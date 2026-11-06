@@ -95,8 +95,9 @@
     par = par || {};
     var T = terrenoDe(estado, par), out = [];
     if (!T) return { lista: [], origem: null, terreno: null };
+    function dem(c) { return !!(c.faseDemolida && String(c.faseDemolida) !== "Nenhum"); }   /* B2b: o demolido não existe no estado final */
     arr(estado.caixas).forEach(function (c) {
-      if (!c || c.tipo !== "viga") return;
+      if (!c || c.tipo !== "viga" || dem(c)) return;
       var alt = num(c.altura, 0), topo = c.cy + alt / 2;
       if (topo > T.y + geo(par, "baldrameAcima") + EPS || topo < T.y - geo(par, "baldrameAbaixo") - EPS) return;
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2;
@@ -107,7 +108,7 @@
     var B = par.baldrame;
     if (B && num(B.altura, 0) > 0 && num(B.largura, 0) > 0 && isFinite(num(B.topo, NaN))) {
       arr(estado.caixas).forEach(function (c) {
-        if (!c || c.tipo !== "parede" || Math.abs(c.cy - num(c.altura, 0) / 2 - T.y) > geo(par, "baldrameAcima")) return;
+        if (!c || c.tipo !== "parede" || dem(c) || Math.abs(c.cy - num(c.altura, 0) / 2 - T.y) > geo(par, "baldrameAcima")) return;
         var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, topo = T.y + num(B.topo, 0);
         var R = retangulo({ x: c.cx - h * cs, z: c.cz + h * sn }, { x: c.cx + h * cs, z: c.cz - h * sn }, num(B.largura, 0));
         if (R) { R.id = "baldrame:" + c.id; R.virtual = true; R.yBase = r4(topo - num(B.altura, 0)); R.yTopo = r4(topo); R.largura = num(B.largura, 0); out.push(R); }
@@ -142,7 +143,9 @@
   }
   function esperasDe(estado, avaliarFam, ops, redeId, T, par) {
     var B = BI(), R = B.rede(estado, avaliarFam), porId = {}, daRede = {};
-    vivas(ops).forEach(function (o) { if (o.rede != null) daRede[o.id] = 1; });
+    /* a ÚLTIMA definição do trecho manda (05/11/2026): a espera do ambiente que a rede emendou (redeParte "espera", abaixo) volta a
+       ser do ambiente quando o "limpar" a restaura — a op antiga da rede ainda está na lista, mas a de depois é a do ambiente */
+    vivas(ops).forEach(function (o) { if (o.id == null) return; if (o.op === "trecho" || o.op === "peca") daRede[o.id] = o.rede != null ? 1 : 0; else if (o.rede != null) daRede[o.id] = 1; });
     arr(estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) { porId[t.id] = t; });
     return arr(R.continuacoes).filter(function (c) {
       var t = porId[c.trecho]; if (!t || t.sistema !== "esgoto" || daRede[t.id] || daRede[String(t.id).replace(/b$/, "")]) return false;
@@ -165,6 +168,28 @@
     if (!fcr) return Infinity;
     return yT - (fcr.corpo.alt + fcr.tampa.alt) * 0.001 + (fcr.corpo.alt - CIr.FORMA.colarinho) * 0.001 - GGr.cotasConexao("pvc_esgoto", "luva", dn).od * 0.0005;   // hid:ok mm → m
   }
+  /* a espera `w` (ponta solta do trecho do ambiente) segue RETA até a caixa `c`? Então o trecho da espera é redefinido (mesmo id, as
+     marcas do ambiente ficam) da origem dele até a entrada da caixa, e a op guarda a original para o limpar devolver. Só se: mesmo DN
+     e material de esgoto, mesmo rumo em planta, nada ligado no meio dele e a declividade final ≥ a mínima do DN (nunca menor que a
+     do ramal: a espera já descia). → a op (redeParte "espera") ou null */
+  function emendaEspera(w, c, yFim, dn, estado, ops, redeId) {
+    var trs = arr(estado.instalacoes && estado.instalacoes.trechos), t = trs.filter(function (x) { return x.id === w.trecho; })[0];
+    if (!t || t.sistema !== "esgoto" || Number(t.dn) !== Number(dn) || (t.material && t.material !== "pvc_esgoto")) return null;
+    var A = w.ponta === "p1" ? t.p2 : t.p1, W = w.ponta === "p1" ? t.p1 : t.p2, La = d2(A, W), Lb = d2(W, c);
+    if (!(La > EPS) || !(Lb > EPS)) return null;
+    var ux = (W.x - A.x) / La, uz = (W.z - A.z) / La, vx = (c.x - W.x) / Lb, vz = (c.z - W.z) / Lb;
+    if (Math.abs(ux * vz - uz * vx) > 1e-4 || ux * vx + uz * vz < 1 - 1e-4) return null;   // hid:ok colinear em planta (0,1 mm por metro)
+    /* nada encosta no MEIO do trecho da espera (a geometria dele muda alguns mm na vertical) */
+    var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01; }); });   // hid:ok 1 cm (tolerância de nó)
+    if (meio) return null;
+    var i = BI().declMinDn("esgoto", dn) / 100, Lt = La + Lb;
+    if ((num(A.y, 0) - yFim) / Lt < i - EPS) return null;
+    var orig = vivas(ops).filter(function (o) { return o.op === "trecho" && o.id === t.id; }).pop(); if (!orig || orig.redeParte === "espera") return null;
+    var n = copia(orig); delete n.continua;
+    n.p1 = { x: A.x, y: A.y, z: A.z }; n.p2 = { x: c.x, y: yFim, z: c.z };
+    n.rede = redeId; n.redeParte = "espera"; n.esperaOriginal = copia(orig);
+    return n;
+  }
   function gerar(e) {
     e = e || {};
     var estado0 = e.estado || {}, ops0 = arr(e.ops), par = e.parametros || {}, B = BI();
@@ -179,7 +204,17 @@
     var ordem = { anotar: 0, acessorio: 0, trecho: 1, peca: 2 }, lim = [];
     vivas(ops0).forEach(function (o) { if (o.rede === redeId && o.id != null && ordem[o.op] != null) lim.push(o); });
     lim.sort(function (a, b) { return ordem[a.op] - ordem[b.op]; });
-    var limpar = lim.map(function (o) { return { op: o.op === "anotar" ? "desanotar" : "apagar", id: o.id, rede: redeId, redeParte: "limpar" }; });
+    /* a ESPERA do ambiente que esta linha emendou no ramal (redeParte "espera"): o limpar devolve a espera como o ambiente a deixou
+       (a op original guardada) — só se o modelo ainda tem a versão da rede; se o ambiente já a refez, nada a devolver */
+    var ultTr = {}; vivas(ops0).forEach(function (o) { if (o.op === "trecho" && o.id != null) ultTr[o.id] = o; });
+    var limpar = [];
+    lim.forEach(function (o) {
+      if (o.op === "trecho" && o.redeParte === "espera" && o.esperaOriginal) {
+        if (ultTr[o.id] === o) limpar.push(copia(o.esperaOriginal));   /* a versão da rede ainda é a que vale no modelo */
+        return;
+      }
+      limpar.push({ op: o.op === "anotar" ? "desanotar" : "apagar", id: o.id, rede: redeId, redeParte: "limpar" });
+    });
     var ops = ops0.concat(limpar), estado = BE().aplicar(ops), ctx = NN().contexto();
     var parT = copia(par); if (L0.cotaTerreno != null) parT.cotaTerreno = L0.cotaTerreno;
     var T = terrenoDe(estado, parT);
@@ -200,7 +235,9 @@
     no(Lh.L, "saida");
     /* ⚠ PADRÃO (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md): o ramal da espera até a linha corre pela ÁREA EXTERNA — o pé mais
        perto que não atravessa a edificação (a perpendicular do corredor entre blocos cruzava um cômodo) */
-    var HIm = dep("HidImplantacao", "./hidimplantacao.js"), aceitaExt = HIm ? function (p, q) { return !HIm._int.cruzaDentro(estado0, p, q, {}); } : null;
+    /* B2b (06/11/2026): a linha da PASSAGEM LATERAL (L0.lateral) corre sob o piso da casa que ocupa o lote — a espera já está NELA (js/hidambiente.js
+       esperaFora): o pé é o mais perto, sem a preferência pela área externa (que puxava o ramal para um pé longe, fora da espera) */
+    var HIm = dep("HidImplantacao", "./hidimplantacao.js"), aceitaExt = HIm && !L0.lateral ? function (p, q) { return !HIm._int.cruzaDentro(estado0, p, q, {}); } : null;
     esperas.forEach(function (w) { var q = projetar(Lh, w, aceitaExt); w.proj = q; var n = no(q.s, "juncao"); n.esperas.push(w); });
     /* junta caixas muito perto (prioridade: saída > mudança de direção > junção) */
     var PRI = { saida: 0, mudanca: 1, juncao: 2, intermediaria: 3 };   // hid:ok ordem de prioridade das caixas
@@ -263,7 +300,12 @@
         if (descCx > EPS) { desce += descCx; decide("rede.caixas.cota", "Ramal da espera " + w.trecho + " desce " + f2(descCx) + " m na espera para entrar no CORPO da caixa de inspeção " + c.id + " (a caixa do fabricante não fica mais rasa que corpo + tampa)."); }
         var idR = redeId + "-r" + (++nR), yIni = chao4(y0 - desce), yFim = chao4(yIni - i * L);
         if (desce > EPS) novas.push({ op: "trecho", id: idR + "v", sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: w.x, y: y0, z: w.z }, p2: { x: w.x, y: yIni, z: w.z }, rede: redeId, redeParte: "ramal" });
-        novas.push({ op: "trecho", id: idR, sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: w.x, y: yIni, z: w.z }, p2: { x: c.x, y: yFim, z: c.z }, rede: redeId, redeParte: "ramal" });
+        /* ⚠ SEM LUVA NA ESPERA (05/11/2026, pedido do Rogério "nenhuma conexão a mais"; critério economia.luva; PADROES-PROJETO-RA R-A1:
+           declividade constante; R-E12: no enterrado, emenda só em caixa): a espera do ambiente que já aponta para a caixa (mesmo rumo,
+           mesmo DN, sem descida) não ganha um 2º tubo emendado nela — o MESMO tubo segue até a caixa (um trecho, da origem da espera) */
+        var emenda = desce > EPS ? null : emendaEspera(w, c, yFim, dn, estado, ops, redeId);
+        if (emenda) { idR = emenda.id; novas.push(emenda); }
+        else novas.push({ op: "trecho", id: idR, sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: w.x, y: yIni, z: w.z }, p2: { x: c.x, y: yFim, z: c.z }, rede: redeId, redeParte: "ramal" });
         if (modo === "atravessar") cr.forEach(function (q) { interf(q, idR, dn); });
         cotaCaixa[ci].entradas.push(yFim);
         out.ramais.push({ id: idR, espera: w.trecho, caixa: c.id, dn: dn, comprimento: r4(L), descida: r4(desce), descidaCaixa: r4(descCx), cruza: cr.map(function (q) { return q.b.id; }) });
@@ -363,12 +405,14 @@
     decide("rede.baldrame", BL.lista.length ? "Viga baldrame (" + (BL.origem === "modelo" ? "modelo estrutural" : "parâmetro sob as paredes do térreo") + "): " + (modo === "por_baixo" ? "o tubo passa POR BAIXO, com " + f2(geo(par, "folgaBaldrame")) + " m de folga (critério do projetista) — padrão" : "o tubo ATRAVESSA com tubo-camisa; " + out.interferencias.length + " furo(s) marcado(s) para o projeto estrutural") + "." : "Sem viga baldrame no modelo nem parâmetro: travessia não verificada (pendência).");
     ctx.pendencias().forEach(function (p) { pend(p.chave, p.motivo, [redeId]); });
     out.normas = ctx.normas();
-    out.ops = limpar.concat(novas);
+    /* a espera devolvida no limpar e emendada de novo aqui: a devolução sai do lote (a op nova já a redefine — refazer = as mesmas peças) */
+    var emendadas = {}; novas.forEach(function (o) { if (o.op === "trecho" && o.redeParte === "espera") emendadas[o.id] = 1; });
+    out.ops = limpar.filter(function (o) { return !(o.op === "trecho" && emendadas[o.id]); }).concat(novas);
     out.terreno = T.y; out.modo = modo; out.ok = !!novas.length;
     return out;
   }
 
-  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, yMaxEntrada: yMaxEntrada, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { linha: linha, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
+  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, yMaxEntrada: yMaxEntrada, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { linha: linha, noPonto: noPonto, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
   global.HidRede = HidRede;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRede;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

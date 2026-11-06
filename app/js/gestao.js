@@ -11843,6 +11843,8 @@
         try { if (window.BimInstUI && BimInstUI.itensMenu) itNiv = itNiv.concat(BimInstUI.itensMenu({ uid: sob || uid })); } catch (eIj) {}
         /* TRAÇAR AUTOMATICAMENTE (18/10/2026, js/hidkitui.js): no ambiente (ou no aparelho) sob o cursor */
         try { if (window.HidKitUI && HidKitUI.itensMenu && window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
+        /* SUBIR/DESCER TRECHO (06/11/2026, js/hidsubirtuboui.js): no tubo horizontal do hidro — "Subir trecho…" / "Descer trecho…" */
+        try { if (window.HidSubirTuboUI && HidSubirTuboUI.itensMenu) itNiv = itNiv.concat(HidSubirTuboUI.itensMenu({ uid: sob || uid })); } catch (eSt) {}
         var SI = window.BimSelInst, temSel = false;
         try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
         if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {

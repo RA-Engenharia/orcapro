@@ -38,7 +38,10 @@
        pré-moldada de concreto; ou o dispositivo de PVC Ø 300 (a 8160 não o aceita na rede enterrada: fica a pendência) — e a tampa */
     tipoCaixa: (function () { var v = lsLer(LSB + ":tipoCaixa", "alvenaria"); return v === "premoldado" || v === "pvc300" ? v : "alvenaria"; })(),
     tampaCaixa: lsLer(LSB + ":tampaCaixa", "concreto") === "ferro" ? "ferro" : "concreto",
-    parametros: function () { var p = { baldrameModo: U.modoBaldrame, tipoCaixa: U.tipoCaixa, tampa: U.tampaCaixa }; if (U.baldrameParam) p.baldrame = U.baldrameParam; if (U.pisoAcabado != null) p.pisoAcabado = U.pisoAcabado; if (U.alturaVent != null) p.alturaSaidaVentilacao = U.alturaVent; if (U.redeAutomatica === false) p.redeAutomatica = false; return p; },
+    /* B2b (06/11/2026): o LADO DA RUA / SAÍDA DO ESGOTO (z0 | x1 | z1 | x0, o lado da caixa envolvente — o mesmo parametros.ladoSaida do pluvial e
+       do barrilete). Vazio = automático: o portão no muro da divisa, senão a porta externa (js/hidimplantacao.js ladoFrente) */
+    /* ladoSaida: getter/setter no fim do arquivo (por empresa + usuário + obra, como o `ligado`) */
+    parametros: function () { var p = { baldrameModo: U.modoBaldrame, tipoCaixa: U.tipoCaixa, tampa: U.tampaCaixa }; if (U.baldrameParam) p.baldrame = U.baldrameParam; if (U.pisoAcabado != null) p.pisoAcabado = U.pisoAcabado; if (U.alturaVent != null) p.alturaSaidaVentilacao = U.alturaVent; if (U.redeAutomatica === false) p.redeAutomatica = false; if (U.ladoSaida) p.ladoSaida = U.ladoSaida; return p; },
     definirCaixa: function (campo, valor) {
       if (campo === "tipo" && (valor === "alvenaria" || valor === "premoldado" || valor === "pvc300")) { U.tipoCaixa = valor; lsGravar(LSB + ":tipoCaixa", valor); }
       else if (campo === "tampa" && (valor === "concreto" || valor === "ferro")) { U.tampaCaixa = valor; lsGravar(LSB + ":tampaCaixa", valor); }
@@ -75,7 +78,8 @@
       var K = dep("HidKit");
       return function (f) {
         var fi = arr(estado.familias).filter(function (x) { return String(x.id) === String(f); })[0]; if (!fi || !K) return [];
-        return arr(estado.familias).filter(function (x) { return x.id !== fi.id && K.tipoDaFamilia(x.famId, x.tipoId) && d2(x, fi) <= K.GEO_KIT.raioAmbiente; }).map(function (x) { return { x: x.x, z: x.z }; });
+        /* B3 (06/11/2026): os vizinhos do MESMO cômodo (sem parede entre os dois) — a conta é do js/hidkit.js (vizinhosDe) */
+        return K._int && K._int.vizinhosDe ? K._int.vizinhosDe(estado, fi) : [];
       };
     },
     aoReconstruir: function (st) {
@@ -349,6 +353,7 @@
     /* campos do bloco (o parâmetro do baldrame sem modelo estrutural) */
     campo: function (n, v) {
       if (n === "kit:piso:acabado") { var xa = parseFloat(String(v).replace(",", ".")); U.pisoAcabado = isFinite(xa) ? xa : null; lsGravar(LSB + ":pisoAcabado", U.pisoAcabado == null ? "" : String(U.pisoAcabado)); var HNc = dep("HidNivel"); if (HNc) HNc.parametros = U.parametros(); return true; }
+      if (n === "kit:rede:rua") { U.ladoSaida = /^(z0|x1|z1|x0)$/.test(String(v)) ? String(v) : null; lsGravar(U.chaveLado(), U.ladoSaida || ""); return true; }
       if (n === "kit:vent:altura") { var xv = parseFloat(String(v).replace(",", ".")); U.alturaVent = isFinite(xv) && xv > 0 ? xv : null; lsGravar(LSB + ":alturaVent", U.alturaVent == null ? "" : String(U.alturaVent)); return true; }
       var m = /^kit:bald:(altura|largura|topo)$/.exec(n); if (!m) return false;
       var p = U.baldrameParam || {}, x = parseFloat(String(v).replace(",", "."));
@@ -358,17 +363,21 @@
     },
     /* ⚠ N23 (25/10/2026) — "LANÇAR A INSTALAÇÃO AUTOMATICAMENTE" (liga/desliga), pedido do Rogério: lembrado POR USUÁRIO E PROJETO
        (empresa + usuário + obra do BIM). Antes a chave era uma só no navegador: desligar numa obra desligava em todas. Sem chave do
-       projeto ainda (antes do login/da obra), vale a escolha antiga do navegador (orcapro:hidkit:auto) e, sem ela, LIGADO — como hoje.
+       projeto ainda (antes do login/da obra), DESLIGADO (desde 05/11/2026 — ver o `_lig` no fim do arquivo).
        DESLIGADO: a peça entra sozinha (sem kit, sem ligar o ambiente, sem a prévia do barrilete da caixa); a instalação só nasce
        quando a pessoa pede: "Ligar esta peça" (Propriedades da peça e botão direito) ou o Traçar automaticamente. */
-    chaveAuto: function () {
+    chaveSufixo: function () {
       var emp = "", usr = "", obra = "";
       try { if (global.Auth && Auth.empresaId) emp = String(Auth.empresaId() || ""); } catch (e) {}
       try { var u0 = global.Auth && Auth._usuario; if (u0) usr = String(u0.id || u0.uid || u0.email || u0.login || ""); } catch (e2) {}
       /* o projeto: a mesma chave de obra das outras telas do BIM (js/bimmateriaisui.js obraKey) — a obra do BIM, o projeto aberto ou "geral" */
       try { var g = global.Gestao, b0 = global.BIM; obra = String((g && g._bimSel) || (b0 && b0.obraAtual && b0.obraAtual()) || "geral"); } catch (e3) { obra = "geral"; }
-      return LS + ":" + emp + ":" + usr + ":" + obra;
+      return emp + ":" + usr + ":" + obra;
     },
+    chaveAuto: function () { return LS + ":" + U.chaveSufixo(); },
+    /* LADO DA RUA / SAÍDA DO ESGOTO por obra (revisão adversarial 06/11/2026: a chave global do navegador vazava a escolha da obra A
+       para a B). Mesma regra do chaveAuto: empresa + usuário + obra. */
+    chaveLado: function () { return LSB + ":ladoSaida:" + U.chaveSufixo(); },
     _chaveVista: null,   /* _sincAuto (relê a escolha quando o projeto muda) e o `ligado` (getter/setter) ficam no fim do arquivo */
     alternar: function (on) { U.ligado = !!on; var k = U.chaveAuto(); U._chaveVista = k; lsGravar(k, on ? "1" : "0"); U._redesenhar(); status(on ? "Lançar a instalação automaticamente: LIGADO neste projeto — ao colocar a peça, o kit e a ligação nascem junto." : "Lançar a instalação automaticamente: DESLIGADO neste projeto — a peça entra sozinha; use “Ligar esta peça” ou o Traçar automaticamente."); },
     /* "LIGAR ESTA PEÇA": a instalação de UMA peça, quando a pessoa pede (com o automático desligado, ou para refazer). Caixa d'água →
@@ -445,11 +454,104 @@
       var ps = [
         { id: "hid:ligar-peca", rotulo: tipo === "caixa" ? "Barrilete da caixa" : "Instalação da peça", tipo: "botao", rotuloBotao: "Ligar esta peça", fn: function () { U.ligarPeca(id); } },
         { id: "hid:auto", rotulo: "Lançar automaticamente", leitura: true, valor: U.ligado ? "ligado neste projeto" : "desligado neste projeto (Instalações › Projeto inteligente)" }];
+      if (tipo === "aparelho" && U._temEsgoto(c, id)) {
+        var atS = U._saidaAtual(c, id), outS = atS === "joelho" ? "curva" : "joelho";
+        ps.push({ id: "hid:saida-es", rotulo: "Saída do esgoto", tipo: "botao", rotuloBotao: U._rotuloSaida(atS) + " — trocar para " + U._rotuloSaida(outS), fn: function () { U.escolherSaida(id, outS); } });
+      }
       if (HEu && tipo !== "caixa") {
         ps.push({ id: "hid:aparente", rotulo: "Instalação aparente", tipo: "botao", rotuloBotao: apA ? "Aparente — voltar a embutir" : "Embutida — marcar aparente", fn: function () { U.marcarAparente([id], !apA); } });
         ps.push({ id: "hid:aparente-amb", rotulo: "Neste ambiente", tipo: "botao", rotuloBotao: apA ? "Embutir o ambiente inteiro" : "Ambiente inteiro aparente", fn: function () { U.marcarAparente(U._doAmbiente(c, id), !apA); } });
       }
       return { nome: "Instalação hidrossanitária", params: ps };
+    },
+    /* ============ SAÍDA DO ESGOTO DO APARELHO (06/11/2026, pedido do Rogério): "Curva longa 90°" (padrão, NBR 8160) ou "Joelho 90°" no
+       nó em que a descida do aparelho vira o ramal. Fica no aparelho (parâmetro HidRota.CHAVE_SAIDA_ES) e o Traçar automaticamente a
+       respeita; a escolha refaz SÓ o ambiente daquele aparelho (a prévia de "Ligar esta peça"). Água fria/quente: sem opção (joelho já é o padrão). */
+    _saidaAtual: function (c, famId) {
+      var HR = dep("HidRota"), f = arr(c && c.estado && c.estado.familias).filter(function (x) { return String(x.id) === String(famId); })[0];
+      return HR && HR.saidaEsgoto ? HR.saidaEsgoto(f) : "curva";
+    },
+    _rotuloSaida: function (id) { var HR = dep("HidRota"), o = HR && HR.opcoesSaida ? HR.opcoesSaida("esgoto").filter(function (x) { return x.id === id; })[0] : null; return o ? o.rotulo : String(id); },
+    /* o aparelho tem ponto de esgoto? (só ele mostra a opção) */
+    _temEsgoto: function (c, famId) {
+      var K = dep("HidKit"), f = arr(c && c.estado && c.estado.familias).filter(function (x) { return String(x.id) === String(famId); })[0];
+      if (!K || !f || !K._int || !K._int.conectores) return false;
+      try { return K._int.conectores(c.avaliarFam, f).some(function (k) { return k.sistema === "esgoto"; }); } catch (e) { return false; }
+    },
+    /* o nó (conexão) vertical ↔ horizontal de esgoto/pluvial selecionado → { cx, sistema, aparelho (o dono, ou null), atual } ou null */
+    saidaDoNo: function (nodeId, R0, c0) {
+      var c = c0 || U._ctx(), B = dep("BimInst"), HR = dep("HidRota"); if (!c || !B || !HR || !B.rede) return null;
+      var R = R0 || null; if (!R) { try { R = B.rede(c.estado, c.avaliarFam); } catch (e) { R = null; } }   /* R0/c0: a rede e o contexto já calculados (o botão direito calcula UMA vez) */
+      var cx = R && R.conexoes ? R.conexoes.filter(function (x) { return String(x.id) === String(nodeId); })[0] : null;
+      if (!cx || !HR.opcoesSaida(cx.sistema).length) return null;
+      var porId = {}; arr(R.trechos).forEach(function (t) { porId[t.id] = t; });
+      var rs = arr(cx.ramos).map(function (i) { return porId[i]; }).filter(Boolean);
+      var vert = rs.filter(function (t) { return t.vertical; })[0];
+      if (rs.length !== 2 || !vert || rs.every(function (t) { return t.vertical; }) || !/^(curva|joelho)90/.test(cx.tipo)) return null;   // hid:ok tipo de peça (curva/joelho 90°), não é valor de norma
+      var lg = arr(R.ligacoes).filter(function (l) { return l.trecho === vert.id && l.tipo === "aparelho" && l.famInst != null; })[0];
+      var ap = lg ? String(lg.famInst) : null;
+      if (ap && !U._temEsgoto(c, ap)) ap = null;
+      return { cx: cx, sistema: cx.sistema, aparelho: ap, atual: ap ? U._saidaAtual(c, ap) : (/^joelho/.test(cx.tipo) ? "joelho" : "curva"), opcoes: HR.opcoesSaida(cx.sistema) };
+    },
+    /* o TUBO VERTICAL da descida do aparelho (Propriedades do tubo / botão direito nele): o nó curva/joelho do pé dela, o mesmo de saidaDoNo */
+    saidaDoTubo: function (trechoId, R0, c0) {
+      var c = c0 || U._ctx(), B = dep("BimInst"); if (!c || !B || !B.rede) return null;
+      var R = R0 || null; if (!R) { try { R = B.rede(c.estado, c.avaliarFam); } catch (e) { R = null; } }
+      var t = R ? arr(R.trechos).filter(function (x) { return String(x.id) === String(trechoId); })[0] : null;
+      if (!t || !t.vertical) return null;
+      var cxs = arr(R.conexoes).filter(function (x) { return arr(x.ramos).indexOf(t.id) >= 0 && /^(curva|joelho)90/.test(x.tipo); });   // hid:ok tipo de peça (curva/joelho 90°), não é valor de norma
+      for (var i = 0; i < cxs.length; i++) { var s = U.saidaDoNo(cxs[i].id, R, c); if (s) return s; }
+      return null;
+    },
+    /* grava a escolha no aparelho (um lote, um Ctrl+Z) e abre a prévia do traçado SÓ do ambiente dele */
+    escolherSaida: function (famId, valor) {
+      var c = U._ctx(), HR = dep("HidRota"); if (!c || !HR || famId == null) return false;
+      famId = String(famId).replace(/^edit:/, "");
+      if (!U._ehLigavel(c, famId) || !U._temEsgoto(c, famId)) { status("Saída do esgoto: " + famId + " não é aparelho com ponto de esgoto."); return false; }
+      var v = HR.saidaEsgoto(valor), inst = {}; inst[HR.CHAVE_SAIDA_ES] = v;
+      var ok = false;
+      try { ok = c.b.editarLote({ op: "lote", id: "hidsaidaes-" + String(new Date().getTime()), ops: [{ op: "instancia", id: famId, inst: inst }] }); } catch (e) { ok = false; }
+      if (!ok) { status("Saída do esgoto: o editor recusou a escolha."); return false; }
+      try { if (global.BimPropsUI && BimPropsUI.render) BimPropsUI.render(); } catch (eR) {}
+      var P = U.ligarPeca(famId);
+      if (P && P.ok) status("Saída do esgoto de " + famId + ": " + U._rotuloSaida(v) + " — prévia do ambiente refeita. Enter aplica, Esc cancela.");
+      return true;
+    },
+    /* nó sem aparelho dono (pluvial, tubo à mão): a peça fica FORÇADA no nó (a mesma gravação de Componentes › Conexão manual) */
+    escolherSaidaNo: function (nodeId, valor) {
+      var s = U.saidaDoNo(nodeId); if (!s) return false;
+      if (s.aparelho) return U.escolherSaida(s.aparelho, valor);
+      var c = U._ctx(), H = dep("HidComponentes"), HR = dep("HidRota"); if (!c || !H || !H.opsForcar) return false;
+      var tipo = HR.saidaEsgoto(valor) === "joelho" ? "joelho90" : "curva90", r = H.opsForcar(c.estado, s.cx, tipo);
+      if (!r || !r.ok) { status((r && r.motivo) || "Saída do esgoto: a peça não serve a este nó."); return false; }
+      try { c.b.instOp(r.op); } catch (e) { return false; }
+      status("Nó " + nodeId + ": " + U._rotuloSaida(valor) + " gravado.");
+      return true;
+    },
+    /* ============ CURVA DE TRANSPOSIÇÃO (06/11/2026, pedido do Rogério: "quando houver interferência, você coloca uma curva de transposição; dá para passar um
+       tubo pelo outro sem interferência"): num tubo de água fria DN 20 que cruza outro tubo de água, "Curva de transposição" insere a peça NO CRUZAMENTO, no tubo
+       selecionado (o outro passa por baixo do arco). A regra de "cabe" é a do js/biminsttransp.js (a mesma do Traçar automaticamente); se não couber, a mensagem diz o porquê. */
+    transpDoTubo: function (trechoId) {
+      var c = U._ctx(), HT = dep("HidTransp"), BC = dep("BimInstColocar"); if (!c || !HT || !BC || !BC.inserir) return null;
+      var ts = arr(c.estado && c.estado.instalacoes && c.estado.instalacoes.trechos), t = ts.filter(function (x) { return String(x.id) === String(trechoId); })[0];
+      if (!t || t.sistema !== "agua_fria" || t.material !== HT.MATERIAL || !HT.regra(t.dn)) return null;
+      var cand = [];
+      ts.forEach(function (o) {
+        if (o.id === t.id || (o.sistema !== "agua_fria" && o.sistema !== "agua_quente")) return;
+        var cr = HT.cruzamento(t, o); if (!cr) return;
+        var r = BC.inserir(c.estado, c.avaliarFam, c.ops, { trecho: t.id }, { famId: "cx:curva_transposicao", outro: o.id });
+        cand.push({ outro: o.id, sistema: o.sistema, dn: o.dn, x: cr.x, z: cr.z, ok: !!(r && r.ok), motivo: r && !r.ok ? r.motivo : null });
+      });
+      return cand.length ? { trecho: t.id, candidatos: cand } : null;
+    },
+    inserirTransposicao: function (trechoId, outroId) {
+      var c = U._ctx(), BC = dep("BimInstColocar"); if (!c || !BC || !BC.inserir) return false;
+      var r = BC.inserir(c.estado, c.avaliarFam, c.ops, { trecho: trechoId }, { famId: "cx:curva_transposicao", outro: outroId });
+      if (!r || !r.ok) { status((r && r.motivo) || "Curva de transposição: não coube."); return false; }
+      var ok = false; try { ok = c.b.instOp(r.op); } catch (e) { ok = false; }
+      if (ok === false) { status("Curva de transposição: o editor recusou a inserção."); return false; }
+      status("Curva de transposição no tubo " + trechoId + ", por cima do tubo " + outroId + ".");
+      return true;
     },
     /* os aparelhos do cômodo do aparelho `id` (os mesmos membros do Traçar) */
     _doAmbiente: function (c, id) {
@@ -660,12 +762,13 @@
       /* (b0) A REDE EXTERNA pelo padrão (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md — correção do Rogério, 18/10/2026: "caixas de
          passagem, de inspeção, tudo é feito do lado de fora"): sem linha da rede e sem caixa de inspeção do usuário, o eixo do
          coletor sai pelo recuo, paralelo às paredes externas, até a frente — e a rede liga caixa a caixa (js/hidrede.js) */
-      var HIm = dep("HidImplantacao"), rAuto = HIm && HIm.redeProposta && esc0.aparelhos.length ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame }) : null;
+      var HIm = dep("HidImplantacao"), rAuto = HIm && HIm.redeProposta && esc0.aparelhos.length ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame, avaliarFam: c.avaliarFam }) : null;
       if (rAuto && rAuto.op) {
         ops.push(rAuto.op); todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
-        avisos.push({ texto: "Rede externa proposta: " + rAuto.motivo + ". As caixas de inspeção ficam na área externa e a rede liga caixa a caixa até a saída.", elementos: [rAuto.op.id] });
+        avisos.push({ texto: (rAuto.op.lateral ? "Rede proposta pela passagem lateral: " + rAuto.motivo + ". Cada ambiente liga numa caixa de inspeção sobre a linha e a rede segue caixa a caixa até a saída na rua."
+          : "Rede externa proposta: " + rAuto.motivo + ". As caixas de inspeção ficam na área externa e a rede liga caixa a caixa até a saída."), elementos: [rAuto.op.id] });
         arr(rAuto.linha && rAuto.linha.pendencias).forEach(function (p) { pendencias.push({ texto: p.motivo, elementos: [rAuto.op.id] }); });
-      }
+      } else if (rAuto && rAuto.linha && rAuto.linha.semRecuo) arr(rAuto.linha.pendencias).forEach(function (p) { pendencias.push({ chave: p.chave, texto: p.motivo, elementos: [], acao: "rede" }); });   /* B2: o lote sem recuo — o motivo vai ao cartão */
       esc0.aparelhos.forEach(function (seed) {
         var M = A.membros(est2, c.avaliarFam, todos, seed, null); if (!M || feitos[M.id]) return; feitos[M.id] = 1;
         /* a pergunta da edição à mão já foi feita no (a0), uma vez por cômodo: "manter" deixa o cômodo como está */
@@ -1279,22 +1382,37 @@
       o = o || {};
       var c = U._ctx(); if (!c) return [];
       var cxM = o.uid ? U._caixaSel(c, [String(o.uid)]) : null;   /* FRENTE H8: botão direito na caixa d'água */
-      if (cxM) return [{ id: "hid-ligar-peca", rotulo: "Ligar esta peça (barrilete)", fn: function () { U.ligarPeca(cxM); } }, { id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }];
-      if (!U._aparelhosDe(c).length) return [];
+      /* saída do esgoto: botão direito no NÓ vertical ↔ horizontal (ou no aparelho dono dele) — Curva longa 90° / Joelho 90° */
+      /* a rede UMA vez por clique (antes saidaDoNo + saidaDoTubo refaziam _ctx + rede 2 a 4 vezes) */
+      var idU = o.uid ? String(o.uid).replace(/^edit:/, "") : null, B0 = dep("BimInst"), R0 = null;
+      if (idU && B0 && B0.rede) { try { R0 = B0.rede(c.estado, c.avaliarFam); } catch (eR) { R0 = null; } }
+      var sdN = idU && R0 ? (U.saidaDoNo(idU, R0, c) || U.saidaDoTubo(idU, R0, c)) : null;   /* o nó, ou o tubo vertical da descida */
+      var txM = idU ? U.transpDoTubo(idU) : null;
+      /* os itens específicos do clique (transposição, saída do esgoto) vêm ACRESCENTADOS à lista normal (Traçar automaticamente etc.), não no lugar dela */
+      var extra = [];
+      if (txM) txM.candidatos.forEach(function (q) { extra.push({ id: "hid-transp-" + q.outro, rotulo: "Curva de transposição sobre " + q.outro + (q.ok ? "" : " (não cabe)"), fn: function () { U.inserirTransposicao(txM.trecho, q.outro); } }); });
+      if (sdN) sdN.opcoes.forEach(function (op) { extra.push({ id: "hid-saida-" + op.id, rotulo: op.rotulo + (op.id === sdN.atual ? " (atual)" : ""), fn: function () { U.escolherSaidaNo(sdN.cx.id, op.id); } }); });
+      if (cxM) return extra.concat([{ id: "hid-ligar-peca", rotulo: "Ligar esta peça (barrilete)", fn: function () { U.ligarPeca(cxM); } }, { id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }]);
+      var nAp = 0; try { nAp = U._aparelhosDe(c).length; } catch (eAp) { nAp = 0; }
+      if (!nAp) return extra;
       var K = dep("HidKit"), uid = o.uid ? String(o.uid) : null, alvo = null;
       if (uid) { var e1 = U.escopo(c, [uid]); if (!e1.erro) alvo = [uid]; }
       var p = o.ponto ? { x: o.ponto[0], z: o.ponto[1] } : null;
       if (!alvo && !p && o.ev && c.b.precisao) { try { var api = c.b.precisao(), q = api && api.planoPonto ? api.planoPonto(o.ev.clientX, o.ev.clientY) : null; if (q) p = { x: q.x, z: q.z }; } catch (eP) {} }
       if (!alvo && p) { var a = K._int.ambienteDe(c.estado, p); if (a && !U.escopo(c, ["edit:" + a.id]).erro) alvo = ["edit:" + a.id]; }
-      if (!alvo) return [];
+      if (!alvo) return extra;
       var itens = [{ id: "hid-tracar-auto", rotulo: "Traçar automaticamente (TA)", fn: function () { U.tracarAuto({ uids: alvo }); } }];
       /* N23: botão direito numa PEÇA ligável — "Ligar esta peça" (a instalação só dela, com a prévia) */
       var idP = uid ? uid.replace(/^edit:/, "") : null;
+      if (idP && U._ehLigavel(c, idP) && U._temEsgoto(c, idP)) {
+        var atM = U._saidaAtual(c, idP), HRm = dep("HidRota");
+        (HRm && HRm.opcoesSaida ? HRm.opcoesSaida("esgoto") : []).forEach(function (op) { itens.push({ id: "hid-saida-" + op.id, rotulo: "Saída do esgoto: " + op.rotulo + (op.id === atM ? " (atual)" : ""), fn: function () { U.escolherSaida(idP, op.id); } }); });
+      }
       if (idP && U._ehLigavel(c, idP)) itens.unshift({ id: "hid-ligar-peca", rotulo: "Ligar esta peça", fn: function () { U.ligarPeca(idP); } });
       /* N23: botão direito no AMBIENTE — "Corrigir tudo neste ambiente" (o traçado feito à mão, com a prévia) */
       var ambA = alvo.length === 1 ? String(alvo[0]).replace(/^edit:/, "") : null;
       if (ambA && dep("HidCorrigir") && arr(c.estado.ambientes).some(function (x) { return String(x.id) === ambA; })) itens.push({ id: "hid-corrigir-ambiente", rotulo: "Corrigir tudo neste ambiente", fn: function () { U.corrigirAmbiente(ambA); } });
-      return itens;
+      return extra.concat(itens);
     },
     /* o botão grande no topo do painel Instalações (js/hidcalcui.js) */
     htmlTopo: function () {
@@ -1315,6 +1433,9 @@
       var bp = U.baldrameParam || {}, fmtB = function (v) { return v == null ? "" : String(v).replace(".", ","); };
       h += '<div data-hid="kit-rede" style="margin:8px 0 4px;font-size:12px"><b>Linha da rede</b> <span class="muted">— desenhe o eixo do coletor com o Tubo de esgoto (no sentido da saída), selecione e use como linha: cada ambiente se liga a ela e o coletor segue com inclinação até as caixas de inspeção (mudança de direção, junção, distância máxima e saída — NBR 8160).</span>' +
            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm" data-hid="kit-rede-sel">Usar o traço selecionado como linha da rede</button><button class="btn sm ghost" data-hid="kit-rede-refazer">Refazer a rede</button></div>' +
+           '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><label>Lado da rua / saída do esgoto: <select class="inp" data-hid-campo="kit:rede:rua">' +
+             [["", "Automático (portão no muro ou porta externa)"], ["z1", "Embaixo na planta (y menor)"], ["z0", "Em cima na planta (y maior)"], ["x0", "À esquerda (x menor)"], ["x1", "À direita (x maior)"]].map(function (t) { return '<option value="' + t[0] + '"' + ((U.ladoSaida || "") === t[0] ? " selected" : "") + ">" + esc(t[1]) + "</option>"; }).join("") +
+           '</select></label> <span class="muted">— sem recuo em volta da casa, a rede vai pela passagem lateral até este lado</span></div>' +
            '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">Viga baldrame: <button class="btn sm' + (U.modoBaldrame === "por_baixo" ? "" : " ghost") + '" data-hid="kit-bald-por_baixo" aria-pressed="' + (U.modoBaldrame === "por_baixo") + '">Passar por baixo (padrão)</button>' +
            '<button class="btn sm' + (U.modoBaldrame === "atravessar" ? "" : " ghost") + '" data-hid="kit-bald-atravessar" aria-pressed="' + (U.modoBaldrame === "atravessar") + '">Atravessar com tubo-camisa</button></div>' +
            '<div data-hid="kit-caixa" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Caixa de inspeção: ' +
@@ -1386,9 +1507,28 @@
   };
   /* N23: `ligado` com getter/setter — quem grava direto (a tela antiga, as e2e) marca a escolha como a do projeto aberto; o `_sincAuto`
      relê do armazenamento só quando o projeto (a chave) muda */
-  var _lig = (function () { try { return localStorage.getItem(LS) !== "0"; } catch (e) { return true; } })();
+  /* ⚠ DESLIGADO DE FÁBRICA (05/11/2026, pedido do Rogério): "assim que eu coloco o vaso e a pia ele já lança o traçado; depois eu
+     coloco outra coisa e ficam as interferências, porque ele quis antecipar o que nem estava pronto". Agora a pessoa posiciona tudo
+     pela arquitetura e pede o "Traçar automaticamente (TA)", que acha o melhor traçado para o CONJUNTO. Quem ligar a chave num
+     projeto continua com ela ligada só ali (a escolha por projeto vale; a chave antiga do navegador e o padrão não ligam mais). */
+  var _lig = false;
   try { Object.defineProperty(U, "ligado", { enumerable: true, configurable: true, get: function () { return _lig; }, set: function (v) { _lig = !!v; try { U._chaveVista = U.chaveAuto(); } catch (e) {} } }); } catch (eD) { U.ligado = _lig; }
-  U._sincAuto = function () { var k = U.chaveAuto(); if (k === U._chaveVista) return _lig; U._chaveVista = k; _lig = lsLer(k, lsLer(LS, "1")) !== "0"; return _lig; };
+  U._sincAuto = function () { var k = U.chaveAuto(); if (k === U._chaveVista) return _lig; U._chaveVista = k; _lig = lsLer(k, "0") === "1"; return _lig; };
+  /* LADO DA SAÍDA por obra: getter relê do armazenamento quando a chave (empresa:usuário:obra) muda; setter marca como a da obra aberta.
+     MIGRAÇÃO: o valor antigo, global do navegador (orcapro:hidkit:baldrame:ladoSaida), NÃO vale para todas as obras. Só é oferecido como
+     sugestão UMA vez: na primeira obra aberta que ainda não tem escolha própria; ali é gravado na chave da obra e o legado é marcado como
+     consumido (…:ladoSaida:migrado), então nenhuma outra obra o herda. */
+  var _lado = null, _chaveLadoVista = null, LADO_RE = /^(z0|x1|z1|x0)$/;
+  function _sincLado() {
+    var k = U.chaveLado(); if (k === _chaveLadoVista) return _lado;
+    _chaveLadoVista = k; var v = lsLer(k, null);
+    if (v == null && lsLer(LSB + ":ladoSaida:migrado", "") !== "1") {
+      lsGravar(LSB + ":ladoSaida:migrado", "1");
+      var leg = lsLer(LSB + ":ladoSaida", ""); if (LADO_RE.test(leg)) { v = leg; lsGravar(k, v); }
+    }
+    _lado = v && LADO_RE.test(v) ? v : null; return _lado;
+  }
+  try { Object.defineProperty(U, "ladoSaida", { enumerable: true, configurable: true, get: _sincLado, set: function (v) { try { _sincLado(); } catch (e0) {} _lado = v && LADO_RE.test(String(v)) ? String(v) : null; try { _chaveLadoVista = U.chaveLado(); } catch (e) {} } }); } catch (eL) { U.ladoSaida = null; }
   global.HidKitUI = U;
   if (global.document && global.setTimeout) global.setTimeout(function () { U._registrarTarde(); }, 0);   /* TRAÇAR AUTOMATICAMENTE: a fita já montada */
   if (typeof module !== "undefined" && module.exports) module.exports = U;

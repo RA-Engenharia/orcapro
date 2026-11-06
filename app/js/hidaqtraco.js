@@ -54,6 +54,7 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  var JUNCAO_TOL = 0.002;   // hid:ok 2 mm: a ponta de outro tubo encostada no meio do tubo novo (a mesma folga de nó do auditor)
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
   function BI() { return dep("BimInst", "./biminst.js"); }
   function HK() { return dep("HidKit", "./hidkit.js"); }
@@ -144,7 +145,11 @@
           if (Lu > EPS && Lv > EPS && (uC.x * vC.x + uC.y * vC.y + uC.z * vC.z) / (Lu * Lv) > COS_PARALELO) return { com: T.id, sistema: T.sistema };
           continue;
         }
-        if (segSeg(a, a, T.a, T.b) <= B.TOL || segSeg(b, b, T.a, T.b) <= B.TOL || segSeg(T.a, T.a, a, b) <= B.TOL || segSeg(T.b, T.b, a, b) <= B.TOL) continue;
+        /* B3 (06/11/2026, R-E21): a PONTA de um tubo existente no meio do tubo novo só é junção se encosta de fato (2 mm, a folga de nó do
+           auditor) — com a tolerância do conector (B.TOL, 2 cm) a descida da alimentação do aquecedor passava a 1,5 cm do fim do ramal de
+           água fria da bancada e contava como "ligada" (TUBO_SOBREPOSTO, ciclo, cruzeta, NO_COM_FOLGA). O tubo novo que termina num
+           existente (a derivação deste traçado) continua com a tolerância do conector. */
+        if (segSeg(a, a, T.a, T.b) <= B.TOL || segSeg(b, b, T.a, T.b) <= B.TOL || segSeg(T.a, T.a, a, b) <= JUNCAO_TOL || segSeg(T.b, T.b, a, b) <= JUNCAO_TOL) continue;
         var req = folga;
         if (Math.min(a.x, b.x) - r - T.r - afast > Math.max(T.a.x, T.b.x) || Math.max(a.x, b.x) + r + T.r + afast < Math.min(T.a.x, T.b.x) || Math.min(a.z, b.z) - r - T.r - afast > Math.max(T.a.z, T.b.z) || Math.max(a.z, b.z) + r + T.r + afast < Math.min(T.a.z, T.b.z) || Math.min(a.y, b.y) - r - T.r - afast > Math.max(T.a.y, T.b.y) || Math.max(a.y, b.y) + r + T.r + afast < Math.min(T.a.y, T.b.y)) continue;
         /* água quente × esgoto/ventilação: o afastamento (livre), salvo as ligações do MESMO aparelho — a louça manda (como no HidRota) */
@@ -350,9 +355,32 @@
           var cf2 = null;
           for (var s = 0; s < segs.length && !cf2; s++) cf2 = conflito(segs[s].p1, segs[s].p2, r, mesmoAp);
           if (!cf2) achou = { segs: segs, L: Lp, W: W0, prof: camadas[ic] };
-          else if (ic === camadas.length - 1) pendG.push(["a descida do ponto " + p.k.famInst + ":" + p.k.id + " não cabe na parede " + w.id + " sem esbarrar em " + cf2.com + " (nenhuma camada da parede dá a folga) — trace à mão", [p.k.famInst, cf2.com]]);
         }
-        if (!achou) return;
+        /* B3 (06/11/2026, R-AQ4 "troca de camada da parede"): nenhuma camada serve de cima a baixo (a água fria passa na camada do
+           eixo e a ventilação corre deitada na mais funda, logo abaixo dela — a bancada de 2 cubas com o ramal de água fria reto no eixo):
+           a descida TROCA de camada no meio, entre os dois tubos que cruza — a de cima numa camada, a de baixo noutra, com o desvio
+           horizontal (perpendicular à parede) na cota livre entre eles. O registro continua no trecho de cima (logo acima do ramal de
+           água fria); a cota do desvio vai de logo abaixo dele até logo acima do ponto, de meio em meio centímetro. */
+        var PASSO_TROCA = 0.005;   // hid:ok passo da busca da cota do desvio de camada (m)
+        for (var iu = 0; iu < camadas.length && !achou; iu++) for (var il = 0; il < camadas.length && !achou; il++) {
+          if (iu === il) continue;
+          var Wu = { x: r4(c.x + n.x * (dF + camadas[iu])), z: r4(c.z + n.z * (dF + camadas[iu])) }, Wl = { x: r4(c.x + n.x * (dF + camadas[il])), z: r4(c.z + n.z * (dF + camadas[il])) };
+          var Lq = { x: r4(c.x + n.x * dF - n.x * dL), z: r4(c.z + n.z * dF - n.z * dL) };
+          for (var yj = r4(yRgP - Lr / 2 - mNo); yj >= c.y + mNo - EPS && !achou; yj = r4(yj - PASSO_TROCA)) {
+            var sgT = [
+              { p1: P3(Lq.x, yD, Lq.z), p2: P3(Wu.x, yD, Wu.z), parte: "descida" },
+              { p1: P3(Wu.x, yD, Wu.z), p2: P3(Wu.x, yj, Wu.z), parte: "descida" },
+              { p1: P3(Wu.x, yj, Wu.z), p2: P3(Wl.x, yj, Wl.z), parte: "descida" },
+              { p1: P3(Wl.x, yj, Wl.z), p2: P3(Wl.x, c.y, Wl.z), parte: "descida" },
+              { p1: P3(Wl.x, c.y, Wl.z), p2: P3(c.x, c.y, c.z), parte: "descida" }
+            ];
+            var cf3 = null;
+            for (var s3 = 0; s3 < sgT.length && !cf3; s3++) cf3 = conflito(sgT[s3].p1, sgT[s3].p2, r, mesmoAp);
+            if (!cf3) achou = { segs: sgT, L: Lq, W: Wu, prof: camadas[iu], troca: camadas[il] };
+            else cf2 = cf2 || cf3;
+          }
+        }
+        if (!achou) { pendG.push(["a descida do ponto " + p.k.famInst + ":" + p.k.id + " não cabe na parede " + w.id + " sem esbarrar em " + (cf2 ? cf2.com : "?") + " (nenhuma camada da parede dá a folga, nem trocando de camada) — trace à mão", [p.k.famInst].concat(cf2 ? [cf2.com] : [])]); return; }
         achou.segs.forEach(function (sg) { novos.push({ a: sg.p1, b: sg.p2, r: r, sistema: "agua_quente", id: "desc-" + p.k.famInst }); });
         lig.push({ p: p, L: achou.L, segs: achou.segs, r: r, yRg: yRgP, n: n, prof: achou.prof, parede: w.id, dn: p.dn });
       });
@@ -570,6 +598,17 @@
     });
     conferirAparelhos();
     conferirHidraulica();
+    /* B3 (06/11/2026, critério estrutura.laje; NBR 6118 13.2.5 a conferir no exemplar): onde a água quente atravessa a laje (a coluna do
+       aquecimento central, R-AQ7), o traçado LANÇA o passante (tubo-camisa na fôrma), como o js/hidkitui.js e o js/hidpredio.js fazem
+       com os tubos deles. Antes o prédio com aquecimento central saía com 2 "Furo na laje" sem solução. Idempotente: o hidkitui chama
+       de novo sobre o lote inteiro e o lançamento só regrava `passantes` do trecho. */
+    var HCr = dep("HidCriterios", "./hidcriterios.js");
+    if (HCr && HCr.lancarPassantes && out.ops.length) {
+      try {
+        var LP = HCr.lancarPassantes(out.ops, estado, avaliarFam); out.passantes = LP.n;
+        if (LP.n) out.avisos.push({ texto: "Água quente: " + LP.n + " travessia(s) de laje com o furo previsto (tubo-camisa fixado na fôrma antes da concretagem; vai ao orçamento do modelo) — confira a posição com o projeto estrutural (ABNT NBR 6118, aberturas em lajes).", elementos: LP.trechos.slice(0, 40) });   // hid:ok até 40 elementos no Mostrar
+      } catch (eLP) { out.pendencias.push({ chave: "ta.passantes", texto: "Água quente — passantes: não consegui conferir as travessias de laje (" + (eLP && eLP.message ? eLP.message : eLP) + ") — confira à mão", elementos: [] }); }
+    }
     return out;
 
     /* ================= H6: a conferência do APARELHO (gás: NBR 13103; elétrico: ponto de força, válvula, respiro) */

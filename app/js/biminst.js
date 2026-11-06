@@ -886,6 +886,18 @@
   }
 
   /* ===== FRENTE 3 — a peça forçada no nó (ver o bloco acima) ===== */
+  /* CURVA DE TRANSPOSIÇÃO forçada: só vale onde a regra (js/biminsttransp.js) vale — DN do tubo que transpõe com ficha (hoje só o DN 20) e, se o
+     tubo cruzado é conhecido, o DE que passa sob o arco. Antes (revisão adversarial 06/11/2026) a peça gravada num tubo DN 20 sobrevivia à troca
+     do tubo para DN 25/32 (o dimensionamento) porque o catálogo tem a peça nesses DN. Devolve null se vale, ou o motivo (PT-BR). */
+  function motivoTransposicao(ramos, cruzado) {
+    var HT = dep("HidTransp", "./biminsttransp.js"); if (!HT) return null;
+    var rp = ramos.filter(function (r) { return r.pecaLinha === "curva_transposicao"; }); if (!rp.length) rp = ramos;
+    var dn = Math.round(Math.max.apply(null, rp.map(function (r) { return r.dn || 0; }))), R = HT.regra(dn);
+    if (!R) return "a curva de transposição só existe para DN " + HT.DN_PERMITIDOS.join("/") + " de PVC soldável; este tubo é DN " + dn;
+    if (cruzado && !(cruzado.sistema === "agua_fria" || cruzado.sistema === "agua_quente")) return "só se cruza outro tubo de água";
+    if (cruzado && (cruzado.dn || 0) > R.deMaxCruzado + 1e-6) return "o arco libera tubo de até DE " + R.deMaxCruzado + " mm; o tubo cruzado é DN " + cruzado.dn;
+    return null;
+  }
   function forcadaDoNo(ramos, sistema) {
     var g = grupoDe(sistema), M0 = MATERIAIS[(ramos[0] || {}).material] || {};
     if (!GRUPOS_FORCA[g] || M0.larguras || M0.flexivel) return null;
@@ -895,7 +907,7 @@
   function decidirForcada(tipo, ramos, sistema, conector, avisos) {
     var av0 = [], base = decidirBase(ramos, sistema, conector, av0), HP = dep("HidPortas", "./biminstportas.js");
     var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0], dnM = Math.round(maior.dn), dnm = Math.round(Math.min.apply(null, ramos.map(function (r) { return r.dn; })));
-    var nome = nomeConexao(tipo, maior.material), mat = maior.material, motivo = null, aviso = [];
+    var nome = nomeConexao(tipo, maior.material), mat = maior.material, motivo = tipo === "curva_transposicao" ? motivoTransposicao(ramos, null) : null, aviso = [];
     var chave = dnM === dnm ? txt(dnM) : dnM + "x" + dnm;
     var cf = conferirPortas({ tipo: tipo, material: mat, ramos: ramos, conector: !!conector });
     cf.itens.forEach(function (it) {
@@ -1262,6 +1274,9 @@
       trechos.forEach(function (t) {
         if (!porSis[t.sistema]) return;
         if (porSis[t.sistema].some(function (r) { return r.trecho === t.id; })) return;
+        /* CURVA DE TRANSPOSIÇÃO (06/11/2026): no nó dela o tubo CRUZADO passa pelo vão da peça (por baixo do arco) — não é derivação nem passante; o nó
+           fica só com os dois ramos da peça (o cruzamento é a razão de ela existir) */
+        if (porSis[t.sistema].some(function (r) { return r.pecaLinha === "curva_transposicao"; }) && !motivoTransposicao(porSis[t.sistema].filter(function (r) { return r.pecaLinha === "curva_transposicao"; }), t)) return;
         var d = noInterior(P, t.p1, t.p2);
         if (d != null && d <= TOL) {
           porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, comprimento: t.comprimento, passante: true, jus: true });
@@ -2553,7 +2568,7 @@
   var BimInst = {
     VERSAO: 1,
     SISTEMAS: SISTEMAS, MATERIAIS: MATERIAIS, APLICACOES: APLICACOES, PECAS: PECAS, ALTURAS_CAIXA: ALTURAS_CAIXA,
-    COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, TOL_CONECTOR: TOL_CONECTOR,
+    COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, TOL_CONECTOR: TOL_CONECTOR, PERTO_ESPERA: PERTO_ESPERA,
     inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
     normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
     conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,

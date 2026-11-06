@@ -56,7 +56,8 @@
     raioRaloExistente: 0.60, // hid:ok ralo/caixa que o usuário já pôs a até 60 cm do ponto do ralo do box = o ralo do box (a área de um box)
     alcanceParedeCuba: 1.20, // hid:ok FRENTE H7: a parede atrás da cuba de bancada é procurada até 1,20 m do eixo (bancada de ilha não tem parede)
     tolParedeCuba: 0.005,    // hid:ok FRENTE H7: 5 mm — abaixo disto a distância medida é a que já está no parâmetro
-    paralelaCos: 0.90        // hid:ok FRENTE H7: a parede "de frente" para o fundo da peça (cos do ângulo entre as normais ≥ 0,90)
+    paralelaCos: 0.90,       // hid:ok FRENTE H7: a parede "de frente" para o fundo da peça (cos do ângulo entre as normais ≥ 0,90)
+    sondaFrente: 0.15        // hid:ok B2 (05/11/2026): o ponto que "olha" o cômodo, 15 cm à frente da origem — o mesmo frenteAparelho do js/hidambiente.js
   };
   /* as peças de esgoto que fazem o papel do ralo do box (o usuário pode ter posto qualquer uma delas à mão) */
   var RALOS_BOX = { ralo_seco: 1, ralo_sifonado: 1, caixa_sifonada: 1 };
@@ -77,6 +78,11 @@
     if (!TIPO_DA_FAM) { TIPO_DA_FAM = {}; ANCORAS = []; var K = kits(); Object.keys(K).forEach(function (k) { arr(K[k].familias).forEach(function (f) { TIPO_DA_FAM[f] = k; }); if (K[k].ancora) ANCORAS.push({ kit: k, familia: K[k].ancora.familia, re: new RegExp(K[k].ancora.tipoNome, "i") }); }); }
     if (TIPO_DA_FAM[famId]) return TIPO_DA_FAM[famId];
     if (tipoId != null) for (var i = 0; i < ANCORAS.length; i++) if (ANCORAS[i].familia === famId) { var t = tipoFam(famId, null, tipoId); if (t && ANCORAS[i].re.test(txt(t.nome))) return ANCORAS[i].kit; }
+    /* B2 (05/11/2026, Casa 487): a família do ARQUIVO que é embrulho da biblioteca (fam.mob = o id-base: a marcenaria da cozinha com cuba, a
+       ilha) tem os pontos de água da base, mas o app nunca a apelidava (só o tools/opbim-hidro.js chamava o apelidarFamilia): o Verificar
+       mostrava os pontos sem tubo e o Traçar automaticamente não a via como aparelho. Agora a base é procurada pela própria família. */
+    var defF = null; try { defF = (HF() && HF().porId && HF().porId(famId)) || (global.FamiliasRA && global.FamiliasRA.obter ? global.FamiliasRA.obter(famId, true) : null); } catch (eF) { defF = null; }
+    if (defF && defF.mob && defF.mob !== famId) return apelidarFamilia(famId, defF.mob);
     return null;
   }
   /* F7 (Casa 487): a família do ARQUIVO do cliente é um embrulho da biblioteca (fam.mob = o id-base): ela ganha o kit da base, sem editar o kits.json
@@ -179,7 +185,7 @@
    * piso = a base do aparelho de piso (caixa y0 ≈ 0 na origem); senão a base da parede onde ele encosta; senão o
    * ambiente do BIM que o contém; senão a base do aparelho de piso mais perto. Sem nada: pendência. */
   function paredes(estado) {
-    return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.shaft; })   /* N23: o fechamento do shaft não hospeda ponto nem é a parede do aparelho */.map(function (c) {
+    return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.shaft && !(c.faseDemolida && String(c.faseDemolida) !== "Nenhum"); })   /* B2b: a parede demolida não hospeda ponto */   /* N23: o fechamento do shaft não hospeda ponto nem é a parede do aparelho */.map(function (c) {
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, alt = num(c.altura, 0);
       return { id: c.id, c: c, p1: { x: c.cx - h * cs, z: c.cz + h * sn }, p2: { x: c.cx + h * cs, z: c.cz - h * sn }, esp: num(c.espessura, 0), base: c.cy - alt / 2, topo: c.cy + alt / 2 };
     });
@@ -201,7 +207,18 @@
     return melhor;
   }
   function dentroPoli(p, pts) { var dentro = false; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) { var a = pts[i], b = pts[j]; if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x)) dentro = !dentro; } return dentro; }
-  function ambienteDe(estado, p) { return arr(estado && estado.ambientes).filter(function (a) { return a && a.calc && arr(a.calc.contorno).length >= 3 && dentroPoli(p, a.calc.contorno); })[0] || null; }   // hid:ok polígono tem 3+ vértices
+  function ambienteNoPonto(estado, p) { return arr(estado && estado.ambientes).filter(function (a) { return a && a.calc && arr(a.calc.contorno).length >= 3 && dentroPoli(p, a.calc.contorno); })[0] || null; }   // hid:ok polígono tem 3+ vértices
+  /* B2 (05/11/2026, Casa 487): o aparelho encostado com a ORIGEM NA FACE DA PAREDE (o chuveiro, a bancada, o ponto da máquina) cai na borda do
+     contorno do ambiente — e o par-ímpar o punha "fora de um ambiente": o TA juntava a peça com os vizinhos à vista e o cômodo saía partido
+     (o chuveiro do banheiro dos fundos num grupo sozinho, sem parede, "ponto de alimentação não informado"). Critério de projetista: a peça
+     pertence ao cômodo para onde ela OLHA (a frente da família, a mesma do HidAmbiente.membros). Só vale quando a origem não está em nenhum
+     ambiente — o aparelho que já está dentro continua onde está (R-C9: o ponto serve o cômodo do lado de dentro). */
+  function ambienteDe(estado, p) {
+    var a = ambienteNoPonto(estado, p);
+    if (a || !p || p.famId == null || !tipoDaFamilia(p.famId, p.tipoId)) return a;   /* só o APARELHO (ralo, caixa e peça de esgoto: o ponto exato) */
+    var r = num(p.rotY, 0), o = geo(null, "sondaFrente");
+    return ambienteNoPonto(estado, { x: num(p.x, 0) + o * Math.sin(r), z: num(p.z, 0) + o * Math.cos(r) });
+  }
   /* aparelho DE PISO = o corpo começa exatamente na origem (bacia, lavatório de coluna, tanque); o chuveiro e a torneira
      têm o corpo abaixo da origem (haste, canopla) e não servem de piso */
   var TOL_PISO = 0.001;   // hid:ok 1 mm
@@ -216,15 +233,42 @@
     var av = avaliar(avaliarFam, fi);
     if (aoPiso(av, fi)) return { ok: true, y: r4(num(fi.y, 0)), origem: "base do próprio aparelho (de piso)" };
     var amb = ambienteDe(estado, fi);
+    var yF = num(fi.y, 0);
+    /* o aparelho de piso mais perto (o chão de verdade); com `amb0`, só os do MESMO ambiente */
+    function vizinhoDePiso(amb0) {
+      return arr(estado && estado.familias).filter(function (f) { var yv = num(f.y, 0); return f.id !== fi.id && aoPiso(avaliar(avaliarFam, f), f) && yv <= yF + EPS && yF - yv < geo(null, "peDireito") && (!amb0 || ambienteDe(estado, f) === amb0); })
+        .sort(function (a, b) { return d2(a, fi) - d2(b, fi); })[0];
+    }
+    /* B2 (06/11/2026): com o chuveiro/a bancada agora DENTRO do ambiente (ambienteDe olha para onde a peça olha), a base do ambiente
+       (cota do pavimento) passava na frente do chão que a louça de piso do MESMO cômodo mostra — a casa sobre terreno rebaixado
+       (paredes e louças a -0,60 m, ambiente a 0) punha o ralo do box 60 cm acima do piso e a bacia ficava "sem caminho livre". O chão
+       da louça de piso do cômodo vale primeiro; sem ela, a base do ambiente, como era. */
+    if (amb) {
+      var vA = vizinhoDePiso(amb);
+      if (vA) return { ok: true, y: r4(num(vA.y, 0)), origem: "base do aparelho de piso " + vA.id + " (mesmo ambiente)" };
+    }
     if (amb && isFinite(num(amb.calc.base, NaN))) return { ok: true, y: r4(num(amb.calc.base, 0)), origem: "base do ambiente " + (amb.nome || amb.id) };
     var w = ponto ? paredeDe(estado, ponto, num(fi.y, null)) : null;   /* a cota do aparelho escolhe o pavimento (prédio) */
     if (w) return { ok: true, y: r4(w.base), origem: "base da parede " + w.id };
-    var yF = num(fi.y, 0), viz = arr(estado && estado.familias).filter(function (f) { var yv = num(f.y, 0); return f.id !== fi.id && aoPiso(avaliar(avaliarFam, f), f) && yv <= yF + EPS && yF - yv < geo(null, "peDireito"); })
-      .sort(function (a, b) { return d2(a, fi) - d2(b, fi); })[0];
+    var viz = vizinhoDePiso(null);
     if (viz && d2(viz, fi) <= geo(null, "raioAmbiente")) return { ok: true, y: r4(num(viz.y, 0)), origem: "base do aparelho de piso " + viz.id + " (mesmo ambiente)" };
     return { ok: false, motivo: "não achei o piso do aparelho " + fi.id + " (sem parede, ambiente ou louça de piso perto)" };
   }
   GEO_KIT.raioAmbiente = 4.0;   // hid:ok raio para achar o piso por um aparelho vizinho (m)
+  /* B3 (06/11/2026, conexões mínimas): os aparelhos VIZINHOS do mesmo cômodo — até raioAmbiente e sem parede entre os dois (a linha de um
+     ao outro não atravessa o eixo de nenhuma parede). A espera do chuveiro vira para o lado deles, que é por onde o ramal chega; com o
+     banheiro do lado (atrás da divisória) contando, a espera virava para a divisória e a subida do chuveiro ficava ENTRE o ramal e a
+     espera: o ramal desviava 5 cm para o fundo da parede no cômodo inteiro (dois tocos de 5 cm; CASA, PRÉDIO). */
+  function vizinhosDe(estado, fi) {
+    if (!fi) return [];
+    var ws = paredes(estado);
+    function corta(a, b) { return ws.some(function (w) { var ux = b.x - a.x, uz = b.z - a.z, vx = w.p2.x - w.p1.x, vz = w.p2.z - w.p1.z, den = ux * vz - uz * vx; if (Math.abs(den) < 1e-9) return false; var wx = w.p1.x - a.x, wz = w.p1.z - a.z, t = (wx * vz - wz * vx) / den, u = (wx * uz - wz * ux) / den; return t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6; }); }   // hid:ok tolerância numérica
+    /* o pavimento pela base das paredes que existem na cota da origem (o chuveiro tem a origem no piso ou a 2,20 m: a cota sozinha não diz) */
+    function nivel(y) { var b = null; ws.forEach(function (w) { if (w.base <= y + 1e-6 && w.topo > y + 1e-6 && (b == null || w.base > b)) b = w.base; }); return b; }   // hid:ok tolerância numérica
+    var p0 = { x: num(fi.x, 0), z: num(fi.z, 0) }, n0 = nivel(num(fi.y, 0));
+    function mesmoPiso(x) { var n1 = nivel(num(x.y, 0)); return n0 != null && n1 != null ? Math.abs(n0 - n1) < 0.01 : Math.abs(num(x.y, 0) - num(fi.y, 0)) <= geo(null, "peDireito") / 2; }   // hid:ok 1 cm: a mesma base de parede
+    return arr(estado.familias).filter(function (x) { if (!x || x.id === fi.id || !tipoDaFamilia(x.famId, x.tipoId)) return false; var q = { x: num(x.x, 0), z: num(x.z, 0) }; return d2(q, p0) <= GEO_KIT.raioAmbiente && mesmoPiso(x) && !corta(p0, q); }).map(function (x) { return { x: num(x.x, 0), z: num(x.z, 0) }; });
+  }
   /* teto do ponto de espera: o fundo da laje logo acima; sem laje, o topo da parede; sem nada, o pé-direito do traçado */
   /* a face de baixo do telhado do estado (BimTelhado: as águas calculadas) no ponto (x, z): { y, id } ou null */
   function telhadoEm(estado, x, z) {
@@ -257,7 +301,7 @@
     return melhor;
   }
   function tetoDe(estado, p, piso) {
-    var lajes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "laje"; }), melhor = null;
+    var lajes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "laje" && !(c.faseDemolida && String(c.faseDemolida) !== "Nenhum"); }), melhor = null;   /* B2b: laje demolida não é teto */
     lajes.forEach(function (c) {
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, hw = num(c.espessura, 0) / 2, xs = [], zs = [];
       [[-h, -hw], [h, -hw], [h, hw], [-h, hw]].forEach(function (q) { xs.push(c.cx + q[0] * cs + q[1] * sn); zs.push(c.cz - q[0] * sn + q[1] * cs); });
@@ -294,6 +338,10 @@
   /* DN do sub-ramal de água: tabela da norma (af.aparelhos.dn_min / af.aparelhos); sem ela, o DN do conector; sem nada,
      o padrão do material COM pendência (o dimensionamento acerta) */
   function dnAgua(ctx, aparelho, conector, pend) {
+    /* B3 (06/11/2026): fora das tabelas da 1998 (a ducha higiênica) — o DN do fabricante (Tigre, Manual Técnico 2025 p.67, secundária);
+       consulta muda antes (a que falha no contexto vira pendência mesmo quando a tabela do fabricante responde) */
+    var Nk = dep("HidNormas"), muda = function (k) { return Nk && Nk.consulta ? Nk.consulta(k, { aparelho: aparelho }, "dn_min") : { ok: false }; };
+    if (Nk && Nk.consulta && !muda("af.aparelhos.dn_min").ok && !muda("af.aparelhos").ok && muda("af.aparelhos.dn_min_fabricante").ok) { var cf = ctx.consulta("af.aparelhos.dn_min_fabricante", { aparelho: aparelho }, "dn_min", "kit: " + aparelho); if (cf.ok) return num(cf.valor, 0); }
     var c = ctx.consulta("af.aparelhos.dn_min", { aparelho: aparelho }, "dn_min", "kit: " + aparelho);
     if (!c.ok) c = ctx.consulta("af.aparelhos", { aparelho: aparelho }, "dn_min", "kit: " + aparelho);
     if (c.ok) return num(c.valor, 0);
@@ -514,7 +562,7 @@
       else if (pc) {
         var nC = pc.parede ? { x: pc.parede.x, z: pc.parede.z } : n, eC = emb(pc), Ac = eixo(pc, nC, eC), yRP = r4(piso + aRP.valor);
         var Lacc = BI().ACESSORIO_PADRAO, yBase = r4(yRP - Lacc / 2 - geo(par, "margemNo"));
-        var tg = tangente(nC), outros = arr(e.vizinhos);
+        var tg = tangente(nC), outros = e.vizinhos ? arr(e.vizinhos) : vizinhosDe(estado, fi);
         if (outros.length) { var cx = 0, cz = 0; outros.forEach(function (v) { cx += v.x; cz += v.z; }); cx /= outros.length; cz /= outros.length; if ((cx - Ac.x) * tg.x + (cz - Ac.z) * tg.z < 0) tg = { x: -tg.x, z: -tg.z }; }
         var dnC = dnAgua(ctx, "chuveiro", pc, out.pendencias);
         K.trecho("ch-toco", "agua_fria", "pvc_soldavel", dnC, Ac, pc, "chuveiro");
@@ -764,7 +812,7 @@
     VERSAO: 1, GEO_KIT: GEO_KIT,
     kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
     aparelhosForcados: aparelhosForcados, paraCalculo: paraCalculo, travados: travados, decisoesDoModelo: decisoesDoModelo, assinatura: assinatura,
-    _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
+    _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, vizinhosDe: vizinhosDe, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
   };
   global.HidKit = HidKit;
   if (typeof module !== "undefined" && module.exports) module.exports = HidKit;

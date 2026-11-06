@@ -29,6 +29,7 @@
   function r4(v) { return Math.round(v * CASAS) / CASAS; }
   var EPS = 1e-6;   // hid:ok
   function d2(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+  function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
 
   /* ⚠ GEOMETRIA / CRITÉRIO DE PROJETO (não é norma) — trocável em parametros */
   var GEO_IMP = {
@@ -38,7 +39,13 @@
     folgaParede: 0.10,       // hid:ok a borda da caixa a pelo menos isto da face da parede (fundação/baldrame não comprometida — confirmar com o estrutural)
     sonda: 0.30,             // hid:ok o ponto de prova do "lado de fora" de uma face
     alcance: 80.0,           // hid:ok até onde o raio procura parede (cercado = parede nas 4 direções)
-    pontaParede: 0.20        // hid:ok a caixa não fica na ponta da parede (canto)
+    pontaParede: 0.20,       // hid:ok a caixa não fica na ponta da parede (canto)
+    tolDivisa: 0.05,         // hid:ok B2 (05/11/2026): o eixo do muro a até meia espessura + 5 cm da linha da divisa = muro de divisa
+    /* B2b (06/11/2026) — a PASSAGEM LATERAL (casa que ocupa o lote): a busca do eixo da faixa livre junto à divisa lateral */
+    faixaMax: 3.0,           // hid:ok até onde (da divisa lateral para dentro) a busca procura o eixo da passagem
+    passoFaixa: 0.05,        // hid:ok passo da busca do eixo (5 cm)
+    amostraFaixa: 0.10,      // hid:ok amostragem ao longo da faixa (10 cm)
+    passagemMin: 1.50        // hid:ok a faixa livre mais curta que isto não é passagem (é recanto/jardim)
   };
   function geo(par, k) { return par && par[k] != null && isFinite(Number(par[k])) ? Number(par[k]) : GEO_IMP[k]; }
 
@@ -52,13 +59,24 @@
   }
   function distSeg(p, a, b) { var dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz, t = L2 > 0 ? ((p.x - a.x) * dx + (p.z - a.z) * dz) / L2 : 0; t = Math.max(0, Math.min(1, t)); var qx = a.x + dx * t, qz = a.z + dz * t; return Math.sqrt((p.x - qx) * (p.x - qx) + (p.z - qz) * (p.z - qz)); }
 
+  /* B2 (05/11/2026, Casa 487) — o MURO DA DIVISA não é parede da edificação. A casa do lote estreito tem muro nas quatro divisas: o raio do
+     "cercado" batia nele em toda direção e o lote INTEIRO virava "cômodo fechado" — nenhuma face externa (posicaoExterna = null), nenhuma rede
+     proposta, a espera do esgoto ia para fora do lote. Critério de projetista (PADRAO-IMPLANTACAO-ESGOTO.md: as caixas ficam "do lado de fora",
+     na área externa do LOTE): a parede cujo eixo corre sobre a linha da divisa (as duas pontas a até meia espessura + tolDivisa de um mesmo lado
+     do contorno) é o limite do lote, não de um cômodo — fica fora do cercado e da caixa envolvente. */
+  function naDivisa(w, L, par) {
+    if (!L) return false;
+    var tol = w.esp / 2 + geo(par, "tolDivisa"), c = L.contorno;
+    for (var i = 0; i < c.length; i++) { var a = c[i], b = c[(i + 1) % c.length]; if (distSeg(w.p1, a, b) <= tol && distSeg(w.p2, a, b) <= tol) return true; }
+    return false;
+  }
   /* as paredes da edificação (eixo em planta + espessura). Cache por estado (o mesmo objeto do replay) */
   function paredes(estado, o) {
     if (o && o.paredes) return o.paredes;
     if (estado && estado._impParedes) return estado._impParedes;
-    var H = HR(), ws = H ? arr(H.obstaculosDoBim(estado, null).paredes) : [];
+    var H = HR(), ws = H ? arr(H.obstaculosDoBim(estado, null).paredes) : [], Ld = lote(estado), parD = o && o.parametros;
     var out = ws.map(function (w) { return { id: w.id, p1: { x: num(w.p1.x, 0), z: num(w.p1.z, 0) }, p2: { x: num(w.p2.x, 0), z: num(w.p2.z, 0) }, esp: num(w.espessura, 0), base: num(w.base, 0), altura: num(w.altura, 0) }; })
-      .filter(function (w) { return d2(w.p1, w.p2) > EPS; });
+      .filter(function (w) { return d2(w.p1, w.p2) > EPS && !naDivisa(w, Ld, parD); });
     try { Object.defineProperty(estado, "_impParedes", { value: out, enumerable: false, configurable: true }); } catch (e) {}
     return out;
   }
@@ -132,6 +150,9 @@
           c = cc; if (aa < a - EPS) origem = "corredor estreito: " + aa.toFixed(2).replace(".", ",") + " m da face"; a = aa; break;
         }
         if (!c) return;
+        /* B2 (05/11/2026): com lote, a caixa (o corpo dela, raio) e a espera (a folga da parede) têm de CABER do lado de dentro da divisa — a
+           fresta de 13 cm entre a parede e o muro da divisa (Casa 487) não é área externa utilizável */
+        if (L && distBordaPoli(c, L.contorno) < Math.max(raio, fp) - EPS) return;
         var custo = d2(p, pe) + Math.abs(t - tc) + a * 0.1;   // hid:ok desempate: a parede mais perto, sem correr ao longo dela
         var cand = { x: c.x, z: c.z, parede: w.id, normal: { x: r4(n.x), z: r4(n.z) }, pe: { x: r4(pe.x), z: r4(pe.z) }, afast: r4(a), origem: origem, custo: custo, motivo: "junto à parede externa " + w.id + " (" + origem + ")" };
         todos.push(cand);
@@ -218,19 +239,90 @@
   /* o lado da FRENTE (saída para o coletor público): a porta numa parede externa; senão o lado mais perto dos pontos (pendência) */
   function ladoFrente(estado, C, pontos, o) {
     var par = o.parametros || {}, LADOS = ["z0", "x1", "z1", "x0"];
-    if (par.ladoSaida && LADOS.indexOf(par.ladoSaida) >= 0) return { lado: par.ladoSaida, origem: "parâmetro ladoSaida" };
-    var H = HR(), abs = H ? arr(H.obstaculosDoBim(estado, null).aberturas).filter(function (a) { return a.tipo === "porta"; }) : [], ws = paredes(estado, o);
+    if (par.ladoSaida && LADOS.indexOf(par.ladoSaida) >= 0) return { lado: par.ladoSaida, origem: "parâmetro \"lado da rua / saída do esgoto\"" };
+    /* B2b (06/11/2026): as PORTAS só saem do obstaculosDoBim com o avaliador de família (os vãos são das famílias de porta) — sem ele a
+       lista vinha sempre vazia e a "porta de entrada na parede externa" nunca era lida (o lado da rua caía no "lado com mais saídas") */
+    var H = HR(), abs = H ? arr(H.obstaculosDoBim(estado, typeof o.avaliarFam === "function" ? o.avaliarFam : null).aberturas).filter(function (a) { return a.tipo === "porta"; }) : [], ws = paredes(estado, o);
     var portas = abs.map(function (a) {
       var m = { x: (a.p1.x + a.p2.x) / 2, z: (a.p1.z + a.p2.z) / 2 }, ex = a.p2.x - a.p1.x, ez = a.p2.z - a.p1.z, L = Math.sqrt(ex * ex + ez * ez) || 1, n = { x: -ez / L, z: ex / L }, e = num(a.espessura, 0.15) / 2 + geo(par, "sonda");   // hid:ok espessura padrão se a abertura não disser
       var f1 = !dentro(estado, { x: m.x + n.x * e, z: m.z + n.z * e }, { paredes: ws }).dentro, f2 = !dentro(estado, { x: m.x - n.x * e, z: m.z - n.z * e }, { paredes: ws }).dentro;
       return f1 !== f2 ? m : null;
     }).filter(Boolean);
     function ladoDe(p) { var ds = { z0: Math.abs(p.z - C.z0), x1: Math.abs(p.x - C.x1), z1: Math.abs(p.z - C.z1), x0: Math.abs(p.x - C.x0) }; return LADOS.slice().sort(function (a, b) { return ds[a] - ds[b]; })[0]; }
+    /* B2b (06/11/2026): o PORTÃO no muro da divisa é a rua (Casa 487: os portões XD1/XD2 no muro da frente). A "porta externa" da casa podia
+       ser a do corredor lateral (a 1ª da lista) e a rede saía para a divisa lateral */
+    var Ld = lote(estado);
+    var portoes = Ld ? abs.filter(function (a) { var m = { x: (a.p1.x + a.p2.x) / 2, z: (a.p1.z + a.p2.z) / 2 }; return distBordaPoli(m, Ld.contorno) <= num(a.espessura, 0.15) / 2 + geo(par, "tolDivisa"); }) : [];   // hid:ok espessura padrão se a abertura não disser
+    if (portoes.length) return { lado: ladoDe({ x: (portoes[0].p1.x + portoes[0].p2.x) / 2, z: (portoes[0].p1.z + portoes[0].p2.z) / 2 }), origem: "portão no muro da divisa (" + portoes[0].id + ")" };
     if (portas.length) return { lado: ladoDe(portas[0]), origem: "porta de entrada na parede externa" };
     var cont = {}; pontos.forEach(function (p) { var l = ladoDe(p); cont[l] = (cont[l] || 0) + 1; });
     var l0 = LADOS.slice().sort(function (a, b) { return (cont[b] || 0) - (cont[a] || 0); })[0];
     return { lado: l0, origem: "sem porta externa nem frente informada: o lado com mais saídas", pendente: true };
   }
+  /* B2b (06/11/2026, Casa 487) — a PASSAGEM LATERAL. Ordem do Rogério (28/10/2026): na casa que ocupa o lote, "o esgoto vai pela passagem
+     lateral até a frente; o banheiro do fundo NUNCA sai para o fundo". Critério de projetista (PADRAO-IMPLANTACAO-ESGOTO.md, NBR 8160 4.2.6.2):
+     o coletor corre reto, paralelo à divisa LATERAL (as duas perpendiculares ao lado da rua), pela faixa livre entre a casa e a divisa.
+       - livre = dentro do lote, fora de cômodo e de parede, com folga para a caixa de inspeção (raio + folgaParede da face das paredes);
+       - a faixa livre que encosta na divisa do FUNDO e não chega à frente é o quintal, não passagem (o esgoto não sai para o fundo);
+       - vale a passagem mais comprida (≥ passagemMin); empate no comprimento → o eixo no meio da faixa (a caixa longe da parede e da divisa).
+     A linha é a reta inteira, do fundo à frente: onde a casa ocupa a largura do lote ela passa sob o piso (premissa declarada na pendência).
+     → { lado, eixo (coordenada lateral), recuo (da divisa), comprimento, de, ate } | null */
+  function passagemLateral(estado, F, o) {
+    o = o || {};
+    var par = o.parametros || {}, L = lote(estado); if (!L) return null;
+    var ws = o.paredes || paredes(estado, o), raio = num(o.raio, 0), fp = geo(par, "folgaParede"), cMin = raio + geo(par, "margemLote");
+    var lx = L.contorno.map(function (q) { return q.x; }), lz = L.contorno.map(function (q) { return q.z; });
+    var B = { x0: Math.min.apply(null, lx), x1: Math.max.apply(null, lx), z0: Math.min.apply(null, lz), z1: Math.max.apply(null, lz) };
+    var porZ = F === "z0" || F === "z1";   /* rua em z: a linha corre em z e a coordenada lateral é x (e vice-versa) */
+    var tF = B[F], tB = porZ ? (F === "z1" ? B.z0 : B.z1) : (F === "x1" ? B.x0 : B.x1), sT = tF > tB ? 1 : -1;
+    var laterais = porZ ? [{ lado: "x0", div: B.x0, s: 1 }, { lado: "x1", div: B.x1, s: -1 }] : [{ lado: "z0", div: B.z0, s: 1 }, { lado: "z1", div: B.z1, s: -1 }];
+    var larg = porZ ? B.x1 - B.x0 : B.z1 - B.z0, passo = geo(par, "passoFaixa"), am = geo(par, "amostraFaixa");
+    var t0 = tB + sT * cMin, t1 = tF - sT * cMin, nA = Math.floor(Math.abs(t1 - t0) / am + EPS);
+    if (nA < 2) return null;
+    function ponto(u, t) { return porZ ? { x: u, z: t } : { x: t, z: u }; }
+    /* a passagem é LATERAL: só conta o trecho ao lado da casa (dentro da extensão dela ao longo da profundidade) — o recuo da frente ou do fundo
+       não é passagem lateral (no lote estreito com quintal na frente, a reta a 1,80 m da divisa "achava" o quintal) */
+    var Cc = contorno(estado, { paredes: ws }); if (!Cc) return null;
+    var eLo = porZ ? Cc.z0 : Cc.x0, eHi = porZ ? Cc.z1 : Cc.x1, iLo = -1, iHi = -1;
+    for (var ii = 0; ii <= nA; ii++) { var tt = t0 + sT * am * ii; if (tt >= eLo - EPS && tt <= eHi + EPS) { if (iLo < 0) iLo = ii; iHi = ii; } }
+    if (iLo < 0) return null;
+    function livre(q) {
+      if (!dentroPoli(q, L.contorno)) return false;
+      if (ws.some(function (w) { return distSeg(q, w.p1, w.p2) < w.esp / 2 + raio + fp - EPS; })) return false;
+      return !dentro(estado, q, { paredes: ws, parametros: par }).dentro;
+    }
+    var melhor = null, porLado = {};
+    laterais.forEach(function (Lt) {
+      for (var c = cMin; c <= Math.min(geo(par, "faixaMax"), larg / 2) + EPS; c = r4(c + passo)) {
+        var u = Lt.div + Lt.s * c, run = 0, ini = -1, best = null;
+        for (var i = 0; i <= nA + 1; i++) {
+          var ok = i >= iLo && i <= iHi && livre(ponto(u, t0 + sT * am * i));
+          if (ok) { if (ini < 0) ini = i; continue; }
+          if (ini >= 0) {
+            var fim = i - 1, tocaFundo = ini <= iLo, tocaFrente = fim >= iHi, comp = (fim - ini) * am;
+            if ((!tocaFundo || tocaFrente) && (!best || comp > best.comp + EPS)) best = { comp: comp, de: t0 + sT * am * ini, ate: t0 + sT * am * fim };
+            ini = -1;
+          }
+        }
+        if (!best || best.comp < geo(par, "passagemMin") - EPS) continue;
+        (porLado[Lt.lado] = porLado[Lt.lado] || []).push({ c: c, u: r4(u), comp: best.comp, de: best.de, ate: best.ate });
+        if (!melhor || best.comp > melhor.comp + EPS) melhor = { lado: Lt.lado, comp: best.comp };
+      }
+    });
+    if (!melhor) return null;
+    var cs = porLado[melhor.lado].filter(function (k) { return k.comp >= melhor.comp - EPS; }), k0 = cs[Math.floor((cs.length - 1) / 2)];
+    return { lado: melhor.lado, eixo: k0.u, recuo: r4(k0.c), comprimento: r4(k0.comp), de: r4(k0.de), ate: r4(k0.ate), porZ: porZ, tFrente: r4(t1), tFundo: r4(t0), sT: sT };
+  }
+  /* os cômodos que a reta a→b cruza (o coletor sob o piso deles) */
+  function comodosNoCaminho(estado, a, b) {
+    var n = Math.max(2, Math.ceil(d2(a, b) / 0.10)), vistos = {}, out = [];   // hid:ok amostragem de 10 cm
+    for (var i = 0; i <= n; i++) {
+      var q = { x: a.x + (b.x - a.x) * i / n, z: a.z + (b.z - a.z) * i / n };
+      arr(estado && estado.ambientes).forEach(function (A) { if (A && A.calc && arr(A.calc.contorno).length >= 3 && !vistos[A.id] && dentroPoli(q, A.calc.contorno)) { vistos[A.id] = 1; out.push(A.nome || A.id); } });   // hid:ok polígono tem 3+ vértices
+    }
+    return out;
+  }
+
   /* o EIXO DO COLETOR pelo recuo: anel da caixa envolvente afastado; do ponto mais a montante até a saída na frente */
   function linhaRede(estado, pontos, o) {
     o = o || {};
@@ -240,7 +332,29 @@
     if (L) {
       /* com lote: o anel recua para caber (a caixa de 0,60 m dentro, com a margem da divisa) */
       var raio = num(o.raio, 0);
-      while (d > raio + geo(par, "folgaParede") + EPS && anel(C, d).some(function (q) { return !dentroPoli(q, L.contorno) || distBordaPoli(q, L.contorno) < raio + geo(par, "margemLote") - EPS; })) d = r4(d - 0.05);   // hid:ok passo de 5 cm
+      var foraLote = function (q) { return !dentroPoli(q, L.contorno) || distBordaPoli(q, L.contorno) < raio + geo(par, "margemLote") - EPS; };
+      while (d > raio + geo(par, "folgaParede") + EPS && anel(C, d).some(foraLote)) d = r4(d - 0.05);   // hid:ok passo de 5 cm
+      /* B2 (05/11/2026, Casa 487): a casa que ocupa o lote de divisa a divisa não tem recuo em volta — o anel recuado ao mínimo ainda saía do
+         lote (o coletor proposto passava FORA do terreno, em x < 0). Critério RA (decisão do Rogério, 28/10/2026: "nada fora do lote"): sem
+         recuo que caiba, NÃO propõe o anel; o TA deixa o esgoto em espera dentro do lote e pede a linha da rede (avisar e seguir). */
+      if (anel(C, d).some(foraLote)) {
+        /* B2b (06/11/2026): sem anel, a rede vai pela PASSAGEM LATERAL até a frente (ordem do Rogério, 28/10/2026) — passagemLateral */
+        var Fl = ladoFrente(estado, C, pontos, o), PL = passagemLateral(estado, Fl.lado, { parametros: par, raio: raio, paredes: op.paredes });
+        if (PL) {
+          var aps = arr(o.aparelhos).length ? arr(o.aparelhos) : arr(pontos);
+          var tAp = aps.map(function (q) { return PL.porZ ? num(q.z, 0) : num(q.x, 0); });
+          /* do aparelho mais ao FUNDO (a reta começa na altura dele — a rede só liga a partir da 1ª junção) até a frente, dentro do lote */
+          var tIni = tAp.length ? (PL.sT > 0 ? Math.min.apply(null, tAp) : Math.max.apply(null, tAp)) : PL.tFundo;
+          tIni = PL.sT > 0 ? Math.max(PL.tFundo, Math.min(tIni, PL.tFrente - 1)) : Math.min(PL.tFundo, Math.max(tIni, PL.tFrente + 1));   // hid:ok 1 m: a linha mínima
+          var pa = PL.porZ ? { x: PL.eixo, z: r4(tIni) } : { x: r4(tIni), z: PL.eixo }, pb = PL.porZ ? { x: PL.eixo, z: PL.tFrente } : { x: PL.tFrente, z: PL.eixo };
+          var sob = comodosNoCaminho(estado, pa, pb);
+          var pdl = [{ chave: "implantacao.passagem_lateral", motivo: "a edificação ocupa o lote: o coletor vai pela passagem lateral (lado " + PL.lado + ", eixo a " + f2(PL.recuo) + " m da divisa; faixa livre de " + f2(PL.comprimento) + " m) até a frente" +
+            (sob.length ? " e passa SOB O PISO de " + sob.join(", ") + " — tubo enterrado sob o contrapiso, caixas de inspeção com tampa no piso acabado desses cômodos (NBR 8160 4.2.6.2): confirme com o projetista" : "") }];
+          if (Fl.pendente) pdl.push({ chave: "implantacao.saida", motivo: "saída da rede: " + Fl.origem + " — informe o \"lado da rua / saída do esgoto\" no Traçar automaticamente" });
+          return { pontos: [pa, pb], saida: pb, lado: Fl.lado, origemSaida: Fl.origem, afast: PL.recuo, lateral: true, passagem: PL, sobComodos: sob, pendencias: pdl };
+        }
+        return { pontos: null, semRecuo: true, pendencias: [{ chave: "implantacao.sem_recuo", motivo: "a edificação ocupa o lote de divisa a divisa: não há recuo em volta para o coletor proposto nem passagem lateral livre — desenhe a linha da rede (Instalações › Linha da rede) pelo caminho da obra (corredor lateral até a frente)" }] };
+      }
     }
     var R = anel(C, d), F = ladoFrente(estado, C, pontos, o);
     var ixLado = { z0: 0, x1: 1, z1: 2, x0: 3 }[F.lado], a = R[ixLado], b = R[(ixLado + 1) % 4];   // hid:ok índices dos 4 lados do anel / geometria
@@ -282,15 +396,21 @@
       arr(estado && estado.familias).some(function (f) { return /caixa-inspecao/.test(String(f.famId)); });
     if (temCI) return { op: null, motivo: "o modelo já tem caixa de inspeção do usuário" };
     var raio = num(o.raio, 0), pts = arr(aparelhos).map(function (f) { var pe = posicaoExterna(estado, { x: num(f.x, 0), z: num(f.z, 0) }, { raio: raio, parametros: par }); return pe ? { x: pe.x, z: pe.z } : null; }).filter(Boolean);
-    if (!pts.length) return { op: null, motivo: "sem parede externa perto dos aparelhos" };
-    var L = linhaRede(estado, pts, { raio: raio, parametros: par });
+    /* B2b: sem face externa que caiba (a casa que ocupa o lote), a passagem lateral ainda pode levar o esgoto — só desiste sem lote */
+    if (!pts.length && !lote(estado)) return { op: null, motivo: "sem parede externa perto dos aparelhos" };
+    var aps = arr(aparelhos).map(function (f) { return { x: num(f.x, 0), z: num(f.z, 0) }; });
+    var L = linhaRede(estado, pts.length ? pts : aps, { raio: raio, parametros: par, aparelhos: aps, avaliarFam: o.avaliarFam });
     if (!L) return { op: null, motivo: "sem paredes para achar o recuo" };
-    return { op: { op: "hidRede", id: o.id || "rede-auto", pontos: L.pontos, baldrame: o.baldrame || "por_baixo", auto: true }, linha: L,
-             motivo: "eixo do coletor pela área externa, a " + L.afast.toFixed(2).replace(".", ",") + " m das paredes externas, saída no lado " + L.lado + " (" + L.origemSaida + ")" };
+    if (L.semRecuo) return { op: null, motivo: L.pendencias[0].motivo, linha: L };
+    var opR = { op: "hidRede", id: o.id || "rede-auto", pontos: L.pontos, baldrame: o.baldrame || "por_baixo", auto: true };
+    if (L.lateral) opR.lateral = true;
+    return { op: opR, linha: L,
+             motivo: L.lateral ? "eixo do coletor pela passagem lateral (lado " + L.passagem.lado + ", a " + f2(L.afast) + " m da divisa), reto até a frente, saída no lado " + L.lado + " (" + L.origemSaida + ")"
+               : "eixo do coletor pela área externa, a " + L.afast.toFixed(2).replace(".", ",") + " m das paredes externas, saída no lado " + L.lado + " (" + L.origemSaida + ")" };
   }
 
   var HidImplantacao = { VERSAO: 1, redeProposta: redeProposta, GEO_IMP: GEO_IMP, dentro: dentro, posicaoExterna: posicaoExterna, caminhoExterno: caminhoExterno, linhaRede: linhaRede, contorno: contorno, lote: lote,
-    _int: { projAnelExterno: projAnelExterno, dentroPoli: dentroPoli, paredes: paredes, anel: anel, trechoAnel: trechoAnel, projAnel: projAnel, cruzaDentro: cruzaDentro, ladoFrente: ladoFrente } };
+    _int: { passagemLateral: passagemLateral, comodosNoCaminho: comodosNoCaminho, projAnelExterno: projAnelExterno, dentroPoli: dentroPoli, paredes: paredes, anel: anel, trechoAnel: trechoAnel, projAnel: projAnel, cruzaDentro: cruzaDentro, ladoFrente: ladoFrente } };
   global.HidImplantacao = HidImplantacao;
   if (typeof module !== "undefined" && module.exports) module.exports = HidImplantacao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

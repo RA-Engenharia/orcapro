@@ -477,7 +477,7 @@
       var HIm = dep("HidImplantacao", "./hidimplantacao.js"), K = HK(), Bi = BI();
       if (HIm && HIm.redeProposta && K) {
         var aps = arr(st.familias).filter(function (f) { return K.tipoDaFamilia(f.famId, f.tipoId); });
-        var rA = aps.length ? HIm.redeProposta(st, aps, { raio: ((Bi && Bi.PECAS) || {}).caixa_inspecao ? Bi.PECAS.caixa_inspecao.r || 0 : 0, parametros: par, baldrame: KU ? KU.modoBaldrame : undefined }) : null;
+        var rA = aps.length ? HIm.redeProposta(st, aps, { raio: ((Bi && Bi.PECAS) || {}).caixa_inspecao ? Bi.PECAS.caixa_inspecao.r || 0 : 0, parametros: par, baldrame: KU ? KU.modoBaldrame : undefined, avaliarFam: avaliarFam }) : null;
         if (rA && rA.op) { todos = todos.concat([{ op: "lote", id: "previa-rede", ops: [rA.op] }]); st = BE().aplicar(todos); }
       }
       var G = HA.ligar({ estado: st, avaliarFam: avaliarFam, ops: todos, famInst: seed, parametros: par });

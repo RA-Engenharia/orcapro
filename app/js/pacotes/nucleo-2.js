@@ -7521,6 +7521,7 @@ try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.conca
 try { if (window.MetalVigasPilaresUI && MetalVigasPilaresUI.itensMenu) itNiv = itNiv.concat(MetalVigasPilaresUI.itensMenu({ uid: sob || uid })); } catch (eVp) {}
 try { if (window.BimInstUI && BimInstUI.itensMenu) itNiv = itNiv.concat(BimInstUI.itensMenu({ uid: sob || uid })); } catch (eIj) {}
 try { if (window.HidKitUI && HidKitUI.itensMenu && window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
+try { if (window.HidSubirTuboUI && HidSubirTuboUI.itensMenu) itNiv = itNiv.concat(HidSubirTuboUI.itensMenu({ uid: sob || uid })); } catch (eSt) {}
 var SI = window.BimSelInst, temSel = false;
 try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
 if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
@@ -72772,5 +72773,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=6196114b54"},{"src":"js/bim-pacote.js?v=d47cc97009","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=4b2e853e46"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b83d6b8b47"},{"src":"js/bim-pacote.js?v=d47cc97009","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=b1b9b33dcd"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

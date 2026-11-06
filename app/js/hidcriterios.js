@@ -115,6 +115,9 @@
   regra("estrutura.vigaZona", { gravidade: "alerta", custo: 2.0, motor: false, titulo: "Furo em viga liberado (dentro da zona da NBR 6118)",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O furo foi liberado e cai na zona que dispensa verificação (≥ 2h do apoio, ≤ 12 cm e ≤ h/3); o estrutural ainda confirma a zona de tração e as armaduras.",
     fonte: "ABNT NBR 6118:2014, 13.2.5.1 — conferir no exemplar", corrigir: "Levar ao estrutural (aval do furo)" });
+  regra("estrutura.cintaShaft", { gravidade: "alerta", custo: 1.0, motor: false, titulo: "Vertical acima do DN-limite na cinta (vai ao shaft)",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "A cinta recebe o tubo embutido só até o DN-limite do projeto (limite_dn_embutir_cinta_mm, padrão 50 mm); o vertical maior sobe/desce num shaft ao lado, no canto da parede.",
+    fonte: "Regra de projeto da RA Engenharia (decisão do Rogério, 06/11/2026)", corrigir: "Levar o prumo ao shaft no canto da parede (HidRota.shaftsDaCinta)" });
   regra("estrutura.laje", { gravidade: "alerta", custo: 0, motor: false, titulo: "Furo na laje",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Passagem pela laje só por shaft ou furo previsto (passante/camisa) na fôrma; furo depois de concretada corta armadura.",
     fonte: "ABNT NBR 6118:2014, 13.2.5 (aberturas em lajes) — conferir no exemplar; critério de projeto: passante previsto", corrigir: "Prever o passante/shaft com o estrutural" });
@@ -275,6 +278,7 @@
     Object.keys(GEO).forEach(function (k) { p[k] = num(par[k], GEO[k]); });
     p.atravessarViga = !!par.atravessarViga;
     p.vigasLiberadas = arr(par.vigasLiberadas).map(String);
+    p.limiteDnCintaMm = num(par.limite_dn_embutir_cinta_mm != null ? par.limite_dn_embutir_cinta_mm : par.limiteDnEmbutirCintaMm, 50);   // hid:ok CINTA não é bloqueio: até este DN (mm) o tubo embute (decisão do Rogério, 06/11/2026)
     return p;
   }
 
@@ -423,6 +427,14 @@
       if (t.ap || !(t.vert || t.L <= G.desvioMax)) return;
       aparelhos.forEach(function (a) { if (!t.ap && arr(a.pontos).some(function (q) { var Q = { x: num(q.x, 0), y: num(q.y, 0), z: num(q.z, 0) }; return d3(Q, t.p1) <= G.tolNo * 3 || d3(Q, t.p2) <= G.tolNo * 3; })) t.ap = String(a.id); });   // hid:ok 3 cm
     });
+    /* ⚠ B4 (06/11/2026, interferencia.afastamento do lavabo da CASA-COMPLETA): a DESCIDA embutida vem logo depois do toco (o toco sai da
+       face até o eixo na parede, a descida corre na parede) — só o toco encostava no ponto e a descida ficava sem aparelho: água e esgoto
+       do MESMO lavatório (8–9 cm, a posição dos pontos da louça) caíam no afastamento. A descida/subida VERTICAL do mesmo sistema que
+       encosta no toco do aparelho é dele também (um salto só: o ramal deitado e as outras descidas continuam conferidos). */
+    T.forEach(function (t) {
+      if (t.ap || !t.vert) return;
+      T.some(function (k) { if (k === t || !k.ap || k.vert || k.sistema !== t.sistema || !(k.L <= G.desvioMax)) return false; var ok = [k.p1, k.p2].some(function (q) { return d3(q, t.p1) <= G.tolNo || d3(q, t.p2) <= G.tolNo; }) && pontosDe[k.ap] && arr(pontosDe[k.ap]).some(function (q) { var Q = { x: num(q.x, 0), y: num(q.y, 0), z: num(q.z, 0) }; return d3(Q, k.p1) <= G.tolNo * 3 || d3(Q, k.p2) <= G.tolNo * 3; }); if (ok) t.ap = k.ap; return ok; });   // hid:ok 3 cm (o mesmo encosto do toco)
+    });
 
     function noEscopo(ids) { if (!escopo) return true; for (var i = 0; i < ids.length; i++) if (escopo[ids[i]]) return true; return false; }
     function add(rid, ids, ponto, texto, extra) {
@@ -474,8 +486,12 @@
       var topo = num(v.topo, 0), h = num(v.altura, 0), cx = caixaSeg(v.p1, v.p2, num(v.largura, 0), topo - h, topo); if (!cx) return;
       var liberada = G.atravessarViga || !!v.liberada || G.vigasLiberadas.indexOf(String(v.id)) >= 0;
       T.forEach(function (t) {
+        /* CINTA (decisão do Rogério, 06/11/2026): toda parede tem cinta em cima e o tubo passa EMBUTIDO nela, até o DN-limite; acima dele só no
+           shaft do canto (o trecho do shaft já não corta a cinta). A VIGA propriamente dita segue sendo bloqueio (NBR 6118) */
+        if (v.cinta && num(t.dn, 0) <= G.limiteDnCintaMm + EPS) return;
         var rc = recorte(cx, t.p1, t.p2, t.r, 0); if (!rc) return;
         var P = ptEm(t.p1, t.p2, (rc.t0 + rc.t1) / 2);
+        if (v.cinta && t.vert) { add("estrutura.cintaShaft", [t.id], P, "O prumo de " + quem(t) + " (DN " + num(t.dn, 0) + " > " + G.limiteDnCintaMm + " mm) cruza a cinta " + v.id + ": vai para o shaft no canto da parede.", { obstaculo: v.id }); return; }
         if (t.vert) { add("estrutura.viga", [t.id], P, "O tubo de " + quem(t) + " atravessa a viga " + v.id + " na vertical (furo de cima a baixo na viga não se faz).", { obstaculo: v.id }); return; }
         /* furo horizontal: a direção atravessa a largura? a distância ao apoio e o tamanho (13.2.5.1) */
         var cosA = t.dir ? Math.abs(t.dir.x * cx.ux + t.dir.z * cx.uz) : 1, u = local(cx, P.x, P.z).u, dApoio = cx.hl - Math.abs(u);
@@ -553,6 +569,10 @@
         /* a LIGAÇÃO DO PRÓPRIO APARELHO (a descida atrás da coluna do lavatório, o toco curto): a regra do motor (HidRota) */
         if (Hr && Hr.ligacaoDoProprioAparelho && proprios.length) { var lig = false; try { lig = Hr.ligacaoDoProprioAparelho(v, t, proprios, t.r, G.tolNo / 5); } catch (eL) {} if (lig) return; }   // hid:ok casca de 2 mm
         if (linha && sisV[t.sistema] && (pontoNoVolume(v, t.p1, G.tolNo) || pontoNoVolume(v, t.p2, G.tolNo))) return;
+        /* B2 (05/11/2026, Casa 487: 32 dos 35 PROIBIDOs do TA): a REDE DA PISCINA dentro do PRÓPRIO equipamento — o tubo pisc_* que entra na casa
+           de máquinas (o abrigo da bomba e do filtro), na coadeira, no registro em linha — é a ligação, não travessia (PADROES-PROJETO-RA, seção E,
+           "falsos positivos conhecidos": a peça e a ponta de tubo ligada a ela). Tubo de OUTRO sistema dentro do equipamento continua PROIBIDO. */
+        if (/^pisc_/.test(String(t.sistema)) && /^hid-pisc-/.test(String(v.famId))) return;
         var sim = false; try { sim = Bi.tuboEmVolume(v, t.p1, t.p2, t.r, pts, G.tolNo / 5); } catch (e) {} if (sim) add("interferencia.louca", [t.id], ptEm(t.p1, t.p2, 1 / 2), "O tubo de " + quem(t) + " passa por dentro de " + (v.famId || "família") + " " + v.id + ".", { obstaculo: v.id }); });   // hid:ok casca de 2 mm
     });
 
@@ -621,6 +641,9 @@
     T.forEach(function (t) {
       if (!t.horiz || !t.dir || t.Lh <= G.chanfroMax) return;
       var ortoOk = paralelo(t, Math.PI / 2);
+      /* CAIXA DE INSPEÇÃO (decisão do Rogério, 06/11/2026): depois da caixa de gordura, a saída dela e o ramal do tanque caem na MESMA caixa de
+         inspeção, e a entrada INCLINADA (não ortogonal) na caixa é aceita — o trecho de esgoto que termina na captura de uma CI não é "diagonal solta" */
+      if (!ortoOk && t.sistema === "esgoto" && [t.p1, t.p2].some(function (q) { return arr(E.caixas).concat(arr(E.pecas).filter(function (k) { return /inspec/.test(txt(k.peca)); })).some(function (c) { return (c.tipo === "caixa_inspecao" || /inspec/.test(txt(c.peca))) && Math.hypot(num(q.x, 0) - num(c.x, 0), num(q.z, 0) - num(c.z, 0)) <= Math.max(num(c.r, 0), 0.15) + 0.05; }); })) ortoOk = true;   // hid:ok captura da CI: o raio da peça (mín. 15 cm) + 5 cm de tolerância
       if (!ortoOk && (ORTO[t.sistema] || !paralelo(t, Math.PI / 4) || t.Lh > G.diagonalMax))   // hid:ok 45° = π/4 (geometria)
         add("leitura.diagonal", [t.id], ptEm(t.p1, t.p2, 1 / 2), "O tubo de " + quem(t) + " corre em diagonal por " + f2(t.Lh) + " m (fora da direção das paredes).");
       if (t.Lh > G.compMinLeitura && ambientes.length) {
@@ -641,7 +664,13 @@
     arr(E.acessorios).forEach(function (q) { var c = q.centro || q; if (c && isFinite(num(c.x, NaN))) marcados.push({ x: num(c.x, 0), y: num(c.y, 0), z: num(c.z, 0) }); });
     arr(E.pecas).forEach(function (q) { if (q && isFinite(num(q.x, NaN))) marcados.push({ x: num(q.x, 0), y: num(q.y, 0), z: num(q.z, 0) }); });
     aparelhos.forEach(function (a) { arr(a.pontos).forEach(function (q) { marcados.push({ x: num(q.x, 0), y: num(q.y, 0), z: num(q.z, 0) }); }); });
-    function marcado(p) { return marcados.some(function (q) { return d3(p, q) <= G.tolNo * 3; }); }   // hid:ok 3 cm
+    /* ⚠ 05/11/2026 (traçado v2, PADROES-PROJETO-RA R-A11/R-E12 e PADRAO-IMPLANTACAO-ESGOTO §2.3): o nó DENTRO do corpo de uma peça
+       (a caixa de inspeção que a NBR 8160 4.2.6.2 pede a cada 25 m e em toda junção enterrada) é a peça, não uma luva — a regra
+       (CRITERIOS-DE-PROJETISTA: "sem derivação, acessório, peça ou ponto") já dizia; o código só comparava com o ponto da TAMPA e o
+       coletor que passa reto pela caixa, 50 cm abaixo dela, contava como "emenda desnecessária". O mesmo cilindro do BimInst.rede. */
+    var hubs = arr(E.pecas).map(function (q) { return q && q.hub; }).filter(function (h) { return h && isFinite(num(h.r, NaN)); });
+    function noCorpo(p) { return hubs.some(function (h) { return Math.hypot(p.x - num(h.x, 0), p.z - num(h.z, 0)) <= num(h.r, 0) + EPS && p.y <= num(h.yTop, INF) + EPS && p.y >= num(h.yBot, -INF) - EPS; }); }
+    function marcado(p) { return marcados.some(function (q) { return d3(p, q) <= G.tolNo * 3; }) || noCorpo(p); }   // hid:ok 3 cm
     Object.keys(nos).forEach(function (k) {
       var n = nos[k]; if (n.t.length !== 2) return;
       var a = n.t[0], b = n.t[1]; if (a.sistema !== b.sistema || a.dn !== b.dn || a.material !== b.material || marcado(n.p)) return;
@@ -951,7 +980,8 @@
     var famDe = {}; arr(estado && estado.familias).forEach(function (f) { famDe[f.id] = f; });
     var aparelhos = ordem.filter(function (id) { return !FAM_CAIXA[(famDe[id] || {}).famId]; }).map(function (id) { var f = famDe[id] || {}; return { id: String(id), famId: f.famId, aparelho: AF && AF.aparelhoDaFamilia ? AF.aparelhoDaFamilia(f.famId) : null, pontos: porFam[id] }; });
     var caixas = arr(estado && estado.familias).filter(function (f) { return FAM_CAIXA[f.famId]; }).map(function (f) { return { id: String(f.id), tipo: FAM_CAIXA[f.famId], x: f.x, y: f.y, z: f.z, r: 0 }; });
-    var pecas = arr(inst.pecas).map(function (k) { var Pk = B && B.PECAS ? B.PECAS[k.peca] : null; return { id: String(k.id), peca: k.peca, sistema: k.sistema, x: k.x, y: k.y, z: k.z, r: Pk ? num(Pk.r, 0) : 0 }; });
+    /* hub = o cilindro de captura da peça (BimInst.normPeca: do topo até a saída; na caixa de inspeção, a profundidade da instância) */
+    var pecas = arr(inst.pecas).map(function (k) { var Pk = B && B.PECAS ? B.PECAS[k.peca] : null; return { id: String(k.id), peca: k.peca, sistema: k.sistema, x: k.x, y: k.y, z: k.z, r: Pk ? num(Pk.r, 0) : 0, hub: k.hub || null }; });
     pecas.filter(function (k) { return k.peca === "caixa_inspecao"; }).forEach(function (k) { caixas.push({ id: k.id, tipo: "caixa_inspecao", x: k.x, y: k.y, z: k.z, r: k.r }); });
     var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2, passantes: t.passantes, continua: t.continua }; });
     var acessorios = arr(inst.acessorios).map(function (a) { return { id: a.id, acessorio: a.acessorio, sistema: a.sistema, trecho: a.trecho, centro: a.centro }; });

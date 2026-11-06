@@ -2147,6 +2147,26 @@
           { id: "ic:auto", rotulo: "Escolha", tipo: "botao", rotuloBotao: "Voltar ao automático", fn: function () { self.voltarAoAutomatico(cx.id); } },
           { id: "ic:outra", rotulo: "Outra conexão", tipo: "botao", rotuloBotao: "Escolher no painel Componentes", fn: function () { if (global.HidComponentesUI) HidComponentesUI.abrir(self._G, { grupo: "Conexões" }); } }] });
       }
+      /* SAÍDA DO ESGOTO (06/11/2026): o nó em que a descida do aparelho vira o ramal — Curva longa 90° (padrão) × Joelho 90°; grava no aparelho
+         dono e refaz só o ambiente dele (js/hidkitui.js). Água fria e quente: sem opção (o joelho já é o padrão). */
+      /* a mesma opção ao clicar no TUBO VERTICAL da descida do aparelho (o pé dela é o nó curva/joelho): Propriedades do tubo */
+      if ((!t && !k && global.HidKitUI && global.HidKitUI.saidaDoNo) || (t && !k && global.HidKitUI && global.HidKitUI.saidaDoTubo)) {
+        var sdP = null; try { sdP = t ? global.HidKitUI.saidaDoTubo(id) : global.HidKitUI.saidaDoNo(id); } catch (eSd) { sdP = null; }
+        if (sdP) sec.push({ nome: "Saída do esgoto", params: [ro("is:atual", t ? "No pé desta descida" : "Neste nó", (sdP.opcoes.filter(function (o) { return o.id === sdP.atual; })[0] || {}).rotulo, sdP.aparelho ? "Escolha gravada no aparelho " + sdP.aparelho + "; o Traçar automaticamente a mantém." : "Nó sem aparelho dono (pluvial ou tubo à mão): a peça fica forçada neste nó.")]
+          .concat(sdP.opcoes.filter(function (o) { return o.id !== sdP.atual; }).map(function (o) { return { id: "is:" + o.id, rotulo: "Trocar para", tipo: "botao", rotuloBotao: o.rotulo, fn: function () { global.HidKitUI.escolherSaidaNo(sdP.cx.id, o.id); } }; })) });
+      }
+      /* CURVA DE TRANSPOSIÇÃO (06/11/2026): o tubo de água fria DN 20 que cruza outro tubo de água — insere a peça no cruzamento, por cima do outro (js/biminsttransp.js: a regra) */
+      if (t && global.HidKitUI && global.HidKitUI.transpDoTubo) {
+        var trP = null; try { trP = global.HidKitUI.transpDoTubo(id); } catch (eTr) { trP = null; }
+        if (trP) {
+          var psT = [];
+          trP.candidatos.forEach(function (q) {
+            psT.push(ro("tp:" + q.outro, "Cruza o tubo " + q.outro, q.ok ? "cabe a curva de transposição" : "não cabe: " + q.motivo, "Água " + (q.sistema === "agua_quente" ? "quente" : "fria") + " DN " + q.dn + " em (" + fmt(q.x, 2) + "; " + fmt(q.z, 2) + ")."));
+            psT.push({ id: "tp:i:" + q.outro, rotulo: "Curva de transposição", tipo: "botao", rotuloBotao: "Inserir sobre o tubo " + q.outro, fn: function () { global.HidKitUI.inserirTransposicao(trP.trecho, q.outro); } });
+          });
+          sec.push({ nome: "Curva de transposição", params: psT });
+        }
+      }
       /* QUALIDADE VISUAL 1 (juntas): a junta onde a conexão de esgoto entrega PONTA — luva (padrão), bolsa do
          próprio tubo ou luva invertida (contra o fluxo, com o motivo registrado) */
       var jtP = this.juntaDoUid(id);

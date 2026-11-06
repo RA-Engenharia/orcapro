@@ -430,7 +430,18 @@
           if (!vr) return;
           var T = vr.p1.y >= vr.p2.y ? vr.p1 : vr.p2;
           if (T.y > opAF.p1.y - EPS) { aviso("o ramal da válvula " + fid + " chega acima do topo da coluna de água fria " + opAF.id, [fid]); return; }
-          var lig = { op: "trecho", id: G.prumada.id + "-vd-" + fid, sistema: "agua_fria", material: vr.material || "pvc_soldavel", dn: vr.dn, p1: { x: F.x, y: r4(T.y), z: F.z }, p2: { x: r4(T.x), y: r4(T.y), z: r4(T.z) }, predio: id, predioParte: "valvula_af" };
+          /* ⚠ ORTOGONAL (05/11/2026, traçado v2 — critério leitura.diagonal, CRITERIOS-DE-PROJETISTA: "água corre paralela às paredes:
+             diagonal não se embute, não se acha na obra e não se lê na prancha"; PADROES-PROJETO-RA R-C11): a ligação da coluna ao ramal
+             da válvula ia em DIAGONAL em planta (0,81 m no prédio de teste). Agora em L: a última perna corre DENTRO da parede da válvula
+             (a parede perpendicular ao toco da válvula, -vd-toco), a primeira sai da coluna até ela. Um joelho no canto. */
+          var A0 = { x: F.x, y: r4(T.y), z: F.z }, B0 = { x: r4(T.x), y: r4(T.y), z: r4(T.z) }, canto = null;
+          if (Math.abs(A0.x - B0.x) > EPS && Math.abs(A0.z - B0.z) > EPS) {
+            var toco = lista.filter(function (o, i) { return o && o.op === "trecho" && String(o.kit) === fid && /-vd-toco$/.test(String(o.id)) && !(apag[o.id] > i); }).pop();
+            var nx = toco ? Math.abs(toco.p2.x - toco.p1.x) : 0, nz = toco ? Math.abs(toco.p2.z - toco.p1.z) : 1;
+            canto = nz >= nx ? { x: A0.x, y: A0.y, z: B0.z } : { x: B0.x, y: A0.y, z: A0.z };   /* toco em z = parede ao longo de x: a perna final anda em x */
+          }
+          if (canto) acc.push({ op: "trecho", id: G.prumada.id + "-vd-" + fid + "-c", sistema: "agua_fria", material: vr.material || "pvc_soldavel", dn: vr.dn, p1: A0, p2: canto, predio: id, predioParte: "valvula_af_perna" });
+          var lig = { op: "trecho", id: G.prumada.id + "-vd-" + fid, sistema: "agua_fria", material: vr.material || "pvc_soldavel", dn: vr.dn, p1: canto ? { x: canto.x, y: canto.y, z: canto.z } : A0, p2: B0, predio: id, predioParte: "valvula_af" };
           acc.push(lig);
           if (yLow == null || T.y < yLow) yLow = T.y;
         });

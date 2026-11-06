@@ -27,6 +27,7 @@
         if (!valida(o)) return false;
         M.porId[o.id] = { id: o.id, pontos: o.pontos.map(function (p) { return { x: num(p.x, 0), z: num(p.z, 0) }; }), baldrame: o.baldrame || "por_baixo",
                           cotaTerreno: o.cotaTerreno == null ? null : num(o.cotaTerreno, 0), nome: o.nome ? String(o.nome).slice(0, 60) : "" };
+        if (o.lateral === true) M.porId[o.id].lateral = true;   /* B2b (06/11/2026): a linha pela PASSAGEM LATERAL (js/hidimplantacao.js) — o ambiente liga nela por baixo do piso */
         if (M.ordem.indexOf(o.id) < 0) M.ordem.push(o.id);
         return true;
       }

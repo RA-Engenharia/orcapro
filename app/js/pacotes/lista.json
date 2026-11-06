@@ -1,13 +1,13 @@
 {
  "gerador": "tools/construir-pacotes-js.js",
- "fonte": "71802196d85680e6e158d77753f846c8",
+ "fonte": "ec997236e5c8d0d4a014e4449cfaeb03",
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=6196114b54",
+  "js/pacotes/bim.js?v=b83d6b8b47",
   "js/bim-pacote.js?v=d47cc97009",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
-  "js/pacotes/hidro.js?v=4b2e853e46"
+  "js/pacotes/hidro.js?v=b1b9b33dcd"
  ],
  "pulados": [
   "venda/perfis-clientes.js"

@@ -63,6 +63,42 @@
     return null;
   }
   function BI() { return dep("BimInst", "./biminst.js"); }
+  /* SAÍDA DO ESGOTO DO APARELHO (06/11/2026, pedido do Rogério: "agora eu quero um joelho"): na descida do aparelho até o ramal, o nó
+     vertical ↔ horizontal é CURVA LONGA 90° (padrão, NBR 8160 — projeto antigo não muda) ou JOELHO 90°. A escolha fica na instância do
+     aparelho (parâmetro CHAVE_SAIDA_ES) e o Traçar automaticamente a respeita de novo. */
+  var CHAVE_SAIDA_ES = "Saida_esgoto", SAIDA_CURVA = "curva", SAIDA_JOELHO = "joelho";
+  function saidaEsgoto(v) { v = v && typeof v === "object" && v.inst ? v.inst[CHAVE_SAIDA_ES] : (v && typeof v === "object" ? v[CHAVE_SAIDA_ES] : v); return /^joelho/i.test(String(v == null ? "" : v)) ? SAIDA_JOELHO : SAIDA_CURVA; }
+  /* as opções da saída por SISTEMA (a UI): só o esgoto e o pluvial têm curva longa × joelho; na água fria e na quente o joelho já é o padrão
+     (nada a escolher), e a ventilação segue a regra do nó */
+  function opcoesSaida(sistema) {
+    return sistema === "esgoto" || sistema === "pluvial" ? [{ id: SAIDA_CURVA, rotulo: "Curva longa 90°", tipo: "curva90" }, { id: SAIDA_JOELHO, rotulo: "Joelho 90°", tipo: "joelho90" }] : [];
+  }
+  /* a perna do joelho 90° de esgoto no DN (m): a cota z do catálogo do produto (js/biminstgeodados.js); null se a peça não existe nesse DN */
+  function pernaJoelho(dn) {
+    var G = dep("HidGeo", "./biminstgeo.js"), B = BI(), d = Math.round(dn); if (!G || !G.cotasConexao || !B || !B.conexaoNoCatalogo || !B.conexaoNoCatalogo("pvc_esgoto", "joelho90", d)) return null;
+    try { var c = G.cotasConexao("pvc_esgoto", "joelho90", d); return c && c.z > 0 ? c.z / 1000 : null; } catch (e) { return null; }   // hid:ok mm → m
+  }
+  /* o nó da descida é um canto simples (a descida + o ramal que sai, nada mais) e o ramal que sai é horizontal */
+  function joelhoNoPe(arv, n, dnS) {
+    if (n.entram.length || n.sai == null || pernaJoelho(dnS) == null) return false;
+    var a = arv.arestas[n.sai], A = arv.nos[a.de], Bn = arv.nos[a.para], L = d2(A, Bn);
+    return L > EPS && Math.abs((arv.Y ? arv.Y[a.de] - arv.Y[a.para] : 0)) < L;
+  }
+  /* CINTA NÃO É BLOQUEIO (06/11/2026, decisão do Rogério, regra de projeto da RA): toda parede tem viga baldrame embaixo e CINTA em cima, e a
+     tubulação passa EMBUTIDA dentro da cinta. Exceção: o tubo com DN acima do limite (parametros.limite_dn_embutir_cinta_mm, padrão 50 mm) NÃO
+     passa na cinta — o vertical vai num SHAFT ao lado, no canto da parede (shaftNoCanto). A VIGA continua bloqueio (B2b: barrilete nunca fura
+     viga); só a peça que o modelo marca como cinta (cinta:true, função/classe "cinta de amarração", ou a marca CI/CB) é passável. */
+  var LIMITE_DN_CINTA_MM = 50;   // hid:ok padrão do projeto RA: até DN 50 embute na cinta (ajustável por parametros.limite_dn_embutir_cinta_mm)
+  function ehCinta(c) {
+    if (!c) return false;
+    if (c.cinta === true) return true;
+    var f = [c.funcao, c.funcaoViga, c.tipoViga, c.classe, c.subtipo, c.categoria, c.uso].map(txt).join(" ");
+    if (/cinta|amarra[cç]/i.test(f)) return true;
+    return [c.marca, c.rotulo, c.nome, c.id].some(function (q) { return /^\s*(cinta(\W.*)?|c[ib]([-_ .]?\d+\w*)?)\s*$/i.test(txt(q)); });
+  }
+  function limiteCintaMm(P) { var v = num(P && (P.limiteDnCintaMm != null ? P.limiteDnCintaMm : (P.limite_dn_embutir_cinta_mm != null ? P.limite_dn_embutir_cinta_mm : P.limiteDnEmbutirCintaMm)), LIMITE_DN_CINTA_MM); return v > 0 ? v : LIMITE_DN_CINTA_MM; }
+  /* o tubo de `dnMm` passa embutido nessa cinta? (DN ≤ limite) */
+  function cintaPassa(dnMm, P) { return num(dnMm, 0) <= limiteCintaMm(P) + EPS; }
   function NN() { return dep("HidNormas", "./hidnormas.js"); }
   /* CRITÉRIO DE PROJETISTA (18/10/2026, js/hidcriterios.js): as zonas de porta/janela (vão + verga + contraverga) e o
      AUDITOR que roda sobre cada estratégia — o que ele chama de PROIBIDO descarta a estratégia; o resto vira custo */
@@ -153,6 +189,7 @@
      máquina de louça entram quando o projeto pedir (parametros.paraCaixaGordura). */
   var PARA_GORDURA = ["pia_cozinha"];
   var FAM_GORDURA = "hid-caixa-gordura";
+  var NUNCA_NA_GORDURA = ["tanque", "maquina_lavar_roupa"];   /* nunca na caixa de gordura, nem a montante dela (regra de projeto da RA) */
   var SIFAO_PROPRIO = { bacia_caixa_acoplada: 1, bacia_valvula: 1, lavatorio: 1, pia_cozinha: 1, tanque: 1, mictorio: 1, bide: 1 };
   var REGISTRO_FAM = "ra-registro-gaveta";
 
@@ -239,6 +276,8 @@
     if (!p.estrategias.length) p.estrategias = ORDEM.slice();
     p.terreo = !!src.terreo;
     p.atravessarViga = !!src.atravessarViga;
+    p.transposicao = src.transposicao !== false;   /* a curva de transposição (js/biminsttransp.js) no traçado da água; false = só o desvio de sempre */
+    p.limiteDnCintaMm = num(src.limite_dn_embutir_cinta_mm != null ? src.limite_dn_embutir_cinta_mm : src.limiteDnEmbutirCintaMm, LIMITE_DN_CINTA_MM);   /* cinta: até este DN (mm) o tubo embute */
     p.dn = src.dn || {};
     p.declividade = num(src.declividade, 0);
     p.prefixo = txt(src.prefixo) || "hr-";
@@ -246,6 +285,10 @@
     p.cotaVentilacao = num(src.cotaVentilacao, null);
     p.criterios = src;   /* os parâmetros do auditor (js/hidcriterios.js, mesmos nomes: folgaVao, transpasseVerga…) */
     p.paraCaixaGordura = arr(src.paraCaixaGordura).length ? arr(src.paraCaixaGordura).map(String) : PARA_GORDURA.slice();
+    /* CAIXA DE GORDURA (decisão do Rogério, 06/11/2026): o tanque e a máquina de lavar roupa NUNCA deságuam na caixa de gordura nem num trecho a
+       montante dela — ela recebe só a pia de cozinha e afins. Depois da caixa, a saída dela e o ramal do tanque podem cair na MESMA caixa de inspeção. */
+    p.gorduraRecusada = p.paraCaixaGordura.filter(function (k) { return NUNCA_NA_GORDURA.indexOf(k) >= 0; });
+    p.paraCaixaGordura = p.paraCaixaGordura.filter(function (k) { return NUNCA_NA_GORDURA.indexOf(k) < 0; });
     p.areaTecnica = src.areaTecnica && isFinite(num(src.areaTecnica.x, NaN)) && isFinite(num(src.areaTecnica.z, NaN)) ? { x: r4(num(src.areaTecnica.x, 0)), z: r4(num(src.areaTecnica.z, 0)) } : null;
     var B = BI(), mat = src.material || (e && e.material) || {};
     p.material = {};
@@ -265,8 +308,25 @@
 
   function ponto3(p) { return p && isFinite(num(p.x, NaN)) && isFinite(num(p.y, NaN)) && isFinite(num(p.z, NaN)) ? { x: r4(num(p.x, 0)), y: r4(num(p.y, 0)), z: r4(num(p.z, 0)) } : null; }
 
+  var MICRO_DENTE = 0.01;  // hid:ok abaixo de 1 cm o desvio na saída do ponto é desencontro de medida, não traçado (a descida absorve)
+  var FACE_PERTO = 0.05;   // hid:ok ponto até 5 cm à frente da face conta como "na parede" (sem parede.d)
   function normEntrada(e, P, pend) {
     var B = BI(), out = { aparelhos: [], pecas: [], grupos: [], destinos: e.destinos || {} };
+    /* B3 (06/11/2026, conexões mínimas): o ponto de parede SEM a distância até a face (parede.d — a família importada da Casa 487) media o
+       eixo embutido do PONTO, não da face: o lavatório ficava 6,4 mm fora do eixo da espera do chuveiro (medida da face pelo kit) e o ramal
+       ganhava um "dente" de 6,4 mm (NO_COM_FOLGA). Sem `d`, a distância vem da parede do modelo em que o ponto encosta (a normal paralela à
+       da parede, o ponto até 5 cm à frente da face). */
+    var paredesN = arr(e.obstaculos && e.obstaculos.paredes).map(function (w) { var b = w && w.p1 && w.p2 ? retSeg(w.p1, w.p2, num(w.espessura, 0)) : null; return b; }).filter(Boolean);
+    function faceDist(p, nx, nz) {
+      var melhor = null;
+      paredesN.forEach(function (w) {
+        if (Math.abs(nx * w.uz - nz * w.ux) < 1 - 1e-3) return;   /* a normal do ponto tem de ser a da parede */   // hid:ok tolerância de paralelismo
+        var q = local(w, p.x, p.z); if (Math.abs(q.u) > w.hl + EPS) return;
+        var dd = Math.abs(q.v) - w.hw; if (dd < -EPS || dd > FACE_PERTO) return;
+        if (melhor == null || dd < melhor) melhor = dd;
+      });
+      return melhor == null ? 0 : r4(melhor);
+    }
     var defGrupos = {}; arr(e.grupos).forEach(function (g) { if (g && g.id != null) defGrupos[String(g.id)] = g; });
     arr(e.aparelhos).forEach(function (a) {
       if (!a || a.id == null) return;
@@ -278,7 +338,8 @@
            ponto. Antes a vertical corria NA face e atravessava a coluna do lavatório e a caixa acoplada
            (print do Rogério). `ponta` = o ponto real; x/z passam a ser o eixo embutido. */
         var n = c.parede, nx = n ? num(n.x, NaN) : NaN, nz = n ? num(n.z, NaN) : NaN, L = Math.sqrt(nx * nx + nz * nz);
-        var e = P.embutir + Math.max(0, num(n && n.d, 0));   /* medido da FACE da parede (o ponto pode estar uns mm à frente dela) */
+        var dFace = n && n.d != null ? num(n.d, 0) : (L > EPS ? faceDist(p, nx / L, nz / L) : 0);
+        var e = P.embutir + Math.max(0, dFace);   /* medido da FACE da parede (o ponto pode estar uns mm à frente dela) */
         /* N23 EMBUTIDO (26/10/2026, js/biminstembutido.js encaixe): a parede que não comporta o eixo a `embutir` da face (fina para o DE +
            cobrimento) manda a profundidade do eixo — `prof` = do ponto até o eixo; parede comum não traz `prof` (o de sempre) */
         /* (prof < 0 = a instalação APARENTE escolhida pelo usuário: o eixo à FRENTE da face, o tubo sobreposto à parede) */
@@ -286,7 +347,7 @@
         if (P.embutir > 0 && L > EPS) { o.ponta = { x: p.x, y: p.y, z: p.z }; o.x = r4(p.x + nx / L * e); o.z = r4(p.z + nz / L * e); }
         return o;
       }).filter(Boolean);
-      out.aparelhos.push({ id: String(a.id), aparelho: txt(a.aparelho), aparelhoEs: a.aparelhoEs ? txt(a.aparelhoEs) : null, grupo: a.grupo != null ? String(a.grupo) : null, conectores: cs });
+      out.aparelhos.push({ id: String(a.id), aparelho: txt(a.aparelho), aparelhoEs: a.aparelhoEs ? txt(a.aparelhoEs) : null, saidaEsgoto: saidaEsgoto(a.saidaEsgoto), grupo: a.grupo != null ? String(a.grupo) : null, conectores: cs });
     });
     arr(e.pecas).forEach(function (k) {
       if (!k || k.id == null || !B.PECAS[k.peca]) return;
@@ -388,7 +449,7 @@
     arr(o.vigas).forEach(function (v) {
       var b = retSeg(v.p1, v.p2, num(v.largura, 0)); if (!b) return;
       var topo = num(v.topo, 0);
-      b.tipo = "viga"; b.id = v.id; b.modo = P.atravessarViga ? "penalidade" : "proibido"; b.y0 = topo - num(v.altura, 0); b.y1 = topo;   // rota:alturaViga
+      b.tipo = "viga"; b.id = v.id; b.modo = P.atravessarViga ? "penalidade" : "proibido"; if (v.cinta) { b.modo = "cinta"; b.limiteMm = limiteCintaMm(P); } b.y0 = topo - num(v.altura, 0); b.y1 = topo;   // rota:alturaViga
       out.push(b);
     });
     arr(o.pilares).forEach(function (c) {
@@ -465,6 +526,7 @@
   // constantes do ALGORITMO (não são norma): as direções da grade ortogonal, o estado "sem direção"
   // do ponto de partida, as tentativas de encolher um desvio, os pontos mínimos para haver canto e
   // quantos pontos de junção se descartam antes de aceitar um tê de 90° (com aviso)
+  var AGUA_TRANSP = { agua_fria: 1, agua_quente: 1 }, MAX_SALTO = 50, MAX_PASSOS_SALTO = 12;   // hid:ok o tubo cruzado de água (curva de transposição), o raio do teste de cruzamento (m) e o máximo de nós da faixa
   var NDIR = 4, SEM_DIR = 4, TENTATIVAS = 3, PONTOS_CANTO = 3, PONTOS_DEGRAU = 4, MAX_DEGRAUS = 200, MAX_VOLTAS = 20;   // hid:ok
   Grade.prototype.viz = function (k, d) {
     var i = k % this.nx + DI[d], j = Math.floor(k / this.nx) + DJ[d];
@@ -495,8 +557,9 @@
     var ND = NDIR + 1, alvosK = Object.keys(ctx.alvos).map(Number), apts = alvosK.map(function (k) { return G.pt(k); });
     if (!alvosK.length || ini < 0) return null;
     function h(k) { var p = G.pt(k), m = INF; for (var i = 0; i < apts.length; i++) { var v = Math.abs(p.x - apts[i].x) + Math.abs(p.z - apts[i].z); if (v < m) m = v; } return m; }
-    var g = {}, ant = {}, fechado = {}, F = new Fila(), s0 = ini * ND + SEM_DIR, n = 0;
-    g[s0] = 0; F.por(h(ini), s0);
+    var g = {}, ant = {}, fechado = {}, F = new Fila(), s0 = ini * ND + SEM_DIR, n = 0, rn = {};
+    g[s0] = 0; rn[s0] = 0; F.por(h(ini), s0);
+    function manh(a, b) { var pa = G.pt(a), pb = G.pt(b); return Math.abs(pa.x - pb.x) + Math.abs(pa.z - pb.z); }
     while (F.h.length) {
       var top = F.tirar(), s = top.k; if (fechado[s]) continue; fechado[s] = 1;
       if (++n > ctx.max) return null;
@@ -510,12 +573,19 @@
       for (var d = 0; d < NDIR; d++) {
         if (dch !== SEM_DIR && d === (dch + 2) % NDIR) continue;
         var v = G.viz(k, d); if (v < 0) continue;
-        if (!ctx.alvos[v] && !ctx.livre(v)) continue;
+        if (!ctx.alvos[v] && !ctx.livre(v)) {
+          /* CURVA DE TRANSPOSIÇÃO (06/11/2026): o vizinho está bloqueado só por um tubo de água que cruza a 90° — chegando RETO, a busca
+             pode atravessá-lo por cima com a peça (ctx.salto: o nó depois da faixa dele e o custo da peça); o custo manda entre ela e o desvio */
+          var sl = ctx.salto && dch === d ? ctx.salto(k, d) : null;
+          /* … e só com a reta ANTES do cruzamento (rn: a reta com que chegou + até o cruzamento ≥ a peça + a folga de nó) */
+          if (sl && (rn[s] || 0) + sl.sa >= sl.need - EPS) { var cs = g[s] + sl.c, ss = sl.v * ND + d; if (!fechado[ss] && !(g[ss] != null && g[ss] <= cs + EMPATE)) { g[ss] = cs; ant[ss] = s; rn[ss] = (rn[s] || 0) + manh(k, sl.v); F.por(cs + h(sl.v), ss); } }
+          continue;
+        }
         var ar = ctx.aresta(k, v); if (!ar) continue;
         if (dch !== SEM_DIR && d !== dch && ctx.semCurva && ctx.semCurva[k]) continue;
         var c = g[s] + ar.c + (dch !== SEM_DIR && d !== dch ? ctx.curva : 0), sv = v * ND + d;
         if (fechado[sv] || (g[sv] != null && g[sv] <= c + EMPATE)) continue;
-        g[sv] = c; ant[sv] = s; F.por(c + h(v), sv);
+        g[sv] = c; ant[sv] = s; if (ctx.salto) rn[sv] = (dch !== SEM_DIR && d === dch ? (rn[s] || 0) : 0) + manh(k, v); F.por(c + h(v), sv);
       }
     }
     return null;
@@ -567,6 +637,11 @@
       afDnMin: function (ap, uso) {
         var c = N ? N.consulta("af.aparelhos.dn_min", { aparelho: ap }, "dn_min") : { ok: false };
         if (c.ok) { ctx.consulta("af.aparelhos.dn_min", { aparelho: ap }, "dn_min", uso); return num(c.valor, null); }
+        /* B3 (06/11/2026): o aparelho fora das tabelas da edição 1998 (a ducha higiênica) — o DN do fabricante (Tigre, Manual Técnico 2025
+           p.67, fonte secundária; a NBR 5626:2020 6.14.3 não fixa DN mínimo de sub-ramal). Consulta muda antes: a que falha no contexto vira
+           pendência ("nenhuma linha de …") mesmo quando a tabela seguinte responde. */
+        var c3 = N ? N.consulta("af.aparelhos.dn_min_fabricante", { aparelho: ap }, "dn_min") : { ok: false }, c2s = N ? N.consulta("af.aparelhos", { aparelho: ap }, "dn_min") : { ok: true };
+        if (!c2s.ok && c3.ok) { ctx.consulta("af.aparelhos.dn_min_fabricante", { aparelho: ap }, "dn_min", uso); return num(c3.valor, null); }
         var c2 = ctx.consulta("af.aparelhos", { aparelho: ap }, "dn_min", uso);
         return c2.ok ? num(c2.valor, null) : null;
       }
@@ -582,7 +657,7 @@
   function Arvore(sistema, grupo) { this.sistema = sistema; this.grupo = grupo; this.nos = []; this.arestas = []; this.raiz = null; this.porRef = {}; }
   Arvore.prototype.no = function (x, z, tipo, ref) { var n = { id: this.nos.length, x: r4(x), z: r4(z), tipo: tipo, ref: ref || null, sai: null, entram: [] }; this.nos.push(n); if (ref) this.porRef[ref] = n.id; return n.id; };
   Arvore.prototype.aresta = function (de, para, info) {
-    var a = { id: this.arestas.length, de: de, para: para, paraCaixa: !!(info && info.paraCaixa), igual: (info && info.igual) || null, vivo: true };
+    var a = { id: this.arestas.length, de: de, para: para, paraCaixa: !!(info && info.paraCaixa), igual: (info && info.igual) || null, r: info && info.r != null ? info.r : null, vivo: true };
     this.arestas.push(a); this.nos[de].sai = a.id; this.nos[para].entram.push(a.id); return a.id;
   };
   /* parte a aresta no ponto (x,z): de→N e N→para; devolve N */
@@ -590,7 +665,7 @@
     var a = this.arestas[aid], n = this.no(x, z, "juncao");
     var para = a.para; this.nos[para].entram = this.nos[para].entram.filter(function (e) { return e !== aid; });
     a.para = n; this.nos[n].entram.push(aid);
-    this.aresta(n, para, { paraCaixa: a.paraCaixa, igual: a.igual });
+    this.aresta(n, para, { paraCaixa: a.paraCaixa, igual: a.igual, r: a.r });
     return n;
   };
   Arvore.prototype.segs = function () { var T = this; return this.arestas.map(function (a) { return { a: T.nos[a.de], b: T.nos[a.para], aresta: a }; }); };
@@ -604,6 +679,8 @@
     this.E = E; this.P = P; this.O = O; this.N = NRM;
     this.verticais = [];   /* {x, z, y0, y1, r, ref} */
     this.tubos = [];       /* {a:{x,y,z}, b, r, sistema, grupo} */
+    this.verticaisAQ = []; /* B3: as descidas FUTURAS da água quente (o modelo tem aquecedor) — reserva do ramal de água fria */
+    this.tubosAgua = [];   /* B3: os tubos de ÁGUA FRIA que já estão no modelo (kit: a subida do chuveiro, o ramal da válvula) — obstáculo do ramal */
     this.entradas = {};    /* chave do destino → [cotas usadas] */
     this.cruz = { parede: 0, laje: 0, viga: 0 }; this.idsCruz = {};
   }
@@ -611,16 +688,19 @@
   /* contexto de UMA rota: livre(k) e aresta(a,b) para o A* */
   function contextoRota(W, G, o) {
     var P = W.P, cacheN = {}, r = o.r, obst = W.O.lista.filter(function (ob) { return faixaCruza(ob.y0, ob.y1, o.b0, o.b1); });
+    /* cinta (modo "cinta"): bloqueia só o tubo acima do DN-limite; até lá o tubo passa embutido */
+    function proib(ob) { return ob.modo === "proibido" || (ob.modo === "cinta" && 2 * r * 1000 > num(ob.limiteMm, LIMITE_DN_CINTA_MM) + EPS); }   // hid:ok m → mm
     var paredes = obst.filter(function (ob) { return ob.tipo === "parede"; });
-    var verts = W.verticais.filter(function (v) { return !o.ignorar[v.ref] && faixaCruza(v.y0, v.y1, o.b0 - P.folga, o.b1 + P.folga); });
+    var verts = W.verticais.concat(o.sistema === "agua_fria" ? W.verticaisAQ : []).filter(function (v) { return !o.ignorar[v.ref] && faixaCruza(v.y0, v.y1, o.b0 - P.folga, o.b1 + P.folga); });
     var tubos = W.tubos.filter(function (t) { return !o.ignorar[t.ref]; });
+    if (o.sistema === "agua_fria") tubos = tubos.concat(W.tubosAgua);
     var segsArv = o.arvore ? o.arvore.segs() : [];
     /* ⚠ na estratégia parede o tubo fica DENTRO da parede; a tolerância da face só vale
        perto das pontas da rota (o ponto do aparelho fica na face ou um pouco fora) —
        com ela em todo lugar o ramal corria 5 cm dentro do ambiente, "na parede" só no nome */
     var pontas = [o.dePt].concat(Object.keys(o.alvos).map(function (k) { return G.pt(Number(k)); })).filter(Boolean);
     /* água × outro sistema: o afastamento; o resto, a folga */
-    function folgaVert(v) { return v.sistema && v.sistema !== o.sistema && (v.sistema === "agua_fria" || o.sistema === "agua_fria") ? P.afastamento : P.folga; }
+    function folgaVert(v) { return v.sistema && v.sistema !== o.sistema && v.sistema !== "agua_quente" && (v.sistema === "agua_fria" || o.sistema === "agua_fria") ? P.afastamento : P.folga; }
     /* ⚠ "na parede" = DENTRO dela, com o cobrimento até a face (QUALIDADE VISUAL 2): com a face contando,
        o ramal "embutido" corria colado na face, metade no ambiente; a tolerância das pontas continua */
     function naParede(x, z) {
@@ -629,16 +709,23 @@
     }
     /* ⚠ folgas comparadas com 1 mm de sobra (o arredondamento a 4 casas mexe 0,1 mm): o nó EXATAMENTE no limite (bacia a 10 cm)
        virava livre ou bloqueado conforme o arredondamento da origem — a rota mudava com a obra deslocada */
-    function livrePt(p, terminal, corredor) {
-      for (var i = 0; i < obst.length; i++) if (obst[i].modo === "proibido" && !o.ignorar[obst[i].id] && dentro(obst[i], p.x, p.z, r + P.folga)) return false;
+    function livrePt(p, terminal, corredor, semTubo) {
+      for (var i = 0; i < obst.length; i++) if (proib(obst[i]) && !o.ignorar[obst[i].id] && dentro(obst[i], p.x, p.z, r + P.folga)) return false;
       if (terminal) return true;
       if (o.modo === "parede" && !naParede(p.x, p.z) && !(o.raiz && d2(p, o.raiz) <= P.raioTerminal + EPS)) return false;
       /* no corredor de saída/chegada vale só a folga física; o afastamento que faltar vira aviso na conferência 3D */
-      for (var j = 0; j < verts.length; j++) if (d2(p, verts[j]) < r + verts[j].r + (corredor ? P.folga : folgaVert(verts[j])) - FOLGA_LIMITE) return false;
+      for (var j = 0; j < verts.length; j++) {
+        /* B3 (06/11/2026, conexões mínimas / R-C1: o sub-ramal deriva do ramal): a descida de um ponto da MESMA árvore que ainda vai
+           derivar dela (o.passaVert) não bloqueia o nó NO PRUMO dela — o ramal passa ali e o ponto nasce num tê (sobreORamal). O nó
+           alinhado com o prumo também fica livre: quem barra o tubo que passaria raspando ao lado é a aresta (abaixo). */
+        if (o.passaVert && o.passaVert[verts[j].ref] && (Math.abs(p.x - verts[j].x) < EPS || Math.abs(p.z - verts[j].z) < EPS)) continue;
+        if (d2(p, verts[j]) < r + verts[j].r + (corredor ? P.folga : folgaVert(verts[j])) - FOLGA_LIMITE) return false;
+      }
       /* ⚠ no corredor o AFASTAMENTO vira aviso, mas tubo dentro de tubo nunca: lá a folga é zero, não infinita
          (a revisão achou o corredor ignorando os tubos de outro sistema por até ~28 cm) */
       for (var t = 0; t < tubos.length; t++) {
-        var T = tubos[t], pr = ptSeg2(p, T.a, T.b), c = corredor ? 0 : (T.sistema === o.sistema ? P.folga : P.afastamento);   // rota:colisaoCorredor
+        var T = tubos[t]; if (T === semTubo) continue;   /* a transposição pergunta "está bloqueado SÓ por este tubo?" */
+        var pr = ptSeg2(p, T.a, T.b), c = corredor ? 0 : (T.sistema === o.sistema ? P.folga : P.afastamento);   // rota:colisaoCorredor
         /* ⚠ no corredor, a outra ENTRADA no mesmo TQ/coluna (o banheiro espelhado) termina no mesmo eixo: a
            separação dela é a cota (espaçamento das entradas, decidido depois), não a planta */
         if (corredor && o.raiz && (d2(T.a, o.raiz) < EPS || d2(T.b, o.raiz) < EPS)) continue;
@@ -656,19 +743,71 @@
         if (o.raiz && o.arvore && o.arvore.raiz != null && d2(p, o.raiz) < r + o.rArv - FOLGA_LIMITE) return false;
         return true;
       }
+      /* ⚠ B4 (06/11/2026, R-E21 "sem tubo atravessando tubo"): no corredor o ESGOTO (e a ventilação) passava POR CIMA do próprio
+         ramal — no lavabo da CASA-COMPLETA o lavatório saiu da parede para a caixa sifonada atravessando o ramal DN 75 do mictório
+         (folga −3,5 cm, o crítico TUBO_ATRAVESSA_MESMO_SISTEMA). No corredor vale só a colisão física com a árvore (sem folga),
+         menos o trecho que passa pelo próprio alvo/saída do corredor (é nele que a rota encosta para fazer a junção). */
+      if (corredor && corredor.length && o.sistema !== "agua_fria") for (var s1 = 0; s1 < segsArv.length; s1++) {
+        var S1 = segsArv[s1];
+        if (corredor.some(function (q) { return ptSeg2(q, S1.a, S1.b).d < EPS; })) continue;
+        if (ptSeg2(p, S1.a, S1.b).d < r + (S1.aresta.r != null ? S1.aresta.r : o.rArv) - FOLGA_LIMITE) return false;   // rota:corredorArvore
+      }
       if (corredor) return true;
       for (var s = 0; s < segsArv.length; s++) if (ptSeg2(p, segsArv[s].a, segsArv[s].b).d < r + o.rArv + P.folga - FOLGA_LIMITE) return false;
       return true;
     }
-    return {
-      livre: function (k) { if (cacheN[k] == null) cacheN[k] = livrePt(G.pt(k), k === o.ini, !!(o.corredor && o.corredor[k])) ? 1 : 0; return cacheN[k] === 1; },
+    /* ---- CURVA DE TRANSPOSIÇÃO (06/11/2026, pedido do Rogério; js/biminsttransp.js tem a regra e a medida). O A* ganha uma aresta LONGA: do nó
+       k, em frente, até o primeiro nó livre depois da faixa de UM tubo de água que bloqueia o vizinho — atravessa por cima com a peça, a
+       custo de uma conexão (o.curva = P.pesos.conexao, a mesma de qualquer peça do motor). Só vale se: o tubo que transpõe é PVC soldável
+       DN 20 (o.transp), o tubo cruzado é de água, horizontal, na mesma cota e a 90°, com DE que o arco libera; os nós do meio estão
+       bloqueados SÓ por ele. A RETA LIVRE dos dois lados (a medida A + margemNo) é conferida no rotear com o caminho inteiro. */
+    var cacheS = {}, HT = o.transp ? dep("HidTransp", "./biminsttransp.js") : null, cotaT = (o.b0 + o.b1) / 2;
+    function saltoCalc(k, d) {
+      var p = G.pt(k), ux = DI[d], uz = DJ[d], v1 = G.viz(k, d); if (v1 < 0) return null;
+      var q1 = G.pt(v1), T1 = null, nB = 0;
+      for (var i = 0; i < tubos.length; i++) {
+        var T = tubos[i], cT = T.sistema === o.sistema ? P.folga : P.afastamento;
+        if (ptSeg2(q1, T.a, T.b).d < r + T.r + cT - FOLGA_LIMITE) { nB++; T1 = T; }
+      }
+      if (nB !== 1 || !AGUA_TRANSP[T1.sistema] || d2(T1.a, T1.b) < EPS || Math.abs(T1.a.y - T1.b.y) > EPS) return null;
+      var cr = HT.cruzamento({ p1: { x: p.x, y: cotaT, z: p.z }, p2: { x: p.x + ux * MAX_SALTO, y: cotaT, z: p.z + uz * MAX_SALTO } }, { p1: T1.a, p2: T1.b });
+      if (!cr || Math.min(cr.sb, cr.Lb - cr.sb) < P.margemNo) return null;
+      var av = HT.avaliar({ sistema: o.sistema, material: o.transp.material, dn: o.transp.dn, cruzadoSistema: T1.sistema, cruzadoDn: Math.round(T1.r * 2 * 1000), cos: cr.cos, dy: cr.dy,
+                            retaAntes: MAX_SALTO, retaDepois: MAX_SALTO, margem: P.margemNo });
+      if (!av.ok) return null;
+      /* a peça ocupa A de cada lado do cruzamento e sobra margemNo até o nó vizinho: o pouso fica a esse "need" do cruzamento (a reta DEPOIS vem daqui;
+         a reta ANTES o A* confere com o comprimento da reta com que chegou — rn); nenhuma junção (alvo) dentro dessa faixa */
+      var X = { x: cr.x, z: cr.z }, need = av.regra.A + P.margemNo, c = 0, ant = k, v = v1, passos = 0, pousou = false;
+      for (;;) {
+        if (o.alvos[v]) return null;
+        var Av = ctxObj.aresta(ant, v); if (!Av) return null;
+        c += Av.c;
+        var livreV = ctxObj.livre(v);
+        if (!pousou) {
+          if (livreV) pousou = true;                                     /* o nó depois da faixa: livre de verdade */
+          else if (!livrePt(G.pt(v), v === o.ini, (o.corredor && o.corredor[v]) || null, T1)) return null;   /* bloqueado por outra coisa além do tubo cruzado */
+        } else if (!livreV) return null;
+        if (pousou && d2(G.pt(v), X) >= need - EPS) break;
+        if (++passos > MAX_PASSOS_SALTO) return null;
+        ant = v; v = G.viz(v, d); if (v < 0) return null;
+      }
+      return { v: v, c: c + o.curva, sa: cr.sa, need: need, x: r4(cr.x), z: r4(cr.z), ux: ux, uz: uz, ref: T1.ref, grupo: T1.grupo, dnCruzado: Math.round(T1.r * 2 * 1000), regra: av.regra };
+    }
+    var ctxObj = {
+      livre: function (k) { if (cacheN[k] == null) cacheN[k] = livrePt(G.pt(k), k === o.ini, (o.corredor && o.corredor[k]) || null) ? 1 : 0; return cacheN[k] === 1; },
       livrePt: livrePt,
+      salto: function (k, d) {
+        if (!HT || (o.semSalto && o.semSalto[k * NDIR + d])) return null;
+        var kk = k * NDIR + d; if (cacheS[kk] === undefined) cacheS[kk] = saltoCalc(k, d);
+        return cacheS[kk];
+      },
       aresta: function (a, b) {
         var A = G.pt(a), Bp = G.pt(b), c = d2(A, Bp), cruz = null, ids = null;
         for (var i = 0; i < obst.length; i++) {
           var ob = obst[i];
           if (o.ignorar[ob.id]) continue;
-          if (ob.modo === "proibido") { if (corta(ob, A, Bp, r + P.folga) && !(a === o.ini && dentro(ob, A.x, A.z, r + P.folga) && !corta(ob, A, Bp, 0))) return null; continue; }
+          if (ob.modo === "cinta" && !proib(ob)) continue;   /* cinta: o tubo até o DN-limite passa EMBUTIDO (sem custo de furo) */
+          if (proib(ob)) { if (corta(ob, A, Bp, r + P.folga) && !(a === o.ini && dentro(ob, A.x, A.z, r + P.folga) && !corta(ob, A, Bp, 0))) return null; continue; }
           if (o.modo === "parede" && ob.tipo === "parede") continue;
           /* ⚠ travessia = o MEIO da aresta dentro (estrito) e a origem fora: os nós da face da
              parede ficavam "dentro" e a travessia saía de graça (0 travessias com o tubo no shaft); e
@@ -677,6 +816,13 @@
           if (!dentro(ob, A.x, A.z, -EPS_DENTRO) && (dentro(ob, Mo.x, Mo.z, -EPS_DENTRO) || dentro(ob, Bp.x, Bp.z, -EPS_DENTRO))) { c += P.pesos[ob.tipo] || 0; (cruz = cruz || {})[ob.tipo] = (cruz[ob.tipo] || 0) + 1; if (ob.id != null) (ids = ids || []).push({ tipo: ob.tipo, id: ob.id }); }
         }
         if (o.modo === "parede") { var M = { x: (A.x + Bp.x) / 2, z: (A.z + Bp.z) / 2 }; if (!naParede(M.x, M.z) && !(o.raiz && d2(M, o.raiz) <= P.raioTerminal + EPS) && !o.alvos[b] && a !== o.ini) return null; }
+        if (o.dirAlvo && o.dirAlvo[b]) { var ua = un2(A, Bp); if (ua.x * o.dirAlvo[b].x + ua.z * o.dirAlvo[b].z < 1 - EPS) return null; }
+        /* B3: a descida que o ramal pode atravessar (o.passaVert) só é atravessada PELO PRUMO; raspando ao lado, a folga de sempre */
+        if (o.passaVert) for (var jv = 0; jv < verts.length; jv++) {
+          var V = verts[jv]; if (!o.passaVert[V.ref]) continue;
+          if ((Math.abs(A.z - V.z) < EPS && Math.abs(Bp.z - V.z) < EPS) || (Math.abs(A.x - V.x) < EPS && Math.abs(Bp.x - V.x) < EPS)) continue;   /* na linha do prumo */
+          var dv = ptSeg2(V, A, Bp).d; if (dv < r + V.r + folgaVert(V) - FOLGA_LIMITE) return null;
+        }
         for (var s = 0; s < segsArv.length; s++) {
           var S = segsArv[s]; if (Math.abs(S.a.x - S.b.x) < EPS || Math.abs(S.a.z - S.b.z) < EPS) continue;   /* só as diagonais: as retas passam por nós */
           if (segSeg2(A, Bp, S.a, S.b) < r + o.rArv + P.folga && !o.alvos[b] && !(o.corredor && o.corredor[b])) return null;
@@ -687,13 +833,14 @@
       },
       /* o segmento p-q (desvio de 45°, junção) está livre? */
       segLivre: function (p, q, excluirAresta) {
-        for (var i = 0; i < obst.length; i++) { var ob = obst[i]; if (!o.ignorar[ob.id] && ob.modo === "proibido" && corta(ob, p, q, r + P.folga)) return false; }
+        for (var i = 0; i < obst.length; i++) { var ob = obst[i]; if (!o.ignorar[ob.id] && proib(ob) && corta(ob, p, q, r + P.folga)) return false; }
         if (o.modo === "parede" && !(naParede(p.x, p.z) && naParede(q.x, q.z))) return false;
         for (var j = 0; j < verts.length; j++) if (ptSeg2(verts[j], p, q).d < r + verts[j].r + folgaVert(verts[j])) return false;
         for (var s = 0; s < segsArv.length; s++) { if (segsArv[s].aresta.id === excluirAresta) continue; if (segSeg2(p, q, segsArv[s].a, segsArv[s].b) < r + o.rArv + P.folga) return false; }
         return true;
       }
     };
+    return ctxObj;
   }
 
   function grade(pts, P, origem) {
@@ -748,7 +895,7 @@
     }
     return pts;
   }
-  function chanfrar(pts, P, segLivre, avisos, falhos) {
+  function chanfrar(pts, P, segLivre, avisos, falhos, uFim) {
     if (pts.length < PONTOS_CANTO) return pts;
     pts = degrausCurtos(pts.slice(), P, segLivre);
     var out = [pts[0]];
@@ -758,6 +905,9 @@
       /* nas pontas da rota o desvio pode comer o trecho inteiro (sai do pé da descida ou
          chega no TQ/caixa já em diagonal); no meio, divide o trecho com o canto vizinho */
       var ini = i === 1, fim = i + 1 === pts.length - 1;
+      /* B4 (06/11/2026): no fim que chega numa junção a 90° (uFim), comer a perna inteira só se a diagonal entrar A FAVOR do fluxo
+         (aí ela É a junção de 45°); contra o fluxo (135°), a perna fica — o tê a 90° continua avisado, nunca vira entrada contra o fluxo */
+      if (fim && uFim && ((c.x + u2.x * d2(c, b)) - (c.x - u1.x * Math.min(P.chanfro, d2(c, b)))) * uFim.x + ((c.z + u2.z * d2(c, b)) - (c.z - u1.z * Math.min(P.chanfro, d2(c, b)))) * uFim.z < -EPS) fim = false;
       var L1 = ini ? d2(a, c) : d2(a, c) - P.margemNo, L2 = fim ? d2(c, b) : d2(c, b) / 2 - P.margemNo / 2;
       var d = r4(Math.min(P.chanfro, L1, L2)), feito = false;   // rota:chanfro
       for (var tent = 0; tent < TENTATIVAS && !feito && d >= P.margemNo / 2; tent++) {
@@ -796,6 +946,14 @@
         });
       });
     }
+    /* B3 (06/11/2026, R-C9): com o registro na DESCIDA da entrada, o pé da descida vira o TÊ do ramal — o 2º lado do ramal chega
+       nele (sem toco de 8 cm até um tê no ramal). Só alinhado com o 1º lado (o tê: o ramal passa reto e a descida é a derivação). */
+    var dirAlvo = null;
+    if (o.raizTe) { var kt = G.idx(o.raizTe.x, o.raizTe.z); if (kt >= 0 && kt !== ini) { alvos[kt] = { tipo: "raiz" }; (dirAlvo = {})[kt] = o.raizTe.dir; } }
+    /* B3 (06/11/2026, conexões mínimas; "a junção só nasce a 8 cm dos nós"): o pé da DESCIDA de um ponto já ligado (o joelho do ramal
+       para a descida) também vira o tê — o outro ponto chega nele alinhado com o ramal. Antes a junção tinha de ficar a margemNo (8 cm)
+       dos nós: com o ponto vizinho a 10 cm, nenhuma junção cabia e a rota dava a volta (no piso, por fora da parede, z = −0,30 m). */
+    arr(o.teNos).forEach(function (t) { var kn = G.idx(t.x, t.z); if (kn >= 0 && kn !== ini && !alvos[kn]) { alvos[kn] = { tipo: "peca", no: t.no }; (dirAlvo = dirAlvo || {})[kn] = t.dir; } });
     delete alvos[ini];
     /* ⚠ CORREDOR de chegada: a folga da árvore bloqueia os nós em volta dela — e
        com isso o próprio ponto de junção ficava inalcançável. Em volta de cada alvo,
@@ -815,21 +973,46 @@
       for (var d = 0; d < NDIR; d++) {
         if (usadas.some(function (u) { return u.x * DI[d] + u.z * DJ[d] > Math.SQRT1_2; })) continue;
         var v = G.viz(k, d);
-        while (v >= 0 && d2(G.pt(v), p) <= alc + EPS) { corredor[v] = 1; v = G.viz(v, d); }
+        while (v >= 0 && d2(G.pt(v), p) <= alc + EPS) { (corredor[v] = corredor[v] || []).push(p); v = G.viz(v, d); }   /* B4: guarda de qual alvo/saída é o corredor */
       }
     });
-    var ctxR = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: o.modo, sistema: arv.sistema, arvore: arv, ignorar: ign, ini: ini, alvos: alvos, raiz: o.raizPlanta, corredor: corredor, dePt: { x: o.de.x, z: o.de.z }, corredorSolto: !!o.corredorSolto });
+    var semSalto = {};   /* os saltos de transposição que o caminho inteiro reprovou (falta reta livre): a busca recomeça sem eles */
+    var ctxR = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: o.modo, sistema: arv.sistema, arvore: arv, ignorar: ign, ini: ini, alvos: alvos, raiz: o.raizPlanta, corredor: corredor, dePt: { x: o.de.x, z: o.de.z }, corredorSolto: !!o.corredorSolto, passaVert: o.passaVert || null, dirAlvo: dirAlvo, transp: o.transp || null, semSalto: semSalto, curva: o.curva });
     /* ⚠ ESGOTO: se a junção de 45° não cabe naquele ponto, o ponto sai da lista e a
        busca recomeça — antes ficava um tê de 90° no horizontal com um aviso, e o
        teste mostrou que quase sempre havia outro ponto da árvore onde a de 45° cabia.
        ⚠ O MESMO para a curva: rota colada no limite da folga (ex.: a 10 cm da descida da
        bacia) não tem espaço para os dois desvios de 45°; aquele nó fica proibido de virar
        e a busca recomeça. Só se nada fechar fica o joelho, com aviso e o ponto. */
-    var semCurva = {}, melhor = null;
+    var semCurva = {}, melhor = null, HTr = o.transp ? dep("HidTransp", "./biminsttransp.js") : null;
+    /* as arestas LONGAS do caminho (transposições): o nó de saída, a direção e o que o A* guardou delas */
+    function saltosDe(nos) {
+      var out = [];
+      for (var q = 1; q < nos.length; q++) {
+        var a0 = nos[q - 1], b0 = nos[q], df = Math.abs(b0 - a0); if (df === 1 || df === G.nx) continue;
+        var pa = G.pt(a0), pb = G.pt(b0), uu = un2(pa, pb), dd = 0;
+        while (dd < NDIR - 1 && !(DI[dd] === Math.round(uu.x) && DJ[dd] === Math.round(uu.z))) dd++;   /* a direção da grade (0 +x, 1 +z, 2 −x, 3 −z) do vetor unitário */
+        var sl = ctxR.salto(a0, dd);
+        if (sl) out.push({ de: a0, d: dd, sl: sl });
+      }
+      return out;
+    }
     for (var volta = 0; volta < MAX_VOLTAS; volta++) {
-      var res = aEstrela(G, ini, { livre: ctxR.livre, aresta: ctxR.aresta, alvos: alvos, curva: o.curva, max: P.maxEstados, semCurva: semCurva });
+      var res = aEstrela(G, ini, { livre: ctxR.livre, aresta: ctxR.aresta, alvos: alvos, curva: o.curva, max: P.maxEstados, semCurva: semCurva, salto: HTr ? ctxR.salto : null });
       if (!res) break;
       var pts = simplificar(res.nos.map(function (k) { return G.pt(k); })), alvo = alvos[res.alvo], juncao = null, av = [];
+      /* TRANSPOSIÇÃO: a reta livre dos dois lados (A + margemNo) pelo CAMINHO inteiro — o canto, o ponto do aparelho ou a junção mais perto
+         do cruzamento; sem ela este salto sai da busca (o desvio de sempre assume) */
+      var saltos = HTr ? saltosDe(res.nos) : [], ruimS = null;
+      saltos.forEach(function (sj) {
+        if (ruimS) return;
+        var Xp = { x: sj.sl.x, z: sj.sl.z }, ia = -1;
+        for (var qs = 1; qs < pts.length && ia < 0; qs++) if (ptSeg2(Xp, pts[qs - 1], pts[qs]).d < EPS) ia = qs;
+        var avS = ia < 0 ? { ok: false } : HTr.avaliar({ sistema: arv.sistema, material: o.transp.material, dn: o.transp.dn, cruzadoSistema: "agua_fria", cruzadoDn: sj.sl.dnCruzado, cos: 0, dy: 0,
+                                                        retaAntes: d2(Xp, pts[ia - 1]), retaDepois: d2(Xp, pts[ia]), margem: P.margemNo });
+        if (!avS.ok) ruimS = sj;
+      });
+      if (ruimS) { semSalto[ruimS.de * NDIR + ruimS.d] = 1; continue; }
       if (alvo.tipo === "aresta") {
         var a = arv.arestas[alvo.aresta], A = arv.nos[a.de], B = arv.nos[a.para], J = pts[pts.length - 1];
         juncao = { aresta: a.id, x: J.x, z: J.z };
@@ -845,6 +1028,13 @@
             if (ctxR.segLivre(Pp, Jl, a.id)) { pts[pts.length - 1] = Pp; pts.push(Jl); juncao.x = Jl.x; juncao.z = Jl.z; ok = true; } else d = r4(d / 2);
           }
           if (!ok) {
+            /* ⚠ B4 (06/11/2026, INSERCAO_90 do lavabo da CASA-COMPLETA; NBR 8160 4.2.5.5 / R-A7-R-A8: no horizontal a junção é a 45° a
+               favor do fluxo): o que não deixa a de 45° quase sempre é o ÚLTIMO trecho curto — a busca virou a 10 cm da árvore (degrau
+               para passar a descida de outro aparelho). Antes o alvo saía da lista e, acabados os alvos, ficava o tê a 90°. Agora, antes
+               de desistir do alvo, a curva de chegada fica proibida e a busca recomeça: ela vira mais cedo e o último trecho cresce. */
+            var kC = null;
+            for (var jn = res.nos.length - 2; jn > 0 && kC == null; jn--) { var w1 = un2(G.pt(res.nos[jn - 1]), G.pt(res.nos[jn])), w2 = un2(G.pt(res.nos[jn]), G.pt(res.nos[jn + 1])); if (Math.abs(w1.x * w2.x + w1.z * w2.z - 1) > EPS) kC = res.nos[jn]; }
+            if (kC != null && kC !== ini && !semCurva[kC] && volta < MAX_VOLTAS - 1) { semCurva[kC] = 1; continue; }   // rota:juncaoCurvaCedo
             delete alvos[res.alvo];
             if (Object.keys(alvos).length && volta < MAX_VOLTAS - 1) continue;
             av.push(prob("junção a 90° no esgoto em " + fxz(J.x, J.z) + ": sem espaço para a de 45° — ajuste à mão ou refaça com a grade mais fina", [pt3(J.x, null, J.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) }));
@@ -852,8 +1042,11 @@
         }
       }
       var falhos = [];
-      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos);
-      melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av };
+      /* B4: com o tê a 90° que sobrou, o chanfro do último canto não pode comer a perna até a junção CONTRA o fluxo (o crítico
+         INSERCAO_CONTRA_FLUXO da área de serviço): uFim = o sentido do escoamento da aresta de chegada */
+      var uFim = juncao && av.length && alvo.tipo === "aresta" ? un2(arv.nos[arv.arestas[juncao.aresta].de], arv.nos[arv.arestas[juncao.aresta].para]) : null;
+      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim);
+      melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra }; }) };
       if (!falhos.length) break;
       var novo = false;
       falhos.forEach(function (c) { var k = G.idx(c.x, c.z); if (k >= 0 && !semCurva[k]) { semCurva[k] = 1; novo = true; } });
@@ -862,7 +1055,7 @@
     if (!melhor) return { erro: "sem caminho livre" };
     var cruz = {}, idsCruz = [], rs = melhor.res;
     for (var i = 1; i < rs.nos.length; i++) { var ar = ctxR.aresta(rs.nos[i - 1], rs.nos[i]); if (ar && ar.cruz) Object.keys(ar.cruz).forEach(function (k) { cruz[k] = (cruz[k] || 0) + ar.cruz[k]; }); if (ar && ar.ids) idsCruz = idsCruz.concat(ar.ids); }
-    return { pts: melhor.pts, alvo: melhor.alvo, juncao: melhor.juncao, cruz: cruz, idsCruz: idsCruz, avisos: melhor.avisos, custo: rs.custo };
+    return { pts: melhor.pts, alvo: melhor.alvo, juncao: melhor.juncao, cruz: cruz, idsCruz: idsCruz, avisos: melhor.avisos, custo: rs.custo, transp: melhor.transp };
   }
 
   /* põe a rota na árvore: devolve o nó da folha */
@@ -903,7 +1096,7 @@
     g.aparelhos.forEach(function (a) {
       if (g.semEsgoto && g.semEsgoto[a.id]) return;   // rota:gordura
       a.conectores.filter(function (c) { return c.sistema === "esgoto"; }).forEach(function (c) {
-        folhas.push({ tipo: "aparelho", ref: a.id + ":" + c.id, ap: a, aparelho: a.aparelho, aparelhoEs: a.aparelhoEs || null, x: c.x, y: c.y, z: c.z, dnCon: c.dn, ponta: c.ponta || null });
+        folhas.push({ tipo: "aparelho", ref: a.id + ":" + c.id, ap: a, saida: saidaEsgoto(a.saidaEsgoto), aparelho: a.aparelho, aparelhoEs: a.aparelhoEs || null, x: c.x, y: c.y, z: c.z, dnCon: c.dn, ponta: c.ponta || null });
       });
     });
     /* a saída da peça é a do CATÁLOGO do biminst (PECAS.dn "100x40" → 40; caixa
@@ -999,7 +1192,7 @@
         if (rota.alvo.tipo === "raiz") usadaRaiz = true;
         somarCruz(W, rota);
         rota.avisos.forEach(function (a) { avisos.push(a); });
-        var noF = enxertar(arv, rota, { tipo: f.tipo, ref: f.ref, no: arv.porRef[f.ref] }, { paraCaixa: !!vaiCaixa, igual: o.igual || null });
+        var noF = enxertar(arv, rota, { tipo: f.tipo, ref: f.ref, no: arv.porRef[f.ref] }, { paraCaixa: !!vaiCaixa, igual: o.igual || null, r: o.r });
         arv.nos[noF].folha = f;
       }
       return null;
@@ -1032,7 +1225,14 @@
       var rN = Math.max.apply(null, [0].concat(n.entram.map(function (aid) { return raio(arv.arestas[aid].dn); }), n.sai != null ? [raio(arv.arestas[n.sai].dn)] : []));
       lim(n.id, F.b1 - rN, F.b0 + rN, "topo da faixa (" + F.nome + ")", "fundo da faixa (" + F.nome + ")", { tipo: "faixa" });
       var f = n.folha;
-      if (f && f.tipo === "aparelho") lim(n.id, f.y - P.quedaMin, -INF, "ponto de " + f.ref + " (descida mínima)", "");
+      if (f && f.tipo === "aparelho") {
+        /* SAÍDA EM JOELHO (06/11/2026, pedido do Rogério): com "Joelho 90°" no aparelho, a descida mínima é a PERNA do joelho (a peça do
+           catálogo, DN do trecho que sai) no lugar da queda mínima genérica; "curva longa" (padrão) deixa a cota como era */
+        /* 06/11/2026 (Rogério): trocar para joelho NÃO desce o ramal — a cota do ramal é a que sairia com a curva longa (descida mínima genérica) e
+           só o TUBO VERTICAL cresce (a perna do joelho é menor que a da curva, então a vertical fica mais comprida). Antes a descida mínima passava a
+           ser a perna do joelho e o ramal baixava uns mm/cm ao trocar de peça. */
+        lim(n.id, f.y - P.quedaMin, -INF, "ponto de " + f.ref + " (descida mínima)", "");
+      }
       /* ⚠ peça que RECEBE (caixa sifonada) tem de ficar dentro da captura dela:
          os ramais que chegam e o que sai se ligam ali. Ralo seco pode sair por
          baixo da captura com um trecho vertical (descida da peça). */
@@ -1244,6 +1444,9 @@
       f.dn = comercial(mat, f.dn);
     });
     var rMax = Math.max.apply(null, folhas.map(function (f) { return raio(f.dn); }));
+    /* CURVA DE TRANSPOSIÇÃO (06/11/2026): só no PVC soldável do DN que a peça tem (20) — todos os sub-ramais do ambiente nesse DN (o DN do tronco = o maior a jusante) */
+    var HTr = P.transposicao ? dep("HidTransp", "./biminsttransp.js") : null, dnMaxF = Math.max.apply(null, folhas.map(function (f) { return f.dn; }));
+    var transp = HTr && mat === HTr.MATERIAL && HTr.regra(dnMaxF) ? { dn: dnMaxF, material: mat, regra: HTr.regra(dnMaxF) } : null;
     var cota = r4(C.cota + (C.desce ? -rMax : rMax));
     /* ⚠ JANELA NA PAREDE HIDRÁULICA: o ramal embutido não corre na faixa da janela (vão + contraverga + verga) — desce para
        ABAIXO da contraverga, nunca abaixo de registroMin do piso (aí a estratégia não serve e o descarte diz por quê) */
@@ -1260,47 +1463,112 @@
     }
     if (C.desce && !W.P.terreo && cota - rMax < g.piso - P.alturaEnchimento - EPS) return falha("água fria no enchimento: não cabe (cota " + f2(cota) + " m abaixo do fundo do enchimento)", [], { tipo: "parametro", campo: "alturaEnchimento", sugerido: r4(P.alturaEnchimento + cmAcima(g.piso - P.alturaEnchimento - (cota - rMax))) });
     if (raizD.vertical && (cota < raizD.yBase + P.margemNo || cota > raizD.yTopo - P.margemNo)) return falha("a coluna de água fria " + (raizD.id || "") + " não chega à cota do ramal (" + f2(cota) + " m)", [raizD.id || pt3(raizD.x, null, raizD.z)], { tipo: "moverDestino", sistema: "agua_fria", id: raizD.id, yBase: r4(Math.min(raizD.yBase, cota - P.margemNo * 2)), yTopo: r4(Math.max(raizD.yTopo, cota + P.margemNo * 2)) });
-    var arv = new Arvore("agua_fria", g.id), G = grade(folhas.concat([raizD]), P, raizD), usadaRaiz = false, avisos = [], primeira = null;
+    /* B3 (06/11/2026): a água fria que já está no modelo (W.tubosAgua: o ramal exclusivo da válvula que desce da coluna, a subida do
+       chuveiro) é obstáculo do ramal; quando o ramal TEM de passar por ela na mesma parede, a grade ganha as linhas a uma folga de cada
+       lado do prumo — o desvio por trás fica possível (antes a grade de 5 cm não tinha a linha que cabe entre o prumo e a face de trás) */
+    var pts0 = folhas.concat([raizD]), bx0 = Math.min.apply(null, pts0.map(function (q) { return q.x; })) - P.margem, bx1 = Math.max.apply(null, pts0.map(function (q) { return q.x; })) + P.margem;
+    var bz0 = Math.min.apply(null, pts0.map(function (q) { return q.z; })) - P.margem, bz1 = Math.max.apply(null, pts0.map(function (q) { return q.z; })) + P.margem, extraG = [];
+    W.tubosAgua.forEach(function (T) {
+      if (d2(T.a, T.b) > EPS || !faixaCruza(Math.min(T.a.y, T.b.y), Math.max(T.a.y, T.b.y), cota - rMax - P.folga, cota + rMax + P.folga)) return;
+      if (T.a.x < bx0 || T.a.x > bx1 || T.a.z < bz0 || T.a.z > bz1) return;
+      var c = rMax + T.r + P.folga + FOLGA_LIMITE * 2;
+      extraG.push({ x: r4(T.a.x + c), z: r4(T.a.z + c) }, { x: r4(T.a.x - c), z: r4(T.a.z - c) });
+    });
+    var arv = new Arvore("agua_fria", g.id), G = grade(pts0.concat(extraG), P, raizD), usadaRaiz = false, avisos = [], primeira = null;
     /* o mais longe primeiro: ele abre o tronco e os outros derivam dele */
     var fila = folhas.slice().sort(function (a, b) { return (Math.abs(b.x - raizD.x) + Math.abs(b.z - raizD.z)) - (Math.abs(a.x - raizD.x) + Math.abs(a.z - raizD.z)) || (a.ref < b.ref ? -1 : 1); });
     var proibirPerto = [];
+    /* B3 (06/11/2026, R-C9 "registro a 1,80 m na descida do ramal", PADROES-PROJETO-RA; zigue-zague): entrada por ESPERA com descida
+       (ou subida) até o ramal = o registro do ambiente vai NA DESCIDA, e o pé dela é o tê do ramal. Antes o registro ficava no ramal,
+       a 20 cm do pé, com uma faixa proibida para derivação em volta (proibirPerto): o ponto vizinho não derivava ali e o ramal fazia
+       o "dente" (economia.zigueZague) ou a descida ganhava toco + joelho. Coluna (vertical) ou descida curta demais: o de antes. */
+    var regDesc = !raizD.vertical && isFinite(num(raizD.y, NaN)) && Math.abs(raizD.y - cota) >= B.ACESSORIO_PADRAO + 2 * P.margemNo - EPS;
+    /* B3 (06/11/2026, R-C9): o ponto NO EIXO da espera (espera dada no prumo do ponto — a espera desce reta até ele):
+       não tem rota; o pé da descida da entrada é o nó dele (o tê com a descida como passagem). Vai por último, quando o pé já existe. */
+    var naRaiz = regDesc ? fila.filter(function (ff) { return d2(ff, raizD) < EPS && Math.abs(ff.y - cota) > EPS && (ff.y - cota) * (raizD.y - cota) < 0; })[0] : null;
+    if (naRaiz) { fila = fila.filter(function (ff) { return ff !== naRaiz; }); fila.push(naRaiz); }
     for (var i = 0; i < fila.length; i++) {
       var f = fila[i], ign = {}; ign[f.ref] = 1; ign[raizD.id || "destino-af"] = 1;
+      if (f === naRaiz) {
+        if (arv.raiz == null) arv.raiz = arv.no(raizD.x, raizD.z, "raiz");
+        arv.nos[arv.raiz].folha = f; arv.porRef[f.ref] = arv.raiz; arv.teRaiz = null; usadaRaiz = true; arv.registroDescida = true;
+        continue;
+      }
       var oRota = { de: f, b0: cota - raio(f.dn), b1: cota + raio(f.dn), r: raio(f.dn), rArv: rMax, modo: C.modo, ignorar: ign, curva: P.pesos.conexao,
-                    folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto };
+                    folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto,
+                    raizTe: usadaRaiz && arv.teRaiz ? arv.teRaiz : null, teNos: teFolhas(arv), transp: transp };
       /* ⚠ CONEXÕES MÍNIMAS (05/11/2026, print do Rogério): o ponto que cai EM CIMA do ramal que já passou (o eixo da descida no eixo
          do ramal) deriva ali mesmo — o tê com a saída virada para a descida. Antes a busca precisava andar uma casa da grade para
          achar a junção: o tê nascia 5 cm ao lado e a descida ganhava um toco e um joelho a mais (tê + toco + joelho no lugar do tê). */
       if (usadaRaiz && sobreORamal(arv, f, P.margemNo, proibirPerto, C.modo === "parede" ? P.embutir + P.passo : 0)) continue;
-      var rota = rotear(W, G, arv, oRota);
-      /* FRENTE B (19/10/2026, D-03): sem caminho que não encoste na própria rede, a rota antiga (corredor solto) com AVISO — um ponto
-         que pode ficar fora do registro é melhor que o ambiente sem água; o aviso diz onde conferir */
-      if (rota.erro && usadaRaiz) {
-        oRota.corredorSolto = true; var rota2 = rotear(W, G, arv, oRota);
-        if (!rota2.erro) { rota = rota2; saida.avisos.push(prob("água fria de " + f.ref + ": o único caminho encosta no próprio ramal — confira se o ponto passa pelo registro do ambiente", [f.ap.id, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) })); }
+      /* B3 (06/11/2026, conexões mínimas): as descidas dos pontos AINDA NÃO ligados desta árvore não bloqueiam o ramal no prumo delas —
+         o ramal passa por cima e o ponto deriva ali num tê (sobreORamal). Antes elas eram obstáculo: o 1º ramal (o ponto mais longe
+         até a coluna) desviava 5 cm para o fundo da parede para não "bater" no prumo do lavatório, e cada descida ganhava um toco de
+         5 cm (tê + toco + joelho; TOCO_ENTRE_CONEXOES em todo banheiro). ⚠ Sem o CICLO que já houve ao ignorar as descidas: a descida
+         atravessada só vale se o ponto vai mesmo nascer num tê dela — fora do registro e da faixa em volta dele (proibirPerto) e longe
+         dos nós da rota (margemNo); senão volta a ser obstáculo e a rota é refeita. */
+      var passa = {}; fila.slice(i + 1).forEach(function (ff) { if (ff !== naRaiz) passa[ff.ref] = 1; });
+      if (naRaiz) passa[naRaiz.ref] = 1;   /* a descida dele fica no alvo (o pé da entrada): o nó alinhado com ela fica livre */
+      oRota.teNos.forEach(function (t) { passa[t.ref] = 1; });   /* a descida do tê de chegada: o nó alinhado com ela fica livre (a aresta barra o resto) */
+      var rota = null, regNovo = null, proibNovo = [];
+      for (var tentV = 0; tentV <= fila.length; tentV++) {
+        oRota.passaVert = Object.keys(passa).length ? passa : null; oRota.corredorSolto = false;
+        rota = rotear(W, G, arv, oRota);
+        /* FRENTE B (19/10/2026, D-03): sem caminho que não encoste na própria rede, a rota antiga (corredor solto) com AVISO — um ponto
+           que pode ficar fora do registro é melhor que o ambiente sem água; o aviso diz onde conferir */
+        var solto = false;
+        if (rota.erro && usadaRaiz) { oRota.corredorSolto = true; var rota2 = rotear(W, G, arv, oRota); if (!rota2.erro) { rota = rota2; solto = true; } }
+        if (rota.erro) break;
+        regNovo = null; proibNovo = [];
+        if (rota.alvo.tipo === "raiz" && !usadaRaiz && !regDesc) { var rg = registroNaRota(rota.pts, P, B.ACESSORIO_PADRAO, arr(rota.transp).map(function (tp) { return { x: tp.x, z: tp.z, raio: tp.regra.A + P.margemNo + B.ACESSORIO_PADRAO / 2 }; })); regNovo = rg.registro; proibNovo = rg.proibir; }
+        var proibT = proibirPerto.concat(proibNovo), ruins = fila.slice(i + 1).filter(function (ff) {
+          if (!passa[ff.ref] || ff === naRaiz) return false;
+          var naRota = false; for (var sg = 1; sg < rota.pts.length && !naRota; sg++) if (ptSeg2(ff, rota.pts[sg - 1], rota.pts[sg]).d < EPS) naRota = true;
+          if (!naRota) return false;
+          return rota.pts.some(function (q) { return d2(q, ff) < P.margemNo - EPS; }) || proibT.some(function (pp) { return d2(ff, pp) < pp.raio; });
+        });
+        if (!ruins.length) break;
+        ruins.forEach(function (ff) { delete passa[ff.ref]; });
       }
+      if (rota && !rota.erro && solto) saida.avisos.push(prob("água fria de " + f.ref + ": o único caminho encosta no próprio ramal — confira se o ponto passa pelo registro do ambiente", [f.ap.id, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) }));
       if (rota.erro) {
         /* parede sem parede: a estratégia não existe neste modelo — a saída é outra estratégia */
         var semParede = C.modo === "parede" && !W.O.lista.some(function (ob) { return ob.tipo === "parede"; });
         return falha("água fria de " + f.ref + ": " + (semParede ? "não há paredes no modelo para embutir o ramal" : rota.erro) + " (" + C.nome + ")", [f.ap.id, pt3(f.x, f.y, f.z)],
                      semParede ? { tipo: "obstaculos", falta: "parede", texto: "modele as paredes do ambiente (ou use piso/forro)" } : { tipo: "parametro", campo: "afastamento", sugerido: r4(P.afastamento / 2) });
       }
-      if (rota.alvo.tipo === "raiz") {
+      /* B3 (06/11/2026): o "dente" de milímetros na saída do ponto — a espera do kit (medida da face) e o eixo dos outros pontos a poucos mm
+         um do outro (família importada, Casa 487: 6,4 mm) davam um trecho de 6 mm entre dois joelhos (NO_COM_FOLGA no auditor). Abaixo de
+         MICRO_DENTE o primeiro canto some: o nó do ponto fica na linha do ramal e a descida/subida até o ponto sai fora de prumo por esses mm. */
+      if (rota.pts.length >= PONTOS_CANTO && Math.abs(f.y - cota) > EPS && d2(rota.pts[0], rota.pts[1]) < MICRO_DENTE) rota.pts.shift();
+      var primeiraRaiz = rota.alvo.tipo === "raiz" && !usadaRaiz;
+      if (rota.alvo.tipo === "peca" && arv.nos[rota.alvo.no]) arv.nos[rota.alvo.no].teUsado = true;   /* o pé da descida virou tê */
+      if (rota.alvo.tipo === "raiz" && usadaRaiz) arv.teRaiz = null;   /* o 2º lado chegou no pé: o tê fechou */
+      if (primeiraRaiz) {
         usadaRaiz = true; primeira = f.ref;
-        /* ⚠ REGISTRO no tronco, a partir da coluna: o primeiro pedaço reto que caiba; e nenhuma
-           derivação entre a coluna e ele (senão o ponto derivado fica fora do registro) */
-        var cam = rota.pts.slice().reverse(), acc = 0, Lr = B.ACESSORIO_PADRAO;
-        for (var s = 1; s < cam.length && !arv.registro; s++) {
-          var A = cam[s - 1], Bc = cam[s], L = d2(A, Bc), s0 = Math.max(P.distanciaRegistro - acc, Lr / 2 + P.margemNo);
-          if (s0 + Lr / 2 + P.margemNo <= L + EPS) { var u = un2(A, Bc); arv.registro = { x: r4(A.x + u.x * s0), z: r4(A.z + u.z * s0) }; }
-          var ate = arv.registro ? s0 + Lr / 2 + P.margemNo * 2 : L;
-          for (var t = 0; t <= ate + EPS; t += P.passo) { var uu = un2(A, Bc), tt = Math.min(t, L); proibirPerto.push({ x: A.x + uu.x * tt, z: A.z + uu.z * tt, raio: P.passo + P.margemNo }); }
-          acc += L;
-        }
+        if (regNovo) arv.registro = regNovo;
+        proibNovo.forEach(function (pp) { proibirPerto.push(pp); });
       }
       somarCruz(W, rota);
       var noF = enxertar(arv, rota, { tipo: "aparelho", ref: f.ref }, {});
       arv.nos[noF].folha = f;
+      /* a curva de transposição vira um NÓ na reta (a aresta se divide no cruzamento); a faixa da peça (A + margemNo de cada lado) fica proibida para derivar
+         e para o registro — a peça não leva tê encostado */
+      arr(rota.transp).forEach(function (tp) {
+        for (var ia = 0; ia < arv.arestas.length; ia++) {
+          var aT = arv.arestas[ia]; if (!aT.vivo) continue;
+          var AT = arv.nos[aT.de], BT = arv.nos[aT.para], Xt = { x: tp.x, z: tp.z };
+          if (ptSeg2(Xt, AT, BT).d > EPS || d2(Xt, AT) < EPS || d2(Xt, BT) < EPS) continue;
+          var nT = arv.dividir(aT.id, tp.x, tp.z); arv.nos[nT].transp = { ref: tp.ref, ux: tp.ux, uz: tp.uz, regra: tp.regra }; break;
+        }
+        proibirPerto.push({ x: tp.x, z: tp.z, raio: tp.regra.A + P.margemNo });
+      });
+      if (Math.abs(f.y - cota) > EPS) arv.nos[noF].teDescida = f.ref;   /* candidato a tê (teFolhas) */
+      if (primeiraRaiz && regDesc) {
+        var nR = arv.nos[arv.raiz], pa = rota.pts[rota.pts.length - 2];
+        arv.registroDescida = true;
+        if (pa && d2(pa, nR) > EPS && !naRaiz) arv.teRaiz = { x: nR.x, z: nR.z, dir: un2(nR, pa) };
+      }
     }
     /* DN do trecho = o maior a jusante (premissa: o dimensionamento acerta depois) */
     function maxDn(nid) { var n = arv.nos[nid], m = n.folha ? n.folha.dn : 0; n.entram.forEach(function (aid) { m = Math.max(m, maxDn(arv.arestas[aid].de)); }); return m; }
@@ -1309,6 +1577,33 @@
     return { arv: arv, avisos: avisos };
   }
 
+  /* B3: os pés de descida da árvore de água que ainda são JOELHO (uma aresta só no plano + a descida do ponto): cada um pode virar o tê
+     de outro ponto que chega alinhado com o ramal (dir = o sentido do ramal saindo do nó). */
+  function teFolhas(arv) {
+    var out = [];
+    arv.nos.forEach(function (n, id) {
+      if (!n || !n.teDescida || n.teUsado) return;
+      var es = n.entram.slice(); if (n.sai != null) es.push(n.sai);
+      if (es.length !== 1) return;
+      var a = arv.arestas[es[0]]; if (!a || !a.vivo) return;
+      var outro = arv.nos[a.de === id ? a.para : a.de]; if (!outro || d2(outro, n) < EPS) return;
+      out.push({ no: id, x: n.x, z: n.z, dir: un2(n, outro), ref: n.teDescida });
+    });
+    return out;
+  }
+  /* ⚠ REGISTRO no tronco, a partir da coluna: o primeiro pedaço reto que caiba; e nenhuma derivação entre a coluna e ele (senão o
+     ponto derivado fica fora do registro) — a faixa proibida em volta (proibir) vale para as junções dos outros pontos */
+  function registroNaRota(pts, P, Lr, evitar) {
+    var cam = pts.slice().reverse(), acc = 0, reg = null, proib = [];
+    for (var s = 1; s < cam.length && !reg; s++) {
+      var A = cam[s - 1], Bc = cam[s], L = d2(A, Bc), s0 = Math.max(P.distanciaRegistro - acc, Lr / 2 + P.margemNo);
+      if (s0 + Lr / 2 + P.margemNo <= L + EPS) { var u = un2(A, Bc); reg = { x: r4(A.x + u.x * s0), z: r4(A.z + u.z * s0) }; if (arr(evitar).some(function (z) { return d2(reg, z) < z.raio; })) reg = null; }   /* longe da curva de transposição */
+      var ate = reg ? s0 + Lr / 2 + P.margemNo * 2 : L;
+      for (var t = 0; t <= ate + EPS; t += P.passo) { var uu = un2(A, Bc), tt = Math.min(t, L); proib.push({ x: A.x + uu.x * tt, z: A.z + uu.z * tt, raio: P.passo + P.margemNo }); }
+      acc += L;
+    }
+    return { registro: reg, proibir: proib };
+  }
   /* o ponto `f` está no eixo de uma aresta RETA viva da árvore, longe das pontas dela (margem: o mesmo folgaJuncao da busca) e fora da
      faixa proibida (registro do ambiente)? Então a aresta se divide ali e o nó vira a folha: o tê com a saída para a descida/subida. */
   function sobreORamal(arv, f, margem, proibirPerto, desvioMax) {
@@ -1376,7 +1671,7 @@
     });
     return out;
     function meioDeReta(T, n) {
-      if (n.entram.length !== 1 || n.sai == null || n.folha || n.tipo === "raiz") return false;
+      if (n.entram.length !== 1 || n.sai == null || n.folha || n.tipo === "raiz" || n.transp) return false;   /* a curva de transposição parte o trecho (a peça em linha) */
       var e1 = T.arestas[n.entram[0]], e2 = T.arestas[n.sai]; if (e1.dn !== e2.dn) return false;
       var A = T.nos[e1.de], Bn = T.nos[e2.para], u = un2(A, n), v = un2(n, Bn);
       return Math.abs(u.x * v.z - u.z * v.x) < EPS && u.x * v.x + u.z * v.z > 0 && (!e1.decl || e1.decl.i === e2.decl.i);
@@ -1436,6 +1731,28 @@
         if (d && d.vertical && !W.verticais.some(function (v) { return v.ref === (d.id || "destino-" + s.slice(0, 2)); })) W.verticais.push({ x: d.x, z: d.z, y0: d.yBase, y1: d.yTopo, r: P.folga, ref: d.id || "destino-" + s.slice(0, 2), sistema: s });
       });
     });
+    /* B3 (06/11/2026, R-E21 "sem tubo atravessando tubo"): a água fria que JÁ ESTÁ no modelo (o kit do aparelho: a subida do chuveiro de
+       0,99 a 2,20 m no plano das descidas, o ramal exclusivo da válvula) entra como obstáculo do ramal de água fria. Antes o motor não
+       a via: o ramal só desviava dela por acaso (bloqueado pela descida do próprio ponto) e, com o ramal reto pelo prumo dos pontos,
+       atravessava a subida (TUBO_ATRAVESSA_MESMO_SISTEMA). Fica de fora o tubo que termina num ponto de aparelho desta entrada (a
+       espera do kit: o ramal chega nela) ou no destino (a espera do ambiente). */
+    (function () {
+      var Bt = (B && B.TOL) || 0.02, fins = [];   // hid:ok mesma tolerância de ponta do biminst
+      EN.aparelhos.forEach(function (a) { a.conectores.forEach(function (c) { if (c.sistema === "agua_fria") { fins.push(c); if (c.ponta) fins.push(c.ponta); } }); });
+      EN.grupos.forEach(function (g) { var d = normDestino(g.destinos.agua_fria, "agua_fria"); if (d) fins.push(d); });
+      (function rec(L) { arr(L).forEach(function (op) {
+        if (!op) return; if (op.op === "lote") { rec(op.ops); return; }
+        if (op.op !== "trecho" || op.sistema !== "agua_fria" || !ponto3(op.p1) || !ponto3(op.p2)) return;
+        var a = ponto3(op.p1), b = ponto3(op.p2);
+        if (fins.some(function (q) { return [a, b].some(function (e) { return Math.abs(e.x - q.x) <= Bt && Math.abs(e.z - q.z) <= Bt && (q.y == null || Math.abs(e.y - q.y) <= Bt); }); })) return;
+        W.tubosAgua.push({ a: a, b: b, r: raio(num(op.dn, 0)), sistema: "agua_fria", ref: "modelo:" + op.id });
+      }); })(entrada.opsModelo);
+    })();
+    /* B3 (06/11/2026, R-AQ4): com aquecedor no modelo, o js/hidambiente.js manda os pontos de ÁGUA QUENTE de parede (entrada.reservaAQ:
+       o eixo embutido, a 1ª camada do js/hidaqtraco.js): a água quente vai subir por ali até o entreforro DEPOIS — o ramal de água fria,
+       traçado antes, deixa esse prumo livre (passa por trás, com a folga entre tubos). Sem a reserva o ramal reto no eixo tomava a camada
+       e a descida da água quente da bancada não cabia na parede (a ventilação corre deitada na camada funda). Só o ramal de água fria vê. */
+    arr(entrada.reservaAQ).forEach(function (q, iq) { var p = ponto3(q); if (p) W.verticaisAQ.push({ x: p.x, z: p.z, y0: p.y, y1: INF, r: raio(num(q.dn, 0)), ref: "reservaAQ:" + iq, sistema: "agua_quente" }); });
     var trechos = [], acessorios = [], furosLaje = 0, idsPorTipo = { contato: [] };
     function laje(x, z, y0, y1) { W.O.lajes.forEach(function (l) { if (x >= l.x0 && x <= l.x1 && z >= l.z0 && z <= l.z1 && Math.min(y0, y1) < l.fundo + EPS && Math.max(y0, y1) > l.topo - EPS) furosLaje++; }); }
     var pendVent = [];
@@ -1468,7 +1785,17 @@
             /* ponto de parede: toco do ponto até o eixo embutido (com a declividade do DN), depois a descida embutida */
             var yD = f.y;
             if (f.ponta) { yD = chao4(f.ponta.y - arv.arestas[n.sai].decl.i / 100 * d2(f.ponta, f)); trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: { x: f.x, y: yD, z: f.z }, toco: true, ap: f.ap.id }); }
-            trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.x, y: yD, z: f.z }, p2: { x: n.x, y: Y[n.id], z: n.z }, ap: f.ap.id }); laje(f.x, f.z, f.y, Y[n.id]);
+            var tD = { sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.x, y: yD, z: f.z }, p2: { x: n.x, y: Y[n.id], z: n.z }, ap: f.ap.id };
+            if (f.saida === SAIDA_JOELHO && joelhoNoPe(arv, n, dnS)) {
+              tD.pecaFim = "joelho90";   /* o nó vertical ↔ horizontal vira joelho 90° (decidir/forçada) */
+              /* a cota do ramal é a da curva longa (não baixa ao trocar de peça): se a descida disponível é menor que a perna do joelho, a peça não
+                 cabe inteira — o aviso diz quanto falta (o ponto do aparelho está baixo demais), em vez de baixar o ramal calado */
+              var pjJ = pernaJoelho(dnS), dispJ = yD - Y[n.id];
+              if (pjJ != null && dispJ + EPS < pjJ) saida.avisos.push(prob("joelho 90° de esgoto DN " + dnS + " em " + f.ref + ": a descida disponível (" + fcm(dispJ) + " cm) é menor que a perna da peça (" + fcm(pjJ) + " cm) — o ramal não foi baixado; suba o ponto do aparelho ou baixe o ramal", [f.ap.id], { tipo: "ajustar", ids: [f.ap.id] }));
+            }
+            else if (f.saida === SAIDA_JOELHO && !n.entram.length && pernaJoelho(dnS) == null)
+              saida.avisos.push(prob("joelho 90° de esgoto DN " + dnS + " não consta no catálogo dos fabricantes (sem cota): " + f.ref + " ficou na curva longa — pendente (cadastre a peça)", [f.ap.id], { tipo: "ajustar", ids: [f.ap.id] }));
+            trechos.push(tD); laje(f.x, f.z, f.y, Y[n.id]);
           }
           else {
             var topoCap = r4(f.peca.hub.yBot + P.folga);
@@ -1591,6 +1918,16 @@
         });
         /* AF corre do destino para o ponto: p1 = lado da coluna */
         trechos.slice(iniGrupo).forEach(function (t) { if (t.sistema === "agua_fria" && !t._inv) { var q = t.p1; t.p1 = t.p2; t.p2 = q; t._inv = true; } });
+        /* CURVA DE TRANSPOSIÇÃO: a peça em linha no nó do cruzamento — gravada na ponta de chegada (p2) do trecho de montante (BimInst: pecaFim; o nó
+           vira a peça e o decidir() a honra se serve — luva trocada pela curva de transposição) */
+        var nTransp = 0;
+        at.nos.forEach(function (nT) {
+          if (!nT.transp) return;
+          var tT = trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria" && d2(t.p2, nT) < EPS && Math.abs(t.p1.y - t.p2.y) < EPS && d2(t.p1, t.p2) > EPS; })[0];
+          if (!tT) return;
+          tT.pecaFim = nT.transp.regra.tipo; tT.transposicao = nT.transp.ref; nTransp++;
+          saida.justificativa.push("água fria: curva de transposição em " + fxz(nT.x, nT.z) + " (cruza " + nT.transp.ref + " por cima, a 90°, DN " + nT.transp.regra.dn + "; reta livre de " + f2(nT.transp.regra.A + P.margemNo) + " m de cada lado; " + nT.transp.regra.fonte + ") — no lugar do desvio, que custaria mais conexões");
+        });
         at.nos.forEach(function (n) {
           var f = n.folha; if (!f) return;
           if (Math.abs(f.y - cota) > EPS) { trechos.push({ sistema: "agua_fria", material: P.material.agua_fria, dn: f.dn, p1: { x: n.x, y: cota, z: n.z }, p2: { x: f.x, y: f.y, z: f.z }, _inv: true, ap: f.ap.id }); laje(f.x, f.z, f.y, cota); }
@@ -1598,13 +1935,21 @@
           if (f.ponta) trechos.push({ sistema: "agua_fria", material: P.material.agua_fria, dn: f.dn, p1: { x: f.x, y: f.y, z: f.z }, p2: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, _inv: true, toco: true, ap: f.ap.id });
         });
         var dA = at.destino;
-        if (!dA.vertical && Math.abs(dA.y - cota) > EPS) trechos.push({ sistema: "agua_fria", material: P.material.agua_fria, dn: Math.max.apply(null, at.arestas.map(function (a) { return a.dn; })), p1: { x: dA.x, y: dA.y, z: dA.z }, p2: { x: dA.x, y: cota, z: dA.z }, _inv: true });
+        var descEnt = null;
+        if (!dA.vertical && Math.abs(dA.y - cota) > EPS) trechos.push(descEnt = { sistema: "agua_fria", material: P.material.agua_fria, dn: Math.max.apply(null, at.arestas.map(function (a) { return a.dn; })), p1: { x: dA.x, y: dA.y, z: dA.z }, p2: { x: dA.x, y: cota, z: dA.z }, _inv: true });
         if (dA.vertical && !dA.existente) saida.avisos.push(prob("coluna de água fria " + (dA.id || "") + " não existe no modelo: o ramal sai dela — modele a coluna", [pt3(dA.x, null, dA.z)], { tipo: "modelar", sistema: "agua_fria", elemento: "coluna" }));
         /* ⚠ registro de gaveta no INÍCIO do ramal do ambiente (isola o banheiro sem fechar a coluna) */
         var regT = at.registro ? trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria" && Math.abs(t.p1.y - t.p2.y) < EPS && ptSeg2(at.registro, t.p1, t.p2).d < EPS; })[0] : null;
         if (regT) regT.registro = { x: at.registro.x, y: cota, z: at.registro.z, comprimento: B.ACESSORIO_PADRAO, frente: frenteRegistro(W, g, at.registro, cota) };
+        else if (at.registroDescida && descEnt) {
+          /* B3 (R-C9 + R-C4): o registro na descida da entrada, na altura do RG (alturaRamalAF) quando ela cabe na descida; senão o mais
+             perto do ramal (logo acima/abaixo do tê do pé), com a folga de nó (margemNo) entre o corpo dele e as conexões */
+          var yLo = Math.min(dA.y, cota) + B.ACESSORIO_PADRAO / 2 + P.margemNo, yHi = Math.max(dA.y, cota) - B.ACESSORIO_PADRAO / 2 - P.margemNo;
+          var yR = r4(Math.max(yLo, Math.min(yHi, g.piso + P.alturaRamalAF)));
+          regT = descEnt; regT.registro = { x: dA.x, y: yR, z: dA.z, comprimento: B.ACESSORIO_PADRAO, frente: frenteRegistro(W, g, dA, yR) };
+        }
         else saida.avisos.push(prob("registro de gaveta do ambiente " + g.id + " não coube no tronco do ramal: ponha à mão", [pt3(dA.x, cota, dA.z)], { tipo: "parametro", campo: "distanciaRegistro", sugerido: r4(B.ACESSORIO_PADRAO / 2 + P.margemNo) }));
-        saida.justificativa.push("água fria (" + at.faixa.nome + "): ramal na cota " + f2(cota) + " m a partir de " + (dA.id || dA.tipo) + ", " + at.arestas.length + " trechos, descida/subida a cada ponto; registro de gaveta no início do ramal; DN do trecho = maior sub-ramal a jusante (rode o dimensionamento e aplique)");
+        saida.justificativa.push("água fria (" + at.faixa.nome + "): ramal na cota " + f2(cota) + " m a partir de " + (dA.id || dA.tipo) + ", " + at.arestas.length + " trechos, descida/subida a cada ponto; registro de gaveta " + (at.registroDescida ? "na descida da entrada (o pé dela é o tê do ramal)" : "no início do ramal") + "; DN do trecho = maior sub-ramal a jusante (rode o dimensionamento e aplique)");
         trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria"; }).forEach(function (t) { W.tubos.push({ a: t.p1, b: t.p2, r: raio(t.dn), sistema: "agua_fria", grupo: g.id, ref: "af" }); });
       }
       pendVent.splice(0).forEach(emitirVent);
@@ -1612,7 +1957,9 @@
     /* -------- ops (trecho → acessório) */
     trechos.forEach(function (t) {
       t.id = novoId(t.sistema);
-      saida.ops.push({ op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: r4(t.p1.x), y: r4(t.p1.y), z: r4(t.p1.z) }, p2: { x: r4(t.p2.x), y: r4(t.p2.y), z: r4(t.p2.z) } });
+      var oT = { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: r4(t.p1.x), y: r4(t.p1.y), z: r4(t.p1.z) }, p2: { x: r4(t.p2.x), y: r4(t.p2.y), z: r4(t.p2.z) } };
+      if (t.pecaFim) oT.pecaFim = t.pecaFim;
+      saida.ops.push(oT);
     });
     saida.familias.forEach(function (op) { saida.ops.push(op); });
     trechos.forEach(function (t) {
@@ -1669,6 +2016,7 @@
       var pcs = []; EN.grupos.forEach(function (g) { arr(g.pecas).forEach(function (k) { pcs.push({ id: k.id, peca: k.peca, x: k.x, y: k.y, z: k.z, r: k.r }); }); });
       var parC = {}; Object.keys(P.criterios || {}).forEach(function (k) { parC[k] = P.criterios[k]; });
       parC.atravessarViga = P.atravessarViga; if (parC.afastamento == null) parC.afastamento = P.afastamento;
+      parC.limiteDnEmbutirCintaMm = P.limiteDnCintaMm;
       var Aud = Hc.auditar({ trechos: trechos.map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, p1: t.p1, p2: t.p2, ap: t.ap }; }),
                              acessorios: acs, pecas: pcs, caixas: cxs, aparelhos: apar, obstaculos: entrada.obstaculos || {}, ambientes: (entrada.obstaculos || {}).ambientes, parametros: parC, piso: EN.grupos.length ? EN.grupos[0].piso : null });
       saida.criterios = Aud;
@@ -1680,6 +2028,95 @@
     return saida;
   }
   function uniq(l) { var o = []; l.forEach(function (x) { if (o.indexOf(x) < 0) o.push(x); }); return o; }
+
+  /* ================================================ SHAFT NO CANTO (cinta: tubo acima do DN-limite)
+     Decisão do Rogério (06/11/2026): o tubo vertical com DN > limite_dn_embutir_cinta_mm (padrão 50) NÃO passa dentro da cinta; sobe/desce
+     num SHAFT ao lado, no CANTO da parede (o canto mais perto do ponto). Aqui só o CAMINHO e o aviso — nenhum elemento de arquitetura novo
+     (o fechamento do shaft é decisão do projeto de arquitetura). O canto é a junção de duas paredes (eixos que se cruzam); o prumo fica
+     encostado nas duas faces, fora de qualquer parede/pilar. */
+  function shaftNoCanto(obst, pt, dnMm, P) {
+    obst = obst || {};
+    var g = num(P && P.folga, GEO.folga), r = num(dnMm, 0) / 2000, M = r + g;   // hid:ok DN mm → raio m
+    var ws = arr(obst.paredes).map(function (w) { var b = retSeg(w.p1, w.p2, num(w.espessura, 0)); if (b) b.id = w.id; return b; }).filter(Boolean);
+    var bloq = ws.slice();
+    arr(obst.pilares).forEach(function (c) { var lx = num(c.largura, 0), lz = num(c.profundidade, lx); if (lx > 0 && lz > 0 && isFinite(num(c.x, NaN))) { var b = retCentro(num(c.x, 0), num(c.z, 0), lx, lz, c.rotY); b.id = c.id; bloq.push(b); } });
+    var melhor = null;
+    for (var i = 0; i < ws.length; i++) for (var j = i + 1; j < ws.length; j++) {
+      var a = ws[i], b = ws[j], det = a.ux * b.uz - a.uz * b.ux;
+      if (Math.abs(det) < 0.5) continue;   // hid:ok paredes quase paralelas não formam canto (sen 30°)
+      var dx = b.cx - a.cx, dz = b.cz - a.cz, s = (dx * b.uz - dz * b.ux) / det, t = (dx * a.uz - dz * a.ux) / det;
+      if (Math.abs(s) > a.hl + b.hw + EPS || Math.abs(t) > b.hl + a.hw + EPS) continue;   // o canto tem de estar nas duas paredes (com a espessura da outra)
+      var X = { x: a.cx + a.ux * s, z: a.cz + a.uz * s };
+      [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (sg) {
+        var q = { x: X.x + sg[0] * a.ux * (b.hw + M) + sg[1] * b.ux * (a.hw + M), z: X.z + sg[0] * a.uz * (b.hw + M) + sg[1] * b.uz * (a.hw + M) };
+        if (bloq.some(function (o) { return dentro(o, q.x, q.z, M - 0.001); })) return;   // hid:ok 1 mm: o prumo encosta na folga, não conta como dentro
+        /* do MESMO lado das duas paredes que o ponto (o cômodo dele): nunca para fora da casa nem para o cômodo vizinho */
+        var lado = [a, b].every(function (w) { var lp = local(w, pt.x, pt.z).v, lq = local(w, q.x, q.z).v; return Math.abs(lp) <= w.hw + EPS || lp * lq > 0; });
+        if (!lado) return;
+        var d = d2(q, pt);
+        if (!melhor || d < melhor.dist - EPS) melhor = { x: r4(q.x), z: r4(q.z), canto: { x: r4(X.x), z: r4(X.z) }, paredes: [a.id, b.id], dist: r4(d) };
+      });
+    }
+    return melhor;
+  }
+  /* desloca para o shaft do canto os verticais com DN > limite que atravessam uma CINTA; o resto das ops fica como veio.
+     Devolve { ops, avisos[], pendencias[], deslocados[] }. Ponta LIGADA (outro trecho, ou o ponto do aparelho) ganha um trecho deitado
+     com a declividade mínima do DN (esgoto desce no sentido do fluxo, a base do vertical sobe o que o deitado precisa). */
+  function shaftsDaCinta(ops, obst, P, pontos) {
+    var out = { ops: arr(ops).slice(), avisos: [], pendencias: [], deslocados: [] };
+    obst = obst || {};
+    var lim = limiteCintaMm(P), cintas = [];
+    arr(obst.vigas).forEach(function (v) { if (!v || !v.cinta) return; var b = retSeg(v.p1, v.p2, num(v.largura, 0)); if (!b) return; b.id = v.id; b.y0 = num(v.topo, 0) - num(v.altura, 0); b.y1 = num(v.topo, 0); cintas.push(b); });
+    if (!cintas.length) return out;
+    var g = num(P && P.folga, GEO.folga), TOLE = 0.01;   // hid:ok 1 cm: ponta de um trecho "toca" a de outro
+    var NRM = null; try { NRM = Normas(NN().contexto(), []); } catch (e) { NRM = null; }
+    function ligada(op, k) {
+      var q = op[k];
+      if (op.ap != null && q.y >= Math.max(op.p1.y, op.p2.y) - EPS) return true;   // a ponta de cima da descida do aparelho é o ponto dele
+      if (arr(pontos).some(function (pp) { return pp && d3(pp, q) <= TOLE * 2; })) return true;   // o ponto de um aparelho, peça ou caixa já no modelo
+      return arr(ops).some(function (o) { return o !== op && o.op === "trecho" && o.p1 && o.p2 && (d3(o.p1, q) <= TOLE || d3(o.p2, q) <= TOLE); }) ||
+             arr(ops).some(function (o) { return o.op === "peca" && Math.abs(num(o.x, 1e9) - q.x) <= TOLE && Math.abs(num(o.z, 1e9) - q.z) <= TOLE && Math.abs(num(o.y, 1e9) - q.y) <= TOLE * 5; });   // hid:ok sentinela de coordenada ausente e casas de arredondamento
+    }
+    var novos = [];
+    arr(ops).forEach(function (op, idx) {
+      if (!op || op.op !== "trecho" || !op.p1 || !op.p2 || !(num(op.dn, 0) > lim + EPS)) return;
+      var dxz = Math.abs(op.p1.x - op.p2.x) + Math.abs(op.p1.z - op.p2.z);
+      if (dxz > EPS || Math.abs(op.p1.y - op.p2.y) < EPS) return;   // só o vertical
+      var r = num(op.dn, 0) / 2000, y0 = Math.min(op.p1.y, op.p2.y), y1 = Math.max(op.p1.y, op.p2.y);   // hid:ok DN mm → raio m
+      var c = cintas.filter(function (b) { return faixaCruza(y0, y1, b.y0, b.y1) && dentro(b, op.p1.x, op.p1.z, r + g); })[0];
+      if (!c) return;
+      var S = shaftNoCanto(obst, { x: op.p1.x, z: op.p1.z }, op.dn, P);
+      if (!S) { out.pendencias.push({ regra: "rota.shaft_cinta", texto: "o tubo " + op.id + " (DN " + op.dn + " > " + lim + " mm) atravessa a cinta " + c.id + " e não achei canto livre para o shaft — decisão do projeto", elementos: [op.id, c.id] }); return; }
+      var i = 1.0;   // hid:ok 1 % de reserva se a tabela de declividade não responde
+      try { var dd = NRM && NRM.decl ? NRM.decl(num(op.dn, 0), P) : null; if (dd && dd.i > 0) i = dd.i; } catch (e2) {}
+      var alto = op.p1.y >= op.p2.y ? "p1" : "p2", baixo = alto === "p1" ? "p2" : "p1";
+      var Ea = copia(op[alto]), Eb = copia(op[baixo]);
+      function deitado(id, p1, p2) { var n = copia(op); n.id = id; n.p1 = p1; n.p2 = p2; delete n.continua; delete n.tomada; delete n.ap; n.ambParte = "shaft_cinta"; return n; }
+      var v = copia(op); v.shaft = true; v.ambParte = "shaft_cinta"; delete v.continua; delete v.tomada;
+      v[alto] = { x: S.x, y: Ea.y, z: S.z }; v[baixo] = { x: S.x, y: Eb.y, z: S.z };
+      var extra = [], dy = d2(Ea, S) * i / 100;
+      if (ligada(op, alto)) {
+        v[alto].y = r4(Ea.y - dy);
+        var dA = deitado(op.id + "-sh1", { x: Ea.x, y: Ea.y, z: Ea.z }, { x: S.x, y: v[alto].y, z: S.z });
+        if (op.continua === alto || op.continua === "ambos") dA.continua = "p1";
+        if (op.tomada != null) dA.tomada = op.tomada;
+        if (op.ap != null) dA.ap = op.ap;
+        extra.push(dA);
+      }
+      if (ligada(op, baixo)) {
+        v[baixo].y = r4(Eb.y + d2(Eb, S) * i / 100);
+        var dB = deitado(op.id + "-sh2", { x: S.x, y: v[baixo].y, z: S.z }, { x: Eb.x, y: Eb.y, z: Eb.z });
+        if (op.continua === baixo || op.continua === "ambos") dB.continua = "p2";
+        extra.push(dB);
+      }
+      out.ops[idx] = v;
+      novos = novos.concat(extra);
+      out.deslocados.push(op.id);
+      out.avisos.push(prob("shaft no canto (DN " + op.dn + " > " + lim + " mm): o prumo " + op.id + " cruzaria a cinta " + c.id + " e foi para o canto das paredes " + S.paredes.join(" / ") + ", em " + fxz(S.x, S.z) + " — o tubo acima de DN " + lim + " não embute na cinta", [op.id, c.id].concat(S.paredes.filter(function (q) { return q != null; })), null));
+    });
+    out.ops = out.ops.concat(novos);
+    return out;
+  }
 
   /* ================================================ VALIDAÇÃO pelo biminst */
   /* o estado do modelo + as ops da opção, as famílias dos aparelhos (pontos em
@@ -1761,6 +2198,7 @@
     e = copia(e);
     arr(e.aparelhos).forEach(function (a) { arr(a && a.conectores).forEach(function (c) { moverPt(c, dx, dz); }); });
     arr(e.pecas).forEach(function (k) { moverPt(k, dx, dz); });
+    arr(e.reservaAQ).forEach(function (q) { moverPt(q, dx, dz); });
     arr(e.caixasGordura).forEach(function (cg) { arr(cg && cg.conectores).forEach(function (c) { moverPt(c, dx, dz); }); });
     if (e.parametros && e.parametros.areaTecnica) moverPt(e.parametros.areaTecnica, dx, dz);
     function dests(ds) { Object.keys(ds || {}).forEach(function (k) { var d = ds[k]; if (d) { moverPt(d, dx, dz); if (d.conector) moverPt(d.conector, dx, dz); } }); }
@@ -1801,6 +2239,7 @@
   function proporLocal(entrada) {
     var pend = [], P = parametros(entrada), ctx = NN().contexto(), NRM = Normas(ctx, pend);
     var EN = normEntrada(entrada, P, pend), opcoes = [], descartadas = [];
+    if (P.gorduraRecusada.length) pend.push(pend0("rota.gordura_recusada", "paraCaixaGordura pediu " + P.gorduraRecusada.join(", ") + ": o tanque e a máquina de lavar roupa nunca deságuam na caixa de gordura nem a montante dela (regra de projeto) — seguem pelo ramal do esgoto e caem na caixa de inspeção depois da caixa de gordura", [], null));
     var base = validar(entrada, []), textosBase = {};
     base.verificacao.itens.forEach(function (i) { textosBase[i.texto] = (textosBase[i.texto] || 0) + 1; });
     var nConBase = base.verificacao.rede.conexoes.length;
@@ -1842,7 +2281,14 @@
           { tipo: "criterio", regra: v0.regra, ids: idsV.slice(), texto: v0.corrigir && v0.corrigir.texto, opcoes: OPCOES_CRIT[v0.regra.split(".")[0]] || OPCOES_CRIT.outro }));
         dV.criterios = r.violacoes; descartadas.push(dV); return;
       }
-      var V = validar(entrada, r.ops), avisos = r.avisos.slice(), vistos = {};
+      /* CINTA (decisão do Rogério, 06/11/2026): o vertical com DN acima do limite que cruzaria a cinta vai para o SHAFT no canto, com aviso */
+      var ptsLig = []; arr(entrada.aparelhos).forEach(function (a) { arr(a.conectores).forEach(function (c) { ptsLig.push({ x: num(c.x, 0), y: num(c.y, 0), z: num(c.z, 0) }); if (c.ponta) ptsLig.push({ x: num(c.ponta.x, 0), y: num(c.ponta.y, 0), z: num(c.ponta.z, 0) }); }); });
+      arr(entrada.pecas).forEach(function (k) { ptsLig.push({ x: num(k.x, 0), y: num(k.y, 0), z: num(k.z, 0) }); });
+      arr(entrada.caixasGordura).forEach(function (cg) { arr(cg.conectores).forEach(function (c) { ptsLig.push({ x: num(c.x, 0), y: num(c.y, 0), z: num(c.z, 0) }); }); });
+      var shC = shaftsDaCinta(r.ops, entrada.obstaculos, P, ptsLig);
+      if (shC.deslocados.length) r.ops = shC.ops;
+      shC.pendencias.forEach(function (pe) { r.pendencias.push(pend0(pe.regra, pe.texto, pe.elementos, null)); });
+      var V = validar(entrada, r.ops), avisos = r.avisos.slice().concat(shC.avisos), vistos = {};
       if (V.recusadas.length) { descartadas.push(descarte(chave, falha("o modelador recusou " + V.recusadas.length + " operação(ões): " + V.recusadas.map(function (idR, iR) { return idR + (V.motivos[iR] ? " (" + V.motivos[iR] + ")" : ""); }).join("; "), V.recusadas, { tipo: "ajustar", ids: V.recusadas.slice() }))); return; }
       /* 27/10/2026 (Casa 487, pedido do Rogério): NADA SOBRE O TELHADO — o tubo horizontal (água, esgoto, ventilação) fica abaixo da face de baixo da
          cobertura; a estratégia que passa por cima da telha (ou a atravessa) sai com o porquê. O terminal da ventilação (vertical) é o que atravessa. */
@@ -1928,6 +2374,10 @@
     }
     return achado;
   }
+  /* B2b (06/11/2026, Casa 487): o elemento DEMOLIDO (faseDemolida, que não seja "Nenhum") não existe no estado final que o traçado projeta. Antes as
+     14 paredes "D-" da reforma (demolidas na Construção nova) seguiam como obstáculo e como parede que hospeda tubo: a ventilação do banho da suíte
+     subia DENTRO da parede D-DEPF-C, que vira a viga VS; o hidpluvial e o hidgasrede já as tiravam */
+  function demolida(c) { return !!(c && c.faseDemolida && String(c.faseDemolida) !== "Nenhum"); }
   function obstaculosDoBim(estado, avaliarFam) {
     var out = { paredes: [], aberturas: [], vigas: [], pilares: [], lajes: [], familias: [], ambientes: [], divisas: [], telhados: [] }, porId = {}, famPorId = {};
     /* 27/10/2026 (Casa 487): o TELHADO é obstáculo para o tubo horizontal (água, esgoto, ventilação): a horizontal corre ABAIXO da cobertura
@@ -1944,12 +2394,12 @@
     });
     arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) famPorId[String(f.id)] = f; });
     arr(estado && estado.caixas).forEach(function (c) {
-      if (!c || c.id == null) return;
+      if (!c || c.id == null || demolida(c)) return;
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2;
       var p1 = { x: c.cx - h * cs, z: c.cz + h * sn }, p2 = { x: c.cx + h * cs, z: c.cz - h * sn }, alt = num(c.altura, 0);
       if (c.tipo === "parede" && !c.shaft) {   /* N23: o fechamento do SHAFT (js/hidpredio.js) não é parede para o traçado: os tubos passam dentro dele */
        var w = { id: c.id, p1: p1, p2: p2, espessura: c.espessura, base: c.cy - alt / 2, altura: alt }; if (c.tipoParede) w.tipoParede = c.tipoParede; out.paredes.push(w); porId[c.id] = { c: c, cs: cs, sn: sn }; }
-      else if (c.tipo === "viga") out.vigas.push({ id: c.id, p1: p1, p2: p2, largura: c.espessura, altura: alt, topo: c.cy + alt / 2 });
+      else if (c.tipo === "viga") { var vg = { id: c.id, p1: p1, p2: p2, largura: c.espessura, altura: alt, topo: c.cy + alt / 2 }; if (ehCinta(c)) vg.cinta = true; out.vigas.push(vg); }
       else if (c.tipo === "pilar") out.pilares.push({ id: c.id, x: c.cx, z: c.cz, largura: c.comprimento, profundidade: c.espessura, rotY: c.rotY, base: c.cy - alt / 2, altura: alt });
       else if (c.tipo === "laje") {
         /* ⚠ laje girada: a projeção é a caixa ENVOLVENTE dos 4 cantos (antes cx ± comprimento/2 sem o giro) */
@@ -2008,7 +2458,7 @@
     var aparelhos = ordem.map(function (id) {
       var ap = forcado[id] || (AF && AF.aparelhoDaFamilia ? AF.aparelhoDaFamilia(famDe[id]) : null) || "";
       var apEs = ap === "mictorio" && ESm && ESm.mictorioDe ? ESm.mictorioDe(instDe[id]).aparelho : null;   /* mictório: linha da Tabela 3 pelo Tipo_descarga */
-      return { id: String(id), aparelho: ap, aparelhoEs: apEs, grupo: grupoDe[id] != null ? grupoDe[id] : null, conectores: porFam[id] };
+      return { id: String(id), aparelho: ap, aparelhoEs: apEs, saidaEsgoto: saidaEsgoto(instDe[id]), grupo: grupoDe[id] != null ? grupoDe[id] : null, conectores: porFam[id] };
     }).filter(function (a) { return !extra.so || extra.so.indexOf(a.id) >= 0; });
     var pecas = arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (p) { return p.sistema === "esgoto" && RECEPTOR[p.peca] || p.peca === "ralo_seco"; })
       .map(function (p) { return { id: p.id, peca: p.peca, sistema: p.sistema, dn: p.dn, x: p.x, y: p.y, z: p.z, grupo: grupoDe[p.id] != null ? grupoDe[p.id] : null }; });
@@ -2031,10 +2481,12 @@
   var HidRota = {
     VERSAO: 1, GEO: GEO, PESOS: PESOS, ESTRATEGIAS: ESTRATEGIAS, ORDEM: ORDEM,
     BACIA: BACIA, RECEPTOR: RECEPTOR, PARA_CAIXA: PARA_CAIXA, SIFAO_PROPRIO: SIFAO_PROPRIO,
-    propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, entradaDoModelo: entradaDoModelo,
+    CHAVE_SAIDA_ES: CHAVE_SAIDA_ES, SAIDA_CURVA: SAIDA_CURVA, SAIDA_JOELHO: SAIDA_JOELHO, saidaEsgoto: saidaEsgoto, pernaJoelho: pernaJoelho, opcoesSaida: opcoesSaida,   /* saída do esgoto do aparelho: curva longa × joelho */
+    propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, demolida: demolida, entradaDoModelo: entradaDoModelo,
+    NUNCA_NA_GORDURA: NUNCA_NA_GORDURA, ehCinta: ehCinta, cintaPassa: cintaPassa, shaftNoCanto: shaftNoCanto, shaftsDaCinta: shaftsDaCinta, LIMITE_DN_CINTA_MM: LIMITE_DN_CINTA_MM,   /* cinta não é bloqueio: o tubo até o DN-limite embute */
     telhadoAbaixoDe: telhadoAbaixoDe, tuboSobreTelhado: tuboSobreTelhado,   /* 27/10/2026: o telhado como obstáculo (nada de tubo horizontal sobre a telha) */
     ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
-    _int: { LAJE_MIN: LAJE_MIN, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
+    _int: { LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };
   global.HidRota = HidRota;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRota;

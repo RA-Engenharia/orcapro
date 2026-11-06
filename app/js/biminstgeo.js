@@ -966,6 +966,25 @@
         varrer(m, reta(add(P, mul(u1.dir, (hu - p0 - fr * (p1u - p0) + 1.2) * MM)), u2.dir), escala([[0, 0], [0, rPo + 1.2], [2.4, rPo + 1.2], [2.4, 0]]), segU, false);
       });
       porta(u1, hu, cot.pb); porta(u2, hu, cot.pb);
+    } else if (tipo === "curva_transposicao") {
+      /* CURVA DE TRANSPOSIÇÃO soldável (06/11/2026; FT Amanco FTC000001 pág. 17): as duas bolsas nas pontas, em linha, e um ARCO no meio que
+         passa por cima do tubo cruzado. Comprimento total L = 2·A, bolsas as da norma (tubo), Ø externo da bolsa = B (od). O desenho marca a
+         altura C do arco mas a tabela não a traz: a CRISTA fica a R + D/2 do eixo (R = raio do arco central lido; forma de desenho, a conferir
+         com a peça — cot.interpretacao deixa o aConferir ligado). O arco é para CIMA (+y) quando a peça é horizontal. */
+      if (eixos.length < 2) return null;
+      var tr1 = eixos[0], tr2 = eixos[1];
+      cot = cotasConexao(mat, "curva_transposicao", c.dn);
+      var Lt = Math.max(cot.L || 2 * cot.A || 0, 2 * cot.pb + 8), Ht = (cot.R != null ? cot.R : cot.de) + cot.de / 2, pbT = cot.pb, segT = segsDe(lod, cot.de);
+      var axT = nrmz(sub(tr2.dir, tr1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perp(axT), sideT = nrmz(cross(axT, upT));
+      var Fa0 = add(P, mul(tr1.dir, (Lt / 2) * MM)), s0T = pbT * MM, s1T = (Lt - pbT) * MM, estT = [], nT = lod === "longe" ? 4 : 16;
+      for (var iT = 0; iT <= nT; iT++) estT.push(s0T + (s1T - s0T) * iT / nT);
+      var camT = { estacoes: estT, em: function (s) {
+        var uu = s <= s0T ? 0 : (s >= s1T ? 1 : (s - s0T) / (s1T - s0T)), h = Ht * MM * (1 - Math.cos(2 * Math.PI * uu)) / 2, dh = uu <= 0 || uu >= 1 ? 0 : Ht * MM * Math.PI * Math.sin(2 * Math.PI * uu) / (s1T - s0T);
+        var tt = nrmz(add(axT, mul(upT, dh)));
+        return { p: add(add(Fa0, mul(axT, s)), mul(upT, h)), t: tt, u: sideT, v: cross(tt, sideT) };
+      } };
+      varrer(m, camT, escala(perfilDuasBocas(Lt, cot, cot, raioCorpo(cot))), segT, false);
+      porta(tr1, Lt / 2, cot.pb); porta(tr2, Lt / 2, cot.pb);
     } else if (tipo === "te_inspecao") {
       /* TÊ DE INSPEÇÃO de esgoto (PENDÊNCIAS FINAIS, 18/10/2026): ponta a jusante (dem C), bolsa a montante (E), comprimento
          E + F e a TAMPA de inspeção de lado (Ø A, face a B − C/2 do eixo), como o produto da ficha (pág. 24). A tampa sai no

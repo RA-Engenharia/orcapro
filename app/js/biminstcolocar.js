@@ -75,7 +75,10 @@
     /* PENDÊNCIAS FINAIS (18/10/2026): a UNIÃO (água) e o TÊ DE INSPEÇÃO (esgoto/pluvial/ventilação) são peças em linha do motor
        (BimInst.PECAS_LINHA): o tubo se divide e o nó do meio vira a peça (pecaFim no trecho de montante) — ficha, geometria e SINAPI */
     "cx:uniao":       { tipo: "uniao", nome: "União", so: ["agua_fria", "agua_quente"], pecaLinha: "uniao" },
-    "cx:te_inspecao": { tipo: "te_inspecao", nome: "Tê de inspeção", so: ["esgoto", "pluvial", "ventilacao"], pecaLinha: "te_inspecao" }
+    "cx:te_inspecao": { tipo: "te_inspecao", nome: "Tê de inspeção", so: ["esgoto", "pluvial", "ventilacao"], pecaLinha: "te_inspecao" },
+    /* 06/11/2026: a CURVA DE TRANSPOSIÇÃO soldável (js/biminsttransp.js): peça em linha posta NO CRUZAMENTO com outro tubo de água (cfg.outro) — só se a regra de "cabe"
+       passa; sem ficha de peça no catálogo gerado (a medida vem de js/biminstgeodados.js): entra pendente no orçamento, como a SINAPI diz. Fora da paleta (ORDEM_INLINE). */
+    "cx:curva_transposicao": { tipo: "curva_transposicao", nome: "Curva de transposição", so: ["agua_fria"], pecaLinha: "curva_transposicao", transposicao: true, semFicha: true }
   };
   var ORDEM_INLINE = ["ra-registro-gaveta", "ra-registro-pressao", "ra-registro-esfera", "ra-valvula-retencao", "cx:luva", "cx:reducao", "cx:te", "cx:juncao", "cx:uniao", "cx:te_inspecao"];
   function oQue(famId) { var I = BI(); if (I && I.ACESSORIO_DA_FAM && I.ACESSORIO_DA_FAM[famId]) return "acessorio"; if (CONEXOES[famId]) return "conexao"; return null; }
@@ -333,7 +336,19 @@
     if (C.pendente) return falha(C.nome + ": " + C.pendente + ".");
     if (C.so && C.so.indexOf(t.sistema) < 0) return falha(C.nome + " é de " + C.so.join("/") + ": o trecho " + t.id + " é de " + I.SISTEMAS[t.sistema].nome.toLowerCase() + " (use o tê).");
     var mg = GEO.margemPonta + I.TOL;
-    if (Lt < 2 * mg) return falha("O trecho " + t.id + " (" + fmt(Lt, 3) + " m) é curto demais para dividir.");
+    if (C.transposicao) {
+      /* a curva de transposição entra no PONTO do cruzamento com o tubo `cfg.outro`, e só se a regra passa (biminsttransp: DN 20 soldável, a 90°, mesma cota, reta livre A + folga de nó) */
+      var HT = dep("HidTransp", "./biminsttransp.js"), HRt = dep("HidRota", "./hidrota.js"), outro = cfg.outro ? (typeof cfg.outro === "object" ? cfg.outro : trechoDe(estado, cfg.outro)) : null;
+      if (!HT) return falha("A regra da curva de transposição não carregou.");
+      if (!outro) return falha("Escolha o tubo que a curva vai atravessar por cima.");
+      var cr = HT.cruzamento(t, outro);
+      if (!cr) return falha("Os tubos " + t.id + " e " + outro.id + " não se cruzam em planta (ou o cruzamento fica na ponta de um deles).");
+      var rl = HT.retaLivre(arr(estado && estado.instalacoes && estado.instalacoes.trechos), t, cr.sa, I.TOL), mgNo = HRt && HRt.GEO && HRt.GEO.margemNo != null ? HRt.GEO.margemNo : 0.08;   // hid:ok a folga de nó do motor (HidRota.GEO.margemNo)
+      var avT = HT.avaliar({ sistema: t.sistema, material: t.material, dn: t.dn, cruzadoSistema: outro.sistema, cruzadoDn: outro.dn, horizontal: Math.abs(t.p2.y - t.p1.y) <= HT.TOL_COTA && Math.abs(outro.p2.y - outro.p1.y) <= HT.TOL_COTA,
+                             cos: cr.cos, dy: cr.dy, retaAntes: rl.antes, retaDepois: rl.depois, margem: mgNo });
+      if (!avT.ok) return falha("Curva de transposição não cabe aqui: " + avT.motivo);
+      s = cr.sa;
+    }
     s = Math.max(mg, Math.min(Lt - mg, s));
     var J = ponto(s), par = I.dividirTrecho(estado, t.id, J);
     if (par.length !== 2) return falha("Não consegui dividir o trecho " + t.id + " nesse ponto.");
@@ -369,7 +384,7 @@
     if (Hp && Hp.conexao) { try { fichaCx = Hp.conexao(tipoFicha, t.material, dnFicha); } catch (eC) { fichaCx = null; } if (!fichaCx) avisos.push(C.nome + " DN " + dnFicha + " de " + (M.nome || t.material) + " não está no catálogo: entra PENDENTE (sem ficha)."); }
     /* a peça em linha que NÃO EXISTE nesse DN/material (o tê de inspeção de esgoto só vem em 75, 100 e 150; a união, em PVC/CPVC
        soldável): recusa — nada de peça que não se compra (pendências finais) */
-    if (C.pecaLinha && Hp && Hp.conexao && !fichaCx) return falha(C.nome + " DN " + dnFicha + " de " + (M.nome || t.material) + " não existe no catálogo (ficha da peça): escolha outro DN ou outra peça.");
+    if (C.pecaLinha && !C.semFicha && Hp && Hp.conexao && !fichaCx) return falha(C.nome + " DN " + dnFicha + " de " + (M.nome || t.material) + " não existe no catálogo (ficha da peça): escolha outro DN ou outra peça.");
     return { ok: true, oQue: k, nome: C.nome, op: { op: "lote", id: novoId("ins", usados), ops: lote }, trecho: t.id, novoTrecho: o2.id, ramal: ramalOp ? ramalOp.id : null, dn: t.dn, avisos: avisos, q: J, u: u,
              ficha: fichaCx ? fichaCx.id : null, previa: { conexao: C.tipo, centro: J, dir: u, ramal: ramalDir, ramalL: ramalOp ? num(cfg.ramal, GEO.ramal) : 0, dn: t.dn, sistema: t.sistema, material: t.material, ops: lote } };
   }

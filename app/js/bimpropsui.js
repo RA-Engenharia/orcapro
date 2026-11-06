@@ -875,6 +875,7 @@
       /* ACABAMENTO E COR (js/metalacab.js): pilar e viga de aço do modelador — também com várias peças (‹vários›, um Ctrl+Z) */
       try { var MCu = global.MetalCriarUI, sAc = MCu && MCu.secaoPaleta ? MCu.secaoPaleta(md.ids) : null; if (sAc) tb.appendChild(self._grupoExtra(doc, sAc, !!rec["extra:" + sAc.nome])); } catch (eAc) {}
       /* N23 (25/10/2026): a peça do hidrossanitário — "Ligar esta peça" (js/hidkitui.js), com o automático desligado ou para refazer */
+      try { var HSu = global.HidSubirTuboUI, sHs = HSu && HSu.secaoPaleta ? HSu.secaoPaleta(md.ids) : null; if (sHs) tb.appendChild(self._grupoExtra(doc, sHs, !!rec["extra:" + sHs.nome])); } catch (eHs) {}   /* SUBIR/DESCER TRECHO (js/hidsubirtuboui.js): o tubo horizontal do hidro */
       try { var HKu = global.HidKitUI, sHk = HKu && HKu.secaoPaleta ? HKu.secaoPaleta(md.ids) : null; if (sHk) tb.appendChild(self._grupoExtra(doc, sHk, !!rec["extra:" + sHk.nome])); } catch (eHk) {}
       if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) {   /* P2-C: extras pode ser função (fresca a cada pintura) */ tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
       raiz.appendChild(tb);
