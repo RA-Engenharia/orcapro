@@ -3748,6 +3748,7 @@ for (var i = 0; i < fila.length; i++) {
 var f = fila[i], ign = {}; ign[f.ref] = 1; ign[raizD.id || "destino-af"] = 1;
 var oRota = { de: f, b0: cota - raio(f.dn), b1: cota + raio(f.dn), r: raio(f.dn), rArv: rMax, modo: C.modo, ignorar: ign, curva: P.pesos.conexao,
 folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto };
+if (usadaRaiz && sobreORamal(arv, f, P.margemNo, proibirPerto, C.modo === "parede" ? P.embutir + P.passo : 0)) continue;
 var rota = rotear(W, G, arv, oRota);
 if (rota.erro && usadaRaiz) {
 oRota.corredorSolto = true; var rota2 = rotear(W, G, arv, oRota);
@@ -3777,6 +3778,25 @@ function maxDn(nid) { var n = arv.nos[nid], m = n.folha ? n.folha.dn : 0; n.entr
 arv.arestas.forEach(function (a) { a.dn = comercial(mat, maxDn(a.de)); });
 arv.cota = cota; arv.destino = raizD; arv.faixa = C;
 return { arv: arv, avisos: avisos };
+}
+function sobreORamal(arv, f, margem, proibirPerto, desvioMax) {
+for (var i = 0; i < arv.arestas.length; i++) {
+var a = arv.arestas[i]; if (!a.vivo || a.paraCaixa) continue;
+var A = arv.nos[a.de], Bn = arv.nos[a.para], L = d2(A, Bn); if (L < EPS) continue;
+var pr = ptSeg2(f, A, Bn), q = { x: r4(A.x + (Bn.x - A.x) * pr.t), z: r4(A.z + (Bn.z - A.z) * pr.t) };
+if (pr.d > EPS) {
+if (!f.ponta || pr.d > desvioMax + EPS) continue;
+var tx = f.ponta.x - f.x, tz = f.ponta.z - f.z, Lt = Math.sqrt(tx * tx + tz * tz), dx = f.x - q.x, dz = f.z - q.z;
+if (Lt < EPS || Math.abs(dx * tz - dz * tx) / Lt > EPS || dx * tx + dz * tz < 0) continue;
+}
+if (d2(q, A) < margem - EPS || d2(q, Bn) < margem - EPS) continue;
+if (arr(proibirPerto).some(function (pp) { return d2(q, pp) < pp.raio; })) continue;
+f.x = q.x; f.z = q.z;
+var n = arv.dividir(a.id, q.x, q.z);
+arv.nos[n].tipo = "aparelho"; arv.nos[n].ref = f.ref; arv.porRef[f.ref] = n; arv.nos[n].folha = f;
+return true;
+}
+return false;
 }
 function frenteRegistro(W, g, p, y) {
 var ws = W.O.lista.filter(function (ob) { return ob.tipo === "parede" && dentro(ob, p.x, p.z, EPS) && (y == null || (y >= ob.y0 - EPS && y <= ob.y1 + EPS)); });

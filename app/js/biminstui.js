@@ -888,16 +888,24 @@
      * Perto do clique (em planta), nesta ordem: ponto de ligação de aparelho
      * do MESMO sistema, ponta de trecho, peça (ralo/caixa), meio de trecho
      * (vira tê). Devolve o ponto 3D EXATO do alvo. */
-    agarrar: function (estado, famAval, p, sistema, raio, yTrab) {
+    /* ⚠ TUBO CURTO (05/11/2026, pedido do Rogério): `longe` = o ponto onde o traço COMEÇOU. Ele e as bocas da mesma conexão (todas
+       as pontas que caem nele) não atraem o 2º clique: com o raio de 15 cm, sair de um tê e clicar a 10 cm dele puxava o clique de
+       volta à própria boca ("Pontos muito próximos") e o tubo curto — ou o joelho de 45° logo na saída — não nascia. Tem de nascer
+       com qualquer comprimento. */
+    agarrar: function (estado, famAval, p, sistema, raio, yTrab, longe) {
       var I = BI(); raio = raio || 0.15;
       if (!p || !estado) return null;
       function dPlan(a) { var dx = a.x - p.x, dz = a.z - p.z; return Math.sqrt(dx * dx + dz * dz); }
+      function noInicio(a) { return !!longe && Math.abs(a.x - longe.x) + Math.abs(a.z - longe.z) <= I.TOL + 1e-6 && (a.y == null || longe.y == null || Math.abs(a.y - longe.y) <= I.TOL + 1e-6); }
       var melhor = null, dm = raio;
-      function ver(alvo, d, prio) { if (d <= dm + 1e-9 && (!melhor || prio < melhor.prio || (prio === melhor.prio && d < dm))) { melhor = alvo; melhor.prio = prio; dm = d; } }
+      function ver(alvo, d, prio) { if (noInicio(alvo)) return; if (d <= dm + 1e-9 && (!melhor || prio < melhor.prio || (prio === melhor.prio && d < dm))) { melhor = alvo; melhor.prio = prio; dm = d; } }
       I.conectoresDoEstado(estado, famAval).forEach(function (k) { if (k.sistema === sistema) ver({ tipo: "aparelho", x: k.x, y: k.y, z: k.z, dn: k.dn, nome: k.nome, famInst: k.famInst, parede: k.parede || null }, dPlan(k), 0); });   /* FAMIMPORT: famInst (o DN do conector importado) */
       var inst = estado.instalacoes || { trechos: [], pecas: [] };
+      /* os tubos que SAEM do ponto de partida não são alvo (nem a ponta nem o meio): ligar neles a poucos cm punha o tubo novo EM CIMA
+         deles (nó de 4 trechos, dois tubos no mesmo lugar) — revisor, 05/11/2026 */
+      function saiDoInicio(t) { return !!longe && (noInicio(t.p1) || noInicio(t.p2)); }
       inst.trechos.forEach(function (t) {
-        if (t.sistema !== sistema) return;
+        if (t.sistema !== sistema || saiDoInicio(t)) return;
         /* ⚠ QUALIDADE VISUAL 2: tubo VERTICAL (tubo de queda, coluna) em planta é um ponto — as duas pontas
            caem no mesmo lugar e a de CIMA ganhava: o esgoto nascia a 2,80 m e descia no vaso (print do
            Rogério). Com a cota de trabalho dentro dele, o alvo é o tubo NAQUELA cota (vira tê/junção). */
@@ -907,7 +915,7 @@
       });
       inst.pecas.forEach(function (k) { if (k.sistema === sistema) ver({ tipo: "peca", x: k.x, y: k.y, z: k.z, peca: k.peca, id: k.id, hub: k.hub || null }, dPlan(k), 2); });
       if (!melhor) inst.trechos.forEach(function (t) {
-        if (t.sistema !== sistema || t.vertical) return;
+        if (t.sistema !== sistema || t.vertical || saiDoInicio(t)) return;
         var ax = t.p2.x - t.p1.x, az = t.p2.z - t.p1.z, L2 = ax * ax + az * az; if (!(L2 > 0)) return;
         var u = ((p.x - t.p1.x) * ax + (p.z - t.p1.z) * az) / L2; if (u <= 0.02 || u >= 0.98) return;
         var q = { x: t.p1.x + ax * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + az * u };
@@ -937,7 +945,7 @@
         ctx.marcar(); return;
       }
       var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-      var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true));
+      var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
       /* N23 (23/10/2026): SNAP NO PROLONGAMENTO — sem alvo de ligação perto, o cursor na RETA de um tubo deitado (além da ponta dele, a
          até 15 cm de lado) ALINHA o ponto com ele e toma a cota dele como altura de referência (js/biminstconectar.js). Não é ligação:
          o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
@@ -1004,6 +1012,13 @@
          arredondamento da cota tirava a inclinação gravada de 1% exato em trecho curto */
       var plano = corteP && corteP.tipo === "horizontal" ? [{ x: corteP.p.x, z: corteP.p.z }] : this.caminhoPlanta(p1, p, alvo, { livre: livre, gravidade: !!S.gravidade, estado: est, so90: c.angulo === "orto" });
       if (corteP && corteP.tipo !== "horizontal") plano = [];
+      /* ⚠ TUBO CURTO SAINDO DE UMA CONEXÃO (05/11/2026): o 1º trecho não pode sair NA DIREÇÃO de um tubo que já sai desta boca (ficaria
+         dentro dele). No travamento a 90°, o clique na diagonal escolhia o eixo do tubo existente: troca para o outro eixo; sem saída, avisa. */
+      if (!alvo && !corteP && plano.length === 1) {
+        var fuga = this._fugirSobreposicao(est, p1, plano[0], p, c.sistema);
+        if (fuga === false) { ctx.hint("O tubo sairia por dentro do tubo que já sai desta boca — clique em outra direção."); return; }
+        if (fuga) plano = [fuga];
+      }
       var sinal = S.gravidade ? (this._sobe ? 1 : -1) : 0, yH = p1.y, ant = p1, pts = [];
       if (corteP && corteP.tipo !== "horizontal") { pts.push(corteP.p); yH = corteP.p.y; }
       plano.forEach(function (q) {
@@ -1084,7 +1099,7 @@
       if (!this._previaHidro()) return false;   /* P8: só com a prévia hidro */
       var ctx = this._ctx(), c = this.cfg; if (!ctx || !c || !q || c.ferramenta === "peca") return false;
       var ed = ctx.edit, est = ed.estado || { instalacoes: { trechos: [], pecas: [] }, familias: [] };
-      return !!this.agarrar(est, ctx.famAval, { x: q.x, z: q.z }, c.sistema, null, ed.p1 ? ed.p1.y : (ed.base || 0) + this.alturaTrabalho(true));
+      return !!this.agarrar(est, ctx.famAval, { x: q.x, z: q.z }, c.sistema, null, ed.p1 ? ed.p1.y : (ed.base || 0) + this.alturaTrabalho(true), ed.p1 || null);
     },
     /* o clique num CORTE/ELEVAÇÃO (js/bimplantamodelar.js clique2d) → o ponto do mundo no plano do corte */
     cliqueCorte: function (id, ev, p) {
@@ -1366,6 +1381,22 @@
     },
     /* os pontos da PLANTA do último ponto até o clique/alvo: travado (90°/45°) e, até um alvo fora do eixo,
        um caminho em L no sistema da parede do aparelho (ou do mundo); com gravidade o canto vira 45° */
+    /* null = o 1º trecho p1 → q não corre dentro de tubo nenhum que sai de p1; {x,z} = o outro eixo (livre); false = não há saída */
+    _fugirSobreposicao: function (est, p1, q, p, sistema) {
+      var I = BI(), TOLs = (I && I.TOL) || 0.02;
+      var dirs = (((est || {}).instalacoes || {}).trechos || []).filter(function (t) { return t.sistema === sistema; }).map(function (t) {
+        var naP1 = Math.abs(t.p1.x - p1.x) + Math.abs(t.p1.z - p1.z) <= TOLs && Math.abs(t.p1.y - p1.y) <= TOLs, naP2 = Math.abs(t.p2.x - p1.x) + Math.abs(t.p2.z - p1.z) <= TOLs && Math.abs(t.p2.y - p1.y) <= TOLs;
+        if (!naP1 && !naP2) return null;
+        var o = naP1 ? t.p2 : t.p1, dx = o.x - p1.x, dz = o.z - p1.z, L = Math.sqrt(dx * dx + dz * dz);
+        return L > 1e-6 && Math.abs(o.y - p1.y) < L ? { x: dx / L, z: dz / L } : null;   /* só tubo deitado: o vertical não é atravessado por um traço em planta */
+      }).filter(Boolean);
+      function corre(c) { var dx = c.x - p1.x, dz = c.z - p1.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.005)) return true; return dirs.some(function (d) { return (dx * d.x + dz * d.z) / L > 0.999; }); }
+      if (!dirs.length || !corre(q)) return null;
+      var alts = [{ x: r4(p1.x), z: r4(p.z) }, { x: r4(p.x), z: r4(p1.z) }].filter(function (c) { return !corre(c); });
+      if (!alts.length) return false;
+      alts.sort(function (a, b) { return (Math.abs(b.x - p1.x) + Math.abs(b.z - p1.z)) - (Math.abs(a.x - p1.x) + Math.abs(a.z - p1.z)); });
+      return alts[0];
+    },
     caminhoPlanta: function (p1, p, alvo, o) {
       o = o || {};
       if (!alvo) return [o.livre ? { x: r4(p.x), z: r4(p.z) } : this.travar(p1, p, o.so90)];
@@ -1649,7 +1680,7 @@
         ctx.hint(P.nome + " colocada" + (P.sistemas[0] === "eletrica" && c.peca !== "caixa_octogonal" ? " a " + fmt(y - base, 2) + " m do piso" : "") + ". Clique para outra, ou Esc.");
         ctx.marcar(); return;
       }
-      var alvo = this.agarrar(est, ctx.famAval, p, c.sistema);
+      var alvo = this.agarrar(est, ctx.famAval, p, c.sistema, null, null, ed.p1 || null);
       var S = I.SISTEMAS[c.sistema];
       if (!ed.p1) {
         /* FAMIMPORT: começar no conector de uma família IMPORTADA (js/familiamalha.js) pega o DN dele — a conexão

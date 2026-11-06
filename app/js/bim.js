@@ -14288,7 +14288,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!pForcado && S._prec && edit.sub === 'inst' && window.BimInstUI && BimInstUI.cfg && BimInstUI.cfg.ferramenta !== 'peca') {
       try {
         var snI = hit ? aplicarSnap(hit, raioToque(e)) : null, pI = snI ? snI.p : editPontoPlano(e.clientX, e.clientY);
-        instAlvo = !!(pI && BimInstUI.agarrar(edit.estado, famAval, pI, BimInstUI.cfg.sistema));
+        instAlvo = !!(pI && BimInstUI.agarrar(edit.estado, famAval, pI, BimInstUI.cfg.sistema, null, null, edit.p1 || null));   /* tubo curto: a boca de onde o traço saiu não atrai */
+        /* perto da boca de partida o snap de precisão continua fora (como antes): ele grudaria na própria boca e o tubo curto não nasceria */
+        if (!instAlvo && pI && edit.p1 && Math.hypot(pI.x - edit.p1.x, pI.z - edit.p1.z) <= 0.15) instAlvo = true;
       } catch (eI) { instAlvo = false; }
     }
     if (!pForcado && S._prec && !instAlvo) { var rPrec = S._prec.clique(e, hit); if (rPrec === true) return; if (rPrec) pForcado = rPrec; }

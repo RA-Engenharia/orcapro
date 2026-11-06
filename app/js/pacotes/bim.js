@@ -109162,23 +109162,25 @@ this._seq = this._seq || {};
 var v = Math.max(mx, this._seq[pref] || 0) + 1; this._seq[pref] = v;
 return pref + v;
 },
-agarrar: function (estado, famAval, p, sistema, raio, yTrab) {
+agarrar: function (estado, famAval, p, sistema, raio, yTrab, longe) {
 var I = BI(); raio = raio || 0.15;
 if (!p || !estado) return null;
 function dPlan(a) { var dx = a.x - p.x, dz = a.z - p.z; return Math.sqrt(dx * dx + dz * dz); }
+function noInicio(a) { return !!longe && Math.abs(a.x - longe.x) + Math.abs(a.z - longe.z) <= I.TOL + 1e-6 && (a.y == null || longe.y == null || Math.abs(a.y - longe.y) <= I.TOL + 1e-6); }
 var melhor = null, dm = raio;
-function ver(alvo, d, prio) { if (d <= dm + 1e-9 && (!melhor || prio < melhor.prio || (prio === melhor.prio && d < dm))) { melhor = alvo; melhor.prio = prio; dm = d; } }
+function ver(alvo, d, prio) { if (noInicio(alvo)) return; if (d <= dm + 1e-9 && (!melhor || prio < melhor.prio || (prio === melhor.prio && d < dm))) { melhor = alvo; melhor.prio = prio; dm = d; } }
 I.conectoresDoEstado(estado, famAval).forEach(function (k) { if (k.sistema === sistema) ver({ tipo: "aparelho", x: k.x, y: k.y, z: k.z, dn: k.dn, nome: k.nome, famInst: k.famInst, parede: k.parede || null }, dPlan(k), 0); });
 var inst = estado.instalacoes || { trechos: [], pecas: [] };
+function saiDoInicio(t) { return !!longe && (noInicio(t.p1) || noInicio(t.p2)); }
 inst.trechos.forEach(function (t) {
-if (t.sistema !== sistema) return;
+if (t.sistema !== sistema || saiDoInicio(t)) return;
 var vert = Math.abs(t.p1.x - t.p2.x) < 1e-6 && Math.abs(t.p1.z - t.p2.z) < 1e-6, y0 = Math.min(t.p1.y, t.p2.y), y1 = Math.max(t.p1.y, t.p2.y);
 if (vert && yTrab != null && isFinite(yTrab) && yTrab > y0 + I.TOL && yTrab < y1 - I.TOL) { ver({ tipo: "vertical", x: t.p1.x, y: r4(yTrab), z: t.p1.z, dn: t.dn, trecho: t.id }, dPlan(t.p1), 1); return; }
 [t.p1, t.p2].forEach(function (q) { ver({ tipo: "ponta", x: q.x, y: q.y, z: q.z, dn: t.dn, trecho: t.id }, dPlan(q), 1); });
 });
 inst.pecas.forEach(function (k) { if (k.sistema === sistema) ver({ tipo: "peca", x: k.x, y: k.y, z: k.z, peca: k.peca, id: k.id, hub: k.hub || null }, dPlan(k), 2); });
 if (!melhor) inst.trechos.forEach(function (t) {
-if (t.sistema !== sistema || t.vertical) return;
+if (t.sistema !== sistema || t.vertical || saiDoInicio(t)) return;
 var ax = t.p2.x - t.p1.x, az = t.p2.z - t.p1.z, L2 = ax * ax + az * az; if (!(L2 > 0)) return;
 var u = ((p.x - t.p1.x) * ax + (p.z - t.p1.z) * az) / L2; if (u <= 0.02 || u >= 0.98) return;
 var q = { x: t.p1.x + ax * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + az * u };
@@ -109206,7 +109208,7 @@ ctx.hint(P.nome + " colocada" + (P.sistemas[0] === "eletrica" && c.peca !== "cai
 ctx.marcar(); return;
 }
 var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true));
+var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
 var refP = null;
 if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
 refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema);
@@ -109256,6 +109258,11 @@ if (alvo && !livre && this._inicio && this.tentarLigacao(ctx, this._inicio, alvo
 this._inicio = null;
 var plano = corteP && corteP.tipo === "horizontal" ? [{ x: corteP.p.x, z: corteP.p.z }] : this.caminhoPlanta(p1, p, alvo, { livre: livre, gravidade: !!S.gravidade, estado: est, so90: c.angulo === "orto" });
 if (corteP && corteP.tipo !== "horizontal") plano = [];
+if (!alvo && !corteP && plano.length === 1) {
+var fuga = this._fugirSobreposicao(est, p1, plano[0], p, c.sistema);
+if (fuga === false) { ctx.hint("O tubo sairia por dentro do tubo que já sai desta boca — clique em outra direção."); return; }
+if (fuga) plano = [fuga];
+}
 var sinal = S.gravidade ? (this._sobe ? 1 : -1) : 0, yH = p1.y, ant = p1, pts = [];
 if (corteP && corteP.tipo !== "horizontal") { pts.push(corteP.p); yH = corteP.p.y; }
 plano.forEach(function (q) {
@@ -109319,7 +109326,7 @@ alvoEm: function (q) {
 if (!this._previaHidro()) return false;
 var ctx = this._ctx(), c = this.cfg; if (!ctx || !c || !q || c.ferramenta === "peca") return false;
 var ed = ctx.edit, est = ed.estado || { instalacoes: { trechos: [], pecas: [] }, familias: [] };
-return !!this.agarrar(est, ctx.famAval, { x: q.x, z: q.z }, c.sistema, null, ed.p1 ? ed.p1.y : (ed.base || 0) + this.alturaTrabalho(true));
+return !!this.agarrar(est, ctx.famAval, { x: q.x, z: q.z }, c.sistema, null, ed.p1 ? ed.p1.y : (ed.base || 0) + this.alturaTrabalho(true), ed.p1 || null);
 },
 cliqueCorte: function (id, ev, p) {
 if (!this._previaHidro()) return false;
@@ -109563,6 +109570,21 @@ chegada: function (alvo) {
 var c = this.cfg, e = Math.max(this.EMBUTIR, (c && c.dn ? c.dn : 0) / 2000 + 0.01);
 if (alvo.tipo === "aparelho" && alvo.parede) { e += Math.max(0, num(alvo.parede.d, 0)); return { x: r4(alvo.x + alvo.parede.x * e), z: r4(alvo.z + alvo.parede.z * e) }; }
 return { x: alvo.x, z: alvo.z };
+},
+_fugirSobreposicao: function (est, p1, q, p, sistema) {
+var I = BI(), TOLs = (I && I.TOL) || 0.02;
+var dirs = (((est || {}).instalacoes || {}).trechos || []).filter(function (t) { return t.sistema === sistema; }).map(function (t) {
+var naP1 = Math.abs(t.p1.x - p1.x) + Math.abs(t.p1.z - p1.z) <= TOLs && Math.abs(t.p1.y - p1.y) <= TOLs, naP2 = Math.abs(t.p2.x - p1.x) + Math.abs(t.p2.z - p1.z) <= TOLs && Math.abs(t.p2.y - p1.y) <= TOLs;
+if (!naP1 && !naP2) return null;
+var o = naP1 ? t.p2 : t.p1, dx = o.x - p1.x, dz = o.z - p1.z, L = Math.sqrt(dx * dx + dz * dz);
+return L > 1e-6 && Math.abs(o.y - p1.y) < L ? { x: dx / L, z: dz / L } : null;
+}).filter(Boolean);
+function corre(c) { var dx = c.x - p1.x, dz = c.z - p1.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.005)) return true; return dirs.some(function (d) { return (dx * d.x + dz * d.z) / L > 0.999; }); }
+if (!dirs.length || !corre(q)) return null;
+var alts = [{ x: r4(p1.x), z: r4(p.z) }, { x: r4(p.x), z: r4(p1.z) }].filter(function (c) { return !corre(c); });
+if (!alts.length) return false;
+alts.sort(function (a, b) { return (Math.abs(b.x - p1.x) + Math.abs(b.z - p1.z)) - (Math.abs(a.x - p1.x) + Math.abs(a.z - p1.z)); });
+return alts[0];
 },
 caminhoPlanta: function (p1, p, alvo, o) {
 o = o || {};
@@ -109814,7 +109836,7 @@ ctx.op(op);
 ctx.hint(P.nome + " colocada" + (P.sistemas[0] === "eletrica" && c.peca !== "caixa_octogonal" ? " a " + fmt(y - base, 2) + " m do piso" : "") + ". Clique para outra, ou Esc.");
 ctx.marcar(); return;
 }
-var alvo = this.agarrar(est, ctx.famAval, p, c.sistema);
+var alvo = this.agarrar(est, ctx.famAval, p, c.sistema, null, null, ed.p1 || null);
 var S = I.SISTEMAS[c.sistema];
 if (!ed.p1) {
 if (alvo && alvo.tipo === "aparelho" && alvo.dn > 0 && alvo.famInst != null && alvo.dn !== c.dn) {

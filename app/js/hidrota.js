@@ -1268,6 +1268,10 @@
       var f = fila[i], ign = {}; ign[f.ref] = 1; ign[raizD.id || "destino-af"] = 1;
       var oRota = { de: f, b0: cota - raio(f.dn), b1: cota + raio(f.dn), r: raio(f.dn), rArv: rMax, modo: C.modo, ignorar: ign, curva: P.pesos.conexao,
                     folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto };
+      /* ⚠ CONEXÕES MÍNIMAS (05/11/2026, print do Rogério): o ponto que cai EM CIMA do ramal que já passou (o eixo da descida no eixo
+         do ramal) deriva ali mesmo — o tê com a saída virada para a descida. Antes a busca precisava andar uma casa da grade para
+         achar a junção: o tê nascia 5 cm ao lado e a descida ganhava um toco e um joelho a mais (tê + toco + joelho no lugar do tê). */
+      if (usadaRaiz && sobreORamal(arv, f, P.margemNo, proibirPerto, C.modo === "parede" ? P.embutir + P.passo : 0)) continue;
       var rota = rotear(W, G, arv, oRota);
       /* FRENTE B (19/10/2026, D-03): sem caminho que não encoste na própria rede, a rota antiga (corredor solto) com AVISO — um ponto
          que pode ficar fora do registro é melhor que o ambiente sem água; o aviso diz onde conferir */
@@ -1303,6 +1307,33 @@
     arv.arestas.forEach(function (a) { a.dn = comercial(mat, maxDn(a.de)); });
     arv.cota = cota; arv.destino = raizD; arv.faixa = C;
     return { arv: arv, avisos: avisos };
+  }
+
+  /* o ponto `f` está no eixo de uma aresta RETA viva da árvore, longe das pontas dela (margem: o mesmo folgaJuncao da busca) e fora da
+     faixa proibida (registro do ambiente)? Então a aresta se divide ali e o nó vira a folha: o tê com a saída para a descida/subida. */
+  function sobreORamal(arv, f, margem, proibirPerto, desvioMax) {
+    for (var i = 0; i < arv.arestas.length; i++) {
+      var a = arv.arestas[i]; if (!a.vivo || a.paraCaixa) continue;
+      var A = arv.nos[a.de], Bn = arv.nos[a.para], L = d2(A, Bn); if (L < EPS) continue;
+      var pr = ptSeg2(f, A, Bn), q = { x: r4(A.x + (Bn.x - A.x) * pr.t), z: r4(A.z + (Bn.z - A.z) * pr.t) };
+      if (pr.d > EPS) {
+        /* ponto de PAREDE com o ramal a poucos cm do eixo embutido (o ramal desviou de outra prumada na mesma parede): a descida
+           sai do tê NO ramal e o desvio vai para BAIXO, no toco que já sai perpendicular até o ponto — o mesmo joelho do ponto,
+           sem o toco e o joelho lá em cima. Só se o desvio é perpendicular à parede (na direção do toco) e curto, e SÓ no traçado
+           PELA PAREDE (desvioMax 0 nos outros): lá a busca obriga o ramal a ficar dentro da parede; no forro/piso o ramal pode correr
+           atrás dela e a descida sairia no cômodo vizinho (revisor, 05/11/2026). */
+        if (!f.ponta || pr.d > desvioMax + EPS) continue;
+        var tx = f.ponta.x - f.x, tz = f.ponta.z - f.z, Lt = Math.sqrt(tx * tx + tz * tz), dx = f.x - q.x, dz = f.z - q.z;
+        if (Lt < EPS || Math.abs(dx * tz - dz * tx) / Lt > EPS || dx * tx + dz * tz < 0) continue;
+      }
+      if (d2(q, A) < margem - EPS || d2(q, Bn) < margem - EPS) continue;
+      if (arr(proibirPerto).some(function (pp) { return d2(q, pp) < pp.raio; })) continue;
+      f.x = q.x; f.z = q.z;
+      var n = arv.dividir(a.id, q.x, q.z);
+      arv.nos[n].tipo = "aparelho"; arv.nos[n].ref = f.ref; arv.porRef[f.ref] = n; arv.nos[n].folha = f;
+      return true;
+    }
+    return false;
   }
 
   /* FRENTE B (19/10/2026, D-01): para onde o volante do registro do ambiente aponta — perpendicular à parede onde ele está
