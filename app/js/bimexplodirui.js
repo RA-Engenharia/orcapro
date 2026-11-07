@@ -116,10 +116,14 @@
     /* ---------------------------------------------------------------- mover */
     function contarVertices() {
       var n = 0, temAg = false;
-      modelos().forEach(function (mo) { if (mo._agreg) { temAg = true; mo._agreg.partes.forEach(function (p) { n += p.malha.geometry.attributes.position.count; }); } });
+      modelos().forEach(function (mo) { if (mo._agreg) { temAg = true; mescladas(mo._agreg).forEach(function (p) { n += p.malha.geometry.attributes.position.count; }); } });
       if (!temAg) Object.keys(malhas).forEach(function (u) { malhas[u].forEach(function (m) { if (m.geometry && m.geometry.attributes.position) n += m.geometry.attributes.position.count; }); });
       return n;
     }
+    /* as malhas mescladas do modelo: as por cor (partes) e as POR MATERIAL (ag.porMat: a gravação do fabricante e o metal das
+       instalações, js/bim.js porMatMesclar — mesmas faixas {iniVert, nVert, ref}). Sem as por material, a peça explodida andava
+       e a gravação/bucha dela ficava parada no lugar (revisão de 07/11/2026). */
+    function mescladas(ag) { return ag ? ag.partes.concat(ag.porMat || []) : []; }
     function uidDe(ref) { return ref && ref.userData ? (ref.userData.mid + ":" + ref.userData.expressID) : null; }
 
     /* a conta sobre um buffer de posições com faixas {ini, n, ref}: pos = base + k·d */
@@ -173,7 +177,7 @@
       });
       /* 2) o mesclado e 3) as arestas */
       modelos().forEach(function (mo) {
-        if (mo._agreg) mo._agreg.partes.forEach(function (pt) { moverBuffer(pt, pt.malha.geometry.attributes.position, pt.faixas, k, k2, "iniVert", "nVert"); });
+        if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { moverBuffer(pt, pt.malha.geometry.attributes.position, pt.faixas, k, k2, "iniVert", "nVert"); });
         var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
         if (ar && ar.ls) moverBuffer(ar, ar.ls.geometry.attributes.position, ar.faixas, k, k2, "ini", "n");
       });
@@ -191,7 +195,7 @@
       });
       tocadas = [];
       modelos().forEach(function (mo) {
-        if (mo._agreg) mo._agreg.partes.forEach(function (pt) { soltarBase(pt, pt.malha.geometry.attributes.position); });
+        if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { soltarBase(pt, pt.malha.geometry.attributes.position); });
         var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
         if (ar && ar.ls) soltarBase(ar, ar.ls.geometry.attributes.position);
       });
@@ -201,7 +205,7 @@
     function precisaReaplicar() {
       var r = false;
       modelos().forEach(function (mo) {
-        if (mo._agreg) mo._agreg.partes.forEach(function (pt) { var b = pt._explBase; if (!b || b.arr !== pt.malha.geometry.attributes.position.array) r = true; });
+        if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { var b = pt._explBase; if (!b || b.arr !== pt.malha.geometry.attributes.position.array) r = true; });
         var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
         if (ar && ar.ls) { var b2 = ar._explBase; if (!b2 || b2.arr !== ar.ls.geometry.attributes.position.array) r = true; }
       });
@@ -1056,7 +1060,7 @@
       var hb = 2166136261, hm = 2166136261, ha = 2166136261, nA = 0, nP = 0, nM = 0, mf = 0, ex = 0, verts = {}, arVerts = {}, pedidos = {}, vers = [];
       (uids || []).forEach(function (u) { pedidos[u] = 1; });
       modelos().forEach(function (mo) {
-        if (mo._agreg) mo._agreg.partes.forEach(function (pt) {
+        if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) {
           var a = pt.malha.geometry.attributes.position.array; hb = fnv(hb, new Uint8Array(a.buffer, a.byteOffset, a.byteLength)); nP++; vers.push(pt.malha.geometry.attributes.position.version);
           pt.faixas.forEach(function (f) { var u = uidDe(f.ref); if (u && pedidos[u] && !verts[u]) { var o = f.iniVert * 3; verts[u] = [a[o] + pt.malha.position.x, a[o + 1] + pt.malha.position.y, a[o + 2] + pt.malha.position.z]; } });
         });

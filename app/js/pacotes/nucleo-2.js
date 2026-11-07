@@ -71861,10 +71861,12 @@ return String(m || "").replace(/[^\s@]+@[^\s@]+/g, "<email>").replace(/[A-Za-z0-
 var V = {
 INTERVALO_MS: 20000,
 FRACAO_RECARREGAR: 0.45,
+FRACAO_TETO: 0.8,
+ALIVIO_INTERVALO_MS: 5 * 60 * 1000,
 ESPERA_RECARREGAR_MS: 2500,
 SALTO_PERFIL_MB: 400,
 JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-_t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
+_t: null, _seq: 0, _recarregando: false, _altoSeguidas: 0, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 medir: function () {
 var pm = global.performance && global.performance.memory;
 if (!pm || !pm.jsHeapSizeLimit) return null;
@@ -71967,9 +71969,26 @@ try { a.versao = global.CONFIG && global.CONFIG.versao; } catch (e) {}
 var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
 this._ultimoUsado = m.usadoMB;
 if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
-if (fr >= this.FRACAO_RECARREGAR) a.alerta = this.proteger(m) || "alto";
+if (fr >= this.FRACAO_RECARREGAR) {
+this._altoSeguidas++;
+a.alerta = this._altoSeguidas < 2 && fr < this.FRACAO_TETO && !this._recarregando ? this.aliviar(m) : (this.proteger(m) || "alto");
+} else this._altoSeguidas = 0;
 this.enviar(a);
 return a;
+},
+aliviar: function (m) {
+var t = this.agora();
+if (!this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
+this._alivioEm = t;
+try { var HS = global.HidSombra; if (HS && HS.cache && HS.cache.clear) { HS.cache.clear(); HS.cache.bytes = 0; } } catch (e) {}
+try { if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") global.dispatchEvent(new global.CustomEvent("orcapro:memoria-alta", { detail: { usadoMB: m.usadoMB } })); } catch (e) {}
+}
+if (!this._avisouAlto) {
+this._avisouAlto = true;
+var ult = this._lerRecarga(), laco = ult && t - ult < this.JANELA_ANTI_LACO_MS;
+try { if (global.UI && global.UI.toast) global.UI.toast("A memória desta página está alta (" + m.usadoMB + " MB). O OrçaPRO liberou o que dava; " + (laco ? "se continuar alta, salve o que estiver fazendo e recarregue (F5)." : "se continuar alta, ele salva e recarrega sozinho."), "aviso", 9000); } catch (e) {}
+}
+return "aliviando";
 },
 proteger: function (m) {
 if (this._recarregando) return "recarregando";
@@ -73281,5 +73300,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=7bcf20c53d"},{"src":"js/bim-pacote.js?v=5b77f59ead","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d03c9a9309"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=dbfb34a6e4"},{"src":"js/bim-pacote.js?v=7455077783","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d03c9a9309"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

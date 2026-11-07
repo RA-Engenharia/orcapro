@@ -2079,9 +2079,10 @@
          na peça); a mesma face escrita em mm passa inteira (medido 06/11/2026, 702/702). O sólido continua sendo
          IfcFacetedBrep — só a escala do desenho muda; quem lê aplica o operador (IFC4, IfcCartesianTransformationOperator3D). */
       var HG = opts.semFormaConexao ? null : dep("HidGeo", "./biminstgeo.js"), geoCx = {}, recuoT = {}, itensCx = {};
-      /* ⚠ O NÍVEL DE DETALHE É O DA TELA (revisão de 06/11/2026): o js/biminstui.js desenha a rede com mais de 700
-         trechos + conexões em "longe" (menos segmentos por volta). Com "perto" fixo aqui, a obra grande saía no IFC com
-         mais faces do que a própria tela mostra — arquivo maior e conexão diferente da que a pessoa viu.
+      /* ⚠ O NÍVEL DE DETALHE DO ARQUIVO (revisão de 06/11/2026): a rede com mais de 700 trechos + conexões sai em "longe"
+         (menos segmentos por volta) — o tamanho do IFC da obra grande. Até a 1.2.260 era também o da tela; desde 07/11/2026
+         (PEÇA COMPLETA) a tela desenha SEMPRE a peça completa no Alto, e esta regra ficou só no arquivo, de propósito: o
+         conteúdo do IFC exportado não muda (opts.lodConexao continua mandando).
          Prova dos dois lados do limiar: tools/test-ifc-conexoes-forma.js [7]. */
       var lodCx = opts.lodConexao || ((Rd.trechos.length + Rd.conexoes.length) > 700 ? "longe" : "perto");
       if (HG && HG.no) {

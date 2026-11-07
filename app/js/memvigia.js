@@ -14,6 +14,14 @@
  *  2. PROTEGE: passou de FRACAO_RECARREGAR do limite, grava o pendente do BIM, avisa e RECARREGA a página antes de o
  *     Edge derrubá-la (o que se perde é só o estado da tela; a queda perderia o mesmo, sem aviso). Uma vez a cada
  *     JANELA_ANTI_LACO_MS no máximo — se voltar a encher logo depois, só avisa (nunca recarrega em laço).
+ *
+ * ⚠ PICO PASSAGEIRO NÃO É QUEDA (07/11/2026, "ele tá com mania de toda hora ficar saindo"). O heap medido inclui o lixo
+ * que o coletor ainda não recolheu: o desenho da planta/corte (js/biminstsombra.js), a mescla do 3D e a leitura da nuvem
+ * passam de 1,9 GB por segundos e voltam. Nos diag/ de 27/10 a 06/11, nas 12 vezes em que o vigia NÃO recarregou (a trava
+ * anti-laço), o heap caiu sozinho na amostra seguinte (2.454 → 392 MB, 2.039 → 141 MB, 6.435 → 1.365 MB) e a página não
+ * caiu; nas outras ele recarregou — 2 a 7 vezes por dia, cada uma "o sistema saiu". Agora: acima de FRACAO_RECARREGAR ele
+ * AVISA e ALIVIA (solta os caches de desenho, evento "orcapro:memoria-alta") e só recarrega se a amostra SEGUINTE continuar
+ * alta; acima de FRACAO_TETO protege na hora, como antes (o pico síncrono de 19/10 foi de 0,5 a 2,97 GB em < 100 s).
  * Sem performance.memory (Firefox, Safari) não faz nada.
  * ===================================================================== */
 (function (global) {
@@ -25,10 +33,12 @@
   var V = {
     INTERVALO_MS: 20000,
     FRACAO_RECARREGAR: 0.45,
+    FRACAO_TETO: 0.8,
+    ALIVIO_INTERVALO_MS: 5 * 60 * 1000,   /* no máximo 1 limpeza de cache a cada 5 min: soltar o cache e refazê-lo em seguida viraria pico em ciclo */
     ESPERA_RECARREGAR_MS: 2500,
     SALTO_PERFIL_MB: 400,
     JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-    _t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
+    _t: null, _seq: 0, _recarregando: false, _altoSeguidas: 0, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 
     medir: function () {
       var pm = global.performance && global.performance.memory;
@@ -154,9 +164,31 @@
       var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
       this._ultimoUsado = m.usadoMB;
       if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
-      if (fr >= this.FRACAO_RECARREGAR) a.alerta = this.proteger(m) || "alto";
+      if (fr >= this.FRACAO_RECARREGAR) {
+        this._altoSeguidas++;
+        /* a 1ª amostra alta (abaixo do teto) só alivia e avisa: o pico costuma ser lixo que o coletor recolhe em segundos */
+        a.alerta = this._altoSeguidas < 2 && fr < this.FRACAO_TETO && !this._recarregando ? this.aliviar(m) : (this.proteger(m) || "alto");
+      } else this._altoSeguidas = 0;
       this.enviar(a);
       return a;
+    },
+    /* a memória passou do limite pela 1ª vez: solta o que é refeito sob demanda (o cache do desenho das instalações na
+       planta/corte) e avisa quem mais guarda cache (evento); avisa a pessoa UMA vez. Devolve "aliviando". */
+    aliviar: function (m) {
+      var t = this.agora();
+      if (!this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
+        this._alivioEm = t;
+        try { var HS = global.HidSombra; if (HS && HS.cache && HS.cache.clear) { HS.cache.clear(); HS.cache.bytes = 0; } } catch (e) {}
+        /* quem ouve: js/biminstui.js (o cache de geometria das instalações solta as gerações que não estão na cena) */
+        try { if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") global.dispatchEvent(new global.CustomEvent("orcapro:memoria-alta", { detail: { usadoMB: m.usadoMB } })); } catch (e) {}
+      }
+      if (!this._avisouAlto) {
+        this._avisouAlto = true;
+        /* ⚠ não prometer recarga que não vem: dentro da janela anti-laço (recarregou há menos de 10 min) ele só avisa */
+        var ult = this._lerRecarga(), laco = ult && t - ult < this.JANELA_ANTI_LACO_MS;
+        try { if (global.UI && global.UI.toast) global.UI.toast("A memória desta página está alta (" + m.usadoMB + " MB). O OrçaPRO liberou o que dava; " + (laco ? "se continuar alta, salve o que estiver fazendo e recarregue (F5)." : "se continuar alta, ele salva e recarrega sozinho."), "aviso", 9000); } catch (e) {}
+      }
+      return "aliviando";
     },
     /* devolve o que fez: "recarregando" | "so-aviso" | null */
     proteger: function (m) {

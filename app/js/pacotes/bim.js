@@ -97332,7 +97332,9 @@ if (desligado() || !c || c.material !== "pvc_soldavel" || !eixos || !eixos.lengt
 var tipo = c.tipo;
 if (!COTOVELO[tipo] && !DERIVA[tipo] && !RETA[tipo]) return null;
 var oo = {}; Object.keys(o).forEach(function (k) { oo[k] = o[k]; }); oo.semReal = true;
-var base = null; try { base = G.conexaoBruta(c, eixos, oo); } catch (e) { base = null; }
+var ooB = {}; Object.keys(oo).forEach(function (k) { ooB[k] = oo[k]; }); ooB.lod = "longe"; ooB.marcacao = false;
+var base = null, baseCheia = o.lod === "longe" && !o.marcacao;
+try { base = G.conexaoBruta(c, eixos, baseCheia ? oo : ooB); } catch (e) { base = null; }
 var lod = o.lod, P = pv(c), real = { fontes: [], pendente: [] }, partes = null;
 var cot = base && base.cotas ? base.cotas : G.cotasConexao("pvc_soldavel", G.tipoBaseGeo ? G.tipoBaseGeo(tipo) : tipo, c.dn, typeof c.dn2 === "number" ? c.dn2 : 0);
 var portas = base ? base.portas : [];
@@ -97345,6 +97347,7 @@ ctT.produto = true; if (!ctT.perfilMedido) ctT.perfilMedido = "tigre:" + tg.cota
 if (o.marcacao && tg.marca) { tg.marca.decal.papel = (tipo === "joelho_bucha" || tipo === "te_bucha" || tipo === "luva_bucha") ? "azul" : "corpo"; tg.partes.push(tg.marca); }
 return { partes: tg.partes, portas: tg.portas, cotas: ctT, aConferir: false, real: true, fonte: "Tigre" };
 }
+if (!baseCheia) { base = null; try { base = G.conexaoBruta(c, eixos, oo); } catch (eB) { base = null; } cot = base && base.cotas ? base.cotas : cot; portas = base ? base.portas : []; fonteFace = cot.perfilMedido ? "fabricante" : "ficha"; }
 real.fonte = "Amanco";
 try {
 if (COTOVELO[tipo]) partes = cotoveloReal(G, c, eixos, o, cot, portaDe, real);
@@ -111356,7 +111359,7 @@ var e = C.m.get(chave);
 if (e) {
 e.ger = C.ger; C.reusos++;
 var m0 = new THREE.Mesh(e.g, mat); m0.position.set(c[0], c[1], c[2]);
-if (mat && mat.metalness > 0.5) m0.userData.famPremium = true;
+if (mat && (mat.metalness > 0.5 || mat.map)) m0.userData.instPorMat = true;
 return m0;
 }
 }
@@ -111370,8 +111373,7 @@ g.setIndex(ml.idx);
 g.computeBoundingBox(); g.computeBoundingSphere();
 if (chave) { g.userData.instGeoCache = true; C.m.set(chave, { g: g, c: c, ger: C.ger }); C.novas++; }
 var m = new THREE.Mesh(g, mat); m.position.set(c[0], c[1], c[2]);
-if (mat && mat.metalness > 0.5) m.userData.famPremium = true;
-if (mat && mat.map) m.userData.famPremium = true;
+if (mat && (mat.metalness > 0.5 || mat.map)) m.userData.instPorMat = true;
 return m;
 },
 _matMarca: function (THREE, pt) {
@@ -111397,8 +111399,8 @@ var NV = global.BimInstNivel, nivel = NV && this.nivelCena ? NV.norm(this.nivelC
 var unif = NV && nivel !== "alto" ? NV.unifilar(R, nivel, { escala: NV.ESCALA_PADRAO }) : null, segsDe = {};
 if (unif) unif.segs.forEach(function (sg) { (segsDe[sg.id] = segsDe[sg.id] || []).push(sg); });
 this._nivelFeito = nivel; this._segsDe = segsDe;
-this._lod = nivel === "medio" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
-var lodEle = nivel !== "alto" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
+this._lod = nivel === "medio" ? "longe" : "perto";
+var lodEle = nivel !== "alto" ? "longe" : "perto";
 var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
 var baixo = nivel === "baixo";
 var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
@@ -111547,7 +111549,50 @@ out.push({ id: k.famInst, malhas: [m], marcador: true });
 });
 try { this.malhasP12(R, famAval, THREE).forEach(function (x) { out.push(x); }); } catch (eP12) {}
 this._ultimaRede = R;
+if (nivel === "alto") { try { this._avisoPeso(out); } catch (eAv) {} }
 return out;
+},
+AVISO_TRI: 4e6,
+AVISO_TRI_FRACO: 3e5,
+_aparelho: function () {
+var a = { memoria: 0, toque: false, telaMax: 0 };
+try { a.memoria = +global.navigator.deviceMemory || 0; } catch (e) {}
+try { a.toque = !!(global.matchMedia && global.matchMedia("(pointer: coarse)").matches); } catch (e) {}
+try { a.telaMax = Math.max(global.screen.width || 0, global.screen.height || 0); } catch (e) {}
+return a;
+},
+avisoPesoDecidir: function (tri, ap) {
+var BT = global.BimTextura, fraco = false;
+try { fraco = BT && BT.aparelhoFraco ? !!BT.aparelhoFraco(ap) : false; } catch (e) { fraco = false; }
+if (fraco && tri > this.AVISO_TRI_FRACO) return "fraco";
+if (tri > this.AVISO_TRI) return "teto";
+return null;
+},
+_avisoPeso: function (out) {
+if (this._avisoPesoFeito) return;
+var tri = 0;
+out.forEach(function (el) { (el.malhas || []).forEach(function (m) { var g = m && m.geometry; if (!g || !m.isMesh) return; tri += (g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0)) / 3; }); });
+var porque = this.avisoPesoDecidir(tri, this._aparelho());
+if (!porque) return;
+this._avisoPesoFeito = { porque: porque, tri: Math.round(tri) };
+var self = this, d = global.document; if (!d || !global.setTimeout) return;
+global.setTimeout(function () { try { self._avisoPesoMostrar(porque, tri); } catch (e) {} }, 0);
+},
+_avisoPesoMostrar: function (porque, tri) {
+var d = global.document, wrap = d.getElementById("toasts"); if (!wrap) return;
+var t = d.createElement("div"); t.className = "toast aviso"; t.setAttribute("data-hid-aviso-peso", porque);
+var mi = Math.round(tri / 1000).toLocaleString("pt-BR") + " mil triângulos";
+var p = d.createElement("div");
+p.textContent = (porque === "fraco" ? "Este aparelho tem pouca memória para as instalações no nível Alto (" + mi + ")." : "As instalações deste modelo estão pesadas no nível Alto (" + mi + ").") +
+" Se a tela ficar lenta ou o navegador fechar a página, use o nível Médio nesta vista — o orçamento e o IFC não mudam.";
+t.appendChild(p);
+var self = this, fechar = function () { try { t.remove(); } catch (e) {} };
+var b1 = d.createElement("button"); b1.type = "button"; b1.className = "btn btn-sm"; b1.textContent = "Usar nível Médio"; b1.setAttribute("data-hid-aviso-peso-acao", "medio");
+b1.onclick = function () { fechar(); try { self.definirNivel3d(self._vistaAtiva().id, "medio"); } catch (e) {} };
+var b2 = d.createElement("button"); b2.type = "button"; b2.className = "btn btn-sm btn-ghost"; b2.textContent = "Manter Alto"; b2.onclick = fechar;
+var lin = d.createElement("div"); lin.style.cssText = "display:flex;gap:8px;margin-top:8px"; lin.appendChild(b1); lin.appendChild(b2); t.appendChild(lin);
+wrap.appendChild(t);
+global.setTimeout(fechar, 30000);
 },
 ehInst: function (uid) {
 var s = String(uid || "");
@@ -111884,6 +111929,12 @@ BimInstUI.registrarFita();
 try { if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("keydown", BimInstUI._teclaLigacao, true); } catch (eK) {}
 try { if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("keydown", BimInstUI._teclaEspaco, true); } catch (eE) {}
 global.BimInstUI = BimInstUI;
+BimInstUI.aliviarCache = function () {
+var C = this._geoCache, n = 0; if (!C || !C.m) return 0;
+C.m.forEach(function (e, k) { if (e.ger < C.ger) { try { e.g.dispose(); } catch (x) {} C.m.delete(k); n++; } });
+return n;
+};
+try { if (global.addEventListener) global.addEventListener("orcapro:memoria-alta", function () { try { BimInstUI.aliviarCache(); } catch (e) {} }); } catch (eL) {}
 if (typeof module !== "undefined" && module.exports) module.exports = BimInstUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
@@ -169759,10 +169810,11 @@ motivo: p.modos.length ? "" : (p.nPecas ? "Este modelo não traz peças com afas
 }
 function contarVertices() {
 var n = 0, temAg = false;
-modelos().forEach(function (mo) { if (mo._agreg) { temAg = true; mo._agreg.partes.forEach(function (p) { n += p.malha.geometry.attributes.position.count; }); } });
+modelos().forEach(function (mo) { if (mo._agreg) { temAg = true; mescladas(mo._agreg).forEach(function (p) { n += p.malha.geometry.attributes.position.count; }); } });
 if (!temAg) Object.keys(malhas).forEach(function (u) { malhas[u].forEach(function (m) { if (m.geometry && m.geometry.attributes.position) n += m.geometry.attributes.position.count; }); });
 return n;
 }
+function mescladas(ag) { return ag ? ag.partes.concat(ag.porMat || []) : []; }
 function uidDe(ref) { return ref && ref.userData ? (ref.userData.mid + ":" + ref.userData.expressID) : null; }
 function moverBuffer(holder, attr, faixas, k, k2, iniKey, nKey) {
 var arr = attr.array, b = holder._explBase, refez = false;
@@ -169806,7 +169858,7 @@ m.updateMatrix(); m.matrixWorldNeedsUpdate = true;
 }
 });
 modelos().forEach(function (mo) {
-if (mo._agreg) mo._agreg.partes.forEach(function (pt) { moverBuffer(pt, pt.malha.geometry.attributes.position, pt.faixas, k, k2, "iniVert", "nVert"); });
+if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { moverBuffer(pt, pt.malha.geometry.attributes.position, pt.faixas, k, k2, "iniVert", "nVert"); });
 var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
 if (ar && ar.ls) moverBuffer(ar, ar.ls.geometry.attributes.position, ar.faixas, k, k2, "ini", "n");
 });
@@ -169823,7 +169875,7 @@ m.updateMatrix(); m.matrixWorldNeedsUpdate = true;
 });
 tocadas = [];
 modelos().forEach(function (mo) {
-if (mo._agreg) mo._agreg.partes.forEach(function (pt) { soltarBase(pt, pt.malha.geometry.attributes.position); });
+if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { soltarBase(pt, pt.malha.geometry.attributes.position); });
 var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
 if (ar && ar.ls) soltarBase(ar, ar.ls.geometry.attributes.position);
 });
@@ -169832,7 +169884,7 @@ ativoAplicado = false;
 function precisaReaplicar() {
 var r = false;
 modelos().forEach(function (mo) {
-if (mo._agreg) mo._agreg.partes.forEach(function (pt) { var b = pt._explBase; if (!b || b.arr !== pt.malha.geometry.attributes.position.array) r = true; });
+if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) { var b = pt._explBase; if (!b || b.arr !== pt.malha.geometry.attributes.position.array) r = true; });
 var ar = S._arestasDoModelo ? S._arestasDoModelo(mo.mid) : null;
 if (ar && ar.ls) { var b2 = ar._explBase; if (!b2 || b2.arr !== ar.ls.geometry.attributes.position.array) r = true; }
 });
@@ -170574,7 +170626,7 @@ function fnv(h, u8) { for (var i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math
 var hb = 2166136261, hm = 2166136261, ha = 2166136261, nA = 0, nP = 0, nM = 0, mf = 0, ex = 0, verts = {}, arVerts = {}, pedidos = {}, vers = [];
 (uids || []).forEach(function (u) { pedidos[u] = 1; });
 modelos().forEach(function (mo) {
-if (mo._agreg) mo._agreg.partes.forEach(function (pt) {
+if (mo._agreg) mescladas(mo._agreg).forEach(function (pt) {
 var a = pt.malha.geometry.attributes.position.array; hb = fnv(hb, new Uint8Array(a.buffer, a.byteOffset, a.byteLength)); nP++; vers.push(pt.malha.geometry.attributes.position.version);
 pt.faixas.forEach(function (f) { var u = uidDe(f.ref); if (u && pedidos[u] && !verts[u]) { var o = f.iniVert * 3; verts[u] = [a[o] + pt.malha.position.x, a[o + 1] + pt.malha.position.y, a[o + 2] + pt.malha.position.z]; } });
 });

@@ -210,7 +210,14 @@
     var tipo = c.tipo;
     if (!COTOVELO[tipo] && !DERIVA[tipo] && !RETA[tipo]) return null;
     var oo = {}; Object.keys(o).forEach(function (k) { oo[k] = o[k]; }); oo.semReal = true;
-    var base = null; try { base = G.conexaoBruta(c, eixos, oo); } catch (e) { base = null; }
+    /* ⚠ PEÇA COMPLETA (07/11/2026): a construção de antes (conexaoBruta) só serve aqui às PORTAS e às COTAS quando a peça é a
+       da medida Tigre — a malha dela ia para o lixo, e no Alto ela era construída inteira (forma "perto" + gravação): a peça
+       saía feita duas vezes. As portas e as cotas não dependem do número de lados nem da gravação, então a base vai no
+       "longe" sem marcação; se a Tigre não servir, a base volta a ser feita como sempre (é ela que vira a peça). Prova peça a
+       peça (portas, recuos e a malha final iguais): tools/test-hid-base-barata.js. */
+    var ooB = {}; Object.keys(oo).forEach(function (k) { ooB[k] = oo[k]; }); ooB.lod = "longe"; ooB.marcacao = false;
+    var base = null, baseCheia = o.lod === "longe" && !o.marcacao;
+    try { base = G.conexaoBruta(c, eixos, baseCheia ? oo : ooB); } catch (e) { base = null; }
     var lod = o.lod, P = pv(c), real = { fontes: [], pendente: [] }, partes = null;
     var cot = base && base.cotas ? base.cotas : G.cotasConexao("pvc_soldavel", G.tipoBaseGeo ? G.tipoBaseGeo(tipo) : tipo, c.dn, typeof c.dn2 === "number" ? c.dn2 : 0);
     var portas = base ? base.portas : [];
@@ -224,6 +231,7 @@
       if (o.marcacao && tg.marca) { tg.marca.decal.papel = (tipo === "joelho_bucha" || tipo === "te_bucha" || tipo === "luva_bucha") ? "azul" : "corpo"; tg.partes.push(tg.marca); }
       return { partes: tg.partes, portas: tg.portas, cotas: ctT, aConferir: false, real: true, fonte: "Tigre" };
     }
+    if (!baseCheia) { base = null; try { base = G.conexaoBruta(c, eixos, oo); } catch (eB) { base = null; } cot = base && base.cotas ? base.cotas : cot; portas = base ? base.portas : []; fonteFace = cot.perfilMedido ? "fabricante" : "ficha"; }   /* sem a Tigre: a base de sempre (ela vira a peça) */
     real.fonte = "Amanco";
     try {
       if (COTOVELO[tipo]) partes = cotoveloReal(G, c, eixos, o, cot, portaDe, real);

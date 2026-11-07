@@ -2641,6 +2641,28 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (mat.transparent !== algumT) { mat.transparent = algumT; mat.depthWrite = !algumT; mat.needsUpdate = true; }
         v.cache[parte._id] = { ver: est.ver, sig: ag.assinatura, idx: r.idx, n: r.nIdx, idxAttr: idxAttr, cores: cores, corAttr: corAttr, mat: mat, nPecas: nPecas };
       });
+      prepararVistaPorMat(v, ag);
+    });
+  }
+  /* PEÇA COMPLETA (revisão de 07/11/2026): a gravação e o metal das instalações, mesclados POR MATERIAL (ag.porMat), seguem
+     a visibilidade DESTA vista como as partes — sem isto a aba com estado próprio mostrava a gravação da peça que ela escondia
+     (e o metal, que antes era desenhado por si e seguia a aba, regrediu). A peça que a aba deixa em fantasma (raio-X) sai do
+     índice: gravação flutuando sobre o fantasma confunde. */
+  function prepararVistaPorMat(v, ag) {
+    var est = v.est;
+    (ag.porMat || []).forEach(function (pm) {
+      if (!pm._id) pm._id = ++_parteSeq;
+      var c = v.cache[pm._id];
+      if (c && c.ver === est.ver && c.sig === ag.assinatura) return;
+      var fx = pm.faixas, ocultos = {};
+      for (var f = 0; f < fx.length; f++) {
+        var ref = fx[f].ref;
+        if (!ref || ref.material !== pm.mat || !existeNaVista(ref, est) || (est.rx && !est.rx[uidDe(ref)])) ocultos['#' + f] = 1;
+      }
+      var r = BimAgreg.indicesVisiveis(fx, pm.idxCheio, ocultos, c && c.idx);
+      var idxAttr = (c && c.idxAttr && c.idxAttr.array === r.idx) ? c.idxAttr : new THREE.BufferAttribute(r.idx, 1);
+      idxAttr.needsUpdate = true;
+      v.cache[pm._id] = { ver: est.ver, sig: ag.assinatura, idx: r.idx, n: r.nIdx, idxAttr: idxAttr };
     });
   }
   function matCorVista(cor) {
@@ -2651,7 +2673,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* troca, para o desenho DESTA vista, o que ela mostra diferente da cena */
   function trocasDaVista(v) {
     prepararVista(v);
-    var est = v.est, t = { partes: [], vis: [], mats: [], lay: [], cotas: null };
+    var est = v.est, t = { partes: [], porMat: [], vis: [], mats: [], lay: [], cotas: null };
     S.modelos.forEach(function (mo) {
       var ag = mo._agreg;
       if (ag) {
@@ -2661,6 +2683,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           t.partes.push([parte, g.index, g.attributes.color, g.drawRange.start, g.drawRange.count, parte.malha.material]);
           g.index = c.idxAttr; g.attributes.color = c.corAttr; g.drawRange.start = 0; g.drawRange.count = c.n;
           parte.malha.material = c.mat;
+        });
+        (ag.porMat || []).forEach(function (pm) {   /* gravação e metal: só o índice desta vista (o material é o da peça) */
+          var c = v.cache[pm._id]; if (!c) return;
+          var g = pm.malha.geometry;
+          t.porMat.push([g, g.index, g.drawRange.start, g.drawRange.count]);
+          g.index = c.idxAttr; g.drawRange.start = 0; g.drawRange.count = c.n;
         });
         /* as peças em destaque (seleção, 4D, conflito) desenham por si e seguem
            a visibilidade DESTA vista: somem onde ela não as mostra e APARECEM
@@ -2699,6 +2727,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function desfazerTrocas(t) {
     t.partes.forEach(function (x) { var g = x[0].malha.geometry; g.index = x[1]; g.attributes.color = x[2]; g.drawRange.start = x[3]; g.drawRange.count = x[4]; x[0].malha.material = x[5]; });
+    (t.porMat || []).forEach(function (x) { x[0].index = x[1]; x[0].drawRange.start = x[2]; x[0].drawRange.count = x[3]; });
     t.vis.forEach(function (x) { x[0].visible = x[1]; });
     t.mats.forEach(function (x) { x[0].material = x[1]; });
     t.lay.forEach(function (x) { x[0].layers.mask = x[1]; x[0].visible = x[2]; });
@@ -5567,11 +5596,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   function agregarModelo(mo) {
     if (!AGREG.on || !mo || mo._agreg || typeof window === 'undefined' || !window.BimAgreg) return false;
-    var geos = {}, insts = [];
+    var geos = {}, insts = [], porMat = [];
     for (var i = 0; i < mo.grupo.children.length; i++) {
       var m = mo.grupo.children[i];
       if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
-      if (m.userData.decal) continue;   /* a GRAVAÇÃO do fabricante (js/biminstgeoreal-agua.js): fica fora da malha mesclada — ela tem a textura do texto */
+      /* a GRAVAÇÃO do fabricante (js/biminstgeoreal-agua.js, a marcação do esgoto) e a peça METÁLICA das instalações têm
+         material próprio (textura do texto, reflexo): fora do mesclado por cor de vértice, mas mescladas POR MATERIAL
+         (porMatMesclar, abaixo). ⚠ PEÇA COMPLETA (07/11/2026): antes cada uma era desenhada por si — uma chamada de desenho
+         por peça; no prédio de 12 pavimentos em Alto eram milhares, e por isso o modelo grande caía para o "longe". */
+      if (m.userData.decal || m.userData.instPorMat) { porMat.push(m); continue; }
       var pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
       if (!pa || !na) continue;
       var k = m.uuid;
@@ -5632,8 +5665,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        Pendurar no `scene` e espelhar a transformacao do modelRoot resolve os
        onze de uma vez, e o proximo varredor que alguem escrever ja nasce
        imune. */
+    var pm = porMatMesclar(porMat, origem, grupo);
     scene.add(grupo);
-    mo._agreg = { grupo: grupo, partes: partes, origem: origem, assinatura: null };
+    mo._agreg = { grupo: grupo, partes: partes, origem: origem, assinatura: null, porMat: pm };
 
     /* as pecas saem da camera, mas continuam no raio e no bbox */
     /* ⚠ SÓ A PEÇA QUE ENTROU NO MESCLADO sai da câmera. A malha SEM ÍNDICE (família importada .opfam: faces planas,
@@ -5641,6 +5675,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        código (17/10/2026: as conexões Tigre/DarivaBIM da Biblioteca do escritório no trecho de esgoto, invisíveis).
        Fora do mesclado: camada 0 (desenha) + 1 (o raio a vê). */
     var fundidos = {}; insts.forEach(function (x) { fundidos[x.g] = 1; });
+    pm.forEach(function (g) { g.faixas.forEach(function (fx) { fundidos[fx.ref.uuid] = 1; }); });
     for (var q = 0; q < mo.grupo.children.length; q++) { var cq = mo.grupo.children[q]; if (!cq.isMesh) continue; if (fundidos[cq.uuid]) cq.layers.set(1); else cq.layers.enable(1); }
     /* ⚠ o mesclado é REFEITO sozinho (o raio-X suspende e devolve): sem isto,
        a volta do raio-X traria os buckets sem textura com o modo ligado */
@@ -5656,6 +5691,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (p.malha.geometry) p.malha.geometry.dispose();
         if (p.malha.material) p.malha.material.dispose();
       });
+      /* ⚠ o material do grupo por material é o da PEÇA (compartilhado, em cache no js/biminstui.js): só a geometria sai */
+      (mo._agreg.porMat || []).forEach(function (g) { if (g.malha.geometry) g.malha.geometry.dispose(); });
       scene.remove(mo._agreg.grupo);
     } catch (_) {}
     mo._agreg = null;
@@ -5829,6 +5866,75 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       parte.malha.geometry.index.needsUpdate = true;
       parte.malha.geometry.setDrawRange(0, r.nIdx);
     }
+    porMatAparencia(ag);
+  }
+  /* ⚠ PEÇA COMPLETA (07/11/2026) — A GRAVAÇÃO E A PEÇA METÁLICA, MESCLADAS POR MATERIAL. A malha mesclada por cor de vértice
+     não leva textura nem reflexo, então a faixa com o texto do fabricante e a bucha de latão eram desenhadas uma a uma (uma
+     chamada de desenho cada; transparentes, ordenadas a cada quadro). Aqui as do MESMO material viram UMA malha (posição já
+     no mundo, menos a origem do mesclado; normal; uv; índice) com o próprio material da peça — a mesma imagem, uma chamada.
+     As malhas da peça continuam existindo (clique, IFC, 2D, render): só param de ser desenhadas (camada 1). */
+  function porMatMesclar(lista, origem, grupo) {
+    var grupos = {}, ordem = [], out = [];
+    for (var i = 0; i < lista.length; i++) {
+      /* o material-BASE da peça (matOrig), não o da hora: com a peça selecionada, em raio-X ou num clone de transparência na
+         hora da mescla, o grupo nasceria com o material de realce/fantasma (revisão de 07/11/2026) */
+      var m = lista[i], mt = m.userData.matOrig || m.material, g = m.geometry, pa = g.attributes.position, na = g.attributes.normal;
+      if (!mt || Array.isArray(mt) || !pa || !na || !g.index) continue;
+      var uv = !!(g.attributes.uv && g.attributes.uv.count === pa.count), k = mt.uuid + (uv ? '|uv' : '') + '|' + (m.renderOrder || 0);
+      var G = grupos[k]; if (!G) { G = grupos[k] = { mat: mt, uv: uv, ro: m.renderOrder || 0, membros: [], nV: 0, nI: 0 }; ordem.push(k); }
+      G.membros.push(m); G.nV += pa.count; G.nI += g.index.count;
+    }
+    var nm = new THREE.Matrix3(), v = new THREE.Vector3();
+    ordem.forEach(function (k) {
+      var G = grupos[k], pos = new Float32Array(G.nV * 3), nor = new Float32Array(G.nV * 3), uvs = G.uv ? new Float32Array(G.nV * 2) : null, idx = new Uint32Array(G.nI), faixas = [], bv = 0, bi = 0;
+      G.membros.forEach(function (m) {
+        /* ⚠ a matriz FECHADA (a mesma regra do mesclado por cor): com a explodida ligada ou a porta aberta na hora de remesclar,
+           a pose deslocada ficaria gravada no buffer (revisão de 07/11/2026) */
+        var g = m.geometry, pa = g.attributes.position, na = g.attributes.normal, ia = g.index, M = m.userData._matFechada || m.matrix, j;
+        nm.getNormalMatrix(M);
+        for (j = 0; j < pa.count; j++) {
+          v.fromBufferAttribute(pa, j).applyMatrix4(M);
+          pos[(bv + j) * 3] = v.x - origem[0]; pos[(bv + j) * 3 + 1] = v.y - origem[1]; pos[(bv + j) * 3 + 2] = v.z - origem[2];
+          v.fromBufferAttribute(na, j).applyMatrix3(nm).normalize();
+          nor[(bv + j) * 3] = v.x; nor[(bv + j) * 3 + 1] = v.y; nor[(bv + j) * 3 + 2] = v.z;
+        }
+        if (uvs) { var ua = g.attributes.uv; for (j = 0; j < pa.count; j++) { uvs[(bv + j) * 2] = ua.getX(j); uvs[(bv + j) * 2 + 1] = ua.getY(j); } }
+        for (j = 0; j < ia.count; j++) idx[bi + j] = ia.getX(j) + bv;
+        faixas.push({ e: m.userData.expressID, iniTri: bi / 3, nTri: ia.count / 3, iniVert: bv, nVert: pa.count, ref: m });
+        bv += pa.count; bi += ia.count;
+      });
+      var bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      bg.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      if (uvs) bg.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      bg.setIndex(new THREE.BufferAttribute(idx, 1));
+      var malha = new THREE.Mesh(bg, G.mat);
+      malha.position.set(origem[0], origem[1], origem[2]);
+      malha.layers.set(0); malha.renderOrder = G.ro; malha.frustumCulled = false; malha.raycast = function () {};
+      malha.userData.agregado = true; malha.userData.agregadoPorMat = true;
+      grupo.add(malha);
+      out.push({ malha: malha, faixas: faixas, idxCheio: idx, mat: G.mat, idxVis: null });
+    });
+    return out;
+  }
+  /* a peça do grupo por material que está OCULTA sai do índice; a que está com OUTRO material (realce, raio-X, estilo de
+     vista) sai do índice e volta a se desenhar sozinha, com o material de agora — o mesmo contrato do _desenhaPorSi */
+  function porMatAparencia(ag) {
+    (ag.porMat || []).forEach(function (pm) {
+      var fx = pm.faixas, ocultos = {};
+      for (var f = 0; f < fx.length; f++) {
+        var ref = fx[f].ref;
+        ref.layers.set(1);
+        if (ref.visible === false) { ocultos['#' + f] = 1; continue; }
+        if (ref.material !== pm.mat || (ref.userData && ref.userData._solta)) { ocultos['#' + f] = 1; ref.layers.enable(0); }
+      }
+      var r = BimAgreg.indicesVisiveis(fx, pm.idxCheio, ocultos, pm.idxVis);
+      pm.idxVis = r.idx;
+      var g = pm.malha.geometry;
+      if (g.index.array !== r.idx) g.setIndex(new THREE.BufferAttribute(r.idx, 1));
+      g.index.needsUpdate = true;
+      g.setDrawRange(0, r.nIdx);
+    });
   }
 
   function ligarAgregacao(on) {

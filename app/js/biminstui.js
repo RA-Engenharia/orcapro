@@ -1901,7 +1901,7 @@
         if (e) {
           e.ger = C.ger; C.reusos++;
           var m0 = new THREE.Mesh(e.g, mat); m0.position.set(c[0], c[1], c[2]);   /* a geometria é a da forma; o lugar é desta peça */
-          if (mat && mat.metalness > 0.5) m0.userData.famPremium = true;
+          if (mat && (mat.metalness > 0.5 || mat.map)) m0.userData.instPorMat = true;   /* PEÇA COMPLETA: ver abaixo (a do cache também — antes a marcação reaproveitada perdia a marca e caía no mesclado por cor) */
           return m0;
         }
       }
@@ -1915,10 +1915,12 @@
       g.computeBoundingBox(); g.computeBoundingSphere();
       if (chave) { g.userData.instGeoCache = true; C.m.set(chave, { g: g, c: c, ger: C.ger }); C.novas++; }
       var m = new THREE.Mesh(g, mat); m.position.set(c[0], c[1], c[2]);
-      /* peça METÁLICA (latão, cromado, cobre): o modelo mesclado só leva cor por vértice e apagaria o reflexo —
-         marca para a tela desenhá-la por si (a mesma marca das louças/metais, js/bim.js _desenhaPorSi) */
-      if (mat && mat.metalness > 0.5) m.userData.famPremium = true;
-      if (mat && mat.map) m.userData.famPremium = true;   /* com textura (marcação): a mescla por cor de vértice apagaria as letras */
+      /* peça METÁLICA (latão, cromado, cobre) e a MARCAÇÃO com textura: o mesclado por cor de vértice apagaria o reflexo e as
+         letras. ⚠ PEÇA COMPLETA (07/11/2026): antes ganhavam famPremium e cada uma era desenhada por si — UMA chamada de desenho
+         por peça (no prédio de 12 pavimentos, milhares). Agora instPorMat: o js/bim.js (agregarModelo) as junta numa malha por
+         MATERIAL (a mesma textura/reflexo, uma chamada para todas) e a peça sozinha só volta a se desenhar quando o material
+         dela muda (realce, raio-X) ou ela some. */
+      if (mat && (mat.metalness > 0.5 || mat.map)) m.userData.instPorMat = true;
       return m;
     },
     /* MARCAÇÃO DO FABRICANTE (06/11/2026): a textura das letras em relevo (js/biminstgeoreal.js canvasMarca) sobre a faixa fina
@@ -1950,10 +1952,18 @@
       var unif = NV && nivel !== "alto" ? NV.unifilar(R, nivel, { escala: NV.ESCALA_PADRAO }) : null, segsDe = {};
       if (unif) unif.segs.forEach(function (sg) { (segsDe[sg.id] = segsDe[sg.id] || []).push(sg); });
       this._nivelFeito = nivel; this._segsDe = segsDe;
-      /* LOD simples: modelo grande (muitas peças) desenha com menos segmentos — o mesmo para todos, sem trocar na hora;
-         o Médio é sempre o "longe" (menos lados) */
-      this._lod = nivel === "medio" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
-      var lodEle = nivel !== "alto" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";   // eletrica-v2 L6/revisão B7: só o eletroduto (material elet_*) liso no Baixo e no Médio; o hidro fica como no master
+      /* LOD: o Médio é sempre o "longe" (menos lados); o Alto é SEMPRE a peça completa ("perto": forma do produto e a gravação
+         do fabricante), em qualquer tamanho de modelo.
+         ⚠ PEÇA COMPLETA (07/11/2026, pedido do Rogério: "sempre mostrem para mim em 3D e em qualquer vista a peça modelada
+         corretamente, não a mais simples"). Até a 1.2.260 o modelo com mais de 700 tubos + conexões caía SOZINHO para o
+         "longe" — o prédio de 12 pavimentos aparecia com peças de 8 lados e sem gravação, mesmo com a vista em Alto. O que
+         pesava não era a peça: era a gravação desenhada uma a uma (1 chamada de desenho por peça). Com ela mesclada por
+         material (js/bim.js agregarModelo, instPorMat) o "perto" do prédio custa menos que o "longe" de antes
+         (tools/medir-hid-memoria.js). O nível escolhido na vista continua mandando; NADA rebaixa sozinho. Modelo pesado ou
+         aparelho fraco recebe AVISO com o botão "Usar nível Médio" (_avisoPeso, abaixo; no Chromium o js/memvigia.js também
+         alivia e avisa no pico de memória) — nunca a peça simplificada calada. */
+      this._lod = nivel === "medio" ? "longe" : "perto";
+      var lodEle = nivel !== "alto" ? "longe" : "perto";   // eletrica-v2 L6/revisão B7: só o eletroduto (material elet_*) liso no Baixo e no Médio; o hidro fica como no master
       var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
       var baixo = nivel === "baixo";
       var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
@@ -2116,7 +2126,59 @@
       /* P12: acessórios (o corpo da família, no eixo do tubo) e as desconexões marcadas */
       try { this.malhasP12(R, famAval, THREE).forEach(function (x) { out.push(x); }); } catch (eP12) {}
       this._ultimaRede = R;
+      if (nivel === "alto") { try { this._avisoPeso(out); } catch (eAv) {} }
       return out;
+    },
+    /* ⚠ PEÇA COMPLETA — O ALTO PESADO AVISA, NÃO REBAIXA (revisão de 07/11/2026, decisão do coordenador). O Alto é o padrão
+       (js/biminstnivel.js) e nada cai sozinho para o "longe". Mas celular e máquina fraca não têm o vigia de memória
+       (performance.memory só existe no Chromium; Safari e Firefox cairiam calados). Então, UMA vez por sessão, quando o aparelho
+       é fraco (a mesma regra das texturas: js/bimtextura.js aparelhoFraco — memória < 4 GB ou toque com tela < 1000 px) e as
+       instalações passam de AVISO_TRI_FRACO triângulos, ou quando passam de AVISO_TRI em qualquer aparelho, aparece um aviso
+       com o botão "Usar nível Médio" — a pessoa escolhe. Medido (tools/medir-hid-memoria.js, 07/11/2026): o prédio de 12
+       pavimentos (1.123 trechos + 1.375 conexões) dá 3,6 M triângulos no Alto, 98 MB de heap e ~180 MB de geometria — roda
+       num PC comum; AVISO_TRI fica acima dele. No aparelho fraco, 300 mil é um banheiro grande: acima disso ele avisa. */
+    AVISO_TRI: 4e6,
+    AVISO_TRI_FRACO: 3e5,
+    _aparelho: function () {
+      var a = { memoria: 0, toque: false, telaMax: 0 };
+      try { a.memoria = +global.navigator.deviceMemory || 0; } catch (e) {}
+      try { a.toque = !!(global.matchMedia && global.matchMedia("(pointer: coarse)").matches); } catch (e) {}
+      try { a.telaMax = Math.max(global.screen.width || 0, global.screen.height || 0); } catch (e) {}
+      return a;
+    },
+    /* a decisão, pura (tools/test-hid-peca-completa.js): null | "fraco" | "teto" */
+    avisoPesoDecidir: function (tri, ap) {
+      var BT = global.BimTextura, fraco = false;
+      try { fraco = BT && BT.aparelhoFraco ? !!BT.aparelhoFraco(ap) : false; } catch (e) { fraco = false; }
+      if (fraco && tri > this.AVISO_TRI_FRACO) return "fraco";
+      if (tri > this.AVISO_TRI) return "teto";
+      return null;
+    },
+    _avisoPeso: function (out) {
+      if (this._avisoPesoFeito) return;
+      var tri = 0;
+      out.forEach(function (el) { (el.malhas || []).forEach(function (m) { var g = m && m.geometry; if (!g || !m.isMesh) return; tri += (g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0)) / 3; }); });
+      var porque = this.avisoPesoDecidir(tri, this._aparelho());
+      if (!porque) return;
+      this._avisoPesoFeito = { porque: porque, tri: Math.round(tri) };
+      var self = this, d = global.document; if (!d || !global.setTimeout) return;
+      global.setTimeout(function () { try { self._avisoPesoMostrar(porque, tri); } catch (e) {} }, 0);   /* fora da montagem da cena */
+    },
+    _avisoPesoMostrar: function (porque, tri) {
+      var d = global.document, wrap = d.getElementById("toasts"); if (!wrap) return;
+      var t = d.createElement("div"); t.className = "toast aviso"; t.setAttribute("data-hid-aviso-peso", porque);
+      var mi = Math.round(tri / 1000).toLocaleString("pt-BR") + " mil triângulos";
+      var p = d.createElement("div");
+      p.textContent = (porque === "fraco" ? "Este aparelho tem pouca memória para as instalações no nível Alto (" + mi + ")." : "As instalações deste modelo estão pesadas no nível Alto (" + mi + ").") +
+        " Se a tela ficar lenta ou o navegador fechar a página, use o nível Médio nesta vista — o orçamento e o IFC não mudam.";
+      t.appendChild(p);
+      var self = this, fechar = function () { try { t.remove(); } catch (e) {} };
+      var b1 = d.createElement("button"); b1.type = "button"; b1.className = "btn btn-sm"; b1.textContent = "Usar nível Médio"; b1.setAttribute("data-hid-aviso-peso-acao", "medio");
+      b1.onclick = function () { fechar(); try { self.definirNivel3d(self._vistaAtiva().id, "medio"); } catch (e) {} };
+      var b2 = d.createElement("button"); b2.type = "button"; b2.className = "btn btn-sm btn-ghost"; b2.textContent = "Manter Alto"; b2.onclick = fechar;
+      var lin = d.createElement("div"); lin.style.cssText = "display:flex;gap:8px;margin-top:8px"; lin.appendChild(b1); lin.appendChild(b2); t.appendChild(lin);
+      wrap.appendChild(t);
+      global.setTimeout(fechar, 30000);
     },
 
     /* ------------------------------------------------ PROPRIEDADES do trecho/peça selecionado */
@@ -2498,5 +2560,13 @@
   try { if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("keydown", BimInstUI._teclaLigacao, true); } catch (eK) {}
   try { if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("keydown", BimInstUI._teclaEspaco, true); } catch (eE) {}   /* ESPAÇO: gira a redução excêntrica */   /* LIGAR A → B: Tab/Enter/Esc da prévia */
   global.BimInstUI = BimInstUI;
+  /* MEMÓRIA ALTA (js/memvigia.js aliviar, no máximo a cada 5 min): o cache de geometria solta as gerações que NÃO estão na
+     cena (as de antes da última montagem); a da cena fica — ela é a geometria das malhas desenhadas agora */
+  BimInstUI.aliviarCache = function () {
+    var C = this._geoCache, n = 0; if (!C || !C.m) return 0;
+    C.m.forEach(function (e, k) { if (e.ger < C.ger) { try { e.g.dispose(); } catch (x) {} C.m.delete(k); n++; } });
+    return n;
+  };
+  try { if (global.addEventListener) global.addEventListener("orcapro:memoria-alta", function () { try { BimInstUI.aliviarCache(); } catch (e) {} }); } catch (eL) {}
   if (typeof module !== "undefined" && module.exports) module.exports = BimInstUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
