@@ -1782,7 +1782,8 @@
       var html = '<div class="flex between mb"><div>' +
         (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
           (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
-        '</div><div style="display:flex;gap:6px">' +
+        '</div><div style="display:flex;gap:6px;align-items:flex-start">' +
+        '<!--colmenu-->' +
         '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
           (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
           (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
@@ -1792,11 +1793,16 @@
           (recTudo ? "\u25BE Expandir todas" : "\u25B8 Recolher todas") + '</button>' : "") +
         '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div></div>';
       if (!orc.etapas.length) {
+        html = html.replace("<!--colmenu-->", "");
         html += MOD().vazio({ icone: "planilha", titulo: "Planilha vazia", texto: "Adicione uma etapa (ex.: Serviços Preliminares) em + Etapa e depois os itens da SINAPI — ou descreva a obra no Escopo Inteligente." });
         return html;
       }
       html += this._faixaAjustes(orc);
       var _calcIdx = Orcamento.calcular(orc);
+      /* COLUNAS EXTRAS (js/colunas.js): preço c/ BDI, custo MO/MAT/EQ e preço de
+         referência. O menu "Colunas" fica no topo; a escolha mora no orçamento. */
+      var _lay = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 9, algumaNova: false };
+      html = html.replace("<!--colmenu-->", (typeof Colunas !== "undefined") ? UI._menuColunas(orc, _calcIdx) : "");
       /* só monta o índice quando o usuário ligou — oculto por padrão, para a
          planilha usar a largura toda (era a queixa do espaço roubado). */
       var _idx = _idxOn ? this._indiceEtapas(orc, _calcIdx) : "";
@@ -1832,9 +1838,16 @@
          custo"). Achado na revisão de 11/09/2026: a seção 1 do laudo mostrava
          110,00 na etapa e a seção 2 do MESMO laudo, 100,00. */
       var _rotPreco = _c.bdiNoPU ? "Preço Venda" : "Preço de custo";
-      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + '"><thead><tr>' +
+      var _catX = _lay.cat ? Colunas.categorias(orc, _c) : null;
+      var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
+      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
-        '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
+        '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
+        (_lay.pubdi ? '<th class="num pl-w1 col-nosso" title="Preço unitário COM BDI (' + Util.esc(Util.fmtPct(_c.pct)) + '), no mesmo arredondamento do orçamento. Ao lado, o Custo Unit é sem BDI.">Preço unit. c/ BDI</th>' : '') +
+        (_lay.ref ? '<th class="num pl-w1 col-ref" title="Preço unitário de referência do órgão (com BDI quando o edital traz).">Preço ref.</th>' +
+          '<th class="num pl-w1" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA) + '. Vermelho: nosso preço ABAIXO da referência. Verde: igual ou até ' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '% acima. Laranja: mais de ' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '% acima.">Dif. %</th>' : '') +
+        '<th class="num">Custo Total</th>' +
+        (_lay.cat ? '<th class="num pl-w1" title="Parte de mão de obra do Custo Total da linha, na proporção do analítico do item (MO + MAT + EQ fecha com o Custo Total).">Custo MO</th><th class="num pl-w1" title="Parte de material do Custo Total da linha, na proporção do analítico do item.">Custo MAT</th><th class="num pl-w1" title="Parte de equipamento do Custo Total da linha, na proporção do analítico do item.">Custo EQ</th>' : '') +
         '<th class="num"' + (_c.bdiNoPU ? '' : ' title="Neste orçamento o BDI incide sobre o preço final: as linhas saem a custo e o BDI é uma parcela única. O preço de venda por etapa está no Resumo Sintético."') + '>' + _rotPreco + '</th><th></th></tr></thead><tbody>';
 
       var _porEtapa = [], _porItem = {}, _porSub = {};
@@ -1864,15 +1877,18 @@
            A própria linha da etapa jamais some: é ela que segura os subtotais. */
         var rec = (typeof App !== "undefined" && App.etapaRecolhida) ? App.etapaRecolhida(orc.id, e.id) : false;
         var nItensEt = e.itens.length;
-        html += '<tr class="etapa-row"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
-          '<td colspan="5" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
+        var _ehIdentEt = (typeof Licitacao !== "undefined" && Licitacao.ehEtapaIdentificados && Licitacao.ehEtapaIdentificados(e));
+        html += '<tr class="etapa-row' + (_ehIdentEt ? ' etapa-ident' : '') + '"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
+          '<td colspan="' + (5 + _lay.nPre) + '" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
             ' <span class="muted" style="font-weight:400;font-size:11px">(' + nItensEt + (nItensEt === 1 ? " item" : " itens") + ')</span>' +
             /* ⚠ A ETAPA OPCIONAL CONTINUA NO TOTAL DA TELA (e do Excel, e da
                medição): o que muda é a PROPOSTA, onde ela sai fora do valor
                fechado. Sem este selo, o usuário veria o papel com um total
                menor que o da planilha e pensaria em erro de conta. */
+            (_ehIdentEt ? ' <span class="pill ident-edital" title="Itens que o edital, o memorial ou os projetos pedem e a planilha do órgão não tem (ou tem com outra quantidade). Ficam FORA do valor da proposta: servem para justificar preço/risco e para o pedido de esclarecimento. A origem de cada um está na memória de cálculo.">fora da planilha do órgão</span>' : '') +
             (e.opcional ? ' <span class="g-pill" style="background:#7a6b4e22;color:#7a6b4e;font-weight:700;font-size:10.5px" title="Na proposta esta etapa sai como adicional, fora do valor total">adicional</span>' : "") + '</td>' +
           '<td class="num">' + Util.fmtMoeda(se.custoDireto) + '</td>' +
+          UI._celulasCatSub(_lay, _catX && _catX.porEtapa[ei]) +
           '<td class="num">' + Util.fmtMoeda(se.precoVenda) + '</td>' +
           '<td class="right"><div class="acoes">' +
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
@@ -1939,7 +1955,8 @@
              print. `table.tbl tr.lin:hover` (css/app.css:537) e o clamp de 2
              linhas do modo compacto já esperavam esta classe; ela nunca foi
              emitida, então as duas regras nasceram mortas. */
-          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + '" data-etapa-linhas="' + cadeia + '">' +
+          var _ehIdentIt = !!(it.identificadoEdital && it.aCompor);
+          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + '" data-etapa-linhas="' + cadeia + '">' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
@@ -1958,6 +1975,7 @@
             /* title com a descrição inteira: no modo compacto a célula corta em
                2 linhas, e sem isto o resto do texto ficaria inalcançável */
             '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
+              (_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
               (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
                 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
                   Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
@@ -1976,9 +1994,11 @@
               UI._seloAjuste(e.id, it) +
               (_licAv && _licAv.porItem[it.id]
                 ? '<br><span class="pill lic-alerta" title="Preço unitário COM BDI de ' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].precoUnit)) + ' acima da referência do órgão (' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].refComBdi)) + ' com BDI). Não bloqueia; confira.">acima do órgão</span>' : '') + '</td>' +
+            UI._celulasRefLinha(orc, L, _lay, _refX) +
             '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+            UI._celulasCatLinha(_lay, _catX && _catX.porLinha[it.id]) +
             '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
-            '<td class="right"><div class="acoes">' +
+            '<td class="right pl-w1"><div class="acoes">' +
               // ▲▼ andam DENTRO do grupo: subir o 1º item de uma sub etapa o
               // arrancaria dela e a numeração sairia 1.1.1, 1.2, 1.1.2.
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (posNoGrupo === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
@@ -1999,7 +2019,7 @@
           if (ehSinapi) {
             var nSem = UI._insumosSemPrecoDe(it.codigo);
             if (nSem > 0) {
-              out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+              out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
             }
           }
           return out;
@@ -2022,9 +2042,10 @@
              que é justamente o oposto do pedido (mesma fonte e cor da etapa). */
           html += '<tr class="etapa-row subetapa' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '">' +
             '<td data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa"><span data-chevron-etapa="' + sx.id + '">' + (recS ? "▸" : "▾") + '</span> ' + rotNum + '</td>' +
-            '<td colspan="5" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
+            '<td colspan="' + (5 + _lay.nPre) + '" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
               ' <span class="muted" style="font-weight:400;font-size:11px">(' + g.qtdItens + (g.qtdItens === 1 ? " item" : " itens") + ')</span></td>' +
             '<td class="num">' + Util.fmtMoeda(g.custoTotal) + '</td>' +
+            UI._celulasCatSub(_lay, _catX && _catX.porSub[sx.id]) +
             '<td class="num">' + Util.fmtMoeda(g.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
             '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|-1"' + (si === 0 ? ' disabled' : '') + ' title="Subir sub etapa">▲</button>' +
@@ -2033,7 +2054,7 @@
             '<button class="btn sm ico" data-edit-sub="' + e.id + '|' + sx.id + '" title="Renomear sub etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
             '<button class="btn sm ico danger" data-del-sub="' + e.id + '|' + sx.id + '" title="Remover sub etapa (os itens voltam para a etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
           if (!lst.length) {
-            html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="8" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
+            html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="' + (_lay.total - 1) + '" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
           }
           lst.forEach(function (it, k) { html += linhaItem(it, k, lst.length, sx.id); });
         });
@@ -2048,12 +2069,13 @@
       var _tt = _c; // mesmos números do motor que geraram as linhas acima
       html += '</tbody><tfoot>';
       if (!_c.bdiNoPU) {
-        html += '<tr class="tot-linha"><td colspan="6">Custo direto</td>' +
-          '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td><td class="num">—</td><td></td></tr>' +
-          '<tr class="tot-linha"><td colspan="6">BDI ' + Util.fmtPct(_c.pct) + ' (sobre o preço final)</td>' +
-          '<td class="num">—</td><td class="num">' + Util.fmtMoeda(_tt.bdiValor) + '</td><td></td></tr>';
+        var _vaziasCat = _lay.cat ? '<td></td><td></td><td></td>' : '';
+        html += '<tr class="tot-linha"><td colspan="' + (6 + _lay.nPre) + '">Custo direto</td>' +
+          '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' + _vaziasCat + '<td class="num">—</td><td></td></tr>' +
+          '<tr class="tot-linha"><td colspan="' + (6 + _lay.nPre) + '">BDI ' + Util.fmtPct(_c.pct) + ' (sobre o preço final)</td>' +
+          '<td class="num">—</td>' + _vaziasCat + '<td class="num">' + Util.fmtMoeda(_tt.bdiValor) + '</td><td></td></tr>';
       }
-      html += '<tr class="tot-geral"><td colspan="6">TOTAL GERAL' +
+      html += '<tr class="tot-geral"><td colspan="' + (6 + _lay.nPre) + '">TOTAL GERAL' +
           '<span class="muted" style="font-weight:400;font-size:11px">' +
           ' — ' + _c.qtdItens + (_c.qtdItens === 1 ? " item" : " itens") +
           " em " + _c.qtdEtapas + (_c.qtdEtapas === 1 ? " etapa" : " etapas") +
@@ -2062,6 +2084,7 @@
           this._seloPrecisao(_c.modo) +
           '</span></td>' +
         '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' +
+        UI._celulasCatSub(_lay, _catX && _catX.total) +
         '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
         '</tfoot></table>';
       /* fecha o container: com índice foram dois divs (.pl-tabela + .pl-com-indice), sem índice foi só o .pl-tabela */
@@ -2490,6 +2513,73 @@
      * O selo é BOTÃO, não texto: quem vê "+4,0%" quer saber de quanto era, e
      * a resposta tem que estar a um clique, não numa outra tela.
      * ----------------------------------------------------------------- */
+    /* ------------------------------------------------------------------
+     * COLUNAS EXTRAS DA PLANILHA (js/colunas.js) — só desenho; a conta é do motor
+     * ------------------------------------------------------------------ */
+    /* menu "Colunas" no topo da planilha: cada grupo liga/desliga e a escolha
+       fica salva no orçamento (config.colunas). Aberto/fechado é estado de tela. */
+    _menuColunas: function (orc, calc) {
+      var aberto = (typeof App !== "undefined") ? !!App._colMenuAberto : false;
+      var lay = Colunas.layout(orc), cfg = Colunas.cfg(orc);
+      var temRef = false;
+      /* só custa a varredura quando o quadrinho está aberto */
+      if (aberto) { try { temRef = Colunas.temReferencia(orc, calc); } catch (e) { temRef = false; } }
+      var n = (lay.pubdi ? 1 : 0) + (lay.cat ? 1 : 0) + (lay.ref ? 1 : 0);
+      var caixa = function (id, marcado, rotulo, ajuda, desab) {
+        return '<label class="col-op" title="' + Util.esc(ajuda) + '"><input type="checkbox" data-acao="col-grupo" data-col="' + id + '"' + (marcado ? ' checked' : '') + (desab ? ' disabled' : '') + '> ' + Util.esc(rotulo) + '</label>';
+      };
+      var h = '<div class="col-menu"><button class="btn sm ' + (aberto || n ? 'primary' : 'ghost') + '" data-acao="col-menu" aria-expanded="' + (aberto ? 'true' : 'false') + '" title="Mostrar ou ocultar as colunas extras da planilha: preço c/ BDI, custo MO/MAT/EQ e preço de referência. A escolha fica salva neste orçamento e vale também no relatório e no laudo.">' +
+        (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + ' Colunas' + (n ? ' (' + n + ')' : '') + '</button>';
+      if (aberto) {
+        h += '<div class="col-pop" role="dialog" aria-label="Colunas da planilha">' +
+          '<div class="col-pop-tit">Colunas extras <span class="muted">— planilha, relatório e laudo</span></div>' +
+          caixa("pubdi", lay.pubdi, Colunas.GRUPOS[0].rotulo, Colunas.GRUPOS[0].ajuda, false) +
+          caixa("cat", lay.cat, Colunas.GRUPOS[1].rotulo, Colunas.GRUPOS[1].ajuda, false) +
+          caixa("ref", lay.ref, Colunas.GRUPOS[2].rotulo, temRef ? Colunas.GRUPOS[2].ajuda : "Este orçamento não tem preço de referência de órgão (ele vem no pacote do CertamePRO).", !temRef && cfg.ref !== true && !lay.ref) +
+          '<div class="col-lim"><label>Verde até <input class="cell" data-col-limite="1" value="' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '" inputmode="decimal" size="4"> % acima da referência</label></div>' +
+          '<div class="col-pop-rod"><button class="btn sm ghost" data-acao="col-padrao" title="Volta ao padrão: colunas ocultas (em licitação, aparecem o preço c/ BDI e o de referência)">Voltar ao padrão</button> <button class="btn sm" data-acao="col-menu">Fechar</button></div>' +
+          '</div>';
+      }
+      return h + '</div>';
+    },
+    _fmtCelulaCat: function (v) { return Util.fmtMoeda(v); },
+    /* subtotal MO/MAT/EQ de etapa, sub etapa ou total; item sem analítico fica de fora e a célula diz quantos */
+    _celulasCatSub: function (lay, a) {
+      if (!lay.cat) return '';
+      if (!a) return '<td></td><td></td><td></td>';
+      var nota = a.sem ? ' title="' + a.sem + (a.sem === 1 ? ' item sem' : ' itens sem') + ' analítico (sem discriminação MO/MAT/EQ) ficou' + (a.sem === 1 ? '' : 'ram') + ' fora deste subtotal — nada é rateado."' : '';
+      var mk = a.sem ? '<sup class="muted">*</sup>' : '';
+      var c = function (v) { return '<td class="num"' + nota + '>' + Util.fmtMoeda(v) + mk + '</td>'; };
+      return c(a.mo) + c(a.mat) + c(a.eq);
+    },
+    _celulasCatLinha: function (lay, lin) {
+      if (!lay.cat) return '';
+      if (!lin || !lin.tem) {
+        var v = '<td class="num muted" title="Item sem analítico: não há discriminação MO/MAT/EQ e o sistema não faz rateio.">—</td>';
+        return v + v + v;
+      }
+      return '<td class="num">' + Util.fmtMoeda(lin.mo) + '</td><td class="num">' + Util.fmtMoeda(lin.mat) + '</td><td class="num">' + Util.fmtMoeda(lin.eq) + '</td>';
+    },
+    /* Preço c/ BDI, Preço ref. e a diferença % (vermelho abaixo · verde próximo · laranja acima) */
+    _celulasRefLinha: function (orc, L, lay, refs) {
+      if (typeof Colunas === "undefined") return '';
+      var h = '';
+      if (lay.pubdi) h += '<td class="num col-nosso">' + Util.fmtMoeda(Colunas.precoUnitComBdi(orc, L)) + '</td>';
+      if (lay.ref) {
+        var r = refs[L.itemId];
+        if (!r) {
+          h += '<td class="num muted" title="Item sem preço de referência do órgão.">—</td><td class="num muted">—</td>';
+        } else {
+          var semBdi = r.tipo === "semBdi";
+          var tip = 'Referência do órgão: ' + Util.fmtMoeda(r.ref) + (semBdi ? ' (sem BDI)' : ' (com BDI)') + (r.origem ? ' · ' + r.origem : '') +
+            ' · nosso: ' + Util.fmtMoeda(r.nosso) + (semBdi ? ' (custo sem BDI)' : ' (com BDI)') + (r.bdiAssumido ? ' · BDI da referência estimado pelo BDI deste orçamento' : '');
+          h += '<td class="num col-ref" title="' + Util.esc(tip) + '">' + Util.fmtMoeda(r.ref) + (semBdi ? ' <span class="muted ref-sbdi">s/ BDI</span>' : '') + '</td>' +
+            '<td class="num"><span class="dif dif-' + r.faixa + '" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA + '. ' + tip) + '">' + Util.esc(r.texto) + '</span></td>';
+        }
+      }
+      return h;
+    },
+
     _seloAjuste: function (etapaId, it) {
       if (typeof Ajustes === "undefined" || !Ajustes.delta) return "";
       var d = Ajustes.delta(it, "custoUnitario", it.custoUnitario);
@@ -3889,8 +3979,19 @@
       var _rotPrecoRel = calc.bdiNoPU ? "Preço Venda" : "Preço de custo";
       html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
       if (!calc.bdiNoPU) html += '<p class="muted" style="font-size:11.5px;margin:-4px 0 6px">Neste orçamento o BDI incide sobre o preço final: as linhas abaixo saem a <b>custo</b> e o BDI é uma parcela única. O preço de venda por etapa está no <b>Resumo Sintético</b> (seção 1).</p>';
+      /* COLUNAS EXTRAS (js/colunas.js): o relatório obedece à escolha salva no orçamento */
+      var _layR = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 8 };
+      var _catR = _layR.cat ? Colunas.categorias(orc, calc) : null;
+      var _refR = _layR.ref ? Colunas.mapaReferencias(orc, calc) : {};
+      var _paraR = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
+      var _totR = 8 + _layR.nPre + _layR.nPos;
       html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
-        '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">' + _rotPrecoRel + '</th></tr></thead><tbody>';
+        '<th class="r">Qtd</th><th class="r">Custo Unit.</th>' +
+        (_layR.pubdi ? '<th class="r">Preço unit. c/ BDI</th>' : '') +
+        (_layR.ref ? '<th class="r">Preço ref.</th><th class="r" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA) + '">Dif. %</th>' : '') +
+        '<th class="r">Custo Total</th>' +
+        (_layR.cat ? '<th class="r">Custo MO</th><th class="r">Custo MAT</th><th class="r">Custo EQ</th>' : '') +
+        '<th class="r">' + _rotPrecoRel + '</th></tr></thead><tbody>';
       calc.linhas.forEach(function (L) {
         porItem[L.etapaIdx + "|" + L.itemIdx] = L;
         var s2 = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
@@ -3902,8 +4003,8 @@
         // subtotal = soma das linhas impressas (ver comentário em renderPlanilha)
         var sm2 = porEtapa[ei] || { custo: 0, venda: 0 };
         var se = { custoDireto: Arred.valor(sm2.custo, calc.modo), precoVenda: Arred.valor(sm2.venda, calc.modo) };
-        html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + (e.opcional ? _marcaOpc : '') + '</td></tr>';
-        if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
+        html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="' + (_totR - 1) + '">' + Util.esc(e.nome) + (e.opcional ? _marcaOpc : '') + '</td></tr>';
+        if (!e.itens.length) html += '<tr><td colspan="' + _totR + '" class="muted">(sem itens)</td></tr>';
         var _subRelAtual = null;
         e.itens.forEach(function (it, ii) {
           var L = porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, custoUnitario: 0, numero: "" };
@@ -3913,29 +4014,32 @@
             if (_subRelAtual) {
               var gR = porSubRel[_subRelAtual] || { numero: "", nome: "", custoTotal: 0, precoTotal: 0 };
               html += '<tr class="grp subetapa"><td style="padding-left:14px"><b>' + Util.esc(gR.numero) + '</b></td>' +
-                '<td colspan="5" style="padding-left:14px">' + Util.esc(gR.nome) + '</td>' +
-                '<td class="r">' + Util.fmtMoeda(gR.custoTotal) + '</td><td class="r">' + Util.fmtMoeda(gR.precoTotal) + '</td></tr>';
+                '<td colspan="' + (5 + _layR.nPre) + '" style="padding-left:14px">' + Util.esc(gR.nome) + '</td>' +
+                '<td class="r">' + Util.fmtMoeda(gR.custoTotal) + '</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.porSub[_subRelAtual])) + '<td class="r">' + Util.fmtMoeda(gR.precoTotal) + '</td></tr>';
             }
           }
           html += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
+            _paraR(UI._celulasRefLinha(orc, L, _layR, _refR)) +
             '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+            _paraR(UI._celulasCatLinha(_layR, _catR && _catR.porLinha[it.id])) +
             '<td class="r">' + Util.fmtMoeda(L.precoTotal) + '</td></tr>';
         });
-        html += '<tr class="sub"><td colspan="6">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
-          '<td class="r">' + Util.fmtMoeda(se.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(se.precoVenda) + '</td></tr>';
+        html += '<tr class="sub"><td colspan="' + (6 + _layR.nPre) + '">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
+          '<td class="r">' + Util.fmtMoeda(se.custoDireto) + '</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.porEtapa[ei])) + '<td class="r">' + Util.fmtMoeda(se.precoVenda) + '</td></tr>';
       });
       html += '</tbody><tfoot>';
       // BDI apartado (incidência "no preço final"): a coluna soma o CUSTO, então
       // o BDI precisa aparecer como linha própria para o rodapé fechar.
       if (!calc.bdiNoPU) {
-        html += '<tr><td colspan="6">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
-          '<tr><td colspan="7">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
+        html += '<tr><td colspan="' + (6 + _layR.nPre) + '">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' + (_layR.cat ? '<td></td><td></td><td></td>' : '') + '<td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
+          '<tr><td colspan="' + (7 + _layR.nPre + _layR.nPos) + '">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
       }
-      html += '<tr><td colspan="6">TOTAL GERAL' + this._seloPrecisao(calc.modo) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
-        '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
+      html += '<tr><td colspan="' + (6 + _layR.nPre) + '">TOTAL GERAL' + this._seloPrecisao(calc.modo) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
+        '</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.total)) + '<td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
+      if (_layR.cat && _catR && _catR.total.sem) html += '<p class="muted" style="font-size:11.5px;margin:2px 0 6px"><sup>*</sup> ' + _catR.total.sem + (_catR.total.sem === 1 ? ' item não tem' : ' itens não têm') + ' analítico (sem discriminação de mão de obra, material e equipamento): fica(m) fora dos subtotais de Custo MO/MAT/EQ — nada é rateado.</p>';
 
       // 3) COMPOSIÇÕES E INSUMOS (analítico SINAPI) — cada composição detalhada em seus insumos
       if (typeof Analitico !== "undefined" && Analitico.carregado) {

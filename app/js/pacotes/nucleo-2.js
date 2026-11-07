@@ -56130,21 +56130,85 @@ arr(dump && dump.gestao && dump.gestao[ent]).forEach(function (x) { r[ent].push(
 });
 return r;
 },
-aplicar: function (dump, origem) {
+_dataHoraBr: function (iso) {
+var d = new Date(iso || Date.now());
+if (isNaN(d.getTime())) d = new Date();
+var z = function (n) { return (n < 10 ? "0" : "") + n; };
+return z(d.getDate()) + "/" + z(d.getMonth() + 1) + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+},
+editadoLocal: function (existente, pacoteOrc) {
+var motivos = [];
+var ehIdent = function (e, it) {
+return !!((typeof Licitacao !== "undefined" && Licitacao.ehEtapaIdentificados && Licitacao.ehEtapaIdentificados(e)) || (it && it.identificadoEdital));
+};
+if (existente.importadoEm && String(existente.atualizadoEm || "") > String(existente.importadoEm)) {
+motivos.push("alterado depois da importação de " + this._dataHoraBr(existente.importadoEm));
+}
+var doPacote = Object.create(null);
+arr(pacoteOrc && pacoteOrc.etapas).forEach(function (e) { arr(e && e.itens).forEach(function (it) { if (it && it.id != null) doPacote[String(it.id)] = it; }); });
+var difer = 0, extras = 0;
+arr(existente && existente.etapas).forEach(function (e) {
+arr(e && e.itens).forEach(function (it) {
+if (!it || it.id == null || ehIdent(e, it)) return;
+var p = doPacote[String(it.id)];
+if (!p) { extras++; return; }
+if (Math.abs(Util.num(it.custoUnitario) - Util.num(p.custoUnitario)) > 0.005 || Math.abs(Util.num(it.quantidade) - Util.num(p.quantidade)) > 1e-9) difer++;
+});
+});
+if (difer) motivos.push(difer + " item(ns) com preço ou quantidade diferente do pacote");
+if (extras) motivos.push(extras + " item(ns) que o pacote não tem");
+return { editado: motivos.length > 0, motivos: motivos };
+},
+conflitos: function (dump) {
+var self = this, out = [], eid;
+try { eid = Auth.empresaId(); } catch (e) { return out; }
+var idx = Object.create(null);
+try { Store.listarOrcamentos(eid).forEach(function (x) { if (x && x.id) idx[x.id] = x; }); } catch (e2) {}
+arr(dump && dump.orcamentos).forEach(function (o) {
+var ex = o && idx[o.id];
+if (!ex) return;
+var r = self.editadoLocal(ex, o);
+if (r.editado) out.push({ id: o.id, nome: ex.nome || o.nome || "", numero: ex.numero || "", motivos: r.motivos, atualizadoEm: ex.atualizadoEm || "", importadoEm: ex.importadoEm || "" });
+});
+return out;
+},
+copiaAntesDaReimportacao: function (ex, agora) {
+var cp = Util.clone(ex), rot = this._dataHoraBr(agora);
+cp.id = Util.uid("orc");
+cp.nome = String(ex.nome || "Orçamento") + " (antes da reimportação " + rot + ")";
+if (ex.numero) cp.numero = String(ex.numero) + "-ANTES-" + rot.replace(/[^0-9]/g, "");
+cp.copiaDe = ex.id; cp.copiaMotivo = "reimportacao-pacote";
+cp.criadoEm = agora; cp.atualizadoEm = agora;
+delete cp.importadoEm;
+return cp;
+},
+aplicar: function (dump, origem, opcoes) {
 var v = this.validar(dump);
 if (!v.ok) return { ok: false, erros: v.erros };
-var eid = Auth.empresaId();
-var res = { ok: true, nOrc: 0, orcMantidos: 0, orcIds: [], gestao: {} };
-var idx = Object.create(null);
-try { Store.listarOrcamentos(eid).forEach(function (x) { if (x && x.id) idx[x.id] = String(x.atualizadoEm || ""); }); } catch (e) {}
-var entramOrc = [];
+var self = this, eid = Auth.empresaId();
+opcoes = opcoes || {};
+var agora = opcoes.agora || Util.agoraISO();
+var res = { ok: true, nOrc: 0, orcMantidos: 0, orcIds: [], gestao: {}, copias: [], mantidosPorEscolha: 0 };
+var idx = Object.create(null), existentes = Object.create(null);
+try { Store.listarOrcamentos(eid).forEach(function (x) { if (x && x.id) { idx[x.id] = String(x.atualizadoEm || ""); existentes[x.id] = x; } }); } catch (e) {}
+var entramOrc = [], copiasOrc = [];
 arr(dump.orcamentos).forEach(function (o) {
 var c = Util.clone(o);
 if (c.schemaVersao == null) c.schemaVersao = CONFIG.schemaVersao;
 if (!c.criadoEm) c.criadoEm = Util.agoraISO();
 if (!c.atualizadoEm) c.atualizadoEm = c.criadoEm;
 res.orcIds.push(c.id);
-if (idx[c.id] != null && idx[c.id] >= String(c.atualizadoEm)) { res.orcMantidos++; return; }
+var ex = existentes[c.id];
+if (ex) {
+var ed = self.editadoLocal(ex, o);
+if (ed.editado) {
+var esc = (opcoes.escolhas && opcoes.escolhas[c.id]) || "substituir";
+if (esc === "manter") { res.orcMantidos++; res.mantidosPorEscolha++; return; }
+copiasOrc.push({ origem: ex, copia: self.copiaAntesDaReimportacao(ex, agora), novoId: c.id });
+c.atualizadoEm = (String(agora) > String(ex.atualizadoEm || "")) ? agora : Util.agoraISO();
+} else if (idx[c.id] >= String(c.atualizadoEm)) { res.orcMantidos++; return; }
+}
+c.importadoEm = agora;
 try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c); } catch (e) {}
 try {
 if (dump.certamepro && typeof Licitacao !== "undefined" && Licitacao.aplicarPacote) {
@@ -56154,6 +56218,7 @@ var _lic = Licitacao.aplicarPacote(c, dump.certamepro);
 if (_lic) {
 res.licitacao = (res.licitacao || 0) + 1;
 if (_lic.basesExigidas && _lic.basesExigidas.length) res.basesExigidas = (res.basesExigidas || 0) + _lic.basesExigidas.length;
+if (_lic.itensIdentificados && _lic.itensIdentificados.novos) res.identificados = (res.identificados || 0) + _lic.itensIdentificados.novos;
 }
 }
 }
@@ -56161,6 +56226,14 @@ if (_lic.basesExigidas && _lic.basesExigidas.length) res.basesExigidas = (res.ba
 entramOrc.push(c);
 });
 try { Store.desenterrar(eid, "orcamentos", entramOrc.map(function (x) { return x.id; })); } catch (e) {}
+var semCopia = Object.create(null);
+copiasOrc.forEach(function (k) {
+var ok = null;
+try { ok = Store.salvarOrcamento(eid, k.copia, true); } catch (eC) { ok = null; }
+if (ok) res.copias.push({ id: k.copia.id, nome: k.copia.nome, deId: k.origem.id });
+else { semCopia[k.novoId] = 1; res.copiaFalhou = (res.copiaFalhou || 0) + 1; }
+});
+entramOrc = entramOrc.filter(function (c) { if (semCopia[c.id]) { res.orcMantidos++; return false; } return true; });
 entramOrc.forEach(function (c) {
 if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; return; }
 if (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") res.orcIlegivel = (res.orcIlegivel || 0) + 1;
@@ -56197,8 +56270,13 @@ mensagem: function (res) {
 if (!res || !res.ok) return "Pacote não importado.";
 var partes = [res.nOrc + " orçamento(s) importado(s)"];
 if (res.licitacao) partes.push("modo licitação ligado (itens do órgão travados; avisos de preço e teto ativos)");
+if (res.identificados) partes.push(res.identificados + " item(ns) identificado(s) no edital fora da planilha do órgão, na etapa opcional “Itens identificados no edital” (sem preço: a compor; fora do total da proposta)");
 if (res.basesExigidas) partes.push(res.basesExigidas + " base(s) de preço exigida(s) pelo edital — confira o painel \"Bases exigidas pelo edital\" antes de rodar o Orçamentista");
-if (res.orcMantidos) partes.push(res.orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s)");
+if (res.copias && res.copias.length) partes.push("o orçamento anterior ficou guardado como cópia: " + res.copias.map(function (k) { return "“" + k.nome + "”"; }).join(", "));
+if (res.copiaFalhou) partes.push(res.copiaFalhou + " NÃO foi substituído(s): não consegui gravar a cópia do atual, e nada se apaga sem cópia");
+if (res.mantidosPorEscolha) partes.push(res.mantidosPorEscolha + " mantido(s) como estava(m) aqui, por escolha sua (o pacote ficou de fora)");
+var _antigos = res.orcMantidos - (res.mantidosPorEscolha || 0) - (res.copiaFalhou || 0);
+if (_antigos > 0) partes.push(_antigos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s)");
 if (res.orcIlegivel) partes.push(res.orcIlegivel + " NÃO entrou(aram): a lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — veja o aviso na lista de orçamentos");
 ENT_PERMITIDAS.forEach(function (ent) {
 var g = res.gestao[ent]; if (!g) return;
@@ -56229,10 +56307,31 @@ return "<li><b>" + esc(o.nome) + "</b>" + (o.numero ? " · " + esc(o.numero) : "
 '<p class="muted" style="font-size:12.5px">Importar <b>mescla</b> com o que já existe nesta conta — nada é apagado. ' +
 "Se um registro já estiver mais novo aqui, ele é mantido e o do arquivo fica de fora." +
 (origem ? "<br>Origem: <span class=\"mono\" style=\"font-size:11px\">" + esc(origem) + "</span>" : "") + "</p>";
+var conf = [];
+try { conf = this.conflitos(dump); } catch (eCf) { conf = []; }
+var quando = this._dataHoraBr(Util.agoraISO());
+conf.forEach(function (k, i) {
+html += '<div class="pkg-reimp" data-pkg-reimp="' + esc(k.id) + '" style="margin-top:10px;padding:8px 10px;border:1px solid var(--linha);border-radius:8px">' +
+'<p style="margin:0 0 6px;font-size:13px"><b>Este certame já está nesta conta</b> (' + esc(k.nome) + (k.numero ? " · " + esc(k.numero) : "") + ') e o orçamento foi <b>editado depois da importação anterior</b>: ' + esc(k.motivos.join("; ")) + '.</p>' +
+'<label style="display:block;font-size:13px;margin:3px 0"><input type="radio" name="pkg-reimp-' + i + '" value="substituir" checked> ' +
+'<b>Substituir</b> pelo pacote — o atual vai para uma cópia “' + esc(k.nome) + ' (antes da reimportação ' + esc(quando) + ')”</label>' +
+'<label style="display:block;font-size:13px;margin:3px 0"><input type="radio" name="pkg-reimp-' + i + '" value="manter"> ' +
+'<b>Manter o atual</b> — o pacote deste certame fica de fora</label></div>';
+});
+var lerEscolhas = function () {
+var esc2 = {};
+conf.forEach(function (k, i) {
+try {
+var r = document.querySelector('input[name="pkg-reimp-' + i + '"]:checked');
+esc2[k.id] = (r && r.value === "manter") ? "manter" : "substituir";
+} catch (e) { esc2[k.id] = "substituir"; }
+});
+return esc2;
+};
 UI.modal("Importar orçamento pronto", html, [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); if (aoTerminar) aoTerminar({ ok: false, cancelado: true }); } },
 { texto: "Importar", classe: "primary", onClick: function () {
-var res = self.aplicar(dump, origem);
+var res = self.aplicar(dump, origem, { escolhas: lerEscolhas() });
 UI.fecharModal();
 UI.toast(self.mensagem(res), res.ok && !res.orcIlegivel ? "ok" : "erro", res.orcIlegivel ? 12000 : undefined);
 if (res.ok && typeof App !== "undefined") {
@@ -57792,6 +57891,22 @@ this._idxAberto = !this._idxAberto;
 try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
 this.render(); return;
 }
+if (t.dataset.acao === "col-menu") { this._colMenuAberto = !this._colMenuAberto; this.render(); return; }
+if (t.dataset.acao === "col-grupo") {
+var ocG = this.orcAtual;
+if (!ocG || typeof Colunas === "undefined") return;
+Colunas.definir(ocG, t.dataset.col, !!t.checked);
+this._colMenuAberto = true;
+this._persistirColunas(); this.render(); return;
+}
+if (t.dataset.acao === "col-padrao") {
+var ocP = this.orcAtual;
+if (!ocP || typeof Colunas === "undefined") return;
+["pubdi", "cat", "ref"].forEach(function (g) { Colunas.definir(ocP, g, null); });
+Colunas.definirLimite(ocP, Colunas.LIMITE_PADRAO);
+this._colMenuAberto = true;
+this._persistirColunas(); this.render(); return;
+}
 if (t.dataset.acao === "pl-compacta") {
 this._plCompacta = !this._plCompacta;
 try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
@@ -58096,6 +58211,15 @@ return;
 Apresentacao.abrir(this.orcAtual);
 },
 onChange: function (e) {
+if (e.target && e.target.getAttribute && e.target.getAttribute("data-col-limite") != null) {
+var ocL = this.orcAtual;
+if (ocL && typeof Colunas !== "undefined") {
+if (!Colunas.definirLimite(ocL, e.target.value)) UI.toast("Informe um percentual entre 0 e 1000 (ex.: 5 ou 7,5).", "erro");
+else this._persistirColunas();
+this._colMenuAberto = true; this.render();
+}
+return;
+}
 var acaoCh = (e.target && e.target.getAttribute) ? e.target.getAttribute("data-acao") : null;
 if (acaoCh && this._ACAO_CRONO_RE.test(acaoCh)) { if (this._acaoCrono(acaoCh, e.target, e)) return; }
 if (e.target && e.target.getAttribute && e.target.getAttribute("data-ia-idx") != null) {
@@ -63598,6 +63722,7 @@ UI.toast("Orçamento “" + orc.nome + "” excluído.", "ok");
 ]);
 },
 abrirOrcamento: function (id) {
+this._colMenuAberto = false;
 var orc = Store.obterOrcamento(Auth.empresaId(), id);
 if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
 if (this._orcForaDoEscopo(orc)) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return; }
@@ -67754,6 +67879,18 @@ else if (s.trial && s.expirado) msg = "⏰ Seu período de teste terminou. Ative
 else msg = "" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Ative sua licença (🔑) para salvar e exportar.";
 UI.toast(msg, "erro");
 try { this.abrirLicenca(); } catch (e) {}
+},
+_persistirColunas: function () {
+var o = this.orcAtual;
+if (!o) return false;
+if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) {
+if (this._avisouColunasAprovado !== o.id) {
+this._avisouColunasAprovado = o.id;
+UI.toast("Orçamento aprovado: a escolha de colunas vale só até fechar este orçamento (o aprovado não é alterado).", "ok", 7000);
+}
+return false;
+}
+return this.persistir();
 },
 persistir: function (opts) {
 if (!this.orcAtual) return false;

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.255",
+versao: "1.2.256",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -9292,8 +9292,20 @@ arredondamento: A().PADRAO,
 bdiIncidencia: A().INCIDENCIA_PADRAO,
 encargos: { tipo: "desonerado", horista: 0, mensalista: 0 },
 permitirZerado: false,
-licitacao: { ativo: false, tipo: "", abertura: "", processo: "" }
+licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
+colunas: this.colunasPadrao()
 };
+},
+colunasPadrao: function () {
+return { pubdi: null, cat: null, ref: null, limiteAcimaPct: 5 };
+},
+garantirColunas: function (cfg) {
+var c = (cfg.colunas && typeof cfg.colunas === "object" && !Array.isArray(cfg.colunas)) ? cfg.colunas : (cfg.colunas = this.colunasPadrao());
+["pubdi", "cat", "ref"].forEach(function (k) { if (c[k] !== true && c[k] !== false) c[k] = null; });
+var lim = Number(c.limiteAcimaPct);
+if (!isFinite(lim) || lim < 0 || lim > 1000 || c.limiteAcimaPct === null || c.limiteAcimaPct === "") c.limiteAcimaPct = 5;
+else c.limiteAcimaPct = lim;
+return c;
 },
 garantirConfig: function (orc) {
 if (!orc) return this.configPadrao();
@@ -9305,6 +9317,7 @@ var pad = this.configPadrao();
 for (var k in pad) { if (orc.config[k] == null) orc.config[k] = pad[k]; }
 if (!orc.config.encargos || typeof orc.config.encargos !== "object") orc.config.encargos = { tipo: "desonerado", horista: 0, mensalista: 0 };
 if (!orc.config.licitacao || typeof orc.config.licitacao !== "object") orc.config.licitacao = { ativo: false, tipo: "", abertura: "", processo: "" };
+this.garantirColunas(orc.config);
 orc.config.arredondamento = A().normalizar(orc.config.arredondamento);
 orc.config.bdiIncidencia = A().normalizarIncidencia(orc.config.bdiIncidencia);
 if (typeof orc.desonerado === "boolean") orc.config.encargos.tipo = orc.desonerado ? "desonerado" : "nao_desonerado";
@@ -9915,6 +9928,7 @@ linhas: function (orc) { return this.calcular(orc).linhas; },
 itensSemPreco: function (orc) {
 var out = [];
 this.calcular(orc).linhas.forEach(function (L) {
+if (L.opcional && L.item && L.item.aCompor === true && L.item.identificadoEdital) return;
 if (!(L.custoUnitario > 0)) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome });
 });
 return out;
@@ -14760,7 +14774,8 @@ UI._insSemPreco = _insSem;
 var html = '<div class="flex between mb"><div>' +
 (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
 (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
-'</div><div style="display:flex;gap:6px">' +
+'</div><div style="display:flex;gap:6px;align-items:flex-start">' +
+'<!--colmenu-->' +
 '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
 (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
 (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
@@ -14770,11 +14785,14 @@ var html = '<div class="flex between mb"><div>' +
 (recTudo ? "\u25BE Expandir todas" : "\u25B8 Recolher todas") + '</button>' : "") +
 '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div></div>';
 if (!orc.etapas.length) {
+html = html.replace("<!--colmenu-->", "");
 html += MOD().vazio({ icone: "planilha", titulo: "Planilha vazia", texto: "Adicione uma etapa (ex.: Serviços Preliminares) em + Etapa e depois os itens da SINAPI — ou descreva a obra no Escopo Inteligente." });
 return html;
 }
 html += this._faixaAjustes(orc);
 var _calcIdx = Orcamento.calcular(orc);
+var _lay = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 9, algumaNova: false };
+html = html.replace("<!--colmenu-->", (typeof Colunas !== "undefined") ? UI._menuColunas(orc, _calcIdx) : "");
 var _idx = _idxOn ? this._indiceEtapas(orc, _calcIdx) : "";
 var _idxA = _idx ? this._indiceAlca() : null;
 if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-tabela">';
@@ -14789,9 +14807,16 @@ html += '<div class="pl-foco">Mostrando só <b>' + Util.esc(_nomeFoco) + '</b>'
 }
 var _c = Orcamento.calcular(orc);
 var _rotPreco = _c.bdiNoPU ? "Preço Venda" : "Preço de custo";
-html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + '"><thead><tr>' +
+var _catX = _lay.cat ? Colunas.categorias(orc, _c) : null;
+var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
+html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
 '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
-'<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
+'<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
+(_lay.pubdi ? '<th class="num pl-w1 col-nosso" title="Preço unitário COM BDI (' + Util.esc(Util.fmtPct(_c.pct)) + '), no mesmo arredondamento do orçamento. Ao lado, o Custo Unit é sem BDI.">Preço unit. c/ BDI</th>' : '') +
+(_lay.ref ? '<th class="num pl-w1 col-ref" title="Preço unitário de referência do órgão (com BDI quando o edital traz).">Preço ref.</th>' +
+'<th class="num pl-w1" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA) + '. Vermelho: nosso preço ABAIXO da referência. Verde: igual ou até ' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '% acima. Laranja: mais de ' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '% acima.">Dif. %</th>' : '') +
+'<th class="num">Custo Total</th>' +
+(_lay.cat ? '<th class="num pl-w1" title="Parte de mão de obra do Custo Total da linha, na proporção do analítico do item (MO + MAT + EQ fecha com o Custo Total).">Custo MO</th><th class="num pl-w1" title="Parte de material do Custo Total da linha, na proporção do analítico do item.">Custo MAT</th><th class="num pl-w1" title="Parte de equipamento do Custo Total da linha, na proporção do analítico do item.">Custo EQ</th>' : '') +
 '<th class="num"' + (_c.bdiNoPU ? '' : ' title="Neste orçamento o BDI incide sobre o preço final: as linhas saem a custo e o BDI é uma parcela única. O preço de venda por etapa está no Resumo Sintético."') + '>' + _rotPreco + '</th><th></th></tr></thead><tbody>';
 var _porEtapa = [], _porItem = {}, _porSub = {};
 _c.linhas.forEach(function (L) {
@@ -14808,11 +14833,14 @@ var se = { custoDireto: Arred.valor(sm.custo, _c.modo), precoVenda: Arred.valor(
 var numEtapa = String(ei + 1);
 var rec = (typeof App !== "undefined" && App.etapaRecolhida) ? App.etapaRecolhida(orc.id, e.id) : false;
 var nItensEt = e.itens.length;
-html += '<tr class="etapa-row"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
-'<td colspan="5" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
+var _ehIdentEt = (typeof Licitacao !== "undefined" && Licitacao.ehEtapaIdentificados && Licitacao.ehEtapaIdentificados(e));
+html += '<tr class="etapa-row' + (_ehIdentEt ? ' etapa-ident' : '') + '"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
+'<td colspan="' + (5 + _lay.nPre) + '" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
 ' <span class="muted" style="font-weight:400;font-size:11px">(' + nItensEt + (nItensEt === 1 ? " item" : " itens") + ')</span>' +
+(_ehIdentEt ? ' <span class="pill ident-edital" title="Itens que o edital, o memorial ou os projetos pedem e a planilha do órgão não tem (ou tem com outra quantidade). Ficam FORA do valor da proposta: servem para justificar preço/risco e para o pedido de esclarecimento. A origem de cada um está na memória de cálculo.">fora da planilha do órgão</span>' : '') +
 (e.opcional ? ' <span class="g-pill" style="background:#7a6b4e22;color:#7a6b4e;font-weight:700;font-size:10.5px" title="Na proposta esta etapa sai como adicional, fora do valor total">adicional</span>' : "") + '</td>' +
 '<td class="num">' + Util.fmtMoeda(se.custoDireto) + '</td>' +
+UI._celulasCatSub(_lay, _catX && _catX.porEtapa[ei]) +
 '<td class="num">' + Util.fmtMoeda(se.precoVenda) + '</td>' +
 '<td class="right"><div class="acoes">' +
 '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
@@ -14857,7 +14885,8 @@ var temCod = it.codigo && it.codigo !== "—";
 var cadeia = subId ? (subId + " " + e.id) : e.id;
 var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
 var recLinha = rec || recSub;
-var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + '" data-etapa-linhas="' + cadeia + '">' +
+var _ehIdentIt = !!(it.identificadoEdital && it.aCompor);
+var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + '" data-etapa-linhas="' + cadeia + '">' +
 '<td class="num-item"><b>' + numItem + '</b></td>' +
 '<td>' + (temCod
 ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet || ehBaseAna ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
@@ -14865,6 +14894,7 @@ var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + '" data-etapa-linhas=
 : (fonte !== "SINAPI" && fonte !== "PROPRIO" && fonte !== "SINAPI_DES" ? '<br><span class="pill ' + pillCls + '" style="font-size:9px;padding:1px 6px">' + Util.esc(rotuloFonte) + '</span>' : ''))
 : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
 '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
+(_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
 (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
 Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
@@ -14878,9 +14908,11 @@ Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].curto) + '</span>' : "") + '</td>' 
 UI._seloAjuste(e.id, it) +
 (_licAv && _licAv.porItem[it.id]
 ? '<br><span class="pill lic-alerta" title="Preço unitário COM BDI de ' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].precoUnit)) + ' acima da referência do órgão (' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].refComBdi)) + ' com BDI). Não bloqueia; confira.">acima do órgão</span>' : '') + '</td>' +
+UI._celulasRefLinha(orc, L, _lay, _refX) +
 '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+UI._celulasCatLinha(_lay, _catX && _catX.porLinha[it.id]) +
 '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
-'<td class="right"><div class="acoes">' +
+'<td class="right pl-w1"><div class="acoes">' +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (posNoGrupo === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
 (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
@@ -14894,7 +14926,7 @@ _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '"
 if (ehSinapi) {
 var nSem = UI._insumosSemPrecoDe(it.codigo);
 if (nSem > 0) {
-out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
 }
 }
 return out;
@@ -14908,9 +14940,10 @@ var rotNum = g.numero ? '<b>' + g.numero + '</b>'
 : '<span class="muted" title="Recebe o número assim que tiver o primeiro item">—</span>';
 html += '<tr class="etapa-row subetapa' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '">' +
 '<td data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa"><span data-chevron-etapa="' + sx.id + '">' + (recS ? "▸" : "▾") + '</span> ' + rotNum + '</td>' +
-'<td colspan="5" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
+'<td colspan="' + (5 + _lay.nPre) + '" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
 ' <span class="muted" style="font-weight:400;font-size:11px">(' + g.qtdItens + (g.qtdItens === 1 ? " item" : " itens") + ')</span></td>' +
 '<td class="num">' + Util.fmtMoeda(g.custoTotal) + '</td>' +
+UI._celulasCatSub(_lay, _catX && _catX.porSub[sx.id]) +
 '<td class="num">' + Util.fmtMoeda(g.precoTotal) + '</td>' +
 '<td class="right"><div class="acoes">' +
 '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|-1"' + (si === 0 ? ' disabled' : '') + ' title="Subir sub etapa">▲</button>' +
@@ -14919,7 +14952,7 @@ html += '<tr class="etapa-row subetapa' + (rec ? " oculta" : "") + '" data-etapa
 '<button class="btn sm ico" data-edit-sub="' + e.id + '|' + sx.id + '" title="Renomear sub etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
 '<button class="btn sm ico danger" data-del-sub="' + e.id + '|' + sx.id + '" title="Remover sub etapa (os itens voltam para a etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
 if (!lst.length) {
-html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="8" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
+html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="' + (_lay.total - 1) + '" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
 }
 lst.forEach(function (it, k) { html += linhaItem(it, k, lst.length, sx.id); });
 });
@@ -14927,12 +14960,13 @@ lst.forEach(function (it, k) { html += linhaItem(it, k, lst.length, sx.id); });
 var _tt = _c;
 html += '</tbody><tfoot>';
 if (!_c.bdiNoPU) {
-html += '<tr class="tot-linha"><td colspan="6">Custo direto</td>' +
-'<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td><td class="num">—</td><td></td></tr>' +
-'<tr class="tot-linha"><td colspan="6">BDI ' + Util.fmtPct(_c.pct) + ' (sobre o preço final)</td>' +
-'<td class="num">—</td><td class="num">' + Util.fmtMoeda(_tt.bdiValor) + '</td><td></td></tr>';
+var _vaziasCat = _lay.cat ? '<td></td><td></td><td></td>' : '';
+html += '<tr class="tot-linha"><td colspan="' + (6 + _lay.nPre) + '">Custo direto</td>' +
+'<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' + _vaziasCat + '<td class="num">—</td><td></td></tr>' +
+'<tr class="tot-linha"><td colspan="' + (6 + _lay.nPre) + '">BDI ' + Util.fmtPct(_c.pct) + ' (sobre o preço final)</td>' +
+'<td class="num">—</td>' + _vaziasCat + '<td class="num">' + Util.fmtMoeda(_tt.bdiValor) + '</td><td></td></tr>';
 }
-html += '<tr class="tot-geral"><td colspan="6">TOTAL GERAL' +
+html += '<tr class="tot-geral"><td colspan="' + (6 + _lay.nPre) + '">TOTAL GERAL' +
 '<span class="muted" style="font-weight:400;font-size:11px">' +
 ' — ' + _c.qtdItens + (_c.qtdItens === 1 ? " item" : " itens") +
 " em " + _c.qtdEtapas + (_c.qtdEtapas === 1 ? " etapa" : " etapas") +
@@ -14941,6 +14975,7 @@ html += '<tr class="tot-geral"><td colspan="6">TOTAL GERAL' +
 this._seloPrecisao(_c.modo) +
 '</span></td>' +
 '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' +
+UI._celulasCatSub(_lay, _catX && _catX.total) +
 '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
 '</tfoot></table>';
 html += _idx ? '</div></div>' : '</div>';
@@ -15245,6 +15280,64 @@ out += '<button class="selo-ajuste ' + (d.dif > 0 ? "sobe" : "desce") + '" data-
 ' title="Era ' + Ajustes.fmtN(d.base, 4) + ' na base. Clique para restaurar.">' + Util.esc(Ajustes.selo(d)) + '</button>';
 }
 return out;
+},
+_menuColunas: function (orc, calc) {
+var aberto = (typeof App !== "undefined") ? !!App._colMenuAberto : false;
+var lay = Colunas.layout(orc), cfg = Colunas.cfg(orc);
+var temRef = false;
+if (aberto) { try { temRef = Colunas.temReferencia(orc, calc); } catch (e) { temRef = false; } }
+var n = (lay.pubdi ? 1 : 0) + (lay.cat ? 1 : 0) + (lay.ref ? 1 : 0);
+var caixa = function (id, marcado, rotulo, ajuda, desab) {
+return '<label class="col-op" title="' + Util.esc(ajuda) + '"><input type="checkbox" data-acao="col-grupo" data-col="' + id + '"' + (marcado ? ' checked' : '') + (desab ? ' disabled' : '') + '> ' + Util.esc(rotulo) + '</label>';
+};
+var h = '<div class="col-menu"><button class="btn sm ' + (aberto || n ? 'primary' : 'ghost') + '" data-acao="col-menu" aria-expanded="' + (aberto ? 'true' : 'false') + '" title="Mostrar ou ocultar as colunas extras da planilha: preço c/ BDI, custo MO/MAT/EQ e preço de referência. A escolha fica salva neste orçamento e vale também no relatório e no laudo.">' +
+(typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + ' Colunas' + (n ? ' (' + n + ')' : '') + '</button>';
+if (aberto) {
+h += '<div class="col-pop" role="dialog" aria-label="Colunas da planilha">' +
+'<div class="col-pop-tit">Colunas extras <span class="muted">— planilha, relatório e laudo</span></div>' +
+caixa("pubdi", lay.pubdi, Colunas.GRUPOS[0].rotulo, Colunas.GRUPOS[0].ajuda, false) +
+caixa("cat", lay.cat, Colunas.GRUPOS[1].rotulo, Colunas.GRUPOS[1].ajuda, false) +
+caixa("ref", lay.ref, Colunas.GRUPOS[2].rotulo, temRef ? Colunas.GRUPOS[2].ajuda : "Este orçamento não tem preço de referência de órgão (ele vem no pacote do CertamePRO).", !temRef && cfg.ref !== true && !lay.ref) +
+'<div class="col-lim"><label>Verde até <input class="cell" data-col-limite="1" value="' + Util.esc(Util.fmtNum(Colunas.limite(orc), 1)) + '" inputmode="decimal" size="4"> % acima da referência</label></div>' +
+'<div class="col-pop-rod"><button class="btn sm ghost" data-acao="col-padrao" title="Volta ao padrão: colunas ocultas (em licitação, aparecem o preço c/ BDI e o de referência)">Voltar ao padrão</button> <button class="btn sm" data-acao="col-menu">Fechar</button></div>' +
+'</div>';
+}
+return h + '</div>';
+},
+_fmtCelulaCat: function (v) { return Util.fmtMoeda(v); },
+_celulasCatSub: function (lay, a) {
+if (!lay.cat) return '';
+if (!a) return '<td></td><td></td><td></td>';
+var nota = a.sem ? ' title="' + a.sem + (a.sem === 1 ? ' item sem' : ' itens sem') + ' analítico (sem discriminação MO/MAT/EQ) ficou' + (a.sem === 1 ? '' : 'ram') + ' fora deste subtotal — nada é rateado."' : '';
+var mk = a.sem ? '<sup class="muted">*</sup>' : '';
+var c = function (v) { return '<td class="num"' + nota + '>' + Util.fmtMoeda(v) + mk + '</td>'; };
+return c(a.mo) + c(a.mat) + c(a.eq);
+},
+_celulasCatLinha: function (lay, lin) {
+if (!lay.cat) return '';
+if (!lin || !lin.tem) {
+var v = '<td class="num muted" title="Item sem analítico: não há discriminação MO/MAT/EQ e o sistema não faz rateio.">—</td>';
+return v + v + v;
+}
+return '<td class="num">' + Util.fmtMoeda(lin.mo) + '</td><td class="num">' + Util.fmtMoeda(lin.mat) + '</td><td class="num">' + Util.fmtMoeda(lin.eq) + '</td>';
+},
+_celulasRefLinha: function (orc, L, lay, refs) {
+if (typeof Colunas === "undefined") return '';
+var h = '';
+if (lay.pubdi) h += '<td class="num col-nosso">' + Util.fmtMoeda(Colunas.precoUnitComBdi(orc, L)) + '</td>';
+if (lay.ref) {
+var r = refs[L.itemId];
+if (!r) {
+h += '<td class="num muted" title="Item sem preço de referência do órgão.">—</td><td class="num muted">—</td>';
+} else {
+var semBdi = r.tipo === "semBdi";
+var tip = 'Referência do órgão: ' + Util.fmtMoeda(r.ref) + (semBdi ? ' (sem BDI)' : ' (com BDI)') + (r.origem ? ' · ' + r.origem : '') +
+' · nosso: ' + Util.fmtMoeda(r.nosso) + (semBdi ? ' (custo sem BDI)' : ' (com BDI)') + (r.bdiAssumido ? ' · BDI da referência estimado pelo BDI deste orçamento' : '');
+h += '<td class="num col-ref" title="' + Util.esc(tip) + '">' + Util.fmtMoeda(r.ref) + (semBdi ? ' <span class="muted ref-sbdi">s/ BDI</span>' : '') + '</td>' +
+'<td class="num"><span class="dif dif-' + r.faixa + '" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA + '. ' + tip) + '">' + Util.esc(r.texto) + '</span></td>';
+}
+}
+return h;
 },
 _seloAjuste: function (etapaId, it) {
 if (typeof Ajustes === "undefined" || !Ajustes.delta) return "";
@@ -16178,8 +16271,18 @@ var calc = Orcamento.calcular(orc), porItem = {}, porEtapa = [];
 var _rotPrecoRel = calc.bdiNoPU ? "Preço Venda" : "Preço de custo";
 html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
 if (!calc.bdiNoPU) html += '<p class="muted" style="font-size:11.5px;margin:-4px 0 6px">Neste orçamento o BDI incide sobre o preço final: as linhas abaixo saem a <b>custo</b> e o BDI é uma parcela única. O preço de venda por etapa está no <b>Resumo Sintético</b> (seção 1).</p>';
+var _layR = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 8 };
+var _catR = _layR.cat ? Colunas.categorias(orc, calc) : null;
+var _refR = _layR.ref ? Colunas.mapaReferencias(orc, calc) : {};
+var _paraR = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
+var _totR = 8 + _layR.nPre + _layR.nPos;
 html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
-'<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">' + _rotPrecoRel + '</th></tr></thead><tbody>';
+'<th class="r">Qtd</th><th class="r">Custo Unit.</th>' +
+(_layR.pubdi ? '<th class="r">Preço unit. c/ BDI</th>' : '') +
+(_layR.ref ? '<th class="r">Preço ref.</th><th class="r" title="' + Util.esc(Colunas.DICA_DESCLASSIFICA) + '">Dif. %</th>' : '') +
+'<th class="r">Custo Total</th>' +
+(_layR.cat ? '<th class="r">Custo MO</th><th class="r">Custo MAT</th><th class="r">Custo EQ</th>' : '') +
+'<th class="r">' + _rotPrecoRel + '</th></tr></thead><tbody>';
 calc.linhas.forEach(function (L) {
 porItem[L.etapaIdx + "|" + L.itemIdx] = L;
 var s2 = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
@@ -16190,8 +16293,8 @@ Util.arr(calc.grupos).forEach(function (g) { porSubRel[g.subEtapaId] = g; });
 Util.arr(orc.etapas).forEach(function (e, ei) {
 var sm2 = porEtapa[ei] || { custo: 0, venda: 0 };
 var se = { custoDireto: Arred.valor(sm2.custo, calc.modo), precoVenda: Arred.valor(sm2.venda, calc.modo) };
-html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + (e.opcional ? _marcaOpc : '') + '</td></tr>';
-if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
+html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="' + (_totR - 1) + '">' + Util.esc(e.nome) + (e.opcional ? _marcaOpc : '') + '</td></tr>';
+if (!e.itens.length) html += '<tr><td colspan="' + _totR + '" class="muted">(sem itens)</td></tr>';
 var _subRelAtual = null;
 e.itens.forEach(function (it, ii) {
 var L = porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, custoUnitario: 0, numero: "" };
@@ -16200,27 +16303,30 @@ _subRelAtual = L.subEtapaId || "";
 if (_subRelAtual) {
 var gR = porSubRel[_subRelAtual] || { numero: "", nome: "", custoTotal: 0, precoTotal: 0 };
 html += '<tr class="grp subetapa"><td style="padding-left:14px"><b>' + Util.esc(gR.numero) + '</b></td>' +
-'<td colspan="5" style="padding-left:14px">' + Util.esc(gR.nome) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(gR.custoTotal) + '</td><td class="r">' + Util.fmtMoeda(gR.precoTotal) + '</td></tr>';
+'<td colspan="' + (5 + _layR.nPre) + '" style="padding-left:14px">' + Util.esc(gR.nome) + '</td>' +
+'<td class="r">' + Util.fmtMoeda(gR.custoTotal) + '</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.porSub[_subRelAtual])) + '<td class="r">' + Util.fmtMoeda(gR.precoTotal) + '</td></tr>';
 }
 }
 html += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
 '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
 '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
 '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
+_paraR(UI._celulasRefLinha(orc, L, _layR, _refR)) +
 '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+_paraR(UI._celulasCatLinha(_layR, _catR && _catR.porLinha[it.id])) +
 '<td class="r">' + Util.fmtMoeda(L.precoTotal) + '</td></tr>';
 });
-html += '<tr class="sub"><td colspan="6">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(se.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(se.precoVenda) + '</td></tr>';
+html += '<tr class="sub"><td colspan="' + (6 + _layR.nPre) + '">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
+'<td class="r">' + Util.fmtMoeda(se.custoDireto) + '</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.porEtapa[ei])) + '<td class="r">' + Util.fmtMoeda(se.precoVenda) + '</td></tr>';
 });
 html += '</tbody><tfoot>';
 if (!calc.bdiNoPU) {
-html += '<tr><td colspan="6">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
-'<tr><td colspan="7">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
+html += '<tr><td colspan="' + (6 + _layR.nPre) + '">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' + (_layR.cat ? '<td></td><td></td><td></td>' : '') + '<td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
+'<tr><td colspan="' + (7 + _layR.nPre + _layR.nPos) + '">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
 }
-html += '<tr><td colspan="6">TOTAL GERAL' + this._seloPrecisao(calc.modo) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
-'</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
+html += '<tr><td colspan="' + (6 + _layR.nPre) + '">TOTAL GERAL' + this._seloPrecisao(calc.modo) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
+'</td>' + _paraR(UI._celulasCatSub(_layR, _catR && _catR.total)) + '<td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
+if (_layR.cat && _catR && _catR.total.sem) html += '<p class="muted" style="font-size:11.5px;margin:2px 0 6px"><sup>*</sup> ' + _catR.total.sem + (_catR.total.sem === 1 ? ' item não tem' : ' itens não têm') + ' analítico (sem discriminação de mão de obra, material e equipamento): fica(m) fora dos subtotais de Custo MO/MAT/EQ — nada é rateado.</p>';
 if (typeof Analitico !== "undefined" && Analitico.carregado) {
 var vistos = {}, comps = [];
 Util.arr(orc.etapas).forEach(function (e) {
@@ -55882,15 +55988,81 @@ lic.refs = { n: porN, c: porC };
 lic.nRefs = n || Object.keys(porC).length;
 lic.travaLiberada = false;
 if (Array.isArray(bloco.bases_exigidas)) {
-lic.basesExigidas = this.lerBasesExigidas(bloco.bases_exigidas);
-lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length;
+var cont = { proprias: 0 };
+lic.basesExigidas = this.lerBasesExigidas(bloco.bases_exigidas, cont);
+lic.basesProprias = cont.proprias;
+lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length - cont.proprias;
 }
 var travados = 0;
 (orc.etapas || []).forEach(function (e) {
 ((e && e.itens) || []).forEach(function (it) { if (it) { it.travadoOrgao = true; travados++; } });
 });
 lic.nTravados = travados;
+if (Array.isArray(bloco.itens_identificados)) {
+var ri = this.aplicarItensIdentificados(orc, bloco.itens_identificados);
+lic.itensIdentificados = { recebidos: bloco.itens_identificados.length, novos: ri.novos, mantidos: ri.mantidos, ignorados: ri.ignorados };
+}
 return lic;
+},
+NOME_ETAPA_IDENTIFICADOS: "Itens identificados no edital (fora da planilha do órgão)",
+ID_ETAPA_IDENTIFICADOS: "eta-ident-edital",
+ehEtapaIdentificados: function (e) { return !!(e && (e.identificadosEdital === true || e.id === this.ID_ETAPA_IDENTIFICADOS)); },
+ehItemAComporIdentificado: function (it) { return !!(it && it.identificadoEdital && it.aCompor === true); },
+_memoriaIdentificado: function (x) {
+var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
+var tipo = s(x.tipo) === "divergencia_quantidade" ? "divergência de quantidade" : "omissão (não está na planilha do órgão)";
+var t = "Item identificado no edital, FORA da planilha do órgão — " + tipo + ".";
+if (s(x.motivo)) t += "\nMotivo: " + s(x.motivo);
+var doc = s(o.arquivo), pg = (o.pagina != null && s(o.pagina) !== "") ? s(o.pagina) : "", tr = s(o.trecho);
+if (doc || pg || tr) t += "\nOrigem: " + (doc ? "documento " + doc : "documento não informado") + (pg ? ", página " + pg : "") + (tr ? "\nTrecho: “" + tr + "”" : "");
+if (s(x.tipo) === "divergencia_quantidade") {
+var qp = x.quantidade_planilha != null && s(x.quantidade_planilha) !== "" ? s(x.quantidade_planilha) : "";
+t += "\nQuantidade na planilha do órgão: " + (qp || "não informada") + (s(x.item_planilha) ? " (item " + s(x.item_planilha) + ")" : "") + "; quantidade do memorial/projeto: " + (num(x.quantidade) > 0 ? s(x.quantidade) : "não informada") + ".";
+}
+t += "\nSem preço e sem código: escolha a composição. Não entra no valor da proposta (etapa opcional); serve para justificar preço/risco e para o pedido de esclarecimento.";
+return t;
+},
+aplicarItensIdentificados: function (orc, lista) {
+var self = this, res = { novos: 0, mantidos: 0, ignorados: 0 };
+if (!orc || !Array.isArray(lista) || !lista.length) return res;
+orc.etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
+var et = orc.etapas.filter(function (e) { return self.ehEtapaIdentificados(e); })[0] || null;
+var tem = {};
+if (et) (et.itens || []).forEach(function (it) { if (it && it.identificadoEdital && it.identificadoEdital.id != null) tem[String(it.identificadoEdital.id)] = 1; });
+var novos = [];
+lista.forEach(function (x) {
+if (!x || typeof x !== "object" || x.id == null || s(x.id) === "" || !s(x.descricao)) { res.ignorados++; return; }
+var chave = s(x.id);
+if (tem[chave]) { res.mantidos++; return; }
+tem[chave] = 1;
+var q = num(x.quantidade);
+var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
+var it = {
+id: "ident-" + chave.replace(/[^A-Za-z0-9_-]/g, "_"), origem: "PROPRIA", baseFonte: null, codigo: "—",
+descricao: s(x.descricao), unidade: s(x.unidade), quantidade: q > 0 ? q : 0, custoUnitario: 0,
+custoMO: 0, custoMAT: 0, custoEQ: 0,
+aCompor: true,
+identificadoEdital: { id: chave, tipo: s(x.tipo), motivo: s(x.motivo), arquivo: s(o.arquivo), pagina: (o.pagina != null ? s(o.pagina) : ""), trecho: s(o.trecho) },
+memoriaCalculo: self._memoriaIdentificado(x)
+};
+if (!(q > 0)) it.qtdPendente = true;
+novos.push(it);
+});
+if (!novos.length) return res;
+if (!et) {
+et = { id: this.ID_ETAPA_IDENTIFICADOS, codigo: "", nome: this.NOME_ETAPA_IDENTIFICADOS, itens: [], opcional: true, identificadosEdital: true };
+orc.etapas.push(et);
+orc.etapas.forEach(function (e, i) { e.codigo = String(i + 1) + ".0"; });
+}
+et.opcional = true; et.identificadosEdital = true;
+et.itens = Array.isArray(et.itens) ? et.itens : [];
+novos.forEach(function (it) {
+var base = it.id, n = 2;
+while (et.itens.some(function (y) { return y && y.id === it.id; })) it.id = base + "-" + (n++);
+et.itens.push(it);
+res.novos++;
+});
+return res;
 },
 itemTravado: function (orc, it) {
 var c = this.cfg(orc);
@@ -55950,13 +56122,29 @@ return out;
 },
 refDoItem: function (orc, it) {
 var c = this.cfg(orc);
-if (!c || !c.refs || !it) return null;
+if (!it) return null;
+var pRef = num(it.precoReferencia), pSem = num(it.precoReferenciaSemBdi);
+if (pRef > 0 || pSem > 0) {
+var nb = { preco: pSem > 0 ? pSem : pRef, semBdi: pSem > 0 ? pSem : 0, fonte: s(it.baseFonte || it.origem), numero: s(it.numeroOrigem),
+codigo: s(it.codigo), origem: s(it.referenciaOrigem), doOrgao: true, bdiAssumido: false };
+if (pRef > 0) { nb.comBdi = tr2(pRef); return nb; }
+var pct0, ass0 = false;
+if (c && c.precosIncluemBdi) pct0 = 0;
+else if (c && c.bdiRef != null) pct0 = num(c.bdiRef);
+else { pct0 = (orc && orc.bdi ? num(orc.bdi.percentual) : 0); ass0 = true; }
+nb.comBdi = tr2(pSem * (1 + pct0 / 100)); nb.bdiAssumido = ass0; nb.doOrgao = false; nb.soSemBdi = true;
+return nb;
+}
 var reg = null;
 var n = s(it.numeroOrigem);
-if (n && c.refs.n && c.refs.n[n]) reg = c.refs.n[n];
-else if (!n && it.codigo && c.refs.c && c.refs.c[s(it.codigo)]) reg = c.refs.c[s(it.codigo)];
-if (!reg) return null;
-var base = { preco: reg.preco, fonte: reg.fonte, numero: reg.numero, codigo: reg.codigo };
+if (c && c.refs && n && c.refs.n && c.refs.n[n]) reg = c.refs.n[n];
+else if (c && c.refs && !n && it.codigo && c.refs.c && c.refs.c[s(it.codigo)]) reg = c.refs.c[s(it.codigo)];
+if (!reg) {
+var pOld = num(it.precoComBDI);
+if (pOld > 0) return { preco: pOld, comBdi: tr2(pOld), fonte: s(it.baseFonte || it.origem), numero: n, codigo: s(it.codigo), origem: "preço do órgão (base importada)", doOrgao: true, bdiAssumido: false };
+return null;
+}
+var base = { preco: reg.preco, fonte: reg.fonte, numero: reg.numero, codigo: reg.codigo, semBdi: reg.preco };
 var pb = num(reg.precoBdi);
 if (pb > 0 && (c.bdiRef != null || pb > num(reg.preco) + 0.005)) {
 base.comBdi = tr2(pb); base.bdiAssumido = false; base.doOrgao = true;
@@ -56396,17 +56584,23 @@ if (m) return t;
 m = /^(\d{2})\/(\d{4})$/.exec(t);
 return m ? (m[2] + "-" + m[1]) : "";
 },
-lerBasesExigidas: function (lista) {
+FONTES_PROPRIAS: { CCU: 1, CPU: 1, COT: 1 },
+FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" } },
+lerBasesExigidas: function (lista, contagem) {
 var self = this, out = [], vistos = {};
 (Array.isArray(lista) ? lista : []).forEach(function (b) {
 if (!b || typeof b !== "object") return;
 var fonte = s(b.fonte).toUpperCase().replace(/[^A-Z0-9_]/g, "");
-var comp = self._comp(b.competencia), reg = self._regime(b.regime), uf = s(b.uf).toUpperCase();
+if (self.FONTES_PROPRIAS[fonte]) { if (contagem) contagem.proprias = (contagem.proprias || 0) + 1; return; }
+var comp = self._comp(b.competencia), reg = self._regime(b.regime), uf = s(b.uf).toUpperCase(), praca = s(b.praca).toUpperCase();
 if (!fonte || !comp || (uf && !/^[A-Z]{2}$/.test(uf))) return;
+var fx = self.FONTES_FIXAS[fonte];
+if (fx) { uf = fx.uf; if (fx.praca && !praca) praca = fx.praca; }
 if (fonte === "SINAPIDESONERADA" || fonte === "SINAPI_DES") { fonte = "SINAPI"; reg = "desonerado"; }
 var catId = fonte === "SINAPI" ? (reg === "desonerado" ? "SINAPI_DES" : "SINAPI") : fonte;
 if (fonte === "SINAPI" && !reg) reg = "onerado";
 var e = { fonte: fonte, catId: catId, uf: uf, competencia: comp, regime: reg };
+if (praca) e.praca = praca;
 var k = self.chaveBase(e);
 if (vistos[k]) return;
 vistos[k] = 1; out.push(e);
@@ -56417,7 +56611,7 @@ chaveBase: function (e) { return [s(e.catId || e.fonte).toUpperCase(), s(e.uf).t
 fmtComp: function (c) { var m = /^(\d{4})-(\d{2})$/.exec(s(c)); return m ? (m[2] + "/" + m[1]) : s(c); },
 fmtBase: function (e) {
 if (!e) return "";
-return s(e.fonte || e.catId).replace(/_DES$/, "") + (e.uf ? "-" + e.uf : "") + " " + this.fmtComp(e.competencia) + (e.regime ? " " + e.regime : "");
+return s(e.fonte || e.catId).replace(/_DES$/, "") + (e.praca ? "-" + e.praca : (e.uf ? "-" + e.uf : "")) + " " + this.fmtComp(e.competencia) + (e.regime ? " " + e.regime : "");
 },
 basesExigidas: function (orc) { var c = this.cfg(orc); return (c && c.ativo && Array.isArray(c.basesExigidas)) ? c.basesExigidas : []; },
 temBasesExigidas: function (orc) { return this.basesExigidas(orc).length > 0; },
@@ -56438,7 +56632,8 @@ return { catId: exig.catId, fonte: exig.fonte, uf: s(inst.uf).toUpperCase(), com
 },
 _confere: function (exig, uso) {
 if (!uso) return false;
-if (exig.uf && uso.uf !== exig.uf) return false;
+if (exig.praca) { if (uso.uf !== exig.praca && uso.uf !== exig.uf) return false; }
+else if (exig.uf && uso.uf !== exig.uf) return false;
 if (uso.competencia !== exig.competencia) return false;
 if (exig.regime && uso.regime && uso.regime !== exig.regime) return false;
 return true;
@@ -56462,7 +56657,7 @@ conhecidas = ((ctx.compsOnerada || {})[e.uf] || []).slice();
 var sv = fatos.servidor && fatos.servidor.sinapi;
 if (sv && self._comp(sv.competencia)) conhecidas.push(self._comp(sv.competencia));
 } else if (Cat && Cat.temHistorico && Cat.temHistorico(e.catId)) {
-conhecidas = Cat.competenciasConhecidas(e.catId, e.uf, fatos);
+conhecidas = Cat.competenciasConhecidas(e.catId, e.praca ? "" : e.uf, fatos);
 } else if (Cat && Cat.get && Cat.get(e.catId)) {
 var ent = Cat.get(e.catId), sv2 = ent.chaveStatus && fatos.servidor ? fatos.servidor[ent.chaveStatus] : null;
 if (ent.versaoPacote) conhecidas.push(self._comp(ent.versaoPacote));
@@ -56477,7 +56672,8 @@ r.estado = "indisponivel";
 r.texto = r.semFonte ? "não distribuída pelo OrçaPRO — importe a planilha oficial do órgão desta competência em Tabelas"
 : "não encontrada nas fontes conhecidas (disco, servidor da RA, espelho)";
 }
-if (uso) r.texto += " · em uso agora: " + self.fmtBase(uso);
+r.pede = self.fmtBase(e); r.tem = uso ? self.fmtBase(uso) : "";
+r.texto = "o edital pede " + r.pede + "; " + (uso ? "você tem " + r.tem : "você não tem nenhuma " + e.fonte + " instalada") + " — " + r.texto;
 return r;
 });
 },
@@ -56591,6 +56787,174 @@ dataBase: s(c.dataBase)
 global.Licitacao = Licitacao;
 if (typeof module !== "undefined" && module.exports) module.exports = Licitacao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/colunas.js ==== */
+try {
+(function (global) {
+"use strict";
+function _dep(nome) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") {
+try { var m = require("./" + nome.toLowerCase() + ".js"); if (m) return m; } catch (e) {}
+}
+return null;
+}
+function U() { return _dep("Util"); }
+function O() { return _dep("Orcamento"); }
+function L_() { return _dep("Licitacao"); }
+function num(v) { var u = U(); return u ? u.num(v) : (Number(v) || 0); }
+function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
+var GRUPOS = [
+{ id: "pubdi", rotulo: "Preço unit. c/ BDI", ajuda: "Preço unitário COM BDI, ao lado do custo unitário (sem BDI), com o mesmo arredondamento e a mesma incidência do BDI do orçamento." },
+{ id: "cat", rotulo: "Custo MO / MAT / EQ", ajuda: "Custo total da linha separado em mão de obra, material e equipamento, na proporção do analítico do item (a soma fecha com o Custo Total). Item sem analítico fica com “—”." },
+{ id: "ref", rotulo: "Preço ref. e diferença (licitação)", ajuda: "Preço de referência do órgão e a diferença para o nosso preço unitário com BDI." }
+];
+var Colunas = {
+GRUPOS: GRUPOS,
+LIMITE_PADRAO: 5,
+DICA_DESCLASSIFICA: "Em licitação, preço unitário acima da referência pode desclassificar a proposta",
+cfg: function (orc) {
+var O0 = O();
+if (O0 && O0.garantirConfig) return O0.garantirConfig(orc).colunas;
+return (orc && orc.config && orc.config.colunas) || { pubdi: null, cat: null, ref: null, limiteAcimaPct: 5 };
+},
+limite: function (orc) { var l = Number(this.cfg(orc).limiteAcimaPct); return isFinite(l) && l >= 0 ? l : this.LIMITE_PADRAO; },
+_licitacao: function (orc) { var L = L_(); return !!(L && L.ativo && L.ativo(orc)); },
+visivel: function (orc, grupo) {
+var v = this.cfg(orc)[grupo];
+if (v === true || v === false) return v;
+if (grupo === "pubdi" || grupo === "ref") return this._licitacao(orc);
+return false;
+},
+definir: function (orc, grupo, valor) {
+if (["pubdi", "cat", "ref"].indexOf(grupo) < 0) return false;
+var c = this.cfg(orc);
+c[grupo] = (valor === true || valor === false) ? valor : null;
+return true;
+},
+definirLimite: function (orc, pct) {
+var n = Number(String(pct == null ? "" : pct).replace(",", "."));
+if (!isFinite(n) || n < 0 || n > 1000) return false;
+this.cfg(orc).limiteAcimaPct = n;
+return true;
+},
+layout: function (orc) {
+var pub = this.visivel(orc, "pubdi"), cat = this.visivel(orc, "cat"), ref = this.visivel(orc, "ref");
+var pre = (pub ? 1 : 0) + (ref ? 2 : 0), pos = cat ? 3 : 0;
+return { pubdi: pub, cat: cat, ref: ref, nPre: pre, nPos: pos, total: 9 + pre + pos,
+algumaNova: pub || cat || ref };
+},
+_catDe: function (i) {
+var c = String((i && (i.categoria || i.cat)) || "").toUpperCase();
+return (c === "MO" || c === "MAT" || c === "EQ") ? c : "";
+},
+categoriasItem: function (it) {
+if (!it) return null;
+var O0 = O(), self = this, r = null;
+var ativas = (O0 && O0.parcelasAtivas) ? O0.parcelasAtivas(it) : ["custoMO", "custoMAT", "custoEQ"];
+var mascara = function (v) {
+return { mo: ativas.indexOf("custoMO") >= 0 ? v.mo : 0, mat: ativas.indexOf("custoMAT") >= 0 ? v.mat : 0, eq: ativas.indexOf("custoEQ") >= 0 ? v.eq : 0 };
+};
+var pm = num(it.custoMO), pa = num(it.custoMAT), pe = num(it.custoEQ);
+if (pm + pa + pe > 0) { r = mascara({ mo: pm, mat: pa, eq: pe }); r.fonte = "item"; return r; }
+if (Array.isArray(it.insumos) && it.insumos.length) {
+var mo = 0, mat = 0, eq = 0, tot = 0;
+it.insumos.forEach(function (x) {
+if (!x || typeof x !== "object") return;
+var ct = num(x.coeficiente) * num(x.custoUnitario);
+tot += ct;
+if (String(x.tipo || "").toUpperCase() === "COMPOSICAO") return;
+var c = self._catDe(x);
+if (c === "MO") mo += ct; else if (c === "MAT") mat += ct; else if (c === "EQ") eq += ct;
+});
+var cu0 = num(it.custoUnitario);
+if (cu0 > 0 && (mo + mat + eq) > 0 && Math.abs(tot - cu0) <= Math.max(0.02, cu0 * 0.01) && Math.abs((mo + mat + eq) - cu0) <= Math.max(0.02, cu0 * 0.01)) {
+r = mascara({ mo: mo, mat: mat, eq: eq }); r.fonte = "insumos"; return r;
+}
+}
+return null;
+},
+categorias: function (orc, calc) {
+var self = this;
+calc = calc || O().calcular(orc);
+var out = { porLinha: {}, porEtapa: [], porSub: {}, total: this._zero() };
+(calc.linhas || []).forEach(function (L) {
+var c = self.categoriasItem(L.item);
+var lin = c ? self._linhaNoCusto(c, num(L.custoTotal)) : { tem: false, mo: 0, mat: 0, eq: 0 };
+out.porLinha[L.itemId] = lin;
+var e = out.porEtapa[L.etapaIdx] || (out.porEtapa[L.etapaIdx] = self._zero());
+var alvos = [e, out.total];
+if (L.subEtapaId) alvos.push(out.porSub[L.subEtapaId] || (out.porSub[L.subEtapaId] = self._zero()));
+alvos.forEach(function (a) {
+a.n++;
+if (lin.tem) { a.mo += lin.mo; a.mat += lin.mat; a.eq += lin.eq; a.comAna++; } else a.sem++;
+});
+});
+var fecha = function (a) { a.mo = r2(a.mo); a.mat = r2(a.mat); a.eq = r2(a.eq); };
+out.porEtapa.forEach(function (a) { if (a) fecha(a); });
+Object.keys(out.porSub).forEach(function (k) { fecha(out.porSub[k]); });
+fecha(out.total);
+return out;
+},
+_zero: function () { return { mo: 0, mat: 0, eq: 0, n: 0, comAna: 0, sem: 0 }; },
+_linhaNoCusto: function (c, ct) {
+var soma = num(c.mo) + num(c.mat) + num(c.eq);
+var lin = { tem: true, mo: 0, mat: 0, eq: 0, fonte: c.fonte };
+if (!(soma > 0) || !(ct > 0)) return lin;
+lin.mo = r2(ct * num(c.mo) / soma); lin.mat = r2(ct * num(c.mat) / soma); lin.eq = r2(ct * num(c.eq) / soma);
+var resto = r2(r2(ct) - (lin.mo + lin.mat + lin.eq));
+if (Math.abs(resto) >= 0.005) {
+var maior = "mo";
+["mat", "eq"].forEach(function (k) { if (lin[k] > lin[maior]) maior = k; });
+lin[maior] = r2(lin[maior] + resto);
+}
+return lin;
+},
+precoUnitComBdi: function (orc, L) {
+var cfg = O().garantirConfig(orc);
+if (cfg.bdiIncidencia !== "final") return num(L.precoUnit);
+var Lic = L_();
+if (Lic && Lic._puComBdi) return Lic._puComBdi(orc, L);
+var pct = orc && orc.bdi ? num(orc.bdi.percentual) : 0;
+return r2(num(L.custoUnitario) * (1 + pct / 100));
+},
+referencia: function (orc, L) {
+var Lic = L_();
+if (!Lic || !L || !L.item) return null;
+var ref = Lic.refDoItem(orc, L.item);
+if (!ref) return null;
+var comBdi = num(ref.comBdi) > 0 && !ref.soSemBdi, valor, nosso, tipo;
+if (comBdi) { valor = num(ref.comBdi); nosso = this.precoUnitComBdi(orc, L); tipo = "comBdi"; }
+else if (num(ref.semBdi) > 0) { valor = num(ref.semBdi); nosso = num(L.custoUnitario); tipo = "semBdi"; }
+else return null;
+var dif = valor > 0 ? (nosso / valor - 1) * 100 : 0;
+var lim = this.limite(orc), faixa;
+if (nosso < valor - 0.005) faixa = "abaixo";
+else if (dif <= lim + 1e-9) faixa = "proximo";
+else faixa = "acima";
+return { ref: valor, tipo: tipo, nosso: nosso, difPct: dif, faixa: faixa, texto: this.textoDif(dif),
+origem: ref.origem || ref.fonte || "", bdiAssumido: !!ref.bdiAssumido, doOrgao: !!ref.doOrgao };
+},
+textoDif: function (dif) {
+var a = Math.abs(Math.round(dif * 10) / 10);
+var t = a.toFixed(1).replace(".", ",");
+return (dif < 0 ? "−" : "+") + t + "%";
+},
+temReferencia: function (orc, calc) {
+var self = this;
+calc = calc || O().calcular(orc);
+return (calc.linhas || []).some(function (L) { return !!self.referencia(orc, L); });
+},
+mapaReferencias: function (orc, calc) {
+var self = this, m = {};
+calc = calc || O().calcular(orc);
+(calc.linhas || []).forEach(function (L) { var r = self.referencia(orc, L); if (r) m[L.itemId] = r; });
+return m;
+}
+};
+global.Colunas = Colunas;
+if (typeof module !== "undefined" && module.exports) module.exports = Colunas;
+})(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/licitacaodocs.js ==== */
 try {
@@ -79696,8 +80060,14 @@ P.push(pg("4. Planilha Orçamentária Sintética",
 var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {}, _pg = {};
 _calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
 Util.arr(_calc.grupos).forEach(function (g) { _pg[g.subEtapaId] = g; });
+var _uiOk = typeof Colunas !== "undefined" && typeof UI !== "undefined" && UI._celulasRefLinha && UI._celulasCatLinha;
+var _layL = _uiOk ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0 };
+var _catL = _layL.cat ? Colunas.categorias(orc, _calc) : null;
+var _refL = _layL.ref ? Colunas.mapaReferencias(orc, _calc) : {};
+var _paraL = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
+var _totL = 7 + _layL.nPre + _layL.nPos;
 Util.arr(orc.etapas).forEach(function (e, ei) {
-analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="6"><b>' + Util.esc(e.nome) + '</b></td></tr>';
+analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="' + (_totL - 1) + '"><b>' + Util.esc(e.nome) + '</b></td></tr>';
 var _subLau = null;
 Util.arr(e.itens).forEach(function (it, ii) {
 var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0, numero: "" };
@@ -79705,20 +80075,28 @@ if ((L.subEtapaId || "") !== _subLau) {
 _subLau = L.subEtapaId || "";
 if (_subLau) {
 var gL = _pg[_subLau] || { numero: "", nome: "" };
-analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="6" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
+analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="' + (_totL - 1) + '" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
 }
 }
 analHtml += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
 '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
 '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
 '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td></tr>';
+(_uiOk ? _paraL(UI._celulasRefLinha(orc, L, _layL, _refL)) : '') +
+'<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+(_uiOk ? _paraL(UI._celulasCatLinha(_layL, _catL && _catL.porLinha[it.id])) : '') + '</tr>';
 });
 });
 P.push(pg("5. Planilha Orçamentária Analítica",
-'<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th><th class="r">Custo total</th></tr></thead>' +
+'<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th>' +
+(_layL.pubdi ? '<th class="r">Preço unit. c/ BDI</th>' : '') +
+(_layL.ref ? '<th class="r">Preço ref.</th><th class="r">Dif. %</th>' : '') +
+'<th class="r">Custo total</th>' +
+(_layL.cat ? '<th class="r">Custo MO</th><th class="r">Custo MAT</th><th class="r">Custo EQ</th>' : '') + '</tr></thead>' +
 '<tbody>' + analHtml + '</tbody>' +
-'<tfoot><tr><td colspan="6">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr></tfoot></table>'));
+'<tfoot><tr><td colspan="' + (6 + _layL.nPre) + '">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
+(_uiOk ? _paraL(UI._celulasCatSub(_layL, _catL && _catL.total)) : '') + '</tr></tfoot></table>' +
+(_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem analítico (sem discriminação MO/MAT/EQ) fora dos subtotais; nada é rateado.</p>' : '')));
 var _cfgMem = (orc.config && orc.config.memorial) || null;
 var _saiMem = !_cfgMem || _cfgMem.laudo !== false;
 var memHtml = '';

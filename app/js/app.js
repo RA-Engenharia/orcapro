@@ -2302,6 +2302,24 @@
         try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
         this.render(); return;
       }
+      /* COLUNAS EXTRAS DA PLANILHA (js/colunas.js): abrir o menu, ligar/desligar um
+         grupo, voltar ao padrão. A escolha vai para o orçamento (config.colunas). */
+      if (t.dataset.acao === "col-menu") { this._colMenuAberto = !this._colMenuAberto; this.render(); return; }
+      if (t.dataset.acao === "col-grupo") {
+        var ocG = this.orcAtual;
+        if (!ocG || typeof Colunas === "undefined") return;
+        Colunas.definir(ocG, t.dataset.col, !!t.checked);
+        this._colMenuAberto = true;
+        this._persistirColunas(); this.render(); return;
+      }
+      if (t.dataset.acao === "col-padrao") {
+        var ocP = this.orcAtual;
+        if (!ocP || typeof Colunas === "undefined") return;
+        ["pubdi", "cat", "ref"].forEach(function (g) { Colunas.definir(ocP, g, null); });
+        Colunas.definirLimite(ocP, Colunas.LIMITE_PADRAO);
+        this._colMenuAberto = true;
+        this._persistirColunas(); this.render(); return;
+      }
       if (t.dataset.acao === "pl-compacta") {
         this._plCompacta = !this._plCompacta;
         try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
@@ -2693,6 +2711,16 @@
     },
 
     onChange: function (e) {
+      /* tolerância do verde (% acima da referência) — js/colunas.js */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-col-limite") != null) {
+        var ocL = this.orcAtual;
+        if (ocL && typeof Colunas !== "undefined") {
+          if (!Colunas.definirLimite(ocL, e.target.value)) UI.toast("Informe um percentual entre 0 e 1000 (ex.: 5 ou 7,5).", "erro");
+          else this._persistirColunas();
+          this._colMenuAberto = true; this.render();
+        }
+        return;
+      }
       /* as ações das funções novas do cronograma que falam por CHANGE (<select>,
          caixa, campo) — o mesmo despacho do onClick (planejador, T5) */
       var acaoCh = (e.target && e.target.getAttribute) ? e.target.getAttribute("data-acao") : null;
@@ -11202,6 +11230,7 @@
     },
 
     abrirOrcamento: function (id) {
+      this._colMenuAberto = false;
       var orc = Store.obterOrcamento(Auth.empresaId(), id);
       if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
       /* ⚠ ESCOPO POR OBRA NA FUNÇÃO, NÃO SÓ NA LISTA (js/auth.js, "ESCOPO DOS
@@ -16736,6 +16765,22 @@
     /* opts.cronoAntes (opcional): o resultado de Cronograma.estimar desta tela
        ANTES da edição — o handler do cronograma mede e passa, para o recado do
        modo executivo dizer o antes → depois verdadeiro (ver _cronoMaterializar). */
+    /* A escolha de colunas é preferência de EXIBIÇÃO guardada no orçamento.
+       Orçamento aprovado não grava (persistir recusa e abre o aviso de revisão):
+       ali a escolha vale só nesta abertura, e a tela diz isso uma vez. */
+    _persistirColunas: function () {
+      var o = this.orcAtual;
+      if (!o) return false;
+      if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(o)) {
+        if (this._avisouColunasAprovado !== o.id) {
+          this._avisouColunasAprovado = o.id;
+          UI.toast("Orçamento aprovado: a escolha de colunas vale só até fechar este orçamento (o aprovado não é alterado).", "ok", 7000);
+        }
+        return false;
+      }
+      return this.persistir();
+    },
+
     persistir: function (opts) {
       if (!this.orcAtual) return false;
       /* ⚠ o clone do PLANO DE EXECUÇÃO da obra (CronoBase.orcComPlano, marca

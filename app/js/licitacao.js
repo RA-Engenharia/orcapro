@@ -276,8 +276,10 @@
          As escolhas já registradas (usar outra competência) sobrevivem a uma
          reimportação: são decisão de quem orça, com data e autor. */
       if (Array.isArray(bloco.bases_exigidas)) {
-        lic.basesExigidas = this.lerBasesExigidas(bloco.bases_exigidas);
-        lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length;
+        var cont = { proprias: 0 };
+        lic.basesExigidas = this.lerBasesExigidas(bloco.bases_exigidas, cont);
+        lic.basesProprias = cont.proprias;
+        lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length - cont.proprias;
       }
 
       /* Tudo que está no pacote veio da planilha do órgão: trava. Item que a
@@ -288,7 +290,95 @@
         ((e && e.itens) || []).forEach(function (it) { if (it) { it.travadoOrgao = true; travados++; } });
       });
       lic.nTravados = travados;
+      /* ITENS IDENTIFICADOS NO EDITAL (CertamePRO 0.12.4): vão para uma etapa
+         OPCIONAL, depois da trava acima (eles NÃO são do órgão: o preço e a
+         quantidade ficam livres para o orçamentista). */
+      if (Array.isArray(bloco.itens_identificados)) {
+        var ri = this.aplicarItensIdentificados(orc, bloco.itens_identificados);
+        lic.itensIdentificados = { recebidos: bloco.itens_identificados.length, novos: ri.novos, mantidos: ri.mantidos, ignorados: ri.ignorados };
+      }
       return lic;
+    },
+
+    /* ------------------------------------------------------------------
+     * 1b) ITENS IDENTIFICADOS NO EDITAL, FORA DA PLANILHA DO ÓRGÃO
+     *
+     * O CertamePRO acha no edital/memorial/projetos serviços que a planilha do
+     * órgão não tem (`tipo:"omissao"`) ou tem com outra quantidade
+     * (`tipo:"divergencia_quantidade"`). Em obra por preço global a proposta
+     * segue a planilha do órgão — esses itens NÃO podem entrar no valor. Por
+     * isso vão numa etapa OPCIONAL (fora de `precoObrigatorio`, que é o que
+     * `totalProposta` lê), para o orçamentista dimensionar preço e risco e
+     * embasar o pedido de esclarecimento.
+     *
+     * ⚠ NUNCA SE INVENTA CÓDIGO NEM PREÇO: o item nasce sem código ("—"), com
+     *   custo 0 e marcado `aCompor` — o orçamentista escolhe a composição.
+     * ⚠ O MOTIVO E A ORIGEM (arquivo, página, trecho) VÃO NA MEMÓRIA DE CÁLCULO
+     *   do item: é onde o Excel, o laudo e a tela já mostram a justificativa.
+     * ⚠ IMPORTAR DE NOVO NÃO DUPLICA: a chave é o `id` do pacote (guardado em
+     *   `item.identificadoEdital.id`; o id do item é derivado dele). O item que
+     *   já existe fica como está — preço e composição digitados não se perdem.
+     * ------------------------------------------------------------------ */
+    NOME_ETAPA_IDENTIFICADOS: "Itens identificados no edital (fora da planilha do órgão)",
+    ID_ETAPA_IDENTIFICADOS: "eta-ident-edital",
+    ehEtapaIdentificados: function (e) { return !!(e && (e.identificadosEdital === true || e.id === this.ID_ETAPA_IDENTIFICADOS)); },
+    ehItemAComporIdentificado: function (it) { return !!(it && it.identificadoEdital && it.aCompor === true); },
+    _memoriaIdentificado: function (x) {
+      var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
+      var tipo = s(x.tipo) === "divergencia_quantidade" ? "divergência de quantidade" : "omissão (não está na planilha do órgão)";
+      var t = "Item identificado no edital, FORA da planilha do órgão — " + tipo + ".";
+      if (s(x.motivo)) t += "\nMotivo: " + s(x.motivo);
+      var doc = s(o.arquivo), pg = (o.pagina != null && s(o.pagina) !== "") ? s(o.pagina) : "", tr = s(o.trecho);
+      if (doc || pg || tr) t += "\nOrigem: " + (doc ? "documento " + doc : "documento não informado") + (pg ? ", página " + pg : "") + (tr ? "\nTrecho: “" + tr + "”" : "");
+      if (s(x.tipo) === "divergencia_quantidade") {
+        var qp = x.quantidade_planilha != null && s(x.quantidade_planilha) !== "" ? s(x.quantidade_planilha) : "";
+        t += "\nQuantidade na planilha do órgão: " + (qp || "não informada") + (s(x.item_planilha) ? " (item " + s(x.item_planilha) + ")" : "") + "; quantidade do memorial/projeto: " + (num(x.quantidade) > 0 ? s(x.quantidade) : "não informada") + ".";
+      }
+      t += "\nSem preço e sem código: escolha a composição. Não entra no valor da proposta (etapa opcional); serve para justificar preço/risco e para o pedido de esclarecimento.";
+      return t;
+    },
+    aplicarItensIdentificados: function (orc, lista) {
+      var self = this, res = { novos: 0, mantidos: 0, ignorados: 0 };
+      if (!orc || !Array.isArray(lista) || !lista.length) return res;
+      orc.etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
+      var et = orc.etapas.filter(function (e) { return self.ehEtapaIdentificados(e); })[0] || null;
+      var tem = {};
+      if (et) (et.itens || []).forEach(function (it) { if (it && it.identificadoEdital && it.identificadoEdital.id != null) tem[String(it.identificadoEdital.id)] = 1; });
+      var novos = [];
+      lista.forEach(function (x) {
+        if (!x || typeof x !== "object" || x.id == null || s(x.id) === "" || !s(x.descricao)) { res.ignorados++; return; }
+        var chave = s(x.id);
+        if (tem[chave]) { res.mantidos++; return; }
+        tem[chave] = 1;
+        var q = num(x.quantidade);
+        var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
+        var it = {
+          id: "ident-" + chave.replace(/[^A-Za-z0-9_-]/g, "_"), origem: "PROPRIA", baseFonte: null, codigo: "—",
+          descricao: s(x.descricao), unidade: s(x.unidade), quantidade: q > 0 ? q : 0, custoUnitario: 0,
+          custoMO: 0, custoMAT: 0, custoEQ: 0,
+          aCompor: true,
+          identificadoEdital: { id: chave, tipo: s(x.tipo), motivo: s(x.motivo), arquivo: s(o.arquivo), pagina: (o.pagina != null ? s(o.pagina) : ""), trecho: s(o.trecho) },
+          memoriaCalculo: self._memoriaIdentificado(x)
+        };
+        if (!(q > 0)) it.qtdPendente = true;
+        novos.push(it);
+      });
+      if (!novos.length) return res;
+      if (!et) {
+        et = { id: this.ID_ETAPA_IDENTIFICADOS, codigo: "", nome: this.NOME_ETAPA_IDENTIFICADOS, itens: [], opcional: true, identificadosEdital: true };
+        orc.etapas.push(et);
+        orc.etapas.forEach(function (e, i) { e.codigo = String(i + 1) + ".0"; });
+      }
+      et.opcional = true; et.identificadosEdital = true;
+      et.itens = Array.isArray(et.itens) ? et.itens : [];
+      novos.forEach(function (it) {
+        /* id do item único dentro da etapa (dois ids do pacote podem virar o mesmo texto saneado) */
+        var base = it.id, n = 2;
+        while (et.itens.some(function (y) { return y && y.id === it.id; })) it.id = base + "-" + (n++);
+        et.itens.push(it);
+        res.novos++;
+      });
+      return res;
     },
 
     /* ------------------------------------------------------------------
@@ -423,13 +513,37 @@
      * ------------------------------------------------------------------ */
     refDoItem: function (orc, it) {
       var c = this.cfg(orc);
-      if (!c || !c.refs || !it) return null;
+      if (!it) return null;
+      /* (07/11/2026) 1º, o que o PRÓPRIO ITEM traz (CertamePRO 0.12.3+):
+         `precoReferencia` (COM BDI do órgão), `precoReferenciaSemBdi` e
+         `referenciaOrigem`. Vale também sem `config.licitacao.refs`: a
+         referência viaja com o item e sobrevive a copiar/colar de orçamento. */
+      var pRef = num(it.precoReferencia), pSem = num(it.precoReferenciaSemBdi);
+      if (pRef > 0 || pSem > 0) {
+        var nb = { preco: pSem > 0 ? pSem : pRef, semBdi: pSem > 0 ? pSem : 0, fonte: s(it.baseFonte || it.origem), numero: s(it.numeroOrigem),
+          codigo: s(it.codigo), origem: s(it.referenciaOrigem), doOrgao: true, bdiAssumido: false };
+        if (pRef > 0) { nb.comBdi = tr2(pRef); return nb; }
+        /* só o preço SEM BDI: a comparação com BDI continua possível pela conta
+           de sempre (avisos), mas a coluna compara sem × sem e diz "s/ BDI" */
+        var pct0, ass0 = false;
+        if (c && c.precosIncluemBdi) pct0 = 0;
+        else if (c && c.bdiRef != null) pct0 = num(c.bdiRef);
+        else { pct0 = (orc && orc.bdi ? num(orc.bdi.percentual) : 0); ass0 = true; }
+        nb.comBdi = tr2(pSem * (1 + pct0 / 100)); nb.bdiAssumido = ass0; nb.doOrgao = false; nb.soSemBdi = true;
+        return nb;
+      }
       var reg = null;
       var n = s(it.numeroOrigem);
-      if (n && c.refs.n && c.refs.n[n]) reg = c.refs.n[n];
-      else if (!n && it.codigo && c.refs.c && c.refs.c[s(it.codigo)]) reg = c.refs.c[s(it.codigo)];
-      if (!reg) return null;
-      var base = { preco: reg.preco, fonte: reg.fonte, numero: reg.numero, codigo: reg.codigo };
+      if (c && c.refs && n && c.refs.n && c.refs.n[n]) reg = c.refs.n[n];
+      else if (c && c.refs && !n && it.codigo && c.refs.c && c.refs.c[s(it.codigo)]) reg = c.refs.c[s(it.codigo)];
+      if (!reg) {
+        /* item vindo de base de órgão (app.js, importação): o preço COM BDI
+           original ficou guardado em `precoComBDI` */
+        var pOld = num(it.precoComBDI);
+        if (pOld > 0) return { preco: pOld, comBdi: tr2(pOld), fonte: s(it.baseFonte || it.origem), numero: n, codigo: s(it.codigo), origem: "preço do órgão (base importada)", doOrgao: true, bdiAssumido: false };
+        return null;
+      }
+      var base = { preco: reg.preco, fonte: reg.fonte, numero: reg.numero, codigo: reg.codigo, semBdi: reg.preco };
       var pb = num(reg.precoBdi);
       if (pb > 0 && (c.bdiRef != null || pb > num(reg.preco) + 0.005)) {
         base.comBdi = tr2(pb); base.bdiAssumido = false; base.doOrgao = true;
@@ -1000,17 +1114,30 @@
       m = /^(\d{2})\/(\d{4})$/.exec(t);
       return m ? (m[2] + "-" + m[1]) : "";
     },
-    lerBasesExigidas: function (lista) {
+    /* Tabelas que NÃO são base de preço instalável: composição própria do órgão
+       (CCU, CPU, COT). O edital as cita, mas não há o que instalar nem comparar:
+       entram só na contagem `proprias` (basesProprias), nunca como "ignorada
+       por erro". */
+    FONTES_PROPRIAS: { CCU: 1, CPU: 1, COT: 1 },
+    /* Tabela regional de UF/praça FIXA. O pacote antigo (CertamePRO < 0.12.3)
+       mandava a UF do CERTAME (ex.: ORSE com uf "MG"), que nunca casaria com a
+       base instalada (ORSE é de Sergipe; a SUDECAP é de Belo Horizonte). */
+    FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" } },
+    lerBasesExigidas: function (lista, contagem) {
       var self = this, out = [], vistos = {};
       (Array.isArray(lista) ? lista : []).forEach(function (b) {
         if (!b || typeof b !== "object") return;
         var fonte = s(b.fonte).toUpperCase().replace(/[^A-Z0-9_]/g, "");
-        var comp = self._comp(b.competencia), reg = self._regime(b.regime), uf = s(b.uf).toUpperCase();
+        if (self.FONTES_PROPRIAS[fonte]) { if (contagem) contagem.proprias = (contagem.proprias || 0) + 1; return; }
+        var comp = self._comp(b.competencia), reg = self._regime(b.regime), uf = s(b.uf).toUpperCase(), praca = s(b.praca).toUpperCase();
         if (!fonte || !comp || (uf && !/^[A-Z]{2}$/.test(uf))) return;
+        var fx = self.FONTES_FIXAS[fonte];
+        if (fx) { uf = fx.uf; if (fx.praca && !praca) praca = fx.praca; }
         if (fonte === "SINAPIDESONERADA" || fonte === "SINAPI_DES") { fonte = "SINAPI"; reg = "desonerado"; }
         var catId = fonte === "SINAPI" ? (reg === "desonerado" ? "SINAPI_DES" : "SINAPI") : fonte;
         if (fonte === "SINAPI" && !reg) reg = "onerado";
         var e = { fonte: fonte, catId: catId, uf: uf, competencia: comp, regime: reg };
+        if (praca) e.praca = praca;
         var k = self.chaveBase(e);
         if (vistos[k]) return;
         vistos[k] = 1; out.push(e);
@@ -1022,7 +1149,7 @@
     /* "SINAPI-MG 06/2026 desonerado" · "SICRO-PA 04/2026" */
     fmtBase: function (e) {
       if (!e) return "";
-      return s(e.fonte || e.catId).replace(/_DES$/, "") + (e.uf ? "-" + e.uf : "") + " " + this.fmtComp(e.competencia) + (e.regime ? " " + e.regime : "");
+      return s(e.fonte || e.catId).replace(/_DES$/, "") + (e.praca ? "-" + e.praca : (e.uf ? "-" + e.uf : "")) + " " + this.fmtComp(e.competencia) + (e.regime ? " " + e.regime : "");
     },
     basesExigidas: function (orc) { var c = this.cfg(orc); return (c && c.ativo && Array.isArray(c.basesExigidas)) ? c.basesExigidas : []; },
     temBasesExigidas: function (orc) { return this.basesExigidas(orc).length > 0; },
@@ -1046,7 +1173,10 @@
     },
     _confere: function (exig, uso) {
       if (!uso) return false;
-      if (exig.uf && uso.uf !== exig.uf) return false;
+      /* tabela com praça (SUDECAP → BH): a base instalada grava a PRAÇA no uf
+         ("BH"); aceita também a UF do estado, que é o que o catálogo declara */
+      if (exig.praca) { if (uso.uf !== exig.praca && uso.uf !== exig.uf) return false; }
+      else if (exig.uf && uso.uf !== exig.uf) return false;
       if (uso.competencia !== exig.competencia) return false;
       if (exig.regime && uso.regime && uso.regime !== exig.regime) return false;
       return true;
@@ -1079,7 +1209,7 @@
           var sv = fatos.servidor && fatos.servidor.sinapi;
           if (sv && self._comp(sv.competencia)) conhecidas.push(self._comp(sv.competencia));
         } else if (Cat && Cat.temHistorico && Cat.temHistorico(e.catId)) {
-          conhecidas = Cat.competenciasConhecidas(e.catId, e.uf, fatos);
+          conhecidas = Cat.competenciasConhecidas(e.catId, e.praca ? "" : e.uf, fatos);   /* tabela de praça: a base instalada grava "BH" no uf, não "MG" */
         } else if (Cat && Cat.get && Cat.get(e.catId)) {
           /* sem histórico: só o que vem no pacote ou o atual do servidor */
           var ent = Cat.get(e.catId), sv2 = ent.chaveStatus && fatos.servidor ? fatos.servidor[ent.chaveStatus] : null;
@@ -1095,7 +1225,10 @@
           r.texto = r.semFonte ? "não distribuída pelo OrçaPRO — importe a planilha oficial do órgão desta competência em Tabelas"
             : "não encontrada nas fontes conhecidas (disco, servidor da RA, espelho)";
         }
-        if (uso) r.texto += " · em uso agora: " + self.fmtBase(uso);
+        /* (07/11/2026) a frase que a pessoa precisa: o que o edital pede × o que
+           ela tem — com competência e regime dos dois lados */
+        r.pede = self.fmtBase(e); r.tem = uso ? self.fmtBase(uso) : "";
+        r.texto = "o edital pede " + r.pede + "; " + (uso ? "você tem " + r.tem : "você não tem nenhuma " + e.fonte + " instalada") + " — " + r.texto;
         return r;
       });
     },

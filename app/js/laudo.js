@@ -152,8 +152,16 @@
       var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {}, _pg = {};
       _calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
       Util.arr(_calc.grupos).forEach(function (g) { _pg[g.subEtapaId] = g; });
+      /* COLUNAS EXTRAS (js/colunas.js): o laudo obedece à escolha salva no orçamento
+         (padrão: ocultas, como sempre foi). Só desenha com a tela carregada (UI). */
+      var _uiOk = typeof Colunas !== "undefined" && typeof UI !== "undefined" && UI._celulasRefLinha && UI._celulasCatLinha;
+      var _layL = _uiOk ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0 };
+      var _catL = _layL.cat ? Colunas.categorias(orc, _calc) : null;
+      var _refL = _layL.ref ? Colunas.mapaReferencias(orc, _calc) : {};
+      var _paraL = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
+      var _totL = 7 + _layL.nPre + _layL.nPos;
       Util.arr(orc.etapas).forEach(function (e, ei) {
-        analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="6"><b>' + Util.esc(e.nome) + '</b></td></tr>';
+        analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="' + (_totL - 1) + '"><b>' + Util.esc(e.nome) + '</b></td></tr>';
         var _subLau = null;
         Util.arr(e.itens).forEach(function (it, ii) {
           var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0, numero: "" };
@@ -161,20 +169,28 @@
             _subLau = L.subEtapaId || "";
             if (_subLau) {
               var gL = _pg[_subLau] || { numero: "", nome: "" };
-              analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="6" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
+              analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="' + (_totL - 1) + '" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
             }
           }
           analHtml += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td></tr>';
+            (_uiOk ? _paraL(UI._celulasRefLinha(orc, L, _layL, _refL)) : '') +
+            '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+            (_uiOk ? _paraL(UI._celulasCatLinha(_layL, _catL && _catL.porLinha[it.id])) : '') + '</tr>';
         });
       });
       P.push(pg("5. Planilha Orçamentária Analítica",
-        '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th><th class="r">Custo total</th></tr></thead>' +
+        '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th>' +
+        (_layL.pubdi ? '<th class="r">Preço unit. c/ BDI</th>' : '') +
+        (_layL.ref ? '<th class="r">Preço ref.</th><th class="r">Dif. %</th>' : '') +
+        '<th class="r">Custo total</th>' +
+        (_layL.cat ? '<th class="r">Custo MO</th><th class="r">Custo MAT</th><th class="r">Custo EQ</th>' : '') + '</tr></thead>' +
         '<tbody>' + analHtml + '</tbody>' +
-        '<tfoot><tr><td colspan="6">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr></tfoot></table>'));
+        '<tfoot><tr><td colspan="' + (6 + _layL.nPre) + '">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
+        (_uiOk ? _paraL(UI._celulasCatSub(_layL, _catL && _catL.total)) : '') + '</tr></tfoot></table>' +
+        (_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem analítico (sem discriminação MO/MAT/EQ) fora dos subtotais; nada é rateado.</p>' : '')));
 
       // ---- 5.1 MEMÓRIA DE CÁLCULO (Lei 14.133 — justificativa dos quantitativos) ----
       // LOTE 4: o campo já era capturado na UI mas não saía no PDF do laudo.

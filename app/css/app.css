@@ -52,6 +52,16 @@
      que ninguem le nao alerta ninguem; nem toda tinta tem folga para vida. */
   --vermelho: #d61f26;
   --amarelo: #aa6200;
+  /* COLUNAS EXTRAS DA PLANILHA (js/colunas.js): preço de referência do órgão,
+     nosso preço c/ BDI, itens identificados no edital e a diferença em % (abaixo
+     da referência / próximo / muito acima). Valores medidos contra a superfície
+     do tema; o impresso redefine os claros no bloco @media print. */
+  --col-ref: #1d5f99;
+  --col-nosso: #7a3fb0;
+  --col-ident: #8a5a00;
+  --col-dif-baixo: #c01a21;
+  --col-dif-ok: #15803d;
+  --col-dif-alto: #b45309;
 
   --bg: #f4f7fb; /* mesmo branco-azulado do site — claro puxado pro branco */
   --surface: #ffffff;
@@ -285,6 +295,12 @@
   --verde-claro: #6fd08a;
   --vermelho: #e8767b;
   --amarelo: #dda23f;
+  --col-ref: #7db8ea;
+  --col-nosso: #cfa8f2;
+  --col-ident: #e6b45c;
+  --col-dif-baixo: #f08a8f;
+  --col-dif-ok: #6fd08a;
+  --col-dif-alto: #f0a45a;
   /* o aco da marca escurece demais sobre o navy: sobre a superficie do tema
      escuro ele dava 3,06:1, abaixo do minimo de leitura. Aqui ele clareia
      mantendo o mesmo azul de aco — a marca continua reconhecivel. */
@@ -945,6 +961,37 @@ table.tbl-plan th:nth-child(9), table.tbl-plan tr.lin td:nth-child(9) {
 }
 table.tbl-plan th:nth-child(5), table.tbl-plan tr.lin td:nth-child(5),
 table.tbl-plan th:nth-child(6), table.tbl-plan tr.lin td:nth-child(6) { width: 1%; }
+
+/* ===== COLUNAS EXTRAS DA PLANILHA (js/colunas.js) =====================
+ * `.pl-w1`: a coluna nova encolhe até o conteúdo (a posição das colunas muda
+ * conforme o menu "Colunas", então não dá para endereçar por nth-child).
+ * Preço de referência e nosso preço têm cor PRÓPRIA, e a diferença em % usa
+ * três tintas com sentido: vermelho = nosso preço ABAIXO da referência,
+ * verde = igual ou até o limite acima, laranja = muito acima. A cor sozinha
+ * não carrega o sentido (daltonismo): o texto leva o sinal (−x,x% / +x,x%). */
+table.tbl-plan .pl-w1 { width: 1%; white-space: nowrap; }
+table.tbl-plan .col-ref { color: var(--col-ref); }
+table.tbl-plan .col-nosso { color: var(--col-nosso); }
+table.tbl-plan .ref-sbdi { font-size: var(--t-micro); }
+.dif { font-weight: var(--p-forte); white-space: nowrap; }
+.dif-abaixo { color: var(--col-dif-baixo); }
+.dif-proximo { color: var(--col-dif-ok); }
+.dif-acima { color: var(--col-dif-alto); }
+/* itens identificados no edital: etapa e linhas em cor diferente da planilha do órgão */
+.pill.ident-edital { background: rgba(180, 120, 0, .14); color: var(--col-ident); padding: 1px 6px; font-size: var(--t-micro); font-weight: var(--p-forte); }
+table.tbl-plan tr.etapa-ident > td:first-child { box-shadow: inset 4px 0 0 var(--col-ident); }
+table.tbl-plan tr.lin-ident > td { background: rgba(180, 120, 0, .07); }
+table.tbl-plan tr.lin-ident > td:first-child { box-shadow: inset 4px 0 0 var(--col-ident); }
+/* menu "Colunas" */
+.col-menu { position: relative; }
+.col-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 280px; padding: 10px 12px;
+  background: var(--surface); color: var(--texto); border: 1px solid var(--linha-forte); border-radius: 10px; box-shadow: var(--sombra-lg, 0 8px 24px rgba(0,0,0,.18)); }
+.col-pop-tit { font-weight: var(--p-forte); margin-bottom: 6px; font-size: var(--t-peq); }
+.col-op { display: block; padding: 4px 0; font-size: var(--t-peq); cursor: pointer; }
+.col-lim { margin-top: 6px; font-size: var(--t-peq); }
+.col-lim input { width: 56px; }
+.col-pop-rod { margin-top: 8px; display: flex; gap: 6px; justify-content: flex-end; }
+@media print { .col-menu { display: none !important; } }
 
 /* ===== MODO COMPACTO DA PLANILHA ==================================
  * Obra grande tem dezenas de itens e a linha alta obriga a rolar sem parar.
@@ -1723,6 +1770,8 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
     --bg-grad: none;
     --sombra-sm: none; --sombra: none; --sombra-lg: none; --sombra-navy: none;
     --realce: none;
+    --col-ref: #1d5f99; --col-nosso: #7a3fb0; --col-ident: #8a5a00;
+    --col-dif-baixo: #c01a21; --col-dif-ok: #15803d; --col-dif-alto: #b45309;
   }
   /* as tarjas do detalhamento também eram versões escuras */
   [data-tema="dark"] .tbl-analitico .lin-comp td { background: rgba(21, 128, 61, .10) !important; }

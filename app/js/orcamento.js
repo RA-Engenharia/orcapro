@@ -173,8 +173,29 @@
         bdiIncidencia: A().INCIDENCIA_PADRAO,        // "unitario" — TCU recomenda
         encargos: { tipo: "desonerado", horista: 0, mensalista: 0 },
         permitirZerado: false,
-        licitacao: { ativo: false, tipo: "", abertura: "", processo: "" }
+        licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
+        colunas: this.colunasPadrao()
       };
+    },
+
+    /* COLUNAS EXTRAS DA PLANILHA (js/colunas.js): quais grupos de colunas novas
+     * a planilha, o relatório e o laudo mostram. `null` = "não escolhido": vale
+     * o padrão (Preço c/ BDI e Preço ref. ligados em orçamento de licitação;
+     * Custo MO/MAT/EQ desligado). true/false = a escolha da pessoa, que fica
+     * salva NO ORÇAMENTO e não muda quando a licitação é ligada depois.
+     * `limiteAcimaPct`: até quantos % acima da referência o desvio ainda é
+     * "próximo" (verde); acima disso fica laranja. */
+    colunasPadrao: function () {
+      return { pubdi: null, cat: null, ref: null, limiteAcimaPct: 5 };
+    },
+    /* migração: orçamento antigo sem o campo ganha o padrão; campo torto vira o padrão */
+    garantirColunas: function (cfg) {
+      var c = (cfg.colunas && typeof cfg.colunas === "object" && !Array.isArray(cfg.colunas)) ? cfg.colunas : (cfg.colunas = this.colunasPadrao());
+      ["pubdi", "cat", "ref"].forEach(function (k) { if (c[k] !== true && c[k] !== false) c[k] = null; });
+      var lim = Number(c.limiteAcimaPct);
+      if (!isFinite(lim) || lim < 0 || lim > 1000 || c.limiteAcimaPct === null || c.limiteAcimaPct === "") c.limiteAcimaPct = 5;
+      else c.limiteAcimaPct = lim;
+      return c;
     },
 
     /* Garante a config em orçamentos ANTIGOS (migração): quem não tinha
@@ -193,6 +214,7 @@
       for (var k in pad) { if (orc.config[k] == null) orc.config[k] = pad[k]; }
       if (!orc.config.encargos || typeof orc.config.encargos !== "object") orc.config.encargos = { tipo: "desonerado", horista: 0, mensalista: 0 };
       if (!orc.config.licitacao || typeof orc.config.licitacao !== "object") orc.config.licitacao = { ativo: false, tipo: "", abertura: "", processo: "" };
+      this.garantirColunas(orc.config);
       orc.config.arredondamento = A().normalizar(orc.config.arredondamento);
       orc.config.bdiIncidencia = A().normalizarIncidencia(orc.config.bdiIncidencia);
       // compat: o campo antigo orc.desonerado manda no tipo de encargo
@@ -1202,6 +1224,12 @@
     itensSemPreco: function (orc) {
       var out = [];
       this.calcular(orc).linhas.forEach(function (L) {
+        /* ⚠ item "a compor" da etapa OPCIONAL de "itens identificados no
+           edital" (js/licitacao.js, aplicarItensIdentificados) não trava a
+           finalização: ele está FORA do valor da proposta por desenho e só
+           serve para justificar preço/risco. Se entrar no preço (a pessoa
+           desmarca o opcional), volta a contar como qualquer item zerado. */
+        if (L.opcional && L.item && L.item.aCompor === true && L.item.identificadoEdital) return;
         if (!(L.custoUnitario > 0)) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome });
       });
       return out;
