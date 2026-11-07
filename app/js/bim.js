@@ -5571,6 +5571,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     for (var i = 0; i < mo.grupo.children.length; i++) {
       var m = mo.grupo.children[i];
       if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
+      if (m.userData.decal) continue;   /* a GRAVAÇÃO do fabricante (js/biminstgeoreal-agua.js): fica fora da malha mesclada — ela tem a textura do texto */
       var pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
       if (!pa || !na) continue;
       var k = m.uuid;
@@ -11175,6 +11176,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
               var ud = m.userData || {};
               if (!m.isMesh || !m.geometry || !ud.instPapel || ud.instUnif || !cadeiaVisivel(m)) return;
               if (['tubo', 'conexao', 'peca', 'acessorio'].indexOf(ud.instPapel) < 0) return;
+              if (m.userData && (m.userData.decal || m.userData.semIfc)) return; if (m.material && (m.material.name === 'inst:marca' || m.material.name === 'inst:marcacao')) return;   /* a faixa da MARCAÇÃO do fabricante (textura 0,3 mm acima da peça) não entra na vista 2D: as bordas dela virariam aresta */
               var sisM = sisDe['edit:' + ud.expressID];
               if (p6Oc && (p6Oc(ud) || ocultoSis(sisM))) return;
               var geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal; if (!pa) return;
@@ -14858,6 +14860,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (m.isInstancedMesh) { pulados++; return; }
       var u = m.userData || {};
       if (u.expressID == null || !cadeiaVisivel(m)) return;
+      if (u.semIfc) return;   /* a GRAVAÇÃO do fabricante (faixa com textura, js/biminstgeoreal-agua.js) não é geometria da peça: fica fora do que sai do OrçaPRO */
       var pa = m.geometry.attributes.position;
       if (!pa || pa.isInterleavedBufferAttribute || pa.count < 3) return;
       var mat = Array.isArray(m.material) ? m.material[0] : m.material;

@@ -1878,6 +1878,8 @@
       for (i = 0; i < n; i++) { v = a[i] | 0; h1 = Math.imul(h1 ^ v, 16777619); h2 = Math.imul(h2 + v, -2048144789) ^ (h2 >>> 13); }
       return ml.pos.length + ":" + ml.idx.length + ":" + (h1 >>> 0).toString(36) + ":" + (h2 >>> 0).toString(36);
     },
+    /* a GRAVAÇÃO do fabricante (faixa com uv + textura de canvas em cache por texto; js/biminstgeoreal-agua.js) */
+    _malhaDecal: function (THREE, pt) { var RA = global.HidGeoRealAgua; return RA && RA.malhaDecal ? RA.malhaDecal(THREE, pt) : null; },
     _malhaG: function (THREE, ml, mat) {
       var C = this._geoCache && this._geoCache.THREE === THREE ? this._geoCache : null, chave = null;
       var n = ml.pos.length / 3, mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], i, k;
@@ -1898,6 +1900,7 @@
       var g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
       g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(ml.nrm), 3));
+      if (ml.uv && ml.uv.length === n * 2) g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(ml.uv), 2));   /* a faixa da marcação do fabricante (js/biminstgeoreal.js) */
       g.setIndex(ml.idx);
       g.computeBoundingBox(); g.computeBoundingSphere();
       if (chave) { g.userData.instGeoCache = true; C.m.set(chave, { g: g, c: c, ger: C.ger }); C.novas++; }
@@ -1905,7 +1908,19 @@
       /* peça METÁLICA (latão, cromado, cobre): o modelo mesclado só leva cor por vértice e apagaria o reflexo —
          marca para a tela desenhá-la por si (a mesma marca das louças/metais, js/bim.js _desenhaPorSi) */
       if (mat && mat.metalness > 0.5) m.userData.famPremium = true;
+      if (mat && mat.map) m.userData.famPremium = true;   /* com textura (marcação): a mescla por cor de vértice apagaria as letras */
       return m;
+    },
+    /* MARCAÇÃO DO FABRICANTE (06/11/2026): a textura das letras em relevo (js/biminstgeoreal.js canvasMarca) sobre a faixa fina
+       da peça; cache por texto, cor e proporção. No modo de cor por SISTEMA a marcação sai (a peça vira a cor do sistema). */
+    _matMarca: function (THREE, pt) {
+      var RL = global.HidGeoReal, k = "marca|" + pt.texto + "|" + pt.cor + "|" + Math.round((pt.aspecto || 4) * 10) + (pt.impressa ? "|i" : "");
+      if (this._mats[k]) return this._mats[k];
+      var cv = RL && RL.canvasMarca ? RL.canvasMarca(pt.texto, pt.cor, pt.aspecto || 4, pt.impressa) : null; if (!cv) return null;
+      var tx = new THREE.CanvasTexture(cv); tx.anisotropy = 4; if (THREE.sRGBEncoding) tx.encoding = THREE.sRGBEncoding;
+      var M = new THREE.MeshStandardMaterial({ map: tx, transparent: true, alphaTest: 0.04, depthWrite: false, roughness: 0.42, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      M.envMapIntensity = 0.5; M.name = "inst:marca";
+      this._mats[k] = M; return M;
     },
     malhas: function (st, famAval, THREE) {
       /* PROJETO INTELIGENTE (js/hidkitui.js): o kit do aparelho que entrou, mudou ou saiu — roda FORA do replay (setTimeout) */
@@ -1940,7 +1955,7 @@
         ordem.forEach(function (k) {
           var lista = nos[k], M = I.MATERIAIS[lista[0].material] || {}, r = null;
           if (M.secao) return;
-          try { r = G.no(lista, porId, { lod: lod, tol: I.TOL }); } catch (eNo) { r = null; }
+          try { r = G.no(lista, porId, { lod: lod, tol: I.TOL, marcacao: lod === "perto" }); } catch (eNo) { r = null; }   /* marcacao: a gravação do fabricante nas conexões de água (só no Alto) */
           if (!r) return;
           r.pecas.forEach(function (pc) { cxGeo[pc.id] = pc; });
           Object.keys(r.recuos).forEach(function (kk) { recuos[kk] = Math.max(recuos[kk] || 0, r.recuos[kk]); });
@@ -1986,21 +2001,23 @@
         u = [u[0] / Lu, u[1] / Lu, u[2] / Lu];
         var cj = G.cotasConexao("pvc_soldavel", "luva", t.dn), reg = (((global.HidGeoDados || {}).conexoes || {}).pvc_soldavel || {})[pa.tipo] || {}, kk = pa.chave && reg[pa.chave] ? pa.chave : null;
         var key = t.id + ":" + lado;
+        /* com a medida TIGRE da peça (js/biminstgeoreal-agua.js), o comprimento e a bolsa dela: a porta acompanha a peça */
+        var pTg = global.HidGeoRealAgua && global.HidGeoRealAgua.pontoAgua ? global.HidGeoRealAgua.pontoAgua(pa.tipo, t.dn) : null;
         if (pa.tipo === "adaptador" || pa.tipo === "luva_bucha") {
-          var La = kk ? reg[kk].L : (pa.tipo === "luva_bucha" ? cj.pb * 2 + 6 : G.PROP.z90(cj.de, cj.pb) * 2), FcA = [E.x + u[0] * La / 1000, E.y + u[1] * La / 1000, E.z + u[2] * La / 1000], gA = null;
-          try { gA = G.pecaSimples(pa.tipo, "pvc_soldavel", t.dn, FcA, [-u[0], -u[1], -u[2]], { lod: lod }); } catch (eA) { gA = null; }
+          var La = pTg && pTg.L ? pTg.L : kk ? reg[kk].L : (pa.tipo === "luva_bucha" ? cj.pb * 2 + 6 : G.PROP.z90(cj.de, cj.pb) * 2), FcA = [E.x + u[0] * La / 1000, E.y + u[1] * La / 1000, E.z + u[2] * La / 1000], gA = null;
+          try { gA = G.pecaSimples(pa.tipo, "pvc_soldavel", t.dn, FcA, [-u[0], -u[1], -u[2]], { lod: lod, marcacao: lod === "perto" }); } catch (eA) { gA = null; }
           if (!gA) return;
-          recuos[key] = Math.max(recuos[key] || 0, (La - cj.pb) / 1000);
+          recuos[key] = Math.max(recuos[key] || 0, (La - (pTg && pTg.pb ? pTg.pb : cj.pb)) / 1000);
           pontosAgua.push({ id: "pa:" + l.alvo, g: gA, sistema: t.sistema, rot: (pa.tipo === "luva_bucha" ? "Luva soldável com bucha de latão " : "Adaptador soldável curto ") + (kk ? kk.replace("x", " × ") + "\"" : "DN " + t.dn + " (cota a conferir)") });
           return;
         }
         var fr = pa.saida ? [pa.saida[0], pa.saida[1], pa.saida[2]] : null; if (!fr) return;
         var dt = fr[0] * u[0] + fr[1] * u[1] + fr[2] * u[2]; fr = [fr[0] - u[0] * dt, fr[1] - u[1] * dt, fr[2] - u[2] * dt];
         var Lf = Math.hypot(fr[0], fr[1], fr[2]); if (!(Lf > 1e-3)) return; fr = [fr[0] / Lf, fr[1] / Lf, fr[2] / Lf];
-        var z = kk ? reg[kk].z : G.PROP.z90(cj.de, cj.pb), Fc = [E.x + u[0] * z / 1000, E.y + u[1] * z / 1000, E.z + u[2] * z / 1000];
-        var gj = null; try { gj = G.pecaSimples("joelho_bucha", "pvc_soldavel", t.dn, Fc, [-u[0], -u[1], -u[2]], { saida: fr, lod: lod }); } catch (eJ) { gj = null; }
+        var z = pTg && pTg.z ? pTg.z : kk ? reg[kk].z : G.PROP.z90(cj.de, cj.pb), Fc = [E.x + u[0] * z / 1000, E.y + u[1] * z / 1000, E.z + u[2] * z / 1000];
+        var gj = null; try { gj = G.pecaSimples("joelho_bucha", "pvc_soldavel", t.dn, Fc, [-u[0], -u[1], -u[2]], { saida: fr, lod: lod, marcacao: lod === "perto" }); } catch (eJ) { gj = null; }
         if (!gj) return;
-        recuos[key] = Math.max(recuos[key] || 0, (z - cj.pb) / 1000);
+        recuos[key] = Math.max(recuos[key] || 0, (z - (pTg && pTg.pb ? pTg.pb : cj.pb)) / 1000);
         pontosAgua.push({ id: "pa:" + l.alvo, g: gj, sistema: t.sistema, rot: kk ? "Joelho 90° soldável com bucha de latão " + kk.replace("x", " × ") + "\"" : "Joelho 90° soldável com bucha de latão DN " + t.dn + " (cota a conferir)" });
       });
       var livres = {};
@@ -2020,9 +2037,13 @@
           m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(w, v, u));
           m.position.copy(a).add(b).multiplyScalar(0.5);
         } else if (G) {
-          var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: lod });
+          var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: lod, marcacao: lod === "perto" });
           m = self._malhaG(THREE, tg.partes[0].malha, self._matPeca(THREE, t.material, t.sistema, "corpo", corV));   /* HIDROSSANITÁRIO: cor por verificação (ok / não verificado / reprovado) */
-          tg.partes.slice(1).forEach(function (pt) { extra.push(self._malhaG(THREE, pt.malha, self._matPeca(THREE, t.material, t.sistema, pt.papel, null))); });   /* anel de borracha das bolsas de emenda */
+          tg.partes.slice(1).forEach(function (pt) {
+            if (pt.decal) { var mxD = self.modoCor === "sistema" || corV ? null : self._malhaDecal(THREE, pt); if (mxD) extra.push(mxD); return; }   /* cor por sistema / de verificação: a gravação da água sai, como a do esgoto */
+            if (pt.papel === "marca") { var mmT = self.modoCor === "sistema" || corV ? null : self._matMarca(THREE, pt); if (mmT) { var mgT = self._malhaG(THREE, pt.malha, mmT); mgT.userData.semIfc = true; extra.push(mgT); } return; }   /* a marcação impressa do tubo (Alto) */
+            extra.push(self._malhaG(THREE, pt.malha, self._matPeca(THREE, t.material, t.sistema, pt.papel, null)));
+          });   /* anel de borracha das bolsas de emenda */
         } else {
           var r = Math.max(t.dn / 2000, 0.008);
           m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 14, 1, false), self._mat(THREE, corV || I.SISTEMAS[t.sistema].cor));
@@ -2037,7 +2058,11 @@
       R.conexoes.forEach(function (c) {
         var gx = cxGeo[c.id], ms;
         if (baixo) ms = self._linhaMalhas(THREE, c.id, null);   /* NÍVEL Baixo: o símbolo unifilar (joelho = só o vértice: nenhuma malha) */
-        else if (gx) ms = gx.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null)); });
+        else if (gx) ms = gx.partes.map(function (pt) {
+          if (pt.decal) return self.modoCor === "sistema" ? null : self._malhaDecal(THREE, pt);
+          if (pt.papel === "marca") { var mm = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mm) return null; var mgC = self._malhaG(THREE, pt.malha, mm); mgC.userData.semIfc = true; return mgC; }   /* a faixa do fabricante é só textura da tela: não vai ao IFC/SketchUp */
+          return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null));
+        }).filter(Boolean);
         else {   /* duto, eletrocalha ou material sem família de junta: um bloco do tamanho da seção (nunca mais a bolota) */
           var porT = (c.ramos || []).map(function (id) { return porId[id]; }).filter(Boolean)[0], s0 = porT && porT.larg ? Math.max(porT.larg, porT.alt) * 1.08 : Math.max((c.dn || 40) / 1000, 0.016) * 1.3;
           var mb = new THREE.Mesh(new THREE.BoxGeometry(s0, porT && porT.alt ? porT.alt * 1.08 : s0, s0), G ? self._matPeca(THREE, c.material, c.sistema, "corpo", null) : self._mat(THREE, I.SISTEMAS[c.sistema].cor));
@@ -2064,7 +2089,7 @@
         if (gp && gp.extras && !baixo) gp.extras.forEach(function (x) { out.push({ id: k.id + "-" + x.suf, ifc: "IFCPIPEFITTING", malhas: papel([self._malhaG(THREE, x.malha, self._matPeca(THREE, "pvc_esgoto", k.sistema, "corpo", null, true))], "peca"), disciplina: "hidraulica", nome: x.nome, qto: { contagem: 1, comprimento: x.comprimento_mm / 1000 }, derivada: true }); });
       });
       pontosAgua.forEach(function (pa) {
-        out.push({ id: pa.id, ifc: "IFCPIPEFITTING", malhas: papel(pa.g.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, "pvc_soldavel", pa.sistema, pt.papel, null)); }), "pontoAgua"), disciplina: "hidraulica",
+        out.push({ id: pa.id, ifc: "IFCPIPEFITTING", malhas: papel(pa.g.partes.map(function (pt) { return pt.decal ? self._malhaDecal(THREE, pt) : self._malhaG(THREE, pt.malha, self._matPeca(THREE, "pvc_soldavel", pa.sistema, pt.papel, null)); }).filter(Boolean), "pontoAgua"), disciplina: "hidraulica",
                    nome: pa.rot + " — ponto de água (acabamento da ligação; ainda fora do quantitativo)", qto: { contagem: 1 }, derivada: true });
       });
       /* o PONTO DE LIGAÇÃO dos aparelhos: um anel discreto, só enquanto uma ferramenta de traçado está armada (é o

@@ -2159,6 +2159,7 @@
         var out = [];
         arr(gx.partes).forEach(function (pt) {
           var ml = pt && pt.malha; if (!ml || !ml.pos || !ml.idx) return;
+          if (pt.decal || pt.papel === "marca") return;   /* a GRAVAÇÃO do fabricante (água: js/biminstgeoreal-agua.js; esgoto: faixa "marca") é só textura da tela: não vira geometria do IFC */
           var cascas = arr(ml.cascas).length ? ml.cascas : [[0, ml.idx.length]];
           var ap = HG.aparencia ? HG.aparencia(null, null, pt.papel) : null, outroPapel = pt.papel && pt.papel !== "corpo" && ap && ap.chave === pt.papel;
           cascas.forEach(function (cs) {

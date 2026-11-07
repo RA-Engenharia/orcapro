@@ -4139,6 +4139,7 @@ var geos = {}, insts = [];
 for (var i = 0; i < mo.grupo.children.length; i++) {
 var m = mo.grupo.children[i];
 if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
+if (m.userData.decal) continue;
 var pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
 if (!pa || !na) continue;
 var k = m.uuid;
@@ -8346,6 +8347,7 @@ modelRoot.traverse(function (m) {
 var ud = m.userData || {};
 if (!m.isMesh || !m.geometry || !ud.instPapel || ud.instUnif || !cadeiaVisivel(m)) return;
 if (['tubo', 'conexao', 'peca', 'acessorio'].indexOf(ud.instPapel) < 0) return;
+if (m.userData && (m.userData.decal || m.userData.semIfc)) return; if (m.material && (m.material.name === 'inst:marca' || m.material.name === 'inst:marcacao')) return;
 var sisM = sisDe['edit:' + ud.expressID];
 if (p6Oc && (p6Oc(ud) || ocultoSis(sisM))) return;
 var geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal; if (!pa) return;
@@ -11370,6 +11372,7 @@ if (!m.isMesh || !m.geometry || !m.geometry.attributes) return;
 if (m.isInstancedMesh) { pulados++; return; }
 var u = m.userData || {};
 if (u.expressID == null || !cadeiaVisivel(m)) return;
+if (u.semIfc) return;
 var pa = m.geometry.attributes.position;
 if (!pa || pa.isInterleavedBufferAttribute || pa.count < 3) return;
 var mat = Array.isArray(m.material) ? m.material[0] : m.material;

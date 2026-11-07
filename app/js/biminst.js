@@ -857,6 +857,8 @@
 
   /* 27/10/2026 (frente 1b): a peça existe no catálogo do fabricante para o material e a chave de DN ("100x50", "100")? Vale a cota lida
      (HidGeoDados.conexoes) ou só a presença da ficha com as letras ainda não lidas (conexoesBrutas): o produto EXISTE, mesmo sem cota. */
+  /* perna (mm) da curva 90 de raio longo na 1.2.255, onde a medida nova da peça (perfil medido) a mudou — congelada só para a DECISÃO joelho × curva */
+  var PERNA_CURVA_LEGADA = { "pvc_esgoto|150": 553.6, "pvc_esgoto|200": 607.1, "pvc_serie_r|100": 0 };
   function conexaoNoCatalogo(material, tipo, chave) {
     var GD = dep("HidGeoDados", "./biminstgeodados.js"), k = txt(chave);
     if (!GD) return false;
@@ -1027,6 +1029,8 @@
              pelo menos a perna da curva; senão fica o joelho e o aviso diz por quê. Sem o comprimento (nó sintético) vale a regra. */
           var HGc2 = dep("HidGeo", "./biminstgeo.js"), cc2 = null; try { cc2 = HGc2 && HGc2.cotasConexao ? HGc2.cotasConexao(maior.material, "curva90", dnM) : null; } catch (eC2) { cc2 = null; }
           var perna = cc2 && cc2.z > 0 ? cc2.z / 1000 : 0;
+          /* ORÇAMENTO IGUAL À 1.2.255: a decisão joelho × curva usa a perna de ANTES (a geometria nova da Tigre não troca o item do orçamento) */
+          if (PERNA_CURVA_LEGADA[txt(maior.material) + "|" + txt(dnM)] != null) perna = PERNA_CURVA_LEGADA[txt(maior.material) + "|" + txt(dnM)] / 1000;
           var curto = perna > 0 && [a, b].filter(function (r) { return isFinite(r.comprimento) && r.comprimento + 1e-6 < perna; })[0];
           if (curto) avisos.push("curva de raio longo DN " + dnM + " não cabe no trecho " + curto.trecho + " (" + Math.round(curto.comprimento * 100) + " cm < perna da curva " + Math.round(perna * 100) + " cm): ficou joelho 90°");
           else tipo = "curva90";

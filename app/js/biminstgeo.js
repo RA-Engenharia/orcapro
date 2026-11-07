@@ -40,6 +40,7 @@
   /* a MEDIDA DO PRODUTO (rodada 4 da paridade, 18/10/2026): as conexões de esgoto série normal com as cotas da tabela de
      dimensões da peça de verdade, conferidas contra a ficha (dados-fonte/hidro/geometria/produto-esgoto-serie-normal.json) */
   function produto() { return dep("HidProdutoDados", "./biminstprodutodados.js") || { joelho: {}, linha: {} }; }
+  function real() { return dep("HidGeoReal", "./biminstgeoreal.js"); }   /* marcação do fabricante (js/biminstgeoreal.js) */
   function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
   var MM = 0.001;
 
@@ -286,7 +287,9 @@
   /* PERFIL MEDIDO (paridade, 18/10/2026): quando a peça é desenhada pelo perfil medido do produto (conexaoProduto), as
      cotas saem DELE — a face, a profundidade e o externo de cada boca são os da peça desenhada (uma fonte só para o 3D, a
      planta e as cotas). O que a ficha dizia e diverge 0,5 mm ou mais fica em cotas.divergencia. */
+  var PONTA_LEGADA = { ligado: false };   /* temPonta da série R: a ponta medida da Tigre só serve à geometria (a luva do orçamento é a da 1.2.255) */
   function cotasDoPerfil(o, material, tipo, dn, dnRamal) {
+    if (PONTA_LEGADA.ligado) return;
     var pp = perfilProduto(material, tipo, dn); if (!pp) return;
     var div = [];
     function poe(c, v, rotulo) { v = Math.round(v * 100) / 100; if (o[c] != null && Math.abs(o[c] - v) >= 0.5) div.push(rotulo + " " + v + " mm (peça medida) × " + o[c] + " mm (antes)"); o[c] = v; o.origem[c] = "produto (perfil medido)"; }
@@ -314,8 +317,8 @@
       if (!pp.ramalForaDoCatalogo && (pR.ext || []).length && Math.abs((dnRamal || dn) - pR.dn) < 0.5) poe("zb", pR.face, "face do ramal");
     } else if (pp.tipo === "reta") {
       var ls = pernas.filter(function (x) { return x.face > 1; });
-      if (ls.length === 1) { poe("L", ls[0].face, "comprimento"); poe("pb", Math.abs(ls[0].conector), "bolsa"); }
-      else if (ls.length >= 2) { poe("L", ls[0].face + ls[1].face, "comprimento"); poe("pb", ls[0].face - ls[0].conector, "bolsa"); poe("od", odBoca(ls[0]), "externo"); }
+      if (ls.length === 1) { poe("L", ls[0].face, "comprimento"); poe("pb", Math.abs(ls[0].conector), "bolsa"); if (o.pb2 == null && pp.lote) { o.pb2 = Math.round((ls[0].face - Math.abs(ls[0].conector)) * 100) / 100; o.origem.pb2 = "produto (perfil medido)"; } }
+      else if (ls.length >= 2) { poe("L", ls[0].face + ls[1].face, "comprimento"); poe("pb", ls[0].face - ls[0].conector, "bolsa"); poe("od", odBoca(ls[0]), "externo"); if (pp.lote && Math.abs((ls[1].face - ls[1].conector) - o.pb) >= 0.5) { o.pb2 = Math.round((ls[1].face - ls[1].conector) * 100) / 100; o.origem.pb2 = "produto (perfil medido)"; } }
     }
     o.produto = true; o.perfilMedido = pp.familia; o.aConferir = false;
     if (div.length) o.divergencia = (o.divergencia ? o.divergencia + "; " : "") + div.join("; ");
@@ -331,11 +334,14 @@
    * Cor por MATERIAL (como a peça é de verdade). A cor por SISTEMA é um modo de
    * vista da tela, não a aparência da peça. */
   var APAR = {
-    pvc_soldavel: { cor: "#684427", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PVC soldável marrom",
-                    fonteCor: "mediana dos pixels marrons das fotos: catálogo predial (soldável, págs. 12-13) #885D36 e ficha de água fria soldável (joelho, pág. 19) #8F7664" },
-    pvc_esgoto: { cor: "#E6E0D2", rug: 0.5, met: 0, verniz: 0, env: 0.45, nome: "PVC esgoto série normal branco",
-                  fonteCor: "foto da ficha de esgoto série normal (junção, pág. 18) #E6DECC — branco levemente acinzentado, nunca o branco puro" },
-    pvc_serie_r: { cor: "#CDCFCE", rug: 0.5, met: 0, verniz: 0, env: 0.45, nome: "PVC série reforçada cinza-claro", fonteCor: "NBR 5688:2018, cor da série R = cinza-claro (tabela de séries)" },
+    pvc_soldavel: { cor: "#6A5442", rug: 0.5, met: 0, verniz: 0, env: 0.5, nome: "PVC soldável marrom",
+                    fonteCor: "mediana dos pixels marrons das fotos: catálogo predial (soldável, págs. 12-13) #885D36 e ficha de água fria soldável (joelho, pág. 19) #8F7664; 06/11/2026: o render ao lado da foto do catálogo saía alaranjado (cobre) — tom menos saturado, entre as duas fotos, levemente brilhante (rug 0,5)" },
+    /* ESGOTO REAL (06/11/2026): a peça é a do perfil medido da família Tigre — a cor é a da foto do catálogo Tigre; acabamento
+       levemente brilhante (rugosidade 0,42, ainda plástico: metálico 0, sem verniz) */
+    pvc_esgoto: { cor: "#E2E2DE", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC esgoto série normal branco",
+                  fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série normal, págs. 22-23): mediana #E7E7E7 sob a luz da foto — branco frio, nunca o branco puro (antes: ficha Amanco, junção pág. 18, #E6DECC)" },
+    pvc_serie_r: { cor: "#9DA39C", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC série reforçada cinza",
+                   fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série reforçada, pág. 24): mediana #A8ADA7 em 12 peças — cinza levemente esverdeado; NBR 5688:2018: série R cinza" },
     pvc_esgoto_enterrado: { cor: "#BF7638", rug: 0.58, met: 0, verniz: 0, env: 0.45, nome: "PVC ocre enterrado", fonteCor: "NBR 7362:2025, tubo ocre (tom a conferir com foto do produto)" },
     ppr: { cor: "#4F8A3C", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PPR verde", fonteCor: "verde da linha PPR (tom a conferir com foto da ficha)" },
     cpvc: { cor: "#E0D2AA", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "CPVC creme", fonteCor: "bege/creme da linha CPVC (tom a conferir com foto da ficha)" },
@@ -367,6 +373,7 @@
     anel: { cor: "#1F2023", rug: 0.85, met: 0, verniz: 0, nome: "anel de borracha" },
     fenda: { cor: "#2B2D30", rug: 0.9, met: 0, verniz: 0, nome: "fenda da grelha (vão escuro)" },
     marcador: { cor: "#E0262B", rug: 0.5, met: 0, verniz: 0, nome: "marcador de problema", emissivo: 0.35 },
+    marca: { cor: "#E2E2DE", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "marcação do fabricante (textura sobre a peça)" },
     ligacao: { cor: "#5B6B7A", rug: 0.5, met: 0, verniz: 0, nome: "ponto de ligação", emissivo: 0.2 },
     ferro: { cor: "#35383C", rug: 0.6, met: 0.7, verniz: 0, nome: "tampão de ferro fundido" },
     tampaConcreto: { cor: "#BDBBB5", rug: 0.9, met: 0, verniz: 0, env: 0.35, nome: "tampa de concreto" }
@@ -535,6 +542,18 @@
       }
     }
     var partesT = [cascaSaida(m)]; if (mA.idx.length) partesT.push(cascaSaida(mA, "anel"));
+    /* MARCAÇÃO IMPRESSA DO TUBO de esgoto (06/11/2026): a tinta do fabricante ao longo do corpo, no meio do trecho, voltada para a
+       vista isométrica — só no Alto; 16 triângulos por tubo (js/biminstgeoreal.js) */
+    var RLt = real();
+    if (RLt && o.lod === "perto" && (t.material === "pvc_esgoto" || t.material === "pvc_serie_r") && L > 4 * c.de) {
+      var hT = Math.min(16, Math.max(5, 0.16 * c.de)), asp8 = Math.max(8, Math.floor(Math.min(L * 0.6, 520) / hT / 8) * 8), Lm = asp8 * hT, s0m = (L - Lm) / 2, PREFt = nrmz([1, 0.72, 1.18]), refT = sub(PREFt, mul(d, dot(PREFt, d)));
+      refT = len(refT) > 0.2 ? nrmz(refT) : perp(d);
+      var fxT = RLt.faixa(A, d, refT, (ro + Math.max(0.3, 0.004 * ro)) * MM, s0m * MM, (s0m + Lm) * MM, hT / ro, 8, 1), mT = new Malha();
+      mT.pos = fxT.pos; mT.nrm = fxT.nrm; mT.idx = fxT.idx; mT.uv = fxT.uv; mT.cascas = [];
+      partesT.push({ papel: "marca", malha: mT, texto: RLt.textoMarca("TIGRE", t.material, t.dn), aspecto: asp8, cor: (APAR[t.material] || {}).cor, impressa: true });
+    }
+    /* a gravação do fabricante ao longo do tubo soldável (só o 3D Alto pede: o.marcacao; js/biminstgeoreal-agua.js) */
+    if (o.marcacao && t.material === "pvc_soldavel" && o.lod !== "longe") { var RAt = dep("HidGeoRealAgua", "./biminstgeoreal-agua.js"), mT = RAt && RAt.marcaTubo ? RAt.marcaTubo(HidGeo, t, A, add(A, mul(d, L * MM)), c.de) : null; if (mT) partesT.push(mT); }
     return { partes: partesT, cotas: c, juntas: juntas, inicio: A, fim: add(A, mul(d, L * MM)), aConferir: c.aConferir };
   }
 
@@ -638,8 +657,14 @@
    * encontro até a face, e o furo): no joelho/curva o caminho é a curva do raio central, na derivação a linha reta e o
    * ramal. O tubo começa no CONECTOR da perna (ele entra na luva/bolsa da peça e fica escondido nela); do lado da LUVA
    * (a ponta da peça) a luva simples do produto abraça a ponta e o tubo começa na face dela. */
-  var CHAVE_PERFIL = { pvc_esgoto: { joelho90: "esg-joelho", joelho45: "esg-joelho", curva90: "esg-curva", curva45: "esg-curva", juncao: "esg-juncao", te: "esg-te", te_reducao: "esg-te", luva: "esg-luva" },
+  var CHAVE_PERFIL = { pvc_esgoto: { joelho90: "esg-joelho", joelho45: "esg-joelho", curva90: "esg-curva", curva45: "esg-curva", juncao: "esg-juncao", te: "esg-te", te_reducao: "esg-te", luva: "esg-luva",
+                                     /* ESGOTO REAL (06/11/2026): tipos novos pelo perfil medido (lote "esgoto-2026-11") */
+                                     curva90_curta: "esg-curvacurta", juncao_dupla: "esg-juncaodupla", cruzeta: "esg-cruzeta", luva_correr: "esg-luvacorrer", cap: "esg-cap", joelho90_anel_labial: "esg-joelhoanel" },
+                       pvc_serie_r: { joelho90: "esgr-joelho", joelho45: "esgr-joelho", curva90: "esgr-curva", curva45: "esgr-curva", curva90_curta: "esgr-curvacurta", juncao: "esgr-juncao",
+                                      juncao_dupla: "esgr-juncaodupla", te: "esgr-te", te_reducao: "esgr-te", te_inspecao: "esgr-teinsp", luva: "esgr-luva", luva_correr: "esgr-luvacorrer", cap: "esgr-cap" },
                        pvc_soldavel: { joelho90: "af-joelho", joelho45: "af-joelho", te: "af-te", te_reducao: "af-te", luva: "af-luva", joelho_bucha: "af-joelhoazul" } };
+  /* o lote de esgoto de 06/11/2026 pode ser desligado (HidGeo.perfisNovos = false): a peça volta à construção de antes */
+  var PERFIS_NOVOS = { ligado: true };
   function segsProduto(lod, dn) { if (lod === "longe") return 8; if (lod === "icone") return 64; return dn >= 100 ? 40 : (dn >= 75 ? 32 : (dn >= 40 ? 24 : 20)); }
   /* o FIM DA PONTA na perna da luva: o conector da família quando ele fica dentro da luva (tê/junção: a ponta entra até o
      meio dela); no joelho/curva a família põe o conector no começo da luva — a ponta vai então até o meio da luva */
@@ -692,13 +717,100 @@
   }
   function perfilProduto(material, tipo, dn) {
     var PR = produto(), base = (CHAVE_PERFIL[material] || {})[tipo]; if (!base || !PR || !PR.perfis) return null;
-    return PR.perfis[base + "-" + dn] || null;
+    var pf = PR.perfis[base + "-" + dn] || null;
+    return pf && pf.lote && !PERFIS_NOVOS.ligado ? null : pf;
   }
   /* o perfil de UMA perna no eixo dela (mm): pontos [s, r] do fim da zona de encontro à face; antes do 1º ponto, o 1º raio */
   function pernaPts(pe) {   /* fecha na FACE (o último raio vai até ela: sem chanfro falso entre a última seção e a face) */
     var p = (pe.ext || []).map(function (q) { return [q[0], q[1]]; });
     if (p.length && pe.face > p[p.length - 1][0] + 1e-6) p.push([pe.face, p[p.length - 1][1]]);
     return p;
+  }
+  /* DERIVAÇÃO SEM A COMBINAÇÃO MEDIDA (ESGOTO REAL, 07/11/2026): o tê/junção 100 × 100, 75 × 75… — o fabricante vende, mas a
+     família da biblioteca só traz a combinação 100 × 50. As FACES e as PORTAS são as de antes (cotasConexao: a tabela do produto,
+     PR.linha, ou a ficha — o traçado não muda); a FORMA das bocas é a medida: a bolsa e a ponta da linha do perfil do mesmo DN e a
+     bolsa do ramal do perfil do DN dele, com o corpo liso entre elas. Sem a ponta nas cotas (duas bolsas) ou sem perfil do ramal:
+     null (fica a construção da ficha). Não é medida desta combinação: a ficha segue com realismo pelo tipo, e as cotas, aConferir
+     como antes. */
+  function bocaMedida(pe, rCorpo) {
+    /* o trecho da BOCA de uma perna medida (do 1º ponto acima do corpo até a face), em s da peça medida */
+    var pts = pernaPts(pe), i0 = -1;
+    for (var i = 0; i < pts.length; i++) if (pts[i][1] > rCorpo + 0.5) { i0 = i; break; }
+    if (i0 < 0) return null;
+    return pts.slice(Math.max(0, i0 - 1));
+  }
+  function derivacaoHibrida(c, eixos, o, pp) {
+    if (!PERFIS_NOVOS.ligado || !(c.material === "pvc_esgoto" || c.material === "pvc_serie_r") || !/^(te|te_reducao|juncao)$/.test(c.tipo) || eixos.length !== 3) return null;
+    var P = pv(c), lod = o.lod, m = new Malha(), mA = new Malha(), portas = [], segs = segsProduto(lod, c.dn);
+    var par = null, best = 1e9;
+    for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) { var dv = desvio(eixos[i].dir, eixos[j].dir); if (dv < best) { best = dv; par = [i, j]; } }
+    var ra = eixos[par[0]], rb = eixos[par[1]], ram = eixos.filter(function (_, k) { return k !== par[0] && k !== par[1]; })[0];
+    var cot = cotasConexao(c.material, c.tipo, c.dn, c.tipo === "te_reducao" ? (c.dn2 || ram.dn) : 0, ram.dn);
+    var jusR = cot.ponta && cot.zp ? jusante([ra, rb]) : null, duas = !jusR;   /* sem a ponta nas cotas: as DUAS bocas da linha são bolsa (como na ficha) */
+    if (jusR && jusR !== ra) { var tmp = ra; ra = rb; rb = tmp; }
+    var linha = pp.pernas.filter(function (x) { return !x.tampa && pp.pernas.some(function (y) { return y !== x && dot(x.d, y.d) < -0.99; }); });
+    /* a BOLSA da linha: a perna sem luva de bolsa mais curta (face − conector) — a da ponta/luva é a mais funda */
+    var curta = function (L0) { return L0.slice().sort(function (x, y) { return (x.face - x.conector) - (y.face - y.conector); })[0]; };
+    var pA = linha.filter(function (x) { return x.luva; })[0], pB = curta(linha.filter(function (x) { return x !== pA; })); if (!pB || (!duas && (!pA || !(pA.luvaIni > 0)))) return null;
+    var ppR = perfilProduto(c.material, c.tipo === "juncao" ? "juncao" : "te", ram.dn) || perfilProduto(c.material, "juncao", ram.dn) || perfilProduto(c.material, "te", ram.dn); if (!ppR) return null;
+    var lR = curta(ppR.pernas.filter(function (x) { return !x.tampa && !x.luva && ppR.pernas.some(function (y) { return y !== x && dot(x.d, y.d) < -0.99; }); })); if (!lR) return null;
+    var za = cot.zp, zb = cot.zr, zc = cot.zb, Lp = cot.ponta, tb = cotasTubo(c.material, c.dn), rT = tb.de / 2;
+    if (duas) {   /* as faces da construção da ficha (conexaoBruta), as mesmas portas */
+      if (c.tipo === "juncao") { var ladoA = dot(ram.dir, ra.dir) > dot(ram.dir, rb.dir); za = cot.L * (ladoA ? 0.6 : 0.4); zb = cot.L - za; zc = cot.L * 0.6; }
+      else { za = zb = cot.zr; zc = cot.zb; }
+      Lp = 0;
+    }
+    if (!(za > Lp + 2) || !(zb > 0) || !(zc > 0)) return null;
+    var rCorpo = pernaPts(duas ? pB : pA)[0][1], bB = bocaMedida(pB, pernaPts(pB)[0][1]), rCorpoR = pernaPts(lR)[0][1], bR = bocaMedida(lR, rCorpoR);
+    if (!bB || !bR) return null;
+    /* a LINHA, de u = 0 (a ponta, face A) a u = za + zb (a face da bolsa B) */
+    var L = za + zb, ch = Math.min(1.5, tb.e * 0.7), ext = duas ? [] : [[0, rT - ch], [ch * 3.7, rT], [Lp, rT], [Lp + 0.3, rCorpo]];
+    var uB = function (s) { return L - (pB.face - s); }, b0 = uB(bB[0][0]);
+    if (duas) { bB.slice().reverse().forEach(function (q) { ext.push([pB.face - q[0], q[1]]); }); Lp = pB.face - bB[0][0]; }
+    if (!(b0 > Lp + 1)) return null;
+    ext.push([b0, rCorpo]); bB.forEach(function (q) { ext.push([uB(q[0]), q[1]]); });
+    ext = ext.filter(function (q, k) { return k === 0 || q[0] >= ext[k - 1][0] - 1e-6; });
+    var furo = Math.min((pA && pA.furo) || rT - tb.e, pB.furo || rT - tb.e, rT - tb.e);
+    segs = segsNoTeto(segs, ext.length + bR.length + 8, tb.de, lod);
+    varrer(m, reta(add(P, mul(ra.dir, za * MM)), mul(ra.dir, -1)), escala([[0, furo]].concat(ext).concat([[L, furo]])), segs, true);
+    /* o RAMAL: de dentro da linha até a face zc, com a bolsa medida do DN dele */
+    var uR = function (s) { return zc - (lR.face - s); }, r0 = uR(bR[0][0]), s0R = Math.max(1, rCorpo * 0.5);
+    if (!(r0 > s0R + 1)) return null;
+    /* no TÊ o ramal do mesmo DN é a própria bolsa colada na linha (a foto do catálogo: o ramal tem o diâmetro da bolsa até a linha);
+       na junção ele nasce no corpo e abre na bolsa */
+    var rIniR = c.tipo !== "juncao" && bR.length > 1 ? bR[1][1] : rCorpoR;
+    var extR = [[s0R, rIniR], [r0, rIniR]]; bR.forEach(function (q, iq) { if (!(c.tipo !== "juncao" && iq === 0)) extR.push([uR(q[0]), q[1]]); });
+    var furoR = Math.min(lR.furo || rCorpoR * 0.9, cotasTubo(c.material, ram.dn).de / 2 - cotasTubo(c.material, ram.dn).e);
+    varrer(m, reta(P, ram.dir), escala([[s0R, furoR]].concat(extR).concat([[zc, furoR]])), segs, true);
+    /* as PORTAS: as mesmas da construção da ficha (conexaoBruta) */
+    var pbR = ram.dn < c.dn - 0.5 ? cotasConexao(c.material, "luva", ram.dn).pb : cot.pb;
+    if (!ra.passante && duas) portas.push({ trecho: ra.trecho, lado: ra.lado, dir: ra.dir, recuo: Math.max(0, za - cot.pb) * MM, z: za * MM, pb: cot.pb * MM, dn: ra.dn, ramal: false });
+    else if (!ra.passante) portas.push({ trecho: ra.trecho, lado: ra.lado, dir: ra.dir, recuo: za * MM, z: za * MM, pb: 0, dn: ra.dn, ponta: Lp * MM, bolsaAtras: Math.max(0, Lp - 1) * MM });
+    if (!rb.passante) portas.push({ trecho: rb.trecho, lado: rb.lado, dir: rb.dir, recuo: Math.max(0, zb - cot.pb) * MM, z: zb * MM, pb: cot.pb * MM, dn: rb.dn, ramal: false });
+    if (!ram.passante) portas.push({ trecho: ram.trecho, lado: ram.lado, dir: ram.dir, recuo: Math.max(0, zc - pbR) * MM, z: zc * MM, pb: pbR * MM, dn: ram.dn, ramal: true });
+    /* o anel de borracha dentro das DUAS bolsas (a ponta não tem) */
+    [[rb, zb, c.dn, bB[bB.length - 1][1]], [ram, zc, ram.dn, bR[bR.length - 1][1]]].concat(duas ? [[ra, za, c.dn, bB[bB.length - 1][1]]] : []).forEach(function (b) {
+      anelBorracha(mA, reta(add(P, mul(b[0].dir, b[1] * MM)), mul(b[0].dir, -1)), 0, +1, { de: cotasTubo(c.material, b[2]).de, junta: "anel", rMaxAnel: b[3] - 1.0 }, segs);
+    });
+    var partes = [cascaSaida(m)]; if (mA.idx.length) partes.push(cascaSaida(mA, "anel"));
+    /* a marcação na bolsa da linha (o mesmo critério das peças medidas) */
+    var RL = real();
+    if (RL && (lod === "perto" || lod === "icone")) {
+      var melhor = null; for (var im = 0; im + 1 < bB.length; im++) { var la = bB[im + 1][0] - bB[im][0]; if (la > 0 && Math.abs(bB[im + 1][1] - bB[im][1]) <= 0.12 && (!melhor || la > melhor.L)) melhor = { a: uB(bB[im][0]), b: uB(bB[im + 1][0]), r: Math.max(bB[im][1], bB[im + 1][1]), L: la }; }
+      if (melhor && melhor.L >= Math.max(8, 0.18 * tb.de)) {
+        var txM = RL.textoMarca("TIGRE", c.material, c.dn, true), mg = Math.max(1, 0.08 * melhor.L), hB = Math.min(14, Math.max(3, 0.12 * tb.de)), Lb = melhor.L - 2 * mg, kT = 0.37 * txM.length;
+        var hA = Math.min(Lb, hB * 1.3), angB = Math.min(2.2, kT * hA / 0.94 / melhor.r), dM = mul(ra.dir, -1), Cm = add(P, mul(ra.dir, za * MM)), PREF = nrmz([1, 0.72, 1.18]), refM = sub(PREF, mul(dM, dot(PREF, dM)));
+        refM = len(refM) > 0.2 ? nrmz(refM) : perp(dM);
+        var fx = RL.faixa(Cm, dM, refM, (melhor.r + Math.max(0.3, 0.004 * melhor.r)) * MM, (melhor.a + mg + (Lb - hA) / 2) * MM, (melhor.b - mg - (Lb - hA) / 2) * MM, angB, 28, 1, null, true), mM = new Malha();
+        mM.pos = fx.pos; mM.nrm = fx.nrm; mM.idx = fx.idx; mM.uv = fx.uv; mM.cascas = [];
+        partes.push({ papel: "marca", malha: mM, texto: txM, aspecto: angB * melhor.r / hA, cor: (APAR[c.material] || {}).cor });
+      }
+    }
+    cot.formaMedida = pp.familia + " (bocas) — faces da tabela do produto/ficha" + (duas ? " (duas bolsas)" : ""); cot.perfilMedido = pp.familia + " (bocas)";
+    /* o externo da BOCA (cotas da peça): o da bolsa medida junto da face (a ficha segue nas cotas da luva para o resto) */
+    var sF = pB.face - Math.min(cot.pb * 0.5, 3), odB = 0; bB.forEach(function (q, k) { if (q[0] >= sF - 1e-6) odB = Math.max(odB, 2 * q[1]); var q2 = bB[k + 1]; if (q2 && q[0] < sF && q2[0] > sF) odB = Math.max(odB, 2 * (q[1] + (q2[1] - q[1]) * (sF - q[0]) / (q2[0] - q[0]))); });
+    if (odB > 0) { if (cot.od != null && Math.abs(cot.od - odB) >= 0.5) cot.divergencia = (cot.divergencia ? cot.divergencia + "; " : "") + "externo da boca " + Math.round(odB * 100) / 100 + " mm (bolsa medida) × " + cot.od + " mm (ficha)"; cot.od = Math.round(odB * 100) / 100; cot.origem.od = "produto (bolsa medida)"; }
+    return { partes: partes, portas: portas, cotas: cot, aConferir: !!cot.aConferir };
   }
   function conexaoProduto(c, eixos, o, pp) {
     /* lados múltiplos de 4 (a silhueta tem vértice nos quatro eixos) e mais lados no DN grande: a peça medida não pode sair facetada */
@@ -710,7 +822,7 @@
     /* a perna da LUVA (perfis: luva + luvaIni): a peça vai até o conector com a PONTA no raio do corpo; a luva simples que a
        abraça (do luvaIni à face, medida na mesma família) sai como parte própria (luvaEixo) — o nó (no) entrega essa parte à
        luva da regra das juntas (biminst.juntasDaPonta) ou a tira, quando a bolsa do tubo cobre a ponta */
-    var partesLuva = [], rTuboP = cotasTubo(c.material, c.dn).de / 2;
+    var partesLuva = [], rTuboP = cotasTubo(c.material, c.dn).de / 2, odReta = 0, marcaInfo = null;
     function rBoca(pe) { var ex = (pe && pe.ext) || []; return ex.length ? ex[ex.length - 1][1] : null; }
     function pernaSemLuva(pe) {
       var pts = pernaPts(pe); if (!pe.luva || !(pe.luvaIni > 0)) return pts;
@@ -745,6 +857,7 @@
          a curva longa tem no mínimo 24 (pedido da rodada final) */
       var rOut = Math.max(1, rcA + rb), nArc = Math.max(8, Math.min(48, Math.ceil(del / (2 * Math.acos(Math.max(-1, 1 - 0.08 / rOut))))));
       if (/curva/.test(c.tipo)) nArc = Math.max(nArc, 24);
+      nArc = Math.min(nArc, 32);   /* DN 150/200 (06/11/2026): 32 estações no arco já dão corda < 0,06 mm — mais que isso só estoura o teto */
       var cam = cotovelo(P, jus.dir, mon.dir, zJ * MM, zM * MM, Math.max(1, rcA) * MM, o.passoArco || (lod === "longe" ? Math.PI / 4 : del / nArc * 1.0001));
       var Lc = cam.L / MM, tlA = (cam.Rb / MM) * Math.tan(del / 2), l1 = zJ - tlA, la = Lc - l1 - (zM - tlA);
       var ext = [];
@@ -757,38 +870,101 @@
       var loop = [[0, furo]].concat(ext).concat([[Lc, furo]]);
       segs = segsNoTeto(segs, loop.length + cam.estacoes.length, cotasTubo(c.material, c.dn).de, lod);
       varrer(m, cam, escala(loop), segs, true);
+      /* o teto vale para a malha que SAIU (DN 150/200: o arco e as pernas dão mais faixas que a estimativa): refaz com menos lados */
+      var tetoC = tetoConexao(cotasTubo(c.material, c.dn).de, true), nTri = m.idx.length / 3;
+      if (lod !== "icone" && lod !== "longe" && nTri > tetoC && segs > 16) { segs = Math.max(16, Math.floor(segs * tetoC / nTri / 4) * 4); m = new Malha(); varrer(m, cam, escala(loop), segs, true); }
+      marcaInfo = { pts: ptsM, C: add(P, mul(mon.dir, (tl - tl0) * MM)), d: mon.dir, ref: cross(mon.dir, jus.dir) };
       if (pJ.luva && pJ.luvaIni > 0) { luvaDaPerna(pJ, jus.dir, tl - tl0, eixos.indexOf(jus)); portaP(jus, sh(pJ.face), sh(pontaFim(pJ)), sh(pJ.luvaIni), rBoca(pJ)); }
       else portaB(jus, zJ, sh(pJ.conector), { rBoca: rBoca(pJ) });
       portaB(mon, zM, sh(pM.conector), { rBoca: rBoca(pM) });
     } else if (pp.tipo === "derivacao") {
-      if (eixos.length < 3) return null;
+      /* TAMPA (a boca de inspeção/visita: o conector na face, sem tubo) não precisa de eixo; cada perna com tubo, sim */
+      var tampas = pernas.filter(function (x) { return x.tampa; }), comTubo = pernas.filter(function (x) { return !x.tampa; });
+      if (eixos.length < Math.max(2, comTubo.length) || (!tampas.length && eixos.length < 3)) return null;
       var par = null, best = 1e9;
       for (var i = 0; i < eixos.length; i++) for (var j = i + 1; j < eixos.length; j++) { var dv = desvio(eixos[i].dir, eixos[j].dir); if (dv < best) { best = dv; par = [i, j]; } }
-      var ra = eixos[par[0]], rbE = eixos[par[1]], ram = eixos.filter(function (_, k) { return k !== par[0] && k !== par[1]; })[0];
+      var ra = eixos[par[0]], rbE = eixos[par[1]], ramsE = eixos.filter(function (_, k) { return k !== par[0] && k !== par[1]; });
       var jR = jusante([ra, rbE]); if (jR && jR !== ra) { var tmp = ra; ra = rbE; rbE = tmp; }
-      var linha = pernas.filter(function (x) { return pernas.some(function (y) { return y !== x && dot(x.d, y.d) < -0.99; }); });
-      var pA = linha.filter(function (x) { return x.luva; })[0] || linha[0], pB = linha.filter(function (x) { return x !== pA; })[0], pR = pernas.filter(function (x) { return linha.indexOf(x) < 0; })[0];
-      if (!pA || !pB || !pR) return null;
+      var linha = comTubo.filter(function (x) { return comTubo.some(function (y) { return y !== x && dot(x.d, y.d) < -0.99; }); });
+      /* CRUZETA (dois pares opostos): a linha é o par da luva (ou o da perna mais longa); o outro par são os ramais */
+      if (linha.length > 2) { var l0 = linha.filter(function (x) { return x.luva; })[0] || linha.slice().sort(function (a, b) { return b.face - a.face; })[0]; linha = [l0].concat(linha.filter(function (y) { return y !== l0 && dot(l0.d, y.d) < -0.99; })); }
+      var pA = linha.filter(function (x) { return x.luva; })[0] || linha[0], pB = linha.filter(function (x) { return x !== pA; })[0], pRs = comTubo.filter(function (x) { return linha.indexOf(x) < 0; });
+      if (!pA || !pB || pRs.length !== ramsE.length) return null;
       /* só a COMBINAÇÃO MEDIDA (linha × ramal da família): o tê/junção 100 × 100 tem outra linha (mais comprida, o ramal
-         maior pede mais corpo) — com o ramal de outro DN a peça sai pela construção da ficha/produto (conexaoBruta) */
-      if (pp.ramalForaDoCatalogo || !(pR.ext || []).length || Math.abs((ram.dn || c.dn) - pR.dn) > 0.5) return null;
+         maior pede mais corpo) — com o ramal de outro DN a peça sai pela construção da ficha/produto (conexaoBruta).
+         Com 2 ramais (junção dupla, cruzeta), cada um com a perna medida do mesmo DN e do ângulo mais parecido */
+      if (pp.ramalForaDoCatalogo) return null;
+      var usadas = [], pares = [];
+      for (var iR = 0; iR < ramsE.length; iR++) {
+        var eR = ramsE[iR], cE = dot(eR.dir, ra.dir), esc = null, dm = 1e9;
+        for (var iq = 0; iq < pRs.length; iq++) { var q0 = pRs[iq]; if (usadas.indexOf(q0) >= 0 || !(q0.ext || []).length || Math.abs((eR.dn || c.dn) - q0.dn) > 0.5) continue; var dd = Math.abs(dot(q0.d, pA.d) - cE); if (dd < dm) { dm = dd; esc = q0; } }
+        if (!esc) return derivacaoHibrida(c, eixos, o, pp);   /* sem a combinação medida: as bocas medidas nas faces de antes */
+        usadas.push(esc); pares.push([eR, esc]);
+      }
       var A = pernaSemLuva(pA), B = pernaPts(pB), zA = A[A.length - 1][0], zB = pB.face, LR = zA + zB;
       var ext2 = [];
       A.slice().reverse().forEach(function (q) { ext2.push([zA - q[0], q[1]]); });
       ext2.push([zA - A[0][0], A[0][1]], [zA + B[0][0], B[0][1]]);
       B.forEach(function (q) { ext2.push([zA + q[0], q[1]]); });
       ext2.sort(function (x, y) { return x[0] - y[0]; });
-      var furoL = Math.min(pA.furo || A[0][1] * 0.9, pB.furo || B[0][1] * 0.9);
-      segs = segsNoTeto(segs, ext2.length + 2 + (pR.ext || []).length + 4, cotasTubo(c.material, c.dn).de, lod);
+      var furoL = Math.min(pA.furo || A[0][1] * 0.9, pB.furo || B[0][1] * 0.9), nPt = 0;
+      pernas.forEach(function (q) { if (q !== pA && q !== pB) nPt += (q.ext || []).length + 4; });
+      segs = segsNoTeto(segs, ext2.length + 2 + nPt, cotasTubo(c.material, c.dn).de, lod);
       varrer(m, reta(add(P, mul(ra.dir, zA * MM)), mul(ra.dir, -1)), escala([[0, furoL]].concat(ext2).concat([[LR, furoL]])), segs, true);
       /* o RAMAL: de dentro da linha (o corpo cobre) até a face, no perfil medido; antes do 1º ponto, o 1º raio */
-      var R = pernaPts(pR), s0R = Math.max(1, Math.min(A[0][1], B[0][1]) * 0.5), extR = [[s0R, R[0][1]], [R[0][0], R[0][1]]].concat(R);
-      var furoR = pR.furo || R[0][1] * 0.9;
-      varrer(m, reta(P, ram.dir), escala([[s0R, furoR]].concat(extR).concat([[pR.face, furoR]])), segs, true);
+      var s0R = Math.max(1, Math.min(A[0][1], B[0][1]) * 0.5);
+      pares.forEach(function (pr) {
+        var R = pernaPts(pr[1]), extR = [[s0R, R[0][1]], [R[0][0], R[0][1]]].concat(R), furoR = pr[1].furo || R[0][1] * 0.9;
+        varrer(m, reta(P, pr[0].dir), escala([[s0R, furoR]].concat(extR).concat([[pr[1].face, furoR]])), segs, true);
+      });
+      /* a TAMPA de inspeção: a direção dela no modelo pelo referencial da peça (linha + ramal, ou o lado pedido) */
+      if (tampas.length) {
+        var u0 = pA.d, pv0 = pares.length ? pares[0][1].d : tampas[0].d, v0 = nrmz(sub(pv0, mul(u0, dot(pv0, u0)))), w0 = cross(u0, v0);
+        var U = ra.dir, Vr = pares.length ? pares[0][0].dir : (o.lado ? pv(o.lado) : perp(U)), V1 = nrmz(sub(Vr, mul(U, dot(Vr, U)))); if (len(V1) < 0.5) V1 = perp(U);
+        var W1 = cross(U, V1);
+        tampas.forEach(function (t) {
+          var dT = nrmz(add(add(mul(U, dot(t.d, u0)), mul(V1, dot(t.d, v0))), mul(W1, dot(t.d, w0)))), Rt = pernaPts(t); if (!Rt.length) return;
+          varrer(m, reta(P, dT), escala([[s0R, 0], [s0R, Rt[0][1]]].concat(Rt).concat([[t.face, 0]])), segs, true);
+          /* a ABA DE APERTO da tampa rosqueada (a barra em relevo na face, como na peça) — só no Alto e no ícone */
+          if (lod === "perto" || lod === "icone") { var rTp = Rt[Rt.length - 1][1], aT = nrmz(perp(dT)); caixaM(m, add(P, mul(dT, (t.face + 2.5) * MM)), [dT, aT, cross(dT, aT)], [2.5 * MM, rTp * 0.62 * MM, Math.max(2.5, rTp * 0.09) * MM]); }
+        });
+      }
       if (pA.luva && pA.luvaIni > 0) { luvaDaPerna(pA, ra.dir, 0, eixos.indexOf(ra)); portaP(ra, pA.face, pontaFim(pA), pA.luvaIni, rBoca(pA)); }
       else portaB(ra, zA, pA.conector, { rBoca: rBoca(pA) });
       portaB(rbE, zB, pB.conector, { rBoca: rBoca(pB) });
-      portaB(ram, pR.face, pR.conector, { ramal: true, rBoca: rBoca(pR) });
+      pares.forEach(function (pr) { portaB(pr[0], pr[1].face, pr[1].conector, { ramal: true, rBoca: rBoca(pr[1]) }); });
+      marcaInfo = { pts: B, C: P, d: rbE.dir, ref: pares.length ? cross(rbE.dir, pares[0][0].dir) : perp(rbE.dir) };
+    } else if (pp.tipo === "reta" && (c.material === "pvc_esgoto" || c.material === "pvc_serie_r") && PERFIS_NOVOS.ligado) {
+      /* LUVA de esgoto (simples e de correr) pelo perfil medido: as PORTAS ficam as da construção de antes (as faces a z1
+         e z2 do centro, pelas cotas da peça); o perfil vai de uma face à outra */
+      if (eixos.length < 2) return null;
+      var f1 = eixos[0], f2 = eixos[1], ctL = cotasConexao(c.material, c.tipo === "luva_correr" ? "luva_correr" : "luva", c.dn);
+      var pb2L = ctL.pb2 && ctL.pb2 !== ctL.pb ? ctL.pb2 : ctL.pb, zL1 = ctL.L * ctL.pb / (ctL.pb + pb2L), zL2 = ctL.L - zL1;
+      var qa = pernas[0], qb = pernas[1] || pernas[0], Pa = pernaPts(qa), Pb = pernaPts(qb), ext4 = [];
+      Pa.slice().reverse().forEach(function (q) { ext4.push([qa.face - q[0], q[1]]); });
+      Pb.forEach(function (q) { ext4.push([qa.face + q[0], q[1]]); });
+      ext4.sort(function (x, y) { return x[0] - y[0]; });
+      var Lg = ext4.length ? ext4[ext4.length - 1][0] - ext4[0][0] : 0, s00 = ext4.length ? ext4[0][0] : 0;
+      if (!(Lg > 1)) return null;
+      var kL = (zL1 + zL2) / Lg;   /* = 1 quando as cotas saíram do mesmo perfil (cotasDoPerfil) */
+      ext4 = ext4.map(function (q) { return [(q[0] - s00) * kL, q[1]]; });
+      var fuL = Math.min(qa.furo || ext4[0][1] * 0.9, qb.furo || ext4[0][1] * 0.9, cotasTubo(c.material, c.dn).de / 2 + 0.3);
+      var F1 = add(P, mul(f1.dir, zL1 * MM));
+      marcaInfo = { pts: ext4, C: F1, d: mul(f1.dir, -1), ref: perp(f1.dir) };
+      varrer(m, reta(F1, mul(f1.dir, -1)), escala([[0, fuL]].concat(ext4).concat([[zL1 + zL2, fuL]])), segs, true);
+      /* o externo da boca (cotas da peça): o maior raio da malha nos 3 mm junto da face 1 */
+      var sOd = Math.min(ctL.pb * 0.5, 3) * MM;
+      for (var iv = 0; iv < m.pos.length; iv += 3) { var w = sub([m.pos[iv], m.pos[iv + 1], m.pos[iv + 2]], F1), sa = -dot(w, f1.dir); if (sa < -1e-7 || sa > sOd + 1e-7) continue; var rr = len(sub(w, mul(f1.dir, -sa))) / MM; if (2 * rr > odReta) odReta = 2 * rr; }
+      if (!f1.passante) portas.push({ trecho: f1.trecho, lado: f1.lado, dir: f1.dir, recuo: Math.max(0, zL1 - ctL.pb) * MM, z: zL1 * MM, pb: ctL.pb * MM, dn: f1.dn, ramal: false, rBoca: ext4[0][1] });
+      if (!f2.passante) portas.push({ trecho: f2.trecho, lado: f2.lado, dir: f2.dir, recuo: Math.max(0, zL2 - pb2L) * MM, z: zL2 * MM, pb: pb2L * MM, dn: f2.dn, ramal: false, rBoca: ext4[ext4.length - 1][1] });
+    } else if (pp.tipo === "tampa") {
+      /* CAP (06/11/2026): a ponta do tubo fica no CONECTOR da peça (o tubo não muda: nenhuma porta); a peça cobre a ponta */
+      if (eixos.length < 1) return null;
+      var et = eixos[0], pt = pernas[0], extT = pernaPts(pt); if (extT.length < 2) return null;
+      var O = add(P, mul(et.dir, -pt.conector * MM)), s0T = pt.fundo != null ? pt.fundo : extT[0][0], rInT = cotasTubo(c.material, et.dn || c.dn).de / 2 + 0.3;
+      var loopT = [[s0T, 0]].concat(extT.filter(function (q) { return q[0] > s0T; })).concat([[pt.face, rInT], [pt.conector, rInT], [pt.conector, 0]]);
+      varrer(m, reta(O, et.dir), escala(loopT), segs, true);
+      marcaInfo = { pts: extT, C: O, d: et.dir, ref: perp(et.dir) };
     } else if (pp.tipo === "reta" && c.material !== "pvc_esgoto") {
       /* LUVA (soldável): as duas pernas medidas, de face a face pelo centro */
       if (eixos.length < 2) return null;
@@ -814,9 +990,32 @@
       var pa = cascaSaida(mA, "anel"); if (q.produto && partesLuva.some(function (pl) { return pl.luvaEixo === eixos.indexOf(e); })) pa.luvaEixo = eixos.indexOf(e);
       partesAnel.push(pa);
     });
+    /* MARCAÇÃO DO FABRICANTE (06/11/2026, liberada pelo Rogério): a gravação da peça (fabricante · DN · norma) numa faixa fina
+       sobre o trecho LISO mais longo da perna escolhida — só no Alto (perto) e no ícone; a peça medida é a da família do
+       fabricante (Tigre), então a marca é a dele. 12 triângulos; a textura sai do js/biminstgeoreal.js */
+    var partesMarca = [], RL = real();
+    if (RL && marcaInfo && (lod === "perto" || lod === "icone") && (c.material === "pvc_esgoto" || c.material === "pvc_serie_r")) {
+      var mp = marcaInfo.pts || [], melhor = null;
+      for (var im = 0; im + 1 < mp.length; im++) { var la = mp[im + 1][0] - mp[im][0]; if (la > 0 && Math.abs(mp[im + 1][1] - mp[im][1]) <= 0.12 && (!melhor || la > melhor.L)) melhor = { a: mp[im][0], b: mp[im + 1][0], r: Math.max(mp[im][1], mp[im + 1][1]), L: la }; }
+      var deM = cotasTubo(c.material, c.dn).de;
+      if (melhor && melhor.L >= Math.max(8, 0.18 * deM)) {
+        var mg = Math.max(1, 0.08 * melhor.L), hB = Math.min(14, Math.max(3, 0.12 * deM)), rr0 = (melhor.r + Math.max(0.3, 0.004 * melhor.r)) * MM, txM = RL.textoMarca("TIGRE", c.material, c.dn, true);
+        /* o meio da faixa voltado para a vista isométrica de catálogo (1; 0,72; 1,18) — o lado que aparece no ícone e na vista 3D inicial */
+        var PREF = nrmz([1, 0.72, 1.18]), refM = sub(PREF, mul(marcaInfo.d, dot(PREF, marcaInfo.d)));
+        refM = len(refM) > 0.2 ? nrmz(refM) : (len(marcaInfo.ref) > 1e-6 ? nrmz(marcaInfo.ref) : perp(marcaInfo.d));
+        /* o texto ao longo do eixo ou EM VOLTA da peça: o que der a letra maior (largura do texto ≈ 0,37 × altura da faixa × nº de letras) */
+        var Lb = melhor.L - 2 * mg, kT = 0.37 * txM.length, fAx = Math.min(1, Lb * 0.94 / (kT * hB)) * hB, hA = Math.min(Lb, hB * 1.3), arc = melhor.r * 2.2, fAr = Math.min(1, arc * 0.94 / (kT * hA)) * hA;
+        var girar = fAr > fAx * 1.1, angB = girar ? Math.min(2.2, kT * hA / 0.94 / melhor.r) : hB / melhor.r;
+        var fx = RL.faixa(marcaInfo.C, marcaInfo.d, refM, rr0, (melhor.a + mg + (girar ? (Lb - hA) / 2 : 0)) * MM, (melhor.b - mg - (girar ? (Lb - hA) / 2 : 0)) * MM, angB, girar ? 28 : 8, 1, null, girar), mM = new Malha();
+        mM.pos = fx.pos; mM.nrm = fx.nrm; mM.idx = fx.idx; mM.uv = fx.uv; mM.cascas = [];
+        partesMarca.push({ papel: "marca", malha: mM, texto: txM, aspecto: girar ? angB * melhor.r / hA : Lb / hB, cor: (APAR[c.material] || {}).cor });
+      }
+    }
     var ramD = 0; if (pp.tipo === "derivacao") eixos.forEach(function (e) { if (portas.some(function (q) { return q.ramal && q.trecho === e.trecho && q.lado === e.lado; })) ramD = e.dn; });
     var ct = cotasConexao(c.material, c.tipo, c.dn, c.dn2 || 0, ramD || undefined); ct.chave = pp.familia; ct.aConferir = false;
-    return { partes: [cascaSaida(m)].concat(partesLuva).concat(partesAnel), portas: portas, cotas: ct, aConferir: false };
+    /* a luva de esgoto do perfil medido: o externo da boca é o da peça desenhada (a ficha segue nas cotas da luva para o resto) */
+    if (pp.tipo === "reta" && odReta > 0) { if (ct.od != null && Math.abs(ct.od - odReta) >= 0.5) ct.divergencia = (ct.divergencia ? ct.divergencia + "; " : "") + "externo da boca " + Math.round(odReta * 100) / 100 + " mm (peça medida) × " + ct.od + " mm (ficha)"; ct.od = Math.round(odReta * 100) / 100; ct.origem.od = "produto (perfil medido)"; }
+    return { partes: [cascaSaida(m)].concat(partesLuva).concat(partesAnel).concat(partesMarca), portas: portas, cotas: ct, aConferir: false };
   }
   /* a LUVA SIMPLES do produto na ponta: o conector dela (no meio do comprimento) coincide com a face da ponta; o tubo
      começa ali (dentro da luva). Devolve null sem o perfil — fica a luva de antes. */
@@ -839,6 +1038,10 @@
   function tipoBaseGeo(tipo) { return BASE_GEO[tipo] || tipo; }
   function conexaoBruta(c, eixos, o) {
     o = o || {};
+    var tipoOrig = c && c.tipo;
+    /* ÁGUA FRIA REAL (06/11/2026): a peça de PVC soldável com a volumetria do produto (js/biminstgeoreal-agua.js) — as portas são as desta construção */
+    var RAg = c && c.material === "pvc_soldavel" && !o.semReal ? dep("HidGeoRealAgua", "./biminstgeoreal-agua.js") : null;
+    if (RAg && RAg.conexao) { var rAg = RAg.conexao(HidGeo, c, eixos, o); if (rAg) return rAg; }
     if (c && BASE_GEO[c.tipo]) { var cb = {}; Object.keys(c).forEach(function (k) { cb[k] = c[k]; }); cb.tipo = BASE_GEO[c.tipo]; c = cb; }
     /* ⚠ JOELHO/CURVA ENTRE DOIS TUBOS QUE SAEM DO NÓ PARA O MESMO LADO (24/10/2026, obra 176 teste): os drenos de dois
        ar-condicionados desciam pela MESMA prumada e terminavam no mesmo ponto — o "joelho" entre eles dobraria 180°. A
@@ -847,8 +1050,11 @@
        (são tubos sobrepostos): sem geometria — o nó fica com o símbolo, como qualquer conexão que não se desenha. */
     if (c && /^(joelho|curva)/.test(c.tipo) && eixos && eixos.length >= 2 && desvio(eixos[0].dir, eixos[1].dir) > 179) return null;
     /* a peça medida do produto, quando há o perfil (esgoto série normal e soldável); senão, a construção de antes */
-    var ppP = c && perfilProduto(c.material, c.tipo, c.dn);
-    if (ppP && eixos && eixos.length) { var rP = conexaoProduto(c, eixos, o, ppP); if (rP) return rP; }
+    /* o tipo PRÓPRIO tem perfil medido (curva curta, junção dupla, luva de correr…)? senão o do tipo-base — menos o plug, que não é o cap */
+    var ppP = null, cP = c;
+    if (c && tipoOrig !== c.tipo && perfilProduto(c.material, tipoOrig, c.dn)) { cP = {}; Object.keys(c).forEach(function (k) { cP[k] = c[k]; }); cP.tipo = tipoOrig; }
+    if (c && tipoOrig !== "plug") ppP = perfilProduto(cP.material, cP.tipo, cP.dn);
+    if (ppP && eixos && eixos.length) { var rP = conexaoProduto(cP, eixos, o, ppP); if (rP) return rP; }
     var P = pv(c), tipo = c.tipo, mat = c.material, J = JUNTA[mat];
     if (!J || !eixos || !eixos.length) return null;
     var lod = o.lod, m = new Malha(), mA = new Malha(), portas = [], cot;
@@ -1176,7 +1382,9 @@
     tipo = tipoBaseGeo(tipo);   /* a junção de redução tem a ponta da junção do DN da linha */
     if (JUNTA[material] !== "anel") return false;
     if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
-    try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
+    /* ORÇAMENTO IGUAL À 1.2.255: a série R não tinha ponta no perfil — a resposta de temPonta (que decide a luva) não muda */
+    PONTA_LEGADA.ligado = material === "pvc_serie_r";
+    try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; } finally { PONTA_LEGADA.ligado = false; }
   }
 
   /* ============================================================ PEÇAS
@@ -1589,6 +1797,9 @@
    * TIL. Recebem o ponto da face e a direção para DENTRO da peça. */
   function pecaSimples(tipo, material, dn, F, dir, o) {
     o = o || {};
+    /* ÁGUA FRIA REAL (06/11/2026): cap, adaptador, luva de correr, joelho/luva azuis e adaptador de caixa com a volumetria do produto (js/biminstgeoreal-agua.js) */
+    var RAs = material === "pvc_soldavel" && !o.semReal ? dep("HidGeoRealAgua", "./biminstgeoreal-agua.js") : null;
+    if (RAs && RAs.simples) { var rAs = RAs.simples(HidGeo, tipo, material, dn, F, dir, o); if (rAs) return rAs; }
     var d = nrmz(pv(dir)), Fv = pv(F), m = new Malha(), mk = new Malha(), cot, seg = segsDe(o.lod, 20), parts = [];
     if (tipo === "cap") {
       cot = cotasConexao(material, "cap", dn); var p = [], L = cot.L;
@@ -1663,9 +1874,11 @@
   var HidGeo = {
     cache: { get ligado() { return CACHE.ligado; }, set ligado(v) { CACHE.ligado = !!v; }, get acertos() { return CACHE.acertos; }, get faltas() { return CACHE.faltas; },
              get tamanho() { return CACHE.m.size; }, limpar: function () { CACHE.m.clear(); CACHE.acertos = 0; CACHE.faltas = 0; } },
+    get perfisNovos() { return PERFIS_NOVOS.ligado; }, set perfisNovos(v) { PERFIS_NOVOS.ligado = !!v; CACHE.m.clear(); },
     VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
     Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,   /* caixaM: a caixa de inspeção de alvenaria (js/hidcigeo.js) */
     cotasTubo: cotasTubo, cotasConexao: cotasConexao, aparencia: aparencia,
+    conexaoBruta: conexaoBruta, tipoBaseGeo: tipoBaseGeo, dados: dados,   /* js/biminstgeoreal-agua.js */
     tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
     TETO_CONEXAO: 2000, TETO_CONEXAO_GRANDE: 2800, tetoConexao: tetoConexao, TETO_PRODUTO: 3200, TETO_PRODUTO_GRANDE: 4800, TETO_ANEL: 200, TETO_TUBO: 400, TETO_PECA: 4200, TETO_REGISTRO: 2600
   };
