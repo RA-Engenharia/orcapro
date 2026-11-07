@@ -63,7 +63,8 @@
     var st = estado(), EL = global.EleAuto; if (!st || !EL) { status("O editor 3D não está aberto."); return; }
     var ids = null;
     if (modo === "sel") { ids = selecionados(st); if (!ids.length) { status("Selecione um ambiente (clique no ambiente na planta) ou use \"Em todos os ambientes\"."); return; } }
-    var res = EL.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: lerCriterios() });
+    var crit = lerCriterios(); if (global.EleAparelhos && global.EleAparelhos.cfg.mobiliario === false) crit.mobiliario = false;   /* eletrica-v2 L3 */
+    var res = EL.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: crit });
     if (!res.ok) { janela("Lançar pontos elétricos", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return; }
     var aplicado = res.lote ? aplicar(res.lote) : false, z = res.resumo;
     var amb = res.porAmbiente.map(function (r) {
@@ -116,11 +117,12 @@
     }).join("");
     var ov = janela("Critérios dos pontos elétricos", legenda() + '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Critério</th><th>Valor</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
       '<p style="font-size:12px">Os números da NBR 5410 (N) e da SINAPI/CEMIG (A) não se editam aqui: mudam com a fonte. Os de critério RA (C) e sem fonte (X) valem neste aparelho.</p>' +
+      (global.EleAparelhos ? '<p style="font-size:12px;margin:6px 0"><label><input type="checkbox" data-ele-pref="auto"' + (global.EleAparelhos.cfg.auto ? " checked" : "") + '> O aparelho (geladeira, chuveiro, split…) cria o próprio ponto ao ser colocado</label><br><label><input type="checkbox" data-ele-pref="mobiliario"' + (global.EleAparelhos.cfg.mobiliario ? " checked" : "") + '> Lançar também pelo mobiliário (cabeceira da cama, rack de TV, sofá, escrivaninha)</label></p>' : "") +
       '<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-ele-salvar>Salvar</button><button type="button" class="btn ghost sm" data-ele-padrao>Voltar ao padrão</button></div>');
     if (!ov) return;
     ov.addEventListener("click", function (e) {
       var t = e.target; if (!t || !t.hasAttribute) return;
-      if (t.hasAttribute("data-ele-salvar")) { var o = {}; arr(ov.querySelectorAll("[data-ele-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-ele-crit")] = v; }); gravarCriterios(o); status("Critérios dos pontos elétricos gravados neste aparelho."); criteriosTela(); }
+      if (t.hasAttribute("data-ele-salvar")) { var o = {}; arr(ov.querySelectorAll("[data-ele-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-ele-crit")] = v; }); gravarCriterios(o); arr(ov.querySelectorAll("[data-ele-pref]")).forEach(function (i) { if (global.EleAparelhos) global.EleAparelhos.definir(i.getAttribute("data-ele-pref"), i.checked); }); status("Critérios dos pontos elétricos gravados neste aparelho."); criteriosTela(); }
       if (t.hasAttribute("data-ele-padrao")) { gravarCriterios({}); status("Critérios dos pontos elétricos: padrão."); criteriosTela(); }
     });
   }

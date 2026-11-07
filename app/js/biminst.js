@@ -1530,7 +1530,7 @@
     return [APELIDO_CHAVE[item.peca] || item.peca, item.material, ap, dnk].join("|");
   }
   function rotuloItem(item) {
-    if (ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) return rotuloP12(item);   /* P12 */
+    if ((ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) && !PECAS[item.peca]) return rotuloP12(item);   /* P12 */   // eletrica-v2 revisão A1: a peça caixa_* (que também é dispositivo) volta ao rótulo da PEÇA
     if (item.peca === "cabo") return "Cabo de cobre flexível isolado " + String(item.dn).replace(".", ",") + " mm² " + (item.material === "cobre_450_750" ? "450/750 V" : item.material) + ", circuitos terminais";   /* ligação elétrica */
     var M = MATERIAIS[item.material], P = PECAS[item.peca];
     if (P && item.nome) return item.nome + (SISTEMAS[item.sistema] ? " — " + SISTEMAS[item.sistema].nome.toLowerCase() : "");   /* pendências finais: a caixa de inspeção pelo tipo */
@@ -2073,7 +2073,10 @@
     tomada:      { nome: "Tomada", categoria: "Dispositivos elétricos", ifc: "IFCOUTLET", pre: "POWEROUTLET" },
     interruptor: { nome: "Interruptor", categoria: "Dispositivos elétricos", ifc: "IFCSWITCHINGDEVICE", pre: "TOGGLESWITCH" },
     luminaria:   { nome: "Luminária", categoria: "Luminárias", ifc: "IFCLIGHTFIXTURE", pre: "POINTSOURCE" },
-    quadro:      { nome: "Quadro de distribuição", categoria: "Equipamento elétrico", ifc: "IFCELECTRICDISTRIBUTIONBOARD", pre: "DISTRIBUTIONBOARD" }
+    quadro:      { nome: "Quadro de distribuição", categoria: "Equipamento elétrico", ifc: "IFCELECTRICDISTRIBUTIONBOARD", pre: "DISTRIBUTIONBOARD" },
+    caixa_4x2:   { nome: "Caixa 4×2 (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" },   // eletrica-v2 L6: ele-caixa-* orçada como a peça caixa (mesma chave SINAPI)
+    caixa_4x4:   { nome: "Caixa 4×4 (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" },
+    caixa_octogonal: { nome: "Caixa octogonal (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" }
   };
   /* extras que escolhem entre composições da MESMA chave (como PN/classe no tubo) */
   var EXTRAS_P12 = { tomada: ["placa"], interruptor: ["placa"], quadro: ["corrente"] };
@@ -2207,6 +2210,11 @@
     else if (p === "interruptor") { it.material = txt(v.Tipo_interruptor).toLowerCase(); it.aplicacao = "10a"; it.dn = String(inteiro(v.Modulos, 1)); it.placa = v.Placa === false ? "sem" : "com"; }
     else if (p === "luminaria") { it.material = txt(v.Modelo); it.aplicacao = txt(v.Instalacao); it.dn = txt(v.Potencia_W) || "-"; }
     else if (p === "quadro") { it.material = txt(v.Material_quadro); it.aplicacao = txt(v.Instalacao); it.dn = String(inteiro(v.Disjuntores, 0)); if (txt(v.Corrente)) it.corrente = txt(v.Corrente); }
+    else if (/^caixa_(4x2|4x4|octogonal)$/.test(p)) {   // eletrica-v2 L6: a caixa FAMÍLIA vira o item da peça (mesma chave SINAPI); EleFamilias.sinapi diz o motivo quando não há código
+      it.material = /^metal/i.test(txt(v.Material_caixa)) ? "metalica" : "pvc"; it.dn = "-";
+      it.aplicacao = p === "caixa_octogonal" ? (txt(v.Aplicacao) === "forro" ? "forro" : "laje") : alturaCaixa(num(v.Altura_montagem, 0.3));
+      var EFc = global.EleFamilias, sc = EFc && EFc.sinapi ? EFc.sinapi("ele-" + p.replace("_", "-"), v) : null; if (sc && sc.status === "pendente") it.semTabela = sc.motivo || "sem composição SINAPI para esta caixa";
+    }
     return it;
   }
   /* a família colocada que é DISPOSITIVO MEP (orçada por aqui). Família com
@@ -2215,12 +2223,18 @@
     if (f && arr(f.servicos).length) return null;
     return itemDispositivo(av);
   }
+  /* eletrica-v2 L6: a caixa família no MESMO ponto de uma peça caixa (≤ 8 cm no plano, ≤ 12 cm de altura) não é cobrada de novo — fica a peça */
+  function caixaJaTemPeca(estado, f, av) {
+    var h = num(f.y, 0) + num(av && av.valores && av.valores.Altura_montagem, 0);
+    return arr(estado && estado.instalacoes && estado.instalacoes.pecas).some(function (k) { return k && /^caixa_/.test(k.peca) && Math.sqrt(Math.pow(num(k.x, 0) - num(f.x, 0), 2) + Math.pow(num(k.z, 0) - num(f.z, 0), 2)) <= 0.08 && Math.abs(num(k.y, 0) - h) <= 0.12; });
+  }
   function dispositivosDo(estado, avaliarFam) {
     var out = [];
     if (typeof avaliarFam !== "function") return out;
     arr(estado && estado.familias).forEach(function (f) {
       var av = avaliarFam(f.famId, f.tipoId, f.inst), it = familiaMep(av, f);
       if (it && it.peca === "interruptor") { var cps = composInterruptor(it, f); if (cps) it.composicoes = cps; }
+      if (it && /^caixa_/.test(it.peca) && caixaJaTemPeca(estado, f, av)) return;   // eletrica-v2 L6: já há a PEÇA caixa no mesmo ponto — uma caixa só
       if (it) out.push({ id: f.id, item: it, av: av, inst: f });
     });
     return out;

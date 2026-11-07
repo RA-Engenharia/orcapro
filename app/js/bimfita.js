@@ -266,9 +266,12 @@
     { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
         dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",
         itens: ["cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
-    { nome: "Elétrica", ids: ["eletroduto", "eletrocalha", "dispositivo-eletrico", "quadro-eletrico", "luminaria-mep"] },
-    { nome: "Pontos elétricos", ids: ["ele-auto", "ele-auditar", "ele-criterios"] },
-    { nome: "Circuitos e quadro", ids: ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-criterios"] },
+    /* ELÉTRICA reagrupada como o Hidro (eletrica-v2 L6, 07/11/2026) — nenhum id saiu: só mudou de grupo */
+    { nome: "Elétrica · Modelar", ids: ["eletroduto", "eletrocalha", "ele-m-caixa", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "ele-m-aparelhos"] },
+    { nome: "Elétrica · Projeto inteligente", ids: ["ele-projeto", "ele-auto", "ele-ilum", "ele-aparelho-ponto"] },
+    { nome: "Elétrica · Dimensionar", ids: ["ele-circ", "ele-circ-auditar", "ele-auditar", "ele-criterios", "ele-circ-criterios"] },
+    { nome: "Elétrica · Documentos", ids: ["ele-docs", "ele-circ-pranchas"] },
+    { nome: "Elétrica · Ver", ids: ["ele-fiacao"] },
     { nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
   ];
   /* a disciplina Metálica: do eixo à fabricação (o fluxo do detalhista) */

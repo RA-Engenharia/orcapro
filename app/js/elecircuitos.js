@@ -46,7 +46,33 @@
   function f1(v) { return (Math.round(v * 10) / 10).toFixed(1).replace(".", ","); }
   function d2(a, b) { var x = a[0] - b[0], z = a[1] - b[1]; return Math.sqrt(x * x + z * z); }
   function copia(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
-  var FAM_QD = "ra-quadro-distribuicao";
+  /* eletrica-v2 L6: o quadro NOVO é a família ele-quadro (dispositivos montados pelo projeto); o ra-quadro-distribuicao dos projetos antigos continua
+     sendo LIDO e respeitado em todo lugar (FAMS_QD = os dois ids). */
+  var FAM_QD = "ele-quadro", FAM_QD_ANTIGO = "ra-quadro-distribuicao", FAMS_QD = [FAM_QD, FAM_QD_ANTIGO];
+  function ehQD(famId) { return FAMS_QD.indexOf(String(famId)) >= 0; }
+  /* o tipo padrão do ele-quadro para N módulos: o menor padrão do catálogo (6, 12, 18, 24, 36) que comporta; aço = metálico de sobrepor */
+  function tipoEleQuadro(espacos, material, instalacao) {   /* M2 (revisão 07/11/2026): aço de EMBUTIR (o que a SINAPI orça) = aco-e-N; só pedido "sobrepor" desenha o aco-s-N */
+    var P = [6, 12, 18, 24, 36], n = 36; for (var i = 0; i < P.length; i++) { if (P[i] >= espacos) { n = P[i]; break; } }
+    return (material === "aco" ? (instalacao === "sobrepor" ? "aco-s-" : "aco-e-") : "pvc-") + n;
+  }
+  /* tipo (geometria do catálogo) + os 4 parâmetros que o ORÇAMENTO lê (a chave SINAPI do quadro: material, instalação, espaços, corrente) —
+     assim o código SINAPI casa com o mesmo do quadro antigo; a caixa desenhada é a do tipo padrão que comporta os módulos */
+  function instQuadroEle(mt, modulos, aval) {
+    var esp = Math.max(num(mt && mt.espacos, 12), num(modulos, 0)), tipoId = tipoEleQuadro(esp, mt && mt.material, mt && mt.instalacao);
+    var t = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente || "" };
+    /* acima do maior tipo do catálogo (36 módulos): mais fileiras no mesmo tipo (altura + 115 mm por fileira, a regra DERIVADA do metálico de
+       js/elefamilias.js, sem-fonte-conferir) — assim a caixa desenhada comporta os dispositivos que o projeto pede */
+    if (esp > 36 && typeof aval === "function") {
+      var av = null; try { av = aval(FAM_QD, tipoId, {}); } catch (e) { av = null; }
+      var v = (av && av.valores) || {}, fr = num(v.Fileiras, 0), cap = num(v.Modulos_fileira, 0);
+      if (fr > 0 && cap > 0 && Math.ceil(esp / cap) > fr) {
+        var nf = Math.ceil(esp / cap);
+        t.Fileiras = nf; t.Altura = Math.round((num(v.Altura, 0.4) + (nf - fr) * 0.115) * 1000) / 1000;
+        t.Cotas_a_conferir = "quadro de " + esp + " módulos: acima do maior do catálogo (36); " + nf + " fileiras, altura + 115 mm por fileira acrescentada — medida DERIVADA, sem-fonte-conferir";
+      }
+    }
+    return { tipoId: tipoId, $tipo: t };
+  }
 
   /* ------------------------------------------------------------------ CRITÉRIOS (C = critério RA, editável; A/N = fonte) */
   var CRITERIOS = {
@@ -99,7 +125,24 @@
   /* ------------------------------------------------------------------ OS PONTOS COM CARGA */
   function potLuminaria(av) { var s = txt(av && av.valores && av.valores.Potencia_W), m = 0; s.split("/").forEach(function (q) { var n = parseFloat(String(q).replace(",", ".")); if (isFinite(n) && n > m) m = n; }); return m; }
   var AQUECIMENTO = /^(chuveiro|forno|fogao)/;
+  /* C1 (revisão 07/11/2026): o grupo da demanda e o "aquecimento" (kVA = kW) de cada aparelho vêm da LINHA do aparelhos.json (grupoCemig / aquecimento),
+     lidos de def.grupoCemig; este mapa só vale para os aparelhos antigos de eleregras.APARELHOS, que não têm o campo. */
   var GRUPO_CEMIG = { chuveiro_220: "b1", forno_embutir: "b3", fogao_4_bocas: "b3", lava_roupas: "b4", geladeira_freezer: "b5", micro_ondas: "b5", ar_condicionado: "c", hidromassagem: "d", bomba_dagua: "d" };
+  /* C2 (revisão 07/11/2026): a PLACA do aparelho (Potencia_W / Tensao_V da instância ou do tipo > 0) manda sobre a tabela */
+  /* ⚠ a família com MAIS DE UM aparelho (a torre quente: forno + micro-ondas) tem UM só parâmetro Potencia_W (o do primeiro aparelho, que o aumentar() cria): o valor da avaliação (padrão do parâmetro) só vale
+     quando a instância tem um aparelho só; o valor GRAVADO NA INSTÂNCIA vale para o aparelho principal (sem sufixo). Sem isso o micro-ondas de 750 W virava 4.500 W (achado no e2e: demanda +3,8 kVA). */
+  function placaDe(ap) {
+    var I = (ap.f && ap.f.inst) || {}, V = ap.va || {}, nIr = ap.irmaos || 1, prim = !ap.def.sufixo;
+    var wI = prim ? num(I.Potencia_W, 0) : 0, tI = prim ? num(I.Tensao_V, 0) : 0, wV = nIr === 1 ? num(V.Potencia_W, 0) : 0, tV = nIr === 1 ? num(V.Tensao_V, 0) : 0;
+    var w = wI > 0 ? wI : wV, t = tI > 0 ? tI : tV;
+    /* igual ao valor da tabela = o padrão do parâmetro, não uma placa informada */
+    return { potW: w > 0 && w !== ap.def.potW ? w : 0, tensao: t > 0 && t !== ap.def.tensao ? t : 0 };
+  }
+  function comPlaca(ap) {
+    var pl = placaDe(ap), d = ap.def; if (!pl.potW && !pl.tensao) return d;
+    var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; });
+    if (pl.potW) o.potW = pl.potW; if (pl.tensao) o.tensao = pl.tensao; return o;
+  }
   function lerPontos(estado, avaliarFam, L, C) {
     var R = RG(), EAl = EA(), C1 = R.criterios(), out = [], famPor = {}, porAmb = {};
     arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) famPor[String(f.id)] = f; });
@@ -108,10 +151,12 @@
     var caixaPor = {}; L.caixas.forEach(function (k) { caixaPor[k.id] = k; });
     function cxP(k) { return k ? [k.p[0], k.y, k.p[1]] : null; }
     /* a TUE de cada aparelho (a mesma régua do js/eleauditor.js: a do lançador tem o id dele; senão a mais perto que serve) */
-    var ehTue = {}, tuePor = {};
+    var ehTue = {}, tuePor = {}, irmaosPor = {};
+    L.aparelhos.forEach(function (ap) { irmaosPor[ap.id] = (irmaosPor[ap.id] || 0) + 1; });
+    L.aparelhos.forEach(function (ap) { ap.irmaos = irmaosPor[ap.id]; });
     L.aparelhos.forEach(function (ap) {
       if (ap.def.semParede) return;
-      var pref = "elee-" + ap.chave, best = null, Q = R.tueDe(ap.def, num((ap.f.inst && ap.f.inst.Capacidade_BTUh), num(ap.va.Capacidade_BTUh, 0)), C1);
+      var pref = "elee-" + ap.chave, best = null, Q = R.tueDe(comPlaca(ap), num((ap.f.inst && ap.f.inst.Capacidade_BTUh), num(ap.va.Capacidade_BTUh, 0)), C1);
       L.pontos.filter(function (q) { return q.kind === "tomada" && q.pav === ap.pav && !ehTue[q.id] && !/^elet-/.test(q.id); }).concat(L.caixas.filter(function (k) { return !k.dono && k.pav === ap.pav && !ehTue[k.id]; })).forEach(function (q) {
         if (!EAl.serveTue(Q, q)) return;
         var d0 = d2(q.p, ap.p), d = q.id === pref ? -1 : d0;
@@ -154,14 +199,15 @@
     L.aparelhos.forEach(function (ap) {
       var t = tuePor[ap.chave]; if (!t) return;
       var q = t.q, Q = t.Q, ehCx = q.peca != null && q.kind == null;
+      var placa = placaDe(ap), def = ap.def;
       var p = ehCx ? { id: q.id, kind: "tue", amb: ap.amb || q.amb, pav: q.pav, h: q.h, tipoId: "", caixa: q.id, caixaP: cxP(q), circManual: "", familia: false, auto: !!q.auto } : base(q, "tue");
       var a = porAmb[p.amb]; p.ambNome = a ? a.nome : ""; p.grupo = a ? a.cls.grupo : "demais"; p.tipoAmb = a ? a.tipo.id : "generico";
-      p.kind = "tue"; p.direta = ehCx; p.aparelho = ap.id; p.aparelhoNome = ap.def.rotulo; p.aparelhoDef = ap.def.id; p.tensao = ap.def.tensao || C.tensaoFN.valor;
-      p.aquecimento = AQUECIMENTO.test(ap.def.id); p.cemig = GRUPO_CEMIG[ap.def.id] || "b5";
-      p.w = Q.potW || 0;
+      p.kind = "tue"; p.direta = ehCx; p.aparelho = ap.id; p.aparelhoNome = ap.def.rotulo; p.aparelhoDef = ap.def.id; p.tensao = placa.tensao || ap.def.tensao || C.tensaoFN.valor;
+      p.aquecimento = def.aquecimento != null ? !!def.aquecimento : AQUECIMENTO.test(def.id); p.cemig = def.grupoCemig || GRUPO_CEMIG[def.id] || "b5";
+      p.w = Q.potW || 0; p.placa = !!(placa.potW || placa.tensao); p.potNivel = def.potNivel || ""; p.potConfirmar = def.confirmar || "";
       p.va = Q.pAr && Q.pAr.VA ? Q.pAr.VA : (p.aquecimento ? p.w : r2(p.w / C.fpNaoAquecimento.valor));
       p.potPendente = !Q.potW;
-      p.vaRegra = Q.potW ? (Q.pAr ? Q.pAr.VA + " VA (CEMIG ND-5.1 Tabela 9, " + Q.pAr.btuTabela + " BTU/h)" : p.w + " W (CEMIG ND-5.1 " + (ap.def.cemig || "Tabelas 8A/8B") + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92")) : "potência da placa pendente";
+      p.vaRegra = Q.potW && placa.potW ? placa.potW + " W (placa informada no parâmetro Potencia_W do aparelho" + (placa.tensao ? ", " + placa.tensao + " V" : "") + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92") : Q.potW ? (Q.pAr ? Q.pAr.VA + " VA (CEMIG ND-5.1 Tabela 9, " + Q.pAr.btuTabela + " BTU/h)" : p.w + " W (" + (def.v2 ? (def.cemig || "sem fonte") + " [nível " + (def.potNivel || "X") + "]" : "CEMIG ND-5.1 " + (def.cemig || "Tabelas 8A/8B")) + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92")) : "potência da placa pendente";
       out.push(p);
     });
     return out;
@@ -169,7 +215,8 @@
 
   /* ------------------------------------------------------------------ O QUADRO (o que existe ou a posição proposta) */
   function quadroDe(estado, avaliarFam) {
-    var f = arr(estado && estado.familias).filter(function (x) { return x && x.famId === FAM_QD; })[0];
+    var fs = arr(estado && estado.familias).filter(function (x) { return x && ehQD(x.famId); });
+    var f = fs.filter(function (x) { return x.famId === FAM_QD; })[0] || fs[0];   /* eletrica-v2 L6: o novo primeiro, o antigo lido igual */
     if (!f) return null;
     var av = null; try { av = typeof avaliarFam === "function" ? avaliarFam(f.famId, f.tipoId, f.inst) : null; } catch (e) { av = null; }
     var v = (av && av.valores) || {}, hm = num(f.inst && f.inst.Altura_montagem, num(v.Altura_montagem, 1.5)), alt = num(v.Altura, 0.25), lg = num(v.Largura, 0.2), pr = num(v.Profundidade, 0.09);
@@ -183,10 +230,17 @@
     var EAl = EA(), C1 = RG().criterios(), best = null, carga = 0, cx = 0, cz = 0;
     pontos.forEach(function (p) { var w = Math.max(1, p.va || 0); carga += w; cx += p.caixaP[0] * w; cz += p.caixaP[2] * w; });
     var cc = carga ? [cx / carga, cz / carga] : [0, 0], pav0 = 0;
+    /* eletrica-v2 L6 (print do e2e da casa completa): o quadro caiu EM CIMA do interruptor do corredor — a descida do eletroduto dele passava por dentro da caixa do
+       quadro. Critério RA declarado: o centro do quadro fica a ≥ 0,35 m (meia largura 0,20 + 0,15 de folga) de qualquer tomada, interruptor ou caixa já existente na
+       mesma parede/pavimento; só quando nenhuma parede serve (casa pequena) a folga é dispensada. */
+    var FOLGA_QD = 0.35, outros = arr(L.pontos).concat(arr(L.caixas));
+    function livreDe(c) { return outros.every(function (q) { return !q || !q.p || q.pav !== c.pav || d2(c.P, q.p) >= FOLGA_QD; }); }
+    function escolher(estrito) {
     L.ambientes.forEach(function (a) {
       if (a.pav !== pav0 || PREF_QD[a.tipo.id] == null || a.cls.grupo === "externa" || a.cls.grupo === "varanda") return;
       var cands = EAl.candidatos(L, estado, avaliarFam, a, C1).map(function (c) { c.pav = a.pav; return c; });
       cands.forEach(function (c) {
+        if (estrito && !livreDe(c)) return;
         var h = C.quadroAltura.valor, okL = [0, -0.15, 0.15].every(function (dt) {
           var c2 = { w: c.w, t: c.t + dt, P: [c.P[0] + Math.cos(num(c.w.rotY, 0)) * dt, c.P[1] - Math.sin(num(c.w.rotY, 0)) * dt], dir: c.dir, pav: c.pav };
           return !EAl.verificar(L, C1, c2, h, {}) && !EAl.verificar(L, C1, c2, h + 0.15, {}) && !EAl.verificar(L, C1, c2, h - 0.15, {});
@@ -196,6 +250,8 @@
         if (!best || sc < best.sc - 1e-9) best = { sc: sc, c: c, a: a };
       });
     });
+    }
+    escolher(true); if (!best) escolher(false);
     if (!best) return null;
     var c = best.c, a = best.a, pr = 0.12, alt = 0.50;
     return { id: null, novo: true, cand: c, amb: a.id, ambNome: a.nome, p: [c.P[0] - c.dir[0] * pr / 2, num(a.base, 0) + C.quadroAltura.valor, c.P[1] - c.dir[1] * pr / 2], topo: [c.P[0] - c.dir[0] * 0.03, num(a.base, 0) + C.quadroAltura.valor + alt / 2, c.P[1] - c.dir[1] * 0.03],
@@ -289,17 +345,19 @@
     if (grupos.d.length) pend.push("Motores (" + grupos.d.map(function (p) { return p.aparelhoNome; }).join(", ") + "): a demanda das Tabelas 14 e 15 da ND-5.1 não foi transcrita — entrou 100 % da potência (conservador) — conferir.");
     var ciTue = pontos.filter(function (p) { return p.kind === "tue"; }).reduce(function (s, p) { return s + p.w / 1000; }, 0);
     var ci = ciA + ciTue, D = a + b1 + b3 + b4 + b5 + cAr + dMot;
+    /* M5 (revisão 07/11/2026): a soma da iluminação e das tomadas é em VA e entra como kW (a favor da segurança: sem o fator de potência); o enquadramento (Tabelas 1 e 2) segue o mesmo critério, sem fonte nova */
+    var ciTxt = f2(ci) + " kVA (somado como kW, a favor da segurança; fator de potência não aplicado — o RT pode reduzir)";
     /* o tipo de fornecimento (4.5.1) e a faixa (Tabelas 1 e 2) */
     var tipo, faixa = null, motivoTipo;
-    if (ci <= F.tipos.A.ate_kW + 1e-9 && !tem220) { tipo = "A"; motivoTipo = "carga instalada " + f2(ci) + " kW ≤ 8 kW, sem aparelho em 220 V (" + F.tipos.A.item + ")"; }
-    else if (ci <= F.tipos.B.ate_kW + 1e-9) { tipo = "B"; motivoTipo = "carga instalada " + f2(ci) + " kW ≤ 16 kW" + (tem220 && ci <= 8 ? " (aparelho em 220 V pede 2 fases)" : "") + " (" + F.tipos.B.item + ")"; }
-    else if (ci <= F.tipos.C.ate_kW + 1e-9 && D <= F.tipos.C.demandaAte_kVA + 1e-9) { tipo = "C"; motivoTipo = "carga instalada " + f2(ci) + " kW entre 16,1 e 75 kW, demanda " + f2(D) + " kVA ≤ 75 kVA (" + F.tipos.C.item + ")"; }
-    else { tipo = null; motivoTipo = "carga instalada " + f2(ci) + " kW / demanda " + f2(D) + " kVA acima do tipo C: medição indireta (ND-5.1 Tabela 4, não transcrita) — pendência"; pend.push("Fornecimento acima do tipo C da ND-5.1: " + motivoTipo + "."); }
+    if (ci <= F.tipos.A.ate_kW + 1e-9 && !tem220) { tipo = "A"; motivoTipo = "carga instalada " + ciTxt + " ≤ 8 kW, sem aparelho em 220 V (" + F.tipos.A.item + ")"; }
+    else if (ci <= F.tipos.B.ate_kW + 1e-9) { tipo = "B"; motivoTipo = "carga instalada " + ciTxt + " ≤ 16 kW" + (tem220 && ci <= 8 ? " (aparelho em 220 V pede 2 fases)" : "") + " (" + F.tipos.B.item + ")"; }
+    else if (ci <= F.tipos.C.ate_kW + 1e-9 && D <= F.tipos.C.demandaAte_kVA + 1e-9) { tipo = "C"; motivoTipo = "carga instalada " + ciTxt + " acima de 16 kW e até 75 kW, demanda " + f2(D) + " kVA ≤ 75 kVA (" + F.tipos.C.item + ")"; }
+    else { tipo = null; motivoTipo = "carga instalada " + ciTxt + " / demanda " + f2(D) + " kVA acima do tipo C: medição indireta (ND-5.1 Tabela 4, não transcrita) — pendência"; pend.push("Fornecimento acima do tipo C da ND-5.1: " + motivoTipo + "."); }
     if (tipo === "A") faixa = F.tabela1.dados[0]; else if (tipo === "B") faixa = F.tabela1.dados[1];
     else if (tipo === "C") F.tabela2.dados.forEach(function (l) { if (!faixa && D <= l[2] + 1e-9) faixa = l; });
     var entrada = faixa ? { faixa: faixa[0], fios: faixa[3], fases: faixa[4], disjuntor_A: faixa[5], condutor_mm2: faixa[6], eletrodutoPVC_mm: faixa[7], eletrodutoAco_mm: faixa[8], aterramento_mm2: faixa[9], hastes: faixa[10], pe_mm2: faixa[11],
       tabela: tipo === "C" ? F.tabela2.item : F.tabela1.item } : null;
-    return { cargaInstalada_kW: r2(ci), luzTomadas_kW: r2(ciA), fdLuzTomadas: fd, a: r2(a), b1: r2(b1), b3: r2(b3), b4: r2(b4), b5: r2(b5), c: r2(cAr), d: r2(dMot), demanda_kVA: r2(D),
+    return { cargaInstaladaTexto: ciTxt, cargaInstalada_kW: r2(ci), luzTomadas_kW: r2(ciA), fdLuzTomadas: fd, a: r2(a), b1: r2(b1), b3: r2(b3), b4: r2(b4), b5: r2(b5), c: r2(cAr), d: r2(dMot), demanda_kVA: r2(D),
       tipo: tipo, motivoTipo: motivoTipo, entrada: entrada, tem220: tem220, pendencias: pend,
       fonte: F.fonte + ", " + F.demanda.item + " (" + F.demanda.formula + "; " + F.tabela10.item + ", " + F.tabela12.item + ", " + F.tabela13.item + ")",
       grupos: { b1: grupos.b1.length, b3: grupos.b3.length, b4: grupos.b4.length, b5: grupos.b5.length, c: grupos.c.length, d: grupos.d.length } };
@@ -639,8 +697,8 @@
       var idQ = "eleq-QD1", k = 1; while (arr(est.familias).some(function (f) { return f && String(f.id) === idQ; })) idQ = "eleq-QD" + (++k);
       qd.id = idQ;
       var m = A0.quadroModelo || { espacos: 24, material: "aco", instalacao: "embutir", corrente: "100A" };
-      ops.push({ op: "familia", id: idQ, famId: FAM_QD, tipoId: m.material === "pvc" ? "pvc6" : "aco24e", x: r4(qd.cand.P[0] - qd.cand.dir[0] * qd.profundidade), y: r4(qd.y), z: r4(qd.cand.P[1] - qd.cand.dir[1] * qd.profundidade), rotY: r4(qd.rotY),
-        inst: { Altura_montagem: r4(qd.hm), $tipo: { Material_quadro: m.material, Instalacao: m.instalacao, Disjuntores: m.espacos, Corrente: m.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } });
+      ops.push({ op: "familia", id: idQ, famId: FAM_QD, tipoId: instQuadroEle(m, A0.modulos, o.avaliarFam).tipoId, x: r4(qd.cand.P[0] - qd.cand.dir[0] * qd.profundidade), y: r4(qd.y), z: r4(qd.cand.P[1] - qd.cand.dir[1] * qd.profundidade), rotY: r4(qd.rotY),
+        inst: { Altura_montagem: r4(qd.hm), $tipo: instQuadroEle(m, A0.modulos, o.avaliarFam).$tipo } });   /* as cotas vêm do catálogo do tipo (js/elefamilias.js) */
       avisos.push("Quadro " + idQ + " posto em \"" + qd.ambNome + "\": " + qd.regra + ".");
     }
     /* 1b) ⚠ FONTE ÚNICA (integração n23): a ligação da iluminação feita ANTES dos circuitos (em espera na porta, encadeada no ponto
@@ -726,11 +784,15 @@
       var mt = A.quadroModelo, tp = (qf.inst && qf.inst.$tipo) || {};
       /* o quadro do lançador (eleq-) acompanha o projeto; o posto à mão só cresce quando não comporta (nunca diminui) */
       var nosso = /^eleq-/.test(String(qd.id)), qn = quadroDe(estN, o.avaliarFam), espAtual = qn ? qn.espacos : num(tp.Disjuntores, null);
-      if (nosso ? (tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) instQ.$tipo = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente, Largura: mt.material === "pvc" ? 0.20 : 0.40, Altura: mt.material === "pvc" ? 0.25 : 0.50, Profundidade: mt.material === "pvc" ? 0.09 : 0.12 };
+      if (qf.famId === FAM_QD) {
+        /* eletrica-v2 L6: ele-quadro troca de TIPO (as cotas são as do catálogo), nunca de $tipo solto */
+        var ieq = instQuadroEle(mt, A.modulos, o.avaliarFam);
+        if (nosso ? (String(qf.tipoId) !== ieq.tipoId || tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) { instQ.tipoId = ieq.tipoId; instQ.$tipo = ieq.$tipo; }
+      } else if (nosso ? (tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) instQ.$tipo = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente, Largura: mt.material === "pvc" ? 0.20 : 0.40, Altura: mt.material === "pvc" ? 0.25 : 0.50, Profundidade: mt.material === "pvc" ? 0.09 : 0.12 };
     }
-    var mudou = !qf || txt(qf.inst && qf.inst.Projeto_eletrico) !== js || instQ.$tipo;
+    var mudou = !qf || txt(qf.inst && qf.inst.Projeto_eletrico) !== js || instQ.$tipo || instQ.tipoId;
     var todas = ops.slice(0, qd.novo ? 1 : 0).concat(ligOps).concat(tr.ops).concat(ops.slice(qd.novo ? 1 : 0));
-    if (mudou) todas.push({ op: "instancia", id: qd.id, inst: instQ });
+    if (mudou) { var opQ = { op: "instancia", id: qd.id, inst: instQ }; if (instQ.tipoId) { opQ.tipoId = instQ.tipoId; delete instQ.tipoId; } todas.push(opQ); }
     A.circuitos.forEach(function (c) { if (c.guardado && !c.dim.mantido && (Number(c.guardado.secao) !== c.dim.secao || Number(c.guardado.disjuntor) !== c.dim.In)) avisos.push(c.id + " redimensionado: " + c.guardado.secao + " mm²/" + c.guardado.disjuntor + " A → " + c.dim.secao + " mm²/" + c.dim.In + " A (o anterior não atendia mais)."); });
     var lote = todas.length ? { op: "lote", id: "elc-" + (o.loteId || Date.now().toString(36)), origem: "circuitos-eletricos", pedido: "Circuitos, quadro e eletrodutos", ops: todas } : null;
     var resumo = { circuitos: A.circuitos.length, luz: A.circuitos.filter(function (c) { return c.tipo === "luz"; }).length, tug: A.circuitos.filter(function (c) { return c.tipo === "tug"; }).length,
@@ -865,7 +927,7 @@
 
   var EleCircuitos = {
     cuidaDoCabo: cuidaDoCabo, campoCircuito: campoCircuito, circuitoManual: circuitoManual,
-    CRITERIOS: CRITERIOS, CORES: CORES, FAM_QD: FAM_QD, criterios: criterios, lerPontos: lerPontos, quadroDe: quadroDe, proporQuadro: proporQuadro,
+    CRITERIOS: CRITERIOS, CORES: CORES, FAM_QD: FAM_QD, FAM_QD_ANTIGO: FAM_QD_ANTIGO, FAMS_QD: FAMS_QD, ehQD: ehQD, tipoEleQuadro: tipoEleQuadro, instQuadroEle: instQuadroEle, criterios: criterios, lerPontos: lerPontos, quadroDe: quadroDe, proporQuadro: proporQuadro,
     dividir: dividir, demandaDe: demandaDe, distribuirFases: distribuirFases, dimensionar: dimensionar, exigeDR: exigeDR, agruparDR: agruparDR,
     condutoresPorTrecho: condutoresPorTrecho, nCond: nCond, derivacoesSemCaixa: derivacoesSemCaixa, analisar: analisar, lancar: lancar, cabos: cabos, servicosOrc: servicosOrc, _baseMaisOps: baseMaisOps
   };

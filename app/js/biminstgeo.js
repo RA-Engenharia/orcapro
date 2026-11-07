@@ -585,6 +585,8 @@
   }
   function achar(k) { var v = CACHE.m.get(k); if (v) { CACHE.m.delete(k); CACHE.m.set(k, v); } return v; }   /* a usada vai para o fim (sai por último) */
   function tubo(t, o) {
+    // eletrica-v2: eletroduto de verdade (js/elegeo.js: corrugado ondulado, rígido com luva, flexível metálico em espiral). Sem EleGeo, ou null = o desenho de antes.
+    if (t && t.p1 && t.p2 && global.EleGeo && /^elet_/.test(t.material || "")) { var geEle = null; try { geEle = global.EleGeo.tubo(t, o); } catch (eEle) { geEle = null; } if (geEle) return geEle; }
     if (!CACHE.ligado || !t || !t.p1 || !t.p2) return tuboBruto(t, o);
     var P1 = pv(t.p1), P2 = pv(t.p2), k = "t" + chaveDe({ t: semCampos(t, ["p1", "p2", "id", "avisos", "comprimento", "comprimentoH", "desnivel", "inclinacao"]), d: sub(P2, P1), o: o || {} });
     var c = achar(k);

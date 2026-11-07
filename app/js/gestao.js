@@ -11380,6 +11380,10 @@
       try { if (window.ConcUI) ConcUI.registrar(reg, self); } catch (eConc) {}
       /* CIRCUITOS E QUADRO (frente E2, 21/10/2026): Instalações › Circuitos e quadro — dividir, quadro, eletrodutos, dimensionar, auditar, pranchas (js/elecircuitosui.js) */
       try { if (window.EleCircuitosUI) EleCircuitosUI.registrar(reg, self); } catch (eElc) {}
+      /* GERAR DOCUMENTOS ELÉTRICOS (eletrica-v2 L5): Instalações › Circuitos e quadro › memorial + planilha + pranchas + LEIA-ME num clique (js/eledocumentosui.js) */
+      try { if (window.EleDocumentosUI) EleDocumentosUI.registrar(reg, self); } catch (eEld) {}   // eletrica-v2
+      /* PROJETO ELÉTRICO COMPLETO (eletrica-v2 L6): o clique único, a biblioteca filtrada, Mostrar fiação e Aparelho cria ponto (js/eleprojetoui.js) */
+      try { if (window.EleProjetoUI) EleProjetoUI.registrar(reg, self); } catch (eElp) {}   // eletrica-v2
       /* TRAÇAR AUTOMATICAMENTE (18/10/2026): Instalações › Projeto inteligente, a aba Modificar | Aparelhos e o atalho TA — js/hidkitui.js (ANTES da fita organizada) */
       try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
       /* EMBREVE (09/10/2026): Igualar tipo, Plano de trabalho e Graute e armadura saem do "em breve" — js/bimembreveui.js (sem a prévia do modelador, sai na hora) */

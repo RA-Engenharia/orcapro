@@ -416,7 +416,14 @@
   }
 
   /* ------------------------------------------------------------ MEMORIAL */
+  /* Elétrica v2 L5: o memorial completo mora em js/elememorial.js; este é o texto curto anterior, que fica de reserva quando o módulo novo
+     não está carregado (mesma assinatura e mesma forma de saída) */
   function memorial(Z, opcoes) {
+    var EMm = dep("EleMemorial", "./elememorial.js");   // eletrica-v2
+    if (EMm && EMm.gerar && Z && Z.ok) { var rm = EMm.gerar(Z, opcoes); if (rm && rm.ok) return rm; }   // eletrica-v2
+    return memorialCurto(Z, opcoes);
+  }
+  function memorialCurto(Z, opcoes) {
     opcoes = opcoes || {};
     var Tb = TB(), secoes = [];
     if (!Z || !Z.ok) return { titulo: "Memorial descritivo e de cálculo — instalações elétricas", secoes: [], html: "", texto: "" };

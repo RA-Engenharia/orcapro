@@ -181,9 +181,10 @@
     if (aQ && (aQ.cls.grupo === "banheiro" || aQ.tipo.id === "area_servico" || aQ.cls.grupo === "externa" || aQ.cls.grupo === "varanda"))
       p("ELE_QUADRO_LOCAL", "aviso", "C", "Quadro em \"" + aQ.nome + "\"", "O quadro fica em local de fácil acesso (" + T.n5410("6.5.4.8") + ") e, pelo critério RA, fora de área molhada, sujeita a lavagem ou externa.", [qd.id],
         [{ id: "nota-mover", texto: "Arraste o quadro para a circulação ou a sala e rode \"Circuitos e quadro\" de novo (os eletrodutos novos saem do lugar novo)." }]);
-    var esp = num(qd.f && qd.f.inst && qd.f.inst.$tipo && qd.f.inst.$tipo.Disjuntores, null);
+    var eleQ = !!(qd.f && qd.f.famId === "ele-quadro");   /* eletrica-v2 L6: o quadro novo; o ra-quadro-distribuicao dos projetos antigos segue valendo */
+    var esp = num(qd.f && qd.f.inst && qd.f.inst.$tipo && qd.f.inst.$tipo.Disjuntores, eleQ ? num(qd.espacos, null) : null);
     if (esp != null && A.modulos > esp) p("ELE_QUADRO_ESPACO", "aviso", "N", "Quadro com " + esp + " espaços para " + A.modulos + " módulos", "Disjuntores, DR, DPS, geral e a reserva para ampliação (" + A.reserva + " — " + T.n5410(T.T59.item) + ") não cabem no quadro.", [qd.id],
-      [A.quadroModelo ? { id: "quadro", texto: "Trocar o quadro pelo de " + A.quadroModelo.espacos + " espaços", ops: [{ op: "instancia", id: qd.id, inst: { $tipo: { Material_quadro: A.quadroModelo.material, Instalacao: A.quadroModelo.instalacao, Disjuntores: A.quadroModelo.espacos, Corrente: A.quadroModelo.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } }] } : { id: "nota-quadro", texto: "Divida a instalação em dois quadros." }]);
+      [A.quadroModelo ? { id: "quadro", texto: "Trocar o quadro pelo de " + A.quadroModelo.espacos + " espaços", ops: eleQ && EC().instQuadroEle ? [{ op: "instancia", id: qd.id, tipoId: EC().instQuadroEle(A.quadroModelo, A.modulos).tipoId, inst: { $tipo: EC().instQuadroEle(A.quadroModelo, A.modulos).$tipo } }] : [{ op: "instancia", id: qd.id, inst: { $tipo: { Material_quadro: A.quadroModelo.material, Instalacao: A.quadroModelo.instalacao, Disjuntores: A.quadroModelo.espacos, Corrente: A.quadroModelo.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } }] } : { id: "nota-quadro", texto: "Divida a instalação em dois quadros." }]);
     return fim();
     function fim() {
       probs.forEach(function (q) { q.solucoes.forEach(function (s) { if (s.ops && !s.ops.length) { delete s.ops; s.id = "nota-" + s.id; s.texto = "Nada a refazer automaticamente: ajuste à mão e rode o auditor de novo."; } }); });

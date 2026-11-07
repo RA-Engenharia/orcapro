@@ -121,9 +121,11 @@
         (global.FamiliaImportUI && FamiliaImportUI.ativo() && global.HidBiblioteca ? '<label class="btn sm" style="position:relative;overflow:hidden" title="A pasta de famílias que o plugin OrçaPRO for Revit exportou do seu Revit (Integração › Exportar Famílias, ou a pasta OrcaPRO-Biblioteca-Escritorio). Uso restrito ao licenciado: as famílias ficam só na sua biblioteca.">Biblioteca do escritório<input type="file" multiple webkitdirectory accept=".opfam" data-fe="escritorio" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' : "") +
         '<input class="fe-busca" data-fe="busca" placeholder="Buscar família" value="' + esc(this._busca) + '"></div>' +
         (HBf ? HBf.htmlControles(filtro, contF, memorial) : "") +
+        (this._filtroId ? '<p class="fe-ajuda" data-fe-filtro="' + esc(this._filtroRotulo || "") + '">Filtro: <b>' + esc(this._filtroRotulo || "") + '</b> <button class="btn sm ghost" data-fe="limpar-filtro">Mostrar todas as famílias</button></p>' : "") +
         '<p class="fe-ajuda">Escolha o tipo e clique <b>Colocar</b>; depois clique no modelo. Porta e janela vão numa parede criada aqui e abrem o vão.</p>';
       var grupos = {}, ocultas = 0;
       L.forEach(function (f) {
+        if (self._filtroId && !self._filtroId.test(f.id)) return;   /* eletrica-v2 L6: a fita da Elétrica abre a biblioteca só nas famílias dela (o chip abaixo desliga) */
         if (b && (f.nome + " " + (cats[f.categoria] || "")).toLowerCase().indexOf(b) < 0) return;
         if (HBf && !HBf.aplicarFiltro([infoF[f.id]], filtro).length) { ocultas++; return; }
         (grupos[f.categoria] = grupos[f.categoria] || []).push(f);
@@ -182,7 +184,8 @@
         if (ch && global.HidBiblioteca) { var HBo = global.HidBiblioteca; HBo.gravarFiltro(null, { origem: ch.getAttribute("data-fil-origem") }, HBo.memorialDoProjeto()); self.render(); return; }
         var b = e.target.closest ? e.target.closest("[data-fe]") : null; if (!b) return;
         var k = b.getAttribute("data-fe"), card = b.closest(".fe-card"), id = card ? card.getAttribute("data-fam") : null, f = id ? self.obter(id) : null;
-        if (k === "nova") { self.editar(F().nova("Família nova", "generico"), true); }
+        if (k === "limpar-filtro") { self._filtroId = null; self._filtroRotulo = ""; self.render(); }
+        else if (k === "nova") { self.editar(F().nova("Família nova", "generico"), true); }
         else if (k === "colocar" && f) { self.colocar(f, self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id); }
         else if (k === "editar" && f) { self.editar(f, f._origem !== "ra"); }
         else if (k === "exportar" && f) { self.exportar(f); }

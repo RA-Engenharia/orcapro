@@ -83,7 +83,7 @@
       reg["eletrocalha"] = function (e) { if (e && e.ligado === false) { var b = B(); if (b && b.editarArmar) b.editarArmar(null); U.cfg = null; return true; } return U.armar("eletrocalha"); };
       reg["dispositivo-eletrico"] = function () { return U.colocarFamilia("ra-tomada", "t10"); };
       reg["luminaria-mep"] = function () { return U.colocarFamilia("ra-luminaria", "pq18e"); };
-      reg["quadro-eletrico"] = function () { return U.colocarFamilia("ra-quadro-distribuicao", "pvc6"); };
+      reg["quadro-eletrico"] = function () { return U.colocarFamilia(global.FamiliasRA && FamiliasRA.obter("ele-quadro", true) ? "ele-quadro" : "ra-quadro-distribuicao", global.FamiliasRA && FamiliasRA.obter("ele-quadro", true) ? "pvc-12" : "pvc6"); };   // eletrica-v2 L6: o quadro novo (dispositivos montados pelo projeto); sem ele, o antigo
       reg["verificar-sistemas"] = function () { U.verificarSistemas(); return true; };
       reg["desconexoes"] = function (e) { U.alternarDesconexoes(!(e && e.ligado === false)); return true; };
       reg["legenda-mep"] = function (e) { U.legendaPlanta(!(e && e.ligado === false)); return true; };
@@ -1602,7 +1602,7 @@
     },
     /* o NOME da peça vai no recado: a tomada, a luminária e o quadro diziam "Clique onde
        colocar a louça" (auditoria de 12/10/2026) */
-    NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição",
+    NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição", "ele-quadro": "o quadro de distribuição",   // eletrica-v2 L6
       "ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água",
       "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
     colocarFamilia: function (famId, tipoId) {
@@ -1779,6 +1779,16 @@
     /* ------------------------------------------------ MALHAS (o bim.js chama no replay)
      * Devolve [{ id, ifc, nome, malhas:[THREE.Mesh], qto, disciplina, codigo, marcador }]. */
     _mats: {},
+    /* eletrica-v2 (revisão 12): a PEÇA caixa (que o EleAuto e o eletilum põem) usa a geometria da família ele-caixa-* (PVC amarela, ou metálica); null = o bloco de antes */
+    _caixaFam: function (k, famAval, THREE) {
+      var W = typeof window !== "undefined" ? window : null; /* Node (IFC/testes) não tem window: cai no bloco de antes */
+      var FM = W && W.BimFamMalhas, fid = { caixa_4x2: "ele-caixa-4x2", caixa_4x4: "ele-caixa-4x4", caixa_octogonal: "ele-caixa-octogonal" }[k.peca], P = fid && BI().PECAS[k.peca];
+      if (!FM || !W.EleFamilias || typeof famAval !== "function" || !P) return null;
+      try {
+        var av = famAval(fid, k.material === "metalica" ? "metal" : "pvc", { Altura_montagem: 0 }), r = k.rotY || 0, d = P.forma === "caixa" ? P.d / 2 : 0;
+        return av && av.solidos && av.solidos.length ? FM(av, { x: k.x + Math.sin(r) * d, y: P.forma === "caixa" ? k.y : k.y - P.h, z: k.z + Math.cos(r) * d, rotY: r, inst: {} }, null) : null;
+      } catch (e) { return null; }
+    },
     _mat: function (THREE, cor) {
       if (this._mats[cor]) return this._mats[cor];
       /* a cor da CONVENÇÃO é sRGB: new THREE.Color converte para o linear da cena
@@ -1943,6 +1953,7 @@
       /* LOD simples: modelo grande (muitas peças) desenha com menos segmentos — o mesmo para todos, sem trocar na hora;
          o Médio é sempre o "longe" (menos lados) */
       this._lod = nivel === "medio" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
+      var lodEle = nivel !== "alto" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";   // eletrica-v2 L6/revisão B7: só o eletroduto (material elet_*) liso no Baixo e no Médio; o hidro fica como no master
       var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
       var baixo = nivel === "baixo";
       var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
@@ -2037,7 +2048,7 @@
           m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(w, v, u));
           m.position.copy(a).add(b).multiplyScalar(0.5);
         } else if (G) {
-          var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: lod, marcacao: lod === "perto" });
+          var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: /^elet_/.test(String(t.material || "")) ? lodEle : lod, marcacao: lod === "perto" });   // eletrica-v2 B7: só o eletroduto usa o lodEle
           m = self._malhaG(THREE, tg.partes[0].malha, self._matPeca(THREE, t.material, t.sistema, "corpo", corV));   /* HIDROSSANITÁRIO: cor por verificação (ok / não verificado / reprovado) */
           tg.partes.slice(1).forEach(function (pt) {
             if (pt.decal) { var mxD = self.modoCor === "sistema" || corV ? null : self._malhaDecal(THREE, pt); if (mxD) extra.push(mxD); return; }   /* cor por sistema / de verificação: a gravação da água sai, como a do esgoto */
@@ -2078,6 +2089,7 @@
           var matCx = gp.tipoCaixa === "alvenaria" ? "alvenaria" : (gp.tipoCaixa === "premoldado" ? "concreto" : "pvc_esgoto");
           ms = gp.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, matCx, k.sistema, pt.papel === "puxador" ? "ferro" : (pt.papel === "grelha" || pt.papel === "ferro" || pt.papel === "tampaConcreto" ? pt.papel : "corpo"), null, true)); });
         }
+        else if (P.sistemas[0] === "eletrica" && (ms = self._caixaFam(k, famAval, THREE))) { /* eletrica-v2: caixa da família */ }
         else {
           var m;
           if (P.forma === "caixa") { m = new THREE.Mesh(new THREE.BoxGeometry(P.w, P.hh, P.d), self._mat(THREE, cor)); m.position.set(k.x, k.y, k.z); m.rotation.y = k.rotY || 0; }

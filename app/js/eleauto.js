@@ -31,6 +31,7 @@
   function EA() { return dep("EsqAuto", "./esqauto.js"); }
   function ER() { return dep("EsqRegras", "./esqregras.js"); }
   function VA() { return dep("BimVaoArr", "./bimvaoarr.js"); }
+  function EM() { return dep("EleMobiliario", "./elemobiliario.js"); }   /* eletrica-v2 L3 */
   function arr(a) { return Array.isArray(a) ? a : []; }
   function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
   function txt(v) { return v == null ? "" : String(v); }
@@ -112,6 +113,16 @@
         L.aparelhos.push({ chave: id + (d.sufixo ? "-" + d.sufixo : ""), id: id, def: d, f: f, va: va, p: pc, dir: frente(f), pav: pav, amb: ambDe(add(pc, frente(f), 0.3), pav) || ambDe(pc, pav), pts: m ? m.pts : null });
       });
       if (R.chuveiroIndefinido(fid)) L.chuveirosIndef.push({ id: id, p: [num(f.x, 0), num(f.z, 0)], pav: pav, amb: ambDe(add([num(f.x, 0), num(f.z, 0)], frente(f), 0.3), pav) });
+    });
+    /* M4 (revisão 07/11/2026): split com evaporadora E condensadora modeladas = UM ponto por conjunto, na evaporadora (TUE alta; decisão RA em PADRAO-PROJETO-ELETRICO-RA.md);
+       a condensadora com uma evaporadora no mesmo pavimento a até 15 m (o mesmo sistema ou o ambiente vizinho — a família não traz o vínculo) não pede ponto; sozinha, continua pedindo */
+    L.condensadorasSemPonto = [];
+    var evaps = L.aparelhos.filter(function (q) { return q.def.id === "ar_condicionado"; });
+    L.aparelhos = L.aparelhos.filter(function (q) {
+      if (q.def.id !== "ar_condensadora") return true;
+      var par = evaps.filter(function (e) { return e.pav === q.pav && dist(e.p, q.p) <= 15; })[0];
+      if (par) L.condensadorasSemPonto.push({ id: q.id, evaporadora: par.id });
+      return !par;
     });
     var inst = (estado && estado.instalacoes) || {};
     /* as pontas dos tubos de OUTRO sistema (água, esgoto, gás…): a caixa elétrica não nasce colada nelas (ver verificar) */
@@ -290,6 +301,7 @@
   function gerar(o) {
     o = o || {};
     var R = RG(), E = EA(), ESQ = ER(), est = o.estado, aval = o.avaliarFam, C = R.criterios(o.criterios), L = leitura(est, aval), dentro = E.dentro;
+    C.mobiliario = !(o.criterios && (o.criterios.mobiliario === false || o.criterios.mobiliario === 0));   /* eletrica-v2 L3: lançar também pelo mobiliário (de fábrica: sim) */
     var ops = [], itens = [], avisos = [], pend = [], porAmb = [], usados = {}, novos = [];
     arr(est && est.familias).forEach(function (f) { if (f) usados[String(f.id)] = 1; });
     arr(est && est.caixas).forEach(function (c) { if (c) usados[String(c.id)] = 1; });
@@ -304,7 +316,8 @@
     /* põe o PONTO: família + caixa (ou só a caixa: ligação direta) */
     function lancar(kind, pref, a, cand, h, tipoId, extra) {
       var id = novoId(pref), base = a.base, pt = add(cand.P, cand.dir, 0.005), cx = add(cand.P, cand.dir, -0.025);
-      if (kind !== "direta") ops.push({ op: "familia", id: id, famId: kind === "tomada" ? "ra-tomada" : "ra-interruptor", tipoId: tipoId, x: r4(pt[0]), y: r4(base), z: r4(pt[1]), rotY: cand.rotY, inst: { Altura_montagem: r4(h) } });
+      var origem = extra && extra.origem ? extra.origem : null;   /* eletrica-v2 L3: cada ponto diz DE ONDE veio (rastreabilidade) */
+      if (kind !== "direta") ops.push({ op: "familia", id: id, famId: kind === "tomada" ? "ra-tomada" : "ra-interruptor", tipoId: tipoId, x: r4(pt[0]), y: r4(base), z: r4(pt[1]), rotY: cand.rotY, inst: origem ? { Altura_montagem: r4(h), Origem: origem } : { Altura_montagem: r4(h) } });
       ops.push({ op: "peca", id: kind === "direta" ? id : id + "-cx", peca: "caixa_4x2", sistema: "eletrica", material: "pvc", x: r4(cx[0]), y: r4(base + h), z: r4(cx[1]), rotY: cand.rotY, alturaPiso: r4(h) });
       novos.push({ id: id, P: cand.P, y: h, pav: a.pav, kind: kind, t: cand.t, parede: cand.w.id, dir: cand.dir });
       var it = { id: id, tipo: kind, ambiente: a.id, ambienteNome: a.nome, tipoId: tipoId || null, altura: r4(h), parede: cand.w.id, caixa: kind === "direta" ? id : id + "-cx", regras: [] };
@@ -349,7 +362,16 @@
         var esc = null, motivo = null;
         for (var i = 0; i < lista.length && !esc; i++) { var mv = livre(lista[i], h, op); if (!mv) esc = lista[i]; else if (!motivo) motivo = mv; }
         if (!esc) { pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não achei parede livre a ≤ " + f2(dMax) + " m de " + d.rotulo + " (" + ap.id + ")" + (motivo ? " — " + motivo : "") + ". Lance o ponto à mão." }); return; }
-        var it = lancar(tom.ligacao === "direta" ? "direta" : "tomada", pref, a, esc, h, tom.tipoId, { aparelho: ap.id, uso: "TUE", aparelhoNome: d.rotulo });
+        /* revisão A3 (07/11/2026): o ponto velho do aparelho movido (o id elee-<chave> ou o Lig = apar-<id>) sai e o novo nasce com o MESMO id (antes nascia "elee-GEL-2" e o velho sobrava) */
+        var velhos = {}; velhos[pref] = 1; velhos[pref + "-cx"] = 1;
+        arr(est && est.familias).forEach(function (f) { if (f && ((f.inst && String(f.inst.Lig) === "apar-" + ap.id) || String(f.lig) === "apar-" + ap.id)) velhos[String(f.id)] = 1; });
+        arr(est && est.instalacoes && est.instalacoes.pecas).forEach(function (k) { if (k && String(k.lig) === "apar-" + ap.id) velhos[String(k.id)] = 1; });
+        Object.keys(velhos).forEach(function (vid) {
+          var vp = L.pontos.concat(L.caixas).filter(function (q) { return q.id === vid; })[0];
+          if (!vp || !usados[vid] || dist(vp.p, ap.p) <= dMax + 1e-6) return;
+          ops.push({ op: "apagar", id: vid }); usados[vid] = 0;
+        });
+        var it = lancar(tom.ligacao === "direta" ? "direta" : "tomada", pref, a, esc, h, tom.tipoId, { aparelho: ap.id, uso: "TUE", aparelhoNome: d.rotulo, origem: "aparelho " + d.rotulo.toLowerCase() });
         usadosTue[it.id] = 1; item.lancado = it.id;
         it.regras.push((Q.exclusivo ? "circuito independente do aparelho (acima de 10 A — " + R.citar(C.correnteExclusivo) + ")" : "ponto dedicado ao aparelho (" + R.rotuloNivel("C") + "; até 10 A a 9.5.3.1 não exige circuito independente)") + (tom.corrente ? "; I ≈ " + f2(tom.corrente) + " A" : ""));
         it.regras.push(potW ? "potência típica " + potW + " W em " + d.tensao + " V (" + R.FONTES.CEMIG + ", " + d.cemig + (pAr ? ", " + pAr.btuTabela + " BTU/h" : "") + " — " + R.rotuloNivel("A") + "; a placa do aparelho manda)" : "potência: a da placa do aparelho (pendente)");
@@ -377,7 +399,7 @@
       var livres = [];
       cands.forEach(function (c) { var ah = alturaTug(c); if (!livre(c, ah.h)) livres.push({ c: c, h: ah.h, bancada: ah.bancada || null, lavatorio: !!ah.lavatorio }); });
       function tomarTug(x, uso, extra) {
-        var it = lancar("tomada", "elet-" + a.id, a, x.c, x.h, "t10", { uso: "TUG" });
+        var it = lancar("tomada", "elet-" + a.id, a, x.c, x.h, "t10", { uso: "TUG", origem: (extra && extra.origem) || (x.bancada ? "bancada da pia 9.5.2.2.1 b)" : x.lavatorio ? "lavatório 9.1.4.3" : "perímetro " + R.citar(regra).split(" — ")[0].replace("NBR 5410 ", "")) });
         escolhidos.push({ s: x.c.s, id: it.id }); res.tug.lancado++;
         it.regras.push("tomadas do ambiente (" + cls.grupoRotulo + "): mínimo " + nExig + " — " + R.citar(regra));
         it.regras.push(uso + "; " + (x.bancada || x.lavatorio ? (x.bancada ? "sobre a bancada, " : "na altura do lavatório, ") + f2(x.h) + " m (" + R.rotuloNivel(C.sobreBancada.nivel) + "; orçada como média — " + R.rotuloNivel("A") + ")" : rotAltura(x.h)));
@@ -385,6 +407,34 @@
         livres = livres.filter(function (y) { return !verificarNovo(y); });
         function verificarNovo(y) { return y.c.w.id === x.c.w.id && Math.abs(y.c.t - x.c.t) < C.entrePontos.valor - 1e-6; }
         return it;
+      }
+      /* ---------- MOBILIÁRIO (eletrica-v2 L3): o móvel pede a tomada dele — cama, rack/painel de TV, sofá, escrivaninha. Contam no mínimo do
+         ambiente; ambiente sem o móvel não pede nada (vale o perímetro). Ver js/elemobiliario.js e dados-fonte/eletrica/padrao-ambientes.json. */
+      res.mobiliario = []; var movelPos = [];
+      if (C.mobiliario && EM()) {
+        var pm = EM().pedidos({ estado: est, aval: aval, L: L, a: a, dentro: dentro });
+        pm.avisos.forEach(function (t) { avisos.push(t); });
+        pm.pendencias.forEach(function (q) { pend.push(q); });
+        pm.pedidos.forEach(function (pd) {
+          var ja = exist.concat(novos.filter(function (n0) { return n0.kind === "tomada"; }).map(function (n0) { return { id: n0.id, p: n0.P, h: n0.y }; }))
+            .filter(function (p) { return p.p && Math.abs(num(p.h, -9) - pd.h) <= 0.25 && pd.ancoras.some(function (an) { return dist(p.p, an) <= pd.alcance + 1e-6; }); })[0];
+          if (ja) { res.mobiliario.push({ movel: pd.movel, origem: pd.origem, existente: ja.id }); return; }
+          var esc0 = null, mot0 = null;
+          pd.ancoras.forEach(function (an) {
+            if (esc0) return;
+            cands.filter(function (c) { return dist(c.P, an) <= pd.alcance + 1e-6; }).sort(function (x, y) { return dist(x.P, an) - dist(y.P, an); }).forEach(function (c) {
+              if (esc0) return;
+              var mv = livre(c, pd.h); if (!mv) esc0 = c; else if (!mot0) mot0 = mv;
+            });
+          });
+          if (!esc0) { pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não coube a tomada \"" + pd.origem + "\" a " + f2(pd.h) + " m" + (mot0 ? " — " + mot0 : " — sem parede perto") + ". Lance à mão." }); return; }
+          var itM = tomarTug({ c: esc0, h: pd.h }, pd.texto, { origem: pd.origem.replace(/ \([^)]*\)$/, "") });
+          itM.regras.push("pedida pelo móvel " + pd.movel + " (" + R.rotuloNivel(pd.nivel) + ")");
+          res.mobiliario.push({ movel: pd.movel, origem: pd.origem, lancado: itM.id });
+          /* M1 (revisão 07/11/2026): pontos do mesmo móvel a < 1 m um do outro (rack: 2 tomadas a 0,6 m) contam como UM para o mínimo do ambiente */
+          if (!movelPos.some(function (q) { return dist(q, esc0.P) < 1.0; })) falta = Math.max(0, falta - 1);
+          movelPos.push(esc0.P);
+        });
       }
       /* cozinha: ≥ 2 acima da bancada da pia, longe do ponto d'água */
       if (g === "cozinha_servico" && a.tipo.id !== "area_servico") {
@@ -447,6 +497,19 @@
         var itU = tomarTug(melhor.x, "distribuída pelo perímetro, o mais longe possível das outras (\"tão uniformemente quanto possível\" — " + R.citar(C.tugPerimSalaDorm) + ")");
         fixosS.push(melhor.x.c.s); falta--; void itU;
       }
+      /* M1: depois dos pontos do móvel e do mínimo, nenhum trecho do perímetro de sala/dormitório fica com mais de 5 m (descontados os vãos abertos) sem tomada: completa com TUG do perímetro */
+      if (g === "sala_dormitorio" && fixosS.length) for (var ig = 0; ig < 12; ig++) {
+        var soG = fixosS.slice().sort(function (x, y) { return x - y; }), gapM = null;
+        soG.forEach(function (s1, ix) {
+          var s2 = ix + 1 < soG.length ? soG[ix + 1] : soG[0] + P, ab = 0;
+          abertosA.forEach(function (o) { [0, P].forEach(function (off) { ab += Math.max(0, Math.min(s2, o.s1 + off) - Math.max(s1, o.s0 + off)); }); });
+          var dG = s2 - s1 - ab; if (dG > C.tugPerimSalaDorm.valor + 1e-6 && (!gapM || dG > gapM.d)) gapM = { s1: s1, d: s2 - s1, mid: (s1 + (s2 - s1) / 2) % P };
+        });
+        if (!gapM) break;
+        var cgM = livres.filter(function (x) { var d1 = (x.c.s - gapM.s1 + P) % P; return d1 > 0.5 && d1 < gapM.d - 0.5; }).sort(function (x, y) { return dCirc(x.c.s, gapM.mid) - dCirc(y.c.s, gapM.mid); })[0];
+        if (!cgM) break;
+        tomarTug(cgM, "completa o trecho do perímetro com mais de " + f2(C.tugPerimSalaDorm.valor) + " m sem tomada (\"tão uniformemente quanto possível\" — " + R.citar(C.tugPerimSalaDorm) + ")"); fixosS.push(cgM.c.s);
+      }
       /* o maior trecho sem tomada (alerta, critério RA) */
       var ss = exist.map(function (p) { return perimetroDe(a.pts, p.p); }).concat(escolhidos.map(function (e) { return e.s; })).sort(function (x, y) { return x - y; });
       if (ss.length >= 2 && (g === "sala_dormitorio")) res.tug.maiorTrecho = r4(maiorTrecho(P, ss, abertosA));
@@ -469,7 +532,7 @@
         var tipoL = a.forro ? "pq18e" : "pq24s";
         mundo.forEach(function (p) {
           var id = novoId("elel-" + a.id);
-          var opL = { op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe) } };
+          var opL = { op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe), Origem: "iluminação do ambiente 9.5.2.1.1" } };
           ops.push(opL);
           /* ⚠ a caixa NO CONECTOR elétrico da luminária (a canopla), não na face dela (revisão adversarial n23, 23/10/2026). Roteiro do
              defeito: no ambiente com forro o plafon de embutir tem o conector 3 cm acima da face; a caixa ficava na face, o
@@ -480,7 +543,7 @@
           try { var avL = typeof aval === "function" ? aval(opL.famId, opL.tipoId, opL.inst) : null, cL = avL && BIm && BIm.conectoresDe ? BIm.conectoresDe(avL, opL).filter(function (q) { return q.sistema === "eletrica"; })[0] : null; if (a.forro && cL && isFinite(Number(cL.y)) && Math.abs(Number(cL.y) - yCxL) <= 0.10) yCxL = Number(cL.y); } catch (eC) {}
           ops.push({ op: "peca", id: id + "-cx", peca: "caixa_octogonal", sistema: "eletrica", material: "pvc", x: r4(p[0]), y: r4(yCxL), z: r4(p[1]), rotY: 0 });
           res.luz.lancado++;
-          itens.push({ id: id, tipo: "luminaria", ambiente: a.id, ambienteNome: a.nome, tipoId: tipoL, altura: r4(a.pe), caixa: id + "-cx",
+          itens.push({ id: id, tipo: "luminaria", ambiente: a.id, ambienteNome: a.nome, tipoId: tipoL, altura: r4(a.pe), caixa: id + "-cx", origem: "iluminação do ambiente 9.5.2.1.1",
             regras: ["ao menos " + C.luzMinimo.valor + " ponto de luz no teto, comandado por interruptor (" + R.citar(C.luzMinimo) + ")",
                      "carga mínima de iluminação do ambiente: " + va + " VA para " + f2(a.area) + " m² (100 VA até 6 m² + 60 VA a cada 4 m² inteiros — " + R.citar(C.luzVaPasso) + "); é carga para o circuito, não a potência da lâmpada",
                      nLuz + " ponto(s) " + (a.alongado ? "ao longo do corredor (1 a cada " + f2(C.luzCorredorPasso.valor) + " m)" : (a.area <= C.luzAreaUmPonto.valor ? "central" : "em grade (1 a cada " + f2(C.luzAreaPorPonto.valor) + " m²)")) + " — " + R.rotuloNivel("C"),
@@ -507,7 +570,7 @@
             });
           });
           if (escP) {
-            var itP = lancar("interruptor", "elei-" + a.id, a, escP.c, hP, "s1", { porta: null, passagem: true });
+            var itP = lancar("interruptor", "elei-" + a.id, a, escP.c, hP, "s1", { porta: null, passagem: true, origem: "passagem do ambiente" });
             res.interruptores.lancado++;
             itP.regras.push("comanda o ponto de luz do ambiente (" + R.citar(C.luzMinimo) + ")");
             itP.regras.push("ambiente integrado, sem porta: junto à passagem, a " + f2(escP.d) + " m dela (" + R.rotuloNivel("C") + ")");
@@ -549,7 +612,7 @@
               if (viz) achou = { c: viz.c, lado: viz.lado, d: viz.d };
             }
             if (!achou) { if (kp === portas.length - 1 && !res.interruptores.lancado) pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não coube o interruptor junto à porta " + dv.id + " (" + motivoI + "). Lance à mão." }); continue; }
-            var itI = lancar("interruptor", "elei-" + a.id, a, achou.c, hI, passagem ? "p1" : "s1", { porta: dv.id });
+            var itI = lancar("interruptor", "elei-" + a.id, a, achou.c, hI, passagem ? "p1" : "s1", { porta: dv.id, origem: "porta " + dv.id });
             res.interruptores.lancado++;
             itI.regras.push("comanda o ponto de luz do ambiente (" + R.citar(C.luzMinimo) + ")");
             if (/^vizinha/.test(achou.lado)) itI.regras.push("junto à porta " + dv.id + ", na parede ao lado" + (achou.lado === "vizinha" ? " (lado da maçaneta)" : " (lado da dobradiça)") + ", a " + f2(achou.d) + " m do batente: a parede da porta não tinha espaço (" + R.citar(C.intVizinha) + ")");

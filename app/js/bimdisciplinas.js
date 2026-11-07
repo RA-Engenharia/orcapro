@@ -201,6 +201,8 @@
   def("eletrica", ["ele-auto", "ele-auto-sel", "ele-auto-todos", "ele-auditar", "ele-criterios"]);
   /* CIRCUITOS E QUADRO (js/elecircuitosui.js, frente E2, 21/10/2026) */
   def("eletrica", ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-pdf", "ele-circ-dxf", "ele-circ-memorial", "ele-circ-criterios"]);
+  /* ELÉTRICA v2 (L6): documentos, projeto completo, biblioteca filtrada, ligação da iluminação, chaves */
+  def("eletrica", ["ele-docs", "ele-projeto", "ele-m-caixa", "ele-m-aparelhos", "ele-ilum", "ele-aparelho-ponto", "ele-fiacao"]);
   /* INCÊNDIO E ACESSIBILIDADE (js/incacsui.js, 21/10/2026): o incêndio é de arquitetura, da hidráulica (extintor, hidrante) e da elétrica
      (luminária de emergência); a acessibilidade é de arquitetura */
   def(["civil", "hidraulica", "eletrica"], ["inc-dados", "inc-lancar", "inc-auditar"]);

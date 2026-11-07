@@ -1028,6 +1028,11 @@
   <script src="js/eleauto.js"></script>
   <script src="js/eleauditor.js"></script>
   <script src="js/eleautoui.js"></script>
+  <!-- ELÉTRICA V2 L3 (06/11/2026): o aparelho pede o próprio ponto (tabela com fonte e nível, gerada de dados-fonte/eletrica) e o lançamento pelo mobiliário -->
+  <script src="js/eleaparelhosdados.js"></script>
+  <script src="js/elepadraodados.js"></script>
+  <script src="js/elemobiliario.js"></script>
+  <script src="js/eleaparelhos.js"></script>
   <!-- INCÊNDIO (CBMMG) E ACESSIBILIDADE (NBR 9050) (21/10/2026): dados da pesquisa (gerado por tools/gerar-incdados.js), regras com fonte, rede de caminhamento, lançador, auditores e a tela -->
   <script src="js/incdados.js"></script>
   <script src="js/incregras.js"></script>
@@ -1044,11 +1049,24 @@
   <script src="js/concui.js"></script>
   <!-- CIRCUITOS, QUADRO, CONDUTORES E ELETRODUTOS (frente E2, 21/10/2026): tabelas da NBR 5410 conferidas na imagem (cópia não licenciada), traçado, dimensionamento, auditor, pranchas e a tela -->
   <script src="js/eletabelas.js"></script>
+  <script src="js/elecatalogodados.js"></script>   <!-- eletrica-v2 L1: catálogo real dos produtos elétricos (cotas + fonte), gerado por tools/gerar-elecatalogo.js -->
+  <script src="js/elefamiliasgeo.js"></script>   <!-- eletrica-v2 L2a: a geometria das caixas, placas, dispositivos DIN e quadro (igual ao produto de loja) -->
+  <script src="js/elefamilias.js"></script>   <!-- eletrica-v2 L2a: as famílias ele-* (cotas do catálogo L1) e o quadro montado pelo projeto -->
+  <script src="js/elefamilias2geo.js"></script>   <!-- eletrica-v2 L2b: a geometria das luminárias (painel, tubular, refletor, balizador, tartaruga, bocal, trilho…) e dos eletrodomésticos com ponto elétrico -->
+  <script src="js/elefamilias2.js"></script>   <!-- eletrica-v2 L2b: as famílias ele-lum-* e ele-eq-* (cotas do catálogo L1; o aparelho pede o próprio ponto pelo aparelhos.json) -->
+  <script src="js/elegeo.js"></script>   <!-- eletrica-v2 L4: eletroduto real (corrugado ondulado com curva contínua, rígido com luva, flexível metálico em espiral); o HidGeo.tubo delega a ele -->
+  <script src="js/elefiacao3d.js"></script>   <!-- eletrica-v2 L4: fios 3D com bitola e cor dentro do eletroduto (chave "Mostrar fiação", padrão desligada) -->
   <script src="js/eletracado.js"></script>
   <script src="js/elecircuitos.js"></script>
   <script src="js/elecircauditor.js"></script>
   <script src="js/elepranchas.js"></script>
+  <script src="js/elememorial.js"></script>   <!-- eletrica-v2 L5: memorial descritivo e de cálculo completo (14 seções); o ElePranchas.memorial delega a ele -->
+  <script src="js/eleplanilhas.js"></script>   <!-- eletrica-v2 L5: planilhas .xlsx (quadro de cargas, circuitos, demanda, eletrodutos e fiação, lista de materiais, pendências) -->
   <script src="js/elecircuitosui.js"></script>
+  <script src="js/eledocumentos.js"></script>   <!-- eletrica-v2 L5: Gerar documentos elétricos (memorial + planilha + pranchas + LEIA-ME num pacote) -->
+  <script src="js/eledocumentosui.js"></script>   <!-- eletrica-v2 L5: a tela do clique único -->
+  <script src="js/eleprojeto.js"></script>   <!-- eletrica-v2 L6: Projeto elétrico completo num clique (pontos + ligação da iluminação + circuitos + quadro + auditoria, UM lote) -->
+  <script src="js/eleprojetoui.js"></script>   <!-- eletrica-v2 L6: o botão, o relatório e a fita Instalações › Elétrica -->
   <!-- MOBILIAR AMBIENTE (21/10/2026): regras de layout com fonte (gerado de docs/arquitetura/interiores), o motor de um clique, o auditor e a tela -->
   <script src="js/mobregrasdados.js"></script>
   <script src="js/mobregras.js"></script>

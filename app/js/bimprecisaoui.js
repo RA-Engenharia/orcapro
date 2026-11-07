@@ -1075,6 +1075,8 @@
           /* UM lote para a seleção inteira: cada op refaz a cena toda (editRebuild), e apagar 276 peças uma a uma
              travava o sistema por minutos (o Rogério achou em 12/10/2026). Um Ctrl+Z desfaz tudo de uma vez. */
           var opsD = lib.map(function (id) { return { op: "apagar", id: id }; });
+          /* eletrica-v2 L6: apagar o aparelho oferece apagar o ponto elétrico dele (EleAparelhos.aoApagar; mesmo lote, um Ctrl+Z) */
+          try { var oEl = global.EleAparelhos && global.EleAparelhos.aoApagar && global.BIM ? global.EleAparelhos.aoApagar(global.BIM.editarOps(), opsD, function (f, t, i) { return global.BIM.familiaAvaliar(f, t, i); }) : null; if (oEl && global.confirm(oEl.texto)) oEl.ops.forEach(function (x) { opsD.push(x); }); } catch (eEl) {}
           if (opsD.length === 1) api.op(opsD[0]);
           else if (opsD.length) api.op({ op: "lote", id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: "modificar", pedido: "Apagar " + opsD.length + " elementos", ops: opsD });
           hint(lib.length + " elemento(s) apagado(s)" + (lib.length > 1 ? " (Ctrl+Z desfaz de uma vez)." : " (Ctrl+Z desfaz).") + (fix.length ? " " + fix.length + " fixado(s) ficou(aram): use Desafixar antes." : "")); return;

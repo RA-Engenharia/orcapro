@@ -182,13 +182,38 @@
     { id: "lava_roupas", rotulo: "Máquina de lavar roupas", fam: /^ra-coz-lavadora$/, potW: 1500, tensao: 127, altura: "baixa", cemig: "Tabela 8B" },
     { id: "geladeira_freezer", rotulo: "Geladeira (ponto dedicado — decisão RA)", fam: /^ra-coz-geladeira$/, potW: 300, tensao: 127, altura: "baixa", cemig: "Tabela 8A (duplex 300 W)" },
     { id: "ar_condicionado", rotulo: "Ar-condicionado", fam: /^ra-clim-(evap-[a-z]+|janela)$/, potW: "btu", tensao: 220, altura: "alta", cemig: "Tabela 9" },
+    { id: "ar_condensadora", rotulo: "Ar-condicionado (condensadora)", fam: /^ra-clim-condensadora(-multi)?$/, potW: null, tensao: 220, altura: "media", cemig: "placa do fabricante", forcaDireta: true, confirmar: "condensadora: confirme no manual do modelo se a alimentação vem da condensadora ou da evaporadora" },   /* eletrica-v2 L3 */
     { id: "hidromassagem", rotulo: "Banheira de hidromassagem (motor)", fam: /^ra-banho-hidromassagem$/, potW: null, tensao: 220, altura: "baixa", forcaDireta: true, noVolume: true },
     { id: "bomba_dagua", rotulo: "Bomba d'água", fam: /^hid-bomba$/, potW: null, tensao: 220, altura: "baixa", forcaDireta: true }
   ];
   /* os aparelhos de uma instância de família (lista: a torre quente dá o forno e o micro-ondas) */
+  /* ELÉTRICA V2 L2b (07/11/2026): os aparelhos das famílias ele-eq-* (e do hidro) vêm da tabela dos aparelhos (dados-fonte/eletrica/aparelhos.json → js/eleaparelhosdados.js,
+     linhas com "v2": true): UMA fonte só, sem repetir a potência aqui. Lido na chamada (a tabela carrega depois deste arquivo no index.html). */
+  var V2 = null, V2src = null, V2n = -1;
+  function condicaoV2(c, v, i) {
+    var x = v[c.param] !== undefined ? v[c.param] : i[c.param];
+    if (x === undefined) return c.op === "!=";
+    if (c.op === "==") return typeof c.valor === "boolean" ? sim(x) === c.valor : x === c.valor;
+    if (c.op === "!=") return typeof c.valor === "boolean" ? sim(x) !== c.valor : x !== c.valor;
+    return c.op === ">=" ? num(x, 0) >= c.valor : false;
+  }
+  function aparelhosV2() {
+    var D = global.EleAparelhosDados || (typeof require === "function" ? (function () { try { return require("./eleaparelhosdados.js"); } catch (e) { return null; } })() : null);
+    if (!D || !D.aparelhos) return [];
+    if (V2 && V2src === D.aparelhos && V2n === D.aparelhos.length) return V2;   /* em cache enquanto a tabela for a mesma */
+    V2src = D.aparelhos; V2n = D.aparelhos.length;
+    V2 = D.aparelhos.filter(function (t) { return t.v2; }).map(function (t) {
+      var q = arr(t.casar && t.casar.quando);
+      return { id: t.id, rotulo: t.rotulo, fam: new RegExp("^(" + arr(t.casar.fam).join("|") + ")$"), quando: q.length ? function (v, i) { return q.every(function (c) { return condicaoV2(c, v, i); }); } : null,
+        potW: t.potW, tensao: t.tensaoV, altura: t.altura_m, cemig: t.potWFonte, forcaDireta: !!t.forcaDireta, noVolume: !!t.noVolume, semParede: !!t.semParede, confirmar: t.confirmar || undefined,
+        lateral: t.posicao && t.posicao.lateral_m ? t.posicao.lateral_m : 0, sufixo: t.sufixo || undefined, v2: true,
+        potNivel: t.potWNivel || undefined, grupoCemig: t.grupoCemig || undefined, aquecimento: t.aquecimento != null ? !!t.aquecimento : undefined };
+    });
+    return V2;
+  }
   function aparelhosDe(famId, valores, inst) {
     var v = valores || {}, i = inst || {}, out = [];
-    APARELHOS.forEach(function (a) { if (a.fam.test(String(famId || "")) && (!a.quando || a.quando(v, i))) out.push(a); });
+    APARELHOS.concat(aparelhosV2()).forEach(function (a) { if (a.fam.test(String(famId || "")) && (!a.quando || a.quando(v, i))) out.push(a); });
     return out;
   }
   /* o chuveiro que não diz se é elétrico (a família antiga ra-chuveiro) */
@@ -214,6 +239,7 @@
   }
   function alturaDe(chave, C) {
     C = C || CRITERIOS;
+    if (typeof chave === "number" && isFinite(chave)) return chave;   /* L2b: altura em metros vinda da tabela dos aparelhos (catálogo L1) */
     return chave === "media" ? C.alturaMedia.valor : chave === "alta" ? C.alturaAlta.valor : chave === "chuveiro" ? C.alturaChuveiro.valor : C.alturaBaixa.valor;
   }
 

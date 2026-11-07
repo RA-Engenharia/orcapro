@@ -5425,6 +5425,7 @@ return true;
 var nIfc = 0;
 S._opsApagarIfc(uids).forEach(function (o) { ops.push(o); nIfc++; });
 if (!ops.length) { S._hint(nFix ? nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : 'Nada para apagar na seleção.'); return true; }
+try { var _or = window.EleAparelhos && EleAparelhos.aoApagar ? EleAparelhos.aoApagar(S.edit ? S.edit.ops : [], ops, S._famAval) : null; if (_or && window.confirm(_or.texto)) _or.ops.forEach(function (o) { ops.push(o); }); } catch (_eO) {}
 var lote = { op: 'lote', id: 'dl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: 'delete', pedido: 'Apagar ' + ops.length + (ops.length === 1 ? ' elemento' : ' elementos'), ops: ops };
 selAplicar([], 'trocar');
 var ok = !!(window.BIM && BIM.editarLote && BIM.editarLote(lote));
@@ -9887,6 +9888,7 @@ return editMats[tipo] || editMats.parede;
 var famReg = { lista: {}, cache: {} };
 function famDefinir(lista) {
 famReg.lista = {}; famReg.cache = {};
+try { if (window.EleAparelhos) lista = EleAparelhos.aumentar(lista); } catch (_eAp) { }
 (lista || []).forEach(function (f) { if (f && f.id) famReg.lista[f.id] = f; });
 if (S && S._famMigPend && edit.ops.length) {
 var rm = migrarFamiliasOps(edit.ops);
@@ -9978,7 +9980,15 @@ var FAM_PBR = {
 'lâmina marrom bronze politherm microperfurada': { cor: 0x5e4b3c, rug: 0.7, met: 0.6, op: 0.55 }, 'lâmina preto lisa': { cor: 0x1c1c1c, rug: 0.7, met: 0.1 },
 'porcelanato marmorizado branco': { cor: 0xe9e6e1, rug: 0.2, met: 0, cc: 0.4, ccr: 0.15 }, 'azulejo branco tijolinho': { cor: 0xf4f3ef, rug: 0.3, met: 0, cc: 0.3, ccr: 0.2 },
 'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 },
-'aço galvanizado perfurado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'alumínio do alçapão': { cor: 0xaeaeae, rug: 0.4, met: 0.85 }
+'aço galvanizado perfurado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'alumínio do alçapão': { cor: 0xaeaeae, rug: 0.4, met: 0.85 },
+'plástico branco': { cor: 0xf3f3f0, rug: 0.35, met: 0, cc: 0.4, ccr: 0.2 }, 'acrílico': { cor: 0xf2f6f8, rug: 0.05, met: 0 }, 'acrílico translúcido': { cor: 0xf2f6f8, rug: 0.05, met: 0, op: 0.72 },
+'pvc amarelo caixa': { cor: 0xd8a600, rug: 0.75, met: 0 }, 'pvc laranja reforçado': { cor: 0xd0600f, rug: 0.75, met: 0 },
+'aço galvanizado estampado': { cor: 0xb9bec4, rug: 0.48, met: 0.85 }, 'plástico cinza din': { cor: 0xdcdcd7, rug: 0.4, met: 0, cc: 0.25, ccr: 0.3 },
+'manípulo preto': { cor: 0x141414, rug: 0.45, met: 0 }, 'manípulo vermelho': { cor: 0xc8201e, rug: 0.4, met: 0 }, 'botão de teste amarelo': { cor: 0xf2c400, rug: 0.4, met: 0 }, 'indicador dps verde': { cor: 0x2fb344, rug: 0.35, met: 0 },
+'cobre': { cor: 0xb87333, rug: 0.3, met: 1 }, 'latão borne': { cor: 0xc8a05a, rug: 0.3, met: 1 },
+'isolação azul': { cor: 0x1f5fb4, rug: 0.45, met: 0 }, 'isolação verde-amarela': { cor: 0x4fa02a, rug: 0.45, met: 0 }, 'isolação preta': { cor: 0x1c1c1e, rug: 0.45, met: 0 },
+'isolação vermelha': { cor: 0xc0282d, rug: 0.45, met: 0 }, 'isolação branca': { cor: 0xeeeeea, rug: 0.45, met: 0 }, 'isolação cinza': { cor: 0x8a8d90, rug: 0.45, met: 0 },
+'policarbonato fumê': { cor: 0x4d5860, rug: 0.08, met: 0, op: 0.28 }
 };
 function famMatPBR(k, nome) {
 var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
@@ -10657,6 +10667,7 @@ return r;
 S._instNivelRefazer = instNivelRefazer; S._instMedir = instMedir;
 function editOp(o) {
 try { if (window.Modela && Modela.iniciarTeste) Modela.iniciarTeste(); } catch (_m) {}
+try { var _am = window.EleAparelhos && EleAparelhos.aoMover ? EleAparelhos.aoMover(o, edit.ops, famAval) : null; if (_am) o = _am; } catch (_eAm) {}
 edit.ops.push(o); edit.redo = [];
 if (!(opSoInst(o) && editRebuildInst())) editRebuild();
 }
@@ -10895,7 +10906,8 @@ if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;
 if (sub === 'apagar') {
 if (!hit) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique em cima de um elemento.'); return; }
 var mA = _ultimosHits[0].object, midA = mA.userData.mid, idA = mA.userData.expressID;
-if (midA === 'edit') { editOp({ op: 'apagar', id: idA }); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Removido (Desfazer volta).'); }
+if (midA === 'edit') { var _o1 = { op: 'apagar', id: idA }, _or1 = null; try { _or1 = window.EleAparelhos && EleAparelhos.aoApagar ? EleAparelhos.aoApagar(edit.ops, [_o1], S._famAval) : null; if (_or1 && !window.confirm(_or1.texto)) _or1 = null; } catch (_e1) { _or1 = null; }
+editOp(_or1 ? { op: 'lote', id: 'dl' + Date.now().toString(36), origem: 'delete', pedido: 'Apagar o aparelho e o ponto', ops: [_o1].concat(_or1.ops) } : _o1); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Removido (Desfazer volta).'); }
 else {
 var moRem = S.modelos.filter(function (x) { return x.mid === midA; })[0];
 editOp({ op: 'apagarIfc', uid: midA + ':' + idA, arq: moRem ? moRem.nome : null, eid: idA });
@@ -11000,8 +11012,10 @@ var idFam = 'f' + (edit.seq + 1);
 var opF = { op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: pzC ? pzC.x : Math.round(p.x * 1000) / 1000, y: pzC ? pzC.y : edit.base, z: pzC ? pzC.z : Math.round(p.z * 1000) / 1000, rotY: pzC ? pzC.rotY : edit.famRot, inst: fsel.inst || {} };
 var ltL = null;
 try { if (window.EletIlumUI && fam.mep && fam.mep.peca === 'luminaria') { ltL = EletIlumUI.aoColocar(JSON.parse(JSON.stringify(opF)), edit.ops, famAval); if (ltL) ltL = BimEdit.sanear([ltL])[0] || null; } } catch (_eL) { ltL = null; }
-editOp(ltL || opF);
-S._hint(fam.nome + ' colocada' + (window.EletIlumUI && fam.mep && fam.mep.peca === 'luminaria' ? EletIlumUI.rotuloColocar() : '') + '. Barra de espaço gira 90°; clique para outra, ou Esc.');
+var ltA = null;
+try { if (!ltL && window.EleAparelhos && EleAparelhos.ligado()) { ltA = EleAparelhos.aoColocar(JSON.parse(JSON.stringify(opF)), edit.ops, famAval); if (ltA) ltA = BimEdit.sanear([ltA])[0] || null; } } catch (_eA) { ltA = null; }
+editOp(ltL || ltA || opF);
+S._hint(fam.nome + ' colocada' + (window.EletIlumUI && fam.mep && fam.mep.peca === 'luminaria' ? EletIlumUI.rotuloColocar() : '') + (ltA && window.EleAparelhos ? EleAparelhos.rotuloColocar() : '') + '. Barra de espaço gira 90°; clique para outra, ou Esc.');
 try { if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('bim:familia-colocada', { detail: { id: idFam, famId: fsel.famId, tipoId: fsel.tipoId } })); } catch (eEv) {}
 }
 marcarFechamento();
@@ -11651,6 +11665,7 @@ THREE: THREE, S: S, edit: edit, scene: scene,
 raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
 telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
 }) : null;
+window.BimFamMalhas = function (av, inst, mat) { return famMalhas(av, inst, mat); };
 S._colocar = (window.BimInstColocar && BimInstColocar.montar3d) ? BimInstColocar.montar3d({
 THREE: THREE, S: S, edit: edit, scene: scene, canvas: canvasEl, camera: function () { return camera; },
 famAval: famAval, famMalhas: function (av, inst, mat) { return famMalhas(av, inst, mat); }, familia: function (id) { return famReg.lista[id] || null; },

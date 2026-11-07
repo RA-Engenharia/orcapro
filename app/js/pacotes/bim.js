@@ -16892,6 +16892,7 @@ e.preventDefault(); e.stopPropagation();
 var stD = estado(), fix = pr.sel.filter(function (id) { return Pr().fixado(stD, id); }), lib = pr.sel.filter(function (id) { return fix.indexOf(id) < 0; });
 try { if (global.BimSelInst && global.BimSelInst.interceptarApagar && global.BimSelInst.interceptarApagar(pr.sel.slice())) return; } catch (eSI) {}
 var opsD = lib.map(function (id) { return { op: "apagar", id: id }; });
+try { var oEl = global.EleAparelhos && global.EleAparelhos.aoApagar && global.BIM ? global.EleAparelhos.aoApagar(global.BIM.editarOps(), opsD, function (f, t, i) { return global.BIM.familiaAvaliar(f, t, i); }) : null; if (oEl && global.confirm(oEl.texto)) oEl.ops.forEach(function (x) { opsD.push(x); }); } catch (eEl) {}
 if (opsD.length === 1) api.op(opsD[0]);
 else if (opsD.length) api.op({ op: "lote", id: "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: "modificar", pedido: "Apagar " + opsD.length + " elementos", ops: opsD });
 hint(lib.length + " elemento(s) apagado(s)" + (lib.length > 1 ? " (Ctrl+Z desfaz de uma vez)." : " (Ctrl+Z desfaz).") + (fix.length ? " " + fix.length + " fixado(s) ficou(aram): use Desafixar antes." : "")); return;
@@ -93624,7 +93625,7 @@ if (!PECAS[item.peca] && !ACESSORIOS[item.peca] && !DISPOSITIVOS[item.peca] && g
 return [APELIDO_CHAVE[item.peca] || item.peca, item.material, ap, dnk].join("|");
 }
 function rotuloItem(item) {
-if (ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) return rotuloP12(item);
+if ((ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) && !PECAS[item.peca]) return rotuloP12(item);
 if (item.peca === "cabo") return "Cabo de cobre flexível isolado " + String(item.dn).replace(".", ",") + " mm² " + (item.material === "cobre_450_750" ? "450/750 V" : item.material) + ", circuitos terminais";
 var M = MATERIAIS[item.material], P = PECAS[item.peca];
 if (P && item.nome) return item.nome + (SISTEMAS[item.sistema] ? " — " + SISTEMAS[item.sistema].nome.toLowerCase() : "");
@@ -94029,7 +94030,10 @@ var DISPOSITIVOS = {
 tomada: { nome: "Tomada", categoria: "Dispositivos elétricos", ifc: "IFCOUTLET", pre: "POWEROUTLET" },
 interruptor: { nome: "Interruptor", categoria: "Dispositivos elétricos", ifc: "IFCSWITCHINGDEVICE", pre: "TOGGLESWITCH" },
 luminaria: { nome: "Luminária", categoria: "Luminárias", ifc: "IFCLIGHTFIXTURE", pre: "POINTSOURCE" },
-quadro: { nome: "Quadro de distribuição", categoria: "Equipamento elétrico", ifc: "IFCELECTRICDISTRIBUTIONBOARD", pre: "DISTRIBUTIONBOARD" }
+quadro: { nome: "Quadro de distribuição", categoria: "Equipamento elétrico", ifc: "IFCELECTRICDISTRIBUTIONBOARD", pre: "DISTRIBUTIONBOARD" },
+caixa_4x2: { nome: "Caixa 4×2 (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" },
+caixa_4x4: { nome: "Caixa 4×4 (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" },
+caixa_octogonal: { nome: "Caixa octogonal (família)", categoria: "Dispositivos elétricos", ifc: "IFCJUNCTIONBOX", pre: "JUNCTIONBOX" }
 };
 var EXTRAS_P12 = { tomada: ["placa"], interruptor: ["placa"], quadro: ["corrente"] };
 var ACESSORIO_MIN = 0.04, ACESSORIO_MAX = 0.6, ACESSORIO_PADRAO = 0.06;
@@ -94147,11 +94151,20 @@ if (p === "tomada") { it.material = "2pt" + inteiro(v.Corrente_A, 10) + "a"; it.
 else if (p === "interruptor") { it.material = txt(v.Tipo_interruptor).toLowerCase(); it.aplicacao = "10a"; it.dn = String(inteiro(v.Modulos, 1)); it.placa = v.Placa === false ? "sem" : "com"; }
 else if (p === "luminaria") { it.material = txt(v.Modelo); it.aplicacao = txt(v.Instalacao); it.dn = txt(v.Potencia_W) || "-"; }
 else if (p === "quadro") { it.material = txt(v.Material_quadro); it.aplicacao = txt(v.Instalacao); it.dn = String(inteiro(v.Disjuntores, 0)); if (txt(v.Corrente)) it.corrente = txt(v.Corrente); }
+else if (/^caixa_(4x2|4x4|octogonal)$/.test(p)) {
+it.material = /^metal/i.test(txt(v.Material_caixa)) ? "metalica" : "pvc"; it.dn = "-";
+it.aplicacao = p === "caixa_octogonal" ? (txt(v.Aplicacao) === "forro" ? "forro" : "laje") : alturaCaixa(num(v.Altura_montagem, 0.3));
+var EFc = global.EleFamilias, sc = EFc && EFc.sinapi ? EFc.sinapi("ele-" + p.replace("_", "-"), v) : null; if (sc && sc.status === "pendente") it.semTabela = sc.motivo || "sem composição SINAPI para esta caixa";
+}
 return it;
 }
 function familiaMep(av, f) {
 if (f && arr(f.servicos).length) return null;
 return itemDispositivo(av);
+}
+function caixaJaTemPeca(estado, f, av) {
+var h = num(f.y, 0) + num(av && av.valores && av.valores.Altura_montagem, 0);
+return arr(estado && estado.instalacoes && estado.instalacoes.pecas).some(function (k) { return k && /^caixa_/.test(k.peca) && Math.sqrt(Math.pow(num(k.x, 0) - num(f.x, 0), 2) + Math.pow(num(k.z, 0) - num(f.z, 0), 2)) <= 0.08 && Math.abs(num(k.y, 0) - h) <= 0.12; });
 }
 function dispositivosDo(estado, avaliarFam) {
 var out = [];
@@ -94159,6 +94172,7 @@ if (typeof avaliarFam !== "function") return out;
 arr(estado && estado.familias).forEach(function (f) {
 var av = avaliarFam(f.famId, f.tipoId, f.inst), it = familiaMep(av, f);
 if (it && it.peca === "interruptor") { var cps = composInterruptor(it, f); if (cps) it.composicoes = cps; }
+if (it && /^caixa_/.test(it.peca) && caixaJaTemPeca(estado, f, av)) return;
 if (it) out.push({ id: f.id, item: it, av: av, inst: f });
 });
 return out;
@@ -96138,6 +96152,7 @@ CACHE.m.set(k, v);
 }
 function achar(k) { var v = CACHE.m.get(k); if (v) { CACHE.m.delete(k); CACHE.m.set(k, v); } return v; }
 function tubo(t, o) {
+if (t && t.p1 && t.p2 && global.EleGeo && /^elet_/.test(t.material || "")) { var geEle = null; try { geEle = global.EleGeo.tubo(t, o); } catch (eEle) { geEle = null; } if (geEle) return geEle; }
 if (!CACHE.ligado || !t || !t.p1 || !t.p2) return tuboBruto(t, o);
 var P1 = pv(t.p1), P2 = pv(t.p2), k = "t" + chaveDe({ t: semCampos(t, ["p1", "p2", "id", "avisos", "comprimento", "comprimentoH", "desnivel", "inclinacao"]), d: sub(P2, P1), o: o || {} });
 var c = achar(k);
@@ -101935,6 +101950,7 @@ def(["hidraulica", "eletrica"], ["verificar-sistemas", "desconexoes", "tabela-me
 def("eletrica", ["eletroduto", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "eletrocalha"]);
 def("eletrica", ["ele-auto", "ele-auto-sel", "ele-auto-todos", "ele-auditar", "ele-criterios"]);
 def("eletrica", ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-pdf", "ele-circ-dxf", "ele-circ-memorial", "ele-circ-criterios"]);
+def("eletrica", ["ele-docs", "ele-projeto", "ele-m-caixa", "ele-m-aparelhos", "ele-ilum", "ele-aparelho-ponto", "ele-fiacao"]);
 def(["civil", "hidraulica", "eletrica"], ["inc-dados", "inc-lancar", "inc-auditar"]);
 def("civil", ["acs-auditar"]);
 def("metalica", ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio",
@@ -108720,9 +108736,11 @@ var h = '<div class="fe-topo"><button class="btn sm primary" data-fe="nova">+ No
 (global.FamiliaImportUI && FamiliaImportUI.ativo() && global.HidBiblioteca ? '<label class="btn sm" style="position:relative;overflow:hidden" title="A pasta de famílias que o plugin OrçaPRO for Revit exportou do seu Revit (Integração › Exportar Famílias, ou a pasta OrcaPRO-Biblioteca-Escritorio). Uso restrito ao licenciado: as famílias ficam só na sua biblioteca.">Biblioteca do escritório<input type="file" multiple webkitdirectory accept=".opfam" data-fe="escritorio" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' : "") +
 '<input class="fe-busca" data-fe="busca" placeholder="Buscar família" value="' + esc(this._busca) + '"></div>' +
 (HBf ? HBf.htmlControles(filtro, contF, memorial) : "") +
+(this._filtroId ? '<p class="fe-ajuda" data-fe-filtro="' + esc(this._filtroRotulo || "") + '">Filtro: <b>' + esc(this._filtroRotulo || "") + '</b> <button class="btn sm ghost" data-fe="limpar-filtro">Mostrar todas as famílias</button></p>' : "") +
 '<p class="fe-ajuda">Escolha o tipo e clique <b>Colocar</b>; depois clique no modelo. Porta e janela vão numa parede criada aqui e abrem o vão.</p>';
 var grupos = {}, ocultas = 0;
 L.forEach(function (f) {
+if (self._filtroId && !self._filtroId.test(f.id)) return;
 if (b && (f.nome + " " + (cats[f.categoria] || "")).toLowerCase().indexOf(b) < 0) return;
 if (HBf && !HBf.aplicarFiltro([infoF[f.id]], filtro).length) { ocultas++; return; }
 (grupos[f.categoria] = grupos[f.categoria] || []).push(f);
@@ -108777,7 +108795,8 @@ var ch = e.target.closest ? e.target.closest("[data-fil-origem]") : null;
 if (ch && global.HidBiblioteca) { var HBo = global.HidBiblioteca; HBo.gravarFiltro(null, { origem: ch.getAttribute("data-fil-origem") }, HBo.memorialDoProjeto()); self.render(); return; }
 var b = e.target.closest ? e.target.closest("[data-fe]") : null; if (!b) return;
 var k = b.getAttribute("data-fe"), card = b.closest(".fe-card"), id = card ? card.getAttribute("data-fam") : null, f = id ? self.obter(id) : null;
-if (k === "nova") { self.editar(F().nova("Família nova", "generico"), true); }
+if (k === "limpar-filtro") { self._filtroId = null; self._filtroRotulo = ""; self.render(); }
+else if (k === "nova") { self.editar(F().nova("Família nova", "generico"), true); }
 else if (k === "colocar" && f) { self.colocar(f, self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id); }
 else if (k === "editar" && f) { self.editar(f, f._origem !== "ra"); }
 else if (k === "exportar" && f) { self.exportar(f); }
@@ -109783,7 +109802,7 @@ reg["acessorio-tubo"] = function (e) { if (e && e.ligado === false) { var b = B(
 reg["eletrocalha"] = function (e) { if (e && e.ligado === false) { var b = B(); if (b && b.editarArmar) b.editarArmar(null); U.cfg = null; return true; } return U.armar("eletrocalha"); };
 reg["dispositivo-eletrico"] = function () { return U.colocarFamilia("ra-tomada", "t10"); };
 reg["luminaria-mep"] = function () { return U.colocarFamilia("ra-luminaria", "pq18e"); };
-reg["quadro-eletrico"] = function () { return U.colocarFamilia("ra-quadro-distribuicao", "pvc6"); };
+reg["quadro-eletrico"] = function () { return U.colocarFamilia(global.FamiliasRA && FamiliasRA.obter("ele-quadro", true) ? "ele-quadro" : "ra-quadro-distribuicao", global.FamiliasRA && FamiliasRA.obter("ele-quadro", true) ? "pvc-12" : "pvc6"); };
 reg["verificar-sistemas"] = function () { U.verificarSistemas(); return true; };
 reg["desconexoes"] = function (e) { U.alternarDesconexoes(!(e && e.ligado === false)); return true; };
 reg["legenda-mep"] = function (e) { U.legendaPlanta(!(e && e.ligado === false)); return true; };
@@ -111092,7 +111111,7 @@ else if (k === "angulo") c.angulo = valor === "livre" || valor === "orto" ? valo
 this._planoCota();
 this.dica();
 },
-NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição",
+NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição", "ele-quadro": "o quadro de distribuição",
 "ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água",
 "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
 colocarFamilia: function (famId, tipoId) {
@@ -111248,6 +111267,15 @@ R.conectoresLivres.forEach(function (k) { marcar(k, k.famInst); });
 return out;
 },
 _mats: {},
+_caixaFam: function (k, famAval, THREE) {
+var W = typeof window !== "undefined" ? window : null;
+var FM = W && W.BimFamMalhas, fid = { caixa_4x2: "ele-caixa-4x2", caixa_4x4: "ele-caixa-4x4", caixa_octogonal: "ele-caixa-octogonal" }[k.peca], P = fid && BI().PECAS[k.peca];
+if (!FM || !W.EleFamilias || typeof famAval !== "function" || !P) return null;
+try {
+var av = famAval(fid, k.material === "metalica" ? "metal" : "pvc", { Altura_montagem: 0 }), r = k.rotY || 0, d = P.forma === "caixa" ? P.d / 2 : 0;
+return av && av.solidos && av.solidos.length ? FM(av, { x: k.x + Math.sin(r) * d, y: P.forma === "caixa" ? k.y : k.y - P.h, z: k.z + Math.cos(r) * d, rotY: r, inst: {} }, null) : null;
+} catch (e) { return null; }
+},
 _mat: function (THREE, cor) {
 if (this._mats[cor]) return this._mats[cor];
 var c = new THREE.Color(cor);
@@ -111373,6 +111401,7 @@ var unif = NV && nivel !== "alto" ? NV.unifilar(R, nivel, { escala: NV.ESCALA_PA
 if (unif) unif.segs.forEach(function (sg) { (segsDe[sg.id] = segsDe[sg.id] || []).push(sg); });
 this._nivelFeito = nivel; this._segsDe = segsDe;
 this._lod = nivel === "medio" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
+var lodEle = nivel !== "alto" || (R.trechos.length + R.conexoes.length) > 700 ? "longe" : "perto";
 var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
 var baixo = nivel === "baixo";
 var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
@@ -111458,7 +111487,7 @@ var w = Math.abs(u.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3().
 m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(w, v, u));
 m.position.copy(a).add(b).multiplyScalar(0.5);
 } else if (G) {
-var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: lod, marcacao: lod === "perto" });
+var tg = G.tubo(t, { recuo1: recuos[t.id + ":0"] || 0, recuo2: recuos[t.id + ":1"] || 0, livre1: !!livres[t.id + ":0"], livre2: !!livres[t.id + ":1"], bolsaAtras1: bolsasT[t.id + ":0"], bolsaAtras2: bolsasT[t.id + ":1"], desloc1: deslocsT[t.id + ":0"], desloc2: deslocsT[t.id + ":1"], lod: /^elet_/.test(String(t.material || "")) ? lodEle : lod, marcacao: lod === "perto" });
 m = self._malhaG(THREE, tg.partes[0].malha, self._matPeca(THREE, t.material, t.sistema, "corpo", corV));
 tg.partes.slice(1).forEach(function (pt) {
 if (pt.decal) { var mxD = self.modoCor === "sistema" || corV ? null : self._malhaDecal(THREE, pt); if (mxD) extra.push(mxD); return; }
@@ -111498,6 +111527,7 @@ else if (gp) {
 var matCx = gp.tipoCaixa === "alvenaria" ? "alvenaria" : (gp.tipoCaixa === "premoldado" ? "concreto" : "pvc_esgoto");
 ms = gp.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, matCx, k.sistema, pt.papel === "puxador" ? "ferro" : (pt.papel === "grelha" || pt.papel === "ferro" || pt.papel === "tampaConcreto" ? pt.papel : "corpo"), null, true)); });
 }
+else if (P.sistemas[0] === "eletrica" && (ms = self._caixaFam(k, famAval, THREE))) { }
 else {
 var m;
 if (P.forma === "caixa") { m = new THREE.Mesh(new THREE.BoxGeometry(P.w, P.hh, P.d), self._mat(THREE, cor)); m.position.set(k.x, k.y, k.z); m.rotation.y = k.rotY || 0; }
@@ -171078,9 +171108,11 @@ var ABA_INSTALACOES = [
 { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
 dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",
 itens: ["cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
-{ nome: "Elétrica", ids: ["eletroduto", "eletrocalha", "dispositivo-eletrico", "quadro-eletrico", "luminaria-mep"] },
-{ nome: "Pontos elétricos", ids: ["ele-auto", "ele-auditar", "ele-criterios"] },
-{ nome: "Circuitos e quadro", ids: ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-criterios"] },
+{ nome: "Elétrica · Modelar", ids: ["eletroduto", "eletrocalha", "ele-m-caixa", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "ele-m-aparelhos"] },
+{ nome: "Elétrica · Projeto inteligente", ids: ["ele-projeto", "ele-auto", "ele-ilum", "ele-aparelho-ponto"] },
+{ nome: "Elétrica · Dimensionar", ids: ["ele-circ", "ele-circ-auditar", "ele-auditar", "ele-criterios", "ele-circ-criterios"] },
+{ nome: "Elétrica · Documentos", ids: ["ele-docs", "ele-circ-pranchas"] },
+{ nome: "Elétrica · Ver", ids: ["ele-fiacao"] },
 { nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
 ];
 var ABA_METALICA = [
@@ -183411,12 +183443,35 @@ var APARELHOS = [
 { id: "lava_roupas", rotulo: "Máquina de lavar roupas", fam: /^ra-coz-lavadora$/, potW: 1500, tensao: 127, altura: "baixa", cemig: "Tabela 8B" },
 { id: "geladeira_freezer", rotulo: "Geladeira (ponto dedicado — decisão RA)", fam: /^ra-coz-geladeira$/, potW: 300, tensao: 127, altura: "baixa", cemig: "Tabela 8A (duplex 300 W)" },
 { id: "ar_condicionado", rotulo: "Ar-condicionado", fam: /^ra-clim-(evap-[a-z]+|janela)$/, potW: "btu", tensao: 220, altura: "alta", cemig: "Tabela 9" },
+{ id: "ar_condensadora", rotulo: "Ar-condicionado (condensadora)", fam: /^ra-clim-condensadora(-multi)?$/, potW: null, tensao: 220, altura: "media", cemig: "placa do fabricante", forcaDireta: true, confirmar: "condensadora: confirme no manual do modelo se a alimentação vem da condensadora ou da evaporadora" },
 { id: "hidromassagem", rotulo: "Banheira de hidromassagem (motor)", fam: /^ra-banho-hidromassagem$/, potW: null, tensao: 220, altura: "baixa", forcaDireta: true, noVolume: true },
 { id: "bomba_dagua", rotulo: "Bomba d'água", fam: /^hid-bomba$/, potW: null, tensao: 220, altura: "baixa", forcaDireta: true }
 ];
+var V2 = null, V2src = null, V2n = -1;
+function condicaoV2(c, v, i) {
+var x = v[c.param] !== undefined ? v[c.param] : i[c.param];
+if (x === undefined) return c.op === "!=";
+if (c.op === "==") return typeof c.valor === "boolean" ? sim(x) === c.valor : x === c.valor;
+if (c.op === "!=") return typeof c.valor === "boolean" ? sim(x) !== c.valor : x !== c.valor;
+return c.op === ">=" ? num(x, 0) >= c.valor : false;
+}
+function aparelhosV2() {
+var D = global.EleAparelhosDados || (typeof require === "function" ? (function () { try { return require("./eleaparelhosdados.js"); } catch (e) { return null; } })() : null);
+if (!D || !D.aparelhos) return [];
+if (V2 && V2src === D.aparelhos && V2n === D.aparelhos.length) return V2;
+V2src = D.aparelhos; V2n = D.aparelhos.length;
+V2 = D.aparelhos.filter(function (t) { return t.v2; }).map(function (t) {
+var q = arr(t.casar && t.casar.quando);
+return { id: t.id, rotulo: t.rotulo, fam: new RegExp("^(" + arr(t.casar.fam).join("|") + ")$"), quando: q.length ? function (v, i) { return q.every(function (c) { return condicaoV2(c, v, i); }); } : null,
+potW: t.potW, tensao: t.tensaoV, altura: t.altura_m, cemig: t.potWFonte, forcaDireta: !!t.forcaDireta, noVolume: !!t.noVolume, semParede: !!t.semParede, confirmar: t.confirmar || undefined,
+lateral: t.posicao && t.posicao.lateral_m ? t.posicao.lateral_m : 0, sufixo: t.sufixo || undefined, v2: true,
+potNivel: t.potWNivel || undefined, grupoCemig: t.grupoCemig || undefined, aquecimento: t.aquecimento != null ? !!t.aquecimento : undefined };
+});
+return V2;
+}
 function aparelhosDe(famId, valores, inst) {
 var v = valores || {}, i = inst || {}, out = [];
-APARELHOS.forEach(function (a) { if (a.fam.test(String(famId || "")) && (!a.quando || a.quando(v, i))) out.push(a); });
+APARELHOS.concat(aparelhosV2()).forEach(function (a) { if (a.fam.test(String(famId || "")) && (!a.quando || a.quando(v, i))) out.push(a); });
 return out;
 }
 function chuveiroIndefinido(famId) { return /^ra-chuveiro$/.test(String(famId || "")); }
@@ -183439,6 +183494,7 @@ return { potW: potW, pAr: pAr, tom: tom, exclusivo: exclusivo };
 }
 function alturaDe(chave, C) {
 C = C || CRITERIOS;
+if (typeof chave === "number" && isFinite(chave)) return chave;
 return chave === "media" ? C.alturaMedia.valor : chave === "alta" ? C.alturaAlta.valor : chave === "chuveiro" ? C.alturaChuveiro.valor : C.alturaBaixa.valor;
 }
 var FIXO = /guarda-roupa|closet|^ra-coz-|armario|estante|^ra-banho-bancada|^ra-bancada|^ra-marm-bancada-|^hid-pia|^hid-tanque|^hid-lavatorio|^hid-cuba|^ra-lavatorio|^ra-banho-hidromassagem|^ra-lazer-churrasqueira|^hid-bacia|^ra-bacia/;
@@ -183467,6 +183523,7 @@ function RG() { return dep("EleRegras", "./eleregras.js"); }
 function EA() { return dep("EsqAuto", "./esqauto.js"); }
 function ER() { return dep("EsqRegras", "./esqregras.js"); }
 function VA() { return dep("BimVaoArr", "./bimvaoarr.js"); }
+function EM() { return dep("EleMobiliario", "./elemobiliario.js"); }
 function arr(a) { return Array.isArray(a) ? a : []; }
 function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
 function txt(v) { return v == null ? "" : String(v); }
@@ -183540,6 +183597,14 @@ var ax = d.lateral || 0, pc = d.posLocal === "cooktop" ? local(f, num(va.Comprim
 L.aparelhos.push({ chave: id + (d.sufixo ? "-" + d.sufixo : ""), id: id, def: d, f: f, va: va, p: pc, dir: frente(f), pav: pav, amb: ambDe(add(pc, frente(f), 0.3), pav) || ambDe(pc, pav), pts: m ? m.pts : null });
 });
 if (R.chuveiroIndefinido(fid)) L.chuveirosIndef.push({ id: id, p: [num(f.x, 0), num(f.z, 0)], pav: pav, amb: ambDe(add([num(f.x, 0), num(f.z, 0)], frente(f), 0.3), pav) });
+});
+L.condensadorasSemPonto = [];
+var evaps = L.aparelhos.filter(function (q) { return q.def.id === "ar_condicionado"; });
+L.aparelhos = L.aparelhos.filter(function (q) {
+if (q.def.id !== "ar_condensadora") return true;
+var par = evaps.filter(function (e) { return e.pav === q.pav && dist(e.p, q.p) <= 15; })[0];
+if (par) L.condensadorasSemPonto.push({ id: q.id, evaporadora: par.id });
+return !par;
 });
 var inst = (estado && estado.instalacoes) || {};
 L.pontasTubo = [];
@@ -183681,6 +183746,7 @@ return num(q.corrente, 10) >= (Q.tom.tipoId === "t20" ? 20 : 10) - 1e-9;
 function gerar(o) {
 o = o || {};
 var R = RG(), E = EA(), ESQ = ER(), est = o.estado, aval = o.avaliarFam, C = R.criterios(o.criterios), L = leitura(est, aval), dentro = E.dentro;
+C.mobiliario = !(o.criterios && (o.criterios.mobiliario === false || o.criterios.mobiliario === 0));
 var ops = [], itens = [], avisos = [], pend = [], porAmb = [], usados = {}, novos = [];
 arr(est && est.familias).forEach(function (f) { if (f) usados[String(f.id)] = 1; });
 arr(est && est.caixas).forEach(function (c) { if (c) usados[String(c.id)] = 1; });
@@ -183693,7 +183759,8 @@ if (!alvo.length) return { ok: false, motivo: "Selecione um ambiente (ou use \"t
 var porId = {}; L.ambientes.forEach(function (a) { porId[a.id] = a; });
 function lancar(kind, pref, a, cand, h, tipoId, extra) {
 var id = novoId(pref), base = a.base, pt = add(cand.P, cand.dir, 0.005), cx = add(cand.P, cand.dir, -0.025);
-if (kind !== "direta") ops.push({ op: "familia", id: id, famId: kind === "tomada" ? "ra-tomada" : "ra-interruptor", tipoId: tipoId, x: r4(pt[0]), y: r4(base), z: r4(pt[1]), rotY: cand.rotY, inst: { Altura_montagem: r4(h) } });
+var origem = extra && extra.origem ? extra.origem : null;
+if (kind !== "direta") ops.push({ op: "familia", id: id, famId: kind === "tomada" ? "ra-tomada" : "ra-interruptor", tipoId: tipoId, x: r4(pt[0]), y: r4(base), z: r4(pt[1]), rotY: cand.rotY, inst: origem ? { Altura_montagem: r4(h), Origem: origem } : { Altura_montagem: r4(h) } });
 ops.push({ op: "peca", id: kind === "direta" ? id : id + "-cx", peca: "caixa_4x2", sistema: "eletrica", material: "pvc", x: r4(cx[0]), y: r4(base + h), z: r4(cx[1]), rotY: cand.rotY, alturaPiso: r4(h) });
 novos.push({ id: id, P: cand.P, y: h, pav: a.pav, kind: kind, t: cand.t, parede: cand.w.id, dir: cand.dir });
 var it = { id: id, tipo: kind, ambiente: a.id, ambienteNome: a.nome, tipoId: tipoId || null, altura: r4(h), parede: cand.w.id, caixa: kind === "direta" ? id : id + "-cx", regras: [] };
@@ -183731,7 +183798,15 @@ var lista = cands.filter(function (c) { return dist(c.P, ap.p) <= dMax + 1e-6; }
 var esc = null, motivo = null;
 for (var i = 0; i < lista.length && !esc; i++) { var mv = livre(lista[i], h, op); if (!mv) esc = lista[i]; else if (!motivo) motivo = mv; }
 if (!esc) { pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não achei parede livre a ≤ " + f2(dMax) + " m de " + d.rotulo + " (" + ap.id + ")" + (motivo ? " — " + motivo : "") + ". Lance o ponto à mão." }); return; }
-var it = lancar(tom.ligacao === "direta" ? "direta" : "tomada", pref, a, esc, h, tom.tipoId, { aparelho: ap.id, uso: "TUE", aparelhoNome: d.rotulo });
+var velhos = {}; velhos[pref] = 1; velhos[pref + "-cx"] = 1;
+arr(est && est.familias).forEach(function (f) { if (f && ((f.inst && String(f.inst.Lig) === "apar-" + ap.id) || String(f.lig) === "apar-" + ap.id)) velhos[String(f.id)] = 1; });
+arr(est && est.instalacoes && est.instalacoes.pecas).forEach(function (k) { if (k && String(k.lig) === "apar-" + ap.id) velhos[String(k.id)] = 1; });
+Object.keys(velhos).forEach(function (vid) {
+var vp = L.pontos.concat(L.caixas).filter(function (q) { return q.id === vid; })[0];
+if (!vp || !usados[vid] || dist(vp.p, ap.p) <= dMax + 1e-6) return;
+ops.push({ op: "apagar", id: vid }); usados[vid] = 0;
+});
+var it = lancar(tom.ligacao === "direta" ? "direta" : "tomada", pref, a, esc, h, tom.tipoId, { aparelho: ap.id, uso: "TUE", aparelhoNome: d.rotulo, origem: "aparelho " + d.rotulo.toLowerCase() });
 usadosTue[it.id] = 1; item.lancado = it.id;
 it.regras.push((Q.exclusivo ? "circuito independente do aparelho (acima de 10 A — " + R.citar(C.correnteExclusivo) + ")" : "ponto dedicado ao aparelho (" + R.rotuloNivel("C") + "; até 10 A a 9.5.3.1 não exige circuito independente)") + (tom.corrente ? "; I ≈ " + f2(tom.corrente) + " A" : ""));
 it.regras.push(potW ? "potência típica " + potW + " W em " + d.tensao + " V (" + R.FONTES.CEMIG + ", " + d.cemig + (pAr ? ", " + pAr.btuTabela + " BTU/h" : "") + " — " + R.rotuloNivel("A") + "; a placa do aparelho manda)" : "potência: a da placa do aparelho (pendente)");
@@ -183756,7 +183831,7 @@ return { h: C.alturaBaixa.valor };
 var livres = [];
 cands.forEach(function (c) { var ah = alturaTug(c); if (!livre(c, ah.h)) livres.push({ c: c, h: ah.h, bancada: ah.bancada || null, lavatorio: !!ah.lavatorio }); });
 function tomarTug(x, uso, extra) {
-var it = lancar("tomada", "elet-" + a.id, a, x.c, x.h, "t10", { uso: "TUG" });
+var it = lancar("tomada", "elet-" + a.id, a, x.c, x.h, "t10", { uso: "TUG", origem: (extra && extra.origem) || (x.bancada ? "bancada da pia 9.5.2.2.1 b)" : x.lavatorio ? "lavatório 9.1.4.3" : "perímetro " + R.citar(regra).split(" — ")[0].replace("NBR 5410 ", "")) });
 escolhidos.push({ s: x.c.s, id: it.id }); res.tug.lancado++;
 it.regras.push("tomadas do ambiente (" + cls.grupoRotulo + "): mínimo " + nExig + " — " + R.citar(regra));
 it.regras.push(uso + "; " + (x.bancada || x.lavatorio ? (x.bancada ? "sobre a bancada, " : "na altura do lavatório, ") + f2(x.h) + " m (" + R.rotuloNivel(C.sobreBancada.nivel) + "; orçada como média — " + R.rotuloNivel("A") + ")" : rotAltura(x.h)));
@@ -183764,6 +183839,31 @@ Object.keys(extra || {}).forEach(function (k) { it[k] = extra[k]; });
 livres = livres.filter(function (y) { return !verificarNovo(y); });
 function verificarNovo(y) { return y.c.w.id === x.c.w.id && Math.abs(y.c.t - x.c.t) < C.entrePontos.valor - 1e-6; }
 return it;
+}
+res.mobiliario = []; var movelPos = [];
+if (C.mobiliario && EM()) {
+var pm = EM().pedidos({ estado: est, aval: aval, L: L, a: a, dentro: dentro });
+pm.avisos.forEach(function (t) { avisos.push(t); });
+pm.pendencias.forEach(function (q) { pend.push(q); });
+pm.pedidos.forEach(function (pd) {
+var ja = exist.concat(novos.filter(function (n0) { return n0.kind === "tomada"; }).map(function (n0) { return { id: n0.id, p: n0.P, h: n0.y }; }))
+.filter(function (p) { return p.p && Math.abs(num(p.h, -9) - pd.h) <= 0.25 && pd.ancoras.some(function (an) { return dist(p.p, an) <= pd.alcance + 1e-6; }); })[0];
+if (ja) { res.mobiliario.push({ movel: pd.movel, origem: pd.origem, existente: ja.id }); return; }
+var esc0 = null, mot0 = null;
+pd.ancoras.forEach(function (an) {
+if (esc0) return;
+cands.filter(function (c) { return dist(c.P, an) <= pd.alcance + 1e-6; }).sort(function (x, y) { return dist(x.P, an) - dist(y.P, an); }).forEach(function (c) {
+if (esc0) return;
+var mv = livre(c, pd.h); if (!mv) esc0 = c; else if (!mot0) mot0 = mv;
+});
+});
+if (!esc0) { pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não coube a tomada \"" + pd.origem + "\" a " + f2(pd.h) + " m" + (mot0 ? " — " + mot0 : " — sem parede perto") + ". Lance à mão." }); return; }
+var itM = tomarTug({ c: esc0, h: pd.h }, pd.texto, { origem: pd.origem.replace(/ \([^)]*\)$/, "") });
+itM.regras.push("pedida pelo móvel " + pd.movel + " (" + R.rotuloNivel(pd.nivel) + ")");
+res.mobiliario.push({ movel: pd.movel, origem: pd.origem, lancado: itM.id });
+if (!movelPos.some(function (q) { return dist(q, esc0.P) < 1.0; })) falta = Math.max(0, falta - 1);
+movelPos.push(esc0.P);
+});
 }
 if (g === "cozinha_servico" && a.tipo.id !== "area_servico") {
 var pias = L.pias.filter(function (pp) { return pp.pav === a.pav && dentro(pp.p, a.pts); });
@@ -183821,6 +183921,18 @@ if (!melhor || sc > melhor.sc + 1e-9) melhor = { x: x, sc: sc };
 var itU = tomarTug(melhor.x, "distribuída pelo perímetro, o mais longe possível das outras (\"tão uniformemente quanto possível\" — " + R.citar(C.tugPerimSalaDorm) + ")");
 fixosS.push(melhor.x.c.s); falta--; void itU;
 }
+if (g === "sala_dormitorio" && fixosS.length) for (var ig = 0; ig < 12; ig++) {
+var soG = fixosS.slice().sort(function (x, y) { return x - y; }), gapM = null;
+soG.forEach(function (s1, ix) {
+var s2 = ix + 1 < soG.length ? soG[ix + 1] : soG[0] + P, ab = 0;
+abertosA.forEach(function (o) { [0, P].forEach(function (off) { ab += Math.max(0, Math.min(s2, o.s1 + off) - Math.max(s1, o.s0 + off)); }); });
+var dG = s2 - s1 - ab; if (dG > C.tugPerimSalaDorm.valor + 1e-6 && (!gapM || dG > gapM.d)) gapM = { s1: s1, d: s2 - s1, mid: (s1 + (s2 - s1) / 2) % P };
+});
+if (!gapM) break;
+var cgM = livres.filter(function (x) { var d1 = (x.c.s - gapM.s1 + P) % P; return d1 > 0.5 && d1 < gapM.d - 0.5; }).sort(function (x, y) { return dCirc(x.c.s, gapM.mid) - dCirc(y.c.s, gapM.mid); })[0];
+if (!cgM) break;
+tomarTug(cgM, "completa o trecho do perímetro com mais de " + f2(C.tugPerimSalaDorm.valor) + " m sem tomada (\"tão uniformemente quanto possível\" — " + R.citar(C.tugPerimSalaDorm) + ")"); fixosS.push(cgM.c.s);
+}
 var ss = exist.map(function (p) { return perimetroDe(a.pts, p.p); }).concat(escolhidos.map(function (e) { return e.s; })).sort(function (x, y) { return x - y; });
 if (ss.length >= 2 && (g === "sala_dormitorio")) res.tug.maiorTrecho = r4(maiorTrecho(P, ss, abertosA));
 var luzEx = pontosDe(a, "luminaria"), nLuz = R.nLuminarias(a.area, a.alongado, a.comprimento, C), va = R.vaIluminacao(a.area, C);
@@ -183840,13 +183952,13 @@ if (mundo.length < nLuz) avisos.push("\"" + a.nome + "\": a grade de " + nLuz + 
 var tipoL = a.forro ? "pq18e" : "pq24s";
 mundo.forEach(function (p) {
 var id = novoId("elel-" + a.id);
-var opL = { op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe) } };
+var opL = { op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe), Origem: "iluminação do ambiente 9.5.2.1.1" } };
 ops.push(opL);
 var yCxL = a.base + a.pe, BIm = dep("BimInst", "./biminst.js");
 try { var avL = typeof aval === "function" ? aval(opL.famId, opL.tipoId, opL.inst) : null, cL = avL && BIm && BIm.conectoresDe ? BIm.conectoresDe(avL, opL).filter(function (q) { return q.sistema === "eletrica"; })[0] : null; if (a.forro && cL && isFinite(Number(cL.y)) && Math.abs(Number(cL.y) - yCxL) <= 0.10) yCxL = Number(cL.y); } catch (eC) {}
 ops.push({ op: "peca", id: id + "-cx", peca: "caixa_octogonal", sistema: "eletrica", material: "pvc", x: r4(p[0]), y: r4(yCxL), z: r4(p[1]), rotY: 0 });
 res.luz.lancado++;
-itens.push({ id: id, tipo: "luminaria", ambiente: a.id, ambienteNome: a.nome, tipoId: tipoL, altura: r4(a.pe), caixa: id + "-cx",
+itens.push({ id: id, tipo: "luminaria", ambiente: a.id, ambienteNome: a.nome, tipoId: tipoL, altura: r4(a.pe), caixa: id + "-cx", origem: "iluminação do ambiente 9.5.2.1.1",
 regras: ["ao menos " + C.luzMinimo.valor + " ponto de luz no teto, comandado por interruptor (" + R.citar(C.luzMinimo) + ")",
 "carga mínima de iluminação do ambiente: " + va + " VA para " + f2(a.area) + " m² (100 VA até 6 m² + 60 VA a cada 4 m² inteiros — " + R.citar(C.luzVaPasso) + "); é carga para o circuito, não a potência da lâmpada",
 nLuz + " ponto(s) " + (a.alongado ? "ao longo do corredor (1 a cada " + f2(C.luzCorredorPasso.valor) + " m)" : (a.area <= C.luzAreaUmPonto.valor ? "central" : "em grade (1 a cada " + f2(C.luzAreaPorPonto.valor) + " m²)")) + " — " + R.rotuloNivel("C"),
@@ -183868,7 +183980,7 @@ if (!livre(cI, hP)) escP = { c: cI, d: d0 };
 });
 });
 if (escP) {
-var itP = lancar("interruptor", "elei-" + a.id, a, escP.c, hP, "s1", { porta: null, passagem: true });
+var itP = lancar("interruptor", "elei-" + a.id, a, escP.c, hP, "s1", { porta: null, passagem: true, origem: "passagem do ambiente" });
 res.interruptores.lancado++;
 itP.regras.push("comanda o ponto de luz do ambiente (" + R.citar(C.luzMinimo) + ")");
 itP.regras.push("ambiente integrado, sem porta: junto à passagem, a " + f2(escP.d) + " m dela (" + R.rotuloNivel("C") + ")");
@@ -183906,7 +184018,7 @@ if (!livre(cI, hI)) viz = { c: cI, d: d0, lado: kv === 0 ? "vizinha" : "vizinha-
 if (viz) achou = { c: viz.c, lado: viz.lado, d: viz.d };
 }
 if (!achou) { if (kp === portas.length - 1 && !res.interruptores.lancado) pend.push({ ambiente: a.id, texto: "\"" + a.nome + "\": não coube o interruptor junto à porta " + dv.id + " (" + motivoI + "). Lance à mão." }); continue; }
-var itI = lancar("interruptor", "elei-" + a.id, a, achou.c, hI, passagem ? "p1" : "s1", { porta: dv.id });
+var itI = lancar("interruptor", "elei-" + a.id, a, achou.c, hI, passagem ? "p1" : "s1", { porta: dv.id, origem: "porta " + dv.id });
 res.interruptores.lancado++;
 itI.regras.push("comanda o ponto de luz do ambiente (" + R.citar(C.luzMinimo) + ")");
 if (/^vizinha/.test(achou.lado)) itI.regras.push("junto à porta " + dv.id + ", na parede ao lado" + (achou.lado === "vizinha" ? " (lado da maçaneta)" : " (lado da dobradiça)") + ", a " + f2(achou.d) + " m do batente: a parede da porta não tinha espaço (" + R.citar(C.intVizinha) + ")");
@@ -184156,7 +184268,8 @@ if (trancou("Lançar pontos elétricos")) return;
 var st = estado(), EL = global.EleAuto; if (!st || !EL) { status("O editor 3D não está aberto."); return; }
 var ids = null;
 if (modo === "sel") { ids = selecionados(st); if (!ids.length) { status("Selecione um ambiente (clique no ambiente na planta) ou use \"Em todos os ambientes\"."); return; } }
-var res = EL.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: lerCriterios() });
+var crit = lerCriterios(); if (global.EleAparelhos && global.EleAparelhos.cfg.mobiliario === false) crit.mobiliario = false;
+var res = EL.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: crit });
 if (!res.ok) { janela("Lançar pontos elétricos", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return; }
 var aplicado = res.lote ? aplicar(res.lote) : false, z = res.resumo;
 var amb = res.porAmbiente.map(function (r) {
@@ -184209,11 +184322,12 @@ return "<tr><td>" + selo(c.nivel) + "</td><td>" + esc(c.rotulo) + (c.item ? " <s
 }).join("");
 var ov = janela("Critérios dos pontos elétricos", legenda() + '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Critério</th><th>Valor</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
 '<p style="font-size:12px">Os números da NBR 5410 (N) e da SINAPI/CEMIG (A) não se editam aqui: mudam com a fonte. Os de critério RA (C) e sem fonte (X) valem neste aparelho.</p>' +
+(global.EleAparelhos ? '<p style="font-size:12px;margin:6px 0"><label><input type="checkbox" data-ele-pref="auto"' + (global.EleAparelhos.cfg.auto ? " checked" : "") + '> O aparelho (geladeira, chuveiro, split…) cria o próprio ponto ao ser colocado</label><br><label><input type="checkbox" data-ele-pref="mobiliario"' + (global.EleAparelhos.cfg.mobiliario ? " checked" : "") + '> Lançar também pelo mobiliário (cabeceira da cama, rack de TV, sofá, escrivaninha)</label></p>' : "") +
 '<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-ele-salvar>Salvar</button><button type="button" class="btn ghost sm" data-ele-padrao>Voltar ao padrão</button></div>');
 if (!ov) return;
 ov.addEventListener("click", function (e) {
 var t = e.target; if (!t || !t.hasAttribute) return;
-if (t.hasAttribute("data-ele-salvar")) { var o = {}; arr(ov.querySelectorAll("[data-ele-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-ele-crit")] = v; }); gravarCriterios(o); status("Critérios dos pontos elétricos gravados neste aparelho."); criteriosTela(); }
+if (t.hasAttribute("data-ele-salvar")) { var o = {}; arr(ov.querySelectorAll("[data-ele-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-ele-crit")] = v; }); gravarCriterios(o); arr(ov.querySelectorAll("[data-ele-pref]")).forEach(function (i) { if (global.EleAparelhos) global.EleAparelhos.definir(i.getAttribute("data-ele-pref"), i.checked); }); status("Critérios dos pontos elétricos gravados neste aparelho."); criteriosTela(); }
 if (t.hasAttribute("data-ele-padrao")) { gravarCriterios({}); status("Critérios dos pontos elétricos: padrão."); criteriosTela(); }
 });
 }
@@ -184239,6 +184353,1649 @@ lancar: lancar, auditar: auditar, criterios: criteriosTela, liberada: liberada
 };
 global.EleAutoUI = EleAutoUI;
 if (typeof module !== "undefined" && module.exports) module.exports = EleAutoUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eleaparelhosdados.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = {
+"_comentario": "Elétrica v2 L3 (06/11/2026). Aparelhos que PEDEM O PRÓPRIO PONTO ao serem colocados. Cada número leva a fonte e o nível (A = fonte primária lida: CEMIG ND-5.1 rev. MAR/2026 e SINAPI MG 06/2026; N = NBR 5410:2004 item lido; C = decisão/critério RA; X = sem fonte, conferir). Gerado em js/eleaparelhosdados.js por tools/gerar-eleaparelhos.js. L2b (07/11/2026): as linhas com \"v2\": true são as das famílias de js/elefamilias2.js (e duas do hidro) e alimentam TAMBÉM o js/eleregras.js (EleRegras.aparelhosDe lê esta tabela: uma fonte só). Casar SEMPRE por id de família, por mep.peca ou por nome exato (casar.nomes) — nunca por semelhança.",
+"grupoCemig": {
+"b1": "chuveiro, torneira e aquecedor de passagem (ND-5.1 item 8.2.3, Tabela 13; kVA = kW)",
+"b3": "fogão, forno e cooktop (Tabela 12)",
+"b4": "lavar e secar roupa, lava-louças (Tabela 13)",
+"b5": "demais aparelhos (Tabela 13)",
+"c": "ar-condicionado",
+"d": "motores",
+"nivel": "A para o grupo da ND-5.1 lido; o agrupamento de cada aparelho é decisão RA sobre a ND-5.1"
+},
+"niveis": {
+"A": "fonte primária lida",
+"N": "NBR 5410:2004, item lido",
+"C": "decisão/critério RA",
+"X": "sem fonte — conferir"
+},
+"fontes": {
+"CEMIG": "CEMIG ND-5.1 rev. MAR/2026, Tabelas 8A/8B/9",
+"SINAPI": "SINAPI MG 06/2026: TOMADA BAIXA 0,30 m (91998-92001), MÉDIA 1,30 m (91994-91997), ALTA 2,00 m (91990-91993)",
+"NBR": "ABNT NBR 5410:2004, item lido (cópia não licenciada: só o valor)"
+},
+"limites": {
+"correnteT10": {
+"valor": 10,
+"nivel": "X",
+"fonte": "decisão RA da pesquisa (NBR 14136 não lida): até 10 A, tomada 10 A"
+},
+"correnteT20": {
+"valor": 20,
+"nivel": "X",
+"fonte": "decisão RA da pesquisa (NBR 14136 não lida): até 20 A, tomada 20 A; acima, ligação direta"
+},
+"correnteExclusivo": {
+"valor": 10,
+"nivel": "N",
+"fonte": "NBR 5410 9.5.3.1: acima de 10 A, circuito independente"
+},
+"distMax": {
+"valor": 1.5,
+"nivel": "N",
+"fonte": "NBR 5410 4.2.1.2.3 d): TUE a no máximo 1,5 m do aparelho"
+}
+},
+"aparelhos": [
+{
+"id": "geladeira",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Geladeira",
+"casar": {
+"fam": [
+"ra-coz-geladeira"
+]
+},
+"potW": 300,
+"potWFonte": "CEMIG Tabela 8A (geladeira duplex 300 W)",
+"potWNivel": "A",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.25,
+"nivel": "C",
+"fonte": "decisão RA: atrás do aparelho, deslocada para o lado (a tomada não fica espremida entre o fundo e a parede)"
+},
+"circuito": "TUE-GELADEIRA",
+"dr": false,
+"notaDr": "DR só se o circuito atender área molhada (NBR 5410 5.1.3.2.2 — não lida)"
+},
+{
+"id": "forno_embutir",
+"grupoCemig": "b3",
+"aquecimento": true,
+"rotulo": "Forno elétrico de embutir",
+"casar": {
+"fam": [
+"ra-coz-torre-quente"
+]
+},
+"potW": 4500,
+"potWFonte": "CEMIG Tabela 8A",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": -0.15,
+"nivel": "C",
+"fonte": "decisão RA: atrás da torre, do lado do forno"
+},
+"circuito": "TUE-FORNO",
+"dr": false
+},
+{
+"id": "micro_ondas",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Micro-ondas",
+"casar": {
+"fam": [
+"ra-coz-torre-quente"
+],
+"quando": [
+{
+"param": "Com_micro",
+"op": "!=",
+"valor": false
+}
+]
+},
+"potW": 750,
+"potWFonte": "CEMIG Tabela 8A",
+"potWNivel": "A",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 2,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada alta 2,00 m (faixa usual 1,90-2,20 m no nicho da torre)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.15,
+"nivel": "C",
+"fonte": "decisão RA: atrás do nicho do micro-ondas"
+},
+"circuito": "TUE-MICROONDAS",
+"dr": false,
+"sufixo": "mo"
+},
+{
+"id": "cooktop",
+"grupoCemig": "b3",
+"aquecimento": true,
+"rotulo": "Cooktop elétrico (4 bocas)",
+"casar": {
+"fam": [
+"ra-coz-inferior"
+],
+"quando": [
+{
+"param": "Com_cooktop",
+"op": "==",
+"valor": true
+},
+{
+"param": "Comprimento",
+"op": ">=",
+"valor": 1.8
+}
+]
+},
+"potW": 6000,
+"potWFonte": "CEMIG Tabela 8A (1.500 W por queimador x 4)",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m (sob a bancada)",
+"posicao": {
+"ref": "sob_bancada",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: sob a bancada, junto do cooktop"
+},
+"circuito": "TUE-COOKTOP",
+"dr": false,
+"confirmar": "cooktop: confirme se é elétrico (indução) e a potência da placa — se for a gás, apague este ponto"
+},
+{
+"id": "cooktop_ilha",
+"grupoCemig": "b3",
+"aquecimento": true,
+"rotulo": "Cooktop elétrico da ilha",
+"casar": {
+"fam": [
+"ra-coz-ilha"
+],
+"quando": [
+{
+"param": "Com_cooktop",
+"op": "==",
+"valor": true
+},
+{
+"param": "Comprimento",
+"op": ">=",
+"valor": 1.8
+}
+]
+},
+"potW": 6000,
+"potWFonte": "CEMIG Tabela 8A (1.500 W por queimador x 4)",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "piso",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "a ilha está no meio do ambiente: o ponto vem pelo piso (lançar à mão)"
+},
+"circuito": "TUE-COOKTOP-ILHA",
+"dr": false,
+"semParede": true
+},
+{
+"id": "lava_roupas",
+"grupoCemig": "b4",
+"aquecimento": false,
+"rotulo": "Máquina de lavar roupas",
+"casar": {
+"fam": [
+"ra-coz-lavadora"
+]
+},
+"potW": 1500,
+"potWFonte": "CEMIG Tabela 8B",
+"potWNivel": "A",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m (faixa usual 0,30-0,60 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.3,
+"nivel": "C",
+"fonte": "decisão RA: atrás, ao lado da mangueira de entrada"
+},
+"circuito": "TUE-LAVADORA",
+"dr": false
+},
+{
+"id": "chuveiro_eletrico",
+"grupoCemig": "b1",
+"aquecimento": true,
+"rotulo": "Chuveiro elétrico",
+"casar": {
+"fam": [
+"hid-chuveiro"
+],
+"quando": [
+{
+"param": "Eletrico",
+"op": "==",
+"valor": true
+}
+]
+},
+"potW": 6000,
+"potWFonte": "CEMIG Tabela 8A",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "LD",
+"forcaDireta": true,
+"altura_m": 2.2,
+"alturaNivel": "C",
+"alturaFonte": "decisão RA: logo acima do ponto d'água (faixa 2,00-2,25 m); ligação direta, sem tomada (NBR 5410 9.5.2.3)",
+"posicao": {
+"ref": "fora_box",
+"lateral_m": 0,
+"nivel": "N",
+"fonte": "NBR 5410 9.1.4.2.4: no volume só a caixa do próprio aparelho; as demais a 0,60 m do box"
+},
+"circuito": "TUE-CHUVEIRO",
+"dr": true,
+"drFonte": "NBR 5410 9.1.4.3.2 c): DR <= 30 mA no banheiro",
+"drNivel": "N",
+"noVolume": true
+},
+{
+"id": "ar_evaporadora",
+"grupoCemig": "c",
+"aquecimento": false,
+"rotulo": "Ar-condicionado (evaporadora)",
+"casar": {
+"fam": [
+"ra-clim-evap-hiwall",
+"ra-clim-evap-pisoteto",
+"ra-clim-evap-cassete",
+"ra-clim-evap-duto",
+"ra-clim-janela"
+]
+},
+"potW": "btu",
+"potWFonte": "CEMIG Tabela 9 (pela capacidade em BTU/h; sem capacidade, a placa)",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 2,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada alta 2,00 m (faixa usual do split 2,00-2,20 m)",
+"posicao": {
+"ref": "lateral",
+"lateral_m": 0.6,
+"nivel": "C",
+"fonte": "decisão RA: alto, ao lado da evaporadora"
+},
+"circuito": "TUE-AC",
+"dr": false
+},
+{
+"id": "ar_condensadora",
+"grupoCemig": "c",
+"aquecimento": false,
+"rotulo": "Ar-condicionado (condensadora)",
+"casar": {
+"fam": [
+"ra-clim-condensadora",
+"ra-clim-condensadora-multi"
+]
+},
+"potW": null,
+"potWFonte": "a placa do fabricante; a condensadora é alimentada conforme o esquema do modelo (própria ou pela evaporadora) e NÃO soma à potência da evaporadora",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "LD",
+"forcaDireta": true,
+"altura_m": 1.3,
+"alturaNivel": "C",
+"alturaFonte": "decisão RA: ponto de seccionamento/manutenção a 1,30 m (média), ligação direta",
+"posicao": {
+"ref": "lateral",
+"lateral_m": 0.6,
+"nivel": "C",
+"fonte": "decisão RA: ao lado da condensadora"
+},
+"circuito": "TUE-AC-COND",
+"dr": false,
+"confirmar": "condensadora: confirme no manual do modelo se a alimentação vem da condensadora ou da evaporadora"
+},
+{
+"id": "ventilador_teto",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Ventilador de teto",
+"casar": {
+"fam": [
+"ra-ilum-ventilador"
+]
+},
+"potW": null,
+"potWFonte": "a placa do aparelho",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TETO",
+"forcaDireta": true,
+"altura_m": null,
+"alturaNivel": "C",
+"alturaFonte": "ponto no teto (caixa octogonal) com interruptor/controle: lançado pela Ligação da iluminação (js/eletilum.js)",
+"posicao": {
+"ref": "teto",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "o ventilador é peça de luminária: ponto de luz + interruptor pelo motor da iluminação"
+},
+"circuito": "ILUM",
+"dr": false,
+"delegado": "eletilum"
+},
+{
+"id": "hidromassagem",
+"grupoCemig": "d",
+"aquecimento": false,
+"rotulo": "Banheira de hidromassagem (motor)",
+"casar": {
+"fam": [
+"ra-banho-hidromassagem"
+]
+},
+"potW": null,
+"potWFonte": "a placa do aparelho",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "LD",
+"forcaDireta": true,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA"
+},
+"circuito": "TUE-HIDRO",
+"dr": true,
+"drFonte": "NBR 5410 9.1.4.3.2 c)",
+"drNivel": "N",
+"noVolume": true
+},
+{
+"id": "bomba_dagua",
+"grupoCemig": "d",
+"aquecimento": false,
+"rotulo": "Bomba d'água",
+"casar": {
+"fam": [
+"hid-bomba"
+]
+},
+"potW": null,
+"potWFonte": "a placa do aparelho",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "LD",
+"forcaDireta": true,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA"
+},
+"circuito": "TUE-BOMBA",
+"dr": false
+},
+{
+"id": "micro_ondas_bancada_20",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Micro-ondas de bancada 20 L",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-microondas"
+],
+"quando": [
+{
+"param": "Capacidade_L",
+"op": "==",
+"valor": 20
+}
+]
+},
+"potW": 1200,
+"potWFonte": "catálogo L1 eq_microondas_20l: valor usual (a ND-5.1 Tabela 8A dá 750 W médio, defasado)",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 1.1,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 1,10 m (usual, na altura da bancada; a SINAPI só tem 0,30 / 1,30 / 2,00 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.16,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-MICROONDAS",
+"dr": false
+},
+{
+"id": "micro_ondas_bancada_30",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Micro-ondas de bancada 30 L",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-microondas"
+],
+"quando": [
+{
+"param": "Capacidade_L",
+"op": "==",
+"valor": 30
+}
+]
+},
+"potW": 1500,
+"potWFonte": "catálogo L1 eq_microondas_30l: valor usual",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 1.1,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 1,10 m (usual, na altura da bancada; a SINAPI só tem 0,30 / 1,30 / 2,00 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.2,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-MICROONDAS",
+"dr": false
+},
+{
+"id": "forno_embutir_50",
+"grupoCemig": "b3",
+"aquecimento": true,
+"rotulo": "Forno elétrico de embutir 50 L",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-forno-embutir"
+]
+},
+"potW": 4500,
+"potWFonte": "CEMIG ND-5.1 Tabela 8A (forno elétrico 4.500 W) = catálogo L1 eq_forno_embutir_50l",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.6,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 0,60 m (usual no nicho do forno; a SINAPI tem 0,30 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.2,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-FORNO",
+"dr": false
+},
+{
+"id": "cooktop_inducao",
+"grupoCemig": "b3",
+"aquecimento": true,
+"rotulo": "Cooktop de indução 4 bocas (de embutir)",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-cooktop-inducao"
+]
+},
+"potW": 7000,
+"potWFonte": "catálogo L1 eq_cooktop_inducao_4b: valor usual de indução (a ND-5.1 dá 1.500 W por boca de fogão elétrico comum)",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.6,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 0,60 m sob o tampo",
+"posicao": {
+"ref": "sob_bancada",
+"lateral_m": 0.2,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-COOKTOP-INDUCAO",
+"dr": false,
+"confirmar": "cooktop de indução: confirme a potência da placa (7.000 W é o usual do catálogo L1); um circuito exclusivo 220 V"
+},
+{
+"id": "coifa_60",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Coifa / depurador 60 cm",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-coifa"
+],
+"quando": [
+{
+"param": "Largura_cm",
+"op": "==",
+"valor": 60
+}
+]
+},
+"potW": 200,
+"potWFonte": "catálogo L1 eq_coifa_60: valor usual",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 2,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada alta 2,00 m (= catálogo L1)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-COIFA",
+"dr": false
+},
+{
+"id": "coifa_90",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Coifa / depurador 90 cm",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-coifa"
+],
+"quando": [
+{
+"param": "Largura_cm",
+"op": "==",
+"valor": 90
+}
+]
+},
+"potW": 250,
+"potWFonte": "catálogo L1 eq_coifa_90: valor usual",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 2,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada alta 2,00 m (= catálogo L1)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-COIFA",
+"dr": false
+},
+{
+"id": "lava_loucas",
+"grupoCemig": "b4",
+"aquecimento": false,
+"rotulo": "Lava-louças (8 e 14 serviços)",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-lava-loucas"
+]
+},
+"potW": 1500,
+"potWFonte": "CEMIG ND-5.1 Tabelas 8A/8B (1.500 W) = catálogo L1 eq_lava_loucas_8/14",
+"potWNivel": "A",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.6,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 0,60 m (faixa usual 0,30-0,60 m; a SINAPI tem 0,30 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.22,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-LAVALOUCAS",
+"dr": false
+},
+{
+"id": "secadora",
+"grupoCemig": "b4",
+"aquecimento": false,
+"rotulo": "Secadora de roupas",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-secadora"
+]
+},
+"potW": 3500,
+"potWFonte": "CEMIG ND-5.1 Tabela 8B (secadora 3.500 W) = catálogo L1 eq_secadora",
+"potWNivel": "A",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.2,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-SECADORA",
+"dr": false
+},
+{
+"id": "lava_seca",
+"grupoCemig": "b4",
+"aquecimento": false,
+"rotulo": "Lava e seca",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-lava-seca"
+]
+},
+"potW": 2500,
+"potWFonte": "catálogo L1 eq_lava_e_seca: valor usual",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.2,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-LAVASECA",
+"dr": false
+},
+{
+"id": "freezer",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "Freezer (horizontal e vertical)",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-freezer"
+]
+},
+"potW": 400,
+"potWFonte": "CEMIG ND-5.1 Tabela 8A (freezer 400 W) = catálogo L1 eq_freezer_horizontal (o vertical reaproveita)",
+"potWNivel": "A",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.3,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-FREEZER",
+"dr": false
+},
+{
+"id": "torneira_eletrica",
+"grupoCemig": "b1",
+"aquecimento": true,
+"rotulo": "Torneira elétrica",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-torneira-eletrica"
+]
+},
+"potW": 5500,
+"potWFonte": "catálogo L1 eq_torneira_eletrica: o insumo SINAPI cita 5.500 W (conferir); a ND-5.1 Tabela 8B dá 2.000 W em 127 V",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 1.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada média 1,30 m (= catálogo L1)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-TORNEIRA",
+"dr": false,
+"confirmar": "torneira elétrica: confira a potência e a tensão da placa (5.500 W / 220 V é o do insumo SINAPI; a ND-5.1 dá 2.000 W em 127 V)"
+},
+{
+"id": "tv_parede",
+"grupoCemig": "b5",
+"aquecimento": false,
+"rotulo": "TV de parede 50\"",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-tv"
+]
+},
+"potW": 150,
+"potWFonte": "catálogo L1 eq_tv_50: valor usual",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 1.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada média 1,30 m (= catálogo L1); o ponto de rede/antena é do projeto de dados",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.44,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-TV",
+"dr": false
+},
+{
+"id": "motor_portao",
+"grupoCemig": "d",
+"aquecimento": false,
+"rotulo": "Motor de portão deslizante",
+"v2": true,
+"casar": {
+"fam": [
+"ele-eq-motor-portao"
+]
+},
+"potW": 370,
+"potWFonte": "catálogo L1 eq_motor_portao: valor usual (1/2 CV)",
+"potWNivel": "X",
+"tensaoV": 127,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": false,
+"altura_m": 1,
+"alturaNivel": "X",
+"alturaFonte": "catálogo L1: ponto a 1,00 m (usual; a SINAPI tem 0,30 / 1,30 m)",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0.05,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-PORTAO",
+"dr": false,
+"confirmar": "motor de portão: confirme a potência e a tensão da placa (370 W / 127 V é o usual do catálogo L1) e o grau de proteção do ponto (área externa)"
+},
+{
+"id": "aquecedor_eletrico_passagem",
+"grupoCemig": "b1",
+"aquecimento": true,
+"rotulo": "Aquecedor elétrico de passagem",
+"v2": true,
+"casar": {
+"fam": [
+"hid-aquecedor-eletrico-passagem"
+]
+},
+"potW": null,
+"potWFonte": "a placa do aparelho (a ficha do hidro traz Potencia_W por tipo; a tabela não duplica)",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": true,
+"altura_m": 1.3,
+"alturaNivel": "C",
+"alturaFonte": "decisão RA: ponto de força a 1,30 m (média), ligação direta, como a condensadora",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-AQUECEDOR",
+"dr": false,
+"confirmar": "aquecedor elétrico de passagem: informe a potência e a tensão da placa (circuito exclusivo; ligação direta)"
+},
+{
+"id": "bomba_piscina",
+"grupoCemig": "d",
+"aquecimento": false,
+"rotulo": "Motobomba da piscina",
+"v2": true,
+"casar": {
+"fam": [
+"hid-pisc-bomba"
+]
+},
+"potW": null,
+"potWFonte": "a placa do aparelho",
+"potWNivel": "X",
+"tensaoV": 220,
+"fp": null,
+"tipoPonto": "TUE",
+"forcaDireta": true,
+"altura_m": 0.3,
+"alturaNivel": "A",
+"alturaFonte": "SINAPI tomada baixa 0,30 m",
+"posicao": {
+"ref": "atras",
+"lateral_m": 0,
+"nivel": "C",
+"fonte": "decisão RA: onde o cabo do aparelho sai (conector el da família), deslocado do centro"
+},
+"circuito": "TUE-BOMBA-PISCINA",
+"dr": false,
+"confirmar": "bomba da piscina: informe a potência e a tensão da placa e confira o DR e o afastamento da borda na NBR 5410 (seção de piscinas — não lida)"
+}
+],
+"pendentes": []
+};
+global.EleAparelhosDados = D;
+if (typeof module !== "undefined" && module.exports) module.exports = D;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elepadraodados.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = {
+"_comentario": "Elétrica v2 L3 (06/11/2026). PADRÃO RA POR AMBIENTE: o que cada móvel pede e o que cada ambiente leva. As regras com motor 'mobiliario' são executadas por js/elemobiliario.js (lidas de js/elepadraodados.js, gerado por tools/gerar-eleaparelhos.js); as demais já são executadas por js/eleauto.js/eleregras.js (perímetro, bancada, banheiro, interruptor) ou por js/eleaparelhos.js (aparelhos) — estão aqui para o documento docs/eletrica/PADRAO-PROJETO-ELETRICO-RA.md e para a tela. Nível: A = fonte primária lida; N = NBR 5410:2004 item lido; C = decisão/critério RA; X = sem fonte, conferir.",
+"mobiliario": {
+"cama": {
+"quando": {
+"fam": [
+"ra-mob-cama"
+]
+},
+"ambientes": [
+"dormitorio",
+"suite",
+"generico"
+],
+"casalMinimo_m": {
+"valor": 1.2,
+"nivel": "C",
+"fonte": "decisão RA: colchão de 1,20 m ou mais (casal 1,38; solteiro 0,88) leva uma tomada de cada lado"
+},
+"recuoLateral_m": {
+"valor": 0.25,
+"nivel": "C",
+"fonte": "decisão RA: centro do criado-mudo, 0,25 m além da lateral da cama (criado-mudo de 0,50 m)"
+},
+"altura_m": {
+"valor": 0.65,
+"nivel": "C",
+"fonte": "decisão RA da pesquisa: 0,60-0,75 m do piso, acima do criado-mudo (que tem 0,45-0,50 m)"
+},
+"alcance_m": {
+"valor": 0.8,
+"nivel": "C",
+"fonte": "decisão RA: parede da cabeceira a até 0,80 m do ponto desejado"
+},
+"origem": "cabeceira da cama"
+},
+"rack": {
+"quando": {
+"fam": [
+"ra-mob-rack-tv"
+]
+},
+"ambientes": [
+"sala_estar",
+"sala_jantar",
+"dormitorio",
+"suite",
+"escritorio",
+"generico"
+],
+"pontos": [
+{
+"lateral_m": -0.3,
+"altura_m": 1.1,
+"origem": "rack TV (TV)"
+},
+{
+"lateral_m": 0.3,
+"altura_m": 0.3,
+"origem": "rack TV (equipamentos)"
+}
+],
+"nivel": "C",
+"fonte": "decisão RA da pesquisa: TV + 2 TUG atrás do painel, 0,30 m ou 1,10 m; o ponto de TV/dados fica pendente (não há família de ponto de dados)",
+"alcance_m": {
+"valor": 0.8,
+"nivel": "C",
+"fonte": "decisão RA"
+}
+},
+"sofa": {
+"quando": {
+"fam": [
+"ra-mob-sofa-reto",
+"ra-mob-sofa-l"
+]
+},
+"ambientes": [
+"sala_estar",
+"generico"
+],
+"recuoLateral_m": {
+"valor": 0.3,
+"nivel": "C",
+"fonte": "decisão RA: 0,30 m além da lateral do sofá, na parede de encosto"
+},
+"altura_m": {
+"valor": 0.3,
+"nivel": "A",
+"fonte": "SINAPI tomada baixa 0,30 m"
+},
+"alcance_m": {
+"valor": 0.6,
+"nivel": "C",
+"fonte": "decisão RA: só se o sofá encosta na parede (a até 0,60 m)"
+},
+"origem": "ao lado do sofá"
+},
+"escrivaninha": {
+"quando": {
+"fam": [
+"ra-mob-escrivaninha"
+]
+},
+"ambientes": [
+"dormitorio",
+"suite",
+"escritorio",
+"sala_estar",
+"generico"
+],
+"altura_m": {
+"valor": 1.1,
+"nivel": "C",
+"fonte": "decisão RA: acima do tampo (0,75 m), alcançável sentado"
+},
+"alcance_m": {
+"valor": 0.8,
+"nivel": "C",
+"fonte": "decisão RA"
+},
+"origem": "escrivaninha"
+}
+},
+"ambientes": [
+{
+"id": "dormitorio",
+"rotulo": "Dormitório / suíte",
+"motor": "mobiliario+perimetro",
+"pontos": [
+{
+"o": "TUG na cabeceira (1 de cada lado se casal; 1 do lado livre se solteiro)",
+"altura": "0,65 m",
+"regra": "cama no modelo",
+"fonte": "decisão RA (0,60-0,75 m)",
+"nivel": "C"
+},
+{
+"o": "Interruptor paralelo na cabeceira",
+"altura": "1,00 m",
+"regra": "Ligação da iluminação (js/eletilum.js) — não duplicar",
+"fonte": "NBR 9050:2020 4.6.9",
+"nivel": "A"
+},
+{
+"o": "Split: TUE alta ao lado da evaporadora",
+"altura": "2,00 m",
+"regra": "aparelho pede o ponto (js/eleaparelhos.js)",
+"fonte": "CEMIG ND-5.1 T9 + SINAPI alta",
+"nivel": "A"
+},
+{
+"o": "TUG da TV atrás do painel/rack",
+"altura": "1,10 m e 0,30 m",
+"regra": "rack no modelo",
+"fonte": "decisão RA",
+"nivel": "C"
+},
+{
+"o": "TUG da escrivaninha",
+"altura": "1,10 m",
+"regra": "escrivaninha no modelo",
+"fonte": "decisão RA",
+"nivel": "C"
+},
+{
+"o": "TUG pelo perímetro: 1 a cada 5 m (fração conta)",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 d)",
+"fonte": "NBR 5410",
+"nivel": "N"
+}
+]
+},
+{
+"id": "sala",
+"rotulo": "Sala",
+"motor": "mobiliario+perimetro",
+"pontos": [
+{
+"o": "Rack: 2 TUG atrás do painel (TV e equipamentos); ponto de TV/dados pendente",
+"altura": "1,10 m e 0,30 m",
+"regra": "rack no modelo",
+"fonte": "decisão RA",
+"nivel": "C"
+},
+{
+"o": "TUG ao lado do sofá (parede de encosto)",
+"altura": "0,30 m",
+"regra": "sofá encostado na parede",
+"fonte": "decisão RA",
+"nivel": "C"
+},
+{
+"o": "TUG pelo perímetro: 1 a cada 5 m",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 d)",
+"fonte": "NBR 5410",
+"nivel": "N"
+}
+]
+},
+{
+"id": "cozinha",
+"rotulo": "Cozinha / copa",
+"motor": "perimetro+bancada+aparelho",
+"pontos": [
+{
+"o": "TUG: 1 a cada 3,5 m de perímetro",
+"altura": "0,30 m (sobre bancada: ~1,10-1,30 m)",
+"regra": "NBR 5410 9.5.2.2.1 b)",
+"fonte": "NBR 5410",
+"nivel": "N"
+},
+{
+"o": "Pelo menos 2 TUG acima da bancada da pia, a >= 0,60 m do ponto de água",
+"altura": "tampo + 0,20 m (1,10-1,30 m)",
+"regra": "NBR 5410 9.5.2.2.1 b) + decisão RA (0,60 m)",
+"fonte": "NBR 5410 / decisão RA",
+"nivel": "N"
+},
+{
+"o": "Geladeira: TUE 10 A atrás/lado",
+"altura": "0,30 m",
+"regra": "aparelho pede o ponto",
+"fonte": "CEMIG T8A + SINAPI baixa",
+"nivel": "A"
+},
+{
+"o": "Micro-ondas (torre): TUE 10 A",
+"altura": "2,00 m",
+"regra": "aparelho pede o ponto",
+"fonte": "CEMIG T8A + SINAPI alta",
+"nivel": "A"
+},
+{
+"o": "Forno e cooktop elétricos: ligação direta sob a bancada",
+"altura": "0,30 m",
+"regra": "I > 20 A: sem tomada (decisão RA)",
+"fonte": "CEMIG T8A",
+"nivel": "A"
+},
+{
+"o": "Coifa: TUE 10 A (sem família no modelo: pendente)",
+"altura": "~2,10 m",
+"regra": "pendente",
+"fonte": "decisão RA",
+"nivel": "C"
+}
+]
+},
+{
+"id": "banheiro",
+"rotulo": "Banheiro / lavabo",
+"motor": "perimetro+aparelho",
+"pontos": [
+{
+"o": "1 TUG junto ao lavatório, fora do volume do box (0,60 m além do volume 1), DR <= 30 mA",
+"altura": "1,10 m",
+"regra": "NBR 5410 9.5.2.2.1 a) + 9.1.4.3",
+"fonte": "NBR 5410",
+"nivel": "N"
+},
+{
+"o": "Chuveiro elétrico: ligação direta (caixa 4x2), circuito exclusivo, DR",
+"altura": "2,20 m",
+"regra": "NBR 5410 9.5.2.3; 9.5.3.1",
+"fonte": "NBR 5410 / decisão RA",
+"nivel": "N"
+}
+]
+},
+{
+"id": "servico",
+"rotulo": "Área de serviço",
+"motor": "perimetro+aparelho",
+"pontos": [
+{
+"o": "TUG: 1 a cada 3,5 m de perímetro",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 b)",
+"fonte": "NBR 5410",
+"nivel": "N"
+},
+{
+"o": "Lavadora: TUE 20 A atrás/lado (11,8 A)",
+"altura": "0,30 m",
+"regra": "aparelho pede o ponto",
+"fonte": "CEMIG T8B + SINAPI baixa",
+"nivel": "A"
+},
+{
+"o": "Secadora e tanque: sem família no modelo (pendente)",
+"altura": "0,30 m",
+"regra": "pendente",
+"fonte": "decisão RA",
+"nivel": "C"
+}
+]
+},
+{
+"id": "varanda",
+"rotulo": "Varanda / área externa",
+"motor": "perimetro",
+"pontos": [
+{
+"o": "1 TUG (mínimo) com DR",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 c); DR em área externa/molhada",
+"fonte": "NBR 5410",
+"nivel": "N"
+}
+]
+},
+{
+"id": "garagem",
+"rotulo": "Garagem",
+"motor": "perimetro",
+"pontos": [
+{
+"o": "1 TUG (demais cômodos); ponto do portão (sem família: pendente)",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 e)",
+"fonte": "NBR 5410",
+"nivel": "N"
+}
+]
+},
+{
+"id": "corredor",
+"rotulo": "Corredor / hall",
+"motor": "perimetro+interruptor",
+"pontos": [
+{
+"o": "1 TUG",
+"altura": "0,30 m",
+"regra": "NBR 5410 9.5.2.2.1 e)",
+"fonte": "NBR 5410",
+"nivel": "N"
+},
+{
+"o": "Interruptor paralelo (three-way) nas pontas",
+"altura": "1,00 m",
+"regra": "2 acessos",
+"fonte": "NBR 9050:2020 4.6.9",
+"nivel": "A"
+}
+]
+}
+],
+"posicionamento": [
+{
+"regra": "Interruptor: junto à porta, lado da maçaneta, a 0,10 m do batente (vão), 1,00 m do piso; paralelo se o ambiente tem 2 acessos",
+"fonte": "NBR 9050:2020 4.6.9 (altura); distância do batente: eng360 (X)",
+"nivel": "X"
+},
+{
+"regra": "Tomada nunca atrás da folha aberta da porta, nunca no vão de porta/janela, nunca atrás de móvel alto (guarda-roupa, geladeira — exceto a do próprio aparelho)",
+"fonte": "decisão RA da pesquisa",
+"nivel": "C"
+},
+{
+"regra": "Tomada e interruptor a >= 0,60 m do box (volume 2)",
+"fonte": "NBR 5410 9.1.4.3.1 + 9.1.2.1",
+"nivel": "N"
+},
+{
+"regra": "TUE a no máximo 1,50 m do aparelho",
+"fonte": "NBR 5410 4.2.1.2.3 d)",
+"nivel": "N"
+},
+{
+"regra": "Aparelho com corrente nominal > 10 A: circuito independente",
+"fonte": "NBR 5410 9.5.3.1",
+"nivel": "N"
+},
+{
+"regra": "Tomada de 10 A até 10 A; 20 A até 20 A; acima, ligação direta (sem tomada)",
+"fonte": "decisão RA (NBR 14136 não lida)",
+"nivel": "X"
+}
+]
+};
+global.ElePadraoDados = D;
+if (typeof module !== "undefined" && module.exports) module.exports = D;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elemobiliario.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function PAD() { return dep("ElePadraoDados", "./elepadraodados.js") || { mobiliario: {} }; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
+function dist(a, b) { var x = a[0] - b[0], z = a[1] - b[1]; return Math.sqrt(x * x + z * z); }
+function distSeg(p, a, b) { var ex = b[0] - a[0], ez = b[1] - a[1], l2 = ex * ex + ez * ez, k = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * ex + (p[1] - a[1]) * ez) / l2)) : 0; return dist(p, [a[0] + ex * k, a[1] + ez * k]); }
+function distContorno(p, P) { var m = Infinity; for (var i = 0; i < P.length; i++) m = Math.min(m, distSeg(p, P[i], P[(i + 1) % P.length])); return m; }
+function valor(r, k) { return r && r[k] && typeof r[k] === "object" ? num(r[k].valor, null) : null; }
+function quadro(f) {
+var r = num(f.rotY, 0), c = Math.cos(r), s = Math.sin(r), O = [num(f.x, 0), num(f.z, 0)];
+return { O: O, lx: [c, -s], lz: [s, c], pt: function (xl, zl) { return [O[0] + c * xl + s * zl, O[1] - s * xl + c * zl]; } };
+}
+function encosto(Q, cx, P) {
+var xm = (cx.x0 + cx.x1) / 2, melhor = null;
+[cx.z0, cx.z1].forEach(function (zl, k) {
+var p = Q.pt(xm, zl), d = distContorno(p, P), sg = k === 0 ? -1 : 1;
+if (!melhor || d < melhor.d) melhor = { zl: zl, d: d, dir: [Q.lz[0] * sg, Q.lz[1] * sg] };
+});
+return melhor;
+}
+function naParede(p, e) { return [p[0] + e.dir[0] * e.d, p[1] + e.dir[1] * e.d]; }
+function pedidos(ctx) {
+var out = { pedidos: [], pendencias: [], avisos: [] }, PD = PAD().mobiliario || {}, a = ctx.a, L = ctx.L, dentro = ctx.dentro, aval = ctx.aval;
+var fams = arr(ctx.estado && ctx.estado.familias);
+function doTipo(rg) { var t = a.tipo && a.tipo.id; return arr(rg.ambientes).indexOf(t) >= 0 || (!a.cls || !a.cls.casou ? arr(rg.ambientes).indexOf("generico") >= 0 : false); }
+function achar(rg) {
+return fams.filter(function (f) { return f && f.famId && arr(rg.quando && rg.quando.fam).indexOf(String(f.famId)) >= 0 && f.host == null && dentro([num(f.x, 0), num(f.z, 0)], a.pts) && L.pavDe(num(f.y, 0)) === a.pav; });
+}
+function caixaDe(f) {
+var av = null; try { av = typeof aval === "function" ? aval(f.famId, f.tipoId, f.inst || {}) : null; } catch (e) { av = null; }
+return av && av.caixa && isFinite(av.caixa.x0) && isFinite(av.caixa.z0) ? { cx: av.caixa, v: av.valores || {} } : null;
+}
+function novo(regra, f, origem, ancoras, h, alcance, nivel, fonte) {
+out.pedidos.push({ regra: regra, movel: String(f.id), origem: origem + " (" + f.id + ")", ancoras: ancoras, h: h, alcance: alcance, nivel: nivel, texto: origem + ": " + fonte });
+}
+var RC = PD.cama;
+if (RC && doTipo(RC)) achar(RC).forEach(function (f) {
+var c = caixaDe(f); if (!c) return;
+var Q = quadro(f), cx = c.cx, e = encosto(Q, cx, a.pts), xm = (cx.x0 + cx.x1) / 2, hw = (cx.x1 - cx.x0) / 2;
+var larg = num(c.v.Largura_colchao, hw * 2), casal = larg >= valor(RC, "casalMinimo_m") - 1e-9, rec = valor(RC, "recuoLateral_m"), h = valor(RC, "altura_m"), al = valor(RC, "alcance_m");
+if (e.d > al + 0.2) { out.avisos.push("\"" + a.nome + "\": a cama " + f.id + " não encosta numa parede (cabeceira a " + e.d.toFixed(2).replace(".", ",") + " m): as tomadas da cabeceira não foram lançadas."); return; }
+function lado(s) {
+var base = Q.pt(xm + s * (hw + rec), e.zl), cr = fams.filter(function (m) { return m && m.famId === "ra-mob-criado" && dist([num(m.x, 0), num(m.z, 0)], base) <= 0.5; })[0];
+var P0 = cr ? [num(cr.x, 0), num(cr.z, 0)] : base;
+return { s: s, P: naParede(P0, { dir: e.dir, d: distContorno(P0, a.pts) }), borda: distContorno(Q.pt(xm + s * hw, (cx.z0 + cx.z1) / 2), a.pts), criado: !!cr };
+}
+var la = lado(-1), lb = lado(1), fonte = (valor(RC, "altura_m") != null ? "altura " + h.toFixed(2).replace(".", ",") + " m (" + RC.altura_m.fonte + ")" : "");
+if (casal) {
+novo("cama", f, RC.origem + " (lado 1)", [la.P], h, al, RC.altura_m.nivel, "casal: uma tomada de cada lado — " + fonte);
+novo("cama", f, RC.origem + " (lado 2)", [lb.P], h, al, RC.altura_m.nivel, "casal: uma tomada de cada lado — " + fonte);
+} else {
+var livre = la.borda >= lb.borda ? [la, lb] : [lb, la];
+novo("cama", f, RC.origem, [livre[0].P, livre[1].P], h, al, RC.altura_m.nivel, "solteiro: uma tomada, do lado livre — " + fonte);
+}
+});
+var RR = PD.rack;
+if (RR && doTipo(RR)) achar(RR).forEach(function (f) {
+var c = caixaDe(f); if (!c) return;
+var Q = quadro(f), cx = c.cx, e = encosto(Q, cx, a.pts), xm = (cx.x0 + cx.x1) / 2, al = valor(RR, "alcance_m");
+if (e.d > al + 0.2) { out.avisos.push("\"" + a.nome + "\": o rack " + f.id + " não encosta numa parede: as tomadas do rack não foram lançadas."); return; }
+arr(RR.pontos).forEach(function (pt) {
+novo("rack", f, pt.origem, [naParede(Q.pt(xm + pt.lateral_m, e.zl), e)], pt.altura_m, al, RR.nivel, "altura " + pt.altura_m.toFixed(2).replace(".", ",") + " m atrás do painel/rack (" + RR.fonte + ")");
+});
+out.pendencias.push({ ambiente: a.id, texto: "\"" + a.nome + "\": ponto de TV/dados do rack " + f.id + " — o modelo não tem família de ponto de dados: lance à mão." });
+});
+var RS = PD.sofa;
+if (RS && doTipo(RS)) achar(RS).forEach(function (f) {
+var c = caixaDe(f); if (!c) return;
+var Q = quadro(f), cx = c.cx, e = encosto(Q, cx, a.pts), al = valor(RS, "alcance_m"), rec = valor(RS, "recuoLateral_m");
+if (e.d > al) return;
+var A = [naParede(Q.pt(cx.x1 + rec, e.zl), e), naParede(Q.pt(cx.x0 - rec, e.zl), e)];
+novo("sofa", f, RS.origem, A, valor(RS, "altura_m"), 0.6, RS.altura_m.nivel, "altura " + valor(RS, "altura_m").toFixed(2).replace(".", ",") + " m, " + RS.recuoLateral_m.fonte);
+});
+var RE = PD.escrivaninha;
+if (RE && doTipo(RE)) achar(RE).forEach(function (f) {
+var c = caixaDe(f); if (!c) return;
+var Q = quadro(f), cx = c.cx, e = encosto(Q, cx, a.pts), xm = (cx.x0 + cx.x1) / 2, al = valor(RE, "alcance_m");
+if (e.d > al + 0.2) { out.avisos.push("\"" + a.nome + "\": a escrivaninha " + f.id + " não encosta numa parede: a tomada dela não foi lançada."); return; }
+novo("escrivaninha", f, RE.origem, [naParede(Q.pt(xm, e.zl), e), naParede(Q.pt(cx.x1 + 0.3, e.zl), e), naParede(Q.pt(cx.x0 - 0.3, e.zl), e)], valor(RE, "altura_m"), al, RE.altura_m.nivel, "altura " + valor(RE, "altura_m").toFixed(2).replace(".", ",") + " m (" + RE.altura_m.fonte + ")");
+});
+return out;
+}
+var EleMobiliario = { pedidos: pedidos, quadro: quadro, encosto: encosto };
+global.EleMobiliario = EleMobiliario;
+if (typeof module !== "undefined" && module.exports) module.exports = EleMobiliario;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eleaparelhos.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function DADOS() { return dep("EleAparelhosDados", "./eleaparelhosdados.js") || { aparelhos: [], limites: {}, niveis: {} }; }
+function RG() { return dep("EleRegras", "./eleregras.js"); }
+function EAU() { return dep("EleAuto", "./eleauto.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+function dist(a, b) { var x = a[0] - b[0], z = a[1] - b[1]; return Math.sqrt(x * x + z * z); }
+function sim(v) { return v === true || v === "true" || v === 1 || v === "1" || v === "sim"; }
+function copia(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+var CHAVE = "orcapro:eleaparelhos:cfg";
+var cfg = { auto: true, mobiliario: true };
+function carregar() { try { var c = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); if (c && typeof c === "object") { if (typeof c.auto === "boolean") cfg.auto = c.auto; if (typeof c.mobiliario === "boolean") cfg.mobiliario = c.mobiliario; } } catch (e) {} }
+function salvar() { try { global.localStorage.setItem(CHAVE, JSON.stringify(cfg)); } catch (e) {} }
+function ligado() { return !!cfg.auto; }
+function definir(k, v) { if (k === "auto" || k === "mobiliario") { cfg[k] = !!v; salvar(); } return cfg[k]; }
+function condicao(c, v) {
+var x = v[c.param];
+if (x === undefined) { return c.op === "!="; }
+if (c.op === "==") return typeof c.valor === "boolean" ? sim(x) === c.valor : x === c.valor;
+if (c.op === "!=") return typeof c.valor === "boolean" ? sim(x) !== c.valor : x !== c.valor;
+if (c.op === ">=") return num(x, 0) >= c.valor;
+return false;
+}
+function casa(ap, famId, peca, nome, v, semCondicao) {
+var c = ap.casar || {}, ok = false;
+if (arr(c.fam).indexOf(String(famId || "")) >= 0) ok = true;
+else if (c.peca && peca && c.peca === peca) ok = true;
+else if (arr(c.nomes).length && nome && c.nomes.indexOf(String(nome).toLowerCase()) >= 0) ok = true;
+if (!ok) return false;
+return semCondicao || arr(c.quando).every(function (q) { return condicao(q, v); });
+}
+function requisitoDe(ap, btu, lim) {
+var R = RG(), potW = ap.potW, pAr = null;
+if (potW === "btu") { pAr = R && R.potenciaAr ? R.potenciaAr(btu) : null; potW = pAr ? pAr.W : null; }
+var V = ap.tensaoV, fp = ap.fp, I = potW > 0 && V > 0 ? potW / (V * (fp > 0 ? fp : 1)) : null;
+var lig = ap.forcaDireta ? "direta" : (I == null ? "tomada" : I <= lim.correnteT10.valor + 1e-9 ? "tomada" : I <= lim.correnteT20.valor + 1e-9 ? "tomada" : "direta");
+var tipoTom = lig === "direta" ? null : (I == null ? "t20" : I <= lim.correnteT10.valor + 1e-9 ? "t10" : "t20");
+var tipoPonto = ap.tipoPonto === "TETO" ? "TETO" : (lig === "direta" ? "LD" : "TUE");
+var excl = I == null || lig === "direta" || I > lim.correnteExclusivo.valor + 1e-9;
+return {
+id: ap.id, chave: null, sufixo: ap.sufixo || "", rotulo: ap.rotulo, potW: potW, pAr: pAr, tensaoV: V, fp: fp, ligacao: lig, tipoPonto: tipoPonto, tipoTomadaId: tipoTom,
+correnteTomada_A: tipoTom === "t10" ? 10 : tipoTom === "t20" ? 20 : null, corrente_A: I == null ? null : Math.round(I * 100) / 100, exclusivo: excl,
+dr: !!ap.dr, altura_m: ap.altura_m, posicao: copia(ap.posicao), circuito: ap.circuito, confirmar: ap.confirmar || null, noVolume: !!ap.noVolume, semParede: !!ap.semParede, delegado: ap.delegado || null,
+fontes: { potencia: { texto: ap.potWFonte, nivel: ap.potWNivel }, altura: { texto: ap.alturaFonte, nivel: ap.alturaNivel }, posicao: ap.posicao ? { texto: ap.posicao.fonte, nivel: ap.posicao.nivel } : null,
+limites: { t10: lim.correnteT10, t20: lim.correnteT20, exclusivo: lim.correnteExclusivo, distMax: lim.distMax } }
+};
+}
+function paraFamilia(d, avaliarFam, opcoes) {
+d = d || {};
+var D = DADOS(), famId = d.famId || d.id, peca = d.mep && d.mep.peca ? d.mep.peca : null, v = {}, i;
+arr(d.parametros).forEach(function (p) { if (p && p.nome) v[p.nome] = p.valor; });
+if (d.famId && typeof avaliarFam === "function") { try { var av = avaliarFam(d.famId, d.tipoId, d.inst || {}); if (av && av.valores) Object.keys(av.valores).forEach(function (k) { v[k] = av.valores[k]; }); if (av && av.mep && av.mep.peca) peca = av.mep.peca; } catch (e) {} }
+Object.keys(d.inst || {}).forEach(function (k) { v[k] = d.inst[k]; });
+var btu = num(v.Capacidade_BTUh, 0), out = [];
+for (i = 0; i < D.aparelhos.length; i++) {
+var ap = D.aparelhos[i];
+if (!casa(ap, famId, peca, d.nome, v, opcoes && opcoes.semCondicao)) continue;
+var nCasa = D.aparelhos.filter(function (r) { return casa(r, famId, peca, d.nome, v, opcoes && opcoes.semCondicao); }).length, prim = !ap.sufixo;
+var w0 = nCasa === 1 ? num(v.Potencia_W, 0) : (prim ? num(d.inst && d.inst.Potencia_W, 0) : 0), t0 = nCasa === 1 ? num(v.Tensao_V, 0) : (prim ? num(d.inst && d.inst.Tensao_V, 0) : 0), ap2 = ap, placa = false;
+if ((w0 > 0 && w0 !== ap.potW) || (t0 > 0 && t0 !== ap.tensaoV)) { ap2 = copia(ap); if (w0 > 0 && w0 !== ap.potW) ap2.potW = w0; if (t0 > 0 && t0 !== ap.tensaoV) ap2.tensaoV = t0; placa = true; }
+var q = requisitoDe(ap2, btu, D.limites); q.placa = placa; q.quando = copia(ap.casar.quando || []); q.chave = (d.id && d.famId ? String(d.id) : "") + (ap.sufixo ? "-" + ap.sufixo : "");
+out.push(q);
+}
+return out;
+}
+function rotuloTipo(q) { return q.tipoPonto === "LD" ? "LD (ligação direta)" : q.tipoPonto === "TETO" ? "Ponto no teto" : "TUE " + q.correnteTomada_A + " A"; }
+function aumentar(lista) {
+return arr(lista).map(function (def) {
+if (!def || !def.id) return def;
+var reqs = paraFamilia({ id: def.id, mep: def.mep, nome: def.nome, parametros: def.parametros }, null, { semCondicao: true }).filter(function (q) { return !q.delegado; });
+if (!reqs.length) return def;
+var f = copia(def), q = reqs[0], tem = {};
+f.parametros = arr(f.parametros); f.conectores = arr(f.conectores);
+var linha = DADOS().aparelhos.filter(function (r) { return r.id === q.id; })[0];
+if (linha) arr(f.tipos).forEach(function (tp) {
+var vv = tp && (tp.valores || tp.v), w = num(vv && vv.Potencia_W, 0), tv = num(vv && vv.Tensao_V, 0);
+if (!vv || !(w > 0 && tv > 0) || !/^TUE/i.test(String(vv.Tipo_ponto || ""))) return;
+var l2 = copia(linha); l2.potW = w; l2.tensaoV = tv;
+if (requisitoDe(l2, 0, DADOS().limites).tipoPonto === "LD") vv.Tipo_ponto = "LD";
+});
+f.parametros.forEach(function (p) { tem[p.nome] = 1; });
+function par(nome, tipoDado, valor, descricao) { if (!tem[nome]) f.parametros.push({ nome: nome, tipoDado: tipoDado, escopo: "instancia", valor: valor, grupo: "Elétrica", descricao: descricao }); }
+par("Potencia_W", "numero", q.potW || 0, "Potência típica (W) — " + (q.fontes.potencia.texto || "") + " [nível " + q.fontes.potencia.nivel + "]; a placa do aparelho manda");
+par("Tensao_V", "numero", q.tensaoV, "Tensão (V)");
+par("Tipo_ponto", "texto", rotuloTipo(q), "Ponto que o aparelho pede (TUE 10/20 A ou ligação direta)");
+if (!f.conectores.some(function (c) { return c && c.sistema === "eletrica"; })) {
+var y = q.posicao && (q.posicao.ref === "atras" || q.posicao.ref === "sob_bancada") && q.altura_m != null ? String(q.altura_m) : "0";
+var vis = arr(q.quando).filter(function (c) { return c.op === "==" && c.valor === true && tem[c.param]; }).map(function (c) { return c.param; })[0];
+f.conectores.push({ id: "el", visivel: vis || undefined, nome: "Alimentação elétrica (" + rotuloTipo(q) + ")", sistema: "eletrica", dn: 25, x: String(q.posicao ? q.posicao.lateral_m || 0 : 0), y: y, z: "0", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo",
+aConferir: "ponto de ligação elétrica do aparelho (eleaparelhos.js, 06/11/2026): posição de projeto, a conferir no manual do modelo" });
+}
+return f;
+});
+}
+function ponteiros(L, id) { return L.pontos.filter(function (p) { return p.id === id; }).concat(L.caixas.filter(function (c) { return c.id === id; })); }
+function pontoPara(inst, ctx) {
+ctx = ctx || {};
+var R = RG(), EA = EAU(), out = { ok: true, ops: [], itens: [], avisos: [], pendencias: [] };
+if (!R || !EA || !ctx.estado) return { ok: false, motivo: "sem o estado do modelo", ops: [], itens: [], avisos: [], pendencias: [] };
+var C = R.criterios(ctx.criterios), D = DADOS(), L = EA.leitura(ctx.estado, ctx.avaliarFam), dMax = num(D.limites.distMax && D.limites.distMax.valor, C.distTue.valor);
+var instId = String(inst.id);
+var f = arr(ctx.estado.familias).filter(function (x) { return x && String(x.id) === instId; })[0] || inst;
+var reqs = paraFamilia({ id: instId, famId: f.famId, tipoId: f.tipoId, inst: f.inst || inst.inst }, ctx.avaliarFam);
+var igual = arr(ctx.estado.familias).filter(function (x) { return x && x.famId === f.famId; }).length;
+if (!reqs.length) return { ok: true, ops: [], itens: [], avisos: [], pendencias: [], semRegra: true };
+reqs.forEach(function (q) {
+if (q.delegado) { out.avisos.push(q.rotulo + ": o ponto vem da Ligação da iluminação (" + q.delegado + "): ponto de luz no teto + interruptor."); return; }
+var ap = L.aparelhos.filter(function (a) { return a.chave === q.chave; })[0];
+if (!ap) { out.pendencias.push({ aparelho: instId, texto: q.rotulo + " (" + instId + "): fora de um ambiente delimitado — lance o ambiente e religue, ou lance o ponto à mão." }); return; }
+var a = L.ambientes.filter(function (x) { return x.id === ap.amb; })[0];
+if (!a) { out.pendencias.push({ aparelho: instId, texto: q.rotulo + " (" + instId + "): fora de um ambiente delimitado — lance o ambiente e religue." }); return; }
+if (q.semParede) { out.pendencias.push({ aparelho: instId, texto: q.rotulo + " (" + instId + ") fica no meio do ambiente — o ponto vem pelo piso: lance à mão." }); return; }
+var pref = "elee-" + q.chave, h = q.altura_m, Q = { tom: { ligacao: q.ligacao, tipoId: q.tipoTomadaId } };
+var vivo = ponteiros(L, pref), perto = vivo.filter(function (x) { return dist(x.p, ap.p) <= dMax + 1e-6; })[0];
+if (perto) { out.itens.push({ aparelho: instId, existente: perto.id, acao: "ja-existe" }); return; }
+var manual = L.pontos.concat(L.caixas).filter(function (x) { return !x.auto && x.pav === ap.pav && dist(x.p, ap.p) <= dMax + 1e-6 && EA.serveTue(Q, x); })[0];
+if (manual) { out.itens.push({ aparelho: instId, existente: manual.id, acao: "ja-existe" }); return; }
+var cands = EA.candidatos(L, ctx.estado, ctx.avaliarFam, a, C).map(function (c) { c.pav = a.pav; return c; })
+.filter(function (c) { return dist(c.P, ap.p) <= dMax + 1e-6; }).sort(function (x, y) { return dist(x.P, ap.p) - dist(y.P, ap.p); });
+var esc = null, motivo = null;
+for (var i = 0; i < cands.length && !esc; i++) { var mv = EA.verificar(L, C, cands[i], h, { exceto: instId, semBox: q.noVolume }); if (!mv) esc = cands[i]; else if (!motivo) motivo = mv; }
+if (!esc) { out.pendencias.push({ aparelho: instId, texto: "\"" + a.nome + "\": não achei parede livre a ≤ " + f2(dMax) + " m de " + q.rotulo + " (" + instId + ")" + (motivo ? " — " + motivo : "") + ". Lance o ponto à mão." }); return; }
+vivo.forEach(function (x) { out.ops.push({ op: "apagar", id: x.id }); });
+if (ponteiros(L, pref + "-cx").length) out.ops.push({ op: "apagar", id: pref + "-cx" });
+var P = esc.P, dir = esc.dir, pt = [P[0] + dir[0] * 0.005, P[1] + dir[1] * 0.005], cx = [P[0] - dir[0] * 0.025, P[1] - dir[1] * 0.025], base = a.base;
+var origem = "aparelho " + q.rotulo.toLowerCase(), circ = igual > 1 ? q.circuito + "-" + instId : q.circuito;
+if (q.ligacao !== "direta") out.ops.push({ op: "familia", id: pref, famId: "ra-tomada", tipoId: q.tipoTomadaId, x: r4(pt[0]), y: r4(base), z: r4(pt[1]), rotY: esc.rotY, inst: { Altura_montagem: r4(h), Circuito: circ, Origem: origem, Lig: "apar-" + instId }, lig: "apar-" + instId });
+out.ops.push({ op: "peca", id: q.ligacao === "direta" ? pref : pref + "-cx", peca: "caixa_4x2", sistema: "eletrica", material: "pvc", x: r4(cx[0]), y: r4(base + h), z: r4(cx[1]), rotY: esc.rotY, alturaPiso: r4(h), lig: "apar-" + instId, circuito: circ, origem: origem, comentarios: "Origem: " + origem + "; Circuito: " + circ });
+var aviso = "ponto criado: " + (q.ligacao === "direta" ? "ligação direta (caixa 4×2)" : "TUE " + q.correnteTomada_A + " A") + " a " + f2(h) + " m";
+out.itens.push({ aparelho: instId, id: pref, acao: vivo.length ? "movido" : "criado", tipo: q.tipoPonto, tomada: q.tipoTomadaId, altura: r4(h), circuito: circ, origem: origem, exclusivo: q.exclusivo, dr: q.dr, potW: q.potW, tensaoV: q.tensaoV, corrente_A: q.corrente_A, aviso: aviso, ambiente: a.id });
+if (q.exclusivo) out.itens[out.itens.length - 1].exclusivoMotivo = q.corrente_A != null && q.ligacao !== "direta" ? "I = " + f2(q.corrente_A) + " A > " + D.limites.correnteExclusivo.valor + " A (NBR 5410 9.5.3.1)" : "ligação direta / potência pela placa";
+if (q.confirmar) out.pendencias.push({ aparelho: instId, texto: q.confirmar + " (" + pref + ")." });
+if (!(q.potW > 0)) out.pendencias.push({ aparelho: instId, texto: q.rotulo + " (" + instId + ") sem potência conhecida — informe a da placa." });
+});
+return out;
+}
+function orfaos(estado, avaliarFam) {
+var EA = EAU(), L = EA.leitura(estado, avaliarFam), D = DADOS(), sufixos = D.aparelhos.map(function (a) { return a.sufixo; }).filter(Boolean);
+var existe = {}; arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) existe[String(f.id)] = 1; });
+var vistos = {}, out = [];
+L.pontos.concat(L.caixas).forEach(function (x) {
+var m = /^elee-(.+?)(-cx)?$/.exec(String(x.id)); if (!m) return;
+var chave = m[1], base = chave;
+sufixos.forEach(function (s) { if (chave.slice(-s.length - 1) === "-" + s) base = chave.slice(0, -s.length - 1); });
+if (existe[chave] || existe[base] || vistos[m[1]]) return;
+vistos[m[1]] = 1;
+var ids = ["elee-" + chave, "elee-" + chave + "-cx"].filter(function (i) { return ponteiros(L, i).length; });
+out.push({ aparelho: base, id: "elee-" + chave, ids: ids, ops: ids.map(function (i) { return { op: "apagar", id: i }; }), texto: "O aparelho " + base + " não existe mais: apagar o ponto " + ids.join(" e ") + "?" });
+});
+return out;
+}
+var ultimo = null;
+function aoColocar(opFam, ops, famAval) {
+ultimo = null;
+if (!cfg.auto || !opFam || !opFam.famId) return null;
+var reqs = paraFamilia({ id: opFam.id, famId: opFam.famId, tipoId: opFam.tipoId, inst: opFam.inst }, famAval).filter(function (q) { return !q.delegado; });
+if (!reqs.length) return null;
+var BE = dep("BimEdit", "./bimedit.js"); if (!BE) return null;
+var estado = BE.aplicar(copia(arr(ops)).concat([copia(opFam)]));
+var r = pontoPara(opFam, { estado: estado, avaliarFam: famAval });
+ultimo = r;
+if (!r.ok || !r.ops.length) return null;
+var msg = r.itens.filter(function (i) { return i.aviso; }).map(function (i) { return i.aviso; }).join("; ");
+return { op: "lote", id: "apar-" + Date.now().toString(36), origem: "aparelho", pedido: "Aparelho com o ponto elétrico (" + msg + ")", ops: [opFam].concat(r.ops) };
+}
+function aoMover(op, opsAtuais, famAval) {
+if (!cfg.auto || !op) return null;
+var lista = op.op === "lote" ? arr(op.ops) : [op], movidos = [];
+lista.forEach(function (o) { if (o && o.op === "mover" && o.id != null && movidos.indexOf(String(o.id)) < 0) movidos.push(String(o.id)); });
+if (!movidos.length) return null;
+var BE = dep("BimEdit", "./bimedit.js"); if (!BE) return null;
+var base = copia(arr(opsAtuais)), estado;
+try { estado = BE.aplicar(base.concat([copia(op)])); } catch (e) { return null; }
+var extra = [];
+movidos.forEach(function (id) {
+var f = arr(estado.familias).filter(function (x) { return x && String(x.id) === id; })[0];
+if (!f || !paraFamilia({ id: id, famId: f.famId, tipoId: f.tipoId, inst: f.inst }, famAval).filter(function (q) { return !q.delegado; }).length) return;
+var r = pontoPara({ id: id, inst: f.inst }, { estado: estado, avaliarFam: famAval });
+if (r && r.ok) r.ops.forEach(function (o) { extra.push(o); });
+});
+if (!extra.length) return null;
+var novo = op.op === "lote" ? copia(op) : { op: "lote", id: "aparmv-" + Date.now().toString(36), origem: "aparelho", pedido: "Aparelho movido: o ponto elétrico vai junto", ops: [copia(op)] };
+novo.ops = novo.ops.concat(extra);
+return BE.sanear([novo])[0] || null;
+}
+function aoApagar(opsAtuais, opsApagar, famAval) {
+var BE = dep("BimEdit", "./bimedit.js"); if (!BE || !arr(opsApagar).length) return null;
+var antes = {}, ativos = copia(arr(opsAtuais)), est1, est2;
+try {
+est1 = BE.aplicar(ativos); orfaos(est1, famAval).forEach(function (o) { antes[o.id] = 1; });
+est2 = BE.aplicar(copia(arr(opsAtuais)).concat(copia(opsApagar)));
+} catch (e) { return null; }
+var novos = orfaos(est2, famAval).filter(function (o) { return !antes[o.id]; });
+if (!novos.length) return null;
+var itens = novos.map(function (o) {
+var tom = arr(est1.familias).filter(function (f) { return f && o.ids.indexOf(String(f.id)) >= 0 && f.famId === "ra-tomada"; })[0], m = tom && /^t(\d+)$/.exec(String(tom.tipoId || ""));
+return { aparelho: o.aparelho, ids: o.ids, descricao: m ? "TUE " + m[1] + " A" : (tom ? "tomada" : "ligação direta") };
+});
+var ops = []; novos.forEach(function (o) { o.ops.forEach(function (x) { ops.push(x); }); });
+return { ops: ops, itens: itens, texto: "Apagar também o ponto (" + itens.map(function (i) { return i.descricao; }).join(", ") + ")?" };
+}
+function rotuloColocar() {
+var r = ultimo; if (!r) return "";
+var m = r.itens.filter(function (i) { return i.aviso; }).map(function (i) { return i.aviso; });
+if (m.length) return " — " + m.join("; ") + " (Ctrl+Z desfaz tudo)";
+return r.pendencias.length ? " — sem ponto: " + r.pendencias[0].texto : "";
+}
+carregar();
+var EleAparelhos = { paraFamilia: paraFamilia, aumentar: aumentar, pontoPara: pontoPara, orfaos: orfaos, aoApagar: aoApagar, aoMover: aoMover, aoColocar: aoColocar, rotuloColocar: rotuloColocar, ligado: ligado, definir: definir, cfg: cfg, dados: DADOS };
+global.EleAparelhos = EleAparelhos;
+if (typeof module !== "undefined" && module.exports) module.exports = EleAparelhos;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/incdados.js ==== */
@@ -187350,6 +189107,2366 @@ global.EleTabelas = EleTabelas;
 if (typeof module !== "undefined" && module.exports) module.exports = EleTabelas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elecatalogodados.js ==== */
+try {
+(function (global) {
+"use strict";
+var DADOS = {"versao":1,"grupos":["caixas","placas","eletrodutos","cabos","dispositivos","quadros","luminarias","equipamentos"],"niveis":["primaria-lida","secundaria-lida","sem-fonte-conferir","decisao-RA"],"itens":[{"id":"cx_4x2_pvc","grupo":"caixas","nome":"Caixa de luz 4x2 PVC amarela (embutir)","ref":"Tigre Tigreflex 4x2","cotas":{"largura_mm":70,"altura_mm":108.5,"profundidade_mm":47.5,"dist_furos_orelha_mm":83.5,"parede_mm":2,"entrada_max_pol":1},"aparencia":{"material":"PVC antichama amarelo","cor_hex":"#F2C500"},"cotas_nivel":{"parede_mm":"sem-fonte-conferir","entrada_max_pol":"primaria-lida"},"fonte":{"pagina":"3 (tabela e desenho 'Caixa de Luz Tigreflex 4x2')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=70 largura do corpo, B=108,5 altura com orelhas, C=47,5 profundidade, F=83,5 dist�ncia entre furos das orelhas (leitura do desenho).","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"},"obs":"Entradas para eletroduto de 1/2, 3/4 e 1 pol (texto da ficha, p.2); posi��o/� exato dos recortes e espessura de parede n�o constam da ficha."},{"id":"cx_4x4_pvc","grupo":"caixas","nome":"Caixa de luz 4x4 PVC amarela (embutir)","ref":"Tigre Tigreflex 4x4","cotas":{"largura_mm":112,"altura_mm":112,"profundidade_mm":47.5,"dist_furos_orelha_mm":83.5,"dist_furos_orelha_horizontal_mm":45,"parede_mm":2},"aparencia":{"material":"PVC antichama amarelo","cor_hex":"#F2C500"},"cotas_nivel":{"parede_mm":"sem-fonte-conferir"},"fonte":{"pagina":"3","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=B=112, C=47,5, F=83,5, F1=45 (leitura do desenho).","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"}},{"id":"cx_4x4_pvc_wavin","grupo":"caixas","nome":"Caixa de luz 4x4 PVC (Amanco Wavin, eletroduto r�gido)","ref":"Amanco Wavin c�d. 11557","cotas":{"largura_mm":112,"profundidade_mm":47.5,"dist_furos_orelha_mm":84,"dist_furos_orelha_horizontal_mm":45,"entradas_20mm":10,"entradas_25mm":6,"altura_mm":108.3},"aparencia":{"material":"PVC antichama","cor_hex":"#E9E9E4"},"cotas_nivel":{"altura_mm":"secundaria-lida"},"fonte":{"pagina":"13","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=108,3 / B=45 / C=84 / D=47,5 / E=112 e n� de entradas 20 mm=10, 25 mm=6; mapeamento das letras por coer�ncia com a ficha Tigre.","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"cx_oct_4x4_fundo_movel","grupo":"caixas","nome":"Caixa octogonal 4x4 fundo m�vel PVC amarela (laje)","ref":"Tigre Tigreflex octogonal fundo m�vel","cotas":{"diametro_externo_mm":105.6,"dim_B_mm":85.5,"profundidade_mm":60.5,"altura_prolongador_mm":60.5},"aparencia":{"material":"PVC antichama amarelo","cor_hex":"#F2C500"},"cotas_nivel":{"dim_B_mm":"secundaria-lida","altura_prolongador_mm":"secundaria-lida"},"fonte":{"pagina":"4 ('Caixa de Embutir Octogonal Fundo M�vel')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=105,6 � o di�metro externo (vista superior); C=60,5 profundidade; B=85,5 sem legenda (prov�vel dist�ncia entre as orelhas) � interpreta��o. Prolongador tem as mesmas cotas A/B/C.","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"}},{"id":"cx_oct_3x3_anel","grupo":"caixas","nome":"Caixa octogonal 3x3 com anel deslizante PVC amarela","ref":"Tigre Tigreflex 3x3 anel deslizante","cotas":{"dim_A_mm":83.4,"dim_B_mm":73.9,"profundidade_mm":50.8},"aparencia":{"material":"PVC antichama amarelo","cor_hex":"#F2C500"},"cotas_nivel":{"dim_A_mm":"secundaria-lida","dim_B_mm":"secundaria-lida"},"fonte":{"pagina":"3","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=83,4, B=73,9, C=50,8; A � o maior di�metro (desenho).","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"}},{"id":"cx_4x2_metal","grupo":"caixas","nome":"Caixa de luz 4x2 met�lica estampada","ref":"usual de mercado (sem cat�logo lido)","cotas":{"largura_mm":51,"altura_mm":102,"profundidade_mm":50,"chapa_mm":1.2},"aparencia":{"material":"A�o galvanizado estampado","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais da pe�a 4x2 (4\" x 2\"); conferir no cat�logo do fabricante antes de modelar fiel.","doc":""},"obs":"Acabamento galvanizado a quente/eletrol�tico ou pintura preta (opcional)."},{"id":"cx_4x4_metal","grupo":"caixas","nome":"Caixa de luz 4x4 met�lica estampada","ref":"usual de mercado (sem cat�logo lido)","cotas":{"largura_mm":102,"altura_mm":102,"profundidade_mm":50,"chapa_mm":1.2},"aparencia":{"material":"A�o galvanizado estampado","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais da pe�a 4x4; conferir.","doc":""}},{"id":"cx_oct_4x4_metal","grupo":"caixas","nome":"Caixa octogonal 4x4 met�lica estampada (fundo m�vel)","ref":"usual de mercado (sem cat�logo lido)","cotas":{"diametro_externo_mm":102,"profundidade_mm":50,"chapa_mm":1.2},"aparencia":{"material":"A�o galvanizado estampado","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais; conferir.","doc":""}},{"id":"cx_sobrepor_alu_4x2","grupo":"caixas","nome":"Caixa de passagem de sobrepor alum�nio CP-4x2","ref":"Tramontina CP-4x2","cotas":{"dim_A_mm":95,"dim_B_mm":65,"dim_C_mm":45},"aparencia":{"material":"Liga de alum�nio fundido (sem pintura; tampa cinza ou dourada)","cor_hex":"#A7ABB0"},"cotas_nivel":{"dim_A_mm":"primaria-lida","dim_B_mm":"primaria-lida","dim_C_mm":"primaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Letras A/B/C como na ficha (legenda n�o lida no desenho); furos roscados 1/2, 3/4 ou 1 pol BSP nas laterais.","doc":"56121110FIP001.pdf"}},{"id":"cx_sobrepor_alu_4x4_baixa","grupo":"caixas","nome":"Caixa de passagem de sobrepor alum�nio CP-4x4 baixa","ref":"Tramontina CP-4x4 baixa","cotas":{"dim_A_mm":95,"dim_B_mm":100,"dim_C_mm":45},"aparencia":{"material":"Liga de alum�nio fundido (sem pintura; tampa cinza ou dourada)","cor_hex":"#A7ABB0"},"cotas_nivel":{"dim_A_mm":"primaria-lida","dim_B_mm":"primaria-lida","dim_C_mm":"primaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Letras A/B/C como na ficha (legenda n�o lida no desenho); furos roscados 1/2, 3/4 ou 1 pol BSP nas laterais.","doc":"56121110FIP001.pdf"}},{"id":"cx_sobrepor_alu_4x4_alta","grupo":"caixas","nome":"Caixa de passagem de sobrepor alum�nio CP-4x4 alta","ref":"Tramontina CP-4x4 alta","cotas":{"dim_A_mm":95,"dim_B_mm":100,"dim_C_mm":65},"aparencia":{"material":"Liga de alum�nio fundido (sem pintura; tampa cinza ou dourada)","cor_hex":"#A7ABB0"},"cotas_nivel":{"dim_A_mm":"primaria-lida","dim_B_mm":"primaria-lida","dim_C_mm":"primaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Letras A/B/C como na ficha (legenda n�o lida no desenho); furos roscados 1/2, 3/4 ou 1 pol BSP nas laterais.","doc":"56121110FIP001.pdf"}},{"id":"condulete_alu_1_2","grupo":"caixas","nome":"Condulete fixo alum�nio 1/2\" (tipos C, E, LB, LL, LR, T, X)","ref":"Tramontina Eletrik conduletes fixos DT-007 rev.05","cotas":{"dim_A_mm":93,"dim_B_mm":51,"dim_C_mm":46,"dim_D_mm":46.5,"dim_E_mm":22,"dim_F_mm":20,"comp_rosca_mm":16,"diametro_ext_eletroduto_mm":21.3},"aparencia":{"material":"Liga de alum�nio fundido, pintura ep�xi-p� cinza Munsell N6,5 (ou sem pintura)","cor_hex":"#9EA3A8"},"cotas_nivel":{"comp_rosca_mm":"secundaria-lida","diametro_ext_eletroduto_mm":"secundaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A..H como na ficha; H = � externo do eletroduto (21,3/26,9/33,7) e G = comprimento de rosca (coerentes). Legenda de A..F n�o lida: n�o assumir qual � comprimento/largura. A tabela � �nica para todos os tipos; o tipo muda o n�/posi��o das bocas (LL = duas bocas em L, LB = duas em linha-lateral, T = tr�s, X = quatro, C = duas opostas).","doc":"56101001FIP001.pdf"},"tipos":["C","E","LB","LL","LR","T","X"]},{"id":"condulete_alu_3_4","grupo":"caixas","nome":"Condulete fixo alum�nio 3/4\" (tipos C, E, LB, LL, LR, T, X)","ref":"Tramontina Eletrik conduletes fixos DT-007 rev.05","cotas":{"dim_A_mm":93,"dim_B_mm":51,"dim_C_mm":46,"dim_D_mm":46.5,"dim_E_mm":22,"dim_F_mm":20,"comp_rosca_mm":20,"diametro_ext_eletroduto_mm":26.9},"aparencia":{"material":"Liga de alum�nio fundido, pintura ep�xi-p� cinza Munsell N6,5 (ou sem pintura)","cor_hex":"#9EA3A8"},"cotas_nivel":{"comp_rosca_mm":"secundaria-lida","diametro_ext_eletroduto_mm":"secundaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A..H como na ficha; H = � externo do eletroduto (21,3/26,9/33,7) e G = comprimento de rosca (coerentes). Legenda de A..F n�o lida: n�o assumir qual � comprimento/largura. A tabela � �nica para todos os tipos; o tipo muda o n�/posi��o das bocas (LL = duas bocas em L, LB = duas em linha-lateral, T = tr�s, X = quatro, C = duas opostas).","doc":"56101001FIP001.pdf"},"tipos":["C","E","LB","LL","LR","T","X"]},{"id":"condulete_alu_1","grupo":"caixas","nome":"Condulete fixo alum�nio 1\" (tipos C, E, LB, LL, LR, T, X)","ref":"Tramontina Eletrik conduletes fixos DT-007 rev.05","cotas":{"dim_A_mm":116,"dim_B_mm":60,"dim_C_mm":56,"dim_D_mm":58,"dim_E_mm":28,"dim_F_mm":25,"comp_rosca_mm":24,"diametro_ext_eletroduto_mm":33.7},"aparencia":{"material":"Liga de alum�nio fundido, pintura ep�xi-p� cinza Munsell N6,5 (ou sem pintura)","cor_hex":"#9EA3A8"},"cotas_nivel":{"comp_rosca_mm":"secundaria-lida","diametro_ext_eletroduto_mm":"secundaria-lida"},"fonte":{"pagina":"1","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A..H como na ficha; H = � externo do eletroduto (21,3/26,9/33,7) e G = comprimento de rosca (coerentes). Legenda de A..F n�o lida: n�o assumir qual � comprimento/largura. A tabela � �nica para todos os tipos; o tipo muda o n�/posi��o das bocas (LL = duas bocas em L, LB = duas em linha-lateral, T = tr�s, X = quatro, C = duas opostas).","doc":"56101001FIP001.pdf"},"tipos":["C","E","LB","LL","LR","T","X"]},{"id":"condulete_pvc_3_4","grupo":"caixas","nome":"Condulete PVC de sobrepor 3/4\" (tipos LL, LB, T, X, C)","ref":"usual de mercado (sem cat�logo lido)","cotas":{"dim_A_mm":90,"dim_B_mm":50,"dim_C_mm":45,"diametro_ext_eletroduto_mm":26.9},"aparencia":{"material":"PVC antichama","cor_hex":"#D9D9D2"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Wetzel/Daisa n�o lidos; � 26,9 mm � o do rosc�vel Wavin 3/4 pol (secund�rio); demais cotas usuais.","doc":""}},{"id":"cx_passagem_pequena","grupo":"caixas","nome":"Caixa de passagem el�trica para parede 190x199 (pequena)","ref":"Amanco Wavin c�d. 22865","cotas":{"largura_mm":190,"altura_mm":199,"profundidade_mm":83,"aba_mm":5},"aparencia":{"material":"PVC antichama","cor_hex":"#E9E9E4"},"cotas_nivel":{"largura_mm":"secundaria-lida","altura_mm":"secundaria-lida"},"fonte":{"pagina":"7","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=190, B=199, C=83, D=5; mapeamento largura/altura por analogia com a figura do quadro (A vertical, B horizontal).","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"cx_passagem_grande","grupo":"caixas","nome":"Caixa de passagem el�trica para parede 342x381 (grande)","ref":"Amanco Wavin","cotas":{"largura_mm":342,"altura_mm":381,"profundidade_mm":83,"aba_mm":5},"aparencia":{"material":"PVC antichama","cor_hex":"#E9E9E4"},"cotas_nivel":{"largura_mm":"secundaria-lida","altura_mm":"secundaria-lida"},"fonte":{"pagina":"7","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=342, B=381, C=83, D=5.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"cx_passagem_15","grupo":"caixas","nome":"Caixa de passagem de embutir 15x15 cm","ref":"nominal (sem cat�logo lido)","cotas":{"largura_mm":150,"altura_mm":150,"profundidade_mm":80},"aparencia":{"material":"PVC antichama / chapa","cor_hex":"#E9E9E4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Largura/altura v�m do nome nominal (decis�o RA); profundidade usual; conferir no cat�logo.","doc":""}},{"id":"cx_passagem_20","grupo":"caixas","nome":"Caixa de passagem de embutir 20x20 cm","ref":"nominal (sem cat�logo lido)","cotas":{"largura_mm":200,"altura_mm":200,"profundidade_mm":80},"aparencia":{"material":"PVC antichama / chapa","cor_hex":"#E9E9E4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Largura/altura v�m do nome nominal (decis�o RA); profundidade usual; conferir no cat�logo.","doc":""}},{"id":"cx_passagem_30","grupo":"caixas","nome":"Caixa de passagem de embutir 30x30 cm","ref":"nominal (sem cat�logo lido)","cotas":{"largura_mm":300,"altura_mm":300,"profundidade_mm":80},"aparencia":{"material":"PVC antichama / chapa","cor_hex":"#E9E9E4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Largura/altura v�m do nome nominal (decis�o RA); profundidade usual; conferir no cat�logo.","doc":""}},{"id":"placa_4x2_liz","grupo":"placas","nome":"Placa/espelho 4x2 Liz (1 a 3 postos juntos)","ref":"Tramontina Liz 57106xxx","cotas":{"largura_mm":120,"altura_mm":83,"espessura_mm":2.5},"aparencia":{"material":"Termopl�stico de engenharia, branco","cor_hex":"#F3F3F0"},"cotas_nivel":{"espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"p�gina do produto (Telhanorte)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"An�ncio de varejo: 12 x 8,3 x 0,25 cm (horizontal); outro an�ncio da mesma placa na vertical d� 8,3 x 12,5 cm � diferen�a de 5 mm entre an�ncios. Ficha t�cnica oficial Liz N�O localizada.","doc":"placa-1-posto-4x2-horizontal-liz-branca-tramontina-1468430"}},{"id":"placa_2postos_afastados_liz","grupo":"placas","nome":"Placa 2 postos afastados Liz","ref":"Tramontina Liz","cotas":{"largura_mm":150,"altura_mm":100,"espessura_mm":2.5},"aparencia":{"material":"Termopl�stico de engenharia, branco","cor_hex":"#F3F3F0"},"cotas_nivel":{"espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"p�gina do produto (Telhanorte)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"An�ncio: 15 x 10 x 2,5 cm; conferir (o desenho dos furos n�o foi lido).","doc":"placa-2-postos-afastados-liz-4x2-branca-tramontina-1468456"}},{"id":"placa_4x4_liz","grupo":"placas","nome":"Placa 4x4 (2 a 6 postos)","ref":"nominal (linha Liz/Pial/Margirius � sem ficha lida)","cotas":{"largura_mm":125,"altura_mm":125,"espessura_mm":2.5},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Derivada da placa 4x2 (125 mm de lado maior); conferir no cat�logo.","doc":""}},{"id":"placa_cega_4x2","grupo":"placas","nome":"Placa cega 4x2","ref":"nominal","cotas":{"largura_mm":120,"altura_mm":83,"espessura_mm":2.5},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Igual � placa 4x2 sem furo (decis�o RA); conferir.","doc":""}},{"id":"placa_cega_4x4","grupo":"placas","nome":"Placa cega 4x4","ref":"nominal","cotas":{"largura_mm":125,"altura_mm":125,"espessura_mm":2.5},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Igual � placa 4x4 sem furo; conferir.","doc":""}},{"id":"tampa_octogonal","grupo":"placas","nome":"Tampa cega da octogonal 4x4 (tampa de laje)","ref":"nominal","cotas":{"diametro_mm":105.6,"espessura_mm":2},"aparencia":{"material":"PVC amarelo","cor_hex":"#F2C500"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Di�metro tomado do corpo da octogonal Tigre (105,6 mm, p.4 da ficha); espessura usual.","doc":""}},{"id":"modulo_tomada_10a","grupo":"placas","nome":"M�dulo de tomada 2P+T 10 A (NBR 14136)","ref":"linha Liz/Pial/Margirius � sem ficha lida","cotas":{"largura_mm":25,"altura_mm":50,"profundidade_mm":22,"diametro_furo_pino_mm":4},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"eletrico":{"corrente_A":10,"tensao_V":250},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"M�dulo de 25 mm (3 postos cabem na 4x2) e � do pino 4,0 mm s�o usuais; NBR 14136 n�o lida. Conferir.","doc":""}},{"id":"modulo_tomada_20a","grupo":"placas","nome":"M�dulo de tomada 2P+T 20 A (NBR 14136)","ref":"linha Liz/Pial/Margirius � sem ficha lida","cotas":{"largura_mm":25,"altura_mm":50,"profundidade_mm":22,"diametro_furo_pino_mm":4.8},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"eletrico":{"corrente_A":20,"tensao_V":250},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� do pino 4,8 mm � o usual do 20 A; conferir.","doc":""}},{"id":"modulo_interruptor","grupo":"placas","nome":"M�dulo de interruptor simples 10 A","ref":"linha Liz/Pial/Margirius � sem ficha lida","cotas":{"largura_mm":25,"altura_mm":50,"profundidade_mm":22},"aparencia":{"material":"Termopl�stico, branco","cor_hex":"#F3F3F0"},"eletrico":{"corrente_A":10,"tensao_V":250},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais; conferir.","doc":""}},{"id":"eletroduto_corrugado_amarelo_20","grupo":"eletrodutos","nome":"Eletroduto corrugado flex�vel amarelo leve DN20","ref":"Tigre Tigreflex (jul/2025)","cotas":{"dn_mm":20,"diametro_externo_mm":20,"diametro_interno_mm":15,"espessura_mm":2.5,"passo_ondulacao_mm":4,"rolo_m":50},"aparencia":{"material":"PVC antichama corrugado (corruga��o paralela)","cor_hex":"#F2C500"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir","rolo_m":"primaria-lida"},"fonte":{"pagina":"3 (tabela 'Eletroduto Flex�vel Corrugado Tigreflex')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 320 N/5 cm (p.2). Rolos: DN20 25/50/100 m; DN25 7/25/50/100 m; DN32 25/50 m.","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"},"obs":"Passo da ondula��o n�o consta da ficha: valor usual (20 % do DE)."},{"id":"eletroduto_corrugado_amarelo_25","grupo":"eletrodutos","nome":"Eletroduto corrugado flex�vel amarelo leve DN25","ref":"Tigre Tigreflex (jul/2025)","cotas":{"dn_mm":25,"diametro_externo_mm":25,"diametro_interno_mm":19.5,"espessura_mm":2.8,"passo_ondulacao_mm":5,"rolo_m":50},"aparencia":{"material":"PVC antichama corrugado (corruga��o paralela)","cor_hex":"#F2C500"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir","rolo_m":"primaria-lida"},"fonte":{"pagina":"3 (tabela 'Eletroduto Flex�vel Corrugado Tigreflex')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 320 N/5 cm (p.2). Rolos: DN20 25/50/100 m; DN25 7/25/50/100 m; DN32 25/50 m.","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"},"obs":"Passo da ondula��o n�o consta da ficha: valor usual (20 % do DE)."},{"id":"eletroduto_corrugado_amarelo_32","grupo":"eletrodutos","nome":"Eletroduto corrugado flex�vel amarelo leve DN32","ref":"Tigre Tigreflex (jul/2025)","cotas":{"dn_mm":32,"diametro_externo_mm":32,"diametro_interno_mm":25.7,"espessura_mm":3.2,"passo_ondulacao_mm":6.4,"rolo_m":25},"aparencia":{"material":"PVC antichama corrugado (corruga��o paralela)","cor_hex":"#F2C500"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir","rolo_m":"primaria-lida"},"fonte":{"pagina":"3 (tabela 'Eletroduto Flex�vel Corrugado Tigreflex')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 320 N/5 cm (p.2). Rolos: DN20 25/50/100 m; DN25 7/25/50/100 m; DN32 25/50 m.","doc":"FT_Tigreflex-Amarelo-2025-1-1.pdf"},"obs":"Passo da ondula��o n�o consta da ficha: valor usual (20 % do DE)."},{"id":"eletroduto_corrugado_laranja_20","grupo":"eletrodutos","nome":"Eletroduto corrugado refor�ado laranja DN20","ref":"Tigre Tigreflex Refor�ado (out/2025)","cotas":{"dn_mm":20,"diametro_externo_mm":20,"diametro_interno_mm":14.6,"espessura_mm":2.7,"passo_ondulacao_mm":4},"aparencia":{"material":"PVC antichama corrugado refor�ado","cor_hex":"#E8731A"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir"},"fonte":{"pagina":"1 e 3 (tabela de dimens�es)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 750 N/5 cm; para laje/concreto.","doc":"FT_Tigreflex-Reforcado-2025_Rev-5.pdf"}},{"id":"eletroduto_corrugado_laranja_25","grupo":"eletrodutos","nome":"Eletroduto corrugado refor�ado laranja DN25","ref":"Tigre Tigreflex Refor�ado (out/2025)","cotas":{"dn_mm":25,"diametro_externo_mm":25,"diametro_interno_mm":18.6,"espessura_mm":3.2,"passo_ondulacao_mm":5},"aparencia":{"material":"PVC antichama corrugado refor�ado","cor_hex":"#E8731A"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir"},"fonte":{"pagina":"1 e 3 (tabela de dimens�es)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 750 N/5 cm; para laje/concreto.","doc":"FT_Tigreflex-Reforcado-2025_Rev-5.pdf"}},{"id":"eletroduto_corrugado_laranja_32","grupo":"eletrodutos","nome":"Eletroduto corrugado refor�ado laranja DN32","ref":"Tigre Tigreflex Refor�ado (out/2025)","cotas":{"dn_mm":32,"diametro_externo_mm":32,"diametro_interno_mm":25.4,"espessura_mm":3.3,"passo_ondulacao_mm":6.4},"aparencia":{"material":"PVC antichama corrugado refor�ado","cor_hex":"#E8731A"},"cotas_nivel":{"passo_ondulacao_mm":"sem-fonte-conferir"},"fonte":{"pagina":"1 e 3 (tabela de dimens�es)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Resist�ncia diametral 750 N/5 cm; para laje/concreto.","doc":"FT_Tigreflex-Reforcado-2025_Rev-5.pdf"}},{"id":"eletroduto_pvc_soldavel_20","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido sold�vel DN20 (barra 3 m)","ref":"Amanco Wavin sold�vel","cotas":{"dn_mm":20,"diametro_externo_mm":20,"espessura_mm":1.6,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"6","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=3000, B=DE, C=espessura. Cor da barra sold�vel n�o consta da ficha (apar�ncia: decis�o RA).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_soldavel_25","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido sold�vel DN25 (barra 3 m)","ref":"Amanco Wavin sold�vel","cotas":{"dn_mm":25,"diametro_externo_mm":25,"espessura_mm":1.8,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"6","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=3000, B=DE, C=espessura. Cor da barra sold�vel n�o consta da ficha (apar�ncia: decis�o RA).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_soldavel_32","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido sold�vel DN32 (barra 3 m)","ref":"Amanco Wavin sold�vel","cotas":{"dn_mm":32,"diametro_externo_mm":32,"espessura_mm":2.1,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"6","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Tabela A=3000, B=DE, C=espessura. Cor da barra sold�vel n�o consta da ficha (apar�ncia: decis�o RA).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_roscavel_20","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido rosc�vel 1/2\" (DN20, barra 3 m)","ref":"Amanco Wavin rosc�vel (confere com Krona: classe pesada, preto)","cotas":{"dn_mm":20,"diametro_externo_medio_mm":20.8,"espessura_mm":2.2,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama, rosca ISO 7 (BSP)","cor_hex":"#1F1F1F"},"fonte":{"pagina":"9 (tabela 'Eletroduto R�gido Rosc�vel', dem = di�metro externo m�dio)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Mapeamento 1/2\"=DN20, 3/4\"=DN25, 1\"=DN32, 1.1/4\"=DN40, 1.1/2\"=DN50 pela descri��o dos c�digos Wavin. Cor preta/negra e classe pesada 1250 N/5 cm: ficha Krona PE001068 ([url no json]).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"luva_roscavel_20","grupo":"eletrodutos","nome":"Luva rosc�vel 1/2\" (DN20)","ref":"Amanco Wavin luva rosc�vel","cotas":{"comprimento_mm":32,"comp_rosca_mm":15,"diametro_externo_mm":27.2},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"cotas_nivel":{"diametro_externo_mm":"sem-fonte-conferir"},"fonte":{"pagina":"10 (tabela da luva rosc�vel)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A e C da ficha (A=comprimento, C=comprimento de rosca � leitura do desenho, legenda n�o lida). � externo da luva N�O consta: derivado (DE + 2�e + 2 mm).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_roscavel_25","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido rosc�vel 3/4\" (DN25, barra 3 m)","ref":"Amanco Wavin rosc�vel (confere com Krona: classe pesada, preto)","cotas":{"dn_mm":25,"diametro_externo_medio_mm":26.2,"espessura_mm":2.3,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama, rosca ISO 7 (BSP)","cor_hex":"#1F1F1F"},"fonte":{"pagina":"9 (tabela 'Eletroduto R�gido Rosc�vel', dem = di�metro externo m�dio)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Mapeamento 1/2\"=DN20, 3/4\"=DN25, 1\"=DN32, 1.1/4\"=DN40, 1.1/2\"=DN50 pela descri��o dos c�digos Wavin. Cor preta/negra e classe pesada 1250 N/5 cm: ficha Krona PE001068 ([url no json]).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"luva_roscavel_25","grupo":"eletrodutos","nome":"Luva rosc�vel 3/4\" (DN25)","ref":"Amanco Wavin luva rosc�vel","cotas":{"comprimento_mm":34,"comp_rosca_mm":16.3,"diametro_externo_mm":32.8},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"cotas_nivel":{"diametro_externo_mm":"sem-fonte-conferir"},"fonte":{"pagina":"10 (tabela da luva rosc�vel)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A e C da ficha (A=comprimento, C=comprimento de rosca � leitura do desenho, legenda n�o lida). � externo da luva N�O consta: derivado (DE + 2�e + 2 mm).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_roscavel_32","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido rosc�vel 1\" (DN32, barra 3 m)","ref":"Amanco Wavin rosc�vel (confere com Krona: classe pesada, preto)","cotas":{"dn_mm":32,"diametro_externo_medio_mm":32.9,"espessura_mm":2.7,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama, rosca ISO 7 (BSP)","cor_hex":"#1F1F1F"},"fonte":{"pagina":"9 (tabela 'Eletroduto R�gido Rosc�vel', dem = di�metro externo m�dio)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Mapeamento 1/2\"=DN20, 3/4\"=DN25, 1\"=DN32, 1.1/4\"=DN40, 1.1/2\"=DN50 pela descri��o dos c�digos Wavin. Cor preta/negra e classe pesada 1250 N/5 cm: ficha Krona PE001068 ([url no json]).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"luva_roscavel_32","grupo":"eletrodutos","nome":"Luva rosc�vel 1\" (DN32)","ref":"Amanco Wavin luva rosc�vel","cotas":{"comprimento_mm":39.8,"comp_rosca_mm":19.1,"diametro_externo_mm":40.3},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"cotas_nivel":{"diametro_externo_mm":"sem-fonte-conferir"},"fonte":{"pagina":"10 (tabela da luva rosc�vel)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A e C da ficha (A=comprimento, C=comprimento de rosca � leitura do desenho, legenda n�o lida). � externo da luva N�O consta: derivado (DE + 2�e + 2 mm).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_roscavel_40","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido rosc�vel 1.1/4\" (DN40, barra 3 m)","ref":"Amanco Wavin rosc�vel (confere com Krona: classe pesada, preto)","cotas":{"dn_mm":40,"diametro_externo_medio_mm":41.9,"espessura_mm":3,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama, rosca ISO 7 (BSP)","cor_hex":"#1F1F1F"},"fonte":{"pagina":"9 (tabela 'Eletroduto R�gido Rosc�vel', dem = di�metro externo m�dio)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Mapeamento 1/2\"=DN20, 3/4\"=DN25, 1\"=DN32, 1.1/4\"=DN40, 1.1/2\"=DN50 pela descri��o dos c�digos Wavin. Cor preta/negra e classe pesada 1250 N/5 cm: ficha Krona PE001068 ([url no json]).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"luva_roscavel_40","grupo":"eletrodutos","nome":"Luva rosc�vel 1.1/4\" (DN40)","ref":"Amanco Wavin luva rosc�vel","cotas":{"comprimento_mm":45,"comp_rosca_mm":21.4,"diametro_externo_mm":49.9},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"cotas_nivel":{"diametro_externo_mm":"sem-fonte-conferir"},"fonte":{"pagina":"10 (tabela da luva rosc�vel)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A e C da ficha (A=comprimento, C=comprimento de rosca � leitura do desenho, legenda n�o lida). � externo da luva N�O consta: derivado (DE + 2�e + 2 mm).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"eletroduto_pvc_roscavel_50","grupo":"eletrodutos","nome":"Eletroduto PVC r�gido rosc�vel 1.1/2\" (DN50, barra 3 m)","ref":"Amanco Wavin rosc�vel (confere com Krona: classe pesada, preto)","cotas":{"dn_mm":50,"diametro_externo_medio_mm":47.4,"espessura_mm":3,"comprimento_barra_mm":3000},"aparencia":{"material":"PVC r�gido antichama, rosca ISO 7 (BSP)","cor_hex":"#1F1F1F"},"fonte":{"pagina":"9 (tabela 'Eletroduto R�gido Rosc�vel', dem = di�metro externo m�dio)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Mapeamento 1/2\"=DN20, 3/4\"=DN25, 1\"=DN32, 1.1/4\"=DN40, 1.1/2\"=DN50 pela descri��o dos c�digos Wavin. Cor preta/negra e classe pesada 1250 N/5 cm: ficha Krona PE001068 ([url no json]).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"luva_roscavel_50","grupo":"eletrodutos","nome":"Luva rosc�vel 1.1/2\" (DN50)","ref":"Amanco Wavin luva rosc�vel","cotas":{"comprimento_mm":46,"comp_rosca_mm":21.4,"diametro_externo_mm":55.4},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"cotas_nivel":{"diametro_externo_mm":"sem-fonte-conferir"},"fonte":{"pagina":"10 (tabela da luva rosc�vel)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A e C da ficha (A=comprimento, C=comprimento de rosca � leitura do desenho, legenda n�o lida). � externo da luva N�O consta: derivado (DE + 2�e + 2 mm).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_soldavel_20","grupo":"eletrodutos","nome":"Curva 90� curta sold�vel DN20","ref":"Amanco Wavin","cotas":{"dn_mm":20,"dim_B_mm":57},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"7","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=DN (encaixe), B=57.0 (tabela; legenda de B n�o lida).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_soldavel_25","grupo":"eletrodutos","nome":"Curva 90� curta sold�vel DN25","ref":"Amanco Wavin","cotas":{"dn_mm":25,"dim_B_mm":69},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"7","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=DN (encaixe), B=69.0 (tabela; legenda de B n�o lida).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_soldavel_32","grupo":"eletrodutos","nome":"Curva 90� curta sold�vel DN32","ref":"Amanco Wavin","cotas":{"dn_mm":32,"dim_B_mm":86.5},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#B8B8B2"},"fonte":{"pagina":"7","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=DN (encaixe), B=86.5 (tabela; legenda de B n�o lida).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_roscavel_20","grupo":"eletrodutos","nome":"Curva 90� curta rosc�vel 1/2\"","ref":"Amanco Wavin","cotas":{"dn_mm":20,"dim_A_mm":50.5},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"11","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=50.5 (tabela).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_roscavel_25","grupo":"eletrodutos","nome":"Curva 90� curta rosc�vel 3/4\"","ref":"Amanco Wavin","cotas":{"dn_mm":25,"dim_A_mm":62.3},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"11","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=62.3 (tabela).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva90_curta_roscavel_32","grupo":"eletrodutos","nome":"Curva 90� curta rosc�vel 1\"","ref":"Amanco Wavin","cotas":{"dn_mm":32,"dim_A_mm":78},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"11","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=78.0 (tabela).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva180_roscavel_25","grupo":"eletrodutos","nome":"Curva 180� rosc�vel 3/4\"","ref":"Amanco Wavin","cotas":{"dn_mm":25,"dim_B_mm":128},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"10 (Curva 180� Rosc�vel)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"C�digos da p�gina: 3/4, 1, 1.1/4, 1.1/2, 2; tabela B = 128, 132, 140, 148, 172 na mesma ordem (extra��o de texto, desenho n�o conferido).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva180_roscavel_32","grupo":"eletrodutos","nome":"Curva 180� rosc�vel 1\"","ref":"Amanco Wavin","cotas":{"dn_mm":32,"dim_B_mm":132},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"10 (Curva 180� Rosc�vel)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"C�digos da p�gina: 3/4, 1, 1.1/4, 1.1/2, 2; tabela B = 128, 132, 140, 148, 172 na mesma ordem (extra��o de texto, desenho n�o conferido).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva180_roscavel_40","grupo":"eletrodutos","nome":"Curva 180� rosc�vel 1.1/4\"","ref":"Amanco Wavin","cotas":{"dn_mm":40,"dim_B_mm":140},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"10 (Curva 180� Rosc�vel)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"C�digos da p�gina: 3/4, 1, 1.1/4, 1.1/2, 2; tabela B = 128, 132, 140, 148, 172 na mesma ordem (extra��o de texto, desenho n�o conferido).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"curva180_roscavel_50","grupo":"eletrodutos","nome":"Curva 180� rosc�vel 1.1/2\"","ref":"Amanco Wavin","cotas":{"dn_mm":50,"dim_B_mm":148},"aparencia":{"material":"PVC r�gido antichama","cor_hex":"#1F1F1F"},"fonte":{"pagina":"10 (Curva 180� Rosc�vel)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"C�digos da p�gina: 3/4, 1, 1.1/4, 1.1/2, 2; tabela B = 128, 132, 140, 148, 172 na mesma ordem (extra��o de texto, desenho n�o conferido).","doc":"-FT-Eletroduto-Soldavel-e-Roscavel.pdf"}},{"id":"bucha_arruela_20","grupo":"eletrodutos","nome":"Bucha e arruela de alum�nio 1/2\"","ref":"usual (sem cat�logo lido)","cotas":{"dn_mm":20,"diametro_rosca_mm":20.8,"altura_bucha_mm":10,"espessura_arruela_mm":3},"aparencia":{"material":"Liga de alum�nio","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� de rosca = DE m�dio do rosc�vel Wavin; altura/espessura usuais; Wetzel/Daisa/Margirius n�o lidos.","doc":""}},{"id":"bucha_arruela_25","grupo":"eletrodutos","nome":"Bucha e arruela de alum�nio 3/4\"","ref":"usual (sem cat�logo lido)","cotas":{"dn_mm":25,"diametro_rosca_mm":26.2,"altura_bucha_mm":10,"espessura_arruela_mm":3},"aparencia":{"material":"Liga de alum�nio","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� de rosca = DE m�dio do rosc�vel Wavin; altura/espessura usuais; Wetzel/Daisa/Margirius n�o lidos.","doc":""}},{"id":"bucha_arruela_32","grupo":"eletrodutos","nome":"Bucha e arruela de alum�nio 1\"","ref":"usual (sem cat�logo lido)","cotas":{"dn_mm":32,"diametro_rosca_mm":32.9,"altura_bucha_mm":10,"espessura_arruela_mm":3},"aparencia":{"material":"Liga de alum�nio","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� de rosca = DE m�dio do rosc�vel Wavin; altura/espessura usuais; Wetzel/Daisa/Margirius n�o lidos.","doc":""}},{"id":"bucha_arruela_40","grupo":"eletrodutos","nome":"Bucha e arruela de alum�nio 1.1/4\"","ref":"usual (sem cat�logo lido)","cotas":{"dn_mm":40,"diametro_rosca_mm":41.9,"altura_bucha_mm":10,"espessura_arruela_mm":3},"aparencia":{"material":"Liga de alum�nio","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� de rosca = DE m�dio do rosc�vel Wavin; altura/espessura usuais; Wetzel/Daisa/Margirius n�o lidos.","doc":""}},{"id":"bucha_arruela_50","grupo":"eletrodutos","nome":"Bucha e arruela de alum�nio 1.1/2\"","ref":"usual (sem cat�logo lido)","cotas":{"dn_mm":50,"diametro_rosca_mm":47.4,"altura_bucha_mm":10,"espessura_arruela_mm":3},"aparencia":{"material":"Liga de alum�nio","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� de rosca = DE m�dio do rosc�vel Wavin; altura/espessura usuais; Wetzel/Daisa/Margirius n�o lidos.","doc":""}},{"id":"eletroduto_flex_metalico_1_2","grupo":"eletrodutos","nome":"Eletroduto flex�vel met�lico com capa de PVC (sealtubo) 1/2\"","ref":"usual (sem cat�logo lido)","cotas":{"diametro_externo_mm":21,"passo_espiral_mm":7,"rolo_m":25},"aparencia":{"material":"Fita de a�o galvanizado em espiral + capa PVC preta","cor_hex":"#2B2B2B"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais da fam�lia sealtubo; conferir no cat�logo (Daisa/Wetzel/Tramontina). Capa tamb�m existe em cinza.","doc":""}},{"id":"eletroduto_flex_metalico_3_4","grupo":"eletrodutos","nome":"Eletroduto flex�vel met�lico com capa de PVC (sealtubo) 3/4\"","ref":"usual (sem cat�logo lido)","cotas":{"diametro_externo_mm":26.5,"passo_espiral_mm":7,"rolo_m":25},"aparencia":{"material":"Fita de a�o galvanizado em espiral + capa PVC preta","cor_hex":"#2B2B2B"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais da fam�lia sealtubo; conferir no cat�logo (Daisa/Wetzel/Tramontina). Capa tamb�m existe em cinza.","doc":""}},{"id":"eletroduto_flex_metalico_1","grupo":"eletrodutos","nome":"Eletroduto flex�vel met�lico com capa de PVC (sealtubo) 1\"","ref":"usual (sem cat�logo lido)","cotas":{"diametro_externo_mm":33,"passo_espiral_mm":7,"rolo_m":25},"aparencia":{"material":"Fita de a�o galvanizado em espiral + capa PVC preta","cor_hex":"#2B2B2B"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais da fam�lia sealtubo; conferir no cat�logo (Daisa/Wetzel/Tramontina). Capa tamb�m existe em cinza.","doc":""}},{"id":"eletrocalha_perfurada_50x50","grupo":"eletrodutos","nome":"Eletrocalha perfurada 50x50 mm","ref":"usual (sem cat�logo lido)","cotas":{"largura_mm":50,"altura_mm":50,"chapa_mm":1.5,"comprimento_barra_mm":3000},"aparencia":{"material":"A�o galvanizado (pr�-zincado ou a fogo)","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Larguras/alturas e barra de 3 m s�o as usuais do mercado; chapa depende do fabricante e da carga. Conferir.","doc":""}},{"id":"eletrocalha_perfurada_100x50","grupo":"eletrodutos","nome":"Eletrocalha perfurada 100x50 mm","ref":"usual (sem cat�logo lido)","cotas":{"largura_mm":100,"altura_mm":50,"chapa_mm":1.5,"comprimento_barra_mm":3000},"aparencia":{"material":"A�o galvanizado (pr�-zincado ou a fogo)","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Larguras/alturas e barra de 3 m s�o as usuais do mercado; chapa depende do fabricante e da carga. Conferir.","doc":""}},{"id":"eletrocalha_perfurada_100x100","grupo":"eletrodutos","nome":"Eletrocalha perfurada 100x100 mm","ref":"usual (sem cat�logo lido)","cotas":{"largura_mm":100,"altura_mm":100,"chapa_mm":1.5,"comprimento_barra_mm":3000},"aparencia":{"material":"A�o galvanizado (pr�-zincado ou a fogo)","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Larguras/alturas e barra de 3 m s�o as usuais do mercado; chapa depende do fabricante e da carga. Conferir.","doc":""}},{"id":"eletrocalha_perfurada_200x100","grupo":"eletrodutos","nome":"Eletrocalha perfurada 200x100 mm","ref":"usual (sem cat�logo lido)","cotas":{"largura_mm":200,"altura_mm":100,"chapa_mm":1.5,"comprimento_barra_mm":3000},"aparencia":{"material":"A�o galvanizado (pr�-zincado ou a fogo)","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Larguras/alturas e barra de 3 m s�o as usuais do mercado; chapa depende do fabricante e da carga. Conferir.","doc":""}},{"id":"eletrocalha_perfurada_300x100","grupo":"eletrodutos","nome":"Eletrocalha perfurada 300x100 mm","ref":"usual (sem cat�logo lido)","cotas":{"largura_mm":300,"altura_mm":100,"chapa_mm":1.5,"comprimento_barra_mm":3000},"aparencia":{"material":"A�o galvanizado (pr�-zincado ou a fogo)","cor_hex":"#B9BEC4"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Larguras/alturas e barra de 3 m s�o as usuais do mercado; chapa depende do fabricante e da carga. Conferir.","doc":""}},{"id":"cabo_750v_1_5","grupo":"cabos","nome":"Cabo flex�vel 750 V 1,5 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":1.5,"diametro_externo_mm":3},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"tabela 'Cabo flex�vel at� 750 V' (AECweb, fabricante n�o identificado)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"� externo nominal desta se��o na tabela do portal AECweb; a Cobrecom Flexicom 105 �C d� 3,1/3,5/4,0/4,6 mm (1,5/2,5/4/6) � diferen�a de at� 0,4 mm entre fabricantes.","doc":"59352"},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_2_5","grupo":"cabos","nome":"Cabo flex�vel 750 V 2,5 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":2.5,"diametro_externo_mm":3.6},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"tabela 'Cabo flex�vel at� 750 V' (AECweb, fabricante n�o identificado)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"� externo nominal desta se��o na tabela do portal AECweb; a Cobrecom Flexicom 105 �C d� 3,1/3,5/4,0/4,6 mm (1,5/2,5/4/6) � diferen�a de at� 0,4 mm entre fabricantes.","doc":"59352"},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_4","grupo":"cabos","nome":"Cabo flex�vel 750 V 4 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":4,"diametro_externo_mm":4.2},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"tabela 'Cabo flex�vel at� 750 V' (AECweb, fabricante n�o identificado)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"� externo nominal desta se��o na tabela do portal AECweb; a Cobrecom Flexicom 105 �C d� 3,1/3,5/4,0/4,6 mm (1,5/2,5/4/6) � diferen�a de at� 0,4 mm entre fabricantes.","doc":"59352"},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_6","grupo":"cabos","nome":"Cabo flex�vel 750 V 6 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":6,"diametro_externo_mm":4.7},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"tabela 'Cabo flex�vel at� 750 V' (AECweb, fabricante n�o identificado)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"� externo nominal desta se��o na tabela do portal AECweb; a Cobrecom Flexicom 105 �C d� 3,1/3,5/4,0/4,6 mm (1,5/2,5/4/6) � diferen�a de at� 0,4 mm entre fabricantes.","doc":"59352"},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_10","grupo":"cabos","nome":"Cabo flex�vel 750 V 10 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":10,"diametro_externo_mm":5.9},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cat�logo SIL/Cobrecom/Prysmian BR n�o acessado (PDF protegido); � usual para cabo flex�vel 750 V classe 5.","doc":""},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_16","grupo":"cabos","nome":"Cabo flex�vel 750 V 16 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":16,"diametro_externo_mm":7},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cat�logo SIL/Cobrecom/Prysmian BR n�o acessado (PDF protegido); � usual para cabo flex�vel 750 V classe 5.","doc":""},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_25","grupo":"cabos","nome":"Cabo flex�vel 750 V 25 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":25,"diametro_externo_mm":8.9},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cat�logo SIL/Cobrecom/Prysmian BR n�o acessado (PDF protegido); � usual para cabo flex�vel 750 V classe 5.","doc":""},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_750v_35","grupo":"cabos","nome":"Cabo flex�vel 750 V 35 mm� (unipolar, isola��o PVC)","ref":"SIL/Cobrecom/Prysmian (0,5 a 35 mm� em NBR NM 247-3)","cotas":{"secao_mm2":35,"diametro_externo_mm":10},"aparencia":{"material":"Cobre classe 5 + PVC antichama","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cat�logo SIL/Cobrecom/Prysmian BR n�o acessado (PDF protegido); � usual para cabo flex�vel 750 V classe 5.","doc":""},"cores_usuais":["preto","vermelho","branco","cinza","azul-claro","verde-amarelo","verde"],"cores_hex":{"preto":"#1A1A1A","vermelho":"#C0171D","branco":"#F2F2F2","cinza":"#8B8B8B","azul-claro":"#6FB7E9","verde-amarelo":"#7CB518","verde":"#2E8B3C"},"cores_nivel":{"preto":"decisao-RA","vermelho":"decisao-RA","branco":"decisao-RA","cinza":"decisao-RA","azul-claro":"primaria-lida","verde-amarelo":"primaria-lida","verde":"primaria-lida"},"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_2_5","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 2,5 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":2.5,"diametro_externo_mm":5.9},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_4","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 4 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":4,"diametro_externo_mm":6.4},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_6","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 6 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":6,"diametro_externo_mm":6.9},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_10","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 10 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":10,"diametro_externo_mm":7.9},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_16","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 16 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":16,"diametro_externo_mm":8.8},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_25","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 25 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":25,"diametro_externo_mm":10.5},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_1kv_35","grupo":"cabos","nome":"Cabo unipolar 0,6/1 kV 35 mm� (isola��o HEPR/XLPE)","ref":"Prysmian Voltalene / Cobrecom Superatox (sem tabela BR lida)","cotas":{"secao_mm2":35,"diametro_externo_mm":11.7},"aparencia":{"material":"Cobre classe 2/5 + isola��o EPR/XLPE + cobertura PVC","cor_hex":"#1A1A1A"},"eletrico":{"tensao_V":1000},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de cabo 0,6/1 kV; cat�logo Prysmian Voltalene (LV 007 01 PT) localizado mas n�o lido. Conferir.","doc":""},"cores_usuais":["preto","vermelho","branco","azul-claro","verde-amarelo"],"cores_nota":"Cores: S� azul-claro (neutro) e verde-amarelo/verde (PE) s�o fixadas pela norma (NBR 5410 6.1.5.3 � lida em c�pia n�o licenciada, ver eletabelas.js). Fase, retorno e demais s�o pr�tica: preto/vermelho/branco para fase, cinza/amarelo para retorno (decis�o RA, como em elecircuitos.js)."},{"id":"cabo_pp_3x2_5","grupo":"cabos","nome":"Cabo PP 3x2,5 mm� (chuveiro, forno, bomba)","ref":"Cobrecom/SIL Cabo PP flex�vel 450/750 V","cotas":{"secao_mm2":2.5,"veias":3,"diametro_externo_mm":9.8},"aparencia":{"material":"Cobre classe 5 + PVC, cobertura PVC preta","cor_hex":"#2B2B2B"},"eletrico":{"tensao_V":750},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"� usual de PP 3x2,5; conferir. Veias: marrom/azul-claro/verde-amarelo usuais.","doc":""}},{"id":"disj_mini_1p_steck","grupo":"dispositivos","nome":"Mini-disjuntor 1P curva C at� 63 A (Steck SDD)","ref":"Steck SDD61 (cat�logo Steck p.51)","cotas":{"largura_mm":17.7,"altura_mm":80,"profundidade_mm":73,"largura_por_polo_mm":17.7,"altura_frontal_mm":44.8,"profundidade_corpo_mm":39,"afastamento_trilho_mm":5.5},"aparencia":{"material":"Termopl�stico cinza, manopla vermelha","cor_hex":"#E6E6E2"},"eletrico":{"polos":1,"curva":"C","In_A":[6,10,16,20,25,32,40,50,63],"Icn_kA":3,"tensao_V":240},"cotas_nivel":{"afastamento_trilho_mm":"secundaria-lida","profundidade_corpo_mm":"secundaria-lida"},"fonte":{"pagina":"51 (desenho 'Hasta 70A')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Largura por n� de polos 17,7/35,4/53,1/70,8; vista lateral 80 x 73 (altura x profundidade total); 44,8 = altura da face frontal; 39 = corpo atr�s da face. Man�pulo no ter�o superior-direito da face, projeta ~ 5 mm. Cat�logo em espanhol hospedado em site de distribuidor; fabricante Steck.","doc":"catalogo-steck.pdf"}},{"id":"disj_mini_2p_steck","grupo":"dispositivos","nome":"Mini-disjuntor 2P curva C at� 63 A (Steck SDD)","ref":"Steck SDD62 (cat�logo Steck p.51)","cotas":{"largura_mm":35.4,"altura_mm":80,"profundidade_mm":73,"largura_por_polo_mm":17.7,"altura_frontal_mm":44.8,"profundidade_corpo_mm":39,"afastamento_trilho_mm":5.5},"aparencia":{"material":"Termopl�stico cinza, manopla vermelha","cor_hex":"#E6E6E2"},"eletrico":{"polos":2,"curva":"C","In_A":[6,10,16,20,25,32,40,50,63],"Icn_kA":3,"tensao_V":400},"cotas_nivel":{"afastamento_trilho_mm":"secundaria-lida","profundidade_corpo_mm":"secundaria-lida"},"fonte":{"pagina":"51 (desenho 'Hasta 70A')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Largura por n� de polos 17,7/35,4/53,1/70,8; vista lateral 80 x 73 (altura x profundidade total); 44,8 = altura da face frontal; 39 = corpo atr�s da face. Man�pulo no ter�o superior-direito da face, projeta ~ 5 mm. Cat�logo em espanhol hospedado em site de distribuidor; fabricante Steck.","doc":"catalogo-steck.pdf"}},{"id":"disj_mini_3p_steck","grupo":"dispositivos","nome":"Mini-disjuntor 3P curva C at� 63 A (Steck SDD)","ref":"Steck SDD63 (cat�logo Steck p.51)","cotas":{"largura_mm":53.1,"altura_mm":80,"profundidade_mm":73,"largura_por_polo_mm":17.7,"altura_frontal_mm":44.8,"profundidade_corpo_mm":39,"afastamento_trilho_mm":5.5},"aparencia":{"material":"Termopl�stico cinza, manopla vermelha","cor_hex":"#E6E6E2"},"eletrico":{"polos":3,"curva":"C","In_A":[6,10,16,20,25,32,40,50,63],"Icn_kA":3,"tensao_V":400},"cotas_nivel":{"afastamento_trilho_mm":"secundaria-lida","profundidade_corpo_mm":"secundaria-lida"},"fonte":{"pagina":"51 (desenho 'Hasta 70A')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Largura por n� de polos 17,7/35,4/53,1/70,8; vista lateral 80 x 73 (altura x profundidade total); 44,8 = altura da face frontal; 39 = corpo atr�s da face. Man�pulo no ter�o superior-direito da face, projeta ~ 5 mm. Cat�logo em espanhol hospedado em site de distribuidor; fabricante Steck.","doc":"catalogo-steck.pdf"}},{"id":"disj_mini_4p_steck","grupo":"dispositivos","nome":"Mini-disjuntor 4P curva C at� 63 A (Steck SDD)","ref":"Steck SDD64 (cat�logo Steck p.51)","cotas":{"largura_mm":70.8,"altura_mm":80,"profundidade_mm":73,"largura_por_polo_mm":17.7,"altura_frontal_mm":44.8,"profundidade_corpo_mm":39,"afastamento_trilho_mm":5.5},"aparencia":{"material":"Termopl�stico cinza, manopla vermelha","cor_hex":"#E6E6E2"},"eletrico":{"polos":4,"curva":"C","In_A":[6,10,16,20,25,32,40,50,63],"Icn_kA":3,"tensao_V":400},"cotas_nivel":{"afastamento_trilho_mm":"secundaria-lida","profundidade_corpo_mm":"secundaria-lida"},"fonte":{"pagina":"51 (desenho 'Hasta 70A')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Largura por n� de polos 17,7/35,4/53,1/70,8; vista lateral 80 x 73 (altura x profundidade total); 44,8 = altura da face frontal; 39 = corpo atr�s da face. Man�pulo no ter�o superior-direito da face, projeta ~ 5 mm. Cat�logo em espanhol hospedado em site de distribuidor; fabricante Steck.","doc":"catalogo-steck.pdf"}},{"id":"disj_mini_1p_easy9","grupo":"dispositivos","nome":"Mini-disjuntor Easy9 1P curva C (Schneider)","ref":"Schneider Easy9 EZ9F (ficha do 3P 40 A)","cotas":{"largura_mm":18,"altura_mm":81,"profundidade_mm":66.5,"largura_por_polo_mm":18},"aparencia":{"material":"Termopl�stico branco, manopla preta","cor_hex":"#EDEDEA"},"eletrico":{"polos":1,"curva":"C"},"cotas_nivel":{"largura_mm":"secundaria-lida","largura_por_polo_mm":"secundaria-lida"},"fonte":{"pagina":"1 (EZ9F56340, distribuidor)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"Ficha do 3P 40 A: altura 81, largura 54, profundidade 66,5, passo de 9 mm; largura do 1P/2P = 18 x n� de polos (derivada).","doc":"INTERRUPTOR-TERMOMAGNETICO-EASY9-DE-3X40-AMP.-EZ9F56340-SCHNEIDER.pdf"}},{"id":"disj_mini_2p_easy9","grupo":"dispositivos","nome":"Mini-disjuntor Easy9 2P curva C (Schneider)","ref":"Schneider Easy9 EZ9F (ficha do 3P 40 A)","cotas":{"largura_mm":36,"altura_mm":81,"profundidade_mm":66.5,"largura_por_polo_mm":18},"aparencia":{"material":"Termopl�stico branco, manopla preta","cor_hex":"#EDEDEA"},"eletrico":{"polos":2,"curva":"C"},"cotas_nivel":{"largura_mm":"secundaria-lida","largura_por_polo_mm":"secundaria-lida"},"fonte":{"pagina":"1 (EZ9F56340, distribuidor)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"Ficha do 3P 40 A: altura 81, largura 54, profundidade 66,5, passo de 9 mm; largura do 1P/2P = 18 x n� de polos (derivada).","doc":"INTERRUPTOR-TERMOMAGNETICO-EASY9-DE-3X40-AMP.-EZ9F56340-SCHNEIDER.pdf"}},{"id":"disj_mini_3p_easy9","grupo":"dispositivos","nome":"Mini-disjuntor Easy9 3P curva C (Schneider)","ref":"Schneider Easy9 EZ9F (ficha do 3P 40 A)","cotas":{"largura_mm":54,"altura_mm":81,"profundidade_mm":66.5,"largura_por_polo_mm":18},"aparencia":{"material":"Termopl�stico branco, manopla preta","cor_hex":"#EDEDEA"},"eletrico":{"polos":3,"curva":"C"},"cotas_nivel":{"largura_mm":"secundaria-lida","largura_por_polo_mm":"secundaria-lida"},"fonte":{"pagina":"1 (EZ9F56340, distribuidor)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"Ficha do 3P 40 A: altura 81, largura 54, profundidade 66,5, passo de 9 mm; largura do 1P/2P = 18 x n� de polos (derivada).","doc":"INTERRUPTOR-TERMOMAGNETICO-EASY9-DE-3X40-AMP.-EZ9F56340-SCHNEIDER.pdf"}},{"id":"disj_mini_weg_mdw","grupo":"dispositivos","nome":"Mini-disjuntor WEG MDW","ref":"WEG MDW (ficha n�o lida)","cotas":{"largura_por_polo_mm":18,"altura_mm":80,"profundidade_mm":70},"aparencia":{"material":"Termopl�stico","cor_hex":"#E6E6E2"},"eletrico":{"curva":"C"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"WEG n�o consultado; valores do padr�o DIN usual.","doc":""}},{"id":"disj_geral_80_125a_steck","grupo":"dispositivos","nome":"Disjuntor geral 80 a 125 A (Steck, 1 a 4 polos)","ref":"Steck SDD6x 80-125 A (cat�logo p.51)","cotas":{"largura_por_polo_mm":27,"largura_1p_mm":27,"largura_2p_mm":54,"largura_3p_mm":81,"largura_4p_mm":108,"altura_mm":80,"profundidade_mm":70},"aparencia":{"material":"Termopl�stico cinza, manopla vermelha","cor_hex":"#E6E6E2"},"eletrico":{"In_A":[80,100,125]},"cotas_nivel":{"altura_mm":"sem-fonte-conferir","profundidade_mm":"sem-fonte-conferir"},"fonte":{"pagina":"51 (desenho '80A hasta 125A')","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Larguras 27/54/81/108 lidas no desenho; altura e profundidade desse bloco N�O lidas: usadas as do mini-disjuntor (conferir).","doc":"catalogo-steck.pdf"}},{"id":"idr_2p_30ma_steck","grupo":"dispositivos","nome":"Interruptor diferencial residual (IDR) 2P 30 mA (Steck)","ref":"Steck SDR (cat�logo Steck p.60)","cotas":{"largura_mm":36,"modulos_18mm":2,"altura_mm":90,"profundidade_mm":78,"profundidade_corpo_mm":50,"altura_frontal_mm":45},"aparencia":{"material":"Termopl�stico cinza, bot�o de teste 'T'","cor_hex":"#E6E6E2"},"eletrico":{"polos":2,"IDn_mA":30,"In_A":[25,40,63]},"fonte":{"pagina":"60","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Desenho: larguras 36 e 72; lateral: 78 (total), 50 m�x (corpo), 90 m�x (altura), 45 m�x (face). Valores como limites m�ximos do fabricante.","doc":"catalogo-steck.pdf"}},{"id":"idr_4p_30ma_steck","grupo":"dispositivos","nome":"Interruptor diferencial residual (IDR) 4P 30 mA (Steck)","ref":"Steck SDR (cat�logo Steck p.60)","cotas":{"largura_mm":72,"modulos_18mm":4,"altura_mm":90,"profundidade_mm":78,"profundidade_corpo_mm":50,"altura_frontal_mm":45},"aparencia":{"material":"Termopl�stico cinza, bot�o de teste 'T'","cor_hex":"#E6E6E2"},"eletrico":{"polos":4,"IDn_mA":30,"In_A":[25,40,63]},"fonte":{"pagina":"60","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Desenho: larguras 36 e 72; lateral: 78 (total), 50 m�x (corpo), 90 m�x (altura), 45 m�x (face). Valores como limites m�ximos do fabricante.","doc":"catalogo-steck.pdf"}},{"id":"dps_classe2_1p_steck","grupo":"dispositivos","nome":"DPS classe II monobloco 1P 275 V (Steck)","ref":"Steck DPS monobloco (cat�logo Steck p.64)","cotas":{"largura_mm":18,"altura_mm":92,"profundidade_mm":70,"profundidade_corpo_mm":44,"altura_face_mm":35.8},"aparencia":{"material":"Termopl�stico cinza","cor_hex":"#E6E6E2"},"eletrico":{"classe":"II","Uc_V":275,"Imax_kA":[20,40],"Imax_nivel":"sem-fonte-conferir","obs":"20/40 kA s�o as correntes usuais do pedido; a ficha lida (p.64) s� mostra o desenho. Conferir a refer�ncia."},"cotas_nivel":{"altura_face_mm":"secundaria-lida"},"fonte":{"pagina":"64","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Desenho: 18 de largura, 92 de altura, 70 de profundidade (44 sobre o trilho). Cartucho remov�vel na vers�o com sinaliza��o.","doc":"catalogo-steck.pdf"}},{"id":"trilho_din_35","grupo":"dispositivos","nome":"Trilho DIN 35 mm (perfil chap�u)","ref":"IEC/EN 60715 (norma n�o lida) � Steck: 'DIN 35 mm'","cotas":{"largura_mm":35,"altura_mm":7.5,"espessura_mm":1,"comprimento_barra_mm":2000},"aparencia":{"material":"A�o zincado","cor_hex":"#B9BEC4"},"cotas_nivel":{"altura_mm":"sem-fonte-conferir","espessura_mm":"sem-fonte-conferir","comprimento_barra_mm":"sem-fonte-conferir"},"fonte":{"pagina":"51 ('Tipo de instala��o sobre rieles: DIN 35 mm')","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"35 mm lido; altura 7,5 mm � da norma de perfil (n�o lida) e espessura/barra s�o usuais.","doc":"catalogo-steck.pdf"}},{"id":"pente_fase_12p","grupo":"dispositivos","nome":"Barramento pente (fase) 12 polos","ref":"Steck S1F/S2F/S3F210","cotas":{"polos":12,"comprimento_mm":210,"passo_mm":17.7,"espessura_mm":1.5},"aparencia":{"material":"Cobre estanhado, capa isolante","cor_hex":"#C8782D"},"cotas_nivel":{"passo_mm":"secundaria-lida","espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"8","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Comprimentos 210/285/321/1000 mm para 12/16/19/57 polos; corrente 80 A. Altura do pente e espessura n�o constam: espessura usual.","doc":"25222-1.pdf"}},{"id":"pente_fase_16p","grupo":"dispositivos","nome":"Barramento pente (fase) 16 polos","ref":"Steck S1F/S2F/S3F285","cotas":{"polos":16,"comprimento_mm":285,"passo_mm":17.7,"espessura_mm":1.5},"aparencia":{"material":"Cobre estanhado, capa isolante","cor_hex":"#C8782D"},"cotas_nivel":{"passo_mm":"secundaria-lida","espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"8","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Comprimentos 210/285/321/1000 mm para 12/16/19/57 polos; corrente 80 A. Altura do pente e espessura n�o constam: espessura usual.","doc":"25222-1.pdf"}},{"id":"pente_fase_19p","grupo":"dispositivos","nome":"Barramento pente (fase) 19 polos","ref":"Steck S1F/S2F/S3F321","cotas":{"polos":19,"comprimento_mm":321,"passo_mm":17.7,"espessura_mm":1.5},"aparencia":{"material":"Cobre estanhado, capa isolante","cor_hex":"#C8782D"},"cotas_nivel":{"passo_mm":"secundaria-lida","espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"8","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Comprimentos 210/285/321/1000 mm para 12/16/19/57 polos; corrente 80 A. Altura do pente e espessura n�o constam: espessura usual.","doc":"25222-1.pdf"}},{"id":"pente_fase_57p","grupo":"dispositivos","nome":"Barramento pente (fase) 57 polos","ref":"Steck S1F/S2F/S3F1000","cotas":{"polos":57,"comprimento_mm":1000,"passo_mm":17.7,"espessura_mm":1.5},"aparencia":{"material":"Cobre estanhado, capa isolante","cor_hex":"#C8782D"},"cotas_nivel":{"passo_mm":"secundaria-lida","espessura_mm":"sem-fonte-conferir"},"fonte":{"pagina":"8","nivel":"primaria-lida","acesso":"2026-11-06","obs":"Comprimentos 210/285/321/1000 mm para 12/16/19/57 polos; corrente 80 A. Altura do pente e espessura n�o constam: espessura usual.","doc":"25222-1.pdf"}},{"id":"barra_nt_8","grupo":"dispositivos","nome":"Barramento neutro/terra para quadro de 8 disjuntores","ref":"Amanco Wavin kit barra quadro 8","cotas":{"comprimento_mm":63,"dim_B_mm":9.6,"dim_C_mm":6.3,"dim_D_mm":5.5,"dim_E_mm":3.3},"aparencia":{"material":"Lat�o/cobre com borne parafusado","cor_hex":"#C8A05A"},"fonte":{"pagina":"7-8 (kit barramento)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=comprimento (leitura); B,C,D,E sem legenda (se��o/furos) � usar s� A para modelar. Corrente 125 A (p.2).","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"barra_nt_12","grupo":"dispositivos","nome":"Barramento neutro/terra para quadro de 12 disjuntores","ref":"Amanco Wavin kit barra quadro 12","cotas":{"comprimento_mm":77,"dim_B_mm":9.6,"dim_C_mm":6.3,"dim_D_mm":5.5,"dim_E_mm":3.3},"aparencia":{"material":"Lat�o/cobre com borne parafusado","cor_hex":"#C8A05A"},"fonte":{"pagina":"7-8 (kit barramento)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=comprimento (leitura); B,C,D,E sem legenda (se��o/furos) � usar s� A para modelar. Corrente 125 A (p.2).","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"barra_nt_24","grupo":"dispositivos","nome":"Barramento neutro/terra para quadro de 24 disjuntores","ref":"Amanco Wavin kit barra quadro 24","cotas":{"comprimento_mm":133,"dim_B_mm":9.6,"dim_C_mm":6.3,"dim_D_mm":5.5,"dim_E_mm":3.3},"aparencia":{"material":"Lat�o/cobre com borne parafusado","cor_hex":"#C8A05A"},"fonte":{"pagina":"7-8 (kit barramento)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=comprimento (leitura); B,C,D,E sem legenda (se��o/furos) � usar s� A para modelar. Corrente 125 A (p.2).","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"barra_nt_36","grupo":"dispositivos","nome":"Barramento neutro/terra para quadro de 36 disjuntores","ref":"Amanco Wavin kit barra quadro 36","cotas":{"comprimento_mm":184,"dim_B_mm":9.6,"dim_C_mm":6.3,"dim_D_mm":5.5,"dim_E_mm":3.3},"aparencia":{"material":"Lat�o/cobre com borne parafusado","cor_hex":"#C8A05A"},"fonte":{"pagina":"7-8 (kit barramento)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"A=comprimento (leitura); B,C,D,E sem legenda (se��o/furos) � usar s� A para modelar. Corrente 125 A (p.2).","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_4din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 4 DIN (porta revers�vel)","ref":"Amanco Wavin quadro 4 DIN liso","cotas":{"altura_mm":190,"largura_mm":199,"profundidade_mm":100,"aba_frontal_mm":22,"fileiras":1,"modulos_por_fileira":4,"modulos_din":4},"aparencia":{"material":"PVC antichama branco, tampa revers�vel 180�","cor_hex":"#F1F1EE"},"eletrico":{"IP":"IP40","barramento_NT_A":125},"cotas_nivel":{"fileiras":"secundaria-lida","modulos_por_fileira":"secundaria-lida","modulos_din":"primaria-lida"},"fonte":{"pagina":"6 (tabela A/B/C/D; figura: A vertical, B horizontal, C profundidade, D aba)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"IP40; entradas de eletroduto 25 e 32 mm; barramento N/T 125 A. N� de fileiras e m�dulos por fileira DERIVADOS (A/17,7 mm), n�o impressos na ficha. Alturas/larguras 'aproximadas' segundo a ficha.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_8din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 8 DIN (porta revers�vel)","ref":"Amanco Wavin quadro 8 DIN liso","cotas":{"altura_mm":195,"largura_mm":290,"profundidade_mm":100,"aba_frontal_mm":22,"fileiras":1,"modulos_por_fileira":8,"modulos_din":8},"aparencia":{"material":"PVC antichama branco, tampa revers�vel 180�","cor_hex":"#F1F1EE"},"eletrico":{"IP":"IP40","barramento_NT_A":125},"cotas_nivel":{"fileiras":"secundaria-lida","modulos_por_fileira":"secundaria-lida","modulos_din":"primaria-lida"},"fonte":{"pagina":"6 (tabela A/B/C/D; figura: A vertical, B horizontal, C profundidade, D aba)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"IP40; entradas de eletroduto 25 e 32 mm; barramento N/T 125 A. N� de fileiras e m�dulos por fileira DERIVADOS (A/17,7 mm), n�o impressos na ficha. Alturas/larguras 'aproximadas' segundo a ficha.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_12din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 12 DIN (porta revers�vel)","ref":"Amanco Wavin quadro 12 DIN liso","cotas":{"altura_mm":199,"largura_mm":381,"profundidade_mm":100,"aba_frontal_mm":22,"fileiras":1,"modulos_por_fileira":12,"modulos_din":12},"aparencia":{"material":"PVC antichama branco, tampa revers�vel 180�","cor_hex":"#F1F1EE"},"eletrico":{"IP":"IP40","barramento_NT_A":125},"cotas_nivel":{"fileiras":"secundaria-lida","modulos_por_fileira":"secundaria-lida","modulos_din":"primaria-lida"},"fonte":{"pagina":"6 (tabela A/B/C/D; figura: A vertical, B horizontal, C profundidade, D aba)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"IP40; entradas de eletroduto 25 e 32 mm; barramento N/T 125 A. N� de fileiras e m�dulos por fileira DERIVADOS (A/17,7 mm), n�o impressos na ficha. Alturas/larguras 'aproximadas' segundo a ficha.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_24din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 24 DIN (porta revers�vel)","ref":"Amanco Wavin quadro 24 DIN liso","cotas":{"altura_mm":342,"largura_mm":381,"profundidade_mm":100,"aba_frontal_mm":22,"fileiras":2,"modulos_por_fileira":12,"modulos_din":24},"aparencia":{"material":"PVC antichama branco, tampa revers�vel 180�","cor_hex":"#F1F1EE"},"eletrico":{"IP":"IP40","barramento_NT_A":125},"cotas_nivel":{"fileiras":"secundaria-lida","modulos_por_fileira":"secundaria-lida","modulos_din":"primaria-lida"},"fonte":{"pagina":"6 (tabela A/B/C/D; figura: A vertical, B horizontal, C profundidade, D aba)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"IP40; entradas de eletroduto 25 e 32 mm; barramento N/T 125 A. N� de fileiras e m�dulos por fileira DERIVADOS (A/17,7 mm), n�o impressos na ficha. Alturas/larguras 'aproximadas' segundo a ficha.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_36din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 36 DIN (porta revers�vel)","ref":"Amanco Wavin quadro 36 DIN liso","cotas":{"altura_mm":473,"largura_mm":381,"profundidade_mm":100,"aba_frontal_mm":22,"fileiras":3,"modulos_por_fileira":12,"modulos_din":36},"aparencia":{"material":"PVC antichama branco, tampa revers�vel 180�","cor_hex":"#F1F1EE"},"eletrico":{"IP":"IP40","barramento_NT_A":125},"cotas_nivel":{"fileiras":"secundaria-lida","modulos_por_fileira":"secundaria-lida","modulos_din":"primaria-lida"},"fonte":{"pagina":"6 (tabela A/B/C/D; figura: A vertical, B horizontal, C profundidade, D aba)","nivel":"primaria-lida","acesso":"2026-11-06","obs":"IP40; entradas de eletroduto 25 e 32 mm; barramento N/T 125 A. N� de fileiras e m�dulos por fileira DERIVADOS (A/17,7 mm), n�o impressos na ficha. Alturas/larguras 'aproximadas' segundo a ficha.","doc":"FT-Quadros-de-distribuicao.pdf"}},{"id":"quadro_pvc_embutir_12_16_tigre","grupo":"quadros","nome":"Quadro PVC de embutir 12 (NEMA) / 16 (DIN) disjuntores Tigre","ref":"Tigre c�d. 530620 (sem barramento)","cotas":{"altura_mm":344.8,"largura_mm":250,"profundidade_mm":78.7,"nicho_altura_mm":298,"nicho_largura_mm":213,"modulos_din":16},"aparencia":{"material":"PVC antichama branco","cor_hex":"#F1F1EE"},"cotas_nivel":{"modulos_din":"secundaria-lida"},"fonte":{"pagina":"p�gina do produto (Telhanorte)","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"An�ncio: externas AxLxP 34,48 x 25 x 7,87 cm; nicho AxL 29,8 x 21,3 cm. Outro an�ncio da mesma linha lista A250 B344,8 C78,7 D213 E298 (consistente).","doc":"Quadro-1216-disjuntores-porta-branca-sem-barramento-Tigre-530620"}},{"id":"quadro_pvc_embutir_3din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 3 DIN","ref":"nominal (sem ficha lida)","cotas":{"altura_mm":190,"largura_mm":199,"profundidade_mm":100,"modulos_din":3,"fileiras":1,"modulos_por_fileira":3},"aparencia":{"material":"PVC antichama branco","cor_hex":"#F1F1EE"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Nem Wavin nem Tigre lidos listam 3 DIN: dimens�es tomadas do vizinho Wavin (4 DIN / 24 DIN); conferir no cat�logo Tigre/Steck/Schneider.","doc":""}},{"id":"quadro_pvc_embutir_6din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 6 DIN","ref":"nominal (sem ficha lida)","cotas":{"altura_mm":190,"largura_mm":199,"profundidade_mm":100,"modulos_din":6,"fileiras":1,"modulos_por_fileira":6},"aparencia":{"material":"PVC antichama branco","cor_hex":"#F1F1EE"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Nem Wavin nem Tigre lidos listam 6 DIN: dimens�es tomadas do vizinho Wavin (4 DIN / 24 DIN); conferir no cat�logo Tigre/Steck/Schneider.","doc":""}},{"id":"quadro_pvc_embutir_18din","grupo":"quadros","nome":"Quadro de distribui��o PVC de embutir 18 DIN","ref":"nominal (sem ficha lida)","cotas":{"altura_mm":342,"largura_mm":381,"profundidade_mm":100,"modulos_din":18,"fileiras":2,"modulos_por_fileira":9},"aparencia":{"material":"PVC antichama branco","cor_hex":"#F1F1EE"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Nem Wavin nem Tigre lidos listam 18 DIN: dimens�es tomadas do vizinho Wavin (4 DIN / 24 DIN); conferir no cat�logo Tigre/Steck/Schneider.","doc":""}},{"id":"quadro_metal_embutir_12din","grupo":"quadros","nome":"Quadro met�lico de embutir 12 DIN (chapa pintada)","ref":"usual de mercado (sem ficha lida)","cotas":{"altura_mm":300,"largura_mm":280,"profundidade_mm":100,"chapa_mm":1,"modulos_din":12,"fileiras":1,"modulos_por_fileira":12},"aparencia":{"material":"Chapa de a�o, pintura ep�xi-p� branca/cinza","cor_hex":"#DADADA"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais; Steck Kick Box (p.85 do cat�logo) � termopl�stico IP67 (193x370x144 para 8 m�dulos), n�o met�lico � conferir.","doc":""}},{"id":"quadro_metal_sobrepor_12din","grupo":"quadros","nome":"Quadro met�lico de sobrepor 12 DIN","ref":"usual de mercado (sem ficha lida)","cotas":{"altura_mm":300,"largura_mm":280,"profundidade_mm":120,"chapa_mm":1,"modulos_din":12},"aparencia":{"material":"Chapa de a�o, pintura ep�xi-p�","cor_hex":"#DADADA"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas usuais; conferir.","doc":""}},{"id":"lum_plafon_redondo_18w","grupo":"luminarias","nome":"Plafon LED de sobrepor redondo 18 W","ref":"usual","cotas":{"diametro_mm":225,"altura_mm":40},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":18,"fluxo_lm":1600,"tensao_V":"bivolt","temperatura_K":6500},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_plafon_redondo_24w","grupo":"luminarias","nome":"Plafon LED de sobrepor redondo 24 W","ref":"usual","cotas":{"diametro_mm":300,"altura_mm":40},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":24,"fluxo_lm":2200,"tensao_V":"bivolt","temperatura_K":6500},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_plafon_quadrado_18w","grupo":"luminarias","nome":"Plafon LED de sobrepor quadrado 18 W","ref":"usual","cotas":{"lado_mm":225,"altura_mm":40},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":18,"fluxo_lm":1600,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_plafon_quadrado_24w","grupo":"luminarias","nome":"Plafon LED de sobrepor quadrado 24 W","ref":"usual","cotas":{"lado_mm":300,"altura_mm":40},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":24,"fluxo_lm":2200,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_painel_60x60_embutir","grupo":"luminarias","nome":"Painel LED de embutir 60x60 cm","ref":"usual (ficha OSRAM 595x595x9,5 mm lida s� como ordem de grandeza)","cotas":{"largura_mm":595,"comprimento_mm":595,"altura_mm":10,"furo_forro_mm":595},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":40,"fluxo_lm":4000,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); profundidade varia de 9,5 a 30 mm entre modelos (OSRAM x Adjditec, an�ncios).","doc":""}},{"id":"lum_painel_30x30_embutir","grupo":"luminarias","nome":"Painel LED de embutir 30x30 cm","ref":"usual","cotas":{"largura_mm":295,"comprimento_mm":295,"altura_mm":10,"furo_forro_mm":280},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":24,"fluxo_lm":2000,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_painel_redondo_12w","grupo":"luminarias","nome":"Painel LED redondo de embutir 12 W","ref":"usual","cotas":{"diametro_mm":170,"altura_mm":25,"furo_forro_mm":145},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":12,"fluxo_lm":1000,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_painel_redondo_18w","grupo":"luminarias","nome":"Painel LED redondo de embutir 18 W","ref":"usual","cotas":{"diametro_mm":225,"altura_mm":25,"furo_forro_mm":200},"aparencia":{"material":"ABS/alum�nio, difusor acr�lico","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":18,"fluxo_lm":1600,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_spot_par20","grupo":"luminarias","nome":"Spot de embutir PAR20/dicroica (GU10)","ref":"usual","cotas":{"diametro_mm":90,"altura_mm":70,"furo_forro_mm":75},"aparencia":{"material":"Alum�nio injetado","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":7,"fluxo_lm":500,"tensao_V":127},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_spot_trilho","grupo":"luminarias","nome":"Spot de trilho LED","ref":"usual","cotas":{"diametro_mm":70,"altura_mm":130,"comprimento_trilho_mm":1000},"aparencia":{"material":"Alum�nio","cor_hex":"#222222"},"eletrico":{"potencia_W":10,"fluxo_lm":800,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_tubular_120","grupo":"luminarias","nome":"Lumin�ria tubular LED 1,20 m (calha)","ref":"usual","cotas":{"comprimento_mm":1200,"largura_mm":60,"altura_mm":40},"aparencia":{"material":"Alum�nio, difusor leitoso","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":18,"fluxo_lm":1800,"tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_emergencia_30led","grupo":"luminarias","nome":"Lumin�ria de emerg�ncia 30 LEDs","ref":"usual","cotas":{"comprimento_mm":300,"largura_mm":100,"altura_mm":50},"aparencia":{"material":"Pl�stico branco","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":3,"fluxo_lm":200,"tensao_V":"bivolt","autonomia_h":3},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_refletor_50w","grupo":"luminarias","nome":"Refletor LED 50 W","ref":"usual","cotas":{"largura_mm":215,"altura_mm":190,"profundidade_mm":40},"aparencia":{"material":"Alum�nio injetado, vidro","cor_hex":"#2A2A2A"},"eletrico":{"potencia_W":50,"fluxo_lm":5000,"tensao_V":"bivolt","IP":"IP65"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_refletor_100w","grupo":"luminarias","nome":"Refletor LED 100 W","ref":"usual","cotas":{"largura_mm":280,"altura_mm":250,"profundidade_mm":45},"aparencia":{"material":"Alum�nio injetado, vidro","cor_hex":"#2A2A2A"},"eletrico":{"potencia_W":100,"fluxo_lm":10000,"tensao_V":"bivolt","IP":"IP65"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_balizador","grupo":"luminarias","nome":"Balizador LED de parede","ref":"usual","cotas":{"largura_mm":140,"altura_mm":70,"profundidade_mm":70},"aparencia":{"material":"Alum�nio","cor_hex":"#3A3A3A"},"eletrico":{"potencia_W":3,"fluxo_lm":150,"tensao_V":"bivolt","IP":"IP65"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_arandela_tartaruga","grupo":"luminarias","nome":"Arandela tartaruga externa","ref":"usual","cotas":{"largura_mm":200,"altura_mm":120,"profundidade_mm":90},"aparencia":{"material":"Alum�nio, vidro","cor_hex":"#2A2A2A"},"eletrico":{"potencia_W":9,"tensao_V":"bivolt","IP":"IP54","bocal":"E27"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_pendente","grupo":"luminarias","nome":"Pendente com bocal E27","ref":"usual","cotas":{"diametro_mm":250,"altura_mm":200,"cabo_mm":1000},"aparencia":{"material":"Metal pintado","cor_hex":"#2A2A2A"},"eletrico":{"potencia_W":9,"bocal":"E27","tensao_V":"bivolt"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_bocal_e27_bulbo_9w","grupo":"luminarias","nome":"Bocal E27 com l�mpada bulbo 9 W","ref":"usual","cotas":{"diametro_bulbo_mm":60,"altura_total_mm":108,"diametro_rosca_mm":27},"aparencia":{"material":"Vidro leitoso + base E27 (rosca Edison 27 mm)","cor_hex":"#F5F5F2"},"eletrico":{"potencia_W":9,"fluxo_lm":806,"bocal":"E27","tensao_V":"bivolt"},"cotas_nivel":{"diametro_rosca_mm":"sem-fonte-conferir"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_fita_led_perfil","grupo":"luminarias","nome":"Fita LED com perfil de alum�nio","ref":"usual","cotas":{"largura_mm":17,"altura_mm":8,"comprimento_barra_mm":2000},"aparencia":{"material":"Perfil de alum�nio, difusor leitoso","cor_hex":"#C8CCD0"},"eletrico":{"potencia_W_por_m":14.4,"tensao_V":12,"obs":"fonte 12/24 V separada"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); conferir","doc":""}},{"id":"lum_ventilador_teto","grupo":"luminarias","nome":"Ventilador de teto 3 p�s com lumin�ria","ref":"usual","cotas":{"diametro_pas_mm":1300,"altura_mm":400,"haste_mm":150},"aparencia":{"material":"Motor met�lico, p�s MDF/ABS","cor_hex":"#E8E4DC"},"eletrico":{"potencia_W":100,"tensao_V":127,"tipo_ponto":"LD + fixa��o para peso (gancho de ventilador, n�o a lingueta da octogonal)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Cotas e fluxo USUAIS de mercado (nenhum cat�logo Taschibra/Avant/Intral lido); Tigre (ficha p.2/3): lingueta da octogonal s� suporta 8 kg e N�O serve para ventilador.","doc":""}},{"id":"eq_geladeira_duplex","grupo":"equipamentos","nome":"Geladeira duplex","ref":"categoria","cotas":{"largura_mm":700,"altura_mm":1750,"profundidade_mm":750},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":300,"tensao_V":127,"tipo_ponto":"TUG dedicada","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8A (duplex 300 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8A (duplex 300 W).","doc":""}},{"id":"eq_freezer_horizontal","grupo":"equipamentos","nome":"Freezer horizontal","ref":"categoria","cotas":{"largura_mm":1000,"altura_mm":850,"profundidade_mm":650},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":400,"tensao_V":127,"tipo_ponto":"TUG dedicada","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8A"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8A.","doc":""}},{"id":"eq_microondas_20l","grupo":"equipamentos","nome":"Micro-ondas 20 L","ref":"categoria","cotas":{"largura_mm":440,"altura_mm":260,"profundidade_mm":340},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":1200,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":1.1,"dist_max_ponto_m":1.5,"potencia_fonte":"usual (a ND-5.1 d� 750 W m�dio, defasado)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual (a ND-5.1 d� 750 W m�dio, defasado).","doc":""}},{"id":"eq_microondas_30l","grupo":"equipamentos","nome":"Micro-ondas 30 L","ref":"categoria","cotas":{"largura_mm":520,"altura_mm":300,"profundidade_mm":400},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":1500,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":1.1,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_forno_embutir_50l","grupo":"equipamentos","nome":"Forno el�trico de embutir 50 L","ref":"categoria","cotas":{"largura_mm":595,"altura_mm":595,"profundidade_mm":550,"nicho_largura_mm":560,"nicho_altura_mm":590},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":4500,"tensao_V":220,"tipo_ponto":"TUE","altura_ponto_m":0.6,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8A (forno 4500 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8A (forno 4500 W).","doc":""}},{"id":"eq_cooktop_inducao_4b","grupo":"equipamentos","nome":"Cooktop de indu��o 4 bocas","ref":"categoria","cotas":{"largura_mm":590,"altura_mm":55,"profundidade_mm":520},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":7000,"tensao_V":220,"tipo_ponto":"TUE","altura_ponto_m":0.6,"dist_max_ponto_m":1.5,"potencia_fonte":"usual de indu��o (a ND-5.1 d� 1500 W/boca de fog�o el�trico comum)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual de indu��o (a ND-5.1 d� 1500 W/boca de fog�o el�trico comum).","doc":""}},{"id":"eq_coifa_60","grupo":"equipamentos","nome":"Coifa/depurador 60 cm","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":600,"profundidade_mm":500},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":200,"tensao_V":127,"tipo_ponto":"TUG alta","altura_ponto_m":2,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_coifa_90","grupo":"equipamentos","nome":"Coifa/depurador 90 cm","ref":"categoria","cotas":{"largura_mm":900,"altura_mm":600,"profundidade_mm":500},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":250,"tensao_V":127,"tipo_ponto":"TUG alta","altura_ponto_m":2,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_lava_loucas_8","grupo":"equipamentos","nome":"Lava-lou�as 8 servi�os","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":450,"profundidade_mm":500},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":1500,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":0.6,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabelas 8A/8B (1500 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabelas 8A/8B (1500 W).","doc":""}},{"id":"eq_lava_loucas_14","grupo":"equipamentos","nome":"Lava-lou�as 14 servi�os","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":850,"profundidade_mm":600},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":1500,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":0.6,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabelas 8A/8B (1500 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabelas 8A/8B (1500 W).","doc":""}},{"id":"eq_lavadora_12kg","grupo":"equipamentos","nome":"Lavadora de roupas 12 kg","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":1000,"profundidade_mm":650},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":1500,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8B (1500 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8B (1500 W).","doc":""}},{"id":"eq_secadora","grupo":"equipamentos","nome":"Secadora de roupas","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":850,"profundidade_mm":650},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":3500,"tensao_V":220,"tipo_ponto":"TUE","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8B (3500 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8B (3500 W).","doc":""}},{"id":"eq_lava_e_seca","grupo":"equipamentos","nome":"Lava e seca","ref":"categoria","cotas":{"largura_mm":600,"altura_mm":850,"profundidade_mm":650},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":2500,"tensao_V":220,"tipo_ponto":"TUE","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_chuveiro_127_5500","grupo":"equipamentos","nome":"Chuveiro el�trico 127 V (4400/5500 W)","ref":"categoria","cotas":{"diametro_mm":130,"altura_mm":100,"braco_mm":300},"aparencia":{"material":"Pl�stico branco","cor_hex":"#F2F2F2"},"eletrico":{"potencia_W":4400,"tensao_V":127,"tipo_ponto":"TUE (liga��o direta, caixa de passagem)","altura_ponto_m":2.1,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8A (4400 W em 127 V)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8A (4400 W em 127 V).","doc":""}},{"id":"eq_chuveiro_220_7500","grupo":"equipamentos","nome":"Chuveiro el�trico 220 V (5500/7500 W)","ref":"categoria","cotas":{"diametro_mm":130,"altura_mm":100,"braco_mm":300},"aparencia":{"material":"Pl�stico branco","cor_hex":"#F2F2F2"},"eletrico":{"potencia_W":7500,"tensao_V":220,"tipo_ponto":"TUE (liga��o direta, caixa de passagem)","altura_ponto_m":2.1,"dist_max_ponto_m":1.5,"potencia_fonte":"7500 W � a maior pot�ncia comercial usual; a ND-5.1 usa 6000 W (Tabela 8A)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: 7500 W � a maior pot�ncia comercial usual; a ND-5.1 usa 6000 W (Tabela 8A).","doc":""}},{"id":"eq_torneira_eletrica","grupo":"equipamentos","nome":"Torneira el�trica","ref":"categoria","cotas":{"largura_mm":110,"altura_mm":250,"profundidade_mm":200},"aparencia":{"material":"Pl�stico/metal cromado","cor_hex":"#F2F2F2"},"eletrico":{"potencia_W":5500,"tensao_V":220,"tipo_ponto":"TUE","altura_ponto_m":1.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 Tabela 8B 2000 W (127 V); SINAPI insumo cita 5500 W (conferir)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 Tabela 8B 2000 W (127 V); SINAPI insumo cita 5500 W (conferir).","doc":""}},{"id":"eq_aquecedor_passagem_gas","grupo":"equipamentos","nome":"Aquecedor de passagem a g�s","ref":"categoria","cotas":{"largura_mm":320,"altura_mm":560,"profundidade_mm":170},"aparencia":{"material":"A�o pintado/pl�stico","cor_hex":"#E6E6E6"},"eletrico":{"potencia_W":10,"tensao_V":127,"tipo_ponto":"TUG (s� pilhas/igni��o eletr�nica; ponto 127 V)","altura_ponto_m":2,"dist_max_ponto_m":1.5,"potencia_fonte":"usual (igni��o/eletr�nica)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual (igni��o/eletr�nica).","doc":""}},{"id":"eq_split_hiwall_9000","grupo":"equipamentos","nome":"Ar-condicionado split hi-wall 9000 BTU/h","ref":"LG Dual Inverter (refer�ncia) ","cotas":{"evaporadora_largura_mm":835,"evaporadora_altura_mm":300,"evaporadora_profundidade_mm":190,"condensadora_largura_mm":717,"condensadora_altura_mm":495,"condensadora_profundidade_mm":230},"aparencia":{"material":"Pl�stico branco / a�o pintado","cor_hex":"#F4F4F2"},"eletrico":{"potencia_W":1300,"tensao_V":220,"disjuntor_A":10,"disjuntor_nivel":"sem-fonte-conferir","tipo_ponto":"TUE (tomada alta junto � evaporadora)","altura_ponto_m":2.2,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 9 (8500 BTU/h: 1300 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 9 (8500 BTU/h: 1300 W).","doc":""}},{"id":"eq_split_hiwall_12000","grupo":"equipamentos","nome":"Ar-condicionado split hi-wall 12000 BTU/h","ref":"LG Dual Inverter (refer�ncia) ","cotas":{"evaporadora_largura_mm":837,"evaporadora_altura_mm":308,"evaporadora_profundidade_mm":189,"condensadora_largura_mm":717,"condensadora_altura_mm":495,"condensadora_profundidade_mm":230},"aparencia":{"material":"Pl�stico branco / a�o pintado","cor_hex":"#F4F4F2"},"eletrico":{"potencia_W":1100,"tensao_V":220,"disjuntor_A":16,"disjuntor_nivel":"sem-fonte-conferir","tipo_ponto":"TUE (tomada alta junto � evaporadora)","altura_ponto_m":2.2,"dist_max_ponto_m":1.5,"potencia_fonte":"ficha varejo LG S3-Q12JA31L (1100 W) � a ND-5.1 Tabela 9 d� 1600 W"},"fonte":{"pagina":"p�gina do produto (Fast Shop): evaporadora 837x308x189, condensadora 717x495x230 mm, peso 7,4/19,4 kg","nivel":"secundaria-lida","acesso":"2026-11-06","obs":"Somente a linha 12000 BTU/h tem dimens�o lida; as outras linhas (9000/18000/24000) usam dimens�es usuais da categoria.","doc":"ar-condicionado-split-lg-dual-inverter-ai-voice-12000-btus-frio-220v-s3-q12ja31l-152077"}},{"id":"eq_split_hiwall_18000","grupo":"equipamentos","nome":"Ar-condicionado split hi-wall 18000 BTU/h","ref":"LG Dual Inverter (refer�ncia) ","cotas":{"evaporadora_largura_mm":1000,"evaporadora_altura_mm":340,"evaporadora_profundidade_mm":215,"condensadora_largura_mm":770,"condensadora_altura_mm":545,"condensadora_profundidade_mm":288},"aparencia":{"material":"Pl�stico branco / a�o pintado","cor_hex":"#F4F4F2"},"eletrico":{"potencia_W":2600,"tensao_V":220,"disjuntor_A":20,"disjuntor_nivel":"sem-fonte-conferir","tipo_ponto":"TUE (tomada alta junto � evaporadora)","altura_ponto_m":2.2,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 9 (18000 BTU/h: 2600 W)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 9 (18000 BTU/h: 2600 W).","doc":""}},{"id":"eq_split_hiwall_24000","grupo":"equipamentos","nome":"Ar-condicionado split hi-wall 24000 BTU/h","ref":"LG Dual Inverter (refer�ncia) ","cotas":{"evaporadora_largura_mm":1080,"evaporadora_altura_mm":335,"evaporadora_profundidade_mm":240,"condensadora_largura_mm":845,"condensadora_altura_mm":700,"condensadora_profundidade_mm":320},"aparencia":{"material":"Pl�stico branco / a�o pintado","cor_hex":"#F4F4F2"},"eletrico":{"potencia_W":3600,"tensao_V":220,"disjuntor_A":25,"disjuntor_nivel":"sem-fonte-conferir","tipo_ponto":"TUE (tomada alta junto � evaporadora)","altura_ponto_m":2.2,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 Tabela 9 n�o tem 24000: usada a linha de 30000 BTU/h (3600 W), conservador"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 Tabela 9 n�o tem 24000: usada a linha de 30000 BTU/h (3600 W), conservador.","doc":""}},{"id":"eq_tv_50","grupo":"equipamentos","nome":"TV 50 polegadas com suporte","ref":"categoria","cotas":{"largura_mm":1120,"altura_mm":650,"profundidade_mm":60},"aparencia":{"material":"Pl�stico preto","cor_hex":"#111111"},"eletrico":{"potencia_W":150,"tensao_V":127,"tipo_ponto":"TUG (+ ponto de rede/antena)","altura_ponto_m":1.3,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_bomba_piscina","grupo":"equipamentos","nome":"Bomba de piscina 1/2 CV","ref":"categoria","cotas":{"comprimento_mm":400,"largura_mm":200,"altura_mm":250},"aparencia":{"material":"Pl�stico/ferro","cor_hex":"#2F6FB5"},"eletrico":{"potencia_W":520,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":0.3,"dist_max_ponto_m":1.5,"potencia_fonte":"ND-5.1 CEMIG Tabela 8A (1/3 CV = 520 W; 1/2 CV conferir)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: ND-5.1 CEMIG Tabela 8A (1/3 CV = 520 W; 1/2 CV conferir).","doc":""}},{"id":"eq_motor_portao","grupo":"equipamentos","nome":"Motor de port�o (deslizante/basculante)","ref":"categoria","cotas":{"largura_mm":250,"altura_mm":270,"profundidade_mm":180},"aparencia":{"material":"Alum�nio/ferro","cor_hex":"#444444"},"eletrico":{"potencia_W":370,"tensao_V":127,"tipo_ponto":"TUE","altura_ponto_m":1,"dist_max_ponto_m":1.5,"potencia_fonte":"usual (1/2 CV)"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual (1/2 CV).","doc":""}},{"id":"eq_interfone","grupo":"equipamentos","nome":"Interfone/porteiro eletr�nico","ref":"categoria","cotas":{"largura_mm":90,"altura_mm":180,"profundidade_mm":30},"aparencia":{"material":"Pl�stico branco","cor_hex":"#F2F2F2"},"eletrico":{"potencia_W":10,"tensao_V":"12/24 (fonte)","tipo_ponto":"ponto de sinal","altura_ponto_m":1.4,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}},{"id":"eq_campainha","grupo":"equipamentos","nome":"Campainha","ref":"categoria","cotas":{"largura_mm":90,"altura_mm":90,"profundidade_mm":40},"aparencia":{"material":"Pl�stico branco","cor_hex":"#F2F2F2"},"eletrico":{"potencia_W":5,"tensao_V":127,"tipo_ponto":"ponto de sinal","altura_ponto_m":2,"dist_max_ponto_m":1.5,"potencia_fonte":"usual"},"fonte":{"pagina":"","nivel":"sem-fonte-conferir","acesso":"2026-11-06","obs":"Dimens�es USUAIS da categoria (nenhuma ficha de Electrolux/Brastemp/LG lida); pot�ncia: usual.","doc":""}}]};
+var POR_ID = {}; var i;
+for (i = 0; i < DADOS.itens.length; i++) POR_ID[DADOS.itens[i].id] = DADOS.itens[i];
+function item(id) { return Object.prototype.hasOwnProperty.call(POR_ID, id) ? POR_ID[id] : null; }
+function porGrupo(g) { var r = []; for (var k = 0; k < DADOS.itens.length; k++) if (DADOS.itens[k].grupo === g) r.push(DADOS.itens[k]); return r; }
+function cota(id, nome) {
+var it = item(id); if (!it || !Object.prototype.hasOwnProperty.call(it.cotas, nome)) return null;
+return { valor: it.cotas[nome], nivel: (it.cotas_nivel && it.cotas_nivel[nome]) || it.fonte.nivel };
+}
+function ids() { var r = []; for (var k = 0; k < DADOS.itens.length; k++) r.push(DADOS.itens[k].id); return r; }
+function grupos() { return DADOS.grupos.slice(); }
+var EleCatalogoDados = { versao: DADOS.versao, NIVEIS: DADOS.niveis, item: item, porGrupo: porGrupo, cota: cota, ids: ids, grupos: grupos, todos: function () { return DADOS.itens.slice(); } };
+global.EleCatalogoDados = EleCatalogoDados;
+if (typeof module !== "undefined" && module.exports) module.exports = EleCatalogoDados;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elefamiliasgeo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var Mob = dep("Mob", "mobgeo.js");
+var MM = 0.001;
+function num(v, d) { return typeof v === "number" && isFinite(v) ? v : d; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+var MAT = {
+PVC_AM: "pvc amarelo caixa", PVC_LJ: "pvc laranja reforçado", PVC: "pvc", GALV: "aço galvanizado estampado", BRANCO: "plástico branco", ACRIL: "acrílico translúcido",
+CINZA_DIN: "plástico cinza din", MANIP: "manípulo preto", MANIP_VM: "manípulo vermelho", COBRE: "cobre", LATAO: "latão borne",
+AZUL: "isolação azul", VERDE: "isolação verde-amarela", PRETA: "isolação preta", VERMELHA: "isolação vermelha", BRANCA: "isolação branca", CINZA: "isolação cinza",
+FUME: "policarbonato fumê", ESCURO: "borracha preta", METAL: "metal cromado", BOTAO: "botão de teste amarelo", DPS_OK: "indicador dps verde", QUADRO_METAL: "metal branco", DOBRADICA: "aço galvanizado"
+};
+function box(c, mat, cx, cy, cz, dx, dy, dz) { c.caixa(mat, cx, cy - dy / 2, cz, dx, dy, dz); }
+function disco(c, mat, x, y, z, r, esp, eixo, seg) {
+if (eixo === "y") c.cil(mat, x, y - esp / 2, z, r, esp, { seg: seg || 16 });
+else c.cilH(mat, x, y, z, r, esp, eixo, { seg: seg || 16 });
+}
+function ko(c, mat, x, y, z, r, eixo, s) {
+var o = { x: x, y: y, z: z }, o2 = { x: x, y: y, z: z };
+o[eixo] += s * 0.00025; o2[eixo] += s * 0.0005;
+disco(c, MAT.ESCURO, o.x, o.y, o.z, r + 0.0009, 0.0005, eixo, 18);
+disco(c, mat, o2.x, o2.y, o2.z, r, 0.001, eixo, 18);
+}
+var FONTE = {
+"0": ["111", "101", "101", "101", "111"], "1": ["010", "110", "010", "010", "111"], "2": ["111", "001", "111", "100", "111"], "3": ["111", "001", "111", "001", "111"],
+"4": ["101", "101", "111", "001", "001"], "5": ["111", "100", "111", "001", "111"], "6": ["111", "100", "111", "101", "111"], "7": ["111", "001", "001", "001", "001"],
+"8": ["111", "101", "111", "101", "111"], "9": ["111", "101", "111", "001", "111"], "A": ["010", "101", "111", "101", "101"], "B": ["110", "101", "110", "101", "110"],
+"C": ["011", "100", "100", "100", "011"], "D": ["110", "101", "101", "101", "110"], "G": ["011", "100", "101", "101", "011"], "P": ["110", "101", "110", "100", "100"],
+"R": ["110", "101", "110", "101", "101"], "S": ["011", "100", "010", "001", "110"], "T": ["111", "010", "010", "010", "010"], "I": ["111", "010", "010", "010", "111"],
+"Q": ["111", "101", "101", "111", "001"], "-": ["000", "000", "111", "000", "000"]
+};
+function larguraTexto(str, h) { var n = String(str || "").length; return n ? (n * 4 - 1) * (h / 5) : 0; }
+function texto(c, mat, str, xc, yc, z, h, dz) {
+str = String(str == null ? "" : str).toUpperCase();
+if (!str) return;
+var px = h / 5, w = larguraTexto(str, h), x0 = xc - w / 2, y0 = yc + h / 2, i, r, k;
+for (i = 0; i < str.length; i++) {
+var g = FONTE[str.charAt(i)]; if (!g) continue;
+for (r = 0; r < 5; r++) {
+k = 0;
+while (k < 3) {
+if (g[r].charAt(k) === "1") {
+var k2 = k; while (k2 + 1 < 3 && g[r].charAt(k2 + 1) === "1") k2++;
+var n = k2 - k + 1;
+box(c, mat, x0 + (i * 4 + k + n / 2) * px, y0 - (r + 0.5) * px, z + num(dz, 0.0003) / 2, n * px, px, num(dz, 0.0003));
+k = k2 + 1;
+} else k++;
+}
+}
+}
+}
+function caixaRet(c, p) {
+var W = p.W, H = p.H, D = p.D, t = p.t, yc = p.yc, metal = !!p.metal, mat = p.mat, matI = p.matInt || p.mat;
+var rc = metal ? 0.0015 : 0.003;
+var ext = Mob.contornoRR(W, H, rc, 3), inte = Mob.contornoRR(W - 2 * t, H - 2 * t, Math.max(0.0003, rc - t * 0.5), 3);
+c.bandeja(mat, matI, 0, yc, -D, ext, inte, D, t, { rotX: 90 });
+var furos = [], fv = num(p.furoV, 0), fh = num(p.furoH, 0), sx, sy;
+if (fv > 0) { if (fh > 0) { for (sx = -1; sx <= 1; sx += 2) for (sy = -1; sy <= 1; sy += 2) furos.push([sx * fh / 2, sy * fv / 2]); } else { furos.push([0, fv / 2]); furos.push([0, -fv / 2]); } }
+if (num(p.orelha, 0) > 0.0003) {
+var e = p.orelha, xs = fh > 0 ? [-fh / 2, fh / 2] : [0];
+for (sy = -1; sy <= 1; sy += 2) xs.forEach(function (x) { box(c, mat, x, yc + sy * (H / 2 + e / 2 - 0.0004), -0.0015, 0.014, e + 0.0008, 0.003); });
+}
+furos.forEach(function (f) {
+var sgn = f[1] >= 0 ? 1 : -1, yi = H / 2 - t;
+if (metal) {
+var yIn = Math.abs(f[1]) - 0.0055, h2 = yi - yIn;
+if (h2 > 0.0005) box(c, mat, f[0], yc + sgn * (yIn + h2 / 2), -0.006, 0.013, h2, 0.0012);
+disco(c, MAT.ESCURO, f[0], yc + f[1], -0.0053, 0.0017, 0.0006, "z", 12);
+} else {
+c.cilH(mat, f[0], yc + f[1], -0.009, 0.0036, 0.018, "z", { seg: 14 });
+var ya = Math.abs(f[1]) + 0.0036, hr = yi - ya;
+if (hr > 0.0004) box(c, mat, f[0], yc + sgn * (ya + hr / 2), -0.009, 0.006, hr, 0.018);
+disco(c, MAT.ESCURO, f[0], yc + f[1], -0.0004, 0.0017, 0.0009, "z", 12);
+}
+});
+if (!metal) { box(c, mat, 0, yc + H * 0.28, -D - 0.0008, W - 2 * t - 0.004, 0.0016, 0.0016); box(c, mat, 0, yc - H * 0.28, -D - 0.0008, W - 2 * t - 0.004, 0.0016, 0.0016); }
+var r = (num(p.dn, 25) + 2) / 2 * MM, zf = -D, zi = -D + t, zm = -D / 2;
+var r20 = Math.min(r, 0.011);
+var fundo = p.kind === "4x4" ? [[0, 0, r], [-0.027, 0.022, r20], [0.027, 0.022, r20], [-0.027, -0.022, r20], [0.027, -0.022, r20]] : [[0, 0, r], [0, 0.0257, r20], [0, -0.0257, r20]];
+fundo.forEach(function (q) { ko(c, mat, q[0], yc + q[1], zf, q[2], "z", -1); ko(c, mat, q[0], yc + q[1], zi, q[2], "z", 1); });
+var lat = p.kind === "4x4" ? [-0.025, 0.025] : [-0.0255, 0.0255];
+[-1, 1].forEach(function (s) { lat.forEach(function (yy) { ko(c, mat, s * W / 2, yc + yy, zm, r, "x", s); ko(c, mat, s * (W / 2 - t), yc + yy, zm, r, "x", -s); }); });
+var topo = p.kind === "4x4" ? [-0.025, 0.025] : [0];
+[-1, 1].forEach(function (s) { topo.forEach(function (xx) { ko(c, mat, xx, yc + s * H / 2, zm, Math.min(r, W / 2 - 0.004), "y", s); ko(c, mat, xx, yc + s * (H / 2 - t), zm, Math.min(r, W / 2 - 0.004), "y", -s); }); });
+}
+function caixaOct(c, p) {
+var Dc = p.Dc, D = p.D, t = p.t, yc = p.yc, mat = p.mat, ro = Dc / 2, ri = ro - t, metal = !!p.metal, recuo = Math.max(0, Math.min(num(p.recuo, 0), D - 2 * t - 0.01));
+var yFundo = yc + D - recuo - t;
+if (!metal) {
+c.torno(mat, 0, 0, 0, [[ri, yc], [ro, yc], [ro, yc + D], [ri, yc + D], [ri, yc]], { seg: 36, aberto: true });
+c.cil(mat, 0, yFundo, 0, ri - 0.0003, t, { seg: 36 });
+} else {
+var a = ri, lado = 2 * (a + t) * Math.tan(Math.PI / 8) + 0.0006, k;
+for (k = 0; k < 8; k++) c.grupo(0, 0, 0, k * 45, function (g) { g.caixa(mat, 0, yc, a + t / 2, lado, D, t); });
+c.cil(mat, 0, yFundo, 0, (a - 0.0002) / Math.cos(Math.PI / 8), t, { seg: 8, rotY: -22.5 });
+}
+var Dt = num(p.Dt, Dc), ext = (Dt - Dc) / 2;
+if (!metal && ext > 0.0004) {
+[-1, 1].forEach(function (s) {
+var larg = ext + 0.002, cx = s * (ro - 0.002 + larg / 2);
+box(c, mat, cx, yc + 0.0015, 0, larg, 0.003, 0.012);
+disco(c, MAT.ESCURO, s * (Dt / 2 - 0.0045), yc - 0.0001, 0, 0.0021, 0.0006, "y", 14);
+});
+}
+if (metal) {
+[-1, 1].forEach(function (s) {
+box(c, mat, s * (a - 0.006), yc + D - 0.012, 0, 0.012, 0.0012, 0.012);
+disco(c, MAT.ESCURO, s * (a - 0.006), yc + D - 0.0114, 0, 0.0021, 0.0006, "y", 12);
+});
+}
+var r = (num(p.dn, 25) + 2) / 2 * MM, kk;
+[[0.02, 0], [-0.02, 0], [0, 0.02], [0, -0.02]].forEach(function (q) {
+ko(c, mat, q[0], yFundo, q[1], r, "y", -1);
+ko(c, mat, q[0], yFundo + t, q[1], r, "y", 1);
+});
+var rad = metal ? a + t : ro;
+[0, 180, 45, 135, 225, 315].forEach(function (ang) {
+c.grupo(0, 0, 0, ang, function (g) { ko(g, mat, 0, yc + D * 0.55, rad, Math.min(r, 0.011), "z", 1); });
+});
+void kk;
+}
+function placa(c, p) {
+var w = p.w, h = p.h, e = p.e, yc = p.yc, raio = Math.min(0.008, Math.min(w, h) / 4);
+var e1 = e * 0.6, e2 = e - e1, mat = MAT.BRANCO;
+c.prisma(mat, 0, yc, 0, Mob.contornoRR(w, h, raio, 4), e1, { rotX: 90 });
+c.prisma(mat, 0, yc, e1, Mob.contornoRR(w - 0.0016, h - 0.0016, Math.max(0.0005, raio - 0.0008), 4), e2, { rotX: 90 });
+var jw = num(p.jan && p.jan[0], 0.0265), jh = num(p.jan && p.jan[1], 0.0515);
+arr(p.postos).forEach(function (q) {
+box(c, MAT.ESCURO, q[0], yc + q[1], e + 0.0001, jw, jh, 0.0004);
+if (p.cheio === "cego") { box(c, mat, q[0], yc + q[1], e + 0.001, jw - 0.0016, jh - 0.0016, 0.0022); }
+});
+}
+function tampaOct(c, p) {
+var R = p.d / 2, e = p.e, y0 = p.yc - e, rh = num(p.furo, 0) / 2, mat = p.mat || MAT.PVC_AM, ch = Math.min(0.0012, e * 0.5);
+if (rh > 0.0005) c.torno(mat, 0, y0, 0, [[rh, e], [rh, 0], [R - ch, 0], [R, ch], [R, e], [rh, e]], { seg: 40, aberto: true });
+else c.torno(mat, 0, y0, 0, [[0, 0], [R - ch, 0], [R, ch], [R, e], [0, e]], { seg: 40 });
+[-1, 1].forEach(function (s) { disco(c, MAT.METAL, s * (R - 0.0075), y0 - 0.0003, 0, 0.0028, 0.0006, "y", 12); disco(c, MAT.ESCURO, s * (R - 0.0075), y0 - 0.0007, 0, 0.0009, 0.0004, "y", 8); });
+}
+function dispDin(c, o) {
+var W = o.W, Ht = o.Ht, Dc = o.Dc, Dt = o.Dt, Hf = o.Hf, gh = num(o.gh, 0.0355), gd = num(o.gd, 0.0055), n = Math.max(1, o.polos || 1), P = 0.0177;
+var cor = MAT.CINZA_DIN, preto = o.mp === "vermelho" ? MAT.MANIP_VM : MAT.MANIP;
+var zf = o.tipo === "dps" ? Dt - 0.0024 : Dt - 0.0055;
+var hs = Ht / 2 - gh / 2;
+box(c, cor, 0, gh / 2 + hs / 2, Dc / 2, W, hs, Dc);
+box(c, cor, 0, -(gh / 2 + hs / 2), Dc / 2, W, hs, Dc);
+box(c, cor, 0, 0, (gd + Dc) / 2, W, gh, Dc - gd);
+c.caixaR(cor, 0, -Hf / 2, (Dc + zf) / 2, W - 0.0004, Hf, zf - Dc, 0.0016, { k: 2 });
+var yb = (Hf / 2 + Ht / 2) / 2, i;
+for (i = 0; i < n; i++) {
+var xi = (i - (n - 1) / 2) * P;
+[-1, 1].forEach(function (s) {
+disco(c, MAT.LATAO, xi, s * yb, Dc + 0.0003, 0.0027, 0.0008, "z", 14);
+box(c, MAT.ESCURO, xi, s * yb, Dc + 0.0008, 0.0038, 0.0006, 0.0004);
+box(c, MAT.ESCURO, xi, s * (Ht / 2 - 0.00025), Dc - 0.0085, 0.0085, 0.0005, 0.0075);
+});
+}
+var yl = Hf / 4 - 0.0008;
+if (o.tipo === "disj") {
+for (i = 0; i < n; i++) {
+var xl = (i - (n - 1) / 2) * P;
+box(c, MAT.ESCURO, xl, yl, zf + 0.0001, 0.0105, 0.0185, 0.0004);
+box(c, preto, xl, yl + 0.0012, zf + 0.00275, 0.0078, 0.0138, 0.0055);
+}
+if (n > 1) box(c, preto, 0, yl + 0.0012 + 0.0069 - 0.0016, zf + 0.00275, (n - 1) * P + 0.0078, 0.0032, 0.0055);
+var jw = Math.min(W - 0.004, 0.0145);
+box(c, MAT.ACRIL, 0, -Hf / 4 - 0.0006, zf + 0.0002, jw, 0.0078, 0.0005);
+texto(c, MAT.ESCURO, o.rotulo, 0, -Hf / 4 - 0.0006, zf + 0.0004, 0.0032, 0.0003);
+} else if (o.tipo === "dr") {
+box(c, MAT.ESCURO, -W / 2 + 0.0105, yl, zf + 0.0001, 0.0105, 0.0185, 0.0004);
+box(c, preto, -W / 2 + 0.0105, yl + 0.0012, zf + 0.00275, 0.0078, 0.0138, 0.0055);
+if (n > 2) box(c, preto, -W / 2 + 0.0105 + 0.0177, yl + 0.0012, zf + 0.00275, 0.0078, 0.0138, 0.0055);
+var xt = W / 2 - 0.0095;
+box(c, MAT.BOTAO, xt, yl + 0.0012, zf + 0.0014, 0.0085, 0.0085, 0.0028);
+texto(c, MAT.ESCURO, "T", xt, yl + 0.0012, zf + 0.0028, 0.0045, 0.0003);
+var jw2 = Math.min(W - 0.006, 0.020);
+box(c, MAT.ACRIL, 0, -Hf / 4 - 0.0006, zf + 0.0002, jw2, 0.0078, 0.0005);
+texto(c, MAT.ESCURO, o.rotulo, 0, -Hf / 4 - 0.0006, zf + 0.0004, 0.0032, 0.0003);
+} else {
+box(c, MAT.ESCURO, 0, yl + 0.0016, zf + 0.0001, 0.0105, 0.0072, 0.0004);
+box(c, MAT.DPS_OK, 0, yl + 0.0016, zf + 0.0003, 0.0082, 0.0050, 0.0004);
+box(c, MAT.CINZA_DIN, 0, -Hf / 4 + 0.0022, zf + 0.0012, W - 0.006, 0.0016, 0.0024);
+box(c, MAT.CINZA_DIN, 0, -Hf / 4 - 0.0014, zf + 0.0012, W - 0.006, 0.0016, 0.0024);
+texto(c, MAT.ESCURO, o.rotulo, 0, -Hf / 4 + 0.0004, zf + 0.0004, 0.0032, 0.0003);
+}
+}
+function pente(c, o) {
+var L = o.L, n = Math.max(1, o.polos), P = o.passo, esp = Math.max(0.0008, o.esp), i;
+box(c, MAT.COBRE, 0, 0, 0.004, L, 0.006, esp * 2);
+box(c, o.cor || MAT.VERMELHA, 0, 0.0035, 0.004, L, 0.0085, 0.011);
+for (i = 0; i < n; i++) box(c, MAT.COBRE, (i - (n - 1) / 2) * P, -0.0085, 0.004, 0.0035, 0.0145, esp * 2);
+box(c, MAT.ESCURO, 0, 0.0035, 0.0097, L - 0.004, 0.0004, 0.0006);
+}
+function trilho(c, o) {
+var L = o.L, e = Math.max(0.0006, o.esp), w = o.w, h = o.h, mat = MAT.GALV, hw = 0.0125, i;
+box(c, mat, 0, -(hw + (w / 2 - hw) / 2), e / 2, L, w / 2 - hw, e);
+box(c, mat, 0, (hw + (w / 2 - hw) / 2), e / 2, L, w / 2 - hw, e);
+box(c, mat, 0, -hw, h / 2, L, e, h); box(c, mat, 0, hw, h / 2, L, e, h);
+box(c, mat, 0, 0, h - e / 2, L, hw * 2 + e, e);
+var passo = 0.025, nf = Math.floor((L - 0.02) / passo);
+for (i = 0; i <= nf; i++) box(c, MAT.ESCURO, -L / 2 + 0.01 + i * passo, 0, h + 0.0001, 0.0052, 0.0075, 0.0003);
+}
+function barraNT(c, o) {
+var L = o.L, base = o.cor === "azul" ? MAT.AZUL : MAT.VERDE, i, n = Math.max(2, Math.floor((L - 0.008) / 0.0095));
+box(c, base, 0, 0, 0.004, L, 0.014, 0.008);
+box(c, MAT.LATAO, 0, 0, 0.0105, L - 0.004, 0.0096, 0.0055);
+for (i = 0; i < n; i++) {
+var x = -((n - 1) * 0.0095) / 2 + i * 0.0095;
+disco(c, MAT.METAL, x, 0, 0.0136, 0.0027, 0.0012, "z", 12);
+box(c, MAT.ESCURO, x, 0, 0.0143, 0.0036, 0.0006, 0.0003);
+}
+box(c, base, -L / 2 + 0.002, 0, 0.0095, 0.004, 0.014, 0.011); box(c, base, L / 2 - 0.002, 0, 0.0095, 0.004, 0.014, 0.011);
+}
+var P17 = 0.0177, ZD = 0.005;
+function quadro(c, p) {
+var L = p.L, A = p.A, D = p.D, aba = num(p.aba, 0), t = p.t, yc = p.yc, metal = !!p.metal;
+var bw = L - 2 * aba, bh = A - 2 * aba, zPorta = D - 0.003;
+var mat = metal ? MAT.QUADRO_METAL : MAT.BRANCO;
+var ext = Mob.contornoRR(bw, bh, 0.003, 3), inte = Mob.contornoRR(bw - 2 * t, bh - 2 * t, 0.0005, 3);
+c.bandeja(mat, mat, 0, yc, 0, ext, inte, zPorta, t, { rotX: 90 });
+if (aba > 0.001) {
+var ez = 0.003;
+box(c, mat, 0, yc + bh / 2 + aba / 2, D - ez / 2 - 0.0, L, aba, ez); box(c, mat, 0, yc - bh / 2 - aba / 2, D - ez / 2, L, aba, ez);
+box(c, mat, -(bw / 2 + aba / 2), yc, D - ez / 2, aba, bh, ez); box(c, mat, bw / 2 + aba / 2, yc, D - ez / 2, aba, bh, ez);
+}
+var rows = Math.max(1, p.rows), capRow = Math.max(1, p.capRow), hi = bh - 2 * t, bandH = hi / rows;
+var Hs = Math.min(0.095, bandH - 0.012), sw = capRow * P17 + 0.028, winW = capRow * P17, zEsp = ZD + 0.050, k;
+sw = Math.min(sw, bw - 2 * t - 0.012);
+var yk = [];
+for (k = 0; k < rows; k++) yk.push(yc + hi / 2 - k * bandH - 0.005 - Hs / 2);
+for (k = 0; k < rows; k++) {
+var y0 = yk[k];
+c.grupo(0, y0, 0, 0, function (g) {
+trilho(g, { L: sw - 0.004, esp: 0.001, w: 0.035, h: 0.0075 });
+var hw2 = (Hs - 0.045) / 2;
+box(g, MAT.BRANCO, 0, 0.0225 + hw2 / 2, zEsp + 0.00125, sw, hw2, 0.0025);
+box(g, MAT.BRANCO, 0, -0.0225 - hw2 / 2, zEsp + 0.00125, sw, hw2, 0.0025);
+var lat = (sw - winW) / 2;
+box(g, MAT.BRANCO, -(winW / 2 + lat / 2), 0, zEsp + 0.00125, lat, 0.045, 0.0025);
+box(g, MAT.BRANCO, winW / 2 + lat / 2, 0, zEsp + 0.00125, lat, 0.045, 0.0025);
+});
+}
+arr(p.itens).forEach(function (it) {
+var y0 = yk[it.fileira]; if (y0 == null) return;
+var xc = -winW / 2 + (it.coluna + it.modulos / 2) * P17, zDev = ZD;
+c.grupo(xc, y0, zDev, 0, function (g) {
+var d = it.dim;
+if (it.tipo === "reserva") {
+var zf = 0.073 - 0.0055;
+g.caixaR(MAT.CINZA_DIN, 0, -0.0224, (0.039 + zf) / 2, P17 - 0.0006, 0.0448, zf - 0.039, 0.0014, { k: 2 });
+return;
+}
+dispDin(g, { W: it.modulos * P17, Ht: d.Ht, Dc: d.Dc, Dt: d.Dt, Hf: d.Hf, gh: 0.0355, gd: 0.0055, polos: it.polos, tipo: it.tipo === "dps" ? "dps" : (it.tipo === "dr" ? "dr" : "disj"), rotulo: it.rotulo, mp: p.manipulo });
+});
+if (it.etiqueta) {
+var wl = Math.min(it.modulos * P17 - 0.002, 0.0172 + (it.modulos - 1) * 0.004), yl = y0 - 0.0225 - 0.0085;
+box(c, MAT.BRANCA, xc, yl, zEsp + 0.0025 + 0.0002, Math.max(wl, larguraTexto(it.etiqueta, 0.0042) + 0.002), 0.0062, 0.0004);
+texto(c, MAT.ESCURO, it.etiqueta, xc, yl, zEsp + 0.0025 + 0.0004, 0.0042, 0.0003);
+}
+});
+var yBar = yk[rows - 1] - Hs / 2 - 0.016, bx = Math.min(bw / 2 - 0.02 - Math.max(num(p.barraN, 0.077), num(p.barraT, 0.077)) / 2, bw * 0.24);
+c.grupo(-bx, yBar, t, 0, function (g) { barraNT(g, { L: num(p.barraN, 0.077), cor: "azul" }); });
+c.grupo(bx, yBar, t, 0, function (g) { barraNT(g, { L: num(p.barraT, 0.077), cor: "verde" }); });
+var env0 = c.env ? { x0: c.env.x0, y0: c.env.y0, z0: c.env.z0, x1: c.env.x1, y1: c.env.y1, z1: c.env.z1 } : null;
+var pw = bw - 0.001, ph = bh - 0.001, pe = 0.003, aberta = !!p.portaAberta, hx = -pw / 2;
+c.grupo(hx, yc, zPorta, aberta ? -105 : 0, function (g) {
+var fr = 0.016;
+if (metal) {
+box(g, mat, pw / 2, 0, pe / 2, pw, ph, pe);
+box(g, mat, pw / 2, 0, pe + 0.0006, pw - 0.012, ph - 0.012, 0.0012);
+} else {
+box(g, mat, pw / 2, ph / 2 - fr / 2, pe / 2, pw, fr, pe); box(g, mat, pw / 2, -ph / 2 + fr / 2, pe / 2, pw, fr, pe);
+box(g, mat, fr / 2, 0, pe / 2, fr, ph - 2 * fr, pe); box(g, mat, pw - fr / 2, 0, pe / 2, fr, ph - 2 * fr, pe);
+box(g, MAT.FUME, pw / 2, 0, pe / 2, pw - 2 * fr, ph - 2 * fr, 0.0016);
+}
+g.cilH(MAT.METAL, pw - 0.018, 0, pe + 0.0035, 0.0065, 0.007, "z", { seg: 16 });
+box(g, MAT.ESCURO, pw - 0.018, 0, pe + 0.0072, 0.009, 0.0016, 0.0006);
+[0.35, -0.35].forEach(function (f) { g.cil(MAT.DOBRADICA, 0.003, ph * f - 0.015, pe / 2, 0.0035, 0.03, { seg: 10 }); });
+});
+if (env0) {
+c.env = env0;
+env0.x0 = Math.min(env0.x0, -pw / 2); env0.x1 = Math.max(env0.x1, pw / 2); env0.y0 = Math.min(env0.y0, yc - ph / 2); env0.y1 = Math.max(env0.y1, yc + ph / 2); env0.z1 = Math.max(env0.z1, D);
+}
+}
+var EleFamiliasGeo = {
+MAT: MAT, caixaRet: caixaRet, caixaOct: caixaOct, placa: placa, tampaOct: tampaOct, dispDin: dispDin, pente: pente, trilho: trilho, barraNT: barraNT,
+quadro: quadro, texto: texto, larguraTexto: larguraTexto, FONTE: FONTE, P17: P17, ZD: ZD
+};
+global.EleFamiliasGeo = EleFamiliasGeo;
+if (typeof module !== "undefined" && module.exports) module.exports = EleFamiliasGeo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elefamilias.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var FM = dep("FamiliasMob", "familiasmob.js");
+var G = dep("EleFamiliasGeo", "elefamiliasgeo.js");
+var Cat = dep("EleCatalogoDados", "elecatalogodados.js");
+function num(v, d) { var n = typeof v === "number" ? v : parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : d; }
+function txt(v) { return v == null ? "" : String(v); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+function item(id) { var x = Cat && Cat.item(id); if (!x) throw new Error("catálogo elétrico (L1) sem o item \"" + id + "\""); return x; }
+function cotaMM(id, nome) { var x = Cat && Cat.cota(id, nome); if (!x) throw new Error("catálogo elétrico (L1): o item \"" + id + "\" não tem a cota \"" + nome + "\""); return x.valor; }
+function cotaM(id, nome) { return cotaMM(id, nome) / 1000; }
+function cotaOr(id, nome, padraoMM) { var x = Cat && Cat.cota(id, nome); return (x ? x.valor : padraoMM) / 1000; }
+var ORDEM_NIVEL = { "primaria-lida": 0, "secundaria-lida": 1, "decisao-RA": 2, "sem-fonte-conferir": 3 };
+function nivelDe(ids, nomes) {
+var pior = "primaria-lida", lista = [], det = [];
+arr(ids).forEach(function (id) {
+var it = item(id);
+Object.keys(it.cotas).forEach(function (k) {
+if (nomes && nomes.indexOf(k) < 0) return;
+var n = Cat.cota(id, k).nivel;
+if ((ORDEM_NIVEL[n] || 0) > (ORDEM_NIVEL[pior] || 0)) pior = n;
+if (n !== "primaria-lida") det.push(k + ": " + n);
+});
+lista.push(it.fonte.nivel);
+});
+return { nivel: pior, detalhe: det };
+}
+function fonteDe(ids) {
+return arr(ids).map(function (id) { var it = item(id); return it.fonte.doc + (it.fonte.pagina ? " p." + it.fonte.pagina : "") + " [" + it.fonte.nivel + "]"; }).join(" | ");
+}
+var P = FM.P, T = FM.T;
+function Pf(nome, tipoDado, valor, grupo, descricao, escopo) { return P(nome, tipoDado, valor, grupo, descricao, escopo); }
+function paramFonte() {
+return [
+Pf("Item_catalogo", "texto", "", "Fonte", "Id do item no catálogo elétrico da RA (dados-fonte/eletrica/catalogo), de onde saem as cotas do tipo"),
+Pf("Fonte", "texto", "", "Fonte", "Documento e página do fabricante (nível entre colchetes: primaria-lida, secundaria-lida, sem-fonte-conferir)"),
+Pf("Nivel_fonte", "texto", "", "Fonte", "A pior fonte entre as cotas usadas: primaria-lida · secundaria-lida · sem-fonte-conferir (valor usual, NÃO usar em projeto assinado)"),
+Pf("Cotas_a_conferir", "texto", "", "Fonte", "As cotas do tipo que NÃO são de ficha primária (nome: nível); vazio = todas primárias")
+];
+}
+function vFonte(ids, nomes) {
+var n = nivelDe(ids, nomes);
+return { Item_catalogo: arr(ids)[0], Fonte: fonteDe(ids), Nivel_fonte: n.nivel, Cotas_a_conferir: n.detalhe.join("; ") };
+}
+function tipo(id, nome, valores, ids) {
+var t = T(id, nome, valores, fonteDe(ids));
+return t;
+}
+var LISTA_ID = [];
+var MODEL = " (modelagem RA — a ficha não publica)";
+function con(id, nome, x, y, z, dir, op) {
+var o = { id: id, nome: nome, sistema: "eletrica", dn: "Entrada_DN", x: x, y: y, z: z, papel: "entrada", dir: dir, origemPos: "catalogo" };
+if (op) o.opcional = true;
+return o;
+}
+function def(o) {
+var fam = FM.def({ id: o.id, nome: o.nome, categoria: o.categoria || "dispositivo_eletrico", descricao: o.descricao, semOrigem: true, parametros: o.parametros, tipos: o.tipos, gerar: o.gerar, quantDesc: o.nome });
+fam.descricao = o.descricao;
+fam.disciplina = "eletrica";
+if (o.mep) fam.mep = { peca: o.mep };
+if (o.conectores) fam.conectores = o.conectores;
+fam.quantitativo = { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: o.nome };
+fam.catalogo = { ids: o.ids || [] };
+LISTA_ID.push(o.id);
+return fam;
+}
+function sim(v, nome) { return v[nome] === true; }
+var NOM = 4 * 25.4;
+function paramsCaixa(extra) {
+return [
+Pf("Material_caixa", "texto", "PVC", "Materiais", "PVC (antichama, amarela) ou Metalica (chapa estampada, galvanizada): muda a aparência e a composição SINAPI"),
+Pf("Material", "material", "pvc amarelo caixa", "Materiais", "Material do corpo (nome do 3D); a metálica usa o aço galvanizado estampado"),
+Pf("Largura", "comprimento", 0.07, "Dimensões", "Largura do corpo — catálogo"),
+Pf("Altura", "comprimento", 0.1085, "Dimensões", "Altura total, com as orelhas — catálogo"),
+Pf("Profundidade", "comprimento", 0.0475, "Dimensões", "Profundidade — catálogo"),
+Pf("Parede", "comprimento", 0.002, "Dimensões", "Espessura da parede (PVC) ou da chapa (metálica) — a ficha da caixa PVC NÃO publica a espessura: valor usual, a conferir"),
+Pf("Dist_furos", "comprimento", 0.0835, "Dimensões", "Distância entre os furos das orelhas (parafusos do suporte), na vertical — catálogo; metálica: usual (83,5), a conferir"),
+Pf("Dist_furos_h", "comprimento", 0, "Dimensões", "Distância horizontal entre os furos (4×4: 45 mm do catálogo); 0 = um furo por orelha"),
+Pf("Orelha_sai", "comprimento", 0, "Dimensões", "Quanto a orelha passa do corpo nominal de 4″ (4×2 PVC: (108,5 − 101,6) ÷ 2) — interpretação do desenho da ficha"),
+Pf("Entrada_DN", "inteiro", 25, "Elétrica", "DN do eletroduto que entra (20 = 1/2″, 25 = 3/4″): o tampão pré-cortado tem DN + 2 mm", "instancia"),
+Pf("Altura_montagem", "comprimento", 0.30, "Restrições", "Do piso ao centro da caixa: a SINAPI separa baixa (0,30 m), média (1,30 m) e alta (2,00 m)", "instancia"),
+Pf("Circuito", "texto", "", "Elétrica", "Circuito de proteção no quadro (informativo)", "instancia")
+].concat(extra || [], paramFonte());
+}
+function conectoresCaixa() {
+return [con("el", "Eletroduto (fundo)", "0", "Altura_montagem", "-Profundidade", { x: 0, y: 0, z: -1 }),
+con("el_e", "Eletroduto (lateral esquerda)", "-Largura/2", "Altura_montagem", "-Profundidade/2", { x: -1, y: 0, z: 0 }, true),
+con("el_d", "Eletroduto (lateral direita)", "Largura/2", "Altura_montagem", "-Profundidade/2", { x: 1, y: 0, z: 0 }, true)];
+}
+function gerarCaixa(kind) {
+return function (c, v) {
+var metal = /^metal/i.test(txt(v.Material_caixa)), oel = metal ? 0 : Math.max(0, num(v.Orelha_sai, 0));
+var W = Math.max(0.03, num(v.Largura, 0.07)), H = Math.max(0.05, num(v.Altura, 0.1085)) - 2 * oel, D = Math.max(0.02, num(v.Profundidade, 0.0475)), t = Math.min(0.006, Math.max(0.0008, num(v.Parede, 0.002)));
+G.caixaRet(c, { W: W, H: H, D: D, t: t, yc: num(v.Altura_montagem, 0.3), orelha: oel, furoV: num(v.Dist_furos, 0.0835), furoH: num(v.Dist_furos_h, 0), metal: metal,
+dn: num(v.Entrada_DN, 25), kind: kind, mat: metal ? G.MAT.GALV : (txt(v.Material) || G.MAT.PVC_AM) });
+};
+}
+function tipoCaixa(id, nome, cat, extra) {
+var it = item(cat), v = vFonte([cat], null), metal = /metal/.test(cat);
+var base = { Material_caixa: metal ? "Metalica" : "PVC", Material: metal ? G.MAT.GALV : (cat === "cx_4x4_pvc_wavin" ? G.MAT.PVC : G.MAT.PVC_AM),
+Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+Parede: metal ? cotaM(cat, "chapa_mm") : cotaOr(cat, "parede_mm", 2), Dist_furos: cotaOr(cat, "dist_furos_orelha_mm", 83.5), Dist_furos_h: cotaOr(cat, "dist_furos_orelha_horizontal_mm", 0) };
+Object.keys(v).forEach(function (k) { base[k] = v[k]; });
+if (!metal && !Cat.cota(cat, "parede_mm")) base.Cotas_a_conferir = (base.Cotas_a_conferir ? base.Cotas_a_conferir + "; " : "") + "parede_mm: sem-fonte-conferir (a ficha não publica; usual 2 mm)";
+Object.keys(extra || {}).forEach(function (k) { base[k] = extra[k]; });
+void it;
+return tipo(id, nome, base, [cat]);
+}
+var famCx42 = def({
+id: "ele-caixa-4x2", nome: "Caixa de luz 4×2 (embutir)", mep: "caixa_4x2", ids: ["cx_4x2_pvc", "cx_4x2_metal"], conectores: conectoresCaixa(),
+descricao: "Caixa de luz 4×2 de embutir (tomada, interruptor, ponto). Corpo OCO com a parede de verdade (de frente se vê o fundo), orelhas com o furo do parafuso do suporte a 83,5 mm, tampões pré-cortados no fundo, nas laterais, no topo e na base (DN + 2 mm) e nervuras. PVC amarela (Tigre Tigreflex) ou metálica estampada. Origem: na face da parede, no centro da caixa; o corpo fica atrás e a boca abre para +Z. A SINAPI orça pelo material e pela altura (baixa, média, alta).",
+parametros: paramsCaixa(),
+tipos: [tipoCaixa("pvc", "PVC amarela 4×2 (Tigre)", "cx_4x2_pvc", { Orelha_sai: (cotaMM("cx_4x2_pvc", "altura_mm") - NOM) / 2 / 1000 }),
+tipoCaixa("metal", "Metálica estampada 4×2 (galvanizada)", "cx_4x2_metal")],
+gerar: gerarCaixa("4x2")
+});
+var famCx44 = def({
+id: "ele-caixa-4x4", nome: "Caixa de luz 4×4 (embutir)", mep: "caixa_4x4", ids: ["cx_4x4_pvc", "cx_4x4_pvc_wavin", "cx_4x4_metal"], conectores: conectoresCaixa(),
+descricao: "Caixa de luz 4×4 de embutir (dois a seis módulos na placa 4×4). Corpo OCO, quatro pinos de parafuso (83,5 mm na vertical e 45 mm na horizontal, catálogo Tigre), tampões pré-cortados no fundo, nas laterais, no topo e na base. PVC amarela (Tigre), PVC (Amanco Wavin, eletroduto rígido) ou metálica estampada. Origem: na face da parede, no centro da caixa; o corpo fica atrás e a boca abre para +Z.",
+parametros: paramsCaixa(),
+tipos: [tipoCaixa("pvc", "PVC amarela 4×4 (Tigre)", "cx_4x4_pvc"),
+tipoCaixa("wavin", "PVC 4×4 (Amanco Wavin, eletroduto rígido)", "cx_4x4_pvc_wavin"),
+tipoCaixa("metal", "Metálica estampada 4×4 (galvanizada)", "cx_4x4_metal", { Dist_furos: 0.0835, Dist_furos_h: 0.045 })],
+gerar: gerarCaixa("4x4")
+});
+function paramsOct() {
+return [
+Pf("Material_caixa", "texto", "PVC", "Materiais", "PVC (antichama, amarela) ou Metalica (chapa estampada, galvanizada)"),
+Pf("Material", "material", "pvc amarelo caixa", "Materiais", "Material do corpo (nome do 3D)"),
+Pf("Diametro_total", "comprimento", 0.1056, "Dimensões", "Diâmetro de ponta a ponta das orelhas (cota A da ficha Tigre); metálica: o diâmetro do catálogo"),
+Pf("Diametro_corpo", "comprimento", 0.0855, "Dimensões", "Diâmetro do corpo (cota B da ficha Tigre — interpretação: a ficha não traz legenda; a imagem da vista lateral dá o corpo); metálica: entre faces"),
+Pf("Profundidade", "comprimento", 0.0605, "Dimensões", "Profundidade — catálogo (cota C)"),
+Pf("Parede", "comprimento", 0.002, "Dimensões", "Espessura da parede / da chapa — PVC: usual, a ficha não publica; metálica: catálogo (chapa)"),
+Pf("Fundo_recuo", "comprimento", 0, "Dimensões", "Quanto o FUNDO MÓVEL desceu da posição de fábrica (0 = no fundo): o fundo se destaca e reduz a profundidade útil", "instancia"),
+Pf("Entrada_DN", "inteiro", 25, "Elétrica", "DN do eletroduto que entra (20 ou 25): o tampão pré-cortado tem DN + 2 mm", "instancia"),
+Pf("Altura_montagem", "comprimento", 2.60, "Restrições", "Do piso à face de baixo da laje ou do forro (a boca da caixa)", "instancia"),
+Pf("Aplicacao", "texto", "laje", "Elétrica", "laje ou forro (a SINAPI orça só laje: o forro usa a de laje)", "instancia"),
+Pf("Circuito", "texto", "", "Elétrica", "Circuito de proteção no quadro (informativo)", "instancia")
+].concat(paramFonte());
+}
+function tipoOct(id, nome, cat, corpoNome, extra) {
+var metal = /metal/.test(cat), v = vFonte([cat], null);
+var base = { Material_caixa: metal ? "Metalica" : "PVC", Material: metal ? G.MAT.GALV : G.MAT.PVC_AM, Profundidade: cotaM(cat, "profundidade_mm"), Parede: metal ? cotaM(cat, "chapa_mm") : 0.002 };
+if (cat === "cx_oct_4x4_fundo_movel") { base.Diametro_total = cotaM(cat, "diametro_externo_mm"); base.Diametro_corpo = cotaM(cat, corpoNome); }
+else if (cat === "cx_oct_3x3_anel") { base.Diametro_total = cotaM(cat, "dim_A_mm"); base.Diametro_corpo = cotaM(cat, corpoNome); }
+else { base.Diametro_total = cotaM(cat, "diametro_externo_mm"); base.Diametro_corpo = base.Diametro_total; }
+Object.keys(v).forEach(function (k) { base[k] = v[k]; });
+Object.keys(extra || {}).forEach(function (k) { base[k] = extra[k]; });
+return tipo(id, nome, base, [cat]);
+}
+var famOct = def({
+id: "ele-caixa-octogonal", nome: "Caixa octogonal 4×4 (laje)", mep: "caixa_octogonal", ids: ["cx_oct_4x4_fundo_movel", "cx_oct_3x3_anel", "cx_oct_4x4_metal"],
+conectores: [con("el", "Eletroduto (fundo móvel, por cima)", "0", "Altura_montagem + Profundidade", "0", { x: 0, y: 1, z: 0 }),
+con("el_l1", "Eletroduto (lateral +Z)", "0", "Altura_montagem + Profundidade*0.55", "Diametro_corpo/2", { x: 0, y: 0, z: 1 }, true),
+con("el_l2", "Eletroduto (lateral −Z)", "0", "Altura_montagem + Profundidade*0.55", "-Diametro_corpo/2", { x: 0, y: 0, z: -1 }, true)],
+descricao: "Caixa octogonal de embutir na laje (ponto de teto, luminária, caixa de passagem do forro). Corpo OCO, orelhas com o furo do parafuso, FUNDO MÓVEL (parâmetro Fundo_recuo), tampões pré-cortados no fundo (quatro, em losango) e na lateral (seis, sem tapar as orelhas). PVC amarela (Tigre fundo móvel e 3×3 com anel) ou metálica estampada de oito faces. Origem: na face de baixo da laje, no centro; a boca abre para BAIXO e o corpo sobe para dentro da laje. A lingueta da octogonal não serve para ventilador (nota da ficha Tigre).",
+parametros: paramsOct(),
+tipos: [tipoOct("pvc", "PVC amarela 4×4 fundo móvel (Tigre)", "cx_oct_4x4_fundo_movel", "dim_B_mm"),
+tipoOct("pvc3", "PVC amarela 3×3 com anel deslizante (Tigre)", "cx_oct_3x3_anel", "dim_B_mm"),
+tipoOct("metal", "Metálica estampada 4×4 (galvanizada)", "cx_oct_4x4_metal")],
+gerar: function (c, v) {
+var metal = /^metal/i.test(txt(v.Material_caixa));
+G.caixaOct(c, { Dc: Math.max(0.05, num(v.Diametro_corpo, 0.0855)), Dt: metal ? num(v.Diametro_corpo, 0.0855) : num(v.Diametro_total, 0.1056), D: Math.max(0.03, num(v.Profundidade, 0.0605)),
+t: Math.min(0.006, Math.max(0.0008, num(v.Parede, 0.002))), yc: num(v.Altura_montagem, 2.6), recuo: num(v.Fundo_recuo, 0), metal: metal, dn: num(v.Entrada_DN, 25),
+mat: metal ? G.MAT.GALV : (txt(v.Material) || G.MAT.PVC_AM) });
+}
+});
+var PASSO_POSTO = 0.0305, LINHA_4X4 = 0.0456;
+function paramsPlaca(postos) {
+return [
+Pf("Postos", "inteiro", postos, "Elétrica", "Número de postos (módulos) da placa; 0 = placa cega"),
+Pf("Placa_L", "comprimento", 0.12, "Dimensões", "Lado MAIOR da placa — catálogo"),
+Pf("Placa_A", "comprimento", 0.083, "Dimensões", "Lado MENOR da placa — catálogo"),
+Pf("Espessura", "comprimento", 0.0025, "Dimensões", "Espessura da placa (sem fonte: usual — conferir)"),
+Pf("Passo_posto", "comprimento", PASSO_POSTO, "Dimensões", "Distância entre os centros de dois postos (30,5 mm, a mesma da ra-tomada)"),
+Pf("Janela_L", "comprimento", 0.0265, "Dimensões", "Largura do rebaixo do posto (módulo 25 mm + folga)" + MODEL),
+Pf("Janela_A", "comprimento", 0.0515, "Dimensões", "Altura do rebaixo do posto (módulo 50 mm + folga)" + MODEL),
+Pf("Afastados", "simnao", false, "Dimensões", "2 postos AFASTADOS (placa de duas caixas): os postos ficam a um quarto da largura do centro"),
+Pf("Modulo_preenchido", "texto", "cego", "Elétrica", "cego (módulo cego no posto: a placa como sai da loja) ou vazio (o rebaixo escuro, sem módulo)", "instancia"),
+Pf("Altura_montagem", "comprimento", 0.30, "Restrições", "Do piso ao centro da placa", "instancia"),
+Pf("Material", "material", "plástico branco", "Materiais", "Termoplástico branco")
+].concat(paramFonte());
+}
+function tipoPlaca(id, nome, cat, postos, extra) {
+var v = vFonte([cat], null);
+var base = { Postos: postos, Placa_L: cotaM(cat, "largura_mm"), Placa_A: cotaM(cat, "altura_mm"), Espessura: cotaM(cat, "espessura_mm") };
+Object.keys(v).forEach(function (k) { base[k] = v[k]; });
+Object.keys(extra || {}).forEach(function (k) { base[k] = extra[k]; });
+return tipo(id, nome, base, [cat]);
+}
+function layoutPlaca(kind, v) {
+var n = Math.max(0, Math.round(num(v.Postos, 0))), L = num(v.Placa_L, 0.12), A = num(v.Placa_A, 0.083), pas = num(v.Passo_posto, PASSO_POSTO), pos = [], k;
+if (kind === "4x2") {
+if (n <= 1) { if (n === 1) pos.push([0, 0]); return { w: A, h: L, postos: pos }; }
+var esp = sim(v, "Afastados") ? L / 4 * (n === 2 ? 1 : 1) : pas;
+for (k = 0; k < n; k++) pos.push([(k - (n - 1) / 2) * (sim(v, "Afastados") && n === 2 ? L / 2 : pas), 0]);
+void esp;
+return { w: L, h: A, postos: pos };
+}
+var cols = Math.max(1, Math.ceil(n / 2)), r, cc;
+for (k = 0; k < n; k++) { r = Math.floor(k / cols); cc = k - cols * r; var nl = Math.min(cols, n - cols * r); pos.push([(cc - (nl - 1) / 2) * pas, LINHA_4X4 / 2 * (1 - 2 * r)]); }
+return { w: L, h: A, postos: pos };
+}
+function gerarPlaca(kind) {
+return function (c, v) {
+var Ly = layoutPlaca(kind, v);
+G.placa(c, { w: Ly.w, h: Ly.h, e: Math.max(0.0012, num(v.Espessura, 0.0025)), yc: num(v.Altura_montagem, 0.3), postos: Ly.postos, jan: [num(v.Janela_L, 0.0265), num(v.Janela_A, 0.0515)],
+cheio: txt(v.Modulo_preenchido) === "vazio" ? "vazio" : "cego" });
+};
+}
+var RA_NOTA = "Medida informada pelo Rogério em 28/10/2026 para Tramontina Liz e Pial Plus (a mesma da ra-tomada); o varejo publica a medida do catálogo L1 — conferir na ficha do modelo comprado.";
+var famPl42 = def({
+id: "ele-placa-4x2", nome: "Placa 4×2 (cega, 1 a 3 postos)", ids: ["placa_cega_4x2", "placa_4x2_liz", "placa_2postos_afastados_liz"],
+descricao: "Placa (espelho) 4×2 branca: cega, 1 posto (em pé), 2 ou 3 postos (deitada) e 2 postos afastados. Bordas arredondadas em degraus (chanfro) e o rebaixo escuro de cada posto; o módulo cego entra por padrão (Modulo_preenchido = vazio mostra o rebaixo escuro). Não duplica a tomada: a ra-tomada continua com a placa dela — esta é a placa avulsa, da medida do catálogo L1. Origem: na face da parede, no centro da placa; a placa sai para +Z.",
+parametros: paramsPlaca(1),
+tipos: [tipoPlaca("cega", "Placa cega 4×2", "placa_cega_4x2", 0), tipoPlaca("p1", "Placa 4×2, 1 posto", "placa_4x2_liz", 1), tipoPlaca("p2", "Placa 4×2, 2 postos", "placa_4x2_liz", 2),
+tipoPlaca("p3", "Placa 4×2, 3 postos", "placa_4x2_liz", 3), tipoPlaca("p2af", "Placa 4×2, 2 postos afastados", "placa_2postos_afastados_liz", 2, { Afastados: true }),
+{ id: "ra-cega", nome: "Placa cega 4×2 (115 × 73, medida da ra-tomada)", valores: { Postos: 0, Placa_L: 0.115, Placa_A: 0.073, Espessura: 0.0025, Item_catalogo: "", Fonte: RA_NOTA, Nivel_fonte: "secundaria-lida", Cotas_a_conferir: "Placa_L, Placa_A: medida informada" }, fonte: RA_NOTA },
+{ id: "ra-p1", nome: "Placa 4×2, 1 posto (115 × 73, medida da ra-tomada)", valores: { Postos: 1, Placa_L: 0.115, Placa_A: 0.073, Espessura: 0.0025, Item_catalogo: "", Fonte: RA_NOTA, Nivel_fonte: "secundaria-lida", Cotas_a_conferir: "Placa_L, Placa_A: medida informada" }, fonte: RA_NOTA },
+{ id: "ra-p2", nome: "Placa 4×2, 2 postos (115 × 73, medida da ra-tomada)", valores: { Postos: 2, Placa_L: 0.115, Placa_A: 0.073, Espessura: 0.0025, Item_catalogo: "", Fonte: RA_NOTA, Nivel_fonte: "secundaria-lida", Cotas_a_conferir: "Placa_L, Placa_A: medida informada" }, fonte: RA_NOTA },
+{ id: "ra-p3", nome: "Placa 4×2, 3 postos (115 × 73, medida da ra-tomada)", valores: { Postos: 3, Placa_L: 0.115, Placa_A: 0.073, Espessura: 0.0025, Item_catalogo: "", Fonte: RA_NOTA, Nivel_fonte: "secundaria-lida", Cotas_a_conferir: "Placa_L, Placa_A: medida informada" }, fonte: RA_NOTA }],
+gerar: gerarPlaca("4x2")
+});
+var famPl44 = def({
+id: "ele-placa-4x4", nome: "Placa 4×4 (cega, 2 a 6 postos)", ids: ["placa_cega_4x4", "placa_4x4_liz"],
+descricao: "Placa (espelho) 4×4 branca: cega e de 2 a 6 postos em duas linhas (30,5 mm entre postos, 45,6 mm entre linhas, como a ra-tomada). Bordas arredondadas em degraus e o rebaixo escuro de cada posto. Origem: na face da parede, no centro da placa; a placa sai para +Z.",
+parametros: paramsPlaca(2).map(function (p) { if (p.nome === "Placa_L") p.valor = 0.125; if (p.nome === "Placa_A") p.valor = 0.125; if (p.nome === "Janela_A") { p.valor = 0.0415; p.descricao = "Altura do rebaixo do posto na 4×4 (duas linhas a 45,6 mm)" + MODEL; } return p; }),
+tipos: [tipoPlaca("cega", "Placa cega 4×4", "placa_cega_4x4", 0), tipoPlaca("p2", "Placa 4×4, 2 postos", "placa_4x4_liz", 2), tipoPlaca("p3", "Placa 4×4, 3 postos", "placa_4x4_liz", 3),
+tipoPlaca("p4", "Placa 4×4, 4 postos", "placa_4x4_liz", 4), tipoPlaca("p5", "Placa 4×4, 5 postos", "placa_4x4_liz", 5), tipoPlaca("p6", "Placa 4×4, 6 postos", "placa_4x4_liz", 6),
+{ id: "ra-p4", nome: "Placa 4×4, 4 postos (124 × 118, medida da ra-tomada)", valores: { Postos: 4, Placa_L: 0.124, Placa_A: 0.118, Espessura: 0.0025, Item_catalogo: "", Fonte: "Pial Plus, placa cega 4×4 branca, Telhanorte 632392 (a medida da ra-tomada, lote 2 de 28/10/2026)", Nivel_fonte: "secundaria-lida", Cotas_a_conferir: "Placa_L, Placa_A: varejo" }, fonte: "varejo" }],
+gerar: gerarPlaca("4x4")
+});
+var famTampa = def({
+id: "ele-tampa-octogonal", nome: "Tampa da octogonal (cega ou com furo do plafon)", ids: ["tampa_octogonal"],
+descricao: "Tampa cega da caixa octogonal 4×4 (tampa de laje), lisa ou com o FURO CENTRAL do plafon (a passagem do cabo da luminária), com os dois parafusos sobre as orelhas. O diâmetro é o do catálogo (105,6 mm, o do conjunto com orelhas) e o furo central de 25 mm é modelagem. Origem: na face de baixo da laje; a tampa fica logo abaixo dela.",
+parametros: [
+Pf("Diametro", "comprimento", 0.1056, "Dimensões", "Diâmetro da tampa — catálogo (sem fonte: tomado do conjunto Tigre; conferir)"),
+Pf("Espessura", "comprimento", 0.002, "Dimensões", "Espessura da tampa (usual — conferir)"),
+Pf("Furo_central", "comprimento", 0, "Dimensões", "Diâmetro do furo central do plafon (0 = tampa cega); 25 mm" + MODEL),
+Pf("Altura_montagem", "comprimento", 2.60, "Restrições", "Do piso à face de baixo da laje ou do forro", "instancia"),
+Pf("Material", "material", "pvc amarelo caixa", "Materiais", "PVC amarelo, a cor da caixa")
+].concat(paramFonte()),
+tipos: [tipo("cega", "Tampa cega", Object.assign({ Diametro: cotaM("tampa_octogonal", "diametro_mm"), Espessura: cotaM("tampa_octogonal", "espessura_mm"), Furo_central: 0 }, vFonte(["tampa_octogonal"], null)), ["tampa_octogonal"]),
+tipo("plafon", "Tampa com furo central (plafon)", Object.assign({ Diametro: cotaM("tampa_octogonal", "diametro_mm"), Espessura: cotaM("tampa_octogonal", "espessura_mm"), Furo_central: 0.025 }, vFonte(["tampa_octogonal"], null)), ["tampa_octogonal"])],
+gerar: function (c, v) {
+G.tampaOct(c, { d: Math.max(0.05, num(v.Diametro, 0.1056)), e: Math.max(0.001, num(v.Espessura, 0.002)), yc: num(v.Altura_montagem, 2.6), furo: Math.max(0, num(v.Furo_central, 0)), mat: txt(v.Material) || G.MAT.PVC_AM });
+}
+});
+function paramsDin(extra) {
+return [
+Pf("Polos", "inteiro", 1, "Elétrica", "Número de polos"),
+Pf("Largura", "comprimento", 0.0177, "Dimensões", "Largura (17,7 mm por polo, passo do módulo DIN) — catálogo Steck"),
+Pf("Altura", "comprimento", 0.08, "Dimensões", "Altura total — catálogo"),
+Pf("Profundidade", "comprimento", 0.073, "Dimensões", "Profundidade total, do fundo à ponta do manípulo — catálogo"),
+Pf("Prof_corpo", "comprimento", 0.039, "Dimensões", "Profundidade do corpo atrás da face (a parte de altura total) — catálogo"),
+Pf("Altura_frontal", "comprimento", 0.0448, "Dimensões", "Altura da face frontal (a que passa pela janela do espelho) — catálogo"),
+Pf("Altura_montagem", "comprimento", 1.50, "Restrições", "Do piso ao centro do dispositivo", "instancia"),
+Pf("Circuito", "texto", "", "Elétrica", "Circuito de proteção no quadro (Cn) — informativo", "instancia")
+].concat(extra || [], paramFonte());
+}
+function gerarDin(tp) {
+return function (c, v) {
+var yc = num(v.Altura_montagem, 1.5);
+c.grupo(0, yc, 0, 0, function (g) {
+G.dispDin(g, { W: num(v.Largura, 0.0177), Ht: num(v.Altura, 0.08), Dc: num(v.Prof_corpo, 0.039), Dt: num(v.Profundidade, 0.073), Hf: num(v.Altura_frontal, 0.0448), gh: 0.0355, gd: 0.0055, polos: Math.max(1, Math.round(num(v.Polos, 1))), tipo: tp,
+rotulo: txt(v.Rotulo), mp: txt(v.Manipulo) === "vermelho" ? "vermelho" : "preto" });
+});
+};
+}
+var IN_DISJ = [6, 10, 16, 20, 25, 32, 40, 50, 63], IN_GERAL = [80, 100, 125];
+var tiposDisj = [];
+[1, 2, 3, 4].forEach(function (p) {
+var cat = "disj_mini_" + p + "p_steck";
+IN_DISJ.forEach(function (In) {
+if (item(cat).eletrico.In_A.indexOf(In) < 0) return;
+var v = vFonte([cat], null), vals = { Polos: p, Corrente_A: In, Curva: "C", Rotulo: "C" + In, Icn_kA: item(cat).eletrico.Icn_kA, Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+Prof_corpo: cotaM(cat, "profundidade_corpo_mm"), Altura_frontal: cotaM(cat, "altura_frontal_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+tiposDisj.push(tipo(p + "p-c" + In, "Mini-disjuntor " + p + "P curva C " + In + " A (Steck)", vals, [cat]));
+});
+if (p <= 4) IN_GERAL.forEach(function (In) {
+var cg = "disj_geral_80_125a_steck", cm2 = "disj_mini_" + p + "p_steck", v = vFonte([cg, cm2], null);
+var vals = { Polos: p, Corrente_A: In, Curva: "", Rotulo: String(In), Icn_kA: 0, Largura: cotaM(cg, "largura_" + p + "p_mm"), Altura: cotaM(cg, "altura_mm"), Profundidade: cotaM(cg, "profundidade_mm"),
+Prof_corpo: cotaM(cm2, "profundidade_corpo_mm"), Altura_frontal: cotaM(cm2, "altura_frontal_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+tiposDisj.push(tipo("g" + p + "p-" + In, "Disjuntor geral " + p + "P " + In + " A (Steck, 80 a 125 A)", vals, [cg, cm2]));
+});
+});
+var famDisj = def({
+id: "ele-disjuntor", nome: "Disjuntor DIN (1P a 4P)", mep: "", ids: ["disj_mini_1p_steck", "disj_mini_2p_steck", "disj_mini_3p_steck", "disj_mini_4p_steck", "disj_geral_80_125a_steck"],
+descricao: "Mini-disjuntor DIN termomagnético 1P, 2P, 3P e 4P, curva C, 6 a 63 A (Steck: 17,7 mm por polo, 80 × 73 mm), e o geral de 80 a 125 A. Corpo em duas partes (atrás de altura total, com o rasgo do trilho de 35 mm; a face de 44,8 mm que passa pelo espelho), manípulo, janela de identificação com a marca (C16…) e os bornes de parafuso em cima e embaixo com a boca do fio. Origem: no fundo do dispositivo, no centro; a frente em +Z. A ficha lida da linha Steck descreve a manopla vermelha; o padrão da RA é o manípulo preto (parâmetro Manipulo).",
+parametros: paramsDin([Pf("Corrente_A", "numero", 16, "Elétrica", "Corrente nominal In (A)"), Pf("Curva", "texto", "C", "Elétrica", "Curva de disparo"), Pf("Rotulo", "texto", "C16", "Elétrica", "Marca gravada na janela de identificação (curva + In)"),
+Pf("Icn_kA", "numero", 3, "Elétrica", "Capacidade de interrupção (kA) — catálogo"), Pf("Manipulo", "texto", "preto", "Materiais", "preto (padrão RA, Easy9) ou vermelho (a ficha da linha Steck descreve manopla vermelha)")]),
+tipos: tiposDisj, gerar: gerarDin("disj")
+});
+var tiposDr = [];
+[2, 4].forEach(function (p) {
+var cat = "idr_" + p + "p_30ma_steck";
+item(cat).eletrico.In_A.forEach(function (In) {
+var v = vFonte([cat], null), vals = { Polos: p, Corrente_A: In, Sensibilidade_mA: item(cat).eletrico.IDn_mA, Rotulo: In + "A", Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+Prof_corpo: cotaM(cat, "profundidade_corpo_mm"), Altura_frontal: cotaM(cat, "altura_frontal_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+tiposDr.push(tipo(p + "p-" + In, "IDR " + p + "P " + In + " A, 30 mA (Steck)", vals, [cat]));
+});
+});
+var famDr = def({
+id: "ele-dr", nome: "Interruptor diferencial residual (IDR/DR)", ids: ["idr_2p_30ma_steck", "idr_4p_30ma_steck"],
+descricao: "Interruptor diferencial residual (IDR) 2P e 4P de 25, 40 e 63 A, 30 mA (Steck: 36 e 72 mm de largura, 90 × 78 mm). Corpo em duas partes (rasgo do trilho atrás), manípulo, BOTÃO DE TESTE 'T', janela de identificação e bornes de parafuso. A cor do botão de teste (amarelo) é USUAL: a ficha lida não diz a cor. Origem: no fundo do dispositivo, no centro; a frente em +Z.",
+parametros: paramsDin([Pf("Corrente_A", "numero", 25, "Elétrica", "Corrente nominal In (A)"), Pf("Sensibilidade_mA", "numero", 30, "Elétrica", "Corrente diferencial residual nominal IΔn (mA)"),
+Pf("Rotulo", "texto", "25A", "Elétrica", "Marca gravada na janela de identificação"), Pf("Manipulo", "texto", "preto", "Materiais", "preto ou vermelho")]).map(function (p) { if (p.nome === "Polos") p.valor = 2; if (p.nome === "Largura") p.valor = 0.036; if (p.nome === "Altura") p.valor = 0.09; if (p.nome === "Profundidade") p.valor = 0.078; if (p.nome === "Prof_corpo") p.valor = 0.05; if (p.nome === "Altura_frontal") p.valor = 0.045; return p; }),
+tipos: tiposDr, gerar: gerarDin("dr")
+});
+var tiposDps = [];
+item("dps_classe2_1p_steck").eletrico.Imax_kA.forEach(function (kA) {
+var cat = "dps_classe2_1p_steck", v = vFonte([cat], null), vals = { Polos: 1, Uc_V: item(cat).eletrico.Uc_V, Imax_kA: kA, Classe: "II", Rotulo: "II", Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+Prof_corpo: cotaM(cat, "profundidade_corpo_mm"), Altura_frontal: cotaM(cat, "altura_face_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+vals.Cotas_a_conferir = (vals.Cotas_a_conferir ? vals.Cotas_a_conferir + "; " : "") + "Imax_kA: sem-fonte-conferir (20/40 kA são os usuais do pedido)";
+tiposDps.push(tipo("1p-" + kA + "ka", "DPS classe II 1P 275 V " + kA + " kA (Steck)", vals, [cat]));
+});
+var famDps = def({
+id: "ele-dps", nome: "DPS classe II (1P, 275 V)", ids: ["dps_classe2_1p_steck"],
+descricao: "Dispositivo de proteção contra surtos classe II monobloco 1P, 275 V, 20 ou 40 kA (Steck: 18 × 92 × 70 mm; 44 mm sobre o trilho). Corpo em duas partes, cartucho com a JANELA DE INDICAÇÃO (verde = em ordem), nervura de puxar, bornes de parafuso. As correntes de 20/40 kA são as usuais do pedido (a ficha lida só traz o desenho: conferir a referência). Origem: no fundo do dispositivo, no centro; a frente em +Z.",
+parametros: paramsDin([Pf("Uc_V", "numero", 275, "Elétrica", "Tensão máxima de operação contínua Uc (V) — catálogo"), Pf("Imax_kA", "numero", 20, "Elétrica", "Corrente máxima de descarga (kA) — usual do pedido, a conferir"),
+Pf("Classe", "texto", "II", "Elétrica", "Classe do DPS"), Pf("Rotulo", "texto", "II", "Elétrica", "Marca gravada")]).map(function (p) { if (p.nome === "Altura") p.valor = 0.092; if (p.nome === "Profundidade") p.valor = 0.07; if (p.nome === "Prof_corpo") p.valor = 0.044; if (p.nome === "Altura_frontal") p.valor = 0.0358; return p; }),
+tipos: tiposDps, gerar: gerarDin("dps")
+});
+var tiposPente = [12, 16, 19, 57].map(function (n) {
+var cat = "pente_fase_" + n + "p", v = vFonte([cat], null), vals = { Polos: n, Comprimento: cotaM(cat, "comprimento_mm"), Passo: cotaM(cat, "passo_mm"), Espessura: cotaM(cat, "espessura_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+return tipo(n + "p", "Barramento pente (fase) " + n + " polos", vals, [cat]);
+});
+var famPente = def({
+id: "ele-barramento-pente", nome: "Barramento pente (fase)", ids: ["pente_fase_12p", "pente_fase_16p", "pente_fase_19p", "pente_fase_57p"],
+descricao: "Barramento pente de fase 12, 16, 19 ou 57 polos (passo de 17,7 mm): barra de cobre com a capa isolante e os dentes que entram nos bornes de cima dos disjuntores. Origem: no centro da barra; os dentes saem para baixo.",
+parametros: [Pf("Polos", "inteiro", 12, "Elétrica", "Número de polos (dentes)"), Pf("Comprimento", "comprimento", 0.21, "Dimensões", "Comprimento — catálogo"), Pf("Passo", "comprimento", 0.0177, "Dimensões", "Passo entre os dentes — catálogo"),
+Pf("Espessura", "comprimento", 0.0015, "Dimensões", "Espessura do cobre (usual — a ficha não publica)"), Pf("Altura_montagem", "comprimento", 1.50, "Restrições", "Do piso ao centro da barra", "instancia")].concat(paramFonte()),
+tipos: tiposPente,
+gerar: function (c, v) { c.grupo(0, num(v.Altura_montagem, 1.5), 0, 0, function (g) { G.pente(g, { L: num(v.Comprimento, 0.21), polos: Math.max(1, Math.round(num(v.Polos, 12))), passo: num(v.Passo, 0.0177), esp: num(v.Espessura, 0.0015) }); }); }
+});
+var catTrilho = "trilho_din_35";
+var famTrilho = def({
+id: "ele-trilho-din", nome: "Trilho DIN 35 mm", ids: [catTrilho],
+descricao: "Trilho DIN 35 × 7,5 mm (perfil chapéu, aço zincado) com as fendas de fixação. O comprimento é da instância (a barra do catálogo tem 2 m). Origem: no centro do trilho, na face de baixo; o chapéu sobe para +Z.",
+parametros: [Pf("Largura_perfil", "comprimento", cotaM(catTrilho, "largura_mm"), "Dimensões", "Largura do perfil — catálogo"), Pf("Altura_perfil", "comprimento", cotaM(catTrilho, "altura_mm"), "Dimensões", "Altura do chapéu (7,5 mm: da norma de perfil, não lida)"),
+Pf("Espessura", "comprimento", cotaM(catTrilho, "espessura_mm"), "Dimensões", "Espessura da chapa (usual — conferir)"), Pf("Comprimento", "comprimento", 0.30, "Dimensões", "Comprimento do trecho", "instancia"),
+Pf("Altura_montagem", "comprimento", 1.50, "Restrições", "Do piso ao centro do trilho", "instancia")].concat(paramFonte()),
+tipos: [tipo("t35", "Trilho DIN 35 × 7,5 (aço zincado)", Object.assign({ Largura_perfil: cotaM(catTrilho, "largura_mm"), Altura_perfil: cotaM(catTrilho, "altura_mm"), Espessura: cotaM(catTrilho, "espessura_mm") }, vFonte([catTrilho], null)), [catTrilho])],
+gerar: function (c, v) { c.grupo(0, num(v.Altura_montagem, 1.5), 0, 0, function (g) { G.trilho(g, { L: Math.max(0.05, num(v.Comprimento, 0.3)), esp: num(v.Espessura, 0.001), w: num(v.Largura_perfil, 0.035), h: num(v.Altura_perfil, 0.0075) }); }); }
+});
+function tiposBarra(cor) {
+return [8, 12, 24, 36].map(function (n) {
+var cat = "barra_nt_" + n, v = vFonte([cat], ["comprimento_mm"]), vals = { Disjuntores: n, Comprimento: cotaM(cat, "comprimento_mm") };
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+return tipo("d" + n, "Barramento de " + cor + " para quadro de " + n + " disjuntores", vals, [cat]);
+});
+}
+function defBarra(id, nome, cor, ids) {
+return def({
+id: id, nome: nome, ids: ids,
+descricao: nome + " do kit do quadro (Wavin): base isolante " + (cor === "azul" ? "AZUL (neutro)" : "VERDE (terra)") + ", barra de latão e os bornes de parafuso, comprimento do catálogo para o quadro de 8, 12, 24 ou 36 disjuntores. A seção da barra e os furos não têm legenda na ficha: só o comprimento é cota. Origem: no centro da barra, no fundo; os bornes saem para +Z.",
+parametros: [Pf("Disjuntores", "inteiro", 12, "Dimensões", "Quadro a que a barra serve (8, 12, 24 ou 36 disjuntores)"), Pf("Comprimento", "comprimento", 0.077, "Dimensões", "Comprimento da barra — catálogo"),
+Pf("Altura_montagem", "comprimento", 1.50, "Restrições", "Do piso ao centro da barra", "instancia")].concat(paramFonte()),
+tipos: tiposBarra(cor === "azul" ? "neutro" : "terra"),
+gerar: function (c, v) { c.grupo(0, num(v.Altura_montagem, 1.5), 0, 0, function (g) { G.barraNT(g, { L: num(v.Comprimento, 0.077), cor: cor }); }); }
+});
+}
+var famBN = defBarra("ele-barramento-neutro", "Barramento de neutro", "azul", ["barra_nt_8", "barra_nt_12", "barra_nt_24", "barra_nt_36"]);
+var famBT = defBarra("ele-barramento-terra", "Barramento de terra", "verde", ["barra_nt_8", "barra_nt_12", "barra_nt_24", "barra_nt_36"]);
+var P17 = G.P17;
+var PADROES = [6, 12, 18, 24, 36];
+var CAP_PADRAO = { 6: [1, 6], 12: [1, 12], 18: [2, 9], 24: [2, 12], 36: [3, 12] };
+var CAT_PVC = { 6: "quadro_pvc_embutir_6din", 12: "quadro_pvc_embutir_12din", 18: "quadro_pvc_embutir_18din", 24: "quadro_pvc_embutir_24din", 36: "quadro_pvc_embutir_36din" };
+var CAT_BARRA = { 8: "barra_nt_8", 12: "barra_nt_12", 24: "barra_nt_24", 36: "barra_nt_36" };
+function barraDe(mod) { return CAT_BARRA[mod <= 8 ? 8 : (mod <= 12 ? 12 : (mod <= 24 ? 24 : 36))]; }
+function dimDisj(polos, In) {
+var geral = In > 63, cat = "disj_mini_" + polos + "p_steck", cg = "disj_geral_80_125a_steck";
+var d = { Ht: cotaM(cat, "altura_mm"), Dt: cotaM(cat, "profundidade_mm"), Dc: cotaM(cat, "profundidade_corpo_mm"), Hf: cotaM(cat, "altura_frontal_mm") };
+if (geral) { d.Ht = cotaM(cg, "altura_mm"); d.Dt = cotaM(cg, "profundidade_mm"); d.W = cotaM(cg, "largura_" + polos + "p_mm"); d.modulos = Math.ceil(d.W / P17 - 1e-9); }
+else d.modulos = polos;
+return d;
+}
+function dimDr(polos) { var cat = "idr_" + polos + "p_30ma_steck"; return { Ht: cotaM(cat, "altura_mm"), Dt: cotaM(cat, "profundidade_mm"), Dc: cotaM(cat, "profundidade_corpo_mm"), Hf: cotaM(cat, "altura_frontal_mm"), modulos: polos }; }
+function dimDps() { var cat = "dps_classe2_1p_steck"; return { Ht: cotaM(cat, "altura_mm"), Dt: cotaM(cat, "profundidade_mm"), Dc: cotaM(cat, "profundidade_corpo_mm"), Hf: cotaM(cat, "altura_face_mm"), modulos: 1 }; }
+function lerProjeto(p) {
+if (p && typeof p === "object") return p;
+if (typeof p === "string" && p) { try { var o = JSON.parse(p); return o && typeof o === "object" ? o : null; } catch (e) { return null; } }
+return null;
+}
+function tipoIdDisj(polos, In) { if (In > 63) return "g" + polos + "p-" + In; return polos + "p-c" + In; }
+function montarQuadro(projeto, opc) {
+opc = opc || {};
+var pj = lerProjeto(projeto), avisos = [], seq = [];
+function dispositivo(tipoK, famId, tipoId, polos, In, dim, rot, et, circ, dr) {
+return { tipo: tipoK, famId: famId, tipoId: tipoId, polos: polos, In: In, modulos: dim.modulos, rotulo: rot, etiqueta: et, circuito: circ || null, dr: dr || null, dim: dim };
+}
+if (pj && (arr(pj.circuitos).length || pj.geral || arr(pj.drs).length)) {
+var porId = {}; arr(pj.circuitos).forEach(function (cc) { porId[String(cc.id)] = cc; });
+var feitos = {};
+function addCirc(cc, drId) {
+if (!cc || feitos[cc.id]) return; feitos[cc.id] = 1;
+var polos = Math.max(1, Math.min(4, Math.round(num(cc.polos, 1)))), In = num(cc.disjuntor, 0), In2 = In;
+if (!(In > 0)) { avisos.push(cc.id + ": sem corrente de disjuntor no projeto — desenhado 1P sem marca."); seq.push(dispositivo("disj", "ele-disjuntor", null, polos, null, dimDisj(polos, 16), "", cc.id, cc.id, drId)); return; }
+if (In2 < 6) In2 = 6;
+if (IN_DISJ.indexOf(In2) < 0 && In2 <= 63) { var melhor = 63; IN_DISJ.forEach(function (x) { if (x >= In2 && x < melhor) melhor = x; }); avisos.push(cc.id + ": disjuntor de " + In + " A fora da série do catálogo — desenhado como " + melhor + " A."); In2 = melhor; }
+if (In > 125) { avisos.push(cc.id + ": disjuntor de " + In + " A passa de 125 A (maior do catálogo) — desenhado como 125 A."); In2 = 125; }
+else if (In > 63 && IN_GERAL.indexOf(In) < 0) { In2 = In <= 80 ? 80 : (In <= 100 ? 100 : 125); }
+seq.push(dispositivo("disj", "ele-disjuntor", tipoIdDisj(polos, In2), polos, In2, dimDisj(polos, In2), In2 > 63 ? String(In2) : "C" + In2, cc.id, cc.id, drId));
+}
+if (pj.geral && num(pj.geral.In, 0) > 0) {
+var pg = Math.max(1, Math.min(4, Math.round(num(pj.geral.polos, 1)))), Ig = num(pj.geral.In, 0), Ig2 = Ig;
+if (Ig > 125) { avisos.push("Geral de " + Ig + " A passa de 125 A (maior do catálogo) — desenhado como 125 A."); Ig2 = 125; }
+else if (Ig > 63) Ig2 = Ig <= 80 ? 80 : (Ig <= 100 ? 100 : 125);
+else if (Ig < 6) Ig2 = 6;
+else if (IN_DISJ.indexOf(Ig2) < 0) { var mg = 63; IN_DISJ.forEach(function (x) { if (x >= Ig2 && x < mg) mg = x; }); Ig2 = mg; }
+seq.push(dispositivo("geral", "ele-disjuntor", tipoIdDisj(pg, Ig2), pg, Ig2, dimDisj(pg, Ig2), Ig2 > 63 ? String(Ig2) : "C" + Ig2, "G", null, null));
+}
+if (pj.dps && num(pj.dps.quantidade, 0) > 0) {
+var kA = num(pj.dps.in_kA, 20) >= 40 ? 40 : 20;
+for (var q = 0; q < Math.round(pj.dps.quantidade); q++) seq.push(dispositivo("dps", "ele-dps", "1p-" + kA + "ka", 1, kA, dimDps(), "II", "DPS", null, null));
+}
+arr(pj.drs).forEach(function (g) {
+var pd = num(g.polos, 2) >= 4 ? 4 : 2, Id = num(g.In, 0), Id2 = [25, 40, 63].filter(function (x) { return x >= Id; })[0] || 63;
+if (!(Id > 0)) avisos.push(g.id + ": sem corrente no projeto — desenhado 25 A.");
+else if (Id2 !== Id) avisos.push(g.id + ": DR de " + Id + " A fora da série do catálogo (25/40/63) — desenhado como " + Id2 + " A.");
+seq.push(dispositivo("dr", "ele-dr", pd + "p-" + (Id > 0 ? Id2 : 25), pd, Id > 0 ? Id2 : 25, dimDr(pd), (Id > 0 ? Id2 : 25) + "A", g.id, null, null));
+arr(g.circuitos).forEach(function (cid) { addCirc(porId[String(cid)], g.id); });
+});
+arr(pj.circuitos).forEach(function (cc) { addCirc(cc, null); });
+} else {
+var nd = Math.max(0, Math.round(num(opc.disjuntores, num(opc.capacidade, 0))));
+for (var i = 0; i < nd; i++) seq.push(dispositivo("disj", "ele-disjuntor", null, 1, null, dimDisj(1, 16), "", "", null, null));
+}
+var capFil, filas;
+function cabe(capRow, rows) {
+var m = 0, ult = 0;
+seq.forEach(function (it) { var col = m % capRow; if (col + it.modulos > capRow) m += capRow - col; m += it.modulos; ult = m; });
+return { fim: ult, ok: ult <= capRow * rows };
+}
+if (num(opc.capacidade, 0) > 0) {
+capFil = num(opc.capFileira, 0) > 0 ? Math.round(opc.capFileira) : (CAP_PADRAO[opc.capacidade] ? CAP_PADRAO[opc.capacidade][1] : Math.min(12, Math.round(opc.capacidade)));
+filas = num(opc.fileiras, 0) > 0 ? Math.round(opc.fileiras) : Math.max(1, Math.ceil(opc.capacidade / capFil));
+} else {
+var ach = null;
+PADROES.forEach(function (n) { if (!ach && cabe(CAP_PADRAO[n][1], CAP_PADRAO[n][0]).ok) ach = n; });
+if (ach) { capFil = CAP_PADRAO[ach][1]; filas = CAP_PADRAO[ach][0]; }
+else { capFil = 12; filas = 3; while (!cabe(capFil, filas).ok && filas < 8) filas++; }
+}
+var capTotal = capFil * filas, m = 0, itens = [], excedeu = 0, usados = 0;
+seq.forEach(function (it) {
+var col = m % capFil;
+if (col + it.modulos > capFil) { var sobra = capFil - col; for (var s = 0; s < sobra && m < capTotal; s++) { itens.push(reserva(m, capFil, true)); m++; } col = 0; }
+if (m + it.modulos > capTotal) { excedeu += it.modulos; return; }
+var o = copia({ tipo: it.tipo, famId: it.famId, tipoId: it.tipoId, polos: it.polos, In: it.In, modulos: it.modulos, rotulo: it.rotulo, etiqueta: it.etiqueta, circuito: it.circuito, dr: it.dr, dim: it.dim });
+o.fileira = Math.floor(m / capFil); o.coluna = m % capFil; itens.push(o); m += it.modulos; usados += it.modulos;
+});
+while (m < capTotal) { itens.push(reserva(m, capFil, false)); m++; }
+function reserva(mm, cf, sobra) { return { tipo: "reserva", famId: "", tipoId: null, polos: 0, In: null, modulos: 1, rotulo: "", etiqueta: "", circuito: null, dr: null, fileira: Math.floor(mm / cf), coluna: mm % cf, sobra: !!sobra, dim: { Ht: 0.08, Dt: 0.073, Dc: 0.039, Hf: 0.0448, modulos: 1 } }; }
+if (excedeu) avisos.push("O quadro de " + capTotal + " módulos não comporta o projeto: faltam " + excedeu + " módulo(s) — escolha um quadro maior.");
+itens.forEach(function (it, i) { it.ordem = i; });
+return { itens: itens, usados: usados, capacidade: capTotal, fileiras: filas, capFileira: capFil, reserva: itens.filter(function (x) { return x.tipo === "reserva"; }).length, excedeu: excedeu, avisos: avisos, temProjeto: !!(pj && (arr(pj.circuitos).length || pj.geral)) };
+}
+function tipoQuadro(n, metal, embutir) {
+var cat = CAT_PVC[n], cm = "quadro_metal_sobrepor_12din", fr = CAP_PADRAO[n][0], cap = CAP_PADRAO[n][1], cb = CAT_BARRA[n <= 8 ? 8 : (n <= 12 ? 12 : (n <= 24 ? 24 : 36))];
+var vals, ids;
+if (!metal) {
+ids = [cat, barraDe(n)];
+vals = { Material_quadro: "pvc", Instalacao: "embutir", Corrente: "", Disjuntores: n, Fileiras: fr, Modulos_fileira: cap, Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+Aba: cotaOr(cat, "aba_frontal_mm", 22), Parede: 0.0025, Material: G.MAT.BRANCO };
+} else {
+ids = [cm, cat, barraDe(n)];
+var L = n === 12 ? cotaMM(cm, "largura_mm") : Math.round((cap * 17.7 + (cotaMM(cm, "largura_mm") - 12 * 17.7)) * 2) / 2;
+var A = n === 12 ? cotaMM(cm, "altura_mm") : cotaMM(cm, "altura_mm") + (fr - 1) * 115;
+vals = { Material_quadro: "aco", Instalacao: embutir ? "embutir" : "sobrepor", Corrente: "100A", Disjuntores: n, Fileiras: fr, Modulos_fileira: cap, Largura: L / 1000, Altura: A / 1000, Profundidade: cotaM(cm, "profundidade_mm"), Aba: embutir ? cotaOr(cat, "aba_frontal_mm", 22) : 0, Parede: cotaM(cm, "chapa_mm"), Material: G.MAT.QUADRO_METAL };
+}
+vals.Barra_N = cotaM(cb, "comprimento_mm"); vals.Barra_T = vals.Barra_N;
+var v = vFonte(ids, null);
+Object.keys(v).forEach(function (k) { vals[k] = v[k]; });
+if (!metal && (n === 6 || n === 18)) vals.Cotas_a_conferir = (vals.Cotas_a_conferir ? vals.Cotas_a_conferir + "; " : "") + "tamanho do quadro: sem-fonte-conferir (nem Wavin nem Tigre listam " + n + " DIN: medidas dos vizinhos)";
+if (metal) vals.Cotas_a_conferir = (vals.Cotas_a_conferir ? vals.Cotas_a_conferir + "; " : "") + (n === 12 ? "medidas: sem-fonte-conferir (usuais)" : "medidas DERIVADAS do metálico de 12 DIN (largura = módulos × 17,7 + a folga do 12; altura + 115 mm por fileira): sem-fonte-conferir");
+if (metal && embutir) vals.Cotas_a_conferir = (vals.Cotas_a_conferir ? vals.Cotas_a_conferir + "; " : "") + "metálico de EMBUTIR: corpo = o do de sobrepor e aba frontal = a do PVC (catálogo Wavin) — DERIVADO, sem-fonte-conferir (a ficha do metálico é só de sobrepor)";
+return tipo((metal ? (embutir ? "aco-e-" : "aco-s-") : "pvc-") + n, metal ? (embutir ? "Metálico de embutir, " : "Metálico de sobrepor, ") + n + " módulos DIN (chapa pintada, com porta)" : "PVC de embutir, " + n + " módulos DIN (porta fumê)", vals, ids);
+}
+var tiposQ = []; PADROES.forEach(function (n) { tiposQ.push(tipoQuadro(n, false)); }); PADROES.forEach(function (n) { tiposQ.push(tipoQuadro(n, true)); }); PADROES.forEach(function (n) { tiposQ.push(tipoQuadro(n, true, true)); });
+var famQuadro = def({
+id: "ele-quadro", nome: "Quadro de distribuição (montado pelo projeto)", categoria: "equipamento_eletrico", mep: "quadro", ids: ["quadro_pvc_embutir_12din", "quadro_metal_sobrepor_12din"],
+conectores: [con("el", "Eletroduto (entrada, por cima)", "0", "Altura_montagem + Altura/2", "Profundidade/2", { x: 0, y: 1, z: 0 })],
+descricao: "Quadro de distribuição com tudo dentro: corpo oco, aba de embutir, trilho DIN por fileira, espelho com a janela de cada fileira, barras de neutro (azul) e de terra (verde) e a porta (fumê no PVC, chapa no metálico; Porta_aberta). Os DISPOSITIVOS são montados pelo PROJETO: lê o Projeto_eletrico gravado pelo js/elecircuitos.js (geral → DPS → DR → disjuntores do DR → circuitos sem DR → reserva com tampa cega), com a etiqueta Cn de cada disjuntor; sem projeto, monta a quantidade de disjuntores 1P do tipo. Mesmos parâmetros do ra-quadro-distribuicao (Material_quadro, Instalacao, Disjuntores, Corrente) e mep.peca quadro: orçamento e eletroduto funcionam igual. Origem: no fundo do quadro (a parede), no meio da largura; a frente em +Z; Altura_montagem = o centro do quadro.",
+parametros: [
+Pf("Material_quadro", "texto", "pvc", "Elétrica", "pvc (de embutir) ou aco (chapa pintada) — o mesmo código do ra-quadro-distribuicao para o orçamento"),
+Pf("Instalacao", "texto", "embutir", "Elétrica", "embutir ou sobrepor"),
+Pf("Disjuntores", "inteiro", 12, "Elétrica", "Capacidade em módulos DIN (de 17,7 mm)"),
+Pf("Corrente", "texto", "", "Elétrica", "Barramento (aço): 100A, 150A"),
+Pf("Fileiras", "inteiro", 1, "Elétrica", "Fileiras de trilho DIN (derivado: altura ÷ 17,7 mm do catálogo)"),
+Pf("Modulos_fileira", "inteiro", 12, "Elétrica", "Módulos por fileira (derivado do catálogo)"),
+Pf("Largura", "comprimento", 0.381, "Dimensões", "Largura EXTERNA (com a aba de embutir) — catálogo"),
+Pf("Altura", "comprimento", 0.199, "Dimensões", "Altura EXTERNA (com a aba de embutir) — catálogo"),
+Pf("Profundidade", "comprimento", 0.1, "Dimensões", "Profundidade — catálogo"),
+Pf("Aba", "comprimento", 0.022, "Dimensões", "Largura da aba frontal de embutir (D da ficha Wavin); 0 = sobrepor"),
+Pf("Parede", "comprimento", 0.0025, "Dimensões", "Espessura da parede/chapa (PVC: usual, a ficha não publica; metálico: catálogo)"),
+Pf("Barra_N", "comprimento", 0.077, "Dimensões", "Comprimento da barra de neutro — catálogo (kit de barramento)"),
+Pf("Barra_T", "comprimento", 0.077, "Dimensões", "Comprimento da barra de terra — catálogo (kit de barramento)"),
+Pf("Material", "material", "plástico branco", "Materiais", "PVC antichama branco; metálico: chapa pintada"),
+Pf("Manipulo", "texto", "preto", "Materiais", "Cor dos manípulos dos disjuntores: preto (padrão RA) ou vermelho"),
+Pf("Altura_montagem", "comprimento", 1.50, "Restrições", "Do piso ao centro do quadro", "instancia"),
+Pf("Entrada_DN", "inteiro", 25, "Elétrica", "DN do eletroduto de entrada (informativo: o conector usa este DN)", "instancia"),
+Pf("Porta_aberta", "simnao", false, "Abertura", "Porta aberta (para ver os dispositivos) ou fechada. Só muda o desenho: a caixa envolvente é a do quadro fechado.", "instancia"),
+Pf("Projeto_eletrico", "texto", "", "Elétrica", "O projeto elétrico gravado pelo \"Circuitos e quadro\" (JSON); desenha os dispositivos na ordem da fileira. Vazio = só a quantidade de disjuntores.", "instancia")
+].concat(paramFonte()),
+tipos: tiposQ,
+gerar: function (c, v) {
+var mont = montarQuadro(v.Projeto_eletrico, { capacidade: Math.max(1, Math.round(num(v.Disjuntores, 12))), fileiras: Math.max(1, Math.round(num(v.Fileiras, 1))), capFileira: Math.max(1, Math.round(num(v.Modulos_fileira, 12))), disjuntores: Math.round(num(v.Disjuntores, 12)) });
+mont.avisos.forEach(function (a) { (c.avisos = c.avisos || []).push(a); });
+var metal = txt(v.Material_quadro) === "aco" || num(v.Aba, 0) <= 0.001 && /sobrepor/.test(txt(v.Instalacao));
+G.quadro(c, { L: Math.max(0.12, num(v.Largura, 0.381)), A: Math.max(0.12, num(v.Altura, 0.199)), D: Math.max(0.06, num(v.Profundidade, 0.1)), aba: txt(v.Instalacao) === "embutir" ? num(v.Aba, 0.022) : 0,
+t: Math.min(0.006, Math.max(0.0008, num(v.Parede, 0.0025))), yc: num(v.Altura_montagem, 1.5), metal: metal, rows: Math.max(1, Math.round(num(v.Fileiras, 1))), capRow: Math.max(1, Math.round(num(v.Modulos_fileira, 12))),
+itens: mont.itens, portaAberta: sim(v, "Porta_aberta"), barraN: num(v.Barra_N, 0.077), barraT: num(v.Barra_T, 0.077), manipulo: txt(v.Manipulo) === "vermelho" ? "vermelho" : "preto" });
+}
+});
+function alturaCaixa(a) {
+var A = { baixa: 0.30, media: 1.30, alta: 2.00 }, melhor = "baixa", d0 = Infinity; a = num(a, 0.30);
+Object.keys(A).forEach(function (k) { var d = Math.abs(A[k] - a); if (d < d0) { d0 = d; melhor = k; } });
+return melhor;
+}
+function pend(motivo) { return { status: "pendente", codigo: "", motivo: motivo }; }
+function porChave(chave, extraFiltro) {
+var BS = dep("BimInstSinapi", "biminstsinapi.js"), L = BS && BS.chaves && BS.chaves[chave];
+if (!L || !L.length) return null;
+var c = L[0];
+if (extraFiltro) { var f = L.filter(extraFiltro)[0]; if (f) c = f; }
+return { status: "ok", codigo: c[0], unidade: c[1], descricao: c[2], chave: chave };
+}
+function sinapi(famId, v) {
+v = v || {};
+var TB = dep("EleTabelas", "eletabelas.js");
+if (famId === "ele-caixa-4x2" || famId === "ele-caixa-4x4") {
+var mat = /^metal/i.test(txt(v.Material_caixa)) ? "metalica" : "pvc", ap = alturaCaixa(v.Altura_montagem), k = (famId === "ele-caixa-4x2" ? "caixa_4x2" : "caixa_4x4") + "|" + mat + "|" + ap + "|-";
+return porChave(k) || pend("a base de instalações não tem " + k);
+}
+if (famId === "ele-caixa-octogonal") {
+var m2 = /^metal/i.test(txt(v.Material_caixa)) ? "metalica" : "pvc", ap2 = txt(v.Aplicacao) === "forro" ? "forro" : "laje";
+return porChave("caixa_octogonal|" + m2 + "|" + ap2 + "|-") || pend("a base de instalações não tem a octogonal " + m2 + " " + ap2);
+}
+if (famId === "ele-disjuntor") {
+var p = Math.round(num(v.Polos, 1)), In = num(v.Corrente_A, 0);
+if (!TB) return pend("EleTabelas não carregou");
+if (In < 10) return pend("a SINAPI MG 06/2026 não tem disjuntor DIN de " + In + " A (a série começa em 10 A) — nunca o parecido");
+var d = TB.disjuntorCodigo(p, In);
+if (!d) return pend("acima do maior disjuntor da SINAPI");
+return d.provisorio ? { status: "provisorio", codigo: d.codigo, motivo: d.motivo } : { status: "ok", codigo: d.codigo, unidade: "UN" };
+}
+if (famId === "ele-dr") {
+var pd = Math.round(num(v.Polos, 2)), Id = num(v.Corrente_A, 0), cod = TB && TB.SINAPI.dr[pd] && TB.SINAPI.dr[pd][Id];
+return cod ? { status: "ok", codigo: cod, unidade: "UN" } : pend("a SINAPI MG 06/2026 não tem DR " + pd + "P " + Id + " A (30 mA tipo AC)");
+}
+if (famId === "ele-dps") {
+if (num(v.Imax_kA, 20) !== 20) return pend("a composição SINAPI do DPS é de 20 kA; o de " + num(v.Imax_kA, 0) + " kA não tem código — nunca o parecido");
+return TB ? { status: "ok", codigo: TB.SINAPI.dps, unidade: "UN", motivo: "DPS 20 kA, 175 V ou 275 V, 1 polo" } : pend("EleTabelas não carregou");
+}
+if (famId === "ele-quadro") {
+var n = Math.round(num(v.Disjuntores, 0)), ch = "quadro|" + txt(v.Material_quadro) + "|" + txt(v.Instalacao) + "|" + n;
+return porChave(ch, function (c) { return !txt(v.Corrente) || !c[3] || c[3].corrente === txt(v.Corrente); }) || pend("a SINAPI MG 06/2026 não tem o quadro " + txt(v.Material_quadro) + " " + txt(v.Instalacao) + " de " + n + " módulos");
+}
+if (famId === "ele-placa-4x2" || famId === "ele-placa-4x4" || famId === "ele-tampa-octogonal") return pend("a placa e a tampa avulsas não têm composição SINAPI (a placa vem no \"suporte e placa\" do módulo de tomada/interruptor)");
+return pend("sem composição SINAPI nas bases carregadas para " + famId);
+}
+var COR_MINI = { "pvc amarelo caixa": "#f2c500", "pvc laranja reforçado": "#e8731a", "aço galvanizado estampado": "#b9bec4", "plástico branco": "#f3f3f0", "acrílico": "#e4eef2", "acrílico translúcido": "#e4eef2", "plástico cinza din": "#d9d9d4",
+"manípulo preto": "#141414", "manípulo vermelho": "#c8201e", "cobre": "#b87333", "latão borne": "#c8a05a", "isolação azul": "#1f5fb4", "isolação verde-amarela": "#4fa02a", "isolação preta": "#1c1c1e", "isolação vermelha": "#c0282d",
+"isolação branca": "#eeeeea", "isolação cinza": "#8a8d90", "policarbonato fumê": "#4a545c", "botão de teste amarelo": "#f2c400", "indicador dps verde": "#2fb344" };
+if (FM && FM.CORES) Object.keys(COR_MINI).forEach(function (k) { FM.CORES[k] = COR_MINI[k]; });
+if (FM && FM.registrar) FM.registrar();
+var EleFamilias = {
+ids: function () { return LISTA_ID.slice(); },
+obter: function (id) { return FM.obter(id); },
+montarQuadro: montarQuadro, sinapi: sinapi, lerProjeto: lerProjeto,
+MATERIAIS_COR: COR_MINI, PADROES_QUADRO: PADROES.slice(), CAP_PADRAO: copia(CAP_PADRAO),
+tiposDe: function (id) { var f = FM.obter(id); return f ? f.tipos : []; }
+};
+void famCx42; void famCx44; void famOct; void famPl42; void famPl44; void famTampa; void famDisj; void famDr; void famDps; void famPente; void famTrilho; void famBN; void famBT; void famQuadro;
+global.EleFamilias = EleFamilias;
+if (typeof module !== "undefined" && module.exports) module.exports = EleFamilias;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elefamilias2geo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var Mob = dep("Mob", "mobgeo.js");
+var RAD = Math.PI / 180;
+function num(v, d) { return typeof v === "number" && isFinite(v) ? v : d; }
+function cl(x, a, b) { return x < a ? a : (x > b ? b : x); }
+var M = { BR: "plástico branco", DIF: "acrilico branco", TRANSP: "acrílico transparente", PRETO: "metal preto", CROMO: "metal cromado", INOX: "inox", FUME: "vidro fume",
+VIDRO: "vidro", TELA: "tela preta", BORR: "borracha preta", MBR: "metal branco", GALV: "aço galvanizado estampado", CINZA: "plástico cinza din", VERDE: "indicador dps verde",
+AMAR: "botão de teste amarelo", VERM: "manípulo vermelho", LACAG: "laca grafite", LACA: "laca branca" };
+function rb(c, mat, cx, cy, cz, dx, dy, dz, r, k, o) {
+var rr = cl(r, 0.0004, Math.min(dx, dy, dz) / 2.2);
+c.caixaR(mat, cx, cy - dy / 2, cz, Math.max(1e-3, dx), Math.max(1e-3, dy), Math.max(1e-3, dz), rr, o ? { k: k || 2, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ } : { k: k || 2 });
+}
+function bx(c, mat, cx, cy, cz, dx, dy, dz) { c.caixa(mat, cx, cy - dy / 2, cz, dx, dy, dz); }
+function dz(c, mat, cx, cy, cz, r, h, seg) { c.cilH(mat, cx, cy, cz, r, h, "z", { seg: seg || 20 }); }
+function pe(c, x, z, y0, r, h) { c.cil(M.BORR, x, y0, z, r, h, { seg: 10 }); }
+function botao(c, x, y, z, r) { dz(c, M.PRETO, x, y, z + 0.0015, r, 0.003, 14); dz(c, M.CROMO, x, y, z + 0.0033, r * 0.72, 0.0012, 14); }
+function manopla(c, x, y, z, r) {
+dz(c, M.PRETO, x, y, z + 0.011, r, 0.022, 18); dz(c, M.CROMO, x, y, z + 0.0225, r * 0.86, 0.003, 18); bx(c, M.CROMO, x, y + r * 0.45, z + 0.0255, 0.0035, r * 0.55, 0.0012);
+}
+function alcaH(c, mat, cx, cy, zface, comp, r, saliencia) {
+c.cilH(mat, cx, cy, zface + saliencia, r, comp, "x", { seg: 12 });
+[-1, 1].forEach(function (s) { c.cilH(mat, cx + s * (comp / 2 - 0.02), cy, zface + saliencia / 2, r * 0.6, saliencia, "z", { seg: 8 }); });
+}
+function alcaV(c, mat, cx, cy, zface, comp, r, saliencia) {
+c.cil(mat, cx, cy - comp / 2, zface + saliencia, r, comp, { seg: 12 });
+[-1, 1].forEach(function (s) { c.cilH(mat, cx, cy + s * (comp / 2 - 0.02), zface + saliencia / 2, r * 0.6, saliencia, "z", { seg: 8 }); });
+}
+function display(c, x, y, z, w, h) { bx(c, M.TELA, x, y, z + 0.0005, w, h, 0.001); bx(c, M.VERDE, x, y, z + 0.0013, w * 0.78, h * 0.5, 0.0006); }
+function corCorpo(acab) { return acab === "branco" ? M.BR : (acab === "preto" ? M.PRETO : M.INOX); }
+function plafon(c, p) {
+var A = num(p.A, 2.6), Ht = cl(num(p.H, 0.04), 0.01, 0.2), D = cl(num(p.D, 0.225), 0.06, 1.2), Ld = cl(num(p.Ld, D - 0.03), 0.03, D - 0.004), r = D / 2;
+var H = Ht - (p.redondo ? 0.0042 : 0.0047);
+if (p.redondo) {
+c.torno(M.BR, 0, 0, 0, [[0, A - H], [r - 0.01, A - H], [r - 0.002, A - H + 0.004], [r, A - H + 0.012], [r, A - 0.004], [r - 0.004, A]], { seg: 48 });
+c.cil(M.BORR, 0, A - H - 0.0006, 0, Ld / 2 + 0.0016, 0.0012, { seg: 48 });
+c.torno(M.DIF, 0, 0, 0, [[0, A - H - 0.0042], [Ld * 0.2, A - H - 0.0041], [Ld * 0.38, A - H - 0.0035], [Ld / 2 - 0.003, A - H - 0.0018], [Ld / 2, A - H - 0.0004]], { seg: 48 });
+} else {
+rb(c, M.BR, 0, A - H / 2, 0, D, H, D, Math.min(0.016, H * 0.45), 3);
+rb(c, M.BORR, 0, A - H - 0.0004, 0, Ld + 0.0032, 0.0012, Ld + 0.0032, 0.004, 2);
+rb(c, M.DIF, 0, A - H - 0.0024, 0, Ld, 0.0046, Ld, 0.003, 2);
+}
+}
+function painel(c, p) {
+var A = num(p.A, 2.6), D = cl(num(p.D, 0.3), 0.06, 1.2), H = cl(num(p.H, 0.01), 0.006, 0.12), b = cl(num(p.borda, 0.008), 0.003, D / 4), fu = cl(num(p.furo, D - 0.015), 0.04, D), e = 0.004;
+if (p.redondo) {
+c.torno(M.BR, 0, 0, 0, [[0, A - e], [D / 2 - 0.0025, A - e], [D / 2, A - e + 0.0015], [D / 2, A]], { seg: 48 });
+c.torno(M.DIF, 0, 0, 0, [[0, A - e - 0.0012], [D / 2 - b - 0.002, A - e - 0.0012], [D / 2 - b, A - e]], { seg: 48 });
+c.cil(M.MBR, 0, A, 0, fu / 2 - 0.002, H - e, { seg: 40 });
+} else {
+rb(c, M.BR, 0, A - e / 2, 0, D, e, D, 0.0015, 2);
+rb(c, M.DIF, 0, A - e - 0.0006, 0, D - 2 * b, 0.0016, D - 2 * b, 0.001, 1);
+bx(c, M.MBR, 0, A + (H - e) / 2, 0, fu - 0.004, H - e, fu - 0.004);
+}
+bx(c, M.MBR, D * 0.22, A + H - e + 0.012, D * 0.18, 0.15, 0.024, 0.045);
+bx(c, M.CINZA, D * 0.22 - 0.075, A + H - e + 0.012, D * 0.18, 0.006, 0.01, 0.03);
+}
+function tubular(c, p) {
+var A = num(p.A, 2.6), L = cl(num(p.L, 1.2), 0.3, 3), W = cl(num(p.W, 0.06), 0.03, 0.4), H = cl(num(p.H, 0.04), 0.02, 0.15), n = Math.round(cl(num(p.tubos, 1), 1, 2)), t = 0.0015;
+bx(c, M.BR, 0, A - 0.001, 0, L, 0.002, W);
+[-1, 1].forEach(function (s) {
+bx(c, M.BR, 0, A - H / 2, s * (W / 2 - t / 2), L, H, t);
+bx(c, M.BR, 0, A - H + t / 2, s * (W / 2 - 0.007), L, t, 0.014);
+bx(c, M.BR, s * (L / 2 - 0.0015), A - H / 2, 0, 0.003, H, W);
+});
+var zs = n === 1 ? [0] : [-W * 0.3, W * 0.3];
+zs.forEach(function (z) {
+c.cilH(M.DIF, 0, A - 0.021, z, 0.0135, L - 0.07, "x", { seg: 18 });
+[-1, 1].forEach(function (s) {
+bx(c, M.CINZA, s * (L / 2 - 0.025), A - 0.019, z, 0.02, 0.026, 0.034);
+c.cilH(M.CROMO, s * (L / 2 - 0.0345), A - 0.021, z, 0.0125, 0.003, "x", { seg: 12 });
+});
+});
+bx(c, M.CINZA, L * 0.18, A - 0.005, 0, 0.09, 0.008, Math.min(W - 0.01, 0.04));
+}
+function emergencia(c, p) {
+var A = num(p.A, 2.2), L = cl(num(p.L, 0.3), 0.1, 1), W = cl(num(p.W, 0.1), 0.04, 0.4), D = cl(num(p.D, 0.05), 0.02, 0.2);
+rb(c, M.BR, 0, A, (D - 0.0012) / 2, L, W, D - 0.0012, 0.01, 3);
+rb(c, M.TELA, 0, A, D - 0.0022, L - 0.034, W - 0.034, 0.0024, 0.004, 1);
+var n = 15, x0 = -(L - 0.074) / 2, dx = (L - 0.074) / (n - 1), i, j;
+for (j = -1; j <= 1; j += 2) for (i = 0; i < n; i++) { dz(c, M.DIF, x0 + i * dx, A + j * W * 0.17, D - 0.0006, 0.0042, 0.0012, 10); }
+dz(c, M.VERDE, L / 2 - 0.016, A - W / 2 + 0.011, D + 0.0004, 0.0032, 0.0012, 10);
+dz(c, M.AMAR, L / 2 - 0.03, A - W / 2 + 0.011, D + 0.0004, 0.0032, 0.0012, 10);
+}
+function refletor(c, p) {
+var A = num(p.A, 2.4), W = cl(num(p.W, 0.215), 0.08, 0.6), H = cl(num(p.H, 0.19), 0.06, 0.6), Dp = cl(num(p.Dp, 0.04), 0.02, 0.2), th = cl(num(p.tilt, 20), 0, 80);
+var Zp = H / 2 + 0.035, cs = Math.cos(th * RAD), sn = Math.sin(th * RAD);
+function T(y, z) { return [A + cs * y - sn * z, Zp + sn * y + cs * z]; }
+function cb(mat, lx, ly, lz, dx, dy, dzz, r, k) {
+var q = T(ly, lz), base = [q[0] - cs * dy / 2, q[1] - sn * dy / 2];
+c.caixaR(mat, lx, base[0], base[1], dx, dy, dzz, cl(r, 0.0004, Math.min(dx, dy, dzz) / 2.2), { k: k || 2, rotX: th });
+}
+cb(M.PRETO, 0, 0, 0, W, H, Dp, 0.012);
+cb(M.DIF, 0, 0, Dp / 2 + 0.0004, W - 0.036, H - 0.036, 0.002, 0.004);
+cb(M.VIDRO, 0, 0, Dp / 2 + 0.0022, W - 0.014, H - 0.014, 0.0022, 0.004);
+var nf = Math.max(5, Math.round((W - 0.05) / 0.021)), i;
+for (i = 0; i < nf; i++) {
+var lx = -((W - 0.05) / 2) + i * ((W - 0.05) / (nf - 1));
+cb(M.PRETO, lx, 0, -Dp / 2 - 0.0085, 0.0034, H - 0.05, 0.017, 0.0008, 1);
+}
+cb(M.PRETO, 0, 0, -Dp / 2 - 0.0015, W - 0.03, H - 0.03, 0.003, 0.001);
+bx(c, M.GALV, 0, A, 0.002, W + 0.05, 0.05, 0.004);
+[-1, 1].forEach(function (s) {
+var xs = s * (W / 2 + 0.0075);
+bx(c, M.GALV, xs, A, Zp / 2, 0.004, 0.04, Zp);
+c.cilH(M.CROMO, s * (W / 2 + 0.0165), A, Zp, 0.0085, 0.014, "x", { seg: 12 });
+c.cilH(M.CROMO, s * (W / 2 + 0.0245), A, Zp, 0.0036, 0.004, "x", { seg: 6 });
+});
+bx(c, M.GALV, 0, A, Zp * 0.45, W + 0.019, 0.004, 0.02);
+}
+function balizador(c, p) {
+var A = num(p.A, 0.4), L = cl(num(p.L, 0.14), 0.04, 0.6), H = cl(num(p.H, 0.07), 0.03, 0.4), P = cl(num(p.P, 0.07), 0.03, 0.4), i;
+if (p.piso) {
+rb(c, M.PRETO, 0, 0.0015, 0, L, 0.003, P, 0.003, 1);
+for (i = -1; i <= 1; i++) bx(c, M.DIF, 0, 0.0034, i * P * 0.24, L - 0.04, 0.0008, 0.012);
+bx(c, M.PRETO, 0, -0.025, 0, L - 0.012, 0.05, P - 0.012);
+return;
+}
+L -= 0.006; H -= 0.004; P -= 0.012;
+rb(c, M.PRETO, 0, A, P / 2, L, H, P, 0.008, 2);
+for (i = -1; i <= 1; i += 2) { bx(c, M.DIF, 0, A + i * H * 0.2, P + 0.0006, L - 0.036, H * 0.17, 0.0016); bx(c, M.PRETO, 0, A + i * H * 0.2 - H * 0.115, P + 0.002, L - 0.03, 0.003, 0.004); }
+bx(c, M.PRETO, 0, A + H / 2 + 0.002, P * 0.725 + 0.006, L + 0.006, 0.004, P * 0.55 + 0.012);
+[-1, 1].forEach(function (s) { c.cilH(M.CROMO, s * (L / 2 - 0.012), A, P + 0.0012, 0.0036, 0.0025, "z", { seg: 6 }); });
+}
+function tartaruga(c, p) {
+var A = num(p.A, 2.0), W = cl(num(p.W, 0.2), 0.06, 0.6), H = cl(num(p.H, 0.12), 0.04, 0.5), P = cl(num(p.P, 0.09), 0.03, 0.3), e = 0.012, h = P - e - 0.0045, k;
+c.torno(M.BR, 0, A, 0, [[0, 0], [1, 0], [1, e], [0, e]], { ex: W / 2, ez: H / 2, rotX: 90, seg: 40 });
+var pf = [];
+for (k = 0; k <= 6; k++) { var f = (k / 6) * 90 * RAD; pf.push([Math.cos(f), e + h * Math.sin(f)]); }
+c.torno(M.BR, 0, A, 0, pf, { ex: W / 2, ez: H / 2, rotX: 90, seg: 40 });
+for (k = -2; k <= 2; k++) {
+var dy = k * H * 0.165, s0 = Math.sqrt(Math.max(0.0001, 1 - Math.pow(dy / (H / 2), 2))), ra = (W / 2) * s0 + 0.0035, rbb = h * s0 + 0.0035, ct = [], j2;
+for (j2 = 0; j2 <= 14; j2++) { var ang = Math.PI * j2 / 14; ct.push([Math.cos(ang) * ra, e + Math.sin(ang) * rbb]); }
+c.prisma(M.PRETO, 0, A + dy - 0.0035, 0, ct, 0.007, {});
+}
+[-1, 1].forEach(function (s) { c.cilH(M.CROMO, s * (W / 2 - 0.012), A, e + 0.0015, 0.0045, 0.003, "z", { seg: 8 }); });
+}
+function bocal(c, p) {
+var A = num(p.A, 2.6), db = cl(num(p.dBulbo, 0.06), 0.03, 0.15), Ht = cl(num(p.Htot, 0.108), 0.06, 0.3), dr = cl(num(p.dRosca, 0.027), 0.012, 0.05);
+var Yg = A - 0.045, Hg = Ht - 0.03, R = db / 2, rn = (dr / 2 - 0.0005) / R, pf = [], k, u, r;
+c.cil(M.BR, 0, A - 0.012, 0, 0.0325, 0.012, { seg: 28 });
+c.torno(M.BR, 0, 0, 0, [[0.0215, A - 0.045], [0.0235, A - 0.043], [0.0235, A - 0.016], [0.0205, A - 0.012]], { seg: 24 });
+c.cil(M.CROMO, 0, A - 0.0475, 0, dr / 2 + 0.0015, 0.0025, { seg: 20 });
+var hs = Math.min(R, Hg * 0.7);
+for (k = 0; k <= 14; k++) {
+var h1 = hs * k / 14; r = Math.sqrt(Math.max(0, 1 - Math.pow((hs - h1) / hs, 2)));
+pf.push([r * R, Yg - Hg + h1]);
+}
+for (k = 1; k <= 10; k++) {
+var t = k / 10; r = rn + (1 - rn) * Math.cos(t * Math.PI / 2);
+pf.push([r * R, Yg - Hg + hs + t * (Hg - hs)]);
+}
+c.torno(M.DIF, 0, 0, 0, pf, { seg: 28 });
+}
+function spotTrilho(c, p) {
+var A = num(p.A, 2.6), L = cl(num(p.L, 1), 0.2, 4), D = cl(num(p.D, 0.07), 0.025, 0.2), Hh = cl(num(p.Hh, 0.13), 0.06, 0.4), th = cl(num(p.incl, 30), 0, 80), n = Math.round(cl(num(p.n, 1), 1, 6)), i;
+bx(c, M.MBR, 0, A - 0.0125, 0, L, 0.025, 0.03);
+bx(c, M.BORR, 0, A - 0.0245, 0, L - 0.004, 0.002, 0.009);
+[-1, 1].forEach(function (s) { bx(c, M.MBR, s * (L / 2 + 0.0015), A - 0.0125, 0, 0.003, 0.025, 0.03); });
+rb(c, M.MBR, -L / 2 + 0.03, A - 0.017, 0, 0.06, 0.034, 0.045, 0.004, 1);
+var bodyL = Hh - 0.062;
+for (i = 0; i < n; i++) {
+var x = n === 1 ? 0 : -L / 2 + 0.2 + i * ((L - 0.4) / (n - 1)), py = A - 0.025 - 0.05;
+bx(c, M.MBR, x, A - 0.035, 0, 0.036, 0.02, 0.026);
+c.cil(M.MBR, x, py, 0, 0.007, 0.03, { seg: 10 });
+c.cilH(M.PRETO, x, py, 0, 0.012, 0.062, "x", { seg: 10 });
+var d = [0, -Math.cos(th * RAD), Math.sin(th * RAD)];
+c.cil(M.MBR, x, py, 0, D / 2, bodyL, { rotX: 180 - th, seg: 24 });
+c.cil(M.PRETO, x + 0, py + d[1] * (bodyL * 0.12), d[2] * (bodyL * 0.12), D / 2 + 0.002, 0.004, { rotX: 180 - th, seg: 24 });
+c.cil(M.DIF, x, py + d[1] * (bodyL + 0.0005), d[2] * (bodyL + 0.0005), D / 2 - 0.006, 0.0014, { rotX: 180 - th, seg: 24 });
+c.cil(M.PRETO, x, py + d[1] * (bodyL - 0.0035), d[2] * (bodyL - 0.0035), D / 2 + 0.0008, 0.0035, { rotX: 180 - th, seg: 24 });
+}
+}
+function microondas(c, p) {
+var W = cl(num(p.W, 0.44), 0.2, 0.9), H = cl(num(p.H, 0.26), 0.15, 0.6), D = cl(num(p.D, 0.34), 0.2, 0.8) - 0.031, y0 = num(p.y0, 0.9), mat = corpo(p.acab), i;
+var b = y0 + 0.012, hb = H - 0.012;
+[-1, 1].forEach(function (sx) { [0.04, D - 0.04].forEach(function (z) { pe(c, sx * (W / 2 - 0.035), z, y0, 0.011, 0.012); }); });
+rb(c, mat, 0, b + hb / 2, D / 2, W, hb, D, 0.014, 2);
+var Wd = W * 0.72, xd = -W / 2 + 0.012 + Wd / 2, hd = hb - 0.034, yc = b + hb / 2, Wp = W - Wd - 0.04, xp = W / 2 - 0.012 - Wp / 2;
+rb(c, M.PRETO, xd, yc, D + 0.002, Wd, hd, 0.01, 0.006, 1);
+rb(c, M.TELA, xd, yc, D + 0.0078, Wd - 0.044, hd - 0.044, 0.004, 0.004, 1);
+for (i = 0; i < 6; i++) bx(c, M.PRETO, xd, yc - (hd - 0.07) / 2 + i * (hd - 0.07) / 5, D + 0.0102, Wd - 0.05, 0.0012, 0.0005);
+alcaV(c, M.CROMO, xd + Wd / 2 - 0.016, yc, D + 0.007, hd * 0.62, 0.0065, 0.017);
+rb(c, M.PRETO, xp, yc, D + 0.0014, Wp, hd, 0.004, 0.004, 1);
+display(c, xp, yc + hd * 0.34, D + 0.0034, Wp * 0.76, 0.024);
+for (i = 0; i < 6; i++) botao(c, xp - Wp * 0.2 + (i % 2) * Wp * 0.4, yc + hd * 0.12 - Math.floor(i / 2) * 0.03, D + 0.0034, 0.0066);
+manopla(c, xp, yc - hd * 0.32, D + 0.0034, Wp * 0.3);
+for (i = 0; i < 4; i++) bx(c, M.PRETO, W / 2 - 0.0005, b + hb - 0.03 - i * 0.012, D * 0.35, 0.001, 0.0045, D * 0.5);
+}
+function corpo(a) { return corCorpo(a); }
+function forno(c, p) {
+var W = cl(num(p.W, 0.595), 0.3, 1), H = cl(num(p.H, 0.595), 0.3, 1), D = cl(num(p.D, 0.55), 0.3, 0.9) - 0.048, y0 = num(p.y0, 0.9), Wn = cl(num(p.Wn, 0.56), 0.28, W), i;
+var band = 0.095;
+rb(c, M.PRETO, 0, y0 + H / 2, D / 2 - 0.01, Wn, H - 0.012, D - 0.02, 0.006, 1);
+rb(c, M.INOX, 0, y0 + H / 2, D - 0.01, W, H, 0.02, 0.006, 2);
+bx(c, M.TELA, 0, y0 + H - band / 2, D + 0.0006, W - 0.04, band - 0.014, 0.0012);
+[-0.215, -0.135, 0.135, 0.215].forEach(function (x) { manopla(c, x, y0 + H - band / 2, D, 0.0165); });
+display(c, 0, y0 + H - band / 2, D + 0.0006, 0.12, 0.034);
+var hd = H - band - 0.014, yc = y0 + hd / 2 + 0.007;
+rb(c, M.INOX, 0, yc, D + 0.006, W - 0.016, hd, 0.014, 0.008, 2);
+rb(c, M.TELA, 0, yc - 0.01, D + 0.0135, W - 0.1, hd - 0.1, 0.004, 0.006, 1);
+for (i = 0; i < 3; i++) bx(c, M.PRETO, 0, y0 + H - band - 0.012 - i * 0.008, D + 0.0004, W * 0.5, 0.0035, 0.001);
+alcaH(c, M.CROMO, 0, yc + hd / 2 - 0.036, D + 0.013, W - 0.15, 0.0085, 0.026);
+}
+function cooktop(c, p) {
+var W = cl(num(p.W, 0.59), 0.3, 1), H = cl(num(p.H, 0.055), 0.03, 0.2), D = cl(num(p.D, 0.52), 0.3, 0.9), yt = num(p.yt, 0.9), i, zy = yt + 0.006;
+rb(c, M.TELA, 0, yt + 0.003, D / 2, W, 0.006, D, 0.006, 2);
+bx(c, M.PRETO, 0, yt - (H - 0.0075) / 2, D / 2, W - 0.05, H - 0.0075, D - 0.05);
+bx(c, M.INOX, 0, yt + 0.003, D - 0.0006, W - 0.012, 0.0062, 0.0012);
+var zonas = [[-0.145, D * 0.3, 0.085], [0.145, D * 0.3, 0.095], [-0.145, D * 0.67, 0.095], [0.145, D * 0.67, 0.085]];
+zonas.forEach(function (z) {
+var R = z[2];
+c.cil(M.MBR, z[0], zy, z[1], R, 0.0004, { seg: 36 }); c.cil(M.TELA, z[0], zy + 0.0004, z[1], R - 0.0022, 0.0004, { seg: 36 });
+c.cil(M.MBR, z[0], zy + 0.0006, z[1], R * 0.62, 0.0004, { seg: 32 }); c.cil(M.TELA, z[0], zy + 0.001, z[1], R * 0.62 - 0.002, 0.0004, { seg: 32 });
+c.cil(M.MBR, z[0], zy + 0.0012, z[1], 0.0045, 0.0004, { seg: 12 });
+});
+bx(c, M.MBR, 0, zy + 0.0004, D - 0.034, W * 0.36, 0.0004, 0.0024);
+for (i = -3; i <= 3; i++) { if (i === 0) continue; bx(c, M.MBR, i * W * 0.062, zy + 0.0004, D - 0.034, 0.011, 0.0004, 0.011); }
+c.cil(M.MBR, 0, zy, D - 0.034, 0.0075, 0.0005, { seg: 14 }); c.cil(M.TELA, 0, zy + 0.0004, D - 0.034, 0.0055, 0.0004, { seg: 14 });
+bx(c, M.VERDE, -W * 0.1, zy + 0.0005, D - 0.034, 0.02, 0.0004, 0.008);
+}
+function coifa(c, p) {
+var W = cl(num(p.W, 0.6), 0.3, 1.2), H = cl(num(p.H, 0.6), 0.1, 1.2), D = cl(num(p.D, 0.5), 0.2, 0.9), yb = num(p.yb, 1.6), i, y = yb + 0.0045;
+if (p.forma === "depurador") {
+var Db = D - 0.12, Hb = H - 0.07;
+rb(c, M.INOX, 0, y + Hb / 2, Db / 2, W, Hb, Db, 0.012, 2);
+rb(c, M.INOX, 0, y + Hb * 0.28, Db - 0.02 + 0.07, W - 0.012, 0.012, 0.14, 0.004, 1);
+bx(c, M.GALV, 0, y - 0.0015, Db / 2 + 0.03, W - 0.06, 0.003, Db - 0.1);
+for (i = -3; i <= 3; i++) bx(c, M.PRETO, i * (W - 0.1) / 7, y - 0.0032, Db / 2 + 0.03, 0.0035, 0.001, Db - 0.1);
+[-1, 1].forEach(function (s) { c.cil(M.DIF, s * W * 0.32, y - 0.0045, Db - 0.04, 0.018, 0.0016, { seg: 14 }); });
+for (i = -1; i <= 1; i++) botao(c, i * 0.04, y + Hb * 0.28, D, 0.0045);
+c.cil(M.MBR, 0, y + Hb, Db * 0.35, 0.075, 0.07 - 0.0045, { seg: 22 });
+return;
+}
+var hc = cl(num(p.hc, 0.22), 0.1, H - 0.1), Dch = cl(num(p.Dch, 0.3), 0.15, D), Wch = cl(num(p.Wch, 0.3), 0.15, W), Ht = H - 0.0045, a = D - Dch, Lg = Math.sqrt(a * a + hc * hc);
+c.prisma(M.INOX, W / 2, y, 0, [[0, 0], [0, D], [hc, Dch], [hc, 0]], W, { rotZ: 90 });
+var ho = (Ht - hc) * 0.56;
+rb(c, M.INOX, 0, y + hc + ho / 2, Dch / 2, Wch, ho, Dch, 0.005, 1);
+rb(c, M.INOX, 0, y + hc + ho + (Ht - hc - ho) / 2, (Dch - 0.03) / 2, Wch - 0.03, Ht - hc - ho, Dch - 0.03, 0.004, 1);
+bx(c, M.PRETO, 0, y + hc + ho, Dch / 2 - 0.0, Wch - 0.026, 0.003, Dch - 0.026);
+bx(c, M.GALV, 0, y - 0.0015, D / 2, W - 0.06, 0.003, D - 0.07);
+for (i = -4; i <= 4; i++) bx(c, M.PRETO, i * (W - 0.1) / 9, y - 0.0032, D / 2, 0.0035, 0.001, D - 0.07);
+[-1, 1].forEach(function (s) { c.cil(M.DIF, s * W * 0.3, y - 0.0045, D * 0.5, 0.017, 0.0016, { seg: 14 }); });
+var th = Math.atan2(-a, hc) / RAD, thn = Math.atan2(hc, a) / RAD, ny = a / Lg, nz = hc / Lg, cw = Math.min(0.28, W * 0.7);
+function naRampa(u, fora) { return [y + u + ny * fora, D - a * u / hc + nz * fora]; }
+var q0 = naRampa(0.045, 0.0004), q1 = naRampa(0.0555, 0), q2 = naRampa(0.0805, 0.0004);
+c.caixa(M.PRETO, 0, q0[0], q0[1], cw, 0.075, 0.0025, { rotX: th });
+for (i = -1; i <= 1; i++) c.cil(M.CROMO, i * cw * 0.2, q1[0], q1[1], 0.0075, 0.0062, { rotX: thn, seg: 12 });
+c.caixa(M.VERDE, cw * 0.3, q2[0], q2[1], 0.034, 0.012, 0.0035, { rotX: th });
+}
+function lavaLoucas(c, p) {
+var W = cl(num(p.W, 0.6), 0.3, 1), H = cl(num(p.H, 0.85), 0.3, 1.2), D = cl(num(p.D, 0.6), 0.3, 0.9) - 0.045, y0 = num(p.y0, 0), mat = corpo(p.acab), i;
+var plinto = H > 0.6 ? 0.08 : 0.012, ct = 0.075, yt = y0 + H;
+if (plinto < 0.03) [-1, 1].forEach(function (sx) { [0.05, D - 0.05].forEach(function (z) { pe(c, sx * (W / 2 - 0.04), z, y0, 0.012, 0.012); }); });
+else bx(c, M.PRETO, 0, y0 + plinto / 2, D / 2 - 0.02, W - 0.03, plinto, D - 0.07);
+rb(c, mat, 0, y0 + plinto + (H - plinto) / 2, D / 2 - 0.01, W, H - plinto, D - 0.02, 0.01, 2);
+rb(c, M.PRETO, 0, yt - ct / 2 - 0.004, D + 0.0014, W - 0.012, ct, 0.006, 0.005, 1);
+display(c, -W * 0.18, yt - ct / 2 - 0.004, D + 0.0044, 0.09, 0.026);
+for (i = 0; i < 6; i++) botao(c, W * 0.02 + i * 0.05, yt - ct / 2 - 0.004, D + 0.0044, 0.0068);
+var hd = H - plinto - ct - 0.012;
+rb(c, mat, 0, y0 + plinto + hd / 2, D + 0.002, W - 0.004, hd, 0.018, 0.008, 2);
+bx(c, M.BORR, 0, yt - ct - 0.0075, D + 0.0012, W - 0.002, 0.003, 0.014);
+alcaH(c, M.CROMO, 0, y0 + plinto + hd - 0.04, D + 0.011, W * 0.58, 0.0085, 0.024);
+}
+function secadora(c, p) {
+var W = cl(num(p.W, 0.6), 0.3, 1), H = cl(num(p.H, 0.85), 0.3, 1.2), D = cl(num(p.D, 0.65), 0.3, 0.9) - 0.053, y0 = num(p.y0, 0), ls = !!p.lavaseca, i;
+var pes = 0.02, cb = 0.11, yt = y0 + H;
+[-1, 1].forEach(function (sx) { [0.05, D - 0.05].forEach(function (z) { pe(c, sx * (W / 2 - 0.04), z, y0, 0.014, pes); }); });
+rb(c, M.BR, 0, y0 + pes + (H - pes) / 2, D / 2, W, H - pes, D, 0.012, 2);
+rb(c, M.PRETO, 0, yt - cb / 2 - 0.006, D + 0.0014, W - 0.02, cb - 0.01, 0.004, 0.006, 1);
+display(c, W * 0.12, yt - cb / 2 - 0.006, D + 0.0034, 0.1, 0.03);
+manopla(c, -W * 0.06, yt - cb / 2 - 0.006, D + 0.002, 0.026);
+for (i = 0; i < 3; i++) botao(c, W * 0.32 + (i % 3) * 0.03 - 0.03, yt - cb / 2 - 0.006, D + 0.0034, 0.0075);
+if (ls) { bx(c, M.CINZA, -W * 0.35, yt - cb / 2 - 0.006, D + 0.0035, 0.1, 0.05, 0.003); bx(c, M.PRETO, -W * 0.35, yt - cb / 2 - 0.006, D + 0.0052, 0.085, 0.0035, 0.001); }
+var R = ls ? 0.215 : 0.2, yc = y0 + pes + (H - pes - cb) * 0.46;
+dz(c, M.PRETO, 0, yc, D + 0.003, R + 0.026, 0.006, 40);
+dz(c, M.CROMO, 0, yc, D + 0.008, R, 0.008, 40);
+dz(c, M.TELA, 0, yc, D + 0.0125, R - 0.032, 0.004, 36);
+c.elipsoide(M.FUME, 0, yc, D + 0.013, R - 0.036, 0.04, R - 0.036, { seg: 28, meia: true, rotX: 90 });
+for (i = 0; i < 5; i++) bx(c, M.PRETO, 0, y0 + pes + 0.03 + i * 0.01, D + 0.0005, W * 0.5, 0.0035, 0.001);
+}
+function freezer(c, p) {
+var W = cl(num(p.W, 1), 0.3, 1.8) - (p.vertical ? 0 : 0.012), H = cl(num(p.H, 0.85), 0.3, 2), D = cl(num(p.D, 0.65), 0.3, 1) - (p.vertical ? 0.043 : 0.0425), y0 = num(p.y0, 0), pes = 0.04, i;
+[-1, 1].forEach(function (sx) { [0.07, D - 0.07].forEach(function (z) { pe(c, sx * (W / 2 - 0.06), z, y0, 0.02, pes); }); });
+if (p.vertical) {
+rb(c, M.BR, 0, y0 + pes + (H - pes) / 2, D / 2, W, H - pes, D, 0.014, 2);
+rb(c, M.BR, 0, y0 + pes + (H - pes - 0.1) / 2 + 0.002, D + 0.004, W - 0.012, H - pes - 0.1, 0.012, 0.008, 2);
+bx(c, M.BORR, 0, y0 + H - 0.13, D + 0.0006, W - 0.006, 0.003, 0.002);
+alcaV(c, M.CROMO, W / 2 - 0.045, y0 + H * 0.6, D + 0.01, H * 0.5, 0.009, 0.024);
+manopla(c, -W / 2 + 0.07, y0 + H - 0.06, D, 0.018); dz(c, M.VERM, W / 2 - 0.07, y0 + H - 0.06, D + 0.0025, 0.005, 0.003, 10);
+for (i = 0; i < 5; i++) bx(c, M.PRETO, 0, y0 + pes + 0.02 + i * 0.01, D + 0.0008, W * 0.7, 0.0035, 0.001);
+return;
+}
+rb(c, M.BR, 0, y0 + pes + (H - pes - 0.06) / 2, D / 2, W, H - pes - 0.06, D, 0.014, 2);
+rb(c, M.BR, 0, y0 + H - 0.03, D / 2 + 0.006, W + 0.012, 0.062, D + 0.012, 0.016, 2);
+bx(c, M.BORR, 0, y0 + H - 0.062, D / 2, W + 0.002, 0.003, D + 0.002);
+alcaH(c, M.CROMO, 0, y0 + H - 0.04, D + 0.012, W * 0.3, 0.0105, 0.02);
+[-1, 1].forEach(function (s) { c.cilH(M.CROMO, s * W * 0.32, y0 + H - 0.058, 0.011, 0.011, 0.07, "x", { seg: 10 }); });
+manopla(c, -W * 0.38, y0 + pes + 0.07, D, 0.02); dz(c, M.VERM, -W * 0.28, y0 + pes + 0.07, D + 0.0025, 0.005, 0.003, 10);
+for (i = 0; i < 4; i++) bx(c, M.PRETO, W * 0.2, y0 + pes + 0.04 + i * 0.01, D + 0.0008, W * 0.34, 0.0035, 0.001);
+}
+function torneiraEletrica(c, p) {
+var A = num(p.A, 1.1), W = cl(num(p.W, 0.11), 0.05, 0.3), H = cl(num(p.H, 0.25), 0.1, 0.6), P = cl(num(p.P, 0.2), 0.08, 0.5);
+var yTop = A + H / 2, yBot = A - H / 2, hb = H * 0.34, yb = yTop - 0.024 - hb / 2 + 0.004, rb2 = 0.0085, zc = (P - 0.016) * 0.58, zb = 0.016 + zc / 2, yh = yb - hb * 0.18, zn = P - rb2 - 0.002;
+dz(c, M.BR, 0, yb, 0.008, W * 0.4, 0.016, 28);
+rb(c, M.BR, 0, yb, zb, W, hb, zc, 0.034, 3);
+bx(c, M.CINZA, 0, yb, 0.016 + zc + 0.0006, W * 0.46, hb * 0.5, 0.0012);
+c.cil(M.CINZA, 0, yb + hb / 2 - 0.004, zb, W * 0.22, 0.024, { seg: 24 });
+c.cil(M.PRETO, 0, yTop - 0.0008, zb, W * 0.16, 0.0008, { seg: 20 });
+bx(c, M.PRETO, 0, yTop + 0.0002, zb + W * 0.07, 0.003, 0.0012, W * 0.14);
+dz(c, M.VERM, W * 0.28, yb + 0.006, 0.016 + zc + 0.0016, 0.0042, 0.0016, 10);
+c.cilH(M.CROMO, 0, yh, (0.016 + zn) / 2, rb2, zn - 0.016, "z", { seg: 14 });
+c.elipsoide(M.CROMO, 0, yh, zn, rb2, rb2, rb2, { seg: 12 });
+c.cil(M.CROMO, 0, yBot + 0.018, zn, rb2, yh - (yBot + 0.018), { seg: 14 });
+c.cil(M.CINZA, 0, yBot, zn, rb2 + 0.003, 0.018, { seg: 16 });
+c.cil(M.TELA, 0, yBot - 0.0004, zn, rb2, 0.0008, { seg: 14 });
+}
+function tv(c, p) {
+var A = num(p.A, 1.3), W = cl(num(p.W, 1.12), 0.4, 2.5), H = cl(num(p.H, 0.65), 0.25, 1.5), D = cl(num(p.D, 0.06), 0.03, 0.2) - 0.0026;
+var zf = D - 0.032;
+bx(c, M.PRETO, 0, A, 0.0065, W * 0.3, H * 0.34, 0.013);
+bx(c, M.PRETO, 0, A, 0.02, W * 0.12, H * 0.06, 0.012);
+bx(c, M.PRETO, 0, A + H * 0.06, zf - 0.006, W * 0.5, H * 0.52, 0.02);
+rb(c, M.PRETO, 0, A, D - 0.016, W, H, 0.032, 0.006, 2);
+[-1, 1].forEach(function (sx) { bx(c, M.CROMO, sx * (W / 2 - 0.0006), A, D - 0.016, 0.0012, H - 0.02, 0.0322); });
+[-1, 1].forEach(function (sy) { bx(c, M.CROMO, 0, A + sy * (H / 2 - 0.0006), D - 0.016, W - 0.02, 0.0012, 0.0322); });
+rb(c, M.TELA, 0, A + 0.012, D + 0.0005, W - 0.03, H - 0.054, 0.001, 0.002, 1);
+rb(c, M.FUME, 0, A + 0.012, D + 0.0012, W - 0.03, H - 0.054, 0.0008, 0.002, 1);
+bx(c, M.GALV, 0, A - H / 2 + 0.0145, D + 0.0003, W * 0.34, 0.012, 0.0008);
+for (var gi = -6; gi <= 6; gi++) bx(c, M.PRETO, gi * W * 0.026, A - H / 2 + 0.0145, D + 0.0009, 0.0035, 0.008, 0.0004);
+dz(c, M.DIF, W * 0.4, A - H / 2 + 0.0145, D + 0.0011, 0.0022, 0.0008, 8);
+}
+function motorPortao(c, p) {
+var W = cl(num(p.W, 0.25), 0.1, 0.6), H = cl(num(p.H, 0.27), 0.1, 0.6), D = cl(num(p.D, 0.18), 0.08, 0.5), yb = num(p.yb, 0), i;
+bx(c, M.GALV, 0, yb + 0.005, D / 2, W, 0.01, D);
+[[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) { c.cil(M.CROMO, s[0] * (W / 2 - 0.014), yb + 0.01, D / 2 + s[1] * (D / 2 - 0.014), 0.0075, 0.012, { seg: 6 }); });
+rb(c, M.MBR, 0, yb + 0.022 + (H - 0.022) * 0.36, D / 2, W - 0.04, (H - 0.022) * 0.72, D - 0.04, 0.018, 2);
+rb(c, M.LACAG, 0, yb + 0.022 + (H - 0.022) * 0.86, D / 2, W - 0.04, (H - 0.022) * 0.3, D - 0.04, 0.026, 3);
+bx(c, M.PRETO, 0, yb + 0.022 + (H - 0.022) * 0.71, D / 2, W - 0.036, 0.003, D - 0.036);
+for (i = -2; i <= 2; i++) bx(c, M.PRETO, W * 0.08 * i, yb + 0.022 + (H - 0.022) * 0.3, D - 0.0405, 0.012, 0.05, 0.001);
+var Lr = W + 0.2, nd = Math.floor(Lr / 0.025);
+bx(c, M.GALV, 0, yb + 0.07, D * 0.55, Lr, 0.012, 0.024);
+for (i = 0; i < nd; i++) bx(c, M.GALV, -Lr / 2 + 0.0125 + i * 0.025, yb + 0.0775, D * 0.55, 0.011, 0.005, 0.024);
+c.cil(M.CROMO, W * 0.22, yb + 0.12, D - 0.02 + 0.001, 0.012, 0.004, { rotX: 90, seg: 12 });
+dz(c, M.VERDE, -W * 0.28, yb + 0.15, D - 0.02 + 0.001, 0.0038, 0.002, 8);
+}
+var EleFamilias2Geo = { M: M, plafon: plafon, painel: painel, tubular: tubular, emergencia: emergencia, refletor: refletor, balizador: balizador, tartaruga: tartaruga, bocal: bocal,
+spotTrilho: spotTrilho, microondas: microondas, forno: forno, cooktop: cooktop, coifa: coifa, lavaLoucas: lavaLoucas, secadora: secadora, freezer: freezer,
+torneiraEletrica: torneiraEletrica, tv: tv, motorPortao: motorPortao };
+global.EleFamilias2Geo = EleFamilias2Geo;
+if (typeof module !== "undefined" && module.exports) module.exports = EleFamilias2Geo;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elefamilias2.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var FM = dep("FamiliasMob", "familiasmob.js");
+var G = dep("EleFamilias2Geo", "elefamilias2geo.js");
+var Cat = dep("EleCatalogoDados", "elecatalogodados.js");
+function num(v, d) { var n = typeof v === "number" ? v : parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : d; }
+function txt(v) { return v == null ? "" : String(v); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function sim(v, nome) { return v[nome] === true; }
+function merge(a) { for (var i = 1; i < arguments.length; i++) { var b = arguments[i] || {}; Object.keys(b).forEach(function (k) { a[k] = b[k]; }); } return a; }
+function item(id) { var x = Cat && Cat.item(id); if (!x) throw new Error("catálogo elétrico (L1) sem o item \"" + id + "\""); return x; }
+function cotaMM(id, nome) { var x = Cat && Cat.cota(id, nome); if (!x) throw new Error("catálogo elétrico (L1): o item \"" + id + "\" não tem a cota \"" + nome + "\""); return x.valor; }
+function cotaM(id, nome) { return cotaMM(id, nome) / 1000; }
+function elet(id, nome) { var e = item(id).eletrico || {}; return Object.prototype.hasOwnProperty.call(e, nome) ? e[nome] : null; }
+var ORDEM_NIVEL = { "primaria-lida": 0, "secundaria-lida": 1, "decisao-RA": 2, "sem-fonte-conferir": 3 };
+function nivelDe(id) {
+var it = item(id), pior = "primaria-lida", det = [];
+Object.keys(it.cotas).forEach(function (k) {
+var n = Cat.cota(id, k).nivel;
+if ((ORDEM_NIVEL[n] || 0) > (ORDEM_NIVEL[pior] || 0)) pior = n;
+if (n !== "primaria-lida") det.push(k + ": " + n);
+});
+return { nivel: pior, detalhe: det };
+}
+function fonteDe(id) { var it = item(id); return "Catálogo RA L1 (dados-fonte/eletrica/catalogo) · " + id + " · nível " + it.fonte.nivel + (it.fonte.doc ? " · " + it.fonte.doc + (it.fonte.pagina ? " p." + it.fonte.pagina : "") : " · valor usual de mercado, conferir o modelo comprado"); }
+function vFonte(id) {
+var n = nivelDe(id);
+return { Item_catalogo: id, Fonte: fonteDe(id), Nivel_fonte: n.nivel, Cotas_a_conferir: n.detalhe.join("; ") };
+}
+var P = FM.P, T = FM.T;
+function Pf(nome, tipoDado, valor, grupo, descricao, escopo) { return P(nome, tipoDado, valor, grupo, descricao, escopo); }
+function F(nome, tipoDado, formula, grupo, descricao) { var o = { nome: nome, tipoDado: tipoDado, escopo: "tipo", formula: formula, grupo: grupo }; if (descricao) o.descricao = descricao; return o; }
+function paramFonte() {
+return [
+Pf("Item_catalogo", "texto", "", "Fonte", "Id do item no catálogo elétrico da RA (dados-fonte/eletrica/catalogo), de onde saem as cotas do tipo"),
+Pf("Fonte", "texto", "", "Fonte", "Origem dos números do tipo (o catálogo L1 de luminárias e equipamentos é de valor usual de mercado, sem ficha de fabricante)"),
+Pf("Nivel_fonte", "texto", "", "Fonte", "A pior fonte entre as cotas usadas: primaria-lida · secundaria-lida · sem-fonte-conferir (valor usual, NÃO usar em projeto assinado)"),
+Pf("Cotas_a_conferir", "texto", "", "Fonte", "As cotas do tipo que NÃO são de ficha primária (nome: nível); vazio = todas primárias")
+];
+}
+var LISTA_ID = [], CAT_IDS = {};
+function mkFamilia(o) {
+var fam = FM.def({ id: o.id, nome: o.nome, categoria: o.categoria, descricao: o.descricao, semOrigem: true, parametros: o.parametros, tipos: o.tipos, gerar: o.gerar, quantDesc: o.nome });
+fam.descricao = o.descricao + (o.aparte ? " Equipamento/mobiliário não tem composição SINAPI: orçar à parte (quantitativo em unidade); o PONTO elétrico dele é orçado pelo motor dos pontos." : "");
+fam.disciplina = o.disciplina;
+if (o.mep) fam.mep = { peca: o.mep };
+fam.conectores = o.conectores;
+fam.quantitativo = { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: o.nome };
+fam.catalogo = { ids: o.ids || [] };
+LISTA_ID.push(o.id); CAT_IDS[o.id] = o.ids || [];
+return fam;
+}
+function con(id, nome, dn, x, y, z, dir, aconf) {
+return { id: id, nome: nome, sistema: "eletrica", dn: dn, x: x, y: y, z: z, papel: "entrada", dir: dir, origemPos: "desenho", aConferir: aconf || "posição de projeto da saída do cabo/eletroduto: conferir no manual do modelo comprado" };
+}
+var D_TETO = { x: 0, y: 1, z: 0 }, D_FUNDO = { x: 0, y: 0, z: -1 };
+function paramsLum(op) {
+var l = [
+Pf("Modelo", "texto", op.modelo, "Elétrica", "Descrição curta para o quantitativo e para o render (" + op.modelo + ")"),
+Pf("Tipo_luz", "texto", op.tipoLuz, "Fotometria", "Como a luz sai, para o render: painel (face que acende), spot (facho) ou pendente (lâmpada para todo lado)"),
+Pf("Temperatura_K", "numero", 0, "Fotometria", "Temperatura de cor (K) do catálogo; 0 = o catálogo não publica (pendente: o render usa o padrão e o diz)"),
+Pf("Angulo_facho", "angulo", op.angulo || 120, "Fotometria", "Abertura do facho (graus). O catálogo L1 não publica: valor usual, conferir"),
+Pf("Lado", "comprimento", op.lado || 0.2, "Fotometria", "Tamanho da face que acende (lado ou diâmetro equivalente) para o render do painel"),
+Pf("Instalacao", "texto", op.instalacao, "Elétrica", "embutir, sobrepor, parede, piso, pendente ou trilho"),
+Pf("Pendente", "texto", "", "Fotometria", "O que o catálogo não publica e falta para a luz (vazio = completo)"),
+Pf("Tensao_V", "texto", "bivolt", "Elétrica", "Tensão (catálogo)"),
+Pf("Altura_montagem", "comprimento", op.altura, "Restrições", op.alturaDesc, "instancia"),
+Pf("Comando", "texto", "", "Elétrica", "Comando (quem acende junto): o interruptor que a liga. Vazio = um comando por ambiente.", "instancia"),
+Pf("Circuito", "texto", "", "Elétrica", "Legado: o mesmo valor do Comando", "instancia"),
+Pf("Circuito_quadro", "texto", "", "Elétrica", "Circuito de proteção no quadro (ex.: C1) — informativo", "instancia")
+];
+if (op.multi) {
+l.push(Pf(op.multi.qtd, "inteiro", op.multi.padrao, "Fotometria", op.multi.desc, op.multi.escopo || "instancia"));
+l.push(Pf(op.multi.fluxoUn, "numero", 0, "Fotometria", "Fluxo de cada unidade (lm) do catálogo"));
+l.push(Pf(op.multi.potUn, "numero", 0, "Elétrica", "Potência de cada unidade (W) do catálogo"));
+l.push(F("Fluxo_lm", "numero", op.multi.qtd + " * " + op.multi.fluxoUn, "Fotometria", "Fluxo total (lm) = unidades × fluxo de cada"));
+l.push(F("Potencia_W", "numero", op.multi.qtd + " * " + op.multi.potUn, "Elétrica", "Potência instalada (W) = unidades × potência de cada"));
+} else {
+l.push(Pf("Fluxo_lm", "numero", 0, "Fotometria", "Fluxo luminoso (lm) do catálogo; 0 = pendente"));
+l.push(Pf("Potencia_W", "numero", 0, "Elétrica", "Potência (W) do catálogo"));
+}
+return l.concat(op.extra || [], paramFonte());
+}
+function valoresLum(catId, extra, op) {
+op = op || {};
+var v = vFonte(catId), p = [];
+if (op.multi) {
+v[op.multi.fluxoUn] = elet(catId, "fluxo_lm") || 0; v[op.multi.potUn] = elet(catId, "potencia_W") || 0;
+} else {
+v.Fluxo_lm = elet(catId, "fluxo_lm") || 0; v.Potencia_W = elet(catId, "potencia_W") || 0;
+}
+var K = elet(catId, "temperatura_K"); v.Temperatura_K = K || 0;
+var tv = elet(catId, "tensao_V"); v.Tensao_V = tv == null ? "bivolt" : String(tv);
+if (!(num(v.Fluxo_lm != null ? v.Fluxo_lm : v[op.multi && op.multi.fluxoUn], 0) > 0)) p.push("fluxo (lm)");
+if (!K) p.push("temperatura de cor (K)");
+Object.keys(extra || {}).forEach(function (k) { v[k] = extra[k]; });
+if (extra && extra.Pendente) p.push(extra.Pendente);
+v.Pendente = p.join("; ");
+return v;
+}
+function tipoLum(id, nome, catId, extra, op) { return T(id, nome, valoresLum(catId, extra, op), fonteDe(catId)); }
+function conCanopla(dn, nome) { return con("el", nome || "Eletroduto (canopla, no teto)", dn || 25, "0", "Altura_montagem", "0", D_TETO, "luminária de teto: o ponto de luz é a caixa octogonal no teto, na vertical da canopla"); }
+function conParede(dn, nome) { return con("el", nome || "Eletroduto (parede, atrás do corpo)", dn || 20, "0", "Altura_montagem", "0", D_FUNDO, "luminária de parede: a caixa 4×2 atrás do corpo, na Altura de montagem"); }
+function defLum(o) {
+return mkFamilia({ id: o.id, nome: o.nome, categoria: "luminaria", disciplina: "eletrica", mep: "luminaria", descricao: o.descricao, parametros: paramsLum(o.op), tipos: o.tipos, gerar: o.gerar,
+conectores: [o.conector || conCanopla()], ids: o.ids });
+}
+function tPlafon(id, nome, cat, redondo) {
+var diam = redondo ? cotaM(cat, "diametro_mm") : cotaM(cat, "lado_mm");
+return tipoLum(id, nome, cat, { Formato: redondo ? "redondo" : "quadrado", Largura: diam, Altura_corpo: cotaM(cat, "altura_mm"), Lado: Math.round((diam - 0.03) * 1000) / 1000, Instalacao: "sobrepor", Modelo: redondo ? "plafon_circular" : "plafon_quadrado" });
+}
+defLum({
+id: "ele-lum-plafon", nome: "Plafon LED de sobrepor (redondo e quadrado)", ids: ["lum_plafon_redondo_18w", "lum_plafon_redondo_24w", "lum_plafon_quadrado_18w", "lum_plafon_quadrado_24w"],
+descricao: "Plafon LED de sobrepor, redondo ou quadrado, 18 ou 24 W: corpo com a borda arredondada, junta escura e difusor leitoso levemente abaulado. A face de baixo fica na Altura de montagem menos a altura do corpo (o corpo sobe até o teto). Conector `el` na canopla. Os tipos 18 W com ficha de fabricante (Taschibra Lux, Stella ECO) estão em ra-ilum-plafon; estes são os de catálogo L1 (valor usual, 24 W inclusive).",
+op: { modelo: "plafon_circular", tipoLuz: "painel", instalacao: "sobrepor", altura: 2.60, alturaDesc: "Do piso à face de baixo do forro ou da laje (o teto onde a peça é fixada)", lado: 0.195,
+extra: [Pf("Formato", "texto", "redondo", "Dimensões", "redondo ou quadrado"), Pf("Largura", "comprimento", 0.225, "Dimensões", "Diâmetro (redondo) ou lado (quadrado) externo — catálogo L1"),
+Pf("Altura_corpo", "comprimento", 0.04, "Dimensões", "Altura do corpo — catálogo L1")] },
+tipos: [tPlafon("red-18", "Plafon redondo 18 W (225 mm)", "lum_plafon_redondo_18w", true), tPlafon("red-24", "Plafon redondo 24 W (300 mm)", "lum_plafon_redondo_24w", true),
+tPlafon("qua-18", "Plafon quadrado 18 W (225 mm)", "lum_plafon_quadrado_18w", false), tPlafon("qua-24", "Plafon quadrado 24 W (300 mm)", "lum_plafon_quadrado_24w", false)],
+gerar: function (c, v) { G.plafon(c, { redondo: txt(v.Formato) !== "quadrado", D: num(v.Largura, 0.225), H: num(v.Altura_corpo, 0.04), A: num(v.Altura_montagem, 2.6), Ld: num(v.Lado, 0.195) }); }
+});
+function tPainel(id, nome, cat, redondo) {
+var D = redondo ? cotaM(cat, "diametro_mm") : cotaM(cat, "largura_mm");
+return tipoLum(id, nome, cat, { Formato: redondo ? "redondo" : "quadrado", Largura: D, Altura_corpo: cotaM(cat, "altura_mm"), Furo_forro: cotaM(cat, "furo_forro_mm"), Lado: Math.round((D - 0.016) * 1000) / 1000, Instalacao: "embutir", Modelo: redondo ? "painel_circular" : "painel_quadrado" });
+}
+defLum({
+id: "ele-lum-painel", nome: "Painel LED de embutir (borda fina)", ids: ["lum_painel_60x60_embutir", "lum_painel_30x30_embutir", "lum_painel_redondo_12w", "lum_painel_redondo_18w"],
+descricao: "Painel LED de embutir no forro, quadrado 60×60 e 30×30 ou redondo 12 e 18 W, com a borda fina (moldura de 4 mm abaixo do forro, 8 mm de largura) e o difusor leitoso. Acima do forro: o corpo que entra no recorte (Furo no forro) e a caixa do driver (modelagem). A Altura de montagem é a do forro. Conector `el` na canopla.",
+op: { modelo: "painel_quadrado", tipoLuz: "painel", instalacao: "embutir", altura: 2.60, alturaDesc: "Do piso à face de baixo do forro (a moldura fica rente)", lado: 0.58,
+extra: [Pf("Formato", "texto", "quadrado", "Dimensões", "redondo ou quadrado"), Pf("Largura", "comprimento", 0.595, "Dimensões", "Lado (quadrado) ou diâmetro (redondo) da moldura — catálogo L1"),
+Pf("Altura_corpo", "comprimento", 0.01, "Dimensões", "Espessura do painel — catálogo L1"), Pf("Furo_forro", "comprimento", 0.595, "Dimensões", "Recorte no forro — catálogo L1"),
+Pf("Borda", "comprimento", 0.008, "Dimensões", "Largura da moldura visível (borda fina) — modelagem, o catálogo não publica")] },
+tipos: [tPainel("q60", "Painel 60×60 cm, 40 W", "lum_painel_60x60_embutir", false), tPainel("q30", "Painel 30×30 cm, 24 W", "lum_painel_30x30_embutir", false),
+tPainel("r12", "Painel redondo 12 W (170 mm)", "lum_painel_redondo_12w", true), tPainel("r18", "Painel redondo 18 W (225 mm)", "lum_painel_redondo_18w", true)],
+gerar: function (c, v) { G.painel(c, { redondo: txt(v.Formato) === "redondo", D: num(v.Largura, 0.3), H: num(v.Altura_corpo, 0.01), furo: num(v.Furo_forro, 0.28), A: num(v.Altura_montagem, 2.6), borda: num(v.Borda, 0.008) }); }
+});
+defLum({
+id: "ele-lum-tubular", nome: "Luminária tubular LED 1,20 m (calha)", ids: ["lum_tubular_120"],
+descricao: "Calha de sobrepor com 1 ou 2 tubos LED T8 de 1,20 m: aba em U, dobras do refletor, tampas de ponta, soquetes bipino e driver. A Altura de montagem é a do teto; a calha desce a partir dela. Conector `el` na canopla.",
+op: { modelo: "calha_tubular", tipoLuz: "painel", instalacao: "sobrepor", altura: 2.60, alturaDesc: "Do piso à face de baixo do forro ou da laje", lado: 0.27,
+multi: { qtd: "Tubos", padrao: 1, escopo: "tipo", desc: "Quantidade de tubos na calha (1 ou 2) — vem do tipo", fluxoUn: "Fluxo_tubo_lm", potUn: "Potencia_tubo_W" },
+extra: [Pf("Comprimento", "comprimento", 1.2, "Dimensões", "Comprimento da calha — catálogo L1"), Pf("Largura", "comprimento", 0.06, "Dimensões", "Largura da calha — catálogo L1 (1 tubo); 2 tubos: usual, sem-fonte-conferir"),
+Pf("Altura_corpo", "comprimento", 0.04, "Dimensões", "Altura da calha — catálogo L1")] },
+tipos: [tipoLum("t1", "Calha 1,20 m com 1 tubo (18 W)", "lum_tubular_120", { Comprimento: cotaM("lum_tubular_120", "comprimento_mm"), Largura: cotaM("lum_tubular_120", "largura_mm"), Altura_corpo: cotaM("lum_tubular_120", "altura_mm"), Lado: 0.27, Instalacao: "sobrepor" }, { multi: { fluxoUn: "Fluxo_tubo_lm", potUn: "Potencia_tubo_W" } }),
+T("t2", "Calha 1,20 m com 2 tubos (2 × 18 W)", (function () {
+var v = valoresLum("lum_tubular_120", { Comprimento: cotaM("lum_tubular_120", "comprimento_mm"), Largura: 0.1, Altura_corpo: cotaM("lum_tubular_120", "altura_mm"), Lado: 0.34, Instalacao: "sobrepor" }, { multi: { fluxoUn: "Fluxo_tubo_lm", potUn: "Potencia_tubo_W" } });
+v.Cotas_a_conferir += "; largura da calha de 2 tubos: sem-fonte-conferir (usual 100 mm, o catálogo L1 só tem a de 1 tubo)";
+v.Tubos = 2; return v; })(), fonteDe("lum_tubular_120"))],
+gerar: function (c, v) { G.tubular(c, { L: num(v.Comprimento, 1.2), W: num(v.Largura, 0.06), H: num(v.Altura_corpo, 0.04), A: num(v.Altura_montagem, 2.6), tubos: num(v.Tubos, 1) }); }
+});
+defLum({
+id: "ele-lum-emergencia", nome: "Luminária de emergência 30 LEDs (sobrepor de parede)", ids: ["lum_emergencia_30led"],
+descricao: "Luminária de emergência de sobrepor na parede, 30 LEDs em duas fileiras atrás de lente transparente, LED de carga e botão de teste (autonomia 3 h). Origem: na face da parede, no meio da peça, frente em +Z; a Altura de montagem é a do CENTRO. Conector `el` atrás do corpo.",
+op: { modelo: "emergencia", tipoLuz: "pendente", instalacao: "parede", altura: 2.20, alturaDesc: "Do piso ao centro da luminária (sobre a porta de saída: faixa usual 2,00-2,30 m)", lado: 0.1,
+extra: [Pf("Comprimento", "comprimento", 0.3, "Dimensões", "Comprimento — catálogo L1"), Pf("Largura", "comprimento", 0.1, "Dimensões", "Altura da peça na parede (cota 'largura' do catálogo) — catálogo L1"),
+Pf("Profundidade", "comprimento", 0.05, "Dimensões", "Saliência da parede — catálogo L1"), Pf("Autonomia_h", "numero", 3, "Elétrica", "Autonomia da bateria (h) — catálogo L1")] },
+conector: conParede(20),
+tipos: [tipoLum("l30", "Emergência 30 LEDs", "lum_emergencia_30led", { Comprimento: cotaM("lum_emergencia_30led", "comprimento_mm"), Largura: cotaM("lum_emergencia_30led", "largura_mm"), Profundidade: cotaM("lum_emergencia_30led", "altura_mm"), Autonomia_h: elet("lum_emergencia_30led", "autonomia_h"), Instalacao: "parede" })],
+gerar: function (c, v) { G.emergencia(c, { L: num(v.Comprimento, 0.3), W: num(v.Largura, 0.1), D: num(v.Profundidade, 0.05), A: num(v.Altura_montagem, 2.2) }); }
+});
+function tRef(id, nome, cat) { return tipoLum(id, nome, cat, { Largura: cotaM(cat, "largura_mm"), Altura_corpo: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm"), Instalacao: "parede", IP: elet(cat, "IP") || "" }); }
+defLum({
+id: "ele-lum-refletor", nome: "Refletor LED (aletas e suporte em U)", ids: ["lum_refletor_50w", "lum_refletor_100w"],
+descricao: "Refletor LED 50 ou 100 W, IP65: carcaça de alumínio injetado, vidro frontal sobre a placa de LED, aletas do dissipador atrás e suporte em U de aço com o parafuso de regulagem (Inclinacao para baixo). Origem: na face da parede, frente em +Z; Altura de montagem = o pivô (centro do corpo). Conector `el` atrás da chapa do suporte.",
+op: { modelo: "refletor", tipoLuz: "pendente", angulo: 120, instalacao: "parede", altura: 2.40, alturaDesc: "Do piso ao pivô (centro do corpo) do refletor", lado: 0.2,
+extra: [Pf("Largura", "comprimento", 0.215, "Dimensões", "Largura do corpo — catálogo L1"), Pf("Altura_corpo", "comprimento", 0.19, "Dimensões", "Altura do corpo — catálogo L1"),
+Pf("Profundidade", "comprimento", 0.04, "Dimensões", "Espessura do corpo sem as aletas — catálogo L1"), Pf("IP", "texto", "IP65", "Elétrica", "Grau de proteção — catálogo L1"),
+Pf("Inclinacao", "angulo", 20, "Restrições", "Inclinação do facho para baixo a partir da frente (graus). No render a luz sai como ponto: a direção do facho não é lida (pendência)", "instancia")] },
+conector: conParede(20, "Eletroduto (atrás do suporte)"),
+tipos: [tRef("w50", "Refletor LED 50 W", "lum_refletor_50w"), tRef("w100", "Refletor LED 100 W", "lum_refletor_100w")],
+gerar: function (c, v) { G.refletor(c, { W: num(v.Largura, 0.215), H: num(v.Altura_corpo, 0.19), Dp: num(v.Profundidade, 0.04), A: num(v.Altura_montagem, 2.4), tilt: num(v.Inclinacao, 20) }); }
+});
+defLum({
+id: "ele-lum-balizador", nome: "Balizador LED (parede e piso)", ids: ["lum_balizador"],
+descricao: "Balizador LED IP65: de PAREDE (corpo de alumínio escuro com viseira e fendas de luz; Altura de montagem = o centro, origem na face da parede, frente em +Z) ou de PISO (moldura rente ao piso com as fendas e a caixa embutida abaixo; a face fica em Y = 0). A cota do catálogo é a do balizador de parede; a de piso usa a mesma pegada (sem-fonte-conferir). Conector `el` atrás do corpo (parede) ou sob a moldura (piso).",
+op: { modelo: "balizador", tipoLuz: "pendente", instalacao: "parede", altura: 0.40, alturaDesc: "Do piso ao centro do balizador de parede (balizamento usual 0,30-0,60 m). No tipo de piso é ignorada: a face fica no piso", lado: 0.1,
+extra: [Pf("Largura", "comprimento", 0.14, "Dimensões", "Largura — catálogo L1"), Pf("Altura_corpo", "comprimento", 0.07, "Dimensões", "Altura — catálogo L1"), Pf("Profundidade", "comprimento", 0.07, "Dimensões", "Profundidade — catálogo L1"),
+Pf("No_piso", "simnao", false, "Dimensões", "Tipo de piso (embutido, face rente ao piso)"), Pf("IP", "texto", "IP65", "Elétrica", "Grau de proteção — catálogo L1")] },
+conector: con("el", "Eletroduto (atrás do corpo ou sob a moldura)", 20, "0", "se(No_piso; 0; Altura_montagem)", "0", D_FUNDO, "balizador: a caixa 4×2 atrás do corpo (parede) ou a caixa embutida sob a moldura (piso)"),
+tipos: [tipoLum("parede", "Balizador de parede", "lum_balizador", { Largura: cotaM("lum_balizador", "largura_mm"), Altura_corpo: cotaM("lum_balizador", "altura_mm"), Profundidade: cotaM("lum_balizador", "profundidade_mm"), Instalacao: "parede", No_piso: false, IP: elet("lum_balizador", "IP") || "" }),
+(function () {
+var v = valoresLum("lum_balizador", { Largura: cotaM("lum_balizador", "largura_mm"), Altura_corpo: cotaM("lum_balizador", "altura_mm"), Profundidade: cotaM("lum_balizador", "profundidade_mm"), Instalacao: "piso", No_piso: true, IP: elet("lum_balizador", "IP") || "" });
+v.Cotas_a_conferir += "; balizador de piso: o catálogo L1 só tem o de parede (pegada reaproveitada), sem-fonte-conferir";
+return T("piso", "Balizador de piso (embutido)", v, fonteDe("lum_balizador"));
+})()],
+gerar: function (c, v) { G.balizador(c, { L: num(v.Largura, 0.14), H: num(v.Altura_corpo, 0.07), P: num(v.Profundidade, 0.07), A: num(v.Altura_montagem, 0.4), piso: sim(v, "No_piso") }); }
+});
+defLum({
+id: "ele-lum-tartaruga", nome: "Arandela externa tipo tartaruga (E27)", ids: ["lum_arandela_tartaruga", "lum_bocal_e27_bulbo_9w"],
+descricao: "Arandela externa 'tartaruga': base oval, cúpula oval e grade de aletas horizontais, soquete E27 com lâmpada bulbo 9 W (a do catálogo L1: fluxo e potência vêm da lâmpada), IP54. Origem: na face da parede, frente em +Z; Altura de montagem = o centro. Conector `el` atrás da base.",
+op: { modelo: "arandela_tartaruga", tipoLuz: "pendente", instalacao: "parede", altura: 2.0, alturaDesc: "Do piso ao centro da arandela (faixa usual externa 1,80-2,20 m)", lado: 0.15,
+extra: [Pf("Largura", "comprimento", 0.2, "Dimensões", "Largura — catálogo L1"), Pf("Altura_corpo", "comprimento", 0.12, "Dimensões", "Altura — catálogo L1"), Pf("Profundidade", "comprimento", 0.09, "Dimensões", "Saliência da parede — catálogo L1"),
+Pf("IP", "texto", "IP54", "Elétrica", "Grau de proteção — catálogo L1"), Pf("Bocal", "texto", "E27", "Elétrica", "Soquete — catálogo L1")] },
+conector: conParede(20, "Eletroduto (atrás da base)"),
+tipos: [(function () {
+var v = valoresLum("lum_arandela_tartaruga", { Largura: cotaM("lum_arandela_tartaruga", "largura_mm"), Altura_corpo: cotaM("lum_arandela_tartaruga", "altura_mm"), Profundidade: cotaM("lum_arandela_tartaruga", "profundidade_mm"), Instalacao: "parede", IP: elet("lum_arandela_tartaruga", "IP"), Bocal: elet("lum_arandela_tartaruga", "bocal") });
+v.Fluxo_lm = elet("lum_bocal_e27_bulbo_9w", "fluxo_lm"); v.Potencia_W = elet("lum_arandela_tartaruga", "potencia_W");
+v.Pendente = "temperatura de cor (K); o fluxo é o da lâmpada bulbo 9 W do catálogo (lum_bocal_e27_bulbo_9w), a arandela não traz fluxo próprio";
+v.Fonte += " | lâmpada: " + fonteDe("lum_bocal_e27_bulbo_9w");
+return T("e27", "Arandela tartaruga E27 + bulbo 9 W", v, v.Fonte);
+})()],
+gerar: function (c, v) { G.tartaruga(c, { W: num(v.Largura, 0.2), H: num(v.Altura_corpo, 0.12), P: num(v.Profundidade, 0.09), A: num(v.Altura_montagem, 2.0) }); }
+});
+defLum({
+id: "ele-lum-bocal", nome: "Bocal E27 com lâmpada bulbo 9 W", ids: ["lum_bocal_e27_bulbo_9w"],
+descricao: "Ponto de luz simples de obra: rosácea no forro, bocal de plástico com a rosca coberta e lâmpada bulbo A60 leitosa 9 W. A Altura de montagem é a do teto; a lâmpada desce a partir dela (altura total da lâmpada 108 mm). Conector `el` na rosácea.",
+op: { modelo: "bocal_e27", tipoLuz: "pendente", instalacao: "sobrepor", altura: 2.60, alturaDesc: "Do piso à face de baixo do forro ou da laje", lado: 0.06,
+extra: [Pf("Diametro_bulbo", "comprimento", 0.06, "Dimensões", "Diâmetro do bulbo — catálogo L1"), Pf("Altura_total", "comprimento", 0.108, "Dimensões", "Altura total da lâmpada (rosca + vidro) — catálogo L1"),
+Pf("Diametro_rosca", "comprimento", 0.027, "Dimensões", "Diâmetro da rosca E27 — catálogo L1 (sem-fonte-conferir)"), Pf("Bocal", "texto", "E27", "Elétrica", "Soquete — catálogo L1")] },
+tipos: [tipoLum("e27", "Bocal E27 + bulbo 9 W (806 lm)", "lum_bocal_e27_bulbo_9w", { Diametro_bulbo: cotaM("lum_bocal_e27_bulbo_9w", "diametro_bulbo_mm"), Altura_total: cotaM("lum_bocal_e27_bulbo_9w", "altura_total_mm"), Diametro_rosca: cotaM("lum_bocal_e27_bulbo_9w", "diametro_rosca_mm"), Instalacao: "sobrepor" })],
+gerar: function (c, v) { G.bocal(c, { A: num(v.Altura_montagem, 2.6), dBulbo: num(v.Diametro_bulbo, 0.06), Htot: num(v.Altura_total, 0.108), dRosca: num(v.Diametro_rosca, 0.027) }); }
+});
+defLum({
+id: "ele-lum-spot-trilho", nome: "Spot de trilho com trilho eletrificado", ids: ["lum_spot_trilho"],
+descricao: "Trilho eletrificado de alumínio (1 m do catálogo L1) com a fenda dos condutores, tampas de ponta e a alimentação (canopla) na ponta de x = −Comprimento/2, e 1 a 6 spots LED (adaptador, haste, pivô e cabeça que inclina). A Altura de montagem é a do teto. Conector `el` na alimentação do trilho. Cada spot do catálogo L1 tem 10 W e 800 lm.",
+op: { modelo: "spot_trilho", tipoLuz: "spot", angulo: 36, instalacao: "trilho", altura: 2.60, alturaDesc: "Do piso à face de baixo do forro ou da laje (onde o trilho é fixado)", lado: 0.07,
+multi: { qtd: "Spots", padrao: 1, desc: "Quantidade de spots no trilho (1 a 6)", fluxoUn: "Fluxo_spot_lm", potUn: "Potencia_spot_W" },
+extra: [Pf("Comprimento_trilho", "comprimento", 1.0, "Dimensões", "Comprimento do trilho — catálogo L1"), Pf("Diametro", "comprimento", 0.07, "Dimensões", "Diâmetro do spot — catálogo L1"),
+Pf("Altura_spot", "comprimento", 0.13, "Dimensões", "Altura do spot (adaptador + cabeça) — catálogo L1"),
+Pf("Inclinacao", "angulo", 30, "Restrições", "Inclinação do facho a partir da vertical (graus). No render a luz sai para baixo: a direção do facho não é lida (pendência)", "instancia")] },
+conector: con("el", "Alimentação do trilho (canopla na ponta)", 25, "-Comprimento_trilho/2+0.03", "Altura_montagem", "0", D_TETO, "trilho: o ponto de luz é a caixa octogonal no teto, sobre a alimentação (ponta do trilho)"),
+tipos: [tipoLum("tr10", "Spot de trilho LED 10 W + trilho de 1 m", "lum_spot_trilho", { Comprimento_trilho: cotaM("lum_spot_trilho", "comprimento_trilho_mm"), Diametro: cotaM("lum_spot_trilho", "diametro_mm"), Altura_spot: cotaM("lum_spot_trilho", "altura_mm"), Instalacao: "trilho", Lado: 0.07 }, { multi: { fluxoUn: "Fluxo_spot_lm", potUn: "Potencia_spot_W" } })],
+gerar: function (c, v) { G.spotTrilho(c, { L: num(v.Comprimento_trilho, 1), D: num(v.Diametro, 0.07), Hh: num(v.Altura_spot, 0.13), A: num(v.Altura_montagem, 2.6), incl: num(v.Inclinacao, 30), n: num(v.Spots, 1) }); }
+});
+function paramsEq(op) {
+var l = [
+Pf("Largura", "comprimento", op.W, "Dimensões", "Largura — catálogo L1"), Pf("Altura", "comprimento", op.H, "Dimensões", "Altura — catálogo L1"), Pf("Profundidade", "comprimento", op.D, "Dimensões", "Profundidade — catálogo L1"),
+Pf("Potencia_W", "numero", 0, "Elétrica", "Potência típica (W) do catálogo L1 — a placa do aparelho comprado manda"),
+Pf("Tensao_V", "numero", 127, "Elétrica", "Tensão (V) do catálogo L1"),
+Pf("Tipo_ponto", "texto", "", "Elétrica", "Ponto que o aparelho pede (TUE, TUG dedicada, ligação direta) — catálogo L1"),
+Pf("Altura_ponto_m", "comprimento", 0.3, "Elétrica", "Altura do ponto elétrico (m do piso) do catálogo L1; o ponto lançado segue a tabela dos aparelhos (dados-fonte/eletrica/aparelhos.json)")
+];
+if (op.acab) l.push(Pf("Acabamento", "texto", op.acab, "Materiais", "inox, branco ou preto (cor do corpo)", "instancia"));
+if (op.apoio) l.push(Pf(op.apoio.nome, "comprimento", op.apoio.padrao, "Restrições", op.apoio.desc, "instancia"));
+return l.concat(op.extra || [], paramFonte());
+}
+function valoresEq(catId, extra) {
+var v = vFonte(catId), it = item(catId);
+v.Potencia_W = elet(catId, "potencia_W") || 0; v.Tensao_V = num(elet(catId, "tensao_V"), 127); v.Tipo_ponto = elet(catId, "tipo_ponto") || "";
+v.Altura_ponto_m = num(elet(catId, "altura_ponto_m"), 0.3);
+Object.keys(extra || {}).forEach(function (k) { v[k] = extra[k]; });
+void it;
+return v;
+}
+function tipoEq(id, nome, catId, extra) { return T(id, nome, valoresEq(catId, extra), fonteDe(catId)); }
+function defEq(o) {
+return mkFamilia({ id: o.id, nome: o.nome, categoria: o.categoria || "mobiliario", disciplina: "mobiliario", aparte: true, descricao: o.descricao, parametros: paramsEq(o.op), tipos: o.tipos, gerar: o.gerar, conectores: [o.conector], ids: o.ids });
+}
+function dimsEq(cat) { return { Largura: cotaM(cat, "largura_mm"), Altura: cotaM(cat, "altura_mm"), Profundidade: cotaM(cat, "profundidade_mm") }; }
+defEq({
+id: "ele-eq-microondas", nome: "Micro-ondas de bancada", ids: ["eq_microondas_20l", "eq_microondas_30l"],
+descricao: "Micro-ondas de bancada 20 ou 30 L: corpo arredondado, porta de vidro escuro com a alça vertical, painel com visor, teclas e seletor, grade lateral e pés. Origem: no apoio (Altura_apoio = o tampo da bancada), no meio da largura, com o FUNDO em Z = 0 e a frente em +Z. Conector `el` onde o cabo sai, atrás, embaixo, do lado direito.",
+op: { W: 0.44, H: 0.26, D: 0.34, acab: "inox", apoio: { nome: "Altura_apoio", padrao: 0.90, desc: "Do piso ao tampo da bancada onde o aparelho apoia (usual 0,90 m)" }, extra: [Pf("Capacidade_L", "inteiro", 20, "Dimensões", "Capacidade (litros) — nome do catálogo L1")] },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 25, "Largura/2-0.06", "Altura_apoio+0.05", "0", D_FUNDO),
+tipos: [tipoEq("l20", "Micro-ondas 20 L (1.200 W)", "eq_microondas_20l", merge(dimsEq("eq_microondas_20l"), { Capacidade_L: 20 })), tipoEq("l30", "Micro-ondas 30 L (1.500 W)", "eq_microondas_30l", merge(dimsEq("eq_microondas_30l"), { Capacidade_L: 30 }))],
+gerar: function (c, v) { G.microondas(c, { W: num(v.Largura, 0.44), H: num(v.Altura, 0.26), D: num(v.Profundidade, 0.34), y0: num(v.Altura_apoio, 0.9), acab: txt(v.Acabamento) }); }
+});
+defEq({
+id: "ele-eq-forno-embutir", nome: "Forno elétrico de embutir 50 L", ids: ["eq_forno_embutir_50l"],
+descricao: "Forno elétrico de embutir de 50 L (nicho 560 × 590 mm): testa de inox, faixa de comando com 4 manoplas e visor, porta com vidro escuro e alça-barra, ventilação sob a faixa e a carcaça que entra no nicho. Origem: na base do aparelho (Altura_apoio), no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás.",
+op: { W: 0.595, H: 0.595, D: 0.55, apoio: { nome: "Altura_apoio", padrao: 0.90, desc: "Do piso à base do forro (usual 0,60-0,90 m na torre)" },
+extra: [Pf("Nicho_largura", "comprimento", 0.56, "Dimensões", "Largura do nicho — catálogo L1"), Pf("Nicho_altura", "comprimento", 0.59, "Dimensões", "Altura do nicho — catálogo L1")] },
+conector: con("el", "Cabo de força (atrás)", 25, "Largura/2-0.1", "Altura_apoio+0.12", "0", D_FUNDO),
+tipos: [tipoEq("l50", "Forno de embutir 50 L (4.500 W, 220 V)", "eq_forno_embutir_50l", merge(dimsEq("eq_forno_embutir_50l"), { Nicho_largura: cotaM("eq_forno_embutir_50l", "nicho_largura_mm"), Nicho_altura: cotaM("eq_forno_embutir_50l", "nicho_altura_mm") }))],
+gerar: function (c, v) { G.forno(c, { W: num(v.Largura, 0.595), H: num(v.Altura, 0.595), D: num(v.Profundidade, 0.55), y0: num(v.Altura_apoio, 0.9), Wn: num(v.Nicho_largura, 0.56) }); }
+});
+defEq({
+id: "ele-eq-cooktop-inducao", nome: "Cooktop de indução 4 bocas (de embutir)", ids: ["eq_cooktop_inducao_4b"],
+descricao: "Cooktop de indução de 4 bocas para embutir no tampo: vidro preto de 6 mm sobre o tampo, quatro zonas de anéis impressos, filete de inox na frente, faixa de comando por toque e o corpo abaixo do tampo. Origem: no tampo (Altura_tampo), no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás embaixo. Sem a bancada (o cooktop da bancada de cozinha é o ra-coz-inferior).",
+op: { W: 0.59, H: 0.055, D: 0.52, apoio: { nome: "Altura_tampo", padrao: 0.90, desc: "Do piso ao tampo onde o cooktop é embutido (usual 0,90 m)" } },
+conector: con("el", "Cabo de força (atrás, embaixo)", 25, "Largura/2-0.08", "Altura_tampo-0.03", "0", D_FUNDO),
+tipos: [tipoEq("i4", "Cooktop de indução 4 bocas (7.000 W, 220 V)", "eq_cooktop_inducao_4b", dimsEq("eq_cooktop_inducao_4b"))],
+gerar: function (c, v) { G.cooktop(c, { W: num(v.Largura, 0.59), H: num(v.Altura, 0.055), D: num(v.Profundidade, 0.52), yt: num(v.Altura_tampo, 0.9) }); }
+});
+function tCoifa(id, nome, cat, forma, cm) {
+var ex = merge(dimsEq(cat), { Forma: forma, Largura_cm: cm });
+var v = valoresEq(cat, ex);
+if (forma === "depurador") { v.Altura = 0.15; v.Cotas_a_conferir += "; altura do depurador: sem-fonte-conferir (o catálogo L1 dá 600 mm para a coifa de parede; o depurador slim usual tem ≈ 150 mm)"; }
+v.Altura_ponto_m = 2.0;
+return T(id, nome, v, fonteDe(cat));
+}
+defEq({
+id: "ele-eq-coifa", nome: "Coifa de parede e depurador", ids: ["eq_coifa_60", "eq_coifa_90"],
+descricao: "Coifa de PAREDE (capelo em trapézio de inox com chaminé, filtro metálico, lâmpadas e botões) ou DEPURADOR slim (corpo baixo, painel retrátil, filtro e saída de ar de 150 mm), 60 ou 90 cm. Origem: na face da parede, no meio da largura, FUNDO em Z = 0; Altura_instalacao = a borda de baixo (usual 0,65-0,75 m acima do cooktop). Conector `el` atrás da chaminé/do corpo.",
+op: { W: 0.6, H: 0.6, D: 0.5, apoio: { nome: "Altura_instalacao", padrao: 1.60, desc: "Do piso à borda de baixo da coifa (cooktop a 0,90 m + 0,65-0,75 m)" },
+extra: [Pf("Forma", "texto", "parede", "Dimensões", "parede (capelo + chaminé) ou depurador (slim)"), Pf("Largura_cm", "inteiro", 60, "Dimensões", "Largura nominal em cm (60 ou 90) — o nome do catálogo L1")] },
+conector: con("el", "Cabo de força (atrás, no alto)", 25, "0", "Altura_instalacao+Altura-0.1", "0", D_FUNDO),
+tipos: [tCoifa("par60", "Coifa de parede 60 cm (200 W)", "eq_coifa_60", "parede", 60), tCoifa("par90", "Coifa de parede 90 cm (250 W)", "eq_coifa_90", "parede", 90),
+tCoifa("dep60", "Depurador 60 cm (200 W)", "eq_coifa_60", "depurador", 60), tCoifa("dep90", "Depurador 90 cm (250 W)", "eq_coifa_90", "depurador", 90)],
+gerar: function (c, v) { G.coifa(c, { forma: txt(v.Forma), W: num(v.Largura, 0.6), H: num(v.Altura, 0.6), D: num(v.Profundidade, 0.5), yb: num(v.Altura_instalacao, 1.6) }); }
+});
+defEq({
+id: "ele-eq-lava-loucas", nome: "Lava-louças (8 e 14 serviços)", ids: ["eq_lava_loucas_8", "eq_lava_loucas_14"],
+descricao: "Lava-louças de 8 serviços (compacta, para bancada: informe a Altura_apoio) ou 14 serviços (no piso): corpo, faixa de comando com visor e teclas, porta com alça-barra, junta, rodapé recuado (14) ou pés (8). Origem: no apoio, no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás.",
+op: { W: 0.6, H: 0.85, D: 0.6, acab: "inox", apoio: { nome: "Altura_apoio", padrao: 0, desc: "Do piso ao apoio (0 = no piso; a de 8 serviços sobre a bancada: 0,90 m)" } },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 25, "Largura/2-0.08", "Altura_apoio+0.1", "0", D_FUNDO),
+tipos: [tipoEq("s8", "Lava-louças 8 serviços (1.500 W)", "eq_lava_loucas_8", dimsEq("eq_lava_loucas_8")), tipoEq("s14", "Lava-louças 14 serviços (1.500 W)", "eq_lava_loucas_14", dimsEq("eq_lava_loucas_14"))],
+gerar: function (c, v) { G.lavaLoucas(c, { W: num(v.Largura, 0.6), H: num(v.Altura, 0.85), D: num(v.Profundidade, 0.6), y0: num(v.Altura_apoio, 0), acab: txt(v.Acabamento) }); }
+});
+defEq({
+id: "ele-eq-secadora", nome: "Secadora de roupas", ids: ["eq_secadora"],
+descricao: "Secadora de roupas de carga frontal 600 × 850 × 650 mm: corpo branco, faixa de comando (visor, seletor, teclas), escotilha redonda com anel de cromo e vidro, ventilação do pé e pés. Origem: no piso, no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás.",
+op: { W: 0.6, H: 0.85, D: 0.65, apoio: { nome: "Altura_apoio", padrao: 0, desc: "Do piso ao apoio (0 = no piso)" } },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 25, "Largura/2-0.1", "Altura_apoio+0.12", "0", D_FUNDO),
+tipos: [tipoEq("s35", "Secadora (3.500 W, 220 V)", "eq_secadora", dimsEq("eq_secadora"))],
+gerar: function (c, v) { G.secadora(c, { W: num(v.Largura, 0.6), H: num(v.Altura, 0.85), D: num(v.Profundidade, 0.65), y0: num(v.Altura_apoio, 0), lavaseca: false }); }
+});
+defEq({
+id: "ele-eq-lava-seca", nome: "Lava e seca", ids: ["eq_lava_e_seca"],
+descricao: "Lava e seca de carga frontal 600 × 850 × 650 mm: como a secadora, com a escotilha maior e a gaveta de sabão na faixa de comando. Origem: no piso, no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás. A mangueira de entrada e o esgoto são do hidrossanitário.",
+op: { W: 0.6, H: 0.85, D: 0.65, apoio: { nome: "Altura_apoio", padrao: 0, desc: "Do piso ao apoio (0 = no piso)" } },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 25, "Largura/2-0.1", "Altura_apoio+0.12", "0", D_FUNDO),
+tipos: [tipoEq("ls25", "Lava e seca (2.500 W, 220 V)", "eq_lava_e_seca", dimsEq("eq_lava_e_seca"))],
+gerar: function (c, v) { G.secadora(c, { W: num(v.Largura, 0.6), H: num(v.Altura, 0.85), D: num(v.Profundidade, 0.65), y0: num(v.Altura_apoio, 0), lavaseca: true }); }
+});
+defEq({
+id: "ele-eq-freezer", nome: "Freezer (horizontal e vertical)", ids: ["eq_freezer_horizontal"],
+descricao: "Freezer HORIZONTAL (caixa com tampa articulada, alça na frente, dobradiças atrás, seletor de temperatura e LED) ou VERTICAL (porta única com alça vertical, seletor no topo e grade inferior), com pés. O catálogo L1 só tem o horizontal; o vertical é desenho usual (sem-fonte-conferir). Origem: no piso, no meio da largura, FUNDO em Z = 0, frente em +Z. Conector `el` onde o cabo sai, atrás.",
+op: { W: 1.0, H: 0.85, D: 0.65, apoio: { nome: "Altura_apoio", padrao: 0, desc: "Do piso ao apoio (0 = no piso)" }, extra: [Pf("Vertical", "simnao", false, "Dimensões", "Freezer vertical (porta única) em vez do horizontal (tampa)")] },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 25, "Largura/2-0.1", "Altura_apoio+0.1", "0", D_FUNDO),
+tipos: [tipoEq("horiz", "Freezer horizontal (400 W)", "eq_freezer_horizontal", merge(dimsEq("eq_freezer_horizontal"), { Vertical: false })),
+(function () {
+var v = valoresEq("eq_freezer_horizontal", { Largura: 0.6, Altura: 1.7, Profundidade: 0.7, Vertical: true });
+v.Cotas_a_conferir += "; freezer vertical: o catálogo L1 só tem o horizontal — as cotas 600 × 1.700 × 700 mm são usuais, sem-fonte-conferir; a potência 400 W foi reaproveitada do horizontal";
+return T("vert", "Freezer vertical (porta única)", v, fonteDe("eq_freezer_horizontal"));
+})()],
+gerar: function (c, v) { G.freezer(c, { W: num(v.Largura, 1), H: num(v.Altura, 0.85), D: num(v.Profundidade, 0.65), y0: num(v.Altura_apoio, 0), vertical: sim(v, "Vertical") }); }
+});
+defEq({
+id: "ele-eq-torneira-eletrica", nome: "Torneira elétrica de parede", ids: ["eq_torneira_eletrica"],
+descricao: "Torneira elétrica de parede: flange, corpo do aquecedor, seletor de temperatura, LED de funcionamento e bico de cromo com arejador. Origem: na face da parede, no meio, frente em +Z; Altura de montagem = o centro do corpo. Conector `el` atrás da flange. A alimentação de água é do hidrossanitário.",
+op: { W: 0.11, H: 0.25, D: 0.2, apoio: { nome: "Altura_montagem", padrao: 1.10, desc: "Do piso ao centro do corpo da torneira (usual: 1,00-1,20 m sobre a pia)" } },
+conector: con("el", "Cabo de força (atrás da flange)", 25, "0", "Altura_montagem", "0", D_FUNDO),
+tipos: [tipoEq("e55", "Torneira elétrica (5.500 W, 220 V)", "eq_torneira_eletrica", dimsEq("eq_torneira_eletrica"))],
+gerar: function (c, v) { G.torneiraEletrica(c, { W: num(v.Largura, 0.11), H: num(v.Altura, 0.25), P: num(v.Profundidade, 0.2), A: num(v.Altura_montagem, 1.1) }); }
+});
+defEq({
+id: "ele-eq-tv", nome: "TV de parede 50\"", ids: ["eq_tv_50"],
+descricao: "TV de 50\" na parede com suporte: corpo fino com a costela atrás, moldura fina e tela de vidro, LED na base. Origem: na face da parede, no meio da largura, frente em +Z; Altura de montagem = o centro da tela. Conector `el` atrás, no canto direito, embaixo. O ponto de rede/antena é do projeto de dados.",
+op: { W: 1.12, H: 0.65, D: 0.06, apoio: { nome: "Altura_montagem", padrao: 1.30, desc: "Do piso ao centro da tela (usual 1,10-1,40 m)" } },
+conector: con("el", "Cabo de força (atrás, embaixo à direita)", 20, "Largura/2-0.12", "Altura_montagem-Altura/2+0.06", "0", D_FUNDO),
+tipos: [tipoEq("t50", "TV 50\" com suporte (150 W)", "eq_tv_50", dimsEq("eq_tv_50"))],
+gerar: function (c, v) { G.tv(c, { W: num(v.Largura, 1.12), H: num(v.Altura, 0.65), D: num(v.Profundidade, 0.06), A: num(v.Altura_montagem, 1.3) }); }
+});
+defEq({
+id: "ele-eq-motor-portao", nome: "Motor de portão deslizante", ids: ["eq_motor_portao"],
+descricao: "Motor de portão deslizante de 1/2 CV: chapa de base com chumbadores, carcaça com tampa, cremalheira que atravessa o motor, fechadura de destravamento e LED. Origem: no piso (Altura_apoio = o topo da base de concreto), no meio da largura, FUNDO em Z = 0 (contra o muro). Conector `el` onde o cabo sai, atrás. O trilho/portão é da esquadria.",
+op: { W: 0.25, H: 0.27, D: 0.18, apoio: { nome: "Altura_apoio", padrao: 0, desc: "Do piso ao topo da base onde o motor é chumbado (0 = no piso)" } },
+conector: con("el", "Cabo de força (atrás, embaixo)", 25, "Largura/2-0.05", "Altura_apoio+0.04", "0", D_FUNDO),
+tipos: [tipoEq("m05", "Motor de portão 1/2 CV (370 W)", "eq_motor_portao", dimsEq("eq_motor_portao"))],
+gerar: function (c, v) { G.motorPortao(c, { W: num(v.Largura, 0.25), H: num(v.Altura, 0.27), D: num(v.Profundidade, 0.18), yb: num(v.Altura_apoio, 0) }); }
+});
+if (FM && FM.registrar) FM.registrar();
+var EleFamilias2 = {
+ids: function () { return LISTA_ID.slice(); },
+catalogoDe: function (id) { return arr(CAT_IDS[id]).slice(); },
+obter: function (id) { return FM.obter(id); },
+tiposDe: function (id) { var f = FM.obter(id); return f ? f.tipos : []; }
+};
+global.EleFamilias2 = EleFamilias2;
+if (typeof module !== "undefined" && module.exports) module.exports = EleFamilias2;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elegeo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arquivo) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arquivo); } catch (e) {} }
+return null;
+}
+function CAT() { return dep("EleCatalogoDados", "./elecatalogodados.js"); }
+function HG() { return dep("HidGeo", "./biminstgeo.js"); }
+function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+var MM = 0.001;
+function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function mul(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function len(a) { return Math.sqrt(dot(a, a)); }
+function nrmz(a) { var l = len(a); return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0]; }
+function pv(p) { return Array.isArray(p) ? p : [num(p.x, 0), num(p.y, 0), num(p.z, 0)]; }
+function perp(d) { var ref = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]; return nrmz(cross(ref, d)); }
+function rodrigues(v, eixo, ang) { var c = Math.cos(ang), s = Math.sin(ang); return add(add(mul(v, c), mul(cross(eixo, v), s)), mul(eixo, dot(eixo, v) * (1 - c))); }
+function Malha() { this.pos = []; this.nrm = []; this.idx = []; this.cascas = []; }
+Malha.prototype.v = function (p, n) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); return this.pos.length / 3 - 1; };
+Malha.prototype.t = function (a, b, c) { this.idx.push(a, b, c); };
+Malha.prototype.abrir = function () { this._i0 = this.idx.length; };
+Malha.prototype.fechar = function () { if (this.idx.length > this._i0) this.cascas.push([this._i0, this.idx.length]); };
+Malha.prototype.tri = function () { return this.idx.length / 3; };
+var MAPA = {
+elet_corrugado: { tipo: "corrugado", prefixo: "eletroduto_corrugado_amarelo_", nome: "corrugado amarelo leve" },
+elet_corrugado_ref: { tipo: "corrugado", prefixo: "eletroduto_corrugado_laranja_", nome: "corrugado reforçado laranja" },
+elet_roscavel: { tipo: "rigido", prefixo: "eletroduto_pvc_roscavel_", luva: "luva_roscavel_", bucha: "bucha_arruela_", nome: "PVC rígido roscável" },
+elet_soldavel: { tipo: "rigido", prefixo: "eletroduto_pvc_soldavel_", nome: "PVC rígido soldável" },
+elet_flexivel_metalico: { tipo: "espiral", ids: { 20: "eletroduto_flex_metalico_1_2", 25: "eletroduto_flex_metalico_3_4", 32: "eletroduto_flex_metalico_1" }, nome: "flexível metálico (sealtubo)" }
+};
+var ALTURA_ONDA_FRAC = 0.55;
+var RAIO_CURVA_FATOR = 4;
+var ALTURA_ESPIRAL = 1.3 * MM;
+var ORCAMENTO = { teto: 200000, usado: 0, cortados: 0 };
+var SEGS = { perto: 10, longe: 8 };
+function itemCat(id) { var C = CAT(); return C ? C.item(id) : null; }
+function cotas(material, dn) {
+var M = MAPA[material]; if (!M) return null;
+dn = num(dn, 25);
+var id = M.ids ? M.ids[dn] : M.prefixo + dn, it = id ? itemCat(id) : null, c = it ? it.cotas : {}, niv = it && it.cotas_nivel ? it.cotas_nivel : {}, nivItem = it && it.fonte ? it.fonte.nivel : "sem-fonte-conferir";
+var o = { material: material, dn: dn, tipo: M.tipo, id: it ? id : null, niveis: {}, fonte: it ? it.fonte : null, aConferir: !it || nivItem === "sem-fonte-conferir" };
+function nv(k) { return niv[k] || nivItem; }
+if (M.tipo === "corrugado") {
+o.de = num(c.diametro_externo_mm, dn); o.di = num(c.diametro_interno_mm, dn * 0.78); o.e = num(c.espessura_mm, (o.de - o.di) / 2);
+o.passo = num(c.passo_ondulacao_mm, 0.2 * dn); o.altura = ALTURA_ONDA_FRAC * (o.de - o.di) / 2;
+o.niveis = { de: nv("diametro_externo_mm"), di: nv("diametro_interno_mm"), passo: nv("passo_ondulacao_mm"), altura: "sem-fonte-conferir" };
+if (!it) o.aConferir = true;
+} else if (M.tipo === "espiral") {
+o.de = num(c.diametro_externo_mm, dn + 1); o.passo = num(c.passo_espiral_mm, 7); o.di = o.de - 4; o.e = 2; o.altura = ALTURA_ESPIRAL / MM;
+o.niveis = { de: nv("diametro_externo_mm"), passo: nv("passo_espiral_mm"), di: "sem-fonte-conferir" }; o.aConferir = true;
+} else {
+o.de = num(c.diametro_externo_mm != null ? c.diametro_externo_mm : c.diametro_externo_medio_mm, dn); o.e = num(c.espessura_mm, 0.08 * o.de); o.di = o.de - 2 * o.e;
+o.barra = num(c.comprimento_barra_mm, 3000); o.niveis = { de: nv("diametro_externo_mm"), e: nv("espessura_mm"), barra: nv("comprimento_barra_mm") };
+var lv = M.luva ? itemCat(M.luva + dn) : null;
+if (lv) o.luva = { L: lv.cotas.comprimento_mm, od: lv.cotas.diametro_externo_mm, nivel: (lv.cotas_nivel && lv.cotas_nivel.diametro_externo_mm) || lv.fonte.nivel, id: lv.id };
+else o.luva = { L: 2 * (0.5 * o.de + 6), od: 1.22 * o.de + 3, nivel: "sem-fonte-conferir", id: null };
+var bu = M.bucha ? itemCat(M.bucha + dn) : null;
+o.bucha = bu ? { rosca: bu.cotas.diametro_rosca_mm, altura: bu.cotas.altura_bucha_mm, arruela: bu.cotas.espessura_arruela_mm, nivel: bu.fonte.nivel, id: bu.id }
+: { rosca: o.de, altura: 10, arruela: 3, nivel: "sem-fonte-conferir", id: null };
+}
+return o;
+}
+function montarCaminho(P1, P2, c1, c2) {
+var d = nrmz(sub(P2, P1)), Ltot = len(sub(P2, P1)), s = 0;
+function arco(c, entrando) {
+var tau = mul(c.dleg, -1), T = add(c.C, mul(c.dleg, c.tl)), bis = nrmz(add(c.dleg, c.dn)), O = add(c.C, mul(bis, c.Rb / Math.cos(c.del / 2)));
+var a = nrmz(sub(T, O)), meia = c.del / 2, La = c.Rb * meia;
+function ponto(phi) { return add(O, mul(add(mul(a, Math.cos(phi)), mul(tau, Math.sin(phi))), c.Rb)); }
+function tang(phi) { var t = add(mul(a, -Math.sin(phi)), mul(tau, Math.cos(phi))); return entrando ? mul(t, -1) : t; }
+return { La: La, ponto: ponto, tang: tang, meia: meia };
+}
+var a1 = c1 ? arco(c1, true) : null, a2 = c2 ? arco(c2, false) : null;
+var tl1 = c1 ? c1.tl : 0, tl2 = c2 ? c2.tl : 0, Ls = Math.max(1e-6, Ltot - tl1 - tl2);
+var lista = [];
+if (a1) lista.push({ k: "arco", a: a1, entrando: true, L: a1.La });
+lista.push({ k: "reta", L: Ls, p0: add(P1, mul(d, tl1)) });
+if (a2) lista.push({ k: "arco", a: a2, entrando: false, L: a2.La });
+lista.forEach(function (g) {
+g.s0 = s; g.s1 = s + g.L; s = g.s1;
+if (g.k === "reta") { g.t0 = d; g.t1 = d; g.eixo = null; g.ang = 0; }
+else {
+g.t0 = g.a.tang(g.entrando ? g.a.meia : 0); g.t1 = g.a.tang(g.entrando ? 0 : g.a.meia);
+var cz = cross(g.t0, g.t1), cs = Math.max(-1, Math.min(1, dot(g.t0, g.t1)));
+g.ang = Math.acos(cs); g.eixo = len(cz) > 1e-9 ? nrmz(cz) : perp(g.t0);
+}
+});
+var uAtual = perp(lista[0].t0);
+lista.forEach(function (g) {
+g.u0 = uAtual;
+if (g.k === "arco" && g.ang > 1e-9) uAtual = rodrigues(g.u0, g.eixo, g.ang);
+});
+var Ltotal = s, marcas = [0];
+lista.forEach(function (g) {
+if (g.k === "arco") { var n = Math.max(2, Math.ceil(g.ang / (Math.PI / 18))); for (var q = 1; q < n; q++) marcas.push(g.s0 + g.L * q / n); }
+marcas.push(g.s1);
+});
+function em(sx) {
+if (sx < 0) sx = 0; if (sx > Ltotal) sx = Ltotal;
+var g = lista[lista.length - 1], i;
+for (i = 0; i < lista.length; i++) if (sx <= lista[i].s1 + 1e-12) { g = lista[i]; break; }
+var f = g.L > 1e-12 ? (sx - g.s0) / g.L : 0, p, t, u;
+if (g.k === "reta") { p = add(g.p0, mul(d, sx - g.s0)); t = d; u = g.u0; }
+else {
+var phi = g.entrando ? g.a.meia * (1 - f) : g.a.meia * f;
+p = g.a.ponto(phi); t = nrmz(g.a.tang(phi)); u = g.ang > 1e-9 ? rodrigues(g.u0, g.eixo, g.ang * f) : g.u0;
+}
+return { p: p, t: t, u: u, v: cross(t, u) };
+}
+return { L: Ltotal, marcas: marcas, em: em, inicio: em(0).p, fim: em(Ltotal).p, curvas: (c1 ? 1 : 0) + (c2 ? 1 : 0), d: d, retaL: Ls, c1: c1, c2: c2 };
+}
+function casca(m, cam, ext, int, segs, viva) {
+m.abrir();
+var cache = {};
+function quadro(s) { var k = String(s); return cache[k] || (cache[k] = cam.em(s)); }
+var cs = [], sn = [], th;
+for (th = 0; th < segs; th++) { cs.push(Math.cos(2 * Math.PI * th / segs)); sn.push(Math.sin(2 * Math.PI * th / segs)); }
+function ponto(fr, r, j) { var rad = add(mul(fr.u, cs[j]), mul(fr.v, sn[j])); return { p: add(fr.p, mul(rad, r)), rad: rad }; }
+function faixas(perfil, dentro) {
+var i, j;
+for (i = 0; i < perfil.length - 1; i++) {
+var a = perfil[i], b = perfil[i + 1], ds = b[0] - a[0], dr = b[1] - a[1], Lh = Math.sqrt(ds * ds + dr * dr);
+if (Lh < 1e-12) continue;
+var ns = -dr / Lh, nr = ds / Lh, fa = quadro(a[0]), fb = quadro(b[0]), A = [], B = [];
+for (j = 0; j < segs; j++) {
+var pa = ponto(fa, a[1], j), pb = ponto(fb, b[1], j);
+var na = add(mul(pa.rad, nr), mul(fa.t, ns)), nb = add(mul(pb.rad, nr), mul(fb.t, ns));
+if (dentro) { na = mul(na, -1); nb = mul(nb, -1); }
+A.push(m.v(pa.p, na)); B.push(m.v(pb.p, nb));
+}
+for (j = 0; j < segs; j++) {
+var j3 = (j + 1) % segs;
+if (!dentro) { m.t(A[j], A[j3], B[j]); m.t(A[j3], B[j3], B[j]); }
+else { m.t(A[j], B[j], A[j3]); m.t(A[j3], B[j], B[j3]); }
+}
+}
+}
+faixas(ext, false); faixas(int, true);
+[[ext[0], int[0], -1], [ext[ext.length - 1], int[int.length - 1], +1]].forEach(function (q) {
+var fr = quadro(q[0][0]), O = [], I = [], j, n = mul(fr.t, q[2]);
+for (j = 0; j < segs; j++) { O.push(m.v(ponto(fr, q[0][1], j).p, n)); I.push(m.v(ponto(fr, q[1][1], j).p, n)); }
+for (j = 0; j < segs; j++) {
+var j3 = (j + 1) % segs;
+if (q[2] < 0) { m.t(O[j], I[j], O[j3]); m.t(O[j3], I[j], I[j3]); } else { m.t(O[j], O[j3], I[j]); m.t(O[j3], I[j3], I[j]); }
+}
+});
+m.fechar();
+}
+function cascaEspiral(m, cam, L, ro, ri, passo, h, segs) {
+m.abrir();
+var nAn = Math.max(2, Math.ceil(L / (passo / 4))), i, j, cs = [], sn = [];
+for (j = 0; j < segs; j++) { cs.push(Math.cos(2 * Math.PI * j / segs)); sn.push(Math.sin(2 * Math.PI * j / segs)); }
+function raio(s, th) { var fase = (s + passo * th / (2 * Math.PI)) / passo; return ro - h * (0.5 - 0.5 * Math.cos(2 * Math.PI * fase)); }
+function dRds(s, th) { var fase = (s + passo * th / (2 * Math.PI)) / passo; return -h * 0.5 * Math.sin(2 * Math.PI * fase) * 2 * Math.PI / passo; }
+var an = [];
+for (i = 0; i <= nAn; i++) {
+var s = i === nAn ? L : L * i / nAn, fr = cam.em(s), linha = [];
+for (j = 0; j < segs; j++) {
+var th = 2 * Math.PI * j / segs, rad = add(mul(fr.u, cs[j]), mul(fr.v, sn[j])), thh = add(mul(fr.u, -sn[j]), mul(fr.v, cs[j])), r = raio(s, th), rs = dRds(s, th), rt = rs * passo / (2 * Math.PI);
+var n = nrmz(add(add(rad, mul(fr.t, -rs)), mul(thh, -rt / r)));
+linha.push(m.v(add(fr.p, mul(rad, r)), n));
+}
+an.push(linha);
+}
+for (i = 0; i < nAn; i++) for (j = 0; j < segs; j++) { var j3 = (j + 1) % segs; m.t(an[i][j], an[i][j3], an[i + 1][j]); m.t(an[i][j3], an[i + 1][j3], an[i + 1][j]); }
+var f0 = cam.em(0), f1 = cam.em(L), I0 = [], I1 = [], O0 = [], O1 = [];
+for (j = 0; j < segs; j++) {
+var q0 = add(mul(f0.u, cs[j]), mul(f0.v, sn[j])), q1 = add(mul(f1.u, cs[j]), mul(f1.v, sn[j]));
+O0.push(m.v(add(f0.p, mul(q0, raio(0, 2 * Math.PI * j / segs))), mul(f0.t, -1))); I0.push(m.v(add(f0.p, mul(q0, ri)), mul(f0.t, -1)));
+O1.push(m.v(add(f1.p, mul(q1, raio(L, 2 * Math.PI * j / segs))), f1.t)); I1.push(m.v(add(f1.p, mul(q1, ri)), f1.t));
+}
+var Pi0 = [], Pi1 = [];
+for (j = 0; j < segs; j++) {
+var r0 = add(mul(f0.u, cs[j]), mul(f0.v, sn[j])), r1 = add(mul(f1.u, cs[j]), mul(f1.v, sn[j]));
+Pi0.push(m.v(add(f0.p, mul(r0, ri)), mul(r0, -1))); Pi1.push(m.v(add(f1.p, mul(r1, ri)), mul(r1, -1)));
+}
+for (j = 0; j < segs; j++) {
+var k3 = (j + 1) % segs;
+m.t(O0[j], I0[j], O0[k3]); m.t(O0[k3], I0[j], I0[k3]); m.t(O1[j], O1[k3], I1[j]); m.t(O1[k3], I1[k3], I1[j]);
+m.t(Pi0[j], Pi1[j], Pi0[k3]); m.t(Pi0[k3], Pi1[j], Pi1[k3]);
+}
+m.fechar();
+}
+var REG = { R: null, porId: null, grade: null, caixas: [] };
+function celula(P) { return Math.floor(P[0] / 0.05) + "," + Math.floor(P[1] / 0.05) + "," + Math.floor(P[2] / 0.05); }
+function caixasDeFamilia(estado, avaliarFam) {
+var out = [];
+if (!estado || typeof avaliarFam !== "function") return out;
+arr(estado.familias).forEach(function (f) {
+if (!f || String(f.famId || "").indexOf("ele-caixa") !== 0) return;
+var av = null; try { av = avaliarFam(f.famId, f.tipoId, f.inst || {}); } catch (e) { av = null; }
+var b = av && av.caixa; if (!b) return;
+var cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2, r = num(f.rotY, 0), co = Math.cos(r), si = Math.sin(r);
+out.push({ id: f.id, c: [num(f.x, 0) + cx * co + cz * si, num(f.y, 0) + (b.y0 + b.y1) / 2, num(f.z, 0) - cx * si + cz * co], meia: Math.max(b.x1 - b.x0, b.z1 - b.z0, b.y1 - b.y0) / 2 });
+});
+return out;
+}
+function registrarRede(R, estado, avaliarFam) {
+REG.R = R || null; REG.porId = null; REG.grade = null; ORCAMENTO.usado = 0; ORCAMENTO.cortados = 0;
+try { REG.caixas = caixasDeFamilia(estado, avaliarFam); } catch (e) { REG.caixas = []; }
+}
+function arr(a) { return Array.isArray(a) ? a : []; }
+function indice() {
+if (REG.grade || !REG.R) return;
+REG.porId = {}; REG.grade = {};
+(REG.R.trechos || []).forEach(function (t) {
+REG.porId[t.id] = t;
+[pv(t.p1), pv(t.p2)].forEach(function (P, lado) { var k = celula(P); (REG.grade[k] = REG.grade[k] || []).push({ t: t, lado: lado }); });
+});
+}
+function noEm(P, excl) {
+indice(); if (!REG.grade) return [];
+var out = [], i, j, k, cx = Math.floor(P[0] / 0.05), cy = Math.floor(P[1] / 0.05), cz = Math.floor(P[2] / 0.05);
+for (i = -1; i <= 1; i++) for (j = -1; j <= 1; j++) for (k = -1; k <= 1; k++) {
+var L = REG.grade[(cx + i) + "," + (cy + j) + "," + (cz + k)]; if (!L) continue;
+L.forEach(function (e) {
+if (e.t === excl || e.t.id === (excl && excl.id)) return;
+var Q = pv(e.lado ? e.t.p2 : e.t.p1); if (len(sub(Q, P)) <= 0.02) out.push(e);
+});
+}
+return out;
+}
+function trechoNaRede(t) {
+indice(); if (!REG.porId) return false;
+var r = REG.porId[t.id]; if (!r) return false;
+return len(sub(pv(r.p1), pv(t.p1))) < 1e-4 && len(sub(pv(r.p2), pv(t.p2))) < 1e-4;
+}
+function caixaEm(P) {
+for (var q = 0; q < REG.caixas.length; q++) {
+var k0 = REG.caixas[q], m = k0.meia + 0.03;
+if (Math.abs(P[0] - k0.c[0]) <= m && Math.abs(P[1] - k0.c[1]) <= m && Math.abs(P[2] - k0.c[2]) <= m) return { id: k0.id, familia: true };
+}
+if (!REG.R) return null;
+var ps = REG.R.pecas || [], i;
+for (i = 0; i < ps.length; i++) {
+var k = ps[i]; if (!k || String(k.peca || "").indexOf("caixa") !== 0) continue;
+var h = k.hub || {}, rr = num(h.r, 0.08) + 0.03, yb = num(h.yBot, num(k.y, 0) - 0.06) - 0.05, yt = num(h.yTop, num(k.y, 0) + 0.06) + 0.05;
+if (Math.abs(num(k.x, 0) - P[0]) <= rr && Math.abs(num(k.z, 0) - P[2]) <= rr && P[1] >= yb && P[1] <= yt) return k;
+}
+return null;
+}
+var FLEX = { elet_corrugado: 1, elet_corrugado_ref: 1, elet_flexivel_metalico: 1 };
+function canto(t, lado, P, d, Ltrecho, c) {
+var viz = noEm(P, t);
+if (viz.length !== 1) return null;
+var e = viz[0], vt = e.t; if (!FLEX[vt.material] || vt.sistema !== t.sistema) return null;
+if (caixaEm(P)) return null;
+var Q = pv(e.lado ? vt.p1 : vt.p2), dn = nrmz(sub(Q, P)), Lv = len(sub(Q, P)), dleg = lado ? mul(d, -1) : d;
+var ent = nrmz(dleg), cosg = Math.max(-1, Math.min(1, dot(ent, dn))), del = Math.PI - Math.acos(cosg);
+if (del < 0.035 || del > Math.PI - 0.17) return null;
+var Rb = RAIO_CURVA_FATOR * c.de * MM, tl = Rb * Math.tan(del / 2), lim = 0.45 * Math.min(Ltrecho, Lv);
+if (tl > lim) { tl = lim; Rb = tl / Math.tan(del / 2); }
+return { C: P, dleg: dleg, dn: dn, Rb: Rb, tl: tl, del: del };
+}
+function caminho(t, o) {
+o = o || {};
+var c = cotas(t.material, t.dn); if (!c) return null;
+var P1 = pv(t.p1), P2 = pv(t.p2), d = nrmz(sub(P2, P1)), Ltot = len(sub(P2, P1));
+if (Ltot < 1e-6) return null;
+var r1 = Math.max(0, num(o.recuo1, 0)), r2 = Math.max(0, num(o.recuo2, 0));
+if (r1 + r2 > Ltot - 0.002) { var k = (Ltot - 0.002) / Math.max(1e-9, r1 + r2); r1 *= Math.max(0, k); r2 *= Math.max(0, k); }
+var A = add(P1, mul(d, r1)), B = sub(P2, mul(d, r2)), c1 = null, c2 = null;
+if (FLEX[t.material] && r1 === 0 && r2 === 0 && trechoNaRede(t)) { c1 = canto(t, 0, P1, d, Ltot, c); c2 = canto(t, 1, P2, d, Ltot, c); }
+var cam = montarCaminho(A, B, c1, c2); cam.cotas = c; cam.A = A; cam.B = B; cam.P1 = P1; cam.P2 = P2;
+return cam;
+}
+var CACHE = { m: new Map(), tris: 0, MAX_TRIS: 600000, acertos: 0, faltas: 0 };
+function rq(v) { return Math.round(v * 1e5) / 1e5; }
+function transl(partes, T) {
+return partes.map(function (pt) {
+var ml = pt.malha, n = Object.create(Malha.prototype), ps = ml.pos, q = new Array(ps.length), i;
+n.nrm = ml.nrm; n.idx = ml.idx; n.cascas = ml.cascas;
+for (i = 0; i < ps.length; i += 3) { q[i] = ps[i] + T[0]; q[i + 1] = ps[i + 1] + T[1]; q[i + 2] = ps[i + 2] + T[2]; }
+n.pos = q; return { papel: pt.papel, malha: n };
+});
+}
+function trisDe(partes) { var n = 0; partes.forEach(function (p) { n += p.malha.idx.length / 3; }); return n; }
+function gerar(t, o, lod, cam, c, caixa1, caixa2) {
+var partes = [], juntas = [], mT = new Malha(), M = MAPA[t.material], segs = SEGS[lod] || SEGS.perto, L = cam.L, ro = c.de * MM / 2, ri = c.di * MM / 2, i;
+var intp = cam.marcas.map(function (s) { return [s, ri]; }), info = {};
+if (M.tipo === "corrugado") {
+var h = c.altura * MM;
+if (lod === "perto") {
+var passo = c.passo * MM, N = 2 * Math.max(1, Math.floor(L / passo)), est = [];
+for (i = 0; i <= N; i++) est.push([i === N ? L : L * i / N, i % 2 === 0 ? ro : ro - h]);
+casca(mT, cam, est, intp, segs, true);
+info = { aneis: N / 2 + 1, passoReal: L / (N / 2), onda: true };
+} else {
+var rm = ro - 0.35 * h; casca(mT, cam, cam.marcas.map(function (s) { return [s, rm]; }), intp, segs, false);
+info = { aneis: 0, onda: false };
+}
+} else if (M.tipo === "espiral") {
+if (lod === "perto") { cascaEspiral(mT, cam, L, ro, ri, c.passo * MM, ALTURA_ESPIRAL, 16); info = { espiral: true, passo: c.passo }; }
+else { casca(mT, cam, cam.marcas.map(function (s) { return [s, ro - 0.4 * ALTURA_ESPIRAL]; }), intp, segs, false); info = { espiral: false }; }
+} else {
+casca(mT, cam, cam.marcas.map(function (s) { return [s, ro]; }), intp, segs, false);
+info = { liso: true };
+}
+partes.push({ papel: "corpo", malha: mT });
+if (M.tipo === "rigido") {
+var mL = new Malha(), mB = new Malha(), sg = SEGS[lod] ? Math.max(12, SEGS[lod]) : 12, barra = c.barra * MM, Lm = c.luva.L * MM, odR = c.luva.od * MM / 2, ch = Math.min(1.2 * MM, Lm / 6);
+for (var s = barra; s < L - 0.05; s += barra) {
+var cm = montarCaminho(add(cam.A, mul(cam.d, s - Lm / 2)), add(cam.A, mul(cam.d, s + Lm / 2)), null, null);
+casca(mL, cm, [[0, ro + 0.0004], [ch, odR], [Lm - ch, odR], [Lm, ro + 0.0004]], [[0, ro], [Lm, ro]], sg, false);
+juntas.push({ s: s, tipo: "luva" });
+}
+if (mL.idx.length) partes.push({ papel: "luva", malha: mL });
+[[caixa2, cam.B, cam.d, true], [caixa1, cam.A, mul(cam.d, -1), false]].forEach(function (q) {
+if (!q[0]) return;
+var bu = c.bucha, rr = bu.rosca * MM / 2, Hb = bu.altura * MM, Ea = bu.arruela * MM, E = q[1], dir = q[2];
+var ca = montarCaminho(add(E, mul(dir, -Ea - 0.0003)), add(E, mul(dir, -0.0003)), null, null), cb = montarCaminho(E, add(E, mul(dir, Hb)), null, null);
+casca(mB, ca, [[0, rr + 0.0035], [Ea, rr + 0.0035]], [[0, ro * 0.98], [Ea, ro * 0.98]], 16, false);
+casca(mB, cb, [[0, rr + 0.0035], [1.5 * MM, rr + 0.0035], [1.5 * MM, rr + 0.0008], [Hb, rr + 0.0008]], [[0, ri], [Hb, ri]], 16, false);
+juntas.push({ s: q[3] ? L : 0, tipo: "bucha" });
+});
+if (mB.idx.length) partes.push({ papel: "elet_aluminio", malha: mB });
+}
+return { partes: partes, juntas: juntas, info: info };
+}
+function tubo(t, o) {
+var M = t && MAPA[t.material]; if (!M || !t.p1 || !t.p2) return null;
+o = o || {};
+var c = cotas(t.material, t.dn); if (!c) return null;
+var cam = caminho(t, o); if (!cam) return null;
+var lod = o.lod === "longe" || o.lod === "icone" ? "longe" : "perto";
+var est = 0;
+if (lod === "perto") {
+if (M.tipo === "corrugado") est = Math.round(cam.L / (c.passo * MM)) * 2 * SEGS.perto * 2 + 100;
+else if (M.tipo === "espiral") est = Math.round(cam.L / (c.passo * MM / 4)) * 16 * 2 + 200;
+if (est && ORCAMENTO.usado + est > ORCAMENTO.teto) { lod = "longe"; ORCAMENTO.cortados++; est = 0; }
+}
+var caixa1 = M.tipo === "rigido" ? caixaEm(cam.P1) : null, caixa2 = M.tipo === "rigido" ? caixaEm(cam.P2) : null;
+function cj(cc) { return cc ? [rq(cc.dn[0]), rq(cc.dn[1]), rq(cc.dn[2]), rq(cc.tl), rq(cc.Rb), rq(cc.C[0] - cam.P1[0]), rq(cc.C[1] - cam.P1[1]), rq(cc.C[2] - cam.P1[2])] : 0; }
+var chave = JSON.stringify([t.material, num(t.dn, 0), lod, rq(cam.P2[0] - cam.P1[0]), rq(cam.P2[1] - cam.P1[1]), rq(cam.P2[2] - cam.P1[2]),
+rq(cam.A[0] - cam.P1[0]), rq(cam.A[1] - cam.P1[1]), rq(cam.A[2] - cam.P1[2]), rq(cam.B[0] - cam.P1[0]), rq(cam.B[1] - cam.P1[1]), rq(cam.B[2] - cam.P1[2]),
+cj(cam.c1), cj(cam.c2), caixa1 ? 1 : 0, caixa2 ? 1 : 0]);
+var P1 = cam.P1, g = CACHE.m.get(chave);
+if (g) { CACHE.acertos++; CACHE.m.delete(chave); CACHE.m.set(chave, g); }
+else {
+CACHE.faltas++;
+var rel = gerar(t, o, lod, cam, c, caixa1, caixa2);
+g = { partes: transl(rel.partes, mul(P1, -1)), juntas: rel.juntas, info: rel.info, inicio: sub(cam.inicio, P1), fim: sub(cam.fim, P1) };
+CACHE.m.set(chave, g); CACHE.tris += trisDe(g.partes);
+while (CACHE.tris > CACHE.MAX_TRIS && CACHE.m.size > 1) { var k0 = CACHE.m.keys().next().value, v0 = CACHE.m.get(k0); CACHE.tris -= trisDe(v0.partes); CACHE.m.delete(k0); }
+}
+var partes = transl(g.partes, P1), tris = trisDe(partes);
+ORCAMENTO.usado += tris;
+var HGg = HG(), cotasH = HGg ? HGg.cotasTubo(t.material, t.dn, t.classe) : { de: c.de, e: c.e };
+return { partes: partes, cotas: cotasH, juntas: g.juntas.map(function (j) { return { s: j.s, tipo: j.tipo }; }), inicio: add(g.inicio, P1), fim: add(g.fim, P1), aConferir: c.aConferir,
+ele: { lod: lod, tipo: M.tipo, tris: tris, info: g.info, catalogo: c, curvas: cam.curvas, comprimento: cam.L } };
+}
+function zerarOrcamento() { ORCAMENTO.usado = 0; ORCAMENTO.cortados = 0; }
+function configurar(o) { o = o || {}; if (o.orcamento != null) ORCAMENTO.teto = num(o.orcamento, ORCAMENTO.teto); }
+function estatisticas() { return { orcamentoTeto: ORCAMENTO.teto, usado: ORCAMENTO.usado, cortados: ORCAMENTO.cortados, cacheTris: CACHE.tris, cacheItens: CACHE.m.size, acertos: CACHE.acertos, faltas: CACHE.faltas }; }
+function limparCache() { CACHE.m.clear(); CACHE.tris = 0; CACHE.acertos = 0; CACHE.faltas = 0; }
+var COR = { elet_corrugado: "#E3B400", elet_corrugado_ref: "#DD6A12", elet_roscavel: "#26272A", elet_soldavel: "#B8B8B2", elet_flexivel_metalico: "#2B2B2B" };
+function instalar() {
+var G = HG(), I = dep("BimInst", "./biminst.js");
+if (G && G.APAR) {
+Object.keys(COR).forEach(function (k) {
+var base = G.APAR[k] || { rug: 0.55, met: 0, verniz: 0, env: 0.5 };
+G.APAR[k] = { cor: COR[k], rug: k === "elet_flexivel_metalico" ? 0.7 : (k.indexOf("corrugado") >= 0 ? 0.5 : base.rug), met: 0, verniz: 0, env: 0.5,
+nome: (MAPA[k] ? "eletroduto " + MAPA[k].nome : base.nome) };
+});
+if (G.PAPEL) G.PAPEL.elet_aluminio = { cor: "#B9BEC4", rug: 0.38, met: 0.85, verniz: 0, nome: "bucha e arruela de alumínio" };
+if (G.JUNTA) G.JUNTA.elet_flexivel_metalico = "eletro";
+}
+if (I && I.MATERIAIS && !I.MATERIAIS.elet_flexivel_metalico) {
+I.MATERIAIS.elet_flexivel_metalico = { nome: "Eletroduto flexível metálico com capa de PVC (sealtubo)", norma: "catálogo de fabricante (cotas sem-fonte-conferir)", dns: [20, 25, 32], dn: 20, flexivel: true, semSinapi: true };
+var S = I.SISTEMAS && I.SISTEMAS.eletrica;
+if (S && S.materiais.indexOf("elet_flexivel_metalico") < 0) S.materiais.push("elet_flexivel_metalico");
+}
+if (I && typeof I.rede === "function" && !I.rede._eleGeo) {
+var orig = I.rede, emb = function (estado, avaliarFam) { var R = orig.apply(this, arguments); try { registrarRede(R, estado, avaliarFam); } catch (e) {} return R; };
+emb._eleGeo = true; I.rede = emb;
+}
+var U = global.BimInstUI;
+if (U && typeof U.malhas === "function" && !U.malhas._eleGeoOrc) {
+var om = U.malhas, ew = function () { ORCAMENTO.usado = 0; ORCAMENTO.cortados = 0; return om.apply(this, arguments); };
+ew._eleGeoOrc = true; for (var kk in om) if (Object.prototype.hasOwnProperty.call(om, kk)) ew[kk] = om[kk]; U.malhas = ew;
+}
+}
+var EleGeo = { VERSAO: 1, MAPA: MAPA, ORCAMENTO: ORCAMENTO, SEGS: SEGS, COR: COR, ALTURA_ONDA_FRAC: ALTURA_ONDA_FRAC, RAIO_CURVA_FATOR: RAIO_CURVA_FATOR,
+tubo: tubo, caminho: caminho, cotas: cotas, registrarRede: registrarRede, zerarOrcamento: zerarOrcamento, configurar: configurar, estatisticas: estatisticas, limparCache: limparCache, instalar: instalar,
+Malha: Malha, caixaEm: caixaEm, redeAtual: function () { return REG.R; }, _montarCaminho: montarCaminho, _casca: casca, ehFlexivel: function (m) { return !!FLEX[m]; } };
+global.EleGeo = EleGeo;
+if (typeof module !== "undefined" && module.exports) module.exports = EleGeo;
+try { instalar(); } catch (eI) {}
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elefiacao3d.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arquivo) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arquivo); } catch (e) {} }
+return null;
+}
+function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function txt(v) { return v == null ? "" : String(v); }
+var MM = 0.001;
+function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function mul(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function len(a) { return Math.sqrt(dot(a, a)); }
+function nrmz(a) { var l = len(a); return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0]; }
+function pv(p) { return Array.isArray(p) ? p : [num(p.x, 0), num(p.y, 0), num(p.z, 0)]; }
+function perp(d) { var ref = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]; return nrmz(cross(ref, d)); }
+function rodrigues(v, eixo, ang) { var c = Math.cos(ang), s = Math.sin(ang); return add(add(mul(v, c), mul(cross(eixo, v), s)), mul(eixo, dot(eixo, v) * (1 - c))); }
+function EG() { return dep("EleGeo", "./elegeo.js"); }
+function CAT() { return dep("EleCatalogoDados", "./elecatalogodados.js"); }
+function TB() { return dep("EleTabelas", "./eletabelas.js"); }
+var MATERIAL_PBR = {
+preto: "isolação preta", vermelho: "isolação vermelha", branco: "isolação branca", "azul-claro": "isolação azul", "verde-amarelo": "isolação verde-amarela", cinza: "isolação cinza", cobre: "cobre"
+};
+var COR = { preto: "#1c1c1e", vermelho: "#c0282d", branco: "#eeeeea", "azul-claro": "#3d86d6", "verde-amarelo": "#4fa02a", "amarelo-pe": "#f2c400", cinza: "#8a8d90", cobre: "#b87333" };
+var FASE_COR = { A: "preto", B: "vermelho", C: "branco" };
+var FUNCAO_NOME = { F: "fase", N: "neutro", PE: "proteção (PE)", R: "retorno" };
+var ORDEM = { F: 0, N: 1, PE: 2, R: 3 };
+function diametroCabo(secao) {
+var s = num(secao, 1.5), C = CAT(), id = "cabo_750v_" + String(s).replace(".", "_"), it = C ? C.item(id) : null;
+if (it && it.cotas.diametro_externo_mm) return { mm: it.cotas.diametro_externo_mm, fonte: "catalogo", id: id, nivel: (it.cotas_nivel && it.cotas_nivel.diametro_externo_mm) || it.fonte.nivel };
+var T = TB(), d = T && T.DIAMETRO_CABO && T.DIAMETRO_CABO.mm ? T.DIAMETRO_CABO.mm[s] : null;
+return d ? { mm: d, fonte: "eletabelas", id: null, nivel: "primaria-lida" } : { mm: 1.6 * Math.sqrt(s) + 1.4, fonte: "proporcao", id: null, nivel: "sem-fonte-conferir" };
+}
+function condutoresDe(cond, fases, secao, circuito) {
+var out = [], fz = txt(fases) || "A", d = diametroCabo(secao).mm, i;
+function p(funcao, cor, k) { out.push({ circuito: txt(circuito), secao: num(secao, 1.5), funcao: funcao, cor: cor, d_mm: d, pe: funcao === "PE", ordem: ORDEM[funcao] * 10 + k }); }
+for (i = 0; i < num(cond && cond.F, 0); i++) p("F", FASE_COR[fz.charAt(Math.min(i, fz.length - 1))] || "preto", i);
+for (i = 0; i < num(cond && cond.N, 0); i++) p("N", "azul-claro", i);
+for (i = 0; i < num(cond && cond.PE, 0); i++) p("PE", "verde-amarelo", i);
+for (i = 0; i < num(cond && cond.R, 0); i++) p("R", "cinza", i);
+return out;
+}
+function fiacaoDeAnalise(A) {
+var por = {};
+arr(A && A.circuitos).forEach(function (c) {
+var sec = c.dim ? c.dim.secao : null; if (sec == null) return;
+Object.keys(c.cond || {}).forEach(function (t) { (por[t] = por[t] || []).push.apply(por[t], condutoresDe(c.cond[t], c.fases, sec, c.id)); });
+});
+return { porTrecho: por, origem: "analise" };
+}
+function contarFio(c) { var o = { F: 0, N: 0, PE: 0, R: 0 }; txt(c).split(" ").forEach(function (k) { if (!k) return; if (k === "F") o.F++; else if (k === "N") o.N++; else if (k === "T" || k === "PE") o.PE++; else o.R++; }); return o; }
+function fiacaoDeEstado(estado) {
+var por = {}, I = estado && estado.instalacoes ? estado.instalacoes : {}, qd = arr(estado && estado.familias).filter(function (f) { return f && (f.famId === "ele-quadro" || f.famId === "ra-quadro-distribuicao"); })[0], proj = null;
+try { proj = qd && qd.inst && qd.inst.Projeto_eletrico ? JSON.parse(qd.inst.Projeto_eletrico) : null; } catch (e) { proj = null; }
+var circs = {}; arr(proj && proj.circuitos).forEach(function (c) { circs[c.id] = c; });
+var daLig = {};
+arr(I.ligacoes).forEach(function (r) {
+var cid = txt(r.circuito) || txt(r.id);
+Object.keys(r.fiacao || {}).forEach(function (t) { daLig[cid + "|" + t] = { c: r.fiacao[t].c, secao: num(r.secao, 1.5) }; });
+});
+if (proj && proj.eletrodutos) {
+Object.keys(proj.eletrodutos).forEach(function (t) {
+var ids = proj.eletrodutos[t]; ids = Array.isArray(ids) ? ids : (ids && Array.isArray(ids.circuitos) ? ids.circuitos : []);
+ids.forEach(function (cid) {
+var c = circs[cid]; if (!c) return;
+var lg = daLig[cid + "|" + t], f2 = txt(c.fases).length === 2, cond = lg ? contarFio(lg.c) : { F: f2 ? 2 : 1, N: f2 ? 0 : 1, PE: 1, R: 0 };
+(por[t] = por[t] || []).push.apply(por[t], condutoresDe(cond, c.fases, c.secao, c.id));
+});
+});
+} else {
+Object.keys(daLig).forEach(function (k) {
+var p = k.split("|"), cid = p[0], t = p.slice(1).join("|"), cj = circs[cid];
+(por[t] = por[t] || []).push.apply(por[t], condutoresDe(contarFio(daLig[k].c), cj ? cj.fases : "A", daLig[k].secao, cid));
+});
+}
+return { porTrecho: por, origem: "estado", aproximada: true };
+}
+var ESTADO = { ligada: false, tubosOpacidade: 0.28, forcada: null };
+var MEMO = { chave: null, fia: null };
+function assinatura(estado) {
+var I = estado && estado.instalacoes ? estado.instalacoes : {}, qd = arr(estado && estado.familias).filter(function (f) { return f && (f.famId === "ele-quadro" || f.famId === "ra-quadro-distribuicao"); })[0];
+return JSON.stringify([arr(I.trechos).map(function (t) { return [t.id, t.dn, t.material, pv(t.p1), pv(t.p2)]; }), qd && qd.inst ? qd.inst.Projeto_eletrico : null,
+arr(estado && estado.familias).length, arr(I.pecas).length, arr(I.ligacoes).map(function (r) { return [r.id, r.circuito, r.fiacao]; })]);
+}
+function fiacaoDe(estado, famAval, opc) {
+opc = opc || {};
+if (opc.fiacao) return opc.fiacao;
+if (ESTADO.forcada) return ESTADO.forcada;
+var chave = null; try { chave = assinatura(estado); } catch (e) { chave = null; }
+if (chave && MEMO.chave === chave && MEMO.fia) return MEMO.fia;
+var EC = dep("EleCircuitos", "./elecircuitos.js"), fia = null;
+if (EC && typeof famAval === "function") { try { var A = EC.analisar({ estado: estado, avaliarFam: famAval }); if (A && A.ok) fia = fiacaoDeAnalise(A); } catch (e2) { fia = null; } }
+if (!fia) fia = fiacaoDeEstado(estado);
+MEMO.chave = chave; MEMO.fia = fia; return fia;
+}
+function empacotar(ds, diMM) {
+var n = ds.length, dmax = 0, i, pos = [], R, ang0 = -Math.PI / 2;
+ds.forEach(function (d) { if (d > dmax) dmax = d; });
+function anel(m, raio, k0, fase) { for (var q = 0; q < m && pos.length < n; q++) { var a = ang0 + fase + 2 * Math.PI * q / m; pos.push({ x: raio * Math.cos(a), y: raio * Math.sin(a) }); } }
+if (n === 0) return { pos: [], contido: 0, cabe: true, folga: diMM / 2, escala: 1 };
+if (n === 1) pos.push({ x: 0, y: 0 });
+else if (n <= 6) { R = dmax / (2 * Math.sin(Math.PI / n)); anel(n, R, 0, 0); }
+else {
+pos.push({ x: 0, y: 0 });
+var m1 = Math.min(n - 1, n <= 7 ? 6 : (n <= 9 ? n - 1 : 6)), r1 = Math.max(dmax, dmax / (2 * Math.sin(Math.PI / m1)));
+anel(m1, r1, 0, 0);
+if (pos.length < n) { var resto = n - pos.length, r2 = Math.max(2 * dmax, dmax / (2 * Math.sin(Math.PI / resto)) + (resto > 12 ? dmax : 0)); anel(resto, r2, 0, Math.PI / resto); }
+}
+var cont = 0; for (i = 0; i < pos.length; i++) cont = Math.max(cont, len([pos[i].x, pos[i].y, 0]) + ds[i] / 2);
+var lim = diMM / 2, cabe = cont <= lim + 1e-9, escala = 1;
+if (!cabe) {
+var maxOff = 0; for (i = 0; i < pos.length; i++) maxOff = Math.max(maxOff, len([pos[i].x, pos[i].y, 0]) + ds[i] / 2);
+escala = Math.max(0.01, (lim - dmax / 2) / Math.max(1e-6, maxOff - dmax / 2));
+for (i = 0; i < pos.length; i++) { pos[i].x *= escala; pos[i].y *= escala; }
+}
+return { pos: pos.map(function (p, k) { return { x: p.x, y: p.y, r: ds[k] / 2 }; }), contido: cont, cabe: cabe, folga: lim - cont, escala: escala };
+}
+function ocupacao(conds, diMM) {
+var T = TB(), tx = (T && T.ELETRODUTO && T.ELETRODUTO.taxa_pct) || { 1: 53, 2: 31, 3: 40 }, n = conds.length, a = 0;
+conds.forEach(function (c) { a += Math.PI * c.d_mm * c.d_mm / 4; });
+var A = Math.PI * diMM * diMM / 4, lim = tx[n >= 3 ? 3 : n] || 40;
+return { n: n, areaFios_mm2: a, areaDI_mm2: A, taxa_pct: n ? 100 * a / A : 0, limite_pct: lim, ok: n === 0 || 100 * a / A <= lim + 1e-9 };
+}
+function rotulo(conds) {
+var grupos = [], porC = {};
+conds.forEach(function (c) { var k = c.circuito + "|" + c.secao; if (!porC[k]) { porC[k] = { circuito: c.circuito, secao: c.secao, f: {} }; grupos.push(porC[k]); } porC[k].f[c.funcao] = (porC[k].f[c.funcao] || 0) + 1; });
+return grupos.map(function (g) {
+var fs = Object.keys(g.f).sort(function (a, b) { return ORDEM[a] - ORDEM[b]; }).map(function (f) { return (g.f[f] > 1 ? g.f[f] : "") + f; }).join("/");
+return (g.circuito ? g.circuito + " · " : "") + String(g.secao).replace(".", ",") + " mm² · " + fs;
+}).join("  +  ");
+}
+function Malha() { this.pos = []; this.nrm = []; this.idx = []; this.cascas = []; this.col = null; }
+Malha.prototype.v = function (p, n, c) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); if (c) { this.col = this.col || []; this.col.push(c[0], c[1], c[2]); } return this.pos.length / 3 - 1; };
+Malha.prototype.t = function (a, b, c) { this.idx.push(a, b, c); };
+Malha.prototype.tri = function () { return this.idx.length / 3; };
+Malha.prototype.juntar = function (o) {
+var base = this.pos.length / 3, i;
+for (i = 0; i < o.pos.length; i++) { this.pos.push(o.pos[i]); this.nrm.push(o.nrm[i]); }
+for (i = 0; i < o.idx.length; i++) this.idx.push(o.idx[i] + base);
+if (o.col) { this.col = this.col || []; for (i = 0; i < o.col.length; i++) this.col.push(o.col[i]); }
+};
+function hexRgb(h) { return [parseInt(h.substr(1, 2), 16) / 255, parseInt(h.substr(3, 2), 16) / 255, parseInt(h.substr(5, 2), 16) / 255]; }
+function varrerPontos(m, pts, r, segs, listra) {
+var n = pts.length, ts = [], i, j;
+if (n < 2) return;
+for (i = 0; i < n; i++) { var a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; ts.push(nrmz(sub(b, a))); }
+var us = [perp(ts[0])];
+for (i = 1; i < n; i++) {
+var tp = ts[i - 1], tc = ts[i], eixo = cross(tp, tc), s = len(eixo), c = Math.max(-1, Math.min(1, dot(tp, tc)));
+us.push(s > 1e-9 ? rodrigues(us[i - 1], mul(eixo, 1 / s), Math.acos(c)) : us[i - 1]);
+}
+var cs = [], sn = [];
+for (j = 0; j < segs; j++) { cs.push(Math.cos(2 * Math.PI * j / segs)); sn.push(Math.sin(2 * Math.PI * j / segs)); }
+function anel(k) { var u = us[k], v = cross(ts[k], u), L = []; for (var q = 0; q < segs; q++) { var rad = add(mul(u, cs[q]), mul(v, sn[q])); L.push({ p: add(pts[k], mul(rad, r)), n: rad }); } return L; }
+var rings = []; for (i = 0; i < n; i++) rings.push(anel(i));
+var dist = 0, cA = listra ? hexRgb(listra[0]) : null, cB = listra ? hexRgb(listra[1]) : null;
+for (i = 0; i < n - 1; i++) {
+var A = rings[i], B = rings[i + 1], seg = len(sub(pts[i + 1], pts[i])), cor = listra ? (Math.floor((dist + seg / 2) / (listra[2] * MM)) % 2 ? cB : cA) : null, ia = [], ib = [];
+for (j = 0; j < segs; j++) { ia.push(m.v(A[j].p, A[j].n, cor)); ib.push(m.v(B[j].p, B[j].n, cor)); }
+for (j = 0; j < segs; j++) { var j3 = (j + 1) % segs; m.t(ia[j], ia[j3], ib[j]); m.t(ia[j3], ib[j3], ib[j]); }
+dist += seg;
+}
+[[0, -1], [n - 1, 1]].forEach(function (q) {
+var k = q[0], R = rings[k], nn = mul(ts[k], q[1]), cc = listra ? cA : null, c0 = m.v(pts[k], nn, cc), ids = [];
+for (j = 0; j < segs; j++) ids.push(m.v(R[j].p, nn, cc));
+for (j = 0; j < segs; j++) { var j3 = (j + 1) % segs; if (q[1] < 0) m.t(c0, ids[j3], ids[j]); else m.t(c0, ids[j], ids[j3]); }
+});
+}
+function densificar(pts, passo) {
+var out = [pts[0]], i, k;
+for (i = 1; i < pts.length; i++) {
+var a = pts[i - 1], b = pts[i], L = len(sub(b, a)), n = Math.max(1, Math.ceil(L / passo));
+for (k = 1; k <= n; k++) out.push(add(a, mul(sub(b, a), k / n)));
+}
+return out;
+}
+function laco(Pend, tOut, off, U, V, idx, sobra) {
+var pts = [], n = 26, adv = 0.032, rho = 0.011 + 0.0021 * idx, phi0 = Math.atan2(dot(off, V), dot(off, U)), r0 = len(off);
+var turns = Math.sqrt(Math.max(0.0004, sobra * sobra - adv * adv)) / (2 * Math.PI * rho);
+for (var k = 1; k <= n; k++) {
+var sg = k / n, w = Math.min(1, sg * 4); w = w * w * (3 - 2 * w);
+var phi = phi0 + 2 * Math.PI * turns * sg, rr = (1 - w) * r0 + w * rho;
+pts.push(add(add(Pend, mul(tOut, adv * sg)), add(mul(U, rr * Math.cos(phi)), mul(V, rr * Math.sin(phi)))));
+}
+return pts;
+}
+var SEGS_FIO = 6, TETO_TRIS = 150000, PARCIAL = { parcial: false, mostrados: 0, total: 0, tris: 0 };
+function malhasTrecho(t, conds, opcoes) {
+opcoes = opcoes || {};
+var G = EG(), cam = null, c = null, P1 = pv(t.p1), P2 = pv(t.p2);
+if (G) { try { cam = G.caminho(t, {}); c = G.cotas(t.material, t.dn); } catch (e) { cam = null; } }
+if (!cam && G) { cam = G._montarCaminho(P1, P2, null, null); }
+if (!cam) return null;
+var di = c ? c.di : num(t.dn, 20) * 0.8;
+conds = conds.slice().sort(function (a, b) { return a.ordem - b.ordem || (a.circuito < b.circuito ? -1 : (a.circuito > b.circuito ? 1 : 0)); });
+var emp = empacotar(conds.map(function (x) { return x.d_mm; }), di), oc = ocupacao(conds, di);
+var segs = SEGS_FIO, partes = {}, tris = 0, lacos = 0, sobra = num(opcoes.sobra, 0.15);
+function mal(cor) { return partes[cor] || (partes[cor] = new Malha()); }
+var cx0 = G && !opcoes.semLaco ? G.caixaEm(P1) : null, cx1 = G && !opcoes.semLaco ? G.caixaEm(P2) : null;
+conds.forEach(function (w, i) {
+var pp = emp.pos[i], r = pp.r * MM, off2 = [pp.x * MM, pp.y * MM], pts = [], k;
+var f0 = cam.em(0), fL = cam.em(cam.L);
+cam.marcas.forEach(function (s) { var f = cam.em(s); pts.push(add(f.p, add(mul(f.u, off2[0]), mul(f.v, off2[1])))); });
+var m = new Malha(), pesca = w.pe;
+var ini = null, fim = null;
+if (cx0) {
+var o0 = add(mul(f0.u, off2[0]), mul(f0.v, off2[1])), lc = laco(f0.p, mul(f0.t, -1), o0, f0.u, f0.v, i, sobra);
+pts = lc.slice().reverse().concat(pts); lacos++; ini = lc[lc.length - 1];
+}
+if (cx1) {
+var o1 = add(mul(fL.u, off2[0]), mul(fL.v, off2[1])), lc1 = laco(fL.p, fL.t, o1, fL.u, fL.v, i, sobra);
+pts = pts.concat(lc1); lacos++; fim = lc1[lc1.length - 1];
+}
+if (pesca) pts = densificar(pts, 0.025);
+varrerPontos(m, pts, r, segs, pesca ? [COR["verde-amarelo"], COR["amarelo-pe"], 25] : null);
+var cor = pesca ? "verde-amarelo" : w.cor;
+mal(cor).juntar(m);
+[[ini, 0], [fim, 1]].forEach(function (q) {
+if (!q[0]) return;
+var np = pts.length, a = q[1] ? pts[np - 2] : pts[1], b = q[1] ? pts[np - 1] : pts[0], dir = nrmz(sub(b, a)), mc = new Malha();
+varrerPontos(mc, [b, add(b, mul(dir, 0.007))], r * 0.55, 6, null); mal("cobre").juntar(mc);
+});
+});
+var out = [];
+Object.keys(partes).forEach(function (cor) { tris += partes[cor].tri(); out.push({ cor: cor, malha: partes[cor], listrado: cor === "verde-amarelo" }); });
+return { id: "fio-" + t.id, trecho: t.id, rotulo: rotulo(conds), partes: out, empacotamento: emp, ocupacao: oc, cotas: c, tris: tris, lacos: lacos, condutores: conds.length, cam: cam };
+}
+function forcar(fia) { ESTADO.forcada = fia || null; return !!ESTADO.forcada; }
+function ligada() { return !!ESTADO.ligada; }
+function ligar(on) {
+ESTADO.ligada = on === undefined ? true : !!on;
+if (!ESTADO.ligada) { Object.keys(VIDRO).forEach(function (k) { try { if (VIDRO[k] && VIDRO[k].dispose) VIDRO[k].dispose(); } catch (e) {} }); VIDRO = {}; }
+try { var b = global.BIM; if (b && b.editarReconstruir) b.editarReconstruir(); } catch (e) {}
+return ESTADO.ligada;
+}
+function alternar() { return ligar(!ESTADO.ligada); }
+var MATS = null, VIDRO = {};
+function material(THREE, cor, listrado) {
+var k = cor + (listrado ? "|v" : "");
+if (!MATS || MATS.THREE !== THREE) MATS = { THREE: THREE, m: {} };
+if (MATS.m[k]) return MATS.m[k];
+var o = cor === "cobre" ? { color: new THREE.Color(COR.cobre), roughness: 0.3, metalness: 1, side: THREE.DoubleSide }
+: { color: new THREE.Color(listrado ? "#ffffff" : COR[cor]), roughness: 0.45, metalness: 0, side: THREE.DoubleSide };
+if (listrado) o.vertexColors = true;
+var M = new THREE.MeshStandardMaterial(o); M.name = "ele-fio:" + cor; M.userData.eleFio = true;
+MATS.m[k] = M; return M;
+}
+function geometria(THREE, ml) {
+var g = new THREE.BufferGeometry();
+g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(ml.pos), 3));
+g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(ml.nrm), 3));
+if (ml.col) g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(ml.col), 3));
+g.setIndex(ml.idx); g.computeBoundingBox(); g.computeBoundingSphere();
+return g;
+}
+function malhas(estado, THREE, opcoes) {
+opcoes = opcoes || {};
+var G = EG(), R = opcoes.rede || (G && G.redeAtual && G.redeAtual()), out = [];
+if (!estado || !THREE || !R) return out;
+var fi = fiacaoDe(estado, opcoes.famAval, opcoes), porT = {};
+arr(R.trechos).forEach(function (t) { porT[t.id] = t; });
+var foco = opcoes.foco || focoDeVista(estado), teto = num(opcoes.teto, TETO_TRIS), usado = 0, ids = Object.keys(fi.porTrecho).filter(function (id) { return porT[id] && /^elet_/.test(porT[id].material || ""); });
+function dFoco(id) { var t = porT[id], a = pv(t.p1), b = pv(t.p2); return foco ? len(sub([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], foco)) : 0; }
+if (foco) ids.sort(function (x, y) { return dFoco(x) - dFoco(y); });
+PARCIAL = { parcial: false, mostrados: 0, total: ids.length, tris: 0 };
+ids.forEach(function (id) {
+var t = porT[id];
+if (usado >= teto) { PARCIAL.parcial = true; return; }
+var r = malhasTrecho(t, fi.porTrecho[id], { lod: opcoes.lod });
+if (!r || !r.partes.length) return;
+usado += r.tris; PARCIAL.mostrados++; PARCIAL.tris = usado;
+var ms = r.partes.map(function (p) {
+var m = new THREE.Mesh(geometria(THREE, p.malha), material(THREE, p.cor, p.listrado));
+m.name = "fio:" + id; m.userData.eleFiacao = { trecho: id, rotulo: r.rotulo, cor: p.cor }; m.userData.rotulo = "Fiação · " + r.rotulo; return m;
+});
+out.push({ id: "fio-" + id, malhas: ms, marcador: true, fiacao: true, ifc: "IFCCABLESEGMENT", disciplina: "eletrica", nome: "Fiação · " + r.rotulo + " (eletroduto " + id + ")", qto: {}, rotulo: r.rotulo, ocupacao: r.ocupacao });
+});
+if (PARCIAL.parcial) PARCIAL.aviso = "fiação mostrada só em parte (" + PARCIAL.mostrados + " de " + PARCIAL.total + " eletrodutos): selecione um ambiente";
+return out;
+}
+function focoDeVista(estado) {
+try {
+var B = global.BIM, sel = B && B.selecao ? arr(B.selecao().uids) : [], amb = arr(estado && estado.ambientes).filter(function (a) { return a && sel.indexOf(a.id) >= 0 && arr(a.pts).length; })[0];
+if (amb) { var n = amb.pts.length, sx = 0, sz = 0; amb.pts.forEach(function (p) { sx += num(p[0], 0); sz += num(p[1], 0); }); return [sx / n, num(amb.base, 1.2) + 1, sz / n]; }
+var c = B && B.cameraAtual ? B.cameraAtual() : null, al = c && (c.alvo || c.target);
+if (al) return pv(al);
+} catch (e) {}
+return null;
+}
+function tubosTransparentes(out) {
+var clones = VIDRO;
+out.forEach(function (e) {
+if (e.marcador || e.ifc !== "IFCCABLECARRIERSEGMENT") return;
+(e.malhas || []).forEach(function (m) {
+var mt = m.material; if (!mt || !mt.clone) return;
+var c = clones[mt.uuid] || (clones[mt.uuid] = (function () { var q = mt.clone(); q.transparent = true; q.opacity = ESTADO.tubosOpacidade; q.depthWrite = false; q.userData = q.userData || {}; q.userData.eleTuboVidro = true; return q; })());
+m.material = c;
+});
+});
+}
+function instalar() {
+var U = global.BimInstUI; if (!U || typeof U.malhas !== "function" || U.malhas._eleFiacao) return false;
+var orig = U.malhas;
+var emb = function (st, famAval, THREE) {
+var out = orig.apply(this, arguments);
+if (ESTADO.ligada && out && out.length) { try { tubosTransparentes(out); malhas(st, THREE, { famAval: famAval }).forEach(function (e) { out.push(e); });
+if (PARCIAL.parcial && PARCIAL.aviso !== ESTADO.avisado) { ESTADO.avisado = PARCIAL.aviso; if (global.UI && global.UI.toast) global.UI.toast(PARCIAL.aviso, "warn"); } else if (!PARCIAL.parcial) ESTADO.avisado = null;
+} catch (e) {} }
+return out;
+};
+emb._eleFiacao = true; U.malhas = emb; return true;
+}
+var EleFiacao3D = { VERSAO: 1, COR: COR, MATERIAL_PBR: MATERIAL_PBR, FASE_COR: FASE_COR, FUNCAO_NOME: FUNCAO_NOME, diametroCabo: diametroCabo, condutoresDe: condutoresDe, empacotar: empacotar, ocupacao: ocupacao,
+rotulo: rotulo, fiacaoDeAnalise: fiacaoDeAnalise, fiacaoDeEstado: fiacaoDeEstado, fiacaoDe: fiacaoDe, malhasTrecho: malhasTrecho, ligar: ligar, alternar: alternar, ligada: ligada, forcar: forcar,
+malhas: malhas, instalar: instalar, parcial: function () { return PARCIAL; }, SEGS_FIO: SEGS_FIO, TETO_TRIS: TETO_TRIS, Malha: Malha, _varrerPontos: varrerPontos };
+global.EleFiacao3D = EleFiacao3D;
+if (typeof module !== "undefined" && module.exports) module.exports = EleFiacao3D;
+try { instalar(); } catch (eI) {}
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/eletracado.js ==== */
 try {
 (function (global) {
@@ -187702,7 +191819,26 @@ function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ",")
 function f1(v) { return (Math.round(v * 10) / 10).toFixed(1).replace(".", ","); }
 function d2(a, b) { var x = a[0] - b[0], z = a[1] - b[1]; return Math.sqrt(x * x + z * z); }
 function copia(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
-var FAM_QD = "ra-quadro-distribuicao";
+var FAM_QD = "ele-quadro", FAM_QD_ANTIGO = "ra-quadro-distribuicao", FAMS_QD = [FAM_QD, FAM_QD_ANTIGO];
+function ehQD(famId) { return FAMS_QD.indexOf(String(famId)) >= 0; }
+function tipoEleQuadro(espacos, material, instalacao) {
+var P = [6, 12, 18, 24, 36], n = 36; for (var i = 0; i < P.length; i++) { if (P[i] >= espacos) { n = P[i]; break; } }
+return (material === "aco" ? (instalacao === "sobrepor" ? "aco-s-" : "aco-e-") : "pvc-") + n;
+}
+function instQuadroEle(mt, modulos, aval) {
+var esp = Math.max(num(mt && mt.espacos, 12), num(modulos, 0)), tipoId = tipoEleQuadro(esp, mt && mt.material, mt && mt.instalacao);
+var t = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente || "" };
+if (esp > 36 && typeof aval === "function") {
+var av = null; try { av = aval(FAM_QD, tipoId, {}); } catch (e) { av = null; }
+var v = (av && av.valores) || {}, fr = num(v.Fileiras, 0), cap = num(v.Modulos_fileira, 0);
+if (fr > 0 && cap > 0 && Math.ceil(esp / cap) > fr) {
+var nf = Math.ceil(esp / cap);
+t.Fileiras = nf; t.Altura = Math.round((num(v.Altura, 0.4) + (nf - fr) * 0.115) * 1000) / 1000;
+t.Cotas_a_conferir = "quadro de " + esp + " módulos: acima do maior do catálogo (36); " + nf + " fileiras, altura + 115 mm por fileira acrescentada — medida DERIVADA, sem-fonte-conferir";
+}
+}
+return { tipoId: tipoId, $tipo: t };
+}
 var CRITERIOS = {
 tensaoFN: { valor: 127, nivel: "A", rotulo: "Tensão fase-neutro (V)", fonte: "CEMIG ND-5.1 (rede secundária 127/220 V)" },
 tensaoFF: { valor: 220, nivel: "A", rotulo: "Tensão fase-fase (V)", fonte: "CEMIG ND-5.1 (rede secundária 127/220 V)" },
@@ -187745,6 +191881,17 @@ return c0 && !/^cmd-/.test(c0) && c0 !== txt(I.Comando) ? c0 : "";
 function potLuminaria(av) { var s = txt(av && av.valores && av.valores.Potencia_W), m = 0; s.split("/").forEach(function (q) { var n = parseFloat(String(q).replace(",", ".")); if (isFinite(n) && n > m) m = n; }); return m; }
 var AQUECIMENTO = /^(chuveiro|forno|fogao)/;
 var GRUPO_CEMIG = { chuveiro_220: "b1", forno_embutir: "b3", fogao_4_bocas: "b3", lava_roupas: "b4", geladeira_freezer: "b5", micro_ondas: "b5", ar_condicionado: "c", hidromassagem: "d", bomba_dagua: "d" };
+function placaDe(ap) {
+var I = (ap.f && ap.f.inst) || {}, V = ap.va || {}, nIr = ap.irmaos || 1, prim = !ap.def.sufixo;
+var wI = prim ? num(I.Potencia_W, 0) : 0, tI = prim ? num(I.Tensao_V, 0) : 0, wV = nIr === 1 ? num(V.Potencia_W, 0) : 0, tV = nIr === 1 ? num(V.Tensao_V, 0) : 0;
+var w = wI > 0 ? wI : wV, t = tI > 0 ? tI : tV;
+return { potW: w > 0 && w !== ap.def.potW ? w : 0, tensao: t > 0 && t !== ap.def.tensao ? t : 0 };
+}
+function comPlaca(ap) {
+var pl = placaDe(ap), d = ap.def; if (!pl.potW && !pl.tensao) return d;
+var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; });
+if (pl.potW) o.potW = pl.potW; if (pl.tensao) o.tensao = pl.tensao; return o;
+}
 function lerPontos(estado, avaliarFam, L, C) {
 var R = RG(), EAl = EA(), C1 = R.criterios(), out = [], famPor = {}, porAmb = {};
 arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) famPor[String(f.id)] = f; });
@@ -187752,10 +191899,12 @@ L.ambientes.forEach(function (a) { porAmb[a.id] = a; });
 function aval(f) { try { return typeof avaliarFam === "function" ? avaliarFam(f.famId, f.tipoId, f.inst) : null; } catch (e) { return null; } }
 var caixaPor = {}; L.caixas.forEach(function (k) { caixaPor[k.id] = k; });
 function cxP(k) { return k ? [k.p[0], k.y, k.p[1]] : null; }
-var ehTue = {}, tuePor = {};
+var ehTue = {}, tuePor = {}, irmaosPor = {};
+L.aparelhos.forEach(function (ap) { irmaosPor[ap.id] = (irmaosPor[ap.id] || 0) + 1; });
+L.aparelhos.forEach(function (ap) { ap.irmaos = irmaosPor[ap.id]; });
 L.aparelhos.forEach(function (ap) {
 if (ap.def.semParede) return;
-var pref = "elee-" + ap.chave, best = null, Q = R.tueDe(ap.def, num((ap.f.inst && ap.f.inst.Capacidade_BTUh), num(ap.va.Capacidade_BTUh, 0)), C1);
+var pref = "elee-" + ap.chave, best = null, Q = R.tueDe(comPlaca(ap), num((ap.f.inst && ap.f.inst.Capacidade_BTUh), num(ap.va.Capacidade_BTUh, 0)), C1);
 L.pontos.filter(function (q) { return q.kind === "tomada" && q.pav === ap.pav && !ehTue[q.id] && !/^elet-/.test(q.id); }).concat(L.caixas.filter(function (k) { return !k.dono && k.pav === ap.pav && !ehTue[k.id]; })).forEach(function (q) {
 if (!EAl.serveTue(Q, q)) return;
 var d0 = d2(q.p, ap.p), d = q.id === pref ? -1 : d0;
@@ -187794,20 +191943,22 @@ out.push(p);
 L.aparelhos.forEach(function (ap) {
 var t = tuePor[ap.chave]; if (!t) return;
 var q = t.q, Q = t.Q, ehCx = q.peca != null && q.kind == null;
+var placa = placaDe(ap), def = ap.def;
 var p = ehCx ? { id: q.id, kind: "tue", amb: ap.amb || q.amb, pav: q.pav, h: q.h, tipoId: "", caixa: q.id, caixaP: cxP(q), circManual: "", familia: false, auto: !!q.auto } : base(q, "tue");
 var a = porAmb[p.amb]; p.ambNome = a ? a.nome : ""; p.grupo = a ? a.cls.grupo : "demais"; p.tipoAmb = a ? a.tipo.id : "generico";
-p.kind = "tue"; p.direta = ehCx; p.aparelho = ap.id; p.aparelhoNome = ap.def.rotulo; p.aparelhoDef = ap.def.id; p.tensao = ap.def.tensao || C.tensaoFN.valor;
-p.aquecimento = AQUECIMENTO.test(ap.def.id); p.cemig = GRUPO_CEMIG[ap.def.id] || "b5";
-p.w = Q.potW || 0;
+p.kind = "tue"; p.direta = ehCx; p.aparelho = ap.id; p.aparelhoNome = ap.def.rotulo; p.aparelhoDef = ap.def.id; p.tensao = placa.tensao || ap.def.tensao || C.tensaoFN.valor;
+p.aquecimento = def.aquecimento != null ? !!def.aquecimento : AQUECIMENTO.test(def.id); p.cemig = def.grupoCemig || GRUPO_CEMIG[def.id] || "b5";
+p.w = Q.potW || 0; p.placa = !!(placa.potW || placa.tensao); p.potNivel = def.potNivel || ""; p.potConfirmar = def.confirmar || "";
 p.va = Q.pAr && Q.pAr.VA ? Q.pAr.VA : (p.aquecimento ? p.w : r2(p.w / C.fpNaoAquecimento.valor));
 p.potPendente = !Q.potW;
-p.vaRegra = Q.potW ? (Q.pAr ? Q.pAr.VA + " VA (CEMIG ND-5.1 Tabela 9, " + Q.pAr.btuTabela + " BTU/h)" : p.w + " W (CEMIG ND-5.1 " + (ap.def.cemig || "Tabelas 8A/8B") + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92")) : "potência da placa pendente";
+p.vaRegra = Q.potW && placa.potW ? placa.potW + " W (placa informada no parâmetro Potencia_W do aparelho" + (placa.tensao ? ", " + placa.tensao + " V" : "") + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92") : Q.potW ? (Q.pAr ? Q.pAr.VA + " VA (CEMIG ND-5.1 Tabela 9, " + Q.pAr.btuTabela + " BTU/h)" : p.w + " W (" + (def.v2 ? (def.cemig || "sem fonte") + " [nível " + (def.potNivel || "X") + "]" : "CEMIG ND-5.1 " + (def.cemig || "Tabelas 8A/8B")) + ")" + (p.aquecimento ? ", aquecimento kVA = kW" : ", kVA = kW/0,92")) : "potência da placa pendente";
 out.push(p);
 });
 return out;
 }
 function quadroDe(estado, avaliarFam) {
-var f = arr(estado && estado.familias).filter(function (x) { return x && x.famId === FAM_QD; })[0];
+var fs = arr(estado && estado.familias).filter(function (x) { return x && ehQD(x.famId); });
+var f = fs.filter(function (x) { return x.famId === FAM_QD; })[0] || fs[0];
 if (!f) return null;
 var av = null; try { av = typeof avaliarFam === "function" ? avaliarFam(f.famId, f.tipoId, f.inst) : null; } catch (e) { av = null; }
 var v = (av && av.valores) || {}, hm = num(f.inst && f.inst.Altura_montagem, num(v.Altura_montagem, 1.5)), alt = num(v.Altura, 0.25), lg = num(v.Largura, 0.2), pr = num(v.Profundidade, 0.09);
@@ -187821,10 +191972,14 @@ function proporQuadro(L, estado, avaliarFam, pontos, C) {
 var EAl = EA(), C1 = RG().criterios(), best = null, carga = 0, cx = 0, cz = 0;
 pontos.forEach(function (p) { var w = Math.max(1, p.va || 0); carga += w; cx += p.caixaP[0] * w; cz += p.caixaP[2] * w; });
 var cc = carga ? [cx / carga, cz / carga] : [0, 0], pav0 = 0;
+var FOLGA_QD = 0.35, outros = arr(L.pontos).concat(arr(L.caixas));
+function livreDe(c) { return outros.every(function (q) { return !q || !q.p || q.pav !== c.pav || d2(c.P, q.p) >= FOLGA_QD; }); }
+function escolher(estrito) {
 L.ambientes.forEach(function (a) {
 if (a.pav !== pav0 || PREF_QD[a.tipo.id] == null || a.cls.grupo === "externa" || a.cls.grupo === "varanda") return;
 var cands = EAl.candidatos(L, estado, avaliarFam, a, C1).map(function (c) { c.pav = a.pav; return c; });
 cands.forEach(function (c) {
+if (estrito && !livreDe(c)) return;
 var h = C.quadroAltura.valor, okL = [0, -0.15, 0.15].every(function (dt) {
 var c2 = { w: c.w, t: c.t + dt, P: [c.P[0] + Math.cos(num(c.w.rotY, 0)) * dt, c.P[1] - Math.sin(num(c.w.rotY, 0)) * dt], dir: c.dir, pav: c.pav };
 return !EAl.verificar(L, C1, c2, h, {}) && !EAl.verificar(L, C1, c2, h + 0.15, {}) && !EAl.verificar(L, C1, c2, h - 0.15, {});
@@ -187834,6 +191989,8 @@ var sc = PREF_QD[a.tipo.id] * 3 + d2(c.P, cc);
 if (!best || sc < best.sc - 1e-9) best = { sc: sc, c: c, a: a };
 });
 });
+}
+escolher(true); if (!best) escolher(false);
 if (!best) return null;
 var c = best.c, a = best.a, pr = 0.12, alt = 0.50;
 return { id: null, novo: true, cand: c, amb: a.id, ambNome: a.nome, p: [c.P[0] - c.dir[0] * pr / 2, num(a.base, 0) + C.quadroAltura.valor, c.P[1] - c.dir[1] * pr / 2], topo: [c.P[0] - c.dir[0] * 0.03, num(a.base, 0) + C.quadroAltura.valor + alt / 2, c.P[1] - c.dir[1] * 0.03],
@@ -187917,16 +192074,17 @@ var dMot = grupos.d.reduce(function (s, p) { return s + p.w / 1000 / C.fpNaoAque
 if (grupos.d.length) pend.push("Motores (" + grupos.d.map(function (p) { return p.aparelhoNome; }).join(", ") + "): a demanda das Tabelas 14 e 15 da ND-5.1 não foi transcrita — entrou 100 % da potência (conservador) — conferir.");
 var ciTue = pontos.filter(function (p) { return p.kind === "tue"; }).reduce(function (s, p) { return s + p.w / 1000; }, 0);
 var ci = ciA + ciTue, D = a + b1 + b3 + b4 + b5 + cAr + dMot;
+var ciTxt = f2(ci) + " kVA (somado como kW, a favor da segurança; fator de potência não aplicado — o RT pode reduzir)";
 var tipo, faixa = null, motivoTipo;
-if (ci <= F.tipos.A.ate_kW + 1e-9 && !tem220) { tipo = "A"; motivoTipo = "carga instalada " + f2(ci) + " kW ≤ 8 kW, sem aparelho em 220 V (" + F.tipos.A.item + ")"; }
-else if (ci <= F.tipos.B.ate_kW + 1e-9) { tipo = "B"; motivoTipo = "carga instalada " + f2(ci) + " kW ≤ 16 kW" + (tem220 && ci <= 8 ? " (aparelho em 220 V pede 2 fases)" : "") + " (" + F.tipos.B.item + ")"; }
-else if (ci <= F.tipos.C.ate_kW + 1e-9 && D <= F.tipos.C.demandaAte_kVA + 1e-9) { tipo = "C"; motivoTipo = "carga instalada " + f2(ci) + " kW entre 16,1 e 75 kW, demanda " + f2(D) + " kVA ≤ 75 kVA (" + F.tipos.C.item + ")"; }
-else { tipo = null; motivoTipo = "carga instalada " + f2(ci) + " kW / demanda " + f2(D) + " kVA acima do tipo C: medição indireta (ND-5.1 Tabela 4, não transcrita) — pendência"; pend.push("Fornecimento acima do tipo C da ND-5.1: " + motivoTipo + "."); }
+if (ci <= F.tipos.A.ate_kW + 1e-9 && !tem220) { tipo = "A"; motivoTipo = "carga instalada " + ciTxt + " ≤ 8 kW, sem aparelho em 220 V (" + F.tipos.A.item + ")"; }
+else if (ci <= F.tipos.B.ate_kW + 1e-9) { tipo = "B"; motivoTipo = "carga instalada " + ciTxt + " ≤ 16 kW" + (tem220 && ci <= 8 ? " (aparelho em 220 V pede 2 fases)" : "") + " (" + F.tipos.B.item + ")"; }
+else if (ci <= F.tipos.C.ate_kW + 1e-9 && D <= F.tipos.C.demandaAte_kVA + 1e-9) { tipo = "C"; motivoTipo = "carga instalada " + ciTxt + " acima de 16 kW e até 75 kW, demanda " + f2(D) + " kVA ≤ 75 kVA (" + F.tipos.C.item + ")"; }
+else { tipo = null; motivoTipo = "carga instalada " + ciTxt + " / demanda " + f2(D) + " kVA acima do tipo C: medição indireta (ND-5.1 Tabela 4, não transcrita) — pendência"; pend.push("Fornecimento acima do tipo C da ND-5.1: " + motivoTipo + "."); }
 if (tipo === "A") faixa = F.tabela1.dados[0]; else if (tipo === "B") faixa = F.tabela1.dados[1];
 else if (tipo === "C") F.tabela2.dados.forEach(function (l) { if (!faixa && D <= l[2] + 1e-9) faixa = l; });
 var entrada = faixa ? { faixa: faixa[0], fios: faixa[3], fases: faixa[4], disjuntor_A: faixa[5], condutor_mm2: faixa[6], eletrodutoPVC_mm: faixa[7], eletrodutoAco_mm: faixa[8], aterramento_mm2: faixa[9], hastes: faixa[10], pe_mm2: faixa[11],
 tabela: tipo === "C" ? F.tabela2.item : F.tabela1.item } : null;
-return { cargaInstalada_kW: r2(ci), luzTomadas_kW: r2(ciA), fdLuzTomadas: fd, a: r2(a), b1: r2(b1), b3: r2(b3), b4: r2(b4), b5: r2(b5), c: r2(cAr), d: r2(dMot), demanda_kVA: r2(D),
+return { cargaInstaladaTexto: ciTxt, cargaInstalada_kW: r2(ci), luzTomadas_kW: r2(ciA), fdLuzTomadas: fd, a: r2(a), b1: r2(b1), b3: r2(b3), b4: r2(b4), b5: r2(b5), c: r2(cAr), d: r2(dMot), demanda_kVA: r2(D),
 tipo: tipo, motivoTipo: motivoTipo, entrada: entrada, tem220: tem220, pendencias: pend,
 fonte: F.fonte + ", " + F.demanda.item + " (" + F.demanda.formula + "; " + F.tabela10.item + ", " + F.tabela12.item + ", " + F.tabela13.item + ")",
 grupos: { b1: grupos.b1.length, b3: grupos.b3.length, b4: grupos.b4.length, b5: grupos.b5.length, c: grupos.c.length, d: grupos.d.length } };
@@ -188198,8 +192356,8 @@ if (qd.novo) {
 var idQ = "eleq-QD1", k = 1; while (arr(est.familias).some(function (f) { return f && String(f.id) === idQ; })) idQ = "eleq-QD" + (++k);
 qd.id = idQ;
 var m = A0.quadroModelo || { espacos: 24, material: "aco", instalacao: "embutir", corrente: "100A" };
-ops.push({ op: "familia", id: idQ, famId: FAM_QD, tipoId: m.material === "pvc" ? "pvc6" : "aco24e", x: r4(qd.cand.P[0] - qd.cand.dir[0] * qd.profundidade), y: r4(qd.y), z: r4(qd.cand.P[1] - qd.cand.dir[1] * qd.profundidade), rotY: r4(qd.rotY),
-inst: { Altura_montagem: r4(qd.hm), $tipo: { Material_quadro: m.material, Instalacao: m.instalacao, Disjuntores: m.espacos, Corrente: m.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } });
+ops.push({ op: "familia", id: idQ, famId: FAM_QD, tipoId: instQuadroEle(m, A0.modulos, o.avaliarFam).tipoId, x: r4(qd.cand.P[0] - qd.cand.dir[0] * qd.profundidade), y: r4(qd.y), z: r4(qd.cand.P[1] - qd.cand.dir[1] * qd.profundidade), rotY: r4(qd.rotY),
+inst: { Altura_montagem: r4(qd.hm), $tipo: instQuadroEle(m, A0.modulos, o.avaliarFam).$tipo } });
 avisos.push("Quadro " + idQ + " posto em \"" + qd.ambNome + "\": " + qd.regra + ".");
 }
 var estQ = ops.length ? baseMaisOps(est, ops) : est, ligOps = [], EIl = EI();
@@ -188266,11 +192424,14 @@ var instQ = { Projeto_eletrico: js };
 if (A.quadroModelo && qf) {
 var mt = A.quadroModelo, tp = (qf.inst && qf.inst.$tipo) || {};
 var nosso = /^eleq-/.test(String(qd.id)), qn = quadroDe(estN, o.avaliarFam), espAtual = qn ? qn.espacos : num(tp.Disjuntores, null);
-if (nosso ? (tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) instQ.$tipo = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente, Largura: mt.material === "pvc" ? 0.20 : 0.40, Altura: mt.material === "pvc" ? 0.25 : 0.50, Profundidade: mt.material === "pvc" ? 0.09 : 0.12 };
+if (qf.famId === FAM_QD) {
+var ieq = instQuadroEle(mt, A.modulos, o.avaliarFam);
+if (nosso ? (String(qf.tipoId) !== ieq.tipoId || tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) { instQ.tipoId = ieq.tipoId; instQ.$tipo = ieq.$tipo; }
+} else if (nosso ? (tp.Disjuntores !== mt.espacos || tp.Material_quadro !== mt.material) : (espAtual == null || espAtual < A.modulos)) instQ.$tipo = { Material_quadro: mt.material, Instalacao: mt.instalacao, Disjuntores: mt.espacos, Corrente: mt.corrente, Largura: mt.material === "pvc" ? 0.20 : 0.40, Altura: mt.material === "pvc" ? 0.25 : 0.50, Profundidade: mt.material === "pvc" ? 0.09 : 0.12 };
 }
-var mudou = !qf || txt(qf.inst && qf.inst.Projeto_eletrico) !== js || instQ.$tipo;
+var mudou = !qf || txt(qf.inst && qf.inst.Projeto_eletrico) !== js || instQ.$tipo || instQ.tipoId;
 var todas = ops.slice(0, qd.novo ? 1 : 0).concat(ligOps).concat(tr.ops).concat(ops.slice(qd.novo ? 1 : 0));
-if (mudou) todas.push({ op: "instancia", id: qd.id, inst: instQ });
+if (mudou) { var opQ = { op: "instancia", id: qd.id, inst: instQ }; if (instQ.tipoId) { opQ.tipoId = instQ.tipoId; delete instQ.tipoId; } todas.push(opQ); }
 A.circuitos.forEach(function (c) { if (c.guardado && !c.dim.mantido && (Number(c.guardado.secao) !== c.dim.secao || Number(c.guardado.disjuntor) !== c.dim.In)) avisos.push(c.id + " redimensionado: " + c.guardado.secao + " mm²/" + c.guardado.disjuntor + " A → " + c.dim.secao + " mm²/" + c.dim.In + " A (o anterior não atendia mais)."); });
 var lote = todas.length ? { op: "lote", id: "elc-" + (o.loteId || Date.now().toString(36)), origem: "circuitos-eletricos", pedido: "Circuitos, quadro e eletrodutos", ops: todas } : null;
 var resumo = { circuitos: A.circuitos.length, luz: A.circuitos.filter(function (c) { return c.tipo === "luz"; }).length, tug: A.circuitos.filter(function (c) { return c.tipo === "tug"; }).length,
@@ -188380,7 +192541,7 @@ return out;
 function cuidaDoCabo(estado, avaliarFam) { try { var q = quadroDe(estado, avaliarFam); return !!(q && q.projeto); } catch (e) { return false; } }
 var EleCircuitos = {
 cuidaDoCabo: cuidaDoCabo, campoCircuito: campoCircuito, circuitoManual: circuitoManual,
-CRITERIOS: CRITERIOS, CORES: CORES, FAM_QD: FAM_QD, criterios: criterios, lerPontos: lerPontos, quadroDe: quadroDe, proporQuadro: proporQuadro,
+CRITERIOS: CRITERIOS, CORES: CORES, FAM_QD: FAM_QD, FAM_QD_ANTIGO: FAM_QD_ANTIGO, FAMS_QD: FAMS_QD, ehQD: ehQD, tipoEleQuadro: tipoEleQuadro, instQuadroEle: instQuadroEle, criterios: criterios, lerPontos: lerPontos, quadroDe: quadroDe, proporQuadro: proporQuadro,
 dividir: dividir, demandaDe: demandaDe, distribuirFases: distribuirFases, dimensionar: dimensionar, exigeDR: exigeDR, agruparDR: agruparDR,
 condutoresPorTrecho: condutoresPorTrecho, nCond: nCond, derivacoesSemCaixa: derivacoesSemCaixa, analisar: analisar, lancar: lancar, cabos: cabos, servicosOrc: servicosOrc, _baseMaisOps: baseMaisOps
 };
@@ -188523,9 +192684,10 @@ var ambQ = A.leitura.ambDe ? A.leitura.ambDe([qd.p[0] + qd.dir[0] * 0.3, qd.p[2]
 if (aQ && (aQ.cls.grupo === "banheiro" || aQ.tipo.id === "area_servico" || aQ.cls.grupo === "externa" || aQ.cls.grupo === "varanda"))
 p("ELE_QUADRO_LOCAL", "aviso", "C", "Quadro em \"" + aQ.nome + "\"", "O quadro fica em local de fácil acesso (" + T.n5410("6.5.4.8") + ") e, pelo critério RA, fora de área molhada, sujeita a lavagem ou externa.", [qd.id],
 [{ id: "nota-mover", texto: "Arraste o quadro para a circulação ou a sala e rode \"Circuitos e quadro\" de novo (os eletrodutos novos saem do lugar novo)." }]);
-var esp = num(qd.f && qd.f.inst && qd.f.inst.$tipo && qd.f.inst.$tipo.Disjuntores, null);
+var eleQ = !!(qd.f && qd.f.famId === "ele-quadro");
+var esp = num(qd.f && qd.f.inst && qd.f.inst.$tipo && qd.f.inst.$tipo.Disjuntores, eleQ ? num(qd.espacos, null) : null);
 if (esp != null && A.modulos > esp) p("ELE_QUADRO_ESPACO", "aviso", "N", "Quadro com " + esp + " espaços para " + A.modulos + " módulos", "Disjuntores, DR, DPS, geral e a reserva para ampliação (" + A.reserva + " — " + T.n5410(T.T59.item) + ") não cabem no quadro.", [qd.id],
-[A.quadroModelo ? { id: "quadro", texto: "Trocar o quadro pelo de " + A.quadroModelo.espacos + " espaços", ops: [{ op: "instancia", id: qd.id, inst: { $tipo: { Material_quadro: A.quadroModelo.material, Instalacao: A.quadroModelo.instalacao, Disjuntores: A.quadroModelo.espacos, Corrente: A.quadroModelo.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } }] } : { id: "nota-quadro", texto: "Divida a instalação em dois quadros." }]);
+[A.quadroModelo ? { id: "quadro", texto: "Trocar o quadro pelo de " + A.quadroModelo.espacos + " espaços", ops: eleQ && EC().instQuadroEle ? [{ op: "instancia", id: qd.id, tipoId: EC().instQuadroEle(A.quadroModelo, A.modulos).tipoId, inst: { $tipo: EC().instQuadroEle(A.quadroModelo, A.modulos).$tipo } }] : [{ op: "instancia", id: qd.id, inst: { $tipo: { Material_quadro: A.quadroModelo.material, Instalacao: A.quadroModelo.instalacao, Disjuntores: A.quadroModelo.espacos, Corrente: A.quadroModelo.corrente, Largura: 0.40, Altura: 0.50, Profundidade: 0.12 } } }] } : { id: "nota-quadro", texto: "Divida a instalação em dois quadros." }]);
 return fim();
 function fim() {
 probs.forEach(function (q) { q.solucoes.forEach(function (s) { if (s.ops && !s.ops.length) { delete s.ops; s.id = "nota-" + s.id; s.texto = "Nada a refazer automaticamente: ajuste à mão e rode o auditor de novo."; } }); });
@@ -188897,6 +193059,11 @@ if (formato === "dxf") return paraDxf(r);
 return null;
 }
 function memorial(Z, opcoes) {
+var EMm = dep("EleMemorial", "./elememorial.js");
+if (EMm && EMm.gerar && Z && Z.ok) { var rm = EMm.gerar(Z, opcoes); if (rm && rm.ok) return rm; }
+return memorialCurto(Z, opcoes);
+}
+function memorialCurto(Z, opcoes) {
 opcoes = opcoes || {};
 var Tb = TB(), secoes = [];
 if (!Z || !Z.ok) return { titulo: "Memorial descritivo e de cálculo — instalações elétricas", secoes: [], html: "", texto: "" };
@@ -188947,6 +193114,760 @@ return { titulo: titulo, secoes: secoes, html: html, texto: texto };
 var ElePranchas = { VERSAO: 1, K2: K2, gerar: gerar, exportar: exportar, memorial: memorial, estilo: estilo, paraDxf: paraDxf };
 global.ElePranchas = ElePranchas;
 if (typeof module !== "undefined" && module.exports) module.exports = ElePranchas;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/elememorial.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function TB() { return dep("EleTabelas", "./eletabelas.js"); }
+function RG() { return dep("EleRegras", "./eleregras.js"); }
+function PL() { return dep("ElePlanilhas", "./eleplanilhas.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function br(v, c) { if (!fin(v)) return "-"; c = c == null ? 2 : c; var k = Math.pow(10, c), s = (Math.round(v * k) / k).toFixed(c).replace(".", ","); var pb = s.split(","); pb[0] = pb[0].replace(/\B(?=(\d{3})+(?!\d))/g, "."); return pb.join(","); }
+function sec(S) { return fin(S) ? String(S).replace(".", ",") : "-"; }
+function dois(k) { return ("0" + k).slice(-2); }
+function hoje() { var d = new Date(); return dois(d.getDate()) + "/" + dois(d.getMonth() + 1) + "/" + d.getFullYear(); }
+function listaPt(l) { l = arr(l); return l.length > 1 ? l.slice(0, -1).join(", ") + " e " + l[l.length - 1] : (l[0] || ""); }
+var RE_INDEF = /\b(undefined|NaN|null|Infinity)\b/;
+function referencias() {
+var T = TB(), N = T.NORMA, Cm = T.CEMIG;
+return [
+["ABNT NBR 5410:2004 — Instalações elétricas de baixa tensão", "dimensionamento, divisão de circuitos, proteções, quadro (itens citados um a um)",
+"cópia de consulta NÃO licenciada à RA, edição original (" + N.edicaoLida + "); vigente: " + N.vigente + ". Só o valor com o item foi usado; o PDF não é arquivado", "N"],
+["ABNT NBR 5444:1989 — Símbolos gráficos para instalações elétricas prediais", "simbologia das pranchas",
+"CANCELADA em 11/2014, sem norma substituta (a ABNT remete à IEC 60617, não lida). Os símbolos são os de uso corrente e TODOS levam texto", "X"],
+[Cm.fonte, "tipo de fornecimento, padrão de entrada e cálculo da demanda (" + Cm.demanda.item + ")",
+"PDF público da CEMIG, fonte primária lida: Tabelas 1, 2, 3, 10, 12 e 13 e os itens 4.5.1 e 8.2.3. NÃO lidos: capítulo 7 (caixa de medição, poste, afastamentos), Tabelas 4, 5, 14, 15 e 18 a 20", "A"],
+["NR-10 — Segurança em instalações e serviços em eletricidade (texto de 2026, Portaria MTE 737/2026)", "itens do memorial (10.4.9 a–f) e responsabilidade do projeto (10.4.8)",
+"fonte primária lida; vigência do texto atual: 01/06/2027. Prontuário das instalações elétricas e demais capítulos: não lidos", "A"],
+["ABNT NBR 9050:2020 — Acessibilidade", "altura do interruptor (4.6.9)", "fonte primária lida", "A"],
+[T.FONTES.SINAPI, "códigos de composição na lista de materiais", "base pública lida; item sem composição sai \"pendente\" ou \"provisório — cotar\"", "A"],
+["Fabricantes: " + [T.FONTES.SIL, T.FONTES.PLASTUBOS, T.FONTES.LAPP].join("; "), "diâmetro do cabo, DN do eletroduto pelo número de condutores, resistência do condutor", "catálogos públicos lidos na imagem", "A"],
+["Critério RA", "limites por circuito, posição do quadro, comprimento provisório do alimentador, esquema de aterramento adotado", "decisão de projeto, editável, a validar com o RT", "C"]
+];
+}
+var NR10 = [
+["a", "proteção contra choques elétricos e queimaduras", "10.4.9 a)"],
+["b", "identificação dos circuitos elétricos", "10.4.9 b)"],
+["c", "restrições e impedimentos de acesso", "10.4.9 c)"],
+["d", "influências externas", "10.4.9 d)"],
+["e", "princípio funcional dos dispositivos de proteção", "10.4.9 e)"],
+["f", "compatibilidade dos dispositivos de proteção com a instalação", "10.4.9 f)"]
+];
+function Sec(id, titulo) { this.id = id; this.titulo = titulo; this.blocos = []; }
+Sec.prototype.p = function (t) { this.blocos.push({ t: "p", x: t }); return this; };
+Sec.prototype.li = function (t) { this.blocos.push({ t: "li", x: t }); return this; };
+Sec.prototype.alerta = function (t) { this.blocos.push({ t: "alerta", x: t }); return this; };
+Sec.prototype.sub = function (t) { this.blocos.push({ t: "sub", x: t }); return this; };
+Sec.prototype.tab = function (titulo, cab, linhas, alin) { this.blocos.push({ t: "tab", titulo: titulo, cab: cab, linhas: linhas, alin: alin || [] }); return this; };
+Sec.prototype.calc = function (titulo, linhas) { this.blocos.push({ t: "calc", titulo: titulo, linhas: linhas }); return this; };
+function itensDe(s) {
+var o = [];
+s.blocos.forEach(function (b) {
+if (b.t === "p" || b.t === "li" || b.t === "alerta") o.push(b.x);
+else if (b.t === "sub") o.push(b.x);
+else if (b.t === "tab") { o.push(b.titulo); b.linhas.forEach(function (l) { o.push(l.join(" | ")); }); }
+else if (b.t === "calc") { o.push(b.titulo); b.linhas.forEach(function (l) { o.push(l); }); }
+else if (b.t === "assin") { o.push(b.rt + " — " + b.titulo + " — " + b.reg + " — " + b.empresa); o.push("Contratante: " + b.contratante); o.push(b.local + ", " + b.data); }
+});
+return o;
+}
+function quedaTerminal(S, L, ib, V) { var r = TB().r70(S); return r == null ? null : 200 * (r / 1000) * L * ib / V; }
+function sens(A) { return A.drs && A.drs.length && fin(A.drs[0].sensibilidade_mA) ? A.drs[0].sensibilidade_mA + " mA" : "sensibilidade a definir"; }
+function limiteB3() { var m = /até\s*([0-9]+(?:[.,][0-9]+)?)\s*kW/i.exec(TB().CEMIG.tabela12.nota); return m ? parseFloat(m[1].replace(",", ".")) : null; }
+function menorIn(ib) { var L = TB().DISJUNTORES_A; for (var k = 0; k < L.length; k++) if (L[k] >= ib - 1e-9) return L[k]; return null; }
+function secaoCapacidade(ref, In, ft, fa) {
+var T = TB(), S = T.T36.secoes;
+for (var i = 0; i < S.length; i++) { var iz0 = T.iz(ref, 2, S[i]); if (iz0 != null && iz0 * ft * fa >= In - 1e-9) return S[i]; }
+return null;
+}
+function secaoQueda(L, ib, V, lim) {
+var T = TB(), S = T.T36.secoes;
+for (var i = 0; i < S.length; i++) { var q = quedaTerminal(S[i], L, ib, V); if (q != null && q <= lim + 1e-9) return S[i]; }
+return null;
+}
+function memoriaCircuito(c, A) {
+var T = TB(), C = A.criterios, d = c.dim, V = d.V, ib = d.va / V, L = fin(c.Lmax) ? c.Lmax : d.L, o = [];
+var cap = secaoCapacidade(d.metodo.ref, d.In, d.ft, d.fa), qS = secaoQueda(L, ib, V, d.limiteQueda), r70 = T.r70(d.secao);
+var inMin = menorIn(ib), qd = quedaTerminal(d.secao, L, ib, V);
+o.push("1) Corrente de projeto: IB = P / V = " + br(d.va, 0) + " VA / " + V + " V = " + br(ib, 2) + " A");
+o.push("2) Método de instalação (pior aplicação do percurso — " + T.n5410("6.2.5.8") + "): " + d.metodo.apl + " → " + T.T33.item + ", método " + d.metodo.metodo + " (referência " + d.metodo.ref + ")" + (d.metodo.estimado ? " — ESTIMADO (sem eletroduto traçado)" : ""));
+o.push("3) Fator de correção de temperatura: FCT = " + br(d.ft, 2) + " (" + T.T40.item + ", " + C.tempAmbiente.valor + " °C)");
+o.push("4) Fator de agrupamento: " + d.nAgrup + " circuito(s) no eletroduto mais cheio → FCA = " + br(d.fa, 2) + " (" + T.T42.item + ")" + (d.desprezado ? "; este circuito é desprezado no agrupamento dos outros (" + T.n5410("6.2.5.5.2") + ")" : ""));
+o.push("5) Disjuntor: menor corrente nominal normalizada com In ≥ IB = " + (inMin != null ? inMin + " A" : "acima da série") + " (série " + T.DISJUNTORES_A.join(", ") + " A)" + (inMin != null && inMin !== d.In ? "; no projeto está " + d.In + " A (valor gravado mantido)" : ""));
+o.push("6) Seção pelo critério da capacidade de condução (" + T.T36.item + ", " + d.metodo.ref + ", 2 condutores carregados — " + T.T46.item + "): Iz corrigida = Iz(tabela) × FCT × FCA ≥ In = " + d.In + " A");
+var S = T.T36.secoes;
+for (var i = 0; i < S.length; i++) {
+var iz0 = T.iz(d.metodo.ref, 2, S[i]), izc = iz0 * d.ft * d.fa, bom = izc >= d.In - 1e-9;
+o.push("      " + sec(S[i]) + " mm²: " + br(iz0, 1) + " A × " + br(d.ft, 2) + " × " + br(d.fa, 2) + " = " + br(izc, 1) + " A " + (bom ? "≥" : "<") + " " + d.In + " A" + (bom ? " → atende" : ""));
+if (bom) break;
+}
+o.push("7) Seção mínima (" + T.T47.item + ", " + (c.tipo === "luz" ? "iluminação" : "força") + "): " + sec(d.secMin) + " mm²");
+o.push("8) Queda de tensão (" + T.QUEDA.item + ", calculada com a corrente de projeto): ΔV% = 200 × R70 × L × IB / V; R70(" + sec(d.secao) + " mm²) = " + br(T.RESISTENCIA.r20[d.secao], 3) + " × (1 + " + br(T.RESISTENCIA.alfa.valor, 5) + " × (" + T.RESISTENCIA.tCondutor + " − 20)) = " + br(r70, 3) + " Ω/km");
+o.push("      ΔV% = 200 × " + br(r70, 3) + " / 1000 × " + br(L, 2) + " m × " + br(ib, 2) + " A / " + V + " V = " + br(qd, 2) + " %  (limite " + br(d.limiteQueda, 2) + " % = o menor entre " + br(T.QUEDA.terminal_pct, 0) + " % no terminal e " + br(T.QUEDA.entregaSecundaria_pct, 0) + " % do ponto de entrega menos a queda do alimentador)" + (qd != null && qd <= d.limiteQueda + 1e-9 ? " → atende" : " → NÃO ATENDE") + (d.estimado ? "; comprimento ESTIMADO" : ""));
+o.push("9) Seção adotada = maior entre capacidade (" + sec(cap) + " mm²), mínima (" + sec(d.secMin) + " mm²) e queda de tensão (" + sec(qS) + " mm²) = " + sec(d.secao) + " mm²" + (d.mantido ? " (valor gravado no projeto, ainda atende)" : ""));
+o.push("10) Condutor de proteção (PE): " + T.T58.item + " → " + sec(d.pe) + " mm²");
+o.push("11) Coordenação (" + T.COORD.item + "): IB ≤ In ≤ Iz → " + br(ib, 2) + " ≤ " + d.In + " ≤ " + br(d.izc, 1) + (ib <= d.In + 1e-9 && fin(d.izc) && d.In <= d.izc + 1e-9 ? " → atende" : " → NÃO ATENDE") + ". " + T.COORD.i2.fonte + ".");
+o.push("12) DR " + sens(A) + ": " + (c.dr && c.dr.length ? "exigido (" + T.DR.item + " " + c.dr.map(function (k) { return k + ")"; }).join(", ") + ") — grupo " + (c.drId || "?") : "não exigido pelos casos da " + T.DR.item) + "; disjuntor " + c.polos + (c.polos === 1 ? " polo" : " polos") + (c.polos === 2 ? " (secciona todas as fases — " + T.DIVISAO.multipolar.split(" — ")[0] + ")" : ""));
+return o;
+}
+function memoriaAlimentador(A) {
+var T = TB(), C = A.criterios, al = A.alimentador, g = A.geral, o = [], fs = {};
+A.fases.fases.forEach(function (f) { fs[f] = 0; });
+A.circuitos.forEach(function (c) { if (c.fases) c.fases.split("").forEach(function (f) { fs[f] += c.dim.va / c.dim.V; }); });
+var cargaTxt = A.fases.fases.map(function (f) { return f + " = " + br(fs[f], 2) + " A"; }).join("; "), mx = 0;
+Object.keys(fs).forEach(function (f) { mx = Math.max(mx, fs[f]); });
+var k = A.demanda.cargaInstalada_kW > 0 ? Math.min(1, A.demanda.demanda_kVA / (A.pontos.reduce(function (s, p) { return s + (p.va || 0); }, 0) / 1000)) : 1;
+o.push("1) Corrente de projeto por fase (soma das IB dos circuitos de cada fase): " + cargaTxt);
+o.push("2) Fator de demanda do conjunto: k = demanda da ND-5.1 / carga instalada = " + br(A.demanda.demanda_kVA, 2) + " kVA / " + br(A.pontos.reduce(function (s, p) { return s + (p.va || 0); }, 0) / 1000, 2) + " kVA = " + br(k, 2) + " (no máximo 1)");
+o.push("3) Corrente de demanda da fase mais carregada: Ig = " + br(mx, 2) + " A × " + br(k, 2) + " = " + br(mx * k, 2) + " A");
+var inG = null; T.GERAL_A.forEach(function (x) { if (inG == null && x >= mx * k - 1e-9) inG = x; });
+o.push("4) Disjuntor geral: menor valor da série (" + T.GERAL_A.join(", ") + " A) com In ≥ Ig = " + (inG != null ? inG + " A" : "acima da série") + ", " + g.polos + (g.polos === 1 ? " polo" : " polos") + (A.demanda.entrada ? "; limitado pelo disjuntor da entrada da ND-5.1 (" + A.demanda.entrada.disjuntor_A + " A, faixa " + A.demanda.entrada.faixa + ")" : ""));
+o.push("5) Seção pelo critério da capacidade (" + T.T36.item + ", " + al.ref + ", " + al.nCarr + " condutores carregados — " + T.T46.item + "; FCT = " + br(T.fatorTemperatura(C.tempAmbiente.valor), 2) + "): Iz(tabela) × FCT ≥ In do geral = " + g.In + " A");
+var S = T.T36.secoes, ftA = T.fatorTemperatura(C.tempAmbiente.valor);
+for (var i = 0; i < S.length; i++) {
+var iz0 = T.iz(al.ref, al.nCarr, S[i]), izc = iz0 * ftA, bom = g.In != null && izc >= g.In - 1e-9;
+o.push("      " + sec(S[i]) + " mm²: " + br(iz0, 1) + " A × " + br(ftA, 2) + " = " + br(izc, 1) + " A " + (bom ? "≥" : "<") + " " + g.In + " A" + (bom ? " → atende" : ""));
+if (bom) break;
+}
+o.push("6) Queda de tensão do alimentador (parcela reservada: " + br(C.quedaAlimentadorMax.valor, 2) + " % — " + C.quedaAlimentadorMax.fonte + "): ΔV% = K × R70 × L × Ig / V, com K = " + br(al.kQueda, 2) + " (" + (A.fases.fases.length === 1 ? "1 fase: 200" : "100 × (1 + I_neutro / I_fase); I_neutro = soma vetorial das correntes fase-neutro = " + br(al.iNeutro, 2) + " A, limite superior conservador") + ")");
+var r70 = al.secao != null ? T.r70(al.secao) : null, dv = r70 != null ? al.kQueda * (r70 / 1000) * al.comprimento * g.ib / C.tensaoFN.valor : null;
+o.push("      ΔV% = " + br(al.kQueda, 2) + " × " + br(r70, 3) + " / 1000 × " + br(al.comprimento, 1) + " m × " + br(g.ib, 2) + " A / " + C.tensaoFN.valor + " V = " + br(dv, 2) + " %" + (al.provisorio ? " — comprimento PROVISÓRIO (critério RA)" : ""));
+if (al.secao != null && g.ib != null) {
+var i0 = -1; for (var ic = 0; ic < S.length && i0 < 0; ic++) if (g.In != null && T.iz(al.ref, al.nCarr, S[ic]) * ftA >= g.In - 1e-9) i0 = ic;
+if (i0 >= 0) {
+o.push("      Queda por seção candidata (da menor que passa na capacidade até a adotada), limite da parcela = " + br(C.quedaAlimentadorMax.valor, 2) + " %:");
+for (var iq = i0; iq < S.length; iq++) {
+var dq = al.kQueda * (T.r70(S[iq]) / 1000) * al.comprimento * g.ib / C.tensaoFN.valor, okq = dq <= C.quedaAlimentadorMax.valor + 1e-9;
+o.push("      " + sec(S[iq]) + " mm²: ΔV% = " + br(dq, 2) + " % " + (okq ? "≤" : ">") + " " + br(C.quedaAlimentadorMax.valor, 2) + " %" + (okq ? " → atende" : " → não atende"));
+if (S[iq] >= al.secao - 1e-9) break;
+}
+o.push("      O limite de " + br(C.quedaAlimentadorMax.valor, 2) + " % do alimentador é critério RA (nível " + C.quedaAlimentadorMax.nivel + "), não é da norma: a norma limita a queda TOTAL do ponto de entrega ao ponto mais distante (o circuito terminal leva o restante); se a soma da queda do terminal mais carregado com a do alimentador couber no limite da norma, uma seção menor que a adotada pode ser aceita pelo RT (a seção maior custa mais ao cliente).");
+}
+}
+o.push("7) Seção adotada (fases e neutro) = " + sec(al.secao) + " mm²; PE (" + T.T58.item + ") = " + sec(al.pe) + " mm²" + (A.demanda.entrada ? "; mínimo da ND-5.1 para a faixa " + A.demanda.entrada.faixa + ": " + sec(A.demanda.entrada.condutor_mm2) + " mm² — " + (al.secao != null && al.secao >= A.demanda.entrada.condutor_mm2 ? "atende" : "NÃO ATENDE") : ""));
+return o;
+}
+var GRUPOS_DEM = [["b1", "chuveiros, torneiras e cafeteiras elétricas", true], ["b3", "fornos, fogões e grill", false], ["b4", "lavar e secar roupa, lava-louças e ferro", false], ["b5", "demais aparelhos", false], ["c", "condicionadores de ar", false], ["d", "motores", false]];
+function contaDemanda(A) {
+var T = TB(), C = A.criterios, fp = C.fpNaoAquecimento.valor, grupos = { b1: [], b3: [], b4: [], b5: [], c: [], d: [] }, vaLT = 0;
+A.pontos.forEach(function (p) {
+if (p.kind === "luz" || p.kind === "tug") vaLT += p.va;
+if (p.kind === "tue") grupos[p.cemig || "b5"].push(p);
+});
+var lim35 = limiteB3(), ciA = vaLT / 1000, fd = T.fdTabela10(ciA), a = ciA * fd / fp, lin = [], v = { a: a, b1: 0, b3: 0, b4: 0, b5: 0, c: 0, d: 0 }, linhas = [], tab = [];
+lin.push("a) Iluminação e tomadas: Σ VA = " + br(vaLT, 0) + " VA = " + br(ciA, 2) + " kW; fator da " + T.CEMIG.tabela10.item + " = " + br(fd, 2) + "; kVA = kW / " + br(fp, 2) + " → a = " + br(ciA, 2) + " × " + br(fd, 2) + " / " + br(fp, 2) + " = " + br(a, 2) + " kVA");
+tab.push(["a", "iluminação e tomadas", String(A.pontos.filter(function (p) { return p.kind === "luz" || p.kind === "tug"; }).length) + " pontos", br(ciA, 2) + " kW", br(fd, 2), br(a, 2)]);
+GRUPOS_DEM.forEach(function (gd) {
+var L = grupos[gd[0]]; if (!L.length) return;
+var kw = L.reduce(function (s, p) { return s + p.w / 1000; }, 0), nome = gd[0], f, val, desc;
+if (nome === "b1") { f = T.fdTabela13(L.length); val = kw * f; desc = kw; lin.push("b1) " + gd[1] + ": " + L.length + " aparelho(s), Σ = " + br(kw, 2) + " kW (aquecimento: kW = kVA); fator da " + T.CEMIG.tabela13.item + " para " + L.length + " = " + br(f, 2) + " → b1 = " + br(kw, 2) + " × " + br(f, 2) + " = " + br(val, 2) + " kVA"); }
+else if (nome === "b3") {
+var ate = L.filter(function (p) { return lim35 == null || p.w <= lim35 * 1000; }), ac = L.filter(function (p) { return lim35 != null && p.w > lim35 * 1000; }), s1 = ate.reduce(function (s, p) { return s + p.w / 1000; }, 0), s2 = ac.reduce(function (s, p) { return s + p.w / 1000; }, 0);
+val = (ate.length ? s1 * T.fdTabela12(ate.length, false) : 0) + (ac.length ? s2 * T.fdTabela12(ac.length, true) : 0); f = kw > 0 ? val / kw : 0; desc = kw;
+lin.push("b3) " + gd[1] + ": " + (ate.length ? ate.length + " até " + br(lim35, 1) + " kW (Σ " + br(s1, 2) + " kW × " + br(T.fdTabela12(ate.length, false), 2) + ")" : "") + (ate.length && ac.length ? " + " : "") + (ac.length ? ac.length + " acima de " + br(lim35, 1) + " kW (Σ " + br(s2, 2) + " kW × " + br(T.fdTabela12(ac.length, true), 2) + ")" : "") + " (" + T.CEMIG.tabela12.item + "; kW = kVA) → b3 = " + br(val, 2) + " kVA");
+} else if (nome === "c") { var kva = L.reduce(function (s, p) { return s + p.va / 1000; }, 0); f = T.fdTabela13(L.length); val = kva * f; desc = kva; lin.push("c) " + gd[1] + ": " + L.length + " aparelho(s), Σ = " + br(kva, 2) + " kVA; fator da " + T.CEMIG.tabela13.item + " para " + L.length + " = " + br(f, 2) + " → c = " + br(kva, 2) + " × " + br(f, 2) + " = " + br(val, 2) + " kVA"); }
+else if (nome === "d") { f = 1; val = kw / fp; desc = kw; lin.push("d) " + gd[1] + ": " + L.length + " aparelho(s), Σ = " + br(kw, 2) + " kW; as Tabelas 14 e 15 da ND-5.1 não foram transcritas — 100 % da potência, kVA = kW / " + br(fp, 2) + " → d = " + br(val, 2) + " kVA (conservador)"); }
+else { f = T.fdTabela13(L.length); val = kw * f / fp; desc = kw; lin.push(nome + ") " + gd[1] + ": " + L.length + " aparelho(s), Σ = " + br(kw, 2) + " kW; fator da " + T.CEMIG.tabela13.item + " para " + L.length + " = " + br(f, 2) + "; kVA = kW / " + br(fp, 2) + " → " + nome + " = " + br(kw, 2) + " × " + br(f, 2) + " / " + br(fp, 2) + " = " + br(val, 2) + " kVA"); }
+v[nome] = val; tab.push([nome, gd[1], L.length + " aparelho(s)", br(desc, 2) + (nome === "c" ? " kVA" : " kW"), br(f, 2), br(val, 2)]);
+});
+var D = v.a + v.b1 + v.b3 + v.b4 + v.b5 + v.c + v.d;
+lin.push("D = " + T.CEMIG.demanda.formula.replace(/^D = /, "") + " = " + br(v.a, 2) + " + " + br(v.b1, 2) + " + " + br(v.b3, 2) + " + " + br(v.b4, 2) + " + " + br(v.b5, 2) + " + " + br(v.c, 2) + " + " + br(v.d, 2) + " = " + br(D, 2) + " kVA");
+void linhas;
+return { v: v, D: D, linhas: lin, tab: tab, grupos: grupos, ciA: ciA };
+}
+function pendencias(A, opc) {
+opc = opc || {}; var T = TB(), R = RG(), out = [], vistos = {};
+function add(nivel, texto, secao) { texto = txt(texto).trim(); if (!texto || vistos[nivel + texto]) return; vistos[nivel + texto] = 1; out.push({ nivel: nivel, texto: texto, secao: secao || "" }); }
+if (!A || !A.ok) return out;
+arr(A.pendencias).forEach(function (p) { add("vermelho", p.texto, "7"); });
+A.circuitos.forEach(function (c) {
+if (!c.dim.ok) add("vermelho", c.id + " (" + c.nome + "): NÃO ATENDE — " + (c.dim.motivos.join("; ") || "dimensionamento sem solução") + ".", "7");
+if (!c.fases) add("vermelho", c.id + " (" + c.nome + "): sem fase definida (aparelho em 220 V num fornecimento de 1 fase).", "5");
+});
+A.pontos.forEach(function (p) {
+if (p.potPendente) add("vermelho", "Ponto " + p.id + " (" + p.aparelhoNome + "): potência da placa do aparelho pendente — informe a potência.", "4");
+else if (p.kind === "tue" && !p.placa && (p.potNivel === "X" || p.potConfirmar)) add("vermelho", "Ponto " + p.id + " (" + p.aparelhoNome + "): " + p.w + " W " + (p.potNivel === "X" ? "sem fonte lida (nível X)" : "a confirmar") + (p.potConfirmar ? " — " + p.potConfirmar : " — confirme a potência da placa do aparelho") + ".", "4");
+});
+Object.keys(A.eletrodutos).forEach(function (t) { var e = A.eletrodutos[t]; if (e.lotado) add("vermelho", "Eletroduto " + t + ": " + e.condutores + " condutores de até " + sec(e.secaoMaior) + " mm² " + (e.dnMinimo == null ? "não cabem num DN 32 pela ficha do fabricante" : "pedem DN " + e.dnMinimo + " e o modelo tem DN " + e.dn) + " — divida o ramal ou troque o DN.", "8"); });
+arr(A.avisos).forEach(function (t) { add("amarelo", t, "13"); });
+if (A.demanda && A.demanda.cargaInstaladaTexto) add("amarelo", "Carga instalada: " + A.demanda.cargaInstaladaTexto + " — o enquadramento do fornecimento (tipo A/B/C) usa essa soma; se o RT aplicar o fator de potência, o tipo pode mudar.", "3");
+if (T.COORD.i2.nivel === "X") add("vermelho", "Sem fonte lida: " + T.COORD.i2.fonte + ".", "7");
+if (T.RESISTENCIA.alfa.nivel === "X") add("vermelho", "Sem fonte lida: " + T.RESISTENCIA.alfa.fonte + ".", "7");
+Object.keys(A.criterios).forEach(function (k) { var q = A.criterios[k]; if (q.nivel === "X") add("vermelho", "Sem fonte lida: " + q.rotulo + " — " + q.fonte + ".", "13"); });
+var C1 = R && R.criterios ? R.criterios() : {};
+Object.keys(C1).forEach(function (k) { var q = C1[k]; if (q && q.nivel === "X") add("vermelho", "Sem fonte lida: " + q.rotulo + " — " + q.fonte + ".", "4"); });
+var cra = []; Object.keys(A.criterios).forEach(function (k) { if (A.criterios[k].nivel === "C") cra.push(A.criterios[k].rotulo); });
+if (cra.length) add("amarelo", cra.length + " critério(s) RA em uso (decisão de projeto, não é norma): " + cra.join("; ") + ". Validar com o RT.", "2");
+if (A.criterios.dpsAQ2 && A.criterios.dpsAQ2.valor >= 1) add("amarelo", "DPS adotado por região AQ2 (critério RA conservador): o índice de trovoadas do local não foi lido — conferir se o DPS é obrigatório ou opcional.", "7");
+add("amarelo", "Temperatura de referência " + A.criterios.tempAmbiente.valor + " °C (Tabela 40): no entreforro sob telhado sem ventilação a temperatura pode passar disso — conferir e, se passar, ajustar nos critérios.", "7");
+add("amarelo", "Caixa de medição, poste e afastamentos: capítulo 7 e desenhos da ND-5.1 não transcritos — conferir com a CEMIG.", "3");
+add("amarelo", "Simbologia: a NBR 5444:1989 está cancelada sem norma substituta; os símbolos das pranchas são os de uso corrente e todos levam texto.", "2");
+if (!opc.esquemaAterramento) add("vermelho", "Esquema de aterramento: o cálculo do DPS e do PE parte do TN-S (premissa de fábrica); a definição formal (NR-10 10.4.4) e a interligação neutro/PE são do RT — a definir pelo RT.", "10");
+add("vermelho", "Equipotencialização: ligação equipotencial principal e suplementar (banheiros) a detalhar pelo RT — o item da norma não foi transcrito.", "10");
+add("vermelho", "NBR 5410:2004 lida em cópia NÃO licenciada à RA e sem a Errata 1/2008: conferir cada valor no exemplar licenciado da edição vigente antes de assinar.", "2");
+if (!txt(opc.responsavel)) add("vermelho", "Responsável técnico não informado: nome, título e registro no conselho (placeholders no memorial).", "1");
+else if (!txt(opc.registro)) add("vermelho", "Registro do responsável técnico (CREA/CAU) não informado.", "1");
+if (!txt(opc.obra)) add("vermelho", "Nome da obra não informado.", "1");
+arr(opc.materiais).forEach(function (m) {
+if (m.situacao === "pendente") add("vermelho", "Material sem código SINAPI (pendente): " + m.item + (m.motivo ? " — " + m.motivo : "") + ".", "12");
+else if (m.situacao === "provisório") add("amarelo", "Material provisório — cotar com o fornecedor: " + m.item + ".", "12");
+});
+var ord = { vermelho: 0, amarelo: 1 };
+return out.map(function (p, i) { p.i = i; return p; }).sort(function (a, b) { return ord[a.nivel] - ord[b.nivel] || a.i - b.i; }).map(function (p) { delete p.i; return p; });
+}
+function origemDe(p, opc) {
+var f = opc && opc.estado ? arr(opc.estado.familias).filter(function (x) { return x && String(x.id) === String(p.id); })[0] : null;
+return f && f.inst && f.inst.Origem ? txt(f.inst.Origem) : "";
+}
+function sIdent(A, opc, pend) {
+var s = new Sec("identificacao", "1. Identificação"), emp = opc.empresa, nomeEmp = emp && typeof emp === "object" ? txt(emp.nome) : txt(emp), cnpj = emp && typeof emp === "object" ? txt(emp.cnpj) : "";
+var rt = txt(opc.responsavel), reg = txt(opc.registro);
+s.tab("Dados do projeto", ["Campo", "Informação"], [
+["Obra", txt(opc.obra) || "[OBRA]"], ["Local", txt(opc.local) || "[ENDEREÇO DA OBRA]"], ["Proprietário / contratante", txt(opc.proprietario || opc.contratante) || "[PROPRIETÁRIO]"],
+["Responsável técnico", rt ? rt + (txt(opc.tituloProfissional) ? " — " + txt(opc.tituloProfissional) : "") : "[NOME DO RESPONSÁVEL TÉCNICO]"],
+["Registro", reg || "[Nº DO REGISTRO NO CREA/CAU]"], ["Empresa", (nomeEmp || "RA Engenharia") + (cnpj ? " — CNPJ " + cnpj : "")],
+["Documento", (txt(opc.numero) || "[Nº DO DOCUMENTO]") + " " + (txt(opc.revisao) || "R00")], ["Data", txt(opc.data) || hoje()]]);
+s.p("Objeto: memorial descritivo e de cálculo da instalação elétrica de baixa tensão (" + A.criterios.tensaoFN.valor + "/" + A.criterios.tensaoFF.valor + " V), com " + A.pontos.filter(function (p) { return p.kind !== "interruptor"; }).length + " pontos de utilização em " + A.circuitos.length + " circuito(s), do padrão de entrada ao quadro de distribuição. Gerado do modelo 3D e do cálculo atual: o que está nas pranchas é o que está aqui.");
+void pend; return s;
+}
+function sNormas(A) {
+var T = TB(), R = RG(), s = new Sec("normas", "2. Normas e referências"), niv = R && R.NIVEIS ? R.NIVEIS : {};
+s.alerta(T.NORMA.ressalva);
+s.tab("Referências, situação e nível da fonte", ["Referência", "Uso neste projeto", "Situação da fonte", "Nível"], referencias().map(function (r) { return [r[0], r[1], r[2], r[3]]; }));
+s.p("Níveis: N = " + (niv.N || "norma lida (cópia não licenciada)") + " · A = " + (niv.A || "fonte primária lida") + " · C = " + (niv.C || "critério RA") + " · X = " + (niv.X || "sem fonte lida — conferir") + ".");
+s.p("Todo valor de tabela da NBR 5410 sai citado como \"" + T.CIT + "\", com o item ou a tabela. Páginas lidas e como foram conferidas: cabeçalho de js/eletabelas.js.");
+void A; return s;
+}
+function sFornecimento(A) {
+var T = TB(), C = A.criterios, dm = A.demanda, en = dm.entrada, s = new Sec("fornecimento", "3. Fornecimento e padrão de entrada");
+s.p("Tensão " + C.tensaoFN.valor + "/" + C.tensaoFF.valor + " V, " + C.tensaoFN.fonte + ".");
+s.p("Carga instalada: " + br(dm.cargaInstalada_kW, 2) + " kW (iluminação e tomadas " + br(dm.luzTomadas_kW, 2) + " kW, mais os aparelhos de uso específico). Demanda provável: " + br(dm.demanda_kVA, 2) + " kVA (seção 6).");
+s.p(dm.tipo ? "Tipo de fornecimento " + dm.tipo + ": " + dm.motivoTipo + "." : "Fornecimento: " + dm.motivoTipo + ".");
+if (en) s.tab("Padrão de entrada — valores mínimos da " + en.tabela + ", faixa " + en.faixa, ["Item", "Valor"], [
+["Fios / fases", en.fios + " fios, " + en.fases + (en.fases === 1 ? " fase" : " fases")], ["Disjuntor termomagnético pós-medidor", en.disjuntor_A + " A"], ["Condutor (cobre)", sec(en.condutor_mm2) + " mm²"],
+["Eletroduto PVC / aço", en.eletrodutoPVC_mm + " mm / " + en.eletrodutoAco_mm + " mm"], ["Aterramento (cobre nu)", sec(en.aterramento_mm2) + " mm²"], ["Hastes", String(en.hastes)], ["Condutor de proteção", sec(en.pe_mm2) + " mm²"]]);
+else s.alerta("Padrão de entrada não verificado: " + dm.motivoTipo);
+s.p("Fonte: " + dm.fonte + ". Caixa de medição, poste e afastamentos: capítulo 7 e desenhos da ND-5.1 — não transcritos, conferir com a CEMIG.");
+void T; return s;
+}
+function sCargas(A, opc) {
+var T = TB(), R = RG(), RC = R && R.criterios ? R.criterios() : null, s = new Sec("cargas", "4. Levantamento de cargas por ambiente"), linhas = [], tot = 0, contas = [];
+s.p("Iluminação: carga mínima pela " + T.n5410("9.5.2.1.2") + " (ou a soma das lâmpadas, se maior). Tomadas de uso geral (TUG): potência atribuída pela " + T.n5410("9.5.2.2.2") + ". Tomadas de uso específico (TUE) e ligações diretas: potência do aparelho (CEMIG ND-5.1, Tabelas 8A/8B e 9), kVA = kW / " + br(A.criterios.fpNaoAquecimento.valor, 2) + " nos que não são de aquecimento.");
+arr(A.leitura.ambientes).forEach(function (a) {
+var ps = A.pontos.filter(function (p) { return p.amb === a.id; }), luz = ps.filter(function (p) { return p.kind === "luz"; }), tug = ps.filter(function (p) { return p.kind === "tug"; }), tue = ps.filter(function (p) { return p.kind === "tue"; });
+var vaL = luz.reduce(function (x, p) { return x + p.va; }, 0), vaT = tug.reduce(function (x, p) { return x + p.va; }, 0), vaE = tue.reduce(function (x, p) { return x + p.va; }, 0);
+if (!ps.length) return;
+var circs = []; A.circuitos.forEach(function (c) { if (c.pontos.some(function (id) { return A.existe[id] && A.existe[id].amb === a.id; })) circs.push(c.id); });
+linhas.push([a.nome, br(a.area, 2), br(vaL, 0), String(tug.length), br(vaT, 0), br(vaE, 0), br(vaL + vaT + vaE, 0), circs.join(", ")]); tot += vaL + vaT + vaE;
+if (luz.length) {
+var vaN = R.vaIluminacao(a.area, RC), base = RC.luzAreaBase.valor, passo = RC.luzAreaPasso.valor, k = Math.round((vaN - RC.luzVaBase.valor) / RC.luzVaPasso.valor), soma = /^soma/.test(txt(luz[0].vaRegra));
+contas.push(a.nome + " — iluminação: " + br(a.area, 2) + " m² " + (a.area <= base + 1e-9 ? "≤ " + base + " m² → " + RC.luzVaBase.valor + " VA" : "→ " + RC.luzVaBase.valor + " VA nos primeiros " + base + " m² + " + RC.luzVaPasso.valor + " VA × " + k + " (a cada " + passo + " m² inteiros além de " + base + " m²) = " + RC.luzVaBase.valor + " + " + (RC.luzVaPasso.valor * k) + " = " + vaN + " VA") + (soma ? "; a soma das lâmpadas é maior: " + br(vaL, 0) + " VA" : "; " + luz.length + " ponto(s) de luz de " + br(luz[0].va, 2) + " VA cada → " + br(vaL, 0) + " VA") + " (" + T.n5410("9.5.2.1.2") + ").");
+}
+if (tug.length) {
+var molh = a.cls && (a.cls.grupo === "cozinha_servico" || a.cls.grupo === "banheiro"), n = tug.length, q = Math.min(n, RC.qtdTugMolhada.valor);
+contas.push(a.nome + " — TUG: " + n + " ponto(s)" + (molh ? "; " + q + " × " + RC.vaTugMolhada.valor + " VA + " + (n - q) + " × " + RC.vaTugDemais.valor + " VA = " + (q * RC.vaTugMolhada.valor) + " + " + ((n - q) * RC.vaTugDemais.valor) + " = " + br(vaT, 0) + " VA" : "; " + n + " × " + RC.vaTugDemais.valor + " VA = " + br(vaT, 0) + " VA") + " (" + T.n5410("9.5.2.2.2") + (molh ? " a)" : " b)") + ").");
+}
+tue.forEach(function (p) {
+var og = origemDe(p, opc);
+contas.push(a.nome + " — TUE " + p.aparelhoNome + (p.direta ? " (ligação direta)" : "") + ": " + p.vaRegra + (p.potPendente ? "" : " = " + br(p.va, 0) + " VA em " + p.tensao + " V") + (og ? "; Origem: " + og : "") + ".");
+});
+});
+linhas.push(["TOTAL", "", "", "", "", "", br(tot, 0), ""]);
+s.tab("Cargas por ambiente (VA)", ["Ambiente", "Área (m²)", "Iluminação", "TUG (pontos)", "TUG", "TUE", "Total", "Circuitos"], linhas, ["", "r", "r", "r", "r", "r", "r", ""]);
+s.sub("A conta de cada ambiente");
+contas.forEach(function (t) { s.li(t); });
+return s;
+}
+function sDivisao(A) {
+var T = TB(), C = A.criterios, R = RG(), RC = R && R.criterios ? R.criterios() : null, s = new Sec("divisao", "5. Divisão de circuitos"), D = T.DIVISAO;
+s.p("Critérios: " + D.luzTomadaSeparados + "; " + D.exclusivo10A + "; " + D.cozinhaServico + ". " + D.excecaoHabitacao + ". Limites por circuito (critério RA, a norma não fixa): iluminação IB ≤ " + C.luzIbMax.valor + " A e até " + C.luzPontosMax.valor + " pontos de luz; tomadas IB ≤ " + C.tugIbMax.valor + " A e até " + C.tugPontosMax.valor + " pontos.");
+var li = A.circuitos.map(function (ci) {
+var d = ci.dim, motivo;
+if (ci.tipo === "luz") motivo = "iluminação separada das tomadas (" + D.luzTomadaSeparados.split(" — ")[0] + "); IB " + br(d.ib, 2) + " A ≤ " + C.luzIbMax.valor + " A";
+else if (ci.tipo === "tug") motivo = /^tug-amb-/.test(ci.chave) ? "tomadas de cozinha/serviço só delas (" + D.cozinhaServico.split(" — ")[0] + ")" : "tomadas de uso geral (" + D.luzTomadaSeparados.split(" — ")[0] + "); IB " + br(d.ib, 2) + " A ≤ " + C.tugIbMax.valor + " A, " + ci.pontos.length + " ponto(s)";
+else motivo = RC && d.ib > RC.correnteExclusivo.valor + 1e-9 ? "aparelho de " + br(d.ib, 2) + " A > " + RC.correnteExclusivo.valor + " A: circuito independente (" + D.exclusivo10A.split(" — ")[0] + ")" : "ponto dedicado ao aparelho (decisão RA)";
+return ci.id + " — " + ci.nome + ": " + br(d.va, 0) + " VA em " + ci.tensao + " V (" + (ci.fases || "fase não definida") + "), IB = " + br(d.ib, 2) + " A, " + ci.pontos.filter(function (id) { return A.existe[id] && A.existe[id].kind !== "interruptor"; }).length + " ponto(s); " + motivo + ".";
+});
+li.forEach(function (t) { s.li(t); });
+var fc = A.fases.carga, fases = A.fases.fases, soma = 0; fases.forEach(function (f) { soma += fc[f]; });
+s.p("Equilíbrio entre as fases (" + D.equilibrio.split(" — ")[0] + "): " + fases.map(function (f) { return "fase " + f + " = " + br(fc[f], 0) + " VA (" + br(soma > 0 ? fc[f] / soma * 100 : 0, 0) + " %)"; }).join("; ") + ".");
+s.p("Circuito de duas fases: o dispositivo de proteção secciona todas as fases (" + D.multipolar.split(" — ")[0] + "). Cores: " + D.cores + " — fases e retorno: critério RA (preto, vermelho, branco; retorno cinza).");
+return s;
+}
+function sDemanda(A) {
+var T = TB(), dm = A.demanda, s = new Sec("demanda", "6. Demanda"), c = contaDemanda(A), div = [];
+s.p("Demanda provável pela CEMIG ND-5.1, " + T.CEMIG.demanda.item + ": " + T.CEMIG.demanda.formula + ". Termos: " + T.CEMIG.demanda.termos + ".");
+s.calc("Conta passo a passo", c.linhas);
+s.tab("Resumo da demanda", ["Termo", "Grupo", "Aparelhos", "Soma", "Fator", "Demanda (kVA)"], c.tab.concat([["D", "demanda provável", "", "", "", br(c.D, 2)]]), ["", "", "", "r", "r", "r"]);
+["a", "b1", "b3", "b4", "b5", "c", "d"].forEach(function (k) { if (Math.abs(c.v[k] - dm[k]) > 0.011) div.push(k + ": " + br(c.v[k], 2) + " × " + br(dm[k], 2)); });
+if (Math.abs(c.D - dm.demanda_kVA) > 0.011) div.push("D: " + br(c.D, 2) + " × " + br(dm.demanda_kVA, 2));
+if (div.length) s.alerta("Divergência entre a conta do memorial e o cálculo do motor (" + div.join("; ") + "): vale o do motor (" + br(dm.demanda_kVA, 2) + " kVA) — conferir antes de assinar.");
+s.p("Resultado do cálculo do projeto: D = " + br(dm.demanda_kVA, 2) + " kVA; carga instalada " + br(dm.cargaInstalada_kW, 2) + " kVA (somada como kW; fator de potência não aplicado). " + (dm.tipo ? "Tipo " + dm.tipo + ": " + dm.motivoTipo + "." : dm.motivoTipo + "."));
+if (dm.entrada) s.p("Faixa " + dm.entrada.faixa + " (" + dm.entrada.tabela + ", pela " + (dm.tipo === "C" ? "demanda provável" : "carga instalada") + "): disjuntor da entrada " + dm.entrada.disjuntor_A + " A, condutor " + sec(dm.entrada.condutor_mm2) + " mm².");
+arr(dm.pendencias).forEach(function (t) { s.alerta(t); });
+return s;
+}
+function sDimensionamento(A) {
+var T = TB(), s = new Sec("dimensionamento", "7. Dimensionamento por circuito"), L1 = [], L2 = [], vistos = {};
+s.p("Método (" + T.COORD.item + " e " + T.n5410("6.2.5") + "): IB = P/V; método de instalação pela " + T.T33.item + "; Iz = Iz(" + T.T36.item + ") × FCT (" + T.T40.item + ") × FCA (" + T.T42.item + "); seção = a maior entre a capacidade de condução, a mínima (" + T.T47.item + ") e a que mantém a queda de tensão (" + T.QUEDA.item + "); disjuntor com IB ≤ In ≤ Iz; PE pela " + T.T58.item + ".");
+A.circuitos.forEach(function (c) {
+var d = c.dim, cap = secaoCapacidade(d.metodo.ref, d.In, d.ft, d.fa), L = fin(c.Lmax) ? c.Lmax : d.L, qS = secaoQueda(L, d.va / d.V, d.V, d.limiteQueda);
+L1.push([c.id, c.nome, br(d.va, 0), d.V + " V " + (c.fases || "?"), br(d.ib, 2), d.metodo.ref + " (nº " + d.metodo.metodo + ", " + d.metodo.apl + ")", br(d.ft, 2), String(d.nAgrup), br(d.fa, 2)]);
+L2.push([c.id, sec(cap), sec(d.secMin), sec(qS), sec(d.secao), sec(d.pe), fin(d.iz) ? br(d.iz, 1) : "-", br(d.izc, 1), d.In + " A " + c.polos + "P", c.drId || "-", br(L, 1) + (d.estimado ? "*" : ""), br(d.dv, 2) + " (≤ " + br(d.limiteQueda, 2) + ")", d.ok ? "atende" : "NÃO ATENDE"]);
+});
+s.tab("7.1 Corrente de projeto, método e fatores", ["Circ.", "Descrição", "VA", "Tensão / fases", "IB (A)", "Método (Tab. 33)", "FCT", "Circ. no eletroduto", "FCA"], L1, ["", "", "r", "", "r", "", "r", "r", "r"]);
+s.tab("7.2 Seção, proteção e queda de tensão", ["Circ.", "S capacidade", "S mínima", "S queda", "S adotada (mm²)", "PE (mm²)", "Iz tab. (A)", "Iz corrigida (A)", "Disjuntor", "DR", "L (m)", "Queda % (limite)", "Situação"], L2, ["", "r", "r", "r", "r", "r", "r", "r", "", "", "r", "r", ""]);
+if (A.circuitos.some(function (c) { return c.dim.estimado; })) s.p("* comprimento ESTIMADO (ponto sem eletroduto traçado até o quadro).");
+s.sub("7.3 Memória de cálculo");
+var ordem = A.circuitos.slice().sort(function (x, y) { return y.dim.ib - x.dim.ib; }), escolhidos = [];
+if (ordem[0]) escolhidos.push([ordem[0], "circuito mais carregado"]);
+["luz", "tug", "tue"].forEach(function (tp) { var c = ordem.filter(function (x) { return x.tipo === tp; })[0]; if (c && !vistos[c.id] && escolhidos.every(function (e) { return e[0].id !== c.id; })) escolhidos.push([c, "circuito de " + (tp === "luz" ? "iluminação" : tp === "tug" ? "tomadas" : "uso específico") + " mais carregado"]); });
+escolhidos.forEach(function (e) { s.calc(e[0].id + " — " + e[0].nome + " (" + e[1] + ")", memoriaCircuito(e[0], A)); });
+s.calc("Alimentador medidor → quadro e disjuntor geral", memoriaAlimentador(A));
+s.sub("7.4 DR, DPS e disjuntor geral");
+s.tab("Dispositivos DR (" + sens(A) + ")", ["DR", "Fases", "Polos", "Circuitos", "Σ IB (A)", "Σ In dos disjuntores (A)", "In do DR (A)"], A.drs.map(function (g) { return [g.id, g.fases, String(g.polos), g.circuitos.join(", "), br(g.somaIb, 2), br(g.somaIn, 0), g.In == null ? "não cabe" : String(g.In)]; }), ["", "", "r", "", "r", "r", "r"]);
+s.p("DR: " + T.DR.item + " — casos: " + ["a", "b", "c", "d"].map(function (k) { return k + ") " + T.DR.casos[k]; }).join("; ") + ". O DR não protege contra sobrecarga: a corrente nominal dele cobre a soma dos disjuntores a jusante, limitada à do geral (" + T.n5410("6.3.6.2.2 a)") + "; critério RA conservador). Grupos de até " + A.criterios.drCircuitosMax.valor + " circuitos.");
+s.p("DPS: " + (A.dps.exigido ? A.dps.regra + "." : "não adotado (" + A.criterios.dpsAQ2.fonte + ")."));
+s.p("Disjuntor geral: " + (A.geral.In ? A.geral.In + " A, " + A.geral.polos + (A.geral.polos === 1 ? " polo" : " polos") : "não verificado") + " (Ig = " + br(A.geral.ib, 2) + " A). Alimentador: " + (A.alimentador.secao ? sec(A.alimentador.secao) + " mm² + PE " + sec(A.alimentador.pe) + " mm², " + br(A.alimentador.comprimento, 1) + " m" + (A.alimentador.provisorio ? " (PROVISÓRIO)" : "") + ", queda " + br(A.alimentador.dv, 2) + " %" : "não verificado") + ".");
+return s;
+}
+function sEletrodutos(A) {
+var T = TB(), s = new Sec("eletrodutos", "8. Eletrodutos"), grupos = {}, ordem = [], porDn = {}, tr = A.grafo && A.grafo.trechos ? A.grafo.trechos : {};
+s.p("DN pelo número de condutores da mesma seção (" + T.OCUPACAO.fonte + "); com seções diferentes no mesmo eletroduto, todos contados como a maior (" + T.OCUPACAO.regra + "). A ficha não traz o diâmetro interno: a taxa de ocupação da " + T.n5410("6.2.11.1.6 a)") + " fica com o fabricante. Caixas e trechos: " + T.ELETRODUTO.texto + ".");
+s.p("Cada ramal do quadro leva no máximo " + A.criterios.circuitosPorEletroduto.valor + " circuito(s) (" + A.criterios.circuitosPorEletroduto.fonte + "); o aparelho de mais de " + A.criterios.pesadoIb.valor + " A vai em eletroduto só dele.");
+Object.keys(A.eletrodutos).forEach(function (t) {
+var e = A.eletrodutos[t], k = [e.circuitos.join(","), e.condutores, e.secaoMaior, e.dnMinimo, e.dn, e.lotado ? 1 : 0].join("|"), g = grupos[k];
+if (!g) { g = grupos[k] = { e: e, n: 0, m: 0, ids: [] }; ordem.push(k); }
+g.n++; g.ids.push(t); g.m += tr[t] ? tr[t].comprimento : 0;
+var dn = e.dn == null ? "?" : String(e.dn); porDn[dn] = (porDn[dn] || 0) + (tr[t] ? tr[t].comprimento : 0);
+});
+s.tab("Eletrodutos agrupados (trechos iguais juntos)", ["Circuitos", "Trechos", "Metros", "Condutores", "Seção maior (mm²)", "DN mínimo (ficha)", "DN no modelo", "Situação"],
+ordem.map(function (k) { var g = grupos[k], e = g.e; return [e.circuitos.join(", "), String(g.n), br(g.m, 2), String(e.condutores), sec(e.secaoMaior), e.dnMinimo == null ? "não cabe em DN 32" : String(e.dnMinimo), e.dn == null ? "-" : String(e.dn), e.lotado ? "LOTADO" : "atende"]; }), ["", "r", "r", "r", "r", "r", "r", ""]);
+s.p("Metros de eletroduto por DN (do modelo): " + Object.keys(porDn).sort(function (a, b) { return a - b; }).map(function (dn) { return "DN " + dn + " = " + br(porDn[dn], 2) + " m"; }).join("; ") + ". Total de trechos: " + Object.keys(A.eletrodutos).length + ".");
+return s;
+}
+function sQuadro(A) {
+var T = TB(), q = A.quadro, mod = A.modulos, nC = A.circuitos.length, s = new Sec("quadro", "9. Quadro de distribuição"), pol = A.circuitos.reduce(function (x, c) { return x + c.polos; }, 0);
+s.p((q && q.regra ? "Posição: " + q.regra + "." : "Posição: a do modelo" + (q && q.ambNome ? " (" + q.ambNome + ")" : "") + ".") + " Local de fácil acesso, identificado (" + T.n5410("6.5.4.8 e 6.5.4.9") + ").");
+s.tab("Espaços (módulos DIN)", ["Item", "Quantidade", "Módulos"], [
+["Disjuntores dos circuitos (Σ polos)", String(nC) + " circuito(s)", String(pol)], ["Dispositivos DR (2 módulos cada)", String(A.drs.length), String(A.drs.length * 2)],
+["DPS", A.dps.exigido ? String(A.dps.quantidade) : "0", String(A.dps.exigido ? A.dps.quantidade : 0)], ["Disjuntor geral", A.geral.polos + " polo(s)", String(A.geral.polos)],
+["Reserva (" + T.T59.item + ")", String(A.reserva), String(A.reserva)], ["TOTAL", "", String(mod)]], ["", "r", "r"]);
+s.p(A.quadroModelo ? "Quadro escolhido: " + A.quadroModelo.espacos + " espaços, " + (A.quadroModelo.material === "pvc" ? "PVC" : "aço") + ", " + A.quadroModelo.instalacao + (A.quadroModelo.corrente ? ", barramento " + A.quadroModelo.corrente : "") + " (SINAPI " + A.quadroModelo.codigo + ")." : "Quadro: nenhum da SINAPI comporta " + mod + " espaços — dividir em dois quadros.");
+return s;
+}
+function sAterramento(A, opc) {
+var C = A.criterios, en = A.demanda.entrada, s = new Sec("aterramento", "10. Aterramento e equipotencialização");
+s.p("Esquema de aterramento considerado no cálculo: " + (opc.esquemaAterramento ? txt(opc.esquemaAterramento) + " (informado pelo usuário)" : "TN-S a partir do quadro (premissa de fábrica do dimensionamento do DPS e do PE, critério RA) — a definir pelo RT com a CEMIG") + ". Tensão fase-neutro de referência " + C.tensaoFN.valor + " V.");
+s.p(en ? "Entrada (" + en.tabela + ", faixa " + en.faixa + "): aterramento em cobre nu " + sec(en.aterramento_mm2) + " mm², " + en.hastes + " haste(s), condutor de proteção " + sec(en.pe_mm2) + " mm². Valores mínimos da CEMIG." : "Entrada: padrão não verificado.");
+s.p("Condutor de proteção (PE) de cada circuito: seção pela " + TB().T58.item + " (seção 7). Todo circuito leva PE e as tomadas e luminárias são ligadas a ele.");
+s.alerta("Esquema de aterramento (NR-10 10.4.4), interligação neutro/PE e equipotencialização principal e suplementar (banheiros): a definir e detalhar pelo RT. Os itens da norma correspondentes não foram transcritos neste sistema.");
+return s;
+}
+function sNr10(A) {
+var T = TB(), s = new Sec("nr10", "11. NR-10 — itens de segurança do memorial (10.4.9 a–f)"), nDR = A.drs.length, q = A.quadro;
+var conteudo = {
+a: "Proteção contra choques: PE em todos os circuitos (" + T.T58.item + "); DR de " + sens(A) + " em " + A.circuitos.filter(function (c) { return c.dr && c.dr.length; }).length + " circuito(s), agrupados em " + nDR + " dispositivo(s) (" + T.DR.item + "); " + (A.dps && A.dps.exigido ? "DPS no quadro" : "sem DPS (não adotado)") + "; quadro com tampa e advertência. Queimaduras: seção e disjuntor coordenados (" + T.COORD.item + ").",
+b: "Identificação: circuitos " + A.circuitos.map(function (c) { return c.id; }).join(", ") + " identificados no quadro e nos pontos (ver quadro de cargas ELE-01); luz, tomadas e aparelhos em circuitos distintos e separados (NR-10 10.4.3.1; " + T.DIVISAO.luzTomadaSeparados.split(" — ")[0] + ").",
+c: "Restrições de acesso: quadro de distribuição" + (q && q.ambNome ? " em " + q.ambNome : "") + ", centro a " + br(q && q.hm, 2) + " m do piso, de fácil acesso; restrição a pessoas qualificadas e sinalização de impedimento de reenergização: a definir pelo RT.",
+d: "Influências externas: temperatura ambiente de referência " + A.criterios.tempAmbiente.valor + " °C; banheiros, cozinha, área de serviço e externa tratados como locais molhados (DR); classificação das influências (água, corpos sólidos, corrosão) do local: a definir pelo RT.",
+e: "Princípio funcional: disjuntor termomagnético (sobrecarga e curto-circuito), DR de " + sens(A) + " (corrente diferencial-residual), DPS classe " + A.dps.classe + " (sobretensão transitória) e disjuntor geral seccionando a instalação.",
+f: "Compatibilidade: IB ≤ In ≤ Iz em todos os circuitos (" + (A.circuitos.every(function (c) { return c.dim.ok; }) ? "atendido" : "NÃO atendido em " + A.circuitos.filter(function (c) { return !c.dim.ok; }).map(function (c) { return c.id; }).join(", ")) + "); DR com In ≥ soma dos disjuntores a jusante, limitada ao geral; DPS com Uc " + A.dps.uc_V + " V e In " + A.dps.in_kA + " kA."
+};
+NR10.forEach(function (n) { s.li("NR-10 " + n[2] + " — " + n[1] + ": " + conteudo[n[0]]); });
+s.p("Demais itens aplicáveis ao projeto (NR-10 2026, vigência 01/06/2027): 10.4.1 dispositivos de desligamento com impedimento de reenergização e sinalização; 10.4.2 seccionamento de ação simultânea; 10.4.4 esquema de aterramento definido; 10.4.8 projeto sob responsabilidade de profissional legalmente habilitado; 10.4.13 projeto atualizado como executado.");
+return s;
+}
+function sMateriais(A, opc, mats) {
+var s = new Sec("materiais", "12. Lista de materiais (resumo)"), P = PL();
+if (!mats || !mats.length) { s.p("Lista de materiais: veja a planilha (.xlsx) deste projeto."); return s; }
+s.tab("Materiais por item", ["Item", "Un.", "Quantidade", "Código SINAPI", "Situação"], mats.map(function (m) { return [m.item, m.unidade, br(m.quantidade, 2), m.codigo || "pendente", m.situacao]; }), ["", "", "r", "", ""]);
+s.p("Quantidades do cálculo (cabo por seção e cor, disjuntores, DR, DPS) e do modelo 3D (eletrodutos, caixas, dispositivos). Detalhe, origem e fonte do preço: planilha .xlsx, aba \"Lista de materiais\". Nada é cobrado duas vezes: o cabo é do projeto de circuitos; o eletroduto, a caixa e o quadro, do modelo.");
+void P; return s;
+}
+function sPendencias(pend) {
+var s = new Sec("pendencias", "13. Pendências e itens sem fonte");
+if (!pend.length) { s.p("Nenhuma pendência registrada."); return s; }
+s.p("Vermelho = sem fonte lida ou a decidir pelo RT; amarelo = aviso ou critério RA a validar. O memorial não diz \"atende\" enquanto houver item vermelho.");
+pend.forEach(function (p) { s.blocos.push({ t: p.nivel === "vermelho" ? "alerta" : "li", x: (p.nivel === "vermelho" ? "[VERMELHO] " : "[AMARELO] ") + p.texto }); });
+return s;
+}
+function situacao(pend) {
+var v = pend.filter(function (p) { return p.nivel === "vermelho"; }).length, a = pend.length - v;
+return { vermelhos: v, amarelos: a, ok: v === 0, texto: v ? "EMITIDO COM " + v + " ITEM(NS) EM VERMELHO — não atende para assinatura até o RT resolver as pendências da seção 13" : "Sem item em vermelho; conferir os " + a + " aviso(s) da seção 13" };
+}
+function sTermo(A, opc, pend) {
+var s = new Sec("termo", "14. Termo do responsável técnico"), sit = situacao(pend), rt = txt(opc.responsavel), reg = txt(opc.registro), emp = opc.empresa, nomeEmp = emp && typeof emp === "object" ? txt(emp.nome) : txt(emp);
+s.p("O responsável técnico declara que o cálculo acima segue os métodos e as fontes indicados, com a ressalva da NBR 5410:2004 em cópia não licenciada e sem a Errata 1/2008 (seção 2). Situação nesta emissão: " + sit.texto + ".");
+s.blocos.push({ t: "assin", rt: rt || "[NOME DO RESPONSÁVEL TÉCNICO]", titulo: txt(opc.tituloProfissional) || "[TÍTULO]", reg: reg || "[Nº DO REGISTRO NO CREA/CAU]", empresa: nomeEmp || "RA Engenharia", contratante: txt(opc.contratante || opc.proprietario) || "[NOME DO CONTRATANTE]", local: txt(opc.local) || "[LOCAL]", data: txt(opc.data) || hoje() });
+return s;
+}
+var CSS = "body{font:10.5pt/1.5 'Segoe UI',Helvetica,Arial,sans-serif;max-width:980px;margin:24px auto;padding:0 18px;color:#1d2733}" +
+"h1{font-size:19pt;margin:0 0 4px;color:#0F2740}h2{font-size:13.5pt;margin:26px 0 8px;color:#0F2740;border-bottom:2px solid #A89868;padding-bottom:3px}h3{font-size:11pt;margin:14px 0 4px;color:#0F2740}" +
+"table{border-collapse:collapse;width:100%;margin:8px 0 12px;font-size:9pt}th{background:#0F2740;color:#fff;padding:4px 6px;text-align:left}td{border:1px solid #cbd5e1;padding:3px 6px;vertical-align:top}" +
+"td.r,th.r{text-align:right}tr:nth-child(even) td{background:#f4f6f9}.cap{font-size:9.5pt;color:#475569;margin:10px 0 0;font-weight:600}" +
+"pre.calc{background:#f4f6f9;border-left:3px solid #A89868;padding:8px 10px;font:9pt/1.4 Consolas,'Courier New',monospace;white-space:pre-wrap;margin:4px 0 12px}" +
+".alerta{background:#fbefed;border-left:4px solid #a3352b;color:#7a1f18;padding:7px 10px;border-radius:4px;margin:8px 0}.aviso{background:#fff3cd;padding:8px 10px;border-radius:4px}" +
+"li.v{color:#7a1f18}.sit{font-weight:700}.assin{display:flex;gap:40px;margin-top:40px}.assin div{flex:1;border-top:1px solid #1d2733;padding-top:4px;font-size:9.5pt}" +
+".capa{border-bottom:3px solid #0F2740;padding-bottom:10px;margin-bottom:10px}nav ol{columns:2;font-size:9.5pt}@media print{h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}body{margin:0 auto}}";
+function htmlBloco(b) {
+if (b.t === "p") return "<p>" + esc(b.x) + "</p>";
+if (b.t === "li") return "<ul><li>" + esc(b.x) + "</li></ul>";
+if (b.t === "alerta") return "<div class=\"alerta\">" + esc(b.x) + "</div>";
+if (b.t === "sub") return "<h3>" + esc(b.x) + "</h3>";
+if (b.t === "tab") return "<div class=\"cap\">" + esc(b.titulo) + "</div><table><thead><tr>" + b.cab.map(function (h, i) { return "<th" + (b.alin[i] === "r" ? " class=\"r\"" : "") + ">" + esc(h) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+b.linhas.map(function (l) { return "<tr>" + l.map(function (c, i) { return "<td" + (b.alin[i] === "r" ? " class=\"r\"" : "") + ">" + esc(c) + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>";
+if (b.t === "calc") return "<div class=\"cap\">" + esc(b.titulo) + "</div><pre class=\"calc\">" + esc(b.linhas.join("\n")) + "</pre>";
+if (b.t === "assin") return "<div class=\"assin\"><div><b>" + esc(b.rt) + "</b><br>" + esc(b.titulo) + " — " + esc(b.reg) + "<br>" + esc(b.empresa) + "</div><div><b>" + esc(b.contratante) + "</b><br>Contratante</div></div><p>" + esc(b.local) + ", " + esc(b.data) + ".</p>";
+return "";
+}
+function textoBloco(b) {
+if (b.t === "p" || b.t === "alerta") return b.x;
+if (b.t === "li") return "- " + b.x;
+if (b.t === "sub") return "\n" + b.x;
+if (b.t === "tab") return b.titulo + "\n" + b.cab.join(" | ") + "\n" + b.linhas.map(function (l) { return l.join(" | "); }).join("\n");
+if (b.t === "calc") return b.titulo + "\n" + b.linhas.join("\n");
+if (b.t === "assin") return b.rt + " — " + b.titulo + " — " + b.reg + " — " + b.empresa + "\nContratante: " + b.contratante + "\n" + b.local + ", " + b.data + ".";
+return "";
+}
+function gerar(A, opc) {
+opc = opc || {};
+var T = TB(), titulo0 = "Memorial descritivo e de cálculo — instalações elétricas";
+if (!A || !A.ok || !arr(A.circuitos).length) return { ok: false, motivo: A && A.motivo ? A.motivo : "Sem circuitos analisados: rode \"Circuitos e quadro\" antes do memorial.", titulo: titulo0, secoes: [], html: "", texto: "", pendencias: [], indefinidos: 0 };
+var P = PL(), mats = opc.materiais || null;
+if (!mats && P && P.materiais) { try { mats = P.materiais(A, opc); } catch (e) { mats = null; } }
+var o2 = {}; Object.keys(opc).forEach(function (k) { o2[k] = opc[k]; }); o2.materiais = mats || [];
+var pend = pendencias(A, o2), sit = situacao(pend), data = txt(opc.data) || hoje();
+var secs = [sIdent(A, o2, pend), sNormas(A), sFornecimento(A), sCargas(A, o2), sDivisao(A), sDemanda(A), sDimensionamento(A), sEletrodutos(A), sQuadro(A), sAterramento(A, o2), sNr10(A), sMateriais(A, o2, mats), sPendencias(pend), sTermo(A, o2, pend)];
+var titulo = titulo0 + (opc.obra ? " — " + txt(opc.obra) : "");
+var indef = 0;
+function limpa(s) { s = txt(s); if (RE_INDEF.test(s)) { indef++; return s.replace(/\b(undefined|NaN|null|Infinity)\b/g, "[valor indefinido]"); } return s; }
+secs.forEach(function (s) {
+s.blocos.forEach(function (b) {
+if (b.x != null) b.x = limpa(b.x);
+if (b.titulo != null) b.titulo = limpa(b.titulo);
+if (b.linhas) b.linhas = b.linhas.map(function (l) { return Array.isArray(l) ? l.map(limpa) : limpa(l); });
+if (b.cab) b.cab = b.cab.map(limpa);
+});
+s.itens = itensDe(s);
+});
+var cap = "<div class=\"capa\">" + (opc.logo ? "<img src=\"" + esc(opc.logo) + "\" alt=\"\" style=\"max-height:56px;float:right\">" : "") + "<h1>" + esc(titulo) + "</h1><div>" + esc((txt(opc.numero) ? opc.numero + " " : "") + (txt(opc.revisao) || "R00") + " — " + data) + "</div>" +
+"<p class=\"sit\" style=\"color:" + (sit.ok ? "#1b6e3c" : "#a3352b") + "\">" + esc(sit.texto) + "</p></div>";
+var nav = "<nav><ol>" + secs.map(function (s) { return "<li><a href=\"#s-" + s.id + "\">" + esc(s.titulo.replace(/^\d+\.\s*/, "")) + "</a></li>"; }).join("") + "</ol></nav>";
+var corpo = secs.map(function (s) { return "<h2 id=\"s-" + s.id + "\">" + esc(s.titulo) + "</h2>" + s.blocos.map(htmlBloco).join(""); }).join("");
+var html = "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>" + esc(titulo) + "</title><style>" + CSS + "</style></head><body>" + cap +
+"<p class=\"aviso\">" + esc(T.NORMA.ressalva) + "</p>" + nav + corpo + "</body></html>";
+var texto = titulo + "\n" + (txt(opc.numero) ? opc.numero + " " : "") + (txt(opc.revisao) || "R00") + " — " + data + "\n" + sit.texto + "\n\n" + secs.map(function (s) { return s.titulo + "\n" + s.blocos.map(textoBloco).join("\n"); }).join("\n\n");
+return { ok: true, titulo: titulo, secoes: secs.map(function (s) { return { id: s.id, titulo: s.titulo, itens: s.itens, blocos: s.blocos }; }), html: html, texto: texto, pendencias: pend, situacao: sit, indefinidos: indef, materiais: mats || [] };
+}
+var EleMemorial = { VERSAO: 1, gerar: gerar, pendencias: pendencias, referencias: referencias, memoriaCircuito: memoriaCircuito, memoriaAlimentador: memoriaAlimentador, contaDemanda: contaDemanda,
+quedaTerminal: quedaTerminal, secaoCapacidade: secaoCapacidade, secaoQueda: secaoQueda, situacao: situacao };
+global.EleMemorial = EleMemorial;
+if (typeof module !== "undefined" && module.exports) module.exports = EleMemorial;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eleplanilhas.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function TB() { return dep("EleTabelas", "./eletabelas.js"); }
+function EC() { return dep("EleCircuitos", "./elecircuitos.js"); }
+function EM() { return dep("EleMemorial", "./elememorial.js"); }
+function xl() {
+if (global.ExcelJS) return global.ExcelJS;
+if (typeof require === "function") {
+try { return require("exceljs"); } catch (e) {}
+try { return require("C:/Users/USER/RA-Gestao-Obras/node_modules/exceljs"); } catch (e2) {}
+}
+return null;
+}
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { var s = v == null ? "" : String(v); return /\b(undefined|NaN|null|Infinity)\b/.test(s) ? s.replace(/\b(undefined|NaN|null|Infinity)\b/g, "[valor indefinido]") : s; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function sec(S) { return fin(S) ? S : "-"; }
+function letra(n) { var s = ""; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function r2(v) { return Math.round(v * 100) / 100; }
+var NUM = "#,##0.00", NUM3 = "#,##0.000", INT = "#,##0";
+var navy = "FF0F2740", branco = "FFFFFFFF", cinza = "FFEFF3F8", areia = "FFA89868", vermelhoBg = "FFFBEFED", alertaBg = "FFFBF6EA", vermelho = "FFA3352B", amareloBg = "FFFFF7CC";
+function thin() { var s = { style: "thin", color: { argb: "FFCBD5E1" } }; return { top: s, left: s, bottom: s, right: s }; }
+function preenche(c, argb) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb } }; }
+function cab(row) {
+row.eachCell(function (c) {
+c.font = { bold: true, color: { argb: branco }, size: 10 }; preenche(c, navy);
+c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = thin();
+});
+row.height = 34;
+}
+function larguras(ws, ls) { ls.forEach(function (w, i) { ws.getColumn(i + 1).width = w; }); }
+function cabecalho(ws, titulo, ate, opc) {
+var T = TB();
+ws.mergeCells(1, 1, 1, ate); var c1 = ws.getCell(1, 1); c1.value = "RA ENGENHARIA — " + titulo; c1.font = { bold: true, size: 14, color: { argb: branco } }; preenche(c1, navy); c1.alignment = { vertical: "middle" }; ws.getRow(1).height = 26;
+ws.mergeCells(2, 1, 2, ate); var c2 = ws.getCell(2, 1);
+c2.value = txt([opc.obra || "[OBRA]", (opc.numero || "[Nº DO DOCUMENTO]") + " " + (opc.revisao || "R00"), opc.data || "", opc.responsavel ? "RT: " + opc.responsavel + (opc.registro ? " — " + opc.registro : "") : "RT: [RESPONSÁVEL TÉCNICO]"].filter(Boolean).join(" · "));
+c2.font = { bold: true, color: { argb: navy } }; preenche(c2, cinza);
+ws.mergeCells(3, 1, 3, ate); var c3 = ws.getCell(3, 1); c3.value = txt(T.NORMA.ressalva); c3.font = { italic: true, size: 9, color: { argb: "FF64748B" } }; c3.alignment = { wrapText: true, vertical: "top" }; ws.getRow(3).height = 40;
+return 5;
+}
+function corpo(row, n, fundo) { for (var i = 1; i <= n; i++) { var c = row.getCell(i); c.border = thin(); if (fundo) preenche(c, fundo); } }
+function titSub(ws, linha, ate, texto) { ws.mergeCells(linha, 1, linha, ate); var c = ws.getCell(linha, 1); c.value = texto; c.font = { bold: true, size: 11, color: { argb: navy } }; ws.getRow(linha).height = 20; }
+function formula(ctx, row, col, f, result, fmt) {
+var c = row.getCell(col);
+if (typeof result === "string") { c.value = { formula: f, result: result }; ctx.formulas++; return c; }
+if (fin(result)) { c.value = { formula: f, result: result }; c.numFmt = fmt || NUM; c.alignment = { horizontal: "right" }; ctx.formulas++; return c; }
+c.value = "não verificado"; c.font = { italic: true, color: { argb: "FF6B5D45" } }; return c;
+}
+function valor(row, col, v, fmt) {
+var c = row.getCell(col);
+if (fin(v)) { c.value = v; c.numFmt = fmt || NUM; c.alignment = { horizontal: "right" }; }
+else { c.value = typeof v === "string" ? txt(v) : "-"; }
+return c;
+}
+function situ(l) { return l.codigo && !l.provisorio && !/provis[óo]rio/i.test(txt(l.observacao)) ? "ok" : (l.codigo ? "provisório" : "pendente"); }
+function materiais(A, opc) {
+opc = opc || {}; var out = [], T = TB(), ECm = EC();
+var fontePrecoBase = T ? T.FONTES.SINAPI : "SINAPI";
+function add(item, un, q, cod, sit, origem, obs, motivo) {
+var pr = typeof opc.preco === "function" && cod ? opc.preco(cod) : null;
+out.push({ item: txt(item), unidade: un, quantidade: fin(q) ? Math.round(q * 10000) / 10000 : 0, codigo: cod || "", situacao: sit, origem: origem,
+preco: pr && fin(pr.valor) ? pr.valor : null, fontePreco: pr && pr.fonte ? txt(pr.fonte) : (cod ? fontePrecoBase + " — composição " + cod + " (preço no Orçamento do modelo)" : "sem composição: sem preço"), observacao: txt(obs || ""), motivo: txt(motivo || "") });
+}
+var serv = opc.servicos;
+if (!serv && opc.estado && ECm && ECm.servicosOrc) { try { serv = ECm.servicosOrc(opc.estado, opc.avaliarFam, { criterios: opc.criterios }); } catch (e) { serv = null; } }
+var temServ = !!(serv && serv.length);
+if (temServ) serv.forEach(function (l) { add(l.rotulo, l.unidade === "un" ? "un" : l.unidade, l.quantidade, l.codigo, situ(l), "projeto de circuitos (EleCircuitos.servicosOrc)", l.observacao, l.motivo); });
+else if (A && A.ok && ECm && T) {
+var porS = {}; ECm.cabos(A).forEach(function (c) { porS[c.secao] = (porS[c.secao] || 0) + c.metros; });
+Object.keys(porS).sort(function (a, b) { return a - b; }).forEach(function (S) { var cod = T.SINAPI.cabo[S] || T.CABO_MAIOR[S] || ""; add("Cabo de cobre flexível " + String(S).replace(".", ",") + " mm²", "m", porS[S], cod, cod ? (T.SINAPI.cabo[S] ? "ok" : "provisório") : "pendente", "projeto de circuitos (resumo do cálculo)", "", cod ? "" : "cabo sem composição SINAPI"); });
+var pd = {}; A.circuitos.forEach(function (c) { var k = c.polos + "|" + c.dim.In; pd[k] = (pd[k] || 0) + 1; });
+if (A.geral.In) { var kg = A.geral.polos + "|" + A.geral.In; pd[kg] = (pd[kg] || 0) + 1; }
+Object.keys(pd).forEach(function (k) { var p = +k.split("|")[0], In = +k.split("|")[1], dc = T.disjuntorCodigo(p, In); add("Disjuntor " + p + "P " + In + " A", "un", pd[k], dc ? dc.codigo : "", dc ? (dc.provisorio ? "provisório" : "ok") : "pendente", "projeto de circuitos (resumo do cálculo)", dc && dc.provisorio ? dc.motivo : "", dc ? "" : "disjuntor sem composição SINAPI"); });
+var pr = {}; A.drs.forEach(function (g) { var k = g.polos + "|" + g.In; pr[k] = (pr[k] || 0) + 1; });
+Object.keys(pr).forEach(function (k) { var p = +k.split("|")[0], In = +k.split("|")[1], cod = (T.SINAPI.dr[p] || {})[In] || ""; add("Dispositivo DR " + p + "P " + In + " A, 30 mA", "un", pr[k], cod, cod ? "ok" : "pendente", "projeto de circuitos (resumo do cálculo)", "", cod ? "" : "DR sem composição SINAPI nesta corrente"); });
+if (A.dps && A.dps.exigido) add("DPS classe II 20 kA 175 V", "un", A.dps.quantidade, T.SINAPI.dps, "ok", "projeto de circuitos (resumo do cálculo)", "", "");
+}
+var qto = opc.qto;
+if (!qto && opc.estado) { var BI = dep("BimInst", "./biminst.js"); if (BI && BI.qto) { try { qto = BI.qto(opc.estado, opc.avaliarFam); } catch (e3) { qto = null; } } }
+function linhaQto(g, un) {
+var s = g.sinapi || {}, cod = s.codigo || "", sit = cod && s.status === "ok" ? "ok" : "pendente";
+add(s.rotulo || g.rotulo || g.nome || g.peca, un, g.quantidade != null ? g.quantidade : g.n, cod, sit, "modelo 3D (BimInst.qto)", g.mercado ? "referência de mercado disponível" : "", cod ? "" : (s.motivo || s.descricao || "sem composição SINAPI"));
+}
+var temQuadroQto = false;
+if (qto) {
+arr(qto.tubos).filter(function (g) { return g.sistema === "eletrica"; }).forEach(function (g) { linhaQto(g, "m"); });
+arr(qto.pecas).filter(function (g) { return g.sistema === "eletrica"; }).forEach(function (g) { linhaQto(g, "un"); });
+arr(qto.dispositivos).forEach(function (g) { if (g.peca === "quadro") temQuadroQto = true; linhaQto(g, "un"); });
+if (!qto.caboDoProjeto) arr(qto.cabos).forEach(function (g) { linhaQto(g, "m"); });
+}
+if (!temQuadroQto && A && A.ok && A.quadroModelo) add("Quadro de distribuição " + (A.quadroModelo.material === "pvc" ? "PVC" : "aço") + " de " + A.quadroModelo.instalacao + ", " + A.quadroModelo.espacos + " espaços", "un", 1, A.quadroModelo.codigo, "ok", "projeto de circuitos (quadro escolhido)", "o modelo 3D não trouxe o quadro: entra pelo projeto", "");
+if (!qto) add("Eletrodutos, caixas, tomadas, interruptores e luminárias", "vb", 0, "", "pendente", "modelo 3D (BimInst.qto)", "", "quantitativo do modelo não informado: gere com o editor 3D aberto");
+return out;
+}
+function abaCargas(wb, A, opc, ctx) {
+var ws = wb.addWorksheet("Quadro de cargas"), N = 17, T = TB();
+larguras(ws, [7, 38, 11, 8, 9, 8, 13, 10, 12, 12, 12, 11, 7, 11, 11, 10, 14]);
+var l = cabecalho(ws, "Quadro de cargas", N, opc);
+var h = ws.getRow(l++);
+["Circ.", "Descrição", "Tipo", "Pontos", "Tensão (V)", "Fases", "Potência (VA)", "IB (A)", "Fase A (VA)", "Fase B (VA)", "Fase C (VA)", "Disjuntor (A)", "Polos", "DR 30 mA", "Seção (mm²)", "PE (mm²)", "Situação"].forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+var p0 = l;
+A.circuitos.forEach(function (c) {
+var d = c.dim, row = ws.getRow(l), pontos = c.pontos.filter(function (id) { return A.existe[id] && A.existe[id].kind !== "interruptor"; }).length;
+row.getCell(1).value = c.id; row.getCell(2).value = txt(c.nome); row.getCell(3).value = c.tipo === "luz" ? "Iluminação" : (c.tipo === "tug" ? "Tomadas (TUG)" : "Uso específico (TUE)");
+valor(row, 4, pontos, INT); valor(row, 5, d.V, INT); row.getCell(6).value = c.fases || "?";
+valor(row, 7, d.va, NUM);
+if (Math.abs(d.va / d.V - d.ib) < 0.006) formula(ctx, row, 8, "G" + l + "/E" + l, d.va / d.V, NUM); else valor(row, 8, d.ib, NUM);
+var fs = (c.fases || "").split(""), cols = { A: 9, B: 10, C: 11 };
+["A", "B", "C"].forEach(function (f) {
+var i = fs.indexOf(f), cc = row.getCell(cols[f]);
+if (i < 0) { cc.value = 0; cc.numFmt = NUM; return; }
+if (fs.length === 1) formula(ctx, row, cols[f], "G" + l, d.va, NUM); else formula(ctx, row, cols[f], "G" + l + "/" + fs.length, d.va / fs.length, NUM);
+});
+valor(row, 12, d.In, INT); valor(row, 13, c.polos, INT); row.getCell(14).value = c.drId || "-"; valor(row, 15, d.secao, "0.0"); valor(row, 16, d.pe, "0.0"); row.getCell(17).value = d.ok ? "atende" : "NÃO ATENDE";
+corpo(row, N, d.ok ? null : vermelhoBg); l++;
+});
+var p1 = l - 1, tr = ws.getRow(l++);
+tr.getCell(2).value = "TOTAL"; tr.font = { bold: true };
+var soma = { 4: 0, 7: 0, 9: 0, 10: 0, 11: 0 };
+A.circuitos.forEach(function (c) { var fs = (c.fases || "").split(""); soma[7] += c.dim.va; soma[4] += c.pontos.filter(function (id) { return A.existe[id] && A.existe[id].kind !== "interruptor"; }).length; fs.forEach(function (f) { soma[{ A: 9, B: 10, C: 11 }[f]] += c.dim.va / fs.length; }); });
+[4, 7, 9, 10, 11].forEach(function (col) { var L = letra(col); formula(ctx, tr, col, "SUM(" + L + p0 + ":" + L + p1 + ")", soma[col], col === 4 ? INT : NUM); });
+corpo(tr, N, cinza); ctx.cargas = { primeira: p0, ultima: p1, total: l - 1 };
+l++;
+titSub(ws, l++, N, "Resumo do quadro");
+var dm = A.demanda;
+[["Carga instalada (kW)", dm.cargaInstalada_kW, NUM], ["Demanda provável (kVA) — CEMIG ND-5.1", dm.demanda_kVA, NUM], ["Tipo de fornecimento / faixa", (dm.tipo || "?") + (dm.entrada ? " / " + dm.entrada.faixa : ""), null],
+["Disjuntor geral (A) / polos", A.geral.In ? A.geral.In + " A / " + A.geral.polos + "P" : "não verificado", null], ["Alimentador (mm²) / comprimento (m)", A.alimentador.secao ? A.alimentador.secao + " mm² + PE " + A.alimentador.pe + " mm² / " + A.alimentador.comprimento + " m" + (A.alimentador.provisorio ? " (PROVISÓRIO)" : "") : "não verificado", null],
+["DR (30 mA)", A.drs.map(function (g) { return g.id + " " + g.In + " A (" + g.circuitos.join("+") + ")"; }).join("; "), null], ["DPS", A.dps.exigido ? A.dps.quantidade + " × classe " + A.dps.classe + " " + A.dps.in_kA + " kA " + A.dps.uc_V + " V" : "não adotado", null],
+["Quadro", A.quadroModelo ? A.quadroModelo.espacos + " espaços (" + A.modulos + " módulos com reserva de " + A.reserva + ")" : "não verificado", null]].forEach(function (r) {
+var row = ws.getRow(l++); row.getCell(1).value = r[0]; ws.mergeCells(row.number, 1, row.number, 3); row.getCell(1).font = { bold: true };
+var c = row.getCell(4); ws.mergeCells(row.number, 4, row.number, 9); if (r[2]) { c.value = r[1]; c.numFmt = r[2]; c.alignment = { horizontal: "left" }; } else c.value = txt(r[1]);
+for (var i = 1; i <= 9; i++) row.getCell(i).border = thin();
+});
+ws.views = [{ state: "frozen", ySplit: p0 - 1 }]; void T;
+return ws;
+}
+function abaCircuitos(wb, A, opc, ctx) {
+var ws = wb.addWorksheet("Circuitos"), T = TB(), M = EM(), N = 23;
+larguras(ws, [7, 34, 9, 9, 18, 11, 9, 7, 10, 7, 11, 10, 10, 11, 8, 10, 12, 9, 7, 11, 10, 14, 14]);
+var l = cabecalho(ws, "Dimensionamento dos circuitos (NBR 5410:2004, cópia não licenciada)", N, opc);
+var cols = ["Circ.", "Descrição", "Tensão (V)", "IB (A)", "Método (Tab. 33)", "R70 (Ω/km)", "L (m)", "FCT", "Circ. no eletroduto", "FCA", "S capacidade (mm²)", "S mínima (mm²)", "S queda (mm²)", "S adotada (mm²)", "PE (mm²)", "Iz tabela (A)", "Iz corrigida (A)", "In (A)", "Polos", "Queda (%)", "Limite (%)", "IB ≤ In ≤ Iz", "Situação"];
+var h = ws.getRow(l++); cols.forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+var lim = [];
+A.circuitos.forEach(function (c) {
+var d = c.dim, row = ws.getRow(l), L = fin(c.Lmax) ? c.Lmax : d.L, ibx = d.va / d.V, r70 = T.r70(d.secao), cap = M.secaoCapacidade(d.metodo.ref, d.In, d.ft, d.fa), qS = M.secaoQueda(L, ibx, d.V, d.limiteQueda);
+row.getCell(1).value = c.id; row.getCell(2).value = txt(c.nome); valor(row, 3, d.V, INT);
+if (Math.abs(ibx - d.ib) < 0.006) formula(ctx, row, 4, "'Quadro de cargas'!G" + (ctx.cargas.primeira + lim.length) + "/C" + l, ibx, NUM); else valor(row, 4, d.ib, NUM);
+row.getCell(5).value = d.metodo.ref + " (nº " + d.metodo.metodo + ", " + d.metodo.apl + ")";
+valor(row, 6, r70, NUM3); valor(row, 7, L, NUM); valor(row, 8, d.ft, NUM); valor(row, 9, d.nAgrup, INT); valor(row, 10, d.fa, NUM);
+valor(row, 11, sec(cap), "0.0"); valor(row, 12, d.secMin, "0.0"); valor(row, 13, sec(qS), "0.0"); valor(row, 14, d.secao, "0.0"); valor(row, 15, d.pe, "0.0"); valor(row, 16, d.iz, NUM);
+var izc = fin(d.iz) ? d.iz * d.ft * d.fa : null;
+if (izc != null && fin(d.izc) && Math.abs(izc - d.izc) < 0.06) formula(ctx, row, 17, "P" + l + "*H" + l + "*J" + l, izc, NUM); else valor(row, 17, d.izc, NUM);
+valor(row, 18, d.In, INT); valor(row, 19, c.polos, INT);
+var q = M.quedaTerminal(d.secao, L, ibx, d.V);
+if (q != null && fin(d.dv) && Math.abs(q - d.dv) < 0.006) formula(ctx, row, 20, "200*F" + l + "/1000*G" + l + "*D" + l + "/C" + l, q, NUM); else valor(row, 20, d.dv, NUM);
+valor(row, 21, d.limiteQueda, NUM);
+var ok = ibx <= d.In + 1e-9 && izc != null && d.In <= izc + 1e-9;
+formula(ctx, row, 22, 'IF(AND(D' + l + '<=R' + l + ',R' + l + '<=Q' + l + '),"atende","NÃO ATENDE")', ok ? "atende" : "NÃO ATENDE");
+row.getCell(23).value = d.ok ? "atende" : "NÃO ATENDE" + (d.estimado ? " (comprimento estimado)" : "");
+if (d.estimado && d.ok) row.getCell(23).value = "atende (comprimento ESTIMADO)";
+corpo(row, N, d.ok ? (d.estimado ? alertaBg : null) : vermelhoBg); lim.push(c.id); l++;
+});
+l++;
+ws.mergeCells(l, 1, l, N);
+var nota = ws.getCell(l, 1);
+nota.value = "Fórmulas: IB = P/V · Iz corrigida = Iz(" + T.T36.item + ") × FCT (" + T.T40.item + ") × FCA (" + T.T42.item + ") · queda % = 200 × R70 × L × IB / V (" + T.QUEDA.item + "). Seção adotada = maior entre capacidade, mínima (" + T.T47.item + ") e queda; PE pela " + T.T58.item + "; coordenação " + T.COORD.item + ". " + T.COORD.i2.fonte + ".";
+nota.font = { italic: true, size: 9, color: { argb: "FF64748B" } }; nota.alignment = { wrapText: true, vertical: "top" }; ws.getRow(l).height = 44;
+l += 2;
+titSub(ws, l++, N, "Alimentador e disjuntor geral");
+var al = A.alimentador, g = A.geral;
+[["Corrente de demanda da fase mais carregada (A)", g.ib, NUM], ["Disjuntor geral (A)", g.In, INT], ["Polos", g.polos, INT], ["Seção do alimentador (mm²)", al.secao, "0.0"], ["PE do alimentador (mm²)", al.pe, "0.0"], ["Comprimento (m)" + (al.provisorio ? " — PROVISÓRIO (critério RA)" : ""), al.comprimento, NUM], ["Queda de tensão no alimentador (%)", al.dv, NUM]].forEach(function (r) {
+var row = ws.getRow(l++); row.getCell(1).value = r[0]; ws.mergeCells(row.number, 1, row.number, 5); row.getCell(1).font = { bold: true }; valor(row, 6, r[1], r[2]); for (var i = 1; i <= 6; i++) row.getCell(i).border = thin();
+});
+ws.views = [{ state: "frozen", xSplit: 2, ySplit: 5 }];
+return ws;
+}
+function abaDemanda(wb, A, opc, ctx) {
+var ws = wb.addWorksheet("Demanda"), T = TB(), M = EM(), N = 8, C = A.criterios, c = M.contaDemanda(A), fp = C.fpNaoAquecimento.valor;
+larguras(ws, [8, 44, 14, 16, 12, 12, 16, 40]);
+var l = cabecalho(ws, "Demanda provável — CEMIG ND-5.1 " + T.CEMIG.demanda.item, N, opc);
+var h = ws.getRow(l++); ["Termo", "Grupo", "Aparelhos / pontos", "Potência somada", "Divisor", "Fator", "Demanda (kVA)", "Fonte do fator"].forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+var p0 = l, dm = A.demanda, gdesc = { b1: "chuveiros, torneiras e cafeteiras", b3: "fornos, fogões e grill", b4: "lavar/secar roupa, lava-louças e ferro", b5: "demais aparelhos", c: "condicionadores de ar", d: "motores" };
+var fonteFator = { a: T.CEMIG.tabela10.item, b1: T.CEMIG.tabela13.item, b3: T.CEMIG.tabela12.item, b4: T.CEMIG.tabela13.item, b5: T.CEMIG.tabela13.item, c: T.CEMIG.tabela13.item, d: "Tabelas 14 e 15 não transcritas: 100 % (conservador)" };
+c.tab.forEach(function (r) {
+var k = r[0], row = ws.getRow(l), div = (k === "b1" || k === "c" || k === "b3") ? 1 : fp;
+row.getCell(1).value = k; row.getCell(2).value = k === "a" ? "iluminação e tomadas" : gdesc[k]; row.getCell(3).value = r[2];
+var val = c.v[k], somaNum, fator;
+if (k === "a") { somaNum = c.ciA; fator = TB().fdTabela10(c.ciA); }
+else { var L = c.grupos[k]; somaNum = k === "c" ? L.reduce(function (s, p) { return s + p.va / 1000; }, 0) : L.reduce(function (s, p) { return s + p.w / 1000; }, 0); fator = somaNum > 0 ? val * div / somaNum : 0; }
+valor(row, 4, somaNum, NUM); valor(row, 5, div, NUM); valor(row, 6, fator, "0.000");
+formula(ctx, row, 7, "D" + l + "*F" + l + "/E" + l, somaNum * fator / div, NUM); row.getCell(8).value = txt(fonteFator[k]);
+corpo(row, N); l++;
+});
+var p1 = l - 1, tr = ws.getRow(l++); tr.getCell(1).value = "D"; tr.getCell(2).value = "DEMANDA PROVÁVEL"; formula(ctx, tr, 7, "SUM(G" + p0 + ":G" + p1 + ")", c.D, NUM); tr.font = { bold: true }; corpo(tr, N, cinza);
+ctx.demanda = { primeira: p0, ultima: p1, total: l - 1, D: c.D };
+l++;
+titSub(ws, l++, N, "Fornecimento e padrão de entrada");
+var en = dm.entrada, linhas = [["Carga instalada (kW)", dm.cargaInstalada_kW, NUM], ["Demanda provável do motor (kVA)", dm.demanda_kVA, NUM], ["Tipo de fornecimento", dm.tipo || "não verificado", null], ["Motivo", dm.motivoTipo, null]];
+if (en) linhas = linhas.concat([["Faixa", en.faixa + " (" + en.tabela + ")", null], ["Disjuntor da entrada (A)", en.disjuntor_A, INT], ["Condutor (mm²)", en.condutor_mm2, "0.0"], ["Eletroduto PVC (mm)", en.eletrodutoPVC_mm, INT], ["Aterramento Cu nu (mm²)", en.aterramento_mm2, "0.0"], ["Hastes", en.hastes, INT], ["Condutor de proteção (mm²)", en.pe_mm2, "0.0"]]);
+linhas.forEach(function (r) { var row = ws.getRow(l++); row.getCell(1).value = r[0]; ws.mergeCells(row.number, 1, row.number, 3); row.getCell(1).font = { bold: true }; var cc = row.getCell(4); ws.mergeCells(row.number, 4, row.number, 8); if (r[2]) { cc.value = r[1]; cc.numFmt = r[2]; cc.alignment = { horizontal: "left" }; } else cc.value = txt(r[1]); for (var i = 1; i <= 8; i++) row.getCell(i).border = thin(); });
+return ws;
+}
+function abaEletrodutos(wb, A, opc, ctx) {
+var ws = wb.addWorksheet("Eletrodutos e fiação"), T = TB(), N = 8, ECm = EC();
+larguras(ws, [26, 12, 12, 12, 16, 16, 14, 18]);
+var l = cabecalho(ws, "Eletrodutos e fiação", N, opc);
+titSub(ws, l++, N, "Eletrodutos (trechos iguais agrupados) — DN pelo número de condutores: " + T.OCUPACAO.fonte);
+var h = ws.getRow(l++); ["Circuitos", "Trechos", "Metros", "Condutores", "Seção maior (mm²)", "DN mínimo (ficha)", "DN no modelo", "Situação"].forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+var tr = A.grafo && A.grafo.trechos ? A.grafo.trechos : {}, grupos = {}, ordem = [];
+Object.keys(A.eletrodutos).forEach(function (t) { var e = A.eletrodutos[t], k = [e.circuitos.join(","), e.condutores, e.secaoMaior, e.dnMinimo, e.dn, e.lotado ? 1 : 0].join("|"), g = grupos[k]; if (!g) { g = grupos[k] = { e: e, n: 0, m: 0 }; ordem.push(k); } g.n++; g.m += tr[t] ? tr[t].comprimento : 0; });
+var p0 = l;
+ordem.forEach(function (k) { var g = grupos[k], e = g.e, row = ws.getRow(l++); row.getCell(1).value = e.circuitos.join(", "); valor(row, 2, g.n, INT); valor(row, 3, g.m, NUM); valor(row, 4, e.condutores, INT); valor(row, 5, e.secaoMaior, "0.0"); row.getCell(6).value = e.dnMinimo == null ? "não cabe em DN 32" : e.dnMinimo; valor(row, 7, e.dn, INT); row.getCell(8).value = e.lotado ? "LOTADO" : "atende"; corpo(row, N, e.lotado ? vermelhoBg : null); });
+var p1 = l - 1, tt = ws.getRow(l++), totN = 0, totM = 0; ordem.forEach(function (k) { totN += grupos[k].n; totM += grupos[k].m; });
+tt.getCell(1).value = "TOTAL"; formula(ctx, tt, 2, "SUM(B" + p0 + ":B" + p1 + ")", totN, INT); formula(ctx, tt, 3, "SUM(C" + p0 + ":C" + p1 + ")", totM, NUM); tt.font = { bold: true }; corpo(tt, N, cinza);
+ctx.eletrodutos = { primeira: p0, ultima: p1, trechos: totN, metros: totM };
+l++;
+titSub(ws, l++, N, "Metros de eletroduto por DN (do modelo)");
+var h2 = ws.getRow(l++); ["DN (mm)", "Metros"].forEach(function (t, i) { h2.getCell(i + 1).value = t; }); cab(h2);
+var dns = {}; ordem.forEach(function (k) { var g = grupos[k]; dns[g.e.dn] = (dns[g.e.dn] || 0) + g.m; });
+Object.keys(dns).sort(function (a, b) { return a - b; }).forEach(function (dn) { var row = ws.getRow(l++); valor(row, 1, Number(dn), INT); formula(ctx, row, 2, "SUMIFS(C" + p0 + ":C" + p1 + ",G" + p0 + ":G" + p1 + ",A" + row.number + ")", dns[dn], NUM); corpo(row, 2); });
+l++;
+titSub(ws, l++, N, "Fiação — metros por seção e cor (inclui sobras nos pontos e no quadro; cores: " + ECm.CORES.fonte + ")");
+var h3 = ws.getRow(l++); ["Seção (mm²)", "Cor", "Metros", "Dos quais estimados (m)", "Circuitos"].forEach(function (t, i) { h3.getCell(i + 1).value = t; }); cab(h3);
+var cabos = ECm.cabos(A), f0 = l;
+cabos.forEach(function (c) { var row = ws.getRow(l++); valor(row, 1, c.secao, "0.0"); row.getCell(2).value = c.cor; valor(row, 3, c.metros, NUM); valor(row, 4, c.estimado, NUM); row.getCell(5).value = c.circuitos.join(", "); corpo(row, 5, c.estimado > 0 ? alertaBg : null); });
+var f1 = l - 1, tc = ws.getRow(l++), totC = cabos.reduce(function (s, c) { return s + c.metros; }, 0);
+tc.getCell(1).value = "TOTAL"; formula(ctx, tc, 3, "SUM(C" + f0 + ":C" + f1 + ")", totC, NUM); tc.font = { bold: true }; corpo(tc, 5, cinza);
+ctx.fiacao = { primeira: f0, ultima: f1, total: totC };
+l++;
+titSub(ws, l++, N, "Total por seção (m)");
+var h4 = ws.getRow(l++); ["Seção (mm²)", "Metros"].forEach(function (t, i) { h4.getCell(i + 1).value = t; }); cab(h4);
+var porS = {}; cabos.forEach(function (c) { porS[c.secao] = (porS[c.secao] || 0) + c.metros; });
+Object.keys(porS).sort(function (a, b) { return a - b; }).forEach(function (S) { var row = ws.getRow(l++); valor(row, 1, Number(S), "0.0"); formula(ctx, row, 2, "SUMIFS(C" + f0 + ":C" + f1 + ",A" + f0 + ":A" + f1 + ",A" + row.number + ")", porS[S], NUM); corpo(row, 2); });
+return ws;
+}
+function abaMateriais(wb, A, mats, opc, ctx) {
+var ws = wb.addWorksheet("Lista de materiais"), N = 10;
+larguras(ws, [58, 8, 13, 14, 13, 30, 14, 14, 44, 38]);
+var l = cabecalho(ws, "Lista de materiais", N, opc);
+var h = ws.getRow(l++); ["Item", "Un.", "Quantidade", "Código SINAPI", "Situação", "Origem", "Preço unit. (R$)", "Total (R$)", "Fonte do preço", "Observação"].forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+var p0 = l, semCodigo = 0, comPreco = 0;
+mats.forEach(function (m) {
+var row = ws.getRow(l); row.getCell(1).value = txt(m.item); row.getCell(1).alignment = { wrapText: true, vertical: "top" }; row.getCell(2).value = m.unidade; valor(row, 3, m.quantidade, NUM);
+row.getCell(4).value = m.codigo || "pendente"; row.getCell(5).value = m.situacao === "ok" ? "ok" : (m.situacao === "provisório" ? "provisório — cotar" : "PENDENTE"); row.getCell(6).value = txt(m.origem);
+if (fin(m.preco)) { valor(row, 7, m.preco, NUM); formula(ctx, row, 8, "C" + l + "*G" + l, m.quantidade * m.preco, NUM); comPreco++; } else { row.getCell(7).value = "-"; row.getCell(8).value = "-"; }
+row.getCell(9).value = txt(m.fontePreco); row.getCell(10).value = txt([m.observacao, m.motivo].filter(Boolean).join(" — ")); row.getCell(9).alignment = row.getCell(10).alignment = { wrapText: true, vertical: "top" };
+if (!m.codigo) semCodigo++;
+corpo(row, N, m.situacao === "pendente" ? vermelhoBg : (m.situacao === "provisório" ? amareloBg : null)); l++;
+});
+var p1 = l - 1;
+if (comPreco) { var tr = ws.getRow(l++); tr.getCell(1).value = "TOTAL com preço"; formula(ctx, tr, 8, "SUM(H" + p0 + ":H" + p1 + ")", mats.reduce(function (s, m) { return s + (fin(m.preco) ? m.quantidade * m.preco : 0); }, 0), NUM); tr.font = { bold: true }; corpo(tr, N, cinza); }
+l++;
+ws.mergeCells(l, 1, l, N);
+var n = ws.getCell(l, 1); n.value = "Código SINAPI MG 06/2026 conferido na base; item sem composição = PENDENTE (nunca inventado); \"provisório\" = composição de maior preço da mesma família, cotar com o fornecedor. O cabo é do projeto de circuitos; eletroduto, caixas, dispositivos e quadro vêm do modelo 3D: nada é cobrado duas vezes. Preço: o do Orçamento do modelo (esta planilha só traz preço quando informado).";
+n.font = { italic: true, size: 9, color: { argb: "FF64748B" } }; n.alignment = { wrapText: true, vertical: "top" }; ws.getRow(l).height = 44;
+ctx.materiais = { primeira: p0, ultima: p1, linhas: mats.length, semCodigo: semCodigo };
+ws.views = [{ state: "frozen", ySplit: 5 }];
+return ws;
+}
+function abaPendencias(wb, pend, opc) {
+var ws = wb.addWorksheet("Pendências"), N = 4;
+larguras(ws, [6, 12, 110, 10]);
+var l = cabecalho(ws, "Pendências e itens sem fonte", N, opc);
+var h = ws.getRow(l++); ["Nº", "Gravidade", "Pendência", "Seção do memorial"].forEach(function (t, i) { h.getCell(i + 1).value = t; }); cab(h);
+pend.forEach(function (p, i) { var row = ws.getRow(l++); valor(row, 1, i + 1, INT); row.getCell(2).value = p.nivel === "vermelho" ? "VERMELHO" : "amarelo"; row.getCell(3).value = txt(p.texto); row.getCell(3).alignment = { wrapText: true, vertical: "top" }; row.getCell(4).value = p.secao; corpo(row, N, p.nivel === "vermelho" ? vermelhoBg : alertaBg); if (p.nivel === "vermelho") row.getCell(2).font = { bold: true, color: { argb: vermelho } }; });
+if (!pend.length) ws.getRow(l).getCell(3).value = "Nenhuma pendência registrada.";
+return ws;
+}
+function gerar(A, opc) {
+opc = opc || {};
+if (!A || !A.ok || !arr(A.circuitos).length) return { ok: false, motivo: A && A.motivo ? A.motivo : "Sem circuitos analisados: rode \"Circuitos e quadro\" antes das planilhas.", workbook: null, abas: [], avisos: [], formulas: 0 };
+var ExcelJS = opc.ExcelJS || xl(), M = EM();
+if (!ExcelJS) return { ok: false, motivo: "Biblioteca ExcelJS indisponível.", workbook: null, abas: [], avisos: [], formulas: 0 };
+var wb = new ExcelJS.Workbook(), ctx = { formulas: 0 }, avisos = [], mats = opc.materiais || materiais(A, opc);
+wb.creator = "OrçaPRO — ElePlanilhas"; wb.created = new Date();
+var o2 = {}; Object.keys(opc).forEach(function (k) { o2[k] = opc[k]; }); o2.materiais = mats;
+var pend = M.pendencias(A, o2);
+abaCargas(wb, A, opc, ctx); abaCircuitos(wb, A, opc, ctx); abaDemanda(wb, A, opc, ctx); abaEletrodutos(wb, A, opc, ctx); abaMateriais(wb, A, mats, opc, ctx); abaPendencias(wb, pend, opc);
+if (ctx.materiais.semCodigo) avisos.push(ctx.materiais.semCodigo + " linha(s) da lista de materiais sem código SINAPI (pendente).");
+return { ok: true, workbook: wb, abas: wb.worksheets.map(function (w) { return w.name; }), avisos: avisos, formulas: ctx.formulas, materiais: mats, pendencias: pend, detalhes: ctx };
+}
+function escrever(A, opc) {
+var g = gerar(A, opc);
+if (!g.ok) return Promise.reject(new Error(g.motivo));
+return g.workbook.xlsx.writeBuffer();
+}
+var ElePlanilhas = { VERSAO: 1, gerar: gerar, escrever: escrever, materiais: materiais };
+global.ElePlanilhas = ElePlanilhas;
+if (typeof module !== "undefined" && module.exports) module.exports = ElePlanilhas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/elecircuitosui.js ==== */
@@ -189141,6 +194062,506 @@ lancar: lancar, auditar: auditar, pranchas: pranchas, pranchasNasAbas: pranchasN
 };
 global.EleCircuitosUI = EleCircuitosUI;
 if (typeof module !== "undefined" && module.exports) module.exports = EleCircuitosUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eledocumentos.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function EM() { return dep("EleMemorial", "./elememorial.js"); }
+function PL() { return dep("ElePlanilhas", "./eleplanilhas.js"); }
+function PR() { return dep("ElePranchas", "./elepranchas.js"); }
+function DX(o) { return (o && o.Docx) || dep("Docx", "./docx.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+var MIME = { html: "text/html;charset=utf-8", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", pdf: "application/pdf", dxf: "application/dxf", txt: "text/plain;charset=utf-8", zip: "application/zip" };
+function slug(s) { var x = txt(s); if (x.normalize) x = x.normalize("NFD").replace(/[̀-ͯ]/g, ""); return x.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "obra"; }
+function nomeBase(o) { o = o || {}; return "eletrico-" + slug(o.obra) + "-" + slug(o.revisao || "R00"); }
+function leiame(R, o) {
+var L = [], pend = R.pendencias, v = pend.filter(function (p) { return p.nivel === "vermelho"; }), a = pend.filter(function (p) { return p.nivel !== "vermelho"; });
+L.push("PROJETO ELÉTRICO DE BAIXA TENSÃO — " + (txt(o.obra) || "[OBRA]"));
+L.push((txt(o.numero) ? txt(o.numero) + " " : "") + (txt(o.revisao) || "R00") + " — " + (txt(o.data) || ""));
+L.push("");
+L.push("SITUAÇÃO: " + R.situacao.texto + ".");
+L.push("");
+L.push("ARQUIVOS DESTE PACOTE");
+R.arquivos.forEach(function (f) { if (f.tipo !== "leiame") L.push(" - " + f.nome); });
+arr(R.naoGerados).forEach(function (t) { L.push(" - NÃO GERADO: " + t); });
+L.push("");
+L.push("O QUE FICOU PENDENTE — EM VERMELHO (" + v.length + "): sem fonte lida ou a decidir pelo responsável técnico; o projeto não pode ser assinado como está.");
+v.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto + (p.secao ? " (seção " + p.secao + " do memorial)" : "")); });
+L.push("");
+L.push("AVISOS E CRITÉRIOS RA — EM AMARELO (" + a.length + "): conferir com o responsável técnico.");
+a.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto); });
+if (R.avisos.length) { L.push(""); L.push("AVISOS DA GERAÇÃO"); R.avisos.forEach(function (t) { L.push(" - " + t); }); }
+L.push("");
+L.push("RESSALVA DA NORMA: a NBR 5410:2004 foi lida numa cópia de consulta NÃO licenciada à RA Engenharia, edição original SEM a Errata 1/2008. Confira cada valor no exemplar licenciado da edição vigente antes de assinar.");
+return L.join("\r\n") + "\r\n";
+}
+function gerar(A, opc) {
+opc = opc || {};
+var M = EM(), Pl = PL(), Pr = PR(), X = DX(opc), docs = opc.documentos || {}, fmt = opc.formatos || {}, base = nomeBase(opc);
+var R = { ok: false, arquivos: [], memorial: null, planilha: null, pranchas: null, pendencias: [], avisos: [], naoGerados: [], situacao: null, resumo: [], leiame: "" };
+if (!A || !A.ok || !arr(A.circuitos).length) { R.motivo = A && A.motivo ? A.motivo : "Sem circuitos analisados: rode \"Circuitos e quadro\" antes de gerar os documentos."; return Promise.resolve(R); }
+if (!M || !Pl) { R.motivo = "Módulos não carregados (js/elememorial.js, js/eleplanilhas.js)."; return Promise.resolve(R); }
+function usa(k) { return docs[k] !== false; }
+function nao(t) { R.naoGerados.push(t); R.avisos.push(t); }
+var mats = null; try { mats = Pl.materiais(A, opc); } catch (e0) { mats = null; R.avisos.push("lista de materiais: " + (e0 && e0.message ? e0.message : e0)); }
+var o2 = {}; Object.keys(opc).forEach(function (k) { o2[k] = opc[k]; }); if (mats) o2.materiais = mats;
+R.pendencias = M.pendencias(A, o2); R.situacao = M.situacao(R.pendencias);
+if (usa("memorial")) {
+try {
+var m = M.gerar(A, o2); R.memorial = m;
+if (!m.ok) nao("memorial: " + m.motivo);
+else {
+if (fmt.html !== false) R.arquivos.push({ nome: "memorial-" + base + ".html", dados: m.html, mime: MIME.html, tipo: "memorial", formato: "html" });
+if (fmt.word !== false && X && X.deHtml) {
+try { var w = X.deHtml(m.html, { titulo: m.titulo, corTitulo: "#0F2740", corDestaque: "#0F2740", fonteTexto: "Segoe UI" }); R.arquivos.push({ nome: "memorial-" + base + ".docx", dados: w.bytes, mime: MIME.docx, tipo: "memorial", formato: "docx" }); arr(w.avisos).forEach(function (t) { R.avisos.push("memorial (Word): " + t); }); }
+catch (e1) { R.avisos.push("memorial (Word): " + (e1 && e1.message ? e1.message : e1)); }
+}
+if (m.indefinidos) R.avisos.push("memorial: " + m.indefinidos + " valor(es) indefinido(s) trocados por [valor indefinido] — conferir.");
+}
+} catch (e2) { nao("memorial: " + (e2 && e2.message ? e2.message : e2)); }
+}
+if (usa("pranchas")) {
+if (!Pr) nao("pranchas: módulo js/elepranchas.js não carregado");
+else if (!A.projetoGravado) nao("pranchas: rode \"Circuitos e quadro\" antes (o projeto fica gravado no quadro) — as pranchas leem o projeto gravado");
+else {
+try {
+var pr = Pr.gerar(A, o2); R.pranchas = pr;
+if (!pr.ok) nao("pranchas: " + (arr(pr.avisos).join(" ") || "não geradas"));
+else {
+var pdf = Pr.exportar(pr, "pdf");
+if (pdf) R.arquivos.push({ nome: "projeto-" + base + ".pdf", dados: pdf, mime: MIME.pdf, tipo: "pranchas", formato: "pdf" }); else R.avisos.push("pranchas: o conversor para PDF (js/svgpdf.js) não está disponível");
+if (fmt.dxf !== false) { var dxf = Pr.exportar(pr, "dxf"); if (dxf) R.arquivos.push({ nome: "projeto-" + base + ".dxf", dados: dxf, mime: MIME.dxf, tipo: "pranchas", formato: "dxf" }); else R.avisos.push("pranchas: o DXF não foi gerado (js/bimdxf.js)"); }
+arr(pr.avisos).forEach(function (t) { R.avisos.push("pranchas: " + t); });
+if (pr.verificacao && pr.verificacao.sobreposicoes) R.avisos.push("pranchas: " + pr.verificacao.sobreposicoes + " texto(s) sobreposto(s) — conferir antes de emitir");
+}
+} catch (e3) { nao("pranchas: " + (e3 && e3.message ? e3.message : e3)); }
+}
+}
+function fim() {
+R.ok = R.arquivos.length > 0;
+R.resumo = [];
+if (R.memorial && R.memorial.ok) R.resumo.push("Memorial: " + R.memorial.secoes.length + " seções, " + R.pendencias.length + " pendência(s) (" + R.situacao.vermelhos + " em vermelho)");
+if (R.planilha && R.planilha.ok) R.resumo.push("Planilha: " + R.planilha.abas.length + " abas, " + R.planilha.formulas + " fórmulas, " + arr(mats).length + " linhas de material (" + arr(mats).filter(function (x) { return x.situacao === "pendente"; }).length + " sem código SINAPI)");
+if (R.pranchas && R.pranchas.ok) R.resumo.push("Pranchas: " + R.pranchas.folhas.length + " folha(s)");
+R.leiame = leiame(R, opc);
+R.arquivos.push({ nome: "LEIA-ME-" + base + ".txt", dados: R.leiame, mime: MIME.txt, tipo: "leiame", formato: "txt" });
+return R;
+}
+if (!usa("planilha")) return Promise.resolve(fim());
+var o3 = {}; Object.keys(o2).forEach(function (k) { o3[k] = o2[k]; }); if (opc.ExcelJS) o3.ExcelJS = opc.ExcelJS;
+var go = Pl.gerar(A, o3);
+R.planilha = go;
+if (!go.ok) { nao("planilha: " + go.motivo); return Promise.resolve(fim()); }
+return go.workbook.xlsx.writeBuffer().then(function (buf) {
+R.arquivos.push({ nome: "planilhas-" + base + ".xlsx", dados: new Uint8Array(buf), mime: MIME.xlsx, tipo: "planilha", formato: "xlsx" });
+arr(go.avisos).forEach(function (t) { R.avisos.push("planilha: " + t); });
+return fim();
+}, function (er) { nao("planilha: " + (er && er.message ? er.message : er)); return fim(); });
+}
+function zipar(arquivos, opc) {
+var X = DX(opc); if (!X || !X.zip) return null;
+return X.zip(arr(arquivos).map(function (f) { return { nome: f.nome, dados: f.dados }; }));
+}
+var EleDocumentos = { VERSAO: 1, gerar: gerar, zipar: zipar, nomeBase: nomeBase, leiame: leiame, MIME: MIME };
+global.EleDocumentos = EleDocumentos;
+if (typeof module !== "undefined" && module.exports) module.exports = EleDocumentos;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eledocumentosui.js ==== */
+try {
+(function (global) {
+"use strict";
+var doc = typeof document !== "undefined" ? document : null;
+function dep(n) { return global[n] || null; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) {} }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function dois(n) { return (n < 10 ? "0" : "") + n; }
+function hoje() { var d = new Date(); return dois(d.getDate()) + "/" + dois(d.getMonth() + 1) + "/" + d.getFullYear(); }
+var CHAVE_CRIT = "raerp:bim:eletrica-circuitos-criterios";
+var MODULO = "modela:eletrica";
+var TRANCADA = "Os documentos elétricos fazem parte do OrçaPRO Modela Elétrica & Dados: a disciplina não está liberada nesta conta.";
+var U = { ultimo: null, ocupado: false };
+function estado() { var B = global.BIM, E = global.BimEdit; if (!B || !B.editarOps || !E) return null; try { return E.aplicar(B.editarOps()); } catch (e) { return null; } }
+function avaliar() { var B = global.BIM; return B && B.familiaAvaliar ? function (f, t, i) { return B.familiaAvaliar(f, t, i); } : null; }
+function liberada() { try { var D = global.BimDisciplinas; return !(D && typeof D.trancada === "function" && D.trancada("eletrica")); } catch (e) { return true; } }
+function lerCriterios() { try { var t = global.localStorage && global.localStorage.getItem(CHAVE_CRIT); return t ? JSON.parse(t) || {} : {}; } catch (e) { return {}; } }
+function carimbo() {
+var em = {}, ob = {}, logo = null, G = global.Gestao;
+try { if (global.Empresa && global.Empresa.dados) em = global.Empresa.dados() || {}; if (global.Empresa && global.Empresa.logo) logo = global.Empresa.logo(); } catch (e1) {}
+try { if (G && G._bimSel && global.Store && global.Auth) ob = global.Store.obter(global.Auth.empresaId(), "obras", G._bimSel) || {}; } catch (e2) {}
+return { empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo), obra: txt(ob.nome), obraId: txt(ob.id || (G && G._bimSel) || ""), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: logo };
+}
+function chaveHist(c) { return "orcapro:ele:docs:" + (c.obraId || c.obra || "obra"); }
+function lerHist(c) { try { var o = JSON.parse(global.localStorage.getItem(chaveHist(c)) || "null"); return o && typeof o === "object" ? o : { rev: "" }; } catch (e) { return { rev: "" }; } }
+function gravarHist(c, h) { try { global.localStorage.setItem(chaveHist(c), JSON.stringify(h)); } catch (e) {} }
+function proxRev(r) { var m = /(\d+)\s*$/.exec(txt(r)); return m ? "R" + dois((parseInt(m[1], 10) || 0) + 1) : "R00"; }
+function baixar(nome, dados, mime) {
+if (global.TesteModulo && global.TesteModulo.marcarArquivo) { var w = global.TesteModulo.marcarArquivo(nome, dados, mime, MODULO); if (!w) return false; nome = w.nome; dados = w.dados; }
+if (!doc || typeof Blob === "undefined") return false;
+try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
+}
+function abrirPdf(html) {
+if (global.TesteModulo && global.TesteModulo.marcarHtml) { html = global.TesteModulo.marcarHtml(html, MODULO); if (html == null) return false; }
+var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
+if (!w) { toast("O navegador bloqueou a janela de impressão. Libere pop-ups para este endereço ou abra o HTML baixado e imprima.", "aviso"); return false; }
+w.document.open(); w.document.write(html.replace("</body>", "<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body>")); w.document.close();
+return true;
+}
+function montar(cfg) {
+cfg = cfg || {};
+if (!liberada()) return { erro: TRANCADA };
+var st = estado(), EC = dep("EleCircuitos"); if (!st || !EC) return { erro: "O editor 3D não está aberto." };
+var A = EC.analisar({ estado: st, avaliarFam: avaliar(), criterios: lerCriterios() });
+if (!A.ok) return { erro: A.motivo };
+var c = carimbo(), op = {}; Object.keys(c).forEach(function (k) { op[k] = c[k]; });
+op.numero = cfg.numero || ""; op.revisao = cfg.rev || "R00"; op.data = cfg.data || hoje(); op.estado = st; op.avaliarFam = avaliar(); op.criterios = lerCriterios();
+op.documentos = cfg.documentos || {}; op.formatos = cfg.formatos || {}; if (global.ExcelJS) op.ExcelJS = global.ExcelJS;
+return { A: A, op: op, c: c };
+}
+function gerar(cfg) {
+var D = dep("EleDocumentos"); if (!D) return Promise.reject(new Error("módulo não carregado (js/eledocumentos.js)"));
+var m = montar(cfg); if (m.erro) return Promise.reject(new Error(m.erro));
+return new Promise(function (ok) {
+var XO = global.ExcelOrc;
+if (cfg.documentos && cfg.documentos.planilha === false) { ok(); return; }
+if (global.ExcelJS || !XO || !XO.ensureExcelJS) { ok(); return; }
+XO.ensureExcelJS(function () { ok(); });
+}).then(function () {
+if (global.ExcelJS) m.op.ExcelJS = global.ExcelJS;
+return D.gerar(m.A, m.op);
+}).then(function (R) {
+if (R.ok) gravarHist(m.c, { rev: cfg.rev || "R00", data: cfg.data || hoje() });
+U.ultimo = { resultado: R, cfg: cfg, ctx: m.c };
+return U.ultimo;
+});
+}
+function corpoHtml() {
+var m = montar({}), c = m.c || carimbo(), h = lerHist(c), prox = h.rev ? proxRev(h.rev) : "R00";
+var linhas = [["memorial", "Memorial descritivo e de cálculo (14 seções, com as contas)"], ["planilha", "Planilhas (.xlsx): quadro de cargas, circuitos, demanda, eletrodutos e fiação, lista de materiais, pendências"], ["pranchas", "Pranchas (PDF e DXF): quadro de cargas, unifilar e planta de pontos e eletrodutos"]];
+return '<div data-ele-docs="tela" style="font-size:13px">' +
+(m.erro ? '<p class="muted" data-ele-docs="sem-analise" style="color:#a3352b">' + esc(m.erro) + "</p>" : (m.A.projetoGravado ? "" : '<p class="muted" data-ele-docs="sem-projeto" style="color:#9a5b12">O projeto dos circuitos ainda não está gravado no quadro: rode <b>Circuitos e quadro</b> antes — sem isso as pranchas não saem (memorial e planilha saem).</p>')) +
+'<p style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px"><b>NBR 5410:2004</b> lida numa cópia <b>não licenciada</b> à RA, edição original <b>sem a Errata 1/2008</b>: o pacote sai com a ressalva e a lista do que ficou pendente (vermelho = sem fonte lida ou a decidir pelo RT).</p>' +
+'<fieldset style="border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;margin:0 0 8px"><legend>Documentos</legend>' +
+linhas.map(function (l) { return '<label style="display:block"><input type="checkbox" data-ele-docs-doc="' + l[0] + '" checked> ' + esc(l[1]) + "</label>"; }).join("") + "</fieldset>" +
+'<fieldset style="border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;margin:0 0 8px"><legend>Formatos</legend><label><input type="checkbox" data-ele-docs-fmt="word" checked> Word (.docx)</label> &nbsp; <label><input type="checkbox" data-ele-docs-fmt="html" checked> HTML</label> &nbsp; <label><input type="checkbox" data-ele-docs-fmt="dxf" checked> DXF das pranchas</label></fieldset>' +
+'<div style="display:grid;grid-template-columns:90px 1fr;gap:6px 10px;align-items:center">' +
+'<label>Nº do doc.</label><input class="input" data-ele-docs-campo="numero" placeholder="ex.: ELE-001">' +
+'<label>Revisão</label><input class="input" data-ele-docs-campo="rev" value="' + esc(prox) + '">' +
+'<label>Data</label><input class="input" data-ele-docs-campo="data" value="' + esc(hoje()) + '"></div>' +
+'<div data-ele-docs="resumo" style="margin-top:10px"></div></div>';
+}
+function lerCfg(raiz) {
+function v(k) { var e = raiz.querySelector('[data-ele-docs-campo="' + k + '"]'); return e ? String(e.value || "").trim() : ""; }
+function ck(sel) { var e = raiz.querySelector(sel); return !!(e && e.checked); }
+return { numero: v("numero"), rev: v("rev") || "R00", data: v("data") || hoje(),
+documentos: { memorial: ck('[data-ele-docs-doc="memorial"]'), planilha: ck('[data-ele-docs-doc="planilha"]'), pranchas: ck('[data-ele-docs-doc="pranchas"]') },
+formatos: { word: ck('[data-ele-docs-fmt="word"]'), html: ck('[data-ele-docs-fmt="html"]'), dxf: ck('[data-ele-docs-fmt="dxf"]') } };
+}
+function resumoHtml(u) {
+var R = u.resultado, v = R.pendencias.filter(function (p) { return p.nivel === "vermelho"; }), a = R.pendencias.length - v.length;
+var bot = R.arquivos.filter(function (f) { return f.tipo !== "leiame"; }).map(function (f) { return '<button class="btn sm ghost" data-ele-docs-baixar="' + esc(f.nome) + '">' + esc(f.nome) + "</button>"; }).join(" ");
+return '<div data-ele-docs="pronto" style="border:1px solid ' + (R.situacao.ok ? "#2e9e5b" : "#e0a100") + ';border-radius:8px;padding:6px 10px">' +
+"<div><b>Documentos gerados</b> — " + esc(R.situacao.texto) + "</div>" +
+'<ul class="muted" style="margin:6px 0 0;font-size:12px">' + R.resumo.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" +
+'<div style="margin-top:6px">' + bot + ' <button class="btn sm" data-ele-docs-pdf="1">Memorial em PDF</button></div>' +
+(v.length ? '<p style="font-size:12px;margin:8px 0 2px;color:#a3352b"><b>Pendente em vermelho (' + v.length + "):</b></p><ul style=\"margin:0;font-size:12px\">" + v.slice(0, 8).map(function (p) { return "<li>" + esc(p.texto) + "</li>"; }).join("") + (v.length > 8 ? "<li>… e mais " + (v.length - 8) + " no LEIA-ME e na aba Pendências</li>" : "") + "</ul>" : "") +
+'<p class="muted" style="font-size:12px;margin:6px 0 0">' + a + " aviso(s) em amarelo no LEIA-ME.</p>" +
+(R.naoGerados.length ? '<ul style="margin:6px 0 0;font-size:12px;color:#9a5b12">' + R.naoGerados.map(function (t) { return "<li>Não gerado — " + esc(t) + "</li>"; }).join("") + "</ul>" : "") + "</div>";
+}
+function nomeZip(R) { return "documentos-" + dep("EleDocumentos").nomeBase({ obra: U.ultimo && U.ultimo.ctx ? U.ultimo.ctx.obra : "", revisao: U.ultimo && U.ultimo.cfg ? U.ultimo.cfg.rev : "" }) + ".zip"; }
+function acaoGerar() {
+var raiz = doc && doc.querySelector('[data-ele-docs="tela"]'); if (!raiz || U.ocupado) return null;
+var cfg = lerCfg(raiz), alvo = raiz.querySelector('[data-ele-docs="resumo"]');
+U.ocupado = true; alvo.innerHTML = '<p class="muted" data-ele-docs="gerando">Gerando os documentos…</p>';
+return gerar(cfg).then(function (u) {
+U.ocupado = false;
+var D = dep("EleDocumentos"), z = D.zipar(u.resultado.arquivos);
+if (z && u.resultado.arquivos.length) baixar(nomeZip(u.resultado), z, D.MIME.zip);
+alvo.innerHTML = u.resultado.ok ? resumoHtml(u) : '<p data-ele-docs="erro" style="color:#d33a2c">Nada foi gerado: ' + esc(u.resultado.motivo || u.resultado.naoGerados.join("; ")) + "</p>";
+try { alvo.scrollIntoView({ block: "nearest" }); } catch (eS) {}
+toast(u.resultado.ok ? "Documentos elétricos gerados: " + u.resultado.arquivos.length + " arquivo(s) no .zip." + (u.resultado.situacao.ok ? "" : " Há pendências em vermelho: veja o LEIA-ME.") : "Não foi possível gerar os documentos elétricos.", u.resultado.situacao && u.resultado.situacao.ok ? "ok" : "aviso");
+status("Documentos elétricos: " + u.resultado.resumo.join(" · "));
+return u;
+}, function (e) {
+U.ocupado = false;
+alvo.innerHTML = '<p data-ele-docs="erro" style="color:#d33a2c">Não foi possível gerar: ' + esc(e && e.message ? e.message : e) + "</p>";
+return null;
+});
+}
+function abrir() {
+if (!liberada()) { status(TRANCADA); toast(TRANCADA, "aviso"); return false; }
+if (!global.UI || !global.UI.modal) return false;
+global.UI.modal("Gerar documentos elétricos", corpoHtml(), [
+{ texto: "Gerar documentos", classe: "primary", onClick: function () { acaoGerar(); } },
+{ texto: "Fechar", classe: "ghost", onClick: function () { try { global.UI.fecharModal(); } catch (e) {} } }
+]);
+var raiz = doc && doc.querySelector('[data-ele-docs="tela"]');
+if (raiz) raiz.addEventListener("click", function (ev) {
+var b = ev.target && ev.target.closest ? ev.target.closest("[data-ele-docs-pdf],[data-ele-docs-baixar]") : null; if (!b || !U.ultimo) return;
+var R = U.ultimo.resultado;
+if (b.hasAttribute("data-ele-docs-pdf")) { if (R.memorial && R.memorial.html) abrirPdf(R.memorial.html); return; }
+var nm = b.getAttribute("data-ele-docs-baixar"), f = R.arquivos.filter(function (x) { return x.nome === nm; })[0];
+if (f) baixar(f.nome, f.dados, f.mime);
+});
+return true;
+}
+function registrar(reg) {
+var R = global.BimRibbon;
+if (!R || !reg || !global.EleDocumentos) return false;
+R.acrescentar("instalacoes", "Instalações", "Circuitos e quadro", [
+{ id: "ele-docs", rotulo: "Gerar documentos\nelétricos", icone: "mais", grande: true, dica: "Num clique: memorial descritivo e de cálculo (14 seções, com as contas passo a passo), planilhas .xlsx (quadro de cargas, circuitos, demanda, eletrodutos e fiação, lista de materiais com SINAPI, pendências), pranchas em PDF e DXF e o LEIA-ME com o que ficou pendente. NBR 5410:2004 em cópia não licenciada: o pacote sai com a ressalva." }
+]);
+reg["ele-docs"] = function () { abrir(); return true; };
+return true;
+}
+U.abrir = abrir; U.gerar = gerar; U.acaoGerar = acaoGerar; U.registrar = registrar; U.montar = montar; U.abrirPdf = abrirPdf; U.liberada = liberada;
+global.EleDocumentosUI = U;
+if (typeof module !== "undefined" && module.exports) module.exports = U;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eleprojeto.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BE() { return dep("BimEdit", "./bimedit.js"); }
+function EA() { return dep("EleAuto", "./eleauto.js"); }
+function EI() { return dep("EletIlum", "./eletilum.js"); }
+function EC() { return dep("EleCircuitos", "./elecircuitos.js"); }
+function EAU() { return dep("EleAuditor", "./eleauditor.js"); }
+function ECA() { return dep("EleCircAuditor", "./elecircauditor.js"); }
+function EF() { return dep("EleFamilias", "./elefamilias.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
+function achatar(ops) { var o = []; arr(ops).forEach(function (x) { if (x && x.op === "lote") arr(x.ops).forEach(function (y) { if (y) o.push(y); }); else if (x) o.push(x); }); return o; }
+function assinatura(st) { try { return JSON.stringify([st.familias, st.instalacoes, st.caixas, st.ambientes && st.ambientes.length]); } catch (e) { return String(Math.random()); } }
+function relatorio(estado, avaliarFam, criterios) {
+var C = EC(), A = C && estado ? C.analisar({ estado: estado, avaliarFam: avaliarFam, criterios: criterios }) : null, R = { ok: false };
+if (!A) return R;
+if (!A.ok) { R.motivo = A.motivo; R.pendencias = arr(A.pendencias).map(function (p) { return p.texto; }); return R; }
+var porTipo = { luz: 0, interruptor: 0, tug: 0, tue: 0, ld: 0 }, porAmb = {};
+arr(A.pontos).forEach(function (p) {
+var k = p.kind === "ld" || p.kind === "direta" ? "ld" : p.kind; porTipo[k] = (porTipo[k] || 0) + 1;
+var a = porAmb[p.amb] = porAmb[p.amb] || { id: p.amb, nome: p.ambNome, luz: 0, interruptor: 0, tug: 0, tue: 0, ld: 0 };
+a[k] = (a[k] || 0) + 1;
+});
+var qd = A.quadro, mq = null, F = EF(), proj = A.projeto;
+if (F && F.montarQuadro && proj) {
+try {
+var qdf = qd && qd.f ? qd.f : null, avq = null; try { avq = qdf && typeof avaliarFam === "function" ? avaliarFam(qdf.famId, qdf.tipoId, qdf.inst) : null; } catch (e0) { avq = null; }
+var vq = (avq && avq.valores) || {}, capQ = Math.max(1, Math.round(num(vq.Disjuntores, qd && qd.espacos ? qd.espacos : 12)));
+var m = F.montarQuadro(JSON.stringify(proj), { capacidade: capQ, fileiras: Math.max(1, Math.round(num(vq.Fileiras, 1))), capFileira: Math.max(1, Math.round(num(vq.Modulos_fileira, capQ))), disjuntores: capQ });
+mq = { itens: arr(m.itens).length, porTipo: {}, disjuntores: 0, dr: 0, dps: 0, geral: 0, avisos: arr(m.avisos).slice() };
+arr(m.itens).forEach(function (it) { var t = String(it.tipo || ""); mq.porTipo[t] = (mq.porTipo[t] || 0) + 1; });
+mq.disjuntores = mq.porTipo.disj || 0; mq.dr = mq.porTipo.dr || 0; mq.dps = mq.porTipo.dps || 0; mq.geral = mq.porTipo.geral || 0;
+} catch (e) { mq = null; }
+}
+var dm = A.demanda || {}, en = dm.entrada || null;
+R = { ok: true, pontosPorTipo: porTipo, porAmbiente: Object.keys(porAmb).map(function (k) { return porAmb[k]; }), totalPontos: arr(A.pontos).length,
+circuitos: { total: A.circuitos.length, luz: A.circuitos.filter(function (c) { return c.tipo === "luz"; }).length, tug: A.circuitos.filter(function (c) { return c.tipo === "tug"; }).length, tue: A.circuitos.filter(function (c) { return c.tipo === "tue"; }).length, dr: arr(A.drs).length },
+quadro: qd ? { id: qd.id, espacos: qd.espacos || (A.quadroModelo && A.quadroModelo.espacos) || null, modulos: A.modulos, modelo: A.quadroModelo || null, montado: mq } : null,
+dps: A.dps ? { exigido: !!A.dps.exigido, quantidade: A.dps.quantidade || 0 } : null,
+demanda: { instalada_kW: dm.cargaInstalada_kW, demanda_kVA: dm.demanda_kVA, tipo: dm.tipo || null },
+entrada: en ? { faixa: en.faixa, disjuntor_A: en.disjuntor_A } : null,
+geral: A.geral ? { In: A.geral.In, polos: A.geral.polos } : null, alimentador: A.alimentador ? { secao: A.alimentador.secao, comprimento: A.alimentador.comprimento, provisorio: !!A.alimentador.provisorio } : null,
+eletrodutosMetros: 0, pendencias: arr(A.pendencias).map(function (p) { return p.texto; }), avisos: arr(A.avisos).slice() };
+var tr = estado.instalacoes && arr(estado.instalacoes.trechos) || [];
+tr.forEach(function (t) { if (t && t.sistema === "eletrica" && t.p1 && t.p2) R.eletrodutosMetros += Math.sqrt(Math.pow(t.p1.x - t.p2.x, 2) + Math.pow(t.p1.y - t.p2.y, 2) + Math.pow(t.p1.z - t.p2.z, 2)); });
+R.eletrodutosMetros = Math.round(R.eletrodutosMetros * 10) / 10;
+return R;
+}
+function gerar(o) {
+o = o || {};
+var out = { ok: false, motivo: "", lote: null, ops: [], passos: [], relatorio: null, auditoria: null, avisos: [], pendencias: [] };
+var E = BE(), Au = EA(), Ci = EC(), aval = o.avaliarFam;
+if (!E || !Au || !Ci) { out.motivo = "os motores da elétrica não carregaram (eleauto, elecircuitos)."; return out; }
+var base = achatar(o.ops);
+if (!base.length && o.estado) { out.motivo = "passe as ops do modelo (ops), não só o estado: o lote único precisa refazer o estado a cada passo."; return out; }
+var acc = [], estado = E.aplicar(copia(base)), sig = assinatura(estado);
+if (!arr(estado.ambientes).length) { out.motivo = "O modelo não tem ambiente: crie os ambientes (Ambiente › clique na sala) e as paredes antes do projeto elétrico."; return out; }
+function refaz() { return E.aplicar(copia(base.concat(acc))); }
+function passo(id, rotulo, ops) {
+ops = achatar(ops); var antes = acc.length;
+acc = acc.concat(copia(ops));
+var st = refaz(), s2 = assinatura(st), mudou = s2 !== sig;
+if (!mudou) acc.length = antes; else { estado = st; sig = s2; }
+out.passos.push({ id: id, rotulo: rotulo, ops: mudou ? ops.length : 0, mudou: mudou });
+return mudou;
+}
+var ga = Au.gerar({ estado: estado, avaliarFam: aval, ambientes: o.ambientes || null, criterios: o.criterios, loteId: "ep" });
+if (!ga.ok) { out.motivo = ga.motivo || "o lançamento dos pontos não rodou."; return out; }
+arr(ga.avisos).forEach(function (a) { out.avisos.push(a); }); arr(ga.pendencias).forEach(function (p) {
+var t = p.texto || String(p);
+if (/rode Instalações › Circuitos e quadro/.test(t)) return;
+out.pendencias.push(t);
+});
+passo("pontos", "Pontos elétricos (luz, TUG, TUE, interruptores)", ga.ops || (ga.lote ? ga.lote.ops : []));
+var Il = EI();
+if (Il && Il.ligar) {
+arr(estado.ambientes).forEach(function (a) {
+if (!a || !a.calc || arr(a.calc.contorno).length < 3) return;
+if (!arr(estado.familias).some(function (f) { return f && /^ra-luminaria$|^ra-ilum-/.test(String(f.famId)); })) return;
+if (arr(estado.instalacoes && estado.instalacoes.ligacoes).some(function (r) { return r && (r.amb === a.id || r.id === "lig-" + a.id); })) return;
+var r = null; try { r = Il.ligar({ estado: estado, avaliarFam: aval, ambiente: a.id }); } catch (e) { r = null; }
+if (!r || !r.ok) { if (r && arr(r.pendencias).length) { var q0 = r.pendencias[0]; if (q0 && !/^(ambiente|luminarias)$/.test(String(q0.chave || ""))) out.pendencias.push("Ligação da iluminação de \"" + (a.nome || a.id) + "\": " + (q0.motivo || q0)); } return; }
+passo("ilum-" + a.id, "Ligação da iluminação: " + (a.nome || a.id), r.ops);
+arr(r.pendencias).forEach(function (q) { if (q && /^(interruptor|luminarias|teto)/.test(String(q.chave || ""))) out.pendencias.push("Ligação da iluminação de \"" + (a.nome || a.id) + "\": " + q.motivo); });
+});
+}
+var rl = null, voltas = 0, motivoC = "";
+for (var v = 0; v < 3; v++) {
+rl = Ci.lancar({ estado: estado, avaliarFam: aval, criterios: o.criterios, loteId: "ep" + v, tracar: true });
+voltas++;
+if (!rl.ok) { motivoC = rl.motivo || "os circuitos não rodaram."; break; }
+arr(rl.avisos).forEach(function (a) { if (out.avisos.indexOf(a) < 0) out.avisos.push(a); });
+if (!rl.lote || !passo("circuitos" + v, "Circuitos, quadro e eletrodutos" + (v ? " (acerto " + v + ")" : ""), rl.ops)) break;
+}
+if (motivoC && !out.passos.some(function (p) { return /^circuitos/.test(p.id) && p.mudou; })) { out.motivo = motivoC; out.relatorio = { ok: false, motivo: motivoC, pendencias: out.pendencias.slice() }; return out; }
+if (motivoC) out.pendencias.push(motivoC);
+out.ops = acc.slice();
+out.lote = acc.length ? { op: "lote", id: "eleproj-" + (o.loteId || Date.now().toString(36)), origem: "eletrica-projeto", pedido: "Projeto elétrico completo", ops: acc.slice() } : null;
+var Ad = EAU(), Ac = ECA(), aud = { pontos: [], circuitos: [] };
+try { if (Ad) aud.pontos = Ad.auditar({ estado: estado, avaliarFam: aval, criterios: o.criterios }).problemas; } catch (e1) { aud.pontos = []; }
+try { if (Ac) aud.circuitos = Ac.auditar({ estado: estado, avaliarFam: aval, criterios: o.criterios }).problemas; } catch (e2) { aud.circuitos = []; }
+function cont(L, g) { return L.filter(function (p) { return g === "erro" ? p.gravidade === "erro" : p.gravidade !== "erro"; }).length; }
+out.auditoria = { pontos: { erros: cont(aud.pontos, "erro"), avisos: cont(aud.pontos, "aviso") }, circuitos: { erros: cont(aud.circuitos, "erro"), avisos: cont(aud.circuitos, "aviso") },
+problemas: aud.pontos.concat(aud.circuitos).map(function (p) { return { codigo: p.codigo, gravidade: p.gravidade, titulo: p.titulo }; }) };
+var rep = relatorio(estado, aval, o.criterios);
+rep.auditoria = out.auditoria; rep.passos = out.passos.slice(); rep.voltas = voltas;
+out.relatorio = rep; out.estadoFinal = estado;
+arr(rep.pendencias).forEach(function (t) { if (out.pendencias.indexOf(t) < 0) out.pendencias.push(t); });
+out.ok = true;
+return out;
+}
+var EleProjeto = { gerar: gerar, relatorio: relatorio, achatar: achatar };
+global.EleProjeto = EleProjeto;
+if (typeof module !== "undefined" && module.exports) module.exports = EleProjeto;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/eleprojetoui.js ==== */
+try {
+(function (global) {
+"use strict";
+var doc = typeof document !== "undefined" ? document : null;
+function arr(a) { return Array.isArray(a) ? a : []; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function f1(v) { var x = Number(v); return isFinite(x) ? x.toFixed(1).replace(".", ",") : "—"; }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+var TRANCADA = "O projeto elétrico faz parte do OrçaPRO Modela Elétrica & Dados: a disciplina não está liberada nesta conta.";
+function liberada() { try { var D = global.BimDisciplinas; return !(D && typeof D.trancada === "function" && D.trancada("eletrica")); } catch (e) { return true; } }
+function lerChave(k) { try { var t = global.localStorage && global.localStorage.getItem(k); return t ? JSON.parse(t) || {} : {}; } catch (e) { return {}; } }
+function criterios() { var a = lerChave("raerp:bim:eletrica-criterios"), b = lerChave("raerp:bim:eletrica-circuitos-criterios"), o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; if (global.EleAparelhos && global.EleAparelhos.cfg && global.EleAparelhos.cfg.mobiliario === false) o.mobiliario = false; return o; }
+function avaliar() { var B = global.BIM; return B && B.familiaAvaliar ? function (f, t, i) { return B.familiaAvaliar(f, t, i); } : null; }
+function janela(titulo, html) {
+if (!doc) return null;
+var velho = doc.getElementById("ele-proj-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
+var ov = doc.createElement("div"); ov.id = "ele-proj-modal";
+ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
+ov.innerHTML = '<div role="dialog" aria-label="' + esc(titulo) + '" style="background:var(--surface,#fff);color:var(--text,#16202a);max-width:900px;width:100%;max-height:88vh;overflow:auto;border-radius:10px;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.35);font:13px/1.45 system-ui,sans-serif">' +
+'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><strong style="font-size:15px">' + esc(titulo) + '</strong><button type="button" data-ele-proj-fechar class="btn sm">Fechar</button></div>' + html + "</div>";
+function fecha() { if (ov.parentNode) ov.parentNode.removeChild(ov); doc.removeEventListener("keydown", aoEsc, true); }
+function aoEsc(e) { if (e && (e.key === "Escape" || e.keyCode === 27)) fecha(); }
+ov.addEventListener("click", function (e) {
+var t = e.target; if (!t) return;
+if (t === ov || (t.hasAttribute && t.hasAttribute("data-ele-proj-fechar"))) { fecha(); return; }
+if (t.hasAttribute && t.hasAttribute("data-ele-proj-docs")) { fecha(); if (global.EleDocumentosUI && global.EleDocumentosUI.abrir) global.EleDocumentosUI.abrir(); return; }
+if (t.hasAttribute && t.hasAttribute("data-ele-proj-fiacao")) { mostrarFiacao(true); t.textContent = "Fiação ligada"; return; }
+});
+doc.addEventListener("keydown", aoEsc, true);
+doc.body.appendChild(ov);
+return ov;
+}
+function mostrarFiacao(on) {
+var F = global.EleFiacao3D; if (!F) { status("A fiação em 3D não carregou."); return false; }
+var r = on === undefined ? F.alternar() : F.ligar(!!on);
+try { if (global.BimRibbon && global.BimRibbon.setAtivo) global.BimRibbon.setAtivo("ele-fiacao", !!F.ligada()); } catch (e) {}
+status(F.ligada() ? "Fiação elétrica em 3D: ligada (fios com a bitola e a cor do projeto dentro do eletroduto)." : "Fiação elétrica em 3D: desligada.");
+return r;
+}
+function relatorioHtml(res, aplicado) {
+var r = res.relatorio || {}, t = r.pontosPorTipo || {}, q = r.quadro, mq = q && q.montado, d = r.demanda || {}, au = r.auditoria || {}, ci = r.circuitos || {};
+var linhasAmb = arr(r.porAmbiente).map(function (a) { return "<tr><td>" + esc(a.nome) + "</td><td>" + a.luz + "</td><td>" + a.interruptor + "</td><td>" + a.tug + "</td><td>" + (a.tue + (a.ld || 0)) + "</td></tr>"; }).join("");
+var pend = arr(res.pendencias).filter(function (p, i, L) { return L.indexOf(p) === i; });
+return '<div data-ele-proj="relatorio">' +
+"<p>" + (aplicado ? "<b>Projeto elétrico gerado</b> num lote só — <b>Ctrl+Z</b> desfaz tudo." : (res.lote ? "<b>Não foi possível aplicar</b> o lote no editor." : "<b>Nada a mudar:</b> o projeto elétrico do modelo já está completo (rodar de novo não duplica).")) + "</p>" +
+'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px" data-ele-proj="pontos"><thead><tr><th>Ambiente</th><th>Luz</th><th>Interruptor</th><th>TUG</th><th>TUE / ligação direta</th></tr></thead><tbody>' + linhasAmb +
+'<tr><td><b>Total</b></td><td><b>' + (t.luz || 0) + "</b></td><td><b>" + (t.interruptor || 0) + "</b></td><td><b>" + (t.tug || 0) + "</b></td><td><b>" + ((t.tue || 0) + (t.ld || 0)) + "</b></td></tr></tbody></table>" +
+"<p><b>Circuitos:</b> " + (ci.total || 0) + " (" + (ci.luz || 0) + " de iluminação, " + (ci.tug || 0) + " de tomadas, " + (ci.tue || 0) + " de uso específico) · <b>DR</b> " + (ci.dr || 0) + " · <b>eletrodutos</b> " + f1(r.eletrodutosMetros) + " m</p>" +
+"<p><b>Quadro:</b> " + (q ? esc(q.id) + " — " + (q.modelo ? q.modelo.espacos + " módulos, " + esc(q.modelo.material) + " de " + esc(q.modelo.instalacao) : "") + (mq ? " · montado com " + mq.disjuntores + " disjuntor(es), " + mq.dr + " DR, " + mq.dps + " DPS e o geral" : "") : "sem quadro") + "</p>" +
+"<p><b>Demanda</b> " + f1(d.demanda_kVA) + " kVA (carga instalada " + f1(d.instalada_kW) + " kW) · <b>padrão de entrada</b> " + (r.entrada ? "faixa " + esc(r.entrada.faixa) + ", disjuntor " + r.entrada.disjuntor_A + " A" : "não verificado") + (d.tipo ? " (fornecimento tipo " + esc(d.tipo) + ", CEMIG ND-5.1)" : "") + "</p>" +
+"<p><b>Auditoria:</b> pontos " + (au.pontos ? au.pontos.erros + " erro(s), " + au.pontos.avisos + " aviso(s)" : "—") + " · circuitos " + (au.circuitos ? au.circuitos.erros + " erro(s), " + au.circuitos.avisos + " aviso(s)" : "—") + "</p>" +
+(pend.length ? '<h4 style="margin:8px 0 4px;color:#a00">Pendências (' + pend.length + ')</h4><ul style="margin:0 0 0 18px;padding:0" data-ele-proj="pendencias">' + pend.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul>" : "") +
+'<p style="font-size:12px;margin-top:6px">NBR 5410:2004 lida numa cópia <b>não licenciada</b> à RA, sem a Errata 1/2008: só valores com o item. Demanda e entrada: CEMIG ND-5.1.</p>' +
+'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="btn primary sm" data-ele-proj-docs>Gerar documentos</button><button type="button" class="btn sm" data-ele-proj-fiacao>Mostrar fiação</button></div></div>';
+}
+function projeto() {
+if (!liberada()) { status(TRANCADA); janela("Projeto elétrico completo", "<p>" + esc(TRANCADA) + "</p>"); return null; }
+var B = global.BIM, EP = global.EleProjeto; if (!B || !B.editarOps || !B.editarLote || !EP) { status("O editor 3D não está aberto."); return null; }
+var res = null;
+try { res = EP.gerar({ ops: B.editarOps(), avaliarFam: avaliar(), criterios: criterios() }); } catch (e) { res = { ok: false, motivo: "falhou: " + (e && e.message ? e.message : e) }; }
+if (!res.ok) { janela("Projeto elétrico completo", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return res; }
+var aplicado = res.lote ? !!B.editarLote(res.lote) : false;
+janela("Projeto elétrico completo", relatorioHtml(res, aplicado));
+var rp = res.relatorio || {}, t = rp.pontosPorTipo || {};
+status("Projeto elétrico: " + (t.luz || 0) + " luz, " + (t.tug || 0) + " TUG, " + (t.tue || 0) + " TUE, " + (t.interruptor || 0) + " interruptor(es) · " + (rp.circuitos ? rp.circuitos.total : 0) + " circuito(s)" + (aplicado ? " (Ctrl+Z desfaz tudo)" : "") + ".");
+return res;
+}
+function aparelhosRegex() {
+var ids = ["ele-eq-[a-z0-9-]+", "ele-lum-[a-z0-9-]+", "ra-ilum-[a-z0-9-]+", "ra-luminaria", "ra-clim-[a-z0-9-]+", "ra-coz-(geladeira|torre-quente|inferior|ilha|lavadora)", "hid-chuveiro", "hid-bomba", "hid-aquecedor-eletrico-passagem"];
+try { arr(global.EleAparelhosDados && global.EleAparelhosDados.aparelhos).forEach(function (a) { arr(a.casar && a.casar.fam).forEach(function (f) { if (ids.indexOf(f) < 0 && /^[a-z0-9-]+$/.test(f)) ids.push(f); }); }); } catch (e) {}
+return new RegExp("^(" + ids.join("|") + ")$");
+}
+function biblioteca(re, rotulo, G) {
+var FU = global.FamiliaUI; if (!FU) { status("A biblioteca de famílias não carregou."); return false; }
+try { if (G && G._famSync) G._famSync(); if (G && G._famAbrir) G._famAbrir("biblioteca"); } catch (e) {}
+FU._filtroId = re; FU._filtroRotulo = rotulo; FU._busca = "";
+try { FU.render(); } catch (e2) {}
+status("Biblioteca filtrada em " + rotulo + ": escolha o tipo e clique Colocar.");
+return true;
+}
+function ilum(G) {
+var U = global.EletIlumUI; if (!U || !U.abrir) { status("A ligação da iluminação não carregou."); return false; }
+var amb = null; try { var AU = global.BimAmbienteUI; amb = AU && AU.selecionado ? AU.selecionado() : null; } catch (e) { amb = null; }
+return U.abrir(amb != null ? String(amb) : undefined);
+}
+var DICA_PROJETO = "Num clique: pontos (luz, tomadas pelo perímetro, cabeceira da cama, rack, bancada, tomada de cada aparelho, interruptor junto à porta), a ligação da iluminação de cada ambiente, os circuitos, o quadro com disjuntores, DR e DPS, os eletrodutos traçados e a auditoria. Tudo num lote só: Ctrl+Z desfaz. Rodar de novo não duplica nada.";
+var U = {
+registrar: function (reg, G) {
+var R = global.BimRibbon; if (!R || !reg || !global.EleProjeto) return false;
+R.acrescentar("instalacoes", "Instalações", "Projeto elétrico", [
+{ id: "ele-projeto", rotulo: "Projeto elétrico\ncompleto", icone: "estrela", grande: true, dica: DICA_PROJETO },
+{ id: "ele-m-caixa", rotulo: "Caixa e\nplaca", icone: "grade", grande: true, dica: "Abre a biblioteca só nas caixas 4×2, 4×4 e octogonal (PVC e metálica), placas e tampas ele-*; escolha o tipo e clique no modelo." },
+{ id: "ele-m-aparelhos", rotulo: "Aparelhos e\nluminárias", icone: "familia", grande: true, dica: "Abre a biblioteca só nos aparelhos que pedem o próprio ponto (geladeira, micro-ondas, cooktop, split, chuveiro…) e nas luminárias." },
+{ id: "ele-ilum", rotulo: "Ligação da\niluminação", icone: "ima", grande: true, dica: "O painel da ligação da iluminação do ambiente selecionado: caminho do eletroduto, regra dos interruptores, comandos e problemas." },
+{ id: "ele-aparelho-ponto", rotulo: "Aparelho\ncria ponto", icone: "mais", grande: true, tipo: "alterna", dica: "Ligado: ao colocar a geladeira, o chuveiro, o split… o ponto elétrico dele nasce junto (um Ctrl+Z desfaz os dois). Desligado: o aparelho entra sozinho." },
+{ id: "ele-fiacao", rotulo: "Mostrar\nfiação", icone: "olho", grande: true, tipo: "alterna", dica: "Liga os fios em 3D dentro do eletroduto, com a bitola e a cor do projeto (fase, neutro, retorno, terra). Desligado de fábrica para não pesar." }
+]);
+reg["ele-projeto"] = function () { projeto(); return true; };
+reg["ele-m-caixa"] = function () { return biblioteca(/^ele-(caixa|placa|tampa)-/, "caixas, placas e tampas elétricas", G); };
+reg["ele-m-aparelhos"] = function () { return biblioteca(aparelhosRegex(), "aparelhos e luminárias", G); };
+reg["ele-ilum"] = function () { ilum(G); return true; };
+reg["ele-aparelho-ponto"] = function (e) {
+var A = global.EleAparelhos; if (!A) return false;
+var on = !(e && e.ligado === false); A.definir("auto", on);
+status(on ? "Aparelho cria ponto: ligado." : "Aparelho cria ponto: desligado (o aparelho entra sem o ponto dele).");
+return true;
+};
+reg["ele-fiacao"] = function (e) { mostrarFiacao(!(e && e.ligado === false)); return true; };
+try { if (global.EleAparelhos && R.setAtivo) R.setAtivo("ele-aparelho-ponto", !!global.EleAparelhos.cfg.auto); } catch (e1) {}
+return true;
+},
+projeto: projeto, mostrarFiacao: mostrarFiacao, aparelhosRegex: aparelhosRegex, liberada: liberada, relatorioHtml: relatorioHtml
+};
+global.EleProjetoUI = U;
+if (typeof module !== "undefined" && module.exports) module.exports = U;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/mobregrasdados.js ==== */
