@@ -311,7 +311,18 @@
            item "só mão de obra" cobrava a MO do custo direto num preço com BDI.
            Escala proporcional; o custo direto fica guardado para o analítico,
            que compara os insumos (sempre custo direto) com ele. */
-        if (regiao && pacote.dados) pacote.dados.forEach(function (it) {
+        self._aplicarRegiao(pacote, regiao);
+        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
+        var grav = { ok: true };
+        if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
+        return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
+      });
+    },
+    /* preço da REGIÃO (SETOP) ou "Com BDI oficial" (GOINFRA) no lugar do padrão
+       do arquivo. Extraído do carregarInclusa (07/11/2026) para valer também
+       no instalarCompetencia (mês fixado pelo edital). */
+    _aplicarRegiao: function (pacote, regiao) {
+        if (regiao && pacote && pacote.dados) pacote.dados.forEach(function (it) {
           if (!it.precos || it.precos[regiao] == null) return;
           var antes = Number(it.custoUnitario) || 0, novo = Number(it.precos[regiao]) || 0;
           if (regiao === "comBDI") it.custoDireto = antes;
@@ -323,11 +334,7 @@
             it.custoMO = mo; it.custoEQ = eq; it.custoMAT = Math.round((novo - mo - eq) * 100) / 100;
           }
         });
-        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
-        var grav = { ok: true };
-        if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
-        return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
-      });
+        return pacote;
     },
 
     /* ==================================================================
@@ -354,7 +361,11 @@
          `sel.competencia` passando por ele, a base subiria com o mês novo e o
          `sel` gravado diria o mês do edital — rótulo sem lastro. */
       if (sel && sel.competencia && BasesCat.temHistorico && BasesCat.temHistorico(e.id)) {
-        return this.instalarCompetencia(e.id, { uf: sel.uf, competencia: sel.competencia }, opts);
+        /* SETOP/SUDECAP (07/11/2026): o regime do eixo ("onerada") vira o do
+           arquivo ("onerado"); sem UF no eixo, a do arquivo (BasesCat.HISTORICO.uf) */
+        var hC = BasesCat.HISTORICO[e.id] || {}, rg = String(sel.regime || "");
+        rg = /^oner/.test(rg) ? "onerado" : (/^desoner/.test(rg) ? "desonerado" : "");
+        return this.instalarCompetencia(e.id, { uf: sel.uf || hC.uf || e.uf, competencia: sel.competencia, regime: rg, regiao: sel.regiao || "" }, opts);
       }
       /* ⚠ SEM CONTEXTO, O ÚLTIMO ANÚNCIO DO SERVIDOR. O arquivo da SINAPI
          desonerada tem a competência no nome (<COMP>), que sai do que o
@@ -419,11 +430,15 @@
       try { cfg.servidor = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || ""; cfg.espelho = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || ""; } catch (eC) {}
       if (opts.cfg) cfg = opts.cfg;
       var uf = String(pedido.uf || "").trim().toUpperCase(), comp = BasesCat._iso(pedido.competencia);
-      var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg);
-      var e = BasesCat.get(id) || { nome: id };
-      var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp);
-      if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
       var regime = (BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].regime) || pedido.regime || "";
+      /* (07/11/2026) SETOP e SUDECAP têm UM arquivo por regime: o nome sai do regime pedido */
+      var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg, regime);
+      var e = BasesCat.get(id) || { nome: id };
+      var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp) + (regime ? " " + regime : "");
+      if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
+      /* base regionalizada (SETOP: 6 regiões de MG): a região da instalada ou a do pedido */
+      var antigaR = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+      var regiao = pedido.regiao || (antigaR && antigaR.sel && antigaR.sel.regiao) || "";
       var tentativas = [], achadas = [];
       var pegar = opts.pegar || function (f) { return self._pegarFonte(f, opts); };
       var tentar = function (k) {
@@ -442,10 +457,14 @@
           }
           /* `sel.competencia` = FIXADA: a varredura diária não troca o mês
              (Atualizacao.planoExtras) e a tela diz que está fixada */
-          var n = self.registrar(id, j, { sel: { uf: uf, competencia: comp }, catId: id });
+          if (regiao) self._aplicarRegiao(j, regiao);
+          var selC = { uf: uf, competencia: comp };
+          if (regiao) selC.regiao = regiao;
+          if (regime && BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].arquivos) selC.regime = regime;   /* só onde o regime escolhe o ARQUIVO */
+          var n = self.registrar(id, j, { sel: selC, catId: id });
           var grav = { ok: true };
           if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
-          return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, origem: f.origem, atual: !!f.atual,
+          return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, regiao: regiao || null, origem: f.origem, atual: !!f.atual,
             live: f.origem !== "disco", fixada: true, persistido: grav.ok, gravErro: grav.erro, tentativas: tentativas };
         }, function (erro) {
           tentativas.push(nomeF + ": " + String((erro && erro.message) || erro || "falhou"));
@@ -477,17 +496,34 @@
       var self = this;
       opts = opts || {};
       var id = String(catId || "").toUpperCase(), comp = BasesCat._iso(pedido && pedido.competencia), uf = String((pedido && pedido.uf) || "").toUpperCase();
+      var regP = (pedido && (pedido.regime === "onerado" || pedido.regime === "desonerado")) ? pedido.regime : "";
+      var regDe = function (b) { return (b && b.desonerado === true) ? "desonerado" : ((b && b.desonerado === false) ? "onerado" : ""); };
       var inst = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
-      if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp) {
-        return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp });
+      /* ⚠ (07/11/2026) o mês certo no regime ERRADO não é "já instalada": a
+         SUDECAP 07/2026 desonerada respondia "ja" a um edital sem desoneração */
+      if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp && !(regP && regDe(inst) && regDe(inst) !== regP)) {
+        return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp, regime: regDe(inst) || regP });
       }
       var e = BasesCat.get(id) || { nome: id };
-      return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; return r; }, function (err) {
+      return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; r.regime = regP || r.regime || ""; return r; }, function (err) {
         if (!err || !err.naoEncontrada || !opts.permitirAtual) throw err;
-        return self.instalar(id, { uf: uf, competencia: "" }, { pesoMb: opts.pesoMb }).then(function (r) {
+        /* a ATUAL no regime do edital, onde o regime escolhe o arquivo (SETOP,
+           GOINFRA: eixo "regime" = "onerada"/"desonerada") */
+        var selA = { uf: uf, competencia: "" };
+        var eixoR = (e.eixos || []).filter(function (x) { return x && x.id === "regime"; })[0];
+        if (eixoR && regP) {
+          var vR = regP === "onerado" ? "onerada" : "desonerada";
+          if ((eixoR.opcoes || []).some(function (o) { return o && o.v === vR; })) selA.regime = vR;
+        }
+        return self.instalar(id, selA, { pesoMb: opts.pesoMb }).then(function (r) {
           var usada = BasesCat._iso(r.competencia) || r.competencia || "";
           r.ok = true; r.fallback = true; r.pedida = comp; r.tentativas = err.tentativas;
-          r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + " — o edital pede " + BasesCat.fmtVersao(comp) + ".";
+          /* o regime é o que a base INSTALADA declara — nunca o do edital por
+             suposição (a justificativa de preços imprime este campo) */
+          var bi = self.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+          r.regime = regDe(bi);
+          r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + (r.regime ? " " + r.regime : "") +
+            " — o edital pede " + BasesCat.fmtVersao(comp) + (regP ? " " + regP : "") + ".";
           return r;
         });
       });

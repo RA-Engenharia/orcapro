@@ -315,8 +315,25 @@
    * ------------------------------------------------------------------ */
   var HISTORICO = {
     SINAPI_DES: { arquivo: "sinapi-<UF>-<COMP>-desonerada.json", regime: "desonerado" },
-    SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" }
+    SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" },
+    /* (07/11/2026) bases estaduais/municipais exigidas por edital (Muriaé/MG
+       pediu SETOP 04/2026, SUDECAP 07/2026 e ORSE 07/2026). O servidor da RA
+       guarda um arquivo por competência e anuncia o que tem em
+       /bases/bases-historico.json (tools/indice-historico-bases.js).
+       `arquivos` = nome POR REGIME (SETOP e SUDECAP publicam os dois);
+       `padrao` = o regime quando o pedido não diz (o mesmo do current).
+       ⚠ SUDECAP é de praça: o arquivo grava uf "BH" (não "MG"). */
+    SETOP: { arquivos: { desonerado: "setop-<UF>-<COMP>.json", onerado: "setop-<UF>-<COMP>-onerada.json" },
+             atuais: { desonerado: "setop-<UF>-current.json", onerado: "setop-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MG" },
+    SUDECAP: { arquivos: { desonerado: "sudecap-<UF>-<COMP>.json", onerado: "sudecap-<UF>-<COMP>-onerada.json" }, padrao: "desonerado", regime: "", uf: "BH" },
+    ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" }
   };
+  /* nome do arquivo de UM mês, pelo regime pedido (bases com `arquivos`) */
+  function nomeHistorico(h, regime) {
+    if (!h.arquivos) return { arquivo: h.arquivo, atual: h.atual || "" };
+    var r = (regime === "onerado" || regime === "desonerado") ? regime : (h.padrao || "desonerado");
+    return { arquivo: h.arquivos[r] || "", atual: (h.atuais && h.atuais[r]) || "" };
+  }
   function semBarra(u) { return String(u == null ? "" : u).trim().replace(/\/+$/, ""); }
 
   var BasesCat = {
@@ -592,14 +609,16 @@
        cfg = { servidor, espelho } (CONFIG.licencaServer, CONFIG.appWebUrl).
        Pedido inválido (UF sem 2 letras, mês que não é AAAA-MM) → [] : sem
        nome de arquivo montado no chute. */
-    fontesCompetencia: function (id, uf, comp, cfg) {
+    fontesCompetencia: function (id, uf, comp, cfg, regime) {
       var h = HISTORICO[up(id)];
       var iso = this._iso(comp), U2 = up(uf);
       if (!h || !iso || !/^[A-Z]{2}$/.test(U2)) return [];
       cfg = cfg || {};
       var srv = semBarra(cfg.servidor), esp = semBarra(cfg.espelho);
-      var lista = [], nomes = [h.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
-      if (h.atual) nomes.push(h.atual.replace("<UF>", U2));
+      var nm = nomeHistorico(h, regime);
+      if (!nm.arquivo) return [];
+      var lista = [], nomes = [nm.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
+      if (nm.atual) nomes.push(nm.atual.replace("<UF>", U2));
       nomes.forEach(function (nome, i) {
         var atual = i > 0;
         lista.push({ origem: "disco", url: "data/" + nome, gz: true, atual: atual });
@@ -644,13 +663,30 @@
                      quando ele passar a publicar)
        `uf` filtra quando a fonte diz a UF; quem não diz (o anúncio do servidor)
        entra para qualquer UF — a instalação confere o conteúdo de qualquer jeito. */
-    competenciasConhecidas: function (id, uf, fatos) {
+    competenciasConhecidas: function (id, uf, fatos, regime) {
       fatos = fatos || {};
       var k = up(id), U2 = up(uf), self = this, out = [];
       var add = function (c) { var iso = self._iso(c); if (iso && out.indexOf(iso) < 0) out.push(iso); };
       var daUf = function (x) { return !U2 || !x || !x.uf || up(x.uf) === U2; };
-      (fatos.instaladas || []).forEach(function (b) { if (b && up(b.fonte) === k && daUf(b)) add(b.competencia); });
-      var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : "");
+      (fatos.instaladas || []).forEach(function (b) {
+        if (!b || up(b.fonte) !== k || !daUf(b)) return;
+        /* regime pedido × o que a instalada declara: outro regime não é "o mês que existe" */
+        if ((regime === "onerado" || regime === "desonerado") && (b.desonerado === true || b.desonerado === false) && b.desonerado !== (regime === "desonerado")) return;
+        add(b.competencia);
+      });
+      /* (07/11/2026) índice do servidor da RA: /bases/bases-historico.json
+         = { bases: { SETOP: { MG: [{competencia, regimes:["onerado",…]}] } } }
+         Lista o que EXISTE lá, lido do cabeçalho de cada arquivo. */
+      var hb = fatos.historico && fatos.historico.bases && fatos.historico.bases[k];
+      if (hb) Object.keys(hb).forEach(function (u) {
+        if (U2 && up(u) !== U2) return;
+        (hb[u] || []).forEach(function (c) {
+          if (!c) return;
+          if ((regime === "onerado" || regime === "desonerado") && Array.isArray(c.regimes) && c.regimes.indexOf(regime) < 0) return;
+          add(c.competencia);
+        });
+      });
+      var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : (k === "ORSE" ? "orse" : ""));
       var srv = chave && fatos.servidor ? fatos.servidor[chave] : null;
       if (srv) { add(srv.competencia); (srv.competencias || []).forEach(add); }
       var d = fatos.disco || {};

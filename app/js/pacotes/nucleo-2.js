@@ -64488,7 +64488,8 @@ return {
 sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado },
 instaladas: (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [],
 compsOnerada: this._compsPorUf || {},
-fatos: { servidor: (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null, disco: this._basesDisco || null, espelho: this._espelhoStatus || null },
+fatos: { servidor: (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null, disco: this._basesDisco || null, espelho: this._espelhoStatus || null,
+historico: this._basesHistorico || null },
 catalogo: (typeof BasesCat !== "undefined") ? BasesCat : null
 };
 },
@@ -64498,10 +64499,19 @@ this._licFatosPedidos = true;
 var self = this, id = this.orcAtual && this.orcAtual.id, ps = [];
 if (!this._basesDisco && this._carregarEstados) ps.push(this._carregarEstados().catch(function () {}));
 if (typeof Atualizacao !== "undefined" && Atualizacao.statusServidor && !Atualizacao._ultimoStatus) ps.push(Atualizacao.statusServidor().catch(function () {}));
+if (!this._basesHistorico) ps.push(this._carregarHistoricoBases().catch(function () {}));
 if (!ps.length) return;
 Promise.all(ps).then(function () {
 if (self.orcAtual && self.orcAtual.id === id && self.tela === "editor") self.render();
 });
+},
+_carregarHistoricoBases: function () {
+var self = this;
+var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/+$/, "") : "";
+if (!srv || typeof fetch !== "function") return Promise.resolve(null);
+return fetch(srv + "/bases/bases-historico.json", { cache: "no-store" })
+.then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+.then(function (j) { if (j && j.bases && typeof j.bases === "object") self._basesHistorico = j; return self._basesHistorico || null; });
 },
 _licExigida: function (chave) {
 var orc = this.orcAtual;
@@ -64532,9 +64542,10 @@ return;
 }
 if (typeof BasesCat !== "undefined" && BasesCat.temHistorico(e.catId)) {
 UI.toast("Procurando " + nome + " no disco, no servidor e no espelho…", "ok");
-Bases.instalarCompetencia(e.catId, { uf: e.uf, competencia: e.competencia, regime: e.regime }, { pesoMb: 3 }).then(function (r) {
-feito({ catId: e.catId, uf: e.uf, competencia: e.competencia }, nome + " instalada (" + r.total.toLocaleString("pt-BR") + " itens, " +
-({ disco: "do disco desta máquina", servidor: "do servidor da RA", espelho: "do espelho do app" }[r.origem] || r.origem) + "). A competência fica fixada: a atualização automática não a troca.");
+Bases.instalarCompetencia(e.catId, { uf: e.praca || e.uf, competencia: e.competencia, regime: e.regime }, { pesoMb: 3 }).then(function (r) {
+feito({ catId: e.catId, uf: e.praca || e.uf, competencia: e.competencia, regime: e.regime }, nome + " instalada (" + r.total.toLocaleString("pt-BR") + " itens, " +
+({ disco: "do disco desta máquina", servidor: "do servidor da RA", espelho: "do espelho do app" }[r.origem] || r.origem) + ")" +
+(r.regiao ? ", preços da região " + r.regiao : "") + ". A competência fica fixada: a atualização automática não a troca.");
 }).catch(function (err) {
 var ach = (err && err.achadas && err.achadas.length) ? " Existe(m): " + err.achadas.map(Licitacao.fmtComp).join(", ") + "." : "";
 falhou(nome + " não foi encontrada (" + ((err && err.tentativas) || []).join("; ") + ")." + ach);
@@ -64577,8 +64588,8 @@ var g = self.persistir(); self.render();
 if (self._gravou(g)) UI.toast((aviso ? aviso + " " : "") + "Escolha registrada na justificativa de preços: o edital exige " + Licitacao.fmtBase(e) + ", os preços usam " + Licitacao.fmtBase(u) + ".", "aviso", 14000);
 };
 if (uso) { registrar(uso, ""); return; }
-Bases.garantirCompetencia(e.catId, { uf: e.uf, competencia: e.competencia, regime: e.regime }, { permitirAtual: true }).then(function (r) {
-var u = { catId: e.catId, fonte: e.fonte, uf: String(r.uf || e.uf).toUpperCase(), competencia: Licitacao._comp(r.competencia), regime: e.regime };
+Bases.garantirCompetencia(e.catId, { uf: e.praca || e.uf, competencia: e.competencia, regime: e.regime }, { permitirAtual: true }).then(function (r) {
+var u = { catId: e.catId, fonte: e.fonte, uf: String(r.uf || e.praca || e.uf).toUpperCase(), competencia: Licitacao._comp(r.competencia), regime: r.fallback ? (r.regime || "") : (r.regime || e.regime) };
 if (!r.fallback) {
 Licitacao.declararBaseUsada(orc, u);
 var g2 = self.persistir(); self.render();

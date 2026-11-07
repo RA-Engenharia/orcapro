@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.257",
+versao: "1.2.258",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -6802,7 +6802,15 @@ carregarInclusa: function (arquivo, fonte, regiao, opts) {
 var self = this;
 opts = opts || {};
 return this._pegar(arquivo, opts).then(function (pacote) {
-if (regiao && pacote.dados) pacote.dados.forEach(function (it) {
+self._aplicarRegiao(pacote, regiao);
+var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
+var grav = { ok: true };
+if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
+return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
+});
+},
+_aplicarRegiao: function (pacote, regiao) {
+if (regiao && pacote && pacote.dados) pacote.dados.forEach(function (it) {
 if (!it.precos || it.precos[regiao] == null) return;
 var antes = Number(it.custoUnitario) || 0, novo = Number(it.precos[regiao]) || 0;
 if (regiao === "comBDI") it.custoDireto = antes;
@@ -6814,11 +6822,7 @@ var mo = Math.round((Number(it.custoMO) || 0) * f * 100) / 100, eq = Math.round(
 it.custoMO = mo; it.custoEQ = eq; it.custoMAT = Math.round((novo - mo - eq) * 100) / 100;
 }
 });
-var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
-var grav = { ok: true };
-if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
-return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
-});
+return pacote;
 },
 instalar: function (catId, sel, opts) {
 var self = this;
@@ -6827,7 +6831,9 @@ if (typeof BasesCat === "undefined") return Promise.reject(new Error("catálogo 
 var e = BasesCat.get(catId);
 if (!e) return Promise.reject(new Error("banco fora do catálogo: " + catId));
 if (sel && sel.competencia && BasesCat.temHistorico && BasesCat.temHistorico(e.id)) {
-return this.instalarCompetencia(e.id, { uf: sel.uf, competencia: sel.competencia }, opts);
+var hC = BasesCat.HISTORICO[e.id] || {}, rg = String(sel.regime || "");
+rg = /^oner/.test(rg) ? "onerado" : (/^desoner/.test(rg) ? "desonerado" : "");
+return this.instalarCompetencia(e.id, { uf: sel.uf || hC.uf || e.uf, competencia: sel.competencia, regime: rg, regiao: sel.regiao || "" }, opts);
 }
 if (!opts.ctx) {
 try { if (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) opts.ctx = { servidor: Atualizacao._ultimoStatus }; } catch (eCtx) {}
@@ -6865,11 +6871,13 @@ var cfg = {};
 try { cfg.servidor = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || ""; cfg.espelho = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || ""; } catch (eC) {}
 if (opts.cfg) cfg = opts.cfg;
 var uf = String(pedido.uf || "").trim().toUpperCase(), comp = BasesCat._iso(pedido.competencia);
-var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg);
-var e = BasesCat.get(id) || { nome: id };
-var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp);
-if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
 var regime = (BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].regime) || pedido.regime || "";
+var fontes = BasesCat.fontesCompetencia(id, uf, comp, cfg, regime);
+var e = BasesCat.get(id) || { nome: id };
+var rotulo = e.nome + " " + uf + " " + BasesCat.fmtVersao(comp) + (regime ? " " + regime : "");
+if (!fontes.length) return Promise.reject(new Error("Pedido inválido para " + e.nome + ": informe a UF e a competência (AAAA-MM)."));
+var antigaR = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+var regiao = pedido.regiao || (antigaR && antigaR.sel && antigaR.sel.regiao) || "";
 var tentativas = [], achadas = [];
 var pegar = opts.pegar || function (f) { return self._pegarFonte(f, opts); };
 var tentar = function (k) {
@@ -6886,10 +6894,14 @@ tentativas.push(nomeF + ": " + c.motivo);
 if (c.competenciaAchada && achadas.indexOf(c.competenciaAchada) < 0) achadas.push(c.competenciaAchada);
 return tentar(k + 1);
 }
-var n = self.registrar(id, j, { sel: { uf: uf, competencia: comp }, catId: id });
+if (regiao) self._aplicarRegiao(j, regiao);
+var selC = { uf: uf, competencia: comp };
+if (regiao) selC.regiao = regiao;
+if (regime && BasesCat.HISTORICO[id] && BasesCat.HISTORICO[id].arquivos) selC.regime = regime;
+var n = self.registrar(id, j, { sel: selC, catId: id });
 var grav = { ok: true };
 if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
-return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, origem: f.origem, atual: !!f.atual,
+return { total: n, fonte: id, competencia: j.mes || comp, uf: uf, regiao: regiao || null, origem: f.origem, atual: !!f.atual,
 live: f.origem !== "disco", fixada: true, persistido: grav.ok, gravErro: grav.erro, tentativas: tentativas };
 }, function (erro) {
 tentativas.push(nomeF + ": " + String((erro && erro.message) || erro || "falhou"));
@@ -6906,17 +6918,28 @@ garantirCompetencia: function (catId, pedido, opts) {
 var self = this;
 opts = opts || {};
 var id = String(catId || "").toUpperCase(), comp = BasesCat._iso(pedido && pedido.competencia), uf = String((pedido && pedido.uf) || "").toUpperCase();
+var regP = (pedido && (pedido.regime === "onerado" || pedido.regime === "desonerado")) ? pedido.regime : "";
+var regDe = function (b) { return (b && b.desonerado === true) ? "desonerado" : ((b && b.desonerado === false) ? "onerado" : ""); };
 var inst = this.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
-if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp) {
-return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp });
+if (inst && String(inst.uf || "").toUpperCase() === uf && BasesCat._iso(inst.competencia) === comp && !(regP && regDe(inst) && regDe(inst) !== regP)) {
+return Promise.resolve({ ok: true, ja: true, fonte: id, uf: uf, competencia: comp, regime: regDe(inst) || regP });
 }
 var e = BasesCat.get(id) || { nome: id };
-return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; return r; }, function (err) {
+return this.instalarCompetencia(id, pedido, opts).then(function (r) { r.ok = true; r.regime = regP || r.regime || ""; return r; }, function (err) {
 if (!err || !err.naoEncontrada || !opts.permitirAtual) throw err;
-return self.instalar(id, { uf: uf, competencia: "" }, { pesoMb: opts.pesoMb }).then(function (r) {
+var selA = { uf: uf, competencia: "" };
+var eixoR = (e.eixos || []).filter(function (x) { return x && x.id === "regime"; })[0];
+if (eixoR && regP) {
+var vR = regP === "onerado" ? "onerada" : "desonerada";
+if ((eixoR.opcoes || []).some(function (o) { return o && o.v === vR; })) selA.regime = vR;
+}
+return self.instalar(id, selA, { pesoMb: opts.pesoMb }).then(function (r) {
 var usada = BasesCat._iso(r.competencia) || r.competencia || "";
 r.ok = true; r.fallback = true; r.pedida = comp; r.tentativas = err.tentativas;
-r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + " — o edital pede " + BasesCat.fmtVersao(comp) + ".";
+var bi = self.lista().filter(function (b) { return String(b.fonte).toUpperCase() === id; })[0];
+r.regime = regDe(bi);
+r.aviso = "Usando " + e.nome + " de " + (BasesCat.fmtVersao(usada) || "competência não declarada") + (r.regime ? " " + r.regime : "") +
+" — o edital pede " + BasesCat.fmtVersao(comp) + (regP ? " " + regP : "") + ".";
 return r;
 });
 });
@@ -7199,8 +7222,17 @@ var AUSENTES = [
 function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }
 var HISTORICO = {
 SINAPI_DES: { arquivo: "sinapi-<UF>-<COMP>-desonerada.json", regime: "desonerado" },
-SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" }
+SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", regime: "" },
+SETOP: { arquivos: { desonerado: "setop-<UF>-<COMP>.json", onerado: "setop-<UF>-<COMP>-onerada.json" },
+atuais: { desonerado: "setop-<UF>-current.json", onerado: "setop-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MG" },
+SUDECAP: { arquivos: { desonerado: "sudecap-<UF>-<COMP>.json", onerado: "sudecap-<UF>-<COMP>-onerada.json" }, padrao: "desonerado", regime: "", uf: "BH" },
+ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" }
 };
+function nomeHistorico(h, regime) {
+if (!h.arquivos) return { arquivo: h.arquivo, atual: h.atual || "" };
+var r = (regime === "onerado" || regime === "desonerado") ? regime : (h.padrao || "desonerado");
+return { arquivo: h.arquivos[r] || "", atual: (h.atuais && h.atuais[r]) || "" };
+}
 function semBarra(u) { return String(u == null ? "" : u).trim().replace(/\/+$/, ""); }
 var BasesCat = {
 REGIOES: REGIOES,
@@ -7362,14 +7394,16 @@ nota: e.nota || ""
 },
 HISTORICO: HISTORICO,
 temHistorico: function (id) { return Object.prototype.hasOwnProperty.call(HISTORICO, up(id)); },
-fontesCompetencia: function (id, uf, comp, cfg) {
+fontesCompetencia: function (id, uf, comp, cfg, regime) {
 var h = HISTORICO[up(id)];
 var iso = this._iso(comp), U2 = up(uf);
 if (!h || !iso || !/^[A-Z]{2}$/.test(U2)) return [];
 cfg = cfg || {};
 var srv = semBarra(cfg.servidor), esp = semBarra(cfg.espelho);
-var lista = [], nomes = [h.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
-if (h.atual) nomes.push(h.atual.replace("<UF>", U2));
+var nm = nomeHistorico(h, regime);
+if (!nm.arquivo) return [];
+var lista = [], nomes = [nm.arquivo.replace("<UF>", U2).replace("<COMP>", iso)];
+if (nm.atual) nomes.push(nm.atual.replace("<UF>", U2));
 nomes.forEach(function (nome, i) {
 var atual = i > 0;
 lista.push({ origem: "disco", url: "data/" + nome, gz: true, atual: atual });
@@ -7395,13 +7429,26 @@ if (decl !== null && decl !== (reg === "desonerado")) return { ok: false, motivo
 }
 return { ok: true, competencia: cj };
 },
-competenciasConhecidas: function (id, uf, fatos) {
+competenciasConhecidas: function (id, uf, fatos, regime) {
 fatos = fatos || {};
 var k = up(id), U2 = up(uf), self = this, out = [];
 var add = function (c) { var iso = self._iso(c); if (iso && out.indexOf(iso) < 0) out.push(iso); };
 var daUf = function (x) { return !U2 || !x || !x.uf || up(x.uf) === U2; };
-(fatos.instaladas || []).forEach(function (b) { if (b && up(b.fonte) === k && daUf(b)) add(b.competencia); });
-var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : "");
+(fatos.instaladas || []).forEach(function (b) {
+if (!b || up(b.fonte) !== k || !daUf(b)) return;
+if ((regime === "onerado" || regime === "desonerado") && (b.desonerado === true || b.desonerado === false) && b.desonerado !== (regime === "desonerado")) return;
+add(b.competencia);
+});
+var hb = fatos.historico && fatos.historico.bases && fatos.historico.bases[k];
+if (hb) Object.keys(hb).forEach(function (u) {
+if (U2 && up(u) !== U2) return;
+(hb[u] || []).forEach(function (c) {
+if (!c) return;
+if ((regime === "onerado" || regime === "desonerado") && Array.isArray(c.regimes) && c.regimes.indexOf(regime) < 0) return;
+add(c.competencia);
+});
+});
+var chave = k === "SINAPI_DES" ? "sinapiDes" : (k === "SICRO" ? "sicro" : (k === "ORSE" ? "orse" : ""));
 var srv = chave && fatos.servidor ? fatos.servidor[chave] : null;
 if (srv) { add(srv.competencia); (srv.competencias || []).forEach(add); }
 var d = fatos.disco || {};
@@ -56657,7 +56704,7 @@ conhecidas = ((ctx.compsOnerada || {})[e.uf] || []).slice();
 var sv = fatos.servidor && fatos.servidor.sinapi;
 if (sv && self._comp(sv.competencia)) conhecidas.push(self._comp(sv.competencia));
 } else if (Cat && Cat.temHistorico && Cat.temHistorico(e.catId)) {
-conhecidas = Cat.competenciasConhecidas(e.catId, e.praca ? "" : e.uf, fatos);
+conhecidas = Cat.competenciasConhecidas(e.catId, e.praca || e.uf, fatos, e.regime);
 } else if (Cat && Cat.get && Cat.get(e.catId)) {
 var ent = Cat.get(e.catId), sv2 = ent.chaveStatus && fatos.servidor ? fatos.servidor[ent.chaveStatus] : null;
 if (ent.versaoPacote) conhecidas.push(self._comp(ent.versaoPacote));

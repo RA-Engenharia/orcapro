@@ -1209,7 +1209,7 @@
           var sv = fatos.servidor && fatos.servidor.sinapi;
           if (sv && self._comp(sv.competencia)) conhecidas.push(self._comp(sv.competencia));
         } else if (Cat && Cat.temHistorico && Cat.temHistorico(e.catId)) {
-          conhecidas = Cat.competenciasConhecidas(e.catId, e.praca ? "" : e.uf, fatos);   /* tabela de praça: a base instalada grava "BH" no uf, não "MG" */
+          conhecidas = Cat.competenciasConhecidas(e.catId, e.praca || e.uf, fatos, e.regime);   /* tabela de praça: a base instalada grava "BH" no uf, não "MG" */
         } else if (Cat && Cat.get && Cat.get(e.catId)) {
           /* sem histórico: só o que vem no pacote ou o atual do servidor */
           var ent = Cat.get(e.catId), sv2 = ent.chaveStatus && fatos.servidor ? fatos.servidor[ent.chaveStatus] : null;
