@@ -471,6 +471,17 @@
       status(v ? "Vista Instalações: arquitetura em cinza translúcido — tubos dentro da parede e sob o piso à vista." : "Vista Instalações desligada: arquitetura opaca.");
       return v;
     };
+    /* VER ATRAVÉS DO IFC (06/11/2026, IFC de arquitetura de cliente): com um IFC de arquitetura aberto como referência, a vista Instalações deixa o
+       IFC INTEIRO em cinza translúcido (js/bim.js instVistaFundo) — o botão do painel tem esse nome, que é o que a pessoa procura.
+       Depois do Traçar automaticamente com o IFC, a vista liga sozinha (sem isso a rede nasce dentro da parede, do piso e do
+       terreno do IFC, e "não dá para ver as peças") — salvo se a pessoa desligou a vista à mão nesta sessão. */
+    U._ifcRef = function () { var b = B(); try { return !!(b && b.ifcReferenciaAberto && b.ifcReferenciaAberto()); } catch (e) { return false; } };
+    U.aposTracarIfc = function () {
+      var b = B(); if (!U._ifcRef() || !b || !b.vistaInstalacoes || U.vistaInst.manual === false) return false;
+      if (!b.vistaInstalacoes()) { b.vistaInstalacoes(true); U._pintarBotaoVista(); U._corDaVista(true); }
+      try { U.renderPainel(); } catch (eR) {}   /* o botão "Ver através do IFC: ligado" diz o que aconteceu; a barra de status fica com o resumo do traçado */
+      return true;
+    };
     U._pintarBotaoVista = function () {
       try { var b = B(), on = !!(b && b.vistaInstalacoes && b.vistaInstalacoes()); document.querySelectorAll('[data-rv-vb="vista-inst"]').forEach(function (e) { e.setAttribute("aria-pressed", on ? "true" : "false"); }); } catch (e) {}
     };
@@ -568,7 +579,10 @@
           T.linhas.map(function (l) { return '<tr data-id="' + esc(l.id) + '"><td>' + esc(l.categoria) + "</td><td>" + esc(l.tipo) + "</td><td>" + esc(l.sistema) + "</td><td>" + esc(l.nomeSistema) + "</td><td>" + esc(l.tamanho) + "</td><td>" + (l.comprimento != null ? fmt(l.comprimento, 3) : "") + "</td><td>" + (l.quantidade != null ? fmt(l.quantidade, 3) : "") + "</td><td>" + esc(l.unidade) + "</td><td" + (l.motivo ? ' title="' + esc(l.motivo) + '"' : "") + ">" + esc(l.codigo || "pendente") + "</td><td>" + esc(l.situacao) + "</td></tr>"; }).join("") +
           "</tbody></table></div>";
       }
-      h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn sm" data-inst="p12-verificar">Verificar sistemas</button><button class="btn sm" data-inst="p12-desc">' + (U._desc ? "Ocultar desconexões" : "Mostrar desconexões") + '</button>' +
+      var vIfc = U._ifcRef() ? !!(b && b.vistaInstalacoes && b.vistaInstalacoes()) : null;
+      h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">' +
+        (vIfc != null ? '<button class="btn sm' + (vIfc ? " primary" : "") + '" data-inst="p12-ver-ifc" aria-pressed="' + (vIfc ? "true" : "false") + '" title="Deixa o IFC aberto (paredes, pisos, terreno, louças e móveis dele) em cinza translúcido para ver os tubos e as conexões por dentro">' + (vIfc ? "Ver através do IFC: ligado" : "Ver através do IFC") + "</button>" : "") +
+        '<button class="btn sm" data-inst="p12-verificar">Verificar sistemas</button><button class="btn sm" data-inst="p12-desc">' + (U._desc ? "Ocultar desconexões" : "Mostrar desconexões") + '</button>' +
         (global.EletIlumUI ? '<button class="btn sm" data-inst="p12-ilum" title="Ponto de luz, interruptores, eletroduto e fiação da iluminação do ambiente">Ligação da iluminação</button>' : "") +
         '<button class="btn sm" data-inst="p12-legenda">' + (U._legenda ? "Tirar a legenda da planta" : "Legenda na planta") + '</button><button class="btn sm" data-inst="p12-tabela">' + (U._tabela ? "Fechar a tabela" : "Tabela de peças") + "</button>" +
         (U._tabela ? '<button class="btn sm primary" data-inst="p12-xlsx">Baixar .xlsx</button>' : "") +
@@ -581,6 +595,7 @@
     };
     U.cliquePainelP12 = function (a, bt) {
       if (a === "p12-verificar") { U.verificarSistemas(); return true; }
+      if (a === "p12-ver-ifc") { U.alternarVistaInst(); U.renderPainel(); return true; }
       if (a === "p12-ilum") { if (global.EletIlumUI) global.EletIlumUI.abrir(); return true; }
       if (a === "crit-ver") { U.critMostrar(Number(bt.getAttribute("data-n"))); return true; }
       if (a === "crit-corrigir") { U.critCorrigir(Number(bt.getAttribute("data-n"))); return true; }

@@ -89,6 +89,7 @@
   /* GEOMETRIA (critério de projeto da RA, não é norma — cada número com o porquê) */
   var GEO_BAR = {
     declividade: 0.005,     // hid:ok R-C10: 0,5 % é PRÁTICA de memorial (P-C5/P-C9), não está na NBR 5626:2020 (6.6.2 só pede evitar bolsa de ar)
+    tocoMin: 0.30,          // hid:ok perna mínima entre duas conexões que o auditor aceita sem acusar toco (m)
     tocoSaida: 0.30,        // hid:ok saída da caixa até o tê da ventilação: o registro no meio, à mão, fora do corpo
     ventAcima: 0.15,        // hid:ok a ventilação do barrilete termina acima do TOPO da caixa (acima do nível máximo — Tigre p.72-73)
     saidaLivre: 0.30,       // hid:ok extravasor/limpeza: a ponta livre além da face externa da edificação
@@ -501,9 +502,11 @@
           continue;
         }
         if (segSeg(a, a, Tq.a, Tq.b) <= TOL || segSeg(b, b, Tq.a, Tq.b) <= TOL || segSeg(Tq.a, Tq.a, a, b) <= TOL || segSeg(Tq.b, Tq.b, a, b) <= TOL) continue;
-        var q = r + Tq.r + folga;
+        /* água fria × esgoto/ventilação: o livre mínimo é o afastamento do projeto (10 cm; o mesmo do HidRota e do auditor), não só a folga entre tubos */
+        var fq = (modoAfasta && (Tq.sistema === "esgoto" || Tq.sistema === "ventilacao")) ? Math.max(folga, num(G.afastamento, 0.10)) : folga;   // hid:ok afastamento água × esgoto/ventilação (m)
+        var q = r + Tq.r + fq;
         if (Math.min(a.x, b.x) - q > Math.max(Tq.a.x, Tq.b.x) || Math.max(a.x, b.x) + q < Math.min(Tq.a.x, Tq.b.x) || Math.min(a.z, b.z) - q > Math.max(Tq.a.z, Tq.b.z) || Math.max(a.z, b.z) + q < Math.min(Tq.a.z, Tq.b.z) || Math.min(a.y, b.y) - q > Math.max(Tq.a.y, Tq.b.y) || Math.max(a.y, b.y) + q < Math.min(Tq.a.y, Tq.b.y)) continue;
-        if (segSeg(a, b, Tq.a, Tq.b) - r - Tq.r < folga - FOLGA_LIMITE) return { com: Tq.id, sistema: Tq.sistema };
+        if (segSeg(a, b, Tq.a, Tq.b) - r - Tq.r < fq - FOLGA_LIMITE) return { com: Tq.id, sistema: Tq.sistema };
       }
       for (var j = 0; j < vols.length; j++) {
         var v = vols[j]; if (ign && ign({ id: String(v.id), volume: true })) continue;
@@ -556,6 +559,8 @@
     lista = lista.concat(satFolhas);
     novos = base0.slice();
     var PES = H.PESOS || {}, pesoCx = num(PES.conexao, 0);
+    var pesoAfasta = 0, PESO_AFASTA = 20;   // hid:ok peso de ficar a menos de 10 cm livres de esgoto/ventilação (m equivalentes): maior que qualquer volta
+    var pesoToco = pesoCx * 1.5;   // hid:ok peso de uma perna curta: um desvio e meio (com 2 a 2ª saída do [b] do test-hid-barrilete deixa de cair no fallback) (m equivalentes)
     /* a distância do centro da caixa que contorna o corpo (com a tampa) por fora, com o tubo e a folga, arredondada à grade */
     var contorno = Math.ceil((Math.max(cx.R, num(cx.av && cx.av.valores && cx.av.valores.Diametro, 0) / 2) + rS + folga) / passo + 1) * passo;
     lista.forEach(function (s) { s.L = { x: s.x, z: s.z }; });
@@ -568,7 +573,7 @@
       novos = base0.slice();
       var arvore = [{ a: { x: A.x, z: A.z }, b: { x: A.x, z: A.z } }], folhas = [], semCaminho = [];
       function grauNo(q) {
-        var g0 = d2(q, A) <= EPS * 10 ? (comVent ? 2 : 1) : 0;   /* no A já chegam o toco da saída e a ventilação */   // hid:ok tolerância do nó
+        var g0 = d2(q, A) <= EPS * 10 ? (raizTomada ? 1 : (comVent ? 2 : 1)) : 0;   /* no A já chegam o toco da saída e a ventilação */   // hid:ok tolerância do nó
         arvore.forEach(function (sg) { if (d2(sg.a, sg.b) < EPS) return; if (d2(sg.a, q) <= EPS * 10 || d2(sg.b, q) <= EPS * 10) g0++; });   // hid:ok tolerância do nó
         folhas.forEach(function (l) { if (d2(l.L, q) <= EPS * 10) g0++; });   // hid:ok tolerância do nó (a coluna que desce dele)
         return g0;
@@ -595,7 +600,11 @@
                 /* a perna mais curta que um nó (o joelho colado no tê) não é tubo que se monte */
                 if (Lg < mNo - EPS) { ok = false; break; }
                 if (conflito(a, b, Math.max(rL, rS), null)) { ok = false; break; }
+                modoAfasta = true; var cfAf = conflito(a, b, Math.max(rL, rS), null); modoAfasta = false;
+                if (cfAf) custo += pesoAfasta;   /* a 10 cm livres da ventilação/esgoto (mínimo do projeto): o caminho que cumpre ganha; sem ele, este ainda fecha */
                 custo += Lg;
+                /* perna curta (< 30 cm) entre duas conexões é toco (TOCO_ENTRE_CONEXOES / TE_TOCO_JOELHO do auditor): pesa como um desvio, para a árvore preferir o caminho sem ela */
+                if (Lg < GEO_BAR.tocoMin - EPS) custo += pesoToco;
               }
               custo += (cm.length - 2) * pesoCx;
               if (ok && (!melhor || custo < melhor.custo - EPS)) melhor = { custo: custo, cam: cm, seg: is, q: q };
@@ -699,17 +708,39 @@
       }
       return Pl;
     }
-    var regColuna = false, modoAsc = false;
+    var modoAfasta = false;   /* conflito() exige o afastamento água × esgoto/ventilação (10 cm livres) — usado só como PREFERÊNCIA no caminho do barrilete */
+    var regColuna = false, modoAsc = false, raizTomada = false;   /* raizTomada: a descida vertical da saída chega ao pé da árvore — lá só ela se liga (o tê do barrilete pode nascer no próprio pé, sem toco e joelho) */
     function planejarCom(yP, base, reg, asc) {
       teto = yP; base0 = base; regColuna = !!reg; modoAsc = !!asc;
-      var at = lista.slice(), P = null, pc = [];
-      for (var tent = 0; tent <= lista.length; tent++) {
-        P = planejarArvore(at);
-        if (!P.colunaFalha) break;
-        pc.push({ l: P.colunaFalha.l, com: P.colunaFalha.com });
-        at = at.filter(function (s) { return s !== P.colunaFalha.l; });
+      var temTomada = base.some(function (q) { return q.id === "tomada"; }), P = null;
+      /* VARIANTES: (1) com 10 cm livres de esgoto/ventilação (peso alto no caminho); (2) como antes. (A opção raizTomada — o tê no próprio pé da
+         tomada — fica desligada: trocava o toco do tê pelo toco do primeiro desvio, sem ganho, e mudava a 2ª saída.) Vale a de MENOR nota —
+         coluna ou caminho perdido, falta de declividade e pernas curtas (< 30 cm, toco) entre conexões; empate fica com a primeira da lista (a que
+         cumpre o afastamento). A de sempre entra na disputa: nunca perder ligação, descida nem somar toco para economizar um tê. */
+      var variantes = temTomada ? [{ raiz: false, af: true }, { raiz: false, af: false }] : [{ raiz: false, af: false }], melhorV = null;
+      function rodarVariante(v) {
+        raizTomada = v.raiz; pesoAfasta = v.af ? PESO_AFASTA : 0;
+        var at = lista.slice(), pc = [], Pv = null;
+        for (var tent = 0; tent <= lista.length; tent++) {
+          Pv = planejarArvore(at);
+          if (!Pv.colunaFalha) break;
+          pc.push({ l: Pv.colunaFalha.l, com: Pv.colunaFalha.com });
+          at = at.filter(function (s) { return s !== Pv.colunaFalha.l; });
+        }
+        Pv.colunasFora = pc;
+        var curtas = 0; arr(Pv.cadeias).forEach(function (cd) { if (d3(cd.p1, cd.p2) < GEO_BAR.tocoMin - EPS) curtas++; });
+        return { P: Pv, nota: pc.length * 1000 + arr(Pv.semCaminho).length * 1000 + (Pv.baixa ? 1e6 : 0) + (Pv.faltaMax > 1 / CASAS ? 1e5 : 0) + curtas };   // hid:ok pesos de ordenação da nota (lexicográfico: baixa > falta > nº de peças), não são cálculo de engenharia
       }
-      P.colunasFora = pc;
+      var ultimaV = null, nV = [];
+      for (var tv = 0; tv < variantes.length; tv++) {
+        var rv = rodarVariante(variantes[tv]); ultimaV = tv; nV.push(rv.nota);
+        if (!melhorV || rv.nota < melhorV.nota - EPS) melhorV = { nota: rv.nota, P: rv.P, tv: tv };
+      }
+      /* a de sempre (a última) é a referência: se ela não fecha (sem descida/declividade, coluna perdida), o resultado é o dela — o chamador recusa a
+         tomada como antes; as variantes só valem onde a de sempre também vale (nunca passar a usar a tomada onde antes não se usava) */
+      if (variantes.length > 1 && nV[nV.length - 1] >= 1000) melhorV = { tv: variantes.length - 1 };
+      /* o plano guardado (as folhas guardam p1/p2) tem de ser o último calculado: refaz a escolhida se não foi a última */
+      P = melhorV.tv === ultimaV ? (melhorV.P || rodarVariante(variantes[melhorV.tv]).P) : rodarVariante(variantes[melhorV.tv]).P;
       return P;
     }
     var baseTopo = base0.slice(), Pl, tomada = null;
@@ -943,7 +974,7 @@
       }
       return topoMax < P2.y - FOLGA_LIMITE ? { id: id0, topo: topoMax } : null;
     }
-    function saidaLivre(parte, y0s, r, dn, rotulo, decl1) {
+    function saidaLivre(parte, y0s, r, dn, rotulo, decl1, minLh) {
       var escolha = null;
       var dirsT = TEL.length ? dirs0() : cand;
       /* B3 (06/11/2026): com a espera no prumo do ponto a 2ª saída muda de lado e tirava a fachada da rua das direções (longeDe u2): o telhado
@@ -967,7 +998,7 @@
         [{ x: -d.z, z: d.x }, { x: d.z, z: -d.x }].forEach(function (d2) { ramos.push({ M: P3(Pc.x + d.x * GEO_BAR.afastaL, y0s - decl1 * GEO_BAR.afastaL, Pc.z + d.z * GEO_BAR.afastaL), dF: d2 }); });
         ramos.forEach(function (rm) {
           var base = rm.M || Pc, dF = rm.dF, desc0 = rm.M ? decl1 * GEO_BAR.afastaL : 0;
-          for (var Lh = rm.M ? GEO_BAR.saidaLivre : GEO_BAR.saidaLivre; Lh <= GEO_BAR.alcanceDescarga + EPS; Lh += GEO_BAR.passoDescarga) {
+          for (var Lh = rm.M ? GEO_BAR.saidaLivre : Math.max(GEO_BAR.saidaLivre, minLh || 0); Lh <= GEO_BAR.alcanceDescarga + EPS; Lh += GEO_BAR.passoDescarga) {
             var Q1 = P3(base.x + dF.x * Lh, y0s - desc0 - decl1 * Lh, base.z + dF.z * Lh), Q2 = P3(Q1.x, Q1.y - GEO_BAR.quedaLivre, Q1.z), pz = pouso(Q2);
             if (!pz) continue;
             var cfD = (rm.M ? conflito(Pc, rm.M, r, ignCaixa, true) : false) || conflito(rm.M || Pc, Q1, r, rm.M ? null : ignCaixa, true) || conflito(Q1, Q2, r, null, true);
@@ -1001,12 +1032,14 @@
     /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério): o EXTRAVASOR (ladrão) sai pelo mesmo lado da limpeza, desce e entra num tê
        da linha da limpeza DEPOIS do registro dela — uma saída livre só, como se executa. Depois do registro: fechar a limpeza nunca
        bloqueia o ladrão. Sem lugar para o tê (limpeza curta, tubo no caminho): o extravasor sai sozinho, como antes. */
-    var yL = r4(cx.yb + rL2 + APOIO), Lp = saidaLivre("limpeza", yL, rL2, dnL, "limpeza da caixa " + cx.id, 0);
+    /* o tê do extravasor na limpeza (depois do registro) fica a pelo menos tocoMin do cotovelo da ponta livre: sem toco curto entre o tê e o joelho */
+    var minLhLimpeza = (GEO_BAR.folgaCorpo + Lr / 2) + Lr / 2 + mNo + rX + GEO_BAR.folgaCorpo + GEO_BAR.tocoMin;
+    var yL = r4(cx.yb + rL2 + APOIO), Lp = saidaLivre("limpeza", yL, rL2, dnL, "limpeza da caixa " + cx.id, 0, minLhLimpeza);
     var kRegL = Lp ? Math.min(GEO_BAR.folgaCorpo + Lr / 2, d3(Lp.t1.p1, Lp.t1.p2) / 2) : 0;
     function ladraoNaLimpeza() {
       if (!Lp || Lp.d == null) return null;
       var d = Lp.d, kJ = kRegL + Lr / 2 + mNo + rX + GEO_BAR.folgaCorpo, Lt = d3(Lp.t1.p1, Lp.t1.p2);
-      if (kJ > Lt - mNo - rL2) return null;
+      if (kJ > Lt - mNo - rL2 || Lt - kJ < GEO_BAR.tocoMin - EPS) return null;   /* sem lugar para o tê, ou o resto até o cotovelo viraria toco */
       var Q = P3(Lp.t1.p1.x + d.x * kJ, Lp.t1.p1.y, Lp.t1.p1.z + d.z * kJ), Rf = Rface + rX;
       var X0 = P3(cx.c.x + d.x * Rf, yX, cx.c.z + d.z * Rf), Lh = d2(X0, Q), X1 = P3(Q.x, r4(yX - decl * Lh), Q.z);
       if (X1.y - Q.y < mNo + rX + rL2 || Lh < mNo) return null;

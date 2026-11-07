@@ -16735,6 +16735,7 @@ if (digitandoFora(alvo) || caixa.contains(alvo)) return;
 if (e.key === "F3") { if (global.BimBarraSnaps && global.BimBarraSnaps.atendeTeclas && global.BimBarraSnaps.atendeTeclas()) return; e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
 if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && tab3d()) { e.preventDefault(); e.stopPropagation(); return; }
 if (e.key === "Escape") {
+pr.tecla = "";
 if (pr.arrasto) { pr.arrasto = null; posicionar(); e.stopPropagation(); return; }
 if (ferramenta() && pr.pts.length) { e.preventDefault(); e.stopPropagation(); cancelarPasso(); hint("Passo cancelado. Esc de novo sai da ferramenta."); return; }
 if (edit.sub && !edit.p1) {
@@ -16768,7 +16769,10 @@ var alvoIn = campos() === "ang" ? inAng : inComp;
 if (caixa.style.display === "none" && pr.ultP) caixaMostrar(null, baseAtual(), pr.ultP);
 caixa.style.display = "flex"; alvoIn.focus(); alvoIn.value += e.key; return;
 }
-if (/^[a-zA-Z]$/.test(e.key)) {
+letrasDoAtalho(e);
+}, true);
+function letrasDoAtalho(e) {
+if (!/^[a-zA-Z]$/.test(e.key) || e.repeat) return;
 var agora = Date.now(), k = e.key.toUpperCase();
 pr.tecla = (agora - pr.teclaT < 1200 ? pr.tecla : "") + k; pr.teclaT = agora;
 var sub = Pr().ATALHOS[pr.tecla.slice(-2)];
@@ -16776,6 +16780,18 @@ if (sub) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; if (edit.sub 
 var cmdA = Pr().ATALHOS_CMD && Pr().ATALHOS_CMD[pr.tecla.slice(-2)];
 if (cmdA && global.BimShell && global.BimShell.executar) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; global.BimShell.executar(cmdA); return; }
 }
+function bimNaTela() { var h = host(), raiz = h && h.closest ? (h.closest(".bim-revit") || h) : h; return !!(raiz && raiz.isConnected && raiz.getClientRects().length); }
+document.addEventListener("keydown", function (e) {
+if (ativo() || !previa() || S.alive === false) return;
+if (e.ctrlKey || e.metaKey || e.altKey) return;
+if (!/^[a-zA-Z]$/.test(e.key)) { if (e.key === "Escape") pr.tecla = ""; return; }
+var alvo = e.target || {};
+if (digitandoFora(alvo) || caixa.contains(alvo)) return;
+if ((S.fly && S.fly.on) || (S.xr && S.xr.on)) return;
+try { if (document.getElementById("modal-bg")) return; } catch (eM) {}
+try { if ([].slice.call(document.querySelectorAll('[aria-modal="true"], .rv-tlist, #hid-tracar')).some(function (el) { return el.getClientRects().length > 0 && (window.getComputedStyle(el).visibility !== "hidden"); })) return; } catch (eD) {}
+if (!bimNaTela()) return;
+letrasDoAtalho(e);
 }, true);
 if (CR() && CR().aoMudar) CR().aoMudar(function (ev, t) {
 try {
@@ -95423,7 +95439,8 @@ return null;
 }
 var MM = 1 / 1000;
 var TIPO = "curva_transposicao", MATERIAL = "pvc_soldavel";
-var DN_PERMITIDOS = [20];
+var DN_PERMITIDOS = [20, 25, 32];
+var DE_CRUZADO_MAX = 20;
 var AGUA = { agua_fria: 1, agua_quente: 1 };
 var TOL_COS = 0.087, TOL_COTA = 0.005, FIM_TUBO = 0.02, EPS = 1e-9, EPS_DEN = 1e-12;
 function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
@@ -95438,7 +95455,7 @@ if (!f || DN_PERMITIDOS.indexOf(dn) < 0 || !(f.A > 0) || !(f.D > 0) || !(f.R > 0
 return { dn: dn, tipo: TIPO, material: MATERIAL,
 A: f.A * MM,
 L: (f.L != null ? f.L : 2 * f.A) * MM,
-deMaxCruzado: Math.min(f.D, 2 * f.R),
+deMaxCruzado: Math.min(f.D, 2 * f.R, DE_CRUZADO_MAX),
 hArco: (f.R + f.D / 2) * MM,
 codigo: f.codigo || null,
 fonte: "Amanco Wavin FT FTC000001 (rev. Out/2025) pág. " + f.pag + ": A " + f.A + ", B " + f.od + ", D " + f.D + ", R " + f.R + " mm; altura C do arco não tabelada (pendente)" };
@@ -107296,7 +107313,7 @@ reg["modelos-vista"] = function () { self.abrirModelos(ativa2d()); return true; 
 reg["vg-vista"] = function () { var a = ativa2d(); if (!a) { toast("A Visibilidade/Gráficos por vista vale nas vistas 2D: abra uma planta, corte ou elevação.", "aviso"); return true; } self.abrirVG(a); return true; };
 reg["estilos-objeto"] = function () { self.abrirEstilos(); return true; };
 reg["navegador-org"] = function () { self.abrirOrganizacao(); return true; };
-try { if (global.BimPrecisao && global.BimPrecisao.ATALHOS && !global.BimPrecisao.ATALHOS.VV) global.BimPrecisao.ATALHOS.VV = "vg-vista"; } catch (eA) {}
+try { var PV = global.BimPrecisao; if (PV && !(PV.ATALHOS && PV.ATALHOS.VV)) { PV.ATALHOS_CMD = PV.ATALHOS_CMD || {}; if (!PV.ATALHOS_CMD.VV) PV.ATALHOS_CMD.VV = "vg-vista"; } } catch (eA) {}
 this._registrarRamos();
 return true;
 },
@@ -108981,6 +108998,13 @@ b.vistaInstalacoes(v); U.vistaInst.manual = v; U._pintarBotaoVista(); U._corDaVi
 status(v ? "Vista Instalações: arquitetura em cinza translúcido — tubos dentro da parede e sob o piso à vista." : "Vista Instalações desligada: arquitetura opaca.");
 return v;
 };
+U._ifcRef = function () { var b = B(); try { return !!(b && b.ifcReferenciaAberto && b.ifcReferenciaAberto()); } catch (e) { return false; } };
+U.aposTracarIfc = function () {
+var b = B(); if (!U._ifcRef() || !b || !b.vistaInstalacoes || U.vistaInst.manual === false) return false;
+if (!b.vistaInstalacoes()) { b.vistaInstalacoes(true); U._pintarBotaoVista(); U._corDaVista(true); }
+try { U.renderPainel(); } catch (eR) {}
+return true;
+};
 U._pintarBotaoVista = function () {
 try { var b = B(), on = !!(b && b.vistaInstalacoes && b.vistaInstalacoes()); document.querySelectorAll('[data-rv-vb="vista-inst"]').forEach(function (e) { e.setAttribute("aria-pressed", on ? "true" : "false"); }); } catch (e) {}
 };
@@ -109074,7 +109098,10 @@ h += '<b>Tabela de peças</b><div style="max-height:320px;overflow:auto;margin:4
 T.linhas.map(function (l) { return '<tr data-id="' + esc(l.id) + '"><td>' + esc(l.categoria) + "</td><td>" + esc(l.tipo) + "</td><td>" + esc(l.sistema) + "</td><td>" + esc(l.nomeSistema) + "</td><td>" + esc(l.tamanho) + "</td><td>" + (l.comprimento != null ? fmt(l.comprimento, 3) : "") + "</td><td>" + (l.quantidade != null ? fmt(l.quantidade, 3) : "") + "</td><td>" + esc(l.unidade) + "</td><td" + (l.motivo ? ' title="' + esc(l.motivo) + '"' : "") + ">" + esc(l.codigo || "pendente") + "</td><td>" + esc(l.situacao) + "</td></tr>"; }).join("") +
 "</tbody></table></div>";
 }
-h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn sm" data-inst="p12-verificar">Verificar sistemas</button><button class="btn sm" data-inst="p12-desc">' + (U._desc ? "Ocultar desconexões" : "Mostrar desconexões") + '</button>' +
+var vIfc = U._ifcRef() ? !!(b && b.vistaInstalacoes && b.vistaInstalacoes()) : null;
+h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">' +
+(vIfc != null ? '<button class="btn sm' + (vIfc ? " primary" : "") + '" data-inst="p12-ver-ifc" aria-pressed="' + (vIfc ? "true" : "false") + '" title="Deixa o IFC aberto (paredes, pisos, terreno, louças e móveis dele) em cinza translúcido para ver os tubos e as conexões por dentro">' + (vIfc ? "Ver através do IFC: ligado" : "Ver através do IFC") + "</button>" : "") +
+'<button class="btn sm" data-inst="p12-verificar">Verificar sistemas</button><button class="btn sm" data-inst="p12-desc">' + (U._desc ? "Ocultar desconexões" : "Mostrar desconexões") + '</button>' +
 (global.EletIlumUI ? '<button class="btn sm" data-inst="p12-ilum" title="Ponto de luz, interruptores, eletroduto e fiação da iluminação do ambiente">Ligação da iluminação</button>' : "") +
 '<button class="btn sm" data-inst="p12-legenda">' + (U._legenda ? "Tirar a legenda da planta" : "Legenda na planta") + '</button><button class="btn sm" data-inst="p12-tabela">' + (U._tabela ? "Fechar a tabela" : "Tabela de peças") + "</button>" +
 (U._tabela ? '<button class="btn sm primary" data-inst="p12-xlsx">Baixar .xlsx</button>' : "") +
@@ -109084,6 +109111,7 @@ return h;
 };
 U.cliquePainelP12 = function (a, bt) {
 if (a === "p12-verificar") { U.verificarSistemas(); return true; }
+if (a === "p12-ver-ifc") { U.alternarVistaInst(); U.renderPainel(); return true; }
 if (a === "p12-ilum") { if (global.EletIlumUI) global.EletIlumUI.abrir(); return true; }
 if (a === "crit-ver") { U.critMostrar(Number(bt.getAttribute("data-n"))); return true; }
 if (a === "crit-corrigir") { U.critCorrigir(Number(bt.getAttribute("data-n"))); return true; }
@@ -110847,6 +110875,21 @@ aparelho: "Aparelhos sanitários", equipamento: "Equipamento mecânico"
 };
 var ORDEM_CAT = ["tubo", "conexao", "acessorio", "aparelho", "equipamento"];
 var MAX_RECENTES = 8;
+var GALERIA = {
+aparelho: {
+regras: [["Mictórios", /mictor/], ["Bacias", /bacia|vaso\b|descarga/], ["Lavatórios e cubas", /lavat|cuba\b|lavabo/], ["Pias", /\bpia\b|\bpias\b/],
+["Tanques", /tanque/], ["Chuveiros e duchas", /chuveiro|ducha/], ["Banheiras e bidês", /banheira|bide\b|hidromassag/],
+["Ralos e caixas", /ralo|caixa|sifon|grelha|inspecao|gordura|areia/], ["Metais e outros", /misturador|torneira|registro|valvula|metal|aquecedor|bebedouro/]],
+ordem: ["Bacias", "Lavatórios e cubas", "Pias", "Tanques", "Chuveiros e duchas", "Mictórios", "Banheiras e bidês", "Ralos e caixas", "Metais e outros", "Outros aparelhos"]
+}
+};
+function grupoGaleria(cat, t) {
+var g = GALERIA[cat]; if (!g) return "";
+var s = norm(txt(t.familia) + " " + txt(t.nome) + " " + txt(t.famId));
+for (var i = 0; i < g.regras.length; i++) if (g.regras[i][1].test(s)) return g.regras[i][0];
+return "Outros aparelhos";
+}
+function ordemGrupoGaleria(cat, nome) { var g = GALERIA[cat], i = g ? g.ordem.indexOf(nome) : -1; return i < 0 ? 999 : i; }
 var PROV = {};
 var TUBOS = [
 { id: "af-soldavel", nome: "AF_Tubo Marrom Soldável", sistema: "agua_fria", material: "pvc_soldavel" },
@@ -110985,6 +111028,7 @@ return "local";
 function ler(chave) { try { var s = global.localStorage ? global.localStorage.getItem(chave) : null; return s ? JSON.parse(s) : null; } catch (e) { return null; } }
 function gravar(chave, v) { try { if (global.localStorage) global.localStorage.setItem(chave, JSON.stringify(v)); return true; } catch (e) { return false; } }
 var BimInstTipos = {
+grupoGaleria: grupoGaleria, GALERIA: GALERIA,
 CATEGORIAS: CATEGORIAS, ORDEM_CAT: ORDEM_CAT, TUBOS: TUBOS, ATALHOS_PADRAO: ATALHOS_PADRAO, ACOES: ACOES, FITA: FITA, NIVEL: NIVEL, MAX_RECENTES: MAX_RECENTES,
 registrarCategoria: function (cat, def) { if (!cat || !def || typeof def.catalogo !== "function") return false; PROV[cat] = def; CATEGORIAS[cat] = def.rotulo || cat; return true; },
 categoriaExterna: function (cat) { return !!PROV[cat]; },
@@ -111117,6 +111161,18 @@ var CSS = ".rv-tsel{display:flex;gap:8px;align-items:center;padding:6px 8px;bord
 ".rv-tlist-grupo{position:sticky;top:0;padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;opacity:.75;background:var(--rv-painel-bg,#2b303b);border-bottom:1px solid var(--rv-linha,#3a4150)}" +
 ".rv-tlist-rec{border-top:1px solid var(--rv-linha-forte,#566);padding:4px 0;max-height:190px;overflow:auto}.rv-tlist-rec h4{margin:2px 7px 3px;font-size:12px}" +
 ".rv-tlist-rec div{padding:3px 7px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rv-tlist-rec div:hover{background:var(--rv-hover,rgba(127,127,127,.14))}" +
+".rv-tlist-gal .rv-tlist-itens{padding:0 8px 8px}" +
+".rv-tlist-gal .rv-tlist-grupo{margin:0 -8px;padding:6px 10px 4px;font-size:12px;opacity:1;background:var(--rv-painel-bg,#2b303b)}.rv-tlist-gal .rv-tlist-grupo .rv-tn{font-weight:400;opacity:.65;margin-left:4px;text-transform:none}" +
+".rv-tgrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding:6px 0 4px}" +
+".rv-tlist .rv-tcard{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:6px;border:1px solid var(--rv-linha,#3a4150);border-radius:6px;background:var(--rv-painel-bg,transparent)}" +
+".rv-tlist .rv-tcard:hover,.rv-tlist .rv-tcard.foco{border-color:var(--rv-ativo-borda,#4a90d9);background:var(--rv-hover,rgba(127,127,127,.14))}" +
+".rv-tlist .rv-tcard.atual{border:2px solid var(--rv-ativo-borda,#4a90d9);padding:5px}" +
+".rv-tlist .rv-tcard .rv-tcard-img{height:112px;background:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden}" +
+".rv-tlist .rv-tcard .rv-tcard-img img,.rv-tlist .rv-tcard .rv-tcard-img .sem{width:100%;height:100%;object-fit:contain;background:#fff;border-radius:0;transform:scale(1.18)}" +
+".rv-tlist .rv-tcard .rv-tcard-img .sem{transform:none}" +
+".rv-tcard-nome{font-size:12px;line-height:1.3;font-weight:600;text-align:center;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;min-height:2.6em}" +
+".rv-tcard-fam{font-size:11px;line-height:1.25;text-align:center;opacity:.72;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}" +
+".rv-tcard-selos{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;font-size:10px}" +
 "body.bim-linha-fina .d2-vista-tela svg [stroke]{stroke-width:.6px!important}";
 function estilo(doc) {
 if (!doc || doc.getElementById("rv-tsel-css")) return;
@@ -111171,9 +111227,12 @@ this.fecharLista(); this.esquecerFonte();
 ctx = ctx || this._ctx || { cat: "tubo" };
 var doc = (ancora && ancora.ownerDocument) || document, self = this; estilo(doc);
 var r = ancora && ancora.getBoundingClientRect ? ancora.getBoundingClientRect() : { left: 60, bottom: 120, width: 320 };
-var m = doc.createElement("div"); m.className = "rv-tlist"; m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
-var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
-m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
+var gal = !!GALERIA[ctx.cat];
+var m = doc.createElement("div"); m.className = "rv-tlist" + (gal ? " rv-tlist-gal" : ""); m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
+var docW = doc.documentElement.clientWidth || 1200, docH = doc.documentElement.clientHeight || 800;
+var larg = gal ? Math.min(660, docW - 16) : Math.max(300, r.width || 300), alt = Math.min(gal ? 700 : 560, docH - r.bottom - 12);
+var esq = gal ? Math.max(8, Math.min(r.left, docW - larg - 8)) : r.left;
+m.style.left = Math.round(esq) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(gal ? 360 : 260, alt) + "px";
 var abasDef = PROV[ctx.cat] && arr(PROV[ctx.cat].abas).length ? PROV[ctx.cat].abas : null, aba = "todos";
 var hb = ctx.cat === "tubo" || PROV[ctx.cat] ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
 m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") + (abasDef ? '<div class="rv-tlist-abas" role="tablist"></div>' : "") +
@@ -111184,8 +111243,26 @@ function pintarBarra() { if (barra && hb) barra.innerHTML = hb.htmlControles(fil
 function pintar() {
 vis = self.pesquisar(ctx.cat, inp.value, filtro);
 if (abasDef && aba !== "todos") vis = vis.filter(function (t) { return t.grupoId === aba; });
-var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+if (gal) {
+var ix = {}; vis.forEach(function (t, i) { ix[t.id] = i; t._gl = grupoGaleria(ctx.cat, t); });
+vis = vis.slice().sort(function (a, b) { return (ordemGrupoGaleria(ctx.cat, a._gl) - ordemGrupoGaleria(ctx.cat, b._gl)) || (ix[a.id] - ix[b.id]); });
+}
+var porO = {}, corte = vis.filter(function (t) { var o = gal ? t._gl : (t.grupo || t.origemFam || "x"); porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
 var grupoAnt = null;
+if (gal && corte.length) {
+var nGr = {}; vis.forEach(function (t) { nGr[t._gl] = (nGr[t._gl] || 0) + 1; });
+var htmlG = "", gAnt = null;
+corte.forEach(function (t, i) {
+if (t._gl !== gAnt) { if (gAnt !== null) htmlG += "</div>"; htmlG += '<div class="rv-tlist-grupo" role="presentation">' + esc(t._gl) + ' <span class="rv-tn">' + nGr[t._gl] + '</span></div><div class="rv-tgrade">'; gAnt = t._gl; }
+var curto = txt(t.nome).replace(/^(LOU|ESG|AF|AQ|EQ|INC|CLIM)_/, ""), pt = curto.indexOf(" : "), fam2 = "";
+if (pt > 0) { fam2 = curto.slice(0, pt); curto = curto.slice(pt + 3).split(" — ")[0]; }
+htmlG += '<div class="rv-tlist-it rv-tcard' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '" title="' + esc(t.indisponivel || t.nome) + '"' + (t.indisponivel ? ' aria-disabled="true"' : "") + ">" +
+'<div class="rv-tcard-img">' + (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "</div>" +
+'<div class="rv-tcard-nome">' + esc(curto) + "</div>" + (fam2 ? '<div class="rv-tcard-fam">' + esc(fam2) + "</div>" : "") + (hb ? '<div class="rv-tcard-selos">' + hb.htmlSelos(t) + "</div>" : "") + "</div>";
+});
+lista.innerHTML = htmlG + "</div>" + (vis.length > corte.length ? '<div style="padding:8px;opacity:.7">Mostrando ' + corte.length + " de " + vis.length + ": refine a pesquisa ou escolha a origem.</div>" : "");
+vis = corte; miniaturas(); return;
+}
 lista.innerHTML = corte.map(function (t, i) {
 var gh = t.grupo ? t.grupo + (t.sub ? " · " + t.sub : "") : null, cab = ""; if (gh && gh !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(gh) + "</div>"; grupoAnt = gh;
 return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +

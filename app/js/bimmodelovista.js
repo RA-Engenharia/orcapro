@@ -1240,7 +1240,9 @@
       reg["vg-vista"] = function () { var a = ativa2d(); if (!a) { toast("A Visibilidade/Gráficos por vista vale nas vistas 2D: abra uma planta, corte ou elevação.", "aviso"); return true; } self.abrirVG(a); return true; };
       reg["estilos-objeto"] = function () { self.abrirEstilos(); return true; };
       reg["navegador-org"] = function () { self.abrirOrganizacao(); return true; };
-      try { if (global.BimPrecisao && global.BimPrecisao.ATALHOS && !global.BimPrecisao.ATALHOS.VV) global.BimPrecisao.ATALHOS.VV = "vg-vista"; } catch (eA) {}
+      /* ⚠ VV é um COMANDO da fita (abre o diálogo), não uma ferramenta do editor: em `ATALHOS` o editor ligado "armava" a ferramenta
+         fantasma "vg-vista" (cursor de mira, nada acontecia) e engolia a tecla. Em `ATALHOS_CMD` ele chama BimShell.executar("vg-vista"). */
+      try { var PV = global.BimPrecisao; if (PV && !(PV.ATALHOS && PV.ATALHOS.VV)) { PV.ATALHOS_CMD = PV.ATALHOS_CMD || {}; if (!PV.ATALHOS_CMD.VV) PV.ATALHOS_CMD.VV = "vg-vista"; } } catch (eA) {}
       this._registrarRamos();
       return true;
     },

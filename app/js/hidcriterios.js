@@ -54,6 +54,7 @@
     folgaEstrutura: 0.03,      // hid:ok do tubo até pilar (contornar, nunca encostar)
     cobrimentoParede: 0.015,   // hid:ok argamassa sobre o tubo embutido, de cada lado
     afastamento: 0.10,         // hid:ok água × esgoto/ventilação/elétrica, livre entre geratrizes (o mesmo do HidRota)
+    folgaCruzamento: 0.03,     // hid:ok água quente que CRUZA a ventilação: só a folga física (a mesma do traçado: HidRota GEO.folga, usada em js/hidaqtraco.js:157)
     distParede: 0.60,          // hid:ok tubo "no meio do cômodo": mais longe que isto de qualquer parede
     compMinLeitura: 1.0,       // hid:ok trecho curto (≤ 1 m) não conta como "atravessa o cômodo"
     desvioMax: 0.60,           // hid:ok um "dente" (sai e volta) de até 60 cm é desvio a conferir
@@ -628,7 +629,14 @@
           else if (CZ.enterrado != null && enterrado(Pc, Math.max(yw, ye)) && folgaG < CZ.enterrado - EPS) add("interferencia.cruzamentoEnterrado", [w.id, e.id], Pc, "Cruzamento enterrado fora da edificação: a " + quem(w) + " passa só " + fcm(Math.max(0, folgaG)) + " cm acima do " + quem(e) + " (desnível usual " + fcm(CZ.enterrado) + " cm).", { fonte: CZ.fonteEnterrado || R["interferencia.cruzamentoEnterrado"].fonte });
         }
       }
-      if (dd < G.afastamento - TOL_FOLGA) add("interferencia.afastamento", [w.id, e.id], ptEm(w.p1, w.p2, 1 / 2), "A " + quem(w) + " está a " + fcm(Math.max(0, dd)) + " cm do " + quem(e) + " (mínimo livre " + fcm(G.afastamento) + " cm).");
+      /* v3-aq (06/11/2026): os 10 cm são critério de projeto (sem norma) de tubos em PARALELO. No CRUZAMENTO da água quente com a ventilação (o ar
+         não pinga) vale a folga física que o traçado já usa — js/hidaqtraco.js:157 (`paralelos`, 45°): abaixo dela continua acusando */
+      var minAf = G.afastamento;
+      if (w.sistema === "agua_quente" && e.sistema === "ventilacao") {
+        var uw = { x: w.p2.x - w.p1.x, y: w.p2.y - w.p1.y, z: w.p2.z - w.p1.z }, ue = { x: e.p2.x - e.p1.x, y: e.p2.y - e.p1.y, z: e.p2.z - e.p1.z }, Lw = Math.sqrt(uw.x * uw.x + uw.y * uw.y + uw.z * uw.z), Le = Math.sqrt(ue.x * ue.x + ue.y * ue.y + ue.z * ue.z);
+        if (Lw > EPS && Le > EPS && Math.abs(uw.x * ue.x + uw.y * ue.y + uw.z * ue.z) / (Lw * Le) < Math.SQRT1_2) minAf = G.folgaCruzamento;
+      }
+      if (dd < minAf - TOL_FOLGA) add("interferencia.afastamento", [w.id, e.id], ptEm(w.p1, w.p2, 1 / 2), "A " + quem(w) + " está a " + fcm(Math.max(0, dd)) + " cm do " + quem(e) + " (mínimo livre " + fcm(minAf) + " cm).");
     }
 
     /* ---------- LEITURA: diagonal e cômodo cruzado pelo meio */
@@ -703,10 +711,26 @@
     arr(O.vigas).forEach(function (v) { var cx = caixaSeg(v.p1, v.p2, num(v.largura, 0), num(v.topo, 0) - num(v.altura, 0), num(v.topo, 0)); if (cx) duros.push(cx); });
     arr(O.familias).forEach(function (v) { if (isFinite(num(v.cx, NaN))) duros.push({ cx: v.cx, cz: v.cz, ux: v.ux, uz: v.uz, hl: v.hl, hw: v.hw, y0: num(v.y0, -INF), y1: num(v.y1, INF) }); });
     arr(E.pecas).forEach(function (q) { var rr = num(q.r, 0); if (rr > 0) duros.push({ cx: num(q.x, 0), cz: num(q.z, 0), ux: 1, uz: 0, hl: rr, hw: rr, y0: num(q.y, 0) - INF, y1: num(q.y, 0) }); });
+    var DESVIO = null;   /* os ids do desvio que está sendo conferido (só o zigue-zague preenche; o livre() zera) */
     function livre(p, q, rr, ignorar, proprios) {
+      /* lê e zera já na entrada: um return false antes do bloco do DESVIO deixava os ids vazarem para a chamada seguinte */
+      var ids = DESVIO; DESVIO = null;
       if (duros.some(function (o) { return recorte(o, p, q, rr, 0); })) return false;
       /* um tubo de OUTRO sistema no caminho também justifica o desvio (a descida do lavatório no meio da reta) */
       if (T.some(function (o) { return o.sistema !== proprios.sistema && segSeg3(p, q, o.p1, o.p2) < rr + o.r + G.folgaEstrutura; })) return false;
+      /* v3-aq (06/11/2026): um tubo do MESMO sistema que não é do desvio e cruza a corda também justifica o desvio (a subida do aquecedor, uma
+         descida, outro ramal): antes só os tubos de OUTRO sistema contavam e o PREDIO-3P-2C-AQ acusava "sem nada no caminho" com a subida da saída
+         a 1,5 cm da corda. A corda perde a ponta de cada lado (folga + raios): o tubo que só se liga ali (o trecho antes do desvio, a derivação
+         que sai de lado) não é obstáculo; o que corre por cima da corda perto da ponta é. A tolerância de 2 cm da volta não muda. */
+      if (ids) {
+        var Lc = d3(p, q);
+        if (T.some(function (o) {
+          if (o.sistema !== proprios.sistema || ids[o.id]) return false;
+          var tm = rr + o.r + G.folgaEstrutura; if (!(Lc > 2 * tm)) return false;
+          var k = tm / Lc, a2 = { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k, z: p.z + (q.z - p.z) * k }, b2 = { x: q.x - (q.x - p.x) * k, y: q.y - (q.y - p.y) * k, z: q.z - (q.z - p.z) * k };
+          return segSeg3(a2, b2, o.p1, o.p2) < tm;
+        })) return false;
+      }
       /* a reta não pode sair da parede onde o desvio corria nem furar parede que o desvio não furava */
       return !paredes.some(function (wl) { return ignorar.indexOf(wl) < 0 && recorte(wl, p, q, 0, 0); });
     }
@@ -767,6 +791,7 @@
           if (!(n3 > EPS) || (v1.x * v3.x + v1.z * v3.z) / (n1 * n3) > -1 + G.tolAngulo || Math.abs(n3 - n1) > G.tolNo * 2) continue;   // hid:ok volta do mesmo tamanho (±2 cm)
           var yM = (p1.y + p3.y) / 2, ini2 = { x: p1.x, y: yM, z: p1.z }, fim2 = { x: p4.x, y: yM, z: p4.z };
           var pa = paredes.filter(function (wl) { return c.some(function (h) { return recorte(wl, h.a, h.b, 0, 0); }); });
+          DESVIO = {}; c.forEach(function (h) { DESVIO[h.t.id] = 1; });
           if (livre(ini2, fim2, c[0].t.r, pa, c[0].t)) add("economia.zigueZague", c.map(function (h) { return h.t.id; }), p2, "O tubo de " + quem(c[0].t) + " sai " + fcm(n1) + " cm da linha e volta sem nada no caminho (4 conexões à toa).");
         }
       });
@@ -793,6 +818,7 @@
               var vd = vet(N3, Dt); if ((vd.x * vb.x + vd.z * vb.z) / (vd.L * vb.L) > -1 + G.tolAngulo || Math.abs(vd.L - vb.L) > G.tolNo * 2) return;   // hid:ok volta do mesmo tamanho (±2 cm)
               var N4 = outra(N3, Dt), yM = (N1.p.y + N4.p.y) / 2, ini3 = { x: N1.p.x, y: yM, z: N1.p.z }, fim3 = { x: N4.p.x, y: yM, z: N4.p.z };
               var pa3 = paredes.filter(function (wl) { return [Bt, Ct, Dt].some(function (h) { return recorte(wl, h.p1, h.p2, 0, 0); }); });
+              DESVIO = {}; DESVIO[Bt.id] = 1; DESVIO[Ct.id] = 1; DESVIO[Dt.id] = 1;
               if (livre(ini3, fim3, Bt.r, pa3, Bt)) add("economia.zigueZague", [Bt.id, Ct.id, Dt.id], N2.p, "O tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + ") sem nada no caminho (4 conexões à toa).");
             });
           });

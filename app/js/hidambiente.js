@@ -781,6 +781,14 @@
     var cols = verticais(estado, "agua_fria", gerados).filter(function (v) { return d2(v, ancora) <= geo(par, "raioAmbiente"); }).sort(function (a, b) { return d2(a, ancora) - d2(b, ancora); });
     function destinoAF(E) { return { tipo: "ponto", id: ambId + "-esp-af", x: E.x, y: E.y, z: E.z, conector: { x: E.x, y: E.y, z: E.z, dn: B.MATERIAIS.pvc_soldavel.dn } }; }
     var esperaAlt = null;
+    /* v3-água (06/11/2026): aquecedor no modelo = a água FRIA corre uma camada (um passo) mais funda que a quente — a espera do ambiente, os
+       pontos de parede e o ramal no mesmo plano (a conta do js/hidkit.js extraAF e do reservaAQ abaixo): o ramal passa por trás das descidas
+       da água quente sem o Z de 5 cm (joelho + toco + joelho) na espera e em cada ponto */
+    var xAF = (function () {
+      var HFa = dep("HidFamilias", "./hidfamilias.js");
+      if (!HFa || !HFa.porId) return 0;
+      return arr(estado.familias).some(function (f) { var F = HFa.porId(f.famId); return !!F && F.categoria === "equipamento" && arr(F.sistemas).indexOf("agua_quente") >= 0; }) ? geo(par, "passo") : 0;
+    })();
     var juntar = null, temAF = aparelhos.some(function (a) { return a.conectores.some(function (c) { return c.sistema === "agua_fria"; }); }), aRG = K.altura("RG"), esperaAF = null;
     if (temAF) {
       /* o kit da válvula já sobe uma prumada própria: a espera do ambiente fica ao lado dela, na ponta da parede molhada
@@ -789,7 +797,7 @@
       if (cols.length && !(colKit && cols[0].id === colKit.id)) destinos.agua_fria = { tipo: "coluna", id: cols[0].id, x: cols[0].x, z: cols[0].z, yBase: cols[0].yBase, yTopo: cols[0].yTopo, existente: true };
       else {
         var base = colKit ? { x: colKit.p1.x, z: colKit.p1.z } : null, nW = null, baseEixo = null;
-        if (!base) { var a0 = aparelhos.filter(function (a) { return a.conectores.some(function (c) { return c.sistema === "agua_fria" && c.parede; }); })[0]; var c0 = a0 ? a0.conectores.filter(function (c) { return c.sistema === "agua_fria" && c.parede; })[0] : null; if (c0) { nW = c0.parede; var eW = geo(par, "embutir") + Math.max(0, num(c0.parede.d, 0)); base = { x: r4(c0.x + c0.parede.x * eW), z: r4(c0.z + c0.parede.z * eW) };
+        if (!base) { var a0 = aparelhos.filter(function (a) { return a.conectores.some(function (c) { return c.sistema === "agua_fria" && c.parede; }); })[0]; var c0 = a0 ? a0.conectores.filter(function (c) { return c.sistema === "agua_fria" && c.parede; })[0] : null; if (c0) { nW = c0.parede; var eW = geo(par, "embutir") + xAF + Math.max(0, num(c0.parede.d, 0)); base = { x: r4(c0.x + c0.parede.x * eW), z: r4(c0.z + c0.parede.z * eW) };
           /* o EIXO da parede atrás do ponto (a alternativa da espera desce nele: FRENTE H1, ver abaixo) — a busca da parede pela FACE */
           var dF0 = Math.max(0, num(c0.parede.d, 0)), wF0 = K._int.paredeDe(estado, { x: c0.x + c0.parede.x * dF0, z: c0.z + c0.parede.z * dF0 }, null);
           if (wF0) { var eA0 = dF0 + wF0.esp / 2; baseEixo = { x: r4(c0.x + c0.parede.x * eA0), z: r4(c0.z + c0.parede.z * eA0) }; } } }   /* o mesmo eixo embutido do HidRota (normEntrada: embutir + d) — com a louça longe da parede, a parede DE VERDADE */
@@ -802,6 +810,8 @@
           var tg = { x: -nW.z, z: nW.x }, ts = [], tV = colKit ? 0 : null;
           aparelhos.forEach(function (a) { a.conectores.forEach(function (c) { if (c.sistema === "agua_fria") ts.push((c.x - base.x) * tg.x + (c.z - base.z) * tg.z); }); });
           var gap = geo(par, "distanciaRegistro") + B.ACESSORIO_PADRAO / 2 + geo(par, "margemNo") * 2 + geo(par, "passo"), lat = geo(par, "lateralEntradaAF");
+          /* v3-água (06/11/2026): sem a prumada da válvula, a espera ao lado da referência faz tê + toco + tê — o toco com no mínimo 30 cm (o auditor reprova < 30 cm entre conexões; TRACAR-E2E, referência no meio da fileira) */
+          if (!colKit) lat = Math.max(lat, 0.31);   // hid:ok 31 cm: acima do limite de 30 cm do toco entre conexões
           var tMin = ts.length ? Math.min.apply(null, ts) : 0, tMax = ts.length ? Math.max.apply(null, ts) : 0;
           var cands = [{ t: tMin - gap, lado: -1 }, { t: tMax + gap, lado: 1 }].filter(function (c) {
             var ax = { x: base.x + tg.x * c.t, z: base.z + tg.z * c.t }, face = { x: ax.x - nW.x * geo(par, "embutir"), z: ax.z - nW.z * geo(par, "embutir") }, w = K._int.paredeDe(estado, face, null);
@@ -855,6 +865,7 @@
     /* 5) TRAÇADO (HidRota) */
     var parR = { terreo: terreo, prefixo: ambId + "-", peDireito: r4(tetoA.y - piso), estrategias: terreo ? ["parede", "piso"] : ["parede", "piso", "forro"] };
     if (aRG.ok) parR.alturaRamalAF = aRG.valor;
+    if (xAF > 0) parR.embutirExtraAF = xAF;   /* os pontos de parede de água fria no mesmo plano fundo (js/hidrota.js, normEntrada) */
     /* B3 (06/11/2026, R-AQ4): aquecedor no modelo (equipamento com água quente; a mesma conta do js/hidkitui.js temFonteAQ) = a água quente
        vai ser traçada DEPOIS pelo eixo embutido dos pontos de parede (a 1ª camada do js/hidaqtraco.js): o ramal de água fria deixa esse
        prumo livre (js/hidrota.js, entrada.reservaAQ) */
@@ -918,6 +929,20 @@
         exist.forEach(function (e) { if (e.sistema === n.sistema && !liga(n, e) && H._int.segSeg3(n.p1, n.p2, e.p1, e.p2) - raio(num(n.dn, 0)) - raio(num(e.dn, 0)) < -EPS) out0.push([String(n.id), String(e.id)]); });
       });
       return out0;
+    }
+    /* v3-água (06/11/2026): o ramal de água do ambiente que passa POR TRÁS da subida do registro do chuveiro (o desvio no fundo da parede, a 5 cm
+       dela, que a atravessaAgua não acusa): vira o Z de 5 cm (joelho + toco + joelho) na espera. `pe` = o pé da subida; o ramal horizontal acima
+       dele, passando a menos de 7,5 cm (planta) pelo MEIO do trecho. O mesmo remédio do H3 abaixo: a espera vira para o lado de onde vem a água. */
+    function passaPorTras(opsO, pe) {
+      var achou = false;
+      arr(opsO).forEach(function (n) {
+        if (achou || n.op !== "trecho" || n.sistema !== "agua_fria" || !n.p1 || !n.p2 || Math.abs(n.p1.y - n.p2.y) > EPS_AMB || n.p1.y < pe.y - 0.05) return;   // hid:ok tolerância geométrica (5 cm) da cota do trecho em relação ao piso do ambiente
+        var ux = n.p2.x - n.p1.x, uz = n.p2.z - n.p1.z, L = Math.sqrt(ux * ux + uz * uz); if (!(L > EPS_AMB)) return;
+        var t = ((pe.x - n.p1.x) * ux + (pe.z - n.p1.z) * uz) / L;   /* distância do começo até o pé da perpendicular */
+        if (t <= 0.02 || L - t <= 0.02) return;   // hid:ok tolerância geométrica (2 cm) para o ponto de derivação não cair na ponta do trecho
+        if (Math.sqrt(Math.pow(pe.x - (n.p1.x + ux / L * t), 2) + Math.pow(pe.z - (n.p1.z + uz / L * t), 2)) <= 0.075) achou = true;   // hid:ok 7,5 cm: metade do passo da grade + folga
+      });
+      return achou;
     }
     /* FRENTE H3 (20/10/2026, decidido pela coordenação — BACKLOG #79): o ramal de água do ambiente que cruza, na MESMA parede, um tubo
        de água que já está no modelo (o ramal exclusivo da válvula de descarga que desce da coluna do prédio) com menos que a folga
@@ -1072,25 +1097,25 @@
          registro; o ramal que chega do OUTRO lado passava por dentro da subida (e2e-hid-tracar, −2 cm). A espera VIRA para o lado de
          onde vem a água (o espelho pela subida) e o ramal segue na parede, chegando ao registro sem atravessar a subida. A troca é
          op do KIT (as marcas kit/kitParte dele, sem a do ambiente: refazer o ambiente não apaga o tubo do kit) */
-      if (R && R.opcoes && R.opcoes.length && atravessaAgua(R.opcoes[0].ops).length) {
-        var virados = [];
+      if (R && R.opcoes && R.opcoes.length) {
+        var virados = [], atrav0 = atravessaAgua(R.opcoes[0].ops);
         M.fams.forEach(function (f) {
           if (tipos[f.id] !== "chuveiro" || !esperaCh[f.id]) return;
           var opE = kitOps.filter(function (o) { return o.op === "trecho" && String(o.kit) === String(f.id) && /-ch-espera$/.test(txt(o.id)); })[0];
           if (!opE) return;
           var pref = txt(opE.id).replace(/-espera$/, "-");   /* os tubos do kit do chuveiro: <kit>-ch-* */
-          if (!atravessaAgua(R.opcoes[0].ops).some(function (x) { return String(x[1]).indexOf(pref) === 0; })) return;
           var aberta = opE.continua === "p2" ? "p2" : "p1", pe = aberta === "p1" ? opE.p2 : opE.p1, E0 = opE[aberta];
+          if (!atrav0.some(function (x) { return String(x[1]).indexOf(pref) === 0; }) && !passaPorTras(R.opcoes[0].ops, pe)) return;
           var E1 = { x: r4(2 * pe.x - E0.x), y: E0.y, z: r4(2 * pe.z - E0.z) };
           var ap = aparelhos.filter(function (a) { return String(a.id) === String(f.id); })[0], cAF = ap ? ap.conectores.filter(function (c) { return c.sistema === "agua_fria"; })[0] : null;
           if (!cAF) return;
           var guarda = { x: cAF.x, z: cAF.z };
           cAF.x = E1.x; cAF.z = E1.z;
-          virados.push({ f: f, opE: opE, aberta: aberta, E1: E1, cAF: cAF, guarda: guarda });
+          virados.push({ f: f, opE: opE, aberta: aberta, E1: E1, cAF: cAF, guarda: guarda, pe: pe });
         });
         if (virados.length) {
           var Rv = rotearCom(caixa, destinos);
-          if (Rv && Rv.opcoes && Rv.opcoes.length && !atravessaAgua(Rv.opcoes[0].ops).length) {
+          if (Rv && Rv.opcoes && Rv.opcoes.length && !atravessaAgua(Rv.opcoes[0].ops).length && !virados.some(function (v) { return passaPorTras(Rv.opcoes[0].ops, v.pe); })) {
             R = Rv;
             virados.forEach(function (v) {
               var nv = copia(v.opE); nv[v.aberta] = { x: v.E1.x, y: v.E1.y, z: v.E1.z }; delete nv.amb; delete nv.ambParte; nv.kitVirado = true;

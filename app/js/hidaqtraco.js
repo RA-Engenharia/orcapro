@@ -292,6 +292,9 @@
         var cP = eixoA({ x: num(fA.x, 0), z: num(fA.z, 0) }, prof), cand = { x: r4(cP.x + tgA.x * lado * off), z: r4(cP.z + tgA.z * lado * off) };
         if (noutraParede(cand)) continue;
         var eAFp = eixoA(A.af, prof), eAQp = eixoA(A.aq, prof);
+        /* v3-água (06/11/2026): a descida da água fria no lado OPOSTO ao do conector, com a saída de água quente entre os dois, atravessava a própria saída
+           (ta-aq-*-af × ta-aq-*-s: TUBO_ATRAVESSA_TUBO) — antes só não saía assim porque a água fria do ambiente ocupava aquele lado */
+        if (((cand.x - eAQp.x) * tgA.x + (cand.z - eAQp.z) * tgA.z) * ((eAFp.x - eAQp.x) * tgA.x + (eAFp.z - eAQp.z) * tgA.z) < -EPS) continue;
         t1.p1.x = t1.p2.x = t2.p1.x = cand.x; t1.p1.z = t1.p2.z = t2.p1.z = cand.z;
         t2.p2.x = t3.p1.x = eAFp.x; t2.p2.z = t3.p1.z = eAFp.z; s2.p2.x = s3.p1.x = s3.p2.x = s4.p1.x = eAQp.x; s2.p2.z = s3.p1.z = s3.p2.z = s4.p1.z = eAQp.z;
         /* o começo da busca: 3 mm além do corpo e, no mínimo, um passo da grade além do conector (o boiler elétrico tem a entrada de água
@@ -385,7 +388,7 @@
         lig.push({ p: p, L: achou.L, segs: achou.segs, r: r, yRg: yRgP, n: n, prof: achou.prof, parede: w.id, dn: p.dn });
       });
       arr(virtuais).forEach(function (v) { lig.push({ virtual: true, id: v.id, L: { x: v.x, z: v.z }, segs: [], r: raio(v.dn), dn: v.dn }); });
-      var arvore = [{ a: { x: raiz.x, z: raiz.z }, b: { x: raiz.x, z: raiz.z }, dn: 0 }];   /* o nó da raiz (comprimento 0) */
+      var arvore = [], okLig = [], nBase = novos.length, pendBase = pendG.length;
       lig.sort(function (l1, l2) { return d2(l1.L, raiz) - d2(l2.L, raiz); });
       function grauNo(q) {
         var g0 = d2(q, raiz) <= EPS * 10 ? 1 : 0;   // hid:ok tolerância do nó
@@ -393,10 +396,20 @@
         lig.forEach(function (l2) { if (d2(l2.L, q) <= EPS * 10) g0++; });   // hid:ok tolerância do nó
         return g0;
       }
+      /* B3 (v3-aq, 06/11/2026): a árvore é montada ponto a ponto, do mais perto da raiz ao mais longe (guloso). O primeiro ramal escolhe o mais
+         barato, e às vezes ele desce EXATAMENTE no eixo do ponto mais perto: aí o nó do ponto vira tê (descida + tronco + ramal) e os pontos
+         seguintes, alinhados com ele, não podem passar por ali sem cruzeta — o ramal deles sai 5 a 8 cm da linha e volta (economia.zigueZague:
+         4 conexões à toa). `rank` escolhe a n-ésima opção do PRIMEIRO ramal (0 = a mais barata, como antes); o laço de baixo remonta com
+         as opções seguintes quando a árvore sai com dente e fica com a que não tem (ou a de menor custo). */
+      function construir(rank) {
+      arvore = [{ a: { x: raiz.x, z: raiz.z }, b: { x: raiz.x, z: raiz.z }, dn: 0 }];   /* o nó da raiz (comprimento 0) */
+      novos.length = nBase; pendG.length = pendBase;
+      var primeiro = true, custoArv = 0;
+      lig.forEach(function (l) { l.ok = false; });
       lig.forEach(function (l) {
         /* o ponto virtual que cai NA raiz (a coluna sai do próprio nó) já está ligado */
         if (l.virtual && d2(l.L, raiz) <= EPS * 10) { l.ok = true; return; }   // hid:ok tolerância do nó
-        var melhor = null;
+        var melhor = null, opcoes = [];
         arvore.forEach(function (sg, is) {
           var cand = [sg.a, sg.b], ux = sg.b.x - sg.a.x, uz = sg.b.z - sg.a.z, LL = ux * ux + uz * uz;
           if (LL > EPS) { var tt = ((l.L.x - sg.a.x) * ux + (l.L.z - sg.a.z) * uz) / LL, Ls = Math.sqrt(LL);
@@ -419,10 +432,16 @@
                 custo += d2(a, b);
               }
               custo += cr * num((H.PESOS || {}).parede, 0) + (cm.length - 2) * num((H.PESOS || {}).conexao, 0);
+              if (ok) opcoes.push({ custo: custo, cam: cm, seg: is, q: q, ordem: opcoes.length });
               if (ok && (!melhor || custo < melhor.custo - EPS)) melhor = { custo: custo, cam: cm, seg: is, q: q };
             });
           });
         });
+        if (melhor && primeiro) {
+          primeiro = false;
+          if (rank > 0 && opcoes.length > 1) { opcoes.sort(function (o1, o2) { return o1.custo - o2.custo || o1.ordem - o2.ordem; }); melhor = opcoes[Math.min(rank, opcoes.length - 1)]; }
+        }
+        if (melhor) custoArv += melhor.custo;
         if (!melhor) { pendG.push([l.virtual ? "a linha de água quente do entreforro não chega à coluna " + l.id + " (parede, vão, viga ou tubo no caminho) — trace à mão" : "a linha de água quente do entreforro não chega ao ponto " + l.p.k.famInst + ":" + l.p.k.id + " (parede, vão, viga ou tubo no caminho) — trace à mão", [l.virtual ? fA.id : l.p.k.famInst]]); return; }
         var sg0 = arvore[melhor.seg], q0 = melhor.q;
         if (d2(q0, sg0.a) > EPS && d2(q0, sg0.b) > EPS) { arvore.splice(melhor.seg, 1, { a: sg0.a, b: { x: q0.x, z: q0.z } }, { a: { x: q0.x, z: q0.z }, b: sg0.b }); }
@@ -433,7 +452,7 @@
         }
         l.ok = true;
       });
-      var okLig = lig.filter(function (l) { return l.ok; });
+      okLig = lig.filter(function (l) { return l.ok; });
       okLig.forEach(function (l) {
         for (var is = 0; is < arvore.length; is++) {
           var sg = arvore[is], ux = sg.b.x - sg.a.x, uz = sg.b.z - sg.a.z, LL = ux * ux + uz * uz; if (!(LL > EPS)) continue;
@@ -441,6 +460,45 @@
           if (tt > EPS && tt < 1 - EPS && d2(q, l.L) <= EPS * 10) { arvore.splice(is, 1, { a: sg.a, b: { x: l.L.x, z: l.L.z } }, { a: { x: l.L.x, z: l.L.z }, b: sg.b }); break; }   // hid:ok tolerância do nó
         }
       });
+      return custoArv;
+      }
+      /* quantos "dentes" a árvore tem: um trecho lateral curto (até 60 cm) entre duas pernas da mesma direção, com a volta do mesmo tamanho
+         — a mesma conta do auditor (economia.zigueZague); só a geometria (o que o desvio contorna é problema do critério, não daqui) */
+      function dentesDaArvore() {
+        var ns = [];
+        function ni(p) { for (var i = 0; i < ns.length; i++) if (d2(ns[i], p) <= EPS * 10) return i; ns.push({ x: p.x, z: p.z, v: [] }); return ns.length - 1; }   // hid:ok tolerância do nó
+        arvore.forEach(function (sg) { if (d2(sg.a, sg.b) < EPS) return; var a = ni(sg.a), b = ni(sg.b); ns[a].v.push(b); ns[b].v.push(a); });
+        /* o toco de cada descida (do ponto até a parede, deitado e perpendicular à parede) também é perna da árvore */
+        okLig.forEach(function (l) { if (l.virtual || !l.n) return; var a = ni(l.L), b = ni({ x: l.L.x + l.n.x * dL, z: l.L.z + l.n.z * dL }); ns[a].v.push(b); ns[b].v.push(a); });
+        function vc(i, j) { var u = { x: ns[j].x - ns[i].x, z: ns[j].z - ns[i].z }; u.L = Math.sqrt(u.x * u.x + u.z * u.z); return u; }
+        var TOL_ANG = 0.035, DENTE_MAX = 0.6, n = 0;   // hid:ok os mesmos 2° e 60 cm do critério interferencia/economia (hidcriterios)
+        ns.forEach(function (N1, i) { N1.v.forEach(function (j) {
+          var vb = vc(i, j); if (!(vb.L > EPS) || vb.L > DENTE_MAX) return;
+          N1.v.forEach(function (a) { if (a === j) return;
+            var va = vc(i, a); if (Math.abs(va.x * vb.x + va.z * vb.z) / (va.L * vb.L) > TOL_ANG) return;
+            var dirA = { x: -va.x / va.L, z: -va.z / va.L };
+            ns[j].v.forEach(function (c) { if (c === i) return;
+              var vC = vc(j, c); if ((vC.x * dirA.x + vC.z * dirA.z) / vC.L < 1 - TOL_ANG) return;
+              ns[c].v.forEach(function (d) { if (d === j) return;
+                var vd = vc(c, d); if ((vd.x * vb.x + vd.z * vb.z) / (vd.L * vb.L) > -1 + TOL_ANG || Math.abs(vd.L - vb.L) > 0.02) return;   // hid:ok volta do mesmo tamanho (±2 cm)
+                n++;
+              });
+            });
+          });
+        }); });
+        return n;
+      }
+      var TETO_MS = 300, tR0 = Date.now();   // hid:ok teto de tempo da busca de opções (revisão 1.2.253): passou disso, fica a melhor achada
+      var custo0 = construir(0), dentes0 = dentesDaArvore();
+      if (dentes0 > 0) {
+        var melhorR = { rank: 0, dentes: dentes0, custo: custo0 }, ultimoR = 0;
+        /* para na PRIMEIRA opção sem dente (melhorR.dentes === 0) ou no teto de tempo; só remonta no fim se a última montada não é a melhor */
+        for (var rk = 1; rk <= 8 && melhorR.dentes > 0 && Date.now() - tR0 < TETO_MS; rk++) {   // hid:ok até 8 opções do primeiro ramal
+          var cR = construir(rk), dR = dentesDaArvore(); ultimoR = rk;
+          if (dR < melhorR.dentes || (dR === melhorR.dentes && dR < dentes0 && cR < melhorR.custo - EPS)) melhorR = { rank: rk, dentes: dR, custo: cR };
+        }
+        if (melhorR.rank !== ultimoR) construir(melhorR.rank);
+      }
       var reais = okLig.filter(function (l) { return !l.virtual; });
       /* ---------- a árvore orientada a partir da raiz: p1 = montante; DN = o maior a jusante; retas seguidas viram um trecho */
       var nos = [], arestas = [];

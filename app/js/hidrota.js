@@ -278,6 +278,7 @@
     p.atravessarViga = !!src.atravessarViga;
     p.transposicao = src.transposicao !== false;   /* a curva de transposição (js/biminsttransp.js) no traçado da água; false = só o desvio de sempre */
     p.limiteDnCintaMm = num(src.limite_dn_embutir_cinta_mm != null ? src.limite_dn_embutir_cinta_mm : src.limiteDnEmbutirCintaMm, LIMITE_DN_CINTA_MM);   /* cinta: até este DN (mm) o tubo embute */
+    p.embutirExtraAF = Math.max(0, num(src.embutirExtraAF, 0));   /* v3-água: com aquecedor no modelo a água fria corre uma camada MAIS FUNDO que a quente (embutir + este extra) */
     p.dn = src.dn || {};
     p.declividade = num(src.declividade, 0);
     p.prefixo = txt(src.prefixo) || "hr-";
@@ -344,6 +345,7 @@
            cobrimento) manda a profundidade do eixo — `prof` = do ponto até o eixo; parede comum não traz `prof` (o de sempre) */
         /* (prof < 0 = a instalação APARENTE escolhida pelo usuário: o eixo à FRENTE da face, o tubo sobreposto à parede) */
         if (n && n.prof != null && isFinite(num(n.prof, NaN)) && num(n.prof, 0) !== 0) e = num(n.prof, 0);
+        else if (c.sistema === "agua_fria") e += P.embutirExtraAF;   /* v3-água: a camada funda da água fria (ver hidambiente reservaAQ) */
         if (P.embutir > 0 && L > EPS) { o.ponta = { x: p.x, y: p.y, z: p.z }; o.x = r4(p.x + nx / L * e); o.z = r4(p.z + nz / L * e); }
         return o;
       }).filter(Boolean);
@@ -1783,14 +1785,39 @@
           var dnS = arv.arestas[n.sai].dn;
           if (f.tipo === "aparelho") {
             /* ponto de parede: toco do ponto até o eixo embutido (com a declividade do DN), depois a descida embutida */
-            var yD = f.y;
-            if (f.ponta) { yD = chao4(f.ponta.y - arv.arestas[n.sai].decl.i / 100 * d2(f.ponta, f)); trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: { x: f.x, y: yD, z: f.z }, toco: true, ap: f.ap.id }); }
-            var tD = { sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.x, y: yD, z: f.z }, p2: { x: n.x, y: Y[n.id], z: n.z }, ap: f.ap.id };
+            var yD = f.y, xD = f.x, zD = f.z, semToco = false, pFimD = { x: n.x, y: Y[n.id], z: n.z };
+            /* v3-esgoto (06/11/2026, regra do Rogério: nenhuma conexão a mais): quando o ramal segue NA MESMA direção do toco (ponta → eixo embutido), o toco
+               de 5 cm e o joelho dele eram um "Z" (dois joelhos seguidos, JOELHO_DUPLO). A descida vai direto no próprio ponto e o ramal nasce ali (a curva do
+               pé da descida já vira para o ramal). O toco só fica quando é preciso para entrar na parede e o ramal segue em outra direção. */
+            /* a pia/bancada de cozinha fica de fora: o volume do móvel não chega ao motor (entra no modelo depois) e a vertical rente à face o atravessaria */
+            if (f.ponta && !n.entram.length && P.paraCaixaGordura.indexOf(f.aparelho) < 0) {
+              var tR = trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "esgoto" && !t.ap && !t.toco && Math.abs(t.p1.x - n.x) < EPS && Math.abs(t.p1.z - n.z) < EPS && Math.abs(t.p1.y - Y[n.id]) < EPS; })[0];
+              var dTx = f.x - f.ponta.x, dTz = f.z - f.ponta.z, lT = Math.sqrt(dTx * dTx + dTz * dTz);
+              if (tR && lT > EPS) {
+                var dRx = tR.p2.x - tR.p1.x, dRz = tR.p2.z - tR.p1.z, lR = Math.sqrt(dRx * dRx + dRz * dRz);
+                if (lR > EPS && (dTx * dRx + dTz * dRz) / (lT * lR) > 0.999) {   // hid:ok cosseno de paralelismo (≈ 2,6°): tolerância geométrica de direção
+                  var pNasce = { x: f.ponta.x, y: r4(Y[n.id] + arv.arestas[n.sai].decl.i / 100 * lT), z: f.ponta.z };   /* o ramal nasce no ponto, com a mesma declividade */
+                  /* só sem travessia de louça: a mesma conferência 3D do fim da estratégia (a vertical no ponto da face de uma pia atravessava o móvel) */
+                  var tDc = { p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: pNasce, ap: f.ap.id, dn: dnS }, tRc = { p1: pNasce, p2: tR.p2, ap: null, dn: dnS }, CASCA_D = 0.002;   // hid:ok 2 mm de encosto (o mesmo CASCA da conferência)
+                  var livre = arr(O.familias).every(function (v) {
+                    var ptsV = []; EN.aparelhos.forEach(function (a) { if (String(a.id) === String(v.id)) a.conectores.forEach(function (c) { ptsV.push(c.ponta || c); }); });
+                    if (comprimentoDentro(v, pNasce, { x: n.x, y: pNasce.y, z: n.z }, 0) > 0.001) return false;   // hid:ok o pedaço novo do ramal (ponto → eixo embutido) fica FORA de qualquer volume (1 mm)
+                    return [tDc, tRc].every(function (t) {
+                      if (t.ap != null && String(t.ap) === String(v.id) && ligacaoDoProprioAparelho(v, t, ptsV, raio(t.dn), CASCA_D)) return true;
+                      return !B.tuboEmVolume(v, t.p1, t.p2, raio(t.dn), ptsV, CASCA_D);
+                    });
+                  });
+                  if (livre) { semToco = true; xD = f.ponta.x; zD = f.ponta.z; yD = f.ponta.y; tR.p1 = pFimD = pNasce; }
+                }
+              }
+            }
+            if (f.ponta && !semToco) { yD = chao4(f.ponta.y - arv.arestas[n.sai].decl.i / 100 * d2(f.ponta, f)); trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: { x: f.x, y: yD, z: f.z }, toco: true, ap: f.ap.id }); }
+            var tD = { sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: xD, y: yD, z: zD }, p2: pFimD, ap: f.ap.id };
             if (f.saida === SAIDA_JOELHO && joelhoNoPe(arv, n, dnS)) {
               tD.pecaFim = "joelho90";   /* o nó vertical ↔ horizontal vira joelho 90° (decidir/forçada) */
               /* a cota do ramal é a da curva longa (não baixa ao trocar de peça): se a descida disponível é menor que a perna do joelho, a peça não
                  cabe inteira — o aviso diz quanto falta (o ponto do aparelho está baixo demais), em vez de baixar o ramal calado */
-              var pjJ = pernaJoelho(dnS), dispJ = yD - Y[n.id];
+              var pjJ = pernaJoelho(dnS), dispJ = yD - pFimD.y;
               if (pjJ != null && dispJ + EPS < pjJ) saida.avisos.push(prob("joelho 90° de esgoto DN " + dnS + " em " + f.ref + ": a descida disponível (" + fcm(dispJ) + " cm) é menor que a perna da peça (" + fcm(pjJ) + " cm) — o ramal não foi baixado; suba o ponto do aparelho ou baixe o ramal", [f.ap.id], { tipo: "ajustar", ids: [f.ap.id] }));
             }
             else if (f.saida === SAIDA_JOELHO && !n.entram.length && pernaJoelho(dnS) == null)

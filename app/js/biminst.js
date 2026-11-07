@@ -886,7 +886,7 @@
   }
 
   /* ===== FRENTE 3 — a peça forçada no nó (ver o bloco acima) ===== */
-  /* CURVA DE TRANSPOSIÇÃO forçada: só vale onde a regra (js/biminsttransp.js) vale — DN do tubo que transpõe com ficha (hoje só o DN 20) e, se o
+  /* CURVA DE TRANSPOSIÇÃO forçada: só vale onde a regra (js/biminsttransp.js) vale — DN do tubo que transpõe com ficha (DN 20, 25 e 32, js/biminsttransp.js DN_PERMITIDOS) e, se o
      tubo cruzado é conhecido, o DE que passa sob o arco. Antes (revisão adversarial 06/11/2026) a peça gravada num tubo DN 20 sobrevivia à troca
      do tubo para DN 25/32 (o dimensionamento) porque o catálogo tem a peça nesses DN. Devolve null se vale, ou o motivo (PT-BR). */
   function motivoTransposicao(ramos, cruzado) {

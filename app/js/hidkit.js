@@ -466,6 +466,15 @@
       return Pw.face;
     }
     function emb(k) { return e0 + (k && k.parede ? faceReal(k, k.parede) : 0); }
+    /* v3-água (06/11/2026): com aquecedor no modelo (equipamento com água quente — a mesma conta do js/hidambiente.js reservaAQ) a água FRIA
+       corre uma camada (um passo) mais funda que a quente, a espera e a subida dela inclusive: o ramal, que passa por trás das descidas da
+       água quente, chega ao ponto no mesmo plano — sem o Z de 5 cm (joelho + toco + joelho). parametros.embutirExtraAF manda, se vier. */
+    var extraAF = (function () {
+      if (par && par.embutirExtraAF != null && isFinite(Number(par.embutirExtraAF))) return Math.max(0, Number(par.embutirExtraAF));
+      var HFq = HF(); if (!HFq || !HFq.porId) return 0;
+      return arr(estado && estado.familias).some(function (f) { var F = HFq.porId(f.famId); return !!F && F.categoria === "equipamento" && arr(F.sistemas).indexOf("agua_quente") >= 0; }) ? geo(par, "passo") : 0;
+    })();
+    function embAF(k) { return emb(k) + extraAF; }
     var P = pisoDe(estado, avaliarFam, fi, refPt);
     if (!P.ok) { pend("kit.piso", P.motivo, { tipo: "parametro", campo: "piso" }); return out; }
     var piso = P.y, yRamalAlt = altura("RG");
@@ -547,7 +556,7 @@
       if (!pa) pend("kit.conector", fi.id + " sem ponto de água fria na família");
       else if (yRamal != null) {
         var dnA = dnAgua(ctx, K0.aparelhoNorma || tipo, pa, out.pendencias);
-        esperaAgua(K, "af", pa, pa.parede ? { x: pa.parede.x, z: pa.parede.z } : n, emb(pa), yRamal, dnA);
+        esperaAgua(K, "af", pa, pa.parede ? { x: pa.parede.x, z: pa.parede.z } : n, embAF(pa), yRamal, dnA);
         /* BANCADA: o ponto de água quente do misturador ganha a espera dele (PPR, o material padrão do sistema no biminst) */
         var pq = A0.quente ? porCid(cs, A0.quente) : null;
         if (pq) esperaAgua(K, "aq", pq, pq.parede ? { x: pq.parede.x, z: pq.parede.z } : n, emb(pq), yRamal, dnA, "agua_quente", BI().SISTEMAS && BI().SISTEMAS.agua_quente ? BI().SISTEMAS.agua_quente.material : "ppr");
@@ -560,7 +569,7 @@
       var pc = porCid(cs, A0.conector || "af") || porSis(cs, "agua_fria"), aRP = altura(A0.registro); fonteAlt(aRP);
       if (!aRP.ok) pend(aRP.chave, aRP.motivo);
       else if (pc) {
-        var nC = pc.parede ? { x: pc.parede.x, z: pc.parede.z } : n, eC = emb(pc), Ac = eixo(pc, nC, eC), yRP = r4(piso + aRP.valor);
+        var nC = pc.parede ? { x: pc.parede.x, z: pc.parede.z } : n, eC = embAF(pc), Ac = eixo(pc, nC, eC), yRP = r4(piso + aRP.valor);
         var Lacc = BI().ACESSORIO_PADRAO, yBase = r4(yRP - Lacc / 2 - geo(par, "margemNo"));
         var tg = tangente(nC), outros = e.vizinhos ? arr(e.vizinhos) : vizinhosDe(estado, fi);
         if (outros.length) { var cx = 0, cz = 0; outros.forEach(function (v) { cx += v.x; cz += v.z; }); cx /= outros.length; cz /= outros.length; if ((cx - Ac.x) * tg.x + (cz - Ac.z) * tg.z < 0) tg = { x: -tg.x, z: -tg.z }; }
@@ -581,7 +590,7 @@
     } else if (A0.tipo === "ancora") {
       /* MÁQUINA: a torneira de tanque/máquina posta pelo usuário é o ponto — já levada à altura MLR acima */
       var pm = porSis(cs, "agua_fria");
-      if (pm && yRamal != null) esperaAgua(K, "mq-af", pm, pm.parede ? { x: pm.parede.x, z: pm.parede.z } : n, emb(pm), yRamal, dnAgua(ctx, tipo, pm, out.pendencias));
+      if (pm && yRamal != null) esperaAgua(K, "mq-af", pm, pm.parede ? { x: pm.parede.x, z: pm.parede.z } : n, embAF(pm), yRamal, dnAgua(ctx, tipo, pm, out.pendencias));
       out.pontoAgua = { famInst: fi.id, aparelho: tipo };
       decide("kit.torneira.altura", "Ponto da máquina a " + f2(aCH.valor) + " m (" + aCH.fonte.doc.split(",")[0] + ", p." + aCH.fonte.pagina + ").");
     } else if (A0.tipo === "torneira") {
@@ -599,7 +608,7 @@
           var top = K.familia("tn", A0.familia, tt.id, pt, fi.rotY, "torneira");
           if (yRamal != null) {
             var csT = conectores(avaliarFam, { id: top.id, famId: top.famId, tipoId: top.tipoId, inst: {}, x: pt.x, y: pt.y, z: pt.z, rotY: top.rotY }), pT = porSis(csT, "agua_fria") || pt;
-            esperaAgua(K, "tn-af", { x: pT.x, y: pT.y, z: pT.z }, nT, e0, yRamal, dnAgua(ctx, tipo, pT, out.pendencias));
+            esperaAgua(K, "tn-af", { x: pT.x, y: pT.y, z: pT.z }, nT, e0 + extraAF, yRamal, dnAgua(ctx, tipo, pT, out.pendencias));
           }
           out.pontoAgua = { famInst: top.id, aparelho: tipo };
           decide("kit.torneira.altura", "Torneira " + txt(tt.nome) + " a " + f2(aT.valor) + " m (" + aT.fonte.doc.split(",")[0] + ", p." + aT.fonte.pagina + ").");

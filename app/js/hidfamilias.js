@@ -406,7 +406,7 @@
      distribuição pelas faces menos a da saída (+X), marcada "a conferir". Entrada além da 1ª que não recebe tubo é boca TAMPADA — por isso
      `opcional: true` (o motor deve honrar: não é desconexão). Tigre/sem número de entradas: só a 1ª. */
   var ENTRADAS_SIFONADA = [
-    { id: "entrada", nome: "Entrada 1", sistema: "esgoto", dn: "DN_entrada", x: "-Largura/2", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha" }
+    { id: "entrada", nome: "Entrada 1", sistema: "esgoto", dn: "DN_entrada", x: "-Largura/2", y: "-Entrada_prof", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha" }
   ];
   (function () {
     var slots = [   /* [x, z, dir] — fração da Largura/Profundidade; a saída fica na face +X */
@@ -414,7 +414,7 @@
       ["-Largura/4", "-Profundidade/2", "parede"], ["Largura/4", "Profundidade/2", "frente"], ["Largura/4", "-Profundidade/2", "parede"]
     ], k;
     for (k = 0; k < slots.length; k++) {
-      ENTRADAS_SIFONADA.push({ id: "entrada" + (k + 2), nome: "Entrada " + (k + 2), sistema: "esgoto", dn: "DN_entrada", x: slots[k][0], y: "0", z: slots[k][1], visivel: "Entradas >= " + (k + 2),
+      ENTRADAS_SIFONADA.push({ id: "entrada" + (k + 2), nome: "Entrada " + (k + 2), sistema: "esgoto", dn: "DN_entrada", x: slots[k][0], y: "-Entrada_prof", z: slots[k][1], visivel: "Entradas >= " + (k + 2),
         papel: "entrada", dir: dv(slots[k][2]), opcional: true, origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha; boca não usada fica tampada" });
     }
   })();
@@ -426,7 +426,10 @@
       G("Largura", 0.15, [0.08, 0.35], NOME(1), "Lado da caixa em planta"),                                           /* hid:ok geometria */
       G("Profundidade", 0.15, [0.08, 0.35], NOME(1), "Lado da caixa em planta (caixa quadrada)"),                     /* hid:ok geometria */
       G("Altura", 0.1, [0.05, 0.3], NOME(2), "Altura nominal do corpo"),                                              /* hid:ok geometria */
-      DN("DN_entrada", conectorCat("entrada"), "DN das entradas"), DN("DN_saida", conectorCat("saida"), "DN da saída")
+      DN("DN_entrada", conectorCat("entrada"), "DN das entradas"), DN("DN_saida", conectorCat("saida"), "DN da saída"),
+      /* Obra de terceiro (06/11/2026): a ficha não cota a altura das bocas de entrada; 0 = no topo do corpo (como antes). O projeto que precisa
+         (ramal que chega abaixo do piso acabado) grava a profundidade na instância — a conferir na ficha do produto escolhido */
+      I("Entrada_prof", 0, null, "Profundidade do eixo das bocas de entrada abaixo do piso acabado (m); 0 = no topo do corpo (a ficha não cota)")
     ],
     extraDados: [["Fecho_hidrico_mm", "fechoHidrico_mm", "Fecho hídrico"], ["Entradas", "entradas", "Número de entradas"]],
     solidos: CX_CORPO,
@@ -1124,6 +1127,146 @@
   padrao("hid-chuveiro", "Altura", 0.2); padrao("hid-chuveiro", "Profundidade", 0.38);   /* o chuveiro ELÉTRICO segue com estas medidas; o de parede usa as Cl_* (Docol Clássico) */
   padrao("hid-torneira", "Largura", 0.047); padrao("hid-torneira", "Altura", 0.083); padrao("hid-torneira", "Profundidade", 0.154);
   padrao("hid-misturador", "Altura", 0.2); padrao("hid-misturador", "Profundidade", 0.16);
+
+  /* ======================== SANEAMENTO ENTERRADO E EQUIPAMENTOS (06/11/2026) ========================
+   * Pedido do Rogério: um hidrossanitário de terceiro modelado DENTRO do sistema, só com famílias, tubos e conexões do sistema —
+   * "nada de volumetria esquisita". O CATÁLOGO só tem famílias e tipos GENÉRICOS (o "t-generico" de cada família, com as cotas padrão
+   * marcadas "a conferir") e o que vem de FABRICANTE (Bakof, Komeco). As cotas de uma obra (detalhes do projeto de terceiro) NUNCA
+   * entram aqui: quem monta o modelo (tools/hid-montar-de-json.js) cria os tipos locais DENTRO do .opbim, lendo-as de um JSON externo.
+   * PORTAS DE PROJETO: as caixas e poços recebem tubos em posições que o PROJETO define (não o catálogo). Cada porta é um
+   * conjunto de parâmetros de INSTÂNCIA (P1_x, P1_y, P1_z em m no sistema local da família; P1_dn em mm; 0 = porta inexistente)
+   * gravados por quem monta o modelo no ponto do traçado. Origem das câmaras enterradas: TOPO DA TAMPA, centro; o corpo desce. */
+  var GP = "Portas de projeto";
+  function portasProjeto(n, sistema, rotulo) {
+    var ps = [], cs = [], i, k;
+    for (i = 1; i <= n; i++) {
+      k = "P" + i;
+      ps.push(X(k + "_x", "comprimento", 0, GP, rotulo + " " + i + ": X local do ponto de ligação (m)"), X(k + "_y", "comprimento", 0, GP, rotulo + " " + i + ": Y local (m; negativo = abaixo do topo)"),
+        X(k + "_z", "comprimento", 0, GP, rotulo + " " + i + ": Z local (m)"), X(k + "_dn", "numero", 0, GP, rotulo + " " + i + ": DN do tubo (mm); 0 = porta inexistente"));
+      cs.push({ id: "p" + i, nome: rotulo + " " + i, sistema: sistema, dn: k + "_dn", x: k + "_x", y: k + "_y", z: k + "_z", visivel: k + "_dn > 0", porta: "p" + i,
+        papel: "entrada", dir: dv("esq"), bidirecional: true, origemPos: "projeto", aConferir: "porta no ponto do traçado do projeto (gravada na instância)" });
+    }
+    ps.forEach(function (p) { p.instancia = true; });
+    return { params: ps, conectores: cs };
+  }
+  function fichaQ(id, nome, valores, fonte, conferir) {
+    var v = JSON.parse(JSON.stringify(valores)); v.Conferir = conferir.join("; "); v.A_conferir = conferir.length > 0;
+    return { id: id, nome: nome, valores: v, fonte: fonte, conferir: conferir.slice() };
+  }
+  var AV_PORTAS = "Portas de projeto: as ligações ficam onde o projeto manda (parâmetros P1…Pn da instância); sem DN a porta não existe.";
+  var NOVAS = {};
+
+  /* 1) SUMIDOURO DE ANÉIS DE CONCRETO com envelope de brita 3 e manta geotêxtil */
+  var pSum = portasProjeto(2, "esgoto", "Entrada");   /* a ducha (águas servidas) chega em porta; a limpeza do reservatório (pluvial) termina em tela sobre a grelha */
+  ESPECS.push({ id: "hid-sumidouro-aneis", nome: "Sumidouro de anéis de concreto (brita 3 e manta geotêxtil)", categoria: "equipamento", sistemas: ["pluvial", "esgoto"], tipos: [], generico: true,
+    descricao: "Sumidouro de anéis pré-moldados de concreto com tampa hermética, grelha metálica e envelope de brita 3 envolto em manta geotêxtil (a manta não é desenhada no 3D). Origem = topo da tampa, centro; o corpo desce.",
+    avisos: [AV_PORTAS, "A tubulação de LIMPEZA do reservatório descarrega POR CIMA da grelha, sem ligar dentro do sumidouro (nota do projeto): termina numa tela, não numa porta."],
+    geo: [G("Diametro_interno", 0.6, [0.3, 2], null, "Ø interno dos anéis"), G("Espessura_anel", 0.1, [0.04, 0.2], null, "Espessura da parede do anel"),
+      G("Altura_util", 1, [0.3, 3], null, "Altura útil abaixo da grelha"), G("Altura_anel", 0.5, [0.2, 1], null, "Altura de UM anel pré-moldado"),
+      G("Brita_fundo", 0.2, [0, 0.6], null, "Camada de brita sob o fundo"), G("Lado_brita", 1.9, [0.8, 4], null, "Lado do envelope de brita em planta"),
+      G("Tampa_esp", 0.05, [0.02, 0.2], null, "Espessura da tampa hermética"), I("Prof_grelha", 0.2, null, "Profundidade da grelha abaixo do topo da tampa (m) — da instância")].concat(pSum.params),
+    solidos: [], conectores: pSum.conectores, material: "Concreto", });
+  NOVAS["hid-sumidouro-aneis"] = { g: "sumidouro_aneis", p: { Di: "Diametro_interno", E: "Espessura_anel", Hr: "Prof_grelha - Tampa_esp + Altura_util", Ha: "Altura_anel", Hb: "Brita_fundo", Lb: "Lado_brita", Tt: "Tampa_esp", Pg: "Prof_grelha" },
+    env: ["0", "-(Prof_grelha + Altura_util + Brita_fundo)", "0", "Lado_brita", "Prof_grelha + Altura_util + Brita_fundo", "Lado_brita"], x: [] };
+
+  /* 2) CÂMARA CILÍNDRICA ENTERRADA — poço de recalque (poço úmido), PV da concessionária, caixa de gradeamento de PRFV */
+  var pCil = portasProjeto(3, "esgoto", "Porta");
+  ESPECS.push({ id: "hid-camara-cilindrica", nome: "Câmara cilíndrica enterrada (poço de recalque, PV, gradeamento)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
+    descricao: "Poço/caixa cilíndrica enterrada: parede, laje de fundo e tampa. Origem = topo da tampa, centro; o corpo desce Tampa_esp + Profundidade_interna.",
+    avisos: [AV_PORTAS],
+    geo: [G("Diametro_interno", 0.8, [0.3, 3], null, "Ø interno"), G("Espessura_parede", 0.1, [0.004, 0.3], null, "Espessura da parede"),
+      G("Tampa_esp", 0.05, [0.01, 0.3], null, "Espessura da tampa"), G("Laje_fundo", 0.15, [0.004, 0.4], null, "Espessura da laje de fundo"),
+      X("Diametro_tampa", "comprimento", 0, "Forma 3D", "Ø da tampa (0 = o externo)"), X("Diametro_base", "comprimento", 0, "Forma 3D", "Ø da laje de base (0 = o externo)"),
+      X("PRFV", "simnao", false, "Materiais", "Corpo de PRFV (produto industrializado); não = concreto"),
+      I("Profundidade_interna", 1, null, "Do fundo da tampa ao fundo interno (m) — da instância, pelo traçado")].concat(pCil.params),
+    solidos: [], conectores: pCil.conectores, material: "Concreto", });
+  NOVAS["hid-camara-cilindrica"] = { g: "camara_cil", p: { Di: "Diametro_interno", E: "Espessura_parede", H: "Profundidade_interna", Tt: "Tampa_esp", Hl: "Laje_fundo", Dt: "Diametro_tampa", Db: "Diametro_base", mat: "se(PRFV; 1; 0)" },
+    env: ["0", "-(Tampa_esp + Profundidade_interna + Laje_fundo)", "0", "max(Diametro_interno + 2*Espessura_parede; max(Diametro_tampa; Diametro_base))", "Tampa_esp + Profundidade_interna + Laje_fundo", "max(Diametro_interno + 2*Espessura_parede; max(Diametro_tampa; Diametro_base))"], x: [] };
+
+  /* 3) CÂMARA RETANGULAR ENTERRADA — inspeção, gordura especial, quebra de pressão, retenção de sólidos grosseiros */
+  var pRet = portasProjeto(4, "esgoto", "Porta");
+  ESPECS.push({ id: "hid-camara-retangular", nome: "Caixa retangular enterrada (inspeção, gordura, quebra de pressão, retenção)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
+    descricao: "Caixa de alvenaria/concreto enterrada: 4 paredes, laje de fundo, tampa; septo e grade de barras opcionais. Origem = topo da tampa, centro; X = comprimento interno.",
+    avisos: [AV_PORTAS],
+    geo: [G("Comprimento_interno", 0.6, [0.3, 3], null, "Comprimento interno (X)"), G("Largura_interna", 0.6, [0.3, 3], null, "Largura interna (Z)"),
+      G("Espessura_parede", 0.1, [0.05, 0.4], null, "Espessura da parede"), G("Tampa_esp", 0.05, [0.02, 0.2], null, "Espessura da tampa"), G("Laje_fundo", 0.1, [0.05, 0.3], null, "Laje de fundo"),
+      X("Septo", "simnao", false, "Instalação", "Tem septo"), X("Grade", "simnao", false, "Instalação", "Tem grade de barras"),
+      I("Profundidade_interna", 0.6, null, "Do fundo da tampa ao fundo interno (m) — da instância"), I("Septo_x", 0, null, "X do septo (m)"),
+      I("Septo_fundo", 0.6, null, "Fundo do septo abaixo do topo da tampa (m)"), I("Septo_topo", 0.1, null, "Topo do septo abaixo do topo da tampa (m)"),
+      I("Grade_x", 0, null, "X do pé da grade (m)"), I("Grade_angulo", 55, null, "Inclinação da grade em relação à horizontal (graus)"), I("Grade_espacamento", 0.0275, null, "Espaçamento entre as barras (m)")].concat(pRet.params),
+    solidos: [], conectores: pRet.conectores, material: "Concreto", });
+  NOVAS["hid-camara-retangular"] = { g: "camara_ret", p: { Li: "Comprimento_interno", Wi: "Largura_interna", E: "Espessura_parede", H: "Profundidade_interna", Tt: "Tampa_esp", Hl: "Laje_fundo",
+      se: "se(Septo; 1; 0)", sx: "Septo_x", sb: "Septo_fundo", st: "Septo_topo", gr: "se(Grade; 1; 0)", gx: "Grade_x", ga: "Grade_angulo", eg: "Grade_espacamento" },
+    env: ["0", "-(Tampa_esp + Profundidade_interna + Laje_fundo)", "0", "Comprimento_interno + 2*Espessura_parede", "Tampa_esp + Profundidade_interna + Laje_fundo", "Largura_interna + 2*Espessura_parede"], x: [] };
+
+  /* 4) RESERVATÓRIO RETANGULAR DE PRFV (paredes inclinadas) — Bakof Tec */
+  var pRes = { params: [], conectores: [] };
+  [["alimentacao", "agua_fria", "Alimentação (boia)", "entrada"], ["saida", "agua_fria", "Saída (consumo)", "saida"], ["saida2", "agua_fria", "2ª saída (consumo)", "saida"],
+    ["extravasor", "pluvial", "Extravasor", "saida"], ["limpeza", "pluvial", "Limpeza", "saida"]].forEach(function (d) {
+    var k = "R_" + d[0];
+    pRes.params.push(X(k + "_x", "comprimento", 0, GP, d[2] + ": X local (m)"), X(k + "_y", "comprimento", 0, GP, d[2] + ": Y local, acima da base (m)"), X(k + "_z", "comprimento", 0, GP, d[2] + ": Z local (m)"),
+      X(k + "_dn", "numero", 0, GP, d[2] + ": DN (mm); 0 = sem tubo nesta porta"));
+    pRes.conectores.push({ id: d[0], nome: d[2], sistema: d[1], dn: k + "_dn", x: k + "_x", y: k + "_y", z: k + "_z", visivel: k + "_dn > 0", porta: d[0], papel: d[3], dir: dv("esq"),
+      origemPos: "projeto", aConferir: "furo feito na obra no ponto do projeto (a ficha não cota)" });
+  });
+  pRes.params.forEach(function (p) { p.instancia = true; });
+  ESPECS.push({ id: "hid-reservatorio-retangular", nome: "Reservatório retangular de PRFV (paredes inclinadas)", categoria: "equipamento", sistemas: ["agua_fria", "pluvial"], tipos: [], generico: true,
+    descricao: "Reservatório retangular de fibra de vidro com paredes inclinadas e tampa. Origem = centro da base; X = comprimento.",
+    avisos: [AV_PORTAS, "Extravasor e limpeza: sistema pluvial (descarregam em local visível/sumidouro, nunca no esgoto — nota do projeto)."],
+    geo: [G("Comprimento_topo", 1.88, [0.5, 5], null, "Comprimento no topo"), G("Largura_topo", 1.23, [0.4, 4], null, "Largura no topo"),
+      G("Comprimento_fundo", 1.53, [0.4, 5], null, "Comprimento no fundo"), G("Largura_fundo", 0.88, [0.3, 4], null, "Largura no fundo"),
+      G("Altura", 0.68, [0.3, 3], null, "Altura total"), G("Tampa_altura", 0.06, [0.01, 0.3], null, "Altura da tampa"), G("Raio_canto", 0.2, [0.01, 0.6], null, "Raio de canto em planta (topo)")].concat(pRes.params),
+    solidos: [], conectores: pRes.conectores, material: "Azul",
+    tiposFicha: [fichaQ("t-bakof-tec-1000", "Bakof Tec 1.000 L (PRFV)",
+      { Fabricante: "Bakof", Linha: "Bakof Tec", Codigo: "Bakof Tec 1000 L", Descricao_ficha: "Reservatório Bakof Tec 1000 L — compr. 1,88 m, largura 1,23 m, altura 0,68 m (tabela do fabricante)", Link_ficha: "https://www.bakof.com.br", Arquivo_ficha: "", Edicao_ficha: "tabela do fabricante Bakof Tec — a conferir na ficha vigente",
+        Pagina_ficha: 1, Pagina_cotas: 1, Cotas_ficha: "topo 1,88 × 1,23; fundo 1,53 × 0,88; altura 0,68", Comprimento_topo: 1.88, Largura_topo: 1.23, Comprimento_fundo: 1.53, Largura_fundo: 0.88, Altura: 0.68, Tampa_altura: 0.06, Raio_canto: 0.2 },
+      "Bakof (fabricante), tabela do reservatório Bakof Tec — a conferir na ficha vigente", ["ficha do fabricante (conferir a edição vigente)", "Tampa_altura e Raio_canto (a tabela não traz: de desenho)", "posição dos furos (feitos na obra, no ponto do projeto)"])] });
+  NOVAS["hid-reservatorio-retangular"] = { g: "reservatorio_ret", p: { Lt: "Comprimento_topo", Wt: "Largura_topo", Lb: "Comprimento_fundo", Wb: "Largura_fundo", H: "Altura", Ht: "Tampa_altura", Rc: "Raio_canto" },
+    env: ["0", "0", "0", "Comprimento_topo + 0.06", "Altura", "Largura_topo + 0.06"], x: [] };
+
+  /* 5) PRESSURIZADOR COMPACTO (gabinete vertical) — Komeco TP 825 */
+  ESPECS.push({ id: "hid-pressurizador-compacto", nome: "Pressurizador compacto (gabinete vertical)", categoria: "equipamento", sistemas: ["agua_fria"], tipos: [], generico: true,
+    descricao: "Pressurizador compacto de gabinete vertical, sobre base nivelada. Origem = centro da base.",
+    avisos: [AV_CONECTOR, "Posição das bocas de entrada e saída no gabinete: a ficha não cota (no alto, de desenho)."],
+    geo: [G("Largura", 0.165, [0.1, 0.6], null, "Largura (L)"), G("Altura", 0.42, [0.2, 1], null, "Altura (A)"), G("Profundidade", 0.21, [0.1, 0.6], null, "Profundidade (P)"),
+      DN("DN_entrada", null, "DN da entrada"), DN("DN_saida", null, "DN da saída"), X("Peso_kg", "numero", 0, GP, "Peso líquido (kg) da ficha")],
+    solidos: [], material: "Branco",
+    conectores: [
+      { id: "entrada", nome: "Entrada (sucção)", sistema: "agua_fria", dn: "DN_entrada", x: "0", y: "Altura + 0.035", z: "-Profundidade/4", papel: "succao", dir: dv("cima"), origemPos: "desenho", aConferir: "a ficha não cota a posição da boca" },
+      { id: "saida", nome: "Saída (recalque)", sistema: "agua_fria", dn: "DN_saida", x: "0", y: "Altura + 0.035", z: "Profundidade/4", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "a ficha não cota a posição da boca" }],
+    tiposFicha: [fichaQ("t-komeco-tp825-g2", "Komeco TP 825 (G2) — 165 × 420 × 210 mm, 7,6 kg, conexões 1\"",
+      { Fabricante: "Komeco", Linha: "TP 820/825 G2", Codigo: "TP 825", Descricao_ficha: "Pressurizador TP 825: dimensões L × A × P 165 × 420 × 210 mm, peso líquido 7,6 kg, conexões de entrada/saída 1\"",
+        Link_ficha: "https://www.komeco.com.br/arquivos/datasheet/bombas-pressurizadores/pressurizadores/datasheet-bomba-tp-820-825.pdf", Edicao_ficha: "datasheet TP 820/825 G2 (Komeco) e boletim BTAQC 002/17", Pagina_ficha: 1, Pagina_cotas: 1,
+        Cotas_ficha: "165 × 420 × 210 mm; 7,6 kg; conexões 1\"", Largura: 0.165, Altura: 0.42, Profundidade: 0.21, Peso_kg: 7.6 },
+      "Komeco, datasheet TP 820/825 G2 (komeco.com.br) e boletim técnico BTAQC 002/17", ["posição das bocas no gabinete (a ficha não cota)", "geração do produto: conferir a geração (G2) na ficha vigente do fabricante"])] });
+  NOVAS["hid-pressurizador-compacto"] = { g: "pressurizador", p: { L: "Largura", H: "Altura", Pp: "Profundidade" }, env: ["0", "0", "0", "Largura", "Altura + 0.035", "Profundidade"], x: [] };
+
+  /* 6) MOTOBOMBA SUBMERSÍVEL DE ESGOTO — sem ficha com cotas: CAIXA marcada "medida a conferir" (pedido de 06/11/2026) */
+  ESPECS.push({ id: "hid-bomba-submersivel", nome: "Motobomba submersível de esgoto (MEDIDAS A CONFERIR)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
+    descricao: "Motobomba submersível de esgoto, no fundo do poço úmido. Origem = centro da base; a boca de recalque no alto. Volume em CAIXA: o catálogo com as cotas não foi achado — medida a conferir.",
+    avisos: ["MEDIDA A CONFERIR: o catálogo do fabricante com as dimensões não foi localizado; a caixa é uma ordem de grandeza de projeto de referência.", AV_CONECTOR],
+    geo: [G("Largura", 0.24, [0.1, 0.8], null, "Largura (X)"), G("Profundidade", 0.18, [0.1, 0.8], null, "Profundidade (Z)"), G("Altura", 0.46, [0.2, 1.5], null, "Altura até a boca de recalque"),
+      DN("DN_recalque", null, "DN do recalque")],
+    solidos: [], material: "Ferro fundido",
+    conectores: [{ id: "recalque", nome: "Recalque", sistema: "esgoto", dn: "DN_recalque", x: "0", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "medida a conferir (sem catálogo)" }], });
+
+  /* 7) TELA NA PONTA DO TUBO — saída do extravasor e da limpeza (nota do projeto: "telas ou malhas de material resistente") */
+  ESPECS.push({ id: "hid-tela-ponta", nome: "Tela de proteção na ponta do tubo (extravasor / limpeza)", categoria: "equipamento", sistemas: ["pluvial"], tipos: [], generico: true,
+    descricao: "Tela ou malha de material resistente na ponta livre do tubo (extravasor em local visível, limpeza sobre a grelha do sumidouro). Origem = ponta do tubo; o tubo chega pelo −X.",
+    avisos: ["A área livre das frestas deve passar a da seção interna do tubo (nota do projeto). Produto não especificado: luva + tela de desenho."],
+    geo: [DN("DN_tubo", null, "DN do tubo")],
+    solidos: [], material: "Inox",
+    conectores: [{ id: "tubo", nome: "Tubo", sistema: "pluvial", dn: "DN_tubo", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "desenho", aConferir: "produto não especificado no projeto" }], });
+  GEO_FAM["hid-bomba-submersivel"] = function () {
+    return [cxs("corpo", "Motobomba (volume a conferir)", "0", "0", "0", "Largura", "Altura*0.85", "Profundidade", "Ferro fundido"),
+      cil("pescoco", "Boca de recalque", "y", "0", "Altura*0.85", "0", "max(0.02; DN_recalque/2000 + 0.004)", "Altura*0.15", "Ferro fundido"),
+      cxs("alca", "Alça de içamento", "0", "Altura*0.85", "Profundidade*0.3", "Largura*0.6", "Altura*0.1", "0.012", "Aço")];
+  };
+  GEO_FAM["hid-tela-ponta"] = function () {
+    return [cil("luva", "Luva", "x", "0", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.04", "PVC"),
+      cil("tela", "Tela", "x", "0.04", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.003", "Inox")];
+  };
+  Object.keys(NOVAS).forEach(function (k) { GERADA[k] = NOVAS[k]; });
   function solidoGerado(e, d) {
     return { id: "forma", nome: e.nome, forma: "gerada", gerador: d.g, x: "0", y: "0", z: "0", p: JSON.parse(JSON.stringify(d.p)), material: "Material",
       env: { x: d.env[0], y: d.env[1], z: d.env[2], dx: d.env[3], dy: d.env[4], dz: d.env[5] } };

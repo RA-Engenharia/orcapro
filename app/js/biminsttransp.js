@@ -13,11 +13,11 @@
  * peça mede 2·A de ponta a ponta; D = DE do tubo; B = Ø externo da bolsa; R = raio do arco central (a curva de baixo, sobre o
  * tubo cruzado).
  *   ⚠ PENDENTE: o desenho marca a letra C (altura total do arco) mas a tabela NÃO traz o valor. Sem C não se afirma a folga livre
- *   por cima do tubo cruzado. Regra CONSERVADORA usada aqui: o tubo cruzado tem DE ≤ D (o mesmo DN da peça) e DE ≤ 2·R (cabe sob o
- *   arco pelo raio lido) — o menor dos dois. Para o DN 20 (D = 20, R = 13): DE ≤ 20 mm. Confirmar com a peça física.
+ *   por cima do tubo cruzado. Regra CONSERVADORA usada aqui: o tubo cruzado tem DE ≤ D, DE ≤ 2·R (cabe sob o
+ *   arco pelo raio lido) e DE ≤ 20 mm (teto fixo enquanto C não consta) — o menor dos três. Nos DN 20, 25 e 32: DE ≤ 20 mm. Confirmar com a peça física
+ *   (releitura da pág. 17 em 06/11/2026: a tabela traz só A, B, D e R; C não aparece).
  *
- * ESCOPO (pedido do Rogério): só o DN que ele pediu — PVC soldável DN 20. A ficha traz também 25 e 32; ficam FORA até alguém validar
- * (DN_PERMITIDOS). A peça de PPR (Amanco 92349, outro material) NÃO entra.
+ * ESCOPO: PVC soldável DN 20, 25 e 32 (DN_PERMITIDOS; 25 e 32 liberados em 06/11/2026 com a mesma regra conservadora). A peça de PPR (Amanco 92349, outro material) NÃO entra.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -29,8 +29,11 @@
   }
   var MM = 1 / 1000;
   var TIPO = "curva_transposicao", MATERIAL = "pvc_soldavel";
-  /* o DN que o Rogério pediu (05/11/2026); o catálogo tem 25 e 32 sem validação — não entram */
-  var DN_PERMITIDOS = [20];   // hid:ok escopo do pedido, não é norma
+  /* 20 (pedido de 05/11/2026) + 25 e 32 (liberados em 06/11/2026: a ficha FTC000001 pág. 17 traz A, B, D e R deles; a altura C segue fora da
+     tabela, por isso a regra conservadora abaixo vale para os três DN) */
+  var DN_PERMITIDOS = [20, 25, 32];   // hid:ok escopo do pedido, não é norma
+  /* maior DE de tubo cruzado que passa sob o arco enquanto a altura C não consta da ficha: 20 mm em qualquer DN da peça (conservador) */
+  var DE_CRUZADO_MAX = 20;   // hid:ok regra conservadora do coordenador (C não tabelada), não é norma
   var AGUA = { agua_fria: 1, agua_quente: 1 };
   /* os dois tubos cruzam a 90° ± ~5° (o seno de 5°) e na mesma cota ± 5 mm — tolerâncias de GEOMETRIA, não de norma */
   var TOL_COS = 0.087, TOL_COTA = 0.005, FIM_TUBO = 0.02, EPS = 1e-9, EPS_DEN = 1e-12;   // hid:ok
@@ -48,7 +51,7 @@
     return { dn: dn, tipo: TIPO, material: MATERIAL,
              A: f.A * MM,                                  /* m: da face da bolsa ao centro — a reta livre que cada lado precisa */
              L: (f.L != null ? f.L : 2 * f.A) * MM,        /* m: comprimento total */
-             deMaxCruzado: Math.min(f.D, 2 * f.R),         /* mm: o maior DE de tubo que passa sob o arco (conservador; ver o cabeçalho) */
+             deMaxCruzado: Math.min(f.D, 2 * f.R, DE_CRUZADO_MAX),         /* mm: o maior DE de tubo que passa sob o arco (conservador; ver o cabeçalho) */
              hArco: (f.R + f.D / 2) * MM,                  /* m: a crista acima do eixo (R + D/2) — só o desenho 3D */
              codigo: f.codigo || null,
              fonte: "Amanco Wavin FT FTC000001 (rev. Out/2025) pág. " + f.pag + ": A " + f.A + ", B " + f.od + ", D " + f.D + ", R " + f.R + " mm; altura C do arco não tabelada (pendente)" };

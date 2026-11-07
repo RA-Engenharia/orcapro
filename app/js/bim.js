@@ -17649,7 +17649,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* + o TERRENO (topossólido/sub-região, IFCGEOGRAPHICELEMENT): opaco, ele escondia a rede enterrada (as caixas de inspeção
      e o coletor sob o terreno — revisão do coordenador, 18/10/2026) */
   var INST_FUNDO = /^IFC(WALL|SLAB|COVERING|ROOF|BEAM|COLUMN|FOOTING|PILE|STAIR|RAMP|RAILING|DOOR|WINDOW|MEMBER|PLATE|CURTAINWALL|FURNISHINGELEMENT|BUILDINGELEMENTPART|GEOGRAPHICELEMENT)/;
-  function instVistaFundo(m) { var t = m && m.userData ? String(m.userData.tipo || '').toUpperCase() : ''; return !!t && INST_FUNDO.test(t); }
+  /* + O IFC DE REFERÊNCIA INTEIRO (06/11/2026, IFC de arquitetura de cliente — "ver através do IFC"): o IFC de arquitetura/estrutura que a pessoa
+     abriu para pôr as louças e traçar por cima é FUNDO por inteiro na vista Instalações — não só parede e laje. Por classe ficavam
+     opacos o terreno que o exportador grava como IFCBUILDINGELEMENTPROXY ("Sólido topográfico" no IFC2x3 — tapava o esgoto sob o
+     piso e a rede até as caixas), as louças do PRÓPRIO IFC (IFCFLOWTERMINAL, no mesmo lugar da louça posta: duas peças brigando
+     no mesmo espaço), geladeira, caixa d'água… O IFC de instalações (disciplina hidráulica, elétrica, mecânica) segue a regra por
+     classe: os tubos dele ficam à vista. */
+  var DISC_INST = /^(hidraulica|eletrica|mecanica)$/;
+  function instVistaFundo(m) {
+    var ud = m && m.userData; if (!ud) return false;
+    if (ud.mid != null && ud.mid !== 'edit') { var moF = modeloDe(ud.mid); if (moF && !moF.sintetico && !moF.editor && !DISC_INST.test(String(moF.disciplina || ''))) return true; }
+    var t = String(ud.tipo || '').toUpperCase(); return !!t && INST_FUNDO.test(t);
+  }
+  S._ifcReferenciaAberto = function () { return S.modelos.some(function (mo) { return mo && mo.mid !== 'edit' && !mo.sintetico && !mo.editor && !mo.exemplo && !DISC_INST.test(String(mo.disciplina || '')); }); };
   function instVistaMat(alpha) {
     var op = Math.round(Math.max(0.05, Math.min(1, 0.2 * (alpha == null ? 1 : alpha))) * 100) / 100, k = op.toFixed(2);
     if (!instVista.mats[k]) { instVista.mats[k] = new THREE.MeshStandardMaterial({ color: 0xa4abb3, roughness: 0.9, metalness: 0, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }); instVista.mats[k].name = 'vista-instalacoes'; }
@@ -17666,6 +17678,58 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._setVistaInst = setVistaInst;
   S._vistaInstOn = function () { return !!instVista.on; };
   S._vistaInstFundo = instVistaFundo;
+  /* ---------------------------------------------------------------
+   * PAREDES DE REFERÊNCIA DO IFC (06/11/2026, IFC de arquitetura de cliente, exportado em IFC2x3). Pedido do Rogério: "puxo o IFC, coloco as louças
+   * em cima (o IFC já tem a ponta) e depois do Traçar automático não consigo ver certinho".
+   * CAUSA: o projeto inteligente do hidro (kit, Traçar automaticamente, rede externa) só enxerga as paredes do EDITOR
+   * (estado.caixas). Com o IFC como arquitetura, o banheiro "não tinha parede": o Traçar voltava "Nenhum tubo foi traçado: sem
+   * paredes no modelo para achar o lado de fora do ambiente" — ou, com alguma parede desenhada à mão, traçava como se o resto
+   * fosse vazio (tubo atravessando a parede do IFC, esgoto saindo por dentro da casa).
+   * AQUI: cada IFCWALL* visível vira uma parede de REFERÊNCIA — eixo, espessura e altura tirados da malha (o retângulo de menor
+   * área na planta, o mesmo do Converter IFC: js/bimifcconv.js `medir`). Só LEITURA para os motores: não entra na lista de
+   * edição, não desenha, não vai para o orçamento. A peça que a pessoa ocultou na edição (removidosIfc) não conta.
+   * ⚠ Parede com planta que não é retângulo (L, curva) fica de fora: a espessura sairia a da caixa toda. */
+  var PAREDE_IFC_RE = /^IFCWALL(STANDARDCASE|ELEMENTEDCASE)?$/;
+  function paredesIfcDoModelo(mo) {
+    /* medido no sistema LOCAL do modelRoot (não no do mundo): durante RV/RA/cristal o modelRoot é movido/escalado e as paredes saíam deslocadas
+       para sempre (o cache valia pela vida do modelo). Mesmo assim guarda a matriz usada: se a relação grupo→modelRoot mudar, recalcula. */
+    modelRoot.updateMatrixWorld(true); mo.grupo.updateMatrixWorld(true);
+    var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), chave = inv.clone().multiply(mo.grupo.matrixWorld).elements.join(',');
+    if (mo._paredesRef && mo._paredesRefM === chave) return mo._paredesRef;
+    var conv = (typeof window !== 'undefined' && window.BimIfcConv && window.BimIfcConv._geo) ? window.BimIfcConv._geo : null;
+    var porId = {}, lista = [];
+    mo.grupo.children.forEach(function (m) {
+      if (!m.isMesh || m.userData.expressID == null || !PAREDE_IFC_RE.test(String(m.userData.tipo || '').toUpperCase())) return;
+      var g = m.geometry, pa = g && g.attributes && g.attributes.position; if (!pa) return;
+      var ix = g.index ? g.index.array : null, n = ix ? ix.length : pa.count, v = new THREE.Vector3();
+      var T = porId[m.userData.expressID] || (porId[m.userData.expressID] = []);
+      for (var i = 0; i < n; i++) { v.fromBufferAttribute(pa, ix ? ix[i] : i).applyMatrix4(m.matrixWorld).applyMatrix4(inv); T.push(v.x, v.y, v.z); }
+    });
+    Object.keys(porId).forEach(function (eid) {
+      var T = porId[eid]; if (T.length < 27) return;
+      var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (var i = 0; i < T.length; i += 3) for (var k = 0; k < 3; k++) { if (T[i + k] < mn[k]) mn[k] = T[i + k]; if (T[i + k] > mx[k]) mx[k] = T[i + k]; }
+      var r = null;
+      if (conv && conv.medir) { var md = conv.medir(new Float32Array(T)); if (md && md.ret) r = md.ret; }
+      if (!r) { var dx = mx[0] - mn[0], dz = mx[2] - mn[2]; r = { cx: (mn[0] + mx[0]) / 2, cz: (mn[2] + mx[2]) / 2, ux: dx >= dz ? 1 : 0, uz: dx >= dz ? 0 : 1, a: Math.max(dx, dz), b: Math.min(dx, dz) }; }
+      var alt = mx[1] - mn[1];
+      if (!(r.a >= 0.2) || !(r.b >= 0.03) || !(r.b <= 0.8) || !(alt >= 0.3)) return;   /* parede de verdade: não é placa nem bloco */
+      var h = r.a / 2;
+      lista.push({ id: 'ifcref-' + mo.mid + '-' + eid, uid: mo.mid + ':' + eid, a: { x: r.cx - r.ux * h, z: r.cz - r.uz * h }, b: { x: r.cx + r.ux * h, z: r.cz + r.uz * h }, espessura: r.b, altura: alt, base: mn[1] });
+    });
+    mo._paredesRef = lista; mo._paredesRefM = chave;
+    return lista;
+  }
+  S._paredesIfcRef = function () {
+    var est = S.edit && S.edit.estado, rem = {};
+    ((est && est.removidosIfc) || []).forEach(function (u) { rem[u] = 1; });
+    var out = [];
+    S.modelos.forEach(function (mo) {
+      if (!mo || mo.mid === 'edit' || mo.sintetico || mo.exemplo || mo.visivel === false) return;
+      try { paredesIfcDoModelo(mo).forEach(function (p) { if (!rem[p.uid]) out.push(p); }); } catch (eP) {}
+    });
+    return out;
+  };
   function catMotor() { return (typeof window !== 'undefined' && window.BimCoresCat) ? window.BimCoresCat : null; }
   function catCaixas() {
     var est = S.edit && S.edit.estado; if (!est || !est.caixas) return null;
@@ -19982,6 +20046,26 @@ window.BIM = {
   parteSobre: function (x, y) { var u = S && S._abrirUI; var a = u && u.alvoEm ? u.alvoEm(x, y, false) : null; return a ? { id: a.pt.id, parte: a.pt.parte, dist: a.dist } : null; },
   caixaCorteAtiva: function () { return !!(S && S._cxMain && S._cxMain.on); },
   /* VISTA INSTALAÇÕES (QUALIDADE VISUAL 2): arquitetura e estrutura em cinza translúcido; sem argumento, só lê */
+  /* as paredes dos IFCs abertos como REFERÊNCIA para os motores do hidro (só leitura): [{id, uid, a:{x,z}, b:{x,z}, espessura, altura, base}] */
+  paredesIfcRef: function () { return (S && S._paredesIfcRef) ? S._paredesIfcRef() : []; },
+  /* o CONTEXTO dos motores do hidro com as paredes do IFC: um lote "ifc-ref" (as paredes de referência) na FRENTE das ops da
+     edição e o estado aplicado com ele. Nunca é gravado: quem grava (HidKitUI._gravar) só escreve as ops novas do plano.
+     null = sem IFC com parede (o contexto fica o de sempre). Guardado pelo estado da edição: o mesmo estado → o mesmo cálculo. */
+  refIfcContexto: function (ops, estado) {
+    if (!S || !S._paredesIfcRef || typeof window === 'undefined' || !window.BimEdit) return null;
+    var refs = S._paredesIfcRef(); if (!refs.length) return null;
+    var chave = refs.map(function (p) { return p.id; }).join('|'), c = S._refIfcCtx;
+    if (c && c.base === estado && c.chave === chave && c.n === ops.length) return c.r;
+    var cr = [];
+    refs.forEach(function (p) { var cx = window.BimEdit.parede(p.a, p.b, p.espessura, p.altura, p.base); if (cx) { cx.ifcRef = p.uid; cr.push({ op: 'criar', id: p.id, caixa: cx }); } });
+    if (!cr.length) return null;
+    var opsR = [{ op: 'lote', id: 'ifc-ref', origem: 'ifc-ref', ops: cr }].concat(ops);
+    var r = { ops: opsR, estado: window.BimEdit.aplicar(opsR), paredes: cr.length };
+    S._refIfcCtx = { base: estado, chave: chave, n: ops.length, r: r };
+    return r;
+  },
+  /* há um IFC de arquitetura/estrutura aberto como referência (não o exemplo) — o botão "Ver através do IFC" do painel Instalações */
+  ifcReferenciaAberto: function () { return !!(S && S._ifcReferenciaAberto && S._ifcReferenciaAberto()); },
   vistaInstalacoes: function (on) { if (!S || !S._setVistaInst) return false; return on === undefined ? S._vistaInstOn() : S._setVistaInst(on); },
   caixaCorteEstado: function () { return (S && S._cxMain) ? S._cxMain.estado() : null; },
   /* onde está, na tela, a seta da face k (0..5 = x−, x+, y−, y+, z−, z+) — usado pelas e2e para puxar a face */

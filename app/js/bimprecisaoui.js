@@ -1048,6 +1048,7 @@
            ferramenta (o editor continua aberto); 3) limpa a seleção; 4) só então o Esc de
            sempre (fecha o editor). Parede/viga com o traço aberto: o Esc de sempre encerra o traço. */
         if (e.key === "Escape") {
+          pr.tecla = "";   /* o Esc zera as letras já digitadas: "W", Esc, "A" não é WA */
           if (pr.arrasto) { pr.arrasto = null; posicionar(); e.stopPropagation(); return; }
           if (ferramenta() && pr.pts.length) { e.preventDefault(); e.stopPropagation(); cancelarPasso(); hint("Passo cancelado. Esc de novo sai da ferramenta."); return; }
           if (edit.sub && !edit.p1) {
@@ -1087,15 +1088,38 @@
           caixa.style.display = "flex"; alvoIn.focus(); alvoIn.value += e.key; return;
         }
         /* atalhos de duas letras (convenção de mercado): MV, CO, MM, RO, AR, DI, WA */
-        if (/^[a-zA-Z]$/.test(e.key)) {
-          var agora = Date.now(), k = e.key.toUpperCase();
-          pr.tecla = (agora - pr.teclaT < 1200 ? pr.tecla : "") + k; pr.teclaT = agora;
-          var sub = Pr().ATALHOS[pr.tecla.slice(-2)];
-          if (sub) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; if (edit.sub !== sub) api.armar(sub); return; }
-          /* o atalho que abre um COMANDO da fita (ELEVAR: EL → o diálogo do js/bimelevarui.js) */
-          var cmdA = Pr().ATALHOS_CMD && Pr().ATALHOS_CMD[pr.tecla.slice(-2)];
-          if (cmdA && global.BimShell && global.BimShell.executar) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; global.BimShell.executar(cmdA); return; }
-        }
+        letrasDoAtalho(e);
+      }, true);
+      /* As duas letras (06/11/2026, pedido do Rogério: "apertei WA e não abriu para fazer as paredes").
+         ⚠ ANTES esta parte só rodava com o editor LIGADO (`ativo()` exige `edit.on`): com o 3D na tela e nenhuma
+         ferramenta aberta — o estado em que a pessoa mais usa o WA — a tecla não fazia nada. Três Esc seguidos (o 3º fecha
+         o editor) deixavam todos os atalhos mortos até clicar numa ferramenta. O `api.armar` já liga o editor sozinho,
+         então a tecla vale também com ele fechado, DESDE QUE o 3D esteja na tela e a pessoa não esteja digitando,
+         voando (W/A/S/D são do voo) nem com uma janela aberta. */
+      function letrasDoAtalho(e) {
+        if (!/^[a-zA-Z]$/.test(e.key) || e.repeat) return;   /* tecla segurada não conta: segurar W e tocar A não é WA */
+        var agora = Date.now(), k = e.key.toUpperCase();
+        pr.tecla = (agora - pr.teclaT < 1200 ? pr.tecla : "") + k; pr.teclaT = agora;
+        var sub = Pr().ATALHOS[pr.tecla.slice(-2)];
+        if (sub) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; if (edit.sub !== sub) api.armar(sub); return; }
+        /* o atalho que abre um COMANDO da fita (ELEVAR: EL → o diálogo do js/bimelevarui.js) */
+        var cmdA = Pr().ATALHOS_CMD && Pr().ATALHOS_CMD[pr.tecla.slice(-2)];
+        if (cmdA && global.BimShell && global.BimShell.executar) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; global.BimShell.executar(cmdA); return; }
+      }
+      /* o 3D está na tela? (o host fica escondido quando outro módulo está aberto) */
+      function bimNaTela() { var h = host(), raiz = h && h.closest ? (h.closest(".bim-revit") || h) : h; return !!(raiz && raiz.isConnected && raiz.getClientRects().length); }
+      document.addEventListener("keydown", function (e) {
+        if (ativo() || !previa() || S.alive === false) return;   /* com o editor ligado quem atende é o ouvinte de cima */
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (!/^[a-zA-Z]$/.test(e.key)) { if (e.key === "Escape") pr.tecla = ""; return; }
+        var alvo = e.target || {};
+        if (digitandoFora(alvo) || caixa.contains(alvo)) return;
+        if ((S.fly && S.fly.on) || (S.xr && S.xr.on)) return;   /* voando/em RV: W, A, S, D são de andar */
+        try { if (document.getElementById("modal-bg")) return; } catch (eM) {}
+        /* diálogo/lista aberta (o de tipo, o do Traçar…) também é dono do teclado: W, A… são letras dele (revisão 1.2.253) — só conta se estiver à vista */
+        try { if ([].slice.call(document.querySelectorAll('[aria-modal="true"], .rv-tlist, #hid-tracar')).some(function (el) { return el.getClientRects().length > 0 && (window.getComputedStyle(el).visibility !== "hidden"); })) return; } catch (eD) {}
+        if (!bimNaTela()) return;
+        letrasDoAtalho(e);
       }, true);
 
       /* --------------------------------------------- o que bim.js chama */

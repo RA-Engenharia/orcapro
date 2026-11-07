@@ -1210,6 +1210,98 @@
     return [co, sa, al];
   }
 
+  /* ================= SANEAMENTO ENTERRADO E EQUIPAMENTOS (06/11/2026) =================
+   * Pedido do Rogério: modelar um hidrossanitário de terceiro "só com famílias do sistema, nada de volumetria esquisita".
+   * Caixas, poços e sumidouro ENTERRADOS: origem no TOPO DA TAMPA (y = 0) e o corpo desce. Reservatório retangular e
+   * pressurizador: origem no centro da BASE. As cotas vêm do tipo da família (js/hidfamilias.js, bloco "SANEAMENTO
+   * ENTERRADO"); os números daqui são desenho (junta entre anéis, alça, aba, chanfro, barra da grelha), nunca norma. */
+  var CONC = "Concreto", BRITA = "Brita";
+  /* contorno CONVEXO em planta [[x, z]…] extrudado de y0 a y1 (malha fechada) */
+  function prisma(m, pl, y0, y1) { loft(m, [pl.map(function (p) { return [p[0], y0, p[1]]; }), pl.map(function (p) { return [p[0], y1, p[1]]; })]); }
+  function anelCil(m, ri, re, y0, y1, N) { torno(m, [[ri, y0], [re, y0], [re, y1], [ri, y1]], N, { c: [0, 0, 0], fechado: true }); }
+  function discoCil(m, r, y0, y1, N) { torno(m, [[r, y0], [r, y1]], N, { c: [0, 0, 0] }); }
+  function alca(m, y, q) { caixaR(m, { x0: -0.06, x1: 0.06, y0: y, y1: y + 0.015, z0: -0.012, z1: 0.012, r: 0.004, rad: 0.006 }, q); }
+  function barra(m, x0, x1, y0, y1, z0, z1) { caixaR(m, { x0: x0, x1: x1, y0: y0, y1: y1, z0: z0, z1: z1, r: 0, rad: 0 }, { k: 1, kv: 0 }); }
+  /* SUMIDOURO de anéis: P = { Di (Ø interno), E (parede do anel), Hr (altura dos anéis), Ha (altura de UM anel), Hb (brita sob o
+     fundo), Lb (lado do envelope de brita em planta), Tt (tampa), Pg (profundidade da grelha abaixo do topo) }. A manta geotêxtil
+     que envolve a brita é fina demais para o 3D: fica no nome e no aviso da família. */
+  function geoSumidouroAneis(P, q) {
+    var Ri = P.Di / 2, Re = Ri + P.E, N = q.N, yT = -P.Tt, yF = yT - P.Hr, j;
+    var an = parte("aneis", "Anéis de concreto", CONC), tp = parte("tampa", "Tampa", CONC), gr = parte("grelha", "Grelha metálica", FERRO), br = parte("brita", "Envelope de brita", BRITA);
+    var n = Math.min(40, Math.max(1, Math.ceil(P.Hr / P.Ha - 1e-6))), h = P.Hr / n;
+    for (j = 0; j < n; j++) anelCil(an.m, Ri, Re, yT - (j + 1) * h + (j + 1 < n ? 0.003 : 0), yT - j * h, N);   // junta de 3 mm entre anéis
+    discoCil(tp.m, Re + 0.02, -P.Tt, 0, N); alca(tp.m, 0, q);
+    var yg = -P.Pg;
+    anelCil(gr.m, Ri - 0.03, Ri - 0.002, yg - 0.03, yg, N);
+    for (var z = -Ri + 0.05; z < Ri - 0.04; z += 0.05) { var hx = Math.sqrt(Math.max(0, (Ri - 0.015) * (Ri - 0.015) - z * z)); if (hx > 0.02) barra(gr.m, -hx, hx, yg - 0.03, yg, z - 0.005, z + 0.005); }
+    var L = P.Lb / 2, n8 = 8 * Math.ceil(N / 8), yb = yF - P.Hb;
+    prisma(br.m, [[-L, -L], [L, -L], [L, L], [-L, L]], yb, yF);
+    /* o envelope lateral é UM sólido (quadrado por fora, o anel por dentro) de faces planas sem vértice compartilhado: em pedaços
+       separados ele saía listrado no 3D e com raios na planta (print de 06/11/2026) */
+    function sq(a) { var c = Math.cos(a), s = Math.sin(a), k = L / Math.max(Math.abs(c), Math.abs(s)); return [c * k, s * k]; }
+    function quad(p, nE) {
+      var u = sub(p[1], p[0]), w = sub(p[2], p[0]), nn = vx(u, w);
+      if (pe(nn, nE) < 0) p = [p[0], p[3], p[2], p[1]];
+      var i0 = anelAdd(br.m, p); br.m.f.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+    }
+    for (j = 0; j < n8; j++) {
+      var a = TAU * j / n8, b = TAU * (j + 1) / n8, A = sq(a), B = sq(b), ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cm = Math.cos((a + b) / 2), sm = Math.sin((a + b) / 2);
+      var Ia = [Re * ca, Re * sa], Ib = [Re * cb, Re * sb];
+      quad([[Ia[0], yT, Ia[1]], [Ib[0], yT, Ib[1]], [B[0], yT, B[1]], [A[0], yT, A[1]]], [0, 1, 0]);
+      quad([[Ia[0], yF, Ia[1]], [Ib[0], yF, Ib[1]], [B[0], yF, B[1]], [A[0], yF, A[1]]], [0, -1, 0]);
+      quad([[A[0], yF, A[1]], [B[0], yF, B[1]], [B[0], yT, B[1]], [A[0], yT, A[1]]], [cm, 0, sm]);
+      quad([[Ia[0], yF, Ia[1]], [Ib[0], yF, Ib[1]], [Ib[0], yT, Ib[1]], [Ia[0], yT, Ia[1]]], [-cm, 0, -sm]);
+    }
+    return [an, tp, gr, br];
+  }
+  /* CÂMARA CILÍNDRICA enterrada (poço de recalque, PV, caixa de gradeamento de PRFV): P = { Di, E, H (do fundo da tampa ao fundo
+     interno), Tt (tampa), Hl (laje de fundo), Dt (Ø da tampa; 0 = o externo), Db (Ø da laje de base; 0 = o externo), mat (0 concreto,
+     1 PRFV) } */
+  function geoCamaraCil(P, q) {
+    var Ri = P.Di / 2, Re = Ri + P.E, N = q.N, prfv = P.mat > 0.5, yT = -P.Tt, yF = yT - P.H, Rb = P.Db / 2 > Re ? P.Db / 2 : Re, Rt = P.Dt / 2 > 0.05 ? P.Dt / 2 : Re;
+    var co = parte("corpo", prfv ? "Corpo de PRFV" : "Parede", prfv ? AZUL : CONC), fu = parte("fundo", "Fundo", prfv ? AZUL : CONC), tp = parte("tampa", "Tampa", prfv ? AZUL : FERRO);
+    anelCil(co.m, Ri, Re, yF, yT, N);
+    discoCil(fu.m, Rb, yF - P.Hl, yF, N);
+    discoCil(tp.m, Rt, -P.Tt, 0, N); alca(tp.m, 0, q);
+    return [co, fu, tp];
+  }
+  /* CÂMARA RETANGULAR enterrada (caixa de inspeção, de gordura especial, de quebra de pressão, de retenção de sólidos):
+     P = { Li (interno em X), Wi (interno em Z), E (parede), H (do fundo da tampa ao fundo interno), Tt (tampa), Hl (laje de fundo),
+     se (1 = septo), sx (X do septo), sb / st (fundo e topo do septo abaixo do topo da tampa), gr (1 = grade), gx (X do pé da
+     grade), ga (inclinação da grade, graus), eg (espaçamento entre as barras) } */
+  function geoCamaraRet(P, q) {
+    var hx = P.Li / 2, hz = P.Wi / 2, E = P.E, yT = -P.Tt, yF = yT - P.H;
+    var pa = parte("paredes", "Paredes", CONC), fu = parte("fundo", "Laje de fundo", CONC), tp = parte("tampa", "Tampa", FERRO), out = [pa, fu, tp];
+    barra(pa.m, -hx - E, -hx, yF, yT, -hz - E, hz + E); barra(pa.m, hx, hx + E, yF, yT, -hz - E, hz + E);
+    barra(pa.m, -hx, hx, yF, yT, -hz - E, -hz); barra(pa.m, -hx, hx, yF, yT, hz, hz + E);
+    barra(fu.m, -hx - E, hx + E, yF - P.Hl, yF, -hz - E, hz + E);
+    barra(tp.m, -hx - E, hx + E, -P.Tt, 0, -hz - E, hz + E); alca(tp.m, 0, q);
+    if (P.se > 0.5) { var se = parte("septo", "Septo", CONC); barra(se.m, P.sx - 0.025, P.sx + 0.025, -P.sb, -P.st, -hz, hz); out.push(se); }
+    if (P.gr > 0.5) {
+      var g = parte("grade", "Grade de barras", FERRO), an = P.ga * Math.PI / 180, Lg = (P.H - 0.05) / Math.max(0.2, Math.sin(an)), y0 = yF + 0.02;
+      for (var z = -hz + P.eg / 2; z <= hz - P.eg / 2 + 1e-9; z += P.eg) tubo(g.m, [[P.gx, y0, z], [P.gx - Math.cos(an) * Lg, y0 + Math.sin(an) * Lg, z]], 0.006, 6, { rc: 0 });
+      out.push(g);
+    }
+    return out;
+  }
+  /* RESERVATÓRIO RETANGULAR de PRFV com paredes inclinadas (Bakof Tec): P = { Lt, Wt (topo), Lb, Wb (fundo), H (altura total, com
+     a tampa), Ht (tampa), Rc (raio de canto no topo) } — origem no centro da base */
+  function geoReservatorioRet(P, q) {
+    var k = q.k, Hc = P.H - P.Ht, co = parte("corpo", "Reservatório", AZUL), tp = parte("tampa", "Tampa", AZUL);
+    function sec(y, d) { var f = Math.max(0, Math.min(1, y / Hc)), hx = (P.Lb + (P.Lt - P.Lb) * f) / 2 + (d || 0), hz = (P.Wb + (P.Wt - P.Wb) * f) / 2 + (d || 0); return anelRR(y, 0, 0, hx, hz, P.Rc * (0.6 + 0.4 * f) + (d || 0), k); }
+    loft(co.m, [sec(0, -0.012), sec(0.012), sec(Hc - 0.03), sec(Hc - 0.03, 0.025), sec(Hc, 0.025)]);
+    loft(tp.m, [sec(Hc, 0.03), sec(Hc + Math.min(0.012, P.Ht * 0.3), 0.03), sec(P.H, -0.04)]);
+    return [co, tp];
+  }
+  /* PRESSURIZADOR COMPACTO (gabinete vertical): P = { L (largura, X), H (altura), Pp (profundidade, Z) } — origem no centro da base;
+     as bocas de entrada e saída no alto (a ficha não cota a posição: a conferir na família) */
+  function geoPressurizador(P, q) {
+    var ga = parte("gabinete", "Gabinete", BRANCO), bo = parte("bocas", "Bocas de 1\"", LATAO, true), N = q.n + 4;
+    caixaR(ga.m, { x0: -P.L / 2, x1: P.L / 2, y0: 0, y1: P.H, z0: -P.Pp / 2, z1: P.Pp / 2, r: 0.012, rad: 0.02 }, q);
+    [-1, 1].forEach(function (s) { torno(bo.m, [[0.0167, 0], [0.0167, 0.035]], N, { c: [0, P.H, s * P.Pp / 4], eixo: [0, 1, 0] }); });
+    return [ga, bo];
+  }
+
   var GERADORES = {
     bacia_caixa: function (P, q) { return geoBacia(P, q, true); },
     bacia_valvula: function (P, q) { return geoBacia(P, q, false); },
@@ -1218,17 +1310,22 @@
     valvula_descarga: geoValvula, caixa_descarga_embutida: geoCaixaEmbutida, caixa_sifonada: geoCaixaSifonada, ralo: geoRalo, caixa_cil: geoCaixaCil,
     caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
-    hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto
+    hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
+    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 800, caixa_descarga_embutida: 1400,
     caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
-    hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100
+    hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
+    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
-  var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN"];
+  var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",
+    /* divisores e passos de laço dos geradores de saneamento enterrado: 0, negativo ou NaN travavam o laço (revisão 1.2.253) */
+    "Ha", "Hr", "eg", "Di", "Li", "Wi", "Lb", "Wb", "Lt", "Wt", "Pp"];
+  var MINIMOS = { eg: 0.005 };   // passo mínimo entre barras da grade (m)
   var OPCIONAIS = { reservatorio: ["Hc"] };
 
   /* ------------------------------------------------------------- SAÍDA */
@@ -1253,6 +1350,7 @@
     Object.keys(P || {}).forEach(function (k) { if (typeof P[k] !== "number" || !isFinite(P[k])) erros.push("parâmetro " + k + " não é número"); });
     /* cota de tamanho tem de ser > 0 (a forma sairia do avesso ou sumiria calada) */
     Object.keys(P || {}).forEach(function (k) { if (POSITIVAS.indexOf(k) >= 0 && (OPCIONAIS[nome] || []).indexOf(k) < 0 && !(P[k] > 0)) erros.push("cota " + k + " ≤ 0 (" + P[k] + ")"); });
+    Object.keys(MINIMOS).forEach(function (k) { if (P && typeof P[k] === "number" && P[k] < MINIMOS[k]) erros.push("cota " + k + " < " + MINIMOS[k] + " (" + P[k] + ")"); });
     if (erros.length) return { ok: false, erros: erros, partes: [] };
     var partes;
     try { partes = g(P, nv); } catch (e) { return { ok: false, erros: ["gerador \"" + nome + "\": " + e.message], partes: [] }; }

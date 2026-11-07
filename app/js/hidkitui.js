@@ -22,6 +22,8 @@
   function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
   function d2(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
   function num0(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+  /* nº de ops da PESSOA (sem o lote "ifc-ref" das paredes de referência, que entra/sai com o IFC e não é ação dela) */
+  function nOpsDe(c) { return c && c.nOps != null ? c.nOps : arr(c && c.ops).length; }
   var LS = "orcapro:hidkit:auto", LSB = "orcapro:hidkit:baldrame";
   function lsLer(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
   function lsGravar(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -72,7 +74,11 @@
       var b = B(); if (!b || !b.editarOps) return null;
       var estado = st || null;
       if (!estado) { if (!b.editarEstado) return null; var est = b.editarEstado(); if (!est || !est.estado) return null; estado = est.estado; }
-      return { b: b, estado: estado, ops: b.editarOps(), avaliarFam: function (f, t, i) { return b.familiaAvaliar(f, t, i); } };
+      /* IFC de arquitetura de cliente (06/11/2026): as paredes do IFC entram como REFERÊNCIA (só leitura, nunca gravadas) —
+         sem elas o Traçar não achava parede nenhuma no banheiro do IFC (js/bim.js, refIfcContexto) */
+      var ops = b.editarOps(), nOps = ops.length, rf = null; try { rf = b.refIfcContexto ? b.refIfcContexto(ops, estado) : null; } catch (eRf) { rf = null; }
+      if (rf) { ops = rf.ops; estado = rf.estado; }
+      return { b: b, estado: estado, ops: ops, nOps: nOps, avaliarFam: function (f, t, i) { return b.familiaAvaliar(f, t, i); } };
     },
     _vizinhos: function (estado) {
       var K = dep("HidKit");
@@ -93,7 +99,7 @@
     /* o ciclo: o que entrou, mudou ou saiu desde a última vez */
     processar: function (st) {
       var K = dep("HidKit"), c = U._ctx(st); if (!K || !c) return null;
-      var fams = arr(c.estado.familias), len = c.ops.length, ids = fams.map(function (f) { return String(f.id); });
+      var fams = arr(c.estado.familias), len = nOpsDe(c), ids = fams.map(function (f) { return String(f.id); });
       U._ligarNivel();
       if (U._vistos == null) { U._vistos = ids; U._len = len; U._nivelBase(c.estado); return null; }   /* abriu o projeto: o que já está lá não ganha kit sozinho (nem religa pelo nível) */
       if (len < U._len) {
@@ -103,7 +109,7 @@
         if (U._lote && U._lote.encadear && U._len === U._lote.len && len === U._lote.len - 1 && c.b.desfazer) {
           U._lote = null; U._ocupado = true;
           try { c.b.desfazer(); } finally { U._ocupado = false; }
-          var c3 = U._ctx(); if (c3) { c = c3; fams = arr(c.estado.familias); len = c.ops.length; ids = fams.map(function (f) { return String(f.id); }); }
+          var c3 = U._ctx(); if (c3) { c = c3; fams = arr(c.estado.familias); len = nOpsDe(c); ids = fams.map(function (f) { return String(f.id); }); }
         }
         U._lote = null;
         /* Ctrl+Z: o desencontro que ficou é o que o usuário quis — aceita a pose atual */
@@ -164,7 +170,7 @@
       if (!ops.length) return null;
       U._ocupado = true; var ok = false;
       try { ok = c.b.editarLote({ op: "lote", id: "hidnivel-" + String(new Date().getTime()), origem: "hidkit", ops: JSON.parse(JSON.stringify(ops)) }); } finally { U._ocupado = false; }
-      var c2 = U._ctx(); if (ok && c2) { U._len = c2.ops.length; U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: true }; U._nivelBase(c2.estado); }
+      var c2 = U._ctx(); if (ok && c2) { U._len = nOpsDe(c2); U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: true }; U._nivelBase(c2.estado); }
       status(ok ? "Nível automático: o piso mudou sob " + aj.map(function (a) { return a.id; }).join(", ") + " — ligações refeitas na cota nova." : "O editor recusou o religar do nível.");
       U._redesenhar();
       return ok;
@@ -198,7 +204,7 @@
       U._ocupado = true;
       var ok = false;
       try { ok = c.b.editarLote({ op: "lote", id: "hidkit-" + String(new Date().getTime()), origem: "hidkit", ops: JSON.parse(JSON.stringify(ops)) }); } finally { U._ocupado = false; }
-      if (ok) { var c2 = U._ctx(); if (c2) { U._len = c2.ops.length; U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: !!encadear }; } }
+      if (ok) { var c2 = U._ctx(); if (c2) { U._len = nOpsDe(c2); U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: !!encadear }; } }
       U.ultimo = { ok: ok, resumo: resumo, quando: new Date().getTime() };
       var nK = resumo.kits.length, amb = resumo.ambientes[0];
       status(ok ? (nK ? "Kit hidráulico: " + resumo.kits.map(function (k) { return k.famInst + " (" + ((k.kit && dep("HidKit").kits()[k.kit.tipo]) || {}).nome + ")"; }).join(", ") + "." : "") + (resumo.removidos.length ? " Kit removido: " + resumo.removidos.map(function (k) { return k.famInst; }).join(", ") + "." : "") +
@@ -236,7 +242,7 @@
       RRl.ops.forEach(function (o) { opsL.push(o); });
       U._ocupado = true; var ok = false;
       try { ok = c.b.editarLote({ op: "lote", id: "hidamb-" + String(new Date().getTime()), origem: "hidkit", ops: JSON.parse(JSON.stringify(opsL)) }); } finally { U._ocupado = false; }
-      var c2 = U._ctx(); if (c2) { U._len = c2.ops.length; U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: false }; }
+      var c2 = U._ctx(); if (c2) { U._len = nOpsDe(c2); U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: false }; }
       U.ultimo = { ok: ok, resumo: { kits: [], removidos: [], ambientes: [R], redes: RRl.resultados }, quando: new Date().getTime() };
       status(ok ? "Ambiente ligado (" + R.ambiente.aparelhos.length + " aparelhos)" + (R.pendencias.length ? " — " + R.pendencias.length + " pendência(s)" : "") + ". Ctrl+Z desfaz." : "O editor recusou a ligação do ambiente.");
       U._redesenhar();
@@ -255,7 +261,7 @@
       if (!ops.length) return false;
       U._ocupado = true; var ok = false;
       try { ok = c.b.editarLote({ op: "lote", id: prefixo + "-" + String(new Date().getTime()), origem: "hidkit", ops: JSON.parse(JSON.stringify(ops)) }); } finally { U._ocupado = false; }
-      var c2 = U._ctx(); if (c2) { U._len = c2.ops.length; U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: false }; }
+      var c2 = U._ctx(); if (c2) { U._len = nOpsDe(c2); U._vistos = arr(c2.estado.familias).map(function (f) { return String(f.id); }); U._lote = { len: U._len, encadear: false }; }
       return ok;
     },
     /* religa os ambientes já ligados + refaz as redes (mudou o modo do baldrame, mudou a linha) — um lote */
@@ -416,7 +422,7 @@
       if (arr(r.apagados).length) avisos.unshift({ texto: "Sai do modelo (Ctrl+Z volta): " + r.apagados.join(", "), elementos: arr(r.apagados) });
       arr(r.restam).forEach(function (a) { avisos.push({ texto: "Fica para ajustar à mão: " + a.titulo + " — " + a.texto, elementos: arr(a.ids) }); });
       return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: [], criterios: null, opcoes: 1, indice: 0, escopo: { tipo: "corrigir" }, ambientes: [], redes: [], kits: [], piscinas: [],
-               opsNaProposta: c.ops.length, titulo: titulo || "Corrigir", prefixo: "hidcorrigir", textos: textos, apagados: arr(r.apagados) };
+               opsNaProposta: nOpsDe(c), titulo: titulo || "Corrigir", prefixo: "hidcorrigir", textos: textos, apagados: arr(r.apagados) };
     },
     corrigirAchado: function (a) {
       var HC = dep("HidCorrigir"), c = U._ctx(); if (!HC || !c || !a) return null;
@@ -919,7 +925,7 @@
         var HBn = dep("HidBanheira");
         if (HBn) { var rbn = HBn.conferir({ estado: est, avaliarFam: c.avaliarFam }); arr(rbn.avisos).forEach(function (a) { avisos.push({ texto: a.texto, elementos: arr(a.elementos), acao: null }); }); arr(rbn.pendencias).forEach(function (p) { if (!pendencias.some(function (q) { return q.chave === p.chave && String(q.texto) === String(p.texto); })) pendencias.push({ chave: p.chave, texto: p.texto, elementos: arr(p.elementos) }); }); }
       } catch (eHB) { pendencias.push({ chave: "ta.hidromassagem", texto: "Hidromassagem: não consegui conferir a banheira (" + (eHB && eHB.message ? eHB.message : eHB) + ") — confira à mão", elementos: [] }); }
-      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: c.ops.length };
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);
        com seleção, só a selecionada (a op, a casa de máquinas dela ou o volume) */
@@ -1024,7 +1030,7 @@
       var resumo = U._resumo(c, ops);
       resumo.kits = 0; resumo.ambientes = 0; resumo.reaproveitadas = []; resumo.caixasNovas = []; resumo.piscinas = 0;
       var avisos = RB.avisos.slice(); if (RB.ligadas) avisos.unshift({ texto: arr(RB.decisoes).map(function (d) { return d.texto; }).join(" "), elementos: RB.caixas.map(function (x) { return x.id; }) });
-      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, opsNaProposta: c.ops.length };
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, opsNaProposta: nOpsDe(c) };
     },
     /* N23 (23/10/2026) — pedido do Rogério: "colocou a caixa → conecta sozinha: barrilete, colunas, registros, extravasor, limpeza,
        boia". A caixa recém-posta abre a PRÉVIA do barrilete dela (o mesmo cartão: Enter aplica, Esc cancela, um Ctrl+Z desfaz); sem
@@ -1086,7 +1092,7 @@
       var Qd = P.criterios && P.criterios.contagem ? P.criterios.contagem.dura : 0;
       if (Qd && !U._confirmar("A prévia tem " + Qd + " PROIBIDO(s) de projetista:\n\n" + P.criterios.apontamentos.filter(function (a) { return a.gravidade === "dura"; }).slice(0, 4).map(function (a) { return "• " + a.titulo + ": " + a.texto; }).join("\n") +   // hid:ok até 4 itens no texto da pergunta
         "\n\nCorrija o modelo (mova o aparelho, a janela/porta ou use outra opção com Tab) e trace de novo.\n\nAplicar mesmo assim? (decisão do RT)")) { status("Traçado NÃO aplicado: há " + Qd + " proibido(s) de projetista na prévia."); return null; }
-      if (c.ops.length !== P.opsNaProposta) { U.cancelarTracado(); status("O modelo mudou depois da prévia: clique Traçar automaticamente de novo."); return null; }
+      if (nOpsDe(c) !== P.opsNaProposta) { U.cancelarTracado(); status("O modelo mudou depois da prévia: clique Traçar automaticamente de novo."); return null; }
       U._previa(null); U._cardFechar();
       var ok = U._gravar(c, P.ops, P.prefixo || "hidtracar");
       U._plano = null;
@@ -1096,6 +1102,8 @@
       if (ok && arr(P.piscinas).length) { try { var PU = dep("HidPiscinaUI"); if (PU && PU.aposTracar) PU.aposTracar(P.piscinas); } catch (eP) {} }
       /* CRITÉRIO DE PROJETISTA depois do traçado: o painel Instalações já traz a lista do modelo inteiro (Mostrar no 3D / Corrigir) */
       try { var BUi = global.BimInstUI, c3 = U._ctx(); if (ok && BUi && BUi.criterios && c3) { BUi._crit = BUi.criterios(c3.estado, c3.avaliarFam); if (BUi.achadosCorr) BUi._achados = BUi.achadosCorr({ estado: c3.estado }); } } catch (eCr) {}
+      /* traçado sobre um IFC de arquitetura: o IFC fica translúcido para ver a rede (js/biminstui.js aposTracarIfc, 06/11/2026) */
+      try { var BUi2 = global.BimInstUI; if (ok && BUi2 && BUi2.aposTracarIfc) BUi2.aposTracarIfc(); } catch (eVi) {}
       if (P.escopo && P.escopo.tipo === "corrigir") { status(ok ? "Correção aplicada: " + arr(P.textos).join("; ") + ". Ctrl+Z desfaz tudo." : "O editor recusou a correção."); try { var BUc = global.BimInstUI; if (ok && BUc && BUc.verificarSistemas) BUc.verificarSistemas(); } catch (eV) {} U._redesenhar(); return U.ultimo; }
       status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
       U._redesenhar();
@@ -1399,6 +1407,15 @@
       if (uid) { var e1 = U.escopo(c, [uid]); if (!e1.erro) alvo = [uid]; }
       var p = o.ponto ? { x: o.ponto[0], z: o.ponto[1] } : null;
       if (!alvo && !p && o.ev && c.b.precisao) { try { var api = c.b.precisao(), q = api && api.planoPonto ? api.planoPonto(o.ev.clientX, o.ev.clientY) : null; if (q) p = { x: q.x, z: q.z }; } catch (eP) {} }
+      /* 3D: BIM.precisao() NÃO tem planoPonto (o botão direito no tubo nunca achava o cômodo e "Traçar automaticamente" sumia do menu, 06/11/2026) —
+         o ponto do cursor no plano da COTA DO TUBO clicado (ou do piso) sai de BIM.pontoPlanoY */
+      if (!alvo && !p && o.ev && c.b.pontoPlanoY) {
+        try {
+          var trY = idU ? arr(c.estado.instalacoes && c.estado.instalacoes.trechos).filter(function (x) { return String(x.id) === idU; })[0] : null;
+          var q2 = c.b.pontoPlanoY(o.ev.clientX, o.ev.clientY, trY ? (Number(trY.p1.y) + Number(trY.p2.y)) / 2 : 0);
+          if (q2) p = { x: q2.x, z: q2.z };
+        } catch (eP2) {}
+      }
       if (!alvo && p) { var a = K._int.ambienteDe(c.estado, p); if (a && !U.escopo(c, ["edit:" + a.id]).erro) alvo = ["edit:" + a.id]; }
       if (!alvo) return extra;
       var itens = [{ id: "hid-tracar-auto", rotulo: "Traçar automaticamente (TA)", fn: function () { U.tracarAuto({ uids: alvo }); } }];

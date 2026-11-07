@@ -56,6 +56,24 @@
   };
   var ORDEM_CAT = ["tubo", "conexao", "acessorio", "aparelho", "equipamento"];
   var MAX_RECENTES = 8;
+  /* GALERIA em cartões (06/11/2026): as categorias da lista que abrem em cartões grandes agrupados por tipo. O grupo vem do NOME
+     (o catálogo tem 500+ aparelhos entre as famílias do produto e as importadas do escritório); a ordem abaixo é a da tela.
+     A 1ª regra que casa vale — mictório antes de bacia, bacia (e descarga) antes de caixa, lavatório/cuba antes de pia. */
+  var GALERIA = {
+    aparelho: {
+      regras: [["Mictórios", /mictor/], ["Bacias", /bacia|vaso\b|descarga/], ["Lavatórios e cubas", /lavat|cuba\b|lavabo/], ["Pias", /\bpia\b|\bpias\b/],
+               ["Tanques", /tanque/], ["Chuveiros e duchas", /chuveiro|ducha/], ["Banheiras e bidês", /banheira|bide\b|hidromassag/],
+               ["Ralos e caixas", /ralo|caixa|sifon|grelha|inspecao|gordura|areia/], ["Metais e outros", /misturador|torneira|registro|valvula|metal|aquecedor|bebedouro/]],
+      ordem: ["Bacias", "Lavatórios e cubas", "Pias", "Tanques", "Chuveiros e duchas", "Mictórios", "Banheiras e bidês", "Ralos e caixas", "Metais e outros", "Outros aparelhos"]
+    }
+  };
+  function grupoGaleria(cat, t) {
+    var g = GALERIA[cat]; if (!g) return "";
+    var s = norm(txt(t.familia) + " " + txt(t.nome) + " " + txt(t.famId));
+    for (var i = 0; i < g.regras.length; i++) if (g.regras[i][1].test(s)) return g.regras[i][0];
+    return "Outros aparelhos";
+  }
+  function ordemGrupoGaleria(cat, nome) { var g = GALERIA[cat], i = g ? g.ordem.indexOf(nome) : -1; return i < 0 ? 999 : i; }
   /* CATEGORIAS DE OUTROS MÓDULOS (27/10/2026): Porta, Janela e Componente (js/bimarqtipos.js) usam o MESMO seletor e a MESMA lista
      (pesquisar, recentes, rodapé). O módulo registra { rotulo, catalogo(), contexto(esquema), aplicar(tipo, ctx), esquecer() }; as
      categorias dele NÃO entram em ORDEM_CAT (atalhos, testes de ícone e filtro de cálculo das instalações seguem iguais). */
@@ -219,6 +237,7 @@
   function gravar(chave, v) { try { if (global.localStorage) global.localStorage.setItem(chave, JSON.stringify(v)); return true; } catch (e) { return false; } }
 
   var BimInstTipos = {
+    grupoGaleria: grupoGaleria, GALERIA: GALERIA,
     CATEGORIAS: CATEGORIAS, ORDEM_CAT: ORDEM_CAT, TUBOS: TUBOS, ATALHOS_PADRAO: ATALHOS_PADRAO, ACOES: ACOES, FITA: FITA, NIVEL: NIVEL, MAX_RECENTES: MAX_RECENTES,
 
     /* ============================================================ CATÁLOGO */
@@ -378,6 +397,20 @@
     ".rv-tlist-grupo{position:sticky;top:0;padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;opacity:.75;background:var(--rv-painel-bg,#2b303b);border-bottom:1px solid var(--rv-linha,#3a4150)}" +
     ".rv-tlist-rec{border-top:1px solid var(--rv-linha-forte,#566);padding:4px 0;max-height:190px;overflow:auto}.rv-tlist-rec h4{margin:2px 7px 3px;font-size:12px}" +
     ".rv-tlist-rec div{padding:3px 7px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rv-tlist-rec div:hover{background:var(--rv-hover,rgba(127,127,127,.14))}" +
+    /* GALERIA (06/11/2026, pedido do Rogério: "o ícone está muito pequenininho… organizar igual na porta"): Aparelho sanitário abre em
+       CARTÕES — miniatura grande, nome embaixo, agrupado por tipo (Bacias, Lavatórios e cubas, Pias…) */
+    ".rv-tlist-gal .rv-tlist-itens{padding:0 8px 8px}" +
+    ".rv-tlist-gal .rv-tlist-grupo{margin:0 -8px;padding:6px 10px 4px;font-size:12px;opacity:1;background:var(--rv-painel-bg,#2b303b)}.rv-tlist-gal .rv-tlist-grupo .rv-tn{font-weight:400;opacity:.65;margin-left:4px;text-transform:none}" +
+    ".rv-tgrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding:6px 0 4px}" +
+    ".rv-tlist .rv-tcard{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:6px;border:1px solid var(--rv-linha,#3a4150);border-radius:6px;background:var(--rv-painel-bg,transparent)}" +
+    ".rv-tlist .rv-tcard:hover,.rv-tlist .rv-tcard.foco{border-color:var(--rv-ativo-borda,#4a90d9);background:var(--rv-hover,rgba(127,127,127,.14))}" +
+    ".rv-tlist .rv-tcard.atual{border:2px solid var(--rv-ativo-borda,#4a90d9);padding:5px}" +
+    ".rv-tlist .rv-tcard .rv-tcard-img{height:112px;background:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden}" +
+    ".rv-tlist .rv-tcard .rv-tcard-img img,.rv-tlist .rv-tcard .rv-tcard-img .sem{width:100%;height:100%;object-fit:contain;background:#fff;border-radius:0;transform:scale(1.18)}" +
+    ".rv-tlist .rv-tcard .rv-tcard-img .sem{transform:none}" +
+    ".rv-tcard-nome{font-size:12px;line-height:1.3;font-weight:600;text-align:center;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;min-height:2.6em}" +
+    ".rv-tcard-fam{font-size:11px;line-height:1.25;text-align:center;opacity:.72;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}" +
+    ".rv-tcard-selos{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;font-size:10px}" +
     "body.bim-linha-fina .d2-vista-tela svg [stroke]{stroke-width:.6px!important}";
   function estilo(doc) {
     if (!doc || doc.getElementById("rv-tsel-css")) return;
@@ -438,9 +471,12 @@
     ctx = ctx || this._ctx || { cat: "tubo" };
     var doc = (ancora && ancora.ownerDocument) || document, self = this; estilo(doc);
     var r = ancora && ancora.getBoundingClientRect ? ancora.getBoundingClientRect() : { left: 60, bottom: 120, width: 320 };
-    var m = doc.createElement("div"); m.className = "rv-tlist"; m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
-    var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
-    m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
+    var gal = !!GALERIA[ctx.cat];   /* cartões grandes por tipo (Aparelho sanitário) */
+    var m = doc.createElement("div"); m.className = "rv-tlist" + (gal ? " rv-tlist-gal" : ""); m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
+    var docW = doc.documentElement.clientWidth || 1200, docH = doc.documentElement.clientHeight || 800;
+    var larg = gal ? Math.min(660, docW - 16) : Math.max(300, r.width || 300), alt = Math.min(gal ? 700 : 560, docH - r.bottom - 12);
+    var esq = gal ? Math.max(8, Math.min(r.left, docW - larg - 8)) : r.left;
+    m.style.left = Math.round(esq) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(gal ? 360 : 260, alt) + "px";
     /* FILTRO (18/10/2026): Todas | OrçaPRO | Escritório + "Só as que entram no cálculo" (a escolha fica gravada por usuário) */
     /* ABAS por grupo (Pintar, 27/10/2026): a categoria externa que declara `abas` ganha uma fileira de grupos; "Todos" não filtra */
     var abasDef = PROV[ctx.cat] && arr(PROV[ctx.cat].abas).length ? PROV[ctx.cat].abas : null, aba = "todos";
@@ -453,8 +489,27 @@
     function pintar() {
       vis = self.pesquisar(ctx.cat, inp.value, filtro);
       if (abasDef && aba !== "todos") vis = vis.filter(function (t) { return t.grupoId === aba; });
-      var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+      if (gal) {   /* o tipo de cada peça decide o grupo; dentro do grupo vale a ordem do catálogo */
+        var ix = {}; vis.forEach(function (t, i) { ix[t.id] = i; t._gl = grupoGaleria(ctx.cat, t); });
+        vis = vis.slice().sort(function (a, b) { return (ordemGrupoGaleria(ctx.cat, a._gl) - ordemGrupoGaleria(ctx.cat, b._gl)) || (ix[a.id] - ix[b.id]); });
+      }
+      var porO = {}, corte = vis.filter(function (t) { var o = gal ? t._gl : (t.grupo || t.origemFam || "x"); porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
       var grupoAnt = null;
+      if (gal && corte.length) {
+        var nGr = {}; vis.forEach(function (t) { nGr[t._gl] = (nGr[t._gl] || 0) + 1; });
+        var htmlG = "", gAnt = null;
+        corte.forEach(function (t, i) {
+          if (t._gl !== gAnt) { if (gAnt !== null) htmlG += "</div>"; htmlG += '<div class="rv-tlist-grupo" role="presentation">' + esc(t._gl) + ' <span class="rv-tn">' + nGr[t._gl] + '</span></div><div class="rv-tgrade">'; gAnt = t._gl; }
+          /* "Família : Tipo — descrição longa": o que distingue o cartão (o tipo, ex. "Celite 54361/54510") em destaque; a família, menor, embaixo */
+          var curto = txt(t.nome).replace(/^(LOU|ESG|AF|AQ|EQ|INC|CLIM)_/, ""), pt = curto.indexOf(" : "), fam2 = "";
+          if (pt > 0) { fam2 = curto.slice(0, pt); curto = curto.slice(pt + 3).split(" — ")[0]; }
+          htmlG += '<div class="rv-tlist-it rv-tcard' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '" title="' + esc(t.indisponivel || t.nome) + '"' + (t.indisponivel ? ' aria-disabled="true"' : "") + ">" +
+            '<div class="rv-tcard-img">' + (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "</div>" +
+            '<div class="rv-tcard-nome">' + esc(curto) + "</div>" + (fam2 ? '<div class="rv-tcard-fam">' + esc(fam2) + "</div>" : "") + (hb ? '<div class="rv-tcard-selos">' + hb.htmlSelos(t) + "</div>" : "") + "</div>";
+        });
+        lista.innerHTML = htmlG + "</div>" + (vis.length > corte.length ? '<div style="padding:8px;opacity:.7">Mostrando ' + corte.length + " de " + vis.length + ": refine a pesquisa ou escolha a origem.</div>" : "");
+        vis = corte; miniaturas(); return;
+      }
       lista.innerHTML = corte.map(function (t, i) {
         var gh = t.grupo ? t.grupo + (t.sub ? " · " + t.sub : "") : null, cab = ""; if (gh && gh !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(gh) + "</div>"; grupoAnt = gh;
         return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
