@@ -287,9 +287,7 @@
   /* PERFIL MEDIDO (paridade, 18/10/2026): quando a peça é desenhada pelo perfil medido do produto (conexaoProduto), as
      cotas saem DELE — a face, a profundidade e o externo de cada boca são os da peça desenhada (uma fonte só para o 3D, a
      planta e as cotas). O que a ficha dizia e diverge 0,5 mm ou mais fica em cotas.divergencia. */
-  var PONTA_LEGADA = { ligado: false };   /* temPonta da série R: a ponta medida da Tigre só serve à geometria (a luva do orçamento é a da 1.2.255) */
   function cotasDoPerfil(o, material, tipo, dn, dnRamal) {
-    if (PONTA_LEGADA.ligado) return;
     var pp = perfilProduto(material, tipo, dn); if (!pp) return;
     var div = [];
     function poe(c, v, rotulo) { v = Math.round(v * 100) / 100; if (o[c] != null && Math.abs(o[c] - v) >= 0.5) div.push(rotulo + " " + v + " mm (peça medida) × " + o[c] + " mm (antes)"); o[c] = v; o.origem[c] = "produto (perfil medido)"; }
@@ -1384,9 +1382,8 @@
     tipo = tipoBaseGeo(tipo);   /* a junção de redução tem a ponta da junção do DN da linha */
     if (JUNTA[material] !== "anel") return false;
     if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
-    /* ORÇAMENTO IGUAL À 1.2.255: a série R não tinha ponta no perfil — a resposta de temPonta (que decide a luva) não muda */
-    PONTA_LEGADA.ligado = material === "pvc_serie_r";
-    try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; } finally { PONTA_LEGADA.ligado = false; }
+    /* DECISÃO DO ROGÉRIO (07/11/2026): na obra o pluvial de PVC série R leva LUVA nas emendas com joelho, curva e tê (a peça Tigre série R é ponta-bolsa) — a série R lê a ponta do perfil medido como as demais */
+    try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
   }
 
   /* ============================================================ PEÇAS

@@ -95930,9 +95930,7 @@ if (junta === "eletro" && (tipo === "joelho90" || tipo === "joelho45")) { o.R = 
 cotasDoPerfil(o, material, tipo, dn, dnRamal);
 return o;
 }
-var PONTA_LEGADA = { ligado: false };
 function cotasDoPerfil(o, material, tipo, dn, dnRamal) {
-if (PONTA_LEGADA.ligado) return;
 var pp = perfilProduto(material, tipo, dn); if (!pp) return;
 var div = [];
 function poe(c, v, rotulo) { v = Math.round(v * 100) / 100; if (o[c] != null && Math.abs(o[c] - v) >= 0.5) div.push(rotulo + " " + v + " mm (peça medida) × " + o[c] + " mm (antes)"); o[c] = v; o.origem[c] = "produto (perfil medido)"; }
@@ -96793,8 +96791,7 @@ function temPonta(material, tipo, dn) {
 tipo = tipoBaseGeo(tipo);
 if (JUNTA[material] !== "anel") return false;
 if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
-PONTA_LEGADA.ligado = material === "pvc_serie_r";
-try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; } finally { PONTA_LEGADA.ligado = false; }
+try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
 }
 function cotasPeca(k) {
 var tab = (dados().pecas || {})[k.peca] || {}, ct = tab[String(k.dn)], o = { aConf: false, fontes: [] };
