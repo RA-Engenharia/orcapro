@@ -1838,8 +1838,12 @@
          custo"). Achado na revisão de 11/09/2026: a seção 1 do laudo mostrava
          110,00 na etapa e a seção 2 do MESMO laudo, 100,00. */
       var _rotPreco = _c.bdiNoPU ? "Preço Venda" : "Preço de custo";
-      var _catX = _lay.cat ? Colunas.categorias(orc, _c) : null;
+      /* MO/MAT/EQ: o analítico que falta (SINAPI e estaduais) é pedido aqui, e
+         a planilha redesenha quando chega (App._colunasAnaGarantir) */
+      if (_lay.cat && typeof App !== "undefined" && App._colunasAnaGarantir) { try { App._colunasAnaGarantir(orc); } catch (eCA) {} }
+      var _catX = _lay.cat ? Colunas.categorias(orc, _c, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
       var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
+      if (_catX) html += UI._faixaCobCat(_catX.cobertura);
       html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
@@ -2555,10 +2559,23 @@
     _celulasCatLinha: function (lay, lin) {
       if (!lay.cat) return '';
       if (!lin || !lin.tem) {
-        var v = '<td class="num muted" title="Item sem analítico: não há discriminação MO/MAT/EQ e o sistema não faz rateio.">—</td>';
+        var tipS = (lin && lin.motivo ? lin.motivo + ' ' : 'Item sem analítico. ') + 'Sem discriminação MO/MAT/EQ, o sistema não faz rateio.';
+        var v = '<td class="num muted" title="' + Util.esc(tipS) + '">—</td>';
         return v + v + v;
       }
-      return '<td class="num">' + Util.fmtMoeda(lin.mo) + '</td><td class="num">' + Util.fmtMoeda(lin.mat) + '</td><td class="num">' + Util.fmtMoeda(lin.eq) + '</td>';
+      var tip = (typeof Colunas !== "undefined" && Colunas.textoOrigem) ? Colunas.textoOrigem(lin) : '';
+      var ti = tip ? ' title="' + Util.esc(tip) + '"' : '';
+      return '<td class="num"' + ti + '>' + Util.fmtMoeda(lin.mo) + '</td><td class="num"' + ti + '>' + Util.fmtMoeda(lin.mat) + '</td><td class="num"' + ti + '>' + Util.fmtMoeda(lin.eq) + '</td>';
+    },
+    /* faixa acima da planilha: "MO/MAT/EQ: 61 de 191 itens separados · 130 sem
+       separação (ver quais)". ⚠ Recado que mente é pior que recado nenhum: com
+       o analítico ainda chegando, a faixa diz que está carregando — não que o
+       item "não tem composição". */
+    _faixaCobCat: function (cob) {
+      if (!cob || !cob.n || typeof Colunas === "undefined") return '';
+      var car = (cob.carregando || []).length ? ' · <span class="col-cob-car">carregando analítico ' + Util.esc(cob.carregando.join(", ")) + '…</span>' : '';
+      var ver = cob.sem ? ' <button class="btn sm ghost" data-acao="col-cat-sem" title="' + Util.esc(Colunas.textoMotivos(cob)) + '">ver quais</button>' : '';
+      return '<div class="col-cob muted" style="font-size:12.5px;margin:4px 0 6px">Custo MO/MAT/EQ: <b>' + Util.esc(Colunas.textoCobertura(cob)) + '</b>' + car + ver + '</div>';
     },
     /* Preço c/ BDI, Preço ref. e a diferença % (vermelho abaixo · verde próximo · laranja acima) */
     _celulasRefLinha: function (orc, L, lay, refs) {
@@ -3981,7 +3998,9 @@
       if (!calc.bdiNoPU) html += '<p class="muted" style="font-size:11.5px;margin:-4px 0 6px">Neste orçamento o BDI incide sobre o preço final: as linhas abaixo saem a <b>custo</b> e o BDI é uma parcela única. O preço de venda por etapa está no <b>Resumo Sintético</b> (seção 1).</p>';
       /* COLUNAS EXTRAS (js/colunas.js): o relatório obedece à escolha salva no orçamento */
       var _layR = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 8 };
-      var _catR = _layR.cat ? Colunas.categorias(orc, calc) : null;
+      var _catR = _layR.cat ? Colunas.categorias(orc, calc, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
+      /* o documento diz quantos itens separaram e por quê os outros não */
+      if (_catR && _catR.cobertura.sem) html += '<p class="muted" style="font-size:11.5px;margin:-2px 0 6px">Custo MO/MAT/EQ: ' + Util.esc(Colunas.textoCobertura(_catR.cobertura)) + ' (' + Util.esc(Colunas.textoMotivos(_catR.cobertura)) + '). Itens sem separação ficam com “—” e fora dos subtotais: nada é rateado.</p>';
       var _refR = _layR.ref ? Colunas.mapaReferencias(orc, calc) : {};
       var _paraR = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
       var _totR = 8 + _layR.nPre + _layR.nPos;

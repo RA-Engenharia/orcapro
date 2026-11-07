@@ -68,8 +68,15 @@
   // Soma da quebra no orçamento inteiro. `ct` de cada item vem da FONTE ÚNICA
   // (Orcamento.calcular) — a mesma coluna H da Analítica — para MO+MAT+EQ fechar
   // com o Custo Direto por construção, e não por coincidência.
+  /* ⚠ deps.catCol (07/11/2026): o resultado de Colunas.categorias com o
+     contexto do app (js/colunas.js, passo 3). Quando a linha foi separada lá
+     (parcelas, insumos do item, composição da base — SINAPI ou estadual —,
+     item-insumo), o arquivo usa EXATAMENTE os mesmos reais das colunas
+     MO/MAT/EQ da tela: eram duas regras, e o IOPES saía 100% material no
+     Excel com a MO separada na planilha. Sem catCol (Node, testes), a régua
+     antiga, intacta. */
   function _quebraMoMatEq(orc, deps) {
-    var num = deps.num, insMap = deps.insumosMap || null;
+    var num = deps.num, insMap = deps.insumosMap || null, catCol = deps.catCol || null;
     var calc = (global.Orcamento && Orcamento.calcular) ? Orcamento.calcular(orc) : null, linhaDe = {};
     if (calc) calc.linhas.forEach(function (L) { linhaDe[L.etapaIdx + "|" + L.itemIdx] = L; });
     var out = { mo: 0, mat: 0, eq: 0, total: 0, nItem: 0, nAna: 0, nMat: 0, n: 0 };
@@ -77,7 +84,9 @@
       (et.itens || []).forEach(function (it, ii) {
         var L = linhaDe[ei + "|" + ii];
         var ct = L ? num(L.custoTotal) : num(it.quantidade) * num(it.custoUnitario);
-        var q = _repartirItem(it, ct, insMap && insMap[String(it.codigo)], num);
+        var lc = (catCol && catCol.porLinha && L) ? catCol.porLinha[L.itemId] : null;
+        var q = (lc && lc.tem) ? { mo: num(lc.mo), mat: num(lc.mat), eq: num(lc.eq), fonte: lc.fonte === 'item' ? 'item' : 'analitico' }
+          : _repartirItem(it, ct, insMap && insMap[String(it.codigo)], num);
         out.mo += q.mo; out.mat += q.mat; out.eq += q.eq; out.total += ct; out.n++;
         if (q.fonte === 'item') out.nItem++; else if (q.fonte === 'analitico') out.nAna++; else out.nMat++;
       });
@@ -431,7 +440,7 @@
 
     var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0;
     // quebra MO/MAT/EQ do orçamento inteiro (Resumo + nota de procedência)
-    var _qb = _quebraMoMatEq(orc, { num: num, insumosMap: insMap });
+    var _qb = _quebraMoMatEq(orc, { num: num, insumosMap: insMap, catCol: deps.catCol || null });
     var grandMO = _qb.mo, grandMAT = _qb.mat, grandEQ = _qb.eq;
     var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
     etapas.forEach(function (et, etIdx) {
@@ -2120,6 +2129,8 @@
               crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc) : null,
               cronoAgente: (typeof Cronograma !== "undefined") ? Cronograma.estimar(orc) : null,
               insumosMap: insumosMap,
+              /* a mesma separação MO/MAT/EQ das colunas da tela (ver _quebraMoMatEq) */
+              catCol: (function () { try { return (global.Colunas && global.App && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eC) { return null; } })(),
               analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",
               responsavel: (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null
             };

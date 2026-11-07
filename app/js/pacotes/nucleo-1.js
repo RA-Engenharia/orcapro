@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.260",
+versao: "1.2.261",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -5943,6 +5943,7 @@ function daBase(rec, propria) {
 return {
 codigo: texto(rec.codigo), descricao: texto(rec.descricao), unidade: texto(rec.unidade),
 custoUnitario: num(rec.custoUnitario), propria: !!propria,
+custoMO: num(rec.custoMO), custoMAT: num(rec.custoMAT), custoEQ: num(rec.custoEQ),
 insumos: rec.insumos.map(function (i) {
 return {
 codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
@@ -5973,6 +5974,7 @@ function daEstadual(a, F) {
 return {
 codigo: texto(a.codigo), descricao: texto(a.descricao), unidade: texto(a.unidade),
 custoUnitario: num(a.custoUnitario), propria: false, fonte: F,
+custoMO: num(a.custoMO), custoMAT: num(a.custoMAT), custoEQ: num(a.custoEQ),
 insumos: (a.insumos || []).map(function (i) {
 return {
 codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
@@ -6140,7 +6142,7 @@ return (x.descricao + " " + x.codigo).toLowerCase().indexOf(b) > -1;
 });
 }
 var InsumosOrc = { consolidar: consolidar, resumoABC: resumoABC, filtrar: filtrar, resolvedor: resolvedor,
-categoria: categoria, _chave: chave, _normFonte: normFonte };
+categoria: categoria, fonteDaLinha: fonteDaLinha, _chave: chave, _normFonte: normFonte };
 global.InsumosOrc = InsumosOrc;
 if (typeof module !== "undefined" && module.exports) module.exports = InsumosOrc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -14854,8 +14856,10 @@ html += '<div class="pl-foco">Mostrando só <b>' + Util.esc(_nomeFoco) + '</b>'
 }
 var _c = Orcamento.calcular(orc);
 var _rotPreco = _c.bdiNoPU ? "Preço Venda" : "Preço de custo";
-var _catX = _lay.cat ? Colunas.categorias(orc, _c) : null;
+if (_lay.cat && typeof App !== "undefined" && App._colunasAnaGarantir) { try { App._colunasAnaGarantir(orc); } catch (eCA) {} }
+var _catX = _lay.cat ? Colunas.categorias(orc, _c, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
 var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
+if (_catX) html += UI._faixaCobCat(_catX.cobertura);
 html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
 '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
 '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
@@ -15363,10 +15367,19 @@ return c(a.mo) + c(a.mat) + c(a.eq);
 _celulasCatLinha: function (lay, lin) {
 if (!lay.cat) return '';
 if (!lin || !lin.tem) {
-var v = '<td class="num muted" title="Item sem analítico: não há discriminação MO/MAT/EQ e o sistema não faz rateio.">—</td>';
+var tipS = (lin && lin.motivo ? lin.motivo + ' ' : 'Item sem analítico. ') + 'Sem discriminação MO/MAT/EQ, o sistema não faz rateio.';
+var v = '<td class="num muted" title="' + Util.esc(tipS) + '">—</td>';
 return v + v + v;
 }
-return '<td class="num">' + Util.fmtMoeda(lin.mo) + '</td><td class="num">' + Util.fmtMoeda(lin.mat) + '</td><td class="num">' + Util.fmtMoeda(lin.eq) + '</td>';
+var tip = (typeof Colunas !== "undefined" && Colunas.textoOrigem) ? Colunas.textoOrigem(lin) : '';
+var ti = tip ? ' title="' + Util.esc(tip) + '"' : '';
+return '<td class="num"' + ti + '>' + Util.fmtMoeda(lin.mo) + '</td><td class="num"' + ti + '>' + Util.fmtMoeda(lin.mat) + '</td><td class="num"' + ti + '>' + Util.fmtMoeda(lin.eq) + '</td>';
+},
+_faixaCobCat: function (cob) {
+if (!cob || !cob.n || typeof Colunas === "undefined") return '';
+var car = (cob.carregando || []).length ? ' · <span class="col-cob-car">carregando analítico ' + Util.esc(cob.carregando.join(", ")) + '…</span>' : '';
+var ver = cob.sem ? ' <button class="btn sm ghost" data-acao="col-cat-sem" title="' + Util.esc(Colunas.textoMotivos(cob)) + '">ver quais</button>' : '';
+return '<div class="col-cob muted" style="font-size:12.5px;margin:4px 0 6px">Custo MO/MAT/EQ: <b>' + Util.esc(Colunas.textoCobertura(cob)) + '</b>' + car + ver + '</div>';
 },
 _celulasRefLinha: function (orc, L, lay, refs) {
 if (typeof Colunas === "undefined") return '';
@@ -16319,7 +16332,8 @@ var _rotPrecoRel = calc.bdiNoPU ? "Preço Venda" : "Preço de custo";
 html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
 if (!calc.bdiNoPU) html += '<p class="muted" style="font-size:11.5px;margin:-4px 0 6px">Neste orçamento o BDI incide sobre o preço final: as linhas abaixo saem a <b>custo</b> e o BDI é uma parcela única. O preço de venda por etapa está no <b>Resumo Sintético</b> (seção 1).</p>';
 var _layR = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0, total: 8 };
-var _catR = _layR.cat ? Colunas.categorias(orc, calc) : null;
+var _catR = _layR.cat ? Colunas.categorias(orc, calc, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
+if (_catR && _catR.cobertura.sem) html += '<p class="muted" style="font-size:11.5px;margin:-2px 0 6px">Custo MO/MAT/EQ: ' + Util.esc(Colunas.textoCobertura(_catR.cobertura)) + ' (' + Util.esc(Colunas.textoMotivos(_catR.cobertura)) + '). Itens sem separação ficam com “—” e fora dos subtotais: nada é rateado.</p>';
 var _refR = _layR.ref ? Colunas.mapaReferencias(orc, calc) : {};
 var _paraR = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
 var _totR = 8 + _layR.nPre + _layR.nPos;
@@ -16658,7 +16672,7 @@ if (soma > 0) return { mo: ct * num(ana.custoMO) / soma, mat: ct * num(ana.custo
 return { mo: 0, mat: ct, eq: 0, fonte: 'material' };
 }
 function _quebraMoMatEq(orc, deps) {
-var num = deps.num, insMap = deps.insumosMap || null;
+var num = deps.num, insMap = deps.insumosMap || null, catCol = deps.catCol || null;
 var calc = (global.Orcamento && Orcamento.calcular) ? Orcamento.calcular(orc) : null, linhaDe = {};
 if (calc) calc.linhas.forEach(function (L) { linhaDe[L.etapaIdx + "|" + L.itemIdx] = L; });
 var out = { mo: 0, mat: 0, eq: 0, total: 0, nItem: 0, nAna: 0, nMat: 0, n: 0 };
@@ -16666,7 +16680,9 @@ var out = { mo: 0, mat: 0, eq: 0, total: 0, nItem: 0, nAna: 0, nMat: 0, n: 0 };
 (et.itens || []).forEach(function (it, ii) {
 var L = linhaDe[ei + "|" + ii];
 var ct = L ? num(L.custoTotal) : num(it.quantidade) * num(it.custoUnitario);
-var q = _repartirItem(it, ct, insMap && insMap[String(it.codigo)], num);
+var lc = (catCol && catCol.porLinha && L) ? catCol.porLinha[L.itemId] : null;
+var q = (lc && lc.tem) ? { mo: num(lc.mo), mat: num(lc.mat), eq: num(lc.eq), fonte: lc.fonte === 'item' ? 'item' : 'analitico' }
+: _repartirItem(it, ct, insMap && insMap[String(it.codigo)], num);
 out.mo += q.mo; out.mat += q.mat; out.eq += q.eq; out.total += ct; out.n++;
 if (q.fonte === 'item') out.nItem++; else if (q.fonte === 'analitico') out.nAna++; else out.nMat++;
 });
@@ -16911,7 +16927,7 @@ hStyle(wa.getRow(hr).getCell(12));
 wa.getColumn(12).width = 60;
 }
 var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0;
-var _qb = _quebraMoMatEq(orc, { num: num, insumosMap: insMap });
+var _qb = _quebraMoMatEq(orc, { num: num, insumosMap: insMap, catCol: deps.catCol || null });
 var grandMO = _qb.mo, grandMAT = _qb.mat, grandEQ = _qb.eq;
 var itensFlat = [];
 etapas.forEach(function (et, etIdx) {
@@ -18108,6 +18124,7 @@ abc: (typeof Orcamento.curvaABC === "function") ? Orcamento.curvaABC(orc) : null
 crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc) : null,
 cronoAgente: (typeof Cronograma !== "undefined") ? Cronograma.estimar(orc) : null,
 insumosMap: insumosMap,
+catCol: (function () { try { return (global.Colunas && global.App && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eC) { return null; } })(),
 analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",
 responsavel: (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null
 };
@@ -20575,8 +20592,18 @@ var u = this.urlsDe(fonte);
 var ent = u.nomes.length ? this._cache[u.nomes[0]] : null;
 if (!ent || !ent.pacote) return null;
 if (ent.remap !== u.remap) { ent.remap = u.remap; ent.idxInsumos = null; }
-var item = (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(up(fonte), String(codigo)) : null;
-return this.montar(ent, codigo, item);
+var cod = this.codigoNaBase(ent.porCodigo, codigo);
+var item = (typeof Bases !== "undefined" && Bases.obter) ? (Bases.obter(up(fonte), String(codigo)) || (cod !== String(codigo) ? Bases.obter(up(fonte), cod) : null)) : null;
+return this.montar(ent, cod, item);
+},
+codigoNaBase: function (porCodigo, codigo) {
+var c = String(codigo == null ? "" : codigo).trim();
+if (!porCodigo || porCodigo[c] || !/^\d{1,7}$/.test(c)) return c;
+for (var w = c.length + 1; w <= 8; w++) {
+var c2 = ("00000000" + c).slice(-w);
+if (porCodigo[c2]) return c2;
+}
+return c;
 },
 meta: function (fonte) {
 var u = this.urlsDe(fonte);
@@ -56853,7 +56880,7 @@ function num(v) { var u = U(); return u ? u.num(v) : (Number(v) || 0); }
 function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
 var GRUPOS = [
 { id: "pubdi", rotulo: "Preço unit. c/ BDI", ajuda: "Preço unitário COM BDI, ao lado do custo unitário (sem BDI), com o mesmo arredondamento e a mesma incidência do BDI do orçamento." },
-{ id: "cat", rotulo: "Custo MO / MAT / EQ", ajuda: "Custo total da linha separado em mão de obra, material e equipamento, na proporção do analítico do item (a soma fecha com o Custo Total). Item sem analítico fica com “—”." },
+{ id: "cat", rotulo: "Custo MO / MAT / EQ", ajuda: "Custo total da linha separado em mão de obra, material e equipamento, na proporção da composição do item na base dele (SINAPI, IOPES, ORSE, SUDECAP…) ou das parcelas do próprio item; a soma fecha com o Custo Total. Item sem composição na base fica com “—” e o resumo diz por quê." },
 { id: "ref", rotulo: "Preço ref. e diferença (licitação)", ajuda: "Preço de referência do órgão e a diferença para o nosso preço unitário com BDI." }
 ];
 var Colunas = {
@@ -56895,7 +56922,7 @@ _catDe: function (i) {
 var c = String((i && (i.categoria || i.cat)) || "").toUpperCase();
 return (c === "MO" || c === "MAT" || c === "EQ") ? c : "";
 },
-categoriasItem: function (it) {
+categoriasItem: function (it, ctx) {
 if (!it) return null;
 var O0 = O(), self = this, r = null;
 var ativas = (O0 && O0.parcelasAtivas) ? O0.parcelasAtivas(it) : ["custoMO", "custoMAT", "custoEQ"];
@@ -56919,15 +56946,163 @@ if (cu0 > 0 && (mo + mat + eq) > 0 && Math.abs(tot - cu0) <= Math.max(0.02, cu0 
 r = mascara({ mo: mo, mat: mat, eq: eq }); r.fonte = "insumos"; return r;
 }
 }
+if (ctx) {
+var a = this._doAnalitico(it, ctx);
+if (a) {
+r = mascara(a);
+if (!(r.mo + r.mat + r.eq > 0)) return null;
+r.fonte = a.fonte; r.origem = a.origem; return r;
+}
+}
 return null;
 },
-categorias: function (orc, calc) {
+fonteDoItem: function (it) {
+var IO = _dep("InsumosOrc");
+if (IO && IO.fonteDaLinha) return IO.fonteDaLinha({ item: it || {} });
+var f = String((it && (it.baseFonte || it.origem)) || "SINAPI").toUpperCase();
+return f === "PROPRIO" ? "PROPRIA" : f;
+},
+proporcoes: function (comp, abrir, _trilha) {
+if (!comp) return null;
+var mo = num(comp.custoMO), mat = num(comp.custoMAT), eq = num(comp.custoEQ);
+if (mo + mat + eq > 0) return { mo: mo, mat: mat, eq: eq };
+var ins = Array.isArray(comp.insumos) ? comp.insumos : [];
+if (!ins.length) return null;
+var self = this, trilha = _trilha || {}, chave = String(comp.codigo || "");
+if (chave) { if (trilha[chave]) return null; trilha[chave] = 1; }
+mo = 0; mat = 0; eq = 0;
+ins.forEach(function (x) {
+if (!x || typeof x !== "object") return;
+var ct = (x.custoTotal != null && num(x.custoTotal) > 0) ? num(x.custoTotal) : num(x.coeficiente) * num(x.custoUnitario);
+if (!(ct > 0)) return;
+if (String(x.tipo || "").toUpperCase() === "COMPOSICAO" && typeof abrir === "function") {
+var sub = null;
+try { sub = abrir(x); } catch (e) { sub = null; }
+var rz = sub ? self.proporcoes(sub, abrir, trilha) : null;
+var t = rz ? rz.mo + rz.mat + rz.eq : 0;
+if (t > 0) { mo += ct * rz.mo / t; mat += ct * rz.mat / t; eq += ct * rz.eq / t; return; }
+}
+var c = self._catDe(x);
+if (c === "MO") mo += ct; else if (c === "EQ") eq += ct; else if (c === "MAT") mat += ct;
+});
+if (chave) delete trilha[chave];
+return (mo + mat + eq) > 0 ? { mo: mo, mat: mat, eq: eq } : null;
+},
+catInsumo: function (rot) {
+var s = String(rot == null ? "" : rot).toUpperCase().replace(/[ÃÁÂÀ]/g, "A").replace(/Ç/g, "C").replace(/\s+/g, " ").trim();
+if (s === "MO" || /^MAO DE OBRA/.test(s) || /^ENCARGO/.test(s)) return "MO";
+if (s === "MAT" || /^MATERIA/.test(s)) return "MAT";
+if (s === "EQ" || /^EQUIP/.test(s)) return "EQ";
+return "";
+},
+_doAnalitico: function (it, ctx) {
+var cod = String(it.codigo == null ? "" : it.codigo).trim();
+if (!cod) return null;
+var F = this.fonteDoItem(it), comp = null;
+try { comp = ctx.composicao ? ctx.composicao(it) : null; } catch (e) { comp = null; }
+if (comp) {
+var p = this.proporcoes(comp, ctx.abrirSub ? function (x) { return ctx.abrirSub(x, F); } : null);
+if (p) {
+var og = (ctx.origem ? ctx.origem(F, it) : null) || {};
+return { mo: p.mo, mat: p.mat, eq: p.eq, fonte: "analitico",
+origem: { base: F, codigo: cod, uf: og.uf || "", comp: og.comp || "", regime: og.regime || "", daSintetico: !!comp.daSintetico, compOrc: og.compOrc || "" } };
+}
+}
+var ins = null;
+try { ins = ctx.insumo ? ctx.insumo(it) : null; } catch (e2) { ins = null; }
+var c = ins ? this.catInsumo(ins.categoria) : "";
+if (c) {
+var og2 = (ctx.origem ? ctx.origem(F, it) : null) || {};
+return { mo: c === "MO" ? 1 : 0, mat: c === "MAT" ? 1 : 0, eq: c === "EQ" ? 1 : 0, fonte: "insumo",
+origem: { base: F, codigo: cod, uf: og2.uf || "", comp: og2.comp || "", insumo: c } };
+}
+return null;
+},
+textoOrigem: function (lin) {
+if (!lin || !lin.tem) return "";
+if (lin.fonte === "item") return "Parcelas MO/MAT/EQ do próprio item.";
+if (lin.fonte === "insumos") return "Insumos gravados no próprio item (somam o custo dele).";
+var o = lin.origem || {};
+var onde = [o.uf, o.comp].filter(Boolean).join(" ") + (o.regime ? ", " + o.regime : "");
+if (lin.fonte === "insumo") {
+var nome = o.insumo === "MO" ? "mão de obra" : (o.insumo === "EQ" ? "equipamento" : "material");
+return "O item é o insumo " + o.base + " " + o.codigo + ": 100% " + nome + (onde ? " (" + onde + ")" : "") + ".";
+}
+if (lin.fonte === "analitico") {
+var t = (o.daSintetico ? "Proporção MO/MAT/EQ que o sintético da " + o.base + " traz para a composição " + o.codigo
+: "Proporção da composição " + o.base + " " + o.codigo) + (onde ? " (" + onde + ")" : "") +
+", aplicada ao custo do item.";
+if (o.compOrc && o.comp && o.compOrc !== o.comp) t += " O orçamento é de " + o.compOrc + ".";
+return t;
+}
+return "";
+},
+MOTIVOS: {
+"sem-codigo": "item sem código",
+"propria": "composição própria (do órgão ou sua) ou cotação, sem analítico",
+"sem-analitico": "o órgão não publica o analítico em arquivo aberto",
+"nao-suporta": "base sem analítico no OrçaPRO",
+"nao-carregada": "analítico da base não carregado",
+"parcela-ausente": "a composição não tem a parcela que o item fatura (só MO / só MAT+EQ)",
+"nao-encontrado": "código não encontrado no analítico da competência",
+"sem-discriminacao": "insumo de serviço, sem discriminação MO/MAT/EQ"
+},
+motivoSem: function (it, ctx) {
+var cod = String((it && it.codigo) == null ? "" : it.codigo).trim();
+var M = function (k, t) { return { chave: k, texto: t }; };
+if (!cod) return M("sem-codigo", "Item sem código: não há composição para separar.");
+var F = this.fonteDoItem(it);
+var bf = String((it && it.baseFonte) || "").trim();
+if (ctx && this._doAnalitico(it, ctx)) return M("parcela-ausente", "A composição " + F + " " + cod + " não tem a parcela que este item fatura (" + (it.modoCusto === "mo" ? "só mão de obra" : "só material + equipamento") + ").");
+var ehProp = F === "PROPRIA" || /^PROP-/i.test(cod) || /^(CPU|CCU|COT)/i.test(cod) || /COTA|^CCU|^CPU/i.test(bf);
+if (ehProp) {
+if (/COTA/i.test(bf) || /^COT/i.test(cod)) return M("propria", "Cotação de mercado (" + (bf || cod) + "): preço fechado, sem composição.");
+return M("propria", "Composição própria" + (bf ? " " + bf : "") + " sem insumos na base própria — o item traz só o preço.");
+}
+var est = (ctx && ctx.estado) ? ctx.estado(F, it) : "sem-ctx";
+var og = (ctx && ctx.origem) ? (ctx.origem(F, it) || {}) : {};
+var onde = [og.uf, og.comp].filter(Boolean).join(" ");
+switch (est) {
+case "carregado":
+var ins = null;
+try { ins = ctx.insumo ? ctx.insumo(it) : null; } catch (e) { ins = null; }
+if (ins) return M("sem-discriminacao", "Insumo " + F + " " + cod + " da categoria “" + String(ins.categoria || "?") + "”: não separa em MO/MAT/EQ.");
+return M("nao-encontrado", "Código " + cod + " não está no analítico " + F + (onde ? " " + onde : "") + ".");
+case "carregando": return M("nao-carregada", "Carregando o analítico " + F + "…");
+case "pendente": return M("nao-carregada", "Analítico " + F + " ainda não carregado.");
+case "outra-uf": return M("nao-carregada", "O analítico " + F + " carregado é de outro estado; abra o orçamento de novo.");
+case "outro-regime-des": return M("nao-carregada", "Item desonerado e o analítico " + F + " carregado é o não desonerado: a proporção de MO seria a do outro regime.");
+case "outro-regime-one": return M("nao-carregada", "Item não desonerado e o analítico " + F + " carregado é o desonerado: a proporção de MO seria a do outro regime.");
+case "sem-arquivo": return M("nao-carregada", "Não há arquivo do analítico " + F + " para esta UF nesta instalação (orçamento sem UF, ou sem servidor).");
+case "falhou": return M("nao-carregada", "Não consegui baixar o analítico " + F + " — confira a internet; o sistema tenta de novo ao redesenhar, em 1 minuto.");
+case "sem-publicacao": return M("sem-analitico", "A " + F + " não publica o analítico em arquivo aberto.");
+case "sem-ctx": return M("nao-carregada", "Analítico não consultado neste documento.");
+}
+return M("nao-suporta", "A base " + F + " não tem analítico no OrçaPRO.");
+},
+categorias: function (orc, calc, ctx) {
 var self = this;
 calc = calc || O().calcular(orc);
-var out = { porLinha: {}, porEtapa: [], porSub: {}, total: this._zero() };
+var out = { porLinha: {}, porEtapa: [], porSub: {}, total: this._zero(),
+cobertura: { n: 0, sep: 0, sem: 0, porBase: {}, porMotivo: {}, carregando: [], semLista: [] } };
+var cob = out.cobertura, vistoCar = {};
 (calc.linhas || []).forEach(function (L) {
-var c = self.categoriasItem(L.item);
+var it = L.item || {};
+var c = self.categoriasItem(it, ctx);
 var lin = c ? self._linhaNoCusto(c, num(L.custoTotal)) : { tem: false, mo: 0, mat: 0, eq: 0 };
+var F = self.fonteDoItem(it);
+var pb = cob.porBase[F] || (cob.porBase[F] = { n: 0, sep: 0 });
+cob.n++; pb.n++;
+if (lin.tem) { cob.sep++; pb.sep++; }
+else {
+var m = self.motivoSem(it, ctx);
+lin.motivo = m.texto; lin.motivoChave = m.chave;
+cob.sem++;
+cob.porMotivo[m.chave] = (cob.porMotivo[m.chave] || 0) + 1;
+if (m.chave === "nao-carregada" && ctx && ctx.estado && ctx.estado(F, it) === "carregando" && !vistoCar[F]) { vistoCar[F] = 1; cob.carregando.push(F); }
+cob.semLista.push({ itemId: L.itemId, numero: L.numero || "", codigo: String(it.codigo == null ? "" : it.codigo), base: F,
+baseFonte: String(it.baseFonte || ""), descricao: String(it.descricao || ""), custoTotal: r2(L.custoTotal), motivo: m.texto, chave: m.chave });
+}
 out.porLinha[L.itemId] = lin;
 var e = out.porEtapa[L.etapaIdx] || (out.porEtapa[L.etapaIdx] = self._zero());
 var alvos = [e, out.total];
@@ -56943,10 +57118,23 @@ Object.keys(out.porSub).forEach(function (k) { fecha(out.porSub[k]); });
 fecha(out.total);
 return out;
 },
+textoCobertura: function (cob) {
+if (!cob || !cob.n) return "";
+var t = cob.sep + " de " + cob.n + " ite" + (cob.n === 1 ? "m" : "ns") + " separado" + (cob.sep === 1 ? "" : "s");
+if (cob.sem) t += " · " + cob.sem + " sem separação";
+return t;
+},
+textoMotivos: function (cob) {
+var self = this;
+if (!cob || !cob.sem) return "";
+return Object.keys(cob.porMotivo).sort(function (a, b) { return cob.porMotivo[b] - cob.porMotivo[a]; }).map(function (k) {
+return cob.porMotivo[k] + " " + (self.MOTIVOS[k] || k);
+}).join("; ");
+},
 _zero: function () { return { mo: 0, mat: 0, eq: 0, n: 0, comAna: 0, sem: 0 }; },
 _linhaNoCusto: function (c, ct) {
 var soma = num(c.mo) + num(c.mat) + num(c.eq);
-var lin = { tem: true, mo: 0, mat: 0, eq: 0, fonte: c.fonte };
+var lin = { tem: true, mo: 0, mat: 0, eq: 0, fonte: c.fonte, origem: c.origem || null };
 if (!(soma > 0) || !(ct > 0)) return lin;
 lin.mo = r2(ct * num(c.mo) / soma); lin.mat = r2(ct * num(c.mat) / soma); lin.eq = r2(ct * num(c.eq) / soma);
 var resto = r2(r2(ct) - (lin.mo + lin.mat + lin.eq));
@@ -80020,8 +80208,12 @@ return { ok: f.length === 0, faltando: f };
 _momateq: function (orc) {
 if (typeof Analitico === "undefined" || !Analitico.carregado) return null;
 var mo = 0, mat = 0, eq = 0;
+var _K = null;
+try { _K = (typeof Colunas !== "undefined" && typeof App !== "undefined" && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eK) { _K = null; }
 Util.arr(orc.etapas).forEach(function (e) {
 Util.arr(e.itens).forEach(function (it) {
+var lk = _K && _K.porLinha ? _K.porLinha[it.id] : null;
+if (lk && lk.tem) { mo += lk.mo; mat += lk.mat; eq += lk.eq; return; }
 var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
 var a = Orcamento.ehSinapi(it.origem) ? Analitico.obter(it.codigo) : null;
 var rep = (typeof Orcamento !== "undefined" && Orcamento.repartirCusto)
@@ -80109,7 +80301,7 @@ _calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
 Util.arr(_calc.grupos).forEach(function (g) { _pg[g.subEtapaId] = g; });
 var _uiOk = typeof Colunas !== "undefined" && typeof UI !== "undefined" && UI._celulasRefLinha && UI._celulasCatLinha;
 var _layL = _uiOk ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0 };
-var _catL = _layL.cat ? Colunas.categorias(orc, _calc) : null;
+var _catL = _layL.cat ? Colunas.categorias(orc, _calc, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
 var _refL = _layL.ref ? Colunas.mapaReferencias(orc, _calc) : {};
 var _paraL = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
 var _totL = 7 + _layL.nPre + _layL.nPos;
@@ -80143,7 +80335,7 @@ P.push(pg("5. Planilha Orçamentária Analítica",
 '<tbody>' + analHtml + '</tbody>' +
 '<tfoot><tr><td colspan="' + (6 + _layL.nPre) + '">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
 (_uiOk ? _paraL(UI._celulasCatSub(_layL, _catL && _catL.total)) : '') + '</tr></tfoot></table>' +
-(_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem analítico (sem discriminação MO/MAT/EQ) fora dos subtotais; nada é rateado.</p>' : '')));
+(_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem discriminação MO/MAT/EQ fora dos subtotais; nada é rateado. ' + Util.esc(Colunas.textoCobertura(_catL.cobertura)) + ' (' + Util.esc(Colunas.textoMotivos(_catL.cobertura)) + ').</p>' : '')));
 var _cfgMem = (orc.config && orc.config.memorial) || null;
 var _saiMem = !_cfgMem || _cfgMem.laudo !== false;
 var memHtml = '';

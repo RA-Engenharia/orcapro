@@ -1729,8 +1729,10 @@
        so se entregam as bases do app. ⚠ Ate 01/10/2026 a tela olhava so o
        analitico SINAPI e todo item de composicao propria caia em "sem
        composicao na base" (ver o roteiro em js/insumosorc.js). */
-    _insumosOrcResolver: function () {
-      var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado);
+    /* opc.semSinapi: trata o analítico SINAPI como não carregado (as colunas
+       MO/MAT/EQ usam quando o que está na memória é de outra UF) */
+    _insumosOrcResolver: function (opc) {
+      var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado) && !(opc && opc.semSinapi);
       var B = (typeof Bases !== "undefined" && Bases.obter) ? Bases : null;
       var self = this;
       return InsumosOrc.resolvedor({
@@ -1784,6 +1786,203 @@
         });
       });
       return true;
+    },
+
+    /* ===== COLUNAS MO/MAT/EQ PELO ANALÍTICO DA BASE (js/colunas.js, passo 3) =====
+     * O contexto que a planilha, o relatório e o laudo entregam ao
+     * Colunas.categorias: a composição de cada item sai do MESMO resolvedor do
+     * "Analítico do item" e da aba Insumos & ABC (_insumosOrcResolver) — nunca
+     * uma terceira regra.
+     * ⚠ GUARDA DE UF, a mesma do Excel (js/excel.js, v1.2.31): analítico SINAPI
+     *   de outro estado na memória (ambiente trocado para consultar preço) NÃO
+     *   separa o item — a proporção seria a do outro estado com cara de certa. */
+    _colunasCtx: function (orc) {
+      if (typeof InsumosOrc === "undefined" || !InsumosOrc.fonteDaLinha) return null;
+      var self = this;
+      var ufOrc = String((orc && orc.uf) || "").toUpperCase();
+      var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado);
+      var ufAna = temAna ? String(Analitico.uf || "").toUpperCase() : "";
+      var ufOk = temAna && (!ufOrc || !ufAna || ufAna === ufOrc);
+      /* ⚠ REGIME POR ITEM (revisão de 07/11/2026). O encargo social muda a
+         parcela de MO em até ~2 pontos (99059: 58,0% onerado × 56,5%
+         desonerado). Item desonerado com o analítico onerado na memória fica
+         "—" com o motivo, nunca com a proporção do outro regime. O regime do
+         item: o dele; sem ele, o do orçamento (Orcamento.regimeDe). */
+      var regAna = temAna && (Analitico.desonerado === true || Analitico.desonerado === false) ? Analitico.desonerado : null;
+      var regItem = function (it) { return (it && (it.desonerado === true || it.desonerado === false)) ? it.desonerado : !!(orc && orc.desonerado); };
+      var anaOkIt = function (it) { return ufOk && (regAna === null || regAna === regItem(it)); };
+      var R = this._insumosOrcResolver({ semSinapi: temAna && !ufOk });
+      var R0 = this._insumosOrcResolver({ semSinapi: true });
+      var B = (typeof Bases !== "undefined" && Bases.obter) ? Bases : null;
+      var mmaaaa = function (c) {
+        var n = (typeof AnaliticoBases !== "undefined" && AnaliticoBases.normComp) ? AnaliticoBases.normComp(c) : "";
+        return n ? n.slice(5, 7) + "/" + n.slice(0, 4) : String(c || "");
+      };
+      var fonte = function (it) { return InsumosOrc.fonteDaLinha({ item: it || {} }); };
+      return {
+        composicao: function (it) {
+          var cod = String((it && it.codigo) == null ? "" : it.codigo).trim();
+          if (!cod) return null;
+          var F = fonte(it);
+          var c = ((F === "SINAPI" && !anaOkIt(it)) ? R0 : R).obter(cod, { item: it });
+          if (c) return c;
+          /* base que traz MO/MAT/EQ no próprio sintético (SUDECAP, SEINFRA;
+             nas outras a repartição foi calculada do analítico do órgão):
+             vale mesmo sem o analítico carregado */
+          if (B && F !== "SINAPI" && F !== "PROPRIA") {
+            var rec = B.obter(F, cod);
+            if (rec && (Number(rec.custoMO) || 0) + (Number(rec.custoMAT) || 0) + (Number(rec.custoEQ) || 0) > 0) {
+              return { codigo: cod, custoMO: Number(rec.custoMO) || 0, custoMAT: Number(rec.custoMAT) || 0, custoEQ: Number(rec.custoEQ) || 0, insumos: [], daSintetico: true };
+            }
+          }
+          return null;
+        },
+        /* sub-composição: abre pela base DELA (o insumo carrega a fonte), e
+           nunca pelo SINAPI quando a base é outra (código igual, composição diferente) */
+        abrirSub: function (x, F) {
+          var f = String((x && x.fonte) || F || "");
+          return R.obter(String(x.codigo == null ? "" : x.codigo), { item: { baseFonte: f, origem: f } });
+        },
+        /* o item É um insumo? { categoria } pelo RÓTULO DA BASE.
+           ⚠ O sintético primeiro (revisão de 07/11/2026): o Analitico.insumo
+           traz a categoria já normalizada pelo gerador, que chama ENCARGOS
+           COMPLEMENTARES e SERVIÇOS (bombeamento de concreto) de "MAT" — e o
+           item sairia 100% material. O rótulo original decide; o analítico só
+           quando o sintético não tem o código. */
+        insumo: function (it) {
+          var cod = String((it && it.codigo) == null ? "" : it.codigo).trim(), F = fonte(it);
+          if (!cod) return null;
+          if (F === "SINAPI") {
+            var s = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(cod) : null;
+            if (s && /insumo/i.test(String(s.tipo || s.tipoItem || "")) && s.categoria) return s;
+            return (anaOkIt(it) && Analitico.insumo) ? Analitico.insumo(cod) : null;
+          }
+          if (F === "PROPRIA") return null;
+          var r = B ? B.obter(F, cod) : null;
+          if (r && /insumo/i.test(String(r.tipoItem || r.tipo || "")) && r.categoria) return r;
+          return (self._anaBasesEstado(F) === "carregado" && AnaliticoBases.insumo) ? AnaliticoBases.insumo(F, cod) : null;
+        },
+        origem: function (F, it) {
+          if (F === "SINAPI") {
+            if (!(it ? anaOkIt(it) : ufOk)) return { uf: ufOk ? ufAna : (ufOrc || ufAna), comp: "" };
+            return { uf: ufAna || ufOrc, comp: mmaaaa(Analitico.competencia), compOrc: mmaaaa((orc && orc.competenciaSinapi) || ""),
+              regime: regAna === null ? "" : (regAna ? "desonerado" : "não desonerado") };
+          }
+          var m = (typeof AnaliticoBases !== "undefined" && AnaliticoBases.meta) ? AnaliticoBases.meta(F) : null;
+          return m ? { uf: m.uf || "", comp: mmaaaa(m.rotuloComp || m.mes) } : {};
+        },
+        estado: function (F, it) {
+          if (F === "SINAPI") {
+            if (it ? anaOkIt(it) : ufOk) return "carregado";
+            if (typeof Analitico === "undefined") return "nao-suporta";
+            if (Analitico.carregando) return "carregando";
+            var st = self._colAnaSt;
+            if (st && st.estado === "falhou" && Date.now() - st.quando < 60000) return "falhou";
+            if (st && st.estado === "sem-arquivo") return "sem-arquivo";
+            if (ufOk) return regItem(it) ? "outro-regime-des" : "outro-regime-one";
+            return temAna ? "outra-uf" : "pendente";
+          }
+          return self._anaBasesEstado(F);
+        }
+      };
+    },
+
+    /* Liga o analítico que falta quando o grupo MO/MAT/EQ está visível: o
+     * SINAPI (~17 MB) e as estaduais (pequenas) do que o orçamento usa, SÓ
+     * para os itens sem discriminação própria. Redesenha a planilha quando
+     * chega. Chamado pela própria planilha a cada desenho.
+     * ⚠ FALHA NÃO VIRA LAÇO (mesmo padrão do _anaBasesGarantir): cada pedido
+     *   (UF|competência|regime) é tentado uma vez a cada 60 s, deu certo ou
+     *   não — um arquivo que chega de outra UF não pode virar
+     *   reset → recarga → redesenho → reset para sempre.
+     * ⚠ O REGIME PEDIDO é o da maioria dos itens SINAPI sem parcelas (o do
+     *   item; sem ele, o do orçamento). Num orçamento misto, a minoria fica
+     *   "—" com o motivo "outro regime" — melhor que a proporção errada.
+     * ⚠ O SINAPI CARREGA SOZINHO SÓ AQUI, porque a pessoa ligou uma coluna
+     *   que depende dele (a aba Insumos & ABC continua pedindo o clique). */
+    _colAnaSt: null,
+    _colAnaTent: null,
+    _colunasAnaGarantir: function (orc) {
+      if (!orc || typeof Colunas === "undefined" || typeof InsumosOrc === "undefined" || !Colunas.visivel(orc, "cat")) return false;
+      var self = this, id = orc.id;
+      var faltam = Orcamento.linhas(orc).filter(function (L) { return L && L.item && !Colunas.categoriasItem(L.item); });
+      if (!faltam.length) return false;
+      var redesenha = function () {
+        try {
+          var ae = document.activeElement;
+          var digitando = ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName || "");
+          if (self.orcAtual && self.orcAtual.id === id && self.tela === "editor" && self.aba === "planilha" && !digitando) self.render();
+        } catch (e) {}
+      };
+      var R = this._insumosOrcResolver();
+      var pedido = false;
+      var pend = R.basesEstaduaisPendentes ? R.basesEstaduaisPendentes(faltam) : [];
+      if (pend.length && this._anaBasesGarantir(pend, redesenha)) pedido = true;
+      if (typeof Analitico === "undefined" || !R.precisaAnalitico(faltam)) return pedido;
+      var nDes = 0, nOne = 0;
+      faltam.forEach(function (L) {
+        if (InsumosOrc.fonteDaLinha(L) !== "SINAPI") return;
+        var d = (L.item.desonerado === true || L.item.desonerado === false) ? L.item.desonerado : !!orc.desonerado;
+        if (d) nDes++; else nOne++;
+      });
+      var alvo = nDes === nOne ? !!orc.desonerado : nDes > nOne;
+      var ufOrc = String(orc.uf || "").toUpperCase();
+      var regOk = function () { return Analitico.desonerado !== true && Analitico.desonerado !== false ? true : Analitico.desonerado === alvo; };
+      if (Analitico.carregado && (!ufOrc || !Analitico.uf || String(Analitico.uf).toUpperCase() === ufOrc) && regOk()) return pedido;
+      if (Analitico.carregando && Analitico._promise) {
+        /* o pré-carregamento da abertura (ou outra tela) já está no ar: espera ele */
+        if (!this._colAnaEspera) {
+          this._colAnaEspera = true;
+          Analitico._promise.then(function () { self._colAnaEspera = false; redesenha(); }, function () { self._colAnaEspera = false; redesenha(); });
+        }
+        return true;
+      }
+      var chave = ufOrc + "|" + String(orc.competenciaSinapi || "") + "|" + alvo;
+      this._colAnaTent = this._colAnaTent || {};
+      if (this._colAnaTent[chave] && Date.now() - this._colAnaTent[chave] < 60000) return pedido;
+      this._colAnaTent[chave] = Date.now();
+      try {
+        if (Analitico.carregado && ufOrc && Analitico.uf && String(Analitico.uf).toUpperCase() !== ufOrc && Analitico.reset) Analitico.reset();
+        var u = this._prepararAnalitico(ufOrc || null, ufOrc ? this._normComp(orc.competenciaSinapi || "") : null, alvo);
+        /* ⚠ sem arquivo (sem UF, instalação sem servidor) não é "internet":
+           o recado diz o que é */
+        if (!u || (!u.local && !u.live)) { this._colAnaSt = { estado: "sem-arquivo", quando: Date.now() }; return pedido; }
+        this._colAnaSt = { estado: "carregando", quando: Date.now() };
+        Analitico.carregarArquivo(u.alts).then(function () { self._colAnaSt = null; }, function (e) {
+          /* "cancelado" = outra tela trocou o analítico no meio: não é falha */
+          self._colAnaSt = (e && e.message === "cancelado") ? null : { estado: "falhou", quando: Date.now() };
+        }).then(redesenha);
+        return true;
+      } catch (e) {
+        this._colAnaSt = { estado: "falhou", quando: Date.now() };
+        return pedido;
+      }
+    },
+
+    /* "ver quais": os itens que ficaram sem MO/MAT/EQ, agrupados pelo motivo */
+    _colunasVerSem: function () {
+      var orc = this.orcAtual;
+      if (!orc || typeof Colunas === "undefined") return;
+      var K = Colunas.categorias(orc, null, this._colunasCtx(orc)), cob = K.cobertura;
+      if (!cob.sem) { UI.toast("Todos os itens estão separados em MO/MAT/EQ.", "ok"); return; }
+      var grupos = {};
+      cob.semLista.forEach(function (x) { (grupos[x.chave] = grupos[x.chave] || []).push(x); });
+      var bases = Object.keys(cob.porBase).sort().map(function (F) {
+        var b = cob.porBase[F];
+        return Util.esc(F) + " " + b.sep + "/" + b.n;
+      }).join(" · ");
+      var h = '<p style="margin:0 0 8px">' + Util.esc(Colunas.textoCobertura(cob)) + '. Por base: ' + bases + '.</p>' +
+        '<p class="muted" style="font-size:12.5px;margin:0 0 10px">O sistema não faz rateio médio: sem a composição do item na base, a linha fica com “—” e fora dos subtotais MO/MAT/EQ.</p>';
+      Object.keys(grupos).sort(function (a, b) { return grupos[b].length - grupos[a].length; }).forEach(function (k) {
+        var lista = grupos[k];
+        h += '<h4 style="margin:12px 0 4px">' + lista.length + ' — ' + Util.esc(Colunas.MOTIVOS[k] || k) + '</h4>' +
+          '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Item</th><th>Base</th><th>Código</th><th>Descrição</th><th class="num">Custo total</th><th>Motivo</th></tr></thead><tbody>' +
+          lista.map(function (x) {
+            return '<tr><td>' + Util.esc(x.numero) + '</td><td>' + Util.esc(x.baseFonte || x.base) + '</td><td class="mono">' + Util.esc(x.codigo) + '</td><td>' + Util.esc(String(x.descricao).slice(0, 90)) + '</td><td class="num">' + Util.fmtMoeda(x.custoTotal) + '</td><td>' + Util.esc(x.motivo) + '</td></tr>';
+          }).join("") + '</tbody></table>';
+      });
+      var bg = UI.modal("Itens sem separação MO/MAT/EQ", h, [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      var m = bg && bg.querySelector && bg.querySelector(".modal"); if (m) m.style.maxWidth = "1000px";
     },
 
     /* O CSV sai do RECORTE que esta na tela, e o nome do arquivo diz qual —
@@ -2312,6 +2511,7 @@
         this._colMenuAberto = true;
         this._persistirColunas(); this.render(); return;
       }
+      if (t.dataset.acao === "col-cat-sem") { this._colunasVerSem(); return; }
       if (t.dataset.acao === "col-padrao") {
         var ocP = this.orcAtual;
         if (!ocP || typeof Colunas === "undefined") return;

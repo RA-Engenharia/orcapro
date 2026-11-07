@@ -119,6 +119,9 @@
     return {
       codigo: texto(rec.codigo), descricao: texto(rec.descricao), unidade: texto(rec.unidade),
       custoUnitario: num(rec.custoUnitario), propria: !!propria,
+      /* os totais MO/MAT/EQ do registro seguem junto: as colunas MO/MAT/EQ da
+         planilha (js/colunas.js) tiram deles a proporção; este motor não os usa */
+      custoMO: num(rec.custoMO), custoMAT: num(rec.custoMAT), custoEQ: num(rec.custoEQ),
       insumos: rec.insumos.map(function (i) {
         return {
           codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
@@ -160,6 +163,8 @@
       return {
         codigo: texto(a.codigo), descricao: texto(a.descricao), unidade: texto(a.unidade),
         custoUnitario: num(a.custoUnitario), propria: false, fonte: F,
+        /* totais que o AnaliticoBases já repartiu descendo nas subs (ver daBase) */
+        custoMO: num(a.custoMO), custoMAT: num(a.custoMAT), custoEQ: num(a.custoEQ),
         insumos: (a.insumos || []).map(function (i) {
           return {
             codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
@@ -400,7 +405,7 @@
   }
 
   var InsumosOrc = { consolidar: consolidar, resumoABC: resumoABC, filtrar: filtrar, resolvedor: resolvedor,
-    categoria: categoria, _chave: chave, _normFonte: normFonte };
+    categoria: categoria, fonteDaLinha: fonteDaLinha, _chave: chave, _normFonte: normFonte };
   global.InsumosOrc = InsumosOrc;
   if (typeof module !== "undefined" && module.exports) module.exports = InsumosOrc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

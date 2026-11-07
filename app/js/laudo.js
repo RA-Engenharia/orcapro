@@ -30,8 +30,16 @@
     _momateq: function (orc) {
       if (typeof Analitico === "undefined" || !Analitico.carregado) return null;
       var mo = 0, mat = 0, eq = 0;
+      /* ⚠ 07/11/2026: a linha que as colunas MO/MAT/EQ separaram (js/colunas.js
+         — parcelas, composição da base SINAPI ou estadual, item-insumo) entra
+         com os MESMOS reais da tabela deste laudo. Sem isso o quadro punha o
+         IOPES inteiro em material e a tabela, logo abaixo, a MO dele. */
+      var _K = null;
+      try { _K = (typeof Colunas !== "undefined" && typeof App !== "undefined" && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eK) { _K = null; }
       Util.arr(orc.etapas).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
+          var lk = _K && _K.porLinha ? _K.porLinha[it.id] : null;
+          if (lk && lk.tem) { mo += lk.mo; mat += lk.mat; eq += lk.eq; return; }
           var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
           var a = Orcamento.ehSinapi(it.origem) ? Analitico.obter(it.codigo) : null;
           /* v1.1.232 — o ITEM tem prioridade: composição própria (e qualquer
@@ -156,7 +164,7 @@
          (padrão: ocultas, como sempre foi). Só desenha com a tela carregada (UI). */
       var _uiOk = typeof Colunas !== "undefined" && typeof UI !== "undefined" && UI._celulasRefLinha && UI._celulasCatLinha;
       var _layL = _uiOk ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0 };
-      var _catL = _layL.cat ? Colunas.categorias(orc, _calc) : null;
+      var _catL = _layL.cat ? Colunas.categorias(orc, _calc, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
       var _refL = _layL.ref ? Colunas.mapaReferencias(orc, _calc) : {};
       var _paraL = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
       var _totL = 7 + _layL.nPre + _layL.nPos;
@@ -190,7 +198,7 @@
         '<tbody>' + analHtml + '</tbody>' +
         '<tfoot><tr><td colspan="' + (6 + _layL.nPre) + '">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
         (_uiOk ? _paraL(UI._celulasCatSub(_layL, _catL && _catL.total)) : '') + '</tr></tfoot></table>' +
-        (_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem analítico (sem discriminação MO/MAT/EQ) fora dos subtotais; nada é rateado.</p>' : '')));
+        (_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem discriminação MO/MAT/EQ fora dos subtotais; nada é rateado. ' + Util.esc(Colunas.textoCobertura(_catL.cobertura)) + ' (' + Util.esc(Colunas.textoMotivos(_catL.cobertura)) + ').</p>' : '')));
 
       // ---- 5.1 MEMÓRIA DE CÁLCULO (Lei 14.133 — justificativa dos quantitativos) ----
       // LOTE 4: o campo já era capturado na UI mas não saía no PDF do laudo.

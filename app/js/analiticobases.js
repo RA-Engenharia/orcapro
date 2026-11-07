@@ -292,8 +292,27 @@
       if (!ent || !ent.pacote) return null;
       /* a região (SETOP) pode ter mudado desde a carga: vale a de AGORA */
       if (ent.remap !== u.remap) { ent.remap = u.remap; ent.idxInsumos = null; }
-      var item = (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(up(fonte), String(codigo)) : null;
-      return this.montar(ent, codigo, item);
+      var cod = this.codigoNaBase(ent.porCodigo, codigo);
+      var item = (typeof Bases !== "undefined" && Bases.obter) ? (Bases.obter(up(fonte), String(codigo)) || (cod !== String(codigo) ? Bases.obter(up(fonte), cod) : null)) : null;
+      return this.montar(ent, cod, item);
+    },
+
+    /* ⚠ ZERO À ESQUERDA PERDIDO NA PLANILHA DO ÓRGÃO (07/11/2026, orçamento de
+       Muriaé). O ORSE numera as composições com 5 dígitos ("08759", "07967") e
+       a planilha do edital, passada pelo Excel, chegou com "8759" e "7967" —
+       mesmo número, mesmo preço, e o detalhamento dizia "código não
+       encontrado". Só quando o código EXATO não existe e ele é só dígitos,
+       tenta o mesmo número com zeros à esquerda (até 8 dígitos) e fica com o
+       primeiro que existe. Não casa por descrição nem por "parecido": é o
+       mesmo número. Puro. */
+    codigoNaBase: function (porCodigo, codigo) {
+      var c = String(codigo == null ? "" : codigo).trim();
+      if (!porCodigo || porCodigo[c] || !/^\d{1,7}$/.test(c)) return c;
+      for (var w = c.length + 1; w <= 8; w++) {
+        var c2 = ("00000000" + c).slice(-w);
+        if (porCodigo[c2]) return c2;
+      }
+      return c;
     },
 
     /* metadados do arquivo carregado (competência, UF, regime, fonte) */
