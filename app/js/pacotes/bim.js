@@ -19769,6 +19769,29 @@ pset(el, "OrcaPRO_Instalacao", [["Sistema", "IFCLABEL", S0.nome], ["SistemaCodig
 }
 var trechoPorId = {}; Rd.trechos.forEach(function (t) { trechoPorId[t.id] = t; });
 var infoTrecho = {}, infoCx = {}, infoPeca = {}, infoAc = {};
+var HG = opts.semFormaConexao ? null : dep("HidGeo", "./biminstgeo.js"), geoCx = {}, recuoT = {}, itensCx = {};
+var lodCx = opts.lodConexao || ((Rd.trechos.length + Rd.conexoes.length) > 700 ? "longe" : "perto");
+if (HG && HG.no) {
+var nosCx = {}, ordemCx = [];
+Rd.conexoes.forEach(function (c) { var k = c.x + "," + c.y + "," + c.z + "|" + c.sistema; if (!nosCx[k]) { nosCx[k] = []; ordemCx.push(k); } nosCx[k].push(c); });
+ordemCx.forEach(function (k) {
+var lista = nosCx[k], M0 = BI.MATERIAIS[lista[0].material] || {}, rNo = null;
+if (M0.secao) return;
+try { rNo = HG.no(lista, trechoPorId, { lod: lodCx, tol: BI.TOL }); } catch (eNo) { rNo = null; }
+if (!rNo) return;
+rNo.pecas.forEach(function (pc) { geoCx[pc.id] = pc; });
+var feitos = {}, inteiro = true;
+try {
+lista.forEach(function (c) {
+var Sc = BI.SISTEMAS[c.sistema] || {}, Mc = BI.MATERIAIS[c.material] || {};
+var its = geoCx[c.id] ? brepsDaTela(geoCx[c.id], [num(c.x, 0), num(c.y, 0), num(c.z, 0)], Mc.nome || c.material, parseInt(String(Sc.cor).slice(1), 16)) : [];
+if (its.length) feitos[c.id] = its; else inteiro = false;
+});
+} catch (eBr) { inteiro = false; avisos.push("conexão " + lista.map(function (c) { return c.id; }).join("+") + ": a forma de catálogo não pôde ser montada (" + (eBr && eBr.message) + ") — foi no formato simplificado"); }
+if (inteiro) Object.keys(feitos).forEach(function (id) { itensCx[id] = feitos[id]; });
+if (inteiro) Object.keys(rNo.recuos || {}).forEach(function (kk) { recuoT[kk] = Math.max(recuoT[kk] || 0, rNo.recuos[kk]); });
+});
+}
 Rd.trechos.forEach(function (t) {
 var S0 = BI.SISTEMAS[t.sistema], M = BI.MATERIAIS[t.material] || {}, gr = S0.grupo, ret = M.secao === "retangular";
 var km = gr === "eletrica" ? "eletroduto" : (gr === "bandeja" ? "bandeja" : (gr === "ar" ? (M.flexivel ? "dutoFlexivel" : "duto") : (M.flexivel ? "tuboFlexivel" : "tubo")));
@@ -19777,7 +19800,10 @@ var a = [t.p1.x, t.p1.y, t.p1.z], b = [t.p2.x, t.p2.y, t.p2.z], nv = nivelDe(Mat
 var us = norm(sub(b, a)), ws = Math.abs(us[1]) > 0.99 ? [1, 0, 0] : norm(cross([0, 1, 0], us)), Lg = len(sub(b, a));
 var pl = placement(nv.pl, W2I(a, nv), cena2ifc(us), cena2ifc(ws));
 var raio = Math.max(num(t.dn, 0) / 2000, 0.008);
-var sol = extrudado(ret ? retangulo(t.larg, t.alt) : circulo(raio), pos3([0, 0, 0]), Lg);
+var rc1 = ret ? 0 : Math.max(0, recuoT[t.id + ":0"] || 0), rc2 = ret ? 0 : Math.max(0, recuoT[t.id + ":1"] || 0);
+if (rc1 + rc2 > Lg - 0.002) { var kRc = Math.max(0, (Lg - 0.002) / Math.max(1e-9, rc1 + rc2)); rc1 *= kRc; rc2 *= kRc; }
+var LgS = Lg - rc1 - rc2;
+var sol = extrudado(ret ? retangulo(t.larg, t.alt) : circulo(raio), pos3([0, 0, rc1]), LgS);
 var nomeM = M.nome || t.material; pintar(sol, nomeM, parseInt(String(S0.cor).slice(1), 16));
 var dnTxt = ret ? Math.round(t.larg * 100) + "×" + Math.round(t.alt * 100) + " cm" : "DN " + t.dn;
 var el = peca(t.id, ent, S0.nome + " · " + dnTxt + " (" + t.id + ")", nomeM + " " + dnTxt, pl, forma([sol], "SweptSolid"), [E(pre)], Math.min(a[1], b[1]), nv, { mapa: km });
@@ -19796,9 +19822,40 @@ if (ent === "IFCPIPESEGMENT" && t.inclinacao > 0) pset(el, "Pset_PipeSegmentOccu
 pset(el, "OrcaPRO_Quantitativo", [["Unidade", "IFCLABEL", q.unidade], ["Quantidade", "IFCREAL", q.quantidade], ["CodigoOrcamento", "IFCIDENTIFIER", cods[t.id] || null]]);
 if (cods[t.id]) ligarCodigos(el, [cods[t.id]], "SINAPI");
 origemPset(el, [["Modelador", "IFCLABEL", "B5"]]);
-el.comprimento = t.comprimento; el.inclinacao = t.inclinacao; el.volumeGeometria = r6(area * Lg);
+el.comprimento = t.comprimento; el.inclinacao = t.inclinacao; el.volumeGeometria = r6(area * LgS);
 noSistema(t.sistema, el);
 });
+function brepsDaTela(gx, C, nomeM, corS) {
+var out = [];
+arr(gx.partes).forEach(function (pt) {
+var ml = pt && pt.malha; if (!ml || !ml.pos || !ml.idx) return;
+var cascas = arr(ml.cascas).length ? ml.cascas : [[0, ml.idx.length]];
+var ap = HG.aparencia ? HG.aparencia(null, null, pt.papel) : null, outroPapel = pt.papel && pt.papel !== "corpo" && ap && ap.chave === pt.papel;
+cascas.forEach(function (cs) {
+var v = [], f = [], mapa = {}, i;
+for (i = cs[0]; i < cs[1]; i++) {
+var q = ml.idx[i], x = ml.pos[3 * q] - C[0], y = ml.pos[3 * q + 1] - C[1], z = ml.pos[3 * q + 2] - C[2];
+var key = Math.round(x * 1e7) + "," + Math.round(y * 1e7) + "," + Math.round(z * 1e7);
+if (mapa[key] == null) { mapa[key] = v.length / 3; v.push(x * 1000, y * 1000, z * 1000); }
+f.push(mapa[key]);
+}
+var f2 = [];
+for (i = 0; i < f.length; i += 3) if (f[i] !== f[i + 1] && f[i + 1] !== f[i + 2] && f[i] !== f[i + 2]) f2.push(f[i], f[i + 1], f[i + 2]);
+if (f2.length < 12) return;
+var b = brep({ v: v, f: f2 }, 0); if (!b) return;
+if (outroPapel) pintar(b, ap.nome.charAt(0).toUpperCase() + ap.nome.slice(1), parseInt(String(ap.cor).slice(1), 16));
+else pintar(b, nomeM, corS);
+out.push(b);
+});
+});
+return out;
+}
+var opMm = null;
+function emMetros(itens) {
+var rm = w("IFCREPRESENTATIONMAP", [ref(eixo0), ref(w("IFCSHAPEREPRESENTATION", [ref(ctxCorpo), S("Body"), S("Brep"), L(itens.map(ref))]))]);
+if (!opMm) opMm = w("IFCCARTESIANTRANSFORMATIONOPERATOR3D", ["$", "$", ref(origem3), R(0.001), "$"]);
+return [w("IFCMAPPEDITEM", [ref(rm), ref(opMm)])];
+}
 Rd.conexoes.forEach(function (c) {
 var S0 = BI.SISTEMAS[c.sistema] || {}, gr = S0.grupo, M = BI.MATERIAIS[c.material] || {};
 var km = gr === "eletrica" ? "conexaoEletroduto" : (gr === "bandeja" ? "conexaoBandeja" : (gr === "ar" ? "conexaoDuto" : "conexaoTubo")), ent = MAPA_REVIT[km].ifc;
@@ -19806,15 +19863,18 @@ var CXE = gr === "eletrica" || gr === "bandeja";
 var pre = (CXE ? CONEXAO_ELET : CONEXAO_TUBO)[c.tipo];
 if (!pre) { pre = "USERDEFINED"; if (c.tipo !== "luva") avisos.push("conexão " + c.id + " (" + c.tipo + "): sem PredefinedType IFC — foi como USERDEFINED"); }
 var nv = nivelDe(c.y), O = W2I([c.x, c.y, c.z], nv), r = raioConexao(c);
-var nomeM = M.nome || c.material, itens = bolsasConexao(c, trechoPorId).map(function (d) {
+var nomeM = M.nome || c.material, corS = parseInt(String(S0.cor).slice(1), 16);
+var itens = itensCx[c.id] ? itensCx[c.id].slice() : [], tipoRep = itens.length ? "MappedRepresentation" : "SweptSolid";
+if (itens.length) itens = emMetros(itens);
+if (!itens.length) itens = bolsasConexao(c, trechoPorId).map(function (d) {
 var di = cena2ifc(d), x = Math.abs(di[2]) < 0.9 ? norm(cross([0, 0, 1], di)) : [1, 0, 0];
 var s = extrudado(circulo(r), pos3(mul(di, -r), di, x), r + BOLSA * r);
-pintar(s, nomeM, parseInt(String(S0.cor).slice(1), 16)); return s;
+pintar(s, nomeM, corS); return s;
 });
 var nomeC = (c.nome || c.tipo) + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "");
 var sem = "cx:" + c.sistema + "@" + R(c.x) + "," + R(c.y) + "," + R(c.z) + ":" + c.tipo + ":" + c.dn + ":" + (c.dn2 || 0);
 var plC = placement(nv.pl, O);
-var el = peca(c.id, ent, nomeC + " (conexão automática)", nomeC, plC, forma(itens, "SweptSolid"), [E(pre)], c.y, nv, { semente: sem, mapa: km });
+var el = peca(c.id, ent, nomeC + " (conexão automática)", nomeC, plC, forma(itens, tipoRep), [E(pre)], c.y, nv, { semente: sem, mapa: km });
 el._pl = plC;
 ligarMaterial(el, nomeM);
 tipoMEP(ent, nomeC, pre, el);

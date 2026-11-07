@@ -50,8 +50,11 @@
  *
  * INTEROPERABILIDADE (08/10/2026, ida e volta real no Revit 2027 — provas em
  * tools/): a classe de cada peça sai do MAPA_REVIT,
- * conferido no arquivo de mapeamento do próprio Revit; a conexão de tubo é
- * corpo de varredura (bolsas), não Brep; todo contorno de perfil passa pelo
+ * conferido no arquivo de mapeamento do próprio Revit; a conexão de tubo é a
+ * peça de catálogo da TELA (HidGeo) em IfcFacetedBrep, em mm num IfcMappedItem
+ * de escala 0,001 (06/11/2026 — antes ia em bolsas de varredura, o "bloco
+ * espetado"; o Revit 2027 traz IfcPipeFitting sem geometria em qualquer
+ * representação, ver o comentário em instalacoes()); todo contorno de perfil passa pelo
  * poligonoSimples (o Revit ignora polilinha que volta sobre si); a escada
  * segue a estrutura IFC4 usual; o IfcGrid tem sempre U e V.
  *
@@ -2049,6 +2052,65 @@
       }
       var trechoPorId = {}; Rd.trechos.forEach(function (t) { trechoPorId[t.id] = t; });
       var infoTrecho = {}, infoCx = {}, infoPeca = {}, infoAc = {};   /* P12: elemento + placement de cada peça da rede (para as portas) */
+      /* ⚠ CONEXÃO COM A FORMA DA TELA (06/11/2026, pedido do Rogério: "parametrizar nosso IFC para ele sair corretamente,
+         que não saia nada destoado"). Defeito: o projeto aberto no app mostrava joelho, curva, tê, junção, luva e bucha com
+         a forma de catálogo (js/biminstgeo.js: bolsa, anel, corpo curvo); o IFC exportado e reaberto mostrava cada conexão
+         como um BLOCO ESPETADO — aqui saía uma "bolsa" cilíndrica GORDA por ramo (raio 1,45 × DN/2) que começava r ATRÁS
+         do centro: no joelho 45°, na curva e na junção as costas desses cilindros furavam o lado de fora da peça e o nó
+         virava uma estrela de tocos; o tê com redução e a luva da ponta somavam mais tocos no mesmo nó.
+         Agora a conexão sai com a MESMA malha da tela: o nó é montado pelo HidGeo.no() com os mesmos agrupamentos do
+         js/biminstui.js (lugar + sistema; peça principal + redução + luva da ponta), e cada casca fechada da malha vira
+         um IfcFacetedBrep com as faces planas juntadas (a regra do cabeçalho: nunca IfcTriangulatedFaceSet).
+         Revit 2027: o "Abrir IFC" leva IfcPipeFitting para "Linha de centro" SEM geometria qualquer que seja a
+         representação — inclusive a do IFC exportado pelo próprio Revit (prova de 09/10/2026,
+         docs/revit-paridade/LIMITACOES-IMPORTADOR-IFC.md); a varredura de bolsas não fazia a peça chegar lá. Trocar para
+         Brep não perde nada no Revit e acerta a forma em todo leitor que lê geometria (o próprio app, Navisworks, Solibri,
+         BIMcollab, IfcOpenShell). Conexão sem forma de catálogo (duto, eletrocalha, material sem junta) e qualquer falha
+         do motor da forma continuam nas bolsas de varredura abaixo. Prova: tools/test-ifc-conexoes-forma.js.
+         ⚠ O TUBO ENTRA NA BOLSA, como na tela: cada conexão diz quanto o tubo ENCURTA para entrar nela (recuos do
+         HidGeo.no, os mesmos do js/biminstui.js). Sem isso, com a conexão de verdade, o tubo ia até o vértice do nó e furava
+         a curva longa por fora (o canto vivo dos dois tubos aparecia do lado de fora da curva). Só o SÓLIDO encurta: o
+         placement, o comprimento (Qto) e as portas continuam no nó — a rede e o orçamento não mudam. Só encurta o tubo
+         do nó que SAIU com a forma da tela (nó que caiu nas bolsas: tubo inteiro, como antes). No Revit a conexão chega
+         como linha de centro, então lá o tubo pode mostrar um vão até o nó — não testado (LIMITACOES-IMPORTADOR-IFC.md).
+         ⚠ EM MILÍMETROS, num IfcMappedItem com escala 0,001: a peça tem faces de décimo de milímetro (chanfro da ponta,
+         friso da bolsa, anel) e o web-ifc 0.0.44 — o leitor do próprio app — usa tolerância ABSOLUTA ao triangular a face
+         (área ~1e-6): em metros ele jogava fora 48 de 702 faces do joelho 45° DN 40 ("No basis found for brep!", furinhos
+         na peça); a mesma face escrita em mm passa inteira (medido 06/11/2026, 702/702). O sólido continua sendo
+         IfcFacetedBrep — só a escala do desenho muda; quem lê aplica o operador (IFC4, IfcCartesianTransformationOperator3D). */
+      var HG = opts.semFormaConexao ? null : dep("HidGeo", "./biminstgeo.js"), geoCx = {}, recuoT = {}, itensCx = {};
+      /* ⚠ O NÍVEL DE DETALHE É O DA TELA (revisão de 06/11/2026): o js/biminstui.js desenha a rede com mais de 700
+         trechos + conexões em "longe" (menos segmentos por volta). Com "perto" fixo aqui, a obra grande saía no IFC com
+         mais faces do que a própria tela mostra — arquivo maior e conexão diferente da que a pessoa viu.
+         Prova dos dois lados do limiar: tools/test-ifc-conexoes-forma.js [7]. */
+      var lodCx = opts.lodConexao || ((Rd.trechos.length + Rd.conexoes.length) > 700 ? "longe" : "perto");
+      if (HG && HG.no) {
+        var nosCx = {}, ordemCx = [];
+        Rd.conexoes.forEach(function (c) { var k = c.x + "," + c.y + "," + c.z + "|" + c.sistema; if (!nosCx[k]) { nosCx[k] = []; ordemCx.push(k); } nosCx[k].push(c); });
+        ordemCx.forEach(function (k) {
+          var lista = nosCx[k], M0 = BI.MATERIAIS[lista[0].material] || {}, rNo = null;
+          if (M0.secao) return;   /* duto/eletrocalha: a tela também não tem forma de catálogo */
+          try { rNo = HG.no(lista, trechoPorId, { lod: lodCx, tol: BI.TOL }); } catch (eNo) { rNo = null; }
+          if (!rNo) return;
+          rNo.pecas.forEach(function (pc) { geoCx[pc.id] = pc; });
+          /* ⚠ O NÓ INTEIRO OU NADA (revisão de 06/11/2026). Os Breps saem AQUI, antes dos tubos, porque o tubo só pode
+             encurtar (entrar na bolsa) se a conexão daquele nó de fato saiu com a forma da tela. Defeito que isto impede:
+             a malha de uma peça falhava (exceção no meio do brepsDaTela) e derrubava a exportação inteira; e, se caísse
+             nas bolsas de varredura, o tubo já tinha sido encurtado pelo recuo — sobrava um VÃO entre o tubo e a bolsa
+             gorda. Agora: falhou qualquer peça do nó → o nó todo volta às bolsas antigas e os tubos dele vão inteiros,
+             como antes desta mudança; a exportação continua. */
+          var feitos = {}, inteiro = true;
+          try {
+            lista.forEach(function (c) {
+              var Sc = BI.SISTEMAS[c.sistema] || {}, Mc = BI.MATERIAIS[c.material] || {};
+              var its = geoCx[c.id] ? brepsDaTela(geoCx[c.id], [num(c.x, 0), num(c.y, 0), num(c.z, 0)], Mc.nome || c.material, parseInt(String(Sc.cor).slice(1), 16)) : [];
+              if (its.length) feitos[c.id] = its; else inteiro = false;
+            });
+          } catch (eBr) { inteiro = false; avisos.push("conexão " + lista.map(function (c) { return c.id; }).join("+") + ": a forma de catálogo não pôde ser montada (" + (eBr && eBr.message) + ") — foi no formato simplificado"); }
+          if (inteiro) Object.keys(feitos).forEach(function (id) { itensCx[id] = feitos[id]; });
+          if (inteiro) Object.keys(rNo.recuos || {}).forEach(function (kk) { recuoT[kk] = Math.max(recuoT[kk] || 0, rNo.recuos[kk]); });
+        });
+      }
       Rd.trechos.forEach(function (t) {
         var S0 = BI.SISTEMAS[t.sistema], M = BI.MATERIAIS[t.material] || {}, gr = S0.grupo, ret = M.secao === "retangular";
         /* a classe e o PredefinedType vêm do MAPA_REVIT (eletroduto → Conduites;
@@ -2062,7 +2124,11 @@
            (cilindro de raio DN/2, mínimo 8 mm; duto largura × altura) */
         var pl = placement(nv.pl, W2I(a, nv), cena2ifc(us), cena2ifc(ws));
         var raio = Math.max(num(t.dn, 0) / 2000, 0.008);
-        var sol = extrudado(ret ? retangulo(t.larg, t.alt) : circulo(raio), pos3([0, 0, 0]), Lg);
+        /* o tubo entra na bolsa da conexão (recuoT; a mesma conta do HidGeo.tubo: sobra ao menos 2 mm) */
+        var rc1 = ret ? 0 : Math.max(0, recuoT[t.id + ":0"] || 0), rc2 = ret ? 0 : Math.max(0, recuoT[t.id + ":1"] || 0);
+        if (rc1 + rc2 > Lg - 0.002) { var kRc = Math.max(0, (Lg - 0.002) / Math.max(1e-9, rc1 + rc2)); rc1 *= kRc; rc2 *= kRc; }
+        var LgS = Lg - rc1 - rc2;
+        var sol = extrudado(ret ? retangulo(t.larg, t.alt) : circulo(raio), pos3([0, 0, rc1]), LgS);
         var nomeM = M.nome || t.material; pintar(sol, nomeM, parseInt(String(S0.cor).slice(1), 16));
         var dnTxt = ret ? Math.round(t.larg * 100) + "×" + Math.round(t.alt * 100) + " cm" : "DN " + t.dn;
         var el = peca(t.id, ent, S0.nome + " · " + dnTxt + " (" + t.id + ")", nomeM + " " + dnTxt, pl, forma([sol], "SweptSolid"), [E(pre)], Math.min(a[1], b[1]), nv, { mapa: km });
@@ -2084,9 +2150,44 @@
         pset(el, "OrcaPRO_Quantitativo", [["Unidade", "IFCLABEL", q.unidade], ["Quantidade", "IFCREAL", q.quantidade], ["CodigoOrcamento", "IFCIDENTIFIER", cods[t.id] || null]]);
         if (cods[t.id]) ligarCodigos(el, [cods[t.id]], "SINAPI");
         origemPset(el, [["Modelador", "IFCLABEL", "B5"]]);
-        el.comprimento = t.comprimento; el.inclinacao = t.inclinacao; el.volumeGeometria = r6(area * Lg);
+        el.comprimento = t.comprimento; el.inclinacao = t.inclinacao; el.volumeGeometria = r6(area * LgS);
         noSistema(t.sistema, el);
       });
+      /* as cascas fechadas da malha da tela (mundo, Y para cima) → IfcFacetedBrep EM MM no placement da conexão (origem no nó).
+         As posições são SOLDADAS (1e-7 m, a régua do tools/test-hid-geo.js) para as faces planas se juntarem pelas arestas. */
+      function brepsDaTela(gx, C, nomeM, corS) {
+        var out = [];
+        arr(gx.partes).forEach(function (pt) {
+          var ml = pt && pt.malha; if (!ml || !ml.pos || !ml.idx) return;
+          var cascas = arr(ml.cascas).length ? ml.cascas : [[0, ml.idx.length]];
+          var ap = HG.aparencia ? HG.aparencia(null, null, pt.papel) : null, outroPapel = pt.papel && pt.papel !== "corpo" && ap && ap.chave === pt.papel;
+          cascas.forEach(function (cs) {
+            var v = [], f = [], mapa = {}, i;
+            for (i = cs[0]; i < cs[1]; i++) {
+              var q = ml.idx[i], x = ml.pos[3 * q] - C[0], y = ml.pos[3 * q + 1] - C[1], z = ml.pos[3 * q + 2] - C[2];
+              var key = Math.round(x * 1e7) + "," + Math.round(y * 1e7) + "," + Math.round(z * 1e7);
+              if (mapa[key] == null) { mapa[key] = v.length / 3; v.push(x * 1000, y * 1000, z * 1000); }
+              f.push(mapa[key]);
+            }
+            /* o triângulo que a solda encolheu a uma aresta não é face */
+            var f2 = [];
+            for (i = 0; i < f.length; i += 3) if (f[i] !== f[i + 1] && f[i + 1] !== f[i + 2] && f[i] !== f[i + 2]) f2.push(f[i], f[i + 1], f[i + 2]);
+            if (f2.length < 12) return;
+            var b = brep({ v: v, f: f2 }, 0); if (!b) return;
+            if (outroPapel) pintar(b, ap.nome.charAt(0).toUpperCase() + ap.nome.slice(1), parseInt(String(ap.cor).slice(1), 16));   /* anel de borracha, bucha de latão: a cor da tela */
+            else pintar(b, nomeM, corS);
+            out.push(b);
+          });
+        });
+        return out;
+      }
+      /* o corpo da conexão: os Breps em mm → IfcRepresentationMap (na origem) + IfcMappedItem com escala 0,001 */
+      var opMm = null;
+      function emMetros(itens) {
+        var rm = w("IFCREPRESENTATIONMAP", [ref(eixo0), ref(w("IFCSHAPEREPRESENTATION", [ref(ctxCorpo), S("Body"), S("Brep"), L(itens.map(ref))]))]);
+        if (!opMm) opMm = w("IFCCARTESIANTRANSFORMATIONOPERATOR3D", ["$", "$", ref(origem3), R(0.001), "$"]);
+        return [w("IFCMAPPEDITEM", [ref(rm), ref(opMm)])];
+      }
       Rd.conexoes.forEach(function (c) {
         var S0 = BI.SISTEMAS[c.sistema] || {}, gr = S0.grupo, M = BI.MATERIAIS[c.material] || {};
         var km = gr === "eletrica" ? "conexaoEletroduto" : (gr === "bandeja" ? "conexaoBandeja" : (gr === "ar" ? "conexaoDuto" : "conexaoTubo")), ent = MAPA_REVIT[km].ifc;   /* P12: eletrocalha */
@@ -2094,21 +2195,21 @@
         var pre = (CXE ? CONEXAO_ELET : CONEXAO_TUBO)[c.tipo];
         if (!pre) { pre = "USERDEFINED"; if (c.tipo !== "luva") avisos.push("conexão " + c.id + " (" + c.tipo + "): sem PredefinedType IFC — foi como USERDEFINED"); }
         var nv = nivelDe(c.y), O = W2I([c.x, c.y, c.z], nv), r = raioConexao(c);
-        /* CORPO SÓLIDO DE VARREDURA (SweptSolid), como o tubo, que o importador já
-           lê: uma bolsa cilíndrica por ramo, do centro para o lado de cada
-           trecho. A bola em Brep (a da tela) chegou no Revit 2027 SEM
-           GEOMETRIA e na categoria "Linha de centro" (ida e volta 08/10/2026). */
-        var nomeM = M.nome || c.material, itens = bolsasConexao(c, trechoPorId).map(function (d) {
+        var nomeM = M.nome || c.material, corS = parseInt(String(S0.cor).slice(1), 16);
+        var itens = itensCx[c.id] ? itensCx[c.id].slice() : [], tipoRep = itens.length ? "MappedRepresentation" : "SweptSolid";   /* os Breps já saíram no nó (acima, antes dos tubos) */
+        if (itens.length) itens = emMetros(itens);
+        /* SEM FORMA DE CATÁLOGO: corpo de varredura — uma bolsa cilíndrica por ramo, do centro para o lado de cada trecho */
+        if (!itens.length) itens = bolsasConexao(c, trechoPorId).map(function (d) {
           var di = cena2ifc(d), x = Math.abs(di[2]) < 0.9 ? norm(cross([0, 0, 1], di)) : [1, 0, 0];
           var s = extrudado(circulo(r), pos3(mul(di, -r), di, x), r + BOLSA * r);
-          pintar(s, nomeM, parseInt(String(S0.cor).slice(1), 16)); return s;
+          pintar(s, nomeM, corS); return s;
         });
         var nomeC = (c.nome || c.tipo) + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "");
         /* a conexão é DEDUZIDA a cada replay e o id dela (cx0, cx1…) muda quando
            a rede muda: o GlobalId sai do lugar + tipo + DN (reexportar não troca) */
         var sem = "cx:" + c.sistema + "@" + R(c.x) + "," + R(c.y) + "," + R(c.z) + ":" + c.tipo + ":" + c.dn + ":" + (c.dn2 || 0);
         var plC = placement(nv.pl, O);
-        var el = peca(c.id, ent, nomeC + " (conexão automática)", nomeC, plC, forma(itens, "SweptSolid"), [E(pre)], c.y, nv, { semente: sem, mapa: km });
+        var el = peca(c.id, ent, nomeC + " (conexão automática)", nomeC, plC, forma(itens, tipoRep), [E(pre)], c.y, nv, { semente: sem, mapa: km });
         el._pl = plC;
         ligarMaterial(el, nomeM);
         tipoMEP(ent, nomeC, pre, el);
