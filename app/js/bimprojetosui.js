@@ -101,7 +101,12 @@
       var g = G(), b = B(), p = this._proj, ops = [], niv = [], mods = [];
       try { ops = (b && b.editarOps) ? b.editarOps() : []; } catch (e) {}
       try { niv = g._nivLer().map(camposNivel).sort(porId); } catch (e2) {}
-      try { mods = ((b && b.modelos) || []).filter(function (m) { return m && !m.sintetico; }).map(function (m) { return String(m.nome); }).sort(); } catch (e3) {}
+      /* ⚠ o IFC que a OBRA trouxe sozinha ao abrir o projeto (Gestao._bimTrazerAusentes)
+         não é alteração do projeto: sem esta exclusão, abrir o .opbim e esperar os
+         modelos da obra chegarem já deixava o projeto "não salvo" (o ● e a pergunta
+         ao fechar) sem a pessoa ter mexido em nada */
+      var trz = (g && g._bimTrazidos && String(g._bimTrazidos.obra) === String((p ? p.obraId : (g && g._bimSel)) || "")) ? g._bimTrazidos.nomes : null;
+      try { mods = ((b && b.modelos) || []).filter(function (m) { return m && !m.sintetico && !(trz && trz[String(m.nome)]); }).map(function (m) { return String(m.nome); }).sort(); } catch (e3) {}
       return P().assinatura({ ops: ops, niveis: niv, d2: P().podarVazios(d2DaObra(p ? p.obraId : (g && g._bimSel) || "geral")), modelos: mods });
     },
     /* nunca gravado = sujo (o arquivo não existe); senão, mudou desde a gravação? */

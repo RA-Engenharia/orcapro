@@ -589,7 +589,7 @@ var nome = txt(d.nome);
 var mid = txt(d.modeloId) || modeloIdDerivado(obraId, nome);
 if (!mid || !nome) return null;
 var ant = d.anterior || null;
-return {
+var out = {
 id: mid,
 modeloId: mid,
 obraId: obraId,
@@ -607,6 +607,11 @@ versao: ant ? (num(ant.versao) || 1) + (txt(d.arquivoId) && txt(d.arquivoId) !==
 importadoEm: (ant && txt(ant.importadoEm)) || txt(d.em),
 atualizadoEmArquivo: txt(d.em)
 };
+var nv = d.nuvem || (ant && ant.nuvem) || null;
+if (nv && txt(nv.arquivoId) && txt(nv.arquivoId) === out.arquivoId) {
+out.nuvem = { arquivoId: txt(nv.arquivoId), bytes: num(nv.bytes), em: txt(nv.em) };
+}
+return out;
 }
 function tomadasDe(regs, obraId) {
 var out = {};
@@ -974,8 +979,137 @@ if (!(ocupadaPor && a && ocupadaPor !== a)) return vaga;
 }
 return cunhar(m.obraId, nome, arquivoId, m.conteudoDaVaga || {});
 }
+var REF_PREFIXO = "bimifc:";
+var BYTES_MAX_NUVEM = 500 * 1024 * 1024;
+var MODELOS_MAX = 8;
+function hashDe(s) {
+try { if (global.Util && global.Util.sha256hex) return global.Util.sha256hex(String(s)); } catch (e) {}
+return "";
+}
+function refNuvem(empresaId, obraId, modeloId) {
+var e = txt(empresaId) || "default", o = txt(obraId), m = txt(modeloId);
+if (!o || !m) return "";
+var r = REF_PREFIXO + e + ":" + o + ":" + m;
+if (r.length <= 200) return r;
+var h = hashDe(m);
+if (!h) return "";
+return REF_PREFIXO + e + ":" + o + ":h" + h.slice(0, 32);
+}
+function naNuvem(reg) {
+return !!(reg && reg.nuvem && txt(reg.nuvem.arquivoId) && txt(reg.nuvem.arquivoId) === txt(reg.arquivoId));
+}
+function marcarNuvem(reg, info) {
+if (!reg) return null;
+info = info || {};
+var out = {};
+for (var k in reg) if (Object.prototype.hasOwnProperty.call(reg, k)) out[k] = reg[k];
+out.nuvem = { arquivoId: txt(info.arquivoId || reg.arquivoId), bytes: num(info.bytes), em: txt(info.em) };
+return out;
+}
+function planoTrazer(ausentes, opts) {
+opts = opts || {};
+var tem = {};
+(opts.emCache || []).forEach(function (a) { tem[txt(a)] = 1; });
+var vagas = (opts.vagas === undefined || opts.vagas === null) ? MODELOS_MAX : Math.max(0, num(opts.vagas));
+var aparelho = [], nuvem = [], faltam = [];
+var lista = (ausentes || []).filter(Boolean).slice().sort(function (x, y) { return txt(x.nome) < txt(y.nome) ? -1 : 1; });
+lista.forEach(function (r) {
+var a = txt(r.arquivoId), nome = txt(r.nome) || txt(r.modeloId);
+if (!a) { faltam.push({ reg: r, nome: nome, motivo: "a obra tem o nome, mas nunca recebeu o arquivo — arraste-o no visualizador" }); return; }
+var fonte = "";
+if (tem[a]) fonte = "aparelho";
+else if (opts.nuvemAtiva && (naNuvem(r) || !opts.soGuardados)) fonte = "nuvem";
+if (!fonte) {
+var mot;
+if (!opts.nuvemAtiva) mot = naNuvem(r)
+? "está guardado na nuvem da obra, mas este aparelho não alcança a nuvem agora (licença ativa e internet) — tente de novo ou arraste o arquivo"
+: "não está neste aparelho nem guardado na nuvem da obra — arraste o arquivo uma vez e use ☁ Guardar na obra";
+else mot = "não foi guardado na nuvem da obra — arraste o arquivo uma vez e use ☁ Guardar na obra";
+faltam.push({ reg: r, nome: nome, motivo: mot });
+return;
+}
+if (vagas <= 0) { faltam.push({ reg: r, nome: nome, motivo: "o visualizador abre até " + MODELOS_MAX + " modelos ao mesmo tempo — feche um para abrir este" }); return; }
+vagas--;
+(fonte === "aparelho" ? aparelho : nuvem).push(r);
+});
+return { aparelho: aparelho, nuvem: nuvem, faltam: faltam };
+}
+function conferirBaixado(reg, versaoId) {
+var esp = txt(reg && reg.arquivoId), veio = txt(versaoId);
+if (!esp) return { ok: false, motivo: "a obra não diz qual versão espera" };
+if (!veio) return { ok: false, motivo: "não consegui conferir o arquivo baixado" };
+if (esp !== veio) return { ok: false, motivo: "a cópia guardada na nuvem é de outra versão do arquivo — arraste a versão atual e use ☁ Guardar na obra" };
+return { ok: true, motivo: "" };
+}
+function paraGuardar(regs, obraId, abertos, maxBytes) {
+var teto = num(maxBytes) || BYTES_MAX_NUVEM;
+var meus = daObra(regs, obraId), porArq = {};
+meus.forEach(function (r) { if (txt(r.arquivoId)) porArq[txt(r.arquivoId)] = r; });
+var guardar = [], grandes = [], vistos = {};
+(abertos || []).forEach(function (m) {
+var a = txt(m && m.arquivoId), r = a ? porArq[a] : null;
+if (!r || vistos[a] || naNuvem(r)) return;
+vistos[a] = 1;
+var b = num(m.bytes);
+if (!(b > 0)) return;
+if (b > teto) grandes.push({ reg: r, nome: txt(r.nome), bytes: b });
+else guardar.push({ reg: r, nome: txt(r.nome), bytes: b, aberto: m });
+});
+return { guardar: guardar, grandes: grandes };
+}
+var BYTES_PERGUNTAR_AUTO = 50 * 1024 * 1024;
+function separarGrandes(lista, limite) {
+var teto = num(limite) || BYTES_PERGUNTAR_AUTO, pequenos = [], grandes = [];
+(lista || []).filter(Boolean).forEach(function (r) {
+var b = num(r.nuvem && r.nuvem.bytes);
+if (b > 0 && b <= teto) pequenos.push(r);
+else grandes.push({ reg: r, nome: txt(r.nome) || txt(r.modeloId), bytes: b > 0 ? b : 0 });
+});
+return { pequenos: pequenos, grandes: grandes };
+}
+function mbTxt(b) {
+var mb = num(b) / 1048576;
+if (!(mb > 0)) return "tamanho não informado";
+return (mb >= 10 ? String(Math.round(mb)) : String(Math.round(mb * 10) / 10).replace(".", ",")) + " MB";
+}
+function perguntaGrandes(grandes) {
+var g = grandes || [], tot = 0, conhecido = true;
+g.forEach(function (x) { if (num(x.bytes) > 0) tot += num(x.bytes); else conhecido = false; });
+return "Esta obra tem " + g.length + (g.length > 1 ? " modelos guardados" : " modelo guardado") + " na nuvem acima de "
++ Math.round(BYTES_PERGUNTAR_AUTO / 1048576) + " MB:\n\n"
++ g.map(function (x) { return "• " + x.nome + " (" + mbTxt(x.bytes) + ")"; }).join("\n")
++ "\n\nBaixar agora" + (conhecido && g.length > 1 ? " (" + mbTxt(tot) + " no total)" : "") + "? Em rede de celular isso gasta o pacote de dados."
++ "\n\nOK = baixar · Cancelar = só os menores; os grandes ficam no botão “Abrir todos os modelos da obra”.";
+}
+function motivoRede(msg) {
+var m = txt(msg);
+if (!m || /failed to fetch|networkerror|network request failed|load failed|err_internet_disconnected|err_network/i.test(m)) return "sem internet agora";
+return m;
+}
+function fraseTrazer(res) {
+res = res || {};
+var p = [], ap = num(res.aparelho), nv = num(res.nuvem), f = res.faltam || [];
+if (ap) p.push(ap + (ap > 1 ? " modelos abertos do que este aparelho guardava" : " modelo aberto do que este aparelho guardava"));
+if (nv) p.push(nv + (nv > 1 ? " modelos baixados da nuvem da obra" : " modelo baixado da nuvem da obra"));
+var s = p.join(" e ");
+if (f.length) s += (s ? ". " : "") + "Faltam " + f.length + ": " + f.map(function (x) { return x.nome + " (" + x.motivo + ")"; }).join("; ");
+return s ? s + "." : "Todos os modelos desta obra já estão abertos.";
+}
 var BimFed = {
 ENTIDADE: ENTIDADE,
+refNuvem: refNuvem,
+naNuvem: naNuvem,
+marcarNuvem: marcarNuvem,
+planoTrazer: planoTrazer,
+conferirBaixado: conferirBaixado,
+paraGuardar: paraGuardar,
+fraseTrazer: fraseTrazer,
+separarGrandes: separarGrandes,
+perguntaGrandes: perguntaGrandes,
+motivoRede: motivoRede,
+BYTES_PERGUNTAR_AUTO: BYTES_PERGUNTAR_AUTO,
+BYTES_MAX_NUVEM: BYTES_MAX_NUVEM,
+MODELOS_MAX: MODELOS_MAX,
 normalizarNome: normalizarNome,
 modeloIdDerivado: modeloIdDerivado,
 registro: registro,
@@ -201466,7 +201600,8 @@ assinaturaAtual: function () {
 var g = G(), b = B(), p = this._proj, ops = [], niv = [], mods = [];
 try { ops = (b && b.editarOps) ? b.editarOps() : []; } catch (e) {}
 try { niv = g._nivLer().map(camposNivel).sort(porId); } catch (e2) {}
-try { mods = ((b && b.modelos) || []).filter(function (m) { return m && !m.sintetico; }).map(function (m) { return String(m.nome); }).sort(); } catch (e3) {}
+var trz = (g && g._bimTrazidos && String(g._bimTrazidos.obra) === String((p ? p.obraId : (g && g._bimSel)) || "")) ? g._bimTrazidos.nomes : null;
+try { mods = ((b && b.modelos) || []).filter(function (m) { return m && !m.sintetico && !(trz && trz[String(m.nome)]); }).map(function (m) { return String(m.nome); }).sort(); } catch (e3) {}
 return P().assinatura({ ops: ops, niveis: niv, d2: P().podarVazios(d2DaObra(p ? p.obraId : (g && g._bimSel) || "geral")), modelos: mods });
 },
 sujo: function () {

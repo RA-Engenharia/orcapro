@@ -104,7 +104,7 @@
     var mid = txt(d.modeloId) || modeloIdDerivado(obraId, nome);
     if (!mid || !nome) return null;
     var ant = d.anterior || null;
-    return {
+    var out = {
       id: mid,
       modeloId: mid,
       obraId: obraId,
@@ -128,6 +128,18 @@
       importadoEm: (ant && txt(ant.importadoEm)) || txt(d.em),
       atualizadoEmArquivo: txt(d.em)
     };
+    /* ⚠ A MARCA DA CÓPIA NA NUVEM SÓ ATRAVESSA SE O CONTEÚDO É O MESMO. Reabrir
+       o mesmo arquivo reconstrói o registro aqui; sem carregar a marca, o
+       painel voltava a dizer "só neste aparelho" de um IFC que já está
+       guardado. Mas versão nova (outro arquivoId) NÃO herda: a cópia guardada
+       é da anterior, e dizer "guardado" seria mandar o outro aparelho abrir a
+       versão velha. O campo só existe quando há marca — os registros de antes
+       não mudam de forma. */
+    var nv = d.nuvem || (ant && ant.nuvem) || null;
+    if (nv && txt(nv.arquivoId) && txt(nv.arquivoId) === out.arquivoId) {
+      out.nuvem = { arquivoId: txt(nv.arquivoId), bytes: num(nv.bytes), em: txt(nv.em) };
+    }
+    return out;
   }
 
   /* as vagas ja ocupadas na obra, com o conteudo de cada uma */
@@ -717,8 +729,220 @@
     return cunhar(m.obraId, nome, arquivoId, m.conteudoDaVaga || {});
   }
 
+  /* =====================================================================
+   * OS ARQUIVOS DA OBRA EM OUTRO APARELHO (06/11/2026)
+   *
+   * ⚠ O DEFEITO, MEDIDO NUMA OBRA REAL. A obra tinha cinco IFC
+   *   registrados (estrutura, madeira, fundação, volumetria, hidrossanitário).
+   *   O dono abriu o .opbim da obra e viu só a modelagem: o painel listava os
+   *   cinco como "não estão abertos neste aparelho" e mandava arrastar. Dois
+   *   buracos juntos:
+   *     1. abrir o .opbim não chamava o restaurar — nem o que estava guardado
+   *        NESTE aparelho (cache de geometria) voltava;
+   *     2. o arquivo IFC nunca ia para lugar nenhum fora do aparelho onde foi
+   *        arrastado. A lista da obra (`bim_modelos`) sincroniza; o arquivo,
+   *        não. Outro aparelho sabia o nome e não tinha de onde tirar.
+   *
+   * O que já existia e foi reaproveitado: a nuvem de arquivos da obra
+   * (js/arquivosnuvem.js → /api/arquivos no VPS → Cloudflare R2), a mesma dos
+   * Documentos da obra, com pasta "bim", 500 MB por arquivo e o espaço do
+   * plano. Nenhuma rota nova.
+   *
+   * ⚠ POR QUE A REFERÊNCIA É A VAGA (modeloId) E NÃO O CONTEÚDO. A versão nova
+   *   do mesmo arquivo SUBSTITUI a cópia na nuvem (o servidor troca quando o
+   *   ref se repete), em vez de empilhar uma cópia de 300 MB por revisão no
+   *   espaço do cliente. A conferência de conteúdo vem depois, no download
+   *   (`conferirBaixado`): o que chega tem de ser o arquivoId que a obra
+   *   espera, senão não abre.
+   * ===================================================================== */
+  var REF_PREFIXO = "bimifc:";
+  /* o mesmo teto do servidor (server/vps/arquivos-srv.js MAX_ARQUIVO): acima
+     disso ele responde 413, e é melhor dizer antes de mandar 600 MB à toa */
+  var BYTES_MAX_NUVEM = 500 * 1024 * 1024;
+  /* o viewer abre no máximo 8 modelos (memória de vídeo, js/bim.js carregarIFC) */
+  var MODELOS_MAX = 8;
+
+  function hashDe(s) {
+    try { if (global.Util && global.Util.sha256hex) return global.Util.sha256hex(String(s)); } catch (e) {}
+    return "";
+  }
+
+  /* ⚠ A REFERÊNCIA LEVA A EMPRESA E A OBRA. O espaço no servidor já é por
+     empresa (tenant = licença), mas a mesma vaga pode existir em duas obras
+     com o mesmo nome de arquivo — e sem a obra no ref, a cópia de uma
+     substituiria a da outra. O servidor corta o ref em 240 caracteres ANTES
+     de tirar o id, e o aparelho tira o id do ref inteiro: ref longo daria ids
+     diferentes nas duas pontas, e o download nunca acharia o envio. Por isso
+     o nome longo vira hash. */
+  function refNuvem(empresaId, obraId, modeloId) {
+    var e = txt(empresaId) || "default", o = txt(obraId), m = txt(modeloId);
+    if (!o || !m) return "";
+    var r = REF_PREFIXO + e + ":" + o + ":" + m;
+    if (r.length <= 200) return r;
+    var h = hashDe(m);
+    if (!h) return "";               /* sem hash não há ref curto honesto */
+    return REF_PREFIXO + e + ":" + o + ":h" + h.slice(0, 32);
+  }
+
+  /* a obra diz que ESTE conteúdo está guardado na nuvem? */
+  function naNuvem(reg) {
+    return !!(reg && reg.nuvem && txt(reg.nuvem.arquivoId) && txt(reg.nuvem.arquivoId) === txt(reg.arquivoId));
+  }
+
+  function marcarNuvem(reg, info) {
+    if (!reg) return null;
+    info = info || {};
+    var out = {};
+    for (var k in reg) if (Object.prototype.hasOwnProperty.call(reg, k)) out[k] = reg[k];
+    out.nuvem = { arquivoId: txt(info.arquivoId || reg.arquivoId), bytes: num(info.bytes), em: txt(info.em) };
+    return out;
+  }
+
+  /* ---------------------------------------------------------------
+   * planoTrazer — de onde vem cada arquivo que falta na cena
+   *
+   * `ausentes`: registros da obra que não estão abertos.
+   * opts.emCache:    arquivoIds com geometria guardada NESTE aparelho
+   * opts.nuvemAtiva: a nuvem de arquivos responde (licença + servidor)
+   * opts.soGuardados: abertura AUTOMÁTICA — só busca na nuvem o que a obra
+   *                   marca como guardado; o botão tenta todos (404 é barato)
+   * opts.vagas:      quantos modelos ainda cabem na cena
+   *
+   * ⚠ O QUE NÃO VEM SAI COM O MOTIVO E COM O QUE FAZER. "Arraste-os" para
+   *   um arquivo que ninguém guardou é a frase certa; para um arquivo que
+   *   está na nuvem e só não baixou por falta de sinal, é a frase errada.
+   * ------------------------------------------------------------- */
+  function planoTrazer(ausentes, opts) {
+    opts = opts || {};
+    var tem = {};
+    (opts.emCache || []).forEach(function (a) { tem[txt(a)] = 1; });
+    var vagas = (opts.vagas === undefined || opts.vagas === null) ? MODELOS_MAX : Math.max(0, num(opts.vagas));
+    var aparelho = [], nuvem = [], faltam = [];
+    var lista = (ausentes || []).filter(Boolean).slice().sort(function (x, y) { return txt(x.nome) < txt(y.nome) ? -1 : 1; });
+    lista.forEach(function (r) {
+      var a = txt(r.arquivoId), nome = txt(r.nome) || txt(r.modeloId);
+      if (!a) { faltam.push({ reg: r, nome: nome, motivo: "a obra tem o nome, mas nunca recebeu o arquivo — arraste-o no visualizador" }); return; }
+      var fonte = "";
+      if (tem[a]) fonte = "aparelho";
+      else if (opts.nuvemAtiva && (naNuvem(r) || !opts.soGuardados)) fonte = "nuvem";
+      if (!fonte) {
+        var mot;
+        if (!opts.nuvemAtiva) mot = naNuvem(r)
+          ? "está guardado na nuvem da obra, mas este aparelho não alcança a nuvem agora (licença ativa e internet) — tente de novo ou arraste o arquivo"
+          : "não está neste aparelho nem guardado na nuvem da obra — arraste o arquivo uma vez e use ☁ Guardar na obra";
+        else mot = "não foi guardado na nuvem da obra — arraste o arquivo uma vez e use ☁ Guardar na obra";
+        faltam.push({ reg: r, nome: nome, motivo: mot });
+        return;
+      }
+      if (vagas <= 0) { faltam.push({ reg: r, nome: nome, motivo: "o visualizador abre até " + MODELOS_MAX + " modelos ao mesmo tempo — feche um para abrir este" }); return; }
+      vagas--;
+      (fonte === "aparelho" ? aparelho : nuvem).push(r);
+    });
+    return { aparelho: aparelho, nuvem: nuvem, faltam: faltam };
+  }
+
+  /* ⚠ O QUE CHEGOU DA NUVEM TEM DE SER O ARQUIVO QUE A OBRA ESPERA. A cópia
+     é por vaga: se o envio da versão nova falhou, a nuvem ainda tem a velha.
+     Abrir a velha fazia a federação registrá-la como "versão nova" — andando
+     a obra para trás e movendo os vínculos — sem ninguém perceber. */
+  function conferirBaixado(reg, versaoId) {
+    var esp = txt(reg && reg.arquivoId), veio = txt(versaoId);
+    if (!esp) return { ok: false, motivo: "a obra não diz qual versão espera" };
+    if (!veio) return { ok: false, motivo: "não consegui conferir o arquivo baixado" };
+    if (esp !== veio) return { ok: false, motivo: "a cópia guardada na nuvem é de outra versão do arquivo — arraste a versão atual e use ☁ Guardar na obra" };
+    return { ok: true, motivo: "" };
+  }
+
+  /* ---------------------------------------------------------------
+   * paraGuardar — o que está aberto aqui e a obra ainda não guardou
+   *
+   * `abertos`: [{ arquivoId, nome, bytes }] — só modelos com o ARQUIVO em
+   * memória (arrastado nesta sessão). O restaurado do cache não tem o
+   * arquivo, só a geometria convertida: não há o que subir, e ele não entra.
+   * ------------------------------------------------------------- */
+  function paraGuardar(regs, obraId, abertos, maxBytes) {
+    var teto = num(maxBytes) || BYTES_MAX_NUVEM;
+    var meus = daObra(regs, obraId), porArq = {};
+    meus.forEach(function (r) { if (txt(r.arquivoId)) porArq[txt(r.arquivoId)] = r; });
+    var guardar = [], grandes = [], vistos = {};
+    (abertos || []).forEach(function (m) {
+      var a = txt(m && m.arquivoId), r = a ? porArq[a] : null;
+      if (!r || vistos[a] || naNuvem(r)) return;
+      vistos[a] = 1;
+      var b = num(m.bytes);
+      if (!(b > 0)) return;
+      if (b > teto) grandes.push({ reg: r, nome: txt(r.nome), bytes: b });
+      else guardar.push({ reg: r, nome: txt(r.nome), bytes: b, aberto: m });
+    });
+    return { guardar: guardar, grandes: grandes };
+  }
+
+  /* ⚠ ABRIR A OBRA NÃO BAIXA 300 MB SEM PERGUNTAR (revisão de 06/11/2026).
+     A abertura automática (o .opbim da obra, a entrada no BIM) baixava tudo o
+     que a obra marca como guardado — no celular, no 4G, um IFC de estrutura
+     come o pacote de dados do mês sem a pessoa ter clicado em nada. Acima
+     deste tamanho o automático pergunta, com o tamanho na cara; o botão
+     "Abrir todos os modelos da obra" é o pedido explícito e não pergunta.
+     Tamanho desconhecido (marca antiga, sem bytes) também pergunta: não dá
+     para dizer que é pequeno. */
+  var BYTES_PERGUNTAR_AUTO = 50 * 1024 * 1024;
+  function separarGrandes(lista, limite) {
+    var teto = num(limite) || BYTES_PERGUNTAR_AUTO, pequenos = [], grandes = [];
+    (lista || []).filter(Boolean).forEach(function (r) {
+      var b = num(r.nuvem && r.nuvem.bytes);
+      if (b > 0 && b <= teto) pequenos.push(r);
+      else grandes.push({ reg: r, nome: txt(r.nome) || txt(r.modeloId), bytes: b > 0 ? b : 0 });
+    });
+    return { pequenos: pequenos, grandes: grandes };
+  }
+  function mbTxt(b) {
+    var mb = num(b) / 1048576;
+    if (!(mb > 0)) return "tamanho não informado";
+    return (mb >= 10 ? String(Math.round(mb)) : String(Math.round(mb * 10) / 10).replace(".", ",")) + " MB";
+  }
+  function perguntaGrandes(grandes) {
+    var g = grandes || [], tot = 0, conhecido = true;
+    g.forEach(function (x) { if (num(x.bytes) > 0) tot += num(x.bytes); else conhecido = false; });
+    return "Esta obra tem " + g.length + (g.length > 1 ? " modelos guardados" : " modelo guardado") + " na nuvem acima de "
+      + Math.round(BYTES_PERGUNTAR_AUTO / 1048576) + " MB:\n\n"
+      + g.map(function (x) { return "• " + x.nome + " (" + mbTxt(x.bytes) + ")"; }).join("\n")
+      + "\n\nBaixar agora" + (conhecido && g.length > 1 ? " (" + mbTxt(tot) + " no total)" : "") + "? Em rede de celular isso gasta o pacote de dados."
+      + "\n\nOK = baixar · Cancelar = só os menores; os grandes ficam no botão “Abrir todos os modelos da obra”.";
+  }
+  /* "Failed to fetch" é a frase do navegador para "não houve rede"; a pessoa
+     lê como defeito do programa. Diz o que aconteceu. */
+  function motivoRede(msg) {
+    var m = txt(msg);
+    if (!m || /failed to fetch|networkerror|network request failed|load failed|err_internet_disconnected|err_network/i.test(m)) return "sem internet agora";
+    return m;
+  }
+
+  function fraseTrazer(res) {
+    res = res || {};
+    var p = [], ap = num(res.aparelho), nv = num(res.nuvem), f = res.faltam || [];
+    if (ap) p.push(ap + (ap > 1 ? " modelos abertos do que este aparelho guardava" : " modelo aberto do que este aparelho guardava"));
+    if (nv) p.push(nv + (nv > 1 ? " modelos baixados da nuvem da obra" : " modelo baixado da nuvem da obra"));
+    var s = p.join(" e ");
+    if (f.length) s += (s ? ". " : "") + "Faltam " + f.length + ": " + f.map(function (x) { return x.nome + " (" + x.motivo + ")"; }).join("; ");
+    return s ? s + "." : "Todos os modelos desta obra já estão abertos.";
+  }
+
   var BimFed = {
     ENTIDADE: ENTIDADE,
+    /* os arquivos da obra em outro aparelho */
+    refNuvem: refNuvem,
+    naNuvem: naNuvem,
+    marcarNuvem: marcarNuvem,
+    planoTrazer: planoTrazer,
+    conferirBaixado: conferirBaixado,
+    paraGuardar: paraGuardar,
+    fraseTrazer: fraseTrazer,
+    separarGrandes: separarGrandes,
+    perguntaGrandes: perguntaGrandes,
+    motivoRede: motivoRede,
+    BYTES_PERGUNTAR_AUTO: BYTES_PERGUNTAR_AUTO,
+    BYTES_MAX_NUVEM: BYTES_MAX_NUVEM,
+    MODELOS_MAX: MODELOS_MAX,
     normalizarNome: normalizarNome,
     modeloIdDerivado: modeloIdDerivado,
     registro: registro,

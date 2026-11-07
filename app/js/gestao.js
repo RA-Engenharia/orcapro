@@ -14851,6 +14851,7 @@
     },
     _opbimAplicar: function (r) {
       var self = this, b = window.BIM, m = r.modelo || {}, obraId = this._bimSel || "geral";
+      this._bimTrazidos = null;   /* os modelos trazidos da obra contam a partir deste projeto */
       this._famConfig();
       (r.familias || []).forEach(function (f) {
         if (window.FamiliaMalha) f = FamiliaMalha.desembutir(f);   /* FAMIMPORT: a malha volta ao registro (e ao aparelho) */
@@ -14900,6 +14901,14 @@
         self._bimEdPend = { id: obraId, ops: m.edicao || [] }; self._bimEdFlush();
         self._nivArvore();
         UI.toast("Projeto \"" + r.nome + "\" aberto: " + (m.edicao || []).length + " operação(ões), " + (r.familias || []).length + " família(s), " + (r.ifcs || []).length + " IFC" + ((r.malhas || []).length ? ", " + r.malhas.length + " malha(s)" : "") + ".", "ok", 7000);
+        /* ⚠ O .opbim DA OBRA TRAZ OS MODELOS DA OBRA (06/11/2026). O .opbim leva
+           a modelagem e só os IFC que tinham o arquivo em memória ao salvar; a
+           obra pode ter outros cinco registrados. Antes, abrir o projeto
+           mostrava só a modelagem e mandava arrastar até o que ESTE aparelho
+           tinha guardado. Automático, mas só do que está guardado (aparelho ou
+           nuvem marcada) — o resto o painel lista com o motivo. Sem obra
+           ("geral") não há o que trazer. */
+        if (obraId !== "geral") { try { self._bimTrazerAusentes({ auto: true }); } catch (eTz) {} }
       })["catch"](function (e) { UI.toast("Abri só parte do projeto: " + e.message, "erro"); });
     },
     /* ---- TRAZER DE OUTROS PROGRAMAS (07/10/2026) ----
@@ -22937,7 +22946,16 @@
              o usuário procurar no escuro; o nome do arquivo ele resolve em dez
              segundos. */
           if (res.semArquivo.length) {
-            UI.toast("Falta o arquivo de: " + res.semArquivo.map(function (f) { return f.nome; }).join(", ") + ". Abra de novo pelo botão + IFC.", "aviso");
+            /* o que este aparelho não guardou pode estar na nuvem da obra: a
+               busca fala o resultado com nome e motivo. ⚠ Fora desta fila do
+               IndexedDB (setTimeout, sem devolver a promessa): o IFC baixado
+               grava a geometria na MESMA fila, que esperaria por si mesma.
+               ⚠ MODO AUTOMÁTICO (revisão de 06/11/2026): entrar no BIM é
+               abertura sem clique — só busca o que a obra marca como guardado
+               e pergunta antes de baixar arquivo grande. Tentar TODOS (inclusive
+               o que nunca subiu) é do botão "Abrir todos os modelos da obra". */
+            if (self._bimNuvemAtiva()) setTimeout(function () { try { self._bimTrazerAusentes({ auto: true }); } catch (eT) {} }, 0);
+            else UI.toast("Falta o arquivo de: " + res.semArquivo.map(function (f) { return f.nome; }).join(", ") + ". Abra de novo pelo botão + IFC.", "aviso");
           }
           /* ⚠ e o que falhou por OUTRO motivo sai com o motivo. Dizer "falta o
              arquivo" quando o problema é o teto de 8 modelos manda a pessoa
@@ -23296,6 +23314,9 @@
       var abertos = {};
       Util.arr(carregados).forEach(function (mo) {
         if (mo && mo.mid) abertos[String(mo.mid)] = 1;
+        /* a âncora da vaga é o que casa de verdade: o `mid` é o número de sessão
+           do web-ifc e nunca é igual a um modeloId (só o nome segurava) */
+        if (mo && mo.modeloId) abertos[String(mo.modeloId)] = 1;
         if (mo && mo.nome) abertos["nome:" + String(mo.nome)] = 1;
       });
       return regs.filter(function (r) {
@@ -23316,20 +23337,273 @@
       (this._BIM_DISCS || []).forEach(function (d) {
         DISC[d[0]] = String(d[1]).replace(/<[^>]*>/g, "").trim();
       });
+      /* o motivo do último "Abrir todos" desta obra, por modelo: depois de tentar,
+         a linha diz o que faltou e o que fazer — não a frase genérica de antes */
+      var ult = (this._bimTrazerRes && String(this._bimTrazerRes.obraId) === String(this._bimSel || "")) ? this._bimTrazerRes : null;
+      var motivoDe = {};
+      if (ult) (ult.faltam || []).forEach(function (f) { if (f.modeloId) motivoDe[String(f.modeloId)] = f.motivo; });
       var linhas = ausentes.map(function (r) {
-        return '<div class="flex" style="gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--linha)">'
+        var onde = window.BimFed && BimFed.naNuvem && BimFed.naNuvem(r)
+          ? '<span style="font-size:11px;color:#15803d;font-weight:700">☁ guardado na obra</span>'
+          : '<span class="muted" style="font-size:11px">só no aparelho onde foi aberto</span>';
+        var mot = motivoDe[String(r.modeloId)];
+        return '<div style="padding:4px 0;border-bottom:1px dashed var(--linha)"><div class="flex" style="gap:8px;align-items:baseline">'
           + '<b style="font-size:12.5px">' + Util.esc(r.nome || r.arquivoId || "(sem nome)") + "</b>"
           + '<span class="muted" style="font-size:11px">' + Util.esc(DISC[r.disciplina] || r.disciplina || "") + "</span>"
-          + '<span style="flex:1"></span>'
-          + '<span class="muted" style="font-size:11px">' + (r.importadoEm ? "aberto pela 1ª vez em " + Util.esc(String(r.importadoEm).slice(0, 10)) : "") + "</span></div>";
+          + '<span style="flex:1"></span>' + onde
+          + '<span class="muted" style="font-size:11px">' + (r.importadoEm ? " · aberto pela 1ª vez em " + Util.esc(String(r.importadoEm).slice(0, 10)) : "") + "</span></div>"
+          + (mot ? '<div style="font-size:11px;color:#b45309;margin-top:2px">' + Util.esc(mot) + "</div>" : "")
+          + "</div>";
       }).join("");
+      /* ⚠ O TEXTO ANTIGO DIZIA QUE O ARQUIVO "NÃO VIAJA NA SINCRONIZAÇÃO" — e
+         era verdade, mas mandava arrastar até o arquivo que este aparelho tinha
+         guardado (abrir o .opbim não chamava o restaurar) e não dava saída
+         nenhuma para o próximo aparelho. Agora: o botão busca de onde estiver,
+         e o que não estiver em lugar nenhum sai com o nome e o que fazer. */
       return '<div class="card" style="padding:9px;margin-bottom:8px;border-left:3px solid #b45309">'
-        + '<b style="font-size:12.5px">' + ausentes.length + " arquivo(s) desta obra não estão abertos neste aparelho</b>"
-        + '<p class="muted" style="font-size:11.5px;margin:4px 0 6px">Arraste-os no visualizador para reabrir. '
-        + "O desenho convertido não viaja na sincronização — são centenas de MB e ele é derivado do arquivo —, "
-        + "mas <b>tudo o que a equipe montou em cima continua guardado</b>: conjuntos de seleção, conflitos com histórico e responsável, tarefas do cronograma 4D e os elos com o orçamento. "
+        + '<div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:12.5px">' + ausentes.length + " arquivo(s) desta obra não estão abertos neste aparelho</b>"
+        + '<span style="flex:1"></span>'
+        + '<button class="btn sm primary" data-bimobra="trazer" title="Abre o que este aparelho guardou e baixa da nuvem da obra o que foi guardado lá">Abrir todos os modelos da obra</button></div>'
+        + '<p class="muted" style="font-size:11.5px;margin:4px 0 6px">A lista da obra sincroniza, mas o desenho convertido não — são centenas de MB e ele é derivado do arquivo. '
+        + "O arquivo IFC chega a outro aparelho quando foi <b>☁ guardado na obra</b> (nuvem de arquivos da empresa); o botão abre o que este aparelho guardou e baixa o que está lá. "
+        + "Os que não estiverem em lugar nenhum? Arraste-os no visualizador para reabrir — "
+        + "<b>tudo o que a equipe montou em cima continua guardado</b>: conjuntos de seleção, conflitos com histórico e responsável, tarefas do cronograma 4D e os elos com o orçamento. "
         + "Eles voltam a apontar para as peças assim que o arquivo abrir.</p>"
         + linhas + "</div>";
+    },
+
+    /* o cartão "abertos só neste aparelho": a OFERTA de guardar na obra o que foi
+       arrastado aqui, para o próximo aparelho abrir sozinho */
+    _bimGuardarHtml: function () {
+      if (!window.BimFed || !BimFed.paraGuardar || !window.BIM || !BIM.bytesModelos || !this._bimSel) return "";
+      if (typeof ArquivosNuvem === "undefined") return "";
+      var regs = [];
+      try { regs = Store.listar(eid(), "bim_modelos") || []; } catch (e) { return ""; }
+      var abertos = [];
+      try { abertos = BIM.bytesModelos().map(function (m) { return { arquivoId: m.arquivoId, nome: m.nome, bytes: m.bytes ? m.bytes.length : 0 }; }); } catch (e2) { return ""; }
+      var p = BimFed.paraGuardar(regs, this._bimSel, abertos);
+      if (!p.guardar.length && !p.grandes.length) return "";
+      var mb = 0; p.guardar.forEach(function (g) { mb += g.bytes; });
+      var on = this._bimNuvemAtiva();
+      return '<div class="card" style="padding:9px;margin-bottom:8px;border-left:3px solid #2563eb">'
+        + '<div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:12.5px">'
+        + (p.guardar.length ? p.guardar.length + " arquivo(s) abertos só neste aparelho" : "Arquivo grande demais para a nuvem") + "</b>"
+        + '<span style="flex:1"></span>'
+        + (p.guardar.length ? '<button class="btn sm" data-bimobra="guardar" title="Sobe o IFC para a nuvem de arquivos da obra">☁ Guardar na obra (' + Util.fmtNum(mb / 1048576, 1) + " MB)</button>" : "") + "</div>"
+        + '<p class="muted" style="font-size:11.5px;margin:4px 0 0">'
+        + (p.guardar.length ? Util.esc(p.guardar.map(function (g) { return g.nome; }).join(", ")) + ". Guardando, os outros aparelhos da empresa abrem estes modelos sozinhos com a obra. Usa o espaço de arquivos do plano. " : "")
+        + (on ? "" : "<b>Agora a nuvem de arquivos não responde</b> (precisa da licença ativa e de internet). ")
+        + (p.grandes.length ? Util.esc(p.grandes.map(function (g) { return g.nome + " (" + Util.fmtNum(g.bytes / 1048576, 0) + " MB)"; }).join(", ")) + ": acima de " + Math.round(BimFed.BYTES_MAX_NUVEM / 1048576) + " MB não sobe — mande o arquivo por fora." : "")
+        + "</p></div>";
+    },
+
+    _bimNuvemAtiva: function () {
+      try { return !!(typeof ArquivosNuvem !== "undefined" && ArquivosNuvem.ativo()); } catch (e) { return false; }
+    },
+
+    /* =================================================================
+     * ABRIR TODOS OS MODELOS DA OBRA (06/11/2026, pedido do dono com a obra
+     * numa obra real: "tudo que tiver salvo dentro dessa obra eu consiga ver")
+     *
+     * De onde vem cada um, nesta ordem (BimFed.planoTrazer):
+     *   1. o que ESTE aparelho guardou (cache de geometria): monta sem WASM,
+     *      pela mesma porta do `_bimRestaurar`;
+     *   2. a nuvem de arquivos da obra (ArquivosNuvem, pasta "bim"): baixa,
+     *      CONFERE o conteúdo (BimFed.conferirBaixado) e abre pela porta do
+     *      "+ IFC" — a federação casa por conteúdo e a geometria fica guardada
+     *      aqui para a próxima vez;
+     *   3. o resto sai com nome e motivo.
+     *
+     * `opts.auto` (ao abrir o .opbim da obra): só busca na nuvem o que a obra
+     * marca como guardado, e não fala nada se não havia nada a trazer.
+     *
+     * ⚠ A NUVEM FICA FORA DA FILA DO IndexedDB. Abrir um IFC baixado dispara
+     *   `_bimCacheGravar`, que entra na mesma fila: esperar o download DENTRO
+     *   dela travaria a fila em si mesma.
+     * ================================================================= */
+    _bimTrazerAusentes: function (opts) {
+      var self = this; opts = opts || {};
+      var obraId = this._bimSel || "";
+      if (!obraId || !window.BimFed || !BimFed.planoTrazer || !window.BIM || !BIM.abrirBytes) return Promise.resolve(null);
+      if (this._semSessao()) return Promise.resolve(null);
+      if (this._bimTrazendoP) return this._bimTrazendoP;
+      var aus = this._bimModelosAusentes(BIM.modelos || []);
+      if (!aus.length) {
+        if (!opts.auto) UI.toast(BimFed.fraseTrazer({}), "ok");
+        return Promise.resolve({ aparelho: 0, nuvem: 0, faltam: [] });
+      }
+      var emp = eid(), nuvemOn = this._bimNuvemAtiva();
+      var aindaNaObra = function () { return String(self._bimSel || "") === String(obraId); };
+      var res = { aparelho: 0, nuvem: 0, faltam: [] };
+      if (!this._bimTrazidos || this._bimTrazidos.obra !== obraId) this._bimTrazidos = { obra: obraId, nomes: {} };
+      var trazidos = this._bimTrazidos;
+      var vagas = 8;
+      try { vagas = Math.max(0, BimFed.MODELOS_MAX - (BIM.modelos || []).length); } catch (eV) {}
+      var lerCache = (window.Idb && window.BimCache && BIM.abrirDoCache)
+        ? Idb.pronto().then(function (ok) { return ok ? Idb.chaves(BimCache.PREFIXO) : []; })["catch"](function () { return []; })
+        : Promise.resolve([]);
+      if (!opts.auto) UI.toast("Procurando os " + aus.length + " modelo(s) da obra…", "info");
+      var p = lerCache.then(function (ks) {
+        var ids = (ks || []).map(function (k) { return BimCache.arquivoIdDaChave(k, emp); }).filter(Boolean);
+        var plano = BimFed.planoTrazer(aus, { emCache: ids, nuvemAtiva: nuvemOn, soGuardados: !!opts.auto, vagas: vagas });
+        plano.faltam.forEach(function (f) { res.faltam.push({ nome: f.nome, motivo: f.motivo, modeloId: f.reg && f.reg.modeloId }); });
+        var seq = Promise.resolve();
+        /* 1. do aparelho — dentro da fila do IndexedDB, como o `_bimRestaurar` */
+        if (plano.aparelho.length) seq = seq.then(function () {
+          return self._bimFila(function () {
+            var ix = null;
+            var s2 = Idb.get(BimCache.chaveIndice(emp)).then(function (b) { ix = BimCache.indiceNormal(b); });
+            plano.aparelho.forEach(function (r) {
+              s2 = s2.then(function () {
+                if (!aindaNaObra()) return;
+                return Idb.get(BimCache.chave(emp, r.arquivoId)).then(function (reg) {
+                  if (!aindaNaObra()) return;
+                  var c = BimCache.conferir(reg, r.arquivoId);
+                  /* ⚠ na dúvida NÃO monta (mesma regra do restaurar) */
+                  if (!c.ok) { res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: "o que este aparelho guardava não confere (" + c.motivo + ") — arraste o arquivo" }); return; }
+                  /* marcado ANTES de entrar na cena: o aviso de modelo novo já
+                     repinta o título do projeto (o ● de "não salvo") */
+                  trazidos.nomes[String(r.nome)] = 1;
+                  var mm = BIM.abrirDoCache(reg, BimFed.paraViewer(r));
+                  if (mm && mm.ok) { res.aparelho++; ix = BimCache.marcarUso(ix, r.arquivoId, Date.now(), obraId); }
+                  else { delete trazidos.nomes[String(r.nome)]; res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: (mm && mm.erro) || "não consegui remontar o que estava guardado" }); }
+                })["catch"](function () { res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: "erro ao ler o que este aparelho guardava" }); });
+              });
+            });
+            return s2.then(function () { if (ix) return Idb.set(BimCache.chaveIndice(emp), ix)["catch"](function () {}); });
+          });
+        });
+        /* ⚠ 1b. NO AUTOMÁTICO, ARQUIVO GRANDE SÓ COM O SIM DA PESSOA (revisão de
+           06/11/2026): abrir a obra no celular baixava sozinho o IFC de 300 MB
+           da estrutura. Uma pergunta só, com o nome e o tamanho de cada um;
+           "Cancelar" baixa só os menores e os grandes ficam no painel com o
+           caminho (o botão, que é o pedido explícito, não pergunta).
+           Depois do que veio do aparelho: a pessoa já vê a obra montando. */
+        var pular = {}, sg = (opts.auto && BimFed.separarGrandes) ? BimFed.separarGrandes(plano.nuvem) : null;
+        if (sg && sg.grandes.length) seq = seq.then(function () {
+          if (!aindaNaObra()) return;
+          var sim = false;
+          try { sim = !!window.confirm(BimFed.perguntaGrandes(sg.grandes)); } catch (eCf) { sim = false; }
+          if (sim) return;
+          sg.grandes.forEach(function (g) {
+            pular[String(g.reg.modeloId)] = 1;
+            res.faltam.push({ nome: g.nome, modeloId: g.reg.modeloId, motivo: "não baixei sozinho (" + (g.bytes ? Util.fmtNum(g.bytes / 1048576, 0) + " MB" : "tamanho não informado") + ") — use “Abrir todos os modelos da obra” para baixar" });
+          });
+        });
+        /* 2. da nuvem da obra — FORA da fila (ver cabeçalho) */
+        plano.nuvem.forEach(function (r) {
+          seq = seq.then(function () {
+            if (!aindaNaObra()) return;
+            if (pular[String(r.modeloId)]) return;
+            var ref = BimFed.refNuvem(emp, obraId, r.modeloId);
+            if (!ref) { res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: "não consegui montar a referência do arquivo na nuvem" }); return; }
+            var tam = (r.nuvem && r.nuvem.bytes) ? " (" + Util.fmtNum(Math.max(0.1, r.nuvem.bytes / 1048576), 1) + " MB)" : "";
+            UI.toast("Baixando “" + r.nome + "”" + tam + " da nuvem da obra…", "info");
+            return ArquivosNuvem.baixar(ref).then(function (bytes) {
+              if (!aindaNaObra()) return;
+              var vid = (window.BimId && BimId.versaoId) ? BimId.versaoId(bytes, bytes.length) : "";
+              var c = BimFed.conferirBaixado(r, vid);
+              if (!c.ok) { res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: c.motivo }); return; }
+              /* o carregarIFC faz `new Uint8Array(ab)`: com o buffer INTEIRO isso é
+                 uma vista, sem cópia. Só fatia (copia) quando o download veio
+                 como pedaço de um buffer maior — 300 MB copiados à toa
+                 dobravam a memória no pico, justo no celular. */
+              var ab = (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+              trazidos.nomes[String(r.nome)] = 1;   /* antes de entrar na cena (ver acima) */
+              return Promise.resolve(BIM.abrirBytes(ab, r.nome, r.disciplina)).then(function () {
+                /* ⚠ conferir NA CENA: o carregarIFC não rejeita no teto de 8
+                   modelos nem no viewer que morreu no meio — só não abre */
+                var abriu = false;
+                try { abriu = (BIM.modelos || []).some(function (m) { return m && String(m.arquivoId) === String(r.arquivoId); }); } catch (eA) {}
+                if (abriu) res.nuvem++;
+                else { delete trazidos.nomes[String(r.nome)]; res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: "baixou, mas o visualizador não abriu (limite de modelos ou memória)" }); }
+              });
+            }, function (e) {
+              res.faltam.push({ nome: r.nome, modeloId: r.modeloId, motivo: (e && e.codigo === 404)
+                ? "não foi guardado na nuvem da obra — arraste o arquivo uma vez e use ☁ Guardar na obra"
+                : "a nuvem não entregou agora (" + (BimFed.motivoRede ? BimFed.motivoRede(e && e.message) : ((e && e.message) || "sem resposta")) + ") — tente de novo" });
+            });
+          });
+        });
+        return seq.then(function () {
+          self._bimTrazendoP = null;
+          if (!aindaNaObra()) return res;
+          self._bimTrazerRes = { obraId: obraId, faltam: res.faltam };
+          try { self._bimRenderModelos(BIM.modelos || []); } catch (eR) {}
+          if (opts.auto && !res.aparelho && !res.nuvem && !res.faltam.length) return res;
+          UI.toast(BimFed.fraseTrazer(res), res.faltam.length ? "aviso" : "ok", res.faltam.length ? 14000 : 6000);
+          return res;
+        });
+      })["catch"](function () { self._bimTrazendoP = null; return null; });
+      this._bimTrazendoP = p;
+      return p;
+    },
+
+    /* sobe para a nuvem da obra os IFC abertos aqui que a obra ainda não guardou */
+    _bimGuardarNaObra: function () {
+      var self = this, obraId = this._bimSel || "";
+      if (!obraId || !window.BimFed || !BimFed.paraGuardar || !window.BIM || !BIM.bytesModelos) return Promise.resolve(null);
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para guardar os arquivos na obra.", "aviso"); return Promise.resolve(null); }
+      if (!this._bimNuvemAtiva()) { UI.toast("A nuvem de arquivos da obra precisa da licença ativa e de internet. Os arquivos continuam só neste aparelho.", "aviso", 9000); return Promise.resolve(null); }
+      if (this._bimGuardandoP) return this._bimGuardandoP;
+      var emp = eid(), regs = [];
+      try { regs = Store.listar(emp, "bim_modelos") || []; } catch (e) {}
+      var abertos = [];
+      try { abertos = BIM.bytesModelos().map(function (m) { return { arquivoId: m.arquivoId, nome: m.nome, bytes: m.bytes ? m.bytes.length : 0, dados: m.bytes }; }); } catch (e1) {}
+      var pl = BimFed.paraGuardar(regs, obraId, abertos);
+      if (!pl.guardar.length) {
+        UI.toast(pl.grandes.length ? "Acima de " + Math.round(BimFed.BYTES_MAX_NUVEM / 1048576) + " MB o arquivo não sobe: " + pl.grandes.map(function (g) { return g.nome; }).join(", ") + "."
+          : "Nada para guardar: os arquivos abertos já estão na nuvem da obra. (Modelo aberto do que o aparelho guardava não tem o arquivo — arraste-o uma vez para guardar.)", "aviso", 9000);
+        return Promise.resolve(null);
+      }
+      var feitos = [], falhas = [], seq = Promise.resolve();
+      pl.guardar.forEach(function (g) {
+        seq = seq.then(function () {
+          var ref = BimFed.refNuvem(emp, obraId, g.reg.modeloId);
+          if (!ref) { falhas.push(g.nome + " (não consegui montar a referência)"); return; }
+          UI.toast("Guardando “" + g.nome + "” (" + Util.fmtNum(g.bytes / 1048576, 1) + " MB) na nuvem da obra…", "info");
+          return ArquivosNuvem.subir(ref, { obraId: obraId, pasta: "bim", nome: g.nome, tipo: "application/x-step" }, g.aberto.dados).then(function (j) {
+            if (!(j && j.ok)) { falhas.push(g.nome + " (" + ((j && j.erro) ? (BimFed.motivoRede ? BimFed.motivoRede(j.erro) : j.erro) : (j && j.naFila ? "sem internet agora" : "a nuvem recusou")) + ")"); return; }
+            /* ⚠ RELÊ O REGISTRO DEPOIS DO ENVIO. Subir 200 MB leva minutos; se
+               nesse meio a versão nova entrou na vaga, marcar "guardado" no
+               registro novo diria que a versão nova está na nuvem — e quem
+               baixasse receberia a velha (que o conferirBaixado recusaria,
+               mas a tela teria mentido antes). */
+            var atual = null;
+            try { atual = Store.obter(emp, "bim_modelos", g.reg.id); } catch (e2) {}
+            if (!atual || String(atual.arquivoId) !== String(g.reg.arquivoId) || String(atual.obraId) !== String(obraId)) {
+              falhas.push(g.nome + " (subiu, mas o modelo mudou de versão durante o envio — guarde de novo)"); return;
+            }
+            var salvo = false;
+            try { salvo = !!Store.salvar(emp, "bim_modelos", BimFed.marcarNuvem(atual, { arquivoId: atual.arquivoId, bytes: g.bytes, em: new Date().toISOString() })); } catch (e3) {}
+            if (salvo) feitos.push(g.nome); else falhas.push(g.nome + " (subiu, mas não consegui marcar na obra — armazenamento cheio?)");
+          });
+        });
+      });
+      var p = seq.then(function () {
+        self._bimGuardandoP = null;
+        self._bimFedRegs = null; try { self._bimFedCarregar(); } catch (e4) {}
+        try { self._bimRenderModelos(BIM.modelos || []); } catch (e5) {}
+        if (feitos.length) UI.toast("☁ Guardado na obra: " + feitos.join(", ") + ". Os outros aparelhos da empresa abrem estes modelos com a obra." + (falhas.length ? " Não subiu: " + falhas.join("; ") + "." : ""), falhas.length ? "aviso" : "ok", 10000);
+        else UI.toast("Não guardei na nuvem: " + falhas.join("; ") + ".", "erro", 10000);
+        return { feitos: feitos, falhas: falhas };
+      })["catch"](function () { self._bimGuardandoP = null; return null; });
+      this._bimGuardandoP = p;
+      return p;
+    },
+
+    /* os dois botões do painel moram em HTML pintado a cada mudança da cena:
+       um ouvinte só, no contêiner (idempotente — reatribui, não acumula) */
+    _bimLigarObraBotoes: function (box) {
+      var self = this;
+      if (!box) return;
+      box.onclick = function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-bimobra]") : null;
+        if (!b || !box.contains(b)) return;
+        var a = b.getAttribute("data-bimobra");
+        if (a === "trazer") self._bimTrazerAusentes({});
+        else if (a === "guardar") self._bimGuardarNaObra();
+      };
     },
 
     _bimRenderModelos: function (lista) {
@@ -23343,6 +23617,7 @@
          esconder o painel fazia a obra parecer sem modelo nenhum, quando ela
          tem quatro arquivos registrados com nome, disciplina e posição. */
       var ausentes = this._bimModelosAusentes(lista);
+      this._bimLigarObraBotoes(box);
       if (!lista || !lista.length) {
         if (!ausentes.length) { card.style.display = "none"; box.innerHTML = ""; this._bimFecharDrawer(); return; }
         card.style.display = "";
@@ -23351,6 +23626,9 @@
       }
       var self = this;
       box.innerHTML = "";
+      /* a vaga de cada modelo na obra, para o selo "☁ na obra" */
+      var regPorMid = {};
+      try { (Store.listar(eid(), "bim_modelos") || []).forEach(function (r) { if (r && String(r.obraId) === String(self._bimSel || "")) regPorMid[String(r.modeloId)] = r; }); } catch (eRg) {}
       lista.forEach(function (mo) {
         var linha = document.createElement("div");
         linha.style.cssText = "display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
@@ -23358,6 +23636,7 @@
         linha.innerHTML =
           '<b style="min-width:180px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(mo.nome) + '">' + Util.esc(mo.nome) + '</b>' +
           '<span class="muted" style="font-size:11.5px">' + (mo.n || 0).toLocaleString("pt-BR") + ' elem.</span>' +
+          (window.BimFed && BimFed.naNuvem && BimFed.naNuvem(regPorMid[String(mo.modeloId || "")]) ? '<span style="font-size:11px;color:#15803d;font-weight:700" title="Os outros aparelhos da empresa abrem este arquivo com a obra">☁ na obra</span>' : "") +
           '<select data-m="disc" class="btn sm" style="padding:4px 8px">' + discOpts + "</select>" +
           '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--texto-fraco)">Transparência <input data-m="alpha" type="range" min="10" max="100" value="' + Math.round((mo.alpha || 1) * 100) + '" style="width:130px"><b data-m="alphapct" style="min-width:38px">' + Math.round((mo.alpha || 1) * 100) + "%</b></label>" +
           '<span style="flex:1"></span>' +
@@ -23382,6 +23661,11 @@
       /* federação PARCIAL: dois arquivos abertos de quatro registrados é o
          caso comum de quem trocou de máquina e reabriu só o que tinha à mão */
       if (ausentes.length) box.insertAdjacentHTML("afterbegin", this._bimAusentesHtml(ausentes));
+      /* a oferta de guardar vem por cima de tudo: é o que evita o problema no
+         PRÓXIMO aparelho, e só faz sentido aqui, onde o arquivo foi arrastado */
+      var gh = "";
+      try { gh = this._bimGuardarHtml(); } catch (eGh) { gh = ""; }
+      if (gh) box.insertAdjacentHTML("afterbegin", gh);
     },
 
     // Reunião no modelo: avatar nomeado + sala (compatibilização ao vivo com a equipe)
