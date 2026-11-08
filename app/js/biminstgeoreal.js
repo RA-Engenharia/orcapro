@@ -39,11 +39,16 @@
     return { pos: pos, nrm: nr, idx: idx, uv: uv, cascas: [] };
   }
   /* o texto da marcação: fabricante · linha · DN · norma (o que vem gravado na peça da foto do catálogo) */
-  var LINHA = { pvc_esgoto: "ESGOTO", pvc_serie_r: "ESGOTO SÉRIE R", pvc_soldavel: "ÁGUA FRIA" };
-  var NORMA = { pvc_esgoto: "NBR 5688", pvc_serie_r: "NBR 5688", pvc_soldavel: "NBR 5648" };
-  function textoMarca(fabricante, material, dn, curto) {
-    /* na CONEXÃO (curto) a gravação é a do molde: fabricante · DN · norma; no tubo, a impressão inteira com a linha */
-    return [String(fabricante || "").toUpperCase(), curto ? "" : (LINHA[material] || ""), "DN " + dn, NORMA[material] || ""].filter(Boolean).join("  ·  ");
+  var LINHA = { pvc_esgoto: "ESGOTO", pvc_serie_r: "ESGOTO SÉRIE R", pvc_soldavel: "ÁGUA FRIA", ppr: "PPR", cpvc: "SUPER CPVC SDR 11", cobre: "COBRE" };
+  var NORMA = { pvc_esgoto: "NBR 5688", pvc_serie_r: "NBR 5688", pvc_soldavel: "NBR 5648", ppr: "NBR 15813", cpvc: "NBR 15884", cobre: "NBR 13206" };
+  function textoMarca(fabricante, material, dn, curto, cotas) {
+    /* na CONEXÃO (curto) a gravação é a do molde: fabricante · DN · norma; no tubo, a impressão inteira com a linha
+       (PPR: a classe PN da linha adotada; cobre: a classe da parede) */
+    var lin = curto ? "" : (LINHA[material] || "");
+    if (!curto && material === "ppr" && cotas && cotas.pn) lin += " PN " + cotas.pn;
+    if (!curto && material === "cobre" && cotas && cotas.classe) lin += " CLASSE " + cotas.classe;
+    var bit = /^(ppr|cpvc|cobre)$/.test(material) && cotas && cotas.de ? String(cotas.de).replace(".", ",") + " x " + String(cotas.e).replace(".", ",") + " mm" : "DN " + dn;
+    return [String(fabricante || "").toUpperCase(), lin, bit, NORMA[material] || ""].filter(Boolean).join("  ·  ");
   }
   /* (navegador) a textura: letras em relevo — a sombra 1 px abaixo/direita e a luz 1 px acima/esquerda, na cor da
      peça um tom abaixo; proporção da faixa (largura/altura) = aspecto. Cache por texto|cor|aspecto */

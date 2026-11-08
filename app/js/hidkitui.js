@@ -783,7 +783,7 @@
         ambs.push(R);
         if (R.rota) { nOp = Math.max(nOp, R.rota.opcoes || 1); iOp = Math.max(iOp, R.rota.indice || 0); }
         if (R.caixaSifonada && R.caixaSifonada.existente) reaproveitadas.push({ id: R.caixaSifonada.id, papel: "caixa sifonada do ambiente " + R.ambiente.id });
-        R.pendencias.forEach(function (p) { pendencias.push({ texto: U._textoPend(p), elementos: arr(p.elementos) }); });
+        R.pendencias.forEach(function (p) { pendencias.push({ chave: p.chave, texto: U._textoPend(p), elementos: arr(p.elementos) }); });
         if (R.ops.length) { U._marcar(R); R.ops.forEach(function (o) { ops.push(o); }); todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos); }
       });
       /* (b9) o cômodo limpo no (a0) cujo traçado novo NÃO fechou: o traçado anterior volta (o "apagar" dele sai do lote) — refazer
@@ -877,6 +877,59 @@
         if (oA.op === "apagar" || oA.op === "desanotar") { if (fora[kA]) { ops.splice(iA, 1); iA--; } else fora[kA] = 1; }
         else if (["trecho", "peca", "familia", "acessorio", "anotar", "criar"].indexOf(oA.op) >= 0) delete fora[kA]; } })();
       if (!ops.length) return { ok: false, erro: ambs.length && pendencias.length ? "Não consegui traçar: " + pendencias.map(function (p) { return p.texto; }).slice(0, 3).join(" · ") : "Nada a traçar: os aparelhos selecionados já estão ligados.", escopo: esc0, pendencias: pendencias, avisos: avisos };   // hid:ok até 3 motivos na mensagem
+      /* ENCAIXE (07/11/2026, "nenhuma conexão a mais"): a luva automática entre dois trechos alinhados do plano (o ramal do ambiente que
+         encontra a rede externa no mesmo alinhamento) some — os dois viram um tubo (js/hidencaixe.js fundirAlinhados). Muda o orçamento: −1 luva.
+         Revisão 08/11/2026: o trecho da REDE (rede-auto-*) não absorve mais o do ambiente (o "refazer a rede" levaria o tubo do ambiente) — ali a luva fica */
+      var HEn = dep("HidEncaixe"); if (!HEn && typeof require === "function") { try { HEn = require("./hidencaixe.js"); } catch (eHe) { HEn = null; } }
+      /* ENCAIXE (07/11/2026, print do Rogério na 1.2.262): o tubo que chega na caixa sifonada / no ralo aponta para o CENTRO da peça (a boca é
+         radial) — o desvio de 45° que terminava na borda, 5–8 cm fora do eixo, tem o canto anterior deslocado (js/hidencaixe.js radial). Roda no
+         plano já escolhido (a escolha da estratégia não muda); o que já está no modelo e os pontos dos aparelhos ficam parados */
+      /* a falha do ajuste de encaixe nunca fica calada (revisão 08/11/2026): o traçado segue como estava e a pendência diz o porquê */
+      var encFalhou = function (etapa, ex) { var m = "Ajuste de encaixe não rodou (" + etapa + ": " + String(ex && ex.message || ex) + "): o traçado ficou sem esse ajuste — confira o encaixe no 3D"; if (!pendencias.some(function (q) { return q.texto === m; })) pendencias.push({ chave: "amb.encaixe", texto: m, elementos: [] }); };
+      if (HEn && HEn.radial) {
+        try {
+          var planoE = [], idsPl = {}; (function ach(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") ach(o.ops); else { planoE.push(o); if (o.op === "trecho") idsPl[String(o.id)] = 1; } }); })(ops);
+          var estE = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-encaixe", ops: ops }])), insE = estE.instalacoes || {};
+          var fixosE = arr(insE.trechos).filter(function (t) { return !idsPl[String(t.id)]; }).map(function (t) { return { op: "trecho", id: t.id, sistema: t.sistema, p1: t.p1, p2: t.p2 }; });
+          var ptsE = arr(BIi.rede(estE, c.avaliarFam).conectores).map(function (k) { return { x: k.x, y: k.y, z: k.z }; });
+          var radE = HEn.radial(planoE, arr(insE.pecas), { fixos: fixosE, pontos: ptsE }); if (radE.ajustes.length) U._encaixe = radE.ajustes;
+          /* o toco da borda ao centro que o radial juntou ao trecho que chega: sai do lote (um tubo só) */
+          if (arr(radE.apagar).length) { var apE = {}; radE.apagar.forEach(function (id) { apE[id] = 1; }); (function tiraE(L) { for (var i = L.length - 1; i >= 0; i--) { var o = L[i]; if (!o) continue; if (o.op === "lote") tiraE(o.ops); else if (o.op === "trecho" && apE[String(o.id)]) L.splice(i, 1); } })(ops); }
+        } catch (eRa) { encFalhou("boca radial", eRa); }
+      }
+      if (HEn && HEn.fundirAlinhados) {
+        try { var Rf = BIi.rede(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-fundir", ops: ops }])), c.avaliarFam), fund = HEn.fundirAlinhados(ops, Rf.conexoes); if (fund.length) U._fundidos = fund; } catch (eFu) { encFalhou("tubos alinhados", eFu); }
+      }
+      /* ENCAIXE, rodada 2 (07/11/2026): o desvio curto que não comporta as peças (luva encavalada, toco de 3 cm entre o pé da descida e o desvio, o
+         tê do tubo de queda colado no desvio) — o chanfro cresce/encolhe, a perna curta some, o desvio desliza, ou o canto vira um joelho de 90°.
+         No plano já escolhido; a régua é a do 3D (js/hidencaixe.js folgar). O que não tem solução fica para o auditor */
+      if (HEn && HEn.folgar && !(typeof process !== "undefined" && process.env && process.env.HID_SEM_ENCAIXE === "1")) {   /* HID_SEM_ENCAIXE: o controle negativo do test-hid-encaixe */
+        try {
+          var planoF = [], idsF = {}; (function achF(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") achF(o.ops); else { planoF.push(o); if (o.op === "trecho") idsF[String(o.id)] = 1; } }); })(ops);
+          var estF = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-folga", ops: ops }])), insF = estF.instalacoes || {};
+          var fixosF = arr(insF.trechos).filter(function (t) { return !idsF[String(t.id)]; }).map(function (t) { var o2 = {}; Object.keys(t).forEach(function (k) { o2[k] = t[k]; }); o2.op = "trecho"; return o2; });
+          var ptsF = arr(BIi.rede(estF, c.avaliarFam).conectores).map(function (k) { return { x: k.x, y: k.y, z: k.z }; });
+          var resF = HEn.folgar(planoF, { fixos: fixosF, pontos: ptsF, pecas: arr(insF.pecas), familias: arr(estF.familias), avaliarFam: c.avaliarFam, BimInst: BIi, HidGeo: global.HidGeo });
+          arr(resF.novos).forEach(function (o) { ops.push(o); });
+          if (resF.apagar.length) { var apg = {}; resF.apagar.forEach(function (id) { apg[id] = 1; }); (function tira(L) { for (var i = L.length - 1; i >= 0; i--) { var o = L[i]; if (!o) continue; if (o.op === "lote") tira(o.ops); else if (o.op === "trecho" && apg[String(o.id)]) L.splice(i, 1); } })(ops); }
+          /* o que não coube (o canto de 90° que não vira 2 × 45°, a perna que não comporta as peças): pendência com o que fazer e o Mostrar no 3D */
+          arr(resF.pendentes).forEach(function (pe) {
+            var tx = pe.texto ? pe.texto : "Encaixe: o trecho " + pe.trecho + " (" + pe.sistema + ", DN " + pe.dn + ") não comporta as duas conexões — faltam " + pe.mm + " mm. Afaste o tubo de queda (ou a peça) dessa distância e trace de novo";
+            if (!pendencias.some(function (q) { return q.texto === tx; })) pendencias.push({ chave: "amb.encaixe", texto: tx, elementos: [pe.trecho].concat(pe.outro ? [pe.outro] : []) });
+          });
+          if (resF.ajustes.length) {
+            U._folgas = resF.ajustes;
+            /* dois desvios seguidos que viraram um só ficam alinhados: a luva entre eles some como as outras */
+            try { var Rf2 = BIi.rede(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-fundir2", ops: ops }])), c.avaliarFam); HEn.fundirAlinhados(ops, Rf2.conexoes); } catch (eFu2) { encFalhou("tubos alinhados", eFu2); }
+          }
+        } catch (eFo) { U._folgaErro = String(eFo && eFo.stack || eFo); encFalhou("folga das peças", eFo); }
+      }
+      /* a pendência de ENCAIXE do ambiente fala de trechos do plano do ambiente; o resto do Traçar (a rede, o encontro com a coluna) pode refazê-los —
+         a que cita um trecho que não está mais no lote final sai (a falha do ajuste fica sempre) (revisão 08/11/2026: "canto de 90°" de um trecho que a junção com a coluna já tinha trocado) */
+      (function () {
+        var vivosF = {}; (function achV(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") achV(o.ops); else if (o.op === "trecho") vivosF[String(o.id)] = 1; }); })(ops);
+        for (var iP = pendencias.length - 1; iP >= 0; iP--) { var pP = pendencias[iP]; if (pP && pP.chave === "amb.encaixe" && !/não rodou/.test(String(pP.texto)) && arr(pP.elementos).length && !arr(pP.elementos).every(function (id) { return vivosF[String(id)]; })) pendencias.splice(iP, 1); }
+      })();
       var resumo = U._resumo(c, ops);
       /* ⚠ 0 tubo = NADA foi ligado (ao vivo, 18/10/2026: o cartão dizia "Tudo ligado" com 0 tubo): a prévia não abre como
          sucesso — diz o que não ligou e por quê (as estratégias descartadas e as pendências) */

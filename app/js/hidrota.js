@@ -852,6 +852,20 @@
   }
 
   /* tira os pontos do meio de trechos retos */
+  /* ⚠ ENCAIXE DAS PEÇAS (07/11/2026, print do Rogério na 1.2.262: joelho → luva → joelho encavalados num toco de 3 cm). A distância entre
+     os vértices de duas conexões do esgoto tem de comportar as duas: a face da 1ª do lado que sai (o joelho de 45° com a LUVA na ponta) +
+     a face da 2ª do lado que recebe (o joelho de 45° pela bolsa, ou a derivação da junção) — as medidas do perfil medido do produto
+     (js/biminstgeo.js faceProduto). Antes a régua era a margemNo (8 cm) para todo DN: o DN 50 pede 13,4 cm, o DN 100 19,3 cm. Sem a
+     geometria (motor isolado) fica a margemNo. r = raio do tubo (m); tipoB = "joelho45" | "juncao". */
+  function encaixeEs(r, tipoB, P) {
+    var HG = dep("HidGeo", "./biminstgeo.js"), dn = Math.round(r * 2000), m = P.margemNo;   // hid:ok DN em mm (raio m × 2000)
+    if (!HG || !HG.faceProduto || !(dn > 0)) return m;
+    var fA = null, fB = null;
+    try { fA = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45); fB = tipoB === "juncao" ? HG.faceProduto("pvc_esgoto", "juncao", dn, "derivacao") : HG.faceProduto("pvc_esgoto", "joelho45", dn, "bolsa", 45); } catch (e) { fA = fB = null; }   // hid:ok ângulo do joelho de 45° (graus)
+    if (!(fA > 0) || !(fB > 0)) return m;
+    return Math.max(m, r4(fA + fB + FOLGA_ENCAIXE));
+  }
+  var FOLGA_ENCAIXE = 0.005;   // hid:ok 5 mm de tubo à vista entre as duas peças (corte na obra)
   function simplificar(pts) {
     var out = [];
     pts.forEach(function (p) {
@@ -897,7 +911,7 @@
     }
     return pts;
   }
-  function chanfrar(pts, P, segLivre, avisos, falhos, uFim) {
+  function chanfrar(pts, P, segLivre, avisos, falhos, uFim, r) {
     if (pts.length < PONTOS_CANTO) return pts;
     pts = degrausCurtos(pts.slice(), P, segLivre);
     var out = [pts[0]];
@@ -1024,7 +1038,10 @@
              perpendicular em J; vira P → J' (J' = J + d·u a jusante) */
           var u = un2(A, B), prev = pts[pts.length - 2], v = un2(prev, J), Lseg = d2(prev, J);
           var lim = pts.length >= PONTOS_CANTO ? Lseg / 2 - P.margemNo / 2 : Lseg - P.margemNo;
-          var d = r4(Math.min(P.chanfro, lim, d2(J, B) - P.margemNo)), ok = false;   // rota:juncao45
+          /* ENCAIXE (07/11/2026): a diagonal da junção (d·√2) PREFERE comportar o joelho de 45° com a luva + a derivação da junção (o DN 100 pede
+             mais que o chanfro); sem espaço fica a menor que cabe, como antes (a junta direta e o auditor de encaixe 3D cuidam do resto) */
+          var dJ = encaixeEs(o.r, "juncao", P) / Math.SQRT2;
+          var d = r4(Math.min(Math.max(P.chanfro, dJ), lim, d2(J, B) - P.margemNo)), ok = false;   // rota:juncao45
           for (var tent = 0; tent < TENTATIVAS && !ok && d >= P.margemNo / 2; tent++) {
             var Pp = { x: r4(J.x - v.x * d), z: r4(J.z - v.z * d) }, Jl = { x: r4(J.x + u.x * d), z: r4(J.z + u.z * d) };
             if (ctxR.segLivre(Pp, Jl, a.id)) { pts[pts.length - 1] = Pp; pts.push(Jl); juncao.x = Jl.x; juncao.z = Jl.z; ok = true; } else d = r4(d / 2);
@@ -1047,7 +1064,7 @@
       /* B4: com o tê a 90° que sobrou, o chanfro do último canto não pode comer a perna até a junção CONTRA o fluxo (o crítico
          INSERCAO_CONTRA_FLUXO da área de serviço): uFim = o sentido do escoamento da aresta de chegada */
       var uFim = juncao && av.length && alvo.tipo === "aresta" ? un2(arv.nos[arv.arestas[juncao.aresta].de], arv.nos[arv.arestas[juncao.aresta].para]) : null;
-      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim);
+      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r);
       melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra }; }) };
       if (!falhos.length) break;
       var novo = false;

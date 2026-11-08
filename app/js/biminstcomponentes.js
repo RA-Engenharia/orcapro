@@ -201,6 +201,9 @@
                dn: dn == null ? "" : dn, junta: junta0(c), opcional: !!c.opcional, aConferir: !!c.aConferir };
     });
   }
+  /* o item do "Conferir" do tipo (js/hidfamilias.js montarGenerico / tipos de ficha): DN de regra/dimensionamento = normal; letra lida ou interpretação da ficha = tem fonte */
+  /* revisão 08/11/2026: só a LETRA lida na ficha é fonte; a posição "interpretada da ficha" continua aviso ("a conferir: posição interpretada") */
+  var DN_REGRA = /DN: o dimensionamento define|DN vindo de regra/i, COM_FONTE = /\((letra [A-Z0-9]+|interpretad[oa] da ficha[^)]*)\)\s*$/i, INTERPRETADO = /\(interpretad[oa] da ficha[^)]*\)\s*$/i;
   function itemFamilia(f, grupo, origem) {
     var tipos = arr(f.tipos), v0 = null, i;
     for (i = 0; i < tipos.length; i++) if (tipos[i] && tipos[i].valores && (tipos[i].valores.Fabricante || tipos[i].valores.Cotas_ficha)) { v0 = tipos[i].valores; break; }
@@ -210,7 +213,22 @@
     var portas = portasDaFamilia(f), selos = [];
     var comCota = tipos.some(function (t) { return t && t.valores && t.valores.Cotas_ficha; });
     if (!comCota) selos.push("sem cota de catálogo");
-    if (portas.some(function (p) { return p.aConferir; }) || tipos.some(function (t) { return t && t.valores && t.valores.A_conferir; })) selos.push("a conferir: posição de bocas ou cotas");
+    /* 07/11/2026 (o Rogério: "NÃO ESTOU CONSEGUINDO USAR OS MODELOS DOS COMPONENTES"): o selo "a conferir" só acende quando há COTA ou POSIÇÃO sem
+       fonte (padrão de reserva, letra descartada). O DN que o dimensionamento define ou que vem da regra é o normal da peça — vira texto neutro na
+       ficha, nunca aviso. A posição de boca marcada "a conferir" no conector só conta quando a família não tem tipo de ficha com as cotas lidas. */
+    var dnRegra = false, interp = false, pendente = tipos.some(function (t) {
+      var v = t && t.valores; if (!v || !v.A_conferir) return false;
+      var itens = txt(v.Conferir).split(/;\s*/).filter(function (x) { return x; });
+      if (!itens.length) return !v.Cotas_ficha;
+      return itens.some(function (x) {
+        if (DN_REGRA.test(x)) { dnRegra = true; return false; }
+        if (INTERPRETADO.test(x) && !/descartad/i.test(x)) interp = true;
+        return !COM_FONTE.test(x) || /descartad/i.test(x);
+      });
+    });
+    if (pendente || (!comCota && portas.some(function (p) { return p.aConferir; }))) selos.push("a conferir: posição de bocas ou cotas");
+    if (interp) selos.push("a conferir: posição interpretada");
+    if (dnRegra) selos.push("DN: o dimensionamento define");
     if (!portas.length && !/^(Escritório)$/.test(grupo)) selos.push("sem ponto de ligação declarado");
     var tipo0 = tipos[0] ? tipos[0].id : "";
     return mk({ id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,

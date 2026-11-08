@@ -388,11 +388,11 @@
   ESPECS.push({
     id: "hid-caixa-descarga-embutida", nome: "Caixa de descarga embutida", categoria: "equipamento", sistemas: ["agua_fria"], tipos: ["caixa_descarga_embutida"], volume: true,
     descricao: "Caixa de descarga embutida Deca (Hydra), mecânica ou pneumática. Origem = ponto da entrada de água, centro da caixa.",
-    avisos: [AV_ESQ, "Algumas cotas do catálogo estão só em desenho (altura da caixa): conferir."],
+    avisos: [AV_ESQ, "Altura, largura e espessura da caixa: vistas cotadas do Catálogo Hydra (págs. impressas 426-428); na 2502 (drywall) a profundidade é regulável 120–180 mm: adotada a mínima."],
     geo: [
       G("Largura", 0.46, null, DADO("largura_mm", true), "Largura (catálogo)"),                                       /* hid:ok geometria */
       G("Espessura", 0.08, null, DADO("espessura_mm", true), "Espessura da caixa (catálogo)"),                        /* hid:ok geometria */
-      G("Altura", 0.6, null, null, "Altura da caixa (só em desenho no catálogo)"),                                    /* hid:ok geometria */
+      G("Altura", 0.6, null, DADO("altura_mm", true), "Altura da caixa (cota do desenho do catálogo Hydra, págs. 426-428)"),   /* hid:ok geometria — FAMÍLIAS REAIS 07/11/2026: 570 / 635 / 1150 lidos do desenho */
       DN("DN_agua", function (it) { var m = /DN\s*(\d+)/i.exec(txt(it.dados.registroIntegrado)); return m ? { v: parseInt(m[1], 10), origem: "catalogo" } : null; }, "DN do registro integrado") /* hid:ok base decimal */
     ],
     solidos: [{ id: "corpo", nome: "Caixa embutida", forma: "caixa", x: "0", y: "0", z: "-Espessura/2", dx: "Largura", dy: "Altura", dz: "Espessura", material: "Material" }],
@@ -947,7 +947,7 @@
       x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
     "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
       x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
-    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade" }, env: ["0", "-Altura*0.4", "0", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
+    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade", cod: "@Codigo" },   /* @: o texto do parâmetro (o modelo do acabamento, catálogo Hydra) */ env: ["0", "-Altura*0.4", "0", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
     "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
     "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"], x: [] },
     "hid-ralo": { g: "ralo", p: { D: "min(Largura; Profundidade)", H: "Altura", quadrado: "Grelha_quadrada" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
@@ -1372,6 +1372,9 @@
     var o = [];
     Object.keys(it.dim).forEach(function (k) { o.push(k + "=" + it.dim[k]); });
     Object.keys(it.dimTexto).forEach(function (k) { o.push(k + "=" + it.dimTexto[k]); });
+    /* FAMÍLIAS REAIS (07/11/2026): ficha sem letras de desenho, mas com as cotas em mm nos dados (ex.: caixa de descarga embutida
+       Hydra: largura, altura e espessura da vista cotada) — também são cota de catálogo */
+    if (!o.length) Object.keys(it.dados || {}).forEach(function (k) { if (/^(largura|altura|espessura|comprimento|profundidade|diametro)_mm$/.test(k) && typeof it.dados[k] === "number") o.push(k.replace(/_mm$/, "") + "=" + it.dados[k]); });
     return o.join("; ");
   }
   function sistemasTxt(e) { return e.sistemas.join(","); }
@@ -1392,6 +1395,26 @@
     return ps;
   }
 
+  /* FAMÍLIAS REAIS (07/11/2026, pedido do Rogério: tirar o "a conferir" das louças com a cota do catálogo e a fonte): o sentido
+     de cada LETRA do desenho Celite foi conferido nas vistas cotadas (Catálogo Geral Celite, pág. 21 — bacia com caixa acoplada
+     54359/54510; pág. 19 — bacia convencional 54321; as demais páginas usam o mesmo desenho). Caixa acoplada: A comprimento, B
+     largura, C altura da borda, D altura total, E projeção da parede, F parede → eixo do esgoto, G afastamento lateral da água,
+     H altura da água, J largura da caixa, L profundidade da caixa. Convencional: A comprimento, B largura, C altura da borda,
+     D projeção, E parede → eixo do esgoto, F altura da entrada de água (no eixo). Só vale para o tipo cujo desenho tem o MESMO
+     arranjo (as cotas de instalação nas faixas desse desenho) e, para posição de ponto de ligação, só quando o valor que o
+     sistema já usa É o da letra (nada muda de lugar). */
+  var DESENHO_CELITE = {
+    "hid-bacia-caixa-acoplada": { ok: function (D) { return D.F >= 300 && D.F <= 305 && D.H === 200 && (D.G === 150 || D.G === 190) && D.L > 100 && D.L < 260; },   /* hid:ok faixas e mm do desenho Celite */
+      letra: { Comprimento: "A", Largura: "B", Altura_borda: "C", Altura_total: "D", Prof_caixa: "L" }, pos: { Esgoto_parede: "F", Agua_altura: "H", Agua_lateral: "G" } },
+    "hid-bacia-convencional": { ok: function (D) { return D.E === 260 && D.F === 330 && D.A > 400 && D.A < 700; },   /* hid:ok faixas e mm do desenho Celite */
+      letra: { Comprimento: "A", Largura: "B", Altura_borda: "C" }, pos: { Esgoto_parede: "E", Agua_altura: "F", Agua_lateral: "0" } }   /* hid:ok faixas e mm do desenho Celite */
+  };
+  function conferidoNoDesenho(famId, nome, v, it) {
+    var R = DESENHO_CELITE[famId], D = it && it.dim; if (!R || !D || !R.ok(D)) return false;
+    if (R.letra[nome]) return true;
+    var L = R.pos[nome]; if (!L) return false;
+    var alvo = L === "0" ? 0 : D[L] / 1000; return typeof v === "number" && typeof alvo === "number" && Math.abs(Math.abs(v) - alvo) < 0.0005;   /* hid:ok faixas e mm do desenho Celite */
+  }
   function montarTipo(e, it) {
     var valores = {}, conferir = [], avisos = [], nome = it.fabricante + " " + it.codigo + " — " + nomeLimpo(it);
     var f = Cat.fonte(it);
@@ -1406,7 +1429,7 @@
       if (r && r.rejeitado) { conferir.push(g.nome + " (letra " + (PROBLEMAS[PROBLEMAS.length - 1].letra) + " = " + PROBLEMAS[PROBLEMAS.length - 1].valorMm + " mm descartada: fora da faixa plausível)"); avisos.push("Cota " + g.nome + ": a letra da ficha trouxe valor fora da faixa plausível; usado o padrão."); return; }
       if (r && r.v != null) {
         valores[g.nome] = g.ehDN || typeof r.v !== "number" ? r.v : r4(r.v);   /* FRENTE H6: texto (o tipo da NBR 13103) não passa pelo arredondamento */
-        if (r.origem !== "catalogo") conferir.push(g.nome + (g.ehDN ? " (DN vindo de regra/interpretação)" : r.letra ? " (letra " + r.letra + ")" : (r.origem === "interpretado" ? " (interpretado da ficha: " + r.v + ")" : " (regra de instalação Deca)")));
+        if (r.origem !== "catalogo" && !conferidoNoDesenho(e.id, g.nome, r.v, it)) conferir.push(g.nome + (g.ehDN ? " (DN vindo de regra/interpretação)" : r.letra ? " (letra " + r.letra + ")" : (r.origem === "interpretado" ? " (interpretado da ficha: " + r.v + ")" : " (regra de instalação Deca)")));
       } else if (!g.semConferir) conferir.push(g.nome + (g.ehDN ? " (DN: o dimensionamento define)" : " (padrão de reserva)"));   /* semConferir: liga/desliga de desenho (QUALIDADE VISUAL 3) */
     });
     arr(e.extraDados).forEach(function (x) { var v = it.dados[x[1]]; if (typeof v === "number") valores[x[0]] = v; });

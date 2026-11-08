@@ -197,7 +197,41 @@
     var ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2));
     return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: r2, ok: ok };
   }
+  /* ENCAIXE DAS PEÇAS (07/11/2026, prints do Rogério na 1.2.262 — js/hidencaixe.js): DEPOIS da opção escolhida (a escolha não muda), o tubo que
+     chega na caixa sifonada / no ralo aponta para o centro e o desvio curto que não comporta as peças é folgado (chanfro, perna que some,
+     deslizar, canto). Vale para o "Ligar ambiente", o Traçar automaticamente e o prédio (todos passam por aqui). O que não tem solução fica para o
+     auditor de encaixe 3D. par._semEncaixe = o traçado de antes (controle negativo) */
   function ligar(e) {
+    var r = ligarSemEncaixe(e), par = (e && e.parametros) || {};
+    var semEnc = par._semEncaixe || (typeof process !== "undefined" && process.env && process.env.HID_SEM_ENCAIXE === "1");   /* controle negativo do test-hid-encaixe */
+    if (!r || !r.ok || !arr(r.ops).length || semEnc || par._reservaEncaixe) return r;
+    var HEn = dep("HidEncaixe", "./hidencaixe.js"), B = BI(), E = BE(), HG = dep("HidGeo", "./biminstgeo.js");
+    if (!HEn || !B || !E || !HG) return r;
+    try {
+      var plano = [], ids = {}; (function ach(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") ach(o.ops); else { plano.push(o); if (o.op === "trecho") ids[String(o.id)] = 1; } }); })(r.ops);
+      var est = E.aplicar(arr(e.ops).concat([{ op: "lote", id: "amb-encaixe", ops: r.ops }])), ins = est.instalacoes || {};
+      var fixos = arr(ins.trechos).filter(function (t) { return !ids[String(t.id)]; }).map(function (t) { var o = {}; Object.keys(t).forEach(function (k) { o[k] = t[k]; }); o.op = "trecho"; return o; });
+      var pontos = arr(B.rede(est, e.avaliarFam).conectores).map(function (k) { return { x: k.x, y: k.y, z: k.z }; });
+      var rad = HEn.radial(plano, arr(ins.pecas), { fixos: fixos, pontos: pontos });
+      /* o toco da borda ao centro da caixa/ralo que o radial juntou ao trecho que chega: sai do plano (um tubo só) */
+      if (arr(rad.apagar).length) { var apR = {}; rad.apagar.forEach(function (id) { apR[id] = 1; }); plano = plano.filter(function (o) { return !(o.op === "trecho" && apR[String(o.id)]); }); (function tiraR(L) { for (var i = L.length - 1; i >= 0; i--) { var o = L[i]; if (!o) continue; if (o.op === "lote") tiraR(o.ops); else if (o.op === "trecho" && apR[String(o.id)]) L.splice(i, 1); } })(r.ops); }
+      var fo = HEn.folgar(plano, { fixos: fixos, pontos: pontos, pecas: arr(ins.pecas), familias: arr(est.familias), avaliarFam: e.avaliarFam, BimInst: B, HidGeo: HG });
+      arr(fo.novos).forEach(function (o) { r.ops.push(o); });
+      if (fo.apagar.length) { var ap = {}; fo.apagar.forEach(function (id) { ap[id] = 1; }); (function tira(L) { for (var i = L.length - 1; i >= 0; i--) { var o = L[i]; if (!o) continue; if (o.op === "lote") tira(o.ops); else if (o.op === "trecho" && ap[String(o.id)]) L.splice(i, 1); } })(r.ops); }
+      if (rad.ajustes.length || fo.ajustes.length) r.encaixe = { radial: rad.ajustes, folgas: fo.ajustes };
+      /* o que não coube: pendência com o que é, por quê e o que fazer (afastar o tubo de queda/a peça), e o Mostrar no 3D */
+      arr(fo.pendentes).forEach(function (pe) {
+        var tx = pe.texto ? pe.texto : "Encaixe: o trecho " + pe.trecho + " (" + pe.sistema + ", DN " + pe.dn + ") não comporta as duas conexões — faltam " + pe.mm + " mm. Afaste o tubo de queda (ou a peça) dessa distância e trace de novo; nunca um joelho de 90° no horizontal do esgoto (NBR 8160)";
+        (r.pendencias = r.pendencias || []).push({ chave: "amb.encaixe", motivo: tx, texto: tx, elementos: [pe.trecho].concat(pe.outro ? [pe.outro] : []), acao: { tipo: "ajustar", ids: [pe.trecho].concat(pe.outro ? [pe.outro] : []) } });
+      });
+    } catch (eEn) {
+      /* a falha do ajuste nunca fica calada (revisão 08/11/2026): o traçado sai como estava, com a pendência e o motivo */
+      r.encaixeErro = String(eEn && eEn.message || eEn);
+      (r.pendencias = r.pendencias || []).push({ chave: "amb.encaixe", motivo: "Ajuste de encaixe não rodou (" + r.encaixeErro + "): o traçado ficou sem o ajuste das peças — confira o encaixe no 3D", texto: "Ajuste de encaixe não rodou (" + r.encaixeErro + "): o traçado ficou sem o ajuste das peças — confira o encaixe no 3D", elementos: arr(r.ops).filter(function (o) { return o && o.op === "trecho"; }).map(function (o) { return String(o.id); }) });
+    }
+    return r;
+  }
+  function ligarSemEncaixe(e) {
     var r = ligar0(e), par = (e && e.parametros) || {};
     if (par._reservaEncaixe) return r;
     var A = aprofundarEncaixe(e, r, par);
@@ -1083,6 +1117,42 @@
     if (destinos.esgoto || destinos.agua_fria) {
       R = rotearCom(caixa, destinos);
       if (reservaV && !(R && R.opcoes && R.opcoes.length)) { delete parR.reservaVentilacao; reservaV = 0; R = rotearCom(caixa, destinos); }
+      /* RALO QUE VOLTA (rodadas 7 e 8 — o "U" do print 6): o ralo seco do box que vai à caixa sifonada e dali o esgoto VOLTA para trás até o destino
+         (o caminho de verdade, nos tubos da opção: ralo → caixa → ramal → destino, mais de 2 × a linha reta e 1,5 m além dela — a régua do auditor,
+         ESGOTO_VOLTA). O ralo do KIT vira RALO SIFONADO (desconector próprio, NBR 8160) e vai direto ao ramal por junção de 45°. Fica a opção
+         sem volta; se as duas não voltam, a mais barata */
+      (function () {
+        var dE = destinos.esgoto; if (!caixa || !dE || !(R && R.opcoes && R.opcoes.length)) return;
+        var Pd = dE.conector || dE; if (!isFinite(num(Pd.x, NaN))) return;
+        /* o caminho em planta do esgoto que nasce em q, seguindo os tubos da opção (p1 → p2), passando pelas caixas, até o destino */
+        function caminho(ops, q) {
+          var ts = vivas(ops).filter(function (o) { return o.op === "trecho" && o.sistema === "esgoto" && o.p1 && o.p2; }), L = 0, P = { x: q.x, z: q.z }, guard = 0, vistos = {};
+          var perto = function (a, b, r) { return Math.hypot(a.x - b.x, a.z - b.z) <= r; };
+          while (guard++ < 200) {   // hid:ok anti-laço
+            var t = ts.filter(function (u) { return !vistos[u.id] && perto(u.p1, P, 0.15); })[0];   // hid:ok 15 cm: a saída do ralo/da caixa (raio de captura)
+            if (!t) break; vistos[t.id] = 1; L += Math.hypot(t.p2.x - t.p1.x, t.p2.z - t.p1.z); P = { x: t.p2.x, z: t.p2.z };
+            if (perto(P, Pd, 0.35)) break;   // hid:ok o destino (a caixa de inspeção / o ponto)
+            var naCx = caixa && perto(P, caixa, 0.15); if (naCx) { P = { x: caixa.x, z: caixa.z }; continue; }   // hid:ok captura da caixa
+            var seg = ts.filter(function (u) { if (vistos[u.id]) return false; var ax = u.p2.x - u.p1.x, az = u.p2.z - u.p1.z, L2 = ax * ax + az * az; if (!(L2 > 0)) return false; var k = ((P.x - u.p1.x) * ax + (P.z - u.p1.z) * az) / L2; return k > 0 && k < 1 && Math.hypot(u.p1.x + ax * k - P.x, u.p1.z + az * k - P.z) <= 0.02; })[0];   // hid:ok 2 cm
+            if (seg) { vistos[seg.id] = 1; L += Math.hypot(seg.p2.x - P.x, seg.p2.z - P.z); P = { x: seg.p2.x, z: seg.p2.z }; if (perto(P, Pd, 0.35)) break; }   // hid:ok o destino
+          }
+          return L;
+        }
+        var volta = function (Rr) { return pecas.filter(function (k) { if (k.peca !== "ralo_seco" || !doKit[k.id]) return false; var D = d2(k, Pd), Lc = caminho(Rr.opcoes[0].ops, k); return Lc > 2 * D && Lc - D > 1.5; }); };   // hid:ok a régua do ESGOTO_VOLTA
+        var vR = volta(R); if (!vR.length) return;
+        var Lantes = vR.map(function (k) { return caminho(R.opcoes[0].ops, k); });
+        var antes = pecas.slice();
+        pecas = pecas.map(function (k) { if (vR.indexOf(k) < 0) return k; var c = {}; Object.keys(k).forEach(function (q) { c[q] = k[q]; }); c.peca = "ralo_sifonado"; c.dn = B.PECAS.ralo_sifonado.dn; return c; });
+        var Rs = rotearCom(caixa, destinos);
+        if (!(Rs && Rs.opcoes && Rs.opcoes.length)) { pecas = antes; return; }
+        var c0 = R.opcoes[0].custo; R = Rs;
+        vR.forEach(function (k, ik) {
+          var o0 = kitOps.filter(function (o) { return o.op === "peca" && String(o.id) === String(k.id); })[0]; if (!o0) return;
+          var oN = {}; Object.keys(o0).forEach(function (q) { oN[q] = o0[q]; }); oN.peca = "ralo_sifonado"; oN.dn = B.PECAS.ralo_sifonado.dn; novas.push(oN);
+          aviso("ralo seco do box " + k.id + " trocado por RALO SIFONADO: evita o caminho de " + f2(Lantes[ik]) + " m até a caixa sifonada e de volta ao destino (a " + f2(d2(k, Pd)) + " m) — o ralo sifonado tem fecho hídrico próprio (NBR 8160) e entra direto no ramal", [k.id], null);
+        });
+        decide("amb.ralo_sifonado", "Ralo " + vR.map(function (k) { return k.id; }).join(", ") + " vira RALO SIFONADO e vai direto ao ramal (o esgoto ia até a caixa sifonada e voltava: " + vR.map(function (k, ik) { return f2(Lantes[ik]) + " m contra " + f2(d2(k, Pd)) + " m em linha reta"; }).join("; ") + "); custo do traçado " + f2(Rs.opcoes[0].custo) + " contra " + f2(c0) + " m equivalentes.");
+      })();
       /* REVISOR H3 (20/10/2026): a faixa do esgoto no enchimento vai até piso − alturaEnchimento (HidRota.GEO, 0,30 m) sem olhar a
          LAJE do rebaixo — com a reserva, num rebaixo de 20 cm o ramal DN 100 entrava 3,5 cm na laje e, num de 15 cm, 8,5 cm (furo
          de laje sem aviso; sem a reserva o mesmo esgoto cabia). Opção com esgoto deitado abaixo do topo da laje que o apoia: a
@@ -1336,6 +1406,12 @@
              barrilete chega como antes); se não sobrar perna (prumadas coladas), sai para o lado oposto. */
           var pertoE = num(B.PERTO_ESPERA, 0), sentidoV = 1;
           if (pertoE > 0 && dj - lj < pertoE + geo(par, "margemNo") / 2) { lj = r4(dj - pertoE - geo(par, "margemNo") / 2); if (lj < geo(par, "margemNo") / 2) { lj = r4(geo(par, "lateralEntradaAF") / 2); sentidoV = -1; } }
+          /* ENCAIXE (07/11/2026, auditor de encaixe 3D): a espera da válvula é o trecho entre o joelho do topo da prumada e o joelho da coluna do
+             barrilete — tem de comportar os dois joelhos com as bolsas (DN 50: 10 cm não cabiam, as peças se sobrepunham). Mínimo = 2 × o
+             avanço do joelho + uma bolsa + 5 mm de corte (js/biminstgeo.js cotasConexao) */
+          var HGa = dep("HidGeo", "./biminstgeo.js"), cja = null; try { cja = HGa && HGa.cotasConexao ? HGa.cotasConexao("pvc_soldavel", "joelho90", juntar.dn) : null; } catch (eJa) { cja = null; }
+          var minAF = cja && cja.z > 0 ? r4((2 * cja.z + num(cja.pb, 0)) / 1000 + 0.005) : 0;   // hid:ok mm → m; 5 mm de corte
+          if (lj < minAF) { lj = minAF; if (sentidoV === 1 && pertoE > 0 && dj - lj < pertoE + geo(par, "margemNo") / 2) sentidoV = -1; }
           var fimV = { x: r4(juntar.de.x + sentidoV * uj.x * lj), y: esperaAF.y, z: r4(juntar.de.z + sentidoV * uj.z * lj) };
           /* no sentido da água — da espera da válvula (p1, a ponta aberta) para a prumada dela (p2) */
           novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimV, p2: juntar.de, continua: "p1", valvula: true, amb: ambId, ambParte: "espera_agua" });

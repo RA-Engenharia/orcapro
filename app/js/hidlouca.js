@@ -817,11 +817,69 @@
        na base do volume, com a mesma altura total H */
     torno(cp.m, [[0.028, -H * 0.4], [0.028, H * 0.5], [0.02, H * 0.6]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 1, 0] });
     torno(cp.m, [[0.012, 0], [0.012, Pp * 0.55]], q.n, { c: [0, 0.02, -Pp * 0.55], eixo: [0, 0, 1] });
-    var yc = H * 0.2;
+    var yc = H * 0.2, A0 = acabHydra(P.cod);
+    if (A0) { acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp); return partes; }
     caixaRz(ac.m, { x0: -W / 2, x1: W / 2, y0: yc - H * 0.3, y1: yc + H * 0.3, z0: 0, z1: 0.008, r: 0.003, rad: W * 0.22 }, q);
     torno(ac.m, [[W * 0.24, 0], [W * 0.24, 0.006], [W * 0.22, 0.012], [W * 0.15, 0.016], [0, 0.017]], q.N, { c: [0, yc, 0.008], eixo: [0, 0, 1] });
     partes.push(cp, ac);
     return partes;
+  }
+  /* FAMÍLIAS REAIS (07/11/2026): o ACABAMENTO da válvula pelo MODELO do tipo (o código Deca), com as cotas do desenho do
+     Catálogo Válvulas Hydra (Deca, AECweb — págs. impressas 437 a 448): largura L × altura A da placa e a profundidade P
+     total a partir da parede (botão/tecla incluído); placa = espessura da placa quando o desenho a cota. O tamanho do botão
+     não é cotado: sai em escala do próprio desenho (fração da placa, medida na figura). Antes: a mesma placa genérica
+     100 × 120 com botão redondo para os 20 tipos. */
+  var HYDRA = {
+    "2553": { m: "Slim", L: 0.130, A: 0.130, P: 0.016, placa: 0.010, bt: "quadrado", kb: 0.23, pag: 437 },
+    "2545": { m: "Duo", L: 0.110, A: 0.090, P: 0.034, bt: "duplo", kb: 0.58, pag: 438 },
+    "2545PRO": { m: "Duo Pro", L: 0.112, A: 0.091, P: 0.032, bt: "meia", kb: 0.62, pag: 439 },
+    "2545KD": { m: "Duo Kids", L: 0.110, A: 0.090, P: 0.034, bt: "duplo", kb: 0.58, pag: 440 },
+    "2565": { m: "Eco", L: 0.110, A: 0.090, P: 0.034, bt: "redondo", kb: 0.6, pag: 441 },
+    "2565PRO": { m: "Eco Pro", L: 0.112, A: 0.090, P: 0.030, bt: "redondo", kb: 0.66, pag: 442 },
+    "2565CONF": { m: "Eco Conforto", L: 0.112, A: 0.091, P: 0.035, bt: "alavanca", kb: 0.5, alav: 0.173, pag: 443 },
+    "2525": { m: "Retrô", D: 0.100, P: 0.0395, bt: "retro", pag: 444 },
+    "2555": { m: "Plus", L: 0.111, A: 0.111, P: 0.018, placa: 0.012, bt: "redondo", kb: 0.3, pag: 445 },
+    "2550": { m: "Max", L: 0.107, A: 0.096, P: 0.048, bt: "tecla", pag: 446 },
+    "2590": { m: "Clean", L: 0.110, A: 0.112, P: 0.054, bt: "tecla", pag: 447 },
+    "2551": { m: "Max Pro", L: 0.111, A: 0.113, P: 0.054, bt: "tecla", pag: 448 }
+  };
+  function acabHydra(cod) {
+    var c = String(cod || ""), mm = /^(\d{4})\./.exec(c); if (!mm) return null;
+    var k = mm[1] + (/\.PRO$/.test(c) ? "PRO" : (/\.CONF$/.test(c) ? "CONF" : (/\.KD$/.test(c) ? "KD" : "")));
+    return HYDRA[k] || HYDRA[mm[1]] || null;
+  }
+  function acabamentoHydra(partes, ac, A0, yc, q) {
+    var bt = parte("botao", "Botão / tecla de acionamento", CROMO), P = A0.P;
+    if (A0.D) {   /* Retrô: espelho redondo abaulado Ø D e o botão central com o anel de borda */
+      var R = A0.D / 2;
+      torno(ac.m, [[R, 0], [R, 0.004], [R * 0.96, 0.012], [R * 0.8, 0.022], [R * 0.5, 0.028], [R * 0.3, 0.029], [0, 0.029]], q.N, { c: [0, yc, 0], eixo: [0, 0, 1] });
+      torno(bt.m, [[R * 0.32, 0], [R * 0.32, P - 0.029 - 0.003], [R * 0.28, P - 0.029], [0, P - 0.029]], q.N, { c: [0, yc, 0.029], eixo: [0, 0, 1] });
+      partes.push(ac, bt); return;
+    }
+    var L = A0.L, A = A0.A, pl = A0.placa || P * 0.62, rad = Math.min(L, A) * (A0.placa ? 0.04 : 0.16);
+    caixaRz(ac.m, { x0: -L / 2, x1: L / 2, y0: yc - A / 2, y1: yc + A / 2, z0: 0, z1: pl, r: Math.min(0.004, pl * 0.4), rad: rad }, q);
+    var hb = P - pl, d = Math.min(L, A) * (A0.kb || 0.5);
+    /* a folga escura em volta do botão (na foto do catálogo é o que separa o botão cromado da placa cromada) */
+    if (A0.bt === "quadrado") { var gq = parte("folga", "Folga do botão", PRETO); partes.push(gq); caixaRz(gq.m, { x0: -d / 2 - 0.0012, x1: d / 2 + 0.0012, y0: yc - d / 2 - 0.0012, y1: yc + d / 2 + 0.0012, z0: pl - 0.0008, z1: pl + 0.0004, r: 0, rad: 0 }, q); }
+    else if (A0.bt === "redondo" || A0.bt === "meia" || A0.bt === "duplo") { var gr0 = parte("folga", "Folga do botão", PRETO); partes.push(gr0); torno(gr0.m, [[d / 2 + 0.0012, 0], [d / 2 + 0.0012, 0.0012], [0, 0.0012]], q.n, { c: [0, yc, pl - 0.0008], eixo: [0, 0, 1] }); }
+    if (A0.bt === "quadrado") caixaRz(bt.m, { x0: -d / 2, x1: d / 2, y0: yc - d / 2, y1: yc + d / 2, z0: pl - 0.001, z1: P, r: 0.0015, rad: 0.002 }, q);
+    else if (A0.bt === "redondo" || A0.bt === "meia") torno(bt.m, [[d / 2, 0], [d / 2, hb * 0.6], [d * 0.46, hb * 0.9], [d * 0.3, hb], [0, hb]], q.N, { c: [0, yc, pl - 0.001], eixo: [0, 0, 1] });
+    else if (A0.bt === "duplo") {   /* Duo: o botão redondo partido em dois (descarga menor e maior) */
+      torno(bt.m, [[d / 2, 0], [d / 2, hb * 0.6], [d * 0.46, hb * 0.9], [d * 0.3, hb], [0, hb]], q.N, { c: [0, yc, pl - 0.001], eixo: [0, 0, 1] });
+      var fd = parte("fenda", "Divisão do botão duplo", PRETO); partes.push(fd);
+      caixaRz(fd.m, { x0: -0.0009, x1: 0.0009, y0: yc - d * 0.47, y1: yc + d * 0.47, z0: pl, z1: P + 0.0004, r: 0, rad: 0 }, q);
+    } else if (A0.bt === "alavanca") {   /* Conforto: o botão e a alavanca que desce até 173 mm do topo da placa */
+      torno(bt.m, [[d / 2, 0], [d / 2, hb * 0.5], [0, hb * 0.6]], q.N, { c: [0, yc, pl - 0.001], eixo: [0, 0, 1] });
+      var yT = yc + A / 2, yB = yT - A0.alav;
+      caixaRz(bt.m, { x0: -0.012, x1: 0.012, y0: yB, y1: yc, z0: pl + hb * 0.3, z1: P, r: 0.003, rad: 0.006 }, q);
+    } else {   /* tecla (Max, Clean, Max Pro): a tecla larga que se projeta mais embaixo (vista lateral do desenho) */
+      var mg = Math.min(L, A) * 0.12;
+      caixaRz(bt.m, { x0: -L / 2 + mg, x1: L / 2 - mg, y0: yc - A / 2 + mg, y1: yc + A / 2 - mg, z0: pl - 0.001, z1: P, r: 0.004, rad: rad * 0.8 }, q);
+      /* a face inclinada: a parte de cima da tecla recua (a tecla sai mais funda embaixo) */
+      var vT = bt.m.v;
+      for (var i = 0; i < vT.length; i += 3) if (vT[i + 2] > pl + 0.002) { var t = (vT[i + 1] - (yc - A / 2)) / A; vT[i + 2] = pl + (vT[i + 2] - pl) * (1 - 0.45 * Math.max(0, Math.min(1, t))); }
+    }
+    partes.push(ac, bt);
   }
   function geoCaixaEmbutida(P, q) {
     var W = P.W, H = P.H, E = P.E, cx = parte("caixa", "Caixa embutida", PLAST), pl = parte("placa", "Placa de acionamento", CROMO);
@@ -1316,7 +1374,7 @@
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
-    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 800, caixa_descarga_embutida: 1400,
+    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 950, caixa_descarga_embutida: 1400,
     caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600
@@ -1347,7 +1405,7 @@
     var g = GERADORES[nome];
     if (!g) return { ok: false, erros: ["gerador de forma \"" + nome + "\" não existe"], partes: [] };
     var nv = NIVEIS[Math.max(0, Math.min(NIVEIS.length - 1, (o && o.nivel) || 0))], erros = [];
-    Object.keys(P || {}).forEach(function (k) { if (typeof P[k] !== "number" || !isFinite(P[k])) erros.push("parâmetro " + k + " não é número"); });
+    Object.keys(P || {}).forEach(function (k) { if (k !== "cod" && (typeof P[k] !== "number" || !isFinite(P[k]))) erros.push("parâmetro " + k + " não é número"); });
     /* cota de tamanho tem de ser > 0 (a forma sairia do avesso ou sumiria calada) */
     Object.keys(P || {}).forEach(function (k) { if (POSITIVAS.indexOf(k) >= 0 && (OPCIONAIS[nome] || []).indexOf(k) < 0 && !(P[k] > 0)) erros.push("cota " + k + " ≤ 0 (" + P[k] + ")"); });
     Object.keys(MINIMOS).forEach(function (k) { if (P && typeof P[k] === "number" && P[k] < MINIMOS[k]) erros.push("cota " + k + " < " + MINIMOS[k] + " (" + P[k] + ")"); });
@@ -1367,7 +1425,7 @@
   function nomes() { return Object.keys(GERADORES); }
 
   /* hid:geometria-fim */
-  var HidLouca = { gerar: gerar, existe: existe, nomes: nomes, ORCAMENTO: ORCAMENTO, NIVEIS: NIVEIS.length,
+  var HidLouca = { gerar: gerar, existe: existe, nomes: nomes, ORCAMENTO: ORCAMENTO, acabHydra: acabHydra, HYDRA: HYDRA, NIVEIS: NIVEIS.length,
     /* ferramentas expostas para teste e para outras famílias */
     _f: { loft: loft, torno: torno, tubo: tubo, caixaR: caixaR, chaikin: chaikin, anelSup: anelSup, anelRR: anelRR, Malha: Malha, volume: function (m) { return volumeFaces(m, 0); } } };
   global.HidLouca = HidLouca;

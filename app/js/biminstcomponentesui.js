@@ -94,6 +94,14 @@
       if (ok !== false) this.usar(it.id);
       return ok !== false;
     },
+    /* o duplo clique insere UMA vez (revisão 08/11/2026): o 2º clique (ev.detail ≥ 2) e o dblclick do navegador chegam os dois — o segundo, para o
+       mesmo item dentro da janela do duplo clique, é ignorado (nem insere de novo, nem grava duas vezes nos recentes). _semTrava = controle negativo */
+    _inserirDuplo: function (id) {
+      var agora = Date.now(), u = this._ultIns;
+      if (!this._semTrava && u && u.id === id && agora - u.t < 600) return false;   // ui: janela do duplo clique (ms)
+      this._ultIns = { id: id, t: agora };
+      var it = H().item(id); return !!(it && it.acao && it.acao.disponivel !== false && this.executar(it));
+    },
     abrirTemplate: function (id) {
       var U = UI(), G = (U && U._G) || this._G;
       if (G && G._optplRA) { G._optplRA(); return true; }
@@ -141,10 +149,12 @@
       return h;
     },
     _htmlLinha: function (it, sel) {
+      /* só o selo de AVISO aparece na linha (o neutro, como "DN: o dimensionamento define", fica na ficha) */
+      var avisos = it.selos.filter(function (t) { return /^(sem|a conferir|indispon)/.test(t); });
       return '<div class="comp-item" data-comp="item" data-cid="' + esc(it.id) + '" role="button" tabindex="0" style="display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:7px;cursor:pointer;border:1px solid ' + (sel ? "var(--aco,#0d6ebd)" : "transparent") + ";background:" + (sel ? "var(--tinta-aco,rgba(13,110,189,.10))" : "transparent") + '">' +
         (it.icone ? '<img src="' + esc(it.icone) + '" alt="" width="26" height="26" loading="lazy" style="object-fit:contain;flex:none" onerror="this.style.visibility=\'hidden\'">' : '<span style="width:26px;flex:none"></span>') +
         '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + "</span>" +
-        (it.selos.length ? '<span title="' + esc(it.selos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (it.selos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(it.selos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
+        (avisos.length ? '<span title="' + esc(avisos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
         (this.ehFavorito(it.id) ? '<span style="flex:none;color:var(--aco,#0d6ebd)" aria-label="favorito">★</span>' : "") + "</div>";
     },
     render: function () {
@@ -162,24 +172,35 @@
       html += '<label style="font-size:12px;display:flex;gap:5px;align-items:center;margin-bottom:6px"><input type="checkbox" data-comp="f-cota"' + (e.filtros.soComCota ? " checked" : "") + '> Só com cota de catálogo</label>';
       html += '<div role="tablist" style="display:flex;gap:4px;margin-bottom:6px">' + [["todos", "Todos"], ["favoritos", "Favoritos"], ["recentes", "Recentes"]].map(function (t) {
         return '<button class="btn sm' + (e.aba === t[0] ? " primary" : "") + '" role="tab" aria-selected="' + (e.aba === t[0]) + '" data-comp="aba" data-caba="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</div>";
-      if (sel) html += this._htmlFicha(sel);
+      /* 07/11/2026 (print do Rogério na 1.2.262: "NÃO ESTOU CONSEGUINDO USAR OS MODELOS DOS COMPONENTES"): a ficha com o Inserir ia para o TOPO da
+         lista; quem rolava até "Louças e metais" e clicava na bacia não via nada acontecer. Agora a ficha abre logo ABAIXO da linha clicada (e rola para
+         a vista); só vai para o topo quando a linha não está desenhada (grupo recolhido). _fichaNoTopo = o desenho de antes (controle negativo da e2e). */
+      var fichaJunto = !!sel && !this._fichaNoTopo, fichaPosta = false;
+      if (sel && !fichaJunto) { html += this._htmlFicha(sel); fichaPosta = true; }
       if (!lista.length) html += '<p class="muted" style="font-size:12.5px">' + (e.aba === "favoritos" ? "Nenhum favorito ainda: abra uma ficha e toque na estrela." : (e.aba === "recentes" ? "Nada inserido ainda." : "Nada encontrado para essa busca e esses filtros.")) + "</p>";
       else {
         var g0 = null, cont = 0, n = 0;
         lista.forEach(function (it) {
           if (it.grupo !== g0) { g0 = it.grupo; cont = 0; n = lista.filter(function (x) { return x.grupo === g0; }).length; html += '<div style="font-weight:700;font-size:12px;margin:8px 0 2px;color:var(--texto-fraco,#516375)">' + esc(g0) + " (" + n + ")</div>"; }
           cont++;
-          if (cont <= MAX_POR_GRUPO || e.abertos[g0]) html += self._htmlLinha(it, it.id === e.sel);
+          if (cont <= MAX_POR_GRUPO || e.abertos[g0]) { html += self._htmlLinha(it, it.id === e.sel); if (fichaJunto && it.id === e.sel) { html += self._htmlFicha(sel); fichaPosta = true; } }
           else if (cont === MAX_POR_GRUPO + 1) html += '<button class="btn sm" data-comp="mais" data-cgrupo="' + esc(g0) + '">Mostrar os ' + (n - MAX_POR_GRUPO) + " restantes de " + esc(g0) + "</button>";
         });
       }
+      if (sel && !fichaPosta) { var fh = this._htmlFicha(sel); html = html.replace('<div role="tablist"', function (m) { return fh + m; }); }
       html += '<p class="muted" style="font-size:11px;margin-top:10px">' + h.todos().length + " componentes. Conexão: escolha aqui, clique no nó da rede e ela fica gravada ali (Propriedades do nó: Voltar ao automático).</p>";
       /* mantém o foco e o cursor da busca ao redesenhar */
       var tinha = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-comp") === "busca", pos = tinha ? document.activeElement.selectionStart : 0;
       corpo.innerHTML = html;
       if (tinha) { var b = corpo.querySelector('[data-comp="busca"]'); if (b) { b.focus(); try { b.setSelectionRange(pos, pos); } catch (eS) {} } }
       this._ligar(corpo);
+      if (sel && this._rolarFicha) this._rolarAgora();
       return true;
+    },
+    _rolarAgora: function () {
+      this._rolarFicha = false; if (this._fichaNoTopo) return;
+      var corpo = typeof document !== "undefined" ? document.getElementById("bim-componentes-corpo") : null, fc = corpo ? corpo.querySelector('[data-comp="ficha"]') : null;
+      if (fc && fc.scrollIntoView) try { fc.scrollIntoView({ block: "nearest" }); var bI = fc.querySelector('[data-comp="inserir"]'); if (bI) bI.scrollIntoView({ block: "nearest" }); } catch (eR) {}
     },
     _ligar: function (corpo) {
       var self = this, e = this.estado, t = null;
@@ -200,14 +221,27 @@
       corpo.onclick = function (ev) {
         var bt = ev.target.closest ? ev.target.closest("[data-comp]") : null; if (!bt) return;
         var c = bt.getAttribute("data-comp"), id = bt.getAttribute("data-cid");
-        if (c === "item") { e.sel = id; self.render(); }
+        if (c === "item") {
+          /* o 2º clique do duplo clique cai na linha JÁ redesenhada (o 1º abriu a ficha): o dblclick do navegador se perde — ev.detail ≥ 2 = Inserir direto */
+          var agora = Date.now(), duplo = (ev.detail >= 2 || (self._ultClique && self._ultClique.id === id && agora - self._ultClique.t < 450)) && e.sel === id;   // ui: janela do duplo clique (ms)
+          self._ultClique = { id: id, t: agora };
+          if (duplo) { self._ultClique = null; if (self._inserirDuplo(id)) self.render(); return; }
+          /* a ficha abre na hora; a rolagem até ela espera a janela do duplo clique (senão o 2º clique cai em outra linha) */
+          e.sel = id; self.render();
+          setTimeout(function () { if (e.sel === id) { self._rolarFicha = true; self._rolarAgora(); } }, 460);
+        }
         else if (c === "aba") { e.aba = bt.getAttribute("data-caba"); self.render(); }
         else if (c === "fav") { self.alternarFavorito(id); self.render(); }
         else if (c === "mais") { e.abertos[bt.getAttribute("data-cgrupo")] = true; self.render(); }
         else if (c === "inserir") { var it = H().item(id); if (it && self.executar(it)) self.render(); }
       };
+      /* duplo clique na linha = Inserir direto (o mesmo botão da ficha) */
+      corpo.ondblclick = function (ev) {
+        var bt = ev.target.closest ? ev.target.closest('[data-comp="item"]') : null; if (!bt) return;
+        if (self._inserirDuplo(bt.getAttribute("data-cid"))) self.render();
+      };
       corpo.onkeydown = function (ev) {
-        if ((ev.key === "Enter" || ev.key === " ") && ev.target.getAttribute && ev.target.getAttribute("data-comp") === "item") { ev.preventDefault(); e.sel = ev.target.getAttribute("data-cid"); self.render(); }
+        if ((ev.key === "Enter" || ev.key === " ") && ev.target.getAttribute && ev.target.getAttribute("data-comp") === "item") { ev.preventDefault(); e.sel = ev.target.getAttribute("data-cid"); self._rolarFicha = true; self.render(); }
       };
     }
   };

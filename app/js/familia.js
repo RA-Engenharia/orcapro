@@ -254,6 +254,7 @@
         if (!txt(s.gerador)) erros.push(rotG + ": falta o nome do gerador da forma");
         else { var GL = geradorLouca(); if (GL && !GL.existe(s.gerador)) erros.push(rotG + ": gerador \"" + s.gerador + "\" desconhecido"); }
         Object.keys(s.p || {}).forEach(function (kp) {
+          if (typeof s.p[kp] === "string" && s.p[kp].charAt(0) === "@") { if (!nomes[chave(s.p[kp].slice(1))]) erros.push(rotG + ", " + kp + ": usa \"" + s.p[kp].slice(1) + "\", que não existe"); return; }   /* "@Param": texto do parâmetro */
           try { Object.keys(refs(analisar(String(s.p[kp])))).forEach(function (r) { if (!nomes[r]) erros.push(rotG + ", " + kp + ": usa \"" + r + "\", que não existe"); }); }
           catch (e) { erros.push(rotG + ", " + kp + ": " + e.message); }
         });
@@ -502,7 +503,7 @@
   }
   function malhasGeradas(s, f, mat, erros) {
     var rotulo = "sólido \"" + (s.nome || s.id) + "\"", G = geradorLouca(), P = {}, base = { x: f(s.x, 0), y: f(s.y, 0), z: f(s.z, 0) };
-    Object.keys(s.p || {}).forEach(function (k) { P[k] = f(s.p[k], 0); });
+    Object.keys(s.p || {}).forEach(function (k) { var e = s.p[k]; P[k] = typeof e === "string" && e.charAt(0) === "@" ? mat(e.slice(1)) : f(e, 0); });   /* "@Param": o TEXTO do parâmetro (ex.: o código do modelo) */
     if (!G) {
       var e = s.env || null;
       if (!e) { erros.push(rotulo + ": o gerador de forma (js/hidlouca.js) não carregou"); return []; }

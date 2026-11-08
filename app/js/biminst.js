@@ -1374,6 +1374,23 @@
             }
           }
         }
+        /* ROSCA × SOLDÁVEL DA MESMA BITOLA (revisão de 08/11/2026): o conector de ROSCA com DN nominal de metal (a válvula de descarga DN 40 =
+           1 1/2", o registro de gaveta DN 20 = 3/4", o pressurizador) num tubo de PVC soldável da MESMA bitola (DE 50 = 1 1/2", NBR 5648) não leva
+           redução (as duas pontas têm a mesma medida): leva o ADAPTADOR SOLDÁVEL CURTO com bolsa e rosca do catálogo (DN do tubo × a rosca). Só
+           na contagem, como o adaptador do registro (D2). Sem o adaptador exato no catálogo: fica a redução e o aviso — nada some, nada inventado.
+           Muda o orçamento: −1 redução, +1 adaptador por ponta. O ponto de água do aparelho (D1, acima) já tem a peça dele. */
+        if (con && con.origem !== "acessorio" && ramos.length === 1 && /^agua_/.test(s) && ramos[0].material === "pvc_soldavel" && !(ligCon && ligCon.pontoAgua)) {   /* o acessório roscável já leva o adaptador dele (revisão 08/11/2026: nunca em dobro) */
+          var dnT = Math.round(num(ramos[0].dn, 0)), rosT = BITOLA_REF.pvc_soldavel[dnT], redT = cxs.filter(function (c) { return c.tipo === "reducao"; })[0];
+          if (redT && rosT && dnDaRosca(rosT) === Math.round(num(con.dn, 0))) {
+            var pcT = pecaDoCatalogo("pvc_soldavel", "adaptador", txt(dnT), rosT);
+            if (pcT && pcT.chave === txt(dnT) + "x" + rosT) {
+              cxs = cxs.filter(function (c) { return c !== redT; });
+              extrasQto.push(itemExtra("adaptador", { sistema: s, material: "pvc_soldavel", aplicacao: ramos[0].aplicacao, dn: dnT },
+                { id: "ar:" + con.id, ramos: [ramos[0].trecho], x: r4(P.x), y: r4(P.y), z: r4(P.z), dn2: pcT.rosca, chave: pcT.chave,
+                  premissa: "adaptador soldável curto DN " + dnT + " × " + rosT + "\" no ponto de rosca " + con.id + " (DN " + Math.round(num(con.dn, 0)) + " = " + rosT + "\", a mesma bitola do tubo — NBR 5648)" }));
+            } else av.push("sem adaptador na base: o ponto de rosca " + con.id + " (DN " + Math.round(num(con.dn, 0)) + " = " + rosT + "\") no tubo soldável DE " + dnT + " (a mesma bitola) pede o adaptador soldável curto " + dnT + " × " + rosT + "\", que o catálogo não tem — ficou a redução " + redT.dn + " × " + redT.dn2 + "; troque o tubo ou orce o adaptador à parte");
+          }
+        }
         /* QV1: a luva onde a conexão entrega PONTA. Decisão da coordenação (18/10/2026, noite): a luva faltava no ORÇAMENTO —
            correção de erro de quantitativo, vale para TODOS; sem a prévia hidro ela entra SÓ na contagem (luvasQto: qto e
            orçamento), sem peça no 3D, sem junta no tubo e sem aviso — a geometria nova segue atrás da prévia (P8) */
@@ -1451,6 +1468,42 @@
        qualquer tubo) é estado do projeto, não defeito: fica na lista, sem marca vermelha em cima da louça */
     var emUso = {}; trechos.forEach(function (t) { emUso[t.sistema] = 1; });
     var marcar = semLigacao.filter(function (c) { return emUso[c.sistema]; });
+    /* JUNTA DIRETA (07/11/2026, print do Rogério na 1.2.262: joelho → luva → joelho encavalados num toco de 3 cm). Regra RA: "se as conexões
+       encostam, liga direto bolsa-ponta, nunca encavala". O trecho que sai da PONTA de um joelho/curva/tê de esgoto e termina noutra conexão é
+       curto demais para a luva: entre o fundo da bolsa da luva e o da peça seguinte não cabem as duas bolsas (a mesma conta do 3D, HidGeo.no,
+       e do auditor de encaixe 3D) — a ponta entra DIRETO na bolsa da seguinte e a luva sai. Só a junta automática (a escolhida fica).
+       Muda o orçamento: −1 luva por desvio curto. O 3D (js/biminstui.js) some com o tubo dentro da bolsa; o auditor de encaixe 3D confere. */
+    var HGj = dep("HidGeo", "./biminstgeo.js"), FOLGA_BOLSA = 0.002;   // hid:ok 2 mm de bolsa (a mesma tolerância do auditor de encaixe 3D)
+    if (HGj && HGj.no && HGj.cotasConexao) {
+      var porIdJ = {}; trechos.forEach(function (t) { porIdJ[t.id] = t; });
+      juntas.forEach(function (jn) {
+        if (jn.junta !== "luva" || !jn.auto) return;
+        var t = porIdJ[jn.trecho]; if (!t) return;
+        var Pf = jn.lado === 0 ? t.p2 : t.p1, Pi = jn.lado === 0 ? t.p1 : t.p2, Lt = dist(t.p1, t.p2);
+        var cB = conexoes.filter(function (c) { return c.juntaDe == null && c.tipo !== "reducao" && arr(c.ramos).indexOf(t.id) >= 0 && dist(c, Pf) <= TOL; })[0]; if (!cB) return;
+        /* a MESMA conta do 3D e do auditor de encaixe (js/biminstgeo.js no): o tubo entre o fundo da bolsa da luva e o da peça seguinte comporta as
+           duas bolsas? Se não, a luva encavala — a ponta vai direto na bolsa da seguinte */
+        var lA = conexoes.filter(function (c) { return c.sistema === t.sistema && dist(c, Pi) <= TOL; }), lB = conexoes.filter(function (c) { return c.sistema === t.sistema && dist(c, Pf) <= TOL; });
+        var gA = null, gB = null; try { gA = HGj.no(lA, porIdJ, { tol: TOL }); gB = HGj.no(lB, porIdJ, { tol: TOL }); } catch (eNo) { gA = gB = null; }
+        var rA = gA && gA.recuos ? gA.recuos[t.id + ":" + jn.lado] : null, rB = gB && gB.recuos ? gB.recuos[t.id + ":" + (jn.lado ? 0 : 1)] : null;
+        var clJ = null; try { clJ = HGj.cotasConexao(t.material, "luva", t.dn); } catch (eCl) { clJ = null; }
+        var pbJ = clJ ? num(clJ.pb2 || clJ.pb, 0) / 1000 : 0;
+        if (!(rA > 0) || !(rB > 0) || !(pbJ > 0) || Lt - rA - rB >= 2 * pbJ - FOLGA_BOLSA) return;
+        /* só com a PONTA medida no perfil (a perna com a luva: DN 50 em diante). O perfil do DN 40 tem as duas pernas de bolsa — sem ponta medida
+           não se liga "ponta na bolsa"; fica a luva e o auditor de encaixe 3D mostra se encavala */
+        var ppJ = null; try { ppJ = HGj.perfilProduto ? HGj.perfilProduto(jn.material, jn.principal, jn.dnPrincipal || jn.dn) : null; } catch (eLj) { ppJ = null; }
+        if (!ppJ || !arr(ppJ.pernas).some(function (x) { return x.luva; })) return;
+        /* a ponta CABE na bolsa da seguinte (sem passar do fundo)? A ponta sem a luva: o meio entre o recuo e a face da perna (a mesma conta do auditor).
+           Se nem assim cabe, fica a luva — o traçado é que está curto e o auditor de encaixe 3D mostra */
+        var gA2 = null; try { gA2 = HGj.no(lA.filter(function (c) { return !(c.tipo === "luva" && String(c.juntaDe) === String(t.id)); }), porIdJ, { tol: TOL }); } catch (eNo2) { gA2 = null; }
+        var kP = t.id + ":" + jn.lado, pontaJ = gA2 && gA2.recuos ? ((gA2.recuos[kP] || 0) + ((gA2.faces || {})[kP] || gA2.recuos[kP] || 0)) / 2 : null;
+        if (!(pontaJ > 0) || Lt - pontaJ < rB - FOLGA_BOLSA) return;
+        var fL = rA, fB = rB;
+        jn.junta = "direta"; jn.motivo = "trecho de " + Math.round(Lt * 1000) + " mm: entre a luva (fundo a " + Math.round(fL * 1000) + " mm) e a peça seguinte (fundo a " + Math.round(fB * 1000) + " mm) não cabem as duas bolsas";
+        function eLuva(c) { return c.tipo === "luva" && String(c.juntaDe) === String(t.id) && dist(c, Pi) <= TOL; }
+        conexoes = conexoes.filter(function (c) { return !eLuva(c); }); luvasQto = luvasQto.filter(function (c) { return !eLuva(c); });
+      });
+    }
     /* ⚠ PRIORIDADE 21/10/2026: o CORPO da caixa sifonada / do ralo acompanha a cota da tubulação ligada e o PROLONGADOR enche até o
        porta-grelha no piso (js/biminstgeo.js corpoPeca — a mesma conta do 3D, do orçamento e da conferência da laje) */
     var HGc = dep("HidGeo", "./biminstgeo.js");
@@ -1477,7 +1530,7 @@
    *   "luva" (padrão) · "bolsa" (bolsa do próprio tubo: a luva some) · "invertida" (luva contra o fluxo: aviso).
    * Quem diz se a conexão tem ponta é a geometria (js/biminstgeo.js, HidGeo.temPonta); sem ela, nada muda.
    * Jusante = o trecho que COMEÇA no nó (o esgoto escoa de p1 para p2), com pelo menos um que chega. */
-  var JUNTAS = { luva: "Luva (padrão)", bolsa: "Bolsa do próprio tubo", invertida: "Luva invertida (contra o fluxo)" };
+  var JUNTAS = { luva: "Luva (padrão)", bolsa: "Bolsa do próprio tubo", invertida: "Luva invertida (contra o fluxo)", direta: "Ponta direto na bolsa da próxima peça (trecho curto)" };
   function juntasDaPonta(cxs, ramos, sistema, avisos) {
     var HG = dep("HidGeo", "./biminstgeo.js"), out = [];
     if (!HG || !HG.temPonta || !SISTEMAS[sistema] || !SISTEMAS[sistema].gravidade && sistema !== "ventilacao") return out;
@@ -1491,8 +1544,8 @@
     if (jus.length !== 1 || !mon.length) return out;
     if (soRed && Math.abs((+jus[0].dn || 0) - (+soRed.dn || 0)) > 0.5) return out;
     var r = jus[0], j = JUNTAS[r.junta] ? r.junta : "luva";
-    out.push({ trecho: r.trecho, lado: 0, junta: j, dn: r.dn, material: r.material, principal: princ.tipo });
-    if (j === "bolsa") return out;
+    out.push({ trecho: r.trecho, lado: 0, junta: j, dn: r.dn, material: r.material, principal: princ.tipo, dnPrincipal: princ.dn, auto: !JUNTAS[r.junta] });
+    if (j === "bolsa" || j === "direta") return out;
     cxs.push({ tipo: "luva", sistema: sistema, material: r.material, aplicacao: r.aplicacao || princ.aplicacao, dn: r.dn, dn2: 0,
                juntaDe: r.trecho, juntaLado: 0, invertida: j === "invertida" });
     if (j === "invertida") avisos.push("luva INVERTIDA (contra o fluxo) entre a ponta da conexão (" + nomeConexao(princ.tipo, princ.material).toLowerCase() + ") e o trecho " + r.trecho +
@@ -1733,6 +1786,10 @@
     return it;
   }
 
+  /* JUNTA DIRETA (revisão 08/11/2026): os trechos sem tubo (a ponta da conexão entra direto na bolsa da peça seguinte) — a MESMA regra para a
+     lista de material (qto) e o orçamento (servicosOrc): os dois nunca divergem */
+  function trechosSemTubo(R) { var d = {}; arr(R && R.juntas).forEach(function (j) { if (j && j.junta === "direta") d[String(j.trecho)] = 1; }); return d; }
+
   /* ===================================================== QUANTITATIVO
    * Por sistema, material e DN: metros de tubo (eixo real), número de
    * conexões por tipo, peças — cada grupo com a composição (ou pendente). */
@@ -1740,7 +1797,11 @@
     var R = rede(estado, avaliarFam);
     var tubos = {}, ordT = [], cxs = {}, ordC = [], pcs = {}, ordP = [], porSis = {}, prol = {}, ordPl = [];
     function sis(s) { return porSis[s] || (porSis[s] = { sistema: s, nome: SISTEMAS[s].nome, cor: SISTEMAS[s].cor, metros: 0, conexoes: 0, pecas: 0 }); }
+    /* JUNTA DIRETA (revisão 08/11/2026): o trecho curto em que a ponta da conexão entra direto na bolsa da seguinte NÃO tem tubo (o 3D esconde) —
+       não entra nos metros de tubo; fica listado em semTubo (trecho e comprimento de eixo) para a conferência */
+    var diretas = trechosSemTubo(R), semTubo = [];
     R.trechos.forEach(function (t) {
+      if (diretas[String(t.id)]) { semTubo.push({ trecho: t.id, sistema: t.sistema, dn: t.dn, comprimento: r4(t.comprimento), motivo: "junta direta: a ponta da conexão entra na bolsa da peça seguinte, sem tubo" }); return; }
       var it = itemTrecho(t), q = quantidadeTrecho(t);
       var k = [t.sistema, t.material, t.material === "duto_chapa" ? r2(t.larg) + "x" + r2(t.alt) : t.dn, t.aplicacao, t.pn || "", t.classe || "", t.iso || "", t.bitola || ""].join("|");
       var g = tubos[k];
@@ -1784,7 +1845,7 @@
     /* REVISÃO H5: o isolamento térmico da água quente fora do ambiente aquecido, por bitola */
     var isos = {}, ordI = [];
     R.trechos.forEach(function (t) {
-      if (!t.isolamento) return;
+      if (!t.isolamento || diretas[String(t.id)]) return;   /* junta direta: sem tubo, sem isolamento */
       var sp = isolamentoDe(t), k = sp.chave, g = isos[k];
       if (!g) { g = isos[k] = { sistema: t.sistema, material: t.material, dn: t.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", coeficiente: ISOLAMENTO_AQ.coeficiente, trechos: [], sinapi: sp }; ordI.push(k); }
       g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.metros * ISOLAMENTO_AQ.coeficiente); g.trechos.push(t.id);
@@ -1836,7 +1897,7 @@
       passantes: ordPs.map(function (k) { return pss[k]; }),
       rasgos: ordR.map(function (k) { return rsg[k]; }),
       prolongadores: ordPl.map(function (k) { return prol[k]; }),
-      tubos: ordT.map(function (k) { return tubos[k]; }),
+      tubos: ordT.map(function (k) { return tubos[k]; }), semTubo: semTubo,
       conexoes: ordC.map(function (k) { return cxs[k]; }),
       /* as PREMISSAS que a dedução assumiu (a rosca do ponto de água, a rosca do adaptador do registro): vão para a lista de material e o memorial */
       premissas: ordC.map(function (k) { return cxs[k]; }).filter(function (g) { return g.premissa; }).map(function (g) { return { item: g.nome + " " + g.dn + (g.dn2 ? " × " + g.dn2 + "\"" : ""), valor: g.premissa, n: g.n }; }),
@@ -1867,8 +1928,10 @@
       }
       out.push(o);
     }
-    R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it));
-      if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));   /* revisão H5: o isolamento térmico da AQ */
+    var semTuboO = trechosSemTubo(R);
+    R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t);
+      if (!semTuboO[String(t.id)]) linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it));   /* junta direta: sem tubo (a mesma regra do qto) */
+      if (t.isolamento && !semTuboO[String(t.id)]) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));   /* revisão H5: o isolamento térmico da AQ */
       arr(t.passantes).forEach(function () { linha(t.id, { peca: "passante_laje", sistema: t.sistema, material: t.material, dn: t.dn }, 1, "un", passanteDe(dnPassante(t))); });   /* N23: o passante de cada travessia de laje */
     });
     /* N23 EMBUTIDO: o rasgo e o chumbamento do trecho embutido em alvenaria (o metro que corre dentro dela), pela SINAPI do DN */

@@ -198,6 +198,9 @@
     if (eCl != null) { o.e = eCl; o.origem.e = "norma"; }
     else if (d && d.e) { o.e = d.e; o.origem.e = "norma"; }
     else { o.e = PROP.e(o.de); o.origem.e = "proporcao"; o.aConferir = true; }
+    if (d && d.pn) o.pn = d.pn;   /* PPR: a classe de pressão adotada no modelo (a marcação impressa a mostra) */
+    if (d && d.classes) o.classe = eCl != null ? classe : "E";
+    if (d && d.pag) o.fontes[o.fontes.length - 1] += ", pág. " + d.pag;
     if (d && d.pb) { o.pb = d.pb; o.origem.pb = d.fpb && d.fpb !== d.f ? "catalogo" : "norma"; if (d.fpb && d.fpb !== d.f) o.fontes.push(fonte(d.fpb)); o.pbMin = d.pbMin || null; }
     else { o.pb = PROP.pb(o.de); o.origem.pb = "proporcao"; o.aConferir = true; }
     return o;
@@ -510,6 +513,7 @@
     if (o.livre2) pf.push([L - lc, ro], [L, ro - ch]); else pf.push([L, ro]);
     pf.push([L, ri]);
     varrer(m, reta(A, d), escala(pf), segs, true);
+    if (o.bolsaIntegral2 && c.junta === "anel" && o.bolsaAtras2 == null) { o = semCampos(o, []); var cxI = cotasConexao(t.material, "luva", t.dn); o.bolsaAtras2 = (c.pb + transicao({ de: c.de, e: c.e, pb: c.pb, od: cxI.od, junta: c.junta })) * MM; }
     /* bolsa PRÓPRIA numa ponta (o tubo de jusante de um joelho/tê/junção de esgoto recebe a ponta da conexão nela):
        a boca fica bolsaAtras ANTES do começo do tubo, voltada para a conexão */
     [[o.bolsaAtras1, A, d], [o.bolsaAtras2, add(A, mul(d, L * MM)), mul(d, -1)]].forEach(function (bx) {
@@ -520,6 +524,14 @@
       var camB0 = reta(add(bx[1], mul(bx[2], -bx[0])), bx[2]);
       varrer(m, camB0, escala(pfb0), segs, false); anelBorracha(mA, camB0, 0, +1, bc0, segs);
     });
+    /* FAMÍLIAS REAIS (07/11/2026): a BOLSA DO PRÓPRIO TUBO na ponta 2, como a barra sai da fábrica (só a ficha/ícone e a bancada
+       pedem: o.bolsaIntegral2 — o traçado do modelo não usa, a emenda dele continua a de antes). PVC soldável: NBR 5648:2018,
+       Tabela 3 (profundidade da bolsa do tubo = c.pb) e a parede da bolsa = a do tubo (a bolsa é o próprio tubo alargado);
+       esgoto e série R: a bolsa com o alojamento do anel, profundidade do catálogo (c.pb), a mesma da emenda de barra. */
+    if (o.bolsaIntegral2 && t.material === "pvc_soldavel" && c.pb > 0) {   /* CPVC e PPR saem de fábrica com as pontas lisas */
+      var E2 = add(A, mul(d, L * MM)), tI = Math.max(1.5 * c.e, 0.12 * c.de), chI = Math.min(0.6, c.e * 0.3), roB = ro + c.e;
+      varrer(m, reta(E2, d), escala([[0, ro], [tI, roB], [tI + c.pb - chI, roB], [tI + c.pb, roB - chI], [tI + c.pb, ro + 0.03]]), segs, true);
+    }
     var juntas = [];
     if (c.barra && Ltot / MM > c.barra * 1000 + 1) {
       var cx = cotasConexao(t.material, "luva", t.dn);
@@ -543,15 +555,18 @@
     /* MARCAÇÃO IMPRESSA DO TUBO de esgoto (06/11/2026): a tinta do fabricante ao longo do corpo, no meio do trecho, voltada para a
        vista isométrica — só no Alto; 16 triângulos por tubo (js/biminstgeoreal.js) */
     var RLt = real();
-    if (RLt && o.lod === "perto" && (t.material === "pvc_esgoto" || t.material === "pvc_serie_r") && L > 4 * c.de) {
+    /* FAMÍLIAS REAIS (07/11/2026): a impressão também no PPR e no CPVC (a linha da ficha Amanco Wavin) e no cobre (classe e norma);
+       o.marcaIcone: o ícone da ficha mostra a marcação como o produto */
+    var MARCA_IMPRESSA = { pvc_esgoto: "TIGRE", pvc_serie_r: "TIGRE", ppr: "AMANCO WAVIN", cpvc: "AMANCO WAVIN", cobre: "" };
+    if (RLt && (o.lod === "perto" || o.marcaIcone) && MARCA_IMPRESSA[t.material] != null && L > 4 * c.de) {
       var hT = Math.min(16, Math.max(5, 0.16 * c.de)), asp8 = Math.max(8, Math.floor(Math.min(L * 0.6, 520) / hT / 8) * 8), Lm = asp8 * hT, s0m = (L - Lm) / 2, PREFt = nrmz([1, 0.72, 1.18]), refT = sub(PREFt, mul(d, dot(PREFt, d)));
       refT = len(refT) > 0.2 ? nrmz(refT) : perp(d);
       var fxT = RLt.faixa(A, d, refT, (ro + Math.max(0.3, 0.004 * ro)) * MM, s0m * MM, (s0m + Lm) * MM, hT / ro, 8, 1), mT = new Malha();
       mT.pos = fxT.pos; mT.nrm = fxT.nrm; mT.idx = fxT.idx; mT.uv = fxT.uv; mT.cascas = [];
-      partesT.push({ papel: "marca", malha: mT, texto: RLt.textoMarca("TIGRE", t.material, t.dn), aspecto: asp8, cor: (APAR[t.material] || {}).cor, impressa: true });
+      partesT.push({ papel: "marca", malha: mT, texto: RLt.textoMarca(MARCA_IMPRESSA[t.material], t.material, t.dn, false, c), aspecto: asp8, cor: (APAR[t.material] || {}).cor, impressa: true });
     }
     /* a gravação do fabricante ao longo do tubo soldável (só o 3D Alto pede: o.marcacao; js/biminstgeoreal-agua.js) */
-    if (o.marcacao && t.material === "pvc_soldavel" && o.lod !== "longe") { var RAt = dep("HidGeoRealAgua", "./biminstgeoreal-agua.js"), mT = RAt && RAt.marcaTubo ? RAt.marcaTubo(HidGeo, t, A, add(A, mul(d, L * MM)), c.de) : null; if (mT) partesT.push(mT); }
+    if ((o.marcacao || o.marcaIcone) && t.material === "pvc_soldavel" && o.lod !== "longe") { var RAt = dep("HidGeoRealAgua", "./biminstgeoreal-agua.js"), mT = RAt && RAt.marcaTubo ? RAt.marcaTubo(HidGeo, t, A, add(A, mul(d, L * MM)), c.de) : null; if (mT) partesT.push(mT); }
     return { partes: partesT, cotas: c, juntas: juntas, inicio: A, fim: add(A, mul(d, L * MM)), aConferir: c.aConferir };
   }
 
@@ -1603,6 +1618,20 @@
   }
   function registroProduto(a, o, C, d, fr) {
     var PR = produto(), D = PR && PR.registros && PR.registros[a.acessorio + ":" + a.variante], rg = D && D[String(a.dn)];
+    /* FAMÍLIAS REAIS (07/11/2026): o registro de PRESSÃO BRUTO (só a base de latão, sem o acabamento) — o corpo é o da família
+       medida do registro de pressão; o castelo é o da BASE medida (a do registro de gaveta bruto: porca sextavada, pescoço e
+       haste), com o topo na altura da ficha da base Deca de pressão (Catálogo Geral Deca 2013, pág. 404: 100 mm do fundo do
+       corpo ao topo da haste, corpo ø 42). Antes saía a forma de reserva (volante de roda). */
+    if (!rg && PR && PR.registros && a.acessorio === "registro_pressao" && a.variante === "bruto" && !/^(aco|inox|cobre)/.test(a.material || "")) {   /* no aço/industrial segue a válvula de volante de roda */
+      var rgP = (PR.registros["registro_pressao:acabamento"] || {})[String(a.dn)], rgG = (PR.registros["registro_gaveta:bruto"] || {})[String(a.dn)];
+      var fP = (((dados().pecas || {}).registro || {}).registro_pressao || {})[String(a.dn)];
+      if (rgP && rgG && fP && fP.altura && fP.corpo && rgG.castelo && rgG.castelo.ext && rgP.castelo && rgP.castelo.ext) {
+        var eG = rgG.castelo.ext, g0 = eG[0][0], g1 = eG[eG.length - 1][0], p0 = rgP.castelo.ext[0][0], alvo = fP.altura - fP.corpo / 2, kS = (alvo - p0) / (g1 - g0);
+        rg = {}; Object.keys(rgP).forEach(function (k) { rg[k] = rgP[k]; });
+        rg.castelo = { xc: rgP.castelo.xc, zc: rgP.castelo.zc, ext: eG.map(function (q) { return [Math.round((p0 + (q[0] - g0) * kS) * 100) / 100, q[1]]; }), hex: [] };
+        rg.tipo = (rgP.tipo || "") + " — base sem acabamento"; rg.baseDe = "castelo da base medida (" + rgG.familia + ") no topo da ficha Deca de pressão (" + fP.altura + " mm)";
+      }
+    }
     if (!rg) return null;
     var zz = cross(d, fr), segs = o.lod === "longe" ? 10 : 32, xm = rg.conectores.length >= 2 ? (rg.conectores[0].x + rg.conectores[1].x) / 2 : 0;
     function W(x, y, z) { return add(C, add(mul(d, (x - xm) * MM), add(mul(fr, y * MM), mul(zz, z * MM)))); }

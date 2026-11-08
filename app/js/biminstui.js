@@ -2041,6 +2041,13 @@
         recuos[key] = Math.max(recuos[key] || 0, (z - (pTg && pTg.pb ? pTg.pb : cj.pb)) / 1000);
         pontosAgua.push({ id: "pa:" + l.alvo, g: gj, sistema: t.sistema, rot: kk ? "Joelho 90° soldável com bucha de latão " + kk.replace("x", " × ") + "\"" : "Joelho 90° soldável com bucha de latão DN " + t.dn + " (cota a conferir)" });
       });
+      /* JUNTA DIRETA (07/11/2026, js/biminst.js juntasDaPonta): o trecho curto que sai da ponta do joelho/curva de esgoto não tem tubo — a ponta
+         entra direto na bolsa da peça seguinte; o tubo some dentro dela (o tuboBruto deixa 2 mm, escondidos) */
+      if (G && !baixo) (R.juntas || []).forEach(function (j) {
+        if (!j || j.junta !== "direta") return; var t = porId[j.trecho]; if (!t) return;
+        var Lj = Math.hypot(t.p2.x - t.p1.x, t.p2.y - t.p1.y, t.p2.z - t.p1.z), k0 = j.trecho + ":" + j.lado, k1 = j.trecho + ":" + (j.lado ? 0 : 1);
+        recuos[k0] = Math.max(recuos[k0] || 0, Lj - (recuos[k1] || 0));
+      });
       var livres = {};
       R.pontasLivres.forEach(function (p) { var t = porId[p.trecho]; if (!t) return; livres[p.trecho + ":" + (Math.hypot(t.p1.x - p.x, t.p1.y - p.y, t.p1.z - p.z) < 0.03 ? 0 : 1)] = true; });
       /* 3) TUBOS: DE e espessura reais, encurtados na bolsa, ponta chanfrada onde fica à vista, luva/bolsa a cada barra */

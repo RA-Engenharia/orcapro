@@ -172,13 +172,16 @@
      marcas do ambiente ficam) da origem dele até a entrada da caixa, e a op guarda a original para o limpar devolver. Só se: mesmo DN
      e material de esgoto, mesmo rumo em planta, nada ligado no meio dele e a declividade final ≥ a mínima do DN (nunca menor que a
      do ramal: a espera já descia). → a op (redeParte "espera") ou null */
+  var COS_EMENDA = Math.cos(10 * Math.PI / 180);   // hid:ok 10° — o limite da luva no js/biminst.js decidirBase (desvio < 10°)
   function emendaEspera(w, c, yFim, dn, estado, ops, redeId) {
     var trs = arr(estado.instalacoes && estado.instalacoes.trechos), t = trs.filter(function (x) { return x.id === w.trecho; })[0];
     if (!t || t.sistema !== "esgoto" || Number(t.dn) !== Number(dn) || (t.material && t.material !== "pvc_esgoto")) return null;
     var A = w.ponta === "p1" ? t.p2 : t.p1, W = w.ponta === "p1" ? t.p1 : t.p2, La = d2(A, W), Lb = d2(W, c);
     if (!(La > EPS) || !(Lb > EPS)) return null;
     var ux = (W.x - A.x) / La, uz = (W.z - A.z) / La, vx = (c.x - W.x) / Lb, vz = (c.z - W.z) / Lb;
-    if (Math.abs(ux * vz - uz * vx) > 1e-4 || ux * vx + uz * vz < 1 - 1e-4) return null;   // hid:ok colinear em planta (0,1 mm por metro)
+    /* 07/11/2026 (auditor de encaixe 3D, LUVA_DESNECESSARIA): até 10° de desvio em planta o motor põe uma LUVA entre a espera e o ramal (js/biminst.js:
+       desvio < 10° = luva) — é o mesmo tubo seguindo para a caixa, com um leve desvio. A espera vira a reta da origem dela até a caixa, sem a luva */
+    if (ux * vx + uz * vz < COS_EMENDA) return null;
     /* nada encosta no MEIO do trecho da espera (a geometria dele muda alguns mm na vertical) */
     var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01; }); });   // hid:ok 1 cm (tolerância de nó)
     if (meio) return null;
@@ -189,6 +192,32 @@
     n.p1 = { x: A.x, y: A.y, z: A.z }; n.p2 = { x: c.x, y: yFim, z: c.z };
     n.rede = redeId; n.redeParte = "espera"; n.esperaOriginal = copia(orig);
     return n;
+  }
+  var CHANFRO_ESPERA = 0.15, SOBRA_ESPERA = 0.10;   // hid:ok perna do desvio de 45° (a do HidRota) e reta que sobra na espera (m)
+  function chanfroEspera(w, c, yFim, dn, estado, ops, redeId, idR) {
+    var trs = arr(estado.instalacoes && estado.instalacoes.trechos), t = trs.filter(function (x) { return x.id === w.trecho; })[0];
+    if (!t || t.sistema !== "esgoto" || Number(t.dn) !== Number(dn) || (t.material && t.material !== "pvc_esgoto")) return null;
+    var A = w.ponta === "p1" ? t.p2 : t.p1, W = w.ponta === "p1" ? t.p1 : t.p2, La = d2(A, W), Lb = d2(W, c);
+    if (!(La > EPS) || !(Lb > EPS) || Math.abs(A.y - W.y) >= La) return null;   /* a espera vertical (o pé da descida) já é o 90° que vale */
+    var ux = (W.x - A.x) / La, uz = (W.z - A.z) / La, vx = (c.x - W.x) / Lb, vz = (c.z - W.z) / Lb;
+    if (Math.abs(ux * vx + uz * vz) > 0.1) return null;   // hid:ok só o canto perpendicular (cos ~ 0)
+    var HG = dep("HidGeo", "./biminstgeo.js"), need = 0;
+    try { need = HG && HG.faceProduto ? (HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45) || 0) + (HG.faceProduto("pvc_esgoto", "joelho45", dn, "bolsa", 45) || 0) + 0.005 : 0; } catch (eF) { need = 0; }   // hid:ok 5 mm de corte
+    var d = Math.min(CHANFRO_ESPERA, La - SOBRA_ESPERA, Lb / 2); if (!(d * Math.SQRT2 >= need) || d <= 0) return null;
+    /* nada do esgoto/ventilação deriva no pedaço da espera que sai (os últimos d + 5 cm, na mesma altura) */
+    var meio = trs.some(function (u) { return u.id !== t.id && (u.sistema === "esgoto" || u.sistema === "ventilacao") && [u.p1, u.p2].some(function (q) { var s2 = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s2 > La - d - 0.05 && s2 < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.05 && Math.abs(q.y - (A.y + (W.y - A.y) * s2 / La)) < 0.1; }); });   // hid:ok 1 cm / 5 cm / 10 cm
+    if (meio) return null;
+    var orig = vivas(ops).filter(function (o) { return o.op === "trecho" && o.id === t.id; }).pop(); if (!orig || orig.redeParte === "espera") return null;
+    var i = BI().declMinDn("esgoto", dn) / 100;
+    /* a cota do canto novo arredonda no sentido do escoamento (A → W, a espera desce para a rede): nunca tira declividade da espera (revisão 08/11/2026) */
+    var yP = W.y + (A.y - W.y) * d / La, P = { x: r4(W.x - ux * d), y: A.y >= W.y ? chao4(yP) : Math.ceil(yP * 1e4 - 1e-6) / 1e4, z: r4(W.z - uz * d) };   // hid:ok grade de 0,1 mm
+    var Q = { x: r4(W.x + vx * d), y: chao4(P.y - i * d * Math.SQRT2), z: r4(W.z + vz * d) };
+    if ((Q.y - yFim) / (Lb - d) < i - EPS) return null;
+    var n = copia(orig); delete n.continua;
+    if (w.ponta === "p1") n.p1 = P; else n.p2 = P;
+    n.rede = redeId; n.redeParte = "espera"; n.esperaOriginal = copia(orig);
+    return [n, { op: "trecho", id: idR + "d", sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: P, p2: Q, rede: redeId, redeParte: "ramal" },
+            { op: "trecho", id: idR, sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: Q.x, y: Q.y, z: Q.z }, p2: { x: c.x, y: yFim, z: c.z }, rede: redeId, redeParte: "ramal" }];
   }
   function gerar(e) {
     e = e || {};
@@ -304,7 +333,12 @@
            declividade constante; R-E12: no enterrado, emenda só em caixa): a espera do ambiente que já aponta para a caixa (mesmo rumo,
            mesmo DN, sem descida) não ganha um 2º tubo emendado nela — o MESMO tubo segue até a caixa (um trecho, da origem da espera) */
         var emenda = desce > EPS ? null : emendaEspera(w, c, yFim, dn, estado, ops, redeId);
+        /* CANTO DE 90° NO HORIZONTAL (rodada 3, 07/11/2026 — NBR 8160: mudança de direção no horizontal com ângulo central até 45°): a espera que
+           chega perpendicular ao ramal (a saída da caixa de gordura, o pé do tubo de queda, a espera do tanque) vira 2 × 45° — a espera encurta
+           d (devolvida no limpar, como a emenda) e um desvio de 45° liga a espera ao ramal */
+        var chf = !emenda && desce <= EPS ? chanfroEspera(w, c, yFim, dn, estado, ops, redeId, idR) : null;
         if (emenda) { idR = emenda.id; novas.push(emenda); }
+        else if (chf) chf.forEach(function (o) { novas.push(o); });
         else novas.push({ op: "trecho", id: idR, sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: w.x, y: yIni, z: w.z }, p2: { x: c.x, y: yFim, z: c.z }, rede: redeId, redeParte: "ramal" });
         if (modo === "atravessar") cr.forEach(function (q) { interf(q, idR, dn); });
         cotaCaixa[ci].entradas.push(yFim);
