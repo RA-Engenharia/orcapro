@@ -56236,8 +56236,9 @@ if (ok) res.copias.push({ id: k.copia.id, nome: k.copia.nome, deId: k.origem.id 
 else { semCopia[k.novoId] = 1; res.copiaFalhou = (res.copiaFalhou || 0) + 1; }
 });
 entramOrc = entramOrc.filter(function (c) { if (semCopia[c.id]) { res.orcMantidos++; return false; } return true; });
+res.salvos = [];
 entramOrc.forEach(function (c) {
-if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; return; }
+if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; res.salvos.push(c.id); return; }
 if (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") res.orcIlegivel = (res.orcIlegivel || 0) + 1;
 });
 ENT_PERMITIDAS.forEach(function (ent) {
@@ -56342,6 +56343,9 @@ if (App.irPara && App.irPara("orcamentos") === false) return;
 if (res.orcIds.length === 1 && App.abrirOrcamento) App.abrirOrcamento(res.orcIds[0]);
 else { App.tela = "lista"; App.render(); }
 } catch (e) {}
+try {
+if (res.orcIds.length === 1 && (res.salvos || []).indexOf(res.orcIds[0]) >= 0 && App.licitacaoAutomaticaSePedido) App.licitacaoAutomaticaSePedido(res.orcIds[0]);
+} catch (eAuto) { try { UI.toast("O orçamento automático não rodou: " + (eAuto && eAuto.message ? eAuto.message : eAuto) + ". O orçamento foi importado; use o botão “Orçar sozinho”.", "erro", 12000); } catch (eT) {} }
 }
 if (aoTerminar) aoTerminar(res);
 } }
@@ -58310,6 +58314,9 @@ case "lic-desconto-itens-desfazer": this.licitacaoDescontoItensDesfazer(); break
 case "lic-cenarios": this.licitacaoCenarios(); break;
 case "lic-trava": this.licitacaoTrava(); break;
 case "lic-devolver": this.devolverCertame(); break;
+case "lic-orcar-auto": this.licitacaoAutomatica({ origem: "botao" }); break;
+case "lic-auto-ver": this.licAutoVer(); break;
+case "lic-auto-conferido": this.licAutoConferido(); break;
 case "lic-base-instalar": this.licBaseInstalar(t.dataset.licBase); break;
 case "lic-base-outra": this.licBaseOutra(t.dataset.licBase); break;
 case "mem-agente": this.memAgente(false); break;
@@ -64640,7 +64647,8 @@ desenhar();
 _licCtxBases: function () {
 var sn = (typeof Sinapi !== "undefined") ? Sinapi : {};
 return {
-sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado },
+sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado,
+regime: typeof sn.desonerado === "boolean" ? (sn.desonerado ? "desonerado" : "onerado") : "" },
 instaladas: (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [],
 compsOnerada: this._compsPorUf || {},
 fatos: { servidor: (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null, disco: this._basesDisco || null, espelho: this._espelhoStatus || null,
@@ -64786,11 +64794,9 @@ var d = Licitacao.destino(lic.devolverPara);
 if (!d.ok) { UI.toast(d.erro, "erro"); return; }
 var seguir = function () {
 UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
-self._analiticoDoOrc(orc, function () {
-ExcelOrc.gerar(orc, {
-aoBlob: function (blob, nome) { self._licEnviar(orc, d, blob, nome); },
-aoErro: function (e) { UI.toast("Não consegui gerar o Excel (" + (e && e.message ? e.message : e) + "). Nada foi enviado.", "erro"); }
-});
+self._licDevolverSilencioso(orc, d).then(function (res) {
+self._licMostrarDevolucao(orc, d, res);
+try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); } catch (eLg) {}
 });
 };
 var destinoOk = function () {
@@ -64843,25 +64849,10 @@ b.push({ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharMod
 }
 return b;
 },
-_licEnviar: function (orc, d, blob, nome) {
-var self = this;
-var baixar = function () {
-try {
-var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome;
-document.body.appendChild(a); a.click(); document.body.removeChild(a);
-setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-} catch (e) {}
-};
-var falha = function (motivo) {
-baixar();
-UI.modal("Não consegui devolver ao CertamePRO",
-'<p style="font-size:13px;margin-top:0">' + Util.esc(motivo) + '</p>' +
-'<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de Downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
-'clique em <b>Outras opções</b> e use <b>Enviar o arquivo à mão</b>, escolhendo esse arquivo. Nada foi perdido neste orçamento.</p>',
-[{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
-};
+_licPost: function (d, blob, nome) {
+return new Promise(function (resolve) {
 var fd;
-try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { falha("Este navegador não montou o envio (" + e0.message + ")."); return; }
+try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { resolve({ ok: false, erro: "Este navegador não montou o envio (" + e0.message + ")." }); return; }
 var tempo = null, ctl = null;
 try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
 fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
@@ -64874,11 +64865,65 @@ var j = null; try { j = JSON.parse(res.txt); } catch (e2) {}
 if (!res.ok) {
 var dt = j && (j.detail || j.erro || j.mensagem);
 var det = dt ? (typeof dt === "string" ? dt : JSON.stringify(dt)) : "";
-falha("O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ").");
+resolve({ ok: false, status: res.status, j: j, erro: "O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ")." });
 return;
 }
-var lido = null, htmlLido = "";
-try { lido = Licitacao.lerDevolucao(j, Licitacao.totalProposta(orc)); if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
+resolve({ ok: true, status: res.status, j: j });
+})
+.catch(function (e) {
+if (tempo) clearTimeout(tempo);
+var abortou = e && e.name === "AbortError";
+resolve({ ok: false, abortou: abortou, erro: abortou ? "O CertamePRO não respondeu em 45 segundos." : "Não consegui falar com o CertamePRO em " + d.host + " (ele está aberto?). " + (e && e.message ? "Detalhe: " + e.message : "") });
+});
+});
+},
+_licGerarExcel: function (orc) {
+var self = this;
+return new Promise(function (resolve) {
+var falhou = function (e) { resolve({ ok: false, erro: "Não consegui gerar o Excel (" + (e && e.message ? e.message : e) + ")." }); };
+try {
+self._analiticoDoOrc(orc, function () {
+try {
+ExcelOrc.gerar(orc, {
+aoBlob: function (blob, nome) { resolve({ ok: true, blob: blob, nome: nome }); },
+aoErro: falhou
+});
+} catch (e1) { falhou(e1); }
+});
+} catch (e0) { falhou(e0); }
+});
+},
+_licDevolverSilencioso: function (orc, d) {
+var self = this;
+return this._licGerarExcel(orc).then(function (g) {
+if (!g.ok) return { ok: false, etapa: "excel", erro: g.erro };
+return self._licPost(d, g.blob, g.nome).then(function (p) {
+var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null };
+if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }
+return out;
+});
+});
+},
+_licMostrarDevolucao: function (orc, d, res) {
+var self = this, nome = res.nome || "";
+if (!res.ok) {
+if (res.etapa === "excel") { UI.toast(res.erro + " Nada foi enviado.", "erro"); return; }
+if (res.blob) {
+try {
+var a = document.createElement("a"); a.href = URL.createObjectURL(res.blob); a.download = nome;
+document.body.appendChild(a); a.click(); document.body.removeChild(a);
+setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+} catch (e) {}
+}
+UI.modal("Não consegui devolver ao CertamePRO",
+'<p style="font-size:13px;margin-top:0">' + Util.esc(res.erro) + '</p>' +
+'<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de Downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
+'clique em <b>Outras opções</b> e use <b>Enviar o arquivo à mão</b>, escolhendo esse arquivo. Nada foi perdido neste orçamento.</p>',
+[{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+return;
+}
+var j = res.j, lido = res.lido, htmlLido = "";
+try { if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
 if (lido && htmlLido) {
 UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, self._licBotoesVolta(orc));
 return;
@@ -64897,11 +64942,13 @@ UI.modal("Orçamento devolvido ao CertamePRO",
 (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
 '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
 self._licBotoesVolta(orc));
-})
-.catch(function (e) {
-if (tempo) clearTimeout(tempo);
-var abortou = e && e.name === "AbortError";
-falha(abortou ? "O CertamePRO não respondeu em 45 segundos." : "Não consegui falar com o CertamePRO em " + d.host + " (ele está aberto?). " + (e && e.message ? "Detalhe: " + e.message : ""));
+},
+_licEnviar: function (orc, d, blob, nome) {
+var self = this;
+this._licPost(d, blob, nome).then(function (p) {
+var lido = null;
+if (p.ok) { try { lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { lido = null; } }
+self._licMostrarDevolucao(orc, d, { ok: p.ok, etapa: "envio", nome: nome, blob: blob, erro: p.erro || "", j: p.j || null, lido: lido });
 });
 },
 fecharDesfazer: function () {
@@ -72623,6 +72670,205 @@ try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo("orcamentist
 UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") +
 (fora ? " · ⚠ " + fora + " item(ns) do plano não estão mais neste orçamento e ficaram de fora" : "") + ".", (n.pendente || fora) ? "erro" : "ok");
 return true;
+};
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/licitacaoautoui.js ==== */
+try {
+(function (global) {
+"use strict";
+if (typeof App === "undefined" || typeof UI === "undefined") return;
+var esc = function (s) { return Util.esc(String(s == null ? "" : s)); };
+var ETAPAS = [
+{ id: "preset", rotulo: "Aplicar o preset do edital" },
+{ id: "bases", rotulo: "Conferir as bases de preço exigidas" },
+{ id: "orcar", rotulo: "Refazer o preço pelas bases exigidas" },
+{ id: "bdi", rotulo: "Conferir o BDI" },
+{ id: "salvar", rotulo: "Salvar o orçamento" },
+{ id: "devolver", rotulo: "Gerar o Excel e devolver ao CertamePRO" }
+];
+var SELO = { espera: "·", rodando: "…", ok: "OK", aviso: "!", erro: "X", pulou: "—" };
+var COR = { espera: "var(--texto-fraco)", rodando: "#1d4ed8", ok: "var(--verde)", aviso: "#b45309", erro: "#b91c1c", pulou: "var(--texto-fraco)" };
+function htmlEtapas(est) {
+return '<ol class="lic-auto-etapas" style="list-style:none;margin:0;padding:0">' + ETAPAS.map(function (e) {
+var s = est[e.id] || { estado: "espera", detalhe: "" };
+return '<li data-etapa="' + e.id + '" data-estado="' + s.estado + '" style="padding:4px 0;font-size:13px">' +
+'<b style="display:inline-block;min-width:26px;color:' + COR[s.estado] + '">' + SELO[s.estado] + '</b> ' + esc(e.rotulo) +
+(s.detalhe ? '<div class="muted" style="font-size:12px;margin-left:30px">' + esc(s.detalhe) + '</div>' : '') + '</li>';
+}).join("") + '</ol>';
+}
+App._licAutoLog = function (tipo, orc, dados) {
+try {
+var u = {}; try { u = Auth.usuario() || {}; } catch (e0) {}
+var reg = { id: Util.uid("lau"), quando: Util.agoraISO(), tipo: String(tipo || ""), usuario: u.email || u.login || "",
+orcId: orc ? orc.id : "", numero: orc ? String(orc.numero || "") : "", versao: (typeof CONFIG !== "undefined" ? CONFIG.versao : "") };
+Object.keys(dados || {}).forEach(function (k) { reg[k] = dados[k]; });
+Store.salvar(Auth.empresaId(), "licitacao_auto_log", reg);
+return reg;
+} catch (e) { return null; }
+};
+App._licAutoCtx = function (orc) {
+var guardado = this._orcm, self = this, ctx;
+try { if (this._licBasesFatos) this._licBasesFatos(); } catch (e0) {}
+var exig = Licitacao.basesExigidas(orc), fontes = [];
+exig.forEach(function (e) { if (fontes.indexOf(e.catId) < 0) fontes.push(e.catId); });
+this._orcm = { modo: "orcamento", orcId: orc.id };
+try { ctx = this._orcmCtx({ fontes: fontes, elaborar: false }); }
+finally { this._orcm = guardado; }
+var sit = this._licCtxBases();
+Object.keys(sit).forEach(function (k) { ctx[k] = sit[k]; });
+return ctx;
+};
+App.licitacaoAutomaticaSePedido = function (orcId) {
+var orc = this.orcAtual;
+if (!orc || orc.id !== orcId || typeof LicitacaoAuto === "undefined" || !LicitacaoAuto.pedeAutomatico(orc)) return false;
+this.licitacaoAutomatica({ origem: "pacote" });
+return true;
+};
+App.licitacaoAutomatica = function (opts) {
+opts = opts || {};
+var self = this, orc = this.orcAtual;
+if (!orc || typeof Licitacao === "undefined" || typeof LicitacaoAuto === "undefined") return;
+var lic = Licitacao.cfg(orc);
+if (!lic || !lic.certamepro) { UI.toast("Este orçamento não veio de um pacote do CertamePRO.", "erro"); return; }
+if (this._trialBloqueado && this._trialBloqueado()) { this._avisoTrial(); return; }
+if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) { UI.toast("Orçamento aprovado: o orçamento automático não roda nele. Crie uma revisão.", "erro"); return; }
+if (this._licAutoRodando) { UI.toast("O orçamento automático já está rodando.", "erro"); return; }
+if (opts.origem === "botao" && !opts.confirmado) {
+var nEdit = LicitacaoAuto.contarEditados(orc);
+UI.modal("Orçar sozinho?",
+'<p style="font-size:13px;margin-top:0">O OrçaPRO vai, <b>sem mais perguntas</b>:</p>' +
+'<ol style="font-size:13px"><li>aplicar o preset do edital;</li>' +
+'<li>refazer o <b>custo</b> dos itens do órgão pelas bases que o edital exige, na competência exigida (o que não casar com segurança <b>fica com o preço do órgão</b>);</li>' +
+'<li>conferir o BDI (só avisa se fugir da faixa do TCU);</li>' +
+'<li>salvar' + (lic.devolverPara ? ' e <b>devolver ao CertamePRO</b>' : '') + '.</li></ol>' +
+'<p style="font-size:13px" id="lic-auto-editados"><b>' + nEdit + ' item(ns) com preço já alterado por você ' + (nEdit ? 'serão preservados (não são refeitos)' : '(nenhum)') + '.</b></p>' +
+'<p class="muted" style="font-size:12.5px">Descrição, unidade e quantidade dos itens do órgão não mudam. O orçamento fica marcado como “não conferido” até você conferir.</p>',
+[
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Orçar sozinho", classe: "primary", onClick: function () { UI.fecharModal(); opts.confirmado = true; self.licitacaoAutomatica(opts); } }
+]);
+return;
+}
+this._licAutoRodando = true;
+var est = {}, copia = Util.clone(orc);
+if (!copia || copia === orc) { this._licAutoRodando = false; UI.toast("Não consegui preparar a cópia de segurança do orçamento. Nada foi feito.", "erro"); return; }
+var set = function (id, estado, detalhe) {
+est[id] = { estado: estado, detalhe: detalhe || "" };
+var corpo = UI.el("lic-auto-corpo"); if (corpo) corpo.innerHTML = htmlEtapas(est);
+};
+var fim = function (titulo, extraHtml, botoes) {
+self._licAutoRodando = false;
+UI.modal(titulo, '<div id="lic-auto-corpo">' + htmlEtapas(est) + '</div>' + (extraHtml || ""), botoes || [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+};
+UI.modal("Orçamento automático", '<div id="lic-auto-corpo">' + htmlEtapas(est) + '</div>', []);
+var proximo = function (fn) { setTimeout(function () { try { fn(); } catch (e) { self._licAutoLog("erro", orc, { erro: String((e && e.message) || e) }); fim("O orçamento automático parou", '<p style="font-size:13px">' + esc("Erro inesperado: " + ((e && e.message) || e) + ". Nada foi gravado; o orçamento está como estava.") + "</p>"); } }, 30); };
+proximo(function () {
+set("preset", "rodando");
+var es = LicitacaoAuto.escolherPreset(LicitacaoAuto.blocoDe(copia));
+var ap = LicitacaoAuto.aplicarPreset(copia, es.id, LicitacaoAuto.blocoDe(copia), es);
+if (!ap) { set("preset", "erro", "preset não aplicado"); fim("O orçamento automático parou", ""); return; }
+set("preset", (es.deduzido || ap.avisos.length) ? "aviso" : "ok", ap.preset.rotulo + (es.deduzido ? " — " + es.motivo : "") + (ap.avisos.length ? " — " + ap.avisos.join(" ") : ""));
+set("bases", "rodando");
+var exig = Licitacao.basesExigidas(copia), ctx;
+try { ctx = self._licAutoCtx(copia); } catch (eC) { set("bases", "erro", "não montei o acesso às bases: " + ((eC && eC.message) || eC)); fim("O orçamento automático parou", '<p style="font-size:13px">Nada foi gravado.</p>'); return; }
+var sits = LicitacaoAuto.situacaoAuto(copia, ctx);
+var faltam = sits.filter(function (x) { return !x.ok; });
+if (!exig.length) set("bases", "aviso", "o pacote não traz base de preço exigida: os itens ficam com o preço do órgão");
+else if (faltam.length) set("bases", "aviso", faltam.map(function (x) { return x.motivo; }).join("; ") + " — os itens dessas bases ficam com o preço do órgão");
+else if (sits.some(function (x) { return !!x.aviso; })) set("bases", "aviso", sits.map(function (x) { return Licitacao.fmtBase(x.exigida) + (x.aviso ? " (" + x.aviso + ")" : ""); }).join("; "));
+else set("bases", "ok", sits.map(function (x) { return Licitacao.fmtBase(x.exigida); }).join("; "));
+proximo(function () {
+set("orcar", "rodando");
+var r = LicitacaoAuto.orcar(copia, ctx);
+set("orcar", r.baixa_confianca.length ? "aviso" : "ok",
+r.pela_base + " de " + r.itens + " item(ns) pelo código na base exigida; " + r.por_descricao + " por descrição (conferir); " + r.preco_do_orgao_mantido + " com o preço do órgão" +
+(r.editados_pelo_usuario ? "; " + r.editados_pelo_usuario + " editado(s) por você, não refeito(s)" : ""));
+set("bdi", "rodando");
+var b = LicitacaoAuto.conferirBdi(copia, ap.preset.id);
+set("bdi", (b.aviso || b.avisoDivergencia) ? "aviso" : "ok", b.percentual != null ? (Util.fmtNum(b.percentual, 2) + "% (mantido, o automático não altera o BDI)" + (b.aviso ? " — " + b.aviso : " — dentro da faixa do TCU") + (b.avisoDivergencia ? " — " + b.avisoDivergencia : "")) : "");
+LicitacaoAuto.marcar(copia, r, ap.preset.id, es);
+Licitacao.cfg(copia).autoAvisos = (ap.avisos || []).concat(r.avisos || []).concat(b.aviso ? [b.aviso] : []).concat(b.avisoDivergencia ? [b.avisoDivergencia] : []);
+set("salvar", "rodando");
+var gravou = false, excecao = null;
+self.orcAtual = copia;
+try { gravou = self.persistir ? self.persistir({ semBackupModal: true, rotulo: "orçamento automático da licitação" }) : !!Store.salvarOrcamento(Auth.empresaId(), copia); }
+catch (eP) { excecao = eP; gravou = false; }
+if (!gravou) {
+self.orcAtual = orc;
+set("salvar", "erro", excecao ? "a gravação falhou (" + String((excecao && excecao.message) || excecao).slice(0, 120) + ")" : (self._iaPorqueNaoGravou ? self._iaPorqueNaoGravou(false, "o orçamento automático") : "o app recusou gravar"));
+self._licAutoLog("nao-gravou", orc, {});
+fim("O orçamento automático não foi gravado", '<p style="font-size:13px">O orçamento ficou <b>como estava</b>. Nada foi enviado.</p>');
+return;
+}
+set("salvar", "ok", "orçamento salvo; marcado como “não conferido por você”");
+self._licAutoLog("orcamento-automatico", copia, { preset: ap.preset.id, presetDeduzido: es.deduzido === true, origem: opts.origem || "", itens: r.itens, pelaBase: r.pela_base, precoDoOrgaoMantido: r.preco_do_orgao_mantido });
+self.render();
+var lic2 = Licitacao.cfg(copia), d = lic2.devolverPara ? Licitacao.destino(lic2.devolverPara) : null;
+var semDev = function (estado, det, aviso) {
+set("devolver", estado, det);
+fim("Orçamento automático pronto", '<p style="font-size:13px">' + esc(aviso) + '</p>', self._licBotoesVolta(copia));
+};
+var simb = Licitacao.itensSimbolicos ? Licitacao.itensSimbolicos(copia) : [];
+if (simb.length) {
+self._licAutoLog("devolucao-bloqueada-simbolico", copia, { itens: simb.length });
+semDev("aviso", simb.length + " itens sem preço do órgão — preencha e use Devolver ao CertamePRO", simb.length + " itens sem preço do órgão — preencha e use Devolver ao CertamePRO. O orçamento está salvo e a devolução automática não foi feita. " + Licitacao.textoSimbolicos(simb));
+return;
+}
+if (!lic2.devolverPara) { semDev("pulou", "o pacote não traz endereço de devolução", "O orçamento está salvo. Este pacote não tem para onde devolver."); return; }
+if (!d.ok) { semDev("erro", d.erro, "O orçamento está salvo. " + d.erro + " Use o botão “Devolver ao CertamePRO” depois de corrigir."); return; }
+if (!d.confiavel) { semDev("aviso", "destino não reconhecido (" + d.host + "): não envio sozinho", "O orçamento está salvo. O endereço de devolução (" + d.host + ") não é este computador nem o CertamePRO oficial; use o botão “Devolver ao CertamePRO”, que mostra o endereço e pede o seu aval."); return; }
+if (!Auth.podeUsar("exportar")) { semDev("aviso", "exportar é recurso PRO", "O orçamento está salvo. Exportar é recurso PRO; faça upgrade para devolver."); return; }
+set("devolver", "rodando", "gerando o Excel e enviando a " + d.host);
+self._licDevolverSilencioso(copia, d).then(function (res) {
+self._licAutoLog("devolucao-automatica", copia, { ok: !!res.ok, etapa: res.etapa || "", erro: res.erro || "", arquivo: res.nome || "", valor: res.lido ? res.lido.valor : null });
+if (res.ok) {
+set("devolver", "ok", "enviado: " + res.nome);
+var html = "";
+try { html = res.lido ? self._licHtmlDevolucao(res.nome, res.lido) : '<p style="font-size:13px">O CertamePRO recebeu <b class="mono">' + esc(res.nome) + "</b>.</p>"; } catch (eH) { html = ""; }
+fim("Orçamento automático devolvido ao CertamePRO", html, self._licBotoesVolta(copia));
+return;
+}
+if (res.blob) {
+try { var a = document.createElement("a"); a.href = URL.createObjectURL(res.blob); a.download = res.nome; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000); } catch (eB) {}
+}
+set("devolver", "erro", res.erro);
+fim("Orçamento salvo, mas não devolvido", '<p style="font-size:13px">' + esc(res.erro) + '</p>' +
+'<p style="font-size:13px">O orçamento <b>está salvo</b>' + (res.blob ? ' e o arquivo <b class="mono">' + esc(res.nome) + '</b> foi baixado' : '') + '. Se o token do certame venceu (vale 12 h), abra o certame de novo no CertamePRO. Quando quiser, use o botão <b>Devolver ao CertamePRO</b> deste orçamento. Nada foi perdido.</p>');
+}).catch(function (eEnv) {
+try { self._licAutoLog("erro-devolucao", copia, { erro: String((eEnv && eEnv.message) || eEnv) }); } catch (eL) {}
+try { set("devolver", "erro", String((eEnv && eEnv.message) || eEnv)); } catch (eS) {}
+fim("Orçamento salvo, mas não devolvido", '<p style="font-size:13px">' + esc("Erro inesperado ao devolver: " + ((eEnv && eEnv.message) || eEnv)) + '</p><p style="font-size:13px">O orçamento <b>está salvo</b>. Use o botão <b>Devolver ao CertamePRO</b> deste orçamento. Nada foi perdido.</p>');
+});
+});
+});
+};
+App.licAutoVer = function () {
+this._licAutoVer = !this._licAutoVer;
+this.render();
+if (this._licAutoVer) {
+var n = LicitacaoAuto.idsBaixaConfianca(this.orcAtual).length;
+UI.toast(n ? n + " linha(s) destacada(s) em laranja: ficaram com o preço do órgão." : "Nenhum item ficou com o preço do órgão.", n ? "aviso" : "ok");
+}
+};
+App.licAutoConferido = function () {
+var self = this, orc = this.orcAtual;
+if (!orc || !LicitacaoAuto.automatico(orc)) return;
+UI.modal("Marcar como conferido?",
+'<p style="font-size:13px;margin-top:0">Ao marcar, o aviso “Orçamento montado sozinho — não conferido por você” some, e o Excel devolvido depois leva <b>conferido pelo usuário</b> para o CertamePRO. Marque só depois de olhar os itens de baixa confiança.</p>',
+[
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Marcar como conferido", classe: "primary", onClick: function () {
+UI.fecharModal();
+LicitacaoAuto.marcarConferido(orc);
+self._licAutoVer = false;
+var g = self.persistir({ rotulo: "orçamento automático conferido" });
+if (!self._gravou(g)) { var a = LicitacaoAuto.automatico(orc); if (a) { a.conferido_pelo_usuario = false; delete a.conferido_em; } return; }
+self._licAutoLog("conferido", orc, {});
+self.render();
+UI.toast("Marcado como conferido. Ao devolver ao CertamePRO, a marca vai junto.", "ok");
+} }
+]);
 };
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }

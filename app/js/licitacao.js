@@ -265,6 +265,14 @@
       if (bloco.leitura && typeof bloco.leitura === "object" && !Array.isArray(bloco.leitura)) {
         try { lic.leitura = JSON.parse(JSON.stringify(bloco.leitura)); } catch (eL) {}
       }
+      /* ORÇAMENTO AUTOMÁTICO (contrato v1, 08/11/2026; js/licitacaoauto.js). Campos
+         OPCIONAIS: só gravam quando o pacote os traz — pacote sem eles deixa
+         config.licitacao exatamente como era (compatibilidade). */
+      if (bloco.orcamento_automatico === true || bloco.orcamento_automatico === false) lic.orcamentoAutomatico = bloco.orcamento_automatico;
+      if (s(bloco.preset)) lic.presetPacote = s(bloco.preset);
+      if (s(bloco.regime_execucao)) lic.regimeExecucao = s(bloco.regime_execucao);
+      if (s(bloco.arredondamento)) lic.arredondamentoPacote = s(bloco.arredondamento);
+
       lic.refs = { n: porN, c: porC };
       lic.nRefs = n || Object.keys(porC).length;
       lic.travaLiberada = false;
@@ -287,7 +295,16 @@
          aviso de "fora da planilha do órgão" o mostra). */
       var travados = 0;
       (orc.etapas || []).forEach(function (e) {
-        ((e && e.itens) || []).forEach(function (it) { if (it) { it.travadoOrgao = true; travados++; } });
+        ((e && e.itens) || []).forEach(function (it) {
+          if (!it) return;
+          it.travadoOrgao = true; travados++;
+          /* MARCA DO QUE O ÓRGÃO MANDOU (orçamento automático, js/licitacaoauto.js): o preço e a
+             identificação do item NA IMPORTAÇÃO. É daqui — não do preço atual — que o automático
+             sabe o que é "preço do órgão" e se a pessoa já mexeu. Reimportar não a sobrescreve se o
+             item já a tem (o orçamento que entra pelo pacote traz o item novo, sem a marca). */
+          if (!it.orgao) it.orgao = { custo: num(it.custoUnitario), mo: it.custoMO != null ? num(it.custoMO) : null, mat: it.custoMAT != null ? num(it.custoMAT) : null,
+            eq: it.custoEQ != null ? num(it.custoEQ) : null, codigo: s(it.codigo), origem: it.origem, baseFonte: it.baseFonte };
+        });
       });
       lic.nTravados = travados;
       /* ITENS IDENTIFICADOS NO EDITAL (CertamePRO 0.12.4): vão para uma etapa
@@ -1307,11 +1324,27 @@
      * ------------------------------------------------------------------ */
     destino: function (url) {
       var u = s(url);
-      var m = u.match(/^(https?):\/\/([^\/:?#]+)(?::(\d+))?(\/[^?#]*)?/i);
-      if (!m) return { ok: false, erro: "O endereço de devolução do certame é inválido." };
+      var inval = { ok: false, erro: "O endereço de devolução do certame é inválido." };
+      /* ⚠ new URL(), não expressão regular (revisão de 08/11/2026): num endereço com arroba, o host é o que vem
+         DEPOIS dela; um 127.0.0.1:8961 antes da arroba é só usuário e senha, e o regex lia o 127.0.0.1 e chamava
+         de local. Endereço com usuário ou senha é recusado.
+         `confiavel` = pode receber o orçamento SOZINHO: esta máquina ou o CertamePRO oficial, só por https, nome
+         exato e porta padrão. Por quê: em produção o devolver_para é o do servidor oficial, e só com "local" o
+         automático nunca enviava. O endereço vem de um arquivo de fora: qualquer outro host fica no botão manual. */
+      if (typeof URL === "function") {
+        var p;
+        try { p = new URL(u); } catch (e) { return inval; }
+        if (p.protocol !== "http:" && p.protocol !== "https:") return inval;
+        if (p.username || p.password) return { ok: false, erro: "O endereço de devolução do certame leva usuário ou senha, o que esconde para onde ele realmente vai. Recusado." };
+        var h = String(p.hostname || "").toLowerCase();
+        var ehLocal = (h === "127.0.0.1" || h === "localhost" || h === "[::1]");
+        return { ok: true, url: u, host: String(p.host || "").toLowerCase(), local: ehLocal, confiavel: ehLocal || (p.protocol === "https:" && String(p.host || "").toLowerCase() === "app.certamepro.com.br") };
+      }
+      var m = u.match(/^(https?):\/\/([^\/:?#@]+)(?::(\d+))?(\/[^?#@]*)?(?:[?#].*)?$/i);
+      if (!m) return inval;
       var host = m[2].toLowerCase();
-      var local = (host === "127.0.0.1" || host === "localhost" || host === "[::1]");
-      return { ok: true, url: u, host: host + (m[3] ? ":" + m[3] : ""), local: local };
+      var ehLocal2 = (host === "127.0.0.1" || host === "localhost" || host === "[::1]");
+      return { ok: true, url: u, host: host + (m[3] ? ":" + m[3] : ""), local: ehLocal2, confiavel: ehLocal2 || (m[1].toLowerCase() === "https" && host === "app.certamepro.com.br" && !m[3]) };
     },
 
     /* ------------------------------------------------------------------

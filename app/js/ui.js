@@ -1960,7 +1960,11 @@
              linhas do modo compacto já esperavam esta classe; ela nunca foi
              emitida, então as duas regras nasceram mortas. */
           var _ehIdentIt = !!(it.identificadoEdital && it.aCompor);
-          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + '" data-etapa-linhas="' + cadeia + '">' +
+          /* ORÇAMENTO AUTOMÁTICO: "Ver itens" destaca as linhas que ficaram com o preço do órgão
+             (js/licitacaoautoui.js; App._licAutoVer liga e desliga) */
+          var _ehAutoBaixa = !!(it.autoOrc && it.autoOrc.baixa === true && typeof App !== "undefined" && App._licAutoVer === true);
+          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '"' +
+            (_ehAutoBaixa ? ' title="' + Util.esc("Preço do órgão mantido pelo orçamento automático: " + (LicitacaoAuto.motivoDoItem(orc, it) || "")) + '"' : '') + '>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
@@ -3842,6 +3846,7 @@
         if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
         if (typeof LicitacaoDocs !== "undefined") acoes += bt("lic-pacote", "Gerar pacote da proposta", "Carta, resumo, planilha, analítico, composições, curva ABC, cronograma, BDI e encargos no timbrado da empresa (PDF). Confere antes se falta algum dado.");
         acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
+        if (typeof LicitacaoAuto !== "undefined") acoes += bt("lic-orcar-auto", "Orçar sozinho", "Aplica o preset, refaz o preço pelas bases que o edital exige, calcula o BDI e devolve ao CertamePRO, sem clique. Pede confirmação.");
         acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
           ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
           : "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
@@ -3853,8 +3858,24 @@
           (lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
         acaoHtml: acoes });
       av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+      h += this._licAutoAviso(orc);
       h += this._licBasesPainel(orc);
       return h;
+    },
+
+    /* AVISO FIXO do orçamento automático: fica à vista enquanto a pessoa não marcar
+       "conferido" (config.licitacao.automatico.conferido_pelo_usuario). Conta os itens
+       que ficaram com o preço do órgão e dá a porta de olhar cada um. */
+    _licAutoAviso: function (orc) {
+      if (typeof LicitacaoAuto === "undefined" || !LicitacaoAuto.naoConferido(orc)) return "";
+      var a = LicitacaoAuto.automatico(orc), nb = (a.baixa_confianca || []).length;
+      var ver = (typeof App !== "undefined" && App._licAutoVer === true);
+      var bts = '<button class="btn ghost sm n3" data-acao="lic-auto-ver" title="Destaca na planilha as linhas que ficaram com o preço do órgão">' + (ver ? "Esconder destaque" : "Ver itens") + '</button>' +
+        '<button class="btn sm n3" data-acao="lic-auto-conferido" title="Confirma que você conferiu o orçamento. Ao devolver depois, o CertamePRO recebe a marca de conferido.">Marcar como conferido</button>';
+      var txt = (a.resumo ? a.resumo.pela_base + " de " + a.resumo.itens + " itens pelo preço da base exigida; " : "") +
+        '<b>' + nb + ' item(ns) de baixa confiança</b> ficaram com o preço do órgão.' +
+        (nb ? '' : ' Nenhum item ficou de fora.') + ' Preset: ' + Util.esc(a.preset || "") + (a.preset_deduzido ? " (deduzido)" : "") + '.';
+      return MOD().aviso({ tom: "alerta", titulo: "Orçamento montado sozinho — não conferido por você", textoHtml: txt, acaoHtml: bts });
     },
 
     /* BASES EXIGIDAS PELO EDITAL — uma linha por tabela que o edital fixa, com

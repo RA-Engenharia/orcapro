@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.263",
+versao: "1.2.264",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -14937,7 +14937,9 @@ var cadeia = subId ? (subId + " " + e.id) : e.id;
 var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
 var recLinha = rec || recSub;
 var _ehIdentIt = !!(it.identificadoEdital && it.aCompor);
-var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + '" data-etapa-linhas="' + cadeia + '">' +
+var _ehAutoBaixa = !!(it.autoOrc && it.autoOrc.baixa === true && typeof App !== "undefined" && App._licAutoVer === true);
+var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '"' +
+(_ehAutoBaixa ? ' title="' + Util.esc("Preço do órgão mantido pelo orçamento automático: " + (LicitacaoAuto.motivoDoItem(orc, it) || "")) + '"' : '') + '>' +
 '<td class="num-item"><b>' + numItem + '</b></td>' +
 '<td>' + (temCod
 ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet || ehBaseAna ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
@@ -16212,6 +16214,7 @@ acoes += bt("lic-desconto-itens", "Desconto por item…", "Um percentual por ite
 if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
 if (typeof LicitacaoDocs !== "undefined") acoes += bt("lic-pacote", "Gerar pacote da proposta", "Carta, resumo, planilha, analítico, composições, curva ABC, cronograma, BDI e encargos no timbrado da empresa (PDF). Confere antes se falta algum dado.");
 acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
+if (typeof LicitacaoAuto !== "undefined") acoes += bt("lic-orcar-auto", "Orçar sozinho", "Aplica o preset, refaz o preço pelas bases que o edital exige, calcula o BDI e devolve ao CertamePRO, sem clique. Pede confirmação.");
 acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
 ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
 : "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
@@ -16223,8 +16226,20 @@ textoHtml: "<span> " + Util.esc(partes.join(" · ") || "dados do edital não inf
 (lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
 acaoHtml: acoes });
 av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+h += this._licAutoAviso(orc);
 h += this._licBasesPainel(orc);
 return h;
+},
+_licAutoAviso: function (orc) {
+if (typeof LicitacaoAuto === "undefined" || !LicitacaoAuto.naoConferido(orc)) return "";
+var a = LicitacaoAuto.automatico(orc), nb = (a.baixa_confianca || []).length;
+var ver = (typeof App !== "undefined" && App._licAutoVer === true);
+var bts = '<button class="btn ghost sm n3" data-acao="lic-auto-ver" title="Destaca na planilha as linhas que ficaram com o preço do órgão">' + (ver ? "Esconder destaque" : "Ver itens") + '</button>' +
+'<button class="btn sm n3" data-acao="lic-auto-conferido" title="Confirma que você conferiu o orçamento. Ao devolver depois, o CertamePRO recebe a marca de conferido.">Marcar como conferido</button>';
+var txt = (a.resumo ? a.resumo.pela_base + " de " + a.resumo.itens + " itens pelo preço da base exigida; " : "") +
+'<b>' + nb + ' item(ns) de baixa confiança</b> ficaram com o preço do órgão.' +
+(nb ? '' : ' Nenhum item ficou de fora.') + ' Preset: ' + Util.esc(a.preset || "") + (a.preset_deduzido ? " (deduzido)" : "") + '.';
+return MOD().aviso({ tom: "alerta", titulo: "Orçamento montado sozinho — não conferido por você", textoHtml: txt, acaoHtml: bts });
 },
 _licBasesPainel: function (orc) {
 if (typeof Licitacao === "undefined" || !Licitacao.temBasesExigidas || !Licitacao.temBasesExigidas(orc)) return "";
@@ -56058,6 +56073,10 @@ if (cod && p > 0 && cont[cod] === 1) porC[cod] = { numero: s(r.numero), codigo: 
 if (bloco.leitura && typeof bloco.leitura === "object" && !Array.isArray(bloco.leitura)) {
 try { lic.leitura = JSON.parse(JSON.stringify(bloco.leitura)); } catch (eL) {}
 }
+if (bloco.orcamento_automatico === true || bloco.orcamento_automatico === false) lic.orcamentoAutomatico = bloco.orcamento_automatico;
+if (s(bloco.preset)) lic.presetPacote = s(bloco.preset);
+if (s(bloco.regime_execucao)) lic.regimeExecucao = s(bloco.regime_execucao);
+if (s(bloco.arredondamento)) lic.arredondamentoPacote = s(bloco.arredondamento);
 lic.refs = { n: porN, c: porC };
 lic.nRefs = n || Object.keys(porC).length;
 lic.travaLiberada = false;
@@ -56069,7 +56088,12 @@ lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.len
 }
 var travados = 0;
 (orc.etapas || []).forEach(function (e) {
-((e && e.itens) || []).forEach(function (it) { if (it) { it.travadoOrgao = true; travados++; } });
+((e && e.itens) || []).forEach(function (it) {
+if (!it) return;
+it.travadoOrgao = true; travados++;
+if (!it.orgao) it.orgao = { custo: num(it.custoUnitario), mo: it.custoMO != null ? num(it.custoMO) : null, mat: it.custoMAT != null ? num(it.custoMAT) : null,
+eq: it.custoEQ != null ? num(it.custoEQ) : null, codigo: s(it.codigo), origem: it.origem, baseFonte: it.baseFonte };
+});
 });
 lic.nTravados = travados;
 if (Array.isArray(bloco.itens_identificados)) {
@@ -56800,11 +56824,21 @@ texto: "O edital exige " + self.fmtBase(x.exigida) + "; os preços usam " + self
 },
 destino: function (url) {
 var u = s(url);
-var m = u.match(/^(https?):\/\/([^\/:?#]+)(?::(\d+))?(\/[^?#]*)?/i);
-if (!m) return { ok: false, erro: "O endereço de devolução do certame é inválido." };
+var inval = { ok: false, erro: "O endereço de devolução do certame é inválido." };
+if (typeof URL === "function") {
+var p;
+try { p = new URL(u); } catch (e) { return inval; }
+if (p.protocol !== "http:" && p.protocol !== "https:") return inval;
+if (p.username || p.password) return { ok: false, erro: "O endereço de devolução do certame leva usuário ou senha, o que esconde para onde ele realmente vai. Recusado." };
+var h = String(p.hostname || "").toLowerCase();
+var ehLocal = (h === "127.0.0.1" || h === "localhost" || h === "[::1]");
+return { ok: true, url: u, host: String(p.host || "").toLowerCase(), local: ehLocal, confiavel: ehLocal || (p.protocol === "https:" && String(p.host || "").toLowerCase() === "app.certamepro.com.br") };
+}
+var m = u.match(/^(https?):\/\/([^\/:?#@]+)(?::(\d+))?(\/[^?#@]*)?(?:[?#].*)?$/i);
+if (!m) return inval;
 var host = m[2].toLowerCase();
-var local = (host === "127.0.0.1" || host === "localhost" || host === "[::1]");
-return { ok: true, url: u, host: host + (m[3] ? ":" + m[3] : ""), local: local };
+var ehLocal2 = (host === "127.0.0.1" || host === "localhost" || host === "[::1]");
+return { ok: true, url: u, host: host + (m[3] ? ":" + m[3] : ""), local: ehLocal2, confiavel: ehLocal2 || (m[1].toLowerCase() === "https" && host === "app.certamepro.com.br" && !m[3]) };
 },
 lerDevolucao: function (j, totalLocal) {
 if (!j || typeof j !== "object" || !Array.isArray(j.alertas)) return null;
@@ -58159,6 +58193,396 @@ _util: { fmt: fmt, R: R, norm: norm, parecido: parecido, arr: arr, prazoExt: pra
 };
 global.LicitacaoDocs = LicitacaoDocs;
 if (typeof module !== "undefined" && module.exports) module.exports = LicitacaoDocs;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/licitacaoauto.js ==== */
+try {
+(function (global) {
+"use strict";
+function _dep(nome) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") {
+try { var m = require("./" + nome.toLowerCase() + ".js"); if (m) return m; } catch (e) {}
+}
+return null;
+}
+function s(v) { return String(v == null ? "" : v).trim(); }
+function num(v) { var u = _dep("Util"); return u ? u.num(v) : (Number(v) || 0); }
+function r4(v) { return Math.round((Number(v) || 0) * 10000) / 10000; }
+function agora() { var u = _dep("Util"); return (u && u.agoraISO) ? u.agoraISO() : new Date().toISOString(); }
+function versaoApp() {
+var c = _dep("CONFIG") || global.CONFIG;
+return (c && c.versao) ? String(c.versao) : "";
+}
+var COLUNAS_TODAS = { pubdi: true, cat: true, ref: true };
+var BASES_DO_EDITAL = { origem: "edital", ordem: "do edital", praca: "exata", competencia: "exata", regime: "exato" };
+function preset(id, rotulo, obra, tipoTcu, regime, colunas) {
+return { id: id, rotulo: rotulo, obra: obra, tipoTcu: tipoTcu, regime: regime, bases: BASES_DO_EDITAL, arredondamento: null, colunas: colunas };
+}
+var PRESETS = {
+obra_global: preset("obra_global", "Obra — empreitada por preço global", true, "edificacoes", "empreitada_global", COLUNAS_TODAS),
+obra_unitario: preset("obra_unitario", "Obra — empreitada por preço unitário", true, "edificacoes", "empreitada_unitario", COLUNAS_TODAS),
+servico_engenharia: preset("servico_engenharia", "Serviço de engenharia", true, "edificacoes", null, COLUNAS_TODAS),
+servico_comum: preset("servico_comum", "Serviço comum", false, "edificacoes", null, COLUNAS_TODAS),
+compra: preset("compra", "Compra de material ou equipamento", false, "fornecimento", null, { pubdi: true, cat: false, ref: true })
+};
+var ORDEM_PRESETS = ["obra_global", "obra_unitario", "servico_engenharia", "servico_comum", "compra"];
+var ARRED_PACOTE = { truncar2: "truncar2", arredondar2: "arred2" };
+var LicitacaoAuto = {
+PRESETS: PRESETS,
+ORDEM_PRESETS: ORDEM_PRESETS,
+presetValido: function (id) { return !!(id && Object.prototype.hasOwnProperty.call(PRESETS, s(id))); },
+escolherPreset: function (bloco) {
+bloco = (bloco && typeof bloco === "object") ? bloco : {};
+var pedido = s(bloco.preset);
+if (this.presetValido(pedido)) return { id: pedido, deduzido: false, motivo: "preset informado pelo pacote" };
+var aviso = pedido ? ("preset “" + pedido + "” não existe; ") : "";
+var obra = bloco.obra_engenharia === true ? true : (bloco.obra_engenharia === false ? false : null);
+var reg = s(bloco.regime_execucao);
+if (obra === true) {
+if (reg === "empreitada_unitario") return { id: "obra_unitario", deduzido: true, motivo: aviso + "deduzido: obra de engenharia, empreitada por preço unitário" };
+if (reg === "empreitada_global" || reg === "integral") return { id: "obra_global", deduzido: true, motivo: aviso + "deduzido: obra de engenharia, regime " + (reg === "integral" ? "de contratação integral" : "de empreitada por preço global") };
+return { id: "servico_engenharia", deduzido: true, motivo: aviso + "deduzido: obra ou serviço de engenharia" + (reg === "tarefa" ? " por tarefa" : " sem regime de execução informado") };
+}
+if (obra === false) return { id: "servico_comum", deduzido: true, motivo: aviso + "deduzido: não é obra nem serviço de engenharia (o pacote não permite distinguir serviço comum de compra)" };
+return { id: "servico_comum", deduzido: true, motivo: aviso + "deduzido: o pacote não informa se é obra de engenharia; tratado como serviço comum (limites de 75% e 85% desligados)" };
+},
+aplicarPreset: function (orc, presetId, bloco, info) {
+var L = _dep("Licitacao"), O = _dep("Orcamento");
+var p = this.presetValido(presetId) ? PRESETS[s(presetId)] : null;
+if (!orc || !L || !p) return null;
+bloco = (bloco && typeof bloco === "object") ? bloco : {};
+info = info || {};
+var lic = L.cfg(orc);
+if (!lic) return null;
+if (O && O.garantirConfig) O.garantirConfig(orc);
+var avisos = [];
+lic.preset = p.id;
+lic.presetDeduzido = info.deduzido === true;
+lic.presetMotivo = s(info.motivo);
+if (lic.obraInformada === true && lic.obra !== p.obra) {
+avisos.push("O pacote marca " + (lic.obra ? "obra ou serviço de engenharia" : "que NÃO é obra nem serviço de engenharia") + ", e o preset “" + p.rotulo + "” pede o contrário. Vale a marcação do pacote; confira os limites de 75% e 85%.");
+} else if (lic.obraInformada !== true) {
+lic.obra = p.obra;
+}
+var arr = ARRED_PACOTE[s(bloco.arredondamento)] || ARRED_PACOTE[s(lic.arredondamentoPacote)] || null;
+if (arr) { orc.config.arredondamento = arr; lic.arredondamentoPacote = s(bloco.arredondamento) || s(lic.arredondamentoPacote); }
+var col = orc.config.colunas;
+if (col && typeof col === "object") {
+Object.keys(p.colunas).forEach(function (k) { if (p.colunas[k] === true && col[k] === null) col[k] = true; });
+}
+lic.autoAvisos = avisos;
+return { preset: p, avisos: avisos };
+},
+conferirBdi: function (orc, presetId) {
+var B = _dep("Bdi") || global.Bdi, p = PRESETS[s(presetId)] || PRESETS.servico_comum;
+if (!orc || !orc.bdi || !B) return { percentual: null, aviso: null, avisoDivergencia: null, tipoTcu: p.tipoTcu };
+var pct = num(orc.bdi.percentual), div = null;
+if (orc.bdi.params && typeof orc.bdi.params === "object") {
+var dosParams = B.calcular(orc.bdi.params);
+if (Math.abs(dosParams - pct) > 0.011) div = "Os parâmetros do BDI dão " + dosParams + "% e o percentual gravado no orçamento é " + pct + "%. O automático usou o gravado; confira na aba BDI.";
+}
+return { percentual: pct, aviso: B.avisoFaixa ? B.avisoFaixa(pct, p.tipoTcu) : null, avisoDivergencia: div, tipoTcu: p.tipoTcu };
+},
+_fonteDeclarada: function (it) {
+var b = s(it.baseFonte), o = s(it.origem).toUpperCase();
+if (b) return b;
+if (!o || o === "PROPRIA" || o === "PROPRIO" || o === "OUTRA" || o === "OUTRO") return "";
+return s(it.origem);
+},
+_fonteEhPropria: function (it) {
+var L = _dep("Licitacao"), o = s(it.origem).toUpperCase(), b = s(it.baseFonte).toUpperCase().replace(/[^A-Z0-9_]/g, "");
+return o === "PROPRIA" || o === "PROPRIO" || b === "PROPRIA" || !!(L && L.FONTES_PROPRIAS && (L.FONTES_PROPRIAS[b] || L.FONTES_PROPRIAS[o]));
+},
+situacaoAuto: function (orc, ctx) {
+var L = _dep("Licitacao");
+if (!orc || !L || !L.basesExigidas(orc).length) return [];
+ctx = ctx || {};
+return L.situacaoBases(orc, ctx).map(function (x) {
+var ex = x.exigida, ok = x.estado === "instalada", motivo = ok ? "" : (L.fmtBase(ex) + " não instalada"), aviso = "";
+if (ok && ex.catId === "SINAPI_DES") {
+var inst = (ctx.instaladas || []).filter(function (b) { return b && s(b.fonte).toUpperCase() === "SINAPI_DES"; })[0];
+if (!inst || inst.desonerado !== true) { ok = false; motivo = "a base SINAPI desonerada instalada (" + L.fmtBase(x.emUso || ex) + ") não declara que é desonerada"; }
+} else if (ok && ex.catId === "SINAPI") {
+var rg = s((ctx.sinapi || {}).regime).toLowerCase();
+if (rg === "desonerado") { ok = false; motivo = "a carga da SINAPI declara ser desonerada e o edital pede onerada"; }
+else if (rg !== "onerado") aviso = "regime assumido: base do app, não desonerada (a carga da SINAPI não declara o regime)";
+} else if (ok && ex.regime && (!x.emUso || x.emUso.regime !== ex.regime)) {
+ok = false;
+motivo = "a base instalada (" + L.fmtBase(x.emUso || ex) + ") não declara se é " + (ex.regime === "desonerado" ? "desonerada" : "onerada");
+}
+return { exigida: ex, emUso: x.emUso, ok: ok, motivo: motivo, aviso: aviso, texto: x.texto };
+});
+},
+_origemDoItem: function (lic, it) {
+if (it.orgao && typeof it.orgao === "object" && it.orgao.custo != null) return it.orgao;
+var refs = lic && lic.refs, ref = null;
+if (refs) {
+if (s(it.numeroOrigem) && refs.n && refs.n[s(it.numeroOrigem)]) ref = refs.n[s(it.numeroOrigem)];
+else if (s(it.codigo) && refs.c && refs.c[s(it.codigo)]) ref = refs.c[s(it.codigo)];
+}
+if (ref && num(ref.preco) > 0) {
+var cur = num(it.custoUnitario), rp = num(ref.preco);
+if (Math.abs(cur - rp) <= 0.01 * rp) return { custo: cur, mo: null, mat: null, eq: null, codigo: s(it.codigo), origem: it.origem, baseFonte: it.baseFonte, deRef: true };
+return { antigo: true };
+}
+return null;
+},
+_estadoItem: function (lic, it) {
+var ao = (it.autoOrc && typeof it.autoOrc === "object") ? it.autoOrc : null, org = this._origemDoItem(lic, it), antigo = false;
+if (org && org.antigo) { org = null; antigo = true; }
+if (!org && ao && ao.custoOrgao != null) { org = { custo: num(ao.custoOrgao), mo: null, mat: null, eq: null }; antigo = false; }
+var editado = false;
+if (ao && ao.custoAplicado != null) editado = Math.abs(num(it.custoUnitario) - num(ao.custoAplicado)) > 0.005;
+else if (org) editado = Math.abs(num(it.custoUnitario) - num(org.custo)) > 0.005;
+return { ao: ao, org: org, editado: editado, semOrigem: !org, antigo: antigo };
+},
+contarEditados: function (orc) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null, self = this, n = 0;
+(orc && orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) { if (it && it.travadoOrgao === true && self._estadoItem(lic, it).editado) n++; });
+});
+return n;
+},
+orcar: function (orc, ctx, opts) {
+var L = _dep("Licitacao"), Orq = _dep("Orcamentista") || global.Orcamentista;
+if (!orc || !L || !Orq) throw new Error("licitacaoauto: faltam Licitacao ou Orcamentista.");
+ctx = ctx || {}; opts = opts || {};
+var self = this, lic = L.cfg(orc);
+var exigidas = L.basesExigidas(orc);
+var situacao = this.situacaoAuto(orc, ctx);
+var elegiveis = [], porCat = {};
+situacao.forEach(function (x) {
+if (x.ok && elegiveis.indexOf(x.exigida.catId) < 0) { elegiveis.push(x.exigida.catId); porCat[x.exigida.catId] = x.exigida; }
+});
+var faltam = situacao.filter(function (x) { return !x.ok; });
+var resumo = { itens: 0, pela_base: 0, por_descricao: 0, preco_do_orgao_mantido: 0, baixa_confianca: [], editados_pelo_usuario: 0, sem_preco_do_orgao: 0,
+avisos: situacao.filter(function (x) { return !!x.aviso; }).map(function (x) { return L.fmtBase(x.exigida) + ": " + x.aviso; }),
+bases: situacao.map(function (x) { return { base: L.fmtBase(x.exigida), estado: x.ok ? "instalada" : "ausente", texto: x.ok ? x.texto : x.motivo }; }) };
+var ok = function (f) { return elegiveis.indexOf(f) >= 0; };
+var ctx2 = {};
+Object.keys(ctx).forEach(function (k) { ctx2[k] = ctx[k]; });
+ctx2.fontes = elegiveis.slice();
+ctx2.elaborar = null;
+ctx2.semPendente = true;
+ctx2._idxDesc = null; ctx2._compCache = null;
+if (typeof ctx.obter === "function") ctx2.obter = function (f, cod) { return ok(f) ? ctx.obter(f, cod) : null; };
+if (typeof ctx.itensDe === "function") ctx2.itensDe = function (f) { return ok(f) ? ctx.itensDe(f) : []; };
+if (typeof ctx.buscar === "function") ctx2.buscar = function (q, o) {
+o = o || {};
+return (ctx.buscar(q, { fontes: elegiveis.slice(), max: o.max, tipo: o.tipo }) || []).filter(function (r) { return r && ok(r.fonte); });
+};
+var lim = ctx2.limiares || Orq.LIMIARES;
+var basesComCodigo = function (cod) {
+var achou = [], vars = Orq.variantes(cod);
+elegiveis.forEach(function (f) {
+for (var v = 0; v < vars.length; v++) { var b = ctx2.obter ? ctx2.obter(f, vars[v]) : null; if (b) { achou.push({ fonte: f, item: b }); break; } }
+});
+return achou;
+};
+var nomeSemEstado = function (f) { return Orq.normalizarFonte(f); };
+var entrada = [], refs = [];
+(orc.etapas || []).forEach(function (e, ei) {
+var et = { nome: e.nome, codigo: e.codigo, itens: [] };
+((e && e.itens) || []).forEach(function (it, ii) {
+if (!it || it.travadoOrgao !== true) return;
+var cod = s(it.codigo) && s(it.codigo) !== "—" ? s(it.codigo) : "";
+var est = self._estadoItem(lic, it), ao = est.ao, org = est.org;
+var aplicadoAntes = !!(ao && ao.codigoAplicado !== undefined && ao.codigoAplicado !== null && cod === ao.codigoAplicado);
+if (aplicadoAntes) cod = "";
+var numero = s(it.numeroOrigem) || (s(e.codigo) ? s(e.codigo).replace(/\.0$/, "") + "." + (ii + 1) : String(ii + 1));
+if (!it.orgao && !ao && org && !est.semOrigem) {
+it.orgao = { custo: num(org.custo), mo: it.custoMO != null ? num(it.custoMO) : null, mat: it.custoMAT != null ? num(it.custoMAT) : null,
+eq: it.custoEQ != null ? num(it.custoEQ) : null, codigo: s(it.codigo), origem: it.origem };
+if (Object.prototype.hasOwnProperty.call(it, "baseFonte")) it.orgao.baseFonte = it.baseFonte;
+}
+var orig, og = (it.orgao && typeof it.orgao === "object") ? it.orgao : null;
+if (ao && ao.codigoOrgao !== undefined) orig = { codigo: ao.codigoOrgao, origem: ao.origemOrgao, temBaseFonte: ao.temBaseFonteOrgao === true, baseFonte: ao.baseFonteOrgao };
+else if (og) orig = { codigo: s(og.codigo), origem: og.origem, temBaseFonte: Object.prototype.hasOwnProperty.call(og, "baseFonte"), baseFonte: og.baseFonte };
+else orig = { codigo: it.codigo, origem: it.origem, temBaseFonte: Object.prototype.hasOwnProperty.call(it, "baseFonte"), baseFonte: it.baseFonte };
+var custoOrg = org ? num(org.custo) : null;
+var decl0 = aplicadoAntes ? "" : self._fonteDeclarada(it);
+refs.push({ it: it, etapa: e, numero: numero, cod: cod, decl: decl0, editado: est.editado, semOrigem: est.semOrigem, antigo: est.antigo, ao: ao, org: org, orig: orig, custoOrg: custoOrg });
+et.itens.push({ _ref: it, _n: refs.length - 1, codigo: cod, fonte: decl0, descricao: it.descricao, unidade: it.unidade,
+quantidade: it.quantidade, custoUnitario: 0, custoPlanilha: custoOrg || 0 });
+});
+if (et.itens.length) entrada.push(et);
+});
+var plano = [];
+if (entrada.length) {
+if (elegiveis.length) plano = Orq.planejar(entrada, ctx2).plano;
+else {
+entrada.forEach(function (et) { et.itens.forEach(function (x) { plano.push({ item: x, status: "pendente", via: "nenhum", confianca: 0, motivo: "", sem: true }); }); });
+}
+}
+var textoFaltam = function (decl) {
+var fam = /^SINAPI/i.test(s(decl)) ? "SINAPI" : "";
+var rel = faltam.filter(function (x) { return !fam || /^SINAPI/.test(x.exigida.catId); });
+if (!rel.length) rel = faltam;
+return rel.length ? rel[0].motivo : "";
+};
+var restaurarCodigo = function (r) {
+var it = r.it, ao = r.ao;
+if (ao && ao.codigoAplicado !== undefined && ao.codigoAplicado !== null && it.codigo === ao.codigoAplicado) {
+it.codigo = r.orig.codigo; it.origem = r.orig.origem;
+if (r.orig.temBaseFonte) it.baseFonte = r.orig.baseFonte; else delete it.baseFonte;
+}
+};
+var parcelasDoOrgao = function (r) {
+if (r.ao && r.ao.parcelasOrgao) return r.ao.parcelasOrgao;
+if (r.org && !r.org.deRef && (r.org.mo != null || r.org.mat != null || r.org.eq != null)) return { mo: num(r.org.mo), mat: num(r.org.mat), eq: num(r.org.eq) };
+if (r.it.orgao && (r.it.orgao.mo != null || r.it.orgao.mat != null || r.it.orgao.eq != null)) return { mo: num(r.it.orgao.mo), mat: num(r.it.orgao.mat), eq: num(r.it.orgao.eq) };
+return { mo: num(r.it.custoMO), mat: num(r.it.custoMAT), eq: num(r.it.custoEQ) };
+};
+var juntar = function (a, b) { Object.keys(b).forEach(function (k) { a[k] = b[k]; }); return a; };
+var manter = function (r, motivo, conf, codMotivo) {
+var it = r.it, ao = r.ao || {};
+if (r.editado) {
+resumo.editados_pelo_usuario++;
+var m1 = "preço alterado por você depois do que o órgão mandou; o automático não o refaz";
+it.autoOrc = juntar(juntar({}, ao), { via: "editado", motivo: "editado", baixa: true, confianca: 0 });
+if (it.autoOrc.custoOrgao === undefined) it.autoOrc.custoOrgao = r.custoOrg;
+if (it.autoOrc.custoAplicado === undefined) it.autoOrc.custoAplicado = null;
+resumo.baixa_confianca.push({ numero: r.numero, codigo: r.cod, descricao: s(it.descricao), motivo: m1, confianca: 0 });
+return;
+}
+if (r.semOrigem) {
+var m2 = r.antigo ? "orçamento antigo: não dá para saber se o preço foi alterado; o automático não mexeu no preço"
+: "o preço original do órgão não está registrado neste orçamento; o automático não mexeu no preço";
+it.autoOrc = { via: "orgao", motivo: r.antigo ? "antigo" : "sem-origem", baixa: true };
+resumo.baixa_confianca.push({ numero: r.numero, codigo: r.cod, descricao: s(it.descricao), motivo: m2, confianca: 0 });
+return;
+}
+var parc = parcelasDoOrgao(r);
+restaurarCodigo(r);
+it.custoUnitario = r.custoOrg; it.custoMO = parc.mo; it.custoMAT = parc.mat; it.custoEQ = parc.eq;
+var simb = it.semPrecoReferencia === true && num(r.custoOrg) <= 0.01 + 1e-9;
+if (simb) { motivo = "o órgão não deu preço (R$ 0,01 simbólico)"; codMotivo = "simbolico"; resumo.sem_preco_do_orgao++; }
+it.autoOrc = { via: "orgao", motivo: codMotivo || "orgao", custoAplicado: r.custoOrg, baixa: true };
+if (conf) it.autoOrc.confianca = conf;
+if (!it.orgao) it.autoOrc.custoOrgao = r.custoOrg;
+resumo.preco_do_orgao_mantido++;
+resumo.baixa_confianca.push({ numero: r.numero, codigo: r.cod, descricao: s(it.descricao), motivo: motivo, confianca: conf || 0 });
+};
+plano.forEach(function (Lx) {
+var r = refs[Lx.item._n];
+var it = r.it, decl = r.decl;
+var conf = Math.round(((Number(Lx.confianca) || 0) / 100) * 100) / 100;
+if (r.editado || r.semOrigem) { manter(r, "", 0); return; }
+if (self._fonteEhPropria(it)) {
+manter(r, "composição própria do órgão: não há base para refazer o preço; mantido o preço do órgão", 0, "propria"); return;
+}
+if (Lx.sem) {
+manter(r, (exigidas.length ? (textoFaltam(decl) || "nenhuma base exigida é aceita") : "o pacote não traz base de preço exigida (competência desconhecida)") + "; mantido o preço do órgão", 0, "sem-base"); return;
+}
+var aprov = false, porDesc = false, rejeicao = "";
+if (Lx.status === "casado" && ok(Lx.fonte) && conf >= lim.auto && num(Lx.custoUnitario) > 0) {
+if (r.cod) {
+if (decl) {
+if (Lx.via === "codigo" && nomeSemEstado(Lx.fonte) === nomeSemEstado(decl)) aprov = true;
+else rejeicao = "o código " + r.cod + " do órgão (" + decl + ") não existe na base " + decl + " exigida" + (Lx.via === "codigo-inferido" ? "; existe em " + Lx.fonte + ", mas é outra base e o preço não passa de uma base para outra" : "; a descrição lembra " + Lx.codigo + " (" + Math.round(conf * 100) + "%), mas o código do órgão não é trocado sem você");
+} else if (Lx.via === "codigo-inferido") {
+var onde = basesComCodigo(r.cod);
+var simD = Orq.similaridade(s(it.descricao), s(Lx.descricaoBase), it.unidade, Lx.unidadeBase, ctx2);
+if (onde.length === 1 && simD >= lim.auto) aprov = true;
+else rejeicao = onde.length > 1 ? "o código " + r.cod + " existe em mais de uma base exigida (" + onde.map(function (x) { return x.fonte; }).join(", ") + "), e o item não diz de qual é" : "o código " + r.cod + " existe em " + Lx.fonte + ", mas a descrição não confere (" + Math.round(simD * 100) + "%)";
+} else rejeicao = "o código " + r.cod + " do órgão não existe nas bases exigidas; a descrição lembra " + Lx.codigo + " (" + Math.round(conf * 100) + "%), mas o código do órgão não é trocado sem você";
+} else if (Lx.via === "descricao" || Lx.via === "descricao-exata") { aprov = true; porDesc = true; }
+}
+if (aprov) {
+var ex = porCat[Lx.fonte] || {};
+var cb = num(Lx.custoUnitario);
+var codigoAplicado = null;
+if (!r.cod) {
+it.codigo = s(Lx.codigo);
+it.baseFonte = Lx.fonte === "SINAPI" ? null : Lx.fonte;
+var OO = _dep("Orcamento");
+if (OO && OO._origemDe) it.origem = OO._origemDe(it.codigo, it.baseFonte);
+codigoAplicado = it.codigo;
+}
+it.custoUnitario = cb; it.custoMO = num(Lx.custoMO); it.custoMAT = num(Lx.custoMAT); it.custoEQ = num(Lx.custoEQ);
+it.autoOrc = { via: Lx.via, confianca: conf, motivo: porDesc ? "por-descricao" : "codigo", fonte: Lx.fonte, competencia: s(ex.competencia),
+custoOrgao: r.custoOrg, custoBase: cb, custoAplicado: cb, codigoAplicado: codigoAplicado, baixa: porDesc };
+if (porDesc) {
+var md = "casado por descrição (" + Math.round(conf * 100) + "%) com " + Lx.fonte + " " + s(Lx.codigo) + " — conferir";
+resumo.por_descricao++;
+resumo.baixa_confianca.push({ numero: r.numero, codigo: s(Lx.codigo), descricao: s(it.descricao), motivo: md, confianca: conf });
+} else resumo.pela_base++;
+return;
+}
+var motivo;
+if (rejeicao) motivo = rejeicao;
+else if (Lx.status === "casado" && !ok(Lx.fonte)) motivo = "casou na base " + Lx.fonte + ", que não é uma das bases exigidas aceitas";
+else if (Lx.status === "casado") motivo = "confiança " + Math.round(conf * 100) + "% abaixo do mínimo automático";
+else if (Lx.status === "revisar") motivo = "casamento incerto (" + Math.round(conf * 100) + "%): " + s(Lx.motivo) + ((Lx.avisos && Lx.avisos.length) ? " — " + Lx.avisos.join(" ") : "");
+else motivo = s(Lx.motivo) || "sem correspondência nas bases exigidas";
+var tf = textoFaltam(decl);
+if (tf) motivo += "; " + tf;
+manter(r, motivo + "; mantido o preço do órgão", Lx.status === "pendente" ? 0 : conf, rejeicao ? "rejeitado" : (Lx.status === "casado" ? "baixa-confianca" : (Lx.status === "revisar" ? "incerto" : "sem-correspondencia")));
+});
+resumo.itens = refs.length;
+return resumo;
+},
+marcar: function (orc, resumo, presetId, info) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null;
+if (!lic || !resumo) return null;
+info = info || {};
+var bc = (resumo.baixa_confianca || []).map(function (b) {
+return { numero: s(b.numero), codigo: s(b.codigo), descricao: s(b.descricao), motivo: s(b.motivo), confianca: Number(b.confianca) || 0 };
+});
+lic.automatico = {
+orcamento_automatico: true,
+conferido_pelo_usuario: false,
+preset: s(presetId) || s(lic.preset),
+preset_deduzido: info.deduzido != null ? info.deduzido === true : lic.presetDeduzido === true,
+em: agora(),
+versao_orcapro: versaoApp(),
+resumo: { itens: resumo.itens | 0, pela_base: resumo.pela_base | 0, por_descricao: resumo.por_descricao | 0, preco_do_orgao_mantido: resumo.preco_do_orgao_mantido | 0 },
+baixa_confianca: bc
+};
+if ((resumo.sem_preco_do_orgao | 0) > 0) lic.automatico.sem_preco_do_orgao = resumo.sem_preco_do_orgao | 0;
+return lic.automatico;
+},
+marcarConferido: function (orc) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null;
+if (!lic || !lic.automatico) return false;
+lic.automatico.conferido_pelo_usuario = true;
+lic.automatico.conferido_em = agora();
+return true;
+},
+motivoDoItem: function (orc, it) {
+var a = this.automatico(orc), n = s(it && it.numeroOrigem), r = null;
+if (a && n) (a.baixa_confianca || []).forEach(function (b) { if (!r && s(b.numero) === n) r = b.motivo; });
+return r || s(it && it.autoOrc && it.autoOrc.motivo);
+},
+blocoDe: function (orc) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null, b = {};
+if (!lic) return b;
+if (s(lic.presetPacote)) b.preset = s(lic.presetPacote);
+if (lic.obraInformada === true) b.obra_engenharia = lic.obra === true;
+if (s(lic.regimeExecucao)) b.regime_execucao = s(lic.regimeExecucao);
+if (s(lic.arredondamentoPacote)) b.arredondamento = s(lic.arredondamentoPacote);
+return b;
+},
+automatico: function (orc) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null;
+return (lic && lic.automatico && lic.automatico.orcamento_automatico === true) ? lic.automatico : null;
+},
+naoConferido: function (orc) { var a = this.automatico(orc); return !!(a && a.conferido_pelo_usuario !== true); },
+idsBaixaConfianca: function (orc) {
+var ids = [];
+(orc && orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) { if (it && it.autoOrc && it.autoOrc.baixa === true && it.id != null) ids.push(it.id); });
+});
+return ids;
+},
+pedeAutomatico: function (orc) {
+var L = _dep("Licitacao"), lic = L ? L.cfg(orc) : null;
+return !!(lic && lic.orcamentoAutomatico === true);
+}
+};
+global.LicitacaoAuto = LicitacaoAuto;
+if (typeof module !== "undefined" && module.exports) module.exports = LicitacaoAuto;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/porobra.js ==== */

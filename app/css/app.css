@@ -1177,6 +1177,10 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
    ⚠ Nasceu (1.2.135) com tamanho 10px e peso 700 escritos à mão — abaixo do
    piso de 12px da tela de canteiro e fora da régua; o gate da 1.2.136 pegou
    pelo tools/test-contraste.js ("tamanho de fonte solto", "peso solto"). */
+/* ORÇAMENTO AUTOMÁTICO: linha que ficou com o preço do órgão ("Ver itens"). Cor própria,
+   diferente do vermelho do "acima do órgão" e do verde do regime. Só o fundo muda. */
+tr.lin-auto-baixa > td { background: rgba(245,158,11,.20); }
+[data-tema="dark"] tr.lin-auto-baixa > td { background: rgba(245,158,11,.24); }
 .pill.lic-alerta { background: rgba(220,38,38,.12); color: #991b1b; padding: 1px 6px; margin-top: 2px; }
 [data-tema="dark"] .pill.lic-alerta { color: #fca5a5; }
 /* Dark: texto claro para não sumir sobre superfície escura */

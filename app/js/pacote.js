@@ -275,8 +275,9 @@
         else { semCopia[k.novoId] = 1; res.copiaFalhou = (res.copiaFalhou || 0) + 1; }
       });
       entramOrc = entramOrc.filter(function (c) { if (semCopia[c.id]) { res.orcMantidos++; return false; } return true; });
+      res.salvos = [];   // ids que de fato entraram NESTA importação (o "Manter o atual" fica de fora)
       entramOrc.forEach(function (c) {
-        if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; return; }
+        if (Store.salvarOrcamento(eid, c, true)) { res.nOrc++; res.salvos.push(c.id); return; }
         /* lista de orçamentos ilegível neste aparelho (js/store.js, quarentena):
            o recado diz por que não entrou, em vez de só "0 importado(s)" */
         if (Store.ultimaRecusa && Store.ultimaRecusa.tipo === "corrompido") res.orcIlegivel = (res.orcIlegivel || 0) + 1;
@@ -394,6 +395,15 @@
               if (res.orcIds.length === 1 && App.abrirOrcamento) App.abrirOrcamento(res.orcIds[0]);
               else { App.tela = "lista"; App.render(); }
             } catch (e) {}
+            /* ORÇAMENTO AUTOMÁTICO (contrato v1; js/licitacaoautoui.js): pacote com
+               `orcamento_automatico: true` roda o preset, o preço pelas bases exigidas, o
+               BDI e a devolução sozinho. Sem o campo, nada acontece (fluxo manual de hoje). */
+            try {
+              /* ⚠ só o orçamento que ENTROU agora: res.orcIds também lista o que a pessoa mandou
+                 "Manter o atual" (revisão de 08/11/2026) — rodar o automático nele refaria os preços
+                 e o devolveria de novo contra a escolha dela */
+              if (res.orcIds.length === 1 && (res.salvos || []).indexOf(res.orcIds[0]) >= 0 && App.licitacaoAutomaticaSePedido) App.licitacaoAutomaticaSePedido(res.orcIds[0]);
+            } catch (eAuto) { try { UI.toast("O orçamento automático não rodou: " + (eAuto && eAuto.message ? eAuto.message : eAuto) + ". O orçamento foi importado; use o botão “Orçar sozinho”.", "erro", 12000); } catch (eT) {} }
           }
           if (aoTerminar) aoTerminar(res);
         } }

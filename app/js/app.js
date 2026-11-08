@@ -2839,6 +2839,9 @@
         case "lic-cenarios": this.licitacaoCenarios(); break;
         case "lic-trava": this.licitacaoTrava(); break;
         case "lic-devolver": this.devolverCertame(); break;
+        case "lic-orcar-auto": this.licitacaoAutomatica({ origem: "botao" }); break;
+        case "lic-auto-ver": this.licAutoVer(); break;
+        case "lic-auto-conferido": this.licAutoConferido(); break;
         case "lic-base-instalar": this.licBaseInstalar(t.dataset.licBase); break;
         case "lic-base-outra": this.licBaseOutra(t.dataset.licBase); break;
         case "mem-agente": this.memAgente(false); break;
@@ -12387,7 +12390,9 @@
     _licCtxBases: function () {
       var sn = (typeof Sinapi !== "undefined") ? Sinapi : {};
       return {
-        sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado },
+        sinapi: { uf: String(this._baseUf || sn.uf || "").toUpperCase(), competencia: sn.competencia || "", carregado: !!sn.carregado,
+          /* regime declarado na carga, se houver (hoje a carga não declara: o orçamento automático assume a base do app como onerada e AVISA) */
+          regime: typeof sn.desonerado === "boolean" ? (sn.desonerado ? "desonerado" : "onerado") : "" },
         instaladas: (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [],
         compsOnerada: this._compsPorUf || {},
         fatos: { servidor: (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null, disco: this._basesDisco || null, espelho: this._espelhoStatus || null,
@@ -12568,11 +12573,13 @@
       if (!d.ok) { UI.toast(d.erro, "erro"); return; }
       var seguir = function () {
         UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
-        self._analiticoDoOrc(orc, function () {
-          ExcelOrc.gerar(orc, {
-            aoBlob: function (blob, nome) { self._licEnviar(orc, d, blob, nome); },
-            aoErro: function (e) { UI.toast("Não consegui gerar o Excel (" + (e && e.message ? e.message : e) + "). Nada foi enviado.", "erro"); }
-          });
+        /* ⚠ a MESMA rota do fluxo automático (js/licitacaoautoui.js): gerar o Excel e
+           enviar sem tela; este botão só mostra o resultado. Devolver à mão depois de
+           "Marcar como conferido" leva conferido_pelo_usuario:true no _meta, porque a
+           marca está no orçamento antes de o Excel ser gerado. */
+        self._licDevolverSilencioso(orc, d).then(function (res) {
+          self._licMostrarDevolucao(orc, d, res);
+          try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); } catch (eLg) {}
         });
       };
       var destinoOk = function () {
@@ -12643,69 +12650,122 @@
       return b;
     },
 
-    _licEnviar: function (orc, d, blob, nome) {
+    /* ENVIO (sem tela): POST multipart ao CertamePRO. Nunca rejeita — resolve
+       { ok, status, j, erro, abortou }. É a rota de envio do botão manual E do
+       fluxo automático (js/licitacaoautoui.js): uma só. */
+    _licPost: function (d, blob, nome) {
+      return new Promise(function (resolve) {
+        var fd;
+        try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { resolve({ ok: false, erro: "Este navegador não montou o envio (" + e0.message + ")." }); return; }
+        var tempo = null, ctl = null;
+        try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
+        fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
+          .then(function (r) {
+            if (tempo) clearTimeout(tempo);
+            return r.text().then(function (txt) { return { ok: r.ok, status: r.status, txt: txt }; });
+          })
+          .then(function (res) {
+            var j = null; try { j = JSON.parse(res.txt); } catch (e2) {}
+            if (!res.ok) {
+              var dt = j && (j.detail || j.erro || j.mensagem);
+              var det = dt ? (typeof dt === "string" ? dt : JSON.stringify(dt)) : "";
+              resolve({ ok: false, status: res.status, j: j, erro: "O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ")." });
+              return;
+            }
+            resolve({ ok: true, status: res.status, j: j });
+          })
+          .catch(function (e) {
+            if (tempo) clearTimeout(tempo);
+            var abortou = e && e.name === "AbortError";
+            resolve({ ok: false, abortou: abortou, erro: abortou ? "O CertamePRO não respondeu em 45 segundos." : "Não consegui falar com o CertamePRO em " + d.host + " (ele está aberto?). " + (e && e.message ? "Detalhe: " + e.message : "") });
+          });
+      });
+    },
+
+    /* Gera o MESMO _PRO.xlsx da exportação, sem tela. Resolve { ok, blob, nome, erro }. */
+    _licGerarExcel: function (orc) {
       var self = this;
-      var baixar = function () {
+      return new Promise(function (resolve) {
+        var falhou = function (e) { resolve({ ok: false, erro: "Não consegui gerar o Excel (" + (e && e.message ? e.message : e) + ")." }); };
         try {
-          var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome;
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-        } catch (e) {}
-      };
-      var falha = function (motivo) {
-        baixar();
+          self._analiticoDoOrc(orc, function () {
+            try {
+              ExcelOrc.gerar(orc, {
+                aoBlob: function (blob, nome) { resolve({ ok: true, blob: blob, nome: nome }); },
+                aoErro: falhou
+              });
+            } catch (e1) { falhou(e1); }
+          });
+        } catch (e0) { falhou(e0); }
+      });
+    },
+
+    /* DEVOLVER SEM TELA: gera o Excel e envia. Resolve { ok, etapa, nome, blob, erro, lido, j }.
+       `lido` = Licitacao.lerDevolucao(resposta, total do orçamento) ou null. Não abre modal
+       nem baixa arquivo: quem chama decide (botão manual = _licMostrarDevolucao). */
+    _licDevolverSilencioso: function (orc, d) {
+      var self = this;
+      return this._licGerarExcel(orc).then(function (g) {
+        if (!g.ok) return { ok: false, etapa: "excel", erro: g.erro };
+        return self._licPost(d, g.blob, g.nome).then(function (p) {
+          var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null };
+          if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }
+          return out;
+        });
+      });
+    },
+
+    /* A TELA do botão manual: o que o CertamePRO respondeu, ou como enviar à mão. */
+    _licMostrarDevolucao: function (orc, d, res) {
+      var self = this, nome = res.nome || "";
+      if (!res.ok) {
+        if (res.etapa === "excel") { UI.toast(res.erro + " Nada foi enviado.", "erro"); return; }
+        if (res.blob) {
+          try {
+            var a = document.createElement("a"); a.href = URL.createObjectURL(res.blob); a.download = nome;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+          } catch (e) {}
+        }
         UI.modal("Não consegui devolver ao CertamePRO",
-          '<p style="font-size:13px;margin-top:0">' + Util.esc(motivo) + '</p>' +
+          '<p style="font-size:13px;margin-top:0">' + Util.esc(res.erro) + '</p>' +
           '<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de Downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
           'clique em <b>Outras opções</b> e use <b>Enviar o arquivo à mão</b>, escolhendo esse arquivo. Nada foi perdido neste orçamento.</p>',
           [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
-      };
-      var fd;
-      try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { falha("Este navegador não montou o envio (" + e0.message + ")."); return; }
-      var tempo = null, ctl = null;
-      try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
-      fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
-        .then(function (r) {
-          if (tempo) clearTimeout(tempo);
-          return r.text().then(function (txt) { return { ok: r.ok, status: r.status, txt: txt }; });
-        })
-        .then(function (res) {
-          var j = null; try { j = JSON.parse(res.txt); } catch (e2) {}
-          if (!res.ok) {
-            var dt = j && (j.detail || j.erro || j.mensagem);
-            var det = dt ? (typeof dt === "string" ? dt : JSON.stringify(dt)) : "";
-            falha("O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ").");
-            return;
-          }
-          /* ⚠ daqui para baixo o envio JÁ deu certo: erro ao montar a tela não
-             pode cair no .catch, que diria "não consegui falar com o
-             CertamePRO" (recado que mente) e mandaria reenviar à mão */
-          var lido = null, htmlLido = "";
-          try { lido = Licitacao.lerDevolucao(j, Licitacao.totalProposta(orc)); if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
-          if (lido && htmlLido) {
-            UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, self._licBotoesVolta(orc));
-            return;
-          }
-          var msg = (j && (j.mensagem || j.message)) ? String(j.mensagem || j.message) : "";
-          var linhas = "";
-          if (j && typeof j === "object") {
-            Object.keys(j).slice(0, 12).forEach(function (k) {
-              if (k === "mensagem" || k === "message") return;
-              var v = j[k]; if (v && typeof v === "object") v = JSON.stringify(v);
-              linhas += "<li><b>" + Util.esc(k) + ":</b> " + Util.esc(String(v)) + "</li>";
-            });
-          }
-          UI.modal("Orçamento devolvido ao CertamePRO",
-            '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b>' + (msg ? ": " + Util.esc(msg) : ".") + '</p>' +
-            (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
-            '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
-            self._licBotoesVolta(orc));
-        })
-        .catch(function (e) {
-          if (tempo) clearTimeout(tempo);
-          var abortou = e && e.name === "AbortError";
-          falha(abortou ? "O CertamePRO não respondeu em 45 segundos." : "Não consegui falar com o CertamePRO em " + d.host + " (ele está aberto?). " + (e && e.message ? "Detalhe: " + e.message : ""));
+        return;
+      }
+      /* ⚠ daqui para baixo o envio JÁ deu certo: erro ao montar a tela não
+         pode dizer "não consegui falar com o CertamePRO" (recado que mente) */
+      var j = res.j, lido = res.lido, htmlLido = "";
+      try { if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
+      if (lido && htmlLido) {
+        UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, self._licBotoesVolta(orc));
+        return;
+      }
+      var msg = (j && (j.mensagem || j.message)) ? String(j.mensagem || j.message) : "";
+      var linhas = "";
+      if (j && typeof j === "object") {
+        Object.keys(j).slice(0, 12).forEach(function (k) {
+          if (k === "mensagem" || k === "message") return;
+          var v = j[k]; if (v && typeof v === "object") v = JSON.stringify(v);
+          linhas += "<li><b>" + Util.esc(k) + ":</b> " + Util.esc(String(v)) + "</li>";
         });
+      }
+      UI.modal("Orçamento devolvido ao CertamePRO",
+        '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b>' + (msg ? ": " + Util.esc(msg) : ".") + '</p>' +
+        (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
+        '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
+        self._licBotoesVolta(orc));
+    },
+
+    /* mantida por compatibilidade: envia um blob já gerado e mostra o resultado */
+    _licEnviar: function (orc, d, blob, nome) {
+      var self = this;
+      this._licPost(d, blob, nome).then(function (p) {
+        var lido = null;
+        if (p.ok) { try { lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { lido = null; } }
+        self._licMostrarDevolucao(orc, d, { ok: p.ok, etapa: "envio", nome: nome, blob: blob, erro: p.erro || "", j: p.j || null, lido: lido });
+      });
     },
 
     fecharDesfazer: function () {
