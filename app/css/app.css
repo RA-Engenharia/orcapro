@@ -3001,14 +3001,19 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
    render: planilha vazia, outras abas e Gestão continuam rolando no #main.
    ⚠ `@media screen`: o impresso precisa da tabela inteira, nunca de uma caixa
    do tamanho da janela. E fora do celular: lá a altura mal cabe o cabeçalho, e a
-   caixa ficaria do tamanho de duas linhas. Sem a regra, a tela rola como sempre. */
-@media screen and (min-width: 821px) and (min-height: 480px) {
-  #main.pl-fixa { display: flex; flex-direction: column; padding-bottom: 10px; }
+   caixa ficaria do tamanho de duas linhas. Sem a regra, a tela rola como sempre.
+   ⚠ `min-height: 600px`: abaixo disso, com o resumo aberto, não sobra caixa nenhuma
+   para a tabela. Na medida exata de js/plfixa.js, `n` só anda com a roda. */
+@media screen and (min-width: 821px) and (min-height: 600px) {
+  /* ⚠ `clip` no #main e na aba: quem rola é a caixa da tabela, e o Tab num botão
+     escondido não pode rolar a tela por trás do `n` (js/plfixa.js) */
+  #main.pl-fixa { display: flex; flex-direction: column; padding-bottom: 10px; overflow: hidden; overflow: clip; }
   #main.pl-fixa > * { flex: 0 0 auto; min-width: 0; }
   #main.pl-fixa > .tabs { margin-bottom: 10px; }
-  /* ⚠ `min-height` e não 0: em janela baixa, com o resumo aberto, a tabela não some.
-     O #main (overflow: auto) rola o que passar, e ninguém fica sem caminho. */
-  #main.pl-fixa > #aba-conteudo { flex: 1 1 0; min-height: 220px; display: flex; flex-direction: column; }
+  /* ⚠ `min-height: 0`, e não um mínimo em px: era o mínimo de 220 px que dava ao #main
+     alguns px de sobra em janela baixa, e a roda fora das linhas ficava com ele, sem
+     mexer a tabela (Rogério, 09/11/2026). */
+  #main.pl-fixa > #aba-conteudo { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; overflow: clip; }
   #main.pl-fixa > #aba-conteudo > * { flex: 0 0 auto; min-width: 0; }
   #main.pl-fixa > #aba-conteudo > .mb { margin-bottom: 6px; }
   #main.pl-fixa > #aba-conteudo > .pl-col,
@@ -3034,15 +3039,14 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
      e no td cada uma precisaria saber a altura das de baixo. */
   #main.pl-fixa table.tbl-plan tfoot { position: sticky; bottom: 0; z-index: 3; }
   #main.pl-fixa table.tbl-plan tfoot td { box-shadow: inset 0 1px 0 var(--linha-forte); }
-  /* o resumo sai quando a pessoa rola e volta ao chegar no topo (PlFixa.decidir) */
-  /* --pl-invade: o quanto a barra de cima passa para dentro do #main (PlFixa._medirBarra) */
-  #main.pl-fixa.pl-cab-rec { padding-top: calc(10px + var(--pl-invade, 0px)); }
-  #main.pl-fixa.pl-cab-rec > .mod-cab,
-  #main.pl-fixa.pl-cab-rec > .orc-cab,
-  #main.pl-fixa.pl-cab-rec > #aba-conteudo > .faixa-ajustes { display: none; }
+  /* o resumo sobe na medida da roda: `--pl-m` é escrita em PlFixa._empurra */
+  #main.pl-fixa .pl-mv { margin-top: var(--pl-m); }
+  #main.pl-fixa .pl-some { visibility: hidden; }
+  #main.pl-fixa.pl-cab-rec .pl-resumo-btn { display: inline-flex; margin-right: auto; }
 }
+.pl-resumo-btn { display: none; }
 /* no índice encolhido em fita (até 1100 px) são duas linhas: fita e tabela */
-@media screen and (min-width: 821px) and (max-width: 1100px) and (min-height: 480px) {
+@media screen and (min-width: 821px) and (max-width: 1100px) and (min-height: 600px) {
   #main.pl-fixa .pl-com-indice { grid-template-rows: auto minmax(0, 1fr); }
 }
 .idx-etapas { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px;

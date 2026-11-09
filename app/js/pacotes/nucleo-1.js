@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.273",
+versao: "1.2.274",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -57092,13 +57092,26 @@ try {
 (function (global) {
 "use strict";
 var TOPO_RECOLHE = 8;
-var SOBRA_MINIMA = 40;
+var PAUSA_TOPO = 350;
+var RODA_RECENTE = 300;
+var SUAVE = 0.35;
 var PlFixa = {
-decidir: function (m) {
-if (m.recolhido) return m.top > 1;
-return m.top > TOPO_RECOLHE && m.max > m.altCab + SOBRA_MINIMA;
+nMax: function (m) { return Math.max(0, Math.min(m.altCab, m.folga)); },
+distribuir: function (m) {
+var d = Number(m.delta) || 0, n = m.n, top = m.top;
+if (d > 0) {
+var usa = Math.min(d, Math.max(0, m.nMax - n));
+n += usa;
+top = Math.min(top + (d - usa), Math.max(0, m.folga - n));
+} else if (d < 0) {
+if (top > 0) top = Math.max(0, top + d);
+else n = Math.max(0, n + d);
+}
+return { n: n, top: top };
 },
-caixaCurta: function (m) { return m.max > 0 && m.max <= m.altCab + SOBRA_MINIMA; },
+segurarNoTopo: function (m) {
+return m.delta < 0 && m.top <= 1 && m.n > 0 && !!m.vinhaDaTabela && (m.agora - m.ultima) < PAUSA_TOPO;
+},
 deltaPx: function (delta, modo, alturaPagina) {
 var d = Number(delta) || 0;
 if (modo === 1) return d * 40;
@@ -57108,15 +57121,25 @@ return d;
 _estado: null,
 _orcId: null,
 _esquecerPos: false,
+_n: 0,
+_med: null,
+_resto: 0,
+_raf: 0,
+_ultima: 0,
+_vinha: false,
 esquecerPosicao: function () { this._esquecerPos = true; },
 _caixa: function (main) { return main && main.querySelector ? main.querySelector("#aba-conteudo .pl-tabela") : null; },
+_ativo: function (main) {
+return main.classList.contains("pl-fixa") && global.getComputedStyle(main).display === "flex";
+},
 antes: function (main) {
 if (!main || !main.classList) return;
 var pl = this._caixa(main);
 if (this._esquecerPos) { this._esquecerPos = false; this._estado = null; }
 else if (pl && main.classList.contains("pl-fixa")) {
-this._estado = { orcId: this._orcId, top: pl.scrollTop, left: pl.scrollLeft, rec: main.classList.contains("pl-cab-rec") };
+this._estado = { orcId: this._orcId, top: pl.scrollTop, left: pl.scrollLeft, n: this._n };
 }
+this._n = 0; this._resto = 0; this._vinha = false; this._med = null; this._med1Aplicado = 0;
 main.classList.remove("pl-fixa");
 main.classList.remove("pl-cab-rec");
 },
@@ -57126,28 +57149,36 @@ if (!pl) return;
 this._ligar(main);
 main.classList.add("pl-fixa");
 this._orcId = orcId;
+this._porBotao(main);
 this._restaurar(main, pl, orcId);
-this._ajustar(main, pl);
 },
 reavaliar: function (main) {
 var pl = this._caixa(main);
-if (pl) this._ajustar(main, pl);
+if (pl) this._ajustar(main, pl, this._n);
 },
 _restaurar: function (main, pl, orcId) {
 var e = this._estado;
-if (!e || e.orcId !== orcId) { this._estado = null; return; }
-if (e.rec) main.classList.add("pl-cab-rec");
+if (!e || e.orcId !== orcId) e = null;
+this._estado = null;
+this._ajustar(main, pl, e ? e.n : 0);
+if (e) {
+this._ultima = Date.now();
 pl.scrollLeft = e.left;
 pl.scrollTop = e.top;
-if (pl.scrollTop <= 1) main.classList.remove("pl-cab-rec");
-},
-_ajustar: function (main, pl) {
-if (!main.classList.contains("pl-cab-rec")) {
-main.classList.add("pl-fixa");
-if (this.caixaCurta({ max: pl.scrollHeight - pl.clientHeight, altCab: this._altCab(main) })) main.classList.remove("pl-fixa");
 }
+},
+_ajustar: function (main, pl, n) {
+if (!this._ativo(main)) { this._aplicarN(main, 0); return; }
 this._medirBarra(main);
+this._medir(main);
+this._aplicarN(main, Math.min(n, this.nMax({ altCab: this._altCab(), folga: this._folga(pl) })));
 this._medirFolgas(pl);
+},
+_altCab: function () { var m = this._med; return m ? m.n1Max + m.n2Max : 0; },
+_folga: function (pl) {
+var t = pl.querySelector("table");
+var alto = pl.scrollHeight > pl.clientHeight || !t ? pl.scrollHeight : t.offsetHeight;
+return alto - pl.clientHeight + this._n;
 },
 _medirFolgas: function (pl) {
 var th = pl.querySelector("thead"), tf = pl.querySelector("tfoot");
@@ -57164,15 +57195,82 @@ for (var i = 0; i < tp.children.length; i++) {
 invade = Math.max(invade, Math.round(tp.children[i].getBoundingClientRect().bottom - fundo));
 }
 }
+this._invade = invade;
 main.style.setProperty("--pl-invade", invade + "px");
 },
-_altCab: function (main) {
-var soma = 0, kids = main.querySelectorAll(":scope > .mod-cab, :scope > .orc-cab, #aba-conteudo > .faixa-ajustes");
-for (var i = 0; i < kids.length; i++) {
-var cs = global.getComputedStyle(kids[i]);
-soma += kids[i].offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+_medir: function (main) {
+this._med = null;
+var abas = main.querySelector(":scope > .tabs");
+if (!abas) return;
+var grupo = [], k = main.firstElementChild;
+for (; k && k !== abas; k = k.nextElementSibling) { if (k.offsetHeight > 0) grupo.push(k); }
+var pad = parseFloat(global.getComputedStyle(main).paddingTop) || 0;
+var topoConteudo = main.getBoundingClientRect().top + main.clientTop + pad;
+var n1Atual = this._med1Aplicado || 0;
+var dist = abas.getBoundingClientRect().top - topoConteudo + n1Atual;
+var respiro = Math.max(0, pad - 10 - (this._invade || 0));
+var faixa = main.querySelector("#aba-conteudo > .faixa-ajustes");
+var prox = faixa && faixa.nextElementSibling;
+this._med = {
+grupo: grupo,
+n1Max: grupo.length ? Math.max(0, dist + respiro) : 0,
+faixa: faixa,
+n2Max: faixa && prox ? Math.max(0, prox.getBoundingClientRect().top - faixa.getBoundingClientRect().top) : 0
+};
+},
+_empurra: function (el, d) {
+if (!el) return;
+if (d > 0) {
+if (el._plBase === undefined) el._plBase = parseFloat(global.getComputedStyle(el).marginTop) || 0;
+el.style.setProperty("--pl-m", (el._plBase - d) + "px");
+el.classList.add("pl-mv");
+} else {
+el.classList.remove("pl-mv");
 }
-return soma;
+},
+_aplicarN: function (main, n) {
+var m = this._med;
+this._n = n > 0 ? n : 0;
+main.classList.toggle("pl-cab-rec", this._n > 0);
+if (!m) { this._med1Aplicado = 0; return; }
+var n1 = Math.min(this._n, m.n1Max), n2 = Math.max(0, this._n - n1);
+this._med1Aplicado = n1;
+this._empurra(m.grupo[0], n1);
+this._empurra(m.faixa, n2);
+var sumiu1 = m.n1Max > 0 && n1 >= m.n1Max;
+for (var i = 0; i < m.grupo.length; i++) m.grupo[i].classList.toggle("pl-some", sumiu1);
+if (m.faixa) m.faixa.classList.toggle("pl-some", m.n2Max > 0 && n2 >= m.n2Max);
+},
+_porBotao: function (main) {
+var menu = main.querySelector("#aba-conteudo .col-menu");
+var casa = menu && menu.parentNode;
+if (!casa || casa.querySelector(".pl-resumo-btn")) return;
+var self = this;
+var b = global.document.createElement("button");
+b.type = "button";
+b.className = "btn sm ghost pl-resumo-btn";
+b.textContent = "Mostrar resumo";
+b.title = "Mostra de novo o título, os indicadores e os botões do orçamento";
+b.addEventListener("click", function () { self._resto = 0; self._aplicarN(main, 0); });
+casa.insertBefore(b, casa.firstChild);
+},
+_tique: function (main) {
+var self = this;
+if (self._raf) return;
+var quadro = function () {
+self._raf = 0;
+var pl = self._caixa(main);
+if (!pl || !self._resto || !self._ativo(main)) { self._resto = 0; return; }
+var r = self._resto, passo = Math.abs(r) < 4 ? r : r * SUAVE;
+self._resto = r - passo;
+var top0 = pl.scrollTop, folga = self._folga(pl);
+var d = self.distribuir({ delta: passo, n: self._n, nMax: self.nMax({ altCab: self._altCab(), folga: folga }), top: top0, folga: folga });
+if (d.n !== self._n) self._aplicarN(main, d.n);
+if (d.top !== top0) pl.scrollTop = d.top;
+if (passo < 0 && top0 > 0 && d.top <= 0) { self._resto = 0; self._vinha = true; self._ultima = Date.now(); }
+if (self._resto) self._raf = global.requestAnimationFrame(quadro);
+};
+self._raf = global.requestAnimationFrame(quadro);
 },
 _ligar: function (main) {
 if (main._plFixaLigado) return;
@@ -57186,25 +57284,49 @@ global.requestAnimationFrame(function () { agendado = false; self.reavaliar(main
 });
 main.addEventListener("scroll", function (ev) {
 var pl = ev.target;
-if (!pl || !pl.classList || !pl.classList.contains("pl-tabela") || !main.classList.contains("pl-fixa")) return;
-var rec = main.classList.contains("pl-cab-rec");
-var quer = self.decidir({ recolhido: rec, top: pl.scrollTop, max: pl.scrollHeight - pl.clientHeight, altCab: rec ? 0 : self._altCab(main) });
-if (quer !== rec) {
-main.classList.toggle("pl-cab-rec", quer);
-if (!quer) self._ajustar(main, pl);
-}
+if (!pl || !pl.classList || !pl.classList.contains("pl-tabela") || !self._ativo(main)) return;
+if (self._raf || pl.scrollTop <= TOPO_RECOLHE || Date.now() - self._ultima < RODA_RECENTE) return;
+var falta = self.nMax({ altCab: self._altCab(), folga: self._folga(pl) }) - self._n;
+if (falta > 0) { self._resto = falta; self._tique(main); }
 }, true);
+main.addEventListener("focusin", function (ev) {
+var m = self._med;
+if (!m || !self._n) return;
+var ali = m.faixa && m.faixa.contains(ev.target);
+for (var i = 0; !ali && i < m.grupo.length; i++) ali = m.grupo[i].contains(ev.target);
+if (ali) { self._resto = 0; self._aplicarN(main, 0); }
+});
 main.addEventListener("wheel", function (ev) {
-if (!main.classList.contains("pl-fixa") || ev.ctrlKey) return;
+if (ev.ctrlKey || !self._ativo(main)) return;
 var pl = self._caixa(main);
-if (!pl || pl.contains(ev.target)) return;
-if (main.scrollHeight > main.clientHeight + 1) return;
-for (var n = ev.target; n && n !== main; n = n.parentNode) {
-if (n.nodeType === 1 && n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(global.getComputedStyle(n).overflowY)) return;
+if (!pl) return;
+var dentro = pl.contains(ev.target);
+if (!dentro) {
+for (var q = ev.target; q && q !== main; q = q.parentNode) {
+if (q.nodeType === 1 && q.scrollHeight > q.clientHeight + 1 && /auto|scroll/.test(global.getComputedStyle(q).overflowY)) return;
 }
-pl.scrollTop += self.deltaPx(ev.deltaY, ev.deltaMode, pl.clientHeight);
-pl.scrollLeft += self.deltaPx(ev.deltaX, ev.deltaMode, pl.clientWidth);
-}, { passive: true });
+}
+var dy = self.deltaPx(ev.deltaY, ev.deltaMode, pl.clientHeight);
+var dx = self.deltaPx(ev.deltaX, ev.deltaMode, pl.clientWidth);
+var agora = Date.now(), ultima = self._ultima;
+self._ultima = agora;
+if (dentro && Math.abs(dx) > Math.abs(dy)) return;
+if (!dentro && dx) { pl.scrollLeft += dx; ev.preventDefault(); }
+if (!dy) return;
+var top = pl.scrollTop, n = self._n, subindo = dy < 0;
+var teto = self.nMax({ altCab: self._altCab(), folga: self._folga(pl) });
+if (subindo ? top > 1 : true) self._vinha = subindo;
+var eDoResumo = subindo ? (top <= 1 && n > 0) : (n < teto);
+if (dentro && !eDoResumo && !self._resto) return;
+ev.preventDefault();
+if (subindo && eDoResumo) {
+if (self.segurarNoTopo({ delta: dy, top: top, n: n, vinhaDaTabela: self._vinha, agora: agora, ultima: ultima })) return;
+self._vinha = false;
+}
+if (self._resto && (self._resto < 0) !== subindo) self._resto = 0;
+self._resto += dy;
+self._tique(main);
+}, { passive: false });
 }
 };
 global.PlFixa = PlFixa;
