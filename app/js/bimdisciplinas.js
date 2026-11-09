@@ -150,7 +150,7 @@
     "parede-cebola", "presets-acabamento", "aplicar-ambiente", "paginar-piso", "paginar-parede", "pranchas-paginacao",
     "pintar-face", "dividir-face", "remover-pintura",
     /* massa e terreno (js/bimterrenoui.js) */
-    "p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp"
+    "p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp", "p11-entorno", "p11-entorno-ver", "p11-entorno-remover"
   ]);
   def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
   /* PORTAS E JANELAS AUTOMÁTICAS (js/esqautoui.js, 20/10/2026): arquitetura */

@@ -304,7 +304,7 @@ function montar(host, opts) {
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
     // (o usuário voltava ao BIM e "não conseguia mais fechar"). Entra sempre limpo.
     try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
-    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} }, 0);   /* a barra do modo mesa morava no host antigo */ // tema re-aplicado (o fundo acima é só o default até aqui)
+    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} try { if (window.BimPegarEntorno) window.BimPegarEntorno.sincronizar(true); } catch (eEnt) {} }, 0);   /* a barra do modo mesa morava no host antigo */ // tema re-aplicado (o fundo acima é só o default até aqui)
     try { if (S._ro) { S._ro.disconnect(); S._ro.observe(host); } } catch (eRo) {}   /* o vigia do tamanho mede o palco NOVO */
     return;
   }
@@ -4860,9 +4860,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var mat = v.proposta ? new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })
         : agua ? new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide })
         : v.tipo === 'edificacao' ? [icMat(0x9ca3af, 0.95), icFachada()] : v.tipo === 'muro' ? icMat(0xa8a29e, 0.95) : icMat(0xcbd5e1, 0.92);
-      var mV = new THREE.Mesh(gV, mat); mV.matrixAutoUpdate = false; mV.matrix.copy(IC_M_MOTOR); mV.name = v.proposta ? 'planta-proposta' : agua ? 'entorno-agua' : 'entorno'; mV.userData.idx = i; icPlantaG.add(mV);
+      var mV = new THREE.Mesh(gV, mat); mV.matrixAutoUpdate = false; mV.matrix.copy(IC_M_MOTOR); mV.name = v.proposta ? 'planta-proposta' : agua ? 'entorno-agua' : 'entorno'; mV.userData.idx = i; if (!v.proposta) mV.userData.entornoSolido = true; icPlantaG.add(mV);
       var eV = new THREE.LineSegments(new THREE.EdgesGeometry(gV), new THREE.LineBasicMaterial({ color: v.proposta ? 0xc2410c : agua ? 0x0284c7 : 0x64748b }));
-      eV.matrixAutoUpdate = false; eV.matrix.copy(IC_M_MOTOR); icPlantaG.add(eV);
+      eV.matrixAutoUpdate = false; eV.matrix.copy(IC_M_MOTOR); if (!v.proposta) eV.userData.entornoSolido = true; icPlantaG.add(eV);
       if (v.proposta) { out.propostas++; return; }
       if (agua) { out.agua++; return; }
       out.volumes++;
@@ -4877,8 +4877,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var lnLi = icLinha(cfg.limiteAberto ? ptsLi : ptsLi.concat([ptsLi[0]]), 0x16a34a, 0.4); lnLi.name = 'agente-limite'; icPlantaG.add(lnLi); out.limite = cfg.limite.length;
     }
     modelRoot.updateMatrixWorld(); icPlantaG.matrix.copy(modelRoot.matrixWorld); icPlantaG.matrixWorldNeedsUpdate = true;
+    icEntornoAplicarOculto();
     return out;
   }
+  /* MOSTRAR/OCULTAR o entorno aceito (BIM › Pegar entorno): só a VISUALIZAÇÃO. A caixa e os triângulos de colisão (icar.entorno) são dados à parte
+     e seguem valendo; a foto e o filme desenham a cena, então respeitam. Vale também depois de um redesenho (icPlanta chama o aplicar). */
+  var icEntornoOculto = false;
+  function icEntornoAplicarOculto() { icPlantaG.children.forEach(function (o) { if (o.userData && o.userData.entornoSolido) o.visible = !icEntornoOculto; }); }
+  function icEntornoVisivel(v) { icEntornoOculto = !v; icEntornoAplicarOculto(); return true; }
   /* o ponto da planta (unidades dela) onde a MALHA desenhada o põe, no motor — gancho de teste: prova que o desenho segue a calibração */
   function icPlantaPonto(px, py) {
     var m = icPlantaG.getObjectByName('planta-imagem') || icPlantaG.getObjectByName('planta-linhas'); if (!m) return null;
@@ -5332,7 +5338,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       scene.background = new THREE.Color(0xffffff);
       if (_selLn) _selLn.visible = false;
       renderer.render(scene, camera);
-      url = cvDesenho().toDataURL('image/png');
+      var cvC = cvDesenho(); url = cvC.toDataURL('image/png');
+      /* © OpenStreetMap (ODbL) quando há dado do mapa na cena: a foto do plano sai com a atribuição; sem ela, segue a imagem pura */
+      try {
+        if (window.BimPegarEntorno && BimPegarEntorno.atribuicao && BimPegarEntorno.atribuicao()) {
+          var cvA = document.createElement('canvas'); cvA.width = cvC.width; cvA.height = cvC.height;
+          var gA = cvA.getContext('2d'); gA.drawImage(cvC, 0, 0);
+          if (BimPegarEntorno.carimbar(gA, cvA.width, cvA.height)) url = cvA.toDataURL('image/png');
+        }
+      } catch (eAt2) {}
     } catch (_) { url = null; } finally {
       camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
       icMapaG.visible = true;
@@ -5422,6 +5436,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       x2.font = '600 ' + fs + 'px system-ui, sans-serif'; var tw = x2.measureText(txt).width;
       x2.fillStyle = 'rgba(15,23,42,.55)'; x2.fillRect(W - tw - fs * 1.6, H - fs * 2.2, tw + fs * 1.2, fs * 1.7);
       x2.fillStyle = '#fff'; x2.fillText(txt, W - tw - fs, H - fs * 0.95);
+      try { if (window.BimPegarEntorno && BimPegarEntorno.carimbar) BimPegarEntorno.carimbar(x2, W, H); } catch (eAt) {}   /* © OpenStreetMap (ODbL) quando há dado do mapa na cena */
       out = { ok: true, url: c2.toDataURL('image/png'), largura: W, altura: H, superamostra: ss, sombras: marcadas.filter(function (x) { return x[0].castShadow; }).length,
         mescladas: marcadas.filter(function (x) { return x[0].userData.agregado; }).length, satelite: trocas.length, google3dNaFoto: g3NaFoto,
         ceu: !!icLocalMundo.getObjectByName('local-ceu'), mapaSombra: dir.shadow.mapSize.x, mapaGerado: mapaOk, recebem: marcadas.length, luz: Math.round(dir.intensity * 100) / 100 };
@@ -5454,7 +5469,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
     simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
-    colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, google3d: icGoogle3d, google3dEstado: icG3Estado, google3dSondar: icG3Sondar, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
+    colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, google3d: icGoogle3d, google3dEstado: icG3Estado, google3dSondar: icG3Sondar, mapa: icMapa, planta: icPlanta, entornoVisivel: icEntornoVisivel, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
     localEstado: function () {
       var c = { gramados: 0, ceu: !!icLocalMundo.getObjectByName('local-ceu'), faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
       c.graos = []; icLocalG.children.forEach(function (o) { var gr = (o.name === 'local-gramado' || o.name === 'local-rua-faixa') && o.material && o.material.userData.grao; if (gr && c.graos.indexOf(gr) < 0) c.graos.push(gr); });
@@ -12084,6 +12099,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         cnv.width = img.width; cnv.height = img.height + faixa;
         var g2 = cnv.getContext('2d');
         g2.drawImage(img, 0, 0);
+        try { if (window.BimPegarEntorno && BimPegarEntorno.carimbar) BimPegarEntorno.carimbar(g2, img.width, img.height); } catch (eAt) {}   /* © OpenStreetMap (ODbL) quando há dado do mapa na cena */
         g2.fillStyle = '#0b1a2b'; g2.fillRect(0, img.height, cnv.width, faixa);
         /* o carimbo honesto virou função: o vídeo do 4D usa o MESMO, e duas
            contagens escritas à mão dariam dois números para a mesma cena */
@@ -19520,6 +19536,7 @@ window.BIM = {
   icarCaixas: function (fora, regiao) { return (S && S._icar) ? S._icar.caixas(fora, regiao) : []; },     // caixa (motor) de cada peça visível — para o agente do equipamento
   icarMapa: function (mp) { return (S && S._icar) ? S._icar.mapa(mp) : { ok: false, erro: 'visualizador não montado' }; },   // mapa do agente no chão (null apaga)
   icarPlanta: function (cfg) { return (S && S._icar) ? S._icar.planta(cfg) : { ok: false, erro: 'visualizador não montado' }; }, // planta PDF/DXF + entorno (null apaga)
+  icarEntornoVisivel: function (v) { return (S && S._icar && S._icar.entornoVisivel) ? S._icar.entornoVisivel(v) : false; },   // mostra/oculta o entorno aceito (só a vista; a colisão segue)
   icarGoogle3d: function (cfg) { return (S && S._icar) ? S._icar.google3d(cfg) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },   // 3D fotorrealista do Google (null desliga)
   icarGoogle3dEstado: function () { return (S && S._icar) ? S._icar.google3dEstado() : null; },
   _icarGoogle3dSondar: function (x, y) { return (S && S._icar) ? S._icar.google3dSondar(x, y) : null; },   // gancho de teste

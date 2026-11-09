@@ -306,7 +306,7 @@
     { nome: "Combinar", ids: ["unir", "subtrair", "empurrar"] }
   ];
   var ABA_TERRENO = [
-    { nome: "Modelar terreno", ids: ["p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular"] },
+    { nome: "Modelar terreno", ids: ["p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-entorno", "p11-entorno-ver", "p11-entorno-remover"] },
     { nome: "Terraplenagem", ids: ["p11-plataforma"] },
     { nome: "Implantação", ids: ["p11-divisa", "p11-norte", "p11-comp"] }
   ];

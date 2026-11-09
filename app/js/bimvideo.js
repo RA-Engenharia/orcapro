@@ -254,6 +254,7 @@
         if (r && r.canvas) {
           try {
             g.drawImage(r.canvas, 0, 0, larg, alt - faixa);
+            try { if (global.BimPegarEntorno && global.BimPegarEntorno.carimbar) global.BimPegarEntorno.carimbar(g, larg, alt - faixa); } catch (eAt) {}   /* © OpenStreetMap (ODbL) quando há dado do mapa na cena */
             var info = BimVideo.textoFaixa(data, r.sim, c.rodape);
             BimVideo.desenharFaixa(g, larg, alt, faixa, info, c.cores);
             trilha.requestFrame();

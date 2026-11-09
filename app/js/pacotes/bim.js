@@ -101987,7 +101987,7 @@ def("civil", [
 "familia-bloco", "modular", "junta", "paginar-alvenaria", "elevacoes", "alvenaria-assentada", "blocok", "conferir-modulacao", "peso-alvenaria",
 "parede-cebola", "presets-acabamento", "aplicar-ambiente", "paginar-piso", "paginar-parede", "pranchas-paginacao",
 "pintar-face", "dividir-face", "remover-pintura",
-"p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp"
+"p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp", "p11-entorno", "p11-entorno-ver", "p11-entorno-remover"
 ]);
 def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
 def("civil", ["esq-auto", "esq-auto-sel", "esq-auto-todos", "esq-auto-acess", "esq-auditar", "esq-criterios"]);
@@ -102438,7 +102438,7 @@ return mudou;
 },
 desligarTodas: function () {
 var self = this, n = 0;
-Object.keys(this._st.ativos).forEach(function (k) { delete self._st.ativos[k]; n++; });
+Object.keys(this._st.ativos).forEach(function (k) { var c = self.comando(k); if (c && c.persistente) return; delete self._st.ativos[k]; n++; });
 return n;
 },
 setContexto: function (ctx) {
@@ -116164,7 +116164,10 @@ R.acrescentar("massa-terreno", "Massa e terreno", "Modelar terreno", [
 { id: "p11-dxf", rotulo: "Curvas do\nDXF", icone: "importar", grande: true, dica: "Topossólido a partir da importação: as curvas de nível (ou pontos cotados) de um DXF de levantamento viram o terreno — cada vértice com a cota (z) do arquivo." },
 { id: "p11-csv", rotulo: "Pontos do\nlevantamento", icone: "tabela", grande: true, dica: "Pontos cotados em CSV/TXT (P N E Z, N E Z…), o mesmo leitor do relevo do içamento." },
 { id: "p11-subregiao", rotulo: "Sub-região", icone: "area", grande: true, tipo: "alterna", dica: "Sub-região do terreno (grama, brita, pavimento): clique o contorno e Enter — área projetada e área da superfície no quantitativo." },
-{ id: "p11-rotular", rotulo: "Rotular\ncurvas", icone: "nota", grande: true, tipo: "alterna", dica: "Dois cliques traçam a linha; cada curva de nível que ela cruza ganha a cota." }
+{ id: "p11-rotular", rotulo: "Rotular\ncurvas", icone: "nota", grande: true, tipo: "alterna", dica: "Dois cliques traçam a linha; cada curva de nível que ela cruza ganha a cota." },
+{ id: "p11-entorno", rotulo: "Pegar\nentorno", icone: "obra", grande: true, dica: "Busca no mapa (OpenStreetMap) as edificações, muros, água, ruas e árvores em volta da obra, pelo local dela, e mostra uma PRÉVIA: só entra no modelo se você aceitar. Se a obra ainda não tem local, pede o endereço aqui mesmo. O entorno fica gravado na obra e vale também no plano de içamento (o prédio vizinho é obstáculo); não entra em orçamento nem em quantitativo." },
+{ id: "p11-entorno-ver", rotulo: "Ocultar\nentorno", icone: "olho", grande: true, tipo: "alterna", persistente: true, previa: "entornoColocado", dica: "Esconde o entorno só na tela, na foto e no filme; não apaga nada. O entorno continua gravado na obra e continua contando como obstáculo no plano de içamento. Só aparece quando a obra tem entorno." },
+{ id: "p11-entorno-remover", rotulo: "Remover\nentorno", icone: "lixeira", grande: true, previa: "entornoColocado", dica: "Tira o entorno do mapa gravado na obra (do BIM e do plano de içamento), depois de confirmar; os volumes da planta do Içamento só saem se você marcar a caixa. Não dá para desfazer. Só aparece quando a obra tem entorno." }
 ], "anotar");
 R.acrescentar("massa-terreno", "Massa e terreno", "Terraplenagem", [
 { id: "p11-plataforma", rotulo: "Plataforma", icone: "corte", grande: true, tipo: "alterna", dica: "Plataforma (região classificada): o contorno na cota do nível + deslocamento. CORTE e ATERRO exatos pelos prismas da triangulação, no quantitativo e no Orçamento do modelo (a composição de movimento de terra você escolhe; sem ela, a linha fica pendente com o volume)." }
@@ -116184,6 +116187,9 @@ return arqui && arqui.armar ? arqui.armar(sub) : (B() && B().editarArmar ? B().e
 Object.keys(SUBS).forEach(function (k) { reg[k] = ferr(k); });
 reg["p11-dxf"] = function () { self.escolherArquivo("dxf"); return true; };
 reg["p11-csv"] = function () { self.escolherArquivo("csv"); return true; };
+reg["p11-entorno"] = function () { if (global.BimPegarEntorno) global.BimPegarEntorno.iniciar(); return true; };
+reg["p11-entorno-ver"] = function (e) { if (global.BimPegarEntorno) global.BimPegarEntorno.ocultar(!!(e && e.ligado === true)); return true; };
+reg["p11-entorno-remover"] = function () { if (global.BimPegarEntorno) global.BimPegarEntorno.remover(); return true; };
 reg["p11-norte"] = function () { try { if (global.BimShell) BimShell.pintarProps(self.esquemaImplantacao()); } catch (e) {} return true; };
 M().fonteSondagem(function () {
 var G = global.Gestao; if (!G || typeof G._sdAtual !== "function") return null;
@@ -116685,6 +116691,361 @@ return true;
 global.BimTerrenoUI = BimTerrenoUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimTerrenoUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimpegarentorno.js ==== */
+try {
+(function (global) {
+"use strict";
+var LIMITE = 300;
+var RAIOS = [100, 150, 250, 400];
+var ATRIB_PADRAO = "© OpenStreetMap contributors (ODbL)";
+var ex = { n: 0, ativo: null, previa: null, obra: null, oculto: false, subst: null };
+var ultSig = null;
+var ultTem = null;
+function esc(s) { var t = String(s == null ? "" : s); return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function G() { return global.Gestao || null; }
+function U() { return global.UI || null; }
+function pl(n, um, mu) { return n + " " + (n === 1 ? um : mu); }
+function num5(v) { return (Math.round(v * 1e5) / 1e5).toFixed(5).replace(".", ","); }
+var Pure = {
+LIMITE: LIMITE,
+doMapa: function (lista) { return (lista || []).filter(function (e) { return e && e.fonte; }); },
+vivas: function (mapa) { return ((mapa && mapa.propostas) || []).filter(function (q) { return q && !q.aceita && !q.descartada && !q.jaAceita && !q.sobreModelo; }); },
+contar: function (mapa, IE) {
+var m = mapa || { propostas: [], porTipo: {}, ruas: [], verdes: [], conta: {} }, vivas = Pure.vivas(m), t = { edificacao: 0, muro: 0, agua: 0 };
+vivas.forEach(function (q) { if (t[q.tipo] != null) t[q.tipo]++; });
+var arv = 0; try { arv = IE && IE.arvores ? IE.arvores(m.verdes || []).length : 0; } catch (e) { arv = 0; }
+return { edificacoes: t.edificacao, muros: t.muro, agua: t.agua, ruas: (m.ruas || []).length, arvores: arv, total: vivas.length,
+sobreModelo: (m.propostas || []).filter(function (q) { return q.sobreModelo; }).length,
+estimadas: vivas.filter(function (q) { return q.alturaEstimada; }).length, cortadas: (m.conta && m.conta.cortadas) || 0 };
+},
+cabe: function (planoEntorno, novos, substituir, fontesNovas) {
+var base = substituir ? (planoEntorno || []).filter(function (e) { return !(e && e.fonte) || (fontesNovas ? !fontesNovas[e.fonte] : false); }) : (planoEntorno || []);
+return base.length + novos <= LIMITE;
+},
+substituicao: function (entorno, vivas) {
+var antigos = {}, novas = {}, herdam = [], digitadas = 0;
+Pure.doMapa(entorno).forEach(function (e) { antigos[e.fonte] = e; });
+(vivas || []).forEach(function (q) { novas[q.fonte] = true; });
+(vivas || []).forEach(function (q) {
+var o = antigos[q.fonte];
+if (!o || o.estimada !== false || o.tipo === "agua" || q.tipo === "agua" || !(+o.altura > 0)) return;
+var oa = +o.altura, nova = +(q.alturaEditada != null ? q.alturaEditada : q.altura);
+if (o.altDigitada === true) { herdam.push({ q: q, altura: oa, semMarca: false }); if (oa !== nova) digitadas++; }
+else if (oa > nova) herdam.push({ q: q, altura: oa, semMarca: true });
+});
+var ficam = Pure.doMapa(entorno).filter(function (e) { return !novas[e.fonte]; });
+return { herdam: herdam, digitadas: digitadas, ficam: ficam, fontesNovas: novas };
+},
+atribuicao: function (entorno, vias, previa) { return (Pure.doMapa(entorno).length || (vias && vias.length) || previa) ? ATRIB_PADRAO : ""; },
+assinatura: function (obra, entorno, vias, oculto) {
+return JSON.stringify([obra || null, (entorno || []).map(function (e) { return [e.id, e.altura]; }), (vias || []).length, !!oculto]);
+},
+erroDoServidor: function (x, erroTxt) {
+var s = x ? x.s : 0, causa = erroTxt || (x && x.j && x.j.error) || "";
+if (!s) return { causa: "Sem conexão com o servidor da RA.", corrigir: "Confira a internet deste aparelho e tente de novo. Nada foi alterado na obra." };
+if (s === 403) return { causa: "A licença deste aparelho não está ativa" + (causa ? " (" + causa + ")" : "") + ".", corrigir: "Ative a licença em Configurações e tente de novo. Nada foi alterado na obra." };
+if (s === 429 || s >= 500) return { causa: "O serviço de mapa está ocupado ou fora do ar" + (causa ? " (" + causa + ")" : "") + ".", corrigir: "Espere alguns minutos e tente de novo, ou use um raio menor. Nada foi alterado na obra." };
+return { causa: "O servidor recusou o pedido" + (causa ? ": " + causa : "") + ".", corrigir: "Tente de novo; se repetir, avise o suporte. Nada foi alterado na obra." };
+}
+};
+function alvoDoc() { var u = U(); try { return u && u._docAlvo ? u._docAlvo() : global.document; } catch (e) { return global.document; } }
+var atual = null;
+function janela(tipo, titulo, corpo, botoes, aoFechar) {
+var u = U(); if (!u || !u.modal) return false;
+if (atual) atual.feito = true;
+var marca = tipo + ":" + (++ex.n), h = { marca: marca, tipo: tipo, feito: false, fechar: function () { h.feito = true; u.fecharModal(); } };
+atual = h;
+u.modal(titulo, '<div data-pe-modal="' + esc(tipo) + '" data-pe-marca="' + marca + '">' + corpo + "</div>", botoes);
+var d = alvoDoc(), MO = global.MutationObserver;
+if (tipo === "ocupado") { try {
+var bg = d && d.querySelector ? d.querySelector("#modal-bg") : null, t0 = Date.now();
+if (bg && bg.addEventListener) bg.addEventListener("click", function (ev) { if (Date.now() - t0 < 400) { if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); if (ev.preventDefault) ev.preventDefault(); } }, true);
+} catch (eV) {} }
+if (MO && d && d.body) {
+var mo = new MO(function () {
+if (d.querySelector('[data-pe-marca="' + marca + '"]')) return;
+mo.disconnect(); if (!h.feito) { h.feito = true; if (aoFechar) aoFechar(); }
+});
+mo.observe(d.body, { childList: true, subtree: true });
+}
+return h;
+}
+function raiz(tipo) { var d = alvoDoc(); return d ? d.querySelector('[data-pe-modal="' + tipo + '"]') : null; }
+function aviso(titulo, texto, corrigir) {
+return janela("aviso", titulo, '<p data-pe="causa">' + esc(texto) + "</p>" + (corrigir ? '<p data-pe="corrigir"><b>O que fazer:</b> ' + esc(corrigir) + "</p>" : ""),
+[{ texto: "Entendi", classe: "primary", onClick: function () { U().fecharModal(); } }]);
+}
+function erroComRetentar(causa, corrigir, retentar) {
+return janela("erro", "Pegar entorno", '<p data-pe="causa">' + esc(causa) + '</p><p data-pe="corrigir"><b>O que fazer:</b> ' + esc(corrigir) + "</p>",
+[{ texto: "Tentar de novo", classe: "primary", onClick: function () { U().fecharModal(); retentar(); } }, { texto: "Fechar", onClick: function () { U().fecharModal(); } }]);
+}
+function obraAtual() { var g = G(); var o = g ? g._bimSel : null; return (o && o !== "geral") ? o : null; }
+function plano() { var g = G(); return g && g._icarPlano ? g._icarPlano() : null; }
+function entornoDoPlano() { var p = plano(); return (p && p.entorno) || []; }
+function pedirLocal(depois) {
+var g = G(), lc = g._icarLocalEst(), achados = [], atrib = "";
+var ifcOk = !!(global.BIM && global.BIM.icarGeoIfc);
+function usar(ng, origem) {
+var p = g._icarPlano();
+if (!g._icarGeoAplicar(p, ng)) { erroComRetentar("Não consegui gravar o local da obra neste aparelho (armazenamento cheio?).", "Libere espaço em Configurações › Armazenamento e tente de novo.", function () { pedirLocal(depois); }); return; }
+lc.assG = null;
+U().fecharModal();
+try { U().toast("Obra localizada" + (origem ? " pelo " + origem : "") + ". Confira no mapa antes de colocar o entorno.", "ok", 6000); } catch (e) {}
+depois();
+}
+function msgCorpo(h) { var r = raiz("local"), a = r && r.querySelector("[data-pe=\"resultados\"]"); if (a) a.innerHTML = h; }
+function localizar() {
+var r = raiz("local"), inp = r && r.querySelector("[data-pe=\"busca\"]"), txt = String(inp ? inp.value : "").trim();
+var c = global.IcarGeo ? global.IcarGeo.lerCoordenada(txt) : null;
+if (c) { usar({ lat: c.lat, lon: c.lon, fonte: c.fonte }, c.fonte); return; }
+if (txt.length < 4) { msgCorpo('<span data-pe="aviso-local" style="color:#b45309">Cole o link do Google Maps, as coordenadas ou digite o endereço da obra (rua, número, cidade).</span>'); return; }
+msgCorpo('<span class="muted" data-pe="procurando">Procurando o endereço…</span>');
+g._icarGeoPost("/ia/geo/busca", { q: txt }).then(function (x) {
+if (!raiz("local")) return;
+if (x.s !== 200 || !x.j || !x.j.ok) { var e = Pure.erroDoServidor(x, x && x.j && x.j.error); msgCorpo('<span data-pe="aviso-local" style="color:#b45309">' + esc(e.causa + " " + e.corrigir) + "</span>"); return; }
+achados = (x.j.resultados || []).slice(0, 5); atrib = x.j.atribuicao || ATRIB_PADRAO;
+if (!achados.length) { msgCorpo('<span data-pe="aviso-local" style="color:#b45309">Não achei esse endereço. Tente com cidade e estado, ou cole o link do Google Maps.</span>'); return; }
+msgCorpo(achados.map(function (a, i) {
+return '<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-top:1px solid var(--linha)"><span style="flex:1">' + esc(a.nome) + '</span><button class="btn sm" data-pe="usar" data-v="' + i + '">Usar</button></div>';
+}).join("") + '<div class="muted" style="font-size:11px">Endereços: ' + esc(atrib) + ". Endereço cai no meio da rua, não no ponto do terreno: confira no mapa.</div>");
+var rr = raiz("local");
+Array.prototype.forEach.call(rr.querySelectorAll("[data-pe=\"usar\"]"), function (b) {
+b.onclick = function () { var a = achados[+b.getAttribute("data-v")]; if (a) usar({ lat: a.lat, lon: a.lon, fonte: "endereço (OpenStreetMap)", endereco: String(a.nome || "").slice(0, 160) }, "endereço"); };
+});
+});
+}
+var corpo = '<p data-pe="pede-local">Esta obra ainda não tem localização. Diga onde ela fica para eu buscar o que está em volta:</p>' +
+'<input type="text" data-pe="busca" placeholder="endereço, link do Google Maps ou -27,5954; -48,5480" style="width:100%;box-sizing:border-box">' +
+'<div data-pe="resultados" style="margin-top:6px;font-size:12px"></div>' +
+'<p class="muted" style="font-size:11px;margin-top:8px">A coordenada vai ao servidor da RA e dele ao serviço público de mapa (OpenStreetMap) — sem nome de obra nem de cliente.</p>';
+var bt = [{ texto: "Localizar", classe: "primary", onClick: localizar }];
+if (ifcOk) bt.push({ texto: "Ler do IFC", onClick: function () {
+var gi = global.BIM.icarGeoIfc();
+if (!gi || !gi.ok) { msgCorpo('<span data-pe="aviso-local" style="color:#b45309">O IFC aberto não traz o local (' + esc((gi && gi.motivo) || "sem dados") + "). Digite o endereço ou cole o link do mapa.</span>"); return; }
+usar(gi, gi.fonte);
+} });
+bt.push({ texto: "Cancelar", onClick: function () { U().fecharModal(); } });
+janela("local", "Pegar entorno: onde fica a obra?", corpo, bt, function () {});
+try { var r0 = raiz("local"), i0 = r0 && r0.querySelector("[data-pe=\"busca\"]"); if (i0) { i0.onkeydown = function (ev) { if (ev && ev.key === "Enter") localizar(); }; i0.focus(); } } catch (e) {}
+}
+function desfazerPrevia() {
+var g = G(), pv = ex.previa; ex.previa = null; ex.ativo = null;
+if (!g || !pv) return;
+var lc = g._icarLocalEst();
+lc.mapaResp = pv.mapaResp; lc.mapa = pv.mapa; lc.obraMapa = pv.obraMapa; lc.raio = pv.raio; lc.mostrar = pv.mostrar;
+redesenhar();
+}
+function redesenhar() {
+var g = G(); if (!g) return;
+try { g._icarPlantaDesenhar(); } catch (e) {}
+try { g._icarLocalSync({ preservar: true }); } catch (e2) {}
+try { g._icarRender(); } catch (e3) {}
+try { if (global.BIM && global.BIM.icarEntornoVisivel) global.BIM.icarEntornoVisivel(!ex.oculto); } catch (e4) {}
+var p = plano(); ultSig = Pure.assinatura(obraAtual(), p && p.entorno, p && p.vias, ex.oculto);
+atualizarRodape();
+}
+function atribuicaoAgora() { var p = plano(); return Pure.atribuicao(p && p.entorno, p && p.vias, !!ex.previa); }
+function atualizarRodape() {
+var d = global.document; if (!d || !d.getElementById) return;
+try {
+var t = atribuicaoAgora(), el = d.getElementById("bim-atrib-osm"), box = d.getElementById("bim-canvas");
+if (!t || !box) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+if (!el) {
+el = d.createElement("div"); el.id = "bim-atrib-osm"; el.setAttribute("data-pe", "atribuicao");
+el.style.cssText = "position:absolute;right:8px;bottom:4px;z-index:6;font:10px system-ui,sans-serif;color:#e2e8f0;background:rgba(15,23,42,.55);padding:1px 6px;border-radius:4px;pointer-events:none";
+box.appendChild(el);
+}
+el.textContent = t;
+} catch (e) {}
+}
+function fecharAtual() { var h = atual; if (h && !h.feito) { try { h.fechar(); } catch (e) {} } }
+function pintarFita() { try { if (global.BimShell && global.BimShell.pintarFita) global.BimShell.pintarFita(); } catch (e) {} }
+function buscar(substituir) {
+var g = G(), p = g._icarPlano(), geo = g._icarGeo(p), lc = g._icarLocalEst(), raio = +lc.raio || 150, id = ++ex.n;
+ex.ativo = id; ex.obra = obraAtual(); ex.subst = null;
+if (!ex.previa) ex.previa = { mapaResp: lc.mapaResp, mapa: lc.mapa, obraMapa: lc.obraMapa, raio: lc.raio, mostrar: lc.mostrar };
+if (lc.mostrar === false) lc.mostrar = true;
+if (RAIOS.indexOf(raio) < 0) raio = 150;
+janela("ocupado", "Pegar entorno", '<p data-pe="ocupado">Buscando o entorno num raio de ' + raio + " m do ponto da obra…</p>",
+[{ texto: "Cancelar", onClick: function () { U().fecharModal(); } }], function () { if (ex.ativo === id) desfazerPrevia(); });
+g._icarGeoPost("/ia/geo/entorno", { lat: +geo.lat, lon: +geo.lon, raio: raio }).then(function (x) {
+if (ex.ativo !== id) return;
+if (ex.obra !== obraAtual()) { if (ex.previa && ex.previa.mostrar === false) lc.mostrar = false; ex.ativo = null; ex.previa = null; fecharAtual(); return; }
+if (x.s !== 200 || !x.j || !x.j.ok) {
+var e = Pure.erroDoServidor(x, x && x.j && x.j.error);
+ex.ativo = null; desfazerPrevia();
+erroComRetentar(e.causa, e.corrigir, function () { buscar(substituir); });
+return;
+}
+var p2 = g._icarPlano(); lc.mapaResp = x.j; lc.obraMapa = obraAtual(); lc.raio = raio;
+lc.mapa = null;
+g._icarLocalMapa(p2, { ignorarEntorno: !!substituir });
+if (lc.mapa && substituir) {
+var sb = Pure.substituicao(p2.entorno, Pure.vivas(lc.mapa));
+sb.herdam.forEach(function (h) { h.q.alturaEditada = h.altura; h.q.alturaSemMarca = !!h.semMarca; });
+ex.subst = { digitadas: sb.digitadas, ficam: sb.ficam.length, planta: (p2.entorno || []).length - Pure.doMapa(p2.entorno).length };
+}
+if (!lc.mapa) {
+ex.ativo = null; desfazerPrevia();
+erroComRetentar("O mapa respondeu, mas sem nada que eu consiga desenhar nesta área.", "Tente um raio maior ou confira o local da obra (o ponto pode estar no meio da rua ou fora do lugar).", function () { buscar(substituir); });
+return;
+}
+redesenhar();
+previa(substituir, id);
+});
+}
+function previa(substituir, id) {
+var g = G(), lc = g._icarLocalEst(), mp = lc.mapa, c = Pure.contar(mp, global.IcarEntorno), resp = lc.mapaResp || {}, geo = g._icarGeo(g._icarPlano());
+var raio = +lc.raio || 150, atrib = resp.atribuicao || resp.fonte || ATRIB_PADRAO, p = g._icarPlano();
+var cabe = Pure.cabe(p.entorno, c.total, substituir, substituir ? Pure.substituicao(p.entorno, Pure.vivas(mp)).fontesNovas : null);
+var li = [pl(c.edificacoes, "edificação", "edificações"), pl(c.muros, "muro", "muros"), pl(c.agua, "corpo de água", "corpos de água"), pl(c.ruas, "rua", "ruas"), pl(c.arvores, "árvore", "árvores")];
+var corpo = '<p data-pe="titulo-previa">Entorno achado num raio de <b>' + raio + ' m</b> do ponto da obra' + (geo ? " (" + num5(+geo.lat) + "; " + num5(+geo.lon) + ")" : "") + ":</p>" +
+'<ul data-pe="contagem" style="margin:4px 0 8px 18px">' + [["edificacoes", li[0]], ["muros", li[1]], ["agua", li[2]], ["ruas", li[3]], ["arvores", li[4]]].map(function (k) { return '<li data-pe-n="' + k[0] + '">' + esc(k[1]) + "</li>"; }).join("") + "</ul>" +
+'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">Raio <select data-pe="raio">' + RAIOS.map(function (r) { return '<option value="' + r + '"' + (r === raio ? " selected" : "") + ">" + r + " m</option>"; }).join("") + "</select>" +
+'<button class="btn sm" data-pe="refazer">Buscar de novo</button></div>';
+if (c.estimadas) corpo += '<p class="muted" style="font-size:12px" data-pe="estimadas">' + pl(c.estimadas, "altura é estimada", "alturas são estimadas") + " (o mapa não traz a altura: vale 3 m por pavimento quando traz os pavimentos, senão 3 m). Depois de colocar, digite a altura real em Plano de içamento › aba Cenário › Entorno aceito (campo \"altura\" de cada prédio).</p>";
+if (c.sobreModelo) corpo += '<p class="muted" style="font-size:12px" data-pe="sobre">' + pl(c.sobreModelo, "edificação está", "edificações estão") + " sobre o terreno da obra (pode ser a casa que será demolida ou a própria obra): fica de fora.</p>";
+if (c.cortadas) corpo += '<p style="color:#b45309;font-size:12px" data-pe="cortadas">' + c.cortadas + " volumes mais longe ficaram de fora (teto de 300 por busca).</p>";
+if (!c.total) corpo += '<p style="color:#b45309" data-pe="vazio"><b>O mapa não tem edificação, muro nem água nesta área.</b> Tente um raio maior ou confira o ponto da obra.</p>';
+if (!cabe) corpo += '<p style="color:#b45309" data-pe="estoura"><b>O plano comporta até ' + LIMITE + ' volumes de entorno.</b> Escolha um raio menor e busque de novo.</p>';
+if (substituir) {
+var sx = ex.subst || { digitadas: 0, ficam: 0, planta: 0 };
+corpo += '<p data-pe="substitui" style="font-size:12px">Vai <b>substituir</b> o entorno do mapa que já está na obra. <span data-pe="mantidos">Fica(m): ' + pl(sx.digitadas, "altura digitada mantida", "alturas digitadas mantidas") + "; " +
+pl(sx.ficam, "volume aceito que o mapa novo não traz como proposta", "volumes aceitos que o mapa novo não traz como proposta") + (sx.planta ? "; " + pl(sx.planta, "volume da planta do Içamento", "volumes da planta do Içamento") : "") + ".</span></p>";
+}
+corpo += '<p class="muted" style="font-size:12px" data-pe="aviso-uso">Em laranja no 3D agora. Ao colocar, o entorno fica gravado na obra e vira obstáculo no plano de içamento (o prédio vizinho é obstáculo de verdade). Não entra em orçamento, quantitativo, áreas nem volumes. Ruas ficam gravadas na obra; árvores, áreas verdes e postes aparecem só nesta sessão (não ficam gravados). Para tirar: Massa e terreno › Remover entorno.</p>' +
+'<p class="muted" style="font-size:11px" data-pe="fonte">Fonte dos dados: ' + esc(atrib) + ".</p>";
+var bt = [];
+bt.push({ texto: "Colocar no modelo", classe: "primary", onClick: function () { colocar(substituir, id); } });
+bt.push({ texto: "Cancelar", onClick: function () { U().fecharModal(); } });
+var j = janela("previa", "Pegar entorno: prévia", corpo, bt, function () { if (ex.ativo === id) desfazerPrevia(); });
+var r = raiz("previa");
+if (r) {
+r.setAttribute("data-pe-total", String(c.total));
+var rf = r.querySelector("[data-pe=\"refazer\"]"), sl = r.querySelector("[data-pe=\"raio\"]");
+if (rf) rf.onclick = function () { var novo = +(sl && sl.value) || 150; lc.raio = novo; ex.ativo = null; if (j) j.fechar(); buscar(substituir); };
+if (!c.total || !cabe) { var bts = alvoDoc().querySelectorAll("#modal-footer button"); Array.prototype.forEach.call(bts, function (b) { if (/Colocar/.test(b.textContent)) { b.disabled = true; b.title = !c.total ? "Não há o que colocar" : "Passa do limite de volumes"; } }); }
+}
+}
+function colocar(substituir, id) {
+var g = G(), lc = g._icarLocalEst(), mp = lc.mapa; if (!mp || ex.ativo !== id) return;
+if (ex.obra !== obraAtual()) { if (ex.previa && ex.previa.mostrar === false) lc.mostrar = false; ex.ativo = null; ex.previa = null; fecharAtual(); return; }
+var p = g._icarPlano(), lista = Pure.vivas(mp);
+if (!lista.length) return;
+var sb = Pure.substituicao(p.entorno, lista);
+if (!Pure.cabe(p.entorno, lista.length, substituir, sb.fontesNovas)) { U().toast("O plano comporta até " + LIMITE + " volumes de entorno: escolha um raio menor.", "aviso"); return; }
+var antes = (p.entorno || []).slice(), tinhaApoio = !!(p.apoio && p.apoio.modo), viasAntes = p.vias, tinhaVias = Object.prototype.hasOwnProperty.call(p, "vias");
+if (substituir) sb.herdam.forEach(function (h) { if (h.q.alturaEditada == null) { h.q.alturaEditada = h.altura; h.q.alturaSemMarca = !!h.semMarca; } });
+p.entorno = substituir ? antes.filter(function (e) { return !(e && e.fonte) || !sb.fontesNovas[e.fonte]; }) : antes.slice();
+g._icarEntornoAdicionar(p, lista);
+if (!tinhaApoio) delete p.apoio;
+var viasNovas = false;
+if (substituir || !(p.vias && p.vias.length)) { try { viasNovas = !!g._icarLocalGuardarVias(p, true); } catch (eV) { viasNovas = false; } }
+if (!g._icarSalvar(p)) {
+p.entorno = antes; lista.forEach(function (q) { q.aceita = false; });
+if (tinhaVias) p.vias = viasAntes; else delete p.vias;
+ex.ativo = null; desfazerPrevia();
+erroComRetentar("Não consegui gravar o entorno na obra neste aparelho (armazenamento cheio?).", "Libere espaço em Configurações › Armazenamento e tente de novo. A obra ficou como estava.", function () { BimPegarEntorno.iniciar(); });
+return;
+}
+var tinhaVerif = g._icarEntornoMudou(p);
+mp.propostas.forEach(function (q) { if (q.sobreModelo && !q.aceita) q.descartada = true; });
+var mostrarAntes = ex.previa ? ex.previa.mostrar : lc.mostrar;
+ex.previa = null; ex.ativo = null;
+if (mostrarAntes === false) lc.mostrar = false;
+U().fecharModal();
+redesenhar(); pintarFita();
+var arv = 0; try { arv = global.IcarEntorno && global.IcarEntorno.arvores ? global.IcarEntorno.arvores(mp.verdes || []).length : 0; } catch (eA) { arv = 0; }
+try {
+U().toast("Entorno colocado: " + pl(lista.length, "volume", "volumes") + " em volta da obra. Também vale no plano de içamento." + (viasNovas ? " As ruas ficaram gravadas." : "") +
+(arv ? " As árvores aparecem só nesta sessão." : "") + (tinhaVerif ? " Verifique o caminho de novo no Içamento." : ""), tinhaVerif ? "aviso" : "ok", 8000);
+} catch (e) {}
+}
+var BimPegarEntorno = {
+Pure: Pure,
+LIMITE: LIMITE,
+tem: function () { try { return !!obraAtual() && entornoDoPlano().length > 0; } catch (e) { return false; } },
+iniciar: function () {
+var g = G();
+if (ex.ativo && atual && !atual.feito && atual.tipo === "ocupado") return true;
+if (!g || !g._icarPlano || !U()) { aviso("Pegar entorno", "O módulo de obras não carregou nesta tela.", "Recarregue o app (F5) e tente de novo."); return false; }
+if (!obraAtual()) { aviso("Pegar entorno: falta a obra", "Este BIM não está ligado a uma obra, e o entorno é gravado na obra.", "Escolha a obra no seletor do alto da tela do BIM (ou crie uma em Obras) e clique em Pegar entorno de novo."); return false; }
+if (!g._icarGeo(g._icarPlano())) { pedirLocal(function () { BimPegarEntorno._depoisDoLocal(); }); return true; }
+BimPegarEntorno._depoisDoLocal(); return true;
+},
+_depoisDoLocal: function () {
+var g = G(), mapaN = Pure.doMapa(entornoDoPlano()).length;
+if (!mapaN) { buscar(false); return; }
+var alt = Pure.doMapa(entornoDoPlano()).filter(function (e) { return e.estimada === false && e.tipo !== "agua"; }).length, plantaN = entornoDoPlano().length - mapaN;
+janela("substituir", "Pegar entorno", '<p data-pe="pergunta">Substituir o entorno atual?</p><p>Esta obra já tem ' + pl(mapaN, "volume", "volumes") + ' do mapa. Se substituir, os que o mapa trouxer de novo são trocados; só depois de você ver a prévia e aceitar. Se não substituir, nada muda.</p>' +
+'<p data-pe="mantem" style="font-size:12px">Não se perde o que você fez: ' + pl(alt, "altura já conferida", "alturas já conferidas") + ' (digitadas por você ou medidas no mapa) passa(m) para o prédio novo de mesmo número; volume aceito que o mapa novo não trouxer como proposta (por exemplo o que está sobre o terreno)' + (plantaN ? ' e ' + pl(plantaN, "volume da planta do Içamento", "volumes da planta do Içamento") : '') + ' ficam. A prévia diz os números exatos.</p>',
+[{ texto: "Substituir", classe: "primary", onClick: function () { U().fecharModal(); buscar(true); } }, { texto: "Não substituir", onClick: function () { U().fecharModal(); } }]);
+return g;
+},
+remover: function () {
+var g = G(); if (!g || !U()) return false;
+var p = g._icarPlano(), lista = (p && p.entorno) || [];
+if (!lista.length) { aviso("Remover entorno", "Esta obra não tem entorno colocado.", ""); return false; }
+var nm = Pure.doMapa(lista).length, np = lista.length - nm;
+janela("remover", "Remover entorno", '<p data-pe="pergunta">Remover o entorno desta obra?</p><p>' + pl(nm, "volume do mapa sai", "volumes do mapa saem") + " do 3D e do plano de içamento (deixam de ser obstáculo). O modelo, o orçamento e o quantitativo não mudam. As ruas gravadas ficam (servem à conferência da área isolada)." + "</p>" +
+(np ? '<p data-pe="planta"><label><input type="checkbox" data-pe="tambem-planta"> Remover também ' + pl(np, "volume da planta do Içamento", "volumes da planta do Içamento") + " (desenhados por você ou lidos da planta)</label></p>" : "") +
+'<p data-pe="irreversivel"><b>Não dá para desfazer.</b></p>',
+[{ texto: "Remover entorno", classe: "primary", onClick: function () {
+var rz = raiz("remover"), ck = rz && rz.querySelector ? rz.querySelector('[data-pe="tambem-planta"]') : null, tambem = !!(ck && ck.checked);
+var p2 = g._icarPlano(), ant = (p2.entorno || []).slice(), fontes = Pure.doMapa(ant).map(function (e) { return e.fonte; });
+if (!fontes.length && !tambem) { U().toast("Não há volume do mapa para remover. Marque a caixa para remover os da planta do Içamento.", "aviso"); return; }
+p2.entorno = tambem ? [] : ant.filter(function (e) { return !(e && e.fonte); });
+if (!g._icarSalvar(p2)) { p2.entorno = ant; U().fecharModal(); erroComRetentar("Não consegui gravar a remoção neste aparelho.", "Libere espaço em Configurações › Armazenamento e tente de novo. O entorno continua na obra.", function () { BimPegarEntorno.remover(); }); return; }
+var tv = g._icarEntornoMudou(p2), lc = g._icarLocalEst(); lc.mapaResp = null; lc.mapa = null; lc.obraMapa = null; lc.assin = null;
+U().fecharModal(); redesenhar(); pintarFita();
+try { U().toast("Entorno removido da obra" + (tambem ? " (também os da planta do Içamento)." : ".") + (tv ? " Verifique o caminho de novo no Içamento." : ""), "ok", 5000); } catch (e) {}
+} }, { texto: "Cancelar", onClick: function () { U().fecharModal(); } }]);
+return true;
+},
+aoSalvar: function () {
+atualizarRodape();
+var t = BimPegarEntorno.tem(); if (t === ultTem) return;
+ultTem = t; pintarFita();
+},
+ocultar: function (sim) {
+ex.oculto = !!sim;
+try { if (global.BIM && global.BIM.icarEntornoVisivel) global.BIM.icarEntornoVisivel(!ex.oculto); } catch (e) {}
+var p = plano(); ultSig = Pure.assinatura(obraAtual(), p && p.entorno, p && p.vias, ex.oculto);
+return ex.oculto;
+},
+oculto: function () { return !!ex.oculto; },
+atribuicao: function () { try { return atribuicaoAgora(); } catch (e) { return ""; } },
+carimbar: function (g, W, H) {
+var t = BimPegarEntorno.atribuicao(); if (!t || !g) return false;
+try {
+var fs = Math.max(10, Math.round(H / 72)); g.save(); g.font = "600 " + fs + "px system-ui, sans-serif";
+var tw = g.measureText(t).width; g.fillStyle = "rgba(15,23,42,.55)"; g.fillRect(fs * 0.6, H - fs * 2.2, tw + fs * 1.2, fs * 1.7);
+g.fillStyle = "#fff"; g.fillText(t, fs * 1.2, H - fs * 0.95); g.restore(); return true;
+} catch (e) { return false; }
+},
+sincronizar: function (forcar) {
+var g = G(); if (!g || !g._icarPlano || !global.BIM || !global.BIM.icarPlanta) return false;
+var lc = g._icarLocalEst(), ob = obraAtual();
+if (lc._obraSync !== undefined && lc._obraSync !== ob) {
+if (ex.previa && ex.previa.mostrar === false) lc.mostrar = false;
+ex.ativo = null; ex.previa = null; ex.subst = null; ex.obra = null; ex.oculto = false;
+lc.mapaResp = null; lc.mapa = null; lc.relevoResp = null; lc.malha = null; lc.assin = null; lc.assG = null; lc.obraMapa = null; ultSig = null;
+fecharAtual();
+}
+lc._obraSync = ob;
+try { if (global.BimRibbon && global.BimRibbon.setAtivo) global.BimRibbon.setAtivo("p11-entorno-ver", !!ex.oculto); } catch (eRb) {}
+var tem = BimPegarEntorno.tem(), p = plano();
+if (!forcar && ultSig != null && ultSig === Pure.assinatura(ob, p && p.entorno, p && p.vias, ex.oculto)) { ultTem = tem; return tem; }
+redesenhar();
+ultTem = tem; pintarFita();
+return tem;
+},
+_ex: ex
+};
+global.BimPegarEntorno = BimPegarEntorno;
+if (typeof module !== "undefined" && module.exports) module.exports = BimPegarEntorno;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimestrutui.js ==== */
 try {
@@ -171304,7 +171665,7 @@ var ABA_VOLUME = [
 { nome: "Combinar", ids: ["unir", "subtrair", "empurrar"] }
 ];
 var ABA_TERRENO = [
-{ nome: "Modelar terreno", ids: ["p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular"] },
+{ nome: "Modelar terreno", ids: ["p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-entorno", "p11-entorno-ver", "p11-entorno-remover"] },
 { nome: "Terraplenagem", ids: ["p11-plataforma"] },
 { nome: "Implantação", ids: ["p11-divisa", "p11-norte", "p11-comp"] }
 ];
@@ -202515,6 +202876,7 @@ var fg = g.createLinearGradient(0, 0, 0, H); fg.addColorStop(0, "#6f9bc9"); fg.a
 g.fillStyle = fg; g.fillRect(0, 0, W, H);
 g.drawImage((c.canvas && c.canvas()) || r.domElement, 0, 0, W, H);
 Hud.desenhar(g, W, H, this);
+try { if (global.BimPegarEntorno && global.BimPegarEntorno.carimbar) global.BimPegarEntorno.carimbar(g, W, H); } catch (eAt) {}
 }
 return true;
 },

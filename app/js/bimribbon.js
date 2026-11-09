@@ -325,7 +325,8 @@
     },
     desligarTodas: function () {
       var self = this, n = 0;
-      Object.keys(this._st.ativos).forEach(function (k) { delete self._st.ativos[k]; n++; });
+      /* `persistente`: o botão guarda um estado da tela (ex.: "Ocultar entorno"), não uma ferramenta armada — Esc não o desliga */
+      Object.keys(this._st.ativos).forEach(function (k) { var c = self.comando(k); if (c && c.persistente) return; delete self._st.ativos[k]; n++; });
       return n;
     },
 

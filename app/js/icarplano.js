@@ -516,6 +516,10 @@
       o.vento = vento(vw);
       o.bloqueios = o.bloqueios.concat(o.vento.bloqueios);
     } else o.bloqueios.push("Vento não verificado.");
+    /* O ENTORNO MUDOU depois de o caminho ser verificado (Gestao._icarEntornoMudou zera a verificação e marca ic.caminhoVelho): a velha não vale
+       e a nova ainda não existe — pendência, nunca verde. Some quando a pessoa roda "Verificar o caminho" de novo. */
+    if (ic.caminhoVelho && !ic.colisao) o.caminhoVelho = true;
+    if (ic.caminhoVelho && !ic.colisao) o.bloqueios.push("O entorno mudou depois da última verificação do caminho: rode \"Verificar o caminho\" de novo.");
     /* choques no caminho (js/icarcolisao.js, conferido no 3D): choque ou zona da NR-10 = bloqueio; rede elétrica perto = crítico */
     if (ic.colisao && ic.colisao.resumo) {
       ic.colisao.resumo.forEach(function (r) {

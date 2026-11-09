@@ -63,6 +63,8 @@
          cada comando pede a compra (BimCmd.executar → TesteModulo.guardaComando) */
       try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
     },
+    /* o botão "Remover entorno" (js/bimpegarentorno.js) só aparece quando a obra aberta TEM entorno gravado */
+    entornoColocado: function () { try { return BimPrevia.modelador() && !!(global.BimPegarEntorno && global.BimPegarEntorno.tem()); } catch (e) { return false; } },
     HIDRO_OFF: HIDRO_OFF,
     VIVO: VIVO,
     /* o botão "Render ao vivo" aparece? (prévia deste aparelho, desligada por padrão) */

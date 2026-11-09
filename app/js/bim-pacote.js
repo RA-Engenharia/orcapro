@@ -104,7 +104,7 @@ host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2
 if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); }
 S.host = host;
 try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
-setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} }, 0);
+setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} try { if (window.BimPegarEntorno) window.BimPegarEntorno.sincronizar(true); } catch (eEnt) {} }, 0);
 try { if (S._ro) { S._ro.disconnect(); S._ro.observe(host); } } catch (eRo) {}
 return;
 }
@@ -3561,9 +3561,9 @@ gV.translate(0, 0, base);
 var mat = v.proposta ? new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })
 : agua ? new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide })
 : v.tipo === 'edificacao' ? [icMat(0x9ca3af, 0.95), icFachada()] : v.tipo === 'muro' ? icMat(0xa8a29e, 0.95) : icMat(0xcbd5e1, 0.92);
-var mV = new THREE.Mesh(gV, mat); mV.matrixAutoUpdate = false; mV.matrix.copy(IC_M_MOTOR); mV.name = v.proposta ? 'planta-proposta' : agua ? 'entorno-agua' : 'entorno'; mV.userData.idx = i; icPlantaG.add(mV);
+var mV = new THREE.Mesh(gV, mat); mV.matrixAutoUpdate = false; mV.matrix.copy(IC_M_MOTOR); mV.name = v.proposta ? 'planta-proposta' : agua ? 'entorno-agua' : 'entorno'; mV.userData.idx = i; if (!v.proposta) mV.userData.entornoSolido = true; icPlantaG.add(mV);
 var eV = new THREE.LineSegments(new THREE.EdgesGeometry(gV), new THREE.LineBasicMaterial({ color: v.proposta ? 0xc2410c : agua ? 0x0284c7 : 0x64748b }));
-eV.matrixAutoUpdate = false; eV.matrix.copy(IC_M_MOTOR); icPlantaG.add(eV);
+eV.matrixAutoUpdate = false; eV.matrix.copy(IC_M_MOTOR); if (!v.proposta) eV.userData.entornoSolido = true; icPlantaG.add(eV);
 if (v.proposta) { out.propostas++; return; }
 if (agua) { out.agua++; return; }
 out.volumes++;
@@ -3576,8 +3576,12 @@ var yLi = icL({ x: 0, y: 0, z: +cfg.cotaLimite || 0 }).y + 0.04, ptsLi = cfg.lim
 var lnLi = icLinha(cfg.limiteAberto ? ptsLi : ptsLi.concat([ptsLi[0]]), 0x16a34a, 0.4); lnLi.name = 'agente-limite'; icPlantaG.add(lnLi); out.limite = cfg.limite.length;
 }
 modelRoot.updateMatrixWorld(); icPlantaG.matrix.copy(modelRoot.matrixWorld); icPlantaG.matrixWorldNeedsUpdate = true;
+icEntornoAplicarOculto();
 return out;
 }
+var icEntornoOculto = false;
+function icEntornoAplicarOculto() { icPlantaG.children.forEach(function (o) { if (o.userData && o.userData.entornoSolido) o.visible = !icEntornoOculto; }); }
+function icEntornoVisivel(v) { icEntornoOculto = !v; icEntornoAplicarOculto(); return true; }
 function icPlantaPonto(px, py) {
 var m = icPlantaG.getObjectByName('planta-imagem') || icPlantaG.getObjectByName('planta-linhas'); if (!m) return null;
 var v = new THREE.Vector3(px, py, 0).applyMatrix4(m.matrix); return icM(v);
@@ -3965,7 +3969,14 @@ camera.lookAt(c); camera.updateProjectionMatrix();
 scene.background = new THREE.Color(0xffffff);
 if (_selLn) _selLn.visible = false;
 renderer.render(scene, camera);
-url = cvDesenho().toDataURL('image/png');
+var cvC = cvDesenho(); url = cvC.toDataURL('image/png');
+try {
+if (window.BimPegarEntorno && BimPegarEntorno.atribuicao && BimPegarEntorno.atribuicao()) {
+var cvA = document.createElement('canvas'); cvA.width = cvC.width; cvA.height = cvC.height;
+var gA = cvA.getContext('2d'); gA.drawImage(cvC, 0, 0);
+if (BimPegarEntorno.carimbar(gA, cvA.width, cvA.height)) url = cvA.toDataURL('image/png');
+}
+} catch (eAt2) {}
 } catch (_) { url = null; } finally {
 camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
 icMapaG.visible = true;
@@ -4040,6 +4051,7 @@ var txt = String(o.carimbo || 'OrçaPRO · modo foto · imagem ilustrativa').sli
 x2.font = '600 ' + fs + 'px system-ui, sans-serif'; var tw = x2.measureText(txt).width;
 x2.fillStyle = 'rgba(15,23,42,.55)'; x2.fillRect(W - tw - fs * 1.6, H - fs * 2.2, tw + fs * 1.2, fs * 1.7);
 x2.fillStyle = '#fff'; x2.fillText(txt, W - tw - fs, H - fs * 0.95);
+try { if (window.BimPegarEntorno && BimPegarEntorno.carimbar) BimPegarEntorno.carimbar(x2, W, H); } catch (eAt) {}
 out = { ok: true, url: c2.toDataURL('image/png'), largura: W, altura: H, superamostra: ss, sombras: marcadas.filter(function (x) { return x[0].castShadow; }).length,
 mescladas: marcadas.filter(function (x) { return x[0].userData.agregado; }).length, satelite: trocas.length, google3dNaFoto: g3NaFoto,
 ceu: !!icLocalMundo.getObjectByName('local-ceu'), mapaSombra: dir.shadow.mapSize.x, mapaGerado: mapaOk, recebem: marcadas.length, luz: Math.round(dir.intensity * 100) / 100 };
@@ -4070,7 +4082,7 @@ if (S._enquadrarObj) S._enquadrarObj(box, 1.25); return true;
 }
 S._icar = { geometria: icGeometria, chao: function () { return icM(new THREE.Vector3(0, icChao(), 0)).z; }, pontoNoChao: icPontoNoChao, sondar: icSondar, desenhar: icDesenhar, limpar: icLimpar,
 simular: icSimular, simulando: function () { return !!icar.sim; }, parar: function () { icLimparSim(); return true; },
-colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, google3d: icGoogle3d, google3dEstado: icG3Estado, google3dSondar: icG3Sondar, mapa: icMapa, planta: icPlanta, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
+colisoes: icColisoes, caixas: icCaixas, fotoHD: icFotoHD, google3d: icGoogle3d, google3dEstado: icG3Estado, google3dSondar: icG3Sondar, mapa: icMapa, planta: icPlanta, entornoVisivel: icEntornoVisivel, plantaPonto: icPlantaPonto, visada: icVisada, local: icLocal, geoIfc: icGeoIfc,
 localEstado: function () {
 var c = { gramados: 0, ceu: !!icLocalMundo.getObjectByName('local-ceu'), faixas: 0, arvores: 0, levantamento: 0, curvas: 0, imagem: 0, relevo: 0, ruas: 0, verdes: 0, postes: 0, redes: 0, chuva: 0, vento: 0, neblina: !!(icLocalEst.nevoaVis && scene.fog), sol: !!icLocalEst.sol, luz: { x: dir.position.x, y: dir.position.y, z: dir.position.z, i: dir.intensity } };
 c.graos = []; icLocalG.children.forEach(function (o) { var gr = (o.name === 'local-gramado' || o.name === 'local-rua-faixa') && o.material && o.material.userData.grao; if (gr && c.graos.indexOf(gr) < 0) c.graos.push(gr); });
@@ -9039,6 +9051,7 @@ var faixa = 44, cnv = document.createElement('canvas');
 cnv.width = img.width; cnv.height = img.height + faixa;
 var g2 = cnv.getContext('2d');
 g2.drawImage(img, 0, 0);
+try { if (window.BimPegarEntorno && BimPegarEntorno.carimbar) BimPegarEntorno.carimbar(g2, img.width, img.height); } catch (eAt) {}
 g2.fillStyle = '#0b1a2b'; g2.fillRect(0, img.height, cnv.width, faixa);
 var rotEl = rotuloElementos();
 g2.fillStyle = '#15803d'; g2.font = 'bold 16px Segoe UI, Arial';
@@ -14892,6 +14905,7 @@ icarVisada: function (o) { return (S && S._icar) ? S._icar.visada(o) : { ok: fal
 icarCaixas: function (fora, regiao) { return (S && S._icar) ? S._icar.caixas(fora, regiao) : []; },
 icarMapa: function (mp) { return (S && S._icar) ? S._icar.mapa(mp) : { ok: false, erro: 'visualizador não montado' }; },
 icarPlanta: function (cfg) { return (S && S._icar) ? S._icar.planta(cfg) : { ok: false, erro: 'visualizador não montado' }; },
+icarEntornoVisivel: function (v) { return (S && S._icar && S._icar.entornoVisivel) ? S._icar.entornoVisivel(v) : false; },
 icarGoogle3d: function (cfg) { return (S && S._icar) ? S._icar.google3d(cfg) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },
 icarGoogle3dEstado: function () { return (S && S._icar) ? S._icar.google3dEstado() : null; },
 _icarGoogle3dSondar: function (x, y) { return (S && S._icar) ? S._icar.google3dSondar(x, y) : null; },

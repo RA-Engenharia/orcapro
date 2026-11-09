@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.265",
+versao: "1.2.266",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -2015,6 +2015,7 @@ if (!BimPrevia._aparelho()) return false;
 var M = BimPrevia._modela(); if (!M) return true;
 try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
 },
+entornoColocado: function () { try { return BimPrevia.modelador() && !!(global.BimPegarEntorno && global.BimPegarEntorno.tem()); } catch (e) { return false; } },
 HIDRO_OFF: HIDRO_OFF,
 VIVO: VIVO,
 renderVivo: function () { try { return global.localStorage.getItem(VIVO) === "1"; } catch (e) { return false; } },
@@ -49092,6 +49093,7 @@ try { r = c.desenhar(data); } catch (e) { r = null; }
 if (r && r.canvas) {
 try {
 g.drawImage(r.canvas, 0, 0, larg, alt - faixa);
+try { if (global.BimPegarEntorno && global.BimPegarEntorno.carimbar) global.BimPegarEntorno.carimbar(g, larg, alt - faixa); } catch (eAt) {}
 var info = BimVideo.textoFaixa(data, r.sim, c.rodape);
 BimVideo.desenharFaixa(g, larg, alt, faixa, info, c.cores);
 trilha.requestFrame();
@@ -49770,6 +49772,8 @@ if (vw.vLim == null && eq && eq.vento_ms) vw.vLim = eq.vento_ms;
 o.vento = vento(vw);
 o.bloqueios = o.bloqueios.concat(o.vento.bloqueios);
 } else o.bloqueios.push("Vento não verificado.");
+if (ic.caminhoVelho && !ic.colisao) o.caminhoVelho = true;
+if (ic.caminhoVelho && !ic.colisao) o.bloqueios.push("O entorno mudou depois da última verificação do caminho: rode \"Verificar o caminho\" de novo.");
 if (ic.colisao && ic.colisao.resumo) {
 ic.colisao.resumo.forEach(function (r) {
 var onde = "em " + br(r.primeiro * 100, 0) + " % do caminho";

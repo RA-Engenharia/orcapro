@@ -969,6 +969,7 @@
         g.fillStyle = fg; g.fillRect(0, 0, W, H);
         g.drawImage((c.canvas && c.canvas()) || r.domElement, 0, 0, W, H);
         Hud.desenhar(g, W, H, this);
+        try { if (global.BimPegarEntorno && global.BimPegarEntorno.carimbar) global.BimPegarEntorno.carimbar(g, W, H); } catch (eAt) {}   /* © OpenStreetMap (ODbL) quando há dado do mapa na cena */
       }
       return true;
     },

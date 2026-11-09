@@ -71,7 +71,11 @@
         { id: "p11-dxf", rotulo: "Curvas do\nDXF", icone: "importar", grande: true, dica: "Topossólido a partir da importação: as curvas de nível (ou pontos cotados) de um DXF de levantamento viram o terreno — cada vértice com a cota (z) do arquivo." },
         { id: "p11-csv", rotulo: "Pontos do\nlevantamento", icone: "tabela", grande: true, dica: "Pontos cotados em CSV/TXT (P N E Z, N E Z…), o mesmo leitor do relevo do içamento." },
         { id: "p11-subregiao", rotulo: "Sub-região", icone: "area", grande: true, tipo: "alterna", dica: "Sub-região do terreno (grama, brita, pavimento): clique o contorno e Enter — área projetada e área da superfície no quantitativo." },
-        { id: "p11-rotular", rotulo: "Rotular\ncurvas", icone: "nota", grande: true, tipo: "alterna", dica: "Dois cliques traçam a linha; cada curva de nível que ela cruza ganha a cota." }
+        { id: "p11-rotular", rotulo: "Rotular\ncurvas", icone: "nota", grande: true, tipo: "alterna", dica: "Dois cliques traçam a linha; cada curva de nível que ela cruza ganha a cota." },
+        /* PEGAR ENTORNO (js/bimpegarentorno.js): o mapa em volta da obra, com prévia e aceite; sai pelo "Remover entorno" (só aparece com entorno) */
+        { id: "p11-entorno", rotulo: "Pegar\nentorno", icone: "obra", grande: true, dica: "Busca no mapa (OpenStreetMap) as edificações, muros, água, ruas e árvores em volta da obra, pelo local dela, e mostra uma PRÉVIA: só entra no modelo se você aceitar. Se a obra ainda não tem local, pede o endereço aqui mesmo. O entorno fica gravado na obra e vale também no plano de içamento (o prédio vizinho é obstáculo); não entra em orçamento nem em quantitativo." },
+        { id: "p11-entorno-ver", rotulo: "Ocultar\nentorno", icone: "olho", grande: true, tipo: "alterna", persistente: true, previa: "entornoColocado", dica: "Esconde o entorno só na tela, na foto e no filme; não apaga nada. O entorno continua gravado na obra e continua contando como obstáculo no plano de içamento. Só aparece quando a obra tem entorno." },
+        { id: "p11-entorno-remover", rotulo: "Remover\nentorno", icone: "lixeira", grande: true, previa: "entornoColocado", dica: "Tira o entorno do mapa gravado na obra (do BIM e do plano de içamento), depois de confirmar; os volumes da planta do Içamento só saem se você marcar a caixa. Não dá para desfazer. Só aparece quando a obra tem entorno." }
       ], "anotar");
       R.acrescentar("massa-terreno", "Massa e terreno", "Terraplenagem", [
         { id: "p11-plataforma", rotulo: "Plataforma", icone: "corte", grande: true, tipo: "alterna", dica: "Plataforma (região classificada): o contorno na cota do nível + deslocamento. CORTE e ATERRO exatos pelos prismas da triangulação, no quantitativo e no Orçamento do modelo (a composição de movimento de terra você escolhe; sem ela, a linha fica pendente com o volume)." }
@@ -91,6 +95,9 @@
       Object.keys(SUBS).forEach(function (k) { reg[k] = ferr(k); });
       reg["p11-dxf"] = function () { self.escolherArquivo("dxf"); return true; };
       reg["p11-csv"] = function () { self.escolherArquivo("csv"); return true; };
+      reg["p11-entorno"] = function () { if (global.BimPegarEntorno) global.BimPegarEntorno.iniciar(); return true; };
+      reg["p11-entorno-ver"] = function (e) { if (global.BimPegarEntorno) global.BimPegarEntorno.ocultar(!!(e && e.ligado === true)); return true; };
+      reg["p11-entorno-remover"] = function () { if (global.BimPegarEntorno) global.BimPegarEntorno.remover(); return true; };
       reg["p11-norte"] = function () { try { if (global.BimShell) BimShell.pintarProps(self.esquemaImplantacao()); } catch (e) {} return true; };
       /* a sondagem da obra (Gestao) para o motor: o corte reparte pelas camadas */
       M().fonteSondagem(function () {

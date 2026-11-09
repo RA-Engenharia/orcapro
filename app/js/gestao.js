@@ -15885,6 +15885,7 @@
          por obra. Trocar aqui sem avisar o viewer deixaria a chave apontando
          para a obra anterior dentro do registro da nova — órfão silencioso. */
       try { if (window.BIM && BIM.setObra) BIM.setObra(obraId); } catch (eB0) {}
+      try { if (window.BimPegarEntorno) BimPegarEntorno.sincronizar(); } catch (eEnt) {}   /* o entorno gravado na obra nova aparece no 3D (e o da anterior sai) */
       /* B1: a obra nova tem OUTRA federação. Sem trocar o mapa, o viewer
          resolveria o modeloId pelas vagas da obra anterior — vínculo da obra A
          aparecendo dentro do registro da obra B. */
@@ -19005,6 +19006,7 @@
       if (!p.criadoEm) p.criadoEm = p.atualizadoEm;
       if (!Store.salvar(eid(), "bim_icamento", p)) { UI.toast("Não consegui salvar o plano de içamento (armazenamento cheio?).", "erro"); return false; }
       this._icarEst().ver++;
+      try { if (window.BimPegarEntorno) BimPegarEntorno.aoSalvar(); } catch (eEnt) {}   /* a fita do BIM mostra "Remover entorno" só quando há entorno */
       return true;
     },
     /* o equipamento do plano: do catálogo, ou a tabela da placa informada */
@@ -19098,7 +19100,8 @@
         vias: p.vias || [],   // ruas do mapa guardadas no plano: a área isolada é conferida contra elas (interdição, CTB art. 95)
         /* TANDEM: o 2º equipamento (do catálogo) e onde ele fica — escolhido sem posição, o motor bloqueia em vez de contar um só */
         tandem: ic.tandem && ic.tandem.catalogoId2 && window.IcarCatalogo ? { eq2: IcarCatalogo.porId(ic.tandem.catalogoId2), pos2: ic.tandem.pos2 || null } : null,
-        colisao: (this._icarEst().colisoes || {})[ic.id] || null, visada: (this._icarEst().visadas || {})[ic.id] || null,
+        caminhoVelho: this._icarCaminhoVelho(p, ic),   /* o entorno mudou depois da verificação: o motor põe a pendência */
+        colisao: this._icarColisaoVale(p, ic), visada: (this._icarEst().visadas || {})[ic.id] || null,
         moitao_kg: e.moitao_kg != null && e.moitao_kg !== "" ? +e.moitao_kg : null, lingas: ic.lingas || { tipo: "cinta", modo: "direto" },
         manilha_cmt_kg: ic.manilha_cmt_kg != null && ic.manilha_cmt_kg !== "" ? +ic.manilha_cmt_kg : null, flags: ic.flags || {},
         vento: { V0: l.V0, S1: l.S1, cat: l.cat, grupo: l.grupo, edicao: l.edicao, Ca: l.Ca, vPrev10: l.vPrev10, vLim: e.vLim != null && e.vLim !== "" ? +e.vLim : (eq && eq.vento_ms) || null },
@@ -19574,30 +19577,99 @@
       return { J: J, ics: ics, np: np, fuso: fuso, dia: dia };
     },
     _icarLocalHora: function (ms, fuso) { var d = new Date(ms + fuso * 60000); function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getUTCHours()) + ":" + z(d.getUTCMinutes()); },
+    /* O ENTORNO MUDOU (ponto ÚNICO: Colocar, Substituir, Remover, "Aceitar" do mapa, "Tirar" e altura nova): a verificação do caminho e a
+       visada que estavam na tela eram contra o entorno de ANTES — valer a velha daria "caminho livre" onde há (ou passou a haver) choque.
+       Zera as duas e marca cada içamento que TINHA verificação como "verificar de novo": o motor (IcarPlano.avaliar, ic.caminhoVelho) põe a
+       pendência no bloqueio e a condição de liberação deixa de ser verde até a pessoa rodar "Verificar o caminho". Devolve se havia
+       verificação a refazer (o aviso diz). Não salva: quem chama salva. */
+    _icarEntornoMudou: function (p) {
+      var st = this._icarEst(), tinha = false, assin = this._icarEntornoAssin(p), ids = {};
+      (p.icamentos || []).forEach(function (ic) {
+        ids[ic.id] = true;
+        /* verificado nesta sessão (st.colisoes) OU verificado antes e gravado no plano (ic.caminhoEnt diferente do entorno de agora) */
+        if ((st.colisoes || {})[ic.id] || (ic.caminhoEnt != null && ic.caminhoEnt !== assin)) { tinha = true; st.caminhoVelho = st.caminhoVelho || {}; st.caminhoVelho[ic.id] = true; }
+      });
+      /* só os içamentos DESTE plano: o choque verificado de outra obra continua valendo para ela */
+      [st.colisoes, st.visadas].forEach(function (m) { if (m) for (var k in ids) delete m[k]; });
+      /* a sugestão do agente do equipamento foi calculada SEM o volume novo: "Usar este" aplicaria uma posição que pode bater nele */
+      if (st.agente) { st.agente = null; try { this._icarAgenteMapa(); } catch (eAg) {} }
+      return tinha;
+    },
+    /* ASSINATURA do entorno do plano (ids, tipo, altura, base e polígono de cada volume), determinística: dois hashes FNV-1a de 32 bits em
+       sequência + o número de volumes. É o que o içamento grava em ic.caminhoEnt ao verificar o caminho. Não guarda o resultado da colisão. */
+    _icarEntornoAssin: function (p) {
+      var txt = JSON.stringify((p && p.entorno || []).map(function (e) { return [e.id, e.tipo || "", e.altura, e.base, e.poligono]; }));
+      var h1 = 0x811c9dc5, h2 = 0x01000193 ^ 0x9e3779b9, i, c;
+      for (i = 0; i < txt.length; i++) {
+        c = txt.charCodeAt(i);
+        h1 ^= c; h1 = (h1 * 0x01000193) >>> 0;
+        h2 ^= c; h2 = ((h2 * 0x85ebca6b) >>> 0) ^ (h2 >>> 13);
+        h2 = h2 >>> 0;
+      }
+      function hx(n) { return ("00000000" + (n >>> 0).toString(16)).slice(-8); }
+      return "e" + ((p && p.entorno || []).length) + "-" + hx(h1) + hx(h2);
+    },
+    /* o caminho deste içamento foi verificado contra um entorno que não é o de agora? (a marca da sessão, ou a assinatura da verificação — a da
+       sessão ou a gravada no plano — diferente da de hoje: recarregar, o entorno vindo da nuvem e o "Aceitar" da planta caem aqui). */
+    /* a colisão da sessão que o motor pode usar: a que BLOQUEIA vale sempre (um choque achado não some por o entorno ter mudado); a "livre" só vale
+       contra o entorno em que foi verificada — senão o motor põe a pendência (ic.caminhoVelho) em vez de "Caminho livre" */
+    _icarColisaoVale: function (p, ic) {
+      var col = (this._icarEst().colisoes || {})[ic.id] || null;
+      return col && !col.bloqueia && this._icarCaminhoVelho(p, ic) ? null : col;
+    },
+    _icarCaminhoVelho: function (p, ic) {
+      var st = this._icarEst();
+      if ((st.caminhoVelho || {})[ic.id]) return true;
+      var col = (st.colisoes || {})[ic.id], v = col ? col.ent : ic.caminhoEnt;   /* a verificação desta sessão carrega o próprio carimbo (col.ent) */
+      return v != null && v !== this._icarEntornoAssin(p);
+    },
+    /* a proposta do mapa de um volume que saiu do entorno volta a poder ser aceita (sem recarregar a página) */
+    _icarEntornoLiberarFontes: function (p, fontes) {
+      var lc = this._icarLocalEst(); if (!lc.mapa || !fontes || !fontes.length) return;
+      lc.mapa.propostas.forEach(function (q) { if (fontes.indexOf(q.fonte) >= 0) { q.aceita = false; q.descartada = false; } });
+      try { this._icarLocalMapa(p); } catch (e) {}
+    },
+    /* ACEITAR propostas do mapa no plano (p.entorno): o caminho ÚNICO — a aba Local e clima do Içamento e o botão "Pegar entorno" do BIM
+       (js/bimpegarentorno.js) entram por aqui, então o formato do volume aceito é um só. Não salva: quem chama salva. */
+    _icarEntornoAdicionar: function (p, lista) {
+      var self = this, nomes = { edificacao: "Edificação", muro: "Muro", agua: "Água" }, novos = [];
+      p.entorno = p.entorno || [];
+      lista.forEach(function (q) {
+        var n = p.entorno.length + 1, alt = q.alturaEditada != null ? q.alturaEditada : q.altura;
+        var e = { id: "ent" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo: q.tipo, nome: (nomes[q.tipo] || "Entorno") + " " + n + " (mapa)",
+          poligono: q.poligono.map(function (pt) { return [Math.round(pt[0] * 1000) / 1000, Math.round(pt[1] * 1000) / 1000]; }), base: self._icarLocalBase(p, q.poligono), altura: q.tipo === "agua" ? 0 : alt,
+          estimada: q.alturaEditada == null && !!q.alturaEstimada, altDigitada: q.alturaEditada != null && q.tipo !== "agua" && !q.alturaSemMarca, origem: q.origem, confianca: q.confianca, fonte: q.fonte };
+        p.entorno.push(e); novos.push(e); q.aceita = true;
+      });
+      return novos;
+    },
     /* recalcula as propostas do mapa a partir da resposta guardada (a georreferência mudou, ou chegou resposta nova),
        preservando o que a pessoa já aceitou/descartou/editou — a chave é o id do OpenStreetMap */
-    _icarLocalMapa: function (p) {
+    _icarLocalMapa: function (p, opts) {
       var lc = this._icarLocalEst(), g = this._icarGeo(p); if (!g || !lc.mapaResp) { lc.mapa = null; return; }
       var antes = {}; if (lc.mapa) lc.mapa.propostas.forEach(function (q) { antes[q.fonte] = q; });
-      var ja = (p.entorno || []).map(function (e) { return e.fonte; }).filter(Boolean).concat((p.redes || []).map(function (r) { return r.fonte; }).filter(Boolean));
+      /* opts.ignorarEntorno: o entorno do mapa que já está no plano vai ser SUBSTITUÍDO (BIM › Pegar entorno) — as propostas dele voltam a valer */
+      var ja = (opts && opts.ignorarEntorno ? [] : (p.entorno || []).map(function (e) { return e.fonte; }).filter(Boolean)).concat((p.redes || []).map(function (r) { return r.fonte; }).filter(Boolean));
       var cx = null; try { var cs = (window.BIM && BIM.icarCaixas) ? BIM.icarCaixas([]) : []; if (cs && cs.length) { cx = { min: [Infinity, Infinity], max: [-Infinity, -Infinity] }; cs.forEach(function (c) { if (/^entorno:/.test(String(c.id))) return; var mn = c.min || (c.aabb && c.aabb.min), mx = c.max || (c.aabb && c.aabb.max); if (!mn || !mx) return; cx.min[0] = Math.min(cx.min[0], mn[0]); cx.min[1] = Math.min(cx.min[1], mn[1]); cx.max[0] = Math.max(cx.max[0], mx[0]); cx.max[1] = Math.max(cx.max[1], mx[1]); }); if (!isFinite(cx.min[0])) cx = null; } } catch (e) { cx = null; }
       var r = IcarEntorno.propostas(lc.mapaResp, g, { raio: lc.mapaResp.raio || lc.raio, jaAceitos: ja, caixaModelo: cx });
       if (!r.ok) { lc.mapa = null; UI.toast(r.motivo, "aviso"); return; }
+      r.serie = lc.serieMapa = (lc.serieMapa || 0) + 1;   /* a assinatura do 3D vê busca nova mesmo com o mesmo número de ruas */
       r.propostas.forEach(function (q) { var a = antes[q.fonte]; if (a) { q.aceita = a.aceita; q.descartada = a.descartada; q.alturaEditada = a.alturaEditada; } });
       lc.mapa = r;
     },
     /* AS VIAS DO MAPA NO PLANO: até 40 ruas/passeios a até 150 m da obra, no referencial do modelo — é contra elas que a área isolada
        de cada içamento é conferida (IcarPlano.viasAfetadas: interdição com permissão do órgão de trânsito). Dado público do mapa,
        sem nada de cliente. Só grava quando muda (roda também quando a georreferência muda). */
-    _icarLocalGuardarVias: function () {
-      var p = this._icarPlano(), lc = this._icarLocalEst();
-      if (!lc.mapa || !this._icarGeo(p)) return;
+    _icarLocalGuardarVias: function (pIn, semSalvar) {
+      var p = pIn || this._icarPlano(), lc = this._icarLocalEst();
+      if (!lc.mapa || !this._icarGeo(p)) return false;
       var vias = lc.mapa.ruas.filter(function (r) { return r.distancia <= 150 && r.pontos && r.pontos.length >= 2; }).sort(function (a, b) { return a.distancia - b.distancia; }).slice(0, 40).map(function (r) {
         return { nome: String(r.nome || "").slice(0, 80), tipo: r.tipo || "", largura: r.largura != null ? Math.round(+r.largura * 10) / 10 : null, larguraEstimada: !!r.larguraEstimada,
           pontos: r.pontos.map(function (q) { return [Math.round(q[0] * 100) / 100, Math.round(q[1] * 100) / 100]; }) };
       });
-      if (JSON.stringify(vias) === JSON.stringify(p.vias || [])) return;
-      p.vias = vias; this._icarSalvar(p);
+      if (JSON.stringify(vias) === JSON.stringify(p.vias || [])) return false;
+      p.vias = vias; if (!semSalvar) this._icarSalvar(p);   /* semSalvar: BIM › Pegar entorno grava o entorno e as ruas numa operação só */
+      return true;
     },
     /* trechos de rede do mapa agrupados pela linha (o id do OpenStreetMap): a pessoa informa altura e tensão UMA vez por linha */
     _icarLocalRedes: function (mapa) {
@@ -19746,6 +19818,16 @@
         if (el) el.textContent = self._icarG3Status(e);
       }, 1500);
     },
+    /* GRAVA O LOCAL DA OBRA no plano (o caminho único: Local e clima do Içamento e BIM › Pegar entorno). Devolve se salvou. */
+    _icarGeoAplicar: function (p, ng) {
+      var lc = this._icarLocalEst(), a = p.geo || {};
+      p.vias = [];   // as ruas guardadas eram do lugar antigo
+      p.geo = { lat: Math.round(+ng.lat * 1e7) / 1e7, lon: Math.round(+ng.lon * 1e7) / 1e7, x0: ng.x0 != null ? +ng.x0 : (a.x0 != null ? a.x0 : 0), y0: ng.y0 != null ? +ng.y0 : (a.y0 != null ? a.y0 : 0),
+        norte: ng.norte != null ? +ng.norte : (a.norte != null ? a.norte : 0), fonte: ng.fonte || "", endereco: ng.endereco || "" };
+      /* a obra mudou de lugar: o que veio do mapa e do clima do lugar antigo não vale mais */
+      lc.mapaResp = null; lc.mapa = null; lc.relevoResp = null; lc.malha = null; lc.imagem = null; lc.clima = null; lc.hora = null; lc.resultados = null; lc.semSatelite = null;
+      return this._icarSalvar(p);
+    },
     _icarLocalCampo: function (t) {
       var lc = this._icarLocalEst(), k = t.getAttribute("data-icar-local"), v = t.value;
       if (k === "busca") { lc.buscaTxt = v; return; }
@@ -19771,13 +19853,7 @@
       function ocupar(txt) { lc.ocupado = txt; self._icarRender(); }
       function livre() { lc.ocupado = null; }
       function usarGeo(ng, msg) {
-        var a = p.geo || {};
-        p.vias = [];   // as ruas guardadas eram do lugar antigo
-        p.geo = { lat: Math.round(+ng.lat * 1e7) / 1e7, lon: Math.round(+ng.lon * 1e7) / 1e7, x0: ng.x0 != null ? +ng.x0 : (a.x0 != null ? a.x0 : 0), y0: ng.y0 != null ? +ng.y0 : (a.y0 != null ? a.y0 : 0),
-          norte: ng.norte != null ? +ng.norte : (a.norte != null ? a.norte : 0), fonte: ng.fonte || "", endereco: ng.endereco || "" };
-        /* a obra mudou de lugar: o que veio do mapa e do clima do lugar antigo não vale mais */
-        lc.mapaResp = null; lc.mapa = null; lc.relevoResp = null; lc.malha = null; lc.imagem = null; lc.clima = null; lc.hora = null; lc.resultados = null; lc.semSatelite = null;
-        if (self._icarSalvar(p)) { self._icarRender(); if (msg) UI.toast(msg, "ok", 7000); if (lc.g3 && lc.g3.on) self._icarG3Aplicar(); }
+        if (self._icarGeoAplicar(p, ng)) { self._icarRender(); if (msg) UI.toast(msg, "ok", 7000); if (lc.g3 && lc.g3.on) self._icarG3Aplicar(); }
       }
       if (acao === "loc-g3-ligar") {
         lc.g3 = lc.g3 || {};
@@ -19882,15 +19958,9 @@
         if (!lista.length) return;
         p.entorno = p.entorno || [];
         if (p.entorno.length + lista.length > 300) { UI.toast("Até 300 volumes de entorno por plano — aceite os mais perto um a um ou diminua o raio.", "aviso"); return; }
-        var nomes = { edificacao: "Edificação", muro: "Muro", agua: "Água" };
-        lista.forEach(function (q) {
-          var n = p.entorno.length + 1, alt = q.alturaEditada != null ? q.alturaEditada : q.altura;
-          p.entorno.push({ id: "ent" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo: q.tipo, nome: (nomes[q.tipo] || "Entorno") + " " + n + " (mapa)",
-            poligono: q.poligono.map(function (pt) { return [Math.round(pt[0] * 1000) / 1000, Math.round(pt[1] * 1000) / 1000]; }), base: self._icarLocalBase(p, q.poligono), altura: q.tipo === "agua" ? 0 : alt,
-            estimada: q.alturaEditada == null && !!q.alturaEstimada, origem: q.origem, confianca: q.confianca, fonte: q.fonte });
-          q.aceita = true;
-        });
-        if (this._icarSalvar(p)) { this._icarRender(); this._icarPlantaDesenhar(); UI.toast(lista.length + " volume(s) do mapa no entorno do plano — entram no \"Verificar o caminho\" e no agente do equipamento.", "ok"); }
+        this._icarEntornoAdicionar(p, lista);
+        var tinhaV = this._icarEntornoMudou(p);
+        if (this._icarSalvar(p)) { this._icarRender(); this._icarPlantaDesenhar(); UI.toast(lista.length + " volume(s) do mapa no entorno do plano — entram no \"Verificar o caminho\" e no agente do equipamento." + (tinhaV ? " Verifique o caminho de novo no Içamento." : ""), "ok"); }
         return;
       }
       if (acao === "loc-descartar") { var qd = lc.mapa && lc.mapa.propostas[+v]; if (qd) { qd.descartada = true; this._icarRender(); this._icarPlantaDesenhar(); } return; }
@@ -19964,27 +20034,33 @@
     },
     /* o 3D do local: relevo, ruas, verdes, postes, redes sugeridas e satélite (com a aba aberta ou não); sol e clima da HORA
        escolhida só com a aba Local e clima na frente — fora dela a luz volta ao normal */
-    _icarLocalSync: function () {
+    /* opts.preservar (BIM › Pegar entorno): só redesenha o 3D — NÃO refaz as propostas do mapa nem regrava as ruas no plano (p.vias) */
+    _icarLocalSync: function (opts) {
       if (!window.BIM || !BIM.icarLocal || !window.IcarEntorno || !window.IcarGeo) return;
       var self = this, p = this._icarPlano(), lc = this._icarLocalEst(), g = this._icarGeo(p), cota = +this._icarApoio(p).cota || 0, st = this._icarEst();
       var assG = JSON.stringify(g ? [g.lat, g.lon, g.x0, g.y0, g.norte, cota] : null);
       if (assG !== lc.assG) {
         lc.assG = assG;
         lc.malha = g && lc.relevoResp ? IcarEntorno.malhaRelevo(lc.relevoResp, g, cota) : null;
-        if (g && lc.mapaResp) { this._icarLocalMapa(p); this._icarLocalGuardarVias(); } else lc.mapa = null;
+        if (opts && opts.preservar) { /* o mapa da prévia e as ruas gravadas ficam como estão */ }
+        else if (g && lc.mapaResp) { this._icarLocalMapa(p); this._icarLocalGuardarVias(); } else lc.mapa = null;
         if (!g) lc.imagem = null; else if (lc.imagem) lc.imagem.cantos = IcarEntorno.cantosImagem(g, lc.imagem.plano);
       }
       var cfg = null;
       function zEm(x, y) { if (!lc.relevoResp || !lc.malha) return cota; var z = IcarEntorno.cotaRelevo(lc.relevoResp, g, x, y); return z == null ? cota : cota + z - lc.malha.cotaObra; }
       if (g && lc.mostrar !== false) {
         cfg = { relevo: lc.malha ? { pos: lc.malha.pos, idx: lc.malha.idx } : null, imagem: lc.imagem ? { canvas: lc.imagem.canvas, cantos: lc.imagem.cantos, z: cota } : null, ruas: [], verdes: [], postes: [], redes: [] };
+        /* a faixa de asfalto: a largura do mapa, senão a da classe da via (premissa larguraVia_m) */
+        var ruaCfg = function (r) {
+          var w = r.largura > 0 ? +r.largura : (IcarPlano.PREMISSAS.larguraVia_m || {})[IcarPlano.classeVia(r.tipo)] || 6, zs = 0;
+          r.pontos.forEach(function (q) { zs += zEm(q[0], q[1]); });
+          return { pontos: r.pontos.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }), faixa: IcarEntorno.faixa(r.pontos, w), z: zs / r.pontos.length };
+        };
+        /* SEM busca na sessão (a página recarregou, ou a obra foi reaberta): as RUAS gravadas no plano (p.vias, BIM › Pegar entorno e aba
+           Local e clima) voltam ao 3D. Árvores, áreas verdes e postes NÃO são gravados: só existem com a busca desta sessão. */
+        if (!lc.mapa && p.vias && p.vias.length) cfg.ruas = p.vias.filter(function (r) { return r.pontos && r.pontos.length >= 2; }).map(ruaCfg);
         if (lc.mapa) {
-          /* a faixa de asfalto: a largura do mapa, senão a da classe da via (premissa larguraVia_m) */
-          cfg.ruas = lc.mapa.ruas.map(function (r) {
-            var w = r.largura > 0 ? +r.largura : (IcarPlano.PREMISSAS.larguraVia_m || {})[IcarPlano.classeVia(r.tipo)] || 6, zs = 0;
-            r.pontos.forEach(function (q) { zs += zEm(q[0], q[1]); });
-            return { pontos: r.pontos.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }), faixa: IcarEntorno.faixa(r.pontos, w), z: zs / r.pontos.length };
-          });
+          cfg.ruas = lc.mapa.ruas.map(ruaCfg);
           cfg.arvores = IcarEntorno.arvores(lc.mapa.verdes).map(function (a) { return { x: a.x, y: a.y, z: zEm(a.x, a.y), escala: a.escala }; });
           cfg.verdes = lc.mapa.verdes.map(function (v) { return { poligono: v.poligono.map(function (q) { return [q[0], q[1], zEm(q[0], q[1])]; }) }; });
           cfg.postes = lc.mapa.postes.map(function (q) { return { x: q.x, y: q.y, z: zEm(q.x, q.y) }; });
@@ -20004,7 +20080,7 @@
           cfg.clima = { neblina: +hs.h.neblina || 0, chuva: +hs.h.chuva || 0, ventoMs: rm != null ? rm : hs.h.v10, ventoDir: hs.h.dir10, estado: hs.estado, norte: +g.norte || 0 };
         }
       }
-      var ass = JSON.stringify([st.levAss || null, lvL ? [lvL.mostrar, lvL.passo] : null, assG, lc.mostrar, lc.malha ? lc.malha.pos.length : 0, lc.mapa ? [lc.mapa.ruas.length, lc.mapa.redes.map(function (r) { return !!(r.aceita || r.jaAceita); })] : 0, lc.imagem ? lc.imagem.plano.tiles.length : 0, cfg && cfg.sol ? [lc.hora, this._icarLocalDia(p)] : null, cfg && cfg.clima ? cfg.clima : null]);
+      var ass = JSON.stringify([st.levAss || null, lvL ? [lvL.mostrar, lvL.passo] : null, assG, lc.mostrar, lc.malha ? lc.malha.pos.length : 0, lc.mapa ? [lc.mapa.serie || 0, lc.mapa.ruas.length, lc.mapa.verdes.length, lc.mapa.redes.map(function (r) { return !!(r.aceita || r.jaAceita); })] : (p.vias || []).length, lc.imagem ? lc.imagem.plano.tiles.length : 0, cfg && cfg.sol ? [lc.hora, this._icarLocalDia(p)] : null, cfg && cfg.clima ? cfg.clima : null]);
       if (ass === lc.assin) return;
       lc.assin = ass;
       try { BIM.icarLocal(cfg); } catch (e) {}
@@ -20253,12 +20329,18 @@
       if (acao === "planta-aceitar") { this._icarPlantaAceitar(v); return; }
       if (acao === "planta-descartar") { var spD = this._icarPlantaEst(), qD = (spD.propostas || [])[+v]; if (qD) qD.descartada = true; this._icarPlantaDesenhar(); this._icarRender(); return; }
       if (acao === "planta-ver") { var spV = this._icarPlantaEst(); spV.mostrar = spV.mostrar === false; this._icarPlantaDesenhar(); this._icarRender(); return; }
-      if (acao === "ent-tirar") { p.entorno = (p.entorno || []).filter(function (x) { return x.id !== v; }); if (this._icarSalvar(p)) { this._icarPlantaDesenhar(); this._icarRender(); } return; }
+      if (acao === "ent-tirar") {
+        var fonteT = ((p.entorno || []).filter(function (x) { return x.id === v; })[0] || {}).fonte;
+        p.entorno = (p.entorno || []).filter(function (x) { return x.id !== v; });
+        var tinhaT = this._icarEntornoMudou(p);
+        if (this._icarSalvar(p)) { if (fonteT) this._icarEntornoLiberarFontes(p, [fonteT]); this._icarPlantaDesenhar(); this._icarRender(); if (tinhaT) UI.toast("Verifique o caminho de novo no Içamento.", "aviso"); }
+        return;
+      }
       if (acao === "agente-usar") { this._icarAgenteUsar(+v); return; }
       if (acao === "agente-mapa") { st.agenteMapa = st.agenteMapa === false; this._icarAgenteMapa(); this._icarRender(); return; }
       if (acao === "agente-fechar") { st.agente = null; this._icarAgenteMapa(); this._icarRender(); return; }
       if (acao === "posicao-unica") {
-        p.icamentos.forEach(function (x) { delete x.pos; delete x.rumo_graus; }); st.colisoes = {}; st.visadas = {};
+        p.icamentos.forEach(function (x) { delete x.pos; delete x.rumo_graus; if (st.colisoes) delete st.colisoes[x.id]; if (st.visadas) delete st.visadas[x.id]; });
         if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast("Todos os içamentos na posição do equipamento.", "ok"); }
         return;
       }
@@ -20560,11 +20642,12 @@
     /* CHOQUES E FOLGAS NO CAMINHO (ESPEC §II.5.4): o botão posa o equipamento em 61 instantes e testa contra o modelo e a rede;
        a lista diz o quê, contra o quê e quanto; a linha do tempo leva a simulação ao instante (pausada) e seleciona a peça */
     _icarHtmlCaminho: function (p, ic, eq) {
-      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, st = this._icarEst(), r = (st.colisoes || {})[ic.id], fis = p.fisica || {};
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); }, st = this._icarEst(), r = this._icarColisaoVale(p, ic), fis = p.fisica || {};
       var COR = { choque: "#dc2626", "zona-de-risco": "#dc2626", "zona-controlada": "#f97316", folga: "#eab308" }, ROT = { choque: "CHOQUE", "zona-de-risco": "zona de RISCO (NR-10)", "zona-controlada": "zona controlada (NR-10)", folga: "folga pequena" };
       var h = '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px" data-icar-caminho="' + (r ? r.resumo.length : -1) + '"><b>Choques e folgas no caminho</b> ' +
         '<span class="muted">folga mínima</span> <input data-icar-c="fisica.folgaColisao_m" data-num value="' + (fis.folgaColisao_m != null ? esc(String(fis.folgaColisao_m).replace(".", ",")) : "") + '" placeholder="0,50" style="width:50px" inputmode="decimal"> m <span class="muted">(premissa do plano)</span> ' +
         '<button class="btn sm primary" data-icar="caminho"' + (eq ? "" : " disabled") + '>Verificar o caminho</button>';
+      if (!r && this._icarCaminhoVelho(p, ic)) h += '<div style="color:#b45309;margin-top:4px" data-icar-caminho-velho="1"><b>O entorno mudou:</b> a verificação de antes não vale mais. Clique em "Verificar o caminho" de novo.</div>';
       if (r) {
         h += '<div class="muted" style="margin-top:3px">' + r.amostras + " instantes · " + r.obstaculos + " peça(s) perto do caminho · " + (p.redes || []).length + " rede(s) · " + f(r.ms / 1000, 1) + " s</div>";
         if (!r.resumo.length) h += '<div style="color:#16a34a;margin-top:4px" data-icar-caminho-limpo="1"><b>Caminho livre</b>: nada a menos de ' + f(r.folga, 2) + " m.</div>";
@@ -20606,7 +20689,9 @@
       var h = '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;margin-top:8px;font-size:11.5px" data-icar-lib="' + cond.status + '"><b>Liberação deste içamento</b> · sistema: <b style="color:' + COR[cond.status] + '">' + ROT[cond.status] + "</b>" +
         (lista.length ? ' <span style="color:' + (ver.ok ? "#16a34a" : "#dc2626") + '" data-icar-cadeia="' + (ver.ok ? "ok" : "quebrada") + '">· registro ' + (ver.ok ? "íntegro (" + ver.n + ")" : "ALTERADO no registro " + (ver.quebradoEm + 1) + " — " + esc(ver.motivo)) + "</span>" : "");
       if (cond.motivosSistema.length) h += '<div class="muted" style="margin-top:2px">' + cond.motivosSistema.slice(0, 4).map(esc).join(" · ") + (cond.motivosSistema.length > 4 ? " …" : "") + "</div>";
-      if (vig) h += '<div style="margin-top:4px" data-icar-lib-vigente="' + esc(vig.id) + '">Liberado <b>' + (vig.tipo === "fora" ? "FORA das condições" : "dentro das condições") + "</b> por " + esc(vig.quem.nome) + (vig.quem.funcao ? " (" + esc(vig.quem.funcao) + ")" : "") + " em " + esc((vig.em || "").replace("T", " ").slice(0, 16)) +
+      var velhaLib = !!(vig && a && a.caminhoVelho);
+      if (velhaLib) h += '<div style="margin-top:4px;color:#b45309" data-icar-lib-velha="' + esc(vig.id) + '"><b>O entorno mudou depois da verificação do caminho:</b> a liberação de ' + esc((vig.em || "").replace("T", " ").slice(0, 16)) + ' por ' + esc(vig.quem.nome) + ' foi dada antes e não vale como vigente. O registro fica na lista; rode "Verificar o caminho" de novo e libere outra vez.</div>';
+      if (vig && !velhaLib) h += '<div style="margin-top:4px" data-icar-lib-vigente="' + esc(vig.id) + '">Liberado <b>' + (vig.tipo === "fora" ? "FORA das condições" : "dentro das condições") + "</b> por " + esc(vig.quem.nome) + (vig.quem.funcao ? " (" + esc(vig.quem.funcao) + ")" : "") + " em " + esc((vig.em || "").replace("T", " ").slice(0, 16)) +
         (vig.motivo ? ' — "' + esc(vig.motivo) + '"' : "") + ' <input data-icar-lib="anulaMotivo" placeholder="motivo para anular" style="width:180px"> <button class="btn sm" data-icar="lib-anular" data-v="' + esc(vig.id) + '"' + (pode ? "" : " disabled") + ">Anular</button></div>";
       else if (cond.status === "REPROVADO") h += '<div style="color:#991b1b;margin-top:4px">Não há liberação para içamento reprovado: troque o equipamento, a posição ou o plano.</div>';
       else if (!pode) h += '<div class="muted" style="margin-top:4px">Só quem pode aprovar (administrador ou aprovador) registra a liberação.</div>';
@@ -20692,8 +20777,10 @@
       h += this._icarHtmlLevantamento(p);
       /* o entorno aceito (vale com ou sem a planta carregada aqui) */
       var ent = p.entorno || [];
-      if (ent.length) h += '<div style="margin-top:8px" data-icar-entorno="' + ent.length + '"><b>Entorno aceito</b> <span class="muted">(obstáculo no caminho e no agente do equipamento)</span>' + ent.map(function (e) {
-        return '<div style="display:flex;gap:6px;align-items:center;border-top:1px solid var(--linha);padding:3px 0"><span style="flex:1">' + esc(e.nome) + (e.tipo === "agua" ? "" : " · " + f(e.altura, 2) + " m" + (e.estimada ? ' <span style="color:#b45309">estimada</span>' : "")) + "</span>" +
+      var nEst = ent.filter(function (e) { return e.tipo !== "agua" && e.estimada; }).length;
+      if (ent.length) h += '<div style="margin-top:8px" data-icar-entorno="' + ent.length + '"><b>Entorno aceito</b> <span class="muted">(obstáculo no caminho e no agente do equipamento)</span>' +
+        (nEst ? '<div class="muted" style="font-size:11.5px;color:#b45309" data-icar-entorno-estimadas="' + nEst + '">' + nEst + (nEst === 1 ? " altura é estimada" : " alturas são estimadas") + " (o mapa não traz a altura): digite a altura real no campo de cada prédio.</div>" : "") + ent.map(function (e) {
+        return '<div style="display:flex;gap:6px;align-items:center;border-top:1px solid var(--linha);padding:3px 0"><span style="flex:1">' + esc(e.nome) + (e.tipo === "agua" ? "" : ' · altura <input type="text" inputmode="decimal" data-icar-planta="entAlt" data-id="' + esc(e.id) + '" value="' + esc(String(e.altura).replace(".", ",")) + '" style="width:54px;text-align:right"> m' + (e.estimada ? ' <span style="color:#b45309">estimada</span>' : "")) + "</span>" +
           '<button class="btn sm" data-icar="ent-tirar" data-v="' + esc(e.id) + '">Tirar</button></div>';
       }).join("") + "</div>";
       return h + "</div>";
@@ -20828,6 +20915,18 @@
       var p = this._icarPlano(), pl = p.planta, sp = this._icarPlantaEst(), k = t.getAttribute("data-icar-planta");
       if (k === "distM") { sp.distM = t.value; return; }
       if (k === "propAlt") { var q = (sp.propostas || [])[+t.getAttribute("data-n")], a = Util.parseNum(String(t.value || "")); if (q && isFinite(a) && a > 0) q.alturaEditada = Math.round(a * 100) / 100; this._icarPlantaDesenhar(); return; }
+      /* ALTURA DO ENTORNO ACEITO (BIM › Pegar entorno manda ajustar aqui): vira medida (estimada:false), é salva, redesenhada e passa pelo ponto único do entorno */
+      if (k === "entAlt") {
+        var eA = (p.entorno || []).filter(function (x) { return x.id === t.getAttribute("data-id"); })[0], aE = Util.parseNum(String(t.value || ""));
+        if (!eA) return;
+        if (!isFinite(aE) || !(aE > 0) || aE > 500) { UI.toast("Altura inválida: digite em metros, entre 0,01 e 500.", "aviso"); this._icarRender(); return; }
+        aE = Math.round(aE * 100) / 100;
+        if (aE === +eA.altura && eA.estimada === false) return;
+        eA.altura = aE; eA.estimada = false; eA.altDigitada = true;
+        var tinhaA = this._icarEntornoMudou(p);
+        if (this._icarSalvar(p)) { this._icarPlantaDesenhar(); this._icarRender(); UI.toast("Altura de " + eA.nome + ": " + String(aE).replace(".", ",") + " m." + (tinhaA ? " Verifique o caminho de novo no Içamento." : ""), tinhaA ? "aviso" : "ok"); }
+        return;
+      }
       if (!pl) return;
       if (k === "cota") { var c = Util.parseNum(String(t.value || "0")); if (isFinite(c)) pl.cota = Math.round(c * 1000) / 1000; }
       else if (k === "op") pl.opacidade = Math.round((1 - (+t.value || 0) / 100) * 100) / 100;
@@ -20908,7 +21007,8 @@
           estimada: q.alturaEditada == null && !!q.alturaEstimada, origem: (pl && pl.nome ? pl.nome + " · " : "") + (q.origem || ""), confianca: q.confianca });
         q.aceita = true;
       });
-      if (this._icarSalvar(p)) { this._icarPlantaDesenhar(); this._icarRender(); UI.toast(lista.length + " volume(s) no entorno do plano — entram no \"Verificar o caminho\" e no agente do equipamento.", "ok"); }
+      var tinhaPl = this._icarEntornoMudou(p);
+      if (this._icarSalvar(p)) { this._icarPlantaDesenhar(); this._icarRender(); UI.toast(lista.length + " volume(s) no entorno do plano — entram no \"Verificar o caminho\" e no agente do equipamento." + (tinhaPl ? " Verifique o caminho de novo no Içamento." : ""), tinhaPl ? "aviso" : "ok"); }
     },
     /* ---------- LANÇAR NO SISTEMA (ESPEC §II.13; motor js/icarlanca.js; skill `dinheiro`) ----------
        ⚠ NADA é gravado sem a conferência: cada linha (tarefa 4D, requisição, acessório) com o que vai acontecer — criar,
@@ -21144,7 +21244,7 @@
       c.posicoes.slice(1).forEach(function (ps) {
         ps.ics.forEach(function (x) { var ic = p.icamentos.filter(function (y) { return y.id === x.id; })[0]; if (ic) { ic.pos = { x: ps.x, y: ps.y, z: ps.z }; ic.rumo_graus = ps.rumo; } });
       });
-      st.colisoes = {}; st.visadas = {};   // o caminho e a visada conferidos eram de outra posição
+      p.icamentos.forEach(function (x) { if (st.colisoes) delete st.colisoes[x.id]; if (st.visadas) delete st.visadas[x.id]; });   // o caminho e a visada conferidos eram de outra posição (só os deste plano)
       /* 23/10/2026: o TEMPO de cada içamento na posição escolhida fica no plano — é dele que o orçamento por peso
          (js/metalorc.js) tira as horas do guindaste; sem isto ele caía no tempo genérico (giro de 180°) até o "Lançar" */
       var self = this;
@@ -21189,7 +21289,12 @@
       var fol = +(p.fisica || {}).folgaColisao_m; if (!(fol >= 0)) fol = 0.5;
       var r = BIM.icarColisoes({ folga: fol, uids: ic.uids, redes: p.redes || [] });
       if (!r || !r.ok) { UI.toast("Não consegui verificar o caminho: " + ((r && r.erro) || "sem resposta do 3D") + ".", "erro"); return; }
-      st.colisoes = st.colisoes || {}; st.colisoes[ic.id] = { resumo: r.resumo, folga: r.folga, bloqueia: r.bloqueia, amostras: r.amostras, obstaculos: r.obstaculos, ms: r.ms };
+      if (st.caminhoVelho) delete st.caminhoVelho[ic.id];   /* verificado contra o entorno de agora */
+      st.colisoes = st.colisoes || {}; var assinV = this._icarEntornoAssin(p);
+      st.colisoes[ic.id] = { resumo: r.resumo, folga: r.folga, bloqueia: r.bloqueia, amostras: r.amostras, obstaculos: r.obstaculos, ms: r.ms, ent: assinV };
+      /* ÚNICA gravação nova no plano: contra QUAL entorno foi verificado. O resultado (livre/choque) continua só na sessão. Ao recarregar,
+         se o entorno for outro, o motor põe a pendência (nunca "caminho livre" herdado de um entorno que mudou). */
+      if (ic.caminhoEnt !== assinV) { ic.caminhoEnt = assinV; this._icarSalvar(p); }
       this._icarRender();
       /* ⚠ no tandem só o 1º (articulado) entra na conferência: o 2º é desenho de referência, sem lança medida — e a frase diz */
       try { BimShell.status((r.bloqueia ? "Caminho com problema: " + r.resumo.length + " item(ns) — clique na marca para ver o instante." : r.resumo.length ? "Caminho com folga pequena em " + r.resumo.length + " ponto(s)." : "Caminho livre.") +
@@ -27401,6 +27506,7 @@
           /* com o viewer prestes a existir, a cena já pode receber o tema do
            * ambiente (o aplicarTema do bim.js precisa do host montado) */
           setTimeout(function () { self._bimTemaAplicar(); }, 0);
+          setTimeout(function () { try { if (window.BimPegarEntorno) BimPegarEntorno.sincronizar(true); } catch (eEnt) {} }, 500);   /* o entorno gravado na obra volta ao 3D recém-montado */
           BIM.montar(canvas, {
             // v1.1.121 — grupo "Análise & Orçamento" do dock abre a gaveta do viewer
             onPainel: function (chave) { self._bimAbrirPainel(chave); },
