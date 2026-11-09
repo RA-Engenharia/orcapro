@@ -243,10 +243,11 @@
           } else if (idx[c.id] >= String(c.atualizadoEm)) { res.orcMantidos++; return; }
         }
         c.importadoEm = agora;
-        /* validade nula no comercial do pacote: garantirComercial a preenche com o padrão (15). Guarda que NÃO veio dado
-           nenhum, para a carta da licitação não tratar esse padrão como validade da empresa (licitacaodocs.js) */
-        var _semValidade = !!(c.comercial && typeof c.comercial === "object" && c.comercial.validadeDias == null);
-        try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c); } catch (e) {}
+        /* certame: a validade nula do pacote fica nula (não existe "15 dias" padrão em licitação). O bloco `certamepro` só é
+           aplicado logo abaixo, então a mesma condição dele é avaliada aqui para o comercial. */
+        var _ehCertame = !!(dump.certamepro && typeof Licitacao !== "undefined" && Licitacao.aplicarPacote
+          && (arr(dump.orcamentos).length === 1 || String(c.numero || "") === String(dump.certamepro.certame || "")));
+        try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c, { certame: _ehCertame }); } catch (e) {}
         /* BLOCO `certamepro` (js/licitacao.js): vira config.licitacao e trava os
            itens do órgão. Com mais de um orçamento no pacote só recebe o que
            tem o número do certame — não se carimba licitação em orçamento alheio. */
@@ -256,7 +257,6 @@
             if (_nOrcs === 1 || String(c.numero || "") === String(dump.certamepro.certame || "")) {
               var _lic = Licitacao.aplicarPacote(c, dump.certamepro);
               if (_lic) {
-                if (_semValidade) { try { Licitacao.cfg(c).validadePadraoAplicada = Number(c.comercial.validadeDias) || 0; } catch (eV) {} }
                 res.licitacao = (res.licitacao || 0) + 1;
                 if (_lic.basesExigidas && _lic.basesExigidas.length) res.basesExigidas = (res.basesExigidas || 0) + _lic.basesExigidas.length;
                 if (_lic.itensIdentificados && _lic.itensIdentificados.novos) res.identificados = (res.identificados || 0) + _lic.itensIdentificados.novos;

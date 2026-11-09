@@ -1211,7 +1211,9 @@
       for (var kT in this._TEXTOS_PROPOSTA_ED) {
         if (Object.prototype.hasOwnProperty.call(this._TEXTOS_PROPOSTA_ED, kT)) d[kT] = Orcamento.normalizarTextoComercial(kT, d[kT]);
       }
-      d.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
+      /* vazio num certame não vira 0 no padrão da empresa (0 = "sem data" por escolha, e valeria para os orçamentos comuns) */
+      var vdPad = String((UI.el("ed-valdias") || {}).value == null ? "" : (UI.el("ed-valdias") || {}).value).trim();
+      d.validadeDias = (vdPad === "" && Orcamento.ehCertame(this.orcAtual)) ? null : Util.num((UI.el("ed-valdias") || {}).value);
       try {
         var p = Store.lerPrefs(Auth.empresaId()) || {};
         p.comercialPadrao = d; p.comercialPadraoEm = Util.agoraISO();
@@ -11475,6 +11477,8 @@
         // Orçamento anterior à parametrização: avisa UMA vez que agora ele calcula
         // pelo padrão do TCU (o total pode diferir em centavos do que foi impresso).
         var cfgMig = Orcamento.garantirConfig(orc), migrou = false;
+        /* certame que o app antigo deixou com o "15 dias" padrão gravado: volta a vazio (idempotente) */
+        try { if (Orcamento.migrarValidadeCertame(orc)) migrou = true; } catch (eVal) {}
         if (cfgMig.migradoTcu && !cfgMig.migradoAvisadoEm) {
           cfgMig.migradoAvisadoEm = Util.agoraISO(); migrou = true;
           UI.toast("Este orçamento passou a calcular pelo padrão do TCU (truncar 2 casas, BDI no preço unitário). O total pode variar centavos do que já foi impresso — dá para mudar o critério no botão Parâmetros do orçamento.", "ok");
@@ -11614,6 +11618,7 @@
       o.cliente = o.cliente || { nome: "", doc: "", contato: "" };
       o.obra = o.obra || { nome: "", local: "", regime: "Empreitada" };
       var c = Orcamento.garantirComercial(o);
+      var certame = Orcamento.ehCertame(o);   // certame: validade vazia = "conforme o edital", sem 15 padrão
       UI.modal("Dados do Orçamento",
         '<div class="field"><label>Nome</label><input id="ed-nome" value="' + Util.esc(o.nome) + '"></div>' +
         '<div class="row"><div class="field"><label>Cliente</label><input id="ed-cliente" value="' + Util.esc(o.cliente.nome) + '"></div>' +
@@ -11624,8 +11629,8 @@
         '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
         '<div class="field"><label>Condições de pagamento</label><textarea id="ed-pag" rows="2">' + Util.esc(c.condicoesPagamento) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Prazo de execução</label><input id="ed-prazo" value="' + Util.esc(c.prazoExecucao) + '"></div>' +
-        '<div class="field"><label>Validade (dias)</label><input id="ed-valdias" type="number" min="0" step="1" value="' + Util.esc(c.validadeDias == null ? 15 : c.validadeDias) + '" title="O número é o que permite calcular e imprimir a data de vencimento. Zero = sem data (só a frase abaixo)."></div></div>' +
-        '<div class="field"><label>Frase da validade (impressa quando não houver dias)</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div>' +
+        '<div class="field"><label>Validade (dias)</label><input id="ed-valdias" type="number" min="0" step="1" value="' + Util.esc(c.validadeDias == null ? (certame ? "" : 15) : c.validadeDias) + '"' + (certame ? ' placeholder="Conforme o edital"' : '') + ' title="O número é o que permite calcular e imprimir a data de vencimento. Zero = sem data (só a frase abaixo)."></div></div>' +
+        '<div class="field"><label>Frase da validade (impressa quando não houver dias)</label><input id="ed-val" value="' + Util.esc(c.validadeProposta == null ? "" : c.validadeProposta) + '"' + (certame ? ' placeholder="Conforme o edital"' : '') + '></div>' +
         '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
         '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
@@ -11658,7 +11663,9 @@
             c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
             c.prazoExecucao = (UI.el("ed-prazo") || {}).value || "";
             c.validadeProposta = (UI.el("ed-val") || {}).value || "";
-            c.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
+            /* certame: campo vazio fica NULO (não 0 — Util.num("") daria 0, que a proposta leria como "sem data" por escolha) */
+            var vdTxt = String((UI.el("ed-valdias") || {}).value == null ? "" : (UI.el("ed-valdias") || {}).value).trim();
+            c.validadeDias = (certame && vdTxt === "") ? null : Util.num((UI.el("ed-valdias") || {}).value);
             c.garantia = (UI.el("ed-gar") || {}).value || "";
             c.incluso = (UI.el("ed-inc") || {}).value || "";
             c.excluso = (UI.el("ed-exc") || {}).value || "";

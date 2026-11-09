@@ -451,7 +451,11 @@
       P.push(pg(sc("Condições Comerciais"),
         bloco("Forma de pagamento", c.condicoesPagamento) +
         bloco("Prazo de execução", c.prazoExecucao) +
-        bloco("Validade da proposta", c.validadeProposta)));
+        bloco("Validade da proposta", (function () {
+          /* certame sem frase: a data calculada dos dias digitados, ou o campo a preencher — nunca um 15 padrão */
+          if (!Orcamento.ehCertame(orc) || Util.naoVazio(c.validadeProposta)) return c.validadeProposta;
+          return Proposta.validade(orc, hoje2ISO()).texto || "[PREENCHER: validade da proposta]";
+        })())));
 
       // 8) RESPONSABILIDADES — ⚠ vazio = os literais de sempre (ver seção 5)
       P.push(pg(sc("Responsabilidades"),

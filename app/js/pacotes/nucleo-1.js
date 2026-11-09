@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.266",
+versao: "1.2.267",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -9421,11 +9421,35 @@ respContratada: "",
 respContratante: ""
 };
 },
-garantirComercial: function (orc) {
-if (!orc.comercial || typeof orc.comercial !== "object") orc.comercial = this.comercialPadrao();
+ehCertame: function (orc) {
+return !!(orc && orc.config && typeof orc.config === "object" && orc.config.licitacao && typeof orc.config.licitacao === "object" && orc.config.licitacao.certamepro);
+},
+garantirComercial: function (orc, opcoes) {
+var certame = this.ehCertame(orc) || !!(opcoes && opcoes.certame);
 var pad = this.comercialPadrao();
-for (var k in pad) { if (orc.comercial[k] == null) orc.comercial[k] = pad[k]; }
+if (!orc.comercial || typeof orc.comercial !== "object") {
+orc.comercial = pad;
+if (certame) { orc.comercial.validadeDias = null; orc.comercial.validadeProposta = null; }
+} else {
+for (var k in pad) {
+if (certame && (k === "validadeDias" || k === "validadeProposta")) continue;
+if (orc.comercial[k] == null) orc.comercial[k] = pad[k];
+}
+}
+this.migrarValidadeCertame(orc);
 return orc.comercial;
+},
+migrarValidadeCertame: function (orc) {
+var lic = orc && orc.config && orc.config.licitacao;
+if (!lic || typeof lic !== "object" || !Object.prototype.hasOwnProperty.call(lic, "validadePadraoAplicada")) return false;
+var marca = Number(lic.validadePadraoAplicada), c = orc.comercial, mudou = false;
+if (marca > 0 && c && typeof c === "object" && c.validadeDias != null && Number(c.validadeDias) === marca) {
+c.validadeDias = null;
+if (c.validadeProposta === this.comercialPadrao().validadeProposta) c.validadeProposta = null;
+mudou = true;
+}
+delete lic.validadePadraoAplicada;
+return mudou;
 },
 TEXTOS_PADRAO_PROPOSTA: {
 premissas: "Condições normais de trabalho e acesso à obra;\nFornecimento de água e energia pelo contratante durante a execução;\nQuantitativos sujeitos a confirmação em projeto executivo.",
@@ -12632,7 +12656,10 @@ tabOpc +
 P.push(pg(sc("Condições Comerciais"),
 bloco("Forma de pagamento", c.condicoesPagamento) +
 bloco("Prazo de execução", c.prazoExecucao) +
-bloco("Validade da proposta", c.validadeProposta)));
+bloco("Validade da proposta", (function () {
+if (!Orcamento.ehCertame(orc) || Util.naoVazio(c.validadeProposta)) return c.validadeProposta;
+return Proposta.validade(orc, hoje2ISO()).texto || "[PREENCHER: validade da proposta]";
+})())));
 P.push(pg(sc("Responsabilidades"),
 '<div class="cols"><div><h3>Contratada</h3><ul>' +
 (Util.naoVazio(c.respContratada) ? this._lista(c.respContratada) :
@@ -58151,9 +58178,10 @@ var emp = empresaResolvida(empresa);
 var tipoLic = s(lic.tipo), proc = s(lic.processo) || s(lic.certame);
 var edital = (opcoes.edital ? s(opcoes.edital) : (tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO") + (proc ? " Nº " + proc : ""));
 var objInfo = objetoDaCarta(orc, lic, opcoes);
+try { if (Orc.migrarValidadeCertame) Orc.migrarValidadeCertame(orc); } catch (eMig) {}
 var vEd = (lic.validadeDiasEdital > 0) ? Math.floor(lic.validadeDiasEdital) : 0;
 var vCom = parseInt(orc.comercial && orc.comercial.validadeDias, 10);
-if (!(vCom > 0) || (lic.validadePadraoAplicada > 0 && vCom === lic.validadePadraoAplicada)) vCom = 0;
+if (!(vCom > 0)) vCom = 0;
 var vTxt = s(opcoes.validade);
 var cab = {
 edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),

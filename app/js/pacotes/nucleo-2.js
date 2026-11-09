@@ -56292,15 +56292,15 @@ c.atualizadoEm = (String(agora) > String(ex.atualizadoEm || "")) ? agora : Util.
 } else if (idx[c.id] >= String(c.atualizadoEm)) { res.orcMantidos++; return; }
 }
 c.importadoEm = agora;
-var _semValidade = !!(c.comercial && typeof c.comercial === "object" && c.comercial.validadeDias == null);
-try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c); } catch (e) {}
+var _ehCertame = !!(dump.certamepro && typeof Licitacao !== "undefined" && Licitacao.aplicarPacote
+&& (arr(dump.orcamentos).length === 1 || String(c.numero || "") === String(dump.certamepro.certame || "")));
+try { Orcamento.garantirConfig(c); Orcamento.garantirComercial(c, { certame: _ehCertame }); } catch (e) {}
 try {
 if (dump.certamepro && typeof Licitacao !== "undefined" && Licitacao.aplicarPacote) {
 var _nOrcs = arr(dump.orcamentos).length;
 if (_nOrcs === 1 || String(c.numero || "") === String(dump.certamepro.certame || "")) {
 var _lic = Licitacao.aplicarPacote(c, dump.certamepro);
 if (_lic) {
-if (_semValidade) { try { Licitacao.cfg(c).validadePadraoAplicada = Number(c.comercial.validadeDias) || 0; } catch (eV) {} }
 res.licitacao = (res.licitacao || 0) + 1;
 if (_lic.basesExigidas && _lic.basesExigidas.length) res.basesExigidas = (res.basesExigidas || 0) + _lic.basesExigidas.length;
 if (_lic.itensIdentificados && _lic.itensIdentificados.novos) res.identificados = (res.identificados || 0) + _lic.itensIdentificados.novos;
@@ -57230,7 +57230,8 @@ for (var k in campos) if (Object.prototype.hasOwnProperty.call(campos, k)) d[k] 
 for (var kT in this._TEXTOS_PROPOSTA_ED) {
 if (Object.prototype.hasOwnProperty.call(this._TEXTOS_PROPOSTA_ED, kT)) d[kT] = Orcamento.normalizarTextoComercial(kT, d[kT]);
 }
-d.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
+var vdPad = String((UI.el("ed-valdias") || {}).value == null ? "" : (UI.el("ed-valdias") || {}).value).trim();
+d.validadeDias = (vdPad === "" && Orcamento.ehCertame(this.orcAtual)) ? null : Util.num((UI.el("ed-valdias") || {}).value);
 try {
 var p = Store.lerPrefs(Auth.empresaId()) || {};
 p.comercialPadrao = d; p.comercialPadraoEm = Util.agoraISO();
@@ -63984,6 +63985,7 @@ var fontes = 0, prazo = false;
 try { fontes = Orcamento.repararFontes(orc); } catch (e2) {}
 try { prazo = Orcamento.sincronizarPrazo(orc); } catch (e3) {}
 var cfgMig = Orcamento.garantirConfig(orc), migrou = false;
+try { if (Orcamento.migrarValidadeCertame(orc)) migrou = true; } catch (eVal) {}
 if (cfgMig.migradoTcu && !cfgMig.migradoAvisadoEm) {
 cfgMig.migradoAvisadoEm = Util.agoraISO(); migrou = true;
 UI.toast("Este orçamento passou a calcular pelo padrão do TCU (truncar 2 casas, BDI no preço unitário). O total pode variar centavos do que já foi impresso — dá para mudar o critério no botão Parâmetros do orçamento.", "ok");
@@ -64082,6 +64084,7 @@ var o = this.orcAtual, self = this;
 o.cliente = o.cliente || { nome: "", doc: "", contato: "" };
 o.obra = o.obra || { nome: "", local: "", regime: "Empreitada" };
 var c = Orcamento.garantirComercial(o);
+var certame = Orcamento.ehCertame(o);
 UI.modal("Dados do Orçamento",
 '<div class="field"><label>Nome</label><input id="ed-nome" value="' + Util.esc(o.nome) + '"></div>' +
 '<div class="row"><div class="field"><label>Cliente</label><input id="ed-cliente" value="' + Util.esc(o.cliente.nome) + '"></div>' +
@@ -64092,8 +64095,8 @@ this._edBaseCampos(o) +
 '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
 '<div class="field"><label>Condições de pagamento</label><textarea id="ed-pag" rows="2">' + Util.esc(c.condicoesPagamento) + '</textarea></div>' +
 '<div class="row"><div class="field"><label>Prazo de execução</label><input id="ed-prazo" value="' + Util.esc(c.prazoExecucao) + '"></div>' +
-'<div class="field"><label>Validade (dias)</label><input id="ed-valdias" type="number" min="0" step="1" value="' + Util.esc(c.validadeDias == null ? 15 : c.validadeDias) + '" title="O número é o que permite calcular e imprimir a data de vencimento. Zero = sem data (só a frase abaixo)."></div></div>' +
-'<div class="field"><label>Frase da validade (impressa quando não houver dias)</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div>' +
+'<div class="field"><label>Validade (dias)</label><input id="ed-valdias" type="number" min="0" step="1" value="' + Util.esc(c.validadeDias == null ? (certame ? "" : 15) : c.validadeDias) + '"' + (certame ? ' placeholder="Conforme o edital"' : '') + ' title="O número é o que permite calcular e imprimir a data de vencimento. Zero = sem data (só a frase abaixo)."></div></div>' +
+'<div class="field"><label>Frase da validade (impressa quando não houver dias)</label><input id="ed-val" value="' + Util.esc(c.validadeProposta == null ? "" : c.validadeProposta) + '"' + (certame ? ' placeholder="Conforme o edital"' : '') + '></div>' +
 '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
 '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
 '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
@@ -64117,7 +64120,8 @@ o.dataVistoria = (UI.el("ed-vistoria") || {}).value || "";
 c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
 c.prazoExecucao = (UI.el("ed-prazo") || {}).value || "";
 c.validadeProposta = (UI.el("ed-val") || {}).value || "";
-c.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
+var vdTxt = String((UI.el("ed-valdias") || {}).value == null ? "" : (UI.el("ed-valdias") || {}).value).trim();
+c.validadeDias = (certame && vdTxt === "") ? null : Util.num((UI.el("ed-valdias") || {}).value);
 c.garantia = (UI.el("ed-gar") || {}).value || "";
 c.incluso = (UI.el("ed-inc") || {}).value || "";
 c.excluso = (UI.el("ed-exc") || {}).value || "";

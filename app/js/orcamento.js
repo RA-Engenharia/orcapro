@@ -255,11 +255,46 @@
       };
     },
 
-    garantirComercial: function (orc) {
-      if (!orc.comercial || typeof orc.comercial !== "object") orc.comercial = this.comercialPadrao();
+    /* Orçamento de CERTAME (pacote do CertamePRO): `config.licitacao.certamepro`. */
+    ehCertame: function (orc) {
+      return !!(orc && orc.config && typeof orc.config === "object" && orc.config.licitacao && typeof orc.config.licitacao === "object" && orc.config.licitacao.certamepro);
+    },
+
+    /* ⚠ VALIDADE NO CERTAME NÃO TEM PADRÃO. A validade da proposta de licitação é a do edital; o "15 dias" do orçamento
+       comum, ali, seria número inventado e sairia na tela de edição, na proposta e na apresentação. Em certame
+       `validadeDias` e `validadeProposta` nulos FICAM nulos; o resto do comercial é preenchido como sempre.
+       `opcoes.certame` serve ao pacote: ao importar, o bloco `certamepro` ainda não foi aplicado (config.licitacao
+       não existe) quando o comercial é garantido. */
+    garantirComercial: function (orc, opcoes) {
+      var certame = this.ehCertame(orc) || !!(opcoes && opcoes.certame);
       var pad = this.comercialPadrao();
-      for (var k in pad) { if (orc.comercial[k] == null) orc.comercial[k] = pad[k]; }
+      if (!orc.comercial || typeof orc.comercial !== "object") {
+        orc.comercial = pad;
+        if (certame) { orc.comercial.validadeDias = null; orc.comercial.validadeProposta = null; }
+      } else {
+        for (var k in pad) {
+          if (certame && (k === "validadeDias" || k === "validadeProposta")) continue;
+          if (orc.comercial[k] == null) orc.comercial[k] = pad[k];
+        }
+      }
+      this.migrarValidadeCertame(orc);
       return orc.comercial;
+    },
+
+    /* Migração leve e idempotente dos orçamentos importados quando o app ainda gravava o 15 por conta própria
+       (`config.licitacao.validadePadraoAplicada`): se a validade em dias ainda é igual a esse valor, nunca foi
+       decisão da pessoa — volta a nulo, e a frase padrão exata sai junto. Valor diferente fica. A marca é apagada. */
+    migrarValidadeCertame: function (orc) {
+      var lic = orc && orc.config && orc.config.licitacao;
+      if (!lic || typeof lic !== "object" || !Object.prototype.hasOwnProperty.call(lic, "validadePadraoAplicada")) return false;
+      var marca = Number(lic.validadePadraoAplicada), c = orc.comercial, mudou = false;
+      if (marca > 0 && c && typeof c === "object" && c.validadeDias != null && Number(c.validadeDias) === marca) {
+        c.validadeDias = null;
+        if (c.validadeProposta === this.comercialPadrao().validadeProposta) c.validadeProposta = null;
+        mudou = true;
+      }
+      delete lic.validadePadraoAplicada;
+      return mudou;
     },
 
     /* O que cada campo VAZIO imprime na proposta clássica, escrito como a

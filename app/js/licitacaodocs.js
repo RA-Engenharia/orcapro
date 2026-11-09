@@ -776,10 +776,11 @@
     var edital = (opcoes.edital ? s(opcoes.edital) : (tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO") + (proc ? " Nº " + proc : ""));
     var objInfo = objetoDaCarta(orc, lic, opcoes);
     /* VALIDADE: a do edital (lic.validadeDiasEdital) manda na carta; sem ela, opcoes.validade ou a do comercial do orçamento.
-       validadeDias nulo, ou o 15 que o app preenche sozinho num pacote sem validade (validadePadraoAplicada), não é dado da empresa. */
+       validadeDias nulo não é dado da empresa; 15 digitado é 15. (O 15 que versões antigas gravavam sozinho é desfeito pela migração.) */
+    try { if (Orc.migrarValidadeCertame) Orc.migrarValidadeCertame(orc); } catch (eMig) {}
     var vEd = (lic.validadeDiasEdital > 0) ? Math.floor(lic.validadeDiasEdital) : 0;
     var vCom = parseInt(orc.comercial && orc.comercial.validadeDias, 10);
-    if (!(vCom > 0) || (lic.validadePadraoAplicada > 0 && vCom === lic.validadePadraoAplicada)) vCom = 0;
+    if (!(vCom > 0)) vCom = 0;
     var vTxt = s(opcoes.validade);
     var cab = {
       edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),
