@@ -54472,6 +54472,17 @@ case "nova-folha": return this.novoFolha();
         rdos: (podeRel("diario") || podeRel("semanal") || podeRel("mensal") || podeRel("ocorrencias") ||
                podeRel("fotografico") || podeRel("efetivo") || podeRel("clima") || podeRel("galeria")) ? rdos : []
       };
+      /* aditivos e só nesta fonte: nas outras a tabela e a evolução vêm dos diários.
+         Falhar aqui não pode travar a publicação: o Portal fica com o que já tinha. */
+      if (fonteExec === "cronograma" && planoPortal) {
+        try {
+          if (podeRel("previsto") && orcPl) {
+            var atividadesPl = PortalAvanco.atividades(orcPl, planoPortal);
+            if (atividadesPl.length) snapshot.atividadesPlano = atividadesPl;
+          }
+          if (planoPortal.diario && planoPortal.diario.length) snapshot.avancoDiario = planoPortal.diario;
+        } catch (eAtiv) { /* segue sem */ }
+      }
       /* ⚠ ÚLTIMA COISA ANTES DE PUBLICAR — e tem de continuar sendo a última.
          Duas empresas já decidiram por escrito que o cliente delas não vê a
          metragem produzida nem o nome de quem produziu, e o retrato mandava
@@ -55854,6 +55865,8 @@ case "nova-folha": return this.novoFolha();
         if (!alvo) break;
         alvo.fotos.pop(); cortou = true;
       }
+      /* a tabela do orçamento nunca pode impedir a publicação do resto */
+      if (bytes() > SNAP_MAX_BYTES && snap.atividadesPlano) delete snap.atividadesPlano;
       return { ok: bytes() <= SNAP_MAX_BYTES, cortou: cortou };
     },
     /* =====================================================================

@@ -108,6 +108,7 @@
          null ele já trata como "não informado". */
       limpar(s.rdos, CAMPOS_QTD, null);
       limpar(s.fisico, CAMPOS_QTD, null);
+      limpar(s.atividadesPlano, CAMPOS_QTD, null);
       /* as listas de unidade e de etapa das séries existem SÓ para carregar
          quantidade — esvaziá-las é mais honesto que deixar uma lista de
          objetos com `qtd: null` */

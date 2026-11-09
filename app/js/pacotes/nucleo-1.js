@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.270",
+versao: "1.2.271",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -63386,6 +63386,7 @@ var s = clone(snapshot);
 if (o.semMetragem) {
 limpar(s.rdos, CAMPOS_QTD, null);
 limpar(s.fisico, CAMPOS_QTD, null);
+limpar(s.atividadesPlano, CAMPOS_QTD, null);
 if (s.fisico) {
 arr(s.fisico.etapas).forEach(function (e) { if (e) e.unidades = []; });
 ["serieDia", "serieSemana", "serieMes"].forEach(function (k) {
@@ -63520,8 +63521,80 @@ saida.push(atual);
 });
 return saida;
 }
+function evolucaoDoAvanco(nos, corte, pctFinal) {
+var fCorte = dia(corte) ? dataUTC(dia(corte)) : null, alvo = num(pctFinal);
+if (fCorte === null) return [];
+var folhas = arr(nos).filter(function (n) {
+return n && n.folha && !n.opcionalFora && !n.foraDaBase && !n.sumiuDoAtual && num(n.valor) > 0;
+});
+var total = 0, inicio = fCorte;
+folhas.forEach(function (n) {
+total += n.valor;
+var i = dia((n.real || {}).ini);
+if (num(n.realPct) > 0 && i && dataUTC(i) < inicio) inicio = dataUTC(i);
+});
+if (!(total > 0)) return [];
+var soma = function (t) {
+var s = 0;
+folhas.forEach(function (n) {
+var p = num(n.realPct);
+if (!(p > 0)) return;
+var real = n.real || {}, ini = dia(real.ini), fim = dia(real.fim) || dia(corte);
+if (!ini) { if (t >= fCorte) s += n.valor * p / 100; return; }
+var a = dataUTC(ini), b = dataUTC(fim);
+if (t < a) return;
+s += n.valor * (p / 100) * ((b <= a) ? 1 : Math.min(1, (t - a + DIA_MS) / (b - a + DIA_MS)));
+});
+return (s / total) * 100;
+};
+var fimSoma = soma(fCorte), fator = (alvo !== null && fimSoma > 0) ? alvo / fimSoma : 1;
+var saida = [], ant = -1;
+for (var t = inicio; t <= fCorte; t += DIA_MS) {
+var v = Math.round(soma(t) * fator * 100) / 100;
+if (t === fCorte && alvo !== null) v = alvo;
+if (v !== ant) saida.push({ d: new Date(t).toISOString().slice(0, 10), acum: v });
+ant = v;
+}
+return saida;
+}
+var ITEM_INTERNO = /\bBDI\b|R\$|ARREDONDAMENTO|DESCONTO|MARGEM|LUCRO|AJUSTE DE PRE/i;
 var PortalAvanco = {
 realizadoDoAvanco: realizadoDoAvanco,
+evolucaoDoAvanco: evolucaoDoAvanco,
+atividades: function (orc, lido) {
+if (!orc || !lido || !lido.temAvanco) return [];
+var porEtapa = {}, saida = [];
+arr(orc.etapas).forEach(function (e) { if (e && e.id != null) porEtapa[String(e.id)] = e; });
+var nos = lido.pctNos || {};
+arr(lido.etapas).forEach(function (n) {
+var e = porEtapa[n.id];
+if (!e) return;
+if (e.opcional && !(num(n.pct) > 0)) return;
+var itens = arr(e.itens).filter(function (i) {
+return i && Number(i.quantidade) > 0 && !ITEM_INTERNO.test(String(i.descricao || ""));
+});
+if (!itens.length) {
+saida.push({ chave: "plano|" + n.id, etapaId: n.id, etapa: n.etapa, descricao: "Etapa completa (sem item de quantidade no orçamento)", unidade: "",
+qtdPrevista: null, qtdAcumulada: null, qtdSaldo: null, pctAcumulado: n.pct, realInicio: n.realInicio, realFim: n.realFim });
+return;
+}
+var valida = {}, temFolha = !!nos[String(e.id) + "~g"];
+arr(e.subetapas).forEach(function (s) {
+if (s && s.id != null) { valida[String(s.id)] = true; if (nos[String(s.id)]) temFolha = true; }
+});
+itens.forEach(function (i) {
+var sub = i.subEtapaId || i.subetapaId, sid = (sub != null && valida[String(sub)]) ? String(sub) : "";
+var no = (sid ? nos[sid] : nos[String(e.id) + "~g"]) || null;
+var pct = no ? no.pct : (temFolha ? null : n.pct);
+var q = Number(i.quantidade);
+var feito = pct === null ? null : Math.round(q * Math.max(0, Math.min(100, pct))) / 100;
+saida.push({ chave: "plano|" + String(i.id), etapaId: n.id, etapa: n.etapa, descricao: String(i.descricao || "").slice(0, 240), unidade: String(i.unidade || ""),
+qtdPrevista: q, qtdAcumulada: feito, qtdSaldo: feito === null ? null : Math.max(0, Math.round((q - feito) * 100) / 100) + 0, pctAcumulado: pct,
+realInicio: (no && no.realInicio) || n.realInicio, realFim: (no && no.realFim) || n.realFim });
+});
+});
+return saida;
+},
 serieNoEixo: serieNoEixo,
 painelNaoServe: function (painel) {
 var p = painel;
@@ -63544,8 +63617,16 @@ var etapas = nos.filter(function (n) { return n && n.tipo === "etapa" && !n.opci
 var c = p.curva || {}, eixo = arr(c.eixo), rotulos = arr(c.rotulos);
 var plan = arr(c.base);
 var temCurva = temPlano && eixo.length > 0 && rotulos.length === eixo.length && plan.length === eixo.length;
+var pctNos = {};
+nos.forEach(function (n) {
+if (n && n.tipo !== "etapa" && n.id != null && !n.opcionalFora && !n.sumiuDoAtual) {
+var ln = linhaEtapa(n);
+pctNos[ln.id] = { pct: ln.pct, realInicio: ln.realInicio, realFim: ln.realFim };
+}
+});
 return { temPlano: temPlano, temAvanco: temAvanco, pct: temAvanco ? po.pct : null,
-corte: dia(p.dataCorte), etapas: etapas,
+corte: dia(p.dataCorte), etapas: etapas, pctNos: pctNos,
+diario: temAvanco ? evolucaoDoAvanco(nos, p.dataCorte, po.pct) : [],
 previstoNaData: (K.previstoNaData && num(K.previstoNaData.pct) !== null) ? K.previstoNaData.pct : null,
 curva: temCurva ? { eixo: eixo.slice(), rotulos: rotulos.slice(), planejado: plan.slice() } : null,
 realizado: (temAvanco && temCurva) ? realizadoDoAvanco(nos, eixo, p.dataCorte, po.pct) : [] };

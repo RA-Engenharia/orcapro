@@ -37958,6 +37958,15 @@ medicoes: podeRel("medicoes") ? medicoes : [],
 rdos: (podeRel("diario") || podeRel("semanal") || podeRel("mensal") || podeRel("ocorrencias") ||
 podeRel("fotografico") || podeRel("efetivo") || podeRel("clima") || podeRel("galeria")) ? rdos : []
 };
+if (fonteExec === "cronograma" && planoPortal) {
+try {
+if (podeRel("previsto") && orcPl) {
+var atividadesPl = PortalAvanco.atividades(orcPl, planoPortal);
+if (atividadesPl.length) snapshot.atividadesPlano = atividadesPl;
+}
+if (planoPortal.diario && planoPortal.diario.length) snapshot.avancoDiario = planoPortal.diario;
+} catch (eAtiv) { }
+}
 if (typeof PortalPriv !== "undefined") {
 snapshot = PortalPriv.aplicar(snapshot, PortalPriv.daObra(obra, Gestao._portalPadrao()));
 }
@@ -38904,6 +38913,7 @@ for (var i = (snap.rdos || []).length - 1; i >= 0; i--) { if (snap.rdos[i].fotos
 if (!alvo) break;
 alvo.fotos.pop(); cortou = true;
 }
+if (bytes() > SNAP_MAX_BYTES && snap.atividadesPlano) delete snap.atividadesPlano;
 return { ok: bytes() <= SNAP_MAX_BYTES, cortou: cortou };
 },
 MOD_DA_ENTIDADE: {
