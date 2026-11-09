@@ -158,6 +158,12 @@
     if (!motivo && /^(municipio|prefeitura( municipal)?|camara( municipal)?|governo) (de|do|da|dos|das) [a-z0-9]+( [a-z0-9]+){0,3}$/.test(n)) motivo = "o texto é só o nome do município (\"" + esc0[1] + "\")";
     return { texto: motivo ? "" : esc0[1], origem: esc0[0], invalido: !!motivo, motivo: motivo, comparou: nomes.length > 0 };
   }
+  /* Início da validade como vem do edital. "da data de abertura" sozinho deixa a frase da carta manca
+     ("é de 90 dias, da data de abertura"): começo em da/de/do ganha "contados". "a contar", "contados" e "a partir" ficam como estão. */
+  function contagemValidade(inicio) {
+    var x = s(inicio).replace(/[\s.]+$/, "");
+    return /^d[aeo]s?\s/i.test(x) ? "contados " + x.charAt(0).toLowerCase() + x.slice(1) : x;
+  }
   function validadeExt(dias) {
     var n = parseInt(dias, 10);
     if (!(n > 0)) return "";
@@ -786,7 +792,7 @@
       edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),
       data: dataExtensoUpper(opcoes.data), prazo: "",
       validade: vEd ? validadeExt(vEd) : (vTxt || validadeExt(vCom)),
-      validadeInicio: s(lic.validadeInicio).replace(/[\s.]+$/, ""),
+      validadeInicio: contagemValidade(lic.validadeInicio),
       prazoInicio: s(opcoes.prazoInicio) || "5 (CINCO)"
     };
     /* PRAZO DA CARTA. Com o prazo em dias lido do edital, a carta usa ELE ("120 (cento e vinte) dias"); o texto do comercial do

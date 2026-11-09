@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.268",
+versao: "1.2.269",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -57801,6 +57801,10 @@ nomes.forEach(function (x) { if (!motivo && normObj(x) === n) motivo = "o texto 
 if (!motivo && /^(municipio|prefeitura( municipal)?|camara( municipal)?|governo) (de|do|da|dos|das) [a-z0-9]+( [a-z0-9]+){0,3}$/.test(n)) motivo = "o texto é só o nome do município (\"" + esc0[1] + "\")";
 return { texto: motivo ? "" : esc0[1], origem: esc0[0], invalido: !!motivo, motivo: motivo, comparou: nomes.length > 0 };
 }
+function contagemValidade(inicio) {
+var x = s(inicio).replace(/[\s.]+$/, "");
+return /^d[aeo]s?\s/i.test(x) ? "contados " + x.charAt(0).toLowerCase() + x.slice(1) : x;
+}
 function validadeExt(dias) {
 var n = parseInt(dias, 10);
 if (!(n > 0)) return "";
@@ -58311,7 +58315,7 @@ var cab = {
 edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),
 data: dataExtensoUpper(opcoes.data), prazo: "",
 validade: vEd ? validadeExt(vEd) : (vTxt || validadeExt(vCom)),
-validadeInicio: s(lic.validadeInicio).replace(/[\s.]+$/, ""),
+validadeInicio: contagemValidade(lic.validadeInicio),
 prazoInicio: s(opcoes.prazoInicio) || "5 (CINCO)"
 };
 var txtPrazo = s(opcoes.prazo) || s(orc.comercial && orc.comercial.prazoExecucao), prazoDiverge = false, diasTxt = diasDoTexto(txtPrazo);
