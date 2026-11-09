@@ -3913,7 +3913,11 @@ espera.forEach(function (cb) { if (cb) cb(res); });
 };
 aoTerminar = terminar;
 var pacote;
-try { pacote = this._snapshotPortal(obra.id, obra).snapshot; }
+try {
+var montado = this._snapshotPortal(obra.id, obra);
+if (montado.avancoRetido) { aoTerminar({ ok: false, erro: "não consegui ler o avanço desta obra — o cliente segue vendo a última publicação" }); return; }
+pacote = montado.snapshot;
+}
 catch (e) { aoTerminar({ ok: false, erro: "falha ao montar o resumo" }); return; }
 var fit = this._caberSnapshot(pacote);
 if (!fit.ok) { aoTerminar({ ok: false, erro: "resumo grande demais" }); return; }
@@ -37678,12 +37682,38 @@ servicosDoOrcamento: contOrc.servicosDoOrcamento, semApontamentoNoOrcamento: con
 var pctMedicoes = Math.min(100, Math.round(acum * 10) / 10);
 pctEmAnalise = Math.round(pctEmAnalise * 10) / 10;
 valorEmAnalise = Math.round(valorEmAnalise * 100) / 100;
+var planoPortal = null;
+var avancoRetido = false;
+var dependeDoAvanco = obra.pctExecutado == null && !(fisico && fisico.pct !== null) && !(pctMedicoes > 0);
+function temAvancoGravado() {
+try {
+if (typeof CronoBase === "undefined" || typeof App._cronoLerPlanejamento !== "function") return false;
+return !!CronoBase.avanco(App._cronoLerPlanejamento(eid()).lista || [], obra.id);
+} catch (eAv) { return false; }
+}
+var orcPl = null;
+try {
+orcPl = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+if (orcPl && typeof PortalAvanco !== "undefined" && typeof App !== "undefined" && typeof App._cronoPainelDados === "function") {
+var envPl = App._cronoPainelDados(obra, orcPl, { corteDaTela: false });
+var painelPl = envPl ? envPl.painel : null;
+if (dependeDoAvanco && PortalAvanco.painelNaoServe(painelPl)) {
+if ((painelPl && painelPl.estado === "planejamento-ilegivel") || temAvancoGravado()) avancoRetido = true;
+}
+planoPortal = PortalAvanco.doPainel(painelPl);
+}
+} catch (ePl) {
+planoPortal = null;
+if (dependeDoAvanco && orcPl && typeof App !== "undefined" && temAvancoGravado()) avancoRetido = true;
+}
 var pctExec, fonteExec;
 if (obra.pctExecutado != null) { pctExec = Util.num(obra.pctExecutado); fonteExec = "manual"; }
 else if (fisico && fisico.pct !== null) { pctExec = fisico.pct; fonteExec = "diario"; }
+else if (pctMedicoes > 0) { pctExec = pctMedicoes; fonteExec = "medicao"; }
+else if (planoPortal && planoPortal.temAvanco) { pctExec = planoPortal.pct; fonteExec = "cronograma"; }
 else { pctExec = pctMedicoes; fonteExec = "medicao"; }
 if (fisico) { fisico.fonte = fonteExec; fisico.pctMedicoes = pctMedicoes; }
-var curvaS = null, cronograma = [];
+var curvaS = null, cronograma = [], cronoIds = [];
 try {
 var orc = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
 if (orc && orc.etapas && orc.etapas.length && typeof Orcamento !== "undefined" && Orcamento.cronograma) {
@@ -37781,6 +37811,7 @@ var real = (e.id != null && Object.prototype.hasOwnProperty.call(medidoPorEtapaI
 var medido = real !== undefined;
 var noBoletim = !medido && fonteExec === "diario" && e.id != null &&
 Object.prototype.hasOwnProperty.call(medidoBolPorEtapaId, String(e.id));
+cronoIds.push(e.id == null ? "" : String(e.id));
 var linhaCr = { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
 pct: Math.round(medido ? Math.min(100, real) : (noBoletim ? medidoBolPorEtapaId[String(e.id)] : p)),
 fonte: medido ? "diario" : (noBoletim ? "medicao" : "estimado") };
@@ -37790,6 +37821,13 @@ return linhaCr;
 }
 }
 } catch (e) { curvaS = null; cronograma = []; }
+if (planoPortal) {
+try {
+var apl = PortalAvanco.aplicar(planoPortal, { cronograma: cronograma, idsCronograma: cronoIds, curvaS: curvaS, fonte: fonteExec, medicoes: medicoes,
+seriePeriodos: (fisico && fisico.serieMes) ? fisico.serieMes.periodos : [] });
+cronograma = apl.cronograma; curvaS = apl.curvaS;
+} catch (eApl) { if (fonteExec === "cronograma") avancoRetido = true; }
+}
 var previsao = null;
 var mostrarPrevisao = (typeof PortalSync !== "undefined")
 ? PortalSync.mostrarPrevisao(obra)
@@ -37804,6 +37842,7 @@ explicacao: "Ainda não dá para projetar o término da obra: " + fisico.semApon
 " serviços do orçamento ainda não apareceram em nenhum diário, e o ritmo medido é só o dos serviços já iniciados. " +
 "A projeção volta quando todos os serviços do orçamento tiverem aparecido nos diários. Até lá, o prazo que vale é o do contrato." };
 }
+if (fonteExec === "cronograma") previsao = PortalAvanco.previsaoSemRitmo();
 }
 var relPermitidos = Array.isArray(obra.portalRelatorios)
 ? obra.portalRelatorios.slice()
@@ -37865,6 +37904,7 @@ var mc = { nome: c.etapa || "", previstoFim: c.fim || "", previstoInicio: c.inic
 pct: p, fonte: c.fonte || "estimado",
 situacao: p >= 100 ? "concluido" : (p > 0 ? "andamento" : "aguardando") };
 if (c.semApontamento) mc.semApontamento = true;
+if (c.rotuloSem) mc.rotuloSem = c.rotuloSem;
 return mc;
 });
 }
@@ -37906,6 +37946,8 @@ var f2 = RDO.fotoDoPortal(v.ref);
 return f2 ? { foto: f2, em: v.em || "", cores: v.cores || "originais" } : null;
 })(),
 fonteExecucao: fonteExec,
+avancoAte: (fonteExec === "cronograma" && planoPortal) ? planoPortal.corte : "",
+datasDaBase: !!(planoPortal && planoPortal.temPlano),
 fisico: fisico,
 previsao: previsao,
 relatorios: relPermitidos,
@@ -37919,7 +37961,7 @@ podeRel("fotografico") || podeRel("efetivo") || podeRel("clima") || podeRel("gal
 if (typeof PortalPriv !== "undefined") {
 snapshot = PortalPriv.aplicar(snapshot, PortalPriv.daObra(obra, Gestao._portalPadrao()));
 }
-return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
+return { avancoRetido: avancoRetido, snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
 segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,
 fisico: fisico, fonteExec: fonteExec, relatorios: relPermitidos, compras: compras,
 previsao: previsao, mostrarPrevisao: mostrarPrevisao, financeiro: financeiro,
@@ -38058,6 +38100,7 @@ var domingo = (function () { var d = new Date(seg + "T12:00:00"); d.setDate(d.ge
 var pk2 = Fisico.pacote(rdosPub, id, { ate: domingo });
 if (pk2 && pk2.pct !== null) pctAntes = pk2.pct;
 }
+if (_s.fonteExec === "cronograma") { pctDepois = _s.pctExec; pctAntes = _s.pctExec; }
 } catch (e) {}
 var porServ = {};
 daSemana.forEach(function (r) {
@@ -38151,6 +38194,7 @@ campo("Senha", inp("pa-senha", "")) + "</div>" +
 (function () {
 var txt = "", cor = "#143454", bg = "#f8fafc", bd = "#e2e8f0";
 if (fonteExec === "manual") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 0) + "</b> porque foi <b>digitado à mão</b> no cadastro da obra — o avanço calculado pelos diários não é usado enquanto esse campo estiver preenchido.";
+else if (fonteExec === "cronograma") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 1) + "</b>, o <b>avanço lançado no cronograma</b> da obra — o mesmo número do Previsto × Realizado. As datas de cada etapa são as da linha de base (sem linha de base, as do plano).";
 else if (fonteExec === "diario") txt = "O andamento vem do <b>avanço físico dos diários</b>. " + Util.esc((fisico && fisico.aviso) || "");
 else { txt = "O andamento vem do <b>acumulado das medições</b> — os diários desta obra ainda não têm serviço com <b>quantidade prevista</b>, e sem isso não há percentual a calcular a partir deles."; cor = "#7c2d12"; bg = "#fff7ed"; bd = "#fdba74"; }
 return '<div class="ov-pt-caixa' + (bg === "#fff7ed" ? " ov-pt-atencao" : "") + '" style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
@@ -38265,10 +38309,14 @@ obra.portalRelatorios = novos;
 obra.portalPrevisao = querPrev;
 Store.salvar(eid(), "obras", obra);
 var _r = self._snapshotPortal(id, obra);
+if (_r.avancoRetido) { UI.toast("Não consegui ler o avanço desta obra, e publicar agora trocaria o número do cliente por um errado. Nada foi enviado: abra o cronograma da obra e tente de novo.", "erro"); return; }
 snapshot = _r.snapshot; rdosPublicaveis = _r.rdosPublicaveis;
 var fit2 = self._caberSnapshot(snapshot);
 if (!fit2.ok) { UI.toast("Fotos demais nos diários desta obra. Remova algumas e publique de novo.", "erro"); return; }
 relSel = novos;
+} else if (_s.avancoRetido) {
+UI.toast("Não consegui ler o avanço desta obra, e publicar agora trocaria o número do cliente por um errado. Nada foi enviado: abra o cronograma da obra e tente de novo.", "erro");
+return;
 }
 var acid = el("g-pacid");
 if (acid) {
@@ -60587,7 +60635,7 @@ var bases = listaL.filter(function (x) { return !!x && x.tipo === "base" && Stri
 function ler(ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } }
 var ativ = [];
 try { if (typeof Gestao !== "undefined" && typeof Gestao._atividadesDaObra === "function") ativ = Gestao._atividadesDaObra(obra.id) || []; } catch (eA) { ativ = []; }
-var corte = (this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte[obra.id] : null;
+var corte = (opts.corteDaTela !== false && this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte[obra.id] : null;
 var orcsP = [];
 try { orcsP = Store.listarOrcamentos(eid) || []; } catch (eO) { orcsP = []; }
 var avRec = (CB && lista) ? CB.avanco(lista, obra.id) : null;
@@ -69225,7 +69273,31 @@ resumo: "Avanço lançado até " + String(rec.corte || "").slice(8, 10) + "/" + 
 catch (eH) { try { console.warn("[cronograma] gancho do avanço falhou (o avanço foi gravado):", eH); } catch (eC) {} }
 r.recado = "Avanço gravado" + (opts.origem ? " (origem: " + opts.origem + ")" : "") + ".";
 if (!alvo.semTela) r.portaFrota = true;
+this._cronoAvancoAoPortal(obraId);
 return r;
+},
+_cronoAvancoAoPortal: function (obraId) {
+try {
+if (typeof Gestao === "undefined" || typeof Gestao._republicarPortal !== "function") return;
+var u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null;
+if (!u || u.papel === "usuario") return;
+var eidP = Auth.empresaId();
+this._cronoPortalTimer = this._cronoPortalTimer || {};
+if (this._cronoPortalTimer[obraId]) clearTimeout(this._cronoPortalTimer[obraId]);
+var self = this;
+this._cronoPortalTimer[obraId] = setTimeout(function () {
+delete self._cronoPortalTimer[obraId];
+try {
+if (Auth.empresaId() !== eidP) return;
+var ob = Store.obter(eidP, "obras", obraId);
+if (!ob || !ob.portalUser) return;
+Gestao._republicarPortal(ob, function (res) {
+if (!res || res.ok || res.semPortal) return;
+try { UI.toast("Avanço gravado, mas o Portal do cliente não foi atualizado (" + (res.erro || "falha") + "). Ele continua vendo o avanço anterior.", "erro"); } catch (eT) {}
+});
+} catch (eI) { try { console.warn("[cronograma] não consegui atualizar o Portal depois do avanço:", eI); } catch (eC2) {} }
+}, 4000);
+} catch (eP) { try { console.warn("[cronograma] não consegui atualizar o Portal depois do avanço:", eP); } catch (eC) {} }
 },
 _cronoAlvoSemTela: function (obraId) {
 var o = String(obraId || "");
@@ -69357,6 +69429,7 @@ var r2 = CronoBase.salvarPlano(r1.lista, plano, { agora: opts.agora });
 if (!r2.ok) { UI.toast(r2.erro, "erro"); return false; }
 if (!this._cronoGravarLista(obraId, r2.lista)) return false;
 alvo.avancoRec = rec;
+this._cronoAvancoAoPortal(obraId);
 return true;
 },
 _regBases: 1,
@@ -71149,6 +71222,7 @@ var l2 = CronoBase.limparAvanco(c2.lista, obraId);
 if (!self._cronoGravarLista(obraId, l2)) { UI.toast("O avanço NÃO foi apagado — o armazenamento deste aparelho recusou.", "erro"); return; }
 if (self._cronoAvancoTela) delete self._cronoAvancoTela[obraId];
 UI.toast("Avanço apagado. Os diários e as medições não mudam.", "ok");
+self._cronoAvancoAoPortal(obraId);
 self._cronoRepintar();
 } }]);
 return true;

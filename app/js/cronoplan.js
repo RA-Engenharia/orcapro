@@ -1090,6 +1090,41 @@
          base (crítica: perto de 1 sozinho depois de reprogramar). */
       K.previstoNaData = T.previstoPct == null ? null : { pct: T.previstoPct, fonte: base ? "base" : out.plano.fonte, realPct: T.realPct,
         rotulo: base ? "Previsto na data (linha de base v" + base.versao + ")" : "Previsto na data (plano atual — ainda sem linha de base)" };
+      /* ⚠ O AVANÇO LANÇADO SÓ ENTRA ONDE O PORTAL NÃO TEM NÚMERO NENHUM.
+         Obra acompanhada pelo planejamento (avanço lançado, diários sem
+         quantidade, nenhum boletim) mostrava ao engenheiro "realizado 29,5%" e
+         ao cliente "0% concluído do total previsto".
+         A regra é estreita de propósito, porque a versão nova republica sozinha
+         toda obra já publicada. A 1ª tentativa deixava o avanço mandar sempre, e
+         a revisão mediu o estrago: avanço velho de 10/05 com diários até agosto,
+         51% caía para 11,5%; medição de 45% com uma etapa lançada, 5,3%. Número
+         que o cliente já vê não muda: diário com quantidade e medição aprovada
+         continuam mandando. Daqui, ele só pode subir a partir do zero.
+         ⚠ DIÁRIOS SEM CORTE: o corte padrão do painel é o do avanço, e um diário
+           com quantidade depois dele é número válido no retrato do cliente.
+         ⚠ BOLETIM QUE DEIXOU DE CONTAR (`e.medcc.semLastro`) barra: boletim rejeitado
+           não vai ao cliente nem disfarçado de avanço.
+         Esta é a régua única: o retrato só lê `kpis.portal`, para os dois não
+         discordarem (js/portalavanco.js). */
+      if (conf.avanco && conf.avanco.nos > 0 && T.realPct > 0 && K.portal && K.portal.fonte === "medicao" && !(K.portal.pct > 0)) {
+        /* a fiação do `medcc` pode faltar (módulo desligado, exceção), e a guarda
+           não pode abrir por isso: confere o lastro contra os boletins também */
+        var bolOk = {};
+        arr(e.medicoes).forEach(function (m) { if (m && m.obraId === obra.id && own(APROV_PORTAL, m.status)) bolOk[m.id] = true; });
+        var porIdAv = conf.avanco.porId || {}, lastroFurado = false, kAv;
+        for (kAv in porIdAv) if (own(porIdAv, kAv) && porIdAv[kAv].origem === "medicao" && porIdAv[kAv].lastro && !own(bolOk, porIdAv[kAv].lastro)) lastroFurado = true;
+        if (lastroFurado || (e.medcc && arr(e.medcc.semLastro).length)) {
+          K.portalRetido = true;
+          aviso("portal-avanco-sem-lastro", "o Portal do cliente não recebeu este avanço porque há tarefa lançada por um boletim que deixou de contar. Ele segue com a última publicação: resolva em [Rever] no cronograma da obra.");
+        } else if (F.pctObra(F.porServico(pub, obra.id, { precos: precosDoPortal(orc, e.atividadesDaObra, Ut, obra.id) })).pct === null) {
+          K.portal = { pct: T.realPct, fonte: "cronograma", base: "plano", pctDiarios: K.portal.pctDiarios, ate: conf.avanco.corte || K.portal.ate,
+            servicos: K.portal.servicos, doOrcamento: K.portal.doOrcamento,
+            rotulo: "no Portal do cliente (avanço lançado no cronograma, pesado pelo valor de cada etapa)" };
+          /* o recado "o número do Portal vem das medições" foi escrito antes de
+             se saber do avanço, e aqui deixou de ser verdade */
+          out.avisos = out.avisos.filter(function (a) { return !a || a.tipo !== "portal-corte"; });
+        }
+      }
       if (base && T.IDP != null) K.idp = { valor: T.IDP, vp: T.VP, va: T.VA, rotulo: T.idpRotulo };
       K.situacao = (T.realPct == null || T.previstoPct == null) ? null : situacao(T.previstoPct, T.realPct, conf.toleranciaPP);
       K.situacaoContra = base ? "linha de base v" + base.versao : "plano atual (sem linha de base)";
@@ -2319,7 +2354,7 @@
           else if (en.o === "medicao" || en.b) rot = "medição " + (en.b ? (own(num, en.b) ? num[en.b] : en.b) : "sem número");
           else rot = "digitado";
           avPorId[en.id] = { estado: est, pct: est === "concluida" ? 100 : (en.p == null ? 0 : en.p),
-            origem: en.o || "digitado", lastro: en.b || null, rotulo: rot, ini: en.i || null, fim: en.f || null, em: en.em || null };
+            origem: en.o || "digitado", lastro: en.b || null, rotulo: rot, ini: en.i || null, fim: en.f || null, em: en.em || null, rs: en.rs === 1, fo: en.fo || null };
           nAv++;
         });
         arr(L.avisos).forEach(function (a) { if (a && a.tipo) avisos.push({ tipo: a.tipo, msg: "avanço lançado: " + a.tipo + (a.id ? " (" + a.id + ")" : "") + "." }); });
@@ -2341,6 +2376,12 @@
         else { rp = rr.pct; sit = situacao(prev, rp, tol); }
         /* o LANÇADO manda sobre o apurado nos diários (mescla por nó) */
         var av = own(avPorId, n.id) ? avPorId[n.id] : null;
+        /* ⚠ ETAPA RESUMIDA (`rs: 1`, porta [Resumir]): a linha do avanço passa a
+           morar na etapa, e o VA só soma FOLHAS. Sem esta herança, resumir uma
+           etapa concluída zerava a parte dela: a tela dizia etapa 100% e o
+           realizado da obra caía de 73,3% para 0%. Medido com o
+           `CronoAvanco.resumirConcluidas` real. */
+        if (!av && n.t === "f" && own(avPorId, n.e) && avPorId[n.e].rs && (!avPorId[n.e].fo || avPorId[n.e].fo.indexOf(n.id) > -1)) av = avPorId[n.e];
         if (av && n.v > 0) {
           rp = av.pct; sit = situacao(prev, rp, tol);
           if (n.t === "f") etapaComAvanco[n.e] = true;

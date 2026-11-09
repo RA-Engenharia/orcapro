@@ -5556,7 +5556,8 @@
         subP = nL ? (po.base === "simples" ? "média de " : "sobre ") + nL + " serviço(s) lançado(s)" : "o que o cliente vê";
         dP += " — " + (po.base === "simples" ? "média simples" : (po.base === "financeira" ? "pesado pelo valor" : "sobre")) +
           (nL ? " dos " + nL + " serviço(s) já lançado(s) nos diários" + (nO ? " (o orçamento tem " + nO + ")" : "") : "") + (po.ate ? " — é o que o cliente vê até " + dmaS(po.ate) : "");
-      } else if (po.fonte) { subP = "número de hoje"; dP += " — é o número de hoje (não foi cortado na data)"; }
+      } else if (po.fonte === "cronograma") { subP = po.ate ? "lançado até " + dmaS(po.ate) : "avanço lançado"; dP += po.ate ? " — é o que o cliente vê, lançado até " + dmaS(po.ate) : ""; }
+      else if (po.fonte) { subP = "número de hoje"; dP += " — é o número de hoje (não foi cortado na data)"; }
       h += kpi("cx-kpi-portal", "No Portal do cliente", pctOu(po.pct), esc(subP), "", dP);
       // MEDIDO (boletins aprovados)
       var dM = me.rotulo || "Medido (boletins aprovados)", subM;
@@ -5624,7 +5625,8 @@
            diário que não é item do orçamento — N pode não ser parte de M */
         subPortal = (po.base === "simples" ? "média simples" : (po.base === "financeira" ? "pesado pelo valor" : "sobre")) + (nL ? " dos " + nL + " serviço(s) já lançado(s) nos diários" + (nO ? " (o orçamento tem " + nO + ")" : "") : "") +
           (po.ate ? " — é o que o cliente vê até " + dmaS(po.ate) : "");
-      } else if (po.fonte) subPortal = "é o número de hoje (não foi cortado na data)";
+      } else if (po.fonte === "cronograma") subPortal = po.ate ? "avanço lançado até " + dmaS(po.ate) : "avanço lançado";
+      else if (po.fonte) subPortal = "é o número de hoje (não foi cortado na data)";
       h += kpi(po.rotulo || "no Portal do cliente", pctOu(po.pct), subPortal, "cx-kpi-portal");
       /* ⚠ com data de corte ESCOLHIDA o medido continua o de hoje (boletim não
          entra na conta pela data): o card diz isso quando algum boletim contado

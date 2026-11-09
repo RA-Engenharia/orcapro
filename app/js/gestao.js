@@ -6383,7 +6383,11 @@
       };
       aoTerminar = terminar;
       var pacote;
-      try { pacote = this._snapshotPortal(obra.id, obra).snapshot; }
+      try {
+        var montado = this._snapshotPortal(obra.id, obra);
+        if (montado.avancoRetido) { aoTerminar({ ok: false, erro: "não consegui ler o avanço desta obra — o cliente segue vendo a última publicação" }); return; }
+        pacote = montado.snapshot;
+      }
       catch (e) { aoTerminar({ ok: false, erro: "falha ao montar o resumo" }); return; }
       var fit = this._caberSnapshot(pacote);
       if (!fit.ok) { aoTerminar({ ok: false, erro: "resumo grande demais" }); return; }
@@ -53851,7 +53855,10 @@ case "nova-folha": return this.novoFolha();
        * Ordem de autoridade agora:
        *   1) `obra.pctExecutado` — quando alguém digitou à mão, a pessoa manda
        *   2) avanço FÍSICO dos diários publicáveis (Fisico.pacote)
-       *   3) acumulado das medições (o comportamento antigo, como último caso)
+       *   3) acumulado das medições aprovadas, quando há alguma
+       *   4) avanço LANÇADO NO CRONOGRAMA, só quando os de cima não têm número
+       *      (`kpis.portal`; a regra e o porquê estão em js/cronoplan.js)
+       *   5) o acumulado zerado das medições, como último caso
        *
        * O pacote leva também de onde o número saiu (`base`) e o que ficou de
        * fora da conta — porque um cliente que compara dois meses precisa saber
@@ -53934,13 +53941,47 @@ case "nova-folha": return this.novoFolha();
       var pctMedicoes = Math.min(100, Math.round(acum * 10) / 10);
       pctEmAnalise = Math.round(pctEmAnalise * 10) / 10;
       valorEmAnalise = Math.round(valorEmAnalise * 100) / 100;
+      /* o painel da obra, pela porta única da tela do engenheiro. `corteDaTela:
+         false` porque a data escolhida para olhar o painel não é o estado da obra. */
+      var planoPortal = null;
+      /* ⚠ NÃO DEU PARA LER O PAINEL DE UMA OBRA QUE TEM AVANÇO: não publica. Cair
+         no caminho antigo calado trocaria o 29,5% do cliente por 0%, na
+         republicação automática, sem ninguém saber. Preso e visível é melhor. */
+      var avancoRetido = false;
+      /* só retém quem depende do avanço para ter número: com percentual manual,
+         diário com quantidade ou medição aprovada, o cliente não perde nada */
+      var dependeDoAvanco = obra.pctExecutado == null && !(fisico && fisico.pct !== null) && !(pctMedicoes > 0);
+      function temAvancoGravado() {
+        try {
+          if (typeof CronoBase === "undefined" || typeof App._cronoLerPlanejamento !== "function") return false;
+          return !!CronoBase.avanco(App._cronoLerPlanejamento(eid()).lista || [], obra.id);
+        } catch (eAv) { return false; }
+      }
+      var orcPl = null;
+      try {
+        orcPl = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+        if (orcPl && typeof PortalAvanco !== "undefined" && typeof App !== "undefined" && typeof App._cronoPainelDados === "function") {
+          var envPl = App._cronoPainelDados(obra, orcPl, { corteDaTela: false });
+          var painelPl = envPl ? envPl.painel : null;
+          if (dependeDoAvanco && PortalAvanco.painelNaoServe(painelPl)) {
+            /* ilegível: não dá nem para saber se há avanço, e é só daí que ele viria */
+            if ((painelPl && painelPl.estado === "planejamento-ilegivel") || temAvancoGravado()) avancoRetido = true;
+          }
+          planoPortal = PortalAvanco.doPainel(painelPl);
+        }
+      } catch (ePl) {
+        planoPortal = null;
+        if (dependeDoAvanco && orcPl && typeof App !== "undefined" && temAvancoGravado()) avancoRetido = true;
+      }
       var pctExec, fonteExec;
       if (obra.pctExecutado != null) { pctExec = Util.num(obra.pctExecutado); fonteExec = "manual"; }
       else if (fisico && fisico.pct !== null) { pctExec = fisico.pct; fonteExec = "diario"; }
+      else if (pctMedicoes > 0) { pctExec = pctMedicoes; fonteExec = "medicao"; }
+      else if (planoPortal && planoPortal.temAvanco) { pctExec = planoPortal.pct; fonteExec = "cronograma"; }
       else { pctExec = pctMedicoes; fonteExec = "medicao"; }
       if (fisico) { fisico.fonte = fonteExec; fisico.pctMedicoes = pctMedicoes; }
       // Curva S (planejado × realizado) + cronograma — do orçamento vinculado à obra
-      var curvaS = null, cronograma = [];
+      var curvaS = null, cronograma = [], cronoIds = [];
       try {
         var orc = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
         if (orc && orc.etapas && orc.etapas.length && typeof Orcamento !== "undefined" && Orcamento.cronograma) {
@@ -54115,6 +54156,8 @@ case "nova-folha": return this.novoFolha();
               var medido = real !== undefined;
               var noBoletim = !medido && fonteExec === "diario" && e.id != null &&
                 Object.prototype.hasOwnProperty.call(medidoBolPorEtapaId, String(e.id));
+              /* o id vai em lista à parte: obra sem plano publica o retrato de sempre, byte a byte */
+              cronoIds.push(e.id == null ? "" : String(e.id));
               var linhaCr = { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
                        pct: Math.round(medido ? Math.min(100, real) : (noBoletim ? medidoBolPorEtapaId[String(e.id)] : p)),
                        /* o cliente precisa saber qual das três está lendo: o
@@ -54131,6 +54174,19 @@ case "nova-folha": return this.novoFolha();
           }
         }
       } catch (e) { curvaS = null; cronograma = []; }
+      /* ⚠ O CRONOGRAMA DO CLIENTE É O DA OBRA, NÃO A ESTIMATIVA DO ORÇAMENTO.
+         O bloco acima conta as etapas do orçamento a partir do início da obra:
+         replanejar não mudava nada para o cliente, e uma obra real mostrava a
+         fundação em 01–06/10 e "100% planejado em outubro" com a linha de base
+         dizendo 22,9%. Com plano ou linha de base, a data e o planejado são
+         deles. Sem nenhum dos dois, fica como sempre foi. */
+      if (planoPortal) {
+        try {
+          var apl = PortalAvanco.aplicar(planoPortal, { cronograma: cronograma, idsCronograma: cronoIds, curvaS: curvaS, fonte: fonteExec, medicoes: medicoes,
+            seriePeriodos: (fisico && fisico.serieMes) ? fisico.serieMes.periodos : [] });
+          cronograma = apl.cronograma; curvaS = apl.curvaS;
+        } catch (eApl) { if (fonteExec === "cronograma") avancoRetido = true; }
+      }
 
       /* ---------- PREVISÃO DE TÉRMINO — LIGADA POR OBRA ----------
        * O painel mostrava a data do CONTRATO e nada mais. O cliente quer
@@ -54183,6 +54239,9 @@ case "nova-folha": return this.novoFolha();
               " serviços do orçamento ainda não apareceram em nenhum diário, e o ritmo medido é só o dos serviços já iniciados. " +
               "A projeção volta quando todos os serviços do orçamento tiverem aparecido nos diários. Até lá, o prazo que vale é o do contrato." };
         }
+        /* o recado do `Fisico.previsao` ("sem isso não existe percentual") seria
+           falso ao lado do avanço lançado */
+        if (fonteExec === "cronograma") previsao = PortalAvanco.previsaoSemRitmo();
       }
 
       /* ---------- RELATÓRIOS QUE ESTE CLIENTE PODE GERAR ----------
@@ -54313,6 +54372,7 @@ case "nova-folha": return this.novoFolha();
              começou, e o diário não sabe disso. `situacao` fica (o portal.html
              publicado a lê); a tela nova diz "sem apontamento no diário". */
           if (c.semApontamento) mc.semApontamento = true;
+          if (c.rotuloSem) mc.rotuloSem = c.rotuloSem;
           return mc;
         });
       }
@@ -54390,6 +54450,10 @@ case "nova-folha": return this.novoFolha();
            embaixo do número, porque "42%" sem dizer de onde veio é um número
            que o cliente não tem como conferir */
         fonteExecucao: fonteExec,
+        /* até que dia o avanço lançado vai: sem a data, um lançamento antigo se
+           passaria pelo estado de hoje. Aditivos, o Portal antigo ignora. */
+        avancoAte: (fonteExec === "cronograma" && planoPortal) ? planoPortal.corte : "",
+        datasDaBase: !!(planoPortal && planoPortal.temPlano),
         fisico: fisico,
         previsao: previsao,
         relatorios: relPermitidos,
@@ -54418,7 +54482,7 @@ case "nova-folha": return this.novoFolha();
         snapshot = PortalPriv.aplicar(snapshot, PortalPriv.daObra(obra, Gestao._portalPadrao()));
       }
 
-      return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
+      return { avancoRetido: avancoRetido, snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
                segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,
                fisico: fisico, fonteExec: fonteExec, relatorios: relPermitidos, compras: compras,
                previsao: previsao, mostrarPrevisao: mostrarPrevisao, financeiro: financeiro,
@@ -54622,6 +54686,10 @@ case "nova-folha": return this.novoFolha();
           var pk2 = Fisico.pacote(rdosPub, id, { ate: domingo });
           if (pk2 && pk2.pct !== null) pctAntes = pk2.pct;
         }
+        /* o aviso dizia "total concluído segue em 0%" com o Portal em 29,5%. O avanço
+           lançado não guarda história por semana: o total é o de hoje, e não se
+           inventa um "avançou X nesta semana" */
+        if (_s.fonteExec === "cronograma") { pctDepois = _s.pctExec; pctAntes = _s.pctExec; }
       } catch (e) {}
       var porServ = {};
       daSemana.forEach(function (r) {
@@ -54735,6 +54803,7 @@ case "nova-folha": return this.novoFolha();
         (function () {
           var txt = "", cor = "#143454", bg = "#f8fafc", bd = "#e2e8f0";
           if (fonteExec === "manual") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 0) + "</b> porque foi <b>digitado à mão</b> no cadastro da obra — o avanço calculado pelos diários não é usado enquanto esse campo estiver preenchido.";
+          else if (fonteExec === "cronograma") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 1) + "</b>, o <b>avanço lançado no cronograma</b> da obra — o mesmo número do Previsto × Realizado. As datas de cada etapa são as da linha de base (sem linha de base, as do plano).";
           else if (fonteExec === "diario") txt = "O andamento vem do <b>avanço físico dos diários</b>. " + Util.esc((fisico && fisico.aviso) || "");
           else { txt = "O andamento vem do <b>acumulado das medições</b> — os diários desta obra ainda não têm serviço com <b>quantidade prevista</b>, e sem isso não há percentual a calcular a partir deles."; cor = "#7c2d12"; bg = "#fff7ed"; bd = "#fdba74"; }
           return '<div class="ov-pt-caixa' + (bg === "#fff7ed" ? " ov-pt-atencao" : "") + '" style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
@@ -54922,10 +54991,15 @@ case "nova-folha": return this.novoFolha();
           obra.portalPrevisao = querPrev;
           Store.salvar(eid(), "obras", obra);
           var _r = self._snapshotPortal(id, obra);
+          if (_r.avancoRetido) { UI.toast("Não consegui ler o avanço desta obra, e publicar agora trocaria o número do cliente por um errado. Nada foi enviado: abra o cronograma da obra e tente de novo.", "erro"); return; }
           snapshot = _r.snapshot; rdosPublicaveis = _r.rdosPublicaveis;
           var fit2 = self._caberSnapshot(snapshot);
           if (!fit2.ok) { UI.toast("Fotos demais nos diários desta obra. Remova algumas e publique de novo.", "erro"); return; }
           relSel = novos;
+        } else if (_s.avancoRetido) {
+          /* sem opção mudada, o envio usa o retrato montado ao abrir a tela */
+          UI.toast("Não consegui ler o avanço desta obra, e publicar agora trocaria o número do cliente por um errado. Nada foi enviado: abra o cronograma da obra e tente de novo.", "erro");
+          return;
         }
 
         /* o texto do acidente só entra se quem publica marcou AGORA — a escolha

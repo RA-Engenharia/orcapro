@@ -128,7 +128,10 @@
       if (p != null) out.p = p;
       if (r != null) out.r = r;
       if (dataOk(e.em) != null) out.em = chMs(dataOk(e.em));
-      if (e.rs === 1) out.rs = 1;
+      if (e.rs === 1) {
+        out.rs = 1;
+        if (Array.isArray(e.fo)) out.fo = e.fo.filter(function (x) { return typeof x === "string"; });
+      }
 
       /* ---- a ORIGEM e o LASTRO (E-MC1) ---- */
       var b = null;
@@ -285,7 +288,9 @@
           else todasMed = false;
         });
         if (!todas || iMin == null || fMax == null) return;
-        var ent = { id: eid, i: chMs(iMin), f: chMs(fMax), p: 100, rs: 1 };
+        /* `fo`: as folhas que este resumo cobre. Subetapa criada depois não foi
+           executada, e não pode herdar os 100% da etapa resumida. */
+        var ent = { id: eid, i: chMs(iMin), f: chMs(fMax), p: 100, rs: 1, fo: folhas.map(String) };
         var emM = null;
         folhas.forEach(function (fid) { var e = porId[fid]; if (e && e.em && (emM == null || e.em > emM)) emM = e.em; });
         if (emM) ent.em = emM;

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.269",
+versao: "1.2.270",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -26017,6 +26017,21 @@ if (conf && conf.totais) {
 var T = conf.totais;
 K.previstoNaData = T.previstoPct == null ? null : { pct: T.previstoPct, fonte: base ? "base" : out.plano.fonte, realPct: T.realPct,
 rotulo: base ? "Previsto na data (linha de base v" + base.versao + ")" : "Previsto na data (plano atual — ainda sem linha de base)" };
+if (conf.avanco && conf.avanco.nos > 0 && T.realPct > 0 && K.portal && K.portal.fonte === "medicao" && !(K.portal.pct > 0)) {
+var bolOk = {};
+arr(e.medicoes).forEach(function (m) { if (m && m.obraId === obra.id && own(APROV_PORTAL, m.status)) bolOk[m.id] = true; });
+var porIdAv = conf.avanco.porId || {}, lastroFurado = false, kAv;
+for (kAv in porIdAv) if (own(porIdAv, kAv) && porIdAv[kAv].origem === "medicao" && porIdAv[kAv].lastro && !own(bolOk, porIdAv[kAv].lastro)) lastroFurado = true;
+if (lastroFurado || (e.medcc && arr(e.medcc.semLastro).length)) {
+K.portalRetido = true;
+aviso("portal-avanco-sem-lastro", "o Portal do cliente não recebeu este avanço porque há tarefa lançada por um boletim que deixou de contar. Ele segue com a última publicação: resolva em [Rever] no cronograma da obra.");
+} else if (F.pctObra(F.porServico(pub, obra.id, { precos: precosDoPortal(orc, e.atividadesDaObra, Ut, obra.id) })).pct === null) {
+K.portal = { pct: T.realPct, fonte: "cronograma", base: "plano", pctDiarios: K.portal.pctDiarios, ate: conf.avanco.corte || K.portal.ate,
+servicos: K.portal.servicos, doOrcamento: K.portal.doOrcamento,
+rotulo: "no Portal do cliente (avanço lançado no cronograma, pesado pelo valor de cada etapa)" };
+out.avisos = out.avisos.filter(function (a) { return !a || a.tipo !== "portal-corte"; });
+}
+}
 if (base && T.IDP != null) K.idp = { valor: T.IDP, vp: T.VP, va: T.VA, rotulo: T.idpRotulo };
 K.situacao = (T.realPct == null || T.previstoPct == null) ? null : situacao(T.previstoPct, T.realPct, conf.toleranciaPP);
 K.situacaoContra = base ? "linha de base v" + base.versao : "plano atual (sem linha de base)";
@@ -26806,7 +26821,7 @@ if (en.o === "diario") rot = "dos diários";
 else if (en.o === "medicao" || en.b) rot = "medição " + (en.b ? (own(num, en.b) ? num[en.b] : en.b) : "sem número");
 else rot = "digitado";
 avPorId[en.id] = { estado: est, pct: est === "concluida" ? 100 : (en.p == null ? 0 : en.p),
-origem: en.o || "digitado", lastro: en.b || null, rotulo: rot, ini: en.i || null, fim: en.f || null, em: en.em || null };
+origem: en.o || "digitado", lastro: en.b || null, rotulo: rot, ini: en.i || null, fim: en.f || null, em: en.em || null, rs: en.rs === 1, fo: en.fo || null };
 nAv++;
 });
 arr(L.avisos).forEach(function (a) { if (a && a.tipo) avisos.push({ tipo: a.tipo, msg: "avanço lançado: " + a.tipo + (a.id ? " (" + a.id + ")" : "") + "." }); });
@@ -26824,6 +26839,7 @@ else if (!rr) { rp = 0; sit = situacao(prev, 0, tol); }
 else if (rr.pct == null) { rp = null; sit = "sem serviço mensurável"; }
 else { rp = rr.pct; sit = situacao(prev, rp, tol); }
 var av = own(avPorId, n.id) ? avPorId[n.id] : null;
+if (!av && n.t === "f" && own(avPorId, n.e) && avPorId[n.e].rs && (!avPorId[n.e].fo || avPorId[n.e].fo.indexOf(n.id) > -1)) av = avPorId[n.e];
 if (av && n.v > 0) {
 rp = av.pct; sit = situacao(prev, rp, tol);
 if (n.t === "f") etapaComAvanco[n.e] = true;
@@ -28064,7 +28080,10 @@ out.f = f != null ? chMs(f) : null;
 if (p != null) out.p = p;
 if (r != null) out.r = r;
 if (dataOk(e.em) != null) out.em = chMs(dataOk(e.em));
-if (e.rs === 1) out.rs = 1;
+if (e.rs === 1) {
+out.rs = 1;
+if (Array.isArray(e.fo)) out.fo = e.fo.filter(function (x) { return typeof x === "string"; });
+}
 var b = null;
 if (own(e, "b")) {
 if (typeof e.b === "string" && e.b.length >= 1 && e.b.length <= this.B_MAX) b = e.b;
@@ -28173,7 +28192,7 @@ if (e.o === "medicao" && e.b) cands.push({ b: e.b, f: fm });
 else todasMed = false;
 });
 if (!todas || iMin == null || fMax == null) return;
-var ent = { id: eid, i: chMs(iMin), f: chMs(fMax), p: 100, rs: 1 };
+var ent = { id: eid, i: chMs(iMin), f: chMs(fMax), p: 100, rs: 1, fo: folhas.map(String) };
 var emM = null;
 folhas.forEach(function (fid) { var e = porId[fid]; if (e && e.em && (emM == null || e.em > emM)) emM = e.em; });
 if (emM) ent.em = emM;
@@ -33770,7 +33789,8 @@ if (po.fonte === "diario") {
 subP = nL ? (po.base === "simples" ? "média de " : "sobre ") + nL + " serviço(s) lançado(s)" : "o que o cliente vê";
 dP += " — " + (po.base === "simples" ? "média simples" : (po.base === "financeira" ? "pesado pelo valor" : "sobre")) +
 (nL ? " dos " + nL + " serviço(s) já lançado(s) nos diários" + (nO ? " (o orçamento tem " + nO + ")" : "") : "") + (po.ate ? " — é o que o cliente vê até " + dmaS(po.ate) : "");
-} else if (po.fonte) { subP = "número de hoje"; dP += " — é o número de hoje (não foi cortado na data)"; }
+} else if (po.fonte === "cronograma") { subP = po.ate ? "lançado até " + dmaS(po.ate) : "avanço lançado"; dP += po.ate ? " — é o que o cliente vê, lançado até " + dmaS(po.ate) : ""; }
+else if (po.fonte) { subP = "número de hoje"; dP += " — é o número de hoje (não foi cortado na data)"; }
 h += kpi("cx-kpi-portal", "No Portal do cliente", pctOu(po.pct), esc(subP), "", dP);
 var dM = me.rotulo || "Medido (boletins aprovados)", subM;
 if (semMed) h += kpi("cx-kpi-medido", "Medido", "—", esc("sem acesso a medições"), "", dM + " — seu usuário não vê medições");
@@ -33820,7 +33840,8 @@ if (po.fonte === "diario") {
 var nL = Number(po.servicos) || 0, nO = Number(po.doOrcamento) || 0;
 subPortal = (po.base === "simples" ? "média simples" : (po.base === "financeira" ? "pesado pelo valor" : "sobre")) + (nL ? " dos " + nL + " serviço(s) já lançado(s) nos diários" + (nO ? " (o orçamento tem " + nO + ")" : "") : "") +
 (po.ate ? " — é o que o cliente vê até " + dmaS(po.ate) : "");
-} else if (po.fonte) subPortal = "é o número de hoje (não foi cortado na data)";
+} else if (po.fonte === "cronograma") subPortal = po.ate ? "avanço lançado até " + dmaS(po.ate) : "avanço lançado";
+else if (po.fonte) subPortal = "é o número de hoje (não foi cortado na data)";
 h += kpi(po.rotulo || "no Portal do cliente", pctOu(po.pct), subPortal, "cx-kpi-portal");
 var subMed = me.pct == null && (me.emValor || semD) ? "boletins só em valor" + (rs(me.emValor) ? " (" + rs(me.emValor) + ")" : "") + ", sem % — não dá para dizer quanto da obra é" : (me.boletins ? me.boletins + " boletim(ns) aprovado(s) ou pago(s)" : "nenhum boletim aprovado");
 if (me.depoisDoCorte) subMed = "acumulado de hoje — inclui " + me.depoisDoCorte + " boletim(ns) com data depois de " + dmaS(p.dataCorte);
@@ -63425,6 +63446,172 @@ return achados;
 };
 global.PortalPriv = PortalPriv;
 if (typeof module !== "undefined" && module.exports) module.exports = PortalPriv;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/portalavanco.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(x) { return Array.isArray(x) ? x : []; }
+function num(x) { return (typeof x === "number" && isFinite(x)) ? x : null; }
+function r1(x) { return Math.round(x * 10) / 10; }
+function dia(x) { return /^\d{4}-\d{2}-\d{2}/.test(String(x || "")) ? String(x).slice(0, 10) : ""; }
+function dataUTC(iso) { var p = iso.split("-"); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+function fimDoMes(k) { var p = k.split("-"); return Date.UTC(+p[0], +p[1], 0); }
+var DIA_MS = 86400000;
+function linhaEtapa(n) {
+var ref = n.base || {};
+var real = n.real || {};
+var pct = num(n.realPct);
+if (pct === null && n.avanco) pct = num(n.avanco.pct);
+if (pct === 0 && !n.avanco) pct = null;
+return { id: n.id == null ? "" : String(n.id), etapa: String(n.nome || ""),
+inicio: dia(ref.ini), fim: dia(ref.fim), realInicio: dia(real.ini), realFim: dia(real.fim), pct: pct };
+}
+function realizadoDoAvanco(nos, eixo, corte, pctFinal) {
+var fimEixo = -1, i;
+var mesCorte = dia(corte).slice(0, 7);
+if (!mesCorte || !eixo.length) return [];
+for (i = 0; i < eixo.length; i++) if (eixo[i] <= mesCorte) fimEixo = i;
+if (fimEixo < 0) return [];
+var folhas = arr(nos).filter(function (n) {
+return n && n.folha && !n.opcionalFora && !n.foraDaBase && !n.sumiuDoAtual && num(n.valor) > 0;
+});
+var total = 0;
+folhas.forEach(function (n) { total += n.valor; });
+if (!(total > 0)) return [];
+var fCorte = dataUTC(dia(corte));
+var saida = [];
+for (i = 0; i <= fimEixo; i++) {
+var limite = Math.min(fimDoMes(eixo[i]), fCorte), soma = 0;
+folhas.forEach(function (n) {
+var p = num(n.realPct);
+if (!(p > 0)) return;
+var real = n.real || {};
+var ini = dia(real.ini), fim = dia(real.fim) || dia(corte);
+if (!ini) { if (i === fimEixo) soma += n.valor * p / 100; return; }
+var a = dataUTC(ini), b = dataUTC(fim);
+if (limite < a) return;
+var frac = (b <= a) ? 1 : Math.min(1, (limite - a + DIA_MS) / (b - a + DIA_MS));
+soma += n.valor * (p / 100) * frac;
+});
+saida.push((soma / total) * 100);
+}
+var fim = saida.length ? saida[saida.length - 1] : 0, alvo = num(pctFinal);
+var fator = (alvo !== null && fim > 0) ? alvo / fim : 1;
+saida = saida.map(function (v) { return r1(v * fator); });
+if (saida.length && alvo !== null) saida[saida.length - 1] = alvo;
+return saida;
+}
+function serieNoEixo(eixo, pontos) {
+var porMes = {}, ultimo = "";
+arr(pontos).forEach(function (p) {
+var m = p && String(p.mes || "").slice(0, 7), v = p ? num(p.pct) : null;
+if (!/^\d{4}-\d{2}$/.test(m) || v === null) return;
+porMes[m] = v;
+if (m > ultimo) ultimo = m;
+});
+if (!ultimo) return [];
+var saida = [], atual = 0;
+arr(eixo).forEach(function (m) {
+if (m > ultimo) return;
+if (Object.prototype.hasOwnProperty.call(porMes, m)) atual = porMes[m];
+saida.push(atual);
+});
+return saida;
+}
+var PortalAvanco = {
+realizadoDoAvanco: realizadoDoAvanco,
+serieNoEixo: serieNoEixo,
+painelNaoServe: function (painel) {
+var p = painel;
+if (!p) return true;
+if (p.estado === "sem-inicio" || p.estado === "sem-obra" || p.estado === "sem-orcamento" || p.estado === "sem-etapas") return false;
+if (p.estado !== "ok" && p.estado !== "sem-diarios") return true;
+var K = p.kpis || {};
+return !K.evm || K.portalRetido === true;
+},
+doPainel: function (painel) {
+var p = painel;
+if (!p || (p.estado !== "ok" && p.estado !== "sem-diarios")) return null;
+var K = p.kpis || {};
+var temPlano = !!p.base;
+var po = K.portal || {};
+var temAvanco = po.fonte === "cronograma" && num(po.pct) !== null;
+if (!temPlano && !temAvanco) return null;
+var nos = arr(p.nos);
+var etapas = nos.filter(function (n) { return n && n.tipo === "etapa" && !n.opcionalFora && !n.sumiuDoAtual; }).map(linhaEtapa);
+var c = p.curva || {}, eixo = arr(c.eixo), rotulos = arr(c.rotulos);
+var plan = arr(c.base);
+var temCurva = temPlano && eixo.length > 0 && rotulos.length === eixo.length && plan.length === eixo.length;
+return { temPlano: temPlano, temAvanco: temAvanco, pct: temAvanco ? po.pct : null,
+corte: dia(p.dataCorte), etapas: etapas,
+previstoNaData: (K.previstoNaData && num(K.previstoNaData.pct) !== null) ? K.previstoNaData.pct : null,
+curva: temCurva ? { eixo: eixo.slice(), rotulos: rotulos.slice(), planejado: plan.slice() } : null,
+realizado: (temAvanco && temCurva) ? realizadoDoAvanco(nos, eixo, p.dataCorte, po.pct) : [] };
+},
+aplicar: function (lido, e) {
+e = e || {};
+var out = { cronograma: arr(e.cronograma), curvaS: e.curvaS || null };
+if (!lido) return out;
+var idsC = arr(e.idsCronograma), antigaPorId = {};
+arr(e.cronograma).forEach(function (L, i) { if (L && idsC[i]) antigaPorId[String(idsC[i])] = L; });
+if (lido.temAvanco && e.fonte === "cronograma") {
+out.cronograma = lido.etapas.map(function (n) {
+var semNumero = n.pct === null, ant = antigaPorId[n.id] || {};
+var L = { etapaId: n.id, etapa: n.etapa, inicio: n.inicio || ant.inicio || "", fim: n.fim || ant.fim || "",
+pct: semNumero ? 0 : Math.round(Math.max(0, Math.min(100, n.pct))), fonte: "cronograma" };
+if (n.realInicio) L.realInicio = n.realInicio;
+if (n.realFim) L.realFim = n.realFim;
+if (semNumero) { L.semApontamento = true; L.rotuloSem = "sem avanço lançado"; }
+return L;
+});
+} else if (lido.temPlano) {
+var porId = {};
+lido.etapas.forEach(function (n) { porId[n.id] = n; });
+var ids = arr(e.idsCronograma);
+out.cronograma = out.cronograma.map(function (L, i) {
+var n = (L && ids[i]) ? porId[String(ids[i])] : null;
+if (!n) return L;
+var c = {}, k;
+for (k in L) if (Object.prototype.hasOwnProperty.call(L, k)) c[k] = L[k];
+if (n.inicio) c.inicio = n.inicio;
+if (n.fim) c.fim = n.fim;
+return c;
+});
+}
+if (lido.curva) {
+var realizado, fonteCurva = (e.curvaS && e.curvaS.fonte) || "";
+var ateCurva = "";
+if (lido.temAvanco && e.fonte === "cronograma") { realizado = lido.realizado; fonteCurva = "cronograma"; ateCurva = lido.corte; }
+else if (fonteCurva === "diario") {
+realizado = serieNoEixo(lido.curva.eixo, arr(e.seriePeriodos).map(function (x) {
+return { mes: x && x.chave, pct: x && x.pctAcumulado };
+}));
+} else {
+realizado = serieNoEixo(lido.curva.eixo, arr(e.medicoes).slice().sort(function (a, b) {
+return String(a.data || "").localeCompare(String(b.data || ""));
+}).map(function (m) { return { mes: m && m.data, pct: m && m.acumuladoPct }; }));
+fonteCurva = fonteCurva || "medicao";
+}
+out.curvaS = { labels: lido.curva.rotulos, planejado: lido.curva.planejado, realizado: realizado,
+fonte: fonteCurva, eixo: "mes-calendario", situacao: null, desvio: null };
+if (ateCurva) { out.curvaS.ate = ateCurva; if (lido.previstoNaData !== null) out.curvaS.previstoNaData = lido.previstoNaData; }
+} else if (lido.temAvanco && e.fonte === "cronograma" && out.curvaS) {
+var cs = {}, kc;
+for (kc in out.curvaS) if (Object.prototype.hasOwnProperty.call(out.curvaS, kc)) cs[kc] = out.curvaS[kc];
+cs.realizado = []; cs.fonte = "cronograma"; cs.situacao = null; cs.desvio = null;
+out.curvaS = cs;
+}
+return out;
+},
+previsaoSemRitmo: function () {
+return { ok: false, motivo: "avanco-pelo-cronograma",
+explicacao: "A projeção automática de término usa o ritmo medido nos diários com quantidade, que esta obra ainda não tem. O andamento acima vem do avanço lançado no cronograma pela equipe. O prazo que vale é o do contrato." };
+}
+};
+global.PortalAvanco = PortalAvanco;
+if (typeof module !== "undefined" && module.exports) module.exports = PortalAvanco;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/resumocliente.js ==== */

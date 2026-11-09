@@ -6401,7 +6401,10 @@
       function ler(ent) { try { return Store.listar(eid, ent) || []; } catch (e) { return []; } }
       var ativ = [];
       try { if (typeof Gestao !== "undefined" && typeof Gestao._atividadesDaObra === "function") ativ = Gestao._atividadesDaObra(obra.id) || []; } catch (eA) { ativ = []; }
-      var corte = (this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte[obra.id] : null;
+      /* ⚠ `corteDaTela: false`: a data que o engenheiro escolheu para OLHAR o
+         painel não é o estado da obra. Sem isto, publicar com a tela num corte
+         antigo mandaria ao cliente o avanço daquela data como se fosse o de hoje. */
+      var corte = (opts.corteDaTela !== false && this._cronoCorte && typeof this._cronoCorte === "object") ? this._cronoCorte[obra.id] : null;
       /* a lista de orçamentos: a cadeia de revisões (base de outro orçamento
          não vale — CronoPlan.baseVale) e o aviso de revisão mais nova */
       var orcsP = [];
@@ -18634,7 +18637,41 @@
          obra, e essa gravação pode perder a edição de outro aparelho (R10). */
       r.recado = "Avanço gravado" + (opts.origem ? " (origem: " + opts.origem + ")" : "") + ".";
       if (!alvo.semTela) r.portaFrota = true;
+      this._cronoAvancoAoPortal(obraId);
       return r;
+    },
+
+    /* ⚠ O AVANÇO É O NÚMERO DO PORTAL: GRAVOU, O CLIENTE RECEBE.
+       Sem isto o retrato só andava com um diário publicado, e o cliente lia o
+       avanço da semana passada com a obra andando. Só para obra JÁ publicada,
+       sem senha, e pela mesma alçada que publica diário: `papel: usuario` só
+       lança, e o número dele chega ao cliente na próxima publicação de um
+       gestor. Espera alguns segundos porque quem lança na grade grava várias
+       tarefas seguidas, e cada envio monta o retrato inteiro. A gravação do
+       avanço não depende disto: falhar aqui só avisa. */
+    _cronoAvancoAoPortal: function (obraId) {
+      try {
+        if (typeof Gestao === "undefined" || typeof Gestao._republicarPortal !== "function") return;
+        var u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null;
+        if (!u || u.papel === "usuario") return;
+        var eidP = Auth.empresaId();
+        this._cronoPortalTimer = this._cronoPortalTimer || {};
+        if (this._cronoPortalTimer[obraId]) clearTimeout(this._cronoPortalTimer[obraId]);
+        var self = this;
+        this._cronoPortalTimer[obraId] = setTimeout(function () {
+          delete self._cronoPortalTimer[obraId];
+          try {
+            /* relê na hora: obra excluída ou tirada do Portal não volta por aqui */
+            if (Auth.empresaId() !== eidP) return;
+            var ob = Store.obter(eidP, "obras", obraId);
+            if (!ob || !ob.portalUser) return;
+            Gestao._republicarPortal(ob, function (res) {
+              if (!res || res.ok || res.semPortal) return;
+              try { UI.toast("Avanço gravado, mas o Portal do cliente não foi atualizado (" + (res.erro || "falha") + "). Ele continua vendo o avanço anterior.", "erro"); } catch (eT) {}
+            });
+          } catch (eI) { try { console.warn("[cronograma] não consegui atualizar o Portal depois do avanço:", eI); } catch (eC2) {} }
+        }, 4000);
+      } catch (eP) { try { console.warn("[cronograma] não consegui atualizar o Portal depois do avanço:", eP); } catch (eC) {} }
     },
 
     /* O ALVO DE QUEM GRAVA AVANÇO SEM TELA ABERTA (E-MC3, §2.8): o canal da
@@ -18856,6 +18893,7 @@
       if (!r2.ok) { UI.toast(r2.erro, "erro"); return false; }
       if (!this._cronoGravarLista(obraId, r2.lista)) return false;
       alvo.avancoRec = rec;
+      this._cronoAvancoAoPortal(obraId);   // desfazer tira do cliente o que tinha ido
       return true;
     },
     /*
@@ -21149,6 +21187,7 @@
             if (!self._cronoGravarLista(obraId, l2)) { UI.toast("O avanço NÃO foi apagado — o armazenamento deste aparelho recusou.", "erro"); return; }
             if (self._cronoAvancoTela) delete self._cronoAvancoTela[obraId];
             UI.toast("Avanço apagado. Os diários e as medições não mudam.", "ok");
+            self._cronoAvancoAoPortal(obraId);   // o cliente não pode seguir vendo o que foi apagado
             self._cronoRepintar();
           } }]);
       return true;
