@@ -226,6 +226,11 @@ html[data-visual="nova"] .btn.success { background: #1f8a4c; border-color: #1f8a
 html[data-visual="nova"] .btn.success:hover { background: #18703d; border-color: #18703d; }
 html[data-visual="nova"] .btn.ghost { background: transparent; border-color: transparent; }
 html[data-visual="nova"] .btn.ghost:hover { background: var(--surface-3); border-color: transparent; }
+/* botão ghost ligado: as mesmas cores do .primary desta folha (o porquê está em css/app.css) */
+html[data-visual="nova"] .btn.ghost.primary { background: #15181d; border-color: #15181d; color: #fff; }
+html[data-visual="nova"] .btn.ghost.primary:hover { background: #1d4a72; border-color: #1d4a72; color: #fff; }
+html[data-visual="nova"][data-tema="dark"] .btn.ghost.primary { background: #ffffff; border-color: #ffffff; color: #15181d; }
+html[data-visual="nova"][data-tema="dark"] .btn.ghost.primary:hover { background: #d9ecfa; border-color: #d9ecfa; color: #15181d; }
 html[data-visual="nova"] .btn[disabled],
 html[data-visual="nova"] .btn[aria-disabled="true"],
 html[data-visual="nova"] .btn.disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }

@@ -56537,6 +56537,7 @@ if (btnTudo) {
 var tudoRec = (orc.etapas || []).length > 0 && !(orc.etapas || []).some(function (e) { return !self.etapaRecolhida(orc.id, e.id); });
 btnTudo.textContent = tudoRec ? "\u25BE Expandir todas" : "\u25B8 Recolher todas";
 }
+try { if (typeof PlFixa !== "undefined") PlFixa.reavaliar(document.getElementById("main")); } catch (ePf2) {}
 },
 iniciar: function () {
 if (!this._dadosProntos) {
@@ -56780,6 +56781,7 @@ this.orcAtual = null; this.tela = "lista";
 this._gxDesligar();
 try { document.body.classList.remove("foco-crono"); } catch (eFc) {}
 var main = document.getElementById("main");
+try { if (typeof PlFixa !== "undefined") PlFixa.antes(main); } catch (ePf) {}
 if (main) {
 main.innerHTML = '<div id="jan-recado" class="card" role="status"></div>';
 main.firstChild.textContent = this._janelaTexto;
@@ -57022,6 +57024,7 @@ return true;
 render: function () {
 this._rtok = (this._rtok || 0) + 1;
 try { document.body.classList.remove("foco-crono"); } catch (eFc0) {}
+try { if (typeof PlFixa !== "undefined") PlFixa.antes(document.getElementById("main")); } catch (ePf0) {}
 if (this._janela) {
 if (this._janelaSemDado) { this._janelaRecado(this._janelaTexto); return; }
 try { this._janelaCab(false); } catch (eJc) {}
@@ -57119,6 +57122,7 @@ if (this.tela === "editor" && this.orcAtual) {
 if (this.aba === "cronograma") { try { document.body.classList.add("foco-crono"); } catch (eFc) {} }
 var _maisAberto = !!document.querySelector("#orc-ed-cab .mod-mais-menu:not([hidden])");
 main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
+try { if (typeof PlFixa !== "undefined") PlFixa.depois(main, this.orcAtual.id); } catch (ePf1) {}
 if (_maisAberto) {
 var _mm = document.querySelector("#orc-ed-cab .mod-mais-menu"), _mb = document.querySelector("#orc-ed-cab .mod-mais-bt");
 if (_mm) _mm.hidden = false;
@@ -58133,7 +58137,7 @@ UI.toast("Não consegui instalar " + eI.nome + ": " + err.message, "erro");
 return;
 }
 if (t.dataset.aba) { this.aba = t.dataset.aba; this.render(); return; }
-if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; this.render(); return; }
+if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; if (typeof PlFixa !== "undefined") PlFixa.esquecerPosicao(); this.render(); return; }
 if (t.dataset.acao === "idx-toggle") {
 this._idxAberto = !this._idxAberto;
 try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
@@ -63975,6 +63979,7 @@ UI.toast("Orçamento “" + orc.nome + "” excluído.", "ok");
 },
 abrirOrcamento: function (id) {
 this._colMenuAberto = false;
+if (typeof PlFixa !== "undefined") PlFixa.esquecerPosicao();
 var orc = Store.obterOrcamento(Auth.empresaId(), id);
 if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
 if (this._orcForaDoEscopo(orc)) { UI.toast(Auth.msgOrcForaDoEscopo(), "erro", 9000); return; }

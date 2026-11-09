@@ -80,6 +80,8 @@
         var tudoRec = (orc.etapas || []).length > 0 && !(orc.etapas || []).some(function (e) { return !self.etapaRecolhida(orc.id, e.id); });
         btnTudo.textContent = tudoRec ? "\u25BE Expandir todas" : "\u25B8 Recolher todas";
       }
+      /* recolher etapa muda a altura da tabela sem passar pelo render (js/plfixa.js) */
+      try { if (typeof PlFixa !== "undefined") PlFixa.reavaliar(document.getElementById("main")); } catch (ePf2) {}
     },
 
     // ---------- Boot ----------
@@ -503,6 +505,7 @@
       this._gxDesligar();
       try { document.body.classList.remove("foco-crono"); } catch (eFc) {}
       var main = document.getElementById("main");
+      try { if (typeof PlFixa !== "undefined") PlFixa.antes(main); } catch (ePf) {}
       if (main) {
         main.innerHTML = '<div id="jan-recado" class="card" role="status"></div>';
         main.firstChild.textContent = this._janelaTexto;   // ⚠ texto puro: o id do endereço pode chegar aqui
@@ -863,6 +866,8 @@
          tools/e2e-crono-foco-sai.js prova as duas, cada uma com o seu controle
          negativo. */
       try { document.body.classList.remove("foco-crono"); } catch (eFc0) {}
+      /* Planilha com cabeçalho e total fixos: guarda a posição e solta o layout antes de o #main ser trocado (js/plfixa.js) */
+      try { if (typeof PlFixa !== "undefined") PlFixa.antes(document.getElementById("main")); } catch (ePf0) {}
       /* janela destacada: o recado (orçamento excluído, endereço inválido…)
          vence qualquer tela; com dado, o cabeçalho acompanha o carimbo */
       if (this._janela) {
@@ -1048,6 +1053,7 @@
            Modulo.ligar (carregado antes deste arquivo) o fecha antes do despacho. */
         var _maisAberto = !!document.querySelector("#orc-ed-cab .mod-mais-menu:not([hidden])");
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
+        try { if (typeof PlFixa !== "undefined") PlFixa.depois(main, this.orcAtual.id); } catch (ePf1) {}
         if (_maisAberto) {
           var _mm = document.querySelector("#orc-ed-cab .mod-mais-menu"), _mb = document.querySelector("#orc-ed-cab .mod-mais-bt");
           if (_mm) _mm.hidden = false;
@@ -2511,7 +2517,7 @@
          data-etapa-foco="" de proposito, e string vazia e falsy — com um
          `if (t.dataset.etapaFoco)` o proprio botao de limpar o filtro nao
          funcionaria. */
-      if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; this.render(); return; }
+      if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; if (typeof PlFixa !== "undefined") PlFixa.esquecerPosicao(); this.render(); return; }
       if (t.dataset.acao === "idx-toggle") {
         this._idxAberto = !this._idxAberto;
         try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
@@ -11450,6 +11456,7 @@
 
     abrirOrcamento: function (id) {
       this._colMenuAberto = false;
+      if (typeof PlFixa !== "undefined") PlFixa.esquecerPosicao();
       var orc = Store.obterOrcamento(Auth.empresaId(), id);
       if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
       /* ⚠ ESCOPO POR OBRA NA FUNÇÃO, NÃO SÓ NA LISTA (js/auth.js, "ESCOPO DOS

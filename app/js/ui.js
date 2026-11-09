@@ -1808,10 +1808,13 @@
       var _idx = _idxOn ? this._indiceEtapas(orc, _calcIdx) : "";
       /* a tabela SEMPRE mora num container que rola de lado (.pl-tabela):
          sem isso, no caminho sem índice, dar min-width à Descrição empurraria
-         a página inteira em vez de rolar só a planilha. */
+         a página inteira em vez de rolar só a planilha.
+         ⚠ O .pl-tabela abre SÓ antes do <table>, dentro da coluna .pl-col: ele é
+         a caixa que rola (js/plfixa.js), e o aviso de filtro e a faixa "Custo
+         MO/MAT/EQ" têm de ficar parados acima dela, junto com os títulos. */
       var _idxA = _idx ? this._indiceAlca() : null;
-      if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-tabela">';
-      else html += '<div class="pl-tabela">';
+      if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-col">';
+      else html += '<div class="pl-col">';
       var _foco = (typeof App !== "undefined") ? App._etapaFoco : "";
       if (_foco) {
         var _nomeFoco = "";
@@ -1844,7 +1847,7 @@
       var _catX = _lay.cat ? Colunas.categorias(orc, _c, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
       var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
       if (_catX) html += UI._faixaCobCat(_catX.cobertura);
-      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
+      html += '<div class="pl-tabela"><table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
         (_lay.pubdi ? '<th class="num pl-w1 col-nosso" title="Preço unitário COM BDI (' + Util.esc(Util.fmtPct(_c.pct)) + '), no mesmo arredondamento do orçamento. Ao lado, o Custo Unit é sem BDI.">Preço unit. c/ BDI</th>' : '') +
@@ -2095,8 +2098,8 @@
         UI._celulasCatSub(_lay, _catX && _catX.total) +
         '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
         '</tfoot></table>';
-      /* fecha o container: com índice foram dois divs (.pl-tabela + .pl-com-indice), sem índice foi só o .pl-tabela */
-      html += _idx ? '</div></div>' : '</div>';
+      /* fecha o .pl-tabela e o .pl-col; com índice, também o .pl-com-indice */
+      html += _idx ? '</div></div></div>' : '</div></div>';
       return html;
     },
 

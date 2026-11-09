@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.267",
+versao: "1.2.268",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -14903,8 +14903,8 @@ var _lay = (typeof Colunas !== "undefined") ? Colunas.layout(orc) : { pubdi: fal
 html = html.replace("<!--colmenu-->", (typeof Colunas !== "undefined") ? UI._menuColunas(orc, _calcIdx) : "");
 var _idx = _idxOn ? this._indiceEtapas(orc, _calcIdx) : "";
 var _idxA = _idx ? this._indiceAlca() : null;
-if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-tabela">';
-else html += '<div class="pl-tabela">';
+if (_idx) html += '<div class="pl-com-indice"' + _idxA.estilo + '>' + _idx + _idxA.alca + '<div class="pl-col">';
+else html += '<div class="pl-col">';
 var _foco = (typeof App !== "undefined") ? App._etapaFoco : "";
 if (_foco) {
 var _nomeFoco = "";
@@ -14919,7 +14919,7 @@ if (_lay.cat && typeof App !== "undefined" && App._colunasAnaGarantir) { try { A
 var _catX = _lay.cat ? Colunas.categorias(orc, _c, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
 var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
 if (_catX) html += UI._faixaCobCat(_catX.cobertura);
-html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
+html += '<div class="pl-tabela"><table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
 '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
 '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
 (_lay.pubdi ? '<th class="num pl-w1 col-nosso" title="Preço unitário COM BDI (' + Util.esc(Util.fmtPct(_c.pct)) + '), no mesmo arredondamento do orçamento. Ao lado, o Custo Unit é sem BDI.">Preço unit. c/ BDI</th>' : '') +
@@ -15090,7 +15090,7 @@ this._seloPrecisao(_c.modo) +
 UI._celulasCatSub(_lay, _catX && _catX.total) +
 '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
 '</tfoot></table>';
-html += _idx ? '</div></div>' : '</div>';
+html += _idx ? '</div></div></div>' : '</div></div>';
 return html;
 },
 _insumosSemPrecoDe: function (codigo) {
@@ -57065,6 +57065,130 @@ dataBase: s(c.dataBase)
 global.Licitacao = Licitacao;
 if (typeof module !== "undefined" && module.exports) module.exports = Licitacao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/plfixa.js ==== */
+try {
+(function (global) {
+"use strict";
+var TOPO_RECOLHE = 8;
+var SOBRA_MINIMA = 40;
+var PlFixa = {
+decidir: function (m) {
+if (m.recolhido) return m.top > 1;
+return m.top > TOPO_RECOLHE && m.max > m.altCab + SOBRA_MINIMA;
+},
+caixaCurta: function (m) { return m.max > 0 && m.max <= m.altCab + SOBRA_MINIMA; },
+deltaPx: function (delta, modo, alturaPagina) {
+var d = Number(delta) || 0;
+if (modo === 1) return d * 40;
+if (modo === 2) return d * (Number(alturaPagina) || 600);
+return d;
+},
+_estado: null,
+_orcId: null,
+_esquecerPos: false,
+esquecerPosicao: function () { this._esquecerPos = true; },
+_caixa: function (main) { return main && main.querySelector ? main.querySelector("#aba-conteudo .pl-tabela") : null; },
+antes: function (main) {
+if (!main || !main.classList) return;
+var pl = this._caixa(main);
+if (this._esquecerPos) { this._esquecerPos = false; this._estado = null; }
+else if (pl && main.classList.contains("pl-fixa")) {
+this._estado = { orcId: this._orcId, top: pl.scrollTop, left: pl.scrollLeft, rec: main.classList.contains("pl-cab-rec") };
+}
+main.classList.remove("pl-fixa");
+main.classList.remove("pl-cab-rec");
+},
+depois: function (main, orcId) {
+var pl = this._caixa(main);
+if (!pl) return;
+this._ligar(main);
+main.classList.add("pl-fixa");
+this._orcId = orcId;
+this._restaurar(main, pl, orcId);
+this._ajustar(main, pl);
+},
+reavaliar: function (main) {
+var pl = this._caixa(main);
+if (pl) this._ajustar(main, pl);
+},
+_restaurar: function (main, pl, orcId) {
+var e = this._estado;
+if (!e || e.orcId !== orcId) { this._estado = null; return; }
+if (e.rec) main.classList.add("pl-cab-rec");
+pl.scrollLeft = e.left;
+pl.scrollTop = e.top;
+if (pl.scrollTop <= 1) main.classList.remove("pl-cab-rec");
+},
+_ajustar: function (main, pl) {
+if (!main.classList.contains("pl-cab-rec")) {
+main.classList.add("pl-fixa");
+if (this.caixaCurta({ max: pl.scrollHeight - pl.clientHeight, altCab: this._altCab(main) })) main.classList.remove("pl-fixa");
+}
+this._medirBarra(main);
+this._medirFolgas(pl);
+},
+_medirFolgas: function (pl) {
+var th = pl.querySelector("thead"), tf = pl.querySelector("tfoot");
+if (!th || !tf) return;
+pl.style.scrollPaddingTop = (th.offsetHeight + 6) + "px";
+pl.style.scrollPaddingBottom = (tf.offsetHeight + 6) + "px";
+},
+_medirBarra: function (main) {
+var tp = global.document && global.document.getElementById("topbar");
+var invade = 0;
+if (tp) {
+var fundo = tp.getBoundingClientRect().bottom;
+for (var i = 0; i < tp.children.length; i++) {
+invade = Math.max(invade, Math.round(tp.children[i].getBoundingClientRect().bottom - fundo));
+}
+}
+main.style.setProperty("--pl-invade", invade + "px");
+},
+_altCab: function (main) {
+var soma = 0, kids = main.querySelectorAll(":scope > .mod-cab, :scope > .orc-cab, #aba-conteudo > .faixa-ajustes");
+for (var i = 0; i < kids.length; i++) {
+var cs = global.getComputedStyle(kids[i]);
+soma += kids[i].offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+}
+return soma;
+},
+_ligar: function (main) {
+if (main._plFixaLigado) return;
+main._plFixaLigado = true;
+var self = this;
+var agendado = false;
+global.addEventListener("resize", function () {
+if (agendado) return;
+agendado = true;
+global.requestAnimationFrame(function () { agendado = false; self.reavaliar(main); });
+});
+main.addEventListener("scroll", function (ev) {
+var pl = ev.target;
+if (!pl || !pl.classList || !pl.classList.contains("pl-tabela") || !main.classList.contains("pl-fixa")) return;
+var rec = main.classList.contains("pl-cab-rec");
+var quer = self.decidir({ recolhido: rec, top: pl.scrollTop, max: pl.scrollHeight - pl.clientHeight, altCab: rec ? 0 : self._altCab(main) });
+if (quer !== rec) {
+main.classList.toggle("pl-cab-rec", quer);
+if (!quer) self._ajustar(main, pl);
+}
+}, true);
+main.addEventListener("wheel", function (ev) {
+if (!main.classList.contains("pl-fixa") || ev.ctrlKey) return;
+var pl = self._caixa(main);
+if (!pl || pl.contains(ev.target)) return;
+if (main.scrollHeight > main.clientHeight + 1) return;
+for (var n = ev.target; n && n !== main; n = n.parentNode) {
+if (n.nodeType === 1 && n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(global.getComputedStyle(n).overflowY)) return;
+}
+pl.scrollTop += self.deltaPx(ev.deltaY, ev.deltaMode, pl.clientHeight);
+pl.scrollLeft += self.deltaPx(ev.deltaX, ev.deltaMode, pl.clientWidth);
+}, { passive: true });
+}
+};
+global.PlFixa = PlFixa;
+if (typeof module !== "undefined" && module.exports) module.exports = PlFixa;
+})(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/colunas.js ==== */
 try {

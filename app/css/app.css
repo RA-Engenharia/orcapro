@@ -776,6 +776,10 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .btn.success:hover { background: #15803d; box-shadow: none; }
 .btn.ghost { background: transparent; box-shadow: none; border-color: var(--linha); }
 .btn.ghost:hover { box-shadow: none; background-color: var(--surface-2); }
+/* ⚠ BOTÃO "LIGADO" NA BARRA DA PLANILHA (Normal, Etapas). `.ghost` vem depois de
+   `.primary` e levava o fundo embora, mas a letra branca ficava: branco no branco,
+   o botão sumia justamente quando estava ligado (visto na tela do Rogério, 08/11/2026). */
+.btn.ghost.primary, .btn.ghost.primary:hover { background: var(--aco); border-color: var(--aco); color: #fff; }
 .btn.danger { color: var(--vermelho); border-color: transparent; background: transparent; box-shadow: none; }
 .btn.danger:hover { background: rgba(220,38,38,.08); border-color: transparent; transform: none; box-shadow: none; }
 /* N2-FORTE — a ação consequente de uma faixa, que não é o primário da tela.
@@ -1831,6 +1835,17 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
 .topo-kbd { font-size: var(--t-micro); font-weight: var(--p-forte); letter-spacing: .4px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); border-radius: var(--raio-sm); padding: 1px 6px; opacity: .85; }
 .aviso-badge { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; border-radius: 999px; background: #dc2626; color: #fff; font-size: var(--t-micro); font-weight: var(--p-forte); display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--navy); }
 @media (max-width: 760px) { .topo-kbd { display: none; } .topo-ic-btn { padding: 7px 9px; } }
+/* ⚠ A BARRA DE CIMA NÃO PODE QUEBRAR LINHA enquanto a faixa dela tiver altura fixa.
+   De 821 px até uns 1150, com menu lateral, ela quebrava em duas linhas dentro de uma
+   faixa de 58 px (o grid só vira `auto` até 820) e passava 33 px por cima da tela: a
+   etiqueta da conta cobria o que estivesse no topo. Aqui os rótulos saem e os botões
+   viram só ícone, como já acontece até 760. Medido em tools/e2e-planilha-fixa.js. */
+@media screen and (min-width: 821px) and (max-width: 1180px) {
+  .topbar { flex-wrap: nowrap; gap: 10px; }
+  .topo-instalar-txt, .topo-kbd { display: none; }
+  .topo-ic-btn { padding: 7px 9px; }
+  .conta-btn .conta-nome { max-width: 110px; }
+}
 
 /* ---------- Busca universal (overlay Ctrl+K) ---------- */
 #busca-ov { position: fixed; inset: 0; background: rgba(8,18,30,.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: none; align-items: flex-start; justify-content: center; z-index: 70; padding: 10vh 16px 16px; animation: fadein .12s; }
@@ -2976,7 +2991,60 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
    `position:relative` é a âncora da alça, que é absoluta para não entrar no
    grid (como filho comum ela tomaria a 2ª coluna e empurraria a tabela). */
 .pl-com-indice { --idx-w: 232px; position: relative; display: grid; grid-template-columns: var(--idx-w) minmax(0, 1fr); gap: 14px; align-items: start; }
+.pl-col { min-width: 0; }
 .pl-tabela { min-width: 0; overflow-x: auto; }
+/* PLANILHA COM CABEÇALHO E TOTAL FIXOS (pedido do Rogério, 08/11/2026): só as
+   linhas andam; abas, botões, títulos das colunas, TOTAL GERAL e a barra de rolar
+   de lado ficam parados. A altura que sobra vai para a caixa da tabela, que rola
+   nos dois eixos, e o `sticky` faz o resto. O porquê está em js/plfixa.js.
+   ⚠ `pl-fixa` só existe com tabela na tela (PlFixa.depois) e sai no topo de todo
+   render: planilha vazia, outras abas e Gestão continuam rolando no #main.
+   ⚠ `@media screen`: o impresso precisa da tabela inteira, nunca de uma caixa
+   do tamanho da janela. E fora do celular: lá a altura mal cabe o cabeçalho, e a
+   caixa ficaria do tamanho de duas linhas. Sem a regra, a tela rola como sempre. */
+@media screen and (min-width: 821px) and (min-height: 480px) {
+  #main.pl-fixa { display: flex; flex-direction: column; padding-bottom: 10px; }
+  #main.pl-fixa > * { flex: 0 0 auto; min-width: 0; }
+  #main.pl-fixa > .tabs { margin-bottom: 10px; }
+  /* ⚠ `min-height` e não 0: em janela baixa, com o resumo aberto, a tabela não some.
+     O #main (overflow: auto) rola o que passar, e ninguém fica sem caminho. */
+  #main.pl-fixa > #aba-conteudo { flex: 1 1 0; min-height: 220px; display: flex; flex-direction: column; }
+  #main.pl-fixa > #aba-conteudo > * { flex: 0 0 auto; min-width: 0; }
+  #main.pl-fixa > #aba-conteudo > .mb { margin-bottom: 6px; }
+  #main.pl-fixa > #aba-conteudo > .pl-col,
+  #main.pl-fixa > #aba-conteudo > .pl-com-indice { flex: 1 1 0; min-height: 0; }
+  #main.pl-fixa .pl-col { display: flex; flex-direction: column; min-height: 0; }
+  #main.pl-fixa .pl-col > * { flex: 0 0 auto; }
+  /* ⚠ Até 1100 px, `.main table.tbl` vira display:block com overflow próprio. Aí a
+     tabela é a caixa de rolagem, o sticky gruda nela e títulos e total somem
+     (medido em 1000 x 800, seção 6 da e2e-planilha-fixa). Aqui quem rola é o .pl-tabela. */
+  #main.pl-fixa table.tbl-plan { display: table; overflow: visible; }
+  #main.pl-fixa .pl-col > .pl-tabela { flex: 1 1 0; min-height: 0; overflow: auto;
+    /* ⚠ quem cai no foco (Tab entre células, ir para um item) não pode parar
+       debaixo dos títulos nem do total, que agora ficam por cima das linhas */
+    scroll-padding: 48px 0 64px; }
+  #main.pl-fixa .pl-com-indice { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  #main.pl-fixa .idx-etapas { position: static; max-height: 100%; }
+  /* a linha da alça do índice media a janela inteira e estouraria a caixa */
+  #main.pl-fixa .pl-com-indice > [data-pn-alca="idxLargura"]::after { position: static; height: 100%; }
+  /* ⚠ `border-collapse: collapse` deixa a borda para trás quando a célula gruda:
+     sem a sombra, as linhas passam sem nenhum fio separando dos títulos */
+  #main.pl-fixa table.tbl-plan thead th { box-shadow: inset 0 -1px 0 var(--linha-forte); }
+  /* ⚠ No tfoot, não no td: com o BDI sobre o preço final são 3 linhas de total,
+     e no td cada uma precisaria saber a altura das de baixo. */
+  #main.pl-fixa table.tbl-plan tfoot { position: sticky; bottom: 0; z-index: 3; }
+  #main.pl-fixa table.tbl-plan tfoot td { box-shadow: inset 0 1px 0 var(--linha-forte); }
+  /* o resumo sai quando a pessoa rola e volta ao chegar no topo (PlFixa.decidir) */
+  /* --pl-invade: o quanto a barra de cima passa para dentro do #main (PlFixa._medirBarra) */
+  #main.pl-fixa.pl-cab-rec { padding-top: calc(10px + var(--pl-invade, 0px)); }
+  #main.pl-fixa.pl-cab-rec > .mod-cab,
+  #main.pl-fixa.pl-cab-rec > .orc-cab,
+  #main.pl-fixa.pl-cab-rec > #aba-conteudo > .faixa-ajustes { display: none; }
+}
+/* no índice encolhido em fita (até 1100 px) são duas linhas: fita e tabela */
+@media screen and (min-width: 821px) and (max-width: 1100px) and (min-height: 480px) {
+  #main.pl-fixa .pl-com-indice { grid-template-rows: auto minmax(0, 1fr); }
+}
 .idx-etapas { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px;
   max-height: calc(100vh - 120px); overflow-y: auto;
   background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio); padding: 6px; }
