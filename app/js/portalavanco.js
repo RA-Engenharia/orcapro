@@ -54,7 +54,9 @@
        "Não iniciado" afirmaria ao contratante o que o sistema não sabe */
     if (pct === 0 && !n.avanco) pct = null;
     return { id: n.id == null ? "" : String(n.id), etapa: String(n.nome || ""),
-      inicio: dia(ref.ini), fim: dia(ref.fim), realInicio: dia(real.ini), realFim: dia(real.fim), pct: pct };
+      inicio: dia(ref.ini), fim: dia(ref.fim), realInicio: dia(real.ini), realFim: dia(real.fim), pct: pct,
+      /* quanto a linha de base previa até a data de corte; null = fora da base */
+      previstoPct: num(n.previstoPct) };
   }
 
   /* ---------- a curva do que foi lançado ----------
@@ -199,8 +201,8 @@
           return i && Number(i.quantidade) > 0 && !ITEM_INTERNO.test(String(i.descricao || ""));
         });
         if (!itens.length) {
-          saida.push({ chave: "plano|" + n.id, etapaId: n.id, etapa: n.etapa, descricao: "Etapa completa (sem item de quantidade no orçamento)", unidade: "",
-            qtdPrevista: null, qtdAcumulada: null, qtdSaldo: null, pctAcumulado: n.pct, realInicio: n.realInicio, realFim: n.realFim });
+          saida.push({ chave: "plano|" + n.id, etapaId: n.id, etapa: n.etapa, descricao: "Etapa inteira (sem item de quantidade no orçamento)", unidade: "",
+            qtdPrevista: null, qtdAcumulada: null, qtdSaldo: null, pctAcumulado: n.pct, previstoPct: n.previstoPct, realInicio: n.realInicio, realFim: n.realFim });
           return;
         }
         /* como a EAP do cronograma: subetapa só vale se for DESTA etapa, e o item
@@ -218,6 +220,8 @@
           var feito = pct === null ? null : Math.round(q * Math.max(0, Math.min(100, pct))) / 100;
           saida.push({ chave: "plano|" + String(i.id), etapaId: n.id, etapa: n.etapa, descricao: String(i.descricao || "").slice(0, 240), unidade: String(i.unidade || ""),
             qtdPrevista: q, qtdAcumulada: feito, qtdSaldo: feito === null ? null : Math.max(0, Math.round((q - feito) * 100) / 100) + 0, pctAcumulado: pct,
+            previstoPct: no ? no.previstoPct : (temFolha ? null : n.previstoPct),
+            previstoPct: no ? no.previstoPct : (temFolha ? null : n.previstoPct),
             realInicio: (no && no.realInicio) || n.realInicio, realFim: (no && no.realFim) || n.realFim });
         });
       });
@@ -261,7 +265,7 @@
       nos.forEach(function (n) {
         if (n && n.tipo !== "etapa" && n.id != null && !n.opcionalFora && !n.sumiuDoAtual) {
           var ln = linhaEtapa(n);
-          pctNos[ln.id] = { pct: ln.pct, realInicio: ln.realInicio, realFim: ln.realFim };
+          pctNos[ln.id] = { pct: ln.pct, realInicio: ln.realInicio, realFim: ln.realFim, previstoPct: ln.previstoPct };
         }
       });
       return { temPlano: temPlano, temAvanco: temAvanco, pct: temAvanco ? po.pct : null,

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.271",
+versao: "1.2.272",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -63467,7 +63467,8 @@ var pct = num(n.realPct);
 if (pct === null && n.avanco) pct = num(n.avanco.pct);
 if (pct === 0 && !n.avanco) pct = null;
 return { id: n.id == null ? "" : String(n.id), etapa: String(n.nome || ""),
-inicio: dia(ref.ini), fim: dia(ref.fim), realInicio: dia(real.ini), realFim: dia(real.fim), pct: pct };
+inicio: dia(ref.ini), fim: dia(ref.fim), realInicio: dia(real.ini), realFim: dia(real.fim), pct: pct,
+previstoPct: num(n.previstoPct) };
 }
 function realizadoDoAvanco(nos, eixo, corte, pctFinal) {
 var fimEixo = -1, i;
@@ -63574,8 +63575,8 @@ var itens = arr(e.itens).filter(function (i) {
 return i && Number(i.quantidade) > 0 && !ITEM_INTERNO.test(String(i.descricao || ""));
 });
 if (!itens.length) {
-saida.push({ chave: "plano|" + n.id, etapaId: n.id, etapa: n.etapa, descricao: "Etapa completa (sem item de quantidade no orçamento)", unidade: "",
-qtdPrevista: null, qtdAcumulada: null, qtdSaldo: null, pctAcumulado: n.pct, realInicio: n.realInicio, realFim: n.realFim });
+saida.push({ chave: "plano|" + n.id, etapaId: n.id, etapa: n.etapa, descricao: "Etapa inteira (sem item de quantidade no orçamento)", unidade: "",
+qtdPrevista: null, qtdAcumulada: null, qtdSaldo: null, pctAcumulado: n.pct, previstoPct: n.previstoPct, realInicio: n.realInicio, realFim: n.realFim });
 return;
 }
 var valida = {}, temFolha = !!nos[String(e.id) + "~g"];
@@ -63590,6 +63591,8 @@ var q = Number(i.quantidade);
 var feito = pct === null ? null : Math.round(q * Math.max(0, Math.min(100, pct))) / 100;
 saida.push({ chave: "plano|" + String(i.id), etapaId: n.id, etapa: n.etapa, descricao: String(i.descricao || "").slice(0, 240), unidade: String(i.unidade || ""),
 qtdPrevista: q, qtdAcumulada: feito, qtdSaldo: feito === null ? null : Math.max(0, Math.round((q - feito) * 100) / 100) + 0, pctAcumulado: pct,
+previstoPct: no ? no.previstoPct : (temFolha ? null : n.previstoPct),
+previstoPct: no ? no.previstoPct : (temFolha ? null : n.previstoPct),
 realInicio: (no && no.realInicio) || n.realInicio, realFim: (no && no.realFim) || n.realFim });
 });
 });
@@ -63621,7 +63624,7 @@ var pctNos = {};
 nos.forEach(function (n) {
 if (n && n.tipo !== "etapa" && n.id != null && !n.opcionalFora && !n.sumiuDoAtual) {
 var ln = linhaEtapa(n);
-pctNos[ln.id] = { pct: ln.pct, realInicio: ln.realInicio, realFim: ln.realFim };
+pctNos[ln.id] = { pct: ln.pct, realInicio: ln.realInicio, realFim: ln.realFim, previstoPct: ln.previstoPct };
 }
 });
 return { temPlano: temPlano, temAvanco: temAvanco, pct: temAvanco ? po.pct : null,
