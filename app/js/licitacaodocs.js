@@ -454,6 +454,8 @@
       rtCrea: pega("rtCrea", "CREA do responsável técnico", emp.crea),
       timbradoTopo: s(emp.timbradoTopo) || s(emp.logo),
       timbradoFundo: s(emp.timbradoFundo),
+      timbradoPagina: s(emp.timbradoPagina),
+      timbradoMargens: emp.timbradoMargens || null,
       certame: emp._certame === true,
       faltando: faltando
     };
@@ -473,6 +475,8 @@
     CAMPOS_EMP.forEach(function (k) { o[k] = s(l[k]); });
     var tb = Lc.timbradoDe ? Lc.timbradoDe(l.cnpj) : { topo: "", fundo: "" };
     o.timbradoTopo = tb.topo; o.timbradoFundo = tb.fundo;
+    /* papel timbrado de página inteira (A4 com logo e rodapé): fundo de cada folha, com as margens que ele deixa livres */
+    o.timbradoPagina = s(tb.pagina); o.timbradoMargens = tb.pagina ? (tb.margens || null) : null;
     return o;
   }
 
@@ -579,11 +583,16 @@
     var tab = leitura && leitura.tabelas ? leitura.tabelas : {};
     var tabelaRef = s(tab.seinfra) ? ("SEINFRA " + s(tab.seinfra)) : (s(tab.sinapi) ? ("SINAPI " + s(tab.sinapi)) : "");
     var baseOk = null;
+    /* O edital CE 012 (p. 13) exige "inclusive as composições de preços unitários auxiliares": a exigência vem das bases exigidas que citam a
+       SEINFRA OU da tabela SEINFRA que o projeto usa (`tabelas.seinfra`). Sem nenhuma das duas (Sangão, 7.20), as auxiliares não são exigidas. */
+    var baseExigida = !!s(tab.seinfra) || (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).some(function (b) { return /SEINFRA/i.test(s(b && b.fonte)); });
     if (base) {
       if (s(tab.seinfra) && norm(base.mes) !== norm(tab.seinfra)) {
         pend.dados.push("A base de referência carregada é a tabela " + base.mes + ", e o projeto usa a SEINFRA " + s(tab.seinfra) + ": descrições e composições auxiliares da base NÃO foram usadas.");
       } else baseOk = base;
-    } else {
+    } else if (baseExigida) {
+      /* O item 7.20 do edital NÃO pede a abertura das auxiliares: este aviso só existe quando o edital/licitação EXIGE a base de
+         referência (SEINFRA) para abri-las. Sem exigência, ficar sem ela não é pendência. */
       pend.dados.push("Base de referência (composições auxiliares) não carregada: as composições auxiliares saem sem detalhamento e as descrições ficam como lidas.");
     }
 
@@ -660,22 +669,40 @@
       }
       var fonteRaw = s(it.baseFonte || it.origem || "");
       var ehSeinfra = /SEINFRA/i.test(fonteRaw);
-      var propria = !!(it.composicaoOrgao && it.composicaoOrgao.propria) || /PROPRI/i.test(fonteRaw);
+      /* custo editado à mão (ou por Fechar valor / orçar sozinho) deixa de ser o do órgão: nem o total impresso por ele nem a nota "já na planilha do
+         órgão" valem mais (revisão de 09/11/2026, M5). O custo do órgão: it.orgao.custo ou o preço de referência sem BDI do pacote. */
+      var orgCusto = (it.orgao && typeof it.orgao === "object" && it.orgao.custo != null) ? nm(it.orgao.custo) : (nm(it.precoReferenciaSemBdi) > 0 ? nm(it.precoReferenciaSemBdi) : null);
+      var custoIgualOrgao = orgCusto === null || Math.abs(nm(Ln.custoUnitario) - orgCusto) <= 0.011;
+      var propriaOrgao = !!(it.composicaoOrgao && it.composicaoOrgao.propria);
+      var propria = propriaOrgao || /PROPRI/i.test(fonteRaw);
       var ins = (Array.isArray(it.insumos) ? it.insumos : []).map(function (x) {
         var cod = s(x.codigo), cat = catDe(x), eh = String(x.tipo || "").toUpperCase() !== "COMPOSICAO";
         var d = (/SEINFRA/i.test(s(x.fonte)) || ehSeinfra) ? descPelaBase(cod, x.descricao, eh) : s(x.descricao);
         var un = s(x.unidade);
         if (!un && baseOk) { var rg = eh ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(cod)); if (rg && parecido(d, rg.descricao) >= LIM_PARECIDO) un = s(rg.unidade); }
         var co = nm(x.coeficiente), cu = nm(x.custoUnitario);
-        return { codigo: cod, descricao: d, unidade: un, fonte: s(x.fonte), coef: co, cu: cu, ct: co * cu, cat: cat, composicao: !eh };
+        /* total impresso pelo órgão nesta linha (ele trunca cada linha): só vale se veio no pacote como número */
+        var cto = (x.custoTotalOrgao !== undefined && x.custoTotalOrgao !== null && x.custoTotalOrgao !== "" && isFinite(Number(x.custoTotalOrgao))) ? Number(x.custoTotalOrgao) : null;
+        return { codigo: cod, descricao: d, unidade: un, fonte: s(x.fonte), coef: co, cu: cu, ct: co * cu, ctOrg: cto, cat: cat, composicao: !eh };
       });
-      var cats = { MO: 0, MAT: 0, EQ: 0, OUTROS: 0 };
+      var cats = { MO: 0, MAT: 0, EQ: 0, OUTROS: 0 }, auxRaw = 0;
       if (ins.length) {
-        ins.forEach(function (x) { cats[x.cat] += Ln.quantidade * x.ct; });
+        ins.forEach(function (x) {
+          var val = Ln.quantidade * x.ct;
+          if (x.composicao && x.cat === "OUTROS") {
+            /* composição AUXILIAR (SINAPI) dentro da composição do órgão: se o analítico carregado é o da mesma UF, competência e
+               regime, reparte MO/MAT/EQ pela proporção da própria auxiliar (mesma regra dos itens sem composição); senão fica em
+               "outros", identificada (o detalhe da conferência diz quanto). */
+            var pa = proporcaoDaBase({ origem: x.fonte || "SINAPI", baseFonte: x.fonte, codigo: x.codigo, unidade: x.unidade }, x.fonte);
+            if (pa) { cats.MO += val * pa.mo; cats.MAT += val * pa.mat; cats.EQ += val * pa.eq; if (pa.compDif) compDif.n++; return; }
+            auxRaw += val;
+          }
+          cats[x.cat] += val;
+        });
         /* O custo unitário do item vem arredondado (1,38) e a composição soma 1,3845: em 25 mil m² isso é dinheiro.
            As categorias repartem o custo da PLANILHA, na proporção da composição, para o resumo fechar com ela. */
         var somaI = cats.MO + cats.MAT + cats.EQ + cats.OUTROS;
-        if (somaI > 0) CATS.forEach(function (c) { cats[c] = cats[c] * Ln.custoTotal / somaI; });
+        if (somaI > 0) { CATS.forEach(function (c) { cats[c] = cats[c] * Ln.custoTotal / somaI; }); auxRaw = auxRaw * Ln.custoTotal / somaI; }
       } else {
         /* sem composição: a parcela do próprio item (MO/MAT/EQ), se ele tiver; senão tudo em OUTROS, marcado */
         var rep = Orc.repartirCusto ? Orc.repartirCusto(it, Ln.custoTotal) : null;
@@ -691,9 +718,9 @@
         numero: numeroDoc, seq: s(Ln.numero), etapaIdx: Ln.etapaIdx, codigo: s(Ln.codigo),
         descricao: ehSeinfra ? descPelaBase(Ln.codigo, Ln.descricao, false) : s(Ln.descricao),
         descricaoLida: s(Ln.descricao),
-        unidade: s(Ln.unidade), fonte: propria ? "PRÓPRIA" : fonteRaw.toUpperCase(),
+        unidade: s(Ln.unidade), fonte: propriaOrgao ? "PRÓPRIO" : (propria ? "PRÓPRIA" : fonteRaw.toUpperCase()),
         quantidade: Ln.quantidade, cu: Ln.custoUnitario, pu: Ln.precoUnit, ct: Ln.custoTotal, pt: Ln.precoTotal,
-        insumos: ins, cats: cats, propria: propria, id: Ln.itemId, refMax: null
+        insumos: ins, cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null
       };
       try { var rf = Lic.refDoItem ? Lic.refDoItem(orc, it) : null; if (rf && rf.comBdi > 0) linhaI.refMax = rf.comBdi; } catch (eRf) {}
       itens.push(linhaI);
@@ -759,7 +786,7 @@
       var semComp = !I.insumos.length && I.cats.OUTROS > 0;
       if (semComp) custoItens.semComposicao++;
       if (!(cc.OUTROS >= ctI - 0.005 && cc.MAT === 0 && cc.MO === 0 && cc.EQ === 0)) custoItens.todosOutros = false;
-      var L = { numero: I.numero, fonte: I.fonte, etapaIdx: I.etapaIdx, codigo: I.codigo, descricao: I.descricao, MAT: cc.MAT, MO: cc.MO, EQ: cc.EQ, OUTROS: cc.OUTROS, ct: ctI, bdi: arr(ptI - ctI, 2), pt: ptI, semComposicao: semComp };
+      var L = { numero: I.numero, fonte: I.fonte, etapaIdx: I.etapaIdx, codigo: I.codigo, descricao: I.descricao, MAT: cc.MAT, MO: cc.MO, EQ: cc.EQ, OUTROS: cc.OUTROS, ct: ctI, bdi: arr(ptI - ctI, 2), pt: ptI, semComposicao: semComp, doOrgao: !!I.doOrgao, auxOutros: arr(Math.min(Math.max(I.auxOutros || 0, 0), cc.OUTROS), 2) };
       custoItens.linhas.push(L);
       ["MAT", "MO", "EQ", "OUTROS", "ct", "bdi", "pt"].forEach(function (c) { custoItens.tot[c] = arr(custoItens.tot[c] + L[c], 2); });
     });
@@ -793,8 +820,13 @@
       data: dataExtensoUpper(opcoes.data), prazo: "",
       validade: vEd ? validadeExt(vEd) : (vTxt || validadeExt(vCom)),
       validadeInicio: contagemValidade(lic.validadeInicio),
-      prazoInicio: s(opcoes.prazoInicio) || "5 (CINCO)"
+      prazoInicio: s(opcoes.prazoInicio)   // sem valor padrão escondido: sem opcoes.prazoInicio a frase de início não existe
     };
+    /* CARTA DO EDITAL: se o pacote traz `carta_do_edital` ({nome, pagina}), a carta de apresentação é a do modelo do edital, preenchida no
+       CertamePRO, e o documento NÃO sai com a carta do OrçaPRO (começa no Resumo). Os dados que só a carta usa deixam de ser pendência. */
+    var cartaEd = (lic.cartaDoEdital && typeof lic.cartaDoEdital === "object" && s(lic.cartaDoEdital.nome)) ? { nome: s(lic.cartaDoEdital.nome), pagina: lic.cartaDoEdital.pagina || null } : null;
+    if (cartaEd) pend.dados.push("A carta de apresentação é a do modelo do edital (" + cartaEd.nome + "), preenchida no CertamePRO.");
+    var rotCarta = cartaEd ? "o orçamento" : "a carta";
     /* PRAZO DA CARTA. Com o prazo em dias lido do edital, a carta usa ELE ("120 (cento e vinte) dias"); o texto do comercial do
        orçamento não manda sobre ele. Se o texto existir e divergir (ou não der para converter em dias), avisa com os dois e a
        conferência do prazo reprova. Sem prazo em dias: o texto, como sempre, e a conferência fica "não conferido". */
@@ -803,19 +835,19 @@
       cab.prazo = prazoExt(prazoDias + " dias");
       if (txtPrazo && diasTxt !== prazoDias) {
         prazoDiverge = true;
-        pend.dados.push("Prazo de execução: a carta usa " + cab.prazo + " (lido do edital), e o prazo do orçamento diz \"" + txtPrazo + "\"" + (diasTxt != null ? " (" + diasTxt + " dias)" : " (não consegui converter em dias)") + ". Conferir qual vale.");
+        pend.dados.push("Prazo de execução: " + rotCarta + " usa " + cab.prazo + " (lido do edital), e o prazo do orçamento diz \"" + txtPrazo + "\"" + (diasTxt != null ? " (" + diasTxt + " dias)" : " (não consegui converter em dias)") + ". Conferir qual vale.");
       }
     } else cab.prazo = prazoExt(txtPrazo);
-    if (!cab.prazo) pend.preencher.push("prazo de execução (comercial do orçamento)");
-    if (!cab.validade) pend.preencher.push("validade da proposta (o pacote não trouxe a validade do edital e o orçamento não tem validade em dias)");
+    if (!cab.prazo && !cartaEd) pend.preencher.push("prazo de execução (comercial do orçamento)");
+    if (!cab.validade && !cartaEd) pend.preencher.push("validade da proposta (o pacote não trouxe a validade do edital e o orçamento não tem validade em dias)");
     if (vEd) {
       var outrosV = [];
       if (vCom && vCom !== vEd) outrosV.push("o orçamento diz " + vCom + " dias");
       if (vTxt && diasDoTexto(vTxt) !== vEd) outrosV.push("o texto informado diz \"" + vTxt + "\"");
-      if (outrosV.length) pend.dados.push("Validade da proposta: a carta usa " + cab.validade + " (lido do edital), e " + outrosV.join("; ") + ". A carta segue o edital; conferir.");
+      if (outrosV.length) pend.dados.push("Validade da proposta: " + rotCarta + " usa " + cab.validade + " (lido do edital), e " + outrosV.join("; ") + ". " + (cartaEd ? "Vale o edital" : "A carta segue o edital") + "; conferir.");
     }
     if (objInfo.invalido) pend.preencher.push("objeto da licitação (" + objInfo.motivo + "; o pacote não trouxe o objeto do edital)");
-    emp.faltando.forEach(function (f) { pend.preencher.push(f); });
+    emp.faltando.forEach(function (f) { if (cartaEd && /^(inscrição municipal|banco|agência|conta corrente)$/i.test(f)) return; pend.preencher.push(f); });
     /* o que o CertamePRO avisou sobre o cadastro da empresa do certame (campo, texto, link) */
     (Array.isArray(lic.licitantePendencias) ? lic.licitantePendencias : []).forEach(function (p) {
       if (!p || typeof p !== "object") return;
@@ -827,7 +859,7 @@
     var tbs = lic.licitanteTimbrado;
     if (emp.certame && tbs && tbs.guardou === false) pend.preencher.push("timbrado: o navegador não conseguiu guardar a imagem (armazenamento cheio). Ela vale só até fechar esta página; importe o pacote de novo antes de gerar o documento.");
     if (emp.certame && tbs && tbs.descartados > 0) pend.dados.push("Timbrado: para guardar o desta empresa, " + tbs.descartados + " timbrado(s) de outra(s) empresa(s) mais antigo(s) foi(ram) removido(s) deste navegador. Importe o pacote da outra empresa de novo se for usá-la.");
-    if (emp.certame && !emp.timbradoTopo) {
+    if (emp.certame && !emp.timbradoTopo && !emp.timbradoPagina) {
       /* três causas diferentes, três avisos: despejado do navegador depois (a importação o guardou), recusado por tamanho, ou nunca veio */
       var motTb = (tbs && tbs.topo === true) ? "foi removido deste navegador por falta de espaço; importe o pacote de novo"
         : ((tbs && tbs.recusadas > 0) ? "passou do limite de tamanho e não foi guardado" : "não veio no pacote");
@@ -1065,7 +1097,8 @@
     });
 
     var auxSem = aux.filter(function (a) { return !a.reg; });
-    if (auxSem.length) pend.dados.push(auxSem.length + " composição(ões) auxiliar(es) sem detalhamento na base: " + auxSem.map(function (a) { return a.codigo; }).join(", ") + ".");
+    /* mesma regra do aviso de "base não carregada": o edital 7.20 não pede a abertura das auxiliares, então a lista só é pendência quando a base é exigida */
+    if (auxSem.length && baseExigida) pend.dados.push(auxSem.length + " composição(ões) auxiliar(es) sem detalhamento na base: " + auxSem.map(function (a) { return a.codigo; }).join(", ") + ".");
     var dl = lic.descontoLinear;
     if (dl && dl.incidencia) {
       var rotInc = dl.incidencia === "MAT" ? "no material" : (dl.incidencia === "MO" ? "na mão de obra" : "no equipamento");
@@ -1079,10 +1112,12 @@
       valor: valor, valorExtenso: extenso, cab: cab, emp: emp, bdiPct: bdiPct, tabelaRef: tabelaRef,
       base: baseOk ? { tabela: baseOk.tabela, mes: baseOk.mes, uf: baseOk.uf, desonerado: baseOk.desonerado, fonte: baseOk.fonte } : null,
       etapas: porEtapa, itens: itens, tot: tot, somaCats: somaCats, difCats: difCats, custoItens: custoItens,
+      baseExigida: baseExigida,
+      consumoNoAnalitico: !!(leitura && leitura.composicoes_orgao && itens.length && itens.every(function (I) { return I.doOrgao; })),
       aux: aux, quant: qLista, curva: curva, crono: crono, bdi: bdi, enc: enc, prazoDias: prazoDias, cronoSemPrazo: cronoSemPrazo, valorMaximo: num0(lic.valorEstimado),
       objetoInfo: objInfo, validadeDias: vEd || vCom || 0, validadeEdital: !!vEd,
       pend: pend, descTrocadas: descTrocadas, prazoTexto: txtPrazo, prazoDiverge: prazoDiverge, prazoDiasTexto: diasTxt,
-      desconto: lic.descontoLinear || lic.descontoItens || null
+      desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd
     };
 
     /* ---- UM valor só ---- */
@@ -1092,7 +1127,10 @@
       if (!(x.pu > 0)) ruins.push("item " + x.numero + " com preço " + R(x.pu));
       if (x.insumos.length) {
         var so = 0; x.insumos.forEach(function (i) { so += i.ct; });
-        if (Math.abs(so - x.cu) > Math.max(0.02, x.cu * 0.01)) ruins.push("item " + x.numero + " (" + x.codigo + "): a composição soma " + R(so) + " e o custo na planilha é " + R(x.cu));
+        /* Composição lida da planilha analítica do órgão: ele trunca cada linha ao centavo, e coeficiente x valor pode passar da tolerância com a
+           conta dele certa (Sangão 2.1.1: 1,9705 x 1,95). O excesso aceito é só o que o truncamento explica: até R$ 0,01 por linha, nunca para menos. */
+        var porTrunc = x.doOrgao && so >= x.cu && (so - x.cu) <= 0.01 * x.insumos.length + 1e-9;
+        if (!porTrunc && Math.abs(so - x.cu) > Math.max(0.02, x.cu * 0.01)) ruins.push("item " + x.numero + " (" + x.codigo + "): a composição soma " + R(so) + " e o custo na planilha é " + R(x.cu));
       }
     });
     if (ruins.length) return { ok: false, erro: "O pacote não pode sair assim: " + ruins.slice(0, 5).join("; ") + (ruins.length > 5 ? " e mais " + (ruins.length - 5) : "") + ". Use o desconto por item ou desfaça a alteração manual do preço.", divergencias: ruins };
@@ -1134,13 +1172,38 @@
       var fecha = Math.abs(arr(cT.MAT + cT.MO + cT.EQ + cT.OUTROS, 2) - arr(tot.semBdi, 2)) < 0.005 && Math.abs(cT.pt - arr(d.valor, 2)) < 0.005;
       var emOutros = ci.linhas.filter(function (L) { return L.OUTROS > 0.005; });
       var pctOutros = tot.semBdi > 0 ? cT.OUTROS / tot.semBdi * 100 : 0;
-      var estCat = (!fecha || ci.todosOutros) ? "reprovado" : ((emOutros.length || (ci.compDif && ci.compDif.n)) ? "nao_conferido" : "ok");
+      /* "ok" quando TODOS os itens têm composição e as colunas fecham, MESMO com parcela em "outros" de serviço (ex.: limpeza de fossa) ou
+         de composição auxiliar sem repartição: o detalhe diz quanto e por quê. Item sem composição continua "não conferido". */
+      var semCompL = ci.linhas.filter(function (L) { return L.semComposicao; });
+      var auxOut = 0, servOut = 0, nAuxOut = 0, nServOut = 0;
+      emOutros.forEach(function (L) {
+        if (L.semComposicao || !L.doOrgao) return;
+        var a = Math.min(L.auxOutros || 0, L.OUTROS), sv = arr(L.OUTROS - a, 2);
+        if (a > 0.005) { auxOut += a; nAuxOut++; }
+        if (sv > 0.005) { servOut += sv; nServOut++; }
+      });
+      /* O VERDE tem condição dupla (revisão de 09/11/2026): TODOS os itens são composição do ÓRGÃO (composicaoOrgao) e o que ficou em "outros"
+         (serviço + auxiliar sem repartição) é no máximo 2% do custo direto. Item com composição própria (sem composicaoOrgao) e custo em "outros"
+         nunca é verde: nada garante que "outros" seja serviço que o órgão publica como um valor só. */
+      var todosOrgao = ci.linhas.length > 0 && ci.linhas.every(function (L) { return L.doOrgao; });
+      var outrosTot = arr(auxOut + servOut, 2), pctOut = tot.semBdi > 0 ? outrosTot / tot.semBdi * 100 : 0;
+      var foraOrgaoOutros = ci.linhas.filter(function (L) { return !L.doOrgao && L.OUTROS > 0.005 && !L.semComposicao; });
+      var estCat = (!fecha || ci.todosOutros) ? "reprovado"
+        : ((semCompL.length || (ci.compDif && ci.compDif.n)) ? "nao_conferido"
+          : (!emOutros.length ? "ok" : ((todosOrgao && pctOut <= 2 + 1e-9) ? "ok" : "nao_conferido")));
       add("Custos de material, mão de obra e equipamento", estCat,
         "Seção \"Custos por item\": material " + R(cT.MAT) + "; mão de obra " + R(cT.MO) + "; equipamento " + R(cT.EQ) + "; outros " + R(cT.OUTROS) +
           (ci.porProporcao ? ". " + ci.porProporcao + " de " + ci.linhas.length + " item(ns) sem composição no pacote repartidos pela proporção da base " + ci.fonteProporcao + " do mesmo código" : "") +
           (ci.compDif && ci.compDif.n ? ". " + ci.compDif.n + " deles pela SINAPI " + ci.compDif.base + ", e o órgão usa " + ci.compDif.orgao + ": a proporção pode diferir, conferir" : "") +
           (ci.semComposicao ? ". " + ci.semComposicao + " de " + ci.linhas.length + " item(ns) sem composição no pacote (custo inteiro em \"outros\")" : "") +
           (ci.todosOutros ? ". Todos os itens caíram em \"outros\": não há custo por categoria" : "") +
+          (estCat !== "reprovado" && (nAuxOut || nServOut) ? ". Nos itens COM composição, o que ficou em \"outros\" (" + R(arr(auxOut + servOut, 2)) + "): " +
+            (nServOut ? R(arr(servOut, 2)) + " de serviço contratado (" + nServOut + " item(ns), a composição do órgão traz o serviço como um valor só)" : "") +
+            (nServOut && nAuxOut ? " e " : "") +
+            (nAuxOut ? R(arr(auxOut, 2)) + " de composição auxiliar sem repartição (" + nAuxOut + " item(ns); sem o analítico da MESMA UF carregado. Competência diferente é apontada, e o regime (onerado ou não) não é conferido)" : "") +
+            (nServOut || nAuxOut ? "; " + P(pctOut) + " do custo direto, e o verde vale até 2%" : "") : "") +
+          (foraOrgaoOutros.length ? ". " + foraOrgaoOutros.length + " item(ns) com composição própria (sem composição do órgão) têm custo em \"outros\": nada garante que seja serviço publicado como valor único" : "") +
+          (!todosOrgao && ci.linhas.length ? ". Nem todos os itens vêm da composição do órgão" : "") +
           (estCat === "nao_conferido" ? ". " + emOutros.length + " de " + ci.linhas.length + " item(ns) ficaram com custo em \"outros\" (" + P(pctOutros) + " do custo direto): conferir a composição desses itens. Itens em outros (número, código, fonte, valor): " + lista(emOutros.map(function (L) { return L.numero + ", " + (L.codigo || "sem código") + ", " + (L.fonte || "sem fonte") + ", " + R(L.OUTROS); }), 30) : "") +
           (!fecha ? ". As colunas não fecham com o custo direto e o preço da proposta" : "") + ".");
     }
@@ -1179,17 +1242,17 @@
 
     var oi = d.objetoInfo;
     if (oi) {
-      if (oi.invalido) add("Objeto", "reprovado", "O objeto da carta ficou [PREENCHER: objeto]: " + oi.motivo + ". O pacote não trouxe o objeto do edital.");
+      if (oi.invalido) add("Objeto", "reprovado", "O objeto ficou [PREENCHER: objeto]" + (d.cartaDoEdital ? " no cabeçalho dos documentos" : " na carta") + ": " + oi.motivo + ". O pacote não trouxe o objeto do edital.");
       else if (oi.origem === "edital" || oi.origem === "opcoes") add("Objeto", "ok", "Objeto " + (oi.origem === "edital" ? "lido do edital" : "informado") + ": " + oi.texto.slice(0, 160) + (oi.texto.length > 160 ? "…" : ""));
-      else add("Objeto", "nao_conferido", "O pacote não trouxe o objeto do edital; a carta usa o nome " + (oi.origem === "obra" ? "da obra" : "") + " do orçamento (" + oi.texto.slice(0, 120) + "). " + (oi.comparou ? "Não é o nome do órgão, mas confira com o edital." : "Sem o nome do órgão para comparar: confira com o edital."));
+      else add("Objeto", "nao_conferido", "O pacote não trouxe o objeto do edital; " + (d.cartaDoEdital ? "o cabeçalho dos documentos usa o nome " : "a carta usa o nome ") + (oi.origem === "obra" ? "da obra" : "") + " do orçamento (" + oi.texto.slice(0, 120) + "). " + (oi.comparou ? "Não é o nome do órgão, mas confira com o edital." : "Sem o nome do órgão para comparar: confira com o edital."));
     }
-    if (d.validadeEdital) add("Validade", "ok", "A carta usa " + d.cab.validade + ", a validade exigida no edital" + (d.cab.validadeInicio ? " (" + d.cab.validadeInicio + ")" : "") + ".");
-    else add("Validade", "nao_conferido", "Validade do edital não conferida: o pacote não trouxe a validade exigida no edital; confira. " + (d.cab && d.cab.validade ? "A carta usa " + d.cab.validade + " (do orçamento)." : "A carta sai com [PREENCHER: validade da proposta]."));
+    if (d.validadeEdital) add("Validade", "ok", (d.cartaDoEdital ? "O orçamento usa " : "A carta usa ") + d.cab.validade + ", a validade exigida no edital" + (d.cab.validadeInicio ? " (" + d.cab.validadeInicio + ")" : "") + ".");
+    else add("Validade", "nao_conferido", "Validade do edital não conferida: o pacote não trouxe a validade exigida no edital; confira. " + (d.cab && d.cab.validade ? (d.cartaDoEdital ? "O orçamento usa " : "A carta usa ") + d.cab.validade + " (do orçamento)." : (d.cartaDoEdital ? "A validade não está no orçamento." : "A carta sai com [PREENCHER: validade da proposta].")));
 
     /* prazo: a carta usa o prazo em dias lido do edital; o texto do orçamento não manda */
-    if (!d.prazoDias) add("Prazo de execução da carta", "nao_conferido", "O edital não trouxe o prazo em dias; a carta usa o texto do orçamento (" + (d.cab && d.cab.prazo ? d.cab.prazo : "sem prazo") + ").");
-    else if (d.prazoDiverge) add("Prazo de execução da carta", "reprovado", "A carta usa " + d.cab.prazo + " (edital), e o orçamento diz \"" + d.prazoTexto + "\"" + (d.prazoDiasTexto != null ? " (" + d.prazoDiasTexto + " dias)" : " (não convertido em dias)") + ".");
-    else add("Prazo de execução da carta", "ok", "A carta usa " + d.cab.prazo + ", o prazo lido do edital" + (d.prazoTexto ? " (o texto do orçamento concorda)" : "") + ".");
+    if (!d.prazoDias) add("Prazo de execução da carta", "nao_conferido", "O edital não trouxe o prazo em dias; " + (d.cartaDoEdital ? "vale o texto do orçamento (" : "a carta usa o texto do orçamento (") + (d.cab && d.cab.prazo ? d.cab.prazo : "sem prazo") + ").");
+    else if (d.prazoDiverge) add("Prazo de execução da carta", "reprovado", (d.cartaDoEdital ? "O orçamento usa " : "A carta usa ") + d.cab.prazo + " (edital), e o orçamento diz \"" + d.prazoTexto + "\"" + (d.prazoDiasTexto != null ? " (" + d.prazoDiasTexto + " dias)" : " (não convertido em dias)") + ".");
+    else add("Prazo de execução da carta", "ok", (d.cartaDoEdital ? "O orçamento usa " : "A carta usa ") + d.cab.prazo + ", o prazo lido do edital" + (d.prazoTexto ? " (o texto do orçamento concorda)" : "") + ".");
 
     var cr = d.crono;
     if (!cr) add("Cronograma compatível com o prazo", "reprovado", d.cronoSemPrazo ? "Sem cronograma e sem o prazo de execução." : "Cronograma ausente ou incompleto.");
@@ -1246,20 +1309,32 @@
     ".ld-pg{page:ld;position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff;margin:0 auto 10px;page-break-after:always;break-after:page;box-shadow:0 2px 14px rgba(0,0,0,.35)}",
     ".ld-pg:last-child{page-break-after:auto;break-after:auto}",
     ".ld-wm{position:absolute;left:50%;top:50%;width:115mm;height:115mm;margin:-57mm 0 0 -57mm;object-fit:contain;opacity:.07;z-index:0}",
-    ".ld-hd{position:absolute;left:12mm;right:12mm;top:8mm;height:26mm;display:flex;align-items:center;justify-content:space-between;z-index:2;overflow:hidden}",
+    /* ⚠ O CABEÇALHO NUNCA CORTA. Antes a altura era fixa (26 mm) com overflow:hidden: objeto longo perdia OBRA:/DATA: pela metade.
+       paginar() mede o .ld-id de verdade e grava --ld-hd-h / --ld-corpo-top na raiz; todas as páginas usam a mesma altura. */
+    ".ld-hd{position:absolute;left:12mm;right:12mm;top:var(--ld-hd-top,8mm);height:var(--ld-hd-h,26mm);display:flex;align-items:center;justify-content:space-between;z-index:2}",
     ".ld-id{font-size:7.4pt;line-height:1.3;max-width:132mm}.ld-id b{font-weight:700}",
+    ".ld-id-peq .ld-id{font-size:7pt}",
     ".ld-logo{max-height:23mm;max-width:46mm;object-fit:contain}",
     ".ld-logo-bg{width:46mm;height:23mm;background-repeat:no-repeat;background-size:contain;background-position:right center}",
     ".ld-hd.big .ld-logo-bg{width:70mm;height:36mm;background-position:center}",
     ".ld-wm-bg{background-repeat:no-repeat;background-size:contain;background-position:center}",
     ".ld-hd.big{top:6mm;height:38mm;justify-content:center}.ld-hd.big .ld-logo{max-height:36mm;max-width:70mm}",
-    ".ld-corpo{position:absolute;left:12mm;right:12mm;top:36mm;bottom:38mm;overflow:hidden;z-index:2}",
+    ".ld-corpo{position:absolute;left:12mm;right:12mm;top:var(--ld-corpo-top,36mm);bottom:38mm;overflow:hidden;z-index:2}",
     ".ld-pg[data-t=cartaA] .ld-corpo{top:46mm;bottom:22mm}",
     ".ld-pg[data-t=cartaB] .ld-corpo{top:14mm;bottom:22mm}",
     ".ld-ass{position:absolute;left:12mm;right:12mm;bottom:15mm;height:22mm;display:flex;gap:14mm;align-items:flex-end;justify-content:center;z-index:2;font-size:7.4pt;text-align:center}",
     ".ld-ass div{flex:1;border-top:.7pt solid #222;padding-top:1mm}",
     ".ld-ass b{display:block}",
     ".ld-pg[data-t=cartaA] .ld-ass,.ld-pg[data-t=cartaB] .ld-ass{display:none}",
+    /* PAPEL TIMBRADO DE PÁGINA INTEIRA (.ld-tp na raiz): a imagem é o fundo de cada folha; sem marca d'água, logo nem cabeçalho grande.
+       --tp-top / --tp-base (mm) = o que o papel ocupa em cima e embaixo; --ld-id-w = largura da identificação à esquerda da logo. */
+    ".ld-tp .ld-tpbg{position:absolute;left:0;top:0;right:0;bottom:0;background-repeat:no-repeat;background-size:100% 100%;z-index:0}",
+    ".ld-tp .ld-hd{right:auto;width:var(--ld-id-w,186mm);display:block}",
+    ".ld-tp .ld-id{max-width:none;width:100%}",
+    ".ld-tp .ld-corpo{bottom:calc(var(--tp-base,27mm) + 31mm)}",
+    ".ld-tp .ld-pg[data-t=cartaA] .ld-corpo,.ld-tp .ld-pg[data-t=cartaB] .ld-corpo{top:calc(var(--tp-top,36mm) + 4mm);bottom:calc(var(--tp-base,27mm) + 9mm)}",
+    ".ld-tp .ld-ass{bottom:calc(var(--tp-base,27mm) + 7mm);height:22mm}",
+    ".ld-tp .ld-rod{bottom:calc(var(--tp-base,27mm) + 1.5mm);height:5mm;border-top:0;padding-top:0;justify-content:flex-end}",
     ".ld-rod{position:absolute;left:12mm;right:12mm;bottom:5mm;height:9mm;display:flex;justify-content:space-between;align-items:flex-end;font-size:6.4pt;line-height:1.3;z-index:2;border-top:.5pt solid #bbb;padding-top:1mm}",
     ".ld-rod .pag{white-space:nowrap;font-size:7pt}",
     ".ld-tit{font-size:12.5pt;font-weight:700;text-align:center;margin:2mm 0 3mm;text-transform:uppercase}",
@@ -1307,6 +1382,8 @@
   function tdN(v) { return '<td class="n">' + v + '</td>'; }
   function tdC(v) { return '<td class="c">' + v + '</td>'; }
   function td(v) { return '<td>' + v + '</td>'; }
+  /* número do item (3.8.2.16) NUNCA quebra: partido em duas linhas ("3.7.1" / "0") cria um item que não existe */
+  function tdI(v) { return '<td style="white-space:nowrap">' + v + '</td>'; }
 
   function secCarta(d) {
     var e = d.emp, cb = d.cab, h = "";
@@ -1320,7 +1397,7 @@
     };
     h += '<p class="ld-p" style="margin-bottom:1mm"><b>À<br>Comissão Permanente de Licitação<br>' + vars.cidade + '<br>REF.: ' + vars.edital + '<br>Objeto: ' + vars.objeto + '</b></p>';
     h += '<p class="ld-p">Prezados Senhores,</p>';
-    h += '<p class="ld-p">' + subst('Apresentamos a V. Sas. Nossa proposta para execução dos serviços objeto do Edital do certame em epígrafe, pelo valor global de {valor}, com prazo de execução de {prazo}, contados a partir da "Ordem de Início das Obras", expedida pela CONTRATANTE.', vars) + '</p>';
+    h += '<p class="ld-p">' + subst('Apresentamos a V. Sas. Nossa proposta para execução dos serviços objeto do Edital do certame em epígrafe, pelo valor global de {valor}, com prazo de execução de {prazo}, contados a partir da emissão da Ordem de Serviço pela CONTRATANTE.', vars) + '</p>';
     h += '<p class="ld-p">Concordamos integralmente e sem qualquer restrição com as condições desta licitação em referência, bem assim com as condições de contratação, estabelecidas na minuta do contrato que nos foi fornecida com o edital, e que nos submetemos às disposições regulamentares e legais sobre esta licitação, especialmente a Lei Federal nº 14.133 de 2021 e suas posteriores alterações.</p>';
     h += '<p class="ld-p">Comprometemo-nos a nos manifestarmos acerca da concordância da prorrogação e revalidação da proposta, caso seja necessário, antes de 10 (dez) dias do vencimento da mesma, por igual e sucessivo período, cientes que a falta de manifestação nos libera, excluindo-nos deste certame licitatório.</p>';
     h += '<p class="ld-p">' + subst('Informamos que o prazo de validade da nossa proposta é de {validade}, {contagem}.', vars) + '</p>';
@@ -1345,7 +1422,7 @@
     h += '<p class="ld-dados"><b>Fone:</b> ' + campo(e.telefone, "telefone") + ' . <b>E-mail:</b> ' + campo(e.email, "e-mail") + '</p>';
     h += '<p class="ld-dados"><b>Dados Bancários:</b> Banco ' + campo(e.banco, "banco") + ', Agência nº ' + campo(e.agencia, "agência") +
       ', Conta Corrente nº ' + campo(e.conta, "conta corrente") + ', em nome de ' + campo(e.nome, "razão social") + ', CNPJ nº ' + campo(e.cnpj, "CNPJ") + '</p>';
-    h += '<p class="ld-p" style="margin-top:2.5mm">' + subst('Finalizando, declaramos que assumimos inteira responsabilidade pela execução dos serviços objeto deste Edital e que serão executados conforme exigência editalícia e contratual, e que serão iniciados dentro do prazo de até {inicio} dias consecutivos, contados a partir da data de recebimento da Ordem de Serviço.', vars) + '</p>';
+    h += '<p class="ld-p" style="margin-top:2.5mm">' + subst('Finalizando, declaramos que assumimos inteira responsabilidade pela execução dos serviços objeto deste Edital e que serão executados conforme exigência editalícia e contratual' + (cb.prazoInicio ? ', e que serão iniciados dentro do prazo de até {inicio} dias consecutivos, contados a partir da data de recebimento da Ordem de Serviço' : '') + '.', vars) + '</p>';
     h += '<div style="display:flex;gap:14mm;margin-top:9mm;text-align:center;font-size:8.4pt">' +
       '<div style="flex:1;border-top:.7pt solid #222;padding-top:1mm"><b>' + campo(e.nome, "razão social") + '</b><br>' + campo(e.socioNome, "nome do sócio administrador") + '<br>' + campo(e.socioCargo, "cargo do sócio") + '</div>' +
       '<div style="flex:1;border-top:.7pt solid #222;padding-top:1mm"><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b><br>Responsável Técnico<br>' + rtRegistro(e) + '</div></div>';
@@ -1354,7 +1431,7 @@
 
   function secResumo(d) {
     var h = '<div class="ld-tit">Resumo do Orçamento</div>';
-    var t = '<table class="ld-t ld-split"><colgroup><col style="width:7mm"><col style="width:42mm"><col style="width:21mm"><col style="width:21mm"><col style="width:16mm"><col style="width:16mm"><col style="width:23mm"><col style="width:12mm"></colgroup>' +
+    var t = '<table class="ld-t ld-split"><colgroup><col style="width:7mm"><col style="width:36mm"><col style="width:21mm"><col style="width:21mm"><col style="width:22mm"><col style="width:16mm"><col style="width:23mm"><col style="width:12mm"></colgroup>' +
       '<thead><tr><th rowspan="2">ITEM</th><th rowspan="2">DESCRIÇÃO</th><th colspan="4">CUSTO DIRETO (R$)</th><th rowspan="2">PREÇO TOTAL (R$)</th><th rowspan="2">%</th></tr>' +
       '<tr><th>MÃO DE OBRA</th><th>MATERIAL</th><th>EQUIPAMENTO</th><th>OUTROS</th></tr></thead><tbody>';
     d.etapas.forEach(function (E) {
@@ -1375,13 +1452,13 @@
 
   function secSintetico(d) {
     var h = '<div class="ld-tit">Planilha Orçamentária</div>';
-    var t = '<table class="ld-t ld-split"><colgroup><col style="width:9mm"><col style="width:13mm"><col style="width:42mm"><col style="width:14mm"><col style="width:9mm"><col style="width:16mm"><col style="width:17mm"><col style="width:17mm"><col style="width:19mm"><col style="width:20mm"></colgroup>' +
+    var t = '<table class="ld-t ld-split"><colgroup><col style="width:13mm"><col style="width:13mm"><col style="width:38mm"><col style="width:14mm"><col style="width:9mm"><col style="width:16mm"><col style="width:17mm"><col style="width:17mm"><col style="width:19mm"><col style="width:20mm"></colgroup>' +
       '<thead><tr><th rowspan="2">ITEM</th><th rowspan="2">CÓDIGO</th><th rowspan="2">DESCRIÇÃO</th><th rowspan="2">FONTE</th><th rowspan="2">UNID.</th><th rowspan="2">QTD.</th><th colspan="2">VALOR UNITÁRIO R$</th><th colspan="2">PREÇO TOTAL R$</th></tr>' +
       '<tr><th>SEM BDI</th><th>COM BDI</th><th>SEM BDI</th><th>COM BDI</th></tr></thead><tbody>';
     d.etapas.forEach(function (E) {
       t += '<tr class="et kn"><td>' + esc(E.codigo) + '</td><td colspan="5">' + esc(E.nome) + '</td><td></td><td></td>' + tdN(R(E.semBdi)) + tdN(R(E.comBdi)) + '</tr>';
       E.itens.forEach(function (I) {
-        t += '<tr>' + td(esc(I.numero)) + td(esc(I.codigo)) + td(esc(I.descricao)) + tdC(esc(I.fonte)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) +
+        t += '<tr>' + tdI(esc(I.numero)) + td(esc(I.codigo)) + td(esc(I.descricao)) + tdC(esc(I.fonte)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) +
           tdN(R(I.cu)) + tdN(R(I.pu)) + tdN(R(I.ct)) + tdN(R(I.pt)) + '</tr>';
       });
     });
@@ -1393,14 +1470,14 @@
   /* bloco analítico de UMA composição */
   function secCustosItem(d) {
     var h = '<div class="ld-tit">Custos por item: material, mão de obra e equipamento</div>';
-    var t = '<table class="ld-t ld-split"><colgroup><col style="width:9mm"><col style="width:52mm"><col style="width:17mm"><col style="width:17mm"><col style="width:20mm"><col style="width:16mm"><col style="width:18mm"><col style="width:16mm"><col style="width:19mm"></colgroup>' +
+    var t = '<table class="ld-t ld-split"><colgroup><col style="width:13mm"><col style="width:46mm"><col style="width:17mm"><col style="width:17mm"><col style="width:22mm"><col style="width:16mm"><col style="width:18mm"><col style="width:16mm"><col style="width:19mm"></colgroup>' +
       '<thead><tr><th>ITEM</th><th>DESCRIÇÃO</th><th>MATERIAL</th><th>MÃO DE OBRA</th><th>EQUIPAMENTO</th><th>OUTROS</th><th>CUSTO DIRETO</th><th>BDI</th><th>PREÇO TOTAL</th></tr></thead><tbody>';
     var porIdx = {};
     d.custoItens.linhas.forEach(function (L) { (porIdx[L.etapaIdx] = porIdx[L.etapaIdx] || []).push(L); });
     d.etapas.forEach(function (E) {
       t += '<tr class="et kn"><td>' + esc(E.codigo) + '</td><td colspan="8">' + esc(E.nome) + '</td></tr>';
       (porIdx[E.idx] || []).forEach(function (L) {
-        t += '<tr>' + td(esc(L.numero)) + td(esc(L.descricao)) + tdN(fmt(L.MAT, 2)) + tdN(fmt(L.MO, 2)) + tdN(fmt(L.EQ, 2)) + tdN(fmt(L.OUTROS, 2)) + tdN(fmt(L.ct, 2)) + tdN(fmt(L.bdi, 2)) + tdN(fmt(L.pt, 2)) + '</tr>';
+        t += '<tr>' + tdI(esc(L.numero)) + td(esc(L.descricao)) + tdN(fmt(L.MAT, 2)) + tdN(fmt(L.MO, 2)) + tdN(fmt(L.EQ, 2)) + tdN(fmt(L.OUTROS, 2)) + tdN(fmt(L.ct, 2)) + tdN(fmt(L.bdi, 2)) + tdN(fmt(L.pt, 2)) + '</tr>';
       });
     });
     var T = d.custoItens.tot;
@@ -1412,8 +1489,11 @@
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Custos por item">' + h + '</section>';
   }
 
-  function blocoComposicao(tit, insumos, valor, bdiPct, pu, qtdRot, qtd, nota) {
-    var h = '<div class="ld-it"><div class="ld-itt">' + esc(tit) + '</div>';
+  function usaTotalOrgao(d, I) {
+    return !d.desconto && I.custoIgualOrgao !== false && !!(I.insumos && I.insumos.length) && I.insumos.every(function (x) { return x.ctOrg !== null && x.ctOrg !== undefined; });
+  }
+  function blocoComposicao(tit, insumos, valor, bdiPct, pu, qtdRot, qtd, nota, usaOrg, contRot) {
+    var h = '<div class="ld-it"' + (contRot ? ' data-cont="' + esc(contRot) + '"' : '') + '><div class="ld-itt">' + esc(tit) + '</div>';
     if (!insumos || !insumos.length) {
       h += '<div class="ld-nota">Sem detalhamento na base de referência.</div>';
     } else {
@@ -1424,8 +1504,9 @@
           '<thead><tr><th style="text-align:left">' + esc(CAT_ROT[c]) + '</th><th>FONTE</th><th>UNID</th><th>COEFICIENTE</th><th>CUSTO UNITÁRIO</th><th>CUSTO TOTAL</th></tr></thead><tbody>';
         var sm = 0;
         seen[c].forEach(function (x) {
-          sm += x.ct;
-          h += '<tr>' + td(esc((x.codigo ? x.codigo + "  " : "") + x.descricao)) + tdC(esc(x.fonte)) + tdC(esc(x.unidade)) + tdN(C8(x.coef)) + tdN(R4(x.cu)) + tdN(R4(x.ct)) + '</tr>';
+          var vl = usaOrg ? x.ctOrg : x.ct;
+          sm += vl;
+          h += '<tr>' + td(esc((x.codigo ? x.codigo + "  " : "") + x.descricao)) + tdC(esc(x.fonte)) + tdC(esc(x.unidade)) + tdN(C8(x.coef)) + tdN(R4(x.cu)) + tdN(R4(vl)) + '</tr>';
         });
         h += '<tr class="gr"><td colspan="5" style="text-align:right">TOTAL ' + esc(CAT_ROT[c]) + ':</td>' + tdN(R(sm)) + '</tr></tbody></table>';
       });
@@ -1445,23 +1526,42 @@
     var n = 0;
     d.itens.forEach(function (I) {
       n++;
-      h += blocoComposicao(I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade);
+      /* Sem desconto, a linha imprime o TOTAL QUE O ÓRGÃO IMPRIMIU (ele trunca cada linha), e os totais de categoria somam esses valores. Com desconto
+         (ou sem o total do órgão no pacote) imprime coeficiente x unitário. A nota só sai quando os totais IMPRESSOS não fecham com o valor do item
+         já na planilha do órgão (Sangão: só o 3.4.1); com desconto não há nota, o valor impresso já não é o do órgão. */
+      var usaOrg = usaTotalOrgao(d, I), somaI = 0; I.insumos.forEach(function (x) { somaI += usaOrg ? x.ctOrg : x.ct; });
+      /* sem o total do órgão no pacote (pacote antigo), coeficiente x unitário passa do valor por até R$ 0,01 por linha (o órgão trunca): isso não é divergência dele */
+      var limNota = usaOrg ? 0.005 : 0.01 * I.insumos.length + 0.005;
+      var notaI = (!d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
+      h += blocoComposicao(I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade, notaI, usaOrg, I.numero + ". " + I.codigo);
     });
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Relatório analítico">' + h + '</section>';
   }
 
   function secProprias(d) {
-    var h = '<div class="ld-tit">Composições Próprias</div><p class="ld-sub">Composições elaboradas pela proponente, fora da tabela oficial de referência (preços e origem informados na licitação).</p>';
     var lst = d.itens.filter(function (I) { return I.propria; });
-    if (!lst.length) h += '<p class="ld-p">Nenhuma composição própria nesta proposta.</p>';
-    lst.forEach(function (I) { h += blocoComposicao(I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, null, null); });
+    /* ⚠ composição PRÓPRIA DO ÓRGÃO (banco "Próprio" da planilha analítica dele) não é "elaborada pela proponente": o texto antigo seria falso. */
+    var doOrgao = lst.filter(function (I) { return I.propriaOrgao; }), daProp = lst.filter(function (I) { return !I.propriaOrgao; });
+    var h = '<div class="ld-tit">' + (doOrgao.length && !daProp.length ? 'Composições Próprias do Orçamento do Órgão' : 'Composições Próprias') + '</div>';
+    if (!lst.length) h += '<p class="ld-sub">Composições elaboradas pela proponente, fora da tabela oficial de referência (preços e origem informados na licitação).</p><p class="ld-p">Nenhuma composição própria nesta proposta.</p>';
+    function grupo(arrI, sub) {
+      if (!arrI.length) return;
+      h += '<p class="ld-sub">' + sub + '</p>';
+      arrI.forEach(function (I) { h += blocoComposicao(I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, null, null, "", usaTotalOrgao(d, I), I.codigo); });
+    }
+    grupo(doOrgao, 'Composições próprias que integram o orçamento do órgão (planilha analítica do edital), fora das tabelas oficiais de referência. Preços e coeficientes como publicados pelo órgão.');
+    grupo(daProp, 'Composições elaboradas pela proponente, fora da tabela oficial de referência (preços e origem informados na licitação).');
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Composições próprias">' + h + '</section>';
   }
 
   function secAuxiliares(d) {
     var ref = d.base ? (s(d.base.tabela) + " " + s(d.base.mes) + (d.base.uf ? "/" + d.base.uf : "") + (d.base.desonerado === true ? " (desonerada)" : (d.base.desonerado === false ? " (não desonerada)" : ""))) : d.tabelaRef;
+    /* Sem exigência de base e sem nenhum detalhe, a seção NÃO sai (e nunca "Sem detalhamento" em lista). Com exigência (CE 012, p. 13), sai
+       sempre: o que a base não tem aparece como "sem detalhamento", para o órgão ver que foi citada. */
+    var abertas = d.aux.filter(function (a) { return a.insumos; });
+    if (!abertas.length && !d.baseExigida) return '';
     var h = '<div class="ld-tit">Relatório Analítico - Composições Auxiliares</div>';
-    var dl = d.desconto, comDesc = d.aux.some(function (a) { return a.descontada; });
+    var dl = d.desconto, comDesc = abertas.some(function (a) { return a.descontada; });
     var rotInc = dl && dl.incidencia === "MO" ? "de mão de obra" : (dl && dl.incidencia === "EQ" ? "de equipamento" : "de material");
     h += '<p class="ld-sub">Composições auxiliares citadas nas composições dos serviços, abertas conforme a tabela de referência ' + esc(ref || "do projeto") + '. ' +
       (comDesc
@@ -1472,34 +1572,35 @@
     d.aux.forEach(function (a) {
       var tit = a.codigo + " " + a.descricao + (a.unidade ? " (" + a.unidade + ")" : "");
       var nota = a.descontada ? "Com o desconto da proposta. Custo na tabela de referência: " + R(a.custoTabela) + "." : "";
-      if (a.insumos) h += blocoComposicao(tit, a.insumos, a.valor, d.bdiPct, arr(a.valor * (1 + d.bdiPct / 100), 2), a.unidade, a.quantidade, nota);
-      else h += '<div class="ld-it"><div class="ld-itt">' + esc(tit) + '</div><div class="ld-nota">Sem detalhamento na base de referência' + (d.tabelaRef ? " (" + esc(d.tabelaRef) + ")" : "") + '. Usada em: ' + esc(a.usadoEm.join(", ")) + '.</div></div>';
+      if (a.insumos) h += blocoComposicao(tit, a.insumos, a.valor, d.bdiPct, arr(a.valor * (1 + d.bdiPct / 100), 2), a.unidade, a.quantidade, nota, false, a.codigo);
+      else if (d.baseExigida) h += '<div class="ld-it"><div class="ld-itt">' + esc(tit) + '</div><div class="ld-nota">Sem detalhamento na base de referência' + (d.tabelaRef ? " (" + esc(d.tabelaRef) + ")" : "") + '. Usada em: ' + esc(a.usadoEm.join(", ")) + '.</div></div>';
     });
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Composições auxiliares">' + h + '</section>';
   }
 
   function secQuantitativos(d) {
     var h = '<div class="ld-tit">Detalhamento dos Quantitativos</div>';
-    h += '<p class="ld-sub">Quantidades dos serviços conforme memória de cálculo do projeto básico do órgão. O consumo de cada insumo é a quantidade do serviço multiplicada pelo coeficiente da composição.</p>';
-    var t = '<table class="ld-t ld-split"><colgroup><col style="width:10mm"><col style="width:15mm"><col style="width:86mm"><col style="width:12mm"><col style="width:26mm"><col style="width:26mm"></colgroup>' +
+    h += '<p class="ld-sub">Quantidades dos serviços conforme memória de cálculo do projeto básico do órgão. ' + (d.consumoNoAnalitico ? 'Os coeficientes de cada insumo estão no relatório analítico.' : 'O consumo de cada insumo é a quantidade do serviço multiplicada pelo coeficiente da composição.') + '</p>';
+    var t = '<table class="ld-t ld-split"><colgroup><col style="width:14mm"><col style="width:15mm"><col style="width:82mm"><col style="width:12mm"><col style="width:26mm"><col style="width:26mm"></colgroup>' +
       '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UNID</th><th>QUANTIDADE DO SERVIÇO</th><th></th></tr></thead><tbody>';
     d.itens.forEach(function (I) {
-      t += '<tr>' + td(esc(I.numero)) + td(esc(I.codigo)) + td(esc(I.descricao)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) + td("") + '</tr>';
+      t += '<tr>' + tdI(esc(I.numero)) + td(esc(I.codigo)) + td(esc(I.descricao)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) + td("") + '</tr>';
     });
     t += '</tbody></table>';
     h += t;
     var q = '<div class="ld-tit" style="font-size:10.5pt;margin-top:5mm">Consumo de insumos por serviço</div>' +
-      '<table class="ld-t ld-split"><colgroup><col style="width:10mm"><col style="width:15mm"><col style="width:68mm"><col style="width:12mm"><col style="width:26mm"><col style="width:20mm"><col style="width:26mm"></colgroup>' +
+      '<table class="ld-t ld-split"><colgroup><col style="width:14mm"><col style="width:15mm"><col style="width:64mm"><col style="width:12mm"><col style="width:26mm"><col style="width:20mm"><col style="width:26mm"></colgroup>' +
       '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UNID</th><th>QUANTIDADE DO SERVIÇO</th><th>COEFICIENTE DO INSUMO</th><th>QUANTIDADE TOTAL</th></tr></thead><tbody>';
     d.quant.forEach(function (g) {
       q += '<tr class="gr kn"><td colspan="7">[ ' + esc(CAT_ROT_Q[g.cat]) + ' ] ' + esc(g.codigo) + ' — ' + esc(g.descricao) + (g.unidade ? ' (' + esc(g.unidade) + ')' : '') + '</td></tr>';
       g.usos.forEach(function (u) {
-        q += '<tr>' + td(esc(u.numero)) + td(esc(u.codigo)) + td(esc(u.descricao)) + tdC(esc(u.unidade)) + tdN(fmt(u.quantidade, 2)) + tdN(C8(u.coef)) + tdN(C8(u.total)) + '</tr>';
+        q += '<tr>' + tdI(esc(u.numero)) + td(esc(u.codigo)) + td(esc(u.descricao)) + tdC(esc(u.unidade)) + tdN(fmt(u.quantidade, 2)) + tdN(C8(u.coef)) + tdN(C8(u.total)) + '</tr>';
       });
       q += '<tr class="tt"><td colspan="6" style="text-align:right">TOTAL:</td>' + tdN(C8(g.total)) + '</tr>';
     });
     q += '</tbody></table>';
-    h += q;
+    /* Toda composição veio da planilha analítica do órgão: o consumo por serviço só repetiria, em 60 folhas (Sangão), os coeficientes que o relatório analítico já traz. */
+    if (!d.consumoNoAnalitico) h += q;
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Detalhamento dos quantitativos">' + h + '</section>';
   }
 
@@ -1553,7 +1654,7 @@
       t += '</tr></tbody></table>';
       h += t + (ultimo ? "" : '<div style="height:4mm"></div>');
     });
-    h += '<p class="ld-nota">Em cada mês: percentual da etapa e valor em R$. ' + (c.elaborado ? 'Cronograma elaborado pela proponente. ' + esc(c.criterio) + ' ' : 'Percentuais mensais conforme o cronograma do órgão; ') + 'Valores calculados sobre o total de cada etapa já com o desconto da proposta. A diferença de centavos fica no último mês de cada etapa.</p>';
+    h += '<p class="ld-nota">Em cada mês: percentual da etapa e valor em R$. ' + (c.elaborado ? 'Cronograma elaborado pela proponente. ' + esc(c.criterio) + ' ' : 'Percentuais mensais conforme o cronograma do órgão; ') + 'Valores calculados sobre o total de cada etapa' + (d.desconto ? ' já com o desconto da proposta' : '') + '. A diferença de centavos fica no último mês de cada etapa.</p>';
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Cronograma">' + h + '</section>';
   }
 
@@ -1629,7 +1730,13 @@
     var e = d.emp, a = urlCss(e.timbradoTopo), b = urlCss(e.timbradoFundo), c = "";
     if (a) c += '.ld-bg-topo{background-image:url("' + a + '")}';
     if (b) c += '.ld-bg-fundo{background-image:url("' + b + '")}';
+    if (modoPagina(d)) c += '.ld-bg-pagina{background-image:url("' + urlCss(e.timbradoPagina) + '")}';
     return c;
+  }
+  /* papel timbrado de página inteira? (imagem em data URL simples + margens válidas) */
+  function modoPagina(d) {
+    var e = d && d.emp, m = e && e.timbradoMargens;
+    return !!(e && urlCss(e.timbradoPagina) && m && isFinite(Number(m.topo_cm)) && isFinite(Number(m.base_cm)));
   }
 
   function tplTimbrado(d) {
@@ -1641,6 +1748,13 @@
     var ass = '<div><b>' + campo(e.nome, "razão social") + '</b>' + campo(e.socioNome, "nome do sócio administrador") + '<br>' + campo(e.socioCargo, "cargo do sócio") + '</div>' +
       '<div><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b>Responsável Técnico<br>' + rtRegistro(e) + '</div>';
     var rod = '<div>' + campo(e.nome, "razão social") + ' CNPJ ' + campo(e.cnpj, "CNPJ") + '<br>' + campo(e.endereco, "endereço") + '<br>Fone: ' + campo(e.telefone, "telefone") + ' / E-mail: ' + campo(e.email, "e-mail") + '</div><div class="pag">Página: {{pag}}</div>';
+    if (modoPagina(d)) {
+      /* razão social, endereço e fone já estão impressos no papel: o rodapé só numera */
+      return '<template class="ld-tpl" data-n="tpbg"><div class="ld-tpbg ld-bg-pagina"></div></template>' +
+        '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + '</div></template>' +
+        '<template class="ld-tpl" data-n="ass"><div class="ld-ass">' + ass + '</div></template>' +
+        '<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página: {{pag}}</div></div></template>';
+    }
     return '<template class="ld-tpl" data-n="hd-big"><div class="ld-hd big">' + logo + '</div></template>' +
       '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + logo + '</div></template>' +
       '<template class="ld-tpl" data-n="ass"><div class="ld-ass">' + ass + '</div></template>' +
@@ -1650,9 +1764,15 @@
 
   /* html(dados): raiz com as seções em ordem + os modelos de cabeçalho/rodapé. Ainda NÃO paginado. */
   function html(d) {
-    var corpo = secCarta(d) + secResumo(d) + secSintetico(d) + secCustosItem(d) + secAnalitico(d) + secProprias(d) + secAuxiliares(d) +
+    var corpo = (d.cartaDoEdital ? "" : secCarta(d)) + secResumo(d) + secSintetico(d) + secCustosItem(d) + secAnalitico(d) + secProprias(d) + secAuxiliares(d) +
       secQuantitativos(d) + secCurva(d) + secCronograma(d) + secBdi(d) + secEncargos(d);
-    return '<div class="ld-raiz rel-doc"><style>' + CSS + cssTimbrado(d) + '</style><div class="ld-fonte">' + corpo + '</div>' + tplTimbrado(d) + '<div class="ld-paginas"></div></div>';
+    var tpAttr = '';
+    if (modoPagina(d)) {
+      var mmDe = function (cm) { return String(+(Number(cm) * 10).toFixed(2)); };   // 3,6 cm -> "36" (e não 36.00000000000001)
+      var mg = d.emp.timbradoMargens, lv = (mg.livre_ate_cm === null || mg.livre_ate_cm === undefined || mg.livre_ate_cm === "") ? "" : mmDe(mg.livre_ate_cm);
+      tpAttr = ' data-tp-top="' + mmDe(mg.topo_cm) + '" data-tp-base="' + mmDe(mg.base_cm) + '" data-tp-livre="' + lv + '"';
+    }
+    return '<div class="ld-raiz rel-doc' + (tpAttr ? ' ld-tp' : '') + '"' + tpAttr + '><style>' + CSS + cssTimbrado(d) + '</style><div class="ld-fonte">' + corpo + '</div>' + tplTimbrado(d) + '<div class="ld-paginas"></div></div>';
   }
 
   /* gerar: tudo de uma vez → { ok, erro, html, dados, pendencias } */
@@ -1675,14 +1795,45 @@
     var tpl = {};
     [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { tpl[t.getAttribute("data-n")] = t.innerHTML; });
     var n = 0;
+    var tp = raiz.classList.contains("ld-tp");
+
+    /* CABEÇALHO MEDIDO (vale para todos os modelos): uma página de prova mede a altura real da identificação da obra e grava
+       --ld-hd-top / --ld-hd-h / --ld-corpo-top (e, no papel timbrado, --ld-id-w) na raiz. Fonte cai de 7,4 para 7 pt se o objeto é longo. */
+    function medirCabecalho() {
+      var mm = function (px) { return px * 25.4 / 96; };
+      var topoPapel = tp ? Number(raiz.getAttribute("data-tp-top")) || 36 : 0;
+      var basePapel = tp ? Number(raiz.getAttribute("data-tp-base")) || 27 : 0;
+      var livre = tp ? Number(raiz.getAttribute("data-tp-livre")) : 0;
+      var temLivre = tp && isFinite(livre) && livre > 0 && raiz.getAttribute("data-tp-livre") !== "";
+      var st = raiz.style;
+      if (tp) { st.setProperty("--tp-top", topoPapel + "mm"); st.setProperty("--tp-base", basePapel + "mm"); }
+      var hdTop = tp ? (temLivre ? 9 : topoPapel + 1) : 8;
+      st.setProperty("--ld-hd-top", hdTop + "mm");
+      if (tp) st.setProperty("--ld-id-w", (temLivre ? Math.max(40, livre - 12 - 4) : 186) + "mm");
+      var pg = doc.createElement("div");
+      pg.className = "ld-pg"; pg.setAttribute("data-t", "corpo"); pg.innerHTML = tpl["hd-std"] || "";
+      saida.appendChild(pg);
+      try {
+        var id = pg.querySelector(".ld-id");
+        if (!id) return;
+        var h = mm(id.getBoundingClientRect().height);
+        var lim = tp ? 24 : 26;
+        if (h > lim) { raiz.classList.add("ld-id-peq"); h = mm(id.getBoundingClientRect().height); }
+        var hdH = tp ? h : Math.max(26, h);
+        st.setProperty("--ld-hd-h", Math.ceil(hdH * 10) / 10 + "mm");
+        var base = tp ? (temLivre ? Math.max(topoPapel + 2, hdTop + hdH + 3) : hdTop + hdH + 3) : Math.max(36, hdTop + hdH + 2);
+        st.setProperty("--ld-corpo-top", Math.ceil(base * 10) / 10 + "mm");
+      } finally { saida.removeChild(pg); }
+    }
+    try { medirCabecalho(); } catch (eMed) {}
 
     function nova(tipo, idx) {
       n++;
       var pg = doc.createElement("div");
       var t = tipo === "carta" ? (idx === 0 ? "cartaA" : "cartaB") : "corpo";
       pg.className = "ld-pg"; pg.setAttribute("data-t", t);
-      var cab = (t === "cartaA") ? tpl["hd-big"] : (t === "cartaB" ? "" : tpl["hd-std"]);
-      pg.innerHTML = (tpl.wm || "") + (cab || "") + '<div class="ld-corpo"></div>' + (tpl.ass || "") + (tpl.rod || "").replace("{{pag}}", String(n));
+      var cab = (t === "cartaA") ? (tp ? "" : tpl["hd-big"]) : (t === "cartaB" ? "" : tpl["hd-std"]);
+      pg.innerHTML = (tp ? (tpl.tpbg || "") : (tpl.wm || "")) + (cab || "") + '<div class="ld-corpo"></div>' + (tpl.ass || "") + (tpl.rod || "").replace("{{pag}}", String(n));
       saida.appendChild(pg);
       return { pg: pg, corpo: pg.querySelector(".ld-corpo") };
     }
@@ -1696,10 +1847,23 @@
       return c;
     }
 
+    var erros = [];
     [].slice.call(fonte.children).forEach(function (sec) {
       var tipo = sec.getAttribute("data-tipo"), idx = 0, P1 = nova(tipo, idx++);
       var corpo = P1.corpo;
+      var contRot = "";   // item cuja composição continua na folha nova ("<número> <código> (continuação)")
       function proxima() { var q = nova(tipo, idx++); corpo = q.corpo; return q; }
+      /* folha nova no meio de uma composição: repete o item no alto (a menos que o próprio título tenha vindo junto) */
+      function novaFolha(junto) {
+        proxima();
+        if (contRot && !junto.some(function (x) { return x.getAttribute && x.getAttribute("data-itt") === "1"; })) {
+          var cEl = doc.createElement("div");
+          cEl.className = "ld-itt"; cEl.setAttribute("data-kn", "1");
+          cEl.textContent = contRot + " (continuação)";
+          corpo.appendChild(cEl);
+        }
+        junto.forEach(function (x) { corpo.appendChild(x); });
+      }
       /* leva junto os blocos "kn" (título) que ficaram no fim da página */
       function carregaKn() {
         var acc = [];
@@ -1708,20 +1872,7 @@
         }
         return acc;
       }
-      [].slice.call(sec.children).forEach(function (b) {
-        if (b.classList.contains("ld-tit") || b.classList.contains("ld-sub")) b.setAttribute("data-kn", "1");
-        var ehTab = b.tagName === "TABLE" && b.classList.contains("ld-split");
-        if (!ehTab) {
-          corpo.appendChild(b);
-          if (!cabe(corpo) && corpo.children.length > 1) {
-            corpo.removeChild(b);
-            var junto = carregaKn();
-            proxima();
-            junto.forEach(function (x) { corpo.appendChild(x); });
-            corpo.appendChild(b);
-          }
-          return;
-        }
+      function colocaTabela(b) {
         var rows = [].slice.call(b.tBodies[0].rows), cur = vazia(b), tb = cur.tBodies[0];
         corpo.appendChild(cur);
         rows.forEach(function (r) {
@@ -1735,20 +1886,69 @@
           var tabVazia = !tb.rows.length, junto = [];
           if (tabVazia) { corpo.removeChild(cur); junto = carregaKn(); }
           if (tabVazia && !corpo.children.length && !junto.length) {
-            /* já era uma página nova e a linha sozinha não cabe: aceita (nada melhor a fazer) */
+            /* já era uma página nova e a linha sozinha não cabe: nada melhor a fazer, mas NUNCA em silêncio (a linha seria cortada) */
             corpo.appendChild(cur); mover.forEach(function (x) { tb.appendChild(x); });
+            erros.push("uma linha de tabela (" + String(r.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) + ") é mais alta que a folha");
             return;
           }
-          proxima();
-          junto.forEach(function (x) { corpo.appendChild(x); });
+          novaFolha(junto);
           cur = vazia(b); tb = cur.tBodies[0]; corpo.appendChild(cur);
           mover.forEach(function (x) { tb.appendChild(x); });
         });
         if (b.parentNode === sec) sec.removeChild(b);
-      });
+      }
+      /* ⚠ BLOCO ALTO NUNCA É CORTADO (revisão de 09/11/2026: 4 composições saíam sem linhas e sem o VALOR COM BDI). Bloco `.ld-it` que não cabe
+         nem numa folha vazia é desmontado: o título fica na folha, cada tabela de categoria vira tabela partida por linha (cabeçalho repetido) e
+         os totais (VALOR, BDI, VALOR COM BDI) vão como blocos próprios, nunca perdidos. */
+      function colocaBloco(b) {
+        if (b.classList.contains("ld-tit") || b.classList.contains("ld-sub")) b.setAttribute("data-kn", "1");
+        if (b.tagName === "TABLE" && b.classList.contains("ld-split")) { colocaTabela(b); return; }
+        corpo.appendChild(b);
+        if (cabe(corpo)) return;
+        if (corpo.children.length > 1) {
+          corpo.removeChild(b);
+          var junto = carregaKn();
+          novaFolha(junto);
+          corpo.appendChild(b);
+          if (cabe(corpo)) return;
+        }
+        if (b.classList.contains("ld-it") && b.children.length > 1) {
+          corpo.removeChild(b);
+          var filhos = [].slice.call(b.children);
+          contRot = b.getAttribute("data-cont") || String((b.firstElementChild && b.firstElementChild.textContent) || "").split(/\s+/).slice(0, 2).join(" ");
+          /* VALOR, BDI, VALOR COM BDI e QUANTIDADE do mesmo bloco não se separam entre folhas: viram um bloco só */
+          var itvs = filhos.filter(function (c) { return c.classList && c.classList.contains("ld-itv"); });
+          if (itvs.length > 1) {
+            var grp = doc.createElement("div"); grp.className = "ld-itvs";
+            b.insertBefore(grp, itvs[0]);
+            itvs.forEach(function (x) { grp.appendChild(x); });
+            filhos = [].slice.call(b.children);
+          }
+          filhos.forEach(function (c, i) {
+            if (c.tagName === "TABLE" && c.classList.contains("ld-t")) {
+              c.classList.add("ld-split");
+              /* a última linha de dados fica junto da linha de TOTAL (que não pode ficar sozinha no alto da folha seguinte) */
+              var rr = c.tBodies[0] ? c.tBodies[0].rows : [];
+              if (rr.length > 1) rr[rr.length - 2].classList.add("kn");
+            }
+            if (i === 0) { c.setAttribute("data-kn", "1"); c.setAttribute("data-itt", "1"); }
+            colocaBloco(c);
+          });
+          contRot = "";
+          return;
+        }
+        erros.push("um bloco (" + String(b.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) + ") é mais alto que a folha");
+      }
+      [].slice.call(sec.children).forEach(colocaBloco);
     });
     raiz.removeChild(fonte);
     [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { t.parentNode.removeChild(t); });
+    /* NUNCA corpo cortado: depois de paginar, toda `.ld-corpo` tem de caber. Se alguma não couber, o gerador acusa (a página e o que sobrou),
+       em vez de entregar um documento ao órgão com linha ou total faltando. */
+    [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
+      if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
+    });
+    if (erros.length) throw new Error("O documento sairia cortado: " + erros.slice(0, 3).join("; ") + (erros.length > 3 ? " e mais " + (erros.length - 3) : "") + ".");
     return n;
   }
 

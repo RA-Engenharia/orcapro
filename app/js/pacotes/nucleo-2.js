@@ -58508,6 +58508,7 @@ case "laudo": this.gerarLaudo(); break;
 case "relatorio": this.gerarRelatorio(); break;
 case "proposta-imprimir": window.print(); break;
 case "proposta-word": if (this._propostaWord) this._propostaWord(); break;
+case "proposta-pdf": if (this._propostaPdf) this._propostaPdf(); break;
 case "proposta-fechar": this.fecharProposta(); break;
 }
 },
@@ -64643,7 +64644,25 @@ if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>',
 var gerar = function () {
 var r = LicitacaoDocs.gerar(orc, emp, opc);
 if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir");
+var baixandoPdf = false;
+var baixarPdf = function () {
+if (baixandoPdf) return;
+if (typeof PdfDireto === "undefined") { UI.toast("O gerador de PDF não carregou nesta página. Use o botão Imprimir.", "erro"); return; }
+var folhas = document.querySelectorAll("#proposta-print .ld-pg");
+if (!folhas.length) { UI.toast("Não há páginas montadas para gravar. Use o botão Imprimir.", "erro"); return; }
+baixandoPdf = true;
+var tit = "Proposta — " + (orc.numero || "licitação");
+UI.toast("Gerando o PDF (" + folhas.length + " páginas)…", "ok");
+PdfDireto.gerar(folhas, { titulo: tit, produtor: "OrçaPRO" }).then(function (res) {
+baixandoPdf = false;
+PdfDireto.baixar(res.blob, "Proposta_" + String(orc.numero || "licitacao").replace(/[^A-Za-z0-9._-]+/g, "_") + ".pdf");
+UI.toast("PDF pronto: " + res.paginas + " páginas. Envie no CertamePRO, passo 5.", "ok");
+}).catch(function (eG) {
+baixandoPdf = false;
+UI.toast("Não consegui gerar o PDF (" + (eG && eG.message ? eG.message : eG) + "). Use o botão Imprimir.", "erro");
+});
+};
+self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf });
 try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
 };
 var conf = [];
@@ -68272,6 +68291,7 @@ UI.toast("Lançado do BIM: " + seed.itens.length + " serviços quantificados" + 
 _abrirPrint: function (titulo, htmlConteudo, icone, extras) {
 this.fecharProposta();
 this._propostaWord = (extras && typeof extras.word === "function") ? extras.word : null;
+this._propostaPdf = (extras && typeof extras.pdf === "function") ? extras.pdf : null;
 var limpo = String(titulo == null ? "" : titulo).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 if (this._tituloApp == null) this._tituloApp = document.title;
 var nomeEmp = this._licNomeEmpresaTitulo();
@@ -68281,7 +68301,8 @@ var overlay = document.createElement("div");
 overlay.className = "proposta-overlay"; overlay.id = "proposta-print";
 overlay.innerHTML =
 '<div class="prop-toolbar no-print"><span class="ttl">' + ic + Util.esc(limpo) + '</span>' +
-'<button class="btn sm success" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / Salvar PDF</button>' +
+(this._propostaPdf ? '<button class="btn sm success" data-acao="proposta-pdf" title="Grava o PDF direto: A4 em pé, com texto selecionável">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Baixar PDF</button>' : '') +
+'<button class="btn sm' + (this._propostaPdf ? '' : ' success') + '" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + (this._propostaPdf ? ' Imprimir' : ' Imprimir / Salvar PDF') + '</button>' +
 (this._propostaWord ? '<button class="btn sm" data-acao="proposta-word" title="Baixar este documento em Word (.docx), com o texto editável">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Baixar em Word</button>' : '') +
 '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
 htmlConteudo;

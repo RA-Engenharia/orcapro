@@ -555,7 +555,7 @@
     // FASE 1.2 — Fonte HONESTA: "SINAPI" só p/ código numérico vindo/confirmado
     // na base SINAPI; código de outra base leva o nome dela (SEINFRA, SUDECAP...);
     // código desconhecido -> "OUTRA". Nunca rotular SINAPI no chute.
-    _codigoSinapi: function (codigo) { return /^\d{1,7}$/.test(String(codigo == null ? "" : codigo).trim()); }, // há 33 códigos SINAPI reais de 1-2 dígitos (ex.: 34 = AÇO CA-50)
+    _codigoSinapi: function (codigo) { return /^\d{1,8}$/.test(String(codigo == null ? "" : codigo).trim()); }, // há 33 códigos SINAPI reais de 1-2 dígitos (ex.: 34 = AÇO CA-50); insumo tem até 8 (00038365)
     _existeNaSinapi: function (codigo) {
       try {
         if (typeof Sinapi !== "undefined" && Sinapi.carregado && Sinapi.obter && Sinapi.obter(codigo)) return true;
@@ -588,6 +588,7 @@
       var baseOk = (typeof Sinapi !== "undefined" && Sinapi.carregado) || (typeof Analitico !== "undefined" && Analitico.carregado);
       Util.arr(orc.etapas).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
+          if (it.travadoOrgao) return;   // item travado do órgão: a fonte é a que o órgão imprimiu (Sangão 3.5.3: SINAPI, código 00038365)
           if (!self.ehSinapi(it.origem)) return;
           var fonteReal = (it.baseFonte && !self.ehSinapi(it.baseFonte)) ? it.baseFonte : null;
           if (!self._codigoSinapi(it.codigo)) {              // não-numérico: nunca é SINAPI

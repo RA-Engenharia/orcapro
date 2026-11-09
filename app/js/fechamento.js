@@ -437,7 +437,8 @@
           etapaId: x.etapa.id, itemId: x.item.id,
           custoUnitario: num(x.item.custoUnitario), custoMO: num(x.item.custoMO),
           custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ),
-          custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null
+          custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null,
+          insumos: _copiaIns(x.item)
         });
       });
     });
@@ -489,6 +490,7 @@
         }
       }
     }
+    _alinharInsumos(orc, antes.itens);
     if (Math.abs(sobra) >= 0.01) {
       avisos.push("Cheguei a " + fmt(precoAlvoDe(orc, fim)) + " — " + fmt(Math.abs(sobra)) +
         (sobra > 0 ? " abaixo" : " acima") + " do alvo. É o degrau de arredondamento do orçamento; " +
@@ -497,6 +499,35 @@
     return { ok: true, modo: "combinado", alvo: num(sim.alvo), atingido: precoAlvoDe(orc, fim),
              sobra: sobra, partes: aplicadas, avisos: avisos,
              itensAfetados: aplicadas.reduce(function (s, a) { return s + (a.itens || 0); }, 0) };
+  }
+
+  /* ⚠ FECHAR VALOR EM CUSTO E A COMPOSIÇÃO DO ÓRGÃO (revisão de 09/11/2026, M6). Os modos de custo (total, MO, material, equipamento) mexem no
+     custoUnitario do item; a composição (insumos) ficava no preço cheio e o documento da licitação RECUSAVA ("a composição soma R$ 504,41 e o custo na
+     planilha é R$ 479,47") — a -0,5% já bloqueava, justo no botão usado para adequar a proposta ao último lance. Agora os insumos andam junto, como no
+     desconto linear: cada unitário de insumo recebe o MESMO fator (custo novo / soma da composição), e o desfazer devolve os insumos de antes. */
+  function _copiaIns(it) {
+    return (it && Array.isArray(it.insumos) && it.insumos.length) ? JSON.parse(JSON.stringify(it.insumos)) : null;
+  }
+  function _alinharInsumos(orc, itensAntes) {
+    var porEtapa = {};
+    ((orc && orc.etapas) || []).forEach(function (e) { porEtapa[e.id] = e; });
+    (itensAntes || []).forEach(function (a) {
+      var e = porEtapa[a.etapaId];
+      var it = e && (e.itens || []).filter(function (x) { return x.id === a.itemId; })[0];
+      if (!it || !Array.isArray(it.insumos) || !it.insumos.length) return;
+      var cu0 = num(a.custoUnitario), cu1 = num(it.custoUnitario);
+      if (!(cu0 > 0) || !(cu1 > 0) || Math.abs(cu1 - cu0) < 1e-9) return;   // custo não mexeu: composição intacta
+      var soma = 0;
+      it.insumos.forEach(function (i) { if (i && typeof i === "object") soma += num(i.coeficiente) * num(i.custoUnitario); });
+      if (!(soma > 0)) return;
+      var k = cu1 / soma;
+      if (Math.abs(k - 1) < 1e-9) return;
+      it.insumos.forEach(function (i) {
+        if (!i || typeof i !== "object") return;
+        i.custoUnitario = Math.round(num(i.custoUnitario) * k * 1e4) / 1e4;
+        if (i.custoTotal != null) i.custoTotal = Math.round(num(i.coeficiente) * num(i.custoUnitario) * 1e4) / 1e4;
+      });
+    });
   }
 
   function nomeParcela(p) {
@@ -560,11 +591,13 @@
            fechamento escala o custo cheio do item com modo de custo, e sem
            isto no snapshot o desfazer devolvia o preço mas deixava a base
            esticada — "voltar ao custo cheio" traria outro número. */
-        custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null
+        custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null,
+        insumos: _copiaIns(x.item)
       });
     });
 
     var res = _convergir(orc, sim, parcela, lista);
+    _alinharInsumos(orc, antes.itens);
     _registrarJustificativas(orc, antes, lista, motivo);
     orc.fechamento = registro(sim, modoId, antes, motivo, opts);
 
@@ -833,6 +866,7 @@
         it.custoMO = a.custoMO; it.custoMAT = a.custoMAT; it.custoEQ = a.custoEQ;
         // o fechamento escala custoBase junto (item com modo de custo) — volta tambem
         if (a.custoBase != null) it.custoBase = a.custoBase;
+        if (a.insumos) it.insumos = a.insumos;   // a composição de antes (os insumos andaram junto com o custo)
         // tira o selo de "alterado por você" que o fechamento criou
         try { if (typeof Ajustes !== "undefined" && Ajustes.restaurar) Ajustes.restaurar(it, "custoUnitario"); } catch (eR) {}
       });

@@ -189,13 +189,23 @@
   var TIMBRADO_MAX_TOTAL = 2000000;
   function _timbTotal(o) {
     var t = 0;
-    Object.keys(o.por).forEach(function (k) { var e = o.por[k] || {}; t += String(e.topo || "").length + String(e.fundo || "").length; });
+    Object.keys(o.por).forEach(function (k) { var e = o.por[k] || {}; t += String(e.topo || "").length + String(e.fundo || "").length + String(e.pagina || "").length; });
     return t;
   }
   var TIMBRADO_CHAVE = "orcapro:timbrado-certame";
   var _timbMem = null;   // espelho em memória (e único lugar quando o navegador não guarda)
   function _soDigitos(v) { return String(v == null ? "" : v).replace(/\D+/g, ""); }
   function _imgOk(v) { v = s(v); return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v) && v.length <= TIMBRADO_MAX_CHARS ? v : ""; }
+  /* margens do papel timbrado de página inteira, em cm: { topo_cm, base_cm, livre_ate_cm }. `livre_ate_cm` null = a faixa de
+     cima está toda ocupada (a identificação da obra desce para baixo dela). Número fora de 0..21 (ou texto) invalida o conjunto. */
+  function _margensOk(m) {
+    if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+    var t = Number(m.topo_cm), b = Number(m.base_cm), l = m.livre_ate_cm;
+    if (!isFinite(t) || !isFinite(b) || t < 0 || b < 0 || t > 15 || b > 15) return null;
+    if (l === null || l === undefined || l === "") l = null;
+    else { l = Number(l); if (!isFinite(l) || l < 0 || l > 21) return null; }
+    return { topo_cm: Math.round(t * 100) / 100, base_cm: Math.round(b * 100) / 100, livre_ate_cm: l === null ? null : Math.round(l * 100) / 100 };
+  }
   function _timbLer() {
     if (_timbMem) return _timbMem;
     var o = { ordem: [], por: {} };
@@ -233,17 +243,37 @@
        Imagem inválida ou grande demais NÃO entra e é contada em `recusadas`. Imagem ausente no pacote
        não apaga a que já está. Devolve { topo, fundo, recusadas, guardou, descartados } (flags, nunca a imagem):
        `guardou` false = só vale nesta página (o navegador não gravou); `descartados` = quantos timbrados de outros CNPJs saíram. */
-    guardarTimbrado: function (cnpj, topo, fundo) {
-      var chave = _soDigitos(cnpj), r = { topo: false, fundo: false, recusadas: 0, guardou: true, descartados: 0 };
-      var vt = _imgOk(topo), vf = _imgOk(fundo);
+    guardarTimbrado: function (cnpj, topo, fundo, pagina, margens, substituir) {
+      var chave = _soDigitos(cnpj), r = { topo: false, fundo: false, pagina: false, recusadas: 0, guardou: true, descartados: 0 };
+      var vt = _imgOk(topo), vf = _imgOk(fundo), vp = _imgOk(pagina), vm = _margensOk(margens);
       if (s(topo) && !vt) r.recusadas++;
       if (s(fundo) && !vf) r.recusadas++;
-      if (!chave) { r.guardou = !(vt || vf); return r; }
+      if (s(pagina) && !vp) r.recusadas++;
+      /* a página inteira só vale com as margens: sem elas o corpo não saberia onde começar. Imagem sem margens válidas não entra. */
+      if (vp && !vm) { vp = ""; r.recusadas++; }
+      if (!chave) { r.guardou = !(vt || vf || vp); return r; }
       var o = _timbLer(), e = o.por[chave] || { topo: "", fundo: "" };
-      if (vt) e.topo = vt;
-      if (vf) e.fundo = vf;
-      r.topo = !!e.topo; r.fundo = !!e.fundo;
-      if (!(vt || vf)) return r;
+      /* `substituir` (pacote que traz chaves de timbrado) vale POR CHAVE: {topo, fundo, pagina}. Chave presente substitui (vazia limpa: "não usar neste
+         certame", ou folha inteira seguida de só logo); chave AUSENTE preserva. Pacote com topo e fundo mas sem a chave de página não apaga a página
+         guardada: não há como saber se é pacote antigo (revisão de 09/11/2026, baixo 3). `true` = todas as chaves. Sem o argumento, imagem ausente
+         nunca apaga a guardada. */
+      var sub = substituir === true ? { topo: true, fundo: true, pagina: true } : ((substituir && typeof substituir === "object") ? substituir : null);
+      var mexeu = false;
+      if (sub) {
+        if (sub.topo) { e.topo = vt; mexeu = true; }
+        if (sub.fundo) { e.fundo = vf; mexeu = true; }
+        if (sub.pagina) { e.pagina = vp; if (vp) e.margens = vm; else delete e.margens; mexeu = true; }
+      }
+      if (vt && !(sub && sub.topo)) e.topo = vt;
+      if (vf && !(sub && sub.fundo)) e.fundo = vf;
+      if (vp && !(sub && sub.pagina)) { e.pagina = vp; e.margens = vm; }
+      if (!e.topo && !e.fundo && !e.pagina && (mexeu || o.por[chave])) {
+        delete o.por[chave]; o.ordem = o.ordem.filter(function (c) { return c !== chave; });
+        r.guardou = _timbGravar(o);
+        return r;
+      }
+      r.topo = !!e.topo; r.fundo = !!e.fundo; r.pagina = !!e.pagina;
+      if (!(vt || vf || vp || mexeu)) return r;
       o.por[chave] = e;
       o.ordem = o.ordem.filter(function (c) { return c !== chave; }); o.ordem.push(chave);
       /* teto de quantidade e de tamanho: sai o CNPJ MAIS ANTIGO (nunca o que está entrando) */
@@ -255,9 +285,10 @@
     },
     timbradoDe: function (cnpj) {
       var chave = _soDigitos(cnpj);
-      if (!chave) return { topo: "", fundo: "" };
+      if (!chave) return { topo: "", fundo: "", pagina: "", margens: null };
       var e = _timbLer().por[chave] || {};
-      return { topo: s(e.topo), fundo: s(e.fundo) };
+      var pg = _imgOk(e.pagina), mg = pg ? _margensOk(e.margens) : null;
+      return { topo: s(e.topo), fundo: s(e.fundo), pagina: mg ? pg : "", margens: mg };
     },
     /* só para teste: esquece o espelho em memória e o que o navegador guardou */
     _timbradoLimpar: function () { _timbMem = null; try { if (typeof localStorage !== "undefined") localStorage.removeItem(TIMBRADO_CHAVE); } catch (e) {} },
@@ -357,9 +388,20 @@
         CAMPOS_LICITANTE.forEach(function (k) { var v = s(bloco.licitante[k]); lt[k] = v; if (v) algum = true; });
         if (algum) {
           lic.licitante = lt;
-          var tb = this.guardarTimbrado(lt.cnpj, bloco.licitante.timbradoTopo, bloco.licitante.timbradoFundo);
+          var temK = function (k) { return Object.prototype.hasOwnProperty.call(bloco.licitante, k); };
+          var temChavesTimb = { topo: temK("timbradoTopo"), fundo: temK("timbradoFundo"), pagina: temK("timbradoPagina") };
+          var tb = this.guardarTimbrado(lt.cnpj, bloco.licitante.timbradoTopo, bloco.licitante.timbradoFundo, bloco.licitante.timbradoPagina, bloco.licitante.timbradoMargens, temChavesTimb);
           lic.licitanteTimbrado = tb;
         }
+      }
+      /* CARTA DO EDITAL: {nome, pagina} quando o edital tem carta de apresentação própria (modelo preenchido no CertamePRO). Com ela o documento não
+         sai com a carta do OrçaPRO. Pacote sem a chave preserva; chave presente e vazia/null remove. */
+      if (Object.prototype.hasOwnProperty.call(bloco, "carta_do_edital")) {
+        var cde = bloco.carta_do_edital;
+        if (cde && typeof cde === "object" && !Array.isArray(cde) && s(cde.nome)) {
+          var pgC = Number(cde.pagina);
+          lic.cartaDoEdital = { nome: s(cde.nome).slice(0, 200), pagina: (isFinite(pgC) && pgC > 0) ? Math.floor(pgC) : null };
+        } else delete lic.cartaDoEdital;
       }
       /* prazo de execução lido do edital: inteiro de 1 a 3650; fora disso ignora */
       var pz = Number(bloco.prazo_execucao_dias);

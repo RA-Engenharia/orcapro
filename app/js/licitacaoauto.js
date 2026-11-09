@@ -414,6 +414,11 @@
         }
         var parc = parcelasDoOrgao(r);
         restaurarCodigo(r);
+        if (it.composicaoOrgaoGuardada) {   // o preço do órgão volta: a composição dele também
+          if (it.composicaoOrgaoGuardada.insumos) it.insumos = it.composicaoOrgaoGuardada.insumos;
+          if (it.composicaoOrgaoGuardada.composicaoOrgao) it.composicaoOrgao = it.composicaoOrgaoGuardada.composicaoOrgao;
+          delete it.composicaoOrgaoGuardada;
+        }
         it.custoUnitario = r.custoOrg; it.custoMO = parc.mo; it.custoMAT = parc.mat; it.custoEQ = parc.eq;
         /* item sem preço do órgão (R$ 0,01 simbólico do CertamePRO) que a base não casou: não é "preço do órgão" */
         var simb = it.semPrecoReferencia === true && num(r.custoOrg) <= 0.01 + 1e-9;
@@ -463,6 +468,13 @@
             codigoAplicado = it.codigo;
           }
           it.custoUnitario = cb; it.custoMO = num(Lx.custoMO); it.custoMAT = num(Lx.custoMAT); it.custoEQ = num(Lx.custoEQ);
+          /* ⚠ preço de base no lugar do do órgão: a composição do órgão (insumos) já não dá o custo do item (+0,5% gera 120 notas falsas; +5% bloqueia
+             "O pacote não pode sair assim"). Ela sai do item e fica guardada, e `manter` a devolve quando o preço do órgão volta. */
+          /* só quando o preço MUDA: base de preço igual ao do órgão (0 custos alterados) não pode trocar o analítico por "Sem detalhamento" */
+          if ((it.insumos || it.composicaoOrgao) && r.custoOrg !== null && r.custoOrg !== undefined && Math.abs(cb - num(r.custoOrg)) > 0.005) {
+            if (!it.composicaoOrgaoGuardada) it.composicaoOrgaoGuardada = { insumos: it.insumos, composicaoOrgao: it.composicaoOrgao };
+            delete it.insumos; delete it.composicaoOrgao;
+          }
           it.autoOrc = { via: Lx.via, confianca: conf, motivo: porDesc ? "por-descricao" : "codigo", fonte: Lx.fonte, competencia: s(ex.competencia),
             custoOrgao: r.custoOrg, custoBase: cb, custoAplicado: cb, codigoAplicado: codigoAplicado, baixa: porDesc };
           if (porDesc) {
