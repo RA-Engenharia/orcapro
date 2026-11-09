@@ -15425,6 +15425,7 @@
       return BimPropsUI.esquema(info, this, { extras: extras, aoMudarExtra: function (pid, valor) {
         if (String(pid).indexOf("b2:") === 0 && window.BimArqUI) BimArqUI.mudar(info, pid, valor);
         else if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(uid, pid, valor);
+        else if (String(pid).indexOf("tpc:") === 0 && window.BimTelhadoParamUI) BimTelhadoParamUI.mudar(uid, pid, valor);   /* telhado paramétrico: V0 das terças */
         try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
       } });
     },

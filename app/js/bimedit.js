@@ -1033,6 +1033,8 @@
         algum = true;
       }
       if (o.tipoId !== undefined) { if (o.tipoId !== null && !(typeof o.tipoId === "string" && o.tipoId.length > 0 && o.tipoId.length <= 60)) return false; algum = true; }
+      /* FORRO HOSPEDADO no telhado (conjunto do Telhado paramétrico): o id do telhado que ele segue (null solta) */
+      if (o.telhado !== undefined) { if (o.telhado !== null && !((typeof o.telhado === "string" && o.telhado.length > 0 && o.telhado.length <= 120) || fin(o.telhado))) return false; algum = true; }
       /* "Delimitação de ambientes" do forro (corta o volume do ambiente): booleano ou null (volta ao padrão Sim) */
       if (o.delimitaAmbiente !== undefined) { if (o.delimitaAmbiente !== null && typeof o.delimitaAmbiente !== "boolean") return false; algum = true; }
       if (o.tipoForro !== undefined) {

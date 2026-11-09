@@ -353,6 +353,11 @@
     teArea: function (x) { return m(x).area != null ? m(x).area : null; },
     teProjecao: function (x) { return m(x).areaProjecao != null ? m(x).areaProjecao : null; },
     teVolume: function (x) { return m(x).volume != null ? m(x).volume : null; },
+    /* CONJUNTO (telhado paramétrico): o aço da trama de terças e o do X, correntes e calços. Só o conjunto expõe — o telhado comum não muda (a medição dele fica como está) */
+    teAcoKgConj: function (x) { return el(x).conjunto && m(x).acoKg != null ? m(x).acoKg : null; },
+    teContraventoKg: function (x) { return el(x).conjunto && m(x).contraventoKg != null ? m(x).contraventoKg : null; },
+    teCalcoKg: function (x) { return el(x).conjunto && m(x).calcoKg != null ? m(x).calcoKg : null; },
+    teContrarrufoM: function (x) { return el(x).conjunto && m(x).contrarrufoM != null ? m(x).contrarrufoM : null; },
     teCumeeira: function (x) { return m(x).comprimento != null ? m(x).comprimento : null; },
     teEspigao: function (x) { return m(x).espigao != null ? m(x).espigao : null; },
     teRincao: function (x) { return m(x).rincao != null ? m(x).rincao : null; },
@@ -676,7 +681,7 @@
       faixa: o.faixa || null, padrao: o.padrao != null ? o.padrao : null,
       opcoes: o.opcoes || null, casas: o.casas != null ? o.casas : null,
       ifc: o.ifc || null, orc: o.orc || null,
-      tabela: o.tabela !== false, filtro: o.filtro !== false, identificador: !!o.identificador,
+      tabela: o.tabela !== false, filtro: o.filtro !== false, identificador: !!o.identificador, so: o.so || null,
       escrita: o.escrita || null,
       revit: o.revit !== undefined ? o.revit : (/^RA_/.test(id) ? null : { bip: id })
     };
@@ -1040,6 +1045,11 @@
         P(I, "Cotas", "Inclinação por aresta (%)", "RA_TELHADO_INCLINACOES", "texto", { calc: "teInclinacoes", escrita: "telhado.inclinacoes", leitura: false, filtro: false, ifc: Q("OrcaPRO_Telhado", "InclinacaoPorAresta") }),
         P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "teArea", ifc: Q("Qto_RoofBaseQuantities", "NetArea"), orc: O("area") }),
         P(I, "Cotas", "Volume", "HOST_VOLUME_COMPUTED", "volume", { calc: "teVolume", ifc: Q("OrcaPRO_Telhado", "Volume"), orc: O("volume") }),
+        /* só o conjunto mostra estas linhas (so: "conjunto"): o painel do telhado comum fica como era */
+        P(I, "Cotas", "Aço da trama de terças (conjunto)", "RA_TELHADO_ACO_KG", "massa", { calc: "teAcoKgConj", orc: O("acoKg"), filtro: false, so: "conjunto" }),
+        P(I, "Cotas", "Aço do X e das correntes (conjunto)", "RA_TELHADO_CONTRAVENTO_KG", "massa", { calc: "teContraventoKg", orc: O("contraventoKg"), filtro: false, so: "conjunto" }),
+        P(I, "Cotas", "Aço dos calços (conjunto)", "RA_TELHADO_CALCO_KG", "massa", { calc: "teCalcoKg", orc: O("calcoKg"), filtro: false, so: "conjunto" }),
+        P(I, "Cotas", "Contrarrufo de encontro (conjunto)", "RA_TELHADO_CONTRARRUFO", "comprimento", { calc: "teContrarrufoM", orc: O("contrarrufoM"), filtro: false, so: "conjunto" }),
         P(I, "Cotas", "Área de projeção", "RA_TELHADO_PROJECAO", "area", { calc: "teProjecao", ifc: Q("Qto_RoofBaseQuantities", "ProjectedArea"), orc: O("areaProjecao") }),
         P(I, "Cotas", "Número de águas", "RA_TELHADO_AGUAS", "inteiro", { calc: "teAguas", ifc: Q("OrcaPRO_Telhado", "Aguas") }),
         P(I, "Cotas", "Comprimento da cumeeira", "RA_TELHADO_CUMEEIRA", "comprimento", { calc: "teCumeeira", ifc: Q("OrcaPRO_Telhado", "Cumeeira"), orc: O("comprimento") }),
@@ -1975,8 +1985,8 @@
        Área de superfície na madeira; só uma tem valor na peça) */
     defsMedida: function (cat, medida) { return defsDe(cat).filter(function (d) { return d.orc && d.orc.medida === medida; }); },
     /* as medidas que o orçamento oferece numa categoria, pelo registro */
-    medidasOrc: function (cat) {
-      var tem = {}; defsDe(cat).forEach(function (d) { if (d.orc && d.orc.medida) tem[d.orc.medida] = 1; });
+    medidasOrc: function (cat, doConjunto) {
+      var tem = {}; defsDe(cat).forEach(function (d) { if (d.orc && d.orc.medida && (!d.so || doConjunto)) tem[d.orc.medida] = 1; });   /* `so: conjunto`: só a peça do conjunto oferece (o telhado comum fica com a lista de sempre) */
       return ORDEM_MEDIDAS.filter(function (k) { return tem[k]; }).concat(Object.keys(tem).filter(function (k) { return ORDEM_MEDIDAS.indexOf(k) < 0; }));
     },
     /* a QUANTIDADE de uma medida numa peça resolvida: { def, valor, valorOrc }
@@ -2083,7 +2093,7 @@
           xOrc.regua = true;
           return xOrc;
         }
-        var itens = defsDe(p.categoria, extra).map(function (d) {
+        var itens = defsDe(p.categoria, extra).filter(function (d) { return !d.so || (d.so === "conjunto" && !!(c && c.conjunto)); }).map(function (d) {
           var v = valorDe(d, x), it = { def: d, valor: v, texto: formatar(v, d), usuario: deUsuario(d, x) };
           if (d.orc && fin(v)) it.valorOrc = valorDe(d, contextoOrc());
           return it;

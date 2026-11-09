@@ -279,7 +279,7 @@
       if (ps.length) {
         var m = 0, v = 0; ps.forEach(function (c) { m += num(c.comprimento, 0); v += num(c.volume, 0); });
         itens.push(item("Estrutura de madeira do forro (" + ps.length + " peças, " + virg(m) + " m)", "m³", v, null, "sarrafos e barrotes do catálogo do fornecedor (medidas brutas); espaçamento NÃO verificado no manual do fabricante da chapa", ex));
-      } else avisos.push("Forro " + f.id + ": sem estrutura de madeira lançada — a estrutura do forro NÃO está no quantitativo.");
+      } else if (f.telhado == null) avisos.push("Forro " + f.id + ": sem estrutura de madeira lançada — a estrutura do forro NÃO está no quantitativo.");   /* hospedado no telhado (conjunto): a estrutura são as terças, no quantitativo do telhado */
       var lum = {};
       arr(estado.familias).forEach(function (q) {
         if (!q || q.famId !== "ra-luminaria") return;

@@ -431,7 +431,7 @@
   var SEM_ARMACAO = { cobertura: 1, guarda: 1, forro: 1, ambiente: 1, topossolido: 1, subregiao: 1, plataforma: 1, divisa: 1, componente_terreno: 1, telhado: 1, borda: 1 };   /* P3: telhado e borda */   /* P11: terreno */
   var ORDEM_MEDIDAS = ["area", "areaBruta", "volume", "comprimento", "areaForma", "areaProjecao", "un", "kgPorM3", "areaFora", "areaDentro", "massa", "corte", "aterro", "areaEspelho", "comprimentoCorrimao",
                        /* P3: linhas do telhado e derivados da fundação (BimEdit.MEDIDAS_ORC) */
-                       "espigao", "rincao", "beiral", "empena", "escavacao", "reaterro", "lastro", "lastroArea", "aco", "estacas", "volumeEstacas", "acoEstacas"];   /* P11: corte e aterro da plataforma */
+                       "espigao", "rincao", "beiral", "empena", "acoKg", "contraventoKg", "calcoKg", "contrarrufoM", "escavacao", "reaterro", "lastro", "lastroArea", "aco", "estacas", "volumeEstacas", "acoEstacas"];   /* P11: corte e aterro da plataforma */
   function categoriaDe(el) { if (!el || el.tipo === "volume") return null; return el.planos ? "cobertura" : (CAT_EL[el.tipo] || null); }
   /* a peça do registro de UM elemento (o orçamento de uma peça recebe só ela e a área dos vãos).
      cat: a categoria quando o elemento não diz (o ambiente não tem `tipo`) */
@@ -455,10 +455,10 @@
   }
   /* as medidas que o orçamento oferece numa categoria — as do registro, mais
      a contagem e a armação por taxa (quando há volume) */
-  function medidasDaCategoria(tipo) {
+  function medidasDaCategoria(tipo, el) {
     var BP = dep("BimParam", "./bimparam.js"), cat = CAT_EL[tipo];
     if (!BP || !BP.medidasOrc || !cat) return null;
-    var tem = {}; BP.medidasOrc(cat).forEach(function (k) { tem[k] = 1; });
+    var tem = {}; BP.medidasOrc(cat, !!(el && el.conjunto)).forEach(function (k) { tem[k] = 1; });
     /* armação por taxa é de peça que PODE ser de concreto (parede, laje, pilar,
        viga, escada); telhado e guarda-corpo nunca ofereceram */
     tem.un = 1; if (tem.volume && !SEM_ARMACAO[cat]) tem.kgPorM3 = 1;
@@ -471,7 +471,7 @@
        RÉGUA DE 4 CASAS de sempre (valorOrc) — custo = preço × quantidade sem
        arredondar a quantidade antes: a medida exata mudaria o total de
        orçamentos existentes nos centavos (prova: tools/fixtures/orc-antes-p1acab.json) */
-    BP.medidasOrc(cat).forEach(function (k) { var q = BP.quantidade(peca, k); if (q) out[k] = { valor: q.valorOrc != null ? q.valorOrc : q.valor, exato: q.valor, def: q.def }; });
+    BP.medidasOrc(cat, true).forEach(function (k) { var q = BP.quantidade(peca, k);   /* a PEÇA lê todas; as `so: conjunto` só têm item no conjunto */ if (q) out[k] = { valor: q.valorOrc != null ? q.valorOrc : q.valor, exato: q.valor, def: q.def }; });
     out.un = { valor: 1, def: null };
     return out;
   }
@@ -768,7 +768,16 @@
       arr(estado && estado[par[0]]).forEach(function (e3) {
         if (!e3 || e3.id == null) return;
         var rot = NOME_EL[par[1]].toLowerCase() + " " + e3.id;
-        if (!arr(e3.servicos).length) { var s3 = semServico(e3, par[1]); if (par[1] !== "fundacao") s3.peso = false; somar(e3.id, rot, s3); return; }
+        if (!arr(e3.servicos).length) {
+          var s3 = semServico(e3, par[1]); if (par[1] !== "fundacao") s3.peso = false;
+          /* TESTEIRA DO CONJUNTO (telhado paramétrico): sem composição na base, mas a lista de fora mostra a PEÇA, a quantidade e o motivo (antes: "Borda do telhado sem composição", quantidade 0) */
+          if (par[1] === "borda" && e3.tipoBorda === "testeira" && e3.ok && num(e3.comprimento, 0) > 0 && arr(estado && estado.telhados).some(function (tx) { return tx && String(tx.id) === String(e3.telhado) && tx.conjunto; })) {
+            s3.linhas[0].descricao = "Testeira do conjunto (" + String(Math.round(num(e3.alturaEf, 0) * 1000) / 10).replace(".", ",") + " cm de altura) sem composição";
+            s3.linhas[0].unidadeQto = "m"; s3.linhas[0].quantidade = num(e3.comprimento, 0); s3.linhas[0].medida = "comprimento";
+            s3.linhas[0].avisos = ["FORA do total: não há composição para a testeira (o 100327 é rufo de corte de 33 cm e a testeira tem a altura acima mais as dobras, desenvolvimento não conferido); a quantidade está aqui para o orçamentista compor"];
+          }
+          somar(e3.id, rot, s3); return;
+        }
         if (e3.ok === false) {
           var mot3 = NOME_EL[par[1]].toLowerCase() + " sem geometria (" + (arr(e3.avisos)[0] || "confira as Propriedades") + "): sem quantidade — pendente";
           somar(e3.id, rot, { linhas: (BE && BE.limparServicos ? BE.limparServicos(e3.servicos) : []).map(function (s, i) {

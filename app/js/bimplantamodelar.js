@@ -164,6 +164,37 @@
     }
     return pts;
   }
+  /* TELHADO PARAMÉTRICO — "Selecionar linhas": as linhas clicadas (qualquer ordem e sentido) viram UM contorno fechado. Encadeia pelo ponto mais perto
+     (até 1 m) e fecha cada canto pelo cruzamento das duas retas — face de parede que ficou curta ou passou do canto dá o canto certo. Menos de 3 linhas,
+     linhas que não se emendam ou paralelas no canto → null (nada é criado e a tela diz por quê). Só trechos retos. */
+  function contornoDeLinhas(segs) {
+    var L = (segs || []).filter(function (s) { return s && s.tipo !== "arco" && s.a && s.b && dist(s.a, s.b) > 1e-6; });
+    if (L.length < 3) return null;
+    var usado = L.map(function () { return false; }), ord = [{ a: L[0].a, b: L[0].b }], i, k;
+    usado[0] = true;
+    for (i = 1; i < L.length; i++) {
+      var fim = ord[ord.length - 1].b, mel = -1, inv = false, dm = 1.0;
+      for (k = 0; k < L.length; k++) {
+        if (usado[k]) continue;
+        var da = dist(fim, L[k].a), db = dist(fim, L[k].b);
+        if (da < dm) { dm = da; mel = k; inv = false; }
+        if (db < dm) { dm = db; mel = k; inv = true; }
+      }
+      if (mel < 0) return null;
+      usado[mel] = true; ord.push(inv ? { a: L[mel].b, b: L[mel].a } : { a: L[mel].a, b: L[mel].b });
+    }
+    if (dist(ord[ord.length - 1].b, ord[0].a) >= 1.0) return null;
+    var pts = [], n = ord.length;
+    for (i = 0; i < n; i++) {
+      var s1 = ord[(i - 1 + n) % n], s2 = ord[i];
+      var u1x = s1.b.x - s1.a.x, u1z = s1.b.z - s1.a.z, u2x = s2.b.x - s2.a.x, u2z = s2.b.z - s2.a.z, den = u1x * u2z - u1z * u2x;
+      if (Math.abs(den) < 1e-9 * Math.sqrt((u1x * u1x + u1z * u1z) * (u2x * u2x + u2z * u2z))) return null;
+      var t = ((s2.a.x - s1.a.x) * u2z - (s2.a.z - s1.a.z) * u2x) / den;
+      pts.push(P(r6(s1.a.x + u1x * t), r6(s1.a.z + u1z * t)));
+    }
+    var area = 0; for (i = 0; i < n; i++) { var p0 = pts[i], p1 = pts[(i + 1) % n]; area += p0.x * p1.z - p1.x * p0.z; }
+    return Math.abs(area) / 2 > 0.01 ? pts : null;
+  }
   function pontoEmPoligono(p, pol) {
     var dentro = false;
     for (var i = 0, j = pol.length - 1; i < pol.length; j = i++) {
@@ -236,14 +267,16 @@
   var BimPlantaModelar = {
     /* puro (testes) */
     circulo3: circulo3, amostrarArco: amostrarArco, amostrar: amostrar, emRetas: emRetas, retasDe: retasDe, deslocar: deslocar, concordar: concordar,
-    polilinha: polilinha, pontoEmPoligono: pontoEmPoligono, simplificar: simplificar, DUBLE: DUBLE,
+    polilinha: polilinha, contornoDeLinhas: contornoDeLinhas, pontoEmPoligono: pontoEmPoligono, simplificar: simplificar, DUBLE: DUBLE,
 
     /* ⚠ CONTRATO: o js/bimdesenho.js real entra AQUI; sem ele, o dublê */
     desenho: function () { var D = global.BimDesenho; return (D && typeof D.ferramentas === "function" && typeof D.gerar === "function") ? D : DUBLE; },
     alvoForma: function (sub) { return sub; },
+    _conjuntoTelhado: function () { try { var P3 = global.BimP3UI; return !!(P3 && P3.cfg && P3.cfg("telhado").conjunto === true); } catch (e) { return false; } },
     /* as ferramentas que desenham por forma (as lineares e as de contorno); o forro automático é um clique */
     aceitaForma: function (sub) {
-      if (!FORMA_SUBS[sub]) return false;
+      /* TELHADO PARAMÉTRICO: só o modo conjunto oferece as formas (Selecionar linhas, retângulo, polígono…); o telhado de sempre fica com a barra de sempre */
+      if (!FORMA_SUBS[sub] && !(sub === "telhado" && this._conjuntoTelhado())) return false;
       try { if (global.BimContornoUI && global.BimContornoUI.modoNovo(sub)) return false; } catch (e0) {}   /* CONTORNO LIVRE: escolher paredes / edificação não desenham forma */
       if (sub === "forro") { try { if (global.BimForroUI && global.BimForroUI.cfg().modo !== "contorno") return false; } catch (e) {} }
       return true;
@@ -391,6 +424,8 @@
     modoForma: function (sub) {
       var Bo = BB(); if (!this.aceitaForma(sub) || !Bo) return null;
       var f = Bo.formaAtual(sub); if (!f) return null;
+      /* TELHADO PARAMÉTRICO: com o contorno já desenhado esperando a aresta da queda, o clique é da queda (o caminho de sempre), não de outra forma */
+      if (sub === "telhado") { try { var m3q = global.BimP3UI && global.BimP3UI._m3d; if (m3q && m3q.quedaPendente && m3q.quedaPendente()) return null; } catch (eq) {} }
       if (f.id === "linha") {
         /* linha: o traço de sempre (cada clique, uma peça; Ctrl+Z desfaz uma). Parede com
            deslocamento ou raio coleta a polilinha toda e cria no Enter, com os cantos certos */
@@ -448,6 +483,16 @@
     _criar: function (sub, g) {
       var a = this.api(); if (!a) return false;
       var segs = g.segmentos.filter(function (s) { return s && s.a && s.b && fin(s.a.x) && fin(s.a.z) && fin(s.b.x) && fin(s.b.z); }), fechado = !!g.fechado, nota = "";
+      /* TELHADO PARAMÉTRICO: o contorno das linhas/forma vai para a ferramenta de Telhado, que pergunta a aresta da queda (js/bimp3ui.js criarPorContorno) */
+      if (sub === "telhado") {
+        var pl0 = polilinha(segs), ct = null;
+        if (pl0 && pl0.length > 2 && fechado) { if (dist(pl0[0], pl0[pl0.length - 1]) < 1e-6) pl0.pop(); ct = pl0; }
+        if (!ct) ct = contornoDeLinhas(segs);
+        var m3 = global.BimP3UI && global.BimP3UI._m3d;
+        if (!ct || ct.length < 3) { status("Telhado: as linhas não fecham um contorno. Escolha 3 ou mais linhas que se emendam (cada ponta a menos de 1 m da próxima) e tecle Enter."); return false; }
+        if (!m3 || !m3.criarPorContorno) { status("Telhado: a ferramenta não está pronta para receber o contorno."); return false; }
+        return !!m3.criarPorContorno(ct, {});
+      }
       if (CONTORNO[sub] || sub === "guarda") {
         var pts = amostrar(segs, 10);
         if (fechado && pts.length > 2 && dist(pts[0], pts[pts.length - 1]) < 1e-6) pts.pop();

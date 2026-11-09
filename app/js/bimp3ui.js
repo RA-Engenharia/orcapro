@@ -36,11 +36,13 @@
   function num(v, d) { if (v == null || v === "") return d; var x = parseFloat(String(v).replace(",", ".")); return isFinite(x) ? x : d; }
   function n2(v, c) { var x = Number(v); return isFinite(x) ? x.toFixed(c == null ? 2 : c).replace(".", ",") : "—"; }
   function ro(id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; }
+  function areaPoli(C) { var s = 0, n = arr(C).length; for (var i = 0; i < n; i++) { var a = C[i], b = C[(i + 1) % n]; s += a.x * b.z - b.x * a.z; } return s / 2; }
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
   var cfg = {
     telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null, modelo: "auto", beiralMexido: false,
-               ref: "beiral", comp: null, larg: null, seguir: null },   /* T4: linha de referência (beiral/cumeeira), cotas digitadas e a peça seguida */
+               ref: "beiral", comp: null, larg: null, seguir: null,   /* T4: linha de referência (beiral/cumeeira), cotas digitadas e a peça seguida */
+               conjunto: false, forroTipoId: "drywall-12_5-madeira", v0: null },   /* TELHADO PARAMÉTRICO (conjunto, js/bimtelhadoparamui.js): o contorno desenhado vira o conjunto, não um telhado solto */
     fundacao: { tipoFundacao: "sapata", largura: 1.2, comprimento: 1.2, altura: 0.4, alturaBase: null, larguraTopo: null, comprimentoTopo: null,
                 nEstacas: 2, diametro: 0.3, comprimentoEstaca: 6, espacamento: 0.9, deslocTopo: 0, taxaAco: null, fck: null, lastro: 0.05, folga: 0, terreno: 0, radierModo: "retangulo" },
     borda: { tipoBorda: "calha" }
@@ -193,9 +195,26 @@
   var DESENHO = { retanguloDeLinha: retanguloDeLinha, retanguloDeCorte: retanguloDeCorte, inclinacaoDePeca: inclinacaoDePeca, retanguloSeguindo: retanguloSeguindo,
                   retanguloDoisCantos: retanguloDoisCantos, setasDoContorno: setasDoContorno };
 
+  var CAMPOS_GUARDA = ["aguas", "modo", "seguir", "modelo", "tipoId", "inclinacao", "beiral", "beiralMexido", "inclMexida"];
   var BimP3UI = {
     ativo: previa,
     desenho: DESENHO,
+    /* TELHADO PARAMÉTRICO: liga/desliga o conjunto (1 água, retângulo, telha sanduíche do catálogo) */
+    conjuntoLigar: function (on) {
+      var c = cfg.telhado, T = TM();
+      /* a ferramenta de Telhado COMUM volta como estava: guarda a configuração ao ligar o conjunto e restaura ao desligar (antes ficava 1 água, sem estrutura, telha sanduíche) */
+      if (on && !c._guarda) { c._guarda = {}; CAMPOS_GUARDA.forEach(function (k) { c._guarda[k] = c[k] == null ? c[k] : JSON.parse(JSON.stringify(c[k])); }); }
+      if (!on && c._guarda) { CAMPOS_GUARDA.forEach(function (k) { c[k] = c._guarda[k]; }); delete c._guarda; }
+      c.conjunto = !!on; c._ate = on ? Date.now() + 2500 : 0;
+      if (on) {
+        c.aguas = 1; c.modo = c.modo === "linha" || c.modo === "corte" ? "retangulo" : c.modo; c.seguir = null; c.modelo = "nenhum";
+        var PP = global.BimTelhadoParam, tp = T && T.telha(c.tipoId) && T.telha(c.tipoId).familia === "sanduiche" ? c.tipoId : (PP ? PP.TELHA_PADRAO : c.tipoId);
+        c.tipoId = tp; if (T && T.inclinacaoPadrao) { var im = T.inclinacaoPadrao(tp); if (fin(im)) c.inclinacao = im; }
+        if (!c.beiralMexido) c.beiral = 0.3;
+        c.inclMexida = false;
+      }
+      return c.conjunto;
+    },
     cfg: function (k) { return JSON.parse(JSON.stringify(k ? cfg[k] : cfg)); },
     ROT_FUND: ROT_FUND,
 
@@ -226,7 +245,8 @@
           return arqui && arqui.armar ? arqui.armar(sub) : false;
         };
       }
-      reg.cobertura = armar("telhado"); reg.fundacao = armar("fundacao");
+      /* o comando de Telhado de sempre desliga o conjunto — MENOS no instante em que o próprio Telhado paramétrico arma a ferramenta (o armar devolve o eco do botão) */
+      reg.cobertura = function (e) { if (!(cfg.telhado._ate && Date.now() < cfg.telhado._ate) && cfg.telhado.conjunto) BimP3UI.conjuntoLigar(false); return armar("telhado")(e); }; reg.fundacao = armar("fundacao");
       reg["telhado-borda"] = armar("telhado-borda"); reg["telhado-unir"] = armar("telhado-unir");
       /* T1: o modelo do telhado (os que existem + os próximos) — um lote, um Ctrl+Z */
       var self = BimP3UI;
@@ -246,6 +266,7 @@
           return true;
         };
       });
+      if (global.BimTelhadoParamUI) global.BimTelhadoParamUI.registrar(reg, arqui, opts, armar);   /* TELHADO PARAMÉTRICO: o conjunto (js/bimtelhadoparamui.js) */
       if (global.BimCoberturaUI) global.BimCoberturaUI.registrar(reg, arqui, opts);   /* COBERTURA COMPLETA: estrutura, platibanda, calha, sanca… (js/bimcoberturaui.js) */
       return true;
     },
@@ -331,7 +352,7 @@
     /* ---------------------------------------- T1: o MODELO do telhado (js/bimtelhadoestrut.js MODELOS) */
     opcoesModelo: function () {
       var ME = ESM(), out = [{ id: "auto", rotulo: "Automático pela telha" }, { id: "nenhum", rotulo: "Sem estrutura (só o telhado)" }];
-      if (ME && ME.MODELOS) Object.keys(ME.MODELOS).forEach(function (k) { out.push({ id: k, rotulo: ME.MODELOS[k].rotulo }); });
+      if (ME && ME.MODELOS) Object.keys(ME.MODELOS).forEach(function (k) { if (ME.MODELOS[k].interno) return; out.push({ id: k, rotulo: ME.MODELOS[k].rotulo }); });   /* `interno` (o modelo do conjunto) fica fora do menu: nasce só do Telhado paramétrico */
       return out;
     },
     /* o modelo que a ferramenta usa: "auto" = o sugerido para a telha de CATÁLOGO (tipo sem catálogo = sem estrutura, como antes) */
@@ -354,7 +375,7 @@
     opsModelo: function (estado, modelo) {
       var ME = ESM(), ops = [];
       arr(estado && estado.telhados).forEach(function (t) {
-        if (!t || t.modo === "extrusao") return;
+        if (!t || t.modo === "extrusao" || t.conjunto) return;   /* trocar o modelo desmontaria o conjunto (terças sobre o forro): ele tem o próprio fluxo */
         var m = modelo === "auto" ? (ME ? ME.modeloSugerido(t.tipoId, t, estado) : null) : (modelo && ME && ME.MODELOS[modelo] ? modelo : null);
         ops.push({ op: "telhado", id: t.id, modelo: m });
       });
@@ -409,6 +430,10 @@
         d.modo = "extrusao"; d.perfil = [{ u: 0, y: 0 }, { u: L / 2, y: L / 2 * i }, { u: L, y: 0 }];
         d.origem = { x: dados.p1.x, z: dados.p1.z }; d.ang = Math.atan2(uz, ux) * 180 / Math.PI; d.inicio = Math.min(0, w); d.fim = Math.max(0, w);
       } else return { ok: false, motivo: "Clique os cantos do telhado." };
+      /* TELHADO PARAMÉTRICO: o contorno NÃO vira telhado solto — falta apontar a aresta onde cai a água; o conjunto sai dela (js/bimtelhadoparam.js) */
+      if (c.conjunto && !leve && d.modo !== "extrusao" && arr(d.contorno).length >= 3)
+        return { ok: true, conjuntoPendente: true, contorno: d.contorno.map(function (q) { var o = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null) o.po = q.po; } return o; }), nivel: nivel, base: base,
+                 resumo: "Contorno de " + n2(Math.abs(areaPoli(d.contorno)), 1) + " m²: clique a ARESTA onde cai a água (a calha) — a seta mostra o caimento — ou Enter para aceitar a sugerida." };
       var id = this.novoId(estado, "te"), op = T.op(id, d);
       if (!op) return { ok: false, motivo: "Telhado inválido: confira o contorno e as Propriedades." };
       var t = T.calcular(op, nivel ? [{ id: nivel.id, elevacao: +nivel.elevacao || 0 }] : []);
@@ -476,6 +501,13 @@
         bt("ref:cumeeira", c.ref === "cumeeira", "Cumeeira", "a linha desenhada é o topo (cumeeira)", '<path d="M3 7 H21"/><path d="M6 17 L12 8 L18 17" stroke-dasharray="2 2"/>'));
       if (c.aguas === 1 && c.modo === "retangulo") h += grp("", '<button type="button" class="bbo-liga" data-bbo="p3" data-p3="seguir" aria-pressed="' + (segOn || peg ? "true" : "false") + '" title="Seguir inclinação de… — clique numa peça já modelada (viga/terça inclinada, peça de madeira, face inclinada de volume/laje): o telhado pega a inclinação, o sentido do caimento e a cota de apoio dela. Clique de novo para desligar.">' +
         svg('<path d="M3 19 L21 9"/><circle cx="12" cy="14" r="3"/><path d="M12 9 V11 M12 17 V19"/>') + "<span>" + (peg ? "Clique na peça…" : (segOn ? "Seguindo " + esc(c.seguir.rotulo) + " (" + n2(c.seguir.inclinacao, 1) + " %)" : "Seguir inclinação de…")) + "</span></button>");
+      if (c.conjunto) {
+        var TT = TM(), lst = TT ? TT.TIPOS.filter(function (x) { var tl = TT.telha(x.id); return tl && tl.familia === "sanduiche"; }) : [], FF = global.BimForro ? global.BimForro.TIPOS : [];
+        function sel(k, rot, v, ops, dica) { return '<label class="bbo-campo" title="' + esc(dica) + '">' + esc(rot) + ' <select data-bbo="p3:' + k + '">' + ops.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.desab ? " disabled" : "") + (String(o.id) === String(v) ? " selected" : "") + ">" + esc(o.rotulo) + "</option>"; }).join("") + "</select></label>"; }
+        h += grp("Conjunto", sel("tipoId", "Telha", c.tipoId, lst.map(function (x) { var tl = TT.telha(x.id), serve = tl && fin(tl.vaoMaxEntreApoios) && fin(tl.pesoKgM2); return { id: x.id, rotulo: x.rotulo + (serve ? "" : " — sem vão máximo e peso com fonte: não serve ao conjunto"), desab: !serve }; }), "Só telha sanduíche do catálogo (a lista traz só essas)") +
+          sel("forroTipoId", "Forro", c.forroTipoId, FF.map(function (x) { return { id: x.id, rotulo: x.rotulo }; }), "Forro hospedado no telhado: a face de baixo fica no plano") +
+          campo("v0", "V0", c.v0, "m/s", "Velocidade básica do vento (NBR 6123) do local: sem ela as terças saem verificadas só na gravidade"));
+      }
       h += grp("", campo("comp", "Compr.", c.comp, "m", c.modo === "corte" ? "Comprimento — vazio: pelos cliques" : "Comprimento da linha/retângulo — vazio: pelo clique (digite um número durante o desenho)") +
         campo("larg", "Larg.", c.larg, "m", "Largura da água (linha) ou do retângulo — vazio: pelo clique") +
         campo("incl", "Incl.", segOn ? "" : c.inclinacao, "%", segOn ? "Inclinação da peça seguida" : "Inclinação (%) — no corte pelo 3D, a da linha desenhada"));
@@ -496,9 +528,12 @@
     },
     barraCampo: function (k, valor) {
       var c = cfg.telhado, v = num(valor, NaN), vazio = valor == null || String(valor).trim() === "";
+      if (k === "v0") { c.v0 = vazio ? null : (v > 5 && v < 100 ? v : c.v0); return true; }
+      if (k === "tipoId") { var TT2 = TM(); if (TT2 && TT2.telha(valor) && TT2.telha(valor).familia === "sanduiche" && fin(TT2.telha(valor).vaoMaxEntreApoios) && fin(TT2.telha(valor).pesoKgM2)) { c.tipoId = String(valor); if (TT2.inclinacaoPadrao) { var im2 = TT2.inclinacaoPadrao(valor); if (fin(im2)) c.inclinacao = im2; } } return true; }
+      if (k === "forroTipoId") { if (global.BimForro && global.BimForro.tipo(valor) && global.BimForro.tipo(valor).id === String(valor)) c.forroTipoId = String(valor); return true; }
       if (k === "comp") c.comp = vazio ? null : (v > 0.05 ? v : c.comp);
       else if (k === "larg") c.larg = vazio ? null : (v > 0.05 ? v : c.larg);
-      else if (k === "incl") { if (!vazio && v > 0) { c.inclinacao = v; c.seguir = null; } }
+      else if (k === "incl") { if (!vazio && v > 0) { c.inclinacao = v; c.seguir = null; c.inclMexida = true; } }
       else return false;
       /* digitou durante o desenho: o ponto pendente sai do cursor com a cota (o Enter do campo confirma) */
       var M = this._m3d;
@@ -605,12 +640,12 @@
       var self = this, THREE = api.THREE, edit = api.edit, grp = new THREE.Group(), pts = [], marcas = [], unirA = null;
       /* T4: o desenho do telhado — esperando o clique da peça a seguir, a face inclinada capturada no 1º canto (só para
          este telhado), o último cursor (Enter e as cotas digitadas usam) e o relógio da prévia */
-      var segPick = false, segAuto = null, cur = null, tFant = 0, kFant = "";
+      var segPick = false, segAuto = null, cur = null, tFant = 0, kFant = "", conj = null;   /* conj: o contorno do conjunto esperando a aresta da queda */
       grp.name = "p3-previa"; api.scene.add(grp);
       var SUBS = { telhado: 1, fundacao: 1, "telhado-borda": 1, "telhado-unir": 1 };
       function nivel() { return edit && edit.b2 && edit.b2.nivel ? edit.b2.nivel : null; }
       function limparPrevia() { grp.children.slice().forEach(function (o) { grp.remove(o); if (o.geometry) o.geometry.dispose(); }); }
-      function cancelar() { pts = []; unirA = null; segAuto = null; kFant = ""; marcas.forEach(function (m) { if (api.limparMarca) api.limparMarca(m); }); marcas = []; limparPrevia(); }
+      function cancelar() { pts = []; unirA = null; segAuto = null; conj = null; kFant = ""; marcas.forEach(function (m) { if (api.limparMarca) api.limparMarca(m); }); marcas = []; limparPrevia(); }
       function marca(p) { if (!api.marca) return; var m = api.marca(new THREE.Vector3(p.x, fin(p.y) ? p.y : edit.base, p.z)); api.scene.add(m); if (api.reescalar) api.reescalar(m); marcas.push(m); }
       var matLinha = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false });
       function linha(lst) {
@@ -620,6 +655,15 @@
       }
       function feito(r) {
         if (!r.ok) { api.hint(r.motivo); return true; }
+        if (r.conjuntoPendente) {
+          cancelar();
+          var PP = global.BimTelhadoParam, am = [];
+          try { if (global.BIM && global.BIM.apoiarRaios && PP) am = PP.semConjunto(edit && edit.estado, global.BIM.apoiarRaios(PP.amostrasDe(r.contorno, null, null, edit && edit.estado), { excluirTipos: PP.TIPOS_SEM_TOPO }));   /* o conjunto já lançado não conta como obra */ } catch (eA) { am = []; }
+          var sg = PP ? PP.sugerirQueda(r.contorno, am) : { k: 0, fonte: "" };
+          conj = { contorno: r.contorno, nivel: r.nivel, base: r.base, amostras: am, sug: sg.k, fonteSug: sg.fonte, hover: null };
+          api.hint(r.resumo + " Sugerida: aresta " + (sg.k + 1) + " (" + sg.fonte + ")."); status(r.resumo);
+          return true;
+        }
         cancelar(); api.op(r.op); if (api.fechou) api.fechou();
         api.hint(r.resumo + " Clique para outro, ou Esc."); status(r.resumo);
         return true;
@@ -691,6 +735,56 @@
           }
         }
         arr(r.setas).forEach(function (sa) { var sp = setaPts(sa, yT); if (sp) sp.forEach(function (l) { addLinha(l, matSeta); }); });
+      }
+      /* TELHADO PARAMÉTRICO: a aresta da queda — a mais perto do ponto (planta ou 3D) */
+      function arestaPerto(p) {
+        if (!conj) return -1;
+        var C = conj.contorno, n = C.length, mk = -1, md = Infinity;
+        for (var i = 0; i < n; i++) {
+          var a = C[i], b = C[(i + 1) % n], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz, k = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / L2)) : 0;
+          var d = Math.sqrt(Math.pow(a.x + k * dx - p.x, 2) + Math.pow(a.z + k * dz - p.z, 2));
+          if (d < md) { md = d; mk = i; }
+        }
+        return mk;
+      }
+      function escolherQueda(k) {
+        if (!conj) return false;
+        var B = global.BIM, PP = global.BimTelhadoParam, UI = global.BimTelhadoParamUI, st = null;
+        if (!PP || !UI) { api.hint("O motor do Telhado paramétrico não carregou."); return true; }
+        try { st = B && B.editarEstado ? B.editarEstado().estado : null; } catch (eS) { st = null; }
+        var c0 = conj, ent = UI.entrada(cfg.telhado, c0, k, st, B);
+        var r = PP.montarLote(st || {}, ent);
+        /* o tracejado cai sobre um conjunto que já existe: pergunta; sem aceitar nada muda (o contorno segue esperando); aceitando, apaga o antigo e cria o novo num lote só */
+        if (!r.ok && r.substituir && r.substituir.length) {
+          var quer = false;
+          try { quer = global.confirm("Substituir o conjunto existente?\n\nO tracejado cai sobre o conjunto " + r.substituir.join(", ") + " (telhado, forro, calha, rufo e testeira). Aceitando, ele é apagado e o novo entra no lugar, num passo só: um Ctrl+Z restaura o antigo."); } catch (eQ) { quer = false; }
+          if (!quer) { cancelar(); api.hint("Nada mudou: o conjunto existente ficou como estava. Desenhe outro contorno, em outro lugar, ou Esc."); status("Substituição recusada: nada mudou."); return true; }
+          ent.substituir = r.substituir; r = PP.montarLote(st || {}, ent);
+        }
+        if (!r.ok) { api.hint(r.motivo + (r.corrigir ? " " + r.corrigir : "")); status(r.motivo); return true; }
+        cancelar(); api.op(r.lote); if (api.fechou) api.fechou();
+        api.hint(r.resumo.titulo + ". Clique para outro, ou Esc."); status(r.resumo.titulo + " — " + r.resumo.linhas[0]);
+        UI.mostrarResumo(r, k);
+        return true;
+      }
+      function cliqueQueda(p) {
+        var k = arestaPerto(p);
+        if (k < 0) { api.hint("Clique perto de uma aresta do contorno."); return true; }
+        return escolherQueda(k);
+      }
+      /* a prévia (planta): o contorno tracejado e a seta do caimento na aresta sob o cursor (ou na sugerida) */
+      function previaConj(c) {
+        if (!conj) return [];
+        if (c) conj.hover = arestaPerto(c);
+        var k = conj.hover != null && conj.hover >= 0 ? conj.hover : conj.sug, C = conj.contorno, n = C.length, a = C[k], b = C[(k + 1) % n], out = [{ pts: C, cls: "pm-telhado-param", fechar: true }];
+        var dx = b.x - a.x, dz = b.z - a.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 1e-6)) return out;
+        var cx = 0, cz = 0; C.forEach(function (q) { cx += q.x / n; cz += q.z / n; });
+        var nx = -dz / L, nz = dx / L; if ((cx - a.x) * nx + (cz - a.z) * nz < 0) { nx = -nx; nz = -nz; }
+        var mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, h = Math.min(1.2, L * 0.25), px = mx + nx * h, pz = mz + nz * h, ah = Math.min(0.35, h * 0.35);
+        out.push({ pts: [{ x: px, z: pz }, { x: mx, z: mz }], cls: "pm-telhado-seta" });
+        out.push({ pts: [{ x: mx + nx * ah - dx / L * ah * 0.6, z: mz + nz * ah - dz / L * ah * 0.6 }, { x: mx, z: mz }, { x: mx + nx * ah + dx / L * ah * 0.6, z: mz + nz * ah + dz / L * ah * 0.6 }], cls: "pm-telhado-seta" });
+        out.push({ pts: [a, b], cls: "pm-telhado-queda" });
+        return out;
       }
       /* a peça a seguir: a do editor (barra/viga com eixo) ou a FACE clicada no 3D */
       function infoDoHit(hit, q, e) {
@@ -771,7 +865,9 @@
         aoSub: function (sub) { cancelar(); segPick = false; void sub; },
         cancelar: function () { cancelar(); segPick = false; },
         /* T4: a barra e a planta conversam com o desenho do telhado por aqui */
-        pendentes: function () { return pts.length + (segPick ? 1 : 0); },
+        pendentes: function () { return pts.length + (segPick ? 1 : 0) + (conj ? 1 : 0); },
+        queda: function (k) { return conj ? escolherQueda(k != null ? k : conj.sug) : false; },
+        quedaPendente: function () { return conj ? { sug: conj.sug, fonte: conj.fonteSug, n: conj.contorno.length, contorno: conj.contorno } : null; },
         base: function () { var u = pts[0]; return u && pts.length === 1 && edit && edit.sub === "telhado" && telNovo() && cfg.telhado.modo !== "retangulo" ? { x: u.x, z: u.z } : null; },
         avancar: avancarTelhado,
         pegarPeca: function (on) { var v = on == null ? !segPick : !!on; cancelar(); segPick = v; if (api.hint && edit && edit.sub === "telhado") api.hint(dicaTelhado()); return segPick; },
@@ -781,6 +877,7 @@
         previaPontos: function (L) { if (!edit || !edit.on || edit.sub !== "telhado") return false; kFant = ""; fantasma(null, arr(L)); return true; },
         /* a prévia na PLANTA (js/bimplantamodelar.js): o contorno, a linha do perfil e as setas, em {x, z} */
         previaPlanta: function (c) {
+          if (edit && edit.on && edit.sub === "telhado" && conj) return previaConj(c);
           if (!edit || !edit.on || edit.sub !== "telhado" || !telNovo()) return [];
           if (c) cur = { x: c.x, y: edit.base, z: c.z };
           var out = [], L = comCursor(cur), r = pts.length ? self.contornoDesenho(L, { seguir: segEf() }) : null;
@@ -797,6 +894,8 @@
           if (!edit || !edit.on || edit.sub !== "telhado") return false;
           cancelar();
           var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { return { x: q.x, z: q.z }; }), arestaSobe: o && o.arestaSobe, vincular: o && o.vincular }, nivel(), edit.base);
+          /* TELHADO PARAMÉTRICO: o contorno puxado das paredes/edificação já traz a aresta do beiral (a queda) quando o usuário a clicou */
+          if (r.ok && r.conjuntoPendente) { feito(r); return o && fin(o.arestaSobe) && o.arestaSobe >= 0 ? escolherQueda(o.arestaSobe) : true; }
           return r.ok ? feito(r) && true : (api.hint(r.motivo), false);
         },
         fechar: function () {
@@ -807,6 +906,7 @@
           return false;
         },
         mover: function (e) {
+          if (edit && edit.on && edit.sub === "telhado" && conj && api.planoPonto) { var pq = api.planoPonto(e.clientX, e.clientY); if (pq) conj.hover = arestaPerto({ x: pq.x, z: pq.z }); return false; }
           var sub = edit && edit.on ? edit.sub : null; if (!SUBS[sub] || !pts.length || !api.planoPonto) return false;
           var p = api.planoPonto(e.clientX, e.clientY); if (!p) return false;
           if (sub === "telhado" && telNovo()) {
@@ -826,6 +926,7 @@
           if (!SUBS[sub]) return false;
           if (!p) { api.hint("Não achei o ponto no plano de trabalho: clique no chão do nível."); return true; }
           var q = { x: p.x, z: p.z };
+          if (sub === "telhado" && conj) return cliqueQueda(q);
           if (sub === "telhado-unir") {
             var id = api.alvo ? api.alvo() : null, ehTel = id != null && arr(edit.estado && edit.estado.telhados).some(function (t) { return String(t.id) === String(id); });
             if (!ehTel) { api.hint("Clique EM CIMA de um telhado criado aqui."); return true; }
@@ -852,6 +953,8 @@
       if (typeof window !== "undefined") window.addEventListener("keydown", function (ev) {
         if (!edit || !edit.on || !SUBS[edit.sub]) return;
         var t3 = ev.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t3.tagName || "") || t3.isContentEditable) return;
+        /* TELHADO PARAMÉTRICO: Enter aceita a aresta de queda sugerida */
+        if (edit.sub === "telhado" && conj && ev.key === "Enter") { ev.preventDefault(); ev.stopImmediatePropagation(); escolherQueda(conj.sug); return; }
         /* T4: no desenho do telhado, Enter usa o cursor como o próximo ponto; um número abre a cota na barra
            (comprimento no 2º ponto, largura no 3º da linha, a inclinação no resto) — Enter no campo confirma */
         if (edit.sub === "telhado" && telNovo() && pts.length) {
@@ -1230,9 +1333,31 @@
       });
       if (arr(pk.sobreporOrfas).length) ps.push({ id: "tpe:orf", rotulo: arr(pk.sobreporOrfas).length + " edição(ões) sem a peça", tipo: "botao", rotuloBotao: "Limpar", fn: function () { var m = {}; pk.sobreporOrfas.forEach(function (k) { m[k] = null; }); var b = B(); if (b && b.b2Op) b.b2Op({ op: "telhado", id: tid, sobrepor: m }); repintar(); } });
       if (!ps.length) ps.push({ id: "tpe:dica", rotulo: "Editar uma peça", leitura: true, valor: "clique de novo no telhado (ou Tab) para pegar a terça, viga, caibro, ripa ou tesoura sob o cursor" });
-      return [{ nome: "Peças da estrutura", params: ps }];
+      var secs = [{ nome: "Peças da estrutura", params: ps }];
+      if (t.conjunto) secs.unshift(secaoConjunto(t, tid));
+      return secs;
     }
   };
+  /* TELHADO PARAMÉTRICO — o comando PERMANENTE do que não foi verificado: o V0, "Refazer a verificação", cada pendência com "Corrigir" e "Mostrar no 3D", e o que fica
+     fora do total do orçamento. (A janela do resumo fecha e não reabre; isto fica nas Propriedades do telhado.) */
+  function secaoConjunto(t, tid) {
+    var cj = t.conjunto || {}, c = cj.calc || null, pk = t.pacote || {}, med = pk.conjunto || {}, PP = global.BimTelhadoParam, UI = global.BimTelhadoParamUI, PC = global.ProblemaCard, b = B(), ps = [];
+    var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+    var estM = null; try { estM = b && b.editarEstado ? b.editarEstado().estado : null; } catch (eM) { estM = null; }
+    ps.push(ro("tpc:st", "Terças", c && c.ok && !(med.tercasSemApoio > 0) ? cj.perfilTerca + " — verificadas pelo motor NBR 14762 (vão " + n2(c.vaoM) + " m, espaçamento " + n2(c.espacamentoM) + " m" + (c.comVento ? ", com vento V0 = " + n2(cj.v0, 0) + " m/s" : ", só gravidade: vento NÃO verificado") + ")" : cj.perfilTerca + " — NÃO verificadas"));
+    ps.push({ id: "tpc:v0", rotulo: "V0 (m/s) — NBR 6123", tipo: "numero", passo: "1", valor: cj.v0 || "" });
+    ps.push({ id: "tpc:refazer", rotulo: "Verificação", tipo: "botao", rotuloBotao: "Refazer a verificação das terças", fn: function () { if (UI) UI.refazer(tid, ""); } });
+    arr(med.pendencias).concat(PP && PP.pendenciasMembros && estM ? PP.pendenciasMembros(estM, t) : []).forEach(function (p, i) {
+      ps.push(ro("tpc:pb" + i, p.gravidade === "alta" ? "Problema" : "Aviso", p.titulo + ": " + p.texto));
+      if (PC) ps.push({ id: "tpc:mo" + i, rotulo: "Mostrar", tipo: "botao", rotuloBotao: "Mostrar no 3D", fn: function () { PC.mostrarNo3D([tid]); } });
+      if (arr(p.solucoes).some(function (s) { return s.id === "ajustar-forro"; })) ps.push({ id: "tpc:af" + i, rotulo: "Corrigir", tipo: "botao", rotuloBotao: "Corrigir: ajustar o conjunto ao forro atual", fn: function () { var ops = PP && PP.opsAjustarForro && estM ? PP.opsAjustarForro(estM, t) : null; if (ops && b && b.editarLote) b.editarLote({ op: "lote", id: "tp-ajustar-forro-" + tid + "-" + new Date().getTime(), origem: "telhado-param", ops: ops }); } });
+      if (arr(p.solucoes).some(function (s) { return s.id === "refazer-verificacao"; })) ps.push({ id: "tpc:co" + i, rotulo: "Corrigir", tipo: "botao", rotuloBotao: "Corrigir: refazer a verificação das terças", fn: function () { if (UI) UI.refazer(tid, ""); } });
+    });
+    var est = null; try { est = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e) { est = null; }
+    var fora = PP && PP.foraDoTotalDe && est ? PP.foraDoTotalDe(t, est) : [];
+    fora.forEach(function (f, i) { ps.push(ro("tpc:ft" + i, "Fora do total", f.peca + " — " + n2(f.qtd, 2) + " " + f.un + ": " + f.motivo + ". O total do orçamento NÃO inclui esta peça.")); });
+    return { nome: "Telhado paramétrico — verificação", params: ps };
+  }
   if (typeof global.addEventListener === "function") global.addEventListener("keydown", function (e) { try { BimTelhadoPecaUI.tecla(e); } catch (eT) {} }, true);
   global.BimTelhadoPecaUI = BimTelhadoPecaUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

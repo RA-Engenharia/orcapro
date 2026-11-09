@@ -72,6 +72,9 @@
 /* T4: o telhado que vai nascer (contorno + setas do caimento) */
 .pm-telhado { fill: rgba(47, 191, 113, 0.12); stroke: var(--d2-sel); stroke-width: 1.5; stroke-dasharray: 6 3; }
 .pm-telhado-seta { fill: none; stroke: #e8a33d; stroke-width: 2; }
+/* TELHADO PARAMÉTRICO (conjunto): o contorno em tracejado e a aresta da queda (a calha) */
+.pm-telhado-param { fill: rgba(47, 191, 113, 0.10); stroke: var(--d2-sel); stroke-width: 1.5; stroke-dasharray: 6 3; }
+.pm-telhado-queda { fill: none; stroke: #2a7fd4; stroke-width: 3.5; }
 .pm-vert { fill: var(--d2-papel); stroke: var(--d2-sel); stroke-width: 1.5; }
 .pm-guia { fill: none; stroke: var(--d2-fraco); stroke-width: 1; stroke-dasharray: 2 4; }
 .pm-mira { stroke: var(--d2-sel); stroke-width: 1; }

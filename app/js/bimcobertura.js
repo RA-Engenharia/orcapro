@@ -381,7 +381,7 @@
     arr(estado && estado.bordas).forEach(function (b) {
       if (!b || !b.ok || b.tipoBorda !== "calha") return;
       out.push({ id: b.id, tipo: "beiral", telhado: b.telhado, arestas: arr(b.arestas).slice(), comprimento: b.comprimento, largura: b.larguraEf, altura: b.alturaEf,
-                 declividadePct: b.perfil ? b.perfil.declPct : null, laminaMm: null, cotaAuto: !!b.perfil,
+                 declividadePct: b.perfil ? b.perfil.declPct : null, laminaMm: null, cotaAuto: !!b.perfil, semDescida: b.semDescida === true,
                  segs: b.perfil ? b.perfil.subs.map(function (s) { return { a: s.a, b: s.b, len: s.len, orig: s.orig, y: s.yb, ya: s.ya, yb: s.yb }; })
                                 : arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z }, orig: s.aresta, y: s.a.y }; }), fonte: b });
     });
@@ -446,9 +446,12 @@
     });
     return { subs: subs, bocais: bocaisOut, semBocal: semBocal, desnivel: r6(desnivel), comprimento: r6(tot), declPct: dec, altura: alt };
   }
-  function bocaisDe(C, calhaId) {
-    return arr(C && C.ordCond).map(function (id) { return C.cond[id]; }).filter(function (f) { return f && String(f.calha) === String(calhaId); })
+  function bocaisDe(C, calhaId, borda) {
+    var out = arr(C && C.ordCond).map(function (id) { return C.cond[id]; }).filter(function (f) { return f && String(f.calha) === String(calhaId); })
       .map(function (f) { return fin(Number(f.pos)) ? Math.max(0, Math.min(1, Number(f.pos))) : 0.5; });
+    /* CONJUNTO: o bocal da calha SEM condutor (a descida é do hidrossanitário) — saidas da própria borda dá o caimento até ele */
+    arr(borda && borda.saidas).forEach(function (v) { if (fin(Number(v))) out.push(Math.max(0, Math.min(1, Number(v)))); });
+    return out;
   }
   function aplicarPerfilEmbutida(c, bocais) {
     var segs = c.segs.map(function (s) { return { a: s.ma, b: s.mb, len: s.ref, orig: s.orig, yRim: s.yBorda, ia: s.quad[0], ib: s.quad[1], oa: s.quad[3], ob: s.quad[2] }; });
@@ -754,7 +757,14 @@
         texto: "A calha ainda está numa altura só, sem o caimento até a descida, e a borda da telha não entra nela. Na cota certa a telha avança " + virg(AVANCO_TELHA * 100, 0) + " cm dentro da calha, a borda da calha fica " + virg(FOLGA_VERTICAL * 100, 0) + " cm abaixo da telha e o fundo cai " + virg(DECL_MIN_CALHA_PCT, 1) + " % (NBR 10844, item 5.5.2) até a descida.",
         solucoes: [{ id: "cota", texto: "Pôr a calha na cota certa", muda: "a calha desloca " + virg(AVANCO_TELHA * 100, 0) + " cm para dentro do beiral e ganha o caimento até a(s) descida(s)", ops: [opDaCalha(cal, { cotaAuto: true })] }], pecas: [cal.id] });
       /* 3) sem descida */
-      if (!tem[String(cal.id)]) {
+      /* CONJUNTO: a calha SEM tubo de queda de propósito (semDescida): a água sai pelo bocal e a descida é do projeto hidrossanitário — aviso,
+         não erro, e o Corrigir de lançar as descidas continua à mão */
+      if (!tem[String(cal.id)] && cal.semDescida) {
+        var cdsH = opsCondutores({ condutores: [], calhasEmbutidas: estado.calhasEmbutidas, bordas: estado.bordas, telhados: estado.telhados }, { porCalha: 2 }).filter(function (o) { return String(o.calha) === String(cal.id); });
+        P.push({ tipo: "calha-descida-no-hidro", gravidade: "aviso", titulo: "Calha " + cal.id + ": a descida é do projeto hidrossanitário",
+          texto: "A calha tem o bocal (caimento de " + virg(DECL_MIN_CALHA_PCT, 1) + " % até ele), mas o tubo de queda não está neste modelo: ele entra no projeto hidrossanitário. Sem a descida, a água não tem para onde ir.",
+          solucoes: [{ id: "descidas", texto: "Lançar 2 descidas nas extremidades", muda: "2 condutores verticais ligados à calha (o DN sai do cálculo da NBR 10844)", ops: cdsH }], pecas: [cal.id] });
+      } else if (!tem[String(cal.id)]) {
         var cds = opsCondutores({ condutores: [], calhasEmbutidas: estado.calhasEmbutidas, bordas: estado.bordas, telhados: estado.telhados }, { porCalha: 2 }).filter(function (o) { return String(o.calha) === String(cal.id); });
         P.push({ tipo: "calha-sem-descida", gravidade: "erro", titulo: "Calha " + cal.id + " sem descida",
           texto: "Sem descida a água da calha não tem para onde ir: a calha enche e transborda. A descida (condutor vertical) é o bocal onde o fundo da calha termina.",
@@ -797,6 +807,23 @@
       P.push({ tipo: "calha-capacidade", gravidade: "erro", titulo: "Calha " + h.id + " não comporta a chuva",
         texto: "Pela NBR 10844 a vazão de projeto da calha é " + virg(h.vazaoProjeto_l_min, 0) + " L/min e a seção atual leva só " + virg(h.capacidade_l_min, 0) + " L/min (intensidade " + virg(h.intensidade_mm_h != null ? h.intensidade_mm_h : r.intensidade.valor_mm_h, 0) + " mm/h" + (h.periodoRetorno_anos ? ", T = " + h.periodoRetorno_anos + " anos: calha embutida" : "") + "): a calha transborda.",
         solucoes: sols, pecas: [h.id] });
+    });
+    /* CONJUNTO (telhado paramétrico): o que NÃO foi verificado (vento, vão e espaçamento reais, nenhum Ue) e o que fica FORA do total do orçamento saem do pacote a cada replay */
+    var PPc = global.BimTelhadoParam;
+    arr(estado && estado.telhados).forEach(function (t) {
+      if (!t || !t.ok || !t.conjunto || !t.pacote || !t.pacote.ok) return;
+      arr(t.pacote.conjunto && t.pacote.conjunto.pendencias).concat(PPc && PPc.pendenciasMembros ? PPc.pendenciasMembros(estado, t) : []).forEach(function (p) {
+        var sols = arr(p.solucoes).map(function (s) {
+          var o = { id: s.id, texto: s.texto, muda: s.muda, ops: [] };
+          if (s.id === "refazer-verificacao" && PPc && PPc.refazerVerificacao) { var rv = PPc.refazerVerificacao(estado, t.id, {}); if (rv && rv.op) o.ops = [rv.op]; }
+          if (s.id === "ajustar-forro" && PPc && PPc.opsAjustarForro) o.ops = PPc.opsAjustarForro(estado, t) || [];
+          return o;
+        });
+        P.push({ tipo: p.tipo, gravidade: p.gravidade === "alta" ? "erro" : "aviso", titulo: "Telhado " + t.id + ": " + p.titulo, texto: p.texto, solucoes: sols, pecas: [String(t.id)] });
+      });
+      var fora = PPc && PPc.foraDoTotalDe ? PPc.foraDoTotalDe(t, estado) : [];
+      if (fora.length) P.push({ tipo: "telhado-param-fora-do-total", gravidade: "aviso", titulo: "Telhado " + t.id + ": " + fora.length + " peça(s) FORA do total do orçamento",
+        texto: fora.map(function (f) { return f.peca + " (" + virg(f.qtd, 2) + " " + f.un + "): " + f.motivo; }).join(". ") + ". O total do orçamento NÃO inclui essas peças.", solucoes: [], pecas: [String(t.id)] });
     });
     return { ok: true, problemas: P, calculo: r && r.ok ? { status: r.status, intensidade: r.intensidade } : null, pendencias: r && r.ok ? r.pendencias : [] };
   }
@@ -1788,7 +1815,7 @@
       saida.calhasEmbutidas = C.ordCalha.map(function (id) { return calcularCalha(C.calha[id], tel); });
       saida.calhasEmbutidas.forEach(function (c) { if (c && c.ok && c.cotaAuto) aplicarPerfilEmbutida(c, bocaisDe(C, c.id)); });
     }
-    arr(saida.bordas).forEach(function (b) { if (b && b.ok && b.tipoBorda === "calha" && b.cotaAuto === true) aplicarPerfilBeiral(b, saida.telhados, bocaisDe(C, b.id)); });
+    arr(saida.bordas).forEach(function (b) { if (b && b.ok && b.tipoBorda === "calha" && b.cotaAuto === true) aplicarPerfilBeiral(b, saida.telhados, bocaisDe(C, b.id, b)); });
     if (C.ordPlat.length) saida.platibandas = C.ordPlat.map(function (id) { return calcularPlatibanda(C.plat[id], tel, C, saida.caixas); });
     if (C.ordCond.length) {
       var piso = Infinity; arr(NIV).forEach(function (n) { var e = num(n && n.elevacao, NaN); if (fin(e) && e < piso) piso = e; });
@@ -1803,6 +1830,11 @@
       saida.condutores.forEach(function (c) { if (c.trecho != null) c.noHidro = !!trs[String(c.trecho)]; });
     }
     if (C.ordRufo && C.ordRufo.length) saida.rufosEncontro = C.ordRufo.map(function (id) { return calcularRufo(C.rufo[id], tel, saida); });
+    /* CONJUNTO (telhado paramétrico): o comprimento do contrarrufo de encontro vai para o telhado, que é quem leva o `orcar` (I2). Só o conjunto; o telhado comum fica como era */
+    arr(saida.rufosEncontro).forEach(function (r) {
+      var t = r && r.ok ? tel[String(r.telhado)] : null; if (!t || !t.conjunto) return;
+      t.rufoEnc = { rufo: r.id, contraM: r4(num(r.comprimentoContra, 0)), rufoM: r4(num(r.comprimentoRufo, 0)), codigoContra: r.sinapiContra ? r.sinapiContra.codigo : null };
+    });
   }
   function registrar(BE) {
     if (!BE || typeof BE.estender !== "function") return false;

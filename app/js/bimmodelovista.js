@@ -94,6 +94,9 @@
     "ra-planta-arq": { id: "ra-planta-arq", nome: "Planta Arquitetônica RA", tipoVista: "planta", ra: true,
       campos: { escala: true, nivelDetalhe: true, disciplina: true, estiloVisual: true, faixa: true },
       valores: { escala: 50, nivelDetalhe: "medio", disciplina: "arquitetura", estiloVisual: "linhasOcultas", faixa: clone(FAIXA_PADRAO.planta), vg: {}, filtros: {} } },
+    "ra-planta-cobertura": { id: "ra-planta-cobertura", nome: "Planta de Cobertura RA", tipoVista: "planta", ra: true,
+      campos: { escala: true, nivelDetalhe: true, disciplina: true, estiloVisual: true, faixa: true },
+      valores: { escala: 100, nivelDetalhe: "medio", disciplina: "arquitetura", estiloVisual: "linhasOcultas", faixa: { sup: 40, corte: 39, inf: 0, prof: 0 }, vg: {}, filtros: {} } },
     "ra-planta-forro": { id: "ra-planta-forro", nome: "Planta de Forro Refletido RA", tipoVista: "forro", ra: true,
       campos: { escala: true, nivelDetalhe: true, disciplina: true, estiloVisual: true, faixa: true, vg: true, filtros: true },
       valores: { escala: 50, nivelDetalhe: "medio", disciplina: "arquitetura", estiloVisual: "linhasOcultas", faixa: clone(FAIXA_PADRAO.forro),
@@ -513,7 +516,9 @@
       { id: "planta", rotulo: "Planta de piso", tipo: "planta", modelo: "ra-planta-arq", nome: "Planta de piso" },
       { id: "estrutural", rotulo: "Planta estrutural (fôrma)", tipo: "estrutural", modelo: "ra-planta-estrutural", nome: "Planta estrutural" },
       { id: "forro", rotulo: "Planta de forro", tipo: "forro", modelo: "ra-planta-forro", nome: "Planta de forro" },
-      { id: "fundacao", rotulo: "Planta de fundação", tipo: "estrutural", modelo: "ra-planta-fundacao", nome: "Planta de fundação" }
+      { id: "fundacao", rotulo: "Planta de fundação", tipo: "estrutural", modelo: "ra-planta-fundacao", nome: "Planta de fundação" },
+      /* PLANTA DE COBERTURA (Telhado paramétrico): a planta do nível mais alto olhando o telhado de cima — a faixa vai pelo topo do modelo */
+      { id: "cobertura", rotulo: "Planta de cobertura", tipo: "planta", modelo: "ra-planta-cobertura", nome: "Planta de cobertura" }
     ],
     MARCA_NIVEL: "{nível}",
     tipoPlanta: function (id) { return this.TIPOS_PLANTA.filter(function (t) { return t.id === id; })[0] || null; },
@@ -521,6 +526,7 @@
     tipoPlantaDe: function (v) {
       v = obj(v);
       if (v.tipo === "estrutural" && v.modeloId === "ra-planta-fundacao") return "fundacao";
+      if (v.tipo === "planta" && v.modeloId === "ra-planta-cobertura") return "cobertura";
       return PLANTAS[v.tipo] ? v.tipo : null;
     },
     nomePlanta: function (molde, nivelNome) {

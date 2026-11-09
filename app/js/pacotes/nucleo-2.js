@@ -10399,6 +10399,7 @@ extras.push({ nome: "Dados", params: [{ id: "peca-ifc", rotulo: "Parâmetros do 
 return BimPropsUI.esquema(info, this, { extras: extras, aoMudarExtra: function (pid, valor) {
 if (String(pid).indexOf("b2:") === 0 && window.BimArqUI) BimArqUI.mudar(info, pid, valor);
 else if (String(pid).indexOf("orc:") === 0 && window.OrcModeloUI) OrcModeloUI.mudar(uid, pid, valor);
+else if (String(pid).indexOf("tpc:") === 0 && window.BimTelhadoParamUI) BimTelhadoParamUI.mudar(uid, pid, valor);
 try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 } });
 },
@@ -73880,5 +73881,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=2d814fa64c"},{"src":"js/bim-pacote.js?v=78e92f20c6","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=3998aea8d2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b576aec913"},{"src":"js/bim-pacote.js?v=03afa0826b","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=3998aea8d2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -138,6 +138,9 @@
       var a = L / (nc + 1), amm = a * 1000;
       for (var k = 0; k < cands.length; k++) {
         var c = cands[k], gP = c.massa * 9.81 / 1000;                                        /* kN/m (G — aço) */
+        /* d.abaMin (mm, opcional): a aba (mesa) mínima que a telha exige da terça (manual do fabricante da telha) — o Ue de mesa menor
+           nem entra. Sem d.abaMin nada muda (as chamadas de antes saem iguais). */
+        if (d.abaMin != null && c.bf < d.abaMin - 1e-9) continue;
         /* cargas por metro: componentes ⊥ (n) e na direção do plano/água (t) */
         var g2 = d.gSup * d.s + d.gPlano * d.s * cs, qv = d.q * d.s * cs;                    /* verticais por metro */
         var Gn, Gt, Qn, Qt;

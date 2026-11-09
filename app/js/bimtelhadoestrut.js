@@ -675,7 +675,13 @@
     "aco-viga": { rotulo: "Metálica — terça Ue + viga W (alma cheia) com pilar na cumeeira (baixa inclinação)", mat: "aco", tesoura: true, viga: true, caibro: false, ripa: false, familias: ["metalica", "sanduiche"],
                   dica: "Para a inclinação mínima da telha metálica: vigas W inclinadas sob as terças, apoiadas nas paredes e em pilares na cumeeira." },
     "aco-sanduiche": { rotulo: "Metálica — terça Ue + telha termoacústica (sanduíche)", mat: "aco", tesoura: true, caibro: false, ripa: false, familias: ["sanduiche"],
-                       dica: "Terças Ue pelo vão máximo da telha sanduíche; tesoura metálica onde não há parede/oitão." }
+                       dica: "Terças Ue pelo vão máximo da telha sanduíche; tesoura metálica onde não há parede/oitão." },
+    /* TELHADO PARAMÉTRICO (conjunto, 09/11/2026 — js/bimtelhadoparam.js). `interno: true` = fora do menu de modelos: só o conjunto nasce com ele.
+       Pilha, de baixo para cima: peças da OBRA → forro (face de baixo no plano) → terças → telha. Nada abaixo do plano: não há tesoura,
+       viga nem pontalete (`obra: true` — as terças apoiam nas linhas `t.conjunto.apoios`, lidas das peças da obra). Edições de peça ficam
+       isoladas por `M.forro` (o aplicarSobreposicoes não mexe em quem não é o conjunto). */
+    "aco-sanduiche-forro": { rotulo: "Conjunto — terça Ue sobre o forro + telha termoacústica (sanduíche)", mat: "aco", tesoura: false, obra: true, forro: true, interno: true, caibro: false, ripa: false, familias: ["sanduiche"],
+                             dica: "Conjunto do Telhado paramétrico: terças Ue sobre o forro (nada abaixo do plano), contraventamento em X e correntes, telha termoacústica do catálogo." }
   };
   /* o modelo que combina com a telha (o assistente sugere; o usuário troca) */
   /* a tesoura triangular deste telhado fica abaixo de vão/12 (a proporção de partida do js/metalporticos.js)? {h, vao, min} ou null */
@@ -734,6 +740,8 @@
       var tf = pc.dims.tf, tw = pc.dims.tw;
       return [[-b / 2, 0], [b / 2, 0], [b / 2, tf], [tw / 2, tf], [tw / 2, h - tf], [b / 2, h - tf], [b / 2, h], [-b / 2, h], [-b / 2, h - tf], [-tw / 2, h - tf], [-tw / 2, tf], [-b / 2, tf]];
     }
+    /* BARRA REDONDA (X, correntes): polígono de 12 lados centrado no EIXO da peça (a e b são os eixos; v vai de −d/2 a +d/2) */
+    if (pc.forma === "barra") { var rb = b / 2, pb = []; for (var kb = 0; kb < 12; kb++) pb.push([r6(rb * Math.cos(kb * Math.PI / 6)), r6(rb * Math.sin(kb * Math.PI / 6))]); return pb; }
     return [[-b / 2, 0], [b / 2, 0], [b / 2, h], [-b / 2, h]];
   }
   /* a peça extrudada (lados + tampas) em `pos` (triângulos soltos); devolve quantos triângulos */
@@ -887,7 +895,8 @@
    * ====================================================================== */
   var ROTULO_PECA = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo)", terca: "Terça", caibro: "Caibro", ripa: "Ripa",
     pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira", "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal",
-    "pilar-aco": "Pilar", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura" };
+    "pilar-aco": "Pilar", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
+    contravento: "Contraventamento em X (barra redonda)", corrente: "Corrente (barra redonda)", calco: "Calço metálico" };
   function rotuloPeca(o) { return o ? (ROTULO_PECA[o.p] || String(o.p)) : ""; }
   function chaveId(o) { return o.p + (o.agua != null ? ".a" + o.agua : "") + (o.fileira != null ? ".f" + o.fileira : "") + (o.tesoura ? "." + o.tesoura : "") + (o.lado != null ? ".l" + o.lado : ""); }
   /* REVISOR T5 (20/10/2026): o id leva o CONTEXTO em que a ordem vale — o total do grupo, o modelo, o nº de águas, o nº de
@@ -1194,11 +1203,25 @@
     if (!M) return { ok: false, avisos: ["Modelo de telhado desconhecido: " + txt(t.modelo) + "."] };
     if (t.modo !== "perimetro") return { ok: false, avisos: ["O modelo com estrutura é do telhado por perímetro (o de extrusão fica só com o telhado)."] };
     var tel = T.telha(t.tipoId), avisos = [], prem = [], pecas = [], H0 = num(t.cotaApoio, 0), mat = M.mat;
+    /* CONJUNTO (M.obra): `t.conjunto` traz a espessura do forro (eForro), o perfil da terça e as linhas de apoio lidas da obra */
+    var CJ = M.obra ? (t.conjunto || {}) : null, eF = CJ ? Math.max(0, num(CJ.eForro, 0)) : 0, tercasObra = [];
+    /* AS LINHAS DE APOIO VIVAS: as paredes e vigas lidas de novo do modelo A CADA REPLAY (apagou, moveu ou baixou a peça, o apoio e o calço acompanham);
+       só o que veio dos raios do IFC (que o replay não enxerga) fica como foi lido; sem nenhuma peça, a terça vai de borda a borda */
+    function apoiosVivosDe() {
+      var PPx = global.BimTelhadoParam, ctr = arr(t.contorno).map(function (q) { return { x: q.x, z: q.z }; }), k0 = num(CJ.arestaQueda, 0), y00 = num(t.cotaApoio, 0), out = [];
+      if (!PPx || !PPx.apoiosDe) return arr(CJ.apoios);
+      try { out = PPx.apoiosDe(estado, { contorno: ctr, arestaQueda: k0, inclinacaoPct: num(t.inclinacao, 0), y0: y00, amostras: [], altas: [] }); } catch (eA) { out = []; }
+      arr(CJ.apoios).forEach(function (ap) { if (ap && ap.fonte === "raio") out.push(ap); });
+      if (!out.length && PPx.apoiosBordaBorda) out = PPx.apoiosBordaBorda(ctr, k0, y00);
+      return out;
+    }
+    var APV = M.obra ? apoiosVivosDe() : [];
     var ags = aguasInclinadas(t);
     if (!ags.length) return { ok: false, avisos: ["Telhado plano: o modelo com estrutura pede inclinação."] };
     if (!tel) avisos.push("O tipo \"" + txt(t.tipoTelhado && t.tipoTelhado.rotulo) + "\" não tem dados de catálogo: galga, vão e fixação saem como VALOR DE PARTIDA — conferir. Escolha uma telha de catálogo.");
     if (tel && M.familias.indexOf(tel.familia) < 0) avisos.push("O modelo \"" + M.rotulo + "\" não é o usual para telha de " + tel.familia + " (sugerido: " + MODELOS[modeloSugerido(t.tipoId)].rotulo + ").");
-    prem.push("Modelo: " + M.rotulo + " — PRÉ-DIMENSIONADO, confirmar no cálculo (" + (mat === "aco" ? "Metálica" : "módulo Madeira, NBR 7190") + ").");
+    if (M.obra) prem.push("Modelo: " + M.rotulo + " — " + (CJ.calc && CJ.calc.ok ? "terças pelo motor NBR 14762 (biapoiadas, isoladas)" : "terças com perfil de partida, NÃO verificadas pelo motor") + "; o restante a conferir pelo cálculo.");
+    else prem.push("Modelo: " + M.rotulo + " — PRÉ-DIMENSIONADO, confirmar no cálculo (" + (mat === "aco" ? "Metálica" : "módulo Madeira, NBR 7190") + ").");
     function usar(chave, sec) { prem.push(sec.rot + " — " + (sec.partida ? "VALOR DE PARTIDA — conferir" + (sec.fonte ? " (" + sec.fonte + ")" : "") : sec.fonte)); return sec; }
     function perfAco(nome) {
       var A = PA(), o = A && A.obter ? A.obter(nome) : null; if (!o) return null;
@@ -1208,9 +1231,10 @@
     /* ---- seções */
     var sT, sC = null, sR = null, sTes = null;
     if (mat === "aco") {
-      sT = perfAco(PERFIS_TEL.terca); sTes = perfAco(PERFIS_TEL.banzo); var sDg = perfAco(PERFIS_TEL.diagonal);
+      sT = perfAco(CJ && CJ.perfilTerca ? CJ.perfilTerca : PERFIS_TEL.terca); sTes = perfAco(PERFIS_TEL.banzo); var sDg = perfAco(PERFIS_TEL.diagonal);
       if (!sT || !sTes || !sDg) return { ok: false, avisos: ["Perfil de aço fora do catálogo (js/perfisaco.js)."] };
-      prem.push("Perfis ADOTADOS — VALOR DE PARTIDA, conferir no cálculo: terça " + PERFIS_TEL.terca + ", banzos da tesoura " + PERFIS_TEL.banzo + ", montantes/diagonais " + PERFIS_TEL.diagonal + " (catálogo " + (PA() && PA().FONTE ? "js/perfisaco.js" : "de perfis") + ")");
+      if (M.obra) prem.push("Terça " + sT.nome + " (catálogo js/perfisaco.js), " + (CJ.calc && CJ.calc.ok ? "escolhida pelo motor NBR 14762 na verificação do conjunto" : "perfil de PARTIDA, NÃO verificado (o motor não achou Ue que passe, ou a verificação não existe)"));
+      else prem.push("Perfis ADOTADOS — VALOR DE PARTIDA, conferir no cálculo: terça " + PERFIS_TEL.terca + ", banzos da tesoura " + PERFIS_TEL.banzo + ", montantes/diagonais " + PERFIS_TEL.diagonal + " (catálogo " + (PA() && PA().FONTE ? "js/perfisaco.js" : "de perfis") + ")");
     } else {
       sT = usar("terca", SEC.terca); if (M.caibro) sC = usar("caibro", SEC.caibro);
       /* a ripa do catálogo da telha quando ele pede uma (Onduline: apoio mínimo 5 × 2,5 cm) */
@@ -1254,6 +1278,18 @@
         var gap = rq[i] - rq[i - 1], nn = Math.max(1, Math.ceil(gap / espApoio.m - 1e-9));
         for (var j = 1; j <= nn; j++) G.linhas.push({ t: rq[i - 1] + gap * j / nn, ponta: i === rq.length - 1 && j === nn });
       }
+    });
+    /* CONJUNTO: as linhas de apoio são as peças da OBRA lidas por BimTelhadoParam.apoiosDe (t.conjunto.apoios) + as duas pontas do contorno;
+       nada de espaçamento de tesoura/pontalete — a terça vence o vão entre elas (ou de borda a borda) */
+    if (M.obra) grupos.forEach(function (G) {
+      var ts = [{ t: G.tmin, ponta: true }];
+      APV.forEach(function (ap) {
+        var tt = G.td[0] * (num(ap.ax, 0) + num(ap.bx, 0)) / 2 + G.td[1] * (num(ap.az, 0) + num(ap.bz, 0)) / 2;
+        if (tt > G.tmin + 0.35 && tt < G.tmax - 0.35 && !ts.some(function (q) { return Math.abs(q.t - tt) < 0.05; })) ts.push({ t: tt, ponta: false });
+      });
+      ts.push({ t: G.tmax, ponta: true });
+      ts.sort(function (a, b) { return a.t - b.t; });
+      G.linhas = ts;
     });
     var linhas = grupos[0].linhas;
     /* parede PARALELA ao caimento perto da linha: a linha vai para o eixo dela e a parede apoia (anexa o topo) */
@@ -1338,7 +1374,7 @@
       hTesV = sPerna.h;
       if (mat !== "aco") { usar("perna", sPerna); usar("linha", SEC.linha); usar("pendural", SEC.pendural); if (vaoTes >= 4 - 1e-6) usar("escora", SEC.escora); if (vaoTes >= 7 - 1e-6) usar("montante", SEC.montante); }
     }
-    var baseT = hTesV * f0;                         /* fundo das terças acima do plano (vertical) */
+    var baseT = (hTesV + eF) * f0;                  /* fundo das terças acima do plano (vertical); no conjunto, acima do FORRO (eForro) */
     var baseC = baseT + sT.h * f0;                  /* fundo dos caibros */
     var baseR = baseC + (sC ? sC.h * f0 : 0);       /* fundo das ripas */
     var baseTel = baseR + (sR ? sR.h * f0 : 0);     /* fundo da telha */
@@ -1355,7 +1391,7 @@
        camada é h · √(1 + i²) da água em que ela está. Com o fator da água principal (f0) em todas, a água de inclinação
        diferente ficava com a camada descolada (ou entrando na de baixo) alguns mm — 4 águas de 30/45/35/60 %: até 8 mm. */
     function camadasDe(f) {
-      var bT = hTesV * f, bC = bT + sT.h * f, bR = bC + (sC ? sC.h * f : 0), bTel = bR + (sR ? sR.h * f : 0);
+      var bT = (hTesV + eF) * f, bC = bT + sT.h * f, bR = bC + (sC ? sC.h * f : 0), bTel = bR + (sR ? sR.h * f : 0);
       if (!sC) bTel = bC;
       if (M.osb) bTel = bR + eOSB * f;
       return { tercas: bT, caibros: bC, ripas: bR, telha: bTel };
@@ -1423,6 +1459,18 @@
     var apoios = [];   /* { t, tipo:"tesoura"|"parede"|"pontalete", parede? } */
     var nTes = 0, tesVaos = [];
     grupos.forEach(function (G) { G.linhas.forEach(function (L) {
+      if (M.obra) {
+        /* o apoio da linha existe onde há peça da obra: os trechos (em s, ao longo de G.d) dos segmentos de CJ.apoios que caem nela */
+        var intO = [], tolO = L.ponta ? 0.35 : 0.06;
+        APV.forEach(function (ap) {
+          var ttm = G.td[0] * (num(ap.ax, 0) + num(ap.bx, 0)) / 2 + G.td[1] * (num(ap.az, 0) + num(ap.bz, 0)) / 2;
+          if (Math.abs(ttm - L.t) > tolO) return;
+          var sa = G.d[0] * num(ap.ax, 0) + G.d[1] * num(ap.az, 0), sb = G.d[0] * num(ap.bx, 0) + G.d[1] * num(ap.bz, 0);
+          intO.push([Math.min(sa, sb) - 0.05, Math.max(sa, sb) + 0.05]);
+        });
+        apoios.push({ t: L.t, tipo: "obra", parede: null, ponta: L.ponta, G: G, int: intO });
+        return;
+      }
       var pw = paredeNaLinha(L.t, G), tj = L.t, tipo, tmin = G.tmin;
       if (M.tesoura) {
         /* modelo de tesoura: nas PONTAS com parede (oitão), a parede apoia; no meio, tesoura (a parede de dentro para na cota de apoio) */
@@ -1634,6 +1682,7 @@
             var a = P3u(u, c[0], baseT), b = P3u(u, c[1], baseT);
             var o = mat === "aco" ? pc("terca", a, b, up, sT, { agua: ia, fileira: iu }) : pc("terca", a, b, up, sT, { agua: ia, fileira: iu });
             tercaSegs.push({ u: u, t0: c[0], t1: c[1], o: o });
+            if (M.obra) tercasObra.push({ ia: ia, d: d, td: td, f: f, up: up, u: u, t0: c[0], t1: c[1], o: o, baseT: baseT, S: S });
           });
         });
         /* apoios das terças: cruzamentos com as linhas de apoio (tesoura/parede/pontalete) */
@@ -1805,7 +1854,7 @@
     });
     if (mat !== "aco" && arr(t.linhas).some(function (l) { return l.tipo === "espigao" || l.tipo === "rincao"; })) usar("espigao", SEC.espigao);
     /* modelo de terça (sem tesoura): o espigão/rincão, que recebe as pontas das terças, desce em pontaletes a cada ≤ eixo de apoio */
-    if (!M.tesoura) pecas.filter(function (o) { return o.p === "espigao" || o.p === "rincao"; }).forEach(function (o) {
+    if (!M.tesoura && !M.obra) pecas.filter(function (o) { return o.p === "espigao" || o.p === "rincao"; }).forEach(function (o) {
       var Lp = dist2([o.a[0], o.a[2]], [o.b[0], o.b[2]]), nP = Math.max(1, Math.ceil(Lp / espApoio.m - 1e-9));
       for (var k5 = 1; k5 <= nP; k5++) {
         var f5 = nP === 1 ? 0.5 : k5 / nP; if (nP > 1 && k5 === nP) break;
@@ -1818,7 +1867,9 @@
     var linhasDiag = arr(t.linhas).filter(function (l) { return l.tipo === "espigao" || l.tipo === "rincao"; }).map(function (l) { return [[l.a.x, l.a.z], [l.b.x, l.b.z]]; });
     /* o balanço da terça na ponta (o beiral lateral do oitão): até 0,70 m, ou o beiral escolhido + 10 cm */
     var balMax = Math.max(0.70, arr(t.arestasCalc).reduce(function (m, e) { return Math.max(m, num(e.beiralM, num(t.beiralEf, 0))); }, 0) + 0.10);
-    var tercasSemApoio = 0, piorVao = 0;
+    var tercasSemApoio = 0, piorVao = 0, balancoPior = 0, balLimObra = arr(t.arestasCalc).reduce(function (m, e) { return Math.max(m, num(e.beiralM, num(t.beiralEf, 0))); }, 0) + 0.10;
+    /* CONJUNTO (I3): a verificação das terças é BIAPOIADA entre apoios; ponta sem apoio além do beiral (+10 cm de tolerância, a do próprio gerador) ou terça com menos de 2 apoios NÃO está verificada.
+       Não há limite de balanço com fonte, então nenhum valor é inventado: só o beiral que o telhado tem. */
     pecas.forEach(function (o) {
       if (o.p !== "terca" || !o.sup) return;
       var pA = [o.a[0], o.a[2]], pB = [o.b[0], o.b[2]], S = o.aguaS, sup = o.sup.map(function (q) { return S.td[0] * q[0] + S.td[1] * q[1]; });
@@ -1827,18 +1878,94 @@
         return paredes.some(function (w) { return w.topo > H0 - 0.6 && w.base < H0 && !lajeSobre(w) && trechoNaParede([q[0] - 0.01, q[1]], [q[0] + 0.01, q[1]], w, 0.08); });
       }
       var tA = S.td[0] * pA[0] + S.td[1] * pA[1], tB = S.td[0] * pB[0] + S.td[1] * pB[1], lo = Math.min(tA, tB), hi = Math.max(tA, tB);
-      if (pontaApoiada(pA)) sup.push(tA); if (pontaApoiada(pB)) sup.push(tB);
+      if (!M.obra && pontaApoiada(pA)) sup.push(tA); if (!M.obra && pontaApoiada(pB)) sup.push(tB);
       sup.sort(function (a, b) { return a - b; });
+      if (M.obra) o.supObra = o.sup.slice();   /* as posições (x, z) dos apoios desta terça: os calços saem dali */
       var ok = sup.length >= (hi - lo > 0.8 ? 2 : 1);
+      if (M.obra) {
+        var balT = sup.length ? Math.max(sup[0] - lo, hi - sup[sup.length - 1]) : (hi - lo);
+        if (sup.length < 2 && hi - lo > 0.8) ok = false;
+        if (balT > balLimObra + 1e-6) ok = false;
+        if (balT > balancoPior) balancoPior = balT;
+        if (!ok) { tercasSemApoio++; o.semApoio = true; }
+        delete o.sup; delete o.tA; delete o.tB; delete o.aguaS;
+        for (var iv = 1; iv < sup.length; iv++) if (sup[iv] - sup[iv - 1] > piorVao) piorVao = sup[iv] - sup[iv - 1];
+        return;
+      }
       if (ok) {
         if (sup[0] - lo > balMax + 1e-6 || hi - sup[sup.length - 1] > balMax + 1e-6) ok = false;
-        for (var i = 1; i < sup.length; i++) { var gp = sup[i] - sup[i - 1]; if (gp > piorVao) piorVao = gp; if (gp > espApoio.m + 0.35) ok = false; }
+        for (var i = 1; i < sup.length; i++) { var gp = sup[i] - sup[i - 1]; if (gp > piorVao) piorVao = gp; if (gp > espApoio.m + 0.35 && !M.obra) ok = false; }
       }
       if (!ok) { tercasSemApoio++; o.semApoio = true }
       delete o.sup; delete o.tA; delete o.tB; delete o.aguaS;
     });
     if (semApoio) avisos.push(semApoio + " pontalete(s) NÃO gerado(s): não há laje, viga nem parede embaixo (cota de apoio " + virg(H0) + " m). Lance a laje/forro estrutural sob o telhado (ou use o modelo com tesoura) — essas terças estão sem esse apoio.");
-    if (tercasSemApoio) avisos.push(tercasSemApoio + " terça(s) SEM apoio a cada ≤ " + virg(espApoio.m) + " m (ou com balanço na ponta maior que o beiral + 10 cm): confira e lance o apoio delas.");
+    if (tercasSemApoio && M.obra) {
+      avisos.push(tercasSemApoio + " terça(s) com menos de 2 apoios ou com ponta em balanço maior que " + virg(balLimObra) + " m (o beiral): NÃO verificadas pelo motor, que só verifica terça entre dois apoios — pior balanço " + virg(balancoPior) + " m. Lance a parede ou viga sob a ponta, ou confira as terças à mão.");
+      for (var ip = 0; ip < prem.length; ip++) if (/terças pelo motor NBR 14762 \(biapoiadas, isoladas\)/.test(prem[ip])) prem[ip] = prem[ip].replace("terças pelo motor NBR 14762 (biapoiadas, isoladas)", "terças com perfil de partida, NÃO verificadas pelo motor (" + tercasSemApoio + " terça(s) sem 2 apoios ou com balanço de " + virg(balancoPior) + " m)");
+    }
+    else if (tercasSemApoio) avisos.push(tercasSemApoio + " terça(s) SEM apoio a cada ≤ " + virg(espApoio.m) + " m (ou com balanço na ponta maior que o beiral + 10 cm): confira e lance o apoio delas.");
+    /* ---- 4c) CONJUNTO (M.obra): contraventamento em X, correntes e calços. Barra redonda SÓ DE TRAÇÃO (X e correntes) na camada das
+       terças — a regra do galpão (js/acomodelo.js: X nos vãos extremos, em cada painel entre linhas de terça). Os nós ficam no EIXO da
+       terça (a meia altura da alma), dentro da seção dela. Perfil da barra: BR 1/2" (D 12,70 mm) Gerdau — VALOR DE PARTIDA, a conferir. */
+    var conj = null;
+    if (M.obra) {
+      var DBAR = 0.0127, secBarra = { forma: "barra", w: DBAR, h: DBAR, nome: "BR 1/2\" (D 12,70 mm) Gerdau" }, secCalco = { forma: "ret", w: 0.06, h: 0.06, nome: "Calço de chapa de aço 60×60 mm" };
+      var nCorr = Math.max(0, Math.round(num(CJ.calc && CJ.calc.correntes, 0))), nX = 0, nCorrP = 0, nCalcos = 0, paineis = 0, baias = [];
+      var gAgua = {}; tercasObra.forEach(function (q) { (gAgua[q.ia] = gAgua[q.ia] || []).push(q); });
+      function tDe(q, p2) { return q.td[0] * p2[0] + q.td[1] * p2[1]; }
+      function nodo(q, tt) { var u = q.u, x = q.d[0] * u + q.td[0] * tt, z = q.d[1] * u + q.td[1] * tt; return ad3([x, q.S.y(x, z) + q.baseT, z], q.up, q.o.h / 2); }
+      Object.keys(gAgua).forEach(function (ia) {
+        var L = gAgua[ia].slice().sort(function (a, b) { return a.u - b.u; });
+        L.forEach(function (q) { q.B = arr(q.o.supObra).map(function (p2) { return tDe(q, p2); }).sort(function (a, b) { return a - b; }); });
+        for (var i = 0; i + 1 < L.length; i++) {
+          var qa = L[i], qb = L[i + 1], lo = Math.max(qa.t0, qb.t0), hi = Math.min(qa.t1, qb.t1);
+          if (!(hi - lo > 0.3)) continue;
+          var com = qa.B.filter(function (tt) { return tt >= lo - 0.06 && tt <= hi + 0.06 && qb.B.some(function (t2) { return Math.abs(t2 - tt) < 0.06; }); });
+          if (com.length < 2) com = [lo, hi];
+          var vaos = com.length - 1, pains = [];
+          if (vaos >= 2) { pains.push([com[0], com[1]]); pains.push([com[vaos - 1], com[vaos]]); }
+          else { var Lb = com[1] - com[0], wp = Math.min(Lb / 2, 6); pains.push([com[0], com[0] + wp]); pains.push([com[1] - wp, com[1]]); }
+          pains.forEach(function (pn, ip) {
+            paineis++;
+            [[pn[0], pn[1]], [pn[1], pn[0]]].forEach(function (dg) {
+              pc("contravento", nodo(qa, dg[0]), nodo(qb, dg[1]), qa.up, secBarra, { mat: "aco", agua: +ia, fileira: i, lado: ip }); nX++;
+            });
+          });
+          if (nCorr > 0) for (var j = 0; j + 1 < com.length; j++) for (var kk = 1; kk <= nCorr; kk++) {
+            var tk = com[j] + (com[j + 1] - com[j]) * kk / (nCorr + 1);
+            pc("corrente", nodo(qa, tk), nodo(qb, tk), qa.up, secBarra, { mat: "aco", agua: +ia, fileira: i, lado: j }); nCorrP++;
+          }
+          if (i === 0) baias = com.map(function (tt) { return r4(tt); });
+        }
+      });
+      /* calços: um por cruzamento terça × linha de apoio, do plano (topo da peça da obra) até o fundo da terça, atravessando o forro */
+      tercasObra.forEach(function (q) {
+        arr(q.o.supObra).forEach(function (p2) {
+          var tt = tDe(q, p2), tc = Math.max(q.t0 + 0.03, Math.min(q.t1 - 0.03, tt)), x = p2[0] + q.td[0] * (tc - tt), z = p2[1] + q.td[1] * (tc - tt), y0 = q.S.y(x, z);
+          /* o fundo do calço fica 5 mm acima da face de baixo do forro (a parede/viga anexada está nela): coplanar (ou a 1 mm) com o forro, o fundo dele aparecia na vista de baixo como pontos soltos (medido: o ponto só some com 5 mm ou mais). A conferir pelo cálculo, como o calço todo. */
+          pc("calco", [x, y0 + 0.005, z], [x, y0 + q.baseT, z], [q.d[0], 0, q.d[1]], secCalco, { mat: "aco", agua: q.ia, fileira: q.o.fileira, aConferir: true }); nCalcos++;
+        });
+      });
+      tercasObra.forEach(function (q) { delete q.o.supObra; });
+      /* o espaçamento REAL entre terças (no plano da água) e as linhas de apoio vivas: o que o motor das terças tem de receber */
+      var espMax = 0, porAg = {};
+      tercasObra.forEach(function (q) { (porAg[q.ia] = porAg[q.ia] || []).push(q); });
+      Object.keys(porAg).forEach(function (ka) {
+        var us = [], ff = porAg[ka][0].f;
+        porAg[ka].forEach(function (q) { if (!us.some(function (u) { return Math.abs(u - q.u) < 1e-4; })) us.push(q.u); });
+        us.sort(function (a, b) { return a - b; });
+        for (var iu = 1; iu < us.length; iu++) espMax = Math.max(espMax, (us[iu] - us[iu - 1]) * ff);
+      });
+      conj = { perfilTerca: sT.nome, eForro: r4(eF), nTercas: tercasObra.length, paineisX: paineis, barrasX: nX, correntes: nCorrP, correntesPorVao: nCorr, calcos: nCalcos, baias: baias, piorVaoTerca: r4(piorVao), tercasSemApoio: tercasSemApoio, balancoPiorM: r4(balancoPior), balancoLimiteM: r4(balLimObra), espacamentoMaxM: r4(espMax), diametroBarra: DBAR,
+               apoiosVivos: APV.map(function (ap) { var o = { ax: r4(ap.ax), az: r4(ap.az), bx: r4(ap.bx), bz: r4(ap.bz), y: r4(ap.y) }; if (ap.fonte) o.fonte = ap.fonte; if (ap.id != null) o.id = String(ap.id); return o; }) };
+      /* o que NÃO foi verificado sai a cada replay: aqui (pacote.avisos), no diagnóstico e nas Propriedades — não só na janela de criação */
+      var PPv = global.BimTelhadoParam;
+      conj.pendencias = PPv && PPv.pendenciasVerificacao ? PPv.pendenciasVerificacao(CJ, conj) : [];
+      conj.pendencias.forEach(function (p) { if (avisos.indexOf(p.texto) < 0) avisos.push(p.texto); });
+      /* a geometria mudou depois da verificação? Compara o hash COM os apoios que este replay acabou de medir (antes olhava o pacote que ainda não existia e o aviso não saía nunca depois de refazer) */
+      if (PPv && PPv.verificacaoAtual && CJ && CJ.calc) { var tHash = {}; Object.keys(t).forEach(function (kh) { tHash[kh] = t[kh]; }); tHash.pacote = { conjunto: conj }; var vv = PPv.verificacaoAtual(tHash); if (!vv.vale && avisos.indexOf(vv.motivo) < 0) avisos.push(vv.motivo); }
+    }
     /* ---- 5) paredes que anexam o topo: as dos oitões (sempre) e, no modelo de terça, todas as de baixo */
     paredes.forEach(function (w) {
       if (w.base >= H0 - 1e-6 || w.topo < H0 - 0.6) return;
@@ -1865,7 +1992,7 @@
     /* ---- 7) quantitativo (lista de material) */
     var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT, removidas: ed.removidas });
     arr(Q.avisos).forEach(function (a) { avisos.push(a); });
-    var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; });
+    var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; delete o.supObra; });
     /* as MEDIDAS do orçamento do modelo (BimTelhado.medidas → servicos do telhado no Orçamento do modelo) */
     var med = { ripas: 0, caibros: 0, tercas: 0, madeiraM3: 0, acoKg: 0, telhasUn: 0, pregosKg: 0, fixacoesUn: 0, tesourasUn: nTes - num(Q.tesApagadas, 0), pontaletes: 0 };
     pecas.forEach(function (o) {
@@ -1881,12 +2008,19 @@
       else if (q.grupo === "Fixação" && q.un === "kg") med.pregosKg += q.qtd;
       else if (q.grupo === "Fixação" && q.un === "un") med.fixacoesUn += q.qtd;
     });
+    /* o X, as correntes e os calços NÃO entram em acoKg (o 104314 é a trama de terças): medida própria, só no conjunto */
+    if (M.obra) {
+      med.contraventoKg = 0; med.calcoKg = 0;   /* X e correntes (barra) × calços (chapa): composições diferentes no orçamento (PROP-MET-9001 × PROP-MET-9003) */
+      Q.itens.forEach(function (q) { if (q.grupo === "Contraventamento (aço)" && q.un === "kg" && !q.informativo) { if (q.pecaTipo === "calco") med.calcoKg += q.qtd; else med.contraventoKg += q.qtd; } });
+    }
     Object.keys(med).forEach(function (k) { med[k] = r4(med[k]); });
-    return { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
+    var resMod = { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
              paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, camadasAgua: camAg, telhaEsp: r4(espTel / f0), espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
              espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo, fiadas: fiadasInfo,
              quantitativo: Q.itens, premissas: prem, avisos: avisos,
              removidas: ed.removidas, editadas: ed.editadas, problemas: ed.problemas, sobreporOrfas: ed.orfas };
+    if (M.obra) resMod.conjunto = conj;   /* só o conjunto leva o campo: o pacote dos outros modelos sai byte a byte igual */
+    return resMod;
   }
 
   /* o código da composição de TELHAMENTO que o BimCobertura.quantitativo usa para esta telha (null = sem composição) —
@@ -1957,6 +2091,7 @@
       var o = { grupo: grupo, item: item, un: un, qtd: r4(qtd), obs: obs || null, partida: !!partida };
       if (extra && extra.informativo) { o.informativo = true; o.inclusoEm = extra.inclusoEm || null; }
       if (extra && extra.sinapi) o.sinapi = extra.sinapi;
+      if (extra && extra.pecaTipo) o.pecaTipo = extra.pecaTipo;
       itens.push(o);
     }
     /* as tesouras de madeira que vão pela COMPOSIÇÃO do SINAPI (vão até 12 m): id → [vão, composição, prego kg, parafusos] */
@@ -1996,10 +2131,12 @@
     var cods0 = {}; Object.keys(tesComp).forEach(function (id) { cods0[tesComp[id][1]] = 1; });
     var inclTes = "composição SINAPI de tesoura " + Object.keys(cods0).join(", ");
     var ROT = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo, 2 por montante)", terca: "Terça", caibro: "Caibro", ripa: "Ripa", pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira",
-                "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura" };
+                "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
+                contravento: "Contraventamento em X", corrente: "Corrente", calco: "Calço metálico" };
     var SECP = { linha: SEC.linha, perna: null, pendural: SEC.pendural, escora: SEC.escora, montante: SEC.montante, terca: SEC.terca, caibro: SEC.caibro, ripa: SEC.ripa, pontalete: SEC.pontalete, espigao: SEC.espigao, rincao: SEC.espigao, testeira: SEC.testeira };
     Object.keys(por).forEach(function (k) {
       var g = por[k], rot = ROT[g.p] || g.p;
+      if (g.p === "contravento" || g.p === "corrente" || g.p === "calco") return;   /* o conjunto tem grupo próprio, abaixo */
       if (g.mat === "aco" || g.perfil) {
         var A9 = PA(), o = A9 && A9.obter ? A9.obter(g.perfil) : null, kg = o && fin(o.massa) ? o.massa * g.m : null;
         it("Estrutura do telhado (aço)", rot + " " + (g.perfil || "") + " — " + g.n + " peça(s), " + virg(g.m) + " m", "kg", kg == null ? 0 : kg, "perfil ADOTADO (valor de partida) — confirmar no cálculo da Metálica", true);
@@ -2009,6 +2146,20 @@
         else it("Madeiramento", rot + " " + virg(g.w * 100, 1).replace(",0", "") + "×" + virg(g.h * 100, 1).replace(",0", "") + " cm — " + g.n + " peça(s)", "m", g.m, (sp && sp.fonte ? sp.fonte : "seção VALOR DE PARTIDA — conferir") + "; " + virg(g.m3, 3) + " m³", part);
       }
     });
+    /* CONJUNTO: X, correntes e calços — grupo próprio, fora do kg de terças (104314). Massa = seção × comprimento × 7.850 kg/m³ (aço);
+       o código PROP-MET-9001 é do orçamentista (fora da base SINAPI: o orçamento marca "pendente" e mostra a quantidade) */
+    if (M.obra) {
+      var contr = { contravento: { n: 0, m: 0, kg: 0, nome: "Contraventamento em X — barra redonda só de tração" }, corrente: { n: 0, m: 0, kg: 0, nome: "Correntes das terças — barra redonda" }, calco: { n: 0, m: 0, kg: 0, nome: "Calços metálicos (atravessam o forro)" } };
+      pecas.forEach(function (o) {
+        var c = contr[o.p]; if (!c) return;
+        c.n++; c.m += o.L; c.kg += (o.forma === "barra" ? Math.PI * o.w * o.w / 4 : o.w * o.h) * o.L * 7850;
+      });
+      Object.keys(contr).forEach(function (k) {
+        var c = contr[k]; if (!c.n) return;
+        it("Contraventamento (aço)", c.nome + " — " + c.n + " peça(s), " + virg(c.m) + " m", "kg", c.kg,
+           (k === "calco" ? "Calço de 60 × 60 mm: VALOR DE PARTIDA, a conferir pelo cálculo. " : "BR 1/2\" (D 12,70 mm) Gerdau: VALOR DE PARTIDA, a conferir pelo cálculo. ") + "massa = seção × comprimento × 7.850 kg/m³; " + (k === "calco" ? "chapa: composição própria PROP-MET-9003 (chapas de ligação) da base do app" : "barra: composição própria PROP-MET-9001 (perfil laminado, tubo ou barra) da base do app"), true, { pecaTipo: k });
+      });
+    }
     /* tesouras de madeira: a tesoura de referência do SINAPI do vão imediatamente maior (pregos 18×30, parafusos, estribo, cobre-juntas) */
     if (M.tesoura && mat !== "aco" && x.nTes) {
       /* a TESOURA vai pela composição SINAPI do vão (imediatamente maior), que já inclui madeira, pregos, parafusos, estribo,

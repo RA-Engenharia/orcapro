@@ -1105,6 +1105,14 @@
       var v = M.criar(tipo, { nome: rot + nivel.nome, nivelId: nivel.id });
       return this._p6Depois(v, true, "“" + v.nome + "” criada com o modelo de vista RA do tipo.");
     },
+    /* PLANTA DE COBERTURA (Telhado paramétrico): a planta do nível pedido, com o modelo de vista RA de cobertura e a faixa pelo TOPO do modelo
+       (o plano de corte acima do telhado: a planta mostra a volumetria de cima). topo = a cota absoluta mais alta (m). */
+    criarPlantaCobertura: function (nivel, topo) {
+      var M = this._p6Depois && this._p6(); if (!M || !nivel) return null;
+      var elev = Number(nivel.elevacao) || 0, alto = isFinite(Number(topo)) ? Number(topo) - elev : 12;
+      var v = M.criar("planta", { nome: "Planta de cobertura — " + nivel.nome, nivelId: nivel.id, modeloId: "ra-planta-cobertura", faixa: { sup: Math.round((alto + 1) * 100) / 100, corte: Math.round((alto + 0.5) * 100) / 100, inf: 0, prof: 0 } });
+      return this._p6Depois(v, true, "“" + v.nome + "” criada: a planta olha o telhado de cima.");
+    },
     criarDesenhoP6: function () {
       var M = this._p6(); if (!M) return null;
       var v = M.criar("desenho", { nome: "Vista de desenho" });

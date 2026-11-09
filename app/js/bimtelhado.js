@@ -1201,6 +1201,23 @@
     if (!t.ok) { avisos.push("O telhado desta borda não fechou: sem comprimento."); b.avisos = avisos; return b; }
     if (t.modo !== "perimetro") { avisos.push("Bordas por aresta são do telhado por perímetro."); b.avisos = avisos; return b; }
     var porOrig = {}; arr(t.arestasCalc).forEach(function (e) { porOrig[e.orig] = e; });
+    /* CONJUNTO (t.conjunto): a borda acompanha a TELHA — o plano é a face de baixo do forro e a telha está acima do forro e das terças.
+       Sem esta soma a calha e o rufo ficavam no plano, 32 a 43 cm abaixo da telha (medido em 09/11/2026: borda a 2,962, fundo da telha a
+       3,282). Só o conjunto: nos telhados antigos nada muda (versão própria, declarada nas notas). */
+    var dyCam = t.conjunto && t.pacote && t.pacote.ok && t.pacote.camadas ? num(t.pacote.camadas.telha, 0) : 0;
+    if (dyCam) b.camadaConjunto = r4(dyCam);
+    /* CONJUNTO: a testeira com `alturaAuto` tem a altura do PACOTE (forro + terça + telha, no plano da água): acompanha a inclinação e a terça, sem vão aberto */
+    /* testeira RECUADA (aresta da calha): a telha segue por cima dela até a calha, então a chapa PARA NO FUNDO DA TELHA (antes entrava 6 cm na telha) */
+    var recuoTest = !!(dyCam && b.tipoBorda === "testeira" && b.alturaAuto === true && fin(Number(b.recuo)) && Number(b.recuo) > 0);
+    if (dyCam && b.tipoBorda === "testeira" && b.alturaAuto === true && t.pacote.camadas) b.alturaEf = r4(num(t.pacote.camadas.telha, 0) + (recuoTest ? 0 : num(t.pacote.telhaEsp, 0)));
+    /* o RUFO do conjunto (capa): cobre a borda de cima da telha — sobe 1 cm acima dela e desce a espessura da telha + 2 cm (antes ficava ABAIXO da telha, sem cobri-la) */
+    var rufoCapa = !!(dyCam && b.tipoBorda === "rufo" && b.alturaAuto === true && t.pacote.camadas);
+    if (rufoCapa) b.alturaEf = r4(num(t.pacote.telhaEsp, 0) + 0.03);
+    /* a testeira do conjunto fecha o pacote DO PLANO (face de baixo do forro) ATÉ A FACE DE CIMA DA TELHA: o desenho pendura a chapa do y do segmento para baixo, então o segmento sobe a espessura da telha
+       (antes a chapa saía do fundo da telha e descia 6 cm abaixo do forro, com a telha 6 cm acima dela). */
+    var dySeg = dyCam + (dyCam && b.tipoBorda === "testeira" && b.alturaAuto === true && !recuoTest ? num(t.pacote.telhaEsp, 0) : 0) + (rufoCapa ? num(t.pacote.telhaEsp, 0) + 0.01 : 0);
+    /* a testeira que fica na aresta da CALHA recua para trás da face interna da calha (a telha avança 5 cm dentro dela): a chapa não atravessa mais o canal */
+    var recuo = dyCam && b.tipoBorda === "testeira" && b.alturaAuto === true && fin(Number(b.recuo)) ? Number(b.recuo) : 0, plRec = recuo > 0 && arr(t.aguasCalc)[0] && arr(t.aguasCalc)[0].plano ? t.aguasCalc[0].plano : null;
     var ks = arr(b.arestas).map(function (k) { return Number(k); }).filter(function (k, i, l) { return fin(k) && l.indexOf(k) === i; });
     var area = 0, compr = 0;
     b.placas = [];
@@ -1209,13 +1226,21 @@
       if (!e) { avisos.push("A aresta " + (k + 1) + " não existe no telhado."); return; }
       if (Bd.onde === "beiral" && !e.define) { avisos.push(Bd.rotulo + " na aresta " + (k + 1) + ": a aresta não define inclinação (é empena) — " + Bd.rotulo.toLowerCase() + " vai no beiral."); return; }
       compr += num(e.comprimento, 0);
-      arr(e.contorno).forEach(function (s) { b.segs.push({ a: s.a, b: s.b, aresta: k }); });
+      arr(e.contorno).forEach(function (s) {
+        if (dyCam && recuo > 0 && e.parede) {
+          var sdx = s.b.x - s.a.x, sdz = s.b.z - s.a.z, sL = Math.sqrt(sdx * sdx + sdz * sdz) || 1, nx = -sdz / sL, nz = sdx / sL;
+          if ((e.parede.a.x - s.a.x) * nx + (e.parede.a.z - s.a.z) * nz < 0) { nx = -nx; nz = -nz; }
+          var gy = plRec ? num(plRec.bx, 0) * nx * recuo + num(plRec.bz, 0) * nz * recuo : 0;
+          b.segs.push({ a: { x: r6(s.a.x + nx * recuo), y: r6(num(s.a.y, 0) + dySeg + gy), z: r6(s.a.z + nz * recuo) }, b: { x: r6(s.b.x + nx * recuo), y: r6(num(s.b.y, 0) + dySeg + gy), z: r6(s.b.z + nz * recuo) }, aresta: k });
+        } else if (dyCam) b.segs.push({ a: { x: s.a.x, y: r6(num(s.a.y, 0) + dySeg), z: s.a.z }, b: { x: s.b.x, y: r6(num(s.b.y, 0) + dySeg), z: s.b.z }, aresta: k });
+        else b.segs.push({ a: s.a, b: s.b, aresta: k });
+      });
       if (b.tipoBorda === "intradorso") {
         /* o forro do beiral: o quadrilátero entre a linha da parede e a do beiral */
         var Q = [[e.parede.a.x, e.parede.a.z], [e.parede.b.x, e.parede.b.z], [e.beiral.b.x, e.beiral.b.z], [e.beiral.a.x, e.beiral.a.z]];
         area += Math.abs(areaSinal(Q));
         /* a placa do forro do beiral, horizontal, na altura da borda do beiral (o desenho e o IFC) */
-        b.placas.push({ aresta: k, y: num(e.alturaBeiral, 0), pts: Q.map(function (q) { return { x: q[0], z: q[1] }; }) });
+        b.placas.push({ aresta: k, y: num(e.alturaBeiral, 0) + dyCam, pts: Q.map(function (q) { return { x: q[0], z: q[1] }; }) });
       }
     });
     if (b.tipoBorda === "testeira" || b.tipoBorda === "rufo") area = compr * b.alturaEf;
@@ -1278,6 +1303,8 @@
     /* TELHADO PARAMÉTRICO (T1): o MODELO da estrutura (js/bimtelhadoestrut.js MODELOS) e se as paredes de baixo anexam o topo */
     if (o.modelo !== undefined) { if (o.modelo !== null && !(typeof o.modelo === "string" && /^[a-z0-9-]{1,40}$/.test(o.modelo))) return false; algum = true; }
     if (o.anexarParedes !== undefined) { if (o.anexarParedes !== null && typeof o.anexarParedes !== "boolean") return false; algum = true; }
+    /* CONJUNTO do Telhado paramétrico: forro, perfil da terça, linhas de apoio da obra, o cálculo e as fontes (null apaga) */
+    if (o.conjunto !== undefined) { if (o.conjunto !== null && !conjuntoValido(o.conjunto)) return false; algum = true; }
     /* T5 (20/10/2026): a EDIÇÃO DE PEÇA da estrutura derivada — um remendo { <id da peça>: campos | null } (js/bimtelhadoestrut.js) */
     if (o.sobrepor !== undefined) {
       var ESv = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
@@ -1285,6 +1312,33 @@
       algum = true;
     }
     return algum;
+  }
+  /* o CONJUNTO do telhado paramétrico (js/bimtelhadoparam.js): objeto plano, SEM lista dentro de lista (o Firestore recusa) */
+  function semListaEmLista(v, dentro, prof) {
+    if (prof > 6) return false;
+    if (Array.isArray(v)) { if (dentro) return false; return v.every(function (x) { return semListaEmLista(x, true, prof + 1); }); }
+    if (v && typeof v === "object") return Object.keys(v).every(function (k) { return semListaEmLista(v[k], false, prof + 1); });
+    return true;
+  }
+  function conjuntoValido(c) {
+    if (!obj(c)) return false;
+    if (c.eForro !== undefined && !(fin(c.eForro) && c.eForro >= 0 && c.eForro <= 0.2)) return false;
+    if (c.perfilTerca !== undefined && !(typeof c.perfilTerca === "string" && c.perfilTerca.length > 0 && c.perfilTerca.length <= 60)) return false;
+    if (c.apoios !== undefined) {
+      if (!Array.isArray(c.apoios) || c.apoios.length > 64) return false;
+      for (var i = 0; i < c.apoios.length; i++) {
+        var a = c.apoios[i]; if (!obj(a)) return false;
+        for (var j = 0, ks = ["ax", "az", "bx", "bz"]; j < ks.length; j++) if (!(fin(a[ks[j]]) && Math.abs(a[ks[j]]) <= 1e6)) return false;
+        if (a.y !== undefined && !(fin(a.y) && Math.abs(a.y) <= 1e4)) return false;
+      }
+    }
+    if (c.calc !== undefined && !obj(c.calc)) return false;
+    if (c.fontes !== undefined && !obj(c.fontes)) return false;
+    if (c.arestaQueda !== undefined && !(fin(c.arestaQueda) && c.arestaQueda >= 0 && Math.round(c.arestaQueda) === c.arestaQueda)) return false;
+    if (c.forroId !== undefined && !idOk(c.forroId)) return false;
+    if (c.v0 !== undefined && c.v0 !== null && !(fin(c.v0) && c.v0 > 0 && c.v0 <= 100)) return false;
+    var tam = 0; try { tam = JSON.stringify(c).length; } catch (e) { return false; }
+    return tam <= 40000 && semListaEmLista(c, false, 0);
   }
   function opBordaValida(o) {
     if (!o || o.op !== "borda" || !idOk(o.id)) return false;
@@ -1303,11 +1357,16 @@
     /* N23: calha de beiral na cota certa (a telha entra na calha, o fundo cai até o bocal) e a declividade dela */
     if (o.cotaAuto !== undefined) { if (o.cotaAuto !== null && typeof o.cotaAuto !== "boolean") return false; algum = true; }
     if (o.declividadePct !== undefined) { if (o.declividadePct !== null && !(fin(o.declividadePct) && o.declividadePct >= 0 && o.declividadePct <= 10)) return false; algum = true; }
+    /* CONJUNTO: o bocal da calha SEM tubo de queda (posições 0..1 no comprimento — dá o caimento) e a marca "a descida é do hidrossanitário" */
+    if (o.saidas !== undefined) { if (o.saidas !== null && !(Array.isArray(o.saidas) && o.saidas.length <= 8 && o.saidas.every(function (v) { return fin(v) && v >= 0 && v <= 1; }))) return false; algum = true; }
+    if (o.semDescida !== undefined) { if (o.semDescida !== null && typeof o.semDescida !== "boolean") return false; algum = true; }
+    if (o.alturaAuto !== undefined) { if (o.alturaAuto !== null && typeof o.alturaAuto !== "boolean") return false; algum = true; }
+    if (o.recuo !== undefined) { if (o.recuo !== null && !(fin(o.recuo) && o.recuo >= 0 && o.recuo <= 0.5)) return false; algum = true; }
     return algum;
   }
 
-  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes"];
-  var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct"];
+  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto"];
+  var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct", "saidas", "semDescida", "alturaAuto", "recuo"];
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 
   /* T1: as medidas do pacote no orçamento do modelo — acrescentadas ao BimEdit.MEDIDAS_ORC (só chaves novas, nunca troca uma que existe) */
@@ -1321,6 +1380,14 @@
       if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, k)) BE.MEDIDAS_ORC[k] = un[k];
       if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, k)) BE.MEDIDAS_ROTULO[k] = rot[k];
     });
+    /* CONJUNTO (telhado paramétrico): o aço do X, das correntes e dos calços — medida PRÓPRIA, fora de MEDIDAS_PACOTE e de acoKg (o 104314 é a trama de terças).
+       Sem o registro aqui, BimEdit.sanear descartava o `orcar` inteiro do conjunto (js/bimedit.js: medida desconhecida). */
+    if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, "contraventoKg")) BE.MEDIDAS_ORC.contraventoKg = "kg";
+    if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, "contraventoKg")) BE.MEDIDAS_ROTULO.contraventoKg = "aço do X e das correntes do conjunto (barra, kg)";
+    if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, "contrarrufoM")) BE.MEDIDAS_ORC.contrarrufoM = "m";
+    if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, "contrarrufoM")) BE.MEDIDAS_ROTULO.contrarrufoM = "contrarrufo de encontro do conjunto (m)";
+    if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, "calcoKg")) BE.MEDIDAS_ORC.calcoKg = "kg";
+    if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, "calcoKg")) BE.MEDIDAS_ROTULO.calcoKg = "aço dos calços do conjunto (chapa, kg)";
   })();
 
   /* =====================================================================
@@ -1385,7 +1452,10 @@
     if (t.modo !== "perimetro" || !arr(t.contorno).length) return { ok: false, erro: "Inverter o caimento vale para o telhado por perímetro (de 1 água)." };
     var bs = arr(estado.bordas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "borda", id: b.id, telhado: b.telhado, tipoBorda: b.tipoBorda, arestas: arr(b.arestas) }; })
       .concat(arr(estado.calhasEmbutidas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "calha", id: b.id, telhado: b.telhado, tipoBorda: "calha", arestas: arr(b.arestas) }; }));
-    return inverterCaimento(t.contorno.map(function (q) { var o = { x: q.x, z: q.z }; if (q.d === false) o.d = false; if (q.i != null) o.i = q.i; return o; }), bs, id);
+    var rInv = inverterCaimento(t.contorno.map(function (q) { var o = { x: q.x, z: q.z }; if (q.d === false) o.d = false; if (q.i != null) o.i = q.i; return o; }), bs, id);
+    /* CONJUNTO: a aresta da queda acompanha (calha, rufo e testeira já trocaram de aresta pelas bordas); a verificação das terças fica vencida (o hash muda) */
+    if (rInv.ok && t.conjunto) { var cj = clone(t.conjunto); cj.arestaQueda = rInv.para; rInv.ops.push({ op: "telhado", id: id, conjunto: cj }); rInv.avisos.push("Conjunto: a queda foi para a aresta " + (rInv.para + 1) + " — refazer a verificação das terças."); }
+    return rInv;
   }
 
   var BimTelhado = {
@@ -1655,6 +1725,10 @@
       m.espigao = R(num(el.espigao, 0)); m.rincao = R(num(el.rincao, 0)); m.beiral = R(num(el.comprimentoBeiral, 0)); m.empena = R(num(el.comprimentoEmpena, 0));
       /* T1: o telhado com MODELO orça também o pacote (ripas, caibros, terças, madeira, aço, telhas, pregos, fixações) */
       if (el.pacote && el.pacote.ok && el.pacote.medidas) MEDIDAS_PACOTE.forEach(function (k) { m[k] = R(num(el.pacote.medidas[k], 0)); });
+      /* CONJUNTO: o aço do X, das correntes e dos calços, FORA de acoKg (o 104314 é só a trama de terças) — chave que só existe nele */
+      if (el.pacote && el.pacote.ok && el.pacote.medidas && el.pacote.medidas.contraventoKg != null) m.contraventoKg = R(num(el.pacote.medidas.contraventoKg, 0));
+      if (el.pacote && el.pacote.ok && el.pacote.medidas && el.pacote.medidas.calcoKg != null) m.calcoKg = R(num(el.pacote.medidas.calcoKg, 0));
+      if (el.conjunto && el.rufoEnc) m.contrarrufoM = R(num(el.rufoEnc.contraM, 0));   /* pelo js/bimcobertura.js (fim): só o conjunto, só com rufo de encontro */
       return m;
     },
 

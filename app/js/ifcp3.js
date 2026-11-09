@@ -73,7 +73,9 @@
     pendural: ["IFCMEMBER", "POST", "Pendural"], "pendural-aco": ["IFCMEMBER", "POST", "Montante central"], montante: ["IFCMEMBER", "POST", "Montante (sarrafo)"], "montante-aco": ["IFCMEMBER", "POST", "Montante"],
     escora: ["IFCMEMBER", "STRUT", "Escora"], diag: ["IFCMEMBER", "STRUT", "Diagonal"],
     espigao: ["IFCBEAM", "BEAM", "Espigão"], rincao: ["IFCBEAM", "BEAM", "Rincão"], "viga-aco": ["IFCBEAM", "BEAM", "Viga principal"],
-    pontalete: ["IFCCOLUMN", "COLUMN", "Pontalete"], "pilar-aco": ["IFCCOLUMN", "COLUMN", "Pilar da cumeeira"]
+    pontalete: ["IFCCOLUMN", "COLUMN", "Pontalete"], "pilar-aco": ["IFCCOLUMN", "COLUMN", "Pilar da cumeeira"],
+    /* CONJUNTO do Telhado paramétrico: barras de contraventamento e correntes (BRACE) e o calço metálico (MEMBER) */
+    contravento: ["IFCMEMBER", "BRACE", "Contraventamento em X"], corrente: ["IFCMEMBER", "BRACE", "Corrente"], calco: ["IFCMEMBER", "MEMBER", "Calço metálico"]
   };
   var MAPA_PECA = { IFCMEMBER: "membroTelhado", IFCBEAM: "vigaTelhado", IFCCOLUMN: "pilarTelhado" };
   /* a seção no plano (w, v), v de 0 a h a partir da face de baixo — a MESMA do js/bimtelhadoestrut.js secaoPts (o 3D) */
@@ -87,6 +89,8 @@
       var tf = pc.dims.tf, tw = pc.dims.tw;
       return [[-b / 2, 0], [b / 2, 0], [b / 2, tf], [tw / 2, tf], [tw / 2, h - tf], [b / 2, h - tf], [b / 2, h], [-b / 2, h], [-b / 2, h - tf], [-tw / 2, h - tf], [-tw / 2, tf], [-b / 2, tf]];
     }
+    /* BARRA REDONDA (X, correntes): 12 lados centrados no eixo — a MESMA do js/bimtelhadoestrut.js */
+    if (pc.forma === "barra") { var rb = b / 2, pb = []; for (var kb = 0; kb < 12; kb++) pb.push([Math.round(rb * Math.cos(kb * Math.PI / 6) * 1e6) / 1e6, Math.round(rb * Math.sin(kb * Math.PI / 6) * 1e6) / 1e6]); return pb; }
     return [[-b / 2, 0], [b / 2, 0], [b / 2, h], [-b / 2, h]];
   }
   function areaPoli(P) { var s = 0; for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); }
@@ -112,7 +116,7 @@
       var el = A.peca(chave, ent, nome, m[2] + " " + secRot, plE, A.forma([sol], "SweptSolid"), [A.E(m[1])], Math.min(o.a[1], o.b[1]), nv, { parte: t.id, mapa: MAPA_PECA[ent] });
       A.ligarMaterial(el, matN);
       var As = areaPoli(S0), V = As * L, q = [["Length", "L", L], ["CrossSectionArea", "A", As], ["NetVolume", "V", V]];
-      if (aco) { var PA = A.dep ? A.dep("PerfisAco", "./perfisaco.js") : null, pf = PA && PA.obter && o.perfil ? PA.obter(o.perfil) : null; if (pf && isFinite(pf.massa)) q.push(["NetWeight", "W", pf.massa * L]); }
+      if (aco) { var PA = A.dep ? A.dep("PerfisAco", "./perfisaco.js") : null, pf = PA && PA.obter && o.perfil ? PA.obter(o.perfil) : null; if (pf && isFinite(pf.massa)) q.push(["NetWeight", "W", pf.massa * L]); else if (o.p === "contravento" || o.p === "corrente" || o.p === "calco") q.push(["NetWeight", "W", (o.forma === "barra" ? Math.PI * o.w * o.w / 4 : o.w * o.h) * L * 7850]); }   /* conjunto: aço 7.850 kg/m³ × seção */
       A.qto(el, ent === "IFCBEAM" ? "Qto_BeamBaseQuantities" : (ent === "IFCCOLUMN" ? "Qto_ColumnBaseQuantities" : "Qto_MemberBaseQuantities"), q);
       A.pset(el, "OrcaPRO_PecaTelhado", [["Papel", "IFCLABEL", m[2]], ["Secao", "IFCLABEL", secRot], ["Telhado", "IFCIDENTIFIER", String(t.id)], ["Modelo", "IFCLABEL", String(pk.rotulo || t.modelo)],
                                          ["Tesoura", "IFCIDENTIFIER", o.tesoura ? String(o.tesoura) : ""], ["Agua", "IFCINTEGER", o.agua != null ? o.agua + 1 : null]]);

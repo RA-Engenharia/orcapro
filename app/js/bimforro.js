@@ -520,7 +520,27 @@
     var E = dep("BimEdit", "./bimedit.js");
     return !!(E && E.opForroValida && E.opForroValida(o));
   }
-  var CAMPOS = ["nivelId", "base", "contorno", "ponto", "furos", "tipoId", "tipoForro", "deslocNivel", "inclinacao", "dirInclinacao", "delimitaAmbiente"];
+  var CAMPOS = ["nivelId", "base", "contorno", "ponto", "furos", "tipoId", "tipoForro", "deslocNivel", "inclinacao", "dirInclinacao", "delimitaAmbiente", "telhado"];
+  /* FORRO HOSPEDADO NO TELHADO (conjunto do Telhado paramétrico, 09/11/2026): `telhado` = o id do telhado que o forro segue. A cada replay, ANTES
+     do calcular, o contorno (a projeção do telhado com o beiral), a inclinação, a direção e a cota vêm do PLANO da água principal — a face de baixo
+     do forro É o plano, então muda a inclinação, a altura ou o contorno do telhado e o forro vai junto. Telhado apagado (ou que não fechou): o forro
+     fica ok:false com o motivo, nunca solto no ar. Sem `telhado` nada disto roda (o forro de antes sai igual). */
+  function derivarDoTelhado(fonte, saida) {
+    var t = null; arr(saida && saida.telhados).forEach(function (x) { if (x && String(x.id) === String(fonte.telhado)) t = x; });
+    var fo = clone(fonte);
+    if (!t || !t.ok || !arr(t.beirais).length) { fo.contorno = []; delete fo.ponto; fo.furos = []; fo._semTelhado = !t ? "O telhado deste forro foi apagado: o forro não tem onde apoiar. Apague-o também ou refaça o conjunto." : "O telhado deste forro não fechou: o forro não tem onde apoiar."; return fo; }
+    var ag = null, best = -1;
+    arr(t.aguasCalc).forEach(function (a) { var p = a.plano || {}; if (Math.sqrt((p.bx || 0) * (p.bx || 0) + (p.bz || 0) * (p.bz || 0)) > 1e-9 && num(a.area, 0) > best) { best = num(a.area, 0); ag = a; } });
+    fo.contorno = t.beirais.map(function (q) { return { x: r6(q.x), z: r6(q.z) }; }); delete fo.ponto; fo.furos = [];
+    if (!ag) { fo.inclinacao = 0; fo.dirInclinacao = 0; fo.deslocNivel = r6(num(t.cotaApoio, 0) - num(t.elevNivel, 0)); if (t.nivelId != null) fo.nivelId = t.nivelId; return fo; }
+    var p = ag.plano, s = Math.sqrt(p.bx * p.bx + p.bz * p.bz), dr = Math.atan2(p.bz, p.bx), ux = p.bx / s, uz = p.bz / s, pmin = Infinity, x0 = 0, z0 = 0;
+    fo.contorno.forEach(function (q) { var pr = q.x * ux + q.z * uz; if (pr < pmin) { pmin = pr; x0 = q.x; z0 = q.z; } });
+    var cota = p.a + p.bx * x0 + p.bz * z0;
+    fo.inclinacao = Math.min(LIM.inclinacao, r6(Math.atan(s) * 180 / Math.PI)); fo.dirInclinacao = r6(dr * 180 / Math.PI);
+    if (t.nivelId != null) { fo.nivelId = t.nivelId; fo.deslocNivel = r6(cota - num(t.elevNivel, 0)); } else { delete fo.nivelId; fo.base = num(t.elevNivel, 0); fo.deslocNivel = r6(cota - num(t.elevNivel, 0)); }
+    fo.deslocNivel = Math.max(-LIM.desloc, Math.min(LIM.desloc, fo.deslocNivel));
+    return fo;
+  }
   function pontosObj(l) {
     return arr(l).map(function (p) {
       var q = pt(p), o = { x: r6(q[0]), z: r6(q[1]) };
@@ -646,7 +666,10 @@
     fim: function (ctx, saida, niveis) {
       if (!ctx || !ctx.forros || !saida) return saida;
       saida.forros = arr(ctx.ordemFo).map(function (id) {
-        var f = calcular(ctx.forros[id], saida, niveis), r = ctx.vincForro && ctx.vincForro[String(id)];
+        var fonte = ctx.forros[id];
+        if (fonte && fonte.telhado != null) fonte = derivarDoTelhado(fonte, saida);
+        var f = calcular(fonte, saida, niveis), r = ctx.vincForro && ctx.vincForro[String(id)];
+        if (f && f._semTelhado) { f.ok = false; f.avisos = [f._semTelhado]; delete f._semTelhado; }
         if (r && f) {
           f.segueParedes = { ligadas: r.ligadas, total: arr(f.contorno).length, mudou: !!r.mudou, usouGravado: !!r.usouGravado };
           if (r.avisos.length) f.avisos = arr(f.avisos).concat(r.avisos);

@@ -224,9 +224,9 @@
        área = superfície da malha; comprimento = caminho da varredura ou altura
        da extrusão. A lista na tela só oferece a medida que a peça TEM. */
     MEDIDAS_VOLUME: ["volume", "area", "areaProjecao", "comprimento", "un", "kgPorM3"],
-    medidasPorTipo: function (tipo, volume) {
+    medidasPorTipo: function (tipo, volume, el) {
       if (volume) return this.MEDIDAS_VOLUME;
-      return (global.OrcModelo && OrcModelo.medidasDaCategoria ? OrcModelo.medidasDaCategoria(tipo) : null) || ["area", "volume", "comprimento", "un"];
+      return (global.OrcModelo && OrcModelo.medidasDaCategoria ? OrcModelo.medidasDaCategoria(tipo, el) : null) || ["area", "volume", "comprimento", "un"];
     },
     secoesElemento: function (id) {
       if (!this.ativo() || !global.OrcModelo || !global.BimEdit) return [];
@@ -236,7 +236,7 @@
       var ps = [];
       if (!base) ps.push(this._botaoBase());
       ps.push(ro("orc:med", "Medidas", ["area", "volume", "comprimento", "areaForma"].filter(function (k) { return med[k] != null; }).map(function (k) { return ROT[k] + " " + fmt(med[k], 2) + " " + unTela(MU[k]); }).join(" · ")));
-      var meds = this.medidasPorTipo(x.tipo, x.volume).filter(function (k) { return k === "kgPorM3" ? med.volume != null : med[k] != null; });
+      var meds = this.medidasPorTipo(x.tipo, x.volume, el).filter(function (k) { return k === "kgPorM3" ? med.volume != null : med[k] != null; });
       (el.servicos || []).forEach(function (s, i) {
         var cl = M ? M.classeDe(s.codigo) : null, n = i === 0 ? "Principal" : "Serviço " + (i + 1);
         var un = s.medida === "kgPorM3" ? "kg" : MU[s.medida];

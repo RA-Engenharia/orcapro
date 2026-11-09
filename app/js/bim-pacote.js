@@ -2628,7 +2628,8 @@ S._apoiarRaios = function (pts, o) {
 o = o || {};
 if (!S || !S.alive || !modelRoot) return [];
 modelRoot.updateMatrixWorld(true);
-var so = o.soUid || null, alvos = apoMalhas(function (m) { return !so || uidDeMalha(m) === so; });
+var so = o.soUid || null, fora = Array.isArray(o.excluirTipos) && o.excluirTipos.length ? o.excluirTipos : null;
+var alvos = apoMalhas(function (m) { if (fora && m.userData && fora.indexOf(m.userData.tipo) >= 0) return false; return !so || uidDeMalha(m) === so; });
 var vazio = (pts || []).map(function (p) { return { x: p.x, z: p.z, hits: [] }; });
 if (!alvos.length) return vazio;
 var mw = modelRoot.matrixWorld, inv = new THREE.Matrix4().copy(mw).invert(), topo = -Infinity;
@@ -5513,6 +5514,9 @@ uids.forEach(function (u) {
 if (!/^edit:/.test(u)) return;
 var id = u.slice(5);
 if (Pr && Pr.fixado && est && Pr.fixado(est, id)) { nFix++; return; }
+var tCj = est && est.telhados && window.BimTelhadoParam ? est.telhados.filter(function (x) { return x && String(x.id) === String(id) && x.conjunto; })[0] : null;
+var casc = tCj ? BimTelhadoParam.opsApagar(est, id) : null;
+if (casc) { casc.ops.forEach(function (o) { ops.push(o); }); eds.push(u); return; }
 ops.push({ op: 'apagar', id: id }); eds.push(u);
 });
 try { if (eds.length && window.BimSelInst && BimSelInst.interceptarApagar && BimSelInst.interceptarApagar(eds)) {
@@ -11005,6 +11009,10 @@ if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;
 if (sub === 'apagar') {
 if (!hit) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique em cima de um elemento.'); return; }
 var mA = _ultimosHits[0].object, midA = mA.userData.mid, idA = mA.userData.expressID;
+if (midA === 'edit') {
+var _cjA = window.BimTelhadoParam && S.edit && S.edit.estado ? BimTelhadoParam.opsApagar(S.edit.estado, idA) : null;
+if (_cjA) { editOp(_cjA); S._hint('Conjunto do telhado removido inteiro (Desfazer volta).'); marcarFechamento(); return; }
+}
 if (midA === 'edit') { var _o1 = { op: 'apagar', id: idA }, _or1 = null; try { _or1 = window.EleAparelhos && EleAparelhos.aoApagar ? EleAparelhos.aoApagar(edit.ops, [_o1], S._famAval) : null; if (_or1 && !window.confirm(_or1.texto)) _or1 = null; } catch (_e1) { _or1 = null; }
 editOp(_or1 ? { op: 'lote', id: 'dl' + Date.now().toString(36), origem: 'delete', pedido: 'Apagar o aparelho e o ponto', ops: [_o1].concat(_or1.ops) } : _o1); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Removido (Desfazer volta).'); }
 else {
