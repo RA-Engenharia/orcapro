@@ -178,6 +178,41 @@
     });
   }
 
+  /* ---------------- empresa do certame: campos e timbrado ---------------- */
+  var CAMPOS_LICITANTE = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
+    "socioNome", "socioCargo", "rtNome", "rtCrea"];
+  /* imagem do timbrado: até ~400 KB por imagem (base64 ~ 4/3). O app reduz o timbrado a 1100 px antes
+     de guardar (js/app.js), então isto só barra o que veio grande demais de fora. */
+  var TIMBRADO_MAX_CHARS = 560000, TIMBRADO_MAX_CNPJS = 6;
+  /* O localStorage do navegador tem ~5,24 milhões de caracteres para TUDO (orçamentos, bases). Seis CNPJs de 2 imagens de 560 mil
+     estourariam isso sozinhos. Teto do conjunto de timbrados: 2 milhões de caracteres; passou, o CNPJ mais antigo sai. */
+  var TIMBRADO_MAX_TOTAL = 2000000;
+  function _timbTotal(o) {
+    var t = 0;
+    Object.keys(o.por).forEach(function (k) { var e = o.por[k] || {}; t += String(e.topo || "").length + String(e.fundo || "").length; });
+    return t;
+  }
+  var TIMBRADO_CHAVE = "orcapro:timbrado-certame";
+  var _timbMem = null;   // espelho em memória (e único lugar quando o navegador não guarda)
+  function _soDigitos(v) { return String(v == null ? "" : v).replace(/\D+/g, ""); }
+  function _imgOk(v) { v = s(v); return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v) && v.length <= TIMBRADO_MAX_CHARS ? v : ""; }
+  function _timbLer() {
+    if (_timbMem) return _timbMem;
+    var o = { ordem: [], por: {} };
+    try {
+      var raw = (typeof localStorage !== "undefined") ? localStorage.getItem(TIMBRADO_CHAVE) : null;
+      var j = raw ? JSON.parse(raw) : null;
+      if (j && Array.isArray(j.ordem) && j.por && typeof j.por === "object") o = j;
+    } catch (e) {}
+    _timbMem = o;
+    return o;
+  }
+  function _timbGravar(o) {
+    _timbMem = o;
+    try { if (typeof localStorage !== "undefined") { localStorage.setItem(TIMBRADO_CHAVE, JSON.stringify(o)); return true; } } catch (e) {}
+    return false;
+  }
+
   var Licitacao = {
     LIM_INEXEQUIVEL: LIM_INEXEQUIVEL,
     LIM_GARANTIA: LIM_GARANTIA,
@@ -188,6 +223,44 @@
     ativo: function (orc) { var c = this.cfg(orc); return !!(c && c.ativo); },
     /* veio do CertamePRO (tem o bloco lido)? */
     temPacote: function (orc) { var c = this.cfg(orc); return !!(c && c.certamepro); },
+
+    /* Empresa do certame: o pacote trouxe `licitante` com algum dado? */
+    temLicitante: function (orc_ou_lic) {
+      var l = orc_ou_lic && orc_ou_lic.config ? this.cfg(orc_ou_lic) : orc_ou_lic;
+      return !!(l && l.licitante && typeof l.licitante === "object" && CAMPOS_LICITANTE.some(function (k) { return s(l.licitante[k]); }));
+    },
+    /* Timbrado do licitante, por CNPJ. Guarda no máximo TIMBRADO_MAX_CNPJS empresas (a mais antiga sai).
+       Imagem inválida ou grande demais NÃO entra e é contada em `recusadas`. Imagem ausente no pacote
+       não apaga a que já está. Devolve { topo, fundo, recusadas, guardou, descartados } (flags, nunca a imagem):
+       `guardou` false = só vale nesta página (o navegador não gravou); `descartados` = quantos timbrados de outros CNPJs saíram. */
+    guardarTimbrado: function (cnpj, topo, fundo) {
+      var chave = _soDigitos(cnpj), r = { topo: false, fundo: false, recusadas: 0, guardou: true, descartados: 0 };
+      var vt = _imgOk(topo), vf = _imgOk(fundo);
+      if (s(topo) && !vt) r.recusadas++;
+      if (s(fundo) && !vf) r.recusadas++;
+      if (!chave) { r.guardou = !(vt || vf); return r; }
+      var o = _timbLer(), e = o.por[chave] || { topo: "", fundo: "" };
+      if (vt) e.topo = vt;
+      if (vf) e.fundo = vf;
+      r.topo = !!e.topo; r.fundo = !!e.fundo;
+      if (!(vt || vf)) return r;
+      o.por[chave] = e;
+      o.ordem = o.ordem.filter(function (c) { return c !== chave; }); o.ordem.push(chave);
+      /* teto de quantidade e de tamanho: sai o CNPJ MAIS ANTIGO (nunca o que está entrando) */
+      while ((o.ordem.length > TIMBRADO_MAX_CNPJS || _timbTotal(o) > TIMBRADO_MAX_TOTAL) && o.ordem.length > 1) { delete o.por[o.ordem.shift()]; r.descartados++; }
+      r.guardou = _timbGravar(o);
+      /* o navegador recusou gravar (cota cheia): tira o mais antigo e tenta de novo, até gravar ou sobrar só este */
+      while (!r.guardou && o.ordem.length > 1) { delete o.por[o.ordem.shift()]; r.descartados++; r.guardou = _timbGravar(o); }
+      return r;
+    },
+    timbradoDe: function (cnpj) {
+      var chave = _soDigitos(cnpj);
+      if (!chave) return { topo: "", fundo: "" };
+      var e = _timbLer().por[chave] || {};
+      return { topo: s(e.topo), fundo: s(e.fundo) };
+    },
+    /* só para teste: esquece o espelho em memória e o que o navegador guardou */
+    _timbradoLimpar: function () { _timbMem = null; try { if (typeof localStorage !== "undefined") localStorage.removeItem(TIMBRADO_CHAVE); } catch (e) {} },
 
     /* ------------------------------------------------------------------
      * 1) LEITURA DO BLOCO `certamepro`
@@ -272,6 +345,58 @@
       if (s(bloco.preset)) lic.presetPacote = s(bloco.preset);
       if (s(bloco.regime_execucao)) lic.regimeExecucao = s(bloco.regime_execucao);
       if (s(bloco.arredondamento)) lic.arredondamentoPacote = s(bloco.arredondamento);
+
+      /* EMPRESA DO CERTAME (contrato proposta completa v1, 08/11/2026). `licitante` é a empresa que
+         DISPUTA este certame (não a da conta). Os documentos da proposta usam SÓ ela
+         (LicitacaoDocs.empresaDoCertame). Cópia só dos campos conhecidos, como texto.
+         ⚠ As imagens (timbradoTopo/timbradoFundo) NÃO ficam em config.licitacao: ele vai inteiro na aba
+         _meta do Excel e no armazenamento do orçamento. Vão para guardarTimbrado (por CNPJ).
+         Pacote sem `licitante` não apaga o que já está (importar de novo é idempotente). */
+      if (bloco.licitante && typeof bloco.licitante === "object" && !Array.isArray(bloco.licitante)) {
+        var lt = {}, algum = false;
+        CAMPOS_LICITANTE.forEach(function (k) { var v = s(bloco.licitante[k]); lt[k] = v; if (v) algum = true; });
+        if (algum) {
+          lic.licitante = lt;
+          var tb = this.guardarTimbrado(lt.cnpj, bloco.licitante.timbradoTopo, bloco.licitante.timbradoFundo);
+          lic.licitanteTimbrado = tb;
+        }
+      }
+      /* prazo de execução lido do edital: inteiro de 1 a 3650; fora disso ignora */
+      var pz = Number(bloco.prazo_execucao_dias);
+      if (isFinite(pz) && Math.floor(pz) === pz && pz >= 1 && pz <= 3650) lic.prazoExecucaoDias = pz;
+      /* OBJETO do edital (texto) e VALIDADE DA PROPOSTA exigida nele (dias, inteiro de 1 a 3650) com o texto de quando ela
+         começa a contar. Só gravam quando o pacote os traz: pacote sem eles não apaga o que já está (idempotente).
+         A carta usa o objeto daqui, nunca o nome do órgão (js/licitacaodocs.js, objetoDaCarta). */
+      if (s(bloco.objeto)) lic.objeto = s(bloco.objeto).slice(0, 2000);
+      var vdE = Number(bloco.validade_dias);
+      if (isFinite(vdE) && Math.floor(vdE) === vdE && vdE >= 1 && vdE <= 3650) lic.validadeDiasEdital = vdE;
+      if (s(bloco.validade_inicio)) lic.validadeInicio = s(bloco.validade_inicio).slice(0, 200);
+      /* totais de encargos que o órgão publicou sem a tabela por grupo. DOIS formatos chegam do CertamePRO:
+           bloco.encargos_totais        { horista, mensalista, regime, uf, fonte }       (contrato)
+           bloco.leitura.encargos_totais { horista, mensalista, desonerado (boolean), fonte }  (leitura dos anexos, leitura_anexos.py)
+         Os dois viram um só (`regime` texto); o do próprio bloco vale primeiro. */
+      var et = bloco.encargos_totais;
+      if (!(et && typeof et === "object" && !Array.isArray(et)) && bloco.leitura && typeof bloco.leitura === "object") et = bloco.leitura.encargos_totais;
+      if (et && typeof et === "object" && !Array.isArray(et)) {
+        var eh = Number(et.horista), em = Number(et.mensalista);
+        if (isFinite(eh) && isFinite(em) && eh > 0 && em > 0) {
+          var regT = s(et.regime);
+          if (!regT) regT = et.desonerado === true ? "desonerado" : (et.desonerado === false ? "nao_desonerado" : "");
+          lic.encargosTotais = { horista: eh, mensalista: em, regime: regT, fonte: s(et.fonte) };
+          /* UF opcional: o órgão que diz de que praça são os totais manda mais que qualquer dedução */
+          var ufT = s(et.uf).toUpperCase();
+          if (/^[A-Z]{2}$/.test(ufT)) lic.encargosTotais.uf = ufT;
+        }
+      }
+      /* pendências do cadastro da empresa do certame que o CertamePRO avisou: [{campo, texto, link}] */
+      if (Array.isArray(bloco.licitante_pendencias)) {
+        lic.licitantePendencias = bloco.licitante_pendencias.slice(0, 30).map(function (p) {
+          if (typeof p === "string") return { campo: "", texto: s(p).slice(0, 300), link: "" };
+          p = (p && typeof p === "object") ? p : {};
+          var lk = s(p.link);
+          return { campo: s(p.campo).slice(0, 80), texto: s(p.texto).slice(0, 300), link: /^https?:\/\//i.test(lk) ? lk.slice(0, 500) : "" };
+        }).filter(function (p) { return !!(p.campo || p.texto); });
+      }
 
       lic.refs = { n: porN, c: porC };
       lic.nRefs = n || Object.keys(porC).length;
@@ -1363,6 +1488,18 @@
      *   _meta, e se os dois não baterem a tela diz — nunca silêncio sobre o
      *   valor que vai para a carta.
      * ------------------------------------------------------------------ */
+    /* HTTP 409 do CertamePRO: o motivo é DELE (orçamento conferido, valor digitado, proposta pronta/enviada/encerrada, certame sendo
+       montado...). Devolve "Não aplicado: <frase do campo erro | detail | mensagem>"; sem frase legível, o texto neutro. NUNCA afirma
+       um motivo por conta própria. */
+    motivoNaoAplicado: function (j) {
+      var f = "";
+      if (j && typeof j === "object") {
+        ["erro", "detail", "mensagem"].forEach(function (k) { if (!f && typeof j[k] === "string" && s(j[k])) f = s(j[k]); });
+      }
+      f = f.replace(/\s+/g, " ").slice(0, 300);
+      return f ? "Não aplicado: " + f : "Não aplicado: o CertamePRO não aceitou este orçamento agora; nada foi gravado lá.";
+    },
+
     lerDevolucao: function (j, totalLocal) {
       if (!j || typeof j !== "object" || !Array.isArray(j.alertas)) return null;
       var pre = (j.preenchido && typeof j.preenchido === "object") ? j.preenchido : {};

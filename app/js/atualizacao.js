@@ -257,7 +257,50 @@
     },
     _gravarVarredura: function (v) {
       try { localStorage.setItem(this.CHAVE_VARR, JSON.stringify(v)); } catch (e) {}
+      this._varrFim();      // toda saída da varredura passa por aqui: quem espera a base é liberado
       return v;
+    },
+
+    /* =================================================================
+     * O SINAL "A VARREDURA TERMINOU" (sem polling escondido).
+     * A SINAPI troca sozinha uns 12 s depois de a aba carregar (checarAuto, agendada no boot). Quem precisa da
+     * base ASSENTADA (o orçamento automático da licitação) pergunta `varreduraPendente()` e espera a Promise de
+     * `aguardarVarredura(tetoMs)`. Estados: ocioso -> agendada (boot) -> rodando (checarAuto) -> pronta.
+     * Toda saída da varredura termina em _gravarVarredura ou num `return` de checarAuto (ambos chamam _varrFim).
+     * ================================================================= */
+    _varr: { estado: "ocioso", promessa: null, resolver: null, extras: null },
+    _varrNova: function () {
+      var self = this, r = this._varr;
+      if (r.estado === "agendada" || r.estado === "rodando") return;
+      r.promessa = new Promise(function (res) { r.resolver = res; });
+    },
+    agendarVarredura: function () { this._varrNova(); this._varr.estado = "agendada"; this._varr.desde = Date.now(); },
+    _varrIni: function () { this._varrNova(); this._varr.estado = "rodando"; this._varr.desde = Date.now(); this._varr.extras = null; },
+    /* ⚠ "pronta" só DEPOIS da varredura das tabelas extras (SEINFRA, SETOP...): quem espera a base assentada não pode ser
+       liberado com uma tabela exigida ainda sendo reinstalada. O teto é o mesmo de `varreduraPendente` (90 s) e o das
+       quem espera (aguardarVarredura): se as extras pendurarem, ninguém fica esperando além dele. */
+    _varrFim: function () {
+      var r = this._varr, ex = r.extras;
+      var fim = function () {
+        r.estado = "pronta"; r.extras = null;
+        if (r.resolver) { var f = r.resolver; r.resolver = null; f(true); }
+      };
+      if (ex && typeof ex.then === "function") { ex.then(fim, fim); return; }
+      fim();
+    },
+    /* ⚠ "pendente" some sozinho depois de 90 s: uma varredura pendurada na rede não pode fazer cada orçamento esperar */
+    varreduraPendente: function () {
+      var r = this._varr;
+      return (r.estado === "agendada" || r.estado === "rodando") && (Date.now() - (r.desde || 0)) < 90000;
+    },
+    /* resolve { estouro:false } quando a varredura termina (ou já não há nenhuma), { estouro:true } no teto */
+    aguardarVarredura: function (tetoMs) {
+      var r = this._varr, self = this;
+      return new Promise(function (res) {
+        if (!self.varreduraPendente()) { res({ estouro: false }); return; }
+        var t = setTimeout(function () { res({ estouro: true }); }, tetoMs > 0 ? tetoMs : 40000);
+        r.promessa.then(function () { clearTimeout(t); res({ estouro: false }); });
+      });
     },
     _carimbarDia: function (dia) {
       try { localStorage.setItem(this.CHAVE_DIA, dia); } catch (e) {}
@@ -265,15 +308,16 @@
 
     checarAuto: function () {
       var self = this, hoje;
+      self._varrIni();
       try {
-        if (typeof Auth === "undefined" || !Auth.usuario()) return;
-        if (global.App && global.App._demo) return;
+        if (typeof Auth === "undefined" || !Auth.usuario()) { self._varrFim(); return; }
+        if (global.App && global.App._demo) { self._varrFim(); return; }
         hoje = new Date().toISOString().slice(0, 10);
-      } catch (eL) { return; }
+      } catch (eL) { self._varrFim(); return; }
       /* os extras têm a trava de dia DELES: um servidor que falhou para a
          SINAPI não pode queimar o dia das outras tabelas, e vice-versa */
-      try { self._varrerExtras(hoje); } catch (eX) {}
-      try { if (localStorage.getItem(self.CHAVE_DIA) === hoje) return; } catch (eL2) { return; }
+      try { self._varr.extras = self._varrerExtras(hoje); } catch (eX) { self._varr.extras = null; }
+      try { if (localStorage.getItem(self.CHAVE_DIA) === hoje) { self._varrFim(); return; } } catch (eL2) { self._varrFim(); return; }
 
       var uf = "";
       try { uf = String((global.App && global.App._baseUf) || Sinapi.uf || CONFIG.sinapi.ufPadrao).toUpperCase(); } catch (eU) {}

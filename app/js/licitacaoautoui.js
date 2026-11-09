@@ -31,9 +31,12 @@
   if (typeof App === "undefined" || typeof UI === "undefined") return;
 
   var esc = function (s) { return Util.esc(String(s == null ? "" : s)); };
+  /* teto da espera da base de preços assentar (60 s, decisão de coordenação; o da varredura pendurada segue 90 s em atualizacao.js) */
+  var PRAZO_BASE_MS = 60000;
 
   var ETAPAS = [
     { id: "preset", rotulo: "Aplicar o preset do edital" },
+    { id: "espera", rotulo: "Aguardando a base de preços" },
     { id: "bases", rotulo: "Conferir as bases de preço exigidas" },
     { id: "orcar", rotulo: "Refazer o preço pelas bases exigidas" },
     { id: "bdi", rotulo: "Conferir o BDI" },
@@ -125,21 +128,54 @@
     UI.modal("Orçamento automático", '<div id="lic-auto-corpo">' + htmlEtapas(est) + '</div>', []);
     var proximo = function (fn) { setTimeout(function () { try { fn(); } catch (e) { self._licAutoLog("erro", orc, { erro: String((e && e.message) || e) }); fim("O orçamento automático parou", '<p style="font-size:13px">' + esc("Erro inesperado: " + ((e && e.message) || e) + ". Nada foi gravado; o orçamento está como estava.") + "</p>"); } }, 30); };
 
-    proximo(function () {
+    /* 0) ESPERAR A BASE ASSENTAR. A SINAPI troca sozinha uns 12 s depois de a aba carregar (Atualizacao.checarAuto):
+       numa aba aberta pelo CertamePRO, importar antes disso fazia o automático ver a base antiga e dizer "não instalada"
+       (falso). Segue NA HORA se a competência exigida de cada base já está instalada, ou se não há varredura em
+       andamento; senão espera o FIM da varredura (Promise de Atualizacao.aguardarVarredura, sem polling), com teto de
+       60 s (PRAZO_BASE_MS; App._licAutoEsperaMs). Não muda preço nem regra de casamento. */
+    var estouroEspera = false, tetoEspera = (self._licAutoEsperaMs > 0 ? self._licAutoEsperaMs : PRAZO_BASE_MS);
+    var aguardarBase = function (cb0) {
+      /* ⚠ o que roda DEPOIS da espera (callback de Promise/timer) não passa pelo try/catch de `proximo`: uma exceção ali deixava o
+         modal "Orçamento automático" aberto e sem botão. `cb` é o mesmo passo, com saída que mostra o erro e fecha. */
+      var cb = function () {
+        try { cb0(); }
+        catch (eCb) {
+          try { self._licAutoLog("erro", orc, { erro: String((eCb && eCb.message) || eCb) }); } catch (eL0) {}
+          fim("O orçamento automático parou", '<p style="font-size:13px">' + esc("Erro inesperado: " + ((eCb && eCb.message) || eCb) + ". Nada foi gravado; o orçamento está como estava.") + "</p>");
+        }
+      };
+      var exig0 = Licitacao.basesExigidas(copia);
+      var certa = function () {
+        if (!exig0.length) return true;
+        try { return LicitacaoAuto.situacaoAuto(copia, self._licAutoCtx(copia)).every(function (x) { return x.ok; }); } catch (eB) { return true; }
+      };
+      var A = global.Atualizacao;
+      if (certa()) { set("espera", "pulou", "a base de preços exigida já está instalada"); cb(); return; }
+      if (!A || !A.varreduraPendente || !A.varreduraPendente()) { set("espera", "pulou", "nenhuma atualização da base em andamento"); cb(); return; }
+      set("espera", "rodando", "a base de preços está sendo atualizada; espero até " + Math.round(tetoEspera / 1000) + " s");
+      A.aguardarVarredura(tetoEspera).then(function (r) {
+        estouroEspera = !!(r && r.estouro);
+        if (estouroEspera) set("espera", "aviso", "a base ainda estava sendo atualizada depois de " + Math.round(tetoEspera / 1000) + " s; segui com o que estava instalado");
+        else set("espera", "ok", "a atualização da base terminou");
+        cb();
+      }, function () { set("espera", "aviso", "não consegui acompanhar a atualização da base"); cb(); });
+    };
+    var corpo = function () {
       // 1) preset
       set("preset", "rodando");
       var es = LicitacaoAuto.escolherPreset(LicitacaoAuto.blocoDe(copia));
       var ap = LicitacaoAuto.aplicarPreset(copia, es.id, LicitacaoAuto.blocoDe(copia), es);
       if (!ap) { set("preset", "erro", "preset não aplicado"); fim("O orçamento automático parou", ""); return; }
       set("preset", (es.deduzido || ap.avisos.length) ? "aviso" : "ok", ap.preset.rotulo + (es.deduzido ? " — " + es.motivo : "") + (ap.avisos.length ? " — " + ap.avisos.join(" ") : ""));
-      // 2) bases
+      // 2) esperar a base assentar (o preset já está na cópia: a mesma conta do passo das bases) e conferir as bases
+      aguardarBase(function () {
       set("bases", "rodando");
       var exig = Licitacao.basesExigidas(copia), ctx;
       try { ctx = self._licAutoCtx(copia); } catch (eC) { set("bases", "erro", "não montei o acesso às bases: " + ((eC && eC.message) || eC)); fim("O orçamento automático parou", '<p style="font-size:13px">Nada foi gravado.</p>'); return; }
       var sits = LicitacaoAuto.situacaoAuto(copia, ctx);
       var faltam = sits.filter(function (x) { return !x.ok; });
       if (!exig.length) set("bases", "aviso", "o pacote não traz base de preço exigida: os itens ficam com o preço do órgão");
-      else if (faltam.length) set("bases", "aviso", faltam.map(function (x) { return x.motivo; }).join("; ") + " — os itens dessas bases ficam com o preço do órgão");
+      else if (faltam.length) set("bases", "aviso", faltam.map(function (x) { return x.motivo; }).join("; ") + (estouroEspera ? " (a base de preços ainda estava sendo atualizada: esperei " + Math.round(tetoEspera / 1000) + " s)" : "") + " — os itens dessas bases ficam com o preço do órgão");
       else if (sits.some(function (x) { return !!x.aviso; })) set("bases", "aviso", sits.map(function (x) { return Licitacao.fmtBase(x.exigida) + (x.aviso ? " (" + x.aviso + ")" : ""); }).join("; "));
       else set("bases", "ok", sits.map(function (x) { return Licitacao.fmtBase(x.exigida); }).join("; "));
       proximo(function () {
@@ -185,18 +221,34 @@
           semDev("aviso", simb.length + " itens sem preço do órgão — preencha e use Devolver ao CertamePRO", simb.length + " itens sem preço do órgão — preencha e use Devolver ao CertamePRO. O orçamento está salvo e a devolução automática não foi feita. " + Licitacao.textoSimbolicos(simb));
           return;
         }
+        /* ⚠ SEM EMPRESA LICITANTE o automático não escolhe por você: o Excel iria em nome de uma empresa que ninguém indicou. Salva e não
+           devolve; o botão manual pergunta qual empresa vai. */
+        if (!Licitacao.temLicitante(lic2)) {
+          self._licAutoLog("devolucao-bloqueada-sem-licitante", copia, {});
+          semDev("aviso", "o certame não informou a empresa licitante: não devolvi", "Este certame não informou a empresa licitante. Orçamento salvo; use o botão Devolver ao CertamePRO, que pergunta qual empresa vai.");
+          return;
+        }
         if (!lic2.devolverPara) { semDev("pulou", "o pacote não traz endereço de devolução", "O orçamento está salvo. Este pacote não tem para onde devolver."); return; }
         if (!d.ok) { semDev("erro", d.erro, "O orçamento está salvo. " + d.erro + " Use o botão “Devolver ao CertamePRO” depois de corrigir."); return; }
         if (!d.confiavel) { semDev("aviso", "destino não reconhecido (" + d.host + "): não envio sozinho", "O orçamento está salvo. O endereço de devolução (" + d.host + ") não é este computador nem o CertamePRO oficial; use o botão “Devolver ao CertamePRO”, que mostra o endereço e pede o seu aval."); return; }
         if (!Auth.podeUsar("exportar")) { semDev("aviso", "exportar é recurso PRO", "O orçamento está salvo. Exportar é recurso PRO; faça upgrade para devolver."); return; }
         set("devolver", "rodando", "gerando o Excel e enviando a " + d.host);
 self._licDevolverSilencioso(copia, d).then(function (res) {
+          /* HTTP 409: o CertamePRO JÁ TEM orçamento conferido e não gravou nada. Não é erro, não repete, não baixa arquivo. */
+          if (res.naoAplicado) {
+            self._licAutoLog("devolucao-nao-aplicada", copia, { status: 409, arquivo: res.nome || "" });
+            var motNA = res.motivoNaoAplicado || "Não aplicado: o CertamePRO não aceitou este orçamento agora; nada foi gravado lá.";
+            set("devolver", "aviso", motNA);
+            fim("Orçamento salvo; devolução não aplicada", '<p style="font-size:13px">' + esc(motNA) + '</p>' +
+              '<p style="font-size:13px">O orçamento <b>está salvo</b> aqui. Nada foi enviado nem alterado no CertamePRO.</p>', self._licBotoesVolta(copia));
+            return;
+          }
           self._licAutoLog("devolucao-automatica", copia, { ok: !!res.ok, etapa: res.etapa || "", erro: res.erro || "", arquivo: res.nome || "", valor: res.lido ? res.lido.valor : null });
           if (res.ok) {
-            set("devolver", "ok", "enviado: " + res.nome);
+            set("devolver", "ok", "enviado: " + res.nome + " — " + self._licTextoFaltaPdf());
             var html = "";
             try { html = res.lido ? self._licHtmlDevolucao(res.nome, res.lido) : '<p style="font-size:13px">O CertamePRO recebeu <b class="mono">' + esc(res.nome) + "</b>.</p>"; } catch (eH) { html = ""; }
-            fim("Orçamento automático devolvido ao CertamePRO", html, self._licBotoesVolta(copia));
+            fim("Orçamento automático devolvido ao CertamePRO", html + self._licBlocoFaltaPdf(), self._licBotoesVolta(copia, true));
             return;
           }
           if (res.blob) {
@@ -212,7 +264,9 @@ self._licDevolverSilencioso(copia, d).then(function (res) {
           fim("Orçamento salvo, mas não devolvido", '<p style="font-size:13px">' + esc("Erro inesperado ao devolver: " + ((eEnv && eEnv.message) || eEnv)) + '</p><p style="font-size:13px">O orçamento <b>está salvo</b>. Use o botão <b>Devolver ao CertamePRO</b> deste orçamento. Nada foi perdido.</p>');
         });
       });
-    });
+      });
+    };
+    proximo(corpo);
   };
 
   /* "Ver itens": liga e desliga o destaque das linhas de baixa confiança */

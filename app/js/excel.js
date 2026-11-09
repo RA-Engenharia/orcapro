@@ -1977,12 +1977,15 @@
     wr.mergeCells('A' + ri + ':B' + ri);
     wr.getCell('A' + ri).value = 'RESPONSÁVEL TÉCNICO PELO ORÇAMENTO';
     wr.getCell('A' + ri).font = { bold: true, color: { argb: navy } };
-    lin(ri + 1, 'Nome', resp.responsavel || '[RESPONSÁVEL TÉCNICO]');
-    lin(ri + 2, 'Título / Registro', (resp.titulo || 'Engenheiro Civil') + ' · ' + (resp.crea || '[CREA/CAU]'));
+    /* Registro do RT do CERTAME: como veio do cadastro (pode ser CREA, CAU...); sem "CREA" nem "CAU" no texto, "Registro: ...".
+       Fora do certame, como sempre foi. */
+    var _regRt = !resp.crea ? '[CREA/CAU]' : (resp.certame && !/(^|[^A-Za-z])(CREA|CAU)([^A-Za-z]|$)/i.test(String(resp.crea)) ? 'Registro: ' + resp.crea : String(resp.crea));
+    lin(ri + 1, resp.certame ? 'Responsável técnico' : 'Nome', resp.responsavel || '[RESPONSÁVEL TÉCNICO]');
+    lin(ri + 2, resp.certame ? 'Registro' : 'Título / Registro', resp.certame ? _regRt : ((resp.titulo || 'Engenheiro Civil') + ' · ' + _regRt));
     lin(ri + 3, 'ART/RRT', orc.art || '[nº da ART/RRT — informar]');
     lin(ri + 4, 'Empresa', (resp.nome || empresa || '') + (resp.cnpj ? ' · CNPJ ' + resp.cnpj : ''));
     wr.getCell('A' + (ri + 6)).value = '___________________________________';
-    wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + (resp.crea || '[CREA/CAU]');
+    wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + _regRt;
     wr.getCell('A' + (ri + 7)).font = { size: 9, color: { argb: muted } };
 
     /* MODO LICITAÇÃO — identificação do certame e assinatura da EMPRESA
@@ -2002,7 +2005,7 @@
       var la = li0 + 8;
       wr.getCell('A' + la).value = '___________________________________';
       wr.getCell('A' + (la + 1)).value = (resp.nome || empresa || '[EMPRESA]') + (resp.cnpj ? ' — CNPJ ' + resp.cnpj : '');
-      wr.getCell('A' + (la + 2)).value = 'Representante legal: ' + (resp.responsavel || '[nome do representante legal]');
+      wr.getCell('A' + (la + 2)).value = 'Representante legal: ' + ((resp.representante != null ? resp.representante : resp.responsavel) || '[nome do representante legal]');
       wr.getCell('A' + (la + 3)).value = (resp.cidade || '[cidade]') + ', ____ de ______________ de ________';
       [1, 2, 3].forEach(function (k) { wr.getCell('A' + (la + k)).font = { size: 9, color: { argb: muted } }; });
     }
@@ -2113,12 +2116,25 @@
       this.ensureExcelJS(function () {
         var finalizar = function (insumosMap) {
           try {
+            /* EMPRESA DO CERTAME: orçamento vindo do CertamePRO com `licitante` assina e se identifica com a
+               empresa que disputa, não com a da conta. Só os campos que a planilha imprime; o que falta fica
+               vazio (a planilha mostra o marcador entre colchetes). O regime tributário segue o da conta:
+               é informativo no _meta, não é impresso. */
+            var _lc = orc && orc.config && orc.config.licitacao, _ec = null;
+            try { if (_lc && typeof LicitacaoDocs !== "undefined" && LicitacaoDocs.temLicitante(_lc)) _ec = LicitacaoDocs.empresaDoCertame(_lc, null); } catch (eEc) { _ec = null; }
+            var _resp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null;
+            /* Licitante sem `nome` NUNCA cai na conta: a planilha sai com o marcador [PREENCHER: razão social]. `certame: true` faz a
+               planilha imprimir "Responsável técnico"/"Registro" como vieram, sem "Engenheiro Civil" nem "CREA" fixos. */
+            if (_ec) _resp = { nome: _ec.nome || "[PREENCHER: razão social]", cnpj: _ec.cnpj, responsavel: _ec.rtNome, titulo: "", crea: _ec.rtCrea, contato: _ec.telefone, cidade: "",
+              representante: _ec.socioNome, regimeTributario: _resp ? _resp.regimeTributario : "", certame: true };
             var deps = {
               num: Util.num,
               fmtNum: Util.fmtNum,
-              empresa: ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") || ((Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "") || "",
+              empresa: _ec ? (_ec.nome || "[PREENCHER: razão social]")
+                : ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") || ((Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "") || "",
               credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
-              creator: (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : "",
+              /* autor do arquivo: no certame com licitante é o licitante (ou vazio), nunca a empresa da conta */
+              creator: _ec ? (_ec.nome || " ") : ((typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : ""),
               abc: (typeof Orcamento.curvaABC === "function") ? Orcamento.curvaABC(orc) : null,
               /* ⚠ SEM o 2º argumento: ele trava o nº de colunas e acumula na
                  última tudo que passar. `orc.cronogramaMeses` é campo DERIVADO
@@ -2132,7 +2148,7 @@
               /* a mesma separação MO/MAT/EQ das colunas da tela (ver _quebraMoMatEq) */
               catCol: (function () { try { return (global.Colunas && global.App && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eC) { return null; } })(),
               analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",
-              responsavel: (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null
+              responsavel: _resp
             };
             // Gera os PNGs dos gráficos NO BROWSER (canvas). Node nunca passa por aqui.
             try { deps.graficos = gerarGraficos(orc, deps); } catch (eg) { console.warn('[excel graficos]', eg); deps.graficos = null; }

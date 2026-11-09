@@ -188,8 +188,22 @@
       }
 
       var self = this;
+      /* A VARREDURA DAS BASES FICA "PENDENTE" ANTES DE A BASE CARREGAR, não depois.
+         A SINAPI troca sozinha uns 12 s depois da abertura (Atualizacao.checarAuto, mais abaixo; é ela que chama
+         Sinapi.carregarDe com a competência nova — achado com o rastro de pilha em 08/11/2026). Quem espera a base
+         assentar (o orçamento automático da licitação, via Atualizacao.aguardarVarredura) tem de enxergar esse
+         estado desde o primeiro instante: marcar só no .then da carga deixava uma janela, enquanto a base do
+         pacote ainda carregava, em que "não há varredura em andamento" e o automático seguia com a base velha.
+         Termina em checarAuto (_varrFim) ou, se a carga da base falhar, no handler abaixo; o teto de 90 s de
+         varreduraPendente() continua valendo. */
+      var varreduraAgendada = false;
+      try {
+        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && Atualizacao.agendarVarredura && !self._janela) { Atualizacao.agendarVarredura(); varreduraAgendada = true; }
+      } catch (eAg0) {}
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
-      this.carregarBaseSinapi().then(function (n) {
+      var cargaBase = this.carregarBaseSinapi();
+      if (varreduraAgendada) cargaBase.then(null, function () { try { Atualizacao._varrFim(); } catch (eFm) {} });
+      cargaBase.then(function (n) {
         console.log("[SINAPI] " + n + " itens (" + Sinapi.competencia + "/" + Sinapi.uf + ")");
         if (self.tela === "lista") self.render(); // atualiza o banner com o total real
         // v1.1.122 — checagem automática das BASES no servidor OrçaPRO (1×/dia,
@@ -12188,37 +12202,140 @@
       if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") return;
       var lic = Licitacao.cfg(orc);
       if (!lic || !lic.ativo) { UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
-      var tabs = (lic.leitura && lic.leitura.tabelas) || {};
-      var pegarBase = function (cb) {
-        if (!s(tabs.seinfra) || typeof AnaliticoBases === "undefined") { cb(null); return; }
-        AnaliticoBases.carregar("SEINFRA").then(function (ent) { cb(LicitacaoDocs.baseDe(ent && ent.pacote)); }, function () { cb(null); });
+      /* EMPRESA DO CERTAME: com `licitante` no pacote, os documentos usam só ele. Certame do CertamePRO SEM licitante
+         nunca sai em nome da conta em silêncio: pergunta antes. */
+      var cx = this._licEmpresaCertame(orc);
+      var seguir = function () {
+        UI.toast("Montando o pacote da proposta…", "ok");
+        /* ⚠ O IMPRESSO TEM DE SER O DEVOLVIDO. A devolução carrega o analítico da UF do orçamento (_analiticoDoOrc) antes de montar;
+           aqui também, senão a proporção MO/MAT/EQ saía de uma base diferente (ou nenhuma) e a Resumo do impresso diferia do Excel.
+           Se o carregamento falhar, segue sem ele: o aviso das pendências diz de onde saiu a repartição. */
+        var andou = false, relogio = null;
+        var depoisBase = function () {
+          if (andou) return; andou = true;
+          if (relogio) { clearTimeout(relogio); relogio = null; }
+          self._licPegarBase(lic, function (base) { montarPacote(base); });
+        };
+        try { self._analiticoDoOrc(orc, depoisBase); } catch (eAn) { depoisBase(); return; }
+        /* TEMPO LIMITE: se o carregamento do analítico não responde (rede, arquivo grande), não fica em "Montando…" para sempre:
+           passados 20 s segue sem ele, com o aviso (as pendências dizem de onde saiu a repartição MO/MAT/EQ). */
+        if (!andou) relogio = setTimeout(function () {
+          if (andou) return;
+          try { UI.toast("A base de insumos demorou mais de " + Math.round((self._licTempoBaseMs || 20000) / 1000) + " s para carregar. Segui sem ela; confira as pendências do pacote.", "aviso"); } catch (eT) {}
+          depoisBase();
+        }, self._licTempoBaseMs || 20000);
       };
-      function s(v) { return String(v == null ? "" : v).trim(); }
-      UI.toast("Montando o pacote da proposta…", "ok");
-      pegarBase(function (base) {
-        var emp = (typeof Empresa !== "undefined") ? Empresa.dados() : {};
-        try { if (typeof Empresa !== "undefined" && !emp.timbradoTopo && Empresa.logo()) emp.timbradoTopo = Empresa.logo(); } catch (e) {}
-        var opc = { base: base };
-        var pr = LicitacaoDocs.pendencias(orc, emp, opc);
-        if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
-        var gerar = function () {
-          var r = LicitacaoDocs.gerar(orc, emp, opc);
-          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-          self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir");
-          try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
-        };
-        if (!pr.total) { gerar(); return; }
-        var lista = function (tit, a) {
-          return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px">' + tit + '</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' + a.map(function (x) { return '<li>' + Util.esc(x) + '</li>'; }).join("") + '</ul>' : "";
-        };
-        UI.modal("Pendências de conferência",
-          '<p style="font-size:13px;margin-top:0">Estes pontos aparecem só aqui, na tela. No PDF, o dado da empresa que falta sai como <b style="color:#c00000">[PREENCHER: ...]</b> em vermelho; cronograma, BDI e encargos que não vieram do órgão saem como PENDÊNCIA.</p>' +
-          lista("Dados que faltam (⚙ Empresa e condições comerciais)", pr.preencher) +
-          lista("Apontadas na leitura do PDF do órgão", pr.conferencia) +
-          lista("Dados do pacote", pr.dados),
-          [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-           { texto: "Gerar assim mesmo", classe: "primary", onClick: function () { UI.fecharModal(); gerar(); } }]);
-      });
+      var montarPacote = function (base) {
+        {
+          var emp = cx.emp;
+          var opc = { base: base };
+          var pr = LicitacaoDocs.pendencias(orc, emp, opc);
+          if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
+          var gerar = function () {
+            var r = LicitacaoDocs.gerar(orc, emp, opc);
+            if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+            self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir");
+            try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+          };
+          /* Conferência contra o item 7.20 do edital: só na tela, nunca no documento */
+          var conf = [];
+          try { conf = LicitacaoDocs.conferirEdital(pr.dados_, lic) || []; } catch (eCf) { conf = []; }
+          var reprovou = conf.filter(function (c) { return !c.ok; }).length;   // "não conferido" também para e avisa: não é verde
+          if (!pr.total && !reprovou) { gerar(); return; }
+          var lista = function (tit, a) {
+            return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px">' + tit + '</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' + a.map(function (x) { return '<li>' + Util.esc(x) + '</li>'; }).join("") + '</ul>' : "";
+          };
+          var blocoConf = conf.length ? '<h4 style="margin:10px 0 4px;font-size:13px">Conferência do edital</h4><ul style="margin:0 0 0 18px;font-size:12.5px;list-style:none;padding:0">' +
+            conf.map(function (c) {
+              var est = c.estado || (c.ok ? "ok" : "reprovado");
+              var cor = est === "ok" ? "#1a7f37" : (est === "nao_conferido" ? "#b45309" : "#c00000");
+              var rot = est === "ok" ? "Confere" : (est === "nao_conferido" ? "Não conferido" : "Reprova");
+              return '<li style="margin:2px 0"><b style="color:' + cor + '">' + rot + '</b> · ' + Util.esc(c.item) + ': <span class="muted">' + Util.esc(c.detalhe) + '</span></li>';
+            }).join("") + '</ul>' : "";
+          UI.modal("Pendências de conferência",
+            '<p style="font-size:13px;margin-top:0">Estes pontos aparecem só aqui, na tela. No PDF, o dado da empresa que falta sai como <b style="color:#c00000">[PREENCHER: ...]</b> em vermelho; cronograma, BDI e encargos que não vieram do órgão saem como PENDÊNCIA.</p>' +
+            lista("Dados que faltam (⚙ Empresa e condições comerciais)", pr.preencher) +
+            lista("Pendências do cadastro do licitante (avisadas pelo CertamePRO)", pr.licitante || []) +
+            lista("Apontadas na leitura do PDF do órgão", pr.conferencia) +
+            lista("Dados do pacote", pr.dados) + blocoConf,
+            [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+             { texto: "Gerar assim mesmo", classe: "primary", onClick: function () { UI.fecharModal(); gerar(); } }]);
+        }
+      };
+      if (cx.perguntar) {
+        this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, function () { /* cancelou: nada a fazer */ });
+        return;
+      }
+      seguir();
+    },
+
+    /* Base SEINFRA do pacote (ou null), para as composições auxiliares do documento. */
+    _licPegarBase: function (lic, cb) {
+      var tabs = (lic && lic.leitura && lic.leitura.tabelas) || {};
+      if (!String(tabs.seinfra == null ? "" : tabs.seinfra).trim() || typeof AnaliticoBases === "undefined") { cb(null); return; }
+      AnaliticoBases.carregar("SEINFRA").then(function (ent) { cb(LicitacaoDocs.baseDe(ent && ent.pacote)); }, function () { cb(null); });
+    },
+
+    /* Nome da empresa no título do documento (vai no cabeçalho/rodapé da impressão do navegador). Orçamento de CERTAME: a razão
+       social da licitante, ou nenhuma empresa — a da conta NUNCA aparece em documento de outra empresa. */
+    _licNomeEmpresaTitulo: function () {
+      var orc = this.orcAtual, lic = (orc && typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null;
+      if (lic && lic.certamepro) {
+        if (typeof LicitacaoDocs !== "undefined" && LicitacaoDocs.temLicitante(lic)) {
+          try { return String(LicitacaoDocs.empresaDoCertame(lic, null).nome || "").trim(); } catch (e0) { return ""; }
+        }
+        return "";
+      }
+      return (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+    },
+
+    /* Proposta comercial, laudo e relatório saem com os dados da EMPRESA DA CONTA (js/proposta.js, Empresa.dados). Num orçamento de
+       certame do CertamePRO isso pode ser a empresa errada: antes de gerar, diz qual vai sair e deixa cancelar. Devolve true se abriu
+       o aviso (quem chamou para e só segue pelo botão). */
+    _licGuardaEmpresaConta: function (orc, seguir) {
+      var lic = (orc && typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null;
+      if (!lic || !lic.certamepro) return false;
+      var conta = {}, nomeLic = "";
+      try { conta = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {}; } catch (e0) { conta = {}; }
+      try { if (typeof LicitacaoDocs !== "undefined" && LicitacaoDocs.temLicitante(lic)) nomeLic = String(LicitacaoDocs.empresaDoCertame(lic, null).nome || "").trim(); } catch (e1) {}
+      UI.modal("Empresa deste documento",
+        '<p style="font-size:13px;margin-top:0">Este orçamento é de um certame do CertamePRO. Este documento sai com a empresa da <b>sua conta</b>: <b>' +
+        Util.esc(String(conta.nome || "").trim() || "(razão social não cadastrada)") + '</b> (CNPJ ' + Util.esc(String(conta.cnpj || "").trim() || "não cadastrado") + ').</p>' +
+        (nomeLic ? '<p style="font-size:13px">A empresa que disputa o certame é <b>' + Util.esc(nomeLic) + '</b>. Para a proposta da licitação (com a empresa dela) use <b>Proposta completa</b>.</p>'
+          : '<p style="font-size:13px">O certame não informou a empresa licitante.</p>'),
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Gerar com a empresa da conta", classe: "primary", onClick: function () { UI.fecharModal(); seguir(); } }]);
+      return true;
+    },
+
+    /* Qual empresa assina os documentos deste certame. `doCertame`: veio `licitante` no pacote. `perguntar`:
+       certame do CertamePRO sem `licitante` — só com o aval da pessoa os documentos saem na empresa da conta. */
+    _licEmpresaCertame: function (orc) {
+      var lic = (typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null, conta = {};
+      try { conta = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {}; } catch (e0) { conta = {}; }
+      if (typeof LicitacaoDocs !== "undefined" && LicitacaoDocs.temLicitante(lic)) {
+        return { emp: LicitacaoDocs.empresaDoCertame(lic, conta), doCertame: true, perguntar: false, conta: conta };
+      }
+      try { if (typeof Empresa !== "undefined" && !conta.timbradoTopo && Empresa.logo()) conta.timbradoTopo = Empresa.logo(); } catch (e1) {}
+      return { emp: conta, doCertame: false, perguntar: !!(lic && lic.certamepro), conta: conta };
+    },
+    _licPerguntarEmpresa: function (conta, rotNao, aoUsar, aoNao) {
+      var nome = String((conta && conta.nome) || "").trim(), cnpj = String((conta && conta.cnpj) || "").trim();
+      UI.modal("Empresa dos documentos",
+        '<p style="font-size:13px;margin-top:0">Este certame não informou a empresa licitante. O Excel e os documentos sairiam em nome de <b>' +
+        Util.esc(nome || "(razão social não cadastrada)") + '</b> (CNPJ ' + Util.esc(cnpj || "não cadastrado") + '), a empresa da sua conta.</p>',
+        [{ texto: rotNao, classe: "ghost", onClick: function () { UI.fecharModal(); if (aoNao) aoNao(); } },
+         { texto: "Usar esta empresa", classe: "primary", onClick: function () { UI.fecharModal(); if (aoUsar) aoUsar(); } }]);
+    },
+
+    /* O CertamePRO NÃO lê o documento da proposta (só o Excel, campo "arquivo"): o PDF vai por uma rota própria dele
+       (Orçamento → Proposta completa), enviado pela pessoa. Por isso a devolução leva SÓ o Excel e a tela, depois de
+       devolver, diz o que falta e abre o documento (licitacaoPacote). NUNCA diz que o PDF foi enviado. */
+    _licTextoFaltaPdf: function () {
+      return "Orçamento devolvido. Falta a proposta em PDF: abra, salve em PDF e envie no CertamePRO, em Orçamento → Proposta completa.";
+    },
+    _licBlocoFaltaPdf: function () {
+      return '<p style="font-size:13px;border-left:3px solid #b45309;padding-left:8px"><b>' + Util.esc(this._licTextoFaltaPdf()) + '</b></p>';
     },
 
     licitacaoDescontoDesfazer: function () {
@@ -12572,15 +12689,22 @@
       var d = Licitacao.destino(lic.devolverPara);
       if (!d.ok) { UI.toast(d.erro, "erro"); return; }
       var seguir = function () {
-        UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
-        /* ⚠ a MESMA rota do fluxo automático (js/licitacaoautoui.js): gerar o Excel e
-           enviar sem tela; este botão só mostra o resultado. Devolver à mão depois de
-           "Marcar como conferido" leva conferido_pelo_usuario:true no _meta, porque a
-           marca está no orçamento antes de o Excel ser gerado. */
-        self._licDevolverSilencioso(orc, d).then(function (res) {
-          self._licMostrarDevolucao(orc, d, res);
-          try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); } catch (eLg) {}
-        });
+        var cx = self._licEmpresaCertame(orc);
+        var ir = function (opcoes) {
+          UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
+          /* ⚠ a MESMA rota do fluxo automático (js/licitacaoautoui.js): gerar o Excel e
+             enviar sem tela; este botão só mostra o resultado. Devolver à mão depois de
+             "Marcar como conferido" leva conferido_pelo_usuario:true no _meta, porque a
+             marca está no orçamento antes de o Excel ser gerado. */
+          self._licDevolverSilencioso(orc, d, opcoes).then(function (res) {
+            self._licMostrarDevolucao(orc, d, res);
+            try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); if (res.naoAplicado && self._licAutoLog) self._licAutoLog("devolucao-nao-aplicada", orc, { status: 409, origem: "manual" }); } catch (eLg) {}
+          });
+        };
+        /* certame sem empresa licitante: o Excel leva os dados da empresa da conta (assinatura, responsável técnico). Só segue com o aval;
+           recusar CANCELA a devolução (nada sai em nome da conta sem a pessoa saber). */
+        if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({}); }, function () { /* cancelou: nada foi enviado */ });
+        else ir({});
       };
       var destinoOk = function () {
         if (d.local) { seguir(); return; }
@@ -12627,7 +12751,7 @@
         (r.modelo ? li("Planilha no modelo do órgão", r.modelo.gerado ? Util.esc(String(r.modelo.itens)) + " item(ns) preenchido(s)" : "não gerada") : "") +
         (r.arquivo ? li("Excel guardado em", '<span class="mono" style="font-size:11.5px">' + Util.esc(r.arquivo) + "</span>") : "") + "</ul>";
       if (r.divergencia) h += av("erro", "O CertamePRO gravou " + Util.fmtMoeda(r.divergencia.certame) + " como valor da proposta, e este orçamento soma " +
-        Util.fmtMoeda(r.divergencia.local) + ". É o valor do CertamePRO que vai para a carta: confira o arredondamento e o BDI antes de enviar a proposta.");
+        Util.fmtMoeda(r.divergencia.local) + ". É esse valor que o CertamePRO usa na carta de apresentação dele. A carta do pacote da proposta (aberta aqui) sai com o valor deste orçamento, e o prazo, a validade e o objeto dela seguem o edital. Confira o arredondamento e o BDI antes de enviar a proposta.");
       h += '<p style="font-size:13px;margin:10px 0 4px"><b>Conferências do CertamePRO</b> <span class="muted">(também ficam no certame)</span></p>';
       if (r.alertas.length) r.alertas.forEach(function (a) { h += av(a.tom, a.texto); });
       else h += av("ok", "Nenhum alerta nas conferências do CertamePRO.");
@@ -12637,15 +12761,18 @@
     /* Botões do modal "Orçamento devolvido": com o endereço do certame (guardado
        em lic.urlCertame ao importar o pacote) o principal é "Voltar ao certame";
        sem ele, só "Fechar". Só abre http/https. */
-    _licBotoesVolta: function (orc) {
+    _licBotoesVolta: function (orc, comPdf) {
+      var self = this;
       var lic = (typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null;
       var u = lic && lic.urlCertame ? String(lic.urlCertame) : "";
       var b = [];
+      /* devolveu o Excel: a proposta em PDF ainda é da pessoa (o CertamePRO só recebe o PDF por rota própria) */
+      if (comPdf) b.push({ texto: "Abrir a proposta (salvar em PDF)", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
       if (/^https?:\/\//i.test(u)) {
-        b.push({ texto: "Voltar ao certame", classe: "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
+        b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
         b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
       } else {
-        b.push({ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } });
+        b.push({ texto: "Fechar", classe: comPdf ? "ghost" : "primary", onClick: function () { UI.fecharModal(); } });
       }
       return b;
     },
@@ -12656,7 +12783,9 @@
     _licPost: function (d, blob, nome) {
       return new Promise(function (resolve) {
         var fd;
-        try { fd = new FormData(); fd.append("arquivo", blob, nome); } catch (e0) { resolve({ ok: false, erro: "Este navegador não montou o envio (" + e0.message + ")." }); return; }
+        try {
+          fd = new FormData(); fd.append("arquivo", blob, nome);
+        } catch (e0) { resolve({ ok: false, erro: "Este navegador não montou o envio (" + e0.message + ")." }); return; }
         var tempo = null, ctl = null;
         try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
         fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
@@ -12703,12 +12832,16 @@
     /* DEVOLVER SEM TELA: gera o Excel e envia. Resolve { ok, etapa, nome, blob, erro, lido, j }.
        `lido` = Licitacao.lerDevolucao(resposta, total do orçamento) ou null. Não abre modal
        nem baixa arquivo: quem chama decide (botão manual = _licMostrarDevolucao). */
-    _licDevolverSilencioso: function (orc, d) {
+    _licDevolverSilencioso: function (orc, d, opcoes) {
       var self = this;
+      opcoes = opcoes || {};
       return this._licGerarExcel(orc).then(function (g) {
         if (!g.ok) return { ok: false, etapa: "excel", erro: g.erro };
+        /* Só o Excel vai ao CertamePRO (ele não lê o documento da proposta; ver _licTextoFaltaPdf). */
         return self._licPost(d, g.blob, g.nome).then(function (p) {
-          var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null };
+          var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null, faltaPdf: !!p.ok };
+          /* 409: o CertamePRO já tem orçamento conferido (devolvido por pessoa ou com valor digitado à mão) e NÃO gravou nada */
+          if (!p.ok && p.status === 409) { out.naoAplicado = true; out.motivoNaoAplicado = Licitacao.motivoNaoAplicado ? Licitacao.motivoNaoAplicado(p.j) : ""; }
           if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }
           return out;
         });
@@ -12718,6 +12851,12 @@
     /* A TELA do botão manual: o que o CertamePRO respondeu, ou como enviar à mão. */
     _licMostrarDevolucao: function (orc, d, res) {
       var self = this, nome = res.nome || "";
+      if (res.naoAplicado) {
+        UI.modal("Devolução não aplicada",
+          '<p style="font-size:13px;margin-top:0">' + Util.esc(res.motivoNaoAplicado || "Não aplicado: o CertamePRO não aceitou este orçamento agora; nada foi gravado lá.") + '</p>' +
+          '<p style="font-size:13px">O orçamento <b>está salvo</b> aqui. Nada foi enviado nem alterado no CertamePRO.</p>', self._licBotoesVolta(orc));
+        return;
+      }
       if (!res.ok) {
         if (res.etapa === "excel") { UI.toast(res.erro + " Nada foi enviado.", "erro"); return; }
         if (res.blob) {
@@ -12738,8 +12877,9 @@
          pode dizer "não consegui falar com o CertamePRO" (recado que mente) */
       var j = res.j, lido = res.lido, htmlLido = "";
       try { if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
+      var linhaProp = self._licBlocoFaltaPdf();
       if (lido && htmlLido) {
-        UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, self._licBotoesVolta(orc));
+        UI.modal("Orçamento devolvido ao CertamePRO", htmlLido + linhaProp, self._licBotoesVolta(orc, true));
         return;
       }
       var msg = (j && (j.mensagem || j.message)) ? String(j.mensagem || j.message) : "";
@@ -12754,8 +12894,8 @@
       UI.modal("Orçamento devolvido ao CertamePRO",
         '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b>' + (msg ? ": " + Util.esc(msg) : ".") + '</p>' +
         (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
-        '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
-        self._licBotoesVolta(orc));
+        '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>' + linhaProp,
+        self._licBotoesVolta(orc, true));
     },
 
     /* mantida por compatibilidade: envia um blob já gerado e mostra o resultado */
@@ -15947,6 +16087,10 @@
     gerarProposta: function () {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (!Auth.podeUsar("proposta")) { UI.toast("Proposta Comercial é recurso PRO.", "erro"); return; }
+      if (!this._licEmpresaOk) {
+        var selfG = this;
+        if (this._licGuardaEmpresaConta(this.orcAtual, function () { selfG._licEmpresaOk = true; try { selfG.gerarProposta(); } finally { selfG._licEmpresaOk = false; } })) return;
+      }
       var val = Proposta.validar(this.orcAtual);
       if (!val.ok) {
         /* "Abra Dados" é a porta do cliente e das condições; a do escopo todo
@@ -16162,6 +16306,10 @@
     gerarLaudo: function () {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (!Auth.podeUsar("proposta")) { UI.toast("Anexo p/ laudo é recurso PRO.", "erro"); return; }
+      if (!this._licEmpresaOk) {
+        var selfL = this;
+        if (this._licGuardaEmpresaConta(this.orcAtual, function () { selfL._licEmpresaOk = true; try { selfL.gerarLaudo(); } finally { selfL._licEmpresaOk = false; } })) return;
+      }
       var val = Laudo.validar(this.orcAtual);
       if (!val.ok) { UI.toast("Faltam dados: " + val.faltando.join(", "), "erro"); return; }
       this._abrirPrint("Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
@@ -16172,6 +16320,10 @@
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       var t = Orcamento.totais(this.orcAtual);
       if (t.qtdItens < 1) { UI.toast("Adicione itens antes de gerar o relatório.", "erro"); return; }
+      if (!this._licEmpresaOk) {
+        var selfR = this;
+        if (this._licGuardaEmpresaConta(this.orcAtual, function () { selfR._licEmpresaOk = true; try { selfR.gerarRelatorio(); } finally { selfR._licEmpresaOk = false; } })) return;
+      }
       var self = this;
       function abrir() {
         self._abrirPrint("Relatório de Orçamento — " + self.orcAtual.numero,
@@ -16915,7 +17067,7 @@
       // navegador — enquanto o documento está aberto, o título vira o do DOCUMENTO
       // (com o nome da empresa do cliente), não o do produto. Restaura ao fechar.
       if (this._tituloApp == null) this._tituloApp = document.title;
-      var nomeEmp = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+      var nomeEmp = this._licNomeEmpresaTitulo();
       try { document.title = (limpo || "Documento") + (nomeEmp ? " — " + nomeEmp : ""); } catch (eT) {}
       var ic = (icone && typeof Icones !== "undefined") ? Icones.get(icone, 15) : "";
       var overlay = document.createElement("div");
