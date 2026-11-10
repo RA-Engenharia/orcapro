@@ -266,6 +266,9 @@
        (metas e prêmio máximo = dinheiro, por isso entidade e não prefs), o
        lançamento diário, a ocorrência e o fechamento homologado do mês. */
     "pp_config", "pp_lanc", "pp_oc", "pp_fech",
+    /* CPLPRO (js/cplproui.js): o processo de licitação (peça de processo administrativo) e o papel de cada pessoa no órgão.
+       Lista plana de registros com `atualizadoEm`, como as demais: o merge é por id. */
+    "cplpro_processos", "cplpro_papeis",
     /* padrao de privacidade do Portal do Cliente (o que a obra herda quando
        ainda nao decidiu). Nao e sob demanda — vale para qualquer empresa —
        e tambem nao pode morar em prefs: e decisao de PRIVACIDADE, e o

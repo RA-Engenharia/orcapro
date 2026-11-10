@@ -92,11 +92,11 @@
        é ele quem responde "a obra está atrasada?" e congela a linha de base
        (espec v2 3.2). Sem estar aqui, o sub-usuário de engenharia criado por
        preset nasceria sem a tela — o mesmo buraco da `producao` acima. */
-    engenharia:     ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
+    engenharia:     ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria", "cplpro"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "documentos", "fiscal", "centrocusto", "relatorios"],
     rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar", "prodpremio"],
-    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
+    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos", "cplpro"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
 
@@ -532,6 +532,8 @@
        são DAQUELA obra: sem estar aqui, o sub-usuário restrito veria o solo e
        as folhas das obras que não acompanha */
     bim_sondagens: 1, bim_pranchas: 1,
+    /* CPLPRO (js/cplproui.js): processo de licitação do órgão (carrega obraId; peça de processo administrativo) */
+    cplpro_processos: 1,
     /* a cena do OrçaPRO Cena é DAQUELA obra (materiais, câmeras e objetos postos no projeto dela) */
     bim_cenas: 1,
     /* o arquivo de documentos (contrato, ART, memorial assinado) é DAQUELA
@@ -756,6 +758,7 @@
     carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
     remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
     /* produtividade e prêmio: barras subindo até a meta (linha no topo) */
+    cplpro: '<path d="M7 3h8l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M10 13h6"/><path d="M10 17h4"/>',
     prodpremio: '<path d="M3 20h18"/><path d="M6 20v-5"/><path d="M11 20v-8"/><path d="M16 20v-11"/><path d="M3 5h18" stroke-dasharray="2 2"/>',
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
@@ -950,6 +953,8 @@
       { id: "remunvar", nome: "Remuneração variável", curto: "Remun. variável", g: "equipe" },   // sob demanda — ver perfis.js
       /* sob demanda (js/perfis.js SOB_DEMANDA): só aparece para o perfil que NOMEIA `prodpremio` */
       { id: "prodpremio", nome: "Produtividade e bonificação", curto: "Produtividade", g: "equipe" },
+      /* sob demanda (js/perfis.js SOB_DEMANDA): só o perfil "orgao_publico" NOMEIA o `cplpro` */
+      { id: "cplpro", nome: "CPLPRO — Licitação do órgão", curto: "CPLPRO", g: "orgao" },
       { id: "frota", nome: "Frota", g: "ativos" },
       { id: "patrimonio", nome: "Patrimônio", g: "ativos" },
       { id: "financeiro", nome: "Financeiro", curto: "Lançamentos", g: "dinheiro" },
@@ -973,8 +978,8 @@
     /* ⚠ O ICONE DO GRUPO E ESCOLHIDO, nao herdado do primeiro filho.
        Herdar fazia "Suprimentos" usar o icone de "Insumos" — o desenho do
        primeiro da lista, que muda sozinho se alguem reordenar os modulos. */
-    ICONE_GRUPO: { orcar: "orcamentos", obra: "obras", canteiro: "rdo", suprimentos: "compras", equipe: "colaboradores", ativos: "frota", dinheiro: "financeiro", config: "usuarios" },
-    GRUPOS_MENU: { orcar: "Orçamentos", obra: "Obras", canteiro: "Canteiro", suprimentos: "Suprimentos", equipe: "Equipe", ativos: "Ativos", dinheiro: "Financeiro", config: "Configurações" },
+    ICONE_GRUPO: { orgao: "cplpro", orcar: "orcamentos", obra: "obras", canteiro: "rdo", suprimentos: "compras", equipe: "colaboradores", ativos: "frota", dinheiro: "financeiro", config: "usuarios" },
+    GRUPOS_MENU: { orgao: "Órgão público", orcar: "Orçamentos", obra: "Obras", canteiro: "Canteiro", suprimentos: "Suprimentos", equipe: "Equipe", ativos: "Ativos", dinheiro: "Financeiro", config: "Configurações" },
 
     // ---------- Sidebar (nav de módulos) ----------
     /* ==================================================================
@@ -1701,6 +1706,7 @@
         case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
         case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
+        case "cplpro": return this.renderCplpro ? this.renderCplpro() : this._moduloNaoCarregado("CPLPRO — Licitação do órgão", "js/cplproui.js");
         case "prodpremio": return this.renderProdPremio ? this.renderProdPremio() : this._moduloNaoCarregado("Produtividade e bonificação", "js/prodpremioui.js");
         case "galeria": return this.renderGaleria();
         /* mesma regra das duas de cima: a tela mora em js/tour360ui.js, que o
@@ -5994,6 +6000,9 @@
       ["pp_lanc", "lançamento(s) de produtividade"],
       ["pp_oc", "ocorrência(s) de produtividade"],
       ["pp_fech", "fechamento(s) do prêmio"],
+      /* CPLPRO: o processo de licitação (parecer, ressalvas, publicação) é PEÇA DE PROCESSO ADMINISTRATIVO — o órgão
+         precisa guardá-lo mesmo que a obra seja excluída. Perde o vínculo (obraId), não a existência. */
+      ["cplpro_processos", "processo(s) de licitação (CPLPRO)"],
       /* ⚠ v1.2 — MESMO DEFEITO, ENTIDADE MAIS ANTIGA. `horas_extras` grava
          `obraId` no formulário, sincroniza, e não estava em NENHUMA das três
          listas. A tela nunca a apagava (não aparecia no modal, não era

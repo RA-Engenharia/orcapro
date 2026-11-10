@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.275",
+versao: "1.2.276",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -2333,7 +2333,7 @@ var o = {};
 "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
 "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
 "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
-"pp_config", "pp_lanc", "pp_oc", "pp_fech",
+"pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis",
 "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
 return o;
 })();
@@ -3340,7 +3340,7 @@ return this.salvar(empresaId, "precosinsumos", reg) ? { preco: reg.preco, em: re
 _LAPIDES_MAX: 3000,
 _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1, obra_docs: 1,
 folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1,
-pp_lanc: 1, pp_oc: 1, pp_fech: 1,
+pp_lanc: 1, pp_oc: 1, pp_fech: 1, cplpro_processos: 1,
 remun_apur: 1, carp_propostas: 1, horas_extras: 1 },
 imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
 _sincroniza: function (entidade) {
@@ -5540,7 +5540,7 @@ try {
 var Perfis = (function () {
 "use strict";
 var NUCLEO = ["dashboard", "ajuda", "relatos", "usuarios"];
-var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio"];
+var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio", "cplpro"];
 var EM_PREVIA = {};
 function _previaFechada(id) {
 var k = EM_PREVIA[id];
@@ -5552,6 +5552,12 @@ completo: {
 nome: "Completo",
 desc: "Todos os módulos do OrçaPRO. É o padrão de quem compra o sistema.",
 modulos: null
+},
+orgao_publico: {
+nome: "Órgão público — CPLPRO",
+desc: "Para a secretaria, a comissão de licitação, o jurídico e a autoridade de um órgão público que licita obra: o processo em 10 passos (demanda, acervo, quantitativos, ETP, riscos, orçamento de referência, TR, parâmetros, minuta e publicação), com obras, orçamentos, contratos, medições, diário, documentos, cronograma e usuários.",
+modulos: ["cplpro", "obras", "orcamentos", "contratos", "medicoes", "rdo", "documentos", "cronobra", "usuarios"],
+soPorURL: true
 },
 };
 function registrarCatalogo(mapa) {
@@ -5790,7 +5796,9 @@ return { id: id, nome: CATALOGO[id].nome, desc: CATALOGO[id].desc };
 });
 }
 function listar() {
-var ids = Object.keys(CATALOGO).filter(_visivel);
+var ids = Object.keys(CATALOGO).filter(_visivel).filter(function (id) {
+return !CATALOGO[id].soPorURL || id === idAtual() || !!_conhecidos()[id] || _reveladoNaURL(id);
+});
 var reg = _registro();
 var meu = reg.perfil;
 if (meu && meu !== "completo" && ids.indexOf(meu) < 0 && _perfilDe(meu)) ids.push(meu);
@@ -13434,6 +13442,7 @@ if (c.tag === "b" || c.tag === "strong") g = herda(f, { negrito: true });
 else if (c.tag === "i" || c.tag === "em") g = herda(f, { italico: true });
 else if (c.tag === "small" || temClasse(c, "tp-qtd") || temClasse(c, "tp-cc-nota") || temClasse(c, "tp-opc-nota")) g = herda(f, { tamanho: Math.max(7, (f.tamanho || 11) - 2), cor: f.cor === "FFFFFF" ? "FFFFFF" : "6B7280" });
 else if (c.tag === "span" && temClasse(c, "tp-cr-v")) g = herda(f, { tamanho: 7.5 });
+else if (c.tag === "span" && temClasse(c, "cpl-pre")) g = herda(f, { negrito: true, cor: "B91C1C" });
 if (c.tag === "span" && (temClasse(c, "tp-cr-b") || temClasse(c, "tp-gt-b") || temClasse(c, "tp-gt-marco") || temClasse(c, "tp-gt-trilho"))) {
 if (temClasse(c, "tp-gt-trilho")) {
 var barra = (c.filhos || []).filter(function (x) { return x.tag === "span"; })[0];

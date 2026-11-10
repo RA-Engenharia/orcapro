@@ -424,6 +424,8 @@
       else if (c.tag === "i" || c.tag === "em") g = herda(f, { italico: true });
       else if (c.tag === "small" || temClasse(c, "tp-qtd") || temClasse(c, "tp-cc-nota") || temClasse(c, "tp-opc-nota")) g = herda(f, { tamanho: Math.max(7, (f.tamanho || 11) - 2), cor: f.cor === "FFFFFF" ? "FFFFFF" : "6B7280" });
       else if (c.tag === "span" && temClasse(c, "tp-cr-v")) g = herda(f, { tamanho: 7.5 });
+      /* CPLPRO (js/cplprodocs.js): campo em branco do documento do órgão, «[PREENCHER: …]», sai em vermelho e negrito no Word */
+      else if (c.tag === "span" && temClasse(c, "cpl-pre")) g = herda(f, { negrito: true, cor: "B91C1C" });
       if (c.tag === "span" && (temClasse(c, "tp-cr-b") || temClasse(c, "tp-gt-b") || temClasse(c, "tp-gt-marco") || temClasse(c, "tp-gt-trilho"))) {
         /* a barra do cronograma é desenho; no Word vira um traço proporcional */
         if (temClasse(c, "tp-gt-trilho")) {

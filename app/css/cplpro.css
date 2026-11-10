@@ -1,0 +1,108 @@
+/* =====================================================================
+ * cplpro.css — a tela do CPLPRO (js/cplproui.js).
+ * Só tokens do css/app.css (cores, escala --t-*, pesos --p-*, raios): o tema escuro vem de graça.
+ * O painel da CPL (modo TV) é SEMPRE escuro (sobre o navy), em qualquer tema.
+ * ===================================================================== */
+
+/* faixa fixa "Minuta — sujeita a parecer jurídico" */
+.cpl-faixa {
+  margin: 0 0 12px; padding: 9px 14px; border-radius: var(--raio);
+  background: var(--tinta-aviso); border: var(--traco) solid var(--amarelo); color: var(--texto);
+  font-size: var(--t-peq);
+}
+.cpl-obra-fixa { display: inline-block; padding: 6px 12px; border: var(--traco) solid var(--linha); border-radius: var(--raio-ctl); font-size: var(--t-peq); color: var(--texto); background: var(--surface); }
+
+/* trilho de 10 passos à esquerda + passo à direita */
+.cpl-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; align-items: start; }
+.cpl-trilho { position: sticky; top: 8px; border: var(--traco) solid var(--linha); border-radius: var(--raio-lg); background: var(--surface); padding: 10px; }
+.cpl-trilho ol { list-style: none; margin: 0; padding: 0; }
+.cpl-onde { font-size: var(--t-peq); color: var(--texto-fraco); padding: 4px 8px 10px; }
+.cpl-onde b { color: var(--texto); }
+.cpl-tr button {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; width: 100%;
+  text-align: left; background: transparent; border: 0; border-radius: var(--raio-sm); padding: 8px; cursor: pointer;
+  color: var(--texto); font: inherit; font-size: var(--t-peq);
+}
+.cpl-tr button:hover { background: var(--faixa-sub); }
+.cpl-tr button:focus-visible { outline: 2px solid var(--aco); outline-offset: 1px; }
+.cpl-tr.ativo button { background: var(--tinta-aco); font-weight: var(--p-medio); }
+.cpl-tr .cpl-n { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: var(--traco) solid var(--linha-forte); font-size: var(--t-micro); }
+.cpl-tr.feito .cpl-n { background: var(--verde); border-color: var(--verde); color: var(--surface); }
+.cpl-tr .cpl-p { font-size: var(--t-micro); color: var(--texto-fraco); }
+
+.cpl-passo { min-width: 0; }
+.cpl-passo h2 { margin: 0 0 12px; font-size: var(--t-tit); font-weight: var(--p-forte); color: var(--texto); }
+.cpl-passo h3 { margin: 20px 0 8px; font-size: var(--t-med); font-weight: var(--p-forte); }
+.cpl-passo h4 { margin: 12px 0 6px; font-size: var(--t-base); font-weight: var(--p-forte); }
+
+/* pendências como cartões com "Corrigir" */
+.cpl-pends { display: grid; gap: 6px; margin: 0 0 14px; }
+.cpl-pend { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--raio); background: var(--tinta-alerta); border: var(--traco) solid var(--linha); font-size: var(--t-peq); }
+
+.cpl-form { display: grid; gap: 12px; }
+.cpl-form textarea, .cpl-form input:not([type=checkbox]), .cpl-form select { width: 100%; max-width: 760px; }
+.cpl-form > .btn, .cpl-form > .field > .btn { justify-self: start; }
+.cpl-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+.cpl-conferi { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-top: 24px; padding: 12px 14px; border-top: var(--traco) solid var(--linha); }
+.cpl-conferi.ok { color: var(--verde); }
+
+.cpl-sug, .cpl-sugerido { font-size: var(--t-peq); color: var(--texto-fraco); margin-top: 4px; }
+.cpl-obrig { font-size: var(--t-micro); color: var(--vermelho); text-transform: uppercase; letter-spacing: .02em; }
+.cpl-obrig-vazio textarea { border-color: var(--vermelho); box-shadow: 0 0 0 1px var(--vermelho); }
+.cpl-alerta { color: var(--amarelo); font-size: var(--t-peq); margin: 4px 0; }
+.cpl-sem td { background: var(--tinta-alerta); }
+.cpl-foco { outline: 3px solid var(--aco); outline-offset: 2px; border-radius: var(--raio-sm); }
+.cpl-pre-ex { color: var(--vermelho); }
+
+/* selo "conferir" e botão Por quê? */
+.cpl-conf { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--t-micro); font-weight: var(--p-medio); background: var(--tinta-aviso); color: var(--amarelo); border: var(--traco) solid var(--amarelo); vertical-align: middle; }
+.cpl-pq { font-size: var(--t-micro); padding: 0 6px; }
+
+.cpl-barra { height: 6px; border-radius: 3px; background: var(--linha); margin-top: 4px; min-width: 80px; overflow: hidden; }
+.cpl-barra > div { height: 6px; background: var(--aco); }
+
+.cpl-item { border: var(--traco) solid var(--linha); border-radius: var(--raio); padding: 8px 12px; margin: 8px 0; background: var(--surface); }
+.cpl-item summary { cursor: pointer; }
+.cpl-novafonte { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: var(--traco) dashed var(--linha); }
+.cpl-bloqueios { margin: 8px 0 0 18px; color: var(--texto-fraco); font-size: var(--t-peq); }
+.cpl-parecer { border: var(--traco) solid var(--linha); border-radius: var(--raio); padding: 12px; margin: 12px 0; background: var(--surface); }
+.cpl-prop { border: var(--traco) solid var(--linha); border-radius: var(--raio-lg); padding: 12px 16px; margin: 14px 0; background: var(--surface); }
+.cpl-menor { font-weight: var(--p-forte); color: var(--verde); }
+.cpl-previa { max-height: 70vh; overflow: auto; }
+.cpl-previa .cpl-pre { color: var(--vermelho); font-weight: var(--p-forte); }
+.cpl-passo .cpl-pre { color: var(--vermelho); font-weight: var(--p-forte); }
+
+@media (max-width: 700px) {
+  .cpl-passo table.tbl th, .cpl-passo table.tbl td { padding: 8px 8px; font-size: var(--t-peq); }
+  .cpl-passo .field input:not([type=checkbox]), .cpl-passo .field select, .cpl-passo .field textarea { max-width: 100%; }
+}
+@media (max-width: 900px) {
+  .cpl-layout { grid-template-columns: 1fr; }
+  .cpl-trilho { position: static; }
+  .cpl-trilho ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .cpl-pend { flex-direction: column; align-items: flex-start; }
+  .cpl-passo { overflow-x: auto; }
+}
+
+/* ---------- PAINEL DA CPL (modo TV): sempre escuro ---------- */
+.cpl-tv {
+  position: fixed; inset: 0; z-index: 9000; background: var(--navy); color: var(--sobre-navy);
+  display: flex; flex-direction: column; align-items: stretch; justify-content: center; padding: 4vh 6vw;
+  font-family: var(--fonte);
+}
+.cpl-tv-fechar { position: absolute; top: 14px; right: 18px; background: transparent; color: var(--sobre-navy-fraco); border: var(--traco) solid var(--sobre-navy-fraco); border-radius: var(--raio-ctl); padding: 6px 14px; cursor: pointer; font-size: var(--t-peq); }
+.cpl-tv-corpo { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.cpl-tv-tit { font-size: var(--t-hero); font-weight: var(--p-forte); color: var(--sobre-navy-forte); margin: 0 0 3vh; }
+.cpl-tv-grade { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+.cpl-tv-cel { background: var(--navy-2); border-radius: var(--raio-lg); padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+.cpl-tv-cel b { font-size: var(--t-hero); color: var(--sobre-navy-forte); }
+.cpl-tv-cel span { font-size: var(--t-base); color: var(--sobre-navy-fraco); }
+.cpl-tv-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; font-size: var(--t-med); }
+.cpl-tv-lista li { background: var(--navy-2); border-radius: var(--raio); padding: 12px 16px; }
+.cpl-tv-lista b { color: var(--sobre-navy-aviso); }
+.cpl-tv-num { font-size: 96px; line-height: 1; margin: 0 0 2vh; color: var(--sobre-navy-ok); font-weight: var(--p-forte); }
+.cpl-tv-vazio { font-size: var(--t-med); color: var(--sobre-navy-fraco); }
+.cpl-tv-pontos { display: flex; gap: 8px; justify-content: center; padding-top: 2vh; }
+.cpl-tv-pontos span { width: 10px; height: 10px; border-radius: 50%; background: var(--sobre-navy-fraco); opacity: .4; }
+.cpl-tv-pontos span.ativo { opacity: 1; background: var(--sobre-navy-forte); }
+@media (max-width: 700px) { .cpl-tv-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cpl-tv-num { font-size: 64px; } }

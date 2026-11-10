@@ -60,7 +60,7 @@ var Perfis = (function () {
    * Aqui o sentido é invertido: quem está NESTA lista só aparece para o
    * perfil que o NOMEIA. Módulo do produto continua valendo por omissão;
    * módulo de cliente precisa de convite. */
-  var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio"];
+  var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio", "cplpro"];
 
   /* MÓDULO EM PRÉVIA (31/10/2026): só existe na instalação que ligou a
      prévia pelo atalho (`?previa=<nome>`, App._PREVIAS em js/app.js grava a
@@ -91,6 +91,19 @@ var Perfis = (function () {
       nome: "Completo",
       desc: "Todos os módulos do OrçaPRO. É o padrão de quem compra o sistema.",
       modulos: null                       // null = sem restrição (menos o sob demanda)
+    },
+    /* ⚠ PERFIL DO PRODUTO, não de cliente: o CPLPRO é um produto à parte (órgão público que licita obra),
+       sem nome de ninguém aqui dentro. Só quem aplica este perfil vê o módulo `cplpro` (SOB_DEMANDA). */
+    orgao_publico: {
+      nome: "Órgão público — CPLPRO",
+      desc: "Para a secretaria, a comissão de licitação, o jurídico e a autoridade de um órgão público que licita obra: o processo em 10 passos (demanda, acervo, quantitativos, ETP, riscos, orçamento de referência, TR, parâmetros, minuta e publicação), com obras, orçamentos, contratos, medições, diário, documentos, cronograma e usuários.",
+      modulos: ["cplpro", "obras", "orcamentos", "contratos", "medicoes", "rdo", "documentos", "cronobra", "usuarios"],
+      /* ⚠ NÃO É ESCOLHA DE TODO CLIENTE. Este perfil é do produto CPLPRO (órgão público): quem compra o OrçaPRO
+         para construir não deve ver "Órgão público" como opção no ⚙ Empresa, nem trocar a barra por curiosidade.
+         `soPorURL` o tira de `listar()` — exceto quando já é o perfil da conta, já foi (volta ao Completo) ou a
+         implantação o revela de propósito com `?perfil=orgao_publico`. NÃO usar `privado`: ele serve ao catálogo
+         de cliente e liga o gate do botão de prévia (`listarPrivados`), que não pode acender em toda máquina. */
+      soPorURL: true
     },
 
   };
@@ -548,7 +561,9 @@ var Perfis = (function () {
        para o sistema completo — uma porta que existia e fecharia calada.
        O nome que aparece é o DELE, gravado no próprio registro; nome de outro
        cliente continua sem caminho nenhum até aqui. */
-    var ids = Object.keys(CATALOGO).filter(_visivel);
+    var ids = Object.keys(CATALOGO).filter(_visivel).filter(function (id) {
+      return !CATALOGO[id].soPorURL || id === idAtual() || !!_conhecidos()[id] || _reveladoNaURL(id);
+    });
     var reg = _registro();
     var meu = reg.perfil;
     if (meu && meu !== "completo" && ids.indexOf(meu) < 0 && _perfilDe(meu)) ids.push(meu);

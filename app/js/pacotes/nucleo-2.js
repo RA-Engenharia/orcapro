@@ -39,11 +39,11 @@ indepMax: imT, podeIndep: ind < imT && (empresa + ind) < mx, usuariosPorIndepend
 return { tipo: "padrao", max: LIMITE_PADRAO, empresa: empresa, indep: 0, usadas: empresa, podeCriar: empresa < LIMITE_PADRAO };
 }
 var DEPTO_MODULOS = {
-engenharia: ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
+engenharia: ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria", "cplpro"],
 compras: ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
 financeiro: ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "documentos", "fiscal", "centrocusto", "relatorios"],
 rh: ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar", "prodpremio"],
-administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
+administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos", "cplpro"],
 diretoria: null
 };
 var RELATORIOS_PORTAL = [
@@ -196,6 +196,7 @@ lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
 producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
 bim_estrut: 1,
 bim_sondagens: 1, bim_pranchas: 1,
+cplpro_processos: 1,
 bim_cenas: 1,
 obra_docs: 1,
 bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
@@ -302,6 +303,7 @@ producao: '<path d="M4 20h16M6 20v-6a6 6 0 0 1 12 0v6M10 8V5a2 2 0 0 1 4 0v3"/><
 folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
 carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
 remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
+cplpro: '<path d="M7 3h8l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M10 13h6"/><path d="M10 17h4"/>',
 prodpremio: '<path d="M3 20h18"/><path d="M6 20v-5"/><path d="M11 20v-8"/><path d="M16 20v-11"/><path d="M3 5h18" stroke-dasharray="2 2"/>',
 ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
 frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
@@ -397,6 +399,7 @@ modulos: [
 { id: "epi", nome: "EPI", g: "equipe" },
 { id: "remunvar", nome: "Remuneração variável", curto: "Remun. variável", g: "equipe" },
 { id: "prodpremio", nome: "Produtividade e bonificação", curto: "Produtividade", g: "equipe" },
+{ id: "cplpro", nome: "CPLPRO — Licitação do órgão", curto: "CPLPRO", g: "orgao" },
 { id: "frota", nome: "Frota", g: "ativos" },
 { id: "patrimonio", nome: "Patrimônio", g: "ativos" },
 { id: "financeiro", nome: "Financeiro", curto: "Lançamentos", g: "dinheiro" },
@@ -410,8 +413,8 @@ modulos: [
 { id: "ajuda", nome: "Ajuda", g: "config" },
 { id: "relatos", nome: "Falar com o suporte", curto: "Suporte", g: "config" }
 ],
-ICONE_GRUPO: { orcar: "orcamentos", obra: "obras", canteiro: "rdo", suprimentos: "compras", equipe: "colaboradores", ativos: "frota", dinheiro: "financeiro", config: "usuarios" },
-GRUPOS_MENU: { orcar: "Orçamentos", obra: "Obras", canteiro: "Canteiro", suprimentos: "Suprimentos", equipe: "Equipe", ativos: "Ativos", dinheiro: "Financeiro", config: "Configurações" },
+ICONE_GRUPO: { orgao: "cplpro", orcar: "orcamentos", obra: "obras", canteiro: "rdo", suprimentos: "compras", equipe: "colaboradores", ativos: "frota", dinheiro: "financeiro", config: "usuarios" },
+GRUPOS_MENU: { orgao: "Órgão público", orcar: "Orçamentos", obra: "Obras", canteiro: "Canteiro", suprimentos: "Suprimentos", equipe: "Equipe", ativos: "Ativos", dinheiro: "Financeiro", config: "Configurações" },
 _recChave: function () { return this._menuChave() + ":rec"; },
 _menuRecentes: function () {
 try { return JSON.parse(localStorage.getItem(this._recChave()) || "[]") || []; } catch (e) { return []; }
@@ -844,6 +847,7 @@ case "producao": return this.renderProducao();
 case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
 case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
 case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
+case "cplpro": return this.renderCplpro ? this.renderCplpro() : this._moduloNaoCarregado("CPLPRO — Licitação do órgão", "js/cplproui.js");
 case "prodpremio": return this.renderProdPremio ? this.renderProdPremio() : this._moduloNaoCarregado("Produtividade e bonificação", "js/prodpremioui.js");
 case "galeria": return this.renderGaleria();
 case "tour360": return this.renderTour360 ? this.renderTour360() : this._moduloNaoCarregado("Tour Virtual 360", "js/tour360ui.js");
@@ -3693,6 +3697,7 @@ _ENT_SO_DESVINCULA: [
 ["pp_lanc", "lançamento(s) de produtividade"],
 ["pp_oc", "ocorrência(s) de produtividade"],
 ["pp_fech", "fechamento(s) do prêmio"],
+["cplpro_processos", "processo(s) de licitação (CPLPRO)"],
 ["horas_extras", "hora(s) extra(s) lançada(s)"]
 ],
 _idsDaObraPara: function (ent, obraId) {
@@ -45274,6 +45279,2976 @@ return falha("Erro inesperado: " + String((e && e.message) || e) + ".");
 };
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplproregras.js ==== */
+try {
+(function (global) {
+"use strict";
+var LEI = "Lei 14.133/2021";
+var ACERVO_TIPOS = {
+projeto_arquitetonico: { nome: "Projeto arquitetônico", disciplina: "Arquitetura", prioridade: 3,
+regex: "\\b(arq|arquitet[oô]n\\w*|planta baixa|fachadas?|layout|implanta[cç][aã]o|projeto arq\\w*)\\b", extensoes: ["pdf", "dwg", "rvt", "ifc"] },
+projeto_estrutural: { nome: "Projeto estrutural", disciplina: "Estrutura", prioridade: 3,
+regex: "\\b(est|estrut\\w*|formas?|arma[cç][aã]o|armadura|pilares?|vigas?|lajes?)\\b", extensoes: ["pdf", "dwg", "ifc"] },
+projeto_fundacao: { nome: "Projeto de fundação", disciplina: "Fundação", prioridade: 4,
+regex: "\\b(fund|funda[cç]\\w*|sapatas?|estacas?|baldrames?|radier|blocos? de funda\\w*)\\b", extensoes: ["pdf", "dwg"] },
+projeto_hidrossanitario: { nome: "Projeto hidrossanitário", disciplina: "Hidrossanitário", prioridade: 3,
+regex: "\\b(hid|hidr\\w*|hidrossanit\\w*|sanit[aá]ri\\w*|hs|agua fria|[aá]gua fria|esgoto)\\b", extensoes: ["pdf", "dwg", "ifc"] },
+projeto_eletrico: { nome: "Projeto elétrico", disciplina: "Elétrica", prioridade: 3,
+regex: "\\b(ele|el[eé]tric\\w*|spda|luminot[eé]cni\\w*|ilumina[cç][aã]o|cabeamento|telecom\\w*|cftv)\\b", extensoes: ["pdf", "dwg", "ifc"] },
+projeto_drenagem: { nome: "Projeto de drenagem", disciplina: "Drenagem", prioridade: 4,
+regex: "\\b(dren\\w*|pluvia\\w*|galerias?|bueiros?|sarjetas?|boca de lobo)\\b", extensoes: ["pdf", "dwg"] },
+projeto_pavimentacao: { nome: "Projeto de pavimentação", disciplina: "Pavimentação", prioridade: 4,
+regex: "\\b(pav|pavimenta\\w*|asfalt\\w*|terraplenagem|recapeamento)\\b", extensoes: ["pdf", "dwg"] },
+memorial_descritivo: { nome: "Memorial descritivo", disciplina: "Geral", prioridade: 5,
+regex: "\\b(mem|memorial|memorial descritivo)\\b", extensoes: ["docx", "doc", "pdf", "odt"] },
+especificacao_tecnica: { nome: "Especificação técnica", disciplina: "Geral", prioridade: 5,
+regex: "\\b(especifica[cç]\\w*|espec|caderno de encargos)\\b", extensoes: ["docx", "doc", "pdf"] },
+sondagem: { nome: "Sondagem / geotecnia", disciplina: "Geotecnia", prioridade: 6,
+regex: "\\b(sondagem|spt|sond|geot[eé]cni\\w*|ensaio de solo)\\b", extensoes: ["pdf", "xlsx", "xls"] },
+topografia: { nome: "Levantamento topográfico", disciplina: "Topografia", prioridade: 6,
+regex: "\\b(topo|topograf\\w*|planialtim[eé]tri\\w*|georreferenc\\w*)\\b", extensoes: ["dwg", "pdf", "dxf"] },
+orcamento_planilha: { nome: "Orçamento / planilha", disciplina: "Orçamento", prioridade: 4,
+regex: "\\b(or[cç]amento|or[cç]ament[aá]ria|planilha|bdi|composi[cç]\\w*|cpu|sinapi|curva abc)\\b", extensoes: ["xlsx", "xls", "pdf"] },
+cronograma: { nome: "Cronograma", disciplina: "Planejamento", prioridade: 4,
+regex: "\\b(cronograma|crono|gantt)\\b", extensoes: ["xlsx", "xls", "pdf", "mpp"] },
+art_rrt: { nome: "ART / RRT / TRT", disciplina: "Responsabilidade técnica", prioridade: 7,
+regex: "\\b(art|rrt|trt|anota[cç][aã]o de responsabilidade t[eé]cnica|registro de responsabilidade t[eé]cnica)\\b", extensoes: ["pdf"] },
+licenca_ambiental: { nome: "Licença ambiental", disciplina: "Ambiental", prioridade: 6,
+regex: "\\b(licen[cç]a ambiental|licenciamento|ambiental|outorga)\\b", extensoes: ["pdf"] },
+alvara_aprovacao: { nome: "Alvará / aprovação", disciplina: "Regularização", prioridade: 6,
+regex: "\\b(alvar[aá]|aprova[cç][aã]o|habite se|avcb|bombeiros)\\b", extensoes: ["pdf"] },
+matricula_imovel: { nome: "Matrícula do imóvel", disciplina: "Regularização", prioridade: 6,
+regex: "\\b(matr[ií]cula|registro de im[oó]veis|escritura)\\b", extensoes: ["pdf"] },
+fotos: { nome: "Fotos / registro fotográfico", disciplina: "Registro", prioridade: 2,
+regex: "\\b(fotos?|fotogr[aá]fic\\w*|img|imagem)\\b", extensoes: ["jpg", "jpeg", "png", "heic"] },
+laudo: { nome: "Laudo / vistoria", disciplina: "Diagnóstico", prioridade: 5,
+regex: "\\b(laudo|parecer t[eé]cnico|vistoria|diagn[oó]stico|patologia)\\b", extensoes: ["pdf", "docx"] },
+outros: { nome: "Outros", disciplina: "Não classificado", prioridade: 0, regex: null, extensoes: [] }
+};
+function risco(id, descricao, categoria, prob, impacto, alocacao, mitigacao) {
+return { id: id, descricao: descricao, categoria: categoria, prob: prob, impacto: impacto, alocacao: alocacao, mitigacao: mitigacao };
+}
+var BIBLIOTECA_RISCOS = {
+solo_diferente: risco("solo_diferente", "Solo encontrado diferente do previsto na sondagem", "geotécnico", 3, 4, "compartilhado", "Sondagem suficiente ao projeto; cláusula de revisão quando o solo divergir do laudo."),
+interferencia_rede: risco("interferencia_rede", "Interferência com redes existentes (água, esgoto, energia, telecom)", "técnico", 3, 4, "contratante", "Cadastro das redes antes do edital; sondagem de interferências; plano de remanejamento."),
+chuva_acima_media: risco("chuva_acima_media", "Chuvas acima da média histórica atrasam a obra", "clima", 3, 3, "compartilhado", "Cronograma com dias de chuva considerados; critério de suspensão e de recomposição do prazo."),
+atraso_licenca: risco("atraso_licenca", "Atraso de licença ou alvará", "regulatório", 3, 4, "contratante", "Licenças obtidas antes da ordem de serviço; prazo de emissão no cronograma."),
+posse_terreno: risco("posse_terreno", "Terreno sem posse ou desapropriação pendente", "fundiário", 2, 5, "contratante", "Matrícula e posse comprovadas antes do edital."),
+variacao_insumo: risco("variacao_insumo", "Variação de preço de insumo acima do previsto", "econômico", 3, 3, "compartilhado", "Reajuste por índice e data-base definidos no edital."),
+projeto_incompleto: risco("projeto_incompleto", "Projeto incompleto ou incompatível entre disciplinas", "técnico", 3, 4, "contratante", "Compatibilização dos projetos e revisão do projeto básico antes da publicação."),
+falha_fornecimento: risco("falha_fornecimento", "Falha no fornecimento de material", "suprimentos", 2, 3, "contratada", "Plano de suprimentos; marcas equivalentes aceitas no edital."),
+acidente_trabalho: risco("acidente_trabalho", "Acidente de trabalho no canteiro", "segurança", 2, 5, "contratada", "PGR/PCMAT, treinamento e fiscalização de segurança."),
+furto_canteiro: risco("furto_canteiro", "Vandalismo ou furto no canteiro", "segurança", 3, 2, "contratada", "Vigilância e guarda de material no canteiro."),
+achado_arqueologico: risco("achado_arqueologico", "Achado arqueológico paralisa a obra", "regulatório", 1, 4, "contratante", "Consulta prévia ao órgão de patrimônio quando a área exigir."),
+mudanca_normas: risco("mudanca_normas", "Mudança de norma técnica ou legal durante a obra", "regulatório", 1, 3, "contratante", "Cláusula de adequação com recomposição do equilíbrio."),
+atraso_pagamento: risco("atraso_pagamento", "Atraso de pagamento pelo órgão", "financeiro", 2, 4, "contratante", "Previsão orçamentária reservada; prazo de pagamento e encargos por atraso no contrato."),
+abandono_contratada: risco("abandono_contratada", "Abandono da obra pela contratada", "contratual", 2, 5, "contratada", "Garantia contratual, seguro-garantia e cláusula de retomada."),
+erro_quantitativo: risco("erro_quantitativo", "Erro de quantitativo na planilha de referência", "orçamento", 3, 3, "contratante", "Quantitativo com memória de cálculo e origem; revisão independente antes da publicação.")
+};
+function todosRiscos() { var o = []; for (var k in BIBLIOTECA_RISCOS) o.push(k); return o; }
+var RISCOS_EDIFICACAO = ["solo_diferente", "interferencia_rede", "chuva_acima_media", "atraso_licenca", "posse_terreno", "variacao_insumo", "projeto_incompleto", "falha_fornecimento", "acidente_trabalho", "furto_canteiro", "atraso_pagamento", "abandono_contratada", "erro_quantitativo"];
+var TIPOS_OBJETO = {
+obra_nova: { nome: "Obra nova (edificação)", palavras: ["obra nova", "construcao de", "construir", "edificacao nova", "implantacao de", "nova sede", "novo predio", "nova escola", "nova creche", "nova ubs"],
+servicoComumEngenharia: false, reforma: false, base: "SINAPI",
+documentosExigidos: ["projeto_arquitetonico", "projeto_estrutural", "projeto_fundacao", "projeto_hidrossanitario", "projeto_eletrico", "memorial_descritivo", "sondagem", "topografia", "art_rrt"],
+porque: { projeto_arquitetonico: "arquitetônico: define o que será construído", projeto_estrutural: "estrutural: base dos quantitativos de concreto, forma e aço", projeto_fundacao: "fundação: depende da sondagem e é o maior risco de aditivo", projeto_hidrossanitario: "hidrossanitário: instalações prediais do projeto básico", projeto_eletrico: "elétrico: instalações prediais do projeto básico", memorial_descritivo: "memorial: descreve materiais e métodos que o orçamento precifica", sondagem: "sondagem: base do projeto de fundação", topografia: "topografia: base da implantação e dos movimentos de terra", art_rrt: "ART/RRT: responsabilidade técnica pelos projetos" },
+riscos: RISCOS_EDIFICACAO.concat(["achado_arqueologico", "mudanca_normas"]) },
+reforma: { nome: "Reforma", palavras: ["reforma", "reformar", "restauro", "restauracao", "revitalizacao", "requalificacao", "adequacao de", "recuperacao de predio"],
+servicoComumEngenharia: false, reforma: true, base: "SINAPI",
+documentosExigidos: ["projeto_arquitetonico", "memorial_descritivo", "fotos", "art_rrt"],
+porque: { projeto_arquitetonico: "arquitetônico: levantamento do existente e do que muda", memorial_descritivo: "memorial: descreve o que é demolido, mantido e refeito", fotos: "fotos: registro do estado atual antes da obra", art_rrt: "ART/RRT: responsabilidade técnica pelo projeto de reforma" },
+riscos: ["interferencia_rede", "chuva_acima_media", "atraso_licenca", "variacao_insumo", "projeto_incompleto", "falha_fornecimento", "acidente_trabalho", "furto_canteiro", "atraso_pagamento", "abandono_contratada", "erro_quantitativo", "mudanca_normas"] },
+ampliacao: { nome: "Ampliação", palavras: ["ampliacao", "ampliar", "acrescimo de area", "anexo", "novo bloco", "nova ala"],
+servicoComumEngenharia: false, reforma: false, base: "SINAPI",
+documentosExigidos: ["projeto_arquitetonico", "projeto_estrutural", "projeto_fundacao", "projeto_hidrossanitario", "projeto_eletrico", "memorial_descritivo", "sondagem", "art_rrt"],
+porque: { projeto_arquitetonico: "arquitetônico: define a área acrescida e a ligação com o existente", projeto_estrutural: "estrutural: base dos quantitativos e da interface com a estrutura existente", projeto_fundacao: "fundação: da parte ampliada", projeto_hidrossanitario: "hidrossanitário: instalações da parte ampliada", projeto_eletrico: "elétrico: instalações da parte ampliada", memorial_descritivo: "memorial: descreve materiais e métodos", sondagem: "sondagem: base do projeto de fundação da ampliação", art_rrt: "ART/RRT: responsabilidade técnica pelos projetos" },
+riscos: RISCOS_EDIFICACAO.concat(["mudanca_normas"]) },
+pavimentacao: { nome: "Pavimentação", palavras: ["pavimentacao", "pavimento", "asfalto", "asfaltica", "recapeamento", "cbuq", "paralelepipedo", "calcamento", "via publica", "ruas"],
+servicoComumEngenharia: false, reforma: false, base: "SICRO", baseNota: "conferir: SICRO para infraestrutura de transportes; vias urbanas podem usar SINAPI ou tabela local", baseConferir: true,
+documentosExigidos: ["topografia", "projeto_pavimentacao", "projeto_drenagem", "sondagem", "memorial_descritivo", "art_rrt"],
+porque: { topografia: "topografia: base do greide e dos volumes de terraplenagem", projeto_pavimentacao: "pavimentação: define camadas e quantitativos", projeto_drenagem: "drenagem: água mal conduzida destrói o pavimento", sondagem: "sondagem: base do dimensionamento do pavimento (suporte do subleito)", memorial_descritivo: "memorial: descreve materiais e métodos", art_rrt: "ART/RRT: responsabilidade técnica pelos projetos" },
+riscos: ["solo_diferente", "interferencia_rede", "chuva_acima_media", "atraso_licenca", "posse_terreno", "variacao_insumo", "projeto_incompleto", "falha_fornecimento", "acidente_trabalho", "atraso_pagamento", "abandono_contratada", "erro_quantitativo", "achado_arqueologico"] },
+drenagem: { nome: "Drenagem", palavras: ["drenagem", "galeria pluvial", "galerias", "bueiro", "sarjeta", "boca de lobo", "aguas pluviais", "canalizacao de corrego"],
+servicoComumEngenharia: false, reforma: false, base: "SINAPI",
+documentosExigidos: ["topografia", "projeto_drenagem", "sondagem", "memorial_descritivo", "art_rrt"],
+porque: { topografia: "topografia: define caimentos e bacias de contribuição", projeto_drenagem: "drenagem: dimensionamento e traçado das redes", sondagem: "sondagem: escavação e escoramento dependem do solo", memorial_descritivo: "memorial: descreve materiais e métodos", art_rrt: "ART/RRT: responsabilidade técnica pelo projeto" },
+riscos: ["solo_diferente", "interferencia_rede", "chuva_acima_media", "atraso_licenca", "posse_terreno", "variacao_insumo", "projeto_incompleto", "acidente_trabalho", "atraso_pagamento", "abandono_contratada", "erro_quantitativo", "achado_arqueologico"] },
+saneamento: { nome: "Saneamento (água e esgoto)", palavras: ["saneamento", "esgoto", "esgotamento sanitario", "rede de agua", "abastecimento de agua", "estacao de tratamento", "ete", "eta"],
+servicoComumEngenharia: false, reforma: false, base: "SINAPI",
+documentosExigidos: ["topografia", "projeto_hidrossanitario", "sondagem", "memorial_descritivo", "licenca_ambiental", "art_rrt"],
+porque: { topografia: "topografia: define declividades e cotas da rede", projeto_hidrossanitario: "projeto de redes: traçado e dimensionamento", sondagem: "sondagem: escavação, escoramento e nível d'água", memorial_descritivo: "memorial: descreve materiais e métodos", licenca_ambiental: "licença ambiental: obras de saneamento costumam exigi-la (conferir com o órgão ambiental)", art_rrt: "ART/RRT: responsabilidade técnica pelo projeto" },
+riscos: ["solo_diferente", "interferencia_rede", "chuva_acima_media", "atraso_licenca", "posse_terreno", "variacao_insumo", "projeto_incompleto", "falha_fornecimento", "acidente_trabalho", "atraso_pagamento", "abandono_contratada", "erro_quantitativo", "achado_arqueologico", "mudanca_normas"] },
+servico_engenharia_comum: { nome: "Serviço comum de engenharia", palavras: ["servico comum de engenharia", "servicos comuns", "pintura", "pequenos reparos", "conserto"],
+servicoComumEngenharia: true, reforma: false, base: "SINAPI",
+documentosExigidos: ["memorial_descritivo", "art_rrt"],
+porque: { memorial_descritivo: "memorial: descreve o serviço e o padrão de aceitação", art_rrt: "ART/RRT: responsabilidade técnica pela especificação" },
+riscos: ["variacao_insumo", "falha_fornecimento", "acidente_trabalho", "furto_canteiro", "atraso_pagamento", "abandono_contratada", "erro_quantitativo"] },
+servico_engenharia_especial: { nome: "Serviço especial de engenharia", palavras: ["servico especial de engenharia", "elaboracao de projeto", "projeto executivo", "projeto basico", "fiscalizacao de obra", "gerenciamento", "supervisao de obra", "consultoria", "estudo de viabilidade"],
+servicoComumEngenharia: false, reforma: false, base: "SINAPI", baseNota: "conferir: serviços técnicos profissionais podem usar tabela própria de honorários", baseConferir: true,
+documentosExigidos: ["especificacao_tecnica", "memorial_descritivo", "art_rrt"],
+porque: { especificacao_tecnica: "especificação: define o produto e o critério de aceite do serviço", memorial_descritivo: "memorial: descreve escopo e premissas", art_rrt: "ART/RRT: responsabilidade técnica" },
+riscos: ["projeto_incompleto", "mudanca_normas", "atraso_licenca", "atraso_pagamento", "abandono_contratada", "erro_quantitativo"] },
+manutencao: { nome: "Manutenção", palavras: ["manutencao", "conservacao", "preventiva", "corretiva", "zeladoria", "operacao e manutencao"],
+servicoComumEngenharia: true, servicoComumConferir: true, reforma: false, base: "SINAPI",
+documentosExigidos: ["memorial_descritivo", "fotos", "art_rrt"],
+porque: { memorial_descritivo: "memorial: descreve rotinas e padrão de aceitação", fotos: "fotos: registro do estado atual", art_rrt: "ART/RRT: responsabilidade técnica pelo plano de manutenção" },
+riscos: ["variacao_insumo", "falha_fornecimento", "acidente_trabalho", "furto_canteiro", "atraso_pagamento", "abandono_contratada", "erro_quantitativo"] }
+};
+var PRAZO_PUBLICACAO = {
+fonte: LEI + ", art. 55, II a IV", conferir: true,
+contagem: "Dias úteis (art. 183): exclui o dia da publicação, inclui o do vencimento; não conta sábado, domingo nem feriado.",
+regras: [
+{ id: "menor_preco_comum", dias: 10, descricao: "menor preço ou maior desconto, serviço comum / obra e serviço comum de engenharia", fonte: LEI + ", art. 55, II" },
+{ id: "menor_preco_especial", dias: 25, descricao: "menor preço ou maior desconto, serviço especial / obra e serviço especial de engenharia", fonte: LEI + ", art. 55, II" },
+{ id: "contratacao_integrada", dias: 60, descricao: "contratação integrada", fonte: LEI + ", art. 55, II" },
+{ id: "semi_integrada", dias: 35, descricao: "contratação semi-integrada ou demais hipóteses", fonte: LEI + ", art. 55, II" },
+{ id: "maior_lance", dias: 15, descricao: "maior lance", fonte: LEI + ", art. 55, III (conferido 10/11/2026: 15 dias úteis)", conferir: false },
+{ id: "tecnica_preco", dias: 35, descricao: "técnica e preço ou melhor técnica", fonte: LEI + ", art. 55, IV" }
+]
+};
+var ETP_ELEMENTOS = [
+{ id: "I", nome: "Descrição da necessidade (problema a resolver, interesse público)", obrigatorio: true },
+{ id: "II", nome: "Previsão no plano de contratações anual", obrigatorio: false },
+{ id: "III", nome: "Requisitos da contratação", obrigatorio: false },
+{ id: "IV", nome: "Estimativa das quantidades, com memória de cálculo", obrigatorio: true },
+{ id: "V", nome: "Levantamento de mercado e justificativa da solução", obrigatorio: false },
+{ id: "VI", nome: "Estimativa do valor, com preços unitários referenciais e memória", obrigatorio: true },
+{ id: "VII", nome: "Descrição da solução como um todo", obrigatorio: false },
+{ id: "VIII", nome: "Justificativa do parcelamento ou não da solução", obrigatorio: true },
+{ id: "IX", nome: "Resultados pretendidos (economicidade)", obrigatorio: false },
+{ id: "X", nome: "Providências prévias ao contrato (inclusive capacitação para a fiscalização)", obrigatorio: false },
+{ id: "XI", nome: "Contratações correlatas e/ou interdependentes", obrigatorio: false },
+{ id: "XII", nome: "Impactos ambientais e medidas de mitigação", obrigatorio: false },
+{ id: "XIII", nome: "Posicionamento conclusivo sobre a adequação da contratação", obrigatorio: true }
+];
+var ETP_FONTE = LEI + ", art. 18, §1º, I a XIII; obrigatórios: art. 18, §2º (I, IV, VI, VIII, XIII); os demais, se não contemplados, exigem justificativa";
+var PARAMETROS = {
+modalidade: { id: "modalidade", nome: "Modalidade", resposta: "texto", como: "Obra: concorrência. Serviço comum de engenharia: pregão ou concorrência. Nunca pregão para obra.", fonte: LEI + ", art. 28; art. 29, parágrafo único", conferir: true },
+criterio_julgamento: { id: "criterio_julgamento", nome: "Critério de julgamento", resposta: "texto", opcoes: ["menor preço", "maior desconto", "técnica e preço"], como: "Menor preço / maior desconto / técnica e preço, pelo tipo de objeto.", fonte: LEI + ", art. 33", conferir: true },
+regime_execucao: { id: "regime_execucao", nome: "Regime de execução", resposta: "texto", opcoes: ["empreitada por preço unitário", "empreitada por preço global", "empreitada integral", "contratação integrada", "contratação semi-integrada"], como: "Sem padrão: decisão do órgão. Contratação integrada parte de anteprojeto.", fonte: LEI + ", art. 46", conferir: true },
+sigiloso: { id: "sigiloso", nome: "Orçamento sigiloso", resposta: "bool", opcoes: [true, false], como: "Escolha explícita, sem padrão. Se sim, liga a trava de vazamento do valor estimado.", fonte: LEI + ", art. 24", conferir: true },
+parcelas_relevancia: { id: "parcelas_relevancia", nome: "Parcelas de maior relevância", resposta: "obj", como: "Itens com valor igual ou maior que 4% do total estimado; quantidade mínima exigida limitada a 50% da parcela.", fonte: LEI + ", art. 67, §§1º e 2º", conferir: true },
+garantia_contrato: { id: "garantia_contrato", nome: "Garantia do contrato", resposta: "obj", como: "Até 5%; até 10% com justificativa de complexidade e risco. Obra de grande vulto: seguro-garantia e cláusula de retomada até 30%. O valor de grande vulto é atualizado por decreto e fica sem preenchimento até ser informado.", fonte: LEI + ", arts. 96 a 99 (art. 98: percentuais; art. 99: seguro-garantia e retomada); grande vulto: art. 6º, XXII e art. 182", conferir: true },
+exequibilidade: { id: "exequibilidade", nome: "Exequibilidade", resposta: "obj", como: "Proposta abaixo de 75% do valor orçado é inexequível; abaixo de 85% exige garantia adicional igual à diferença.", fonte: LEI + ", art. 59, §§4º e 5º", conferir: true },
+reajuste: { id: "reajuste", nome: "Reajuste", resposta: "obj", como: "Índice (sem padrão) e data-base igual à data do orçamento estimado.", fonte: LEI + ", art. 25, §7º", conferir: true },
+aditivo_teto: { id: "aditivo_teto", nome: "Teto de aditivos (fase de contrato)", resposta: "obj", como: "Acréscimos e supressões até 25%; em reforma de edifício ou equipamento, acréscimo até 50%.", fonte: LEI + ", art. 125", conferir: true },
+recurso_prazo: { id: "recurso_prazo", nome: "Prazo de recurso", resposta: "obj", como: "3 dias úteis.", fonte: LEI + ", art. 165", conferir: true },
+visita_tecnica: { id: "visita_tecnica", nome: "Visita técnica", resposta: "bool", opcoes: [true, false], como: "Pergunta sim/não, sem padrão. Sim: a visita fica prevista no edital. Não: o licitante assume o risco do que não viu.", fonte: LEI + ", art. 63, §2º", conferir: true },
+consorcio: { id: "consorcio", nome: "Participação de consórcio", resposta: "bool", opcoes: [true, false], como: "Pergunta sim/não, sem padrão. Sim: o edital precisa fixar as regras do consórcio. Não: restringe a competição e pede justificativa.", fonte: LEI + ", art. 15", conferir: true },
+subcontratacao: { id: "subcontratacao", nome: "Subcontratação", resposta: "bool", opcoes: [true, false], como: "Pergunta sim/não, sem padrão. Sim: o edital fixa o limite e as parcelas subcontratáveis.", fonte: LEI + ", art. 122", conferir: true },
+amostra: { id: "amostra", nome: "Amostra / prova de conceito", resposta: "bool", opcoes: [true, false], como: "Pergunta sim/não, sem padrão. Sim: o edital descreve o critério de aceitação e o prazo.", fonte: LEI + " (artigo a conferir pelo jurídico do órgão)", conferir: true },
+me_epp: { id: "me_epp", nome: "Tratamento de ME/EPP", resposta: "bool", opcoes: [true, false], como: "Pergunta sim/não, sem padrão. Sim: aplicam-se os benefícios da LC 123/2006. O jurídico confirma o enquadramento (exclusividade, cota, empate ficto).", fonte: "LC 123/2006", conferir: true }
+};
+var PARAMETROS_ORDEM = ["modalidade", "criterio_julgamento", "regime_execucao", "sigiloso", "parcelas_relevancia", "garantia_contrato", "exequibilidade", "reajuste", "aditivo_teto", "recurso_prazo", "visita_tecnica", "consorcio", "subcontratacao", "amostra", "me_epp"];
+var REGULAMENTOS = {
+"federal-14133": {
+id: "federal-14133", nome: "Federal — Lei 14.133 (padrão para município sem decreto próprio)",
+fonte: LEI + ", art. 23, §2º; IN SEGES/ME 91/2022 (obras) — fonte secundária", conferir: true,
+ordem: [
+{ ordem: 1, tipo: "sistema_oficial", nome: "SINAPI (edificações) / SICRO (infraestrutura de transportes)", bases: ["SINAPI", "SICRO"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: LEI + ", art. 23, §2º, I" },
+{ ordem: 2, tipo: "midia", nome: "Mídia especializada, tabela de referência aprovada pelo Poder Executivo federal, sítios especializados ou de domínio amplo", exigeDataHora: true, fonte: LEI + ", art. 23, §2º, II" },
+{ ordem: 3, tipo: "contratacao_similar", nome: "Contratações similares da Administração, em execução ou concluídas até 1 ano antes da pesquisa, atualizadas por índice", exigeDataHora: false, validade: { anos: 1, ref: "dataPesquisa" }, exigeIndice: true, fonte: LEI + ", art. 23, §2º, III" },
+{ ordem: 4, tipo: "nota_fiscal", nome: "Base nacional de notas fiscais eletrônicas", exigeDataHora: false, fonte: LEI + ", art. 23, §2º, IV", conferir: true }
+],
+calculo: { minimoPrecos: 3, metodos: ["media", "mediana", "menor"], descarta: "inexequíveis, inconsistentes e excessivamente elevados (critério configurável)", fonte: "IN SEGES/ME 65/2021, art. 6º", conferir: true },
+justificativa: "Menos de 3 preços só com justificativa aprovada pela autoridade (IN 65/2021, art. 6º — conferir)."
+},
+"sp-capital-62100": {
+id: "sp-capital-62100", nome: "São Paulo (capital) — Decreto Municipal 62.100/2022",
+fonte: "Decreto Municipal SP 62.100/2022, arts. 28 e 29 (FONTE PRIMÁRIA; texto lido em RA-Equipe\\orcapro\\pesquisas\\SP-Decreto-62100-2022-texto.txt)", conferir: false,
+ordem: [
+{ ordem: 1, tipo: "sistema_oficial", nome: "Tabela de Custos Unitários da SIURB (composição ≤ mediana do item, mais BDI de referência e encargos sociais)", bases: ["SIURB"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: "Decreto 62.100/2022, art. 28, caput" },
+{ ordem: 2, tipo: "outro_sistema", nome: "Outros sistemas de custos (composição ≤ mediana do item)", exigeDataHora: false, fonte: "Decreto 62.100/2022, art. 28, §1º, I",
+conferir: true, nota: "O decreto não diz se um único sistema basta; aqui conta como 1 preço e o mínimo de 3 aplica-se ao conjunto. Decisão do jurídico." },
+{ ordem: 3, tipo: "midia", nome: "Pesquisa publicada em mídia especializada e sítios especializados ou de domínio amplo, com data e hora de acesso", exigeDataHora: true, fonte: "Decreto 62.100/2022, art. 28, §1º, II" },
+{ ordem: 4, tipo: "contratacao_similar", nome: "Contratações similares da Administração, em execução ou concluídas no ano anterior à data da pesquisa, com índice de atualização", exigeDataHora: false, validade: { anos: 1, ref: "dataPesquisa" }, exigeIndice: true, fonte: "Decreto 62.100/2022, art. 28, §1º, III" },
+{ ordem: 5, tipo: "cotacao", nome: "Consulta direta a no mínimo 3 fornecedores, por solicitação formal, com justificativa da escolha, até 6 meses da divulgação do edital", exigeDataHora: false, validade: { meses: 6, ref: "dataPrevistaEdital" }, fonte: "Decreto 62.100/2022, art. 28, §1º, IV" }
+],
+calculo: { minimoPrecos: 3, metodos: ["media", "mediana", "menor"], descarta: "critério configurável pelo órgão", fonte: "Decreto 62.100/2022, art. 29 (menos de 3 preços, nas consultas a contratações similares ou ao mercado, só com justificativa)",
+conferir: true, nota: "O art. 29 trata de contratações similares e consulta ao mercado; o mínimo de 3 foi aplicado ao conjunto por cautela — o jurídico confirma." },
+recursoFederal: "Com recursos da União valem as regras federais (art. 28, §2º): o motor troca para federal-14133.",
+justificativa: "Menos de 3 preços só mediante justificativa (art. 29)."
+}
+};
+var VALIDADE_FONTE = { cotacao: "6 meses até a data prevista do edital", contratacao_similar: "1 ano até a data da pesquisa", midia: "exige data e hora de acesso" };
+var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "ler_tudo", "ler_auditoria"];
+var PAPEIS = {
+admin_orgao: { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "ler_tudo"] },
+requisitante: { nome: "Setor requisitante", acoes: ["criar_processo", "editar_dfd", "editar_acervo"] },
+engenharia: { nome: "Engenharia / planejamento", acoes: ["editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr"] },
+cpl: { nome: "Agente de contratação / comissão (CPL)", acoes: ["editar_parametros", "gerar_minuta", "enviar_juridico", "responder_ressalva", "analisar_propostas", "publicar"] },
+juridico: { nome: "Jurídico (procuradoria / assessoria)", acoes: ["emitir_parecer", "ler_tudo"] },
+autoridade: { nome: "Autoridade competente", acoes: ["aprovar_justificativa", "autorizar_abertura", "adjudicar", "homologar"] },
+controle_interno: { nome: "Controle interno", acoes: ["ler_tudo", "ler_auditoria"] },
+fiscal: { nome: "Fiscal do contrato", acoes: ["ler_tudo"] }
+};
+var ACOES_ROTULO = {
+criar_processo: "criar processo", editar_dfd: "editar a demanda", editar_acervo: "editar o acervo", editar_quantitativos: "editar quantitativos",
+editar_orcamento: "editar o orçamento", editar_pesquisa: "editar a pesquisa de preços", editar_etp: "editar o ETP", editar_riscos: "editar os riscos",
+editar_tr: "editar o TR / projeto básico", editar_parametros: "editar os parâmetros do edital", gerar_minuta: "gerar a minuta", enviar_juridico: "enviar ao jurídico",
+emitir_parecer: "emitir parecer jurídico", responder_ressalva: "responder ressalva", aprovar_justificativa: "aprovar justificativa", autorizar_abertura: "autorizar a abertura",
+publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins",
+ler_tudo: "ler o processo inteiro", ler_auditoria: "ler a auditoria"
+};
+var CplproRegras = {
+versao: 1,
+ACERVO_TIPOS: ACERVO_TIPOS, BIBLIOTECA_RISCOS: BIBLIOTECA_RISCOS, TODOS_RISCOS: todosRiscos(),
+TIPOS_OBJETO: TIPOS_OBJETO, PRAZO_PUBLICACAO: PRAZO_PUBLICACAO,
+ETP_ELEMENTOS: ETP_ELEMENTOS, ETP_FONTE: ETP_FONTE,
+PARAMETROS: PARAMETROS, PARAMETROS_ORDEM: PARAMETROS_ORDEM,
+REGULAMENTOS: REGULAMENTOS, VALIDADE_FONTE: VALIDADE_FONTE,
+PAPEIS: PAPEIS, ACOES: ACOES, ACOES_ROTULO: ACOES_ROTULO
+};
+global.CplproRegras = CplproRegras;
+if (typeof module !== "undefined" && module.exports) module.exports = CplproRegras;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplpro.js ==== */
+try {
+(function (global) {
+"use strict";
+var R = global.CplproRegras;
+var Arred = global.Arred;
+var Feriados = global.Feriados;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!R) R = require("./cplproregras.js");
+if (!Arred) Arred = require("./arredondamento.js");
+if (!Feriados) Feriados = require("./feriados.js");
+}
+function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+function ehNum(v) { return typeof v === "number" && isFinite(v); }
+function numOuNull(v) {
+if (ehNum(v)) return v;
+if (typeof v === "string" && v.replace(/\s/g, "") !== "") {
+var n = Number(v.replace(/\s/g, "").replace(",", "."));
+return isFinite(n) ? n : null;
+}
+return null;
+}
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function norm(s) {
+return String(s === null || s === undefined ? "" : s).toLowerCase()
+.replace(/[áàâãä]/g, "a").replace(/[éèêë]/g, "e").replace(/[íìîï]/g, "i")
+.replace(/[óòôõö]/g, "o").replace(/[úùûü]/g, "u").replace(/ç/g, "c").replace(/ñ/g, "n");
+}
+function normNome(s) { return norm(s).replace(/[_\-.\/\\]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, ""); }
+function esc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function cent(v) { var n = numOuNull(v); return n === null ? null : Math.round(Number(n.toPrecision(15)) * 100); }
+function deCent(c) { return c / 100; }
+function modoArred(ctx) { return Arred.normalizar(ctx && ctx.modoArredondamento); }
+function valorArred(v, ctx) { return Arred.valor(v, modoArred(ctx)); }
+function somaCent(lista) { var t = 0; arr(lista).forEach(function (c) { t += c; }); return t; }
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function dataISO(d) { return d.getFullYear() + "-" + dd(d.getMonth() + 1) + "-" + dd(d.getDate()); }
+function lerData(s) {
+var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s === null || s === undefined ? "" : s));
+if (!m) return null;
+var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+return dataISO(d) === m[1] + "-" + m[2] + "-" + m[3] ? d : null;
+}
+function somaMeses(d, n) {
+var y = d.getFullYear(), m = d.getMonth() + n, dia = d.getDate();
+var alvo = new Date(y, m, 1, 12, 0, 0);
+var ult = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0, 12, 0, 0).getDate();
+return new Date(alvo.getFullYear(), alvo.getMonth(), dia > ult ? ult : dia, 12, 0, 0);
+}
+function agoraLocalISO() {
+var d = new Date();
+return dataISO(d) + "T" + dd(d.getHours()) + ":" + dd(d.getMinutes()) + ":" + dd(d.getSeconds());
+}
+function quemNome(quem) { return quem && typeof quem === "object" ? (quem.nome !== undefined ? quem.nome : null) : (quem === undefined ? null : quem); }
+function quemPapel(quem) { return quem && typeof quem === "object" && quem.papel ? quem.papel : null; }
+function pode(papel, acao) {
+var p = R.PAPEIS[papel];
+if (!p || R.ACOES.indexOf(acao) < 0) return false;
+return p.acoes.indexOf(acao) >= 0;
+}
+function exigir(papel, acao) {
+if (!R.PAPEIS[papel]) throw new Error("Perfil «" + papel + "» não existe. Peça ao administrador do órgão para conferir o seu login.");
+if (R.ACOES.indexOf(acao) < 0) throw new Error("Ação «" + acao + "» não existe no CPLPRO.");
+if (!pode(papel, acao)) {
+throw new Error("O perfil «" + R.PAPEIS[papel].nome + "» não pode " + (R.ACOES_ROTULO[acao] || acao) + ". Peça a quem tem esse perfil ou ao administrador do órgão.");
+}
+return true;
+}
+function exigirSePapel(quem, acao) { var pp = quemPapel(quem); if (pp) exigir(pp, acao); }
+var PASSOS = [
+{ id: "demanda", ordem: 1, nome: "Demanda (DFD)" },
+{ id: "acervo", ordem: 2, nome: "Acervo do processo" },
+{ id: "quantitativos", ordem: 3, nome: "Quantitativos" },
+{ id: "etp", ordem: 4, nome: "ETP" },
+{ id: "riscos", ordem: 5, nome: "Riscos" },
+{ id: "orcamento", ordem: 6, nome: "Orçamento de referência" },
+{ id: "tr", ordem: 7, nome: "TR / Projeto básico" },
+{ id: "parametros", ordem: 8, nome: "Parâmetros do edital" },
+{ id: "minuta", ordem: 9, nome: "Minuta e anexos" },
+{ id: "conformidade", ordem: 10, nome: "Conformidade e publicação" }
+];
+function hash8(s) {
+var h = 5381, i, str = String(s);
+for (i = 0; i < str.length; i++) { h = ((h << 5) + h + str.charCodeAt(i)) % 4294967296; }
+var x = h.toString(16);
+while (x.length < 8) x = "0" + x;
+return x;
+}
+function novoProcesso(dados, quem, agoraISO) {
+var d = dados && typeof dados === "object" ? dados : {};
+var passos = {};
+PASSOS.forEach(function (ps) { passos[ps.id] = { conferido: false }; });
+var id = !vazio(d.id) ? String(d.id) : "prc-" + hash8(String(agoraISO) + "|" + String(d.objeto) + "|" + String(d.secretaria));
+var p = {
+id: id, versao: 1,
+obraId: vazio(d.obraId) ? null : d.obraId,
+orcamentoId: vazio(d.orcamentoId) ? null : d.orcamentoId,
+criadoEm: vazio(agoraISO) ? null : agoraISO, atualizadoEm: vazio(agoraISO) ? null : agoraISO,
+autor: quemNome(quem),
+tipoObjeto: vazio(d.tipoObjeto) ? null : d.tipoObjeto,
+secretaria: vazio(d.secretaria) ? null : d.secretaria,
+objeto: vazio(d.objeto) ? null : d.objeto,
+justificativa: vazio(d.justificativa) ? null : d.justificativa,
+pca: vazio(d.pca) ? null : d.pca,
+regulamentoId: vazio(d.regulamentoId) ? null : d.regulamentoId,
+recursoFederal: d.recursoFederal === true ? true : (d.recursoFederal === false ? false : null),
+feriadosLocais: arr(d.feriadosLocais).slice(),
+dataPrevistaEdital: vazio(d.dataPrevistaEdital) ? null : d.dataPrevistaEdital,
+passos: passos,
+documentos: [], quantitativos: [],
+etp: { campos: {}, justificativas: {}, lacunas: [] },
+riscos: [],
+orcamentoRef: { base: null, competencia: null },
+tr: { objeto: null, medicao: null, recebimento: null },
+parametros: {},
+sigiloso: d.sigiloso === true ? true : (d.sigiloso === false ? false : null),
+pacote: null, parecer: null, pareceresAnteriores: [], status: "rascunho",
+historico: []
+};
+R.PARAMETROS_ORDEM.forEach(function (pid) { p.parametros[pid] = { valor: null, sugerido: null, regra: null, fonte: null, conferido: false }; });
+if (p.sigiloso !== null) p.parametros.sigiloso.valor = p.sigiloso;
+return p;
+}
+function pend(passo, campo, msg) { return { passo: passo, campo: campo, msg: msg, corrigir: { passo: passo, campo: campo } }; }
+function progressoPasso(p, id) {
+var pend_ = [], total = 0, feitos = 0;
+function campo(nome, valor, msg) { total++; if (vazio(valor)) pend_.push(pend(id, nome, msg)); else feitos++; }
+var t = p.tipoObjeto && R.TIPOS_OBJETO[p.tipoObjeto] ? R.TIPOS_OBJETO[p.tipoObjeto] : null;
+if (id === "demanda") {
+campo("objeto", p.objeto, "Descreva o objeto por inteiro.");
+campo("secretaria", p.secretaria, "Informe a secretaria requisitante.");
+campo("tipoObjeto", t ? p.tipoObjeto : null, "Escolha o tipo de objeto.");
+campo("justificativa", p.justificativa, "Escreva a justificativa da necessidade (interesse público).");
+campo("pca", p.pca, "Informe a previsão no plano de contratações anual (ou justifique a ausência).");
+} else if (id === "acervo") {
+if (!t) { total = 1; pend_.push(pend(id, "tipoObjeto", "Sem o tipo de objeto não há checklist do acervo.")); }
+else {
+checklistAcervo(p).forEach(function (c) {
+total++;
+if (c.situacao === "ok") feitos++; else pend_.push(pend(id, c.exigencia, "Falta: " + c.nome + " (" + c.porque + ")."));
+});
+}
+} else if (id === "quantitativos") {
+var qs = arr(p.quantitativos);
+if (!qs.length) { total = 1; pend_.push(pend(id, "quantitativos", "Nenhum quantitativo lançado.")); }
+else {
+total = qs.length;
+pendenciasQuantitativos(p).forEach(function (x) { pend_.push(x); });
+feitos = total - pend_.length;
+}
+} else if (id === "etp") {
+var ec = (p.etp && p.etp.campos) ? p.etp.campos : {}, ej = (p.etp && p.etp.justificativas) ? p.etp.justificativas : {};
+R.ETP_ELEMENTOS.forEach(function (el) {
+total++;
+if (!vazio(ec[el.id]) || (!el.obrigatorio && !vazio(ej[el.id]))) feitos++;
+else pend_.push(pend(id, el.id, el.obrigatorio ? "ETP, elemento " + el.id + " é obrigatório (art. 18, §2º): " + el.nome + "." : "ETP, elemento " + el.id + ": preencha ou justifique por que não se aplica."));
+});
+} else if (id === "riscos") {
+var rs = arr(p.riscos);
+if (!rs.length) { total = 1; pend_.push(pend(id, "riscos", "Nenhum risco avaliado; use a biblioteca do tipo de objeto.")); }
+else {
+rs.forEach(function (r, i) {
+total++;
+if (vazio(r.alocacao) || !ehNum(r.prob) || !ehNum(r.impacto)) pend_.push(pend(id, "riscos." + i, "Risco «" + r.descricao + "»: falta alocação, probabilidade ou impacto."));
+else feitos++;
+});
+}
+} else if (id === "orcamento") {
+campo("orcamentoId", p.orcamentoId, "Vincule o orçamento de referência.");
+campo("base", p.orcamentoRef ? p.orcamentoRef.base : null, "Declare a base de preços do orçamento.");
+campo("competencia", p.orcamentoRef ? p.orcamentoRef.competencia : null, "Declare a competência (data-base) do orçamento.");
+} else if (id === "tr") {
+campo("objeto", p.tr ? p.tr.objeto : null, "TR/PB: falta a descrição do objeto.");
+campo("medicao", p.tr ? p.tr.medicao : null, "TR/PB: falta o critério de medição.");
+campo("recebimento", p.tr ? p.tr.recebimento : null, "TR/PB: falta o critério de recebimento.");
+} else if (id === "parametros") {
+R.PARAMETROS_ORDEM.forEach(function (pid) {
+var v = p.parametros && p.parametros[pid] ? p.parametros[pid].valor : null;
+if (pid === "sigiloso" && vazio(v)) v = p.sigiloso;
+total++;
+if (vazio(v)) pend_.push(pend(id, pid, "Parâmetro «" + R.PARAMETROS[pid].nome + "» sem valor: " + R.PARAMETROS[pid].fonte + "."));
+else feitos++;
+});
+} else if (id === "minuta") {
+total = 1;
+if (p.pacote && p.pacote.geradoEm) feitos = 1; else pend_.push(pend(id, "pacote", "A minuta e os anexos ainda não foram gerados."));
+} else if (id === "conformidade") {
+total = 2;
+if (p.parecer) feitos++; else pend_.push(pend(id, "parecer", "Falta o parecer jurídico (art. 53)."));
+if (fluxoJuridico.podePublicar(p)) feitos++; else pend_.push(pend(id, "publicacao", "Publicação trancada: parecer ausente, desfavorável ou com ressalva sem resposta/ciência."));
+}
+var pct = total ? Math.floor(feitos * 100 / total) : 0;
+var conf = p.passos && p.passos[id] ? p.passos[id].conferido === true : false;
+return { id: id, pct: pct, pendencias: pend_, conferido: conf };
+}
+function progresso(p) {
+var porPasso = {}, soma = 0, todas = [], pronto = true;
+PASSOS.forEach(function (ps) {
+var r = progressoPasso(p, ps.id);
+porPasso[ps.id] = r; soma += r.pct;
+r.pendencias.forEach(function (x) { todas.push(x); });
+if (r.pct < 100 || !r.conferido) pronto = false;
+});
+return { passos: porPasso, geral: Math.floor(soma / PASSOS.length), pendencias: todas, pronto: pronto };
+}
+function sugerirTipoObjeto(texto) {
+var t = normNome(texto), out = [], ordem = 0;
+if (!t) return out;
+Object.keys(R.TIPOS_OBJETO).forEach(function (id) {
+var termos = [], pontos = 0;
+R.TIPOS_OBJETO[id].palavras.forEach(function (w) {
+var re = new RegExp("(^| )" + esc(normNome(w)) + "(s|es)?( |$)");
+if (re.test(t)) { termos.push(w); pontos += (w.indexOf(" ") >= 0 ? 2 : 1); }
+});
+if (pontos) out.push({ tipo: id, pontos: pontos, termos: termos, _o: ordem });
+ordem++;
+});
+out.sort(function (a, b) { return b.pontos - a.pontos || a._o - b._o; });
+out.forEach(function (x) { delete x._o; });
+return out;
+}
+var RE_REV = /(?:^| )(?:rev(?:isao)?|r) ?(\d{1,2})(?= |$)/;
+function lerRevisao(nomeNorm) {
+var m = RE_REV.exec(nomeNorm);
+if (!m) return { revisao: null, revisaoNum: null, trecho: null };
+var n = parseInt(m[1], 10);
+return { revisao: "R" + (n < 10 ? "0" : "") + n, revisaoNum: n, trecho: m[0] };
+}
+var RE_CACHE = {};
+function reTipo(id) {
+if (!RE_CACHE[id]) RE_CACHE[id] = R.ACERVO_TIPOS[id].regex ? new RegExp(R.ACERVO_TIPOS[id].regex, "i") : null;
+return RE_CACHE[id];
+}
+function classificarArquivo(arq) {
+var a = arq || {};
+var nomeBruto = String(a.nome === undefined || a.nome === null ? "" : a.nome);
+var ext = !vazio(a.ext) ? String(a.ext).replace(/^\./, "").toLowerCase() : (/\.([A-Za-z0-9]+)$/.exec(nomeBruto) ? /\.([A-Za-z0-9]+)$/.exec(nomeBruto)[1].toLowerCase() : "");
+var semExt = nomeBruto.replace(/\.[A-Za-z0-9]{1,5}$/, "");
+var nome = normNome(semExt), texto = normNome(String(a.texto === undefined || a.texto === null ? "" : a.texto).substring(0, 3000));
+var rev = lerRevisao(nome);
+var base = rev.trecho ? nome.replace(rev.trecho, " ") : nome;
+var melhor = null;
+Object.keys(R.ACERVO_TIPOS).forEach(function (id) {
+var re = reTipo(id);
+if (!re) return;
+var tipo = R.ACERVO_TIPOS[id], score = 0, motivo = null, mn = re.exec(nome), mt = re.exec(texto);
+if (mn) { score = 10 + mn[0].length / 100; motivo = "nome contém «" + mn[0] + "»"; }
+else if (mt) { score = 4 + mt[0].length / 100; motivo = "texto do arquivo contém «" + mt[0] + "»"; }
+if (!score) return;
+if (tipo.extensoes.indexOf(ext) >= 0) score += 0.5;
+if (!melhor || score > melhor.score || (score === melhor.score && tipo.prioridade > R.ACERVO_TIPOS[melhor.tipo].prioridade)) {
+melhor = { tipo: id, score: score, motivo: motivo, doNome: !!mn };
+}
+});
+if (!melhor && R.ACERVO_TIPOS.fotos.extensoes.indexOf(ext) >= 0) melhor = { tipo: "fotos", score: 1, motivo: "extensão de imagem", doNome: false };
+var tipoId = melhor ? melhor.tipo : "outros";
+var conf = !melhor ? "baixa" : (melhor.doNome && R.ACERVO_TIPOS[tipoId].extensoes.indexOf(ext) >= 0 ? "alta" : (melhor.doNome ? "media" : "baixa"));
+return {
+tipo: tipoId, disciplina: R.ACERVO_TIPOS[tipoId].disciplina,
+revisao: rev.revisao, revisaoNum: rev.revisaoNum, confianca: conf,
+motivo: melhor ? melhor.motivo : "nenhuma regra do acervo reconheceu o nome",
+nomeBase: base.replace(/\s+/g, " ").replace(/^ | $/g, ""), ext: ext
+};
+}
+function docVigente(d) { return vazio(d.superadoPor); }
+function recalcularSuperados(docs) {
+docs.forEach(function (d) { if (d.superadoMotivo === "revisao") { d.superadoPor = null; d.superadoMotivo = null; } });
+var grupos = {};
+docs.forEach(function (d) {
+if (!docVigente(d)) return;
+var k = d.tipo + "|" + d.nomeBase;
+(grupos[k] = grupos[k] || []).push(d);
+});
+Object.keys(grupos).forEach(function (k) {
+var g = grupos[k];
+if (g.length < 2) return;
+var max = null;
+g.forEach(function (d) { var n = d.revisaoNum === null ? -1 : d.revisaoNum; if (max === null || n > max) max = n; });
+var vencedores = g.filter(function (d) { return (d.revisaoNum === null ? -1 : d.revisaoNum) === max; });
+var venc = vencedores[0];
+g.forEach(function (d) {
+var n = d.revisaoNum === null ? -1 : d.revisaoNum;
+if (n < max) { d.superadoPor = venc.id; d.superadoMotivo = "revisao"; }
+});
+});
+}
+function adicionarDocumentos(p, arqs) {
+var q = clone(p);
+q.documentos = arr(q.documentos);
+arr(arqs).forEach(function (a) {
+var nome = a && a.nome !== undefined ? String(a.nome) : "";
+var sha = vazio(a && a.sha) ? null : String(a.sha);
+var ja = q.documentos.filter(function (d) { return d.nome === nome && d.sha === sha; })[0];
+if (ja) return;
+var c = classificarArquivo(a);
+var id = "doc-" + (sha ? sha.substring(0, 12) : hash8(nome));
+var primeiro = sha ? q.documentos.filter(function (d) { return d.sha === sha && d.superadoMotivo !== "repetido"; })[0] : null;
+var doc = {
+id: id, nome: nome, sha: sha, tipo: c.tipo, disciplina: c.disciplina, revisao: c.revisao, revisaoNum: c.revisaoNum,
+nomeBase: c.nomeBase, confianca: c.confianca, motivo: c.motivo,
+rt: a && !vazio(a.rt) ? a.rt : null, origem: a && !vazio(a.origem) ? a.origem : null, data: a && !vazio(a.data) ? a.data : null,
+superadoPor: null, superadoMotivo: null
+};
+if (primeiro) {
+doc.id = id + "-" + (q.documentos.filter(function (d) { return d.sha === sha; }).length + 1);
+doc.superadoPor = primeiro.id; doc.superadoMotivo = "repetido";
+}
+q.documentos.push(doc);
+});
+recalcularSuperados(q.documentos);
+return q;
+}
+function checklistAcervo(p) {
+var t = p && R.TIPOS_OBJETO[p.tipoObjeto];
+if (!t) return [];
+var docs = arr(p.documentos).filter(docVigente);
+return t.documentosExigidos.map(function (id) {
+var tem = docs.filter(function (d) { return d.tipo === id; }).map(function (d) { return d.id; });
+return { exigencia: id, nome: R.ACERVO_TIPOS[id].nome, porque: t.porque[id], tem: tem, situacao: tem.length ? "ok" : "falta" };
+});
+}
+function temOrigem(it) {
+var o = it && it.origem;
+return !!(o && !vazio(o.arquivo) && !vazio(o.pagina));
+}
+function pendenciasQuantitativos(p, itensOrcamento) {
+var itens = itensOrcamento !== undefined ? arr(itensOrcamento) : arr(p && p.quantitativos);
+var out = [];
+itens.forEach(function (it, i) {
+if (!temOrigem(it)) {
+var ref = !vazio(it.item) ? it.item : (!vazio(it.itemRef) ? it.itemRef : i + 1);
+out.push({ passo: "quantitativos", campo: "origem", item: ref,
+msg: "Item " + ref + ": quantidade sem origem (arquivo e página). Sem origem não entra no ETP nem no TR.",
+corrigir: { passo: "quantitativos", campo: "origem", item: ref } });
+}
+});
+return out;
+}
+function quantitativosValidos(p) { return arr(p && p.quantitativos).filter(temOrigem); }
+function etpCampos(p, ctx) {
+var c = ctx || {}, man = (p.etp && p.etp.campos) ? p.etp.campos : {}, just = (p.etp && p.etp.justificativas) ? p.etp.justificativas : {};
+var campos = {}, lacunas = [];
+R.ETP_ELEMENTOS.forEach(function (el) { campos[el.id] = vazio(man[el.id]) ? null : man[el.id]; });
+if (campos.I === null && !vazio(p.justificativa)) campos.I = p.justificativa;
+if (campos.VII === null && !vazio(p.objeto)) campos.VII = p.objeto;
+var qs = arr(p.quantitativos), validos = qs.filter(temOrigem);
+var qtdPend = qs.length - validos.length;
+if (campos.IV === null && validos.length) {
+campos.IV = { itens: validos.length, comOrigem: validos.length, semOrigem: qtdPend, memoria: validos.map(function (q2) { return { item: q2.itemRef !== undefined ? q2.itemRef : q2.item, qtd: q2.qtd, un: q2.un, origem: q2.origem }; }) };
+}
+var orc = c.orcamento || {};
+if (campos.VI === null && ehNum(orc.total)) campos.VI = { total: orc.total, base: vazio(orc.base) ? null : orc.base, competencia: vazio(orc.competencia) ? null : orc.competencia };
+R.ETP_ELEMENTOS.forEach(function (el) {
+if (campos[el.id] === null) {
+if (el.obrigatorio) lacunas.push({ elemento: el.id, nivel: "vermelho", msg: "Obrigatório (art. 18, §2º): " + el.nome + "." });
+else if (vazio(just[el.id])) lacunas.push({ elemento: el.id, nivel: "justificar", msg: "Preencha ou justifique por que não se aplica: " + el.nome + "." });
+}
+});
+if (qtdPend > 0) lacunas.push({ elemento: "IV", nivel: "vermelho", msg: qtdPend + " quantitativo(s) sem origem ficam de fora da estimativa (art. 18, §1º, IV)." });
+return { campos: campos, lacunas: lacunas, fonte: R.ETP_FONTE };
+}
+function riscosSugeridos(tipo) {
+var t = R.TIPOS_OBJETO[tipo];
+if (!t) return [];
+return t.riscos.map(function (id) {
+var r = clone(R.BIBLIOTECA_RISCOS[id]);
+r.fonte = "Biblioteca RA de riscos (texto sugerido — conferir); matriz de riscos: Lei 14.133/2021, art. 22";
+r.sugerido = true;
+return r;
+});
+}
+function nivelRisco(prob, impacto) {
+var a = numOuNull(prob), b = numOuNull(impacto);
+if (a === null || b === null || a < 1 || a > 5 || b < 1 || b > 5 || Math.floor(a) !== a || Math.floor(b) !== b) return null;
+var v = a * b;
+return { valor: v, nivel: v >= 15 ? "critico" : (v >= 10 ? "alto" : (v >= 5 ? "medio" : "baixo")) };
+}
+function regulamentoEfetivo(p) {
+if (p && p.recursoFederal === true) return R.REGULAMENTOS["federal-14133"];
+return p && p.regulamentoId && R.REGULAMENTOS[p.regulamentoId] ? R.REGULAMENTOS[p.regulamentoId] : null;
+}
+function mediana(vals) {
+var s = vals.slice().sort(function (x, y) { return x - y; }), n = s.length;
+if (!n) return null;
+return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+function validarFonte(f, regra, ctx) {
+var v = numOuNull(f.valor);
+if (v === null || v <= 0) return { ok: false, motivo: "valor ausente ou inválido", vermelho: false };
+var valor = v;
+if (regra.tipo === "sistema_oficial" && regra.bases && regra.bases.indexOf(String(f.base).toUpperCase()) < 0) {
+return { ok: false, motivo: "base «" + f.base + "» não é a base oficial do regulamento (" + regra.bases.join("/") + ")", vermelho: false };
+}
+if (regra.exigeDataHora) {
+var dh = lerData(f.dataAcesso);
+if (!dh || !/^([01]\d|2[0-3]):[0-5]\d/.test(String(f.horaAcesso === undefined || f.horaAcesso === null ? "" : f.horaAcesso))) {
+return { ok: false, motivo: "sem data e hora de acesso (exigido por " + regra.fonte + ")", vermelho: true };
+}
+}
+if (regra.validade && regra.validade.ref === "dataPrevistaEdital") {
+var ed = lerData(ctx.dataPrevistaEdital), col = lerData(f.dataColeta);
+if (!ed) return { ok: false, motivo: "sem data prevista do edital para conferir a validade da cotação", vermelho: true, pendencia: "Informe a data prevista do edital." };
+if (!col) return { ok: false, motivo: "cotação sem data de coleta", vermelho: true };
+var lim = somaMeses(col, regra.validade.meses);
+if (lim.getTime() < ed.getTime()) return { ok: false, motivo: "cotação de " + dataISO(col) + " vencida: passa de " + regra.validade.meses + " meses até a data prevista do edital (" + dataISO(ed) + ")", vermelho: true };
+}
+if (regra.validade && regra.validade.ref === "dataPesquisa") {
+var pesq = lerData(ctx.dataPesquisa);
+if (!pesq) return { ok: false, motivo: "sem data da pesquisa para conferir a validade da contratação similar", vermelho: true, pendencia: "Informe a data da pesquisa de preços." };
+if (f.emExecucao !== true) {
+var fim = lerData(f.dataConclusao);
+if (!fim) return { ok: false, motivo: "contratação similar sem data de conclusão (e não marcada em execução)", vermelho: true };
+if (somaMeses(fim, 12).getTime() < pesq.getTime()) return { ok: false, motivo: "contratação concluída em " + dataISO(fim) + ": passa de 1 ano antes da data da pesquisa (" + dataISO(pesq) + ")", vermelho: true };
+}
+if (regra.exigeIndice) {
+var fator = numOuNull(f.fatorAtualizacao);
+if (fator === null || fator <= 0) return { ok: false, motivo: "contratação similar sem índice de atualização de preços", vermelho: true };
+valor = deCent(cent(valor * fator));
+}
+}
+return { ok: true, motivo: null, vermelho: false, valor: valor };
+}
+function avaliarItem(item, fontes, regulamento, ctx) {
+var c = ctx || {}, reg = regulamento, lista = arr(fontes);
+var res = {
+item: item && item.item !== undefined ? item.item : null, regulamentoId: reg ? reg.id : null,
+valor: null, metodo: null, fontesUsadas: [], descartadas: [], vermelhas: [], pendencias: [],
+justificativaObrigatoria: false, regraDescarte: null, avisoDescarte: null, situacao: "pendente", fonte: reg ? reg.fonte : null
+};
+if (!reg) { res.pendencias.push("Regulamento de pesquisa de preços não definido para o processo."); return res; }
+var minimo = reg.calculo.minimoPrecos;
+var regraOficial = reg.ordem[0];
+if (regraOficial.umaFonteBasta && item && !vazio(item.codigo)) {
+var oficiais = lista.map(function (f, i) { return { f: f, i: i }; }).filter(function (x) {
+return x.f.tipo === "sistema_oficial" && regraOficial.bases.indexOf(String(x.f.base).toUpperCase()) >= 0 && numOuNull(x.f.valor) !== null && numOuNull(x.f.valor) > 0;
+});
+if (oficiais.length) {
+res.valor = numOuNull(oficiais[0].f.valor); res.metodo = "base_oficial";
+res.fontesUsadas.push({ indice: oficiais[0].i, tipo: "sistema_oficial", base: oficiais[0].f.base, valor: res.valor, regra: regraOficial.fonte });
+res.situacao = "ok";
+return res;
+}
+}
+var validos = [], parar = false;
+res.naoUsadas = [];
+reg.ordem.forEach(function (regra) {
+if (parar) {
+lista.forEach(function (f, i) { if (f.tipo === regra.tipo) res.naoUsadas.push({ indice: i, tipo: f.tipo, motivo: "o conjunto já estava completo em nível anterior da ordem do regulamento" }); });
+return;
+}
+lista.forEach(function (f, i) {
+if (f.tipo !== regra.tipo) return;
+var v = validarFonte(f, regra, c);
+if (v.ok) {
+validos.push({ indice: i, tipo: f.tipo, valor: v.valor, nivel: regra.ordem, regra: regra.fonte, fornecedor: vazio(f.fornecedor) ? null : f.fornecedor, link: vazio(f.link) ? null : f.link });
+} else {
+res.descartadas.push({ indice: i, tipo: f.tipo, motivo: v.motivo, vermelho: v.vermelho, regra: regra.fonte });
+if (v.vermelho) res.vermelhas.push({ indice: i, tipo: f.tipo, motivo: v.motivo });
+if (v.pendencia && res.pendencias.indexOf(v.pendencia) < 0) res.pendencias.push(v.pendencia);
+}
+});
+if (validos.length >= minimo) parar = true;
+});
+lista.forEach(function (f, i) {
+var previsto = reg.ordem.some(function (r) { return r.tipo === f.tipo; });
+if (!previsto) res.descartadas.push({ indice: i, tipo: f.tipo, motivo: "fonte do tipo «" + f.tipo + "» não é prevista no regulamento " + reg.id, vermelho: false, regra: reg.fonte });
+});
+var rd = c.regraDescarte;
+if (rd && (ehNum(rd.abaixoPct) || ehNum(rd.acimaPct)) && validos.length) {
+var med = mediana(validos.map(function (x) { return x.valor; }));
+res.regraDescarte = { abaixoPct: ehNum(rd.abaixoPct) ? rd.abaixoPct : null, acimaPct: ehNum(rd.acimaPct) ? rd.acimaPct : null, mediana: med };
+var mantidos = [];
+validos.forEach(function (x) {
+var abaixo = ehNum(rd.abaixoPct) && x.valor < med * (1 - rd.abaixoPct / 100) - 1e-9;
+var acima = ehNum(rd.acimaPct) && x.valor > med * (1 + rd.acimaPct / 100) + 1e-9;
+if (abaixo || acima) {
+res.descartadas.push({ indice: x.indice, tipo: x.tipo, motivo: (abaixo ? "abaixo de " + rd.abaixoPct + "% da mediana (" : "acima de " + rd.acimaPct + "% da mediana (") + med + ")", vermelho: false, regra: "regra de descarte configurada pelo órgão" });
+} else mantidos.push(x);
+});
+validos = mantidos;
+} else {
+res.avisoDescarte = "Nenhuma regra de descarte configurada: nenhum preço foi descartado por discrepância.";
+}
+res.fontesUsadas = validos;
+if (validos.length < minimo) {
+res.justificativaObrigatoria = true;
+res.pendencias.push("Menos de " + minimo + " preços válidos (" + validos.length + "): justificativa obrigatória aprovada pela autoridade (" + reg.calculo.fonte + ").");
+}
+if (!validos.length) { res.situacao = "sem_fonte"; res.pendencias.push("Nenhuma fonte válida para o item."); return res; }
+var m = c.metodo, vals = validos.map(function (x) { return x.valor; });
+if (reg.calculo.metodos.indexOf(m) < 0) {
+res.pendencias.push("Escolha o método de cálculo do preço de referência (média, mediana ou menor valor).");
+res.situacao = "pendente";
+return res;
+}
+var bruto = m === "media" ? somaCent(vals.map(cent)) / vals.length / 100 : (m === "mediana" ? mediana(vals) : Math.min.apply(null, vals));
+res.valor = valorArred(bruto, c); res.metodo = m;
+res.situacao = res.justificativaObrigatoria || res.pendencias.length ? "justificativa" : "ok";
+return res;
+}
+function mapaPrecos(itens, avaliacoes, ctx) {
+var linhas = [], cs = [];
+arr(itens).forEach(function (it, i) {
+var av = arr(avaliacoes)[i];
+var unit = av && ehNum(av.valor) ? av.valor : null, qtd = numOuNull(it.qtd), tot = null;
+if (unit !== null && qtd !== null) { tot = valorArred(qtd * unit, ctx); cs.push(cent(tot)); }
+linhas.push({ item: it.item, descricao: it.descricao, un: it.un, qtd: qtd, unitario: unit, total: tot, situacao: av ? av.situacao : "sem_avaliacao", metodo: av ? av.metodo : null });
+});
+return { linhas: linhas, total: deCent(somaCent(cs)), semPreco: linhas.filter(function (l) { return l.total === null; }).length };
+}
+var pesquisaPrecos = { avaliarItem: avaliarItem, regulamentoEfetivo: regulamentoEfetivo, mapa: mapaPrecos };
+function parcelasRelevancia(linhas, total) {
+var tc = cent(total), out = [];
+if (tc === null || tc <= 0) return out;
+arr(linhas).forEach(function (l) {
+var vc = cent(l.total !== undefined ? l.total : l.valor);
+if (vc === null) return;
+if (vc * 100 >= 4 * tc) {
+var q = numOuNull(l.qtd);
+out.push({ item: l.item, descricao: l.descricao, valor: deCent(vc), pct: Arred.valor(vc * 100 / tc, "truncar2"), qtd: q, un: l.un,
+qtdMaxExigivel: q === null ? null : q / 2, fonte: "Lei 14.133/2021, art. 67, §§1º e 2º" });
+}
+});
+return out;
+}
+function sug(p, id, sugerido, regra) {
+var cur = p && p.parametros && p.parametros[id] ? p.parametros[id].valor : null;
+var def = R.PARAMETROS[id];
+return { id: id, valor: vazio(cur) ? null : cur, sugerido: sugerido, regra: regra, fonte: def.fonte, conferir: def.conferir === true, pendencias: [] };
+}
+var parametros = {
+sugerir: function (p, ctx) {
+var c = ctx || {}, tipoId = c.tipoObjeto !== undefined ? c.tipoObjeto : (p ? p.tipoObjeto : null);
+var t = R.TIPOS_OBJETO[tipoId] || null, out = {}, semTipo = "Informe o tipo de objeto para o sistema sugerir.";
+var x;
+x = sug(p, "modalidade", t ? (t.servicoComumEngenharia ? "pregão ou concorrência" : "concorrência") : null,
+t ? (t.servicoComumEngenharia ? "Serviço comum de engenharia admite pregão ou concorrência." : "Obra e serviço especial de engenharia: concorrência; pregão não se aplica.") : semTipo);
+if (!t) x.pendencias.push(semTipo);
+out.modalidade = x;
+x = sug(p, "criterio_julgamento", t && tipoId !== "servico_engenharia_especial" ? "menor preço" : null,
+t ? (tipoId === "servico_engenharia_especial" ? "Serviço especial: menor preço, maior desconto ou técnica e preço; decisão do órgão (art. 36 exige justificativa para técnica)." : "Obra e serviço comum: menor preço é o critério usual; alternativas: maior desconto, técnica e preço (justificar).") : semTipo);
+x.opcoes = R.PARAMETROS.criterio_julgamento.opcoes; out.criterio_julgamento = x;
+x = sug(p, "regime_execucao", null, "Sem padrão: decisão do órgão. Contratação integrada parte de anteprojeto.");
+x.opcoes = R.PARAMETROS.regime_execucao.opcoes; out.regime_execucao = x;
+x = sug(p, "sigiloso", null, "Escolha explícita, sem padrão. Sim liga a trava de vazamento do valor estimado.");
+if (vazio(x.valor) && p && (p.sigiloso === true || p.sigiloso === false)) x.valor = p.sigiloso;
+x.opcoes = [true, false]; out.sigiloso = x;
+var pr = ehNum(c.totalEstimado) && arr(c.linhas).length ? parcelasRelevancia(c.linhas, c.totalEstimado) : null;
+x = sug(p, "parcelas_relevancia", pr, "Itens com valor igual ou maior que 4% do total estimado; quantidade mínima exigível até 50% da parcela.");
+if (pr === null) x.pendencias.push("Informe o total estimado e as linhas do orçamento para calcular as parcelas de maior relevância.");
+out.parcelas_relevancia = x;
+var gv = ehNum(c.valorGrandeVulto) && ehNum(c.totalEstimado) ? c.totalEstimado >= c.valorGrandeVulto : null;
+x = sug(p, "garantia_contrato", { pctMax: 5, pctMaxComJustificativa: 10, grandeVulto: gv, seguroGarantiaRetomadaPctMax: 30 },
+"Garantia até 5%; até 10% com justificativa de complexidade e risco; obra de grande vulto: seguro-garantia com cláusula de retomada até 30%.");
+if (gv === null) { x.conferir = true; x.pendencias.push("Valor de obra de grande vulto não informado: é atualizado por decreto (conferir); sem ele não se sabe se vale o seguro-garantia com retomada."); }
+out.garantia_contrato = x;
+out.exequibilidade = sug(p, "exequibilidade", { inexequivelAbaixoPct: 75, garantiaAdicionalAbaixoPct: 85 }, "Abaixo de 75% do orçado: inexequível; abaixo de 85%: garantia adicional igual à diferença.");
+x = sug(p, "reajuste", { indice: null, dataBase: vazio(c.dataBaseOrcamento) ? null : c.dataBaseOrcamento }, "Índice sem padrão (decisão do órgão); data-base igual à data do orçamento estimado.");
+x.pendencias.push("Escolha o índice de reajuste." );
+if (x.sugerido.dataBase === null) x.pendencias.push("Informe a data do orçamento estimado (data-base do reajuste).");
+out.reajuste = x;
+x = sug(p, "aditivo_teto", t ? { acrescimoPct: t.reforma ? 50 : 25, supressaoPct: 25 } : null, t ? (t.reforma ? "Reforma de edifício ou equipamento: acréscimo até 50%; supressão até 25%." : "Acréscimos e supressões até 25%.") : semTipo);
+if (!t) x.pendencias.push(semTipo);
+out.aditivo_teto = x;
+out.recurso_prazo = sug(p, "recurso_prazo", { diasUteis: 3 }, "Prazo de recurso: 3 dias úteis.");
+["visita_tecnica", "consorcio", "subcontratacao", "amostra", "me_epp"].forEach(function (id) {
+var y = sug(p, id, null, R.PARAMETROS[id].como);
+y.opcoes = [true, false]; y.pendencias.push("Responda sim ou não: o sistema não tem valor padrão."); out[id] = y;
+});
+return out;
+},
+parcelasRelevancia: parcelasRelevancia
+};
+function ehFeriadoNacional(d, cacheAno) {
+var ano = d.getFullYear();
+if (!cacheAno[ano]) {
+cacheAno[ano] = {};
+Feriados.doAno(ano).forEach(function (f) { if (f.tipo === "nacional") cacheAno[ano][f.data] = f.nome; });
+}
+return !!cacheAno[ano][dataISO(d)];
+}
+function diasUteisDepois(iso, n, feriadosLocais, opcoes) {
+var d = lerData(iso);
+if (!d || !ehNum(n)) return null;
+var cache = {}, locais = {}, pular = opcoes && opcoes.pularFacultativos === true, contados = 0;
+arr(feriadosLocais).forEach(function (s) { if (lerData(s)) locais[String(s).substring(0, 10)] = true; });
+var guarda = 0;
+while (contados < n && guarda < 4000) {
+d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12, 0, 0);
+guarda++;
+var dow = d.getDay();
+if (dow === 0 || dow === 6) continue;
+if (locais[dataISO(d)]) continue;
+if (ehFeriadoNacional(d, cache)) continue;
+if (pular) {
+var ano = d.getFullYear(), fac = Feriados.doAno(ano).some(function (f) { return f.tipo === "facultativo" && f.data === dataISO(d); });
+if (fac) continue;
+}
+contados++;
+}
+return dataISO(d);
+}
+function prazoPublicacao(dataPublicacaoISO, criterio, regime, natureza, feriadosLocais, opcoes) {
+var regras = {}, dias = null, regraId = null;
+R.PRAZO_PUBLICACAO.regras.forEach(function (r) { regras[r.id] = r; });
+var cr = norm(criterio).replace(/[ -]+/g, "_"), rg = norm(regime).replace(/[ -]+/g, "_"), nat = norm(natureza).replace(/[ -]+/g, "_");
+if (/integrada/.test(rg) && !/semi/.test(rg)) regraId = "contratacao_integrada";
+else if (/semi/.test(rg)) regraId = "semi_integrada";
+else if (cr === "maior_lance") regraId = "maior_lance";
+else if (cr === "tecnica_e_preco" || cr === "melhor_tecnica" || cr === "tecnica_preco") regraId = "tecnica_preco";
+else if (cr === "menor_preco" || cr === "maior_desconto") {
+if (/comum/.test(nat)) regraId = "menor_preco_comum";
+else if (/especial/.test(nat)) regraId = "menor_preco_especial";
+}
+var res = { diasUteis: null, dataMinimaAbertura: null, regra: null, fonte: R.PRAZO_PUBLICACAO.fonte, conferir: true,
+contagem: R.PRAZO_PUBLICACAO.contagem, pendencias: [] };
+if (!regraId) { res.pendencias.push("Critério, regime ou natureza (comum/especial) insuficientes para definir o prazo mínimo do art. 55: informe-os."); return res; }
+dias = regras[regraId].dias; res.regra = regras[regraId];
+res.diasUteis = dias; res.fonte = regras[regraId].fonte; res.conferir = true;
+if (!lerData(dataPublicacaoISO)) { res.pendencias.push("Informe a data de publicação do edital."); return res; }
+res.dataMinimaAbertura = diasUteisDepois(dataPublicacaoISO, dias, feriadosLocais, opcoes);
+return res;
+}
+function exequibilidade(valorProposta, valorOrcado) {
+var pc = cent(valorProposta), oc = cent(valorOrcado);
+var res = { inexequivel: null, garantiaAdicional: null, pct: null, fonte: "Lei 14.133/2021, art. 59, §§4º e 5º", conferir: true };
+if (pc === null || oc === null || oc <= 0 || pc < 0) { res.erro = "Valor da proposta ou orçado ausente/inválido."; return res; }
+res.pct = Arred.valor(pc * 100 / oc, "truncar2");
+res.inexequivel = pc * 100 < 75 * oc;
+res.garantiaAdicional = pc * 100 < 85 * oc ? deCent(oc - pc) : 0;
+return res;
+}
+var TOLERANCIA_CENTAVOS = 1;
+var F_LEI = "Lei 14.133/2021";
+function analisarProposta(referenciaLinhas, propostaLinhas, ctx) {
+var c = ctx || {}, achados = [], refs = {}, props = {}, vistos = {};
+function achado(item, tipo, grav, esperado, encontrado, fonte, sugestao) {
+achados.push({ item: item, tipo: tipo, gravidade: grav, esperado: esperado, encontrado: encontrado, fonte: fonte, sugestao: sugestao });
+}
+arr(referenciaLinhas).forEach(function (l) { refs[String(l.item).replace(/^\s+|\s+$/g, "")] = l; });
+arr(propostaLinhas).forEach(function (l) {
+var k = String(l.item).replace(/^\s+|\s+$/g, "");
+if (vistos[k]) achado(k, "item_duplicado", "alta", "uma linha por item", "item repetido na proposta", "Edital/TR (planilha da proposta)", "diligencia");
+vistos[k] = true; props[k] = l;
+});
+Object.keys(refs).forEach(function (k) {
+if (!props[k]) achado(k, "item_faltando", "alta", refs[k].descricao, "item ausente na proposta", "Edital/TR (planilha de referência é item travado)", "diligencia");
+});
+Object.keys(props).forEach(function (k) {
+var pr = props[k], rf = refs[k];
+if (!rf) { achado(k, "item_a_mais", "alta", "item não consta da referência", pr.descricao, "Edital/TR (planilha de referência é item travado)", "diligencia"); return; }
+if (normNome(pr.descricao) !== normNome(rf.descricao)) achado(k, "descricao_alterada", "alta", rf.descricao, pr.descricao, "Edital/TR (descrição do item é travada)", "diligencia");
+if (normNome(pr.un) !== normNome(rf.un)) achado(k, "unidade_alterada", "alta", rf.un, pr.un, "Edital/TR (unidade do item é travada)", "diligencia");
+var qr = numOuNull(rf.qtd), qp = numOuNull(pr.qtd);
+if (qr !== null && (qp === null || Math.abs(qp - qr) > 1e-9)) achado(k, "quantidade_alterada", "alta", qr, pr.qtd, "Edital/TR (quantidade do item é travada)", "diligencia");
+var ur = cent(rf.unitario), up = cent(pr.unitario);
+if (ur !== null && up !== null && up > ur) achado(k, "sobrepreco_unitario", "media", deCent(ur), deCent(up), "Edital/TR (preço unitário máximo) — conferir a cláusula do edital", "diligencia");
+var tp = cent(pr.total);
+if (qp !== null && up !== null && tp !== null) {
+var esperadoC = cent(valorArred(qp * deCent(up), c));
+if (Math.abs(tp - esperadoC) > TOLERANCIA_CENTAVOS) achado(k, "erro_aritmetico", "media", deCent(esperadoC), deCent(tp), "Planilha da proposta: quantidade × unitário ≠ total", "diligencia");
+}
+});
+var somaProp = somaCent(arr(propostaLinhas).map(function (l) { return cent(l.total) === null ? 0 : cent(l.total); }));
+var somaRef = somaCent(arr(referenciaLinhas).map(function (l) { return cent(l.total) === null ? 0 : cent(l.total); }));
+var totalDecl = cent(c.totalProposta);
+if (totalDecl !== null && totalDecl !== somaProp) achado("TOTAL", "total_difere_da_soma", "media", deCent(somaProp), deCent(totalDecl), "Planilha da proposta: total declarado ≠ soma das linhas", "diligencia");
+var totalProp = totalDecl !== null ? totalDecl : somaProp;
+var totalRef = cent(c.totalReferencia) !== null ? cent(c.totalReferencia) : somaRef;
+var exq = null;
+if (totalRef > 0 && arr(propostaLinhas).length) {
+if (totalProp > totalRef) achado("TOTAL", "total_acima_da_referencia", "alta", deCent(totalRef), deCent(totalProp), F_LEI + ", art. 59, III (acima do orçamento estimado)", "desclassificar");
+exq = exequibilidade(deCent(totalProp), deCent(totalRef));
+if (exq.inexequivel) achado("TOTAL", "inexequivel", "alta", ">= 75% de " + deCent(totalRef), deCent(totalProp) + " (" + exq.pct + "%)", F_LEI + ", art. 59, III e §4º", "desclassificar");
+else if (exq.garantiaAdicional > 0) achado("TOTAL", "garantia_adicional", "baixa", "garantia adicional de " + exq.garantiaAdicional, deCent(totalProp) + " (" + exq.pct + "%)", F_LEI + ", art. 59, §5º", "ok");
+}
+var sug_ = achados.some(function (a) { return a.sugestao === "desclassificar"; }) ? "desclassificar" : (achados.some(function (a) { return a.sugestao === "diligencia"; }) ? "diligencia" : "ok");
+return { achados: achados, sugestao: sug_, decisao: "do agente de contratação / comissão (o motor só sugere)",
+resumo: { totalReferencia: deCent(totalRef), totalProposta: deCent(totalProp), somaProposta: deCent(somaProp) }, exequibilidade: exq };
+}
+function registrar(q, acao, antes, depois, quem, agoraISO) {
+q.historico = arr(q.historico).concat([{ em: vazio(agoraISO) ? agoraLocalISO() : agoraISO, quem: quemNome(quem), acao: acao, antes: antes, depois: depois }]);
+if (!vazio(agoraISO)) q.atualizadoEm = agoraISO;
+}
+var RESULTADOS = ["favoravel", "com_ressalvas", "desfavoravel"];
+var fluxoJuridico = {
+enviar: function (p, quem, agoraISO) {
+exigirSePapel(quem, "enviar_juridico");
+if (p.status === "em_analise_juridica") return clone(p);
+if (p.status !== "rascunho" && p.status !== "devolvido") throw new Error("O processo está «" + p.status + "» e não pode ser enviado ao jurídico agora.");
+var q = clone(p), antes = q.status;
+if (q.parecer) { q.pareceresAnteriores = arr(q.pareceresAnteriores).concat([q.parecer]); q.parecer = null; }
+q.status = "em_analise_juridica";
+registrar(q, "enviar_juridico", antes, q.status, quem, agoraISO);
+return q;
+},
+emitirParecer: function (p, parecer, quem, agoraISO) {
+exigirSePapel(quem, "emitir_parecer");
+var pa = parecer || {};
+if (RESULTADOS.indexOf(pa.resultado) < 0) throw new Error("Resultado do parecer inválido: use favoravel, com_ressalvas ou desfavoravel.");
+if (vazio(pa.texto)) throw new Error("O parecer precisa de texto (art. 53).");
+var ress = arr(pa.ressalvas);
+if (pa.resultado === "com_ressalvas" && !ress.length) throw new Error("Parecer com ressalvas precisa listar ao menos uma ressalva.");
+if (pa.resultado !== "com_ressalvas" && ress.length) throw new Error("Só o parecer «com ressalvas» pode listar ressalvas.");
+if (p.parecer && p.parecer.resultado === pa.resultado && p.parecer.texto === pa.texto && p.status !== "em_analise_juridica") return clone(p);
+if (p.status !== "em_analise_juridica") throw new Error("O parecer só pode ser emitido com o processo «em análise jurídica» (hoje: «" + p.status + "»).");
+var q = clone(p), antes = q.status;
+q.parecer = { resultado: pa.resultado, texto: pa.texto, emitidoPor: quemNome(quem), emitidoEm: vazio(agoraISO) ? agoraLocalISO() : agoraISO,
+ressalvas: ress.map(function (r, i) { return { idx: i, texto: typeof r === "string" ? r : r.texto, respondida: false, resposta: null, respondidoPor: null }; }),
+ciencia: null };
+q.status = pa.resultado === "favoravel" ? "parecer_favoravel" : (pa.resultado === "desfavoravel" ? "devolvido" : "com_ressalvas");
+registrar(q, "emitir_parecer:" + pa.resultado, antes, q.status, quem, agoraISO);
+return q;
+},
+responderRessalva: function (p, idx, texto, quem, agoraISO) {
+exigirSePapel(quem, "responder_ressalva");
+if (!p.parecer || p.parecer.resultado !== "com_ressalvas") throw new Error("Não há parecer com ressalvas para responder.");
+var r = p.parecer.ressalvas[idx];
+if (!r) throw new Error("Ressalva " + idx + " não existe.");
+if (vazio(texto)) throw new Error("A resposta à ressalva não pode ficar em branco.");
+if (r.respondida && r.resposta === texto) return clone(p);
+var q = clone(p), antes = q.parecer.ressalvas[idx].respondida;
+q.parecer.ressalvas[idx].respondida = true; q.parecer.ressalvas[idx].resposta = texto; q.parecer.ressalvas[idx].respondidoPor = quemNome(quem);
+q.parecer.ciencia = null;
+registrar(q, "responder_ressalva:" + idx, antes, true, quem, agoraISO);
+return q;
+},
+darCiencia: function (p, quem, agoraISO) {
+exigirSePapel(quem, "emitir_parecer");
+if (!p.parecer || p.parecer.resultado !== "com_ressalvas") throw new Error("Só há ciência a dar quando o parecer tem ressalvas.");
+if (p.parecer.ressalvas.some(function (r) { return !r.respondida; })) throw new Error("Ainda há ressalva sem resposta: a ciência só vem depois de todas respondidas.");
+if (p.parecer.ciencia) return clone(p);
+var q = clone(p), antes = q.status;
+q.parecer.ciencia = { por: quemNome(quem), em: vazio(agoraISO) ? agoraLocalISO() : agoraISO };
+q.status = "parecer_favoravel";
+registrar(q, "dar_ciencia", antes, q.status, quem, agoraISO);
+return q;
+},
+podePublicar: function (p) {
+var pa = p && p.parecer;
+if (!pa) return false;
+if (pa.resultado === "desfavoravel") return false;
+if (pa.resultado === "favoravel") return true;
+if (pa.resultado !== "com_ressalvas") return false;
+if (arr(pa.ressalvas).some(function (r) { return !r.respondida; })) return false;
+return !!pa.ciencia;
+}
+};
+function editavel(p) { return !(p && p.status === "em_analise_juridica"); }
+var CAMPOS_SIGILOSOS = ["valorEstimado", "totalEstimado", "orcamentoSintetico", "orcamentoAnalitico", "planilhaOrcamentaria", "mapaPesquisaPrecos", "curvaAbc", "composicoes"];
+var NUNCA_PUBLICO = ["historico", "auditoria", "parecer.rascunho", "cpfSocio", "rgSocio", "enderecoResidencial", "cotacoesFornecedores.contato"];
+var sigilo = {
+CAMPOS_SIGILOSOS: CAMPOS_SIGILOSOS, NUNCA_PUBLICO: NUNCA_PUBLICO, fonte: "Lei 14.133/2021, art. 24; LGPD (Lei 13.709/2018)",
+campoPublico: function (p, campo) {
+if (NUNCA_PUBLICO.indexOf(campo) >= 0) return false;
+if (CAMPOS_SIGILOSOS.indexOf(campo) >= 0) {
+if (p && p.julgamentoConcluido === true) return true;
+return !!p && p.sigiloso === false;
+}
+return true;
+}
+};
+var Cplpro = {
+PASSOS: PASSOS,
+novoProcesso: novoProcesso, progresso: progresso,
+sugerirTipoObjeto: sugerirTipoObjeto, classificarArquivo: classificarArquivo,
+adicionarDocumentos: adicionarDocumentos, checklistAcervo: checklistAcervo,
+pendenciasQuantitativos: pendenciasQuantitativos, quantitativosValidos: quantitativosValidos,
+etpCampos: etpCampos, riscosSugeridos: riscosSugeridos, nivelRisco: nivelRisco,
+pesquisaPrecos: pesquisaPrecos, parametros: parametros,
+prazoPublicacao: prazoPublicacao, exequibilidade: exequibilidade, analisarProposta: analisarProposta,
+pode: pode, exigir: exigir, fluxoJuridico: fluxoJuridico, editavel: editavel, sigilo: sigilo,
+diasUteisDepois: diasUteisDepois,
+TOLERANCIA_CENTAVOS: TOLERANCIA_CENTAVOS
+};
+global.Cplpro = Cplpro;
+if (typeof module !== "undefined" && module.exports) module.exports = Cplpro;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplprofluxo.js ==== */
+try {
+(function (global) {
+"use strict";
+var Cplpro = global.Cplpro, R = global.CplproRegras;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!R) R = require("./cplproregras.js");
+if (!Cplpro) Cplpro = require("./cplpro.js");
+}
+function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function dataISO(d) { return d.getFullYear() + "-" + dd(d.getMonth() + 1) + "-" + dd(d.getDate()); }
+function hojeISO() { return dataISO(new Date()); }
+function agoraISO() { var d = new Date(); return dataISO(d) + "T" + dd(d.getHours()) + ":" + dd(d.getMinutes()) + ":" + dd(d.getSeconds()); }
+function lerData(s) {
+var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s === null || s === undefined ? "" : s));
+if (!m) return null;
+var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+return dataISO(d) === m[1] + "-" + m[2] + "-" + m[3] ? d : null;
+}
+function norm(s) {
+return String(s === null || s === undefined ? "" : s).toLowerCase()
+.replace(/[áàâãä]/g, "a").replace(/[éèêë]/g, "e").replace(/[íìîï]/g, "i")
+.replace(/[óòôõö]/g, "o").replace(/[úùûü]/g, "u").replace(/ç/g, "c").replace(/ñ/g, "n");
+}
+function cent(v) { var n = typeof v === "number" ? v : Number(v); return isFinite(n) ? Math.round(Number(n.toPrecision(15)) * 100) : null; }
+function hash(s) {
+var h1 = 5381, h2 = 0, i, str = String(s);
+for (i = 0; i < str.length; i++) {
+var c = str.charCodeAt(i);
+h1 = ((h1 << 5) + h1 + c) % 4294967296;
+h2 = (c + (h2 << 6) + (h2 << 16) - h2) % 4294967296;
+if (h2 < 0) h2 += 4294967296;
+}
+function hx(x) { var t = (x >>> 0).toString(16); while (t.length < 8) t = "0" + t; return t; }
+return hx(h1) + hx(h2);
+}
+var ACAO_DO_PASSO = {
+demanda: "editar_dfd", acervo: "editar_acervo", quantitativos: "editar_quantitativos", etp: "editar_etp",
+riscos: "editar_riscos", orcamento: "editar_orcamento", tr: "editar_tr", parametros: "editar_parametros",
+minuta: "gerar_minuta", conformidade: "enviar_juridico"
+};
+var PAPEL_DO_PASSO = {
+demanda: "requisitante", acervo: "requisitante", quantitativos: "engenharia", etp: "engenharia", riscos: "engenharia",
+orcamento: "engenharia", tr: "engenharia", parametros: "cpl", minuta: "cpl", conformidade: "cpl"
+};
+var Fluxo = { ACAO_DO_PASSO: ACAO_DO_PASSO, PAPEL_DO_PASSO: PAPEL_DO_PASSO };
+Fluxo.papeisDe = function (u, registros) {
+if (!u) return [];
+var reg = arr(registros).filter(function (r) { return r && (r.usuarioId === u.id || r.id === u.id); })[0];
+var l = reg ? arr(reg.papeis).filter(function (p) { return !!R.PAPEIS[p]; }) : [];
+if (u.gestor && l.indexOf("admin_orgao") < 0) l.push("admin_orgao");
+return l;
+};
+Fluxo.papelPara = function (papeis, acao) {
+var l = arr(papeis);
+for (var i = 0; i < l.length; i++) if (Cplpro.pode(l[i], acao)) return l[i];
+return null;
+};
+Fluxo.pode = function (papeis, acao) { return Fluxo.papelPara(papeis, acao) !== null; };
+Fluxo.exigir = function (papeis, acao) {
+var p = Fluxo.papelPara(papeis, acao);
+if (p) { Cplpro.exigir(p, acao); return p; }
+var l = arr(papeis);
+if (!l.length) throw new Error("Você ainda não tem perfil no CPLPRO. Peça ao administrador do órgão para definir o seu em «Pessoas e papéis».");
+Cplpro.exigir(l[0], acao);
+return l[0];
+};
+Fluxo.motivoSemPermissao = function (papeis, acao) {
+try { Fluxo.exigir(papeis, acao); return ""; } catch (e) { return String(e.message || e); }
+};
+Fluxo.quem = function (nome, papel) { return { nome: nome, papel: papel }; };
+Fluxo.editavel = function (p) {
+if (!p) return false;
+if (p.status === "publicado") return false;
+return Cplpro.editavel(p);
+};
+Fluxo.motivoTravado = function (p) {
+if (!p) return "Sem processo.";
+if (p.status === "em_analise_juridica") return "Em análise jurídica (art. 53): as peças ficam trancadas até o parecer.";
+if (p.status === "publicado") return "Edital publicado: as peças não mudam mais.";
+return "";
+};
+Fluxo.assinaturaConteudo = function (p) {
+if (!p) return "";
+var par = {};
+Object.keys(p.parametros || {}).forEach(function (k) { par[k] = p.parametros[k] ? p.parametros[k].valor : null; });
+var docs = arr(p.documentos).map(function (d) { return [d.id, d.tipo, d.sha, d.superadoPor]; });
+var base = [p.tipoObjeto, p.secretaria, p.objeto, p.justificativa, p.pca, p.recursoFederal, p.sigiloso, p.regulamentoId,
+p.dataPrevistaEdital, p.cronograma, p.orcamentoId, p.orcamentoRef, p.tr, p.edital, p.requisitante, p.prazoDesejado, p.etp, p.riscos, p.quantitativos, p.pesquisa, par, docs];
+return hash(JSON.stringify(base));
+};
+Fluxo.pacoteValido = function (p) {
+return !!(p && p.pacote && p.pacote.geradoEm && p.pacote.assinatura === Fluxo.assinaturaConteudo(p));
+};
+Fluxo.normalizar = function (p) {
+if (p && p.pacote && p.pacote.geradoEm && p.pacote.assinatura !== Fluxo.assinaturaConteudo(p)) {
+p.pacote = { geradoEm: null, invalidadoEm: agoraISO(), motivo: "o conteúdo mudou depois de a minuta ser gerada" };
+}
+return p;
+};
+function curto(v) {
+var s = typeof v === "string" ? v : JSON.stringify(v);
+if (s === undefined) s = "";
+return s.length > 300 ? s.substring(0, 300) + "…" : s;
+}
+Fluxo.registrar = function (p, acao, antes, depois, quem, agora) {
+p.historico = arr(p.historico).concat([{ em: vazio(agora) ? agoraISO() : agora, quem: quem && typeof quem === "object" ? quem.nome : quem, acao: acao, antes: curto(antes), depois: curto(depois) }]);
+p.atualizadoEm = vazio(agora) ? agoraISO() : agora;
+return p;
+};
+Fluxo.diferencas = function (antes, depois, campos) {
+var a = {}, d = {}, mudou = false;
+arr(campos).forEach(function (c) {
+var x = antes ? antes[c] : undefined, y = depois ? depois[c] : undefined;
+if (JSON.stringify(x) !== JSON.stringify(y)) { a[c] = x === undefined ? null : x; d[c] = y === undefined ? null : y; mudou = true; }
+});
+return mudou ? { antes: a, depois: d } : null;
+};
+Fluxo.conferirPasso = function (p, passoId, papeis, quem, agora) {
+var acao = ACAO_DO_PASSO[passoId];
+if (!acao) throw new Error("Passo «" + passoId + "» não existe.");
+var papel = Fluxo.exigir(papeis, acao);
+if (!Fluxo.editavel(p)) throw new Error(Fluxo.motivoTravado(p));
+var pr = Cplpro.progresso(p).passos[passoId];
+if (pr.pct < 100) throw new Error("O passo ainda tem " + pr.pendencias.length + " pendência(s). Corrija-as antes de conferir.");
+var q = clone(p), antes = q.passos[passoId].conferido === true;
+if (antes) return q;
+q.passos[passoId].conferido = true;
+q.passos[passoId].conferidoPor = quem && quem.nome !== undefined ? quem.nome : quem;
+q.passos[passoId].conferidoEm = vazio(agora) ? agoraISO() : agora;
+Fluxo.registrar(q, "conferir:" + passoId, false, true, { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }, agora);
+return q;
+};
+Fluxo.desconferirPasso = function (p, passoId, papeis, quem, agora) {
+var acao = ACAO_DO_PASSO[passoId];
+if (!acao) throw new Error("Passo «" + passoId + "» não existe.");
+Fluxo.exigir(papeis, acao);
+if (!Fluxo.editavel(p)) throw new Error(Fluxo.motivoTravado(p));
+var q = clone(p);
+if (!q.passos[passoId].conferido) return q;
+q.passos[passoId].conferido = false;
+Fluxo.registrar(q, "desconferir:" + passoId, true, false, quem, agora);
+return q;
+};
+Fluxo.soltarConferencia = function (p, passoId) {
+if (p && p.passos && p.passos[passoId] && p.passos[passoId].conferido) { p.passos[passoId].conferido = false; return true; }
+return false;
+};
+Fluxo.passoAtual = function (p) {
+var pr = Cplpro.progresso(p);
+for (var i = 0; i < Cplpro.PASSOS.length; i++) {
+var id = Cplpro.PASSOS[i].id, x = pr.passos[id];
+if (x.pct < 100 || !x.conferido) return { id: id, ordem: i + 1, nome: Cplpro.PASSOS[i].nome, pct: x.pct };
+}
+var ult = Cplpro.PASSOS[Cplpro.PASSOS.length - 1];
+return { id: ult.id, ordem: Cplpro.PASSOS.length, nome: ult.nome, pct: 100 };
+};
+Fluxo.natureza = function (p) {
+var t = p && R.TIPOS_OBJETO[p.tipoObjeto];
+return t ? (t.servicoComumEngenharia ? "comum" : "especial") : null;
+};
+Fluxo.valorParametro = function (p, id) {
+var x = p && p.parametros ? p.parametros[id] : null;
+var v = x ? x.valor : null;
+if (id === "sigiloso" && vazio(v) && p) v = p.sigiloso;
+return vazio(v) ? null : v;
+};
+Fluxo.prazo = function (p) {
+var cron = (p && p.cronograma) || {};
+var res = Cplpro.prazoPublicacao(p ? p.dataPrevistaEdital : null, Fluxo.valorParametro(p, "criterio_julgamento"),
+Fluxo.valorParametro(p, "regime_execucao"), Fluxo.natureza(p), p ? p.feriadosLocais : []);
+res.dataAbertura = vazio(cron.dataAbertura) ? null : cron.dataAbertura;
+res.aberturaOk = res.dataMinimaAbertura && res.dataAbertura ? res.dataAbertura >= res.dataMinimaAbertura : null;
+return res;
+};
+Fluxo.autorizar = function (p, papeis, quem, agora) {
+var papel = Fluxo.exigir(papeis, "autorizar_abertura");
+if (p.status === "publicado") return clone(p);
+if (!Cplpro.fluxoJuridico.podePublicar(p)) throw new Error("A autorização só vem depois do parecer jurídico favorável (ou das ressalvas respondidas e com ciência).");
+if (p.autorizacao && p.autorizacao.assinatura === Fluxo.assinaturaConteudo(p)) return clone(p);
+var q = clone(p);
+q.autorizacao = { por: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel, em: vazio(agora) ? agoraISO() : agora, assinatura: Fluxo.assinaturaConteudo(q) };
+Fluxo.registrar(q, "autorizar_abertura", null, "autorizada", { nome: q.autorizacao.por, papel: papel }, agora);
+return q;
+};
+Fluxo.bloqueiosPublicacao = function (p) {
+var m = [];
+if (!p) return ["Sem processo."];
+if (p.status === "publicado") return ["Já publicado."];
+var pa = p.parecer;
+if (!pa) m.push("Falta o parecer jurídico (art. 53).");
+else if (pa.resultado === "desfavoravel") m.push("O parecer jurídico foi desfavorável: ajuste o processo e envie de novo.");
+else if (!Cplpro.fluxoJuridico.podePublicar(p)) {
+var abertas = arr(pa.ressalvas).filter(function (r) { return !r.respondida; }).length;
+m.push(abertas ? abertas + " ressalva(s) do jurídico sem resposta." : "Falta a ciência do jurídico sobre as respostas às ressalvas.");
+}
+if (Fluxo.mudouDepoisDoParecer(p)) m.push("O processo mudou depois do envio (ou da ciência) do jurídico: envie de novo para o parecer cobrir o texto atual (art. 53).");
+if (!p.autorizacao) m.push("Falta a autorização da autoridade competente para a abertura.");
+else if (p.autorizacao.assinatura !== Fluxo.assinaturaConteudo(p)) m.push("O processo mudou depois da autorização: a autoridade precisa autorizar de novo.");
+if (!Fluxo.pacoteValido(p)) m.push("Gere a minuta e os anexos (sem nenhum campo [PREENCHER]) sobre o conteúdo atual.");
+if (!lerData(p.dataPrevistaEdital)) m.push("Informe a data de publicação do edital (passo 8).");
+var pz = Fluxo.prazo(p);
+if (pz.aberturaOk === false) m.push("A data de abertura está antes do mínimo do art. 55 (" + pz.dataMinimaAbertura + ").");
+else if (lerData(p.dataPrevistaEdital) && !pz.dataAbertura) m.push("Informe a data de abertura das propostas (passo 8).");
+return m;
+};
+Fluxo.podePublicar = function (p) { return Fluxo.bloqueiosPublicacao(p).length === 0; };
+Fluxo.publicar = function (p, papeis, quem, agora, ref) {
+var papel = Fluxo.exigir(papeis, "publicar");
+if (p.status === "publicado") return clone(p);
+var bl = Fluxo.bloqueiosPublicacao(p);
+if (bl.length) throw new Error("Publicação trancada: " + bl[0] + (bl.length > 1 ? " (e mais " + (bl.length - 1) + ")" : ""));
+if (!ref || typeof ref.total !== "number" || !arr(ref.linhas).length) throw new Error("Sem o orçamento de referência não dá para congelar o valor da publicação.");
+var q = clone(p), antes = q.status;
+q.status = "publicado";
+q.publicacao = { dataPublicacao: q.dataPrevistaEdital, dataAbertura: (q.cronograma || {}).dataAbertura || null, publicadoPor: quem && quem.nome !== undefined ? quem.nome : quem,
+publicadoEm: vazio(agora) ? agoraISO() : agora, autorizadoPor: q.autorizacao.por, sigiloso: q.sigiloso !== false };
+q.referenciaPublicada = { total: ref.total, linhas: clone(ref.linhas), congeladoEm: q.publicacao.publicadoEm };
+Fluxo.registrar(q, "publicar", antes, q.status, { nome: q.publicacao.publicadoPor, papel: papel }, agora);
+return q;
+};
+function num(v) {
+if (typeof v === "number") return isFinite(v) ? v : null;
+if (v === null || v === undefined) return null;
+var s = String(v).replace(/R\$/gi, "").replace(/\s/g, "");
+if (!s) return null;
+if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");
+var n = Number(s);
+return isFinite(n) ? n : null;
+}
+var COLUNAS = [
+{ chave: "item", nomes: ["item", "n item", "no item", "n", "numero", "num", "nº", "n°"] },
+{ chave: "descricao", nomes: ["descricao", "discriminacao", "servico", "servicos", "especificacao", "descricao do servico", "descricao dos servicos"] },
+{ chave: "un", nomes: ["un", "und", "unid", "unidade", "un."] },
+{ chave: "qtd", nomes: ["qtd", "quant", "quantidade", "qtde", "quant."] },
+{ chave: "unitario", nomes: ["preco unitario", "valor unitario", "p unitario", "pu", "unitario", "preco unit", "valor unit", "p. unit", "preco unitario com bdi", "unitario com bdi", "valor unitario com bdi", "pu com bdi"] },
+{ chave: "total", nomes: ["total", "preco total", "valor total", "total item", "total do item", "total com bdi", "valor total com bdi"] }
+];
+function achaCabecalho(row) {
+var mapa = {}, achados = 0;
+arr(row).forEach(function (cel, i) {
+var t = norm(cel).replace(/[().:]/g, " ").replace(/\s+/g, " ").replace(/^ | $/g, "");
+if (!t) return;
+COLUNAS.forEach(function (c) {
+if (mapa[c.chave] !== undefined) return;
+if (c.nomes.indexOf(t) >= 0 || (c.chave === "unitario" && /unit/.test(t) && !/total/.test(t)) || (c.chave === "total" && /^(valor |preco )?total/.test(t))) { mapa[c.chave] = i; achados++; }
+});
+});
+return achados >= 4 && mapa.item !== undefined && mapa.qtd !== undefined && mapa.unitario !== undefined ? mapa : null;
+}
+var ROT_COL = { item: "Item", descricao: "Descrição", un: "Unidade", qtd: "Quantidade", unitario: "Preço unitário", total: "Total" };
+function letraCol(i) { var s = "", n = i + 1; while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+Fluxo.proposta = {
+ler: function (matriz) {
+var m = arr(matriz), hi = -1, col = null, i;
+for (i = 0; i < m.length && i < 60; i++) { col = achaCabecalho(m[i]); if (col) { hi = i; break; } }
+if (!col) return { erro: "Não achei o cabeçalho da planilha. Procurei as colunas Item, Descrição, Unidade, Quantidade, Preço unitário e Total na parte de cima da planilha." };
+var linhas = [], totalDeclarado = null, brancos = 0;
+for (i = hi + 1; i < m.length; i++) {
+var r = arr(m[i]);
+var item = r[col.item] === undefined || r[col.item] === null ? "" : String(r[col.item]).replace(/^\s+|\s+$/g, "");
+var resto = r.map(function (c) { return norm(c); }).join(" ");
+if (!item) {
+if (/\btotal\b|valor global|preco global/.test(resto) && col.total !== undefined && num(r[col.total]) !== null) totalDeclarado = num(r[col.total]);
+if (!r.some(function (c) { return !vazio(c); })) brancos++;
+continue;
+}
+if (/^total/.test(norm(item))) { if (col.total !== undefined && num(r[col.total]) !== null) totalDeclarado = num(r[col.total]); continue; }
+var qtd = num(r[col.qtd]), unit = num(r[col.unitario]), tot = col.total !== undefined ? num(r[col.total]) : null;
+if (qtd === null && unit === null) continue;
+linhas.push({ item: item, descricao: col.descricao !== undefined && r[col.descricao] !== undefined ? String(r[col.descricao]) : "",
+un: col.un !== undefined && r[col.un] !== undefined ? String(r[col.un]) : "", qtd: qtd, unitario: unit, total: tot });
+}
+if (!linhas.length) return { erro: "O cabeçalho foi achado, mas não há linha de preço abaixo dele." };
+return { linhas: linhas, totalDeclarado: totalDeclarado, colunas: "colunas lidas: " + COLUNAS.filter(function (c) { return col[c.chave] !== undefined; }).map(function (c) { return ROT_COL[c.chave] + " (" + letraCol(col[c.chave]) + ")"; }).join(", ") };
+}
+};
+Fluxo.analisarProposta = function (p, prop, modoArredondamento) {
+var ref = p && p.referenciaPublicada;
+if (!ref) throw new Error("O edital ainda não foi publicado: não há referência congelada para comparar.");
+var refLinhas = arr(ref.linhas).map(function (l) { return { item: l.item, descricao: l.descricao, un: l.un, qtd: l.qtd, unitario: l.unitario, total: l.total }; });
+return Cplpro.analisarProposta(refLinhas, prop.linhas, { totalProposta: prop.totalDeclarado, totalReferencia: ref.total, modoArredondamento: modoArredondamento });
+};
+Fluxo.decidirProposta = function (p, propostaId, decisao, papeis, quem, agora) {
+var papel = Fluxo.exigir(papeis, "analisar_propostas");
+var DEC = ["classificar", "diligencia", "desclassificar"];
+if (DEC.indexOf(decisao.acao) < 0) throw new Error("Decisão inválida: use classificar, diligencia ou desclassificar.");
+if (decisao.acao !== "classificar" && vazio(decisao.motivo)) throw new Error("Escreva o motivo da decisão: ele vai no documento enviado ao licitante.");
+var q = clone(p), pr = arr(q.propostas).filter(function (x) { return x.id === propostaId; })[0];
+if (!pr) throw new Error("Proposta não encontrada.");
+var antes = pr.decisao ? pr.decisao.acao : null;
+pr.decisao = { acao: decisao.acao, motivo: vazio(decisao.motivo) ? null : decisao.motivo, itens: arr(decisao.itens), por: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel, em: vazio(agora) ? agoraISO() : agora };
+Fluxo.registrar(q, "proposta:" + decisao.acao + ":" + pr.id, antes, decisao.acao, { nome: pr.decisao.por, papel: papel }, agora);
+return q;
+};
+var BASES_OFICIAIS = /^(SINAPI|SICRO|SIURB)/i;
+Fluxo.itemTemBase = function (linha) {
+var bf = String((linha && (linha.baseFonte || (linha.item && linha.item.baseFonte))) || "");
+return !!(linha && !vazio(linha.codigo) && BASES_OFICIAIS.test(bf));
+};
+Fluxo.pesquisar = function (p, linhas, modoArredondamento) {
+var reg = Cplpro.pesquisaPrecos.regulamentoEfetivo(p), pesq = p.pesquisa || {}, itens = pesq.itens || {};
+var ctx = { dataPrevistaEdital: p.dataPrevistaEdital, dataPesquisa: pesq.dataPesquisa, metodo: pesq.metodo, regraDescarte: pesq.regraDescarte, modoArredondamento: modoArredondamento };
+var avals = [], itensMapa = [];
+arr(linhas).forEach(function (l) {
+itensMapa.push({ item: l.numero, descricao: l.descricao, un: l.unidade, qtd: l.quantidade });
+if (Fluxo.itemTemBase(l)) {
+avals.push({ item: l.numero, valor: l.custoUnitario, metodo: "base_oficial", situacao: "ok", comBase: true, regulamentoId: reg ? reg.id : null });
+return;
+}
+var cfg = itens[l.numero] || {};
+var av = Cplpro.pesquisaPrecos.avaliarItem({ item: l.numero, codigo: l.codigo }, arr(cfg.fontes), reg, ctx);
+av.justificativa = vazio(cfg.justificativa) ? null : cfg.justificativa;
+if (av.justificativaObrigatoria && av.justificativa) av.situacao = av.valor !== null ? "ok_justificado" : av.situacao;
+avals.push(av);
+});
+var mapa = Cplpro.pesquisaPrecos.mapa(itensMapa, avals, { modoArredondamento: modoArredondamento });
+return { avaliacoes: avals, mapa: mapa, regulamento: reg, semBase: avals.filter(function (a) { return !a.comBase; }).length };
+};
+var CAMPOS_PAINEL = {
+processo: ["codigo", "objeto", "secretaria", "passo", "passoNome", "pct", "status", "statusRotulo"],
+prazo: ["codigo", "objeto", "tipo", "tipoRotulo", "data", "dias"],
+pendenciaPapel: ["papel", "papelNome", "total"],
+publicado: ["codigo", "objeto", "dataPublicacao"]
+};
+Fluxo.CAMPOS_PAINEL = CAMPOS_PAINEL;
+var STATUS_ROTULO = { rascunho: "Em preparo", em_analise_juridica: "No jurídico", com_ressalvas: "Com ressalvas", parecer_favoravel: "Parecer favorável", devolvido: "Devolvido pelo jurídico", publicado: "Publicado" };
+Fluxo.STATUS_ROTULO = STATUS_ROTULO;
+function aSomenteLista(obj, campos) {
+var o = {};
+campos.forEach(function (c) { if (obj[c] !== undefined) o[c] = obj[c]; });
+return o;
+}
+function codigoDe(p) { return String(p.id || "").replace(/^prc-/, "").substring(0, 6).toUpperCase(); }
+function objCurto(p) {
+var s = String(p.objeto || "").replace(/\s+/g, " ");
+return s.length > 90 ? s.substring(0, 87) + "…" : s;
+}
+function difDias(aISO, bISO) {
+var a = lerData(aISO), b = lerData(bISO);
+return a && b ? Math.round((b.getTime() - a.getTime()) / 86400000) : null;
+}
+function somaMesesISO(iso, n) {
+var d = lerData(iso); if (!d) return null;
+var alvo = new Date(d.getFullYear(), d.getMonth() + n, 1, 12, 0, 0), ult = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0, 12, 0, 0).getDate();
+return dataISO(new Date(alvo.getFullYear(), alvo.getMonth(), Math.min(d.getDate(), ult), 12, 0, 0));
+}
+Fluxo.fimPrazoRecurso = function (p) {
+if (!p || vazio(p.resultadoEm)) return null;
+var dias = Fluxo.valorParametro(p, "recurso_prazo");
+var n = dias && typeof dias === "object" && typeof dias.diasUteis === "number" ? dias.diasUteis : 3;
+return Cplpro.diasUteisDepois(p.resultadoEm, n, p.feriadosLocais);
+};
+Fluxo.cotacaoVence = function (p) {
+var reg = Cplpro.pesquisaPrecos.regulamentoEfetivo(p), regra = null;
+if (!reg) return null;
+reg.ordem.forEach(function (o) { if (o.tipo === "cotacao" && o.validade) regra = o; });
+if (!regra) return null;
+var menor = null;
+var itens = (p.pesquisa && p.pesquisa.itens) || {};
+Object.keys(itens).forEach(function (k) {
+arr(itens[k].fontes).forEach(function (f) {
+if (f.tipo !== "cotacao" || !lerData(f.dataColeta)) return;
+var v = somaMesesISO(f.dataColeta, regra.validade.meses);
+if (v && (!menor || v < menor)) menor = v;
+});
+});
+return menor;
+};
+Fluxo.painel = function (processos, hoje) {
+var lista = arr(processos), h = hoje || hojeISO();
+var abertos = lista.filter(function (p) { return p.status !== "publicado"; });
+var porPasso = {}, procs = [], prazos = [], pend = {}, publicados = [];
+Cplpro.PASSOS.forEach(function (ps) { porPasso[ps.id] = { passo: ps.id, ordem: ps.ordem, passoNome: ps.nome, total: 0, processos: [] }; });
+abertos.forEach(function (p) {
+var at = Fluxo.passoAtual(p), cod = codigoDe(p);
+porPasso[at.id].total++;
+var item = aSomenteLista({ codigo: cod, objeto: objCurto(p), secretaria: p.secretaria || "", passo: at.ordem, passoNome: at.nome, pct: Cplpro.progresso(p).geral, status: p.status, statusRotulo: STATUS_ROTULO[p.status] || p.status }, CAMPOS_PAINEL.processo);
+porPasso[at.id].processos.push(item); procs.push(item);
+var pr = Cplpro.progresso(p);
+pr.pendencias.forEach(function (x) { var pap = PAPEL_DO_PASSO[x.passo] || "cpl"; pend[pap] = (pend[pap] || 0) + 1; });
+var cv = Fluxo.cotacaoVence(p);
+if (cv) prazos.push(aSomenteLista({ codigo: cod, objeto: objCurto(p), tipo: "cotacao", tipoRotulo: "Cotação vence", data: cv, dias: difDias(h, cv) }, CAMPOS_PAINEL.prazo));
+if (p.parecer && p.parecer.resultado === "com_ressalvas") {
+var ab = arr(p.parecer.ressalvas).filter(function (r) { return !r.respondida; }).length;
+if (ab) prazos.push(aSomenteLista({ codigo: cod, objeto: objCurto(p), tipo: "ressalva", tipoRotulo: ab + " ressalva(s) do jurídico em aberto", data: p.parecer.emitidoEm ? String(p.parecer.emitidoEm).substring(0, 10) : null, dias: null }, CAMPOS_PAINEL.prazo));
+}
+});
+lista.forEach(function (p) {
+var cod = codigoDe(p);
+if (p.status === "publicado" && p.publicacao) {
+publicados.push({ p: p, d: p.publicacao.dataPublicacao || "" });
+var ab = (p.publicacao && p.publicacao.dataAbertura) || (p.cronograma && p.cronograma.dataAbertura);
+if (ab && ab >= h) prazos.push(aSomenteLista({ codigo: cod, objeto: objCurto(p), tipo: "abertura", tipoRotulo: "Abertura das propostas", data: ab, dias: difDias(h, ab) }, CAMPOS_PAINEL.prazo));
+var fr = Fluxo.fimPrazoRecurso(p);
+if (fr && fr >= h) prazos.push(aSomenteLista({ codigo: cod, objeto: objCurto(p), tipo: "recurso", tipoRotulo: "Fim do prazo de recurso", data: fr, dias: difDias(h, fr) }, CAMPOS_PAINEL.prazo));
+} else if (p.status !== "publicado" && p.cronograma && p.cronograma.dataAbertura && p.cronograma.dataAbertura >= h) {
+prazos.push(aSomenteLista({ codigo: cod, objeto: objCurto(p), tipo: "abertura", tipoRotulo: "Abertura prevista", data: p.cronograma.dataAbertura, dias: difDias(h, p.cronograma.dataAbertura) }, CAMPOS_PAINEL.prazo));
+}
+});
+prazos = prazos.filter(function (x) { return x.dias === null || x.dias >= 0; }).sort(function (a, b) { return String(a.data || "9999") < String(b.data || "9999") ? -1 : 1; });
+var mes = h.substring(0, 7);
+var doMes = publicados.filter(function (x) { return String(x.d).substring(0, 7) === mes; }).map(function (x) {
+return aSomenteLista({ codigo: codigoDe(x.p), objeto: objCurto(x.p), dataPublicacao: x.d }, CAMPOS_PAINEL.publicado);
+});
+var pendList = Object.keys(pend).map(function (k) { return aSomenteLista({ papel: k, papelNome: R.PAPEIS[k] ? R.PAPEIS[k].nome : k, total: pend[k] }, CAMPOS_PAINEL.pendenciaPapel); })
+.sort(function (a, b) { return b.total - a.total; });
+return {
+geradoEm: h,
+quadros: [
+{ id: "passos", titulo: "Processos por passo", itens: Cplpro.PASSOS.map(function (ps) { return { passo: porPasso[ps.id].ordem, passoNome: ps.nome, total: porPasso[ps.id].total }; }), processos: procs },
+{ id: "prazos", titulo: "Próximos prazos", itens: prazos },
+{ id: "pendencias", titulo: "Pendências por responsável", itens: pendList },
+{ id: "publicados", titulo: "Publicados no mês", itens: doMes, total: doMes.length }
+]
+};
+};
+Fluxo.conformidade = function (p, ctx) {
+var c = ctx || {}, pr = Cplpro.progresso(p), it = [];
+function add(id, texto, artigo, ok, detalhe, passo) { it.push({ id: id, texto: texto, artigo: artigo, ok: !!ok, detalhe: detalhe || "", passo: passo || null }); }
+var etpOk = pr.passos.etp.pct === 100;
+add("demanda", "Demanda formalizada, com justificativa e previsão no plano de contratações", "Lei 14.133/2021, art. 18, caput", pr.passos.demanda.pct === 100, pr.passos.demanda.pendencias.length ? pr.passos.demanda.pendencias[0].msg : "", "demanda");
+add("etp", "Estudo técnico preliminar com os elementos obrigatórios", "Lei 14.133/2021, art. 18, §§1º e 2º", etpOk, etpOk ? "" : pr.passos.etp.pendencias[0].msg, "etp");
+add("riscos", "Riscos avaliados e alocados (matriz de riscos)", "Lei 14.133/2021, art. 22", pr.passos.riscos.pct === 100, pr.passos.riscos.pendencias.length ? pr.passos.riscos.pendencias[0].msg : "", "riscos");
+var pq = c.pesquisa;
+var okPesq = !!pq && pq.avaliacoes.every(function (a) { return a.comBase || a.situacao === "ok" || a.situacao === "ok_justificado"; });
+add("pesquisa", "Pesquisa de preços pelas fontes do regulamento, com mínimo de preços ou justificativa", "Lei 14.133/2021, art. 23", okPesq, !pq ? "Orçamento de referência não vinculado." : (okPesq ? "" : "Há item sem preço de referência fechado."), "orcamento");
+add("orcamento", "Orçamento de referência vinculado, com base e competência declaradas", "Lei 14.133/2021, art. 23, §§1º e 2º", pr.passos.orcamento.pct === 100, pr.passos.orcamento.pendencias.length ? pr.passos.orcamento.pendencias[0].msg : "", "orcamento");
+add("tr", "Termo de referência / projeto básico com objeto, medição e recebimento", "Lei 14.133/2021, art. 6º, XXIII e XXV", pr.passos.tr.pct === 100, pr.passos.tr.pendencias.length ? pr.passos.tr.pendencias[0].msg : "", "tr");
+add("sigilo", "Sigilo do orçamento decidido de forma explícita", "Lei 14.133/2021, art. 24", p.sigiloso === true || p.sigiloso === false, p.sigiloso === null || p.sigiloso === undefined ? "Responda sim ou não no passo 8." : "", "parametros");
+var pz = Fluxo.prazo(p);
+add("prazo", "Abertura respeita o prazo mínimo desde a publicação", "Lei 14.133/2021, art. 55", pz.aberturaOk === true, pz.aberturaOk === false ? "Mínimo: " + pz.dataMinimaAbertura : (pz.pendencias[0] || "Informe a data de abertura."), "parametros");
+add("pacote", "Minuta do edital e anexos gerados sem campo [PREENCHER]", "Lei 14.133/2021, art. 25 e art. 18", Fluxo.pacoteValido(p), Fluxo.pacoteValido(p) ? "" : "Gere os documentos no passo 9.", "minuta");
+var pa = p.parecer;
+add("parecer", "Parecer jurídico favorável (ou ressalvas respondidas e com ciência)", "Lei 14.133/2021, art. 53", Cplpro.fluxoJuridico.podePublicar(p), pa ? "Resultado: " + ({ favoravel: "favorável", com_ressalvas: "favorável com ressalvas", desfavoravel: "desfavorável" }[pa.resultado] || pa.resultado) : "Ainda não enviado/emitido.", "conformidade");
+return it;
+};
+Fluxo.bloqueiosEnvio = function (p) {
+var pr = Cplpro.progresso(p), m = [];
+Cplpro.PASSOS.forEach(function (ps) {
+if (ps.id === "conformidade") return;
+var x = pr.passos[ps.id];
+if (x.pct < 100) m.push("Passo " + ps.ordem + " (" + ps.nome + ") tem " + x.pendencias.length + " pendência(s).");
+else if (!x.conferido) m.push("Passo " + ps.ordem + " (" + ps.nome + ") ainda não foi conferido.");
+});
+if (!Fluxo.pacoteValido(p)) m.unshift("A minuta e os anexos precisam estar gerados sobre o conteúdo atual (passo 9).");
+return m;
+};
+Fluxo.mudouDepoisDoParecer = function (p) { return !!(p && p.assinaturaEnviada && p.assinaturaEnviada !== Fluxo.assinaturaConteudo(p)); };
+Fluxo.podeReenviar = function (p) {
+return !!p && (p.status === "rascunho" || p.status === "devolvido" || ((p.status === "parecer_favoravel" || p.status === "com_ressalvas") && Fluxo.mudouDepoisDoParecer(p)));
+};
+Fluxo.enviarJuridico = function (p, papeis, quem, agora) {
+var papel = Fluxo.exigir(papeis, "enviar_juridico");
+if (p.status === "em_analise_juridica") return clone(p);
+if (!Fluxo.podeReenviar(p)) throw new Error("O processo está «" + (STATUS_ROTULO[p.status] || p.status) + "» e não pode ser enviado ao jurídico agora.");
+var bl = Fluxo.bloqueiosEnvio(p);
+if (bl.length) throw new Error("Não dá para enviar ainda: " + bl[0]);
+var base = p;
+if (p.status === "parecer_favoravel" || p.status === "com_ressalvas") {
+base = clone(p); base.status = "devolvido";
+Fluxo.registrar(base, "reenvio_por_alteracao", p.status, "devolvido", { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }, agora);
+}
+var q = Cplpro.fluxoJuridico.enviar(base, { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }, vazio(agora) ? agoraISO() : agora);
+q.assinaturaEnviada = Fluxo.assinaturaConteudo(q);
+q.autorizacao = null;
+return q;
+};
+Fluxo.darCiencia = function (p, papeis, quem, agora) {
+var papel = Fluxo.exigir(papeis, "emitir_parecer");
+var q = Cplpro.fluxoJuridico.darCiencia(p, { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }, vazio(agora) ? agoraISO() : agora);
+if (q.parecer && q.parecer.ciencia && (!p.parecer || !p.parecer.ciencia)) { q.assinaturaEnviada = Fluxo.assinaturaConteudo(q); q.autorizacao = null; }
+return q;
+};
+Fluxo.hash = hash; Fluxo.num = num; Fluxo.codigoDe = codigoDe;
+global.CplproFluxo = Fluxo;
+if (typeof module !== "undefined" && module.exports) module.exports = Fluxo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplprodocs.js ==== */
+try {
+(function (global) {
+"use strict";
+var Cplpro = global.Cplpro, R = global.CplproRegras;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!R) R = require("./cplproregras.js");
+if (!Cplpro) Cplpro = require("./cplpro.js");
+}
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function esc(s) { return String(s === null || s === undefined ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function nl2br(s) { return esc(s).replace(/\r?\n/g, "<br>"); }
+function pre(rotulo) { return '<span class="cpl-pre" style="color:#b91c1c;font-weight:bold">[PREENCHER: ' + esc(rotulo) + "]</span>"; }
+function val(v, rotulo) { return vazio(v) ? pre(rotulo) : nl2br(v); }
+function valLinha(v, rotulo) { return vazio(v) ? pre(rotulo) : esc(v); }
+function dataBR(iso) {
+var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso === null || iso === undefined ? "" : iso));
+return m ? m[3] + "/" + m[2] + "/" + m[1] : "";
+}
+function numBR(n, casas) {
+if (typeof n !== "number" || !isFinite(n)) return "";
+var neg = n < 0, s = Math.abs(n).toFixed(casas === undefined ? 2 : casas), parts = s.split("."), int = parts[0], out = "";
+while (int.length > 3) { out = "." + int.slice(-3) + out; int = int.slice(0, -3); }
+return (neg ? "-" : "") + int + out + (parts[1] ? "," + parts[1] : "");
+}
+function brl(n) { return typeof n === "number" && isFinite(n) ? "R$ " + numBR(n, 2) : ""; }
+function sn(v) { return v === true ? "Sim" : (v === false ? "Não" : null); }
+var NIVEL_ROTULO = { baixo: "Baixo", medio: "Médio", alto: "Alto", critico: "Crítico" };
+var ALOC_ROTULO = { contratante: "Contratante (órgão)", contratada: "Contratada", compartilhado: "Compartilhado" };
+function cab(p, ctx, titulo, tarja) {
+var o = (ctx && ctx.orgao) || {}, h = "";
+h += (o.logoHtml ? "<p>" + o.logoHtml + "</p>" : "");
+h += "<p><b>" + valLinha(o.nome, "nome do órgão") + "</b></p>";
+if (p && p.secretaria) h += "<p>" + esc(p.secretaria) + "</p>";
+h += "<h1>" + esc(titulo) + "</h1>";
+h += "<p>Processo " + esc(codigo(p)) + (ctx && ctx.hoje ? " — " + dataBR(ctx.hoje) : "") + "</p>";
+if (!parecerFavoravel(p)) h += "<p><b>Minuta — sujeita a parecer jurídico (art. 53 da Lei 14.133/2021).</b></p>";
+if (tarja) h += "<p><b>" + esc(tarja) + "</b></p>";
+return h;
+}
+function codigo(p) { return String((p && p.id) || "").replace(/^prc-/, "").substring(0, 6).toUpperCase(); }
+function parecerFavoravel(p) { return !!(p && p.parecer && Cplpro.fluxoJuridico.podePublicar(p)); }
+function secao(n, titulo, corpo) { return "<h2>" + (n ? n + ". " : "") + esc(titulo) + "</h2>" + corpo; }
+function par(texto) { return "<p>" + texto + "</p>"; }
+function lista(itens) { return "<ul>" + itens.map(function (i) { return "<li>" + i + "</li>"; }).join("") + "</ul>"; }
+function tabela(cabecalho, linhas) {
+return "<table><thead><tr>" + cabecalho.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+linhas.map(function (l) { return "<tr>" + l.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>";
+}
+function assinatura(rotulo) { return '<p> </p><p class="linha-assin">' + esc(rotulo) + "</p>"; }
+function pv(p, id) {
+var x = p && p.parametros ? p.parametros[id] : null, v = x ? x.valor : null;
+if (id === "sigiloso" && vazio(v)) v = p ? p.sigiloso : null;
+return vazio(v) ? null : v;
+}
+function descParam(p, id) {
+var v = pv(p, id);
+if (v === null) return null;
+if (typeof v === "boolean") return sn(v);
+if (typeof v === "string") return v;
+if (id === "garantia_contrato") {
+var t = v.pct === undefined || v.pct === null ? "Sem garantia exigida" : "Garantia de " + numBR(Number(v.pct), 2) + "% do valor do contrato";
+return t + (v.seguroRetomada ? "; seguro-garantia com cláusula de retomada" : "") + (v.justificativa ? ". Justificativa: " + v.justificativa : "");
+}
+if (id === "reajuste") return "Índice: " + (v.indice || "—") + "; data-base: " + (dataBR(v.dataBase) || "—");
+if (id === "aditivo_teto") return "Acréscimos até " + numBR(v.acrescimoPct, 0) + "% e supressões até " + numBR(v.supressaoPct, 0) + "% do valor inicial";
+if (id === "recurso_prazo") return numBR(v.diasUteis, 0) + " dias úteis";
+if (id === "exequibilidade") return "Inexequível abaixo de " + numBR(v.inexequivelAbaixoPct, 0) + "% do valor orçado; garantia adicional abaixo de " + numBR(v.garantiaAdicionalAbaixoPct, 0) + "%";
+if (id === "parcelas_relevancia") return arr(v).length ? arr(v).length + " parcela(s) de maior relevância" : "Nenhuma parcela atinge 4% do valor estimado";
+return JSON.stringify(v);
+}
+function parOuPre(p, id, rotulo) { var d = descParam(p, id); return d === null ? pre(rotulo) : esc(d); }
+function publico(p, campo) { return Cplpro.sigilo.campoPublico(p, campo); }
+var TEXTO_SIGILO = "O orçamento estimado desta contratação é sigiloso, nos termos do art. 24 da Lei 14.133/2021, e só será tornado público após o julgamento das propostas.";
+function tabQuantitativos(p) {
+var qs = arr(p.quantitativos);
+if (!qs.length) return par(pre("quantitativos do objeto"));
+return tabela(["Item", "Descrição", "Un.", "Quantidade", "Origem (arquivo, página)"], qs.map(function (q) {
+var o = q.origem || {};
+return [esc(q.item === undefined ? q.itemRef : q.item), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
+(vazio(o.arquivo) || vazio(o.pagina)) ? pre("origem do item " + (q.item === undefined ? q.itemRef : q.item)) : esc(o.arquivo + ", p. " + o.pagina)];
+}));
+}
+function dfd(p, ctx) {
+var h = cab(p, ctx, "Documento de formalização da demanda (DFD)", "Documento INTERNO do processo.");
+var tipo = R.TIPOS_OBJETO[p.tipoObjeto];
+h += secao(1, "Unidade requisitante", par("Secretaria: " + valLinha(p.secretaria, "secretaria requisitante") + ". Responsável pela demanda: " + valLinha(p.requisitante, "nome do responsável pela demanda") + "."));
+h += secao(2, "Objeto", par(val(p.objeto, "descrição completa do objeto")) + par("Tipo de objeto: " + (tipo ? esc(tipo.nome) : pre("tipo de objeto")) + "."));
+h += secao(3, "Justificativa da necessidade", par(val(p.justificativa, "justificativa da necessidade (interesse público)")));
+h += secao(4, "Previsão no plano de contratações anual", par(val(p.pca, "referência no plano de contratações anual, ou a justificativa da ausência") + " (Lei 14.133/2021, art. 18, caput)."));
+h += secao(5, "Prazo desejado", par(valLinha(p.prazoDesejado, "data ou prazo desejado para a contratação")));
+h += secao(6, "Fonte dos recursos", par("Recurso federal: " + (sn(p.recursoFederal) || pre("informar se há recurso federal (muda o regulamento da pesquisa de preços)")) + "."));
+return h + assinatura("Responsável pela demanda") + assinatura("Autoridade competente");
+}
+function etp(p, ctx) {
+var h = cab(p, ctx, "Estudo técnico preliminar (ETP)", "Documento INTERNO do processo — contém o valor estimado.");
+var man = (p.etp && p.etp.campos) || {}, just = (p.etp && p.etp.justificativas) || {};
+h += par("Elementos do art. 18, §1º, da Lei 14.133/2021. Obrigatórios (art. 18, §2º): I, IV, VI, VIII e XIII; os demais, se não contemplados, exigem justificativa.");
+R.ETP_ELEMENTOS.forEach(function (el) {
+var v = man[el.id], corpo;
+if (vazio(v)) {
+if (!el.obrigatorio && !vazio(just[el.id])) corpo = par("Não se aplica. Justificativa: " + nl2br(just[el.id]));
+else corpo = par(pre(el.nome + (el.obrigatorio ? " (obrigatório)" : "")));
+} else corpo = par(nl2br(v));
+h += "<h2>" + esc(el.id) + " — " + esc(el.nome) + "</h2>" + corpo;
+if (el.id === "IV") h += tabQuantitativos(p);
+});
+return h + assinatura("Responsável pelo estudo");
+}
+function riscos(p, ctx) {
+var h = cab(p, ctx, "Mapa e matriz de riscos", null);
+var rs = arr(p.riscos);
+h += par("Matriz de alocação de riscos — Lei 14.133/2021, art. 22. Escala 5×5 da casa: probabilidade × impacto (1–4 baixo, 5–9 médio, 10–14 alto, 15–25 crítico).");
+if (!rs.length) return h + par(pre("riscos da contratação (use a biblioteca do tipo de objeto)"));
+h += secao(1, "Mapa de riscos", tabela(["Risco", "Categoria", "Prob.", "Impacto", "Nível", "Mitigação"], rs.map(function (r) {
+var n = Cplpro.nivelRisco(r.prob, r.impacto);
+return [esc(r.descricao), esc(r.categoria || ""), esc(r.prob), esc(r.impacto), n ? esc(NIVEL_ROTULO[n.nivel] + " (" + n.valor + ")") : pre("probabilidade e impacto"), val(r.mitigacao, "mitigação do risco")];
+})));
+var grupos = {};
+rs.forEach(function (r) { var a = r.alocacao || "sem"; (grupos[a] = grupos[a] || []).push(r); });
+var corpo = "";
+["contratante", "contratada", "compartilhado", "sem"].forEach(function (a) {
+if (!grupos[a]) return;
+corpo += "<h3>" + (a === "sem" ? "Sem alocação definida" : esc(ALOC_ROTULO[a] || a)) + "</h3>" +
+(a === "sem" ? par(pre("alocação de cada risco abaixo")) : "") + lista(grupos[a].map(function (r) { return esc(r.descricao); }));
+});
+h += secao(2, "Matriz de alocação", corpo);
+return h + par("Sugestões da biblioteca da casa: texto a conferir pelo órgão antes da adoção.");
+}
+function mapaPrecos(p, ctx) {
+var h = cab(p, ctx, "Mapa da pesquisa de preços", "Documento INTERNO — preços e fontes; sigiloso até o julgamento quando o orçamento é sigiloso (art. 24).");
+var pq = ctx && ctx.pesquisa;
+if (!pq) return h + par(pre("orçamento de referência e pesquisa de preços (passo 6)"));
+var reg = pq.regulamento;
+h += par("Regulamento aplicado: " + (reg ? esc(reg.nome) + " — " + esc(reg.fonte) : pre("regulamento de pesquisa de preços")) + ".");
+h += par("Data da pesquisa: " + valLinha(dataBR((p.pesquisa || {}).dataPesquisa), "data da pesquisa de preços") + ". Método de cálculo: " + valLinha(((p.pesquisa || {}).metodo || "") && ({ media: "média", mediana: "mediana", menor: "menor valor" }[(p.pesquisa || {}).metodo]), "método de cálculo (média, mediana ou menor valor)") + ".");
+var rd = (p.pesquisa || {}).regraDescarte;
+h += par("Regra de descarte por discrepância: " + (rd && (typeof rd.abaixoPct === "number" || typeof rd.acimaPct === "number") ? "preços abaixo de " + numBR(rd.abaixoPct || 0, 0) + "% ou acima de " + numBR(rd.acimaPct || 0, 0) + "% da mediana são descartados" : "nenhuma configurada — nenhum preço foi descartado por discrepância") + ".");
+var linhas = pq.mapa.linhas;
+h += secao(1, "Preço de referência por item", tabela(["Item", "Descrição", "Un.", "Qtd.", "Preço unitário", "Total", "Situação"], linhas.map(function (l, i) {
+var av = pq.avaliacoes[i] || {};
+return [esc(l.item), esc(l.descricao), esc(l.un), esc(numBR(l.qtd, 2)), l.unitario === null ? pre("preço do item " + l.item) : esc(numBR(l.unitario, 2)), l.total === null ? "—" : esc(numBR(l.total, 2)),
+esc(av.comBase ? "base oficial" : ({ ok: "ok", ok_justificado: "ok com justificativa", justificativa: "justificativa pendente", sem_fonte: "sem fonte", pendente: "pendente" }[av.situacao] || av.situacao || ""))];
+})) + par("<b>Total do mapa (sem BDI): " + esc(brl(pq.mapa.total)) + "</b>" + (pq.mapa.semPreco ? " — " + pq.mapa.semPreco + " item(ns) sem preço fechado" : "") + "."));
+var corpo = "";
+pq.avaliacoes.forEach(function (av, i) {
+if (av.comBase) return;
+var it = linhas[i];
+corpo += "<h3>Item " + esc(it.item) + " — " + esc(it.descricao) + "</h3>";
+var cfg = ((p.pesquisa || {}).itens || {})[it.item] || {};
+var us = arr(av.fontesUsadas);
+corpo += us.length ? tabela(["Fonte", "Detalhe", "Valor", "Regra"], us.map(function (u) {
+var f = arr(cfg.fontes)[u.indice] || {};
+return [esc(u.tipo), esc([f.base, f.fornecedor, f.link, f.dataAcesso ? "acesso " + dataBR(f.dataAcesso) + " " + (f.horaAcesso || "") : "", f.dataColeta ? "coleta " + dataBR(f.dataColeta) : ""].filter(Boolean).join(" · ")), esc(numBR(u.valor, 2)), esc(u.regra)];
+})) : par("Nenhuma fonte válida.");
+if (arr(av.descartadas).length) corpo += par("<b>Descartadas:</b>") + lista(av.descartadas.map(function (d) { return esc("Fonte " + (d.indice + 1) + " (" + d.tipo + "): " + d.motivo + " — " + d.regra); }));
+if (av.avisoDescarte) corpo += par(esc(av.avisoDescarte));
+if (av.justificativaObrigatoria) corpo += par("Menos preços do que o mínimo. Justificativa: " + (av.justificativa ? nl2br(av.justificativa) : pre("justificativa aprovada pela autoridade (item " + it.item + ")")));
+arr(av.pendencias).forEach(function (m) { corpo += par(esc(m)); });
+});
+if (corpo) h += secao(2, "Fontes por item sem base oficial", corpo);
+return h + assinatura("Responsável pela pesquisa");
+}
+function tr(p, ctx) {
+var h = cab(p, ctx, "Termo de referência / projeto básico", null);
+var t = p.tr || {}, tipo = R.TIPOS_OBJETO[p.tipoObjeto];
+h += par("Elementos do art. 6º, XXIII (termo de referência) e XXV (projeto básico) da Lei 14.133/2021.");
+h += secao(1, "Definição do objeto", par(val(t.objeto || p.objeto, "descrição do objeto")));
+h += secao(2, "Fundamentação da contratação", par(val(p.justificativa, "fundamentação (referência ao ETP)")));
+var req = arr(p.documentos).filter(function (d) { return !d.superadoPor; });
+h += secao(3, "Elementos de projeto que integram o objeto", req.length ? lista(req.map(function (d) { return esc((R.ACERVO_TIPOS[d.tipo] ? R.ACERVO_TIPOS[d.tipo].nome : d.tipo) + " — " + d.nome + (d.revisao ? " (" + d.revisao + ")" : "")); })) : par(pre("projetos e documentos técnicos do objeto")));
+h += secao(4, "Quantitativos", tabQuantitativos(p));
+h += secao(5, "Modelo de execução", par("Regime de execução: " + parOuPre(p, "regime_execucao", "regime de execução") + (tipo ? "." : "")));
+h += secao(6, "Modelo de gestão e fiscalização", par(val(t.gestao, "modelo de gestão e fiscalização do contrato")));
+h += secao(7, "Critérios de medição e de pagamento", par(val(t.medicao, "critério de medição")) + par("Pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento")));
+h += secao(8, "Critérios de recebimento", par(val(t.recebimento, "critério de recebimento provisório e definitivo")));
+h += secao(9, "Forma e critério de seleção do fornecedor", par("Modalidade: " + parOuPre(p, "modalidade", "modalidade") + ". Critério de julgamento: " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + "."));
+var pr = pv(p, "parcelas_relevancia");
+if (arr(pr).length) {
+h += secao(10, "Parcelas de maior relevância (qualificação técnica)", par("Quantidade mínima exigível: até 50% da quantidade da parcela (Lei 14.133/2021, art. 67, §§1º e 2º).") +
+tabela(["Item", "Descrição", "Un.", "Quantidade mínima exigível"], pr.map(function (x) { return [esc(x.item), esc(x.descricao), esc(x.un), esc(numBR(x.qtdMaxExigivel, 2))]; })));
+}
+var vEst = publico(p, "valorEstimado") && ctx && ctx.orc ? brl(ctx.orc.total) : null;
+h += secao(11, "Estimativa do valor da contratação", par(publico(p, "valorEstimado") ? (vEst ? "Valor estimado: " + esc(vEst) + "." : pre("valor estimado")) : TEXTO_SIGILO));
+h += secao(12, "Adequação orçamentária", par(val(t.dotacao, "dotação orçamentária")));
+return h + assinatura("Responsável pelo termo de referência");
+}
+function edital(p, ctx) {
+var h = cab(p, ctx, "Minuta de edital", null);
+var tipo = R.TIPOS_OBJETO[p.tipoObjeto], pz = (ctx && ctx.prazo) || {};
+h += par("Modalidade: " + parOuPre(p, "modalidade", "modalidade") + ". Edital nº " + valLinha((p.edital || {}).numero, "número do edital") + ".");
+h += secao(1, "Objeto", par(val(p.objeto, "objeto da licitação")) + par("Descrição completa, projetos e quantitativos no termo de referência (anexo)."));
+h += secao(2, "Valor estimado e sigilo", par(publico(p, "valorEstimado") ? (ctx && ctx.orc ? "Valor estimado da contratação: " + esc(brl(ctx.orc.total)) + "." : pre("valor estimado")) : TEXTO_SIGILO));
+h += secao(3, "Critério de julgamento e regime de execução", par("Critério: " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + " (art. 33). Regime: " + parOuPre(p, "regime_execucao", "regime de execução") + " (art. 46)."));
+h += secao(4, "Participação", lista([
+"Consórcio: " + parOuPre(p, "consorcio", "participação de consórcio (sim/não)") + " (art. 15).",
+"Subcontratação: " + parOuPre(p, "subcontratacao", "subcontratação (sim/não)") + " (art. 122).",
+"Tratamento de ME/EPP: " + parOuPre(p, "me_epp", "tratamento de ME/EPP (sim/não)") + " (LC 123/2006).",
+"Visita técnica: " + parOuPre(p, "visita_tecnica", "visita técnica (sim/não)") + " (art. 63, §2º).",
+"Amostra ou prova de conceito: " + parOuPre(p, "amostra", "amostra (sim/não)") + "."
+]));
+h += secao(5, "Prazos", par("Publicação do edital: " + valLinha(dataBR(p.dataPrevistaEdital), "data de publicação") + " (art. 54: divulgação no PNCP). Abertura das propostas: " + valLinha(dataBR(pz.dataAbertura), "data de abertura") +
+". Prazo mínimo entre publicação e abertura: " + (pz.diasUteis ? esc(pz.diasUteis) + " dias úteis (art. 55), isto é, a partir de " + esc(dataBR(pz.dataMinimaAbertura)) : pre("prazo mínimo do art. 55")) + "."));
+h += secao(6, "Habilitação", par(val((p.edital || {}).habilitacao, "documentos de habilitação jurídica, técnica, fiscal, social, trabalhista e econômico-financeira exigidos")) +
+(arr(pv(p, "parcelas_relevancia")).length ? par("Qualificação técnica: atestados das parcelas de maior relevância indicadas no termo de referência (art. 67).") : ""));
+h += secao(7, "Proposta e planilha de preços", par("A planilha de preços do licitante preserva, sem alteração, a numeração, a descrição, a unidade e a quantidade de cada item do orçamento do órgão; só o preço unitário é do licitante. Serão desclassificadas as propostas acima do valor orçado pela Administração e as inexequíveis (art. 59). " + parOuPre(p, "exequibilidade", "exequibilidade") + "."));
+h += secao(8, "Garantia", par(parOuPre(p, "garantia_contrato", "garantia do contrato") + " (arts. 96 a 99)."));
+h += secao(9, "Reajuste", par(parOuPre(p, "reajuste", "índice e data-base do reajuste") + " (art. 25, §7º)."));
+h += secao(10, "Recursos", par("Prazo de recurso: " + parOuPre(p, "recurso_prazo", "prazo de recurso") + " (art. 165)."));
+h += secao(11, "Sanções e penalidades", par(val((p.edital || {}).sancoes, "regime de sanções aplicável (lei e regulamento do órgão)")));
+h += secao(12, "Anexos", lista(["Termo de referência / projeto básico", "Matriz de riscos", "Minuta do contrato", "Planilha de quantitativos (sem preços, quando o orçamento é sigiloso)"]));
+return h + assinatura("Agente de contratação / presidente da comissão") + assinatura("Autoridade competente");
+}
+function contrato(p, ctx) {
+var h = cab(p, ctx, "Minuta de contrato", null);
+h += par("Cláusulas necessárias: Lei 14.133/2021, art. 92. Contrato nº: numeração atribuída pelo órgão na assinatura.");
+h += secao(1, "Partes", par("Contratante: " + valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ". Contratada: a licitante vencedora, qualificada na ata de julgamento e na assinatura."));
+h += secao(2, "Objeto", par(val(p.objeto, "objeto do contrato")));
+h += secao(3, "Vigência e prazo de execução", par(val((p.edital || {}).vigencia, "prazo de vigência e prazo de execução, em meses ou dias")));
+h += secao(4, "Preço", par("O preço é o da proposta vencedora, aceito pela Administração e registrado na ata de julgamento. " + (publico(p, "valorEstimado") ? "" : "O orçamento estimado é sigiloso até o julgamento (art. 24).")));
+h += secao(5, "Regime de execução, medição e pagamento", par("Regime: " + parOuPre(p, "regime_execucao", "regime de execução") + ". Medição: " + valLinha((p.tr || {}).medicao, "critério de medição") + ". Pagamento: " + valLinha((p.tr || {}).pagamento, "condições e prazo de pagamento") + "."));
+h += secao(6, "Reajuste", par(parOuPre(p, "reajuste", "índice e data-base do reajuste") + " (art. 25, §7º)."));
+h += secao(7, "Garantia", par(parOuPre(p, "garantia_contrato", "garantia do contrato") + " (arts. 96 a 99)."));
+h += secao(8, "Alterações do contrato", par(parOuPre(p, "aditivo_teto", "limites de acréscimos e supressões") + " (art. 125)."));
+h += secao(9, "Fiscalização e recebimento", par("Gestão e fiscalização: " + valLinha((p.tr || {}).gestao, "fiscal e gestor do contrato") + ". Recebimento: " + valLinha((p.tr || {}).recebimento, "critério de recebimento") + "."));
+h += secao(10, "Matriz de riscos", par("A alocação de riscos é a do anexo «Mapa e matriz de riscos» (art. 22)."));
+h += secao(11, "Rescisão, sanções e foro", par(val((p.edital || {}).rescisaoForo, "hipóteses de extinção, sanções e foro")));
+return h + assinatura("Contratante") + assinatura("Contratada");
+}
+var DOCS = [
+{ id: "dfd", nome: "DFD — Documento de formalização da demanda", arquivo: "DFD", publico: false, fn: dfd },
+{ id: "etp", nome: "ETP — Estudo técnico preliminar", arquivo: "ETP", publico: false, fn: etp },
+{ id: "riscos", nome: "Mapa e matriz de riscos", arquivo: "Mapa e matriz de riscos", publico: true, fn: riscos },
+{ id: "pesquisa", nome: "Mapa da pesquisa de preços", arquivo: "Mapa da pesquisa de precos", publico: false, fn: mapaPrecos },
+{ id: "tr", nome: "TR / Projeto básico", arquivo: "TR - Projeto basico", publico: true, fn: tr },
+{ id: "edital", nome: "Minuta do edital", arquivo: "Minuta do edital", publico: true, fn: edital },
+{ id: "contrato", nome: "Minuta do contrato", arquivo: "Minuta do contrato", publico: true, fn: contrato }
+];
+function contarPre(html) { var m = String(html).match(/\[PREENCHER:/g); return m ? m.length : 0; }
+var CplproDocs = {
+DOCS: DOCS.map(function (d) { return { id: d.id, nome: d.nome, publico: d.publico }; }),
+TEXTO_SIGILO: TEXTO_SIGILO,
+contarPre: contarPre,
+nomeArquivo: function (doc, p) { return doc.arquivo + " - " + codigo(p); },
+gerar: function (p, ctx) {
+var out = [], total = 0;
+DOCS.forEach(function (d) {
+var html = d.fn(p, ctx || {}), n = contarPre(html);
+total += n;
+out.push({ id: d.id, nome: d.nome, arquivo: d.arquivo, publico: d.publico, html: html, pendentes: n });
+});
+return { docs: out, pendentes: total };
+},
+gerarProposta: function (tipo, p, prop, ctx) {
+var an = prop.analise || { achados: [], sugestao: "ok" };
+var nomeLic = valLinha(prop.licitante, "nome do licitante");
+var sugRot = { ok: "sem achado que exija providência", diligencia: "diligência", desclassificar: "desclassificação" };
+var h, fonteLinha = function (a) { return esc(a.fonte); };
+if (tipo === "parecer") {
+h = cab(p, ctx, "Parecer de análise da proposta", "Documento INTERNO.");
+h += par("Licitante: " + nomeLic + ". Proposta importada de «" + esc(prop.arquivo || "") + "» em " + esc(dataBR(prop.importadoEm)) + ".");
+h += par("O sistema compara a proposta com a planilha de referência congelada na publicação e <b>apenas sugere</b>; a decisão é do agente de contratação ou da comissão. Sugestão do sistema: <b>" + esc(sugRot[an.sugestao] || an.sugestao) + "</b>.");
+if (an.resumo) h += par("Total da referência: " + esc(brl(an.resumo.totalReferencia)) + " · total da proposta: " + esc(brl(an.resumo.totalProposta)) + (an.exequibilidade && an.exequibilidade.pct !== null ? " (" + esc(numBR(an.exequibilidade.pct, 2)) + "% da referência)" : "") + ".");
+h += an.achados.length ? tabela(["Item", "Achado", "Esperado", "Encontrado", "Fundamento", "Sugestão"], an.achados.map(function (a) {
+return [esc(a.item), esc(a.tipo.replace(/_/g, " ")), esc(a.esperado), esc(a.encontrado), fonteLinha(a), esc(sugRot[a.sugestao] || a.sugestao)];
+})) : par("Nenhum achado.");
+h += par("Decisão do servidor: " + (prop.decisao ? esc(prop.decisao.acao) + " por " + esc(prop.decisao.por) + " em " + esc(dataBR(prop.decisao.em)) + (prop.decisao.motivo ? " — " + esc(prop.decisao.motivo) : "") : pre("decisão do agente de contratação")) + ".");
+return h + assinatura("Agente de contratação / comissão");
+}
+if (tipo === "diligencia") {
+h = cab(p, ctx, "Termo de diligência", null);
+h += par("Ao licitante: " + nomeLic + ".");
+h += par("A proposta foi analisada e há pontos a esclarecer ou corrigir, sem alterar o preço global nem a substância da oferta. Prazo para resposta: " + valLinha(dataBR(prop.decisao && prop.decisao.prazo), "prazo para resposta") + ".");
+var itens = an.achados.filter(function (a) { return a.sugestao === "diligencia"; });
+h += itens.length ? tabela(["Item", "Ponto a esclarecer", "Esperado", "Encontrado", "Fundamento"], itens.map(function (a) { return [esc(a.item), esc(a.tipo.replace(/_/g, " ")), esc(a.esperado), esc(a.encontrado), fonteLinha(a)]; })) : par(pre("pontos a esclarecer"));
+if (prop.decisao && prop.decisao.motivo) h += par("Observação: " + nl2br(prop.decisao.motivo));
+return h + assinatura("Agente de contratação / comissão");
+}
+h = cab(p, ctx, "Comunicado de desclassificação", null);
+h += par("Ao licitante: " + nomeLic + ".");
+h += par("Comunicamos a desclassificação da proposta, pelo(s) motivo(s) abaixo, com o respectivo fundamento. Cabe recurso no prazo de " + parOuPre(p, "recurso_prazo", "prazo de recurso") + " (art. 165).");
+var base = an.achados.filter(function (a) { return a.sugestao === "desclassificar"; });
+var citados = prop.decisao && arr(prop.decisao.itens).length ? an.achados.filter(function (a) { return prop.decisao.itens.indexOf(a.item + ":" + a.tipo) >= 0; }) : base;
+h += citados.length ? tabela(["Item", "Motivo", "Esperado", "Encontrado", "Fundamento"], citados.map(function (a) { return [esc(a.item), esc(a.tipo.replace(/_/g, " ")), esc(a.esperado), esc(a.encontrado), fonteLinha(a)]; })) : par(pre("item e motivo da desclassificação"));
+h += par("Motivação do servidor: " + (prop.decisao && prop.decisao.motivo ? nl2br(prop.decisao.motivo) : pre("motivação")));
+return h + assinatura("Agente de contratação / comissão");
+}
+};
+global.CplproDocs = CplproDocs;
+if (typeof module !== "undefined" && module.exports) module.exports = CplproDocs;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplproui.js ==== */
+try {
+(function (global) {
+"use strict";
+if (typeof global.Gestao === "undefined") return;
+var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs;
+var ENT_PROC = "cplpro_processos";
+var ENT_PAP = "cplpro_papeis";
+var MODULO = "cplpro";
+var MAX_BYTES = 60 * 1024 * 1024;
+var MODALIDADES = ["concorrência", "pregão", "concurso", "leilão", "diálogo competitivo"];
+function eid() { return (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : "default"; }
+function esc(s) { return Util.esc(s == null ? "" : String(s)); }
+function arr(x) { return Array.isArray(x) ? x : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function hoje() { var d = new Date(); return d.getFullYear() + "-" + dd(d.getMonth() + 1) + "-" + dd(d.getDate()); }
+function agoraLocal() { var d = new Date(); return hoje() + "T" + dd(d.getHours()) + ":" + dd(d.getMinutes()) + ":" + dd(d.getSeconds()); }
+function dataBR(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? m[3] + "/" + m[2] + "/" + m[1] : "—"; }
+function dataHoraBR(iso) { var s = String(iso || ""); return dataBR(s) + (s.length > 10 ? " " + s.substring(11, 16) : ""); }
+function moeda(v) { return typeof v === "number" ? Util.fmtMoeda(v) : "—"; }
+function numBR(v, c) { return typeof v === "number" ? Util.fmtNum(v, c == null ? 2 : c) : "—"; }
+function lerNum(id) { var el = document.getElementById(id); if (!el || String(el.value).replace(/\s/g, "") === "") return null; var n = F.num(el.value); return n; }
+function toast(m, t) { if (typeof UI !== "undefined") UI.toast(m, t || "ok"); }
+G._cplView = G._cplView || "lista";
+G._cplId = G._cplId || "";
+G._cplPasso = G._cplPasso || "demanda";
+G._cplAba = G._cplAba || "passos";
+G._cplObra = G._cplObra || "";
+G._cplFoco = null;
+G._cplFonteTipo = G._cplFonteTipo || {};
+function listaProc() { return arr(K.lista(ENT_PROC)); }
+function procPorId(id) { return id ? Store.obter(eid(), ENT_PROC, id) : null; }
+function procAtual() { return procPorId(G._cplId); }
+function usuario() {
+var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+return { id: u.usuarioId || u.id || u.email || "conta", nome: (typeof Auth !== "undefined" && Auth.nome && Auth.nome()) || u.nome || u.email || "", gestor: typeof Auth === "undefined" || !Auth.papel || Auth.papel() !== "usuario" };
+}
+function papeis() { return F.papeisDe(usuario(), K.lista(ENT_PAP)); }
+function nomeAtual() { return usuario().nome; }
+function quemAtual(papel) { return { nome: nomeAtual(), papel: papel }; }
+function obraPorId(id) { return arr(K.lista("obras")).filter(function (o) { return o.id === id; })[0] || null; }
+function modoArred() { return null; }
+function orcDoProc(p) {
+if (!p || !p.orcamentoId) return null;
+var l = []; try { l = Store.listarOrcamentos(eid()); } catch (e) { l = []; }
+return arr(l).filter(function (o) { return o.id === p.orcamentoId; })[0] || null;
+}
+function calc(orc) {
+if (!orc) return null;
+try { return Orcamento.calcular(orc); } catch (e) { return null; }
+}
+function modoDoOrc(c) { return c && c.modo ? c.modo : undefined; }
+function refDoCalc(c) {
+if (!c) return null;
+return { total: c.precoVenda, linhas: c.linhas.map(function (l) { return { item: l.numero, descricao: l.descricao, un: l.unidade, qtd: l.quantidade, unitario: l.precoUnit, total: l.precoTotal }; }) };
+}
+function ctxDocs(p) {
+var orc = orcDoProc(p), c = calc(orc), pq = c ? F.pesquisar(p, c.linhas, modoDoOrc(c)) : null;
+var emp = (typeof Empresa !== "undefined") ? Empresa : null, logo = null;
+try { logo = emp && emp.logo ? emp.logo() : null; } catch (e) { logo = null; }
+return { orgao: { nome: emp && emp.nomeDoc ? emp.nomeDoc() : "", logoHtml: logo ? '<img src="' + logo + '" alt="logo" style="max-height:70px">' : "" },
+orc: c ? { total: c.precoVenda, custoDireto: c.custoDireto } : null, pesquisa: pq, prazo: F.prazo(p), hoje: hoje() };
+}
+function podeAcao(acao) { return F.pode(papeis(), acao); }
+function motivoAcao(acao) { return F.motivoSemPermissao(papeis(), acao); }
+function exigir(acao) {
+try { return F.exigir(papeis(), acao); } catch (e) { toast(e.message || String(e), "erro"); return null; }
+}
+function exigirEditavel(p, acao) {
+var papel = exigir(acao); if (!papel) return null;
+if (!F.editavel(p)) { toast(F.motivoTravado(p), "erro"); return null; }
+return papel;
+}
+function salvarProc(q) {
+F.normalizar(q);
+var r = Store.salvar(eid(), ENT_PROC, q);
+if (!r) { toast("Não consegui gravar o processo. Nada foi alterado.", "erro"); return null; }
+return r;
+}
+function gravar(passoId, aplicar, acao) {
+var p = procAtual(); if (!p) return false;
+var papel = exigirEditavel(p, acao || F.ACAO_DO_PASSO[passoId]); if (!papel) return false;
+var q = clone(p), dif;
+try { dif = aplicar(q); } catch (e) { toast(e.message || String(e), "erro"); return false; }
+if (!dif) { toast("Nada mudou.", "info"); return false; }
+F.soltarConferencia(q, passoId);
+F.registrar(q, "editar:" + passoId, dif.antes, dif.depois, quemAtual(papel), agoraLocal());
+return !!salvarProc(q);
+}
+function setFoco(passo, campo) { G._cplPasso = passo; G._cplAba = "passos"; G._cplView = "proc"; G._cplFoco = campo || null; }
+function porque(regra, fonte, conferir, rotulo) {
+var h = conferir ? ' <span class="cpl-conf" title="Esta regra ainda precisa ser conferida pelo jurídico do órgão">conferir</span>' : "";
+h += ' <button type="button" class="btn sm ghost cpl-pq" data-gacao="cpl-porque" data-regra="' + esc(regra || "") + '" data-fonte="' + esc(fonte || "") + '" data-conferir="' + (conferir ? "1" : "") + '" data-titulo="' + esc(rotulo || "") + '">Por quê?</button>';
+return h;
+}
+function campo(label, inner, foco) { return '<div class="field"' + (foco ? ' data-foco-bloco="' + esc(foco) + '"' : "") + "><label>" + label + "</label>" + inner + "</div>"; }
+function dis(ok, motivo) { return ok ? "" : ' disabled title="' + esc(motivo || "") + '"'; }
+function btn(rotulo, gacao, extra, cls) { return '<button type="button" class="btn ' + (cls || "") + '" data-gacao="' + gacao + '"' + (extra || "") + ">" + rotulo + "</button>"; }
+function selOpts(lista, atual, vazioRot) {
+return (vazioRot === null ? "" : '<option value="">' + esc(vazioRot || "—") + "</option>") + lista.map(function (o) {
+var v = Array.isArray(o) ? o[0] : o, r = Array.isArray(o) ? o[1] : o;
+return '<option value="' + esc(v) + '"' + (String(v) === String(atual) ? " selected" : "") + ">" + esc(r) + "</option>";
+}).join("");
+}
+function selOptsCtx(lista, atual, ctx) {
+return lista.map(function (o) {
+var v = Array.isArray(o) ? o[0] : o, r = Array.isArray(o) ? o[1] : o;
+return '<option value="' + esc(ctx + "||" + v) + '"' + (String(v) === String(atual) ? " selected" : "") + ">" + esc(r) + "</option>";
+}).join("");
+}
+function cortaCtx(valor) { var s = String(valor == null ? "" : valor), i = s.indexOf("||"); return i < 0 ? { ctx: "", v: s } : { ctx: s.slice(0, i), v: s.slice(i + 2) }; }
+function sn3(v) { return v === true ? "sim" : (v === false ? "nao" : ""); }
+function deSn3(s) { return s === "sim" ? true : (s === "nao" ? false : null); }
+function selSn(id, v, foco, desab) {
+return '<select id="' + id + '" data-foco="' + esc(foco || id) + '"' + (desab || "") + '><option value="">— escolha —</option><option value="sim"' + (v === true ? " selected" : "") + '>Sim</option><option value="nao"' + (v === false ? " selected" : "") + ">Não</option></select>";
+}
+function pendCartoes(pend) {
+if (!pend.length) return "";
+return '<div class="cpl-pends" role="list">' + pend.map(function (x, i) {
+return '<div class="cpl-pend" role="listitem"><span>' + esc(x.msg) + "</span>" +
+'<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="' + esc(x.corrigir.passo) + '" data-campo="' + esc(x.corrigir.campo) + '" data-item="' + esc(x.corrigir.item === undefined ? "" : x.corrigir.item) + '">Corrigir</button></div>';
+}).join("") + "</div>";
+}
+function barra(pct) {
+var v = Math.max(0, Math.min(100, pct || 0));
+return '<div class="cpl-barra" role="progressbar" aria-valuenow="' + v + '" aria-valuemin="0" aria-valuemax="100"><div style="width:' + v + '%"></div></div>';
+}
+function pilStatus(s) {
+var tom = { rascunho: "neutro", devolvido: "erro", em_analise_juridica: "info", com_ressalvas: "alerta", parecer_favoravel: "ok", publicado: "ok" };
+return M.pilula(F.STATUS_ROTULO[s] || s, tom[s] || "neutro");
+}
+G.renderCplpro = function () {
+if (!C || !R || !F || !D) return G._moduloNaoCarregado("CPLPRO — Licitação do órgão", "js/cplpro.js");
+var obras = K.lista("obras");
+var html;
+if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
+else {
+if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
+html = G._cplView === "papeis" ? _renderPapeis(obras) : _renderLista(obras);
+}
+return html;
+};
+function cabLista(obras, sub, ativo) {
+return M.cab({
+iconeHtml: K.svg("cplpro", 22), titulo: "CPLPRO — Licitação do órgão", sub: sub,
+obraHtml: '<select id="cpl-obra" data-gacao="cpl-obra" aria-label="Obra">' + K.optsRec(obras, "nome", G._cplObra, "Todas as obras") + "</select>",
+acoes: [btn("Painel da CPL", "cpl-painel")],
+primariaHtml: podeAcao("criar_processo") ? btn("+ Novo processo", "cpl-novo", "", "primary") : '<button type="button" class="btn primary" data-gacao="cpl-novo" disabled title="' + esc(motivoAcao("criar_processo")) + '">+ Novo processo</button>'
+});
+}
+function _renderLista(obras) {
+var todos = listaProc().filter(function (p) { return !G._cplObra || p.obraId === G._cplObra; });
+var sig = todos.filter(function (p) { return p.sigiloso !== false; }).length;
+var prep = todos.filter(function (p) { return ["rascunho", "devolvido", "parecer_favoravel", "com_ressalvas"].indexOf(p.status) >= 0; }).length;
+var jur = todos.filter(function (p) { return p.status === "em_analise_juridica"; }).length;
+var pub = todos.filter(function (p) { return p.status === "publicado"; }).length;
+var comPend = todos.filter(function (p) { return p.status !== "publicado" && C.progresso(p).pendencias.length > 0; }).length;
+var soma = 0, nSoma = 0;
+todos.forEach(function (p) {
+if (p.sigiloso === false) { var c = calc(orcDoProc(p)); if (c) { soma += c.precoVenda; nSoma++; } }
+});
+var html = cabLista(obras, todos.length + " processo(s)" + (G._cplObra ? " nesta obra" : " · todas as obras"));
+var pap = papeis();
+html += M.abas([{ id: "lista", rotulo: "Processos", ativa: true, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: false, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+if (!pap.length) html += M.aviso({ tom: "alerta", titulo: "Você ainda não tem perfil no CPLPRO.", texto: "Peça ao administrador do órgão para definir o seu em «Pessoas e papéis». Sem perfil, nenhuma ação é liberada." });
+html += M.kpis([
+{ rotulo: "Em preparo", valor: prep, sub: "ainda não foram ao jurídico", tom: "info" },
+{ rotulo: "No jurídico", valor: jur, sub: "aguardando parecer (art. 53)", tom: jur ? "alerta" : "" },
+{ rotulo: "Publicados", valor: pub, tom: "pos" },
+{ rotulo: "Com pendência", valor: comPend, sub: "falta algo para avançar", tom: comPend ? "alerta" : "" },
+{ rotulo: "Valor estimado", valor: nSoma ? moeda(soma) : "—", sub: sig ? "só processos não sigilosos (" + sig + " sigiloso(s) fora da soma)" : (nSoma ? "soma dos orçamentos de referência" : "sem processo com orçamento"), id: "cpl-kpi-valor" }
+]);
+if (!todos.length) {
+return html + M.secao({ corpoHtml: M.vazio({ icone: "documentos", titulo: "Nenhum processo de licitação ainda", texto: "O processo guia os 10 passos da fase preparatória, da demanda à publicação do edital.",
+acaoHtml: podeAcao("criar_processo") ? btn("Novo processo", "cpl-novo", "", "primary") : '<span class="muted">Seu perfil não cria processos.</span>' }) });
+}
+todos.sort(function (a, b) { return String(b.atualizadoEm || "") < String(a.atualizadoEm || "") ? -1 : 1; });
+var tb = '<table class="tbl" id="cpl-tab-proc"><thead><tr><th>CÓDIGO</th><th>OBJETO</th><th>SECRETARIA</th><th>PASSO</th><th>SITUAÇÃO</th><th class="num">VALOR ESTIMADO</th><th></th></tr></thead><tbody>' +
+todos.map(function (p) {
+var at = F.passoAtual(p), pr = C.progresso(p), v;
+if (p.sigiloso !== false) v = M.pilula("sigiloso", "neutro");
+else { var c = calc(orcDoProc(p)); v = c ? moeda(c.precoVenda) : "—"; }
+return "<tr><td><b>" + esc(F.codigoDe(p)) + "</b></td><td>" + esc(String(p.objeto || "(sem objeto)").substring(0, 110)) + "</td><td>" + esc(p.secretaria || "—") + "</td><td>" +
+(p.status === "publicado" ? "Publicado" : "<b>" + at.ordem + ".</b> " + esc(at.nome)) + barra(pr.geral) + "</td><td>" + pilStatus(p.status) +
+(p.status !== "publicado" && pr.pendencias.length ? " " + M.pilula(pr.pendencias.length + " pendência(s)", "alerta") : "") + '</td><td class="num">' + v + '</td><td>' +
+btn("Abrir", "cpl-abrir", ' data-id="' + esc(p.id) + '"', "sm") + "</td></tr>";
+}).join("") + "</tbody></table>";
+return html + M.secao({ titulo: "Processos", corpoHtml: tb });
+}
+function _renderPapeis(obras) {
+var html = cabLista(obras, "Pessoas e papéis");
+html += M.abas([{ id: "lista", rotulo: "Processos", ativa: false, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: true, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+if (!podeAcao("gerenciar_logins")) {
+return html + M.secao({ corpoHtml: M.vazio({ icone: "usuarios", titulo: "Só o administrador do órgão define os papéis", texto: motivoAcao("gerenciar_logins") }) });
+}
+var u = usuario(), equipe = arr(K.lista("equipe")).filter(function (e) { return e.ativo !== false; });
+var pessoas = [{ id: u.id, nome: u.nome || "Titular da conta", titular: true }];
+equipe.forEach(function (e) { if (e.id !== u.id) pessoas.push({ id: e.id, nome: e.nome || e.email || e.id, email: e.email || e.login || "" }); });
+var regs = K.lista(ENT_PAP);
+var corpo = '<p class="mod-sub" style="margin:0 0 12px">Os logins são criados no módulo Usuários; aqui você diz o que cada pessoa faz no processo. A mesma pessoa pode ter mais de um perfil. ' +
+btn("Abrir Usuários", "cpl-ir-usuarios", "", "sm") + "</p>";
+corpo += '<table class="tbl" id="cpl-tab-papeis"><thead><tr><th>PESSOA</th>' + Object.keys(R.PAPEIS).map(function (k) { return '<th class="num" title="' + esc(R.PAPEIS[k].nome) + '">' + esc(R.PAPEIS[k].nome) + "</th>"; }).join("") + "<th></th></tr></thead><tbody>" +
+pessoas.map(function (pe) {
+var atual = F.papeisDe({ id: pe.id, gestor: !!pe.titular }, regs);
+return "<tr><td><b>" + esc(pe.nome) + "</b>" + (pe.titular ? ' <span class="muted">(titular)</span>' : (pe.email ? '<div class="muted">' + esc(pe.email) + "</div>" : "")) + "</td>" +
+Object.keys(R.PAPEIS).map(function (k) {
+var forcado = pe.titular && k === "admin_orgao";
+return '<td class="num"><input type="checkbox" data-pap-pessoa="' + esc(pe.id) + '" data-pap="' + k + '" aria-label="' + esc(R.PAPEIS[k].nome) + '"' + (atual.indexOf(k) >= 0 ? " checked" : "") + (forcado ? ' disabled title="O titular sempre administra os logins do órgão"' : "") + "></td>";
+}).join("") + "<td>" + btn("Salvar", "cpl-pap-salvar", ' data-pessoa="' + esc(pe.id) + '" data-nome="' + esc(pe.nome) + '"', "sm") + "</td></tr>";
+}).join("") + "</tbody></table>";
+corpo += '<p class="muted" style="margin:12px 0 0">' + Object.keys(R.PAPEIS).map(function (k) { return "<b>" + esc(R.PAPEIS[k].nome) + ":</b> " + esc(R.PAPEIS[k].acoes.map(function (a) { return R.ACOES_ROTULO[a] || a; }).join(", ")); }).join(" · ") + "</p>";
+return html + M.secao({ titulo: "Quem faz o quê", corpoHtml: corpo });
+}
+function _renderProc(p) {
+var obras = K.lista("obras"), ob = obraPorId(p.obraId), pr = C.progresso(p), at = F.passoAtual(p), ed = F.editavel(p);
+var abasLista = [{ id: "passos", rotulo: "Passos" }];
+if (p.status === "publicado") abasLista.push({ id: "propostas", rotulo: "Propostas" });
+abasLista.push({ id: "historico", rotulo: "Histórico" });
+if (G._cplAba === "propostas" && p.status !== "publicado") G._cplAba = "passos";
+var html = M.cab({
+iconeHtml: K.svg("cplpro", 22), titulo: "Processo " + F.codigoDe(p), sub: (p.objeto ? String(p.objeto).substring(0, 90) : "(sem objeto)") + " · " + (p.secretaria || "sem secretaria"),
+obraHtml: '<span class="cpl-obra-fixa" id="cpl-obra-fixa">' + esc(ob ? ob.nome : "Sem obra vinculada") + "</span>",
+acoes: [btn("Voltar aos processos", "cpl-voltar"), p.status !== "publicado" ? btn("Ir ao passo " + at.ordem, "cpl-ir-atual") : ""],
+primariaHtml: pilStatus(p.status)
+});
+if (!C.fluxoJuridico.podePublicar(p)) {
+html += '<div class="cpl-faixa" id="cpl-faixa-minuta" role="status"><b>Minuta — sujeita a parecer jurídico (art. 53 da Lei 14.133).</b> Esta faixa sai quando houver parecer favorável.</div>';
+}
+if (!ed) html += M.aviso({ tom: "info", titulo: F.motivoTravado(p) });
+html += M.abas(abasLista.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === G._cplAba, attrs: 'data-gacao="cpl-aba" data-aba="' + a.id + '"' }; }));
+if (G._cplAba === "historico") return html + _histProc(p);
+if (G._cplAba === "propostas") return html + _propostas(p);
+var trilho = '<nav class="cpl-trilho" aria-label="Passos do processo"><div class="cpl-onde" id="cpl-onde">Você está no passo <b>' + at.ordem + "</b> de 10</div><ol>" + C.PASSOS.map(function (ps) {
+var x = pr.passos[ps.id], ativo = ps.id === G._cplPasso;
+return '<li class="cpl-tr' + (ativo ? " ativo" : "") + (x.conferido ? " feito" : "") + '"><button type="button" data-gacao="cpl-passo" data-passo="' + ps.id + '"' + (ativo ? ' aria-current="step"' : "") + ">" +
+'<span class="cpl-n">' + ps.ordem + '</span><span class="cpl-t">' + esc(ps.nome) + '</span><span class="cpl-p">' + x.pct + "%" + (x.conferido ? " conferido" : "") + "</span></button></li>";
+}).join("") + "</ol></nav>";
+var passo = G._cplPasso, x = pr.passos[passo];
+var corpo = '<div class="cpl-passo" id="cpl-passo" data-passo="' + passo + '">' + '<h2>' + (C.PASSOS.filter(function (s) { return s.id === passo; })[0].ordem) + ". " + esc(C.PASSOS.filter(function (s) { return s.id === passo; })[0].nome) + "</h2>";
+corpo += pendCartoes(x.pendencias);
+var fn = { demanda: _pDemanda, acervo: _pAcervo, quantitativos: _pQuant, etp: _pEtp, riscos: _pRiscos, orcamento: _pOrcamento, tr: _pTr, parametros: _pParametros, minuta: _pMinuta, conformidade: _pConformidade }[passo];
+corpo += fn(p, x, ed);
+corpo += _rodapeConferi(p, passo, x, ed);
+corpo += "</div>";
+return html + '<div class="cpl-layout">' + trilho + corpo + "</div>";
+}
+function _rodapeConferi(p, passo, x, ed) {
+var acao = F.ACAO_DO_PASSO[passo], ok = podeAcao(acao), motivo = !ok ? motivoAcao(acao) : (!ed ? F.motivoTravado(p) : (x.pct < 100 ? "Ainda há " + x.pendencias.length + " pendência(s)." : ""));
+if (x.conferido) {
+var ps = p.passos[passo];
+return '<div class="cpl-conferi ok"><span>Conferido' + (ps.conferidoPor ? " por " + esc(ps.conferidoPor) : "") + (ps.conferidoEm ? " em " + esc(dataHoraBR(ps.conferidoEm)) : "") + ".</span> " + btn("Desfazer conferência", "cpl-desconferir", ' data-passo="' + passo + '"' + dis(ok && ed, ok ? F.motivoTravado(p) : motivoAcao(acao)), "sm") + "</div>";
+}
+var pode = ok && ed && x.pct >= 100;
+return '<div class="cpl-conferi"><span>' + (x.pct >= 100 ? "Tudo preenchido neste passo." : "Faltam itens neste passo.") + "</span> " + btn("Conferi este passo", "cpl-conferir", ' data-passo="' + passo + '"' + dis(pode, motivo), "primary") + "</div>";
+}
+function _pDemanda(p, x, ed) {
+var d = ed && podeAcao("editar_dfd") ? "" : " disabled";
+var tipos = Object.keys(R.TIPOS_OBJETO).map(function (k) { return [k, R.TIPOS_OBJETO[k].nome]; });
+var sug = C.sugerirTipoObjeto(p.objeto || "");
+var obras = K.lista("obras");
+var h = '<div class="cpl-form" id="cpl-f-demanda">';
+h += campo("Secretaria requisitante *", '<input id="cpl-secretaria" data-foco="secretaria" value="' + esc(p.secretaria || "") + '"' + d + ">", "secretaria");
+h += campo("Responsável pela demanda", '<input id="cpl-requisitante" value="' + esc(p.requisitante || "") + '"' + d + ">");
+h += campo("Objeto (descreva por inteiro) *", '<textarea id="cpl-objeto" rows="4" data-foco="objeto"' + d + ">" + esc(p.objeto || "") + "</textarea>", "objeto");
+h += campo("Tipo de objeto *", '<select id="cpl-tipo" data-foco="tipoObjeto"' + d + ">" + selOpts(tipos, p.tipoObjeto, "— escolha —") + "</select>" +
+(sug.length && sug[0].tipo !== p.tipoObjeto ? '<div class="cpl-sug">Sugestão pelo texto: <b>' + esc(R.TIPOS_OBJETO[sug[0].tipo].nome) + "</b> " + btn("Aceitar", "cpl-aceitar-tipo", ' data-tipo="' + sug[0].tipo + '"' + d, "sm") +
+porque("O texto do objeto contém: «" + sug[0].termos.join("», «") + "».", "Biblioteca RA de tipos de objeto (palavras-chave) — o sistema sugere e a pessoa confirma.", false, "Tipo de objeto") + "</div>" : ""), "tipoObjeto");
+h += campo("Justificativa da necessidade (interesse público) *", '<textarea id="cpl-justificativa" rows="4" data-foco="justificativa"' + d + ">" + esc(p.justificativa || "") + "</textarea>", "justificativa");
+h += campo("Previsão no plano de contratações anual (PCA) *", '<input id="cpl-pca" data-foco="pca" placeholder="Ex.: item 12 do PCA 2027, ou a justificativa da ausência" value="' + esc(p.pca || "") + '"' + d + ">" +
+porque("A fase preparatória deve se compatibilizar com o plano de contratações anual, sempre que elaborado.", "Lei 14.133/2021, art. 18, caput (e art. 12, VII)", false, "PCA"), "pca");
+h += campo("Prazo desejado", '<input id="cpl-prazoDesejado" type="date" value="' + esc(p.prazoDesejado || "") + '"' + d + ">");
+h += campo("Há recurso federal? *", selSn("cpl-recursoFederal", p.recursoFederal, "recursoFederal", d) +
+porque("Com recursos da União valem as regras federais de pesquisa de preços.", "Lei 14.133/2021, art. 23, §2º (regulamento federal); Decreto Municipal SP 62.100/2022, art. 28, §2º", true, "Recurso federal"), "recursoFederal");
+h += campo("O orçamento será sigiloso? *", selSn("cpl-sigiloso", p.sigiloso, "sigiloso", d) + porque("Escolha explícita, sem padrão. Sim liga a trava de vazamento do valor estimado nos documentos públicos.", "Lei 14.133/2021, art. 24", true, "Sigilo do orçamento"), "sigiloso");
+h += campo("Obra", '<select id="cpl-obraProc" data-foco="obraId"' + d + ">" + K.optsRec(obras, "nome", p.obraId, "— sem obra —") + "</select> " + btn("Criar obra", "cpl-criar-obra", d, "sm"), "obraId");
+h += '</div><div class="cpl-acoes">' + btn("Salvar demanda", "cpl-salvar-demanda", d, "primary") + "</div>";
+return h;
+}
+function _pAcervo(p, x, ed) {
+var d = ed && podeAcao("editar_acervo") ? "" : " disabled";
+var docs = arr(p.documentos), vig = docs.filter(function (z) { return !z.superadoPor; }), sup = docs.filter(function (z) { return z.superadoPor; });
+var tipos = Object.keys(R.ACERVO_TIPOS).map(function (k) { return [k, R.ACERVO_TIPOS[k].nome]; });
+var h = '<input type="file" id="cpl-arq" multiple hidden><input type="file" id="cpl-pasta" webkitdirectory multiple hidden>';
+h += '<div class="cpl-acoes">' + btn("Escolher arquivos", "cpl-add-arq", d) + btn("Escolher uma pasta", "cpl-add-pasta", d) + '<span class="muted" id="cpl-acervo-status"></span></div>';
+var chk = C.checklistAcervo(p);
+if (!p.tipoObjeto) h += M.aviso({ tom: "alerta", titulo: "Escolha o tipo de objeto no passo 1 para ver o que o acervo precisa ter." });
+else {
+h += "<h3>O que o processo precisa × o que já tem</h3>" + '<table class="tbl" id="cpl-chk-acervo"><thead><tr><th>EXIGÊNCIA</th><th>PARA QUÊ</th><th>TEM</th><th></th></tr></thead><tbody>' +
+chk.map(function (c) {
+return '<tr data-foco="' + esc(c.exigencia) + '"><td><b>' + esc(c.nome) + "</b></td><td>" + esc(c.porque) + "</td><td>" + (c.tem.length ? c.tem.map(function (id) { var dc = docs.filter(function (z) { return z.id === id; })[0]; return esc(dc ? dc.nome : id); }).join("<br>") : "—") + "</td><td>" +
+(c.situacao === "ok" ? M.pilula("tem", "ok") : M.pilula("falta", "alerta")) + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+h += "<h3>Documentos do acervo (" + vig.length + " vigentes)</h3>";
+if (!docs.length) h += M.vazio({ icone: "documentos", titulo: "Nenhum arquivo no acervo", texto: "Escolha os arquivos ou a pasta do projeto: o sistema calcula o SHA-256 de cada um e sugere o tipo pelo nome." });
+else {
+h += '<table class="tbl" id="cpl-tab-acervo"><thead><tr><th>ARQUIVO</th><th>TIPO</th><th>REV.</th><th>CONFIANÇA</th><th>SHA-256</th><th></th></tr></thead><tbody>' + vig.map(function (z) {
+return "<tr><td>" + esc(z.nome) + (z.origem ? '<div class="muted">' + esc(z.origem) + "</div>" : "") + '</td><td><select data-gacao="cpl-doc-tipo" aria-label="Tipo do arquivo"' + d + ">" + selOptsCtx(tipos, z.tipo, z.id) + "</select>" +
+porque(z.motivo, "Classificação pelo nome do arquivo (regras da casa); a pessoa pode trocar.", false, "Tipo do arquivo") + "</td><td>" + esc(z.revisao || "—") + "</td><td>" + M.pilula(z.confianca === "alta" ? "alta" : (z.confianca === "media" ? "média" : (z.confianca === "manual" ? "manual" : "baixa")), z.confianca === "alta" || z.confianca === "manual" ? "ok" : "alerta") +
+'</td><td><code title="' + esc(z.sha || "") + '">' + esc((z.sha || "—").substring(0, 12)) + "</code></td><td>" + btn("Abrir", "cpl-doc-abrir", ' data-id="' + esc(z.id) + '"', "sm") + "</td></tr>";
+}).join("") + "</tbody></table>";
+if (sup.length) {
+h += "<h3>Repetidos e superados (nunca são apagados)</h3>" + '<table class="tbl" id="cpl-tab-superados"><thead><tr><th>ARQUIVO</th><th>MOTIVO</th><th>SUBSTITUÍDO POR</th></tr></thead><tbody>' + sup.map(function (z) {
+var por = docs.filter(function (w) { return w.id === z.superadoPor; })[0];
+return "<tr><td>" + esc(z.nome) + "</td><td>" + (z.superadoMotivo === "repetido" ? "mesmo conteúdo (SHA-256 igual)" : "revisão mais nova") + "</td><td>" + esc(por ? por.nome : z.superadoPor) + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+}
+return h;
+}
+function _selOrc(p, d) {
+var orcs = arr((function () { try { return Store.listarOrcamentos(eid()); } catch (e) { return []; } })());
+var obra = obraPorId(p.obraId), sel = p.orcamentoId || (obra && obra.orcamentoId) || "";
+var opts = orcs.map(function (o) { return { id: o.id, rot: G._orcRotulo ? G._orcRotulo(o) : (o.nome || o.id) }; });
+return '<select id="cpl-orcamentoId" data-foco="orcamentoId"' + (d || "") + ">" + K.optsRec(opts, "rot", sel, "— escolha o orçamento —") + "</select>";
+}
+function _pQuant(p, x, ed) {
+var d = ed && podeAcao("editar_quantitativos") ? "" : " disabled";
+var orc = orcDoProc(p), c = calc(orc), qs = arr(p.quantitativos);
+var h = campo("Orçamento da obra", _selOrc(p, d) + " " + btn("Trazer os itens do orçamento", "cpl-q-trazer", d, "sm"), "orcamentoId");
+var acervo = arr(p.documentos).filter(function (z) { return !z.superadoPor; });
+if (c && qs.length) {
+var dif = qs.filter(function (q) { var l = c.linhas.filter(function (z) { return z.numero === q.item; })[0]; return !l || Math.abs(l.quantidade - q.qtd) > 1e-9; }).length +
+c.linhas.filter(function (l) { return !qs.some(function (q) { return q.item === l.numero; }); }).length;
+if (dif) h += M.aviso({ tom: "alerta", titulo: dif + " item(ns) diferem do orçamento atual.", texto: "Use «Trazer os itens do orçamento» para atualizar; as origens já informadas são mantidas." });
+}
+if (!qs.length) return h + M.vazio({ icone: "orcamentos", titulo: "Nenhum quantitativo lançado", texto: "Escolha o orçamento e traga os itens. Cada quantidade precisa de origem: arquivo do acervo e página." });
+h += '<table class="tbl" id="cpl-tab-quant"><thead><tr><th>ITEM</th><th>DESCRIÇÃO</th><th>UN.</th><th class="num">QTD.</th><th>ORIGEM — ARQUIVO</th><th>PÁGINA</th></tr></thead><tbody>' + qs.map(function (q, i) {
+var o = q.origem || {}, sem = vazio(o.arquivo) || vazio(o.pagina);
+var nomes = acervo.map(function (z) { return z.nome; });
+if (o.arquivo && nomes.indexOf(o.arquivo) < 0) nomes.push(o.arquivo);
+return '<tr data-foco="origem:' + esc(q.item) + '" class="' + (sem ? "cpl-sem" : "") + '"><td>' + esc(q.item) + "</td><td>" + esc(q.descricao) + "</td><td>" + esc(q.un) + '</td><td class="num">' + numBR(q.qtd, 2) + '</td><td><select id="cpl-qa-' + i + '"' + d + ">" + selOpts(nomes, o.arquivo, "— arquivo —") + '</select></td><td><input id="cpl-qp-' + i + '" style="width:80px" value="' + esc(o.pagina == null ? "" : o.pagina) + '"' + d + "></td></tr>";
+}).join("") + "</tbody></table>";
+return h + '<div class="cpl-acoes">' + btn("Salvar origens", "cpl-q-salvar", d, "primary") + '<span class="muted">Sem origem o item não entra no ETP nem no TR (art. 18, §1º, IV).</span></div>';
+}
+function _textoSugestaoEtp(id, v) {
+if (v === null || v === undefined) return "";
+if (typeof v === "string") return v;
+if (id === "IV") return "Quantidades estimadas por memória de cálculo: " + v.comOrigem + " item(ns) com origem documental (arquivo e página), listados no quadro de quantitativos." + (v.semOrigem ? " Atenção: " + v.semOrigem + " item(ns) sem origem ficaram de fora." : "");
+if (id === "VI") return "Valor estimado da contratação: " + moeda(v.total) + (v.base ? ", base " + v.base : "") + (v.competencia ? ", competência " + v.competencia : "") + ". Totais do orçamento de referência do processo.";
+return JSON.stringify(v);
+}
+function _pEtp(p, x, ed) {
+var d = ed && podeAcao("editar_etp") ? "" : " disabled";
+var c = calc(orcDoProc(p));
+var et = C.etpCampos(p, { orcamento: c ? { total: c.precoVenda, base: p.orcamentoRef && p.orcamentoRef.base, competencia: p.orcamentoRef && p.orcamentoRef.competencia } : null });
+var man = (p.etp && p.etp.campos) || {}, just = (p.etp && p.etp.justificativas) || {};
+var h = '<p class="muted">13 elementos do art. 18, §1º. Obrigatórios (§2º): <b>I, IV, VI, VIII e XIII</b>. O sistema pré-preenche o que sabe — confira, edite e salve.' + porque("Elementos do ETP e quais são obrigatórios.", R.ETP_FONTE, false, "ETP") + "</p>";
+h += '<div class="cpl-form" id="cpl-f-etp">' + R.ETP_ELEMENTOS.map(function (el) {
+var salvo = !vazio(man[el.id]), sugt = _textoSugestaoEtp(el.id, et.campos[el.id]), valor = salvo ? man[el.id] : sugt;
+var vermelho = vazio(valor) && el.obrigatorio;
+return '<div class="field' + (vermelho ? " cpl-obrig-vazio" : "") + '" data-foco-bloco="' + el.id + '"><label>' + esc(el.id) + " — " + esc(el.nome) + (el.obrigatorio ? ' <span class="cpl-obrig">obrigatório</span>' : "") + (!salvo && sugt ? ' <span class="cpl-sugerido">sugestão do sistema — confira e salve</span>' : "") + "</label>" +
+'<textarea id="cpl-etp-' + el.id + '" rows="3" data-foco="' + el.id + '"' + d + ">" + esc(valor || "") + "</textarea>" +
+(!el.obrigatorio ? '<input id="cpl-etpj-' + el.id + '" placeholder="Se não se aplica, justifique aqui" value="' + esc(just[el.id] || "") + '"' + d + ">" : "") + "</div>";
+}).join("") + '</div><div class="cpl-acoes">' + btn("Salvar ETP", "cpl-salvar-etp", d, "primary") + "</div>";
+return h;
+}
+function _pRiscos(p, x, ed) {
+var d = ed && podeAcao("editar_riscos") ? "" : " disabled";
+var rs = arr(p.riscos), sug = C.riscosSugeridos(p.tipoObjeto);
+var h = '<div class="cpl-acoes">' + btn("Trazer os riscos sugeridos do tipo de objeto", "cpl-r-sugeridos", d + (p.tipoObjeto ? "" : ' disabled title="Escolha o tipo de objeto no passo 1"')) +
+porque("Riscos usuais do tipo de objeto, da biblioteca da casa. Prob. e impacto são sugestões da casa; o órgão ajusta.", sug.length ? sug[0].fonte : "Biblioteca RA de riscos (texto sugerido — conferir); matriz de riscos: Lei 14.133/2021, art. 22", true, "Riscos sugeridos") + "</div>";
+if (!rs.length) return h + M.vazio({ icone: "alerta", titulo: "Nenhum risco avaliado", texto: "Traga os sugeridos do tipo de objeto e ajuste probabilidade, impacto e quem assume cada risco." });
+var niv = { baixo: "ok", medio: "info", alto: "alerta", critico: "erro" };
+var cinco = [1, 2, 3, 4, 5].map(function (n) { return [n, String(n)]; });
+h += '<table class="tbl" id="cpl-tab-riscos"><thead><tr><th>RISCO</th><th>PROB.</th><th>IMPACTO</th><th>NÍVEL</th><th>ALOCAÇÃO</th><th>MITIGAÇÃO</th><th></th></tr></thead><tbody>' + rs.map(function (r, i) {
+var n = C.nivelRisco(r.prob, r.impacto);
+return '<tr data-foco="riscos.' + i + '"><td>' + esc(r.descricao) + '<div class="muted">' + esc(r.categoria || "") + (r.sugerido ? " · sugerido" : "") + '</div></td><td><select id="cpl-rp-' + i + '"' + d + ">" + selOpts(cinco, r.prob, "—") + '</select></td><td><select id="cpl-ri-' + i + '"' + d + ">" + selOpts(cinco, r.impacto, "—") + "</select></td><td>" +
+(n ? M.pilula({ baixo: "Baixo", medio: "Médio", alto: "Alto", critico: "Crítico" }[n.nivel] + " (" + n.valor + ")", niv[n.nivel]) : M.pilula("sem nível", "alerta")) + '</td><td><select id="cpl-ra-' + i + '"' + d + ">" + selOpts([["contratante", "Contratante (órgão)"], ["contratada", "Contratada"], ["compartilhado", "Compartilhado"]], r.alocacao, "—") + '</select></td><td><input id="cpl-rm-' + i + '" value="' + esc(r.mitigacao || "") + '" style="min-width:220px"' + d + "></td><td>" + btn("Remover", "cpl-r-remover", ' data-i="' + i + '"' + d, "sm ghost") + "</td></tr>";
+}).join("") + "</tbody></table>";
+return h + '<div class="cpl-acoes">' + btn("Salvar riscos", "cpl-r-salvar", d, "primary") + "</div>";
+}
+function _pOrcamento(p, x, ed) {
+var d = ed && podeAcao("editar_orcamento") ? "" : " disabled";
+var orc = orcDoProc(p), c = calc(orc), ref = p.orcamentoRef || {};
+var tp = R.TIPOS_OBJETO[p.tipoObjeto];
+var h = '<div class="cpl-form" id="cpl-f-orc">' + campo("Orçamento de referência *", _selOrc(p, d) + (orc ? " " + btn("Abrir no orçamento", "cpl-orc-abrir", "", "sm") : ""), "orcamentoId");
+var sugBase = orc ? (orc.competenciaSinapi ? "SINAPI" + (orc.uf ? "/" + orc.uf : "") + (orc.desonerado ? " desonerado" : " não desonerado") : "") : "";
+h += campo("Base de preços *", '<input id="cpl-oBase" data-foco="base" value="' + esc(ref.base || "") + '" placeholder="Ex.: SINAPI/SP não desonerado"' + d + ">" +
+(!ref.base && sugBase ? '<div class="cpl-sug">Do orçamento: <b>' + esc(sugBase) + "</b> " + btn("Usar", "cpl-orc-usar", ' data-base="' + esc(sugBase) + '" data-comp="' + esc(orc.competenciaSinapi || "") + '"' + d, "sm") + "</div>" : "") +
+(tp ? '<div class="cpl-sug">Base usual para ' + esc(tp.nome) + ": <b>" + esc(tp.base) + "</b>" + (tp.baseConferir ? porque(tp.baseNota || "", "Biblioteca RA de tipos de objeto", true, "Base de preços") : "") + "</div>" : ""), "base");
+h += campo("Competência (data-base) *", '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
+h += "</div>";
+h += '<div class="cpl-acoes">' + btn("Salvar orçamento de referência", "cpl-orc-salvar", d, "primary") + "</div>";
+if (!c) return h + M.aviso({ tom: "alerta", titulo: "Escolha o orçamento para ver os totais e a pesquisa de preços." });
+h += M.kpis([
+{ rotulo: "Preço de venda", valor: moeda(c.precoVenda), sub: "total oficial do orçamento (com BDI)", id: "cpl-orc-total" },
+{ rotulo: "Custo direto", valor: moeda(c.custoDireto) }, { rotulo: "BDI", valor: numBR(c.pct, 2) + " %" }, { rotulo: "Itens", valor: c.linhas.length }
+]);
+h += _painelPesquisa(p, c, ed);
+return h;
+}
+function _painelPesquisa(p, c, ed) {
+var d = ed && podeAcao("editar_pesquisa") ? "" : " disabled";
+var pq = F.pesquisar(p, c.linhas, modoDoOrc(c)), pesq = p.pesquisa || {}, reg = pq.regulamento, rd = pesq.regraDescarte || {};
+var h = "<h3>Pesquisa de preços</h3>";
+if (!reg) h += M.aviso({ tom: "alerta", titulo: "Regulamento de pesquisa de preços não definido.", acaoHtml: '<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="parametros" data-campo="regulamentoId">Escolher no passo 8</button>' });
+else h += '<p class="muted">Regulamento: <b>' + esc(reg.nome) + "</b>" + (p.recursoFederal === true ? " (recurso federal: vale o regulamento federal)" : "") + porque(reg.fonte, reg.fonte, reg.conferir === true, "Regulamento") + "</p>";
+h += '<div class="cpl-form" id="cpl-f-pesq">' + campo("Data da pesquisa", '<input id="cpl-pDataPesq" type="date" value="' + esc(pesq.dataPesquisa || "") + '"' + d + ">") +
+campo("Data prevista do edital", '<input id="cpl-pDataEdital" type="date" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">") +
+campo("Método de cálculo", '<select id="cpl-pMetodo"' + d + ">" + selOpts([["media", "Média"], ["mediana", "Mediana"], ["menor", "Menor valor"]], pesq.metodo, "— escolha —") + "</select>" + porque("Média, mediana ou menor valor; sem escolha não há preço de referência.", reg ? reg.calculo.fonte : "", reg ? reg.calculo.conferir === true : true, "Método de cálculo")) +
+campo("Descartar abaixo de (% da mediana)", '<input id="cpl-pDescAbaixo" inputmode="decimal" style="width:90px" value="' + esc(rd.abaixoPct == null ? "" : rd.abaixoPct) + '"' + d + ">") +
+campo("Descartar acima de (% da mediana)", '<input id="cpl-pDescAcima" inputmode="decimal" style="width:90px" value="' + esc(rd.acimaPct == null ? "" : rd.acimaPct) + '"' + d + ">") + "</div>" +
+'<div class="cpl-acoes">' + btn("Salvar parâmetros da pesquisa", "cpl-pesq-salvar", d) + '<span class="muted">Sem regra de descarte, nenhum preço é descartado por discrepância — e o mapa diz isso.</span></div>';
+var semBase = [], comBase = 0;
+c.linhas.forEach(function (l, i) { if (pq.avaliacoes[i].comBase) comBase++; else semBase.push({ l: l, a: pq.avaliacoes[i] }); });
+h += "<p>" + comBase + " item(ns) com base oficial (SINAPI/SICRO/SIURB) — o próprio orçamento é a fonte. <b>" + semBase.length + "</b> item(ns) sem base pedem pesquisa.</p>";
+semBase.forEach(function (z) { h += _cartaoItemPesquisa(p, z.l, z.a, reg, d, ed); });
+var difMapa = pq.mapa.total - c.custoDireto;
+h += M.kpis([
+{ rotulo: "Mapa da pesquisa", valor: moeda(pq.mapa.total), sub: "sem BDI; " + (pq.mapa.semPreco ? pq.mapa.semPreco + " item(ns) sem preço" : "todos os itens com preço"), id: "cpl-pq-total" },
+{ rotulo: "Custo direto do orçamento", valor: moeda(c.custoDireto), sub: Math.abs(difMapa) < 0.005 ? "fecha com o mapa" : "difere do mapa em " + moeda(Math.abs(difMapa)), tom: Math.abs(difMapa) < 0.005 ? "pos" : "alerta" }
+]);
+return h;
+}
+function _cartaoItemPesquisa(p, l, a, reg, d, ed) {
+var cfg = ((p.pesquisa || {}).itens || {})[l.numero] || {}, fontes = arr(cfg.fontes);
+var tipos = reg ? reg.ordem.map(function (o) { return [o.tipo, o.nome]; }) : [];
+var sit = { ok: ["ok", "ok"], ok_justificado: ["ok com justificativa", "ok"], justificativa: ["justificativa pendente", "alerta"], sem_fonte: ["sem fonte válida", "erro"], pendente: ["pendente", "alerta"] }[a.situacao] || [a.situacao, "neutro"];
+var h = '<details class="cpl-item" data-foco="pesq:' + esc(l.numero) + '"' + (a.situacao !== "ok" && a.situacao !== "ok_justificado" ? " open" : "") + "><summary><b>" + esc(l.numero) + "</b> " + esc(l.descricao) + " <span class=\"muted\">" + esc(l.unidade) + " · qtd " + numBR(l.quantidade, 2) + " · no orçamento " + moeda(l.custoUnitario) + "</span> " + M.pilula(sit[0], sit[1]) +
+(a.valor != null ? " <b>" + moeda(a.valor) + "</b>" + (Math.abs(a.valor - l.custoUnitario) > 0.005 ? " " + M.pilula("diverge do orçamento", "alerta") : "") : "") + "</summary>";
+if (fontes.length) {
+h += '<table class="tbl"><thead><tr><th>#</th><th>TIPO</th><th>FONTE</th><th class="num">VALOR</th><th>DATA</th><th>SITUAÇÃO</th><th></th></tr></thead><tbody>' + fontes.map(function (f, i) {
+var usada = arr(a.fontesUsadas).filter(function (u) { return u.indice === i; })[0], desc = arr(a.descartadas).filter(function (u) { return u.indice === i; })[0], nao = arr(a.naoUsadas).filter(function (u) { return u.indice === i; })[0];
+return "<tr><td>" + (i + 1) + "</td><td>" + esc(f.tipo) + "</td><td>" + esc([f.base, f.fornecedor, f.link].filter(Boolean).join(" · ")) + '</td><td class="num">' + numBR(F.num(f.valor), 2) + "</td><td>" + esc(dataBR(f.dataAcesso || f.dataColeta || f.dataConclusao)) + (f.horaAcesso ? " " + esc(f.horaAcesso) : "") + "</td><td>" +
+(usada ? M.pilula("usada", "ok") + porque(usada.regra, usada.regra, false, "Fonte usada") : (desc ? M.pilula("descartada", "erro") + " " + esc(desc.motivo) + porque(desc.motivo, desc.regra, false, "Fonte descartada") : (nao ? M.pilula("não usada", "neutro") + " " + esc(nao.motivo) : ""))) + "</td><td>" +
+btn("Remover", "cpl-f-remover", ' data-item="' + esc(l.numero) + '" data-i="' + i + '"' + d, "sm ghost") + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+if (a.avisoDescarte) h += '<p class="muted">' + esc(a.avisoDescarte) + "</p>";
+arr(a.pendencias).forEach(function (m) { h += '<p class="cpl-alerta">' + esc(m) + "</p>"; });
+if (a.justificativaObrigatoria) h += campo("Justificativa (menos preços que o mínimo — aprovada pela autoridade)", '<textarea id="cpl-pj-' + esc(l.numero) + '" rows="2"' + d + ">" + esc(cfg.justificativa || "") + "</textarea> " + btn("Salvar justificativa", "cpl-f-just", ' data-item="' + esc(l.numero) + '"' + d, "sm"));
+var tipoSel = G._cplFonteTipo[l.numero] || (tipos[0] ? tipos[0][0] : "");
+if (reg) {
+var oficial = tipoSel === "sistema_oficial";
+h += '<div class="cpl-novafonte"><b>Adicionar fonte</b> <select data-gacao="cpl-f-tipo" aria-label="Tipo da fonte"' + d + ">" + selOptsCtx(tipos, tipoSel, l.numero) + "</select>" +
+(oficial ? ' <select id="cpl-fb-' + esc(l.numero) + '"' + d + '><option>SINAPI</option><option>SICRO</option><option>SIURB</option></select>' : "") +
+' <input id="cpl-fv-' + esc(l.numero) + '" inputmode="decimal" placeholder="Valor unitário" style="width:120px"' + d + ">" +
+' <input id="cpl-ff-' + esc(l.numero) + '" placeholder="Fornecedor / órgão / site" style="min-width:180px"' + d + ">" +
+(tipoSel === "midia" || tipoSel === "outro_sistema" || tipoSel === "nota_fiscal" ? ' <input id="cpl-fl-' + esc(l.numero) + '" placeholder="Link" style="min-width:160px"' + d + ">" : "") +
+(tipoSel === "midia" ? ' <label>Acesso <input id="cpl-fda-' + esc(l.numero) + '" type="date"' + d + '></label> <input id="cpl-fha-' + esc(l.numero) + '" type="time" aria-label="Hora do acesso"' + d + ">" : "") +
+(tipoSel === "cotacao" ? ' <label>Coleta <input id="cpl-fdc-' + esc(l.numero) + '" type="date"' + d + "></label>" : "") +
+(tipoSel === "contratacao_similar" ? ' <label>Conclusão <input id="cpl-fdq-' + esc(l.numero) + '" type="date"' + d + '></label> <label><input type="checkbox" id="cpl-fex-' + esc(l.numero) + '"' + d + '> em execução</label> <input id="cpl-fat-' + esc(l.numero) + '" inputmode="decimal" placeholder="Índice de atualização (ex.: 1,042)" style="width:170px"' + d + ">" : "") +
+" " + btn("Adicionar", "cpl-f-add", ' data-item="' + esc(l.numero) + '"' + d, "sm primary") + "</div>";
+}
+return h + "</details>";
+}
+function _pTr(p, x, ed) {
+var d = ed && podeAcao("editar_tr") ? "" : " disabled";
+var t = p.tr || {};
+var h = '<p class="muted">O termo de referência (art. 6º, XXIII) e o projeto básico (art. 6º, XXV) saem do que já está no processo; aqui você completa o que não se deduz.</p>';
+h += '<div class="cpl-form" id="cpl-f-tr">' +
+campo("Descrição do objeto *", '<textarea id="cpl-tr-objeto" rows="3" data-foco="objeto"' + d + ">" + esc(t.objeto != null ? t.objeto : (p.objeto || "")) + "</textarea>" + (vazio(t.objeto) && p.objeto ? '<div class="cpl-sugerido">pré-preenchido com o objeto do passo 1 — confira e salve</div>' : ""), "objeto") +
+campo("Critério de medição *", '<textarea id="cpl-tr-medicao" rows="3" data-foco="medicao"' + d + ">" + esc(t.medicao || "") + "</textarea>", "medicao") +
+campo("Critério de recebimento (provisório e definitivo) *", '<textarea id="cpl-tr-recebimento" rows="3" data-foco="recebimento"' + d + ">" + esc(t.recebimento || "") + "</textarea>", "recebimento") +
+campo("Pagamento (condições e prazo)", '<textarea id="cpl-tr-pagamento" rows="2"' + d + ">" + esc(t.pagamento || "") + "</textarea>") +
+campo("Gestão e fiscalização do contrato", '<textarea id="cpl-tr-gestao" rows="2"' + d + ">" + esc(t.gestao || "") + "</textarea>") +
+campo("Adequação orçamentária (dotação)", '<input id="cpl-tr-dotacao" value="' + esc(t.dotacao || "") + '"' + d + ">") + "</div>" +
+'<div class="cpl-acoes">' + btn("Salvar TR", "cpl-salvar-tr", d, "primary") + btn("Ver prévia do documento", "cpl-doc-previa", ' data-doc="tr"') + "</div>";
+return h;
+}
+function _pParametros(p, x, ed) {
+var d = ed && podeAcao("editar_parametros") ? "" : " disabled";
+var c = calc(orcDoProc(p));
+var linhas = c ? c.linhas.map(function (l) { return { item: l.numero, descricao: l.descricao, total: l.precoTotal, qtd: l.quantidade, un: l.unidade }; }) : [];
+var sug = C.parametros.sugerir(p, { totalEstimado: c ? c.precoVenda : undefined, linhas: linhas });
+var h = '<p class="muted">Cada linha traz a sugestão do sistema, o porquê e o artigo. Aceite a sugestão ou troque o valor.</p>';
+h += '<table class="tbl" id="cpl-tab-param"><thead><tr><th>PARÂMETRO</th><th>SUGESTÃO</th><th>VALOR</th><th></th></tr></thead><tbody>' + R.PARAMETROS_ORDEM.map(function (id) {
+var def = R.PARAMETROS[id], s = sug[id], v = (p.parametros[id] || {}).valor;
+if (id === "sigiloso" && vazio(v)) v = p.sigiloso;
+var sugTxt = s.sugerido === null || s.sugerido === undefined ? "—" : (typeof s.sugerido === "object" ? _descObj(id, s.sugerido) : (typeof s.sugerido === "boolean" ? (s.sugerido ? "Sim" : "Não") : String(s.sugerido)));
+var ctrl = _ctrlParam(id, def, v, s, d);
+return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
+(s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste") ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
+}).join("") + "</tbody></table>";
+var regs = Object.keys(R.REGULAMENTOS).map(function (k) { return [k, R.REGULAMENTOS[k].nome]; });
+var efet = C.pesquisaPrecos.regulamentoEfetivo(p), cron = p.cronograma || {};
+h += '<div class="cpl-form" id="cpl-f-prazos"><h3>Regulamento, publicação e abertura</h3>' +
+campo("Regulamento de pesquisa de preços", '<select id="cpl-regulamento" data-foco="regulamentoId"' + (p.recursoFederal === true ? " disabled" : d) + ">" + selOpts(regs, p.recursoFederal === true ? "federal-14133" : p.regulamentoId, "— escolha —") + "</select>" +
+(p.recursoFederal === true ? '<div class="cpl-sug">Há recurso federal: vale o regulamento federal.</div>' : "") + (efet ? porque(efet.fonte, efet.fonte, efet.conferir === true, "Regulamento efetivo") : ""), "regulamentoId") +
+campo("Data de publicação do edital *", '<input id="cpl-dataEdital" type="date" data-foco="dataPrevistaEdital" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">", "dataPrevistaEdital") +
+campo("Data de abertura das propostas", '<input id="cpl-dataAbertura" type="date" data-foco="dataAbertura" value="' + esc(cron.dataAbertura || "") + '"' + d + ">", "dataAbertura") +
+campo("Feriados locais (um por linha, AAAA-MM-DD)", '<textarea id="cpl-feriados" rows="2"' + d + ">" + esc(arr(p.feriadosLocais).join("\n")) + "</textarea>") + "</div>";
+var pz = F.prazo(p);
+h += '<div class="cpl-prazo" id="cpl-prazo">';
+if (pz.diasUteis) {
+h += "<p><b>Prazo mínimo:</b> " + pz.diasUteis + " dias úteis desde a publicação" + (pz.dataMinimaAbertura ? " → <b>abertura a partir de " + esc(dataBR(pz.dataMinimaAbertura)) + "</b>" : "") + "." +
+porque((pz.regra ? pz.regra.descricao + ". " : "") + pz.contagem, pz.fonte, pz.regra && pz.regra.conferir === false ? false : pz.conferir, "Prazo mínimo") + "</p>";
+if (pz.aberturaOk === false) h += '<p class="cpl-alerta">A data de abertura informada está antes do mínimo legal.</p>';
+}
+arr(pz.pendencias).forEach(function (m) { h += '<p class="cpl-alerta">' + esc(m) + "</p>"; });
+h += "</div>";
+return h + '<div class="cpl-acoes">' + btn("Salvar datas e regulamento", "cpl-par-datas", d, "primary") + "</div>";
+}
+function _descObj(id, v) {
+if (id === "parcelas_relevancia") return arr(v).length + " parcela(s)";
+if (id === "garantia_contrato") return "até " + v.pctMax + "% (até " + v.pctMaxComJustificativa + "% com justificativa)" + (v.grandeVulto ? "; seguro-garantia com retomada até " + v.seguroGarantiaRetomadaPctMax + "%" : "");
+if (id === "exequibilidade") return "inexequível abaixo de " + v.inexequivelAbaixoPct + "%; garantia adicional abaixo de " + v.garantiaAdicionalAbaixoPct + "%";
+if (id === "aditivo_teto") return "acréscimo até " + v.acrescimoPct + "%, supressão até " + v.supressaoPct + "%";
+if (id === "recurso_prazo") return v.diasUteis + " dias úteis";
+if (id === "reajuste") return "data-base " + (v.dataBase ? dataBR(v.dataBase) : "—") + "; índice a escolher";
+return JSON.stringify(v);
+}
+function _ctrlParam(id, def, v, s, d) {
+if (def.resposta === "bool") return selSn("cpl-par-" + id, v === true || v === false ? v : null, id, d);
+if (def.resposta === "texto") {
+var ops = (def.opcoes || (id === "modalidade" ? MODALIDADES : [])).slice();
+if (v && ops.indexOf(v) < 0) ops.push(v);
+return '<select id="cpl-par-' + id + '" data-foco="' + id + '"' + d + ">" + selOpts(ops, v, "— escolha —") + "</select>";
+}
+if (id === "garantia_contrato") return '<input id="cpl-par-' + id + '" data-foco="' + id + '" inputmode="decimal" style="width:90px" placeholder="% exigido" value="' + esc(v && v.pct != null ? v.pct : "") + '"' + d + "> % " + (v && v.pct != null ? "" : "");
+if (id === "reajuste") return '<input id="cpl-par-reaj-i" data-foco="reajuste" placeholder="Índice (ex.: INCC-DI)" value="' + esc(v && v.indice ? v.indice : "") + '"' + d + '> <input id="cpl-par-reaj-d" type="date" aria-label="Data-base" value="' + esc(v && v.dataBase ? v.dataBase : (s.sugerido && s.sugerido.dataBase) || "") + '"' + d + ">";
+if (v !== null && v !== undefined && v !== "") return esc(_descObj(id, v));
+return '<span class="muted">sem valor</span>';
+}
+function _pMinuta(p, x, ed) {
+var d = ed && podeAcao("gerar_minuta") ? "" : " disabled";
+var g = D.gerar(p, ctxDocs(p)), val_ = F.pacoteValido(p), pdoc = p.pacote || {};
+var h = '<p class="muted">O nome e o logo do órgão vêm de Empresa (Configurações). Os documentos saem do que está no processo. Campo em branco vira <b class="cpl-pre-ex">[PREENCHER: …]</b> em vermelho; o passo só fica pronto com <b>nenhum</b> campo desses.</p>';
+h += '<table class="tbl" id="cpl-tab-docs"><thead><tr><th>DOCUMENTO</th><th>USO</th><th class="num">CAMPOS EM BRANCO</th><th></th></tr></thead><tbody>' + g.docs.map(function (doc) {
+return "<tr><td><b>" + esc(doc.nome) + "</b></td><td>" + (doc.publico ? M.pilula("público", "info") : M.pilula("interno", "neutro")) + '</td><td class="num">' + (doc.pendentes ? M.pilula(String(doc.pendentes), "alerta") : M.pilula("0", "ok")) + "</td><td>" +
+btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn("Baixar .docx", "cpl-doc-baixar", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") + "</td></tr>";
+}).join("") + "</tbody></table>";
+h += "<p>" + (val_ ? M.pilula("Documentos gerados em " + dataHoraBR(pdoc.geradoEm), "ok") : (g.pendentes ? M.pilula(g.pendentes + " campo(s) em branco no total", "alerta") : M.pilula("ainda não gerados", "neutro"))) + "</p>";
+if (!val_ && pdoc.invalidadoEm) h += '<p class="cpl-alerta">A minuta gerada deixou de valer: ' + esc(pdoc.motivo || "o processo mudou") + ". Gere de novo.</p>";
+var e = p.edital || {}, dm = ed && podeAcao("gerar_minuta") ? "" : " disabled";
+h += '<h3>Dados que completam a minuta</h3><div class="cpl-form" id="cpl-f-edital">' +
+campo("Número do edital", '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
+campo("Documentos de habilitação exigidos", '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
+campo("Regime de sanções aplicável", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
+campo("Vigência e prazo de execução do contrato", '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
+campo("Extinção do contrato, sanções contratuais e foro", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") + "</div>" +
+'<div class="cpl-acoes">' + btn("Salvar dados da minuta", "cpl-salvar-edital", dm, "") + "</div>";
+h += '<div class="cpl-acoes">' + btn("Gerar documentos", "cpl-gerar", dis(ed && podeAcao("gerar_minuta"), !podeAcao("gerar_minuta") ? motivoAcao("gerar_minuta") : F.motivoTravado(p)), "primary") + (g.pendentes ? '<span class="muted">Com campos em branco os documentos podem ser baixados como rascunho, mas o passo não fica pronto.</span>' : "") + "</div>";
+return h;
+}
+function _pConformidade(p, x, ed) {
+var c = calc(orcDoProc(p)), pq = c ? F.pesquisar(p, c.linhas, modoDoOrc(c)) : null;
+var lista = F.conformidade(p, { pesquisa: pq });
+var h = '<table class="tbl" id="cpl-tab-conf"><thead><tr><th>VERIFICAÇÃO</th><th>ARTIGO</th><th>SITUAÇÃO</th><th></th></tr></thead><tbody>' + lista.map(function (it) {
+return "<tr><td>" + esc(it.texto) + (it.detalhe && !it.ok ? '<div class="muted">' + esc(it.detalhe) + "</div>" : "") + "</td><td>" + esc(it.artigo) + "</td><td>" + (it.ok ? M.pilula("ok", "ok") : M.pilula("pendente", "alerta")) + "</td><td>" +
+(!it.ok && it.passo && it.passo !== "conformidade" ? btn("Corrigir", "cpl-corrigir", ' data-passo="' + it.passo + '" data-campo=""', "sm") : "") + "</td></tr>";
+}).join("") + "</tbody></table>";
+var st = p.status, pa = p.parecer;
+h += "<h3>Jurídico (art. 53)</h3>";
+var blEnvio = F.bloqueiosEnvio(p), reenvio = st !== "rascunho" && st !== "devolvido", podeEnv = podeAcao("enviar_juridico") && F.podeReenviar(p) && !blEnvio.length;
+var motEnv = !podeAcao("enviar_juridico") ? motivoAcao("enviar_juridico") : (!F.podeReenviar(p) ? "O processo está «" + (F.STATUS_ROTULO[st] || st) + "»." : (blEnvio[0] || ""));
+if (F.podeReenviar(p)) h += '<div class="cpl-acoes">' + btn(reenvio ? "Enviar de novo ao jurídico (o processo mudou)" : "Enviar ao jurídico", "cpl-enviar-jur", dis(podeEnv, motEnv), "primary") + (blEnvio.length ? '<span class="muted">' + esc(blEnvio[0]) + "</span>" : "") + "</div>";
+if (st === "em_analise_juridica") {
+h += M.aviso({ tom: "info", titulo: "Aguardando parecer do jurídico.", texto: "As peças ficam trancadas até o parecer." });
+var podeEmitir = podeAcao("emitir_parecer");
+h += '<div class="cpl-form" id="cpl-f-parecer"><h4>Parecer do jurídico</h4>' + campo("Resultado", '<select id="cpl-par-res"' + dis(podeEmitir, motivoAcao("emitir_parecer")) + ">" + selOpts([["favoravel", "Favorável"], ["com_ressalvas", "Favorável com ressalvas"], ["desfavoravel", "Desfavorável"]], "", "— escolha —") + "</select>") +
+campo("Texto do parecer", '<textarea id="cpl-par-txt" rows="4"' + dis(podeEmitir, motivoAcao("emitir_parecer")) + "></textarea>") +
+campo("Ressalvas (uma por linha — só no parecer com ressalvas)", '<textarea id="cpl-par-ress" rows="3"' + dis(podeEmitir, motivoAcao("emitir_parecer")) + "></textarea>") +
+"</div>" + '<div class="cpl-acoes">' + btn("Emitir parecer", "cpl-emitir-parecer", dis(podeEmitir, motivoAcao("emitir_parecer")), "primary") + "</div>";
+}
+if (pa) {
+h += '<div class="cpl-parecer" id="cpl-parecer"><p><b>Parecer:</b> ' + esc({ favoravel: "favorável", com_ressalvas: "favorável com ressalvas", desfavoravel: "desfavorável" }[pa.resultado] || pa.resultado) + " · " + esc(pa.emitidoPor || "") + " em " + esc(dataHoraBR(pa.emitidoEm)) + "</p><p>" + esc(pa.texto) + "</p>";
+if (arr(pa.ressalvas).length) {
+h += '<table class="tbl" id="cpl-tab-ress"><thead><tr><th>#</th><th>RESSALVA</th><th>RESPOSTA</th><th></th></tr></thead><tbody>' + pa.ressalvas.map(function (r) {
+var pode = podeAcao("responder_ressalva") && !r.respondida && st === "com_ressalvas";
+return "<tr><td>" + (r.idx + 1) + "</td><td>" + esc(r.texto) + "</td><td>" + (r.respondida ? esc(r.resposta) + '<div class="muted">por ' + esc(r.respondidoPor || "") + "</div>" : '<input id="cpl-rr-' + r.idx + '" style="min-width:240px" placeholder="Resposta da CPL"' + dis(pode, !podeAcao("responder_ressalva") ? motivoAcao("responder_ressalva") : "") + ">") + "</td><td>" +
+(r.respondida ? M.pilula("respondida", "ok") : btn("Responder", "cpl-resp-ress", ' data-i="' + r.idx + '"' + dis(pode, !podeAcao("responder_ressalva") ? motivoAcao("responder_ressalva") : "Só com o parecer com ressalvas."), "sm")) + "</td></tr>";
+}).join("") + "</tbody></table>";
+if (st === "com_ressalvas") {
+var todas = pa.ressalvas.every(function (r) { return r.respondida; });
+h += '<div class="cpl-acoes">' + btn("Dar ciência às respostas (jurídico)", "cpl-ciencia", dis(podeAcao("emitir_parecer") && todas, !podeAcao("emitir_parecer") ? motivoAcao("emitir_parecer") : "Ainda há ressalva sem resposta."), "") + "</div>";
+}
+}
+if (pa.ciencia) h += "<p>Ciência do jurídico: " + esc(pa.ciencia.por || "") + " em " + esc(dataHoraBR(pa.ciencia.em)) + ".</p>";
+h += "</div>";
+}
+h += "<h3>Autorização e publicação</h3>";
+var bl = F.bloqueiosPublicacao(p), podeAutorizar = podeAcao("autorizar_abertura") && C.fluxoJuridico.podePublicar(p) && st !== "publicado";
+if (st === "publicado") {
+var pb = p.publicacao || {};
+h += M.aviso({ tom: "ok", titulo: "Edital publicado.", texto: "Publicado em " + dataHoraBR(pb.publicadoEm) + " por " + (pb.publicadoPor || "—") + ", autorizado por " + (pb.autorizadoPor || "—") + ". Abertura: " + dataBR(pb.dataAbertura) + "." });
+} else {
+h += "<p>" + (p.autorizacao && p.autorizacao.assinatura === F.assinaturaConteudo(p) ? M.pilula("Abertura autorizada por " + (p.autorizacao.por || "") + " em " + dataHoraBR(p.autorizacao.em), "ok") : M.pilula("sem autorização válida", "alerta")) + "</p>";
+var motAut = !podeAcao("autorizar_abertura") ? motivoAcao("autorizar_abertura") : (!C.fluxoJuridico.podePublicar(p) ? "A autorização vem depois do parecer favorável." : "");
+var podePub = podeAcao("publicar") && !bl.length, motPub = !podeAcao("publicar") ? motivoAcao("publicar") : (bl[0] || "");
+h += '<div class="cpl-acoes">' + btn("Autorizar a abertura (autoridade)", "cpl-autorizar", dis(podeAutorizar, motAut)) + btn("Publicar o edital", "cpl-publicar", dis(podePub, motPub), "primary") + "</div>";
+if (bl.length) h += '<ul class="cpl-bloqueios" id="cpl-bloqueios">' + bl.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>";
+}
+return h;
+}
+function _propostas(p) {
+var pode = podeAcao("analisar_propostas"), d = pode ? "" : " disabled";
+var props = arr(p.propostas), ref = p.referenciaPublicada;
+var h = '<input type="file" id="cpl-arq-prop" accept=".xlsx,.xls,.xlsm" hidden>';
+h += M.aviso({ tom: "info", titulo: "Habilitação: leitura automática na próxima versão.", texto: "Hoje o sistema compara só a planilha de preços com a referência congelada na publicação. A habilitação (documentos do licitante) continua sendo conferida pela comissão." });
+h += '<div class="cpl-acoes">' + campo("Nome do licitante", '<input id="cpl-lic-nome" placeholder="Razão social"' + d + ">") + btn("Importar planilha da proposta (.xlsx)", "cpl-prop-importar", dis(pode, motivoAcao("analisar_propostas")), "primary") +
+'<span class="muted">Aceita o .xlsx de proposta do OrçaPRO / CertamePRO.</span></div>';
+if (!props.length) return h + M.vazio({ icone: "documentos", titulo: "Nenhuma proposta importada", texto: "Importe a planilha de cada licitante. O sistema compara com a referência e sugere; a decisão é sempre do servidor." });
+h += '<div class="cpl-form"><h3>Resultado</h3>' + campo("Resultado divulgado em", '<input id="cpl-resultadoEm" type="date" value="' + esc(p.resultadoEm || "") + '"' + d + ">") + btn("Salvar data", "cpl-resultado-data", d, "sm") +
+(p.resultadoEm ? "<p>Fim do prazo de recurso: <b>" + esc(dataBR(F.fimPrazoRecurso(p))) + "</b></p>" : "") + "</div>";
+props.forEach(function (pr) { h += _cartaoProposta(p, pr, pode, d); });
+h += _quadroComparativo(p, props, ref);
+return h;
+}
+function _cartaoProposta(p, pr, pode, d) {
+var an = pr.analise || { achados: [], sugestao: "ok" };
+var tom = { ok: "ok", diligencia: "alerta", desclassificar: "erro" }[an.sugestao] || "neutro", rot = { ok: "sem achado que exija providência", diligencia: "sugere diligência", desclassificar: "sugere desclassificar" }[an.sugestao];
+var dec = pr.decisao;
+var h = '<section class="cpl-prop" data-id="' + esc(pr.id) + '"><h3>' + esc(pr.licitante || "(sem nome)") + " " + M.pilula(rot, tom) + (dec ? " " + M.pilula("decisão: " + dec.acao, dec.acao === "desclassificar" ? "erro" : "ok") : "") + "</h3>";
+h += '<p class="muted">' + esc(pr.arquivo || "") + " · " + pr.linhas.length + " item(ns) · total da proposta " + moeda(an.resumo ? an.resumo.totalProposta : null) + " · " + esc(pr.colunas || "") + "</p>";
+if (an.achados.length) {
+h += '<table class="tbl"><thead><tr><th>ITEM</th><th>ACHADO</th><th>ESPERADO</th><th>ENCONTRADO</th><th>SUGESTÃO</th></tr></thead><tbody>' + an.achados.map(function (a) {
+return "<tr><td>" + esc(a.item) + "</td><td>" + esc(a.tipo.replace(/_/g, " ")) + "</td><td>" + esc(a.esperado) + "</td><td>" + esc(a.encontrado) + "</td><td>" + esc({ ok: "ok", diligencia: "diligência", desclassificar: "desclassificar" }[a.sugestao] || a.sugestao) + porque("Fundamento do achado: " + a.fonte + ". A sugestão é da casa; só o texto da lei manda desclassificar.", a.fonte, true, "Achado da proposta") + "</td></tr>";
+}).join("") + "</tbody></table>";
+} else h += '<p class="muted">Nenhum achado: a planilha bate com a referência.</p>';
+h += '<div class="cpl-acoes">' + btn("Classificar", "cpl-prop-decidir", ' data-id="' + esc(pr.id) + '" data-acao="classificar"' + d, "sm") + btn("Pedir diligência", "cpl-prop-decidir", ' data-id="' + esc(pr.id) + '" data-acao="diligencia"' + d, "sm") + btn("Desclassificar", "cpl-prop-decidir", ' data-id="' + esc(pr.id) + '" data-acao="desclassificar"' + d, "sm") +
+btn("Parecer de análise (.docx)", "cpl-prop-doc", ' data-id="' + esc(pr.id) + '" data-tipo="parecer"', "sm ghost") + btn("Termo de diligência (.docx)", "cpl-prop-doc", ' data-id="' + esc(pr.id) + '" data-tipo="diligencia"' + dis(!!(dec && dec.acao === "diligencia"), "Disponível depois que o servidor decidir pela diligência."), "sm ghost") +
+btn("Comunicado de desclassificação (.docx)", "cpl-prop-doc", ' data-id="' + esc(pr.id) + '" data-tipo="desclassificacao"' + dis(!!(dec && dec.acao === "desclassificar"), "Disponível depois que o servidor decidir desclassificar."), "sm ghost") + "</div></section>";
+return h;
+}
+function _quadroComparativo(p, props, ref) {
+if (!ref) return "";
+var cols = props.map(function (pr) { return pr; });
+var h = "<h3>Quadro comparativo</h3>" + '<table class="tbl" id="cpl-quadro"><thead><tr><th>ITEM</th><th>DESCRIÇÃO</th><th class="num">REFERÊNCIA (unit.)</th>' + cols.map(function (pr) { return '<th class="num">' + esc(pr.licitante || "—") + "</th>"; }).join("") + "</tr></thead><tbody>" + ref.linhas.map(function (l) {
+var vals = cols.map(function (pr) { var q = pr.linhas.filter(function (z) { return String(z.item).trim() === String(l.item).trim(); })[0]; return q && typeof q.unitario === "number" ? q.unitario : null; });
+var menor = null; vals.forEach(function (v) { if (v !== null && (menor === null || v < menor)) menor = v; });
+return "<tr><td>" + esc(l.item) + "</td><td>" + esc(l.descricao) + '</td><td class="num">' + numBR(l.unitario, 2) + "</td>" + vals.map(function (v) { return '<td class="num' + (v !== null && v === menor && cols.length > 1 ? " cpl-menor" : "") + '">' + (v === null ? "—" : numBR(v, 2)) + "</td>"; }).join("") + "</tr>";
+}).join("") + '</tbody><tfoot><tr><th colspan="2">TOTAL</th><th class="num">' + numBR(ref.total, 2) + "</th>" + cols.map(function (pr) { return '<th class="num">' + (pr.analise && pr.analise.resumo ? numBR(pr.analise.resumo.totalProposta, 2) : "—") + "</th>"; }).join("") + "</tr></tfoot></table>";
+return h;
+}
+function _histProc(p) {
+var h = arr(p.historico).slice().reverse();
+if (!h.length) return M.secao({ corpoHtml: M.vazio({ icone: "documentos", titulo: "Sem histórico ainda", texto: "Cada mudança do processo é registrada com quem fez, quando e o antes/depois." }) });
+return M.secao({ titulo: "Histórico do processo", sub: "Somente leitura.", corpoHtml: '<table class="tbl" id="cpl-tab-hist"><thead><tr><th>QUANDO</th><th>QUEM</th><th>O QUÊ</th><th>ANTES</th><th>DEPOIS</th></tr></thead><tbody>' + h.map(function (e) {
+return "<tr><td>" + esc(dataHoraBR(e.em)) + "</td><td>" + esc(e.quem || "—") + "</td><td>" + esc(e.acao) + "</td><td>" + esc(e.antes == null ? "" : e.antes) + "</td><td>" + esc(e.depois == null ? "" : e.depois) + "</td></tr>";
+}).join("") + "</tbody></table>" });
+}
+function chaveArq(sha) { return "cplpro:" + eid() + ":" + sha; }
+function sha256(bytes) {
+if (typeof crypto === "undefined" || !crypto.subtle) return Promise.reject(new Error("este navegador não calcula SHA-256 (use https ou localhost)"));
+return crypto.subtle.digest("SHA-256", bytes).then(function (ab) {
+var u = new Uint8Array(ab), s = "", i; for (i = 0; i < u.length; i++) s += (u[i] < 16 ? "0" : "") + u[i].toString(16);
+return s;
+});
+}
+function lerArquivo(f) {
+return new Promise(function (ok, falha) {
+var fr = new FileReader(); fr.onload = function () { ok(new Uint8Array(fr.result)); }; fr.onerror = function () { falha(fr.error || new Error("não consegui ler " + f.name)); }; fr.readAsArrayBuffer(f);
+});
+}
+function adicionarArquivos(files) {
+var p = procAtual(); if (!p) return;
+var papel = exigirEditavel(p, "editar_acervo"); if (!papel) return;
+var lista = Array.prototype.slice.call(files || []);
+if (!lista.length) return;
+var st = document.getElementById("cpl-acervo-status"); if (st) st.textContent = "Lendo " + lista.length + " arquivo(s)…";
+var novos = [], guardados = 0, grandes = [];
+var seq = Promise.resolve();
+lista.forEach(function (f) {
+seq = seq.then(function () {
+return lerArquivo(f).then(function (bytes) {
+return sha256(bytes).then(function (sha) {
+var ext = (/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "";
+novos.push({ nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: f.lastModified ? hoje() : null });
+if (bytes.length <= MAX_BYTES && typeof Idb !== "undefined") {
+var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+return Idb.set(chaveArq(sha), { nome: f.name, tipo: f.type || "application/octet-stream", dados: copia }).then(function () {
+guardados++;
+try { if (p.obraId && typeof ArquivosNuvem !== "undefined") ArquivosNuvem.subir(chaveArq(sha), { obraId: p.obraId, pasta: "documentos", nome: f.name, tipo: f.type || "application/octet-stream" }, bytes); } catch (eN) {}
+}, function () { grandes.push(f.name); });
+}
+grandes.push(f.name);
+});
+});
+});
+});
+seq.then(function () {
+var atual = procAtual(); if (!atual) return;
+var q = C.adicionarDocumentos(atual, novos);
+var nNovos = q.documentos.length - arr(atual.documentos).length;
+F.soltarConferencia(q, "acervo");
+F.registrar(q, "acervo:adicionar", arr(atual.documentos).length + " arquivo(s)", q.documentos.length + " arquivo(s) (+" + nNovos + ")", quemAtual(papel), agoraLocal());
+if (salvarProc(q)) {
+toast(nNovos + " arquivo(s) novo(s) no acervo" + (novos.length - nNovos ? " (" + (novos.length - nNovos) + " já estavam)" : "") + "." + (grandes.length ? " " + grandes.length + " ficou(aram) só como registro com SHA-256 (maior que 60 MB ou sem armazenamento neste navegador)." : ""), "ok");
+App.render();
+}
+}, function (e) { toast("Não consegui ler os arquivos: " + (e && e.message ? e.message : e), "erro"); if (st) st.textContent = ""; });
+}
+function abrirArquivoDoc(doc) {
+if (!doc || !doc.sha || typeof Idb === "undefined") { toast("Este arquivo só existe como registro (sem os bytes neste aparelho).", "info"); return; }
+Idb.get(chaveArq(doc.sha)).then(function (v) {
+if (!v || !v.dados) { toast("O arquivo não está neste computador — foi adicionado em outro aparelho ou era grande demais.", "info"); return; }
+var url = URL.createObjectURL(new Blob([new Uint8Array(v.dados)], { type: v.tipo || "application/octet-stream" }));
+var w = global.open(url, "_blank");
+if (!w) { var a = document.createElement("a"); a.href = url; a.download = doc.nome; document.body.appendChild(a); a.click(); a.remove(); }
+setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+}, function () { toast("Não consegui abrir o arquivo.", "erro"); });
+}
+function baixarDocx(html, titulo) {
+if (typeof Docx === "undefined") { toast("A saída em Word não está disponível nesta versão.", "erro"); return false; }
+var op = { titulo: titulo, data: Util.agoraISO(), aplicativo: (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO" };
+try { op.criador = (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : ""; } catch (e) { op.criador = ""; }
+var r;
+try { r = Docx.deHtml(html, op); } catch (e2) { toast("Não consegui montar o Word: " + (e2 && e2.message ? e2.message : e2), "erro"); return false; }
+Util.baixar(Docx.nomeArquivo(titulo), r.bytes, Docx.MIME);
+toast("Word baixado: " + Docx.nomeArquivo(titulo) + ".", "ok");
+return true;
+}
+function docPorId(p, id) {
+var g = D.gerar(p, ctxDocs(p));
+return { doc: g.docs.filter(function (z) { return z.id === id; })[0], todos: g };
+}
+var tvTimer = null;
+function fecharPainel() {
+if (tvTimer) { clearInterval(tvTimer); tvTimer = null; }
+var el = document.getElementById("cpl-tv"); if (el) el.remove();
+try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+document.removeEventListener("fullscreenchange", aoMudarTela);
+document.removeEventListener("keydown", aoTeclar);
+}
+function aoMudarTela() { if (!document.fullscreenElement) fecharPainel(); }
+function aoTeclar(e) { if (e.key === "Escape") fecharPainel(); }
+function htmlQuadro(q) {
+var h = '<h2 class="cpl-tv-tit">' + esc(q.titulo) + "</h2>";
+if (q.id === "passos") {
+h += '<div class="cpl-tv-grade">' + q.itens.map(function (i) { return '<div class="cpl-tv-cel"><b>' + i.total + "</b><span>" + i.passo + ". " + esc(i.passoNome) + "</span></div>"; }).join("") + "</div>";
+} else if (q.id === "prazos") {
+h += q.itens.length ? '<ul class="cpl-tv-lista">' + q.itens.map(function (i) { return "<li><b>" + esc(i.tipoRotulo) + "</b> — " + esc(i.codigo) + " · " + esc(i.objeto) + (i.data ? " · " + esc(dataBR(i.data)) : "") + (i.dias !== null && i.dias !== undefined ? " (" + (i.dias === 0 ? "hoje" : "em " + i.dias + " dia(s)") + ")" : "") + "</li>"; }).join("") + "</ul>" : '<p class="cpl-tv-vazio">Nenhum prazo próximo.</p>';
+} else if (q.id === "pendencias") {
+h += q.itens.length ? '<ul class="cpl-tv-lista">' + q.itens.map(function (i) { return "<li><b>" + i.total + "</b> pendência(s) — " + esc(i.papelNome) + "</li>"; }).join("") + "</ul>" : '<p class="cpl-tv-vazio">Nenhuma pendência.</p>';
+} else {
+h += '<p class="cpl-tv-num">' + q.total + "</p>" + (q.itens.length ? '<ul class="cpl-tv-lista">' + q.itens.map(function (i) { return "<li>" + esc(i.codigo) + " · " + esc(i.objeto) + " · " + esc(dataBR(i.dataPublicacao)) + "</li>"; }).join("") + "</ul>" : '<p class="cpl-tv-vazio">Nenhum edital publicado neste mês.</p>');
+}
+return h;
+}
+function abrirPainel() {
+fecharPainel();
+var dados = F.painel(listaProc().filter(function (p) { return !G._cplObra || p.obraId === G._cplObra; }), hoje());
+var el = document.createElement("div");
+el.id = "cpl-tv"; el.className = "cpl-tv"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Painel da CPL");
+el.innerHTML = '<button type="button" class="cpl-tv-fechar" id="cpl-tv-fechar" aria-label="Sair do painel (Esc)">Sair (Esc)</button><div class="cpl-tv-corpo" id="cpl-tv-corpo"></div><div class="cpl-tv-pontos" id="cpl-tv-pontos"></div>';
+document.body.appendChild(el);
+var i = 0, corpo = document.getElementById("cpl-tv-corpo"), pontos = document.getElementById("cpl-tv-pontos");
+function mostrar(n) {
+i = n % dados.quadros.length;
+corpo.innerHTML = htmlQuadro(dados.quadros[i]);
+pontos.innerHTML = dados.quadros.map(function (q, k) { return '<span class="' + (k === i ? "ativo" : "") + '"></span>'; }).join("");
+el.setAttribute("data-quadro", dados.quadros[i].id);
+}
+mostrar(0);
+tvTimer = setInterval(function () { mostrar(i + 1); }, 15000);
+document.getElementById("cpl-tv-fechar").onclick = fecharPainel;
+document.addEventListener("keydown", aoTeclar);
+try { if (el.requestFullscreen) { el.requestFullscreen().then(function () { document.addEventListener("fullscreenchange", aoMudarTela); }, function () {}); } } catch (e) {}
+}
+G.cplproPainelDados = function () { return F.painel(listaProc(), hoje()); };
+function lerCampo(id) { var el = document.getElementById(id); return el ? String(el.value).replace(/^\s+|\s+$/g, "") : ""; }
+function emBranco(v) { return v === "" ? null : v; }
+G.registrarAcoes(MODULO, {
+"cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
+"cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
+"cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
+"cpl-voltar": function () { G._cplView = "lista"; G._cplId = ""; App.render(); },
+"cpl-abrir": function (ds) { var p = procPorId(ds.id); if (!p) return; G._cplId = p.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = F.passoAtual(p).id; App.render(); },
+"cpl-aba": function (ds) { G._cplAba = ds.aba || "passos"; App.render(); },
+"cpl-passo": function (ds) { G._cplPasso = ds.passo; G._cplFoco = null; App.render(); },
+"cpl-ir-atual": function () { var p = procAtual(); if (!p) return; G._cplPasso = F.passoAtual(p).id; G._cplFoco = null; G._cplAba = "passos"; App.render(); },
+"cpl-corrigir": function (ds) { setFoco(ds.passo, ds.item ? ds.campo + ":" + ds.item : ds.campo); App.render(); },
+"cpl-ir-usuarios": function () { if (typeof App !== "undefined" && App.irPara) App.irPara("usuarios"); },
+"cpl-porque": function (ds) {
+var corpo = "<p>" + Util.esc(ds.regra || "") + "</p><p><b>Fonte:</b> " + Util.esc(ds.fonte || "") + "</p>" +
+(ds.conferir ? '<p class="muted"><span class="cpl-conf">conferir</span> Esta regra ainda precisa da conferência do jurídico do órgão antes de ser tomada como definitiva.</p>' : "");
+UI.modal("Por quê? " + (ds.titulo ? "— " + ds.titulo : ""), corpo, [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-novo": function () {
+if (!exigir("criar_processo")) return;
+var obras = K.lista("obras");
+var corpo = campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
+UI.modal("Novo processo de licitação", corpo, [
+{ texto: "Criar processo", classe: "primary", onClick: function () {
+var papel = exigir("criar_processo"); if (!papel) return;
+var sec = lerCampo("cpl-n-sec"), obj = lerCampo("cpl-n-obj"), obra = lerCampo("cpl-n-obra");
+if (!sec || !obj) { toast("Informe a secretaria e o objeto.", "erro"); return; }
+var q = C.novoProcesso({ secretaria: sec, objeto: obj, obraId: obra || null }, quemAtual(papel), agoraLocal());
+F.registrar(q, "criar_processo", null, "criado", quemAtual(papel), agoraLocal());
+var r = salvarProc(q); if (!r) return;
+UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-criar-obra": function () {
+var p = procAtual(); if (!p || !exigirEditavel(p, "editar_dfd")) return;
+UI.modal("Criar obra", campo("Nome da obra *", '<input id="cpl-co-nome">') + '<p class="muted">Os demais dados da obra se completam no módulo Obras.</p>', [
+{ texto: "Criar e vincular", classe: "primary", onClick: function () {
+var nome = lerCampo("cpl-co-nome"); if (!nome) { toast("Dê um nome à obra.", "erro"); return; }
+var ob = Store.salvar(eid(), "obras", { nome: nome });
+if (!ob) { toast("Não consegui criar a obra.", "erro"); return; }
+UI.fecharModal();
+gravar("demanda", function (q) { var antes = q.obraId; q.obraId = ob.id; return { antes: { obraId: antes }, depois: { obraId: ob.id } }; });
+App.render();
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-aceitar-tipo": function (ds) {
+var ok = gravar("demanda", function (q) { var a = q.tipoObjeto; q.tipoObjeto = ds.tipo; return { antes: { tipoObjeto: a }, depois: { tipoObjeto: ds.tipo } }; });
+if (ok) { toast("Tipo de objeto confirmado.", "ok"); App.render(); }
+},
+"cpl-salvar-demanda": function () {
+var ok = gravar("demanda", function (q) {
+var antes = { secretaria: q.secretaria, requisitante: q.requisitante, objeto: q.objeto, tipoObjeto: q.tipoObjeto, justificativa: q.justificativa, pca: q.pca, prazoDesejado: q.prazoDesejado, recursoFederal: q.recursoFederal, sigiloso: q.sigiloso, obraId: q.obraId };
+q.secretaria = emBranco(lerCampo("cpl-secretaria")); q.requisitante = emBranco(lerCampo("cpl-requisitante")); q.objeto = emBranco(lerCampo("cpl-objeto"));
+q.tipoObjeto = emBranco(lerCampo("cpl-tipo")); q.justificativa = emBranco(lerCampo("cpl-justificativa")); q.pca = emBranco(lerCampo("cpl-pca")); q.prazoDesejado = emBranco(lerCampo("cpl-prazoDesejado"));
+q.recursoFederal = deSn3(lerCampo("cpl-recursoFederal")); q.sigiloso = deSn3(lerCampo("cpl-sigiloso")); q.obraId = emBranco(lerCampo("cpl-obraProc"));
+if (q.sigiloso !== null) q.parametros.sigiloso.valor = q.sigiloso;
+var dep = { secretaria: q.secretaria, requisitante: q.requisitante, objeto: q.objeto, tipoObjeto: q.tipoObjeto, justificativa: q.justificativa, pca: q.pca, prazoDesejado: q.prazoDesejado, recursoFederal: q.recursoFederal, sigiloso: q.sigiloso, obraId: q.obraId };
+return F.diferencas(antes, dep, Object.keys(dep));
+});
+if (ok) { toast("Demanda salva.", "ok"); App.render(); }
+},
+"cpl-conferir": function (ds) {
+var p = procAtual(); if (!p) return;
+try { var q = F.conferirPasso(p, ds.passo, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Passo conferido.", "ok"); var prox = F.passoAtual(q); G._cplPasso = prox.id !== ds.passo ? prox.id : ds.passo; App.render(); } }
+catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-desconferir": function (ds) {
+var p = procAtual(); if (!p) return;
+try { var q = F.desconferirPasso(p, ds.passo, papeis(), quemAtual(null), agoraLocal()); if (salvarProc(q)) { toast("Conferência desfeita.", "ok"); App.render(); } }
+catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-add-arq": function () { var el = document.getElementById("cpl-arq"); if (el) el.click(); },
+"cpl-add-pasta": function () { var el = document.getElementById("cpl-pasta"); if (el) el.click(); },
+"cpl-doc-tipo": function (ds) {
+var c = cortaCtx(ds.value), tipo = c.v, docId = c.ctx;
+var ok = gravar("acervo", function (q) {
+var dc = q.documentos.filter(function (z) { return z.id === docId; })[0];
+if (!dc || !R.ACERVO_TIPOS[tipo] || dc.tipo === tipo) return null;
+var antes = dc.tipo; dc.tipo = tipo; dc.disciplina = R.ACERVO_TIPOS[tipo].disciplina; dc.confianca = "manual"; dc.motivo = "tipo escolhido por " + nomeAtual();
+var r = C.adicionarDocumentos(q, []);
+q.documentos = r.documentos;
+return { antes: { arquivo: dc.nome, tipo: antes }, depois: { arquivo: dc.nome, tipo: tipo } };
+});
+if (ok) App.render();
+},
+"cpl-doc-abrir": function (ds) { var p = procAtual(); if (!p) return; abrirArquivoDoc(arr(p.documentos).filter(function (z) { return z.id === ds.id; })[0]); },
+"cpl-q-trazer": function () {
+var sel = lerCampo("cpl-orcamentoId");
+if (!sel) { toast("Escolha o orçamento primeiro.", "erro"); return; }
+var ok = gravar("quantitativos", function (q) {
+var orcs = Store.listarOrcamentos(eid()), orc = orcs.filter(function (o) { return o.id === sel; })[0];
+var c = calc(orc); if (!c) throw new Error("Não consegui calcular o orçamento escolhido.");
+var antigos = {}; arr(q.quantitativos).forEach(function (z) { antigos[z.item] = z; });
+var antes = { orcamentoId: q.orcamentoId, itens: arr(q.quantitativos).length };
+q.orcamentoId = sel;
+q.quantitativos = c.linhas.map(function (l) { var a = antigos[l.numero]; return { item: l.numero, itemRef: l.numero, codigo: l.codigo || "", descricao: l.descricao, un: l.unidade, qtd: l.quantidade, origem: a && a.origem ? a.origem : { arquivo: null, pagina: null } }; });
+return { antes: antes, depois: { orcamentoId: sel, itens: q.quantitativos.length } };
+});
+if (ok) { toast("Itens trazidos do orçamento.", "ok"); App.render(); }
+},
+"cpl-q-salvar": function () {
+var ok = gravar("quantitativos", function (q) {
+var antes = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; })), sel = lerCampo("cpl-orcamentoId");
+q.quantitativos.forEach(function (z, i) {
+var a = lerCampo("cpl-qa-" + i), pg = lerCampo("cpl-qp-" + i);
+z.origem = { arquivo: a || null, pagina: pg || null };
+});
+if (sel && q.orcamentoId !== sel) q.orcamentoId = sel;
+var depois = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; }));
+return antes === depois ? null : { antes: antes, depois: depois };
+});
+if (ok) { toast("Origens salvas.", "ok"); App.render(); }
+},
+"cpl-salvar-etp": function () {
+var ok = gravar("etp", function (q) {
+var antes = JSON.stringify({ c: q.etp.campos, j: q.etp.justificativas });
+q.etp = q.etp || { campos: {}, justificativas: {}, lacunas: [] }; q.etp.campos = {}; q.etp.justificativas = {};
+R.ETP_ELEMENTOS.forEach(function (el) {
+var v = lerCampo("cpl-etp-" + el.id); if (v) q.etp.campos[el.id] = v;
+var j = lerCampo("cpl-etpj-" + el.id); if (j) q.etp.justificativas[el.id] = j;
+});
+var depois = JSON.stringify({ c: q.etp.campos, j: q.etp.justificativas });
+return antes === depois ? null : { antes: antes, depois: depois };
+});
+if (ok) { toast("ETP salvo.", "ok"); App.render(); }
+},
+"cpl-r-sugeridos": function () {
+var ok = gravar("riscos", function (q) {
+var sug = C.riscosSugeridos(q.tipoObjeto), ja = {}; arr(q.riscos).forEach(function (r) { ja[r.id] = 1; });
+var novos = sug.filter(function (r) { return !ja[r.id]; });
+if (!novos.length) return null;
+var antes = arr(q.riscos).length; q.riscos = arr(q.riscos).concat(novos);
+return { antes: antes + " risco(s)", depois: q.riscos.length + " risco(s)" };
+});
+if (ok) { toast("Riscos sugeridos incluídos. Ajuste e salve.", "ok"); App.render(); }
+},
+"cpl-r-remover": function (ds) {
+var ok = gravar("riscos", function (q) { var r = q.riscos.splice(Number(ds.i), 1)[0]; return r ? { antes: r.descricao, depois: "removido" } : null; });
+if (ok) App.render();
+},
+"cpl-r-salvar": function () {
+var ok = gravar("riscos", function (q) {
+var antes = JSON.stringify(q.riscos);
+q.riscos.forEach(function (r, i) {
+var pb = lerCampo("cpl-rp-" + i), im = lerCampo("cpl-ri-" + i);
+r.prob = pb ? Number(pb) : null; r.impacto = im ? Number(im) : null; r.alocacao = emBranco(lerCampo("cpl-ra-" + i)); r.mitigacao = lerCampo("cpl-rm-" + i); r.sugerido = false;
+});
+var depois = JSON.stringify(q.riscos);
+return antes === depois ? null : { antes: "riscos", depois: "riscos ajustados" };
+});
+if (ok) { toast("Riscos salvos.", "ok"); App.render(); }
+},
+"cpl-orc-abrir": function () {
+var p = procAtual(); if (!p || !p.orcamentoId) return;
+if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
+App.abrirOrcamento(p.orcamentoId);
+},
+"cpl-orc-usar": function (ds) { var b = document.getElementById("cpl-oBase"), c = document.getElementById("cpl-oComp"); if (b) b.value = ds.base || ""; if (c && !c.value) c.value = ds.comp || ""; },
+"cpl-orc-salvar": function () {
+var ok = gravar("orcamento", function (q) {
+var sel = lerCampo("cpl-orcamentoId"), antes = { orcamentoId: q.orcamentoId, base: q.orcamentoRef.base, competencia: q.orcamentoRef.competencia };
+q.orcamentoId = emBranco(sel); q.orcamentoRef = { base: emBranco(lerCampo("cpl-oBase")), competencia: emBranco(lerCampo("cpl-oComp")) };
+var dep = { orcamentoId: q.orcamentoId, base: q.orcamentoRef.base, competencia: q.orcamentoRef.competencia };
+return F.diferencas(antes, dep, Object.keys(dep));
+});
+if (ok) { toast("Orçamento de referência salvo.", "ok"); App.render(); }
+},
+"cpl-pesq-salvar": function () {
+var ok = gravar("orcamento", function (q) {
+q.pesquisa = q.pesquisa || { itens: {} };
+var antes = JSON.stringify({ a: q.pesquisa.dataPesquisa, m: q.pesquisa.metodo, r: q.pesquisa.regraDescarte, e: q.dataPrevistaEdital });
+q.pesquisa.dataPesquisa = emBranco(lerCampo("cpl-pDataPesq")); q.pesquisa.metodo = emBranco(lerCampo("cpl-pMetodo"));
+var ab = lerNum("cpl-pDescAbaixo"), ac = lerNum("cpl-pDescAcima");
+q.pesquisa.regraDescarte = (ab !== null || ac !== null) ? { abaixoPct: ab, acimaPct: ac } : null;
+q.dataPrevistaEdital = emBranco(lerCampo("cpl-pDataEdital"));
+var depois = JSON.stringify({ a: q.pesquisa.dataPesquisa, m: q.pesquisa.metodo, r: q.pesquisa.regraDescarte, e: q.dataPrevistaEdital });
+return antes === depois ? null : { antes: antes, depois: depois };
+}, "editar_pesquisa");
+if (ok) { toast("Parâmetros da pesquisa salvos.", "ok"); App.render(); }
+},
+"cpl-f-tipo": function (ds) { var c = cortaCtx(ds.value); G._cplFonteTipo[c.ctx] = c.v; setFoco("orcamento", "pesq:" + c.ctx); App.render(); },
+"cpl-f-add": function (ds) {
+var it = ds.item, tipo = G._cplFonteTipo[it];
+var p0 = procAtual(), reg = p0 ? C.pesquisaPrecos.regulamentoEfetivo(p0) : null;
+if (!tipo && reg && reg.ordem[0]) tipo = reg.ordem[0].tipo;
+var valor = lerNum("cpl-fv-" + it);
+if (valor === null || valor <= 0) { toast("Informe o valor unitário da fonte.", "erro"); return; }
+var f = { tipo: tipo, valor: valor, fornecedor: emBranco(lerCampo("cpl-ff-" + it)) };
+if (document.getElementById("cpl-fb-" + it)) f.base = lerCampo("cpl-fb-" + it);
+if (document.getElementById("cpl-fl-" + it)) f.link = emBranco(lerCampo("cpl-fl-" + it));
+if (document.getElementById("cpl-fda-" + it)) { f.dataAcesso = emBranco(lerCampo("cpl-fda-" + it)); f.horaAcesso = emBranco(lerCampo("cpl-fha-" + it)); }
+if (document.getElementById("cpl-fdc-" + it)) f.dataColeta = emBranco(lerCampo("cpl-fdc-" + it));
+if (document.getElementById("cpl-fdq-" + it)) { f.dataConclusao = emBranco(lerCampo("cpl-fdq-" + it)); f.emExecucao = !!document.getElementById("cpl-fex-" + it).checked; f.fatorAtualizacao = lerNum("cpl-fat-" + it); }
+var ok = gravar("orcamento", function (q) {
+q.pesquisa = q.pesquisa || { itens: {} }; q.pesquisa.itens = q.pesquisa.itens || {};
+var cfg = q.pesquisa.itens[it] = q.pesquisa.itens[it] || { fontes: [], justificativa: null };
+cfg.fontes = arr(cfg.fontes).concat([f]);
+return { antes: "item " + it + ": " + (cfg.fontes.length - 1) + " fonte(s)", depois: "item " + it + ": " + cfg.fontes.length + " fonte(s)" };
+}, "editar_pesquisa");
+if (ok) { setFoco("orcamento", "pesq:" + it); toast("Fonte adicionada.", "ok"); App.render(); }
+},
+"cpl-f-remover": function (ds) {
+var ok = gravar("orcamento", function (q) {
+var cfg = q.pesquisa && q.pesquisa.itens ? q.pesquisa.itens[ds.item] : null; if (!cfg) return null;
+var r = cfg.fontes.splice(Number(ds.i), 1)[0]; return r ? { antes: "item " + ds.item + ": fonte " + (Number(ds.i) + 1), depois: "removida" } : null;
+}, "editar_pesquisa");
+if (ok) { setFoco("orcamento", "pesq:" + ds.item); App.render(); }
+},
+"cpl-f-just": function (ds) {
+var ok = gravar("orcamento", function (q) {
+q.pesquisa = q.pesquisa || { itens: {} }; q.pesquisa.itens = q.pesquisa.itens || {};
+var cfg = q.pesquisa.itens[ds.item] = q.pesquisa.itens[ds.item] || { fontes: [], justificativa: null }, ant = cfg.justificativa;
+cfg.justificativa = emBranco(lerCampo("cpl-pj-" + ds.item));
+return ant === cfg.justificativa ? null : { antes: ant, depois: cfg.justificativa };
+}, "editar_pesquisa");
+if (ok) { setFoco("orcamento", "pesq:" + ds.item); toast("Justificativa salva.", "ok"); App.render(); }
+},
+"cpl-salvar-tr": function () {
+var ok = gravar("tr", function (q) {
+var antes = JSON.stringify(q.tr);
+q.tr = { objeto: emBranco(lerCampo("cpl-tr-objeto")), medicao: emBranco(lerCampo("cpl-tr-medicao")), recebimento: emBranco(lerCampo("cpl-tr-recebimento")), pagamento: emBranco(lerCampo("cpl-tr-pagamento")), gestao: emBranco(lerCampo("cpl-tr-gestao")), dotacao: emBranco(lerCampo("cpl-tr-dotacao")) };
+var depois = JSON.stringify(q.tr);
+return antes === depois ? null : { antes: antes, depois: depois };
+});
+if (ok) { toast("TR salvo.", "ok"); App.render(); }
+},
+"cpl-par-aceitar": function (ds) {
+var id = ds.id;
+var ok = gravar("parametros", function (q) {
+var c = calc(orcDoProc(q)), linhas = c ? c.linhas.map(function (l) { return { item: l.numero, descricao: l.descricao, total: l.precoTotal, qtd: l.quantidade, un: l.unidade }; }) : [];
+var s = C.parametros.sugerir(q, { totalEstimado: c ? c.precoVenda : undefined, linhas: linhas })[id];
+if (!s || s.sugerido === null || s.sugerido === undefined) throw new Error("O sistema ainda não tem sugestão para este parâmetro: " + (s && s.pendencias[0] ? s.pendencias[0] : "complete os passos anteriores") + ".");
+if (typeof s.sugerido === "string" && / ou /.test(s.sugerido)) throw new Error("O sistema aponta duas modalidades possíveis («" + s.sugerido + "»). Escolha uma na lista: a decisão é do órgão.");
+var antes = q.parametros[id].valor, v = s.sugerido;
+if (id === "garantia_contrato") v = { pct: s.sugerido.pctMax, seguroRetomada: s.sugerido.grandeVulto === true };
+q.parametros[id].valor = v; q.parametros[id].sugerido = s.sugerido; q.parametros[id].regra = s.regra; q.parametros[id].fonte = s.fonte; q.parametros[id].conferido = true;
+if (id === "sigiloso") q.sigiloso = v;
+return { antes: antes, depois: v };
+});
+if (ok) { toast("Sugestão aceita.", "ok"); App.render(); }
+},
+"cpl-par-datas": function () {
+var ok = gravar("parametros", function (q) {
+var antes = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+R.PARAMETROS_ORDEM.forEach(function (id) {
+var def = R.PARAMETROS[id], el = document.getElementById("cpl-par-" + id), v;
+if (id === "reajuste") {
+var ind = lerCampo("cpl-par-reaj-i"), db = lerCampo("cpl-par-reaj-d");
+if (ind || db) q.parametros[id].valor = { indice: emBranco(ind), dataBase: emBranco(db) }; return;
+}
+if (!el) return;
+if (def.resposta === "bool") { v = deSn3(el.value); if (v !== null) { q.parametros[id].valor = v; if (id === "sigiloso") q.sigiloso = v; } return; }
+if (def.resposta === "texto") { if (el.value) q.parametros[id].valor = el.value; return; }
+if (id === "garantia_contrato") {
+var pct = lerNum("cpl-par-" + id);
+if (pct !== null) { if (pct < 0 || pct > 10) throw new Error("A garantia vai de 0 a 10% (acima de 5% só com justificativa de complexidade e risco)."); q.parametros[id].valor = { pct: pct, seguroRetomada: !!(q.parametros[id].valor && q.parametros[id].valor.seguroRetomada) }; }
+}
+});
+if (q.recursoFederal !== true) q.regulamentoId = emBranco(lerCampo("cpl-regulamento")); else q.regulamentoId = "federal-14133";
+q.dataPrevistaEdital = emBranco(lerCampo("cpl-dataEdital"));
+q.cronograma = { dataAbertura: emBranco(lerCampo("cpl-dataAbertura")) };
+q.feriadosLocais = lerCampo("cpl-feriados").split(/[\s,;]+/).filter(function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); });
+var depois = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+return antes === depois ? null : { antes: "parâmetros e datas", depois: "parâmetros e datas atualizados" };
+});
+if (ok) { toast("Parâmetros e datas salvos.", "ok"); App.render(); }
+},
+"cpl-doc-previa": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo") || podeAcao("editar_tr"))) { toast("Seu perfil não vê a prévia dos documentos do processo.", "erro"); return; }
+var r = docPorId(p, ds.doc); if (!r.doc) return;
+UI.modal(r.doc.nome, '<div class="cpl-previa" id="cpl-previa">' + r.doc.html + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-doc-baixar": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo"))) { toast("Seu perfil não baixa documentos do processo.", "erro"); return; }
+var r = docPorId(p, ds.doc); if (!r.doc) return;
+baixarDocx(r.doc.html, D.nomeArquivo({ arquivo: r.doc.arquivo }, p));
+},
+"cpl-salvar-edital": function () {
+var ok = gravar("minuta", function (q) {
+var antes = JSON.stringify(q.edital || {});
+q.edital = { numero: emBranco(lerCampo("cpl-ed-numero")), habilitacao: emBranco(lerCampo("cpl-ed-habilitacao")), sancoes: emBranco(lerCampo("cpl-ed-sancoes")), vigencia: emBranco(lerCampo("cpl-ed-vigencia")), rescisaoForo: emBranco(lerCampo("cpl-ed-rescisao")) };
+var depois = JSON.stringify(q.edital);
+return antes === depois ? null : { antes: antes, depois: depois };
+});
+if (ok) { toast("Dados da minuta salvos.", "ok"); App.render(); }
+},
+"cpl-gerar": function () {
+var p = procAtual(); if (!p) return;
+var papel = exigirEditavel(p, "gerar_minuta"); if (!papel) return;
+var g = D.gerar(p, ctxDocs(p)), q = clone(p);
+q.pacote = g.pendentes === 0
+? { geradoEm: agoraLocal(), assinatura: F.assinaturaConteudo(q), docs: g.docs.map(function (z) { return { id: z.id, nome: z.nome, publico: z.publico, pendentes: 0 }; }), geradoPor: nomeAtual() }
+: { geradoEm: null, tentativaEm: agoraLocal(), pendentes: g.pendentes, docs: g.docs.map(function (z) { return { id: z.id, nome: z.nome, pendentes: z.pendentes }; }) };
+F.registrar(q, "gerar_documentos", null, g.pendentes === 0 ? "gerados sem campo em branco" : g.pendentes + " campo(s) [PREENCHER]", quemAtual(papel), agoraLocal());
+q.passos.minuta.conferido = false;
+var r = Store.salvar(eid(), ENT_PROC, q);
+if (!r) { toast("Não consegui gravar o processo.", "erro"); return; }
+toast(g.pendentes === 0 ? "Documentos gerados. Baixe cada um na lista." : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso");
+App.render();
+},
+"cpl-enviar-jur": function () {
+var p = procAtual(); if (!p) return;
+try { var q = F.enviarJuridico(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Processo enviado ao jurídico.", "ok"); App.render(); } }
+catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-emitir-parecer": function () {
+var p = procAtual(); if (!p) return;
+var papel = exigir("emitir_parecer"); if (!papel) return;
+var ress = lerCampo("cpl-par-ress").split(/\r?\n/).map(function (s) { return s.replace(/^\s+|\s+$/g, ""); }).filter(Boolean);
+try {
+var q = C.fluxoJuridico.emitirParecer(p, { resultado: lerCampo("cpl-par-res"), texto: lerCampo("cpl-par-txt"), ressalvas: ress }, { nome: nomeAtual(), papel: papel }, agoraLocal());
+if (salvarProc(q)) { toast("Parecer registrado.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-resp-ress": function (ds) {
+var p = procAtual(); if (!p) return;
+var papel = exigir("responder_ressalva"); if (!papel) return;
+try {
+var q = C.fluxoJuridico.responderRessalva(p, Number(ds.i), lerCampo("cpl-rr-" + ds.i), { nome: nomeAtual(), papel: papel }, agoraLocal());
+if (salvarProc(q)) { toast("Resposta registrada.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-ciencia": function () {
+var p = procAtual(); if (!p) return;
+try { var q = F.darCiencia(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Ciência registrada.", "ok"); App.render(); } }
+catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-autorizar": function () {
+var p = procAtual(); if (!p) return;
+try { var q = F.autorizar(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Abertura autorizada.", "ok"); App.render(); } }
+catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-publicar": function () {
+var p = procAtual(); if (!p) return;
+var c = calc(orcDoProc(p));
+try {
+var q = F.publicar(p, papeis(), nomeAtual(), agoraLocal(), refDoCalc(c));
+if (salvarProc(q)) { toast("Edital publicado. A referência de preços foi congelada para a análise das propostas.", "ok"); G._cplAba = "propostas"; App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-prop-importar": function () {
+var p = procAtual(); if (!p) return;
+if (!exigir("analisar_propostas")) return;
+if (!lerCampo("cpl-lic-nome")) { toast("Informe o nome do licitante antes de escolher a planilha.", "erro"); return; }
+var el = document.getElementById("cpl-arq-prop"); if (el) el.click();
+},
+"cpl-resultado-data": function () {
+var p = procAtual(); if (!p) return;
+var papel = exigir("analisar_propostas"); if (!papel) return;
+var q = clone(p), ant = q.resultadoEm; q.resultadoEm = emBranco(lerCampo("cpl-resultadoEm"));
+if (ant === q.resultadoEm) { toast("Nada mudou.", "info"); return; }
+F.registrar(q, "resultado_divulgado", ant, q.resultadoEm, quemAtual(papel), agoraLocal());
+if (salvarProc(q)) { toast("Data do resultado salva.", "ok"); App.render(); }
+},
+"cpl-prop-decidir": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!exigir("analisar_propostas")) return;
+var acao = ds.acao, rot = { classificar: "Classificar a proposta", diligencia: "Pedir diligência", desclassificar: "Desclassificar a proposta" }[acao];
+var corpo = campo(acao === "classificar" ? "Observação (opcional)" : "Motivo (vai no documento ao licitante) *", '<textarea id="cpl-dec-motivo" rows="3"></textarea>') + (acao === "diligencia" ? campo("Prazo para resposta", '<input id="cpl-dec-prazo" type="date">') : "") +
+'<p class="muted">O sistema apenas sugeriu. Esta decisão é sua e fica registrada com seu nome e a hora.</p>';
+UI.modal(rot, corpo, [
+{ texto: "Confirmar", classe: "primary", onClick: function () {
+var atual = procAtual(); if (!atual) return;
+try {
+var q = F.decidirProposta(atual, ds.id, { acao: acao, motivo: lerCampo("cpl-dec-motivo") }, papeis(), nomeAtual(), agoraLocal());
+if (acao === "diligencia") { var pr = q.propostas.filter(function (z) { return z.id === ds.id; })[0]; pr.decisao.prazo = emBranco(lerCampo("cpl-dec-prazo")); }
+if (salvarProc(q)) { UI.fecharModal(); toast("Decisão registrada.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-prop-doc": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!(podeAcao("analisar_propostas") || podeAcao("ler_tudo"))) { toast("Seu perfil não gera estes documentos.", "erro"); return; }
+var pr = arr(p.propostas).filter(function (z) { return z.id === ds.id; })[0]; if (!pr) return;
+var tipo = ds.tipo === "desclassificacao" ? "desclassificacao" : ds.tipo;
+var html = D.gerarProposta(tipo, p, pr, ctxDocs(p));
+var nome = { parecer: "Parecer de analise da proposta", diligencia: "Termo de diligencia", desclassificacao: "Comunicado de desclassificacao" }[tipo];
+baixarDocx(html, nome + " - " + F.codigoDe(p));
+},
+"cpl-pap-salvar": function (ds) {
+var papel = exigir("gerenciar_logins"); if (!papel) return;
+var marcados = [];
+Array.prototype.forEach.call(document.querySelectorAll("input[data-pap-pessoa]"), function (el) { if (el.getAttribute("data-pap-pessoa") === ds.pessoa && el.checked) marcados.push(el.getAttribute("data-pap")); });
+var reg = arr(K.lista(ENT_PAP)).filter(function (r) { return r.usuarioId === ds.pessoa; })[0] || { usuarioId: ds.pessoa, id: "pap-" + F.hash(String(ds.pessoa)) };
+var antes = arr(reg.papeis).join(",");
+reg.nome = ds.nome; reg.papeis = marcados;
+if (Store.salvar(eid(), ENT_PAP, reg)) { toast("Papéis de " + ds.nome + " salvos (" + (marcados.join(", ") || "nenhum") + ").", "ok"); if (antes !== marcados.join(",")) App.render(); }
+else toast("Não consegui gravar os papéis.", "erro");
+},
+"cpl-painel": function () { abrirPainel(); }
+});
+G.registrarWire(MODULO, function () {
+var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
+if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
+if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
+var ap = document.getElementById("cpl-arq-prop");
+if (ap) ap.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarProposta(f); };
+var foco = G._cplFoco;
+if (foco) {
+G._cplFoco = null;
+var el = document.querySelector('#cpl-passo [data-foco="' + foco + '"]') || document.querySelector('#cpl-passo [data-foco-bloco="' + foco + '"]');
+if (!el && foco.indexOf(":") > 0) el = document.querySelector('#cpl-passo [data-foco="' + foco.split(":")[0] + '"]');
+if (el) {
+try { el.scrollIntoView({ block: "center" }); } catch (e1) {}
+var alvo = el.matches && el.matches("input,select,textarea,button") ? el : el.querySelector("input,select,textarea,button");
+if (alvo) { try { alvo.focus(); } catch (e2) {} }
+el.classList.add("cpl-foco");
+setTimeout(function () { el.classList.remove("cpl-foco"); }, 2500);
+if (el.tagName === "DETAILS") el.open = true;
+}
+}
+});
+function importarProposta(file) {
+var p = procAtual(); if (!p) return;
+var papel = exigir("analisar_propostas"); if (!papel) return;
+var nome = lerCampo("cpl-lic-nome");
+App._lerPlanilha(file, function (matriz, erro) {
+if (erro || !matriz) { toast(erro || "Não consegui ler a planilha.", "erro"); return; }
+var lido = F.proposta.ler(matriz);
+if (lido.erro) { toast(lido.erro, "erro"); return; }
+var atual = procAtual(); if (!atual) return;
+var q = clone(atual), c = calc(orcDoProc(atual));
+var prop = { id: "prp-" + F.hash(nome + "|" + file.name + "|" + agoraLocal()).substring(0, 10), licitante: nome, arquivo: file.name, importadoEm: hoje(), importadoPor: nomeAtual(), linhas: lido.linhas, totalDeclarado: lido.totalDeclarado, colunas: lido.colunas, decisao: null };
+try { prop.analise = F.analisarProposta(q, prop, modoDoOrc(c)); } catch (e) { toast(e.message || String(e), "erro"); return; }
+q.propostas = arr(q.propostas).concat([prop]);
+F.registrar(q, "proposta:importar", null, nome + " (" + lido.linhas.length + " itens)", quemAtual(papel), agoraLocal());
+if (salvarProc(q)) { toast("Proposta importada e comparada com a referência (" + prop.analise.achados.length + " achado(s)). Nenhuma decisão foi tomada.", "ok"); App.render(); }
+});
+}
+global.CplproUI = { fecharPainel: fecharPainel };
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/tour360.js ==== */
 try {
 (function (global) {
@@ -54709,6 +57684,7 @@ var ENTIDADES = [
 "marm_precos", "marm_propostas",
 "remun_param", "remun_apur",
 "pp_config", "pp_lanc", "pp_oc", "pp_fech",
+"cplpro_processos", "cplpro_papeis",
 "portal_padrao",
 "precosinsumos",
 "perfil_impl",

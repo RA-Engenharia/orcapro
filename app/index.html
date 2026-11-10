@@ -57,6 +57,7 @@
   <!-- as duas familias dos temas, embutidas em base64 (offline-first, sem CDN) -->
   <link rel="stylesheet" href="css/fontes.css">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/cplpro.css">
   <link rel="stylesheet" href="css/bim-revit.css">
   <link rel="stylesheet" href="css/bimprecisao.css">
   <!-- PLANTA: barra de opções da ferramenta (sob a fita) e a prévia de modelar na planta baixa — só com a prévia do modelador -->
@@ -1177,6 +1178,13 @@
   <script src="js/remunvarui.js"></script>
   <script src="js/prodpremioui.js"></script>
   <script src="js/bonificacaoui.js"></script>
+  <!-- CPLPRO (licitação do órgão público, módulo sob demanda): motor puro das regras (leva A), fluxo
+       e documentos (leva B) e a tela. Os motores usam Arred e Feriados, carregados lá em cima. -->
+  <script src="js/cplproregras.js"></script>
+  <script src="js/cplpro.js"></script>
+  <script src="js/cplprofluxo.js"></script>
+  <script src="js/cplprodocs.js"></script>
+  <script src="js/cplproui.js"></script>
   <!-- Tour virtual 360. Ordem obrigatoria e' esta: o motor (tour360.js) nao
        depende de ninguem; o viewer usa o motor; o relatorio usa os dois mais
        o BimVideo (carregado la em cima); e a tela usa todos, entao vem por
