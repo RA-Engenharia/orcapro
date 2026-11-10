@@ -80,7 +80,7 @@
     var chave = fonteChave(it), B = _dep("Bases");
     if (chave === "PROPRIA" || chave === "OUTRA" || !s(it.codigo)) return false;
     if (B && B.META) return !!B.META[chave];
-    return /^(SINAPI|SICRO|SIURB|SEINFRA|SETOP|SUDECAP|ORSE|IOPES|AGESUL|DERPR|SEDOP|AGETOP|CDHU|CPOS|FDE|EMOP|DEINFRA|DER)/.test(chave);
+    return /^(SINAPI|SICRO|SIURB|SEINFRA|SETOP|SUDECAP|ORSE|IOPES|AGESUL|DERPR|SEDOP|AGETOP|CDHU|CPOS|SCO|FDE|EMOP|DEINFRA|DER)/.test(chave);
   }
   function ehSinapi(chave) { return chave === "SINAPI" || chave === "SINAPI_DES"; }
   function compTexto(c) {

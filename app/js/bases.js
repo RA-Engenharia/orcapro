@@ -34,6 +34,7 @@
       SBC: { label: "SBC", cor: "sbc" },
       EMOP: { label: "EMOP-RJ", cor: "emop" },
       CPOS: { label: "CPOS-SP", cor: "cpos" },
+      SCO: { label: "SCO-Rio", cor: "sco" },
       FDE: { label: "FDE-SP", cor: "fde" },
       AGETOP: { label: "AGETOP-GO", cor: "agetop" },
       SEDOP: { label: "SEDOP-PA", cor: "sedop" },

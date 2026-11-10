@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.277",
+versao: "1.2.278",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -6647,6 +6647,7 @@ DERPR: { label: "DER-PR", cor: "derpr" },
 SBC: { label: "SBC", cor: "sbc" },
 EMOP: { label: "EMOP-RJ", cor: "emop" },
 CPOS: { label: "CPOS-SP", cor: "cpos" },
+SCO: { label: "SCO-Rio", cor: "sco" },
 FDE: { label: "FDE-SP", cor: "fde" },
 AGETOP: { label: "AGETOP-GO", cor: "agetop" },
 SEDOP: { label: "SEDOP-PA", cor: "sedop" },
@@ -7203,6 +7204,22 @@ eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo",
 nota: "Tabela de infraestrutura urbana (vias, drenagem, obras de arte), data-base julho/2026. Os códigos desta tabela NÃO são os da SIURB Edificações."
 },
 {
+id: "CPOS", nome: "CPOS / CDHU", orgao: "Companhia de Desenvolvimento Habitacional e Urbano do Estado de São Paulo (CDHU/CPOS)",
+regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (estado)",
+entrega: { local: "data/cpos-SP-current.json", vps: "cpos-SP-current.json" },
+coleta: "manual", versaoPacote: "2026-08", itens: 2313, pesoMb: 0.37, eixos: [],
+nota: "Tabela de Composição Sintética de Serviços PADRÃO, data-base agosto/2026. O preço oficial traz BDI de 20,81%; o OrçaPRO guarda o custo direto (preço oficial dividido pelo BDI). A planilha não informa se os encargos são desonerados ou onerados. Serviços ESPECIAIS (sem preço na planilha) e a composição analítica (só coeficientes) não estão incluídos."
+},
+{
+id: "SCO", nome: "SCO-Rio", orgao: "Sistema de Custos para Obras e Serviços de Engenharia — Prefeitura do Rio de Janeiro (CGM-Rio / FGV)",
+regiao: "sudeste", uf: "RJ", localRotulo: "Rio de Janeiro (capital)",
+entrega: { local: { desonerada: "data/sco-RJ-current.json", onerada: "data/sco-RJ-onerada-current.json" },
+vps: { desonerada: "sco-RJ-current.json", onerada: "sco-RJ-onerada-current.json" } },
+coleta: "manual", versaoPacote: "2026-09", itens: 4863, pesoMb: 1.45,
+eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+nota: "Catálogo de Itens de Serviço, referência setembro/2026 (a tabela é mensal). Custo direto, sem BDI. ATENÇÃO: o mesmo serviço tem código diferente no desonerado e no onerado (ex.: AD 04.05.0050 × AD 05.05.0050); não troque de regime pelo código. A composição analítica não está incluída."
+},
+{
 id: "IOPES", nome: "DER-ES Edificações (antigo IOPES)", orgao: "Departamento de Edificações e de Rodovias do Espírito Santo — DER-ES (sucessor do IOPES, LC 926/2019)",
 regiao: "sudeste", uf: "ES", localRotulo: "Espírito Santo",
 entrega: { local: "data/iopes-ES-current.json", vps: "iopes-ES-current.json" },
@@ -7271,9 +7288,7 @@ nota: "Nasce vazia e cresce com o que você cria. Não vem de órgão nenhum e n
 var AUSENTES = [
 { id: "SBC", nome: "SBC", orgao: "Sistema Brasileiro de Custos", regiao: "nacional", uf: "BR" },
 { id: "FDE", nome: "FDE", orgao: "Fundação para o Desenvolvimento da Educação — SP", regiao: "sudeste", uf: "SP" },
-{ id: "CPOS", nome: "CPOS", orgao: "Companhia Paulista de Obras e Serviços", regiao: "sudeste", uf: "SP" },
 { id: "EMOP", nome: "EMOP", orgao: "Empresa de Obras Públicas do Estado do Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
-{ id: "SCO", nome: "SCO", orgao: "Sistema de Custos de Obras — Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
 { id: "CAEMA", nome: "CAEMA", orgao: "Companhia de Saneamento Ambiental do Maranhão", regiao: "nordeste", uf: "MA" },
 { id: "EMBASA", nome: "EMBASA", orgao: "Empresa Baiana de Águas e Saneamento", regiao: "nordeste", uf: "BA" },
 { id: "CAERN", nome: "CAERN", orgao: "Companhia de Águas e Esgotos do Rio Grande do Norte", regiao: "nordeste", uf: "RN" },
@@ -19116,7 +19131,7 @@ quantidade: ["qtd", "qtde", "quant", "quantidade", "qty", "quantity"],
 custoUnit: ["unitario", "unit", "preco unit", "preco unitario", "valor unit", "valor unitario", "custo unit", "custo unitario", "p unit", "punit", "vlr unit", "r$ unit", "unit price", "unit cost", "price"],
 custoTotal: ["total", "valor total", "custo total", "preco total", "vlr total", "subtotal", "amount"]
 };
-var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "der es", "der es edificacoes", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
+var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "sco", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "der es", "der es edificacoes", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
 var UNID = { "m2": 1, "m²": 1, "m3": 1, "m³": 1, "m": 1, "ml": 1, "kg": 1, "un": 1, "und": 1, "unid": 1, "pc": 1, "vb": 1, "cj": 1, "l": 1, "t": 1, "h": 1, "dia": 1, "mes": 1, "gl": 1, "pt": 1, "cx": 1, "par": 1, "km": 1, "ha": 1 };
 var UNID_NORM = { "m2": "m²", "m²": "m²", "m3": "m³", "m³": "m³", "und": "un", "unid": "un", "ml": "m" };
 var TOTAL_KW = ["total", "subtotal", "sub total", "total geral", "totais", "valor total",
@@ -56989,7 +57004,7 @@ m = /^(\d{2})\/(\d{4})$/.exec(t);
 return m ? (m[2] + "-" + m[1]) : "";
 },
 FONTES_PROPRIAS: { CCU: 1, CPU: 1, COT: 1 },
-FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" } },
+FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" }, CPOS: { uf: "SP" }, SCO: { uf: "RJ" } },
 lerBasesExigidas: function (lista, contagem) {
 var self = this, out = [], vistos = {};
 (Array.isArray(lista) ? lista : []).forEach(function (b) {
@@ -60036,7 +60051,7 @@ function temBaseOficial(it) {
 var chave = fonteChave(it), B = _dep("Bases");
 if (chave === "PROPRIA" || chave === "OUTRA" || !s(it.codigo)) return false;
 if (B && B.META) return !!B.META[chave];
-return /^(SINAPI|SICRO|SIURB|SEINFRA|SETOP|SUDECAP|ORSE|IOPES|AGESUL|DERPR|SEDOP|AGETOP|CDHU|CPOS|FDE|EMOP|DEINFRA|DER)/.test(chave);
+return /^(SINAPI|SICRO|SIURB|SEINFRA|SETOP|SUDECAP|ORSE|IOPES|AGESUL|DERPR|SEDOP|AGETOP|CDHU|CPOS|SCO|FDE|EMOP|DEINFRA|DER)/.test(chave);
 }
 function ehSinapi(chave) { return chave === "SINAPI" || chave === "SINAPI_DES"; }
 function compTexto(c) {

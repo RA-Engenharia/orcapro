@@ -237,6 +237,29 @@
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Tabela de infraestrutura urbana (vias, drenagem, obras de arte), data-base julho/2026. Os códigos desta tabela NÃO são os da SIURB Edificações."
     },
+    /* CPOS/CDHU-SP (10/11/2026, leva I): estava AUSENTE ("bloqueada") porque o acesso por robô foi barrado; com navegador de verdade a
+       página da CDHU (Transparência > Tabela de Composição de Serviços) é PÚBLICA e baixa o .xls sem login. Convertida por
+       tools/converter-cpos.js: o preço oficial vem COM BDI 20,81% (título da planilha) e o OrçaPRO guarda custo direto, então o
+       conversor divide pelo BDI declarado. A planilha não diz se os encargos são desonerados ou onerados: regime NÃO declarado. */
+    {
+      id: "CPOS", nome: "CPOS / CDHU", orgao: "Companhia de Desenvolvimento Habitacional e Urbano do Estado de São Paulo (CDHU/CPOS)",
+      regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (estado)",
+      entrega: { local: "data/cpos-SP-current.json", vps: "cpos-SP-current.json" },
+      coleta: "manual", versaoPacote: "2026-08", itens: 2313, pesoMb: 0.37, eixos: [],
+      nota: "Tabela de Composição Sintética de Serviços PADRÃO, data-base agosto/2026. O preço oficial traz BDI de 20,81%; o OrçaPRO guarda o custo direto (preço oficial dividido pelo BDI). A planilha não informa se os encargos são desonerados ou onerados. Serviços ESPECIAIS (sem preço na planilha) e a composição analítica (só coeficientes) não estão incluídos."
+    },
+    /* SCO-Rio (10/11/2026, leva I): Catálogo de Itens de Serviço da Prefeitura do Rio (pesquisa FGV), publicado todo mês pela Controladoria
+       (CGM-Rio) em Excel, sem login. Convertido por tools/converter-sco.js. Os códigos do desonerado e do onerado NÃO são os mesmos
+       (o grupo de nível 1 muda de número: D "AD 04.05.0050" = O "AD 05.05.0050"), então cada regime é lido com os códigos dele. */
+    {
+      id: "SCO", nome: "SCO-Rio", orgao: "Sistema de Custos para Obras e Serviços de Engenharia — Prefeitura do Rio de Janeiro (CGM-Rio / FGV)",
+      regiao: "sudeste", uf: "RJ", localRotulo: "Rio de Janeiro (capital)",
+      entrega: { local: { desonerada: "data/sco-RJ-current.json", onerada: "data/sco-RJ-onerada-current.json" },
+                 vps: { desonerada: "sco-RJ-current.json", onerada: "sco-RJ-onerada-current.json" } },
+      coleta: "manual", versaoPacote: "2026-09", itens: 4863, pesoMb: 1.45,
+      eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+      nota: "Catálogo de Itens de Serviço, referência setembro/2026 (a tabela é mensal). Custo direto, sem BDI. ATENÇÃO: o mesmo serviço tem código diferente no desonerado e no onerado (ex.: AD 04.05.0050 × AD 05.05.0050); não troque de regime pelo código. A composição analítica não está incluída."
+    },
     {
       /* nome de exibição: o IOPES foi extinto (LC 926/2019) e a tabela é do
          DER-ES; "antigo IOPES" fica para quem procura pelo nome de mercado.
@@ -337,9 +360,7 @@
   var AUSENTES = [
     { id: "SBC", nome: "SBC", orgao: "Sistema Brasileiro de Custos", regiao: "nacional", uf: "BR" },
     { id: "FDE", nome: "FDE", orgao: "Fundação para o Desenvolvimento da Educação — SP", regiao: "sudeste", uf: "SP" },
-    { id: "CPOS", nome: "CPOS", orgao: "Companhia Paulista de Obras e Serviços", regiao: "sudeste", uf: "SP" },
     { id: "EMOP", nome: "EMOP", orgao: "Empresa de Obras Públicas do Estado do Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
-    { id: "SCO", nome: "SCO", orgao: "Sistema de Custos de Obras — Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
     { id: "CAEMA", nome: "CAEMA", orgao: "Companhia de Saneamento Ambiental do Maranhão", regiao: "nordeste", uf: "MA" },
     { id: "EMBASA", nome: "EMBASA", orgao: "Empresa Baiana de Águas e Saneamento", regiao: "nordeste", uf: "BA" },
     { id: "CAERN", nome: "CAERN", orgao: "Companhia de Águas e Esgotos do Rio Grande do Norte", regiao: "nordeste", uf: "RN" },

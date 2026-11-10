@@ -1159,6 +1159,7 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 .pill.derpr { background: rgba(190,18,60,.12); color: #9f1239; }
 .pill.emop { background: rgba(225,29,72,.13); color: #be123c; }
 .pill.cpos { background: rgba(37,99,235,.13); color: #1d4ed8; }
+.pill.sco { background: rgba(13,148,136,.14); color: #0f766e; }
 .pill.fde { background: rgba(5,150,105,.14); color: #046e50; }
 .pill.agetop { background: rgba(234,88,12,.14); color: #ac3a0b; }
 .pill.sedop { background: rgba(21,128,61,.14); color: #126e35; }
@@ -1212,6 +1213,7 @@ tr.lin-auto-baixa > td { background: rgba(245,158,11,.20); }
 [data-tema="dark"] .pill.derpr { color: #fda4af; }
 [data-tema="dark"] .pill.emop { color: #fb7185; }
 [data-tema="dark"] .pill.cpos { color: #93c5fd; }
+[data-tema="dark"] .pill.sco { color: #5eead4; }
 [data-tema="dark"] .pill.fde { color: #6ee7b7; }
 [data-tema="dark"] .pill.agetop { color: #fdba74; }
 [data-tema="dark"] .pill.sedop { color: #86efac; }
