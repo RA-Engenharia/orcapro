@@ -719,7 +719,12 @@
       // vitrine da GESTÃO: semeia dados de exemplo (empresa "demo") e permite deep-link
       // ?demo=1&view=<modulo> (dashboard, obras, rdos, medicoes, financeiro...) p/ site e screenshots
       try { if (typeof DemoGestao !== "undefined") DemoGestao.seed({ obra: _obraNome }); } catch (e) {}
+      /* CPLPRO (?demo=1&perfil=orgao_publico ou &view=cplpro): só aqui, na vitrine (empresa "demo"), aplica o perfil do órgão e semeia o
+         processo de exemplo; o plano é de CplproFluxo.planoDemo. Pedido que não é do CPLPRO devolve a vitrine ao perfil Completo. */
+      var _plCpl = null;
+      try { if (typeof CplproUI !== "undefined" && CplproUI.demonstracao) _plCpl = CplproUI.demonstracao(qs); } catch (eCpl) {}
       var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
+      if (!vw && _plCpl && _plCpl.aplicar) vw = "cplpro";
       // ?view= inválido é o caminho mais provável de um visitante cair em tela
       // branca: ignora a view (cai no Painel logo abaixo) e, se for uma AÇÃO
       // disfarçada (?view=tabelas), dispara a ação depois do render.
@@ -2855,6 +2860,7 @@
         case "fechar-desfazer": this.fecharDesfazer(); break;
         case "lic-desconto": this.licitacaoDesconto(); break;
         case "lic-pacote": this.licitacaoPacote(); break;
+        case "orc-ref": if (typeof OrcRefUI !== "undefined") OrcRefUI.abrir(this.orcAtual); break;
         case "lic-desconto-desfazer": this.licitacaoDescontoDesfazer(); break;
         case "lic-desconto-itens": this.licitacaoDescontoItens(); break;
         case "lic-desconto-itens-desfazer": this.licitacaoDescontoItensDesfazer(); break;

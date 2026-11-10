@@ -55798,8 +55798,10 @@ case "nova-folha": return this.novoFolha();
           lib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
             /* DANFE com muitos itens passa de 3 paginas — o teto antigo cortava
                justamente o quadro de produtos, que e o que alimenta a triagem. */
-            var texto = "", n = Math.min(pdf.numPages, 10), chain = Promise.resolve();
-            if (pdf.numPages > 10) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
+            /* opts.paginas (CPLPRO, classificação do acervo pelo carimbo): só as primeiras páginas, e sem o aviso no texto */
+            var teto = (opts && opts.paginas > 0) ? opts.paginas : 10;
+            var texto = "", n = Math.min(pdf.numPages, teto), chain = Promise.resolve();
+            if (pdf.numPages > teto && !(opts && opts.paginas)) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
             for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += porLinha ? juntarLinhas(tc.items) : tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
             chain.then(function () { cb(texto); });
           })["catch"](function () { cb(""); });

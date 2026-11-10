@@ -1152,8 +1152,11 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 .pill.seinfra { background: rgba(13,148,136,.15); color: #096c63; }
 .pill.setop { background: rgba(124,58,237,.15); color: #7027eb; }
 .pill.sudecap { background: rgba(8,145,178,.15); color: #066981; }
+.pill.siurb { background: rgba(8,145,178,.15); color: #066981; }
 .pill.orse { background: rgba(219,39,119,.15); color: #af1d5e; }
 .pill.sbc { background: rgba(100,116,139,.15); color: #475569; }
+.pill.agesul { background: rgba(2,132,199,.14); color: #0369a1; }
+.pill.derpr { background: rgba(190,18,60,.12); color: #9f1239; }
 .pill.emop { background: rgba(225,29,72,.13); color: #be123c; }
 .pill.cpos { background: rgba(37,99,235,.13); color: #1d4ed8; }
 .pill.fde { background: rgba(5,150,105,.14); color: #046e50; }
@@ -1202,8 +1205,11 @@ tr.lin-auto-baixa > td { background: rgba(245,158,11,.20); }
 [data-tema="dark"] .pill.seinfra { color: #2dd4bf; }
 [data-tema="dark"] .pill.setop { color: #a78bfa; }
 [data-tema="dark"] .pill.sudecap { color: #22c3e6; }
+[data-tema="dark"] .pill.siurb { color: #22c3e6; }
 [data-tema="dark"] .pill.orse { color: #f472b6; }
 [data-tema="dark"] .pill.sbc { color: #94a3b8; }
+[data-tema="dark"] .pill.agesul { color: #7dd3fc; }
+[data-tema="dark"] .pill.derpr { color: #fda4af; }
 [data-tema="dark"] .pill.emop { color: #fb7185; }
 [data-tema="dark"] .pill.cpos { color: #93c5fd; }
 [data-tema="dark"] .pill.fde { color: #6ee7b7; }

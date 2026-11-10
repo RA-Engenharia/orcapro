@@ -106,3 +106,31 @@
 .cpl-tv-pontos span { width: 10px; height: 10px; border-radius: 50%; background: var(--sobre-navy-fraco); opacity: .4; }
 .cpl-tv-pontos span.ativo { opacity: 1; background: var(--sobre-navy-forte); }
 @media (max-width: 700px) { .cpl-tv-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cpl-tv-num { font-size: 64px; } }
+
+/* ---------- HABILITAÇÃO DOS LICITANTES (leva E1) ---------- */
+#cpl-hab { margin: 0 0 28px; }
+.cpl-hab-par { margin: 8px 0 14px; }
+.cpl-hab-lic details { margin: 10px 0; }
+.cpl-hab-lic summary { cursor: pointer; padding: 6px 0; }
+.cpl-hab-tab { margin-top: 6px; }
+.cpl-hab-tab td { vertical-align: top; }
+.cpl-hab-tab select, .cpl-hab-tab input { max-width: 100%; margin: 4px 4px 4px 0; }
+.cpl-hab-tab input.cpl-hab-mot { min-width: 180px; }
+@media (max-width: 700px) {
+  .cpl-hab-lic { overflow-x: auto; }
+  .cpl-hab-tab { min-width: 680px; }
+}
+
+/* leva F — montagem automática a partir da pasta */
+.cpl-selo-sist { display: inline-block; padding: 1px 8px; margin-left: 6px; border-radius: 999px; font-size: var(--t-micro); font-weight: var(--p-medio); background: var(--tinta-info, var(--tinta-aviso)); color: var(--aco, var(--texto)); border: var(--traco) solid var(--aco, var(--linha)); vertical-align: middle; white-space: nowrap; }
+.cpl-preparo { margin: 0 0 16px; padding: 14px 16px; border-radius: var(--raio); border: var(--traco) solid var(--aco, var(--linha)); background: var(--tinta-info, var(--tinta-aviso)); }
+.cpl-preparo h3 { margin: 0 0 6px; }
+.cpl-preparo-frase { font-size: var(--t-base, 1rem); margin: 0 0 6px; }
+.cpl-preparo details { margin-top: 10px; }
+.cpl-preparo summary { cursor: pointer; }
+.cpl-preparo .cpl-pends { margin-top: 8px; }
+@media (max-width: 640px) { .cpl-selo-sist { white-space: normal; } }
+.cpl-andamento { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); z-index: 9999; display: flex; gap: 10px; align-items: center; width: max-content; max-width: min(92vw, 640px); padding: 12px 18px; border-radius: var(--raio); background: var(--surface, #fff); color: var(--texto, #111); border: var(--traco) solid var(--aco, var(--linha)); box-shadow: 0 6px 24px rgba(0, 0, 0, .25); font-size: var(--t-peq); }
+.cpl-gira { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--linha); border-top-color: var(--aco, var(--texto)); animation: cpl-gira 0.9s linear infinite; flex: none; }
+@keyframes cpl-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cpl-gira { animation: none; } }

@@ -12,6 +12,8 @@
  *   cplpro_processos  um registro por processo; carrega obraId; imune à exclusão da obra
  *                     (é peça de processo administrativo: a obra some, o processo não)
  *   cplpro_papeis     o papel de cada pessoa no órgão (um registro por pessoa)
+ *   cplpro_modelos    a ficha do modelo de documento do ÓRGÃO (edital, TR, contrato, ETP, DFD), um registro por tipo;
+ *                     o js/cplprotpl.js troca os {{campos}} dentro do .docx do órgão (a procuradoria define as minutas)
  *
  * ⚠ RBAC NA FUNÇÃO: toda ação que grava chama Fluxo.exigir → Cplpro.exigir ANTES de gravar.
  *   Esconder ou desabilitar o botão é conforto; a trava é a função.
@@ -25,9 +27,10 @@
 
   if (typeof global.Gestao === "undefined") return;
 
-  var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs;
+  var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo;
   var ENT_PROC = "cplpro_processos";
   var ENT_PAP = "cplpro_papeis";
+  var ENT_MOD = "cplpro_modelos";   /* ficha do modelo de documento do ÓRGÃO; os bytes do .docx ficam no IndexedDB do aparelho */
   var MODULO = "cplpro";
   var MAX_BYTES = 60 * 1024 * 1024;
   var MODALIDADES = ["concorrência", "pregão", "concurso", "leilão", "diálogo competitivo"];   /* Lei 14.133/2021, art. 28 */
@@ -140,6 +143,13 @@
     return h;
   }
   function campo(label, inner, foco) { return '<div class="field"' + (foco ? ' data-foco-bloco="' + esc(foco) + '"' : "") + "><label>" + label + "</label>" + inner + "</div>"; }
+  /* selo «sugerido pelo sistema — confira» (leva F): só aparece enquanto o campo continua como o sistema escreveu */
+  function selo(p, caminho) {
+    var x = Pr && p ? Pr.seloSistema(p, caminho) : null;
+    if (!x) return "";
+    var tip = "Preenchido pelo sistema" + (x.arquivo ? " a partir de «" + x.arquivo + "»" : "") + (x.regra ? ". " + x.regra : "") + ". Se você editar, o selo sai.";
+    return ' <span class="cpl-selo-sist" title="' + esc(tip) + '">sugerido pelo sistema — confira</span>';
+  }
   function dis(ok, motivo) { return ok ? "" : ' disabled title="' + esc(motivo || "") + '"'; }
   function btn(rotulo, gacao, extra, cls) { return '<button type="button" class="btn ' + (cls || "") + '" data-gacao="' + gacao + '"' + (extra || "") + ">" + rotulo + "</button>"; }
   function selOpts(lista, atual, vazioRot) {
@@ -188,10 +198,17 @@
     if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
     else {
       if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
-      html = G._cplView === "papeis" ? _renderPapeis(obras) : _renderLista(obras);
+      html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : _renderLista(obras));
     }
     return html;
   };
+
+  /* «Modelos do órgão» só aparece para quem pode importá-los (administrador do órgão); a trava de verdade é a função */
+  function abasTopo(ativa) {
+    var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }];
+    if (podeAcao("gerenciar_modelos")) abas.push({ id: "modelos", rotulo: "Modelos do órgão", attrs: 'data-gacao="cpl-aba-modelos"' });
+    return M.abas(abas.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === ativa, attrs: a.attrs }; }));
+  }
 
   function cabLista(obras, sub, ativo) {
     return M.cab({
@@ -216,7 +233,7 @@
     });
     var html = cabLista(obras, todos.length + " processo(s)" + (G._cplObra ? " nesta obra" : " · todas as obras"));
     var pap = papeis();
-    html += M.abas([{ id: "lista", rotulo: "Processos", ativa: true, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: false, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+    html += abasTopo("lista");
     if (!pap.length) html += M.aviso({ tom: "alerta", titulo: "Você ainda não tem perfil no CPLPRO.", texto: "Peça ao administrador do órgão para definir o seu em «Pessoas e papéis». Sem perfil, nenhuma ação é liberada." });
     html += M.kpis([
       { rotulo: "Em preparo", valor: prep, sub: "ainda não foram ao jurídico", tom: "info" },
@@ -246,7 +263,7 @@
   /* ---------- PESSOAS E PAPÉIS ---------- */
   function _renderPapeis(obras) {
     var html = cabLista(obras, "Pessoas e papéis");
-    html += M.abas([{ id: "lista", rotulo: "Processos", ativa: false, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: true, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+    html += abasTopo("papeis");
     if (!podeAcao("gerenciar_logins")) {
       return html + M.secao({ corpoHtml: M.vazio({ icone: "usuarios", titulo: "Só o administrador do órgão define os papéis", texto: motivoAcao("gerenciar_logins") }) });
     }
@@ -269,6 +286,30 @@
     return html + M.secao({ titulo: "Quem faz o quê", corpoHtml: corpo });
   }
 
+  /* ---------- MODELOS DO ÓRGÃO (Decreto SP 62.100, art. 16: a procuradoria define as minutas) ---------- */
+  function modeloDoTipo(tipo) { return arr(K.lista(ENT_MOD)).filter(function (m) { return m.id === tipo; })[0] || null; }
+  function _renderModelos(obras) {
+    var html = cabLista(obras, "Modelos do órgão");
+    html += abasTopo("modelos");
+    if (!podeAcao("gerenciar_modelos")) {
+      return html + M.secao({ corpoHtml: M.vazio({ icone: "documentos", titulo: "Só o administrador do órgão importa os modelos", texto: motivoAcao("gerenciar_modelos") }) });
+    }
+    var corpo = '<input type="file" id="cpl-mod-arq" accept=".docx" hidden>';
+    corpo += '<p class="mod-sub" style="margin:0 0 12px">O texto das minutas é da procuradoria do órgão. Importe o seu modelo em Word (.docx) e escreva, onde o sistema deve entrar com o dado do processo, o campo entre chaves duplas, por exemplo <code>{{objeto}}</code>. Ao gerar, o sistema troca os campos <b>dentro do seu arquivo</b>, sem mexer na formatação. Tipo sem modelo do órgão usa o modelo padrão da casa.</p>';
+    corpo += '<table class="tbl" id="cpl-tab-modelos"><thead><tr><th>DOCUMENTO</th><th>MODELO EM USO</th><th>CAMPOS</th><th></th></tr></thead><tbody>' + T.TIPOS_ORDEM.map(function (tp) {
+      var m = modeloDoTipo(tp), nome = T.TIPOS[tp].nome;
+      var uso = m ? M.pilula("do órgão", "ok") + ' <span class="muted">' + esc(m.nome) + " · " + esc(dataBR(m.importadoEm)) + (m.importadoPor ? " · " + esc(m.importadoPor) : "") + "</span>" : M.pilula("padrão da casa", "neutro");
+      var campos = m ? esc(arr(m.campos).length) + " campo(s)" + (arr(m.desconhecidos).length ? " " + M.pilula(arr(m.desconhecidos).length + " desconhecido(s): " + arr(m.desconhecidos).join(", "), "alerta") : "") : "—";
+      return '<tr data-tipo="' + tp + '"><td><b>' + esc(nome) + "</b></td><td>" + uso + "</td><td>" + campos + "</td><td>" +
+        btn(m ? "Trocar o modelo" : "Importar modelo (.docx)", "cpl-mod-escolher", ' data-tipo="' + tp + '"', "sm") + " " + btn("Baixar exemplo", "cpl-mod-exemplo", ' data-tipo="' + tp + '"', "sm") +
+        (m ? " " + btn("Baixar o do órgão", "cpl-mod-baixar", ' data-tipo="' + tp + '"', "sm") + " " + btn("Remover", "cpl-mod-remover", ' data-tipo="' + tp + '"', "sm") : "") + "</td></tr>";
+    }).join("") + "</tbody></table>";
+    corpo += '<h3 style="margin-top:16px">Campos disponíveis</h3><table class="tbl" id="cpl-tab-campos"><thead><tr><th>CAMPO</th><th>O QUE ENTRA</th><th>EXEMPLO</th></tr></thead><tbody>' +
+      D.CAMPOS_MODELO.map(function (c) { return "<tr><td><code>{{" + esc(c.id) + "}}</code></td><td>" + esc(c.rotulo) + "</td><td>" + esc(c.exemplo) + "</td></tr>"; }).join("") + "</tbody></table>";
+    corpo += '<p class="muted" style="margin:12px 0 0">Campo sem valor no processo sai como <b>[PREENCHER: …]</b> em vermelho. Campo que o sistema não conhece sai como <b>[CAMPO DESCONHECIDO: …]</b>. O valor estimado só entra depois do julgamento, quando o orçamento é sigiloso (art. 24). O arquivo fica neste aparelho; a ficha do modelo sincroniza com a conta.</p>';
+    return html + M.secao({ titulo: "Modelos de documento do órgão", corpoHtml: corpo });
+  }
+
   /* ================================================================== *
    * TELA — processo
    * ================================================================== */
@@ -288,6 +329,7 @@
       html += '<div class="cpl-faixa" id="cpl-faixa-minuta" role="status"><b>Minuta — sujeita a parecer jurídico (art. 53 da Lei 14.133).</b> Esta faixa sai quando houver parecer favorável.</div>';
     }
     if (!ed) html += M.aviso({ tom: "info", titulo: F.motivoTravado(p) });
+    if (p.preparo && p.preparo.resumo && G._cplAba === "passos") html += _painelPreparo(p);
     html += M.abas(abasLista.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === G._cplAba, attrs: 'data-gacao="cpl-aba" data-aba="' + a.id + '"' }; }));
     if (G._cplAba === "historico") return html + _histProc(p);
     if (G._cplAba === "propostas") return html + _propostas(p);
@@ -324,13 +366,13 @@
     var sug = C.sugerirTipoObjeto(p.objeto || "");
     var obras = K.lista("obras");
     var h = '<div class="cpl-form" id="cpl-f-demanda">';
-    h += campo("Secretaria requisitante *", '<input id="cpl-secretaria" data-foco="secretaria" value="' + esc(p.secretaria || "") + '"' + d + ">", "secretaria");
+    h += campo("Secretaria requisitante *" + selo(p, "secretaria"), '<input id="cpl-secretaria" data-foco="secretaria" value="' + esc(p.secretaria || "") + '"' + d + ">", "secretaria");
     h += campo("Responsável pela demanda", '<input id="cpl-requisitante" value="' + esc(p.requisitante || "") + '"' + d + ">");
-    h += campo("Objeto (descreva por inteiro) *", '<textarea id="cpl-objeto" rows="4" data-foco="objeto"' + d + ">" + esc(p.objeto || "") + "</textarea>", "objeto");
-    h += campo("Tipo de objeto *", '<select id="cpl-tipo" data-foco="tipoObjeto"' + d + ">" + selOpts(tipos, p.tipoObjeto, "— escolha —") + "</select>" +
+    h += campo("Objeto (descreva por inteiro) *" + selo(p, "objeto"), '<textarea id="cpl-objeto" rows="4" data-foco="objeto"' + d + ">" + esc(p.objeto || "") + "</textarea>", "objeto");
+    h += campo("Tipo de objeto *" + selo(p, "tipoObjeto"), '<select id="cpl-tipo" data-foco="tipoObjeto"' + d + ">" + selOpts(tipos, p.tipoObjeto, "— escolha —") + "</select>" +
       (sug.length && sug[0].tipo !== p.tipoObjeto ? '<div class="cpl-sug">Sugestão pelo texto: <b>' + esc(R.TIPOS_OBJETO[sug[0].tipo].nome) + "</b> " + btn("Aceitar", "cpl-aceitar-tipo", ' data-tipo="' + sug[0].tipo + '"' + d, "sm") +
         porque("O texto do objeto contém: «" + sug[0].termos.join("», «") + "».", "Biblioteca RA de tipos de objeto (palavras-chave) — o sistema sugere e a pessoa confirma.", false, "Tipo de objeto") + "</div>" : ""), "tipoObjeto");
-    h += campo("Justificativa da necessidade (interesse público) *", '<textarea id="cpl-justificativa" rows="4" data-foco="justificativa"' + d + ">" + esc(p.justificativa || "") + "</textarea>", "justificativa");
+    h += campo("Justificativa da necessidade (interesse público) *" + selo(p, "justificativa"), '<textarea id="cpl-justificativa" rows="4" data-foco="justificativa"' + d + ">" + esc(p.justificativa || "") + "</textarea>", "justificativa");
     h += campo("Previsão no plano de contratações anual (PCA) *", '<input id="cpl-pca" data-foco="pca" placeholder="Ex.: item 12 do PCA 2027, ou a justificativa da ausência" value="' + esc(p.pca || "") + '"' + d + ">" +
       porque("A fase preparatória deve se compatibilizar com o plano de contratações anual, sempre que elaborado.", "Lei 14.133/2021, art. 18, caput (e art. 12, VII)", false, "PCA"), "pca");
     h += campo("Prazo desejado", '<input id="cpl-prazoDesejado" type="date" value="' + esc(p.prazoDesejado || "") + '"' + d + ">");
@@ -348,7 +390,9 @@
     var docs = arr(p.documentos), vig = docs.filter(function (z) { return !z.superadoPor; }), sup = docs.filter(function (z) { return z.superadoPor; });
     var tipos = Object.keys(R.ACERVO_TIPOS).map(function (k) { return [k, R.ACERVO_TIPOS[k].nome]; });
     var h = '<input type="file" id="cpl-arq" multiple hidden><input type="file" id="cpl-pasta" webkitdirectory multiple hidden>';
-    h += '<div class="cpl-acoes">' + btn("Escolher arquivos", "cpl-add-arq", d) + btn("Escolher uma pasta", "cpl-add-pasta", d) + '<span class="muted" id="cpl-acervo-status"></span></div>';
+    h += '<input type="file" id="cpl-preparo-pasta" webkitdirectory multiple hidden>';
+    h += '<div class="cpl-acoes">' + btn("Montar tudo a partir da pasta", "cpl-preparo-escolher", d, "primary") + btn("Escolher arquivos", "cpl-add-arq", d) + btn("Escolher uma pasta", "cpl-add-pasta", d) + '<span class="muted" id="cpl-acervo-status"></span></div>' +
+      '<p class="muted">«Montar tudo» lê a pasta inteira (memorial, planilha, cronograma, projetos), preenche os passos que dá para deduzir e marca cada campo como <b>sugerido pelo sistema — confira</b>. Nada fica «conferido» sem você, e o que você editar o sistema não sobrescreve.</p>';
     var chk = C.checklistAcervo(p);
     if (!p.tipoObjeto) h += M.aviso({ tom: "alerta", titulo: "Escolha o tipo de objeto no passo 1 para ver o que o acervo precisa ter." });
     else {
@@ -363,7 +407,8 @@
     else {
       h += '<table class="tbl" id="cpl-tab-acervo"><thead><tr><th>ARQUIVO</th><th>TIPO</th><th>REV.</th><th>CONFIANÇA</th><th>SHA-256</th><th></th></tr></thead><tbody>' + vig.map(function (z) {
         return "<tr><td>" + esc(z.nome) + (z.origem ? '<div class="muted">' + esc(z.origem) + "</div>" : "") + '</td><td><select data-gacao="cpl-doc-tipo" aria-label="Tipo do arquivo"' + d + ">" + selOptsCtx(tipos, z.tipo, z.id) + "</select>" +
-          porque(z.motivo, "Classificação pelo nome do arquivo (regras da casa); a pessoa pode trocar.", false, "Tipo do arquivo") + "</td><td>" + esc(z.revisao || "—") + "</td><td>" + M.pilula(z.confianca === "alta" ? "alta" : (z.confianca === "media" ? "média" : (z.confianca === "manual" ? "manual" : "baixa")), z.confianca === "alta" || z.confianca === "manual" ? "ok" : "alerta") +
+          (z.porConteudo ? ' <span class="pill info cpl-conteudo" title="O nome do arquivo não bastou: o sistema leu as páginas 1 e 2 do PDF">pelo conteúdo</span>' : "") +
+          porque(z.motivo, z.porConteudo ? "Classificado pelo texto das páginas 1 e 2 do PDF (frases do carimbo, regras da casa); a pessoa confirma ou troca." : "Classificação pelo nome do arquivo (regras da casa); a pessoa pode trocar.", false, "Tipo do arquivo") + "</td><td>" + esc(z.revisao || "—") + "</td><td>" + M.pilula(z.confianca === "alta" ? "alta" : (z.confianca === "media" ? "média" : (z.confianca === "manual" ? "manual" : "baixa")), z.confianca === "alta" || z.confianca === "manual" ? "ok" : "alerta") +
           '</td><td><code title="' + esc(z.sha || "") + '">' + esc((z.sha || "—").substring(0, 12)) + "</code></td><td>" + btn("Abrir", "cpl-doc-abrir", ' data-id="' + esc(z.id) + '"', "sm") + "</td></tr>";
       }).join("") + "</tbody></table>";
       if (sup.length) {
@@ -395,10 +440,10 @@
     }
     if (!qs.length) return h + M.vazio({ icone: "orcamentos", titulo: "Nenhum quantitativo lançado", texto: "Escolha o orçamento e traga os itens. Cada quantidade precisa de origem: arquivo do acervo e página." });
     h += '<table class="tbl" id="cpl-tab-quant"><thead><tr><th>ITEM</th><th>DESCRIÇÃO</th><th>UN.</th><th class="num">QTD.</th><th>ORIGEM — ARQUIVO</th><th>PÁGINA</th></tr></thead><tbody>' + qs.map(function (q, i) {
-      var o = q.origem || {}, sem = vazio(o.arquivo) || vazio(o.pagina);
+      var o = q.origem || {}, sem = vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha));
       var nomes = acervo.map(function (z) { return z.nome; });
       if (o.arquivo && nomes.indexOf(o.arquivo) < 0) nomes.push(o.arquivo);
-      return '<tr data-foco="origem:' + esc(q.item) + '" class="' + (sem ? "cpl-sem" : "") + '"><td>' + esc(q.item) + "</td><td>" + esc(q.descricao) + "</td><td>" + esc(q.un) + '</td><td class="num">' + numBR(q.qtd, 2) + '</td><td><select id="cpl-qa-' + i + '"' + d + ">" + selOpts(nomes, o.arquivo, "— arquivo —") + '</select></td><td><input id="cpl-qp-' + i + '" style="width:80px" value="' + esc(o.pagina == null ? "" : o.pagina) + '"' + d + "></td></tr>";
+      return '<tr data-foco="origem:' + esc(q.item) + '" class="' + (sem ? "cpl-sem" : "") + '"><td>' + esc(q.item) + "</td><td>" + esc(q.descricao) + "</td><td>" + esc(q.un) + '</td><td class="num">' + numBR(q.qtd, 2) + '</td><td><select id="cpl-qa-' + i + '"' + d + ">" + selOpts(nomes, o.arquivo, "— arquivo —") + '</select></td><td><input id="cpl-qp-' + i + '" style="width:80px" value="' + esc(o.pagina == null ? "" : o.pagina) + '"' + d + ">" + (o.linha ? '<div class="muted">linha ' + esc(o.linha) + " da planilha</div>" : "") + selo(p, "quantitativos#" + q.item) + "</td></tr>";
     }).join("") + "</tbody></table>";
     return h + '<div class="cpl-acoes">' + btn("Salvar origens", "cpl-q-salvar", d, "primary") + '<span class="muted">Sem origem o item não entra no ETP nem no TR (art. 18, §1º, IV).</span></div>';
   }
@@ -420,7 +465,7 @@
     h += '<div class="cpl-form" id="cpl-f-etp">' + R.ETP_ELEMENTOS.map(function (el) {
       var salvo = !vazio(man[el.id]), sugt = _textoSugestaoEtp(el.id, et.campos[el.id]), valor = salvo ? man[el.id] : sugt;
       var vermelho = vazio(valor) && el.obrigatorio;
-      return '<div class="field' + (vermelho ? " cpl-obrig-vazio" : "") + '" data-foco-bloco="' + el.id + '"><label>' + esc(el.id) + " — " + esc(el.nome) + (el.obrigatorio ? ' <span class="cpl-obrig">obrigatório</span>' : "") + (!salvo && sugt ? ' <span class="cpl-sugerido">sugestão do sistema — confira e salve</span>' : "") + "</label>" +
+      return '<div class="field' + (vermelho ? " cpl-obrig-vazio" : "") + '" data-foco-bloco="' + el.id + '"><label>' + esc(el.id) + " — " + esc(el.nome) + (el.obrigatorio ? ' <span class="cpl-obrig">obrigatório</span>' : "") + (!salvo && sugt ? ' <span class="cpl-sugerido">sugestão do sistema — confira e salve</span>' : "") + (salvo ? selo(p, "etp.campos." + el.id) : "") + "</label>" +
         '<textarea id="cpl-etp-' + el.id + '" rows="3" data-foco="' + el.id + '"' + d + ">" + esc(valor || "") + "</textarea>" +
         (!el.obrigatorio ? '<input id="cpl-etpj-' + el.id + '" placeholder="Se não se aplica, justifique aqui" value="' + esc(just[el.id] || "") + '"' + d + ">" : "") + "</div>";
     }).join("") + '</div><div class="cpl-acoes">' + btn("Salvar ETP", "cpl-salvar-etp", d, "primary") + "</div>";
@@ -438,7 +483,7 @@
     var cinco = [1, 2, 3, 4, 5].map(function (n) { return [n, String(n)]; });
     h += '<table class="tbl" id="cpl-tab-riscos"><thead><tr><th>RISCO</th><th>PROB.</th><th>IMPACTO</th><th>NÍVEL</th><th>ALOCAÇÃO</th><th>MITIGAÇÃO</th><th></th></tr></thead><tbody>' + rs.map(function (r, i) {
       var n = C.nivelRisco(r.prob, r.impacto);
-      return '<tr data-foco="riscos.' + i + '"><td>' + esc(r.descricao) + '<div class="muted">' + esc(r.categoria || "") + (r.sugerido ? " · sugerido" : "") + '</div></td><td><select id="cpl-rp-' + i + '"' + d + ">" + selOpts(cinco, r.prob, "—") + '</select></td><td><select id="cpl-ri-' + i + '"' + d + ">" + selOpts(cinco, r.impacto, "—") + "</select></td><td>" +
+      return '<tr data-foco="riscos.' + i + '"><td>' + esc(r.descricao) + '<div class="muted">' + esc(r.categoria || "") + (r.sugerido ? " · sugerido" : "") + selo(p, "riscos#" + r.id) + (r.ajusteSistema ? " · " + esc(r.ajusteSistema) : "") + '</div></td><td><select id="cpl-rp-' + i + '"' + d + ">" + selOpts(cinco, r.prob, "—") + '</select></td><td><select id="cpl-ri-' + i + '"' + d + ">" + selOpts(cinco, r.impacto, "—") + "</select></td><td>" +
         (n ? M.pilula({ baixo: "Baixo", medio: "Médio", alto: "Alto", critico: "Crítico" }[n.nivel] + " (" + n.valor + ")", niv[n.nivel]) : M.pilula("sem nível", "alerta")) + '</td><td><select id="cpl-ra-' + i + '"' + d + ">" + selOpts([["contratante", "Contratante (órgão)"], ["contratada", "Contratada"], ["compartilhado", "Compartilhado"]], r.alocacao, "—") + '</select></td><td><input id="cpl-rm-' + i + '" value="' + esc(r.mitigacao || "") + '" style="min-width:220px"' + d + "></td><td>" + btn("Remover", "cpl-r-remover", ' data-i="' + i + '"' + d, "sm ghost") + "</td></tr>";
     }).join("") + "</tbody></table>";
     return h + '<div class="cpl-acoes">' + btn("Salvar riscos", "cpl-r-salvar", d, "primary") + "</div>";
@@ -451,10 +496,10 @@
     var tp = R.TIPOS_OBJETO[p.tipoObjeto];
     var h = '<div class="cpl-form" id="cpl-f-orc">' + campo("Orçamento de referência *", _selOrc(p, d) + (orc ? " " + btn("Abrir no orçamento", "cpl-orc-abrir", "", "sm") : ""), "orcamentoId");
     var sugBase = orc ? (orc.competenciaSinapi ? "SINAPI" + (orc.uf ? "/" + orc.uf : "") + (orc.desonerado ? " desonerado" : " não desonerado") : "") : "";
-    h += campo("Base de preços *", '<input id="cpl-oBase" data-foco="base" value="' + esc(ref.base || "") + '" placeholder="Ex.: SINAPI/SP não desonerado"' + d + ">" +
+    h += campo("Base de preços *" + selo(p, "orcamentoRef.base"), '<input id="cpl-oBase" data-foco="base" value="' + esc(ref.base || "") + '" placeholder="Ex.: SINAPI/SP não desonerado"' + d + ">" +
       (!ref.base && sugBase ? '<div class="cpl-sug">Do orçamento: <b>' + esc(sugBase) + "</b> " + btn("Usar", "cpl-orc-usar", ' data-base="' + esc(sugBase) + '" data-comp="' + esc(orc.competenciaSinapi || "") + '"' + d, "sm") + "</div>" : "") +
       (tp ? '<div class="cpl-sug">Base usual para ' + esc(tp.nome) + ": <b>" + esc(tp.base) + "</b>" + (tp.baseConferir ? porque(tp.baseNota || "", "Biblioteca RA de tipos de objeto", true, "Base de preços") : "") + "</div>" : ""), "base");
-    h += campo("Competência (data-base) *", '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
+    h += campo("Competência (data-base) *" + selo(p, "orcamentoRef.competencia"), '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
     h += "</div>";
     h += '<div class="cpl-acoes">' + btn("Salvar orçamento de referência", "cpl-orc-salvar", d, "primary") + "</div>";
     if (!c) return h + M.aviso({ tom: "alerta", titulo: "Escolha o orçamento para ver os totais e a pesquisa de preços." });
@@ -462,8 +507,18 @@
       { rotulo: "Preço de venda", valor: moeda(c.precoVenda), sub: "total oficial do orçamento (com BDI)", id: "cpl-orc-total" },
       { rotulo: "Custo direto", valor: moeda(c.custoDireto) }, { rotulo: "BDI", valor: numBR(c.pct, 2) + " %" }, { rotulo: "Itens", valor: c.linhas.length }
     ]);
+    h += _blocoPacoteReferencia(p);
     h += _painelPesquisa(p, c, ed);
     return h;
+  }
+
+  /* Pacote do orçamento de referência (PDF + Excel no padrão do órgão): js/orcref.js. Só LÊ o processo; não grava nada. */
+  function _blocoPacoteReferencia(p) {
+    var pode = podeAcao("gerar_minuta") || podeAcao("ler_tudo");
+    var h = '<div id="cpl-pacote-ref"><h3>Pacote do orçamento de referência</h3>';
+    if (p.sigiloso !== false) h += M.aviso({ tom: "alerta", titulo: "Documento interno: não anexar ao edital enquanto o orçamento for sigiloso.", texto: "O pacote traz o orçamento por inteiro (valores, composições, curva ABC e mapa de cotação). Ele serve ao controle interno do órgão; o valor estimado só pode ser divulgado nos termos do art. 24 da Lei 14.133/2021." });
+    h += '<p class="muted">Sintética, analítica, BDI, encargos, curva ABC, cronograma, memória de cálculo, mapa de cotação e declarações. A pesquisa de preços abaixo entra no mapa de cotação; item sem base oficial e sem pesquisa fica <b>pendente</b> no pacote, e ART/RRT não informada também.</p>';
+    return h + '<div class="cpl-acoes">' + btn("Pacote do orçamento de referência (PDF + Excel)", "cpl-orc-pacote", pode ? "" : ' disabled title="Seu perfil não baixa documentos do processo."', "primary") + "</div></div>";
   }
 
   function _painelPesquisa(p, c, ed) {
@@ -512,7 +567,7 @@
     if (reg) {
       var oficial = tipoSel === "sistema_oficial";
       h += '<div class="cpl-novafonte"><b>Adicionar fonte</b> <select data-gacao="cpl-f-tipo" aria-label="Tipo da fonte"' + d + ">" + selOptsCtx(tipos, tipoSel, l.numero) + "</select>" +
-        (oficial ? ' <select id="cpl-fb-' + esc(l.numero) + '"' + d + '><option>SINAPI</option><option>SICRO</option><option>SIURB</option></select>' : "") +
+        (oficial ? ' <select id="cpl-fb-' + esc(l.numero) + '"' + d + '><option>SINAPI</option><option>SICRO</option><option>SIURB</option><option>SIURB_INFRA</option></select>' : "") +
         ' <input id="cpl-fv-' + esc(l.numero) + '" inputmode="decimal" placeholder="Valor unitário" style="width:120px"' + d + ">" +
         ' <input id="cpl-ff-' + esc(l.numero) + '" placeholder="Fornecedor / órgão / site" style="min-width:180px"' + d + ">" +
         (tipoSel === "midia" || tipoSel === "outro_sistema" || tipoSel === "nota_fiscal" ? ' <input id="cpl-fl-' + esc(l.numero) + '" placeholder="Link" style="min-width:160px"' + d + ">" : "") +
@@ -524,18 +579,61 @@
     return h + "</details>";
   }
 
+  /* Campos que o modelo oficial (AGU/SEGES) deixa para o órgão (D.CAMPOS): a lista é uma só e os formulários saem dela.
+     id do input: cpl-cf-<campo>. Campo cujo bloco "OU" os parâmetros não escolheram nem aparece. */
+  function htmlCampos(p, onde, d) {
+    var grupos = [], porGrupo = {}, o = (onde === "tr" ? p.tr : p.edital) || {};
+    D.CAMPOS.forEach(function (c) {
+      if (c.onde !== onde || !D.campoAplica(c.id, p)) return;
+      if (!porGrupo[c.grupo]) { porGrupo[c.grupo] = []; grupos.push(c.grupo); }
+      porGrupo[c.grupo].push(c);
+    });
+    return grupos.map(function (g) {
+      return "<h4>" + esc(g) + "</h4>" + porGrupo[g].map(function (c) {
+        var v = o[c.id] == null ? "" : o[c.id], ctrl;
+        if (c.tipo === "select") ctrl = '<select id="cpl-cf-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
+        else ctrl = '<input id="cpl-cf-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
+        return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *", ctrl, c.id);
+      }).join("");
+    }).join("");
+  }
+  /* lê os inputs de volta para o objeto; devolve o próprio objeto */
+  function lerCampos(obj, p, onde) {
+    D.CAMPOS.forEach(function (c) {
+      if (c.onde !== onde || !D.campoAplica(c.id, p)) return;
+      if (!document.getElementById("cpl-cf-" + c.id)) return;
+      obj[c.id] = emBranco(lerCampo("cpl-cf-" + c.id));
+    });
+    return obj;
+  }
+  /* ⚠ campo de um bloco que os parâmetros não escolhem (ex.: limite da subcontratação) não está na tela:
+     o que já estava gravado fica. Sem isto, salvar a tela apagaria o dado em silêncio. */
+  function preservarFora(novo, antesJson) {
+    var antes = {}; try { antes = JSON.parse(antesJson) || {}; } catch (e) { antes = {}; }
+    Object.keys(antes).forEach(function (k) { if (!(k in novo)) novo[k] = antes[k]; });
+    return novo;
+  }
+
   /* ---------- 7. TR / PROJETO BÁSICO ---------- */
   function _pTr(p, x, ed) {
     var d = ed && podeAcao("editar_tr") ? "" : " disabled";
     var t = p.tr || {};
     var h = '<p class="muted">O termo de referência (art. 6º, XXIII) e o projeto básico (art. 6º, XXV) saem do que já está no processo; aqui você completa o que não se deduz.</p>';
+    if (p.cronogramaFisico && arr(p.cronogramaFisico.etapas).length) {
+      var cf = p.cronogramaFisico, cabM = "";
+      for (var mi = 1; mi <= cf.meses; mi++) cabM += '<th class="num">MÊS ' + mi + "</th>";
+      h += "<h3>Cronograma físico (lido da pasta)" + selo(p, "cronogramaFisico") + '</h3><table class="tbl" id="cpl-tab-crono"><thead><tr><th>ETAPA</th>' + cabM + "</tr></thead><tbody>" + cf.etapas.map(function (e) {
+        return "<tr><td>" + esc(e.nome) + "</td>" + e.pct.map(function (v) { return '<td class="num">' + (v ? numBR(v, 0) + "%" : "—") + "</td>"; }).join("") + "</tr>";
+      }).join("") + "</tbody></table>";
+    }
     h += '<div class="cpl-form" id="cpl-f-tr">' +
-      campo("Descrição do objeto *", '<textarea id="cpl-tr-objeto" rows="3" data-foco="objeto"' + d + ">" + esc(t.objeto != null ? t.objeto : (p.objeto || "")) + "</textarea>" + (vazio(t.objeto) && p.objeto ? '<div class="cpl-sugerido">pré-preenchido com o objeto do passo 1 — confira e salve</div>' : ""), "objeto") +
-      campo("Critério de medição *", '<textarea id="cpl-tr-medicao" rows="3" data-foco="medicao"' + d + ">" + esc(t.medicao || "") + "</textarea>", "medicao") +
-      campo("Critério de recebimento (provisório e definitivo) *", '<textarea id="cpl-tr-recebimento" rows="3" data-foco="recebimento"' + d + ">" + esc(t.recebimento || "") + "</textarea>", "recebimento") +
+      campo("Descrição do objeto *" + selo(p, "tr.objeto"), '<textarea id="cpl-tr-objeto" rows="3" data-foco="objeto"' + d + ">" + esc(t.objeto != null ? t.objeto : (p.objeto || "")) + "</textarea>" + (vazio(t.objeto) && p.objeto ? '<div class="cpl-sugerido">pré-preenchido com o objeto do passo 1 — confira e salve</div>' : ""), "objeto") +
+      campo("Critério de medição *" + selo(p, "tr.medicao"), '<textarea id="cpl-tr-medicao" rows="3" data-foco="medicao"' + d + ">" + esc(t.medicao || "") + "</textarea>", "medicao") +
+      campo("Critério de recebimento (provisório e definitivo) *" + selo(p, "tr.recebimento"), '<textarea id="cpl-tr-recebimento" rows="3" data-foco="recebimento"' + d + ">" + esc(t.recebimento || "") + "</textarea>", "recebimento") +
       campo("Pagamento (condições e prazo)", '<textarea id="cpl-tr-pagamento" rows="2"' + d + ">" + esc(t.pagamento || "") + "</textarea>") +
       campo("Gestão e fiscalização do contrato", '<textarea id="cpl-tr-gestao" rows="2"' + d + ">" + esc(t.gestao || "") + "</textarea>") +
-      campo("Adequação orçamentária (dotação)", '<input id="cpl-tr-dotacao" value="' + esc(t.dotacao || "") + '"' + d + ">") + "</div>" +
+      campo("Adequação orçamentária (dotação)", '<input id="cpl-tr-dotacao" value="' + esc(t.dotacao || "") + '"' + d + ">") +
+      '<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Sem eles, o termo de referência sai com «[PREENCHER: …]» e o passo «Minuta e anexos» não fecha.</p>' + htmlCampos(p, "tr", d) + "</div>" +
       '<div class="cpl-acoes">' + btn("Salvar TR", "cpl-salvar-tr", d, "primary") + btn("Ver prévia do documento", "cpl-doc-previa", ' data-doc="tr"') + "</div>";
     return h;
   }
@@ -549,17 +647,18 @@
     var h = '<p class="muted">Cada linha traz a sugestão do sistema, o porquê e o artigo. Aceite a sugestão ou troque o valor.</p>';
     h += '<table class="tbl" id="cpl-tab-param"><thead><tr><th>PARÂMETRO</th><th>SUGESTÃO</th><th>VALOR</th><th></th></tr></thead><tbody>' + R.PARAMETROS_ORDEM.map(function (id) {
       var def = R.PARAMETROS[id], s = sug[id], v = (p.parametros[id] || {}).valor;
+      if ((s.sugerido === null || s.sugerido === undefined) && p.parametros[id] && p.parametros[id].sugerido !== null && p.parametros[id].sugerido !== undefined) { s = { id: id, valor: s.valor, sugerido: p.parametros[id].sugerido, regra: p.parametros[id].regra || s.regra, fonte: s.fonte, conferir: s.conferir, pendencias: s.pendencias }; }
       if (id === "sigiloso" && vazio(v)) v = p.sigiloso;
       var sugTxt = s.sugerido === null || s.sugerido === undefined ? "—" : (typeof s.sugerido === "object" ? _descObj(id, s.sugerido) : (typeof s.sugerido === "boolean" ? (s.sugerido ? "Sim" : "Não") : String(s.sugerido)));
       var ctrl = _ctrlParam(id, def, v, s, d);
-      return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
+      return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + selo(p, "parametros." + id + ".valor") + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
         (s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste") ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
     }).join("") + "</tbody></table>";
     /* regulamento + datas */
     var regs = Object.keys(R.REGULAMENTOS).map(function (k) { return [k, R.REGULAMENTOS[k].nome]; });
     var efet = C.pesquisaPrecos.regulamentoEfetivo(p), cron = p.cronograma || {};
     h += '<div class="cpl-form" id="cpl-f-prazos"><h3>Regulamento, publicação e abertura</h3>' +
-      campo("Regulamento de pesquisa de preços", '<select id="cpl-regulamento" data-foco="regulamentoId"' + (p.recursoFederal === true ? " disabled" : d) + ">" + selOpts(regs, p.recursoFederal === true ? "federal-14133" : p.regulamentoId, "— escolha —") + "</select>" +
+      campo("Regulamento de pesquisa de preços" + selo(p, "regulamentoId"), '<select id="cpl-regulamento" data-foco="regulamentoId"' + (p.recursoFederal === true ? " disabled" : d) + ">" + selOpts(regs, p.recursoFederal === true ? "federal-14133" : p.regulamentoId, "— escolha —") + "</select>" +
         (p.recursoFederal === true ? '<div class="cpl-sug">Há recurso federal: vale o regulamento federal.</div>' : "") + (efet ? porque(efet.fonte, efet.fonte, efet.conferir === true, "Regulamento efetivo") : ""), "regulamentoId") +
       campo("Data de publicação do edital *", '<input id="cpl-dataEdital" type="date" data-foco="dataPrevistaEdital" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">", "dataPrevistaEdital") +
       campo("Data de abertura das propostas", '<input id="cpl-dataAbertura" type="date" data-foco="dataAbertura" value="' + esc(cron.dataAbertura || "") + '"' + d + ">", "dataAbertura") +
@@ -603,9 +702,10 @@
     var d = ed && podeAcao("gerar_minuta") ? "" : " disabled";
     var g = D.gerar(p, ctxDocs(p)), val_ = F.pacoteValido(p), pdoc = p.pacote || {};
     var h = '<p class="muted">O nome e o logo do órgão vêm de Empresa (Configurações). Os documentos saem do que está no processo. Campo em branco vira <b class="cpl-pre-ex">[PREENCHER: …]</b> em vermelho; o passo só fica pronto com <b>nenhum</b> campo desses.</p>';
-    h += '<table class="tbl" id="cpl-tab-docs"><thead><tr><th>DOCUMENTO</th><th>USO</th><th class="num">CAMPOS EM BRANCO</th><th></th></tr></thead><tbody>' + g.docs.map(function (doc) {
-      return "<tr><td><b>" + esc(doc.nome) + "</b></td><td>" + (doc.publico ? M.pilula("público", "info") : M.pilula("interno", "neutro")) + '</td><td class="num">' + (doc.pendentes ? M.pilula(String(doc.pendentes), "alerta") : M.pilula("0", "ok")) + "</td><td>" +
-        btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn("Baixar .docx", "cpl-doc-baixar", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") + "</td></tr>";
+    h += '<table class="tbl" id="cpl-tab-docs"><thead><tr><th>DOCUMENTO</th><th>USO</th><th>MODELO</th><th class="num">CAMPOS EM BRANCO</th><th></th></tr></thead><tbody>' + g.docs.map(function (doc) {
+      return "<tr><td><b>" + esc(doc.nome) + "</b></td><td>" + (doc.publico ? M.pilula("público", "info") : M.pilula("interno", "neutro")) + "</td><td>" + (modeloDoTipo(doc.id) ? M.pilula("do órgão", "ok") : M.pilula("padrão da casa", "neutro")) + '</td><td class="num">' + (doc.pendentes ? M.pilula(String(doc.pendentes), "alerta") : M.pilula("0", "ok")) + "</td><td>" +
+        btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn("Baixar .docx", "cpl-doc-baixar", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") +
+        (modeloDoTipo(doc.id) ? " " + btn("Baixar no padrão da casa", "cpl-doc-baixar-padrao", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") : "") + "</td></tr>";
     }).join("") + "</tbody></table>";
     h += "<p>" + (val_ ? M.pilula("Documentos gerados em " + dataHoraBR(pdoc.geradoEm), "ok") : (g.pendentes ? M.pilula(g.pendentes + " campo(s) em branco no total", "alerta") : M.pilula("ainda não gerados", "neutro"))) + "</p>";
     if (!val_ && pdoc.invalidadoEm) h += '<p class="cpl-alerta">A minuta gerada deixou de valer: ' + esc(pdoc.motivo || "o processo mudou") + ". Gere de novo.</p>";
@@ -613,9 +713,10 @@
     h += '<h3>Dados que completam a minuta</h3><div class="cpl-form" id="cpl-f-edital">' +
       campo("Número do edital", '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
       campo("Documentos de habilitação exigidos", '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
-      campo("Regime de sanções aplicável", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
+      campo("Complemento do regime de sanções do edital (opcional)", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
       campo("Vigência e prazo de execução do contrato", '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
-      campo("Extinção do contrato, sanções contratuais e foro", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") + "</div>" +
+      campo("Complemento do contrato: extinção e sanções contratuais (opcional)", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") +
+      '<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Cada um entra no edital ou no contrato no lugar do «XXXX» do modelo; sem eles o texto sai com «[PREENCHER: …]».</p>' + htmlCampos(p, "edital", dm) + "</div>" +
       '<div class="cpl-acoes">' + btn("Salvar dados da minuta", "cpl-salvar-edital", dm, "") + "</div>";
     h += '<div class="cpl-acoes">' + btn("Gerar documentos", "cpl-gerar", dis(ed && podeAcao("gerar_minuta"), !podeAcao("gerar_minuta") ? motivoAcao("gerar_minuta") : F.motivoTravado(p)), "primary") + (g.pendentes ? '<span class="muted">Com campos em branco os documentos podem ser baixados como rascunho, mas o passo não fica pronto.</span>' : "") + "</div>";
     return h;
@@ -680,12 +781,14 @@
     var pode = podeAcao("analisar_propostas"), d = pode ? "" : " disabled";
     var props = arr(p.propostas), ref = p.referenciaPublicada;
     var h = '<input type="file" id="cpl-arq-prop" accept=".xlsx,.xls,.xlsm" hidden>';
-    h += M.aviso({ tom: "info", titulo: "Habilitação: leitura automática na próxima versão.", texto: "Hoje o sistema compara só a planilha de preços com a referência congelada na publicação. A habilitação (documentos do licitante) continua sendo conferida pela comissão." });
+    h += _habilitacao(p);
+    h += "<h3>Propostas de preço</h3>";
     h += '<div class="cpl-acoes">' + campo("Nome do licitante", '<input id="cpl-lic-nome" placeholder="Razão social"' + d + ">") + btn("Importar planilha da proposta (.xlsx)", "cpl-prop-importar", dis(pode, motivoAcao("analisar_propostas")), "primary") +
       '<span class="muted">Aceita o .xlsx de proposta do OrçaPRO / CertamePRO.</span></div>';
-    if (!props.length) return h + M.vazio({ icone: "documentos", titulo: "Nenhuma proposta importada", texto: "Importe a planilha de cada licitante. O sistema compara com a referência e sugere; a decisão é sempre do servidor." });
-    h += '<div class="cpl-form"><h3>Resultado</h3>' + campo("Resultado divulgado em", '<input id="cpl-resultadoEm" type="date" value="' + esc(p.resultadoEm || "") + '"' + d + ">") + btn("Salvar data", "cpl-resultado-data", d, "sm") +
+    var blocoResultado = '<div class="cpl-form"><h3>Resultado</h3>' + campo("Resultado divulgado em", '<input id="cpl-resultadoEm" type="date" value="' + esc(p.resultadoEm || "") + '"' + d + ">") + btn("Salvar data", "cpl-resultado-data", d, "sm") +
       (p.resultadoEm ? "<p>Fim do prazo de recurso: <b>" + esc(dataBR(F.fimPrazoRecurso(p))) + "</b></p>" : "") + "</div>";
+    if (!props.length) return h + M.vazio({ icone: "documentos", titulo: "Nenhuma proposta importada", texto: "Importe a planilha de cada licitante. O sistema compara com a referência e sugere; a decisão é sempre do servidor." }) + blocoResultado;
+    h += blocoResultado;
     props.forEach(function (pr) { h += _cartaoProposta(p, pr, pode, d); });
     h += _quadroComparativo(p, props, ref);
     return h;
@@ -717,6 +820,140 @@
     return h;
   }
 
+  /* ---------- HABILITAÇÃO DOS LICITANTES (leva E1) ----------
+   * Lê os documentos do licitante pelo serviço do CertamePRO (js/cplprohab.js) e organiza a decisão do servidor.
+   * ⚠ O serviço só sugere, com prova. Nada muda sozinho: cada exigência pede o clique de quem tem o papel de CPL.
+   * ⚠ O token do pareamento mora SÓ no localStorage deste aparelho (Hab.lerPareamento) — nunca no processo, nunca na nuvem. */
+  var habArquivos = [];          /* File[] escolhidos (ficam na memória, não na tela: re-render não perde) */
+  var habOcupado = false;
+  function storageLocal() { try { return global.localStorage; } catch (e) { return null; } }
+  /* o serviço é o oficial; para teste local, só um endereço de loopback guardado neste aparelho (Hab.destino recusa qualquer outro host) */
+  function servicoAtual() {
+    var s = storageLocal(), alt = "";
+    try { alt = s ? s.getItem("orcapro:cplpro:servico") || "" : ""; } catch (e) { alt = ""; }
+    var d = alt ? H.destino(alt) : null;
+    return d && d.ok ? d.url : H.SERVICO_OFICIAL;
+  }
+  function pareamento() { var s = storageLocal(); return s ? H.lerPareamento(s, eid()) : null; }
+  function cfgServico() {
+    var par = pareamento();
+    return { fetch: function (u, o) { return global.fetch(u, o); }, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
+  }
+  function msgErroHab(e) { return e && e.mensagem ? e.mensagem : (e && e.message ? e.message : "Não consegui concluir. Nada foi gravado no processo."); }
+  function tomSit(s) { return (H.SITUACOES[s] || {}).tom || "neutro"; }
+
+  function _habPareamento(p) {
+    var st = storageLocal() ? H.estadoPareamento(storageLocal(), eid()) : { pareado: false };
+    var h = '<div class="cpl-hab-par" id="cpl-hab-par">';
+    if (st.pareado) {
+      h += M.pilula("conectado ao CertamePRO", "ok") + ' <span class="muted">Conta ' + esc(st.usuario || "—") + " · desde " + esc(dataHoraBR(st.pareadoEm)) + ". O acesso fica só neste aparelho.</span>";
+      h += '<div class="cpl-acoes">' + btn("Desligar este aparelho", "cpl-hab-desligar", dis(podeAcao("gerenciar_logins"), motivoAcao("gerenciar_logins")), "sm ghost") + "</div>";
+      if (G._cplHabRepar) h += M.aviso({ tom: "erro", titulo: "O CertamePRO recusou esta conexão.", texto: "Desligue e conecte de novo com um código novo (gerado pelo administrador do CertamePRO)." });
+    } else {
+      var pode = podeAcao("gerenciar_logins");
+      h += M.aviso({ tom: "info", titulo: "Conecte o CPLPRO ao CertamePRO para ler a habilitação automaticamente.",
+        texto: "O administrador do órgão gera um código de pareamento no CertamePRO (tipo «órgão») e o digita aqui, uma vez por aparelho. Sem a conexão, a habilitação continua sendo conferida à mão pela comissão." });
+      h += '<div class="cpl-acoes">' + campo("Código de pareamento do CertamePRO", '<input id="cpl-hab-codigo" autocomplete="off" spellcheck="false" placeholder="Cole o código aqui"' + (pode ? "" : " disabled") + ">") +
+        btn("Conectar", "cpl-hab-parear", dis(pode, motivoAcao("gerenciar_logins")), "primary") + "</div>";
+    }
+    return h + "</div>";
+  }
+  function _habForm(p, pode) {
+    var par = !!pareamento(), d = pode ? "" : " disabled", aviso = H.exigenciasDoProcesso(p).avisos;
+    var ds = H.dataSessaoDoProcesso(p) || "";
+    var h = '<div class="cpl-form" id="cpl-hab-form"><h3>Analisar um licitante</h3>';
+    h += '<div class="cpl-acoes">' + campo("CNPJ do licitante *", '<input id="cpl-hab-cnpj" placeholder="00.000.000/0000-00"' + d + ">") + campo("Razão social", '<input id="cpl-hab-razao" placeholder="Razão social"' + d + ">") +
+      campo("Data da sessão *", '<input id="cpl-hab-sessao" type="date" value="' + esc(ds) + '"' + d + ">") + "</div>";
+    h += '<p class="muted">A validade das certidões é conferida na <b>data da sessão</b>, não na de hoje.</p>';
+    h += '<input type="file" id="cpl-hab-arq" accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.gif,.webp,.docx,.xlsx,.zip" multiple hidden>' +
+      '<input type="file" id="cpl-hab-pasta" webkitdirectory multiple hidden>';
+    h += '<div class="cpl-acoes">' + btn("Escolher arquivos", "cpl-hab-arquivos", dis(pode, motivoAcao("analisar_propostas")), "sm") + btn("Escolher a pasta do licitante", "cpl-hab-pasta", dis(pode, motivoAcao("analisar_propostas")), "sm") +
+      btn("Limpar escolha", "cpl-hab-limpar", "", "sm ghost") + '<span class="muted" id="cpl-hab-sel">' + (habArquivos.length ? habArquivos.length + " arquivo(s) escolhido(s)" : "nenhum arquivo escolhido") + "</span></div>";
+    h += '<div class="cpl-acoes">' + btn("Analisar habilitação", "cpl-hab-analisar", dis(pode && par, !pode ? motivoAcao("analisar_propostas") : "Conecte o CPLPRO ao CertamePRO primeiro (acima)."), "primary") +
+      '<span class="muted" id="cpl-hab-status" role="status"></span></div>';
+    if (aviso.length) h += '<ul class="cpl-bloqueios" id="cpl-hab-avisos">' + aviso.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>";
+    h += '<p class="muted">Os arquivos vão ao serviço só para esta análise e são apagados de lá ao fim. O sistema compara com a ficha de exigências deste processo e <b>apenas sugere</b>; a decisão é sua, exigência por exigência.</p>';
+    return h + "</div>";
+  }
+  function _habLinhaExigencia(p, lic, r, pode) {
+    var e = arr(lic.exigencias).filter(function (x) { return x.id === r.id; })[0] || { descricao: r.id, grupo: "" }, d = lic.decisoes[r.id];
+    var sug = { atende: "atende", nao_atende: "nao_atende", diligencia: "diligencia" }[r.situacao] || "", atual = d ? d.situacao : sug;
+    var provas = arr(r.provas).map(function (x) { return esc(x.arquivo) + (x.pagina ? ", p. " + esc(x.pagina) : "") + (x.trecho ? ' — «' + esc(x.trecho) + "»" : ""); });
+    var h = '<tr data-ex="' + esc(r.id) + '"><td><b>' + esc(r.id) + "</b><br>" + esc(e.descricao) + "</td>";
+    h += "<td>" + M.pilula((H.SITUACOES[r.situacao] || {}).nome || r.situacao, tomSit(r.situacao)) + '<br><span class="muted">' + esc(r.motivo) + "</span>" +
+      (r.regra ? porque("Regra aplicada pelo serviço: " + r.regra, "contrato de análise de habilitação", false, "Regra") : "") + "</td>";
+    h += "<td>" + (provas.length ? provas.join("<br>") : '<span class="muted">sem prova</span>') + "</td>";
+    var opts = '<option value="">— escolha —</option>' + H.DECISAO_ORDEM.map(function (k) { return '<option value="' + k + '"' + (k === atual ? " selected" : "") + ">" + esc(H.DECISOES[k].nome) + "</option>"; }).join("");
+    h += "<td>" + (d ? M.pilula((d.origem === "confirmado" ? "confirmado: " : "alterado: ") + H.DECISOES[d.situacao].curto, ABR_INAB(d.situacao) ? "erro" : (d.situacao === "diligencia" ? "alerta" : "ok")) + '<br><span class="muted">' + esc(d.por || "") + " · " + esc(dataBR(d.em)) + (d.motivo ? " · " + esc(d.motivo) : "") + "</span><br>" : M.pilula("pendente de decisão", "alerta") + "<br>");
+    h += '<select class="cpl-hab-sel" aria-label="Decisão da exigência ' + esc(r.id) + '"' + (pode ? "" : " disabled") + ">" + opts + "</select> " +
+      '<input class="cpl-hab-mot" placeholder="Motivo (obrigatório ao alterar)" aria-label="Motivo da decisão ' + esc(r.id) + '"' + (pode ? "" : " disabled") + "> " +
+      btn(d ? "Alterar" : "Registrar", "cpl-hab-decidir", ' data-lic="' + esc(lic.id) + '" data-ex="' + esc(r.id) + '"' + (pode ? "" : " disabled"), "sm") + "</td></tr>";
+    return h;
+  }
+  function ABR_INAB(s) { return s === "nao_atende" || s === "nao_apresentou"; }
+  function _habCartao(p, lic, pode) {
+    var c = H.consolidar(lic), n = H.ordem(p, lic.id), pgs = H.podeGerar;
+    var tom = { habilitado: "ok", inabilitado: "erro", em_diligencia: "alerta", pendente: "alerta", sem_analise: "neutro" }[c.status];
+    var h = '<section class="cpl-prop cpl-hab-lic" data-lic="' + esc(lic.id) + '"><h3>Licitante ' + n + " — " + esc(lic.razaoSocial || "(sem razão social)") + " " + M.pilula(H.STATUS_ROTULO[c.status], tom) + "</h3>";
+    h += '<p class="muted">CNPJ ' + esc(H.mascaraCnpj(lic.cnpj)) + " · sessão " + esc(dataBR(lic.dataSessao)) + " · " + arr(lic.resultados).length + " exigência(s): " + c.atendidas.length + " atendida(s), " + c.diligencia.length + " em diligência, " + c.inabilita.length + " inabilitante(s), " + c.pendentes.length + " pendente(s)</p>";
+    var ll = lic.licitanteLido || {};
+    if (ll.confere === false) h += M.aviso({ tom: "alerta", titulo: "O CNPJ lido nos documentos (" + esc(H.mascaraCnpj(ll.cnpjLido || "")) + ") não confere com o informado.", texto: "Confira se os arquivos são mesmo deste licitante." });
+    if (ll.sancoes && ll.sancoes.situacao) h += '<p class="muted">Sanções (CEIS/CNEP): ' + esc(ll.sancoes.situacao) + (ll.sancoes.texto ? " — " + esc(ll.sancoes.texto) : "") + "</p>";
+    arr(lic.avisos).forEach(function (a) { h += '<p class="muted">Aviso do serviço: ' + esc(a) + "</p>"; });
+    var porGrupo = {};
+    arr(lic.resultados).forEach(function (r) { var e = arr(lic.exigencias).filter(function (x) { return x.id === r.id; })[0] || {}; (porGrupo[e.grupo || "outros"] = porGrupo[e.grupo || "outros"] || []).push(r); });
+    H.GRUPOS.concat([{ id: "outros", nome: "Outras" }]).forEach(function (g) {
+      if (!porGrupo[g.id]) return;
+      h += "<details open><summary><b>" + esc(g.nome) + "</b> (" + porGrupo[g.id].length + ")</summary>" +
+        '<table class="tbl cpl-hab-tab"><thead><tr><th>EXIGÊNCIA</th><th>RESULTADO DO SERVIÇO</th><th>PROVA</th><th>SUA DECISÃO</th></tr></thead><tbody>' +
+        porGrupo[g.id].map(function (r) { return _habLinhaExigencia(p, lic, r, pode); }).join("") + "</tbody></table></details>";
+    });
+    if (c.diligencia.length) {
+      h += '<div class="cpl-acoes"><label>Prazo da resposta do licitante (escolha da comissão) ' + '<input type="date" class="cpl-hab-prazo" value="' + esc((lic.diligencia && lic.diligencia.prazo) || "") + '"' + (pode ? "" : " disabled") + "></label>" +
+        btn("Salvar prazo", "cpl-hab-prazo", ' data-lic="' + esc(lic.id) + '"' + (pode ? "" : " disabled"), "sm") + "</div>";
+    }
+    function docBtn(tipo, rot) {
+      var g = pgs(tipo, p, lic.id, papeis());
+      return btn(rot, "cpl-hab-doc", ' data-lic="' + esc(lic.id) + '" data-tipo="' + tipo + '"' + dis(g.ok, g.motivo), "sm ghost");
+    }
+    h += '<div class="cpl-acoes">' + docBtn("relatorio", "Relatório de habilitação (.docx)") + docBtn("diligencia", "Termo de diligência (.docx)") + docBtn("inabilitacao", "Comunicado de inabilitação (.docx)") +
+      btn("Recurso: alegações e conclusão", "cpl-hab-recurso", ' data-lic="' + esc(lic.id) + '"' + dis(pode, motivoAcao("analisar_propostas")), "sm ghost") + docBtn("recurso", "Quadro do recurso (.docx)") + "</div>";
+    return h + "</section>";
+  }
+  function _habilitacao(p) {
+    var pode = podeAcao("analisar_propostas"), ls = arr(p.habilitacao && p.habilitacao.licitantes);
+    var h = '<section id="cpl-hab"><h3>Habilitação dos licitantes</h3>' + _habPareamento(p) + _habForm(p, pode);
+    if (!ls.length) h += M.vazio({ icone: "documentos", titulo: "Nenhum licitante analisado", texto: "Escolha os arquivos do licitante, informe o CNPJ e a data da sessão e clique em «Analisar habilitação»." });
+    ls.forEach(function (l) { h += _habCartao(p, l, pode); });
+    if (ls.length) {
+      var gAta = H.podeGerar("ata", p, null, papeis()), gAdj = H.podeGerar("adjudicacao", p, null, papeis()), gHom = H.podeGerar("homologacao", p, null, papeis());
+      var habilitados = ls.filter(function (l) { return H.consolidar(l).status === "habilitado"; });
+      var adjId = p.habilitacao && p.habilitacao.adjudicatarioId;
+      h += '<div class="cpl-form" id="cpl-hab-fim"><h3>Resultado, adjudicação e homologação</h3>' +
+        '<div class="cpl-acoes">' + btn("Ata de julgamento e habilitação (.docx)", "cpl-hab-doc", ' data-tipo="ata"' + dis(gAta.ok, gAta.motivo), "sm") + "</div>" +
+        '<div class="cpl-acoes">' + campo("Licitante a adjudicar (só habilitado)", '<select id="cpl-hab-adj"' + (podeAcao("adjudicar") ? "" : " disabled") + '><option value="">— escolha —</option>' + habilitados.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === adjId ? " selected" : "") + ">Licitante " + H.ordem(p, l.id) + " — " + esc(l.razaoSocial || H.mascaraCnpj(l.cnpj)) + "</option>"; }).join("") + "</select>") +
+        btn("Escolher", "cpl-hab-adjudicatario", dis(podeAcao("adjudicar"), motivoAcao("adjudicar")), "sm") + "</div>" +
+        '<div class="cpl-acoes">' + btn("Minuta de adjudicação (.docx)", "cpl-hab-doc", ' data-tipo="adjudicacao"' + dis(gAdj.ok, gAdj.motivo), "sm") + btn("Minuta de homologação (.docx)", "cpl-hab-doc", ' data-tipo="homologacao"' + dis(gHom.ok, gHom.motivo), "sm") + "</div>" +
+        '<p class="muted">As minutas só saem sem nenhuma exigência pendente ou em diligência, com o licitante escolhido habilitado. Quem adjudica e homologa é a autoridade competente.</p></div>';
+    }
+    return h + "</section>";
+  }
+  function habLerForm() {
+    return { cnpj: lerCampo("cpl-hab-cnpj"), razao: lerCampo("cpl-hab-razao"), sessao: lerCampo("cpl-hab-sessao") };
+  }
+  function habEscolher(files, pasta) {
+    var lista = Array.prototype.slice.call(files || []), vistos = {};
+    habArquivos.forEach(function (f) { vistos[f.name] = (vistos[f.name] || 0) + 1; });
+    lista.forEach(function (f) {
+      var n = f.name;
+      if (vistos[n]) { vistos[n]++; var ponto = n.lastIndexOf("."); var novo = (ponto > 0 ? n.slice(0, ponto) : n) + " (" + vistos[n] + ")" + (ponto > 0 ? n.slice(ponto) : ""); try { f = new global.File([f], novo, { type: f.type }); } catch (e) {} }
+      else vistos[n] = 1;
+      habArquivos.push(f);
+    });
+    var el = document.getElementById("cpl-hab-sel");
+    if (el) el.textContent = habArquivos.length + " arquivo(s) escolhido(s)";
+  }
+
   /* ---------- HISTÓRICO (só leitura) ---------- */
   function _histProc(p) {
     var h = arr(p.historico).slice().reverse();
@@ -742,6 +979,16 @@
       var fr = new FileReader(); fr.onload = function () { ok(new Uint8Array(fr.result)); }; fr.onerror = function () { falha(fr.error || new Error("não consegui ler " + f.name)); }; fr.readAsArrayBuffer(f);
     });
   }
+  /* PDF cujo nome não classifica: lê o texto das 2 primeiras páginas com o leitor local de PDF (js/vendor/pdfjs, o mesmo da
+     nota fiscal). Falha de leitura NUNCA trava a entrada do arquivo: ele segue sem texto, classificado só pelo nome. */
+  function textoParaClassificar(file, ent) {
+    return new Promise(function (ok) {
+      if (!/.pdf$/i.test(ent.nome) || C.classificarArquivo({ nome: ent.nome, ext: ent.ext }).confianca !== "baixa" || !G._pdfTexto) { ok(); return; }
+      var feito = false, fim = function (txt) { if (feito) return; feito = true; if (txt && String(txt).replace(/s/g, "")) ent.texto = String(txt); ok(); };
+      setTimeout(function () { fim(""); }, 20000);
+      try { G._pdfTexto(file, fim, { paginas: 2 }); } catch (e) { fim(""); }
+    });
+  }
   function adicionarArquivos(files) {
     var p = procAtual(); if (!p) return;
     var papel = exigirEditavel(p, "editar_acervo"); if (!papel) return;
@@ -755,7 +1002,10 @@
         return lerArquivo(f).then(function (bytes) {
           return sha256(bytes).then(function (sha) {
             var ext = (/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "";
-            novos.push({ nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: f.lastModified ? hoje() : null });
+            var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: f.lastModified ? hoje() : null };
+            novos.push(ent);
+            /* o nome não bastou (confiança baixa) e é PDF: lê o texto das páginas 1 e 2 e classifica pelo carimbo (o texto não é gravado) */
+            return textoParaClassificar(f, ent).then(function () {
             if (bytes.length <= MAX_BYTES && typeof Idb !== "undefined") {
               var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
               return Idb.set(chaveArq(sha), { nome: f.name, tipo: f.type || "application/octet-stream", dados: copia }).then(function () {
@@ -764,6 +1014,7 @@
               }, function () { grandes.push(f.name); });
             }
             grandes.push(f.name);
+            });
           });
         });
       });
@@ -792,6 +1043,178 @@
   }
 
   /* ================================================================== *
+   * MONTAR O PROCESSO A PARTIR DA PASTA (leva F)
+   * O motor é js/cplpropreparo.js (puro). Aqui: ler os arquivos (SHA-256, texto do .docx/PDF, matriz do .xlsx), criar o orçamento
+   * no OrçaPRO com o importador de planilha que já existe, chamar o motor e gravar. RBAC na função: cada passo só é preenchido
+   * se o papel da pessoa pode editá-lo (F.ACAO_DO_PASSO); o «Conferi» nunca é marcado.
+   * ================================================================== */
+  function lerPdfTexto(file, paginas) {
+    return new Promise(function (ok) {
+      if (!G._pdfTexto) { ok(""); return; }
+      var feito = false, fim = function (t) { if (feito) return; feito = true; ok(t ? String(t) : ""); };
+      setTimeout(function () { fim(""); }, 30000);
+      try { G._pdfTexto(file, fim, { paginas: paginas }); } catch (e) { fim(""); }
+    });
+  }
+  function lerMatriz(file) {
+    return new Promise(function (ok) {
+      if (typeof App === "undefined" || !App._lerPlanilha) { ok(null); return; }
+      var feito = false, fim = function (m) { if (feito) return; feito = true; ok(m); };
+      setTimeout(function () { fim(null); }, 30000);
+      try { App._lerPlanilha(file, function (matriz, erro) { fim(erro || !matriz || !matriz.length ? null : matriz); }); } catch (e) { fim(null); }
+    });
+  }
+  function guardarBytes(p, f, bytes, sha) {
+    if (bytes.length > MAX_BYTES || typeof Idb === "undefined") return Promise.resolve();
+    var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return Idb.set(chaveArq(sha), { nome: f.name, tipo: f.type || "application/octet-stream", dados: copia }).then(function () {
+      try { if (p.obraId && typeof ArquivosNuvem !== "undefined") ArquivosNuvem.subir(chaveArq(sha), { obraId: p.obraId, pasta: "documentos", nome: f.name, tipo: f.type || "application/octet-stream" }, bytes); } catch (eN) {}
+    }, function () {});
+  }
+  /* lê a pasta inteira: → Promise { ents, erros } (arquivo ilegível vira aviso, nunca derruba a montagem) */
+  function lerParaPreparo(p, files) {
+    var ents = [], erros = [], seq = Promise.resolve();
+    files.forEach(function (f) {
+      seq = seq.then(function () {
+        return lerArquivo(f).then(function (bytes) {
+          return sha256(bytes).then(function (sha) {
+            var ext = ((/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "").toLowerCase();
+            var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: hoje() };
+            var cl = C.classificarArquivo({ nome: f.name, ext: ext }), passo = Promise.resolve();
+            if (ext === "docx") passo = T.textoDocx(bytes, inflarFn()).then(function (r) { if (r.ok) ent.texto = r.texto; else erros.push("«" + f.name + "»: " + r.erro); });
+            else if (ext === "pdf" && cl.tipo === "memorial_descritivo") passo = lerPdfTexto(f, 40).then(function (t) { if (t) ent.texto = t; else erros.push("«" + f.name + "»: não consegui ler o texto do PDF (imagem escaneada?)."); });
+            else if (ext === "pdf" && cl.confianca === "baixa") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
+            else if ((ext === "xlsx" || ext === "xls" || ext === "csv") && bytes.length <= 25 * 1024 * 1024) passo = lerMatriz(f).then(function (m) { if (m) ent.matriz = m; else erros.push("«" + f.name + "»: não consegui ler a planilha."); });
+            return passo.then(function () { ents.push(ent); return guardarBytes(p, f, bytes, sha); });
+          });
+        }, function () { erros.push("«" + f.name + "»: não consegui ler o arquivo."); });
+      });
+    });
+    return seq.then(function () { return { ents: ents, erros: erros }; });
+  }
+
+  /* cria (ou reaproveita) o orçamento do OrçaPRO a partir da planilha da pasta, com a base SINAPI carregada.
+     Quem precifica é o sistema; o que não casa na base fica SEM preço e entra em `semBase` (pesquisa de preços no passo 6). */
+  function preencherOrc(orc, plano, baseSinapiOk) {
+    orc.etapas = []; var casados = 0, semBase = [];
+    plano.etapas.forEach(function (et) {
+      Orcamento.addEtapa(orc, et.nome);
+      var etapaId = orc.etapas[orc.etapas.length - 1].id;
+      et.itens.forEach(function (it) {
+        var base = baseSinapiOk && it.codigo && typeof Sinapi !== "undefined" ? Sinapi.obter(it.codigo) : null, si;
+        if (base) {
+          casados++;
+          si = { codigo: base.codigo, baseFonte: "SINAPI", descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
+            custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
+        } else {
+          semBase.push(it.codigo ? it.codigo : it.descricao);
+          si = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: Util.num(it.custoUnitario) };
+        }
+        Orcamento.addItem(orc, etapaId, si, it.quantidade);
+      });
+    });
+    return { casados: casados, semBase: semBase };
+  }
+  function infoDoOrc(orc, casados, semBase) {
+    var c = calc(orc); if (!c) return null;
+    return { id: orc.id, base: casados > 0 ? "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado") : "", competencia: casados > 0 ? (orc.competenciaSinapi || "") : "", total: c.precoVenda,
+      linhas: c.linhas.map(function (l) { return { numero: l.numero, codigo: l.codigo || "", descricao: l.descricao, unidade: l.unidade, quantidade: l.quantidade, precoTotal: l.precoTotal }; }),
+      assinatura: Pr.assinaturaOrc(orc), casados: casados, semBase: semBase };
+  }
+  function orcamentoDoPreparo(p, plano, avisos) {
+    var orcs = []; try { orcs = arr(Store.listarOrcamentos(eid())); } catch (e) { orcs = []; }
+    var rec = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+    var existente = rec ? orcs.filter(function (o) { return o.id === rec.id; })[0] : null;
+    var baseOk = typeof Sinapi !== "undefined" && Sinapi.carregado === true && (!p.regulamentoId || p.regulamentoId === "federal-14133" || p.recursoFederal === true);
+    if (typeof Sinapi !== "undefined" && Sinapi.carregado !== true) avisos.push("A base SINAPI não está carregada neste aparelho: os itens entraram sem preço. Carregue a base do estado e monte de novo.");
+    if (existente) {
+      if (rec.sha === plano.sha) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+      if (Pr.assinaturaOrc(existente) === rec.assinatura) {
+        var rr = preencherOrc(existente, plano, baseOk);
+        if (!Store.salvarOrcamento(eid(), existente)) throw new Error("não consegui gravar o orçamento atualizado");
+        return infoDoOrc(existente, rr.casados, rr.semBase);
+      }
+      avisos.push("A planilha da pasta mudou, mas o orçamento já tem edições suas: ele NÃO foi alterado. Confira as diferenças antes de seguir.");
+      return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+    }
+    if (p.orcamentoId) { avisos.push("O processo já usa um orçamento escolhido por você: a planilha da pasta não criou outro."); return null; }
+    var ob = obraPorId(p.obraId);
+    var orc = Orcamento.novo({ nome: "Orçamento de referência — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : plano.arquivo)), obra: ob ? ob.nome : "" });
+    var r2 = preencherOrc(orc, plano, baseOk);
+    if (!Store.salvarOrcamento(eid(), orc)) throw new Error("não consegui gravar o orçamento");
+    return infoDoOrc(orc, r2.casados, r2.semBase);
+  }
+
+  function montarDaPasta(files, opcoes) {
+    var p = procAtual(); if (!p) return Promise.resolve(null);
+    var papel = exigirEditavel(p, "editar_acervo"); if (!papel) return Promise.resolve(null);
+    var permitidos = {}; C.PASSOS.forEach(function (ps) { permitidos[ps.id] = podeAcao(F.ACAO_DO_PASSO[ps.id]); });
+    var st = document.getElementById("cpl-acervo-status");
+    var msg = "Montando o processo a partir da pasta (" + files.length + " arquivo(s))…";
+    if (st) st.textContent = msg;
+    G._cplMontando = true; toast(msg, "info"); andamento(msg);
+    var t0 = Date.now();
+    return lerParaPreparo(p, files).then(function (lido) {
+      var atual = procAtual(); if (!atual) return null;
+      var an = Pr.analisar({ arquivos: lido.ents }), plano = Pr.planoOrcamento(an), oi = null, avisosExtra = lido.erros.slice();
+      if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
+      else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
+      var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi });
+      G._cplMontando = false;
+      if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); return r; }
+      var q = r.p;
+      avisosExtra.forEach(function (a) { q.preparo.resumo.avisos.push(a); });
+      F.registrar(q, "preparo:pasta", lido.ents.length + " arquivo(s) na pasta", "o sistema preencheu " + q.preparo.resumo.preencheu + " campo(s) em " + q.preparo.resumo.passosTocados + " passo(s)", quemAtual(papel), agoraLocal());
+      if (!salvarProc(q)) return null;
+      G._cplPasso = "demanda"; G._cplAba = "passos"; G._cplView = "proc";
+      var sit = Pr.situacao(q);
+      toast("O sistema preencheu " + q.preparo.resumo.preencheu + " campos em " + q.preparo.resumo.passosTocados + " passos; faltam " + sit.faltamTotal + " decisões suas. (" + Math.max(1, Math.round((Date.now() - t0) / 1000)) + " s)", "ok");
+      App.render();
+      return r;
+    }, function (e) { G._cplMontando = false; toast("Não consegui montar o processo: " + (e && e.message ? e.message : e), "erro"); return null; })
+      .then(function (r) { andamento(null); return r; }, function (e) { andamento(null); throw e; });
+  }
+
+  /* faixa «Montando…» enquanto o sistema lê a pasta (some sozinha ao terminar, com sucesso ou erro) */
+  function andamento(msg) {
+    var el = document.getElementById("cpl-preparo-andamento");
+    if (msg === null) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) { el = document.createElement("div"); el.id = "cpl-preparo-andamento"; el.className = "cpl-andamento"; el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite"); document.body.appendChild(el); }
+    el.innerHTML = '<span class="cpl-gira" aria-hidden="true"></span><span><b>Montando o processo…</b> ' + esc(String(msg).replace(/^Montando o processo a partir da pasta/, "lendo a pasta")) + "</span>";
+  }
+
+  function _sugTxt(id, v) {
+    if (v === null || v === undefined) return "—";
+    if (typeof v === "boolean") return v ? "Sim" : "Não";
+    if (typeof v === "object") return _descObj(id, v);
+    return String(v);
+  }
+  /* painel «Montagem automática»: a frase, as 10 decisões da lei e o que só o órgão tem — tudo com «Corrigir» */
+  function _painelPreparo(p) {
+    var rs = p.preparo.resumo, sit = Pr.situacao(p);
+    var dados = sit.faltam.filter(function (x) { return x.tipo === "dado"; });
+    var h = '<div class="cpl-preparo" id="cpl-preparo-resumo" role="region" aria-label="Montagem automática a partir da pasta">';
+    h += "<h3>Montagem automática a partir da pasta</h3>";
+    h += '<p class="cpl-preparo-frase" id="cpl-preparo-frase">O sistema preencheu <b>' + rs.preencheu + "</b> campos em <b>" + rs.passosTocados + "</b> passos; faltam <b>" + sit.faltamTotal + "</b> decisões suas.</p>";
+    var gd = null; try { gd = D.gerar(p, ctxDocs(p)); } catch (eG) { gd = null; }
+    if (gd) h += '<p class="muted" id="cpl-preparo-docs">Documentos do processo: ' + (gd.pendentes ? "<b>" + gd.pendentes + "</b> campo(s) ainda em branco (dados do órgão, método de cálculo da pesquisa e origem de quantidades — veja o passo 9)." : "nenhum campo em branco.") + "</p>";
+    h += '<p class="muted">Tudo o que o sistema preencheu leva o selo <span class="cpl-selo-sist">sugerido pelo sistema — confira</span>. Nenhum passo foi dado como conferido: o «Conferi» é seu. O que você editar, o sistema não sobrescreve.</p>';
+    if (sit.decisoes.length) {
+      h += '<details open id="cpl-preparo-decisoes"><summary><b>Decisões que a lei reserva ao órgão (' + sit.decisoes.length + ')</b></summary><div class="cpl-pends">' + sit.decisoes.map(function (d) {
+        return '<div class="cpl-pend" role="listitem"><span><b>' + esc(d.nome) + "</b> — sugestão pré-marcada: <b>" + esc(_sugTxt(d.id, d.sugerido)) + "</b>" + porque(d.regra || "", d.fonte, d.conferir, d.nome) + "</span>" +
+          '<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="parametros" data-campo="' + esc(d.id) + '" data-item="">Corrigir</button></div>';
+      }).join("") + "</div></details>";
+    }
+    if (dados.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dados.length + ")</b></summary>" + pendCartoes(dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; })) + "</details>";
+    var avisos = arr(rs.avisos).concat(arr(rs.lacunas));
+    if (avisos.length || arr(rs.mantidos).length) {
+      h += '<details id="cpl-preparo-avisos"><summary><b>Avisos</b></summary><ul>' + avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") +
+        (arr(rs.mantidos).length ? "<li>" + rs.mantidos.length + " campo(s) que você editou foram mantidos: o sistema não sobrescreve o que a pessoa escreveu.</li>" : "") + "</ul></details>";
+    }
+    return h + "</div>";
+  }
+
+  /* ================================================================== *
    * DOCUMENTOS (.docx)
    * ================================================================== */
   function baixarDocx(html, titulo) {
@@ -807,6 +1230,61 @@
   function docPorId(p, id) {
     var g = D.gerar(p, ctxDocs(p));
     return { doc: g.docs.filter(function (z) { return z.id === id; })[0], todos: g };
+  }
+
+  /* ---------- modelos do órgão: importar, usar, exemplo ---------- */
+  function chaveMod(sha) { return "cplpro-modelo:" + eid() + ":" + sha; }
+  /* .docx é ZIP com entradas comprimidas (deflate): o navegador descomprime com DecompressionStream */
+  function inflarFn() {
+    if (typeof DecompressionStream === "undefined" || typeof Response === "undefined") return null;
+    return function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }); };
+  }
+  function rotulosModelo() { var o = {}; D.CAMPOS_MODELO.forEach(function (c) { o[c.id] = c.rotulo; }); return o; }
+  function baixarBytes(nome, bytes) {
+    Util.baixar(nome, bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  }
+  function importarModelo(file, tipo) {
+    var papel = exigir("gerenciar_modelos"); if (!papel) return;
+    if (!T.TIPOS[tipo]) { toast("Escolha o tipo de documento do modelo.", "erro"); return; }
+    if (!/\.docx$/i.test(file.name)) { toast("O modelo precisa ser um arquivo Word (.docx). Salve o seu documento nesse formato e tente de novo.", "erro"); return; }
+    if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos (IndexedDB indisponível); o modelo não pode ser importado aqui.", "erro"); return; }
+    var ids = D.CAMPOS_MODELO.map(function (c) { return c.id; });
+    lerArquivo(file).then(function (bytes) {
+      return T.analisar(bytes, ids, inflarFn()).then(function (a) {
+        if (!a.ok) { toast("Não importei «" + file.name + "»: " + a.erro, "erro"); return; }
+        return sha256(bytes).then(function (sha) {
+          var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+          return Idb.set(chaveMod(sha), { nome: file.name, tipo: "docx", dados: copia }).then(function () {
+            var reg = { id: tipo, tipo: tipo, nome: file.name, sha: sha, bytes: bytes.length, campos: a.campos, desconhecidos: a.desconhecidos, importadoEm: hoje(), importadoPor: nomeAtual(), atualizadoEm: agoraLocal() };
+            if (!Store.salvar(eid(), ENT_MOD, reg)) { toast("Não consegui gravar a ficha do modelo.", "erro"); return; }
+            toast("Modelo de «" + T.TIPOS[tipo].nome + "» importado: " + a.campos.length + " campo(s) reconhecido(s)." + (a.desconhecidos.length ? " Atenção: " + a.desconhecidos.length + " campo(s) que o sistema não conhece (" + a.desconhecidos.join(", ") + ") sairão como [CAMPO DESCONHECIDO]." : ""), a.desconhecidos.length ? "aviso" : "ok");
+            App.render();
+          }, function () { toast("Não consegui guardar o arquivo neste aparelho.", "erro"); });
+        });
+      });
+    }, function (e) { toast("Não consegui ler o arquivo: " + (e && e.message ? e.message : e), "erro"); });
+  }
+  /* preenche o .docx do órgão com os dados do processo e baixa. Falhou = nada é baixado e a mensagem diz por quê:
+     entregar o modelo PADRÃO no lugar, calado, faria o órgão assinar um texto que não é o da sua procuradoria. */
+  function baixarDoModeloDoOrgao(p, doc) {
+    var reg = modeloDoTipo(doc.id); if (!reg) return;
+    if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos; use «Baixar no padrão da casa».", "erro"); return; }
+    Idb.get(chaveMod(reg.sha)).then(function (v) {
+      if (!v || !v.dados) { toast("O modelo do órgão para «" + doc.nome + "» foi importado em outro aparelho e não está neste. Importe-o de novo em «Modelos do órgão» ou use «Baixar no padrão da casa».", "erro"); return; }
+      return T.preencher(new Uint8Array(v.dados), D.valoresModelo(p, ctxDocs(p)), rotulosModelo(), inflarFn()).then(function (r) {
+        if (!r.ok) { toast("O modelo do órgão não pôde ser usado: " + r.erro + " Nada foi baixado.", "erro"); return; }
+        baixarBytes(Docx.nomeArquivo(D.nomeArquivo({ arquivo: doc.arquivo }, p)), r.bytes);
+        toast("Word baixado no modelo do órgão." + (r.pendentes ? " Atenção: " + r.pendentes + " campo(s) saíram em vermelho ([PREENCHER] ou campo desconhecido)." : ""), r.pendentes ? "aviso" : "ok");
+      });
+    }, function () { toast("Não consegui abrir o modelo do órgão neste aparelho.", "erro"); });
+  }
+  /* o modelo de exemplo sai do padrão: as seções são as do documento padrão do processo (ou de um processo em branco) */
+  function secoesDoPadrao(tipo) {
+    var p = procAtual() || listaProc()[0] || C.novoProcesso({}, "", agoraLocal());
+    var doc = D.gerar(p, ctxDocs(p)).docs.filter(function (z) { return z.id === tipo; })[0], out = [];
+    if (!doc) return out;
+    doc.html.replace(/<h2>([\s\S]*?)<\/h2>/g, function (m, t) { out.push(t.replace(/<[^>]+>/g, "").replace(/^\d+\.\s*/, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')); return m; });
+    return out;
   }
 
   /* ================================================================== *
@@ -867,6 +1345,40 @@
     "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
     "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
     "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
+    "cpl-aba-modelos": function () { if (!exigir("gerenciar_modelos")) return; G._cplView = "modelos"; App.render(); },
+    /* ---------- modelos do órgão (só o administrador do órgão) ---------- */
+    "cpl-mod-escolher": function (ds) {
+      if (!exigir("gerenciar_modelos")) return;
+      G._cplModTipo = ds.tipo;
+      var el = document.getElementById("cpl-mod-arq"); if (el) el.click();
+    },
+    "cpl-mod-exemplo": function (ds) {
+      if (!exigir("gerenciar_modelos")) return;
+      if (typeof Docx === "undefined") { toast("A saída em Word não está disponível nesta versão.", "erro"); return; }
+      var tp = ds.tipo, html = T.exemploHtml(tp, D.CAMPOS_MODELO, secoesDoPadrao(tp), ctxDocs(procAtual() || C.novoProcesso({}, "", agoraLocal())).orgao.nome || "");
+      var r; try { r = Docx.deHtml(html, { titulo: "Modelo de exemplo - " + T.TIPOS[tp].nome, data: Util.agoraISO(), aplicativo: "OrçaPRO" }); } catch (e) { toast("Não consegui montar o exemplo: " + (e && e.message ? e.message : e), "erro"); return; }
+      baixarBytes(Docx.nomeArquivo("Modelo de exemplo - " + T.TIPOS[tp].nome), r.bytes);
+      toast("Exemplo baixado. Edite com o texto da procuradoria, mantenha os campos {{...}} e importe de volta.", "ok");
+    },
+    "cpl-mod-baixar": function (ds) {
+      if (!exigir("gerenciar_modelos")) return;
+      var reg = modeloDoTipo(ds.tipo); if (!reg) return;
+      if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos.", "erro"); return; }
+      Idb.get(chaveMod(reg.sha)).then(function (v) {
+        if (!v || !v.dados) { toast("O arquivo deste modelo foi importado em outro aparelho e não está neste. Importe-o de novo.", "info"); return; }
+        baixarBytes(reg.nome, new Uint8Array(v.dados));
+      }, function () { toast("Não consegui abrir o arquivo.", "erro"); });
+    },
+    "cpl-mod-remover": function (ds) {
+      if (!exigir("gerenciar_modelos")) return;
+      var reg = modeloDoTipo(ds.tipo); if (!reg) return;
+      UI.modal("Remover o modelo do órgão", "<p>O modelo «" + esc(reg.nome) + "» de <b>" + esc(T.TIPOS[ds.tipo].nome) + "</b> deixa de ser usado; os próximos documentos voltam ao padrão da casa. Os documentos já baixados não mudam.</p>", [
+        { texto: "Remover", classe: "primary", onClick: function () {
+          try { if (typeof Idb !== "undefined" && Idb.del) Idb.del(chaveMod(reg.sha)); } catch (e) {}
+          Store.excluir(eid(), ENT_MOD, reg.id); UI.fecharModal(); toast("Modelo removido.", "ok"); App.render();
+        } },
+        { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+    },
     "cpl-voltar": function () { G._cplView = "lista"; G._cplId = ""; App.render(); },
     "cpl-abrir": function (ds) { var p = procPorId(ds.id); if (!p) return; G._cplId = p.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = F.passoAtual(p).id; App.render(); },
     "cpl-aba": function (ds) { G._cplAba = ds.aba || "passos"; App.render(); },
@@ -884,7 +1396,10 @@
     "cpl-novo": function () {
       if (!exigir("criar_processo")) return;
       var obras = K.lista("obras");
-      var corpo = campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
+      var corpoPasta = '<div class="field"><label>Ou suba a pasta do projeto</label><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
+        '<button type="button" class="btn primary" id="cpl-n-montar">Montar tudo a partir da pasta</button>' +
+        '<div class="cpl-sug">O sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche o que dá para deduzir. Secretaria e objeto abaixo ficam opcionais.</div></div>';
+      var corpo = corpoPasta + campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
       UI.modal("Novo processo de licitação", corpo, [
         { texto: "Criar processo", classe: "primary", onClick: function () {
           var papel = exigir("criar_processo"); if (!papel) return;
@@ -896,6 +1411,21 @@
           UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
         } },
         { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+      /* leva F: «Montar tudo a partir da pasta» já na criação — cria o processo e deixa o sistema preencher */
+      var bm = document.getElementById("cpl-n-montar"), pa = document.getElementById("cpl-n-pasta");
+      if (bm && pa) {
+        bm.onclick = function () { pa.click(); };
+        pa.onchange = function () {
+          var fs_ = Array.prototype.slice.call(this.files || []); if (!fs_.length) return;
+          var papel = exigir("criar_processo"); if (!papel) return;
+          var sec = lerCampo("cpl-n-sec"), obj = lerCampo("cpl-n-obj"), obra = lerCampo("cpl-n-obra");
+          var q = C.novoProcesso({ secretaria: sec || null, objeto: obj || null, obraId: obra || null }, quemAtual(papel), agoraLocal());
+          F.registrar(q, "criar_processo", null, "criado a partir da pasta", quemAtual(papel), agoraLocal());
+          var r = salvarProc(q); if (!r) return;
+          UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
+          montarDaPasta(fs_, null);
+        };
+      }
     },
     "cpl-criar-obra": function () {
       var p = procAtual(); if (!p || !exigirEditavel(p, "editar_dfd")) return;
@@ -942,6 +1472,10 @@
     /* ---------- acervo ---------- */
     "cpl-add-arq": function () { var el = document.getElementById("cpl-arq"); if (el) el.click(); },
     "cpl-add-pasta": function () { var el = document.getElementById("cpl-pasta"); if (el) el.click(); },
+    "cpl-preparo-escolher": function () {
+      var p = procAtual(); if (!p || !exigirEditavel(p, "editar_acervo")) return;
+      var el = document.getElementById("cpl-preparo-pasta"); if (el) el.click();
+    },
     "cpl-doc-tipo": function (ds) {
       var c = cortaCtx(ds.value), tipo = c.v, docId = c.ctx;
       var ok = gravar("acervo", function (q) {
@@ -976,7 +1510,10 @@
         var antes = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; })), sel = lerCampo("cpl-orcamentoId");
         q.quantitativos.forEach(function (z, i) {
           var a = lerCampo("cpl-qa-" + i), pg = lerCampo("cpl-qp-" + i);
-          z.origem = { arquivo: a || null, pagina: pg || null };
+          /* leva F: a LINHA da planilha de onde o sistema leu a quantidade não se perde ao salvar a origem */
+          var oAnt = z.origem || {}, o2 = { arquivo: a || null, pagina: pg || null };
+          if (oAnt.linha && oAnt.arquivo === o2.arquivo) o2.linha = oAnt.linha;
+          z.origem = o2;
         });
         if (sel && q.orcamentoId !== sel) q.orcamentoId = sel;
         var depois = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; }));
@@ -1044,6 +1581,21 @@
       });
       if (ok) { toast("Orçamento de referência salvo.", "ok"); App.render(); }
     },
+    "cpl-orc-pacote": function () {
+      var p = procAtual(); if (!p) return;
+      if (!exigir(podeAcao("gerar_minuta") ? "gerar_minuta" : "ler_tudo")) return;
+      var orc = orcDoProc(p), c = calc(orc);
+      if (!orc || !c) { toast("Escolha o orçamento de referência do processo antes de gerar o pacote.", "erro"); return; }
+      if (typeof OrcamentoReferencia === "undefined") { toast("O gerador do pacote do orçamento de referência não carregou.", "erro"); return; }
+      var cx = ctxDocs(p), bases = []; try { bases = (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : []; } catch (e0) { bases = []; }
+      var emp = {}; try { emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {}; } catch (e1) { emp = {}; }
+      var op = F.opcoesPacoteReferencia(p, orc, c, { orgaoNome: cx.orgao.nome, empresa: emp, bases: bases, hoje: hoje() });
+      toast("Gerando o pacote do orçamento de referência…", "info");
+      OrcamentoReferencia.baixar(orc, op).then(function (r) {
+        var nb = r.pendencias && r.pendencias.bloqueios ? r.pendencias.bloqueios.length : 0;
+        toast(nb ? "Pacote gerado COM PENDÊNCIAS (" + nb + ") — não publicar; veja a página de pendências." : "Pacote do orçamento de referência gerado.", nb ? "info" : "ok");
+      }, function (e) { toast("Não gerei o pacote: " + (e && e.message ? e.message : e), "erro"); });
+    },
     "cpl-pesq-salvar": function () {
       var ok = gravar("orcamento", function (q) {
         q.pesquisa = q.pesquisa || { itens: {} };
@@ -1099,7 +1651,7 @@
     "cpl-salvar-tr": function () {
       var ok = gravar("tr", function (q) {
         var antes = JSON.stringify(q.tr);
-        q.tr = { objeto: emBranco(lerCampo("cpl-tr-objeto")), medicao: emBranco(lerCampo("cpl-tr-medicao")), recebimento: emBranco(lerCampo("cpl-tr-recebimento")), pagamento: emBranco(lerCampo("cpl-tr-pagamento")), gestao: emBranco(lerCampo("cpl-tr-gestao")), dotacao: emBranco(lerCampo("cpl-tr-dotacao")) };
+        q.tr = preservarFora(lerCampos({ objeto: emBranco(lerCampo("cpl-tr-objeto")), medicao: emBranco(lerCampo("cpl-tr-medicao")), recebimento: emBranco(lerCampo("cpl-tr-recebimento")), pagamento: emBranco(lerCampo("cpl-tr-pagamento")), gestao: emBranco(lerCampo("cpl-tr-gestao")), dotacao: emBranco(lerCampo("cpl-tr-dotacao")) }, q, "tr"), antes);
         var depois = JSON.stringify(q.tr);
         return antes === depois ? null : { antes: antes, depois: depois };
       });
@@ -1112,6 +1664,7 @@
       var ok = gravar("parametros", function (q) {
         var c = calc(orcDoProc(q)), linhas = c ? c.linhas.map(function (l) { return { item: l.numero, descricao: l.descricao, total: l.precoTotal, qtd: l.quantidade, un: l.unidade }; }) : [];
         var s = C.parametros.sugerir(q, { totalEstimado: c ? c.precoVenda : undefined, linhas: linhas })[id];
+        if (s && (s.sugerido === null || s.sugerido === undefined) && q.parametros[id] && q.parametros[id].sugerido !== null && q.parametros[id].sugerido !== undefined) { s = { sugerido: q.parametros[id].sugerido, regra: q.parametros[id].regra || s.regra, fonte: s.fonte, pendencias: s.pendencias }; }
         if (!s || s.sugerido === null || s.sugerido === undefined) throw new Error("O sistema ainda não tem sugestão para este parâmetro: " + (s && s.pendencias[0] ? s.pendencias[0] : "complete os passos anteriores") + ".");
         if (typeof s.sugerido === "string" && / ou /.test(s.sugerido)) throw new Error("O sistema aponta duas modalidades possíveis («" + s.sugerido + "»). Escolha uma na lista: a decisão é do órgão.");
         var antes = q.parametros[id].valor, v = s.sugerido;
@@ -1155,9 +1708,18 @@
       var p = procAtual(); if (!p) return;
       if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo") || podeAcao("editar_tr"))) { toast("Seu perfil não vê a prévia dos documentos do processo.", "erro"); return; }
       var r = docPorId(p, ds.doc); if (!r.doc) return;
-      UI.modal(r.doc.nome, '<div class="cpl-previa" id="cpl-previa">' + r.doc.html + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      var aviso = modeloDoTipo(r.doc.id) ? '<p class="muted" id="cpl-previa-aviso">Prévia do texto do modelo <b>padrão da casa</b>. O Word baixado sai no <b>modelo do órgão</b> importado.</p>' : "";
+      UI.modal(r.doc.nome, aviso + '<div class="cpl-previa" id="cpl-previa">' + r.doc.html + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
     "cpl-doc-baixar": function (ds) {
+      var p = procAtual(); if (!p) return;
+      if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo"))) { toast("Seu perfil não baixa documentos do processo.", "erro"); return; }
+      var r = docPorId(p, ds.doc); if (!r.doc) return;
+      /* o modelo do ÓRGÃO tem prioridade; o padrão da casa é a reserva (tipo sem modelo importado) */
+      if (modeloDoTipo(r.doc.id)) { baixarDoModeloDoOrgao(p, r.doc); return; }
+      baixarDocx(r.doc.html, D.nomeArquivo({ arquivo: r.doc.arquivo }, p));
+    },
+    "cpl-doc-baixar-padrao": function (ds) {
       var p = procAtual(); if (!p) return;
       if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo"))) { toast("Seu perfil não baixa documentos do processo.", "erro"); return; }
       var r = docPorId(p, ds.doc); if (!r.doc) return;
@@ -1166,7 +1728,7 @@
     "cpl-salvar-edital": function () {
       var ok = gravar("minuta", function (q) {
         var antes = JSON.stringify(q.edital || {});
-        q.edital = { numero: emBranco(lerCampo("cpl-ed-numero")), habilitacao: emBranco(lerCampo("cpl-ed-habilitacao")), sancoes: emBranco(lerCampo("cpl-ed-sancoes")), vigencia: emBranco(lerCampo("cpl-ed-vigencia")), rescisaoForo: emBranco(lerCampo("cpl-ed-rescisao")) };
+        q.edital = preservarFora(lerCampos({ numero: emBranco(lerCampo("cpl-ed-numero")), habilitacao: emBranco(lerCampo("cpl-ed-habilitacao")), sancoes: emBranco(lerCampo("cpl-ed-sancoes")), vigencia: emBranco(lerCampo("cpl-ed-vigencia")), rescisaoForo: emBranco(lerCampo("cpl-ed-rescisao")) }, q, "edital"), antes);
         var depois = JSON.stringify(q.edital);
         return antes === depois ? null : { antes: antes, depois: depois };
       });
@@ -1271,6 +1833,125 @@
       baixarDocx(html, nome + " - " + F.codigoDe(p));
     },
 
+    /* ---------- habilitação dos licitantes (leva E1) ---------- */
+    "cpl-hab-parear": function () {
+      if (!exigir("gerenciar_logins")) return;
+      var cod = lerCampo("cpl-hab-codigo"), st = storageLocal();
+      if (!st) { toast("Este navegador não guarda a conexão. Use outro navegador ou o app instalado.", "erro"); return; }
+      var cfg = cfgServico();
+      H.previaPareamento(cfg, cod).then(function (pv) {
+        var corpo = "<p>O CertamePRO vai conectar este aparelho à conta abaixo. Confira antes de confirmar.</p><ul>" +
+          "<li>Conta: <b>" + esc(pv.conta) + "</b> (" + esc(pv.papel || "—") + ")</li>" +
+          (pv.empresas.length ? "<li>Órgão(s): " + pv.empresas.map(function (e) { return esc(e.nome); }).join(", ") + "</li>" : "") + "</ul>" +
+          '<p class="muted">O acesso fica guardado só neste aparelho e pode ser desligado a qualquer hora.</p>';
+        UI.modal("Conectar ao CertamePRO", corpo, [
+          { texto: "Confirmar a conexão", classe: "primary", onClick: function () {
+            H.parear(cfg, cod, "CPLPRO " + (usuario().nome || "")).then(function (r) {
+              var ok = H.gravarPareamento(st, eid(), { token: r.token, usuario: r.usuario, aparelhoId: r.aparelhoId, escopo: r.escopo, pareadoEm: r.pareadoEm, servico: cfg.servico });
+              UI.fecharModal();
+              if (!ok) { toast("Não consegui guardar a conexão neste aparelho.", "erro"); return; }
+              var pp = procAtual(); if (pp) { var q = clone(pp); F.registrar(q, "habilitacao:parear", null, "aparelho conectado", quemAtual("admin_orgao"), agoraLocal()); salvarProc(q); }
+              G._cplHabRepar = false; toast("Conectado ao CertamePRO.", "ok"); App.render();
+            }, function (e) { toast(msgErroHab(e), "erro"); });
+          } },
+          { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+      }, function (e) { toast(msgErroHab(e), "erro"); });
+    },
+    "cpl-hab-desligar": function () {
+      if (!exigir("gerenciar_logins")) return;
+      var st = storageLocal(); if (!st) return;
+      H.desligar(st, eid()); G._cplHabRepar = false;
+      var pd = procAtual(), q = pd ? clone(pd) : null; if (q) { F.registrar(q, "habilitacao:desligar", "aparelho conectado", null, quemAtual("admin_orgao"), agoraLocal()); salvarProc(q); }
+      toast("Este aparelho foi desligado do CertamePRO. O acesso foi apagado daqui.", "ok"); App.render();
+    },
+    "cpl-hab-arquivos": function () { if (!exigir("analisar_propostas")) return; var el = document.getElementById("cpl-hab-arq"); if (el) el.click(); },
+    "cpl-hab-pasta": function () { if (!exigir("analisar_propostas")) return; var el = document.getElementById("cpl-hab-pasta"); if (el) el.click(); },
+    "cpl-hab-limpar": function () { habArquivos = []; var el = document.getElementById("cpl-hab-sel"); if (el) el.textContent = "nenhum arquivo escolhido"; },
+    "cpl-hab-analisar": function () {
+      var p = procAtual(); if (!p || habOcupado) return;
+      var papel = exigir("analisar_propostas"); if (!papel) return;
+      var par = pareamento();
+      if (!par) { toast("Conecte o CPLPRO ao CertamePRO primeiro (caixa «Habilitação dos licitantes»).", "erro"); return; }
+      var f = habLerForm(), ficha;
+      try { ficha = H.montarFicha(p, { cnpj: f.cnpj, razaoSocial: f.razao }, f.sessao); } catch (e) { toast(e.message || String(e), "erro"); return; }
+      if (!habArquivos.length) { toast("Escolha os arquivos (ou a pasta) do licitante antes de analisar.", "erro"); return; }
+      habOcupado = true;
+      var st = document.getElementById("cpl-hab-status"); if (st) st.textContent = "Analisando " + habArquivos.length + " arquivo(s)… isto pode levar alguns minutos.";
+      H.analisar(cfgServico(), ficha, habArquivos).then(function (resposta) {
+        habOcupado = false;
+        var atual = procAtual(); if (!atual) return;
+        try {
+          var q = H.registrarAnalise(atual, papeis(), { cnpj: f.cnpj, razaoSocial: f.razao, dataSessao: f.sessao || H.dataSessaoDoProcesso(atual), ficha: ficha, resposta: resposta }, quemAtual(papel), agoraLocal());
+          if (salvarProc(q)) { habArquivos = []; G._cplHabRepar = false; toast("Análise recebida: " + resposta.resultados.length + " exigência(s). Nenhuma foi decidida — a decisão é sua.", "ok"); App.render(); }
+        } catch (e2) { toast(e2.message || String(e2), "erro"); }
+      }, function (e) {
+        habOcupado = false;
+        if (e && e.reparear) { G._cplHabRepar = true; App.render(); }
+        var st2 = document.getElementById("cpl-hab-status"); if (st2) st2.textContent = "";
+        toast(msgErroHab(e), "erro");
+      });
+    },
+    "cpl-hab-decidir": function (ds) {
+      var p = procAtual(); if (!p) return;
+      var linha = document.querySelector('.cpl-hab-lic[data-lic="' + ds.lic + '"] tr[data-ex="' + ds.ex + '"]'); if (!linha) return;
+      var sel = linha.querySelector(".cpl-hab-sel"), mot = linha.querySelector(".cpl-hab-mot");
+      try {
+        var q = H.decidir(p, papeis(), ds.lic, ds.ex, { situacao: sel ? sel.value : "", motivo: mot ? mot.value : "" }, quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+        if (salvarProc(q)) { toast("Decisão registrada com o seu nome e a hora.", "ok"); App.render(); }
+      } catch (e) { toast(e.message || String(e), "erro"); }
+    },
+    "cpl-hab-prazo": function (ds) {
+      var p = procAtual(); if (!p) return;
+      var el = document.querySelector('.cpl-hab-lic[data-lic="' + ds.lic + '"] .cpl-hab-prazo');
+      try {
+        var q = H.definirPrazoDiligencia(p, papeis(), ds.lic, el ? el.value : "", quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+        if (salvarProc(q)) { toast("Prazo da diligência salvo.", "ok"); App.render(); }
+      } catch (e) { toast(e.message || String(e), "erro"); }
+    },
+    "cpl-hab-adjudicatario": function () {
+      var p = procAtual(); if (!p) return;
+      var el = document.getElementById("cpl-hab-adj");
+      try {
+        var q = H.escolherAdjudicatario(p, papeis(), el ? el.value : "", quemAtual(F.papelPara(papeis(), "adjudicar")), agoraLocal());
+        if (salvarProc(q)) { toast("Licitante a adjudicar registrado.", "ok"); App.render(); }
+      } catch (e) { toast(e.message || String(e), "erro"); }
+    },
+    "cpl-hab-recurso": function (ds) {
+      var p = procAtual(); if (!p) return;
+      if (!exigir("analisar_propostas")) return;
+      var lic = H.licPorId(p, ds.lic); if (!lic) return;
+      var rc = lic.recurso || { itens: [], conclusao: "", intencaoEm: "" };
+      var pz = H.prazosRecurso(p);
+      var corpo = '<p class="muted">Prazos do art. 165 (dias úteis): ' + (pz ? "razões até <b>" + esc(dataBR(pz.razoesAte)) + "</b>, contrarrazões até <b>" + esc(dataBR(pz.contrarrazoesAte)) + "</b>." : "informe a data do resultado na aba Propostas.") + "</p>" +
+        (arr(rc.itens).length ? "<p>" + arr(rc.itens).length + " alegação(ões) já registrada(s).</p>" : "") +
+        campo("Intenção de recorrer manifestada em", '<input id="cpl-rec-intencao" type="date" value="' + esc(rc.intencaoEm || "") + '">') +
+        campo("Nova alegação do recorrente", '<textarea id="cpl-rec-alegacao" rows="3"></textarea>') +
+        campo("Exigência relacionada (opcional)", '<select id="cpl-rec-exig"><option value="">—</option>' + arr(lic.resultados).map(function (r) { return '<option value="' + esc(r.id) + '">' + esc(r.id) + "</option>"; }).join("") + "</select>") +
+        campo("Documento (arquivo e página; opcional)", '<input id="cpl-rec-doc">') +
+        campo("Resposta à alegação (texto do servidor)", '<textarea id="cpl-rec-resp" rows="2"></textarea>') +
+        campo("Conclusão (texto do servidor)", '<textarea id="cpl-rec-concl" rows="3">' + esc(rc.conclusao || "") + "</textarea>") +
+        '<p class="muted">O sistema só organiza os fatos: a conclusão e as respostas são escritas por você.</p>';
+      UI.modal("Recurso — Licitante " + H.ordem(p, lic.id), corpo, [
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var atual = procAtual(); if (!atual) return;
+          var dados = { conclusao: lerCampo("cpl-rec-concl"), intencaoEm: lerCampo("cpl-rec-intencao") };
+          if (lerCampo("cpl-rec-alegacao")) { dados.alegacao = lerCampo("cpl-rec-alegacao"); dados.exigenciaId = lerCampo("cpl-rec-exig"); dados.documento = lerCampo("cpl-rec-doc"); dados.resposta = lerCampo("cpl-rec-resp"); }
+          try {
+            var q = H.registrarRecurso(atual, papeis(), ds.lic, dados, quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+            if (salvarProc(q)) { UI.fecharModal(); toast("Recurso registrado.", "ok"); App.render(); }
+          } catch (e) { toast(e.message || String(e), "erro"); }
+        } },
+        { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+    },
+    "cpl-hab-doc": function (ds) {
+      var p = procAtual(); if (!p) return;
+      var g = H.podeGerar(ds.tipo, p, ds.lic || null, papeis());
+      if (!g.ok) { toast(g.motivo, "erro"); return; }
+      var html;
+      try { html = D.gerarHabilitacao(ds.tipo, p, ds.lic || null, ctxDocs(p)); } catch (e) { toast(e.message || String(e), "erro"); return; }
+      baixarDocx(html, D.nomeArquivoHab(ds.tipo, p, ds.lic || null));
+    },
+
     /* ---------- pessoas e papéis ---------- */
     "cpl-pap-salvar": function (ds) {
       var papel = exigir("gerenciar_logins"); if (!papel) return;
@@ -1292,6 +1973,13 @@
     var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
     if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
     if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
+    var pp = document.getElementById("cpl-preparo-pasta");
+    if (pp) pp.onchange = function () { var fs_ = Array.prototype.slice.call(this.files || []); this.value = ""; if (fs_.length) montarDaPasta(fs_, null); };
+    var am = document.getElementById("cpl-mod-arq");
+    if (am) am.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarModelo(f, G._cplModTipo); };
+    var ha = document.getElementById("cpl-hab-arq"), hp = document.getElementById("cpl-hab-pasta");
+    if (ha) ha.onchange = function () { habEscolher(this.files, false); this.value = ""; };
+    if (hp) hp.onchange = function () { habEscolher(this.files, true); this.value = ""; };
     var ap = document.getElementById("cpl-arq-prop");
     if (ap) ap.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarProposta(f); };
     /* "Corrigir" leva ao campo */
@@ -1329,5 +2017,24 @@
     });
   }
 
-  global.CplproUI = { fecharPainel: fecharPainel };
+  /* DEMONSTRAÇÃO EM UM CLIQUE (chamada por App._iniciarDemo): a decisão é do Fluxo.planoDemo — só a vitrine (empresa «demo») aplica
+     o perfil do órgão e semeia o processo de exemplo; conta real nunca é tocada. Idempotente: abrir de novo não duplica nada. */
+  function demonstracao(qs) {
+    var emp = eid(), perfilAtual = "completo";
+    try { if (typeof Perfis !== "undefined" && Perfis.idAtual) perfilAtual = Perfis.idAtual(); } catch (e0) {}
+    var plano = F.planoDemo({ qs: qs, demo: !!(typeof App !== "undefined" && App._demo), empresaId: emp, perfilAtual: perfilAtual });
+    try {
+      if (plano.restaurar && typeof Perfis !== "undefined") Perfis.aplicar("completo");
+      if (!plano.aplicar) return plano;
+      if (typeof Perfis !== "undefined" && perfilAtual !== "orgao_publico") { var r = Perfis.aplicar("orgao_publico"); if (!r || !r.ok) plano.erro = (r && r.erro) || "não consegui aplicar o perfil do órgão"; }
+      if (plano.semear) {
+        if (!arr(Store.listar(emp, ENT_PROC)).some(function (x) { return x.id === F.DEMO_PROC_ID; })) Store.salvar(emp, ENT_PROC, F.processoExemplo(agoraLocal()));
+        var uid = usuario().id;
+        if (!arr(Store.listar(emp, ENT_PAP)).some(function (x) { return x.usuarioId === uid; })) Store.salvar(emp, ENT_PAP, F.papeisDemo(uid));
+      }
+    } catch (e) { plano.erro = e && e.message ? e.message : String(e); }
+    return plano;
+  }
+
+  global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao };
 })(typeof window !== "undefined" ? window : this);

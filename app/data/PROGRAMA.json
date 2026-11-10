@@ -62,8 +62,8 @@
       "motivo": "base de demonstração (30 itens) no formato SINAPI: vai só no pacote completo, como as bases; o js/basescat.js já a trata como base (lista NUNCA)"
     },
     {
-      "padrao": "^(goinfra|setop|seinfra|sudecap|sicro|iopes|orse)-.+\\.json(\\.gz)?$",
-      "motivo": "bases estaduais e rodoviárias (GOINFRA, SETOP, SEINFRA, SUDECAP, SICRO, IOPES, ORSE), por UF e competência"
+      "padrao": "^(goinfra|setop|seinfra|sudecap|siurb|agesul|derpr|sedop|sicro|iopes|orse)-.+\\.json(\\.gz)?$",
+      "motivo": "bases estaduais e rodoviárias (GOINFRA, SETOP, SEINFRA, SUDECAP, SIURB, AGESUL, DER-PR, SEDOP, SICRO, IOPES, ORSE), por UF e competência"
     },
     {
       "padrao": "^base-ativa\\.json$",

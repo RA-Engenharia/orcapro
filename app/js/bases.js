@@ -24,6 +24,13 @@
       SETOP: { label: "SETOP-MG", cor: "setop" },
       ORSE: { label: "ORSE-SE", cor: "orse" },
       SUDECAP: { label: "SUDECAP-BH", cor: "sudecap" },
+      /* SIURB (Prefeitura de São Paulo, 10/11/2026): referência do regulamento sp-capital-62100 do CPLPRO (Decreto 62.100/2022, art. 28).
+         DUAS bases porque EDIFICAÇÕES e INFRAESTRUTURA URBANA são tabelas diferentes e o mesmo código não é o mesmo serviço (37 repetidos em jul/2026). */
+      SIURB: { label: "SIURB-SP", cor: "siurb" },
+      SIURB_INFRA: { label: "SIURB-SP Infra", cor: "siurb" },
+      /* leva G1 (10/11/2026): bases estaduais convertidas dos PDFs oficiais (tools/converter-bases-pdf.py) */
+      AGESUL: { label: "AGESUL-MS", cor: "agesul" },
+      DERPR: { label: "DER-PR", cor: "derpr" },
       SBC: { label: "SBC", cor: "sbc" },
       EMOP: { label: "EMOP-RJ", cor: "emop" },
       CPOS: { label: "CPOS-SP", cor: "cpos" },

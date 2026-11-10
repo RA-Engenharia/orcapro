@@ -38859,8 +38859,9 @@ function extrair(lib) {
 var fr = new FileReader();
 fr.onload = function () {
 lib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
-var texto = "", n = Math.min(pdf.numPages, 10), chain = Promise.resolve();
-if (pdf.numPages > 10) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
+var teto = (opts && opts.paginas > 0) ? opts.paginas : 10;
+var texto = "", n = Math.min(pdf.numPages, teto), chain = Promise.resolve();
+if (pdf.numPages > teto && !(opts && opts.paginas)) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
 for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += porLinha ? juntarLinhas(tc.items) : tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
 chain.then(function () { cb(texto); });
 })["catch"](function () { cb(""); });
@@ -45325,6 +45326,27 @@ laudo: { nome: "Laudo / vistoria", disciplina: "Diagnóstico", prioridade: 5,
 regex: "\\b(laudo|parecer t[eé]cnico|vistoria|diagn[oó]stico|patologia)\\b", extensoes: ["pdf", "docx"] },
 outros: { nome: "Outros", disciplina: "Não classificado", prioridade: 0, regex: null, extensoes: [] }
 };
+var LIMITE_TEXTO = 3;
+var ACERVO_TEXTO = {
+projeto_arquitetonico: [["planta baixa", 3], ["projeto arquitetonico", 3], ["planta de situacao", 2], ["planta de cobertura", 2], ["fachada", 1], ["fachadas", 1], ["cortes e fachadas", 3], ["planta de layout", 2], ["quadro de esquadrias", 2]],
+projeto_estrutural: [["projeto estrutural", 3], ["planta de formas", 3], ["forma do pavimento", 3], ["formas e armacao", 3], ["detalhamento de armacao", 3], ["relacao do aco", 3], ["resumo do aco", 3], ["armacao de vigas", 3], ["armacao de pilares", 3], ["lajes", 1], ["pilares", 1], ["vigas", 1]],
+projeto_fundacao: [["projeto de fundacao", 3], ["projeto de fundacoes", 3], ["planta de locacao de pilares", 3], ["locacao das estacas", 3], ["locacao de estacas", 3], ["blocos de coroamento", 3], ["sapatas", 1], ["estacas", 1], ["baldrames", 1], ["planta de fundacao", 3]],
+projeto_hidrossanitario: [["projeto hidrossanitario", 3], ["instalacoes hidrossanitarias", 3], ["instalacoes hidraulicas", 3], ["agua fria", 2], ["esgoto sanitario", 3], ["rede de esgoto", 2], ["instalacoes sanitarias", 3], ["agua quente", 1]],
+projeto_eletrico: [["projeto eletrico", 3], ["instalacoes eletricas", 3], ["quadro de cargas", 3], ["diagrama unifilar", 3], ["luminotecnico", 3], ["spda", 2], ["sistema de protecao contra descargas", 3], ["cabeamento estruturado", 3]],
+projeto_drenagem: [["projeto de drenagem", 3], ["drenagem pluvial", 3], ["galerias pluviais", 3], ["boca de lobo", 3], ["bocas de lobo", 3], ["sarjeta", 1], ["bueiro", 2]],
+projeto_pavimentacao: [["projeto de pavimentacao", 3], ["secao tipo", 2], ["pavimento flexivel", 3], ["perfil longitudinal", 2], ["terraplenagem", 2], ["camadas do pavimento", 3], ["cbuq", 2]],
+memorial_descritivo: [["memorial descritivo", 3], ["memorial de especificacoes", 3], ["descricao do projeto", 1], ["memorial tecnico", 2]],
+especificacao_tecnica: [["especificacoes tecnicas", 3], ["especificacao tecnica", 3], ["caderno de encargos", 3], ["caderno de especificacoes", 3]],
+sondagem: [["sondagem a percussao", 3], ["boletim de sondagem", 3], ["sondagem spt", 3], ["perfil individual de sondagem", 3], ["sondagem", 2], ["nspt", 2], ["spt", 1], ["nivel d agua", 1], ["ensaio de penetracao", 2]],
+topografia: [["levantamento planialtimetrico", 3], ["levantamento topografico", 3], ["planta planialtimetrica", 3], ["planialtimetrico", 2], ["topografico", 1], ["georreferenciamento", 2], ["curvas de nivel", 2]],
+orcamento_planilha: [["planilha orcamentaria", 3], ["orcamento sintetico", 3], ["orcamento analitico", 3], ["composicao de custos", 3], ["curva abc", 2], ["bdi", 1], ["sinapi", 1]],
+cronograma: [["cronograma fisico financeiro", 3], ["cronograma fisico-financeiro", 3], ["cronograma de obra", 3], ["cronograma fisico", 3]],
+art_rrt: [["anotacao de responsabilidade tecnica", 3], ["registro de responsabilidade tecnica", 3], ["termo de responsabilidade tecnica", 3], ["art de obra ou servico", 3], ["art de projeto", 3], ["conselho regional de engenharia", 1], ["crea", 1], ["conselho de arquitetura e urbanismo", 1]],
+licenca_ambiental: [["licenca ambiental", 3], ["licenca previa", 3], ["licenca de instalacao", 3], ["licenca de operacao", 3], ["outorga de direito de uso", 3], ["autorizacao de supressao", 3]],
+alvara_aprovacao: [["alvara de construcao", 3], ["alvara de execucao", 3], ["alvara de aprovacao", 3], ["aprovacao de projeto", 2], ["habite se", 2], ["auto de vistoria do corpo de bombeiros", 3], ["avcb", 2]],
+matricula_imovel: [["matricula do imovel", 3], ["registro de imoveis", 2], ["oficial de registro de imoveis", 3], ["certidao de matricula", 3], ["certidao de inteiro teor", 3], ["escritura publica", 2]],
+laudo: [["laudo tecnico", 3], ["laudo de vistoria", 3], ["laudo de inspecao", 3], ["parecer tecnico", 2], ["relatorio de vistoria", 3], ["patologias", 1], ["manifestacoes patologicas", 3]]
+};
 function risco(id, descricao, categoria, prob, impacto, alocacao, mitigacao) {
 return { id: id, descricao: descricao, categoria: categoria, prob: prob, impacto: impacto, alocacao: alocacao, mitigacao: mitigacao };
 }
@@ -45457,7 +45479,8 @@ justificativa: "Menos de 3 preços só com justificativa aprovada pela autoridad
 id: "sp-capital-62100", nome: "São Paulo (capital) — Decreto Municipal 62.100/2022",
 fonte: "Decreto Municipal SP 62.100/2022, arts. 28 e 29 (FONTE PRIMÁRIA; texto lido em RA-Equipe\\orcapro\\pesquisas\\SP-Decreto-62100-2022-texto.txt)", conferir: false,
 ordem: [
-{ ordem: 1, tipo: "sistema_oficial", nome: "Tabela de Custos Unitários da SIURB (composição ≤ mediana do item, mais BDI de referência e encargos sociais)", bases: ["SIURB"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: "Decreto 62.100/2022, art. 28, caput" },
+{ ordem: 1, tipo: "sistema_oficial", nome: "Tabela de Custos Unitários da SIURB (composição ≤ mediana do item, mais BDI de referência e encargos sociais)", bases: ["SIURB", "SIURB_INFRA"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: "Decreto 62.100/2022, art. 28, caput",
+baseNoApp: { SIURB: "SIURB Edificações", SIURB_INFRA: "SIURB Infraestrutura Urbana" }, dataBaseNoApp: "2026-07", paginaOficial: "https://prefeitura.sp.gov.br/web/obras/w/tabelas_de_custos/355179" },
 { ordem: 2, tipo: "outro_sistema", nome: "Outros sistemas de custos (composição ≤ mediana do item)", exigeDataHora: false, fonte: "Decreto 62.100/2022, art. 28, §1º, I",
 conferir: true, nota: "O decreto não diz se um único sistema basta; aqui conta como 1 preço e o mínimo de 3 aplica-se ao conjunto. Decisão do jurídico." },
 { ordem: 3, tipo: "midia", nome: "Pesquisa publicada em mídia especializada e sítios especializados ou de domínio amplo, com data e hora de acesso", exigeDataHora: true, fonte: "Decreto 62.100/2022, art. 28, §1º, II" },
@@ -45471,9 +45494,9 @@ justificativa: "Menos de 3 preços só mediante justificativa (art. 29)."
 }
 };
 var VALIDADE_FONTE = { cotacao: "6 meses até a data prevista do edital", contratacao_similar: "1 ano até a data da pesquisa", midia: "exige data e hora de acesso" };
-var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "ler_tudo", "ler_auditoria"];
+var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "ler_tudo", "ler_auditoria"];
 var PAPEIS = {
-admin_orgao: { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "ler_tudo"] },
+admin_orgao: { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "ler_tudo"] },
 requisitante: { nome: "Setor requisitante", acoes: ["criar_processo", "editar_dfd", "editar_acervo"] },
 engenharia: { nome: "Engenharia / planejamento", acoes: ["editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr"] },
 cpl: { nome: "Agente de contratação / comissão (CPL)", acoes: ["editar_parametros", "gerar_minuta", "enviar_juridico", "responder_ressalva", "analisar_propostas", "publicar"] },
@@ -45487,12 +45510,12 @@ criar_processo: "criar processo", editar_dfd: "editar a demanda", editar_acervo:
 editar_orcamento: "editar o orçamento", editar_pesquisa: "editar a pesquisa de preços", editar_etp: "editar o ETP", editar_riscos: "editar os riscos",
 editar_tr: "editar o TR / projeto básico", editar_parametros: "editar os parâmetros do edital", gerar_minuta: "gerar a minuta", enviar_juridico: "enviar ao jurídico",
 emitir_parecer: "emitir parecer jurídico", responder_ressalva: "responder ressalva", aprovar_justificativa: "aprovar justificativa", autorizar_abertura: "autorizar a abertura",
-publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins",
+publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão",
 ler_tudo: "ler o processo inteiro", ler_auditoria: "ler a auditoria"
 };
 var CplproRegras = {
 versao: 1,
-ACERVO_TIPOS: ACERVO_TIPOS, BIBLIOTECA_RISCOS: BIBLIOTECA_RISCOS, TODOS_RISCOS: todosRiscos(),
+ACERVO_TIPOS: ACERVO_TIPOS, ACERVO_TEXTO: ACERVO_TEXTO, LIMITE_TEXTO: LIMITE_TEXTO, BIBLIOTECA_RISCOS: BIBLIOTECA_RISCOS, TODOS_RISCOS: todosRiscos(),
 TIPOS_OBJETO: TIPOS_OBJETO, PRAZO_PUBLICACAO: PRAZO_PUBLICACAO,
 ETP_ELEMENTOS: ETP_ELEMENTOS, ETP_FONTE: ETP_FONTE,
 PARAMETROS: PARAMETROS, PARAMETROS_ORDEM: PARAMETROS_ORDEM,
@@ -45587,7 +45610,7 @@ var PASSOS = [
 ];
 function hash8(s) {
 var h = 5381, i, str = String(s);
-for (i = 0; i < str.length; i++) { h = ((h << 5) + h + str.charCodeAt(i)) % 4294967296; }
+for (i = 0; i < str.length; i++) { h = ((h << 5) + h + str.charCodeAt(i)) >>> 0; }
 var x = h.toString(16);
 while (x.length < 8) x = "0" + x;
 return x;
@@ -45737,27 +45760,48 @@ function reTipo(id) {
 if (!RE_CACHE[id]) RE_CACHE[id] = R.ACERVO_TIPOS[id].regex ? new RegExp(R.ACERVO_TIPOS[id].regex, "i") : null;
 return RE_CACHE[id];
 }
+var RE_TEXTO_CACHE = {};
+function reFrase(f) {
+if (!RE_TEXTO_CACHE[f]) RE_TEXTO_CACHE[f] = new RegExp("(^| )" + esc(f).replace(/ /g, " ") + "( |$)");
+return RE_TEXTO_CACHE[f];
+}
+function classificarTexto(textoBruto) {
+var t = normNome(String(textoBruto === undefined || textoBruto === null ? "" : textoBruto).substring(0, 60000)), melhor = null;
+if (!t) return null;
+Object.keys(R.ACERVO_TEXTO).forEach(function (id) {
+var soma = 0, frases = [];
+R.ACERVO_TEXTO[id].forEach(function (par) {
+if (reFrase(par[0]).test(t)) { soma += par[1]; frases.push(par[0]); }
+});
+if (soma < R.LIMITE_TEXTO) return;
+if (!melhor || soma > melhor.soma || (soma === melhor.soma && R.ACERVO_TIPOS[id].prioridade > R.ACERVO_TIPOS[melhor.tipo].prioridade)) melhor = { tipo: id, soma: soma, frases: frases };
+});
+return melhor;
+}
 function classificarArquivo(arq) {
 var a = arq || {};
 var nomeBruto = String(a.nome === undefined || a.nome === null ? "" : a.nome);
 var ext = !vazio(a.ext) ? String(a.ext).replace(/^\./, "").toLowerCase() : (/\.([A-Za-z0-9]+)$/.exec(nomeBruto) ? /\.([A-Za-z0-9]+)$/.exec(nomeBruto)[1].toLowerCase() : "");
 var semExt = nomeBruto.replace(/\.[A-Za-z0-9]{1,5}$/, "");
-var nome = normNome(semExt), texto = normNome(String(a.texto === undefined || a.texto === null ? "" : a.texto).substring(0, 3000));
+var nome = normNome(semExt), porTexto = null;
 var rev = lerRevisao(nome);
 var base = rev.trecho ? nome.replace(rev.trecho, " ") : nome;
 var melhor = null;
 Object.keys(R.ACERVO_TIPOS).forEach(function (id) {
 var re = reTipo(id);
 if (!re) return;
-var tipo = R.ACERVO_TIPOS[id], score = 0, motivo = null, mn = re.exec(nome), mt = re.exec(texto);
+var tipo = R.ACERVO_TIPOS[id], score = 0, motivo = null, mn = re.exec(nome);
 if (mn) { score = 10 + mn[0].length / 100; motivo = "nome contém «" + mn[0] + "»"; }
-else if (mt) { score = 4 + mt[0].length / 100; motivo = "texto do arquivo contém «" + mt[0] + "»"; }
 if (!score) return;
 if (tipo.extensoes.indexOf(ext) >= 0) score += 0.5;
 if (!melhor || score > melhor.score || (score === melhor.score && tipo.prioridade > R.ACERVO_TIPOS[melhor.tipo].prioridade)) {
 melhor = { tipo: id, score: score, motivo: motivo, doNome: !!mn };
 }
 });
+if (!melhor && !vazio(a.texto)) {
+porTexto = classificarTexto(a.texto);
+if (porTexto) melhor = { tipo: porTexto.tipo, score: 4, motivo: "classificado pelo conteúdo do PDF (páginas 1 e 2): " + porTexto.frases.map(function (f) { return "«" + f + "»"; }).join(", "), doNome: false, doConteudo: true };
+}
 if (!melhor && R.ACERVO_TIPOS.fotos.extensoes.indexOf(ext) >= 0) melhor = { tipo: "fotos", score: 1, motivo: "extensão de imagem", doNome: false };
 var tipoId = melhor ? melhor.tipo : "outros";
 var conf = !melhor ? "baixa" : (melhor.doNome && R.ACERVO_TIPOS[tipoId].extensoes.indexOf(ext) >= 0 ? "alta" : (melhor.doNome ? "media" : "baixa"));
@@ -45765,6 +45809,7 @@ return {
 tipo: tipoId, disciplina: R.ACERVO_TIPOS[tipoId].disciplina,
 revisao: rev.revisao, revisaoNum: rev.revisaoNum, confianca: conf,
 motivo: melhor ? melhor.motivo : "nenhuma regra do acervo reconheceu o nome",
+porConteudo: !!(melhor && melhor.doConteudo),
 nomeBase: base.replace(/\s+/g, " ").replace(/^ | $/g, ""), ext: ext
 };
 }
@@ -45803,7 +45848,7 @@ var id = "doc-" + (sha ? sha.substring(0, 12) : hash8(nome));
 var primeiro = sha ? q.documentos.filter(function (d) { return d.sha === sha && d.superadoMotivo !== "repetido"; })[0] : null;
 var doc = {
 id: id, nome: nome, sha: sha, tipo: c.tipo, disciplina: c.disciplina, revisao: c.revisao, revisaoNum: c.revisaoNum,
-nomeBase: c.nomeBase, confianca: c.confianca, motivo: c.motivo,
+nomeBase: c.nomeBase, confianca: c.confianca, motivo: c.motivo, porConteudo: c.porConteudo,
 rt: a && !vazio(a.rt) ? a.rt : null, origem: a && !vazio(a.origem) ? a.origem : null, data: a && !vazio(a.data) ? a.data : null,
 superadoPor: null, superadoMotivo: null
 };
@@ -45827,7 +45872,7 @@ return { exigencia: id, nome: R.ACERVO_TIPOS[id].nome, porque: t.porque[id], tem
 }
 function temOrigem(it) {
 var o = it && it.origem;
-return !!(o && !vazio(o.arquivo) && !vazio(o.pagina));
+return !!(o && !vazio(o.arquivo) && (!vazio(o.pagina) || !vazio(o.linha)));
 }
 function pendenciasQuantitativos(p, itensOrcamento) {
 var itens = itensOrcamento !== undefined ? arr(itensOrcamento) : arr(p && p.quantitativos);
@@ -46269,7 +46314,7 @@ return true;
 var Cplpro = {
 PASSOS: PASSOS,
 novoProcesso: novoProcesso, progresso: progresso,
-sugerirTipoObjeto: sugerirTipoObjeto, classificarArquivo: classificarArquivo,
+sugerirTipoObjeto: sugerirTipoObjeto, classificarArquivo: classificarArquivo, classificarTexto: classificarTexto,
 adicionarDocumentos: adicionarDocumentos, checklistAcervo: checklistAcervo,
 pendenciasQuantitativos: pendenciasQuantitativos, quantitativosValidos: quantitativosValidos,
 etpCampos: etpCampos, riscosSugeridos: riscosSugeridos, nivelRisco: nivelRisco,
@@ -46375,6 +46420,7 @@ Object.keys(p.parametros || {}).forEach(function (k) { par[k] = p.parametros[k] 
 var docs = arr(p.documentos).map(function (d) { return [d.id, d.tipo, d.sha, d.superadoPor]; });
 var base = [p.tipoObjeto, p.secretaria, p.objeto, p.justificativa, p.pca, p.recursoFederal, p.sigiloso, p.regulamentoId,
 p.dataPrevistaEdital, p.cronograma, p.orcamentoId, p.orcamentoRef, p.tr, p.edital, p.requisitante, p.prazoDesejado, p.etp, p.riscos, p.quantitativos, p.pesquisa, par, docs];
+if (p.cronogramaFisico) base.push(p.cronogramaFisico);
 return hash(JSON.stringify(base));
 };
 Fluxo.pacoteValido = function (p) {
@@ -46605,6 +46651,38 @@ avals.push(av);
 var mapa = Cplpro.pesquisaPrecos.mapa(itensMapa, avals, { modoArredondamento: modoArredondamento });
 return { avaliacoes: avals, mapa: mapa, regulamento: reg, semBase: avals.filter(function (a) { return !a.comBase; }).length };
 };
+function cronogramaDoProcesso(p, orc) {
+var cf = p && p.cronogramaFisico, ets = arr(cf && cf.etapas), oe = arr(orc && orc.etapas);
+if (!ets.length || ets.length !== oe.length) return null;
+function nm(x) { return String(x == null ? "" : x).replace(/\s+/g, " ").trim().toLowerCase(); }
+var i, meses = Number(cf.meses) || 0, saida = [], rot = [];
+for (i = 0; i < ets.length; i++) {
+if (nm(ets[i].nome) !== nm(oe[i].nome)) return null;
+if (arr(ets[i].pct).length < meses || !meses) return null;
+saida.push({ meses: arr(ets[i].pct).slice(0, meses).map(function (v) { return Number(v) || 0; }) });
+}
+for (i = 1; i <= meses; i++) rot.push(i + "º mês");
+return { meses: meses, etapas: saida, rotulos: rot };
+}
+Fluxo.cronogramaParaPacote = cronogramaDoProcesso;
+Fluxo.opcoesPacoteReferencia = function (p, orc, c, ctx) {
+ctx = ctx || {}; p = p || {};
+var pq = Fluxo.pesquisar(p, arr(c && c.linhas), c && c.modo ? c.modo : undefined);
+var itensCfg = (p.pesquisa || {}).itens || {}, fontes = {};
+Object.keys(itensCfg).forEach(function (k) { fontes[k] = arr(itensCfg[k] && itensCfg[k].fontes); });
+var ref = p.orcamentoRef || {}, op = {
+pesquisa: { avaliacoes: pq.avaliacoes, fontes: fontes, regulamento: pq.regulamento },
+recursoFederal: p.recursoFederal === true,
+totalEsperado: c ? c.precoVenda : undefined,
+orgao: { nome: ctx.orgaoNome || "" },
+objeto: p.objeto || "", processo: codigoDe(p), data: ctx.hoje || "",
+empresa: ctx.empresa || {}, bases: arr(ctx.bases)
+};
+if (!vazio(ref.competencia)) op.dataBase = (vazio(ref.base) ? "" : ref.base + " — ") + ref.competencia;
+var cr = cronogramaDoProcesso(p, orc);
+if (cr) op.cronograma = cr;
+return op;
+};
 var CAMPOS_PAINEL = {
 processo: ["codigo", "objeto", "secretaria", "passo", "passoNome", "pct", "status", "statusRotulo"],
 prazo: ["codigo", "objeto", "tipo", "tipoRotulo", "data", "dias"],
@@ -46760,6 +46838,35 @@ var q = Cplpro.fluxoJuridico.darCiencia(p, { nome: quem && quem.nome !== undefin
 if (q.parecer && q.parecer.ciencia && (!p.parecer || !p.parecer.ciencia)) { q.assinaturaEnviada = Fluxo.assinaturaConteudo(q); q.autorizacao = null; }
 return q;
 };
+Fluxo.planoDemo = function (o) {
+o = o || {};
+var qs = String(o.qs === undefined || o.qs === null ? "" : o.qs);
+var pedido = /[?&]perfil=orgao_publico(&|$)/i.test(qs) || /[?&]view=cplpro(&|$)/i.test(qs);
+var vitrine = o.demo === true && o.empresaId === "demo";
+return { pedido: pedido, vitrine: vitrine, aplicar: pedido && vitrine, semear: pedido && vitrine, restaurar: !pedido && vitrine && o.perfilAtual === "orgao_publico" };
+};
+var DEMO_PROC_ID = "prc-demo-creche";
+Fluxo.DEMO_PROC_ID = DEMO_PROC_ID;
+Fluxo.processoExemplo = function (agora) {
+var ag = vazio(agora) ? agoraISO() : agora;
+var p = Cplpro.novoProcesso({ id: DEMO_PROC_ID, objeto: "Construção de uma creche municipal com 6 salas de aula, refeitório e área de serviço (exemplo)", secretaria: "Secretaria Municipal de Educação (exemplo)", tipoObjeto: "obra_nova",
+sigiloso: true, recursoFederal: false, dataPrevistaEdital: null }, "Demonstração", ag);
+p.justificativa = "Atender à demanda por vagas em educação infantil no bairro, hoje sem creche pública a menos de 3 km. (Texto de exemplo.)";
+p.pca = "Item 12 do Plano de Contratações Anual (exemplo)";
+p.requisitante = "Maria Souza (exemplo)";
+p.prazoDesejado = "2027-03-01";
+var arqs = ["Arquitetura planta baixa R01.pdf", "Projeto estrutural formas e armacao.pdf", "Projeto de fundacao estacas.pdf", "Projeto hidrossanitario.pdf", "Projeto eletrico.pdf", "Memorial descritivo.pdf", "Sondagem SPT.pdf", "Levantamento topografico.pdf", "ART projetos.pdf"];
+p = Cplpro.adicionarDocumentos(p, arqs.map(function (nm, i) { return { nome: nm, sha: ("de" + i + "0000000000000000").substring(0, 16) + i }; }));
+p.quantitativos = [
+{ item: "1.1", itemRef: "1.1", descricao: "Escavação mecanizada de valas", un: "m3", qtd: 180, origem: { arquivo: "Projeto de fundacao estacas.pdf", pagina: "2" } },
+{ item: "2.1", itemRef: "2.1", descricao: "Concreto estrutural fck 30 MPa", un: "m3", qtd: 95, origem: { arquivo: "Projeto estrutural formas e armacao.pdf", pagina: "4" } },
+{ item: "3.1", itemRef: "3.1", descricao: "Alvenaria de vedação em bloco cerâmico", un: "m2", qtd: 640, origem: { arquivo: "Arquitetura planta baixa R01.pdf", pagina: "1" } }
+];
+return p;
+};
+Fluxo.papeisDemo = function (usuarioId) {
+return { id: "pap-demo", usuarioId: usuarioId, nome: "Visitante da demonstração", papeis: Object.keys(R.PAPEIS) };
+};
 Fluxo.hash = hash; Fluxo.num = num; Fluxo.codigoDe = codigoDe;
 global.CplproFluxo = Fluxo;
 if (typeof module !== "undefined" && module.exports) module.exports = Fluxo;
@@ -46843,10 +46950,10 @@ var TEXTO_SIGILO = "O orçamento estimado desta contratação é sigiloso, nos t
 function tabQuantitativos(p) {
 var qs = arr(p.quantitativos);
 if (!qs.length) return par(pre("quantitativos do objeto"));
-return tabela(["Item", "Descrição", "Un.", "Quantidade", "Origem (arquivo, página)"], qs.map(function (q) {
+return tabela(["Item", "Descrição", "Un.", "Quantidade", "Origem (arquivo, página ou linha)"], qs.map(function (q) {
 var o = q.origem || {};
 return [esc(q.item === undefined ? q.itemRef : q.item), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
-(vazio(o.arquivo) || vazio(o.pagina)) ? pre("origem do item " + (q.item === undefined ? q.itemRef : q.item)) : esc(o.arquivo + ", p. " + o.pagina)];
+(vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha))) ? pre("origem do item " + (q.item === undefined ? q.itemRef : q.item)) : esc(o.arquivo + (vazio(o.pagina) ? ", linha " + o.linha : ", p. " + o.pagina))];
 }));
 }
 function dfd(p, ctx) {
@@ -46929,71 +47036,569 @@ arr(av.pendencias).forEach(function (m) { corpo += par(esc(m)); });
 if (corpo) h += secao(2, "Fontes por item sem base oficial", corpo);
 return h + assinatura("Responsável pela pesquisa");
 }
+function ehLances(p) { var c = pv(p, "criterio_julgamento"); return c === "menor preço" || c === "maior desconto"; }
+var CAMPOS = [
+{ id: "portal", onde: "edital", grupo: "Sessão pública e portal", rotulo: "portal ou plataforma eletrônica da licitação", dica: "Ex.: o portal que o órgão adota (Compras.gov.br ou outro)." },
+{ id: "sessaoHora", onde: "edital", grupo: "Sessão pública e portal", rotulo: "hora da sessão pública (horário de Brasília)", dica: "Ex.: 09:00" },
+{ id: "modoDisputa", onde: "edital", grupo: "Sessão pública e portal", rotulo: "modo de disputa", tipo: "select", opcoes: ["aberto", "aberto e fechado", "fechado e aberto"], quando: ehLances },
+{ id: "intervaloLances", onde: "edital", grupo: "Sessão pública e portal", rotulo: "intervalo mínimo de diferença entre lances (valor ou percentual)", dica: "Discricionário do órgão. Ex.: 0,15%", quando: ehLances },
+{ id: "cadastro", onde: "edital", grupo: "Sessão pública e portal", rotulo: "cadastro de fornecedores usado pelo órgão", tipo: "select", opcoes: [["sicaf", "SICAF (Compras.gov.br)"], ["proprio", "Cadastro próprio do órgão"]] },
+{ id: "cadastroProprio", onde: "edital", grupo: "Sessão pública e portal", rotulo: "nome do cadastro próprio de fornecedores", quando: function (p) { return (p.edital || {}).cadastro === "proprio"; } },
+{ id: "setorLicitacoes", onde: "edital", grupo: "Órgão", rotulo: "setor responsável pelas licitações", dica: "Ex.: Comissão Permanente de Licitação" },
+{ id: "enderecoOrgao", onde: "edital", grupo: "Órgão", rotulo: "endereço do órgão (sede)" },
+{ id: "emailImpugnacao", onde: "edital", grupo: "Órgão", rotulo: "e-mail institucional para impugnações e pedidos de esclarecimento" },
+{ id: "representante", onde: "edital", grupo: "Órgão", rotulo: "nome, cargo e ato de nomeação do representante do contratante", dica: "Vai na qualificação das partes do contrato." },
+{ id: "foro", onde: "edital", grupo: "Contrato", rotulo: "foro da sede da Administração (art. 92, §1º)", dica: "Ex.: Foro da Comarca de ..." },
+{ id: "multaContrato", onde: "edital", grupo: "Contrato", rotulo: "percentuais da multa moratória e da multa compensatória do contrato" },
+{ id: "prazoRepactuacao", onde: "edital", grupo: "Contrato", rotulo: "prazo de resposta ao pedido de repactuação (art. 92, X)", dica: "Ex.: 30 dias" },
+{ id: "prazoReequilibrio", onde: "edital", grupo: "Contrato", rotulo: "prazo de resposta ao pedido de reequilíbrio econômico-financeiro (art. 92, XI)", dica: "Ex.: 30 dias" },
+{ id: "visitaAgendamento", onde: "edital", grupo: "Condições do certame", rotulo: "forma de agendamento da vistoria", quando: function (p) { return pv(p, "visita_tecnica") === true; } },
+{ id: "consorcioAcrescimo", onde: "edital", grupo: "Condições do certame", rotulo: "acréscimo de habilitação econômico-financeira ao consórcio (10% a 30%) ou a justificativa para suprimi-lo", quando: function (p) { return pv(p, "consorcio") === true; } },
+{ id: "instrumentoRepasse", onde: "edital", grupo: "Condições do certame", rotulo: "instrumento da transferência de recursos federais (convênio, contrato de repasse...)", quando: function (p) { return p.recursoFederal === true; } },
+{ id: "local", onde: "tr", grupo: "Execução", rotulo: "endereço do local da obra" },
+{ id: "inicioExecucao", onde: "tr", grupo: "Execução", rotulo: "início da execução (em dias da assinatura do contrato ou da ordem de serviço)", dica: "Ex.: 10 dias da emissão da ordem de serviço" },
+{ id: "garantiaServicoMeses", onde: "tr", grupo: "Execução", rotulo: "garantia complementar do serviço, em meses (0 = só a garantia legal)", dica: "Número inteiro. 0 = vale o Código de Defesa do Consumidor e o Código Civil." },
+{ id: "prazoRecProvisorio", onde: "tr", grupo: "Recebimento e pagamento", rotulo: "prazo do recebimento provisório (dias)" },
+{ id: "prazoRecDefinitivo", onde: "tr", grupo: "Recebimento e pagamento", rotulo: "prazo do recebimento definitivo (dias)" },
+{ id: "prazoLiquidacao", onde: "tr", grupo: "Recebimento e pagamento", rotulo: "prazo de liquidação da despesa (dias úteis)" },
+{ id: "indiceAtraso", onde: "tr", grupo: "Recebimento e pagamento", rotulo: "índice de correção monetária por atraso de pagamento", dica: "INCC, IPCA ou IGP-M — escolha do órgão." },
+{ id: "qualificacaoEconomica", onde: "tr", grupo: "Habilitação", rotulo: "capital mínimo ou patrimônio líquido mínimo exigido (até 10% do valor estimado)", dica: "Exigido só de quem não atinge os índices; limite de 10% do modelo AGU." },
+{ id: "subcontratacaoLimite", onde: "tr", grupo: "Habilitação", rotulo: "limite da subcontratação (percentual do valor do contrato)", quando: function (p) { return pv(p, "subcontratacao") === true; } }
+];
+function campoAplica(c, p) { return typeof c.quando !== "function" || c.quando(p); }
+function valCampo(p, id) {
+var c = null; CAMPOS.forEach(function (x) { if (x.id === id) c = x; });
+var o = c && c.onde === "tr" ? p.tr : p.edital;
+var v = o ? o[id] : null;
+if (c && !campoAplica(c, p)) return "";
+return vazio(v) ? pre(c ? c.rotulo : id) : esc(v);
+}
+function rotuloOpcao(c, v) {
+var r = v; (c.opcoes || []).forEach(function (o) { if (Array.isArray(o) ? o[0] === v : o === v) r = Array.isArray(o) ? o[1] : o; });
+return r;
+}
+function redigir(montar) {
+var refs = {};
+function passada(prev) {
+var o = { html: "", refs: {}, n: 0, s: 0, m: 0 };
+o.sec = function (t) { o.n++; o.s = 0; o.m = 0; o.html += "<h2>" + o.n + ". " + esc(t) + "</h2>"; };
+o.sub = function (t) { o.s++; o.m = 0; o.html += "<h3>" + o.n + "." + o.s + " " + esc(t) + "</h3>"; };
+o.it = function (txt, chave) {
+o.m++;
+var num = o.n + "." + (o.s ? o.s + "." : "") + o.m;
+if (chave) o.refs[chave] = num;
+o.html += "<p><b>" + num + "</b> " + txt + "</p>";
+return num;
+};
+o.al = function (lista) { lista.forEach(function (t, i) { o.html += "<p>  " + String.fromCharCode(97 + i) + ") " + t + "</p>"; }); };
+o.raw = function (h) { o.html += h; };
+o.r = function (chave) { return prev[chave] || "—"; };
+montar(o);
+return o;
+}
+var a = passada({}), b = passada(a.refs);
+return b.html;
+}
+function nomeCadastro(p) {
+var c = (p.edital || {}).cadastro;
+if (c === "sicaf") return "SICAF";
+if (c === "proprio") return vazio((p.edital || {}).cadastroProprio) ? pre("nome do cadastro próprio de fornecedores") : esc(p.edital.cadastroProprio);
+return pre("cadastro de fornecedores usado pelo órgão (SICAF ou cadastro próprio)");
+}
+function valorOuSigilo(p, ctx) {
+if (!publico(p, "valorEstimado")) return esc(TEXTO_SIGILO);
+return ctx && ctx.orc ? esc(brl(ctx.orc.total)) : pre("valor estimado");
+}
+var REGIMES_GLOBAIS = /global|integral|integrada/;
+function regimeGlobal(p) { var r = pv(p, "regime_execucao"); return r === null ? null : REGIMES_GLOBAIS.test(r); }
 function tr(p, ctx) {
 var h = cab(p, ctx, "Termo de referência / projeto básico", null);
-var t = p.tr || {}, tipo = R.TIPOS_OBJETO[p.tipoObjeto];
-h += par("Elementos do art. 6º, XXIII (termo de referência) e XXV (projeto básico) da Lei 14.133/2021.");
-h += secao(1, "Definição do objeto", par(val(t.objeto || p.objeto, "descrição do objeto")));
-h += secao(2, "Fundamentação da contratação", par(val(p.justificativa, "fundamentação (referência ao ETP)")));
+var t = p.tr || {}, tipo = R.TIPOS_OBJETO[p.tipoObjeto], e = p.edital || {};
+var sig = !publico(p, "valorEstimado");
+var sub = pv(p, "subcontratacao"), gar = pv(p, "garantia_contrato"), vis = pv(p, "visita_tecnica"), cons = pv(p, "consorcio");
+var reg = pv(p, "regime_execucao"), crit = pv(p, "criterio_julgamento"), me = pv(p, "me_epp");
 var req = arr(p.documentos).filter(function (d) { return !d.superadoPor; });
-h += secao(3, "Elementos de projeto que integram o objeto", req.length ? lista(req.map(function (d) { return esc((R.ACERVO_TIPOS[d.tipo] ? R.ACERVO_TIPOS[d.tipo].nome : d.tipo) + " — " + d.nome + (d.revisao ? " (" + d.revisao + ")" : "")); })) : par(pre("projetos e documentos técnicos do objeto")));
-h += secao(4, "Quantitativos", tabQuantitativos(p));
-h += secao(5, "Modelo de execução", par("Regime de execução: " + parOuPre(p, "regime_execucao", "regime de execução") + (tipo ? "." : "")));
-h += secao(6, "Modelo de gestão e fiscalização", par(val(t.gestao, "modelo de gestão e fiscalização do contrato")));
-h += secao(7, "Critérios de medição e de pagamento", par(val(t.medicao, "critério de medição")) + par("Pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento")));
-h += secao(8, "Critérios de recebimento", par(val(t.recebimento, "critério de recebimento provisório e definitivo")));
-h += secao(9, "Forma e critério de seleção do fornecedor", par("Modalidade: " + parOuPre(p, "modalidade", "modalidade") + ". Critério de julgamento: " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + "."));
-var pr = pv(p, "parcelas_relevancia");
-if (arr(pr).length) {
-h += secao(10, "Parcelas de maior relevância (qualificação técnica)", par("Quantidade mínima exigível: até 50% da quantidade da parcela (Lei 14.133/2021, art. 67, §§1º e 2º).") +
-tabela(["Item", "Descrição", "Un.", "Quantidade mínima exigível"], pr.map(function (x) { return [esc(x.item), esc(x.descricao), esc(x.un), esc(numBR(x.qtdMaxExigivel, 2))]; })));
+var pr = arr(pv(p, "parcelas_relevancia"));
+var meses = t.garantiaServicoMeses;
+var nMeses = vazio(meses) ? null : Number(String(meses).replace(",", "."));
+h += par("Elementos do art. 6º, XXIII (termo de referência) e XXV (projeto básico) da Lei 14.133/2021. Estrutura do modelo de termo de referência de obras e serviços comuns de engenharia da AGU/SEGES, adaptada ao município.");
+h += redigir(function (o) {
+o.sec("Condições gerais da contratação");
+o.it("Contratação de empresa especializada para a execução de obra de engenharia: " + val(t.objeto || p.objeto, "descrição do objeto") + ", nos termos da tabela abaixo, conforme condições e exigências estabelecidas neste instrumento.");
+o.raw(tabela(["Item", "Especificação", "Unidade", "Quantidade", "Valor total"], [["1", val(t.objeto || p.objeto, "descrição do objeto"), "Obra", "1", sig ? "sigiloso (art. 24)" : (ctx && ctx.orc ? esc(brl(ctx.orc.total)) : pre("valor estimado"))]]));
+o.it(tipo ? (tipo.servicoComumEngenharia ? "O objeto é caracterizado como serviço comum de engenharia, conforme justificativa constante do Estudo Técnico Preliminar." : "O objeto é obra de engenharia, caracterizada no Estudo Técnico Preliminar.") : pre("tipo de objeto"));
+o.it("O prazo de vigência da contratação é de " + valLinha(e.vigencia, "prazo de vigência e prazo de execução, em meses ou dias") + ", contados da assinatura do contrato, na forma do art. 105 da Lei 14.133/2021.");
+o.it("O contrato oferece maior detalhamento das regras que serão aplicadas em relação à vigência da contratação.");
+o.sec("Fundamentação e descrição da necessidade da contratação");
+o.it("A fundamentação da contratação e de seus quantitativos encontra-se pormenorizada no Estudo Técnico Preliminar, apêndice deste termo de referência.");
+o.it(val(p.justificativa, "fundamentação (referência ao ETP)"));
+o.it("O objeto da contratação " + (vazio(p.pca) ? pre("referência no plano de contratações anual, ou a justificativa da ausência") : "está previsto no plano de contratações anual: " + esc(p.pca)) + " (art. 18, caput).");
+o.sec("Descrição da solução como um todo, considerado o ciclo de vida do objeto");
+o.it("A descrição da solução como um todo encontra-se pormenorizada no Estudo Técnico Preliminar, apêndice deste termo de referência.");
+o.it("Elementos de projeto que integram o objeto:");
+o.raw(req.length ? lista(req.map(function (d) { return esc((R.ACERVO_TIPOS[d.tipo] ? R.ACERVO_TIPOS[d.tipo].nome : d.tipo) + " — " + d.nome + (d.revisao ? " (" + d.revisao + ")" : "")); })) : par(pre("projetos e documentos técnicos do objeto")));
+o.it("Quantitativos (sem preços):");
+o.raw(tabQuantitativos(p));
+o.sec("Requisitos da contratação");
+o.sub("Sustentabilidade");
+o.it("Além dos critérios de sustentabilidade inseridos na descrição do objeto, devem ser atendidos os requisitos que se baseiam no Guia Nacional de Contratações Sustentáveis: alinhamento com o plano de gestão e logística sustentável do órgão; incorporação das dimensões ambientais, sociais, econômicas e culturais; e alinhamento com a Política Nacional de Meio Ambiente (Lei 6.938/1981), com a Política Nacional sobre Mudança do Clima (Lei 12.187/2009) e com a Política Nacional de Resíduos Sólidos (Lei 12.305/2010).");
+o.it("A Contratada observará o plano de gerenciamento de resíduos da construção civil, nos termos da Resolução CONAMA 307/2002, a proteção da biodiversidade do local da obra e as práticas para minimizar a poluição durante a construção.");
+o.sub("Indicação de marcas ou modelos (art. 41, I)");
+o.it("Eventual indicação de marca, característica ou modelo observa o art. 41, I, da Lei 14.133/2021 e só é admitida quando formalmente justificada no Estudo Técnico Preliminar.");
+o.sub("Subcontratação");
+if (sub === null) o.it(pre("subcontratação (sim/não)"));
+else if (sub === false) o.it("Não é admitida a subcontratação do objeto contratual.");
+else {
+o.it("É admitida a subcontratação parcial do objeto, até o limite de " + valCampo(p, "subcontratacaoLimite") + " do valor do contrato (art. 122).");
+o.it("É vedada a subcontratação completa ou da parcela principal do objeto da contratação" + (pr.length ? ", que consiste em: " + pr.map(function (x) { return esc(x.descricao); }).join("; ") : "") + ".");
 }
-var vEst = publico(p, "valorEstimado") && ctx && ctx.orc ? brl(ctx.orc.total) : null;
-h += secao(11, "Estimativa do valor da contratação", par(publico(p, "valorEstimado") ? (vEst ? "Valor estimado: " + esc(vEst) + "." : pre("valor estimado")) : TEXTO_SIGILO));
-h += secao(12, "Adequação orçamentária", par(val(t.dotacao, "dotação orçamentária")));
-return h + assinatura("Responsável pelo termo de referência");
+o.it("O contrato oferece maior detalhamento das regras que serão aplicadas em relação à subcontratação, caso admitida.");
+o.sub("Garantia da contratação");
+if (gar === null) o.it(pre("garantia do contrato"));
+else if (gar.pct === undefined || gar.pct === null) o.it("Não haverá exigência da garantia da contratação dos arts. 96 e seguintes da Lei 14.133/2021, pelas razões constantes do Estudo Técnico Preliminar.");
+else {
+o.it("Será exigida a garantia da contratação de que tratam os arts. 96 e seguintes da Lei 14.133/2021, no percentual de " + esc(numBR(Number(gar.pct), 2)) + "% e condições descritas nas cláusulas do contrato" + (gar.seguroRetomada ? ", na modalidade seguro-garantia com cláusula de retomada (art. 102)" : "") + (gar.justificativa ? ". Justificativa: " + esc(gar.justificativa) : "") + ".");
+o.it("Em caso de opção pelo seguro-garantia, a parte adjudicatária deverá apresentá-lo, no máximo, até a data de assinatura do contrato.");
+o.it("A garantia, nas modalidades caução e fiança bancária, deverá ser prestada em até 10 dias úteis após a assinatura do contrato.");
+o.it("O contrato oferece maior detalhamento das regras que serão aplicadas em relação à garantia da contratação.");
+}
+o.sub("Vistoria");
+if (vis === null) o.it(pre("visita técnica (sim/não)"));
+else if (vis === false) o.it("Não há necessidade de realização de avaliação prévia do local de execução dos serviços.");
+else {
+o.it("A avaliação prévia do local de execução dos serviços é imprescindível para o conhecimento pleno das condições e peculiaridades do objeto a ser contratado, sendo assegurado ao interessado o direito de realização de vistoria prévia, acompanhado por servidor designado para esse fim, nos dias e horários indicados no edital (art. 63, §2º).");
+o.it("Serão disponibilizados data e horário diferentes aos interessados em realizar a vistoria prévia. Forma de agendamento: " + valCampo(p, "visitaAgendamento") + ".");
+o.it("Para a vistoria, o representante legal da empresa ou responsável técnico deverá estar devidamente identificado, apresentando documento de identidade civil e documento expedido pela empresa comprovando sua habilitação para a realização da vistoria.");
+o.it("Caso o licitante opte por não realizar a vistoria, deverá prestar declaração formal assinada pelo responsável técnico do licitante acerca do conhecimento pleno das condições e peculiaridades da contratação.");
+o.it("A não realização da vistoria não poderá embasar posteriores alegações de desconhecimento das instalações, dúvidas ou esquecimentos de quaisquer detalhes dos locais da prestação dos serviços, devendo o contratado assumir os ônus dos serviços decorrentes.");
+}
+o.sec("Modelo de execução do objeto");
+o.sub("Condições de execução");
+o.it("A execução do objeto seguirá a seguinte dinâmica: início da execução em " + valCampo(p, "inicioExecucao") + "; etapas, frequência e periodicidade conforme o cronograma físico-financeiro, anexo a este termo de referência.");
+o.sub("Local da prestação dos serviços");
+o.it("Os serviços serão prestados no seguinte endereço: " + valCampo(p, "local") + ".");
+o.sub("Materiais a serem disponibilizados");
+o.it("Para a perfeita execução dos serviços, a Contratada deverá disponibilizar os materiais, equipamentos, ferramentas e utensílios necessários, nas quantidades estimadas e qualidades estabelecidas, promovendo sua substituição quando necessário. Os materiais a serem utilizados devem seguir rigorosamente os memoriais descritivos e as especificações técnicas.");
+o.sub("Informações relevantes para o dimensionamento da proposta");
+o.it("A demanda do órgão tem como base os projetos, os quantitativos e as memórias de cálculo listados na seção 3 deste termo de referência e no Estudo Técnico Preliminar.");
+o.sub("Garantia do serviço (art. 40, §1º, III)");
+if (nMeses === null || !isFinite(nMeses)) o.it(pre("garantia complementar do serviço, em meses (0 = só a garantia legal)"));
+else if (nMeses <= 0) o.it("O prazo de garantia contratual dos serviços é aquele estabelecido na Lei 8.078/1990 (Código de Defesa do Consumidor) e na Lei 10.406/2002 (Código Civil).");
+else o.it("O prazo de garantia contratual dos serviços, complementar à garantia legal, será de, no mínimo, " + numBR(nMeses, 0) + " meses, contado a partir do primeiro dia útil subsequente à data do recebimento definitivo do objeto.");
+o.sub("Procedimentos de transição e finalização do contrato");
+o.it("Não serão necessários procedimentos de transição e finalização do contrato devido às características do objeto (obra de entrega definitiva).");
+o.sec("Modelo de gestão do contrato");
+o.it("O contrato deverá ser executado fielmente pelas partes, de acordo com as cláusulas avençadas e as normas da Lei 14.133/2021, e cada parte responderá pelas consequências de sua inexecução total ou parcial.");
+o.it("Em caso de impedimento, ordem de paralisação ou suspensão do contrato, o cronograma de execução será prorrogado automaticamente pelo tempo correspondente, anotadas tais circunstâncias mediante simples apostila.");
+o.it("As comunicações entre o órgão e a contratada devem ser realizadas por escrito sempre que o ato exigir tal formalidade, admitindo-se o uso de mensagem eletrônica para esse fim. O órgão poderá convocar representante da empresa para adoção de providências que devam ser cumpridas de imediato.");
+o.it("Após a assinatura do contrato, o órgão poderá convocar o representante da contratada para reunião inicial de apresentação do plano de fiscalização, com as obrigações contratuais, os mecanismos de fiscalização, as estratégias de execução, o método de aferição dos resultados e as sanções aplicáveis.");
+o.it("Designação do fiscal e do gestor do contrato: " + val(t.gestao, "modelo de gestão e fiscalização do contrato") + ".");
+o.sub("Preposto");
+o.it("A Contratada designará formalmente o preposto da empresa, antes do início da prestação dos serviços, indicando no instrumento os poderes e deveres em relação à execução do objeto contratado, e o manterá no local da execução do objeto. A Contratante poderá recusar, desde que justificadamente, a indicação ou a manutenção do preposto, hipótese em que a Contratada designará outro.");
+o.sub("Fiscalização");
+o.it("A execução do contrato deverá ser acompanhada e fiscalizada pelo(s) fiscal(is) do contrato, ou pelos respectivos substitutos (Lei 14.133/2021, art. 117, caput).");
+o.it("Fiscalização técnica: o fiscal técnico acompanhará a execução para que sejam cumpridas todas as condições do contrato; anotará no histórico de gerenciamento do contrato todas as ocorrências, com a descrição do que for necessário para a regularização das faltas ou dos defeitos observados (art. 117, §1º); emitirá notificações para a correção de inexatidões ou irregularidades, determinando prazo; informará ao gestor, em tempo hábil, a situação que demandar decisão que ultrapasse sua competência, as ocorrências que possam inviabilizar a execução nas datas aprazadas e o término do contrato, para tempestiva renovação ou prorrogação.");
+o.it("Fiscalização administrativa: o fiscal administrativo verificará a manutenção das condições de habilitação da contratada, acompanhará o empenho, o pagamento, as garantias, as glosas e a formalização de apostilamentos e termos aditivos, e atuará tempestivamente na solução de descumprimentos, reportando ao gestor o que ultrapassar a sua competência.");
+o.it("As atribuições detalhadas de fiscais e gestor seguem o regulamento do órgão. A fiscalização observará ainda: Lei 14.133/2021; Lei 5.194/1966 (exercício da Engenharia); Lei 12.378/2010 (exercício da Arquitetura e Urbanismo); Lei 6.496/1977 (Anotação de Responsabilidade Técnica); Resolução CONAMA 307/2002 (resíduos da construção civil); ABNT NBR 9050 (acessibilidade); e as demais normas técnicas aplicáveis ao objeto.");
+o.sub("Gestor do contrato");
+o.it("O gestor do contrato coordenará a atualização do processo de acompanhamento e fiscalização, com todos os registros formais da execução (ordem de serviço, registro de ocorrências, alterações e prorrogações), elaborando relatório com vistas à verificação da necessidade de adequações do contrato; acompanhará os registros dos fiscais e a manutenção das condições de habilitação da contratada, para fins de empenho e pagamento; emitirá documento comprobatório da avaliação do desempenho da contratada na execução contratual; tomará as providências para a formalização de processo administrativo de responsabilização, para fins de aplicação de sanções; elaborará relatório final sobre a consecução dos objetivos que justificaram a contratação; e enviará a documentação pertinente ao setor de contratos para a liquidação e o pagamento, no valor dimensionado pela fiscalização.");
+o.sec("Critérios de medição e de pagamento");
+o.sub("Medição");
+o.it("Critério de medição: " + val(t.medicao, "critério de medição") + ".");
+o.it("Ao final de cada etapa da execução contratual, conforme previsto no cronograma físico-financeiro, o Contratado apresentará a medição prévia dos serviços executados no período, por meio de planilha e memória de cálculo detalhada. Uma etapa será considerada efetivamente concluída quando os serviços previstos para aquela etapa estiverem executados em sua totalidade.");
+o.it("Será indicada a retenção ou glosa no pagamento, proporcional à irregularidade verificada, sem prejuízo das sanções cabíveis, caso se constate que a Contratada não produziu os resultados acordados, deixou de executar ou não executou com a qualidade mínima exigida as atividades contratadas, ou deixou de utilizar os materiais e recursos humanos exigidos para a execução do serviço, ou os utilizou com qualidade ou quantidade inferior à demandada.");
+o.sub("Do recebimento");
+o.it("Critério de recebimento: " + val(t.recebimento, "critério de recebimento provisório e definitivo") + ".");
+o.it("Os serviços serão recebidos provisoriamente, no prazo de " + valCampo(p, "prazoRecProvisorio") + " dias, pelos fiscais técnico e administrativo, mediante termos detalhados, quando verificado o cumprimento das exigências de caráter técnico e administrativo (art. 140, I, a), contados do recebimento da comunicação de cobrança do contratado com a comprovação da prestação dos serviços.");
+o.it("O Contratado fica obrigado a reparar, corrigir, remover, reconstruir ou substituir, às suas expensas, no todo ou em parte, o objeto em que se verificarem vícios, defeitos ou incorreções resultantes da execução ou dos materiais empregados. A fiscalização não atestará a última ou única medição de serviços até que sejam sanadas todas as pendências apontadas no recebimento provisório (art. 119 c/c art. 140).");
+o.it("O recebimento provisório fica sujeito, quando cabível, à conclusão dos testes de campo e à entrega dos manuais e instruções exigíveis. Os serviços poderão ser rejeitados, no todo ou em parte, quando em desacordo com as especificações deste termo de referência e da proposta, sem prejuízo das penalidades.");
+o.it("Os serviços serão recebidos definitivamente no prazo de " + valCampo(p, "prazoRecDefinitivo") + " dias, contados do recebimento provisório, por servidor ou comissão designada pela autoridade competente, após a verificação da qualidade e quantidade do serviço e consequente aceitação mediante termo detalhado, que servirá de base para a emissão da nota fiscal com o valor exato dimensionado pela fiscalização.");
+o.it("No caso de controvérsia sobre a execução do objeto, quanto à dimensão, qualidade e quantidade, será observado o art. 143, comunicando-se à empresa para emissão de nota fiscal quanto à parcela incontroversa. Nenhum prazo de recebimento ocorrerá enquanto pendente a solução, pelo contratado, de inconsistências verificadas na execução do objeto ou no instrumento de cobrança.");
+o.it("O recebimento provisório ou definitivo não excluirá a responsabilidade civil pela solidez e pela segurança do serviço nem a responsabilidade ético-profissional pela perfeita execução do contrato.");
+o.sub("Liquidação");
+o.it("Recebida a nota fiscal ou documento de cobrança equivalente, correrá o prazo de " + valCampo(p, "prazoLiquidacao") + " dias úteis para fins de liquidação, prorrogáveis por igual período.");
+o.it("Para fins de liquidação, o setor competente deve verificar se a nota fiscal ou fatura expressa os elementos necessários e essenciais do documento: prazo de validade; data da emissão; dados do contrato e do órgão contratante; período respectivo de execução do contrato; valor a pagar; e eventual destaque do valor de retenções tributárias cabíveis. Havendo erro ou circunstância que impeça a liquidação da despesa, esta ficará sobrestada até que o contratado providencie as medidas saneadoras, reiniciando-se o prazo, sem ônus à contratante.");
+o.it("A nota fiscal deverá ser acompanhada da comprovação da regularidade fiscal, constatada por consulta ao " + nomeCadastro(p) + " ou, na impossibilidade, por consulta aos sítios eletrônicos oficiais ou à documentação mencionada no art. 68 da Lei 14.133/2021. Constatada irregularidade, o contratado será notificado, por escrito, para que, no prazo de 5 dias úteis, regularize sua situação ou apresente sua defesa, prorrogável uma vez por igual período; persistindo a irregularidade, o contratante adotará as medidas necessárias à rescisão contratual, assegurada a ampla defesa. Havendo a efetiva execução do objeto, os pagamentos serão realizados normalmente até que se decida pela rescisão.");
+o.sub("Prazo e forma de pagamento");
+o.it("Condições e prazo de pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento") + ", contados da finalização da liquidação da despesa.");
+o.it("No caso de atraso pelo Contratante, os valores devidos ao contratado serão atualizados monetariamente entre o termo final do prazo de pagamento e a data de sua efetiva realização, mediante aplicação do índice " + valCampo(p, "indiceAtraso") + ".");
+o.it("O pagamento será realizado por ordem bancária, para crédito em banco, agência e conta corrente indicados pelo contratado, e a data do pagamento será o dia em que constar como emitida a ordem bancária.");
+o.it("Quando do pagamento, será efetuada a retenção tributária prevista na legislação aplicável, independentemente do percentual de tributo inserido na planilha. O contratado optante pelo Simples Nacional (Lei Complementar 123/2006) não sofrerá a retenção quanto aos impostos e contribuições abrangidos por aquele regime, condicionado o pagamento à comprovação, por documento oficial, de que faz jus ao tratamento tributário favorecido.");
+o.sec("Forma e critérios de seleção do fornecedor e regime de execução");
+o.sub("Forma de seleção e critério de julgamento da proposta");
+o.it("O fornecedor será selecionado por meio da realização de licitação, na modalidade " + parOuPre(p, "modalidade", "modalidade") + ", sob a forma eletrônica, com adoção do critério de julgamento " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + " (art. 33).");
+o.sub("Regime de execução");
+o.it("O regime de execução do contrato será " + parOuPre(p, "regime_execucao", "regime de execução") + " (art. 46).");
+o.sub("Critérios de aceitabilidade de preços");
+if (reg !== null && !REGIMES_GLOBAIS.test(reg)) {
+o.it("Por se tratar de empreitada por preço unitário, o critério de aceitabilidade de preços será o valor global estimado para a contratação e os custos unitários tidos como relevantes, conforme a planilha anexa ao edital.");
+} else {
+o.it("O critério de aceitabilidade de preços será o valor global estimado para a contratação.");
+}
+o.it("O licitante mais bem colocado na disputa deverá apresentar à Administração, por meio eletrônico, planilha que contenha o preço global, os quantitativos e os preços unitários tidos como relevantes, conforme o modelo de planilha elaborado pela Administração, para efeito de avaliação de exequibilidade (art. 59, §3º).");
+o.sub("Exigências de habilitação");
+o.it("Para fins de habilitação, deverá o licitante comprovar os seguintes requisitos (arts. 62 a 70):");
+o.it("Habilitação jurídica: empresário individual, inscrição no Registro Público de Empresas Mercantis, a cargo da Junta Comercial da respectiva sede; microempreendedor individual, Certificado da Condição de Microempreendedor Individual (CCMEI); sociedade empresária, sociedade limitada unipessoal ou empresa individual de responsabilidade limitada, inscrição do ato constitutivo, estatuto ou contrato social no Registro Público de Empresas Mercantis, acompanhada de documento comprobatório de seus administradores; sociedade simples, inscrição do ato constitutivo no Registro Civil de Pessoas Jurídicas do local de sua sede, acompanhada de documento comprobatório de seus administradores; filial, sucursal ou agência, inscrição do ato constitutivo no registro onde opera, com averbação no registro onde tem sede a matriz. Os documentos devem estar acompanhados de todas as alterações ou da consolidação respectiva.");
+o.it("Habilitação fiscal, social e trabalhista: prova de inscrição no Cadastro Nacional de Pessoas Jurídicas; prova de regularidade perante a Fazenda Nacional, mediante certidão conjunta expedida pela Secretaria da Receita Federal do Brasil e pela Procuradoria-Geral da Fazenda Nacional, referente a todos os créditos tributários federais e à Dívida Ativa da União, inclusive os relativos à Seguridade Social; prova de regularidade com o Fundo de Garantia do Tempo de Serviço (FGTS); prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho (certidão negativa ou positiva com efeito de negativa); prova de inscrição no cadastro de contribuintes municipal relativo ao domicílio ou sede do fornecedor, pertinente ao seu ramo de atividade e compatível com o objeto contratual; prova de regularidade com a Fazenda Municipal do domicílio ou sede do fornecedor. Caso o fornecedor seja isento dos tributos relacionados ao objeto contratual, comprovará tal condição por declaração da Fazenda respectiva.");
+o.it("Qualificação econômico-financeira: certidão negativa de falência expedida pelo distribuidor da sede do fornecedor (art. 69, II); balanço patrimonial, demonstração de resultado do exercício e demais demonstrações contábeis dos 2 últimos exercícios sociais, comprovando índices de Liquidez Geral (LG), Liquidez Corrente (LC) e Solvência Geral (SG) superiores a 1 (um), atestados por declaração assinada por profissional habilitado da área contábil. As empresas criadas no exercício financeiro da licitação poderão substituir os demonstrativos contábeis pelo balanço de abertura (art. 65, §1º); a pessoa jurídica constituída há menos de 2 anos apresentará apenas o último exercício. Caso o licitante apresente resultado igual ou inferior a 1 (um) em qualquer dos índices, será exigido, para fins de habilitação, capital mínimo ou patrimônio líquido mínimo de " + valCampo(p, "qualificacaoEconomica") + ".");
+o.it("Qualificação técnica: declaração de que o licitante tomou conhecimento de todas as informações e das condições locais para o cumprimento das obrigações do objeto da licitação, que poderá ser substituída por declaração formal assinada pelo responsável técnico; registro ou inscrição da empresa no CREA ou no CAU, em plena validade; apresentação do(s) profissional(is) registrado(s) no conselho profissional competente, detentor(es) de atestado de responsabilidade técnica por execução de obra ou serviço de características semelhantes às parcelas de maior relevância abaixo, que deverão participar da obra, admitida a substituição por profissionais de experiência equivalente ou superior, aprovada pela Administração; comprovação de aptidão para execução de serviço de complexidade tecnológica e operacional equivalente ou superior, por certidões ou atestados de pessoas jurídicas de direito público ou privado, ou emitidos pelo conselho profissional competente. Será admitido o somatório de atestados executados de forma concomitante, e os atestados poderão estar em nome da matriz ou da filial.");
+if (pr.length) {
+o.it("Parcelas de maior relevância (qualificação técnica). Quantidade mínima exigível: até 50% da quantidade da parcela (art. 67, §§1º e 2º).");
+o.raw(tabela(["Item", "Descrição", "Un.", "Quantidade mínima exigível"], pr.map(function (x) { return [esc(x.item), esc(x.descricao), esc(x.un), esc(numBR(x.qtdMaxExigivel, 2))]; })));
+}
+o.it("Exigências específicas de qualificação técnica e demais exigências do órgão: " + val(e.habilitacao, "documentos de habilitação jurídica, técnica, fiscal, social, trabalhista e econômico-financeira exigidos") + ".");
+if (cons === true) o.it("Admitida a participação de consórcio, a habilitação técnica será feita pelo somatório dos quantitativos de cada consorciado e a econômico-financeira pelo somatório dos valores de cada consorciado (art. 15).");
+else if (cons === null) o.it(pre("participação de consórcio (sim/não)"));
+if (me === true) o.it("O fornecedor enquadrado como microempreendedor individual que pretenda auferir os benefícios do tratamento diferenciado da Lei Complementar 123/2006 estará dispensado da prova de inscrição nos cadastros de contribuintes estadual e municipal.");
+o.sec("Estimativa do valor da contratação");
+o.it(sig ? TEXTO_SIGILO : (ctx && ctx.orc ? "O custo estimado total da contratação é de " + esc(brl(ctx.orc.total)) + ", conforme custos unitários constantes do orçamento anexo." : pre("valor estimado")));
+o.it("A estimativa de custo levou em consideração o risco envolvido na contratação e sua alocação entre contratante e contratado, conforme especificado na matriz de riscos constante do contrato.");
+o.sec("Adequação orçamentária");
+o.it("As despesas decorrentes da presente contratação correrão à conta de recursos específicos consignados no orçamento do órgão. Dotação: " + valLinha(t.dotacao, "dotação orçamentária") + ".");
+o.it("A dotação relativa aos exercícios financeiros subsequentes será indicada após aprovação da lei orçamentária respectiva e liberação dos créditos correspondentes, mediante apostilamento.");
+o.sec("Aprovação motivada do termo de referência pela autoridade competente");
+o.it("Aprovo este termo de referência, por entender atendidos os requisitos legais e motivada a contratação nos termos do Estudo Técnico Preliminar.");
+});
+if (p.cronogramaFisico && arr(p.cronogramaFisico.etapas).length) {
+var cf = p.cronogramaFisico, cabM = ["Etapa"], mi;
+for (mi = 1; mi <= cf.meses; mi++) cabM.push("Mês " + mi);
+h += "<h2>Anexo — Cronograma físico</h2>" + par("Percentual do valor de cada etapa a executar em cada mês, conforme o cronograma do projeto entregue com o processo. O cronograma físico-financeiro definitivo é o do contrato.");
+h += tabela(cabM, cf.etapas.map(function (e) { return [esc(e.nome)].concat(arr(e.pct).map(function (v) { return v ? esc(numBR(v, 0)) + "%" : "—"; })); }));
+}
+return h + assinatura("Servidor (ou equipe) responsável pelo termo de referência") + assinatura("Autoridade competente");
 }
 function edital(p, ctx) {
+var e = p.edital || {}, pz = (ctx && ctx.prazo) || {}, sig = !publico(p, "valorEstimado");
+var modal = pv(p, "modalidade"), crit = pv(p, "criterio_julgamento"), reg = pv(p, "regime_execucao");
+var me = pv(p, "me_epp"), cons = pv(p, "consorcio"), vis = pv(p, "visita_tecnica"), amo = pv(p, "amostra");
+var gar = pv(p, "garantia_contrato"), exe = pv(p, "exequibilidade"), recp = pv(p, "recurso_prazo");
+var fed = p.recursoFederal === true, lances = ehLances(p), desc = crit === "maior desconto";
+var cad = nomeCadastro(p), global_ = regimeGlobal(p);
+var vp = desc ? "percentual de desconto" : "preço";
 var h = cab(p, ctx, "Minuta de edital", null);
-var tipo = R.TIPOS_OBJETO[p.tipoObjeto], pz = (ctx && ctx.prazo) || {};
-h += par("Modalidade: " + parOuPre(p, "modalidade", "modalidade") + ". Edital nº " + valLinha((p.edital || {}).numero, "número do edital") + ".");
-h += secao(1, "Objeto", par(val(p.objeto, "objeto da licitação")) + par("Descrição completa, projetos e quantitativos no termo de referência (anexo)."));
-h += secao(2, "Valor estimado e sigilo", par(publico(p, "valorEstimado") ? (ctx && ctx.orc ? "Valor estimado da contratação: " + esc(brl(ctx.orc.total)) + "." : pre("valor estimado")) : TEXTO_SIGILO));
-h += secao(3, "Critério de julgamento e regime de execução", par("Critério: " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + " (art. 33). Regime: " + parOuPre(p, "regime_execucao", "regime de execução") + " (art. 46)."));
-h += secao(4, "Participação", lista([
-"Consórcio: " + parOuPre(p, "consorcio", "participação de consórcio (sim/não)") + " (art. 15).",
-"Subcontratação: " + parOuPre(p, "subcontratacao", "subcontratação (sim/não)") + " (art. 122).",
-"Tratamento de ME/EPP: " + parOuPre(p, "me_epp", "tratamento de ME/EPP (sim/não)") + " (LC 123/2006).",
-"Visita técnica: " + parOuPre(p, "visita_tecnica", "visita técnica (sim/não)") + " (art. 63, §2º).",
-"Amostra ou prova de conceito: " + parOuPre(p, "amostra", "amostra (sim/não)") + "."
-]));
-h += secao(5, "Prazos", par("Publicação do edital: " + valLinha(dataBR(p.dataPrevistaEdital), "data de publicação") + " (art. 54: divulgação no PNCP). Abertura das propostas: " + valLinha(dataBR(pz.dataAbertura), "data de abertura") +
-". Prazo mínimo entre publicação e abertura: " + (pz.diasUteis ? esc(pz.diasUteis) + " dias úteis (art. 55), isto é, a partir de " + esc(dataBR(pz.dataMinimaAbertura)) : pre("prazo mínimo do art. 55")) + "."));
-h += secao(6, "Habilitação", par(val((p.edital || {}).habilitacao, "documentos de habilitação jurídica, técnica, fiscal, social, trabalhista e econômico-financeira exigidos")) +
-(arr(pv(p, "parcelas_relevancia")).length ? par("Qualificação técnica: atestados das parcelas de maior relevância indicadas no termo de referência (art. 67).") : ""));
-h += secao(7, "Proposta e planilha de preços", par("A planilha de preços do licitante preserva, sem alteração, a numeração, a descrição, a unidade e a quantidade de cada item do orçamento do órgão; só o preço unitário é do licitante. Serão desclassificadas as propostas acima do valor orçado pela Administração e as inexequíveis (art. 59). " + parOuPre(p, "exequibilidade", "exequibilidade") + "."));
-h += secao(8, "Garantia", par(parOuPre(p, "garantia_contrato", "garantia do contrato") + " (arts. 96 a 99)."));
-h += secao(9, "Reajuste", par(parOuPre(p, "reajuste", "índice e data-base do reajuste") + " (art. 25, §7º)."));
-h += secao(10, "Recursos", par("Prazo de recurso: " + parOuPre(p, "recurso_prazo", "prazo de recurso") + " (art. 165)."));
-h += secao(11, "Sanções e penalidades", par(val((p.edital || {}).sancoes, "regime de sanções aplicável (lei e regulamento do órgão)")));
-h += secao(12, "Anexos", lista(["Termo de referência / projeto básico", "Matriz de riscos", "Minuta do contrato", "Planilha de quantitativos (sem preços, quando o orçamento é sigiloso)"]));
-return h + assinatura("Agente de contratação / presidente da comissão") + assinatura("Autoridade competente");
+var nome = modal ? modal.toUpperCase() : null;
+h += "<p><b>" + (nome ? esc(nome) : pre("modalidade")) + " ELETRÔNICA Nº " + valLinha(e.numero, "número do edital") + "</b></p>";
+h += par("<b>Processo administrativo nº:</b> " + esc(codigo(p)));
+h += par("<b>Contratante:</b> " + valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + (p.secretaria ? " — " + esc(p.secretaria) : ""));
+h += par("<b>Objeto:</b> " + val(p.objeto, "objeto da licitação"));
+h += par("<b>Valor total da contratação:</b> " + valorOuSigilo(p, ctx));
+h += par("<b>Data da sessão pública:</b> " + valLinha(dataBR(pz.dataAbertura), "data de abertura das propostas") + " às " + (vazio(e.sessaoHora) ? pre("hora da sessão pública (horário de Brasília)") : esc(e.sessaoHora)) + " (horário de Brasília), no portal " + valLinha(e.portal, "portal ou plataforma eletrônica da licitação") + ".");
+h += par("<b>Critério de julgamento:</b> " + parOuPre(p, "criterio_julgamento", "critério de julgamento") + ". <b>Regime de execução:</b> " + parOuPre(p, "regime_execucao", "regime de execução") + ".");
+h += par("<b>Modo de disputa:</b> " + (lances ? (vazio(e.modoDisputa) ? pre("modo de disputa") : esc(e.modoDisputa)) : (crit ? "não se aplica (critério sem lances)" : pre("critério de julgamento"))));
+h += par("<b>Preferência ME/EPP/equiparadas:</b> " + (me === null ? pre("tratamento de ME/EPP (sim/não)") : (me ? "SIM" : "NÃO")));
+h += par("Torna-se público que o(a) " + valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ", por meio do(a) " + valLinha(e.setorLicitacoes, "setor responsável pelas licitações") + ", sediado(a) em " + valLinha(e.enderecoOrgao, "endereço do órgão (sede)") + ", realizará licitação, na modalidade " + (nome ? esc(modal) : pre("modalidade")) + ", na forma ELETRÔNICA, nos termos da Lei 14.133/2021 e demais legislação aplicável e, ainda, de acordo com as condições estabelecidas neste Edital.");
+h += par("Publicação do edital: " + valLinha(dataBR(p.dataPrevistaEdital), "data de publicação") + " (art. 54: divulgação no Portal Nacional de Contratações Públicas — PNCP). Prazo mínimo entre a publicação e a abertura: " + (pz.diasUteis ? esc(pz.diasUteis) + " dias úteis (art. 55), isto é, a partir de " + esc(dataBR(pz.dataMinimaAbertura)) : pre("prazo mínimo do art. 55")) + ".");
+h += redigir(function (o) {
+o.sec("Do objeto");
+o.it("O objeto da presente licitação é " + val(p.objeto, "objeto da licitação") + ", conforme condições, quantidades e exigências estabelecidas neste Edital e seus anexos.");
+o.it("A licitação será realizada em único item (a obra é contratada como um todo).");
+o.sec("Da participação na licitação");
+o.it("Poderão participar desta licitação os interessados que estiverem previamente credenciados no " + cad + " e no sistema eletrônico do portal " + valLinha(e.portal, "portal ou plataforma eletrônica da licitação") + ".");
+o.it("Os interessados deverão atender às condições exigidas no cadastramento no " + cad + " até o terceiro dia útil anterior à data prevista para recebimento das propostas.");
+o.it("O licitante responsabiliza-se exclusiva e formalmente pelas transações efetuadas em seu nome, assume como firmes e verdadeiras suas propostas e seus lances, inclusive os atos praticados diretamente ou por seu representante, excluída a responsabilidade do provedor do sistema ou do órgão promotor da licitação por eventuais danos decorrentes de uso indevido das credenciais de acesso, ainda que por terceiros.");
+o.it("É de responsabilidade do cadastrado conferir a exatidão dos seus dados cadastrais nos sistemas relacionados e mantê-los atualizados junto aos órgãos responsáveis pela informação, devendo proceder, imediatamente, à correção ou à alteração dos registros tão logo identifique incorreção ou aqueles se tornem desatualizados. A não observância poderá ensejar desclassificação no momento da habilitação.");
+if (me === true) {
+o.it("Será concedido tratamento favorecido para as microempresas e empresas de pequeno porte, para as sociedades cooperativas mencionadas no art. 16 da Lei 14.133/2021, para o agricultor familiar, o produtor rural pessoa física e para o microempreendedor individual (MEI), nos limites previstos da Lei Complementar 123/2006.", "tratamento");
+} else if (me === false) {
+o.it("Não será concedido, nesta licitação, o tratamento favorecido de que trata a Lei Complementar 123/2006 (decisão do órgão registrada nos parâmetros do processo).", "tratamento");
+} else o.it(pre("tratamento de ME/EPP (sim/não)"), "tratamento");
+o.it("Não poderão disputar esta licitação:", "vedacoes");
+var ved = [
+"aquele que não atenda às condições deste Edital e seu(s) anexo(s);",
+"autor do anteprojeto, do projeto básico ou do projeto executivo, pessoa física ou jurídica, quando a licitação versar sobre serviços ou fornecimento de bens a ele relacionados;",
+"empresa, isoladamente ou em consórcio, responsável pela elaboração do projeto básico ou do projeto executivo, ou empresa da qual o autor do projeto seja dirigente, gerente, controlador, acionista ou detentor de mais de 5% do capital com direito a voto, responsável técnico ou subcontratado, quando a licitação versar sobre serviços ou fornecimento de bens a ela necessários;",
+"pessoa física ou jurídica que se encontre, ao tempo da licitação, impossibilitada de participar da licitação em decorrência de sanção que lhe foi imposta;",
+"aquele que mantenha vínculo de natureza técnica, comercial, econômica, financeira, trabalhista ou civil com dirigente do órgão contratante ou com agente público que desempenhe função na licitação ou atue na fiscalização ou na gestão do contrato, ou que deles seja cônjuge, companheiro ou parente em linha reta, colateral ou por afinidade, até o terceiro grau;",
+"empresas controladoras, controladas ou coligadas, nos termos da Lei 6.404/1976, concorrendo entre si;",
+"pessoa física ou jurídica que, nos 5 anos anteriores à divulgação do edital, tenha sido condenada judicialmente, com trânsito em julgado, por exploração de trabalho infantil, por submissão de trabalhadores a condições análogas às de escravo ou por contratação de adolescentes nos casos vedados pela legislação trabalhista;",
+"agente público do órgão licitante;"
+];
+if (cons !== true) ved.push("pessoas jurídicas reunidas em consórcio;");
+ved.push("Organizações da Sociedade Civil de Interesse Público (OSCIP), atuando nessa condição.");
+o.al(ved);
+if (cons === true) {
+o.it("É permitida a participação de pessoas jurídicas reunidas em consórcio (art. 15). Para a habilitação técnica será feito o somatório dos quantitativos de cada consorciado e, para a econômico-financeira, o somatório dos valores de cada consorciado. Se o consórcio não for formado integralmente por microempresas ou empresas de pequeno porte, haverá acréscimo de habilitação econômico-financeira para o consórcio em relação ao exigido dos licitantes individuais: " + valCampo(p, "consorcioAcrescimo") + ".");
+} else if (cons === null) o.it(pre("participação de consórcio (sim/não)"));
+o.it("Não poderá participar, direta ou indiretamente, da licitação ou da execução do contrato agente público do órgão contratante, devendo ser observadas as situações que possam configurar conflito de interesses no exercício ou após o exercício do cargo ou emprego, nos termos do art. 9º, §1º, da Lei 14.133/2021.");
+o.it("A critério da Administração e exclusivamente a seu serviço, o autor dos projetos e a empresa a que se referem as alíneas b e c do item " + o.r("vedacoes") + " poderão participar no apoio das atividades de planejamento da contratação, de execução da licitação ou de gestão do contrato, desde que sob supervisão exclusiva de agentes públicos do órgão. Equiparam-se aos autores do projeto as empresas integrantes do mesmo grupo econômico.");
+o.it("O impedimento relativo ao projeto não impede a licitação ou a contratação de serviço que inclua como encargo do contratado a elaboração do projeto executivo (nos demais regimes de execução) ou do projeto básico e do projeto executivo (nas contratações integradas).");
+o.it("Em licitações e contratações realizadas no âmbito de projetos e programas parcialmente financiados por agência oficial de cooperação estrangeira ou organismo financeiro internacional com recursos do financiamento ou da contrapartida nacional, não poderá participar pessoa física ou jurídica que integre o rol de pessoas sancionadas por essas entidades ou que seja declarada inidônea nos termos da Lei 14.133/2021, vedação que se estende a terceiro que auxilie a condução da contratação na qualidade de integrante de equipe de apoio, profissional especializado ou funcionário ou representante de empresa que preste assessoria técnica.");
+o.sec("Da apresentação da proposta e dos documentos de habilitação");
+o.it("Nesta licitação, a fase de habilitação sucederá as fases de apresentação de propostas e lances e de julgamento. (Adotando-se a modalidade concorrência, o critério de julgamento poderá ser o menor preço ou maior desconto, a melhor técnica, técnica e preço, ou o maior retorno econômico.)");
+o.it("Os licitantes encaminharão, exclusivamente por meio do sistema eletrônico, a proposta com o " + vp + ", conforme o critério de julgamento adotado neste Edital, até a data e o horário estabelecidos para abertura da sessão pública.");
+o.it("Caso a fase de habilitação anteceda as fases de apresentação de propostas e lances, os licitantes encaminharão, na forma e no prazo acima, simultaneamente os documentos de habilitação e a proposta (art. 17, §1º).");
+o.it("No cadastramento da proposta inicial, o licitante declarará, em campo próprio do sistema, que:", "declaracoes");
+o.al([
+"está ciente e concorda com as condições contidas no edital e seus anexos, bem como de que a proposta apresentada compreende a integralidade dos custos para atendimento dos direitos trabalhistas assegurados na Constituição Federal, nas leis trabalhistas, nas normas infralegais, nas convenções coletivas de trabalho e nos termos de ajustamento de conduta vigentes na data de sua entrega em definitivo e que cumpre plenamente os requisitos de habilitação definidos no instrumento convocatório;",
+"não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre e não emprega menor de 16 anos, salvo menor, a partir de 14 anos, na condição de aprendiz, nos termos do art. 7º, XXXIII, da Constituição;",
+"não possui empregados executando trabalho degradante ou forçado, observando o disposto nos incisos III e IV do art. 1º e no inciso III do art. 5º da Constituição Federal;",
+"cumpre as exigências de reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social, previstas em lei e em outras normas específicas."
+]);
+o.it("O licitante organizado em cooperativa deverá declarar, ainda, em campo próprio do sistema, que cumpre os requisitos estabelecidos no art. 16 da Lei 14.133/2021.");
+if (me === true) {
+o.it("O fornecedor enquadrado como microempresa, empresa de pequeno porte ou sociedade cooperativa deverá declarar, ainda, em campo próprio do sistema, que cumpre os requisitos estabelecidos no art. 3º da Lei Complementar 123/2006, estando apto a usufruir do tratamento favorecido estabelecido em seus arts. 42 a 49, observado o disposto nos §§1º a 3º do art. 4º da Lei 14.133/2021.", "declme");
+o.al([
+"no item exclusivo para participação de microempresas e empresas de pequeno porte, a assinalação do campo «não» impedirá o prosseguimento no certame, para aquele item;",
+"nos itens em que a participação não for exclusiva, a assinalação do campo «não» apenas produzirá o efeito de o licitante não ter direito ao tratamento favorecido, mesmo que microempresa, empresa de pequeno porte ou sociedade cooperativa."
+]);
 }
+o.it("A falsidade das declarações sujeitará o licitante às sanções previstas na Lei 14.133/2021 e neste Edital.");
+o.it("Os licitantes poderão retirar ou substituir a proposta ou, na hipótese de a fase de habilitação anteceder as fases de apresentação de propostas e lances e de julgamento, os documentos de habilitação anteriormente inseridos no sistema, até a abertura da sessão pública.");
+o.it("Não haverá ordem de classificação na etapa de apresentação da proposta e dos documentos de habilitação pelo licitante, o que ocorrerá somente após os procedimentos de abertura da sessão pública e da fase de envio de lances. Serão disponibilizados para acesso público os documentos que compõem a proposta dos licitantes convocados para apresentação de propostas, após a fase de envio de lances.");
+if (lances) {
+o.it("Desde que disponibilizada a funcionalidade no sistema, o licitante poderá parametrizar o seu valor final mínimo ou o seu percentual de desconto máximo quando do cadastramento da proposta, e obedecerá às seguintes regras: a aplicação do intervalo mínimo de diferença de valores ou de percentuais entre os lances, que incidirá tanto em relação aos lances intermediários quanto em relação ao lance que cobrir a melhor oferta; e lances de envio automático pelo sistema, respeitado o valor final mínimo, caso estabelecido, e o intervalo mínimo.");
+o.it("O valor final mínimo ou o percentual de desconto final máximo parametrizado poderá ser alterado pelo fornecedor durante a fase de disputa, sendo vedado valor superior a lance já registrado pelo fornecedor (menor preço) ou percentual de desconto inferior a lance já registrado (maior desconto). Esse parâmetro possui caráter sigiloso para os demais fornecedores e para o órgão, podendo ser disponibilizado estrita e permanentemente aos órgãos de controle externo e interno.");
+}
+o.it("Caberá ao licitante acompanhar as operações no sistema eletrônico durante o processo licitatório e responsabilizar-se pelo ônus decorrente da perda de negócios diante da inobservância de mensagens emitidas pela Administração ou de sua desconexão, e comunicar imediatamente ao provedor do sistema qualquer acontecimento que possa comprometer o sigilo ou a segurança, para imediato bloqueio de acesso.");
+o.sec("Do preenchimento da proposta");
+o.it("O licitante deverá enviar sua proposta mediante o preenchimento, no sistema eletrônico, do campo do " + vp + " global do item e, quando exigido, da planilha de preços do órgão, com a numeração, a descrição, a unidade e a quantidade de cada item do orçamento do órgão preservadas, sem alteração; só o preço unitário é do licitante.");
+o.it("Todas as especificações do objeto contidas na proposta vinculam o licitante.");
+o.it("Nos valores propostos estarão inclusos todos os custos operacionais, encargos previdenciários, trabalhistas, tributários, comerciais e quaisquer outros que incidam direta ou indiretamente na execução do objeto.");
+o.it("Os preços ofertados, tanto na proposta inicial quanto na etapa de lances, serão de exclusiva responsabilidade do licitante, não lhe assistindo o direito de pleitear qualquer alteração, sob alegação de erro, omissão ou qualquer outro pretexto.");
+o.it("Se o regime tributário da empresa implicar o recolhimento de tributos em percentuais variáveis, a cotação adequada será a que corresponde à média dos efetivos recolhimentos da empresa nos últimos doze meses. Independentemente do percentual de tributo inserido na planilha, no pagamento serão retidos na fonte os percentuais estabelecidos na legislação vigente.");
+if (me === true) o.it("Na presente licitação, a microempresa e a empresa de pequeno porte poderão se beneficiar do regime de tributação pelo Simples Nacional.");
+o.it("A apresentação das propostas implica obrigatoriedade do cumprimento das disposições nelas contidas, em conformidade com o que dispõe o projeto básico / termo de referência, assumindo o proponente o compromisso de executar o objeto licitado nos seus termos, bem como de fornecer os materiais, equipamentos, ferramentas e utensílios necessários, em quantidades e qualidades adequadas à perfeita execução contratual, promovendo, quando requerido, sua substituição.");
+o.it("O prazo de validade da proposta não será inferior a 60 (sessenta) dias, a contar da data de sua apresentação.");
+if (desc) o.it("Como o critério de julgamento é o de maior desconto, o preço já decorrente da aplicação do desconto ofertado deverá respeitar os preços máximos previstos no projeto básico / termo de referência.");
+if (fed) o.it("Os licitantes devem respeitar os preços máximos estabelecidos nas normas de regência de contratações públicas federais, por se tratar de contratação com recursos da União. O descumprimento pode ensejar a responsabilização pelo Tribunal de Contas da União e, após o devido processo legal, a condenação dos agentes públicos responsáveis e da empresa contratada ao pagamento dos prejuízos ao erário, caso verificado superfaturamento por sobrepreço na execução do contrato.");
+o.sec("Da abertura da sessão, classificação das propostas e formulação de lances");
+o.it("A abertura da presente licitação dar-se-á automaticamente em sessão pública, por meio de sistema eletrônico, na data, horário e local indicados neste Edital.");
+o.it("O sistema disponibilizará campo próprio para troca de mensagens entre o agente de contratação / comissão e os licitantes.");
+if (!lances) {
+o.it(crit === "técnica e preço" ? "O critério é o de técnica e preço (art. 33): a pontuação da proposta técnica e da proposta de preço segue os critérios e a ponderação do termo de referência, e a sessão pública observa a ordem de classificação assim obtida." : pre("critério de julgamento"));
+} else {
+o.it("Iniciada a etapa competitiva, os licitantes deverão encaminhar lances exclusivamente por meio de sistema eletrônico, sendo imediatamente informados do seu recebimento e do valor consignado no registro. O lance deverá ser ofertado pelo valor global do item, e os licitantes poderão oferecer lances sucessivos, observando o horário fixado para abertura da sessão e as regras estabelecidas no Edital.");
+o.it("O licitante somente poderá oferecer lance de valor inferior ou percentual de desconto superior ao último por ele ofertado e registrado pelo sistema.");
+o.it("O intervalo mínimo de diferença de valores ou percentuais entre os lances, que incidirá tanto em relação aos lances intermediários quanto em relação à proposta que cobrir a melhor oferta, deverá ser de " + valCampo(p, "intervaloLances") + ".");
+o.it("O licitante poderá, uma única vez, excluir seu último lance ofertado, no intervalo de quinze segundos após o registro no sistema, na hipótese de lance inconsistente ou inexequível.");
+o.it("O procedimento seguirá de acordo com o modo de disputa adotado: " + (vazio(e.modoDisputa) ? pre("modo de disputa") : esc(e.modoDisputa)) + ".", "modo");
+if (e.modoDisputa === "aberto") {
+o.it("Modo de disputa aberto: os licitantes apresentarão lances públicos e sucessivos, com prorrogações. A etapa de lances terá duração de dez minutos e, após isso, será prorrogada automaticamente pelo sistema quando houver lance ofertado nos últimos dois minutos do período de duração da sessão pública. A prorrogação automática será de dois minutos e ocorrerá sucessivamente sempre que houver lances enviados nesse período, inclusive no caso de lances intermediários. Não havendo novos lances, a sessão pública encerrar-se-á automaticamente, e o sistema ordenará e divulgará os lances conforme a ordem final de classificação.");
+o.it("Definida a melhor proposta, se a diferença em relação à classificada em segundo lugar for de pelo menos 5%, o agente de contratação / comissão, auxiliado pela equipe de apoio, poderá admitir o reinício da disputa aberta, para a definição das demais colocações, convocando os licitantes para apresentar lances intermediários.");
+} else if (e.modoDisputa === "aberto e fechado") {
+o.it("Modo de disputa aberto e fechado: os licitantes apresentarão lances públicos e sucessivos, com lance final e fechado. A etapa de lances terá duração inicial de quinze minutos; após esse prazo, o sistema encaminhará aviso de fechamento iminente dos lances, após o que transcorrerá o período de até dez minutos, aleatoriamente determinado, findo o qual será automaticamente encerrada a recepção de lances.");
+o.it("Encerrado esse prazo, o sistema abrirá oportunidade para que o autor da oferta de valor mais baixo e os das ofertas com preços até 10% superiores àquela possam ofertar um lance final e fechado em até cinco minutos, sigiloso até o encerramento do prazo, podendo o licitante manter o seu último lance da etapa aberta ou ofertar melhor lance. Não havendo pelo menos três ofertas nessas condições, poderão os autores dos melhores lances subsequentes, na ordem de classificação, até o máximo de três, oferecer um lance final e fechado em até cinco minutos. Após os prazos, o sistema ordenará e divulgará os lances segundo a ordem crescente de valores.");
+} else if (e.modoDisputa === "fechado e aberto") {
+o.it("Modo de disputa fechado e aberto: poderão participar da etapa aberta somente os licitantes que apresentarem a proposta de menor preço / maior percentual de desconto e os das propostas até 10% superiores / inferiores àquela, que apresentarão lances públicos e sucessivos, até o encerramento da sessão e eventuais prorrogações. Não havendo pelo menos 3 propostas nessas condições, poderão os licitantes que apresentaram as três melhores propostas, consideradas as empatadas, oferecer novos lances sucessivos.");
+o.it("A etapa de lances terá duração de dez minutos e será prorrogada automaticamente, por dois minutos e sucessivamente, quando houver lance ofertado nos últimos dois minutos do período. Definida a melhor proposta, se a diferença em relação à classificada em segundo lugar for de pelo menos 5%, o agente de contratação / comissão poderá admitir o reinício da disputa aberta, com lances intermediários. Ao término dos prazos, o sistema ordenará e divulgará os lances segundo a ordem crescente de valores.");
+}
+o.it("Não serão aceitos dois ou mais lances de mesmo valor, prevalecendo aquele que for recebido e registrado em primeiro lugar. Durante o transcurso da sessão pública, os licitantes serão informados, em tempo real, do valor do menor lance registrado, vedada a identificação do licitante.");
+o.it("No caso de desconexão com o agente de contratação / comissão, no decorrer da etapa competitiva, o sistema eletrônico poderá permanecer acessível aos licitantes para a recepção dos lances. Quando a desconexão persistir por tempo superior a dez minutos, a sessão pública será suspensa e reiniciada somente após decorridas vinte e quatro horas da comunicação do fato aos participantes, no sítio eletrônico utilizado para divulgação. Caso o licitante não apresente lances, concorrerá com o valor de sua proposta.");
+}
+if (me === true) {
+o.it("Em relação a itens não exclusivos para participação de microempresas e empresas de pequeno porte, uma vez encerrada a etapa de lances será verificado o porte da entidade empresarial. As propostas de microempresas e empresas de pequeno porte que se encontrarem na faixa de até 10% acima da melhor proposta ou melhor lance serão consideradas empatadas com a primeira colocada (arts. 44 e 45 da Lei Complementar 123/2006). A melhor classificada nessa faixa terá o direito de encaminhar uma última oferta para desempate, obrigatoriamente em valor inferior ao da primeira colocada, no prazo de 5 minutos controlados pelo sistema; se desistir ou não se manifestar, serão convocadas as demais microempresas e empresas de pequeno porte na faixa, na ordem de classificação; havendo equivalência de valores, será realizado sorteio entre elas.");
+}
+o.it("Só poderá haver empate entre propostas iguais (não seguidas de lances), ou entre lances finais da fase fechada do modo de disputa aberto e fechado. Havendo empate, o critério de desempate será o do art. 60 da Lei 14.133/2021, nesta ordem:");
+o.al([
+"disputa final, hipótese em que os licitantes empatados poderão apresentar nova proposta em ato contínuo à classificação;",
+"avaliação do desempenho contratual prévio dos licitantes, para a qual deverão preferencialmente ser utilizados registros cadastrais para efeito de atesto de cumprimento de obrigações;",
+"desenvolvimento pelo licitante de ações de equidade entre homens e mulheres no ambiente de trabalho, conforme regulamento;",
+"desenvolvimento pelo licitante de programa de integridade, conforme orientações dos órgãos de controle."
+]);
+o.it("Persistindo o empate, será assegurada preferência, sucessivamente, aos bens e serviços produzidos ou prestados por: empresas estabelecidas no território do Estado do órgão licitante; empresas brasileiras; empresas que invistam em pesquisa e no desenvolvimento de tecnologia no País; e empresas que comprovem a prática de mitigação, nos termos da Lei 12.187/2009.");
+o.it(sig ? "Encerrada a etapa de envio de lances, o agente de contratação / comissão poderá negociar condições mais vantajosas com o primeiro colocado se a proposta permanecer acima do preço máximo definido pela Administração. " + TEXTO_SIGILO : "Encerrada a etapa de envio de lances, na hipótese de a proposta do primeiro colocado permanecer acima do preço máximo ou inferior ao desconto definido para a contratação, o agente de contratação / comissão poderá negociar condições mais vantajosas, após definido o resultado do julgamento.");
+o.it("A negociação poderá ser feita com os demais licitantes, segundo a ordem de classificação inicialmente estabelecida, quando o primeiro colocado, mesmo após a negociação, for desclassificado em razão de sua proposta permanecer acima do preço máximo definido pela Administração. A negociação será realizada por meio do sistema, podendo ser acompanhada pelos demais licitantes, e o resultado será divulgado a todos e anexado aos autos do processo licitatório.");
+o.it("O agente de contratação / comissão solicitará ao licitante mais bem classificado que, no prazo de 2 (duas) horas, envie a proposta adequada ao último lance ofertado após a negociação, acompanhada, se for o caso, dos documentos complementares necessários à confirmação daqueles exigidos neste Edital e já apresentados. É facultado prorrogar o prazo, a partir de solicitação fundamentada feita no chat pelo licitante, antes de findo o prazo. Após a negociação do preço, iniciar-se-á a fase de aceitação e julgamento da proposta.");
+o.sec("Da fase de julgamento");
+o.it("Encerrada a etapa de negociação, o agente de contratação / comissão verificará se o licitante provisoriamente classificado em primeiro lugar atende às condições de participação no certame, conforme o art. 14 da Lei 14.133/2021, a legislação correlata e o item " + o.r("vedacoes") + " do edital, especialmente quanto à existência de sanção que impeça a participação ou a futura contratação, mediante consulta aos seguintes cadastros:");
+o.al([cad + ";", "Cadastro Nacional de Empresas Inidôneas e Suspensas (CEIS), mantido pela Controladoria-Geral da União (https://www.portaltransparencia.gov.br/sancoes/ceis); e", "Cadastro Nacional de Empresas Punidas (CNEP), mantido pela Controladoria-Geral da União (https://www.portaltransparencia.gov.br/sancoes/cnep)."]);
+o.it("A consulta aos cadastros será realizada em nome da empresa licitante e também de seu sócio majoritário, por força da vedação do art. 12 da Lei 8.429/1992. Constatada a existência de sanção, o licitante será reputado inabilitado, por falta de condição de participação.");
+o.it("Na hipótese de inversão das fases de habilitação e julgamento, caso atendidas as condições de participação, será iniciado o procedimento de habilitação.");
+if (me === true) o.it("Caso o licitante provisoriamente classificado em primeiro lugar tenha se utilizado de tratamento favorecido às ME/EPP, o agente de contratação / comissão verificará se faz jus ao benefício, em conformidade com os itens " + o.r("tratamento") + " e " + o.r("declme") + " deste edital.");
+o.it("Verificadas as condições de participação, o agente de contratação / comissão examinará a proposta classificada em primeiro lugar quanto à adequação ao objeto e à compatibilidade do preço em relação ao máximo estipulado para contratação neste Edital e em seus anexos. " + (sig ? TEXTO_SIGILO : ""), "aceitabilidade");
+o.it("Será desclassificada a proposta vencedora que:");
+o.al(["contiver vícios insanáveis;", "não obedecer às especificações técnicas contidas no projeto básico / termo de referência;", "apresentar preços inexequíveis ou permanecerem acima do preço máximo definido para a contratação;", "não tiverem sua exequibilidade demonstrada, quando exigido pela Administração;", "apresentar desconformidade com quaisquer outras exigências deste Edital ou seus anexos, desde que insanável."]);
+o.it("No caso de bens e serviços em geral, é indício de inexequibilidade das propostas valores inferiores a 50% do valor orçado pela Administração, que só será considerada após diligência do agente de contratação / comissão, que comprove que o custo do licitante ultrapassa o valor da proposta e que inexistem custos de oportunidade capazes de justificar o vulto da oferta.");
+o.it("Em contratação de serviços de engenharia, além do acima, a análise de exequibilidade e sobrepreço considerará o seguinte:");
+if (global_ === null) o.al([pre("regime de execução (define como se caracteriza o sobrepreço)")]);
+else if (global_) o.al(["no regime de execução " + esc(reg) + ", a caracterização do sobrepreço se dará pela superação do valor global estimado;"]);
+else o.al(["no regime de empreitada por preço unitário, a caracterização do sobrepreço se dará pela superação do valor global estimado e pela superação de custo unitário tido como relevante, conforme a planilha anexa ao edital;"]);
+var inex = exe ? numBR(exe.inexequivelAbaixoPct, 0) : null, gad = exe ? numBR(exe.garantiaAdicionalAbaixoPct, 0) : null;
+o.al([exe ? "serão consideradas inexequíveis as propostas cujos valores forem inferiores a " + inex + "% do valor orçado pela Administração, independentemente do regime de execução (art. 59);" : pre("exequibilidade (percentuais do art. 59)"),
+exe ? "será exigida garantia adicional do licitante vencedor cuja proposta for inferior a " + gad + "% do valor orçado pela Administração, equivalente à diferença entre este último e o valor da proposta, sem prejuízo das demais garantias exigíveis de acordo com a Lei." : pre("garantia adicional (percentual do art. 59)")]);
+o.it("Se houver indícios de inexequibilidade da proposta de preço, ou em caso da necessidade de esclarecimentos complementares, poderão ser efetuadas diligências, para que a empresa comprove a exequibilidade da proposta.");
+o.it("O licitante classificado em primeiro lugar será convocado para apresentar, por meio eletrônico, a planilha com a indicação dos quantitativos e dos custos unitários, seguindo o modelo elaborado pela Administração, com detalhamento das Bonificações e Despesas Indiretas (BDI) e dos Encargos Sociais (ES), com os respectivos valores adequados ao valor final da sua proposta, sob pena de não aceitação da proposta. Nos regimes de preço global, empreitada integral, contratação semi-integrada e contratação integrada, a utilização dos preços unitários é admitida exclusivamente para eventuais adequações indispensáveis no cronograma físico-financeiro e para balizar excepcional aditamento posterior do contrato.");
+o.it("Erros no preenchimento da planilha não constituem motivo para a desclassificação da proposta. A planilha poderá ser ajustada pelo fornecedor, no prazo indicado pelo sistema, desde que não haja majoração do preço e que se comprove que este é o bastante para arcar com todos os custos da contratação; o ajuste limita-se a sanar erros ou falhas que não alterem a substância das propostas. Considera-se erro passível de correção a indicação de recolhimento de impostos e contribuições na forma do Simples Nacional, quando não cabível esse regime.");
+o.it("Para fins de análise da proposta quanto ao cumprimento das especificações do objeto, poderá ser colhida a manifestação escrita do setor requisitante ou da área especializada no objeto.");
+if (amo === true) {
+o.it("O projeto básico / termo de referência exige a apresentação de amostra: o licitante classificado em primeiro lugar deverá apresentá-la, sob pena de não aceitação da proposta. Por mensagem no sistema será divulgado o local e horário do procedimento de avaliação das amostras, cuja presença é facultada a todos os interessados, incluindo os demais licitantes, e os resultados também serão divulgados por mensagem no sistema.");
+o.it("No caso de não haver entrega da amostra ou ocorrer atraso, sem justificativa aceita pelo agente de contratação / comissão, ou havendo entrega de amostra fora das especificações previstas neste Edital, a proposta do licitante será recusada. Se a amostra do primeiro classificado não for aceita, analisar-se-á a aceitabilidade da proposta do segundo classificado e, assim, sucessivamente, até a verificação de uma que atenda às especificações.");
+} else if (amo === null) o.it(pre("amostra ou prova de conceito (sim/não)"));
+o.sec("Da fase de habilitação");
+o.it("Os documentos previstos no projeto básico / termo de referência, necessários e suficientes para demonstrar a capacidade do licitante de realizar o objeto da licitação, serão exigidos para fins de habilitação, nos termos dos arts. 62 a 70 da Lei 14.133/2021.");
+o.it("A documentação exigida para fins de habilitação jurídica, fiscal, social e trabalhista e econômico-financeira poderá ser substituída pelo registro cadastral no " + cad + ", ou por registro cadastral emitido por órgão ou entidade pública, desde que o registro tenha sido feito em obediência ao disposto na Lei 14.133/2021.");
+o.it("Quando permitida a participação de empresas estrangeiras que não funcionem no País, as exigências de habilitação serão atendidas mediante documentos equivalentes, inicialmente apresentados em tradução livre; sendo vencedora, para fins de assinatura do contrato, os documentos serão traduzidos por tradutor juramentado no País e apostilados, ou consularizados pelos respectivos consulados ou embaixadas.");
+if (cons === true) o.it("Na participação de consórcio, a habilitação técnica será feita por meio do somatório dos quantitativos de cada consorciado e, para a econômico-financeira, o somatório dos valores de cada consorciado, com o acréscimo indicado no item " + o.r("vedacoes") + " quando aplicável.");
+o.it("Os documentos exigidos para fins de habilitação poderão ser apresentados em original ou por cópia autenticada, ou por meio digital admitido pelo sistema. Somente haverá a necessidade de comprovação do preenchimento de requisitos mediante apresentação dos documentos originais não digitais quando houver dúvida em relação à integridade do documento digital ou quando a lei expressamente o exigir.");
+o.it("Será verificado se o licitante apresentou declaração de que atende aos requisitos de habilitação, e o declarante responderá pela veracidade das informações prestadas, na forma da lei (art. 63, I). Será verificado também, sob pena de inabilitação, que apresentou no sistema a declaração de que cumpre as exigências de reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social, e, sob pena de desclassificação, a declaração de que suas propostas econômicas compreendem a integralidade dos custos para atendimento dos direitos trabalhistas.");
+if (vis === true) {
+o.it("Considerando que, nesta contratação, a avaliação prévia do local de execução é imprescindível para o conhecimento pleno das condições e peculiaridades do objeto, o licitante deve atestar, sob pena de inabilitação, que conhece o local e as condições de realização do serviço, assegurado a ele o direito de realização de vistoria prévia (art. 63, §2º).");
+o.it("O licitante que optar por realizar vistoria prévia terá disponibilizado pela Administração data e horário exclusivos, a ser agendado por " + valCampo(p, "visitaAgendamento") + ", de modo que seu agendamento não coincida com o de outros licitantes. Caso opte por não realizar vistoria, poderá substituir a declaração exigida por declaração formal assinada pelo seu responsável técnico acerca do conhecimento pleno das condições e peculiaridades da contratação.");
+} else if (vis === null) o.it(pre("visita técnica (sim/não)"));
+o.it("A habilitação será verificada por meio do " + cad + ", nos documentos por ele abrangidos. É de responsabilidade do licitante conferir a exatidão dos seus dados cadastrais e mantê-los atualizados, sob pena de desclassificação no momento da habilitação. A verificação, pelo agente de contratação / comissão, em sítios eletrônicos oficiais de órgãos e entidades emissores de certidões constitui meio legal de prova.");
+o.it("Os documentos exigidos para habilitação que não estejam contemplados no " + cad + " serão enviados por meio do sistema, em formato digital, no prazo de, no mínimo, duas horas, prorrogável por igual período, contado da solicitação do agente de contratação / comissão. A verificação ou a exigência dos documentos somente será feita em relação ao licitante vencedor. Os documentos de regularidade fiscal somente serão exigidos em momento posterior ao julgamento das propostas e apenas do licitante mais bem classificado. Quando a fase de habilitação anteceder as fases de apresentação de propostas e lances e de julgamento, a verificação ou exigência ocorrerá em relação a todos os licitantes.");
+o.it("Após a entrega dos documentos para habilitação, não será permitida a substituição ou a apresentação de novos documentos, salvo em sede de diligência (art. 64), para complementação de informações acerca dos documentos já apresentados, desde que necessária para apurar fatos existentes à época da abertura do certame, e para atualização de documentos cuja validade tenha expirado após a data de recebimento das propostas.");
+o.it("Na análise dos documentos de habilitação, a comissão poderá sanar erros ou falhas que não alterem a substância dos documentos e sua validade jurídica, mediante decisão fundamentada, registrada em ata e acessível a todos, atribuindo-lhes eficácia para fins de habilitação e classificação.");
+o.it("Na hipótese de o licitante não atender às exigências para habilitação, o agente de contratação / comissão examinará a proposta subsequente e assim sucessivamente, na ordem de classificação, até a apuração de uma proposta que atenda ao presente edital. Somente serão disponibilizados para acesso público os documentos de habilitação do licitante cuja proposta atenda ao edital, após concluídos os procedimentos.");
+if (me === true) o.it("A comprovação de regularidade fiscal e trabalhista das microempresas e empresas de pequeno porte somente será exigida para efeito de contratação, e não como condição para participação na licitação.");
+o.it("Quando a fase de habilitação anteceder a de julgamento e já tiver sido encerrada, não caberá exclusão de licitante por motivo relacionado à habilitação, salvo em razão de fatos supervenientes ou só conhecidos após o julgamento.");
+o.sec("Dos recursos");
+o.it("A interposição de recurso referente ao julgamento das propostas, à habilitação ou inabilitação de licitantes, à anulação ou revogação da licitação, observará o disposto no art. 165 da Lei 14.133/2021.");
+o.it("O prazo recursal é de " + (recp ? numBR(recp.diasUteis, 0) + " dias úteis" : pre("prazo de recurso")) + ", contados da data de intimação ou de lavratura da ata.");
+o.it("Quando o recurso impugnar o julgamento das propostas ou o ato de habilitação ou inabilitação do licitante: a intenção de recorrer deverá ser manifestada imediatamente, sob pena de preclusão, e o prazo para a manifestação da intenção de recorrer não será inferior a 10 minutos; o prazo para apresentação das razões recursais será iniciado na data de intimação ou de lavratura da ata de habilitação ou inabilitação; na hipótese de adoção da inversão de fases (art. 17, §1º), o prazo para apresentação das razões recursais será iniciado na data de intimação da ata de julgamento.");
+o.it("Os recursos deverão ser encaminhados em campo próprio do sistema e dirigidos à autoridade que tiver editado o ato ou proferido a decisão recorrida, a qual poderá reconsiderar sua decisão no prazo de 3 dias úteis ou, nesse mesmo prazo, encaminhar o recurso à autoridade superior, que deverá proferir sua decisão no prazo de 10 dias úteis, contado do recebimento dos autos. Os recursos interpostos fora do prazo não serão conhecidos.");
+o.it("O prazo para apresentação de contrarrazões pelos demais licitantes será de 3 dias úteis, contados da data da intimação pessoal ou da divulgação da interposição do recurso, assegurada a vista imediata dos elementos indispensáveis à defesa de seus interesses.");
+o.it("O recurso e o pedido de reconsideração terão efeito suspensivo do ato ou da decisão recorrida até que sobrevenha decisão final da autoridade competente. O acolhimento do recurso invalida tão somente os atos insuscetíveis de aproveitamento.");
+o.it("Os autos do processo permanecerão com vista franqueada aos interessados no sítio eletrônico " + valLinha(e.portal, "portal ou plataforma eletrônica da licitação") + ".");
+o.sec("Das infrações administrativas e sanções");
+o.it("Comete infração administrativa, nos termos da lei, o licitante que, com dolo ou culpa:", "infracoes");
+o.al([
+"deixar de entregar a documentação exigida para o certame ou não entregar qualquer documento que tenha sido solicitado pelo agente de contratação / comissão durante o certame;",
+"salvo em decorrência de fato superveniente devidamente justificado, não mantiver a proposta, em especial quando não enviar a proposta adequada ao último lance ofertado ou após a negociação, recusar-se a enviar o detalhamento da proposta quando exigível, pedir para ser desclassificado quando encerrada a etapa competitiva, deixar de apresentar amostra ou apresentar proposta ou amostra em desacordo com as especificações do edital;",
+"não celebrar o contrato ou não entregar a documentação exigida para a contratação, quando convocado dentro do prazo de validade de sua proposta;",
+"recusar-se, sem justificativa, a assinar o contrato, ou a aceitar ou retirar o instrumento equivalente no prazo estabelecido pela Administração;",
+"apresentar declaração ou documentação falsa exigida para o certame ou prestar declaração falsa durante a licitação;",
+"fraudar a licitação;",
+"comportar-se de modo inidôneo ou cometer fraude de qualquer natureza, em especial quando induzir deliberadamente a erro no julgamento, apresentar amostra falsificada ou deteriorada ou praticar atos ilícitos com vistas a frustrar os objetivos da licitação;",
+"praticar ato lesivo previsto no art. 5º da Lei 12.846/2013."
+]);
+o.it("Com fulcro na Lei 14.133/2021, a Administração poderá, garantida a prévia defesa, aplicar aos licitantes e/ou adjudicatários as seguintes sanções, sem prejuízo das responsabilidades civil e criminal: advertência; multa; impedimento de licitar e contratar; e declaração de inidoneidade para licitar ou contratar, enquanto perdurarem os motivos determinantes da punição ou até que seja promovida sua reabilitação perante a própria autoridade que aplicou a penalidade.");
+o.it("Na aplicação das sanções serão considerados a natureza e a gravidade da infração cometida, as peculiaridades do caso concreto, as circunstâncias agravantes ou atenuantes, os danos que dela provierem para a Administração Pública e a implantação ou o aperfeiçoamento de programa de integridade, conforme normas e orientações dos órgãos de controle.");
+o.it("A multa será recolhida em percentual de 0,5% a 30% incidente sobre o valor do contrato licitado, no prazo fixado na comunicação oficial. Para as infrações das alíneas a, b e c do item " + o.r("infracoes") + ", a multa será de 0,5% a 15% do valor do contrato licitado; para as das alíneas d a h, de 15% a 30%.");
+o.it("As sanções de advertência, impedimento de licitar e contratar e declaração de inidoneidade poderão ser aplicadas, cumulativamente ou não, à penalidade de multa. Na aplicação da multa será facultada a defesa do interessado no prazo de 15 dias úteis, contado da data de sua intimação.");
+o.it("A sanção de impedimento de licitar e contratar será aplicada ao responsável em decorrência das infrações das alíneas a, b e c, quando não se justificar a imposição de penalidade mais grave, e impedirá o responsável de licitar e contratar no âmbito da Administração Pública direta e indireta do ente federativo a qual pertencer o órgão, pelo prazo máximo de 3 anos.");
+o.it("Poderá ser aplicada a sanção de declaração de inidoneidade em decorrência das infrações das alíneas d a h, bem como das alíneas a, b e c que justifiquem a imposição de penalidade mais grave que o impedimento, cuja duração observará o prazo do art. 156, §5º, da Lei 14.133/2021.");
+o.it("A recusa injustificada do adjudicatário em assinar o contrato, ou em aceitar ou retirar o instrumento equivalente no prazo estabelecido pela Administração, caracterizará o descumprimento total da obrigação assumida e o sujeitará às penalidades e à imediata perda da garantia de proposta em favor do órgão promotor da licitação.");
+o.it("A apuração de responsabilidade relacionada às sanções de impedimento de licitar e contratar e de declaração de inidoneidade demandará a instauração de processo de responsabilização conduzido por comissão composta por 2 ou mais servidores estáveis, que avaliará fatos e circunstâncias conhecidos e intimará o licitante ou o adjudicatário para, no prazo de 15 dias úteis, contado da data de sua intimação, apresentar defesa escrita e especificar as provas que pretenda produzir.");
+o.it("Caberá recurso no prazo de 15 dias úteis da aplicação das sanções de advertência, multa e impedimento de licitar e contratar, contado da data da intimação, dirigido à autoridade que tiver proferido a decisão recorrida, que, se não a reconsiderar no prazo de 5 dias úteis, encaminhará o recurso com sua motivação à autoridade superior, que deverá decidir no prazo máximo de 20 dias úteis, contado do recebimento dos autos. Caberá pedido de reconsideração da declaração de inidoneidade no prazo de 15 dias úteis, decidido no prazo máximo de 20 dias úteis. O recurso e o pedido de reconsideração terão efeito suspensivo.");
+o.it("A aplicação das sanções previstas neste edital não exclui, em hipótese alguma, a obrigação de reparação integral dos danos causados." + (vazio(e.sancoes) ? "" : " Regime complementar do órgão: " + nl2br(e.sancoes)));
+o.sec("Da impugnação ao edital e do pedido de esclarecimento");
+o.it("Qualquer pessoa é parte legítima para impugnar este Edital por irregularidade na aplicação da Lei 14.133/2021, devendo protocolar o pedido até 3 (três) dias úteis antes da data da abertura do certame.");
+o.it("A resposta à impugnação ou ao pedido de esclarecimento será divulgada em sítio eletrônico oficial no prazo de até 3 (três) dias úteis, limitado ao último dia útil anterior à data da abertura do certame.");
+o.it("A impugnação e o pedido de esclarecimento poderão ser realizados por forma eletrônica, pelo seguinte meio: " + valLinha(e.emailImpugnacao, "e-mail institucional para impugnações e pedidos de esclarecimento") + ".");
+o.it("As impugnações e pedidos de esclarecimentos não suspendem os prazos previstos no certame. A concessão de efeito suspensivo à impugnação é medida excepcional e deverá ser motivada pelo agente de contratação, nos autos do processo de licitação. Acolhida a impugnação, será definida e publicada nova data para a realização do certame.");
+o.sec("Das disposições gerais");
+o.it("Será divulgada ata da sessão pública no sistema eletrônico.");
+o.it("Não havendo expediente ou ocorrendo qualquer fato superveniente que impeça a realização do certame na data marcada, a sessão será automaticamente transferida para o primeiro dia útil subsequente, no mesmo horário anteriormente estabelecido, desde que não haja comunicação em contrário, pelo agente de contratação / comissão.");
+o.it("Todas as referências de tempo no Edital, no aviso e durante a sessão pública observarão o horário de Brasília - DF.");
+o.it("A homologação do resultado desta licitação não implicará direito à contratação.");
+o.it("As normas disciplinadoras da licitação serão sempre interpretadas em favor da ampliação da disputa entre os interessados, desde que não comprometam o interesse da Administração, o princípio da isonomia, a finalidade e a segurança da contratação.");
+o.it("Os licitantes assumem todos os custos de preparação e apresentação de suas propostas e a Administração não será, em nenhum caso, responsável por esses custos, independentemente da condução ou do resultado do processo licitatório.");
+o.it("Na contagem dos prazos estabelecidos neste Edital e seus Anexos, excluir-se-á o dia do início e incluir-se-á o do vencimento. Só se iniciam e vencem os prazos em dias de expediente na Administração.");
+o.it("O desatendimento de exigências formais não essenciais não importará o afastamento do licitante, desde que seja possível o aproveitamento do ato, observados os princípios da isonomia e do interesse público.");
+o.it("Em caso de divergência entre disposições deste Edital e de seus anexos ou demais peças que compõem o processo, prevalecerão as deste Edital.");
+if (fed) o.it("A contratação é custeada com recursos da União, por meio de " + valCampo(p, "instrumentoRepasse") + ", e se sujeita às normas do concedente, à fiscalização dos órgãos de controle federais e às demais condições do instrumento de transferência.");
+o.it("O Edital e seus anexos estão disponíveis, na íntegra, no Portal Nacional de Contratações Públicas (PNCP) e no endereço eletrônico " + valLinha(e.portal, "portal ou plataforma eletrônica da licitação") + ".");
+o.it("Integram este Edital, para todos os fins e efeitos, os seguintes anexos:");
+o.raw(lista(["Anexo I — Termo de referência / projeto básico (com o Estudo Técnico Preliminar, como apêndice)", "Anexo II — Planilha orçamentária" + (sig ? " (sem preços, enquanto o orçamento é sigiloso)" : "") + ", composições de custos, BDI e encargos sociais", "Anexo III — Cronograma físico-financeiro", "Anexo IV — Projetos e memoriais descritivos", "Anexo V — Matriz de riscos", "Anexo VI — Minuta do contrato", "Anexo VII — Modelos de declaração e de proposta"]));
+});
+return h + par(valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ", " + (ctx && ctx.hoje ? dataBR(ctx.hoje) : pre("data"))) + assinatura("Agente de contratação / presidente da comissão") + assinatura("Autoridade competente");
+}
+var CONFERIR = ' <b>[conferir com o jurídico]</b>';
 function contrato(p, ctx) {
+var e = p.edital || {}, t = p.tr || {}, sig = !publico(p, "valorEstimado");
+var sub = pv(p, "subcontratacao"), gar = pv(p, "garantia_contrato"), aditivo = pv(p, "aditivo_teto"), reaj = pv(p, "reajuste"), reg = pv(p, "regime_execucao");
+var rs = arr(p.riscos), cad = nomeCadastro(p);
 var h = cab(p, ctx, "Minuta de contrato", null);
-h += par("Cláusulas necessárias: Lei 14.133/2021, art. 92. Contrato nº: numeração atribuída pelo órgão na assinatura.");
-h += secao(1, "Partes", par("Contratante: " + valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ". Contratada: a licitante vencedora, qualificada na ata de julgamento e na assinatura."));
-h += secao(2, "Objeto", par(val(p.objeto, "objeto do contrato")));
-h += secao(3, "Vigência e prazo de execução", par(val((p.edital || {}).vigencia, "prazo de vigência e prazo de execução, em meses ou dias")));
-h += secao(4, "Preço", par("O preço é o da proposta vencedora, aceito pela Administração e registrado na ata de julgamento. " + (publico(p, "valorEstimado") ? "" : "O orçamento estimado é sigiloso até o julgamento (art. 24).")));
-h += secao(5, "Regime de execução, medição e pagamento", par("Regime: " + parOuPre(p, "regime_execucao", "regime de execução") + ". Medição: " + valLinha((p.tr || {}).medicao, "critério de medição") + ". Pagamento: " + valLinha((p.tr || {}).pagamento, "condições e prazo de pagamento") + "."));
-h += secao(6, "Reajuste", par(parOuPre(p, "reajuste", "índice e data-base do reajuste") + " (art. 25, §7º)."));
-h += secao(7, "Garantia", par(parOuPre(p, "garantia_contrato", "garantia do contrato") + " (arts. 96 a 99)."));
-h += secao(8, "Alterações do contrato", par(parOuPre(p, "aditivo_teto", "limites de acréscimos e supressões") + " (art. 125)."));
-h += secao(9, "Fiscalização e recebimento", par("Gestão e fiscalização: " + valLinha((p.tr || {}).gestao, "fiscal e gestor do contrato") + ". Recebimento: " + valLinha((p.tr || {}).recebimento, "critério de recebimento") + "."));
-h += secao(10, "Matriz de riscos", par("A alocação de riscos é a do anexo «Mapa e matriz de riscos» (art. 22)."));
-h += secao(11, "Rescisão, sanções e foro", par(val((p.edital || {}).rescisaoForo, "hipóteses de extinção, sanções e foro")));
-return h + assinatura("Contratante") + assinatura("Contratada");
+h += par("Contrato administrativo nº ____/____ (numeração atribuída pelo órgão na assinatura). Cláusulas necessárias: Lei 14.133/2021, art. 92. Estrutura do modelo de termo de contrato de obras e serviços comuns de engenharia da AGU/SEGES, adaptada ao município. Marcação «[conferir com o jurídico]»: redação que não consta do modelo de referência.");
+h += redigir(function (o) {
+o.sec("Das partes");
+o.it("Contratante: " + valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + (p.secretaria ? ", por intermédio de " + esc(p.secretaria) : "") + ", com sede em " + valLinha(e.enderecoOrgao, "endereço do órgão (sede)") + ", neste ato representado por " + valLinha(e.representante, "nome, cargo e ato de nomeação do representante do contratante") + ".");
+o.it("Contratada: a licitante vencedora, qualificada na ata de julgamento e na assinatura do contrato.");
+o.sec("Do objeto (art. 92, I e II)");
+o.it("O objeto do presente instrumento é a contratação de empresa especializada para a execução de " + val(p.objeto, "objeto do contrato") + ", nas condições estabelecidas no Termo de Referência.");
+o.it("Vinculam esta contratação, independentemente de transcrição: o Termo de Referência; o Edital da licitação; a proposta do contratado; e eventuais anexos dos documentos supracitados.");
+o.it("O regime de execução é o de " + parOuPre(p, "regime_execucao", "regime de execução") + " (art. 92, IV; art. 46).");
+o.sec("Da vigência e da prorrogação (art. 92, VII)");
+o.it("O prazo de vigência da contratação é de " + valLinha(e.vigencia, "prazo de vigência e prazo de execução, em meses ou dias") + ", contados da assinatura do contrato, na forma do art. 105 da Lei 14.133/2021.");
+o.it("O prazo de vigência será automaticamente prorrogado, independentemente de termo aditivo, quando o objeto não for concluído no período firmado acima, ressalvadas as providências cabíveis no caso de culpa do contratado, previstas neste instrumento.");
+o.sec("Dos modelos de execução e gestão contratuais (art. 92, IV, VII e XVIII)");
+o.it("O regime de execução contratual, os modelos de gestão e de execução, assim como os prazos e condições de conclusão, entrega, observação e recebimento do objeto, constam no Termo de Referência, anexo a este contrato. A execução terá início em " + valCampo(p, "inicioExecucao") + ", e o recebimento seguirá os prazos de " + valCampo(p, "prazoRecProvisorio") + " dias (provisório) e " + valCampo(p, "prazoRecDefinitivo") + " dias (definitivo) do Termo de Referência. Fiscalização e gestão: " + val(t.gestao, "fiscal e gestor do contrato") + ".");
+o.sec("Da matriz de riscos (art. 92, IX; art. 22)");
+if (!rs.length) o.it(pre("riscos da contratação (use a biblioteca do tipo de objeto)"));
+else {
+[["contratante", "Constituem riscos a serem suportados pelo contratante:"], ["contratada", "Constituem riscos a serem suportados pelo contratado:"], ["compartilhado", "Constituem riscos a serem compartilhados pelas partes:"]].forEach(function (g) {
+var lst = rs.filter(function (r) { return r.alocacao === g[0]; });
+if (lst.length) { o.it(g[1]); o.al(lst.map(function (r) { return esc(r.descricao) + ";"; })); }
+});
+var sem = rs.filter(function (r) { return !r.alocacao; });
+if (sem.length) o.it(pre("alocação de cada risco: " + sem.map(function (r) { return r.descricao; }).join("; ")));
+o.it("O detalhamento (causa, impacto, ações preventivas e de contingência) consta do anexo «Mapa e matriz de riscos»." + CONFERIR);
+}
+o.sec("Da subcontratação");
+if (sub === null) o.it(pre("subcontratação (sim/não)"));
+else if (sub === false) o.it("Não será admitida a subcontratação do objeto contratual.");
+else {
+o.it("É permitida a subcontratação parcial do objeto, até o limite de " + valCampo(p, "subcontratacaoLimite") + " do valor total do contrato, vedada a subcontratação completa ou da parcela principal da obrigação.");
+o.it("Em qualquer hipótese de subcontratação, permanece a responsabilidade integral do contratado pela perfeita execução contratual, cabendo-lhe realizar a supervisão e coordenação das atividades do subcontratado, bem como responder perante o contratante pelo rigoroso cumprimento das obrigações correspondentes ao objeto da subcontratação.");
+o.it("A subcontratação depende de autorização prévia do contratante, a quem incumbe avaliar se o subcontratado cumpre os requisitos de qualificação técnica necessários, mediante documentação apresentada pelo contratado e juntada aos autos.");
+o.it("É vedada a subcontratação de pessoa física ou jurídica, se aquela ou os dirigentes desta mantiverem vínculo de natureza técnica, comercial, econômica, financeira, trabalhista ou civil com dirigente do órgão contratante ou com agente público que desempenhe função na contratação ou atue na fiscalização ou na gestão do contrato, ou se deles forem cônjuge, companheiro ou parente em linha reta, colateral ou por afinidade, até o terceiro grau.");
+}
+o.sec("Do preço (art. 92, V)");
+o.it("O valor total da contratação é o da proposta vencedora, aceita pela Administração e registrada na ata de julgamento." + (sig ? " O orçamento estimado é sigiloso até o julgamento (art. 24)." : ""));
+o.it("No valor estão incluídas todas as despesas ordinárias diretas e indiretas decorrentes da execução do objeto, inclusive tributos e/ou impostos, encargos sociais, trabalhistas, previdenciários, fiscais e comerciais incidentes, taxa de administração, frete, seguro e outros necessários ao cumprimento integral do objeto da contratação.");
+o.it(reg !== null && !REGIMES_GLOBAIS.test(reg) ? "O valor é meramente estimativo, de forma que os pagamentos devidos ao contratado dependerão dos quantitativos efetivamente executados (empreitada por preço unitário)." : "Os pagamentos dependerão da medição dos serviços efetivamente executados, conforme o cronograma físico-financeiro." + CONFERIR);
+o.sec("Da medição, da liquidação e do pagamento (art. 92, V e VI)");
+o.it("Medição: " + valLinha(t.medicao, "critério de medição") + ". O prazo de liquidação é de " + valCampo(p, "prazoLiquidacao") + " dias úteis, contados do recebimento da nota fiscal ou documento de cobrança equivalente.");
+o.it("Pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento") + ". No caso de atraso pelo Contratante, os valores devidos serão atualizados monetariamente pelo índice " + valCampo(p, "indiceAtraso") + ". As demais condições constam do Termo de Referência, anexo a este contrato.");
+o.sec("Do reajuste (art. 92, V)");
+if (reaj === null) o.it(pre("índice e data-base do reajuste"));
+else {
+o.it("Os preços inicialmente contratados são fixos e irreajustáveis no prazo de um ano contado da data-base " + valLinha(dataBR(reaj.dataBase), "data-base do orçamento estimado") + " (art. 25, §7º).");
+o.it("Após o interregno de um ano, e independentemente de pedido do contratado, os preços iniciais serão reajustados, mediante a aplicação, pelo contratante, do índice " + (vazio(reaj.indice) ? pre("índice de reajuste") : esc(reaj.indice)) + ", exclusivamente para as obrigações iniciadas e concluídas após a ocorrência da anualidade. Nos reajustes subsequentes ao primeiro, o interregno mínimo de um ano será contado a partir dos efeitos financeiros do último reajuste.");
+o.it("No caso de atraso ou não divulgação do índice, o contratante pagará a importância calculada pela última variação conhecida, liquidando a diferença tão logo seja divulgado o índice definitivo. O contratado apresentará memória de cálculo do reajustamento. Extinto o índice, será adotado o que vier a ser determinado pela legislação; na ausência de previsão legal, as partes elegerão novo índice oficial, por termo aditivo. O reajuste será realizado por apostilamento.");
+}
+o.sec("Das obrigações do contratante (art. 92, X, XI e XIV)");
+o.it("São obrigações do Contratante: exigir o cumprimento de todas as obrigações assumidas pelo Contratado, de acordo com o contrato e seus anexos; receber o objeto no prazo e condições estabelecidos no Termo de Referência; notificar o Contratado, por escrito, de imperfeições, falhas, vícios, defeitos ou irregularidades constatadas, fixando prazo para a correção; acompanhar e fiscalizar a execução do contrato; comunicar a empresa para emissão de nota fiscal quanto à parcela incontroversa da execução, quando houver controvérsia sobre dimensão, qualidade e quantidade (art. 143); efetuar o pagamento no prazo, forma e condições estabelecidos; aplicar ao Contratado as sanções previstas na lei e neste contrato; fornecer por escrito as informações necessárias ao desenvolvimento dos serviços; realizar avaliações periódicas da qualidade dos serviços, após seu recebimento; comunicar o Contratado na hipótese de posterior alteração do projeto pelo Contratante (art. 93, §2º); e notificar os emitentes das garantias quanto ao início de processo administrativo para apuração de descumprimento de cláusulas contratuais (art. 137, §4º).");
+o.it("O Contratante emitirá decisão explícita sobre todas as solicitações e reclamações relacionadas à execução do contrato, ressalvados os requerimentos manifestamente impertinentes, meramente protelatórios ou de nenhum interesse para a boa execução do ajuste, e responderá aos pedidos de repactuação no prazo de " + valCampo(p, "prazoRepactuacao") + " e de reestabelecimento do equilíbrio econômico-financeiro no prazo de " + valCampo(p, "prazoReequilibrio") + ".");
+o.it("Previamente à expedição da ordem de serviço, o Contratante verificará pendências, liberará áreas e adotará as providências cabíveis para a regularidade do início da execução, e exigirá do Contratado, como condição para o recebimento definitivo, quando for o caso: o projeto «as built»; a comprovação das ligações definitivas de energia, água, telefone e gás; o laudo de vistoria do corpo de bombeiros; o alvará de funcionamento; a carta «habite-se»; a licença ambiental de operação, quando cabível; e a certidão negativa de débitos previdenciários específica para o registro da obra no Cartório de Registro de Imóveis.");
+o.it("O Contratante não responderá por quaisquer compromissos assumidos pelo Contratado com terceiros, ainda que vinculados à execução do contrato, nem por dano causado a terceiros em decorrência de ato do Contratado, de seus empregados, prepostos ou subordinados.");
+o.sec("Das obrigações do contratado (art. 92, XIV, XVI e XVII)");
+o.it("O Contratado deve cumprir todas as obrigações constantes deste contrato e de seus anexos, assumindo como exclusivamente seus os riscos e as despesas decorrentes da boa e perfeita execução do objeto, observando ainda: manter preposto aceito pela Administração no local do serviço; atender às determinações regulares do fiscal do contrato ou autoridade superior (art. 137, II); alocar os empregados necessários, com habilitação adequada, fornecendo materiais, equipamentos, ferramentas e utensílios, cuja quantidade, qualidade e tecnologia atendam às recomendações de boa técnica e à legislação de regência; reparar, corrigir, remover, reconstruir ou substituir, às suas expensas, no prazo fixado pelo fiscal, os serviços com vícios, defeitos ou incorreções; e responsabilizar-se pelos vícios e danos decorrentes da execução do objeto, de acordo com o Código de Defesa do Consumidor (Lei 8.078/1990), sem que a fiscalização reduza essa responsabilidade, ficando o Contratante autorizado a descontar dos pagamentos devidos ou da garantia o valor correspondente aos danos sofridos.");
+o.it("O Contratado deve ainda: comunicar ao Contratante, assim que tiver ciência, a impossibilidade de realização ou finalização do serviço no prazo; não contratar, durante a vigência do contrato, cônjuge, companheiro ou parente em linha reta, colateral ou por afinidade, até o terceiro grau, de dirigente do contratante ou do fiscal ou gestor do contrato (art. 48, parágrafo único); responsabilizar-se pelas obrigações trabalhistas, sociais, previdenciárias, tributárias e as demais previstas em legislação específica, cuja inadimplência não transfere a responsabilidade ao Contratante; comunicar ao fiscal, em 24 horas, qualquer ocorrência anormal ou acidente no local dos serviços; garantir o acesso, a qualquer tempo, aos locais e documentos relativos à execução; paralisar, por determinação do Contratante, qualquer atividade que não esteja sendo executada de acordo com a boa técnica ou que ponha em risco pessoas ou bens de terceiros; promover a guarda e a vigilância de materiais e ferramentas durante a vigência do contrato; manter limpo o local dos serviços e nas melhores condições de segurança, higiene e disciplina; e submeter previamente ao Contratante, por escrito, mudanças nos métodos executivos que fujam às especificações do memorial descritivo.");
+o.it("O Contratado manterá, durante toda a vigência do contrato, em compatibilidade com as obrigações assumidas, todas as condições exigidas para habilitação na licitação (art. 92, XVI); quando não for possível a verificação da regularidade no " + cad + ", entregará ao fiscal, até o dia trinta do mês seguinte ao da prestação dos serviços, a prova de regularidade relativa à Seguridade Social, a certidão conjunta relativa aos tributos federais e à Dívida Ativa da União, as certidões de regularidade perante a Fazenda Municipal, o Certificado de Regularidade do FGTS e a Certidão Negativa de Débitos Trabalhistas.");
+o.it("O Contratado cumprirá, durante todo o período de execução do contrato, a reserva de cargos prevista em lei para pessoa com deficiência, para reabilitado da Previdência Social ou para aprendiz (art. 116; art. 92, XVII), e a comprovará no prazo fixado pelo fiscal do contrato, com a indicação dos empregados que preencheram as vagas (art. 116, parágrafo único).");
+o.it("O Contratado deve, também: não permitir a utilização de trabalho do menor de dezesseis anos, exceto na condição de aprendiz para os maiores de quatorze, nem de menor de dezoito anos em trabalho noturno, perigoso ou insalubre; guardar sigilo sobre as informações obtidas em decorrência do contrato; arcar com o ônus de eventual equívoco no dimensionamento dos quantitativos de sua proposta, exceto nos eventos do art. 124, II, d; estar registrado no conselho profissional competente, em plena validade; obter as licenças e autorizações exigíveis, na forma da legislação aplicável; elaborar o Diário de Obra, com as informações diárias do andamento do empreendimento; observar a gestão dos resíduos da construção civil nos termos da Resolução CONAMA 307/2002, dando destinação ambientalmente adequada aos resíduos; providenciar, conforme o caso, as ligações definitivas das utilidades previstas no projeto; e responder por qualquer acidente de trabalho na execução dos serviços e por danos resultantes de defeitos ou incorreções dos serviços, ainda que ocorridos em via pública junto à obra.");
+o.it("As partes cumprirão a Lei 13.709/2018 (LGPD) quanto aos dados pessoais a que tenham acesso em razão do certame ou do contrato, que somente poderão ser utilizados para as finalidades que justificaram o acesso, vedado o compartilhamento com terceiros fora das hipóteses legais; terminado o tratamento, o contratado os eliminará, ressalvadas as hipóteses do art. 16 da LGPD." + CONFERIR);
+o.sec("Da garantia de execução (art. 92, XII)");
+if (gar === null) o.it(pre("garantia do contrato"));
+else if (gar.pct === undefined || gar.pct === null) o.it("Não haverá exigência de garantia contratual da execução.");
+else {
+o.it("A contratação conta com garantia de execução, nos moldes do art. 96 da Lei 14.133/2021, em valor correspondente a " + esc(numBR(Number(gar.pct), 2)) + "% do valor total do contrato, à escolha do contratado: caução em dinheiro ou em títulos da dívida pública, seguro-garantia ou fiança bancária" + (gar.seguroRetomada ? "; a modalidade seguro-garantia terá cláusula de retomada, conforme o art. 102, devendo a seguradora, em caso de inadimplemento do contratado, assumir a execução e concluir o objeto do contrato" : "") + "." + (gar.justificativa ? " Justificativa: " + esc(gar.justificativa) + "." : ""));
+o.it("O contratado apresentará, no prazo máximo de 10 dias úteis, prorrogáveis por igual período, a critério do contratante, contado da assinatura do contrato, o comprovante de prestação de garantia; na modalidade seguro-garantia, a apólice será apresentada, no máximo, até a data de assinatura e terá validade durante a vigência do contrato e por mais 90 dias após o término desta, permanecendo em vigor mesmo que o contratado não pague o prêmio nas datas convencionadas, e acompanhará as modificações da vigência mediante endosso.");
+o.it("A garantia assegurará, qualquer que seja a modalidade, o pagamento de prejuízos advindos do não cumprimento do objeto e do não adimplemento das demais obrigações; de multas moratórias e punitivas aplicadas pela Administração à contratada; e de obrigações trabalhistas e previdenciárias de qualquer natureza e para com o FGTS, não adimplidas pelo contratado, quando couber.");
+o.it("Na fiança bancária, a instituição financeira será autorizada a operar no País pelo Banco Central do Brasil e renunciará expressamente aos benefícios do art. 827 do Código Civil. No caso de alteração do valor do contrato ou prorrogação de sua vigência, a garantia será ajustada ou renovada nos mesmos parâmetros. Se o valor da garantia for utilizado em pagamento de qualquer obrigação, o contratado a reporá no prazo fixado na notificação." + CONFERIR);
+o.it("A garantia somente será liberada ou restituída após a fiel execução do contrato ou após a sua extinção por culpa exclusiva da Administração e, quando em dinheiro, será atualizada monetariamente. A garantia de execução é independente de eventual garantia do produto ou serviço prevista no Termo de Referência.");
+}
+o.sec("Da garantia do objeto (art. 92, XIII)");
+var nm = Number(String(t.garantiaServicoMeses === undefined ? "" : t.garantiaServicoMeses).replace(",", "."));
+if (vazio(t.garantiaServicoMeses) || !isFinite(nm)) o.it(pre("garantia complementar do serviço, em meses (0 = só a garantia legal)"));
+else if (nm <= 0) o.it("O prazo de garantia do objeto é o estabelecido na Lei 8.078/1990 (Código de Defesa do Consumidor) e na Lei 10.406/2002 (Código Civil).");
+else o.it("O prazo de garantia mínima do objeto, complementar à garantia legal, é de " + numBR(nm, 0) + " meses, contados do primeiro dia útil subsequente ao recebimento definitivo.");
+o.sec("Das infrações e sanções administrativas (art. 92, XIV)");
+o.it("Comete infração administrativa, nos termos da Lei 14.133/2021, o contratado que: der causa à inexecução parcial do contrato; der causa à inexecução parcial que cause grave dano à Administração, ao funcionamento dos serviços públicos ou ao interesse coletivo; der causa à inexecução total; ensejar o retardamento da execução ou da entrega do objeto sem motivo justificado; apresentar documentação falsa ou prestar declaração falsa durante a execução; praticar ato fraudulento na execução; comportar-se de modo inidôneo ou cometer fraude de qualquer natureza; ou praticar ato lesivo previsto no art. 5º da Lei 12.846/2013.");
+o.it("Serão aplicadas as seguintes sanções: advertência, quando o contratado der causa à inexecução parcial, sempre que não se justificar penalidade mais grave (art. 156, §2º); impedimento de licitar e contratar, nas condutas de inexecução parcial com grave dano, inexecução total e retardamento injustificado, quando não se justificar penalidade mais grave (art. 156, §4º); declaração de inidoneidade para licitar e contratar, nas condutas de documentação ou declaração falsa, fraude e comportamento inidôneo ou ato lesivo, bem como nas anteriores que justifiquem penalidade mais grave (art. 156, §5º); e multa.");
+o.it("Multa moratória e compensatória: " + valLinha(e.multaContrato, "percentuais da multa moratória e da multa compensatória do contrato") + ".");
+o.it("A aplicação das sanções não exclui a obrigação de reparação integral do dano causado ao Contratante (art. 156, §9º) e todas poderão ser aplicadas cumulativamente com a multa (art. 156, §7º). Antes da aplicação da multa será facultada a defesa do interessado no prazo de 15 dias úteis, contado da data de sua intimação (art. 157). Se a multa e as indenizações forem superiores ao pagamento eventualmente devido, a diferença será descontada da garantia prestada ou cobrada judicialmente (art. 156, §8º).");
+o.it("A aplicação das sanções realizar-se-á em processo administrativo que assegure o contraditório e a ampla defesa, observado o procedimento do art. 158 para o impedimento de licitar e contratar e a declaração de inidoneidade. Na aplicação serão considerados a natureza e a gravidade da infração, as peculiaridades do caso concreto, as circunstâncias agravantes ou atenuantes, os danos para o Contratante e a implantação ou o aperfeiçoamento de programa de integridade (art. 156, §1º). Os atos que também sejam tipificados como atos lesivos na Lei 12.846/2013 serão apurados e julgados conjuntamente (art. 159). A personalidade jurídica do Contratado poderá ser desconsiderada quando utilizada com abuso do direito para facilitar, encobrir ou dissimular a prática dos atos ilícitos previstos neste contrato (art. 160).");
+o.it("O Contratante informará e manterá atualizados os dados relativos às sanções aplicadas, para fins de publicidade nos cadastros de empresas inidôneas e punidas (art. 161), e as sanções de impedimento e de inidoneidade são passíveis de reabilitação na forma do art. 163." + (vazio(e.rescisaoForo) ? "" : " Complemento do órgão: " + nl2br(e.rescisaoForo)));
+o.sec("Da extinção contratual (art. 92, XIX)");
+o.it("O contrato será extinto quando cumpridas as obrigações de ambas as partes, ainda que isso ocorra antes do prazo estipulado. Se as obrigações não forem cumpridas no prazo estipulado, a vigência ficará prorrogada até a conclusão do objeto, devendo a Administração providenciar a readequação do cronograma; quando a não conclusão decorrer de culpa do contratado, ficará ele constituído em mora, sendo-lhe aplicáveis as sanções administrativas, e poderá a Administração optar pela extinção do contrato e adotar as medidas admitidas em lei para a continuidade da execução.");
+o.it("O contrato poderá ser extinto antes do prazo, sem ônus para o contratante, quando este não dispuser de créditos orçamentários para sua continuidade ou quando entender que o contrato não mais lhe oferece vantagem, na próxima data de aniversário do contrato, mediante notificação com pelo menos 2 meses de antecedência (ou 2 meses da comunicação, se esta ocorrer com menos de 2 meses da data de aniversário).");
+o.it("O contrato poderá ser extinto por algum dos motivos previstos no art. 137 da Lei 14.133/2021, bem como amigavelmente, assegurados o contraditório e a ampla defesa, aplicando-se também os arts. 138 e 139. A extinção do contrato não configura óbice ao reconhecimento do desequilíbrio econômico-financeiro, hipótese em que será concedida indenização por meio de termo indenizatório (art. 131, caput). A alteração social ou a modificação da finalidade ou da estrutura da empresa não ensejará a extinção se não restringir sua capacidade de concluir o contrato; se implicar mudança da pessoa jurídica contratada, será formalizado termo aditivo para alteração subjetiva.");
+o.sec("Da dotação orçamentária (art. 92, VIII)");
+o.it("As despesas decorrentes desta contratação correrão à conta de recursos específicos consignados no orçamento do contratante, na dotação (funcional programática e categoria econômica): " + valLinha(t.dotacao, "dotação orçamentária") + ". A dotação relativa aos exercícios financeiros subsequentes será indicada após aprovação da lei orçamentária respectiva e liberação dos créditos correspondentes, mediante apostilamento.");
+o.sec("Dos casos omissos (art. 92, III)");
+o.it("Os casos omissos serão decididos pelo contratante, segundo as disposições contidas na Lei 14.133/2021 e demais normas aplicáveis e, subsidiariamente, segundo as disposições da Lei 8.078/1990 (Código de Defesa do Consumidor) e as normas e princípios gerais dos contratos.");
+o.sec("Das alterações");
+o.it("Eventuais alterações contratuais reger-se-ão pela disciplina dos arts. 124 e seguintes da Lei 14.133/2021. " + (aditivo ? "O contratado é obrigado a aceitar, nas mesmas condições contratuais, os acréscimos ou supressões que se fizerem necessários, até o limite de " + numBR(aditivo.acrescimoPct, 0) + "% de acréscimo e " + numBR(aditivo.supressaoPct, 0) + "% de supressão do valor inicial atualizado do contrato (art. 125)." : pre("limites de acréscimos e supressões")));
+o.it("As alterações contratuais deverão ser promovidas mediante termo aditivo, submetido à prévia aprovação da assessoria jurídica do contratante, salvo nos casos de justificada necessidade de antecipação de seus efeitos, hipótese em que a formalização do aditivo deverá ocorrer no prazo máximo de 1 (um) mês (art. 132). Registros que não caracterizam alteração do contrato podem ser realizados por simples apostila (art. 136).");
+o.sec("Da publicação");
+o.it("Incumbirá ao contratante divulgar o presente instrumento no Portal Nacional de Contratações Públicas (PNCP), na forma do art. 94 da Lei 14.133/2021, bem como em seu sítio oficial na internet (art. 91, caput).");
+o.sec("Do foro (art. 92, §1º)");
+o.it("Fica eleito o foro da sede da Administração, " + valLinha(e.foro, "foro da sede da Administração (art. 92, §1º)") + ", para dirimir os litígios que decorrerem da execução deste contrato que não puderem ser compostos pela conciliação (art. 92, §1º).");
+});
+return h + par(valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ", " + (ctx && ctx.hoje ? dataBR(ctx.hoje) : pre("data"))) + assinatura("Contratante") + assinatura("Contratada") + par("Testemunhas:") + assinatura("1.") + assinatura("2.");
 }
 var DOCS = [
 { id: "dfd", nome: "DFD — Documento de formalização da demanda", arquivo: "DFD", publico: false, fn: dfd },
@@ -47004,12 +47609,175 @@ var DOCS = [
 { id: "edital", nome: "Minuta do edital", arquivo: "Minuta do edital", publico: true, fn: edital },
 { id: "contrato", nome: "Minuta do contrato", arquivo: "Minuta do contrato", publico: true, fn: contrato }
 ];
+function txt(v) { return vazio(v) ? null : String(v); }
+function ed_(p, k) { return txt((p.edital || {})[k]); }
+function tr_(p, k) { return txt((p.tr || {})[k]); }
+var CAMPOS_MODELO = [
+{ id: "orgao", rotulo: "nome do órgão", exemplo: "Prefeitura Municipal de Exemplo", v: function (p, c) { return txt(((c && c.orgao) || {}).nome); } },
+{ id: "secretaria", rotulo: "secretaria requisitante", exemplo: "Secretaria Municipal de Obras", v: function (p) { return txt(p.secretaria); } },
+{ id: "processo", rotulo: "código do processo", exemplo: "A1B2C3", v: function (p) { return txt(codigo(p)); } },
+{ id: "numero_edital", rotulo: "número do edital", exemplo: "001/2027", v: function (p) { return ed_(p, "numero"); } },
+{ id: "modalidade", rotulo: "modalidade", exemplo: "concorrência", v: function (p) { return txt(pv(p, "modalidade")); } },
+{ id: "criterio_julgamento", rotulo: "critério de julgamento", exemplo: "menor preço", v: function (p) { return txt(pv(p, "criterio_julgamento")); } },
+{ id: "regime_execucao", rotulo: "regime de execução", exemplo: "empreitada por preço global", v: function (p) { return txt(pv(p, "regime_execucao")); } },
+{ id: "objeto", rotulo: "objeto", exemplo: "Construção de uma creche municipal com 6 salas", v: function (p) { return txt(p.objeto); } },
+{ id: "data_publicacao", rotulo: "data de publicação do edital", exemplo: "01/12/2026", v: function (p) { return txt(dataBR(p.dataPrevistaEdital)); } },
+{ id: "data_abertura", rotulo: "data de abertura das propostas", exemplo: "20/01/2027", v: function (p, c) { return txt(dataBR(((c && c.prazo) || {}).dataAbertura)); } },
+{ id: "hora_sessao", rotulo: "hora da sessão pública", exemplo: "09:00", v: function (p) { return ed_(p, "sessaoHora"); } },
+{ id: "portal", rotulo: "portal da licitação", exemplo: "www.portal-exemplo.gov.br", v: function (p) { return ed_(p, "portal"); } },
+{ id: "valor_estimado", rotulo: "valor estimado", exemplo: "R$ 1.234,56 (ou o texto do sigilo do art. 24)", v: function (p, c) { return !publico(p, "valorEstimado") ? TEXTO_SIGILO : (c && c.orc ? txt(brl(c.orc.total)) : null); } },
+{ id: "vigencia", rotulo: "prazo de vigência e de execução", exemplo: "12 meses", v: function (p) { return ed_(p, "vigencia"); } },
+{ id: "local_obra", rotulo: "endereço do local da obra", exemplo: "Rua Exemplo, 100", v: function (p) { return tr_(p, "local"); } },
+{ id: "inicio_execucao", rotulo: "início da execução", exemplo: "10 dias da ordem de serviço", v: function (p) { return tr_(p, "inicioExecucao"); } },
+{ id: "garantia_contrato", rotulo: "garantia do contrato", exemplo: "Garantia de 5% do valor do contrato", v: function (p) { return descParam(p, "garantia_contrato"); } },
+{ id: "reajuste", rotulo: "reajuste", exemplo: "Índice: INCC-DI; data-base: 01/10/2026", v: function (p) { return descParam(p, "reajuste"); } },
+{ id: "prazo_recurso", rotulo: "prazo de recurso", exemplo: "3 dias úteis", v: function (p) { return descParam(p, "recurso_prazo"); } },
+{ id: "dotacao", rotulo: "dotação orçamentária", exemplo: "12.361.0001", v: function (p) { return tr_(p, "dotacao"); } },
+{ id: "representante", rotulo: "representante do contratante", exemplo: "Maria Souza, Prefeita, Portaria 10/2026", v: function (p) { return ed_(p, "representante"); } },
+{ id: "setor_licitacoes", rotulo: "setor responsável pelas licitações", exemplo: "Comissão Permanente de Licitação", v: function (p) { return ed_(p, "setorLicitacoes"); } },
+{ id: "endereco_orgao", rotulo: "endereço do órgão", exemplo: "Praça da Matriz, 1", v: function (p) { return ed_(p, "enderecoOrgao"); } },
+{ id: "email_impugnacao", rotulo: "e-mail para impugnações", exemplo: "licitacao@exemplo.com.br", v: function (p) { return ed_(p, "emailImpugnacao"); } },
+{ id: "foro", rotulo: "foro da sede da Administração", exemplo: "Foro da Comarca de Exemplo", v: function (p) { return ed_(p, "foro"); } },
+{ id: "data_hoje", rotulo: "data de hoje", exemplo: "10/11/2026", v: function (p, c) { return txt(dataBR(c && c.hoje)); } }
+];
+function valoresModelo(p, ctx) {
+var out = {};
+CAMPOS_MODELO.forEach(function (c) { var v = null; try { v = c.v(p || {}, ctx || {}); } catch (e) { v = null; } out[c.id] = vazio(v) ? null : String(v); });
+return out;
+}
 function contarPre(html) { var m = String(html).match(/\[PREENCHER:/g); return m ? m.length : 0; }
+var HAB_DOCS = {
+relatorio: { nome: "Relatório de habilitação do licitante", arquivo: "Relatorio de habilitacao" },
+diligencia: { nome: "Termo de diligência (habilitação)", arquivo: "Termo de diligencia da habilitacao" },
+inabilitacao: { nome: "Comunicado de inabilitação", arquivo: "Comunicado de inabilitacao" },
+ata: { nome: "Ata de julgamento e habilitação", arquivo: "Ata de julgamento e habilitacao" },
+recurso: { nome: "Quadro do recurso (alegação × documento × resposta)", arquivo: "Quadro do recurso" },
+adjudicacao: { nome: "Minuta de adjudicação", arquivo: "Minuta de adjudicacao" },
+homologacao: { nome: "Minuta de homologação", arquivo: "Minuta de homologacao" }
+};
+function habH() {
+var H = global.CplproHab;
+if (!H && typeof require === "function" && typeof module !== "undefined") { try { H = require("./cplprohab.js"); } catch (e) { H = null; } }
+return H;
+}
+function habProvas(r) {
+var pv2 = arr(r && r.provas);
+if (!pv2.length) return "—";
+return pv2.map(function (x) { return esc(x.arquivo || "(sem nome)") + (x.pagina ? ", p. " + esc(x.pagina) : "") + (x.trecho ? ": «" + esc(x.trecho) + "»" : ""); }).join("<br>");
+}
+function habProva1(r) {
+var x = arr(r && r.provas).filter(function (z) { return z.arquivo && z.pagina; })[0];
+return x ? esc(x.arquivo) + ", p. " + esc(x.pagina) : null;
+}
+function habQuemQuando(d) { return d ? esc(d.por || "—") + " em " + esc(dataBR(d.em)) : ""; }
+function habCelDecisao(d, H) {
+if (!d) return pre("decisão do agente de contratação");
+return "<b>" + esc(H.DECISOES[d.situacao] ? H.DECISOES[d.situacao].curto : d.situacao) + "</b> (" + (d.origem === "confirmado" ? "resultado do serviço confirmado" : "resultado do serviço ALTERADO") + " por " + habQuemQuando(d) + ")" + (d.motivo ? "<br>Motivo: " + nl2br(d.motivo) : "");
+}
+function habCab(p, ctx, lic, titulo, tarja) {
+var h = cab(p, ctx, titulo, tarja);
+if (lic) h += par("Licitante: <b>" + valLinha(lic.razaoSocial, "razão social do licitante") + "</b> — CNPJ " + esc(habH().mascaraCnpj(lic.cnpj)) + ".");
+return h;
+}
+function habExig(lic, id) { return arr(lic.exigencias).filter(function (e) { return e.id === id; })[0] || { id: id, descricao: id, grupo: "" }; }
+function habilitacaoDoc(tipo, p, licId, ctx) {
+var H = habH(), def = HAB_DOCS[tipo];
+if (!H || !def) throw new Error("Documento de habilitação desconhecido: " + tipo);
+var lic = licId ? H.licPorId(p, licId) : null, c = lic ? H.consolidar(lic) : null, h;
+if (!lic && tipo !== "ata" && tipo !== "adjudicacao" && tipo !== "homologacao") throw new Error("Escolha o licitante.");
+if (tipo === "relatorio") {
+h = habCab(p, ctx, lic, def.nome, "Documento do processo — serve de fundamento da decisão e de defesa em recurso.");
+h += par("Data da sessão: " + valLinha(dataBR(lic.dataSessao), "data da sessão") + " (é nela que a validade das certidões é conferida). Análise do serviço em " + esc(dataBR(arr(lic.analises).length ? lic.analises[lic.analises.length - 1].em : "")) + ".");
+h += par("O sistema leu os documentos enviados e <b>apenas preparou a análise, com a prova</b> (arquivo, página e trecho). A decisão sobre cada exigência é do agente de contratação ou da comissão. A mesma regra foi aplicada a todos os licitantes (tratamento isonômico).");
+var ll = lic.licitanteLido || {};
+h += par("CNPJ lido nos documentos: " + esc(ll.cnpjLido ? H.mascaraCnpj(ll.cnpjLido) : "nenhum") + " — " + (ll.confere === true ? "confere com o do licitante" : (ll.confere === false ? "<b>NÃO confere</b> com o do licitante" : "não foi possível conferir")) + ".");
+if (ll.sancoes) h += par("Sanções (CEIS/CNEP): " + esc(ll.sancoes.situacao || "—") + (ll.sancoes.texto ? " — " + esc(ll.sancoes.texto) : "") + (ll.sancoes.baseAtualizadaEm ? " (base de " + esc(dataBR(ll.sancoes.baseAtualizadaEm)) + ")" : "") + ".");
+h += tabela(["Exigência", "Grupo", "Resultado do serviço", "Regra aplicada", "Prova (arquivo, página, trecho)", "Decisão do servidor"], arr(lic.resultados).map(function (r) {
+var e = habExig(lic, r.id);
+return [esc(r.id) + " — " + esc(e.descricao), esc(H.nomeGrupo(e.grupo)), "<b>" + esc(H.SITUACOES[r.situacao] ? H.SITUACOES[r.situacao].nome : r.situacao) + "</b><br>" + nl2br(r.motivo || ""), esc(r.regra || "—"), habProvas(r), habCelDecisao(lic.decisoes[r.id], H)];
+}));
+h += par("Situação do licitante: <b>" + esc(H.STATUS_ROTULO[c.status]) + "</b>" + (c.pendentes.length ? " — " + pre("decisão sobre " + c.pendentes.length + " exigência(s) pendente(s)") : "") + ".");
+if (arr(lic.avisos).length) h += secao(null, "Avisos do serviço", lista(lic.avisos.map(esc)));
+return h + assinatura("Agente de contratação / comissão");
+}
+if (tipo === "diligencia") {
+if (!c.diligencia.length) throw new Error("Nenhuma exigência está em diligência.");
+h = habCab(p, ctx, lic, def.nome, null);
+h += par("Ao licitante. A documentação de habilitação foi analisada e há pontos a esclarecer ou a atualizar, nos termos do art. 64 da Lei 14.133/2021 (diligência para complementar informações sobre documentos já apresentados ou atualizar documento cuja validade expirou).");
+h += par("Prazo para resposta: " + valLinha(dataBR(lic.diligencia && lic.diligencia.prazo), "prazo para resposta do licitante") + ".");
+h += tabela(["Exigência", "Motivo da diligência", "Regra aplicada", "Documento / página"], c.diligencia.map(function (id) {
+var r = arr(lic.resultados).filter(function (x) { return x.id === id; })[0] || {}, e = habExig(lic, id), d = lic.decisoes[id];
+return [esc(id) + " — " + esc(e.descricao), nl2br((d && d.motivo) || r.motivo || ""), esc(r.regra || "—"), habProva1(r) || "—"];
+}));
+h += par("A resposta deve ser enviada pelo sistema no prazo acima. Não será aceita a substituição ou a apresentação de documento que deveria ter constado originariamente da proposta ou da habilitação.");
+return h + assinatura("Agente de contratação / comissão");
+}
+if (tipo === "inabilitacao") {
+if (!c.inabilita.length) throw new Error("Nenhuma exigência foi decidida como inabilitante.");
+h = habCab(p, ctx, lic, def.nome, null);
+h += par("Comunicamos a <b>inabilitação</b> do licitante, pelo(s) motivo(s) abaixo, com o respectivo fundamento. Cabe recurso no prazo de " + parOuPre(p, "recurso_prazo", "prazo de recurso") + " (Lei 14.133/2021, art. 165).");
+h += tabela(["Exigência", "Item do edital", "Fundamento", "Motivo", "Arquivo / página"], c.inabilita.map(function (id) {
+var r = arr(lic.resultados).filter(function (x) { return x.id === id; })[0] || {}, e = habExig(lic, id), d = lic.decisoes[id];
+return [esc(id) + " — " + esc(e.descricao), pre("número do item do edital"), esc(r.regra || "—"), "<b>" + esc(H.DECISOES[d.situacao].curto) + "</b>: " + nl2br(d.motivo || r.motivo || ""), habProva1(r) || "—"];
+}));
+h += par("Decisão tomada por " + esc(lic.decisoes[c.inabilita[0]].por || "—") + " (" + esc(lic.decisoes[c.inabilita[0]].papel || "") + ") em " + esc(dataBR(lic.decisoes[c.inabilita[0]].em)) + ".");
+return h + assinatura("Agente de contratação / comissão");
+}
+if (tipo === "ata") {
+var ls = arr(p.habilitacao && p.habilitacao.licitantes);
+h = cab(p, ctx, def.nome, null);
+h += par("Objeto: " + val(p.objeto, "objeto da licitação") + ".");
+h += par("Sessão de " + valLinha(dataBR(H.dataSessaoDoProcesso(p) || (ls[0] && ls[0].dataSessao)), "data da sessão") + ", " + pre("hora e local da sessão") + ". Presentes: " + pre("agente de contratação e membros da comissão") + ".");
+h += par("Examinados os documentos de habilitação dos licitantes abaixo, com apoio do relatório de cada um (arquivo, página e trecho de cada prova) e aplicando a mesma regra a todos:" + CONFERIR);
+h += tabela(["Nº", "Licitante", "CNPJ", "Resultado", "Exigências inabilitantes"], ls.map(function (l, i) {
+var cc = H.consolidar(l);
+return [esc(i + 1), valLinha(l.razaoSocial, "razão social"), esc(H.mascaraCnpj(l.cnpj)), "<b>" + esc(H.STATUS_ROTULO[cc.status]) + "</b>" + (cc.pendentes.length ? "<br>" + pre("decisão de " + cc.pendentes.length + " exigência(s)") : ""),
+cc.inabilita.length ? cc.inabilita.map(function (id) { var d = l.decisoes[id]; return esc(id) + ": " + esc(d.motivo || (arr(l.resultados).filter(function (x) { return x.id === id; })[0] || {}).motivo || ""); }).join("<br>") : "—"];
+}));
+ls.forEach(function (l, i) {
+var cc = H.consolidar(l);
+if (cc.diligencia.length) h += par("Licitante " + (i + 1) + ": diligência aberta nos itens " + esc(cc.diligencia.join(", ")) + (l.diligencia ? " com prazo até " + esc(dataBR(l.diligencia.prazo)) : " — " + pre("prazo da diligência")) + ".");
+});
+h += par("Fica aberto o prazo de " + parOuPre(p, "recurso_prazo", "prazo de recurso") + " para a intenção de recorrer, nos termos do art. 165 da Lei 14.133/2021.");
+return h + assinatura("Agente de contratação / comissão") + assinatura("Demais membros da comissão");
+}
+if (tipo === "recurso") {
+var rc = lic.recurso || { itens: [], conclusao: null, intencaoEm: null }, pz = H.prazosRecurso(p);
+h = habCab(p, ctx, lic, def.nome, "Documento INTERNO — organiza os fatos; a conclusão é do servidor.");
+h += par("Resultado divulgado em: " + valLinha(dataBR(p.resultadoEm), "data do resultado (aba Propostas)") + ". Intenção de recorrer manifestada em: " + valLinha(dataBR(rc.intencaoEm), "data da intenção de recurso") + ".");
+h += par("Prazos do art. 165 (dias úteis, contados pelo sistema): razões até " + (pz && pz.razoesAte ? "<b>" + esc(dataBR(pz.razoesAte)) + "</b>" : pre("data do resultado")) + " · contrarrazões até " + (pz && pz.contrarrazoesAte ? "<b>" + esc(dataBR(pz.contrarrazoesAte)) + "</b>" : pre("data do resultado")) + ".");
+h += arr(rc.itens).length ? tabela(["Alegação", "Documento", "Resposta"], rc.itens.map(function (it) {
+var r = it.exigenciaId ? arr(lic.resultados).filter(function (x) { return x.id === it.exigenciaId; })[0] : null;
+var doc = it.documento ? esc(it.documento) : (r ? habProvas(r) : "—");
+return [nl2br(it.alegacao) + (it.exigenciaId ? "<br><i>Exigência " + esc(it.exigenciaId) + "</i>" : ""), doc, it.resposta ? nl2br(it.resposta) : pre("resposta do servidor à alegação")];
+})) : par(pre("alegações do recurso"));
+h += secao(null, "Conclusão", par(rc.conclusao ? nl2br(rc.conclusao) : pre("conclusão do agente de contratação / autoridade (texto do servidor)")));
+return h + assinatura("Agente de contratação / comissão");
+}
+var adj = H.licPorId(p, p.habilitacao && p.habilitacao.adjudicatarioId);
+if (!adj || H.pendenciasGerais(p, adj.id).length) throw new Error("A minuta só sai com o licitante a adjudicar escolhido e sem nenhuma exigência pendente ou em diligência.");
+h = cab(p, ctx, def.nome, null);
+h += par("Objeto: " + val(p.objeto, "objeto da licitação") + ".");
+if (tipo === "adjudicacao") {
+h += par("Encerradas as fases de julgamento e de habilitação e exauridos os recursos administrativos, <b>adjudico</b> o objeto da licitação ao licitante <b>" + valLinha(adj.razaoSocial, "razão social do adjudicatário") + "</b>, CNPJ " + esc(H.mascaraCnpj(adj.cnpj)) + ", pelo valor de " + pre("valor da proposta vencedora") + ", nos termos do art. 71, IV, da Lei 14.133/2021." + CONFERIR);
+} else {
+h += par("Verificada a regularidade dos atos do processo licitatório, <b>homologo</b> a licitação, adjudicada ao licitante <b>" + valLinha(adj.razaoSocial, "razão social do adjudicatário") + "</b>, CNPJ " + esc(H.mascaraCnpj(adj.cnpj)) + ", nos termos do art. 71, IV, da Lei 14.133/2021." + CONFERIR);
+h += par("Data da adjudicação: " + pre("data da adjudicação") + ".");
+}
+return h + assinatura("Autoridade competente");
+}
 var CplproDocs = {
 DOCS: DOCS.map(function (d) { return { id: d.id, nome: d.nome, publico: d.publico }; }),
 TEXTO_SIGILO: TEXTO_SIGILO,
+CAMPOS: CAMPOS.map(function (c) { return { id: c.id, onde: c.onde, grupo: c.grupo, rotulo: c.rotulo, dica: c.dica || "", tipo: c.tipo || "texto", opcoes: c.opcoes || null }; }),
+campoAplica: function (id, p) { var r = true; CAMPOS.forEach(function (c) { if (c.id === id) r = campoAplica(c, p); }); return r; },
+CAMPOS_MODELO: CAMPOS_MODELO.map(function (c) { return { id: c.id, rotulo: c.rotulo, exemplo: c.exemplo }; }),
+valoresModelo: valoresModelo,
 contarPre: contarPre,
 nomeArquivo: function (doc, p) { return doc.arquivo + " - " + codigo(p); },
+HAB_DOCS: HAB_DOCS,
+gerarHabilitacao: habilitacaoDoc,
+nomeArquivoHab: function (tipo, p, licId) { var H = habH(), d = HAB_DOCS[tipo]; return d.arquivo + (licId && H ? " - " + H.nomeLicitante(p, licId) : "") + " - " + codigo(p); },
 gerar: function (p, ctx) {
 var out = [], total = 0;
 DOCS.forEach(function (d) {
@@ -47058,14 +47826,1089 @@ global.CplproDocs = CplproDocs;
 if (typeof module !== "undefined" && module.exports) module.exports = CplproDocs;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplprotpl.js ==== */
+try {
+(function (global) {
+"use strict";
+var Docx = global.Docx;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!Docx) { try { Docx = require("./docx.js"); } catch (e) { Docx = null; } }
+}
+var TIPOS = {
+edital: { id: "edital", nome: "Edital" },
+tr: { id: "tr", nome: "TR / Projeto básico" },
+contrato: { id: "contrato", nome: "Contrato" },
+etp: { id: "etp", nome: "ETP — Estudo técnico preliminar" },
+dfd: { id: "dfd", nome: "DFD — Documento de formalização da demanda" }
+};
+var TIPOS_ORDEM = ["edital", "tr", "contrato", "etp", "dfd"];
+var MAX_BYTES = 8 * 1024 * 1024;
+var VERMELHO = "B91C1C";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function r16(a, p) { return a[p] | (a[p + 1] << 8); }
+function r32(a, p) { return (a[p] | (a[p + 1] << 8) | (a[p + 2] << 16) | (a[p + 3] << 24)) >>> 0; }
+function deUtf8(b) {
+if (typeof TextDecoder !== "undefined") return new TextDecoder("utf-8").decode(b);
+var s = "", i; for (i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+try { return decodeURIComponent(escape(s)); } catch (e) { return s; }
+}
+function paraUtf8(s) {
+if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
+var u = unescape(encodeURIComponent(s)), o = new Uint8Array(u.length), i; for (i = 0; i < u.length; i++) o[i] = u.charCodeAt(i);
+return o;
+}
+function decEnt(s) {
+return String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+.replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(+d); })
+.replace(/&#x([0-9a-fA-F]+);/g, function (m, h) { return String.fromCharCode(parseInt(h, 16)); }).replace(/&amp;/g, "&");
+}
+function encEnt(s) {
+return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+function lerZip(bytes, inflar) {
+var b = (bytes instanceof Uint8Array) ? bytes : new Uint8Array(bytes || []);
+var fim = -1, i;
+for (i = b.length - 22; i >= 0 && i > b.length - 66000; i--) { if (r32(b, i) === 0x06054b50) { fim = i; break; } }
+if (fim < 0) return Promise.reject(new Error("O arquivo não é um .docx válido (não achei o índice do ZIP). Salve o modelo como «Documento do Word (.docx)»."));
+var n = r16(b, fim + 10), cdIni = r32(b, fim + 16), entradas = [], p = cdIni, k;
+for (k = 0; k < n; k++) {
+if (r32(b, p) !== 0x02014b50) return Promise.reject(new Error("O índice do arquivo está corrompido."));
+var nlen = r16(b, p + 28), elen = r16(b, p + 30), clen = r16(b, p + 32);
+entradas.push({ nome: deUtf8(b.subarray(p + 46, p + 46 + nlen)), metodo: r16(b, p + 10), csize: r32(b, p + 20), off: r32(b, p + 42) });
+p += 46 + nlen + elen + clen;
+}
+var saida = {}, ordem = [], seq = Promise.resolve();
+entradas.forEach(function (e) {
+seq = seq.then(function () {
+if (r32(b, e.off) !== 0x04034b50) throw new Error("Entrada corrompida no arquivo: " + e.nome);
+var nl = r16(b, e.off + 30 - 4), el = r16(b, e.off + 30 - 2), ini = e.off + 30 + nl + el, bruto = b.subarray(ini, ini + e.csize);
+ordem.push(e.nome);
+if (/\/$/.test(e.nome)) return;
+if (e.metodo === 0) { saida[e.nome] = bruto.slice(0); return; }
+if (e.metodo !== 8) throw new Error("O arquivo usa uma compressão que não leio (" + e.nome + ").");
+if (typeof inflar !== "function") throw new Error("O arquivo está comprimido e este aparelho não sabe descomprimir.");
+return Promise.resolve(inflar(bruto.slice(0))).then(function (r) { saida[e.nome] = (r instanceof Uint8Array) ? r : new Uint8Array(r); });
+});
+});
+return seq.then(function () { return { arquivos: saida, ordem: ordem.filter(function (nm) { return saida[nm]; }) }; });
+}
+var RE_CAMPO = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+var RE_RUN = /<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g;
+var RE_RUN_SIMPLES = /^(<w:r(?:\s[^>]*)?>)(<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t(?:\s[^>]*)?>([^<]*)<\/w:t><\/w:r>$/;
+var RE_ENTRE = /^(\s|<w:proofErr[^>]*\/>|<w:bookmark(?:Start|End)[^>]*\/>)*$/;
+function runVermelho(rPr) {
+var cor = '<w:color w:val="' + VERMELHO + '"/>', neg = "<w:b/>";
+if (!rPr) return "<w:rPr>" + neg + cor + "</w:rPr>";
+var x = rPr.replace(/<w:color\s[^>]*\/>/g, "");
+if (!/<w:b[\s/>]/.test(x)) x = x.replace("</w:rPr>", neg + "</w:rPr>");
+return x.replace("</w:rPr>", cor + "</w:rPr>");
+}
+function emitirRun(open, rPr, texto, vermelho) {
+if (texto === "") return "";
+return open + (vermelho ? runVermelho(rPr) : (rPr || "")) + '<w:t xml:space="preserve">' + encEnt(texto) + "</w:t></w:r>";
+}
+function acharCampos(texto) {
+var out = [], m, re = new RegExp(RE_CAMPO.source, "g");
+while ((m = re.exec(texto)) !== null) out.push({ ini: m.index, fim: m.index + m[0].length, id: m[1].toLowerCase() });
+return out;
+}
+function reescreverGrupo(runs, resolver) {
+var full = "", marcas = [];
+runs.forEach(function (r, i) { marcas.push(full.length); full += r.texto; });
+var campos = acharCampos(full);
+if (!campos.length) return null;
+function runDe(pos) { var k = 0; while (k + 1 < runs.length && marcas[k + 1] <= pos) k++; return k; }
+var xml = "", cursor = 0;
+function literal(de, ate) {
+var pos = de;
+while (pos < ate) {
+var k = runDe(pos), fimRun = k + 1 < runs.length ? marcas[k + 1] : full.length, corte = Math.min(ate, fimRun);
+xml += emitirRun(runs[k].open, runs[k].rPr, full.substring(pos, corte), false);
+pos = corte;
+}
+}
+campos.forEach(function (c) {
+literal(cursor, c.ini);
+var r0 = runs[runDe(c.ini)], res = resolver(c.id);
+xml += emitirRun(r0.open, r0.rPr, res.texto, res.vermelho);
+cursor = c.fim;
+});
+literal(cursor, full.length);
+return { xml: xml, campos: campos.map(function (c) { return c.id; }) };
+}
+function processarXml(xml, resolver) {
+var achados = [];
+var novo = xml.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g, function (par) {
+var itens = [], m, re = new RegExp(RE_RUN.source, "g");
+while ((m = re.exec(par)) !== null) {
+var simples = RE_RUN_SIMPLES.exec(m[0]);
+itens.push({ ini: m.index, fim: m.index + m[0].length, xml: m[0], simples: !!simples, open: simples ? simples[1] : null, rPr: simples ? (simples[2] || "") : null, texto: simples ? decEnt(simples[3]) : null });
+}
+var grupos = [], atual = null;
+itens.forEach(function (it) {
+if (!it.simples) { atual = null; return; }
+if (atual && RE_ENTRE.test(par.substring(atual[atual.length - 1].fim, it.ini))) atual.push(it);
+else { atual = [it]; grupos.push(atual); }
+});
+var saida = par;
+for (var g = grupos.length - 1; g >= 0; g--) {
+var gr = grupos[g], rg = reescreverGrupo(gr, resolver);
+if (!rg) continue;
+saida = saida.substring(0, gr[0].ini) + rg.xml + saida.substring(gr[gr.length - 1].fim);
+achados = rg.campos.concat(achados);
+}
+return saida;
+});
+return { xml: novo, campos: achados };
+}
+function partesDoTexto(nome) { return /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(nome); }
+var CplproTpl = {
+TIPOS: TIPOS, TIPOS_ORDEM: TIPOS_ORDEM, MAX_BYTES: MAX_BYTES,
+textoDocx: function (bytes, inflar) {
+if (!bytes || !bytes.length) return Promise.resolve({ ok: false, erro: "O arquivo está vazio." });
+return lerZip(bytes, inflar).then(function (z) {
+if (!z.arquivos["word/document.xml"]) return { ok: false, erro: "O arquivo não é um documento do Word (.docx): falta o texto principal." };
+var xml = deUtf8(z.arquivos["word/document.xml"]);
+var paras = xml.split(/<\/w:p>/), linhas = [];
+paras.forEach(function (pp) {
+var t = "", re = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:br\/>/g, m;
+while ((m = re.exec(pp)) !== null) t += m[1] !== undefined ? m[1] : " ";
+t = t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+linhas.push(t);
+});
+return { ok: true, texto: linhas.join("\n") };
+}, function (e) { return { ok: false, erro: e && e.message ? e.message : String(e) }; });
+},
+analisar: function (bytes, idsConhecidos, inflar) {
+var conhecidos = arr(idsConhecidos);
+if (!bytes || !bytes.length) return Promise.resolve({ ok: false, erro: "O arquivo está vazio." });
+if (bytes.length > MAX_BYTES) return Promise.resolve({ ok: false, erro: "O arquivo passa de " + Math.round(MAX_BYTES / 1048576) + " MB; um modelo de documento não precisa disso." });
+return lerZip(bytes, inflar).then(function (z) {
+if (!z.arquivos["word/document.xml"]) return { ok: false, erro: "O arquivo não é um documento do Word (.docx): falta o texto principal." };
+var ids = [];
+Object.keys(z.arquivos).forEach(function (nome) {
+if (!partesDoTexto(nome)) return;
+processarXml(deUtf8(z.arquivos[nome]), function (id) { if (ids.indexOf(id) < 0) ids.push(id); return { texto: "", vermelho: false }; });
+});
+return { ok: true, campos: ids, conhecidos: ids.filter(function (i) { return conhecidos.indexOf(i) >= 0; }), desconhecidos: ids.filter(function (i) { return conhecidos.indexOf(i) < 0; }) };
+}, function (e) { return { ok: false, erro: e && e.message ? e.message : String(e) }; });
+},
+preencher: function (bytes, valores, rotulos, inflar) {
+valores = valores || {}; rotulos = rotulos || {};
+if (!Docx || typeof Docx.zip !== "function") return Promise.resolve({ ok: false, erro: "O gerador de .docx não carregou." });
+return lerZip(bytes, inflar).then(function (z) {
+if (!z.arquivos["word/document.xml"]) return { ok: false, erro: "O arquivo não é um documento do Word (.docx): falta o texto principal." };
+var faltando = [], desconhecidos = [], usados = [], pendentes = 0;
+function resolver(id) {
+if (!Object.prototype.hasOwnProperty.call(valores, id)) {
+if (desconhecidos.indexOf(id) < 0) desconhecidos.push(id);
+pendentes++;
+return { texto: "[CAMPO DESCONHECIDO: " + id + "]", vermelho: true };
+}
+if (usados.indexOf(id) < 0) usados.push(id);
+if (vazio(valores[id])) {
+var rot = rotulos[id] || id;
+if (!faltando.some(function (f) { return f.id === id; })) faltando.push({ id: id, rotulo: rot });
+pendentes++;
+return { texto: "[PREENCHER: " + rot + "]", vermelho: true };
+}
+return { texto: String(valores[id]), vermelho: false };
+}
+var lista = z.ordem.map(function (nome) {
+var dados = z.arquivos[nome];
+if (partesDoTexto(nome)) {
+var r = processarXml(deUtf8(dados), resolver);
+dados = paraUtf8(r.xml);
+}
+return { nome: nome, dados: dados };
+});
+return { ok: true, bytes: Docx.zip(lista), pendentes: pendentes, faltando: faltando, desconhecidos: desconhecidos, usados: usados };
+}, function (e) { return { ok: false, erro: e && e.message ? e.message : String(e) }; });
+},
+exemploHtml: function (tipo, campos, secoes, nomeOrgao) {
+var t = TIPOS[tipo] ? TIPOS[tipo].nome : tipo, h = "";
+h += "<h1>" + encEnt(t) + " — modelo do órgão</h1>";
+h += "<p><b>Como usar:</b> apague este bloco, escreva aqui o texto da procuradoria do órgão e, onde o sistema deve entrar com o dado do processo, digite o nome do campo com duas chaves de cada lado (veja a coluna «Campo» da tabela no fim deste arquivo). Esta explicação e a tabela são só orientação: apague-as antes de usar o modelo. Mantenha a formatação do órgão: o sistema só troca os campos.</p>";
+h += "<p><b>" + encEnt(nomeOrgao || "{{orgao}}") + "</b></p>";
+h += "<p>Processo nº {{processo}} — " + encEnt(t) + " nº {{numero_edital}}</p>";
+h += "<p>Objeto: {{objeto}}</p>";
+arr(secoes).forEach(function (s) { h += "<h2>" + encEnt(s) + "</h2><p>[texto da procuradoria para esta seção]</p>"; });
+h += "<h2>Campos disponíveis</h2><table><thead><tr><th>Campo</th><th>O que entra</th><th>Exemplo</th></tr></thead><tbody>" +
+arr(campos).map(function (c) { return "<tr><td>{{" + encEnt(c.id) + "}}</td><td>" + encEnt(c.rotulo) + "</td><td>" + encEnt(c.exemplo || "") + "</td></tr>"; }).join("") + "</tbody></table>";
+return h;
+},
+_lerZip: lerZip, _processarXml: processarXml
+};
+global.CplproTpl = CplproTpl;
+if (typeof module !== "undefined" && module.exports) module.exports = CplproTpl;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplprohab.js ==== */
+try {
+(function (global) {
+"use strict";
+var Cplpro = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!R) R = require("./cplproregras.js");
+if (!Cplpro) Cplpro = require("./cplpro.js");
+if (!F) F = require("./cplprofluxo.js");
+}
+function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function ehNum(v) { return typeof v === "number" && isFinite(v); }
+function texto(v, max) { var s = String(v === null || v === undefined ? "" : v).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ").replace(/^\s+|\s+$/g, ""); return max ? s.substring(0, max) : s; }
+function agoraISO() {
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+var d = new Date();
+return d.getFullYear() + "-" + dd(d.getMonth() + 1) + "-" + dd(d.getDate()) + "T" + dd(d.getHours()) + ":" + dd(d.getMinutes()) + ":" + dd(d.getSeconds());
+}
+var SERVICO_OFICIAL = "https://app.certamepro.com.br";
+var VERSAO_FICHA = 1;
+var MAX_TRECHO = 200;
+var GRUPOS = [
+{ id: "juridica", nome: "Habilitação jurídica" },
+{ id: "fiscal", nome: "Regularidade fiscal" },
+{ id: "trabalhista", nome: "Regularidade trabalhista" },
+{ id: "economica", nome: "Qualificação econômico-financeira" },
+{ id: "tecnica", nome: "Qualificação técnica" },
+{ id: "declaracao", nome: "Declarações" }
+];
+function nomeGrupo(id) { var n = id; GRUPOS.forEach(function (g) { if (g.id === id) n = g.nome; }); return n; }
+var SITUACOES = {
+atende: { nome: "Atende", tom: "ok" },
+nao_atende: { nome: "Não atende", tom: "erro" },
+diligencia: { nome: "Diligência", tom: "alerta" },
+conferir: { nome: "Conferir", tom: "alerta" },
+nao_localizado: { nome: "Não localizado", tom: "alerta" }
+};
+var DECISOES = {
+atende: { nome: "Atende", curto: "atende" },
+nao_atende: { nome: "Não atende (inabilita)", curto: "não atende" },
+diligencia: { nome: "Pedir diligência (art. 64)", curto: "diligência" },
+nao_apresentou: { nome: "Não apresentou (inabilita)", curto: "não apresentou" }
+};
+var DECISAO_ORDEM = ["atende", "diligencia", "nao_atende", "nao_apresentou"];
+var ABRE_INABILITACAO = { nao_atende: true, nao_apresentou: true };
+function limparCnpj(s) { return String(s === null || s === undefined ? "" : s).toUpperCase().replace(/[^0-9A-Z]/g, ""); }
+function dvCnpj(base) {
+var soma = 0, peso = 2, i;
+for (i = base.length - 1; i >= 0; i--) { soma += (base.charCodeAt(i) - 48) * peso; peso = peso === 9 ? 2 : peso + 1; }
+var r = soma % 11;
+return r < 2 ? 0 : 11 - r;
+}
+function cnpjValido(s) {
+var c = limparCnpj(s);
+if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(c) || /^(.)\1{13}$/.test(c)) return false;
+var d1 = dvCnpj(c.substring(0, 12)), d2 = dvCnpj(c.substring(0, 12) + d1);
+return c.charAt(12) === String(d1) && c.charAt(13) === String(d2);
+}
+function mascaraCnpj(c) {
+c = limparCnpj(c);
+return c.length === 14 ? c.substring(0, 2) + "." + c.substring(2, 5) + "." + c.substring(5, 8) + "/" + c.substring(8, 12) + "-" + c.substring(12) : c;
+}
+function mascarar(t) {
+var s = String(t === null || t === undefined ? "" : t);
+s = s.replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, function (m) { return /^\d{2}\.?\d{3}\.?\d{3}$/.test(m) ? m : "***.***.***-**"; });
+s = s.replace(/\b\d{1,2}\.?\d{3}\.?\d{3}-?[0-9Xx]\b/g, "**.***.***-*");
+s = s.replace(/\b\d{5}-?\d{3}\b/g, "*****-***");
+s = s.replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, "***@***");
+s = s.replace(/\(?\b\d{2}\)?[ .-]?9?\d{4}[ .-]?\d{4}\b/g, "(**) *****-****");
+return s;
+}
+function destino(url) {
+var u = String(url === null || url === undefined ? "" : url).replace(/\/+$/, "");
+var m = /^(https?):\/\/([^\/@?#:]+)(?::(\d{1,5}))?$/i.exec(u);
+if (!m) return { ok: false, motivo: "Endereço inválido." };
+var proto = m[1].toLowerCase(), host = m[2].toLowerCase(), porta = m[3] || "";
+if (proto === "https" && host === "app.certamepro.com.br" && !porta) return { ok: true, url: SERVICO_OFICIAL, local: false };
+if ((host === "localhost" || host === "127.0.0.1") && proto === "http") return { ok: true, url: proto + "://" + host + (porta ? ":" + porta : ""), local: true };
+return { ok: false, motivo: "O CPLPRO só conversa com o CertamePRO oficial (" + SERVICO_OFICIAL + ")." };
+}
+function chavePareamento(emp) { return "orcapro:cplpro:certamepro:" + String(emp || "default"); }
+function lerPareamento(storage, emp) {
+try {
+var o = JSON.parse(storage.getItem(chavePareamento(emp)) || "null");
+if (!o || typeof o.token !== "string" || o.token.length < 16) return null;
+return o;
+} catch (e) { return null; }
+}
+function gravarPareamento(storage, emp, o) {
+try { storage.setItem(chavePareamento(emp), JSON.stringify(o)); return true; } catch (e) { return false; }
+}
+function desligar(storage, emp) { try { storage.removeItem(chavePareamento(emp)); return true; } catch (e) { return false; } }
+function estadoPareamento(storage, emp) {
+var o = lerPareamento(storage, emp);
+if (!o) return { pareado: false };
+return { pareado: true, usuario: o.usuario || "", pareadoEm: o.pareadoEm || "", servico: o.servico || SERVICO_OFICIAL, escopo: o.escopo || "" };
+}
+function mensagemErro(status, corpo, retryAfter) {
+var det = corpo && (corpo.erro || corpo.detail) ? texto(typeof (corpo.erro || corpo.detail) === "string" ? (corpo.erro || corpo.detail) : JSON.stringify(corpo.erro || corpo.detail), 400) : "";
+var espera = retryAfter && /^\d+$/.test(String(retryAfter)) ? " Tente de novo em " + retryAfter + " s." : "";
+var m = {
+401: { msg: "Este OrçaPRO não está conectado ao CertamePRO (a conexão foi revogada, venceu ou é de outro tipo). Desligue e peça um novo código de pareamento ao administrador.", reparear: true },
+400: { msg: "O CertamePRO recusou o pedido.", usaDetalhe: true },
+404: { msg: "O serviço de análise de habilitação não está ligado neste servidor do CertamePRO. Fale com a RA Engenharia." },
+409: { msg: "O CertamePRO não conectou este aparelho.", usaDetalhe: true },
+413: { msg: "Os arquivos passam do limite do serviço (200 MB ou 300 arquivos no total). Envie em duas análises, separando por pasta." },
+422: { msg: "O serviço não aceitou o pedido." + (det ? "" : " Confira o CNPJ, a data da sessão e os arquivos."), usaDetalhe: true },
+429: { msg: "Já há uma análise em andamento com esta conexão, ou foram mais de 3 pedidos por minuto." + (espera || " Aguarde um minuto e tente de novo.") },
+503: { msg: "O serviço está ocupado agora." + (espera || " Tente de novo em alguns minutos.") }
+}[status];
+if (!m) return { status: status, mensagem: "O CertamePRO respondeu com erro " + status + "." + (det ? " " + det : "") + " Nada foi gravado no processo.", reparear: false };
+return { status: status, mensagem: m.msg + (m.usaDetalhe && det ? " " + det : ""), reparear: !!m.reparear };
+}
+function semConexao() {
+return { status: 0, mensagem: "Não consegui falar com o CertamePRO (sem internet ou bloqueio na rede). Confira a conexão e tente de novo. Nada foi gravado no processo.", reparear: false };
+}
+function lerCorpo(r) {
+return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return null; } }, function () { return null; });
+}
+function postJson(cfg, rota, corpo, comToken) {
+var d = destino(cfg.servico || SERVICO_OFICIAL);
+if (!d.ok) return Promise.reject({ status: 0, mensagem: d.motivo, reparear: false });
+var cab = { "Content-Type": "application/json" };
+if (comToken) { cab.Authorization = "Bearer " + cfg.token; cab["X-Licitacoes"] = "1"; }
+return cfg.fetch(d.url + rota, { method: "POST", headers: cab, body: JSON.stringify(corpo) }).then(function (r) {
+return lerCorpo(r).then(function (j) {
+if (r.ok) return j || {};
+throw mensagemErro(r.status, j, r.headers && r.headers.get ? r.headers.get("Retry-After") : null);
+});
+}, function () { throw semConexao(); });
+}
+function previaPareamento(cfg, codigo) {
+var c = String(codigo || "").replace(/\s/g, "").toUpperCase();
+if (!c) return Promise.reject({ status: 0, mensagem: "Digite o código de pareamento do CertamePRO.", reparear: false });
+return postJson(cfg, "/api/integracao/orcapro/parear/previa", { codigo: c }, false).then(function (j) {
+if (j.escopo !== "orgao") throw { status: 0, mensagem: "Este código é de um OrçaPRO de empresa, não de órgão público. Peça ao administrador um código do tipo «órgão».", reparear: false };
+return { conta: texto(j.conta, 120), papel: texto(j.papel, 40), empresas: arr(j.empresas).map(function (e) { return { id: e.id, nome: texto(e.nome, 160) }; }), escopo: j.escopo };
+});
+}
+function parear(cfg, codigo, nomeAparelho) {
+var c = String(codigo || "").replace(/\s/g, "").toUpperCase();
+return postJson(cfg, "/api/integracao/orcapro/parear", { codigo: c, aparelho: texto(nomeAparelho || "CPLPRO", 60) }, false).then(function (j) {
+if (j.escopo !== "orgao" || typeof j.token !== "string" || j.token.length < 16) throw { status: 0, mensagem: "O CertamePRO devolveu uma conexão que não serve para o CPLPRO (escopo «" + texto(j.escopo, 20) + "»). Nada foi guardado.", reparear: false };
+return { token: j.token, usuario: texto(j.usuario, 120), aparelhoId: j.aparelho_id, escopo: j.escopo, pareadoEm: agoraISO() };
+});
+}
+function validarResposta(ficha, resp) {
+if (!resp || resp.versao !== VERSAO_FICHA || !arr(resp.resultados).length) throw { status: 0, mensagem: "A resposta do CertamePRO veio incompleta (versão ou resultados ausentes). Tente de novo; nada foi gravado.", reparear: false };
+var porId = {}, avisosLocais = [];
+arr(resp.resultados).forEach(function (r) { if (r && typeof r.id === "string" && !porId[r.id]) porId[r.id] = r; });
+var resultados = [];
+arr(ficha.exigencias).forEach(function (ex) {
+var r = porId[ex.id];
+if (!r) throw { status: 0, mensagem: "A resposta do CertamePRO não trouxe a exigência «" + ex.id + "». Tente de novo; nada foi gravado.", reparear: false };
+var sit = SITUACOES[r.situacao] ? r.situacao : "conferir";
+var provas = arr(r.provas).map(function (p) {
+return { arquivo: texto(p && p.arquivo, 200), pagina: (p && ehNum(p.pagina) && p.pagina >= 1) ? Math.floor(p.pagina) : null, trecho: mascarar(texto(p && p.trecho, MAX_TRECHO)).substring(0, MAX_TRECHO) };
+});
+var motivo = texto(r.motivo, 1200);
+if (sit === "nao_atende" && !provas.some(function (p) { return p.arquivo && p.pagina !== null; })) {
+sit = "conferir";
+motivo = "O serviço apontou «não atende» sem indicar arquivo e página; por regra, sem prova é «conferir». " + motivo;
+avisosLocais.push("Exigência " + ex.id + ": «não atende» sem prova foi tratada como «conferir».");
+}
+resultados.push({ id: ex.id, situacao: sit, motivo: motivo, regra: texto(r.regra, 1200), provas: provas, validade: texto(r.validade, 10) || null, cnpjDoc: limparCnpj(r.cnpjDoc) || null });
+});
+var lic = resp.licitante || {};
+return {
+analisadoEm: texto(resp.analisadoEm, 40) || agoraISO(),
+licitante: { cnpjLido: limparCnpj(lic.cnpjLido) || null, confere: lic.confere === true ? true : (lic.confere === false ? false : null),
+sancoes: lic.sancoes ? { situacao: texto(lic.sancoes.situacao, 40), texto: texto(lic.sancoes.texto, 400), baseAtualizadaEm: texto(lic.sancoes.baseAtualizadaEm, 10) } : null },
+resultados: resultados,
+arquivos: arr(resp.arquivos).map(function (a) { return { nome: texto(a && a.nome, 200), tipoDetectado: a && a.tipoDetectado, paginas: a && ehNum(a.paginas) ? a.paginas : null, sha256: texto(a && a.sha256, 64) }; }),
+avisos: arr(resp.avisos).map(function (a) { return texto(a, 400); }).concat(avisosLocais)
+};
+}
+function analisar(cfg, ficha, arquivos) {
+var d = destino(cfg.servico || SERVICO_OFICIAL);
+if (!d.ok) return Promise.reject({ status: 0, mensagem: d.motivo, reparear: false });
+if (!arr(arquivos).length) return Promise.reject({ status: 0, mensagem: "Escolha os arquivos (ou a pasta) do licitante antes de analisar.", reparear: false });
+var fd = new cfg.FormData();
+fd.append("ficha", JSON.stringify(ficha));
+arr(arquivos).forEach(function (f) { fd.append("arquivos", f, f.name); });
+return cfg.fetch(d.url + "/api/orgao/analisar", { method: "POST", headers: { Authorization: "Bearer " + cfg.token, "X-Licitacoes": "1" }, body: fd }).then(function (r) {
+return lerCorpo(r).then(function (j) {
+if (!r.ok) throw mensagemErro(r.status, j, r.headers && r.headers.get ? r.headers.get("Retry-After") : null);
+return validarResposta(ficha, j);
+});
+}, function () { throw semConexao(); });
+}
+function pv(p, id) { return F ? F.valorParametro(p, id) : null; }
+function idSeguro(s) { return String(s).replace(/[^A-Za-z0-9._-]/g, "_").substring(0, 40); }
+function dataSessaoDoProcesso(p) {
+var d = (p && p.publicacao && p.publicacao.dataAbertura) || (p && p.cronograma && p.cronograma.dataAbertura) || null;
+return /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? String(d) : null;
+}
+var INDICES_DO_EDITAL = [
+{ sigla: "LG", nome: "Liquidez Geral", minimo: 1 },
+{ sigla: "LC", nome: "Liquidez Corrente", minimo: 1 },
+{ sigla: "SG", nome: "Solvência Geral", minimo: 1 }
+];
+function exigenciasDoProcesso(p) {
+var ex = [], avisos = [];
+function add(id, grupo, tipo, descricao, fonte, regra, semRegra) {
+var o = { id: id, grupo: grupo, tipo: tipo, descricao: descricao, fonte: fonte };
+if (regra) o.regra = regra;
+if (semRegra) o.semRegra = semRegra;
+ex.push(o);
+}
+var LEI = "Lei 14.133/2021";
+add("J1", "juridica", "J1", "Ato constitutivo, contrato social ou CCMEI, com as alterações ou a consolidação", LEI + ", art. 66");
+add("C2", "juridica", "C2", "Consulta de sanções (CEIS/CNEP) do licitante", LEI + ", art. 14 e 156");
+add("F-CNPJ", "fiscal", "J2", "Prova de inscrição no CNPJ", LEI + ", art. 68, I");
+add("F2", "fiscal", "F2", "Regularidade federal (certidão conjunta Receita/PGFN, inclusive Seguridade Social)", LEI + ", art. 68, III");
+add("F-INSCMUN", "fiscal", "inscricao_municipal", "Inscrição no cadastro de contribuintes municipal, pertinente ao ramo", LEI + ", art. 68, II");
+add("F4", "fiscal", "F4", "Regularidade com a Fazenda Municipal da sede", LEI + ", art. 68, III");
+add("F5", "trabalhista", "F5", "Regularidade com o FGTS (CRF)", LEI + ", art. 68, IV");
+add("F6", "trabalhista", "F6", "Inexistência de débitos perante a Justiça do Trabalho (CNDT)", LEI + ", art. 68, V");
+add("E2", "economica", "E2", "Certidão negativa de falência e recuperação judicial", LEI + ", art. 69, II");
+add("E1", "economica", "E1", "Balanço patrimonial, DRE e demonstrações dos 2 últimos exercícios", LEI + ", art. 69, I");
+INDICES_DO_EDITAL.forEach(function (ind) {
+add("E3-" + ind.sigla, "economica", "balanco", ind.nome + " (" + ind.sigla + ") não inferior a " + String(ind.minimo).replace(".", ","), "edital padrão (índices superiores a 1)", { indice: ind.sigla, minimo: ind.minimo });
+});
+var cap = p && p.tr && !vazio(p.tr.qualificacaoEconomica) ? texto(p.tr.qualificacaoEconomica, 120) : null;
+add("E3-CAP", "economica", "E3", "Capital mínimo ou patrimônio líquido mínimo" + (cap ? ": " + cap : " (valor não informado no edital)") + ", exigido de quem não atinge os índices", LEI + ", art. 69, §§4º e 5º", null,
+"O serviço não confere capital mínimo: ele só localiza o balanço. A conclusão é do servidor.");
+add("T1", "tecnica", "T1", "Registro da empresa no CREA/CAU (certidão de registro e quitação)", LEI + ", art. 67, I");
+add("T2", "tecnica", "T2", "Registro do responsável técnico no conselho profissional", LEI + ", art. 67, I");
+add("T3", "tecnica", "T3", "Acervo técnico-profissional (CAT do responsável técnico)", LEI + ", art. 67, I");
+add("T5", "tecnica", "T5", "Vínculo do responsável técnico com a empresa", LEI + ", art. 67, §6º");
+var pr = arr(pv(p, "parcelas_relevancia"));
+if (!pr.length) {
+add("T4", "tecnica", "T4", "Atestado de capacidade técnico-operacional (o edital não fixou parcelas de maior relevância)", LEI + ", art. 67, II", null,
+"Sem parcela e quantidade fixadas no edital, o serviço só confere presença e legibilidade.");
+avisos.push("O processo não tem parcelas de maior relevância fixadas (passo 8): os atestados serão conferidos sem quantidade mínima.");
+} else {
+pr.forEach(function (x, i) {
+var q = ehNum(x.qtd) ? x.qtd : null, qm = ehNum(x.qtdMaxExigivel) ? x.qtdMaxExigivel : null;
+var id = "T4-" + idSeguro(vazio(x.item) ? i + 1 : x.item), desc = "Atestado: " + texto(x.descricao, 160) + (vazio(x.un) ? "" : " (" + texto(x.un, 20) + ")");
+var ok = qm !== null && qm > 0 && q !== null && qm <= q / 2 + 1e-9 && !vazio(x.un) && !vazio(x.descricao);
+if (ok) add(id, "tecnica", "atestado", desc, LEI + ", art. 67, §§1º e 2º (até 50% da parcela)", { parcela: texto(x.descricao, 200), unidade: texto(x.un, 20), quantidadeMinima: qm });
+else {
+add(id, "tecnica", "atestado", desc, LEI + ", art. 67, §§1º e 2º", null, "Parcela sem quantidade mínima conferível (acima de 50% da parcela, sem unidade ou sem descrição): o serviço só confere presença.");
+avisos.push("Parcela «" + texto(x.descricao, 80) + "»: quantidade mínima fora do limite de 50% (ou sem unidade); ficou sem regra de quantidade.");
+}
+});
+}
+add("D1", "declaracao", "D1", "Declaração de que atende aos requisitos de habilitação", LEI + ", art. 63, I");
+add("D2", "declaracao", "D2", "Declaração de reserva de cargos para pessoa com deficiência e reabilitado", LEI + ", art. 63, IV");
+add("D3", "declaracao", "D3", "Declaração de que a proposta cobre os custos dos direitos trabalhistas", LEI + ", art. 63");
+if (pv(p, "visita_tecnica") === true) add("D8", "declaracao", "D8", "Declaração de vistoria ou de conhecimento do local", LEI + ", art. 63, §2º");
+if (pv(p, "me_epp") === true) add("D5", "declaracao", "D5", "Declaração de enquadramento como ME/EPP", "LC 123/2006");
+if (p && p.edital && !vazio(p.edital.habilitacao)) avisos.push("O edital tem exigências específicas em texto livre («Exigências específicas…»): elas NÃO entram na ficha automática. Confira à mão.");
+return { exigencias: ex, avisos: avisos };
+}
+function montarFicha(p, licitante, dataSessao, ids) {
+var cnpj = limparCnpj(licitante && licitante.cnpj);
+if (!cnpjValido(cnpj)) throw new Error("O CNPJ do licitante não confere (confira os dígitos).");
+var ds = vazio(dataSessao) ? dataSessaoDoProcesso(p) : String(dataSessao);
+if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ds || ""))) throw new Error("Informe a data da sessão: é nela que a validade das certidões é conferida.");
+var base = exigenciasDoProcesso(p).exigencias;
+if (arr(ids).length) base = base.filter(function (e) { return ids.indexOf(e.id) > -1; });
+if (!base.length) throw new Error("Não há exigência para analisar.");
+var f = { versao: VERSAO_FICHA, cnpjLicitante: cnpj, dataSessao: ds, exigencias: base.map(function (e) {
+var o = { id: e.id, grupo: e.grupo, tipo: e.tipo, descricao: e.descricao };
+if (e.regra) o.regra = clone(e.regra);
+return o;
+}) };
+if (!vazio(licitante && licitante.razaoSocial)) f.razaoSocial = texto(licitante.razaoSocial, 200);
+return f;
+}
+function hab(q) { if (!q.habilitacao || typeof q.habilitacao !== "object") q.habilitacao = { licitantes: [], adjudicatarioId: null }; q.habilitacao.licitantes = arr(q.habilitacao.licitantes); return q.habilitacao; }
+function licPorId(p, id) { return arr(p && p.habilitacao && p.habilitacao.licitantes).filter(function (l) { return l.id === id; })[0] || null; }
+function ordem(p, licId) { var l = arr(p && p.habilitacao && p.habilitacao.licitantes); for (var i = 0; i < l.length; i++) if (l[i].id === licId) return i + 1; return 0; }
+function nomeLicitante(p, licId) { var n = ordem(p, licId); return n ? "Licitante " + n : "Licitante"; }
+function quemDe(quem, papel) { return { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }; }
+function idLicitante(cnpj) { return "hab-" + F.hash(limparCnpj(cnpj)).substring(0, 8); }
+function registrarAnalise(p, papeis, dados, quem, agora) {
+var papel = F.exigir(papeis, "analisar_propostas");
+var cnpj = limparCnpj(dados.cnpj);
+if (!cnpjValido(cnpj)) throw new Error("O CNPJ do licitante não confere (confira os dígitos).");
+var q = clone(p), h = hab(q), id = idLicitante(cnpj);
+var lic = h.licitantes.filter(function (l) { return l.id === id; })[0];
+var novo = !lic;
+if (!lic) { lic = { id: id, cnpj: cnpj, razaoSocial: texto(dados.razaoSocial, 200), dataSessao: dados.dataSessao, exigencias: [], resultados: [], decisoes: {}, diligencia: null, recurso: null, analises: [] }; h.licitantes.push(lic); }
+if (!vazio(dados.razaoSocial)) lic.razaoSocial = texto(dados.razaoSocial, 200);
+lic.dataSessao = dados.dataSessao;
+var resp = dados.resposta, fichaEx = {};
+arr(dados.ficha.exigencias).forEach(function (e) { fichaEx[e.id] = e; });
+var ja = {};
+lic.resultados = arr(lic.resultados).map(function (r) {
+var nr = arr(resp.resultados).filter(function (x) { return x.id === r.id; })[0];
+if (nr) { ja[r.id] = true; delete lic.decisoes[r.id]; return nr; }
+return r;
+});
+lic.exigencias = arr(lic.exigencias).map(function (e) { return fichaEx[e.id] ? clone(fichaEx[e.id]) : e; });
+arr(resp.resultados).forEach(function (r) {
+if (ja[r.id]) return;
+lic.resultados.push(r); lic.exigencias.push(clone(fichaEx[r.id]));
+});
+lic.licitanteLido = resp.licitante;
+lic.arquivos = resp.arquivos;
+lic.avisos = resp.avisos;
+lic.analises = arr(lic.analises).concat([{ em: resp.analisadoEm, itens: arr(resp.resultados).length, por: quemDe(quem, papel).nome }]);
+F.registrar(q, "habilitacao:analisar:" + id, novo ? null : "reanálise", arr(resp.resultados).length + " exigência(s)", quemDe(quem, papel), agora);
+return q;
+}
+function mapaDecisao(sitServidor) { return { atende: "atende", nao_atende: "nao_atende", diligencia: "diligencia" }[sitServidor] || null; }
+function temProvaCompleta(res) { return arr(res && res.provas).some(function (p) { return !vazio(p.arquivo) && p.pagina !== null && p.pagina !== undefined; }); }
+function decidir(p, papeis, licId, exigId, dec, quem, agora) {
+var papel = F.exigir(papeis, "analisar_propostas");
+if (!dec || !DECISOES[dec.situacao]) throw new Error("Escolha a decisão: atende, diligência, não atende ou não apresentou.");
+var q = clone(p), lic = licPorId(q, licId);
+if (!lic) throw new Error("Licitante não encontrado.");
+var res = arr(lic.resultados).filter(function (r) { return r.id === exigId; })[0];
+if (!res) throw new Error("Exigência não encontrada.");
+var motivo = texto(dec.motivo, 1500);
+var confirma = mapaDecisao(res.situacao) === dec.situacao;
+if (dec.situacao === "nao_apresentou" && !motivo) throw new Error("«Não apresentou» é decisão sua: escreva o motivo (onde procurou e por que não há o documento).");
+if (dec.situacao === "nao_atende" && !temProvaCompleta(res) && !motivo) throw new Error("«Não atende» precisa de prova (arquivo e página) ou do motivo escrito por você. Sem nenhum dos dois, o licitante não pode ser inabilitado.");
+if (!confirma && !motivo) throw new Error("Você está alterando o resultado do serviço («" + (SITUACOES[res.situacao] ? SITUACOES[res.situacao].nome : res.situacao) + "»): escreva o motivo.");
+if (dec.situacao === "diligencia" && !confirma && !motivo) throw new Error("Escreva o motivo da diligência: ele vai no termo enviado ao licitante.");
+var antes = lic.decisoes[exigId] ? lic.decisoes[exigId].situacao : null;
+lic.decisoes[exigId] = { situacao: dec.situacao, origem: confirma ? "confirmado" : "alterado", situacaoServidor: res.situacao, motivo: motivo || null, por: quemDe(quem, papel).nome, papel: papel, em: vazio(agora) ? agoraISO() : agora };
+F.registrar(q, "habilitacao:" + (confirma ? "confirmar" : "alterar") + ":" + licId + ":" + exigId, antes, dec.situacao, quemDe(quem, papel), agora);
+return q;
+}
+function definirPrazoDiligencia(p, papeis, licId, prazoISO, quem, agora) {
+var papel = F.exigir(papeis, "analisar_propostas");
+if (!/^\d{4}-\d{2}-\d{2}$/.test(String(prazoISO || ""))) throw new Error("Escolha a data-limite da resposta do licitante.");
+var q = clone(p), lic = licPorId(q, licId);
+if (!lic) throw new Error("Licitante não encontrado.");
+var antes = lic.diligencia ? lic.diligencia.prazo : null;
+lic.diligencia = { prazo: prazoISO, por: quemDe(quem, papel).nome, em: vazio(agora) ? agoraISO() : agora };
+F.registrar(q, "habilitacao:prazo_diligencia:" + licId, antes, prazoISO, quemDe(quem, papel), agora);
+return q;
+}
+function consolidar(lic) {
+var pend = [], dil = [], inab = [], ok = [];
+arr(lic && lic.resultados).forEach(function (r) {
+var d = lic.decisoes && lic.decisoes[r.id];
+if (!d) pend.push(r.id);
+else if (d.situacao === "diligencia") dil.push(r.id);
+else if (ABRE_INABILITACAO[d.situacao]) inab.push(r.id);
+else ok.push(r.id);
+});
+var status = !arr(lic && lic.resultados).length ? "sem_analise" : (pend.length ? "pendente" : (dil.length ? "em_diligencia" : (inab.length ? "inabilitado" : "habilitado")));
+return { status: status, pendentes: pend, diligencia: dil, inabilita: inab, atendidas: ok };
+}
+var STATUS_ROTULO = { sem_analise: "sem análise", pendente: "pendente de decisão", em_diligencia: "em diligência", inabilitado: "inabilitado", habilitado: "habilitado" };
+function pendenciasGerais(p, soLicId) {
+var out = [];
+arr(p && p.habilitacao && p.habilitacao.licitantes).forEach(function (l, i) {
+if (soLicId && l.id !== soLicId) return;
+var c = consolidar(l);
+if (c.pendentes.length) out.push({ licitanteId: l.id, ordem: i + 1, tipo: "pendente", itens: c.pendentes });
+if (c.diligencia.length) out.push({ licitanteId: l.id, ordem: i + 1, tipo: "diligencia", itens: c.diligencia });
+});
+return out;
+}
+function escolherAdjudicatario(p, papeis, licId, quem, agora) {
+var papel = F.exigir(papeis, "adjudicar");
+var q = clone(p), lic = licPorId(q, licId);
+if (!lic) throw new Error("Licitante não encontrado.");
+if (consolidar(lic).status !== "habilitado") throw new Error("Só se adjudica a licitante HABILITADO, com todas as exigências decididas.");
+var antes = hab(q).adjudicatarioId;
+hab(q).adjudicatarioId = licId;
+F.registrar(q, "habilitacao:adjudicatario", antes, licId, quemDe(quem, papel), agora);
+return q;
+}
+function registrarRecurso(p, papeis, licId, dados, quem, agora) {
+var papel = F.exigir(papeis, "analisar_propostas");
+var q = clone(p), lic = licPorId(q, licId);
+if (!lic) throw new Error("Licitante não encontrado.");
+var r = lic.recurso || { itens: [], conclusao: null, intencaoEm: null };
+if (dados.alegacao !== undefined) {
+var al = texto(dados.alegacao, 1500);
+if (!al) throw new Error("Escreva a alegação do recorrente.");
+r.itens = arr(r.itens).concat([{ id: "alg-" + F.hash(al + "|" + (arr(r.itens).length + 1)).substring(0, 8), alegacao: al, exigenciaId: texto(dados.exigenciaId, 64) || null, documento: texto(dados.documento, 300) || null, resposta: texto(dados.resposta, 1500) || null }]);
+}
+if (dados.conclusao !== undefined) r.conclusao = texto(dados.conclusao, 3000) || null;
+if (dados.intencaoEm !== undefined) r.intencaoEm = /^\d{4}-\d{2}-\d{2}$/.test(String(dados.intencaoEm)) ? dados.intencaoEm : null;
+lic.recurso = r;
+F.registrar(q, "habilitacao:recurso:" + licId, null, dados.alegacao !== undefined ? "alegação registrada" : "atualizado", quemDe(quem, papel), agora);
+return q;
+}
+function prazosRecurso(p) {
+if (!p || vazio(p.resultadoEm)) return null;
+var x = F.valorParametro(p, "recurso_prazo");
+var n = x && typeof x === "object" && ehNum(x.diasUteis) ? x.diasUteis : 3;
+var razoes = Cplpro.diasUteisDepois(p.resultadoEm, n, p.feriadosLocais);
+var contra = razoes ? Cplpro.diasUteisDepois(razoes, n, p.feriadosLocais) : null;
+return { dias: n, resultadoEm: p.resultadoEm, razoesAte: razoes, contrarrazoesAte: contra, fonte: "Lei 14.133/2021, art. 165" };
+}
+function podeGerar(tipo, p, licId, papeis) {
+var lic = licId ? licPorId(p, licId) : null, c = lic ? consolidar(lic) : null;
+function sem(m) { return { ok: false, motivo: m }; }
+function papelDe(acao) { return F.pode(papeis, acao) || F.pode(papeis, "ler_tudo"); }
+if (tipo === "adjudicacao" || tipo === "homologacao") {
+if (!F.pode(papeis, tipo === "adjudicacao" ? "adjudicar" : "homologar")) return sem(F.motivoSemPermissao(papeis, tipo === "adjudicacao" ? "adjudicar" : "homologar"));
+var adj = licPorId(p, p.habilitacao && p.habilitacao.adjudicatarioId);
+if (!adj) return sem("Escolha o licitante a adjudicar (só habilitado, sem item pendente).");
+var pg = pendenciasGerais(p, adj.id);
+if (pg.length) return sem("O licitante a adjudicar (Licitante " + pg[0].ordem + ") tem item pendente de decisão ou em diligência. Decida cada exigência antes das minutas.");
+if (consolidar(adj).status !== "habilitado") return sem("O licitante escolhido não está habilitado.");
+return { ok: true };
+}
+if (tipo === "ata") {
+if (!papelDe("analisar_propostas")) return sem(F.motivoSemPermissao(papeis, "analisar_propostas"));
+return arr(p && p.habilitacao && p.habilitacao.licitantes).length ? { ok: true } : sem("Analise ao menos um licitante.");
+}
+if (!lic) return sem("Escolha o licitante.");
+if (!papelDe("analisar_propostas")) return sem(F.motivoSemPermissao(papeis, "analisar_propostas"));
+if (tipo === "relatorio") return c.status === "sem_analise" ? sem("Analise o licitante antes.") : { ok: true };
+if (tipo === "diligencia") return c.diligencia.length ? { ok: true } : sem("Nenhuma exigência está em diligência: o termo só sai depois da sua decisão.");
+if (tipo === "inabilitacao") return c.inabilita.length ? { ok: true } : sem("Nenhuma exigência foi decidida como «não atende» ou «não apresentou».");
+if (tipo === "recurso") return c.status === "sem_analise" ? sem("Analise o licitante antes.") : { ok: true };
+return sem("Documento desconhecido.");
+}
+var Hab = {
+SERVICO_OFICIAL: SERVICO_OFICIAL, VERSAO_FICHA: VERSAO_FICHA, GRUPOS: GRUPOS, SITUACOES: SITUACOES, DECISOES: DECISOES, DECISAO_ORDEM: DECISAO_ORDEM,
+STATUS_ROTULO: STATUS_ROTULO, INDICES_DO_EDITAL: INDICES_DO_EDITAL, MAX_TRECHO: MAX_TRECHO,
+nomeGrupo: nomeGrupo, limparCnpj: limparCnpj, cnpjValido: cnpjValido, mascaraCnpj: mascaraCnpj, mascarar: mascarar,
+destino: destino, chavePareamento: chavePareamento, lerPareamento: lerPareamento, gravarPareamento: gravarPareamento, desligar: desligar, estadoPareamento: estadoPareamento,
+mensagemErro: mensagemErro, previaPareamento: previaPareamento, parear: parear, analisar: analisar, validarResposta: validarResposta,
+exigenciasDoProcesso: exigenciasDoProcesso, montarFicha: montarFicha, dataSessaoDoProcesso: dataSessaoDoProcesso,
+licPorId: licPorId, ordem: ordem, nomeLicitante: nomeLicitante, idLicitante: idLicitante,
+registrarAnalise: registrarAnalise, decidir: decidir, definirPrazoDiligencia: definirPrazoDiligencia, consolidar: consolidar, pendenciasGerais: pendenciasGerais,
+escolherAdjudicatario: escolherAdjudicatario, registrarRecurso: registrarRecurso, prazosRecurso: prazosRecurso, podeGerar: podeGerar, temProvaCompleta: temProvaCompleta
+};
+global.CplproHab = Hab;
+if (typeof module !== "undefined" && module.exports) module.exports = Hab;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplpropreparo.js ==== */
+try {
+(function (global) {
+"use strict";
+var Cplpro = global.Cplpro, R = global.CplproRegras, Fluxo = global.CplproFluxo, Docs = global.CplproDocs, Importador = global.Importador;
+if (typeof require === "function" && typeof module !== "undefined") {
+if (!R) R = require("./cplproregras.js");
+if (!Cplpro) Cplpro = require("./cplpro.js");
+if (!Fluxo) Fluxo = require("./cplprofluxo.js");
+if (!Docs) { try { Docs = require("./cplprodocs.js"); } catch (e) { Docs = null; } }
+if (!Importador) { try { Importador = require("./importador.js"); } catch (e2) { Importador = null; } }
+}
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function vazio(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === "") || (Object.prototype.toString.call(v) === "[object Array]" && v.length === 0); }
+function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+function semValor(v) { return v === null || v === undefined || (typeof v === "string" && v.replace(/\s/g, "") === ""); }
+function igual(a, b) { return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+function trim(s) { return String(s === null || s === undefined ? "" : s).replace(/^\s+|\s+$/g, ""); }
+function norm(s) {
+return String(s === null || s === undefined ? "" : s).toLowerCase()
+.replace(/[áàâãä]/g, "a").replace(/[éèêë]/g, "e").replace(/[íìîï]/g, "i").replace(/[óòôõö]/g, "o").replace(/[úùûü]/g, "u").replace(/ç/g, "c")
+.replace(/\s+/g, " ").replace(/^ | $/g, "");
+}
+function numBR(n, c) {
+var s = Number(n).toFixed(c), p = s.split("."), i = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+return i + (p[1] ? "," + p[1] : "");
+}
+function numCel(v) {
+if (typeof v === "number" && isFinite(v)) return v;
+if (v && typeof v === "object" && v.result !== undefined) return numCel(v.result);
+var s = trim(v).replace(/%$/, "").replace(/\s/g, "");
+if (!s) return null;
+if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+else s = s.replace(",", ".");
+var n = Number(s);
+return isFinite(n) ? n : null;
+}
+function textoCel(v) {
+if (v === null || v === undefined) return "";
+if (typeof v === "object") {
+if (v.richText) return v.richText.map(function (x) { return x.text; }).join("");
+if (v.result !== undefined) return textoCel(v.result);
+if (v.text !== undefined) return String(v.text);
+return "";
+}
+return String(v);
+}
+function ehTitulo(l) {
+var t = trim(l);
+if (t.length < 4 || t.length > 90) return null;
+if (t !== t.toUpperCase() || !/[A-ZÀ-Ý]{3}/.test(t) || /[.;:]$/.test(t)) return null;
+return trim(t.replace(/^\d+(?:\.\d+)*[.)]?\s+/, ""));
+}
+var CHAVES_SECAO = [
+["identificacao", "identificacao"], ["objeto", "objeto"], ["justificativa", "justificativa"], ["solucao", "solucao"],
+["requisitos", "requisitos"], ["especificac", "especificacoes"], ["medicao", "medicaoRecebimento"], ["recebimento", "medicaoRecebimento"], ["prazo", "prazo"]
+];
+function chaveDaSecao(tituloNorm) {
+for (var i = 0; i < CHAVES_SECAO.length; i++) if (tituloNorm.indexOf(CHAVES_SECAO[i][0]) >= 0) return CHAVES_SECAO[i][1];
+return null;
+}
+function lerMemorial(texto) {
+var linhas = String(texto === null || texto === undefined ? "" : texto).split(/\r?\n/).map(trim).filter(function (l) { return l !== ""; });
+var secoes = {}, atual = null, todas = [];
+linhas.forEach(function (l) {
+var t = ehTitulo(l);
+if (t) { var k = chaveDaSecao(norm(t)); atual = k && !secoes[k] ? (secoes[k] = []) : null; return; }
+todas.push(l);
+if (atual) atual.push(l);
+});
+function juntar(k) { return secoes[k] && secoes[k].length ? secoes[k].join("\n") : null; }
+var tudo = todas.join("\n"), m;
+var out = { objeto: juntar("objeto"), justificativa: juntar("justificativa"), solucao: juntar("solucao"), requisitos: juntar("requisitos"),
+especificacoes: juntar("especificacoes"), prazo: juntar("prazo"), identificacao: juntar("identificacao"), medicao: null, recebimento: null,
+secretaria: null, municipio: null, uf: null, secoesAchadas: Object.keys(secoes) };
+arr(secoes.medicaoRecebimento).forEach(function (l) {
+var a = /^medi[cç][aã]o\s*:\s*(.+)$/i.exec(l), b = /^recebimento\s*:\s*(.+)$/i.exec(l);
+if (a) out.medicao = a[1]; else if (b) out.recebimento = b[1];
+});
+if (out.medicao === null && out.recebimento === null && secoes.medicaoRecebimento) out.medicao = secoes.medicaoRecebimento.join("\n");
+m = /Secretaria requisitante\s*:\s*([^(.\n]+)/i.exec(tudo);
+if (m) out.secretaria = trim(m[1]);
+else {
+m = /Secretaria\s+(?:Municipal\s+)?d[aeo]s?\s+[A-Za-zÀ-ú]+(?:\s+(?:e\s+|de\s+)?[A-ZÀ-Ú][A-Za-zÀ-ú]+)*/.exec(tudo);
+if (m) out.secretaria = trim(m[0]);
+}
+m = /Munic[íi]pio(?:\s+de|\s*:)\s+([A-ZÀ-Ú][A-Za-zÀ-ú ]+?)\s*\/\s*([A-Z]{2})\b/.exec(tudo);
+if (m) { out.municipio = trim(m[1]); out.uf = m[2]; }
+return out;
+}
+function lerPlanilha(matriz) {
+if (!Importador) return { erro: "O importador de planilha não está carregado." };
+var res = Importador.analisar(matriz);
+if (!res || res.erro || !arr(res.etapas).length) return { erro: "Não reconheci uma planilha de orçamento neste arquivo (sem cabeçalho de itens)." };
+var m = arr(matriz), ptr = 0, itens = [];
+function linhaDoItem(it) {
+var d = norm(it.descricao).substring(0, 40), cod = trim(it.codigo), num = trim(it.numero);
+for (var i = ptr; i < m.length; i++) {
+var cels = arr(m[i]).map(function (c) { return norm(textoCel(c)); });
+var temDesc = d !== "" && cels.join(" | ").indexOf(d) >= 0;
+var temCod = cod !== "" && cels.indexOf(norm(cod)) >= 0;
+var temNum = num !== "" && cels.indexOf(norm(num)) >= 0;
+if (temDesc && (temCod || temNum || cod === "")) { ptr = i + 1; return i + 1; }
+}
+return null;
+}
+res.etapas.forEach(function (et, ei) {
+arr(et.itens).forEach(function (it) {
+itens.push({ numero: it.numero || null, codigo: trim(it.codigo), descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade,
+custoUnitario: it.custoUnitario, etapa: et.nome, etapaIdx: ei, linha: linhaDoItem(it) });
+});
+});
+return { etapas: res.etapas, itens: itens, confianca: res.confianca, avisos: arr(res.avisos), resumo: res.resumo };
+}
+function lerCronograma(matriz) {
+var m = arr(matriz), hi = -1, cols = [], i, j;
+for (i = 0; i < m.length && i < 40; i++) {
+var r = arr(m[i]), c = [];
+for (j = 0; j < r.length; j++) if (/^m[eê]s\s*\d+/i.test(trim(textoCel(r[j])))) c.push(j);
+if (c.length >= 2) { hi = i; cols = c; break; }
+}
+if (hi < 0) return { erro: "Não achei as colunas «Mês 1, Mês 2…» no cronograma." };
+var etapas = [], avisos = [];
+for (i = hi + 1; i < m.length; i++) {
+var row = arr(m[i]), nome = trim(textoCel(row[0]));
+if (!nome) { if (etapas.length) break; continue; }
+if (/^total/i.test(nome)) continue;
+var pct = cols.map(function (cj) { var n = numCel(row[cj]); return n === null ? 0 : n; });
+var soma = pct.reduce(function (a, b) { return a + b; }, 0);
+if (Math.abs(soma - 100) > 0.001) avisos.push("Etapa «" + nome + "»: os percentuais somam " + numBR(soma, 2) + "%, não 100%.");
+etapas.push({ nome: nome, pct: pct });
+}
+if (!etapas.length) return { erro: "O cronograma não tem nenhuma etapa abaixo do cabeçalho." };
+return { meses: cols.length, etapas: etapas, avisos: avisos };
+}
+function analisar(entrada) {
+var arqs = arr(entrada && entrada.arquivos).map(function (a) {
+var c = Cplpro.classificarArquivo({ nome: a.nome, ext: a.ext, texto: a.texto });
+return { nome: a.nome, sha: a.sha || null, ext: c.ext, tipo: c.tipo, origem: a.origem || null, data: a.data || null, texto: a.texto || null, matriz: a.matriz || null };
+});
+var an = { arquivos: arqs, memorial: null, planilha: null, cronograma: null, avisos: [], lacunas: [] };
+function primeiro(tipo, campo) { return arqs.filter(function (a) { return a.tipo === tipo && !vazio(a[campo]); })[0] || null; }
+var mem = primeiro("memorial_descritivo", "texto"), pla = primeiro("orcamento_planilha", "matriz"), cro = primeiro("cronograma", "matriz");
+if (mem) { an.memorial = lerMemorial(mem.texto); an.memorial.arquivo = mem.nome; an.memorial.sha = mem.sha; }
+else an.lacunas.push("Sem memorial descritivo legível: objeto, justificativa, solução e requisitos ficam para a pessoa.");
+if (pla) {
+var lp = lerPlanilha(pla.matriz);
+if (lp.erro) an.avisos.push("Planilha «" + pla.nome + "»: " + lp.erro);
+else { an.planilha = lp; lp.arquivo = pla.nome; lp.sha = pla.sha; }
+} else if (arqs.some(function (a) { return a.tipo === "orcamento_planilha"; })) {
+an.avisos.push("Há uma planilha orçamentária, mas só em PDF ou sem texto legível: o sistema não converte PDF em orçamento. Salve a planilha em .xlsx e rode de novo.");
+} else an.lacunas.push("Sem planilha orçamentária na pasta: o orçamento de referência e os quantitativos ficam para a pessoa.");
+if (cro) {
+var lc = lerCronograma(cro.matriz);
+if (lc.erro) an.avisos.push("Cronograma «" + cro.nome + "»: " + lc.erro);
+else { an.cronograma = lc; lc.arquivo = cro.nome; lc.sha = cro.sha; arr(lc.avisos).forEach(function (a) { an.avisos.push(a); }); }
+}
+return an;
+}
+function planoOrcamento(an) {
+if (!an || !an.planilha) return null;
+var etapas = arr(an.planilha.etapas).map(function (et) {
+return { nome: et.nome, itens: arr(et.itens).map(function (it) { return { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: it.custoUnitario, numero: it.numero || null }; }) };
+});
+return { etapas: etapas, itens: an.planilha.itens, arquivo: an.planilha.arquivo, sha: an.planilha.sha };
+}
+function assinaturaOrc(orc) {
+var s = [];
+arr(orc && orc.etapas).forEach(function (et) {
+s.push(et.nome);
+arr(et.itens).forEach(function (it) { s.push([it.codigo, it.quantidade, it.custoUnitario, it.descricao].join("|")); });
+});
+var h = 5381, str = s.join("\n"), i;
+for (i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) % 4294967296;
+return h.toString(16);
+}
+var DECISOES = ["sigiloso", "modalidade", "criterio_julgamento", "regime_execucao", "garantia_contrato", "visita_tecnica", "consorcio", "subcontratacao", "amostra", "me_epp"];
+var CONTAS = ["parcelas_relevancia", "exequibilidade", "reajuste", "aditivo_teto", "recurso_prazo"];
+var PASSO_DO_CAMPO = { secretaria: "demanda", objeto: "demanda", justificativa: "demanda", tipoObjeto: "demanda", regulamentoId: "parametros",
+orcamentoId: "orcamento", cronogramaFisico: "tr" };
+function pegar(o, caminho) {
+var ps = caminho.split("."), x = o, i;
+for (i = 0; i < ps.length; i++) { if (x === null || x === undefined) return undefined; x = x[ps[i]]; }
+return x;
+}
+function colocar(o, caminho, v) {
+var ps = caminho.split("."), x = o, i;
+for (i = 0; i < ps.length - 1; i++) { if (x[ps[i]] === null || x[ps[i]] === undefined || typeof x[ps[i]] !== "object") x[ps[i]] = {}; x = x[ps[i]]; }
+x[ps[ps.length - 1]] = v;
+}
+function passoDe(caminho) {
+if (PASSO_DO_CAMPO[caminho]) return PASSO_DO_CAMPO[caminho];
+var p0 = caminho.split(/[.#]/)[0];
+return { tr: "tr", etp: "etp", riscos: "riscos", quantitativos: "quantitativos", orcamentoRef: "orcamento", pesquisa: "orcamento", parametros: "parametros", documentos: "acervo" }[p0] || "demanda";
+}
+function moedaBR(n) { return "R$ " + numBR(n, 2); }
+function datasComp(comp) { return /^\d{4}-\d{2}$/.test(String(comp || "")) ? String(comp) + "-01" : null; }
+function aplicar(p, an, ctx) {
+var c = ctx || {}, agora = c.agora || null;
+var q = clone(p);
+var permitidos = c.permitidos || null;
+function pode(passo) { return !permitidos || permitidos[passo] !== false; }
+var prev = q.preparo && q.preparo.campos ? q.preparo : null;
+q.preparo = { versao: 1, campos: clone(prev ? prev.campos : {}), arquivos: [], resumo: null, atualizadoEm: prev ? prev.atualizadoEm : null, orcamento: prev ? clone(prev.orcamento) : null };
+var rastro = q.preparo.campos;
+var E = { preenchidos: 0, atualizados: 0, mantidos: [], porPasso: {}, soltos: {}, semPermissao: {}, mudou: false };
+function marcar(passo, tipo) { E.porPasso[passo] = (E.porPasso[passo] || 0) + 1; if (E.soltos[passo] === undefined && Fluxo && Fluxo.soltarConferencia(q, passo)) E.soltos[passo] = true; E.mudou = true; return tipo; }
+function campo(caminho, valor, meta, passoForcado) {
+if (semValor(valor)) return "sem-dado";
+var passo = passoForcado || passoDe(caminho);
+if (!pode(passo)) { E.semPermissao[passo] = true; return "sem-permissao"; }
+var atual = pegar(q, caminho), rec = rastro[caminho];
+if (igual(atual, valor)) return "igual";
+if (semValor(atual) || (rec && igual(atual, rec.valor))) {
+colocar(q, caminho, clone(valor));
+rastro[caminho] = { valor: clone(valor), arquivo: meta.arquivo || null, regra: meta.regra || null, em: agora };
+if (rec) { E.atualizados++; return marcar(passo, "atualizado"); }
+E.preenchidos++; return marcar(passo, "preenchido");
+}
+E.mantidos.push({ caminho: caminho, passo: passo, motivo: "a pessoa editou" });
+return "mantido";
+}
+var arqs = arr(an && an.arquivos);
+if (pode("acervo")) {
+var antesN = arr(q.documentos).length;
+var q2 = Cplpro.adicionarDocumentos(q, arqs.map(function (a) { return { nome: a.nome, sha: a.sha, ext: a.ext, texto: a.texto, origem: a.origem, data: a.data }; }));
+q.documentos = q2.documentos;
+if (q.documentos.length !== antesN) { E.preenchidos += q.documentos.length - antesN; marcar("acervo", "preenchido"); }
+} else E.semPermissao.acervo = true;
+q.preparo.arquivos = arqs.map(function (a) { return { nome: a.nome, sha: a.sha, tipo: a.tipo }; });
+var mem = an && an.memorial, ref = mem ? { arquivo: mem.arquivo } : {};
+if (mem) {
+campo("secretaria", mem.secretaria, { arquivo: mem.arquivo, regra: "Secretaria citada no memorial descritivo." });
+campo("objeto", mem.objeto, { arquivo: mem.arquivo, regra: "Seção «Objeto» do memorial descritivo." });
+campo("justificativa", mem.justificativa, { arquivo: mem.arquivo, regra: "Seção «Justificativa» do memorial descritivo." });
+var sug = Cplpro.sugerirTipoObjeto(mem.objeto || "");
+if (sug.length && (sug.length === 1 || sug[0].pontos > sug[1].pontos)) {
+campo("tipoObjeto", sug[0].tipo, { arquivo: mem.arquivo, regra: "Termos do objeto no memorial: " + sug[0].termos.join(", ") + "." });
+}
+}
+var munic = mem && mem.municipio ? norm(mem.municipio) : null;
+if (munic) {
+var regId = (munic === "sao paulo" && mem.uf === "SP") ? "sp-capital-62100" : "federal-14133";
+campo("regulamentoId", regId, { arquivo: mem.arquivo, regra: regId === "sp-capital-62100" ? "Município de São Paulo (capital): Decreto Municipal 62.100/2022." : "Município sem decreto próprio cadastrado no sistema: vale o regulamento federal (Lei 14.133)." });
+}
+var oi = c.orcInfo || null, plano = an && an.planilha ? an.planilha : null;
+if (oi && oi.id) {
+campo("orcamentoId", oi.id, { arquivo: plano ? plano.arquivo : null, regra: "Orçamento criado a partir da planilha orçamentária da pasta, com a base de preços do sistema." });
+if (oi.base) campo("orcamentoRef.base", oi.base, { arquivo: plano ? plano.arquivo : null, regra: "Base de preços do orçamento criado." }, "orcamento");
+if (oi.competencia) campo("orcamentoRef.competencia", oi.competencia, { arquivo: plano ? plano.arquivo : null, regra: "Competência da base de preços do orçamento criado." }, "orcamento");
+if (oi.casados > 0 && agora) campo("pesquisa.dataPesquisa", String(agora).substring(0, 10), { arquivo: plano ? plano.arquivo : null, regra: "Dia em que o sistema consultou a base oficial de preços para precificar o orçamento." }, "orcamento");
+q.preparo.orcamento = { id: oi.id, sha: plano ? plano.sha : null, assinatura: oi.assinatura || null, casados: oi.casados, semBase: arr(oi.semBase) };
+if (pode("quantitativos")) {
+var linhasOrc = arr(oi.linhas), itensPl = plano ? arr(plano.itens) : [], nq = 0;
+linhasOrc.forEach(function (l, i) {
+var it = itensPl[i] && trim(itensPl[i].codigo) === trim(l.codigo) ? itensPl[i] : null;
+var chave = "quantitativos#" + l.numero, rec = rastro[chave];
+var novo = { item: l.numero, itemRef: l.numero, codigo: l.codigo || "", descricao: l.descricao, un: l.unidade, qtd: l.quantidade,
+origem: it && it.linha ? { arquivo: plano.arquivo, pagina: null, linha: it.linha } : { arquivo: null, pagina: null } };
+var idx = -1; arr(q.quantitativos).forEach(function (z, k) { if (z.item === l.numero) idx = k; });
+if (idx < 0) {
+if (rec) { E.mantidos.push({ caminho: chave, passo: "quantitativos", motivo: "a pessoa removeu" }); return; }
+q.quantitativos.push(novo); rastro[chave] = { valor: clone(novo), arquivo: plano ? plano.arquivo : null, regra: "Quantidade e linha de origem lidas da planilha orçamentária.", em: agora };
+E.preenchidos++; nq++; marcar("quantitativos", "preenchido"); return;
+}
+var cur = q.quantitativos[idx];
+if (igual(cur, novo)) return;
+if (rec && igual(cur, rec.valor)) {
+q.quantitativos[idx] = novo; rastro[chave] = { valor: clone(novo), arquivo: plano ? plano.arquivo : null, regra: rec.regra, em: agora };
+E.atualizados++; marcar("quantitativos", "atualizado"); return;
+}
+E.mantidos.push({ caminho: chave, passo: "quantitativos", motivo: "a pessoa editou" });
+});
+} else E.semPermissao.quantitativos = true;
+}
+if (pode("etp")) {
+if (mem) {
+campo("etp.campos.I", mem.justificativa, { arquivo: mem.arquivo, regra: "Necessidade = a justificativa do memorial descritivo." }, "etp");
+campo("etp.campos.III", mem.requisitos, { arquivo: mem.arquivo, regra: "Seção «Requisitos da contratação» do memorial descritivo." }, "etp");
+campo("etp.campos.VII", mem.solucao || mem.objeto, { arquivo: mem.arquivo, regra: "Seção «Descrição da solução» do memorial descritivo." }, "etp");
+}
+var comOrig = arr(q.quantitativos).filter(function (z) { return z.origem && !vazio(z.origem.arquivo) && (!vazio(z.origem.pagina) || !vazio(z.origem.linha)); }).length;
+var semOrig = arr(q.quantitativos).length - comOrig;
+if (comOrig) campo("etp.campos.IV", "Quantidades estimadas por memória de cálculo: " + comOrig + " item(ns) com origem documental (arquivo e linha ou página), listados no quadro de quantitativos." + (semOrig ? " Atenção: " + semOrig + " item(ns) sem origem ficaram de fora." : ""), { arquivo: plano ? plano.arquivo : null, regra: "Contagem dos quantitativos com origem." }, "etp");
+if (oi && typeof oi.total === "number") campo("etp.campos.VI", "Valor estimado da contratação: " + moedaBR(oi.total) + (oi.base ? ", base " + oi.base : "") + (oi.competencia ? ", competência " + oi.competencia : "") + ". Totais do orçamento de referência do processo.", { arquivo: plano ? plano.arquivo : null, regra: "Total do orçamento criado a partir da planilha." }, "etp");
+} else E.semPermissao.etp = true;
+if (pode("tr")) {
+if (mem) {
+campo("tr.objeto", mem.objeto, { arquivo: mem.arquivo, regra: "Seção «Objeto» do memorial descritivo." });
+campo("tr.medicao", mem.medicao, { arquivo: mem.arquivo, regra: "Critério de medição escrito no memorial descritivo." });
+campo("tr.recebimento", mem.recebimento, { arquivo: mem.arquivo, regra: "Critério de recebimento escrito no memorial descritivo." });
+}
+if (an && an.cronograma) {
+campo("cronogramaFisico", { meses: an.cronograma.meses, etapas: an.cronograma.etapas, arquivo: an.cronograma.arquivo }, { arquivo: an.cronograma.arquivo, regra: "Percentual por etapa e mês lido da planilha de cronograma." });
+}
+} else E.semPermissao.tr = true;
+if (pode("riscos") && q.tipoObjeto && R.TIPOS_OBJETO[q.tipoObjeto]) {
+var chk = Cplpro.checklistAcervo(q), faltam = chk.filter(function (x) { return x.situacao !== "ok"; });
+var temSond = chk.some(function (x) { return x.exigencia === "sondagem"; }) ? chk.filter(function (x) { return x.exigencia === "sondagem"; })[0].situacao === "ok" : arr(q.documentos).some(function (d) { return d.tipo === "sondagem" && !d.superadoPor; });
+Cplpro.riscosSugeridos(q.tipoObjeto).forEach(function (r) {
+var ajuste = null;
+if (r.id === "solo_diferente") {
+if (temSond) { if (r.prob > 1) { r.prob -= 1; ajuste = "Sondagem presente no acervo: probabilidade reduzida em 1 ponto em relação à biblioteca."; } }
+else { r.prob = Math.min(5, r.prob + 1); ajuste = "Sem sondagem no acervo: probabilidade aumentada em 1 ponto — junte a sondagem (pendência do passo 2)."; }
+}
+if (r.id === "projeto_incompleto" && faltam.length) { r.prob = Math.min(5, r.prob + 1); ajuste = "Faltam " + faltam.length + " documento(s) exigidos no acervo: probabilidade aumentada em 1 ponto."; }
+if (ajuste) r.ajusteSistema = ajuste;
+delete r.sugerido; r.sugerido = true;
+var chave = "riscos#" + r.id, rec = rastro[chave], idx = -1;
+arr(q.riscos).forEach(function (z, k) { if (z.id === r.id) idx = k; });
+if (idx < 0) {
+if (rec) { E.mantidos.push({ caminho: chave, passo: "riscos", motivo: "a pessoa removeu" }); return; }
+q.riscos.push(r); rastro[chave] = { valor: clone(r), arquivo: null, regra: "Biblioteca de riscos do tipo de objeto, ajustada pelo acervo.", em: agora };
+E.preenchidos++; marcar("riscos", "preenchido"); return;
+}
+if (igual(q.riscos[idx], r)) return;
+if (rec && igual(q.riscos[idx], rec.valor)) { q.riscos[idx] = r; rastro[chave] = { valor: clone(r), arquivo: null, regra: rec.regra, em: agora }; E.atualizados++; marcar("riscos", "atualizado"); return; }
+E.mantidos.push({ caminho: chave, passo: "riscos", motivo: "a pessoa editou" });
+});
+} else if (!pode("riscos")) E.semPermissao.riscos = true;
+if (pode("parametros")) {
+var linhasPar = oi ? arr(oi.linhas).map(function (l) { return { item: l.numero, descricao: l.descricao, total: l.precoTotal, qtd: l.quantidade, un: l.unidade }; }) : [];
+var sg = Cplpro.parametros.sugerir(q, { totalEstimado: oi && typeof oi.total === "number" ? oi.total : undefined, linhas: linhasPar, valorGrandeVulto: c.valorGrandeVulto, dataBaseOrcamento: oi ? datasComp(oi.competencia) : undefined });
+function escParam(id, valor, regra) {
+var r = campo("parametros." + id + ".valor", valor, { arquivo: oi && plano ? plano.arquivo : null, regra: regra }, "parametros");
+if (r === "preenchido" || r === "atualizado") { q.parametros[id].sugerido = clone(valor); q.parametros[id].regra = regra; q.parametros[id].fonte = R.PARAMETROS[id].fonte; q.parametros[id].conferido = false; }
+}
+if (oi && sg.parcelas_relevancia && sg.parcelas_relevancia.sugerido !== null) escParam("parcelas_relevancia", sg.parcelas_relevancia.sugerido, sg.parcelas_relevancia.regra);
+escParam("exequibilidade", sg.exequibilidade.sugerido, sg.exequibilidade.regra);
+escParam("aditivo_teto", sg.aditivo_teto.sugerido, sg.aditivo_teto.regra);
+escParam("recurso_prazo", sg.recurso_prazo.sugerido, sg.recurso_prazo.regra);
+var dbase = oi ? datasComp(oi.competencia) : null;
+if (dbase) {
+var rj = q.parametros.reajuste.valor, indiceAtual = rj && rj.indice ? rj.indice : null;
+escParam("reajuste", { indice: indiceAtual, dataBase: dbase }, "Data-base = a data do orçamento estimado; o índice é escolha do órgão.");
+}
+var PRE = {
+sigiloso: { v: false, regra: "O sistema pré-marca «não»: orçamento público é a regra e o sigilo é exceção que o órgão escolhe e justifica." },
+modalidade: { v: sg.modalidade.sugerido, regra: sg.modalidade.regra },
+criterio_julgamento: { v: sg.criterio_julgamento.sugerido, regra: sg.criterio_julgamento.regra },
+regime_execucao: { v: plano ? "empreitada por preço unitário" : null, regra: "Há planilha com quantidade por item e origem na planilha do órgão: o regime por preço unitário paga o que for medido. Sugestão do sistema; a decisão é do órgão." },
+garantia_contrato: { v: sg.garantia_contrato.sugerido, regra: sg.garantia_contrato.regra },
+visita_tecnica: { v: true, regra: "Sugestão: visita facultativa. Quem optar agenda a vistoria; quem não for assume o risco do que não viu." },
+consorcio: { v: false, regra: "Sugestão: sem consórcio, em obra de porte e complexidade comuns. Atenção: vedar o consórcio pede justificativa no processo." },
+subcontratacao: { v: true, regra: "Sugestão: subcontratação parcial admitida, com limite e parcelas fixados no edital." },
+amostra: { v: false, regra: "Sugestão: sem amostra nem prova de conceito em obra civil comum; o jurídico confirma." },
+me_epp: { v: true, regra: "Sugestão: aplicar o tratamento de ME/EPP (LC 123/2006). O jurídico confirma o enquadramento." }
+};
+DECISOES.forEach(function (id) {
+var pr = PRE[id], par = q.parametros[id];
+if (!pr || pr.v === null || pr.v === undefined || !par) return;
+if (vazio(par.valor) && !igual(par.sugerido, pr.v) ) {
+par.sugerido = clone(pr.v); par.regra = pr.regra; par.fonte = R.PARAMETROS[id].fonte; par.conferido = false;
+E.mudou = true;
+}
+});
+} else E.semPermissao.parametros = true;
+if (E.mudou || !prev) q.preparo.atualizadoEm = agora; else q.preparo.atualizadoEm = prev.atualizadoEm;
+q.preparo.resumo = resumo(q, E, an);
+var rodada = { preenchidos: E.preenchidos, atualizados: E.atualizados, mantidos: E.mantidos.length, passosSoltos: Object.keys(E.soltos) };
+if (!E.mudou && prev && igual(prev.resumo, q.preparo.resumo) && igual(prev.campos, q.preparo.campos) && igual(prev.arquivos, q.preparo.arquivos)) {
+return { p: clone(p), resumo: q.preparo.resumo, rodada: rodada, mudou: false };
+}
+return { p: q, resumo: q.preparo.resumo, rodada: rodada, mudou: E.mudou };
+}
+function situacao(q) {
+var pr = Cplpro.progresso(q), faltam = [];
+var NAO_CONTA = { minuta: true, conformidade: true };
+Cplpro.PASSOS.forEach(function (ps) {
+if (NAO_CONTA[ps.id]) return;
+arr(pr.passos[ps.id].pendencias).forEach(function (x) {
+faltam.push({ passo: ps.id, passoNome: ps.nome, campo: x.campo, msg: x.msg, item: x.item === undefined ? null : x.item,
+tipo: ps.id === "parametros" && DECISOES.indexOf(x.campo) >= 0 ? "decisao" : "dado" });
+});
+});
+var decisoes = DECISOES.filter(function (id) { var v = q.parametros[id] ? q.parametros[id].valor : null; if (id === "sigiloso" && vazio(v)) v = q.sigiloso; return vazio(v); }).map(function (id) {
+var par = q.parametros[id], def = R.PARAMETROS[id];
+return { id: id, nome: def.nome, sugerido: par ? par.sugerido : null, regra: par ? par.regra : null, fonte: def.fonte, conferir: def.conferir === true };
+});
+var rj = q.parametros.reajuste && q.parametros.reajuste.valor;
+return { faltam: faltam, faltamTotal: faltam.length, decisoes: decisoes, reajusteSemIndice: !!(rj && vazio(rj.indice)) };
+}
+function resumo(q, E, an) {
+var sit = situacao(q);
+var tocados = {};
+Object.keys(q.preparo.campos).forEach(function (k) { tocados[passoDe(k)] = true; });
+if (arr(q.preparo.arquivos).length && arr(q.documentos).length) tocados.acervo = true;
+var passosTocados = Cplpro.PASSOS.map(function (ps) { return ps.id; }).filter(function (id) { return tocados[id]; });
+var campos = Object.keys(q.preparo.campos).filter(function (k) { return k.indexOf("#") < 0; }).length;
+var itens = Object.keys(q.preparo.campos).filter(function (k) { return k.indexOf("#") >= 0; }).length;
+return {
+preencheu: campos + itens, campos: campos, itens: itens, passosTocados: passosTocados.length, passos: passosTocados,
+mantidos: E.mantidos, semPermissao: Object.keys(E.semPermissao),
+decisoes: sit.decisoes, reajusteSemIndice: sit.reajusteSemIndice, faltam: sit.faltam, faltamTotal: sit.faltamTotal,
+avisos: arr(an && an.avisos), lacunas: arr(an && an.lacunas),
+documentos: arr(q.documentos).filter(function (d) { return !d.superadoPor; }).length
+};
+}
+function seloSistema(p, caminho) {
+var rec = p && p.preparo && p.preparo.campos ? p.preparo.campos[caminho] : null;
+if (!rec) return null;
+var atual = caminho.indexOf("#") > 0 ? null : pegar(p, caminho);
+if (caminho.indexOf("#") > 0) {
+var k = caminho.split("#"), lista = k[0] === "riscos" ? arr(p.riscos) : arr(p.quantitativos), ch = k[0] === "riscos" ? "id" : "item", f = null;
+lista.forEach(function (z) { if (String(z[ch]) === k[1]) f = z; });
+atual = f;
+}
+return igual(atual, rec.valor) ? { arquivo: rec.arquivo, regra: rec.regra, em: rec.em } : null;
+}
+var CplproPreparo = {
+DECISOES: DECISOES, CONTAS: CONTAS,
+lerMemorial: lerMemorial, lerPlanilha: lerPlanilha, lerCronograma: lerCronograma,
+analisar: analisar, planoOrcamento: planoOrcamento, assinaturaOrc: assinaturaOrc,
+aplicar: aplicar, seloSistema: seloSistema, situacao: situacao
+};
+global.CplproPreparo = CplproPreparo;
+if (typeof module !== "undefined" && module.exports) module.exports = CplproPreparo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/cplproui.js ==== */
 try {
 (function (global) {
 "use strict";
 if (typeof global.Gestao === "undefined") return;
-var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs;
+var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo;
 var ENT_PROC = "cplpro_processos";
 var ENT_PAP = "cplpro_papeis";
+var ENT_MOD = "cplpro_modelos";
 var MODULO = "cplpro";
 var MAX_BYTES = 60 * 1024 * 1024;
 var MODALIDADES = ["concorrência", "pregão", "concurso", "leilão", "diálogo competitivo"];
@@ -47156,6 +48999,12 @@ h += ' <button type="button" class="btn sm ghost cpl-pq" data-gacao="cpl-porque"
 return h;
 }
 function campo(label, inner, foco) { return '<div class="field"' + (foco ? ' data-foco-bloco="' + esc(foco) + '"' : "") + "><label>" + label + "</label>" + inner + "</div>"; }
+function selo(p, caminho) {
+var x = Pr && p ? Pr.seloSistema(p, caminho) : null;
+if (!x) return "";
+var tip = "Preenchido pelo sistema" + (x.arquivo ? " a partir de «" + x.arquivo + "»" : "") + (x.regra ? ". " + x.regra : "") + ". Se você editar, o selo sai.";
+return ' <span class="cpl-selo-sist" title="' + esc(tip) + '">sugerido pelo sistema — confira</span>';
+}
 function dis(ok, motivo) { return ok ? "" : ' disabled title="' + esc(motivo || "") + '"'; }
 function btn(rotulo, gacao, extra, cls) { return '<button type="button" class="btn ' + (cls || "") + '" data-gacao="' + gacao + '"' + (extra || "") + ">" + rotulo + "</button>"; }
 function selOpts(lista, atual, vazioRot) {
@@ -47198,10 +49047,15 @@ var html;
 if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
 else {
 if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
-html = G._cplView === "papeis" ? _renderPapeis(obras) : _renderLista(obras);
+html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : _renderLista(obras));
 }
 return html;
 };
+function abasTopo(ativa) {
+var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }];
+if (podeAcao("gerenciar_modelos")) abas.push({ id: "modelos", rotulo: "Modelos do órgão", attrs: 'data-gacao="cpl-aba-modelos"' });
+return M.abas(abas.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === ativa, attrs: a.attrs }; }));
+}
 function cabLista(obras, sub, ativo) {
 return M.cab({
 iconeHtml: K.svg("cplpro", 22), titulo: "CPLPRO — Licitação do órgão", sub: sub,
@@ -47223,7 +49077,7 @@ if (p.sigiloso === false) { var c = calc(orcDoProc(p)); if (c) { soma += c.preco
 });
 var html = cabLista(obras, todos.length + " processo(s)" + (G._cplObra ? " nesta obra" : " · todas as obras"));
 var pap = papeis();
-html += M.abas([{ id: "lista", rotulo: "Processos", ativa: true, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: false, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+html += abasTopo("lista");
 if (!pap.length) html += M.aviso({ tom: "alerta", titulo: "Você ainda não tem perfil no CPLPRO.", texto: "Peça ao administrador do órgão para definir o seu em «Pessoas e papéis». Sem perfil, nenhuma ação é liberada." });
 html += M.kpis([
 { rotulo: "Em preparo", valor: prep, sub: "ainda não foram ao jurídico", tom: "info" },
@@ -47251,7 +49105,7 @@ return html + M.secao({ titulo: "Processos", corpoHtml: tb });
 }
 function _renderPapeis(obras) {
 var html = cabLista(obras, "Pessoas e papéis");
-html += M.abas([{ id: "lista", rotulo: "Processos", ativa: false, attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", ativa: true, attrs: 'data-gacao="cpl-aba-papeis"' }]);
+html += abasTopo("papeis");
 if (!podeAcao("gerenciar_logins")) {
 return html + M.secao({ corpoHtml: M.vazio({ icone: "usuarios", titulo: "Só o administrador do órgão define os papéis", texto: motivoAcao("gerenciar_logins") }) });
 }
@@ -47273,6 +49127,28 @@ return '<td class="num"><input type="checkbox" data-pap-pessoa="' + esc(pe.id) +
 corpo += '<p class="muted" style="margin:12px 0 0">' + Object.keys(R.PAPEIS).map(function (k) { return "<b>" + esc(R.PAPEIS[k].nome) + ":</b> " + esc(R.PAPEIS[k].acoes.map(function (a) { return R.ACOES_ROTULO[a] || a; }).join(", ")); }).join(" · ") + "</p>";
 return html + M.secao({ titulo: "Quem faz o quê", corpoHtml: corpo });
 }
+function modeloDoTipo(tipo) { return arr(K.lista(ENT_MOD)).filter(function (m) { return m.id === tipo; })[0] || null; }
+function _renderModelos(obras) {
+var html = cabLista(obras, "Modelos do órgão");
+html += abasTopo("modelos");
+if (!podeAcao("gerenciar_modelos")) {
+return html + M.secao({ corpoHtml: M.vazio({ icone: "documentos", titulo: "Só o administrador do órgão importa os modelos", texto: motivoAcao("gerenciar_modelos") }) });
+}
+var corpo = '<input type="file" id="cpl-mod-arq" accept=".docx" hidden>';
+corpo += '<p class="mod-sub" style="margin:0 0 12px">O texto das minutas é da procuradoria do órgão. Importe o seu modelo em Word (.docx) e escreva, onde o sistema deve entrar com o dado do processo, o campo entre chaves duplas, por exemplo <code>{{objeto}}</code>. Ao gerar, o sistema troca os campos <b>dentro do seu arquivo</b>, sem mexer na formatação. Tipo sem modelo do órgão usa o modelo padrão da casa.</p>';
+corpo += '<table class="tbl" id="cpl-tab-modelos"><thead><tr><th>DOCUMENTO</th><th>MODELO EM USO</th><th>CAMPOS</th><th></th></tr></thead><tbody>' + T.TIPOS_ORDEM.map(function (tp) {
+var m = modeloDoTipo(tp), nome = T.TIPOS[tp].nome;
+var uso = m ? M.pilula("do órgão", "ok") + ' <span class="muted">' + esc(m.nome) + " · " + esc(dataBR(m.importadoEm)) + (m.importadoPor ? " · " + esc(m.importadoPor) : "") + "</span>" : M.pilula("padrão da casa", "neutro");
+var campos = m ? esc(arr(m.campos).length) + " campo(s)" + (arr(m.desconhecidos).length ? " " + M.pilula(arr(m.desconhecidos).length + " desconhecido(s): " + arr(m.desconhecidos).join(", "), "alerta") : "") : "—";
+return '<tr data-tipo="' + tp + '"><td><b>' + esc(nome) + "</b></td><td>" + uso + "</td><td>" + campos + "</td><td>" +
+btn(m ? "Trocar o modelo" : "Importar modelo (.docx)", "cpl-mod-escolher", ' data-tipo="' + tp + '"', "sm") + " " + btn("Baixar exemplo", "cpl-mod-exemplo", ' data-tipo="' + tp + '"', "sm") +
+(m ? " " + btn("Baixar o do órgão", "cpl-mod-baixar", ' data-tipo="' + tp + '"', "sm") + " " + btn("Remover", "cpl-mod-remover", ' data-tipo="' + tp + '"', "sm") : "") + "</td></tr>";
+}).join("") + "</tbody></table>";
+corpo += '<h3 style="margin-top:16px">Campos disponíveis</h3><table class="tbl" id="cpl-tab-campos"><thead><tr><th>CAMPO</th><th>O QUE ENTRA</th><th>EXEMPLO</th></tr></thead><tbody>' +
+D.CAMPOS_MODELO.map(function (c) { return "<tr><td><code>{{" + esc(c.id) + "}}</code></td><td>" + esc(c.rotulo) + "</td><td>" + esc(c.exemplo) + "</td></tr>"; }).join("") + "</tbody></table>";
+corpo += '<p class="muted" style="margin:12px 0 0">Campo sem valor no processo sai como <b>[PREENCHER: …]</b> em vermelho. Campo que o sistema não conhece sai como <b>[CAMPO DESCONHECIDO: …]</b>. O valor estimado só entra depois do julgamento, quando o orçamento é sigiloso (art. 24). O arquivo fica neste aparelho; a ficha do modelo sincroniza com a conta.</p>';
+return html + M.secao({ titulo: "Modelos de documento do órgão", corpoHtml: corpo });
+}
 function _renderProc(p) {
 var obras = K.lista("obras"), ob = obraPorId(p.obraId), pr = C.progresso(p), at = F.passoAtual(p), ed = F.editavel(p);
 var abasLista = [{ id: "passos", rotulo: "Passos" }];
@@ -47289,6 +49165,7 @@ if (!C.fluxoJuridico.podePublicar(p)) {
 html += '<div class="cpl-faixa" id="cpl-faixa-minuta" role="status"><b>Minuta — sujeita a parecer jurídico (art. 53 da Lei 14.133).</b> Esta faixa sai quando houver parecer favorável.</div>';
 }
 if (!ed) html += M.aviso({ tom: "info", titulo: F.motivoTravado(p) });
+if (p.preparo && p.preparo.resumo && G._cplAba === "passos") html += _painelPreparo(p);
 html += M.abas(abasLista.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === G._cplAba, attrs: 'data-gacao="cpl-aba" data-aba="' + a.id + '"' }; }));
 if (G._cplAba === "historico") return html + _histProc(p);
 if (G._cplAba === "propostas") return html + _propostas(p);
@@ -47321,13 +49198,13 @@ var tipos = Object.keys(R.TIPOS_OBJETO).map(function (k) { return [k, R.TIPOS_OB
 var sug = C.sugerirTipoObjeto(p.objeto || "");
 var obras = K.lista("obras");
 var h = '<div class="cpl-form" id="cpl-f-demanda">';
-h += campo("Secretaria requisitante *", '<input id="cpl-secretaria" data-foco="secretaria" value="' + esc(p.secretaria || "") + '"' + d + ">", "secretaria");
+h += campo("Secretaria requisitante *" + selo(p, "secretaria"), '<input id="cpl-secretaria" data-foco="secretaria" value="' + esc(p.secretaria || "") + '"' + d + ">", "secretaria");
 h += campo("Responsável pela demanda", '<input id="cpl-requisitante" value="' + esc(p.requisitante || "") + '"' + d + ">");
-h += campo("Objeto (descreva por inteiro) *", '<textarea id="cpl-objeto" rows="4" data-foco="objeto"' + d + ">" + esc(p.objeto || "") + "</textarea>", "objeto");
-h += campo("Tipo de objeto *", '<select id="cpl-tipo" data-foco="tipoObjeto"' + d + ">" + selOpts(tipos, p.tipoObjeto, "— escolha —") + "</select>" +
+h += campo("Objeto (descreva por inteiro) *" + selo(p, "objeto"), '<textarea id="cpl-objeto" rows="4" data-foco="objeto"' + d + ">" + esc(p.objeto || "") + "</textarea>", "objeto");
+h += campo("Tipo de objeto *" + selo(p, "tipoObjeto"), '<select id="cpl-tipo" data-foco="tipoObjeto"' + d + ">" + selOpts(tipos, p.tipoObjeto, "— escolha —") + "</select>" +
 (sug.length && sug[0].tipo !== p.tipoObjeto ? '<div class="cpl-sug">Sugestão pelo texto: <b>' + esc(R.TIPOS_OBJETO[sug[0].tipo].nome) + "</b> " + btn("Aceitar", "cpl-aceitar-tipo", ' data-tipo="' + sug[0].tipo + '"' + d, "sm") +
 porque("O texto do objeto contém: «" + sug[0].termos.join("», «") + "».", "Biblioteca RA de tipos de objeto (palavras-chave) — o sistema sugere e a pessoa confirma.", false, "Tipo de objeto") + "</div>" : ""), "tipoObjeto");
-h += campo("Justificativa da necessidade (interesse público) *", '<textarea id="cpl-justificativa" rows="4" data-foco="justificativa"' + d + ">" + esc(p.justificativa || "") + "</textarea>", "justificativa");
+h += campo("Justificativa da necessidade (interesse público) *" + selo(p, "justificativa"), '<textarea id="cpl-justificativa" rows="4" data-foco="justificativa"' + d + ">" + esc(p.justificativa || "") + "</textarea>", "justificativa");
 h += campo("Previsão no plano de contratações anual (PCA) *", '<input id="cpl-pca" data-foco="pca" placeholder="Ex.: item 12 do PCA 2027, ou a justificativa da ausência" value="' + esc(p.pca || "") + '"' + d + ">" +
 porque("A fase preparatória deve se compatibilizar com o plano de contratações anual, sempre que elaborado.", "Lei 14.133/2021, art. 18, caput (e art. 12, VII)", false, "PCA"), "pca");
 h += campo("Prazo desejado", '<input id="cpl-prazoDesejado" type="date" value="' + esc(p.prazoDesejado || "") + '"' + d + ">");
@@ -47343,7 +49220,9 @@ var d = ed && podeAcao("editar_acervo") ? "" : " disabled";
 var docs = arr(p.documentos), vig = docs.filter(function (z) { return !z.superadoPor; }), sup = docs.filter(function (z) { return z.superadoPor; });
 var tipos = Object.keys(R.ACERVO_TIPOS).map(function (k) { return [k, R.ACERVO_TIPOS[k].nome]; });
 var h = '<input type="file" id="cpl-arq" multiple hidden><input type="file" id="cpl-pasta" webkitdirectory multiple hidden>';
-h += '<div class="cpl-acoes">' + btn("Escolher arquivos", "cpl-add-arq", d) + btn("Escolher uma pasta", "cpl-add-pasta", d) + '<span class="muted" id="cpl-acervo-status"></span></div>';
+h += '<input type="file" id="cpl-preparo-pasta" webkitdirectory multiple hidden>';
+h += '<div class="cpl-acoes">' + btn("Montar tudo a partir da pasta", "cpl-preparo-escolher", d, "primary") + btn("Escolher arquivos", "cpl-add-arq", d) + btn("Escolher uma pasta", "cpl-add-pasta", d) + '<span class="muted" id="cpl-acervo-status"></span></div>' +
+'<p class="muted">«Montar tudo» lê a pasta inteira (memorial, planilha, cronograma, projetos), preenche os passos que dá para deduzir e marca cada campo como <b>sugerido pelo sistema — confira</b>. Nada fica «conferido» sem você, e o que você editar o sistema não sobrescreve.</p>';
 var chk = C.checklistAcervo(p);
 if (!p.tipoObjeto) h += M.aviso({ tom: "alerta", titulo: "Escolha o tipo de objeto no passo 1 para ver o que o acervo precisa ter." });
 else {
@@ -47358,7 +49237,8 @@ if (!docs.length) h += M.vazio({ icone: "documentos", titulo: "Nenhum arquivo no
 else {
 h += '<table class="tbl" id="cpl-tab-acervo"><thead><tr><th>ARQUIVO</th><th>TIPO</th><th>REV.</th><th>CONFIANÇA</th><th>SHA-256</th><th></th></tr></thead><tbody>' + vig.map(function (z) {
 return "<tr><td>" + esc(z.nome) + (z.origem ? '<div class="muted">' + esc(z.origem) + "</div>" : "") + '</td><td><select data-gacao="cpl-doc-tipo" aria-label="Tipo do arquivo"' + d + ">" + selOptsCtx(tipos, z.tipo, z.id) + "</select>" +
-porque(z.motivo, "Classificação pelo nome do arquivo (regras da casa); a pessoa pode trocar.", false, "Tipo do arquivo") + "</td><td>" + esc(z.revisao || "—") + "</td><td>" + M.pilula(z.confianca === "alta" ? "alta" : (z.confianca === "media" ? "média" : (z.confianca === "manual" ? "manual" : "baixa")), z.confianca === "alta" || z.confianca === "manual" ? "ok" : "alerta") +
+(z.porConteudo ? ' <span class="pill info cpl-conteudo" title="O nome do arquivo não bastou: o sistema leu as páginas 1 e 2 do PDF">pelo conteúdo</span>' : "") +
+porque(z.motivo, z.porConteudo ? "Classificado pelo texto das páginas 1 e 2 do PDF (frases do carimbo, regras da casa); a pessoa confirma ou troca." : "Classificação pelo nome do arquivo (regras da casa); a pessoa pode trocar.", false, "Tipo do arquivo") + "</td><td>" + esc(z.revisao || "—") + "</td><td>" + M.pilula(z.confianca === "alta" ? "alta" : (z.confianca === "media" ? "média" : (z.confianca === "manual" ? "manual" : "baixa")), z.confianca === "alta" || z.confianca === "manual" ? "ok" : "alerta") +
 '</td><td><code title="' + esc(z.sha || "") + '">' + esc((z.sha || "—").substring(0, 12)) + "</code></td><td>" + btn("Abrir", "cpl-doc-abrir", ' data-id="' + esc(z.id) + '"', "sm") + "</td></tr>";
 }).join("") + "</tbody></table>";
 if (sup.length) {
@@ -47388,10 +49268,10 @@ if (dif) h += M.aviso({ tom: "alerta", titulo: dif + " item(ns) diferem do orça
 }
 if (!qs.length) return h + M.vazio({ icone: "orcamentos", titulo: "Nenhum quantitativo lançado", texto: "Escolha o orçamento e traga os itens. Cada quantidade precisa de origem: arquivo do acervo e página." });
 h += '<table class="tbl" id="cpl-tab-quant"><thead><tr><th>ITEM</th><th>DESCRIÇÃO</th><th>UN.</th><th class="num">QTD.</th><th>ORIGEM — ARQUIVO</th><th>PÁGINA</th></tr></thead><tbody>' + qs.map(function (q, i) {
-var o = q.origem || {}, sem = vazio(o.arquivo) || vazio(o.pagina);
+var o = q.origem || {}, sem = vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha));
 var nomes = acervo.map(function (z) { return z.nome; });
 if (o.arquivo && nomes.indexOf(o.arquivo) < 0) nomes.push(o.arquivo);
-return '<tr data-foco="origem:' + esc(q.item) + '" class="' + (sem ? "cpl-sem" : "") + '"><td>' + esc(q.item) + "</td><td>" + esc(q.descricao) + "</td><td>" + esc(q.un) + '</td><td class="num">' + numBR(q.qtd, 2) + '</td><td><select id="cpl-qa-' + i + '"' + d + ">" + selOpts(nomes, o.arquivo, "— arquivo —") + '</select></td><td><input id="cpl-qp-' + i + '" style="width:80px" value="' + esc(o.pagina == null ? "" : o.pagina) + '"' + d + "></td></tr>";
+return '<tr data-foco="origem:' + esc(q.item) + '" class="' + (sem ? "cpl-sem" : "") + '"><td>' + esc(q.item) + "</td><td>" + esc(q.descricao) + "</td><td>" + esc(q.un) + '</td><td class="num">' + numBR(q.qtd, 2) + '</td><td><select id="cpl-qa-' + i + '"' + d + ">" + selOpts(nomes, o.arquivo, "— arquivo —") + '</select></td><td><input id="cpl-qp-' + i + '" style="width:80px" value="' + esc(o.pagina == null ? "" : o.pagina) + '"' + d + ">" + (o.linha ? '<div class="muted">linha ' + esc(o.linha) + " da planilha</div>" : "") + selo(p, "quantitativos#" + q.item) + "</td></tr>";
 }).join("") + "</tbody></table>";
 return h + '<div class="cpl-acoes">' + btn("Salvar origens", "cpl-q-salvar", d, "primary") + '<span class="muted">Sem origem o item não entra no ETP nem no TR (art. 18, §1º, IV).</span></div>';
 }
@@ -47411,7 +49291,7 @@ var h = '<p class="muted">13 elementos do art. 18, §1º. Obrigatórios (§2º):
 h += '<div class="cpl-form" id="cpl-f-etp">' + R.ETP_ELEMENTOS.map(function (el) {
 var salvo = !vazio(man[el.id]), sugt = _textoSugestaoEtp(el.id, et.campos[el.id]), valor = salvo ? man[el.id] : sugt;
 var vermelho = vazio(valor) && el.obrigatorio;
-return '<div class="field' + (vermelho ? " cpl-obrig-vazio" : "") + '" data-foco-bloco="' + el.id + '"><label>' + esc(el.id) + " — " + esc(el.nome) + (el.obrigatorio ? ' <span class="cpl-obrig">obrigatório</span>' : "") + (!salvo && sugt ? ' <span class="cpl-sugerido">sugestão do sistema — confira e salve</span>' : "") + "</label>" +
+return '<div class="field' + (vermelho ? " cpl-obrig-vazio" : "") + '" data-foco-bloco="' + el.id + '"><label>' + esc(el.id) + " — " + esc(el.nome) + (el.obrigatorio ? ' <span class="cpl-obrig">obrigatório</span>' : "") + (!salvo && sugt ? ' <span class="cpl-sugerido">sugestão do sistema — confira e salve</span>' : "") + (salvo ? selo(p, "etp.campos." + el.id) : "") + "</label>" +
 '<textarea id="cpl-etp-' + el.id + '" rows="3" data-foco="' + el.id + '"' + d + ">" + esc(valor || "") + "</textarea>" +
 (!el.obrigatorio ? '<input id="cpl-etpj-' + el.id + '" placeholder="Se não se aplica, justifique aqui" value="' + esc(just[el.id] || "") + '"' + d + ">" : "") + "</div>";
 }).join("") + '</div><div class="cpl-acoes">' + btn("Salvar ETP", "cpl-salvar-etp", d, "primary") + "</div>";
@@ -47427,7 +49307,7 @@ var niv = { baixo: "ok", medio: "info", alto: "alerta", critico: "erro" };
 var cinco = [1, 2, 3, 4, 5].map(function (n) { return [n, String(n)]; });
 h += '<table class="tbl" id="cpl-tab-riscos"><thead><tr><th>RISCO</th><th>PROB.</th><th>IMPACTO</th><th>NÍVEL</th><th>ALOCAÇÃO</th><th>MITIGAÇÃO</th><th></th></tr></thead><tbody>' + rs.map(function (r, i) {
 var n = C.nivelRisco(r.prob, r.impacto);
-return '<tr data-foco="riscos.' + i + '"><td>' + esc(r.descricao) + '<div class="muted">' + esc(r.categoria || "") + (r.sugerido ? " · sugerido" : "") + '</div></td><td><select id="cpl-rp-' + i + '"' + d + ">" + selOpts(cinco, r.prob, "—") + '</select></td><td><select id="cpl-ri-' + i + '"' + d + ">" + selOpts(cinco, r.impacto, "—") + "</select></td><td>" +
+return '<tr data-foco="riscos.' + i + '"><td>' + esc(r.descricao) + '<div class="muted">' + esc(r.categoria || "") + (r.sugerido ? " · sugerido" : "") + selo(p, "riscos#" + r.id) + (r.ajusteSistema ? " · " + esc(r.ajusteSistema) : "") + '</div></td><td><select id="cpl-rp-' + i + '"' + d + ">" + selOpts(cinco, r.prob, "—") + '</select></td><td><select id="cpl-ri-' + i + '"' + d + ">" + selOpts(cinco, r.impacto, "—") + "</select></td><td>" +
 (n ? M.pilula({ baixo: "Baixo", medio: "Médio", alto: "Alto", critico: "Crítico" }[n.nivel] + " (" + n.valor + ")", niv[n.nivel]) : M.pilula("sem nível", "alerta")) + '</td><td><select id="cpl-ra-' + i + '"' + d + ">" + selOpts([["contratante", "Contratante (órgão)"], ["contratada", "Contratada"], ["compartilhado", "Compartilhado"]], r.alocacao, "—") + '</select></td><td><input id="cpl-rm-' + i + '" value="' + esc(r.mitigacao || "") + '" style="min-width:220px"' + d + "></td><td>" + btn("Remover", "cpl-r-remover", ' data-i="' + i + '"' + d, "sm ghost") + "</td></tr>";
 }).join("") + "</tbody></table>";
 return h + '<div class="cpl-acoes">' + btn("Salvar riscos", "cpl-r-salvar", d, "primary") + "</div>";
@@ -47438,10 +49318,10 @@ var orc = orcDoProc(p), c = calc(orc), ref = p.orcamentoRef || {};
 var tp = R.TIPOS_OBJETO[p.tipoObjeto];
 var h = '<div class="cpl-form" id="cpl-f-orc">' + campo("Orçamento de referência *", _selOrc(p, d) + (orc ? " " + btn("Abrir no orçamento", "cpl-orc-abrir", "", "sm") : ""), "orcamentoId");
 var sugBase = orc ? (orc.competenciaSinapi ? "SINAPI" + (orc.uf ? "/" + orc.uf : "") + (orc.desonerado ? " desonerado" : " não desonerado") : "") : "";
-h += campo("Base de preços *", '<input id="cpl-oBase" data-foco="base" value="' + esc(ref.base || "") + '" placeholder="Ex.: SINAPI/SP não desonerado"' + d + ">" +
+h += campo("Base de preços *" + selo(p, "orcamentoRef.base"), '<input id="cpl-oBase" data-foco="base" value="' + esc(ref.base || "") + '" placeholder="Ex.: SINAPI/SP não desonerado"' + d + ">" +
 (!ref.base && sugBase ? '<div class="cpl-sug">Do orçamento: <b>' + esc(sugBase) + "</b> " + btn("Usar", "cpl-orc-usar", ' data-base="' + esc(sugBase) + '" data-comp="' + esc(orc.competenciaSinapi || "") + '"' + d, "sm") + "</div>" : "") +
 (tp ? '<div class="cpl-sug">Base usual para ' + esc(tp.nome) + ": <b>" + esc(tp.base) + "</b>" + (tp.baseConferir ? porque(tp.baseNota || "", "Biblioteca RA de tipos de objeto", true, "Base de preços") : "") + "</div>" : ""), "base");
-h += campo("Competência (data-base) *", '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
+h += campo("Competência (data-base) *" + selo(p, "orcamentoRef.competencia"), '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
 h += "</div>";
 h += '<div class="cpl-acoes">' + btn("Salvar orçamento de referência", "cpl-orc-salvar", d, "primary") + "</div>";
 if (!c) return h + M.aviso({ tom: "alerta", titulo: "Escolha o orçamento para ver os totais e a pesquisa de preços." });
@@ -47449,8 +49329,16 @@ h += M.kpis([
 { rotulo: "Preço de venda", valor: moeda(c.precoVenda), sub: "total oficial do orçamento (com BDI)", id: "cpl-orc-total" },
 { rotulo: "Custo direto", valor: moeda(c.custoDireto) }, { rotulo: "BDI", valor: numBR(c.pct, 2) + " %" }, { rotulo: "Itens", valor: c.linhas.length }
 ]);
+h += _blocoPacoteReferencia(p);
 h += _painelPesquisa(p, c, ed);
 return h;
+}
+function _blocoPacoteReferencia(p) {
+var pode = podeAcao("gerar_minuta") || podeAcao("ler_tudo");
+var h = '<div id="cpl-pacote-ref"><h3>Pacote do orçamento de referência</h3>';
+if (p.sigiloso !== false) h += M.aviso({ tom: "alerta", titulo: "Documento interno: não anexar ao edital enquanto o orçamento for sigiloso.", texto: "O pacote traz o orçamento por inteiro (valores, composições, curva ABC e mapa de cotação). Ele serve ao controle interno do órgão; o valor estimado só pode ser divulgado nos termos do art. 24 da Lei 14.133/2021." });
+h += '<p class="muted">Sintética, analítica, BDI, encargos, curva ABC, cronograma, memória de cálculo, mapa de cotação e declarações. A pesquisa de preços abaixo entra no mapa de cotação; item sem base oficial e sem pesquisa fica <b>pendente</b> no pacote, e ART/RRT não informada também.</p>';
+return h + '<div class="cpl-acoes">' + btn("Pacote do orçamento de referência (PDF + Excel)", "cpl-orc-pacote", pode ? "" : ' disabled title="Seu perfil não baixa documentos do processo."', "primary") + "</div></div>";
 }
 function _painelPesquisa(p, c, ed) {
 var d = ed && podeAcao("editar_pesquisa") ? "" : " disabled";
@@ -47496,7 +49384,7 @@ var tipoSel = G._cplFonteTipo[l.numero] || (tipos[0] ? tipos[0][0] : "");
 if (reg) {
 var oficial = tipoSel === "sistema_oficial";
 h += '<div class="cpl-novafonte"><b>Adicionar fonte</b> <select data-gacao="cpl-f-tipo" aria-label="Tipo da fonte"' + d + ">" + selOptsCtx(tipos, tipoSel, l.numero) + "</select>" +
-(oficial ? ' <select id="cpl-fb-' + esc(l.numero) + '"' + d + '><option>SINAPI</option><option>SICRO</option><option>SIURB</option></select>' : "") +
+(oficial ? ' <select id="cpl-fb-' + esc(l.numero) + '"' + d + '><option>SINAPI</option><option>SICRO</option><option>SIURB</option><option>SIURB_INFRA</option></select>' : "") +
 ' <input id="cpl-fv-' + esc(l.numero) + '" inputmode="decimal" placeholder="Valor unitário" style="width:120px"' + d + ">" +
 ' <input id="cpl-ff-' + esc(l.numero) + '" placeholder="Fornecedor / órgão / site" style="min-width:180px"' + d + ">" +
 (tipoSel === "midia" || tipoSel === "outro_sistema" || tipoSel === "nota_fiscal" ? ' <input id="cpl-fl-' + esc(l.numero) + '" placeholder="Link" style="min-width:160px"' + d + ">" : "") +
@@ -47507,17 +49395,54 @@ h += '<div class="cpl-novafonte"><b>Adicionar fonte</b> <select data-gacao="cpl-
 }
 return h + "</details>";
 }
+function htmlCampos(p, onde, d) {
+var grupos = [], porGrupo = {}, o = (onde === "tr" ? p.tr : p.edital) || {};
+D.CAMPOS.forEach(function (c) {
+if (c.onde !== onde || !D.campoAplica(c.id, p)) return;
+if (!porGrupo[c.grupo]) { porGrupo[c.grupo] = []; grupos.push(c.grupo); }
+porGrupo[c.grupo].push(c);
+});
+return grupos.map(function (g) {
+return "<h4>" + esc(g) + "</h4>" + porGrupo[g].map(function (c) {
+var v = o[c.id] == null ? "" : o[c.id], ctrl;
+if (c.tipo === "select") ctrl = '<select id="cpl-cf-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
+else ctrl = '<input id="cpl-cf-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
+return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *", ctrl, c.id);
+}).join("");
+}).join("");
+}
+function lerCampos(obj, p, onde) {
+D.CAMPOS.forEach(function (c) {
+if (c.onde !== onde || !D.campoAplica(c.id, p)) return;
+if (!document.getElementById("cpl-cf-" + c.id)) return;
+obj[c.id] = emBranco(lerCampo("cpl-cf-" + c.id));
+});
+return obj;
+}
+function preservarFora(novo, antesJson) {
+var antes = {}; try { antes = JSON.parse(antesJson) || {}; } catch (e) { antes = {}; }
+Object.keys(antes).forEach(function (k) { if (!(k in novo)) novo[k] = antes[k]; });
+return novo;
+}
 function _pTr(p, x, ed) {
 var d = ed && podeAcao("editar_tr") ? "" : " disabled";
 var t = p.tr || {};
 var h = '<p class="muted">O termo de referência (art. 6º, XXIII) e o projeto básico (art. 6º, XXV) saem do que já está no processo; aqui você completa o que não se deduz.</p>';
+if (p.cronogramaFisico && arr(p.cronogramaFisico.etapas).length) {
+var cf = p.cronogramaFisico, cabM = "";
+for (var mi = 1; mi <= cf.meses; mi++) cabM += '<th class="num">MÊS ' + mi + "</th>";
+h += "<h3>Cronograma físico (lido da pasta)" + selo(p, "cronogramaFisico") + '</h3><table class="tbl" id="cpl-tab-crono"><thead><tr><th>ETAPA</th>' + cabM + "</tr></thead><tbody>" + cf.etapas.map(function (e) {
+return "<tr><td>" + esc(e.nome) + "</td>" + e.pct.map(function (v) { return '<td class="num">' + (v ? numBR(v, 0) + "%" : "—") + "</td>"; }).join("") + "</tr>";
+}).join("") + "</tbody></table>";
+}
 h += '<div class="cpl-form" id="cpl-f-tr">' +
-campo("Descrição do objeto *", '<textarea id="cpl-tr-objeto" rows="3" data-foco="objeto"' + d + ">" + esc(t.objeto != null ? t.objeto : (p.objeto || "")) + "</textarea>" + (vazio(t.objeto) && p.objeto ? '<div class="cpl-sugerido">pré-preenchido com o objeto do passo 1 — confira e salve</div>' : ""), "objeto") +
-campo("Critério de medição *", '<textarea id="cpl-tr-medicao" rows="3" data-foco="medicao"' + d + ">" + esc(t.medicao || "") + "</textarea>", "medicao") +
-campo("Critério de recebimento (provisório e definitivo) *", '<textarea id="cpl-tr-recebimento" rows="3" data-foco="recebimento"' + d + ">" + esc(t.recebimento || "") + "</textarea>", "recebimento") +
+campo("Descrição do objeto *" + selo(p, "tr.objeto"), '<textarea id="cpl-tr-objeto" rows="3" data-foco="objeto"' + d + ">" + esc(t.objeto != null ? t.objeto : (p.objeto || "")) + "</textarea>" + (vazio(t.objeto) && p.objeto ? '<div class="cpl-sugerido">pré-preenchido com o objeto do passo 1 — confira e salve</div>' : ""), "objeto") +
+campo("Critério de medição *" + selo(p, "tr.medicao"), '<textarea id="cpl-tr-medicao" rows="3" data-foco="medicao"' + d + ">" + esc(t.medicao || "") + "</textarea>", "medicao") +
+campo("Critério de recebimento (provisório e definitivo) *" + selo(p, "tr.recebimento"), '<textarea id="cpl-tr-recebimento" rows="3" data-foco="recebimento"' + d + ">" + esc(t.recebimento || "") + "</textarea>", "recebimento") +
 campo("Pagamento (condições e prazo)", '<textarea id="cpl-tr-pagamento" rows="2"' + d + ">" + esc(t.pagamento || "") + "</textarea>") +
 campo("Gestão e fiscalização do contrato", '<textarea id="cpl-tr-gestao" rows="2"' + d + ">" + esc(t.gestao || "") + "</textarea>") +
-campo("Adequação orçamentária (dotação)", '<input id="cpl-tr-dotacao" value="' + esc(t.dotacao || "") + '"' + d + ">") + "</div>" +
+campo("Adequação orçamentária (dotação)", '<input id="cpl-tr-dotacao" value="' + esc(t.dotacao || "") + '"' + d + ">") +
+'<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Sem eles, o termo de referência sai com «[PREENCHER: …]» e o passo «Minuta e anexos» não fecha.</p>' + htmlCampos(p, "tr", d) + "</div>" +
 '<div class="cpl-acoes">' + btn("Salvar TR", "cpl-salvar-tr", d, "primary") + btn("Ver prévia do documento", "cpl-doc-previa", ' data-doc="tr"') + "</div>";
 return h;
 }
@@ -47529,16 +49454,17 @@ var sug = C.parametros.sugerir(p, { totalEstimado: c ? c.precoVenda : undefined,
 var h = '<p class="muted">Cada linha traz a sugestão do sistema, o porquê e o artigo. Aceite a sugestão ou troque o valor.</p>';
 h += '<table class="tbl" id="cpl-tab-param"><thead><tr><th>PARÂMETRO</th><th>SUGESTÃO</th><th>VALOR</th><th></th></tr></thead><tbody>' + R.PARAMETROS_ORDEM.map(function (id) {
 var def = R.PARAMETROS[id], s = sug[id], v = (p.parametros[id] || {}).valor;
+if ((s.sugerido === null || s.sugerido === undefined) && p.parametros[id] && p.parametros[id].sugerido !== null && p.parametros[id].sugerido !== undefined) { s = { id: id, valor: s.valor, sugerido: p.parametros[id].sugerido, regra: p.parametros[id].regra || s.regra, fonte: s.fonte, conferir: s.conferir, pendencias: s.pendencias }; }
 if (id === "sigiloso" && vazio(v)) v = p.sigiloso;
 var sugTxt = s.sugerido === null || s.sugerido === undefined ? "—" : (typeof s.sugerido === "object" ? _descObj(id, s.sugerido) : (typeof s.sugerido === "boolean" ? (s.sugerido ? "Sim" : "Não") : String(s.sugerido)));
 var ctrl = _ctrlParam(id, def, v, s, d);
-return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
+return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + selo(p, "parametros." + id + ".valor") + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
 (s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste") ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
 }).join("") + "</tbody></table>";
 var regs = Object.keys(R.REGULAMENTOS).map(function (k) { return [k, R.REGULAMENTOS[k].nome]; });
 var efet = C.pesquisaPrecos.regulamentoEfetivo(p), cron = p.cronograma || {};
 h += '<div class="cpl-form" id="cpl-f-prazos"><h3>Regulamento, publicação e abertura</h3>' +
-campo("Regulamento de pesquisa de preços", '<select id="cpl-regulamento" data-foco="regulamentoId"' + (p.recursoFederal === true ? " disabled" : d) + ">" + selOpts(regs, p.recursoFederal === true ? "federal-14133" : p.regulamentoId, "— escolha —") + "</select>" +
+campo("Regulamento de pesquisa de preços" + selo(p, "regulamentoId"), '<select id="cpl-regulamento" data-foco="regulamentoId"' + (p.recursoFederal === true ? " disabled" : d) + ">" + selOpts(regs, p.recursoFederal === true ? "federal-14133" : p.regulamentoId, "— escolha —") + "</select>" +
 (p.recursoFederal === true ? '<div class="cpl-sug">Há recurso federal: vale o regulamento federal.</div>' : "") + (efet ? porque(efet.fonte, efet.fonte, efet.conferir === true, "Regulamento efetivo") : ""), "regulamentoId") +
 campo("Data de publicação do edital *", '<input id="cpl-dataEdital" type="date" data-foco="dataPrevistaEdital" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">", "dataPrevistaEdital") +
 campo("Data de abertura das propostas", '<input id="cpl-dataAbertura" type="date" data-foco="dataAbertura" value="' + esc(cron.dataAbertura || "") + '"' + d + ">", "dataAbertura") +
@@ -47579,9 +49505,10 @@ function _pMinuta(p, x, ed) {
 var d = ed && podeAcao("gerar_minuta") ? "" : " disabled";
 var g = D.gerar(p, ctxDocs(p)), val_ = F.pacoteValido(p), pdoc = p.pacote || {};
 var h = '<p class="muted">O nome e o logo do órgão vêm de Empresa (Configurações). Os documentos saem do que está no processo. Campo em branco vira <b class="cpl-pre-ex">[PREENCHER: …]</b> em vermelho; o passo só fica pronto com <b>nenhum</b> campo desses.</p>';
-h += '<table class="tbl" id="cpl-tab-docs"><thead><tr><th>DOCUMENTO</th><th>USO</th><th class="num">CAMPOS EM BRANCO</th><th></th></tr></thead><tbody>' + g.docs.map(function (doc) {
-return "<tr><td><b>" + esc(doc.nome) + "</b></td><td>" + (doc.publico ? M.pilula("público", "info") : M.pilula("interno", "neutro")) + '</td><td class="num">' + (doc.pendentes ? M.pilula(String(doc.pendentes), "alerta") : M.pilula("0", "ok")) + "</td><td>" +
-btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn("Baixar .docx", "cpl-doc-baixar", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") + "</td></tr>";
+h += '<table class="tbl" id="cpl-tab-docs"><thead><tr><th>DOCUMENTO</th><th>USO</th><th>MODELO</th><th class="num">CAMPOS EM BRANCO</th><th></th></tr></thead><tbody>' + g.docs.map(function (doc) {
+return "<tr><td><b>" + esc(doc.nome) + "</b></td><td>" + (doc.publico ? M.pilula("público", "info") : M.pilula("interno", "neutro")) + "</td><td>" + (modeloDoTipo(doc.id) ? M.pilula("do órgão", "ok") : M.pilula("padrão da casa", "neutro")) + '</td><td class="num">' + (doc.pendentes ? M.pilula(String(doc.pendentes), "alerta") : M.pilula("0", "ok")) + "</td><td>" +
+btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn("Baixar .docx", "cpl-doc-baixar", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") +
+(modeloDoTipo(doc.id) ? " " + btn("Baixar no padrão da casa", "cpl-doc-baixar-padrao", ' data-doc="' + doc.id + '"' + dis(podeAcao("gerar_minuta") || podeAcao("ler_tudo"), "Seu perfil não baixa documentos do processo."), "sm") : "") + "</td></tr>";
 }).join("") + "</tbody></table>";
 h += "<p>" + (val_ ? M.pilula("Documentos gerados em " + dataHoraBR(pdoc.geradoEm), "ok") : (g.pendentes ? M.pilula(g.pendentes + " campo(s) em branco no total", "alerta") : M.pilula("ainda não gerados", "neutro"))) + "</p>";
 if (!val_ && pdoc.invalidadoEm) h += '<p class="cpl-alerta">A minuta gerada deixou de valer: ' + esc(pdoc.motivo || "o processo mudou") + ". Gere de novo.</p>";
@@ -47589,9 +49516,10 @@ var e = p.edital || {}, dm = ed && podeAcao("gerar_minuta") ? "" : " disabled";
 h += '<h3>Dados que completam a minuta</h3><div class="cpl-form" id="cpl-f-edital">' +
 campo("Número do edital", '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
 campo("Documentos de habilitação exigidos", '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
-campo("Regime de sanções aplicável", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
+campo("Complemento do regime de sanções do edital (opcional)", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
 campo("Vigência e prazo de execução do contrato", '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
-campo("Extinção do contrato, sanções contratuais e foro", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") + "</div>" +
+campo("Complemento do contrato: extinção e sanções contratuais (opcional)", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") +
+'<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Cada um entra no edital ou no contrato no lugar do «XXXX» do modelo; sem eles o texto sai com «[PREENCHER: …]».</p>' + htmlCampos(p, "edital", dm) + "</div>" +
 '<div class="cpl-acoes">' + btn("Salvar dados da minuta", "cpl-salvar-edital", dm, "") + "</div>";
 h += '<div class="cpl-acoes">' + btn("Gerar documentos", "cpl-gerar", dis(ed && podeAcao("gerar_minuta"), !podeAcao("gerar_minuta") ? motivoAcao("gerar_minuta") : F.motivoTravado(p)), "primary") + (g.pendentes ? '<span class="muted">Com campos em branco os documentos podem ser baixados como rascunho, mas o passo não fica pronto.</span>' : "") + "</div>";
 return h;
@@ -47650,12 +49578,14 @@ function _propostas(p) {
 var pode = podeAcao("analisar_propostas"), d = pode ? "" : " disabled";
 var props = arr(p.propostas), ref = p.referenciaPublicada;
 var h = '<input type="file" id="cpl-arq-prop" accept=".xlsx,.xls,.xlsm" hidden>';
-h += M.aviso({ tom: "info", titulo: "Habilitação: leitura automática na próxima versão.", texto: "Hoje o sistema compara só a planilha de preços com a referência congelada na publicação. A habilitação (documentos do licitante) continua sendo conferida pela comissão." });
+h += _habilitacao(p);
+h += "<h3>Propostas de preço</h3>";
 h += '<div class="cpl-acoes">' + campo("Nome do licitante", '<input id="cpl-lic-nome" placeholder="Razão social"' + d + ">") + btn("Importar planilha da proposta (.xlsx)", "cpl-prop-importar", dis(pode, motivoAcao("analisar_propostas")), "primary") +
 '<span class="muted">Aceita o .xlsx de proposta do OrçaPRO / CertamePRO.</span></div>';
-if (!props.length) return h + M.vazio({ icone: "documentos", titulo: "Nenhuma proposta importada", texto: "Importe a planilha de cada licitante. O sistema compara com a referência e sugere; a decisão é sempre do servidor." });
-h += '<div class="cpl-form"><h3>Resultado</h3>' + campo("Resultado divulgado em", '<input id="cpl-resultadoEm" type="date" value="' + esc(p.resultadoEm || "") + '"' + d + ">") + btn("Salvar data", "cpl-resultado-data", d, "sm") +
+var blocoResultado = '<div class="cpl-form"><h3>Resultado</h3>' + campo("Resultado divulgado em", '<input id="cpl-resultadoEm" type="date" value="' + esc(p.resultadoEm || "") + '"' + d + ">") + btn("Salvar data", "cpl-resultado-data", d, "sm") +
 (p.resultadoEm ? "<p>Fim do prazo de recurso: <b>" + esc(dataBR(F.fimPrazoRecurso(p))) + "</b></p>" : "") + "</div>";
+if (!props.length) return h + M.vazio({ icone: "documentos", titulo: "Nenhuma proposta importada", texto: "Importe a planilha de cada licitante. O sistema compara com a referência e sugere; a decisão é sempre do servidor." }) + blocoResultado;
+h += blocoResultado;
 props.forEach(function (pr) { h += _cartaoProposta(p, pr, pode, d); });
 h += _quadroComparativo(p, props, ref);
 return h;
@@ -47686,6 +49616,133 @@ return "<tr><td>" + esc(l.item) + "</td><td>" + esc(l.descricao) + '</td><td cla
 }).join("") + '</tbody><tfoot><tr><th colspan="2">TOTAL</th><th class="num">' + numBR(ref.total, 2) + "</th>" + cols.map(function (pr) { return '<th class="num">' + (pr.analise && pr.analise.resumo ? numBR(pr.analise.resumo.totalProposta, 2) : "—") + "</th>"; }).join("") + "</tr></tfoot></table>";
 return h;
 }
+var habArquivos = [];
+var habOcupado = false;
+function storageLocal() { try { return global.localStorage; } catch (e) { return null; } }
+function servicoAtual() {
+var s = storageLocal(), alt = "";
+try { alt = s ? s.getItem("orcapro:cplpro:servico") || "" : ""; } catch (e) { alt = ""; }
+var d = alt ? H.destino(alt) : null;
+return d && d.ok ? d.url : H.SERVICO_OFICIAL;
+}
+function pareamento() { var s = storageLocal(); return s ? H.lerPareamento(s, eid()) : null; }
+function cfgServico() {
+var par = pareamento();
+return { fetch: function (u, o) { return global.fetch(u, o); }, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
+}
+function msgErroHab(e) { return e && e.mensagem ? e.mensagem : (e && e.message ? e.message : "Não consegui concluir. Nada foi gravado no processo."); }
+function tomSit(s) { return (H.SITUACOES[s] || {}).tom || "neutro"; }
+function _habPareamento(p) {
+var st = storageLocal() ? H.estadoPareamento(storageLocal(), eid()) : { pareado: false };
+var h = '<div class="cpl-hab-par" id="cpl-hab-par">';
+if (st.pareado) {
+h += M.pilula("conectado ao CertamePRO", "ok") + ' <span class="muted">Conta ' + esc(st.usuario || "—") + " · desde " + esc(dataHoraBR(st.pareadoEm)) + ". O acesso fica só neste aparelho.</span>";
+h += '<div class="cpl-acoes">' + btn("Desligar este aparelho", "cpl-hab-desligar", dis(podeAcao("gerenciar_logins"), motivoAcao("gerenciar_logins")), "sm ghost") + "</div>";
+if (G._cplHabRepar) h += M.aviso({ tom: "erro", titulo: "O CertamePRO recusou esta conexão.", texto: "Desligue e conecte de novo com um código novo (gerado pelo administrador do CertamePRO)." });
+} else {
+var pode = podeAcao("gerenciar_logins");
+h += M.aviso({ tom: "info", titulo: "Conecte o CPLPRO ao CertamePRO para ler a habilitação automaticamente.",
+texto: "O administrador do órgão gera um código de pareamento no CertamePRO (tipo «órgão») e o digita aqui, uma vez por aparelho. Sem a conexão, a habilitação continua sendo conferida à mão pela comissão." });
+h += '<div class="cpl-acoes">' + campo("Código de pareamento do CertamePRO", '<input id="cpl-hab-codigo" autocomplete="off" spellcheck="false" placeholder="Cole o código aqui"' + (pode ? "" : " disabled") + ">") +
+btn("Conectar", "cpl-hab-parear", dis(pode, motivoAcao("gerenciar_logins")), "primary") + "</div>";
+}
+return h + "</div>";
+}
+function _habForm(p, pode) {
+var par = !!pareamento(), d = pode ? "" : " disabled", aviso = H.exigenciasDoProcesso(p).avisos;
+var ds = H.dataSessaoDoProcesso(p) || "";
+var h = '<div class="cpl-form" id="cpl-hab-form"><h3>Analisar um licitante</h3>';
+h += '<div class="cpl-acoes">' + campo("CNPJ do licitante *", '<input id="cpl-hab-cnpj" placeholder="00.000.000/0000-00"' + d + ">") + campo("Razão social", '<input id="cpl-hab-razao" placeholder="Razão social"' + d + ">") +
+campo("Data da sessão *", '<input id="cpl-hab-sessao" type="date" value="' + esc(ds) + '"' + d + ">") + "</div>";
+h += '<p class="muted">A validade das certidões é conferida na <b>data da sessão</b>, não na de hoje.</p>';
+h += '<input type="file" id="cpl-hab-arq" accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.bmp,.gif,.webp,.docx,.xlsx,.zip" multiple hidden>' +
+'<input type="file" id="cpl-hab-pasta" webkitdirectory multiple hidden>';
+h += '<div class="cpl-acoes">' + btn("Escolher arquivos", "cpl-hab-arquivos", dis(pode, motivoAcao("analisar_propostas")), "sm") + btn("Escolher a pasta do licitante", "cpl-hab-pasta", dis(pode, motivoAcao("analisar_propostas")), "sm") +
+btn("Limpar escolha", "cpl-hab-limpar", "", "sm ghost") + '<span class="muted" id="cpl-hab-sel">' + (habArquivos.length ? habArquivos.length + " arquivo(s) escolhido(s)" : "nenhum arquivo escolhido") + "</span></div>";
+h += '<div class="cpl-acoes">' + btn("Analisar habilitação", "cpl-hab-analisar", dis(pode && par, !pode ? motivoAcao("analisar_propostas") : "Conecte o CPLPRO ao CertamePRO primeiro (acima)."), "primary") +
+'<span class="muted" id="cpl-hab-status" role="status"></span></div>';
+if (aviso.length) h += '<ul class="cpl-bloqueios" id="cpl-hab-avisos">' + aviso.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>";
+h += '<p class="muted">Os arquivos vão ao serviço só para esta análise e são apagados de lá ao fim. O sistema compara com a ficha de exigências deste processo e <b>apenas sugere</b>; a decisão é sua, exigência por exigência.</p>';
+return h + "</div>";
+}
+function _habLinhaExigencia(p, lic, r, pode) {
+var e = arr(lic.exigencias).filter(function (x) { return x.id === r.id; })[0] || { descricao: r.id, grupo: "" }, d = lic.decisoes[r.id];
+var sug = { atende: "atende", nao_atende: "nao_atende", diligencia: "diligencia" }[r.situacao] || "", atual = d ? d.situacao : sug;
+var provas = arr(r.provas).map(function (x) { return esc(x.arquivo) + (x.pagina ? ", p. " + esc(x.pagina) : "") + (x.trecho ? ' — «' + esc(x.trecho) + "»" : ""); });
+var h = '<tr data-ex="' + esc(r.id) + '"><td><b>' + esc(r.id) + "</b><br>" + esc(e.descricao) + "</td>";
+h += "<td>" + M.pilula((H.SITUACOES[r.situacao] || {}).nome || r.situacao, tomSit(r.situacao)) + '<br><span class="muted">' + esc(r.motivo) + "</span>" +
+(r.regra ? porque("Regra aplicada pelo serviço: " + r.regra, "contrato de análise de habilitação", false, "Regra") : "") + "</td>";
+h += "<td>" + (provas.length ? provas.join("<br>") : '<span class="muted">sem prova</span>') + "</td>";
+var opts = '<option value="">— escolha —</option>' + H.DECISAO_ORDEM.map(function (k) { return '<option value="' + k + '"' + (k === atual ? " selected" : "") + ">" + esc(H.DECISOES[k].nome) + "</option>"; }).join("");
+h += "<td>" + (d ? M.pilula((d.origem === "confirmado" ? "confirmado: " : "alterado: ") + H.DECISOES[d.situacao].curto, ABR_INAB(d.situacao) ? "erro" : (d.situacao === "diligencia" ? "alerta" : "ok")) + '<br><span class="muted">' + esc(d.por || "") + " · " + esc(dataBR(d.em)) + (d.motivo ? " · " + esc(d.motivo) : "") + "</span><br>" : M.pilula("pendente de decisão", "alerta") + "<br>");
+h += '<select class="cpl-hab-sel" aria-label="Decisão da exigência ' + esc(r.id) + '"' + (pode ? "" : " disabled") + ">" + opts + "</select> " +
+'<input class="cpl-hab-mot" placeholder="Motivo (obrigatório ao alterar)" aria-label="Motivo da decisão ' + esc(r.id) + '"' + (pode ? "" : " disabled") + "> " +
+btn(d ? "Alterar" : "Registrar", "cpl-hab-decidir", ' data-lic="' + esc(lic.id) + '" data-ex="' + esc(r.id) + '"' + (pode ? "" : " disabled"), "sm") + "</td></tr>";
+return h;
+}
+function ABR_INAB(s) { return s === "nao_atende" || s === "nao_apresentou"; }
+function _habCartao(p, lic, pode) {
+var c = H.consolidar(lic), n = H.ordem(p, lic.id), pgs = H.podeGerar;
+var tom = { habilitado: "ok", inabilitado: "erro", em_diligencia: "alerta", pendente: "alerta", sem_analise: "neutro" }[c.status];
+var h = '<section class="cpl-prop cpl-hab-lic" data-lic="' + esc(lic.id) + '"><h3>Licitante ' + n + " — " + esc(lic.razaoSocial || "(sem razão social)") + " " + M.pilula(H.STATUS_ROTULO[c.status], tom) + "</h3>";
+h += '<p class="muted">CNPJ ' + esc(H.mascaraCnpj(lic.cnpj)) + " · sessão " + esc(dataBR(lic.dataSessao)) + " · " + arr(lic.resultados).length + " exigência(s): " + c.atendidas.length + " atendida(s), " + c.diligencia.length + " em diligência, " + c.inabilita.length + " inabilitante(s), " + c.pendentes.length + " pendente(s)</p>";
+var ll = lic.licitanteLido || {};
+if (ll.confere === false) h += M.aviso({ tom: "alerta", titulo: "O CNPJ lido nos documentos (" + esc(H.mascaraCnpj(ll.cnpjLido || "")) + ") não confere com o informado.", texto: "Confira se os arquivos são mesmo deste licitante." });
+if (ll.sancoes && ll.sancoes.situacao) h += '<p class="muted">Sanções (CEIS/CNEP): ' + esc(ll.sancoes.situacao) + (ll.sancoes.texto ? " — " + esc(ll.sancoes.texto) : "") + "</p>";
+arr(lic.avisos).forEach(function (a) { h += '<p class="muted">Aviso do serviço: ' + esc(a) + "</p>"; });
+var porGrupo = {};
+arr(lic.resultados).forEach(function (r) { var e = arr(lic.exigencias).filter(function (x) { return x.id === r.id; })[0] || {}; (porGrupo[e.grupo || "outros"] = porGrupo[e.grupo || "outros"] || []).push(r); });
+H.GRUPOS.concat([{ id: "outros", nome: "Outras" }]).forEach(function (g) {
+if (!porGrupo[g.id]) return;
+h += "<details open><summary><b>" + esc(g.nome) + "</b> (" + porGrupo[g.id].length + ")</summary>" +
+'<table class="tbl cpl-hab-tab"><thead><tr><th>EXIGÊNCIA</th><th>RESULTADO DO SERVIÇO</th><th>PROVA</th><th>SUA DECISÃO</th></tr></thead><tbody>' +
+porGrupo[g.id].map(function (r) { return _habLinhaExigencia(p, lic, r, pode); }).join("") + "</tbody></table></details>";
+});
+if (c.diligencia.length) {
+h += '<div class="cpl-acoes"><label>Prazo da resposta do licitante (escolha da comissão) ' + '<input type="date" class="cpl-hab-prazo" value="' + esc((lic.diligencia && lic.diligencia.prazo) || "") + '"' + (pode ? "" : " disabled") + "></label>" +
+btn("Salvar prazo", "cpl-hab-prazo", ' data-lic="' + esc(lic.id) + '"' + (pode ? "" : " disabled"), "sm") + "</div>";
+}
+function docBtn(tipo, rot) {
+var g = pgs(tipo, p, lic.id, papeis());
+return btn(rot, "cpl-hab-doc", ' data-lic="' + esc(lic.id) + '" data-tipo="' + tipo + '"' + dis(g.ok, g.motivo), "sm ghost");
+}
+h += '<div class="cpl-acoes">' + docBtn("relatorio", "Relatório de habilitação (.docx)") + docBtn("diligencia", "Termo de diligência (.docx)") + docBtn("inabilitacao", "Comunicado de inabilitação (.docx)") +
+btn("Recurso: alegações e conclusão", "cpl-hab-recurso", ' data-lic="' + esc(lic.id) + '"' + dis(pode, motivoAcao("analisar_propostas")), "sm ghost") + docBtn("recurso", "Quadro do recurso (.docx)") + "</div>";
+return h + "</section>";
+}
+function _habilitacao(p) {
+var pode = podeAcao("analisar_propostas"), ls = arr(p.habilitacao && p.habilitacao.licitantes);
+var h = '<section id="cpl-hab"><h3>Habilitação dos licitantes</h3>' + _habPareamento(p) + _habForm(p, pode);
+if (!ls.length) h += M.vazio({ icone: "documentos", titulo: "Nenhum licitante analisado", texto: "Escolha os arquivos do licitante, informe o CNPJ e a data da sessão e clique em «Analisar habilitação»." });
+ls.forEach(function (l) { h += _habCartao(p, l, pode); });
+if (ls.length) {
+var gAta = H.podeGerar("ata", p, null, papeis()), gAdj = H.podeGerar("adjudicacao", p, null, papeis()), gHom = H.podeGerar("homologacao", p, null, papeis());
+var habilitados = ls.filter(function (l) { return H.consolidar(l).status === "habilitado"; });
+var adjId = p.habilitacao && p.habilitacao.adjudicatarioId;
+h += '<div class="cpl-form" id="cpl-hab-fim"><h3>Resultado, adjudicação e homologação</h3>' +
+'<div class="cpl-acoes">' + btn("Ata de julgamento e habilitação (.docx)", "cpl-hab-doc", ' data-tipo="ata"' + dis(gAta.ok, gAta.motivo), "sm") + "</div>" +
+'<div class="cpl-acoes">' + campo("Licitante a adjudicar (só habilitado)", '<select id="cpl-hab-adj"' + (podeAcao("adjudicar") ? "" : " disabled") + '><option value="">— escolha —</option>' + habilitados.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === adjId ? " selected" : "") + ">Licitante " + H.ordem(p, l.id) + " — " + esc(l.razaoSocial || H.mascaraCnpj(l.cnpj)) + "</option>"; }).join("") + "</select>") +
+btn("Escolher", "cpl-hab-adjudicatario", dis(podeAcao("adjudicar"), motivoAcao("adjudicar")), "sm") + "</div>" +
+'<div class="cpl-acoes">' + btn("Minuta de adjudicação (.docx)", "cpl-hab-doc", ' data-tipo="adjudicacao"' + dis(gAdj.ok, gAdj.motivo), "sm") + btn("Minuta de homologação (.docx)", "cpl-hab-doc", ' data-tipo="homologacao"' + dis(gHom.ok, gHom.motivo), "sm") + "</div>" +
+'<p class="muted">As minutas só saem sem nenhuma exigência pendente ou em diligência, com o licitante escolhido habilitado. Quem adjudica e homologa é a autoridade competente.</p></div>';
+}
+return h + "</section>";
+}
+function habLerForm() {
+return { cnpj: lerCampo("cpl-hab-cnpj"), razao: lerCampo("cpl-hab-razao"), sessao: lerCampo("cpl-hab-sessao") };
+}
+function habEscolher(files, pasta) {
+var lista = Array.prototype.slice.call(files || []), vistos = {};
+habArquivos.forEach(function (f) { vistos[f.name] = (vistos[f.name] || 0) + 1; });
+lista.forEach(function (f) {
+var n = f.name;
+if (vistos[n]) { vistos[n]++; var ponto = n.lastIndexOf("."); var novo = (ponto > 0 ? n.slice(0, ponto) : n) + " (" + vistos[n] + ")" + (ponto > 0 ? n.slice(ponto) : ""); try { f = new global.File([f], novo, { type: f.type }); } catch (e) {} }
+else vistos[n] = 1;
+habArquivos.push(f);
+});
+var el = document.getElementById("cpl-hab-sel");
+if (el) el.textContent = habArquivos.length + " arquivo(s) escolhido(s)";
+}
 function _histProc(p) {
 var h = arr(p.historico).slice().reverse();
 if (!h.length) return M.secao({ corpoHtml: M.vazio({ icone: "documentos", titulo: "Sem histórico ainda", texto: "Cada mudança do processo é registrada com quem fez, quando e o antes/depois." }) });
@@ -47706,6 +49763,14 @@ return new Promise(function (ok, falha) {
 var fr = new FileReader(); fr.onload = function () { ok(new Uint8Array(fr.result)); }; fr.onerror = function () { falha(fr.error || new Error("não consegui ler " + f.name)); }; fr.readAsArrayBuffer(f);
 });
 }
+function textoParaClassificar(file, ent) {
+return new Promise(function (ok) {
+if (!/.pdf$/i.test(ent.nome) || C.classificarArquivo({ nome: ent.nome, ext: ent.ext }).confianca !== "baixa" || !G._pdfTexto) { ok(); return; }
+var feito = false, fim = function (txt) { if (feito) return; feito = true; if (txt && String(txt).replace(/s/g, "")) ent.texto = String(txt); ok(); };
+setTimeout(function () { fim(""); }, 20000);
+try { G._pdfTexto(file, fim, { paginas: 2 }); } catch (e) { fim(""); }
+});
+}
 function adicionarArquivos(files) {
 var p = procAtual(); if (!p) return;
 var papel = exigirEditavel(p, "editar_acervo"); if (!papel) return;
@@ -47719,7 +49784,9 @@ seq = seq.then(function () {
 return lerArquivo(f).then(function (bytes) {
 return sha256(bytes).then(function (sha) {
 var ext = (/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "";
-novos.push({ nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: f.lastModified ? hoje() : null });
+var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: f.lastModified ? hoje() : null };
+novos.push(ent);
+return textoParaClassificar(f, ent).then(function () {
 if (bytes.length <= MAX_BYTES && typeof Idb !== "undefined") {
 var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 return Idb.set(chaveArq(sha), { nome: f.name, tipo: f.type || "application/octet-stream", dados: copia }).then(function () {
@@ -47728,6 +49795,7 @@ try { if (p.obraId && typeof ArquivosNuvem !== "undefined") ArquivosNuvem.subir(
 }, function () { grandes.push(f.name); });
 }
 grandes.push(f.name);
+});
 });
 });
 });
@@ -47754,6 +49822,162 @@ if (!w) { var a = document.createElement("a"); a.href = url; a.download = doc.no
 setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
 }, function () { toast("Não consegui abrir o arquivo.", "erro"); });
 }
+function lerPdfTexto(file, paginas) {
+return new Promise(function (ok) {
+if (!G._pdfTexto) { ok(""); return; }
+var feito = false, fim = function (t) { if (feito) return; feito = true; ok(t ? String(t) : ""); };
+setTimeout(function () { fim(""); }, 30000);
+try { G._pdfTexto(file, fim, { paginas: paginas }); } catch (e) { fim(""); }
+});
+}
+function lerMatriz(file) {
+return new Promise(function (ok) {
+if (typeof App === "undefined" || !App._lerPlanilha) { ok(null); return; }
+var feito = false, fim = function (m) { if (feito) return; feito = true; ok(m); };
+setTimeout(function () { fim(null); }, 30000);
+try { App._lerPlanilha(file, function (matriz, erro) { fim(erro || !matriz || !matriz.length ? null : matriz); }); } catch (e) { fim(null); }
+});
+}
+function guardarBytes(p, f, bytes, sha) {
+if (bytes.length > MAX_BYTES || typeof Idb === "undefined") return Promise.resolve();
+var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+return Idb.set(chaveArq(sha), { nome: f.name, tipo: f.type || "application/octet-stream", dados: copia }).then(function () {
+try { if (p.obraId && typeof ArquivosNuvem !== "undefined") ArquivosNuvem.subir(chaveArq(sha), { obraId: p.obraId, pasta: "documentos", nome: f.name, tipo: f.type || "application/octet-stream" }, bytes); } catch (eN) {}
+}, function () {});
+}
+function lerParaPreparo(p, files) {
+var ents = [], erros = [], seq = Promise.resolve();
+files.forEach(function (f) {
+seq = seq.then(function () {
+return lerArquivo(f).then(function (bytes) {
+return sha256(bytes).then(function (sha) {
+var ext = ((/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "").toLowerCase();
+var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: hoje() };
+var cl = C.classificarArquivo({ nome: f.name, ext: ext }), passo = Promise.resolve();
+if (ext === "docx") passo = T.textoDocx(bytes, inflarFn()).then(function (r) { if (r.ok) ent.texto = r.texto; else erros.push("«" + f.name + "»: " + r.erro); });
+else if (ext === "pdf" && cl.tipo === "memorial_descritivo") passo = lerPdfTexto(f, 40).then(function (t) { if (t) ent.texto = t; else erros.push("«" + f.name + "»: não consegui ler o texto do PDF (imagem escaneada?)."); });
+else if (ext === "pdf" && cl.confianca === "baixa") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
+else if ((ext === "xlsx" || ext === "xls" || ext === "csv") && bytes.length <= 25 * 1024 * 1024) passo = lerMatriz(f).then(function (m) { if (m) ent.matriz = m; else erros.push("«" + f.name + "»: não consegui ler a planilha."); });
+return passo.then(function () { ents.push(ent); return guardarBytes(p, f, bytes, sha); });
+});
+}, function () { erros.push("«" + f.name + "»: não consegui ler o arquivo."); });
+});
+});
+return seq.then(function () { return { ents: ents, erros: erros }; });
+}
+function preencherOrc(orc, plano, baseSinapiOk) {
+orc.etapas = []; var casados = 0, semBase = [];
+plano.etapas.forEach(function (et) {
+Orcamento.addEtapa(orc, et.nome);
+var etapaId = orc.etapas[orc.etapas.length - 1].id;
+et.itens.forEach(function (it) {
+var base = baseSinapiOk && it.codigo && typeof Sinapi !== "undefined" ? Sinapi.obter(it.codigo) : null, si;
+if (base) {
+casados++;
+si = { codigo: base.codigo, baseFonte: "SINAPI", descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
+custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
+} else {
+semBase.push(it.codigo ? it.codigo : it.descricao);
+si = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: Util.num(it.custoUnitario) };
+}
+Orcamento.addItem(orc, etapaId, si, it.quantidade);
+});
+});
+return { casados: casados, semBase: semBase };
+}
+function infoDoOrc(orc, casados, semBase) {
+var c = calc(orc); if (!c) return null;
+return { id: orc.id, base: casados > 0 ? "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado") : "", competencia: casados > 0 ? (orc.competenciaSinapi || "") : "", total: c.precoVenda,
+linhas: c.linhas.map(function (l) { return { numero: l.numero, codigo: l.codigo || "", descricao: l.descricao, unidade: l.unidade, quantidade: l.quantidade, precoTotal: l.precoTotal }; }),
+assinatura: Pr.assinaturaOrc(orc), casados: casados, semBase: semBase };
+}
+function orcamentoDoPreparo(p, plano, avisos) {
+var orcs = []; try { orcs = arr(Store.listarOrcamentos(eid())); } catch (e) { orcs = []; }
+var rec = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+var existente = rec ? orcs.filter(function (o) { return o.id === rec.id; })[0] : null;
+var baseOk = typeof Sinapi !== "undefined" && Sinapi.carregado === true && (!p.regulamentoId || p.regulamentoId === "federal-14133" || p.recursoFederal === true);
+if (typeof Sinapi !== "undefined" && Sinapi.carregado !== true) avisos.push("A base SINAPI não está carregada neste aparelho: os itens entraram sem preço. Carregue a base do estado e monte de novo.");
+if (existente) {
+if (rec.sha === plano.sha) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+if (Pr.assinaturaOrc(existente) === rec.assinatura) {
+var rr = preencherOrc(existente, plano, baseOk);
+if (!Store.salvarOrcamento(eid(), existente)) throw new Error("não consegui gravar o orçamento atualizado");
+return infoDoOrc(existente, rr.casados, rr.semBase);
+}
+avisos.push("A planilha da pasta mudou, mas o orçamento já tem edições suas: ele NÃO foi alterado. Confira as diferenças antes de seguir.");
+return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+}
+if (p.orcamentoId) { avisos.push("O processo já usa um orçamento escolhido por você: a planilha da pasta não criou outro."); return null; }
+var ob = obraPorId(p.obraId);
+var orc = Orcamento.novo({ nome: "Orçamento de referência — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : plano.arquivo)), obra: ob ? ob.nome : "" });
+var r2 = preencherOrc(orc, plano, baseOk);
+if (!Store.salvarOrcamento(eid(), orc)) throw new Error("não consegui gravar o orçamento");
+return infoDoOrc(orc, r2.casados, r2.semBase);
+}
+function montarDaPasta(files, opcoes) {
+var p = procAtual(); if (!p) return Promise.resolve(null);
+var papel = exigirEditavel(p, "editar_acervo"); if (!papel) return Promise.resolve(null);
+var permitidos = {}; C.PASSOS.forEach(function (ps) { permitidos[ps.id] = podeAcao(F.ACAO_DO_PASSO[ps.id]); });
+var st = document.getElementById("cpl-acervo-status");
+var msg = "Montando o processo a partir da pasta (" + files.length + " arquivo(s))…";
+if (st) st.textContent = msg;
+G._cplMontando = true; toast(msg, "info"); andamento(msg);
+var t0 = Date.now();
+return lerParaPreparo(p, files).then(function (lido) {
+var atual = procAtual(); if (!atual) return null;
+var an = Pr.analisar({ arquivos: lido.ents }), plano = Pr.planoOrcamento(an), oi = null, avisosExtra = lido.erros.slice();
+if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
+else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
+var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi });
+G._cplMontando = false;
+if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); return r; }
+var q = r.p;
+avisosExtra.forEach(function (a) { q.preparo.resumo.avisos.push(a); });
+F.registrar(q, "preparo:pasta", lido.ents.length + " arquivo(s) na pasta", "o sistema preencheu " + q.preparo.resumo.preencheu + " campo(s) em " + q.preparo.resumo.passosTocados + " passo(s)", quemAtual(papel), agoraLocal());
+if (!salvarProc(q)) return null;
+G._cplPasso = "demanda"; G._cplAba = "passos"; G._cplView = "proc";
+var sit = Pr.situacao(q);
+toast("O sistema preencheu " + q.preparo.resumo.preencheu + " campos em " + q.preparo.resumo.passosTocados + " passos; faltam " + sit.faltamTotal + " decisões suas. (" + Math.max(1, Math.round((Date.now() - t0) / 1000)) + " s)", "ok");
+App.render();
+return r;
+}, function (e) { G._cplMontando = false; toast("Não consegui montar o processo: " + (e && e.message ? e.message : e), "erro"); return null; })
+.then(function (r) { andamento(null); return r; }, function (e) { andamento(null); throw e; });
+}
+function andamento(msg) {
+var el = document.getElementById("cpl-preparo-andamento");
+if (msg === null) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+if (!el) { el = document.createElement("div"); el.id = "cpl-preparo-andamento"; el.className = "cpl-andamento"; el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite"); document.body.appendChild(el); }
+el.innerHTML = '<span class="cpl-gira" aria-hidden="true"></span><span><b>Montando o processo…</b> ' + esc(String(msg).replace(/^Montando o processo a partir da pasta/, "lendo a pasta")) + "</span>";
+}
+function _sugTxt(id, v) {
+if (v === null || v === undefined) return "—";
+if (typeof v === "boolean") return v ? "Sim" : "Não";
+if (typeof v === "object") return _descObj(id, v);
+return String(v);
+}
+function _painelPreparo(p) {
+var rs = p.preparo.resumo, sit = Pr.situacao(p);
+var dados = sit.faltam.filter(function (x) { return x.tipo === "dado"; });
+var h = '<div class="cpl-preparo" id="cpl-preparo-resumo" role="region" aria-label="Montagem automática a partir da pasta">';
+h += "<h3>Montagem automática a partir da pasta</h3>";
+h += '<p class="cpl-preparo-frase" id="cpl-preparo-frase">O sistema preencheu <b>' + rs.preencheu + "</b> campos em <b>" + rs.passosTocados + "</b> passos; faltam <b>" + sit.faltamTotal + "</b> decisões suas.</p>";
+var gd = null; try { gd = D.gerar(p, ctxDocs(p)); } catch (eG) { gd = null; }
+if (gd) h += '<p class="muted" id="cpl-preparo-docs">Documentos do processo: ' + (gd.pendentes ? "<b>" + gd.pendentes + "</b> campo(s) ainda em branco (dados do órgão, método de cálculo da pesquisa e origem de quantidades — veja o passo 9)." : "nenhum campo em branco.") + "</p>";
+h += '<p class="muted">Tudo o que o sistema preencheu leva o selo <span class="cpl-selo-sist">sugerido pelo sistema — confira</span>. Nenhum passo foi dado como conferido: o «Conferi» é seu. O que você editar, o sistema não sobrescreve.</p>';
+if (sit.decisoes.length) {
+h += '<details open id="cpl-preparo-decisoes"><summary><b>Decisões que a lei reserva ao órgão (' + sit.decisoes.length + ')</b></summary><div class="cpl-pends">' + sit.decisoes.map(function (d) {
+return '<div class="cpl-pend" role="listitem"><span><b>' + esc(d.nome) + "</b> — sugestão pré-marcada: <b>" + esc(_sugTxt(d.id, d.sugerido)) + "</b>" + porque(d.regra || "", d.fonte, d.conferir, d.nome) + "</span>" +
+'<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="parametros" data-campo="' + esc(d.id) + '" data-item="">Corrigir</button></div>';
+}).join("") + "</div></details>";
+}
+if (dados.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dados.length + ")</b></summary>" + pendCartoes(dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; })) + "</details>";
+var avisos = arr(rs.avisos).concat(arr(rs.lacunas));
+if (avisos.length || arr(rs.mantidos).length) {
+h += '<details id="cpl-preparo-avisos"><summary><b>Avisos</b></summary><ul>' + avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") +
+(arr(rs.mantidos).length ? "<li>" + rs.mantidos.length + " campo(s) que você editou foram mantidos: o sistema não sobrescreve o que a pessoa escreveu.</li>" : "") + "</ul></details>";
+}
+return h + "</div>";
+}
 function baixarDocx(html, titulo) {
 if (typeof Docx === "undefined") { toast("A saída em Word não está disponível nesta versão.", "erro"); return false; }
 var op = { titulo: titulo, data: Util.agoraISO(), aplicativo: (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO" };
@@ -47767,6 +49991,55 @@ return true;
 function docPorId(p, id) {
 var g = D.gerar(p, ctxDocs(p));
 return { doc: g.docs.filter(function (z) { return z.id === id; })[0], todos: g };
+}
+function chaveMod(sha) { return "cplpro-modelo:" + eid() + ":" + sha; }
+function inflarFn() {
+if (typeof DecompressionStream === "undefined" || typeof Response === "undefined") return null;
+return function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }); };
+}
+function rotulosModelo() { var o = {}; D.CAMPOS_MODELO.forEach(function (c) { o[c.id] = c.rotulo; }); return o; }
+function baixarBytes(nome, bytes) {
+Util.baixar(nome, bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+}
+function importarModelo(file, tipo) {
+var papel = exigir("gerenciar_modelos"); if (!papel) return;
+if (!T.TIPOS[tipo]) { toast("Escolha o tipo de documento do modelo.", "erro"); return; }
+if (!/\.docx$/i.test(file.name)) { toast("O modelo precisa ser um arquivo Word (.docx). Salve o seu documento nesse formato e tente de novo.", "erro"); return; }
+if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos (IndexedDB indisponível); o modelo não pode ser importado aqui.", "erro"); return; }
+var ids = D.CAMPOS_MODELO.map(function (c) { return c.id; });
+lerArquivo(file).then(function (bytes) {
+return T.analisar(bytes, ids, inflarFn()).then(function (a) {
+if (!a.ok) { toast("Não importei «" + file.name + "»: " + a.erro, "erro"); return; }
+return sha256(bytes).then(function (sha) {
+var copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+return Idb.set(chaveMod(sha), { nome: file.name, tipo: "docx", dados: copia }).then(function () {
+var reg = { id: tipo, tipo: tipo, nome: file.name, sha: sha, bytes: bytes.length, campos: a.campos, desconhecidos: a.desconhecidos, importadoEm: hoje(), importadoPor: nomeAtual(), atualizadoEm: agoraLocal() };
+if (!Store.salvar(eid(), ENT_MOD, reg)) { toast("Não consegui gravar a ficha do modelo.", "erro"); return; }
+toast("Modelo de «" + T.TIPOS[tipo].nome + "» importado: " + a.campos.length + " campo(s) reconhecido(s)." + (a.desconhecidos.length ? " Atenção: " + a.desconhecidos.length + " campo(s) que o sistema não conhece (" + a.desconhecidos.join(", ") + ") sairão como [CAMPO DESCONHECIDO]." : ""), a.desconhecidos.length ? "aviso" : "ok");
+App.render();
+}, function () { toast("Não consegui guardar o arquivo neste aparelho.", "erro"); });
+});
+});
+}, function (e) { toast("Não consegui ler o arquivo: " + (e && e.message ? e.message : e), "erro"); });
+}
+function baixarDoModeloDoOrgao(p, doc) {
+var reg = modeloDoTipo(doc.id); if (!reg) return;
+if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos; use «Baixar no padrão da casa».", "erro"); return; }
+Idb.get(chaveMod(reg.sha)).then(function (v) {
+if (!v || !v.dados) { toast("O modelo do órgão para «" + doc.nome + "» foi importado em outro aparelho e não está neste. Importe-o de novo em «Modelos do órgão» ou use «Baixar no padrão da casa».", "erro"); return; }
+return T.preencher(new Uint8Array(v.dados), D.valoresModelo(p, ctxDocs(p)), rotulosModelo(), inflarFn()).then(function (r) {
+if (!r.ok) { toast("O modelo do órgão não pôde ser usado: " + r.erro + " Nada foi baixado.", "erro"); return; }
+baixarBytes(Docx.nomeArquivo(D.nomeArquivo({ arquivo: doc.arquivo }, p)), r.bytes);
+toast("Word baixado no modelo do órgão." + (r.pendentes ? " Atenção: " + r.pendentes + " campo(s) saíram em vermelho ([PREENCHER] ou campo desconhecido)." : ""), r.pendentes ? "aviso" : "ok");
+});
+}, function () { toast("Não consegui abrir o modelo do órgão neste aparelho.", "erro"); });
+}
+function secoesDoPadrao(tipo) {
+var p = procAtual() || listaProc()[0] || C.novoProcesso({}, "", agoraLocal());
+var doc = D.gerar(p, ctxDocs(p)).docs.filter(function (z) { return z.id === tipo; })[0], out = [];
+if (!doc) return out;
+doc.html.replace(/<h2>([\s\S]*?)<\/h2>/g, function (m, t) { out.push(t.replace(/<[^>]+>/g, "").replace(/^\d+\.\s*/, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')); return m; });
+return out;
 }
 var tvTimer = null;
 function fecharPainel() {
@@ -47818,6 +50091,39 @@ G.registrarAcoes(MODULO, {
 "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
 "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
 "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
+"cpl-aba-modelos": function () { if (!exigir("gerenciar_modelos")) return; G._cplView = "modelos"; App.render(); },
+"cpl-mod-escolher": function (ds) {
+if (!exigir("gerenciar_modelos")) return;
+G._cplModTipo = ds.tipo;
+var el = document.getElementById("cpl-mod-arq"); if (el) el.click();
+},
+"cpl-mod-exemplo": function (ds) {
+if (!exigir("gerenciar_modelos")) return;
+if (typeof Docx === "undefined") { toast("A saída em Word não está disponível nesta versão.", "erro"); return; }
+var tp = ds.tipo, html = T.exemploHtml(tp, D.CAMPOS_MODELO, secoesDoPadrao(tp), ctxDocs(procAtual() || C.novoProcesso({}, "", agoraLocal())).orgao.nome || "");
+var r; try { r = Docx.deHtml(html, { titulo: "Modelo de exemplo - " + T.TIPOS[tp].nome, data: Util.agoraISO(), aplicativo: "OrçaPRO" }); } catch (e) { toast("Não consegui montar o exemplo: " + (e && e.message ? e.message : e), "erro"); return; }
+baixarBytes(Docx.nomeArquivo("Modelo de exemplo - " + T.TIPOS[tp].nome), r.bytes);
+toast("Exemplo baixado. Edite com o texto da procuradoria, mantenha os campos {{...}} e importe de volta.", "ok");
+},
+"cpl-mod-baixar": function (ds) {
+if (!exigir("gerenciar_modelos")) return;
+var reg = modeloDoTipo(ds.tipo); if (!reg) return;
+if (typeof Idb === "undefined") { toast("Este navegador não guarda arquivos.", "erro"); return; }
+Idb.get(chaveMod(reg.sha)).then(function (v) {
+if (!v || !v.dados) { toast("O arquivo deste modelo foi importado em outro aparelho e não está neste. Importe-o de novo.", "info"); return; }
+baixarBytes(reg.nome, new Uint8Array(v.dados));
+}, function () { toast("Não consegui abrir o arquivo.", "erro"); });
+},
+"cpl-mod-remover": function (ds) {
+if (!exigir("gerenciar_modelos")) return;
+var reg = modeloDoTipo(ds.tipo); if (!reg) return;
+UI.modal("Remover o modelo do órgão", "<p>O modelo «" + esc(reg.nome) + "» de <b>" + esc(T.TIPOS[ds.tipo].nome) + "</b> deixa de ser usado; os próximos documentos voltam ao padrão da casa. Os documentos já baixados não mudam.</p>", [
+{ texto: "Remover", classe: "primary", onClick: function () {
+try { if (typeof Idb !== "undefined" && Idb.del) Idb.del(chaveMod(reg.sha)); } catch (e) {}
+Store.excluir(eid(), ENT_MOD, reg.id); UI.fecharModal(); toast("Modelo removido.", "ok"); App.render();
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+},
 "cpl-voltar": function () { G._cplView = "lista"; G._cplId = ""; App.render(); },
 "cpl-abrir": function (ds) { var p = procPorId(ds.id); if (!p) return; G._cplId = p.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = F.passoAtual(p).id; App.render(); },
 "cpl-aba": function (ds) { G._cplAba = ds.aba || "passos"; App.render(); },
@@ -47833,7 +50139,10 @@ UI.modal("Por quê? " + (ds.titulo ? "— " + ds.titulo : ""), corpo, [{ texto: 
 "cpl-novo": function () {
 if (!exigir("criar_processo")) return;
 var obras = K.lista("obras");
-var corpo = campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
+var corpoPasta = '<div class="field"><label>Ou suba a pasta do projeto</label><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
+'<button type="button" class="btn primary" id="cpl-n-montar">Montar tudo a partir da pasta</button>' +
+'<div class="cpl-sug">O sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche o que dá para deduzir. Secretaria e objeto abaixo ficam opcionais.</div></div>';
+var corpo = corpoPasta + campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
 UI.modal("Novo processo de licitação", corpo, [
 { texto: "Criar processo", classe: "primary", onClick: function () {
 var papel = exigir("criar_processo"); if (!papel) return;
@@ -47845,6 +50154,20 @@ var r = salvarProc(q); if (!r) return;
 UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
 } },
 { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+var bm = document.getElementById("cpl-n-montar"), pa = document.getElementById("cpl-n-pasta");
+if (bm && pa) {
+bm.onclick = function () { pa.click(); };
+pa.onchange = function () {
+var fs_ = Array.prototype.slice.call(this.files || []); if (!fs_.length) return;
+var papel = exigir("criar_processo"); if (!papel) return;
+var sec = lerCampo("cpl-n-sec"), obj = lerCampo("cpl-n-obj"), obra = lerCampo("cpl-n-obra");
+var q = C.novoProcesso({ secretaria: sec || null, objeto: obj || null, obraId: obra || null }, quemAtual(papel), agoraLocal());
+F.registrar(q, "criar_processo", null, "criado a partir da pasta", quemAtual(papel), agoraLocal());
+var r = salvarProc(q); if (!r) return;
+UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
+montarDaPasta(fs_, null);
+};
+}
 },
 "cpl-criar-obra": function () {
 var p = procAtual(); if (!p || !exigirEditavel(p, "editar_dfd")) return;
@@ -47887,6 +50210,10 @@ catch (e) { toast(e.message || String(e), "erro"); }
 },
 "cpl-add-arq": function () { var el = document.getElementById("cpl-arq"); if (el) el.click(); },
 "cpl-add-pasta": function () { var el = document.getElementById("cpl-pasta"); if (el) el.click(); },
+"cpl-preparo-escolher": function () {
+var p = procAtual(); if (!p || !exigirEditavel(p, "editar_acervo")) return;
+var el = document.getElementById("cpl-preparo-pasta"); if (el) el.click();
+},
 "cpl-doc-tipo": function (ds) {
 var c = cortaCtx(ds.value), tipo = c.v, docId = c.ctx;
 var ok = gravar("acervo", function (q) {
@@ -47919,7 +50246,9 @@ var ok = gravar("quantitativos", function (q) {
 var antes = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; })), sel = lerCampo("cpl-orcamentoId");
 q.quantitativos.forEach(function (z, i) {
 var a = lerCampo("cpl-qa-" + i), pg = lerCampo("cpl-qp-" + i);
-z.origem = { arquivo: a || null, pagina: pg || null };
+var oAnt = z.origem || {}, o2 = { arquivo: a || null, pagina: pg || null };
+if (oAnt.linha && oAnt.arquivo === o2.arquivo) o2.linha = oAnt.linha;
+z.origem = o2;
 });
 if (sel && q.orcamentoId !== sel) q.orcamentoId = sel;
 var depois = JSON.stringify(q.quantitativos.map(function (z) { return z.origem; }));
@@ -47981,6 +50310,21 @@ return F.diferencas(antes, dep, Object.keys(dep));
 });
 if (ok) { toast("Orçamento de referência salvo.", "ok"); App.render(); }
 },
+"cpl-orc-pacote": function () {
+var p = procAtual(); if (!p) return;
+if (!exigir(podeAcao("gerar_minuta") ? "gerar_minuta" : "ler_tudo")) return;
+var orc = orcDoProc(p), c = calc(orc);
+if (!orc || !c) { toast("Escolha o orçamento de referência do processo antes de gerar o pacote.", "erro"); return; }
+if (typeof OrcamentoReferencia === "undefined") { toast("O gerador do pacote do orçamento de referência não carregou.", "erro"); return; }
+var cx = ctxDocs(p), bases = []; try { bases = (typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : []; } catch (e0) { bases = []; }
+var emp = {}; try { emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {}; } catch (e1) { emp = {}; }
+var op = F.opcoesPacoteReferencia(p, orc, c, { orgaoNome: cx.orgao.nome, empresa: emp, bases: bases, hoje: hoje() });
+toast("Gerando o pacote do orçamento de referência…", "info");
+OrcamentoReferencia.baixar(orc, op).then(function (r) {
+var nb = r.pendencias && r.pendencias.bloqueios ? r.pendencias.bloqueios.length : 0;
+toast(nb ? "Pacote gerado COM PENDÊNCIAS (" + nb + ") — não publicar; veja a página de pendências." : "Pacote do orçamento de referência gerado.", nb ? "info" : "ok");
+}, function (e) { toast("Não gerei o pacote: " + (e && e.message ? e.message : e), "erro"); });
+},
 "cpl-pesq-salvar": function () {
 var ok = gravar("orcamento", function (q) {
 q.pesquisa = q.pesquisa || { itens: {} };
@@ -48034,7 +50378,7 @@ if (ok) { setFoco("orcamento", "pesq:" + ds.item); toast("Justificativa salva.",
 "cpl-salvar-tr": function () {
 var ok = gravar("tr", function (q) {
 var antes = JSON.stringify(q.tr);
-q.tr = { objeto: emBranco(lerCampo("cpl-tr-objeto")), medicao: emBranco(lerCampo("cpl-tr-medicao")), recebimento: emBranco(lerCampo("cpl-tr-recebimento")), pagamento: emBranco(lerCampo("cpl-tr-pagamento")), gestao: emBranco(lerCampo("cpl-tr-gestao")), dotacao: emBranco(lerCampo("cpl-tr-dotacao")) };
+q.tr = preservarFora(lerCampos({ objeto: emBranco(lerCampo("cpl-tr-objeto")), medicao: emBranco(lerCampo("cpl-tr-medicao")), recebimento: emBranco(lerCampo("cpl-tr-recebimento")), pagamento: emBranco(lerCampo("cpl-tr-pagamento")), gestao: emBranco(lerCampo("cpl-tr-gestao")), dotacao: emBranco(lerCampo("cpl-tr-dotacao")) }, q, "tr"), antes);
 var depois = JSON.stringify(q.tr);
 return antes === depois ? null : { antes: antes, depois: depois };
 });
@@ -48045,6 +50389,7 @@ var id = ds.id;
 var ok = gravar("parametros", function (q) {
 var c = calc(orcDoProc(q)), linhas = c ? c.linhas.map(function (l) { return { item: l.numero, descricao: l.descricao, total: l.precoTotal, qtd: l.quantidade, un: l.unidade }; }) : [];
 var s = C.parametros.sugerir(q, { totalEstimado: c ? c.precoVenda : undefined, linhas: linhas })[id];
+if (s && (s.sugerido === null || s.sugerido === undefined) && q.parametros[id] && q.parametros[id].sugerido !== null && q.parametros[id].sugerido !== undefined) { s = { sugerido: q.parametros[id].sugerido, regra: q.parametros[id].regra || s.regra, fonte: s.fonte, pendencias: s.pendencias }; }
 if (!s || s.sugerido === null || s.sugerido === undefined) throw new Error("O sistema ainda não tem sugestão para este parâmetro: " + (s && s.pendencias[0] ? s.pendencias[0] : "complete os passos anteriores") + ".");
 if (typeof s.sugerido === "string" && / ou /.test(s.sugerido)) throw new Error("O sistema aponta duas modalidades possíveis («" + s.sugerido + "»). Escolha uma na lista: a decisão é do órgão.");
 var antes = q.parametros[id].valor, v = s.sugerido;
@@ -48085,9 +50430,17 @@ if (ok) { toast("Parâmetros e datas salvos.", "ok"); App.render(); }
 var p = procAtual(); if (!p) return;
 if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo") || podeAcao("editar_tr"))) { toast("Seu perfil não vê a prévia dos documentos do processo.", "erro"); return; }
 var r = docPorId(p, ds.doc); if (!r.doc) return;
-UI.modal(r.doc.nome, '<div class="cpl-previa" id="cpl-previa">' + r.doc.html + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+var aviso = modeloDoTipo(r.doc.id) ? '<p class="muted" id="cpl-previa-aviso">Prévia do texto do modelo <b>padrão da casa</b>. O Word baixado sai no <b>modelo do órgão</b> importado.</p>' : "";
+UI.modal(r.doc.nome, aviso + '<div class="cpl-previa" id="cpl-previa">' + r.doc.html + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
 },
 "cpl-doc-baixar": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo"))) { toast("Seu perfil não baixa documentos do processo.", "erro"); return; }
+var r = docPorId(p, ds.doc); if (!r.doc) return;
+if (modeloDoTipo(r.doc.id)) { baixarDoModeloDoOrgao(p, r.doc); return; }
+baixarDocx(r.doc.html, D.nomeArquivo({ arquivo: r.doc.arquivo }, p));
+},
+"cpl-doc-baixar-padrao": function (ds) {
 var p = procAtual(); if (!p) return;
 if (!(podeAcao("gerar_minuta") || podeAcao("ler_tudo"))) { toast("Seu perfil não baixa documentos do processo.", "erro"); return; }
 var r = docPorId(p, ds.doc); if (!r.doc) return;
@@ -48096,7 +50449,7 @@ baixarDocx(r.doc.html, D.nomeArquivo({ arquivo: r.doc.arquivo }, p));
 "cpl-salvar-edital": function () {
 var ok = gravar("minuta", function (q) {
 var antes = JSON.stringify(q.edital || {});
-q.edital = { numero: emBranco(lerCampo("cpl-ed-numero")), habilitacao: emBranco(lerCampo("cpl-ed-habilitacao")), sancoes: emBranco(lerCampo("cpl-ed-sancoes")), vigencia: emBranco(lerCampo("cpl-ed-vigencia")), rescisaoForo: emBranco(lerCampo("cpl-ed-rescisao")) };
+q.edital = preservarFora(lerCampos({ numero: emBranco(lerCampo("cpl-ed-numero")), habilitacao: emBranco(lerCampo("cpl-ed-habilitacao")), sancoes: emBranco(lerCampo("cpl-ed-sancoes")), vigencia: emBranco(lerCampo("cpl-ed-vigencia")), rescisaoForo: emBranco(lerCampo("cpl-ed-rescisao")) }, q, "edital"), antes);
 var depois = JSON.stringify(q.edital);
 return antes === depois ? null : { antes: antes, depois: depois };
 });
@@ -48196,6 +50549,123 @@ var html = D.gerarProposta(tipo, p, pr, ctxDocs(p));
 var nome = { parecer: "Parecer de analise da proposta", diligencia: "Termo de diligencia", desclassificacao: "Comunicado de desclassificacao" }[tipo];
 baixarDocx(html, nome + " - " + F.codigoDe(p));
 },
+"cpl-hab-parear": function () {
+if (!exigir("gerenciar_logins")) return;
+var cod = lerCampo("cpl-hab-codigo"), st = storageLocal();
+if (!st) { toast("Este navegador não guarda a conexão. Use outro navegador ou o app instalado.", "erro"); return; }
+var cfg = cfgServico();
+H.previaPareamento(cfg, cod).then(function (pv) {
+var corpo = "<p>O CertamePRO vai conectar este aparelho à conta abaixo. Confira antes de confirmar.</p><ul>" +
+"<li>Conta: <b>" + esc(pv.conta) + "</b> (" + esc(pv.papel || "—") + ")</li>" +
+(pv.empresas.length ? "<li>Órgão(s): " + pv.empresas.map(function (e) { return esc(e.nome); }).join(", ") + "</li>" : "") + "</ul>" +
+'<p class="muted">O acesso fica guardado só neste aparelho e pode ser desligado a qualquer hora.</p>';
+UI.modal("Conectar ao CertamePRO", corpo, [
+{ texto: "Confirmar a conexão", classe: "primary", onClick: function () {
+H.parear(cfg, cod, "CPLPRO " + (usuario().nome || "")).then(function (r) {
+var ok = H.gravarPareamento(st, eid(), { token: r.token, usuario: r.usuario, aparelhoId: r.aparelhoId, escopo: r.escopo, pareadoEm: r.pareadoEm, servico: cfg.servico });
+UI.fecharModal();
+if (!ok) { toast("Não consegui guardar a conexão neste aparelho.", "erro"); return; }
+var pp = procAtual(); if (pp) { var q = clone(pp); F.registrar(q, "habilitacao:parear", null, "aparelho conectado", quemAtual("admin_orgao"), agoraLocal()); salvarProc(q); }
+G._cplHabRepar = false; toast("Conectado ao CertamePRO.", "ok"); App.render();
+}, function (e) { toast(msgErroHab(e), "erro"); });
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+}, function (e) { toast(msgErroHab(e), "erro"); });
+},
+"cpl-hab-desligar": function () {
+if (!exigir("gerenciar_logins")) return;
+var st = storageLocal(); if (!st) return;
+H.desligar(st, eid()); G._cplHabRepar = false;
+var pd = procAtual(), q = pd ? clone(pd) : null; if (q) { F.registrar(q, "habilitacao:desligar", "aparelho conectado", null, quemAtual("admin_orgao"), agoraLocal()); salvarProc(q); }
+toast("Este aparelho foi desligado do CertamePRO. O acesso foi apagado daqui.", "ok"); App.render();
+},
+"cpl-hab-arquivos": function () { if (!exigir("analisar_propostas")) return; var el = document.getElementById("cpl-hab-arq"); if (el) el.click(); },
+"cpl-hab-pasta": function () { if (!exigir("analisar_propostas")) return; var el = document.getElementById("cpl-hab-pasta"); if (el) el.click(); },
+"cpl-hab-limpar": function () { habArquivos = []; var el = document.getElementById("cpl-hab-sel"); if (el) el.textContent = "nenhum arquivo escolhido"; },
+"cpl-hab-analisar": function () {
+var p = procAtual(); if (!p || habOcupado) return;
+var papel = exigir("analisar_propostas"); if (!papel) return;
+var par = pareamento();
+if (!par) { toast("Conecte o CPLPRO ao CertamePRO primeiro (caixa «Habilitação dos licitantes»).", "erro"); return; }
+var f = habLerForm(), ficha;
+try { ficha = H.montarFicha(p, { cnpj: f.cnpj, razaoSocial: f.razao }, f.sessao); } catch (e) { toast(e.message || String(e), "erro"); return; }
+if (!habArquivos.length) { toast("Escolha os arquivos (ou a pasta) do licitante antes de analisar.", "erro"); return; }
+habOcupado = true;
+var st = document.getElementById("cpl-hab-status"); if (st) st.textContent = "Analisando " + habArquivos.length + " arquivo(s)… isto pode levar alguns minutos.";
+H.analisar(cfgServico(), ficha, habArquivos).then(function (resposta) {
+habOcupado = false;
+var atual = procAtual(); if (!atual) return;
+try {
+var q = H.registrarAnalise(atual, papeis(), { cnpj: f.cnpj, razaoSocial: f.razao, dataSessao: f.sessao || H.dataSessaoDoProcesso(atual), ficha: ficha, resposta: resposta }, quemAtual(papel), agoraLocal());
+if (salvarProc(q)) { habArquivos = []; G._cplHabRepar = false; toast("Análise recebida: " + resposta.resultados.length + " exigência(s). Nenhuma foi decidida — a decisão é sua.", "ok"); App.render(); }
+} catch (e2) { toast(e2.message || String(e2), "erro"); }
+}, function (e) {
+habOcupado = false;
+if (e && e.reparear) { G._cplHabRepar = true; App.render(); }
+var st2 = document.getElementById("cpl-hab-status"); if (st2) st2.textContent = "";
+toast(msgErroHab(e), "erro");
+});
+},
+"cpl-hab-decidir": function (ds) {
+var p = procAtual(); if (!p) return;
+var linha = document.querySelector('.cpl-hab-lic[data-lic="' + ds.lic + '"] tr[data-ex="' + ds.ex + '"]'); if (!linha) return;
+var sel = linha.querySelector(".cpl-hab-sel"), mot = linha.querySelector(".cpl-hab-mot");
+try {
+var q = H.decidir(p, papeis(), ds.lic, ds.ex, { situacao: sel ? sel.value : "", motivo: mot ? mot.value : "" }, quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+if (salvarProc(q)) { toast("Decisão registrada com o seu nome e a hora.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-hab-prazo": function (ds) {
+var p = procAtual(); if (!p) return;
+var el = document.querySelector('.cpl-hab-lic[data-lic="' + ds.lic + '"] .cpl-hab-prazo');
+try {
+var q = H.definirPrazoDiligencia(p, papeis(), ds.lic, el ? el.value : "", quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+if (salvarProc(q)) { toast("Prazo da diligência salvo.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-hab-adjudicatario": function () {
+var p = procAtual(); if (!p) return;
+var el = document.getElementById("cpl-hab-adj");
+try {
+var q = H.escolherAdjudicatario(p, papeis(), el ? el.value : "", quemAtual(F.papelPara(papeis(), "adjudicar")), agoraLocal());
+if (salvarProc(q)) { toast("Licitante a adjudicar registrado.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+},
+"cpl-hab-recurso": function (ds) {
+var p = procAtual(); if (!p) return;
+if (!exigir("analisar_propostas")) return;
+var lic = H.licPorId(p, ds.lic); if (!lic) return;
+var rc = lic.recurso || { itens: [], conclusao: "", intencaoEm: "" };
+var pz = H.prazosRecurso(p);
+var corpo = '<p class="muted">Prazos do art. 165 (dias úteis): ' + (pz ? "razões até <b>" + esc(dataBR(pz.razoesAte)) + "</b>, contrarrazões até <b>" + esc(dataBR(pz.contrarrazoesAte)) + "</b>." : "informe a data do resultado na aba Propostas.") + "</p>" +
+(arr(rc.itens).length ? "<p>" + arr(rc.itens).length + " alegação(ões) já registrada(s).</p>" : "") +
+campo("Intenção de recorrer manifestada em", '<input id="cpl-rec-intencao" type="date" value="' + esc(rc.intencaoEm || "") + '">') +
+campo("Nova alegação do recorrente", '<textarea id="cpl-rec-alegacao" rows="3"></textarea>') +
+campo("Exigência relacionada (opcional)", '<select id="cpl-rec-exig"><option value="">—</option>' + arr(lic.resultados).map(function (r) { return '<option value="' + esc(r.id) + '">' + esc(r.id) + "</option>"; }).join("") + "</select>") +
+campo("Documento (arquivo e página; opcional)", '<input id="cpl-rec-doc">') +
+campo("Resposta à alegação (texto do servidor)", '<textarea id="cpl-rec-resp" rows="2"></textarea>') +
+campo("Conclusão (texto do servidor)", '<textarea id="cpl-rec-concl" rows="3">' + esc(rc.conclusao || "") + "</textarea>") +
+'<p class="muted">O sistema só organiza os fatos: a conclusão e as respostas são escritas por você.</p>';
+UI.modal("Recurso — Licitante " + H.ordem(p, lic.id), corpo, [
+{ texto: "Salvar", classe: "primary", onClick: function () {
+var atual = procAtual(); if (!atual) return;
+var dados = { conclusao: lerCampo("cpl-rec-concl"), intencaoEm: lerCampo("cpl-rec-intencao") };
+if (lerCampo("cpl-rec-alegacao")) { dados.alegacao = lerCampo("cpl-rec-alegacao"); dados.exigenciaId = lerCampo("cpl-rec-exig"); dados.documento = lerCampo("cpl-rec-doc"); dados.resposta = lerCampo("cpl-rec-resp"); }
+try {
+var q = H.registrarRecurso(atual, papeis(), ds.lic, dados, quemAtual(F.papelPara(papeis(), "analisar_propostas")), agoraLocal());
+if (salvarProc(q)) { UI.fecharModal(); toast("Recurso registrado.", "ok"); App.render(); }
+} catch (e) { toast(e.message || String(e), "erro"); }
+} },
+{ texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+},
+"cpl-hab-doc": function (ds) {
+var p = procAtual(); if (!p) return;
+var g = H.podeGerar(ds.tipo, p, ds.lic || null, papeis());
+if (!g.ok) { toast(g.motivo, "erro"); return; }
+var html;
+try { html = D.gerarHabilitacao(ds.tipo, p, ds.lic || null, ctxDocs(p)); } catch (e) { toast(e.message || String(e), "erro"); return; }
+baixarDocx(html, D.nomeArquivoHab(ds.tipo, p, ds.lic || null));
+},
 "cpl-pap-salvar": function (ds) {
 var papel = exigir("gerenciar_logins"); if (!papel) return;
 var marcados = [];
@@ -48212,6 +50682,13 @@ G.registrarWire(MODULO, function () {
 var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
 if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
 if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
+var pp = document.getElementById("cpl-preparo-pasta");
+if (pp) pp.onchange = function () { var fs_ = Array.prototype.slice.call(this.files || []); this.value = ""; if (fs_.length) montarDaPasta(fs_, null); };
+var am = document.getElementById("cpl-mod-arq");
+if (am) am.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarModelo(f, G._cplModTipo); };
+var ha = document.getElementById("cpl-hab-arq"), hp = document.getElementById("cpl-hab-pasta");
+if (ha) ha.onchange = function () { habEscolher(this.files, false); this.value = ""; };
+if (hp) hp.onchange = function () { habEscolher(this.files, true); this.value = ""; };
 var ap = document.getElementById("cpl-arq-prop");
 if (ap) ap.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarProposta(f); };
 var foco = G._cplFoco;
@@ -48246,7 +50723,23 @@ F.registrar(q, "proposta:importar", null, nome + " (" + lido.linhas.length + " i
 if (salvarProc(q)) { toast("Proposta importada e comparada com a referência (" + prop.analise.achados.length + " achado(s)). Nenhuma decisão foi tomada.", "ok"); App.render(); }
 });
 }
-global.CplproUI = { fecharPainel: fecharPainel };
+function demonstracao(qs) {
+var emp = eid(), perfilAtual = "completo";
+try { if (typeof Perfis !== "undefined" && Perfis.idAtual) perfilAtual = Perfis.idAtual(); } catch (e0) {}
+var plano = F.planoDemo({ qs: qs, demo: !!(typeof App !== "undefined" && App._demo), empresaId: emp, perfilAtual: perfilAtual });
+try {
+if (plano.restaurar && typeof Perfis !== "undefined") Perfis.aplicar("completo");
+if (!plano.aplicar) return plano;
+if (typeof Perfis !== "undefined" && perfilAtual !== "orgao_publico") { var r = Perfis.aplicar("orgao_publico"); if (!r || !r.ok) plano.erro = (r && r.erro) || "não consegui aplicar o perfil do órgão"; }
+if (plano.semear) {
+if (!arr(Store.listar(emp, ENT_PROC)).some(function (x) { return x.id === F.DEMO_PROC_ID; })) Store.salvar(emp, ENT_PROC, F.processoExemplo(agoraLocal()));
+var uid = usuario().id;
+if (!arr(Store.listar(emp, ENT_PAP)).some(function (x) { return x.usuarioId === uid; })) Store.salvar(emp, ENT_PAP, F.papeisDemo(uid));
+}
+} catch (e) { plano.erro = e && e.message ? e.message : String(e); }
+return plano;
+}
+global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao };
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/tour360.js ==== */
@@ -57684,7 +60177,7 @@ var ENTIDADES = [
 "marm_precos", "marm_propostas",
 "remun_param", "remun_apur",
 "pp_config", "pp_lanc", "pp_oc", "pp_fech",
-"cplpro_processos", "cplpro_papeis",
+"cplpro_processos", "cplpro_papeis", "cplpro_modelos",
 "portal_padrao",
 "precosinsumos",
 "perfil_impl",
@@ -59984,7 +62477,10 @@ this._demo = true;
 this.tela = "editor";
 this.aba = aba;
 try { if (typeof DemoGestao !== "undefined") DemoGestao.seed({ obra: _obraNome }); } catch (e) {}
+var _plCpl = null;
+try { if (typeof CplproUI !== "undefined" && CplproUI.demonstracao) _plCpl = CplproUI.demonstracao(qs); } catch (eCpl) {}
 var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
+if (!vw && _plCpl && _plCpl.aplicar) vw = "cplpro";
 var vwAcao = (vw && !this.viewValida(vw) && this.VIEW_ACOES[vw]) ? vw : null;
 if (vw && !this.viewValida(vw)) vw = null;
 if (vw && vw !== "orcamentos" && typeof Gestao !== "undefined") { this.view = vw; this.tela = "gestao"; }
@@ -61437,6 +63933,7 @@ case "fechar-valor": this.fecharValor(); break;
 case "fechar-desfazer": this.fecharDesfazer(); break;
 case "lic-desconto": this.licitacaoDesconto(); break;
 case "lic-pacote": this.licitacaoPacote(); break;
+case "orc-ref": if (typeof OrcRefUI !== "undefined") OrcRefUI.abrir(this.orcAtual); break;
 case "lic-desconto-desfazer": this.licitacaoDescontoDesfazer(); break;
 case "lic-desconto-itens": this.licitacaoDescontoItens(); break;
 case "lic-desconto-itens-desfazer": this.licitacaoDescontoItensDesfazer(); break;

@@ -288,9 +288,22 @@ var Perfis = (function () {
        dúvida resolve ao contrário: mostrar o módulo de outro cliente não
        ajuda ninguém e entrega tela que não faz sentido na operação de quem
        está olhando. */
+  /* ⚠ MÓDULO SOB DEMANDA LIBERADO PELA LICENÇA. A chave pode trazer `modulosExtras` (server/modulos-extras.js, via
+     Licenca.modulosExtras()): a RA e o parceiro de licitações veem o CPLPRO JUNTO com tudo, em QUALQUER perfil (completo
+     inclusive; perfil restrito também). Só vale para SOB_DEMANDA — o extra nunca abre módulo do produto que o perfil esconde
+     (esconder foi escolha da conta). Revogado no servidor, a lista desce e o módulo some. Sem Licenca ou sem lista: nada muda. */
+  function _extraPelaLicenca(s) {
+    if (!_sobDemanda(s)) return false;
+    try {
+      var L = (typeof Licenca !== "undefined") ? Licenca : null;
+      return !!(L && typeof L.modulosExtras === "function" && L.modulosExtras().indexOf(s) > -1);
+    } catch (e) { return false; }
+  }
+
   function permite(id) {
     var s = String(id);
     if (_previaFechada(s)) return false;
+    if (_extraPelaLicenca(s)) return true;
     try {
       var libs = modulosLiberados();
       if (!libs) return !_sobDemanda(s);        // perfil completo

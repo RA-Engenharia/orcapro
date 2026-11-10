@@ -308,11 +308,36 @@
       var e = (info && info.exp) || 0;
       return (e > 0 && Number(l.renovadaAte) > e) ? Number(l.renovadaAte) : e;
     },
+    /* ===== MÓDULOS LIBERADOS POR CHAVE (ex.: o CPLPRO da prefeitura) =====
+       O servidor (server/modulos-extras.js) manda `modulos` no /api/ativar. Guardado em `modulosServidor`.
+       ⚠ AO CONTRÁRIO DO TIER, ESTE PODE DESCER: o servidor mandou a lista sem o módulo, ele sai (revogar tem de
+         funcionar). Campo AUSENTE na resposta = servidor antigo que não conhece o contrato: mantém o último.
+       ⚠ Offline, vale o último dentro da MESMA carência da licença (GRACE_MS); passada a carência sem revalidar,
+         o módulo some junto com a licença. Nunca é gravado em nuvem: é fato desta licença neste aparelho. */
+    _aplicarModulos: function (l, d) {
+      if (!d || !Array.isArray(d.modulos)) return false;
+      var antes = JSON.stringify(l.modulosServidor || null), novo = [];
+      d.modulos.forEach(function (m) { m = String(m || "").trim().toLowerCase(); if (m && novo.indexOf(m) < 0) novo.push(m); });
+      l.modulosServidor = novo;
+      return JSON.stringify(novo) !== antes;
+    },
+    modulosExtras: function () {
+      try {
+        var l = this._ler() || {};
+        if (!l.chave || !l.verificado || !Array.isArray(l.modulosServidor) || !l.modulosServidor.length) return [];
+        var info = this._lerExpDe(l.chave), expEf = this._expEfetiva(l, info);
+        if (expEf && expEf < agora()) return [];                         // licença vencida: o extra vence junto
+        if (l.deviceId && l.deviceId !== this.deviceId()) return [];     // outra máquina
+        if (!(agora() < (l.validadoEm || 0) + GRACE_MS)) return [];      // carência vencida: só volta revalidando
+        if (this._suspensaPorCobranca(l.chave)) return [];
+        return l.modulosServidor.slice();
+      } catch (e) { return []; }
+    },
     _ativarLocal: function (chave, v, verificado) {
       var l = this._ler() || {}, nova = String(chave).trim();
       /* chave NOVA: o que o servidor disse sobre a anterior (tipo de licença,
          vagas, aparelhos) não vale para esta. O tierServidor segue a regra dele. */
-      if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; }
+      if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; delete l.modulosServidor; }
       l.chave = nova; l.email = v.email; l.expira = v.expira;
       /* o que o SERVIDOR disse — guardado para o status() poder subir o tier
          da chave. Nunca desce: ver _maiorTier. */
@@ -321,6 +346,7 @@
       l.verificado = !!verificado; if (verificado) l.validadoEm = agora();
       this._aplicarEquipe(l, v);
       this._aplicarRenovacao(l, v);
+      this._aplicarModulos(l, v);
       this._gravar(l);
     },
     // Ativação ONLINE obrigatória p/ licenças v2: o servidor assina + trava o dispositivo (sem furo offline).
@@ -353,7 +379,8 @@
             // e é também por aqui que a licença independente chega, e que o upgrade a libera
             var mudou = self._aplicarEquipe(l, d);
             var mudouRen = self._aplicarRenovacao(l, d);   // a renovação chega por aqui, na mesma chave
-            self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, tipoLicenca: l.tipoLicenca || "" });
+            var mudouMod = self._aplicarModulos(l, d);     // módulos por chave: chega E sai por aqui (revogar funciona)
+            self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, mudouModulos: mudouMod, tipoLicenca: l.tipoLicenca || "" });
           }
           else if (d && d.bloqueado) { try { localStorage.removeItem(KEY); } catch (e) {} cb({ ok: false, bloqueado: true, erro: d.erro }); }
           else {

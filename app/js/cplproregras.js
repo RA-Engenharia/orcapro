@@ -65,6 +65,35 @@
     outros:                  { nome: "Outros", disciplina: "Não classificado", prioridade: 0, regex: null, extensoes: [] }
   };
 
+  /* ---------- ACERVO PELO TEXTO DO PDF (10/11/2026) ----------
+   * Quando o NOME do arquivo não basta ("Documento 7.pdf"), o sistema lê o texto das páginas 1 e 2 do PDF e procura as
+   * frases que o carimbo e o corpo de cada tipo de documento trazem. Cada frase vale um peso (frase longa e exclusiva = 3;
+   * palavra que também aparece em prosa = 1) e o tipo só é sugerido com soma >= LIMITE_TEXTO: uma palavra solta
+   * ("estrutura", "art", "ele") NUNCA classifica sozinha — é para isso que as regras de nome, com abreviaturas, não servem
+   * aqui. O texto chega JÁ LIDO (este arquivo é só dado); o resultado é sempre confiança baixa: a pessoa confirma. As frases
+   * estão sem acento e em minúsculas (o texto é normalizado antes). */
+  var LIMITE_TEXTO = 3;
+  var ACERVO_TEXTO = {
+    projeto_arquitetonico:   [["planta baixa", 3], ["projeto arquitetonico", 3], ["planta de situacao", 2], ["planta de cobertura", 2], ["fachada", 1], ["fachadas", 1], ["cortes e fachadas", 3], ["planta de layout", 2], ["quadro de esquadrias", 2]],
+    projeto_estrutural:      [["projeto estrutural", 3], ["planta de formas", 3], ["forma do pavimento", 3], ["formas e armacao", 3], ["detalhamento de armacao", 3], ["relacao do aco", 3], ["resumo do aco", 3], ["armacao de vigas", 3], ["armacao de pilares", 3], ["lajes", 1], ["pilares", 1], ["vigas", 1]],
+    projeto_fundacao:        [["projeto de fundacao", 3], ["projeto de fundacoes", 3], ["planta de locacao de pilares", 3], ["locacao das estacas", 3], ["locacao de estacas", 3], ["blocos de coroamento", 3], ["sapatas", 1], ["estacas", 1], ["baldrames", 1], ["planta de fundacao", 3]],
+    projeto_hidrossanitario: [["projeto hidrossanitario", 3], ["instalacoes hidrossanitarias", 3], ["instalacoes hidraulicas", 3], ["agua fria", 2], ["esgoto sanitario", 3], ["rede de esgoto", 2], ["instalacoes sanitarias", 3], ["agua quente", 1]],
+    projeto_eletrico:        [["projeto eletrico", 3], ["instalacoes eletricas", 3], ["quadro de cargas", 3], ["diagrama unifilar", 3], ["luminotecnico", 3], ["spda", 2], ["sistema de protecao contra descargas", 3], ["cabeamento estruturado", 3]],
+    projeto_drenagem:        [["projeto de drenagem", 3], ["drenagem pluvial", 3], ["galerias pluviais", 3], ["boca de lobo", 3], ["bocas de lobo", 3], ["sarjeta", 1], ["bueiro", 2]],
+    projeto_pavimentacao:    [["projeto de pavimentacao", 3], ["secao tipo", 2], ["pavimento flexivel", 3], ["perfil longitudinal", 2], ["terraplenagem", 2], ["camadas do pavimento", 3], ["cbuq", 2]],
+    memorial_descritivo:     [["memorial descritivo", 3], ["memorial de especificacoes", 3], ["descricao do projeto", 1], ["memorial tecnico", 2]],
+    especificacao_tecnica:   [["especificacoes tecnicas", 3], ["especificacao tecnica", 3], ["caderno de encargos", 3], ["caderno de especificacoes", 3]],
+    sondagem:                [["sondagem a percussao", 3], ["boletim de sondagem", 3], ["sondagem spt", 3], ["perfil individual de sondagem", 3], ["sondagem", 2], ["nspt", 2], ["spt", 1], ["nivel d agua", 1], ["ensaio de penetracao", 2]],
+    topografia:              [["levantamento planialtimetrico", 3], ["levantamento topografico", 3], ["planta planialtimetrica", 3], ["planialtimetrico", 2], ["topografico", 1], ["georreferenciamento", 2], ["curvas de nivel", 2]],
+    orcamento_planilha:      [["planilha orcamentaria", 3], ["orcamento sintetico", 3], ["orcamento analitico", 3], ["composicao de custos", 3], ["curva abc", 2], ["bdi", 1], ["sinapi", 1]],
+    cronograma:              [["cronograma fisico financeiro", 3], ["cronograma fisico-financeiro", 3], ["cronograma de obra", 3], ["cronograma fisico", 3]],
+    art_rrt:                 [["anotacao de responsabilidade tecnica", 3], ["registro de responsabilidade tecnica", 3], ["termo de responsabilidade tecnica", 3], ["art de obra ou servico", 3], ["art de projeto", 3], ["conselho regional de engenharia", 1], ["crea", 1], ["conselho de arquitetura e urbanismo", 1]],
+    licenca_ambiental:       [["licenca ambiental", 3], ["licenca previa", 3], ["licenca de instalacao", 3], ["licenca de operacao", 3], ["outorga de direito de uso", 3], ["autorizacao de supressao", 3]],
+    alvara_aprovacao:        [["alvara de construcao", 3], ["alvara de execucao", 3], ["alvara de aprovacao", 3], ["aprovacao de projeto", 2], ["habite se", 2], ["auto de vistoria do corpo de bombeiros", 3], ["avcb", 2]],
+    matricula_imovel:        [["matricula do imovel", 3], ["registro de imoveis", 2], ["oficial de registro de imoveis", 3], ["certidao de matricula", 3], ["certidao de inteiro teor", 3], ["escritura publica", 2]],
+    laudo:                   [["laudo tecnico", 3], ["laudo de vistoria", 3], ["laudo de inspecao", 3], ["parecer tecnico", 2], ["relatorio de vistoria", 3], ["patologias", 1], ["manifestacoes patologicas", 3]]
+  };
+
   /* ---------- BIBLIOTECA DE RISCOS (texto da casa, curto; sugestão a conferir) ---------- */
   function risco(id, descricao, categoria, prob, impacto, alocacao, mitigacao) {
     return { id: id, descricao: descricao, categoria: categoria, prob: prob, impacto: impacto, alocacao: alocacao, mitigacao: mitigacao };
@@ -218,7 +247,10 @@
       id: "sp-capital-62100", nome: "São Paulo (capital) — Decreto Municipal 62.100/2022",
       fonte: "Decreto Municipal SP 62.100/2022, arts. 28 e 29 (FONTE PRIMÁRIA; texto lido em RA-Equipe\\orcapro\\pesquisas\\SP-Decreto-62100-2022-texto.txt)", conferir: false,
       ordem: [
-        { ordem: 1, tipo: "sistema_oficial", nome: "Tabela de Custos Unitários da SIURB (composição ≤ mediana do item, mais BDI de referência e encargos sociais)", bases: ["SIURB"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: "Decreto 62.100/2022, art. 28, caput" },
+        { ordem: 1, tipo: "sistema_oficial", nome: "Tabela de Custos Unitários da SIURB (composição ≤ mediana do item, mais BDI de referência e encargos sociais)", bases: ["SIURB", "SIURB_INFRA"], limite: "mediana", exigeDataHora: false, umaFonteBasta: true, fonte: "Decreto 62.100/2022, art. 28, caput",
+          /* 10/11/2026: a base REAL está no OrçaPRO (js/basescat.js: SIURB = Edificações, SIURB_INFRA = Infraestrutura Urbana; gerada por tools/converter-siurb.js
+             das planilhas oficiais, data-base julho/2026). O orçamento que usa os itens dessas bases já TEM a fonte 1: uma fonte basta (umaFonteBasta). */
+          baseNoApp: { SIURB: "SIURB Edificações", SIURB_INFRA: "SIURB Infraestrutura Urbana" }, dataBaseNoApp: "2026-07", paginaOficial: "https://prefeitura.sp.gov.br/web/obras/w/tabelas_de_custos/355179" },
         { ordem: 2, tipo: "outro_sistema", nome: "Outros sistemas de custos (composição ≤ mediana do item)", exigeDataHora: false, fonte: "Decreto 62.100/2022, art. 28, §1º, I",
           conferir: true, nota: "O decreto não diz se um único sistema basta; aqui conta como 1 preço e o mínimo de 3 aplica-se ao conjunto. Decisão do jurídico." },
         { ordem: 3, tipo: "midia", nome: "Pesquisa publicada em mídia especializada e sítios especializados ou de domínio amplo, com data e hora de acesso", exigeDataHora: true, fonte: "Decreto 62.100/2022, art. 28, §1º, II" },
@@ -234,9 +266,9 @@
   var VALIDADE_FONTE = { cotacao: "6 meses até a data prevista do edital", contratacao_similar: "1 ano até a data da pesquisa", midia: "exige data e hora de acesso" };
 
   /* ---------- PAPÉIS (RBAC do órgão) ---------- */
-  var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "ler_tudo", "ler_auditoria"];
+  var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "ler_tudo", "ler_auditoria"];
   var PAPEIS = {
-    admin_orgao:      { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "ler_tudo"] },
+    admin_orgao:      { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "ler_tudo"] },
     requisitante:     { nome: "Setor requisitante", acoes: ["criar_processo", "editar_dfd", "editar_acervo"] },
     engenharia:       { nome: "Engenharia / planejamento", acoes: ["editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr"] },
     cpl:              { nome: "Agente de contratação / comissão (CPL)", acoes: ["editar_parametros", "gerar_minuta", "enviar_juridico", "responder_ressalva", "analisar_propostas", "publicar"] },
@@ -250,13 +282,13 @@
     editar_orcamento: "editar o orçamento", editar_pesquisa: "editar a pesquisa de preços", editar_etp: "editar o ETP", editar_riscos: "editar os riscos",
     editar_tr: "editar o TR / projeto básico", editar_parametros: "editar os parâmetros do edital", gerar_minuta: "gerar a minuta", enviar_juridico: "enviar ao jurídico",
     emitir_parecer: "emitir parecer jurídico", responder_ressalva: "responder ressalva", aprovar_justificativa: "aprovar justificativa", autorizar_abertura: "autorizar a abertura",
-    publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins",
+    publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão",
     ler_tudo: "ler o processo inteiro", ler_auditoria: "ler a auditoria"
   };
 
   var CplproRegras = {
     versao: 1,
-    ACERVO_TIPOS: ACERVO_TIPOS, BIBLIOTECA_RISCOS: BIBLIOTECA_RISCOS, TODOS_RISCOS: todosRiscos(),
+    ACERVO_TIPOS: ACERVO_TIPOS, ACERVO_TEXTO: ACERVO_TEXTO, LIMITE_TEXTO: LIMITE_TEXTO, BIBLIOTECA_RISCOS: BIBLIOTECA_RISCOS, TODOS_RISCOS: todosRiscos(),
     TIPOS_OBJETO: TIPOS_OBJETO, PRAZO_PUBLICACAO: PRAZO_PUBLICACAO,
     ETP_ELEMENTOS: ETP_ELEMENTOS, ETP_FONTE: ETP_FONTE,
     PARAMETROS: PARAMETROS, PARAMETROS_ORDEM: PARAMETROS_ORDEM,

@@ -119,7 +119,7 @@
 
   function hash8(s) {
     var h = 5381, i, str = String(s);
-    for (i = 0; i < str.length; i++) { h = ((h << 5) + h + str.charCodeAt(i)) % 4294967296; }
+    for (i = 0; i < str.length; i++) { h = ((h << 5) + h + str.charCodeAt(i)) >>> 0; }   /* >>> 0: sem sinal. Com `%` o hash ia a negativo e o código saía «Processo -E18D4» (10/11/2026). O id é GRAVADO ao criar o processo (e o código exibido só recorta o id), então processo existente não muda; só os novos ids saem sem o sinal. */
     var x = h.toString(16);
     while (x.length < 8) x = "0" + x;
     return x;
@@ -283,27 +283,52 @@
     return RE_CACHE[id];
   }
 
+  /* Classificação PELO TEXTO (páginas 1 e 2 do PDF, já lidas por quem chama; este motor é puro). Soma o peso das frases
+     de carimbo de cada tipo (R.ACERVO_TEXTO); só sugere com soma >= R.LIMITE_TEXTO — palavra solta não classifica. */
+  var RE_TEXTO_CACHE = {};
+  function reFrase(f) {
+    if (!RE_TEXTO_CACHE[f]) RE_TEXTO_CACHE[f] = new RegExp("(^| )" + esc(f).replace(/ /g, " ") + "( |$)");
+    return RE_TEXTO_CACHE[f];
+  }
+  function classificarTexto(textoBruto) {
+    var t = normNome(String(textoBruto === undefined || textoBruto === null ? "" : textoBruto).substring(0, 60000)), melhor = null;
+    if (!t) return null;
+    Object.keys(R.ACERVO_TEXTO).forEach(function (id) {
+      var soma = 0, frases = [];
+      R.ACERVO_TEXTO[id].forEach(function (par) {
+        if (reFrase(par[0]).test(t)) { soma += par[1]; frases.push(par[0]); }
+      });
+      if (soma < R.LIMITE_TEXTO) return;
+      if (!melhor || soma > melhor.soma || (soma === melhor.soma && R.ACERVO_TIPOS[id].prioridade > R.ACERVO_TIPOS[melhor.tipo].prioridade)) melhor = { tipo: id, soma: soma, frases: frases };
+    });
+    return melhor;
+  }
+
   function classificarArquivo(arq) {
     var a = arq || {};
     var nomeBruto = String(a.nome === undefined || a.nome === null ? "" : a.nome);
     var ext = !vazio(a.ext) ? String(a.ext).replace(/^\./, "").toLowerCase() : (/\.([A-Za-z0-9]+)$/.exec(nomeBruto) ? /\.([A-Za-z0-9]+)$/.exec(nomeBruto)[1].toLowerCase() : "");
     var semExt = nomeBruto.replace(/\.[A-Za-z0-9]{1,5}$/, "");
-    var nome = normNome(semExt), texto = normNome(String(a.texto === undefined || a.texto === null ? "" : a.texto).substring(0, 3000));
+    var nome = normNome(semExt), porTexto = null;
     var rev = lerRevisao(nome);
     var base = rev.trecho ? nome.replace(rev.trecho, " ") : nome;
     var melhor = null;
     Object.keys(R.ACERVO_TIPOS).forEach(function (id) {
       var re = reTipo(id);
       if (!re) return;
-      var tipo = R.ACERVO_TIPOS[id], score = 0, motivo = null, mn = re.exec(nome), mt = re.exec(texto);
+      var tipo = R.ACERVO_TIPOS[id], score = 0, motivo = null, mn = re.exec(nome);
       if (mn) { score = 10 + mn[0].length / 100; motivo = "nome contém «" + mn[0] + "»"; }
-      else if (mt) { score = 4 + mt[0].length / 100; motivo = "texto do arquivo contém «" + mt[0] + "»"; }
       if (!score) return;
       if (tipo.extensoes.indexOf(ext) >= 0) score += 0.5;
       if (!melhor || score > melhor.score || (score === melhor.score && tipo.prioridade > R.ACERVO_TIPOS[melhor.tipo].prioridade)) {
         melhor = { tipo: id, score: score, motivo: motivo, doNome: !!mn };
       }
     });
+    /* o nome não bastou: o texto das páginas 1 e 2 do PDF decide (sempre confiança baixa — a pessoa confirma) */
+    if (!melhor && !vazio(a.texto)) {
+      porTexto = classificarTexto(a.texto);
+      if (porTexto) melhor = { tipo: porTexto.tipo, score: 4, motivo: "classificado pelo conteúdo do PDF (páginas 1 e 2): " + porTexto.frases.map(function (f) { return "«" + f + "»"; }).join(", "), doNome: false, doConteudo: true };
+    }
     if (!melhor && R.ACERVO_TIPOS.fotos.extensoes.indexOf(ext) >= 0) melhor = { tipo: "fotos", score: 1, motivo: "extensão de imagem", doNome: false };
     var tipoId = melhor ? melhor.tipo : "outros";
     var conf = !melhor ? "baixa" : (melhor.doNome && R.ACERVO_TIPOS[tipoId].extensoes.indexOf(ext) >= 0 ? "alta" : (melhor.doNome ? "media" : "baixa"));
@@ -311,6 +336,7 @@
       tipo: tipoId, disciplina: R.ACERVO_TIPOS[tipoId].disciplina,
       revisao: rev.revisao, revisaoNum: rev.revisaoNum, confianca: conf,
       motivo: melhor ? melhor.motivo : "nenhuma regra do acervo reconheceu o nome",
+      porConteudo: !!(melhor && melhor.doConteudo),
       nomeBase: base.replace(/\s+/g, " ").replace(/^ | $/g, ""), ext: ext
     };
   }
@@ -352,7 +378,7 @@
       var primeiro = sha ? q.documentos.filter(function (d) { return d.sha === sha && d.superadoMotivo !== "repetido"; })[0] : null;
       var doc = {
         id: id, nome: nome, sha: sha, tipo: c.tipo, disciplina: c.disciplina, revisao: c.revisao, revisaoNum: c.revisaoNum,
-        nomeBase: c.nomeBase, confianca: c.confianca, motivo: c.motivo,
+        nomeBase: c.nomeBase, confianca: c.confianca, motivo: c.motivo, porConteudo: c.porConteudo,
         rt: a && !vazio(a.rt) ? a.rt : null, origem: a && !vazio(a.origem) ? a.origem : null, data: a && !vazio(a.data) ? a.data : null,
         superadoPor: null, superadoMotivo: null
       };
@@ -381,7 +407,8 @@
    * ------------------------------------------------------------------ */
   function temOrigem(it) {
     var o = it && it.origem;
-    return !!(o && !vazio(o.arquivo) && !vazio(o.pagina));
+    /* leva F: quantidade lida de planilha (xlsx) tem origem em ARQUIVO + LINHA; de projeto em PDF, ARQUIVO + PÁGINA */
+    return !!(o && !vazio(o.arquivo) && (!vazio(o.pagina) || !vazio(o.linha)));
   }
   function pendenciasQuantitativos(p, itensOrcamento) {
     var itens = itensOrcamento !== undefined ? arr(itensOrcamento) : arr(p && p.quantitativos);
@@ -894,7 +921,7 @@
   var Cplpro = {
     PASSOS: PASSOS,
     novoProcesso: novoProcesso, progresso: progresso,
-    sugerirTipoObjeto: sugerirTipoObjeto, classificarArquivo: classificarArquivo,
+    sugerirTipoObjeto: sugerirTipoObjeto, classificarArquivo: classificarArquivo, classificarTexto: classificarTexto,
     adicionarDocumentos: adicionarDocumentos, checklistAcervo: checklistAcervo,
     pendenciasQuantitativos: pendenciasQuantitativos, quantitativosValidos: quantitativosValidos,
     etpCampos: etpCampos, riscosSugeridos: riscosSugeridos, nivelRisco: nivelRisco,

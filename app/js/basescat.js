@@ -217,6 +217,27 @@
       nota: "Competência híbrida declarada pelo próprio órgão: construção 01/26 com insumos 04/26."
     },
     {
+      /* SIURB (10/11/2026): a Tabela de Custos Unitários da Prefeitura de São Paulo, referência do regulamento sp-capital-62100 (CPLPRO).
+         Gerada por tools/converter-siurb.js a partir das planilhas oficiais (página e URLs no próprio arquivo). Um arquivo por regime,
+         como a SETOP; EDIFICAÇÕES e INFRAESTRUTURA são bases separadas (o mesmo código não é o mesmo serviço). */
+      id: "SIURB", nome: "SIURB Edificações", orgao: "Secretaria Municipal de Infraestrutura Urbana e Obras — Prefeitura de São Paulo",
+      regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
+      entrega: { local: { desonerada: "data/siurb-SP-current.json", onerada: "data/siurb-SP-onerada-current.json" },
+                 vps: { desonerada: "siurb-SP-current.json", onerada: "siurb-SP-onerada-current.json" } },
+      coleta: "manual", versaoPacote: "2026-07", itens: 2630, pesoMb: 0.43,
+      eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+      nota: "Data-base julho/2026 (publicada em 16/09/2026). Custo direto da tabela; a SIURB publica o BDI à parte."
+    },
+    {
+      id: "SIURB_INFRA", nome: "SIURB Infraestrutura Urbana", orgao: "Secretaria Municipal de Infraestrutura Urbana e Obras — Prefeitura de São Paulo",
+      regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
+      entrega: { local: { desonerada: "data/siurb-SP-infra-current.json", onerada: "data/siurb-SP-infra-onerada-current.json" },
+                 vps: { desonerada: "siurb-SP-infra-current.json", onerada: "siurb-SP-infra-onerada-current.json" } },
+      coleta: "manual", versaoPacote: "2026-07", itens: 864, pesoMb: 0.16,
+      eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+      nota: "Tabela de infraestrutura urbana (vias, drenagem, obras de arte), data-base julho/2026. Os códigos desta tabela NÃO são os da SIURB Edificações."
+    },
+    {
       /* nome de exibição: o IOPES foi extinto (LC 926/2019) e a tabela é do
          DER-ES; "antigo IOPES" fica para quem procura pelo nome de mercado.
          O id NÃO muda (ver Bases.META.IOPES) */
@@ -248,7 +269,7 @@
         vps: { onerada: "goinfra-GO-onerada-current.json", desonerada: "goinfra-GO-current.json" },
         rotaVps: "/goinfra/"
       },
-      chaveStatus: "goinfra", coleta: "cron", versaoPacote: "2025-12", itens: 566, pesoMb: 0.14,
+      chaveStatus: "goinfra", coleta: "cron", versaoPacote: "2026-04", itens: 567, pesoMb: 0.14,
       eixos: [
         /* ⚠ padrão 'onerada' — é o que App.carregarGoinfra usa hoje
            (app.js:2189: "padrão: SEM desoneração (o que o cliente usa)").
@@ -257,6 +278,40 @@
         { id: "preco", rotulo: "Preço", padrao: "direto", opcoes: [{ v: "direto", r: "Custo direto" }, { v: "comBDI", r: "Com BDI oficial" }] }
       ],
       nota: "Só a tabela rodoviária (terraplenagem, pavimentação e OAE). No detalhamento, os coeficientes são da EQUIPE POR HORA e o preço é por unidade de serviço — a soma dos insumos não fecha com o preço porque falta o divisor: a produção horária da equipe, que ainda não é coletada."
+    },
+    /* AGESUL-MS (10/11/2026, leva G1): Boletim de Preços sem BDI (SINAPI/AGESUL) de junho/2026, só PDF no portal; convertido por
+       tools/converter-bases-pdf.py (posição de cada palavra, material + mão de obra = total conferido linha a linha). Muitas linhas são
+       itens SINAPI recodificados pela AGESUL: só trazem o total (sem parcelas). */
+    {
+      id: "AGESUL", nome: "AGESUL", orgao: "Agência Estadual de Gestão de Empreendimentos — Mato Grosso do Sul",
+      regiao: "centro-oeste", uf: "MS", localRotulo: "Mato Grosso do Sul",
+      entrega: { local: { desonerada: "data/agesul-MS-current.json", onerada: "data/agesul-MS-onerada-current.json" },
+                 vps: { desonerada: "agesul-MS-current.json", onerada: "agesul-MS-onerada-current.json" } },
+      coleta: "manual", versaoPacote: "2026-06", itens: 1564, pesoMb: 0.4,
+      eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+      nota: "Boletim de Preços sem BDI de junho/2026 (publicado em 14/09/2026). O órgão só publica em PDF; o OrçaPRO converte o PDF e confere a soma de cada linha. Itens recodificados da SINAPI trazem só o total."
+    },
+    /* ---------------- Norte ---------------- */
+    /* SEDOP-PA (10/11/2026, leva G1): a SEDOP virou SEOP (Secretaria de Obras Públicas do Pará); o id continua SEDOP, que é o que o
+       mercado e o Bases.META já usam. Planilha Padrão de março/2026 (sem BDI), só SEM desoneração, só PDF. */
+    {
+      id: "SEDOP", nome: "SEDOP / SEOP-PA", orgao: "Secretaria de Estado de Obras Públicas do Pará (antiga SEDOP)",
+      regiao: "norte", uf: "PA", localRotulo: "Pará",
+      entrega: { local: "data/sedop-PA-onerada-current.json", vps: "sedop-PA-onerada-current.json" },
+      coleta: "manual", versaoPacote: "2026-03", itens: 1361, pesoMb: 0.18, eixos: [],
+      nota: "Planilha Padrão de março/2026 (sem BDI), SÓ sem desoneração (o órgão não publica a desonerada). A SEDOP passou a se chamar SEOP; o código dos itens é o da planilha oficial. O órgão só publica PDF; o OrçaPRO converte e confere."
+    },
+    /* ---------------- Sul ---------------- */
+    /* DER-PR (10/11/2026, leva G1): Referencial de Custos de agosto/2026, "Custo Referencial de Serviços (sem Bonificação)". PDF no portal.
+       O custo unitário NÃO inclui transporte (a tabela marca "A acrescer" em parte dos serviços). */
+    {
+      id: "DERPR", nome: "DER-PR", orgao: "Departamento de Estradas de Rodagem do Paraná",
+      regiao: "sul", uf: "PR", localRotulo: "Paraná",
+      entrega: { local: { desonerada: "data/derpr-PR-current.json", onerada: "data/derpr-PR-onerada-current.json" },
+                 vps: { desonerada: "derpr-PR-current.json", onerada: "derpr-PR-onerada-current.json" } },
+      coleta: "manual", versaoPacote: "2026-08", itens: 697, pesoMb: 0.11,
+      eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+      nota: "Referencial de Custos de agosto/2026, tabela de obras rodoviárias (data-base 31/08/2026). Em parte dos serviços o transporte vem \"a acrescer\" e não está no custo unitário. O órgão só publica PDF; o OrçaPRO converte e confere a soma de cada linha."
     },
     /* ---------------- autoral ---------------- */
     {
@@ -281,8 +336,6 @@
    * ------------------------------------------------------------------ */
   var AUSENTES = [
     { id: "SBC", nome: "SBC", orgao: "Sistema Brasileiro de Custos", regiao: "nacional", uf: "BR" },
-    { id: "SIURB", nome: "SIURB", orgao: "Secretaria de Infraestrutura Urbana e Obras — São Paulo", regiao: "sudeste", uf: "SP" },
-    { id: "SIURB_INFRA", nome: "SIURB Infra", orgao: "SIURB — tabela de infraestrutura", regiao: "sudeste", uf: "SP" },
     { id: "FDE", nome: "FDE", orgao: "Fundação para o Desenvolvimento da Educação — SP", regiao: "sudeste", uf: "SP" },
     { id: "CPOS", nome: "CPOS", orgao: "Companhia Paulista de Obras e Serviços", regiao: "sudeste", uf: "SP" },
     { id: "EMOP", nome: "EMOP", orgao: "Empresa de Obras Públicas do Estado do Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
@@ -291,10 +344,7 @@
     { id: "EMBASA", nome: "EMBASA", orgao: "Empresa Baiana de Águas e Saneamento", regiao: "nordeste", uf: "BA" },
     { id: "CAERN", nome: "CAERN", orgao: "Companhia de Águas e Esgotos do Rio Grande do Norte", regiao: "nordeste", uf: "RN" },
     { id: "COMPESA", nome: "COMPESA", orgao: "Companhia Pernambucana de Saneamento", regiao: "nordeste", uf: "PE" },
-    { id: "AGESUL", nome: "AGESUL", orgao: "Agência Estadual de Gestão de Empreendimentos — Mato Grosso do Sul", regiao: "centro-oeste", uf: "MS" },
-    { id: "AGETOP_CIVIL", nome: "AGETOP Civil", orgao: "GOINFRA — tabela de edificações", regiao: "centro-oeste", uf: "GO" },
-    { id: "SEDOP", nome: "SEDOP", orgao: "Secretaria de Estado de Desenvolvimento Urbano e Obras Públicas — Pará", regiao: "norte", uf: "PA" },
-    { id: "DERPR", nome: "DER-PR", orgao: "Departamento de Estradas de Rodagem do Paraná", regiao: "sul", uf: "PR" }
+    { id: "AGETOP_CIVIL", nome: "AGETOP Civil", orgao: "GOINFRA — tabela de edificações", regiao: "centro-oeste", uf: "GO" }
   ];
 
   function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }

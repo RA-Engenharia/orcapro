@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.276",
+versao: "1.2.277",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -2333,7 +2333,7 @@ var o = {};
 "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
 "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
 "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
-"pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis",
+"pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis", "cplpro_modelos",
 "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
 return o;
 })();
@@ -5636,9 +5636,17 @@ var lista = _comRequeridos(p.modulos);
 var fora = lista.filter(function (id) { return NUCLEO.indexOf(id) < 0; });
 return NUCLEO.concat(fora);
 }
+function _extraPelaLicenca(s) {
+if (!_sobDemanda(s)) return false;
+try {
+var L = (typeof Licenca !== "undefined") ? Licenca : null;
+return !!(L && typeof L.modulosExtras === "function" && L.modulosExtras().indexOf(s) > -1);
+} catch (e) { return false; }
+}
 function permite(id) {
 var s = String(id);
 if (_previaFechada(s)) return false;
+if (_extraPelaLicenca(s)) return true;
 try {
 var libs = modulosLiberados();
 if (!libs) return !_sobDemanda(s);
@@ -6632,6 +6640,10 @@ SEINFRA: { label: "SEINFRA-CE", cor: "seinfra" },
 SETOP: { label: "SETOP-MG", cor: "setop" },
 ORSE: { label: "ORSE-SE", cor: "orse" },
 SUDECAP: { label: "SUDECAP-BH", cor: "sudecap" },
+SIURB: { label: "SIURB-SP", cor: "siurb" },
+SIURB_INFRA: { label: "SIURB-SP Infra", cor: "siurb" },
+AGESUL: { label: "AGESUL-MS", cor: "agesul" },
+DERPR: { label: "DER-PR", cor: "derpr" },
 SBC: { label: "SBC", cor: "sbc" },
 EMOP: { label: "EMOP-RJ", cor: "emop" },
 CPOS: { label: "CPOS-SP", cor: "cpos" },
@@ -7173,6 +7185,24 @@ eixos: [],
 nota: "Competência híbrida declarada pelo próprio órgão: construção 01/26 com insumos 04/26."
 },
 {
+id: "SIURB", nome: "SIURB Edificações", orgao: "Secretaria Municipal de Infraestrutura Urbana e Obras — Prefeitura de São Paulo",
+regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
+entrega: { local: { desonerada: "data/siurb-SP-current.json", onerada: "data/siurb-SP-onerada-current.json" },
+vps: { desonerada: "siurb-SP-current.json", onerada: "siurb-SP-onerada-current.json" } },
+coleta: "manual", versaoPacote: "2026-07", itens: 2630, pesoMb: 0.43,
+eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+nota: "Data-base julho/2026 (publicada em 16/09/2026). Custo direto da tabela; a SIURB publica o BDI à parte."
+},
+{
+id: "SIURB_INFRA", nome: "SIURB Infraestrutura Urbana", orgao: "Secretaria Municipal de Infraestrutura Urbana e Obras — Prefeitura de São Paulo",
+regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
+entrega: { local: { desonerada: "data/siurb-SP-infra-current.json", onerada: "data/siurb-SP-infra-onerada-current.json" },
+vps: { desonerada: "siurb-SP-infra-current.json", onerada: "siurb-SP-infra-onerada-current.json" } },
+coleta: "manual", versaoPacote: "2026-07", itens: 864, pesoMb: 0.16,
+eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+nota: "Tabela de infraestrutura urbana (vias, drenagem, obras de arte), data-base julho/2026. Os códigos desta tabela NÃO são os da SIURB Edificações."
+},
+{
 id: "IOPES", nome: "DER-ES Edificações (antigo IOPES)", orgao: "Departamento de Edificações e de Rodovias do Espírito Santo — DER-ES (sucessor do IOPES, LC 926/2019)",
 regiao: "sudeste", uf: "ES", localRotulo: "Espírito Santo",
 entrega: { local: "data/iopes-ES-current.json", vps: "iopes-ES-current.json" },
@@ -7199,12 +7229,37 @@ local: { onerada: "data/goinfra-GO-onerada-current.json", desonerada: "data/goin
 vps: { onerada: "goinfra-GO-onerada-current.json", desonerada: "goinfra-GO-current.json" },
 rotaVps: "/goinfra/"
 },
-chaveStatus: "goinfra", coleta: "cron", versaoPacote: "2025-12", itens: 566, pesoMb: 0.14,
+chaveStatus: "goinfra", coleta: "cron", versaoPacote: "2026-04", itens: 567, pesoMb: 0.14,
 eixos: [
 { id: "regime", rotulo: "Regime", padrao: "onerada", tipo: "arquivo", opcoes: [{ v: "onerada", r: "Onerada" }, { v: "desonerada", r: "Desonerada" }] },
 { id: "preco", rotulo: "Preço", padrao: "direto", opcoes: [{ v: "direto", r: "Custo direto" }, { v: "comBDI", r: "Com BDI oficial" }] }
 ],
 nota: "Só a tabela rodoviária (terraplenagem, pavimentação e OAE). No detalhamento, os coeficientes são da EQUIPE POR HORA e o preço é por unidade de serviço — a soma dos insumos não fecha com o preço porque falta o divisor: a produção horária da equipe, que ainda não é coletada."
+},
+{
+id: "AGESUL", nome: "AGESUL", orgao: "Agência Estadual de Gestão de Empreendimentos — Mato Grosso do Sul",
+regiao: "centro-oeste", uf: "MS", localRotulo: "Mato Grosso do Sul",
+entrega: { local: { desonerada: "data/agesul-MS-current.json", onerada: "data/agesul-MS-onerada-current.json" },
+vps: { desonerada: "agesul-MS-current.json", onerada: "agesul-MS-onerada-current.json" } },
+coleta: "manual", versaoPacote: "2026-06", itens: 1564, pesoMb: 0.4,
+eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+nota: "Boletim de Preços sem BDI de junho/2026 (publicado em 14/09/2026). O órgão só publica em PDF; o OrçaPRO converte o PDF e confere a soma de cada linha. Itens recodificados da SINAPI trazem só o total."
+},
+{
+id: "SEDOP", nome: "SEDOP / SEOP-PA", orgao: "Secretaria de Estado de Obras Públicas do Pará (antiga SEDOP)",
+regiao: "norte", uf: "PA", localRotulo: "Pará",
+entrega: { local: "data/sedop-PA-onerada-current.json", vps: "sedop-PA-onerada-current.json" },
+coleta: "manual", versaoPacote: "2026-03", itens: 1361, pesoMb: 0.18, eixos: [],
+nota: "Planilha Padrão de março/2026 (sem BDI), SÓ sem desoneração (o órgão não publica a desonerada). A SEDOP passou a se chamar SEOP; o código dos itens é o da planilha oficial. O órgão só publica PDF; o OrçaPRO converte e confere."
+},
+{
+id: "DERPR", nome: "DER-PR", orgao: "Departamento de Estradas de Rodagem do Paraná",
+regiao: "sul", uf: "PR", localRotulo: "Paraná",
+entrega: { local: { desonerada: "data/derpr-PR-current.json", onerada: "data/derpr-PR-onerada-current.json" },
+vps: { desonerada: "derpr-PR-current.json", onerada: "derpr-PR-onerada-current.json" } },
+coleta: "manual", versaoPacote: "2026-08", itens: 697, pesoMb: 0.11,
+eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
+nota: "Referencial de Custos de agosto/2026, tabela de obras rodoviárias (data-base 31/08/2026). Em parte dos serviços o transporte vem \"a acrescer\" e não está no custo unitário. O órgão só publica PDF; o OrçaPRO converte e confere a soma de cada linha."
 },
 {
 id: "PROPRIA", nome: "Suas composições", orgao: "Base autoral da sua empresa",
@@ -7215,8 +7270,6 @@ nota: "Nasce vazia e cresce com o que você cria. Não vem de órgão nenhum e n
 ];
 var AUSENTES = [
 { id: "SBC", nome: "SBC", orgao: "Sistema Brasileiro de Custos", regiao: "nacional", uf: "BR" },
-{ id: "SIURB", nome: "SIURB", orgao: "Secretaria de Infraestrutura Urbana e Obras — São Paulo", regiao: "sudeste", uf: "SP" },
-{ id: "SIURB_INFRA", nome: "SIURB Infra", orgao: "SIURB — tabela de infraestrutura", regiao: "sudeste", uf: "SP" },
 { id: "FDE", nome: "FDE", orgao: "Fundação para o Desenvolvimento da Educação — SP", regiao: "sudeste", uf: "SP" },
 { id: "CPOS", nome: "CPOS", orgao: "Companhia Paulista de Obras e Serviços", regiao: "sudeste", uf: "SP" },
 { id: "EMOP", nome: "EMOP", orgao: "Empresa de Obras Públicas do Estado do Rio de Janeiro", regiao: "sudeste", uf: "RJ" },
@@ -7225,10 +7278,7 @@ var AUSENTES = [
 { id: "EMBASA", nome: "EMBASA", orgao: "Empresa Baiana de Águas e Saneamento", regiao: "nordeste", uf: "BA" },
 { id: "CAERN", nome: "CAERN", orgao: "Companhia de Águas e Esgotos do Rio Grande do Norte", regiao: "nordeste", uf: "RN" },
 { id: "COMPESA", nome: "COMPESA", orgao: "Companhia Pernambucana de Saneamento", regiao: "nordeste", uf: "PE" },
-{ id: "AGESUL", nome: "AGESUL", orgao: "Agência Estadual de Gestão de Empreendimentos — Mato Grosso do Sul", regiao: "centro-oeste", uf: "MS" },
-{ id: "AGETOP_CIVIL", nome: "AGETOP Civil", orgao: "GOINFRA — tabela de edificações", regiao: "centro-oeste", uf: "GO" },
-{ id: "SEDOP", nome: "SEDOP", orgao: "Secretaria de Estado de Desenvolvimento Urbano e Obras Públicas — Pará", regiao: "norte", uf: "PA" },
-{ id: "DERPR", nome: "DER-PR", orgao: "Departamento de Estradas de Rodagem do Paraná", regiao: "sul", uf: "PR" }
+{ id: "AGETOP_CIVIL", nome: "AGETOP Civil", orgao: "GOINFRA — tabela de edificações", regiao: "centro-oeste", uf: "GO" }
 ];
 function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }
 var HISTORICO = {
@@ -14739,7 +14789,8 @@ bt("config-orc", "dados", "Dados", ' title="Cliente, obra, endereço, validade e
 bt("parametros-orc", "parametros", "Parâmetros", ' title="Arredondamento, encargos, incidência do BDI, categoria e licitação"'),
 bt("reimportar-excel", "reimportar", "Reimportar", ' title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado"'),
 bt("cenarios", "cenarios", "Comparar cenários"),
-bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"')
+bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"'),
+bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"')
 ])
 .concat(aprov.botoes || [])
 .concat(vazio ? [bProp.replace(' primary"', '"')] : [])
@@ -56938,7 +56989,7 @@ m = /^(\d{2})\/(\d{4})$/.exec(t);
 return m ? (m[2] + "-" + m[1]) : "";
 },
 FONTES_PROPRIAS: { CCU: 1, CPU: 1, COT: 1 },
-FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" } },
+FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" } },
 lerBasesExigidas: function (lista, contagem) {
 var self = this, out = [], vistos = {};
 (Array.isArray(lista) ? lista : []).forEach(function (b) {
@@ -59927,6 +59978,1130 @@ _util: { fmt: fmt, R: R, norm: norm, parecido: parecido, arr: arr, prazoExt: pra
 };
 global.LicitacaoDocs = LicitacaoDocs;
 if (typeof module !== "undefined" && module.exports) module.exports = LicitacaoDocs;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orcref.js ==== */
+try {
+(function (global) {
+"use strict";
+function _dep(nome) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") {
+var arq = { Orcamento: "orcamento", Arred: "arredondamento", Bdi: "bdi", Util: "util", EncargosTab: "encargostab", LicitacaoDocs: "licitacaodocs", Bases: "bases", Analitico: "analitico", Licitacao: "licitacao" }[nome];
+if (arq) { try { var m = require("./" + arq + ".js"); if (m) return m; } catch (e) {} }
+}
+return null;
+}
+function s(v) { return String(v == null ? "" : v).trim(); }
+function nm(v) { var u = _dep("Util"); return u && u.num ? u.num(v) : (Number(v) || 0); }
+function esc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function arr(x, c) { var f = Math.pow(10, c), sg = x < 0 ? -1 : 1; return sg * Math.round(Math.abs(x) * f + 1e-9) / f; }
+function fmt(n, c) {
+n = Number(n) || 0;
+var t = arr(n, c).toFixed(c), neg = t.charAt(0) === "-";
+if (neg) t = t.slice(1);
+var p = t.split(".");
+p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+return (neg ? "-" : "") + p.join(",");
+}
+function R(n) { return "R$ " + fmt(n, 2); }
+function P(n) { return fmt(n, 2) + "%"; }
+function cent(x) { return Math.round(x * 100 + (x < 0 ? -1e-9 : 1e-9)); }
+function norm(t) {
+var x = String(t == null ? "" : t).toUpperCase();
+try { x = x.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+return x.replace(/[^A-Z0-9]/g, "");
+}
+function lista(a) { return Array.isArray(a) ? a : []; }
+function pr(rotulo) { return "[PREENCHER: " + rotulo + "]"; }
+function campo(v, rotulo) { return s(v) ? esc(v) : '<span class="ld-p0">' + esc(pr(rotulo)) + '</span>'; }
+var CATS = ["MO", "MAT", "EQ", "OUTROS"];
+var CAT_ROT = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento", OUTROS: "Serviço/auxiliar" };
+function catDe(i) {
+if (i && String(i.tipo || "").toUpperCase() === "COMPOSICAO") return "OUTROS";
+var c = String((i && i.categoria) || "").toUpperCase();
+return (c === "MO" || c === "MAT" || c === "EQ") ? c : "OUTROS";
+}
+var CLASSES = { A: 80, B: 95 };
+function fonteChave(it) {
+var f = s(it.baseFonte || it.origem).toUpperCase();
+return (!f || f === "PROPRIO" || f === "PROPRIA") ? "PROPRIA" : f;
+}
+function rotuloFonte(chave) {
+if (chave === "PROPRIA") return "Própria";
+var B = _dep("Bases");
+return (B && B.rotuloCurto) ? B.rotuloCurto(chave) : chave;
+}
+function temBaseOficial(it) {
+var chave = fonteChave(it), B = _dep("Bases");
+if (chave === "PROPRIA" || chave === "OUTRA" || !s(it.codigo)) return false;
+if (B && B.META) return !!B.META[chave];
+return /^(SINAPI|SICRO|SIURB|SEINFRA|SETOP|SUDECAP|ORSE|IOPES|AGESUL|DERPR|SEDOP|AGETOP|CDHU|CPOS|FDE|EMOP|DEINFRA|DER)/.test(chave);
+}
+function ehSinapi(chave) { return chave === "SINAPI" || chave === "SINAPI_DES"; }
+function compTexto(c) {
+var t = s(c), m = /^(\d{4})-(\d{2})/.exec(t);
+if (m) return m[2] + "/" + m[1];
+return t;
+}
+function alocarCentavos(raws, alvo) {
+var n = raws.length, base = [], soma = 0, i;
+for (i = 0; i < n; i++) { base.push(cent(raws[i])); soma += base[i]; }
+var dif = cent(alvo) - soma;
+if (dif !== 0 && n) {
+var ord = raws.map(function (x, k) { return { k: k, r: x * 100 - base[k] }; });
+ord.sort(function (a, b) { return dif > 0 ? (b.r - a.r) : (a.r - b.r); });
+for (i = 0; i < Math.abs(dif); i++) base[ord[i % n].k] += dif > 0 ? 1 : -1;
+}
+return base.map(function (c) { return c / 100; });
+}
+function curvaABC(itens, total) {
+var lst = itens.map(function (x, k) { return { x: x, k: k }; });
+lst.sort(function (a, b) { return (b.x.valor - a.x.valor) || (a.k - b.k); });
+var t = total > 0 ? total : lst.reduce(function (a, o) { return a + o.x.valor; }, 0);
+var acum = 0, resumo = { A: { qtd: 0, valor: 0, pct: 0 }, B: { qtd: 0, valor: 0, pct: 0 }, C: { qtd: 0, valor: 0, pct: 0 } };
+var linhas = lst.map(function (o) {
+acum += o.x.valor;
+var pct = t > 0 ? o.x.valor / t * 100 : 0, ac = t > 0 ? acum / t * 100 : 0;
+var cl = ac <= CLASSES.A + 1e-9 ? "A" : (ac <= CLASSES.B + 1e-9 ? "B" : "C");
+resumo[cl].qtd++; resumo[cl].valor += o.x.valor;
+var r = {}; for (var k in o.x) r[k] = o.x[k];
+r.pct = pct; r.acum = ac; r.classe = cl;
+return r;
+});
+["A", "B", "C"].forEach(function (c) { resumo[c].valor = arr(resumo[c].valor, 2); resumo[c].pct = t > 0 ? resumo[c].valor / t * 100 : 0; });
+return { linhas: linhas, total: arr(t, 2), resumo: resumo };
+}
+function composicaoDe(it, orc, opcoes) {
+var lst = null, origem = "";
+if (Array.isArray(it.insumos) && it.insumos.length) { lst = it.insumos; origem = "composição gravada no item"; }
+else if (opcoes.composicoes && opcoes.composicoes[String(it.codigo)] && Array.isArray(opcoes.composicoes[String(it.codigo)].insumos)) {
+lst = opcoes.composicoes[String(it.codigo)].insumos; origem = s(opcoes.composicoes[String(it.codigo)].fonte) || "composição informada";
+} else if (ehSinapi(fonteChave(it))) {
+var An = _dep("Analitico");
+if (An && An.carregado && typeof An.obter === "function" && s(An.uf).toUpperCase() === s(orc.uf).toUpperCase()) {
+var reg = An.obter(it.codigo);
+if (reg && Array.isArray(reg.insumos) && reg.insumos.length) { lst = reg.insumos; origem = "analítico SINAPI " + s(An.uf) + " " + compTexto(An.competencia); }
+}
+}
+if (!lst) return null;
+var ins = lst.map(function (x) {
+var co = nm(x.coeficiente), cu = nm(x.custoUnitario);
+return { codigo: s(x.codigo), descricao: s(x.descricao), unidade: s(x.unidade), fonte: s(x.fonte), coef: co, cu: cu, ct: co * cu, cat: catDe(x), auxiliar: String(x.tipo || "").toUpperCase() === "COMPOSICAO" };
+});
+return { insumos: ins, origem: origem };
+}
+var BDI_PARCELAS = [["AC", "Administração central"], ["S", "Seguros"], ["R", "Riscos"], ["G", "Garantias"], ["DF", "Despesas financeiras"], ["L", "Lucro"], ["I", "Tributos sobre o faturamento (PIS, COFINS, ISS, CPRB)"]];
+function bdiQuadro(params, pctAplicado, tipoObra, tipoInformado) {
+var B = _dep("Bdi"), fx = B && B.FAIXAS_TCU ? B.FAIXAS_TCU[tipoObra] : null;
+var q = { pct: pctAplicado, tipoObra: tipoObra, tipoObraRotulo: fx ? fx.label : tipoObra, tipoInformado: !!tipoInformado, faixa: fx ? { min: fx.min, max: fx.max } : null,
+aviso: B && B.avisoFaixa ? B.avisoFaixa(pctAplicado, tipoObra) : null, parcelas: null, calculado: null, incoerente: false, formula: "BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1" };
+if (params && typeof params === "object" && BDI_PARCELAS.some(function (p) { return nm(params[p[0]]) > 0; })) {
+q.parcelas = BDI_PARCELAS.map(function (p) { return { sigla: p[0], nome: p[1], pct: nm(params[p[0]]) }; });
+q.calculado = B.calcular(params);
+q.incoerente = Math.abs(q.calculado - pctAplicado) > 0.05;
+}
+return q;
+}
+function encargosDe(orc, cfg, usaSinapi, opcoes, pend) {
+var ET = _dep("EncargosTab"), LD = _dep("LicitacaoDocs");
+var tipo = s(cfg.encargos && cfg.encargos.tipo) === "nao_desonerado" ? "nao_desonerado" : "desonerado";
+if (typeof orc.desonerado === "boolean") tipo = orc.desonerado ? "desonerado" : "nao_desonerado";
+var out = { ok: false, regime: tipo, regimeRotulo: tipo === "desonerado" ? "desonerado" : "não desonerado", uf: s(orc.uf).toUpperCase(), declarado: null, avisos: [], outroRegime: null };
+var decH = nm(cfg.encargos && cfg.encargos.horista), decM = nm(cfg.encargos && cfg.encargos.mensalista);
+if (decH > 0 || decM > 0) out.declarado = { horista: decH, mensalista: decM };
+var tabela = opcoes.encargos || null;
+if (!tabela && usaSinapi && ET && ET.todas) {
+var cand = ET.todas().filter(function (t) { return t && ET.regimeDe(t.regime) === tipo && s(t.uf).toUpperCase() === out.uf; });
+cand.sort(function (a, b) { return s(b.competencia) < s(a.competencia) ? -1 : (s(b.competencia) > s(a.competencia) ? 1 : 0); });
+tabela = cand[0] || null;
+var outro = ET.todas().filter(function (t) { return t && ET.regimeDe(t.regime) !== tipo && s(t.uf).toUpperCase() === out.uf; })[0];
+if (outro) { var ot = ET.totaisDe(outro); out.outroRegime = { regime: ET.regimeDe(outro.regime) === "desonerado" ? "desonerado" : "não desonerado", horista: ot.horista, mensalista: ot.mensalista }; }
+}
+if (!tabela || !LD || !LD.parseEncargos) {
+out.motivo = !usaSinapi && !opcoes.encargos
+? "As bases usadas (fora da SINAPI) publicam encargos próprios que o OrçaPRO ainda não tem em tabela: informe a tabela oficial da base. Nenhum valor foi estimado."
+: "Não há tabela de encargos da base para a UF " + (out.uf || "(não informada)") + " no regime " + out.regimeRotulo + ". Nenhum valor foi estimado.";
+pend.bloqueios.push("Encargos sociais: " + out.motivo);
+return out;
+}
+var pe = LD.parseEncargos({ encargos: { linhas: tabela.linhas }, tabelas: { desonerado: ET.regimeDe(tabela.regime) === "desonerado" }, regimeConfirmado: true });
+if (!pe.ok) { out.motivo = pe.motivo; pend.bloqueios.push("Encargos sociais: " + pe.motivo); return out; }
+out.ok = true; out.grupos = pe.grupos; out.total = pe.total; out.avisos = pe.avisos || [];
+out.fonte = s(tabela.fonte); out.rotulo = s(tabela.rotulo); out.competencia = s(tabela.competencia); out.url = s(tabela.url);
+if (out.declarado && (Math.abs(out.declarado.horista - pe.total.horista) > 0.015 || Math.abs(out.declarado.mensalista - pe.total.mensalista) > 0.015)) {
+out.divergeDeclarado = true;
+pend.conferir.push("Encargos: o orçamento declara horista " + P(out.declarado.horista) + " / mensalista " + P(out.declarado.mensalista) + " e a tabela da base dá " + P(pe.total.horista) + " / " + P(pe.total.mensalista) + ". Conferir qual vale.");
+}
+return out;
+}
+function montar(orc, opcoes) {
+opcoes = opcoes || {};
+var Orc = _dep("Orcamento"), A = _dep("Arred"), B = _dep("Bdi");
+if (!orc || !Orc || !A) return { ok: false, erro: "Orçamento ou módulos de cálculo indisponíveis." };
+var calc = Orc.calcular(orc), cfg = calc.cfg;
+var linhas = calc.linhas || [];
+if (!linhas.length) return { ok: false, erro: "O orçamento não tem itens." };
+var modo = calc.modo, pct = calc.pct, bdiNoPU = calc.bdiNoPU;
+var pend = { bloqueios: [], conferir: [], avisos: [] };
+var tolTot = modo === "nenhum" ? 1e-6 : 0.004;
+var itens = [], etapas = [], eIdx = {}, divergencias = [];
+linhas.forEach(function (Ln) {
+var it = Ln.item || {}, q = Ln.quantidade, raw = nm(it.custoUnitario);
+var cu = A.unitario(raw, modo), ct = A.valor(q * cu, modo);
+var pu = bdiNoPU ? A.unitario(raw * (1 + pct / 100), modo) : cu;
+var pt = A.valor(q * pu, modo);
+if (Math.abs(ct - Ln.custoTotal) > tolTot || Math.abs(pt - Ln.precoTotal) > tolTot || Math.abs(pu - Ln.precoUnit) > tolTot) {
+divergencias.push("item " + Ln.numero + ": o pacote calcularia custo " + R(ct) + " / preço " + R(pt) + " e o orçamento tem " + R(Ln.custoTotal) + " / " + R(Ln.precoTotal));
+}
+var chave = fonteChave(it), comBase = temBaseOficial(it);
+var comp = composicaoDe(it, orc, opcoes);
+var linhaI = {
+numero: Ln.numero, etapaIdx: Ln.etapaIdx, codigo: s(Ln.codigo), fonteChave: chave, fonte: rotuloFonte(chave), comBaseOficial: comBase,
+descricao: s(Ln.descricao), unidade: s(Ln.unidade), quantidade: q, custoBase: raw, cu: cu, bdiPct: bdiNoPU ? pct : 0, pu: pu, ct: ct, pt: pt,
+opcional: !!Ln.opcional, memoria: s(it.memoriaCalculo), composicao: comp, id: Ln.itemId
+};
+if (!(raw > 0)) pend.bloqueios.push("Item " + Ln.numero + " sem preço unitário.");
+if (!(q > 0)) pend.bloqueios.push("Item " + Ln.numero + " sem quantidade.");
+itens.push(linhaI);
+if (!eIdx[Ln.etapaIdx]) {
+eIdx[Ln.etapaIdx] = { idx: Ln.etapaIdx, codigo: s(Ln.etapaCodigo), numero: String(Ln.etapaIdx + 1), nome: s(Ln.etapaNome).replace(/^[^A-Za-z0-9À-ÿ]+/, ""), opcional: !!Ln.opcional, itens: [], custo: 0, total: 0, peso: 0 };
+etapas.push(eIdx[Ln.etapaIdx]);
+}
+var E = eIdx[Ln.etapaIdx]; E.itens.push(linhaI); E.custo += ct; E.total += pt;
+});
+var somaCt = 0, somaPt = 0;
+itens.forEach(function (I) { somaCt += I.ct; somaPt += I.pt; });
+var custoDireto = A.valor(somaCt, modo);
+var totalPacote = bdiNoPU ? A.valor(somaPt, modo) : A.valor(B.aplicar(custoDireto, pct), modo);
+if (Math.abs(custoDireto - calc.custoDireto) > tolTot) divergencias.push("o custo direto do pacote (" + R(custoDireto) + ") difere do do orçamento (" + R(calc.custoDireto) + ")");
+if (Math.abs(totalPacote - calc.precoVenda) > tolTot) divergencias.push("o total do pacote (" + R(totalPacote) + ") difere do total do orçamento (" + R(calc.precoVenda) + ")");
+if (opcoes.totalEsperado != null && Math.abs(totalPacote - nm(opcoes.totalEsperado)) > tolTot) divergencias.push("o total do pacote (" + R(totalPacote) + ") difere do total esperado pelo processo (" + R(nm(opcoes.totalEsperado)) + ")");
+if (divergencias.length) return { ok: false, erro: "O pacote teria valores diferentes do orçamento: " + divergencias.slice(0, 4).join("; ") + (divergencias.length > 4 ? " e mais " + (divergencias.length - 4) : "") + ". Corrija o orçamento antes de gerar o pacote.", divergencias: divergencias };
+var bdiValor = arr(totalPacote - custoDireto, 2);
+var porEtapaPt = alocarCentavos(etapas.map(function (E) { return bdiNoPU ? E.total : E.custo; }), bdiNoPU ? totalPacote : custoDireto);
+etapas.forEach(function (E, k) {
+E.custo = bdiNoPU ? arr(E.custo, 2) : porEtapaPt[k]; E.total = bdiNoPU ? porEtapaPt[k] : E.custo;
+E.peso = (bdiNoPU ? totalPacote : custoDireto) > 0 ? E.total / (bdiNoPU ? totalPacote : custoDireto) * 100 : 0;
+});
+var baseTot = bdiNoPU ? totalPacote : custoDireto;
+itens.forEach(function (I) { I.peso = baseTot > 0 ? (bdiNoPU ? I.pt : I.ct) / baseTot * 100 : 0; });
+var lic = (cfg && cfg.licitacao) || {}, org = (cfg && cfg.orgao && typeof cfg.orgao === "object") ? cfg.orgao : {};
+var clienteNome = s(orc.cliente && typeof orc.cliente === "object" ? orc.cliente.nome : orc.cliente);
+var cab = {
+orgao: s(opcoes.orgao && opcoes.orgao.nome) || s(org.nome) || s(lic.orgao && lic.orgao.nome) || clienteNome,
+obra: s(opcoes.obra) || s(orc.obra && orc.obra.nome) || s(orc.nome),
+objeto: s(opcoes.objeto) || s(lic.objeto) || s(orc.obra && orc.obra.nome),
+local: s(opcoes.local) || s(orc.obra && orc.obra.local),
+uf: s(orc.uf).toUpperCase(), numero: s(orc.numero), processo: s(opcoes.processo) || s(org.processoId) || s(lic.processo),
+data: s(opcoes.data) || s(orc.atualizadoEm) || s(orc.criadoEm),
+recursoFederal: opcoes.recursoFederal === true,
+arredondamento: A.rotulo ? A.rotulo(modo) : modo, incidencia: bdiNoPU ? "BDI no preço unitário" : "BDI sobre o preço final (parcela única)"
+};
+if (!cab.orgao) pend.conferir.push("Órgão contratante não informado: preencha o cliente do orçamento.");
+if (!cab.local) pend.conferir.push("Local da obra não informado.");
+var porBase = {}, ordemBases = [];
+itens.forEach(function (I) {
+if (!porBase[I.fonteChave]) { porBase[I.fonteChave] = { chave: I.fonteChave, rotulo: I.fonte, itens: 0, valor: 0 }; ordemBases.push(I.fonteChave); }
+porBase[I.fonteChave].itens++; porBase[I.fonteChave].valor += I.pt;
+});
+var Lc = _dep("Licitacao"), exig = [];
+try { exig = Lc && Lc.basesExigidas ? Lc.basesExigidas(orc) : []; } catch (eL) { exig = []; }
+var declaradas = lista(opcoes.bases).concat(exig);
+var bases = ordemBases.map(function (k) {
+var b = porBase[k], comp = "", uf = "", regime = "";
+if (ehSinapi(k)) { comp = compTexto(orc.competenciaSinapi); uf = cab.uf; regime = k === "SINAPI_DES" ? "desonerado" : ""; }
+else {
+var d0 = declaradas.filter(function (x) { return x && (s(x.fonte).toUpperCase() === k || s(x.catId).toUpperCase() === k); })[0];
+if (d0) { comp = compTexto(d0.competencia); uf = s(d0.uf).toUpperCase(); regime = s(d0.regime); }
+}
+if (k !== "PROPRIA" && k !== "OUTRA" && !comp) pend.conferir.push("Base " + b.rotulo + ": a competência não está registrada no orçamento; informe a data-base.");
+return { chave: k, rotulo: b.rotulo, itens: b.itens, valor: arr(b.valor, 2), competencia: comp, uf: uf, regime: regime, oficial: k !== "PROPRIA" && k !== "OUTRA" };
+});
+cab.bases = bases;
+cab.dataBase = s(opcoes.dataBase) || bases.filter(function (b) { return b.oficial && b.competencia; }).map(function (b) { return b.rotulo + " " + b.competencia; }).join(" · ");
+var usaSinapi = bases.some(function (b) { return ehSinapi(b.chave); });
+var encTipo = (typeof orc.desonerado === "boolean") ? (orc.desonerado ? "desonerado" : "nao_desonerado") : (s(cfg.encargos && cfg.encargos.tipo) === "nao_desonerado" ? "nao_desonerado" : "desonerado");
+cab.regime = encTipo === "desonerado" ? "desonerado" : "não desonerado";
+cab.bdiPct = pct;
+var tipoInf = s(opcoes.tipoObra) || s(org.tipoBdi);
+var bdi = bdiQuadro(orc.bdi && orc.bdi.params, pct, tipoInf || "edificacoes", !!tipoInf);
+if (!tipoInf) pend.conferir.push("Tipo de obra para a faixa do BDI não informado: foi usada a faixa de edificações do Acórdão TCU 2.622/2013. Informe o tipo de obra.");
+if (!bdi.parcelas) pend.bloqueios.push("Composição do BDI não informada (BDI digitado direto, " + P(pct) + "): o Acórdão TCU 2.622/2013 pede as parcelas. Nada foi decomposto.");
+if (bdi.incoerente) pend.conferir.push("BDI: as parcelas dão " + P(bdi.calculado) + " e o orçamento aplica " + P(pct) + ".");
+if (bdi.aviso) pend.conferir.push(bdi.aviso);
+bdi.diferenciado = null;
+if (opcoes.bdiDiferenciado && (nm(opcoes.bdiDiferenciado.percentual) > 0 || opcoes.bdiDiferenciado.params)) {
+var bd = opcoes.bdiDiferenciado, pctD = nm(bd.percentual) > 0 ? nm(bd.percentual) : B.calcular(bd.params);
+bdi.diferenciado = bdiQuadro(bd.params, pctD, "fornecimento", true);
+bdi.diferenciado.itens = lista(bd.itens);
+if (bdi.diferenciado.aviso) pend.conferir.push("BDI diferenciado: " + bdi.diferenciado.aviso);
+}
+var enc = encargosDe(orc, cfg, usaSinapi, opcoes, pend);
+cab.encargos = enc.ok ? { horista: enc.total.horista, mensalista: enc.total.mensalista } : (enc.declarado || null);
+var semComp = itens.filter(function (I) { return !I.composicao; });
+if (semComp.length) pend.conferir.push(semComp.length + " item(ns) sem composição detalhada na base carregada (a analítica mostra o custo unitário, sem inventar insumos): " + semComp.slice(0, 8).map(function (I) { return I.numero; }).join(", ") + (semComp.length > 8 ? " e mais " + (semComp.length - 8) : "") + ".");
+itens.forEach(function (I) {
+if (!I.composicao) return;
+var so = 0; I.composicao.insumos.forEach(function (x) { so += x.ct; });
+I.composicao.soma = so;
+I.composicao.confere = Math.abs(so - I.cu) <= Math.max(0.02, I.cu * 0.01);
+if (!I.composicao.confere) pend.conferir.push("Item " + I.numero + " (" + I.codigo + "): a composição soma " + R(so) + " e o custo unitário é " + R(I.cu) + ".");
+});
+var abcServ = curvaABC(itens.map(function (I) { return { numero: I.numero, codigo: I.codigo, descricao: I.descricao, fonte: I.fonte, unidade: I.unidade, quantidade: I.quantidade, pu: bdiNoPU ? I.pu : I.cu, valor: bdiNoPU ? I.pt : I.ct }; }), baseTot);
+var mIns = {}, lIns = [], detalhado = 0;
+itens.forEach(function (I) {
+if (!I.composicao) return;
+I.composicao.insumos.forEach(function (x) {
+var k = x.cat + "|" + (x.codigo || norm(x.descricao)) + "|" + norm(x.unidade);
+if (!mIns[k]) { mIns[k] = { codigo: x.codigo, descricao: x.descricao, unidade: x.unidade, cat: x.cat, auxiliar: x.auxiliar, quantidade: 0, valor: 0, cu: x.cu }; lIns.push(mIns[k]); }
+mIns[k].quantidade += I.quantidade * x.coef; mIns[k].valor += I.quantidade * x.coef * x.cu;
+});
+});
+lIns.forEach(function (x) { x.valor = arr(x.valor, 2); detalhado += x.valor; });
+detalhado = arr(detalhado, 2);
+var resto = arr(custoDireto - detalhado, 2);
+var linhasIns = lIns.slice();
+if (Math.abs(resto) >= 0.005) linhasIns.push({ codigo: "", descricao: "Itens sem composição na base e diferença de arredondamento dos coeficientes", unidade: "vb", cat: "OUTROS", auxiliar: false, quantidade: 1, valor: resto, cu: resto, residuo: true });
+var abcIns = curvaABC(linhasIns.filter(function (x) { return x.valor > 0; }), custoDireto);
+abcIns.detalhado = detalhado; abcIns.resto = resto; abcIns.semComposicao = semComp.length;
+if (semComp.length) pend.avisos.push("Curva ABC de insumos: " + semComp.length + " item(ns) sem composição entram na linha de resíduo (" + R(resto) + ").");
+var crono = null, cr = opcoes.cronograma || null, cronoMotivo = "";
+if (!cr) { try { cr = Orc.cronograma ? Orc.cronograma(orc) : null; } catch (eC) { cr = null; } }
+if (cr && (cr.base === "gantt" || opcoes.cronograma) && lista(cr.etapas).length === lista(orc.etapas).length) {
+var nM = cr.meses || (cr.etapas[0] && cr.etapas[0].meses ? cr.etapas[0].meses.length : 0);
+var linhasC = [], okC = true;
+etapas.forEach(function (E) {
+var ce = cr.etapas[E.idx] || {}, ms = lista(ce.meses).slice(0, nM);
+var soma = ms.reduce(function (a, v) { return a + (Number(v) || 0); }, 0);
+if (!(soma > 0) || !(E.total > 0)) { okC = false; return; }
+var pcts = ms.map(function (v) { return (Number(v) || 0) / soma; });
+var vals = [], acE = 0;
+pcts.forEach(function (p, ix) { var v = ix === pcts.length - 1 ? arr(E.total - acE, 2) : arr(E.total * p, 2); vals.push(v); acE = arr(acE + v, 2); });
+linhasC.push({ numero: E.numero, nome: E.nome, total: E.total, pcts: pcts, valores: vals });
+});
+if (okC && linhasC.length === etapas.length) {
+var totM = [], ac = 0, mm;
+for (mm = 0; mm < nM; mm++) { var sv = 0; linhasC.forEach(function (l) { sv += l.valores[mm] || 0; }); sv = arr(sv, 2); ac = arr(ac + sv, 2); totM.push({ valor: sv, pct: baseTot > 0 ? sv / baseTot * 100 : 0, acumValor: ac, acumPct: baseTot > 0 ? ac / baseTot * 100 : 0 }); }
+if (Math.abs(ac - baseTot) > 0.005) return { ok: false, erro: "O cronograma físico-financeiro fecharia em " + R(ac) + " e o total do orçamento é " + R(baseTot) + ".", divergencias: ["cronograma"] };
+crono = { nMeses: nM, linhas: linhasC, totais: totM, total: ac, rotulos: lista(cr.rotulos), origem: opcoes.cronograma ? "informado pelo processo" : "Gantt do orçamento" };
+} else cronoMotivo = "Há etapa sem valor ou sem distribuição no cronograma.";
+} else {
+cronoMotivo = "O orçamento não tem cronograma elaborado (durações e dependências das etapas). A distribuição proporcional ao valor não é cronograma e não foi usada.";
+}
+if (!crono) pend.bloqueios.push("Cronograma físico-financeiro: " + cronoMotivo);
+var semMem = itens.filter(function (I) { return !I.memoria; });
+if (semMem.length) pend.conferir.push(semMem.length + " item(ns) sem memória de cálculo da quantidade (saem marcados na peça).");
+var cot = mapaCotacao(itens, opcoes.pesquisa, pend);
+var caixa = null;
+if (cab.recursoFederal) {
+var foraSinapi = bases.filter(function (b) { return b.oficial && !ehSinapi(b.chave) && b.chave !== "SICRO"; });
+caixa = {
+aviso: "Aba montada pelos campos exigidos pelo Decreto 7.983/2013; arquivo-modelo oficial da CAIXA não localizado em fonte pública — conferir com o leiaute da CAIXA antes de enviar.",
+sinapiObrigatoria: true, foraSinapi: foraSinapi.map(function (b) { return b.rotulo; }), proprias: itens.filter(function (I) { return !I.comBaseOficial; }).length
+};
+if (foraSinapi.length) pend.bloqueios.push("Recurso federal: o Decreto 7.983/2013 (art. 3º) manda a SINAPI como referência (SICRO em infraestrutura de transportes, art. 4º). O orçamento usa também " + foraSinapi.map(function (b) { return b.rotulo; }).join(", ") + ": justifique pelo art. 6º ou troque a base.");
+if (!bases.some(function (b) { return ehSinapi(b.chave); }) && !bases.some(function (b) { return b.chave === "SICRO"; })) pend.bloqueios.push("Recurso federal sem SINAPI nem SICRO no orçamento (Decreto 7.983/2013, arts. 3º e 4º).");
+if (caixa.proprias) pend.conferir.push("Recurso federal: " + caixa.proprias + " item(ns) sem código de base oficial precisam de composição própria justificada (art. 8º) ou pesquisa de mercado (art. 6º).");
+}
+var emp = opcoes.empresa || {};
+var rt = {
+nome: s(opcoes.responsavel && opcoes.responsavel.nome) || s(emp.rtNome) || s(emp.responsavel),
+titulo: s(opcoes.responsavel && opcoes.responsavel.titulo) || s(emp.titulo),
+registro: s(opcoes.responsavel && opcoes.responsavel.registro) || s(emp.rtCrea) || s(emp.crea)
+};
+var art = { tipo: s(opcoes.art && opcoes.art.tipo) || "ART/RRT", numero: s(opcoes.art && opcoes.art.numero) };
+if (!rt.nome) pend.bloqueios.push("Responsável técnico pelo orçamento não informado.");
+if (!rt.registro) pend.bloqueios.push("Registro profissional (CREA/CAU) do responsável técnico não informado.");
+if (!art.numero) pend.bloqueios.push("Número da ART/RRT do orçamento não informado.");
+var d = {
+versao: 1, cab: cab, emp: emp, rt: rt, art: art,
+modo: modo, bdiNoPU: bdiNoPU, bdiPct: pct,
+etapas: etapas, itens: itens,
+tot: { custoDireto: custoDireto, bdi: bdiValor, precoVenda: totalPacote, qtdItens: itens.length, qtdEtapas: etapas.length },
+bdi: bdi, enc: enc, abcServ: abcServ, abcIns: abcIns, crono: crono, cronoMotivo: cronoMotivo, cot: cot, caixa: caixa,
+bases: bases, pend: pend, pronto: pend.bloqueios.length === 0,
+declaracoes: declaracoes(cab, rt, art, bases, pct, cot)
+};
+return { ok: true, dados: d, pendencias: pend };
+}
+function mapaCotacao(itens, pesquisa, pend) {
+var sem = itens.filter(function (I) { return !I.comBaseOficial; });
+var av = lista(pesquisa && pesquisa.avaliacoes), fontesBrutas = (pesquisa && pesquisa.fontes) || {};
+var linhas = sem.map(function (I) {
+var a = av.filter(function (x) { return x && String(x.item) === String(I.numero); })[0] || null;
+var usadas = a ? lista(a.fontesUsadas) : [];
+var vals = usadas.map(function (f) { return nm(f.valor); }).filter(function (v) { return v > 0; });
+var srt = vals.slice().sort(function (x, y) { return x - y; });
+var med = srt.length ? (srt.length % 2 ? srt[(srt.length - 1) / 2] : (srt[srt.length / 2 - 1] + srt[srt.length / 2]) / 2) : null;
+var media = vals.length ? vals.reduce(function (x, y) { return x + y; }, 0) / vals.length : null;
+var brutas = lista(fontesBrutas[String(I.numero)]);
+var fontes = usadas.map(function (f) {
+var b = brutas[f.indice] || {};
+return { tipo: s(f.tipo), base: s(f.base || b.base), fornecedor: s(f.fornecedor || b.fornecedor), valor: nm(f.valor), data: s(b.dataColeta || b.dataAcesso || b.dataConclusao), hora: s(b.horaAcesso), link: s(f.link || b.link) };
+});
+var sit = !a ? "sem_pesquisa" : s(a.situacao);
+var l = { numero: I.numero, codigo: I.codigo, descricao: I.descricao, unidade: I.unidade, quantidade: I.quantidade, custoItem: I.cu, fontes: fontes,
+descartadas: a ? lista(a.descartadas).length : 0, media: media, mediana: med, menor: srt.length ? srt[0] : null, metodo: a ? s(a.metodo) : "", adotado: a && a.valor != null ? nm(a.valor) : null,
+situacao: sit, justificativa: a ? s(a.justificativa) : "", pendencias: a ? lista(a.pendencias) : ["Sem pesquisa de preços anexada para este item."] };
+l.diverge = l.adotado != null && Math.abs(l.adotado - I.cu) > 0.005;
+return l;
+});
+var semPesq = linhas.filter(function (l) { return l.adotado == null; }).length;
+if (linhas.length && semPesq) pend.bloqueios.push("Mapa de cotação: " + semPesq + " de " + linhas.length + " item(ns) sem base oficial ainda sem preço de referência pesquisado.");
+var divg = linhas.filter(function (l) { return l.diverge; });
+if (divg.length) pend.conferir.push("Mapa de cotação: o custo do orçamento difere do preço pesquisado nos itens " + divg.slice(0, 8).map(function (l) { return l.numero; }).join(", ") + ".");
+return { linhas: linhas, regulamento: pesquisa && pesquisa.regulamento ? s(pesquisa.regulamento.id) : "", semPesquisa: semPesq };
+}
+function declaracoes(cab, rt, art, bases, pct, cot) {
+var bs = bases.filter(function (b) { return b.oficial; }).map(function (b) { return b.rotulo + (b.competencia ? " (" + b.competencia + ")" : ""); }).join(", ") || pr("bases de preços utilizadas");
+return [
+{ id: "projeto", titulo: "Compatibilidade com o projeto", texto: "Declaro que as quantidades, os serviços e as especificações deste orçamento são compatíveis com o projeto " + pr("identificação do projeto básico/executivo e revisão") + ", relativo a " + (cab.obra || pr("obra")) + "." },
+{ id: "bases", titulo: "Compatibilidade com as bases de preços", texto: "Declaro que os custos unitários foram obtidos das bases " + bs + ", no regime " + cab.regime + ", e que os itens sem código de base oficial tiveram o preço de referência pesquisado conforme o mapa de cotação anexo (" + cot.linhas.length + " item(ns))." },
+{ id: "bdi", titulo: "BDI e encargos sociais", texto: "Declaro que o BDI de " + P(pct) + " foi composto conforme o Acórdão TCU 2.622/2013 e que os encargos sociais adotados são os da tabela oficial da base, conforme as peças anexas." },
+{ id: "art", titulo: "Responsabilidade técnica", texto: "Responsável técnico: " + (rt.nome || pr("nome")) + (rt.registro ? ", registro " + rt.registro : ", " + pr("registro CREA/CAU")) + ". " + art.tipo + " nº " + (art.numero || pr("número da ART/RRT do orçamento")) + "." }
+];
+}
+function td(v) { return '<td>' + v + '</td>'; }
+function tdN(v) { return '<td class="n">' + v + '</td>'; }
+function tdC(v) { return '<td class="c">' + v + '</td>'; }
+function sec(titulo, h) { return '<section class="ld-sec" data-tipo="corpo" data-titulo="' + esc(titulo) + '">' + h + '</section>'; }
+function col(ws) { return '<colgroup>' + ws.map(function (w) { return '<col style="width:' + w + 'mm">'; }).join("") + '</colgroup>'; }
+function pend0(t) { return '<div class="ld-pend">PENDÊNCIA: ' + esc(t) + '</div>'; }
+function faixaRascunho(d) {
+return d.pronto ? "" : '<div class="ld-pend" style="font-size:8pt;margin:0 0 3mm">COM PENDÊNCIAS — NÃO PUBLICAR. ' + esc(d.pend.bloqueios.length) + ' ponto(s) em aberto (listados na aba/folha de pendências do arquivo de trabalho).</div>';
+}
+function secSintetica(d) {
+var h = faixaRascunho(d) + '<div class="ld-tit">Planilha orçamentária sintética</div>';
+var t = '<table class="ld-t ld-split">' + col([11, 15, 14, 53, 8, 15, 16, 9, 16, 20, 9]) +
+'<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>FONTE</th><th>DESCRIÇÃO</th><th>UN.</th><th>QUANT.</th><th>CUSTO UNIT. S/ BDI</th><th>BDI %</th><th>PREÇO UNIT. C/ BDI</th><th>TOTAL</th><th>PESO %</th></tr></thead><tbody>';
+d.etapas.forEach(function (E) {
+t += '<tr class="et kn"><td colspan="11">' + esc(E.numero) + '  ' + esc(E.nome) + (E.opcional ? ' (opcional)' : '') + '</td></tr>';
+E.itens.forEach(function (I) {
+t += '<tr>' + tdC(esc(I.numero)) + td(esc(I.codigo)) + tdC(esc(I.fonte)) + td(esc(I.descricao)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) + tdN(fmt(I.cu, 2)) +
+tdN(d.bdiNoPU ? fmt(I.bdiPct, 2) : "—") + tdN(fmt(I.pu, 2)) + tdN(fmt(d.bdiNoPU ? I.pt : I.ct, 2)) + tdN(fmt(I.peso, 2)) + '</tr>';
+});
+t += '<tr class="gr"><td colspan="9" style="text-align:right">Subtotal da etapa ' + esc(E.numero) + '</td>' + tdN(fmt(E.total, 2)) + tdN(fmt(E.peso, 2)) + '</tr>';
+});
+if (!d.bdiNoPU) {
+t += '<tr class="tt"><td colspan="9" style="text-align:right">Custo direto</td>' + tdN(fmt(d.tot.custoDireto, 2)) + tdN("") + '</tr>' +
+'<tr class="gr"><td colspan="9" style="text-align:right">BDI (' + esc(P(d.bdiPct)) + ') sobre o preço final</td>' + tdN(fmt(d.tot.bdi, 2)) + tdN("") + '</tr>';
+}
+t += '<tr class="tt"><td colspan="9" style="text-align:right">TOTAL GERAL</td>' + tdN(fmt(d.tot.precoVenda, 2)) + tdN("100,00") + '</tr></tbody></table>';
+h += t + '<p class="ld-nota">Custo direto ' + esc(R(d.tot.custoDireto)) + ' + BDI ' + esc(R(d.tot.bdi)) + ' = ' + esc(R(d.tot.precoVenda)) + '. Critério: ' + esc(d.cab.arredondamento) + '. ' + esc(d.cab.incidencia) + '.</p>';
+return sec("Sintética", h);
+}
+function secAnalitica(d) {
+var h = '<div class="ld-tit">Planilha orçamentária analítica (composições)</div>';
+d.itens.forEach(function (I) {
+var b = '<div class="ld-it" data-cont="' + esc(I.numero + " " + I.codigo) + '"><div class="ld-itt">' + esc(I.numero) + '  ' + esc(I.codigo) + '  [' + esc(I.fonte) + ']  ' + esc(I.descricao) + '  (' + esc(I.unidade) + ')</div>';
+if (I.composicao) {
+b += '<table class="ld-t">' + col([16, 16, 78, 9, 20, 22, 25]) + '<thead><tr><th>TIPO</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UN.</th><th>COEF.</th><th>PREÇO UNIT.</th><th>CUSTO</th></tr></thead><tbody>';
+I.composicao.insumos.forEach(function (x) {
+b += '<tr>' + tdC(esc(CAT_ROT[x.cat])) + td(esc(x.codigo)) + td(esc(x.descricao)) + tdC(esc(x.unidade)) + tdN(fmt(x.coef, 5)) + tdN(fmt(x.cu, 4)) + tdN(fmt(x.ct, 4)) + '</tr>';
+});
+b += '<tr class="tt"><td colspan="6" style="text-align:right">Custo unitário da composição (' + esc(I.composicao.origem) + ')</td>' + tdN(fmt(I.composicao.soma, 4)) + '</tr></tbody></table>';
+if (!I.composicao.confere) b += '<div class="ld-nota" style="color:#c00000">Conferir: a composição soma ' + esc(R(I.composicao.soma)) + ' e o custo unitário do orçamento é ' + esc(R(I.cu)) + '.</div>';
+} else {
+b += '<div class="ld-nota"><b>Composição sem detalhamento na base carregada</b>' + (I.comBaseOficial ? '' : ' (item sem base oficial: ver o mapa de cotação)') + '. O custo unitário do orçamento é ' + esc(R(I.cu)) + '; nenhum insumo foi inventado.</div>';
+}
+b += '<div class="ld-itv"><b>CUSTO UNITÁRIO</b> ' + esc(R(I.cu)) + '</div>';
+if (d.bdiNoPU) b += '<div class="ld-itv"><b>BDI ' + esc(P(I.bdiPct)) + '</b> ' + esc(R(I.pu - I.cu)) + '</div><div class="ld-itv"><b>PREÇO UNIT. C/ BDI</b> ' + esc(R(I.pu)) + '</div>';
+b += '</div>';
+h += b;
+});
+return sec("Analítica", h);
+}
+function secBdi(d) {
+var h = '<div class="ld-tit">Composição do BDI</div>';
+var q = d.bdi;
+function quadro(qq, titulo) {
+var o = '';
+if (titulo) o += '<div class="ld-sub"><b>' + esc(titulo) + '</b></div>';
+if (!qq.parcelas) return o + pend0("composição do BDI não informada (BDI de " + P(qq.pct) + " digitado direto). Nenhuma parcela foi inventada.");
+o += '<table class="ld-t" style="width:150mm;margin:0 auto">' + col([20, 100, 30]) + '<thead><tr><th>SIGLA</th><th>DESCRIÇÃO</th><th>%</th></tr></thead><tbody>';
+qq.parcelas.forEach(function (p) { o += '<tr>' + tdC(esc(p.sigla)) + td(esc(p.nome)) + tdN(fmt(p.pct, 2)) + '</tr>'; });
+o += '<tr class="tt"><td colspan="2">BDI calculado pela fórmula</td>' + tdN(P(qq.calculado)) + '</tr><tr class="gr"><td colspan="2">BDI aplicado no orçamento</td>' + tdN(P(qq.pct)) + '</tr></tbody></table>';
+o += '<p class="ld-ext" style="font-style:normal">' + esc(qq.formula) + '</p>';
+o += '<p class="ld-nota">Tipo de obra: ' + esc(qq.tipoObraRotulo) + (qq.tipoInformado ? '' : ' (assumido; conferir)') + (qq.faixa ? '. Faixa referencial do Acórdão TCU 2.622/2013 (1º e 3º quartis): ' + esc(P(qq.faixa.min)) + ' a ' + esc(P(qq.faixa.max)) + '.' : '.') + '</p>';
+if (qq.aviso) o += '<div class="ld-pend" style="font-size:8pt">' + esc(qq.aviso) + '</div>';
+if (qq.incoerente) o += '<div class="ld-pend" style="font-size:8pt">As parcelas dão ' + esc(P(qq.calculado)) + ' e o orçamento aplica ' + esc(P(qq.pct)) + '. Conferir.</div>';
+return o;
+}
+h += quadro(q, "");
+if (q.diferenciado) h += quadro(q.diferenciado, "BDI diferenciado — fornecimento de materiais e equipamentos" + (q.diferenciado.itens.length ? " (itens " + q.diferenciado.itens.join(", ") + ")" : ""));
+else h += '<p class="ld-nota">O orçamento aplica um único BDI a todos os itens; não há BDI diferenciado informado para fornecimento de materiais e equipamentos.</p>';
+return sec("BDI", h);
+}
+function secEncargos(d) {
+var e = d.enc, h = '<div class="ld-tit">Encargos sociais</div>';
+if (!e.ok) {
+h += pend0(e.motivo);
+if (e.declarado) h += '<p class="ld-nota">Declarado no orçamento (sem tabela da base para conferir): horista ' + esc(P(e.declarado.horista)) + ', mensalista ' + esc(P(e.declarado.mensalista)) + '.</p>';
+return sec("Encargos sociais", h);
+}
+var t = '<table class="ld-t ld-split" style="width:150mm;margin:0 auto">' + col([14, 96, 20, 20]) + '<thead><tr><th>COD</th><th>DESCRIÇÃO</th><th>HORISTA %</th><th>MENSALISTA %</th></tr></thead><tbody>';
+e.grupos.forEach(function (g) {
+t += '<tr class="et kn"><td colspan="4">GRUPO ' + g.grupo + '</td></tr>';
+g.linhas.forEach(function (l) { t += '<tr>' + td(esc(l.codigo)) + td(esc(l.descricao)) + tdN(P(l.horista)) + tdN(l.mensalistaNI ? "Não incide" : P(l.mensalista)) + '</tr>'; });
+t += '<tr class="gr"><td></td><td>TOTAL GRUPO ' + g.grupo + '</td>' + tdN(P(g.horista)) + tdN(P(g.mensalista)) + '</tr>';
+});
+t += '</tbody></table>';
+h += '<p class="ld-nota" style="text-align:center">Regime: <b>' + esc(e.regimeRotulo) + '</b> · UF ' + esc(e.uf) + '</p>' + t;
+h += '<p class="ld-ext" style="font-style:normal"><b>A + B + C + D = ' + esc(P(e.total.horista)) + ' (horista)  /  ' + esc(P(e.total.mensalista)) + ' (mensalista)</b></p>';
+if (e.outroRegime) h += '<p class="ld-nota" style="text-align:center">Para comparação, no regime ' + esc(e.outroRegime.regime) + ': horista ' + esc(P(e.outroRegime.horista)) + ', mensalista ' + esc(P(e.outroRegime.mensalista)) + '.</p>';
+h += '<p class="ld-nota">Fonte: ' + esc(e.rotulo || e.fonte) + '.' + (e.declarado ? ' Declarado no orçamento: horista ' + esc(P(e.declarado.horista)) + ', mensalista ' + esc(P(e.declarado.mensalista)) + (e.divergeDeclarado ? ' (DIVERGE da tabela; conferir)' : ' (confere)') + '.' : '') + '</p>';
+return sec("Encargos sociais", h);
+}
+function secAbc(d, tipo) {
+var ab = tipo === "serv" ? d.abcServ : d.abcIns;
+var h = '<div class="ld-tit">Curva ABC de ' + (tipo === "serv" ? "serviços" : "insumos") + '</div>';
+var t = '<table class="ld-t ld-split">' + (tipo === "serv"
+? col([13, 17, 62, 9, 17, 22, 18, 14, 14]) + '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UN.</th><th>QUANT.</th><th>VALOR</th><th>%</th><th>ACUM. %</th><th>CL.</th></tr></thead>'
+: col([13, 17, 62, 9, 17, 22, 18, 14, 14]) + '<thead><tr><th>TIPO</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UN.</th><th>QUANT.</th><th>VALOR</th><th>%</th><th>ACUM. %</th><th>CL.</th></tr></thead>') + '<tbody>';
+ab.linhas.forEach(function (c) {
+t += '<tr>' + (tipo === "serv" ? tdC(esc(c.numero)) : tdC(esc(CAT_ROT[c.cat]))) + td(esc(c.codigo)) + td(esc(c.descricao)) + tdC(esc(c.unidade)) + tdN(fmt(c.quantidade, 2)) + tdN(fmt(c.valor, 2)) + tdN(fmt(c.pct, 2)) + tdN(fmt(c.acum, 2)) + tdC(c.classe) + '</tr>';
+});
+t += '<tr class="tt"><td colspan="5" style="text-align:right">TOTAL</td>' + tdN(fmt(ab.total, 2)) + '<td colspan="3"></td></tr></tbody></table>';
+h += t + '<table class="ld-t" style="width:110mm;margin:3mm auto 0">' + col([20, 25, 35, 30]) + '<thead><tr><th>CLASSE</th><th>ITENS</th><th>VALOR</th><th>%</th></tr></thead><tbody>' +
+["A", "B", "C"].map(function (c) { return '<tr>' + tdC(c) + tdN(String(ab.resumo[c].qtd)) + tdN(fmt(ab.resumo[c].valor, 2)) + tdN(fmt(ab.resumo[c].pct, 2)) + '</tr>'; }).join("") + '</tbody></table>';
+h += '<p class="ld-nota">Classe A: até 80% do valor acumulado; B: de 80% a 95%; C: acima de 95%. ' + (tipo === "serv" ? 'Valores ' + (d.bdiNoPU ? 'com BDI.' : 'de custo direto.') : 'Valores de custo direto (coeficiente × quantidade × preço do insumo).' + (ab.resto ? ' Resíduo de itens sem composição/arredondamento: ' + esc(R(ab.resto)) + '.' : '')) + '</p>';
+return sec(tipo === "serv" ? "Curva ABC de serviços" : "Curva ABC de insumos", h);
+}
+function secCronograma(d) {
+var h = '<div class="ld-tit">Cronograma físico-financeiro</div>';
+if (!d.crono) return sec("Cronograma", h + pend0(d.cronoMotivo));
+var c = d.crono, POR = 6, k, blocos = [];
+for (k = 0; k < c.nMeses; k += POR) blocos.push([k, Math.min(c.nMeses, k + POR)]);
+function rot(i) { return c.rotulos[i] ? esc(c.rotulos[i]) : (i + 1) + 'º MÊS'; }
+blocos.forEach(function (bl, bi) {
+var ult = bi === blocos.length - 1, n2 = bl[1] - bl[0], wM = ult ? 19 : 26, i;
+var ws = [8, ult ? 36 : 44, 22]; for (i = 0; i < n2; i++) ws.push(wM); if (ult) ws.push(22);
+var t = '<table class="ld-t ld-split" style="font-size:6.6pt">' + col(ws) + '<thead><tr><th>ITEM</th><th>ETAPA</th><th>VALOR (R$)</th>';
+for (i = bl[0]; i < bl[1]; i++) t += '<th>' + rot(i) + '</th>';
+if (ult) t += '<th>TOTAL</th>';
+t += '</tr></thead><tbody>';
+c.linhas.forEach(function (l) {
+t += '<tr>' + tdC(esc(l.numero)) + td(esc(l.nome)) + tdN(fmt(l.total, 2));
+for (i = bl[0]; i < bl[1]; i++) t += '<td class="n" style="font-size:6.2pt">' + fmt(l.pcts[i] * 100, 2) + '%<br>' + fmt(l.valores[i], 2) + '</td>';
+if (ult) t += tdN(fmt(l.total, 2));
+t += '</tr>';
+});
+t += '<tr class="tt"><td></td><td>TOTAL</td>' + tdN(fmt(c.total, 2));
+for (i = bl[0]; i < bl[1]; i++) t += '<td class="n" style="font-size:6.2pt">' + fmt(c.totais[i].pct, 2) + '%<br>' + fmt(c.totais[i].valor, 2) + '</td>';
+if (ult) t += tdN(fmt(c.total, 2));
+t += '</tr><tr class="gr"><td></td><td>Acumulado</td><td></td>';
+for (i = bl[0]; i < bl[1]; i++) t += '<td class="n" style="font-size:6.2pt">' + fmt(c.totais[i].acumPct, 2) + '%<br>' + fmt(c.totais[i].acumValor, 2) + '</td>';
+if (ult) t += '<td></td>';
+t += '</tr></tbody></table>' + (ult ? '' : '<div style="height:4mm"></div>');
+h += t;
+});
+h += '<p class="ld-nota">Origem: ' + esc(c.origem) + '. Em cada mês: percentual físico da etapa e valor financeiro. A diferença de centavos fica no mês de maior resto de cada etapa; o total fecha com a sintética.</p>';
+return sec("Cronograma", h);
+}
+function secMemoria(d) {
+var h = '<div class="ld-tit">Memória de cálculo dos quantitativos</div>';
+var t = '<table class="ld-t ld-split">' + col([13, 17, 52, 9, 17, 78]) + '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UN.</th><th>QUANT.</th><th>MEMÓRIA DE CÁLCULO</th></tr></thead><tbody>';
+d.itens.forEach(function (I) {
+t += '<tr>' + tdC(esc(I.numero)) + td(esc(I.codigo)) + td(esc(I.descricao)) + tdC(esc(I.unidade)) + tdN(fmt(I.quantidade, 2)) +
+td(I.memoria ? esc(I.memoria).replace(/\n/g, "<br>") : '<span class="ld-p0">SEM MEMÓRIA DE CÁLCULO INFORMADA</span>') + '</tr>';
+});
+return sec("Memória de cálculo", h + t + '</tbody></table>');
+}
+function secCotacao(d) {
+var h = '<div class="ld-tit">Mapa de cotação — itens sem base oficial</div>', c = d.cot;
+if (!c.linhas.length) return sec("Mapa de cotação", h + '<p class="ld-nota">Todos os itens têm código de base oficial; não há composição própria nem item a cotar.</p>');
+var t = '<table class="ld-t ld-split">' + col([11, 50, 8, 14, 14, 14, 14, 14, 47]) + '<thead><tr><th>ITEM</th><th>DESCRIÇÃO / FONTES</th><th>UN.</th><th>MÉDIA</th><th>MEDIANA</th><th>MENOR</th><th>ADOTADO</th><th>CUSTO NO ORÇ.</th><th>SITUAÇÃO</th></tr></thead><tbody>';
+c.linhas.forEach(function (l) {
+var fs = l.fontes.map(function (f) { return esc((f.fornecedor || f.base || f.tipo) + ' — ' + R(f.valor) + (f.data ? ' em ' + f.data : '') + (f.hora ? ' ' + f.hora : '')); }).join("<br>");
+t += '<tr>' + tdC(esc(l.numero)) + td('<b>' + esc(l.descricao) + '</b>' + (fs ? '<br>' + fs : '')) + tdC(esc(l.unidade)) +
+tdN(l.media != null ? fmt(l.media, 2) : "—") + tdN(l.mediana != null ? fmt(l.mediana, 2) : "—") + tdN(l.menor != null ? fmt(l.menor, 2) : "—") +
+tdN(l.adotado != null ? fmt(l.adotado, 2) + (l.metodo ? '<br>(' + esc(l.metodo) + ')' : '') : '<span class="ld-p0">PENDENTE</span>') + tdN(fmt(l.custoItem, 2)) +
+td(esc(l.situacao) + (l.diverge ? '<br><span class="ld-p0">custo do orçamento ≠ adotado</span>' : '') + (l.pendencias.length ? '<br>' + esc(l.pendencias.join(" ")) : '') + (l.justificativa ? '<br>Justificativa: ' + esc(l.justificativa) : '')) + '</tr>';
+});
+return sec("Mapa de cotação", h + t + '</tbody></table><p class="ld-nota">Pesquisa lida do processo' + (c.regulamento ? ' (regulamento ' + esc(c.regulamento) + ')' : '') + '. Descartes e justificativas constam da pesquisa; nenhum preço foi criado aqui.</p>');
+}
+function secCaixa(d) {
+var c = d.caixa, h = '<div class="ld-tit">Padrão CAIXA — repasse federal</div>';
+h += '<div class="ld-pend" style="font-size:8pt">' + esc(c.aviso) + '</div>';
+h += '<table class="ld-t" style="width:170mm;margin:3mm auto">' + col([60, 110]) + '<tbody>' +
+[["Proponente / órgão", campo(d.cab.orgao, "órgão")], ["Objeto", campo(d.cab.objeto, "objeto")], ["Local / UF", campo(d.cab.local, "local") + ' / ' + esc(d.cab.uf)],
+["Base de referência", esc(d.cab.dataBase || "—")], ["Regime de encargos", esc(d.cab.regime)], ["Custo direto", esc(R(d.tot.custoDireto))], ["BDI", esc(P(d.bdiPct)) + ' (' + esc(R(d.tot.bdi)) + ')'],
+["Valor total do investimento (QCI)", '<b>' + esc(R(d.tot.precoVenda)) + '</b>'], ["Itens sem código de base oficial", String(c.proprias)]]
+.map(function (r) { return '<tr><td class="et"><b>' + r[0] + '</b></td>' + td(r[1]) + '</tr>'; }).join("") + '</tbody></table>';
+h += '<p class="ld-nota">Quadro de resumo por etapa (QCI/PO) — SINAPI como referência (Decreto 7.983/2013, art. 3º; SICRO em infraestrutura de transportes, art. 4º).</p>';
+h += '<table class="ld-t">' + col([14, 110, 28, 18]) + '<thead><tr><th>ITEM</th><th>ETAPA / SERVIÇO</th><th>VALOR</th><th>%</th></tr></thead><tbody>' +
+d.etapas.map(function (E) { return '<tr>' + tdC(esc(E.numero)) + td(esc(E.nome)) + tdN(fmt(E.total, 2)) + tdN(fmt(E.peso, 2)) + '</tr>'; }).join("") +
+'<tr class="tt"><td></td><td>TOTAL</td>' + tdN(fmt(baseTotal(d), 2)) + tdN("100,00") + '</tr></tbody></table>';
+if (c.foraSinapi.length) h += '<div class="ld-pend" style="font-size:8pt">Bases fora da SINAPI neste orçamento: ' + esc(c.foraSinapi.join(", ")) + '. Com recurso da União a SINAPI é a referência (art. 3º); justificar pelo art. 6º.</div>';
+return sec("Padrão CAIXA", h);
+}
+function baseTotal(d) { return d.bdiNoPU ? d.tot.precoVenda : d.tot.custoDireto; }
+function secDeclaracoes(d) {
+var h = '<div class="ld-tit">Declarações do responsável pelo orçamento</div>';
+d.declaracoes.forEach(function (x) {
+h += '<p class="ld-p"><b>' + esc(x.titulo) + '.</b> ' + esc(x.texto).replace(/\[PREENCHER: ([^\]]*)\]/g, '<span class="ld-p0">[PREENCHER: $1]</span>') + '</p>';
+});
+h += '<table class="ld-t" style="width:150mm;margin:5mm auto">' + col([50, 100]) + '<tbody>' +
+'<tr><td class="et"><b>Responsável técnico</b></td>' + td(campo(d.rt.nome, "nome")) + '</tr>' +
+'<tr><td class="et"><b>Registro (CREA/CAU)</b></td>' + td(campo(d.rt.registro, "registro")) + '</tr>' +
+'<tr><td class="et"><b>' + esc(d.art.tipo) + ' do orçamento</b></td>' + td(campo(d.art.numero, "número da ART/RRT")) + '</tr>' +
+'<tr><td class="et"><b>Data</b></td>' + td(campo(d.cab.data ? d.cab.data.slice(0, 10).split("-").reverse().join("/") : "", "data")) + '</tr></tbody></table>';
+h += '<p class="ld-nota">Texto-base da RA Engenharia, em minuta: revisar com o jurídico do órgão antes de assinar.</p>';
+return sec("Declarações", h);
+}
+function secPendencias(d) {
+if (d.pronto && !d.pend.conferir.length) return "";
+var h = '<div class="ld-tit">Pendências e pontos a conferir</div>';
+if (d.pend.bloqueios.length) h += '<div class="ld-sub"><b>Em aberto (impedem publicar)</b></div><ul class="ld-nota" style="font-size:8pt">' + d.pend.bloqueios.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + '</ul>';
+if (d.pend.conferir.length) h += '<div class="ld-sub"><b>Conferir</b></div><ul class="ld-nota" style="font-size:8pt">' + d.pend.conferir.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + '</ul>';
+return sec("Pendências", h);
+}
+function tplTimbrado(d) {
+var e = d.emp || {}, cb = d.cab;
+function urlCss(v) { v = s(v); return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v) ? v : ""; }
+var topo = s(e.timbradoTopo) || s(e.logo), fundo = s(e.timbradoFundo);
+var logo = !topo ? '' : (urlCss(topo) ? '<div class="ld-logo ld-logo-bg orcref-logo"></div>' : '<img class="ld-logo" src="' + esc(topo) + '" alt="">');
+var wm = !fundo ? '' : (urlCss(fundo) ? '<div class="ld-wm ld-wm-bg orcref-fundo"></div>' : '<img class="ld-wm" src="' + esc(fundo) + '" alt="">');
+var bs = cb.bases.filter(function (b) { return b.oficial; }).map(function (b) { return esc(b.rotulo) + (b.competencia ? ' ' + esc(b.competencia) : '') + (b.uf ? '-' + esc(b.uf) : ''); }).join(" · ") || "bases não informadas";
+var id = '<div class="ld-id"><b>ÓRGÃO:</b> ' + campo(cb.orgao, "órgão") + '<br><b>OBRA:</b> ' + campo(cb.obra, "obra") + '<br><b>LOCAL:</b> ' + campo(cb.local, "local") + (cb.uf ? ' / ' + esc(cb.uf) : '') +
+'<br><b>DATA-BASE / BASES:</b> ' + bs + '<br><b>REGIME:</b> ' + esc(cb.regime) + ' · <b>BDI:</b> ' + esc(P(cb.bdiPct)) +
+(cb.encargos && cb.encargos.horista != null ? ' · <b>ENCARGOS:</b> ' + esc(P(cb.encargos.horista)) + ' h / ' + esc(P(cb.encargos.mensalista)) + ' m' : ' · <b>ENCARGOS:</b> pendente') + '</div>';
+var rt = d.rt;
+var ass = '<div><b>' + campo(rt.nome, "responsável técnico") + '</b>Responsável pelo orçamento<br>' + campo(rt.registro, "registro") + ' · ' + esc(d.art.tipo) + ' ' + campo(d.art.numero, "nº") + '</div>';
+var rod = '<div>' + (s(e.nome) ? esc(e.nome) + (s(e.cnpj) ? ' · CNPJ ' + esc(e.cnpj) : '') + '<br>' : '') + 'Orçamento ' + esc(cb.numero) + ' · RT: ' + campo(rt.nome, "responsável técnico") + ' · ' + campo(rt.registro, "registro") +
+'</div><div class="pag">Página {{pag}} de <span class="orcref-tot">{{tot}}</span></div>';
+return '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + logo + '</div></template>' +
+'<template class="ld-tpl" data-n="ass"><div class="ld-ass">' + ass + '</div></template>' +
+'<template class="ld-tpl" data-n="rod"><div class="ld-rod">' + rod + '</div></template>' +
+'<template class="ld-tpl" data-n="wm">' + wm + '</template>';
+}
+function cssImagens(d) {
+var e = d.emp || {}, c = "";
+function u(v) { v = s(v); return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v) ? v : ""; }
+var a = u(e.timbradoTopo) || u(e.logo), b = u(e.timbradoFundo);
+if (a) c += '.orcref-logo{background-image:url("' + a + '")}';
+if (b) c += '.orcref-fundo{background-image:url("' + b + '")}';
+return c;
+}
+function html(d) {
+var LD = _dep("LicitacaoDocs");
+var corpo = secSintetica(d) + secAnalitica(d) + secBdi(d) + secEncargos(d) + secAbc(d, "serv") + secAbc(d, "ins") + secCronograma(d) + secMemoria(d) + secCotacao(d) +
+(d.caixa ? secCaixa(d) : "") + secDeclaracoes(d) + secPendencias(d);
+return '<div class="ld-raiz rel-doc orcref"><style>' + (LD ? LD.css : "") + cssImagens(d) + '</style><div class="ld-fonte">' + corpo + '</div>' + tplTimbrado(d) + '<div class="ld-paginas"></div></div>';
+}
+function paginar(raiz) {
+var LD = _dep("LicitacaoDocs");
+if (!LD || !LD.paginar) throw new Error("O paginador de documentos não carregou.");
+var n = LD.paginar(raiz);
+[].slice.call(raiz.querySelectorAll(".orcref-tot")).forEach(function (el) { el.textContent = String(n); });
+return n;
+}
+function pdf(d) {
+var PD = global.PdfDireto, doc = global.document;
+if (!PD || !doc) return Promise.reject(new Error("O gerador de PDF não carregou nesta página."));
+var host = doc.createElement("div");
+host.setAttribute("style", "position:absolute;left:-99999px;top:0;width:210mm");
+host.innerHTML = html(d);
+doc.body.appendChild(host);
+var limpar = function () { try { doc.body.removeChild(host); } catch (e) {} };
+try { paginar(host.querySelector(".ld-raiz")); } catch (e) { limpar(); return Promise.reject(e); }
+var folhas = host.querySelectorAll(".ld-pg");
+return PD.gerar(folhas, { titulo: "Orçamento de referência — " + (d.cab.obra || d.cab.numero), produtor: "OrçaPRO" }).then(function (res) { limpar(); return res; }, function (e) { limpar(); throw e; });
+}
+function baixar(orc, opcoes) {
+opcoes = opcoes || {};
+var r = montar(orc, opcoes);
+if (!r.ok) return Promise.reject(new Error(r.erro));
+var d = r.dados, formatos = opcoes.formatos || ["pdf", "xlsx"], nome = "Orcamento_referencia_" + String(orc.numero || "orcamento").replace(/[^A-Za-z0-9._-]+/g, "_");
+function entrega(blob, arq) {
+if (typeof opcoes.aoBlob === "function") { opcoes.aoBlob(blob, arq); return; }
+var PD = global.PdfDireto;
+if (PD && PD.baixar) PD.baixar(blob, arq);
+}
+var tarefas = [];
+if (formatos.indexOf("pdf") >= 0) tarefas.push(pdf(d).then(function (res) { entrega(res.blob, nome + ".pdf"); return { formato: "pdf", paginas: res.paginas }; }));
+if (formatos.indexOf("xlsx") >= 0) {
+tarefas.push(new Promise(function (ok) {
+var X = global.OrcamentoReferenciaXls, Ex = global.ExcelOrc;
+if (!X || !Ex) throw new Error("O gerador de Excel não carregou.");
+Ex.ensureExcelJS(function () { ok(); });
+}).then(function () { return global.OrcamentoReferenciaXls.gerar(global.ExcelJS, d); }).then(function (blob) { entrega(blob, nome + ".xlsx"); return { formato: "xlsx" }; }));
+}
+return Promise.all(tarefas).then(function (saidas) { return { ok: true, dados: d, saidas: saidas, pendencias: r.pendencias }; });
+}
+var OrcamentoReferencia = {
+montar: montar, html: html, paginar: paginar, pdf: pdf, baixar: baixar,
+curvaABC: curvaABC, alocarCentavos: alocarCentavos, CLASSES: CLASSES,
+_util: { fmt: fmt, R: R, P: P, norm: norm, cent: cent }
+};
+global.OrcamentoReferencia = OrcamentoReferencia;
+if (typeof module !== "undefined" && module.exports) module.exports = OrcamentoReferencia;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orcrefxls.js ==== */
+try {
+(function (global) {
+"use strict";
+var NAVY = "FF0F2740", ACO = "FF1858A8", BRANCO = "FFFFFFFF", CINZA = "FFF1F5F9", SUB = "FFE2E8F0", VERM = "FFC00000";
+var NUM = "#,##0.00", MOEDA = "R$ #,##0.00", PCT = '0.00"%"', COEF = "#,##0.00000";
+function s(v) { return String(v == null ? "" : v); }
+function thin() { var b = { style: "thin", color: { argb: "FFCBD5E1" } }; return { top: b, left: b, bottom: b, right: b }; }
+function nomeAba(n) { return s(n).replace(/[:\\\/?*\[\]]/g, "-").slice(0, 31); }
+function colL(n) { var r = ""; while (n > 0) { var m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; }
+function construir(ExcelJS, d) {
+var A = global.Arred || (typeof require === "function" ? require("./arredondamento.js") : null);
+var modo = d.modo;
+function wrap(expr, uni) {
+if (modo === "nenhum") return expr;
+var trunca = modo === "truncar2" || (uni && modo === "arred2truncpu");
+return (trunca ? "TRUNC(" : "ROUND(") + expr + ",2)";
+}
+var fV = function (e) { return wrap(e, false); }, fU = function (e) { return wrap(e, true); };
+var aV = function (v) { return A ? A.valor(v, modo) : v; };
+var wb = new ExcelJS.Workbook();
+wb.creator = s(d.emp && d.emp.nome) || "OrçaPRO"; wb.created = new Date();
+wb.calcProperties = { fullCalcOnLoad: true };
+var wr = wb.addWorksheet("Resumo", { properties: { tabColor: { argb: "FF16A34A" } } });
+var wsi = wb.addWorksheet("Sintética", { properties: { tabColor: { argb: ACO } } });
+var wan = wb.addWorksheet("Analítica", { properties: { tabColor: { argb: NAVY } } });
+var wbd = wb.addWorksheet("BDI", { properties: { tabColor: { argb: "FFF59E0B" } } });
+var wen = wb.addWorksheet("Encargos", { properties: { tabColor: { argb: "FFF59E0B" } } });
+var wa1 = wb.addWorksheet("Curva ABC Serviços", { properties: { tabColor: { argb: "FF8B5CF6" } } });
+var wa2 = wb.addWorksheet("Curva ABC Insumos", { properties: { tabColor: { argb: "FF8B5CF6" } } });
+var wcr = wb.addWorksheet("Cronograma", { properties: { tabColor: { argb: "FF0EA5E9" } } });
+var wme = wb.addWorksheet("Memória de Cálculo", { properties: { tabColor: { argb: "FF64748B" } } });
+var wco = wb.addWorksheet("Mapa de Cotação", { properties: { tabColor: { argb: "FF64748B" } } });
+var wca = d.caixa ? wb.addWorksheet("CAIXA - Repasse", { properties: { tabColor: { argb: "FF2563EB" } } }) : null;
+var wde = wb.addWorksheet("Declarações", { properties: { tabColor: { argb: "FF16A34A" } } });
+var wpe = (!d.pronto || d.pend.conferir.length) ? wb.addWorksheet("Pendências", { properties: { tabColor: { argb: VERM } } }) : null;
+function cab(ws, titulo, ncol) {
+ws.mergeCells(1, 1, 1, ncol); var c = ws.getCell(1, 1); c.value = titulo; c.font = { bold: true, size: 13, color: { argb: NAVY } };
+ws.mergeCells(2, 1, 2, ncol); var c2 = ws.getCell(2, 1);
+c2.value = "Órgão: " + (d.cab.orgao || "[PREENCHER: órgão]") + "  ·  Obra: " + (d.cab.obra || "[PREENCHER: obra]") + "  ·  " + (d.cab.local || "[PREENCHER: local]") + (d.cab.uf ? "/" + d.cab.uf : "");
+c2.font = { size: 9, color: { argb: "FF475569" } };
+ws.mergeCells(3, 1, 3, ncol); var c3 = ws.getCell(3, 1);
+c3.value = "Bases: " + (d.cab.dataBase || "não informadas") + "  ·  Regime: " + d.cab.regime + "  ·  BDI: " + d.bdiPct + "%  ·  " + d.cab.incidencia + "  ·  " + d.cab.arredondamento;
+c3.font = { size: 9, color: { argb: "FF475569" } };
+if (!d.pronto) { ws.mergeCells(4, 1, 4, ncol); var c4 = ws.getCell(4, 1); c4.value = "COM PENDÊNCIAS — NÃO PUBLICAR (ver a aba Pendências)"; c4.font = { bold: true, color: { argb: VERM } }; }
+}
+function head(ws, row, titulos) {
+titulos.forEach(function (t, i) {
+var c = ws.getCell(row, i + 1); c.value = t; c.font = { bold: true, color: { argb: BRANCO }, size: 10 };
+c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; c.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; c.border = thin();
+});
+ws.getRow(row).height = 28;
+}
+function larg(ws, ws2) { ws2.forEach(function (w, i) { ws.getColumn(i + 1).width = w; }); }
+function borda(ws, r, n) { for (var k = 1; k <= n; k++) ws.getCell(r, k).border = thin(); }
+function faixa(ws, r, n, texto, cor) {
+ws.mergeCells(r, 1, r, n); var c = ws.getCell(r, 1); c.value = texto; c.font = { bold: true, color: { argb: BRANCO } };
+c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: cor || ACO } }; c.border = thin();
+}
+larg(wr, [38, 70]);
+cab(wr, "Orçamento de referência — Resumo", 2);
+var rowsR = [
+["Órgão contratante", d.cab.orgao || "[PREENCHER: órgão]"], ["Obra", d.cab.obra || "[PREENCHER: obra]"], ["Objeto", d.cab.objeto || "[PREENCHER: objeto]"],
+["Local / UF", (d.cab.local || "[PREENCHER: local]") + (d.cab.uf ? " / " + d.cab.uf : "")], ["Processo", d.cab.processo || "—"], ["Orçamento nº", d.cab.numero],
+["Bases e competências", d.cab.dataBase || "não informadas"], ["Regime dos encargos", d.cab.regime],
+["Critério de arredondamento", d.cab.arredondamento], ["Incidência do BDI", d.cab.incidencia]
+];
+var r0 = 6; rowsR.forEach(function (x, i) { wr.getCell(r0 + i, 1).value = x[0]; wr.getCell(r0 + i, 1).font = { bold: true }; wr.getCell(r0 + i, 2).value = x[1]; borda(wr, r0 + i, 2); });
+var rBdi = r0 + rowsR.length;
+wr.getCell(rBdi, 1).value = "BDI aplicado (%)"; wr.getCell(rBdi, 1).font = { bold: true };
+wr.getCell(rBdi, 2).value = d.bdiPct; wr.getCell(rBdi, 2).numFmt = PCT; wr.getCell(rBdi, 2).alignment = { horizontal: "left" }; borda(wr, rBdi, 2);
+wb.definedNames.add("Resumo!$B$" + rBdi, "p_BDI");
+var rCd = rBdi + 1, rBv = rBdi + 2, rTt = rBdi + 3, rCk = rBdi + 4;
+["Custo direto", "BDI (R$)", "TOTAL GERAL", "Total no OrçaPRO (conferência)", "Diferença (deve ser zero)"].forEach(function (t, i) { wr.getCell(rCd + i, 1).value = t; wr.getCell(rCd + i, 1).font = { bold: true }; borda(wr, rCd + i, 2); });
+var rDif = rCk + 1;
+var rr = r0 + rowsR.length + 6;
+[["Responsável técnico", d.rt.nome || "[PREENCHER: nome]"], ["Registro", d.rt.registro || "[PREENCHER: registro CREA/CAU]"], [d.art.tipo + " do orçamento", d.art.numero || "[PREENCHER: número da ART/RRT]"]].forEach(function (x, i) {
+wr.getCell(rr + 1 + i, 1).value = x[0]; wr.getCell(rr + 1 + i, 1).font = { bold: true }; wr.getCell(rr + 1 + i, 2).value = x[1]; borda(wr, rr + 1 + i, 2);
+});
+larg(wsi, [9, 14, 13, 52, 7, 12, 14, 8, 15, 17, 9, 13, 15]);
+wsi.getColumn(12).hidden = true; wsi.getColumn(13).hidden = true;
+cab(wsi, "Planilha orçamentária sintética", 11);
+var HR = 6;
+head(wsi, HR, ["ITEM", "CÓDIGO", "FONTE", "DESCRIÇÃO", "UN.", "QUANT.", "CUSTO UNIT. S/ BDI", "BDI %", "PREÇO UNIT. C/ BDI", d.bdiNoPU ? "TOTAL" : "TOTAL (CUSTO)", "PESO %", "Custo base (precisão cheia)", "Custo total s/ BDI"]);
+wsi.views = [{ state: "frozen", ySplit: HR }];
+var r = HR + 1, subRows = [], rowDe = {}, subDe = {}, firstItem = r;
+var totCell = null;
+var pesoFormulas = [];
+d.etapas.forEach(function (E) {
+faixa(wsi, r, 11, E.numero + "  " + E.nome + (E.opcional ? "  (opcional)" : ""), ACO); r++;
+var f1 = r;
+E.itens.forEach(function (I, k) {
+wsi.getCell(r, 1).value = I.numero; wsi.getCell(r, 2).value = I.codigo; wsi.getCell(r, 3).value = I.fonte; wsi.getCell(r, 4).value = I.descricao; wsi.getCell(r, 5).value = I.unidade;
+wsi.getCell(r, 6).value = I.quantidade; wsi.getCell(r, 6).numFmt = NUM;
+wsi.getCell(r, 12).value = I.custoBase; wsi.getCell(r, 12).numFmt = "#,##0.0000";
+wsi.getCell(r, 7).value = { formula: fU("L" + r), result: I.cu }; wsi.getCell(r, 7).numFmt = MOEDA;
+if (d.bdiNoPU) wsi.getCell(r, 8).value = { formula: "p_BDI", result: d.bdiPct }; else wsi.getCell(r, 8).value = "—";
+wsi.getCell(r, 8).numFmt = PCT;
+wsi.getCell(r, 9).value = { formula: d.bdiNoPU ? fU("L" + r + "*(1+H" + r + "/100)") : fU("L" + r), result: I.pu }; wsi.getCell(r, 9).numFmt = MOEDA;
+wsi.getCell(r, 10).value = { formula: fV("F" + r + "*I" + r), result: d.bdiNoPU ? I.pt : aV(I.quantidade * I.pu) }; wsi.getCell(r, 10).numFmt = MOEDA;
+wsi.getCell(r, 13).value = { formula: fV("F" + r + "*G" + r), result: I.ct }; wsi.getCell(r, 13).numFmt = MOEDA;
+borda(wsi, r, 11);
+[6, 7, 9].forEach(function (c) { wsi.getCell(r, c).protection = { locked: false }; });
+if (k % 2) for (var c2 = 1; c2 <= 11; c2++) wsi.getCell(r, c2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: CINZA } };
+rowDe[I.numero] = r; pesoFormulas.push({ row: r, valor: d.bdiNoPU ? I.pt : I.ct });
+r++;
+});
+var f2 = r - 1;
+wsi.mergeCells(r, 1, r, 9);
+wsi.getCell(r, 1).value = "Subtotal da etapa " + E.numero; wsi.getCell(r, 1).alignment = { horizontal: "right" }; wsi.getCell(r, 1).font = { bold: true };
+wsi.getCell(r, 10).value = { formula: "SUM(J" + f1 + ":J" + f2 + ")", result: E.total }; wsi.getCell(r, 10).numFmt = MOEDA; wsi.getCell(r, 10).font = { bold: true };
+for (var c3 = 1; c3 <= 11; c3++) wsi.getCell(r, c3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: SUB } };
+borda(wsi, r, 11);
+subRows.push(r); subDe[E.numero] = r; pesoFormulas.push({ row: r, valor: E.total });
+r++;
+});
+var rCusto = null, rBdiL = null;
+if (!d.bdiNoPU) {
+wsi.mergeCells(r, 1, r, 9); wsi.getCell(r, 1).value = "Custo direto"; wsi.getCell(r, 1).alignment = { horizontal: "right" };
+wsi.getCell(r, 10).value = { formula: subRows.map(function (x) { return "J" + x; }).join("+"), result: d.tot.custoDireto }; wsi.getCell(r, 10).numFmt = MOEDA; borda(wsi, r, 11); rCusto = r; r++;
+wsi.mergeCells(r, 1, r, 9); wsi.getCell(r, 1).value = "BDI sobre o preço final"; wsi.getCell(r, 1).alignment = { horizontal: "right" };
+wsi.getCell(r, 10).value = { formula: fV("J" + rCusto + "*(1+p_BDI/100)") + "-J" + rCusto, result: d.tot.bdi }; wsi.getCell(r, 10).numFmt = MOEDA; borda(wsi, r, 11); rBdiL = r; r++;
+}
+var rTot = r;
+wsi.mergeCells(r, 1, r, 9); wsi.getCell(r, 1).value = "TOTAL GERAL"; wsi.getCell(r, 1).alignment = { horizontal: "right" }; wsi.getCell(r, 1).font = { bold: true };
+wsi.getCell(r, 10).value = { formula: d.bdiNoPU ? subRows.map(function (x) { return "J" + x; }).join("+") : "J" + rCusto + "+J" + rBdiL, result: d.tot.precoVenda };
+wsi.getCell(r, 10).numFmt = MOEDA; wsi.getCell(r, 10).font = { bold: true };
+for (var c4 = 1; c4 <= 11; c4++) wsi.getCell(r, c4).fill = { type: "pattern", pattern: "solid", fgColor: { argb: SUB } };
+borda(wsi, r, 11);
+var baseCell = d.bdiNoPU ? "J" + rTot : "J" + rCusto;
+pesoFormulas.forEach(function (p) {
+wsi.getCell(p.row, 11).value = { formula: "IFERROR(J" + p.row + "/" + "$" + baseCell.charAt(0) + "$" + baseCell.slice(1) + ",0)*100", result: (d.bdiNoPU ? d.tot.precoVenda : d.tot.custoDireto) > 0 ? p.valor / (d.bdiNoPU ? d.tot.precoVenda : d.tot.custoDireto) * 100 : 0 };
+wsi.getCell(p.row, 11).numFmt = NUM;
+});
+wsi.getCell(rTot, 11).value = 100; wsi.getCell(rTot, 11).numFmt = NUM;
+var rNota = rTot + 2;
+wsi.mergeCells(rNota, 1, rNota, 11);
+wsi.getCell(rNota, 1).value = "Quantidade (F), custo unitário (L, oculta) e BDI (Resumo) são editáveis; o resto recalcula com o critério: " + d.cab.arredondamento + ". Peso % sobre " + (d.bdiNoPU ? "o total geral" : "o custo direto") + ".";
+wsi.getCell(rNota, 1).font = { italic: true, size: 9, color: { argb: "FF64748B" } };
+wr.getCell(rCd, 2).value = d.bdiNoPU ? { formula: "SUM(Sintética!M" + firstItem + ":M" + (rTot - 1) + ")", result: d.tot.custoDireto } : { formula: "Sintética!J" + rCusto, result: d.tot.custoDireto };
+wr.getCell(rBv, 2).value = { formula: "B" + rTt + "-B" + rCd, result: d.tot.bdi };
+wr.getCell(rTt, 2).value = { formula: "Sintética!J" + rTot, result: d.tot.precoVenda };
+wr.getCell(rCk, 2).value = d.tot.precoVenda;
+wr.getCell(rDif, 1).value = "Diferença (deve ser zero)"; wr.getCell(rDif, 1).font = { bold: true }; borda(wr, rDif, 2);
+wr.getCell(rDif, 2).value = { formula: "ROUND(B" + rTt + "-B" + rCk + ",2)", result: 0 };
+[rCd, rBv, rTt, rCk, rDif].forEach(function (x) { wr.getCell(x, 2).numFmt = MOEDA; wr.getCell(x, 2).alignment = { horizontal: "left" }; });
+wr.getCell(rTt, 2).font = { bold: true };
+wr.getCell(rCk, 1).value = "Total no OrçaPRO na emissão (conferência)";
+var rr2 = rr;
+wr.getCell(rr2, 1).value = "Responsabilidade técnica"; wr.getCell(rr2, 1).font = { bold: true, color: { argb: NAVY } };
+larg(wan, [9, 14, 11, 56, 7, 12, 14, 16, 14]);
+cab(wan, "Planilha orçamentária analítica (composições)", 9);
+var ra = 6;
+d.itens.forEach(function (I) {
+var sr = rowDe[I.numero];
+wan.mergeCells(ra, 1, ra, 9); var h = wan.getCell(ra, 1);
+h.value = I.numero + "   " + I.codigo + "   [" + I.fonte + "]   " + I.descricao + "   (" + I.unidade + ")";
+h.font = { bold: true, color: { argb: BRANCO } }; h.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACO } }; ra++;
+if (I.composicao) {
+head(wan, ra, ["TIPO", "CÓDIGO", "UN.", "DESCRIÇÃO", "", "COEFICIENTE", "PREÇO UNIT.", "CUSTO", ""]); ra++;
+var i1 = ra;
+I.composicao.insumos.forEach(function (x) {
+wan.getCell(ra, 1).value = x.cat; wan.getCell(ra, 2).value = x.codigo; wan.getCell(ra, 3).value = x.unidade; wan.getCell(ra, 4).value = x.descricao;
+wan.getCell(ra, 6).value = x.coef; wan.getCell(ra, 6).numFmt = COEF; wan.getCell(ra, 7).value = x.cu; wan.getCell(ra, 7).numFmt = "#,##0.0000";
+wan.getCell(ra, 8).value = { formula: "F" + ra + "*G" + ra, result: x.ct }; wan.getCell(ra, 8).numFmt = "#,##0.0000"; borda(wan, ra, 8); ra++;
+});
+wan.getCell(ra, 4).value = "Custo unitário da composição (" + I.composicao.origem + ")"; wan.getCell(ra, 4).font = { bold: true };
+wan.getCell(ra, 8).value = { formula: "SUM(H" + i1 + ":H" + (ra - 1) + ")", result: I.composicao.soma }; wan.getCell(ra, 8).numFmt = "#,##0.0000"; wan.getCell(ra, 8).font = { bold: true };
+wan.getCell(ra, 9).value = { formula: 'IF(ABS(H' + ra + '-Sintética!G' + sr + ')<=MAX(0.02,Sintética!G' + sr + '*0.01),"confere","CONFERIR")', result: I.composicao.confere ? "confere" : "CONFERIR" };
+ra++;
+} else {
+wan.mergeCells(ra, 1, ra, 9); wan.getCell(ra, 1).value = "Composição sem detalhamento na base carregada" + (I.comBaseOficial ? "" : " (item sem base oficial: ver Mapa de Cotação)") + ". Nenhum insumo foi inventado.";
+wan.getCell(ra, 1).font = { italic: true, color: { argb: VERM } }; ra++;
+}
+wan.getCell(ra, 4).value = "Custo unitário (Sintética)"; wan.getCell(ra, 8).value = { formula: "Sintética!G" + sr, result: I.cu }; wan.getCell(ra, 8).numFmt = MOEDA; ra++;
+if (d.bdiNoPU) {
+wan.getCell(ra, 4).value = "BDI"; wan.getCell(ra, 7).value = { formula: "Sintética!H" + sr, result: d.bdiPct }; wan.getCell(ra, 7).numFmt = PCT;
+wan.getCell(ra, 8).value = { formula: "Sintética!I" + sr + "-Sintética!G" + sr, result: I.pu - I.cu }; wan.getCell(ra, 8).numFmt = MOEDA; ra++;
+wan.getCell(ra, 4).value = "Preço unitário com BDI"; wan.getCell(ra, 4).font = { bold: true };
+wan.getCell(ra, 8).value = { formula: "Sintética!I" + sr, result: I.pu }; wan.getCell(ra, 8).numFmt = MOEDA; wan.getCell(ra, 8).font = { bold: true }; ra++;
+}
+ra++;
+});
+larg(wbd, [14, 60, 14]);
+cab(wbd, "Composição do BDI — Acórdão TCU nº 2.622/2013", 3);
+function blocoBdi(ws, q, r1, titulo) {
+var r2 = r1;
+if (titulo) { ws.mergeCells(r2, 1, r2, 3); ws.getCell(r2, 1).value = titulo; ws.getCell(r2, 1).font = { bold: true, color: { argb: NAVY } }; r2++; }
+if (!q.parcelas) { ws.mergeCells(r2, 1, r2, 3); ws.getCell(r2, 1).value = "PENDÊNCIA: composição do BDI não informada (BDI de " + q.pct + "% digitado direto). Nenhuma parcela foi inventada."; ws.getCell(r2, 1).font = { bold: true, color: { argb: VERM } }; return r2 + 2; }
+head(ws, r2, ["SIGLA", "DESCRIÇÃO", "%"]); r2++;
+var p0 = r2;
+q.parcelas.forEach(function (p) { ws.getCell(r2, 1).value = p.sigla; ws.getCell(r2, 2).value = p.nome; ws.getCell(r2, 3).value = p.pct / 100; ws.getCell(r2, 3).numFmt = "0.00%"; ws.getCell(r2, 3).protection = { locked: false }; borda(ws, r2, 3); r2++; });
+var AC = "C" + p0, S = "C" + (p0 + 1), Rr = "C" + (p0 + 2), G = "C" + (p0 + 3), DF = "C" + (p0 + 4), L = "C" + (p0 + 5), I = "C" + (p0 + 6);
+ws.getCell(r2, 2).value = "BDI pela fórmula"; ws.getCell(r2, 2).font = { bold: true };
+ws.getCell(r2, 3).value = { formula: "(1+" + AC + "+" + S + "+" + Rr + "+" + G + ")*(1+" + DF + ")*(1+" + L + ")/(1-" + I + ")-1", result: q.calculado / 100 }; ws.getCell(r2, 3).numFmt = "0.00%"; ws.getCell(r2, 3).font = { bold: true }; var rf = r2; r2++;
+ws.getCell(r2, 2).value = "BDI aplicado no orçamento"; ws.getCell(r2, 3).value = q.pct / 100; ws.getCell(r2, 3).numFmt = "0.00%"; r2++;
+ws.getCell(r2, 2).value = "Confere?"; ws.getCell(r2, 3).value = { formula: 'IF(ABS(C' + rf + '-C' + (r2 - 1) + ')<=0.0005,"confere","DIVERGE")', result: Math.abs(q.calculado - q.pct) <= 0.05 ? "confere" : "DIVERGE" }; r2++;
+if (q.faixa) {
+ws.getCell(r2, 2).value = "Faixa do Acórdão (" + q.tipoObraRotulo + (q.tipoInformado ? "" : ", assumido") + "): " + q.faixa.min + "% a " + q.faixa.max + "%";
+ws.getCell(r2, 3).value = { formula: 'IF(AND(C' + (r2 - 2) + '>=' + (q.faixa.min / 100) + ',C' + (r2 - 2) + '<=' + (q.faixa.max / 100) + '),"dentro","FORA DA FAIXA")', result: (q.pct >= q.faixa.min && q.pct <= q.faixa.max) ? "dentro" : "FORA DA FAIXA" };
+r2++;
+}
+return r2 + 1;
+}
+var rb = blocoBdi(wbd, d.bdi, 5, "");
+if (d.bdi.diferenciado) blocoBdi(wbd, d.bdi.diferenciado, rb, "BDI diferenciado — fornecimento de materiais e equipamentos");
+else { wbd.getCell(rb, 1).value = "Um único BDI para todos os itens; não há BDI diferenciado informado para fornecimento de materiais e equipamentos."; wbd.getCell(rb, 1).font = { italic: true }; }
+larg(wen, [10, 70, 14, 16]);
+cab(wen, "Encargos sociais", 4);
+var re = 6;
+if (!d.enc.ok) {
+wen.mergeCells(re, 1, re, 4); wen.getCell(re, 1).value = "PENDÊNCIA: " + d.enc.motivo; wen.getCell(re, 1).font = { bold: true, color: { argb: VERM } };
+if (d.enc.declarado) { wen.getCell(re + 2, 2).value = "Declarado no orçamento (horista / mensalista)"; wen.getCell(re + 2, 3).value = d.enc.declarado.horista; wen.getCell(re + 2, 4).value = d.enc.declarado.mensalista; }
+} else {
+wen.getCell(re, 1).value = "Regime: " + d.enc.regimeRotulo + " · UF " + d.enc.uf + " · " + (d.enc.rotulo || d.enc.fonte); wen.getCell(re, 1).font = { bold: true }; re += 2;
+head(wen, re, ["COD", "DESCRIÇÃO", "HORISTA %", "MENSALISTA %"]); re++;
+var tg = [];
+d.enc.grupos.forEach(function (g) {
+faixa(wen, re, 4, "GRUPO " + g.grupo, ACO); re++;
+var g1 = re;
+g.linhas.forEach(function (l) { wen.getCell(re, 1).value = l.codigo; wen.getCell(re, 2).value = l.descricao; wen.getCell(re, 3).value = l.horista; wen.getCell(re, 3).numFmt = PCT; wen.getCell(re, 4).value = l.mensalistaNI ? "Não incide" : l.mensalista; wen.getCell(re, 4).numFmt = PCT; borda(wen, re, 4); re++; });
+wen.getCell(re, 2).value = "TOTAL GRUPO " + g.grupo; wen.getCell(re, 2).font = { bold: true };
+wen.getCell(re, 3).value = { formula: "SUM(C" + g1 + ":C" + (re - 1) + ")", result: g.horista }; wen.getCell(re, 3).numFmt = PCT;
+wen.getCell(re, 4).value = { formula: "SUM(D" + g1 + ":D" + (re - 1) + ")", result: g.mensalista }; wen.getCell(re, 4).numFmt = PCT;
+tg.push(re); re++;
+});
+wen.getCell(re, 2).value = "A + B + C + D"; wen.getCell(re, 2).font = { bold: true };
+wen.getCell(re, 3).value = { formula: tg.map(function (x) { return "C" + x; }).join("+"), result: d.enc.total.horista }; wen.getCell(re, 3).numFmt = PCT;
+wen.getCell(re, 4).value = { formula: tg.map(function (x) { return "D" + x; }).join("+"), result: d.enc.total.mensalista }; wen.getCell(re, 4).numFmt = PCT; re += 2;
+if (d.enc.outroRegime) { wen.getCell(re, 2).value = "Para comparação, regime " + d.enc.outroRegime.regime + " (totais)"; wen.getCell(re, 3).value = d.enc.outroRegime.horista; wen.getCell(re, 3).numFmt = PCT; wen.getCell(re, 4).value = d.enc.outroRegime.mensalista; wen.getCell(re, 4).numFmt = PCT; re++; }
+if (d.enc.declarado) { wen.getCell(re, 2).value = "Declarado no orçamento" + (d.enc.divergeDeclarado ? " (DIVERGE da tabela)" : " (confere)"); wen.getCell(re, 3).value = d.enc.declarado.horista; wen.getCell(re, 3).numFmt = PCT; wen.getCell(re, 4).value = d.enc.declarado.mensalista; wen.getCell(re, 4).numFmt = PCT; }
+}
+function abcSheet(ws, ab, tipo) {
+larg(ws, [11, 16, 58, 7, 14, 17, 10, 11, 7]);
+cab(ws, "Curva ABC de " + (tipo === "serv" ? "serviços" : "insumos"), 9);
+head(ws, 6, [tipo === "serv" ? "ITEM" : "TIPO", "CÓDIGO", "DESCRIÇÃO", "UN.", "QUANT.", "VALOR", "%", "ACUM. %", "CL."]);
+var q = 7, q1 = q, nL = ab.linhas.length, qT = q1 + nL;
+ab.linhas.forEach(function (c) {
+ws.getCell(q, 1).value = tipo === "serv" ? c.numero : c.cat; ws.getCell(q, 2).value = c.codigo; ws.getCell(q, 3).value = c.descricao; ws.getCell(q, 4).value = c.unidade;
+ws.getCell(q, 5).value = c.quantidade; ws.getCell(q, 5).numFmt = NUM;
+if (tipo === "serv") ws.getCell(q, 6).value = { formula: "Sintética!" + (d.bdiNoPU ? "J" : "M") + rowDe[c.numero], result: c.valor }; else ws.getCell(q, 6).value = c.valor;
+ws.getCell(q, 6).numFmt = MOEDA;
+ws.getCell(q, 7).value = { formula: "IFERROR(F" + q + "/F$" + qT + ",0)", result: c.pct / 100 }; ws.getCell(q, 7).numFmt = "0.00%";
+ws.getCell(q, 8).value = { formula: "IFERROR(SUM(F$" + q1 + ":F" + q + ")/F$" + qT + ",0)", result: c.acum / 100 }; ws.getCell(q, 8).numFmt = "0.00%";
+ws.getCell(q, 9).value = { formula: 'IF(H' + q + '<=0.8+1E-9,"A",IF(H' + q + '<=0.95+1E-9,"B","C"))', result: c.classe };
+borda(ws, q, 9); q++;
+});
+ws.getCell(qT, 3).value = "TOTAL"; ws.getCell(qT, 3).font = { bold: true };
+ws.getCell(qT, 6).value = { formula: "SUM(F" + q1 + ":F" + (qT - 1) + ")", result: ab.total }; ws.getCell(qT, 6).numFmt = MOEDA; ws.getCell(qT, 6).font = { bold: true };
+var qq = qT + 2;
+head(ws, qq, ["CLASSE", "ITENS", "VALOR", "%"]); qq++;
+["A", "B", "C"].forEach(function (cl) {
+ws.getCell(qq, 1).value = cl;
+ws.getCell(qq, 2).value = { formula: 'COUNTIF(I' + q1 + ':I' + (qT - 1) + ',A' + qq + ')', result: ab.resumo[cl].qtd };
+ws.getCell(qq, 3).value = { formula: 'SUMIF(I' + q1 + ':I' + (qT - 1) + ',A' + qq + ',F' + q1 + ':F' + (qT - 1) + ')', result: ab.resumo[cl].valor }; ws.getCell(qq, 3).numFmt = MOEDA;
+ws.getCell(qq, 4).value = { formula: "IFERROR(C" + qq + "/F" + qT + ",0)", result: ab.resumo[cl].pct / 100 }; ws.getCell(qq, 4).numFmt = "0.00%"; borda(ws, qq, 4); qq++;
+});
+ws.getCell(qq + 1, 1).value = "Classe A: até 80% do valor acumulado; B: de 80% a 95%; C: acima de 95%.";
+ws.getCell(qq + 1, 1).font = { italic: true, size: 9 };
+ws.views = [{ state: "frozen", ySplit: 6 }];
+}
+abcSheet(wa1, d.abcServ, "serv");
+abcSheet(wa2, d.abcIns, "ins");
+cab(wcr, "Cronograma físico-financeiro", 6);
+if (!d.crono) {
+wcr.mergeCells(6, 1, 6, 6); wcr.getCell(6, 1).value = "PENDÊNCIA: " + d.cronoMotivo; wcr.getCell(6, 1).font = { bold: true, color: { argb: VERM } };
+} else {
+var c = d.crono, n = c.nMeses, cP = 4 + n + 1;
+var cTot = 4 + n, cPct = cTot + 1;
+wcr.getColumn(1).width = 8; wcr.getColumn(2).width = 40; wcr.getColumn(3).width = 17;
+var hd = ["ITEM", "ETAPA", "VALOR (R$)"], k;
+for (k = 0; k < n; k++) hd.push((c.rotulos[k] || ((k + 1) + "º mês")) + " (R$)");
+hd.push("TOTAL");
+for (k = 0; k < n; k++) hd.push((c.rotulos[k] || ((k + 1) + "º mês")) + " (% físico)");
+head(wcr, 6, hd);
+for (k = 4; k <= cPct + n - 1; k++) wcr.getColumn(k).width = 15;
+var rc = 7, rc1 = rc;
+c.linhas.forEach(function (l) {
+wcr.getCell(rc, 1).value = l.numero; wcr.getCell(rc, 2).value = l.nome;
+wcr.getCell(rc, 3).value = { formula: "Sintética!J" + subDe[l.numero], result: l.total }; wcr.getCell(rc, 3).numFmt = MOEDA;
+for (k = 0; k < n; k++) {
+var cp = colL(cPct + k);
+wcr.getCell(rc, cPct + k).value = l.pcts[k]; wcr.getCell(rc, cPct + k).numFmt = "0.00%"; wcr.getCell(rc, cPct + k).protection = { locked: false };
+var fm = k === n - 1 ? "$C" + rc + "-SUM(" + colL(4) + rc + ":" + colL(4 + n - 2) + rc + ")" : "ROUND($C" + rc + "*" + cp + rc + ",2)";
+if (k === n - 1 && n === 1) fm = "$C" + rc;
+wcr.getCell(rc, 4 + k).value = { formula: fm, result: l.valores[k] }; wcr.getCell(rc, 4 + k).numFmt = MOEDA;
+}
+wcr.getCell(rc, cTot).value = { formula: "SUM(" + colL(4) + rc + ":" + colL(4 + n - 1) + rc + ")", result: l.total }; wcr.getCell(rc, cTot).numFmt = MOEDA;
+borda(wcr, rc, cPct + n - 1); rc++;
+});
+wcr.getCell(rc, 2).value = "TOTAL"; wcr.getCell(rc, 2).font = { bold: true };
+wcr.getCell(rc, 3).value = { formula: "SUM(C" + rc1 + ":C" + (rc - 1) + ")", result: c.total }; wcr.getCell(rc, 3).numFmt = MOEDA;
+for (k = 0; k < n; k++) { wcr.getCell(rc, 4 + k).value = { formula: "SUM(" + colL(4 + k) + rc1 + ":" + colL(4 + k) + (rc - 1) + ")", result: c.totais[k].valor }; wcr.getCell(rc, 4 + k).numFmt = MOEDA; wcr.getCell(rc, 4 + k).font = { bold: true }; }
+wcr.getCell(rc, cTot).value = { formula: "SUM(" + colL(cTot) + rc1 + ":" + colL(cTot) + (rc - 1) + ")", result: c.total }; wcr.getCell(rc, cTot).numFmt = MOEDA;
+var rAc = rc + 1;
+wcr.getCell(rAc, 2).value = "Acumulado";
+for (k = 0; k < n; k++) { wcr.getCell(rAc, 4 + k).value = { formula: "SUM($" + colL(4) + rc + ":" + colL(4 + k) + rc + ")", result: c.totais[k].acumValor }; wcr.getCell(rAc, 4 + k).numFmt = MOEDA; }
+wcr.getCell(rAc + 1, 2).value = "% acumulado";
+for (k = 0; k < n; k++) { wcr.getCell(rAc + 1, 4 + k).value = { formula: "IFERROR(" + colL(4 + k) + rAc + "/$C" + rc + ",0)", result: c.totais[k].acumPct / 100 }; wcr.getCell(rAc + 1, 4 + k).numFmt = "0.00%"; }
+wcr.getCell(rAc + 3, 2).value = "Confere com a Sintética?";
+wcr.getCell(rAc + 3, 3).value = { formula: 'IF(ROUND(' + colL(cTot) + rc + '-Sintética!' + (d.bdiNoPU ? "J" : "J") + (d.bdiNoPU ? rTot : rCusto) + ',2)=0,"confere","DIVERGE")', result: "confere" };
+wcr.getCell(rAc + 4, 2).value = "Origem: " + c.origem + ". Meses: ROUND(valor × % físico); o último mês fecha a etapa.";
+wcr.getCell(rAc + 4, 2).font = { italic: true, size: 9 };
+wcr.views = [{ state: "frozen", ySplit: 6, xSplit: 3 }];
+}
+larg(wme, [9, 14, 50, 7, 13, 90]);
+cab(wme, "Memória de cálculo dos quantitativos", 6);
+head(wme, 6, ["ITEM", "CÓDIGO", "DESCRIÇÃO", "UN.", "QUANT.", "MEMÓRIA DE CÁLCULO"]);
+var rm = 7;
+d.itens.forEach(function (I) {
+wme.getCell(rm, 1).value = I.numero; wme.getCell(rm, 2).value = I.codigo; wme.getCell(rm, 3).value = I.descricao; wme.getCell(rm, 4).value = I.unidade;
+wme.getCell(rm, 5).value = { formula: "Sintética!F" + rowDe[I.numero], result: I.quantidade }; wme.getCell(rm, 5).numFmt = NUM;
+wme.getCell(rm, 6).value = I.memoria || "SEM MEMÓRIA DE CÁLCULO INFORMADA"; wme.getCell(rm, 6).alignment = { wrapText: true, vertical: "top" };
+if (!I.memoria) wme.getCell(rm, 6).font = { bold: true, color: { argb: VERM } };
+borda(wme, rm, 6); rm++;
+});
+larg(wco, [9, 48, 7, 28, 14, 15, 15, 15, 15, 40]);
+cab(wco, "Mapa de cotação — itens sem base oficial", 10);
+if (!d.cot.linhas.length) { wco.getCell(6, 1).value = "Todos os itens têm código de base oficial; não há composição própria nem item a cotar."; }
+else {
+head(wco, 6, ["ITEM", "DESCRIÇÃO / FONTE", "UN.", "FORNECEDOR / BASE", "DATA", "VALOR", "MÉDIA", "MEDIANA", "MENOR", "ADOTADO · CUSTO NO ORÇAMENTO · SITUAÇÃO"]);
+var rk = 7;
+d.cot.linhas.forEach(function (l) {
+wco.mergeCells(rk, 2, rk, 4); wco.getCell(rk, 1).value = l.numero; wco.getCell(rk, 2).value = l.descricao; wco.getCell(rk, 2).font = { bold: true }; wco.getCell(rk, 3).value = l.unidade; rk++;
+var v1 = rk;
+l.fontes.forEach(function (f) {
+wco.getCell(rk, 4).value = f.fornecedor || f.base || f.tipo; wco.getCell(rk, 5).value = (f.data || "") + (f.hora ? " " + f.hora : ""); wco.getCell(rk, 6).value = f.valor; wco.getCell(rk, 6).numFmt = MOEDA; borda(wco, rk, 6); rk++;
+});
+if (l.fontes.length) {
+wco.getCell(rk - 1, 7).value = { formula: "AVERAGE(F" + v1 + ":F" + (rk - 1) + ")", result: l.media }; wco.getCell(rk - 1, 8).value = { formula: "MEDIAN(F" + v1 + ":F" + (rk - 1) + ")", result: l.mediana };
+wco.getCell(rk - 1, 9).value = { formula: "MIN(F" + v1 + ":F" + (rk - 1) + ")", result: l.menor };
+[7, 8, 9].forEach(function (q2) { wco.getCell(rk - 1, q2).numFmt = MOEDA; });
+} else { wco.getCell(rk, 4).value = "SEM PESQUISA ANEXADA"; wco.getCell(rk, 4).font = { bold: true, color: { argb: VERM } }; rk++; }
+wco.getCell(rk - 1, 10).value = (l.adotado != null ? "Adotado " + l.adotado + " (" + (l.metodo || "método n/i") + ")" : "PENDENTE") + " · custo no orçamento " + l.custoItem + " · " + l.situacao + (l.diverge ? " · DIVERGE" : "") + (l.justificativa ? " · " + l.justificativa : "");
+wco.getCell(rk - 1, 10).alignment = { wrapText: true, vertical: "top" };
+rk++;
+});
+}
+if (wca) {
+larg(wca, [14, 70, 20, 12]);
+cab(wca, "Padrão CAIXA — repasse federal (Decreto 7.983/2013)", 4);
+wca.mergeCells(5, 1, 5, 4); wca.getCell(5, 1).value = d.caixa.aviso; wca.getCell(5, 1).font = { bold: true, color: { argb: VERM } }; wca.getCell(5, 1).alignment = { wrapText: true }; wca.getRow(5).height = 32;
+var rx = 7;
+[["Proponente / órgão", d.cab.orgao || "[PREENCHER: órgão]"], ["Objeto", d.cab.objeto || "[PREENCHER: objeto]"], ["Local / UF", (d.cab.local || "[PREENCHER: local]") + " / " + d.cab.uf],
+["Base de referência (SINAPI)", d.cab.dataBase || "não informada"], ["Regime de encargos", d.cab.regime], ["Itens sem código de base oficial", String(d.caixa.proprias)]].forEach(function (x) {
+wca.getCell(rx, 1).value = x[0]; wca.getCell(rx, 1).font = { bold: true }; wca.mergeCells(rx, 2, rx, 4); wca.getCell(rx, 2).value = x[1]; rx++;
+});
+rx++;
+wca.getCell(rx, 1).value = "Custo direto"; wca.getCell(rx, 3).value = { formula: "Resumo!B" + rCd, result: d.tot.custoDireto }; wca.getCell(rx, 3).numFmt = MOEDA; rx++;
+wca.getCell(rx, 1).value = "BDI"; wca.getCell(rx, 3).value = { formula: "Resumo!B" + rBv, result: d.tot.bdi }; wca.getCell(rx, 3).numFmt = MOEDA; rx++;
+rx++;
+head(wca, rx, ["ITEM", "ETAPA (QCI / PO)", "VALOR", "%"]); rx++;
+var x1 = rx;
+d.etapas.forEach(function (E) {
+wca.getCell(rx, 1).value = E.numero; wca.getCell(rx, 2).value = E.nome; wca.getCell(rx, 3).value = { formula: "Sintética!J" + subDe[E.numero], result: E.total }; wca.getCell(rx, 3).numFmt = MOEDA;
+borda(wca, rx, 4); rx++;
+});
+var xT = rx;
+wca.getCell(xT, 2).value = "TOTAL DO INVESTIMENTO"; wca.getCell(xT, 2).font = { bold: true };
+wca.getCell(xT, 3).value = { formula: "SUM(C" + x1 + ":C" + (xT - 1) + ")", result: d.bdiNoPU ? d.tot.precoVenda : d.tot.custoDireto }; wca.getCell(xT, 3).numFmt = MOEDA;
+for (var xr = x1; xr < xT; xr++) { wca.getCell(xr, 4).value = { formula: "IFERROR(C" + xr + "/C$" + xT + ",0)", result: 0 }; wca.getCell(xr, 4).numFmt = "0.00%"; }
+if (d.caixa.foraSinapi.length) { wca.mergeCells(xT + 2, 1, xT + 2, 4); wca.getCell(xT + 2, 1).value = "Bases fora da SINAPI: " + d.caixa.foraSinapi.join(", ") + ". Justificar pelo art. 6º do Decreto 7.983/2013."; wca.getCell(xT + 2, 1).font = { bold: true, color: { argb: VERM } }; }
+}
+larg(wde, [30, 110]);
+cab(wde, "Declarações do responsável pelo orçamento", 2);
+var rd = 6;
+d.declaracoes.forEach(function (x) { wde.getCell(rd, 1).value = x.titulo; wde.getCell(rd, 1).font = { bold: true }; wde.getCell(rd, 2).value = x.texto; wde.getCell(rd, 2).alignment = { wrapText: true, vertical: "top" }; wde.getRow(rd).height = 48; borda(wde, rd, 2); rd++; });
+rd++;
+[["Responsável técnico", d.rt.nome || "[PREENCHER: nome]"], ["Registro (CREA/CAU)", d.rt.registro || "[PREENCHER: registro]"], [d.art.tipo + " do orçamento", d.art.numero || "[PREENCHER: número da ART/RRT]"], ["Data", "[PREENCHER: data]"]].forEach(function (x) {
+wde.getCell(rd, 1).value = x[0]; wde.getCell(rd, 1).font = { bold: true }; wde.getCell(rd, 2).value = x[1]; borda(wde, rd, 2); rd++;
+});
+wde.getCell(rd + 1, 1).value = "Minuta-base da RA Engenharia: revisar com o jurídico do órgão antes de assinar."; wde.getCell(rd + 1, 1).font = { italic: true, size: 9 };
+if (wpe) {
+larg(wpe, [16, 140]);
+cab(wpe, "Pendências e pontos a conferir", 2);
+var rp = 6;
+d.pend.bloqueios.forEach(function (x) { wpe.getCell(rp, 1).value = "EM ABERTO"; wpe.getCell(rp, 1).font = { bold: true, color: { argb: VERM } }; wpe.getCell(rp, 2).value = x; wpe.getCell(rp, 2).alignment = { wrapText: true }; rp++; });
+d.pend.conferir.forEach(function (x) { wpe.getCell(rp, 1).value = "CONFERIR"; wpe.getCell(rp, 2).value = x; wpe.getCell(rp, 2).alignment = { wrapText: true }; rp++; });
+}
+return wb;
+}
+function gerar(ExcelJS, d) {
+var wb = construir(ExcelJS, d);
+return Promise.resolve(wb.xlsx.writeBuffer()).then(function (buf) {
+return typeof Blob !== "undefined" ? new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }) : buf;
+});
+}
+var OrcamentoReferenciaXls = { construir: construir, gerar: gerar };
+global.OrcamentoReferenciaXls = OrcamentoReferenciaXls;
+if (typeof module !== "undefined" && module.exports) module.exports = OrcamentoReferenciaXls;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orcrefui.js ==== */
+try {
+(function (global) {
+"use strict";
+var CH = "orcapro:orcref:";
+function s(v) { return String(v == null ? "" : v).trim(); }
+function esc(v) { return s(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function lerSalvo(id) { try { return JSON.parse(global.localStorage.getItem(CH + id) || "{}") || {}; } catch (e) { return {}; } }
+function gravarSalvo(id, o) { try { global.localStorage.setItem(CH + id, JSON.stringify(o)); } catch (e) {} }
+function el(id) { return global.document ? global.document.getElementById(id) : null; }
+function val(id) { var e = el(id); return e ? s(e.value) : ""; }
+function opcoesDe(orc, f) {
+var emp = (global.Empresa && global.Empresa.dados) ? global.Empresa.dados() : {};
+try { if (global.Empresa && global.Empresa.logo && global.Empresa.logo() && !emp.timbradoTopo) emp.timbradoTopo = global.Empresa.logo(); } catch (e) {}
+var bases = [];
+try { bases = (global.Bases && global.Bases.lista) ? global.Bases.lista() : []; } catch (e2) { bases = []; }
+return {
+empresa: emp, bases: bases, tipoObra: f.tipoObra || "", recursoFederal: !!f.recursoFederal, processo: f.processo || "",
+responsavel: { nome: f.rtNome || s(emp.rtNome) || s(emp.responsavel), titulo: s(emp.titulo), registro: f.rtReg || s(emp.rtCrea) || s(emp.crea) },
+art: { tipo: f.artTipo || "ART", numero: f.artNum || "" }
+};
+}
+function listaHtml(tit, a, cor) {
+return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px;color:' + cor + '">' + tit + ' (' + a.length + ')</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' +
+a.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") + (a.length > 12 ? '<li>e mais ' + (a.length - 12) + '…</li>' : '') + '</ul>' : "";
+}
+function lerForm() {
+var e = el("orcref-fed");
+return { tipoObra: val("orcref-tipo"), recursoFederal: !!(e && e.checked), processo: val("orcref-proc"), rtNome: val("orcref-rt"), rtReg: val("orcref-reg"), artTipo: val("orcref-arttipo"), artNum: val("orcref-art") };
+}
+function abrir(orc) {
+var UI = global.UI, OR = global.OrcamentoReferencia;
+if (!orc || !OR || !UI) return;
+var salvo = lerSalvo(orc.id), emp = (global.Empresa && global.Empresa.dados) ? global.Empresa.dados() : {};
+var tipos = global.Bdi.FAIXAS_TCU;
+var opt = '<option value="">(escolha o tipo de obra)</option>' + Object.keys(tipos).map(function (k) { return '<option value="' + k + '"' + (salvo.tipoObra === k ? " selected" : "") + '>' + esc(tipos[k].label) + '</option>'; }).join("");
+function campo(rot, id, v) { return '<label style="display:block;margin:6px 0"><span style="font-size:12px;color:#64748b">' + rot + '</span><input id="' + id + '" value="' + esc(v) + '" style="width:100%"></label>'; }
+var corpo = '<p style="font-size:13px;margin-top:0">Gera o <b>orçamento de referência</b> no padrão que o órgão público precisa: sintética, analítica, BDI, encargos, curva ABC de serviços e de insumos, cronograma físico-financeiro, memória de cálculo, mapa de cotação, declarações e (com recurso da União) a aba para a CAIXA. PDF em A4 e Excel com fórmulas vivas.</p>' +
+'<label style="display:block;margin:6px 0"><span style="font-size:12px;color:#64748b">Tipo de obra (define a faixa do BDI do Acórdão TCU 2.622/2013)</span><select id="orcref-tipo" style="width:100%">' + opt + '</select></label>' +
+'<label style="display:block;margin:8px 0"><input type="checkbox" id="orcref-fed"' + (salvo.recursoFederal ? " checked" : "") + '> Obra com recurso da União (repasse): exige SINAPI e monta a aba CAIXA</label>' +
+campo("Processo / edital", "orcref-proc", salvo.processo || "") +
+campo("Responsável técnico pelo orçamento", "orcref-rt", salvo.rtNome || s(emp.rtNome) || s(emp.responsavel)) +
+campo("Registro profissional (CREA/CAU)", "orcref-reg", salvo.rtReg || s(emp.rtCrea) || s(emp.crea)) +
+'<div style="display:flex;gap:8px"><label style="flex:0 0 90px"><span style="font-size:12px;color:#64748b">Tipo</span><select id="orcref-arttipo" style="width:100%"><option>ART</option><option' + (salvo.artTipo === "RRT" ? " selected" : "") + '>RRT</option></select></label>' +
+'<div style="flex:1">' + campo("Número da ART/RRT do orçamento", "orcref-art", salvo.artNum || "") + '</div></div>' +
+'<div id="orcref-pend" style="margin-top:8px"></div>';
+function mostrarPend() {
+var f = lerForm(), r = OR.montar(orc, opcoesDe(orc, f)), box = el("orcref-pend");
+if (!box) return r;
+if (!r.ok) box.innerHTML = '<div style="border:1px solid #c00000;color:#c00000;padding:8px;font-size:12.5px"><b>O pacote não pode sair assim:</b> ' + esc(r.erro) + '</div>';
+else box.innerHTML = (r.dados.pronto ? '<div style="color:#1a7f37;font-size:12.5px"><b>Sem pendências que impeçam publicar.</b></div>' : '<div style="color:#c00000;font-size:12.5px"><b>Com pendências: o arquivo sai marcado "NÃO PUBLICAR".</b></div>') +
+listaHtml("Em aberto", r.pendencias.bloqueios, "#c00000") + listaHtml("Conferir", r.pendencias.conferir, "#b45309");
+return r;
+}
+UI.modal("Orçamento de referência — pacote da prefeitura", corpo, [
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Conferir pendências", classe: "ghost", onClick: function () { mostrarPend(); } },
+{ texto: "Baixar PDF e Excel", classe: "primary", onClick: function () {
+var f = lerForm(); gravarSalvo(orc.id, f);
+var r = mostrarPend();
+if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+UI.toast("Montando o pacote…", "ok");
+OR.baixar(orc, opcoesDe(orc, f)).then(function (res) {
+UI.toast("Pacote gerado: " + res.saidas.map(function (x) { return x.formato.toUpperCase() + (x.paginas ? " (" + x.paginas + " pág.)" : ""); }).join(" e ") + (res.dados.pronto ? "." : ". Atenção: há pendências, o arquivo sai marcado NÃO PUBLICAR."), res.dados.pronto ? "ok" : "aviso");
+}, function (e) { UI.toast("Não consegui gerar o pacote: " + (e && e.message ? e.message : e), "erro"); });
+} }
+]);
+mostrarPend();
+}
+global.OrcRefUI = { abrir: abrir, opcoesDe: opcoesDe };
+if (typeof module !== "undefined" && module.exports) module.exports = global.OrcRefUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/licitacaoauto.js ==== */
@@ -81471,15 +82646,35 @@ _expEfetiva: function (l, info) {
 var e = (info && info.exp) || 0;
 return (e > 0 && Number(l.renovadaAte) > e) ? Number(l.renovadaAte) : e;
 },
+_aplicarModulos: function (l, d) {
+if (!d || !Array.isArray(d.modulos)) return false;
+var antes = JSON.stringify(l.modulosServidor || null), novo = [];
+d.modulos.forEach(function (m) { m = String(m || "").trim().toLowerCase(); if (m && novo.indexOf(m) < 0) novo.push(m); });
+l.modulosServidor = novo;
+return JSON.stringify(novo) !== antes;
+},
+modulosExtras: function () {
+try {
+var l = this._ler() || {};
+if (!l.chave || !l.verificado || !Array.isArray(l.modulosServidor) || !l.modulosServidor.length) return [];
+var info = this._lerExpDe(l.chave), expEf = this._expEfetiva(l, info);
+if (expEf && expEf < agora()) return [];
+if (l.deviceId && l.deviceId !== this.deviceId()) return [];
+if (!(agora() < (l.validadoEm || 0) + GRACE_MS)) return [];
+if (this._suspensaPorCobranca(l.chave)) return [];
+return l.modulosServidor.slice();
+} catch (e) { return []; }
+},
 _ativarLocal: function (chave, v, verificado) {
 var l = this._ler() || {}, nova = String(chave).trim();
-if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; }
+if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; delete l.modulosServidor; }
 l.chave = nova; l.email = v.email; l.expira = v.expira;
 if (v.tier) l.tierServidor = this._maiorTier(l.tierServidor, v.tier);
 l.ativadoEm = agora(); l.deviceId = this.deviceId();
 l.verificado = !!verificado; if (verificado) l.validadoEm = agora();
 this._aplicarEquipe(l, v);
 this._aplicarRenovacao(l, v);
+this._aplicarModulos(l, v);
 this._gravar(l);
 },
 ativarOnline: function (chave, cb) {
@@ -81507,7 +82702,8 @@ l.validadoEm = agora(); l.email = d.email; l.expira = d.expira;
 if (d.tier) l.tierServidor = self._maiorTier(l.tierServidor, d.tier);
 var mudou = self._aplicarEquipe(l, d);
 var mudouRen = self._aplicarRenovacao(l, d);
-self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, tipoLicenca: l.tipoLicenca || "" });
+var mudouMod = self._aplicarModulos(l, d);
+self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, mudouModulos: mudouMod, tipoLicenca: l.tipoLicenca || "" });
 }
 else if (d && d.bloqueado) { try { localStorage.removeItem(KEY); } catch (e) {} cb({ ok: false, bloqueado: true, erro: d.erro }); }
 else {

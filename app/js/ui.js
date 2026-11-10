@@ -1541,7 +1541,8 @@
           bt("parametros-orc", "parametros", "Parâmetros", ' title="Arredondamento, encargos, incidência do BDI, categoria e licitação"'),
           bt("reimportar-excel", "reimportar", "Reimportar", ' title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado"'),
           bt("cenarios", "cenarios", "Comparar cenários"),
-          bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"')
+          bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"'),
+          bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"')
         ])
         .concat(aprov.botoes || [])
         .concat(vazio ? [bProp.replace(' primary"', '"')] : [])

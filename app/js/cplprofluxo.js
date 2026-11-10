@@ -135,6 +135,8 @@
     var docs = arr(p.documentos).map(function (d) { return [d.id, d.tipo, d.sha, d.superadoPor]; });
     var base = [p.tipoObjeto, p.secretaria, p.objeto, p.justificativa, p.pca, p.recursoFederal, p.sigiloso, p.regulamentoId,
       p.dataPrevistaEdital, p.cronograma, p.orcamentoId, p.orcamentoRef, p.tr, p.edital, p.requisitante, p.prazoDesejado, p.etp, p.riscos, p.quantitativos, p.pesquisa, par, docs];
+    /* leva F: o cronograma físico lido da pasta só entra na assinatura quando existe (processo antigo mantém a assinatura) */
+    if (p.cronogramaFisico) base.push(p.cronogramaFisico);
     return hash(JSON.stringify(base));
   };
 
@@ -405,6 +407,47 @@
   };
 
   /* ------------------------------------------------------------------ *
+   * PACOTE DO ORÇAMENTO DE REFERÊNCIA (passo 6) — opções de OrcamentoReferencia.baixar/montar (js/orcref.js)
+   * montadas do que o PROCESSO já sabe. Puro: sem DOM, sem Store. Nada é inventado: o que o processo não tem
+   * (ART/RRT, tipo de obra do BDI, cronograma que não bate com as etapas) fica de fora e o pacote o marca como pendência.
+   *   p      processo           c   resultado de Orcamento.calcular(orc)      orc  orçamento do processo
+   *   ctx    { orgaoNome, empresa, bases, hoje }  (a tela entrega; vazio em teste)
+   * A pesquisa é a MESMA que o passo 6 mostra (Fluxo.pesquisar): avaliações + fontes brutas por item + regulamento.
+   * ------------------------------------------------------------------ */
+  function cronogramaDoProcesso(p, orc) {
+    var cf = p && p.cronogramaFisico, ets = arr(cf && cf.etapas), oe = arr(orc && orc.etapas);
+    if (!ets.length || ets.length !== oe.length) return null;
+    function nm(x) { return String(x == null ? "" : x).replace(/\s+/g, " ").trim().toLowerCase(); }
+    var i, meses = Number(cf.meses) || 0, saida = [], rot = [];
+    for (i = 0; i < ets.length; i++) {
+      if (nm(ets[i].nome) !== nm(oe[i].nome)) return null;   // etapa em outra ordem/nome: não adivinho o casamento
+      if (arr(ets[i].pct).length < meses || !meses) return null;
+      saida.push({ meses: arr(ets[i].pct).slice(0, meses).map(function (v) { return Number(v) || 0; }) });
+    }
+    for (i = 1; i <= meses; i++) rot.push(i + "º mês");
+    return { meses: meses, etapas: saida, rotulos: rot };
+  }
+  Fluxo.cronogramaParaPacote = cronogramaDoProcesso;
+  Fluxo.opcoesPacoteReferencia = function (p, orc, c, ctx) {
+    ctx = ctx || {}; p = p || {};
+    var pq = Fluxo.pesquisar(p, arr(c && c.linhas), c && c.modo ? c.modo : undefined);
+    var itensCfg = (p.pesquisa || {}).itens || {}, fontes = {};
+    Object.keys(itensCfg).forEach(function (k) { fontes[k] = arr(itensCfg[k] && itensCfg[k].fontes); });
+    var ref = p.orcamentoRef || {}, op = {
+      pesquisa: { avaliacoes: pq.avaliacoes, fontes: fontes, regulamento: pq.regulamento },
+      recursoFederal: p.recursoFederal === true,
+      totalEsperado: c ? c.precoVenda : undefined,
+      orgao: { nome: ctx.orgaoNome || "" },
+      objeto: p.objeto || "", processo: codigoDe(p), data: ctx.hoje || "",
+      empresa: ctx.empresa || {}, bases: arr(ctx.bases)
+    };
+    if (!vazio(ref.competencia)) op.dataBase = (vazio(ref.base) ? "" : ref.base + " — ") + ref.competencia;
+    var cr = cronogramaDoProcesso(p, orc);
+    if (cr) op.cronograma = cr;
+    return op;
+  };
+
+  /* ------------------------------------------------------------------ *
    * PAINEL DA CPL (modo TV) — LISTA BRANCA
    *
    * ⚠ O link público do Mirante do CertamePRO vazou dado entre clientes. Aqui
@@ -582,6 +625,48 @@
     var q = Cplpro.fluxoJuridico.darCiencia(p, { nome: quem && quem.nome !== undefined ? quem.nome : quem, papel: papel }, vazio(agora) ? agoraISO() : agora);
     if (q.parecer && q.parecer.ciencia && (!p.parecer || !p.parecer.ciencia)) { q.assinaturaEnviada = Fluxo.assinaturaConteudo(q); q.autorizacao = null; }
     return q;
+  };
+
+  /* ------------------------------------------------------------------ *
+   * DEMONSTRAÇÃO EM UM CLIQUE (10/11/2026): ?demo=1&perfil=orgao_publico  e  ?demo=1&view=cplpro
+   *
+   * ⚠ SÓ NA VITRINE. Aplicar o perfil do órgão sozinho mexe nos módulos que a empresa inteira enxerga; numa conta REAL isso
+   *   esconderia o sistema do cliente por causa de um link. Por isso a decisão é daqui e exige as DUAS coisas: a sessão é a
+   *   vitrine (`demo === true`) E a empresa é «demo». Em conta real o parâmetro só REVELA o perfil (js/perfis.js), nunca aplica.
+   * ⚠ A VITRINE PÚBLICA NÃO PODE FICAR PRESA NO PERFIL DO ÓRGÃO: o perfil grava na empresa «demo», que persiste no navegador.
+   *   Quem abriu a demonstração do CPLPRO e depois abre ?demo=1 comum voltaria a ver só os módulos do órgão. `restaurar`
+   *   devolve o perfil Completo quando o pedido NÃO é do CPLPRO.
+   * ------------------------------------------------------------------ */
+  Fluxo.planoDemo = function (o) {
+    o = o || {};
+    var qs = String(o.qs === undefined || o.qs === null ? "" : o.qs);
+    var pedido = /[?&]perfil=orgao_publico(&|$)/i.test(qs) || /[?&]view=cplpro(&|$)/i.test(qs);
+    var vitrine = o.demo === true && o.empresaId === "demo";
+    return { pedido: pedido, vitrine: vitrine, aplicar: pedido && vitrine, semear: pedido && vitrine, restaurar: !pedido && vitrine && o.perfilAtual === "orgao_publico" };
+  };
+  var DEMO_PROC_ID = "prc-demo-creche";
+  Fluxo.DEMO_PROC_ID = DEMO_PROC_ID;
+  /* processo FICTÍCIO, com os passos 1 a 3 preenchidos, para quem abre a vitrine ver o fluxo. Dados inventados, sem cliente. */
+  Fluxo.processoExemplo = function (agora) {
+    var ag = vazio(agora) ? agoraISO() : agora;
+    var p = Cplpro.novoProcesso({ id: DEMO_PROC_ID, objeto: "Construção de uma creche municipal com 6 salas de aula, refeitório e área de serviço (exemplo)", secretaria: "Secretaria Municipal de Educação (exemplo)", tipoObjeto: "obra_nova",
+      sigiloso: true, recursoFederal: false, dataPrevistaEdital: null }, "Demonstração", ag);
+    p.justificativa = "Atender à demanda por vagas em educação infantil no bairro, hoje sem creche pública a menos de 3 km. (Texto de exemplo.)";
+    p.pca = "Item 12 do Plano de Contratações Anual (exemplo)";
+    p.requisitante = "Maria Souza (exemplo)";
+    p.prazoDesejado = "2027-03-01";
+    var arqs = ["Arquitetura planta baixa R01.pdf", "Projeto estrutural formas e armacao.pdf", "Projeto de fundacao estacas.pdf", "Projeto hidrossanitario.pdf", "Projeto eletrico.pdf", "Memorial descritivo.pdf", "Sondagem SPT.pdf", "Levantamento topografico.pdf", "ART projetos.pdf"];
+    p = Cplpro.adicionarDocumentos(p, arqs.map(function (nm, i) { return { nome: nm, sha: ("de" + i + "0000000000000000").substring(0, 16) + i }; }));
+    p.quantitativos = [
+      { item: "1.1", itemRef: "1.1", descricao: "Escavação mecanizada de valas", un: "m3", qtd: 180, origem: { arquivo: "Projeto de fundacao estacas.pdf", pagina: "2" } },
+      { item: "2.1", itemRef: "2.1", descricao: "Concreto estrutural fck 30 MPa", un: "m3", qtd: 95, origem: { arquivo: "Projeto estrutural formas e armacao.pdf", pagina: "4" } },
+      { item: "3.1", itemRef: "3.1", descricao: "Alvenaria de vedação em bloco cerâmico", un: "m2", qtd: 640, origem: { arquivo: "Arquitetura planta baixa R01.pdf", pagina: "1" } }
+    ];
+    return p;
+  };
+  /* na vitrine, quem abre o CPLPRO precisa poder AGIR: o registro de papéis dá ao visitante os perfis de quem prepara o processo */
+  Fluxo.papeisDemo = function (usuarioId) {
+    return { id: "pap-demo", usuarioId: usuarioId, nome: "Visitante da demonstração", papeis: Object.keys(R.PAPEIS) };
   };
 
   Fluxo.hash = hash; Fluxo.num = num; Fluxo.codigoDe = codigoDe;

@@ -1306,7 +1306,11 @@
     /* Tabela regional de UF/praça FIXA. O pacote antigo (CertamePRO < 0.12.3)
        mandava a UF do CERTAME (ex.: ORSE com uf "MG"), que nunca casaria com a
        base instalada (ORSE é de Sergipe; a SUDECAP é de Belo Horizonte). */
-    FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" } },
+    /* Leva G (10/11/2026): SIURB (Edificações e Infraestrutura, Prefeitura de SP), AGESUL (MS), DER-PR e SEDOP/SEOP (PA) também são
+       tabelas de uma UF só, e o edital da prefeitura/estado as cita como "SIURB", "DER-PR" etc. Sem entrar aqui, o pacote que mandasse a
+       UF do CERTAME (ex.: DER-PR com uf "MG") nunca casaria com a base instalada (que grava a UF do órgão), e a exigência ficaria
+       "indisponível" para sempre. "DER-PR" vira DERPR pela limpeza de pontuação de lerBasesExigidas (mesmo id do catálogo). */
+    FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" } },
     lerBasesExigidas: function (lista, contagem) {
       var self = this, out = [], vistos = {};
       (Array.isArray(lista) ? lista : []).forEach(function (b) {
