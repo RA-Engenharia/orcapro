@@ -45698,6 +45698,13 @@ else feitos++;
 campo("orcamentoId", p.orcamentoId, "Vincule o orçamento de referência.");
 campo("base", p.orcamentoRef ? p.orcamentoRef.base : null, "Declare a base de preços do orçamento.");
 campo("competencia", p.orcamentoRef ? p.orcamentoRef.competencia : null, "Declare a competência (data-base) do orçamento.");
+var po = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+if (po && po.leituraPdf && po.leituraPdf.ok !== true && po.leituraPdf.conferida !== true) {
+total++; pend_.push(pend(id, "leituraPdf", "Conferir a leitura do PDF da planilha (nota " + po.leituraPdf.nota + "): " + (po.leituraPdf.motivos && po.leituraPdf.motivos.length ? po.leituraPdf.motivos.join("; ") : "a leitura automática não passou na conferência") + "."));
+}
+if (p.preparo && p.preparo.oferta && p.preparo.oferta.escopo && vazio(p.orcamentoId)) {
+total++; pend_.push(pend(id, "orcamentoPeloEscopo", "A pasta não tem planilha orçamentária: use «Orçar pelo escopo (IA)» (a cobrança por uso é confirmada antes de qualquer IA) ou salve a planilha em .xlsx e monte de novo."));
+}
 } else if (id === "tr") {
 campo("objeto", p.tr ? p.tr.objeto : null, "TR/PB: falta a descrição do objeto.");
 campo("medicao", p.tr ? p.tr.medicao : null, "TR/PB: falta o critério de medição.");
@@ -48569,7 +48576,79 @@ if (m) out.secretaria = trim(m[0]);
 }
 m = /Munic[íi]pio(?:\s+de|\s*:)\s+([A-ZÀ-Ú][A-Za-zÀ-ú ]+?)\s*\/\s*([A-Z]{2})\b/.exec(tudo);
 if (m) { out.municipio = trim(m[1]); out.uf = m[2]; }
+out.nomeObra = null; out.endereco = null; out.areaConstruida = null; out.areaTerreno = null; out.prazoMeses = null;
+out.recProvisorioDias = null; out.recDefinitivoDias = null; out.responsavelTecnico = null;
+m = /^Obra\s*:\s*(.+)$/im.exec(tudo);
+if (m) out.nomeObra = nomeLimpo(m[1]);
+m = /[Tt]erreno\s+de\s+([\d.]+(?:,\d+)?)\s*m[²2]/.exec(tudo);
+if (m) out.areaTerreno = numCel(m[1]);
+m = /[ÁA]rea\s+a\s+construir\s*:\s*([\d.]+(?:,\d+)?)\s*m[²2]/i.exec(tudo) || /([\d.]+(?:,\d+)?)\s*m[²2]\s+de\s+[áa]rea\s+constru[íi]da/i.exec(tudo);
+if (m) out.areaConstruida = numCel(m[1]);
+m = /\bna\s+((?:Rua|Avenida|Av\.|Travessa|Alameda|Estrada|Rodovia|Pra[çc]a|Via)\s[^()\n]*?)\s*(?:\(|\.\s|\.$|$)/m.exec(tudo);
+if (m) out.endereco = trim(m[1]);
+m = /Prazo\s+de\s+execu[çc][ãa]o\s*:\s*(\d+)/i.exec(tudo);
+if (m) out.prazoMeses = Number(m[1]);
+var recTxt = (out.recebimento || out.medicao || "");
+m = /provis[óo]rio[^.;]*?(\d+)\s*dias/i.exec(recTxt); if (m) out.recProvisorioDias = Number(m[1]);
+m = /definitivo[^.;]*?(\d+)\s*dias/i.exec(recTxt); if (m) out.recDefinitivoDias = Number(m[1]);
+m = /Respons[áa]vel\s+t[ée]cnico[^:\n]*:\s*([^.\n(]+)/i.exec(tudo);
+if (m) out.responsavelTecnico = trim(m[1]);
+out.frases = frasesDe(tudo);
+out.emailImpugnacao = null;
+arr(out.frases).forEach(function (f) { var em = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/.exec(f); if (!out.emailImpugnacao && em && /impugna|esclarecimento/i.test(f)) out.emailImpugnacao = em[0]; });
 return out;
+}
+function nomeLimpo(x) { return trim(String(x).replace(/\s*[—–-]\s*(?:exemplo|fict[íi]cio)\s*$/i, "").replace(/\s*\((?:fict[íi]cio|exemplo)\)\s*$/i, "")); }
+function frasesDe(txt) { return String(txt || "").split(/\n+|\.\s+/).map(trim).filter(function (f) { return f.length > 20; }); }
+function frasesQue(frases, re, max) { return arr(frases).filter(function (f) { return re.test(f); }).slice(0, max || 2); }
+function pontuar(f) { return /[.!?]$/.test(f) ? f : f + "."; }
+function lerBasePlanilha(matriz) {
+var m = arr(matriz), i, j, linha;
+for (i = 0; i < m.length && i < 15; i++) {
+linha = arr(m[i]).map(textoCel).join(" ");
+var b = /base\s+de\s+pre[çc]os?\s*:?\s*(SINAPI|SICRO|SIURB|SETOP|SUDECAP|ORSE|CPOS|SEINFRA|AGETOP|SCO)\b[^,;.\n]*/i.exec(linha);
+if (!b) continue;
+var uf = /\b(?:SINAPI|SICRO|SIURB|SETOP|SUDECAP|ORSE|CPOS|SEINFRA|AGETOP|SCO)[\s\-\/]+([A-Z]{2})\b/.exec(linha.replace(/\bde\b/gi, "").replace(/\s+/g, " "));
+var cp = /(\d{2})\s*\/\s*(\d{4})/.exec(linha);
+var rg = /n[ãa]o\s+desoner|\bonerad/i.test(linha) ? "onerado" : (/desoner/i.test(linha) ? "desonerado" : "");
+return { base: b[1].toUpperCase(), uf: uf ? uf[1] : null, competencia: cp ? cp[2] + "-" + cp[1] : null, regime: rg, linha: i + 1, texto: trim(linha) };
+}
+return null;
+}
+function lerArt(texto) {
+var t = String(texto || ""), out = { numero: null, profissional: null, registro: null, contratante: null, placeholder: false };
+function pega(re) { var r = re.exec(t); return r ? trim(r[1]) : null; }
+var num = pega(/N[º°o]\s*da\s*(?:ART|RRT|TRT)\s*\n?\s*([^\n]+)/i);
+if (num) { if (/[\[\]]|exemplo|sem n[úu]mero/i.test(num) || num.replace(/\D/g, "").length < 5) out.placeholder = true; else out.numero = num; }
+out.profissional = pega(/Profissional\s*\n\s*([^\n]+)/i);
+var reg = pega(/Registro\s+profissional\s*\n\s*([^\n]+)/i);
+out.registro = reg && !/[\[\]]|exemplo|n[ãa]o existe/i.test(reg) ? reg : null;
+out.contratante = pega(/Contratante\s*\n\s*([^\n]+)/i);
+return out;
+}
+function lerPlanilhaPdf(res) {
+if (!res || !arr(res.itens).length) return { erro: "A leitura do PDF não achou itens de planilha." };
+var etapasTit = arr(res.etapas), grupos = [], porNome = {}, itens = [];
+function grupoDe(it) {
+var nome = trim(it.etapa || "");
+if (!nome) {
+var num = trim(it.item), melhor = null;
+etapasTit.forEach(function (e) { var en = trim(e.item); if (en && (num === en || num.indexOf(en + ".") === 0) && (!melhor || en.length > trim(melhor.item).length)) melhor = e; });
+nome = melhor ? trim(melhor.titulo) : "Itens da planilha";
+}
+if (!porNome[nome]) { porNome[nome] = { nome: nome, itens: [] }; grupos.push(porNome[nome]); }
+return porNome[nome];
+}
+arr(res.itens).forEach(function (it) {
+var g = grupoDe(it), pu = (it.precoUnit === null || it.precoUnit === undefined) ? null : it.precoUnit;
+var linhaItem = { numero: it.item || null, codigo: trim(it.codigo), fonte: it.fonte || null, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: pu };
+g.itens.push(linhaItem);
+itens.push({ numero: linhaItem.numero, codigo: linhaItem.codigo, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: pu, etapa: g.nome,
+etapaIdx: grupos.indexOf(g), linha: it.linha || null, pagina: it.pagina || null });
+});
+var cf = res.conferencia || {};
+return { etapas: grupos, itens: itens, confianca: cf.ok === true ? "alta" : "baixa", avisos: [], resumo: null, deOnde: "pdf",
+leituraPdf: { nota: typeof cf.nota === "number" ? cf.nota : null, ok: cf.ok === true, motivos: arr(cf.motivos).slice(), totalImpresso: res.totalImpresso === undefined ? null : res.totalImpresso } };
 }
 function lerPlanilha(matriz) {
 if (!Importador) return { erro: "O importador de planilha não está carregado." };
@@ -48619,20 +48698,35 @@ return { meses: cols.length, etapas: etapas, avisos: avisos };
 function analisar(entrada) {
 var arqs = arr(entrada && entrada.arquivos).map(function (a) {
 var c = Cplpro.classificarArquivo({ nome: a.nome, ext: a.ext, texto: a.texto });
-return { nome: a.nome, sha: a.sha || null, ext: c.ext, tipo: c.tipo, origem: a.origem || null, data: a.data || null, texto: a.texto || null, matriz: a.matriz || null };
+return { nome: a.nome, sha: a.sha || null, ext: c.ext, tipo: c.tipo, origem: a.origem || null, data: a.data || null, texto: a.texto || null, matriz: a.matriz || null, planilhaPdf: a.planilhaPdf || null };
 });
-var an = { arquivos: arqs, memorial: null, planilha: null, cronograma: null, avisos: [], lacunas: [] };
+var an = { arquivos: arqs, memorial: null, planilha: null, cronograma: null, art: null, baseDeclarada: null, oferta: null, avisos: [], lacunas: [] };
 function primeiro(tipo, campo) { return arqs.filter(function (a) { return a.tipo === tipo && !vazio(a[campo]); })[0] || null; }
 var mem = primeiro("memorial_descritivo", "texto"), pla = primeiro("orcamento_planilha", "matriz"), cro = primeiro("cronograma", "matriz");
 if (mem) { an.memorial = lerMemorial(mem.texto); an.memorial.arquivo = mem.nome; an.memorial.sha = mem.sha; }
 else an.lacunas.push("Sem memorial descritivo legível: objeto, justificativa, solução e requisitos ficam para a pessoa.");
+var plaPdf = arqs.filter(function (a) { return a.tipo === "orcamento_planilha" && a.planilhaPdf; })[0] || null;
 if (pla) {
 var lp = lerPlanilha(pla.matriz);
 if (lp.erro) an.avisos.push("Planilha «" + pla.nome + "»: " + lp.erro);
-else { an.planilha = lp; lp.arquivo = pla.nome; lp.sha = pla.sha; }
+else { an.planilha = lp; lp.arquivo = pla.nome; lp.sha = pla.sha; an.baseDeclarada = lerBasePlanilha(pla.matriz); }
+} else if (plaPdf) {
+var lq = lerPlanilhaPdf(plaPdf.planilhaPdf);
+if (lq.erro) an.avisos.push("Planilha «" + plaPdf.nome + "»: " + lq.erro);
+else {
+an.planilha = lq; lq.arquivo = plaPdf.nome; lq.sha = plaPdf.sha;
+if (!lq.leituraPdf.ok) an.avisos.push("Planilha «" + plaPdf.nome + "» lida do PDF com conferência reprovada (nota " + lq.leituraPdf.nota + "): confira a leitura no passo 6 — " + (lq.leituraPdf.motivos.join("; ") || "sem motivo informado") + ".");
+}
 } else if (arqs.some(function (a) { return a.tipo === "orcamento_planilha"; })) {
 an.avisos.push("Há uma planilha orçamentária, mas só em PDF ou sem texto legível: o sistema não converte PDF em orçamento. Salve a planilha em .xlsx e rode de novo.");
-} else an.lacunas.push("Sem planilha orçamentária na pasta: o orçamento de referência e os quantitativos ficam para a pessoa.");
+} else {
+an.lacunas.push("Sem planilha orçamentária na pasta: o orçamento de referência e os quantitativos ficam para a pessoa.");
+if (an.memorial && (an.memorial.areaConstruida || Cplpro.sugerirTipoObjeto(an.memorial.objeto || "").length)) {
+an.oferta = { escopo: true, texto: an.memorial.objeto || "", area: an.memorial.areaConstruida || null, municipio: an.memorial.municipio || null, uf: an.memorial.uf || null };
+}
+}
+var artArq = arqs.filter(function (a) { return a.tipo === "art_rrt" && !vazio(a.texto); })[0];
+if (artArq) { an.art = lerArt(artArq.texto); an.art.arquivo = artArq.nome; }
 if (cro) {
 var lc = lerCronograma(cro.matriz);
 if (lc.erro) an.avisos.push("Cronograma «" + cro.nome + "»: " + lc.erro);
@@ -48645,7 +48739,7 @@ if (!an || !an.planilha) return null;
 var etapas = arr(an.planilha.etapas).map(function (et) {
 return { nome: et.nome, itens: arr(et.itens).map(function (it) { return { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: it.custoUnitario, numero: it.numero || null }; }) };
 });
-return { etapas: etapas, itens: an.planilha.itens, arquivo: an.planilha.arquivo, sha: an.planilha.sha };
+return { etapas: etapas, itens: an.planilha.itens, arquivo: an.planilha.arquivo, sha: an.planilha.sha, deOnde: an.planilha.deOnde || "xlsx", leituraPdf: an.planilha.leituraPdf || null };
 }
 function assinaturaOrc(orc) {
 var s = [];
@@ -48674,7 +48768,7 @@ x[ps[ps.length - 1]] = v;
 function passoDe(caminho) {
 if (PASSO_DO_CAMPO[caminho]) return PASSO_DO_CAMPO[caminho];
 var p0 = caminho.split(/[.#]/)[0];
-return { tr: "tr", etp: "etp", riscos: "riscos", quantitativos: "quantitativos", orcamentoRef: "orcamento", pesquisa: "orcamento", parametros: "parametros", documentos: "acervo" }[p0] || "demanda";
+return { tr: "tr", etp: "etp", riscos: "riscos", quantitativos: "quantitativos", orcamentoRef: "orcamento", pesquisa: "orcamento", parametros: "parametros", documentos: "acervo", edital: "minuta" }[p0] || "demanda";
 }
 function moedaBR(n) { return "R$ " + numBR(n, 2); }
 function datasComp(comp) { return /^\d{4}-\d{2}$/.test(String(comp || "")) ? String(comp) + "-01" : null; }
@@ -48684,7 +48778,8 @@ var q = clone(p);
 var permitidos = c.permitidos || null;
 function pode(passo) { return !permitidos || permitidos[passo] !== false; }
 var prev = q.preparo && q.preparo.campos ? q.preparo : null;
-q.preparo = { versao: 1, campos: clone(prev ? prev.campos : {}), arquivos: [], resumo: null, atualizadoEm: prev ? prev.atualizadoEm : null, orcamento: prev ? clone(prev.orcamento) : null };
+q.preparo = { versao: 1, campos: clone(prev ? prev.campos : {}), arquivos: [], resumo: null, atualizadoEm: prev ? prev.atualizadoEm : null, orcamento: prev ? clone(prev.orcamento) : null,
+baseCtx: c.baseCtx ? clone(c.baseCtx) : (prev && prev.baseCtx ? clone(prev.baseCtx) : null), obra: prev && prev.obra ? clone(prev.obra) : null, oferta: prev && prev.oferta ? clone(prev.oferta) : null };
 var rastro = q.preparo.campos;
 var E = { preenchidos: 0, atualizados: 0, mantidos: [], porPasso: {}, soltos: {}, semPermissao: {}, mudou: false };
 function marcar(passo, tipo) { E.porPasso[passo] = (E.porPasso[passo] || 0) + 1; if (E.soltos[passo] === undefined && Fluxo && Fluxo.soltarConferencia(q, passo)) E.soltos[passo] = true; E.mudou = true; return tipo; }
@@ -48721,6 +48816,11 @@ if (sug.length && (sug.length === 1 || sug[0].pontos > sug[1].pontos)) {
 campo("tipoObjeto", sug[0].tipo, { arquivo: mem.arquivo, regra: "Termos do objeto no memorial: " + sug[0].termos.join(", ") + "." });
 }
 }
+if (c.obraInfo && c.obraInfo.id) {
+campo("obraId", c.obraInfo.id, { arquivo: c.obraInfo.arquivo || (mem && mem.arquivo) || null, regra: c.obraInfo.criada ? "Obra criada pelo sistema com o nome e os dados lidos dos documentos da pasta." : "Obra criada antes por esta mesma pasta." });
+q.preparo.obra = { id: c.obraInfo.id, assinatura: c.obraInfo.assinatura || null };
+} else if (prev && prev.obra) q.preparo.obra = clone(prev.obra);
+if (mem && mem.nomeObra) campo("nome", mem.nomeObra + (mem.municipio ? " — " + mem.municipio + "/" + mem.uf : ""), { arquivo: mem.arquivo, regra: "Nome da obra («Obra:» do memorial) e município." });
 var munic = mem && mem.municipio ? norm(mem.municipio) : null;
 if (munic) {
 var regId = (munic === "sao paulo" && mem.uf === "SP") ? "sp-capital-62100" : "federal-14133";
@@ -48728,18 +48828,22 @@ campo("regulamentoId", regId, { arquivo: mem.arquivo, regra: regId === "sp-capit
 }
 var oi = c.orcInfo || null, plano = an && an.planilha ? an.planilha : null;
 if (oi && oi.id) {
-campo("orcamentoId", oi.id, { arquivo: plano ? plano.arquivo : null, regra: "Orçamento criado a partir da planilha orçamentária da pasta, com a base de preços do sistema." });
+campo("orcamentoId", oi.id, { arquivo: plano ? plano.arquivo : null, regra: oi.origem === "orçamento pelo escopo" ? "Orçamento pelo escopo (IA): gerado do memorial, com a cobrança por uso confirmada." : "Orçamento criado a partir da planilha orçamentária da pasta, com a base de preços exigida pelo regulamento." });
 if (oi.base) campo("orcamentoRef.base", oi.base, { arquivo: plano ? plano.arquivo : null, regra: "Base de preços do orçamento criado." }, "orcamento");
 if (oi.competencia) campo("orcamentoRef.competencia", oi.competencia, { arquivo: plano ? plano.arquivo : null, regra: "Competência da base de preços do orçamento criado." }, "orcamento");
 if (oi.casados > 0 && agora) campo("pesquisa.dataPesquisa", String(agora).substring(0, 10), { arquivo: plano ? plano.arquivo : null, regra: "Dia em que o sistema consultou a base oficial de preços para precificar o orçamento." }, "orcamento");
-q.preparo.orcamento = { id: oi.id, sha: plano ? plano.sha : null, assinatura: oi.assinatura || null, casados: oi.casados, semBase: arr(oi.semBase) };
+var lpdf = plano && plano.leituraPdf ? plano.leituraPdf : null, lpdfAnt = prev && prev.orcamento && prev.orcamento.leituraPdf ? prev.orcamento.leituraPdf : null;
+q.preparo.orcamento = { id: oi.id, sha: plano ? plano.sha : null, assinatura: oi.assinatura || null, casados: oi.casados, semBase: arr(oi.semBase),
+origem: oi.origem || (plano ? (plano.deOnde === "pdf" ? "planilha em PDF" : "planilha") : "escopo"),
+baseExigida: oi.baseExigida ? clone(oi.baseExigida) : null,
+leituraPdf: lpdf ? { nota: lpdf.nota, ok: lpdf.ok, motivos: lpdf.motivos.slice(), conferida: lpdfAnt && lpdfAnt.conferida === true && lpdfAnt.nota === lpdf.nota ? true : false } : null };
 if (pode("quantitativos")) {
 var linhasOrc = arr(oi.linhas), itensPl = plano ? arr(plano.itens) : [], nq = 0;
 linhasOrc.forEach(function (l, i) {
 var it = itensPl[i] && trim(itensPl[i].codigo) === trim(l.codigo) ? itensPl[i] : null;
 var chave = "quantitativos#" + l.numero, rec = rastro[chave];
 var novo = { item: l.numero, itemRef: l.numero, codigo: l.codigo || "", descricao: l.descricao, un: l.unidade, qtd: l.quantidade,
-origem: it && it.linha ? { arquivo: plano.arquivo, pagina: null, linha: it.linha } : { arquivo: null, pagina: null } };
+origem: it && it.linha ? { arquivo: plano.arquivo, pagina: it.pagina || null, linha: it.linha } : { arquivo: null, pagina: null } };
 var idx = -1; arr(q.quantitativos).forEach(function (z, k) { if (z.item === l.numero) idx = k; });
 if (idx < 0) {
 if (rec) { E.mantidos.push({ caminho: chave, passo: "quantitativos", motivo: "a pessoa removeu" }); return; }
@@ -48756,11 +48860,23 @@ E.mantidos.push({ caminho: chave, passo: "quantitativos", motivo: "a pessoa edit
 });
 } else E.semPermissao.quantitativos = true;
 }
+if (an && an.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = { escopo: true, texto: an.oferta.texto, area: an.oferta.area };
+else if (prev && prev.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = clone(prev.oferta);
+else q.preparo.oferta = null;
 if (pode("etp")) {
 if (mem) {
 campo("etp.campos.I", mem.justificativa, { arquivo: mem.arquivo, regra: "Necessidade = a justificativa do memorial descritivo." }, "etp");
 campo("etp.campos.III", mem.requisitos, { arquivo: mem.arquivo, regra: "Seção «Requisitos da contratação» do memorial descritivo." }, "etp");
 campo("etp.campos.VII", mem.solucao || mem.objeto, { arquivo: mem.arquivo, regra: "Seção «Descrição da solução» do memorial descritivo." }, "etp");
+}
+if (mem) {
+var fr = arr(mem.frases);
+var f8 = frasesQue(fr, /(?:[uú]nico contrato|parcelamento|parcelad)/i, 2);
+if (f8.length) campo("etp.campos.VIII", f8.map(pontuar).join(" "), { arquivo: mem.arquivo, regra: "Frase do memorial que trata de contrato único ou parcelamento (transcrita)." }, "etp");
+var f5 = frasesQue(fr, /dispon[ií]ve(?:l|is)\s+na\s+regi[ãa]o|linha comercial|mercado local/i, 2);
+if (f5.length) campo("etp.campos.V", f5.map(pontuar).join(" "), { arquivo: mem.arquivo, regra: "Frase do memorial sobre a disponibilidade dos materiais no mercado (transcrita)." }, "etp");
+var f9 = frasesQue(arr(frasesDe(mem.justificativa)), /\b(?:reduz|atende|beneficia|elimina|amplia|garante)\b/i, 2);
+if (f9.length) campo("etp.campos.IX", f9.map(pontuar).join(" "), { arquivo: mem.arquivo, regra: "Frase da justificativa do memorial que diz o resultado pretendido (transcrita)." }, "etp");
 }
 var comOrig = arr(q.quantitativos).filter(function (z) { return z.origem && !vazio(z.origem.arquivo) && (!vazio(z.origem.pagina) || !vazio(z.origem.linha)); }).length;
 var semOrig = arr(q.quantitativos).length - comOrig;
@@ -48772,6 +48888,12 @@ if (mem) {
 campo("tr.objeto", mem.objeto, { arquivo: mem.arquivo, regra: "Seção «Objeto» do memorial descritivo." });
 campo("tr.medicao", mem.medicao, { arquivo: mem.arquivo, regra: "Critério de medição escrito no memorial descritivo." });
 campo("tr.recebimento", mem.recebimento, { arquivo: mem.arquivo, regra: "Critério de recebimento escrito no memorial descritivo." });
+}
+if (mem) {
+if (mem.endereco) campo("tr.local", mem.endereco + (mem.municipio ? ", " + mem.municipio + "/" + mem.uf : ""), { arquivo: mem.arquivo, regra: "Endereço do terreno na seção «Identificação» do memorial descritivo." }, "tr");
+if (mem.recProvisorioDias) campo("tr.prazoRecProvisorio", String(mem.recProvisorioDias), { arquivo: mem.arquivo, regra: "Prazo do recebimento provisório escrito no critério de recebimento do memorial." }, "tr");
+if (mem.emailImpugnacao) campo("edital.emailImpugnacao", mem.emailImpugnacao, { arquivo: mem.arquivo, regra: "E-mail citado no memorial junto a impugnações/esclarecimentos (transcrito)." }, "minuta");
+if (mem.recDefinitivoDias) campo("tr.prazoRecDefinitivo", String(mem.recDefinitivoDias), { arquivo: mem.arquivo, regra: "Prazo do recebimento definitivo escrito no critério de recebimento do memorial." }, "tr");
 }
 if (an && an.cronograma) {
 campo("cronogramaFisico", { meses: an.cronograma.meses, etapas: an.cronograma.etapas, arquivo: an.cronograma.arquivo }, { arquivo: an.cronograma.arquivo, regra: "Percentual por etapa e mês lido da planilha de cronograma." });
@@ -48838,6 +48960,7 @@ E.mudou = true;
 }
 });
 } else E.semPermissao.parametros = true;
+if (prev && (!igual(prev.orcamento, q.preparo.orcamento) || !igual(prev.baseCtx, q.preparo.baseCtx) || !igual(prev.obra, q.preparo.obra) || !igual(prev.oferta, q.preparo.oferta))) E.mudou = true;
 if (E.mudou || !prev) q.preparo.atualizadoEm = agora; else q.preparo.atualizadoEm = prev.atualizadoEm;
 q.preparo.resumo = resumo(q, E, an);
 var rodada = { preenchidos: E.preenchidos, atualizados: E.atualizados, mantidos: E.mantidos.length, passosSoltos: Object.keys(E.soltos) };
@@ -48890,7 +49013,112 @@ atual = f;
 }
 return igual(atual, rec.valor) ? { arquivo: rec.arquivo, regra: rec.regra, em: rec.em } : null;
 }
+function assinaturaPasta(an) {
+var shas = arr(an && an.arquivos).map(function (a) { return a.sha || a.nome; }).sort(), h = 5381, str = shas.join("|"), i;
+for (i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) % 4294967296;
+return "pasta-" + h.toString(16);
+}
+function dadosObra(an) {
+var m = an && an.memorial, art = an && an.art, pl = an && an.planilha;
+if (!m || !m.nomeObra) return null;
+var orig = {}, c = {}, munUf = m.municipio ? (m.municipio + (m.uf ? "/" + m.uf : "")) : null;
+function pos(k, v, regra) { if (!semValor(v)) { c[k] = v; orig[k] = { arquivo: m.arquivo, regra: regra }; } }
+pos("nome", m.nomeObra + (munUf ? " — " + munUf : ""), "Linha «Obra:» do memorial descritivo, mais o município do memorial.");
+pos("local", m.endereco ? (m.endereco + (munUf ? ", " + munUf : "")) : null, "Endereço da seção «Identificação» do memorial, mais o município.");
+pos("areaConstruida", m.areaConstruida, "Área construída informada no memorial descritivo.");
+pos("areaTerreno", m.areaTerreno, "Área do terreno informada no memorial descritivo.");
+var obs = [];
+if (m.secretaria) obs.push("Secretaria requisitante: " + m.secretaria + " (memorial).");
+var contr = (art && art.contratante) || (m.municipio ? "Município de " + m.municipio + (m.uf ? "/" + m.uf : "") : null);
+if (contr) obs.push("Contratante (órgão): " + nomeLimpo(contr) + (art && art.contratante ? " (ART)." : " (memorial)."));
+if (m.responsavelTecnico) obs.push("Responsável técnico pelo projeto: " + m.responsavelTecnico + " (memorial).");
+else if (art && art.profissional) obs.push("Responsável técnico: " + art.profissional + (art.registro ? ", registro " + art.registro : "") + " (ART).");
+if (art && art.numero) obs.push("ART/RRT nº " + art.numero + " (" + art.arquivo + ").");
+if (m.prazoMeses) obs.push("Prazo de execução: " + m.prazoMeses + " meses (memorial).");
+if (an.baseDeclarada) obs.push("Base de preços da planilha: " + an.baseDeclarada.base + (an.baseDeclarada.uf ? "/" + an.baseDeclarada.uf : "") + (an.baseDeclarada.competencia ? ", competência " + an.baseDeclarada.competencia : "") + ".");
+if (obs.length) { c.obs = "Preenchido pelo sistema a partir da pasta de documentos — confira.\n" + obs.join("\n"); orig.obs = { arquivo: m.arquivo, regra: "Dados do memorial, da ART e da planilha." }; }
+return { campos: c, origem: orig, chave: norm(m.nomeObra) + "|" + norm(m.municipio) + "|" + (m.uf || "") };
+}
+function decidirObra(p, an, obras, agora) {
+var d = dadosObra(an), ass = assinaturaPasta(an);
+if (!d) return { acao: "nenhuma", motivo: "Nenhum documento da pasta traz o nome da obra (linha «Obra:» do memorial)." };
+var lista = arr(obras), atual = null, criada = false;
+if (p && p.obraId) {
+atual = lista.filter(function (o) { return o.id === p.obraId; })[0] || null;
+if (!atual || !atual.origemPreparo) return { acao: "nenhuma", motivo: "A obra foi escolhida por você: o sistema não alterou o cadastro dela.", obraId: p.obraId };
+} else {
+atual = lista.filter(function (o) { return o.origemPreparo && (o.origemPreparo.assinatura === ass || o.origemPreparo.chave === d.chave); })[0] || null;
+}
+var o2 = atual ? clone(atual) : { status: "planejamento" }, rastro, mant = [], mudou = false;
+if (!atual) criada = true;
+o2.origemPreparo = o2.origemPreparo || { assinatura: ass, chave: d.chave, em: agora || null, campos: {} };
+rastro = o2.origemPreparo.campos = o2.origemPreparo.campos || {};
+Object.keys(d.campos).forEach(function (k) {
+var v = d.campos[k], cur = o2[k], rec = rastro[k];
+if (igual(cur, v)) return;
+if (semValor(cur) || (rec && igual(cur, rec.valor))) {
+o2[k] = clone(v); rastro[k] = { valor: clone(v), arquivo: d.origem[k].arquivo, regra: d.origem[k].regra, em: agora || null }; mudou = true;
+} else mant.push(k);
+});
+o2.origemPreparo.assinatura = ass; o2.origemPreparo.chave = d.chave;
+if (!criada && !mudou) return { acao: "nenhuma", motivo: "A obra já estava como os documentos dizem.", obraId: atual.id, obra: atual, mantidos: mant };
+return { acao: criada ? "criar" : "atualizar", obra: o2, obraId: atual ? atual.id : null, criada: criada, mantidos: mant, assinatura: ass, arquivo: an.memorial.arquivo };
+}
+var PORQUE_ORGAO = "Dado administrativo do órgão: nenhum documento da pasta traz.";
+var PORQUE_LEI = "A lei reserva a decisão ao órgão (o sistema só sugere, com «Por quê?»).";
+function inventario(p) {
+var campos = [], q = p || {}, rastro = q.preparo && q.preparo.campos ? q.preparo.campos : {};
+function add(caminho, rotulo, passo, valor, porque, rastroChave) {
+var tem = !semValor(valor) && !(typeof valor === "object" && valor !== null && !arr(valor).length && !Object.keys(valor).length);
+var rec = rastro[rastroChave || caminho], doSist = !!(tem && rec && igual(valor, rec.valor));
+campos.push({ caminho: caminho, rotulo: rotulo, passo: passo, preenchido: tem, por: tem ? (doSist ? "sistema" : "pessoa") : null, porque: tem ? null : porque,
+origem: doSist ? { arquivo: rec.arquivo, regra: rec.regra } : null });
+}
+var D = Docs || global.CplproDocs;
+add("obraId", "Obra", "demanda", q.obraId, "Obra não vinculada.");
+add("secretaria", "Secretaria requisitante", "demanda", q.secretaria, "Não consta nos documentos.");
+add("requisitante", "Requisitante", "demanda", q.requisitante, "Pessoa responsável pelo pedido: nenhum documento da pasta a nomeia.");
+add("objeto", "Objeto", "demanda", q.objeto, "Não consta nos documentos.");
+add("tipoObjeto", "Tipo do objeto", "demanda", q.tipoObjeto, "O texto do objeto não aponta um único tipo.");
+add("justificativa", "Justificativa", "demanda", q.justificativa, "Não consta nos documentos.");
+add("pca", "Previsão no PCA", "demanda", q.pca, "O plano de contratações anual é do órgão: nenhum documento da pasta o traz.");
+add("prazoDesejado", "Prazo desejado", "demanda", q.prazoDesejado, "Data desejada pelo órgão para a contratação: não está nos documentos técnicos.");
+add("recursoFederal", "Recurso federal", "demanda", q.recursoFederal, "Origem do recurso é informação do órgão.");
+add("regulamentoId", "Regulamento da pesquisa de preços", "parametros", q.regulamentoId, "Município não consta nos documentos.");
+add("nome", "Nome do processo", "demanda", q.nome, "Nenhum documento traz o nome da obra.");
+R.ETP_ELEMENTOS.forEach(function (el) {
+var v = q.etp && q.etp.campos ? q.etp.campos[el.id] : null, j = q.etp && q.etp.justificativas ? q.etp.justificativas[el.id] : null;
+add("etp.campos." + el.id, "ETP " + el.id + " — " + el.nome, "etp", semValor(v) ? j : v,
+el.id === "II" ? "Previsão no PCA é do órgão." : (el.id === "XIII" ? "Conclusão sobre a adequação da contratação é decisão da autoridade." : "Nenhum documento da pasta trata deste elemento."));
+});
+add("tr.objeto", "TR — objeto", "tr", q.tr && q.tr.objeto, "Não consta nos documentos.");
+add("tr.medicao", "TR — medição", "tr", q.tr && q.tr.medicao, "Não consta nos documentos.");
+add("tr.recebimento", "TR — recebimento", "tr", q.tr && q.tr.recebimento, "Não consta nos documentos.");
+add("cronogramaFisico", "Cronograma físico", "tr", q.cronogramaFisico, "Sem planilha de cronograma na pasta.");
+add("orcamentoId", "Orçamento de referência", "orcamento", q.orcamentoId, "Sem planilha na pasta.");
+add("orcamentoRef.base", "Base de preços", "orcamento", q.orcamentoRef && q.orcamentoRef.base, "Nenhum item da planilha casou com base oficial.");
+add("orcamentoRef.competencia", "Competência (data-base)", "orcamento", q.orcamentoRef && q.orcamentoRef.competencia, "Nenhum item casou com base oficial.");
+add("pesquisa.dataPesquisa", "Data da pesquisa de preços", "orcamento", q.pesquisa && q.pesquisa.dataPesquisa, "Sem orçamento precificado.");
+R.PARAMETROS_ORDEM.forEach(function (id) {
+var par = q.parametros && q.parametros[id], v = par ? par.valor : null;
+if (id === "sigiloso" && semValor(v)) v = q.sigiloso;
+add("parametros." + id + ".valor", "Parâmetro — " + R.PARAMETROS[id].nome, "parametros", v, DECISOES.indexOf(id) >= 0 ? PORQUE_LEI : "O orçamento não permite a conta.");
+});
+var trCampos = [];
+if (D && D.CAMPOS) D.CAMPOS.forEach(function (c) { if (!D.campoAplica || D.campoAplica(c.id, q)) trCampos.push(c); });
+trCampos.forEach(function (c) {
+var o = c.onde === "tr" ? q.tr : q.edital, v = o ? o[c.id] : null;
+var porque = PORQUE_ORGAO;
+if (c.id === "local") porque = "O endereço do terreno não consta nos documentos.";
+else if (c.id === "prazoRecProvisorio" || c.id === "prazoRecDefinitivo") porque = "O critério de recebimento do memorial não diz o prazo em dias.";
+add((c.onde === "tr" ? "tr." : "edital.") + c.id, "Passo 9 — " + c.rotulo, "minuta", v, porque);
+});
+var pre = campos.filter(function (c) { return c.preenchido; }), exSist = pre.filter(function (c) { return c.por === "sistema"; });
+return { total: campos.length, preenchidos: pre.length, doSistema: exSist.length, daPessoa: pre.length - exSist.length,
+brancos: campos.filter(function (c) { return !c.preenchido; }).map(function (c) { return { caminho: c.caminho, rotulo: c.rotulo, passo: c.passo, porque: c.porque }; }), campos: campos };
+}
 var CplproPreparo = {
+lerBasePlanilha: lerBasePlanilha, lerArt: lerArt, lerPlanilhaPdf: lerPlanilhaPdf, dadosObra: dadosObra, decidirObra: decidirObra, assinaturaPasta: assinaturaPasta, inventario: inventario, nomeLimpo: nomeLimpo,
 DECISOES: DECISOES, CONTAS: CONTAS,
 lerMemorial: lerMemorial, lerPlanilha: lerPlanilha, lerCronograma: lerCronograma,
 analisar: analisar, planoOrcamento: planoOrcamento, assinaturaOrc: assinaturaOrc,
@@ -49323,6 +49551,18 @@ h += campo("Base de preços *" + selo(p, "orcamentoRef.base"), '<input id="cpl-o
 (tp ? '<div class="cpl-sug">Base usual para ' + esc(tp.nome) + ": <b>" + esc(tp.base) + "</b>" + (tp.baseConferir ? porque(tp.baseNota || "", "Biblioteca RA de tipos de objeto", true, "Base de preços") : "") + "</div>" : ""), "base");
 h += campo("Competência (data-base) *" + selo(p, "orcamentoRef.competencia"), '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
 h += "</div>";
+var po = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+if (po && po.leituraPdf && po.leituraPdf.ok !== true && po.leituraPdf.conferida !== true) {
+h += M.aviso({ tom: "alerta", titulo: "Conferir a leitura do PDF (nota " + po.leituraPdf.nota + ").", texto: (po.leituraPdf.motivos || []).join("; ") || "A conferência automática da leitura não passou.",
+acaoHtml: btn("Conferi a leitura do PDF", "cpl-pdf-conferida", d, "sm") });
+}
+if (p.preparo && p.preparo.oferta && p.preparo.oferta.escopo && !p.orcamentoId) {
+h += M.aviso({ tom: "alerta", titulo: "A pasta não tem planilha orçamentária.", texto: "Dá para orçar pelo escopo: o sistema abre o Escopo Inteligente com o texto do memorial. A cobrança por uso (2 orçamentos grátis por mês, depois o preço mostrado) é confirmada antes de qualquer IA.",
+acaoHtml: btn("Orçar pelo escopo (IA)", "cpl-orc-escopo", d, "primary") });
+}
+if (po && po.baseExigida && po.baseExigida.length) {
+h += '<p class="muted" id="cpl-base-exigida">Base de preços escolhida sozinha pelo regulamento: ' + po.baseExigida.map(function (b) { return "<b>" + esc(b.catId.replace(/_DES$/, "") + (b.uf ? "-" + b.uf : "") + (b.competencia ? " " + b.competencia : "")) + "</b>" + (b.precificou ? " (" + b.precificou + " itens)" : ""); }).join(" · ") + ".</p>";
+}
 h += '<div class="cpl-acoes">' + btn("Salvar orçamento de referência", "cpl-orc-salvar", d, "primary") + "</div>";
 if (!c) return h + M.aviso({ tom: "alerta", titulo: "Escolha o orçamento para ver os totais e a pesquisa de preços." });
 h += M.kpis([
@@ -49855,6 +50095,12 @@ var ext = ((/\.([A-Za-z0-9]+)$/.exec(f.name) || [])[1] || "").toLowerCase();
 var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: hoje() };
 var cl = C.classificarArquivo({ nome: f.name, ext: ext }), passo = Promise.resolve();
 if (ext === "docx") passo = T.textoDocx(bytes, inflarFn()).then(function (r) { if (r.ok) ent.texto = r.texto; else erros.push("«" + f.name + "»: " + r.erro); });
+else if (ext === "pdf" && cl.tipo === "orcamento_planilha" && typeof PlanilhaPDF !== "undefined" && PlanilhaPDF && typeof PlanilhaPDF.ler === "function") {
+var bufPdf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+passo = Promise.resolve().then(function () { return PlanilhaPDF.ler(bufPdf, { nome: f.name }); }).then(function (r) { if (r && r.itens && r.itens.length) ent.planilhaPdf = r; else erros.push("«" + f.name + "»: a leitura do PDF não achou itens de planilha."); },
+function (e) { erros.push("«" + f.name + "»: não consegui ler a planilha do PDF (" + (e && e.message ? e.message : e) + ")."); });
+}
+else if (ext === "pdf" && cl.tipo === "art_rrt") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
 else if (ext === "pdf" && cl.tipo === "memorial_descritivo") passo = lerPdfTexto(f, 40).then(function (t) { if (t) ent.texto = t; else erros.push("«" + f.name + "»: não consegui ler o texto do PDF (imagem escaneada?)."); });
 else if (ext === "pdf" && cl.confianca === "baixa") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
 else if ((ext === "xlsx" || ext === "xls" || ext === "csv") && bytes.length <= 25 * 1024 * 1024) passo = lerMatriz(f).then(function (m) { if (m) ent.matriz = m; else erros.push("«" + f.name + "»: não consegui ler a planilha."); });
@@ -49865,16 +50111,23 @@ return passo.then(function () { ents.push(ent); return guardarBytes(p, f, bytes,
 });
 return seq.then(function () { return { ents: ents, erros: erros }; });
 }
-function preencherOrc(orc, plano, baseSinapiOk) {
-orc.etapas = []; var casados = 0, semBase = [];
+function achaNaBase(catId, codigo) {
+try {
+if (catId === "SINAPI") return (typeof Sinapi !== "undefined" && Sinapi.carregado === true) ? Sinapi.obter(codigo) : null;
+return (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(catId, codigo) : null;
+} catch (e) { return null; }
+}
+function preencherOrc(orc, plano, lista) {
+orc.etapas = []; var casados = 0, semBase = [], porBase = {};
 plano.etapas.forEach(function (et) {
 Orcamento.addEtapa(orc, et.nome);
 var etapaId = orc.etapas[orc.etapas.length - 1].id;
 et.itens.forEach(function (it) {
-var base = baseSinapiOk && it.codigo && typeof Sinapi !== "undefined" ? Sinapi.obter(it.codigo) : null, si;
+var base = null, catId = null, si, k;
+if (it.codigo) for (k = 0; k < lista.length && !base; k++) { base = achaNaBase(lista[k].catId, it.codigo); if (base) catId = lista[k].catId; }
 if (base) {
-casados++;
-si = { codigo: base.codigo, baseFonte: "SINAPI", descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
+casados++; porBase[catId] = (porBase[catId] || 0) + 1;
+si = { codigo: base.codigo, baseFonte: catId === "SINAPI_DES" ? "SINAPI" : catId, descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
 custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
 } else {
 semBase.push(it.codigo ? it.codigo : it.descricao);
@@ -49883,36 +50136,95 @@ si = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade || 
 Orcamento.addItem(orc, etapaId, si, it.quantidade);
 });
 });
-return { casados: casados, semBase: semBase };
+if (typeof BaseExigida !== "undefined") BaseExigida.marcar(orc, lista);
+return { casados: casados, semBase: semBase, porBase: porBase };
 }
-function infoDoOrc(orc, casados, semBase) {
+function rotuloBaseDoOrc(orc, lista, porBase) {
+var primeira = lista.filter(function (b) { return porBase && porBase[b.catId] > 0; })[0];
+if (!primeira) return { base: "", competencia: "" };
+if (primeira.catId === "SINAPI" || primeira.catId === "SINAPI_DES") {
+var des = primeira.catId === "SINAPI_DES" || orc.desonerado;
+return { base: "SINAPI/" + (orc.uf || primeira.uf || "") + (des ? " desonerado" : " não desonerado"), competencia: primeira.competencia || orc.competenciaSinapi || "" };
+}
+return { base: primeira.base + "/" + (primeira.uf || "") + (primeira.regime === "desonerado" ? " desonerado" : (primeira.regime === "onerado" ? " não desonerado" : "")), competencia: primeira.competencia || "" };
+}
+function infoDoOrc(orc, casados, semBase, lista, porBase, origem) {
 var c = calc(orc); if (!c) return null;
-return { id: orc.id, base: casados > 0 ? "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado") : "", competencia: casados > 0 ? (orc.competenciaSinapi || "") : "", total: c.precoVenda,
+var rb = casados > 0 ? rotuloBaseDoOrc(orc, lista || [], porBase) : { base: "", competencia: "" };
+if (casados > 0 && !rb.base) rb = { base: "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado"), competencia: orc.competenciaSinapi || "" };
+return { id: orc.id, base: rb.base, competencia: rb.competencia, total: c.precoVenda, origem: origem || null,
+baseExigida: (lista || []).map(function (b) { return { catId: b.catId, uf: b.uf, competencia: b.competencia, regime: b.regime, motivo: b.motivo, precificou: (porBase && porBase[b.catId]) || 0 }; }),
 linhas: c.linhas.map(function (l) { return { numero: l.numero, codigo: l.codigo || "", descricao: l.descricao, unidade: l.unidade, quantidade: l.quantidade, precoTotal: l.precoTotal }; }),
 assinatura: Pr.assinaturaOrc(orc), casados: casados, semBase: semBase };
 }
-function orcamentoDoPreparo(p, plano, avisos) {
+function orcamentoDoPreparo(p, plano, avisos, prep) {
 var orcs = []; try { orcs = arr(Store.listarOrcamentos(eid())); } catch (e) { orcs = []; }
 var rec = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
 var existente = rec ? orcs.filter(function (o) { return o.id === rec.id; })[0] : null;
-var baseOk = typeof Sinapi !== "undefined" && Sinapi.carregado === true && (!p.regulamentoId || p.regulamentoId === "federal-14133" || p.recursoFederal === true);
-if (typeof Sinapi !== "undefined" && Sinapi.carregado !== true) avisos.push("A base SINAPI não está carregada neste aparelho: os itens entraram sem preço. Carregue a base do estado e monte de novo.");
+var lista = prep && prep.usadas ? prep.usadas : [];
+if (!lista.length && !existente) avisos.push("Nenhuma base de preços ficou instalada neste aparelho: os itens entraram sem preço. Use «Tentar de novo» (ou monte outra vez) com a internet ligada.");
+var origem = plano.deOnde === "pdf" ? "planilha em PDF" : "planilha";
+var pbPrev = {}; if (rec) arr(rec.baseExigida).forEach(function (b) { pbPrev[b.catId] = b.precificou || 0; });
 if (existente) {
-if (rec.sha === plano.sha) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+var semPrecoAntes = lista.length > 0 && (rec.casados || 0) === 0 && arr(rec.semBase).length > 0 && Pr.assinaturaOrc(existente) === rec.assinatura;
+if (rec.sha === plano.sha && !semPrecoAntes) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase), lista, pbPrev, rec.origem || origem);
 if (Pr.assinaturaOrc(existente) === rec.assinatura) {
-var rr = preencherOrc(existente, plano, baseOk);
+var rr = preencherOrc(existente, plano, lista);
 if (!Store.salvarOrcamento(eid(), existente)) throw new Error("não consegui gravar o orçamento atualizado");
-return infoDoOrc(existente, rr.casados, rr.semBase);
+return infoDoOrc(existente, rr.casados, rr.semBase, lista, rr.porBase, origem);
 }
 avisos.push("A planilha da pasta mudou, mas o orçamento já tem edições suas: ele NÃO foi alterado. Confira as diferenças antes de seguir.");
-return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase), lista, pbPrev, rec.origem || origem);
 }
 if (p.orcamentoId) { avisos.push("O processo já usa um orçamento escolhido por você: a planilha da pasta não criou outro."); return null; }
-var ob = obraPorId(p.obraId);
+var ob = obraPorId(p.obraId) || (prep && prep.obraInfo ? obraPorId(prep.obraInfo.id) : null);
 var orc = Orcamento.novo({ nome: "Orçamento de referência — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : plano.arquivo)), obra: ob ? ob.nome : "" });
-var r2 = preencherOrc(orc, plano, baseOk);
+var r2 = preencherOrc(orc, plano, lista);
 if (!Store.salvarOrcamento(eid(), orc)) throw new Error("não consegui gravar o orçamento");
-return infoDoOrc(orc, r2.casados, r2.semBase);
+return infoDoOrc(orc, r2.casados, r2.semBase, lista, r2.porBase, origem);
+}
+function prepararObraEBases(atual, an, plano, permitidos, avisos) {
+var prep = { obraInfo: null, baseCtx: null, lista: [], usadas: [], resultado: null };
+if (permitidos.demanda !== false) {
+try {
+var dec = Pr.decidirObra(atual, an, arr(K.lista("obras")), agoraLocal());
+if (dec.acao === "criar" || dec.acao === "atualizar") {
+var ob = Store.salvar(eid(), "obras", dec.obra);
+if (ob) prep.obraInfo = { id: ob.id, criada: dec.criada, assinatura: dec.assinatura, arquivo: dec.arquivo, nome: ob.nome };
+else avisos.push("Não consegui gravar a obra deduzida dos documentos (" + dec.obra.nome + ").");
+} else if (dec.acao === "nenhuma" && dec.obra && dec.obra.origemPreparo) {
+prep.obraInfo = { id: dec.obraId, criada: false, assinatura: dec.obra.origemPreparo.assinatura, nome: dec.obra.nome };
+}
+} catch (eO) { avisos.push("Não consegui preparar a obra: " + (eO && eO.message ? eO.message : eO)); }
+}
+if (!plano || typeof BaseExigida === "undefined") return Promise.resolve(prep);
+var mem = an.memorial || {}, bd = an.baseDeclarada || {};
+var tipo = atual.tipoObjeto;
+if (!tipo && mem.objeto) { var sg = C.sugerirTipoObjeto(mem.objeto); if (sg.length && (sg.length === 1 || sg[0].pontos > sg[1].pontos)) tipo = sg[0].tipo; }
+var uf = mem.uf || bd.uf || "";
+if (!uf) { avisos.push("Não achei a UF da obra nos documentos (memorial ou cabeçalho da planilha): a base de preços não foi escolhida sozinha. Informe a UF no orçamento."); return Promise.resolve(prep); }
+prep.baseCtx = { uf: uf, municipio: mem.municipio || "", regulamentoId: atual.regulamentoId || "", recursoFederal: atual.recursoFederal === true, tipoObjeto: tipo || "",
+competencia: bd.competencia || "", regime: bd.regime || "" };
+prep.lista = BaseExigida.resolver(prep.baseCtx);
+var lista = function () { try { return Bases.lista(); } catch (e) { return []; } };
+return BaseExigida.garantir(prep.lista, { instalar: BaseExigida.instaladorPadrao(), instaladas: lista,
+onProgresso: function (msg) { andamento("Montando o processo a partir da pasta — " + msg); } }).then(function (res) {
+prep.resultado = res; prep.usadas = BaseExigida.usadas(prep.lista, lista());
+res.avisos.forEach(function (a) { avisos.push(a); });
+res.falhou.forEach(function (f) { avisos.push(f.motivo); });
+res.precisaImportar.forEach(function (f) { avisos.push(f.motivo); });
+prep.usadas.forEach(function (u) { if (u.divergeDoPedido) avisos.push("Usando " + u.base + " " + u.uf + " de " + BaseExigida.fmtComp(u.competencia) + " — a planilha pede " + BaseExigida.fmtComp(prep.baseCtx.competencia) + ". Confira antes de usar em edital."); });
+return prep;
+}, function (e) { avisos.push("Não consegui preparar a base de preços: " + (e && e.message ? e.message : e)); return prep; });
+}
+function avisoDeBases(prep, refazer) {
+var rs = prep && prep.resultado; if (!rs || rs.ok) return;
+var corpo = "", botoes = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+rs.falhou.forEach(function (f) { corpo += "<p>" + esc(f.motivo) + "</p>"; });
+rs.precisaImportar.forEach(function (f) { corpo += "<p>" + esc(f.motivo) + "</p>"; });
+if (rs.tentarDeNovo && refazer) botoes.push({ texto: "Tentar de novo", classe: "primary", onClick: function () { UI.fecharModal(); refazer(); } });
+if (rs.precisaImportar.length) botoes.push({ texto: "Importar meu arquivo", classe: "primary", onClick: function () { UI.fecharModal(); if (App.abrirTabelas) App.abrirTabelas(); } });
+UI.modal("A base de preços não ficou pronta", corpo + '<p class="muted">Os itens que dependem dela entraram sem preço e estão marcados como pendência no passo 6. Nada foi inventado.</p>', botoes);
 }
 function montarDaPasta(files, opcoes) {
 var p = procAtual(); if (!p) return Promise.resolve(null);
@@ -49922,15 +50234,17 @@ var st = document.getElementById("cpl-acervo-status");
 var msg = "Montando o processo a partir da pasta (" + files.length + " arquivo(s))…";
 if (st) st.textContent = msg;
 G._cplMontando = true; toast(msg, "info"); andamento(msg);
-var t0 = Date.now();
+var t0 = Date.now(), prepGuardado = null;
 return lerParaPreparo(p, files).then(function (lido) {
 var atual = procAtual(); if (!atual) return null;
 var an = Pr.analisar({ arquivos: lido.ents }), plano = Pr.planoOrcamento(an), oi = null, avisosExtra = lido.erros.slice();
-if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
+return prepararObraEBases(atual, an, plano, permitidos, avisosExtra).then(function (prep) {
+prepGuardado = prep;
+if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra, prep); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
 else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
-var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi });
+var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx });
 G._cplMontando = false;
-if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); return r; }
+if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); avisoDeBases(prep, function () { montarDaPasta(files, opcoes); }); return r; }
 var q = r.p;
 avisosExtra.forEach(function (a) { q.preparo.resumo.avisos.push(a); });
 F.registrar(q, "preparo:pasta", lido.ents.length + " arquivo(s) na pasta", "o sistema preencheu " + q.preparo.resumo.preencheu + " campo(s) em " + q.preparo.resumo.passosTocados + " passo(s)", quemAtual(papel), agoraLocal());
@@ -49939,7 +50253,9 @@ G._cplPasso = "demanda"; G._cplAba = "passos"; G._cplView = "proc";
 var sit = Pr.situacao(q);
 toast("O sistema preencheu " + q.preparo.resumo.preencheu + " campos em " + q.preparo.resumo.passosTocados + " passos; faltam " + sit.faltamTotal + " decisões suas. (" + Math.max(1, Math.round((Date.now() - t0) / 1000)) + " s)", "ok");
 App.render();
+avisoDeBases(prep, function () { montarDaPasta(files, opcoes); });
 return r;
+});
 }, function (e) { G._cplMontando = false; toast("Não consegui montar o processo: " + (e && e.message ? e.message : e), "erro"); return null; })
 .then(function (r) { andamento(null); return r; }, function (e) { andamento(null); throw e; });
 }
@@ -50087,7 +50403,51 @@ try { if (el.requestFullscreen) { el.requestFullscreen().then(function () { docu
 G.cplproPainelDados = function () { return F.painel(listaProc(), hoje()); };
 function lerCampo(id) { var el = document.getElementById(id); return el ? String(el.value).replace(/^\s+|\s+$/g, "") : ""; }
 function emBranco(v) { return v === "" ? null : v; }
-G.registrarAcoes(MODULO, {
+var salvandoComBase = false;
+function garantirBaseDoOrc(p, orc) {
+var vazioRes = Promise.resolve({ usadas: [], resultado: null });
+if (!p || !orc || typeof BaseExigida === "undefined") return vazioRes;
+var base = p.preparo && p.preparo.baseCtx ? JSON.parse(JSON.stringify(p.preparo.baseCtx)) : null;
+var ctx = base || { uf: orc.uf || "", regulamentoId: p.regulamentoId || "", recursoFederal: p.recursoFederal === true, tipoObjeto: p.tipoObjeto || "",
+competencia: (p.orcamentoRef && p.orcamentoRef.competencia) || orc.competenciaSinapi || "", regime: orc.desonerado ? "desonerado" : "onerado" };
+if (!ctx.uf) return vazioRes;
+var lista = BaseExigida.resolver(ctx), inst = function () { try { return Bases.lista(); } catch (e) { return []; } };
+return BaseExigida.garantir(lista, { instalar: BaseExigida.instaladorPadrao(), instaladas: inst, onProgresso: function (m) { toast(m, "info"); } }).then(function (res) {
+var usadas = BaseExigida.usadas(lista, inst());
+res.falhou.concat(res.precisaImportar).forEach(function (f) { toast(f.motivo, "erro"); });
+try {
+var criadoAqui = p.preparo && p.preparo.orcamento && p.preparo.orcamento.id === orc.id;
+var travado = typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc);
+if (criadoAqui && !travado && usadas.length) { BaseExigida.marcar(orc, usadas); Store.salvarOrcamento(eid(), orc); }
+} catch (eM) {}
+return { usadas: usadas, resultado: res };
+}, function () { return { usadas: [], resultado: null }; });
+}
+function orcarPeloEscopo() {
+var p = procAtual(); if (!p || !exigirEditavel(p, "editar_orcamento")) return;
+var of = p.preparo && p.preparo.oferta; if (!of || !of.escopo) { toast("Esta pasta tem planilha: não há o que orçar pelo escopo.", "erro"); return; }
+if (p.orcamentoId) { toast("O processo já tem orçamento de referência.", "erro"); return; }
+var ob = obraPorId(p.obraId);
+var orc = Orcamento.novo({ nome: "Orçamento pelo escopo — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : "processo")), obra: ob ? ob.nome : "" });
+orc.etapas = [];
+if (!Store.salvarOrcamento(eid(), orc)) { toast("Não consegui criar o orçamento.", "erro"); return; }
+var ok = gravar("orcamento", function (q) {
+q.orcamentoId = orc.id;
+if (q.preparo) { q.preparo.orcamento = { id: orc.id, sha: null, assinatura: null, casados: 0, semBase: [], origem: "orçamento pelo escopo", baseExigida: null, leituraPdf: null }; q.preparo.oferta = null; }
+return { antes: { orcamentoId: null }, depois: { orcamentoId: orc.id } };
+});
+if (!ok) return;
+var ctxB = p.preparo && p.preparo.baseCtx; if (ctxB && typeof BaseExigida !== "undefined") { try { garantirBaseDoOrc(procAtual(), orc); } catch (eB) {} }
+var texto = [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
+if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
+App.abrirOrcamento(orc.id);
+if (typeof App.abrirEscopo === "function") {
+App.abrirEscopo();
+var cx = document.getElementById("esc-txt"); if (cx) cx.value = texto;
+}
+toast("Escopo aberto com o texto do memorial. Ao gerar, a cobrança por uso é confirmada antes de qualquer IA.", "info");
+}
+var acoes = {
 "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
 "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
 "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
@@ -50298,10 +50658,33 @@ if (ok) { toast("Riscos salvos.", "ok"); App.render(); }
 "cpl-orc-abrir": function () {
 var p = procAtual(); if (!p || !p.orcamentoId) return;
 if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
-App.abrirOrcamento(p.orcamentoId);
+garantirBaseDoOrc(p, orcDoProc(p)).then(function () { App.abrirOrcamento(p.orcamentoId); });
 },
+"cpl-orc-escopo": function () { orcarPeloEscopo(); },
+"cpl-pdf-conferida": function () {
+var ok = gravar("orcamento", function (q) {
+var o = q.preparo && q.preparo.orcamento; if (!o || !o.leituraPdf) return null;
+var antes = { leituraPdfConferida: o.leituraPdf.conferida === true }; o.leituraPdf.conferida = true;
+return { antes: antes, depois: { leituraPdfConferida: true } };
+});
+if (ok) { toast("Leitura do PDF marcada como conferida por você.", "ok"); App.render(); }
+},
+"cpl-importar-meu-arquivo": function () { if (App.abrirTabelas) App.abrirTabelas(); },
 "cpl-orc-usar": function (ds) { var b = document.getElementById("cpl-oBase"), c = document.getElementById("cpl-oComp"); if (b) b.value = ds.base || ""; if (c && !c.value) c.value = ds.comp || ""; },
 "cpl-orc-salvar": function () {
+var pOrc = procAtual(), selOrc = lerCampo("cpl-orcamentoId");
+var orcEsc = null; try { orcEsc = selOrc ? arr(Store.listarOrcamentos(eid())).filter(function (o) { return o.id === selOrc; })[0] : null; } catch (eL) { orcEsc = null; }
+if (pOrc && orcEsc && !salvandoComBase) {
+garantirBaseDoOrc(pOrc, orcEsc).then(function (r) {
+var u = r && r.usadas && r.usadas[0], b = document.getElementById("cpl-oBase"), c = document.getElementById("cpl-oComp");
+if (u) {
+if (b && !b.value) b.value = u.catId === "SINAPI" || u.catId === "SINAPI_DES" ? "SINAPI/" + u.uf + (u.regime === "desonerado" ? " desonerado" : " não desonerado") : u.base + "/" + u.uf;
+if (c && !c.value) c.value = u.competencia || "";
+}
+salvandoComBase = true; try { acoes["cpl-orc-salvar"](); } finally { salvandoComBase = false; }
+});
+return;
+}
 var ok = gravar("orcamento", function (q) {
 var sel = lerCampo("cpl-orcamentoId"), antes = { orcamentoId: q.orcamentoId, base: q.orcamentoRef.base, competencia: q.orcamentoRef.competencia };
 q.orcamentoId = emBranco(sel); q.orcamentoRef = { base: emBranco(lerCampo("cpl-oBase")), competencia: emBranco(lerCampo("cpl-oComp")) };
@@ -50677,7 +51060,8 @@ if (Store.salvar(eid(), ENT_PAP, reg)) { toast("Papéis de " + ds.nome + " salvo
 else toast("Não consegui gravar os papéis.", "erro");
 },
 "cpl-painel": function () { abrirPainel(); }
-});
+};
+G.registrarAcoes(MODULO, acoes);
 G.registrarWire(MODULO, function () {
 var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
 if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
@@ -63897,6 +64281,8 @@ case "liberar-ilegivel": this.liberarIlegiveis(); break;
 case "backup-pausa-fim": this.backupPausaFim(); break;
 case "copiar-orc": this.copiarOrcamento(); break;
 case "importar-sinapi": this.abrirImportSinapi(); break;
+case "assin-contratar": this.assinContratar(t.dataset.id); break;
+case "assin-importar": this.assinImportar(t.dataset.id); break;
 case "base-oficial": this.voltarBaseOficial(); break;
 case "atualizar": this.abrirAtualizar(); break;
 case "previa-sair": if (typeof PreviewCli !== "undefined") PreviewCli.sair(); break;
@@ -69180,6 +69566,151 @@ return;
 if (f) { var rd = new FileReader(); rd.onload = function () { concluir(rd.result, f.name); }; rd.onerror = function () { UI.toast("Falha ao ler arquivo.", "erro"); }; rd.readAsText(f); }
 else { concluir((UI.el("tab-text") || {}).value, "colado.txt"); }
 },
+assinContratar: function (id) {
+var e = (typeof BasesCat !== "undefined") ? BasesCat.assinatura(id) : null;
+var url = e && e.assinatura && e.assinatura.url;
+if (!url || !/^https:\/\//.test(url)) { UI.toast("Não achei o endereço de contratação desta fonte.", "erro"); return; }
+try { window.open(url, "_blank", "noopener"); }
+catch (err) { UI.toast("Não consegui abrir o navegador. Endereço do órgão: " + url, "erro", 12000); }
+},
+assinImportar: function (id) {
+if (!this._podeBases()) { this._recusaBases("Importar uma tabela de preço"); return; }
+var self = this, e = (typeof BasesCat !== "undefined") ? BasesCat.assinatura(id) : null;
+if (!e) { UI.toast("Fonte por assinatura desconhecida: " + id, "erro"); return; }
+var inp = UI.el("assin-file-" + e.id);
+if (!inp) { UI.toast("Não achei o seletor de arquivo. Feche e abra Tabelas.", "erro"); return; }
+inp.onchange = function () {
+var f = inp.files && inp.files[0]; inp.value = "";
+if (f) self._assinLerArquivo(e.id, f);
+};
+inp.click();
+},
+_assinLerArquivo: function (id, f) {
+var self = this, nome = String(f.name || "");
+if (/\.pdf$/i.test(nome)) {
+UI.toast("O PDF ainda não é lido por aqui (a tabela se perde na leitura e preço errado é pior que nenhum). Peça ao órgão a versão em Excel (.xls/.xlsx) ou CSV, ou salve a planilha nesse formato.", "erro", 12000);
+return;
+}
+if (!/\.(xlsx|xls|csv)$/i.test(nome)) { UI.toast("Formato não aceito. Use o arquivo do órgão em Excel (.xls/.xlsx) ou CSV.", "erro"); return; }
+UI.toast("Lendo o arquivo…", "ok");
+var rd = new FileReader();
+rd.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+rd.onload = function () {
+var bytes = new Uint8Array(rd.result);
+BasesAssinatura.sha256(bytes).then(function (sha) {
+self._lerPlanilha(f, function (matriz, erro, meta) {
+if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+var cand = [matriz];
+((meta && meta.abas) || []).forEach(function (a) { if (a.matriz !== matriz) cand.push(a.matriz); });
+var escolhida = cand.filter(function (m) { return BasesAssinatura.detectar(m).confianca !== "nenhuma"; })[0] || matriz;
+self._assinPrevia(id, escolhida, { arquivo: nome, sha256: sha });
+});
+});
+};
+rd.readAsArrayBuffer(f);
+},
+_assinPrevia: function (id, matriz, arq) {
+var self = this, e = BasesCat.assinatura(id), A = BasesAssinatura;
+var det = A.detectar(matriz), nCols = 0;
+matriz.forEach(function (r) { if (r && r.length > nCols) nCols = r.length; });
+var salvo = null;
+Bases.lista().forEach(function (b) { if (String(b.fonte).toUpperCase() === id && b.assinatura) salvo = b.assinatura; });
+var rec = A.reconhecerPreset(matriz, salvo);
+var cab = rec ? rec.cab : det.cab, mapa = rec ? rec.mapa : det.mapa;
+var meta = A.metaCabecalho(matriz);
+var letra = function (c) { var s = ""; c++; while (c > 0) { var m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - m) / 26); } return s; };
+var rotCol = function (c) {
+var h = cab >= 0 ? String(Importador._txt(matriz[cab][c])).trim() : "";
+return "Coluna " + letra(c) + (h ? " — " + h.slice(0, 28) : "");
+};
+var selects = A.PAPEIS.map(function (p) {
+var opc = '<option value="">' + (A.OBRIGATORIOS.indexOf(p) >= 0 ? "(escolha)" : "(não tem)") + "</option>";
+for (var c = 0; c < nCols; c++) opc += '<option value="' + c + '"' + (mapa[p] === c ? " selected" : "") + ">" + Util.esc(rotCol(c)) + "</option>";
+return '<div><label for="asp-' + p + '">' + Util.esc(A.ROTULO[p]) + (A.OBRIGATORIOS.indexOf(p) >= 0 ? " *" : "") + '</label><select id="asp-' + p + '">' + opc + "</select></div>";
+}).join("");
+var aviso = rec ? '<b>Reconhecido pelo preset desta empresa</b> (as colunas batem com a importação anterior). Confira a prévia mesmo assim.'
+: (det.confianca === "alta" ? "Sugeri as colunas pelo cabeçalho. <b>Confira na prévia</b> antes de importar."
+: (det.confianca === "parcial" ? "Reconheci só parte do cabeçalho. <b>Escolha as colunas que faltam</b> (marcadas com *)."
+: "Não reconheci o cabeçalho. <b>Escolha as colunas</b> (marcadas com *) olhando a prévia."));
+var corpo = '<p style="margin:0 0 6px;font-size:12.5px">Arquivo <b>' + Util.esc(arq.arquivo) + "</b> · " + matriz.length.toLocaleString("pt-BR") + " linhas. " + aviso + "</p>" +
+'<div class="assin-map">' + selects + "</div>" +
+'<div class="assin-map">' +
+'<div><label for="asp-bdi">BDI já embutido no preço (%)</label><input id="asp-bdi" placeholder="0 = preço sem BDI" value="' + (meta.bdiIncluso > 0 ? meta.bdiIncluso : "") + '"></div>' +
+'<div><label for="asp-comp">Competência (AAAA-MM)</label><input id="asp-comp" placeholder="2026-09" value="' + Util.esc(meta.competencia || "") + '"></div>' +
+'<div><label for="asp-uf">UF</label><input id="asp-uf" maxlength="2" value="' + Util.esc(e.uf) + '"></div>' +
+'<div><label for="asp-reg">Regime de encargos</label><select id="asp-reg"><option value="">Não informado</option><option value="d"' + (meta.desonerado === true ? " selected" : "") + '>Desonerado</option><option value="o"' + (meta.desonerado === false ? " selected" : "") + ">Onerado</option></select></div>" +
+"</div>" +
+'<div id="asp-prev"></div>' +
+'<p class="muted" style="font-size:11.5px;margin:4px 0 0">Linha sem preço numérico ou sem código <b>não entra</b>. Preço com BDI embutido é guardado como custo direto (preço ÷ (1 + BDI)). O mapeamento que você confirmar vira o preset desta empresa para a próxima edição.</p>';
+var lerMapa = function () {
+var m = {};
+A.PAPEIS.forEach(function (p) { var v = (UI.el("asp-" + p) || {}).value; if (v !== "" && v != null) m[p] = parseInt(v, 10); });
+return m;
+};
+var pinta = function () {
+var box = UI.el("asp-prev"); if (!box) return;
+var m = lerMapa(), erro = A.validarMapa(m, nCols);
+if (erro) { box.innerHTML = '<p class="assin-nota" style="color:var(--amarelo)">' + Util.esc(erro) + "</p>"; return; }
+var linhas = A.previa(matriz, cab, m, 10);
+var cols = A.PAPEIS.filter(function (p) { return m[p] != null; });
+box.innerHTML = '<table class="assin-prev"><thead><tr><th>Linha</th>' + cols.map(function (p) { return "<th>" + Util.esc(A.ROTULO[p]) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+linhas.map(function (l) { return "<tr><td>" + l.linha + "</td>" + cols.map(function (p) { return "<td>" + Util.esc(String(l[p]).slice(0, 60)) + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>";
+};
+var bg = UI.modal("Importar " + e.nome + " — confirme as colunas", corpo, [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); self.abrirTabelas(); } },
+{ texto: "Importar", classe: "primary", onClick: function () {
+var m = lerMapa(), regV = (UI.el("asp-reg") || {}).value, bdiV = String((UI.el("asp-bdi") || {}).value || "").replace(",", ".").trim();
+var r = A.ler(matriz, cab, m, {
+fonte: id, uf: String((UI.el("asp-uf") || {}).value || "").toUpperCase() || e.uf,
+bdiIncluso: bdiV === "" ? null : Number(bdiV),
+competencia: (UI.el("asp-comp") || {}).value || null,
+desonerado: regV === "d" ? true : (regV === "o" ? false : undefined)
+});
+if (!r.ok) { UI.toast("Importação recusada: " + r.erro, "erro", 10000); return; }
+var origem = A.origem({ id: id, importadaEm: Util.agoraISO ? Util.agoraISO() : new Date().toISOString(), arquivo: arq.arquivo, sha256: arq.sha256,
+cab: cab, mapa: m, impressao: A.impressao(matriz, cab, m), bdiIncluso: r.resumo.bdiIncluso });
+Bases.registrar(id, r.pacote, { assinatura: origem, catId: id });
+var grav = Bases.persistir(Auth.empresaId());
+if (grav && grav.bloqueado && grav.quedas && grav.quedas.length) { UI.fecharModal(); self._assinSubstituirMesmoAssim(id, e, r, grav); return; }
+UI.fecharModal();
+var s = r.resumo, fora = s.semPreco + s.semCodigo + s.repetidos;
+UI.toast(s.itens.toLocaleString("pt-BR") + " itens de " + e.nome + " importados" + (s.competencia ? " (competência " + s.competencia + ")" : "") +
+(s.bdiIncluso > 0 ? " — BDI " + s.bdiIncluso + "% estava embutido: gravado o custo direto" : "") +
+(fora ? " — " + fora + " linha(s) não entraram (sem preço, sem código ou repetidas)" : "") +
+(grav.ok ? ". Fica só nesta conta." : " — a gravação foi bloqueada; nada foi apagado"), grav.ok ? "ok" : "erro", 9000);
+self.abrirTabelas();
+} }
+]);
+var mm = bg && bg.querySelector(".modal"); if (mm) mm.style.maxWidth = "760px";
+A.PAPEIS.forEach(function (p) { var el = UI.el("asp-" + p); if (el) el.onchange = pinta; });
+pinta();
+},
+_assinSubstituirMesmoAssim: function (id, e, r, grav) {
+var self = this;
+var linhas = grav.quedas.map(function (q) { return "<li><b>" + Util.esc(q.fonte) + "</b>: " + q.de.toLocaleString("pt-BR") + " itens guardados → " + q.para.toLocaleString("pt-BR") + " no arquivo novo (−" + q.pct + "%)</li>"; }).join("");
+UI.modal("O arquivo novo tem muito menos itens que a tabela guardada",
+'<p style="margin-top:0;font-size:13px">A importação de <b>' + Util.esc(e.nome) + '</b> não foi gravada, para proteger a tabela que você já usa:</p><ul style="font-size:13px">' + linhas + "</ul>" +
+'<p style="font-size:12.5px">Se o arquivo é mesmo outra edição, menor que a anterior, pode <b>substituir</b>: a versão anterior fica guardada neste aparelho (desfazer da gravação em massa). Se não era para a tabela encolher, <b>cancele</b> e confira o arquivo e as colunas.</p>',
+[
+{ texto: "Cancelar (manter a tabela guardada)", classe: "ghost", onClick: function () {
+UI.fecharModal();
+try { Bases.carregar(Auth.empresaId()); } catch (eC) {}
+UI.toast("Nada foi substituído: a tabela guardada continua como estava.", "ok", 8000);
+self.abrirTabelas();
+} },
+{ texto: "Substituir mesmo assim", classe: "danger", onClick: function () {
+var g2 = Bases.persistir(Auth.empresaId(), { permitirRemocao: true });
+UI.fecharModal();
+try {
+Store.salvar(Auth.empresaId(), "bases_log", { id: Util.uid("bsl"), quando: Util.agoraISO(), tipo: "substituir-mesmo-assim", fonte: id,
+quedas: grav.quedas.map(function (q) { return { fonte: q.fonte, de: q.de, para: q.para, pct: q.pct }; }), gravou: !!(g2 && g2.ok),
+arquivo: (r.resumo && r.resumo.arquivo) || "", usuario: (Auth.usuario && Auth.usuario() && (Auth.usuario().email || Auth.usuario().nome)) || "" });
+} catch (eL) {}
+UI.toast(g2 && g2.ok ? e.nome + " substituída (" + r.resumo.itens.toLocaleString("pt-BR") + " itens). A versão anterior ficou guardada neste aparelho." : "A gravação falhou; nada foi apagado.", g2 && g2.ok ? "ok" : "erro", 9000);
+self.abrirTabelas();
+} }
+]);
+},
 _baseItensDaMatriz: function (matriz, fonte) {
 if (typeof Importador === "undefined" || !Importador._detectarColunas) return [];
 var linhas = (matriz || []).filter(function (r) { return r && r.some(function (c) { return String(c == null ? "" : c).trim() !== ""; }); });
@@ -73243,11 +73774,12 @@ document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.
 importarPlanilha: function () {
 var self = this;
 var inp = document.createElement("input");
-inp.type = "file"; inp.accept = ".xlsx,.xls,.csv"; inp.style.display = "none";
+inp.type = "file"; inp.accept = ".xlsx,.xls,.csv,.pdf"; inp.style.display = "none";
 inp.onchange = function () {
 var f = inp.files && inp.files[0]; if (!f) return;
-if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
-UI.toast("Lendo a planilha…", "ok");
+var ePdf = /\.pdf$/i.test(f.name || "");
+if (f.size > (ePdf ? 80 : 25) * 1024 * 1024) { UI.toast(ePdf ? "PDF muito grande (máx. 80 MB). Envie só as páginas da planilha." : "Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
+UI.toast(ePdf ? "Lendo a planilha do PDF… (acha sozinho as páginas da planilha, pode levar alguns segundos)" : "Lendo a planilha…", "ok");
 self._lerPlanilha(f, function (matriz, erro, meta) { self._aoLerPlanilha(f, matriz, erro, meta); });
 };
 document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
@@ -73257,10 +73789,34 @@ var self = this;
 if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
 if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
 if (self._orcNovoRecusado()) return;
-if (self._tentarPlanilhaCompleta((meta && meta.abas) || [{ nome: f.name, matriz: matriz }], f.name, matriz, meta)) return;
+if (!(meta && meta.pdf) && self._tentarPlanilhaCompleta((meta && meta.abas) || [{ nome: f.name, matriz: matriz }], f.name, matriz, meta)) return;
 var res = Importador.analisar(matriz);
-self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
+if (meta && meta.pdf) self._marcarOrigemPdf(res, meta.pdf, f.name);
+self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0, pdf: (meta && meta.pdf) || null };
 self._abrirImportPreview();
+},
+_marcarOrigemPdf: function (res, pdf, arquivo) {
+var porNum = {};
+Util.arr(pdf.itens).forEach(function (it) { porNum[it.item] = it; });
+Util.arr(res.etapas).forEach(function (et) {
+Util.arr(et.itens).forEach(function (it) {
+var o = porNum[it.numero];
+if (o) it.origemPdf = { arquivo: arquivo, pagina: o.pagina, linha: o.linha };
+if (o && o.duvidoso) it.duvidosoPdf = o.avisos || [];
+});
+});
+},
+_htmlConferenciaPdf: function (pdf) {
+var c = pdf.conferencia || {}, ok = !!c.ok, cor = ok ? "#16a34a" : (c.nota >= 50 ? "#f59e0b" : "#dc2626");
+var duv = Util.arr(pdf.itens).filter(function (it) { return it.duvidoso; });
+var h = '<div id="imp-pdf-conf" class="card" style="border-color:' + cor + '66;background:' + cor + '12;padding:8px 12px;margin-bottom:10px;font-size:12.5px">' +
+'<div style="font-weight:700;color:' + cor + '">' + (ok ? "Conferido" : "NÃO conferido — confira antes de importar") + ' · nota ' + (c.nota != null ? c.nota : "—") + '/100</div>' +
+'<div class="muted" style="margin-top:2px">' + Util.esc(PlanilhaPDF.resumoConferencia(pdf)) + ' Páginas lidas: ' + Util.esc(Util.arr(pdf.paginas).join(", ")) + '.</div>';
+if (Util.arr(c.motivos).length) h += '<ul style="margin:6px 0 0 18px;padding:0">' + c.motivos.slice(0, 8).map(function (m) { return "<li>" + Util.esc(m) + "</li>"; }).join("") +
+(c.motivos.length > 8 ? "<li>… e mais " + (c.motivos.length - 8) + " observação(ões)</li>" : "") + "</ul>";
+if (duv.length) h += '<div style="margin-top:6px"><b>Linhas para conferir (' + duv.length + '):</b> ' + duv.slice(0, 12).map(function (it) {
+return '<span class="g-pill" style="background:#f59e0b22;color:#92400e" title="' + Util.esc((it.avisos || []).join("; ")) + '">' + Util.esc(it.item) + " · pág. " + it.pagina + "</span>"; }).join(" ") + (duv.length > 12 ? " …" : "") + "</div>";
+return h + "</div>";
 },
 _abrirRestaurarSnapshot: function (snap, nomeArq, matriz, meta) {
 var self = this, cab = snap.cab || {}, orc = snap.orc || {};
@@ -73571,6 +74127,19 @@ try { this.backupAuto({ urgente: true }); } catch (eB) {}
 },
 _lerPlanilha: function (file, cb) {
 var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
+if (/\.pdf$/.test(nome)) {
+if (typeof PlanilhaPDF === "undefined" || !PlanilhaPDF.ler) { cb(null, "o leitor de planilha em PDF (js/planilhapdf.js) não está carregado nesta instalação. Atualize o OrçaPRO."); return; }
+fr.onload = function () {
+PlanilhaPDF.ler(fr.result, { nome: file.name }).then(function (r) {
+if (!r.itens.length) { cb(null, (r.conferencia && r.conferencia.motivos && r.conferencia.motivos[0]) || "não achei a planilha orçamentária neste PDF"); return; }
+var matriz = PlanilhaPDF.paraMatriz(r, { semBdi: true });
+cb(matriz, null, { abas: [{ nome: file.name, matriz: matriz }], idx: 0, pdf: r });
+})["catch"](function (e) { cb(null, "falha ao ler o PDF: " + String(e && e.message || e)); });
+};
+fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
+fr.readAsArrayBuffer(file);
+return;
+}
 if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
 if (/\.xls$/.test(nome)) {
 if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureSheetJS) { cb(null, "Leitor de .xls indisponível. Salve como .xlsx ou .csv e importe."); return; }
@@ -73682,6 +74251,7 @@ picker = '<div class="card" style="background:#eff6ff;border-color:#bfdbfe;paddi
 '<select id="imp-aba" style="margin:0 6px;padding:2px 6px;font-size:12.5px">' + opts + "</select>" +
 '<span class="muted">— se não for a aba do orçamento, troque e clique <b>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Reanalisar</b>.</span></div>';
 }
+if (imp.pdf && typeof PlanilhaPDF !== "undefined") picker = self._htmlConferenciaPdf(imp.pdf) + picker;
 UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
@@ -73712,7 +74282,7 @@ if (this._trialBloqueado()) { this._avisoTrial(); return; }
 if (this._orcNovoRecusado()) return;
 var res = this._imp && this._imp.res;
 if (!res || !res.etapas.length) { UI.toast("Nada pra importar — ajuste o mapeamento das colunas e clique Reanalisar.", "erro"); return; }
-var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv)$/i, "");
+var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv|pdf)$/i, "");
 var orc = Orcamento.novo({ nome: nomeBase });
 var temSinapi = (typeof Sinapi !== "undefined" && Sinapi.obter), casados = 0, proprios = 0, semCusto = 0;
 res.etapas.forEach(function (et) {
@@ -73735,6 +74305,10 @@ sinapiItem = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.uni
 }
 if (!(sinapiItem.custoUnitario > 0)) semCusto++;
 Orcamento.addItem(orc, etapaId, sinapiItem, it.quantidade);
+if (it.origemPdf) {
+var etN = orc.etapas[orc.etapas.length - 1], itN = etN && etN.itens && etN.itens[etN.itens.length - 1];
+if (itN) itN.origemPdf = it.origemPdf;
+}
 });
 });
 Store.salvarOrcamento(Auth.empresaId(), orc);

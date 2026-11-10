@@ -210,6 +210,8 @@
       var drop = document.getElementById("avisos-drop");
       if (drop) { drop.parentNode.removeChild(drop); return; } // toggle
       drop = document.createElement("div"); drop.id = "avisos-drop";
+      /* abrir o sino = ver as mensagens: apaga o pontinho vermelho de erro */
+      if (typeof UI !== "undefined" && UI.verMensagens) UI.verMensagens();
       this._desenhar(drop);
       document.body.appendChild(drop);
       /* abrir o sino RECONFERE os cronogramas (o cache pode ter 5 min): o que
@@ -239,6 +241,17 @@
         }
         /* WhatsApp do catálogo: síncrono dentro do clique (o window.open fora
            do clique é bloqueado como pop-up) */
+        if (e.target.closest("[data-msgs-limpar]")) {
+          e.stopPropagation();
+          if (typeof UI !== "undefined") UI.limparMensagens();
+          AvisosUI._desenhar(drop);
+          return;
+        }
+        if (e.target.closest("[data-msgs-tela]")) {
+          e.stopPropagation();
+          if (typeof UI !== "undefined") UI.mensagensNaTela(!!e.target.closest("[data-msgs-tela]").checked);
+          return;
+        }
         var cp = e.target.closest("[data-cat-pedir]");
         if (cp) {
           e.stopPropagation();
@@ -298,7 +311,28 @@
         }
       });
       if (tx && tx.rodape) h += '<div class="avisos-rodape">' + Util.esc(tx.rodape) + "</div>";
+      h += this._htmlMensagens();
       drop.innerHTML = h;
+    },
+
+    /* "Mensagens recentes": os recados que antes apareciam no canto da tela
+       (UI.toast → UI.mensagens). Texto sempre por Util.esc. */
+    _htmlMensagens: function () {
+      if (typeof UI === "undefined" || !UI.mensagens) return "";
+      var lista = UI.mensagens.slice(0, 20), tela = UI.mensagensNaTela();
+      var h = '<div class="avisos-msgs-cab"><b>Mensagens recentes</b>' +
+        (lista.length ? '<button type="button" class="avisos-dispensar" data-msgs-limpar>Limpar</button>' : "") + "</div>";
+      if (!lista.length) h += '<div class="avisos-msg"><span>Nenhuma mensagem recente.</span></div>';
+      lista.forEach(function (m) {
+        h += '<div class="avisos-msg ' + Util.esc(m.tipo) + '"><i></i><time>' + Util.esc(m.hora) + "</time><span>" + Util.esc(m.texto) + "</span></div>";
+      });
+      h += '<label class="avisos-msgs-pref"><input type="checkbox" data-msgs-tela' + (tela ? " checked" : "") + "> Mostrar as mensagens na tela</label>";
+      return h;
+    },
+    /* chegou mensagem com o sino aberto: redesenha */
+    mensagensMudaram: function () {
+      var dr = document.getElementById("avisos-drop");
+      if (dr) { if (typeof UI !== "undefined") UI.verMensagens(); this._desenhar(dr); }
     },
 
     _fora: function (e) {

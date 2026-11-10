@@ -224,7 +224,7 @@
       regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
       entrega: { local: { desonerada: "data/siurb-SP-current.json", onerada: "data/siurb-SP-onerada-current.json" },
                  vps: { desonerada: "siurb-SP-current.json", onerada: "siurb-SP-onerada-current.json" } },
-      coleta: "manual", versaoPacote: "2026-07", itens: 2630, pesoMb: 0.43,
+      chaveStatus: "siurb", coleta: "robo", versaoPacote: "2026-07", itens: 2630, pesoMb: 0.43,
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Data-base julho/2026 (publicada em 16/09/2026). Custo direto da tabela; a SIURB publica o BDI à parte."
     },
@@ -233,7 +233,7 @@
       regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (capital)",
       entrega: { local: { desonerada: "data/siurb-SP-infra-current.json", onerada: "data/siurb-SP-infra-onerada-current.json" },
                  vps: { desonerada: "siurb-SP-infra-current.json", onerada: "siurb-SP-infra-onerada-current.json" } },
-      coleta: "manual", versaoPacote: "2026-07", itens: 864, pesoMb: 0.16,
+      chaveStatus: "siurbInfra", coleta: "robo", versaoPacote: "2026-07", itens: 864, pesoMb: 0.16,
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Tabela de infraestrutura urbana (vias, drenagem, obras de arte), data-base julho/2026. Os códigos desta tabela NÃO são os da SIURB Edificações."
     },
@@ -245,7 +245,7 @@
       id: "CPOS", nome: "CPOS / CDHU", orgao: "Companhia de Desenvolvimento Habitacional e Urbano do Estado de São Paulo (CDHU/CPOS)",
       regiao: "sudeste", uf: "SP", localRotulo: "São Paulo (estado)",
       entrega: { local: "data/cpos-SP-current.json", vps: "cpos-SP-current.json" },
-      coleta: "manual", versaoPacote: "2026-08", itens: 2313, pesoMb: 0.37, eixos: [],
+      chaveStatus: "cpos", coleta: "robo", versaoPacote: "2026-08", itens: 2313, pesoMb: 0.37, eixos: [],
       nota: "Tabela de Composição Sintética de Serviços PADRÃO, data-base agosto/2026. O preço oficial traz BDI de 20,81%; o OrçaPRO guarda o custo direto (preço oficial dividido pelo BDI). A planilha não informa se os encargos são desonerados ou onerados. Serviços ESPECIAIS (sem preço na planilha) e a composição analítica (só coeficientes) não estão incluídos."
     },
     /* SCO-Rio (10/11/2026, leva I): Catálogo de Itens de Serviço da Prefeitura do Rio (pesquisa FGV), publicado todo mês pela Controladoria
@@ -256,7 +256,7 @@
       regiao: "sudeste", uf: "RJ", localRotulo: "Rio de Janeiro (capital)",
       entrega: { local: { desonerada: "data/sco-RJ-current.json", onerada: "data/sco-RJ-onerada-current.json" },
                  vps: { desonerada: "sco-RJ-current.json", onerada: "sco-RJ-onerada-current.json" } },
-      coleta: "manual", versaoPacote: "2026-09", itens: 4863, pesoMb: 1.45,
+      chaveStatus: "sco", coleta: "robo", versaoPacote: "2026-09", itens: 4863, pesoMb: 1.45,
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Catálogo de Itens de Serviço, referência setembro/2026 (a tabela é mensal). Custo direto, sem BDI. ATENÇÃO: o mesmo serviço tem código diferente no desonerado e no onerado (ex.: AD 04.05.0050 × AD 05.05.0050); não troque de regime pelo código. A composição analítica não está incluída."
     },
@@ -310,7 +310,7 @@
       regiao: "centro-oeste", uf: "MS", localRotulo: "Mato Grosso do Sul",
       entrega: { local: { desonerada: "data/agesul-MS-current.json", onerada: "data/agesul-MS-onerada-current.json" },
                  vps: { desonerada: "agesul-MS-current.json", onerada: "agesul-MS-onerada-current.json" } },
-      coleta: "manual", versaoPacote: "2026-06", itens: 1564, pesoMb: 0.4,
+      chaveStatus: "agesul", coleta: "robo", versaoPacote: "2026-06", itens: 1564, pesoMb: 0.4,
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Boletim de Preços sem BDI de junho/2026 (publicado em 14/09/2026). O órgão só publica em PDF; o OrçaPRO converte o PDF e confere a soma de cada linha. Itens recodificados da SINAPI trazem só o total."
     },
@@ -321,7 +321,7 @@
       id: "SEDOP", nome: "SEDOP / SEOP-PA", orgao: "Secretaria de Estado de Obras Públicas do Pará (antiga SEDOP)",
       regiao: "norte", uf: "PA", localRotulo: "Pará",
       entrega: { local: "data/sedop-PA-onerada-current.json", vps: "sedop-PA-onerada-current.json" },
-      coleta: "manual", versaoPacote: "2026-03", itens: 1361, pesoMb: 0.18, eixos: [],
+      chaveStatus: "sedop", coleta: "robo", versaoPacote: "2026-03", itens: 1361, pesoMb: 0.18, eixos: [],
       nota: "Planilha Padrão de março/2026 (sem BDI), SÓ sem desoneração (o órgão não publica a desonerada). A SEDOP passou a se chamar SEOP; o código dos itens é o da planilha oficial. O órgão só publica PDF; o OrçaPRO converte e confere."
     },
     /* ---------------- Sul ---------------- */
@@ -332,7 +332,7 @@
       regiao: "sul", uf: "PR", localRotulo: "Paraná",
       entrega: { local: { desonerada: "data/derpr-PR-current.json", onerada: "data/derpr-PR-onerada-current.json" },
                  vps: { desonerada: "derpr-PR-current.json", onerada: "derpr-PR-onerada-current.json" } },
-      coleta: "manual", versaoPacote: "2026-08", itens: 697, pesoMb: 0.11,
+      chaveStatus: "derpr", coleta: "robo", versaoPacote: "2026-08", itens: 697, pesoMb: 0.11,
       eixos: [{ id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }],
       nota: "Referencial de Custos de agosto/2026, tabela de obras rodoviárias (data-base 31/08/2026). Em parte dos serviços o transporte vem \"a acrescer\" e não está no custo unitário. O órgão só publica PDF; o OrçaPRO converte e confere a soma de cada linha."
     },
@@ -366,6 +366,57 @@
     { id: "CAERN", nome: "CAERN", orgao: "Companhia de Águas e Esgotos do Rio Grande do Norte", regiao: "nordeste", uf: "RN" },
     { id: "COMPESA", nome: "COMPESA", orgao: "Companhia Pernambucana de Saneamento", regiao: "nordeste", uf: "PE" },
     { id: "AGETOP_CIVIL", nome: "AGETOP Civil", orgao: "GOINFRA — tabela de edificações", regiao: "centro-oeste", uf: "GO" }
+  ];
+
+  /* ------------------------------------------------------------------
+   * FONTES POR ASSINATURA (10/11/2026, leva K) — `entrega: { assinatura: true }`.
+   *
+   * São tabelas que o órgão só vende/cede mediante assinatura. A RA NÃO as
+   * distribui: sem licença de redistribuição, comprar uma e entregar a todos
+   * seria cópia indevida. Cada EMPRESA contrata no site do órgão e importa o
+   * arquivo DELA (js/basesassinatura.js); ele fica só na conta dela.
+   *
+   * ⚠ Array SEPARADO de CATALOGO de propósito (mesma razão de AUSENTES): entrada
+   * daqui não tem `local`/`vps`, então nenhum consumidor do catálogo (instalar,
+   * atualização automática, Passo 3, licitação) consegue tentar baixá-la. FDE e
+   * EMOP continuam também em AUSENTES: para o Passo 3 do assistente seguem
+   * "não distribuídos"; a porta nova é a tela ⚙ Tabelas.
+   *
+   * Preço informado: SÓ o que está em docs/BASES-NOVAS-DEPLOY.md §7, com a data
+   * em que foi visto (precoVistoEm). Preço de órgão muda — quem decide é o site.
+   * `preset`: leiaute documentado da planilha. Nenhum foi confirmado em arquivo
+   * real; por isso `documentado:false` e a importação pede confirmação das
+   * colunas (o mapeamento confirmado vira preset da empresa).
+   * ------------------------------------------------------------------ */
+  var ASSINATURAS = [
+    {
+      id: "FDE", nome: "FDE", orgao: "Fundação para o Desenvolvimento da Educação — SP", regiao: "sudeste", uf: "SP",
+      entrega: { assinatura: true },
+      assinatura: {
+        url: "https://produtostecnicos.fde.sp.gov.br/Login.aspx",
+        pede: "Assinatura da Listagem de Preços e Insumos na plataforma Produtos Técnicos. Cadastro de pessoa jurídica (CNPJ e senha) ou pessoa física com conta gov.br. Contato do órgão: no próprio site.",
+        precos: [], precoVistoEm: "10/11/2026",
+        precoNota: "A página de entrada não informa preço; consulte no site depois do cadastro.",
+        preset: { documentado: false, obs: "Leiaute da Listagem de Preços da FDE não confirmado em arquivo real: confirme as colunas na prévia." }
+      }
+    },
+    {
+      id: "EMOP", nome: "EMOP", orgao: "Empresa de Obras Públicas do Estado do Rio de Janeiro", regiao: "sudeste", uf: "RJ",
+      entrega: { assinatura: true },
+      assinatura: {
+        url: "https://www.rj.gov.br/emop/catalogos-emop",
+        pede: "Compra à vista por guia de recolhimento, por produto: a EMOP tem exclusividade de expedir os Boletins mensais de custos e os catálogos; o arquivo digital para programas é vendido pelo órgão.",
+        precos: [
+          { produto: "Boletim Mensal de Custos", valores: "R$ 47,03 (avulso) · R$ 268,73 (semestral) · R$ 537,46 (anual)" },
+          { produto: "Catálogo de Referência", valores: "R$ 295,60 · R$ 335,91 · R$ 604,64" },
+          { produto: "Catálogo de Composição e Serviços", valores: "R$ 429,97 · R$ 470,28 · R$ 671,83" },
+          { produto: "Catálogo de Materiais", valores: "R$ 100,77 · R$ 134,37 · R$ 201,55" }
+        ],
+        precoVistoEm: "10/11/2026",
+        precoNota: "Valores na ordem avulso, semestral, anual, como a página listava em 10/11/2026.",
+        preset: { documentado: false, obs: "Leiaute do boletim/catálogo da EMOP não confirmado em arquivo real: confirme as colunas na prévia." }
+      }
+    }
   ];
 
   function up(s) { return String(s == null ? "" : s).trim().toUpperCase(); }
@@ -411,6 +462,7 @@
     REGIOES: REGIOES,
     CATALOGO: CATALOGO,
     AUSENTES: AUSENTES,
+    ASSINATURAS: ASSINATURAS,
     NUNCA: NUNCA,
     NUNCA_PADRAO: NUNCA_PADRAO,
     ehProibido: ehProibido,
@@ -419,6 +471,12 @@
     get: function (id) {
       var k = up(id);
       for (var i = 0; i < CATALOGO.length; i++) { if (CATALOGO[i].id === k) return CATALOGO[i]; }
+      return null;
+    },
+    /* fonte por assinatura (null se o id não é uma) */
+    assinatura: function (id) {
+      var k = up(id);
+      for (var i = 0; i < ASSINATURAS.length; i++) { if (ASSINATURAS[i].id === k) return ASSINATURAS[i]; }
       return null;
     },
     ausente: function (id) {
@@ -633,7 +691,8 @@
       var coletaServidor = e.coleta === "cron"
         ? "Coletor semanal no servidor da RA"
         : (e.coleta === "diario" ? "Coletor diário no servidor da RA"
-          : (grau === AUSENTE ? "" : (e.entrega && e.entrega.autoral ? "" : "Publicada à mão pela RA")));
+          : (e.coleta === "robo" ? "Robô no servidor da RA confere a página oficial todo dia"
+          : (grau === AUSENTE ? "" : (e.entrega && e.entrega.autoral ? "" : "Publicada à mão pela RA"))));
       /* QUEM PODE DIZER "SOZINHO": a SINAPI (Atualizacao.checarAuto) e, desde
          01/10/2026, toda base que o servidor ANUNCIA (`chaveStatus`) — a
          varredura diária reinstala a instalada quando o servidor está à frente

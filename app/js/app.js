@@ -2822,6 +2822,8 @@
         case "backup-pausa-fim": this.backupPausaFim(); break;
         case "copiar-orc": this.copiarOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
+        case "assin-contratar": this.assinContratar(t.dataset.id); break;
+        case "assin-importar": this.assinImportar(t.dataset.id); break;
         case "base-oficial": this.voltarBaseOficial(); break;
         case "atualizar": this.abrirAtualizar(); break;
         /* prévia de versão de cliente — ver js/previewcli.js */
@@ -11007,6 +11009,165 @@
       if (f) { var rd = new FileReader(); rd.onload = function () { concluir(rd.result, f.name); }; rd.onerror = function () { UI.toast("Falha ao ler arquivo.", "erro"); }; rd.readAsText(f); }
       else { concluir((UI.el("tab-text") || {}).value, "colado.txt"); }
     },
+    /* =================================================================
+     * FONTES POR ASSINATURA (leva K, 10/11/2026) — FDE, EMOP e afins.
+     * Contratar = abrir o site OFICIAL do órgão. Importar = ler o arquivo que a
+     * empresa baixou da área dela. ⚠ O arquivo e a base ficam SÓ nesta conta
+     * (IndexedDB da empresa, o mesmo lugar das bases extras): nenhuma chamada de
+     * rede aqui, de propósito. Motor: js/basesassinatura.js.
+     * ================================================================= */
+    assinContratar: function (id) {
+      var e = (typeof BasesCat !== "undefined") ? BasesCat.assinatura(id) : null;
+      var url = e && e.assinatura && e.assinatura.url;
+      if (!url || !/^https:\/\//.test(url)) { UI.toast("Não achei o endereço de contratação desta fonte.", "erro"); return; }
+      try { window.open(url, "_blank", "noopener"); }
+      catch (err) { UI.toast("Não consegui abrir o navegador. Endereço do órgão: " + url, "erro", 12000); }
+    },
+    assinImportar: function (id) {
+      if (!this._podeBases()) { this._recusaBases("Importar uma tabela de preço"); return; }
+      var self = this, e = (typeof BasesCat !== "undefined") ? BasesCat.assinatura(id) : null;
+      if (!e) { UI.toast("Fonte por assinatura desconhecida: " + id, "erro"); return; }
+      var inp = UI.el("assin-file-" + e.id);
+      if (!inp) { UI.toast("Não achei o seletor de arquivo. Feche e abra Tabelas.", "erro"); return; }
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; inp.value = "";
+        if (f) self._assinLerArquivo(e.id, f);
+      };
+      inp.click();
+    },
+    _assinLerArquivo: function (id, f) {
+      var self = this, nome = String(f.name || "");
+      if (/\.pdf$/i.test(nome)) {
+        UI.toast("O PDF ainda não é lido por aqui (a tabela se perde na leitura e preço errado é pior que nenhum). Peça ao órgão a versão em Excel (.xls/.xlsx) ou CSV, ou salve a planilha nesse formato.", "erro", 12000);
+        return;
+      }
+      if (!/\.(xlsx|xls|csv)$/i.test(nome)) { UI.toast("Formato não aceito. Use o arquivo do órgão em Excel (.xls/.xlsx) ou CSV.", "erro"); return; }
+      UI.toast("Lendo o arquivo…", "ok");
+      var rd = new FileReader();
+      rd.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+      rd.onload = function () {
+        var bytes = new Uint8Array(rd.result);
+        BasesAssinatura.sha256(bytes).then(function (sha) {
+          self._lerPlanilha(f, function (matriz, erro, meta) {
+            if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+            // a aba que o app elegeu pode não ser a da tabela: usa a primeira que o detector entende
+            var cand = [matriz];
+            ((meta && meta.abas) || []).forEach(function (a) { if (a.matriz !== matriz) cand.push(a.matriz); });
+            var escolhida = cand.filter(function (m) { return BasesAssinatura.detectar(m).confianca !== "nenhuma"; })[0] || matriz;
+            self._assinPrevia(id, escolhida, { arquivo: nome, sha256: sha });
+          });
+        });
+      };
+      rd.readAsArrayBuffer(f);
+    },
+    /* Tela de confirmação: a pessoa vê 10 linhas e diz qual coluna é qual. */
+    _assinPrevia: function (id, matriz, arq) {
+      var self = this, e = BasesCat.assinatura(id), A = BasesAssinatura;
+      var det = A.detectar(matriz), nCols = 0;
+      matriz.forEach(function (r) { if (r && r.length > nCols) nCols = r.length; });
+      var salvo = null;
+      Bases.lista().forEach(function (b) { if (String(b.fonte).toUpperCase() === id && b.assinatura) salvo = b.assinatura; });
+      var rec = A.reconhecerPreset(matriz, salvo);
+      var cab = rec ? rec.cab : det.cab, mapa = rec ? rec.mapa : det.mapa;
+      var meta = A.metaCabecalho(matriz);
+      var letra = function (c) { var s = ""; c++; while (c > 0) { var m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - m) / 26); } return s; };
+      var rotCol = function (c) {
+        var h = cab >= 0 ? String(Importador._txt(matriz[cab][c])).trim() : "";
+        return "Coluna " + letra(c) + (h ? " — " + h.slice(0, 28) : "");
+      };
+      var selects = A.PAPEIS.map(function (p) {
+        var opc = '<option value="">' + (A.OBRIGATORIOS.indexOf(p) >= 0 ? "(escolha)" : "(não tem)") + "</option>";
+        for (var c = 0; c < nCols; c++) opc += '<option value="' + c + '"' + (mapa[p] === c ? " selected" : "") + ">" + Util.esc(rotCol(c)) + "</option>";
+        return '<div><label for="asp-' + p + '">' + Util.esc(A.ROTULO[p]) + (A.OBRIGATORIOS.indexOf(p) >= 0 ? " *" : "") + '</label><select id="asp-' + p + '">' + opc + "</select></div>";
+      }).join("");
+      var aviso = rec ? '<b>Reconhecido pelo preset desta empresa</b> (as colunas batem com a importação anterior). Confira a prévia mesmo assim.'
+        : (det.confianca === "alta" ? "Sugeri as colunas pelo cabeçalho. <b>Confira na prévia</b> antes de importar."
+          : (det.confianca === "parcial" ? "Reconheci só parte do cabeçalho. <b>Escolha as colunas que faltam</b> (marcadas com *)."
+            : "Não reconheci o cabeçalho. <b>Escolha as colunas</b> (marcadas com *) olhando a prévia."));
+      var corpo = '<p style="margin:0 0 6px;font-size:12.5px">Arquivo <b>' + Util.esc(arq.arquivo) + "</b> · " + matriz.length.toLocaleString("pt-BR") + " linhas. " + aviso + "</p>" +
+        '<div class="assin-map">' + selects + "</div>" +
+        '<div class="assin-map">' +
+          '<div><label for="asp-bdi">BDI já embutido no preço (%)</label><input id="asp-bdi" placeholder="0 = preço sem BDI" value="' + (meta.bdiIncluso > 0 ? meta.bdiIncluso : "") + '"></div>' +
+          '<div><label for="asp-comp">Competência (AAAA-MM)</label><input id="asp-comp" placeholder="2026-09" value="' + Util.esc(meta.competencia || "") + '"></div>' +
+          '<div><label for="asp-uf">UF</label><input id="asp-uf" maxlength="2" value="' + Util.esc(e.uf) + '"></div>' +
+          '<div><label for="asp-reg">Regime de encargos</label><select id="asp-reg"><option value="">Não informado</option><option value="d"' + (meta.desonerado === true ? " selected" : "") + '>Desonerado</option><option value="o"' + (meta.desonerado === false ? " selected" : "") + ">Onerado</option></select></div>" +
+        "</div>" +
+        '<div id="asp-prev"></div>' +
+        '<p class="muted" style="font-size:11.5px;margin:4px 0 0">Linha sem preço numérico ou sem código <b>não entra</b>. Preço com BDI embutido é guardado como custo direto (preço ÷ (1 + BDI)). O mapeamento que você confirmar vira o preset desta empresa para a próxima edição.</p>';
+      var lerMapa = function () {
+        var m = {};
+        A.PAPEIS.forEach(function (p) { var v = (UI.el("asp-" + p) || {}).value; if (v !== "" && v != null) m[p] = parseInt(v, 10); });
+        return m;
+      };
+      var pinta = function () {
+        var box = UI.el("asp-prev"); if (!box) return;
+        var m = lerMapa(), erro = A.validarMapa(m, nCols);
+        if (erro) { box.innerHTML = '<p class="assin-nota" style="color:var(--amarelo)">' + Util.esc(erro) + "</p>"; return; }
+        var linhas = A.previa(matriz, cab, m, 10);
+        var cols = A.PAPEIS.filter(function (p) { return m[p] != null; });
+        box.innerHTML = '<table class="assin-prev"><thead><tr><th>Linha</th>' + cols.map(function (p) { return "<th>" + Util.esc(A.ROTULO[p]) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          linhas.map(function (l) { return "<tr><td>" + l.linha + "</td>" + cols.map(function (p) { return "<td>" + Util.esc(String(l[p]).slice(0, 60)) + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>";
+      };
+      var bg = UI.modal("Importar " + e.nome + " — confirme as colunas", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); self.abrirTabelas(); } },
+        { texto: "Importar", classe: "primary", onClick: function () {
+            var m = lerMapa(), regV = (UI.el("asp-reg") || {}).value, bdiV = String((UI.el("asp-bdi") || {}).value || "").replace(",", ".").trim();
+            var r = A.ler(matriz, cab, m, {
+              fonte: id, uf: String((UI.el("asp-uf") || {}).value || "").toUpperCase() || e.uf,
+              bdiIncluso: bdiV === "" ? null : Number(bdiV),
+              competencia: (UI.el("asp-comp") || {}).value || null,
+              desonerado: regV === "d" ? true : (regV === "o" ? false : undefined)
+            });
+            if (!r.ok) { UI.toast("Importação recusada: " + r.erro, "erro", 10000); return; }
+            var origem = A.origem({ id: id, importadaEm: Util.agoraISO ? Util.agoraISO() : new Date().toISOString(), arquivo: arq.arquivo, sha256: arq.sha256,
+              cab: cab, mapa: m, impressao: A.impressao(matriz, cab, m), bdiIncluso: r.resumo.bdiIncluso });
+            Bases.registrar(id, r.pacote, { assinatura: origem, catId: id });
+            var grav = Bases.persistir(Auth.empresaId());
+            /* leva L: a guarda de queda brusca barrou a edição nova (ex.: a tabela do ano que vem tem muito menos linhas). A trava ganha
+               PORTA: a pessoa vê o antes × depois e decide; sem ela, só a edição nova ficaria fora e ninguém saberia por quê. */
+            if (grav && grav.bloqueado && grav.quedas && grav.quedas.length) { UI.fecharModal(); self._assinSubstituirMesmoAssim(id, e, r, grav); return; }
+            UI.fecharModal();
+            var s = r.resumo, fora = s.semPreco + s.semCodigo + s.repetidos;
+            UI.toast(s.itens.toLocaleString("pt-BR") + " itens de " + e.nome + " importados" + (s.competencia ? " (competência " + s.competencia + ")" : "") +
+              (s.bdiIncluso > 0 ? " — BDI " + s.bdiIncluso + "% estava embutido: gravado o custo direto" : "") +
+              (fora ? " — " + fora + " linha(s) não entraram (sem preço, sem código ou repetidas)" : "") +
+              (grav.ok ? ". Fica só nesta conta." : " — a gravação foi bloqueada; nada foi apagado"), grav.ok ? "ok" : "erro", 9000);
+            self.abrirTabelas();
+        } }
+      ]);
+      var mm = bg && bg.querySelector(".modal"); if (mm) mm.style.maxWidth = "760px";
+      A.PAPEIS.forEach(function (p) { var el = UI.el("asp-" + p); if (el) el.onchange = pinta; });
+      pinta();
+    },
+    /* PORTA da guarda de queda brusca na importação por assinatura: «Substituir mesmo assim» mostra o antes × depois de itens, grava com
+       permitirRemocao e deixa registro em `bases_log`. Cancelar devolve a memória ao que está gravado (nada foi apagado). A cópia da
+       versão anterior que o Bases.persistir guarda em `bases_extras__anterior` continua valendo depois de substituir. */
+    _assinSubstituirMesmoAssim: function (id, e, r, grav) {
+      var self = this;
+      var linhas = grav.quedas.map(function (q) { return "<li><b>" + Util.esc(q.fonte) + "</b>: " + q.de.toLocaleString("pt-BR") + " itens guardados → " + q.para.toLocaleString("pt-BR") + " no arquivo novo (−" + q.pct + "%)</li>"; }).join("");
+      UI.modal("O arquivo novo tem muito menos itens que a tabela guardada",
+        '<p style="margin-top:0;font-size:13px">A importação de <b>' + Util.esc(e.nome) + '</b> não foi gravada, para proteger a tabela que você já usa:</p><ul style="font-size:13px">' + linhas + "</ul>" +
+        '<p style="font-size:12.5px">Se o arquivo é mesmo outra edição, menor que a anterior, pode <b>substituir</b>: a versão anterior fica guardada neste aparelho (desfazer da gravação em massa). Se não era para a tabela encolher, <b>cancele</b> e confira o arquivo e as colunas.</p>',
+        [
+          { texto: "Cancelar (manter a tabela guardada)", classe: "ghost", onClick: function () {
+              UI.fecharModal();
+              try { Bases.carregar(Auth.empresaId()); } catch (eC) {}
+              UI.toast("Nada foi substituído: a tabela guardada continua como estava.", "ok", 8000);
+              self.abrirTabelas();
+          } },
+          { texto: "Substituir mesmo assim", classe: "danger", onClick: function () {
+              var g2 = Bases.persistir(Auth.empresaId(), { permitirRemocao: true });
+              UI.fecharModal();
+              try {
+                Store.salvar(Auth.empresaId(), "bases_log", { id: Util.uid("bsl"), quando: Util.agoraISO(), tipo: "substituir-mesmo-assim", fonte: id,
+                  quedas: grav.quedas.map(function (q) { return { fonte: q.fonte, de: q.de, para: q.para, pct: q.pct }; }), gravou: !!(g2 && g2.ok),
+                  arquivo: (r.resumo && r.resumo.arquivo) || "", usuario: (Auth.usuario && Auth.usuario() && (Auth.usuario().email || Auth.usuario().nome)) || "" });
+              } catch (eL) {}
+              UI.toast(g2 && g2.ok ? e.nome + " substituída (" + r.resumo.itens.toLocaleString("pt-BR") + " itens). A versão anterior ficou guardada neste aparelho." : "A gravação falhou; nada foi apagado.", g2 && g2.ok ? "ok" : "erro", 9000);
+              self.abrirTabelas();
+          } }
+        ]);
+    },
     // Converte a matriz de uma planilha em itens de BASE (lista plana com custo unitário),
     // reusando o DETECTOR DE COLUNAS do importador — mas lê o código CRU (bases usam formatos
     // próprios: EMOP "C-100", ORSE "01.001.0001", CPOS "39.05.010" — não o padrão SINAPI, então
@@ -16427,11 +16588,13 @@
     importarPlanilha: function () {
       var self = this;
       var inp = document.createElement("input");
-      inp.type = "file"; inp.accept = ".xlsx,.xls,.csv"; inp.style.display = "none";
+      inp.type = "file"; inp.accept = ".xlsx,.xls,.csv,.pdf"; inp.style.display = "none";
       inp.onchange = function () {
         var f = inp.files && inp.files[0]; if (!f) return;
-        if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
-        UI.toast("Lendo a planilha…", "ok");
+        var ePdf = /\.pdf$/i.test(f.name || "");
+        /* PDF de prefeitura/edital passa fácil de 25 MB (298 páginas = 16 MB): o teto do PDF é maior porque a leitura é local e página a página */
+        if (f.size > (ePdf ? 80 : 25) * 1024 * 1024) { UI.toast(ePdf ? "PDF muito grande (máx. 80 MB). Envie só as páginas da planilha." : "Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
+        UI.toast(ePdf ? "Lendo a planilha do PDF… (acha sozinho as páginas da planilha, pode levar alguns segundos)" : "Lendo a planilha…", "ok");
         self._lerPlanilha(f, function (matriz, erro, meta) { self._aoLerPlanilha(f, matriz, erro, meta); });
       };
       document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
@@ -16453,10 +16616,37 @@
          e o regime de encargos ficam para trás e o arredondamento vira o
          truncamento do app — o total sai centavos abaixo do que o cliente
          já recebeu. O arquivo diz tudo isso por escrito; é só ler. */
-      if (self._tentarPlanilhaCompleta((meta && meta.abas) || [{ nome: f.name, matriz: matriz }], f.name, matriz, meta)) return;
+      if (!(meta && meta.pdf) && self._tentarPlanilhaCompleta((meta && meta.abas) || [{ nome: f.name, matriz: matriz }], f.name, matriz, meta)) return;
       var res = Importador.analisar(matriz);
-      self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
+      if (meta && meta.pdf) self._marcarOrigemPdf(res, meta.pdf, f.name);
+      self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0, pdf: (meta && meta.pdf) || null };
       self._abrirImportPreview();
+    },
+    /* PDF → cada item importado carrega de onde veio ({arquivo, pagina, linha}) e as dúvidas da conferência aparecem no cartão da prévia (_htmlConferenciaPdf).
+       O item do Importador casa com o do PDF pelo nº do item (a matriz leva o nº na 1ª coluna). */
+    _marcarOrigemPdf: function (res, pdf, arquivo) {
+      var porNum = {};
+      Util.arr(pdf.itens).forEach(function (it) { porNum[it.item] = it; });
+      Util.arr(res.etapas).forEach(function (et) {
+        Util.arr(et.itens).forEach(function (it) {
+          var o = porNum[it.numero];
+          if (o) it.origemPdf = { arquivo: arquivo, pagina: o.pagina, linha: o.linha };
+          if (o && o.duvidoso) it.duvidosoPdf = o.avisos || [];
+        });
+      });
+    },
+    /* Cartão da conferência na prévia da importação de PDF: nota, ok/não ok, motivos e as linhas duvidosas (quem confirma é a pessoa). */
+    _htmlConferenciaPdf: function (pdf) {
+      var c = pdf.conferencia || {}, ok = !!c.ok, cor = ok ? "#16a34a" : (c.nota >= 50 ? "#f59e0b" : "#dc2626");
+      var duv = Util.arr(pdf.itens).filter(function (it) { return it.duvidoso; });
+      var h = '<div id="imp-pdf-conf" class="card" style="border-color:' + cor + '66;background:' + cor + '12;padding:8px 12px;margin-bottom:10px;font-size:12.5px">' +
+        '<div style="font-weight:700;color:' + cor + '">' + (ok ? "Conferido" : "NÃO conferido — confira antes de importar") + ' · nota ' + (c.nota != null ? c.nota : "—") + '/100</div>' +
+        '<div class="muted" style="margin-top:2px">' + Util.esc(PlanilhaPDF.resumoConferencia(pdf)) + ' Páginas lidas: ' + Util.esc(Util.arr(pdf.paginas).join(", ")) + '.</div>';
+      if (Util.arr(c.motivos).length) h += '<ul style="margin:6px 0 0 18px;padding:0">' + c.motivos.slice(0, 8).map(function (m) { return "<li>" + Util.esc(m) + "</li>"; }).join("") +
+        (c.motivos.length > 8 ? "<li>… e mais " + (c.motivos.length - 8) + " observação(ões)</li>" : "") + "</ul>";
+      if (duv.length) h += '<div style="margin-top:6px"><b>Linhas para conferir (' + duv.length + '):</b> ' + duv.slice(0, 12).map(function (it) {
+        return '<span class="g-pill" style="background:#f59e0b22;color:#92400e" title="' + Util.esc((it.avisos || []).join("; ")) + '">' + Util.esc(it.item) + " · pág. " + it.pagina + "</span>"; }).join(" ") + (duv.length > 12 ? " …" : "") + "</div>";
+      return h + "</div>";
     },
     /* ==================================================================
      * RESTAURAR O ORÇAMENTO DA PRÓPRIA PLANILHA (v1.1.211)
@@ -16852,6 +17042,22 @@
     },
     _lerPlanilha: function (file, cb) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
+      /* PLANILHA ORÇAMENTÁRIA EM PDF (leva M, 10/11/2026): o PDF que a prefeitura manda entra pelo MESMO funil do .xlsx — vira uma matriz
+         (Item, Código, Fonte, Descrição, Und, Quantidade, Preço, Total) que o Importador já sabe ler — e leva junto a conferência
+         (soma × total impresso, subtotais, numeração) em meta.pdf para a prévia mostrar a nota e as linhas duvidosas. */
+      if (/\.pdf$/.test(nome)) {
+        if (typeof PlanilhaPDF === "undefined" || !PlanilhaPDF.ler) { cb(null, "o leitor de planilha em PDF (js/planilhapdf.js) não está carregado nesta instalação. Atualize o OrçaPRO."); return; }
+        fr.onload = function () {
+          PlanilhaPDF.ler(fr.result, { nome: file.name }).then(function (r) {
+            if (!r.itens.length) { cb(null, (r.conferencia && r.conferencia.motivos && r.conferencia.motivos[0]) || "não achei a planilha orçamentária neste PDF"); return; }
+            var matriz = PlanilhaPDF.paraMatriz(r, { semBdi: true });
+            cb(matriz, null, { abas: [{ nome: file.name, matriz: matriz }], idx: 0, pdf: r });
+          })["catch"](function (e) { cb(null, "falha ao ler o PDF: " + String(e && e.message || e)); });
+        };
+        fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
+        fr.readAsArrayBuffer(file);
+        return;
+      }
       if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
       // .xls antigo (binário BIFF, pré-2007): o ExcelJS NÃO lê (só .xlsx/OOXML). Usa o SheetJS
       // (vendorizado, offline) só pra este caso → mesma estrutura {abas, idx} do .xlsx, então o
@@ -17001,6 +17207,7 @@
           '<select id="imp-aba" style="margin:0 6px;padding:2px 6px;font-size:12.5px">' + opts + "</select>" +
           '<span class="muted">— se não for a aba do orçamento, troque e clique <b>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Reanalisar</b>.</span></div>';
       }
+      if (imp.pdf && typeof PlanilhaPDF !== "undefined") picker = self._htmlConferenciaPdf(imp.pdf) + picker;
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
@@ -17036,7 +17243,7 @@
       if (this._orcNovoRecusado()) return;   // escopo por obra: o restrito não cria orçamento solto (Auth.orcNovoRestrito)
       var res = this._imp && this._imp.res;
       if (!res || !res.etapas.length) { UI.toast("Nada pra importar — ajuste o mapeamento das colunas e clique Reanalisar.", "erro"); return; }
-      var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv)$/i, "");
+      var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv|pdf)$/i, "");
       var orc = Orcamento.novo({ nome: nomeBase });
       var temSinapi = (typeof Sinapi !== "undefined" && Sinapi.obter), casados = 0, proprios = 0, semCusto = 0;
       res.etapas.forEach(function (et) {
@@ -17061,6 +17268,10 @@
           }
           if (!(sinapiItem.custoUnitario > 0)) semCusto++;
           Orcamento.addItem(orc, etapaId, sinapiItem, it.quantidade);
+          if (it.origemPdf) {      // de onde veio no PDF da prefeitura (arquivo, página, linha) — o item novo é o último da etapa
+            var etN = orc.etapas[orc.etapas.length - 1], itN = etN && etN.itens && etN.itens[etN.itens.length - 1];
+            if (itN) itN.origemPdf = it.origemPdf;
+          }
         });
       });
       Store.salvarOrcamento(Auth.empresaId(), orc);

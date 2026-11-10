@@ -1886,15 +1886,74 @@
           var tabVazia = !tb.rows.length, junto = [];
           if (tabVazia) { corpo.removeChild(cur); junto = carregaKn(); }
           if (tabVazia && !corpo.children.length && !junto.length) {
-            /* já era uma página nova e a linha sozinha não cabe: nada melhor a fazer, mas NUNCA em silêncio (a linha seria cortada) */
+            /* já era uma página nova e a linha sozinha não cabe: a linha é PARTIDA entre folhas (ver partirLinhaAlta); só se nem assim couber
+               (uma palavra mais alta que a folha) o final acusa — NUNCA em silêncio (a linha seria cortada) */
             corpo.appendChild(cur); mover.forEach(function (x) { tb.appendChild(x); });
-            erros.push("uma linha de tabela (" + String(r.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) + ") é mais alta que a folha");
+            partirLinhaAlta(mover[mover.length - 1]);
             return;
           }
           novaFolha(junto);
           cur = vazia(b); tb = cur.tBodies[0]; corpo.appendChild(cur);
           mover.forEach(function (x) { tb.appendChild(x); });
+          if (!cabe(corpo)) partirLinhaAlta(mover[mover.length - 1]);
         });
+        /* ⚠ LINHA MAIS ALTA QUE A FOLHA (leva M, 10/11/2026 — "nada cortado"). Uma descrição de 1.800 caracteres numa coluna estreita dá uma
+           linha de 950 px numa folha de 843: o paginador mandava a linha para a folha nova, ela estourava lá, e o pacote INTEIRO era
+           recusado ("O documento sairia cortado"). Agora a célula mais comprida é partida por palavras: a 1ª parte fica nesta folha (o
+           maior prefixo que cabe, achado por busca binária contra a altura real) e o resto vai numa linha de continuação na folha seguinte,
+           com o cabeçalho repetido e as outras células em branco. Nada é descartado: o texto das duas partes é o da célula original. */
+        function partirLinhaAlta(r) {
+          var vezes = 0;
+          while (!cabe(corpo) && vezes++ < 60) {
+            var alvo = null, tam = 0, ix = -1;
+            [].slice.call(r.cells).forEach(function (c, k) { var n = String(c.textContent || "").length; if (n > tam) { tam = n; alvo = c; ix = k; } });
+            if (!alvo) return;
+            var at = atomosDe(alvo);
+            if (at.length < 2) return;
+            var ini = 1, fimB = at.length - 1, bom = 0;
+            while (ini <= fimB) {
+              var meio = (ini + fimB) >> 1;
+              alvo.innerHTML = htmlDeAtomos(at.slice(0, meio));
+              if (cabe(corpo)) { bom = meio; ini = meio + 1; } else fimB = meio - 1;
+            }
+            if (!bom) { alvo.innerHTML = htmlDeAtomos(at); return; }      // nem uma palavra cabe: o final acusa
+            alvo.innerHTML = htmlDeAtomos(at.slice(0, bom));
+            var resto = r.cloneNode(true);
+            [].slice.call(resto.cells).forEach(function (c, k) { if (k !== ix) c.innerHTML = ""; });
+            resto.cells[ix].innerHTML = htmlDeAtomos(at.slice(bom));
+            resto.classList.remove("kn");
+            novaFolha([]);
+            cur = vazia(b); tb = cur.tBodies[0]; corpo.appendChild(cur);
+            tb.appendChild(resto);
+            r = resto;
+          }
+        }
+        /* a célula vira uma lista de palavras (e quebras <br>); palavra gigante (sem espaço) é fatiada em pedaços de 40 letras */
+        function atomosDe(td) {
+          var out = [];
+          (function anda(no) {
+            [].slice.call(no.childNodes).forEach(function (c) {
+              if (c.nodeType === 3) {
+                String(c.nodeValue).split(/\s+/).forEach(function (w) {
+                  if (!w) return;
+                  for (var q = 0; q < w.length; q += 40) out.push({ t: w.slice(q, q + 40), g: q > 0 });
+                });
+              } else if (c.nodeType === 1) {
+                if (c.tagName === "BR") out.push({ br: true }); else anda(c);
+              }
+            });
+          })(td);
+          return out;
+        }
+        function htmlDeAtomos(at) {
+          var h = "";
+          at.forEach(function (a, k) {
+            if (a.br) { h += "<br>"; return; }
+            var e = String(a.t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            h += (k > 0 && !a.g && !at[k - 1].br ? " " : "") + e;
+          });
+          return h;
+        }
         if (b.parentNode === sec) sec.removeChild(b);
       }
       /* ⚠ BLOCO ALTO NUNCA É CORTADO (revisão de 09/11/2026: 4 composições saíam sem linhas e sem o VALOR COM BDI). Bloco `.ld-it` que não cabe

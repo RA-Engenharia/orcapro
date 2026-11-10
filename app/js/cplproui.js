@@ -501,6 +501,19 @@
       (tp ? '<div class="cpl-sug">Base usual para ' + esc(tp.nome) + ": <b>" + esc(tp.base) + "</b>" + (tp.baseConferir ? porque(tp.baseNota || "", "Biblioteca RA de tipos de objeto", true, "Base de preços") : "") + "</div>" : ""), "base");
     h += campo("Competência (data-base) *" + selo(p, "orcamentoRef.competencia"), '<input id="cpl-oComp" data-foco="competencia" value="' + esc(ref.competencia || "") + '" placeholder="AAAA-MM"' + d + ">", "competencia");
     h += "</div>";
+    /* leva L: o que o «Montar a partir da pasta» deixou para conferir/decidir neste passo */
+    var po = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+    if (po && po.leituraPdf && po.leituraPdf.ok !== true && po.leituraPdf.conferida !== true) {
+      h += M.aviso({ tom: "alerta", titulo: "Conferir a leitura do PDF (nota " + po.leituraPdf.nota + ").", texto: (po.leituraPdf.motivos || []).join("; ") || "A conferência automática da leitura não passou.",
+        acaoHtml: btn("Conferi a leitura do PDF", "cpl-pdf-conferida", d, "sm") });
+    }
+    if (p.preparo && p.preparo.oferta && p.preparo.oferta.escopo && !p.orcamentoId) {
+      h += M.aviso({ tom: "alerta", titulo: "A pasta não tem planilha orçamentária.", texto: "Dá para orçar pelo escopo: o sistema abre o Escopo Inteligente com o texto do memorial. A cobrança por uso (2 orçamentos grátis por mês, depois o preço mostrado) é confirmada antes de qualquer IA.",
+        acaoHtml: btn("Orçar pelo escopo (IA)", "cpl-orc-escopo", d, "primary") });
+    }
+    if (po && po.baseExigida && po.baseExigida.length) {
+      h += '<p class="muted" id="cpl-base-exigida">Base de preços escolhida sozinha pelo regulamento: ' + po.baseExigida.map(function (b) { return "<b>" + esc(b.catId.replace(/_DES$/, "") + (b.uf ? "-" + b.uf : "") + (b.competencia ? " " + b.competencia : "")) + "</b>" + (b.precificou ? " (" + b.precificou + " itens)" : ""); }).join(" · ") + ".</p>";
+    }
     h += '<div class="cpl-acoes">' + btn("Salvar orçamento de referência", "cpl-orc-salvar", d, "primary") + "</div>";
     if (!c) return h + M.aviso({ tom: "alerta", titulo: "Escolha o orçamento para ver os totais e a pesquisa de preços." });
     h += M.kpis([
@@ -1082,6 +1095,13 @@
             var ent = { nome: f.name, sha: sha, ext: ext, origem: f.webkitRelativePath || null, data: hoje() };
             var cl = C.classificarArquivo({ nome: f.name, ext: ext }), passo = Promise.resolve();
             if (ext === "docx") passo = T.textoDocx(bytes, inflarFn()).then(function (r) { if (r.ok) ent.texto = r.texto; else erros.push("«" + f.name + "»: " + r.erro); });
+            else if (ext === "pdf" && cl.tipo === "orcamento_planilha" && typeof PlanilhaPDF !== "undefined" && PlanilhaPDF && typeof PlanilhaPDF.ler === "function") {
+              /* planilha só em PDF (leva L+M): o módulo de leitura devolve itens com página/linha e a nota da conferência */
+              var bufPdf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+              passo = Promise.resolve().then(function () { return PlanilhaPDF.ler(bufPdf, { nome: f.name }); }).then(function (r) { if (r && r.itens && r.itens.length) ent.planilhaPdf = r; else erros.push("«" + f.name + "»: a leitura do PDF não achou itens de planilha."); },
+                function (e) { erros.push("«" + f.name + "»: não consegui ler a planilha do PDF (" + (e && e.message ? e.message : e) + ")."); });
+            }
+            else if (ext === "pdf" && cl.tipo === "art_rrt") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
             else if (ext === "pdf" && cl.tipo === "memorial_descritivo") passo = lerPdfTexto(f, 40).then(function (t) { if (t) ent.texto = t; else erros.push("«" + f.name + "»: não consegui ler o texto do PDF (imagem escaneada?)."); });
             else if (ext === "pdf" && cl.confianca === "baixa") passo = lerPdfTexto(f, 2).then(function (t) { if (t) ent.texto = t; });
             else if ((ext === "xlsx" || ext === "xls" || ext === "csv") && bytes.length <= 25 * 1024 * 1024) passo = lerMatriz(f).then(function (m) { if (m) ent.matriz = m; else erros.push("«" + f.name + "»: não consegui ler a planilha."); });
@@ -1093,18 +1113,26 @@
     return seq.then(function () { return { ents: ents, erros: erros }; });
   }
 
-  /* cria (ou reaproveita) o orçamento do OrçaPRO a partir da planilha da pasta, com a base SINAPI carregada.
-     Quem precifica é o sistema; o que não casa na base fica SEM preço e entra em `semBase` (pesquisa de preços no passo 6). */
-  function preencherOrc(orc, plano, baseSinapiOk) {
-    orc.etapas = []; var casados = 0, semBase = [];
+  /* cria (ou reaproveita) o orçamento do OrçaPRO a partir da planilha da pasta, com a(s) base(s) de preço EXIGIDA(S) (leva L:
+     BaseExigida decide e instala sozinha — a pessoa não abre Tabelas). Quem precifica é o sistema; o que não casa na base fica
+     SEM preço e entra em `semBase` (pesquisa de preços no passo 6). */
+  function achaNaBase(catId, codigo) {
+    try {
+      if (catId === "SINAPI") return (typeof Sinapi !== "undefined" && Sinapi.carregado === true) ? Sinapi.obter(codigo) : null;
+      return (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(catId, codigo) : null;
+    } catch (e) { return null; }
+  }
+  function preencherOrc(orc, plano, lista) {
+    orc.etapas = []; var casados = 0, semBase = [], porBase = {};
     plano.etapas.forEach(function (et) {
       Orcamento.addEtapa(orc, et.nome);
       var etapaId = orc.etapas[orc.etapas.length - 1].id;
       et.itens.forEach(function (it) {
-        var base = baseSinapiOk && it.codigo && typeof Sinapi !== "undefined" ? Sinapi.obter(it.codigo) : null, si;
+        var base = null, catId = null, si, k;
+        if (it.codigo) for (k = 0; k < lista.length && !base; k++) { base = achaNaBase(lista[k].catId, it.codigo); if (base) catId = lista[k].catId; }
         if (base) {
-          casados++;
-          si = { codigo: base.codigo, baseFonte: "SINAPI", descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
+          casados++; porBase[catId] = (porBase[catId] || 0) + 1;
+          si = { codigo: base.codigo, baseFonte: catId === "SINAPI_DES" ? "SINAPI" : catId, descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade, custoUnitario: Util.num(base.custoUnitario),
             custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
         } else {
           semBase.push(it.codigo ? it.codigo : it.descricao);
@@ -1113,36 +1141,103 @@
         Orcamento.addItem(orc, etapaId, si, it.quantidade);
       });
     });
-    return { casados: casados, semBase: semBase };
+    /* a base exigida fica MARCADA no orçamento: a mesma que acabou de precificar */
+    if (typeof BaseExigida !== "undefined") BaseExigida.marcar(orc, lista);
+    return { casados: casados, semBase: semBase, porBase: porBase };
   }
-  function infoDoOrc(orc, casados, semBase) {
+  function rotuloBaseDoOrc(orc, lista, porBase) {
+    var primeira = lista.filter(function (b) { return porBase && porBase[b.catId] > 0; })[0];
+    if (!primeira) return { base: "", competencia: "" };
+    if (primeira.catId === "SINAPI" || primeira.catId === "SINAPI_DES") {
+      var des = primeira.catId === "SINAPI_DES" || orc.desonerado;
+      return { base: "SINAPI/" + (orc.uf || primeira.uf || "") + (des ? " desonerado" : " não desonerado"), competencia: primeira.competencia || orc.competenciaSinapi || "" };
+    }
+    return { base: primeira.base + "/" + (primeira.uf || "") + (primeira.regime === "desonerado" ? " desonerado" : (primeira.regime === "onerado" ? " não desonerado" : "")), competencia: primeira.competencia || "" };
+  }
+  function infoDoOrc(orc, casados, semBase, lista, porBase, origem) {
     var c = calc(orc); if (!c) return null;
-    return { id: orc.id, base: casados > 0 ? "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado") : "", competencia: casados > 0 ? (orc.competenciaSinapi || "") : "", total: c.precoVenda,
+    var rb = casados > 0 ? rotuloBaseDoOrc(orc, lista || [], porBase) : { base: "", competencia: "" };
+    if (casados > 0 && !rb.base) rb = { base: "SINAPI/" + (orc.uf || "") + (orc.desonerado ? " desonerado" : " não desonerado"), competencia: orc.competenciaSinapi || "" };
+    return { id: orc.id, base: rb.base, competencia: rb.competencia, total: c.precoVenda, origem: origem || null,
+      baseExigida: (lista || []).map(function (b) { return { catId: b.catId, uf: b.uf, competencia: b.competencia, regime: b.regime, motivo: b.motivo, precificou: (porBase && porBase[b.catId]) || 0 }; }),
       linhas: c.linhas.map(function (l) { return { numero: l.numero, codigo: l.codigo || "", descricao: l.descricao, unidade: l.unidade, quantidade: l.quantidade, precoTotal: l.precoTotal }; }),
       assinatura: Pr.assinaturaOrc(orc), casados: casados, semBase: semBase };
   }
-  function orcamentoDoPreparo(p, plano, avisos) {
+  function orcamentoDoPreparo(p, plano, avisos, prep) {
     var orcs = []; try { orcs = arr(Store.listarOrcamentos(eid())); } catch (e) { orcs = []; }
     var rec = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
     var existente = rec ? orcs.filter(function (o) { return o.id === rec.id; })[0] : null;
-    var baseOk = typeof Sinapi !== "undefined" && Sinapi.carregado === true && (!p.regulamentoId || p.regulamentoId === "federal-14133" || p.recursoFederal === true);
-    if (typeof Sinapi !== "undefined" && Sinapi.carregado !== true) avisos.push("A base SINAPI não está carregada neste aparelho: os itens entraram sem preço. Carregue a base do estado e monte de novo.");
+    var lista = prep && prep.usadas ? prep.usadas : [];
+    if (!lista.length && !existente) avisos.push("Nenhuma base de preços ficou instalada neste aparelho: os itens entraram sem preço. Use «Tentar de novo» (ou monte outra vez) com a internet ligada.");
+    var origem = plano.deOnde === "pdf" ? "planilha em PDF" : "planilha";
+    var pbPrev = {}; if (rec) arr(rec.baseExigida).forEach(function (b) { pbPrev[b.catId] = b.precificou || 0; });   // quando nada é refeito, o que cada base precificou fica como estava
     if (existente) {
-      if (rec.sha === plano.sha) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+      /* a montagem anterior ficou SEM base (sem internet) e o orçamento não foi mexido por ninguém: agora que a base está aí, repreça */
+      var semPrecoAntes = lista.length > 0 && (rec.casados || 0) === 0 && arr(rec.semBase).length > 0 && Pr.assinaturaOrc(existente) === rec.assinatura;
+      if (rec.sha === plano.sha && !semPrecoAntes) return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase), lista, pbPrev, rec.origem || origem);
       if (Pr.assinaturaOrc(existente) === rec.assinatura) {
-        var rr = preencherOrc(existente, plano, baseOk);
+        var rr = preencherOrc(existente, plano, lista);
         if (!Store.salvarOrcamento(eid(), existente)) throw new Error("não consegui gravar o orçamento atualizado");
-        return infoDoOrc(existente, rr.casados, rr.semBase);
+        return infoDoOrc(existente, rr.casados, rr.semBase, lista, rr.porBase, origem);
       }
       avisos.push("A planilha da pasta mudou, mas o orçamento já tem edições suas: ele NÃO foi alterado. Confira as diferenças antes de seguir.");
-      return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase));
+      return infoDoOrc(existente, rec.casados || 0, arr(rec.semBase), lista, pbPrev, rec.origem || origem);
     }
     if (p.orcamentoId) { avisos.push("O processo já usa um orçamento escolhido por você: a planilha da pasta não criou outro."); return null; }
-    var ob = obraPorId(p.obraId);
+    var ob = obraPorId(p.obraId) || (prep && prep.obraInfo ? obraPorId(prep.obraInfo.id) : null);
     var orc = Orcamento.novo({ nome: "Orçamento de referência — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : plano.arquivo)), obra: ob ? ob.nome : "" });
-    var r2 = preencherOrc(orc, plano, baseOk);
+    var r2 = preencherOrc(orc, plano, lista);
     if (!Store.salvarOrcamento(eid(), orc)) throw new Error("não consegui gravar o orçamento");
-    return infoDoOrc(orc, r2.casados, r2.semBase);
+    return infoDoOrc(orc, r2.casados, r2.semBase, lista, r2.porBase, origem);
+  }
+
+  /* leva L — antes de precificar: (1) a OBRA que os documentos descrevem (cria sozinha, idempotente) e (2) a BASE exigida
+     (instala sozinha o que falta). Devolve { obraInfo, baseCtx, lista, usadas, resultado } — nunca rejeita: o que falhar vira aviso. */
+  function prepararObraEBases(atual, an, plano, permitidos, avisos) {
+    var prep = { obraInfo: null, baseCtx: null, lista: [], usadas: [], resultado: null };
+    /* 1) obra: pelo mesmo caminho da tela de Obras (Store.salvar na entidade "obras"); nunca grava fora dele */
+    if (permitidos.demanda !== false) {
+      try {
+        var dec = Pr.decidirObra(atual, an, arr(K.lista("obras")), agoraLocal());
+        if (dec.acao === "criar" || dec.acao === "atualizar") {
+          var ob = Store.salvar(eid(), "obras", dec.obra);
+          if (ob) prep.obraInfo = { id: ob.id, criada: dec.criada, assinatura: dec.assinatura, arquivo: dec.arquivo, nome: ob.nome };
+          else avisos.push("Não consegui gravar a obra deduzida dos documentos (" + dec.obra.nome + ").");
+        } else if (dec.acao === "nenhuma" && dec.obra && dec.obra.origemPreparo) {
+          prep.obraInfo = { id: dec.obraId, criada: false, assinatura: dec.obra.origemPreparo.assinatura, nome: dec.obra.nome };
+        }
+      } catch (eO) { avisos.push("Não consegui preparar a obra: " + (eO && eO.message ? eO.message : eO)); }
+    }
+    /* 2) base de preços exigida */
+    if (!plano || typeof BaseExigida === "undefined") return Promise.resolve(prep);
+    var mem = an.memorial || {}, bd = an.baseDeclarada || {};
+    var tipo = atual.tipoObjeto;
+    if (!tipo && mem.objeto) { var sg = C.sugerirTipoObjeto(mem.objeto); if (sg.length && (sg.length === 1 || sg[0].pontos > sg[1].pontos)) tipo = sg[0].tipo; }
+    var uf = mem.uf || bd.uf || "";
+    if (!uf) { avisos.push("Não achei a UF da obra nos documentos (memorial ou cabeçalho da planilha): a base de preços não foi escolhida sozinha. Informe a UF no orçamento."); return Promise.resolve(prep); }
+    prep.baseCtx = { uf: uf, municipio: mem.municipio || "", regulamentoId: atual.regulamentoId || "", recursoFederal: atual.recursoFederal === true, tipoObjeto: tipo || "",
+      competencia: bd.competencia || "", regime: bd.regime || "" };
+    prep.lista = BaseExigida.resolver(prep.baseCtx);
+    var lista = function () { try { return Bases.lista(); } catch (e) { return []; } };
+    return BaseExigida.garantir(prep.lista, { instalar: BaseExigida.instaladorPadrao(), instaladas: lista,
+      onProgresso: function (msg) { andamento("Montando o processo a partir da pasta — " + msg); } }).then(function (res) {
+      prep.resultado = res; prep.usadas = BaseExigida.usadas(prep.lista, lista());
+      res.avisos.forEach(function (a) { avisos.push(a); });
+      res.falhou.forEach(function (f) { avisos.push(f.motivo); });
+      res.precisaImportar.forEach(function (f) { avisos.push(f.motivo); });
+      prep.usadas.forEach(function (u) { if (u.divergeDoPedido) avisos.push("Usando " + u.base + " " + u.uf + " de " + BaseExigida.fmtComp(u.competencia) + " — a planilha pede " + BaseExigida.fmtComp(prep.baseCtx.competencia) + ". Confira antes de usar em edital."); });
+      return prep;
+    }, function (e) { avisos.push("Não consegui preparar a base de preços: " + (e && e.message ? e.message : e)); return prep; });
+  }
+  /* o que o «Montar» não resolveu sozinho: modal com a saída (nunca só um toast que some) */
+  function avisoDeBases(prep, refazer) {
+    var rs = prep && prep.resultado; if (!rs || rs.ok) return;
+    var corpo = "", botoes = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+    rs.falhou.forEach(function (f) { corpo += "<p>" + esc(f.motivo) + "</p>"; });
+    rs.precisaImportar.forEach(function (f) { corpo += "<p>" + esc(f.motivo) + "</p>"; });
+    if (rs.tentarDeNovo && refazer) botoes.push({ texto: "Tentar de novo", classe: "primary", onClick: function () { UI.fecharModal(); refazer(); } });
+    if (rs.precisaImportar.length) botoes.push({ texto: "Importar meu arquivo", classe: "primary", onClick: function () { UI.fecharModal(); if (App.abrirTabelas) App.abrirTabelas(); } });
+    UI.modal("A base de preços não ficou pronta", corpo + '<p class="muted">Os itens que dependem dela entraram sem preço e estão marcados como pendência no passo 6. Nada foi inventado.</p>', botoes);
   }
 
   function montarDaPasta(files, opcoes) {
@@ -1153,24 +1248,28 @@
     var msg = "Montando o processo a partir da pasta (" + files.length + " arquivo(s))…";
     if (st) st.textContent = msg;
     G._cplMontando = true; toast(msg, "info"); andamento(msg);
-    var t0 = Date.now();
+    var t0 = Date.now(), prepGuardado = null;
     return lerParaPreparo(p, files).then(function (lido) {
       var atual = procAtual(); if (!atual) return null;
       var an = Pr.analisar({ arquivos: lido.ents }), plano = Pr.planoOrcamento(an), oi = null, avisosExtra = lido.erros.slice();
-      if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
-      else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
-      var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi });
-      G._cplMontando = false;
-      if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); return r; }
-      var q = r.p;
-      avisosExtra.forEach(function (a) { q.preparo.resumo.avisos.push(a); });
-      F.registrar(q, "preparo:pasta", lido.ents.length + " arquivo(s) na pasta", "o sistema preencheu " + q.preparo.resumo.preencheu + " campo(s) em " + q.preparo.resumo.passosTocados + " passo(s)", quemAtual(papel), agoraLocal());
-      if (!salvarProc(q)) return null;
-      G._cplPasso = "demanda"; G._cplAba = "passos"; G._cplView = "proc";
-      var sit = Pr.situacao(q);
-      toast("O sistema preencheu " + q.preparo.resumo.preencheu + " campos em " + q.preparo.resumo.passosTocados + " passos; faltam " + sit.faltamTotal + " decisões suas. (" + Math.max(1, Math.round((Date.now() - t0) / 1000)) + " s)", "ok");
-      App.render();
-      return r;
+      return prepararObraEBases(atual, an, plano, permitidos, avisosExtra).then(function (prep) {
+        prepGuardado = prep;
+        if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra, prep); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
+        else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
+        var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx });
+        G._cplMontando = false;
+        if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); avisoDeBases(prep, function () { montarDaPasta(files, opcoes); }); return r; }
+        var q = r.p;
+        avisosExtra.forEach(function (a) { q.preparo.resumo.avisos.push(a); });
+        F.registrar(q, "preparo:pasta", lido.ents.length + " arquivo(s) na pasta", "o sistema preencheu " + q.preparo.resumo.preencheu + " campo(s) em " + q.preparo.resumo.passosTocados + " passo(s)", quemAtual(papel), agoraLocal());
+        if (!salvarProc(q)) return null;
+        G._cplPasso = "demanda"; G._cplAba = "passos"; G._cplView = "proc";
+        var sit = Pr.situacao(q);
+        toast("O sistema preencheu " + q.preparo.resumo.preencheu + " campos em " + q.preparo.resumo.passosTocados + " passos; faltam " + sit.faltamTotal + " decisões suas. (" + Math.max(1, Math.round((Date.now() - t0) / 1000)) + " s)", "ok");
+        App.render();
+        avisoDeBases(prep, function () { montarDaPasta(files, opcoes); });
+        return r;
+      });
     }, function (e) { G._cplMontando = false; toast("Não consegui montar o processo: " + (e && e.message ? e.message : e), "erro"); return null; })
       .then(function (r) { andamento(null); return r; }, function (e) { andamento(null); throw e; });
   }
@@ -1341,7 +1440,59 @@
   function lerCampo(id) { var el = document.getElementById(id); return el ? String(el.value).replace(/^\s+|\s+$/g, "") : ""; }
   function emBranco(v) { return v === "" ? null : v; }
 
-  G.registrarAcoes(MODULO, {
+  /* ================================================================== *
+   * LEVA L — passo 6: a base exigida fica instalada ao ESCOLHER/ABRIR o orçamento de referência, e «Orçar pelo escopo (IA)»
+   * quando a pasta não trouxe planilha. Nada aqui chama IA sem passar pela cobrança por uso do OrçaPRO.
+   * ================================================================== */
+  var salvandoComBase = false;
+  function garantirBaseDoOrc(p, orc) {
+    var vazioRes = Promise.resolve({ usadas: [], resultado: null });
+    if (!p || !orc || typeof BaseExigida === "undefined") return vazioRes;
+    var base = p.preparo && p.preparo.baseCtx ? JSON.parse(JSON.stringify(p.preparo.baseCtx)) : null;
+    var ctx = base || { uf: orc.uf || "", regulamentoId: p.regulamentoId || "", recursoFederal: p.recursoFederal === true, tipoObjeto: p.tipoObjeto || "",
+      competencia: (p.orcamentoRef && p.orcamentoRef.competencia) || orc.competenciaSinapi || "", regime: orc.desonerado ? "desonerado" : "onerado" };
+    if (!ctx.uf) return vazioRes;
+    var lista = BaseExigida.resolver(ctx), inst = function () { try { return Bases.lista(); } catch (e) { return []; } };
+    return BaseExigida.garantir(lista, { instalar: BaseExigida.instaladorPadrao(), instaladas: inst, onProgresso: function (m) { toast(m, "info"); } }).then(function (res) {
+      var usadas = BaseExigida.usadas(lista, inst());
+      res.falhou.concat(res.precisaImportar).forEach(function (f) { toast(f.motivo, "erro"); });
+      /* marca no orçamento SÓ se foi o sistema que o criou desta pasta e ele ainda não está aprovado */
+      try {
+        var criadoAqui = p.preparo && p.preparo.orcamento && p.preparo.orcamento.id === orc.id;
+        var travado = typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc);
+        if (criadoAqui && !travado && usadas.length) { BaseExigida.marcar(orc, usadas); Store.salvarOrcamento(eid(), orc); }
+      } catch (eM) {}
+      return { usadas: usadas, resultado: res };
+    }, function () { return { usadas: [], resultado: null }; });
+  }
+  /* «Orçar pelo escopo (IA)»: cria o orçamento VAZIO do processo e abre o Escopo do OrçaPRO com o texto do memorial. A geração e a
+     cobrança (2 grátis/mês, depois o preço confirmado) são do fluxo que já existe (App._escopoComPagamento): daqui não sai nenhuma chamada de IA. */
+  function orcarPeloEscopo() {
+    var p = procAtual(); if (!p || !exigirEditavel(p, "editar_orcamento")) return;
+    var of = p.preparo && p.preparo.oferta; if (!of || !of.escopo) { toast("Esta pasta tem planilha: não há o que orçar pelo escopo.", "erro"); return; }
+    if (p.orcamentoId) { toast("O processo já tem orçamento de referência.", "erro"); return; }
+    var ob = obraPorId(p.obraId);
+    var orc = Orcamento.novo({ nome: "Orçamento pelo escopo — " + (ob ? ob.nome : (p.objeto ? String(p.objeto).substring(0, 50) : "processo")), obra: ob ? ob.nome : "" });
+    orc.etapas = [];
+    if (!Store.salvarOrcamento(eid(), orc)) { toast("Não consegui criar o orçamento.", "erro"); return; }
+    var ok = gravar("orcamento", function (q) {
+      q.orcamentoId = orc.id;
+      if (q.preparo) { q.preparo.orcamento = { id: orc.id, sha: null, assinatura: null, casados: 0, semBase: [], origem: "orçamento pelo escopo", baseExigida: null, leituraPdf: null }; q.preparo.oferta = null; }
+      return { antes: { orcamentoId: null }, depois: { orcamentoId: orc.id } };
+    });
+    if (!ok) return;
+    var ctxB = p.preparo && p.preparo.baseCtx; if (ctxB && typeof BaseExigida !== "undefined") { try { garantirBaseDoOrc(procAtual(), orc); } catch (eB) {} }
+    var texto = [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
+    if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
+    App.abrirOrcamento(orc.id);
+    if (typeof App.abrirEscopo === "function") {
+      App.abrirEscopo();
+      var cx = document.getElementById("esc-txt"); if (cx) cx.value = texto;
+    }
+    toast("Escopo aberto com o texto do memorial. Ao gerar, a cobrança por uso é confirmada antes de qualquer IA.", "info");
+  }
+
+  var acoes = {
     "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
     "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
     "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
@@ -1569,10 +1720,35 @@
     "cpl-orc-abrir": function () {
       var p = procAtual(); if (!p || !p.orcamentoId) return;
       if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
-      App.abrirOrcamento(p.orcamentoId);
+      /* leva L: a base exigida já tem de estar instalada ao abrir (senão o orçamento abre com «A base SINAPI não está carregada») */
+      garantirBaseDoOrc(p, orcDoProc(p)).then(function () { App.abrirOrcamento(p.orcamentoId); });
     },
+    "cpl-orc-escopo": function () { orcarPeloEscopo(); },
+    "cpl-pdf-conferida": function () {
+      var ok = gravar("orcamento", function (q) {
+        var o = q.preparo && q.preparo.orcamento; if (!o || !o.leituraPdf) return null;
+        var antes = { leituraPdfConferida: o.leituraPdf.conferida === true }; o.leituraPdf.conferida = true;
+        return { antes: antes, depois: { leituraPdfConferida: true } };
+      });
+      if (ok) { toast("Leitura do PDF marcada como conferida por você.", "ok"); App.render(); }
+    },
+    "cpl-importar-meu-arquivo": function () { if (App.abrirTabelas) App.abrirTabelas(); },
     "cpl-orc-usar": function (ds) { var b = document.getElementById("cpl-oBase"), c = document.getElementById("cpl-oComp"); if (b) b.value = ds.base || ""; if (c && !c.value) c.value = ds.comp || ""; },
     "cpl-orc-salvar": function () {
+      var pOrc = procAtual(), selOrc = lerCampo("cpl-orcamentoId");
+      /* leva L: escolher o orçamento instala (e preenche) a base exigida sozinha — sem a pessoa abrir Tabelas */
+      var orcEsc = null; try { orcEsc = selOrc ? arr(Store.listarOrcamentos(eid())).filter(function (o) { return o.id === selOrc; })[0] : null; } catch (eL) { orcEsc = null; }
+      if (pOrc && orcEsc && !salvandoComBase) {
+        garantirBaseDoOrc(pOrc, orcEsc).then(function (r) {
+          var u = r && r.usadas && r.usadas[0], b = document.getElementById("cpl-oBase"), c = document.getElementById("cpl-oComp");
+          if (u) {
+            if (b && !b.value) b.value = u.catId === "SINAPI" || u.catId === "SINAPI_DES" ? "SINAPI/" + u.uf + (u.regime === "desonerado" ? " desonerado" : " não desonerado") : u.base + "/" + u.uf;
+            if (c && !c.value) c.value = u.competencia || "";
+          }
+          salvandoComBase = true; try { acoes["cpl-orc-salvar"](); } finally { salvandoComBase = false; }
+        });
+        return;
+      }
       var ok = gravar("orcamento", function (q) {
         var sel = lerCampo("cpl-orcamentoId"), antes = { orcamentoId: q.orcamentoId, base: q.orcamentoRef.base, competencia: q.orcamentoRef.competencia };
         q.orcamentoId = emBranco(sel); q.orcamentoRef = { base: emBranco(lerCampo("cpl-oBase")), competencia: emBranco(lerCampo("cpl-oComp")) };
@@ -1966,7 +2142,8 @@
 
     /* ---------- painel ---------- */
     "cpl-painel": function () { abrirPainel(); }
-  });
+  };
+  G.registrarAcoes(MODULO, acoes);
 
   /* campos que não podem ter data-gacao (arquivo): ligam aqui, depois do DOM existir */
   G.registrarWire(MODULO, function () {

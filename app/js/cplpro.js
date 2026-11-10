@@ -211,6 +211,14 @@
       campo("orcamentoId", p.orcamentoId, "Vincule o orçamento de referência.");
       campo("base", p.orcamentoRef ? p.orcamentoRef.base : null, "Declare a base de preços do orçamento.");
       campo("competencia", p.orcamentoRef ? p.orcamentoRef.competencia : null, "Declare a competência (data-base) do orçamento.");
+      /* leva L: o que o «Montar a partir da pasta» deixou para a pessoa conferir (nunca some sozinho) */
+      var po = p.preparo && p.preparo.orcamento ? p.preparo.orcamento : null;
+      if (po && po.leituraPdf && po.leituraPdf.ok !== true && po.leituraPdf.conferida !== true) {
+        total++; pend_.push(pend(id, "leituraPdf", "Conferir a leitura do PDF da planilha (nota " + po.leituraPdf.nota + "): " + (po.leituraPdf.motivos && po.leituraPdf.motivos.length ? po.leituraPdf.motivos.join("; ") : "a leitura automática não passou na conferência") + "."));
+      }
+      if (p.preparo && p.preparo.oferta && p.preparo.oferta.escopo && vazio(p.orcamentoId)) {
+        total++; pend_.push(pend(id, "orcamentoPeloEscopo", "A pasta não tem planilha orçamentária: use «Orçar pelo escopo (IA)» (a cobrança por uso é confirmada antes de qualquer IA) ou salve a planilha em .xlsx e monte de novo."));
+      }
     } else if (id === "tr") {
       campo("objeto", p.tr ? p.tr.objeto : null, "TR/PB: falta a descrição do objeto.");
       campo("medicao", p.tr ? p.tr.medicao : null, "TR/PB: falta o critério de medição.");

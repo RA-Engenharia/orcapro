@@ -1606,6 +1606,21 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
 .toast { background: var(--navy); color: #fff; padding: 11px 16px; border-radius: var(--raio); box-shadow: var(--sombra); font-size: var(--t-base); animation: slidein .2s; }
 .toast.ok { background: var(--verde); }
 .toast.erro { background: var(--vermelho); }
+/* recados do canto guardados no sino (UI.toast): ficam no DOM, só não aparecem.
+   Sem visibility:hidden — ele zera o innerText que as e2e leem nos .toast */
+.toasts.silencioso { opacity: 0; pointer-events: none; }
+.toasts.silencioso .toast { pointer-events: none; animation: none; }
+.topo-ic-btn.tem-erro::after { content: ""; position: absolute; bottom: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: #dc2626; border: 2px solid var(--navy); }
+.avisos-msgs-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 4px; border-top: 1px solid var(--linha); }
+.avisos-msgs-cab b { font-size: var(--t-micro); font-weight: var(--p-forte); text-transform: uppercase; letter-spacing: .6px; color: var(--texto-fraco); }
+.avisos-msg { display: flex; gap: 8px; align-items: baseline; padding: 4px 14px; font-size: var(--t-peq); }
+.avisos-msg time { color: var(--texto-fraco); font-variant-numeric: tabular-nums; flex: none; }
+.avisos-msg i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--texto-fraco); align-self: center; }
+.avisos-msg.ok i { background: var(--verde); }
+.avisos-msg.erro i { background: var(--vermelho); }
+.avisos-msg.erro span { color: var(--vermelho); }
+.avisos-msg span { overflow-wrap: anywhere; }
+.avisos-msgs-pref { display: flex; gap: 6px; align-items: center; padding: 6px 14px 12px; font-size: var(--t-peq); color: var(--texto-fraco); cursor: pointer; }
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .muted { color: var(--texto-fraco); }
@@ -4736,3 +4751,22 @@ button.g-leg[aria-pressed="false"] b { text-decoration: line-through; }
   .pn-busca input { width: 100%; }
   .pn-busca { width: 100%; }
 }
+
+/* FONTES POR ASSINATURA (leva K, 10/11/2026) — tokens do tema, nada de cor fixa:
+   o selo e os blocos acompanham claro/escuro sozinhos */
+.assin-lin { padding: 10px 12px; margin: 0 0 10px; border: 1px solid var(--linha); border-radius: 10px; background: var(--surface-2); }
+.assin-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.selo-assin { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--linha-forte); color: var(--texto); background: var(--surface); }
+.assin-pede, .assin-nota { font-size: 12px; margin: 4px 0; color: var(--texto); }
+.assin-nota { color: var(--texto-fraco); }
+.assin-precos { font-size: 12px; margin: 4px 0; padding-left: 18px; color: var(--texto); }
+.assin-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.assin-status { margin-top: 8px; font-size: 12.5px; }
+.assin-ok { color: var(--verde); font-weight: 600; }
+.assin-origem { display: block; color: var(--texto-fraco); margin-top: 2px; }
+.assin-prev { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.assin-prev th, .assin-prev td { border: 1px solid var(--linha); padding: 3px 6px; text-align: left; vertical-align: top; }
+.assin-prev th { background: var(--surface-2); }
+.assin-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
+.assin-map label { font-size: 12px; font-weight: 600; display: block; }
+.assin-map select { width: 100%; }

@@ -120,7 +120,11 @@
         ativaUsuario: ativaU,
         inativaPorUf: false,           // runtime; quem decide é carregar()
         sel: opts.sel || (antiga ? antiga.sel : null) || null,
-        catId: opts.catId || (antiga ? antiga.catId : null) || null
+        catId: opts.catId || (antiga ? antiga.catId : null) || null,
+        /* ORIGEM de uma base por assinatura (js/basesassinatura.js): quem importou,
+           quando, qual arquivo (sha256) e o mapa de colunas confirmado. Reinstalar
+           sem informar origem NÃO apaga a que já existia. */
+        assinatura: opts.assinatura || (antiga ? antiga.assinatura : null) || null
       });
       EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; });
       EXTRA.push(b);
@@ -156,6 +160,7 @@
       EXTRA.forEach(function (b) {
         out.push({
           fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf, desonerado: b.desonerado,
+          assinatura: b.assinatura || null,
           total: b.itens.length, ativa: self.usavel(b),
           ativaUsuario: b.ativaUsuario !== false, inativaPorUf: !!b.inativaPorUf,
           sel: b.sel || null, catId: b.catId || b.fonte
@@ -641,7 +646,8 @@
           /* aditivo: versão anterior ignora o campo; null não é gravado */
           desonerado: (b.desonerado === true || b.desonerado === false) ? b.desonerado : undefined,
           ativaUsuario: b.ativaUsuario !== false,
-          sel: b.sel || null, catId: b.catId || null
+          sel: b.sel || null, catId: b.catId || null,
+          assinatura: b.assinatura || undefined   // aditivo: versão anterior ignora
         };
       });
 
@@ -709,7 +715,7 @@
         if (!p || !p.fonte) return;
         /* payload legado não tem ativaUsuario/sel/catId: `undefined` cai no
            padrão de registrar() (ativa, sem variante) e nada quebra */
-        self.registrar(p.fonte, p, { ativaUsuario: p.ativaUsuario, sel: p.sel, catId: p.catId }); n++;
+        self.registrar(p.fonte, p, { ativaUsuario: p.ativaUsuario, sel: p.sel, catId: p.catId, assinatura: p.assinatura }); n++;
         var ufBase = String(p.uf || "").toUpperCase();
         // a base PROPRIA é AUTORAL (composições criadas pelo cliente) — vale em
         // qualquer UF e nunca é desativada pela troca de estado

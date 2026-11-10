@@ -94,9 +94,51 @@
       t.className = "toast " + (tipo || "");
       this._rotulo(t, msg);
       wrap.appendChild(t);
+      /* ⚠ MENSAGEM DO CANTO NÃO FICA MAIS NA TELA (Rogério, 10/11/2026): o
+         recado continua sendo montado em #toasts (as e2e e o toastJuntar leem
+         o elemento), mas o contêiner nasce `silencioso` (CSS: opacity:0, sem
+         clique) e o texto vai para o histórico do sino (UI.mensagens). A
+         preferência "Mostrar as mensagens na tela" devolve o comportamento
+         antigo. ⚠ Não é visibility:hidden de propósito: ele zera o
+         `innerText`, que dezenas de e2e leem nos `.toast`. */
+      try { this._silenciar(wrap); this._registrarMensagem(t, tipo); } catch (eMs) {}
       var dura = (typeof ms === "number" && ms > 0) ? ms : 2600;
       setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, dura);
     },
+
+    /* ---------- Mensagens guardadas no sino ---------- */
+    mensagens: [],
+    _erroNaoVisto: false,
+    _chaveMsgTela: "orcapro:tela:mensagens:v1",
+    /* preferência POR APARELHO (nunca em prefs, que sincroniza): "tela" = mostra
+       os recados no canto como antes; qualquer outra coisa = silencioso */
+    mensagensNaTela: function (novo) {
+      if (arguments.length) {
+        try { if (novo) window.localStorage.setItem(this._chaveMsgTela, "tela"); else window.localStorage.removeItem(this._chaveMsgTela); } catch (e) {}
+        try { this._silenciar(document.getElementById("toasts")); } catch (e2) {}
+        return !!novo;
+      }
+      try { return window.localStorage.getItem(this._chaveMsgTela) === "tela"; } catch (e3) { return false; }
+    },
+    _silenciar: function (wrap) {
+      if (wrap && wrap.classList) wrap.classList.toggle("silencioso", !this.mensagensNaTela());
+    },
+    _registrarMensagem: function (el, tipo) {
+      var tp = /(^|\s)erro(\s|$)/.test(String(tipo || "")) ? "erro" : (/(^|\s)ok(\s|$)/.test(String(tipo || "")) ? "ok" : "info");
+      var d = new Date(), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+      this.mensagens.unshift({ texto: String(el.textContent || ""), tipo: tp, hora: p2(d.getHours()) + ":" + p2(d.getMinutes()) });
+      if (this.mensagens.length > 50) this.mensagens.length = 50;
+      if (tp === "erro") { this._erroNaoVisto = true; this._pintarPontoErro(); }
+      try { if (typeof AvisosUI !== "undefined" && AvisosUI.mensagensMudaram) AvisosUI.mensagensMudaram(); } catch (e) {}
+    },
+    _pintarPontoErro: function () {
+      var b = document.querySelector("[data-avisos-abrir]");
+      if (!b) return;
+      b.classList.toggle("tem-erro", !!this._erroNaoVisto);
+      b.setAttribute("aria-label", this._erroNaoVisto ? "Central de avisos — há mensagem de erro não vista" : "Central de avisos");
+    },
+    verMensagens: function () { this._erroNaoVisto = false; this._pintarPontoErro(); },
+    limparMensagens: function () { this.mensagens.length = 0; this._erroNaoVisto = false; this._pintarPontoErro(); },
 
     /* ⚠ UM RECADO SÓ POR ASSUNTO (frente cf-grade, 16/09/2026). Roteiro do
        defeito (revisão da F6 e auditoria de tela da 1.2.80, galpão): cada
@@ -324,7 +366,7 @@
         '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '<span class="topo-kbd">Ctrl+K</span></button>' +
         (function () {
           var n = (typeof AvisosUI !== "undefined") ? AvisosUI.contar() : 0;
-          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas, restrições e atrasos do cronograma das obras">' + (typeof Icones !== "undefined" ? Icones.solo("sino", 17) : "") +
+          return '<button class="topo-ic-btn' + (UI._erroNaoVisto ? ' tem-erro' : '') + '" data-avisos-abrir aria-label="' + (UI._erroNaoVisto ? 'Central de avisos — há mensagem de erro não vista' : 'Central de avisos') + '" title="Central de avisos — medições a aprovar, tarefas atrasadas, restrições e atrasos do cronograma das obras">' + (typeof Icones !== "undefined" ? Icones.solo("sino", 17) : "") +
             (n ? '<span class="aviso-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") + "</button>";
         })() +
         '<div class="topbar-conta">' +
@@ -525,6 +567,47 @@
       }).join("");
       return '<p class="muted" style="font-size:12px;margin:-2px 0 8px">O app tenta primeiro a versão mais nova no servidor da RA e cai no arquivo que veio no pacote se estiver sem internet.</p>' +
         '<div style="margin-bottom:6px">' + linhas + "</div>";
+    },
+
+    /* ==================================================================
+     * FONTES POR ASSINATURA DO ÓRGÃO (leva K, 10/11/2026) — FDE, EMOP e afins.
+     * A RA não distribui estas tabelas (sem licença de redistribuição): a empresa
+     * contrata no site do órgão e importa o arquivo DELE, que fica só na conta
+     * dela. Dirigido por BasesCat.ASSINATURAS — fonte nova entra sozinha.
+     * ================================================================== */
+    _assinaturas: function (lista) {
+      if (typeof BasesCat === "undefined" || !BasesCat.ASSINATURAS || !BasesCat.ASSINATURAS.length) return "";
+      var inst = {};
+      (lista || []).forEach(function (b) { inst[String(b.fonte).toUpperCase()] = b; });
+      var linhas = BasesCat.ASSINATURAS.map(function (e) {
+        var a = e.assinatura || {}, b = inst[e.id], o = b && b.assinatura;
+        var precos = (a.precos && a.precos.length)
+          ? '<ul class="assin-precos">' + a.precos.map(function (p) { return "<li><b>" + Util.esc(p.produto) + ":</b> " + Util.esc(p.valores) + "</li>"; }).join("") + "</ul>"
+          : "";
+        var rodapePreco = (a.precos && a.precos.length ? "Preço informado, visto em " + Util.esc(a.precoVistoEm) + " (confira no site: pode ter mudado). " : "") + Util.esc(a.precoNota || "");
+        var status;
+        if (b) {
+          status = '<span class="assin-ok">Importada: <b>' + (b.total || 0).toLocaleString("pt-BR") + "</b> itens"
+            + (b.competencia ? " · " + Util.esc((BasesCat.fmtVersao(b.competencia)) || b.competencia) : "") + "</span>"
+            + ((typeof BasesAssinatura !== "undefined" && o) ? '<small class="assin-origem">' + Util.esc(BasesAssinatura.textoOrigem(o)) + ". Fica só nesta conta.</small>" : "");
+        } else {
+          status = '<span class="muted">Ainda não importada nesta conta.</span>';
+        }
+        return '<div class="assin-lin" data-assin="' + Util.esc(e.id) + '">' +
+          '<div class="assin-topo"><span class="pill ' + Util.esc(e.id.toLowerCase()) + '">' + Util.esc(e.nome) + '</span>' +
+          '<span class="selo-assin">Assinatura do órgão</span>' +
+          '<small class="muted">' + Util.esc(e.orgao) + "</small></div>" +
+          '<p class="assin-pede"><b>O que o órgão pede:</b> ' + Util.esc(a.pede || "") + "</p>" +
+          precos + (rodapePreco ? '<p class="assin-nota">' + rodapePreco + "</p>" : "") +
+          '<div class="assin-acoes">' +
+          '<button class="btn sm ' + (b ? "" : "primary") + '" data-acao="assin-contratar" data-id="' + Util.esc(e.id) + '">Contratar no site</button>' +
+          '<button class="btn sm ' + (b ? "primary" : "") + '" data-acao="assin-importar" data-id="' + Util.esc(e.id) + '">Importar meu arquivo</button>' +
+          '<input type="file" id="assin-file-' + Util.esc(e.id) + '" accept=".xlsx,.xls,.csv" style="display:none" aria-label="Arquivo da ' + Util.esc(e.nome) + '">' +
+          "</div>" + '<div class="assin-status">' + status + "</div></div>";
+      }).join("");
+      return '<h3 style="margin:18px 0 6px">Fontes por assinatura do órgão</h3>' +
+        '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Estas tabelas o órgão só entrega a quem assina. Cada empresa usa a <b>sua</b> assinatura: contrate no site, baixe o arquivo da sua área e importe aqui. O arquivo <b>fica só nesta conta</b> — o OrçaPRO não o envia a servidor nenhum e não o repassa a outra empresa.</p>' +
+        linhas;
     },
 
     // ---------- Tabelas de Preço (multi-base) ----------
@@ -791,6 +874,7 @@
         '<h3 style="margin:18px 0 8px;display:flex;align-items:center">' + _icT("mais") + 'Criar composição própria</h3>' +
         '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Monte a SUA composição (código PROP-XXXX): informações gerais + estrutura de insumos pescada das bases reais, com custo no seu método de cálculo. O <b>agente especialista</b> propõe a estrutura pela referência oficial mais parecida — nada é inventado e tudo passa por um checklist duro antes de gravar.</p>' +
         '<button class="btn primary" data-acao="criar-composicao" style="margin-bottom:10px">' + _icT("escopo") + 'Criar composição própria</button>' +
+        this._assinaturas(lista) +
         '<h3 style="margin:18px 0 8px">Importar base extra</h3>' +
         '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Carregue a <b>planilha oficial da base do seu estado</b> (EMOP-RJ, CPOS/FDE-SP, ORSE-SE, AGETOP-GO…). O detector reconhece as colunas (código, descrição, unidade, custo) sozinho — nada é inventado.</p>' +
         '<div class="row"><div class="field"><label>Fonte</label><select id="tab-fonte">' + opts + '</select></div>' +
