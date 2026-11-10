@@ -2855,6 +2855,7 @@
         case "escopo-aux-nenhum": this.escopoAuxNenhum(); break;
         case "escopo-aux-add": this.escopoAuxAdd(); break;
         case "escopo-planilha": this.escopoPlanilha(); break;
+        case "escopo-memorial": this.escopoMemorial(); break;
         case "escopo-documento": this.escopoDocumento(); break;
         case "qi-calcular": this.qiCalcular(); break;
         // memorial de cálculo: agente, IA de reforço e calculadora
@@ -16070,6 +16071,34 @@
           if (!texto) { UI.toast("Não consegui extrair texto deste PDF — se for uma imagem escaneada, não há texto para ler.", "erro"); return; }
           aplicar(Escopo.deTextos(String(texto).split(/\r?\n/)), "documento");
         });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
+
+    /* Memorial (.docx ou .pdf) vira o texto do escopo, inteiro, lido no navegador. A IA só é chamada (e cobrada) ao gerar. */
+    escopoMemorial: function () {
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".docx,.pdf"; inp.style.display = "none";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        if (typeof CplproTpl === "undefined" || !CplproTpl.memorialParaEscopo) { UI.toast("Leitor de memorial indisponível.", "erro"); return; }
+        UI.toast("Lendo o memorial…", "ok");
+        var fim = function (r) {
+          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+          var t = UI.el("esc-txt"); if (!t) return;
+          t.value = r.texto;
+          UI.toast("Memorial trazido (" + r.texto.length + " caracteres) — revise e gere. A cobrança só vem ao gerar.", "ok");
+          t.focus();
+        };
+        var ler = function (cb) { Gestao._pdfTexto(f, cb); };
+        if (/\.pdf$/i.test(f.name)) { CplproTpl.memorialParaEscopo(f.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? ler : null).then(fim); return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+          var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }); };
+          CplproTpl.memorialParaEscopo(f.name, new Uint8Array(fr.result), inflar, null).then(fim);
+        };
+        fr.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+        fr.readAsArrayBuffer(f);
       };
       document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
     },

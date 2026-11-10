@@ -47988,6 +47988,28 @@ linhas.push(t);
 return { ok: true, texto: linhas.join("\n") };
 }, function (e) { return { ok: false, erro: e && e.message ? e.message : String(e) }; });
 },
+memorialParaEscopo: function (nome, bytes, inflar, lerPdf) {
+var ext = ((/\.([A-Za-z0-9]+)$/.exec(String(nome || "")) || [])[1] || "").toLowerCase();
+if (ext === "docx") {
+return CplproTpl.textoDocx(bytes, inflar).then(function (r) {
+if (!r.ok) return r;
+var t = String(r.texto || "").replace(/\n{3,}/g, "\n\n").trim();
+return t ? { ok: true, texto: t } : { ok: false, erro: "O documento não tem texto legível." };
+});
+}
+if (ext === "pdf") {
+if (typeof lerPdf !== "function") return Promise.resolve({ ok: false, erro: "Leitor de PDF indisponível." });
+return new Promise(function (res) {
+try {
+lerPdf(function (texto) {
+var t = String(texto || "").trim();
+res(t ? { ok: true, texto: t } : { ok: false, erro: "Não consegui extrair texto deste PDF — se for imagem escaneada, não há texto para ler." });
+});
+} catch (e) { res({ ok: false, erro: "Falha ao ler o PDF: " + ((e && e.message) || e) }); }
+});
+}
+return Promise.resolve({ ok: false, erro: "Anexe um memorial em .docx ou .pdf." });
+},
 analisar: function (bytes, idsConhecidos, inflar) {
 var conhecidos = arr(idsConhecidos);
 if (!bytes || !bytes.length) return Promise.resolve({ ok: false, erro: "O arquivo está vazio." });
@@ -48722,7 +48744,7 @@ an.avisos.push("Há uma planilha orçamentária, mas só em PDF ou sem texto leg
 } else {
 an.lacunas.push("Sem planilha orçamentária na pasta: o orçamento de referência e os quantitativos ficam para a pessoa.");
 if (an.memorial && (an.memorial.areaConstruida || Cplpro.sugerirTipoObjeto(an.memorial.objeto || "").length)) {
-an.oferta = { escopo: true, texto: an.memorial.objeto || "", area: an.memorial.areaConstruida || null, municipio: an.memorial.municipio || null, uf: an.memorial.uf || null };
+an.oferta = { escopo: true, texto: an.memorial.objeto || "", memorial: mem.texto || null, area: an.memorial.areaConstruida || null, municipio: an.memorial.municipio || null, uf: an.memorial.uf || null };
 }
 }
 var artArq = arqs.filter(function (a) { return a.tipo === "art_rrt" && !vazio(a.texto); })[0];
@@ -48860,7 +48882,7 @@ E.mantidos.push({ caminho: chave, passo: "quantitativos", motivo: "a pessoa edit
 });
 } else E.semPermissao.quantitativos = true;
 }
-if (an && an.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = { escopo: true, texto: an.oferta.texto, area: an.oferta.area };
+if (an && an.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = { escopo: true, texto: an.oferta.texto, area: an.oferta.area, memorial: an.oferta.memorial || null };
 else if (prev && prev.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = clone(prev.oferta);
 else q.preparo.oferta = null;
 if (pode("etp")) {
@@ -50438,7 +50460,7 @@ return { antes: { orcamentoId: null }, depois: { orcamentoId: orc.id } };
 });
 if (!ok) return;
 var ctxB = p.preparo && p.preparo.baseCtx; if (ctxB && typeof BaseExigida !== "undefined") { try { garantirBaseDoOrc(procAtual(), orc); } catch (eB) {} }
-var texto = [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
+var texto = of.memorial ? String(of.memorial) + (of.area ? "\nÁrea construída: " + String(of.area).replace(".", ",") + " m²." : "") : [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
 if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
 App.abrirOrcamento(orc.id);
 if (typeof App.abrirEscopo === "function") {
@@ -64313,6 +64335,7 @@ case "escopo-sugerir": this.escopoSugerir(); break;
 case "escopo-aux-nenhum": this.escopoAuxNenhum(); break;
 case "escopo-aux-add": this.escopoAuxAdd(); break;
 case "escopo-planilha": this.escopoPlanilha(); break;
+case "escopo-memorial": this.escopoMemorial(); break;
 case "escopo-documento": this.escopoDocumento(); break;
 case "qi-calcular": this.qiCalcular(); break;
 case "fechar-valor": this.fecharValor(); break;
@@ -73396,6 +73419,32 @@ Gestao._pdfTexto(f, function (texto) {
 if (!texto) { UI.toast("Não consegui extrair texto deste PDF — se for uma imagem escaneada, não há texto para ler.", "erro"); return; }
 aplicar(Escopo.deTextos(String(texto).split(/\r?\n/)), "documento");
 });
+};
+document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+},
+escopoMemorial: function () {
+var inp = document.createElement("input");
+inp.type = "file"; inp.accept = ".docx,.pdf"; inp.style.display = "none";
+inp.onchange = function () {
+var f = inp.files && inp.files[0]; if (!f) return;
+if (typeof CplproTpl === "undefined" || !CplproTpl.memorialParaEscopo) { UI.toast("Leitor de memorial indisponível.", "erro"); return; }
+UI.toast("Lendo o memorial…", "ok");
+var fim = function (r) {
+if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+var t = UI.el("esc-txt"); if (!t) return;
+t.value = r.texto;
+UI.toast("Memorial trazido (" + r.texto.length + " caracteres) — revise e gere. A cobrança só vem ao gerar.", "ok");
+t.focus();
+};
+var ler = function (cb) { Gestao._pdfTexto(f, cb); };
+if (/\.pdf$/i.test(f.name)) { CplproTpl.memorialParaEscopo(f.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? ler : null).then(fim); return; }
+var fr = new FileReader();
+fr.onload = function () {
+var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }); };
+CplproTpl.memorialParaEscopo(f.name, new Uint8Array(fr.result), inflar, null).then(fim);
+};
+fr.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+fr.readAsArrayBuffer(f);
 };
 document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
 },

@@ -1482,7 +1482,7 @@
     });
     if (!ok) return;
     var ctxB = p.preparo && p.preparo.baseCtx; if (ctxB && typeof BaseExigida !== "undefined") { try { garantirBaseDoOrc(procAtual(), orc); } catch (eB) {} }
-    var texto = [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
+    var texto = of.memorial ? String(of.memorial) + (of.area ? "\nÁrea construída: " + String(of.area).replace(".", ",") + " m²." : "") : [p.objeto || of.texto || "", p.tr && p.tr.objeto && p.tr.objeto !== p.objeto ? p.tr.objeto : "", of.area ? "Área construída: " + String(of.area).replace(".", ",") + " m²." : ""].filter(Boolean).join("\n");
     if (App.tela === "gestao" && App.irPara && App.irPara("orcamentos") === false) return;
     App.abrirOrcamento(orc.id);
     if (typeof App.abrirEscopo === "function") {

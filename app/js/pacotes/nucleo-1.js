@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.280",
+versao: "1.2.281",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -17257,6 +17257,8 @@ return '<option value="' + k + '"' + (k === "padrao" ? " selected" : "") + ' tit
 (typeof Icones !== 'undefined' ? Icones.get('excel', 15) : '') + ' Anexar planilha</button>' +
 '<button class="btn" data-acao="escopo-documento" title="Planta em DXF ou memorial em PDF: o sistema le as etiquetas de ambiente com area (SALA 12,50 m2) e traz para o escopo">' +
 (typeof Icones !== 'undefined' ? Icones.get('laudo', 15) : '') + ' Anexar planta/PDF</button>' +
+'<button class="btn" data-acao="escopo-memorial" title="Memorial descritivo em .docx ou .pdf: o texto inteiro vai para o campo do escopo, lido aqui no seu navegador (sem enviar nada)">' +
+(typeof Icones !== 'undefined' ? Icones.get('laudo', 15) : '') + ' Anexar memorial (.docx ou .pdf)</button>' +
 '</div>' +
 '<div id="esc-aux"></div>' +
 (UI.renderEscopoParametros ? UI.renderEscopoParametros() : '') +

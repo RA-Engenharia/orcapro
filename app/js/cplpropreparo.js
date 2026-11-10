@@ -295,7 +295,7 @@
       an.lacunas.push("Sem planilha orçamentária na pasta: o orçamento de referência e os quantitativos ficam para a pessoa.");
       /* sem planilha, mas com memorial e área/tipo: oferece orçar pelo escopo (IA, com a cobrança por uso do OrçaPRO) */
       if (an.memorial && (an.memorial.areaConstruida || Cplpro.sugerirTipoObjeto(an.memorial.objeto || "").length)) {
-        an.oferta = { escopo: true, texto: an.memorial.objeto || "", area: an.memorial.areaConstruida || null, municipio: an.memorial.municipio || null, uf: an.memorial.uf || null };
+        an.oferta = { escopo: true, texto: an.memorial.objeto || "", memorial: mem.texto || null, area: an.memorial.areaConstruida || null, municipio: an.memorial.municipio || null, uf: an.memorial.uf || null };
       }
     }
     var artArq = arqs.filter(function (a) { return a.tipo === "art_rrt" && !vazio(a.texto); })[0];
@@ -459,7 +459,7 @@
     }
 
     /* sem planilha: a oferta «Orçar pelo escopo (IA)» fica registrada até o orçamento existir (o passo 6 mostra a pendência) */
-    if (an && an.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = { escopo: true, texto: an.oferta.texto, area: an.oferta.area };
+    if (an && an.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = { escopo: true, texto: an.oferta.texto, area: an.oferta.area, memorial: an.oferta.memorial || null };
     else if (prev && prev.oferta && !(oi && oi.id) && !q.orcamentoId) q.preparo.oferta = clone(prev.oferta);
     else q.preparo.oferta = null;
 

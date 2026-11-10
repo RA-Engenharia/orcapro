@@ -203,6 +203,32 @@
       }, function (e) { return { ok: false, erro: e && e.message ? e.message : String(e) }; });
     },
 
+    /* memorial (.docx ou .pdf) -> texto INTEIRO para o campo do Escopo, tudo no navegador (nenhuma rede).
+       nome: nome do arquivo; bytes: Uint8Array (docx); lerPdf: function(cb) que devolve o texto do PDF (Gestao._pdfTexto).
+       -> Promise { ok, erro, texto } */
+    memorialParaEscopo: function (nome, bytes, inflar, lerPdf) {
+      var ext = ((/\.([A-Za-z0-9]+)$/.exec(String(nome || "")) || [])[1] || "").toLowerCase();
+      if (ext === "docx") {
+        return CplproTpl.textoDocx(bytes, inflar).then(function (r) {
+          if (!r.ok) return r;
+          var t = String(r.texto || "").replace(/\n{3,}/g, "\n\n").trim();
+          return t ? { ok: true, texto: t } : { ok: false, erro: "O documento não tem texto legível." };
+        });
+      }
+      if (ext === "pdf") {
+        if (typeof lerPdf !== "function") return Promise.resolve({ ok: false, erro: "Leitor de PDF indisponível." });
+        return new Promise(function (res) {
+          try {
+            lerPdf(function (texto) {
+              var t = String(texto || "").trim();
+              res(t ? { ok: true, texto: t } : { ok: false, erro: "Não consegui extrair texto deste PDF — se for imagem escaneada, não há texto para ler." });
+            });
+          } catch (e) { res({ ok: false, erro: "Falha ao ler o PDF: " + ((e && e.message) || e) }); }
+        });
+      }
+      return Promise.resolve({ ok: false, erro: "Anexe um memorial em .docx ou .pdf." });
+    },
+
     /* lê o .docx e diz que campos {{...}} ele traz, quais o sistema conhece e quais não.
        → Promise { ok, erro, campos:[ids], conhecidos:[ids], desconhecidos:[ids] } */
     analisar: function (bytes, idsConhecidos, inflar) {
