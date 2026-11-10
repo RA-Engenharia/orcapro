@@ -5519,11 +5519,13 @@
       /* ⚠ o MOTIVO da atualização não entra aqui — ver a nota em js/autoupdate.js.
          `d.novidades` continua chegando do servidor (quem acompanha release usa),
          só não é mostrado a quem está orçando. */
-      var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" +
-        "<p class=\"muted\" style=\"margin-top:10px\">Pode atualizar tranquilo: <b>seus orçamentos e dados continuam salvos</b> (ficam no seu navegador).</p>";
-      var botoes = [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
-      if (d.downloadUrl) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });
-      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Atualização disponível", html, botoes);
+      /* ⚠ NADA DE "BAIXAR ATUALIZAÇÃO" (pedido do Rogério, 10/11/2026): o cliente via o modal com o
+         botão de download e achava que TODA versão nova tinha de ser baixada e instalada à mão — e não
+         tem: o js/autoupdate.js baixa, aplica e recarrega sozinho, mostrando só a faixa de baixo
+         ("Atualizando… aguarde um pouquinho"). Aqui só se acorda essa rodada; nenhuma janela, nenhum link.
+         `d` (versão, downloadUrl, novidades) continua chegando; só não vira tela. */
+      try { if (typeof AutoUpdate !== "undefined" && AutoUpdate.verificar) AutoUpdate.verificar(); } catch (eAu) {}
+      return d;
     },
 
     // ---------- Empresa / Responsável Técnico ----------

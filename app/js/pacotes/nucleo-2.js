@@ -60045,8 +60045,8 @@ pedirRecarga(noServidor);
 function aplicarSilencioso(d) {
 if (aplicando || recarregarPendente) return;
 aplicando = true;
-faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Atualizando para a versão ' + esc(d.disponivel) + ' em segundo plano…</b>' +
-'<small>Pode continuar usando normalmente — seus dados não são tocados.</small></div>');
+faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Atualizando o OrçaPRO para a versão ' + esc(d.disponivel) + '… aguarde um pouquinho.</b>' +
+'<small>Não precisa baixar nem instalar nada: é automático. Pode continuar usando — seus dados não são tocados.</small></div>');
 fetch("/__update/apply", { method: "POST" })
 .then(function (r) {
 if (r.status === 409) { aplicando = false; agendarRecarga(d.disponivel); return null; }
@@ -65631,11 +65631,8 @@ for (var i = 0; i < 3; i++) { var x = parseInt(pa[i] || 0, 10), y = parseInt(pb[
 return false;
 },
 _avisarAtualizacao: function (d) {
-var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" +
-"<p class=\"muted\" style=\"margin-top:10px\">Pode atualizar tranquilo: <b>seus orçamentos e dados continuam salvos</b> (ficam no seu navegador).</p>";
-var botoes = [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
-if (d.downloadUrl) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });
-UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Atualização disponível", html, botoes);
+try { if (typeof AutoUpdate !== "undefined" && AutoUpdate.verificar) AutoUpdate.verificar(); } catch (eAu) {}
+return d;
 },
 abrirGestaoEmpresa: function () {
 var self = this;

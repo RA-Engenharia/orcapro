@@ -274,8 +274,8 @@
   function aplicarSilencioso(d) {
     if (aplicando || recarregarPendente) return;
     aplicando = true;
-    faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Atualizando para a versão ' + esc(d.disponivel) + ' em segundo plano…</b>' +
-      '<small>Pode continuar usando normalmente — seus dados não são tocados.</small></div>');
+    faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Atualizando o OrçaPRO para a versão ' + esc(d.disponivel) + '… aguarde um pouquinho.</b>' +
+      '<small>Não precisa baixar nem instalar nada: é automático. Pode continuar usando — seus dados não são tocados.</small></div>');
     fetch("/__update/apply", { method: "POST" })
       .then(function (r) {
         // 409 = outra aba já está aplicando: o disco vai ficar atualizado — esta aba
