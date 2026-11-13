@@ -759,7 +759,10 @@
        gestor. A flag `aprovador` é rotulada na tela como medições/compras/
        requisições; quem a marca não está autorizando ninguém a publicar diário
        no Portal do cliente. */
-    if (acao === "publicar" || acao === "despublicar") return gestor;
+    /* `publicaDiario`: o admin marca na Equipe quem pode, sem dar a flag
+       genérica de aprovador (pedido de 13/11/2026: quem faz a gestão da obra
+       para o dono da conta precisa publicar e tirar do ar). */
+    if (acao === "publicar" || acao === "despublicar") return gestor || u.publicaDiario === true;
     if (acao === "editar") {
       if (est === "publicado") return false;   // ninguém reescreve o publicado
       if (autor && emAberto) return true;

@@ -396,7 +396,7 @@
             if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
             if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
             var mot = c.legado ? "seguranca" : "";
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _publicaDiario: u.publicaDiario === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
           }
         }
       }
@@ -844,7 +844,7 @@
           if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
           if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
           var mot = c.legado ? "seguranca" : "";
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _publicaDiario: u.publicaDiario === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
         }
       }
       return vencido || { ok: false, erro: "Usuário ou senha inválidos." };
@@ -1297,6 +1297,7 @@
         obras: u._obras || null,
         aprovador: u._aprovador === true,
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
+        publicaDiario: u._publicaDiario === true,  // pode publicar/despublicar diário no Portal do cliente sem ser admin
         gestaoPremio: u._gestaoPremio === true,  // pode ver valores e fechar a bonificação da equipe (ver podeGestaoPremio)
         editaGestao: u._editaGestao === true,  // pode definir o responsável pelo planejamento e gestão sem ser admin (ver podeEditarGestao)
         trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)

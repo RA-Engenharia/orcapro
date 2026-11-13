@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.283",
+versao: "1.2.284",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -5024,7 +5024,7 @@ if (!c.ok) continue;
 if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
 if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
 var mot = c.legado ? "seguranca" : "";
-return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _publicaDiario: u.publicaDiario === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
 }
 }
 }
@@ -5247,7 +5247,7 @@ if (!c.ok) continue;
 if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
 if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
 var mot = c.legado ? "seguranca" : "";
-return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _publicaDiario: u.publicaDiario === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
 }
 }
 return vencido || { ok: false, erro: "Usuário ou senha inválidos." };
@@ -5515,6 +5515,7 @@ modulos: u._modulos || null,
 obras: u._obras || null,
 aprovador: u._aprovador === true,
 autoAprovar: u._autoAprovar === true,
+publicaDiario: u._publicaDiario === true,
 gestaoPremio: u._gestaoPremio === true,
 editaGestao: u._editaGestao === true,
 trocarSenha: u._trocarSenha === true,
@@ -53948,7 +53949,7 @@ if (c.exigirOutroAprovador === true) return false;
 return gestor || u.autoAprovar === true;
 }
 if (acao === "revisar") return aprovador;
-if (acao === "publicar" || acao === "despublicar") return gestor;
+if (acao === "publicar" || acao === "despublicar") return gestor || u.publicaDiario === true;
 if (acao === "editar") {
 if (est === "publicado") return false;
 if (autor && emAberto) return true;

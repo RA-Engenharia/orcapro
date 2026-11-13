@@ -39520,6 +39520,10 @@
              aprovador na PRÓPRIA criação. Só faz efeito junto com "Pode
              aprovar" acima — sem poder de aprovação, não há o que dispensar. */
           + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-autoaprovar"' + (u.autoAprovar ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>aprovar a própria criação</b> (dispensa o segundo aprovador)<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. A ação fica registrada na trilha como autoaprovação.</span></span></label>'
+          /* publicar diário mexe no que o CLIENTE vê: permissão própria, separada
+             de "aprovar" (ver RDO.podeAcao). Caso de quem faz a gestão da obra
+             para o dono da conta. */
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-publicadiario"' + (u.publicaDiario ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>publicar e despublicar o diário de obra</b> no Portal do cliente<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. Fica registrado na trilha do diário.</span></span></label>'
           /* "planejamento e gestão": o único campo dos Dados da empresa que um
              usuário comum pode mudar — e só com esta permissão (Auth.podeEditarGestao).
              Caso de quem faz o planejamento da obra sem ser o dono da conta. */
@@ -39602,6 +39606,7 @@
         }
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
         obj.autoAprovar = !!(document.getElementById("g-autoaprovar") && document.getElementById("g-autoaprovar").checked);
+        obj.publicaDiario = !!(document.getElementById("g-publicadiario") && document.getElementById("g-publicadiario").checked);
         obj.editaGestao = !!(document.getElementById("g-editagestao") && document.getElementById("g-editagestao").checked);
         obj.gestaoPremio = !!(document.getElementById("g-gestaopremio") && document.getElementById("g-gestaopremio").checked);
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
