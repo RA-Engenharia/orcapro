@@ -209,8 +209,25 @@ var Perfis = (function () {
     return null;
   }
 
+  /* perfil imposto pelo produto (CPLPRO → orgao_publico), ou "" */
+  function idForcado() {
+    try {
+      var f = (typeof Produto !== "undefined" && Produto.perfilForcado) ? Produto.perfilForcado() : null;
+      return (f && CATALOGO[f]) ? f : "";
+    } catch (e) { return ""; }
+  }
+  /* o perfil REAL gravado na conta (ignora o forçado) — decide o aviso do domínio novo e o acesso */
+  function idGravado() {
+    var id = _registro().perfil;
+    return (typeof id === "string" && _perfilDe(id)) ? id : "completo";
+  }
+
   /* id do perfil gravado, ou "completo". */
   function idAtual() {
+    /* ⚠ PRODUTO CPLPRO (js/produto.js): o perfil do órgão vale SEM ser gravado — a conta, aberta no
+       domínio do OrçaPRO, continua como estava. Só vale se o perfil existe neste catálogo. */
+    var forc = idForcado();
+    if (forc) return forc;
     var id = _registro().perfil;
     return (typeof id === "string" && _perfilDe(id)) ? id : "completo";
   }
@@ -322,6 +339,9 @@ var Perfis = (function () {
     var _reg = _registro();
     var _meu = _conhecidos(_reg)[perfilId];
     if (!CATALOGO[perfilId] && !_meu) return { ok: false, erro: "Perfil desconhecido: " + perfilId };
+    /* ⚠ no produto CPLPRO ninguém troca de perfil (nem pelo console): o do produto é o único */
+    var _forc = idForcado();
+    if (_forc && perfilId !== _forc) return { ok: false, erro: "Neste produto o perfil é fixo." };
     /* ⚠ PERFIL PRIVADO NÃO SE APLICA PELO CONSOLE. `_visivel` protegia só o
        `listar()`; `aplicar` aceitava qualquer id do catálogo. Um cliente com
        o F12 aberto digitava `Perfis.aplicar("<id>")` e virava o outro cliente
@@ -568,6 +588,12 @@ var Perfis = (function () {
 
   /* Para telas de escolha: [{id, nome, desc, qtd}] */
   function listar() {
+    /* ⚠ PRODUTO CPLPRO: o ⚙ não oferece perfil do OrçaPRO — só o do produto (a lista de uma opção some da tela) */
+    var forc = idForcado();
+    if (forc) {
+      var pf = CATALOGO[forc];
+      return [{ id: forc, nome: pf.nome, desc: pf.desc, qtd: pf.modulos ? contar(pf.modulos) : null, semente: !!pf.semente, atual: true }];
+    }
     /* ⚠ O CLIENTE PRECISA VER O PRÓPRIO PERFIL, mesmo sem o catálogo. Sem esta
        linha, na máquina dele a lista teria só "Completo", o bloco de escolha
        sumiria (ele desiste com menos de 2 opções) e ele ficaria sem a volta
@@ -647,6 +673,7 @@ var Perfis = (function () {
     contar: contar,
     registrarCatalogo: registrarCatalogo,
     idAtual: idAtual,
+    idGravado: idGravado,
     atual: atual,
     modulosLiberados: modulosLiberados,
     permite: permite,

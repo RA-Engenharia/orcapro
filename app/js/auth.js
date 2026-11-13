@@ -137,7 +137,7 @@
         /* prazo vencido sai como o inativo — mas com o recado, para a tela de
            login dizer o porquê (ver `acessoVencido`, acima) */
         if (this.acessoVencido(atual)) { var recado = this.msgAcessoVencido(atual); this.logout(); this._recadoSaida = recado; return null; }
-        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.gestaoPremio = atual.gestaoPremio === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.gestaoPremio = atual.gestaoPremio === true; u.publicaDiario = atual.publicaDiario === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;

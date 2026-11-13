@@ -137,6 +137,8 @@
       p.dataPrevistaEdital, p.cronograma, p.orcamentoId, p.orcamentoRef, p.tr, p.edital, p.requisitante, p.prazoDesejado, p.etp, p.riscos, p.quantitativos, p.pesquisa, par, docs];
     /* leva F: o cronograma físico lido da pasta só entra na assinatura quando existe (processo antigo mantém a assinatura) */
     if (p.cronogramaFisico) base.push(p.cronogramaFisico);
+    /* leva B2: a marca «especial» muda o prazo mínimo — entra na assinatura só quando existe (processo antigo mantém a assinatura) */
+    if (p.naturezaEspecial && p.naturezaEspecial.ativo === true) base.push(p.naturezaEspecial);
     return hash(JSON.stringify(base));
   };
 
@@ -223,10 +225,18 @@
   /* ------------------------------------------------------------------ *
    * Natureza, critério e datas (insumos do prazo do art. 55)
    * ------------------------------------------------------------------ */
-  Fluxo.natureza = function (p) {
+  /* Natureza para o prazo do art. 55, II (NÃO é a mesma coisa que «cabe pregão»: ver NATUREZA_PRAZO em cplproregras.js).
+   * Padrão pelo tipo de objeto: obra nova, reforma, ampliação, pavimentação, drenagem, saneamento e manutenção = comum
+   * (10 dias úteis, alínea a); só «Serviço especial de engenharia» = especial (25, alínea b). O servidor pode marcar
+   * «especial» no processo (p.naturezaEspecial = { ativo: true, justificativa }) — sem justificativa a marca não vale. */
+  Fluxo.naturezaInfo = function (p) {
     var t = p && R.TIPOS_OBJETO[p.tipoObjeto];
-    return t ? (t.servicoComumEngenharia ? "comum" : "especial") : null;
+    if (!t) return { natureza: null, padrao: null, marcada: false, justificativa: null };
+    var padrao = t.naturezaPrazo || (t.servicoComumEngenharia ? "comum" : "especial");
+    var ne = p.naturezaEspecial, marcada = !!(ne && ne.ativo === true && !vazio(ne.justificativa));
+    return { natureza: marcada ? "especial" : padrao, padrao: padrao, marcada: marcada, justificativa: marcada ? ne.justificativa : null };
   };
+  Fluxo.natureza = function (p) { return Fluxo.naturezaInfo(p).natureza; };
   Fluxo.valorParametro = function (p, id) {
     var x = p && p.parametros ? p.parametros[id] : null;
     var v = x ? x.valor : null;
@@ -237,6 +247,8 @@
     var cron = (p && p.cronograma) || {};
     var res = Cplpro.prazoPublicacao(p ? p.dataPrevistaEdital : null, Fluxo.valorParametro(p, "criterio_julgamento"),
       Fluxo.valorParametro(p, "regime_execucao"), Fluxo.natureza(p), p ? p.feriadosLocais : []);
+    var ni = Fluxo.naturezaInfo(p);
+    res.natureza = ni.natureza; res.naturezaPadrao = ni.padrao; res.naturezaMarcadaEspecial = ni.marcada;
     res.dataAbertura = vazio(cron.dataAbertura) ? null : cron.dataAbertura;
     res.aberturaOk = res.dataMinimaAbertura && res.dataAbertura ? res.dataAbertura >= res.dataMinimaAbertura : null;
     return res;

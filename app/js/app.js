@@ -925,6 +925,34 @@
       /* a tarja é fixa no rodapé: sem esta folga ela cobre a última linha da
          tabela, e conferir a versão do cliente é justamente ler as tabelas */
       if (main) main.style.paddingBottom = faixaPrev ? "56px" : "";
+      /* ⚠ PRODUTO (js/produto.js). Conta de ÓRGÃO aberta no endereço do OrçaPRO: aviso discreto de que o CPLPRO tem
+         endereço próprio (mesmos dados, mesma nuvem). Dispensável por sessão; nunca aparece no CPLPRO nem para quem não é órgão. */
+      try {
+        var velhoAv = document.getElementById("produto-aviso");
+        if (velhoAv && velhoAv.parentNode) velhoAv.parentNode.removeChild(velhoAv);
+        var avP = (!this._demo && typeof Produto !== "undefined" && typeof Perfis !== "undefined" && Produto.avisoDominioNovo) ? Produto.avisoDominioNovo(Perfis.idGravado()) : null;
+        var avOff = false; try { avOff = sessionStorage.getItem("orcapro:aviso-cplpro") === "1"; } catch (eAvS) {}
+        if (avP && !avOff) {
+          var avEl = document.createElement("div");
+          avEl.id = "produto-aviso"; avEl.setAttribute("role", "status");
+          avEl.style.cssText = "display:flex;align-items:center;gap:10px;justify-content:center;padding:6px 12px;font-size:12.5px;background:rgba(29,79,140,.1);border-bottom:1px solid rgba(29,79,140,.25)";
+          avEl.innerHTML = '<span>' + Util.esc(avP.texto) + '</span> <a href="' + Util.esc(avP.url) + '" target="_blank" rel="noopener" style="font-weight:600">Abrir o CPLPRO</a>' +
+            '<button type="button" aria-label="Dispensar o aviso" title="Dispensar" style="border:0;background:none;cursor:pointer;font-size:15px;line-height:1" onclick="try{sessionStorage.setItem(&#39;orcapro:aviso-cplpro&#39;,&#39;1&#39;)}catch(e){}if(this.parentNode&&this.parentNode.parentNode)this.parentNode.parentNode.removeChild(this.parentNode)">×</button>';
+          topbar.parentNode.insertBefore(avEl, topbar.nextSibling);
+        }
+      } catch (eAv) {}
+      /* ⚠ PRODUTO CPLPRO sem a liberação: mensagem clara + contato, nunca tela quebrada. Só entra quem tem a chave com o módulo `cplpro`,
+         a conta que já era de órgão ou a vitrine (Produto.temAcesso). Antes de qualquer módulo, para nada abrir por baixo. */
+      if (typeof Produto !== "undefined" && Produto.ehCplpro() && !this._demo) {
+        var exP = []; try { if (typeof Licenca !== "undefined" && Licenca.modulosExtras) exP = Licenca.modulosExtras(); } catch (eEx) {}
+        var pgP = ""; try { if (typeof Perfis !== "undefined" && Perfis.idGravado) pgP = Perfis.idGravado(); } catch (ePg) {}
+        if (!Produto.temAcesso({ extras: exP, perfilGravado: pgP, demo: false })) {
+          if (sidebar) sidebar.innerHTML = "";
+          if (app) app.classList.remove("com-sidebar");
+          main.innerHTML = Produto.telaSemAcesso();
+          return;
+        }
+      }
       // Tour guiado de primeira entrada (1x por sessão; o Tour se auto-guarda via
       // localStorage). Re-valida o login DENTRO do timeout: se o usuário deslogou
       // nos 900ms, não roda sobre a tela de login nem queima a flag (gate v1.1.63).
@@ -950,7 +978,10 @@
       /* ⚠ A ABERTURA usa a Gestão COMPRADA: com o teste de 1 hora por módulo (js/testemodulo.js) a Gestão aparece
          para quem tem só o Orçamento, e abrir o programa no Painel gastaria o relógio do teste sem ninguém pedir */
       var gestaoComprada = typeof Gestao !== "undefined" && (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : podeGestao);
-      var view = this.view || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+      /* PRODUTO CPLPRO abre direto no módulo do produto (a permissão ainda decide) */
+      var viewProd = (typeof Produto !== "undefined" && !this._demo) ? Produto.moduloInicial() : "";
+      if (viewProd && Auth.podeModulo && !Auth.podeModulo(viewProd)) viewProd = "";
+      var view = this.view || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
       /* o selo e a faixa do teste de 1 hora acompanham a tela nova (depois do render, que é síncrono) */
       try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
       // Rede de segurança: quem seta App.view direto (deep-link ?view=xxx, console,

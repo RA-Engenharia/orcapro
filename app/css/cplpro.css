@@ -134,3 +134,14 @@
 .cpl-gira { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--linha); border-top-color: var(--aco, var(--texto)); animation: cpl-gira 0.9s linear infinite; flex: none; }
 @keyframes cpl-gira { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cpl-gira { animation: none; } }
+
+/* Retorno JUNTO DO BOTÃO (CplproUI.retorno): "✔ Salvo às 14:03" / "✖ motivo" + Corrigir.
+   Desde a 1.2.279 o toast fica no sino; quem clica precisa ver a resposta no lugar do clique.
+   Texto em var(--texto) (contraste garantido em claro e escuro); a cor vai na borda e no ícone. */
+.cpl-retorno { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 8px; padding: 3px 10px; border-radius: var(--raio); border: var(--traco) solid var(--linha); border-left-width: 4px; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto); vertical-align: middle; max-width: 100%; }
+.cpl-retorno-ok { background: var(--tinta-ok); border-color: var(--verde); }
+.cpl-retorno-erro { background: var(--tinta-alerta); border-color: var(--vermelho); }
+.cpl-retorno-info { background: var(--tinta-aco); border-color: var(--aco, var(--linha)); }
+.cpl-retorno-ic { font-weight: 700; }
+.cpl-retorno-ok .cpl-retorno-ic { color: var(--verde); }
+.cpl-retorno-erro .cpl-retorno-ic { color: var(--vermelho); }

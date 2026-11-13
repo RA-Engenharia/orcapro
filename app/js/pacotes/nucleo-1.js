@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.284",
+versao: "1.2.285",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -553,6 +553,177 @@ Carregar._ligarCliques();
 global.Carregar = Carregar;
 if (typeof module !== "undefined" && module.exports) module.exports = Carregar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/produto.js ==== */
+try {
+var Produto = (function () {
+"use strict";
+var CHAVE_SESSAO = "orcapro:produto";
+var CONTATO_WA = "https://wa.me/553492869383";
+var TABELA = {
+orcapro: {
+id: "orcapro", nome: "OrçaPRO",
+perfilForcado: null, moduloInicial: null
+},
+cplpro: {
+id: "cplpro",
+nome: "CPLPRO",
+slogan: "Do projeto ao edital — Lei 14.133",
+titulo: "CPLPRO — Do projeto ao edital",
+assinatura: "um produto RA Engenharia",
+corPrimaria: "#0b2447",
+corSecundaria: "#1d4f8c",
+icone: "img/cplpro.svg",
+icone192: "img/cplpro-192.png",
+icone512: "img/cplpro-512.png",
+manifest: "manifest-cplpro.webmanifest",
+perfilForcado: "orgao_publico",
+moduloInicial: "cplpro",
+loginTitulo: "Entrar no CPLPRO — acesso do órgão",
+loginChamada: "Do projeto ao edital.",
+loginDestaque: "Lei 14.133.",
+loginLinhas: [
+"O processo em 10 passos, da demanda à publicação — Lei 14.133",
+"Orçamento de referência com SINAPI, SICRO e bases estaduais",
+"Minuta, parecer jurídico e acompanhamento do contrato"
+],
+semAcessoTitulo: "Seu acesso ao CPLPRO ainda não foi liberado",
+semAcessoTexto: "Esta conta ainda não tem a liberação do CPLPRO. A liberação vem com a chave do órgão: se você já a recebeu, use “Ativar chave”; se não, fale com a RA Engenharia.",
+contatoUrl: CONTATO_WA,
+contatoRotulo: "Falar com a RA Engenharia (WhatsApp)",
+avisoOrcapro: "O CPLPRO agora tem endereço próprio: app.cplpro.com.br",
+avisoUrl: "https://app.cplpro.com.br/"
+}
+};
+function _hostDoCplpro(h) {
+h = String(h || "").toLowerCase().replace(/\.$/, "");
+return h === "cplpro.com.br" || /\.cplpro\.com\.br$/.test(h);
+}
+function detectar(env) {
+env = env || {};
+var q = String(env.search || "");
+var m = /[?&]produto=([a-z0-9_-]+)/i.exec(q);
+var pedido = m ? m[1].toLowerCase() : "";
+var s = env.sessao || null;
+function lerS() { try { return s ? s.get(CHAVE_SESSAO) : null; } catch (e) { return null; } }
+function gravS(v) { try { if (s) { if (v) s.set(CHAVE_SESSAO, v); else s.del(CHAVE_SESSAO); } } catch (e) {} }
+if (_hostDoCplpro(env.hostname)) return "cplpro";
+if (pedido === "orcapro") { gravS(null); return "orcapro"; }
+if (pedido === "cplpro") { gravS("cplpro"); return "cplpro"; }
+return lerS() === "cplpro" ? "cplpro" : "orcapro";
+}
+function _ambiente() {
+var env = { hostname: "", search: "", sessao: null };
+try { env.hostname = location.hostname; env.search = location.search; } catch (e) {}
+try {
+if (typeof sessionStorage !== "undefined") {
+env.sessao = {
+get: function (k) { return sessionStorage.getItem(k); },
+set: function (k, v) { sessionStorage.setItem(k, v); },
+del: function (k) { sessionStorage.removeItem(k); }
+};
+}
+} catch (e2) {}
+return env;
+}
+var _id = null;
+function atual() {
+if (_id === null) _id = detectar(_ambiente());
+return _id;
+}
+function cfg(id) { return TABELA[id || atual()] || TABELA.orcapro; }
+function ehCplpro() { return atual() === "cplpro"; }
+function perfilForcado() { return cfg().perfilForcado || null; }
+function moduloInicial() { return cfg().moduloInicial || ""; }
+function _redetectar(env) { _id = detectar(env); return _id; }
+function temAcesso(d) {
+d = d || {};
+if (!ehCplpro()) return true;
+if (d.demo) return true;
+if (d.perfilGravado === "orgao_publico") return true;
+return (d.extras || []).indexOf("cplpro") > -1;
+}
+function avisoDominioNovo(perfilGravado) {
+if (ehCplpro() || perfilGravado !== "orgao_publico") return null;
+var c = TABELA.cplpro;
+return { texto: c.avisoOrcapro, url: c.avisoUrl };
+}
+function _esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function aplicarMarca(config) {
+var c = cfg();
+if (c.id === "orcapro" || !config || !config.marca) return false;
+config.marca.nome = c.nome;
+config.marca.nomeProduto = c.nome;
+config.marca.slogan = c.slogan;
+config.marca.corPrimaria = c.corPrimaria;
+config.marca.corSecundaria = c.corSecundaria;
+config.marca.logoTexto = '<span class="marca-top">' + _esc(c.nome) + '</span>';
+config.marca.assinatura = c.assinatura;
+return true;
+}
+function aplicarDocumento(doc) {
+var c = cfg();
+if (c.id === "orcapro" || !doc) return false;
+function elLink(rel, ach) {
+var el = null;
+try { el = doc.querySelector(ach); } catch (e) {}
+if (!el && doc.createElement && doc.head) { el = doc.createElement("link"); el.setAttribute("rel", rel); doc.head.appendChild(el); }
+return el;
+}
+try { doc.title = c.titulo; } catch (e1) {}
+var ic = elLink("icon", 'link[rel="icon"]');
+if (ic) { ic.setAttribute("href", c.icone); ic.setAttribute("type", "image/svg+xml"); }
+var mf = elLink("manifest", 'link[rel="manifest"]');
+if (mf) mf.setAttribute("href", c.manifest);
+var at = elLink("apple-touch-icon", 'link[rel="apple-touch-icon"]');
+if (at) at.setAttribute("href", c.icone192);
+try {
+var tc = doc.querySelector('meta[name="theme-color"]');
+if (tc) tc.setAttribute("content", c.corPrimaria);
+var ap = doc.querySelector('meta[name="apple-mobile-web-app-title"]');
+if (ap) ap.setAttribute("content", c.nome);
+} catch (e2) {}
+return true;
+}
+function seloHtml(px) {
+var c = cfg();
+return '<img class="produto-selo" src="' + c.icone + '" width="' + px + '" height="' + px + '" alt="' + _esc(c.nome) + '" style="flex:none;border-radius:' + Math.round(px / 4.5) + 'px">';
+}
+function login() {
+var c = cfg();
+if (c.id === "orcapro") return null;
+return { nome: c.nome, titulo: c.loginTitulo, chamada: c.loginChamada, destaque: c.loginDestaque, linhas: c.loginLinhas.slice(), assinatura: c.assinatura };
+}
+function telaSemAcesso() {
+var c = cfg();
+return '<div class="card" id="produto-sem-acesso" role="alert" style="max-width:560px;margin:48px auto;padding:28px 26px;text-align:center">' +
+seloHtml(64) +
+'<h2 style="margin:14px 0 8px">' + _esc(c.semAcessoTitulo) + '</h2>' +
+'<p style="margin:0 0 18px;line-height:1.5">' + _esc(c.semAcessoTexto) + '</p>' +
+'<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+'<button class="btn primary" data-acao="licenca">Ativar chave</button>' +
+'<a class="btn" href="' + _esc(c.contatoUrl) + '" target="_blank" rel="noopener">' + _esc(c.contatoRotulo) + '</a>' +
+'<button class="btn" data-acao="logout">Sair</button>' +
+'</div>' +
+'<p class="muted" style="margin:16px 0 0;font-size:12px">' + _esc(c.nome) + ' · ' + _esc(c.assinatura) + '</p>' +
+'</div>';
+}
+function iniciar() {
+if (atual() === "orcapro") return false;
+try { if (typeof CONFIG !== "undefined") aplicarMarca(CONFIG); } catch (e) {}
+try { if (typeof document !== "undefined") aplicarDocumento(document); } catch (e2) {}
+return true;
+}
+var API = {
+TABELA: TABELA, detectar: detectar, atual: atual, cfg: cfg, ehCplpro: ehCplpro,
+perfilForcado: perfilForcado, moduloInicial: moduloInicial, temAcesso: temAcesso,
+avisoDominioNovo: avisoDominioNovo, aplicarMarca: aplicarMarca, aplicarDocumento: aplicarDocumento,
+seloHtml: seloHtml, login: login, telaSemAcesso: telaSemAcesso, iniciar: iniciar, _redetectar: _redetectar
+};
+iniciar();
+return API;
+})();
+if (typeof module !== "undefined" && module.exports) module.exports = Produto;
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/dinheiro.js ==== */
 try {
@@ -4882,7 +5053,7 @@ var eq = this._equipe(u.empresaId), atual = null;
 for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
 if (!atual || atual.ativo === false) { this.logout(); return null; }
 if (this.acessoVencido(atual)) { var recado = this.msgAcessoVencido(atual); this.logout(); this._recadoSaida = recado; return null; }
-u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.gestaoPremio = atual.gestaoPremio === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
+u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.gestaoPremio = atual.gestaoPremio === true; u.publicaDiario = atual.publicaDiario === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
 localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
 }
 return this._usuario;
@@ -5603,7 +5774,19 @@ return { nome: k.nome || "Perfil da conta", desc: k.desc || "", modulos: k.modul
 }
 return null;
 }
+function idForcado() {
+try {
+var f = (typeof Produto !== "undefined" && Produto.perfilForcado) ? Produto.perfilForcado() : null;
+return (f && CATALOGO[f]) ? f : "";
+} catch (e) { return ""; }
+}
+function idGravado() {
+var id = _registro().perfil;
+return (typeof id === "string" && _perfilDe(id)) ? id : "completo";
+}
 function idAtual() {
+var forc = idForcado();
+if (forc) return forc;
 var id = _registro().perfil;
 return (typeof id === "string" && _perfilDe(id)) ? id : "completo";
 }
@@ -5658,6 +5841,8 @@ function aplicar(perfilId) {
 var _reg = _registro();
 var _meu = _conhecidos(_reg)[perfilId];
 if (!CATALOGO[perfilId] && !_meu) return { ok: false, erro: "Perfil desconhecido: " + perfilId };
+var _forc = idForcado();
+if (_forc && perfilId !== _forc) return { ok: false, erro: "Neste produto o perfil é fixo." };
 if (!_visivel(perfilId)) return { ok: false, erro: "Perfil não disponível nesta conta." };
 try {
 var eid = _eid();
@@ -5805,6 +5990,11 @@ return { id: id, nome: CATALOGO[id].nome, desc: CATALOGO[id].desc };
 });
 }
 function listar() {
+var forc = idForcado();
+if (forc) {
+var pf = CATALOGO[forc];
+return [{ id: forc, nome: pf.nome, desc: pf.desc, qtd: pf.modulos ? contar(pf.modulos) : null, semente: !!pf.semente, atual: true }];
+}
 var ids = Object.keys(CATALOGO).filter(_visivel).filter(function (id) {
 return !CATALOGO[id].soPorURL || id === idAtual() || !!_conhecidos()[id] || _reveladoNaURL(id);
 });
@@ -5853,6 +6043,7 @@ REQUER: REQUER,
 contar: contar,
 registrarCatalogo: registrarCatalogo,
 idAtual: idAtual,
+idGravado: idGravado,
 atual: atual,
 modulosLiberados: modulosLiberados,
 permite: permite,
@@ -14567,7 +14758,7 @@ var deptoLbl = (usuario.departamento && typeof Gestao !== "undefined" && Gestao.
 return '' +
 '<button class="topbar-burger" data-acao="menu" aria-label="Menu de módulos" title="Módulos">☰</button>' +
 '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
-'<svg width="34" height="34" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#tbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>' +
+((typeof Produto !== "undefined" && Produto.ehCplpro()) ? Produto.seloHtml(34) : '<svg width="34" height="34" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#tbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>') +
 '<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + ' · <span style="opacity:.85">v' + CONFIG.versao + '</span></small></div>' +
 '</div>' +
 '<span class="badge-plano ' + freeCls + '">' + ((typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) ? "Modela" : (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano)) + '</span>' +
@@ -15124,21 +15315,26 @@ var caixaRecado = recadoSaida
 : '';
 var caixaLic = this._caixaRecadoLicenca();
 var badge = '<svg width="46" height="46" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#lgg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>';
+var pr = (typeof Produto !== "undefined" && Produto.login) ? Produto.login() : null;
+if (pr) badge = Produto.seloHtml(46);
 return '' +
 '<div class="login-wrap">' +
 '<div class="login-hero"><div class="lh-grid"></div><div class="lh-content">' +
-'<div class="lh-logo">' + badge + '<span>OrçaPRO<b>IA</b></span></div>' +
-'<h2 class="lh-h">Você descreve a obra.<br><em>A IA monta o orçamento.</em></h2>' +
+'<div class="lh-logo">' + badge + (pr ? '<span>' + Util.esc(pr.nome) + '</span>' : '<span>OrçaPRO<b>IA</b></span>') + '</div>' +
+(pr
+? '<h2 class="lh-h">' + Util.esc(pr.chamada) + '<br><em>' + Util.esc(pr.destaque) + '</em></h2>' +
+'<ul class="lh-feats">' + pr.linhas.map(function (l) { return '<li>' + Util.esc(l) + '</li>'; }).join("") + '</ul>'
+: '<h2 class="lh-h">Você descreve a obra.<br><em>A IA monta o orçamento.</em></h2>' +
 '<ul class="lh-feats">' +
 '<li>SINAPI, SICRO, SUDECAP e mais — já com BDI (TCU/DNIT)</li>' +
 '<li>Cronograma de Gantt e Excel profissional</li>' +
 '<li>Proposta comercial e anexo para laudo pericial</li>' +
-'</ul>' +
+'</ul>') +
 '<div class="lh-trust">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Roda no seu PC · seus orçamentos ficam salvos no dispositivo</div>' +
 '</div></div>' +
 '<div class="login-formside"><div class="login-card">' +
-'<div class="brand"><div class="lc-logo">' + badge + '<span class="nome">OrçaPRO<span class="ia">IA</span></span></div>' +
-'<div class="slogan">Entre ou crie sua conta para começar.</div></div>' +
+'<div class="brand"><div class="lc-logo">' + badge + (pr ? '<span class="nome">' + Util.esc(pr.nome) + '</span>' : '<span class="nome">OrçaPRO<span class="ia">IA</span></span>') + '</div>' +
+'<div class="slogan">' + (pr ? Util.esc(pr.titulo) + '<br><small>' + Util.esc(pr.assinatura) + '</small>' : 'Entre ou crie sua conta para começar.') + '</div></div>' +
 '<div id="login-form">' +
 caixaRecado +
 caixaLic +
@@ -15157,7 +15353,7 @@ chips +
 '</form>' +
 ((contas.length || (typeof Auth !== "undefined" && Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().length) || (typeof Auth !== "undefined" && Auth.resgateAdminPossivel && Auth.resgateAdminPossivel()))
 ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
-: '<p class="muted mt" style="font-size:12px;text-align:center">Já usa o OrçaPRO no computador? Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
+: '<p class="muted mt" style="font-size:12px;text-align:center">' + (pr ? 'Já usa o ' + Util.esc(pr.nome) + ' em outro aparelho?' : 'Já usa o OrçaPRO no computador?') + ' Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
 '</div>' +
 '</div></div>' +
 '</div>';

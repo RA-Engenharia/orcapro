@@ -45425,8 +45425,8 @@ var PRAZO_PUBLICACAO = {
 fonte: LEI + ", art. 55, II a IV", conferir: true,
 contagem: "Dias úteis (art. 183): exclui o dia da publicação, inclui o do vencimento; não conta sábado, domingo nem feriado.",
 regras: [
-{ id: "menor_preco_comum", dias: 10, descricao: "menor preço ou maior desconto, serviço comum / obra e serviço comum de engenharia", fonte: LEI + ", art. 55, II" },
-{ id: "menor_preco_especial", dias: 25, descricao: "menor preço ou maior desconto, serviço especial / obra e serviço especial de engenharia", fonte: LEI + ", art. 55, II" },
+{ id: "menor_preco_comum", dias: 10, descricao: "menor preço ou maior desconto, serviço comum / obra e serviço comum de engenharia", fonte: LEI + ", art. 55, II, alínea a" },
+{ id: "menor_preco_especial", dias: 25, descricao: "menor preço ou maior desconto, serviço especial / obra e serviço especial de engenharia", fonte: LEI + ", art. 55, II, alínea b" },
 { id: "contratacao_integrada", dias: 60, descricao: "contratação integrada", fonte: LEI + ", art. 55, II" },
 { id: "semi_integrada", dias: 35, descricao: "contratação semi-integrada ou demais hipóteses", fonte: LEI + ", art. 55, II" },
 { id: "maior_lance", dias: 15, descricao: "maior lance", fonte: LEI + ", art. 55, III (conferido 10/11/2026: 15 dias úteis)", conferir: false },
@@ -45449,6 +45449,13 @@ var ETP_ELEMENTOS = [
 { id: "XIII", nome: "Posicionamento conclusivo sobre a adequação da contratação", obrigatorio: true }
 ];
 var ETP_FONTE = LEI + ", art. 18, §1º, I a XIII; obrigatórios: art. 18, §2º (I, IV, VI, VIII, XIII); os demais, se não contemplados, exigem justificativa";
+var INCC_DI = "INCC-DI (FGV)", IPCA_IBGE = "IPCA (IBGE)", INDICE_DNIT = "índice setorial do DNIT aplicável (SICRO)";
+var NATUREZA_PRAZO = { obra_nova: "comum", reforma: "comum", ampliacao: "comum", pavimentacao: "comum", drenagem: "comum", saneamento: "comum", servico_engenharia_comum: "comum", manutencao: "comum", servico_engenharia_especial: "especial" };
+var INDICE_REAJUSTE = { obra_nova: INCC_DI, reforma: INCC_DI, ampliacao: INCC_DI, manutencao: INCC_DI, saneamento: INCC_DI, servico_engenharia_comum: INCC_DI, pavimentacao: INDICE_DNIT, drenagem: INDICE_DNIT, servico_engenharia_especial: IPCA_IBGE };
+Object.keys(TIPOS_OBJETO).forEach(function (id) {
+TIPOS_OBJETO[id].naturezaPrazo = NATUREZA_PRAZO[id] || "especial";
+TIPOS_OBJETO[id].indiceReajuste = INDICE_REAJUSTE[id] || null;
+});
 var PARAMETROS = {
 modalidade: { id: "modalidade", nome: "Modalidade", resposta: "texto", como: "Obra: concorrência. Serviço comum de engenharia: pregão ou concorrência. Nunca pregão para obra.", fonte: LEI + ", art. 28; art. 29, parágrafo único", conferir: true },
 criterio_julgamento: { id: "criterio_julgamento", nome: "Critério de julgamento", resposta: "texto", opcoes: ["menor preço", "maior desconto", "técnica e preço"], como: "Menor preço / maior desconto / técnica e preço, pelo tipo de objeto.", fonte: LEI + ", art. 33", conferir: true },
@@ -46091,6 +46098,13 @@ var cur = p && p.parametros && p.parametros[id] ? p.parametros[id].valor : null;
 var def = R.PARAMETROS[id];
 return { id: id, valor: vazio(cur) ? null : cur, sugerido: sugerido, regra: regra, fonte: def.fonte, conferir: def.conferir === true, pendencias: [] };
 }
+function indiceReajusteSugerido(tipoId) {
+var t = R.TIPOS_OBJETO[tipoId];
+if (!t || vazio(t.indiceReajuste)) return null;
+var dnit = /DNIT/.test(t.indiceReajuste), ipca = /^IPCA/.test(t.indiceReajuste);
+return { indice: t.indiceReajuste, sugerido: true, fonte: R.PARAMETROS.reajuste.fonte,
+regra: ipca ? "Serviço especial de engenharia (projeto, fiscalização, consultoria): IPCA (IBGE), índice geral de preços. Sugestão da casa; o órgão confirma." : dnit ? "Pavimentação e drenagem (obra de infraestrutura viária): índices setoriais do DNIT (SICRO). Sugestão da casa; o órgão confirma." : "Edificação, obra, reforma, ampliação, manutenção e serviço comum de engenharia: INCC-DI (FGV), índice setorial da construção civil. Sugestão da casa; o órgão confirma." };
+}
 var parametros = {
 sugerir: function (p, ctx) {
 var c = ctx || {}, tipoId = c.tipoObjeto !== undefined ? c.tipoObjeto : (p ? p.tipoObjeto : null);
@@ -46118,8 +46132,9 @@ x = sug(p, "garantia_contrato", { pctMax: 5, pctMaxComJustificativa: 10, grandeV
 if (gv === null) { x.conferir = true; x.pendencias.push("Valor de obra de grande vulto não informado: é atualizado por decreto (conferir); sem ele não se sabe se vale o seguro-garantia com retomada."); }
 out.garantia_contrato = x;
 out.exequibilidade = sug(p, "exequibilidade", { inexequivelAbaixoPct: 75, garantiaAdicionalAbaixoPct: 85 }, "Abaixo de 75% do orçado: inexequível; abaixo de 85%: garantia adicional igual à diferença.");
-x = sug(p, "reajuste", { indice: null, dataBase: vazio(c.dataBaseOrcamento) ? null : c.dataBaseOrcamento }, "Índice sem padrão (decisão do órgão); data-base igual à data do orçamento estimado.");
-x.pendencias.push("Escolha o índice de reajuste." );
+var ir = indiceReajusteSugerido(tipoId);
+x = sug(p, "reajuste", { indice: ir ? ir.indice : null, dataBase: vazio(c.dataBaseOrcamento) ? null : c.dataBaseOrcamento }, ir ? ir.regra + " Data-base igual à data do orçamento estimado." : "Índice sem padrão para este tipo (decisão do órgão); data-base igual à data do orçamento estimado.");
+if (!ir) x.pendencias.push("Escolha o índice de reajuste.");
 if (x.sugerido.dataBase === null) x.pendencias.push("Informe a data do orçamento estimado (data-base do reajuste).");
 out.reajuste = x;
 x = sug(p, "aditivo_teto", t ? { acrescimoPct: t.reforma ? 50 : 25, supressaoPct: 25 } : null, t ? (t.reforma ? "Reforma de edifício ou equipamento: acréscimo até 50%; supressão até 25%." : "Acréscimos e supressões até 25%.") : semTipo);
@@ -46331,6 +46346,7 @@ adicionarDocumentos: adicionarDocumentos, checklistAcervo: checklistAcervo,
 pendenciasQuantitativos: pendenciasQuantitativos, quantitativosValidos: quantitativosValidos,
 etpCampos: etpCampos, riscosSugeridos: riscosSugeridos, nivelRisco: nivelRisco,
 pesquisaPrecos: pesquisaPrecos, parametros: parametros,
+indiceReajusteSugerido: indiceReajusteSugerido,
 prazoPublicacao: prazoPublicacao, exequibilidade: exequibilidade, analisarProposta: analisarProposta,
 pode: pode, exigir: exigir, fluxoJuridico: fluxoJuridico, editavel: editavel, sigilo: sigilo,
 diasUteisDepois: diasUteisDepois,
@@ -46433,6 +46449,7 @@ var docs = arr(p.documentos).map(function (d) { return [d.id, d.tipo, d.sha, d.s
 var base = [p.tipoObjeto, p.secretaria, p.objeto, p.justificativa, p.pca, p.recursoFederal, p.sigiloso, p.regulamentoId,
 p.dataPrevistaEdital, p.cronograma, p.orcamentoId, p.orcamentoRef, p.tr, p.edital, p.requisitante, p.prazoDesejado, p.etp, p.riscos, p.quantitativos, p.pesquisa, par, docs];
 if (p.cronogramaFisico) base.push(p.cronogramaFisico);
+if (p.naturezaEspecial && p.naturezaEspecial.ativo === true) base.push(p.naturezaEspecial);
 return hash(JSON.stringify(base));
 };
 Fluxo.pacoteValido = function (p) {
@@ -46501,10 +46518,14 @@ if (x.pct < 100 || !x.conferido) return { id: id, ordem: i + 1, nome: Cplpro.PAS
 var ult = Cplpro.PASSOS[Cplpro.PASSOS.length - 1];
 return { id: ult.id, ordem: Cplpro.PASSOS.length, nome: ult.nome, pct: 100 };
 };
-Fluxo.natureza = function (p) {
+Fluxo.naturezaInfo = function (p) {
 var t = p && R.TIPOS_OBJETO[p.tipoObjeto];
-return t ? (t.servicoComumEngenharia ? "comum" : "especial") : null;
+if (!t) return { natureza: null, padrao: null, marcada: false, justificativa: null };
+var padrao = t.naturezaPrazo || (t.servicoComumEngenharia ? "comum" : "especial");
+var ne = p.naturezaEspecial, marcada = !!(ne && ne.ativo === true && !vazio(ne.justificativa));
+return { natureza: marcada ? "especial" : padrao, padrao: padrao, marcada: marcada, justificativa: marcada ? ne.justificativa : null };
 };
+Fluxo.natureza = function (p) { return Fluxo.naturezaInfo(p).natureza; };
 Fluxo.valorParametro = function (p, id) {
 var x = p && p.parametros ? p.parametros[id] : null;
 var v = x ? x.valor : null;
@@ -46515,6 +46536,8 @@ Fluxo.prazo = function (p) {
 var cron = (p && p.cronograma) || {};
 var res = Cplpro.prazoPublicacao(p ? p.dataPrevistaEdital : null, Fluxo.valorParametro(p, "criterio_julgamento"),
 Fluxo.valorParametro(p, "regime_execucao"), Fluxo.natureza(p), p ? p.feriadosLocais : []);
+var ni = Fluxo.naturezaInfo(p);
+res.natureza = ni.natureza; res.naturezaPadrao = ni.padrao; res.naturezaMarcadaEspecial = ni.marcada;
 res.dataAbertura = vazio(cron.dataAbertura) ? null : cron.dataAbertura;
 res.aberturaOk = res.dataMinimaAbertura && res.dataAbertura ? res.dataAbertura >= res.dataMinimaAbertura : null;
 return res;
@@ -46949,7 +46972,10 @@ if (id === "garantia_contrato") {
 var t = v.pct === undefined || v.pct === null ? "Sem garantia exigida" : "Garantia de " + numBR(Number(v.pct), 2) + "% do valor do contrato";
 return t + (v.seguroRetomada ? "; seguro-garantia com cláusula de retomada" : "") + (v.justificativa ? ". Justificativa: " + v.justificativa : "");
 }
-if (id === "reajuste") return "Índice: " + (v.indice || "—") + "; data-base: " + (dataBR(v.dataBase) || "—");
+if (id === "reajuste") {
+var sgR = vazio(v.indice) ? Cplpro.indiceReajusteSugerido(p && p.tipoObjeto) : null;
+return "Índice: " + (sgR ? sgR.indice + " (sugerido — confira)" : (v.indice || "—")) + "; data-base: " + (dataBR(v.dataBase) || "—");
+}
 if (id === "aditivo_teto") return "Acréscimos até " + numBR(v.acrescimoPct, 0) + "% e supressões até " + numBR(v.supressaoPct, 0) + "% do valor inicial";
 if (id === "recurso_prazo") return numBR(v.diasUteis, 0) + " dias úteis";
 if (id === "exequibilidade") return "Inexequível abaixo de " + numBR(v.inexequivelAbaixoPct, 0) + "% do valor orçado; garantia adicional abaixo de " + numBR(v.garantiaAdicionalAbaixoPct, 0) + "%";
@@ -47506,6 +47532,12 @@ o.raw(lista(["Anexo I — Termo de referência / projeto básico (com o Estudo T
 });
 return h + par(valLinha(((ctx && ctx.orgao) || {}).nome, "nome do órgão") + ", " + (ctx && ctx.hoje ? dataBR(ctx.hoje) : pre("data"))) + assinatura("Agente de contratação / presidente da comissão") + assinatura("Autoridade competente");
 }
+function indiceReajusteTexto(p, reaj) {
+var sg = Cplpro.indiceReajusteSugerido(p && p.tipoObjeto), SELO = ' <b>[sugerido — confira]</b>';
+var conferido = !!(p && p.passos && p.passos.parametros && p.passos.parametros.conferido);
+if (vazio(reaj && reaj.indice)) return sg ? esc(sg.indice) + SELO : pre("índice de reajuste");
+return esc(reaj.indice) + (sg && sg.indice === reaj.indice && !conferido ? SELO : "");
+}
 var CONFERIR = ' <b>[conferir com o jurídico]</b>';
 function contrato(p, ctx) {
 var e = p.edital || {}, t = p.tr || {}, sig = !publico(p, "valorEstimado");
@@ -47554,10 +47586,10 @@ o.sec("Da medição, da liquidação e do pagamento (art. 92, V e VI)");
 o.it("Medição: " + valLinha(t.medicao, "critério de medição") + ". O prazo de liquidação é de " + valCampo(p, "prazoLiquidacao") + " dias úteis, contados do recebimento da nota fiscal ou documento de cobrança equivalente.");
 o.it("Pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento") + ". No caso de atraso pelo Contratante, os valores devidos serão atualizados monetariamente pelo índice " + valCampo(p, "indiceAtraso") + ". As demais condições constam do Termo de Referência, anexo a este contrato.");
 o.sec("Do reajuste (art. 92, V)");
-if (reaj === null) o.it(pre("índice e data-base do reajuste"));
-else {
+if (reaj === null) reaj = { indice: null, dataBase: null };
+{
 o.it("Os preços inicialmente contratados são fixos e irreajustáveis no prazo de um ano contado da data-base " + valLinha(dataBR(reaj.dataBase), "data-base do orçamento estimado") + " (art. 25, §7º).");
-o.it("Após o interregno de um ano, e independentemente de pedido do contratado, os preços iniciais serão reajustados, mediante a aplicação, pelo contratante, do índice " + (vazio(reaj.indice) ? pre("índice de reajuste") : esc(reaj.indice)) + ", exclusivamente para as obrigações iniciadas e concluídas após a ocorrência da anualidade. Nos reajustes subsequentes ao primeiro, o interregno mínimo de um ano será contado a partir dos efeitos financeiros do último reajuste.");
+o.it("Após o interregno de um ano, e independentemente de pedido do contratado, os preços iniciais serão reajustados, mediante a aplicação, pelo contratante, do índice " + indiceReajusteTexto(p, reaj) + ", exclusivamente para as obrigações iniciadas e concluídas após a ocorrência da anualidade. Nos reajustes subsequentes ao primeiro, o interregno mínimo de um ano será contado a partir dos efeitos financeiros do último reajuste.");
 o.it("No caso de atraso ou não divulgação do índice, o contratante pagará a importância calculada pela última variação conhecida, liquidando a diferença tão logo seja divulgado o índice definitivo. O contratado apresentará memória de cálculo do reajustamento. Extinto o índice, será adotado o que vier a ser determinado pela legislação; na ausência de previsão legal, as partes elegerão novo índice oficial, por termo aditivo. O reajuste será realizado por apostilamento.");
 }
 o.sec("Das obrigações do contratante (art. 92, X, XI e XIV)");
@@ -48964,7 +48996,11 @@ escParam("recurso_prazo", sg.recurso_prazo.sugerido, sg.recurso_prazo.regra);
 var dbase = oi ? datasComp(oi.competencia) : null;
 if (dbase) {
 var rj = q.parametros.reajuste.valor, indiceAtual = rj && rj.indice ? rj.indice : null;
-escParam("reajuste", { indice: indiceAtual, dataBase: dbase }, "Data-base = a data do orçamento estimado; o índice é escolha do órgão.");
+var sgI = Cplpro.indiceReajusteSugerido(q.tipoObjeto);
+var recR = q.preparo && q.preparo.campos ? q.preparo.campos["parametros.reajuste.valor"] : null;
+var indiceDoSistema = !!(recR && recR.valor && indiceAtual && recR.valor.indice === indiceAtual);
+var indiceNovo = indiceAtual && !indiceDoSistema ? indiceAtual : (sgI ? sgI.indice : indiceAtual);
+escParam("reajuste", { indice: indiceNovo, dataBase: dbase }, "Data-base = a data do orçamento estimado; " + (sgI && indiceNovo === sgI.indice ? "índice sugerido pelo tipo de objeto. " + sgI.regra : "o índice é escolha do órgão."));
 }
 var PRE = {
 sigiloso: { v: false, regra: "O sistema pré-marca «não»: orçamento público é a regra e o sigilo é exceção que o órgão escolhe e justifica." },
@@ -49180,7 +49216,107 @@ function dataHoraBR(iso) { var s = String(iso || ""); return dataBR(s) + (s.leng
 function moeda(v) { return typeof v === "number" ? Util.fmtMoeda(v) : "—"; }
 function numBR(v, c) { return typeof v === "number" ? Util.fmtNum(v, c == null ? 2 : c) : "—"; }
 function lerNum(id) { var el = document.getElementById(id); if (!el || String(el.value).replace(/\s/g, "") === "") return null; var n = F.num(el.value); return n; }
-function toast(m, t) { if (typeof UI !== "undefined") UI.toast(m, t || "ok"); }
+var RETORNO_MS = 8000;
+var retornos = {}, acaoAtiva = null, ultimoClique = null;
+var CHAVES_DS = ["id", "doc", "passo", "i", "tipo", "acao", "pessoa", "lic"];
+function copiaDs(ds) { var o = {}; ds = ds || {}; CHAVES_DS.forEach(function (k) { o[k] = ds[k]; }); return o; }
+function hhmm() { var d = new Date(); return dd(d.getHours()) + ":" + dd(d.getMinutes()); }
+function chaveRetorno(nome, ds) {
+var p = null; try { p = procAtual(); } catch (e) { p = null; }
+var s = ds ? CHAVES_DS.map(function (k) { return ds[k]; }).filter(function (x) { return x !== undefined && x !== null && x !== ""; }).join(",") : "";
+return nome + "|" + s + "|" + (p ? p.id : "");
+}
+function tirarRetorno(botao, chave) {
+var n = botao && botao.nextSibling;
+while (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) { var seg = n.nextSibling; if (n.parentNode) n.parentNode.removeChild(n); n = seg; }
+}
+function desenharRetorno(botao, r, chave) {
+if (!botao || !botao.parentNode || typeof document === "undefined") return null;
+tirarRetorno(botao, chave);
+var tipo = r.ok === true ? "ok" : (r.ok === false ? "erro" : "info");
+var el = document.createElement("span");
+el.className = "cpl-retorno cpl-retorno-" + tipo;
+el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite");
+el.setAttribute("data-cpl-retorno", chave || "");
+var msg = String(r.msg === null || r.msg === undefined ? "" : r.msg).replace(/\s+$/, "").replace(/\.$/, "");
+var ic = document.createElement("span"); ic.className = "cpl-retorno-ic"; ic.setAttribute("aria-hidden", "true");
+ic.textContent = tipo === "ok" ? "\u2714" : (tipo === "erro" ? "\u2716" : "\u2139");
+var tx = document.createElement("span"); tx.className = "cpl-retorno-txt";
+tx.textContent = msg + (tipo === "ok" ? " às " + (r.hora || hhmm()) : "");
+el.appendChild(ic); el.appendChild(document.createTextNode(" ")); el.appendChild(tx);
+if (r.corrigir && r.corrigir.passo) {
+var a = document.createElement("button"); a.type = "button"; a.className = "btn sm cpl-retorno-corrigir";
+a.setAttribute("data-gacao", "cpl-corrigir"); a.setAttribute("data-passo", r.corrigir.passo);
+a.setAttribute("data-campo", r.corrigir.campo || ""); a.setAttribute("data-item", r.corrigir.item === undefined || r.corrigir.item === null ? "" : r.corrigir.item);
+a.textContent = "Corrigir";
+el.appendChild(document.createTextNode(" ")); el.appendChild(a);
+}
+botao.parentNode.insertBefore(el, botao.nextSibling);
+if (tipo !== "erro") {
+setTimeout(function () {
+if (el.parentNode) el.parentNode.removeChild(el);
+if (retornos[chave] && retornos[chave].el === el) delete retornos[chave];
+}, Math.max(0, RETORNO_MS - (Date.now() - (r.t || Date.now()))));
+}
+return el;
+}
+function retorno(botao, o) {
+o = o || {};
+var ds = botao && botao.dataset ? botao.dataset : {}, nome = botao && botao.getAttribute ? (botao.getAttribute("data-gacao") || "") : "";
+var chave = chaveRetorno(nome, ds), p = null;
+try { p = procAtual(); } catch (e) { p = null; }
+var r = { nome: nome, ds: copiaDs(ds), ok: o.ok === true ? true : (o.ok === false ? false : null), msg: o.msg, corrigir: o.corrigir || null, hora: hhmm(), t: Date.now(), procId: p ? p.id : null };
+retornos[chave] = r;
+r.el = desenharRetorno(botao, r, chave);
+return r.el;
+}
+function registrarRetorno(m, t, corrigir) {
+if (!acaoAtiva) return;
+var chave = acaoAtiva.chave, ok = t === "ok" ? true : ((t === "erro" || t === "aviso") ? false : null);
+var r = { nome: acaoAtiva.nome, ds: acaoAtiva.ds, ok: ok, msg: m, corrigir: corrigir || null, hora: hhmm(), t: Date.now(), procId: acaoAtiva.procId };
+retornos[chave] = r;
+if (acaoAtiva.botao && document.body.contains(acaoAtiva.botao)) r.el = desenharRetorno(acaoAtiva.botao, r, chave);
+}
+function reanexarRetornos() {
+var p = null; try { p = procAtual(); } catch (e) { p = null; }
+Object.keys(retornos).forEach(function (chave) {
+var r = retornos[chave];
+if (r.ok !== false && Date.now() - r.t > RETORNO_MS) { delete retornos[chave]; return; }
+if (r.procId && (!p || p.id !== r.procId)) return;
+var bs = document.querySelectorAll('[data-gacao="' + r.nome + '"]'), alvo = null, i;
+for (i = 0; i < bs.length && !alvo; i++) {
+var b = bs[i], d = b.dataset || {}, bate = true;
+CHAVES_DS.forEach(function (k) { if ((r.ds[k] || "") !== (d[k] || "")) bate = false; });
+if (bate && b.tagName === "BUTTON" && !/cpl-retorno-corrigir/.test(b.className || "")) alvo = b;
+}
+if (!alvo) return;
+var n = alvo.nextSibling;
+if (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) return;
+r.el = desenharRetorno(alvo, r, chave);
+});
+}
+var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+function iniciarAcao(nome, ds) {
+if (NAVEGACAO[nome]) return;
+ds = ds || {};
+var b = ultimoClique && ultimoClique.gacao === nome && Date.now() - ultimoClique.t < 1500 ? ultimoClique.el : null;
+if (b && b.tagName !== "BUTTON") b = null;
+var p = null; try { p = procAtual(); } catch (e) { p = null; }
+var chave = chaveRetorno(nome, ds);
+acaoAtiva = { nome: nome, ds: copiaDs(ds), botao: b, chave: chave, procId: p ? p.id : null };
+delete retornos[chave]; if (b) tirarRetorno(b, chave);
+}
+if (typeof document !== "undefined" && !G._cplRetornoLig) {
+G._cplRetornoLig = true;
+document.addEventListener("click", function (e) {
+var t = e.target && e.target.closest ? e.target.closest("[data-gacao]") : null;
+if (t) ultimoClique = { gacao: t.getAttribute("data-gacao"), el: t, t: Date.now() };
+}, true);
+}
+function toast(m, t, corrigir) {
+if (typeof UI !== "undefined") UI.toast(m, t || "ok");
+try { registrarRetorno(m, t || "ok", corrigir); } catch (eR) {}
+}
 G._cplView = G._cplView || "lista";
 G._cplId = G._cplId || "";
 G._cplPasso = G._cplPasso || "demanda";
@@ -49241,11 +49377,17 @@ function gravar(passoId, aplicar, acao) {
 var p = procAtual(); if (!p) return false;
 var papel = exigirEditavel(p, acao || F.ACAO_DO_PASSO[passoId]); if (!papel) return false;
 var q = clone(p), dif;
-try { dif = aplicar(q); } catch (e) { toast(e.message || String(e), "erro"); return false; }
+try { dif = aplicar(q); } catch (e) { toast(e.message || String(e), "erro", { passo: passoId, campo: e && e.campo ? e.campo : "" }); return false; }
 if (!dif) { toast("Nada mudou.", "info"); return false; }
 F.soltarConferencia(q, passoId);
 F.registrar(q, "editar:" + passoId, dif.antes, dif.depois, quemAtual(papel), agoraLocal());
 return !!salvarProc(q);
+}
+function primeiraPendencia(q) {
+var pr = null; try { pr = C.progresso(q); } catch (e) { pr = null; }
+var ach = null;
+if (pr) C.PASSOS.forEach(function (ps) { var x = pr.passos[ps.id]; if (!ach && ps.id !== "minuta" && ps.id !== "conformidade" && x && x.pendencias && x.pendencias.length && x.pendencias[0].corrigir) ach = x.pendencias[0].corrigir; });
+return ach || { passo: "minuta", campo: "" };
 }
 function setFoco(passo, campo) { G._cplPasso = passo; G._cplAba = "passos"; G._cplView = "proc"; G._cplFoco = campo || null; }
 function porque(regra, fonte, conferir, rotulo) {
@@ -49726,7 +49868,7 @@ if (id === "sigiloso" && vazio(v)) v = p.sigiloso;
 var sugTxt = s.sugerido === null || s.sugerido === undefined ? "—" : (typeof s.sugerido === "object" ? _descObj(id, s.sugerido) : (typeof s.sugerido === "boolean" ? (s.sugerido ? "Sim" : "Não") : String(s.sugerido)));
 var ctrl = _ctrlParam(id, def, v, s, d);
 return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + selo(p, "parametros." + id + ".valor") + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
-(s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste") ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
+(s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste" && vazio(s.sugerido.indice)) ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
 }).join("") + "</tbody></table>";
 var regs = Object.keys(R.REGULAMENTOS).map(function (k) { return [k, R.REGULAMENTOS[k].nome]; });
 var efet = C.pesquisaPrecos.regulamentoEfetivo(p), cron = p.cronograma || {};
@@ -49735,11 +49877,12 @@ campo("Regulamento de pesquisa de preços" + selo(p, "regulamentoId"), '<select 
 (p.recursoFederal === true ? '<div class="cpl-sug">Há recurso federal: vale o regulamento federal.</div>' : "") + (efet ? porque(efet.fonte, efet.fonte, efet.conferir === true, "Regulamento efetivo") : ""), "regulamentoId") +
 campo("Data de publicação do edital *", '<input id="cpl-dataEdital" type="date" data-foco="dataPrevistaEdital" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">", "dataPrevistaEdital") +
 campo("Data de abertura das propostas", '<input id="cpl-dataAbertura" type="date" data-foco="dataAbertura" value="' + esc(cron.dataAbertura || "") + '"' + d + ">", "dataAbertura") +
-campo("Feriados locais (um por linha, AAAA-MM-DD)", '<textarea id="cpl-feriados" rows="2"' + d + ">" + esc(arr(p.feriadosLocais).join("\n")) + "</textarea>") + "</div>";
+campo("Feriados locais (um por linha, AAAA-MM-DD)", '<textarea id="cpl-feriados" rows="2"' + d + ">" + esc(arr(p.feriadosLocais).join("\n")) + "</textarea>") +
+_campoNatureza(p, d) + "</div>";
 var pz = F.prazo(p);
 h += '<div class="cpl-prazo" id="cpl-prazo">';
 if (pz.diasUteis) {
-h += "<p><b>Prazo mínimo:</b> " + pz.diasUteis + " dias úteis desde a publicação" + (pz.dataMinimaAbertura ? " → <b>abertura a partir de " + esc(dataBR(pz.dataMinimaAbertura)) + "</b>" : "") + "." +
+h += "<p><b>Prazo mínimo:</b> " + pz.diasUteis + " dias úteis desde a publicação" + (pz.natureza && pz.regra && /menor_preco/.test(pz.regra.id) ? " (" + (pz.natureza === "comum" ? "obra ou serviço comum" : "obra ou serviço especial") + (pz.naturezaMarcadaEspecial ? ", marcado como especial" : ", padrão do tipo de objeto") + ")" : "") + (pz.dataMinimaAbertura ? " → <b>abertura a partir de " + esc(dataBR(pz.dataMinimaAbertura)) + "</b>" : "") + "." +
 porque((pz.regra ? pz.regra.descricao + ". " : "") + pz.contagem, pz.fonte, pz.regra && pz.regra.conferir === false ? false : pz.conferir, "Prazo mínimo") + "</p>";
 if (pz.aberturaOk === false) h += '<p class="cpl-alerta">A data de abertura informada está antes do mínimo legal.</p>';
 }
@@ -49747,13 +49890,21 @@ arr(pz.pendencias).forEach(function (m) { h += '<p class="cpl-alerta">' + esc(m)
 h += "</div>";
 return h + '<div class="cpl-acoes">' + btn("Salvar datas e regulamento", "cpl-par-datas", d, "primary") + "</div>";
 }
+function _campoNatureza(p, d) {
+var ni = F.naturezaInfo(p), ne = p.naturezaEspecial || {};
+if (!ni.padrao) return "";
+return campo("Natureza do objeto para o prazo do art. 55" + porque("O prazo mínimo de menor preço/maior desconto é de 10 dias úteis para obra e serviço COMUM de engenharia (alínea a) e de 25 dias úteis para obra e serviço ESPECIAL (alínea b). O sistema trata como comum: obra nova, reforma, ampliação, pavimentação, drenagem, saneamento, manutenção e serviço comum. Marque «especial» só com justificativa técnica.", "Lei 14.133/2021, art. 55, II, alíneas a e b", true, "Natureza do objeto"),
+'<label class="cpl-nat"><input type="checkbox" id="cpl-nat-esp"' + (ni.marcada || ne.ativo === true ? " checked" : "") + d + '> Tratar como obra/serviço <b>especial</b> de engenharia (25 dias úteis)</label>' +
+'<textarea id="cpl-nat-just" rows="2" placeholder="Justificativa técnica da natureza especial (obrigatória)" data-foco="naturezaEspecial"' + d + ">" + esc(ne.justificativa || "") + "</textarea>" +
+'<div class="cpl-sug">Padrão do tipo de objeto: <b>' + (ni.padrao === "comum" ? "comum" : "especial") + "</b>.</div>", "naturezaEspecial");
+}
 function _descObj(id, v) {
 if (id === "parcelas_relevancia") return arr(v).length + " parcela(s)";
 if (id === "garantia_contrato") return "até " + v.pctMax + "% (até " + v.pctMaxComJustificativa + "% com justificativa)" + (v.grandeVulto ? "; seguro-garantia com retomada até " + v.seguroGarantiaRetomadaPctMax + "%" : "");
 if (id === "exequibilidade") return "inexequível abaixo de " + v.inexequivelAbaixoPct + "%; garantia adicional abaixo de " + v.garantiaAdicionalAbaixoPct + "%";
 if (id === "aditivo_teto") return "acréscimo até " + v.acrescimoPct + "%, supressão até " + v.supressaoPct + "%";
 if (id === "recurso_prazo") return v.diasUteis + " dias úteis";
-if (id === "reajuste") return "data-base " + (v.dataBase ? dataBR(v.dataBase) : "—") + "; índice a escolher";
+if (id === "reajuste") return (v.indice ? "índice " + v.indice : "índice a escolher") + "; data-base " + (v.dataBase ? dataBR(v.dataBase) : "—");
 return JSON.stringify(v);
 }
 function _ctrlParam(id, def, v, s, d) {
@@ -50812,7 +50963,7 @@ if (ok) { toast("Sugestão aceita.", "ok"); App.render(); }
 },
 "cpl-par-datas": function () {
 var ok = gravar("parametros", function (q) {
-var antes = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+var antes = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, n: q.naturezaEspecial || null, par: q.parametros });
 R.PARAMETROS_ORDEM.forEach(function (id) {
 var def = R.PARAMETROS[id], el = document.getElementById("cpl-par-" + id), v;
 if (id === "reajuste") {
@@ -50830,8 +50981,16 @@ if (pct !== null) { if (pct < 0 || pct > 10) throw new Error("A garantia vai de 
 if (q.recursoFederal !== true) q.regulamentoId = emBranco(lerCampo("cpl-regulamento")); else q.regulamentoId = "federal-14133";
 q.dataPrevistaEdital = emBranco(lerCampo("cpl-dataEdital"));
 q.cronograma = { dataAbertura: emBranco(lerCampo("cpl-dataAbertura")) };
+var chk = document.getElementById("cpl-nat-esp");
+if (chk) {
+if (chk.checked) {
+var jn = emBranco(lerCampo("cpl-nat-just"));
+if (!jn) { var en = new Error("Para tratar como obra/serviço especial (25 dias úteis), escreva a justificativa técnica."); en.campo = "naturezaEspecial"; throw en; }
+q.naturezaEspecial = { ativo: true, justificativa: jn };
+} else delete q.naturezaEspecial;
+}
 q.feriadosLocais = lerCampo("cpl-feriados").split(/[\s,;]+/).filter(function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); });
-var depois = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+var depois = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, n: q.naturezaEspecial || null, par: q.parametros });
 return antes === depois ? null : { antes: "parâmetros e datas", depois: "parâmetros e datas atualizados" };
 });
 if (ok) { toast("Parâmetros e datas salvos.", "ok"); App.render(); }
@@ -50876,13 +51035,13 @@ F.registrar(q, "gerar_documentos", null, g.pendentes === 0 ? "gerados sem campo 
 q.passos.minuta.conferido = false;
 var r = Store.salvar(eid(), ENT_PROC, q);
 if (!r) { toast("Não consegui gravar o processo.", "erro"); return; }
-toast(g.pendentes === 0 ? "Documentos gerados. Baixe cada um na lista." : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso");
+toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : primeiraPendencia(q));
 App.render();
 },
 "cpl-enviar-jur": function () {
 var p = procAtual(); if (!p) return;
 try { var q = F.enviarJuridico(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Processo enviado ao jurídico.", "ok"); App.render(); } }
-catch (e) { toast(e.message || String(e), "erro"); }
+catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
 },
 "cpl-emitir-parecer": function () {
 var p = procAtual(); if (!p) return;
@@ -50909,7 +51068,7 @@ catch (e) { toast(e.message || String(e), "erro"); }
 "cpl-autorizar": function () {
 var p = procAtual(); if (!p) return;
 try { var q = F.autorizar(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Abertura autorizada.", "ok"); App.render(); } }
-catch (e) { toast(e.message || String(e), "erro"); }
+catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
 },
 "cpl-publicar": function () {
 var p = procAtual(); if (!p) return;
@@ -50917,7 +51076,7 @@ var c = calc(orcDoProc(p));
 try {
 var q = F.publicar(p, papeis(), nomeAtual(), agoraLocal(), refDoCalc(c));
 if (salvarProc(q)) { toast("Edital publicado. A referência de preços foi congelada para a análise das propostas.", "ok"); G._cplAba = "propostas"; App.render(); }
-} catch (e) { toast(e.message || String(e), "erro"); }
+} catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
 },
 "cpl-prop-importar": function () {
 var p = procAtual(); if (!p) return;
@@ -51088,8 +51247,11 @@ else toast("Não consegui gravar os papéis.", "erro");
 },
 "cpl-painel": function () { abrirPainel(); }
 };
-G.registrarAcoes(MODULO, acoes);
+var acoesTela = {};
+Object.keys(acoes).forEach(function (k) { var fn = acoes[k]; acoesTela[k] = function (ds) { iniciarAcao(k, ds); return fn.apply(this, arguments); }; });
+G.registrarAcoes(MODULO, acoesTela);
 G.registrarWire(MODULO, function () {
+try { reanexarRetornos(); } catch (eRt) {}
 var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
 if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
 if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
@@ -51150,7 +51312,7 @@ if (!arr(Store.listar(emp, ENT_PAP)).some(function (x) { return x.usuarioId === 
 } catch (e) { plano.erro = e && e.message ? e.message : String(e); }
 return plano;
 }
-global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao };
+global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao, retorno: retorno };
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/tour360.js ==== */
@@ -62998,6 +63160,30 @@ wrap.innerHTML = faixaPrev;
 topbar.parentNode.insertBefore(wrap.firstChild, topbar.nextSibling);
 }
 if (main) main.style.paddingBottom = faixaPrev ? "56px" : "";
+try {
+var velhoAv = document.getElementById("produto-aviso");
+if (velhoAv && velhoAv.parentNode) velhoAv.parentNode.removeChild(velhoAv);
+var avP = (!this._demo && typeof Produto !== "undefined" && typeof Perfis !== "undefined" && Produto.avisoDominioNovo) ? Produto.avisoDominioNovo(Perfis.idGravado()) : null;
+var avOff = false; try { avOff = sessionStorage.getItem("orcapro:aviso-cplpro") === "1"; } catch (eAvS) {}
+if (avP && !avOff) {
+var avEl = document.createElement("div");
+avEl.id = "produto-aviso"; avEl.setAttribute("role", "status");
+avEl.style.cssText = "display:flex;align-items:center;gap:10px;justify-content:center;padding:6px 12px;font-size:12.5px;background:rgba(29,79,140,.1);border-bottom:1px solid rgba(29,79,140,.25)";
+avEl.innerHTML = '<span>' + Util.esc(avP.texto) + '</span> <a href="' + Util.esc(avP.url) + '" target="_blank" rel="noopener" style="font-weight:600">Abrir o CPLPRO</a>' +
+'<button type="button" aria-label="Dispensar o aviso" title="Dispensar" style="border:0;background:none;cursor:pointer;font-size:15px;line-height:1" onclick="try{sessionStorage.setItem(&#39;orcapro:aviso-cplpro&#39;,&#39;1&#39;)}catch(e){}if(this.parentNode&&this.parentNode.parentNode)this.parentNode.parentNode.removeChild(this.parentNode)">×</button>';
+topbar.parentNode.insertBefore(avEl, topbar.nextSibling);
+}
+} catch (eAv) {}
+if (typeof Produto !== "undefined" && Produto.ehCplpro() && !this._demo) {
+var exP = []; try { if (typeof Licenca !== "undefined" && Licenca.modulosExtras) exP = Licenca.modulosExtras(); } catch (eEx) {}
+var pgP = ""; try { if (typeof Perfis !== "undefined" && Perfis.idGravado) pgP = Perfis.idGravado(); } catch (ePg) {}
+if (!Produto.temAcesso({ extras: exP, perfilGravado: pgP, demo: false })) {
+if (sidebar) sidebar.innerHTML = "";
+if (app) app.classList.remove("com-sidebar");
+main.innerHTML = Produto.telaSemAcesso();
+return;
+}
+}
 if (!this._tourTentado) {
 this._tourTentado = true;
 var selfT = this;
@@ -63011,7 +63197,9 @@ if (typeof Tour !== "undefined") Tour.iniciar();
 var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
 var soModela = typeof Gestao !== "undefined" && !this._demo && !!Gestao.soModela && Gestao.soModela();
 var gestaoComprada = typeof Gestao !== "undefined" && (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : podeGestao);
-var view = this.view || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+var viewProd = (typeof Produto !== "undefined" && !this._demo) ? Produto.moduloInicial() : "";
+if (viewProd && Auth.podeModulo && !Auth.podeModulo(viewProd)) viewProd = "";
+var view = this.view || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
 try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
 if (!this.viewValida(view)) { view = this.viewPadrao(); this.view = view; }
 if (soModela) {

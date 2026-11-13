@@ -96,7 +96,10 @@
       var t = v.pct === undefined || v.pct === null ? "Sem garantia exigida" : "Garantia de " + numBR(Number(v.pct), 2) + "% do valor do contrato";
       return t + (v.seguroRetomada ? "; seguro-garantia com cláusula de retomada" : "") + (v.justificativa ? ". Justificativa: " + v.justificativa : "");
     }
-    if (id === "reajuste") return "Índice: " + (v.indice || "—") + "; data-base: " + (dataBR(v.dataBase) || "—");
+    if (id === "reajuste") {
+      var sgR = vazio(v.indice) ? Cplpro.indiceReajusteSugerido(p && p.tipoObjeto) : null;   /* sem escolha: a sugestão do tipo, marcada */
+      return "Índice: " + (sgR ? sgR.indice + " (sugerido — confira)" : (v.indice || "—")) + "; data-base: " + (dataBR(v.dataBase) || "—");
+    }
     if (id === "aditivo_teto") return "Acréscimos até " + numBR(v.acrescimoPct, 0) + "% e supressões até " + numBR(v.supressaoPct, 0) + "% do valor inicial";
     if (id === "recurso_prazo") return numBR(v.diasUteis, 0) + " dias úteis";
     if (id === "exequibilidade") return "Inexequível abaixo de " + numBR(v.inexequivelAbaixoPct, 0) + "% do valor orçado; garantia adicional abaixo de " + numBR(v.garantiaAdicionalAbaixoPct, 0) + "%";
@@ -728,6 +731,15 @@
    * XVI manter a habilitação · XVII reserva de cargos · XVIII modelo de gestão · XIX extinção · §1º foro.
    * «[conferir]» marca o que NÃO está no texto de referência (é redação da casa): o jurídico do órgão confirma.
    * ================================================================== */
+  /* Índice do reajuste: o que o órgão escolheu; se ainda não escolheu, a sugestão do tipo de objeto com o selo
+   * «[sugerido — confira]» (igual aos outros textos sugeridos). O selo também fica enquanto o índice for o sugerido e o
+   * passo Parâmetros ainda não foi conferido. Tipo sem sugestão (serviço especial) = [PREENCHER]. */
+  function indiceReajusteTexto(p, reaj) {
+    var sg = Cplpro.indiceReajusteSugerido(p && p.tipoObjeto), SELO = ' <b>[sugerido — confira]</b>';
+    var conferido = !!(p && p.passos && p.passos.parametros && p.passos.parametros.conferido);
+    if (vazio(reaj && reaj.indice)) return sg ? esc(sg.indice) + SELO : pre("índice de reajuste");
+    return esc(reaj.indice) + (sg && sg.indice === reaj.indice && !conferido ? SELO : "");
+  }
   var CONFERIR = ' <b>[conferir com o jurídico]</b>';
   function contrato(p, ctx) {
     var e = p.edital || {}, t = p.tr || {}, sig = !publico(p, "valorEstimado");
@@ -784,10 +796,10 @@
       o.it("Pagamento: " + valLinha(t.pagamento, "condições e prazo de pagamento") + ". No caso de atraso pelo Contratante, os valores devidos serão atualizados monetariamente pelo índice " + valCampo(p, "indiceAtraso") + ". As demais condições constam do Termo de Referência, anexo a este contrato.");
 
       o.sec("Do reajuste (art. 92, V)");
-      if (reaj === null) o.it(pre("índice e data-base do reajuste"));
-      else {
+      if (reaj === null) reaj = { indice: null, dataBase: null };   /* sem valor: o índice sai sugerido pelo tipo (selo) e só a data-base fica por preencher */
+      {
         o.it("Os preços inicialmente contratados são fixos e irreajustáveis no prazo de um ano contado da data-base " + valLinha(dataBR(reaj.dataBase), "data-base do orçamento estimado") + " (art. 25, §7º).");
-        o.it("Após o interregno de um ano, e independentemente de pedido do contratado, os preços iniciais serão reajustados, mediante a aplicação, pelo contratante, do índice " + (vazio(reaj.indice) ? pre("índice de reajuste") : esc(reaj.indice)) + ", exclusivamente para as obrigações iniciadas e concluídas após a ocorrência da anualidade. Nos reajustes subsequentes ao primeiro, o interregno mínimo de um ano será contado a partir dos efeitos financeiros do último reajuste.");
+        o.it("Após o interregno de um ano, e independentemente de pedido do contratado, os preços iniciais serão reajustados, mediante a aplicação, pelo contratante, do índice " + indiceReajusteTexto(p, reaj) + ", exclusivamente para as obrigações iniciadas e concluídas após a ocorrência da anualidade. Nos reajustes subsequentes ao primeiro, o interregno mínimo de um ano será contado a partir dos efeitos financeiros do último reajuste.");
         o.it("No caso de atraso ou não divulgação do índice, o contratante pagará a importância calculada pela última variação conhecida, liquidando a diferença tão logo seja divulgado o índice definitivo. O contratado apresentará memória de cálculo do reajustamento. Extinto o índice, será adotado o que vier a ser determinado pela legislação; na ausência de previsão legal, as partes elegerão novo índice oficial, por termo aditivo. O reajuste será realizado por apostilamento.");
       }
 

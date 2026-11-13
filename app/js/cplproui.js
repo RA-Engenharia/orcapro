@@ -49,7 +49,121 @@
   function moeda(v) { return typeof v === "number" ? Util.fmtMoeda(v) : "—"; }
   function numBR(v, c) { return typeof v === "number" ? Util.fmtNum(v, c == null ? 2 : c) : "—"; }
   function lerNum(id) { var el = document.getElementById(id); if (!el || String(el.value).replace(/\s/g, "") === "") return null; var n = F.num(el.value); return n; }
-  function toast(m, t) { if (typeof UI !== "undefined") UI.toast(m, t || "ok"); }
+  /* ------------------------------------------------------------------ *
+   * RETORNO JUNTO DO BOTÃO (pedido do Rogério, 13/11/2026)
+   * Desde a 1.2.279 o toast fica escondido no sino: ele clicou «Salvar dados da minuta» e «Gerar
+   * documentos» e não soube se funcionou. Toda ação do CPLPRO mostra a resposta AO LADO do botão:
+   * «✔ Salvo às 14:03» ou «✖ motivo» + «Corrigir» (leva ao passo/campo). O sino continua recebendo
+   * o histórico. Um ponto só: o `toast` local alimenta o retorno; as ações são embrulhadas em
+   * `acoesTela` (no fim do arquivo) para saber QUAL botão foi clicado. Sucesso some em ~8 s; erro
+   * fica até a pessoa clicar de novo no mesmo botão. Reaparece depois do App.render().
+   * ------------------------------------------------------------------ */
+  var RETORNO_MS = 8000;
+  var retornos = {}, acaoAtiva = null, ultimoClique = null;
+  var CHAVES_DS = ["id", "doc", "passo", "i", "tipo", "acao", "pessoa", "lic"];   /* o que distingue um botão de outro igual (data-*) */
+  function copiaDs(ds) { var o = {}; ds = ds || {}; CHAVES_DS.forEach(function (k) { o[k] = ds[k]; }); return o; }
+  function hhmm() { var d = new Date(); return dd(d.getHours()) + ":" + dd(d.getMinutes()); }
+  function chaveRetorno(nome, ds) {
+    var p = null; try { p = procAtual(); } catch (e) { p = null; }
+    var s = ds ? CHAVES_DS.map(function (k) { return ds[k]; }).filter(function (x) { return x !== undefined && x !== null && x !== ""; }).join(",") : "";
+    return nome + "|" + s + "|" + (p ? p.id : "");
+  }
+  function tirarRetorno(botao, chave) {
+    var n = botao && botao.nextSibling;
+    while (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) { var seg = n.nextSibling; if (n.parentNode) n.parentNode.removeChild(n); n = seg; }
+  }
+  /* Desenha o retorno logo depois do botão. r = { ok: true|false|null, msg, corrigir: {passo, campo, item}, hora, t } */
+  function desenharRetorno(botao, r, chave) {
+    if (!botao || !botao.parentNode || typeof document === "undefined") return null;
+    tirarRetorno(botao, chave);
+    var tipo = r.ok === true ? "ok" : (r.ok === false ? "erro" : "info");
+    var el = document.createElement("span");
+    el.className = "cpl-retorno cpl-retorno-" + tipo;
+    el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite");
+    el.setAttribute("data-cpl-retorno", chave || "");
+    var msg = String(r.msg === null || r.msg === undefined ? "" : r.msg).replace(/\s+$/, "").replace(/\.$/, "");
+    var ic = document.createElement("span"); ic.className = "cpl-retorno-ic"; ic.setAttribute("aria-hidden", "true");
+    ic.textContent = tipo === "ok" ? "\u2714" : (tipo === "erro" ? "\u2716" : "\u2139");
+    var tx = document.createElement("span"); tx.className = "cpl-retorno-txt";
+    tx.textContent = msg + (tipo === "ok" ? " às " + (r.hora || hhmm()) : "");
+    el.appendChild(ic); el.appendChild(document.createTextNode(" ")); el.appendChild(tx);
+    if (r.corrigir && r.corrigir.passo) {
+      var a = document.createElement("button"); a.type = "button"; a.className = "btn sm cpl-retorno-corrigir";
+      a.setAttribute("data-gacao", "cpl-corrigir"); a.setAttribute("data-passo", r.corrigir.passo);
+      a.setAttribute("data-campo", r.corrigir.campo || ""); a.setAttribute("data-item", r.corrigir.item === undefined || r.corrigir.item === null ? "" : r.corrigir.item);
+      a.textContent = "Corrigir";
+      el.appendChild(document.createTextNode(" ")); el.appendChild(a);
+    }
+    botao.parentNode.insertBefore(el, botao.nextSibling);
+    if (tipo !== "erro") {   /* só o sucesso some sozinho (~8 s desde o clique); o erro fica */
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+        if (retornos[chave] && retornos[chave].el === el) delete retornos[chave];
+      }, Math.max(0, RETORNO_MS - (Date.now() - (r.t || Date.now()))));
+    }
+    return el;
+  }
+  /* API: CplproUI.retorno(botao, {ok, msg, corrigir}) — mostra a confirmação ao lado do botão dado */
+  function retorno(botao, o) {
+    o = o || {};
+    var ds = botao && botao.dataset ? botao.dataset : {}, nome = botao && botao.getAttribute ? (botao.getAttribute("data-gacao") || "") : "";
+    var chave = chaveRetorno(nome, ds), p = null;
+    try { p = procAtual(); } catch (e) { p = null; }
+    var r = { nome: nome, ds: copiaDs(ds), ok: o.ok === true ? true : (o.ok === false ? false : null), msg: o.msg, corrigir: o.corrigir || null, hora: hhmm(), t: Date.now(), procId: p ? p.id : null };
+    retornos[chave] = r;
+    r.el = desenharRetorno(botao, r, chave);
+    return r.el;
+  }
+  function registrarRetorno(m, t, corrigir) {
+    if (!acaoAtiva) return;
+    var chave = acaoAtiva.chave, ok = t === "ok" ? true : ((t === "erro" || t === "aviso") ? false : null);
+    var r = { nome: acaoAtiva.nome, ds: acaoAtiva.ds, ok: ok, msg: m, corrigir: corrigir || null, hora: hhmm(), t: Date.now(), procId: acaoAtiva.procId };
+    retornos[chave] = r;
+    if (acaoAtiva.botao && document.body.contains(acaoAtiva.botao)) r.el = desenharRetorno(acaoAtiva.botao, r, chave);
+  }
+  /* depois de cada render a tela é nova: recoloca o retorno ao lado do botão (sucesso ainda dentro dos ~8 s; erro sempre) */
+  function reanexarRetornos() {
+    var p = null; try { p = procAtual(); } catch (e) { p = null; }
+    Object.keys(retornos).forEach(function (chave) {
+      var r = retornos[chave];
+      if (r.ok !== false && Date.now() - r.t > RETORNO_MS) { delete retornos[chave]; return; }
+      if (r.procId && (!p || p.id !== r.procId)) return;
+      var bs = document.querySelectorAll('[data-gacao="' + r.nome + '"]'), alvo = null, i;
+      for (i = 0; i < bs.length && !alvo; i++) {
+        var b = bs[i], d = b.dataset || {}, bate = true;
+        CHAVES_DS.forEach(function (k) { if ((r.ds[k] || "") !== (d[k] || "")) bate = false; });
+        if (bate && b.tagName === "BUTTON" && !/cpl-retorno-corrigir/.test(b.className || "")) alvo = b;
+      }
+      if (!alvo) return;
+      var n = alvo.nextSibling;
+      if (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) return;
+      r.el = desenharRetorno(alvo, r, chave);
+    });
+  }
+  /* navegação pura: não é «ação com resposta» e não troca o botão de uma ação ainda em curso (importação assíncrona) */
+  var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+  function iniciarAcao(nome, ds) {
+    if (NAVEGACAO[nome]) return;
+    ds = ds || {};
+    var b = ultimoClique && ultimoClique.gacao === nome && Date.now() - ultimoClique.t < 1500 ? ultimoClique.el : null;
+    if (b && b.tagName !== "BUTTON") b = null;
+    var p = null; try { p = procAtual(); } catch (e) { p = null; }
+    var chave = chaveRetorno(nome, ds);
+    acaoAtiva = { nome: nome, ds: copiaDs(ds), botao: b, chave: chave, procId: p ? p.id : null };
+    delete retornos[chave]; if (b) tirarRetorno(b, chave);   /* clicou de novo: o erro antigo sai */
+  }
+  if (typeof document !== "undefined" && !G._cplRetornoLig) {
+    G._cplRetornoLig = true;
+    document.addEventListener("click", function (e) {
+      var t = e.target && e.target.closest ? e.target.closest("[data-gacao]") : null;
+      if (t) ultimoClique = { gacao: t.getAttribute("data-gacao"), el: t, t: Date.now() };
+    }, true);
+  }
+  /* o aviso do sino (UI.toast) continua; o retorno ao lado do botão é novo. `corrigir` = {passo, campo, item} */
+  function toast(m, t, corrigir) {
+    if (typeof UI !== "undefined") UI.toast(m, t || "ok");
+    try { registrarRetorno(m, t || "ok", corrigir); } catch (eR) {}
+  }
 
   /* ------------------------------------------------------------------ *
    * Estado da tela
@@ -126,11 +240,18 @@
     var p = procAtual(); if (!p) return false;
     var papel = exigirEditavel(p, acao || F.ACAO_DO_PASSO[passoId]); if (!papel) return false;
     var q = clone(p), dif;
-    try { dif = aplicar(q); } catch (e) { toast(e.message || String(e), "erro"); return false; }
+    try { dif = aplicar(q); } catch (e) { toast(e.message || String(e), "erro", { passo: passoId, campo: e && e.campo ? e.campo : "" }); return false; }
     if (!dif) { toast("Nada mudou.", "info"); return false; }
     F.soltarConferencia(q, passoId);
     F.registrar(q, "editar:" + passoId, dif.antes, dif.depois, quemAtual(papel), agoraLocal());
     return !!salvarProc(q);
+  }
+  /* a primeira pendência (fora do passo da minuta) para o «Corrigir» de quem gerou com campo em branco */
+  function primeiraPendencia(q) {
+    var pr = null; try { pr = C.progresso(q); } catch (e) { pr = null; }
+    var ach = null;
+    if (pr) C.PASSOS.forEach(function (ps) { var x = pr.passos[ps.id]; if (!ach && ps.id !== "minuta" && ps.id !== "conformidade" && x && x.pendencias && x.pendencias.length && x.pendencias[0].corrigir) ach = x.pendencias[0].corrigir; });
+    return ach || { passo: "minuta", campo: "" };
   }
   function setFoco(passo, campo) { G._cplPasso = passo; G._cplAba = "passos"; G._cplView = "proc"; G._cplFoco = campo || null; }
 
@@ -665,7 +786,7 @@
       var sugTxt = s.sugerido === null || s.sugerido === undefined ? "—" : (typeof s.sugerido === "object" ? _descObj(id, s.sugerido) : (typeof s.sugerido === "boolean" ? (s.sugerido ? "Sim" : "Não") : String(s.sugerido)));
       var ctrl = _ctrlParam(id, def, v, s, d);
       return '<tr data-foco="' + id + '"><td><b>' + esc(def.nome) + "</b>" + selo(p, "parametros." + id + ".valor") + porque(s.regra + " " + (def.como || ""), s.fonte, s.conferir, def.nome) + (s.pendencias.length ? '<div class="cpl-alerta">' + esc(s.pendencias[0]) + "</div>" : "") + "</td><td>" + esc(sugTxt) + "</td><td>" + ctrl + "</td><td>" +
-        (s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste") ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
+        (s.sugerido !== null && s.sugerido !== undefined && !(id === "reajuste" && vazio(s.sugerido.indice)) ? btn("Aceitar sugestão", "cpl-par-aceitar", ' data-id="' + id + '"' + d, "sm") : "") + "</td></tr>";
     }).join("") + "</tbody></table>";
     /* regulamento + datas */
     var regs = Object.keys(R.REGULAMENTOS).map(function (k) { return [k, R.REGULAMENTOS[k].nome]; });
@@ -675,11 +796,12 @@
         (p.recursoFederal === true ? '<div class="cpl-sug">Há recurso federal: vale o regulamento federal.</div>' : "") + (efet ? porque(efet.fonte, efet.fonte, efet.conferir === true, "Regulamento efetivo") : ""), "regulamentoId") +
       campo("Data de publicação do edital *", '<input id="cpl-dataEdital" type="date" data-foco="dataPrevistaEdital" value="' + esc(p.dataPrevistaEdital || "") + '"' + d + ">", "dataPrevistaEdital") +
       campo("Data de abertura das propostas", '<input id="cpl-dataAbertura" type="date" data-foco="dataAbertura" value="' + esc(cron.dataAbertura || "") + '"' + d + ">", "dataAbertura") +
-      campo("Feriados locais (um por linha, AAAA-MM-DD)", '<textarea id="cpl-feriados" rows="2"' + d + ">" + esc(arr(p.feriadosLocais).join("\n")) + "</textarea>") + "</div>";
+      campo("Feriados locais (um por linha, AAAA-MM-DD)", '<textarea id="cpl-feriados" rows="2"' + d + ">" + esc(arr(p.feriadosLocais).join("\n")) + "</textarea>") +
+      _campoNatureza(p, d) + "</div>";
     var pz = F.prazo(p);
     h += '<div class="cpl-prazo" id="cpl-prazo">';
     if (pz.diasUteis) {
-      h += "<p><b>Prazo mínimo:</b> " + pz.diasUteis + " dias úteis desde a publicação" + (pz.dataMinimaAbertura ? " → <b>abertura a partir de " + esc(dataBR(pz.dataMinimaAbertura)) + "</b>" : "") + "." +
+      h += "<p><b>Prazo mínimo:</b> " + pz.diasUteis + " dias úteis desde a publicação" + (pz.natureza && pz.regra && /menor_preco/.test(pz.regra.id) ? " (" + (pz.natureza === "comum" ? "obra ou serviço comum" : "obra ou serviço especial") + (pz.naturezaMarcadaEspecial ? ", marcado como especial" : ", padrão do tipo de objeto") + ")" : "") + (pz.dataMinimaAbertura ? " → <b>abertura a partir de " + esc(dataBR(pz.dataMinimaAbertura)) + "</b>" : "") + "." +
         porque((pz.regra ? pz.regra.descricao + ". " : "") + pz.contagem, pz.fonte, pz.regra && pz.regra.conferir === false ? false : pz.conferir, "Prazo mínimo") + "</p>";
       if (pz.aberturaOk === false) h += '<p class="cpl-alerta">A data de abertura informada está antes do mínimo legal.</p>';
     }
@@ -687,13 +809,22 @@
     h += "</div>";
     return h + '<div class="cpl-acoes">' + btn("Salvar datas e regulamento", "cpl-par-datas", d, "primary") + "</div>";
   }
+  /* natureza para o prazo do art. 55, II: padrão pelo tipo de objeto; «especial» só marcado, com justificativa */
+  function _campoNatureza(p, d) {
+    var ni = F.naturezaInfo(p), ne = p.naturezaEspecial || {};
+    if (!ni.padrao) return "";
+    return campo("Natureza do objeto para o prazo do art. 55" + porque("O prazo mínimo de menor preço/maior desconto é de 10 dias úteis para obra e serviço COMUM de engenharia (alínea a) e de 25 dias úteis para obra e serviço ESPECIAL (alínea b). O sistema trata como comum: obra nova, reforma, ampliação, pavimentação, drenagem, saneamento, manutenção e serviço comum. Marque «especial» só com justificativa técnica.", "Lei 14.133/2021, art. 55, II, alíneas a e b", true, "Natureza do objeto"),
+      '<label class="cpl-nat"><input type="checkbox" id="cpl-nat-esp"' + (ni.marcada || ne.ativo === true ? " checked" : "") + d + '> Tratar como obra/serviço <b>especial</b> de engenharia (25 dias úteis)</label>' +
+      '<textarea id="cpl-nat-just" rows="2" placeholder="Justificativa técnica da natureza especial (obrigatória)" data-foco="naturezaEspecial"' + d + ">" + esc(ne.justificativa || "") + "</textarea>" +
+      '<div class="cpl-sug">Padrão do tipo de objeto: <b>' + (ni.padrao === "comum" ? "comum" : "especial") + "</b>.</div>", "naturezaEspecial");
+  }
   function _descObj(id, v) {
     if (id === "parcelas_relevancia") return arr(v).length + " parcela(s)";
     if (id === "garantia_contrato") return "até " + v.pctMax + "% (até " + v.pctMaxComJustificativa + "% com justificativa)" + (v.grandeVulto ? "; seguro-garantia com retomada até " + v.seguroGarantiaRetomadaPctMax + "%" : "");
     if (id === "exequibilidade") return "inexequível abaixo de " + v.inexequivelAbaixoPct + "%; garantia adicional abaixo de " + v.garantiaAdicionalAbaixoPct + "%";
     if (id === "aditivo_teto") return "acréscimo até " + v.acrescimoPct + "%, supressão até " + v.supressaoPct + "%";
     if (id === "recurso_prazo") return v.diasUteis + " dias úteis";
-    if (id === "reajuste") return "data-base " + (v.dataBase ? dataBR(v.dataBase) : "—") + "; índice a escolher";
+    if (id === "reajuste") return (v.indice ? "índice " + v.indice : "índice a escolher") + "; data-base " + (v.dataBase ? dataBR(v.dataBase) : "—");
     return JSON.stringify(v);
   }
   function _ctrlParam(id, def, v, s, d) {
@@ -1853,7 +1984,7 @@
     },
     "cpl-par-datas": function () {
       var ok = gravar("parametros", function (q) {
-        var antes = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+        var antes = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, n: q.naturezaEspecial || null, par: q.parametros });
         /* parâmetros preenchidos por controle (select/campo) */
         R.PARAMETROS_ORDEM.forEach(function (id) {
           var def = R.PARAMETROS[id], el = document.getElementById("cpl-par-" + id), v;
@@ -1872,8 +2003,16 @@
         if (q.recursoFederal !== true) q.regulamentoId = emBranco(lerCampo("cpl-regulamento")); else q.regulamentoId = "federal-14133";
         q.dataPrevistaEdital = emBranco(lerCampo("cpl-dataEdital"));
         q.cronograma = { dataAbertura: emBranco(lerCampo("cpl-dataAbertura")) };
+        var chk = document.getElementById("cpl-nat-esp");
+        if (chk) {
+          if (chk.checked) {
+            var jn = emBranco(lerCampo("cpl-nat-just"));
+            if (!jn) { var en = new Error("Para tratar como obra/serviço especial (25 dias úteis), escreva a justificativa técnica."); en.campo = "naturezaEspecial"; throw en; }
+            q.naturezaEspecial = { ativo: true, justificativa: jn };
+          } else delete q.naturezaEspecial;
+        }
         q.feriadosLocais = lerCampo("cpl-feriados").split(/[\s,;]+/).filter(function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); });
-        var depois = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, par: q.parametros });
+        var depois = JSON.stringify({ r: q.regulamentoId, e: q.dataPrevistaEdital, a: q.cronograma, f: q.feriadosLocais, n: q.naturezaEspecial || null, par: q.parametros });
         return antes === depois ? null : { antes: "parâmetros e datas", depois: "parâmetros e datas atualizados" };
       });
       if (ok) { toast("Parâmetros e datas salvos.", "ok"); App.render(); }
@@ -1921,7 +2060,7 @@
       q.passos.minuta.conferido = false;
       var r = Store.salvar(eid(), ENT_PROC, q);        // sem normalizar: acabamos de fixar a assinatura certa
       if (!r) { toast("Não consegui gravar o processo.", "erro"); return; }
-      toast(g.pendentes === 0 ? "Documentos gerados. Baixe cada um na lista." : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso");
+      toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : primeiraPendencia(q));
       App.render();
     },
 
@@ -1929,7 +2068,7 @@
     "cpl-enviar-jur": function () {
       var p = procAtual(); if (!p) return;
       try { var q = F.enviarJuridico(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Processo enviado ao jurídico.", "ok"); App.render(); } }
-      catch (e) { toast(e.message || String(e), "erro"); }
+      catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
     },
     "cpl-emitir-parecer": function () {
       var p = procAtual(); if (!p) return;
@@ -1956,7 +2095,7 @@
     "cpl-autorizar": function () {
       var p = procAtual(); if (!p) return;
       try { var q = F.autorizar(p, papeis(), nomeAtual(), agoraLocal()); if (salvarProc(q)) { toast("Abertura autorizada.", "ok"); App.render(); } }
-      catch (e) { toast(e.message || String(e), "erro"); }
+      catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
     },
     "cpl-publicar": function () {
       var p = procAtual(); if (!p) return;
@@ -1964,7 +2103,7 @@
       try {
         var q = F.publicar(p, papeis(), nomeAtual(), agoraLocal(), refDoCalc(c));
         if (salvarProc(q)) { toast("Edital publicado. A referência de preços foi congelada para a análise das propostas.", "ok"); G._cplAba = "propostas"; App.render(); }
-      } catch (e) { toast(e.message || String(e), "erro"); }
+      } catch (e) { toast(e.message || String(e), "erro", { passo: "conformidade", campo: "" }); }
     },
 
     /* ---------- propostas ---------- */
@@ -2143,10 +2282,15 @@
     /* ---------- painel ---------- */
     "cpl-painel": function () { abrirPainel(); }
   };
-  G.registrarAcoes(MODULO, acoes);
+  /* cada ação passa por `iniciarAcao` (sabe qual botão foi clicado, para o retorno ao lado dele). As chamadas internas
+     `acoes[...]()` seguem na cópia crua. */
+  var acoesTela = {};
+  Object.keys(acoes).forEach(function (k) { var fn = acoes[k]; acoesTela[k] = function (ds) { iniciarAcao(k, ds); return fn.apply(this, arguments); }; });
+  G.registrarAcoes(MODULO, acoesTela);
 
   /* campos que não podem ter data-gacao (arquivo): ligam aqui, depois do DOM existir */
   G.registrarWire(MODULO, function () {
+    try { reanexarRetornos(); } catch (eRt) {}
     var a = document.getElementById("cpl-arq"), pa = document.getElementById("cpl-pasta");
     if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
     if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
@@ -2213,5 +2357,5 @@
     return plano;
   }
 
-  global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao };
+  global.CplproUI = { fecharPainel: fecharPainel, demonstracao: demonstracao, retorno: retorno };
 })(typeof window !== "undefined" ? window : this);

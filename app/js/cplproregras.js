@@ -175,8 +175,8 @@
     fonte: LEI + ", art. 55, II a IV", conferir: true,
     contagem: "Dias úteis (art. 183): exclui o dia da publicação, inclui o do vencimento; não conta sábado, domingo nem feriado.",
     regras: [
-      { id: "menor_preco_comum",     dias: 10, descricao: "menor preço ou maior desconto, serviço comum / obra e serviço comum de engenharia", fonte: LEI + ", art. 55, II" },
-      { id: "menor_preco_especial",  dias: 25, descricao: "menor preço ou maior desconto, serviço especial / obra e serviço especial de engenharia", fonte: LEI + ", art. 55, II" },
+      { id: "menor_preco_comum",     dias: 10, descricao: "menor preço ou maior desconto, serviço comum / obra e serviço comum de engenharia", fonte: LEI + ", art. 55, II, alínea a" },
+      { id: "menor_preco_especial",  dias: 25, descricao: "menor preço ou maior desconto, serviço especial / obra e serviço especial de engenharia", fonte: LEI + ", art. 55, II, alínea b" },
       { id: "contratacao_integrada", dias: 60, descricao: "contratação integrada", fonte: LEI + ", art. 55, II" },
       { id: "semi_integrada",        dias: 35, descricao: "contratação semi-integrada ou demais hipóteses", fonte: LEI + ", art. 55, II" },
       { id: "maior_lance",           dias: 15, descricao: "maior lance", fonte: LEI + ", art. 55, III (conferido 10/11/2026: 15 dias úteis)", conferir: false },
@@ -201,6 +201,24 @@
     { id: "XIII", nome: "Posicionamento conclusivo sobre a adequação da contratação", obrigatorio: true }
   ];
   var ETP_FONTE = LEI + ", art. 18, §1º, I a XIII; obrigatórios: art. 18, §2º (I, IV, VI, VIII, XIII); os demais, se não contemplados, exigem justificativa";
+
+  /* ---------- NATUREZA PARA O PRAZO DO ART. 55 e ÍNDICE DE REAJUSTE SUGERIDO, por tipo de objeto ----------
+   * ⚠ `servicoComumEngenharia` (acima) decide PREGÃO (art. 29, parágrafo único) e NÃO serve ao prazo: obra nova é
+   *   «obra comum de engenharia» para o prazo (art. 55, II, "a": 10 dias úteis, menor preço ou maior desconto) e, ao
+   *   mesmo tempo, não cabe pregão. Já deu defeito: creche (obra nova, menor preço) saía com 25 dias úteis, que é o prazo
+   *   de obra/serviço ESPECIAL (art. 55, II, "b"). Padrão = comum para obra nova, reforma, ampliação, pavimentação,
+   *   drenagem, saneamento, manutenção e serviço comum; só «Serviço especial de engenharia» é especial. O servidor
+   *   pode marcar «especial» no processo, com justificativa (p.naturezaEspecial).
+   * Índice de reajuste: SUGESTÃO da casa por tipo (o órgão confirma; selo «sugerido — confira»). Edificação, obra, reforma,
+   *   ampliação, manutenção, saneamento e serviço comum de engenharia: INCC-DI (FGV). Pavimentação e drenagem: índice
+   *   setorial do DNIT (SICRO). Serviço especial (projeto, fiscalização, consultoria): IPCA (IBGE). */
+  var INCC_DI = "INCC-DI (FGV)", IPCA_IBGE = "IPCA (IBGE)", INDICE_DNIT = "índice setorial do DNIT aplicável (SICRO)";
+  var NATUREZA_PRAZO = { obra_nova: "comum", reforma: "comum", ampliacao: "comum", pavimentacao: "comum", drenagem: "comum", saneamento: "comum", servico_engenharia_comum: "comum", manutencao: "comum", servico_engenharia_especial: "especial" };
+  var INDICE_REAJUSTE = { obra_nova: INCC_DI, reforma: INCC_DI, ampliacao: INCC_DI, manutencao: INCC_DI, saneamento: INCC_DI, servico_engenharia_comum: INCC_DI, pavimentacao: INDICE_DNIT, drenagem: INDICE_DNIT, servico_engenharia_especial: IPCA_IBGE };
+  Object.keys(TIPOS_OBJETO).forEach(function (id) {
+    TIPOS_OBJETO[id].naturezaPrazo = NATUREZA_PRAZO[id] || "especial";
+    TIPOS_OBJETO[id].indiceReajuste = INDICE_REAJUSTE[id] || null;
+  });
 
   /* ---------- PARÂMETROS DO EDITAL (passo 8) ----------
    * Cada um: como o sistema sugere, a fonte e se precisa de conferência do jurídico.

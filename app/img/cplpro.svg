@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CPLPRO">
+  <defs>
+    <linearGradient id="cpf" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="#1d4f8c"/><stop offset="1" stop-color="#0b2447"/></linearGradient>
+    <linearGradient id="cpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2bd55"/><stop offset="1" stop-color="#b8892a"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="#0b2447"/>
+  <path d="M256 56 L420 108 V250 C420 346 350 412 256 456 C162 412 92 346 92 250 V108 Z" fill="url(#cpf)" stroke="url(#cpo)" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M256 82 L398 126 V250 C398 332 340 390 256 430 C172 390 114 332 114 250 V126 Z" fill="none" stroke="#e2bd55" stroke-opacity=".45" stroke-width="3"/>
+  <path d="M168 168 H344" stroke="url(#cpo)" stroke-width="6" stroke-linecap="round"/>
+  <text x="256" y="292" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="112" letter-spacing="2" fill="#ffffff">CPL</text>
+  <path d="M176 330 H336" stroke="url(#cpo)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M214 360 L244 388 L304 330" fill="none" stroke="url(#cpo)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -544,7 +544,13 @@
       var dbase = oi ? datasComp(oi.competencia) : null;
       if (dbase) {
         var rj = q.parametros.reajuste.valor, indiceAtual = rj && rj.indice ? rj.indice : null;
-        escParam("reajuste", { indice: indiceAtual, dataBase: dbase }, "Data-base = a data do orçamento estimado; o índice é escolha do órgão.");
+        /* leva B2: o índice sai sugerido pelo tipo de objeto (selo «sugerido pelo sistema — confira»). Índice que a pessoa
+           escolheu ou editou fica como está; índice que o próprio sistema escreveu acompanha o tipo de objeto. */
+        var sgI = Cplpro.indiceReajusteSugerido(q.tipoObjeto);
+        var recR = q.preparo && q.preparo.campos ? q.preparo.campos["parametros.reajuste.valor"] : null;
+        var indiceDoSistema = !!(recR && recR.valor && indiceAtual && recR.valor.indice === indiceAtual);
+        var indiceNovo = indiceAtual && !indiceDoSistema ? indiceAtual : (sgI ? sgI.indice : indiceAtual);
+        escParam("reajuste", { indice: indiceNovo, dataBase: dbase }, "Data-base = a data do orçamento estimado; " + (sgI && indiceNovo === sgI.indice ? "índice sugerido pelo tipo de objeto. " + sgI.regra : "o índice é escolha do órgão."));
       }
       /* decisões: sugestão pré-marcada, SEM valor */
       var PRE = {

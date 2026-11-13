@@ -656,6 +656,16 @@
     return { id: id, valor: vazio(cur) ? null : cur, sugerido: sugerido, regra: regra, fonte: def.fonte, conferir: def.conferir === true, pendencias: [] };
   }
 
+  /* Índice de reajuste SUGERIDO pelo tipo de objeto (leva B2, 13/11/2026). Sugestão da casa: o órgão confirma e a tela/
+   * minuta marcam «sugerido — confira». Tipo sem sugestão (serviço especial) ou desconhecido = null (continua pendência). */
+  function indiceReajusteSugerido(tipoId) {
+    var t = R.TIPOS_OBJETO[tipoId];
+    if (!t || vazio(t.indiceReajuste)) return null;
+    var dnit = /DNIT/.test(t.indiceReajuste), ipca = /^IPCA/.test(t.indiceReajuste);
+    return { indice: t.indiceReajuste, sugerido: true, fonte: R.PARAMETROS.reajuste.fonte,
+      regra: ipca ? "Serviço especial de engenharia (projeto, fiscalização, consultoria): IPCA (IBGE), índice geral de preços. Sugestão da casa; o órgão confirma." : dnit ? "Pavimentação e drenagem (obra de infraestrutura viária): índices setoriais do DNIT (SICRO). Sugestão da casa; o órgão confirma." : "Edificação, obra, reforma, ampliação, manutenção e serviço comum de engenharia: INCC-DI (FGV), índice setorial da construção civil. Sugestão da casa; o órgão confirma." };
+  }
+
   var parametros = {
     sugerir: function (p, ctx) {
       var c = ctx || {}, tipoId = c.tipoObjeto !== undefined ? c.tipoObjeto : (p ? p.tipoObjeto : null);
@@ -683,8 +693,9 @@
       if (gv === null) { x.conferir = true; x.pendencias.push("Valor de obra de grande vulto não informado: é atualizado por decreto (conferir); sem ele não se sabe se vale o seguro-garantia com retomada."); }
       out.garantia_contrato = x;
       out.exequibilidade = sug(p, "exequibilidade", { inexequivelAbaixoPct: 75, garantiaAdicionalAbaixoPct: 85 }, "Abaixo de 75% do orçado: inexequível; abaixo de 85%: garantia adicional igual à diferença.");
-      x = sug(p, "reajuste", { indice: null, dataBase: vazio(c.dataBaseOrcamento) ? null : c.dataBaseOrcamento }, "Índice sem padrão (decisão do órgão); data-base igual à data do orçamento estimado.");
-      x.pendencias.push("Escolha o índice de reajuste." );
+      var ir = indiceReajusteSugerido(tipoId);
+      x = sug(p, "reajuste", { indice: ir ? ir.indice : null, dataBase: vazio(c.dataBaseOrcamento) ? null : c.dataBaseOrcamento }, ir ? ir.regra + " Data-base igual à data do orçamento estimado." : "Índice sem padrão para este tipo (decisão do órgão); data-base igual à data do orçamento estimado.");
+      if (!ir) x.pendencias.push("Escolha o índice de reajuste.");
       if (x.sugerido.dataBase === null) x.pendencias.push("Informe a data do orçamento estimado (data-base do reajuste).");
       out.reajuste = x;
       x = sug(p, "aditivo_teto", t ? { acrescimoPct: t.reforma ? 50 : 25, supressaoPct: 25 } : null, t ? (t.reforma ? "Reforma de edifício ou equipamento: acréscimo até 50%; supressão até 25%." : "Acréscimos e supressões até 25%.") : semTipo);
@@ -934,6 +945,7 @@
     pendenciasQuantitativos: pendenciasQuantitativos, quantitativosValidos: quantitativosValidos,
     etpCampos: etpCampos, riscosSugeridos: riscosSugeridos, nivelRisco: nivelRisco,
     pesquisaPrecos: pesquisaPrecos, parametros: parametros,
+    indiceReajusteSugerido: indiceReajusteSugerido,
     prazoPublicacao: prazoPublicacao, exequibilidade: exequibilidade, analisarProposta: analisarProposta,
     pode: pode, exigir: exigir, fluxoJuridico: fluxoJuridico, editavel: editavel, sigilo: sigilo,
     /* usado pela tela (leva B) para o prazo de recurso: a MESMA contagem do art. 183 da data mínima de abertura */
