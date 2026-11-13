@@ -15068,6 +15068,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._metp) S._metp.aoSub(edit.sub);   /* METÁLICA › PEÇAS PRONTAS */
     if (S._mtq) S._mtq.aoSub(edit.sub);   /* METÁLICA › T — TANQUES */
     if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);   /* PLANTA: a barra de opções da ferramenta */
+    if (window.BimInstUI && BimInstUI.aoSub) BimInstUI.aoSub(edit.sub);   /* INSTALAÇÕES: saiu de 'inst' → some a configuração, o botão aceso e as Propriedades da ferramenta */
   }
   function setEdit(on) {
     edit.on = !!on;
@@ -15096,6 +15097,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (S._metp) S._metp.aoSub(null);   /* METÁLICA › PEÇAS PRONTAS */
       if (S._mtq) S._mtq.aoSub(null);   /* METÁLICA › T — TANQUES */
       if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);   /* PLANTA */
+      if (window.BimInstUI && BimInstUI.aoSub) BimInstUI.aoSub(null);   /* INSTALAÇÕES */
     }
     var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
   }
@@ -19730,7 +19732,7 @@ window.BIM = {
     var o = { op: 'volProps', id: id }; if (mud.categoria) o.categoria = mud.categoria; if (mud.material != null) o.material = mud.material; if (mud.nome != null) o.nome = mud.nome;
     S._editOpExterna(o); return true;
   },
-  _volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },   // gancho de teste
+  _volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", traco: !!e.p1, marca: !!(S.snapMarca && S.snapMarca.style.display !== 'none'), ghost: !!e.ghost, cursor: (S.renderer && S.renderer.domElement && S.renderer.domElement.style.cursor) || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },   // gancho de teste
   csgCarregar: function () { return (S && S._csgCarregar) ? S._csgCarregar().then(function () { return true; }, function () { return false; }) : Promise.resolve(false); },
   /* o modelado em IFC4: Promise → { ok, texto, resumo, n } (js/ifcsaida.js) */
   ifcSaida: function (o) { return (S && S._ifcSaida) ? S._ifcSaida(o) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },

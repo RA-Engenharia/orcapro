@@ -829,6 +829,39 @@
                 peca: (par && par.peca) || (sis === "eletrica" ? "caixa_4x2" : "ralo_sifonado"), pecaDn: "", pecaMat: "pvc", alturaPiso: 0.30, dh: 2.50, cotaAuto: !!S.gravidade && this._previaHidro() };   /* P8: altura automática só com a prévia hidro */
       return c;
     },
+    /* SAIR DA FERRAMENTA (09/11/2026, relato do Rogério: "aperto o X e ele não sai — tinha que voltar para o seletor").
+     * Com o Tubo (ou o Aparelho, o Eletroduto, a Eletrocalha, o Acessório, a tomada, a luminária, o quadro) armado, três
+     * controles de tela que parecem "fechar" não soltavam a ferramenta: o ✕ da gaveta Instalações, o ✕ da aba da vista e o
+     * Modificar da barra de acesso rápido. Os três chamam isto. Soltar = desarmar o editor (o traço e a prévia saem junto,
+     * pelo editTirarProv) — o aoSub(null) abaixo limpa o que é daqui (Propriedades da ferramenta, botão aceso da fita). */
+    armada: function () {
+      var b = B(), v = b && b._volEstado ? b._volEstado() : null;
+      return !!(v && v.on && (v.sub === "inst" || (v.sub === "familia" && this._famInst)));
+    },
+    sairDaFerramenta: function () {
+      if (!this.armada()) return false;
+      var b = B();
+      try { b.editarArmar(null); } catch (e) {}
+      this.aoSub(null);   /* idempotente: o editor já avisou, mas não custa se o hook faltar */
+      status("Ferramenta encerrada. Clique seleciona.");
+      return true;
+    },
+    /* o editor mudou de ferramenta (ou fechou): quem não é mais "inst" deixa de ter configuração, botão aceso e Propriedades daqui */
+    aoSub: function (sub) {
+      if (sub === "inst") return;
+      if (sub !== "familia") this._famInst = false;
+      var tinha = !!this.cfg; this.cfg = null;
+      try {
+        var R = global.BimRibbon, mudou = false;
+        if (R && R.setAtivo) ["tubo", "aparelho", "eletroduto", "eletrocalha", "acessorio-tubo"].forEach(function (k) { if (R.ativo && R.ativo(k) && R.comando && R.comando(k)) { R.setAtivo(k, false); mudou = true; } });
+        if (mudou && global.BimShell && BimShell.pintarFita) BimShell.pintarFita();
+      } catch (eR) {}
+      try {
+        var SH = global.BimShell;
+        if (tinha && this._esqProps && SH && SH.pintarProps && SH._estado && SH._estado.props === this._esqProps) SH.pintarProps(null);
+        this._esqProps = null;
+      } catch (eP) {}
+    },
     armar: function (ferr, par) {
       var I = BI(), b = B(); if (!I || !b || !b.editarArmar) { toast("O visualizador 3D ainda não abriu.", "aviso"); return false; }
       var ant = this.cfg;
@@ -1347,6 +1380,10 @@
       return ok;
     },
     _teclaLigacao: function (ev) {
+      /* ESC COM O FOCO NUM CAMPO (09/11/2026): escolher o DN/material nas Propriedades deixa o foco na lista, e o Esc era engolido
+         pelos ouvintes do editor ("estou digitando": só o campo do 3D era solto) — a ferramenta nunca saía. Com uma ferramenta de
+         instalações armada, o 1º Esc solta o campo; o seguinte sai da ferramenta como sempre. */
+      if (ev.key === "Escape" && ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName || "") && BimInstUI.armada && BimInstUI.armada()) { try { ev.target.blur(); } catch (eB) {} return; }
       if (!BimInstUI._ligacao) { if (ev.key === "Tab" && BimInstUI.trocarPlanoCorte && BimInstUI.trocarPlanoCorte()) { ev.preventDefault(); ev.stopPropagation(); } return; }
       if (ev.key === "Tab") { ev.preventDefault(); ev.stopPropagation(); BimInstUI.trocarLigacao(); }
       else if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); BimInstUI.confirmarLigacao(); }
@@ -1574,7 +1611,7 @@
         onMudar: function (id, valor) { self.mudarCfg(id, valor); return self.esquemaFerramenta(); }
       };
     },
-    pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) BimShell.pintarProps(this.esquemaFerramenta()); } catch (e) {} },
+    pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) { this._esqProps = this.esquemaFerramenta(); BimShell.pintarProps(this._esqProps); } } catch (e) {} },
     mudarCfg: function (id, valor) {
       var c = this.cfg, I = BI(); if (!c) return;
       var k = String(id).replace(/^i:/, "");
@@ -1609,6 +1646,7 @@
       var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
       try { if (G && G._famSync) G._famSync(); } catch (e) {}
       b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
+      this._famInst = true;   /* a ferramenta "familia" veio da aba Instalações: Modificar, ✕ e Esc a soltam */
       status("Clique onde colocar " + (this.NOMES_FAM[famId] || "a peça") + " (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");
       return true;
     },

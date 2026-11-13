@@ -615,6 +615,8 @@
       a["fx-modificar"] = function () {
         var n = 0, cm = CMD(); try { n = cm ? cm.cancelar() : 0; } catch (e) {}
         if (self._m2) { self.medir2d(false); n++; }
+        /* a ferramenta de INSTALAÇÕES (tubo, aparelho, eletroduto…) não é ferramenta do desenho de precisão: sem isto o Modificar só apagava o botão da fita e ela seguia armada */
+        try { if (global.BimInstUI && BimInstUI.sairDaFerramenta && BimInstUI.sairDaFerramenta()) n++; } catch (eI) {}
         var api = self._api(), d = doc();
         /* a ferramenta do editor (mover, copiar, parede…) sai pelo Esc dela, que não limpa a seleção quando há ferramenta */
         try { if (api && api.ferramenta && api.ferramenta() && d) d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); } catch (e2) {}

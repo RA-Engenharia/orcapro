@@ -11550,6 +11550,7 @@ if (S._cot) S._cot.aoSub(edit.sub);
 if (S._metp) S._metp.aoSub(edit.sub);
 if (S._mtq) S._mtq.aoSub(edit.sub);
 if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(edit.sub);
+if (window.BimInstUI && BimInstUI.aoSub) BimInstUI.aoSub(edit.sub);
 }
 function setEdit(on) {
 edit.on = !!on;
@@ -11574,6 +11575,7 @@ if (S._cot) S._cot.aoSub(null);
 if (S._metp) S._metp.aoSub(null);
 if (S._mtq) S._mtq.aoSub(null);
 if (window.BimBarraOpcoes && BimBarraOpcoes.armou) BimBarraOpcoes.armou(null);
+if (window.BimInstUI && BimInstUI.aoSub) BimInstUI.aoSub(null);
 }
 var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
 }
@@ -15049,7 +15051,7 @@ if (!S || !S._editOpExterna || !mud) return false;
 var o = { op: 'volProps', id: id }; if (mud.categoria) o.categoria = mud.categoria; if (mud.material != null) o.material = mud.material; if (mud.nome != null) o.nome = mud.nome;
 S._editOpExterna(o); return true;
 },
-_volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },
+_volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", traco: !!e.p1, marca: !!(S.snapMarca && S.snapMarca.style.display !== 'none'), ghost: !!e.ghost, cursor: (S.renderer && S.renderer.domElement && S.renderer.domElement.style.cursor) || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },
 csgCarregar: function () { return (S && S._csgCarregar) ? S._csgCarregar().then(function () { return true; }, function () { return false; }) : Promise.resolve(false); },
 ifcSaida: function (o) { return (S && S._ifcSaida) ? S._ifcSaida(o) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },
 enviarSketchUp: function (o) { return (S && S._enviarSU) ? S._enviarSU(o) : { ok: false, erro: 'visualizador não montado' }; },

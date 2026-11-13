@@ -10609,6 +10609,7 @@ if (w && !w.closed) { try { w.close(); } catch (e) {} }
 if (v.tipo === "2d") { try { Bim2D.desmontar(id); } catch (e2d) {} }
 else if (v.tipo === "folha") { try { BimFolhaUI.desmontar(id); } catch (eP8) {} }
 else { try { BIM.vistaFechar(id); } catch (e2) {} }
+if (st.ativa === id) { try { if (window.BimInstUI && BimInstUI.sairDaFerramenta) BimInstUI.sairDaFerramenta(); } catch (eSf) {} }
 var t = this._bimVxTela(id); if (t && t.parentNode) t.parentNode.removeChild(t);
 st.lista = st.lista.filter(function (x) { return x.id !== id; });
 if (st.ativa === id) st.ativa = "3d";
@@ -37042,7 +37043,9 @@ case "fin-rapido": return this.finRapido();
 case "vinculo-morto": return this.vinculoMortoModal();
 case "pr-troca-obra": return this.prTrocaObra(dataset.value);
 case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
-case "bim-drawer-fechar": return this._bimFecharDrawer();
+case "bim-drawer-fechar":
+try { if (this._bimDocaChave === "inst" && window.BimInstUI && BimInstUI.sairDaFerramenta) BimInstUI.sairDaFerramenta(); } catch (eSf) {}
+return this._bimFecharDrawer();
 case "bim-drawer-min": return this._bimDrawerMin();
 case "bim-drawer-restaurar": return this._bimDrawerRestaurar();
 case "bim-drawer-janela": return this._bimPopAbrir();
@@ -79995,5 +79998,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b576aec913"},{"src":"js/bim-pacote.js?v=03afa0826b","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=3998aea8d2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=95a25df2a3"},{"src":"js/bim-pacote.js?v=175c6e3c25","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=3998aea8d2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

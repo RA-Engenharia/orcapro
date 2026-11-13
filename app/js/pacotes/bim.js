@@ -111608,6 +111608,33 @@ larg: M.larg || 0.40, alt: M.alt || 0.25, aplicacao: "", cota: COTA_PADRAO[sis],
 peca: (par && par.peca) || (sis === "eletrica" ? "caixa_4x2" : "ralo_sifonado"), pecaDn: "", pecaMat: "pvc", alturaPiso: 0.30, dh: 2.50, cotaAuto: !!S.gravidade && this._previaHidro() };
 return c;
 },
+armada: function () {
+var b = B(), v = b && b._volEstado ? b._volEstado() : null;
+return !!(v && v.on && (v.sub === "inst" || (v.sub === "familia" && this._famInst)));
+},
+sairDaFerramenta: function () {
+if (!this.armada()) return false;
+var b = B();
+try { b.editarArmar(null); } catch (e) {}
+this.aoSub(null);
+status("Ferramenta encerrada. Clique seleciona.");
+return true;
+},
+aoSub: function (sub) {
+if (sub === "inst") return;
+if (sub !== "familia") this._famInst = false;
+var tinha = !!this.cfg; this.cfg = null;
+try {
+var R = global.BimRibbon, mudou = false;
+if (R && R.setAtivo) ["tubo", "aparelho", "eletroduto", "eletrocalha", "acessorio-tubo"].forEach(function (k) { if (R.ativo && R.ativo(k) && R.comando && R.comando(k)) { R.setAtivo(k, false); mudou = true; } });
+if (mudou && global.BimShell && BimShell.pintarFita) BimShell.pintarFita();
+} catch (eR) {}
+try {
+var SH = global.BimShell;
+if (tinha && this._esqProps && SH && SH.pintarProps && SH._estado && SH._estado.props === this._esqProps) SH.pintarProps(null);
+this._esqProps = null;
+} catch (eP) {}
+},
 armar: function (ferr, par) {
 var I = BI(), b = B(); if (!I || !b || !b.editarArmar) { toast("O visualizador 3D ainda não abriu.", "aviso"); return false; }
 var ant = this.cfg;
@@ -112040,6 +112067,7 @@ this.pintarProps();
 return ok;
 },
 _teclaLigacao: function (ev) {
+if (ev.key === "Escape" && ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName || "") && BimInstUI.armada && BimInstUI.armada()) { try { ev.target.blur(); } catch (eB) {} return; }
 if (!BimInstUI._ligacao) { if (ev.key === "Tab" && BimInstUI.trocarPlanoCorte && BimInstUI.trocarPlanoCorte()) { ev.preventDefault(); ev.stopPropagation(); } return; }
 if (ev.key === "Tab") { ev.preventDefault(); ev.stopPropagation(); BimInstUI.trocarLigacao(); }
 else if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); BimInstUI.confirmarLigacao(); }
@@ -112233,7 +112261,7 @@ secoes: secoes,
 onMudar: function (id, valor) { self.mudarCfg(id, valor); return self.esquemaFerramenta(); }
 };
 },
-pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) BimShell.pintarProps(this.esquemaFerramenta()); } catch (e) {} },
+pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) { this._esqProps = this.esquemaFerramenta(); BimShell.pintarProps(this._esqProps); } } catch (e) {} },
 mudarCfg: function (id, valor) {
 var c = this.cfg, I = BI(); if (!c) return;
 var k = String(id).replace(/^i:/, "");
@@ -112266,6 +112294,7 @@ colocarFamilia: function (famId, tipoId) {
 var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
 try { if (G && G._famSync) G._famSync(); } catch (e) {}
 b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
+this._famInst = true;
 status("Clique onde colocar " + (this.NOMES_FAM[famId] || "a peça") + " (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");
 return true;
 },
@@ -173318,6 +173347,7 @@ var self = this, a = {};
 a["fx-modificar"] = function () {
 var n = 0, cm = CMD(); try { n = cm ? cm.cancelar() : 0; } catch (e) {}
 if (self._m2) { self.medir2d(false); n++; }
+try { if (global.BimInstUI && BimInstUI.sairDaFerramenta && BimInstUI.sairDaFerramenta()) n++; } catch (eI) {}
 var api = self._api(), d = doc();
 try { if (api && api.ferramenta && api.ferramenta() && d) d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); } catch (e2) {}
 status((n ? "Ferramenta solta. " : "") + "Modificar: clique seleciona, Ctrl+clique soma, arrastar faz janela; Esc limpa.");

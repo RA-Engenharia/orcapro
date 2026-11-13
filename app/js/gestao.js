@@ -15665,6 +15665,8 @@
       if (v.tipo === "2d") { try { Bim2D.desmontar(id); } catch (e2d) {} }
       else if (v.tipo === "folha") { try { BimFolhaUI.desmontar(id); } catch (eP8) {} }   /* P8 */
       else { try { BIM.vistaFechar(id); } catch (e2) {} }
+      /* fechar a vista em que a ferramenta de instalações está armada solta a ferramenta (o ✕ da aba — relato do Rogério, 09/11/2026) */
+      if (st.ativa === id) { try { if (window.BimInstUI && BimInstUI.sairDaFerramenta) BimInstUI.sairDaFerramenta(); } catch (eSf) {} }
       var t = this._bimVxTela(id); if (t && t.parentNode) t.parentNode.removeChild(t);
       st.lista = st.lista.filter(function (x) { return x.id !== id; });
       if (st.ativa === id) st.ativa = "3d";
@@ -53008,7 +53010,10 @@ renderFolha: function () {
         case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
-        case "bim-drawer-fechar": return this._bimFecharDrawer();
+        case "bim-drawer-fechar":
+          /* o ✕ da gaveta Instalações com uma ferramenta de instalações armada: fecha o painel E volta ao Selecionar (relato do Rogério, 09/11/2026) */
+          try { if (this._bimDocaChave === "inst" && window.BimInstUI && BimInstUI.sairDaFerramenta) BimInstUI.sairDaFerramenta(); } catch (eSf) {}
+          return this._bimFecharDrawer();
         case "bim-drawer-min": return this._bimDrawerMin();
         case "bim-drawer-restaurar": return this._bimDrawerRestaurar();
         case "bim-drawer-janela": return this._bimPopAbrir();
