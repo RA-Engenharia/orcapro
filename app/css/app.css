@@ -4405,6 +4405,158 @@ button.g-leg[aria-pressed="false"] b { text-decoration: line-through; }
   .mod-kpi:nth-child(n+3) { border-top: 1px solid var(--linha); }
 }
 
+/* ROTEIRO (Modulo.roteiro, orçamento guiado — prévia ?previa=orcamento).
+   Uma faixa de passos com a situação de cada um. Só o passo ATUAL (o primeiro
+   que falta) ganha o aço e a barra em cima: um destaque por tela. */
+/* Pílula DENTRO do orçamento guiado: o texto colorido sobre a própria tinta (15%) ficava em 3,9:1 a 4,3:1 no claro (abaixo do 4,5 de texto).
+   Aqui a tinta sai e o contorno na mesma cor leva o tom — o texto passa a ser lido sobre o fundo do cartão (>= 4,7:1). O kit global não muda. */
+:is(.mod-rot, .obs-nome, .ogm-tit, .oi-txt) .mod-pil-ok,
+:is(.mod-rot, .obs-nome, .ogm-tit, .oi-txt) .mod-pil-alerta,
+:is(.mod-rot, .obs-nome, .ogm-tit, .oi-txt) .mod-pil-info { background: transparent; box-shadow: inset 0 0 0 1px currentColor; }
+.mod-rot { margin: 0 0 16px; }
+.mod-rot-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); overflow: hidden; }
+.mod-rot-p { min-width: 0; border-left: 1px solid var(--linha); }
+.mod-rot-p:first-child { border-left: 0; }
+.mod-rot-bt { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: var(--texto); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 3px 0 transparent; }
+.mod-rot-bt:hover { background: var(--surface-2); }
+.mod-rot-bt:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: -3px; }
+.mod-rot-atual .mod-rot-bt { box-shadow: inset 0 3px 0 var(--aco); }
+.mod-rot-n { flex: 0 0 auto; width: 26px; height: 26px; margin-top: 1px; display: inline-grid; place-items: center; border-radius: 50%; border: 2px solid var(--texto-fraco); color: var(--texto-fraco); font-size: var(--t-peq); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
+.mod-rot-aviso .mod-rot-n { border-color: var(--amarelo); color: var(--amarelo); }
+.mod-rot-atual .mod-rot-n { border-color: var(--aco); color: var(--aco); }
+.mod-rot-ok .mod-rot-n { background: var(--verde); border-color: var(--verde); color: var(--surface); }
+.mod-rot-compacto .mod-rot-s { display: none; }
+.mod-rot-compacto .mod-rot-bt { min-height: 44px; padding: 8px 16px; align-items: center; }
+.mod-rot-compacto .mod-rot-n { margin-top: 0; }
+.mod-rot-compacto { margin-bottom: 12px; }
+.mod-rot-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mod-rot-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.mod-rot-l { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.mod-rot-l b { font-size: var(--t-base); font-weight: var(--p-forte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mod-rot-s { font-size: var(--t-peq); line-height: 1.35; color: var(--texto-fraco); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 1100px) {
+  .mod-rot-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mod-rot-p:nth-child(odd) { border-left: 0; }
+  .mod-rot-p:nth-child(n+3) { border-top: 1px solid var(--linha); }
+}
+@media (max-width: 520px) {
+  .mod-rot-lista { grid-template-columns: minmax(0, 1fr); }
+  .mod-rot-p { border-left: 0; }
+  .mod-rot-p + .mod-rot-p { border-top: 1px solid var(--linha); }
+  .mod-rot-bt { min-height: 48px; padding: 10px 14px; align-items: center; box-shadow: inset 3px 0 0 transparent; }
+  .mod-rot-atual .mod-rot-bt { box-shadow: inset 3px 0 0 var(--aco); }
+  .mod-rot-n { margin-top: 0; align-self: flex-start; }
+  .mod-rot-ok .mod-rot-s { display: none; }
+  .mod-rot-s { -webkit-line-clamp: 2; }
+}
+
+/* PAINEL "BASES E COMPOSIÇÕES" (js/orcguiaui.js, prévia ?previa=orcamento): uma linha por base —
+   nome + situação, o que é, estado e competência, e o botão que resolve. Só tokens. */
+.obs-intro { margin: 0 0 12px; font-size: var(--t-base); line-height: 1.5; max-width: 62ch; }
+.obs-uf { margin: 0 0 12px; font-size: var(--t-peq); color: var(--texto-fraco); }
+.obs-uf-campo { max-width: 160px; margin: 0 0 12px; }
+.obs-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--linha); border-radius: var(--raio-lg); overflow: hidden; background: var(--card-bg); }
+.obs-linha { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; row-gap: 4px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--linha); }
+.obs-linha:first-child { border-top: 0; }
+.obs-nome { grid-column: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.obs-nome b { font-size: var(--t-base); font-weight: var(--p-forte); }
+.obs-sub { font-size: var(--t-peq); color: var(--texto-fraco); }
+.obs-desc { grid-column: 1; margin: 0; font-size: var(--t-peq); line-height: 1.45; color: var(--texto-fraco); max-width: 70ch; }
+.obs-meta { grid-column: 1; margin: 0; font-size: var(--t-peq); font-variant-numeric: tabular-nums; }
+.obs-meta:empty { display: none; }
+.obs-acao { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; gap: 10px; min-width: 104px; justify-content: flex-end; }
+.obs-acao .btn { min-height: 40px; }
+/* sem tinta no fundo: a pílula Falta (âmbar) sobre tinta azul caía a 4,2:1; a barra à esquerda já marca a linha */
+.obs-foco { box-shadow: inset 4px 0 0 var(--aco); }
+.obs-andamento { font-size: var(--t-peq); color: var(--texto-fraco); }
+/* pontinhos: carregamento sem % real; só aparecem depois de 300 ms (download curto não pisca) */
+.obs-pontos { display: inline-flex; gap: 4px; opacity: 0; animation: obs-surge 0s linear .3s forwards; }
+.obs-pontos i { width: 6px; height: 6px; border-radius: 50%; background: var(--aco); }
+.obs-andamento { opacity: 0; animation: obs-surge 0s linear .3s forwards; }
+@keyframes obs-surge { to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .obs-pontos i { animation: obs-pulso 1.1s ease-in-out infinite; }
+  .obs-pontos i:nth-child(2) { animation-delay: .15s; }
+  .obs-pontos i:nth-child(3) { animation-delay: .3s; }
+  @keyframes obs-pulso { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+}
+@media (max-width: 600px) {
+  .obs-linha { grid-template-columns: minmax(0, 1fr); }
+  .obs-acao { grid-column: 1; grid-row: auto; justify-content: flex-start; margin-top: 8px; }
+  .obs-acao .btn { width: 100%; }
+}
+
+/* QUADRO "FALTA PARA GERAR A PROPOSTA" e ESCOLHA DO DESENHO POR TIPO DE CLIENTE (orçamento guiado, prévia ?previa=orcamento). Só tokens. */
+.ogf-intro, .ogm-intro { margin: 0 0 14px; font-size: var(--t-base); line-height: 1.5; max-width: 62ch; }
+.ogf-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--linha); border-radius: var(--raio-lg); overflow: hidden; background: var(--card-bg); }
+.ogf-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--linha); }
+.ogf-item:first-child { border-top: 0; }
+.ogf-txt { min-width: 0; font-size: var(--t-base); line-height: 1.4; overflow-wrap: anywhere; }
+.ogf-item .btn { flex: 0 0 auto; min-height: 40px; }
+.ogm-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+.ogm-card { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--card-bg); cursor: pointer; min-width: 0; }
+.ogm-card input { margin-top: 4px; flex: 0 0 auto; width: 18px; height: 18px; }
+.ogm-card:has(input:checked) { border-color: var(--aco); background: color-mix(in srgb, var(--aco) 8%, transparent); box-shadow: inset 0 0 0 1px var(--aco); }
+.ogm-card:focus-within { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+.ogm-txt { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; }
+.ogm-tit { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.ogm-txt b { font-size: var(--t-base); font-weight: var(--p-forte); }
+.ogm-desc { font-size: var(--t-peq); line-height: 1.4; color: var(--texto-fraco); }
+.ogm-pacote { margin-top: 4px; min-height: 38px; }
+/* declarações opcionais da carta: só com o cartão do órgão público marcado */
+.ogm-decl { display: none; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--card-bg); min-width: 0; }
+.ogm-grade:has(.ogm-card-publico input:checked) ~ .ogm-decl { display: block; }
+.ogm-decl legend { padding: 0 6px; font-size: var(--t-base); font-weight: var(--p-forte); }
+.od-sub { margin: 0 0 8px; font-size: var(--t-peq); color: var(--texto-fraco); line-height: 1.4; }
+.od-linha { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; min-height: 38px; cursor: pointer; }
+.od-linha input { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 2px; }
+.od-linha:focus-within { outline: 2px solid var(--aco-claro); outline-offset: 2px; border-radius: var(--raio-sm); }
+.od-txt { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-base); min-width: 0; }
+.od-txt small { font-size: var(--t-peq); color: var(--texto-fraco); line-height: 1.4; }
+.od-sep { height: 1px; margin: 4px 0; background: var(--linha); }
+.ogm-outros { margin: 4px 0 0; }
+.ogm-outros > summary { cursor: pointer; font-size: var(--t-peq); color: var(--texto-fraco); padding: 8px 0; min-height: 38px; }
+.ogm-outros > summary:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; border-radius: var(--raio-sm); }
+/* TESTE GRÁTIS POR INTERESSE: "O que você quer conhecer?" e "Liberar outro módulo" */
+.oi-intro { margin: 0 0 14px; font-size: var(--t-base); line-height: 1.5; max-width: 56ch; }
+.oi-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.oi-card { display: flex; align-items: flex-start; gap: 14px; text-align: left; padding: 16px; min-height: 96px; border: 1px solid var(--texto-fraco); border-radius: var(--raio); background: var(--card-bg); color: var(--texto); font: inherit; cursor: pointer; }
+.oi-card:hover:not(:disabled) { border-color: var(--aco); background: var(--surface-2); }
+.oi-card:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+.oi-card:disabled { cursor: default; opacity: .75; }
+.oi-ic { flex: 0 0 auto; width: 44px; height: 44px; display: inline-grid; place-items: center; border-radius: var(--raio); background: var(--surface-2); color: var(--aco); border: 1px solid var(--linha); }
+.oi-txt { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.oi-txt b { font-size: var(--t-med); font-weight: var(--p-forte); }
+.oi-txt > span { font-size: var(--t-peq); line-height: 1.4; color: var(--texto-fraco); }
+.oi-txt > .mod-pil { color: var(--verde); }
+/* "CertamePRO — conheça": aviso quieto abaixo dos cartões (não é cartão de teste) */
+.oi-certame { margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--linha); }
+.oi-certame h3 { margin: 0; font-size: var(--t-base); font-weight: var(--p-forte); }
+.oi-certame-sub { margin: 2px 0 8px; font-size: var(--t-peq); color: var(--texto-fraco); }
+.oi-certame ul { margin: 0 0 12px; padding: 0 0 0 18px; font-size: var(--t-peq); line-height: 1.5; max-width: 66ch; }
+.oi-certame-acoes { display: flex; flex-wrap: wrap; gap: 10px; }
+.oi-certame-acoes .btn { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+/* o .btn comum tem a borda do tema (1,3:1); nos botões de venda ela é a do texto fraco (>= 3:1) — seletor mais específico para vencer as regras do .btn */
+.oi-certame .oi-certame-acoes a.btn[data-certame] { border-color: var(--texto-fraco); }
+@media (max-width: 600px) { .oi-certame-acoes .btn { width: 100%; } }
+/* o menu do teste: a porta para somar outro assunto tem de ser vista (a classe .sb-org do menu é discreta por desenho) */
+.sidebar .sb-nav > .sb-liberar { width: calc(100% - 16px); margin: 8px 8px 6px; min-height: 40px; padding: 8px 6px; text-align: center; opacity: 1; color: var(--sobre-navy-forte); border: 1px solid color-mix(in srgb, var(--sobre-navy) 45%, transparent); border-radius: var(--raio-sm); font-size: var(--t-peq); }
+.sidebar .sb-nav > .sb-liberar:hover { background: color-mix(in srgb, var(--sobre-navy) 14%, transparent); text-decoration: none; }
+.sidebar .sb-nav > .sb-liberar:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+.og-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.og-campos .field { margin: 0; }
+.og-largo { grid-column: 1 / -1; }
+.og-rodape { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.og-resumo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 24px; margin: 0; }
+.og-resumo dt { font-size: var(--t-peq); color: var(--texto-fraco); }
+.og-resumo dd { margin: 2px 0 0; font-size: var(--t-base); font-weight: var(--p-forte); }
+@media (max-width: 600px) {
+  .og-campos, .og-resumo, .oi-grade { grid-template-columns: minmax(0, 1fr); }
+  .og-rodape .btn { width: 100%; }
+  .ogf-item { flex-direction: column; align-items: stretch; gap: 8px; }
+  .ogm-grade { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* =====================================================================
  * PAINEL — ESTILO "VIDRO E PROFUNDIDADE" DOS GRÁFICOS (26/10/2026, escolha do Rogério)
  * Entre três opções (A sóbrio, B vibrante, C vidro) ele escolheu a C; A e B saíram do

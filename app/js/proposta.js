@@ -13,17 +13,19 @@
 
     /* Botão [GERAR PROPOSTA] só habilita se passar nesta validação. */
     validar: function (orc) {
-      var faltando = [];
-      if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) faltando.push("Cliente vinculado");
+      var faltando = [], itens = [];
+      /* `itens` (orçamento guiado): a MESMA pendência de `faltando`, com o lugar que a resolve (alvo) — o quadro "Falta:" leva a pessoa até ela. `faltando` não mudou. */
+      var pend = function (texto, alvo) { faltando.push(texto); itens.push({ texto: texto, alvo: alvo }); };
+      if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) pend("Cliente vinculado", "cliente");
       var totais = Orcamento.totais(orc);
-      if (totais.qtdItens < 1) faltando.push("Ao menos 1 item no escopo");
+      if (totais.qtdItens < 1) pend("Ao menos 1 item no escopo", "itens");
       // ZERO não é preço: orçamento com item sem custo não vira proposta —
       // o usuário cota (planilha ou detalhamento do insumo) e preenche antes.
       var semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
       if (semPreco.length) {
-        faltando.push("Preço em " + semPreco.length + " item(ns): " +
+        pend("Preço em " + semPreco.length + " item(ns): " +
           semPreco.slice(0, 3).map(function (i) { return i.numero + (i.codigo ? " (" + i.codigo + ")" : ""); }).join(", ") +
-          (semPreco.length > 3 ? "…" : ""));
+          (semPreco.length > 3 ? "…" : ""), "preco");
       }
       /* v1.1.232 — QUANTIDADE PENDENTE bloqueia igual ao preco zerado. O item
          trazido sem metragem (fluxo do memorial) passava por aqui valendo R$ 0:
@@ -31,9 +33,9 @@
          cliente aceitava um preco que nao continha aquele servico. */
       var semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
       if (semQtd.length) {
-        faltando.push("Quantidade em " + semQtd.length + " item(ns): " +
+        pend("Quantidade em " + semQtd.length + " item(ns): " +
           semQtd.slice(0, 3).map(function (x) { return (x.item.codigo || x.item.descricao.slice(0, 18)); }).join(", ") +
-          (semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha");
+          (semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha", "quantidade");
       }
       /* ⚠ TUDO OPCIONAL = PROPOSTA DE R$ 0,00 (revisão de 13/09/2026). Desde
          que o papel imprime o escopo contratado (`_totalDoPapel`), marcar como
@@ -45,11 +47,11 @@
       var temOpcV = Util.arr(orc.etapas).some(function (e) { return e && e.opcional; });
       var semEscopo = temOpcV && totais.qtdItens >= 1 && !(Util.num(totais.precoObrigatorio) > 0) && Util.num(totais.precoOpcional) > 0;
       if (semEscopo) {
-        faltando.push("Escopo contratado: todas as etapas com valor estão marcadas como adicional opcional, e a proposta sairia com valor total R$ 0,00 — desmarque “opcional” nas etapas que fazem parte do serviço contratado");
+        pend("Escopo contratado: todas as etapas com valor estão marcadas como adicional opcional, e a proposta sairia com valor total R$ 0,00 — desmarque “opcional” nas etapas que fazem parte do serviço contratado", "escopo");
       }
       Orcamento.garantirComercial(orc);
-      if (!Util.naoVazio(orc.comercial.condicoesPagamento)) faltando.push("Condições de pagamento");
-      var r = { ok: faltando.length === 0, faltando: faltando };
+      if (!Util.naoVazio(orc.comercial.condicoesPagamento)) pend("Condições de pagamento", "condicoes");
+      var r = { ok: faltando.length === 0, faltando: faltando, itens: itens };
       /* o caminho dessa pendência é a planilha, não "⚙ Dados" (ver app.js gerarProposta) */
       if (semEscopo) r.escopoTodoOpcional = true;
       return r;

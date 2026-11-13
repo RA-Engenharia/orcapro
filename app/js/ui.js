@@ -1671,13 +1671,16 @@
       var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
       var _desf = (ap && ap._iaDesfazerBotao) ? ap._iaDesfazerBotao(orc) : '';
       var linhasAv = [];
-      if (_semPreco.length) {
+      /* ORÇAMENTO GUIADO (prévia ?previa=orcamento): o roteiro do topo já diz "N itens sem preço / sem quantidade" e leva à linha;
+         o aviso solto com a mesma frase sai — um recado só por assunto. Fora da prévia nada muda. */
+      var guiado = (typeof OrcGuia !== "undefined" && typeof OrcGuiaUI !== "undefined" && OrcGuia.previa());
+      if (_semPreco.length && !guiado) {
         linhasAv.push('<span><b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
           _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
           (_semPreco.length > 5 ? '…' : '') +
           ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</span>');
       }
-      if (_semQtd.length) {
+      if (_semQtd.length && !guiado) {
         linhasAv.push('<span><b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
           _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
           (_semQtd.length > 5 ? '…' : '') +
@@ -1691,10 +1694,12 @@
           _prov.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
           (_prov.length > 5 ? '…' : '') + ' — ' + Util.esc(_prov[0].motivo) + '. Entram no total com o maior preço da categoria; ao digitar o preço cotado a pendência sai.</span>');
       }
+      /* o roteiro de 4 passos (js/orcguia.js): base → itens → BDI e condições → proposta. Reaproveita o que este render já calculou. */
+      if (guiado) cab2 += OrcGuiaUI.roteiroHtml(orc, { totais: t, semPreco: _semPreco, semQtd: _semQtd, provisorio: _prov.length });
       cab2 += this._licitacaoPainel(orc);
       if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
       if (linhasAv.length || _desf) {
-        cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info"),
+        cab2 += M.aviso({ tom: guiado ? (_prov.length ? "alerta" : "info") : (_semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info")),
           textoHtml: linhasAv.join(""), acaoHtml: _desf });
       }
 
@@ -4283,6 +4288,12 @@
         '<div><div class="muted" style="font-size:var(--t-micro)">BDI resultante</div>' +
         '<div style="font-size:var(--t-tit);font-weight:var(--p-forte);color:var(--verde);font-variant-numeric:tabular-nums" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +
         '<button class="btn acao-forte" data-acao="salvar-bdi">Aplicar BDI</button></div>';
+      /* ORÇAMENTO GUIADO (prévia ?previa=orcamento): esta aba é o PASSO ③ — o BDI, o cliente e as condições e o resumo dos parâmetros
+         numa porta só. Fora da prévia: a seção do BDI, como sempre. */
+      if (typeof OrcGuia !== "undefined" && typeof OrcGuiaUI !== "undefined" && OrcGuia.previa()) {
+        return MOD().secao({ id: "og-bdi", titulo: "BDI do orçamento", sub: "Fórmula do Acórdão TCU 2.622/2013", acoesHtml: modeloHtml, corpoHtml: html }) +
+          OrcGuiaUI.secaoCondicoes(orc) + OrcGuiaUI.secaoParametros(orc);
+      }
       return MOD().secao({ titulo: "BDI do orçamento", sub: "Fórmula do Acórdão TCU 2.622/2013 · arredondamento, encargos e licitação ficam em Parâmetros (menu Mais)",
         acoesHtml: modeloHtml, corpoHtml: html });
     },

@@ -69,7 +69,12 @@ var Perfis = (function () {
      ⚠ É ANTES do perfil: com a prévia ligada, o perfil ainda decide (um
      perfil de cliente com lista própria precisa NOMEAR o módulo). */
   var EM_PREVIA = {};
+  /* MÓDULO QUE JÁ É PADRÃO, COM SAÍDA POR APARELHO (13/11/2026): "Bases e Composições" (orçamento guiado) vale para todos; só fica de fora do
+     aparelho que digitou `?previa=orcamento-desligar` (chave `…:off` = "1", gravada por OrcGuia.aplicarUrl). Falha de leitura = vale o padrão. */
+  var EM_PADRAO = { bases: "orcapro:tela:orcamento-guiado:off" };
   function _previaFechada(id) {
+    var p = EM_PADRAO[id];
+    if (p) { try { return typeof localStorage !== "undefined" && localStorage.getItem(p) === "1"; } catch (e0) { return false; } }
     var k = EM_PREVIA[id];
     if (!k) return false;
     try { return !(typeof localStorage !== "undefined" && localStorage.getItem(k)); } catch (e) { return true; }
@@ -373,7 +378,8 @@ var Perfis = (function () {
          de quem implanta) ele completa; quando não está, o caminho honesto é
          o backup, e é por isso que a recuperação por arquivo existe. */
       var saindo = _reg.perfil;
-      if (saindo && saindo !== "completo") {
+      /* o perfil `teste` (teste grátis por assunto) nunca vira "perfil conhecido" da conta: depois de liberar tudo ele não volta como opção no ⚙ Empresa */
+      if (saindo && saindo !== "completo" && saindo !== "teste") {
         var fonte = (_reg.modulos || _reg.nome) ? _reg : (CATALOGO[saindo] || null);
         if (fonte) {
           conhecidos[saindo] = {
@@ -658,6 +664,86 @@ var Perfis = (function () {
     return problemas;
   }
 
+  /* =====================================================================
+   * TESTE GRÁTIS POR INTERESSE (13/11/2026, prévia ?previa=orcamento)
+   *
+   * O cliente novo abre o teste com 34 módulos na barra e se perde. Na primeira
+   * entrada do teste ele diz o que quer conhecer (Orçamento, Projetos e BIM,
+   * Gestão de obra, Licitação) e o menu mostra só isso — com a porta
+   * "Liberar outro módulo" sempre à mão. É um PERFIL como os outros (mesma
+   * entidade `perfil_impl`, o mesmo gancho do Auth.podeModulo), com id
+   * `teste` e a lista de módulos gravada no registro da conta.
+   *
+   * ⚠ NÃO MEXE NO QUE JÁ ESTAVA GRAVADO. Quem tem perfil de implantação
+   *   (órgão público, cliente com perfil próprio) nunca passa por aqui: a tela
+   *   só abre para a conta no perfil "completo". E o módulo sob demanda
+   *   (cplpro…) não entra em lista de interesse nenhuma — continua só para o
+   *   perfil que o nomeia.
+   * ⚠ NÃO É LICENÇA. Esconder módulo é do MENU: nada é apagado, e "Liberar
+   *   tudo" (ou virar licença paga) devolve o completo. Quem vira cliente
+   *   pago sai do perfil `teste` sozinho (`liberarTesteSePago`): comprar e
+   *   continuar com o menu enxuto seria o pior primeiro dia de cliente.
+   * ⚠ O PERFIL `teste` NÃO ENTRA EM `conhecidos` (aplicar): senão, depois de
+   *   liberar tudo, "Teste grátis: Orçamento" ficaria para sempre na escolha
+   *   de perfil do ⚙ Empresa.
+   * ===================================================================== */
+  var INTERESSES_TESTE = {
+    orcamento: { nome: "Orçamento", desc: "Planilha com SINAPI, BDI, cronograma e proposta comercial.", icone: "orcamentos",
+      modulos: ["orcamentos", "propmodelos", "bases", "clientes"] },
+    bim: { nome: "Projetos e BIM", desc: "Abrir o modelo 3D, conferir interferências e orçar a partir dele.", icone: "bim",
+      modulos: ["bim"] },
+    gestao: { nome: "Gestão de obra", desc: "Obras, contratos, medições, financeiro, compras, diário e equipe.", icone: "obras",
+      modulos: ["orcamentos", "clientes", "contratos", "obras", "documentos", "tarefas", "rdo", "lastplanner", "cronobra", "producao", "medicoes", "galeria",
+        "insumos", "requisicoes", "cotacoes", "compras", "fornecedores", "estoque", "colaboradores", "ponto", "financeiro", "previstoreal", "centrocusto"] },
+    licitacao: { nome: "Licitação", desc: "Orçamento e proposta para participar de licitações.", icone: "cplpro",
+      modulos: ["orcamentos", "propmodelos", "bases", "documentos", "clientes", "contratos"] }
+  };
+  var ORDEM_INTERESSES = ["orcamento", "bim", "gestao", "licitacao"];
+
+  function _interessesValidos(ids) {
+    var out = [];
+    (Array.isArray(ids) ? ids : []).forEach(function (i) { if (INTERESSES_TESTE[i] && out.indexOf(i) < 0) out.push(i); });
+    return ORDEM_INTERESSES.filter(function (i) { return out.indexOf(i) > -1; });
+  }
+  /* a lista de módulos (sem o núcleo, que o perfil acrescenta) de um conjunto de interesses */
+  function modulosDeInteresses(ids) {
+    var lista = [];
+    _interessesValidos(ids).forEach(function (i) { INTERESSES_TESTE[i].modulos.forEach(function (m) { if (lista.indexOf(m) < 0 && !_sobDemanda(m)) lista.push(m); }); });
+    return lista;
+  }
+
+  function interessesTeste() {
+    var reg = _registro();
+    return reg.perfil === "teste" ? _interessesValidos(reg.interesses) : [];
+  }
+
+  function aplicarTeste(ids) {
+    var vals = _interessesValidos(ids);
+    if (!vals.length) return { ok: false, erro: "Escolha ao menos um assunto." };
+    /* ⚠ só sai do "completo" (ou do próprio teste): o perfil de implantação da conta nunca é trocado por aqui */
+    var atualId = idAtual();
+    if (atualId !== "completo" && atualId !== "teste") return { ok: false, erro: "Esta conta tem um perfil de implantação; o teste por assunto não se aplica." };
+    try { if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return { ok: false, erro: "Só o administrador da conta escolhe o que o menu mostra." }; } catch (eA) {}
+    try {
+      var eid = _eid();
+      if (!eid) return { ok: false, erro: "sem empresa" };
+      var reg = _registro(), conhecidos = {}, antes = _conhecidos(reg);
+      Object.keys(antes).forEach(function (k) { conhecidos[k] = antes[k]; });
+      var nome = "Teste grátis: " + vals.map(function (i) { return INTERESSES_TESTE[i].nome; }).join(" e ");
+      Store.salvar(eid, ENT_PERFIL, { id: "perfil-impl", perfil: "teste", nome: nome, modulos: modulosDeInteresses(vals), interesses: vals, conhecidos: conhecidos });
+      try { var pr = Store.lerPrefs(eid) || {}; pr.perfil = "teste"; Store.salvarPrefs(eid, pr); } catch (eP) {}
+      return { ok: true, perfil: atual(), interesses: vals };
+    } catch (e) { return { ok: false, erro: e.message || String(e) }; }
+  }
+
+  /* a licença virou paga: o menu volta a ser o completo. Devolve true se mudou algo. */
+  function liberarTesteSePago(statusLicenca) {
+    var st = statusLicenca || {};
+    if (idAtual() !== "teste") return false;
+    if (st.trial || !st.ativo) return false;
+    return aplicar("completo").ok === true;
+  }
+
   /* ⚠ `CATALOGO` E `semente` NÃO SÃO MAIS EXPORTADOS CRUS. Eram: bastava
      `Perfis.CATALOGO` no console para ler nome, descrição e os números de
      todo cliente do catálogo, e `Perfis.semente("<id>")` devolvia a semente
@@ -678,6 +764,9 @@ var Perfis = (function () {
     modulosLiberados: modulosLiberados,
     permite: permite,
     aplicar: aplicar,
+    /* teste grátis por assunto (orçamento guiado, prévia ?previa=orcamento) */
+    INTERESSES_TESTE: INTERESSES_TESTE, ORDEM_INTERESSES: ORDEM_INTERESSES, modulosDeInteresses: modulosDeInteresses,
+    aplicarTeste: aplicarTeste, interessesTeste: interessesTeste, liberarTesteSePago: liberarTesteSePago,
     /* recuperação de conta que perdeu o perfil antes de `conhecidos` existir */
     restaurar: restaurar,
     doBackup: doBackup,

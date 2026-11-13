@@ -956,12 +956,21 @@
       // Tour guiado de primeira entrada (1x por sessão; o Tour se auto-guarda via
       // localStorage). Re-valida o login DENTRO do timeout: se o usuário deslogou
       // nos 900ms, não roda sobre a tela de login nem queima a flag (gate v1.1.63).
+      /* orçamento guiado (prévia): os modelos de proposta por tipo de cliente entram uma vez por sessão, sem tocar nos do usuário;
+         quem virou cliente pago sai do menu do teste; quem entra no teste grátis pela primeira vez escolhe o assunto (F) */
+      if (!this._guiaSemeado && Auth.usuario()) {
+        this._guiaSemeado = true;
+        try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.semearModelos(); } catch (eSb) {}
+        try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.interesseVerificar(this); } catch (eIn) {}
+      }
       if (!this._tourTentado) {
         this._tourTentado = true;
         var selfT = this;
         setTimeout(function () {
           try {
             if (selfT.tela === "login" || !Auth.usuario()) return;
+            /* com a tela "O que você quer conhecer?" por abrir, o tour espera: ele começa DEPOIS da escolha (js/orcguiaui.js, _depois) */
+            if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interessePendente(selfT)) return;
             if (typeof Tour !== "undefined") Tour.iniciar();
           } catch (eT) {}
         }, 900);
@@ -2227,7 +2236,9 @@
     /* Ações que PARECEM view mas são MODAL — nunca existiram como módulo. Quem
      * chamava App.irPara("tabelas") caía num render vazio (Tabelas de Preço abre
      * por App.abrirTabelas()). Mapear p/ o método real em vez de só recusar. */
-    VIEW_ACOES: { tabelas: "abrirTabelas" },
+    VIEW_ACOES: { tabelas: "abrirTabelas", bases: "abrirBasesComposicoes" },
+    /* "Bases e Composições" (menu do orçamento, prévia ?previa=orcamento): o painel didático de js/orcguiaui.js, com ou sem orçamento aberto */
+    abrirBasesComposicoes: function () { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.abrirBases(this, this.tela === "editor" ? this.orcAtual : null); },
 
     /* Fonte ÚNICA de views válidas: os módulos da sidebar (Gestao.modulos) + o
      * Orçamentos. Sem a Gestão carregada, só o Orçamentos existe. */
@@ -2360,6 +2371,9 @@
       // ações da Gestão (CRUD dos módulos)
       if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
+      /* ORÇAMENTO GUIADO (js/orcguiaui.js, prévia ?previa=orcamento): todo `data-acao="orcguia-…"` vai para a fiação própria */
+      if (t.dataset.acao && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interceptaAtalho && OrcGuiaUI.interceptaAtalho(this, t)) return;   // [Dados] e [Parâmetros] do Mais: atalhos para a aba BDI & Parâmetros
+      if (t.dataset.acao && t.dataset.acao.indexOf("orcguia-") === 0) { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.acao(this, t.dataset.acao, t); return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
       // v1.1.123 — criador de composição: adicionar/remover insumo no passo 2
@@ -13759,6 +13773,8 @@
                 /* a instalação mora em Tabelas, com o seletor de estado: mandar
                    para lá é honesto — a base é por UF e quem escolhe é o usuário */
                 UI.fecharModal();
+                /* orçamento guiado (prévia): abre o painel JÁ na linha da SINAPI desonerada, em vez de mandar "procurar a linha" */
+                if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { OrcGuiaUI.abrirBases(self, self.orcAtual, { foco: "SINAPI_DES" }); return; }
                 self.abrirTabelas();
                 UI.toast("Procure a linha “SINAPI desonerada”, escolha o estado e clique em Instalar.", "ok");
               };
@@ -16359,6 +16375,7 @@
         if (this._licGuardaEmpresaConta(this.orcAtual, function () { selfG._licEmpresaOk = true; try { selfG.gerarProposta(); } finally { selfG._licEmpresaOk = false; } })) return;
       }
       var val = Proposta.validar(this.orcAtual);
+      if (!val.ok && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { OrcGuiaUI.quadroFalta(this, this.orcAtual, val); return; }   // orçamento guiado: quadro que fica, no lugar do toast
       if (!val.ok) {
         /* "Abra Dados" é a porta do cliente e das condições; a do escopo todo
            opcional é a planilha (desmarcar a etapa) — mandar a Dados era
@@ -16389,6 +16406,7 @@
        * =================================================================== */
       var self = this;
       var modelos = [];
+      try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.semearModelos(); } catch (eSm) {}   // os três por tipo de cliente (idempotente)
       try {
         if (typeof PropTpl !== "undefined" && typeof Store !== "undefined") {
           modelos = Store.listar(Auth.empresaId(), "prop_modelos") || [];
@@ -16407,11 +16425,13 @@
       var gerar = function (op) {
         var sel = document.querySelector('input[name="opl"]:checked');
         var escolhido = sel ? sel.value : "";
+        try { if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) OrcGuiaUI.guardarDeclaracoes(self); } catch (eDc) {}   // declarações opcionais da carta de órgão público: ficam no orçamento
         UI.fecharModal();
         if (!escolhido) { self._propostaClassica(op); return; }
         self._propostaPorModelo(escolhido, op);
       };
       UI.modal("Com qual desenho?",
+        (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) ? OrcGuiaUI.htmlEscolhaModelo(self, self.orcAtual, modelos, sugId) :
         '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel. <b>Gerar</b> abre para imprimir ou salvar em PDF; <b>Word</b> baixa o .docx com o texto editável.</p>'
         + '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
         + '<input type="radio" name="opl" value=""' + (sugId ? "" : " checked") + ' style="margin-top:3px">'
@@ -16488,6 +16508,8 @@
       if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
       this._iaLimparNaProposta();   // o documento vai ao cliente: o desfazer da IA não atravessa
       var m = PropTpl.modelo(raw);
+      /* orçamento guiado: a carta de órgão público leva as declarações opcionais marcadas (e a troca da frase da impugnação) numa CÓPIA do modelo */
+      if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { try { m = OrcGuiaUI.modeloComDeclaracoes(m, orc); } catch (eMd) {} }
       var temEmp = typeof Empresa !== "undefined";
       var c = orc.comercial || {};
       var hoje = Util.agoraISO().slice(0, 10);
@@ -18191,7 +18213,7 @@
        do endereço vira chave arbitrária no aparelho. */
     /* `visual` = cara nova do sistema (07/10/2026): o index.html lê esta chave antes do 1º paint e põe html[data-visual="nova"].
        ⚠ o objeto fica numa LINHA só: tools/test-previa-url.js recorta esta linha para rodar o _previaDaUrl em Node. */
-    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'] },
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'], orcamento: ["orcapro:tela:orcamento-guiado:v1", '{"guiado":true}'] },
     /* `?previa=icamento` ou uma LISTA `?previa=icamento,cristal` (um atalho liga as duas); `-desligar` em cada nome apaga.
        Nome que não existe em _PREVIAS é ignorado — nunca grava chave inventada. */
     _previaDaUrl: function () {

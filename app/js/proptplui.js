@@ -54,6 +54,41 @@
    *   que a empresa ajustou — inclusive apagando as fotos que ela subiu. A
    *   marca é o id de fábrica: uma vez semeado, nunca mais.
    * =================================================================== */
+  /* ===================================================================
+   * SEMEAR OS MODELOS POR TIPO DE CLIENTE (orçamento guiado, no boot)
+   *
+   * ⚠ IDEMPOTENTE E SEM TOCAR NOS DO USUÁRIO: só entra o modelo de fábrica
+   *   (com `tipoCliente`) que a conta ainda não tem — a marca é o `base`, o id
+   *   de fábrica. E "uma vez semeado, nunca mais": o id fica anotado no
+   *   aparelho, então quem EXCLUIU um deles não o vê voltar no boot seguinte.
+   *   Os modelos que a empresa já tinha (e as fotos dela) não são lidos nem
+   *   alterados.
+   * ⚠ PARA TODOS (aprovado pelo Rogério em 13/11/2026): não depende mais da prévia nem do `?previa=orcamento-desligar` — o modelo de
+   *   fábrica é conteúdo da conta, como os outros seis.
+   * =================================================================== */
+  G.propModelosSemearTipos = function () {
+    var chave = "orcapro:orcguia:semeados:v1:" + String(eid() || ""), vistos = {};
+    try { vistos = JSON.parse(localStorage.getItem(chave) || "{}") || {}; } catch (e) { vistos = {}; }
+    var atuais = {};
+    lista().forEach(function (m) { if (m.base) atuais[m.base] = 1; });
+    var n = 0;
+    T.FABRICA.forEach(function (f) {
+      if (!f.tipoCliente || atuais[f.id] || vistos[f.id]) return;
+      var m = T.deFabrica(f.id);
+      m.id = "";
+      if (gravar(m)) { n++; vistos[f.id] = 1; }
+    });
+    try { localStorage.setItem(chave, JSON.stringify(vistos)); } catch (e2) {}
+    return n;
+  };
+
+  /* a lista está vazia, ou só tem os modelos de fábrica POR TIPO DE CLIENTE (semeados no boot)? Então a tela Modelos ainda é "primeira visita". */
+  G._propModelosSoTipos = function (ms) {
+    var tipos = {};
+    T.FABRICA.forEach(function (f) { if (f.tipoCliente) tipos[f.id] = 1; });
+    return (ms || []).every(function (m) { return !!(m && m.base && tipos[m.base]); });
+  };
+
   G.propModelosSemear = function () {
     var atuais = {};
     lista().forEach(function (m) { if (m.base) atuais[m.base] = 1; });
@@ -73,9 +108,11 @@
   G.renderPropModelos = function () {
     var self = this;
     var ms = lista();
-    if (!ms.length) {
-      /* primeira visita: os quatro de fábrica entram sozinhos, senão a tela
-         abre vazia e ninguém descobre que existe ponto de partida */
+    if (G._propModelosSoTipos(ms)) {
+      /* primeira visita: os de fábrica entram sozinhos, senão a tela
+         abre vazia e ninguém descobre que existe ponto de partida.
+         ⚠ "vazia" = sem modelo NENHUM *ou só com os três por tipo de cliente*, que o orçamento guiado semeia no boot para todo mundo
+         (js/orcguiaui.js). Com a regra antiga (`!ms.length`) esses três tapavam a primeira visita e os seis de sempre nunca chegavam. */
       this.propModelosSemear();
       ms = lista();
     }

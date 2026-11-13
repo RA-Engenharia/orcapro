@@ -301,6 +301,7 @@ rdo: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 
 colaboradores: '<path d="M2 18h20"/><path d="M4 18v-2a8 8 0 0 1 16 0v2"/><path d="M10 8V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3"/>',
 producao: '<path d="M4 20h16M6 20v-6a6 6 0 0 1 12 0v6M10 8V5a2 2 0 0 1 4 0v3"/><path d="M9 16h6"/>',
 folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
+bases: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
 remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
 cplpro: '<path d="M7 3h8l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M10 13h6"/><path d="M10 17h4"/>',
@@ -373,6 +374,7 @@ modulos: [
 { id: "orcamentos", nome: "Orçamentos", g: "orcar" },
 { id: "carpintaria", nome: "Carpintaria", g: "orcar" },
 { id: "propmodelos", nome: "Modelos de Proposta", curto: "Modelos de proposta", g: "orcar" },
+{ id: "bases", nome: "Bases e Composições", curto: "Bases e composições", g: "orcar" },
 { id: "bim", nome: "BIM 3D ao 7D" },
 { id: "clientes", nome: "Clientes", g: "obra" },
 { id: "contratos", nome: "Contratos", g: "obra" },
@@ -819,6 +821,7 @@ return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 512 512"><d
 est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
 + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
 + (this.menuFoco() ? "⇥ Menu fixo" : "⇤ Modo foco") + "</button>"
++ ((typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.menuLiberar) ? OrcGuiaUI.menuLiberar() : "")
 + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Organizar menu</button></nav>';
 },
 render: function (view) {
@@ -845,6 +848,9 @@ case "estoque": return this.renderEstoque();
 case "rdo": return this.renderRdo();
 case "producao": return this.renderProducao();
 case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
+case "bases": return kit().cab({ icone: "bases", titulo: "Bases e Composições", sub: "As tabelas de preço do orçamento" }) +
+kit().vazio({ icone: "bases", titulo: "As bases de preço ficam num painel", texto: "Abra o painel para instalar a SINAPI do seu estado e ver as composições próprias.",
+acaoHtml: '<button type="button" class="btn primary" data-acao="orcguia-bases">Abrir Bases e Composições</button>' });
 case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
 case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
 case "cplpro": return this.renderCplpro ? this.renderCplpro() : this._moduloNaoCarregado("CPLPRO — Licitação do órgão", "js/cplproui.js");
@@ -40178,6 +40184,26 @@ var IMG_QUALIDADE = 0.9;
 function lista() { return K.lista(ENT); }
 function obter(id) { try { return Store.obter(eid(), ENT, id); } catch (e) { return null; } }
 function gravar(m) { return Store.salvar(eid(), ENT, m); }
+G.propModelosSemearTipos = function () {
+var chave = "orcapro:orcguia:semeados:v1:" + String(eid() || ""), vistos = {};
+try { vistos = JSON.parse(localStorage.getItem(chave) || "{}") || {}; } catch (e) { vistos = {}; }
+var atuais = {};
+lista().forEach(function (m) { if (m.base) atuais[m.base] = 1; });
+var n = 0;
+T.FABRICA.forEach(function (f) {
+if (!f.tipoCliente || atuais[f.id] || vistos[f.id]) return;
+var m = T.deFabrica(f.id);
+m.id = "";
+if (gravar(m)) { n++; vistos[f.id] = 1; }
+});
+try { localStorage.setItem(chave, JSON.stringify(vistos)); } catch (e2) {}
+return n;
+};
+G._propModelosSoTipos = function (ms) {
+var tipos = {};
+T.FABRICA.forEach(function (f) { if (f.tipoCliente) tipos[f.id] = 1; });
+return (ms || []).every(function (m) { return !!(m && m.base && tipos[m.base]); });
+};
 G.propModelosSemear = function () {
 var atuais = {};
 lista().forEach(function (m) { if (m.base) atuais[m.base] = 1; });
@@ -40193,7 +40219,7 @@ return n;
 G.renderPropModelos = function () {
 var self = this;
 var ms = lista();
-if (!ms.length) {
+if (G._propModelosSoTipos(ms)) {
 this.propModelosSemear();
 ms = lista();
 }
@@ -63184,12 +63210,18 @@ main.innerHTML = Produto.telaSemAcesso();
 return;
 }
 }
+if (!this._guiaSemeado && Auth.usuario()) {
+this._guiaSemeado = true;
+try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.semearModelos(); } catch (eSb) {}
+try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.interesseVerificar(this); } catch (eIn) {}
+}
 if (!this._tourTentado) {
 this._tourTentado = true;
 var selfT = this;
 setTimeout(function () {
 try {
 if (selfT.tela === "login" || !Auth.usuario()) return;
+if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interessePendente(selfT)) return;
 if (typeof Tour !== "undefined") Tour.iniciar();
 } catch (eT) {}
 }, 900);
@@ -64057,7 +64089,8 @@ document.addEventListener("visibilitychange", function () {
 try { if (document.visibilityState === "visible") self._relerAgendar("visivel"); } catch (e) {}
 });
 },
-VIEW_ACOES: { tabelas: "abrirTabelas" },
+VIEW_ACOES: { tabelas: "abrirTabelas", bases: "abrirBasesComposicoes" },
+abrirBasesComposicoes: function () { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.abrirBases(this, this.tela === "editor" ? this.orcAtual : null); },
 viewsValidas: function () {
 var vs = ["orcamentos"];
 if (typeof Gestao !== "undefined" && Gestao.modulos) {
@@ -64138,6 +64171,8 @@ if (t.hasAttribute && t.hasAttribute("data-avisos-abrir")) { if (typeof AvisosUI
 if (t.dataset.view) { this.irPara(t.dataset.view); return; }
 if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
 if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
+if (t.dataset.acao && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interceptaAtalho && OrcGuiaUI.interceptaAtalho(this, t)) return;
+if (t.dataset.acao && t.dataset.acao.indexOf("orcguia-") === 0) { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.acao(this, t.dataset.acao, t); return; }
 if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
 if (t.dataset.cpAdd && this._cp) {
 var pAdd = String(t.dataset.cpAdd).split("|");
@@ -71910,6 +71945,7 @@ var _bIns = box.querySelector("#bs-instalar-des");
 if (_bIns) {
 _bIns.onclick = function () {
 UI.fecharModal();
+if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { OrcGuiaUI.abrirBases(self, self.orcAtual, { foco: "SINAPI_DES" }); return; }
 self.abrirTabelas();
 UI.toast("Procure a linha “SINAPI desonerada”, escolha o estado e clique em Instalar.", "ok");
 };
@@ -73818,6 +73854,7 @@ var selfG = this;
 if (this._licGuardaEmpresaConta(this.orcAtual, function () { selfG._licEmpresaOk = true; try { selfG.gerarProposta(); } finally { selfG._licEmpresaOk = false; } })) return;
 }
 var val = Proposta.validar(this.orcAtual);
+if (!val.ok && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { OrcGuiaUI.quadroFalta(this, this.orcAtual, val); return; }
 if (!val.ok) {
 var _soEscopo = val.escopoTodoOpcional && val.faltando.length === 1;
 UI.toast("Faltam dados: " + val.faltando.join(", ") + "." + (_soEscopo ? "" : " Abra " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados."), "erro");
@@ -73830,6 +73867,7 @@ if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em " + (typeof Ico
 } catch (eAv) {}
 var self = this;
 var modelos = [];
+try { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.semearModelos(); } catch (eSm) {}
 try {
 if (typeof PropTpl !== "undefined" && typeof Store !== "undefined") {
 modelos = Store.listar(Auth.empresaId(), "prop_modelos") || [];
@@ -73844,11 +73882,13 @@ var sugId = sug ? sug.id : "";
 var gerar = function (op) {
 var sel = document.querySelector('input[name="opl"]:checked');
 var escolhido = sel ? sel.value : "";
+try { if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) OrcGuiaUI.guardarDeclaracoes(self); } catch (eDc) {}
 UI.fecharModal();
 if (!escolhido) { self._propostaClassica(op); return; }
 self._propostaPorModelo(escolhido, op);
 };
 UI.modal("Com qual desenho?",
+(typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) ? OrcGuiaUI.htmlEscolhaModelo(self, self.orcAtual, modelos, sugId) :
 '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel. <b>Gerar</b> abre para imprimir ou salvar em PDF; <b>Word</b> baixa o .docx com o texto editável.</p>'
 + '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
 + '<input type="radio" name="opl" value=""' + (sugId ? "" : " checked") + ' style="margin-top:3px">'
@@ -73902,6 +73942,7 @@ try { raw = Store.obter(Auth.empresaId(), "prop_modelos", modeloId); } catch (e)
 if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
 this._iaLimparNaProposta();
 var m = PropTpl.modelo(raw);
+if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { try { m = OrcGuiaUI.modeloComDeclaracoes(m, orc); } catch (eMd) {} }
 var temEmp = typeof Empresa !== "undefined";
 var c = orc.comercial || {};
 var hoje = Util.agoraISO().slice(0, 10);
@@ -75082,7 +75123,7 @@ try { console.info(txt); } catch (eC) {}
 return ef;
 } catch (e) { return null; }
 },
-_PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'] },
+_PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'], orcamento: ["orcapro:tela:orcamento-guiado:v1", '{"guiado":true}'] },
 _previaDaUrl: function () {
 try {
 var m = /[?&]previa=([a-z0-9,-]+)/i.exec(location.search || ""); if (!m) return null;

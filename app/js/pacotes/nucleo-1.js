@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.286",
+versao: "1.2.287",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -1136,6 +1136,23 @@ return '<div class="mod-kpi' + tom + '"' + (k.id ? ' id="' + esc(k.id) + '"' : "
 '<b class="mod-kpi-v">' + (k.valorHtml || esc(k.valor == null ? "—" : k.valor)) + "</b>" +
 (k.sub || k.subHtml ? '<span class="mod-kpi-s">' + (k.subHtml || esc(k.sub)) + "</span>" : "") + "</div>";
 }).join("") + "</div>";
+},
+roteiro: function (passos, o) {
+o = o || {};
+var PALAVRA = { ok: "Pronto", falta: "Falta", aviso: "Confira" }, TOM = { ok: "ok", falta: "alerta", aviso: "info" };
+var CHECK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>';
+var compacto = (passos || []).filter(Boolean).every(function (p) { return p.estado === "ok"; });
+return '<nav class="mod-rot' + (compacto ? " mod-rot-compacto" : "") + '" aria-label="' + esc(o.rotulo || "Roteiro") + '"' + (o.id ? ' id="' + esc(o.id) + '"' : "") + '><ol class="mod-rot-lista">' +
+(passos || []).filter(Boolean).map(function (p, i) {
+var est = PALAVRA[p.estado] ? p.estado : "falta";
+return '<li class="mod-rot-p mod-rot-' + est + (p.atual ? " mod-rot-atual" : "") + '">' +
+'<button type="button" class="mod-rot-bt" data-acao="orcguia-passo" data-passo="' + esc(p.id) + '"' + (p.atual ? ' aria-current="step"' : "") +
+' title="' + esc(p.resumo || "") + '">' +
+'<span class="mod-rot-n" aria-hidden="true">' + (est === "ok" ? CHECK : (i + 1)) + "</span>" +
+'<span class="mod-rot-t"><span class="mod-rot-l"><b>' + esc(p.rotulo) + "</b>" +
+(est === "ok" ? '<span class="mod-rot-sr">Pronto</span>' : Modulo.pilula(PALAVRA[est], TOM[est])) + "</span>" +
+'<span class="mod-rot-s">' + esc(p.resumo || "") + "</span></span></button></li>";
+}).join("") + "</ol></nav>";
 },
 filtros: function (camposHtml, o) {
 o = o || {};
@@ -5714,7 +5731,10 @@ var Perfis = (function () {
 var NUCLEO = ["dashboard", "ajuda", "relatos", "usuarios"];
 var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio", "cplpro"];
 var EM_PREVIA = {};
+var EM_PADRAO = { bases: "orcapro:tela:orcamento-guiado:off" };
 function _previaFechada(id) {
+var p = EM_PADRAO[id];
+if (p) { try { return typeof localStorage !== "undefined" && localStorage.getItem(p) === "1"; } catch (e0) { return false; } }
 var k = EM_PREVIA[id];
 if (!k) return false;
 try { return !(typeof localStorage !== "undefined" && localStorage.getItem(k)); } catch (e) { return true; }
@@ -5852,7 +5872,7 @@ var conhecidos = {};
 var antes = _conhecidos(_reg);
 Object.keys(antes).forEach(function (k) { conhecidos[k] = antes[k]; });
 var saindo = _reg.perfil;
-if (saindo && saindo !== "completo") {
+if (saindo && saindo !== "completo" && saindo !== "teste") {
 var fonte = (_reg.modulos || _reg.nome) ? _reg : (CATALOGO[saindo] || null);
 if (fonte) {
 conhecidos[saindo] = {
@@ -6036,6 +6056,55 @@ vistos[id] = 1;
 });
 return problemas;
 }
+var INTERESSES_TESTE = {
+orcamento: { nome: "Orçamento", desc: "Planilha com SINAPI, BDI, cronograma e proposta comercial.", icone: "orcamentos",
+modulos: ["orcamentos", "propmodelos", "bases", "clientes"] },
+bim: { nome: "Projetos e BIM", desc: "Abrir o modelo 3D, conferir interferências e orçar a partir dele.", icone: "bim",
+modulos: ["bim"] },
+gestao: { nome: "Gestão de obra", desc: "Obras, contratos, medições, financeiro, compras, diário e equipe.", icone: "obras",
+modulos: ["orcamentos", "clientes", "contratos", "obras", "documentos", "tarefas", "rdo", "lastplanner", "cronobra", "producao", "medicoes", "galeria",
+"insumos", "requisicoes", "cotacoes", "compras", "fornecedores", "estoque", "colaboradores", "ponto", "financeiro", "previstoreal", "centrocusto"] },
+licitacao: { nome: "Licitação", desc: "Orçamento e proposta para participar de licitações.", icone: "cplpro",
+modulos: ["orcamentos", "propmodelos", "bases", "documentos", "clientes", "contratos"] }
+};
+var ORDEM_INTERESSES = ["orcamento", "bim", "gestao", "licitacao"];
+function _interessesValidos(ids) {
+var out = [];
+(Array.isArray(ids) ? ids : []).forEach(function (i) { if (INTERESSES_TESTE[i] && out.indexOf(i) < 0) out.push(i); });
+return ORDEM_INTERESSES.filter(function (i) { return out.indexOf(i) > -1; });
+}
+function modulosDeInteresses(ids) {
+var lista = [];
+_interessesValidos(ids).forEach(function (i) { INTERESSES_TESTE[i].modulos.forEach(function (m) { if (lista.indexOf(m) < 0 && !_sobDemanda(m)) lista.push(m); }); });
+return lista;
+}
+function interessesTeste() {
+var reg = _registro();
+return reg.perfil === "teste" ? _interessesValidos(reg.interesses) : [];
+}
+function aplicarTeste(ids) {
+var vals = _interessesValidos(ids);
+if (!vals.length) return { ok: false, erro: "Escolha ao menos um assunto." };
+var atualId = idAtual();
+if (atualId !== "completo" && atualId !== "teste") return { ok: false, erro: "Esta conta tem um perfil de implantação; o teste por assunto não se aplica." };
+try { if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return { ok: false, erro: "Só o administrador da conta escolhe o que o menu mostra." }; } catch (eA) {}
+try {
+var eid = _eid();
+if (!eid) return { ok: false, erro: "sem empresa" };
+var reg = _registro(), conhecidos = {}, antes = _conhecidos(reg);
+Object.keys(antes).forEach(function (k) { conhecidos[k] = antes[k]; });
+var nome = "Teste grátis: " + vals.map(function (i) { return INTERESSES_TESTE[i].nome; }).join(" e ");
+Store.salvar(eid, ENT_PERFIL, { id: "perfil-impl", perfil: "teste", nome: nome, modulos: modulosDeInteresses(vals), interesses: vals, conhecidos: conhecidos });
+try { var pr = Store.lerPrefs(eid) || {}; pr.perfil = "teste"; Store.salvarPrefs(eid, pr); } catch (eP) {}
+return { ok: true, perfil: atual(), interesses: vals };
+} catch (e) { return { ok: false, erro: e.message || String(e) }; }
+}
+function liberarTesteSePago(statusLicenca) {
+var st = statusLicenca || {};
+if (idAtual() !== "teste") return false;
+if (st.trial || !st.ativo) return false;
+return aplicar("completo").ok === true;
+}
 return {
 NUCLEO: NUCLEO,
 SOB_DEMANDA: SOB_DEMANDA,
@@ -6048,6 +6117,8 @@ atual: atual,
 modulosLiberados: modulosLiberados,
 permite: permite,
 aplicar: aplicar,
+INTERESSES_TESTE: INTERESSES_TESTE, ORDEM_INTERESSES: ORDEM_INTERESSES, modulosDeInteresses: modulosDeInteresses,
+aplicarTeste: aplicarTeste, interessesTeste: interessesTeste, liberarTesteSePago: liberarTesteSePago,
 restaurar: restaurar,
 doBackup: doBackup,
 semear: semear,
@@ -8431,6 +8502,681 @@ rotulo: rotulo, fmtComp: fmtComp, comp: comp, regimeDe: regimeDe, pareceSemRede:
 };
 global.BaseExigida = BaseExigida;
 if (typeof module !== "undefined" && module.exports) module.exports = BaseExigida;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orcguia.js ==== */
+try {
+(function (global) {
+"use strict";
+var CHAVE = "orcapro:tela:orcamento-guiado:off";
+function s(v) { return String(v === null || v === undefined ? "" : v).replace(/^\s+|\s+$/g, ""); }
+function up(v) { return s(v).toUpperCase(); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+function BE() {
+if (global.BaseExigida) return global.BaseExigida;
+if (typeof require === "function") { try { return require("./baseexigida.js"); } catch (e) { return null; } }
+return null;
+}
+var PASSOS = [
+{ id: "base", rotulo: "Base de preço" },
+{ id: "itens", rotulo: "Itens" },
+{ id: "bdi", rotulo: "BDI e condições" },
+{ id: "proposta", rotulo: "Proposta" }
+];
+function previa() {
+try { return !(typeof localStorage !== "undefined" && localStorage.getItem(CHAVE) === "1"); } catch (e) { return true; }
+}
+function aplicarUrl(busca, armazem) {
+var m = /[?&]previa=([^&]*)/i.exec(String(busca || "")), st = armazem || (typeof localStorage !== "undefined" ? localStorage : null);
+if (!m || !st) return "";
+var nomes = []; try { nomes = decodeURIComponent(m[1]).toLowerCase().split(","); } catch (e) { nomes = String(m[1]).toLowerCase().split(","); }
+try {
+if (nomes.indexOf("orcamento-desligar") > -1) { st.setItem(CHAVE, "1"); return "desligado"; }
+if (nomes.indexOf("orcamento") > -1) { st.removeItem(CHAVE); return "ligado"; }
+} catch (e2) {}
+return "";
+}
+try { if (typeof location !== "undefined") aplicarUrl(location.search); } catch (eU) {}
+function usoDeBases(orc) {
+var uso = {};
+arr(orc && orc.etapas).forEach(function (e) {
+arr(e && e.itens).forEach(function (it) {
+var f = up(it && (it.origem || it.baseFonte));
+if (!f || f === "PROPRIO" || f === "PROPRIA" || f === "OUTRA") return;
+uso[f] = (uso[f] || 0) + 1;
+});
+});
+return uso;
+}
+function fmtComp(c) {
+var B = BE(), x = B && B.comp ? B.comp(c) : "";
+return x && B.fmtComp ? B.fmtComp(x) : s(c);
+}
+function nomeBase(it) {
+var n = it.catId === "SINAPI_DES" ? "SINAPI desonerada" : (it.base || it.catId);
+return n + (it.uf ? " " + it.uf : "");
+}
+function basesNecessarias(orc, ctx) {
+var c = ctx || {}, uso = usoDeBases(orc), out = [];
+var uf = up(orc && orc.uf) || up(c.sinapi && c.sinapi.uf);
+var vazio = !(c.totais && num(c.totais.qtdItens) > 0);
+var onerada = uso.SINAPI > 0 || (vazio && !uso.SINAPI_DES);
+if (onerada) out.push({ catId: "SINAPI", base: "SINAPI", uf: uf, competencia: "", regime: "onerado", origem: uso.SINAPI > 0 ? "itens" : "padrao" });
+if (uso.SINAPI_DES > 0) out.push({ catId: "SINAPI_DES", base: "SINAPI", uf: uf, competencia: "", regime: "desonerado", origem: "itens" });
+else if (vazio && orc && orc.desonerado === true) out.push({ catId: "SINAPI_DES", base: "SINAPI", uf: uf, competencia: "", regime: "desonerado", origem: "declarada" });
+Object.keys(uso).forEach(function (f) {
+if (f === "SINAPI" || f === "SINAPI_DES") return;
+out.push({ catId: f, base: f, uf: "", competencia: "", regime: "", origem: "itens" });
+});
+return out;
+}
+function passoBase(orc, ctx) {
+var c = ctx || {}, B = BE();
+var nec = basesNecessarias(orc, c), pend = [], avisos = [], ok = [];
+var sit = B && B.situacao ? B.situacao(nec, arr(c.bases)) : [];
+nec.forEach(function (it, i) {
+var st = sit[i] || { estado: "ausente", instalada: null };
+if (st.estado === "instalada") {
+var inst = st.instalada || {}, compInst = B && B.comp ? B.comp(inst.competencia) : "";
+var compOrc = B && B.comp ? B.comp(orc && orc.competenciaSinapi) : "";
+if ((it.catId === "SINAPI" || it.catId === "SINAPI_DES") && compOrc && compInst && compOrc !== compInst) {
+avisos.push({ texto: "O orçamento declara " + fmtComp(compOrc) + " e a " + nomeBase(it) + " instalada é de " + fmtComp(compInst) + ". Confira se é essa que você quer.", alvo: "base", item: it });
+} else if (it.origem === "declarada") {
+avisos.push({ texto: "Você declarou o regime desonerado e a " + nomeBase(it) + " já está instalada. Ao lançar itens, filtre por desonerada na busca.", alvo: "base", item: it });
+}
+ok.push(nomeBase(it) + (compInst ? " " + fmtComp(compInst) : ""));
+} else if (st.estado === "assinatura") {
+pend.push({ texto: "A base " + it.base + " é de assinatura: importe o arquivo da sua empresa.", alvo: "base", item: it, importar: true });
+} else if (it.origem === "declarada") {
+avisos.push({ texto: "Você declarou o regime desonerado, mas a " + nomeBase(it) + " ainda não está instalada.", alvo: "base", item: it, instalar: true });
+} else {
+pend.push({ texto: "Falta a base " + nomeBase(it) + ".", alvo: "base", item: it, instalar: true });
+}
+});
+var estado = pend.length ? "falta" : (avisos.length ? "aviso" : "ok"), resumo;
+if (pend.length) resumo = pend[0].texto + (pend.length > 1 ? " (+" + (pend.length - 1) + ")" : "") + " Clique para instalar.";
+else if (avisos.length) resumo = avisos[0].texto;
+else if (!nec.length) resumo = "Os itens têm preço próprio; nenhuma base é exigida.";
+else resumo = ok.join(" e ") + ".";
+return { id: "base", estado: estado, resumo: resumo, pendencias: pend.concat(avisos) };
+}
+function passoItens(orc, ctx) {
+var c = ctx || {}, t = c.totais || {}, n = num(t.qtdItens);
+var semPreco = arr(c.semPreco), semQtd = arr(c.semQtd), prov = num(c.provisorio);
+var pend = [], resumo, estado = "ok";
+if (n < 1) {
+pend.push({ texto: "O orçamento não tem itens.", alvo: "itens" });
+resumo = "Nenhum item ainda. Descreva a obra no Escopo Inteligente ou lance os serviços na planilha.";
+} else {
+if (semPreco.length) pend.push({ texto: semPreco.length + (semPreco.length === 1 ? " item sem preço." : " itens sem preço."), alvo: "preco" });
+if (semQtd.length) pend.push({ texto: semQtd.length + (semQtd.length === 1 ? " item sem quantidade." : " itens sem quantidade."), alvo: "quantidade" });
+resumo = n + (n === 1 ? " item" : " itens") + " em " + num(t.qtdEtapas) + (num(t.qtdEtapas) === 1 ? " etapa." : " etapas.");
+if (pend.length) resumo = pend.map(function (p) { return p.texto.replace(/\.$/, ""); }).join("; ") + ".";
+else if (prov) { estado = "aviso"; pend.push({ texto: prov + (prov === 1 ? " item com preço provisório." : " itens com preço provisório.") + " Cote com o fornecedor.", alvo: "itens" }); resumo = pend[0].texto; }
+}
+if (n < 1 || semPreco.length || semQtd.length) estado = "falta";
+return { id: "itens", estado: estado, resumo: resumo, pendencias: pend };
+}
+function passoBdi(orc, ctx) {
+var o = orc || {}, cm = o.comercial || {}, pend = [];
+var cliente = s(o.cliente && o.cliente.nome), pag = s(cm.condicoesPagamento);
+if (!cliente) pend.push({ texto: "Falta o cliente.", alvo: "cliente" });
+if (!pag) pend.push({ texto: "Faltam as condições de pagamento.", alvo: "condicoes" });
+var bdi = o.bdi && o.bdi.percentual != null && isFinite(Number(o.bdi.percentual)) ? Number(o.bdi.percentual) : null;
+var val = cm.validadeDias != null && num(cm.validadeDias) > 0 ? num(cm.validadeDias) + " dias de validade" : (s(cm.validadeProposta) ? "validade definida" : "validade conforme o edital");
+var partes = [];
+if (bdi !== null) partes.push("BDI " + String(bdi.toFixed(2)).replace(".", ",") + "%");
+partes.push(val);
+var resumo = pend.length ? pend.map(function (p) { return p.texto.replace(/\.$/, ""); }).join("; ") + "." : (cliente + ": " + partes.join(", ") + ".");
+return { id: "bdi", estado: pend.length ? "falta" : "ok", resumo: resumo, pendencias: pend };
+}
+function pendenciasProposta(validar) {
+var v = validar || {};
+if (arr(v.itens).length) return arr(v.itens).map(function (i) { return { texto: s(i.texto), alvo: s(i.alvo) || "condicoes" }; });
+return arr(v.faltando).map(function (t) { return { texto: s(t), alvo: "condicoes" }; });
+}
+function passoProposta(orc, ctx) {
+var v = (ctx && ctx.validar) || { ok: false, faltando: [] };
+var pend = pendenciasProposta(v);
+if (v.ok && !pend.length) return { id: "proposta", estado: "ok", resumo: "Pronta para gerar. Escolha o modelo e imprima ou baixe em Word.", pendencias: [] };
+var n = pend.length;
+var resumo = (n === 1 ? "1 pendência: " : n + " pendências: ") + pend.slice(0, 2).map(function (p) { return p.texto.replace(/[.:—].*$/, "").replace(/\s+$/, ""); }).join("; ") + (n > 2 ? " e mais " + (n - 2) : "") + ".";
+return { id: "proposta", estado: "falta", resumo: resumo, pendencias: pend };
+}
+function passos(orc, ctx) {
+var lista = [passoBase(orc, ctx), passoItens(orc, ctx), passoBdi(orc, ctx), passoProposta(orc, ctx)];
+var atual = -1;
+lista.forEach(function (p, i) { if (atual < 0 && p.estado === "falta") atual = i; });
+if (atual < 0) atual = lista.length - 1;
+return lista.map(function (p, i) {
+var meta = PASSOS[i];
+p.rotulo = meta.rotulo; p.num = i + 1; p.atual = (i === atual);
+return p;
+});
+}
+var OrcGuia = {
+CHAVE: CHAVE, PASSOS: PASSOS, previa: previa, aplicarUrl: aplicarUrl, usoDeBases: usoDeBases, basesNecessarias: basesNecessarias,
+passos: passos, pendenciasProposta: pendenciasProposta, nomeBase: nomeBase
+};
+global.OrcGuia = OrcGuia;
+if (typeof module !== "undefined" && module.exports) module.exports = OrcGuia;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orcguiaui.js ==== */
+try {
+(function (global) {
+"use strict";
+function s(v) { return String(v === null || v === undefined ? "" : v); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function esc(v) { return (global.Util && Util.esc) ? Util.esc(v) : s(v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function toast(msg, tipo) { try { if (global.UI && UI.toast) UI.toast(msg, tipo || "ok"); } catch (e) {} }
+var OrcGuiaUI = {
+ativa: function () { return !!(global.OrcGuia && OrcGuia.previa()); },
+ctx: function (orc, extra) {
+var x = extra || {}, c = { bases: [], sinapi: {}, totais: {}, semPreco: [], semQtd: [], provisorio: 0, validar: { ok: false, faltando: [] } };
+try { c.bases = (global.Bases && Bases.lista) ? Bases.lista() : []; } catch (e) {}
+try { c.sinapi = { carregado: !!(global.Sinapi && Sinapi.carregado), uf: global.Sinapi ? Sinapi.uf : "", competencia: global.Sinapi ? Sinapi.competencia : "" }; } catch (e1) {}
+try { c.totais = x.totais || Orcamento.totais(orc); } catch (e2) {}
+try { c.semPreco = x.semPreco || (Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : []); } catch (e3) {}
+try { c.semQtd = x.semQtd || (Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : []); } catch (e4) {}
+try { c.provisorio = x.provisorio != null ? x.provisorio : (Orcamento.itensPrecoProvisorio ? Orcamento.itensPrecoProvisorio(orc).length : 0); } catch (e5) {}
+try { c.validar = Proposta.validar(orc); } catch (e6) {}
+return c;
+},
+passos: function (orc, extra) { return OrcGuia.passos(orc, this.ctx(orc, extra)); },
+roteiroHtml: function (orc, extra) {
+try {
+return Modulo.roteiro(this.passos(orc, extra), { id: "orcguia-roteiro", rotulo: "Roteiro do orçamento até a proposta" });
+} catch (e) { return ""; }
+},
+acao: function (app, acao, t) {
+var d = (t && t.dataset) || {};
+switch (acao) {
+case "orcguia-passo": this.passo(app, d.passo); break;
+case "orcguia-ir": this.ir(app, d.alvo, { fechar: true }); break;
+case "orcguia-cond-salvar": this.salvarCondicoes(app); break;
+case "orcguia-dados": app.editarDadosOrc(); break;
+case "orcguia-params": this.abrirParametros(app); break;
+case "orcguia-interesse": this.escolherInteresse(app, d.id); break;
+case "orcguia-liberar": try { var ap0 = document.querySelector(".app"); if (ap0) ap0.classList.remove("menu-aberto"); } catch (eM) {} this.abrirInteresse(app, { liberar: true }); break;
+case "orcguia-bases": this.abrirBases(app, app.tela === "editor" ? app.orcAtual : null); break;
+case "orcguia-base-instalar": this.instalarBase(app, d.cat, false); break;
+case "orcguia-base-atualizar": this.instalarBase(app, d.cat, true); break;
+default: break;
+}
+},
+passo: function (app, id) {
+var orc = app.orcAtual; if (!orc) return;
+var p = this.passos(orc).filter(function (x) { return x.id === id; })[0];
+if (!p) return;
+if (id === "base") {
+var pf = p.pendencias.filter(function (x) { return x.instalar && x.item; })[0];
+if (pf && p.estado === "falta") this.abrirBases(app, orc, { foco: pf.item.catId, instalarAuto: pf.item.catId });
+else this.abrirBases(app, orc);
+return;
+}
+if (id === "itens") {
+var tipo = (p.pendencias[0] && p.pendencias[0].alvo) || "itens";
+this.ir(app, tipo === "itens" && p.estado === "ok" ? "planilha" : tipo); return;
+}
+if (id === "bdi") { this.ir(app, (p.pendencias[0] && p.pendencias[0].alvo) || "bdi"); return; }
+if (id === "proposta") { app.gerarProposta(); return; }
+},
+ir: function (app, alvo, op) {
+var self = this, orc = app.orcAtual; if (!orc) return;
+if (op && op.fechar) { try { UI.fecharModal(); } catch (e) {} }
+var aba = function (n) { if (app.aba !== n) { app.aba = n; } app.render(); };
+switch (alvo) {
+case "base": this.abrirBases(app, orc); break;
+case "itens":
+if (!(global.Orcamento && Orcamento.totais(orc).qtdItens > 0)) { aba("planilha"); try { app.abrirEscopo(); } catch (eE) {} }
+else aba("planilha");
+break;
+case "planilha": case "escopo": aba("planilha"); break;
+case "preco": case "quantidade": this.irItemPendente(app, orc, alvo); break;
+case "cliente": case "condicoes": case "bdi":
+aba("bdi");
+this.focar(alvo === "cliente" ? "og-cliente" : (alvo === "condicoes" ? "og-pagamento" : "og-cond"));
+break;
+default: break;
+}
+},
+irItemPendente: function (app, orc, alvo) {
+var campo = alvo === "quantidade" ? "quantidade" : "custoUnitario", achou = null;
+arr(orc.etapas).forEach(function (e) {
+if (achou) return;
+arr(e.itens).forEach(function (it) {
+if (achou) return;
+var falta = alvo === "quantidade" ? (it.qtdPendente || !(Number(it.quantidade) > 0)) : !(Number(it.custoUnitario) > 0);
+if (falta) achou = { e: e, it: it };
+});
+});
+if (app.aba !== "planilha") app.aba = "planilha";
+if (achou) { try { app.expandirEtapa(achou.e.id, achou.it.subEtapaId); } catch (eX) {} }
+app.render();
+if (!achou) return;
+setTimeout(function () {
+var el = document.querySelector('input[data-edit="' + campo + '"][data-eta="' + achou.e.id + '"][data-itm="' + achou.it.id + '"]');
+if (el) { try { el.scrollIntoView({ block: "center" }); el.focus(); } catch (e2) {} }
+else toast("O item " + (achou.it.codigo || "") + " está numa etapa recolhida ou fora do filtro. Abra a etapa para editar.", "erro");
+}, 30);
+},
+DESCRICAO: {
+SINAPI: "Preços e composições de obras da Caixa, por estado. A mão de obra leva a contribuição previdenciária sobre a folha.",
+SINAPI_DES: "A mesma tabela, com a mão de obra sem essa contribuição. Use quando o edital ou o contrato pedir preço desonerado."
+},
+linhasBases: function (orc, ufSel) {
+var bases = [], B = global.BaseExigida, uso = orc ? OrcGuia.usoDeBases(orc) : {}, linhas = [];
+try { bases = Bases.lista(); } catch (e) {}
+var uf = String((orc && orc.uf) || ufSel || (global.Sinapi && Sinapi.uf) || "").toUpperCase();
+["SINAPI", "SINAPI_DES"].forEach(function (cat) {
+var item = { catId: cat, base: "SINAPI", uf: uf, competencia: "", regime: cat === "SINAPI" ? "onerado" : "desonerado" };
+var st = B.situacao([item], bases)[0] || { estado: "ausente", instalada: null };
+linhas.push({ cat: cat, item: item, titulo: "SINAPI", sub: cat === "SINAPI" ? "não desonerada" : "desonerada", desc: OrcGuiaUI.DESCRICAO[cat],
+estado: st.estado, instalada: st.instalada, exigida: uso[cat] > 0, uf: uf });
+});
+var vistos = { SINAPI: 1, SINAPI_DES: 1, PROPRIA: 1 };
+bases.forEach(function (b) {
+var cat = String(b.fonte || "").toUpperCase();
+if (vistos[cat]) return; vistos[cat] = 1;
+var item = { catId: cat, base: b.label || cat, uf: b.uf || "", competencia: "", regime: "" };
+linhas.push({ cat: cat, item: item, titulo: b.label || cat, sub: "", desc: "Tabela de preço instalada nesta conta. Atualiza sozinha uma vez por dia.", estado: "instalada", instalada: b, exigida: uso[cat] > 0, uf: b.uf || "" });
+});
+Object.keys(uso).forEach(function (cat) {
+if (vistos[cat]) return; vistos[cat] = 1;
+var item = { catId: cat, base: cat, uf: "", competencia: "", regime: "" };
+var st = B.situacao([item], bases)[0] || { estado: "ausente" };
+linhas.push({ cat: cat, item: item, titulo: cat, sub: "", desc: st.estado === "assinatura" ? "Base de assinatura do órgão: a RA não a distribui. Importe o arquivo da sua empresa em Todas as tabelas de preço." : "Base usada por itens deste orçamento e ainda não instalada.",
+estado: st.estado, instalada: null, exigida: true, uf: "" });
+});
+return linhas;
+},
+_compTxt: function (b) {
+if (!b) return "";
+var c = b.competencia;
+try { if (global.BasesCat && BasesCat.fmtVersao) return BasesCat.fmtVersao(c) || s(c); } catch (e) {}
+return s(c);
+},
+_htmlBases: function (orc) {
+var st = this._bs, self = this, ocupado = st.ocupado || {};
+var linhas = st.linhas = this.linhasBases(orc, st.ufSel);
+var propria = 0; try { (Bases.lista() || []).forEach(function (b) { if (String(b.fonte).toUpperCase() === "PROPRIA") propria = b.total || 0; }); } catch (e) {}
+var uf = linhas[0] ? linhas[0].uf : "";
+var ufCampo;
+if (orc) {
+var cd = orc.competenciaSinapi ? (global.BaseExigida ? (BaseExigida.fmtComp(BaseExigida.comp(orc.competenciaSinapi)) || orc.competenciaSinapi) : orc.competenciaSinapi) : "";
+ufCampo = '<p class="obs-uf">Estado do orçamento: <b>' + esc(uf || "não informado") + "</b>" + (cd ? ", competência declarada <b>" + esc(cd) + "</b>" : "") + ".</p>";
+} else {
+var ufs = []; try { (global.App._estados || []).forEach(function (e) { var u = String(e.uf).toUpperCase(); if (u && ufs.indexOf(u) < 0) ufs.push(u); }); } catch (e1) {}
+ufs.sort();
+ufCampo = '<div class="field obs-uf-campo"><label for="obs-uf">Estado</label><select id="obs-uf">' + ufs.map(function (u) { return '<option value="' + u + '"' + (u === uf ? " selected" : "") + ">" + u + "</option>"; }).join("") + "</select></div>";
+}
+var recado = st.recado ? '<div class="mod-aviso mod-aviso-' + (st.recado.tom || "info") + '" role="status"><div class="mod-aviso-txt"><span>' + esc(st.recado.texto) + "</span></div></div>" : "";
+var html = '<p class="obs-intro">Os preços do orçamento vêm destas tabelas. Instale a que você vai usar; o programa a mantém atualizada.</p>' + ufCampo + recado;
+html += '<ul class="obs-lista">' + linhas.map(function (l) {
+var inst = l.instalada, compTxt = self._compTxt(inst), pil, acao = "", meta;
+var busy = !!ocupado[l.cat];
+if (l.estado === "instalada") { pil = Modulo.pilula("Instalada", "ok"); meta = (inst && inst.uf ? esc(inst.uf) + ", " : "") + "competência " + esc(compTxt || "—"); }
+else if (l.estado === "assinatura") { pil = Modulo.pilula("Assinatura", "info"); meta = "Importe o arquivo do órgão"; }
+else {
+pil = Modulo.pilula(l.exigida ? "Falta" : "Não instalada", l.exigida ? "alerta" : "neutro");
+meta = inst && inst.uf && l.uf && String(inst.uf).toUpperCase() !== l.uf ? "Carregada agora: " + esc(inst.uf) + ", " + esc(compTxt || "—") + ". Falta " + esc(l.uf) + "." : (l.uf ? "Estado " + esc(l.uf) : "");
+}
+if (busy) acao = '<span class="obs-pontos" aria-hidden="true"><i></i><i></i><i></i></span><span class="obs-andamento" role="status">Baixando e conferindo</span>';
+else if (l.estado === "ausente") acao = '<button type="button" class="btn ' + (l.exigida ? "primary" : "") + '" data-acao="orcguia-base-instalar" data-cat="' + esc(l.cat) + '">Instalar</button>';
+else if (l.estado === "instalada") acao = '<button type="button" class="btn ghost" data-acao="orcguia-base-atualizar" data-cat="' + esc(l.cat) + '" title="Baixa a competência mais recente desta base">Atualizar</button>';
+return '<li class="obs-linha' + (st.foco === l.cat ? " obs-foco" : "") + '" data-base="' + esc(l.cat) + '">' +
+'<div class="obs-nome"><b>' + esc(l.titulo) + "</b>" + (l.sub ? '<span class="obs-sub">' + esc(l.sub) + "</span>" : "") + pil + "</div>" +
+'<p class="obs-desc">' + esc(l.desc) + "</p>" + '<p class="obs-meta">' + meta + "</p>" +
+'<div class="obs-acao">' + acao + "</div></li>";
+}).join("") +
+'<li class="obs-linha" data-base="PROPRIA"><div class="obs-nome"><b>Composições próprias</b>' + Modulo.pilula(propria ? propria + (propria === 1 ? " item" : " itens") : "Nenhuma", propria ? "ok" : "neutro") + "</div>" +
+'<p class="obs-desc">Composições que você mesmo criou, a partir dos insumos das bases. Valem só nesta conta.</p><p class="obs-meta"></p>' +
+'<div class="obs-acao"><button type="button" class="btn ghost" data-acao="criar-composicao">Criar composição</button></div></li></ul>';
+return html;
+},
+_pintarBases: function () {
+var st = this._bs, el = document.getElementById("obs-corpo");
+if (!st || !el) return;
+el.innerHTML = this._htmlBases(st.orc);
+this._ligarBases();
+},
+_ligarBases: function () {
+var self = this, sel = document.getElementById("obs-uf");
+if (sel) sel.onchange = function () { self._bs.ufSel = sel.value; self._pintarBases(); };
+var foco = this._bs && this._bs.foco;
+if (foco && !this._bs.focoFeito) {
+this._bs.focoFeito = true;
+var li = document.querySelector('.obs-linha[data-base="' + foco + '"]');
+if (li) { try { li.scrollIntoView({ block: "center" }); var b = li.querySelector("button"); if (b) b.focus(); } catch (e) {} }
+}
+},
+abrirBases: function (app, orc, op) {
+op = op || {};
+this._bs = { orc: orc || null, ocupado: {}, foco: op.foco || "", focoFeito: false, ufSel: "", recado: null, linhas: [] };
+var bg = UI.modal("Bases e composições",
+'<div id="obs-corpo" class="obs">' + this._htmlBases(orc || null) + "</div>",
+[{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); if (app.render && app.tela === "editor") app.render(); } },
+{ texto: "Todas as tabelas de preço", classe: "", onClick: function () { UI.fecharModal(); app.abrirTabelas(); } }]);
+var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "780px";
+this._ligarBases();
+if (op.instalarAuto) this.instalarBase(app, op.instalarAuto, false);
+},
+instalarBase: function (app, cat, atualizar) {
+var self = this, st = this._bs; if (!st) return;
+cat = String(cat || "").toUpperCase();
+var linha = (st.linhas || []).filter(function (l) { return l.cat === cat; })[0];
+if (!linha) return;
+if (app._podeBases && !app._podeBases()) { app._recusaBases("Instalar uma tabela de preço"); return; }
+if (st.ocupado[cat]) return;
+var B = global.BaseExigida, item = {}, k; for (k in linha.item) item[k] = linha.item[k];
+var lista = function () { try { return Bases.lista(); } catch (e) { return []; } };
+st.ocupado[cat] = true; st.recado = null; st.foco = cat; this._pintarBases();
+var fim = function (tom, texto) {
+st.ocupado[cat] = false; st.recado = { tom: tom, texto: texto };
+if (document.getElementById("obs-corpo")) self._pintarBases();
+toast(texto, tom === "erro" ? "erro" : "ok");
+if (tom !== "erro" && app.render && app.tela === "editor") { try { app.render(); } catch (eR) {} }
+};
+var nome = (item.catId === "SINAPI_DES" ? "SINAPI desonerada" : (linha.titulo || item.catId)) + (item.uf ? " " + item.uf : "");
+if (atualizar) {
+return B.instaladorPadrao()(item).then(function () { fim("ok", nome + " atualizada."); }, function (err) { fim("erro", "Não consegui atualizar " + nome + ": " + s(err && err.message ? err.message : err) + ". A base atual foi mantida."); });
+}
+return B.garantir([item], { instalar: B.instaladorPadrao(), instaladas: lista }).then(function (res) {
+if (res.ok) { var av = (res.avisos && res.avisos[0]) || ""; fim(av ? "info" : "ok", nome + " instalada." + (av ? " " + av : "")); return; }
+var f = (res.falhou[0] || res.precisaImportar[0] || {}).motivo || ("Não consegui instalar " + nome + ".");
+fim("erro", f);
+}, function (err) { fim("erro", "Não consegui instalar " + nome + ": " + s(err && err.message ? err.message : err)); });
+},
+ROTULO_ALVO: { cliente: "Informar o cliente", condicoes: "Definir o pagamento", preco: "Informar o preço", quantidade: "Calcular a quantidade", itens: "Montar os itens", escopo: "Ver as etapas", base: "Abrir as bases" },
+htmlQuadroFalta: function (pendencias) {
+var lista = arr(pendencias);
+return '<p class="ogf-intro">A proposta só sai depois de resolver ' + (lista.length === 1 ? "este ponto" : "estes " + lista.length + " pontos") + ". Cada botão leva ao lugar onde se resolve.</p>" +
+'<ul class="ogf-lista">' + lista.map(function (p) {
+var alvo = p.alvo || "condicoes";
+return '<li class="ogf-item"><span class="ogf-txt">' + esc(p.texto) + '</span><button type="button" class="btn" data-acao="orcguia-ir" data-alvo="' + esc(alvo) + '">' + esc(OrcGuiaUI.ROTULO_ALVO[alvo] || "Resolver") + "</button></li>";
+}).join("") + "</ul>";
+},
+quadroFalta: function (app, orc, val) {
+var v = val || Proposta.validar(orc), pend = OrcGuia.pendenciasProposta(v);
+if (!pend.length) { app.gerarProposta(); return; }
+var bg = UI.modal("Falta para gerar a proposta", this.htmlQuadroFalta(pend),
+[{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "620px";
+try { var b = document.querySelector("#modal-bg .ogf-item .btn"); if (b) b.focus(); } catch (e) {}
+},
+tipoSugerido: function (orc) {
+try { if (global.Orcamento && Orcamento.ehCertame && Orcamento.ehCertame(orc)) return "publico"; } catch (e) {}
+var doc = s(orc && orc.cliente && orc.cliente.doc).replace(/\D/g, "");
+if (doc.length === 14) return "empresa";
+if (doc.length === 11) return "particular";
+return "";
+},
+htmlEscolhaModelo: function (app, orc, modelos, sugId) {
+var T = global.PropTpl, tipos = T.TIPOS_CLIENTE, brutos = arr(modelos);
+var norm = brutos.map(function (m) { var mm = T.modelo(m); mm.id = m.id; return mm; });
+var doTipo = function (id) { return norm.filter(function (m) { return m.tipoCliente === id; })[0]; };
+var sugTipo = this.tipoSugerido(orc);
+var cliId = ""; try { cliId = Proposta.clienteIdDoOrcamento(orc); } catch (eC) {}
+var pref = norm.filter(function (m) { return cliId && brutos.filter(function (b) { return b.id === m.id; })[0].paraCliente === cliId; })[0] || norm.filter(function (m) { return m.padrao; })[0] || null;
+var proprio = norm.filter(function (m) { return !m.base && !m.tipoCliente; })[0] || null;
+var marcado = pref ? pref.id : (sugTipo && doTipo(sugTipo) ? doTipo(sugTipo).id : (proprio ? proprio.id : ""));
+var card = function (valor, titulo, desc, extra, sugerido, classe) {
+return '<label class="ogm-card' + (classe ? " " + classe : "") + '"><input type="radio" name="opl" value="' + esc(valor) + '"' + (valor === marcado ? " checked" : "") + ">" +
+'<span class="ogm-txt"><span class="ogm-tit"><b>' + esc(titulo) + "</b>" + (valor && valor === marcado ? Modulo.pilula("Sugerido", "info") : "") + '</span><span class="ogm-desc">' + esc(desc) + "</span>" + (extra || "") + "</span></label>";
+};
+var h = '<p class="ogm-intro">Para quem é esta proposta? O conteúdo e os preços são os mesmos; muda o layout do papel. <b>Gerar</b> abre para imprimir ou salvar em PDF; <b>Gerar em Word</b> baixa o .docx com o texto editável.</p>';
+h += '<div class="ogm-grade">';
+tipos.forEach(function (tp) {
+var mod = doTipo(tp.id);
+if (!mod) return;
+var extra = tp.id === "publico"
+? '<button type="button" class="btn sm ogm-pacote" data-acao="orc-ref" title="Orçamento de referência no padrão do órgão: sintética, analítica, BDI, encargos, curva ABC, cronograma e declarações (PDF + Excel)">Pacote da prefeitura</button>' : "";
+h += card(mod.id, tp.nome, tp.desc, extra, tp.id === sugTipo, tp.id === "publico" ? "ogm-card-publico" : "");
+});
+h += card("", "Documento padrão do sistema", "O documento completo de sempre", "", false);
+h += "</div>";
+if (doTipo("publico")) h += this.htmlDeclaracoes(orc);
+var outros = norm.filter(function (m) { return !m.tipoCliente; });
+if (outros.length) {
+var abre = outros.some(function (m) { return m.id === marcado; });
+h += '<details class="ogm-outros"' + (abre ? " open" : "") + "><summary>Outros desenhos (" + outros.length + ")</summary><div class=\"ogm-grade\">" +
+outros.map(function (m) { return card(m.id, m.nome, m.descricao || (m.paginas.length + " páginas"), "", false); }).join("") + "</div></details>";
+}
+return h;
+},
+DECLARACOES_OPCIONAIS: [
+{ id: "mepp", rotulo: "Sou microempresa ou empresa de pequeno porte",
+dica: "LC nº 123/2006, art. 3º",
+texto: "Declaramos, sob as penas da lei, que esta empresa se enquadra como microempresa ou empresa de pequeno porte, nos termos do art. 3º da Lei Complementar nº 123/2006, e não se enquadra nas vedações do § 4º do mesmo artigo" },
+{ id: "indep", rotulo: "Elaboração independente da proposta",
+dica: "o edital costuma pedir",
+texto: "Declaramos que esta proposta foi elaborada de maneira independente, e que seu conteúdo não foi, no todo ou em parte, informado, discutido ou recebido de qualquer outro participante ou potencial participante desta licitação" },
+{ id: "art14", rotulo: "Sem vínculo nem impedimento do art. 14",
+dica: "Lei nº 14.133/2021, art. 14",
+texto: "Declaramos que não incorremos nas hipóteses de impedimento do art. 14 da Lei nº 14.133/2021 e que não mantemos vínculo com dirigente do órgão contratante nem com agente público que atue nesta licitação ou na fiscalização ou na gestão do contrato, inclusive por parentesco até o terceiro grau (art. 14, IV)" }
+],
+FRASE_CONCORDO: "Temos pleno conhecimento do edital e de seus anexos e concordamos com todas as suas condições",
+FRASE_IMPUGNA: "Temos pleno conhecimento do edital e de seus anexos",
+declaracoesDoOrc: function (orc) {
+var d = (orc && orc.comercial && orc.comercial.declaracoesOpcionais) || {};
+return { mepp: d.mepp === true, indep: d.indep === true, art14: d.art14 === true, impugna: d.impugna === true };
+},
+modeloComDeclaracoes: function (modelo, orc) {
+if (!modelo || modelo.tipoCliente !== "publico") return modelo;
+var sel = this.declaracoesDoOrc(orc), self = this;
+var m = JSON.parse(JSON.stringify(modelo));
+(m.paginas || []).forEach(function (pg) {
+if (pg.tipo !== "condicoes" || !/^Declaramos que:/.test(s(pg.paragrafos))) return;
+var linhas = s(pg.paragrafos).split(/\r?\n/), cab = linhas.shift();
+var corpo = linhas.filter(function (l) { return s(l).replace(/^\s+|\s+$/g, ""); }).map(function (l) { return s(l).replace(/^\s+|\s+$/g, "").replace(/[;.]$/, ""); });
+if (sel.impugna) corpo = corpo.map(function (l) { return l === self.FRASE_CONCORDO ? self.FRASE_IMPUGNA : l; });
+self.DECLARACOES_OPCIONAIS.forEach(function (d) { if (sel[d.id]) corpo.push(d.texto); });
+pg.paragrafos = [cab].concat(corpo.map(function (l, i) { return l + (i === corpo.length - 1 ? "." : ";"); })).join("\n");
+});
+return m;
+},
+htmlDeclaracoes: function (orc) {
+var sel = this.declaracoesDoOrc(orc);
+var caixa = function (id, rotulo, dica) {
+return '<label class="od-linha"><input type="checkbox" id="od-' + id + '"' + (sel[id] ? " checked" : "") + '><span class="od-txt">' + esc(rotulo) + (dica ? '<small>' + esc(dica) + "</small>" : "") + "</span></label>";
+};
+return '<fieldset class="ogm-decl"><legend>Declarações da carta</legend>' +
+'<p class="od-sub">As declarações obrigatórias saem sempre. Marque as que o edital pede; a escolha fica gravada neste orçamento.</p>' +
+this.DECLARACOES_OPCIONAIS.map(function (d) { return caixa(d.id, d.rotulo, d.dica); }).join("") +
+'<div class="od-sep"></div>' +
+caixa("impugna", "Vou impugnar (ou já impugnei) o edital", "troca “concordamos com todas as suas condições” por “Temos pleno conhecimento do edital e de seus anexos”") +
+"</fieldset>";
+},
+guardarDeclaracoes: function (app) {
+var orc = app && app.orcAtual; if (!orc || !document.getElementById("od-mepp")) return;
+if (!document.querySelector(".ogm-card-publico input:checked")) return;
+var v = function (id) { var el = document.getElementById("od-" + id); return !!(el && el.checked); };
+var novo = { mepp: v("mepp"), indep: v("indep"), art14: v("art14"), impugna: v("impugna") };
+var atual = this.declaracoesDoOrc(orc), salvo = !!(orc.comercial && orc.comercial.declaracoesOpcionais);
+if (!salvo && !novo.mepp && !novo.indep && !novo.art14 && !novo.impugna) return;
+if (salvo && novo.mepp === atual.mepp && novo.indep === atual.indep && novo.art14 === atual.art14 && novo.impugna === atual.impugna) return;
+orc.comercial = orc.comercial || {};
+orc.comercial.declaracoesOpcionais = novo;
+try { app.persistir(); } catch (e) {}
+},
+semearModelos: function () {
+try { return (global.Gestao && Gestao.propModelosSemearTipos) ? Gestao.propModelosSemearTipos() : 0; } catch (e) { return 0; }
+},
+htmlCondicoes: function (orc) {
+var o = orc || {}, c = (global.Orcamento && Orcamento.garantirComercial) ? Orcamento.garantirComercial(o) : (o.comercial || {});
+var certame = false; try { certame = !!(global.Orcamento && Orcamento.ehCertame && Orcamento.ehCertame(o)); } catch (e) {}
+var nomes = [];
+try { (Store.listar(Auth.empresaId(), "clientes") || []).forEach(function (x) { var n = s((x && (x.nome || x.razaoSocial)) || "").trim(); if (n && nomes.indexOf(n) < 0) nomes.push(n); }); } catch (e1) {}
+var val = c.validadeDias == null ? (certame ? "" : 15) : c.validadeDias;
+var h = '<div class="og-campos">' +
+'<div class="field og-largo"><label for="og-cliente">Cliente</label><input id="og-cliente" type="text" autocomplete="off" list="og-clientes" value="' + esc(o.cliente && o.cliente.nome) + '" placeholder="Nome de quem recebe a proposta">' +
+'<datalist id="og-clientes">' + nomes.slice(0, 200).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join("") + "</datalist></div>" +
+'<div class="field"><label for="og-validade">Validade da proposta (dias)</label><input id="og-validade" type="number" min="0" step="1" value="' + esc(val) + '"' + (certame ? ' placeholder="Conforme o edital"' : "") + "></div>" +
+'<div class="field"><label for="og-prazo">Prazo de execução</label><input id="og-prazo" type="text" value="' + esc(c.prazoExecucao) + '"></div>' +
+'<div class="field og-largo"><label for="og-pagamento">Condições de pagamento</label><textarea id="og-pagamento" rows="3">' + esc(c.condicoesPagamento) + "</textarea></div></div>" +
+'<div class="og-rodape"><button type="button" class="btn acao-forte" data-acao="orcguia-cond-salvar">Salvar condições</button>' +
+'<button type="button" class="btn ghost" data-acao="orcguia-dados" title="Garantia, incluso e não incluso, premissas, responsabilidades, ART e data da vistoria">Mais dados da proposta</button></div>';
+return h;
+},
+secaoCondicoes: function (orc) {
+return Modulo.secao({ id: "og-cond", titulo: "Cliente e condições", sub: "O que a proposta imprime. Sem o cliente e o pagamento ela não é gerada.", corpoHtml: this.htmlCondicoes(orc) });
+},
+secaoParametros: function (orc) {
+var cfg = {}; try { cfg = Orcamento.garantirConfig(orc) || {}; } catch (e) {}
+var arred = ""; try { arred = Arred.rotulo(cfg.arredondamento); } catch (e1) {}
+var reg = (cfg.encargos && cfg.encargos.tipo) === "desonerado" ? "desonerado" : "não desonerado";
+var inc = cfg.bdiIncidencia === "final" ? "só no preço final" : "dentro de cada preço unitário";
+var linha = function (r, v) { return "<div><dt>" + esc(r) + "</dt><dd>" + esc(v) + "</dd></div>"; };
+var corpo = '<dl class="og-resumo">' + linha("Arredondamento", arred || "padrão do sistema") + linha("Encargos declarados", reg) + linha("BDI entra", inc) + "</dl>";
+return Modulo.secao({ id: "og-params", titulo: "Parâmetros do orçamento", sub: "Como o preço é arredondado, o regime dos encargos e onde o BDI incide.",
+acoesHtml: '<button type="button" class="btn" data-acao="orcguia-params">Editar parâmetros</button>', corpoHtml: corpo });
+},
+salvarCondicoes: function (app) {
+var orc = app.orcAtual; if (!orc) return;
+var v = function (id) { var el = document.getElementById(id); return el ? String(el.value == null ? "" : el.value) : null; };
+var cli = v("og-cliente"), pag = v("og-pagamento"), prazo = v("og-prazo"), vd = v("og-validade");
+var c = Orcamento.garantirComercial(orc), certame = false;
+try { certame = !!Orcamento.ehCertame(orc); } catch (e) {}
+orc.cliente = orc.cliente || { nome: "", doc: "", contato: "" };
+if (cli !== null) {
+var nome = cli.trim();
+if (nome && nome !== s(orc.cliente.nome)) {
+try {
+var ach = (Store.listar(Auth.empresaId(), "clientes") || []).filter(function (x) { return s(x && (x.nome || x.razaoSocial)).trim().toLowerCase() === nome.toLowerCase(); });
+if (ach.length === 1 && !s(orc.cliente.doc)) orc.cliente.doc = s(ach[0].doc || ach[0].cnpj || ach[0].cpfCnpj || ach[0].documento || "");
+} catch (e2) {}
+}
+orc.cliente.nome = nome;
+}
+if (pag !== null) c.condicoesPagamento = pag.trim();
+if (prazo !== null) c.prazoExecucao = prazo.trim();
+if (vd !== null) c.validadeDias = (certame && vd.trim() === "") ? null : Util.num(vd);
+var g = app.persistir(); app.render();
+if (app._gravou(g)) toast("Condições salvas.", "ok");
+},
+interceptaAtalho: function (app, t) {
+if (!this.ativa() || this._passando || !t || !t.dataset) return false;
+var a = t.dataset.acao;
+if (a !== "config-orc" && a !== "parametros-orc") return false;
+if (app.tela !== "editor" || !app.orcAtual || !(t.closest && t.closest(".mod-mais-menu"))) return false;
+if (app.aba !== "bdi") app.aba = "bdi";
+app.render();
+this.focar(a === "config-orc" ? "og-cliente" : "og-params");
+return true;
+},
+abrirParametros: function (app) {
+var b = document.querySelector('#orc-ed-cab [data-acao="parametros-orc"]');
+if (!b) { toast("Os parâmetros não estão disponíveis nesta tela.", "erro"); return; }
+this._passando = true;
+try { b.click(); } finally { this._passando = false; }
+},
+_chaveInteresse: function () { return "orcapro:interesse:v1:" + String((global.Auth && Auth.empresaId && Auth.empresaId()) || ""); },
+_interesseFeito: function () { try { return !!localStorage.getItem(this._chaveInteresse()); } catch (e) { return false; } },
+_marcarInteresse: function () { try { localStorage.setItem(this._chaveInteresse(), "1"); } catch (e) {} },
+_interesseForcado: function () { try { return /[?&]interesse=1\b/.test(String(global.location && location.search || "")); } catch (e) { return false; } },
+interessePendente: function (app) {
+if (!this.ativa() || !global.Perfis) return false;
+if (this._interesseForcado()) return Perfis.idAtual() === "completo" || Perfis.idAtual() === "teste";
+if (app && app._demo) return false;
+var st = null; try { st = global.Licenca && Licenca.status ? Licenca.status() : null; } catch (e) {}
+if (!st || !st.trial || !st.ativo || st.pendente || st.expirado) return false;
+if (Perfis.idAtual() !== "completo") return false;
+try { if (localStorage.getItem("orcapro:tour:v1")) return false; } catch (eT) {}
+return !this._interesseFeito();
+},
+htmlInteresse: function (opcoes) {
+var o = opcoes || {}, ja = o.liberados || [];
+var cartoes = Perfis.ORDEM_INTERESSES.map(function (id) {
+var it = Perfis.INTERESSES_TESTE[id], lib = ja.indexOf(id) > -1;
+var ic = ""; try { ic = (global.Gestao && Gestao.iconeModulo) ? Gestao.iconeModulo(it.icone, 28) : ""; } catch (e) {}
+return '<button type="button" class="oi-card" data-acao="orcguia-interesse" data-id="' + esc(id) + '"' + (lib ? ' disabled aria-disabled="true"' : "") + ">" +
+'<span class="oi-ic" aria-hidden="true">' + ic + "</span>" +
+'<span class="oi-txt"><b>' + esc(it.nome) + "</b><span>" + esc(it.desc) + "</span>" + (lib ? Modulo.pilula("Liberado", "ok") : "") + "</span></button>";
+}).join("");
+return '<p class="oi-intro">' + esc(o.intro || "Escolha por onde começar. Durante o teste o menu mostra só esse assunto; os outros módulos você libera quando quiser.") + "</p>" +
+'<div class="oi-grade">' + cartoes + "</div>" + this.htmlCertame();
+},
+CERTAME_LINHAS: [
+"Lê o edital e monta o resumo, com a página de cada dado.",
+"Confere a planilha do órgão e a proposta contra o edital.",
+"Monta o pacote da habilitação: carta, declarações e documentos, com os prazos.",
+"Confere a validade e o CNPJ dos documentos e deixa o aviso para você conferir."
+],
+urlVendaCertame: function (assunto) {
+var st = {}; try { st = (global.Licenca && Licenca.status) ? (Licenca.status() || {}) : {}; } catch (e) { st = {}; }
+if (assunto === "comprar") return "https://app.certamepro.com.br/comprar";
+var fone = s(st.whatsappRA).replace(/\D/g, "") || "5534992869383";
+var msg = "Olá, Rogério! Estou usando o OrçaPRO e quero agendar uma apresentação do CertamePRO.";
+return "https://wa.me/" + fone + "?text=" + encodeURIComponent(msg);
+},
+htmlCertame: function () {
+try { if (document.documentElement.getAttribute("data-origem") === "play") return ""; } catch (e) {}
+return '<section class="oi-certame" aria-labelledby="oi-certame-t"><h3 id="oi-certame-t">CertamePRO — conheça</h3>' +
+'<p class="oi-certame-sub">Sistema à parte, do edital ao contrato. Não faz parte do teste.</p>' +
+"<ul>" + this.CERTAME_LINHAS.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul>" +
+'<div class="oi-certame-acoes"><a class="btn" href="' + esc(this.urlVendaCertame("agendar")) + '" target="_blank" rel="noopener" data-certame="agendar">Agendar apresentação</a>' +
+'<a class="btn" href="' + esc(this.urlVendaCertame("comprar")) + '" target="_blank" rel="noopener" data-certame="comprar">Quero comprar</a></div></section>';
+},
+abrirInteresse: function (app, op) {
+var self = this, o = op || {}, ja = Perfis.interessesTeste();
+var botoes = o.liberar
+? [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Liberar tudo", classe: "", onClick: function () { self.liberarTudo(app); } }]
+: [{ texto: "Quero ver tudo", classe: "ghost", onClick: function () { self._marcarInteresse(); UI.fecharModal(); self._depois(app, false, "", true); } }];
+var bg = UI.modal(o.liberar ? "Liberar outro módulo" : "O que você quer conhecer?",
+this.htmlInteresse({ liberados: ja, intro: o.liberar ? "Marque o assunto que você quer somar ao menu. O que já está liberado continua." : "" }), botoes);
+var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "640px";
+this._liberando = !!o.liberar;
+try { var b = document.querySelector("#modal-bg .oi-card:not([disabled])"); if (b) b.focus(); } catch (e) {}
+},
+escolherInteresse: function (app, id) {
+var atual = Perfis.interessesTeste(), novos = atual.indexOf(id) > -1 ? atual : atual.concat([id]);
+var r = Perfis.aplicarTeste(novos);
+if (!r.ok) { toast(r.erro || "Não consegui guardar a escolha.", "erro"); return; }
+this._marcarInteresse();
+try { UI.fecharModal(); } catch (e) {}
+var primeiro = { orcamento: "orcamentos", bim: "bim", gestao: "obras", licitacao: "orcamentos" }[id] || "orcamentos";
+var liberando = this._liberando;
+this._liberando = false;
+toast(liberando ? Perfis.INTERESSES_TESTE[id].nome + " liberado no menu." : "Pronto. O menu mostra só " + Perfis.INTERESSES_TESTE[id].nome + ". Use Liberar outro módulo quando quiser mais.", "ok");
+this._depois(app, true, primeiro, !liberando);
+},
+_depois: function (app, mudou, primeiro, comTour) {
+try {
+if (mudou && primeiro && app.irPara) app.irPara(primeiro); else app.render();
+if (comTour && global.Tour && Tour.iniciar) setTimeout(function () { try { Tour.iniciar(); } catch (e) {} }, 400);
+} catch (e) { try { app.render(); } catch (e2) {} }
+},
+liberarTudo: function (app) {
+var r = Perfis.aplicar("completo");
+try { UI.fecharModal(); } catch (e) {}
+if (!r.ok) { toast(r.erro || "Não consegui liberar tudo.", "erro"); return; }
+toast("Todos os módulos liberados.", "ok");
+try { app.render(); } catch (e2) {}
+},
+menuLiberar: function () {
+try {
+if (!this.ativa() || !global.Perfis || Perfis.idAtual() !== "teste") return "";
+return '<button type="button" class="sb-org sb-liberar" data-acao="orcguia-liberar" title="Somar outro assunto ao menu durante o teste">Liberar outro módulo</button>';
+} catch (e) { return ""; }
+},
+interesseVerificar: function (app) {
+var self = this;
+try { if (global.Perfis && Perfis.liberarTesteSePago && global.Licenca) { if (Perfis.liberarTesteSePago(Licenca.status())) { try { app.render(); } catch (e) {} } } } catch (e0) {}
+if (this.interessePendente(app)) setTimeout(function () { try { if (global.Auth && Auth.usuario() && self.interessePendente(app)) self.abrirInteresse(app); } catch (e) {} }, 500);
+},
+focar: function (id) {
+setTimeout(function () {
+var el = document.getElementById(id);
+if (!el) return;
+try { el.scrollIntoView({ block: "center" }); if (el.focus && /^(input|select|textarea|button)$/i.test(el.tagName)) el.focus(); } catch (e) {}
+}, 30);
+}
+};
+global.OrcGuiaUI = OrcGuiaUI;
+if (typeof module !== "undefined" && module.exports) module.exports = OrcGuiaUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/propriasync.js ==== */
@@ -13140,30 +13886,31 @@ try {
 "use strict";
 var Proposta = {
 validar: function (orc) {
-var faltando = [];
-if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) faltando.push("Cliente vinculado");
+var faltando = [], itens = [];
+var pend = function (texto, alvo) { faltando.push(texto); itens.push({ texto: texto, alvo: alvo }); };
+if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) pend("Cliente vinculado", "cliente");
 var totais = Orcamento.totais(orc);
-if (totais.qtdItens < 1) faltando.push("Ao menos 1 item no escopo");
+if (totais.qtdItens < 1) pend("Ao menos 1 item no escopo", "itens");
 var semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
 if (semPreco.length) {
-faltando.push("Preço em " + semPreco.length + " item(ns): " +
+pend("Preço em " + semPreco.length + " item(ns): " +
 semPreco.slice(0, 3).map(function (i) { return i.numero + (i.codigo ? " (" + i.codigo + ")" : ""); }).join(", ") +
-(semPreco.length > 3 ? "…" : ""));
+(semPreco.length > 3 ? "…" : ""), "preco");
 }
 var semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
 if (semQtd.length) {
-faltando.push("Quantidade em " + semQtd.length + " item(ns): " +
+pend("Quantidade em " + semQtd.length + " item(ns): " +
 semQtd.slice(0, 3).map(function (x) { return (x.item.codigo || x.item.descricao.slice(0, 18)); }).join(", ") +
-(semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha");
+(semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha", "quantidade");
 }
 var temOpcV = Util.arr(orc.etapas).some(function (e) { return e && e.opcional; });
 var semEscopo = temOpcV && totais.qtdItens >= 1 && !(Util.num(totais.precoObrigatorio) > 0) && Util.num(totais.precoOpcional) > 0;
 if (semEscopo) {
-faltando.push("Escopo contratado: todas as etapas com valor estão marcadas como adicional opcional, e a proposta sairia com valor total R$ 0,00 — desmarque “opcional” nas etapas que fazem parte do serviço contratado");
+pend("Escopo contratado: todas as etapas com valor estão marcadas como adicional opcional, e a proposta sairia com valor total R$ 0,00 — desmarque “opcional” nas etapas que fazem parte do serviço contratado", "escopo");
 }
 Orcamento.garantirComercial(orc);
-if (!Util.naoVazio(orc.comercial.condicoesPagamento)) faltando.push("Condições de pagamento");
-var r = { ok: faltando.length === 0, faltando: faltando };
+if (!Util.naoVazio(orc.comercial.condicoesPagamento)) pend("Condições de pagamento", "condicoes");
+var r = { ok: faltando.length === 0, faltando: faltando, itens: itens };
 if (semEscopo) r.escopoTodoOpcional = true;
 return r;
 },
@@ -15585,13 +16332,14 @@ var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
 var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
 var _desf = (ap && ap._iaDesfazerBotao) ? ap._iaDesfazerBotao(orc) : '';
 var linhasAv = [];
-if (_semPreco.length) {
+var guiado = (typeof OrcGuia !== "undefined" && typeof OrcGuiaUI !== "undefined" && OrcGuia.previa());
+if (_semPreco.length && !guiado) {
 linhasAv.push('<span><b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
 _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
 (_semPreco.length > 5 ? '…' : '') +
 ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</span>');
 }
-if (_semQtd.length) {
+if (_semQtd.length && !guiado) {
 linhasAv.push('<span><b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
 _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
 (_semQtd.length > 5 ? '…' : '') +
@@ -15603,10 +16351,11 @@ linhasAv.push('<span data-orc-preco-provisorio="' + _prov.length + '"><b>' + _pr
 _prov.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
 (_prov.length > 5 ? '…' : '') + ' — ' + Util.esc(_prov[0].motivo) + '. Entram no total com o maior preço da categoria; ao digitar o preço cotado a pendência sai.</span>');
 }
+if (guiado) cab2 += OrcGuiaUI.roteiroHtml(orc, { totais: t, semPreco: _semPreco, semQtd: _semQtd, provisorio: _prov.length });
 cab2 += this._licitacaoPainel(orc);
 if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
 if (linhasAv.length || _desf) {
-cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info"),
+cab2 += M.aviso({ tom: guiado ? (_prov.length ? "alerta" : "info") : (_semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info")),
 textoHtml: linhasAv.join(""), acaoHtml: _desf });
 }
 var subPreco = "";
@@ -17384,6 +18133,10 @@ html += '<div class="flex between mt" style="align-items:flex-end">' +
 '<div><div class="muted" style="font-size:var(--t-micro)">BDI resultante</div>' +
 '<div style="font-size:var(--t-tit);font-weight:var(--p-forte);color:var(--verde);font-variant-numeric:tabular-nums" id="bdi-resultado">' + Util.fmtPct(orc.bdi.percentual) + '</div></div>' +
 '<button class="btn acao-forte" data-acao="salvar-bdi">Aplicar BDI</button></div>';
+if (typeof OrcGuia !== "undefined" && typeof OrcGuiaUI !== "undefined" && OrcGuia.previa()) {
+return MOD().secao({ id: "og-bdi", titulo: "BDI do orçamento", sub: "Fórmula do Acórdão TCU 2.622/2013", acoesHtml: modeloHtml, corpoHtml: html }) +
+OrcGuiaUI.secaoCondicoes(orc) + OrcGuiaUI.secaoParametros(orc);
+}
 return MOD().secao({ titulo: "BDI do orçamento", sub: "Fórmula do Acórdão TCU 2.622/2013 · arredondamento, encargos e licitação ficam em Parâmetros (menu Mais)",
 acoesHtml: modeloHtml, corpoHtml: html });
 },
@@ -70952,6 +71705,7 @@ id: txt(m.id),
 nome: txt(m.nome) || "Modelo sem nome",
 descricao: txt(m.descricao),
 paraCliente: txt(m.paraCliente),
+tipoCliente: PropTpl.tipoClienteValido(m.tipoCliente),
 padrao: !!m.padrao,
 base: txt(m.base),
 estilo: estilo,
@@ -71173,8 +71927,95 @@ nivel: "resumido", mostrarPeso: true, detalhar: true, tituloOpcionais: "Adiciona
 { id: "p10", tipo: "condicoes", titulo: "Garantias", paragrafos: "", usarPrazo: false, usarGarantia: true },
 { id: "p11", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "Declaramos estar de acordo com os termos, valores e condições desta proposta comercial.", mostrarValidade: false, botaoAceite: false }
 ]
+},
+{
+id: "tpl-tipo-publico",
+tipoCliente: "publico",
+nome: "Prefeitura / Órgão público — carta-proposta",
+descricao: "Carta-proposta para licitação: planilha de preços resumida, BDI com a metodologia do TCU, cronograma físico-financeiro, validade de 60 dias e as declarações padrão.",
+estilo: {
+corTitulo: "#14304F", corTexto: "#1F2933", corFundo: "#FFFFFF",
+corDestaque: "#14304F", corDestaque2: "#2E6F9E", corFundoEscuro: "#14304F",
+textura: "", fonte: "classica", formato: "a4",
+ornamento: "", rodape: "nome", fundoInternas: "claro",
+logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+},
+paginas: [
+{ id: "p1", tipo: "capa_classica", kicker: "CARTA-PROPOSTA", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: false, mostrarValor: true, mostrarEmpresa: true },
+{ id: "p2", tipo: "apresentacao", titulo: "Carta-proposta",
+texto: "Apresentamos a nossa proposta de preços para a execução do objeto descrito nesta carta, nas condições do edital e de seus anexos e nos termos da Lei nº 14.133/2021.",
+fonteDePrecos: "padrao", mostrarBdi: true },
+{ id: "p3", tipo: "escopo_etapas", titulo: "Objeto e etapas", mostrarCodigo: true, mostrarQtdItens: true },
+{ id: "p4", tipo: "investimento", titulo: "Planilha de preços", colTrabalho: "Descrição", colValor: "Valor",
+tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: true, detalhar: false,
+nota: "Preços em reais, com o BDI incluído. A planilha analítica e a composição do BDI acompanham o pacote do orçamento." },
+{ id: "p5", tipo: "premissas", titulo: "Premissas e metodologia", fonteDePrecos: "padrao", mostrarRegime: true, mostrarBdiTcu: true },
+{ id: "p6", tipo: "cronograma", titulo: "Cronograma físico-financeiro", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: true },
+{ id: "p7", tipo: "comercial", titulo: "Condições da proposta", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: false, mostrarGarantia: false,
+extras: "Validade da proposta | O prazo indicado no edital; se o edital for omisso, 60 (sessenta) dias contados da data de sua apresentação." },
+{ id: "p8", tipo: "condicoes", titulo: "Declarações",
+paragrafos: "Declaramos que:\nTemos pleno conhecimento do edital e de seus anexos e concordamos com todas as suas condições;\nCumprimos plenamente os requisitos de habilitação exigidos no edital e respondemos pela veracidade das informações prestadas, na forma da lei (art. 63, I, da Lei nº 14.133/2021);\nCumprimos as exigências de reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social previstas em lei e em outras normas específicas (art. 63, IV, da Lei nº 14.133/2021);\nNão empregamos menor de 18 anos em trabalho noturno, perigoso ou insalubre, nem menor de 16 anos em qualquer trabalho, salvo na condição de aprendiz, a partir de 14 anos (art. 7º, XXXIII, da Constituição Federal; art. 68, VI, da Lei nº 14.133/2021);\nNão existe fato impeditivo à nossa participação ou à nossa habilitação nesta licitação;\nNossa proposta econômica compreende a integralidade dos custos para atendimento dos direitos trabalhistas assegurados na Constituição Federal, nas leis trabalhistas, nas normas infralegais, nas convenções coletivas de trabalho e nos termos de ajustamento de conduta vigentes na data de entrega da proposta (art. 63, § 1º, da Lei nº 14.133/2021), e os preços incluem todos os custos e despesas necessários à execução do objeto.",
+usarPrazo: false, usarGarantia: false },
+{ id: "p9", tipo: "assinatura", titulo: "Local, data e assinatura", texto: "Assinatura do representante legal da empresa.", mostrarValidade: false, botaoAceite: false }
+]
+},
+{
+id: "tpl-tipo-particular",
+tipoCliente: "particular",
+nome: "Particular — reforma e obra",
+descricao: "Para pessoa física: o que será feito e o que não está incluso, o valor por etapa, a forma de pagamento, o prazo e o aceite pelo WhatsApp.",
+estilo: {
+corTitulo: "#1D3557", corTexto: "#26303B", corFundo: "#FFFFFF",
+corDestaque: "#2A7F62", corDestaque2: "#1D3557", corFundoEscuro: "#1D3557",
+textura: "", fonte: "mista", formato: "a4",
+ornamento: "", rodape: "nome", fundoInternas: "claro",
+logoEscuro: "clarear", marcaDagua: "", marcaDaguaEmpresa: "", numerarSecoes: ""
+},
+paginas: [
+{ id: "p1", tipo: "capa_classica", kicker: "PROPOSTA DE REFORMA E OBRA", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+{ id: "p2", tipo: "escopo_etapas", titulo: "O que será feito", abertura: "Os serviços desta proposta são:", mostrarCodigo: false, mostrarQtdItens: false },
+{ id: "p3", tipo: "incluso", titulo: "O que está incluso e o que não está" },
+{ id: "p4", tipo: "investimento", titulo: "Valor", colTrabalho: "Etapa", colValor: "Valor", tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: false, detalhar: false },
+{ id: "p5", tipo: "comercial", titulo: "Pagamento, prazo e garantia", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: true },
+{ id: "p6", tipo: "assinatura", titulo: "Aceite", texto: "Se está de acordo com o escopo, o valor e as condições acima, assine abaixo ou responda pelo WhatsApp.", mostrarValidade: true, botaoAceite: true }
+]
+},
+{
+id: "tpl-tipo-empresa",
+tipoCliente: "empresa",
+nome: "Empresa / Condomínio — medição e contrato",
+descricao: "Para pessoa jurídica ou condomínio: escopo por etapa, cronograma, medições mensais, retenção e responsabilidades das partes, para virar contrato.",
+estilo: {
+corTitulo: "#26323F", corTexto: "#26303A", corFundo: "#FFFFFF",
+corDestaque: "#0D6EBD", corDestaque2: "#26323F", corFundoEscuro: "#26323F",
+textura: "", fonte: "tecnica", formato: "a4",
+ornamento: "", rodape: "nome", fundoInternas: "claro",
+logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+},
+paginas: [
+{ id: "p1", tipo: "capa_classica", kicker: "PROPOSTA COMERCIAL", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+{ id: "p2", tipo: "apresentacao", titulo: "Apresentação", fonteDePrecos: "padrao", mostrarBdi: false },
+{ id: "p3", tipo: "escopo_etapas", titulo: "Escopo por etapa", mostrarCodigo: true, mostrarQtdItens: true },
+{ id: "p4", tipo: "incluso", titulo: "Está incluso / Não está incluso" },
+{ id: "p5", tipo: "investimento", titulo: "Resumo financeiro", colTrabalho: "Etapa", colValor: "Valor", tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: true, detalhar: false },
+{ id: "p6", tipo: "cronograma", titulo: "Cronograma e desembolso", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: false },
+{ id: "p7", tipo: "comercial", titulo: "Medição, pagamento e contrato", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: true,
+extras: "Medição | Medições mensais, conforme o avanço físico, com aprovação do contratante antes da emissão da nota fiscal.\nRetenção | Eventual retenção contratual, em percentual a combinar, liberada conforme o contrato.\nContrato | Aceita a proposta, os serviços serão formalizados em contrato de prestação de serviços de engenharia entre as partes." },
+{ id: "p8", tipo: "responsabilidades", titulo: "Responsabilidades" },
+{ id: "p9", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "A assinatura abaixo formaliza o aceite do escopo, dos valores e das condições desta proposta.", mostrarValidade: true, botaoAceite: false }
+]
 }
 ];
+PropTpl.TIPOS_CLIENTE = [
+{ id: "publico", nome: "Prefeitura / Órgão público", desc: "Carta-proposta para licitação" },
+{ id: "particular", nome: "Particular", desc: "Pessoa física: reforma e obra" },
+{ id: "empresa", nome: "Empresa / Condomínio", desc: "Medição, retenção e contrato" }
+];
+PropTpl.tipoClienteValido = function (v) {
+var x = String(v == null ? "" : v);
+for (var i = 0; i < PropTpl.TIPOS_CLIENTE.length; i++) if (PropTpl.TIPOS_CLIENTE[i].id === x) return x;
+return "";
+};
 PropTpl.deFabrica = function (id) {
 var base = null;
 PropTpl.FABRICA.forEach(function (f) { if (f.id === id) base = f; });

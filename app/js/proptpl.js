@@ -893,6 +893,8 @@
       nome: txt(m.nome) || "Modelo sem nome",
       descricao: txt(m.descricao),
       paraCliente: txt(m.paraCliente),
+      /* o tipo de cliente do orçamento guiado (publico | particular | empresa | ""): liga o modelo ao cartão do passo ④ */
+      tipoCliente: PropTpl.tipoClienteValido(m.tipoCliente),
       padrao: !!m.padrao,
       base: txt(m.base),
       estilo: estilo,
@@ -1213,8 +1215,121 @@
         { id: "p10", tipo: "condicoes", titulo: "Garantias", paragrafos: "", usarPrazo: false, usarGarantia: true },
         { id: "p11", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "Declaramos estar de acordo com os termos, valores e condições desta proposta comercial.", mostrarValidade: false, botaoAceite: false }
       ]
+    },
+    /* =================================================================
+     * OS TRÊS MODELOS POR TIPO DE CLIENTE (13/11/2026, orçamento guiado)
+     *
+     * O passo ④ do orçamento guiado pergunta "para quem é a proposta?" e
+     * oferece o desenho certo: carta-proposta de órgão público, proposta para
+     * pessoa física (reforma e obra) e proposta para empresa ou condomínio
+     * (medição e contrato). Como os de fábrica de cima: sem foto, sem nome de
+     * empresa (a marca vem de ⚙ Empresa), e o conteúdo e os preços são os do
+     * orçamento — o modelo só escolhe o que mostrar e como.
+     *
+     * ⚠ `tipoCliente` é o que liga o modelo ao cartão da escolha. Desde 13/11/2026
+     *   (orçamento guiado = padrão) os três entram na lista de fábrica de TODOS
+     *   e são semeados na conta (js/proptplui.js, propModelosSemearTipos).
+     * ⚠ NENHUM TEXTO JURÍDICO É INVENTADO. A carta de órgão público cita só o
+     *   que é certo (Lei nº 14.133/2021 como regime da licitação e o art. 7º,
+     *   XXXIII, da Constituição para a declaração sobre menores). A validade
+     *   de 60 dias e a lista de declarações são o padrão de partida: o texto
+     *   diz "ou o prazo do edital", e o campo é editável. Revisão jurídica
+     *   pendente: ver PENDENCIAS-ORCAMENTO-GUIADO.md.
+     * ⚠ "BDI aberto" no modelo de órgão: o percentual e a metodologia
+     *   (Acórdão TCU 2.622/2013) saem na apresentação e nas premissas; as
+     *   parcelas do BDI e a planilha analítica saem no Pacote da prefeitura
+     *   (orc-ref), que o passo ④ oferece ao lado.
+     * ================================================================= */
+    {
+      id: "tpl-tipo-publico",
+      tipoCliente: "publico",
+      nome: "Prefeitura / Órgão público — carta-proposta",
+      descricao: "Carta-proposta para licitação: planilha de preços resumida, BDI com a metodologia do TCU, cronograma físico-financeiro, validade de 60 dias e as declarações padrão.",
+      estilo: {
+        corTitulo: "#14304F", corTexto: "#1F2933", corFundo: "#FFFFFF",
+        corDestaque: "#14304F", corDestaque2: "#2E6F9E", corFundoEscuro: "#14304F",
+        textura: "", fonte: "classica", formato: "a4",
+        ornamento: "", rodape: "nome", fundoInternas: "claro",
+        logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+      },
+      paginas: [
+        { id: "p1", tipo: "capa_classica", kicker: "CARTA-PROPOSTA", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: false, mostrarValor: true, mostrarEmpresa: true },
+        { id: "p2", tipo: "apresentacao", titulo: "Carta-proposta",
+          texto: "Apresentamos a nossa proposta de preços para a execução do objeto descrito nesta carta, nas condições do edital e de seus anexos e nos termos da Lei nº 14.133/2021.",
+          fonteDePrecos: "padrao", mostrarBdi: true },
+        { id: "p3", tipo: "escopo_etapas", titulo: "Objeto e etapas", mostrarCodigo: true, mostrarQtdItens: true },
+        { id: "p4", tipo: "investimento", titulo: "Planilha de preços", colTrabalho: "Descrição", colValor: "Valor",
+          tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: true, detalhar: false,
+          nota: "Preços em reais, com o BDI incluído. A planilha analítica e a composição do BDI acompanham o pacote do orçamento." },
+        { id: "p5", tipo: "premissas", titulo: "Premissas e metodologia", fonteDePrecos: "padrao", mostrarRegime: true, mostrarBdiTcu: true },
+        { id: "p6", tipo: "cronograma", titulo: "Cronograma físico-financeiro", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: true },
+        { id: "p7", tipo: "comercial", titulo: "Condições da proposta", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: false, mostrarGarantia: false,
+          extras: "Validade da proposta | O prazo indicado no edital; se o edital for omisso, 60 (sessenta) dias contados da data de sua apresentação." },
+        { id: "p8", tipo: "condicoes", titulo: "Declarações",
+          paragrafos: "Declaramos que:\nTemos pleno conhecimento do edital e de seus anexos e concordamos com todas as suas condições;\nCumprimos plenamente os requisitos de habilitação exigidos no edital e respondemos pela veracidade das informações prestadas, na forma da lei (art. 63, I, da Lei nº 14.133/2021);\nCumprimos as exigências de reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social previstas em lei e em outras normas específicas (art. 63, IV, da Lei nº 14.133/2021);\nNão empregamos menor de 18 anos em trabalho noturno, perigoso ou insalubre, nem menor de 16 anos em qualquer trabalho, salvo na condição de aprendiz, a partir de 14 anos (art. 7º, XXXIII, da Constituição Federal; art. 68, VI, da Lei nº 14.133/2021);\nNão existe fato impeditivo à nossa participação ou à nossa habilitação nesta licitação;\nNossa proposta econômica compreende a integralidade dos custos para atendimento dos direitos trabalhistas assegurados na Constituição Federal, nas leis trabalhistas, nas normas infralegais, nas convenções coletivas de trabalho e nos termos de ajustamento de conduta vigentes na data de entrega da proposta (art. 63, § 1º, da Lei nº 14.133/2021), e os preços incluem todos os custos e despesas necessários à execução do objeto.",
+          usarPrazo: false, usarGarantia: false },
+        { id: "p9", tipo: "assinatura", titulo: "Local, data e assinatura", texto: "Assinatura do representante legal da empresa.", mostrarValidade: false, botaoAceite: false }
+      ]
+    },
+    {
+      id: "tpl-tipo-particular",
+      tipoCliente: "particular",
+      nome: "Particular — reforma e obra",
+      descricao: "Para pessoa física: o que será feito e o que não está incluso, o valor por etapa, a forma de pagamento, o prazo e o aceite pelo WhatsApp.",
+      estilo: {
+        corTitulo: "#1D3557", corTexto: "#26303B", corFundo: "#FFFFFF",
+        corDestaque: "#2A7F62", corDestaque2: "#1D3557", corFundoEscuro: "#1D3557",
+        textura: "", fonte: "mista", formato: "a4",
+        ornamento: "", rodape: "nome", fundoInternas: "claro",
+        logoEscuro: "clarear", marcaDagua: "", marcaDaguaEmpresa: "", numerarSecoes: ""
+      },
+      paginas: [
+        { id: "p1", tipo: "capa_classica", kicker: "PROPOSTA DE REFORMA E OBRA", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+        { id: "p2", tipo: "escopo_etapas", titulo: "O que será feito", abertura: "Os serviços desta proposta são:", mostrarCodigo: false, mostrarQtdItens: false },
+        { id: "p3", tipo: "incluso", titulo: "O que está incluso e o que não está" },
+        { id: "p4", tipo: "investimento", titulo: "Valor", colTrabalho: "Etapa", colValor: "Valor", tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: false, detalhar: false },
+        { id: "p5", tipo: "comercial", titulo: "Pagamento, prazo e garantia", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: true },
+        { id: "p6", tipo: "assinatura", titulo: "Aceite", texto: "Se está de acordo com o escopo, o valor e as condições acima, assine abaixo ou responda pelo WhatsApp.", mostrarValidade: true, botaoAceite: true }
+      ]
+    },
+    {
+      id: "tpl-tipo-empresa",
+      tipoCliente: "empresa",
+      nome: "Empresa / Condomínio — medição e contrato",
+      descricao: "Para pessoa jurídica ou condomínio: escopo por etapa, cronograma, medições mensais, retenção e responsabilidades das partes, para virar contrato.",
+      estilo: {
+        corTitulo: "#26323F", corTexto: "#26303A", corFundo: "#FFFFFF",
+        corDestaque: "#0D6EBD", corDestaque2: "#26323F", corFundoEscuro: "#26323F",
+        textura: "", fonte: "tecnica", formato: "a4",
+        ornamento: "", rodape: "nome", fundoInternas: "claro",
+        logoEscuro: "clarear", marcaDagua: "auto", marcaDaguaEmpresa: "nome", numerarSecoes: "sim"
+      },
+      paginas: [
+        { id: "p1", tipo: "capa_classica", kicker: "PROPOSTA COMERCIAL", mostrarLogo: true, mostrarObra: true, mostrarNumero: true, mostrarValidade: true, mostrarValor: true, mostrarEmpresa: true },
+        { id: "p2", tipo: "apresentacao", titulo: "Apresentação", fonteDePrecos: "padrao", mostrarBdi: false },
+        { id: "p3", tipo: "escopo_etapas", titulo: "Escopo por etapa", mostrarCodigo: true, mostrarQtdItens: true },
+        { id: "p4", tipo: "incluso", titulo: "Está incluso / Não está incluso" },
+        { id: "p5", tipo: "investimento", titulo: "Resumo financeiro", colTrabalho: "Etapa", colValor: "Valor", tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: true, detalhar: false },
+        { id: "p6", tipo: "cronograma", titulo: "Cronograma e desembolso", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: false },
+        { id: "p7", tipo: "comercial", titulo: "Medição, pagamento e contrato", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: true, mostrarGarantia: true,
+          extras: "Medição | Medições mensais, conforme o avanço físico, com aprovação do contratante antes da emissão da nota fiscal.\nRetenção | Eventual retenção contratual, em percentual a combinar, liberada conforme o contrato.\nContrato | Aceita a proposta, os serviços serão formalizados em contrato de prestação de serviços de engenharia entre as partes." },
+        { id: "p8", tipo: "responsabilidades", titulo: "Responsabilidades" },
+        { id: "p9", tipo: "assinatura", titulo: "Aceite e assinatura", texto: "A assinatura abaixo formaliza o aceite do escopo, dos valores e das condições desta proposta.", mostrarValidade: true, botaoAceite: false }
+      ]
     }
   ];
+
+  /* os três tipos de cliente do orçamento guiado (a escolha do passo ④). `desc` é a linha sob o nome no cartão. */
+  PropTpl.TIPOS_CLIENTE = [
+    { id: "publico", nome: "Prefeitura / Órgão público", desc: "Carta-proposta para licitação" },
+    { id: "particular", nome: "Particular", desc: "Pessoa física: reforma e obra" },
+    { id: "empresa", nome: "Empresa / Condomínio", desc: "Medição, retenção e contrato" }
+  ];
+  PropTpl.tipoClienteValido = function (v) {
+    var x = String(v == null ? "" : v);
+    for (var i = 0; i < PropTpl.TIPOS_CLIENTE.length; i++) if (PropTpl.TIPOS_CLIENTE[i].id === x) return x;
+    return "";
+  };
 
   /* cópia limpa de um modelo de fábrica, pronta para gravar */
   PropTpl.deFabrica = function (id) {

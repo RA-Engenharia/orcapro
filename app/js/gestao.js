@@ -755,6 +755,7 @@
     folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
     /* réguas de deck — os dois módulos abaixo são SOB DEMANDA (js/perfis.js):
        só aparecem para o perfil que os nomeia */
+    bases: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
     carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
     remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
     /* produtividade e prêmio: barras subindo até a meta (linha no topo) */
@@ -910,6 +911,9 @@
          letra. Vale para todo mundo — quem nao mexer continua com o documento
          de sempre, porque a proposta so usa modelo se houver um. */
       { id: "propmodelos", nome: "Modelos de Proposta", curto: "Modelos de proposta", g: "orcar" },
+      /* as bases de preço e as composições, numa porta só (prévia ?previa=orcamento, js/orcguiaui.js). NÃO é tela: o clique abre o
+         painel (App.VIEW_ACOES.bases). Fora da prévia o Perfis.permite responde false e o item não existe (EM_PREVIA em js/perfis.js). */
+      { id: "bases", nome: "Bases e Composições", curto: "Bases e composições", g: "orcar" },
       { id: "bim", nome: "BIM 3D ao 7D" },
       { id: "clientes", nome: "Clientes", g: "obra" },
       { id: "contratos", nome: "Contratos", g: "obra" },
@@ -1659,6 +1663,8 @@
            linha só cabia nos 212 de antes */
         + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
         + (this.menuFoco() ? "⇥ Menu fixo" : "⇤ Modo foco") + "</button>"
+        /* teste grátis por assunto (prévia ?previa=orcamento): "Liberar outro módulo" — só existe com o perfil `teste` */
+        + ((typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.menuLiberar) ? OrcGuiaUI.menuLiberar() : "")
         + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Organizar menu</button></nav>';
     },
 
@@ -1704,6 +1710,10 @@
            `Auth.podeModulo` já barrou quem não tem o perfil: se ainda assim a
            função faltar, a tela diz o que houve em vez de ficar em branco. */
         case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
+        /* "Bases e Composições" abre como PAINEL (App.VIEW_ACOES); este caso só roda se alguém forçar a view (link direto): em vez de tela em branco, a porta para o painel */
+        case "bases": return kit().cab({ icone: "bases", titulo: "Bases e Composições", sub: "As tabelas de preço do orçamento" }) +
+          kit().vazio({ icone: "bases", titulo: "As bases de preço ficam num painel", texto: "Abra o painel para instalar a SINAPI do seu estado e ver as composições próprias.",
+            acaoHtml: '<button type="button" class="btn primary" data-acao="orcguia-bases">Abrir Bases e Composições</button>' });
         case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
         case "cplpro": return this.renderCplpro ? this.renderCplpro() : this._moduloNaoCarregado("CPLPRO — Licitação do órgão", "js/cplproui.js");

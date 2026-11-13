@@ -112,6 +112,37 @@
       }).join("") + "</div>";
     },
 
+    /* ROTEIRO (peça opcional, entre o cabeçalho e o aviso): a tela mostra os
+       passos que levam ao resultado, cada um com a situação CALCULADA e
+       clicável para o lugar que o resolve. Nasceu no editor de orçamento
+       (Base de preço → Itens → BDI e condições → Proposta): cliente novo se
+       perdia porque cada pedaço morava num canto do sistema.
+       passos = [{ id, rotulo, estado: 'ok'|'falta'|'aviso', resumo, atual }]
+       `atual` = o primeiro passo que falta (um só; recebe o destaque).
+       ⚠ A SITUAÇÃO TAMBÉM VAI EM PALAVRA ("Pronto", "Falta", "Confira"): cor
+         sozinha não diz nada a quem não distingue verde de amarelo.
+       ⚠ Cada passo é um <button> com o mesmo `data-acao` — quem trata o
+         clique é o App (orcguia-passo), nunca esta peça. */
+    roteiro: function (passos, o) {
+      o = o || {};
+      var PALAVRA = { ok: "Pronto", falta: "Falta", aviso: "Confira" }, TOM = { ok: "ok", falta: "alerta", aviso: "info" };
+      var CHECK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>';
+      /* TUDO PRONTO = faixa compacta (só o ✔ e o título): o roteiro ensina enquanto falta algo e depois sai do caminho — a planilha fixa precisa da altura */
+      var compacto = (passos || []).filter(Boolean).every(function (p) { return p.estado === "ok"; });
+      return '<nav class="mod-rot' + (compacto ? " mod-rot-compacto" : "") + '" aria-label="' + esc(o.rotulo || "Roteiro") + '"' + (o.id ? ' id="' + esc(o.id) + '"' : "") + '><ol class="mod-rot-lista">' +
+        (passos || []).filter(Boolean).map(function (p, i) {
+          var est = PALAVRA[p.estado] ? p.estado : "falta";
+          return '<li class="mod-rot-p mod-rot-' + est + (p.atual ? " mod-rot-atual" : "") + '">' +
+            '<button type="button" class="mod-rot-bt" data-acao="orcguia-passo" data-passo="' + esc(p.id) + '"' + (p.atual ? ' aria-current="step"' : "") +
+            ' title="' + esc(p.resumo || "") + '">' +
+            '<span class="mod-rot-n" aria-hidden="true">' + (est === "ok" ? CHECK : (i + 1)) + "</span>" +
+            '<span class="mod-rot-t"><span class="mod-rot-l"><b>' + esc(p.rotulo) + "</b>" +
+              /* pronto = o ✔ já diz; a palavra fica só para o leitor de tela (nada de "Pronto" repetido quatro vezes) */
+              (est === "ok" ? '<span class="mod-rot-sr">Pronto</span>' : Modulo.pilula(PALAVRA[est], TOM[est])) + "</span>" +
+            '<span class="mod-rot-s">' + esc(p.resumo || "") + "</span></span></button></li>";
+        }).join("") + "</ol></nav>";
+    },
+
     /* FILTROS: uma barra só (campos em HTML, já com seus ids) */
     filtros: function (camposHtml, o) {
       o = o || {};
