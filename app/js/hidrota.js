@@ -75,7 +75,7 @@
   }
   /* a perna do joelho 90° de esgoto no DN (m): a cota z do catálogo do produto (js/biminstgeodados.js); null se a peça não existe nesse DN */
   function pernaJoelho(dn) {
-    var G = dep("HidGeo", "./biminstgeo.js"), B = BI(), d = Math.round(dn); if (!G || !G.cotasConexao || !B || !B.conexaoNoCatalogo || !B.conexaoNoCatalogo("pvc_esgoto", "joelho90", d)) return null;
+    var G = dep("HidGeo", "./biminstgeo.js"), B = BI(), d = Math.round(dn); if (!G || !G.cotasConexao || !B || !B.conexaoNoCatalogo || !(B.conexaoNoCatalogo("pvc_esgoto", "joelho90", d) || (B.joelhoOrcado && B.joelhoOrcado("joelho90", "pvc_esgoto", d, "esgoto", "ramal")))) return null;
     try { var c = G.cotasConexao("pvc_esgoto", "joelho90", d); return c && c.z > 0 ? c.z / 1000 : null; } catch (e) { return null; }   // hid:ok mm → m
   }
   /* o nó da descida é um canto simples (a descida + o ramal que sai, nada mais) e o ramal que sai é horizontal */
@@ -349,7 +349,7 @@
         if (P.embutir > 0 && L > EPS) { o.ponta = { x: p.x, y: p.y, z: p.z }; o.x = r4(p.x + nx / L * e); o.z = r4(p.z + nz / L * e); }
         return o;
       }).filter(Boolean);
-      out.aparelhos.push({ id: String(a.id), aparelho: txt(a.aparelho), aparelhoEs: a.aparelhoEs ? txt(a.aparelhoEs) : null, saidaEsgoto: saidaEsgoto(a.saidaEsgoto), grupo: a.grupo != null ? String(a.grupo) : null, conectores: cs });
+      out.aparelhos.push({ id: String(a.id), aparelho: txt(a.aparelho), aparelhoEs: a.aparelhoEs ? txt(a.aparelhoEs) : null, saidaEsgoto: saidaEsgoto(a.saidaEsgoto), grupo: a.grupo != null ? String(a.grupo) : null, direto: !!a.direto, conectores: cs });
     });
     arr(e.pecas).forEach(function (k) {
       if (!k || k.id == null || !B.PECAS[k.peca]) return;
@@ -1001,6 +1001,8 @@
        bacia) não tem espaço para os dois desvios de 45°; aquele nó fica proibido de virar
        e a busca recomeça. Só se nada fechar fica o joelho, com aviso e o ponto. */
     var semCurva = {}, melhor = null, HTr = o.transp ? dep("HidTransp", "./biminsttransp.js") : null;
+    /* a saída da caixa sifonada sai reta até passar da boca e do chanfro: o desvio de 45° colado na caixa saía fora do eixo da boca (só quando o ramal dela vem depois do do aparelho direto) */
+    if (o.retoDaPeca > 0) for (var kS = 0; kS < G.nx * G.nz; kS++) { if (d2(G.pt(kS), o.de) <= o.retoDaPeca + EPS) semCurva[kS] = 1; }
     /* as arestas LONGAS do caminho (transposições): o nó de saída, a direção e o que o A* guardou delas */
     function saltosDe(nos) {
       var out = [];
@@ -1042,7 +1044,8 @@
              mais que o chanfro); sem espaço fica a menor que cabe, como antes (a junta direta e o auditor de encaixe 3D cuidam do resto) */
           var dJ = encaixeEs(o.r, "juncao", P) / Math.SQRT2;
           var d = r4(Math.min(Math.max(P.chanfro, dJ), lim, d2(J, B) - P.margemNo)), ok = false;   // rota:juncao45
-          for (var tent = 0; tent < TENTATIVAS && !ok && d >= P.margemNo / 2; tent++) {
+          /* o ramal da caixa que entra no do aparelho direto (trecho curto): a diagonal comporta as peças, ou a curva de chegada vai mais cedo */
+          for (var tent = 0; tent < TENTATIVAS && !ok && d >= (o.dMinJ ? dJ : P.margemNo / 2); tent++) {
             var Pp = { x: r4(J.x - v.x * d), z: r4(J.z - v.z * d) }, Jl = { x: r4(J.x + u.x * d), z: r4(J.z + u.z * d) };
             if (ctxR.segLivre(Pp, Jl, a.id)) { pts[pts.length - 1] = Pp; pts.push(Jl); juncao.x = Jl.x; juncao.z = Jl.z; ok = true; } else d = r4(d / 2);
           }
@@ -1092,6 +1095,126 @@
     return noIni;
   }
 
+  /* ALVO DE JUNÇÃO DO PÉ DA DESCIDA (08/11/2026 — lavabo da CASA-COMPLETA: o lavatório a 10 cm do ramal do mictório ia à caixa sifonada e voltava 2,6 m). O pé da descida do
+     aparelho vira a DERIVAÇÃO de uma junção de 45° num ramal que passa reto, a favor do fluxo (NBR 8160 4.2.5.5; do vertical para o horizontal vale peça até 90°, 4.2.3.4).
+     Dois casos, os dois com a peça em ângulo exato:
+       · DE LADO: o ramal corre ao lado da descida (δ em planta): pé com joelho de 90° e a derivação deitada, em linha reta, a 45° do ramal. Pede δ·√2 ≥ derivação + joelho + as bolsas.
+         Faltando distância e sendo ponto de parede, a descida recua dentro da parede (o toco do ponto cresce), com o tubo inteiro na espessura;
+       · POR CIMA: a descida cai no eixo do ramal (δ ≤ 1 cm): a derivação sobe a 45° no plano do ramal e o joelho de 45° a põe na vertical (a junção simples serve na horizontal
+         e na vertical; o afluente fica acima do tronco). Sem esse primitivo a descida atravessaria o ramal.
+     O δ entre os dois não tem peça em ângulo exato: fica de fora e a busca normal decide. */
+  var ALCANCE_PE = 1.2, EIXO_PE = 0.01, PASSO_RECUO = 0.005;   // hid:ok até 1,20 m de reta em planta até o ramal; até 1 cm = no eixo dele; a descida recua de 5 em 5 mm
+  function faceDe(cx, ramos) { var HG = dep("HidGeo", "./biminstgeo.js"); if (!HG || !HG.facesNo) return null; try { return HG.facesNo(cx, ramos); } catch (e) { return null; } }
+  function juncaoDoPe(W, G, arv, f, o) {
+    var P = W.P, dnF = Math.round(o.r * 2000), melhor = null, s2 = Math.SQRT1_2;   // hid:ok DN em mm (raio m × 2000)
+    var ctx = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: "livre", sistema: arv.sistema, arvore: arv, ignorar: o.ignorar, ini: -1, alvos: {}, dePt: { x: f.x, z: f.z }, raiz: o.raizPlanta, curva: o.curva });
+    var HGb = dep("HidGeo", "./biminstgeo.js"), cL = null; try { cL = HGb && HGb.cotasConexao ? HGb.cotasConexao("pvc_esgoto", "luva", dnF) : null; } catch (eL) { cL = null; }
+    var bolsas = 2 * (cL ? (cL.pb2 || cL.pb || 0) / 1000 : 0);   /* o tubo entre as duas peças tem as duas bolsas (a régua do encaixe 3D) */
+    var nT = null, recMax = 0;
+    if (f.ponta && d2(f.ponta, f) > EPS) {
+      var Lt = d2(f.ponta, f); nT = { x: (f.x - f.ponta.x) / Lt, z: (f.z - f.ponta.z) / Lt };
+      var w0 = W.O.lista.filter(function (w) { return w.tipo === "parede" && dentro(w, f.x, f.z, -o.r); })[0];
+      /* até onde a descida recua no sentido do toco com o tubo inteiro na parede */
+      if (w0) for (var rr = PASSO_RECUO; rr <= 2 * w0.hw + EPS; rr += PASSO_RECUO) { if (dentro(w0, f.x + nT.x * rr, f.z + nT.z * rr, -o.r)) recMax = rr; else break; }
+    }
+    arv.arestas.forEach(function (a) {
+      if (!a.vivo || a.paraCaixa || a.r == null || a.r < o.r - EPS) return;
+      var A = arv.nos[a.de], B = arv.nos[a.para], L = d2(A, B); if (!(L > EPS)) return;
+      var u = un2(A, B), dnRun = Math.round(a.r * 2000);   // hid:ok DN em mm (raio m × 2000)
+      for (var rec = 0; rec <= recMax + EPS; rec += PASSO_RECUO) {
+        if (rec > EPS && !nT) break;
+        var E = rec > EPS ? { x: r4(f.x + nT.x * rec), z: r4(f.z + nT.z * rec) } : { x: f.x, z: f.z };
+        var vx = E.x - A.x, vz = E.z - A.z, tP = vx * u.x + vz * u.z, dl = Math.abs(vx * u.z - vz * u.x), porCima = dl <= EIXO_PE;
+        var proj = { x: A.x + u.x * tP, z: A.z + u.z * tP };
+        if (dl * Math.SQRT2 > ALCANCE_PE) continue;
+        var uv = dl > EPS ? { x: (proj.x - E.x) / dl, z: (proj.z - E.z) / dl } : { x: 0, z: 0 };
+        /* a derivação da junção (a peça medida, com a redução do afluente) + o joelho do pé (45° por cima; 90° de lado) + as bolsas + o corte */
+        var dirD = porCima ? [-u.x * s2, s2, -u.z * s2] : [-u.x * s2 - uv.x * s2, 0, -u.z * s2 - uv.z * s2];
+        var fJ = faceDe({ tipo: "juncao", material: "pvc_esgoto", dn: dnRun }, [{ d: [u.x, 0, u.z], passante: true, dn: dnRun }, { d: dirD, chega: true, dn: dnF }]);
+        var fP = faceDe({ tipo: porCima ? "joelho45" : "joelho90", material: "pvc_esgoto", dn: dnF }, [{ d: [0, 1, 0], chega: true, dn: dnF }, { d: [-dirD[0], -dirD[1], -dirD[2]], chega: false, dn: dnF }]);
+        if (!fJ || fJ[1] == null || !fP || fP[1] == null) continue;
+        var need = fJ[1] + fP[1] + bolsas + FOLGA_ENCAIXE, h = porCima ? cmAcima(need * s2) : 0;
+        if (!porCima && dl * Math.SQRT2 < need - EPS) continue;
+        var tJ = tP + (porCima ? h : dl);
+        /* J no meio do trecho reto, longe das pontas (a junção tem corpo) */
+        if (tJ < P.chanfro - EPS || L - tJ < P.chanfro - EPS) continue;
+        var J = { x: r4(A.x + u.x * tJ), z: r4(A.z + u.z * tJ) };
+        if (!porCima && !ctx.segLivre(E, J, a.id)) continue;
+        var custo = (porCima ? h : dl * Math.SQRT2) + rec;
+        if (!melhor || custo < melhor.custo - EPS) melhor = { custo: custo, a: a, E: E, J: J, porCima: porCima };
+        break;   /* o menor recuo que serve neste ramal */
+      }
+    });
+    if (!melhor) return null;
+    var novo = melhor.E;
+    /* de lado: o pé da descida é joelho de 90° (a curva longa não cabe na derivação curta) */
+    if (!melhor.porCima) f.peJoelho = true;
+    if (d2(novo, f) > EPS) {
+      /* o prumo da descida anda junto (a reserva do ponto na busca dos outros) */
+      W.verticais.forEach(function (v) { if (v.ref === f.ref) { v.x = novo.x; v.z = novo.z; } });
+      f.x = novo.x; f.z = novo.z;
+    }
+    var rota = { pts: [{ x: novo.x, z: novo.z }, { x: melhor.J.x, z: melhor.J.z }], alvo: { tipo: "aresta", aresta: melhor.a.id }, juncao: { aresta: melhor.a.id, x: melhor.J.x, z: melhor.J.z }, cruz: {}, idsCruz: [], avisos: [], custo: melhor.custo, transp: [] };
+    if (melhor.porCima) rota.porCima = true;
+    return rota;
+  }
+
+  /* A SAÍDA DA CAIXA SIFONADA no ramal do aparelho direto, sem o S: reta da caixa até a diagonal e a diagonal de 45° até a junção (M1 da revisão 09/11/2026: "nenhuma conexão a mais"; a busca, com o alvo só na grade, fazia 2 × 45° a mais) */
+  function saidaDaCaixa(W, G, arv, f, o) {
+    var P = W.P, melhor = null;
+    var ctx = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: "livre", sistema: arv.sistema, arvore: arv, ignorar: o.ignorar, ini: -1, alvos: {}, dePt: { x: f.x, z: f.z }, raiz: o.raizPlanta, curva: o.curva });
+    var dMin = Math.max(P.chanfro, encaixeEs(o.r, "juncao", P) / Math.SQRT2);
+    arv.arestas.forEach(function (a) {
+      if (!a.vivo || a.paraCaixa) return;
+      var A = arv.nos[a.de], B = arv.nos[a.para], L = d2(A, B); if (!(L > EPS)) return;
+      var u = un2(A, B), vx = f.x - A.x, vz = f.z - A.z, tF = vx * u.x + vz * u.z, dl = Math.abs(vx * u.z - vz * u.x); if (!(dl > EPS)) return;
+      var F = { x: A.x + u.x * tF, z: A.z + u.z * tF }, n = { x: (f.x - F.x) / dl, z: (f.z - F.z) / dl };
+      /* a menor diagonal que comporta as peças, com a junção longe das pontas do ramal e a reta da caixa passando da boca */
+      var d = Math.max(dMin, P.chanfro - tF); if (tF + d > L - P.chanfro + EPS || dl - d < num(f.peca.hub && f.peca.hub.r, 0) + P.chanfro - EPS) return;
+      var Pp = { x: r4(F.x + n.x * d), z: r4(F.z + n.z * d) }, J = { x: r4(F.x + u.x * d), z: r4(F.z + u.z * d) };
+      if (!ctx.segLivre({ x: f.x, z: f.z }, Pp, a.id) || !ctx.segLivre(Pp, J, a.id)) return;
+      var c = (dl - d) + d * Math.SQRT2; if (!melhor || c < melhor.c - EPS) melhor = { c: c, a: a, Pp: Pp, J: J };
+    });
+    if (!melhor) return null;
+    return { pts: [{ x: f.x, z: f.z }, melhor.Pp, melhor.J], alvo: { tipo: "aresta", aresta: melhor.a.id }, juncao: { aresta: melhor.a.id, x: melhor.J.x, z: melhor.J.z }, cruz: {}, idsCruz: [], avisos: [], custo: melhor.c, transp: [] };
+  }
+
+  /* PAR DE CUBAS DA BANCADA (08/11/2026 — BANCADA-BAN-2C: cubas a 60 cm, a 25 cm da parede, sem reta de 31 cm para a junção de 45° de cada uma). As duas saídas do MESMO aparelho
+     mandado direto ao ramal unem-se sob a bancada, dentro da parede, e descem como uma saída só: a cuba mais longe do destino desce um toco (no horizontal não há canto de 90°: NBR 8160
+     4.2.3.3), corre com a declividade do DN até junto da descida da outra e entra nela por uma junção de 45° a favor do fluxo (a junção serve na vertical). Só com as duas no mesmo eixo
+     embutido e com altura acima do piso. A folha que fica recebe a soma das UHC e o DN do ramal pela tabela; a descida da outra deixa de existir abaixo da união. */
+  function geoUniaoCubas(f, U, dnS, dnC, i, P) {
+    var s2 = Math.SQRT1_2, dU = un2(f, U);
+    var fJ = faceDe({ tipo: "juncao", material: "pvc_esgoto", dn: dnS }, [{ d: [0, -1, 0], passante: true, dn: dnS }, { d: [dU.x * s2, s2, dU.z * s2], chega: true, dn: dnC }]);
+    var fE = faceDe({ tipo: "joelho45", material: "pvc_esgoto", dn: dnC }, [{ d: [dU.x, 0, dU.z], chega: true, dn: dnC }, { d: [-dU.x * s2, -s2, -dU.z * s2], chega: false, dn: dnC }]);
+    /* o toco vertical da cuba de longe: os dois joelhos + as bolsas */
+    var HG = dep("HidGeo", "./biminstgeo.js"), fJ90 = faceDe({ tipo: "joelho90", material: "pvc_esgoto", dn: dnC }, [{ d: [0, 1, 0], chega: true, dn: dnC }, { d: [dU.x, 0, dU.z], chega: false, dn: dnC }]), cL = null;
+    try { cL = HG && HG.cotasConexao ? HG.cotasConexao("pvc_esgoto", "luva", dnC) : null; } catch (e) { cL = null; }
+    var pb = cL ? (cL.pb2 || cL.pb || 0) / 1000 : 0;
+    /* a derivação comporta a junção, o joelho e as duas bolsas: sem as bolsas o ajuste de encaixe empurrava o joelho na horizontal e a peça deixava de ser 45° (revisão 09/11/2026, A1: 52°) */
+    var L = (fJ && fJ[1] != null ? fJ[1] : P.margemNo) + (fE && fE[1] != null ? fE[1] : P.margemNo) + 2 * pb + FOLGA_ENCAIXE;
+    var queda = cmAcima((fJ90 && fJ90[0] != null ? fJ90[0] : P.margemNo) + (fJ90 && fJ90[1] != null ? fJ90[1] : P.margemNo) + 2 * pb + FOLGA_ENCAIXE);
+    return { h: cmAcima(L * s2), queda: queda };
+  }
+  function uniaoCubas(W, folhas, raizD, piso, mat, NRM) {
+    var P = W.P, porAp = {}, fora = {};
+    folhas.forEach(function (f) { if (f.direto && f.ap && f.tipo === "aparelho") (porAp[f.ap.id] = porAp[f.ap.id] || []).push(f); });
+    Object.keys(porAp).forEach(function (id) {
+      var l = porAp[id]; if (l.length !== 2) return;
+      var a = l[0], b = l[1], dx = Math.abs(a.x - b.x), dz = Math.abs(a.z - b.z), L = d2(a, b);
+      if (!(L > EPS) || (dx > EPS && dz > EPS) || Math.abs(a.y - b.y) > P.margemNo) return;   /* no mesmo eixo embutido e na mesma altura */
+      var perto = d2(a, raizD) <= d2(b, raizD) ? a : b, longe = perto === a ? b : a;
+      /* a bancada de 2 cubas conta como lavatório de uso geral no dimensionamento (js/hides.js): o ramal comum sai no DN que ele aceita, sem troca depois */
+      var uG = NRM.esAparelho("lavatorio_uso_geral", "uhc", "traçado: ramal do par de cubas"), uhc = Math.max(num(a.uhc, 0) + num(b.uhc, 0), uG != null ? 2 * uG : 0), dT = NRM.dnRamal(uhc, "traçado: ramal do par de cubas"), dnC = Math.max(num(a.dn, 0), num(b.dn, 0)), dnS = comercial(mat, Math.max(dnC, dT != null ? dT : 0));
+      var i = (NRM.decl(dnC, P) || {}).i / 100, geo = geoUniaoCubas(perto, longe, dnS, dnC, i, P);
+      if (L - geo.h < P.margemNo) return;   /* a reta entre as cubas não comporta o joelho e a junção */
+      if (Math.min(a.y, b.y) - geo.queda - i * L - geo.h < piso + P.margemNo) return;   /* a união fica acima do piso, sob a bancada */
+      perto.uniao = longe; perto.dnCuba = dnC; perto.dn = dnS; perto.uhc = uhc; fora[longe.ref] = 1;
+      W.verticais.forEach(function (v) { if (v.ref === longe.ref) v.y0 = r4(longe.y - geo.queda - geo.h); });
+    });
+    return folhas.filter(function (f) { return !fora[f.ref]; });
+  }
+
   /* ===================================================== ESGOTO (um grupo) */
   function faixaEs(W, g, raizD) {
     var P = W.P, E = W.E;
@@ -1115,7 +1238,7 @@
     g.aparelhos.forEach(function (a) {
       if (g.semEsgoto && g.semEsgoto[a.id]) return;   // rota:gordura
       a.conectores.filter(function (c) { return c.sistema === "esgoto"; }).forEach(function (c) {
-        folhas.push({ tipo: "aparelho", ref: a.id + ":" + c.id, ap: a, saida: saidaEsgoto(a.saidaEsgoto), aparelho: a.aparelho, aparelhoEs: a.aparelhoEs || null, x: c.x, y: c.y, z: c.z, dnCon: c.dn, ponta: c.ponta || null });
+        folhas.push({ tipo: "aparelho", ref: a.id + ":" + c.id, ap: a, saida: saidaEsgoto(a.saidaEsgoto), aparelho: a.aparelho, aparelhoEs: a.aparelhoEs || null, direto: !!a.direto, x: c.x, y: c.y, z: c.z, dnCon: c.dn, ponta: c.ponta || null });
       });
     });
     /* a saída da peça é a do CATÁLOGO do biminst (PECAS.dn "100x40" → 40; caixa
@@ -1141,10 +1264,16 @@
       if (f.dn == null && !RECEPTOR[f.aparelho]) { saida.pendencias.push(pend("es.aparelhos[" + f.aparelho + "].dn_min", "DN do ramal de descarga de " + f.ref + " sem tabela nem DN no ponto — usado o DN padrão do material; rode o dimensionamento", [f.ap ? f.ap.id : f.ref], { tipo: "dimensionar" })); f.dn = B.MATERIAIS[mat].dn; }
       if (f.dn != null) f.dn = comercial(mat, f.dn);
     });
+    /* LAVATÓRIO DIRETO (08/11/2026, ESGOTO_VOLTA do lavabo e da bancada de 2 cubas): o aparelho de sifão próprio que o ambiente mandou direto ao ramal (o caminho pela
+       caixa sifonada dava a volta: HidAmbiente.ligar) vale como o tanque — vai ao ramal, sem passar pela caixa — e entra DEPOIS dos outros: o ramal dos outros já existe
+       e ele deriva ali (juncaoDoPe). O par de cubas do MESMO aparelho vira uma saída só, unida sob a bancada (uniaoCubas) */
+    folhas = uniaoCubas(W, folhas, raizD, g.piso, mat, NRM);
+    function paraCx(f) { return PARA_CAIXA[f.aparelho] && !(f.direto && SIFAO_PROPRIO[f.aparelho]); }
     var receptores = folhas.filter(function (f) { return RECEPTOR[f.aparelho]; });
-    var paraCaixa = folhas.filter(function (f) { return PARA_CAIXA[f.aparelho]; });
+    var paraCaixa = folhas.filter(paraCx);
     var bacias = folhas.filter(function (f) { return BACIA[f.aparelho]; });
-    var outros = folhas.filter(function (f) { return !RECEPTOR[f.aparelho] && !PARA_CAIXA[f.aparelho] && !BACIA[f.aparelho]; });
+    var outros = folhas.filter(function (f) { return !RECEPTOR[f.aparelho] && !paraCx(f) && !BACIA[f.aparelho] && !f.direto; });
+    var diretos = folhas.filter(function (f) { return !RECEPTOR[f.aparelho] && !paraCx(f) && !BACIA[f.aparelho] && f.direto; });
     function perto(f) { return d2(f, raizD); }
     function ord(l) { return l.slice().sort(function (a, b) { return perto(a) - perto(b) || (a.ref < b.ref ? -1 : 1); }); }
     var G = grade(folhas.concat([raizD]), P, raizD);
@@ -1168,14 +1297,15 @@
       });
       return o;
     }
-    var filas = [ord(bacias).concat(ord(receptores), ord(outros), ordIguais(paraCaixa))];
-    if (outros.length > 1) filas.push(ord(bacias).concat(ord(receptores), ord(outros).reverse(), ordIguais(paraCaixa)));
+    /* com aparelho direto, o ramal dele nasce antes do ramal da caixa sifonada: a caixa é que entra nele (o aparelho está preso na parede; a caixa, no meio do piso, chega por cima a 45°) */
+    var filas = [diretos.length ? ord(bacias).concat(ord(outros), ord(diretos), ord(receptores), ordIguais(paraCaixa)) : ord(bacias).concat(ord(receptores), ord(outros), ordIguais(paraCaixa))];
+    if (outros.length > 1) filas.push(ord(bacias).concat(ord(receptores), ord(outros).reverse(), ord(diretos), ordIguais(paraCaixa)));
     /* ⚠ REVISÃO H7 (21/10/2026): ÁREA DE SERVIÇO (tanque + máquina): a caixa sifonada da máquina ia primeiro e tomava a entrada do
        ambiente com um ramal CURTO (a caixa fica perto da saída) — o tanque (sifão próprio, vai ao ramal) não tinha trecho reto para
        a junção de 45° e ficava "sem caminho livre até o destino": o Traçar automaticamente nunca fechava a área de serviço com o
        tanque e a máquina. Na falha, o traçado refaz com o tanque (os "outros") primeiro: o ramal dele vai à saída e a caixa entra
        nele com a junção de 45°. A 1ª ordem segue valendo quando fecha. */
-    if (outros.length && receptores.length) filas.push(ord(bacias).concat(ord(outros), ord(receptores), ordIguais(paraCaixa)));
+    if (outros.length && receptores.length) filas.push(ord(bacias).concat(ord(outros), ord(receptores), ord(diretos), ordIguais(paraCaixa)));
     var cruz0 = copia(W.cruz), idsCruz0 = copia(W.idsCruz), falha0 = null;
     for (var iF = 0; iF < filas.length; iF++) {
       var fila = filas[iF];
@@ -1190,8 +1320,9 @@
         var f = fila[i], ign = {};
         ign[f.ref] = 1; if (f.peca) ign[f.peca.id] = 1;
         var o = { de: f, b0: F.b0, b1: F.b1, r: (f.dn || 0) / 1000 / 2, rArv: rMax, modo: "livre", ignorar: ign, curva: P.pesos.conexao * 2,
-                  folgaJuncao: P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };
-        var vaiCaixa = PARA_CAIXA[f.aparelho] && receptores.length;
+                  folgaJuncao: f.direto || (diretos.length && RECEPTOR[f.aparelho]) ? P.chanfro + P.margemNo : P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };   /* com aparelho direto os ramais são curtos (o da bacia até a espera): só a perna do chanfro + a margem de um lado */
+        var vaiCaixa = paraCx(f) && receptores.length;
+        if (diretos.length && f.peca && RECEPTOR[f.aparelho]) { o.retoDaPeca = num(f.peca.hub && f.peca.hub.r, 0) + P.chanfro + P.margemNo; o.dMinJ = true; }
         if (vaiCaixa) {
           /* lavatório, chuveiro, bidê, ralo seco → a caixa (ou ralo) sifonada mais perto */
           var rc = receptores.slice().sort(function (a, b) { return (a.aparelho === "caixa_sifonada" ? 0 : 1) - (b.aparelho === "caixa_sifonada" ? 0 : 1) || d2(f, a) - d2(f, b) || (a.ref < b.ref ? -1 : 1); })[0];
@@ -1206,13 +1337,18 @@
           o.raiz = usadaRaiz ? null : raizD; ign[raizD.id || "destino-es"] = 1;
         }
         if (!o.raiz && !o.alvoPeca && !arv.arestas.length) return falha("sem destino para " + f.ref, [f.ap ? f.ap.id : f.ref], { tipo: "destino", sistema: "esgoto", grupo: g.id });
-        var rota = rotear(W, G, arv, o);
+        /* o ramal dos outros passa livre no prumo do aparelho direto que vem depois: a descida dele deriva por cima (juncaoDoPe) */
+        /* (só até o DN que corre embutido sob a parede, a regra da cinta: acima dele o ramal fica fora da parede, como antes, e o aparelho deriva de lado) */
+        if (diretos.length && !f.direto && cintaPassa(f.dn, P)) { var pv = {}; diretos.forEach(function (fd) { if (fd !== f) pv[fd.ref] = 1; }); o.passaVert = pv; }
+        /* o aparelho direto com o ramal ao alcance do pé da descida: deriva ali (o A* só acha junção a 31 cm dos nós, com reta de chegada) */
+        var rota = (f.direto && !vaiCaixa ? juncaoDoPe(W, G, arv, f, o) : null) || (o.dMinJ ? saidaDaCaixa(W, G, arv, f, o) : null) || rotear(W, G, arv, o);
         if (rota.erro) return falha("esgoto de " + f.ref + ": " + rota.erro + " até " + (vaiCaixa ? "a caixa sifonada" : "o destino") + " (" + F.nome + ")", [f.ap ? f.ap.id : f.ref, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) });
         if (rota.alvo.tipo === "raiz") usadaRaiz = true;
         somarCruz(W, rota);
         rota.avisos.forEach(function (a) { avisos.push(a); });
         var noF = enxertar(arv, rota, { tipo: f.tipo, ref: f.ref, no: arv.porRef[f.ref] }, { paraCaixa: !!vaiCaixa, igual: o.igual || null, r: o.r });
         arv.nos[noF].folha = f;
+        if (rota.porCima) { arv.nos[noF].porCima = true; arv.arestas[arv.nos[noF].sai].iFixa = 100; }   // hid:ok 45° = 100 %: a derivação por cima
       }
       return null;
     }
@@ -1230,6 +1366,8 @@
       var m = montante(a.de, memo), dn = m.dn;
       if (m.refs.length > 1 || RECEPTOR[(arv.nos[a.de].folha || {}).aparelho]) { var dt = NRM.dnRamal(m.u, "traçado: ramal de esgoto"); if (dt != null) dn = Math.max(dn, dt); }
       a.dn = comercial(mat, dn || B.MATERIAIS[mat].dn); a.uhc = m.u; a.decl = NRM.decl(a.dn, P);
+      /* a derivação POR CIMA (juncaoDoPe): sobe a 45° até o pé da descida — a queda é a da peça, não a da declividade do ramal */
+      if (a.iFixa != null) { var dF = copia(a.decl); dF.i = a.iFixa; a.decl = dF; }
     });
     /* ---- COTAS: da raiz para cima, com a declividade de cada DN */
     var sobe = {}, ordem = [];
@@ -1242,7 +1380,8 @@
     }
     arv.nos.forEach(function (n) {
       var rN = Math.max.apply(null, [0].concat(n.entram.map(function (aid) { return raio(arv.arestas[aid].dn); }), n.sai != null ? [raio(arv.arestas[n.sai].dn)] : []));
-      lim(n.id, F.b1 - rN, F.b0 + rN, "topo da faixa (" + F.nome + ")", "fundo da faixa (" + F.nome + ")", { tipo: "faixa" });
+      /* o pé da derivação POR CIMA sai acima do ramal, dentro da parede/do enchimento: o teto da faixa vale para a junção, não para ele */
+      if (!n.porCima) lim(n.id, F.b1 - rN, F.b0 + rN, "topo da faixa (" + F.nome + ")", "fundo da faixa (" + F.nome + ")", { tipo: "faixa" });
       var f = n.folha;
       if (f && f.tipo === "aparelho") {
         /* SAÍDA EM JOELHO (06/11/2026, pedido do Rogério): com "Joelho 90°" no aparelho, a descida mínima é a PERNA do joelho (a peça do
@@ -1784,6 +1923,23 @@
       V.trechos.forEach(function (t) { trechos.push(t); if (t.tipo === "subida") laje(t.p1.x, t.p1.z, t.p1.y, t.p2.y); W.tubos.push({ a: t.p1, b: t.p2, r: raio(t.dn), sistema: "ventilacao", grupo: g.id, ref: "ve" }); });
       V.contatos.forEach(function (c) { idsPorTipo.contato.push(c); });
     }
+    /* o par de cubas (uniaoCubas): a descida da cuba que fica parte na junção; a outra corre no eixo embutido e entra nela a 45° */
+    function emitirUniaoCubas(f, tD) {
+      var U0 = f.uniao, mE = P.material.esgoto, dnC = f.dnCuba, dnS = tD.dn, i = NRM_decl(dnC) / 100;
+      /* a descida da cuba que fica pode ter recuado na parede (juncaoDoPe): a outra entra no mesmo eixo, para o joelho ser de 45° exato */
+      var U = { x: f.x, z: f.z, y: U0.y, ponta: U0.ponta, ap: U0.ap }, dX = Math.abs(U0.x - f.x), dZ = Math.abs(U0.z - f.z); if (dX > dZ) U.x = U0.x; else U.z = U0.z;
+      var dU = un2(f, U), geo = geoUniaoCubas(f, U, dnS, dnC, i, P);
+      var yIni = U.ponta ? chao4(U.ponta.y - i * d2(U.ponta, U)) : U.y, yR = chao4(yIni - geo.queda), yE = chao4(yR - i * (d2(f, U) - geo.h)), yJ = chao4(yE - geo.h);
+      var E = { x: r4(f.x + dU.x * geo.h), y: yE, z: r4(f.z + dU.z * geo.h) }, J = { x: tD.p1.x, y: yJ, z: tD.p1.z };
+      trechos.push({ sistema: "esgoto", material: mE, dn: dnC, p1: tD.p1, p2: J, ap: tD.ap });
+      /* a descida abaixo da união é o RAMAL do par, não tubo de queda: o dimensionamento (js/hides.js) classifica vertical como tubo de queda e pedia DN 100 */
+      var tB = { sistema: "esgoto", material: mE, dn: dnS, p1: J, p2: tD.p2, aplicacao: "ramal" }; if (tD.pecaFim) tB.pecaFim = tD.pecaFim; trechos.push(tB);
+      if (U.ponta) trechos.push({ sistema: "esgoto", material: mE, dn: dnC, p1: { x: U.ponta.x, y: U.ponta.y, z: U.ponta.z }, p2: { x: U.x, y: yIni, z: U.z }, toco: true, ap: U.ap.id });
+      trechos.push({ sistema: "esgoto", material: mE, dn: dnC, p1: { x: U.x, y: yIni, z: U.z }, p2: { x: U.x, y: yR, z: U.z }, ap: U.ap.id });
+      trechos.push({ sistema: "esgoto", material: mE, dn: dnC, p1: { x: U.x, y: yR, z: U.z }, p2: E });
+      trechos.push({ sistema: "esgoto", material: mE, dn: dnC, p1: E, p2: J });
+    }
+    function NRM_decl(dn) { return (NRM.decl(dn, P) || {}).i; }
     /* esgoto de UM grupo (o ambiente, ou a pia até a caixa de gordura) */
     function emitirEsgoto(g, gi) {
       var es = rotearEsgoto(W, g, gi, saida);
@@ -1807,7 +1963,7 @@
                de 5 cm e o joelho dele eram um "Z" (dois joelhos seguidos, JOELHO_DUPLO). A descida vai direto no próprio ponto e o ramal nasce ali (a curva do
                pé da descida já vira para o ramal). O toco só fica quando é preciso para entrar na parede e o ramal segue em outra direção. */
             /* a pia/bancada de cozinha fica de fora: o volume do móvel não chega ao motor (entra no modelo depois) e a vertical rente à face o atravessaria */
-            if (f.ponta && !n.entram.length && P.paraCaixaGordura.indexOf(f.aparelho) < 0) {
+            if (f.ponta && !n.entram.length && !f.uniao && P.paraCaixaGordura.indexOf(f.aparelho) < 0) {
               var tR = trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "esgoto" && !t.ap && !t.toco && Math.abs(t.p1.x - n.x) < EPS && Math.abs(t.p1.z - n.z) < EPS && Math.abs(t.p1.y - Y[n.id]) < EPS; })[0];
               var dTx = f.x - f.ponta.x, dTz = f.z - f.ponta.z, lT = Math.sqrt(dTx * dTx + dTz * dTz);
               if (tR && lT > EPS) {
@@ -1828,7 +1984,7 @@
                 }
               }
             }
-            if (f.ponta && !semToco) { yD = chao4(f.ponta.y - arv.arestas[n.sai].decl.i / 100 * d2(f.ponta, f)); trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: { x: f.x, y: yD, z: f.z }, toco: true, ap: f.ap.id }); }
+            if (f.ponta && !semToco) { yD = chao4(f.ponta.y - arv.arestas[n.sai].decl.i / 100 * d2(f.ponta, f)); trechos.push({ sistema: "esgoto", material: P.material.esgoto, dn: f.dnCuba || dnS, p1: { x: f.ponta.x, y: f.ponta.y, z: f.ponta.z }, p2: { x: f.x, y: yD, z: f.z }, toco: true, ap: f.ap.id }); }
             var tD = { sistema: "esgoto", material: P.material.esgoto, dn: dnS, p1: { x: xD, y: yD, z: zD }, p2: pFimD, ap: f.ap.id };
             if (f.saida === SAIDA_JOELHO && joelhoNoPe(arv, n, dnS)) {
               tD.pecaFim = "joelho90";   /* o nó vertical ↔ horizontal vira joelho 90° (decidir/forçada) */
@@ -1839,7 +1995,9 @@
             }
             else if (f.saida === SAIDA_JOELHO && !n.entram.length && pernaJoelho(dnS) == null)
               saida.avisos.push(prob("joelho 90° de esgoto DN " + dnS + " não consta no catálogo dos fabricantes (sem cota): " + f.ref + " ficou na curva longa — pendente (cadastre a peça)", [f.ap.id], { tipo: "ajustar", ids: [f.ap.id] }));
-            trechos.push(tD); laje(f.x, f.z, f.y, Y[n.id]);
+            if (f.peJoelho) tD.pecaFim = "joelho90";
+            if (f.uniao) emitirUniaoCubas(f, tD); else trechos.push(tD);
+            laje(f.x, f.z, f.y, Y[n.id]);
           }
           else {
             var topoCap = r4(f.peca.hub.yBot + P.folga);
@@ -2003,6 +2161,7 @@
       t.id = novoId(t.sistema);
       var oT = { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: r4(t.p1.x), y: r4(t.p1.y), z: r4(t.p1.z) }, p2: { x: r4(t.p2.x), y: r4(t.p2.y), z: r4(t.p2.z) } };
       if (t.pecaFim) oT.pecaFim = t.pecaFim;
+      if (t.aplicacao) oT.aplicacao = t.aplicacao;
       saida.ops.push(oT);
     });
     saida.familias.forEach(function (op) { saida.ops.push(op); });
@@ -2530,7 +2689,7 @@
     NUNCA_NA_GORDURA: NUNCA_NA_GORDURA, ehCinta: ehCinta, cintaPassa: cintaPassa, shaftNoCanto: shaftNoCanto, shaftsDaCinta: shaftsDaCinta, LIMITE_DN_CINTA_MM: LIMITE_DN_CINTA_MM,   /* cinta não é bloqueio: o tubo até o DN-limite embute */
     telhadoAbaixoDe: telhadoAbaixoDe, tuboSobreTelhado: tuboSobreTelhado,   /* 27/10/2026: o telhado como obstáculo (nada de tubo horizontal sobre a telha) */
     ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
-    _int: { LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
+    _int: { juncaoDoPe: juncaoDoPe, uniaoCubas: uniaoCubas, saidaDaCaixa: saidaDaCaixa, Arvore: Arvore, Mundo: Mundo, LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };
   global.HidRota = HidRota;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRota;

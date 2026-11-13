@@ -558,8 +558,10 @@
          sem parede (ilha), no eixo (0, −Esgoto_abaixo_tampo, 0), como antes */
       var yE = -Ea, zc = zv + 0.05, naParede = num(P.Dp, 0) > Pp / 2, zS = naParede ? -num(P.Dp, 0) : 0;
       if (yb - 0.03 > yE + 0.07) {
-        tubo(mt.m, [[0, yb - 0.03, zv], [0, yE + 0.075, zv], [0, yE + 0.06, zc]], 0.0155, q.n, { rc: 0.02, arco: q.arco });
-        sifaoCopo(mt.m, [0, yE + 0.06, zc], [0, yE, zS], q, !naParede);
+        /* o sifão de copo e o tubo até ele ficam sob o tampo, à sombra da cuba: menos faces no giro (o orçamento de triângulos do gerador), a mesma forma e as mesmas cotas */
+        var qSob = { N: q.N, n: Math.min(q.n, 10), arco: Math.min(q.arco, 2), k: q.k, kv: q.kv };
+        tubo(mt.m, [[0, yb - 0.03, zv], [0, yE + 0.075, zv], [0, yE + 0.06, zc]], 0.0155, qSob.n, { rc: 0.02, arco: qSob.arco });
+        sifaoCopo(mt.m, [0, yE + 0.06, zc], [0, yE, zS], qSob, !naParede);
       } else tubo(mt.m, [[0, yb - 0.03, zv], [0, yE, zv], [0, yE, zS]], 0.0155, q.n, { rc: 0.02, arco: q.arco });
       partes.push(mt);
     }

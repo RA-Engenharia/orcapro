@@ -183,7 +183,7 @@
        desvio < 10° = luva) — é o mesmo tubo seguindo para a caixa, com um leve desvio. A espera vira a reta da origem dela até a caixa, sem a luva */
     if (ux * vx + uz * vz < COS_EMENDA) return null;
     /* nada encosta no MEIO do trecho da espera (a geometria dele muda alguns mm na vertical) */
-    var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01; }); });   // hid:ok 1 cm (tolerância de nó)
+    var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01 && Math.abs(num(q.y, 0) - (A.y + (W.y - A.y) * s / La)) < 0.02; }); });   // hid:ok 1 cm em planta (tolerância de nó); 2 cm na vertical (TOL do biminst): o que passa por cima, em outra cota (o deitado da ventilação), não encosta — fundia menos e sobrava a luva entre a espera e o ramal
     if (meio) return null;
     var i = BI().declMinDn("esgoto", dn) / 100, Lt = La + Lb;
     if ((num(A.y, 0) - yFim) / Lt < i - EPS) return null;
@@ -446,7 +446,7 @@
     return out;
   }
 
-  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, yMaxEntrada: yMaxEntrada, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { linha: linha, noPonto: noPonto, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
+  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, yMaxEntrada: yMaxEntrada, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { emendaEspera: emendaEspera,  linha: linha, noPonto: noPonto, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
   global.HidRede = HidRede;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRede;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

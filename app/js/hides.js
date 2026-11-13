@@ -88,6 +88,7 @@
     return ls.length ? ls[0] : null;
   }
 
+  var TOCO_TERMINAL = 1.0, INF_TOCO = 1e9;   // hid:ok até 1 m: o toco acima do teto, antes do terminal (geometria, não norma)
   function calcular(entrada, ctx, R) {
     var B = BI(), Gr = GR(), Nn = NR();
     entrada = entrada || {}; ctx = ctx || Nn.contexto();
@@ -215,7 +216,7 @@
       sai[id].forEach(function (eid) {
         var e = G.arestas[eid], classe;
         if (descarga[id]) classe = "ramal_descarga";
-        else if (e.vertical) classe = "tubo_queda";
+        else if (e.vertical && e.aplicacao !== "ramal") classe = "tubo_queda";   /* vertical marcada como ramal: a descida do par de cubas (js/hidrota.js), não é tubo de queda */
         else if (temTQ[id] || e.aplicacao === "subcoletor") classe = "subcoletor";
         else classe = "ramal_esgoto";
         E[eid] = { porAmb: porAmb[id], semAmb: semAmb[id], e: e, uhc: uhc[id], pend: pend[id], dnMinAc: dnMinAc[id], temBacia: temBacia[id], temTQ: temTQ[id], classe: classe, descargaDe: descarga[id] || null,
@@ -525,6 +526,8 @@
       pendV.forEach(function (p) { ctx.pendencia(/^es\./.test(p) ? p : "es.ventilacao." + tipo, p, "ventilação"); });
       cp.arestas.forEach(function (eid) {
         var e = GV.arestas[eid], trav = !!travados[e.trecho], dn = req == null ? e.dn : (trav ? e.dn : (comercial(e.material, Math.max(req, 0)) || null));
+        /* o toco curto que só leva ao terminal (a redução acima do teto da ventilação individual): o catálogo não tem terminal menor, a redução sugerida não existe na obra */
+        if (dn != null && dn < e.dn && num(e.comprimento, INF_TOCO) <= TOCO_TERMINAL && arr(R.pecas).some(function (k) { return k.peca === "terminal_ventilacao" && (Math.hypot(k.x - e.pb.x, k.y - e.pb.y, k.z - e.pb.z) <= 0.02 || Math.hypot(k.x - e.pa.x, k.y - e.pa.y, k.z - e.pa.z) <= 0.02); })) dn = e.dn;
         var st = pendV.length ? "pendente" : (trav && req != null && e.dn < req ? "reprovado" : "ok");
         out.ventilacao.push({ id: e.trecho, aresta: eid, tipo: tipo, componente: ci, dn: dn, dnModelo: e.dn, dnReq: req, uhc: uhcV, comprimento_m: comp, travado: trav, status: st, passos: passos, fonte: fonte, pendencias: pendV });
         if (req != null) verif(e.trecho, "DN da ventilação (" + tipo + ")", dn, req, "mm", dn ? req / dn : null, st !== "reprovado", passos, fonte);

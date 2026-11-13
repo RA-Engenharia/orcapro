@@ -94216,6 +94216,10 @@ if (!GRUPOS_FORCA[g] || M0.larguras || M0.flexivel) return null;
 for (var i = 0; i < ramos.length; i++) { var pl = ramos[i].pecaLinha; if (pl && !PECAS_LINHA[pl] && tipoForcavel(pl, g)) return pl; }
 return null;
 }
+function joelhoOrcado(tipo, mat, dn, sistema, aplicacao) {
+if (tipo !== "joelho90") return false;
+try { var sJ = sinapiDe(itemConexao({ tipo: tipo, material: mat, dn: dn, dn2: 0, sistema: sistema, aplicacao: aplicacao })); return !!sJ && sJ.status === "ok"; } catch (eJ) { return false; }
+}
 function decidirForcada(tipo, ramos, sistema, conector, avisos) {
 var av0 = [], base = decidirBase(ramos, sistema, conector, av0), HP = dep("HidPortas", "./biminstportas.js");
 var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0], dnM = Math.round(maior.dn), dnm = Math.round(Math.min.apply(null, ramos.map(function (r) { return r.dn; })));
@@ -94231,7 +94235,8 @@ motivo = nome + " não serve num nó de " + (dv == null ? "?" : dv) + "°: a pe�
 } else motivo = it.texto;
 }
 });
-if (!motivo && !conexaoNoCatalogo(mat, tipo, chave)) motivo = nome + " DN " + chave.replace("x", " × ") + " não existe no catálogo de " + ((MATERIAIS[mat] || {}).nome || mat);
+var noOrc = (sistema === "esgoto" || sistema === "pluvial") && dnM === dnm && joelhoOrcado(tipo, mat, dnM, sistema, maior.aplicacao);
+if (!motivo && !noOrc && !conexaoNoCatalogo(mat, tipo, chave)) motivo = nome + " DN " + chave.replace("x", " × ") + " não existe no catálogo de " + ((MATERIAIS[mat] || {}).nome || mat);
 if (motivo) {
 av0.forEach(function (t) { avisos.push(t); });
 avisos.push("conexão escolhida não aplicada — " + motivo + ". Ficou a conexão automática" + (base.length ? " (" + nomeConexao(base[0].tipo, base[0].material) + ")" : "") + "; use \"Voltar ao automático\" ou escolha outra peça");
@@ -95585,7 +95590,7 @@ var BimInst = {
 VERSAO: 1,
 SISTEMAS: SISTEMAS, MATERIAIS: MATERIAIS, APLICACOES: APLICACOES, PECAS: PECAS, ALTURAS_CAIXA: ALTURAS_CAIXA,
 COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, TOL_CONECTOR: TOL_CONECTOR, PERTO_ESPERA: PERTO_ESPERA,
-inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
+joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
 normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
 conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
 chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,

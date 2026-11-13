@@ -905,7 +905,10 @@
          No plano já escolhido; a régua é a do 3D (js/hidencaixe.js folgar). O que não tem solução fica para o auditor */
       if (HEn && HEn.folgar && !(typeof process !== "undefined" && process.env && process.env.HID_SEM_ENCAIXE === "1")) {   /* HID_SEM_ENCAIXE: o controle negativo do test-hid-encaixe */
         try {
-          var planoF = [], idsF = {}; (function achF(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") achF(o.ops); else { planoF.push(o); if (o.op === "trecho") idsF[String(o.id)] = 1; } }); })(ops);
+          /* ⚠ o trecho que o PRÓPRIO plano apaga depois (op "apagar" com o mesmo id, mais adiante na lista) não existe no modelo final: folgar não o vê.
+             Entregá-lo fazia a folga medir um tubo morto e gerar a pendência falsa "Encaixe: o trecho ktan-es-t… faltam 32 mm" (CASA, CASA-CAIXA, CASA-COMPLETA) */
+          var planoF = [], idsF = {}, seqF = [], apagF = {}; (function achF(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") achF(o.ops); else { if (o.op === "apagar" && o.id != null) apagF[String(o.id)] = seqF.length; seqF.push(o); } }); })(ops);
+          seqF.forEach(function (o, i) { if (o.op === "trecho" && apagF[String(o.id)] > i) return; planoF.push(o); if (o.op === "trecho") idsF[String(o.id)] = 1; });
           var estF = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-folga", ops: ops }])), insF = estF.instalacoes || {};
           var fixosF = arr(insF.trechos).filter(function (t) { return !idsF[String(t.id)]; }).map(function (t) { var o2 = {}; Object.keys(t).forEach(function (k) { o2[k] = t[k]; }); o2.op = "trecho"; return o2; });
           var ptsF = arr(BIi.rede(estF, c.avaliarFam).conectores).map(function (k) { return { x: k.x, y: k.y, z: k.z }; });
