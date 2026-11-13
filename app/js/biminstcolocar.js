@@ -320,6 +320,21 @@
       var Lff = comprimentoAc(famAval, cfg.famId, tipo, t.dn), folga = Lff / 2 + I.TOL + 0.005;
       if (Lt < 2 * folga) return falha("O trecho " + t.id + " (" + fmt(Lt, 3) + " m) é curto demais para o " + A.nome.toLowerCase() + " (" + fmt(Lff, 3) + " m de face a face).");
       s = Math.max(folga, Math.min(Lt - folga, s));
+      /* C3 (13/11/2026): REGISTRO NA ALTURA PADRÃO — posto num tubo VERTICAL, o registro vai sozinho à altura de instalação da família
+         (dados-fonte/hidro/kits/alturas-instalacao.json via HidKit.alturaInstalacao: RP/RG da tabela da Tigre p.40, com fonte), medida do piso
+         do nível (cfg.piso); fora do tubo, fica onde o cursor está e avisa. Sem altura com fonte (esfera, retenção): onde o cursor está. A pessoa
+         muda depois nas Propriedades. No tubo deitado, o clique manda (o registro do ramal). */
+      var alturaP = null;
+      if (Math.abs(u.y) > 0.9 && cfg.piso != null && isFinite(num(cfg.piso, NaN))) {   // hid:ok tubo vertical (cosseno com o eixo y)
+        var famH = { registro_gaveta: "hid-registro-gaveta", registro_pressao: "hid-registro-pressao", registro_esfera: "hid-registro-esfera" }[chave];
+        var HKc = global.HidKit || (typeof require === "function" ? (function () { try { return require("./hidkit.js"); } catch (eK) { return null; } })() : null);
+        var hA = famH && HKc && HKc.alturaInstalacao ? HKc.alturaInstalacao(famH, "") : null;
+        if (hA && hA.ok && !hA.piso) {
+          var yA = num(cfg.piso, 0) + hA.valor, sA = (yA - t.p1.y) / u.y;
+          if (sA >= folga - 1e-6 && sA <= Lt - folga + 1e-6) { s = sA; alturaP = { valor: hA.valor, texto: hA.texto }; }
+          else avisos.push(A.nome + ": a altura padrão (" + fmt(hA.valor, 2) + " m do piso — " + hA.texto + ") fica fora deste tubo; ficou onde o cursor está.");
+        }
+      }
       var q = ponto(s);
       var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
       if (cfg.tipoId && !A.variantes[cfg.tipoId]) op.produto = String(cfg.tipoId);   /* tipo do catálogo (hid-registro-*): identificação do produto */
@@ -328,7 +343,8 @@
       /* FRENTE H2 (20/10/2026): o lado do PONTO a jusante manda; sem tubo a jusante até um ponto, o cômodo vizinho */
       if (/registro/.test(String(chave))) { var fC = ladoJusante(estado, famAval, t, q, arr(ops).length) || ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
       if (giro) op.giro = giro;
-      return { ok: true, oQue: k, nome: A.nome, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,
+      if (alturaP) { op.alturaPiso = r4(alturaP.valor); avisos.push(A.nome + " na altura padrão: " + fmt(alturaP.valor, 2) + " m do piso (" + alturaP.texto + ")."); }
+      return { ok: true, oQue: k, nome: A.nome, alturaPadrao: alturaP, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,
                previa: { centro: q, dir: u, comprimento: Lff, dn: t.dn, material: t.material, sistema: t.sistema, acessorio: chave, variante: tipo, giro: giro } };
     }
     /* CONEXÃO: divide o tubo; a rede põe a conexão do nó (luva, redução, tê, junção) */
@@ -401,6 +417,9 @@
 
   /* paredes modeladas (caixas do BimEdit) */
   function paredes(estado) { return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && num(c.comprimento, 0) > 0; }); }
+  /* LIGAR POR CLIQUE (13/11/2026): a caixa sifonada e o ralo giram em passos de 45° — o giro é o SENTIDO DA SAÍDA (js/hidligar.js tira dele o toco
+     da saída); as outras peças seguem 90° */
+  function passoGiroPeca(peca) { return /^(caixa_sifonada|ralo_)/.test(String(peca || "")) ? 45 : 90; }
   function eixoParede(c) { var r = num(c.rotY, 0); return { a: { x: Math.cos(r), z: -Math.sin(r) }, n: { x: Math.sin(r), z: Math.cos(r) } }; }
   /* a cota temporária: do ponto à FACE da parede mais próxima (perpendicular, dentro do comprimento dela) */
   function cotaParede(estado, p, excluir) {
@@ -498,7 +517,7 @@
                op: ops.length === 1 ? ops[0] : { op: "lote", id: novoId("giro", usados), ops: ops } };
     }
     var k = arr(ins.pecas).filter(function (x) { return String(x.id) === id; })[0];
-    if (k) { var rN = normAng(num(k.rotY, 0) + sg * Math.PI / 2); return { ok: true, tipo: "peca", de: { rotY: num(k.rotY, 0) }, para: { rotY: rN }, op: { op: "instAlterar", id: k.id, rotY: rN } }; }
+    if (k) { var rN = normAng(num(k.rotY, 0) + sg * passoGiroPeca(k.peca) * Math.PI / 180); return { ok: true, tipo: "peca", de: { rotY: num(k.rotY, 0) }, para: { rotY: rN }, op: passoGiroPeca(k.peca) === 45 ? { op: "instAlterar", id: k.id, rotY: rN, saidaGirada: true } : { op: "instAlterar", id: k.id, rotY: rN } }; }   /* A6: girada de propósito (até de volta a 0°) */
     var a = arr(ins.acessorios).filter(function (x) { return String(x.id) === id; })[0];
     if (a) { var g = ((num(a.giro, 0) + sg * 90) % 360 + 360) % 360; return { ok: true, tipo: "acessorio", de: { giro: num(a.giro, 0) }, para: { giro: g }, op: { op: "instAlterar", id: a.id, giro: g } }; }
     if (trechoDe(estado, id)) return falha("Tubo não gira: arraste a ponta ou use Mover.");
@@ -548,7 +567,7 @@
       pose.cota = cotaParede(T.estado(), pose, null);
       return pose;
     },
-    cfgTubo: function (cursor) { var U = global.BimInstUI, cf = (U && U.cfg) || {}; return { famId: cf.famId, tipoId: cf.tipoId, giro: T.giro, dnNovo: cf.dnNovo, dnRamal: cf.dnRamal, cursor: cursor || null }; },
+    cfgTubo: function (cursor) { var U = global.BimInstUI, cf = (U && U.cfg) || {}, ed = T.ctx && T.ctx.edit; return { famId: cf.famId, tipoId: cf.tipoId, giro: T.giro, dnNovo: cf.dnNovo, dnRamal: cf.dnRamal, cursor: cursor || null, piso: ed && isFinite(num(ed.base, NaN)) ? num(ed.base, 0) : null }; },
     filtroTubo: function (famId) { var I = BI(), k = oQue(famId); return function (t) { var S = I.SISTEMAS[t.sistema]; if (!S) return false; return k === "acessorio" ? S.grupo === "agua" : (S.grupo !== "eletrica" && S.grupo !== "bandeja" && S.grupo !== "ar"); }; },
 
     /* ------------------------------------------------ 3D */
@@ -786,7 +805,7 @@
       if (md === "familia") {
         var ed = T.ctx.edit; ed.famRot = normAng(num(ed.famRot, 0) + sg * Math.PI / 2);
         T._status("Giro " + Math.round(ed.famRot * 180 / Math.PI) + "° — Espaço gira 90°, Shift+Espaço volta.");
-      } else if (md === "peca") { T.rot = ((T.rot + sg * 90) % 360 + 360) % 360; T._status("Giro " + T.rot + "° — Espaço gira 90°, Shift+Espaço volta."); }
+      } else if (md === "peca") { var Uc = global.BimInstUI, pz = Uc && Uc.cfg ? String(Uc.cfg.peca || "") : "", pa = passoGiroPeca(pz); T.rot = ((T.rot + sg * pa) % 360 + 360) % 360; T.girouPeca = true; T._status("Giro " + T.rot + "°" + (pa === 45 ? " (sentido da saída)" : "") + " — Espaço gira " + pa + "°, Shift+Espaço volta."); }
       else if (md === "tubo") { T.giro = ((T.giro + sg * 90) % 360 + 360) % 360; T._status("Giro em torno do tubo: " + T.giro + "°."); }
       else if (!md && !(T.ctx.edit && T.ctx.edit.on && T.ctx.edit.sub)) { if (!T.girarSelecionada(sg)) return; }
       else return;
@@ -833,7 +852,7 @@
         if (T.ctx && T.ativo() && this.cfg && this.cfg.ferramenta === "peca" && ctx && p) {
           var pose = T.posePecaEm(p), op0 = ctx.op;
           /* item 8: o x/z da pose (no passo da grade, se ligada) — o mesmo lugar da prévia */
-          ctx = Object.assign({}, ctx, { op: function (o) { if (o && o.op === "peca" && pose) { o.rotY = pose.rotY; o.x = pose.x; o.z = pose.z; if (pose.encaixe === "piso") o.y = pose.y; } return op0(o); } });
+          ctx = Object.assign({}, ctx, { op: function (o) { if (o && o.op === "peca" && pose) { o.rotY = pose.rotY; if (T.girouPeca && passoGiroPeca(o.peca) === 45) o.saidaGirada = true; o.x = pose.x; o.z = pose.z; if (pose.encaixe === "piso") o.y = pose.y; } return op0(o); } });
         }
         return cq.call(this, ctx, p, ev);
       };
@@ -869,7 +888,7 @@
 
   var BimInstColocar = {
     VERSAO: 1, GEO: GEO, CONEXOES: CONEXOES, ORDEM_INLINE: ORDEM_INLINE,
-    oQue: oQue, nomeInline: nomeInline, tuboSob: tuboSob, encaixeGrade: encaixeGrade, inserir: inserir, girar: girar, poseFamilia: poseFamilia, cotaParede: cotaParede,
+    passoGiroPeca: passoGiroPeca, oQue: oQue, nomeInline: nomeInline, tuboSob: tuboSob, encaixeGrade: encaixeGrade, inserir: inserir, girar: girar, poseFamilia: poseFamilia, cotaParede: cotaParede,
     paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, giroPara: giroPara, ladoComodo: ladoComodo, ladoJusante: ladoJusante, idsUsados: idsUsados, novoId: novoId,
     montar3d: T.montar3d, tela: T
   };

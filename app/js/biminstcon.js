@@ -256,6 +256,9 @@
     /* o "+": arma o Tubo com o sistema e o DN do ponto e começa nele (de uma ENTRADA, desenha-se para montante) */
     iniciar: function (i) {
       var m = this._marcas[i], U = global.BimInstUI, I = BI(); if (!m || !U || !I) return false;
+      /* ⚠ A1 (13/11/2026): com o "Interligar a…" armado, o "+" da peça é o DESTINO — armar de novo zeraria o ponto de partida guardado (o clique na
+         caixa selecionada caía no "+" dela e a ligação começava na caixa, sem o ralo) */
+      if (U._interligar && U.cfg && U.cfg.ferramenta === "tubo") { var ctxI = U._ctx(); if (ctxI) { U.clique(ctxI, { x: m.x, y: m.y, z: m.z }, {}); return true; } }
       U.armar("tubo", { sistema: m.sistema });
       var c = U.cfg, M = I.MATERIAIS[c.material];
       if (m.dn > 0 && M && arr(M.dns).indexOf(m.dn) >= 0) U.mudarCfg("i:dn", m.dn);

@@ -426,6 +426,9 @@
       });
       var z = zp.p1 + zp.p2;
       var livre = L - z, pb = bolsaTubo(t);
+      /* (13/11/2026) o tubo que NÃO ficou mais curto que antes não é "curto por causa do arraste": o vertical de 0,38 m entre duas curvas longas DN 50
+         só ANDOU de lado e era acusado (falso positivo). O aviso fica para o que o arraste encurtou */
+      var t0c = porT[t.id]; if (t0c && L >= dist(t0c.p1, t0c.p2) - TOL) return;
       if (livre < pb) curtos.push({ id: t.id, comprimento: r4(L), livre: r4(livre), bolsa: r4(pb) });
     });
     curtos.forEach(function (c) { avisos.push("o tubo " + c.id + " ficou CURTO: " + fmt(c.comprimento * 100, 1) + " cm, sobram " + fmt(Math.max(0, c.livre) * 100, 1) + " cm entre as conexões (a bolsa pede " + fmt(c.bolsa * 100, 1) + " cm)"); });

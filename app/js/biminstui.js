@@ -22,6 +22,9 @@
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
   function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
+  /* o sistema da ferramenta escoa por gravidade (esgoto, pluvial) */
+  function arrL(a) { return Array.isArray(a) ? a : []; }
+  function S0g(c) { var I = BI(); return !!(c && I && I.SISTEMAS[c.sistema] && I.SISTEMAS[c.sistema].gravidade); }
   function toast(t, k) { try { if (global.UI && UI.toast) UI.toast(t, k || "info"); } catch (e) {} }
 
   /* cota inicial padrão (m, a partir do nível): água a 60 cm (sub-ramal na
@@ -849,6 +852,9 @@
     /* o editor mudou de ferramenta (ou fechou): quem não é mais "inst" deixa de ter configuração, botão aceso e Propriedades daqui */
     aoSub: function (sub) {
       if (sub === "inst") return;
+      /* ⚠ A1 (revisão 13/11/2026): sair da ferramenta desarma o "Interligar a…" — ficava guardado e, dias depois, o 1º clique
+         com o Tubo começava na caixa antiga, ligando um tubo que ninguém pediu */
+      this._interligar = null; this._incHerdada = null;
       if (sub !== "familia") this._famInst = false;
       var tinha = !!this.cfg; this.cfg = null;
       try {
@@ -865,6 +871,10 @@
     armar: function (ferr, par) {
       var I = BI(), b = B(); if (!I || !b || !b.editarArmar) { toast("O visualizador 3D ainda não abriu.", "aviso"); return false; }
       var ant = this.cfg;
+      /* ⚠ A1: armar de novo (qualquer ferramenta) zera o ponto guardado do "Interligar a…"; o interligarDe grava DEPOIS do armar */
+      this._interligar = null;
+      /* A5: a inclinação herdada de um tubo continuado vale só para aquele traço — a ferramenta rearmada volta à escolhida */
+      if (ant && this._incHerdada != null) { ant.inclinacao = this._incHerdada; } this._incHerdada = null;
       this.cfg = this._cfgPadrao(ferr === "acessorio" || ferr === "conexao-manual" ? "tubo" : ferr, par);
       if (ferr === "acessorio") { this.cfg.ferramenta = "acessorio"; this.cfg.famId = (par && par.famId) || "ra-registro-gaveta"; this.cfg.tipoId = (par && par.tipoId) || ""; }   /* P12 */
       if (ferr === "conexao-manual") { this.cfg.ferramenta = "conexao-manual"; this.cfg.tipoConexao = (par && par.tipo) || ""; this.cfg.matConexao = (par && par.material) || ""; }   /* frente 3 */
@@ -969,6 +979,12 @@
         var q = { x: t.p1.x + ax * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + az * u };
         ver({ tipo: "meio", x: r4(q.x), y: r4(q.y), z: r4(q.z), dn: t.dn, trecho: t.id }, dPlan(q), 3);
       });
+      /* C1 (13/11/2026): a PONTA de um tubo que já chega numa caixa/ralo fica DENTRO da captura dela — o clique ali é na peça (ligar mais um
+         aparelho na caixa), não no fim daquele tubo */
+      if (melhor && melhor.tipo === "ponta") {
+        var kP = arrL(inst.pecas).filter(function (k) { var Pk = I.PECAS[k.peca]; return k.sistema === sistema && Pk && /^(caixa_sifonada|ralo_|caixa_inspecao)/.test(k.peca) && Math.hypot(k.x - melhor.x, k.z - melhor.z) <= num(Pk.captura, 0) + I.TOL; })[0];
+        if (kP) melhor = { tipo: "peca", x: kP.x, y: kP.y, z: kP.z, peca: kP.peca, id: kP.id, hub: kP.hub || null, prio: 2 };
+      }
       return melhor;
     },
 
@@ -979,6 +995,12 @@
       var c = this.cfg, I = BI(); if (!c || !ctx || !I) return;
       if (!p) { ctx.hint("Não achei o ponto — clique no plano de trabalho ou no modelo."); return; }
       var ed = ctx.edit, est = ed.estado || { instalacoes: { trechos: [], pecas: [] }, familias: [] }, base = ed.base || 0;
+      /* C1: "Interligar a…" deixou o ponto de partida guardado — o 1º clique real começa nele e este mesmo clique é o destino */
+      if (this._interligar && !ed.p1 && c.ferramenta === "tubo" && !(ev && ev._forcar)) {
+        var a0 = this._interligar; this._interligar = null;
+        this.clique(ctx, { x: a0.x, y: a0.y, z: a0.z }, { _forcar: true, _alvo: a0 });
+        if (ctx.edit && ctx.edit.p1) return this.clique(ctx, p, ev);
+      }
       if (c.ferramenta === "acessorio") { this.cliqueAcessorio(ctx, p); return; }   /* P12: registro/válvula no tubo */
       if (c.ferramenta === "peca") {
         var P = I.PECAS[c.peca], y = P.sistemas[0] === "eletrica" ? base + num(c.alturaPiso, 0.30) : base;
@@ -993,7 +1015,7 @@
         ctx.marcar(); return;
       }
       var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-      var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
+      var alvo = ev && (ev._corte || ev._forcar) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
       /* N23 (23/10/2026): SNAP NO PROLONGAMENTO — sem alvo de ligação perto, o cursor na RETA de um tubo deitado (além da ponta dele, a
          até 15 cm de lado) ALINHA o ponto com ele e toma a cota dele como altura de referência (js/biminstconectar.js). Não é ligação:
          o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
@@ -1041,6 +1063,21 @@
         /* LIGAR A → B: o ponto de partida fica guardado — se o próximo clique for outro ponto de ligação, o traçado
            liga os dois sozinho (js/hidligar.js). Um clique solto no meio do caminho volta ao desenho ponto a ponto. */
         this._inicio = alvo ? { alvo: JSON.parse(JSON.stringify(alvo)), nIni: nIni, y: q0.y } : null;
+        /* CONTINUAR UM TUBO (13/11/2026): começou na PONTA de um tubo existente → o traço segue a MESMA inclinação dele e, se o 1º trecho sai na mesma
+           direção, o tubo existente só cresce (nenhuma luva no meio; a luva só entra na barra de 6 m — js/biminst.js luvas da barra) */
+        this._contDe = null;
+        /* A5 (revisão 13/11/2026): a inclinação de um tubo CONTINUADO valia para todos os traços seguintes (1 % herdado sem a pessoa ver).
+           Traço novo volta à inclinação que estava na ferramenta antes de continuar */
+        if (this._incHerdada != null) { c.inclinacao = this._incHerdada; this._incHerdada = null; }
+        if (alvo && alvo.tipo === "ponta" && alvo.trecho != null && !saida0) {
+          var tC = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+          if (tC) {
+            var naP1 = Math.abs(tC.p1.x - alvo.x) + Math.abs(tC.p1.z - alvo.z) + Math.abs(tC.p1.y - alvo.y) <= 3 * I.TOL + 1e-6, longe = naP1 ? tC.p2 : tC.p1, perto = naP1 ? tC.p1 : tC.p2;
+            var dh = Math.hypot(perto.x - longe.x, perto.z - longe.z);
+            this._contDe = { id: tC.id, longe: { x: longe.x, y: longe.y, z: longe.z }, perto: { x: perto.x, y: perto.y, z: perto.z }, naP1: naP1, i: dh > 1e-6 ? (perto.y - longe.y) / dh : null };
+            if (S.gravidade && dh > 1e-6 && Math.abs(perto.y - longe.y) > 1e-6) { this._incHerdada = c.inclinacao; c.inclinacao = r4(Math.abs(perto.y - longe.y) / dh * 100); this._sobe = perto.y > longe.y; }
+          }
+        }
         /* começar no MEIO de um tubo: ele é dividido no ponto */
         if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var dv = I.dividirTrecho(est, alvo.trecho, q0); if (dv.length) { ed.ops.push(dv[0]); ctx.op(dv[1]); } }
         ctx.inicio(q0);
@@ -1092,6 +1129,23 @@
         criados.push(o); ini = pts[i];
       }
       var self = this;
+      /* CONTINUAR UM TUBO: o 1º trecho na mesma direção (planta) e inclinação do tubo de onde saiu = o MESMO tubo, mais comprido (sem luva) */
+      var cD = this._contDe; this._contDe = null;
+      if (cD && criados.length && !this._ligacao) {
+        var o0 = criados[0], a0 = this._sobe && S.gravidade ? o0.p2 : o0.p1, b0 = a0 === o0.p1 ? o0.p2 : o0.p1;
+        var ux = cD.perto.x - cD.longe.x, uz = cD.perto.z - cD.longe.z, vx = b0.x - a0.x, vz = b0.z - a0.z, Lu = Math.hypot(ux, uz), Lv = Math.hypot(vx, vz);
+        var dyU = cD.perto.y - cD.longe.y, dyV = b0.y - a0.y;
+        var mesmo = Lu > 1e-6 && Lv > 1e-6 ? Math.abs(ux / Lu - vx / Lv) + Math.abs(uz / Lu - vz / Lv) < 2e-3 && Math.abs(dyU / Lu - dyV / Lv) < 2e-4 : (Lu <= 1e-6 && Lv <= 1e-6 && dyU * dyV > 0);   // hid:ok mesma direção e inclinação (arredondamento de desenho)
+        if (mesmo && Math.abs(a0.x - cD.perto.x) + Math.abs(a0.z - cD.perto.z) + Math.abs(a0.y - cD.perto.y) <= 3 * I.TOL + 1e-6) {
+          var ex = { op: "trecho", id: cD.id };
+          Object.keys(o0).forEach(function (k) { if (k !== "op" && k !== "id" && k !== "p1" && k !== "p2") ex[k] = o0[k]; });
+          var tAnt = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(cD.id); })[0];
+          if (tAnt) Object.keys(tAnt).forEach(function (k) { if (k !== "op" && k !== "id" && k !== "p1" && k !== "p2" && k !== "comprimento" && ex[k] == null) ex[k] = tAnt[k]; });
+          if (tAnt) ["dn", "material", "sistema", "aplicacao", "pn", "classe", "iso"].forEach(function (k) { if (tAnt[k] != null) ex[k] = tAnt[k]; });
+          if (cD.naP1) { ex.p1 = { x: b0.x, y: b0.y, z: b0.z }; ex.p2 = cD.longe; } else { ex.p1 = cD.longe; ex.p2 = { x: b0.x, y: b0.y, z: b0.z }; }
+          criados[0] = ex;
+        }
+      }
       /* chegou no MEIO de um tubo: ele é DIVIDIDO no ponto (o tê ou a junção fica no nó) */
       if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
       criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
@@ -1330,12 +1384,35 @@
       return pk;
     },
     pontoLigacao: function (alvo, c) {
-      var a = alvo || {}, base = { x: a.x, y: a.y, z: a.z, sistema: c.sistema, dn: a.dn > 0 ? a.dn : c.dn };
+      /* (C1) */
+      /* o ponto de APARELHO sem DN próprio vai sem DN: o motor (js/hidligar.js) tira o DN do ramal de descarga do aparelho pela norma (13/11/2026) */
+      var a = alvo || {}, base = { x: a.x, y: a.y, z: a.z, sistema: c.sistema, dn: a.dn > 0 ? a.dn : (a.tipo === "aparelho" ? 0 : c.dn) };
       if (a.tipo === "aparelho") { base.tipo = "conector"; base.famInst = a.famInst; base.parede = a.parede || null; return base; }
       if (a.tipo === "peca") { base.tipo = "peca"; base.id = a.id; base.y = a.hub ? r4(Math.min(a.hub.yTop - 0.03, Math.max(a.hub.yBot + 0.03, a.y - 0.06))) : a.y; return base; }   /* entrada lateral, logo abaixo da grelha */
       if (a.tipo === "vertical") { var t = this._trecho(a.trecho); base.tipo = "vertical"; base.trecho = a.trecho; if (t) { base.yBase = Math.min(t.p1.y, t.p2.y); base.yTopo = Math.max(t.p1.y, t.p2.y); } return base; }
       if (a.tipo === "meio" || a.tipo === "ponta") { base.tipo = a.tipo; base.trecho = a.trecho; return base; }
       return null;
+    },
+    /* C1 (13/11/2026): o PONTO de onde "Interligar a…" começa — a peça (caixa/ralo/caixa de inspeção, entrada pela captura) ou o ponto de ligação
+       do aparelho (esgoto antes da água: é o que pede a regra do fluxo). null = não é peça nem aparelho com ponto de ligação. */
+    pontoInterligar: function (est, famAval, id) {
+      var I = BI(); if (!I || !est || id == null) return null; id = String(id).replace(/^edit:/, "");
+      var k = arrL(est.instalacoes && est.instalacoes.pecas).filter(function (x) { return String(x.id) === id; })[0];
+      if (k && I.PECAS[k.peca] && I.PECAS[k.peca].sistemas[0] !== "eletrica") return { tipo: "peca", id: k.id, peca: k.peca, x: k.x, y: k.y, z: k.z, hub: k.hub || null, sistema: k.sistema };
+      var cs = []; try { cs = I.conectoresDoEstado(est, famAval).filter(function (c) { return String(c.famInst) === id && /^(esgoto|agua_fria|pluvial)$/.test(c.sistema); }); } catch (e) { cs = []; }
+      cs.sort(function (a, b) { return (a.sistema === "esgoto" ? 0 : 1) - (b.sistema === "esgoto" ? 0 : 1); });
+      var c = cs[0]; return c ? { tipo: "aparelho", famInst: c.famInst, x: c.x, y: c.y, z: c.z, dn: c.dn, parede: c.parede || null, sistema: c.sistema, nome: c.nome } : null;
+    },
+    interligarDe: function (id) {
+      var ctx0 = this._ctx(); if (!ctx0) return false;
+      var a = this.pontoInterligar(ctx0.edit && ctx0.edit.estado || ctx0.estado, ctx0.famAval || ctx0.avaliarFam, id); if (!a) { toast("Interligar: escolha uma peça (caixa, ralo) ou um aparelho com ponto de ligação.", "aviso"); return false; }
+      if (!this.armar("tubo", { sistema: a.sistema })) return false;
+      var ctx = this._ctx(); if (!ctx) return false;
+      /* o ponto de partida fica guardado: o próximo clique (no destino) começa nele — o editor reabre o traço a cada clique de fora, então o
+         início vai junto com o clique do destino */
+      this._interligar = a;
+      try { ctx.hint("Interligar a…: clique no destino (outro equipamento, caixa, ponta ou meio de um tubo). O fluxo e a inclinação saem sozinhos; Esc cancela."); } catch (eH) {}
+      return true;
     },
     _trecho: function (id) { var b = B(), e = b && b.editarEstado ? b.editarEstado() : null; return e && e.estado && e.estado.instalacoes ? e.estado.instalacoes.trechos.filter(function (t) { return t.id === id; })[0] : null; },
     tentarLigacao: function (ctx, ini, alvo, base) {
@@ -1343,6 +1420,16 @@
       var A = this.pontoLigacao(ini.alvo, c), Bp = this.pontoLigacao(alvo, c); if (!A || !Bp) return false;
       /* esgoto: A é o lado de MONTANTE — clicou primeiro no destino (tubo de queda, meio de tubo)? troca */
       if ((A.tipo === "vertical" || A.tipo === "meio") && (Bp.tipo === "conector" || Bp.tipo === "peca" || Bp.tipo === "ponta")) { var tx = A; A = Bp; Bp = tx; }
+      /* C1: o fluxo pelas bocas — clicou na caixa/ralo e depois no aparelho? o aparelho é que DESCE até a caixa (nunca o contrário) */
+      if (S0g(c) && A.tipo === "peca" && Bp.tipo === "conector") { var tx2 = A; A = Bp; Bp = tx2; }
+      /* ⚠ A2 (revisão 13/11/2026): PONTA de tubo × caixa/aparelho — quem é montante sai da DECLIVIDADE do tubo. A ponta de CIMA (montante) recebe:
+         clicada primeiro, ela virava A e a rota descia dela até a caixa — a ponta ficava ponto alto com dois tubos saindo e a saída da caixa
+         não chegava ao ramal. A ponta de BAIXO (jusante) é que despeja: ponta de baixo → caixa. O esgoto sempre desce no sentido do fluxo. */
+      if (S0g(c)) {
+        var estF = ctx.edit && ctx.edit.estado;
+        if (estF && A.tipo === "ponta" && (Bp.tipo === "peca" || Bp.tipo === "conector") && this._pontaDeCima(estF, A)) { var tx3 = A; A = Bp; Bp = tx3; }
+        else if (estF && Bp.tipo === "ponta" && A.tipo === "peca" && this._pontaDeBaixo(estF, Bp)) { var tx4 = A; A = Bp; Bp = tx4; }
+      }
       if (A.tipo === "vertical") return false;
       /* ÁGUA tubo a tubo (ponta/meio → ponta/meio/coluna): a ligação direta — corre na altura do 1º e sobe/desce no 2º —
          é o que se quer; o traçado automático levaria ao ramal da parede (1,20 m) */
@@ -1373,7 +1460,7 @@
       /* a saída embutida que o 1º clique já criou sai: a rota traz a dela (um lote só, um Ctrl+Z) */
       for (var k = 0; k < g.nIni; k++) ed.ops.pop();
       var ok = b.editarLote({ op: "lote", id: "hid-ligar-" + Date.now(), origem: "hidligar", ops: JSON.parse(JSON.stringify(o.ops)) });
-      ctx.fim(); this._inicio = null; this._sobe = false; this._planoCota();
+      ctx.fim(); this._inicio = null; this._sobe = false; this._interligar = null; this._planoCota();
       var t = ok ? "Ligado: " + o.nome + " (" + fmt(o.comprimento, 2) + " m, " + o.ops.length + " operações — um Ctrl+Z desfaz)" + (o.avisos.length ? ". " + o.avisos.join("; ") : ".") : "O editor recusou a ligação.";
       status(t); try { ctx.hint(t); } catch (eH) {}
       this.pintarProps();
@@ -1383,6 +1470,8 @@
       /* ESC COM O FOCO NUM CAMPO (09/11/2026): escolher o DN/material nas Propriedades deixa o foco na lista, e o Esc era engolido
          pelos ouvintes do editor ("estou digitando": só o campo do 3D era solto) — a ferramenta nunca saía. Com uma ferramenta de
          instalações armada, o 1º Esc solta o campo; o seguinte sai da ferramenta como sempre. */
+      /* ⚠ A1: Esc cancela o "Interligar a…" armado (o ponto de partida guardado), mesmo com a ferramenta ainda armada */
+      if (ev.key === "Escape" && BimInstUI._interligar && !(ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName || ""))) { BimInstUI._interligar = null; try { status("Interligar cancelado."); } catch (eS) {} }
       if (ev.key === "Escape" && ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName || "") && BimInstUI.armada && BimInstUI.armada()) { try { ev.target.blur(); } catch (eB) {} return; }
       if (!BimInstUI._ligacao) { if (ev.key === "Tab" && BimInstUI.trocarPlanoCorte && BimInstUI.trocarPlanoCorte()) { ev.preventDefault(); ev.stopPropagation(); } return; }
       if (ev.key === "Tab") { ev.preventDefault(); ev.stopPropagation(); BimInstUI.trocarLigacao(); }
@@ -1416,6 +1505,12 @@
       var t = ((estado.instalacoes || {}).trechos || []).filter(function (x) { return x.id === alvo.trecho; })[0]; if (!t) return false;
       var outra = Math.abs(t.p1.x - alvo.x) < 1e-6 && Math.abs(t.p1.z - alvo.z) < 1e-6 && Math.abs(t.p1.y - alvo.y) < 1e-6 ? t.p2 : t.p1;
       return outra.y < alvo.y - 1e-6;
+    },
+    /* A2: a ponta clicada é a de BAIXO do trecho (o lado de jusante, por onde ele despeja)? */
+    _pontaDeBaixo: function (estado, alvo) {
+      var t = ((estado.instalacoes || {}).trechos || []).filter(function (x) { return x.id === alvo.trecho; })[0]; if (!t) return false;
+      var outra = Math.abs(t.p1.x - alvo.x) < 1e-6 && Math.abs(t.p1.z - alvo.z) < 1e-6 && Math.abs(t.p1.y - alvo.y) < 1e-6 ? t.p2 : t.p1;
+      return outra.y > alvo.y + 1e-6;
     },
     livre: function (ev) { var c = this.cfg; return !!((c && c.angulo === "livre") || (ev && ev.altKey)); },
     /* direção travada (planta): o múltiplo de 45° (ou de 90°) mais perto, PROJETANDO o cursor nela */

@@ -2689,7 +2689,7 @@
     NUNCA_NA_GORDURA: NUNCA_NA_GORDURA, ehCinta: ehCinta, cintaPassa: cintaPassa, shaftNoCanto: shaftNoCanto, shaftsDaCinta: shaftsDaCinta, LIMITE_DN_CINTA_MM: LIMITE_DN_CINTA_MM,   /* cinta não é bloqueio: o tubo até o DN-limite embute */
     telhadoAbaixoDe: telhadoAbaixoDe, tuboSobreTelhado: tuboSobreTelhado,   /* 27/10/2026: o telhado como obstáculo (nada de tubo horizontal sobre a telha) */
     ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
-    _int: { juncaoDoPe: juncaoDoPe, uniaoCubas: uniaoCubas, saidaDaCaixa: saidaDaCaixa, Arvore: Arvore, Mundo: Mundo, LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
+    _int: { juncaoDoPe: juncaoDoPe, uniaoCubas: uniaoCubas, saidaDaCaixa: saidaDaCaixa, Arvore: Arvore, Mundo: Mundo, LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, retCentro: retCentro, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };
   global.HidRota = HidRota;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRota;

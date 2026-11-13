@@ -254,8 +254,10 @@
     var tx = volta.map(function (v) { return v.id + ": " + f2(v.ate) + " m contra " + f2(v.reta) + " m em linha reta"; }).join("; ");
     /* a volta que fica nunca é calada (revisão 09/11/2026, A4): o lavatório continua indo à caixa, com o motivo */
     var ficaVolta = function (motivo) { (r.avisos = r.avisos || []).push({ texto: "lavatório " + ids.join(", ") + ": o esgoto vai até a caixa sifonada e volta (" + tx + "). Tentei ligar direto ao ramal e não fechou: " + motivo, elementos: ids.slice(), acao: { tipo: "ajustar", ids: ids.slice() } }); return r; };
-    /* A3: a caixa posta à mão que só recebe este lavatório ficaria sem entrada e o fecho hídrico seca (NBR 8160 4.2.2.7): fica como está, avisado */
-    if (m.caixaUsuario && m.recept.every(function (q) { return ids.indexOf(String(q)) >= 0; })) return ficaVolta("a caixa sifonada " + m.caixaUsuario + ", posta no modelo, só recebe este lavatório e ficaria sem contribuição (o fecho hídrico seca). Tire a caixa ou ligue outro aparelho nela");
+    /* LAVABO COM RALO (pendência 4 da 1.2.283, decisão 13/11/2026 — antes era a guarda A3, que deixava o lavatório voltando): a caixa sifonada posta no
+       modelo é o ponto de lavagem do piso que o projeto quer — ela FICA, ligada ao ramal, e o lavatório vai direto (sifão próprio, NBR 8160). Sem caixa
+       nem ralo no modelo, o lavabo não ganha ralo inventado (a NBR 8160 não exige ralo no lavabo): o aviso M7 diz como pôr. */
+    var caixaFica = m.caixaUsuario && m.recept.every(function (q) { return ids.indexOf(String(q)) >= 0; }) ? m.caixaUsuario : null;
     var par2 = {}; Object.keys(par).forEach(function (k) { par2[k] = par[k]; }); par2._lavDireto = ids;
     var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2.parametros = par2;
     var r2 = null; try { r2 = ligarBase(e2); } catch (eL) { r2 = null; }
@@ -272,6 +274,12 @@
     if (giroD.length) return ficaVolta("a descida do lavatório fica perto demais do fim do ramal para a junção de 45° a favor do fluxo; ligado direto, o esgoto andaria para trás e entraria contra o fluxo. Afaste o lavatório do fim do ramal e trace de novo");
     r2.avisos.push({ texto: "lavatório " + ids.join(", ") + " ligado direto ao ramal: o esgoto dele ia até a caixa sifonada e voltava (" + tx + ") — o lavatório tem sifão próprio (NBR 8160) e entra no ramal por junção de 45°" + (semCx ? ". O ambiente ficou sem caixa sifonada e, com ela, sem ponto de lavagem de piso (grelha): se o piso precisa de ralo, ponha-o e trace de novo" : ""), elementos: ids.slice(), acao: null });
     r2.decisoes.push({ id: "amb.lavatorio_direto", texto: "Lavatório " + ids.join(", ") + " direto ao ramal (o esgoto ia até a caixa sifonada e voltava: " + tx + ")." });
+    if (caixaFica) {
+      var cxLig = arr(r2.ops).some(function x(o) { return o && (o.op === "lote" ? arr(o.ops).some(x) : (o.op === "trecho" && o.sistema === "esgoto" && [o.p1, o.p2].some(function (p) { return p && Math.hypot(p.x - m.caixa.x, p.z - m.caixa.z) < 0.2; }))); });   // hid:ok 20 cm: o tubo que sai da caixa (raio do corpo)
+      if (!cxLig) return ficaVolta("a caixa sifonada " + caixaFica + ", posta no modelo como ralo do lavabo, ficaria sem ligação ao ramal");
+      r2.avisos.push({ texto: "lavabo com ralo: a caixa sifonada " + caixaFica + " fica como ponto de lavagem do piso, ligada ao ramal; o lavatório " + ids.join(", ") + " vai direto (sifão próprio). O fecho hídrico dela é mantido pela lavagem do piso", elementos: [caixaFica], acao: null });
+      r2.decisoes.push({ id: "amb.lavabo_ralo", texto: "Lavabo com ralo: caixa sifonada " + caixaFica + " mantida como ponto de lavagem do piso; lavatório " + ids.join(", ") + " direto ao ramal." });
+    }
     return r2;
   }
   function ligarSemEncaixe(e) {
@@ -1742,6 +1750,18 @@
       if (acl2 == null) pend("es8160.ventilacao_regras", "aclive do trecho inicial da ventilação ligada em ângulo menor (4.3.16 b 2) sem tabela: o trecho inicial saiu com o aclive mínimo", ids);
       var acIni = acl2 == null ? ac : Math.max(ac, acl2 / 100), angMenor = false;
       var outros = novas.filter(function (o) { return o.op === "trecho" && o.sistema !== "esgoto"; }).concat(arr(estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t.sistema !== "esgoto"; }));
+      /* CASA-CAIXA (pendência 3 da 1.2.283, 13/11/2026): com caixa d'água no modelo, a COLUNA do barrilete (js/hidbarrilete.js) desce exatamente
+         na prumada da ESPERA de água fria do ambiente, que ainda não existe quando a ventilação é traçada — a ventilação passava a 6–9 cm dela.
+         O prolongamento vertical da espera até o teto entra como obstáculo de água (o mesmo afastamento de 10 cm), e a coluna depois desce livre */
+      var temCaixaDagua = arr(estado.familias).some(function (f) { return /caixa-dagua/.test(String(f.famId)); });
+      if (temCaixaDagua) outros = outros.concat(outros.filter(function (t) {
+        return t.sistema === "agua_fria" && t.p1 && t.p2 && Math.abs(t.p1.x - t.p2.x) + Math.abs(t.p1.z - t.p2.z) < 1e-3 && !!t.continua;   // hid:ok tolerância de desenho / DN de reserva (geometria, não norma)
+      }).map(function (t) {
+        var top = t.p1.y >= t.p2.y ? t.p1 : t.p2, yTeto = piso + Math.max(geo(par, "peDireito"), geo(par, "alturaSaidaVentilacao"));   /* até onde a ventilação sobe: a coluna vem do barrilete, acima do forro */
+        /* a coluna que vai descer ali tem o DN mínimo de coluna do barrilete (DN 50), não o DN 25 da espera: o obstáculo é do tamanho dela */
+        var HBc = dep("HidBarrilete", "./hidbarrilete.js"), dnCol = Math.max(num(t.dn, 0), num(HBc && HBc.GEO_BAR && HBc.GEO_BAR.dnMinColuna, 0));
+        return { op: "trecho", id: String(t.id) + ":prumada-coluna", sistema: "agua_fria", dn: dnCol, p1: { x: top.x, y: top.y, z: top.z }, p2: { x: top.x, y: yTeto, z: top.z }, virtual: true };
+      }).filter(function (v) { return v.p2.y > v.p1.y + EPS; }));
       var mat = "pvc_esgoto", pr = ambId + "-ve-", nV = 0;
       /* a ALTURA DE SAÍDA da ventilação (projeto, editável no painel do kit): onde fica o terminal */
       var hSaida = geo(par, "alturaSaidaVentilacao"), ySaida = r4(piso + hSaida);
@@ -2073,7 +2093,33 @@
         yJunta = melhor.extra.fim.y;
         encaixePend(melhor); desvioDec(melhor);
       } else {
+        /* PIA → CAIXA SIFONADA (pendência 1 da 1.2.283, decisão 13/11/2026): a pia sai em DN 40 até a caixa, a saída da caixa é DN 50 e a ventilação que
+           sobe até o terminal próprio é DN 50 do começo ao fim — o terminal do catálogo começa no DN 50 e o dimensionamento (js/hides.js, Tabela 8 pelo grupo
+           que chega à junção) também pede DN 50. Antes subia em DN 40 com a redução 50 × 40 acima do teto, sem motivo. A redução só fica onde há motivo: o
+           DN 50 não cabe inteiro na parede (a busca abaixo não acha subida com o raio dele) e o DN do ramal volta, com a redução no teto (M2 da revisão 09/11). */
+        var dnsT0 = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnT0 = dnsT0.filter(function (d) { return d >= dnV - EPS; })[0], dnV0r = dnV;
         cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
+        /* o MESMO caminho (escolhido com o DN da Tabela 8, que já desvia da água) vai inteiro no DN do terminal se o tubo maior não chega mais perto da água
+           do que o afastamento da casa (10 cm livres) — ou, se o caminho já estava abaixo disso, não piora além da diferença de raio */
+        /* serve50(b): o caminho b comporta o DN do terminal inteiro? */
+        var serve50 = function (b) {
+          if (!b || !b.segs || !b.segs.length) return false;
+          var aguaV = outros.filter(function (t) { return /^agua/.test(String(t.sistema)) && t.p1 && t.p2; });
+          var folgaAgua = function (r) { var m = Infinity; b.segs.forEach(function (sg) { aguaV.forEach(function (t) { m = Math.min(m, H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - r - raio(num(t.dn, 0))); }); }); return m; };
+          var AFAST = 0.10, MONT_V = 0.03, f40 = folgaAgua(raio(dnV)), f50 = folgaAgua(raio(dnT0));   // hid:ok afastamento água × esgoto/ventilação (10 cm) e 3 cm livres de montagem (os do auditor)
+          /* as peças do DN maior cabem (perna ≥ 20 cm entre duas conexões: as faces DN 50 medidas, 16,4 cm, + a ponta na bolsa) e não cola em outro esgoto */
+          var pernasOk = b.segs.every(function (sg, k) { return k === b.segs.length - 1 || d3(sg.a, sg.b) >= 0.20 - EPS; });   // hid:ok 20 cm (catálogo DN 50; PERNA_DESVIO_VENT é do DN 40)
+          var esgV = novas.filter(function (o) { return o.op === "trecho" && o.sistema === "esgoto" && String(o.id) !== String(b.c && b.c.trecho); }).concat(esExist);
+          var folgaEs = Infinity; b.segs.forEach(function (sg, k) { esgV.forEach(function (t) { if (!t.p1 || !t.p2) return; if (k === 0 && (d3(sg.a, t.p1) < 0.01 || d3(sg.a, t.p2) < 0.01)) return; folgaEs = Math.min(folgaEs, H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - raio(dnT0) - raio(num(t.dn, 0))); }); });   // hid:ok 1 cm: o tubo onde a tomada encosta
+          return pernasOk && folgaEs >= MONT_V - EPS && !b.bate && (f50 >= AFAST - EPS || (f40 < AFAST - EPS && f50 >= f40 - (raio(dnT0) - raio(dnV)) - EPS && f50 > 2 * EPS));
+        };
+        if (melhor && dnT0 != null && dnT0 > dnV + EPS) {
+          var m50 = serve50(melhor) ? melhor : null;
+          /* o caminho do DN da tabela não comporta o DN 50: procura um caminho próprio com o raio dele, que passe nas mesmas réguas */
+          if (!m50) cands.forEach(function (c) { var b = subida(c, raio(dnT0), function () { return ySaida; }); if (b && serve50(b) && (!m50 || b.nota < m50.nota - EPS)) m50 = b; });
+          if (!m50) aviso("a ventilação de " + desc[0].ref + " ficou em DN " + dnV0r + " na parede, com a redução " + dnT0 + " × " + dnV0r + " acima do teto: o DN " + dnT0 + " (o do terminal e o que o dimensionamento pede) não cabe nessa parede com 10 cm livres da água, 3 cm de outro esgoto e as pernas das conexões. Para DN " + dnT0 + " inteiro, afaste a descida da água/esgoto ou engrosse a parede", ids, { tipo: "ajustar", ids: ids });
+          if (m50) { melhor = m50; dnV = dnT0; decide("amb.ventilacao.dn_terminal", "Ventilação de " + desc[0].ref + " em DN " + dnT0 + " da tomada ao terminal (o terminal começa no DN " + dnT0 + "; a Tabela 8 dava DN " + dnV0r + "): sem a redução " + dnT0 + " × " + dnV0r + " no teto."); }
+        }
         if (!melhor) melhor = ventDescidaReserva(null);
         if (!melhor) { pend("amb.ventilacao", "a ventilação de " + desc[0].ref + " não achou subida: nenhuma parede comporta o tubo inteiro na espessura (a parede fina ou a água correndo nela) nem pelo ramal nem pela descida do aparelho — suba à mão, num shaft ou numa parede mais grossa", ids); return; }
         /* sem coluna de ventilação (o térreo com terminal próprio): o ponto em que este ramal deixa de ser ramal é o topo dele */

@@ -475,6 +475,7 @@
     var mat = P.materiais ? (P.materiais.indexOf(o.material) >= 0 ? o.material : P.material) : P.material;
     var dn = P.dns.indexOf(txt(o.dn)) >= 0 ? txt(o.dn) : P.dn;
     var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
+    if (o.saidaGirada === true) k.saidaGirada = true;   /* A6: a pessoa girou a saída da caixa/ralo (vale até em 0°) — sem o campo, rotY 0 = livre */
     if (o.peca === "extintor" && txt(o.capacidade)) k.capacidade = txt(o.capacidade).slice(0, 40);   /* capacidade extintora calculada pelo Hidro (ex.: "3-A:20-B:C"); o incendio a le */
     if (P.sistemas[0] === "eletrica") {
       k.alturaPiso = num(o.alturaPiso, null);
@@ -551,7 +552,7 @@
     if (o.op === "instAlterar" && o.id != null) {
       var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
       var novo = copia(alvo);
-      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
       if (o.continua === "") delete novo.continua;
       if (o.pecaIni === "") delete novo.pecaIni;
       if (o.pecaFim === "") delete novo.pecaFim;
@@ -1525,6 +1526,24 @@
         try { var cp = HGc.corpoPeca(q, lig); if (cp) q.corpo = { base: r4(cp.base), baseCatalogo: r4(cp.baseCatalogo), prolongador: r4(cp.prolongador), diam: cp.diam, porTrecho: cp.porTrecho }; } catch (eCp) {}
       });
     }
+    function tuboEmRolo(mat) { var M = MATERIAIS[mat]; return /^(cobre_frigorigeno|elet_corrugado|elet_corrugado_ref|duto_flex|pead|pex)$/.test(String(mat || "")) || !!(M && /(rolo|flex[ií]vel)/i.test(String(M.nome || ""))); }
+    /* LUVA DA BARRA (13/11/2026, pedido do Rogério no ligar por clique): o tubo contínuo mais comprido que a barra comercial do material (6 m no PVC —
+       js/biminstgeodados.js barra_m, da norma do tubo) leva a luva de emenda a cada barra; abaixo disso, nenhuma. Só na contagem (qto e orçamento) */
+    (function () {
+      var HGb = dep("HidGeo", "./biminstgeo.js");
+      trechos.forEach(function (t) {
+        var Lb = null; try { var ct = HGb && HGb.cotasTubo ? HGb.cotasTubo(t.material, t.dn) : null; Lb = ct ? num(ct.barra, 0) : 0; } catch (eB) { Lb = 0; }
+        /* ⚠ A3 (revisão 13/11/2026): tubo em ROLO (cobre de refrigeração, eletroduto corrugado, duto flexível, PEAD, PEX) não tem emenda a cada 6 m —
+           vem inteiro no comprimento da obra. Só tubo em BARRA leva a luva, mesmo se um dia o catálogo der barra_m a um material em rolo */
+        if (tuboEmRolo(t.material)) return;
+        if (!(Lb > 0) || !(num(t.comprimento, 0) > Lb + 1e-6)) return;
+        var nL = Math.ceil(num(t.comprimento, 0) / Lb - 1e-6) - 1;
+        for (var m = 1; m <= nL; m++) {
+          var f = m * Lb / num(t.comprimento, 1), P = { x: r4(t.p1.x + (t.p2.x - t.p1.x) * f), y: r4(t.p1.y + (t.p2.y - t.p1.y) * f), z: r4(t.p1.z + (t.p2.z - t.p1.z) * f) };
+          luvasQto.push({ id: "lb:" + t.id + ":" + m, tipo: "luva", sistema: t.sistema, material: t.material, aplicacao: t.aplicacao, dn: t.dn, x: P.x, y: P.y, z: P.z, ramos: [t.id], juntaDe: t.id, soQto: true, barra: true, nome: nomeConexao("luva", t.material), premissa: "luva de emenda da barra de " + Lb + " m (tubo de " + r4(t.comprimento) + " m)" });
+        }
+      });
+    })();
     return { trechos: trechos, pecas: pecas, conectores: conectores, conexoes: conexoes, ligacoes: ligacoes, pontasLivres: livres, continuacoes: continuacoes,
              conectoresLivres: semLigacao, conectoresMarcar: marcar, ligacoesPeca: ligPeca, avisos: avisosRede, acessorios: acessorios, nosRamos: nosRamos, juntas: juntas, luvasQto: luvasQto, extrasQto: extrasQto, pontosSemRosca: pontosSemRosca };
   }
@@ -1684,6 +1703,18 @@
     if (M.alturas && M.alturas.indexOf(Math.round(t.alt * 1000)) < 0) it.semTabela = "a SINAPI 06/2026 só tem eletrocalha de altura " + M.alturas.join(", ") + " mm (esta tem " + Math.round(t.alt * 1000) + " mm) — pendente (nunca a parecida)";
     return it;
   }
+  /* JUNÇÃO 75 × 40 E 100 × 40 (pendência da 1.2.283, decisão 13/11/2026): a SINAPI 06/2026 não tem a junção com a derivação DN 40 nesses DN, e
+     a obra também não a monta assim — a peça de prateleira é a junção de redução invertida DN × 50 com a bucha de redução longa 50 × 40 na bolsa
+     da derivação. O orçamento leva as DUAS peças, cada uma com a sua composição real (104343/104350 ou 104345/104353 + 104341), nunca uma inventada. */
+  function partesConexao(c) {
+    if (c && c.tipo === "juncao" && c.material === "pvc_esgoto" && Number(c.dn2) === 40 && (Number(c.dn) === 75 || Number(c.dn) === 100)) {
+      var j = {}, b = {}; Object.keys(c).forEach(function (q) { j[q] = c[q]; b[q] = c[q]; });
+      j.dn2 = "50"; j.partede = c.dn + "x40";
+      b.tipo = "reducao"; b.dn = "50"; b.dn2 = "40"; b.id = c.id + ":bucha"; b.partede = c.dn + "x40"; b.nome = "Bucha de redução longa 50 × 40 (derivação da junção " + c.dn + " × 40)";
+      return [j, b];
+    }
+    return [c];
+  }
   function itemConexao(c) {
     var M = MATERIAIS[c.material] || {};
     if (M.semSinapi) return { peca: c.tipo, sistema: c.sistema, material: c.material, aplicacao: c.aplicacao, dn: c.dn, dn2: c.dn2, semTabela: "a SINAPI 06/2026 não tem composição de conexão de " + M.nome.toLowerCase() + " — pendente" };
@@ -1815,7 +1846,8 @@
       g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.quantidade + q.quantidade); g.trechos.push(t.id);
       sis(t.sistema).metros = r4(sis(t.sistema).metros + t.comprimento);
     });
-    R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c) {   /* + a luva na ponta e o ponto de água/adaptador/terminal (só contagem, sem a prévia) */
+    var cxsPartes = []; R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c0) { partesConexao(c0).forEach(function (c) { cxsPartes.push(c); }); });
+    cxsPartes.forEach(function (c) {   /* + a luva na ponta e o ponto de água/adaptador/terminal (só contagem, sem a prévia) */
       var k = [c.sistema, c.material, c.tipo, c.dn, c.dn2 || "", c.aplicacao, c.incluso ? "incl" : ""].join("|");
       var g = cxs[k];
       if (!g) {
@@ -1943,7 +1975,8 @@
     /* N23 EMBUTIDO: o rasgo e o chumbamento do trecho embutido em alvenaria (o metro que corre dentro dela), pela SINAPI do DN */
     var HEo = dep("HidEmbutido", "./biminstembutido.js");
     if (HEo && HEo.rasgos) { try { HEo.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) { linha(r.id, { peca: "rasgo_alvenaria", sistema: r.sistema, material: r.material, dn: r.dn }, r.metros, "m", sp); }); }); } catch (eO) {} }
-    R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c) {
+    var cxsPartesO = []; R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c0) { partesConexao(c0).forEach(function (c) { cxsPartesO.push(c); }); });
+    cxsPartesO.forEach(function (c) {
       if (c.incluso) return;   /* o adaptador com flange que os serviços da caixa já orçam (js/hidbarrilete.js): não soma duas vezes */
       var it = itemConexao(c);
       linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
@@ -2659,7 +2692,7 @@
     joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
     normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
     conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
-    chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
+    partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
     quantidadeTrecho: quantidadeTrecho, qto: qto, servicosOrc: servicosOrc, planta: planta,
     /* P12 */
     ACESSORIOS: ACESSORIOS, ACESSORIO_DA_FAM: ACESSORIO_DA_FAM, DISPOSITIVOS: DISPOSITIVOS, BITOLA_REF: BITOLA_REF, TIPOS_VERIF: TIPOS_VERIF,

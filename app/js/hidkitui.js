@@ -1456,6 +1456,10 @@
       var extra = [];
       if (txM) txM.candidatos.forEach(function (q) { extra.push({ id: "hid-transp-" + q.outro, rotulo: "Curva de transposição sobre " + q.outro + (q.ok ? "" : " (não cabe)"), fn: function () { U.inserirTransposicao(txM.trecho, q.outro); } }); });
       if (sdN) sdN.opcoes.forEach(function (op) { extra.push({ id: "hid-saida-" + op.id, rotulo: op.rotulo + (op.id === sdN.atual ? " (atual)" : ""), fn: function () { U.escolherSaidaNo(sdN.cx.id, op.id); } }); });
+      /* C1 (13/11/2026): INTERLIGAR A PARTIR DE QUALQUER CONEXÃO/EQUIPAMENTO — o item arma a ferramenta Tubo já começando na peça (ou no ponto
+         de ligação do aparelho); o próximo clique no alvo (outro equipamento, peça, ponta ou meio de tubo) liga os dois pelo motor do Ligar A → B */
+      var UIi = global.BimInstUI;
+      if (idU && UIi && UIi.pontoInterligar && UIi.pontoInterligar(c.estado, c.avaliarFam, idU)) extra.push({ id: "hid-interligar", rotulo: "Interligar a…", fn: function () { UIi.interligarDe(idU); } });
       if (cxM) return extra.concat([{ id: "hid-ligar-peca", rotulo: "Ligar esta peça (barrilete)", fn: function () { U.ligarPeca(cxM); } }, { id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }]);
       var nAp = 0; try { nAp = U._aparelhosDe(c).length; } catch (eAp) { nAp = 0; }
       if (!nAp) return extra;

@@ -4865,7 +4865,7 @@ propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, demolida: de
 NUNCA_NA_GORDURA: NUNCA_NA_GORDURA, ehCinta: ehCinta, cintaPassa: cintaPassa, shaftNoCanto: shaftNoCanto, shaftsDaCinta: shaftsDaCinta, LIMITE_DN_CINTA_MM: LIMITE_DN_CINTA_MM,
 telhadoAbaixoDe: telhadoAbaixoDe, tuboSobreTelhado: tuboSobreTelhado,
 ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,
-_int: { juncaoDoPe: juncaoDoPe, uniaoCubas: uniaoCubas, saidaDaCaixa: saidaDaCaixa, Arvore: Arvore, Mundo: Mundo, LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
+_int: { juncaoDoPe: juncaoDoPe, uniaoCubas: uniaoCubas, saidaDaCaixa: saidaDaCaixa, Arvore: Arvore, Mundo: Mundo, LAJE_MIN: LAJE_MIN, contextoRota: contextoRota, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, retCentro: retCentro, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
 };
 global.HidRota = HidRota;
 if (typeof module !== "undefined" && module.exports) module.exports = HidRota;
@@ -6525,6 +6525,26 @@ function arr(a) { return Array.isArray(a) ? a : []; }
 function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
 function r4(v) { return Math.round(v * 10000) / 10000; }
 function txt(v) { return v == null ? "" : String(v); }
+var EPS = 1e-6;
+function bate45(estado, obs, P, J, dn, idTb) {
+var H = HR(), G = H && H._int; if (!G || !G.retSeg || !G.corta) return null;
+var r = num(dn, 50) / 2000, y0 = Math.min(P.y, J.y) - r, y1 = Math.max(P.y, J.y) + r;
+function faixa(b0, b1) { return y0 < b1 - EPS && y1 > b0 + EPS; }
+var m = null;
+arr(obs && obs.paredes).forEach(function (w) {
+if (m) return; var o = G.retSeg(w.p1, w.p2, num(w.espessura, 0));
+if (o && G.corta(o, P, J, r) && faixa(num(w.base, 0), num(w.base, 0) + num(w.altura, 0))) m = "atravessa a parede " + txt(w.id);
+});
+arr(obs && obs.pilares).forEach(function (q) {
+if (m || !G.retCentro) return; var o = G.retCentro(num(q.x, 0), num(q.z, 0), num(q.largura, 0), num(q.profundidade, 0), q.rotY);
+if (G.corta(o, P, J, r) && faixa(num(q.base, 0), num(q.base, 0) + num(q.altura, 0))) m = "atravessa o pilar " + txt(q.id);
+});
+arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) {
+if (m || String(t.id) === String(idTb) || !t.p1 || !t.p2 || !G.segSeg3) return;
+if (G.segSeg3(P, J, t.p1, t.p2) < r + num(t.dn, 0) / 2000) m = "cruza o tubo " + txt(t.id);
+});
+return m;
+}
 var PREFIXO = "lg", SEQ = 0;
 function destino(B, sis) {
 if (B.tipo === "vertical") return { tipo: sis === "esgoto" ? "tubo_queda" : "coluna", id: B.trecho, x: B.x, z: B.z, yBase: B.yBase, yTopo: B.yTopo, existente: true, ventilado: false };
@@ -6533,39 +6553,119 @@ return { tipo: "ponto", id: B.trecho || B.id || "B", conector: { x: B.x, y: B.y,
 function dividir(estado, idT, P) { var I = BI(); return I && I.dividirTrecho ? I.dividirTrecho(estado, idT, P) : []; }
 function ligar(estado, avaliarFam, A, B, opts) {
 opts = opts || {};
+var A0 = A ? JSON.parse(JSON.stringify(A)) : A, B0 = B ? JSON.parse(JSON.stringify(B)) : B;
 var H = HR(), I = BI(); if (!H || !I) return { ok: false, erro: "Motor do traçado não carregado.", opcoes: [] };
 if (!A || !B) return { ok: false, erro: "Clique o ponto de partida e o de chegada.", opcoes: [] };
 var sis = A.sistema || B.sistema;
 if (A.sistema && B.sistema && A.sistema !== B.sistema) return { ok: false, erro: "Sistemas diferentes (" + I.SISTEMAS[A.sistema].nome + " × " + I.SISTEMAS[B.sistema].nome + "): não se ligam.", opcoes: [] };
 if (!I.SISTEMAS[sis] || (sis !== "esgoto" && sis !== "agua_fria" && sis !== "pluvial")) return { ok: false, erro: "Ligar A → B: esgoto e água fria (o sistema " + txt(sis) + " ainda não).", opcoes: [] };
 var sisRota = sis === "pluvial" ? "esgoto" : sis;
-var dnA = num(A.dn, 0) || num(B.dn, 0);
-var con = { id: "c", sistema: sisRota, dn: dnA, x: A.x, y: A.y, z: A.z };
+if (A.tipo === "conector" && A.famInst != null && !A.aparelho) {
+var K = dep("HidKit", "./hidkit.js"), fA = arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(A.famInst); })[0];
+if (K && fA && K.tipoDaFamilia) { var tA = K.tipoDaFamilia(fA.famId, fA.tipoId); if (K.aparelhoNorma) tA = K.aparelhoNorma(tA); if (tA) { A.aparelho = tA; if (opts.dnAparelho == null) A._dnPeloAparelho = true; } }
+}
+var dnA = num(A.dn, 0) || (A._dnPeloAparelho ? 0 : num(B.dn, 0));
+var tocoA = null, PkA = A.tipo === "peca" && A.id != null ? arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return String(k.id) === String(A.id); })[0] : null;
+if (PkA && sisRota === "esgoto" && /^(caixa_sifonada|ralo_)/.test(String(PkA.peca)) && (PkA.saidaGirada === true || Math.abs(num(PkA.rotY, 0)) > EPS)) {
+var PPa = I.PECAS[PkA.peca] || {}, dnS = num(String(PkA.dn || PPa.dn || "").split("x").pop(), 0) || 50, rot = num(PkA.rotY, 0);
+var dx = Math.cos(rot), dz = -Math.sin(rot), rC = num(PPa.r, 0.05), yS = opts._yToco != null ? opts._yToco : r4(num(PkA.y, 0) - num(PPa.h, 0.1) + dnS / 2000 + 0.01);
+var iS = num(I.inclinacaoMinima ? I.inclinacaoMinima("esgoto", dnS) : null, 2) / 100;
+var Lt = 0.15, q0 = { x: r4(PkA.x + dx * rC), y: yS, z: r4(PkA.z + dz * rC) }, q1 = { x: r4(q0.x + dx * Lt), y: r4(yS - iS * Lt), z: r4(q0.z + dz * Lt) };
+tocoA = { op: "trecho", id: "lgcx" + (opts.seq || (++SEQ) + "-") + "toco", sistema: "esgoto", material: "pvc_esgoto", dn: dnS, p1: q0, p2: q1 };
+A = { tipo: "ponta", x: q1.x, y: q1.y, z: q1.z, sistema: "esgoto", dn: dnS }; dnA = dnS;
+}
+var con = { id: "c", sistema: sisRota, dn: dnA || num(A.dn, 0), x: A.x, y: A.y, z: A.z };
 if (A.parede) con.parede = A.parede;
 var par = { estrategias: opts.estrategias || (sisRota === "esgoto" ? ["piso", "forro"] : ["parede", "piso", "forro"]), prefixo: PREFIXO + (opts.seq || (++SEQ) + "-"), dn: {}, terreo: opts.terreo !== false };
+if (tocoA) par.quedaMin = 0.001;
 var apId = A.famInst != null ? String(A.famInst) : "A";
 if (dnA > 0) par.dn[apId + ":c"] = dnA;
+var entra45 = null;
+if (sisRota === "esgoto" && B.tipo === "meio" && B.trecho) {
+var Tb = arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) === String(B.trecho); })[0];
+if (Tb) {
+var up = Tb.p1.y >= Tb.p2.y ? Tb.p1 : Tb.p2, dw = up === Tb.p1 ? Tb.p2 : Tb.p1, ux = dw.x - up.x, uz = dw.z - up.z, Lu = Math.hypot(ux, uz);
+if (Lu > 1e-6) {
+ux /= Lu; uz /= Lu;
+var nx = -uz, nz = ux; if ((A.x - B.x) * nx + (A.z - B.z) * nz < 0) { nx = -nx; nz = -nz; }
+var obs45 = H.obstaculosDoBim(estado, avaliarFam);
+var dnB = num(Tb.dn, 100), d45 = Math.max(0.15, (dnB + dnA) / 2000 + 0.10), iB = num(I.inclinacaoMinima ? I.inclinacaoMinima("esgoto", dnA || 40) : null, 2) / 100;
+var J = { x: r4(B.x), y: r4(B.y), z: r4(B.z) }, Ld = d45 * Math.SQRT2;
+var Pp = null, mot = [];
+[1, -1].forEach(function (sg) {
+if (Pp) return;
+var Pc = { x: r4(J.x - ux * d45 + sg * nx * d45), y: r4(J.y + iB * Ld), z: r4(J.z - uz * d45 + sg * nz * d45) }, b45 = bate45(estado, obs45, Pc, J, dnA || 40, Tb.id);
+if (b45) mot.push((sg > 0 ? "do lado de A " : "do outro lado ") + b45); else Pp = Pc;
+});
+if (!Pp) return { ok: false, erro: "a entrada a 45° no tubo " + txt(Tb.id) + " não cabe: " + mot.join("; ") + " — escolha outro ponto do tubo (mais longe da parede) ou ligue numa ponta/caixa", opcoes: [] };
+entra45 = { J: J, P: Pp };
+B = { tipo: "ponto", x: Pp.x, y: Pp.y, z: Pp.z, sistema: B.sistema, dn: dnA, trecho: B.trecho };
+}
+}
+}
 var dest = {}; dest[sisRota] = destino(B, sisRota);
 var piso = num(opts.piso, num(A.y, 0));
 var entrada = { aparelhos: [{ id: apId, aparelho: txt(A.aparelho), grupo: "1", conectores: [con] }], pecas: [], destinos: dest, grupos: [{ id: "1", piso: piso }], piso: piso,
 obstaculos: H.obstaculosDoBim(estado, avaliarFam), parametros: par, opsModelo: arr(opts.opsModelo) };
 var r = H.propor(entrada);
+var Pk = B.tipo === "peca" && B.id != null ? arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return String(k.id) === String(B.id); })[0] : null;
+var PP = Pk ? I.PECAS[Pk.peca] : null;
+if (sisRota === "esgoto" && PP && !arr(r.opcoes).length) {
+var yFundo = num(Pk.y, 0) - num(PP.prof, 0) + num(dnA, 40) / 2000 + 0.02, PASSO = 0.02;
+for (var yB = num(B.y, 0) - PASSO; yB >= yFundo && !arr(r.opcoes).length; yB -= PASSO) {
+var B2 = {}; Object.keys(B).forEach(function (q) { B2[q] = B[q]; }); B2.y = r4(yB);
+dest[sisRota] = destino(B2, sisRota); entrada.destinos = dest;
+r = H.propor(entrada);
+}
+}
+if (tocoA) arr(r.opcoes).forEach(function (o) {
+var vt = arr(o.ops).filter(function (x) { return x.op === "trecho" && Math.abs(x.p1.x - A.x) + Math.abs(x.p1.z - A.z) < 1e-3 && Math.abs(x.p1.x - x.p2.x) + Math.abs(x.p1.z - x.p2.z) < 1e-3 && x.p2.y < x.p1.y - 0.001; })[0];
+var yF = num(PkA.y, 0) - num((I.PECAS[PkA.peca] || {}).prof, 0.3) + num(tocoA.dn, 50) / 2000 + 0.02;
+if (!vt) { o.toco = JSON.parse(JSON.stringify(tocoA)); return; }
+var dy = tocoA.p1.y - tocoA.p2.y, y2 = vt.p2.y;
+if (y2 + dy < yF) { o.toco = JSON.parse(JSON.stringify(tocoA)); return; }
+var tc = JSON.parse(JSON.stringify(tocoA)); tc.p1.y = r4(y2 + dy); tc.p2.y = r4(y2); o.toco = tc;
+o.ops = o.ops.filter(function (x) { return x !== vt; });
+});
 var div = B.tipo === "meio" ? null : null;
 var opcoes = r.opcoes.map(function (o) {
 var ops = o.ops.filter(function (x) { return x.op === "trecho" || x.op === "acessorio"; }).filter(function (x) { return !(x.op === "acessorio"); });
 if (sis === "pluvial") ops.forEach(function (x) { if (x.op === "trecho") { x.sistema = "pluvial"; x.material = I.SISTEMAS.pluvial.material; } });
 var antes = [];
-if (B.tipo === "meio" && B.trecho) {
+if (entra45) {
+ops.push({ op: "trecho", id: par.prefixo + "j45", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num((ops[ops.length - 1] || {}).dn, 40), p1: entra45.P, p2: entra45.J });
+antes = dividir(estado, B.trecho, entra45.J);
+} else if (B.tipo === "meio" && B.trecho) {
 var fim = null; ops.forEach(function (x) { if (x.op === "trecho" && Math.hypot(x.p2.x - B.x, x.p2.z - B.z) < 0.05) fim = x.p2; });
 antes = dividir(estado, B.trecho, fim || B);
 }
 if (A.tipo === "meio" && A.trecho) antes = antes.concat(dividir(estado, A.trecho, A));
+if (tocoA) ops = [o.toco || JSON.parse(JSON.stringify(tocoA))].concat(ops);
+ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
 return { estrategia: o.estrategia, nome: o.nome, ops: antes.concat(ops), comprimento: o.comprimento, avisos: o.avisos.slice() };
 });
+if (!opcoes.length && tocoA && B.y != null && num(B.y, 0) > tocoA.p2.y - 0.005) return { ok: false, erro: "a saída da caixa " + txt(PkA.id) + " (cota " + tocoA.p2.y.toFixed(2).replace(".", ",") + " m) fica abaixo do ponto de chegada (cota " + num(B.y, 0).toFixed(2).replace(".", ",") + " m): o esgoto não sobe — ligue a caixa mais a jusante (onde o tubo está mais fundo) ou direto na caixa de inspeção", opcoes: [], descartadas: r.descartadas, pendencias: r.pendencias };
 if (!opcoes.length) return { ok: false, erro: (r.descartadas[0] ? r.descartadas[0].motivo : (r.pendencias[0] ? r.pendencias[0].motivo : "nenhuma rota fechou")), opcoes: [], descartadas: r.descartadas, pendencias: r.pendencias };
 return { ok: true, opcoes: opcoes, descartadas: r.descartadas, pendencias: r.pendencias };
 }
-var HidLigar = { VERSAO: 1, ligar: ligar, destino: destino, dividir: dividir };
+function unirColineares(ops, existentes) {
+var tr = ops.filter(function (x) { return x.op === "trecho"; }), mudou = true, fixo = {};
+function chave(p) { return r4(p.x) + "," + r4(p.y) + "," + r4(p.z); }
+arr(existentes).forEach(function (t) { if (t && t.p1 && t.p2 && tr.indexOf(t) < 0) { fixo[chave(t.p1)] = 1; fixo[chave(t.p2)] = 1; } });
+while (mudou) {
+mudou = false;
+var cont = {}; tr.forEach(function (t) { [t.p1, t.p2].forEach(function (p) { var k = chave(p); cont[k] = (cont[k] || 0) + 1; }); });
+for (var i = 0; i < tr.length && !mudou; i++) for (var j = 0; j < tr.length && !mudou; j++) {
+var a = tr[i], b = tr[j]; if (i === j || chave(a.p2) !== chave(b.p1) || cont[chave(a.p2)] !== 2 || fixo[chave(a.p2)] || num(a.dn, 0) !== num(b.dn, 0) || a.material !== b.material || a.sistema !== b.sistema) continue;
+var ua = { x: a.p2.x - a.p1.x, y: a.p2.y - a.p1.y, z: a.p2.z - a.p1.z }, ub = { x: b.p2.x - b.p1.x, y: b.p2.y - b.p1.y, z: b.p2.z - b.p1.z };
+var La = Math.hypot(ua.x, ua.y, ua.z), Lb = Math.hypot(ub.x, ub.y, ub.z); if (!(La > 0) || !(Lb > 0)) continue;
+if (Math.abs(ua.x / La - ub.x / Lb) + Math.abs(ua.y / La - ub.y / Lb) + Math.abs(ua.z / La - ub.z / Lb) > 2e-3) continue;
+a.p2 = b.p2; tr.splice(j, 1); ops.splice(ops.indexOf(b), 1); mudou = true;
+}
+}
+return ops;
+}
+var HidLigar = { VERSAO: 1, bate45: bate45, unirColineares: unirColineares, ligar: ligar, destino: destino, dividir: dividir };
 global.HidLigar = HidLigar;
 if (typeof module !== "undefined" && module.exports) module.exports = HidLigar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -7393,7 +7493,7 @@ if (!volta.length) return r;
 var ids = []; volta.forEach(function (v) { if (ids.indexOf(v.id) < 0) ids.push(v.id); });
 var tx = volta.map(function (v) { return v.id + ": " + f2(v.ate) + " m contra " + f2(v.reta) + " m em linha reta"; }).join("; ");
 var ficaVolta = function (motivo) { (r.avisos = r.avisos || []).push({ texto: "lavatório " + ids.join(", ") + ": o esgoto vai até a caixa sifonada e volta (" + tx + "). Tentei ligar direto ao ramal e não fechou: " + motivo, elementos: ids.slice(), acao: { tipo: "ajustar", ids: ids.slice() } }); return r; };
-if (m.caixaUsuario && m.recept.every(function (q) { return ids.indexOf(String(q)) >= 0; })) return ficaVolta("a caixa sifonada " + m.caixaUsuario + ", posta no modelo, só recebe este lavatório e ficaria sem contribuição (o fecho hídrico seca). Tire a caixa ou ligue outro aparelho nela");
+var caixaFica = m.caixaUsuario && m.recept.every(function (q) { return ids.indexOf(String(q)) >= 0; }) ? m.caixaUsuario : null;
 var par2 = {}; Object.keys(par).forEach(function (k) { par2[k] = par[k]; }); par2._lavDireto = ids;
 var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2.parametros = par2;
 var r2 = null; try { r2 = ligarBase(e2); } catch (eL) { r2 = null; }
@@ -7406,6 +7506,12 @@ var giroD = m.lavs.filter(function (c) { if (ids.indexOf(c.id) < 0) return false
 if (giroD.length) return ficaVolta("a descida do lavatório fica perto demais do fim do ramal para a junção de 45° a favor do fluxo; ligado direto, o esgoto andaria para trás e entraria contra o fluxo. Afaste o lavatório do fim do ramal e trace de novo");
 r2.avisos.push({ texto: "lavatório " + ids.join(", ") + " ligado direto ao ramal: o esgoto dele ia até a caixa sifonada e voltava (" + tx + ") — o lavatório tem sifão próprio (NBR 8160) e entra no ramal por junção de 45°" + (semCx ? ". O ambiente ficou sem caixa sifonada e, com ela, sem ponto de lavagem de piso (grelha): se o piso precisa de ralo, ponha-o e trace de novo" : ""), elementos: ids.slice(), acao: null });
 r2.decisoes.push({ id: "amb.lavatorio_direto", texto: "Lavatório " + ids.join(", ") + " direto ao ramal (o esgoto ia até a caixa sifonada e voltava: " + tx + ")." });
+if (caixaFica) {
+var cxLig = arr(r2.ops).some(function x(o) { return o && (o.op === "lote" ? arr(o.ops).some(x) : (o.op === "trecho" && o.sistema === "esgoto" && [o.p1, o.p2].some(function (p) { return p && Math.hypot(p.x - m.caixa.x, p.z - m.caixa.z) < 0.2; }))); });
+if (!cxLig) return ficaVolta("a caixa sifonada " + caixaFica + ", posta no modelo como ralo do lavabo, ficaria sem ligação ao ramal");
+r2.avisos.push({ texto: "lavabo com ralo: a caixa sifonada " + caixaFica + " fica como ponto de lavagem do piso, ligada ao ramal; o lavatório " + ids.join(", ") + " vai direto (sifão próprio). O fecho hídrico dela é mantido pela lavagem do piso", elementos: [caixaFica], acao: null });
+r2.decisoes.push({ id: "amb.lavabo_ralo", texto: "Lavabo com ralo: caixa sifonada " + caixaFica + " mantida como ponto de lavagem do piso; lavatório " + ids.join(", ") + " direto ao ramal." });
+}
 return r2;
 }
 function ligarSemEncaixe(e) {
@@ -8537,6 +8643,14 @@ var acl2 = NR.regraVent("aclive_inicial_angulo_menor_pct", "ventilação: aclive
 if (acl2 == null) pend("es8160.ventilacao_regras", "aclive do trecho inicial da ventilação ligada em ângulo menor (4.3.16 b 2) sem tabela: o trecho inicial saiu com o aclive mínimo", ids);
 var acIni = acl2 == null ? ac : Math.max(ac, acl2 / 100), angMenor = false;
 var outros = novas.filter(function (o) { return o.op === "trecho" && o.sistema !== "esgoto"; }).concat(arr(estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t.sistema !== "esgoto"; }));
+var temCaixaDagua = arr(estado.familias).some(function (f) { return /caixa-dagua/.test(String(f.famId)); });
+if (temCaixaDagua) outros = outros.concat(outros.filter(function (t) {
+return t.sistema === "agua_fria" && t.p1 && t.p2 && Math.abs(t.p1.x - t.p2.x) + Math.abs(t.p1.z - t.p2.z) < 1e-3 && !!t.continua;
+}).map(function (t) {
+var top = t.p1.y >= t.p2.y ? t.p1 : t.p2, yTeto = piso + Math.max(geo(par, "peDireito"), geo(par, "alturaSaidaVentilacao"));
+var HBc = dep("HidBarrilete", "./hidbarrilete.js"), dnCol = Math.max(num(t.dn, 0), num(HBc && HBc.GEO_BAR && HBc.GEO_BAR.dnMinColuna, 0));
+return { op: "trecho", id: String(t.id) + ":prumada-coluna", sistema: "agua_fria", dn: dnCol, p1: { x: top.x, y: top.y, z: top.z }, p2: { x: top.x, y: yTeto, z: top.z }, virtual: true };
+}).filter(function (v) { return v.p2.y > v.p1.y + EPS; }));
 var mat = "pvc_esgoto", pr = ambId + "-ve-", nV = 0;
 var hSaida = geo(par, "alturaSaidaVentilacao"), ySaida = r4(piso + hSaida);
 var esExist = arr(estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t.sistema === "esgoto" && String(t.id).indexOf(ambId + "-") !== 0; });
@@ -8775,7 +8889,24 @@ if (!melhor) { pend("amb.ventilacao", "sem caminho livre do ramal de " + desc[0]
 yJunta = melhor.extra.fim.y;
 encaixePend(melhor); desvioDec(melhor);
 } else {
+var dnsT0 = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnT0 = dnsT0.filter(function (d) { return d >= dnV - EPS; })[0], dnV0r = dnV;
 cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
+var serve50 = function (b) {
+if (!b || !b.segs || !b.segs.length) return false;
+var aguaV = outros.filter(function (t) { return /^agua/.test(String(t.sistema)) && t.p1 && t.p2; });
+var folgaAgua = function (r) { var m = Infinity; b.segs.forEach(function (sg) { aguaV.forEach(function (t) { m = Math.min(m, H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - r - raio(num(t.dn, 0))); }); }); return m; };
+var AFAST = 0.10, MONT_V = 0.03, f40 = folgaAgua(raio(dnV)), f50 = folgaAgua(raio(dnT0));
+var pernasOk = b.segs.every(function (sg, k) { return k === b.segs.length - 1 || d3(sg.a, sg.b) >= 0.20 - EPS; });
+var esgV = novas.filter(function (o) { return o.op === "trecho" && o.sistema === "esgoto" && String(o.id) !== String(b.c && b.c.trecho); }).concat(esExist);
+var folgaEs = Infinity; b.segs.forEach(function (sg, k) { esgV.forEach(function (t) { if (!t.p1 || !t.p2) return; if (k === 0 && (d3(sg.a, t.p1) < 0.01 || d3(sg.a, t.p2) < 0.01)) return; folgaEs = Math.min(folgaEs, H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - raio(dnT0) - raio(num(t.dn, 0))); }); });
+return pernasOk && folgaEs >= MONT_V - EPS && !b.bate && (f50 >= AFAST - EPS || (f40 < AFAST - EPS && f50 >= f40 - (raio(dnT0) - raio(dnV)) - EPS && f50 > 2 * EPS));
+};
+if (melhor && dnT0 != null && dnT0 > dnV + EPS) {
+var m50 = serve50(melhor) ? melhor : null;
+if (!m50) cands.forEach(function (c) { var b = subida(c, raio(dnT0), function () { return ySaida; }); if (b && serve50(b) && (!m50 || b.nota < m50.nota - EPS)) m50 = b; });
+if (!m50) aviso("a ventilação de " + desc[0].ref + " ficou em DN " + dnV0r + " na parede, com a redução " + dnT0 + " × " + dnV0r + " acima do teto: o DN " + dnT0 + " (o do terminal e o que o dimensionamento pede) não cabe nessa parede com 10 cm livres da água, 3 cm de outro esgoto e as pernas das conexões. Para DN " + dnT0 + " inteiro, afaste a descida da água/esgoto ou engrosse a parede", ids, { tipo: "ajustar", ids: ids });
+if (m50) { melhor = m50; dnV = dnT0; decide("amb.ventilacao.dn_terminal", "Ventilação de " + desc[0].ref + " em DN " + dnT0 + " da tomada ao terminal (o terminal começa no DN " + dnT0 + "; a Tabela 8 dava DN " + dnV0r + "): sem a redução " + dnT0 + " × " + dnV0r + " no teto."); }
+}
 if (!melhor) melhor = ventDescidaReserva(null);
 if (!melhor) { pend("amb.ventilacao", "a ventilação de " + desc[0].ref + " não achou subida: nenhuma parede comporta o tubo inteiro na espessura (a parede fina ou a água correndo nela) nem pelo ramal nem pela descida do aparelho — suba à mão, num shaft ou numa parede mais grossa", ids); return; }
 yJunta = melhor.top.y;
@@ -35201,6 +35332,8 @@ var txM = idU ? U.transpDoTubo(idU) : null;
 var extra = [];
 if (txM) txM.candidatos.forEach(function (q) { extra.push({ id: "hid-transp-" + q.outro, rotulo: "Curva de transposição sobre " + q.outro + (q.ok ? "" : " (não cabe)"), fn: function () { U.inserirTransposicao(txM.trecho, q.outro); } }); });
 if (sdN) sdN.opcoes.forEach(function (op) { extra.push({ id: "hid-saida-" + op.id, rotulo: op.rotulo + (op.id === sdN.atual ? " (atual)" : ""), fn: function () { U.escolherSaidaNo(sdN.cx.id, op.id); } }); });
+var UIi = global.BimInstUI;
+if (idU && UIi && UIi.pontoInterligar && UIi.pontoInterligar(c.estado, c.avaliarFam, idU)) extra.push({ id: "hid-interligar", rotulo: "Interligar a…", fn: function () { UIi.interligarDe(idU); } });
 if (cxM) return extra.concat([{ id: "hid-ligar-peca", rotulo: "Ligar esta peça (barrilete)", fn: function () { U.ligarPeca(cxM); } }, { id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }]);
 var nAp = 0; try { nAp = U._aparelhosDe(c).length; } catch (eAp) { nAp = 0; }
 if (!nAp) return extra;
