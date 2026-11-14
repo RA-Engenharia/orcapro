@@ -97418,13 +97418,22 @@ var Pv = pv(P), out = [], T = tol || 0.02;
 (ramosIds || []).forEach(function (id) {
 var t = trechosPorId[id]; if (!t) return;
 var a = pv(t.p1), b = pv(t.p2);
-if (len(sub(a, Pv)) <= T) out.push({ trecho: id, lado: 0, dir: nrmz(sub(b, a)), dn: t.dn, material: t.material });
-else if (len(sub(b, Pv)) <= T) out.push({ trecho: id, lado: 1, dir: nrmz(sub(a, b)), dn: t.dn, material: t.material });
-else { var d = nrmz(sub(b, a)); out.push({ trecho: id, lado: -1, dir: d, dn: t.dn, material: t.material, passante: true }, { trecho: id, lado: -1, dir: mul(d, -1), dn: t.dn, material: t.material, passante: true }); }
+if (len(sub(a, Pv)) <= T) out.push({ trecho: id, lado: 0, dir: nrmz(sub(b, a)), dn: t.dn, material: t.material, sistema: t.sistema });
+else if (len(sub(b, Pv)) <= T) out.push({ trecho: id, lado: 1, dir: nrmz(sub(a, b)), dn: t.dn, material: t.material, sistema: t.sistema });
+else { var d = nrmz(sub(b, a)); out.push({ trecho: id, lado: -1, dir: d, dn: t.dn, material: t.material, sistema: t.sistema, passante: true }, { trecho: id, lado: -1, dir: mul(d, -1), dn: t.dn, material: t.material, sistema: t.sistema, passante: true }); }
 });
 return out;
 }
-function jusante(lista) { var j = lista.filter(function (e) { return e && !e.passante && e.lado === 0; }), mo = lista.filter(function (e) { return e && !e.passante && e.lado === 1; }); return j.length === 1 && mo.length >= 1 ? j[0] : null; }
+var CAIMENTO_MIN = 1e-4;
+var SEM_GRAVIDADE = 0;
+function jusante(lista) {
+var ns = lista.filter(function (e) { return e && !e.passante && e.dir; });
+if (!SEM_GRAVIDADE && ns.length >= 2 && ns.every(function (e) { return e.sistema === "esgoto"; })) {
+var ord = ns.slice().sort(function (a, b) { return a.dir[1] - b.dir[1]; });
+if (ord[0].dir[1] < -CAIMENTO_MIN && ord[1].dir[1] > ord[0].dir[1] + CAIMENTO_MIN) return ord[0];
+}
+var j = lista.filter(function (e) { return e && !e.passante && e.lado === 0; }), mo = lista.filter(function (e) { return e && !e.passante && e.lado === 1; }); return j.length === 1 && mo.length >= 1 ? j[0] : null;
+}
 function desvio(d1, d2) { return Math.acos(Math.max(-1, Math.min(1, -dot(d1, d2)))) * 180 / Math.PI; }
 var CHAVE_PERFIL = { pvc_esgoto: { joelho90: "esg-joelho", joelho45: "esg-joelho", curva90: "esg-curva", curva45: "esg-curva", juncao: "esg-juncao", te: "esg-te", te_reducao: "esg-te", luva: "esg-luva",
 curva90_curta: "esg-curvacurta", juncao_dupla: "esg-juncaodupla", cruzeta: "esg-cruzeta", luva_correr: "esg-luvacorrer", cap: "esg-cap", joelho90_anel_labial: "esg-joelhoanel" },
@@ -97464,7 +97473,7 @@ else { a = [0, 0, 0]; b = [d[0] * L, d[1] * L, d[2] * L]; }
 T[id] = { id: id, p1: { x: a[0], y: a[1], z: a[2] }, p2: { x: b[0], y: b[1], z: b[2] }, dn: r.dn, material: c.material, sistema: c.sistema || "esgoto" }; ids.push(id);
 });
 var cc = {}; Object.keys(c).forEach(function (k) { cc[k] = c[k]; }); cc.x = 0; cc.y = 0; cc.z = 0; cc.ramos = ids;
-var r0 = null; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; }
+var r0 = null; SEM_GRAVIDADE++; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; } finally { SEM_GRAVIDADE--; }
 return ids.map(function (id, i) { if (!r0) return null; var f = ramos[i].passante ? null : (r0.faces || {})[id + ":" + (ramos[i].chega ? 1 : 0)]; return f == null ? null : f; });
 }
 function perfilProduto(material, tipo, dn) {
@@ -181639,6 +181648,20 @@ toast(msg, r.puladas.length ? "aviso" : "ok"); status(msg);
 return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr),
 formato: formato, automatico: auto, aviso: auto ? avisoFormato : "", soltas: soltas, mensagem: msg };
 },
+temHidro: function () {
+var H = global.HidCalcUI; if (!H || !H.pranchas) return false;
+try { var m = H.modeloAtual && H.modeloAtual(); var ins = m && m.estado && m.estado.instalacoes; return !!(ins && arr(ins.trechos).length); } catch (e) { return false; }
+},
+pranchasHidro: function () {
+var H = global.HidCalcUI; if (!H || !H.pranchas) { toast("O módulo hidrossanitário não está carregado.", "erro"); return false; }
+if (!(H.estado && H.estado.resultado)) {
+var R = H.dimensionar ? H.dimensionar() : null;
+if (!R) { toast((H.estado && H.estado.msg && H.estado.msg.t) || "Não consegui dimensionar o hidrossanitário: abra Instalações › Hidro e confira.", "erro"); return false; }
+}
+var ok = H.pranchas();
+if (!ok && H.estado && H.estado.msg) toast(H.estado.msg.t, H.estado.msg.k === "erro" ? "erro" : "aviso");
+return ok;
+},
 abrirGerar: function () {
 if (!this.ativo()) return false;
 var self = this, vs = this.vistasParaGerar(), reg = this.registros().filter(function (r) { return r.origem === "folhas"; })[0], f0 = (reg && reg.formato) || "A1";
@@ -181650,15 +181673,16 @@ var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Uma folha por pl
 '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
 return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
 }).join("") + "</div>";
-global.UI.modal("Gerar pranchas", h, [
-{ texto: "Gerar", classe: "primary", onClick: function () {
+if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
+global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
+{ texto: "Gerar", classe: this.temHidro() ? "" : "primary", onClick: function () {
 var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
 var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-ger"); });
 global.UI.fecharModal();
 if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
 self.gerar({ formato: fm, vistas: ids });
 } },
-{ texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+{ texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));
 return true;
 },
 painel: function () {
@@ -181671,7 +181695,8 @@ return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-s
 }).join("") : '<p style="font-size:13px">Nenhuma folha ainda. <b>Gerar pranchas</b> monta o jogo do modelo aberto — plantas, cortes e elevações — com o carimbo do escritório.</p>');
 global.UI.modal("Pranchas do projeto", h, [
 { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } }].concat(
-global.PranchaVivaUI ? [{ texto: "Prancha Viva", onClick: function () { global.UI.fecharModal(); global.PranchaVivaUI.abrir(); } }] : []).concat([
+global.PranchaVivaUI ? [{ texto: "Prancha Viva", onClick: function () { global.UI.fecharModal(); global.PranchaVivaUI.abrir(); } }] : []).concat(
+self.temHidro() ? [{ texto: "Hidrossanitário completo", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
 { texto: "Pranchas de arquitetura", onClick: function () { global.UI.fecharModal(); if (global.ArqPranchasUI) global.ArqPranchasUI.abrir(); } },
 { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
 { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },

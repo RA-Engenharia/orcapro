@@ -261,7 +261,15 @@
     faixaTitulo(D, x, y, w, hT, titulo, K.cor.faixa, K.cor.tinta, Math.min(3.0, T.tabelaCab));
     D.ret(x, y, w, hT, "MET-TABELA");
     var cols = colPct.map(function (p, i) { return { w: w * p, t: cab[i], al: (o && o.al && o.al[i]) || "C" }; });
-    var r = D.tabela(x, y + hT, cols, linhas.length ? linhas : [cols.map(function () { return ""; })], { fs: o && o.fs || 2.1, fsc: 2.3, hl: o && o.hl || K.linhaTab });
+    /* 13/11/2026: a descrição longa ("Registro de pressão DN 25 PVC soldável (marrom)") ESTOURAVA a coluna e empurrava o
+       código para fora da tabela (prancha do Rogério, folha 07). A letra da tabela desce até caber a célula mais larga
+       (mínimo 70% — abaixo disso não se lê plotado); se nem assim couber, o texto é encurtado com "…" na própria coluna. */
+    var fs = o && o.fs || 2.1, fsMin = fs * 0.7, folgaCel = 1.6;
+    if (II && II.larg) {
+      linhas.forEach(function (ln) { cols.forEach(function (cl, i) { var t0 = txt(ln[i]); while (fs > fsMin && II.larg(t0, fs) > cl.w - folgaCel) fs = Math.max(fsMin, fs - 0.05); }); });
+      linhas = linhas.map(function (ln) { return ln.map(function (v, i) { var t0 = txt(v), cw = cols[i] ? cols[i].w - folgaCel : 999; if (II.larg(t0, fs) <= cw) return v; while (t0.length > 3 && II.larg(t0 + "…", fs) > cw) t0 = t0.slice(0, -1); return t0 + "…"; }); });
+    }
+    var r = D.tabela(x, y + hT, cols, linhas.length ? linhas : [cols.map(function () { return ""; })], { fs: fs, fsc: 2.3, hl: o && o.hl || K.linhaTab });
     return hT + r.h;
   }
   function nota(II, D, x, y, w, t, h, cor) {
@@ -656,7 +664,15 @@
     var R1p = { x: R1.x, y: R1.y, w: R1.w, h: R1.h * fPl };
     var pl = plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk);
     var yP = R1.y + R1p.h + 3;
-    if (phsV.length) { vistaAmbiente(c, D, { x: R1.x, y: yP, w: R1.w, h: R1.h * fVi }, am, pv, chk, phsV, o); yP += R1.h * fVi + 2; }
+    if (phsV.length) {
+      /* 13/11/2026: a cadeia de cotas da vista sai ABAIXO do desenho (yFundo + 5) e passava do retângulo reservado: o título
+         "PONTOS E ALTURAS" caía em cima da cota (folha 07 do Rogério). O texto agora começa abaixo do que a vista de fato
+         desenhou (os segmentos novos em D.sg), nunca acima do fim do retângulo. */
+      var nSgV = D.sg ? D.sg.length : 0, fimV = yP + R1.h * fVi;
+      vistaAmbiente(c, D, { x: R1.x, y: yP, w: R1.w, h: R1.h * fVi }, am, pv, chk, phsV, o);
+      if (D.sg) for (var iv = nSgV; iv < D.sg.length; iv++) fimV = Math.max(fimV, D.sg[iv][1], D.sg[iv][3]);
+      yP = fimV + 4;
+    }
     else c.avisos.push("Ambiente " + am.nome + ": sem parede hidráulica com ponto para a vista cotada.");
     D.texto(R1.x + 1, yP + 2.4, "PONTOS E ALTURAS (m do piso acabado)", 2.4, { peso: 0.2, cor: K.cor.tinta }); yP += 5.2;
     var hP = 2.1, maxP = Math.floor((R1.y + R1.h - yP) / (hP * 1.55));

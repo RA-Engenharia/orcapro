@@ -48,7 +48,7 @@
   var K = {
     eps: 1e-9,
     cos: Math.sqrt(3) / 2, sen: 1 / 2,                    /* eixos a 30° da horizontal */
-    fatores: [100, 80, 60, 50, 40, 30, 25, 20, 15, 12, 10],   /* mm de papel por metro do modelo (sem escala; maior primeiro) */
+    fatores: [200, 160, 130, 100, 80, 60, 50, 40, 30, 25, 20, 15, 12, 10],   /* mm de papel por metro do modelo (sem escala; maior primeiro). 13/11/2026: 200/160/130 — o banheiro de 3 m parava em 100 mm/m e ocupava 1/3 da A1 (desenho no canto); o maior que couber enche a folha */
     fatorPadrao: 30,
     ancoras: [0.5, 0.35, 0.65, 0.2, 0.8],                 /* posições (fração do trecho) onde o rótulo tenta ficar, em ordem de preferência */
     ancorasCurtas: [0.5, 0.3, 0.7], meio: 0.5, arrPos: 0.4,
@@ -302,12 +302,41 @@
   });
   }
 
+  /* 13/11/2026: a COLUNA DE VENTILAÇÃO em vários pedaços (tubo + "terminal" até +3,50 m) não era interrompida — a quebra
+     só olhava um trecho com a ponta de cima livre, e o de baixo tinha o terminal encostado. O isométrico do banheiro ficava
+     com 0,5 m de altura de papel e caía para 100 mm/m, desenho pequeno no canto da A1. Os pedaços verticais de ventilação
+     no mesmo prumo, emendados, viram UM trecho (o de baixo, estendido até o topo) para a quebra decidir sobre a coluna. */
+  function colunaVentUnica(tr) {
+    var tol = K.tolNo_m, usados = {}, out = [];
+    function vv(t) { return t && t.sistema === "ventilacao" && t.vertical; }
+    function lo(t) { return t.p1.y <= t.p2.y ? t.p1 : t.p2; }
+    function hi(t) { return t.p1.y <= t.p2.y ? t.p2 : t.p1; }
+    tr.forEach(function (t, i) {
+      if (usados[i]) return;
+      if (!vv(t)) { out.push(t); return; }
+      var a = lo(t), b = hi(t), achou = true;
+      while (achou) {
+        achou = false;
+        for (var j = 0; j < tr.length; j++) {
+          if (j === i || usados[j] || !vv(tr[j])) continue;
+          var u = tr[j];
+          if (Math.abs(u.p1.x - a.x) > tol || Math.abs(u.p1.z - a.z) > tol) continue;
+          if (dist3(lo(u), b) <= tol) { b = hi(u); usados[j] = 1; achou = true; }
+          else if (dist3(hi(u), a) <= tol) { a = lo(u); usados[j] = 1; achou = true; }
+        }
+      }
+      if (a === lo(t) && b === hi(t)) { out.push(t); return; }
+      var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
+      c.p1 = a; c.p2 = b; out.push(c);
+    });
+    return out;
+  }
   /* ------------------------------------------------------------ desenhar um grupo */
   /* GERAR PRANCHAS (18/10/2026): o ventilador que sobe 3 m até a cobertura achatava o isométrico do banheiro (o fator era
      escolhido pela altura dele). A coluna de ventilação com a ponta de cima LIVRE sai INTERROMPIDA (símbolo de quebra);
      a cota mostra o comprimento REAL (t.quebra). */
   function comQuebra(g) {
-    var tr = g.trechos, out = tr.map(function (t) {
+    var tr = colunaVentUnica(g.trechos), out = tr.map(function (t) {
       if (t.sistema !== "ventilacao" || !t.vertical) return t;
       var L = Math.abs(t.p2.y - t.p1.y); if (!(L > K.quebraMin_m)) return t;
       var alto = t.p2.y > t.p1.y ? "p2" : "p1", baixo = alto === "p2" ? "p1" : "p2", pa = t[alto];
@@ -390,15 +419,23 @@
       var sigla = SIGLA_ACESSORIO[a.acessorio] || "RG";
       pendentes.push({ s: sigla + " DN " + a.dn, h: K.hPeq, tipo: "registro", camada: "HID-TEXTO", trecho: a.id, anchors: [c], prio: 1 });
     });
-    var jaLig = {};
+    var jaLig = {}, quebrados = {};
+    g.trechos.forEach(function (t) { if (t.quebra) { var yd = Math.max(t.p1.y, t.p2.y); quebrados[t.id] = { yDesenho: yd, yReal: Math.min(t.p1.y, t.p2.y) + t.quebra }; } });
     arr(rede.ligacoes).forEach(function (l) {
       if (!ids[l.trecho]) return;
       if (jaLig[l.alvo] || l.tipo === "acessorio") return;   /* a peça (caixa sifonada) recebe vários trechos: um símbolo e um rótulo só */
       jaLig[l.alvo] = 1;
-      var p = proj(l, k), alt = alturaPiso(l.y, pavs), nome = l.famInst || l.alvo;
+      /* 13/11/2026: a peça na ponta de uma ventilação INTERROMPIDA (o terminal a +3,50 m) ia para a altura real e esticava o
+         desenho (isométrico pequeno no canto da A1): vai para a ponta desenhada; a altura escrita continua a real */
+      var tq = quebrados[l.trecho], lp = l;
+      if (tq && Math.abs(l.y - tq.yReal) < 0.05) lp = { x: l.x, y: tq.yDesenho, z: l.z };
+      var p = proj(lp, k), alt = alturaPiso(l.y, pavs), nome = l.famInst || l.alvo;
       /* GERAR PRANCHAS: o nome do ponto na folha é a SIGLA do aparelho (BS, LV, CH…) e o da peça é o rótulo do padrão ("CS 100x100x50mm"), nunca o id interno */
       var nm2 = l.tipo === "peca" ? (typeof opcoes.nomePeca === "function" ? opcoes.nomePeca(l.alvo) : null) : (typeof opcoes.nomeAparelho === "function" ? opcoes.nomeAparelho(l.famInst) : null);
       if (nm2) nome = nm2;
+      /* nunca o id interno na folha ("ambbac-ve-terminal"): sem nome do padrão, o rótulo pelo que a peça é */
+      else if (/terminal/i.test(String(l.alvo || ""))) nome = "TV (terminal de ventilação)";
+      else if (l.tipo === "peca" && /[-_]/.test(String(nome))) nome = "Peça";
       if (l.tipo === "peca") {
         var q = K.caixaL / 2;
         S.push({ tipo: "caixa", x: p[0], y: p[1], r: q, camada: "HID-SIMBOLO", box: [p[0] - q, p[1] - q, p[0] + q, p[1] + q], id: l.alvo });

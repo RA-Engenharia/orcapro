@@ -24994,7 +24994,7 @@ try {
 var K = {
 eps: 1e-9,
 cos: Math.sqrt(3) / 2, sen: 1 / 2,
-fatores: [100, 80, 60, 50, 40, 30, 25, 20, 15, 12, 10],
+fatores: [200, 160, 130, 100, 80, 60, 50, 40, 30, 25, 20, 15, 12, 10],
 fatorPadrao: 30,
 ancoras: [0.5, 0.35, 0.65, 0.2, 0.8],
 ancorasCurtas: [0.5, 0.3, 0.7], meio: 0.5, arrPos: 0.4,
@@ -25211,8 +25211,33 @@ L.push({ x1: melhor.an[0], y1: melhor.an[1], x2: ex, y2: ey, camada: "HID-COTA",
 }
 });
 }
+function colunaVentUnica(tr) {
+var tol = K.tolNo_m, usados = {}, out = [];
+function vv(t) { return t && t.sistema === "ventilacao" && t.vertical; }
+function lo(t) { return t.p1.y <= t.p2.y ? t.p1 : t.p2; }
+function hi(t) { return t.p1.y <= t.p2.y ? t.p2 : t.p1; }
+tr.forEach(function (t, i) {
+if (usados[i]) return;
+if (!vv(t)) { out.push(t); return; }
+var a = lo(t), b = hi(t), achou = true;
+while (achou) {
+achou = false;
+for (var j = 0; j < tr.length; j++) {
+if (j === i || usados[j] || !vv(tr[j])) continue;
+var u = tr[j];
+if (Math.abs(u.p1.x - a.x) > tol || Math.abs(u.p1.z - a.z) > tol) continue;
+if (dist3(lo(u), b) <= tol) { b = hi(u); usados[j] = 1; achou = true; }
+else if (dist3(hi(u), a) <= tol) { a = lo(u); usados[j] = 1; achou = true; }
+}
+}
+if (a === lo(t) && b === hi(t)) { out.push(t); return; }
+var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k];
+c.p1 = a; c.p2 = b; out.push(c);
+});
+return out;
+}
 function comQuebra(g) {
-var tr = g.trechos, out = tr.map(function (t) {
+var tr = colunaVentUnica(g.trechos), out = tr.map(function (t) {
 if (t.sistema !== "ventilacao" || !t.vertical) return t;
 var L = Math.abs(t.p2.y - t.p1.y); if (!(L > K.quebraMin_m)) return t;
 var alto = t.p2.y > t.p1.y ? "p2" : "p1", baixo = alto === "p2" ? "p1" : "p2", pa = t[alto];
@@ -25287,14 +25312,19 @@ S.push({ tipo: "registro", x: c[0], y: c[1], r: r, camada: "HID-SIMBOLO", box: [
 var sigla = SIGLA_ACESSORIO[a.acessorio] || "RG";
 pendentes.push({ s: sigla + " DN " + a.dn, h: K.hPeq, tipo: "registro", camada: "HID-TEXTO", trecho: a.id, anchors: [c], prio: 1 });
 });
-var jaLig = {};
+var jaLig = {}, quebrados = {};
+g.trechos.forEach(function (t) { if (t.quebra) { var yd = Math.max(t.p1.y, t.p2.y); quebrados[t.id] = { yDesenho: yd, yReal: Math.min(t.p1.y, t.p2.y) + t.quebra }; } });
 arr(rede.ligacoes).forEach(function (l) {
 if (!ids[l.trecho]) return;
 if (jaLig[l.alvo] || l.tipo === "acessorio") return;
 jaLig[l.alvo] = 1;
-var p = proj(l, k), alt = alturaPiso(l.y, pavs), nome = l.famInst || l.alvo;
+var tq = quebrados[l.trecho], lp = l;
+if (tq && Math.abs(l.y - tq.yReal) < 0.05) lp = { x: l.x, y: tq.yDesenho, z: l.z };
+var p = proj(lp, k), alt = alturaPiso(l.y, pavs), nome = l.famInst || l.alvo;
 var nm2 = l.tipo === "peca" ? (typeof opcoes.nomePeca === "function" ? opcoes.nomePeca(l.alvo) : null) : (typeof opcoes.nomeAparelho === "function" ? opcoes.nomeAparelho(l.famInst) : null);
 if (nm2) nome = nm2;
+else if (/terminal/i.test(String(l.alvo || ""))) nome = "TV (terminal de ventilação)";
+else if (l.tipo === "peca" && /[-_]/.test(String(nome))) nome = "Peça";
 if (l.tipo === "peca") {
 var q = K.caixaL / 2;
 S.push({ tipo: "caixa", x: p[0], y: p[1], r: q, camada: "HID-SIMBOLO", box: [p[0] - q, p[1] - q, p[0] + q, p[1] + q], id: l.alvo });
@@ -25668,7 +25698,7 @@ var pr = plantaPrim(c.rede, c.ix, sis, trs, c.pavs, s2, { medio: medio, nome: c.
 arr(pr.avisos).forEach(function (m) { c.avisos.push(m); });
 var bb = bbox(pr), xs = ex.xs, zs = ex.zs;
 bb = { x0: Math.min(bb.x0, Math.min.apply(null, xs) * s2), y0: Math.min(bb.y0, Math.min.apply(null, zs) * s2), x1: Math.max(bb.x1, Math.max.apply(null, xs) * s2), y1: Math.max(bb.y1, Math.max.apply(null, zs) * s2) };
-var tit = titulo, sub = "ESC 1:" + esc + (medio ? " - nível de detalhe MÉDIO" : "");
+var tit = titulo, sub = "ESC 1:" + esc + (medio ? " - nível de detalhe ALTO" : "");
 return { tipo: "planta", titulo: tit, escala: esc, w: Math.max(bb.x1 - bb.x0, c.AP.largTexto ? c.AP.largTexto(tit, D0().E.T.titulo) : 0) + K2.folgaVista * 2, h: bb.y1 - bb.y0 + K2.titulo + K2.folgaVista,
 desenhar: function (D, x, y, chk) {
 var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
@@ -25871,9 +25901,12 @@ var f = f0 || formasDe(c, trs);
 if (!f) return;
 function P(q) { return [q[0] * s + ox, q[2] * s + oy]; }
 function corDe(sis) { var cam = D.E.camadas["HID-" + (CAMADA_SIS[sis] || "AF") + "-TUBO"]; return cam ? cam.cor : "#000"; }
-var ordem = { tubo: 0, peca: 1, forma: 1, caixa: 2, prumada: 3 };
-f.polys.slice().sort(function (a, b) { return (ordem[a.papel] || 1) - (ordem[b.papel] || 1); }).forEach(function (p) {
-var fill = p.papel === "tubo" || p.papel === "prumada" ? corDe(p.sistema) : "#ffffff", pp = p.pts.map(P), sw = K2.contornoTubo;
+var NVc = NIV(), brilhoDe = function (sis, fx) { var c0 = corDe(sis); return NVc && NVc.brilho ? NVc.brilho(c0, fx) : c0; };
+var corPeca = (NVc && NVc.COR_CONEXAO) || "#ececec", FX = { tuboM: 1.3, tuboN: 1.55 };
+var ordem = { tubo: 0, tuboM: 0.4, tuboN: 0.5, peca: 1, forma: 1, caixa: 2, prumada: 3 };
+f.polys.slice().sort(function (a, b) { return (ordem[a.papel] != null ? ordem[a.papel] : 1) - (ordem[b.papel] != null ? ordem[b.papel] : 1); }).forEach(function (p) {
+if (FX[p.papel]) { poliCheio(D, p.pts.map(P), brilhoDe(p.sistema, FX[p.papel]), null, 0, "HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO"); return; }
+var fill = p.papel === "tubo" ? corDe(p.sistema) : p.papel === "prumada" ? brilhoDe(p.sistema, 1.3) : (p.papel === "caixa" || p.papel === "grade" ? "#ffffff" : corPeca), pp = p.pts.map(P), sw = K2.contornoTubo;
 if (p.papel === "tubo" && pp.length === 4) { var lm = Math.min(Math.sqrt(Math.pow(pp[1][0] - pp[0][0], 2) + Math.pow(pp[1][1] - pp[0][1], 2)), Math.sqrt(Math.pow(pp[3][0] - pp[0][0], 2) + Math.pow(pp[3][1] - pp[0][1], 2))); sw = Math.min(sw, lm * K2.contornoFrac); }
 var finoTubo = p.papel === "tubo" && pp.length === 4 && lm0(pp) < K2.tuboFinoMm, camTubo = D.E.camadas["HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO"];
 poliCheio(D, pp, fill, finoTubo ? fill : "#000", finoTubo ? Math.max(sw, camTubo ? camTubo.mm : sw) : sw, p.papel === "tubo" || p.papel === "prumada" ? "HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO" : "HID-CONEXAO");
@@ -25904,7 +25937,7 @@ var R = { trechos: trs, conexoes: arr(c.rede.conexoes).filter(function (k) { ret
 pecas: arr(c.rede.pecas).filter(function (k) { return pecaOk(k) && k.y >=(pv.base != null ? pv.base : pv.cota - K2.cortePiso) - tol && k.y < (pv.sup != null ? pv.sup : pv.topo) - tol; }) };
 var f = null;
 try {
-f = NV.formas(R, "medio", [0, -1, 0], { cotasCx: function (m, t, dn) { try { return G ? G.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
+f = NV.formas(R, "alto", [0, -1, 0], { cotasCx: function (m, t, dn) { try { return G ? G.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
 cotasTubo: function (m, dn) { try { return G ? G.cotasTubo(m, dn) : null; } catch (e) { return null; } } });
 } catch (e) { c.avisos.push("Folha " + dois(c.n) + ": a forma do nível médio falhou (" + (e && e.message ? e.message : e) + "); planta em linha única."); f = null; }
 return f;
@@ -26485,7 +26518,7 @@ if (W * s + folga <= g.area.w && Hh * s + folga + K2.titulo <= g.area.h) return 
 return K2.formatosAuto[K2.formatosAuto.length - 1];
 }
 function configPadrao() {
-var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = k !== "ambientes"; });
+var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
 return { versao: 1, sistemas: [], formato: "AUTO", escala: "auto", prefixo: "HID", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO",
 nivelPlanta: "medio", arquitetura: true, agrupar: true, qr: "", conjuntos: cj, perspectiva: { vista: "SE", ambientes: [] } };
 }
@@ -27190,7 +27223,7 @@ if (CJ.ambientes) {
 var HCa = dep("HidCaderno", "./hidcaderno.js");
 if (!HCa) avisos.push("O motor do isométrico por ambiente (js/hidcaderno.js) não carregou: folhas de ambiente não geradas.");
 else pavs.forEach(function (pv) {
-var amL = HCa.ambientesDoModelo(ctx0, pv), nBlocos = 2, itensAm = [];
+var amL = HCa.ambientesDoModelo(ctx0, pv), nBlocos = 1, itensAm = [];
 amL.forEach(function (am0) {
 var gs0 = []; try { gs0 = HCa.gruposDoAmbiente(ctx0, am0, pv); } catch (eG) { gs0 = []; }
 if (!gs0.length) itensAm.push({ am: am0, g: null }); else gs0.forEach(function (g0) { itensAm.push({ am: am0, g: g0.id, gn: g0.nome }); });
@@ -27959,7 +27992,12 @@ var II = I(), hT = 5.2, T = D.E.T;
 faixaTitulo(D, x, y, w, hT, titulo, K.cor.faixa, K.cor.tinta, Math.min(3.0, T.tabelaCab));
 D.ret(x, y, w, hT, "MET-TABELA");
 var cols = colPct.map(function (p, i) { return { w: w * p, t: cab[i], al: (o && o.al && o.al[i]) || "C" }; });
-var r = D.tabela(x, y + hT, cols, linhas.length ? linhas : [cols.map(function () { return ""; })], { fs: o && o.fs || 2.1, fsc: 2.3, hl: o && o.hl || K.linhaTab });
+var fs = o && o.fs || 2.1, fsMin = fs * 0.7, folgaCel = 1.6;
+if (II && II.larg) {
+linhas.forEach(function (ln) { cols.forEach(function (cl, i) { var t0 = txt(ln[i]); while (fs > fsMin && II.larg(t0, fs) > cl.w - folgaCel) fs = Math.max(fsMin, fs - 0.05); }); });
+linhas = linhas.map(function (ln) { return ln.map(function (v, i) { var t0 = txt(v), cw = cols[i] ? cols[i].w - folgaCel : 999; if (II.larg(t0, fs) <= cw) return v; while (t0.length > 3 && II.larg(t0 + "…", fs) > cw) t0 = t0.slice(0, -1); return t0 + "…"; }); });
+}
+var r = D.tabela(x, y + hT, cols, linhas.length ? linhas : [cols.map(function () { return ""; })], { fs: fs, fsc: 2.3, hl: o && o.hl || K.linhaTab });
 return hT + r.h;
 }
 function nota(II, D, x, y, w, t, h, cor) {
@@ -28311,7 +28349,12 @@ var fPl = phsV.length ? (DT ? DT.fPlanta : 0.36) : 0.62, fVi = phsV.length ? (DT
 var R1p = { x: R1.x, y: R1.y, w: R1.w, h: R1.h * fPl };
 var pl = plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk);
 var yP = R1.y + R1p.h + 3;
-if (phsV.length) { vistaAmbiente(c, D, { x: R1.x, y: yP, w: R1.w, h: R1.h * fVi }, am, pv, chk, phsV, o); yP += R1.h * fVi + 2; }
+if (phsV.length) {
+var nSgV = D.sg ? D.sg.length : 0, fimV = yP + R1.h * fVi;
+vistaAmbiente(c, D, { x: R1.x, y: yP, w: R1.w, h: R1.h * fVi }, am, pv, chk, phsV, o);
+if (D.sg) for (var iv = nSgV; iv < D.sg.length; iv++) fimV = Math.max(fimV, D.sg[iv][1], D.sg[iv][3]);
+yP = fimV + 4;
+}
 else c.avisos.push("Ambiente " + am.nome + ": sem parede hidráulica com ponto para a vista cotada.");
 D.texto(R1.x + 1, yP + 2.4, "PONTOS E ALTURAS (m do piso acabado)", 2.4, { peso: 0.2, cor: K.cor.tinta }); yP += 5.2;
 var hP = 2.1, maxP = Math.floor((R1.y + R1.h - yP) / (hP * 1.55));

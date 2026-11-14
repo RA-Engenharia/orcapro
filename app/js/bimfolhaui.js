@@ -713,6 +713,25 @@
       return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr),
                formato: formato, automatico: auto, aviso: auto ? avisoFormato : "", soltas: soltas, mensagem: msg };
     },
+    /* PRANCHAS DO HIDRO PELO BOTÃO GERAL (13/11/2026). Roteiro do defeito: o dono gerou o hidro pelo "Gerar pranchas" do BIM
+       e saíram 8 folhas A1 genéricas para um banheiro (sem diâmetro, sem altura de ponto, sem tag de conexão, sem quadro),
+       porque o jogo geral só enquadra vistas; o projeto hidrossanitário completo (planta por sistema, isométrico, cortes das
+       paredes hidráulicas, detalhes, quadro de materiais) mora no js/hidpranchas.js e só abria pelo painel de cálculo.
+       ⚠ Não duplicar o gerador aqui: só a porta. Sem resultado, dimensiona antes (o mesmo botão Dimensionar do painel). */
+    temHidro: function () {
+      var H = global.HidCalcUI; if (!H || !H.pranchas) return false;
+      try { var m = H.modeloAtual && H.modeloAtual(); var ins = m && m.estado && m.estado.instalacoes; return !!(ins && arr(ins.trechos).length); } catch (e) { return false; }
+    },
+    pranchasHidro: function () {
+      var H = global.HidCalcUI; if (!H || !H.pranchas) { toast("O módulo hidrossanitário não está carregado.", "erro"); return false; }
+      if (!(H.estado && H.estado.resultado)) {
+        var R = H.dimensionar ? H.dimensionar() : null;
+        if (!R) { toast((H.estado && H.estado.msg && H.estado.msg.t) || "Não consegui dimensionar o hidrossanitário: abra Instalações › Hidro e confira.", "erro"); return false; }
+      }
+      var ok = H.pranchas();
+      if (!ok && H.estado && H.estado.msg) toast(H.estado.msg.t, H.estado.msg.k === "erro" ? "erro" : "aviso");
+      return ok;
+    },
     /* a pergunta mínima: o formato e quais vistas (todas marcadas) */
     abrirGerar: function () {
       if (!this.ativo()) return false;
@@ -725,15 +744,16 @@
         '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
           return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
         }).join("") + "</div>";
-      global.UI.modal("Gerar pranchas", h, [
-        { texto: "Gerar", classe: "primary", onClick: function () {
+      if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
+      global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
+        { texto: "Gerar", classe: this.temHidro() ? "" : "primary", onClick: function () {
           var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
           var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-ger"); });
           global.UI.fecharModal();
           if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
           self.gerar({ formato: fm, vistas: ids });
         } },
-        { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+        { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));
       return true;
     },
     /* "Pranchas" (barra de título): onde ficam as folhas e o que fazer com elas */
@@ -748,7 +768,8 @@
       global.UI.modal("Pranchas do projeto", h, [
         { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } }].concat(
         /* PRANCHA VIVA (js/pranchavivaui.js): a folha que abre o 3D no ponto tocado */
-        global.PranchaVivaUI ? [{ texto: "Prancha Viva", onClick: function () { global.UI.fecharModal(); global.PranchaVivaUI.abrir(); } }] : []).concat([
+        global.PranchaVivaUI ? [{ texto: "Prancha Viva", onClick: function () { global.UI.fecharModal(); global.PranchaVivaUI.abrir(); } }] : []).concat(
+        self.temHidro() ? [{ texto: "Hidrossanitário completo", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
         { texto: "Pranchas de arquitetura", onClick: function () { global.UI.fecharModal(); if (global.ArqPranchasUI) global.ArqPranchasUI.abrir(); } },
         { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
         { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },

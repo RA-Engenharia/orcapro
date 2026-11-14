@@ -354,7 +354,7 @@
     arr(pr.avisos).forEach(function (m) { c.avisos.push(m); });
     var bb = bbox(pr), xs = ex.xs, zs = ex.zs;
     bb = { x0: Math.min(bb.x0, Math.min.apply(null, xs) * s2), y0: Math.min(bb.y0, Math.min.apply(null, zs) * s2), x1: Math.max(bb.x1, Math.max.apply(null, xs) * s2), y1: Math.max(bb.y1, Math.max.apply(null, zs) * s2) };
-    var tit = titulo, sub = "ESC 1:" + esc + (medio ? " - nível de detalhe MÉDIO" : "");
+    var tit = titulo, sub = "ESC 1:" + esc + (medio ? " - nível de detalhe ALTO" : "");
     return { tipo: "planta", titulo: tit, escala: esc, w: Math.max(bb.x1 - bb.x0, c.AP.largTexto ? c.AP.largTexto(tit, D0().E.T.titulo) : 0) + K2.folgaVista * 2, h: bb.y1 - bb.y0 + K2.titulo + K2.folgaVista,
       desenhar: function (D, x, y, chk) {
         var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
@@ -587,9 +587,17 @@
     if (!f) return;
     function P(q) { return [q[0] * s + ox, q[2] * s + oy]; }
     function corDe(sis) { var cam = D.E.camadas["HID-" + (CAMADA_SIS[sis] || "AF") + "-TUBO"]; return cam ? cam.cor : "#000"; }
-    var ordem = { tubo: 0, peca: 1, forma: 1, caixa: 2, prumada: 3 };
-    f.polys.slice().sort(function (a, b) { return (ordem[a.papel] || 1) - (ordem[b.papel] || 1); }).forEach(function (p) {
-      var fill = p.papel === "tubo" || p.papel === "prumada" ? corDe(p.sistema) : "#ffffff", pp = p.pts.map(P), sw = K2.contornoTubo;
+    /* ⚠ 13/11/2026 — o TUBO VAZADO: js/biminstnivel.js formas devolve, além do "tubo", duas faixas de brilho ("tuboM" 62% e
+       "tuboN" 28% da largura, semContorno) que dão o volume da peça real na tela. Aqui elas caíam no "senão" e saíam BRANCAS
+       com contorno preto: o tubo de esgoto virava duas linhas verdes com um corredor branco riscado (print do Rogério:
+       "esse tracejado feio"). Agora a prancha pinta igual à tela: faixa na cor do sistema clareada (NV.brilho), sem
+       contorno, por cima do tubo; e a conexão no cinza claro da tela (NV.COR_CONEXAO), não branco puro. */
+    var NVc = NIV(), brilhoDe = function (sis, fx) { var c0 = corDe(sis); return NVc && NVc.brilho ? NVc.brilho(c0, fx) : c0; };
+    var corPeca = (NVc && NVc.COR_CONEXAO) || "#ececec", FX = { tuboM: 1.3, tuboN: 1.55 };
+    var ordem = { tubo: 0, tuboM: 0.4, tuboN: 0.5, peca: 1, forma: 1, caixa: 2, prumada: 3 };
+    f.polys.slice().sort(function (a, b) { return (ordem[a.papel] != null ? ordem[a.papel] : 1) - (ordem[b.papel] != null ? ordem[b.papel] : 1); }).forEach(function (p) {
+      if (FX[p.papel]) { poliCheio(D, p.pts.map(P), brilhoDe(p.sistema, FX[p.papel]), null, 0, "HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO"); return; }
+      var fill = p.papel === "tubo" ? corDe(p.sistema) : p.papel === "prumada" ? brilhoDe(p.sistema, 1.3) : (p.papel === "caixa" || p.papel === "grade" ? "#ffffff" : corPeca), pp = p.pts.map(P), sw = K2.contornoTubo;
       /* tubo fino na escala (AF ø20 na 1:50 = 0,5 mm): o contorno afina junto, senão o preto engole a cor do sistema */
       if (p.papel === "tubo" && pp.length === 4) { var lm = Math.min(Math.sqrt(Math.pow(pp[1][0] - pp[0][0], 2) + Math.pow(pp[1][1] - pp[0][1], 2)), Math.sqrt(Math.pow(pp[3][0] - pp[0][0], 2) + Math.pow(pp[3][1] - pp[0][1], 2))); sw = Math.min(sw, lm * K2.contornoFrac); }
       /* R01: tubo mais fino que 1 mm de papel (gás ø15, AF ø20/25 na 1:50) leva o contorno na COR DO SISTEMA e na pena do padrão — o contorno preto engolia a cor e a planta de gás saía como um risco preto */
@@ -625,7 +633,10 @@
               pecas: arr(c.rede.pecas).filter(function (k) { return pecaOk(k) && k.y >=(pv.base != null ? pv.base : pv.cota - K2.cortePiso) - tol && k.y < (pv.sup != null ? pv.sup : pv.topo) - tol; }) };
     var f = null;
     try {
-      f = NV.formas(R, "medio", [0, -1, 0], { cotasCx: function (m, t, dn) { try { return G ? G.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
+      /* ⚠ 13/11/2026: "ALTO", o mesmo desenho da tela (bolsa, anel, faixas de volume do tubo) — o Rogério reprovou a prancha
+         simplificada ("não são só as cores, é o padrão de qualidade das conexões, dos tubos, dos equipamentos"). O Baixo da
+         configuração (nivelPlanta) continua saindo em linha única por outro caminho. */
+      f = NV.formas(R, "alto", [0, -1, 0], { cotasCx: function (m, t, dn) { try { return G ? G.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
                                             cotasTubo: function (m, dn) { try { return G ? G.cotasTubo(m, dn) : null; } catch (e) { return null; } } });
     } catch (e) { c.avisos.push("Folha " + dois(c.n) + ": a forma do nível médio falhou (" + (e && e.message ? e.message : e) + "); planta em linha única."); f = null; }
     return f;
@@ -1250,7 +1261,9 @@
     return K2.formatosAuto[K2.formatosAuto.length - 1];
   }
   function configPadrao() {
-    var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = k !== "ambientes"; });   /* R01: o isométrico por ambiente (js/hidcaderno.js) só sai quando o conjunto é pedido (conjuntos.ambientes = true) */
+    /* 13/11/2026: o isométrico por ambiente (js/hidcaderno.js — planta do ambiente, vista cotada, iso com balões, tabelas de
+       tubos e conexões) vem LIGADO: é a folha-modelo do Rogério; desligado, ele gerou e recebeu só o jogo básico sem tags */
+    var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
     return { versao: 1, sistemas: [], formato: "AUTO", escala: "auto", prefixo: "HID", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO",
              nivelPlanta: "medio", arquitetura: true, agrupar: true, qr: "", conjuntos: cj, perspectiva: { vista: "SE", ambientes: [] } };
   }
@@ -2032,7 +2045,9 @@
       if (!HCa) avisos.push("O motor do isométrico por ambiente (js/hidcaderno.js) não carregou: folhas de ambiente não geradas.");
       else pavs.forEach(function (pv) {
         /* HIDRO-3D: um BLOCO por ambiente e grupo de sistema (água | esgoto e ventilação | pluvial | gás), 2 por folha; cada bloco parte só das peças modeladas do grupo */
-        var amL = HCa.ambientesDoModelo(ctx0, pv), nBlocos = 2, itensAm = [];
+        /* 13/11/2026: UM bloco por folha (era 2): com água e esgoto do mesmo banheiro na mesma A1 a planta caía para 1:75 e a vista
+           para 1:100 — tudo miúdo (o Rogério: "precisa ter um padrão, cara"). A folha-modelo é um ambiente × sistema por folha. */
+        var amL = HCa.ambientesDoModelo(ctx0, pv), nBlocos = 1, itensAm = [];
         amL.forEach(function (am0) {
           var gs0 = []; try { gs0 = HCa.gruposDoAmbiente(ctx0, am0, pv); } catch (eG) { gs0 = []; }
           if (!gs0.length) itensAm.push({ am: am0, g: null }); else gs0.forEach(function (g0) { itensAm.push({ am: am0, g: g0.id, gn: g0.nome }); });

@@ -652,14 +652,29 @@
     (ramosIds || []).forEach(function (id) {
       var t = trechosPorId[id]; if (!t) return;
       var a = pv(t.p1), b = pv(t.p2);
-      if (len(sub(a, Pv)) <= T) out.push({ trecho: id, lado: 0, dir: nrmz(sub(b, a)), dn: t.dn, material: t.material });
-      else if (len(sub(b, Pv)) <= T) out.push({ trecho: id, lado: 1, dir: nrmz(sub(a, b)), dn: t.dn, material: t.material });
-      else { var d = nrmz(sub(b, a)); out.push({ trecho: id, lado: -1, dir: d, dn: t.dn, material: t.material, passante: true }, { trecho: id, lado: -1, dir: mul(d, -1), dn: t.dn, material: t.material, passante: true }); }
+      if (len(sub(a, Pv)) <= T) out.push({ trecho: id, lado: 0, dir: nrmz(sub(b, a)), dn: t.dn, material: t.material, sistema: t.sistema });
+      else if (len(sub(b, Pv)) <= T) out.push({ trecho: id, lado: 1, dir: nrmz(sub(a, b)), dn: t.dn, material: t.material, sistema: t.sistema });
+      else { var d = nrmz(sub(b, a)); out.push({ trecho: id, lado: -1, dir: d, dn: t.dn, material: t.material, sistema: t.sistema, passante: true }, { trecho: id, lado: -1, dir: mul(d, -1), dn: t.dn, material: t.material, sistema: t.sistema, passante: true }); }
     });
     return out;
   }
   /* o ramo de JUSANTE no nó: o trecho que COMEÇA nele (o esgoto escoa de p1 para p2), com pelo menos um que chega */
-  function jusante(lista) { var j = lista.filter(function (e) { return e && !e.passante && e.lado === 0; }), mo = lista.filter(function (e) { return e && !e.passante && e.lado === 1; }); return j.length === 1 && mo.length >= 1 ? j[0] : null; }
+  /* ⚠ 13/11/2026 — JUSANTE PELA GRAVIDADE: o trecho desenhado da caixa de inspeção PARA TRÁS (p1 a jusante) invertia a peça —
+     a ponta do joelho ia para montante e a bolsa verde do tubo aparecia POR CIMA da conexão; na junção, a bolsa do tubo caía no
+     meio da peça (prints do Rogério: "tem que ser o que é real"). Esgoto escoa para baixo: com caimento visível (o ramo que
+     DESCE saindo do nó, único), ele é o de jusante; nivelado, vale o sentido p1 → p2 como antes. */
+  var CAIMENTO_MIN = 1e-4;
+  var SEM_GRAVIDADE = 0;
+  function jusante(lista) {
+    var ns = lista.filter(function (e) { return e && !e.passante && e.dir; });
+    /* só no ESGOTO (água desce). Na VENTILAÇÃO o ar sobe e o tubo nasce no topo do TQ: a regra lá invertia a peça e o auditor
+       via ventilação terminando na caixa sifonada (test-hid-predio, 14/11/2026) — lá vale o sentido do desenho */
+    if (!SEM_GRAVIDADE && ns.length >= 2 && ns.every(function (e) { return e.sistema === "esgoto"; })) {
+      var ord = ns.slice().sort(function (a, b) { return a.dir[1] - b.dir[1]; });
+      if (ord[0].dir[1] < -CAIMENTO_MIN && ord[1].dir[1] > ord[0].dir[1] + CAIMENTO_MIN) return ord[0];
+    }
+    var j = lista.filter(function (e) { return e && !e.passante && e.lado === 0; }), mo = lista.filter(function (e) { return e && !e.passante && e.lado === 1; }); return j.length === 1 && mo.length >= 1 ? j[0] : null;
+  }
   function desvio(d1, d2) { return Math.acos(Math.max(-1, Math.min(1, -dot(d1, d2)))) * 180 / Math.PI; }
 
   /* a PEÇA PRINCIPAL de um nó: joelho, curva, tê, junção, luva, redução, cruzeta.
@@ -727,7 +742,9 @@
       T[id] = { id: id, p1: { x: a[0], y: a[1], z: a[2] }, p2: { x: b[0], y: b[1], z: b[2] }, dn: r.dn, material: c.material, sistema: c.sistema || "esgoto" }; ids.push(id);
     });
     var cc = {}; Object.keys(c).forEach(function (k) { cc[k] = c[k]; }); cc.x = 0; cc.y = 0; cc.z = 0; cc.ramos = ids;
-    var r0 = null; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; }
+    /* a peça sintética do traçado já DECLARA quem chega e quem sai (ramos[i].chega): o caimento não manda aqui — sem isso o
+       prédio inteiro descia 13 cm e a ventilação caía dentro da caixa sifonada (test-hid-predio, 14/11/2026) */
+    var r0 = null; SEM_GRAVIDADE++; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; } finally { SEM_GRAVIDADE--; }
     return ids.map(function (id, i) { if (!r0) return null; var f = ramos[i].passante ? null : (r0.faces || {})[id + ":" + (ramos[i].chega ? 1 : 0)]; return f == null ? null : f; });
   }
   function perfilProduto(material, tipo, dn) {
