@@ -49,6 +49,10 @@
     }
     /* 2) peça (caixa sifonada, ralo): entradas laterais e a saída — a saída para o lado do tubo que já sai, ou +X */
     var pc = pecas.filter(function (k) { return k.id === id; })[0];
+    /* SELEÇÃO (14/11/2026, js/hidselecao.js): a caixa/ralo com bocas de CATÁLOGO (js/hidbocas.js) mostra as bocas DE VERDADE — posição, DN e
+       ocupada/livre da ficha; o "+" fica só na livre e começa o tubo naquela boca. Sem catálogo (ou sem o motor), as faces da caixa, como antes. */
+    var HSl = global.HidSelecao, bcat = pc && HSl && HSl.bocasPeca ? HSl.bocasPeca(estado, pc) : [];
+    if (bcat.length) return bcat;
     if (pc && pc.hub) {
       var P = I.PECAS[pc.peca] || {}, r = pc.hub.r || P.r || 0.05, h = P.h || 0.12, lig = [];
       trechos.forEach(function (t) {
@@ -180,6 +184,8 @@
       this._marcas = this._uid && e && e.estado ? pontos(e.estado, function (f, t, i) { return b.familiaAvaliar(f, t, i); }, this._uid) : [];
       /* ARRASTAR O TUBO (js/biminstarr.js): a ALÇA no meio do tubo selecionado */
       var idT = this._uid ? this._uid.slice(5) : null, tS = idT && e && e.estado && e.estado.instalacoes ? (e.estado.instalacoes.trechos || []).filter(function (t) { return t.id === idT; })[0] : null;
+      /* SELEÇÃO (14/11/2026): as setas de girar/inverter da peça e o inverter do ramal do tê/junção (js/hidselecaoui.js) */
+      if (this._uid && e && e.estado && global.HidSelecaoUI && global.HidSelecaoUI.alcas) { try { this._marcas = this._marcas.concat(global.HidSelecaoUI.alcas(e.estado, this._uid)); } catch (eA) {} }
       if (tS && global.BimInstArr) this._marcas.push({ alca: "mover", x: (tS.p1.x + tS.p2.x) / 2, y: (tS.p1.y + tS.p2.y) / 2, z: (tS.p1.z + tS.p2.z) / 2, sistema: tS.sistema, nome: "Arrastar o tubo (a rede acompanha)", livre: false });
       this.desenhar();
       var self = this;
@@ -207,6 +213,14 @@
       this._el.innerHTML = ""; this._sigPos = null;
       this._marcas.forEach(function (m, i) {
         var cor = I && I.SISTEMAS[m.sistema] ? I.SISTEMAS[m.sistema].cor : "#2d6a9c", bt = document.createElement(m.livre || m.alca ? "button" : "span");
+        if (m.alca && m.alca !== "mover") {   /* SELEÇÃO (14/11/2026): girar / inverter / inverter o ramal (js/hidselecaoui.js executa) */
+          bt.type = "button"; bt.setAttribute("data-inst-con", String(i)); bt.setAttribute("data-inst-acao", m.alca); bt.title = m.nome;
+          bt.style.cssText = "position:absolute;pointer-events:auto;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:3px;border:1px solid #2f6fd0;background:#fff;color:#2f6fd0;font:600 12px/16px sans-serif;padding:0;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.25)";
+          bt.textContent = m.icone || "↻";
+          bt.onmousedown = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+          bt.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); var SU = global.HidSelecaoUI; if (SU && SU.acao) SU.acao(m.alca, self._uid, ev); };
+          self._el.appendChild(bt); return;
+        }
         if (m.alca) {
           bt.type = "button"; bt.setAttribute("data-inst-con", String(i)); bt.setAttribute("data-inst-mover", "1"); bt.title = m.nome;
           bt.style.cssText = "position:absolute;pointer-events:auto;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:4px;border:2px solid " + cor + ";background:#fff;color:" + cor + ";font:700 13px/14px sans-serif;padding:0;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,.35)";
@@ -218,10 +232,15 @@
         bt.title = m.nome + (m.livre ? " — clique para sair dele com o tubo (" + (m.fluxo === "entrada" ? "entrada" : (m.fluxo === "saida" ? "saída" : "ponto")) + ")" : " — ligado");
         if (m.livre) {
           bt.type = "button";
-          bt.style.cssText = "position:absolute;pointer-events:auto;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2px solid " + cor + ";background:#fff;color:" + cor + ";font:700 15px/16px sans-serif;padding:0;cursor:crosshair;box-shadow:0 1px 3px rgba(0,0,0,.35)";
-          bt.innerHTML = '+<span data-seta style="position:absolute;left:50%;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid ' + cor + ';transform-origin:50% 0"></span>' +
-            (m.fluxo ? '<span style="position:absolute;right:-12px;top:-10px;font:700 9px sans-serif;color:' + cor + ';background:#fff;border-radius:3px;padding:0 2px">' + (m.fluxo === "entrada" ? "E" : "S") + "</span>" : "");
+          /* SELEÇÃO (14/11/2026): o "+" é um QUADRADINHO fino (14 px, borda de 1 px) — o círculo grosso de 22 px cobria a peça */
+          bt.style.cssText = "position:absolute;pointer-events:auto;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:2px;border:1px solid " + cor + ";background:#fff;color:" + cor + ";font:600 12px/12px sans-serif;padding:0;cursor:crosshair;box-shadow:0 0 0 1px rgba(255,255,255,.8)";
+          if (m.boca) bt.setAttribute("data-boca", m.boca);
+          bt.innerHTML = '+<span data-seta style="position:absolute;left:50%;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:7px solid ' + cor + ';transform-origin:50% 0;opacity:.85"></span>' +
+            (m.fluxo ? '<span data-rotulo style="display:none;position:absolute;right:-12px;top:-10px;font:700 9px sans-serif;color:' + cor + ';background:#fff;border-radius:3px;padding:0 2px">' + (m.fluxo === "entrada" ? "E" : "S") + "</span>" : "");
           bt.onmousedown = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+          /* revisão 14/11: o rótulo E/S só no hover (na caixa de 5 entradas os rótulos se cobriam) */
+          bt.onmouseenter = function () { var r0 = bt.querySelector("[data-rotulo]"); if (r0) r0.style.display = ""; bt.style.zIndex = "2"; };
+          bt.onmouseleave = function () { var r0 = bt.querySelector("[data-rotulo]"); if (r0) r0.style.display = "none"; bt.style.zIndex = ""; };
           bt.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); self.iniciar(i); };
         } else bt.style.cssText = "position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:" + cor + ";opacity:.75";
         self._el.appendChild(bt);
@@ -241,9 +260,18 @@
           var q2 = pr({ x: m.x + m.dir.x * 0.2, y: m.y + m.dir.y * 0.2, z: m.z + m.dir.z * 0.2 });
           ang = q2 ? Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / Math.PI + 90 : 0;
         }
-        pos.push({ q: q, ang: ang });
+        /* revisão 14/11: o "+" da BOCA sai um pouco para fora, na direção da boca (12 px), para não ficar em cima da peça */
+        if (q && m.boca && m.dir) { var q3 = pr({ x: m.x + m.dir.x * 0.2, y: m.y + m.dir.y * 0.2, z: m.z + m.dir.z * 0.2 }); if (q3) { var L3 = Math.hypot(q3.x - q.x, q3.y - q.y) || 1; q = { x: q.x + (q3.x - q.x) / L3 * 12, y: q.y + (q3.y - q.y) / L3 * 12 }; } }
+        pos.push({ q: q, ang: ang, boca: !!m.boca });
         sig += q ? (Math.round(q.x * 2) + "," + Math.round(q.y * 2) + "," + (ang == null ? "" : Math.round(ang)) + ";") : "-;";
       });
+      /* e nenhum "+" de boca encosta no outro: empurra o mais recente para longe do vizinho até 16 px de centro a centro */
+      for (var it = 0; it < 4; it++) for (var a = 0; a < pos.length; a++) for (var b2 = 0; b2 < a; b2++) {
+        var A = pos[a], Bq = pos[b2]; if (!A.boca || !Bq.boca || !A.q || !Bq.q) continue;
+        var dx = A.q.x - Bq.q.x, dy = A.q.y - Bq.q.y, dd = Math.hypot(dx, dy);
+        if (dd < 16) { if (dd < 0.5) { dx = 1; dy = 0; dd = 1; } var k2 = (16 - dd) / 2 / dd; A.q = { x: A.q.x + dx * k2, y: A.q.y + dy * k2 }; Bq.q = { x: Bq.q.x - dx * k2, y: Bq.q.y - dy * k2 }; }
+      }
+      sig = pos.map(function (p) { return p.q ? Math.round(p.q.x * 2) + "," + Math.round(p.q.y * 2) + "," + (p.ang == null ? "" : Math.round(p.ang)) : "-"; }).join(";");
       if (sig === this._sigPos && els.length === this._nPos) return;
       this._sigPos = sig; this._nPos = els.length;
       els.forEach(function (el, i) {
@@ -263,7 +291,9 @@
       var c = U.cfg, M = I.MATERIAIS[c.material];
       if (m.dn > 0 && M && arr(M.dns).indexOf(m.dn) >= 0) U.mudarCfg("i:dn", m.dn);
       var ctx = U._ctx(); if (!ctx) return false;
-      U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true });
+      /* SELEÇÃO (14/11/2026): o "+" de uma BOCA de catálogo começa o tubo EXATAMENTE na boca (antes ia ao centro da caixa) */
+      if (m.boca) U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true, _encaixe: true, _alvo: { tipo: "peca", x: m.x, y: m.y, z: m.z, id: m.id, peca: m.peca, boca: m.boca, dn: m.dn, hub: null } });
+      else U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true });
       if (m.fluxo === "entrada" && I.SISTEMAS[m.sistema] && I.SISTEMAS[m.sistema].gravidade && m.tipo !== "conector") U._sobe = true;   /* da ENTRADA da caixa/ponta de montante: desenha para montante */
       this._marcas = []; this.desenhar();
       return true;

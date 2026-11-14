@@ -5282,7 +5282,7 @@ function ehInstUid(u) { try { return !!(window.BimInstUI && BimInstUI.ehInst && 
 function realcarInst() {
 while (selInstGrp.children.length) selInstGrp.remove(selInstGrp.children[0]);
 var mo = edit.modelo; if (!selInst.length || !mo) return;
-if (!selInstMat) { selInstMat = new THREE.MeshBasicMaterial({ color: 0x2effa0, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); selInstLin = new THREE.LineBasicMaterial({ color: 0x2effa0, depthTest: false, transparent: true, opacity: 0.95 }); }
+if (!selInstMat) { selInstMat = new THREE.MeshBasicMaterial({ color: 0x3d86f0, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); selInstLin = new THREE.LineBasicMaterial({ color: 0x1f5fc8, depthTest: false, transparent: true, opacity: 0.95 }); }
 var s = {}; selInst.forEach(function (u) { s[u.slice(5)] = 1; });
 mo.grupo.children.forEach(function (m) {
 var ud = m.userData || {}; if (!s[ud.expressID] || !m.geometry || ud.marcador) return;
@@ -5290,9 +5290,25 @@ var c = m.isLineSegments ? new THREE.LineSegments(m.geometry, selInstLin) : (m.i
 if (!c) return;
 c.matrixAutoUpdate = false; c.matrix.copy(m.matrixWorld); c.renderOrder = 999; c.raycast = function () {}; c.userData.marcador = true; c.frustumCulled = m.frustumCulled;
 selInstGrp.add(c);
+if (m.isMesh) { var ct = contornoSelInst(m); if (ct) selInstGrp.add(ct); }
 });
 }
-S._selInstContar = function () { return selInstGrp.children.length; };
+var arestasSel = typeof WeakMap === 'function' ? new WeakMap() : null;
+function contornoSelInst(m) {
+try {
+var g = m.geometry; if (!g || !THREE.EdgesGeometry || !arestasSel) return null;
+var ag = arestasSel.get(g);
+if (!ag) {
+ag = new THREE.EdgesGeometry(g, 30); arestasSel.set(g, ag);
+g.addEventListener('dispose', function () { var a2 = arestasSel.get(g); if (a2) { a2.dispose(); arestasSel.delete(g); } });
+}
+var l = new THREE.LineSegments(ag, selInstLin);
+l.matrixAutoUpdate = false; l.matrix.copy(m.matrixWorld); l.renderOrder = 1000; l.raycast = function () {}; l.userData.marcador = true; l.userData.contornoSel = true; l.frustumCulled = m.frustumCulled;
+return l;
+} catch (_) { return null; }
+}
+S._selInstContar = function () { return selInstGrp.children.filter(function (c) { return !c.userData.contornoSel; }).length; };
+S._selInstContorno = function () { return selInstGrp.children.filter(function (c) { return c.userData.contornoSel; }).length; };
 S._selInstRefazer = function () { var vivos = selInst.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); }); selInst = vivos; realcarInst(); };
 function selAtual() {
 var r = [];

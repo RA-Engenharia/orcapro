@@ -1063,7 +1063,12 @@
         ctx.marcar(); return;
       }
       var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-      var alvo = ev && (ev._corte || ev._forcar) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
+      /* SNAP VISÍVEL (14/11/2026, js/hidselecaoui.js): o encaixe que o pontinho mostra sob o cursor é o ponto do clique — exatamente ele */
+      if (!(ev && ev._alvo !== undefined) && !(ev && ev._corte) && global.HidSelecaoUI && global.HidSelecaoUI.encaixeDoClique) {
+        var enc0 = global.HidSelecaoUI.encaixeDoClique(c.sistema);
+        if (enc0) { p = { x: enc0.P.x, y: enc0.P.y, z: enc0.P.z }; ev = Object.assign({}, ev || {}, { _encaixe: true, _alvo: enc0.alvo }); }
+      }
+      var alvo = ev && (ev._corte || ev._forcar || ev._encaixe) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
       /* N23 (23/10/2026): SNAP NO PROLONGAMENTO — sem alvo de ligação perto, o cursor na RETA de um tubo deitado (além da ponta dele, a
          até 15 cm de lado) ALINHA o ponto com ele e toma a cota dele como altura de referência (js/biminstconectar.js). Não é ligação:
          o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
@@ -1087,7 +1092,7 @@
         var yT = r4(base + this.alturaTrabalho(this._sobe));
         var q0 = alvo ? { x: alvo.x, y: alvo.tipo === "vertical" && !(ev && ev._corte) ? yT : alvo.y, z: alvo.z } : { x: r4(p.x), y: yT, z: r4(p.z) };   /* no corte, o tubo vertical na altura do cursor */
         /* começar numa caixa/ralo: a saída na cota de trabalho, se ela está dentro da captura da peça */
-        if (alvo && alvo.tipo === "peca" && alvo.hub && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
+        if (alvo && alvo.tipo === "peca" && alvo.hub && !alvo.boca && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;   /* a BOCA de catálogo fica na cota dela */
         if (!alvo && ev && ev._corte && isFinite(p.y)) q0.y = r6(p.y);   /* no corte, o clique já diz a cota */
         if (refP) q0.y = refP.y;   /* N23: alinhado no prolongamento de um tubo — a cota de referência é a dele */
         /* começar NUM APARELHO longe da cota de trabalho: toco até dentro da parede (ponto de parede) e
@@ -1671,7 +1676,7 @@
     _rotAlvo: function (a) {
       if (a.tipo === "vertical") return "tubo vertical " + a.trecho + " (na cota de trabalho)";
       if (a.tipo === "aparelho") return "\"" + a.nome + "\"";
-      if (a.tipo === "peca") return BI().PECAS[a.peca].nome.toLowerCase();
+      if (a.tipo === "peca") return ((BI().PECAS[a.peca] || {}).nome || "peça").toLowerCase() + (a.boca ? " (boca " + a.boca + (a.dn ? " DN " + a.dn : "") + ")" : "");
       if (a.tipo === "meio") return "meio do trecho " + a.trecho + " (tê)";
       return "ponta do trecho " + a.trecho;
     },
@@ -2462,6 +2467,20 @@
         sp = cx.material && /^duto_/.test(cx.material) ? { status: "pendente", motivo: "conexão de duto é orçada em m² de chapa" } : I.sinapiDe({ peca: cx.tipo, sistema: cx.sistema, material: cx.material, aplicacao: cx.aplicacao, dn: cx.dn, dn2: cx.dn2 });
         sec.push({ nome: "Identidade", params: [ro("ic:tipo", "Conexão", cx.nome), ro("ic:dn", "DN", cx.dn + (cx.dn2 ? " × " + cx.dn2 : "")), ro("ic:mat", "Material", (I.MATERIAIS[cx.material] || {}).nome),
           ro("ic:ramos", "Trechos", cx.ramos.join(", "), "A conexão é deduzida da geometria: mude os trechos, ela muda junto. Não se apaga à parte.")] });
+        /* SELEÇÃO (14/11/2026, js/hidselecao.js): família/tipo, DN de cada boca, fabricante/código, ângulo — e a TROCA por outra compatível ali mesmo */
+        var HSp = global.HidSelecao, pc0 = null, cmp0 = [];
+        try { pc0 = HSp ? HSp.propsConexao(est.estado, b.familiaAvaliar, cx) : null; cmp0 = HSp ? HSp.compativeis(est.estado, function (f, tt, ii) { return b.familiaAvaliar(f, tt, ii); }, cx) : []; } catch (eHs) { pc0 = null; cmp0 = []; }
+        if (pc0) {
+          var psC = [ro("ic:fam", "Família / tipo", pc0.familia + " / " + pc0.nome), ro("ic:ang", "Ângulo", pc0.angulo == null ? "—" : pc0.angulo + "°", "Medido entre os tubos ligados no nó.")];
+          pc0.bocas.forEach(function (bq) { psC.push(ro("ic:b:" + bq.id, "Boca " + bq.id + " (" + bq.papel + ")", "DN " + (bq.dn == null ? "?" : bq.dn) + (bq.junta && bq.junta !== "indefinida" ? " · " + bq.junta.replace("_", " ") : ""))); });
+          psC.push(ro("ic:fab", "Fabricante / código", pc0.codigo ? pc0.fabricante + " " + pc0.codigo : "—", pc0.codigo ? pc0.descricao + " (" + pc0.fonte + ")" : pc0.fonte));
+          sec.push({ nome: "Conexão (catálogo)", params: psC });
+          var outras = cmp0.filter(function (o2) { return !o2.atual; });
+          if (outras.length) sec.push({ nome: "Trocar a conexão", params: outras.map(function (o2) {
+            return o2.ok ? { id: "ic:tr:" + o2.tipo, rotulo: "Trocar por", tipo: "botao", rotuloBotao: o2.nome, fn: function () { if (global.HidSelecaoUI) global.HidSelecaoUI.trocar(cx.id, o2.tipo); } }
+                         : ro("ic:tr:" + o2.tipo, o2.nome, "não cabe aqui", o2.motivo);
+          }) });
+        }
         /* frente 3: a conexão escolhida pelo projetista (Componentes > Conexão manual) e o caminho de volta */
         var escol = global.HidComponentes && cx.sistema ? global.HidComponentes.escolhaDoNo(st, cx) : null;
         sec.push({ nome: "Escolha da conexão", params: [ro("ic:escolha", "Conexão", cx.forcada ? cx.nome + " (escolhida)" : (escol ? cx.nome + " (automática — a escolha \"" + escol + "\" não serve a este nó; veja os avisos)" : cx.nome + " (automática)"),

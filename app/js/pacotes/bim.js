@@ -111919,7 +111919,11 @@ ctx.hint(P.nome + " colocada" + (P.sistemas[0] === "eletrica" && c.peca !== "cai
 ctx.marcar(); return;
 }
 var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-var alvo = ev && (ev._corte || ev._forcar) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
+if (!(ev && ev._alvo !== undefined) && !(ev && ev._corte) && global.HidSelecaoUI && global.HidSelecaoUI.encaixeDoClique) {
+var enc0 = global.HidSelecaoUI.encaixeDoClique(c.sistema);
+if (enc0) { p = { x: enc0.P.x, y: enc0.P.y, z: enc0.P.z }; ev = Object.assign({}, ev || {}, { _encaixe: true, _alvo: enc0.alvo }); }
+}
+var alvo = ev && (ev._corte || ev._forcar || ev._encaixe) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
 var refP = null;
 if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
 refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema);
@@ -111936,7 +111940,7 @@ else ctx.hint("O conector pede DN " + alvo.dn + ", que " + (M0 ? M0.nome : c.mat
 this._sobe = !!(alvo && S.gravidade && (alvo.tipo === "vertical" || alvo.tipo === "meio" || (alvo.tipo === "ponta" && this._pontaDeCima(est, alvo))));
 var yT = r4(base + this.alturaTrabalho(this._sobe));
 var q0 = alvo ? { x: alvo.x, y: alvo.tipo === "vertical" && !(ev && ev._corte) ? yT : alvo.y, z: alvo.z } : { x: r4(p.x), y: yT, z: r4(p.z) };
-if (alvo && alvo.tipo === "peca" && alvo.hub && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
+if (alvo && alvo.tipo === "peca" && alvo.hub && !alvo.boca && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
 if (!alvo && ev && ev._corte && isFinite(p.y)) q0.y = r6(p.y);
 if (refP) q0.y = refP.y;
 if (alvo && alvo.tipo === "aparelho") {
@@ -112417,7 +112421,7 @@ return Math.abs(alvo.y - y) > I.TOL ? [{ x: r4(alvo.x), y: r4(alvo.y), z: r4(alv
 _rotAlvo: function (a) {
 if (a.tipo === "vertical") return "tubo vertical " + a.trecho + " (na cota de trabalho)";
 if (a.tipo === "aparelho") return "\"" + a.nome + "\"";
-if (a.tipo === "peca") return BI().PECAS[a.peca].nome.toLowerCase();
+if (a.tipo === "peca") return ((BI().PECAS[a.peca] || {}).nome || "peça").toLowerCase() + (a.boca ? " (boca " + a.boca + (a.dn ? " DN " + a.dn : "") + ")" : "");
 if (a.tipo === "meio") return "meio do trecho " + a.trecho + " (tê)";
 return "ponta do trecho " + a.trecho;
 },
@@ -113096,6 +113100,19 @@ titulo = cx.nome + (cx.forcada ? " (escolhida)" : " (automática)");
 sp = cx.material && /^duto_/.test(cx.material) ? { status: "pendente", motivo: "conexão de duto é orçada em m² de chapa" } : I.sinapiDe({ peca: cx.tipo, sistema: cx.sistema, material: cx.material, aplicacao: cx.aplicacao, dn: cx.dn, dn2: cx.dn2 });
 sec.push({ nome: "Identidade", params: [ro("ic:tipo", "Conexão", cx.nome), ro("ic:dn", "DN", cx.dn + (cx.dn2 ? " × " + cx.dn2 : "")), ro("ic:mat", "Material", (I.MATERIAIS[cx.material] || {}).nome),
 ro("ic:ramos", "Trechos", cx.ramos.join(", "), "A conexão é deduzida da geometria: mude os trechos, ela muda junto. Não se apaga à parte.")] });
+var HSp = global.HidSelecao, pc0 = null, cmp0 = [];
+try { pc0 = HSp ? HSp.propsConexao(est.estado, b.familiaAvaliar, cx) : null; cmp0 = HSp ? HSp.compativeis(est.estado, function (f, tt, ii) { return b.familiaAvaliar(f, tt, ii); }, cx) : []; } catch (eHs) { pc0 = null; cmp0 = []; }
+if (pc0) {
+var psC = [ro("ic:fam", "Família / tipo", pc0.familia + " / " + pc0.nome), ro("ic:ang", "Ângulo", pc0.angulo == null ? "—" : pc0.angulo + "°", "Medido entre os tubos ligados no nó.")];
+pc0.bocas.forEach(function (bq) { psC.push(ro("ic:b:" + bq.id, "Boca " + bq.id + " (" + bq.papel + ")", "DN " + (bq.dn == null ? "?" : bq.dn) + (bq.junta && bq.junta !== "indefinida" ? " · " + bq.junta.replace("_", " ") : ""))); });
+psC.push(ro("ic:fab", "Fabricante / código", pc0.codigo ? pc0.fabricante + " " + pc0.codigo : "—", pc0.codigo ? pc0.descricao + " (" + pc0.fonte + ")" : pc0.fonte));
+sec.push({ nome: "Conexão (catálogo)", params: psC });
+var outras = cmp0.filter(function (o2) { return !o2.atual; });
+if (outras.length) sec.push({ nome: "Trocar a conexão", params: outras.map(function (o2) {
+return o2.ok ? { id: "ic:tr:" + o2.tipo, rotulo: "Trocar por", tipo: "botao", rotuloBotao: o2.nome, fn: function () { if (global.HidSelecaoUI) global.HidSelecaoUI.trocar(cx.id, o2.tipo); } }
+: ro("ic:tr:" + o2.tipo, o2.nome, "não cabe aqui", o2.motivo);
+}) });
+}
 var escol = global.HidComponentes && cx.sistema ? global.HidComponentes.escolhaDoNo(st, cx) : null;
 sec.push({ nome: "Escolha da conexão", params: [ro("ic:escolha", "Conexão", cx.forcada ? cx.nome + " (escolhida)" : (escol ? cx.nome + " (automática — a escolha \"" + escol + "\" não serve a este nó; veja os avisos)" : cx.nome + " (automática)"),
 "Escolha outra conexão no painel Componentes (grupo Conexões) e clique neste nó. O motor só honra a peça que serve ao nó."),
@@ -115099,6 +115116,8 @@ out.push({ tipo: "conector", x: k.x, y: k.y, z: k.z, dir: dir, sistema: k.sistem
 return out;
 }
 var pc = pecas.filter(function (k) { return k.id === id; })[0];
+var HSl = global.HidSelecao, bcat = pc && HSl && HSl.bocasPeca ? HSl.bocasPeca(estado, pc) : [];
+if (bcat.length) return bcat;
 if (pc && pc.hub) {
 var P = I.PECAS[pc.peca] || {}, r = pc.hub.r || P.r || 0.05, h = P.h || 0.12, lig = [];
 trechos.forEach(function (t) {
@@ -115204,6 +115223,7 @@ atualizar: function () {
 var b = B(), e = b && b.editarEstado ? b.editarEstado() : null;
 this._marcas = this._uid && e && e.estado ? pontos(e.estado, function (f, t, i) { return b.familiaAvaliar(f, t, i); }, this._uid) : [];
 var idT = this._uid ? this._uid.slice(5) : null, tS = idT && e && e.estado && e.estado.instalacoes ? (e.estado.instalacoes.trechos || []).filter(function (t) { return t.id === idT; })[0] : null;
+if (this._uid && e && e.estado && global.HidSelecaoUI && global.HidSelecaoUI.alcas) { try { this._marcas = this._marcas.concat(global.HidSelecaoUI.alcas(e.estado, this._uid)); } catch (eA) {} }
 if (tS && global.BimInstArr) this._marcas.push({ alca: "mover", x: (tS.p1.x + tS.p2.x) / 2, y: (tS.p1.y + tS.p2.y) / 2, z: (tS.p1.z + tS.p2.z) / 2, sistema: tS.sistema, nome: "Arrastar o tubo (a rede acompanha)", livre: false });
 this.desenhar();
 var self = this;
@@ -115230,6 +115250,14 @@ var self = this, I = BI();
 this._el.innerHTML = ""; this._sigPos = null;
 this._marcas.forEach(function (m, i) {
 var cor = I && I.SISTEMAS[m.sistema] ? I.SISTEMAS[m.sistema].cor : "#2d6a9c", bt = document.createElement(m.livre || m.alca ? "button" : "span");
+if (m.alca && m.alca !== "mover") {
+bt.type = "button"; bt.setAttribute("data-inst-con", String(i)); bt.setAttribute("data-inst-acao", m.alca); bt.title = m.nome;
+bt.style.cssText = "position:absolute;pointer-events:auto;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:3px;border:1px solid #2f6fd0;background:#fff;color:#2f6fd0;font:600 12px/16px sans-serif;padding:0;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.25)";
+bt.textContent = m.icone || "↻";
+bt.onmousedown = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+bt.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); var SU = global.HidSelecaoUI; if (SU && SU.acao) SU.acao(m.alca, self._uid, ev); };
+self._el.appendChild(bt); return;
+}
 if (m.alca) {
 bt.type = "button"; bt.setAttribute("data-inst-con", String(i)); bt.setAttribute("data-inst-mover", "1"); bt.title = m.nome;
 bt.style.cssText = "position:absolute;pointer-events:auto;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:4px;border:2px solid " + cor + ";background:#fff;color:" + cor + ";font:700 13px/14px sans-serif;padding:0;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,.35)";
@@ -115241,10 +115269,13 @@ bt.setAttribute("data-inst-con", String(i)); bt.setAttribute("data-livre", m.liv
 bt.title = m.nome + (m.livre ? " — clique para sair dele com o tubo (" + (m.fluxo === "entrada" ? "entrada" : (m.fluxo === "saida" ? "saída" : "ponto")) + ")" : " — ligado");
 if (m.livre) {
 bt.type = "button";
-bt.style.cssText = "position:absolute;pointer-events:auto;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2px solid " + cor + ";background:#fff;color:" + cor + ";font:700 15px/16px sans-serif;padding:0;cursor:crosshair;box-shadow:0 1px 3px rgba(0,0,0,.35)";
-bt.innerHTML = '+<span data-seta style="position:absolute;left:50%;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid ' + cor + ';transform-origin:50% 0"></span>' +
-(m.fluxo ? '<span style="position:absolute;right:-12px;top:-10px;font:700 9px sans-serif;color:' + cor + ';background:#fff;border-radius:3px;padding:0 2px">' + (m.fluxo === "entrada" ? "E" : "S") + "</span>" : "");
+bt.style.cssText = "position:absolute;pointer-events:auto;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:2px;border:1px solid " + cor + ";background:#fff;color:" + cor + ";font:600 12px/12px sans-serif;padding:0;cursor:crosshair;box-shadow:0 0 0 1px rgba(255,255,255,.8)";
+if (m.boca) bt.setAttribute("data-boca", m.boca);
+bt.innerHTML = '+<span data-seta style="position:absolute;left:50%;top:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:7px solid ' + cor + ';transform-origin:50% 0;opacity:.85"></span>' +
+(m.fluxo ? '<span data-rotulo style="display:none;position:absolute;right:-12px;top:-10px;font:700 9px sans-serif;color:' + cor + ';background:#fff;border-radius:3px;padding:0 2px">' + (m.fluxo === "entrada" ? "E" : "S") + "</span>" : "");
 bt.onmousedown = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+bt.onmouseenter = function () { var r0 = bt.querySelector("[data-rotulo]"); if (r0) r0.style.display = ""; bt.style.zIndex = "2"; };
+bt.onmouseleave = function () { var r0 = bt.querySelector("[data-rotulo]"); if (r0) r0.style.display = "none"; bt.style.zIndex = ""; };
 bt.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); self.iniciar(i); };
 } else bt.style.cssText = "position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:" + cor + ";opacity:.75";
 self._el.appendChild(bt);
@@ -115260,9 +115291,16 @@ if (q && m.dir && el.querySelector && el.querySelector("[data-seta]")) {
 var q2 = pr({ x: m.x + m.dir.x * 0.2, y: m.y + m.dir.y * 0.2, z: m.z + m.dir.z * 0.2 });
 ang = q2 ? Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / Math.PI + 90 : 0;
 }
-pos.push({ q: q, ang: ang });
+if (q && m.boca && m.dir) { var q3 = pr({ x: m.x + m.dir.x * 0.2, y: m.y + m.dir.y * 0.2, z: m.z + m.dir.z * 0.2 }); if (q3) { var L3 = Math.hypot(q3.x - q.x, q3.y - q.y) || 1; q = { x: q.x + (q3.x - q.x) / L3 * 12, y: q.y + (q3.y - q.y) / L3 * 12 }; } }
+pos.push({ q: q, ang: ang, boca: !!m.boca });
 sig += q ? (Math.round(q.x * 2) + "," + Math.round(q.y * 2) + "," + (ang == null ? "" : Math.round(ang)) + ";") : "-;";
 });
+for (var it = 0; it < 4; it++) for (var a = 0; a < pos.length; a++) for (var b2 = 0; b2 < a; b2++) {
+var A = pos[a], Bq = pos[b2]; if (!A.boca || !Bq.boca || !A.q || !Bq.q) continue;
+var dx = A.q.x - Bq.q.x, dy = A.q.y - Bq.q.y, dd = Math.hypot(dx, dy);
+if (dd < 16) { if (dd < 0.5) { dx = 1; dy = 0; dd = 1; } var k2 = (16 - dd) / 2 / dd; A.q = { x: A.q.x + dx * k2, y: A.q.y + dy * k2 }; Bq.q = { x: Bq.q.x - dx * k2, y: Bq.q.y - dy * k2 }; }
+}
+sig = pos.map(function (p) { return p.q ? Math.round(p.q.x * 2) + "," + Math.round(p.q.y * 2) + "," + (p.ang == null ? "" : Math.round(p.ang)) : "-"; }).join(";");
 if (sig === this._sigPos && els.length === this._nPos) return;
 this._sigPos = sig; this._nPos = els.length;
 els.forEach(function (el, i) {
@@ -115279,7 +115317,8 @@ U.armar("tubo", { sistema: m.sistema });
 var c = U.cfg, M = I.MATERIAIS[c.material];
 if (m.dn > 0 && M && arr(M.dns).indexOf(m.dn) >= 0) U.mudarCfg("i:dn", m.dn);
 var ctx = U._ctx(); if (!ctx) return false;
-U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true });
+if (m.boca) U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true, _encaixe: true, _alvo: { tipo: "peca", x: m.x, y: m.y, z: m.z, id: m.id, peca: m.peca, boca: m.boca, dn: m.dn, hub: null } });
+else U.clique(ctx, { x: m.x, y: m.y, z: m.z }, { _doConector: true });
 if (m.fluxo === "entrada" && I.SISTEMAS[m.sistema] && I.SISTEMAS[m.sistema].gravidade && m.tipo !== "conector") U._sobe = true;
 this._marcas = []; this.desenhar();
 return true;
@@ -115287,6 +115326,426 @@ return true;
 };
 global.BimInstCon = BimInstCon;
 if (typeof module !== "undefined" && module.exports) module.exports = BimInstCon;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/hidselecao.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function HB() { return dep("HidBocas", "./hidbocas.js"); }
+function HP() { return dep("HidPortas", "./biminstportas.js"); }
+function HC() { return dep("HidComponentes", "./biminstcomponentes.js"); }
+function CAT() { return dep("HidCatalogo", "./hidcatalogo.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function txt(v) { return v == null ? "" : String(v); }
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+function d3(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
+function un(v) { var L = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; }
+var TOL_NO = 0.021;
+function ins(estado) { return (estado && estado.instalacoes) || { trechos: [], pecas: [] }; }
+function trecho(estado, id) { return arr(ins(estado).trechos).filter(function (t) { return String(t.id) === String(id); })[0] || null; }
+function lote(ops, pedido) { return ops.length === 1 ? ops[0] : { op: "lote", id: "sel" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), origem: "selecao", pedido: pedido, ops: ops }; }
+function opsDe(op) { return op && op.op === "lote" ? arr(op.ops) : (op ? [op] : []); }
+function simular(estado, ops) {
+var I = BI(); if (!I || !estado) return estado;
+var e = I.novoEstado(), S = ins(estado);
+arr(S.trechos).forEach(function (t) { e.trechos[t.id] = copia(t); e.ordemT.push(t.id); });
+arr(S.pecas).forEach(function (k) { e.pecas[k.id] = copia(k); e.ordemP.push(k.id); });
+arr(S.acessorios).forEach(function (a) { e.acessorios[a.id] = copia(a); e.ordemAc.push(a.id); });
+if (S.nomesSistema) e.nomesSis = copia(S.nomesSistema);
+arr(ops).forEach(function (o) { opsDe(o).forEach(function (q) { I.aplicarOp(e, copia(q)); }); });
+var out = {}; Object.keys(estado).forEach(function (k) { out[k] = estado[k]; });
+out.instalacoes = I.fechar(e);
+return out;
+}
+function entorno(estado, no) {
+var S = ins(estado), ts = arr(S.trechos).filter(function (t) {
+if (!t.p1 || !t.p2) return false;
+if (d3(t.p1, no) <= 0.6 || d3(t.p2, no) <= 0.6) return true;
+var ax = t.p2.x - t.p1.x, ay = t.p2.y - t.p1.y, az = t.p2.z - t.p1.z, L2 = ax * ax + ay * ay + az * az; if (!(L2 > 0)) return false;
+var u = Math.max(0, Math.min(1, ((no.x - t.p1.x) * ax + (no.y - t.p1.y) * ay + (no.z - t.p1.z) * az) / L2));
+return d3({ x: t.p1.x + ax * u, y: t.p1.y + ay * u, z: t.p1.z + az * u }, no) <= 0.05;
+});
+var out = {}; Object.keys(estado || {}).forEach(function (k) { out[k] = estado[k]; });
+out.instalacoes = { trechos: ts, pecas: arr(S.pecas).filter(function (k) { return Math.hypot(k.x - no.x, k.z - no.z) <= 1.5; }) };
+return out;
+}
+function noNaRede(R, no) { var H = HC(); return H && R ? H.noEm(R, no, 0.05) : null; }
+function redeDe(estado, famAval) { var I = BI(); try { return I.rede(estado, famAval || null); } catch (e) { return null; } }
+function bocasPeca(estado, pk) {
+var H = HB(), I = BI(); if (!H || !pk) return [];
+var bs = []; try { bs = H.bocas(estado, pk); } catch (e) { bs = []; }
+var P = (I && I.PECAS[pk.peca]) || {}, nome = txt(P.nome || "peça").toLowerCase(), nE = 0;
+return bs.map(function (b) {
+var ent = b.papel === "entrada"; if (ent) nE++;
+return { tipo: "peca", id: pk.id, peca: pk.peca, boca: b.id, x: b.x, y: b.y, z: b.z, dir: b.dir, sistema: pk.sistema, dn: b.dn, fluxo: ent ? "entrada" : "saida",
+livre: !b.ocupada, nome: (ent ? "Entrada " + nE : "Saída") + " DN " + b.dn + " da " + nome, aConferir: b.aConferir };
+});
+}
+function ramosDoNo(estado, no) {
+var out = [];
+arr(no && no.ramos).forEach(function (id) {
+var t = trecho(estado, id); if (!t) return;
+if (d3(t.p1, no) <= TOL_NO) out.push({ trecho: t.id, lado: "p1", dir: un({ x: t.p2.x - t.p1.x, y: t.p2.y - t.p1.y, z: t.p2.z - t.p1.z }), t: t });
+else if (d3(t.p2, no) <= TOL_NO) out.push({ trecho: t.id, lado: "p2", dir: un({ x: t.p1.x - t.p2.x, y: t.p1.y - t.p2.y, z: t.p1.z - t.p2.z }), t: t });
+else { var u = un({ x: t.p2.x - t.p1.x, y: t.p2.y - t.p1.y, z: t.p2.z - t.p1.z }); out.push({ trecho: t.id, lado: "passa", dir: u, t: t }); out.push({ trecho: t.id, lado: "passa", dir: { x: -u.x, y: -u.y, z: -u.z }, t: t }); }
+});
+return out;
+}
+function distSeg(p, a, b) {
+var ax = b.x - a.x, ay = b.y - a.y, az = b.z - a.z, L2 = ax * ax + ay * ay + az * az, u = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ax + (p.y - a.y) * ay + (p.z - a.z) * az) / L2)) : 0;
+return d3(p, { x: a.x + ax * u, y: a.y + ay * u, z: a.z + az * u });
+}
+function ang(u, v) { var c = u.x * v.x + u.y * v.y + u.z * v.z; return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI; }
+var TIPO_CAT = { joelho90: ["joelho90", "joelho_90"], joelho45: ["joelho45", "joelho_45"], curva90: ["curva_90", "curva"], curva45: ["curva"], te: ["te"], juncao: ["juncao"], luva: ["luva", "luva_simples", "luva_simp"], reducao: ["reducao", "bucha_red", "luva_red"], te_inspecao: ["te_inspecao"], cap: ["cap"], uniao: ["uniao", "uniao_soldavel"] };
+var MAT_CAT = { pvc_soldavel: /soldavel|agua-fria/i, pvc_esgoto: /esgoto/i, pvc_serie_r: /serie-r|reforcad/i, cpvc: /cpvc|aquatherm|quente/i, ppr: /ppr/i };
+function itemCatalogo(tipo, material, dn) {
+var C = CAT(); if (!C || !C.itens) return null;
+var ts = TIPO_CAT[tipo] || [tipo], rx = MAT_CAT[material], dnS = txt(dn);
+var cand = []; ts.forEach(function (t) { cand = cand.concat(arr(C.itens({ tipo: t }))); });
+var achou = cand.filter(function (it) {
+var d = txt(it.descricao).toUpperCase(), js = txt(it.fonte && it.fonte.json);
+if (rx && !rx.test(js)) return false;
+if (tipo === "curva45" && !/45/.test(d)) return false;
+if (tipo === "curva90" && !/90/.test(d)) return false;
+var m = d.match(/(?:DN\s*)?(\d{2,3})\s*(?:MM)?/g) || [];
+return m.some(function (s) { return (s.match(/\d+/) || [""])[0] === dnS; }) && (/MM|DN/.test(d));
+})[0];
+return achou ? { fabricante: achou.fabricante || txt(achou.id).split("-").slice(0, 2).join(" "), codigo: achou.codigo, descricao: achou.descricao, fonte: (achou.fonte && (achou.fonte.arquivo || achou.fonte.json)) || "" } : null;
+}
+function propsConexao(estado, famAval, no) {
+var I = BI(), P = HP(); if (!I || !no) return null;
+var nome = I.nomeConexao ? I.nomeConexao(no.tipo, no.material) : no.tipo, ch = no.dn2 ? no.dn + "x" + no.dn2 : txt(no.dn);
+var portas = P && P.info(no.tipo) ? P.portasDe(no.tipo, no.material, ch) : [];
+var rs = ramosDoNo(estado, no), angulo = null;
+if (rs.length === 2) angulo = Math.round(180 - ang(rs[0].dir, rs[1].dir));
+else if (rs.length === 3) { var al = principal(rs); if (al) angulo = Math.round(Math.min(ang(rs[al.c].dir, rs[al.a].dir), ang(rs[al.c].dir, rs[al.b].dir))); }
+var cat = itemCatalogo(no.tipo, no.material, no.dn);
+return { tipo: no.tipo, nome: nome, familia: nome.split(" ")[0], material: no.material, materialNome: ((I.MATERIAIS[no.material] || {}).nome) || no.material, forcada: !!no.forcada,
+bocas: portas.filter(function (p) { return p.papel !== "tampa"; }).map(function (p) { return { id: p.id, papel: p.papel, dn: p.dn, junta: p.junta }; }),
+angulo: angulo, fabricante: cat ? cat.fabricante : null, codigo: cat ? cat.codigo : null, descricao: cat ? cat.descricao : null, fonte: cat ? cat.fonte : "não consta no catálogo de fabricante carregado" };
+}
+function principal(rs) {
+if (rs.length !== 3) return null;
+var best = 999, par = null;
+for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) { var d = 180 - ang(rs[i].dir, rs[j].dir); if (d < best) { best = d; par = [i, j]; } }
+return { a: par[0], b: par[1], c: 3 - par[0] - par[1], desvio: best };
+}
+var RECUO_2X45 = 0.15;
+function plano2x45(estado, no) {
+var rs = ramosDoNo(estado, no);
+if (rs.length !== 2 || rs.some(function (r) { return r.lado === "passa"; })) return { ok: false, motivo: "o 2 × 45° vale num canto de dois tubos" };
+if (rs.some(function (r) { return Math.abs(r.dir.y) > 0.2; })) return { ok: false, motivo: "o 2 × 45° é para o desvio em planta (um dos tubos é vertical)" };
+var dv = 180 - ang(rs[0].dir, rs[1].dir); if (Math.abs(dv - 90) > 10) return { ok: false, motivo: "o canto não é de 90° (" + Math.round(dv) + "°)" };
+var d = RECUO_2X45, ops = [], pts = [];
+for (var i = 0; i < 2; i++) {
+var r = rs[i], t = r.t, L = d3(t.p1, t.p2); if (L < d + 0.1) return { ok: false, motivo: "o tubo " + t.id + " é curto para o 2 × 45° (" + Math.round(L * 100) + " cm)" };
+var u = d / L, a = r.lado === "p1" ? t.p1 : t.p2, b = r.lado === "p1" ? t.p2 : t.p1;
+var q = { x: r4(a.x + (b.x - a.x) * u), y: r4(a.y + (b.y - a.y) * u), z: r4(a.z + (b.z - a.z) * u) };
+var o = BI().opDoTrecho(t); o[r.lado] = q; delete o[r.lado === "p1" ? "pecaIni" : "pecaFim"]; ops.push(o); pts.push({ q: q, r: r });
+}
+var t0 = pts[0].r.t, chega;
+if (Math.abs(pts[0].q.y - pts[1].q.y) > 1e-6) chega = pts[0].q.y > pts[1].q.y ? pts[0] : pts[1];
+else chega = pts[0].r.lado === "p2" ? pts[0] : pts[1];
+var sai = chega === pts[0] ? pts[1] : pts[0];
+var nid = "x45" + txt(t0.id) + "_" + Date.now().toString(36).slice(-4), novo = BI().opDoTrecho(t0);
+novo.id = nid; novo.p1 = chega.q; novo.p2 = sai.q; delete novo.pecaIni; delete novo.pecaFim; ops.push(novo);
+return { ok: true, ops: ops, novo: nid };
+}
+function candidatos(no) {
+var P = HP(), I = BI(); if (!P || !I) return [];
+var n = P.info(no.tipo) ? P.ligaTubo(no.tipo, false) : arr(no.ramos).length, df = P.deflexao(no.tipo);
+return P.tipos().filter(function (t) {
+var inf = P.info(t); if (!inf || inf.naoDeduzir) return false;
+if (P.ligaTubo(t, false) !== n) return false;
+if (n === 2) { var d2 = P.deflexao(t); return df != null && d2 != null && Math.abs(d2 - df) < 1 && df > 1; }
+return n === 3;
+});
+}
+function compativeis(estado, famAval, no) {
+var I = BI(), H = HC(); if (!I || !H || !no) return [];
+var base = entorno(estado, no), out = [], rs = ramosDoNo(estado, no), al = principal(rs), beta = null;
+if (al) { var cb = Math.abs(rs[al.c].dir.x * rs[al.a].dir.x + rs[al.c].dir.y * rs[al.a].dir.y + rs[al.c].dir.z * rs[al.a].dir.z); beta = Math.acos(Math.min(1, cb)) * 180 / Math.PI; }
+candidatos(no).forEach(function (tipo) {
+var nome = I.nomeConexao(tipo, no.material);
+if (beta != null && tipo !== no.tipo && (/^juncao/.test(tipo) ? !(beta >= 25 && beta <= 65) : beta < 70)) return;
+if (tipo === no.tipo) { out.push({ tipo: tipo, nome: nome, atual: true, ok: true }); return; }
+var r = H.opsForcar(base, no, tipo); if (!r.ok) return;
+var R = redeDe(simular(base, [r.op]), famAval), n2 = noNaRede(R, no);
+if (n2 && n2.tipo === tipo) out.push({ tipo: tipo, nome: nome, atual: false, ok: true });
+});
+if (/^(joelho90|curva90)/.test(no.tipo)) {
+var pl = plano2x45(estado, no);
+out.push({ tipo: "duplo45", nome: "2 × " + I.nomeConexao("joelho45", no.material) + " (com tubo a 45°)", atual: false, ok: pl.ok, motivo: pl.ok ? "" : pl.motivo });
+}
+if (no.forcada) out.push({ tipo: "auto", nome: "Voltar ao automático", atual: false, ok: true });
+return out;
+}
+function trocar(estado, famAval, no, tipo) {
+var I = BI(), H = HC(); if (!I || !H || !no) return { ok: false, motivo: "O motor de conexões ainda não carregou." };
+if (tipo === no.tipo && !no.forcada) return { ok: false, motivo: "Esta já é a conexão do nó." };
+if (tipo === "auto") return H.opsAutomatico(estado, no);
+if (tipo === "duplo45") {
+var pl = plano2x45(estado, no); if (!pl.ok) return { ok: false, motivo: pl.motivo };
+return { ok: true, op: lote(pl.ops, "Trocar o 90° por 2 × 45°"), novo: pl.novo };
+}
+var r = H.opsForcar(estado, no, tipo); if (!r.ok) return r;
+var base = entorno(estado, no), R = redeDe(simular(base, [H.opsForcar(base, no, tipo).op]), famAval), n2 = noNaRede(R, no);
+if (!n2 || n2.tipo !== tipo) {
+var av = R ? arr(R.avisos).filter(function (a) { return /conexão escolhida não aplicada/.test(a.texto); }).map(function (a) { return a.texto; })[0] : "";
+return { ok: false, motivo: av || (I.nomeConexao(tipo, no.material) + " não serve neste nó.") };
+}
+return { ok: true, op: r.op };
+}
+function livreEm(estado, P, tExc) {
+var S = ins(estado);
+if (arr(S.trechos).some(function (t) { return String(t.id) !== String(tExc) && (d3(t.p1, P) <= TOL_NO || d3(t.p2, P) <= TOL_NO); })) return false;
+if (arr(S.pecas).some(function (k) { return Math.hypot(k.x - P.x, k.z - P.z) <= num(k.hub && k.hub.r, 0.1) + 0.01 && P.y <= k.y + 0.05 && P.y >= k.y - 1; })) return false;
+return true;
+}
+function inverterRamal(estado, famAval, no) {
+if (!no || !/^(te|juncao)/.test(txt(no.tipo))) return { ok: false, motivo: "Inverter o ramal vale no tê e na junção." };
+var rs = ramosDoNo(estado, no), al = principal(rs); if (!al) return { ok: false, motivo: "O nó não tem três ramos." };
+var rc = rs[al.c], t = rc.t; if (rc.lado === "passa") return { ok: false, motivo: "O ramal passa direto pelo nó." };
+var u = rs[al.a].dir, ux = u.x, uz = u.z, Lu = Math.hypot(ux, uz); if (Lu < 1e-6) return { ok: false, motivo: "A linha principal é vertical: gire o ramal pela peça." };
+ux /= Lu; uz /= Lu;
+var longe = rc.lado === "p1" ? t.p2 : t.p1, vx = longe.x - no.x, vz = longe.z - no.z, s = vx * ux + vz * uz;
+var nx = r4(no.x + 2 * s * ux - vx), nz = r4(no.z + 2 * s * uz - vz);
+if (Math.hypot(nx - longe.x, nz - longe.z) < 0.005) return { ok: false, motivo: "O ramal está no eixo da linha: nada a inverter." };
+if (!livreEm(estado, longe, t.id)) return { ok: false, motivo: "A outra ponta do ramal " + t.id + " está ligada: inverter desligaria a rede. Solte a ponta ou refaça o ramal." };
+var novoP = { x: nx, y: longe.y, z: nz }, bate = arr(ins(estado).trechos).filter(function (q) { return String(q.id) !== String(t.id) && distSeg(novoP, q.p1, q.p2) <= num(q.dn, 50) / 2000 + num(t.dn, 50) / 2000 + 0.01; })[0];
+if (bate) return { ok: false, motivo: "Do outro lado o ramal cairia sobre o tubo " + bate.id + ": não invertido." };
+var bateK = arr(ins(estado).pecas).filter(function (k) { return Math.hypot(k.x - nx, k.z - nz) <= num(k.hub && k.hub.r, 0.15) + 0.02 && longe.y <= k.y + 0.05 && longe.y >= k.y - 1; })[0];
+if (bateK) return { ok: false, motivo: "Do outro lado o ramal cairia sobre a peça " + bateK.id + ": não invertido." };
+var o = BI().opDoTrecho(t); o[rc.lado === "p1" ? "p2" : "p1"] = novoP;
+var R = redeDe(simular(entorno(estado, no), [o]), famAval), n2 = noNaRede(R, no);
+if (!n2) return { ok: false, motivo: "Depois de inverter o nó some — não aplicado." };
+return { ok: true, op: o, tipoDepois: n2.tipo };
+}
+function passoGiro(peca) { var C = dep("BimInstColocar", "./biminstcolocar.js"); return C && C.passoGiroPeca ? C.passoGiroPeca(peca) : (/^(caixa_sifonada|ralo_)/.test(txt(peca)) ? 45 : 90); }
+function normAng(a) { var t = Math.PI * 2; a = a % t; if (a > Math.PI) a -= t; if (a <= -Math.PI) a += t; return Math.round(a * 1e6) / 1e6; }
+function girarPeca(estado, id, graus) {
+var I = BI(), k = arr(ins(estado).pecas).filter(function (x) { return String(x.id) === String(id); })[0];
+if (!k) return { ok: false, motivo: "Selecione uma caixa ou ralo." };
+var a = graus * Math.PI / 180, rN = normAng(num(k.rotY, 0) + a), ops = [{ op: "instAlterar", id: k.id, rotY: rN, saidaGirada: true }];
+var bs = bocasPeca(estado, k).filter(function (b) { return !b.livre; }), co = Math.cos(a), si = Math.sin(a), nT = 0;
+arr(ins(estado).trechos).forEach(function (t) {
+var mud = null;
+["p1", "p2"].forEach(function (pp) {
+var P = t[pp]; if (!bs.some(function (b) { return d3(b, P) <= num(b.dn, 50) / 2000 + 0.005; })) return;
+var dx = P.x - k.x, dz = P.z - k.z;
+mud = mud || I.opDoTrecho(t); mud[pp] = { x: r4(k.x + dx * co + dz * si), y: P.y, z: r4(k.z - dx * si + dz * co) };
+});
+if (mud) { ops.push(mud); nT++; }
+});
+if (!bocasPeca(estado, k).length) {
+var hr = num(k.hub && k.hub.r, 0.15), chegam = arr(ins(estado).trechos).filter(function (t) { return [t.p1, t.p2].some(function (P) { return Math.hypot(P.x - k.x, P.z - k.z) <= hr + 0.01; }); });
+if (chegam.length) return { ok: false, motivo: "Esta peça não tem bocas de catálogo: girando, os " + chegam.length + " tubo(s) ligados ficariam soltos. Solte-os antes ou refaça a ligação." };
+}
+var Ii = BI(), rC = 0;
+try { var cc = dep("HidBocas", "./hidbocas.js").catalogo(k.peca, k.dn); rC = cc ? num(cc.diam, 100) / 2000 : 0.05; } catch (eC) { rC = 0.05; }
+for (var j = 1; j < ops.length; j++) {
+var o2 = ops[j], dh = Math.hypot(o2.p2.x - o2.p1.x, o2.p2.z - o2.p1.z), dy = Math.abs(o2.p2.y - o2.p1.y);
+var grav = Ii.SISTEMAS[o2.sistema] && Ii.SISTEMAS[o2.sistema].gravidade;
+if (grav && dh > 1e-6 && dy > 1e-6) { var im = Ii.declMinDn ? num(Ii.declMinDn(o2.sistema, o2.dn), 0) : 0; if (dy / dh * 100 + 1e-6 < im) return { ok: false, motivo: "Girando, o tubo " + o2.id + " ficaria com " + (Math.round(dy / dh * 10000) / 100) + "% (mínimo " + im + "% para DN " + o2.dn + "): não girado. Refaça a ligação depois de girar." }; }
+if (dh > 0.03) {
+var ax = o2.p2.x - o2.p1.x, az = o2.p2.z - o2.p1.z, uu = Math.max(0, Math.min(1, ((k.x - o2.p1.x) * ax + (k.z - o2.p1.z) * az) / (dh * dh)));
+var naBoca = Math.hypot(o2.p1.x - k.x, o2.p1.z - k.z) < Math.hypot(o2.p2.x - k.x, o2.p2.z - k.z) ? 0 : 1, lim = 0.02 / dh;
+uu = naBoca === 1 ? Math.min(uu, 1 - lim) : Math.max(uu, lim);
+if (Math.hypot(o2.p1.x + ax * uu - k.x, o2.p1.z + az * uu - k.z) < rC - 0.005) return { ok: false, motivo: "Girando, o tubo " + o2.id + " atravessaria o corpo da peça: não girado. Refaça a ligação depois de girar." };
+}
+}
+return { ok: true, op: lote(ops, "Girar a peça"), rotY: rN, tubos: nT };
+}
+function inverterPeca(estado, id) { return girarPeca(estado, id, 180); }
+var PRIO = { boca: 0, conector: 0, ponta: 1, meio: 2, eixo: 3 };
+function encaixes(estado, famAval, opts) {
+opts = opts || {}; var I = BI(), out = [], S = ins(estado), sis = opts.sistema || null;
+if (!I) return out;
+try {
+I.conectoresDoEstado(estado, famAval).forEach(function (k) {
+if (sis && k.sistema !== sis) return;
+out.push({ tipo: "conector", nome: "ponto " + txt(k.nome || "do aparelho"), P: { x: k.x, y: k.y, z: k.z }, alvo: { tipo: "aparelho", x: k.x, y: k.y, z: k.z, dn: k.dn, nome: k.nome, famInst: k.famInst, parede: k.parede || null } });
+});
+} catch (e) {}
+arr(S.pecas).forEach(function (k) {
+if (sis && k.sistema !== sis) return;
+bocasPeca(estado, k).forEach(function (b) {
+out.push({ tipo: "boca", nome: b.nome + (b.livre ? "" : " (ocupada)"), P: { x: b.x, y: b.y, z: b.z }, livre: b.livre, alvo: { tipo: "peca", x: b.x, y: b.y, z: b.z, peca: k.peca, id: k.id, hub: k.hub || null, boca: b.boca, dn: b.dn } });
+});
+});
+arr(S.trechos).forEach(function (t) {
+if (sis && t.sistema !== sis) return;
+[["p1", "inicial"], ["p2", "final"]].forEach(function (e) { var p = t[e[0]]; out.push({ tipo: "ponta", nome: "ponta " + e[1] + " do tubo " + t.id + " (DN " + t.dn + ")", P: { x: p.x, y: p.y, z: p.z }, alvo: { tipo: "ponta", x: p.x, y: p.y, z: p.z, dn: t.dn, trecho: t.id } }); });
+var m = { x: r4((t.p1.x + t.p2.x) / 2), y: r4((t.p1.y + t.p2.y) / 2), z: r4((t.p1.z + t.p2.z) / 2) }, vert = Math.abs(t.p1.x - t.p2.x) < 1e-6 && Math.abs(t.p1.z - t.p2.z) < 1e-6;
+out.push({ tipo: "meio", nome: "meio do tubo " + t.id + " (DN " + t.dn + ")", P: m, trecho: t.id, alvo: vert ? { tipo: "vertical", x: t.p1.x, y: m.y, z: t.p1.z, dn: t.dn, trecho: t.id } : { tipo: "meio", x: m.x, y: m.y, z: m.z, dn: t.dn, trecho: t.id } });
+});
+return out;
+}
+function encaixeTela(estado, famAval, proj, cur, o) {
+o = o || {}; if (!proj || !cur) return null;
+var tol = num(o.tol, 12), lista = o.lista || encaixes(estado, famAval, o), melhor = null;
+lista.forEach(function (e) {
+var q = proj(e.P); if (!q) return;
+var d = Math.hypot(q.x - cur.x, q.y - cur.y); if (d > tol) return;
+var nota = d + PRIO[e.tipo] * 3;
+if (!melhor || nota < melhor.nota) melhor = { tipo: e.tipo, nome: e.nome, P: e.P, alvo: e.alvo, livre: e.livre, nota: nota, d: d };
+});
+if (!melhor) {
+arr(ins(estado).trechos).forEach(function (t) {
+if (o.sistema && t.sistema !== o.sistema) return;
+var a = proj(t.p1), b = proj(t.p2); if (!a || !b) return;
+var dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy; if (L2 < 4) return;
+var u = ((cur.x - a.x) * dx + (cur.y - a.y) * dy) / L2; if (u <= 0.03 || u >= 0.97) return;
+var d = Math.hypot(a.x + u * dx - cur.x, a.y + u * dy - cur.y); if (d > tol * 0.6 || (melhor && d >= melhor.d)) return;
+var P = { x: r4(t.p1.x + (t.p2.x - t.p1.x) * u), y: r4(t.p1.y + (t.p2.y - t.p1.y) * u), z: r4(t.p1.z + (t.p2.z - t.p1.z) * u) };
+var vert = Math.abs(t.p1.x - t.p2.x) < 1e-6 && Math.abs(t.p1.z - t.p2.z) < 1e-6;
+melhor = { tipo: "eixo", nome: "eixo do tubo " + t.id + " (DN " + t.dn + ")", P: P, d: d, alvo: vert ? { tipo: "vertical", x: t.p1.x, y: P.y, z: t.p1.z, dn: t.dn, trecho: t.id } : { tipo: "meio", x: P.x, y: P.y, z: P.z, dn: t.dn, trecho: t.id } };
+});
+}
+if (melhor) delete melhor.nota;
+return melhor;
+}
+var HidSelecao = { VERSAO: 1, simular: simular, bocasPeca: bocasPeca, propsConexao: propsConexao, itemCatalogo: itemCatalogo, compativeis: compativeis, trocar: trocar,
+plano2x45: plano2x45, inverterRamal: inverterRamal, girarPeca: girarPeca, inverterPeca: inverterPeca, passoGiro: passoGiro, encaixes: encaixes, encaixeTela: encaixeTela,
+_ramosDoNo: ramosDoNo };
+global.HidSelecao = HidSelecao;
+if (typeof module !== "undefined" && module.exports) module.exports = HidSelecao;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/hidselecaoui.js ==== */
+try {
+(function (global) {
+"use strict";
+function B() { return global.BIM || null; }
+function HS() { return global.HidSelecao || null; }
+function U() { return global.BimInstUI || null; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function estado() { var b = B(); try { var e = b && b.editarEstado ? b.editarEstado() : null; return e && e.estado ? e.estado : null; } catch (e2) { return null; } }
+function aval() { var b = B(); return function (f, t, i) { return b && b.familiaAvaliar ? b.familiaAvaliar(f, t, i) : null; }; }
+function aplicar(op) { var b = B(); if (!b || !op) return false; return op.op === "lote" ? b.editarLote(op) : b.instOp(op); }
+function noDe(id) { var R = U() && U()._ultimaRede; return R && R.conexoes ? R.conexoes.filter(function (c) { return c.id === id; })[0] || null : null; }
+function reselecionar(uid, P) {
+var b = B(); if (!b || !b.selecionar) return;
+setTimeout(function () {
+try {
+var u = uid;
+if (P && global.HidComponentes && U() && U()._ultimaRede) { var n = global.HidComponentes.noEm(U()._ultimaRede, P, 0.05); if (n) u = "edit:" + n.id; }
+b.selecionar([u], "trocar");
+} catch (e) {}
+}, 30);
+}
+var SU = {
+alcas: function (st, uid) {
+var id = String(uid || "").replace(/^edit:/, ""), I = global.BimInst, out = [], ins = st.instalacoes || {};
+var k = arr(ins.pecas).filter(function (x) { return String(x.id) === id; })[0];
+if (k && I && I.PECAS[k.peca] && /^(caixa_|ralo_)/.test(k.peca)) {
+var pas = HS() ? HS().passoGiro(k.peca) : 90;
+out.push({ alca: "girar", icone: "↻", x: k.x + 0.22, y: k.y + 0.05, z: k.z, nome: "Girar " + pas + "° (Shift: ao contrário; os tubos das bocas vão junto)", livre: false });
+out.push({ alca: "inverter", icone: "⇄", x: k.x - 0.22, y: k.y + 0.05, z: k.z, nome: "Inverter (180°): a saída passa para o outro lado", livre: false });
+return out;
+}
+var fi = arr(st.familias).filter(function (f) { return String(f.id) === id; })[0];
+if (fi && !fi.host && global.BimInstColocar) { out.push({ alca: "girar", icone: "↻", x: fi.x + 0.3, y: fi.y + 0.1, z: fi.z, nome: "Girar 90° (os tubos dos pontos vão junto)", livre: false }); return out; }
+var no = noDe(id);
+if (no && /^(te|juncao)/.test(String(no.tipo))) out.push({ alca: "inverter-ramal", icone: "⇋", x: no.x, y: no.y + 0.15, z: no.z, nome: "Inverter o lado do ramal (" + no.nome + ")", livre: false });
+return out;
+},
+acao: function (tipo, uid, ev) {
+var st = estado(), H = HS(), id = String(uid || "").replace(/^edit:/, ""), r = null, sg = ev && ev.shiftKey ? -1 : 1;
+if (!st || !H) return { ok: false, motivo: "O 3D ainda não abriu." };
+var k = arr((st.instalacoes || {}).pecas).filter(function (x) { return String(x.id) === id; })[0];
+if (tipo === "girar" && k) r = H.girarPeca(st, id, sg * H.passoGiro(k.peca));
+else if (tipo === "inverter" && k) r = H.inverterPeca(st, id);
+else if (tipo === "girar" && global.BimInstColocar) { var b = B(); r = global.BimInstColocar.girar(st, aval(), uid, sg, { ops: b && b.editarOps ? b.editarOps() : [] }); }
+else if (tipo === "inverter-ramal") { var no = noDe(id); r = no ? H.inverterRamal(st, aval(), no) : { ok: false, motivo: "Não achei o nó." }; if (r.ok) r.P = { x: no.x, y: no.y, z: no.z }; }
+if (!r) return { ok: false };
+if (!r.ok) { status(r.motivo); return r; }
+aplicar(r.op);
+status(tipo === "inverter-ramal" ? "Ramal invertido. Ctrl+Z desfaz." : (tipo === "inverter" ? "Peça invertida (180°)" : "Peça girada") + (r.tubos ? "; " + r.tubos + " tubo(s) acompanharam" : "") + ". Ctrl+Z desfaz.");
+reselecionar(uid, r.P);
+return r;
+},
+trocar: function (cxId, tipo) {
+var st = estado(), H = HS(), no = noDe(cxId);
+if (!st || !H || !no) { status("Não achei o nó."); return { ok: false }; }
+var r = H.trocar(st, aval(), no, tipo);
+if (!r.ok) { status(r.motivo); return r; }
+aplicar(r.op);
+status("Conexão do nó trocada" + (tipo === "duplo45" ? " por 2 × 45° (um tubo a 45° no canto)" : "") + ". Os tubos seguem ligados; o orçamento conta a peça nova. Ctrl+Z desfaz.");
+reselecionar("edit:" + cxId, { x: no.x, y: no.y, z: no.z });
+return r;
+},
+_ult: null, _el: null, _t: 0, _lista: null, _listaSig: null, _cur: null,
+_ativo: function () { var u = U(); try { return !!(u && u._previaHidro && u._previaHidro()); } catch (e) { return false; } },
+_sistema: function () { var u = U(); return u && u.cfg && u.cfg.ferramenta === "tubo" ? u.cfg.sistema : null; },
+_sobreVista: function (ev) {
+var t = ev && ev.target; if (!t || !t.closest) return false;
+var tela = t.closest('.bim-tela[data-ativa="1"]'); if (!tela) return false;
+return t.tagName === "CANVAS" || !!t.closest("svg");
+},
+mover: function (ev) {
+var self = SU; self._cur = { x: ev.clientX, y: ev.clientY };
+if (!self._ativo() || !self._sobreVista(ev) || (ev.buttons & 7)) { self.esconder(); return; }
+var now = Date.now(); if (now - self._t < 40) return; self._t = now;
+var st = estado(), H = HS(), K = global.BimInstCon; if (!st || !H || !K || !K._projetor) { self.esconder(); return; }
+var sis = self._sistema(), sig = sis + "|" + self._assinatura(st);
+if (self._listaSt !== st || self._listaSig !== sig) { self._lista = H.encaixes(st, aval(), { sistema: sis }); self._listaSt = st; self._listaSig = sig; }
+var e = H.encaixeTela(st, aval(), K._projetor(), self._cur, { lista: self._lista, sistema: sis, tol: 12 });
+if (!e) { self.esconder(); return; }
+self._ult = { e: e, t: now, x: ev.clientX, y: ev.clientY, sis: sis, assin: self._assinatura(st) };
+self.desenhar(e, ev.clientX, ev.clientY);
+},
+desenhar: function (e, cx, cy) {
+if (typeof document === "undefined") return;
+if (!this._el) {
+this._el = document.createElement("div"); this._el.className = "hid-snap-ponto"; this._el.setAttribute("data-hid-snap", "1");
+this._el.style.cssText = "position:fixed;left:0;top:0;z-index:41;pointer-events:none;display:none";
+this._el.innerHTML = '<span data-p style="position:absolute;width:7px;height:7px;margin:-4px 0 0 -4px;border-radius:50%;background:#2f6fd0;box-shadow:0 0 0 2px #fff"></span>' +
+'<span data-n style="position:absolute;left:9px;top:-22px;white-space:nowrap;font:500 11px/14px system-ui,sans-serif;color:#1d3f73;background:rgba(255,255,255,.92);border:1px solid #9db8e3;border-radius:3px;padding:1px 5px"></span>';
+document.body.appendChild(this._el);
+}
+var K = global.BimInstCon, pr = K && K._projetor ? K._projetor() : null, q = pr ? pr(e.P) : null;
+if (!q) { this.esconder(); return; }
+this._el.style.display = ""; this._el.style.left = q.x + "px"; this._el.style.top = q.y + "px";
+this._el.setAttribute("data-tipo", e.tipo);
+this._el.querySelector("[data-n]").textContent = { boca: "Boca", conector: "Ponto", ponta: "Ponta", meio: "Meio", eixo: "Eixo" }[e.tipo] + " · " + e.nome;
+},
+esconder: function () { this._ult = null; if (this._el) this._el.style.display = "none"; },
+_assinatura: function (st) {
+try { return this._assinatura0(st); } catch (eA) { return "x" + Date.now(); }
+},
+_assinatura0: function (st) {
+var I = st.instalacoes || {}, h = 0, n = 0;
+arr(I.trechos).forEach(function (t) { n++; h += (t.p1.x * 3.1 + t.p1.y * 5.3 + t.p1.z * 7.7 + t.p2.x * 11.3 + t.p2.y * 13.1 + t.p2.z * 17.9 + (+t.dn || 0)) * (n % 97 + 1); });
+arr(I.pecas).forEach(function (k) { n++; h += (k.x * 19.1 + k.y * 23.3 + k.z * 29.7 + (+k.rotY || 0) * 31.1 + (+k.rebaixo || 0) * 37.3) * (n % 89 + 1); });
+arr(st.familias).forEach(function (fi) { n++; h += ((+fi.x || 0) * 41.3 + (+fi.z || 0) * 43.7 + (+fi.rotY || 0) * 47.1) * (n % 83 + 1); });
+return n + ":" + Math.round(h * 1e4);
+},
+encaixeDoClique: function (sistema) {
+var u = this._ult; if (!u || Date.now() - u.t > 1500 || !this._cur) return null;
+if (Math.hypot(this._cur.x - u.x, this._cur.y - u.y) > 4) return null;
+if (u.sis !== (sistema || null)) return null;
+var K = global.BimInstCon, pr = K && K._projetor ? K._projetor() : null, q = pr ? pr(u.e.P) : null;
+if (!q || Math.hypot(q.x - this._cur.x, q.y - this._cur.y) > 12) { this.esconder(); return null; }
+var st = estado(); if (!st || this._assinatura(st) !== u.assin) { this.esconder(); return null; }
+return JSON.parse(JSON.stringify(u.e));
+},
+instalar: function () {
+if (this._instalado || typeof document === "undefined") return; this._instalado = true;
+document.addEventListener("pointermove", function (ev) { try { SU.mover(ev); } catch (e) {} }, true);
+document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" || /^(Arrow|Page|Home|End)/.test(ev.key)) SU.esconder(); }, true);
+document.addEventListener("wheel", function () { SU.esconder(); }, { capture: true, passive: true });
+}
+};
+if (typeof document !== "undefined") SU.instalar();
+global.HidSelecaoUI = SU;
+if (typeof module !== "undefined" && module.exports) module.exports = SU;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/biminstarr.js ==== */
