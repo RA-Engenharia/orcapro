@@ -64,6 +64,20 @@
 
   /* ------------------------------------------------------------------ MALHA */
   function Malha() { return { v: [], f: [] }; }
+  /* FAMÍLIAS R2 (14/11/2026): GRAVAÇÃO DO FABRICANTE na peça — uma placa fina FECHADA (6 faces, 0,3 mm) colada na face do produto, com a
+     textura do texto (js/bim.js famMatMarca, o mesmo desenho de letra da marcação dos tubos, js/biminstgeoreal.js canvasMarca) na face
+     da frente; as outras faces pegam o canto transparente da textura. c = centro na superfície, n = normal (para fora), u = direção da
+     leitura; L × H = tamanho da gravação na peça. A logomarca é a do fabricante (uso liberado, memória familias-logo-e-foto-do-fabricante). */
+  function decal(id, texto, cor, c, n, u, L, H) {
+    n = nrm(n); u = nrm(u); var v = nrm(vx(n, u)), e = 0.0003, m = Malha(), uv = [];
+    function P(a, b, d) { return [c[0] + u[0] * a + v[0] * b + n[0] * d, c[1] + u[1] * a + v[1] * b + n[1] * d, c[2] + u[2] * a + v[2] * b + n[2] * d]; }
+    var cs = [[-L / 2, -H / 2], [L / 2, -H / 2], [L / 2, H / 2], [-L / 2, H / 2]], k;
+    for (k = 0; k < 4; k++) { var q = P(cs[k][0], cs[k][1], 0.0002); m.v.push(q[0], q[1], q[2]); uv.push(0.002, 0.002); }                     /* fundo (canto transparente) */
+    for (k = 0; k < 4; k++) { var q2 = P(cs[k][0], cs[k][1], 0.0002 + e); m.v.push(q2[0], q2[1], q2[2]); uv.push(k === 1 || k === 2 ? 1 : 0, k >= 2 ? 1 : 0); }   /* frente com o texto */
+    m.f.push(0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7);
+    m.uv = uv;
+    return { id: id, nome: "Gravação " + texto, material: "gravação " + texto, acessorio: true, marca: { texto: texto, cor: cor || "#1a1a1a", aspecto: L / H }, m: m };
+  }
   function anelAdd(m, pts) { var i0 = m.v.length / 3; for (var i = 0; i < pts.length; i++) m.v.push(pts[i][0], pts[i][1], pts[i][2]); return i0; }
   function liga(m, a, b, n) { for (var j = 0; j < n; j++) { var j2 = (j + 1) % n; m.f.push(a + j, b + j, b + j2, a + j, b + j2, a + j2); } }
   function centro(pts) { var c = [0, 0, 0]; pts.forEach(function (p) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }); return esc(c, 1 / pts.length); }
@@ -821,9 +835,18 @@
     /* o corpo desce 0,4 H abaixo da entrada: a SAÍDA para a bacia (conector "descarga", js/hidfamilias.js — D-02, 19/10/2026) fica
        na base do volume, com a mesma altura total H */
     torno(cp.m, [[0.028, -H * 0.4], [0.028, H * 0.5], [0.02, H * 0.6]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 1, 0] });
-    torno(cp.m, [[0.012, 0], [0.012, Pp * 0.55]], q.n, { c: [0, 0.02, -Pp * 0.55], eixo: [0, 0, 1] });
+    torno(cp.m, [[0.012, 0], [0.012, Pp * 0.55]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 0, 1] });   /* FAMÍLIAS R2: a entrada no eixo do conector "af" (y = 0); antes 2 cm acima e o tubo entrava torto */
+    /* FAMÍLIAS R2 (print no tubo): a SAÍDA para a bacia sai do pé do corpo e vem até a face da parede, no ponto do conector "descarga"
+       (0, −0,4 H, 0) — antes o tubo da descida começava 5 cm à frente do corpo, solto no ar */
+    torno(cp.m, [[0.0195, 0], [0.0195, Pp * 0.55 + 0.0195], [0, Pp * 0.55 + 0.0195]], Math.min(q.n, 10), { c: [0, -H * 0.4 + 0.0195, -Pp * 0.55], eixo: [0, 0, 1] });   /* o tubo da descida entra por baixo, no ponto do conector */
     var yc = H * 0.2, A0 = acabHydra(P.cod);
-    if (A0) { acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp); return partes; }
+    if (A0) {
+      acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp);
+      partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });   /* FAMÍLIAS R2: a placa plana saía preta com o cromado polido (js/bim.js FAM_PBR) */
+      /* FAMÍLIAS R2: a marca "Deca" gravada no pé da placa (foto do Catálogo Válvulas Hydra, p.437); a Retrô (espelho redondo) não leva */
+      if (!A0.D) partes.push(decal("logo", "Deca", "#6F747B", [0, yc - A0.A * 0.4, (A0.placa || A0.P * 0.62) + 0.0002], [0, 0, 1], [1, 0, 0], A0.L * 0.2, A0.L * 0.05));
+      return partes;
+    }
     caixaRz(ac.m, { x0: -W / 2, x1: W / 2, y0: yc - H * 0.3, y1: yc + H * 0.3, z0: 0, z1: 0.008, r: 0.003, rad: W * 0.22 }, q);
     torno(ac.m, [[W * 0.24, 0], [W * 0.24, 0.006], [W * 0.22, 0.012], [W * 0.15, 0.016], [0, 0.017]], q.N, { c: [0, yc, 0.008], eixo: [0, 0, 1] });
     partes.push(cp, ac);
@@ -1096,7 +1119,7 @@
     /* LOTE 3-5 (13/11/2026): P.yc = eixo da sucção (letra C da ficha Dancor) e P.xr = face da sucção → eixo do recalque (B + J); 0 = proporção antiga */
     var C = P.C, W = P.W, H = P.H, x0 = -C / 2, yc = P.yc > 0 ? P.yc : 0.03 + W / 2, partes = [], N = q.N, k = C / 0.266;
     /* LOTE 3-5: tipo da ficha Dancor (P.yc > 0) nas cores da foto do catálogo — motor e pé pretos, carcaça em liga de alumínio-silício (p.160) */
-    var dancor = P.yc > 0, cMot = dancor ? "metal preto" : AZUL, cVol = dancor ? "alumínio" : FERRO;
+    var dancor = P.yc > 0, cMot = dancor ? "metal preto" : AZUL, cVol = dancor ? "alumínio fundido" : FERRO;
     var ba = parte("base", "Pé", cMot), vo = parte("voluta", "Carcaça em voluta e bocais", cVol), mo = parte("motor", "Motor", cMot), vt = parte("ventilador", "Tampa traseira", PRETO);
     var xf = x0 + 0.055 * k, ec = 0.06 * k, xm0 = xf + ec, xm1 = C / 2, rv = Math.min(W * 0.44, yc - 0.004), rm = Math.min(W * 0.4, yc - 0.006), xp = (xm0 + xm1) / 2;
     var xr = P.xr > 0 ? x0 + P.xr : xf + ec * 0.45;   /* eixo do recalque (o conector da família usa a mesma conta) */
@@ -1121,6 +1144,8 @@
     torno(vt.m, [[rm * 0.96, 0], [rm * 0.96, 0.014], [rm * 0.7, 0.02], [0, 0.021]], N, { c: [xm1 - 0.02, yc, 0], eixo: [1, 0, 0] });
     [0.25, 0.75].forEach(function (t) { caixaR(vt.m, { x0: xm0 + (xm1 - xm0) * t - 0.02, x1: xm0 + (xm1 - xm0) * t + 0.02, y0: yc - rm * 0.5, y1: yc - rm * 0.3, z0: rm * 0.96, z1: rm * 1.01, r: 0.002, rad: 0.004 }, { k: 1, kv: 1 }); });
     partes.push(ba, vo, mo, vt);
+    /* FAMÍLIAS R2: a marca DANCOR na lateral da caixa de ligação (foto do catálogo p.160), só no tipo da ficha */
+    if (dancor) partes.push(decal("logo", "DANCOR", "#F2F2F2", [xm0 + (xm1 - xm0) * 0.46, yc + rm * 0.7 + (rm * 0.3 + 0.03 * k) * 0.55, rm * 0.45], [0, 0, 1], [1, 0, 0], (xm1 - xm0) * 0.4, 0.012));
     return partes;
   }
 
@@ -1134,9 +1159,25 @@
      P.L, P.P, P.H = largura, profundidade e altura total (cotas da ficha); detalhe sem cota (raio de canto, espessura da placa, braço) é
      proporção do desenho. */
   function geoDuchaZagonel(P, q) {
-    var W = P.W, Pp = P.P, H = P.H, mod = P.mod > 1.5 ? 2 : 1, partes = [], N = q.N;   /* a mesma régua do conector (Modelo > 1.5 = Ducali) */
+    var W = P.W, Pp = P.P, H = P.H, mod = P.mod > 2.5 ? 3 : P.mod > 1.5 ? 2 : 1, partes = [], N = q.N;   /* a mesma régua do conector (1 Moment, 2 Ducali, 3 Acqua Duo) */
     var co = parte("corpo", "Corpo da ducha", BRANCO), es = parte("espalhador", "Espalhador", CLARO), ac = parte("ligacoes", "Rosca, cordão e puxador", LATAO, true), pu = parte("puxador", "Cordão e puxador", BRANCO, true);
-    if (mod === 2) {
+    if (mod === 3) {
+      /* FAMÍLIAS R2: LORENZETTI ACQUA DUO (foto do produto, img 11: corpo do aquecedor preto na parede, braço cromado e espalhador QUADRADO
+         cromado com a face preta). A × L × P = 228 × 210 × 520 (dimensões de varejo — fonte secundária, ver a família); o corpo, o braço e a
+         espessura do espalhador são proporção da foto. Entrada atrás do corpo, no alto (como a Ducali). */
+      var yA = 0.02, Lc = Math.max(0.07, W * 0.42), hB = H * 0.92, eE = 0.022, aE = Math.min(W, Pp * 0.42);
+      var pr = parte("corpo-preto", "Corpo do aquecedor", PRETO), cr = parte("cromado", "Braço e espalhador", CROMO);
+      caixaR(pr.m, { x0: -Lc / 2, x1: Lc / 2, y0: yA - hB, y1: yA, z0: 0.004, z1: 0.075, r: 0.012, rad: 0.02 }, q);   /* corpo na parede */
+      caixaR(es.m, { x0: -Lc * 0.32, x1: Lc * 0.32, y0: yA - hB * 0.55, y1: yA - hB * 0.4, z0: 0.075, z1: 0.078, r: 0.001, rad: 0.006 }, { k: 1, kv: 1 });   /* seletor */
+      caixaR(cr.m, { x0: -0.022, x1: 0.022, y0: yA - 0.012, y1: yA + 0.002, z0: 0.06, z1: Pp - aE + 0.01, r: 0.004, rad: 0.008 }, q);   /* braço cromado */
+      caixaR(cr.m, { x0: -W / 2, x1: W / 2, y0: yA - eE, y1: yA - 0.004, z0: Pp - aE, z1: Pp, r: 0.004, rad: 0.012 }, q);   /* espalhador quadrado */
+      caixaR(pr.m, { x0: -W / 2 + 0.008, x1: W / 2 - 0.008, y0: yA - eE - 0.002, y1: yA - eE + 0.002, z0: Pp - aE + 0.008, z1: Pp - 0.008, r: 0.001, rad: 0.008 }, q);   /* face preta */
+      var bA = parte("bicos", "Bicos do espalhador", ESCURO), nA = q.N > 20 ? 9 : 4, ia, ja;
+      for (ia = 0; ia < nA; ia++) for (ja = 0; ja < nA; ja++) torno(bA.m, [[0.0025, 0], [0.002, 0.003], [0, 0.0034]], q.N > 20 ? 6 : 4, { c: [-W / 2 + 0.025 + (W - 0.05) * ia / (nA - 1), yA - eE - 0.002, Pp - aE + 0.025 + (aE - 0.05) * ja / (nA - 1)], eixo: [0, -1, 0] });
+      torno(ac.m, [[0.0105, 0], [0.0105, 0.02], [0.012, 0.022], [0.012, 0.03]], q.n, { c: [0, 0, 0.03], eixo: [0, 0, -1] });
+      torno(pu.m, [[0, 0], [0.01, 0.003], [0.01, 0.012], [0.007, 0.015], [0, 0.016]], 16, { c: [0, yA - hB * 0.47, 0.078], eixo: [0, 0, 1] });   /* botão do seletor (sem cordão: a Acqua Duo é eletrônica) */
+      partes.push(pr, cr, bA, decal("logo", "LORENZETTI", "#E8E8E8", [0, yA - hB * 0.25, 0.075], [0, 0, 1], [1, 0, 0], Lc * 0.8, 0.012));
+    } else if (mod === 2) {
       /* o espalhador 210 × 130 acompanha a largura e a profundidade do tipo (proporção da ficha: 210/265 e 130/476) */
       var hc = num(P.Hc, 0.237), ex = num(P.Ex, 0.21 * W / 0.265), ez = num(P.Ez, 0.13 * Pp / 0.476), yT = 0.022, tp = 0.016;
       /* placa de cima (476): afina para a frente como no desenho lateral (16 → 13 → 9 mm, face de cima reta) com a borda arredondada */
@@ -1164,6 +1205,7 @@
       /* painel digital (visor) e o botão redondo da vista frontal */
       caixaR(es.m, { x0: -0.045, x1: 0.045, y0: yT - hc * 0.62, y1: yT - hc * 0.5, z0: 0.04, z1: 0.043, r: 0.001, rad: 0.004 }, { k: 1, kv: 1 });
       torno(es.m, [[0.007, 0], [0.007, 0.003], [0.005, 0.005], [0, 0.0052]], 12, { c: [0.06, yT - hc + 0.03, 0.04], eixo: [0, 0, 1] });
+      partes.push(decal("logo", "Zagonel", "#00A651", [0, yT - hc * 0.36, 0.04], [0, 0, 1], [1, 0, 0], 0.1, 0.024));   /* FAMÍLIAS R2: a marca no corpo, acima do visor (foto do produto) */
       torno(ac.m, [[0.0105, 0], [0.0105, 0.02], [0.012, 0.022], [0.012, 0.03]], q.n, { c: [0, 0, 0.03], eixo: [0, 0, -1] });   /* rosca de 1/2" para a parede */
       tubo(pu.m, [[0, yT - hc, 0.025], [0, yT - H + 0.04, 0.025]], 0.0025, 6, { rc: 0 });
       torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yT - H, 0.025] });
@@ -1181,11 +1223,34 @@
       partes.push(fu);
       /* pescoço até a parede: o "gargalo" do desenho em planta (afina de 2R para ~0,62 × 2R junto da parede) */
       caixaR(co.m, { x0: -R * 0.62, x1: R * 0.62, y0: yTop - 0.075, y1: yTop - 0.002, z0: 0.004, z1: zc - R * 0.5, r: 0.014, rad: 0.03 }, q);
+      partes.push(decal("logo", "Zagonel", "#00A651", [0, yTop - 0.002, (0.004 + zc - R * 0.5) / 2 + 0.01], [0, 1, 0], [1, 0, 0], Math.min(0.07, R * 1.1), 0.016));   /* FAMÍLIAS R2: a marca no alto do pescoço */
       torno(ac.m, [[0.0105, 0], [0.0105, 0.016], [0.012, 0.018], [0.012, 0.024]], q.n, { c: [0, -0.024, 0.03], eixo: [0, 1, 0] });   /* rosca de 1/2" para cima */
       tubo(pu.m, [[0, yTop - 0.075, 0.07], [0, yTop - H + 0.04, 0.07]], 0.0025, 6, { rc: 0 });   /* o cordão sai de baixo do pescoço */
       torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yTop - H, 0.07] });
     }
     partes.push(co, es, ac, pu);
+    return partes;
+  }
+
+  /* ---------- FAMÍLIAS R2 (14/11/2026): TORNEIRA DE BOIA pelo desenho cotado da ficha Docol (Catálogo Geral Docol, p.253: Torneira de Boia
+     Alta Vazão 1/2" 00032100). Origem = a ponta da rosca G 1/2" (o conector, entrando pela parede da caixa em −X); o eixo da entrada em Y = 0.
+     Cotas da ficha (mm): 166,5 da ponta da rosca ao fim do regulador; 106 da ponta ao eixo vertical da boia; 33 do eixo ao topo da cabeça;
+     250 do topo da cabeça ao fim do tubo de baixo; em planta 33 + 39 do eixo às laterais. Detalhe sem cota (porca, cabeça, degraus da boia):
+     proporção do desenho. P.L = 166,5; P.H = 250; P.W = 72 (em m). ---------- */
+  function geoBoia(P, q) {
+    var L = P.L, H = P.H, W = P.W, k = L / 0.1665, xa = 0.106 * k, yT = 0.033 * H / 0.25, yB = yT - H, rB = W / 2 * 0.9, N = q.N, n = q.n, partes = [];
+    var co = parte("corpo", "Corpo e boia", BRANCO), pr = parte("porca", "Porca de união e regulador", PRETO), rg = parte("regulador", "Regulagem de nível", AZUL);
+    torno(co.m, [[0.0105, 0], [0.0105, 0.016 * k], [0.0085, 0.017 * k], [0, 0.0172 * k]], n, { c: [0, 0, 0], eixo: [1, 0, 0] });   /* rosca G 1/2" */
+    torno(pr.m, [[0.0155, 0], [0.0155, 0.02 * k], [0.013, 0.022 * k], [0, 0.0222 * k]], q.N > 20 ? 18 : 8, { c: [0.018 * k, 0, 0], eixo: [1, 0, 0] });   /* porca tipo união (serrilhada) */
+    torno(co.m, [[0.0095, 0], [0.0095, xa - 0.05 * k], [0, xa - 0.05 * k]], n, { c: [0.04 * k, 0, 0], eixo: [1, 0, 0] });   /* corpo horizontal */
+    caixaR(co.m, { x0: xa - 0.02 * k, x1: L - 0.018 * k, y0: -0.014, y1: yT, z0: -0.015, z1: 0.015, r: 0.006, rad: 0.012 }, q);   /* cabeça (alavanca e obturador) */
+    torno(rg.m, [[0.015, 0], [0.015, 0.016 * k], [0.012, 0.018 * k], [0, 0.0185 * k]], q.N > 20 ? 16 : 8, { c: [L - 0.0185 * k, -0.003, 0], eixo: [1, 0, 0] });   /* botão de regulagem (azul na foto) */
+    /* a boia vertical: colar, rosca, flutuador e o tubo de baixo */
+    torno(co.m, [[0, 0], [rB * 0.82, 0], [rB * 0.82, 0.018], [rB * 0.6, 0.026], [0.012, 0.03], [0, 0.03]], N, { c: [xa, -0.044, 0] });
+    var sH = H / 0.25;
+    torno(co.m, [[0, 0], [rB * 0.95, 0], [rB, 0.006 * sH], [rB, 0.098 * sH], [rB * 0.92, 0.104 * sH], [0, 0.104 * sH]], N, { c: [xa, -0.152 * sH, 0] });   /* flutuador */
+    torno(co.m, [[0, 0], [rB * 0.68, 0], [rB * 0.68, yB * -1 - 0.152 * H / 0.25 + 0.002], [0, yB * -1 - 0.152 * H / 0.25 + 0.002]], N, { c: [xa, yB, 0] });   /* tubo de baixo */
+    partes.push(co, pr, rg, decal("logo", "DOCOL", "#8A8F96", [xa, -0.1 * H / 0.25, rB + 0.0002], [0, 0, 1], [1, 0, 0], rB * 1.1, 0.011));
     return partes;
   }
 
@@ -1443,15 +1508,15 @@
     caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
-    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel
+    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel, boia: geoBoia
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 950, caixa_descarga_embutida: 1400,
+    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
     caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
-    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000
+    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
   var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",
@@ -1491,7 +1556,9 @@
       if (!p.m.f.length) return;
       var vol = limpar(p.m), bad = p.m.v.some(function (x) { return !isFinite(x); });
       if (bad) { erros.push("parte " + p.id + ": vértice não finito (cota fora do esperado?)"); return; }
-      out.push({ id: p.id, nome: p.nome, material: p.material, acessorio: p.acessorio, v: p.m.v, f: p.m.f, volume: vol });
+      var o2 = { id: p.id, nome: p.nome, material: p.material, acessorio: p.acessorio, v: p.m.v, f: p.m.f, volume: vol };
+      if (p.marca && p.m.uv && p.m.uv.length === p.m.v.length / 3 * 2) { o2.marca = p.marca; o2.uv = p.m.uv; }   /* FAMÍLIAS R2: a gravação do fabricante (decal) */
+      out.push(o2);
     });
     return { ok: !erros.length, erros: erros, partes: out };
   }

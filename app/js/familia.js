@@ -519,9 +519,10 @@
     function grupos(partes) {
       var gs = {}, ordem = [];
       partes.forEach(function (p) {
-        var m = p.material === "@" ? mat(s.material) : p.material, k = m + (p.acessorio ? "|acessorio" : "");
-        if (!gs[k]) { gs[k] = { material: m, acessorio: !!p.acessorio, v: [], f: [], volume: 0, partes: [] }; ordem.push(k); }
+        var m = p.material === "@" ? mat(s.material) : p.material, k = m + (p.acessorio ? "|acessorio" : "") + (p.marca ? "|marca|" + p.marca.texto + "|" + p.marca.cor : "");
+        if (!gs[k]) { gs[k] = { material: m, acessorio: !!p.acessorio, v: [], f: [], volume: 0, partes: [] }; if (p.marca) { gs[k].marca = p.marca; gs[k].uv = []; } ordem.push(k); }
         var g = gs[k], i0 = g.v.length / 3, q;
+        if (g.uv) g.uv.push.apply(g.uv, p.uv || []);   /* FAMÍLIAS R2: a gravação do fabricante leva a uv junto */
         for (q = 0; q + 2 < p.v.length; q += 3) {
           var x = p.v[q], z = p.v[q + 2];
           g.v.push(rot ? Math.round((x * c + z * sn) * 1e6) / 1e6 : x, p.v[q + 1], rot ? Math.round((-x * sn + z * c) * 1e6) / 1e6 : z);
@@ -537,6 +538,7 @@
       var g = g0.gs[k], o = { id: s.id + ":" + k, nome: (s.nome || "") + (g.acessorio ? " — acessórios" : ""), forma: "malha", origemForma: "gerada", gerador: s.gerador, suave: true,
         x: base.x, y: base.y, z: base.z, rot: 0, v: g.v, f: g.f, volume: g.volume, material: g.material, cor: "", partes: g.partes };
       if (g.acessorio) o.acessorio = true;
+      if (g.marca) { o.marca = g.marca; o.uv = g.uv; }
       o.lod = gl.map(function (x) { var h = x.gs[k]; return h ? { v: h.v, f: h.f } : { v: [], f: [] }; });
       return o;
     });

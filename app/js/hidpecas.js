@@ -275,6 +275,7 @@
     ordem.forEach(function (k) {
       var g = grupos[k], prod = g.fc ? arr((g.fc.comercial || {}).produtos).filter(function (p) { return p[0] === g.tipoId; })[0] : null;
       var lf = linha(g.fc, { classe: "louca", descricao: nomeLegivel(g.famId), unidade: "un", quantidade: g.n, produto: prod || null });
+      var mpt = g.fc && g.fc.identificacao && g.fc.identificacao.materialPorTipo; if (mpt && g.tipoId && mpt[g.tipoId]) lf.material = mpt[g.tipoId];   /* FAMÍLIAS R2: o material do TIPO colocado */
       if (g.reserva) { lf.descricao = txt(lf.descricao) + " - RESERVA DE ESPAÇO (não compra no hidro)"; var crit = "reserva de espaço: equipamento a definir em projeto próprio (climatização) — não entra na compra do hidrossanitário"; lf.reserva = true; lf.incluso = crit; lf.total = null; lf.preco = { pendente: false, valor: null, incluso: true, criterio: crit }; }
       out.push(lf);
     });

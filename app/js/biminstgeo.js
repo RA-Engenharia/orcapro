@@ -1786,6 +1786,15 @@
     }
     var corpoPapel = latao && !pvcR ? "latao" : "corpo";
     var partes = [cascaSaida(mc, corpoPapel)];
+    /* FAMÍLIAS R2 (14/11/2026): a gravação "DOCOL" em relevo no bojo da base com acabamento DocolBase (a ficha do acabamento é Docol,
+       catálogo geral pág. 44; a base de latão da linha traz a marca fundida no corpo — fotos do Rogério, img 9). Só no nível Alto. */
+    var RLg = real();
+    if (acab && RLg && (o.lod === "perto" || o.lod === "icone" || !o.lod)) {
+      var Lb0 = Lff - 2 * h * 0.65, hAg = Math.max(4, Math.min(Lb0 * 0.9, rBojo * 0.55)), txG = "DOCOL", angG = Math.min(2.2, 0.37 * txG.length * hAg / 0.94 / rBojo);
+      var fxG = RLg.faixa(C, d, fr, (rBojo + Math.max(0.3, 0.004 * rBojo)) * MM, -hAg / 2 * MM, hAg / 2 * MM, angG, 28, 1, null, true), mG = new Malha();
+      mG.pos = fxG.pos; mG.nrm = fxG.nrm; mG.idx = fxG.idx; mG.uv = fxG.uv; mG.cascas = [];
+      partes.push({ papel: "marca", malha: mG, texto: txG, aspecto: angG * rBojo / hAg, cor: (APAR.latao || {}).cor || "#C9A44C" });
+    }
     if (mv.idx.length) partes.push(cascaSaida(mv, latao ? "volante" : "corpo"));
     if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
     return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };

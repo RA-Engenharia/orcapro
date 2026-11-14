@@ -873,7 +873,14 @@
   };
   GEO_FAM["hid-hidrante-abrigo"] = function () {
     var t = "0.04";
-    return [cxs("corpo", "Caixa do abrigo", "0", "0", "-0.01", "Largura", "Altura", "Profundidade - 0.02", "Vermelho"),
+    /* FAMÍLIAS R2 (print): a caixa era um bloco cheio e escondia a mangueira atrás do vidro — agora é a caixa de chapa ABERTA na frente
+       (fundo + 4 laterais), como o abrigo do catálogo, e a mangueira aparece pelo visor */
+    var ch = "0.008";
+    return [cxs("corpo", "Fundo do abrigo", "0", "0", "-Profundidade/2 + " + ch + "/2", "Largura", "Altura", ch, "Vermelho"),
+      cxs("lat-esq", "Lateral (esquerda)", "-Largura/2 + " + ch + "/2", "0", "0", ch, "Altura", "Profundidade", "Vermelho"),
+      cxs("lat-dir", "Lateral (direita)", "Largura/2 - " + ch + "/2", "0", "0", ch, "Altura", "Profundidade", "Vermelho"),
+      cxs("teto", "Teto", "0", "Altura - " + ch, "0", "Largura", ch, "Profundidade", "Vermelho"),
+      cxs("piso", "Fundo de baixo", "0", "0", "0", "Largura", ch, "Profundidade", "Vermelho"),
       cxs("vidro", "Porta de vidro", "0", "Altura*0.06", "Profundidade/2 - 0.005", "Largura - 2*" + t, "Altura - 0.12*Altura", "0.01", VIDRO),
       cxs("moldura-sup", "Moldura (alto)", "0", "Altura - " + t, "Profundidade/2 - 0.01", "Largura", t, "0.02", "Vermelho"),
       cxs("moldura-inf", "Moldura (baixo)", "0", "0", "Profundidade/2 - 0.01", "Largura", t, "0.02", "Vermelho"),
@@ -1305,12 +1312,12 @@
       Modelo: mod, Largura: W, Profundidade: Pp, Altura: H, Altura_cabeca: Hc, Potencia_W: pot, Tensao_V: tensao, DN_agua: 20 },
       "Zagonel, ficha técnica " + (moment ? "Moment Eletrônica (Rev.03)" : "Ducali Eletrônica (Rev.02)") + ": desenho cotado p.8 e características técnicas p.3", ["DN_agua (rosca 1/2\" = DN 20 soldável: regra de ligação)"]);
   }
-  ESPECS.push({ id: "hid-ducha-eletrica", nome: "Ducha elétrica (Zagonel Moment / Ducali)", categoria: "aparelho", sistemas: ["agua_fria", "eletrica"], tipos: [], generico: true,
+  ESPECS.push({ id: "hid-ducha-eletrica", nome: "Ducha elétrica (Zagonel Moment / Ducali, Lorenzetti Acqua Duo)", categoria: "aparelho", sistemas: ["agua_fria", "eletrica"], tipos: [], generico: true,
     descricao: "Ducha elétrica de parede pelo desenho cotado do fabricante. Origem = o ponto de água (rosca de 1/2\"); a ducha sai da parede para +Z.",
     avisos: ["Tipos com a ficha Zagonel (desenho p.8 e características p.3). Raios, espessura da placa e braços: proporção do desenho."],
     geo: [G("Largura", 0.182, [0.1, 0.6], null, "Largura (ficha)"), G("Profundidade", 0.35, [0.15, 0.7], null, "Da parede à frente (ficha)"), G("Altura", 0.36, [0.1, 0.8], null, "Altura total até a ponta do puxador (ficha)"),
       X("Altura_cabeca", "comprimento", 0.126, "Dimensões", "Moment: topo do espalhador ao fundo da câmara (126); Ducali: topo ao fundo do corpo (237)"),
-      X("Modelo", "numero", 1, "Dimensões", "1 = Moment (espalhador redondo, entrada no topo); 2 = Ducali (placa, entrada atrás). Qualquer valor acima de 1,5 vale 2 (geometria e conector usam a mesma régua)"),
+      X("Modelo", "numero", 1, "Dimensões", "1 = Zagonel Moment (espalhador redondo, entrada no topo); 2 = Zagonel Ducali (placa, entrada atrás); 3 = Lorenzetti Acqua Duo (espalhador quadrado, entrada atrás). Acima de 1,5 = entrada atrás (geometria e conector usam a mesma régua)"),
       X("Pressao_acionamento_kPa", "numero", 0, "Dados", "Pressão mínima de ACIONAMENTO da resistência (kPa) — ficha; a mínima para vazão vai em Pressao_min_kPa"),
       X("Eletrico", "simnao", true, "Dados", "Aparelho elétrico (entra na carga do quadro como chuveiro elétrico — js/eleaparelhosdados.js)"),
       X("Potencia_W", "numero", 0, "Dados", "Potência nominal (W) da ficha"), X("Tensao_V", "numero", 0, "Dados", "Tensão nominal (V)"), DN("DN_agua", null, "DN da água fria")],
@@ -1323,9 +1330,39 @@
       tipoZagonel("t-zagonel-moment-6800-220", "Zagonel Moment Eletrônica 6.800 W 220 V — 182 × 350 × 360 mm", 1, 0.182, 0.35, 0.36, 0.126, 6800, 220, "DMOEL68220BR03", 16),
       tipoZagonel("t-zagonel-ducali-7500-220", "Zagonel Ducali Eletrônica 7.500 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 7500, 220, "DDCEL75220BR03", 10),
       tipoZagonel("t-zagonel-ducali-6800-220", "Zagonel Ducali Eletrônica 6.800 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 6800, 220, "DDCEL68220BR03", 10),
-      tipoZagonel("t-zagonel-ducali-4400-220", "Zagonel Ducali Eletrônica 4.400 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 4400, 220, "DDCEL44220BR03", 10)] });
-  NOVAS["hid-ducha-eletrica"] = { g: "ducha_zagonel", p: { W: "Largura", P: "Profundidade", H: "Altura", Hc: "Altura_cabeca", mod: "se(Modelo > 1.5; 2; 1)" },
+      tipoZagonel("t-zagonel-ducali-4400-220", "Zagonel Ducali Eletrônica 4.400 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 4400, 220, "DDCEL44220BR03", 10),
+      /* FAMÍLIAS R2 (14/11/2026): LORENZETTI ACQUA DUO (linha Acqua Ultra) 7.800 W 220 V. Potência, disjuntor, pressões (10 a 400 kPa) e a
+         entrada DN15 (1/2"): manual do FABRICANTE (lorenzetti.com.br/manuais/acquaultra, seção 2 "Especificação", tabela da linha Acqua Ultra:
+         127 V 5.500 W; 220 V 6.800 W; 220 V 7.800 W com disjuntor 40 A e cabo 6 mm²). O manual não traz desenho cotado: A × L × P
+         228 × 210 × 520 mm seguem do varejo (Ponto Frio / AnalisaMelhor) — FONTE SECUNDÁRIA, marcada em Conferir. */
+      fichaQ("t-lorenzetti-acqua-duo-7800-220", "Lorenzetti Acqua Duo Ultra 7.800 W 220 V — 210 × 520 × 228 mm",
+        { Fabricante: "Lorenzetti", Linha: "Acqua Duo (Ultra)", Codigo: "Acqua Duo Ultra 7800W 220V", Descricao_ficha: "Ducha eletrônica Acqua Duo Ultra, 7.800 W, 220 V, multitemperatura",
+          Link_ficha: "https://www.lorenzetti.com.br/manuais/acquaultra/", Edicao_ficha: "manual Lorenzetti Acqua Ultra (site do fabricante, seção 2: tabela de especificação, lida em 14/11/2026); medidas: Ponto Frio / AnalisaMelhor (varejo)", Pagina_ficha: 2, Pagina_cotas: 0,
+          Cotas_ficha: "A × L × P = 228 × 210 × 520 mm (varejo); espalhador quadrado", Pressao_min_kPa: 10, Pressao_acionamento_kPa: 10, Pressao_max_kPa: 400,
+          Pressao_texto: "funcionamento de 1,0 a 40 m.c.a. (10 a 400 kPa) — manual Lorenzetti", Eletrico: true,
+          Modelo: 3, Largura: 0.21, Profundidade: 0.52, Altura: 0.228, Altura_cabeca: 0.228, Potencia_W: 7800, Tensao_V: 220, DN_agua: 20 },
+        "Lorenzetti, manual Acqua Ultra no site do fabricante (potência 7.800 W, disjuntor 40 A, pressões 10–400 kPa, entrada DN15); medidas do varejo (fonte secundária)",
+        ["Largura, Profundidade e Altura: medidas do varejo (o manual não traz desenho cotado) — conferir na caixa do produto", "corpo, braço e espessura do espalhador: proporção da foto", "DN_agua (rosca 1/2\" = DN 20 soldável: regra de ligação)"])] });
+  NOVAS["hid-ducha-eletrica"] = { g: "ducha_zagonel", p: { W: "Largura", P: "Profundidade", H: "Altura", Hc: "Altura_cabeca", mod: "se(Modelo > 2.5; 3; se(Modelo > 1.5; 2; 1))" },
     env: ["0", "se(Modelo > 1.5; 0.022 - Altura; -0.012 - Altura)", "Profundidade/2", "Largura", "Altura + 0.012", "Profundidade"], x: [] };
+
+  /* 9) TORNEIRA DE BOIA — FAMÍLIAS R2 (14/11/2026): Docol Alta Vazão 1/2" 00032100 pelo desenho cotado (Catálogo Geral Docol, p.253).
+     Família solta (a peça da entrada da caixa); a caixa d'água e o barrilete NÃO mudam (o motor continua lançando a entrada pela porta
+     "alimentacao" do reservatório). Origem = a ponta da rosca; o tubo chega por −X. */
+  ESPECS.push({ id: "hid-torneira-boia", nome: "Torneira de boia (Docol Alta Vazão)", categoria: "acessorio_tubo", sistemas: ["agua_fria"], tipos: [], generico: true,
+    descricao: "Torneira de boia de entrada de reservatório. Origem = a ponta da rosca G 1/2\" (passa pela parede da caixa); a boia fica dentro da caixa, em +X.",
+    avisos: ["Tipo da ficha: cotas do desenho Docol p.253. Cabeça, porca e degraus da boia: proporção do desenho."],
+    geo: [G("Comprimento", 0.1665, [0.1, 0.4], null, "Da ponta da rosca ao fim do regulador (ficha)"), G("Altura", 0.25, [0.12, 0.5], null, "Do topo da cabeça ao fim do tubo de baixo (ficha)"),
+      G("Largura", 0.072, [0.04, 0.2], null, "Largura em planta (33 + 39 da ficha)"), DN("DN_entrada", null, "DN da entrada")],
+    solidos: [], material: "Branco",
+    conectores: [{ id: "entrada", nome: "Entrada (rosca G 1/2\")", sistema: "agua_fria", dn: "DN_entrada", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "catalogo", aConferir: "ponta da rosca do desenho da ficha" }],
+    tiposFicha: [fichaQ("t-docol-00032100", "Docol Torneira de Boia Alta Vazão 1/2\" — 00032100",
+      { Fabricante: "Docol", Linha: "Docol Básicos — Torneira de boia", Codigo: "00032100", Descricao_ficha: "Torneira de Boia Alta Vazão 1/2\" (peneira, regulagem de nível, porca de conexão tipo união)",
+        Link_ficha: "http://api.aecweb.com.br/cls/catalogos/docol/catalogo_geral_docol.pdf", Arquivo_ficha: "Docol - Catalogo Geral de Produtos.pdf", Edicao_ficha: "Catálogo Geral Docol (AECweb)", Pagina_ficha: 253, Pagina_cotas: 253,
+        Cotas_ficha: "166,5; 106; 33 (eixo ao topo); 250 (altura); G 1/2\"; planta 33 + 39", Vazao_L_min: 40, Pressao_texto: "1.200 L em 30 min com pressão dinâmica de 3 kgf/cm² (gráfico da ficha)",
+        Comprimento: 0.1665, Altura: 0.25, Largura: 0.072, DN_entrada: 20 },
+      "Docol, Catálogo Geral, p.253 (desenho cotado da Torneira de Boia Alta Vazão)", ["DN_entrada (rosca G 1/2\" = DN 20 soldável: regra de ligação)", "Vazao_L_min: 1.200 L / 30 min do gráfico a 300 kPa (não é vazão nominal)"])] });
+  NOVAS["hid-torneira-boia"] = { g: "boia", p: { L: "Comprimento", H: "Altura", W: "Largura" }, env: ["Comprimento/2", "0.033*Altura/0.25 - Altura", "0", "Comprimento", "Altura", "Largura"], x: [] };
 
   /* 7) TELA NA PONTA DO TUBO — saída do extravasor e da limpeza (nota do projeto: "telas ou malhas de material resistente") */
   ESPECS.push({ id: "hid-tela-ponta", nome: "Tela de proteção na ponta do tubo (extravasor / limpeza)", categoria: "equipamento", sistemas: ["pluvial"], tipos: [], generico: true,

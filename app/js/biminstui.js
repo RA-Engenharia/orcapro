@@ -320,7 +320,10 @@
         else if (global.HidGeo) {
           try {
             var V0 = I.ACESSORIOS[a.acessorio].variantes[a.variante] || {}, rg = global.HidGeo.registro({ centro: a.centro, dir: a.dir, comprimento: a.comprimento, dn: a.dn, material: a.material, variante: a.variante, acessorio: a.acessorio, varMaterial: V0.material }, { lod: self._lod, frente: global.BimInstColocar ? global.BimInstColocar.frenteAcessorio(a) : null });   /* COLOCAÇÃO: o giro do volante (Espaço) */
-            ms = rg.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null)); });
+            ms = rg.partes.map(function (pt) {
+              if (pt.papel === "marca") { var mmA = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mmA) return null; var mgA = self._malhaG(THREE, pt.malha, mmA); mgA.userData.semIfc = true; return mgA; }   /* FAMÍLIAS R2: a gravação da marca no registro */
+              return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null));
+            }).filter(Boolean);
           } catch (eRg) { ms = []; }
         }
         if (!ms.length && self._nivelFeito !== "baixo") {   /* a família não está na biblioteca deste aparelho: o corpo no eixo, honesto */

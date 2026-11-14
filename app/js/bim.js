@@ -13321,7 +13321,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      metal liso que reflete o ambiente PMREM, inox escovado = metal fosco. Só os nomes desta tabela mudam. */
   var FAM_PBR = {
     'louça branca': { cor: 0xf3f3f0, rug: 0.25, met: 0, cc: 0.5, ccr: 0.15 }, 'branco': { cor: 0xf0f0ee, rug: 0.32, met: 0, cc: 0.4, ccr: 0.18 },
-    'metal cromado': { cor: 0xe9ebef, rug: 0.06, met: 1 }, 'inox': { cor: 0xc6cacf, rug: 0.38, met: 1 }, 'aço inox': { cor: 0xc6cacf, rug: 0.38, met: 1 },
+    'metal cromado': { cor: 0xe9ebef, rug: 0.06, met: 1 },
+    /* FAMÍLIAS R2 (revisão 14/11, decisão da coordenação): o cromado polido acima fica como está para todas as famílias; a placa GRANDE e
+       plana da válvula de descarga (que espelhava o chão escuro e saía PRETA no print) usa este, o mesmo tratamento do cromado dos registros
+       no tubo (js/biminstgeo.js PAPEL.cromado) — só js/hidlouca.js geoValvula o pede */
+    'metal cromado acetinado': { cor: 0xf2f4f6, rug: 0.3, met: 0.85 },
+    /* FAMÍLIAS R2: cores das famílias do lote em sRGB de verdade (pela tabela antiga, luzNum, o vermelho do abrigo saía rosado e o
+       verde do BombUp, claro). Só estes nomes: a iluminação e as demais famílias não mudam */
+    'vermelho': { cor: 0xb3201f, rug: 0.45, met: 0.1, cc: 0.3, ccr: 0.25 }, 'polietileno verde': { cor: 0x2f7d34, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 },
+    'polietileno amarelo': { cor: 0xe0b114, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 }, 'metal preto': { cor: 0x1f2124, rug: 0.4, met: 0.3, cc: 0.3, ccr: 0.3 },
+    'alumínio fundido': { cor: 0xc3c7cc, rug: 0.38, met: 0.9 }, 'preto': { cor: 0x222428, rug: 0.5, met: 0 }, 'inox': { cor: 0xc6cacf, rug: 0.38, met: 1 }, 'aço inox': { cor: 0xc6cacf, rug: 0.38, met: 1 },
     'latão': { cor: 0xc9a24a, rug: 0.28, met: 1 }, 'plástico': { cor: 0xd6d8da, rug: 0.45, met: 0 }, 'pvc': { cor: 0xece9e1, rug: 0.5, met: 0 },
     'polietileno azul': { cor: 0x1d5fae, rug: 0.42, met: 0, cc: 0.25, ccr: 0.3 }, 'ferro fundido': { cor: 0x3a3d42, rug: 0.55, met: 0.5 },
     'água': { cor: 0xc9dbe2, rug: 0.04, met: 0, cc: 1, ccr: 0.02 },
@@ -13439,10 +13448,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (s.forma === 'caixa') { g = new THREE.BoxGeometry(s.dx, s.dy, s.dz); m = new THREE.Mesh(g); m.position.set(s.x, s.y + s.dy / 2, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180; }
         else if (s.forma === 'malha') {   /* FAMIMPORT (js/familiamalha.js): a malha do TIPO, uma por material; faces planas (sem índice) para a luz não "amolecer" a aresta */
           g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(s.v, 3)); g.setIndex(s.f);
+          /* FAMÍLIAS R2: gravação do fabricante. Os níveis de detalhe (famLodRegistrar) trocam só posição e faces, sem a uv: de longe a placa
+             lê o canto transparente da textura e o logo SOME — intencional (letra de 1 cm a 10 m é ruído) */
+          if (s.marca && s.uv && s.uv.length === s.v.length / 3 * 2) g.setAttribute('uv', new THREE.Float32BufferAttribute(s.uv, 2));
           if (!s.suave && s.f.length < 600000) g = g.toNonIndexed();   /* revolução (js/familia.js): malha indexada, giro liso */
           g.computeVertexNormals(); m = new THREE.Mesh(g); m.position.set(s.x || 0, s.y || 0, s.z || 0);
           if (s.origemForma === 'gerada') famLodRegistrar(m, s);   /* QUALIDADE VISUAL 3: louça/equipamento gerado — desenha por si e troca o detalhe pela distância */
           if (!matSobre && (s.cor || s.transparencia)) matProprio = famMatCor(s.material, s.cor, s.transparencia);
+          if (!matSobre && s.marca) matProprio = famMatMarca(s.marca);
         }
         else if (s.forma === 'cilindro') {
           g = new THREE.CylinderGeometry(s.raio, s.raio, s.altura, 28); m = new THREE.Mesh(g);
@@ -13461,6 +13474,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       m.material = matSobre || matProprio || famMat(s.material);
       m.updateMatrix(); m.applyMatrix4(M);
       if (s.id != null) m.userData.famSolido = s.id;   /* PORTA: a planta reconhece o sólido da folha (js/simboloporta.js) */
+      if (s.marca) { m.userData.semIfc = true; m.userData.decal = true; m.castShadow = false; }   /* FAMÍLIAS R2: a gravação fica fora do SketchUp, da vista 2D e da sombra (como no biminstui) */
       if (s.parte) m.userData.parte = s.parte;   /* PARTE MÓVEL (porta, folha, gaveta — js/partesmoveis.js): o clique do 3D abre só ela */
       if (/^água da piscina$/i.test(String(s.material || ''))) m.userData.sem2d = true;   /* PISCINA: translúcida, fora do desenho 2D */
       out.push(m);
@@ -13541,6 +13555,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   /* FAMIMPORT: o material da família importada tem a COR e a transparência do arquivo (não a do nome) */
   var famMatsCor = {};
+  /* FAMÍLIAS R2 (14/11/2026): material da GRAVAÇÃO do fabricante na família (js/hidlouca.js decal) — o mesmo desenho de letra da marcação
+     dos tubos (js/biminstgeoreal.js canvasMarca, impressa); sem ele, um canvas simples com o texto. Cache por texto/cor/proporção. */
+  var famMarcas = {};
+  function famMatMarca(mc) {
+    var k = mc.texto + '|' + mc.cor + '|' + Math.round((mc.aspecto || 4) * 10);
+    if (famMarcas[k]) return famMarcas[k];
+    var RL = window.HidGeoReal, cv = null;
+    try { cv = mc.relevo && RL && RL.canvasMarca ? RL.canvasMarca(mc.texto, mc.cor, mc.aspecto || 4, false) : null; } catch (e) { cv = null; }   /* relevo na peça (cor da peça); logo impresso: a cor da marca, abaixo */
+    if (!cv) {
+      cv = document.createElement('canvas'); var W = 512, Hh = Math.max(32, Math.round(W / Math.max(0.5, mc.aspecto || 4))); cv.width = W; cv.height = Hh;
+      var cx = cv.getContext('2d'); cx.clearRect(0, 0, W, Hh); cx.fillStyle = mc.cor || '#1a1a1a'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      var fs = Math.round(Hh * 0.78); cx.font = 'bold ' + fs + 'px Arial, Helvetica, sans-serif';
+      while (fs > 8 && cx.measureText(mc.texto).width > W * 0.94) { fs--; cx.font = 'bold ' + fs + 'px Arial, Helvetica, sans-serif'; }
+      cx.fillText(mc.texto, W / 2, Hh / 2);
+    }
+    var tx = new THREE.CanvasTexture(cv); tx.anisotropy = 4; if (THREE.sRGBEncoding) tx.encoding = THREE.sRGBEncoding;
+    var M = new THREE.MeshStandardMaterial({ map: tx, transparent: true, alphaTest: 0.05, depthWrite: false, roughness: 0.5, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    M.name = 'fam:marca'; famMarcas[k] = M; return M;
+  }
   function famMatCor(nome, cor, transp) {
     var k = String(nome || '') + '|' + (cor || '') + '|' + (transp || 0);
     if (famMatsCor[k]) return famMatsCor[k];

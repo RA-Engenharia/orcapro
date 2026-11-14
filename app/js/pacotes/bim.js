@@ -19523,6 +19523,7 @@ var base = cena2ifc([f.x, f.y, f.z]); base[2] -= nv.elevacao;
 var pl = placement(nv.pl, base, [0, 0, 1], [Math.cos(th), Math.sin(th), 0]);
 var itens = [], volTot = 0, contMat = {}, temBrep = false, volAberto = false;
 arr(av.solidos).forEach(function (s) {
+if (s.marca) return;
 var rot = num(s.rot, 0) * Math.PI / 180, loc = [s.x, -s.z, s.y], solido = null;
 if (s.forma === "malha") {
 var faces = [], vv = s.v, ff = s.f;
@@ -57598,9 +57599,10 @@ var rot = f(s.rot, 0) * Math.PI / 180, c = Math.cos(rot), sn = Math.sin(rot);
 function grupos(partes) {
 var gs = {}, ordem = [];
 partes.forEach(function (p) {
-var m = p.material === "@" ? mat(s.material) : p.material, k = m + (p.acessorio ? "|acessorio" : "");
-if (!gs[k]) { gs[k] = { material: m, acessorio: !!p.acessorio, v: [], f: [], volume: 0, partes: [] }; ordem.push(k); }
+var m = p.material === "@" ? mat(s.material) : p.material, k = m + (p.acessorio ? "|acessorio" : "") + (p.marca ? "|marca|" + p.marca.texto + "|" + p.marca.cor : "");
+if (!gs[k]) { gs[k] = { material: m, acessorio: !!p.acessorio, v: [], f: [], volume: 0, partes: [] }; if (p.marca) { gs[k].marca = p.marca; gs[k].uv = []; } ordem.push(k); }
 var g = gs[k], i0 = g.v.length / 3, q;
+if (g.uv) g.uv.push.apply(g.uv, p.uv || []);
 for (q = 0; q + 2 < p.v.length; q += 3) {
 var x = p.v[q], z = p.v[q + 2];
 g.v.push(rot ? Math.round((x * c + z * sn) * 1e6) / 1e6 : x, p.v[q + 1], rot ? Math.round((-x * sn + z * c) * 1e6) / 1e6 : z);
@@ -57616,6 +57618,7 @@ return g0.ordem.map(function (k) {
 var g = g0.gs[k], o = { id: s.id + ":" + k, nome: (s.nome || "") + (g.acessorio ? " — acessórios" : ""), forma: "malha", origemForma: "gerada", gerador: s.gerador, suave: true,
 x: base.x, y: base.y, z: base.z, rot: 0, v: g.v, f: g.f, volume: g.volume, material: g.material, cor: "", partes: g.partes };
 if (g.acessorio) o.acessorio = true;
+if (g.marca) { o.marca = g.marca; o.uv = g.uv; }
 o.lod = gl.map(function (x) { var h = x.gs[k]; return h ? { v: h.v, f: h.f } : { v: [], f: [] }; });
 return o;
 });
@@ -98306,6 +98309,13 @@ varrer(mv, reta(add(Cv, mul(fr, -6 * MM)), fr), escala([[0, 0], [0, 7], [12, 7],
 }
 var corpoPapel = latao && !pvcR ? "latao" : "corpo";
 var partes = [cascaSaida(mc, corpoPapel)];
+var RLg = real();
+if (acab && RLg && (o.lod === "perto" || o.lod === "icone" || !o.lod)) {
+var Lb0 = Lff - 2 * h * 0.65, hAg = Math.max(4, Math.min(Lb0 * 0.9, rBojo * 0.55)), txG = "DOCOL", angG = Math.min(2.2, 0.37 * txG.length * hAg / 0.94 / rBojo);
+var fxG = RLg.faixa(C, d, fr, (rBojo + Math.max(0.3, 0.004 * rBojo)) * MM, -hAg / 2 * MM, hAg / 2 * MM, angG, 28, 1, null, true), mG = new Malha();
+mG.pos = fxG.pos; mG.nrm = fxG.nrm; mG.idx = fxG.idx; mG.uv = fxG.uv; mG.cascas = [];
+partes.push({ papel: "marca", malha: mG, texto: txG, aspecto: angG * rBojo / hAg, cor: (APAR.latao || {}).cor || "#C9A44C" });
+}
 if (mv.idx.length) partes.push(cascaSaida(mv, latao ? "volante" : "corpo"));
 if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
 return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };
@@ -111282,7 +111292,10 @@ if (self._nivelFeito === "baixo" && global.BimInstNivel) ms = self._linhaMalhas(
 else if (global.HidGeo) {
 try {
 var V0 = I.ACESSORIOS[a.acessorio].variantes[a.variante] || {}, rg = global.HidGeo.registro({ centro: a.centro, dir: a.dir, comprimento: a.comprimento, dn: a.dn, material: a.material, variante: a.variante, acessorio: a.acessorio, varMaterial: V0.material }, { lod: self._lod, frente: global.BimInstColocar ? global.BimInstColocar.frenteAcessorio(a) : null });
-ms = rg.partes.map(function (pt) { return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null)); });
+ms = rg.partes.map(function (pt) {
+if (pt.papel === "marca") { var mmA = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mmA) return null; var mgA = self._malhaG(THREE, pt.malha, mmA); mgA.userData.semIfc = true; return mgA; }
+return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null));
+}).filter(Boolean);
 } catch (eRg) { ms = []; }
 }
 if (!ms.length && self._nivelFeito !== "baixo") {

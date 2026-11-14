@@ -1571,6 +1571,7 @@
       var pl = placement(nv.pl, base, [0, 0, 1], [Math.cos(th), Math.sin(th), 0]);
       var itens = [], volTot = 0, contMat = {}, temBrep = false, volAberto = false;
       arr(av.solidos).forEach(function (s) {
+        if (s.marca) return;   /* FAMÍLIAS R2: a placa da GRAVAÇÃO do fabricante (js/hidlouca.js decal) é textura da tela, não geometria da peça: fora do IFC */
         var rot = num(s.rot, 0) * Math.PI / 180, loc = [s.x, -s.z, s.y], solido = null;
         if (s.forma === "malha") {
           /* FAMIMPORT: a malha vira IfcFacetedBrep (um por material; NUNCA IfcTriangulatedFaceSet — o Revit o lê sem geometria).
