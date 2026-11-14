@@ -40,7 +40,7 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) {
   --rv-ativo-borda: #9fbfdc;
   --rv-sel: #dbeaf7;
   --rv-tx-fraco: #56606b;
-  --rv-tx-off: #98a1ab;
+  --rv-tx-off: #7b848e;
   --rv-status-bg: #f1f3f5;
   --rv-foco: #2d6a9c;
   --rv-sombra: rgba(20, 30, 45, .16);
@@ -69,7 +69,7 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-tema=
   --rv-ativo-borda: #4f8fc4;
   --rv-sel: #27425a;
   --rv-tx-fraco: #9ba5b1;
-  --rv-tx-off: #667080;
+  --rv-tx-off: #7a8594;
   --rv-status-bg: #1b1e22;
   --rv-foco: #5aa7de;
   --rv-sombra: rgba(0, 0, 0, .5);
@@ -94,6 +94,15 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-obra { bo
 /* o nome do projeto começa à esquerda (centralizado, o excesso cortava o começo: "a térrea 3 quartos…") e encurta com reticências */
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome { justify-content: flex-start; overflow: hidden; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo { flex: 0 1 auto; max-width: none; min-width: 0; }
+/* 14/11/2026: "Início" nunca é coberto pelo seletor de obra nem pelo nome (a 1366 px o seletor passava por cima do botão): o botão não encolhe,
+   o nome do projeto e o seletor encolhem com reticências, e o conjunto ocupa o que sobra sem sobrepor o vizinho */
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo > .bp-tbt { flex: 0 0 auto; white-space: nowrap; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo > .bp-tbt span { white-space: nowrap; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo > .bp-titulo-nome { flex: 0 1 auto; min-width: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo > .bp-titulo-obra { flex: 0 1 auto; min-width: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome select.rv-obra { flex: 1 1 56px; min-width: 56px; max-width: 220px; text-overflow: ellipsis; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .rv-titulo-app, html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .modela-selo { flex: 0 0 auto; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo-nome { font-weight: 500; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-titulo-nome .bp-titulo-obra { max-width: 200px; opacity: 1; color: var(--rv-tx-fraco); }
 /* o selo "Modela · …" é do JS com estilo na linha (pílula): aqui vira uma etiqueta fina, igual ao resto */
@@ -123,48 +132,66 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-tema=
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-disc-op { min-height: 30px; padding: 3px 12px; font-size: 12px; font-weight: 400; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-disc-op[aria-checked="true"] { font-weight: 500; }
 
-/* ------------------------------------------------------------------ fita */
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita { min-height: 0; padding: 2px 6px 0; gap: 0; background: var(--rv-fita-bg); border-bottom: 1px solid var(--rv-linha-forte); scrollbar-width: thin; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita::-webkit-scrollbar { height: 4px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel { padding: 0 6px; border-right: 1px solid var(--rv-linha); }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-corpo { gap: 1px; padding: 3px 0 2px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-nome { font-size: 10.5px; font-weight: 400; letter-spacing: .1px; padding: 1px 0 3px; color: var(--rv-tx-fraco); text-transform: none; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd { width: auto; min-width: 46px; max-width: 66px; min-height: 48px; padding: 4px 4px 3px; gap: 2px; border-radius: 3px; border: 1px solid transparent; font-size: 11px; font-weight: 400; color: var(--rv-fita-tx); }
+/* ------------------------------------------------------------------ fita
+ * 14/11/2026 — FAIXA DE ALTURA FIXA (pedido do Rogério, 1.2.296: "o Mais painéis come a tela toda... os itens ainda estão grandes").
+ * A faixa mede 92 px em TODA aba e a vista nunca se mexe: 3 linhas de 21 px (botão pequeno: ícone de 16 px com o rótulo ao lado) ou um
+ * botão grande de 66 px (ícone de 32 px e rótulo em até 2 linhas) mais o nome do grupo (17 px) embaixo. O que não cabe na largura
+ * vai para o "Mais painéis", uma janela que FLUTUA sobre a vista (position: fixed, com sombra) e nunca empurra nada.
+ * Quem é grande e quem é pequeno é decidido em js/bimshell.js (_tamanhos); o rótulo é partido em 2 linhas lá também (_linhasRotulo). */
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita { min-height: 0; padding: 3px 6px 0; gap: 0; background: var(--rv-fita-bg); border-bottom: 1px solid var(--rv-linha-forte); scrollbar-width: none; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita::-webkit-scrollbar { height: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel { padding: 0 7px; border-right: 1px solid var(--rv-linha); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-corpo { gap: 2px; padding: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-nome { font-size: 11px; line-height: 17px; height: 17px; font-weight: 400; letter-spacing: 0; padding: 0; color: var(--rv-tx-fraco); text-transform: none; white-space: nowrap; max-width: 168px; overflow: hidden; text-overflow: ellipsis; align-self: center; }
+/* botão GRANDE: ícone de 32 px, rótulo em até 2 linhas */
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd { width: auto; min-width: 46px; max-width: 98px; height: 66px; min-height: 0; padding: 3px 5px 1px; gap: 2px; justify-content: flex-start; border-radius: 3px; border: 1px solid transparent; font-size: 11.5px; font-weight: 400; color: var(--rv-fita-tx); box-sizing: border-box; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd:hover:not(:disabled) { background: var(--rv-hover); border-color: transparent; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); box-shadow: none; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-disc-on] .rv-cmd[aria-pressed="true"] { box-shadow: none; }
+P[data-rv-disc-on] .rv-cmd[aria-pressed="true"] { box-shadow: none; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd:disabled { color: var(--rv-tx-off); }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-ico { height: 22px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-ico svg { width: 20px; height: 20px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-rot { font-size: 11px; line-height: 1.12; letter-spacing: 0; font-weight: 400; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm { height: 20px; min-width: 0; max-width: none; min-height: 0; padding: 1px 6px; gap: 5px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-ico { height: 14px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-ico svg { width: 14px; height: 14px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-rot { font-size: 11px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-col { gap: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-ico { height: 32px; width: 32px; flex: 0 0 32px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-ico svg { width: 32px; height: 32px; margin: 0 !important; vertical-align: 0 !important; stroke-width: 1; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-rot { font-size: 11.5px; line-height: 13px; letter-spacing: 0; font-weight: 400; max-width: 100%; align-items: center; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-rot > span { display: block; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* botão PEQUENO: três por coluna, ícone de 16 px com o rótulo na mesma linha */
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-col { gap: 1px; max-width: 182px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm { height: 21px; min-width: 0; max-width: 182px; min-height: 0; padding: 0 7px 0 4px; gap: 6px; align-items: center; justify-content: flex-start; text-align: left; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-ico { height: 16px; width: 16px; flex: 0 0 16px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-ico svg { width: 16px; height: 16px; stroke-width: 1.5; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-rot { font-size: 11.5px; line-height: 15px; flex-direction: row; align-items: center; min-width: 0; flex: 1 1 auto; overflow: hidden; }
 /* ícone: grafite, um estilo só; só o comando ligado ganha o acento */
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita button svg { color: var(--rv-fita-tx); opacity: .82; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita button:hover:not(:disabled) svg { opacity: 1; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita button[aria-pressed="true"] svg { color: var(--rv-foco); opacity: 1; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-disc-on] .rv-fita button svg { color: var(--rv-fita-tx); }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-disc-on] .rv-fita button[aria-pressed="true"] svg { color: var(--rv-disc-acento, var(--rv-foco)); }
+P[data-rv-disc-on] .rv-fita button svg { color: var(--rv-fita-tx); }
+P[data-rv-disc-on] .rv-fita button[aria-pressed="true"] svg { color: var(--rv-disc-acento, var(--rv-foco)); }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita button { border-radius: 3px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-seta { font-size: 9px; opacity: .55; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-seta { font-size: 10px; line-height: 1; opacity: .7; margin: 0 0 0 3px; display: inline-block; }
 
-/* o "Mais painéis": o que não coube na faixa (BimShell._ajustarFita) mora num botão no fim dela e abre por baixo */
+/* o "Mais painéis": o que não coube na largura da faixa (BimShell._ajustarFita). Botão do tamanho de um comando grande no fim da faixa;
+   aberto, é uma JANELA que flutua sobre a vista (position: fixed, posição calculada em _abrirPainelFita): a faixa e a vista não mudam de altura */
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais { padding: 0 3px; border-right: 0; position: relative; margin-left: auto; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit)[data-rv-recolhe="1"] .rv-fita { overflow: visible; position: relative; z-index: 40; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec { appearance: none; font: inherit; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 62px; height: calc(100% - 6px); margin: 3px 0; padding: 4px 8px; background: transparent; border: 1px solid transparent; border-radius: 3px; color: var(--rv-fita-tx); font-size: 10.5px; line-height: 1.15; cursor: pointer; position: relative; }
+P[data-rv-recolhe="1"] .rv-fita { overflow: visible; position: relative; z-index: 40; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec { appearance: none; font: inherit; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; min-width: 56px; height: 66px; margin: 0; padding: 3px 6px 1px; box-sizing: border-box; background: transparent; border: 1px solid transparent; border-radius: 3px; color: var(--rv-fita-tx); font-size: 11.5px; line-height: 13px; cursor: pointer; position: relative; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec:hover { background: var(--rv-hover); }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec svg { width: 18px; height: 18px; margin: 0; opacity: .8; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec-nome { max-width: 92px; text-align: center; overflow-wrap: anywhere; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec-seta { font-size: 9px; opacity: .6; line-height: 1; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec[data-rv-ligado="1"]::after { content: ""; position: absolute; top: 3px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--rv-foco); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-painel-rec svg { width: 32px; height: 32px; margin: 0 !important; vertical-align: 0 !important; opacity: .82; stroke-width: 1; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec-nome { text-align: center; white-space: nowrap; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec-seta { font-size: 9px; opacity: .6; line-height: 1; margin-left: 3px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec[data-rv-ligado="1"]::after { content: ""; position: absolute; top: 4px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--rv-foco); }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais[data-aberto="1"] > .rv-painel-rec { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais > .rv-fita-mais-corpo { display: none; }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais[data-aberto="1"] > .rv-fita-mais-corpo { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0; position: absolute; top: 100%; right: 0; z-index: 70; width: max-content; max-width: min(1100px, 96vw); padding: 6px 4px 2px; background: var(--rv-painel-bg); border: 1px solid var(--rv-linha-forte); border-radius: 4px; box-shadow: 0 8px 20px var(--rv-sombra); }
-html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais-corpo > .rv-painel { border-bottom: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais[data-aberto="1"] > .rv-fita-mais-corpo { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 4px 0; position: fixed; z-index: 70; width: max-content; padding: 8px 6px 4px; background: var(--rv-painel-bg); border: 1px solid var(--rv-linha-forte); border-radius: 6px; box-shadow: 0 12px 32px var(--rv-sombra); overflow: auto; overscroll-behavior: contain; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais-corpo > .rv-painel { border-bottom: 0; height: auto; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais-corpo > .rv-painel:last-child { border-right: 1px solid var(--rv-linha); }
+
+@media (min-width: 901px) {
+  /* a ALTURA FIXA: nenhuma aba, nenhum comando, nenhum "Mais" muda isto */
+  html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita { height: 92px; min-height: 92px; max-height: 92px; flex: 0 0 92px; box-sizing: border-box; overflow-y: hidden; align-items: flex-start; }
+  html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita > .rv-painel { height: 100%; }
+  html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita > .rv-painel > .rv-painel-corpo { flex: 0 0 66px; height: 66px; }
+}
+
 
 /* barra de opções da ferramenta (sob a fita) */
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bbo { height: 28px; background: var(--rv-fita-bg); border-bottom: 1px solid var(--rv-linha); font-size: 11.5px; }
@@ -200,6 +227,24 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bbs-tit { fo
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb.bbs-bt { padding: 0 6px; gap: 4px; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bbs-luz { width: 6px; height: 6px; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bbs-bt[aria-pressed="true"] .bbs-luz { box-shadow: none; }
+
+/* o menu "Mais" da barra de baixo (js/bimshell.js › _menuMaisBarra): Reforma, Portas e Twinmotion moram aqui, flutuando PARA CIMA sobre a vista */
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais { position: relative; display: inline-flex; align-items: center; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais[hidden] { display: none; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-bt { gap: 4px; padding: 0 7px 0 5px; width: auto; min-width: 0; flex: 0 0 auto; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-bt svg { margin: 0 !important; vertical-align: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-bt[aria-expanded="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu { position: absolute; left: 0; bottom: calc(100% + 5px); z-index: 60; display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 190px; max-width: min(360px, 92vw); padding: 5px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); border: 1px solid var(--rv-linha-forte); border-radius: 6px; box-shadow: 0 -8px 24px var(--rv-sombra); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu[hidden] { display: none; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu > span { display: flex; flex-direction: column; align-items: stretch; gap: 1px; margin: 0; padding: 0; border: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu > span[hidden] { display: none !important; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu button { display: flex; align-items: center; justify-content: flex-start; gap: 7px; width: 100%; min-height: 26px; padding: 2px 8px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit; font: inherit; font-size: 11.5px; font-weight: 400; text-align: left; white-space: nowrap; cursor: pointer; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu button:hover { background: var(--rv-hover); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu button[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); color: var(--rv-painel-tx); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu button:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu .rv-ad-rot { padding: 2px 8px 0; font-size: 11px; color: var(--rv-tx-fraco); opacity: 1; margin: 0; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu [data-tw="status"] { padding: 0 8px 2px; font-size: 11px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-vb-mais-menu svg { width: 14px; height: 14px; margin: 0 !important; flex: 0 0 14px; }
 
 /* o menu dos snaps: opaco, enxuto, sem caixa-alta */
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bbs-pop { min-width: 0; max-width: 420px; width: max-content; padding: 6px 10px 8px; border-radius: 4px; background: var(--rv-painel-bg); border: 1px solid var(--rv-linha-forte); box-shadow: 0 6px 18px var(--rv-sombra); font-size: 11.5px; line-height: 1.3; -webkit-backdrop-filter: none; backdrop-filter: none; }

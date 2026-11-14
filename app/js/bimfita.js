@@ -89,7 +89,7 @@
   /* ⚠ 23/10/2026: a ordem do FLUXO de trabalho do projeto — o que se modela primeiro vem primeiro: arquitetura, alvenaria,
      estrutura (concreto → aço, com o içamento colado nele → madeira), instalações, acabamentos, formas livres e terreno;
      depois o que vale para todos (anotar, vista, analisar, quantitativos, gerenciar). */
-  var ORDEM = ["arquivo", "modificar", "arquitetura", "alvenaria", "estrutura", "metalica", "icamento", "marcenaria", "instalacoes", "acabamentos",
+  var ORDEM = ["arquivo", "modificar", "arquitetura", "alvenaria", "estrutura", "metalica", "icamento", "marcenaria", "instalacoes", "eletrica", "acabamentos",
     "volume", "massa-terreno", "anotar", "vista", "analisar", "quantitativos", "gerenciar"];
 
   /* um comando novo (o mesmo formato do js/bimribbon.js) */
@@ -266,13 +266,17 @@
     { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
         dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",
         itens: ["cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
-    /* ELÉTRICA reagrupada como o Hidro (eletrica-v2 L6, 07/11/2026) — nenhum id saiu: só mudou de grupo */
+    { nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
+  ];
+  /* 14/11/2026 — a ELÉTRICA ganhou aba própria (pedido do Rogério: a faixa única de Instalações não cabia e o "Mais painéis" a engolia).
+     Hidrossanitário fica em `instalacoes` (o id é o que os módulos de hidro e a vista Instalações conhecem); nenhum id mudou de nome.
+     "Verificar e documentar" (sistemas, desconexões, legenda, tabela) serve às duas e fica na aba Instalações. */
+  var ABA_ELETRICA = [
     { nome: "Elétrica · Modelar", ids: ["eletroduto", "eletrocalha", "ele-m-caixa", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "ele-m-aparelhos"] },
     { nome: "Elétrica · Projeto inteligente", ids: ["ele-projeto", "ele-auto", "ele-ilum", "ele-aparelho-ponto"] },
     { nome: "Elétrica · Dimensionar", ids: ["ele-circ", "ele-circ-auditar", "ele-auditar", "ele-criterios", "ele-circ-criterios"] },
     { nome: "Elétrica · Documentos", ids: ["ele-docs", "ele-circ-pranchas"] },
-    { nome: "Elétrica · Ver", ids: ["ele-fiacao"] },
-    { nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
+    { nome: "Elétrica · Ver", ids: ["ele-fiacao"] }
   ];
   /* a disciplina Metálica: do eixo à fabricação (o fluxo do detalhista) */
   var ABA_METALICA = [
@@ -348,7 +352,8 @@
     { id: "alvenaria", rotulo: "Alvenaria", paineis: ABA_ALVENARIA },
     { id: "estrutura", rotulo: "Estrutura", paineis: ABA_ESTRUTURA },
     { id: "acabamentos", rotulo: "Acabamentos", paineis: ABA_ACABAMENTOS },
-    { id: "instalacoes", rotulo: "Instalações", paineis: ABA_INSTALACOES },
+    { id: "instalacoes", rotulo: "Hidrossanitário", paineis: ABA_INSTALACOES },
+    { id: "eletrica", rotulo: "Elétrica", paineis: ABA_ELETRICA },
     { id: "metalica", paineis: ABA_METALICA },
     { id: "marcenaria", paineis: ABA_MARCENARIA },
     { id: "volume", paineis: ABA_VOLUME },

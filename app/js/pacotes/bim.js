@@ -103374,6 +103374,8 @@ return { ok: true, id: id, mudou: antes !== id };
 aoMudar: function (fn) { if (typeof fn === "function") this._ouvintes.push(fn); },
 filtrando: function () { return this.atual() !== PADRAO; },
 rotuloAba: function (abaId, rotulo, disc) {
+var Rb = global.BimRibbon;
+if (abaId === "instalacoes" && (disc || this.atual()) === "eletrica" && Rb && Rb.aba && Rb.aba("eletrica")) return "Sistemas";
 var t = ROTULO_ABA[disc || this.atual()];
 return (t && t[abaId]) || rotulo;
 },
@@ -104477,11 +104479,54 @@ d.appendChild(pin);
 d.appendChild(this._rapidos());
 return d;
 },
+_menuMaisBarra: function (itens, el) {
+var wrap = el("span", "rv-vb-mais"), bt = el("button", "rv-vb rv-vb-mais-bt"), menu = el("div", "rv-vb-mais-menu");
+bt.type = "button"; bt.setAttribute("data-rv-vb", "mais"); bt.setAttribute("aria-haspopup", "menu"); bt.setAttribute("aria-expanded", "false");
+bt.title = "Mais: abrir e fechar portas, apresentar a reforma, sincronizar com o Twinmotion";
+bt.innerHTML = ico("mais", 14) + "<span>Mais</span><span class=\"rv-cmd-seta\" aria-hidden=\"true\">▾</span>";
+menu.setAttribute("role", "menu"); menu.hidden = true;
+itens.forEach(function (i) { menu.appendChild(i); });
+wrap.appendChild(bt); wrap.appendChild(menu);
+function algum() { return itens.some(function (i) { return !i.hidden; }); }
+function sinc() { wrap.hidden = !algum(); if (wrap.hidden) fechar(); }
+function fechar() { menu.hidden = true; bt.setAttribute("aria-expanded", "false"); document.removeEventListener("pointerdown", fora, true); document.removeEventListener("keydown", tecla, true); global.removeEventListener("resize", fechar); }
+function fora(ev) { if (!wrap.contains(ev.target)) fechar(); }
+function visiveis() { return [].filter.call(menu.querySelectorAll("button"), function (b) { return !b.disabled && b.getClientRects().length > 0; }); }
+function tecla(ev) {
+if (ev.key === "Escape") { fechar(); try { bt.focus(); } catch (e) {} return; }
+if (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "Home" || ev.key === "End") {
+var l = visiveis(); if (!l.length) return;
+var k = l.indexOf(document.activeElement), n = l.length;
+var alvo = ev.key === "Home" ? 0 : ev.key === "End" ? n - 1 : ev.key === "ArrowDown" ? (k + 1) % n : (k <= 0 ? n - 1 : k - 1);
+try { l[alvo].focus(); } catch (e2) {}
+ev.preventDefault();
+}
+}
+bt.onclick = function () {
+if (!menu.hidden) { fechar(); return; }
+menu.hidden = false; bt.setAttribute("aria-expanded", "true");
+[].forEach.call(menu.querySelectorAll("button"), function (b) { b.setAttribute("role", "menuitem"); });
+[].forEach.call(menu.children, function (g) { g.setAttribute("role", "group"); });
+var z = Shell._zoomDe(bt), rb = bt.getBoundingClientRect(), Hh = global.innerHeight || document.documentElement.clientHeight;
+menu.style.position = "fixed"; menu.style.left = (Math.max(8, Math.round(rb.left)) / z) + "px"; menu.style.bottom = (Math.round(Hh - rb.top + 4) / z) + "px"; menu.style.top = "auto";
+var mr = menu.getBoundingClientRect(), Ww = global.innerWidth || document.documentElement.clientWidth;
+if (mr.right > Ww - 8) menu.style.left = (Math.max(8, Math.round(rb.left - (mr.right - (Ww - 8)))) / z) + "px";
+document.addEventListener("pointerdown", fora, true); document.addEventListener("keydown", tecla, true); global.addEventListener("resize", fechar);
+var p1 = visiveis()[0]; if (p1) { try { p1.focus(); } catch (e3) {} }
+};
+menu.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("button") : null; if (b && b.getAttribute("data-pt") !== "modo") setTimeout(fechar, 0); });
+try { if (global.MutationObserver) new global.MutationObserver(sinc).observe(menu, { attributes: true, subtree: true, attributeFilter: ["hidden"] }); } catch (eMo) {}
+sinc();
+return wrap;
+},
+_ABA_CURTA: { "Metálica & Mecânica": "Metálica", "Carpintaria & Marcenaria": "Marcenaria", "Modelar volume": "Volume", "Massa e terreno": "Terreno" },
 _listaAbas: function (r) { return r.abasVisiveis ? r.abasVisiveis() : r.abas(); },
 _assinaturaAbas: function (lista) { return lista.map(function (a) { return a.id + "=" + a.rotulo; }).join("|"); },
 _botaoAba: function (a) {
 var self = this, r = R();
-var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), a.rotulo);
+var curto = Shell._ABA_CURTA[a.rotulo];
+var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), curto || a.rotulo);
+if (curto) { b.title = a.rotulo; b.setAttribute("aria-label", a.rotulo); }
 b.type = "button";
 b.setAttribute("role", "tab");
 b.setAttribute("data-rv-aba", a.id);
@@ -104660,6 +104705,31 @@ var aceso = id === "orbita" ? (d.ok && !noVoo) : r.ativo(id);
 if (id === "orbita" || (c && c.tipo === "alterna")) b.setAttribute("aria-pressed", aceso ? "true" : "false");
 });
 },
+_tamanhos: function (cmds) {
+var n = cmds.length, out = [], k = 0, marcados = 0;
+cmds.forEach(function (c) { if (c.grande) marcados++; });
+cmds.forEach(function (c) {
+var g = !!c.grande;
+if (n > 3 && g) { g = k < 2; k++; }
+out.push(g);
+});
+if (n <= 2 && !marcados) out = cmds.map(function () { return true; });
+return out;
+},
+_linhasRotulo: function (rotulo, grande) {
+var txt = String(rotulo == null ? "" : rotulo).replace(/\s+/g, " ").trim().replace(/- /g, "-");
+txt = txt.replace("Planifi-cação", "Planificação").replace("Contra-ventamento", "Contraventamento");
+var partes = String(rotulo == null ? "" : rotulo).split("\n").map(function (x) { return x.trim(); }).filter(Boolean);
+if (!grande) return [txt];
+if (partes.length === 2 && partes[0].length <= 15 && partes[1].length <= 15) return partes;
+if (txt.length <= 11 || txt.indexOf(" ") < 0) return [txt];
+var pal = txt.split(" "), melhor = 1, pior = 1e9;
+for (var i = 1; i < pal.length; i++) {
+var a = pal.slice(0, i).join(" ").length, b = pal.slice(i).join(" ").length, m = Math.max(a, b);
+if (m < pior) { pior = m; melhor = i; }
+}
+return [pal.slice(0, melhor).join(" "), pal.slice(melhor).join(" ")];
+},
 pintarFita: function () {
 var self = this, r = R();
 if (!this._raiz || !r) return;
@@ -104677,8 +104747,10 @@ v.paineis.forEach(function (p) {
 var pn = el("div", "rv-painel");
 var corpo = el("div", "rv-painel-corpo");
 var col = null;
-p.comandos.forEach(function (c) {
-var b = el("button", "rv-cmd" + (c.grande ? "" : " rv-cmd-sm"));
+var grandes = self._tamanhos(p.comandos);
+p.comandos.forEach(function (c, ci) {
+var gr = grandes[ci];
+var b = el("button", "rv-cmd" + (gr ? "" : " rv-cmd-sm"));
 b.type = "button";
 b.setAttribute("data-rv-cmd", c.id);
 b.disabled = !c.habilitado && !c.emBreve;
@@ -104686,20 +104758,21 @@ if (c.emBreve) b.setAttribute("data-rv-embreve", "1");
 var tecDica = "";
 try { tecDica = global.BimFita && global.BimFita.tecla ? global.BimFita.tecla(c.id) : ""; } catch (eTec) { tecDica = ""; }
 b.title = (c.habilitado ? c.dica : (c.motivo || c.dica)) + (tecDica && String(c.dica || "").indexOf("(" + tecDica + ")") < 0 && String(c.dica || "").indexOf("atalho " + tecDica) < 0 ? " (atalho " + tecDica + ")" : "");
+b.setAttribute("aria-label", String(c.rotulo || "").split("\n").join(" "));
 if (c.tipo === "alterna") b.setAttribute("aria-pressed", c.ativo ? "true" : "false");
 var i = el("span", "rv-cmd-ico");
-i.innerHTML = ico(c.icone, c.grande ? 24 : 15);
+i.innerHTML = ico((global.Icones && global.Icones.deComando) ? global.Icones.deComando(c.id, c.icone) : c.icone, gr ? 32 : 16);
 b.appendChild(i);
 var rot = el("span", "rv-cmd-rot");
-c.linhas.forEach(function (l) { rot.appendChild(el("span", null, l)); });
+self._linhasRotulo(c.rotulo, gr).forEach(function (l) { rot.appendChild(el("span", null, l)); });
+if (c.tipo === "menu") { var ult = rot.lastChild; if (ult) ult.appendChild(el("span", "rv-cmd-seta", "▾")); else rot.appendChild(el("span", "rv-cmd-seta", "▾")); }
 b.appendChild(rot);
-if (c.tipo === "menu") b.appendChild(el("span", "rv-cmd-seta", "▾"));
 if (c.pro) b.appendChild(el("span", "rv-cmd-pro", "PRO"));
 b.onclick = function () {
 if (c.emBreve) { self._emBreve(c); return; }
 self.executar(c.id);
 };
-if (c.grande) {
+if (gr) {
 corpo.appendChild(b); col = null;
 } else {
 if (!col || col.childNodes.length >= 3) { col = el("div", "rv-col"); corpo.appendChild(col); }
@@ -104707,7 +104780,7 @@ col.appendChild(b);
 }
 });
 pn.appendChild(corpo);
-pn.appendChild(el("div", "rv-painel-nome", p.nome));
+pn.appendChild(el("div", "rv-painel-nome", String(p.nome).replace(/^Elétrica · /, "")));
 pn.setAttribute("data-ord", String(fita.children.length));
 fita.appendChild(pn);
 });
@@ -104736,7 +104809,7 @@ try { if (global.localStorage && global.localStorage.getItem("orcapro:bim:fita-m
 if (!disp || fita.offsetParent === null || fita.scrollWidth <= disp + 1 || raiz.getAttribute("data-rv-foco") === "1") return;
 var mais = el("div", "rv-painel rv-fita-mais"), rec = el("button", "rv-painel-rec"), corpo = el("div", "rv-fita-mais-corpo");
 rec.type = "button"; rec.setAttribute("data-rv-rec", "mais"); rec.setAttribute("aria-haspopup", "true"); rec.setAttribute("aria-expanded", "false");
-rec.innerHTML = ico("camadas", 18) + '<span class="rv-painel-rec-nome">Mais painéis</span><span class="rv-painel-rec-seta" aria-hidden="true">▾</span>';
+rec.innerHTML = ico("camadas", 32) + '<span class="rv-painel-rec-nome">Mais painéis<span class="rv-painel-rec-seta" aria-hidden="true">▾</span></span>';
 rec.onclick = function (ev) { if (ev) ev.stopPropagation(); self._abrirPainelFita(mais, mais.getAttribute("data-aberto") !== "1"); };
 mais.appendChild(rec); mais.appendChild(corpo);
 fita.appendChild(mais);
@@ -104766,6 +104839,21 @@ this._roFita.observe(fita);
 } catch (eRo) { this._roFita = null; }
 }
 },
+_zoomDe: function (e) {
+try { var w = e.offsetWidth, r = e.getBoundingClientRect().width; return w > 0 && r > 0 ? r / w : 1; } catch (x) { return 1; }
+},
+_posicionarMais: function (mais) {
+var raiz = this._raiz, fita = raiz && raiz.querySelector(".rv-fita"), corpo = mais && mais.querySelector(".rv-fita-mais-corpo");
+if (!fita || !corpo) return;
+var z = this._zoomDe(fita), r = fita.getBoundingClientRect(), W = global.innerWidth || document.documentElement.clientWidth, H = global.innerHeight || document.documentElement.clientHeight;
+var top = Math.round(r.bottom + 2);
+corpo.style.position = "fixed";
+corpo.style.top = (top / z) + "px";
+corpo.style.right = (Math.max(8, Math.round(W - r.right + 4)) / z) + "px";
+corpo.style.left = "auto";
+corpo.style.maxWidth = (Math.max(240, W - 16) / z) + "px";
+corpo.style.maxHeight = (Math.max(140, H - top - 34) / z) + "px";
+},
 _abrirPainelFita: function (mais, abrir) {
 var self = this, raiz = this._raiz; if (!raiz) return;
 [].forEach.call(raiz.querySelectorAll(".rv-fita-mais[data-aberto]"), function (p) {
@@ -104774,11 +104862,15 @@ p.removeAttribute("data-aberto");
 var r0 = p.querySelector(".rv-painel-rec"); if (r0) r0.setAttribute("aria-expanded", "false");
 });
 if (this._fecharFita) { document.removeEventListener("pointerdown", this._fecharFita, true); document.removeEventListener("keydown", this._fecharFita, true); document.removeEventListener("click", this._fecharFita, true); this._fecharFita = null; }
+if (this._reposMais) { global.removeEventListener("resize", this._reposMais); this._reposMais = null; }
 this._painelAberto = null;
 if (!mais || !abrir) return;
 mais.setAttribute("data-aberto", "1");
 this._painelAberto = "mais";
 var rec = mais.querySelector(".rv-painel-rec"); if (rec) rec.setAttribute("aria-expanded", "true");
+this._posicionarMais(mais);
+this._reposMais = function () { self._posicionarMais(mais); };
+global.addEventListener("resize", this._reposMais);
 this._fecharFita = function (ev) {
 if (ev.type === "keydown") { if (ev.key === "Escape") { self._abrirPainelFita(null, false); try { if (rec) rec.focus(); } catch (e) {} } return; }
 var alvo = ev.target;
@@ -105204,9 +105296,11 @@ d.appendChild(bt);
 });
 if (global.BimInstUI && global.BimInstUI.botaoNivel) { var bND = global.BimInstUI.botaoNivel(el, ico); if (bND) { var bEst = d.querySelector('[data-rv-vb="estilo"]'); d.insertBefore(bND, bEst ? bEst.nextSibling : null); } }
 if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
-if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) d.appendChild(bAD); }
-if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) d.appendChild(bAP); }
-if (global.BimTwinmotion && global.BimTwinmotion.botaoBarra) { var bTW = global.BimTwinmotion.botaoBarra(el, ico); if (bTW) d.appendChild(bTW); }
+var maisItens = [];
+if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) maisItens.push(bAD); }
+if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) maisItens.push(bAP); }
+if (global.BimTwinmotion && global.BimTwinmotion.botaoBarra) { var bTW = global.BimTwinmotion.botaoBarra(el, ico); if (bTW) maisItens.push(bTW); }
+if (maisItens.length) d.appendChild(this._menuMaisBarra(maisItens, el));
 if (global.BimInstUI && global.BimInstUI.botaoBarra) { var bVI = global.BimInstUI.botaoBarra(el, ico); if (bVI) d.appendChild(bVI); }
 var bMao = el("button", "rv-vb");
 bMao.type = "button";
@@ -111557,7 +111651,8 @@ U.alternarDesconexoes = function (on) { U._desc = !!on; reconstruir(); var R = U
 U.vistaInst = { manual: null };
 U.aoTrocarAba = function (aba) {
 var b = B(); if (!U.ativo() || !U._barraHidro() || !b || !b.vistaInstalacoes || U.vistaInst.manual != null) return false;
-b.vistaInstalacoes(aba === "instalacoes"); U._pintarBotaoVista(); U._corDaVista(aba === "instalacoes"); return true;
+var dentro = aba === "instalacoes" || aba === "eletrica";
+b.vistaInstalacoes(dentro); U._pintarBotaoVista(); U._corDaVista(dentro); return true;
 };
 U._corDaVista = function (on) {
 var P = global.BimInstPadrao, m = P && P.modoCorPadrao ? P.modoCorPadrao() : null;
@@ -173817,7 +173912,7 @@ function r4(v) { return Math.round(v * 10000) / 10000; }
 function d3(a, b) { var x = b.x - a.x, y = b.y - a.y, z = b.z - a.z; return Math.sqrt(x * x + y * y + z * z); }
 function cp3(p) { return { x: p.x, y: p.y, z: p.z }; }
 var TOL_NO = 0.02;
-var ORDEM = ["arquivo", "modificar", "arquitetura", "alvenaria", "estrutura", "metalica", "icamento", "marcenaria", "instalacoes", "acabamentos",
+var ORDEM = ["arquivo", "modificar", "arquitetura", "alvenaria", "estrutura", "metalica", "icamento", "marcenaria", "instalacoes", "eletrica", "acabamentos",
 "volume", "massa-terreno", "anotar", "vista", "analisar", "quantitativos", "gerenciar"];
 function c(id, rotulo, icone, dica, extra) {
 var o = { id: id, rotulo: rotulo, icone: icone, dica: dica };
@@ -173943,12 +174038,14 @@ var ABA_INSTALACOES = [
 { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
 dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",
 itens: ["cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
+{ nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
+];
+var ABA_ELETRICA = [
 { nome: "Elétrica · Modelar", ids: ["eletroduto", "eletrocalha", "ele-m-caixa", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "ele-m-aparelhos"] },
 { nome: "Elétrica · Projeto inteligente", ids: ["ele-projeto", "ele-auto", "ele-ilum", "ele-aparelho-ponto"] },
 { nome: "Elétrica · Dimensionar", ids: ["ele-circ", "ele-circ-auditar", "ele-auditar", "ele-criterios", "ele-circ-criterios"] },
 { nome: "Elétrica · Documentos", ids: ["ele-docs", "ele-circ-pranchas"] },
-{ nome: "Elétrica · Ver", ids: ["ele-fiacao"] },
-{ nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
+{ nome: "Elétrica · Ver", ids: ["ele-fiacao"] }
 ];
 var ABA_METALICA = [
 { nome: "Eixos e plano", ids: ["met-plano", "met-grade-eixos", "met-cotas-eixos", "met-niveis-3d"] },
@@ -174022,7 +174119,8 @@ var ORG = [
 { id: "alvenaria", rotulo: "Alvenaria", paineis: ABA_ALVENARIA },
 { id: "estrutura", rotulo: "Estrutura", paineis: ABA_ESTRUTURA },
 { id: "acabamentos", rotulo: "Acabamentos", paineis: ABA_ACABAMENTOS },
-{ id: "instalacoes", rotulo: "Instalações", paineis: ABA_INSTALACOES },
+{ id: "instalacoes", rotulo: "Hidrossanitário", paineis: ABA_INSTALACOES },
+{ id: "eletrica", rotulo: "Elétrica", paineis: ABA_ELETRICA },
 { id: "metalica", paineis: ABA_METALICA },
 { id: "marcenaria", paineis: ABA_MARCENARIA },
 { id: "volume", paineis: ABA_VOLUME },

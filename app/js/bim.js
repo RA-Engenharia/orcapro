@@ -6796,7 +6796,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   try { var _gl = renderer.getContext(), _dbg = _gl && _gl.getExtension('WEBGL_debug_renderer_info'); _swGL = !!(_dbg && /swiftshader|llvmpipe|software|softpipe/i.test(String(_gl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) || ''))); } catch (_) { _swGL = false; }
   try { var _cg = localStorage.getItem(CONT_CHAVE); EST.cont = _cg === '1' ? true : _cg === '0' ? false : !_swGL; } catch (_) { EST.cont = !_swGL; }
   function estContMat() {
-    if (!EST.matCont) EST.matCont = new THREE.LineBasicMaterial({ color: 0x2f353d, transparent: true, opacity: .55, depthWrite: false });
+    if (!EST.matCont) EST.matCont = new THREE.LineBasicMaterial({ color: 0x7b838d, transparent: true, opacity: .42, depthWrite: false });   /* 14/11/2026: cinza-medio e fino (era grafite .55, que pesava preto em 1 milhao de arestas) */
     return EST.matCont;
   }
   /* aquece o cache de arestas dos modelos que ainda não têm a LineSegments; devolve true quando TODOS estão prontos */

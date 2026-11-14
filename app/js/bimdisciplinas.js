@@ -357,6 +357,9 @@
 
     /* ---- o que a fita pergunta ---- */
     rotuloAba: function (abaId, rotulo, disc) {
+      /* 14/11/2026: com a Elétrica em aba própria, a Instalações (só o que é comum: verificar sistemas, desconexões, tabela) não pode se chamar "Elétrica" também */
+      var Rb = global.BimRibbon;
+      if (abaId === "instalacoes" && (disc || this.atual()) === "eletrica" && Rb && Rb.aba && Rb.aba("eletrica")) return "Sistemas";
       var t = ROTULO_ABA[disc || this.atual()];
       return (t && t[abaId]) || rotulo;
     },

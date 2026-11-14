@@ -449,7 +449,8 @@
     U.vistaInst = { manual: null };
     U.aoTrocarAba = function (aba) {
       var b = B(); if (!U.ativo() || !U._barraHidro() || !b || !b.vistaInstalacoes || U.vistaInst.manual != null) return false;   /* P8: a vista Instalações automática só com a prévia hidro */
-      b.vistaInstalacoes(aba === "instalacoes"); U._pintarBotaoVista(); U._corDaVista(aba === "instalacoes"); return true;
+      var dentro = aba === "instalacoes" || aba === "eletrica";   /* 14/11/2026: a Elétrica tem aba própria e também trabalha com a arquitetura translúcida */
+      b.vistaInstalacoes(dentro); U._pintarBotaoVista(); U._corDaVista(dentro); return true;
     };
     /* PADRÃO DE APRESENTAÇÃO DE INSTALAÇÕES (js/biminstpadrao.js): a vista Instalações nasce com a cor por SISTEMA do
        padrão (água fria, esgoto, ventilação… cada um com a sua) — é o que o projetista lê na hora; fora dela fica a cor do

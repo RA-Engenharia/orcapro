@@ -430,11 +430,63 @@
       d.appendChild(this._rapidos());
       return d;
     },
+    /* O MENU "Mais" DA BARRA DE BAIXO: os grupos que os módulos penduram na barra (Reforma, Portas, Twinmotion) moram num menu só.
+       São os MESMOS nós (os módulos seguem ligando/desligando `hidden` e o estado deles): o botão some quando nenhum está à mostra,
+       e o menu abre PARA CIMA, flutuando sobre a vista, fecha com Esc, clique fora ou ao escolher. */
+    _menuMaisBarra: function (itens, el) {
+      var wrap = el("span", "rv-vb-mais"), bt = el("button", "rv-vb rv-vb-mais-bt"), menu = el("div", "rv-vb-mais-menu");
+      bt.type = "button"; bt.setAttribute("data-rv-vb", "mais"); bt.setAttribute("aria-haspopup", "menu"); bt.setAttribute("aria-expanded", "false");
+      bt.title = "Mais: abrir e fechar portas, apresentar a reforma, sincronizar com o Twinmotion";
+      bt.innerHTML = ico("mais", 14) + "<span>Mais</span><span class=\"rv-cmd-seta\" aria-hidden=\"true\">▾</span>";
+      menu.setAttribute("role", "menu"); menu.hidden = true;
+      itens.forEach(function (i) { menu.appendChild(i); });
+      wrap.appendChild(bt); wrap.appendChild(menu);
+      function algum() { return itens.some(function (i) { return !i.hidden; }); }
+      function sinc() { wrap.hidden = !algum(); if (wrap.hidden) fechar(); }
+      function fechar() { menu.hidden = true; bt.setAttribute("aria-expanded", "false"); document.removeEventListener("pointerdown", fora, true); document.removeEventListener("keydown", tecla, true); global.removeEventListener("resize", fechar); }
+      function fora(ev) { if (!wrap.contains(ev.target)) fechar(); }
+      function visiveis() { return [].filter.call(menu.querySelectorAll("button"), function (b) { return !b.disabled && b.getClientRects().length > 0; }); }
+      function tecla(ev) {
+        if (ev.key === "Escape") { fechar(); try { bt.focus(); } catch (e) {} return; }
+        /* setas, Home e End andam pelos itens do menu */
+        if (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "Home" || ev.key === "End") {
+          var l = visiveis(); if (!l.length) return;
+          var k = l.indexOf(document.activeElement), n = l.length;
+          var alvo = ev.key === "Home" ? 0 : ev.key === "End" ? n - 1 : ev.key === "ArrowDown" ? (k + 1) % n : (k <= 0 ? n - 1 : k - 1);
+          try { l[alvo].focus(); } catch (e2) {}
+          ev.preventDefault();
+        }
+      }
+      bt.onclick = function () {
+        if (!menu.hidden) { fechar(); return; }
+        menu.hidden = false; bt.setAttribute("aria-expanded", "true");
+        /* itens do menu para o leitor de tela (os botões são dos módulos; o papel se põe aqui) */
+        [].forEach.call(menu.querySelectorAll("button"), function (b) { b.setAttribute("role", "menuitem"); });
+        [].forEach.call(menu.children, function (g) { g.setAttribute("role", "group"); });
+        /* fixa na tela (a barra corta o que passa dela): logo acima do botão, alinhada à esquerda dele; a escala da interface (zoom) é compensada */
+        var z = Shell._zoomDe(bt), rb = bt.getBoundingClientRect(), Hh = global.innerHeight || document.documentElement.clientHeight;
+        menu.style.position = "fixed"; menu.style.left = (Math.max(8, Math.round(rb.left)) / z) + "px"; menu.style.bottom = (Math.round(Hh - rb.top + 4) / z) + "px"; menu.style.top = "auto";
+        /* tela estreita: o menu nunca passa da borda direita nem da esquerda */
+        var mr = menu.getBoundingClientRect(), Ww = global.innerWidth || document.documentElement.clientWidth;
+        if (mr.right > Ww - 8) menu.style.left = (Math.max(8, Math.round(rb.left - (mr.right - (Ww - 8)))) / z) + "px";
+        document.addEventListener("pointerdown", fora, true); document.addEventListener("keydown", tecla, true); global.addEventListener("resize", fechar);
+        var p1 = visiveis()[0]; if (p1) { try { p1.focus(); } catch (e3) {} }
+      };
+      /* escolher um comando do menu fecha (o clique chega ao botão primeiro) */
+      menu.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("button") : null; if (b && b.getAttribute("data-pt") !== "modo") setTimeout(fechar, 0); });
+      try { if (global.MutationObserver) new global.MutationObserver(sinc).observe(menu, { attributes: true, subtree: true, attributeFilter: ["hidden"] }); } catch (eMo) {}
+      sinc();
+      return wrap;
+    },
+    _ABA_CURTA: { "Metálica & Mecânica": "Metálica", "Carpintaria & Marcenaria": "Marcenaria", "Modelar volume": "Volume", "Massa e terreno": "Terreno" },
     _listaAbas: function (r) { return r.abasVisiveis ? r.abasVisiveis() : r.abas(); },
     _assinaturaAbas: function (lista) { return lista.map(function (a) { return a.id + "=" + a.rotulo; }).join("|"); },
     _botaoAba: function (a) {
       var self = this, r = R();
-      var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), a.rotulo);
+      /* 18 abas numa linha só a 1366 px: os nomes compridos viram curtos NA ABA (a dica e o leitor de tela têm o nome inteiro) */
+      var curto = Shell._ABA_CURTA[a.rotulo];
+      var b = el("button", "rv-aba" + (a.id === "arquivo" ? " rv-aba-arquivo" : ""), curto || a.rotulo);
+      if (curto) { b.title = a.rotulo; b.setAttribute("aria-label", a.rotulo); }
       b.type = "button";
       b.setAttribute("role", "tab");
       b.setAttribute("data-rv-aba", a.id);
@@ -637,6 +689,37 @@
     },
 
     /* ------------------------------------------------------------ FITA */
+    /* QUEM É GRANDE NA FAIXA (14/11/2026, pedido do Rogério: "ícone grande só nos comandos principais, os demais em pilha de 3 linhas").
+       O mapa de comandos marca `grande` em quase tudo (cada autor achava o seu comando o principal) e a faixa de altura fixa não
+       comporta isso. Regra de exibição (o comando e o mapa não mudam): painel de até 3 comandos mantém o que o mapa marcou; painel
+       maior leva no máximo os 2 primeiros marcados como grandes e o resto vira pilha pequena (ícone 16 px, rótulo ao lado). */
+    _tamanhos: function (cmds) {
+      var n = cmds.length, out = [], k = 0, marcados = 0;
+      cmds.forEach(function (c) { if (c.grande) marcados++; });
+      cmds.forEach(function (c) {
+        var g = !!c.grande;
+        if (n > 3 && g) { g = k < 2; k++; }
+        out.push(g);
+      });
+      /* painel só de pequenos, de 1 a 2 comandos: grande (um botão pequeno sozinho fica perdido na faixa) */
+      if (n <= 2 && !marcados) out = cmds.map(function () { return true; });
+      return out;
+    },
+    /* o rótulo em NO MÁXIMO 2 linhas (grande) ou 1 (pequeno): o que veio sem quebra é partido ao meio, no espaço mais central */
+    _linhasRotulo: function (rotulo, grande) {
+      var txt = String(rotulo == null ? "" : rotulo).replace(/\s+/g, " ").trim().replace(/- /g, "-");   /* o hifen de quebra de linha ("Guarda-" + "corpo") vira "Guarda-corpo" */
+      txt = txt.replace("Planifi-cação", "Planificação").replace("Contra-ventamento", "Contraventamento");   /* hifen de quebra de linha, nao de palavra */
+      var partes = String(rotulo == null ? "" : rotulo).split("\n").map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!grande) return [txt];
+      if (partes.length === 2 && partes[0].length <= 15 && partes[1].length <= 15) return partes;
+      if (txt.length <= 11 || txt.indexOf(" ") < 0) return [txt];
+      var pal = txt.split(" "), melhor = 1, pior = 1e9;
+      for (var i = 1; i < pal.length; i++) {
+        var a = pal.slice(0, i).join(" ").length, b = pal.slice(i).join(" ").length, m = Math.max(a, b);
+        if (m < pior) { pior = m; melhor = i; }
+      }
+      return [pal.slice(0, melhor).join(" "), pal.slice(melhor).join(" ")];
+    },
     pintarFita: function () {
       var self = this, r = R();
       if (!this._raiz || !r) return;
@@ -658,8 +741,10 @@
         var pn = el("div", "rv-painel");
         var corpo = el("div", "rv-painel-corpo");
         var col = null;
-        p.comandos.forEach(function (c) {
-          var b = el("button", "rv-cmd" + (c.grande ? "" : " rv-cmd-sm"));
+        var grandes = self._tamanhos(p.comandos);
+        p.comandos.forEach(function (c, ci) {
+          var gr = grandes[ci];
+          var b = el("button", "rv-cmd" + (gr ? "" : " rv-cmd-sm"));
           b.type = "button";
           b.setAttribute("data-rv-cmd", c.id);
           /* "em breve" NÃO fica disabled: o botão continua clicável e o clique
@@ -673,17 +758,19 @@
           var tecDica = "";
           try { tecDica = global.BimFita && global.BimFita.tecla ? global.BimFita.tecla(c.id) : ""; } catch (eTec) { tecDica = ""; }
           b.title = (c.habilitado ? c.dica : (c.motivo || c.dica)) + (tecDica && String(c.dica || "").indexOf("(" + tecDica + ")") < 0 && String(c.dica || "").indexOf("atalho " + tecDica) < 0 ? " (atalho " + tecDica + ")" : "");
+          /* o rótulo é cortado/dobrado na faixa; quem usa leitor de tela ouve o nome inteiro */
+          b.setAttribute("aria-label", String(c.rotulo || "").split("\n").join(" "));
           if (c.tipo === "alterna") b.setAttribute("aria-pressed", c.ativo ? "true" : "false");
 
           var i = el("span", "rv-cmd-ico");
-          i.innerHTML = ico(c.icone, c.grande ? 24 : 15);
+          i.innerHTML = ico((global.Icones && global.Icones.deComando) ? global.Icones.deComando(c.id, c.icone) : c.icone, gr ? 32 : 16);
           b.appendChild(i);
 
           var rot = el("span", "rv-cmd-rot");
-          c.linhas.forEach(function (l) { rot.appendChild(el("span", null, l)); });
+          self._linhasRotulo(c.rotulo, gr).forEach(function (l) { rot.appendChild(el("span", null, l)); });
+          /* a setinha do menu fica NA ÚLTIMA LINHA do rótulo (não numa linha só dela: era o que alongava o botão) */
+          if (c.tipo === "menu") { var ult = rot.lastChild; if (ult) ult.appendChild(el("span", "rv-cmd-seta", "▾")); else rot.appendChild(el("span", "rv-cmd-seta", "▾")); }
           b.appendChild(rot);
-
-          if (c.tipo === "menu") b.appendChild(el("span", "rv-cmd-seta", "▾"));
           if (c.pro) b.appendChild(el("span", "rv-cmd-pro", "PRO"));
 
           b.onclick = function () {
@@ -691,7 +778,7 @@
             self.executar(c.id);
           };
 
-          if (c.grande) {
+          if (gr) {
             corpo.appendChild(b); col = null;
           } else {
             /* pequenos empilham de três em três */
@@ -700,7 +787,7 @@
           }
         });
         pn.appendChild(corpo);
-        pn.appendChild(el("div", "rv-painel-nome", p.nome));
+        pn.appendChild(el("div", "rv-painel-nome", String(p.nome).replace(/^Elétrica · /, "")));   /* na aba Elétrica o prefixo repetia o nome da aba */
         pn.setAttribute("data-ord", String(fita.children.length));   /* a ordem de origem: o "Mais" devolve os painéis ao lugar */
         fita.appendChild(pn);
       });
@@ -741,7 +828,7 @@
       /* 2) cria o "Mais" e manda para ele, da direita para a esquerda, o que não cabe (o 1º painel só vai se ainda faltar lugar) */
       var mais = el("div", "rv-painel rv-fita-mais"), rec = el("button", "rv-painel-rec"), corpo = el("div", "rv-fita-mais-corpo");
       rec.type = "button"; rec.setAttribute("data-rv-rec", "mais"); rec.setAttribute("aria-haspopup", "true"); rec.setAttribute("aria-expanded", "false");
-      rec.innerHTML = ico("camadas", 18) + '<span class="rv-painel-rec-nome">Mais painéis</span><span class="rv-painel-rec-seta" aria-hidden="true">▾</span>';
+      rec.innerHTML = ico("camadas", 32) + '<span class="rv-painel-rec-nome">Mais painéis<span class="rv-painel-rec-seta" aria-hidden="true">▾</span></span>';
       rec.onclick = function (ev) { if (ev) ev.stopPropagation(); self._abrirPainelFita(mais, mais.getAttribute("data-aberto") !== "1"); };
       mais.appendChild(rec); mais.appendChild(corpo);
       fita.appendChild(mais);
@@ -772,6 +859,23 @@
         } catch (eRo) { this._roFita = null; }
       }
     },
+    /* a escala da interface (--rv-ui, Vista › Tamanho da interface) é `zoom` na faixa e na barra de baixo: o que se grava em px dentro delas
+       é multiplicado por ela. Medida pelo próprio elemento (largura na tela ÷ largura em px de CSS), serve a qualquer escala. */
+    _zoomDe: function (e) {
+      try { var w = e.offsetWidth, r = e.getBoundingClientRect().width; return w > 0 && r > 0 ? r / w : 1; } catch (x) { return 1; }
+    },
+    _posicionarMais: function (mais) {
+      var raiz = this._raiz, fita = raiz && raiz.querySelector(".rv-fita"), corpo = mais && mais.querySelector(".rv-fita-mais-corpo");
+      if (!fita || !corpo) return;
+      var z = this._zoomDe(fita), r = fita.getBoundingClientRect(), W = global.innerWidth || document.documentElement.clientWidth, H = global.innerHeight || document.documentElement.clientHeight;
+      var top = Math.round(r.bottom + 2);
+      corpo.style.position = "fixed";
+      corpo.style.top = (top / z) + "px";
+      corpo.style.right = (Math.max(8, Math.round(W - r.right + 4)) / z) + "px";
+      corpo.style.left = "auto";
+      corpo.style.maxWidth = (Math.max(240, W - 16) / z) + "px";
+      corpo.style.maxHeight = (Math.max(140, H - top - 34) / z) + "px";
+    },
     _abrirPainelFita: function (mais, abrir) {
       var self = this, raiz = this._raiz; if (!raiz) return;
       [].forEach.call(raiz.querySelectorAll(".rv-fita-mais[data-aberto]"), function (p) {
@@ -780,11 +884,17 @@
         var r0 = p.querySelector(".rv-painel-rec"); if (r0) r0.setAttribute("aria-expanded", "false");
       });
       if (this._fecharFita) { document.removeEventListener("pointerdown", this._fecharFita, true); document.removeEventListener("keydown", this._fecharFita, true); document.removeEventListener("click", this._fecharFita, true); this._fecharFita = null; }
+      if (this._reposMais) { global.removeEventListener("resize", this._reposMais); this._reposMais = null; }
       this._painelAberto = null;
       if (!mais || !abrir) return;
       mais.setAttribute("data-aberto", "1");
       this._painelAberto = "mais";
       var rec = mais.querySelector(".rv-painel-rec"); if (rec) rec.setAttribute("aria-expanded", "true");
+      /* a janela FLUTUA sobre a vista: fixa na tela, logo abaixo da faixa, alinhada à direita — a altura da faixa não muda (o defeito da 1.2.296: ela crescia até a tela inteira) */
+      this._posicionarMais(mais);
+      /* a janela da tela mudou de tamanho com o Mais aberto: reposiciona (a reorganização por largura cuida do resto) */
+      this._reposMais = function () { self._posicionarMais(mais); };
+      global.addEventListener("resize", this._reposMais);
       this._fecharFita = function (ev) {
         if (ev.type === "keydown") { if (ev.key === "Escape") { self._abrirPainelFita(null, false); try { if (rec) rec.focus(); } catch (e) {} } return; }
         var alvo = ev.target;
@@ -1293,11 +1403,13 @@
       /* CORES POR CATEGORIA (js/bimcorescatui.js): o interruptor da vista ativa, ao lado do Estilo */
       if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
       /* ANTES · OBRA · DEPOIS · COMPARAR (js/bimapresentacaoui.js): só aparece quando o modelo tem fases; vale na {3D} e nas plantas */
-      if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) d.appendChild(bAD); }
+      var maisItens = [];   /* o que só aparece às vezes e ocupava a barra inteira vai para UM menu (14/11/2026: "a barra de baixo está cheia") */
+      if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) maisItens.push(bAD); }
       /* PORTAS, PORTÕES E GAVETAS QUE ABREM (js/bimabrirui.js): o botão da mão (O), Abrir todas e Fechar todas — só aparecem quando o modelo tem o que abrir */
-      if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) d.appendChild(bAP); }
+      if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) maisItens.push(bAP); }
       /* SINCRONIZAR COM TWINMOTION (js/bimtwinmotion.js): só aparece com o app local; liga câmera + modelo ao OrçaPRO Direct Link */
-      if (global.BimTwinmotion && global.BimTwinmotion.botaoBarra) { var bTW = global.BimTwinmotion.botaoBarra(el, ico); if (bTW) d.appendChild(bTW); }
+      if (global.BimTwinmotion && global.BimTwinmotion.botaoBarra) { var bTW = global.BimTwinmotion.botaoBarra(el, ico); if (bTW) maisItens.push(bTW); }
+      if (maisItens.length) d.appendChild(this._menuMaisBarra(maisItens, el));
       /* VISTA INSTALAÇÕES (js/biminstui.js): arquitetura translúcida para ver os tubos — liga sozinha na aba Instalações */
       if (global.BimInstUI && global.BimInstUI.botaoBarra) { var bVI = global.BimInstUI.botaoBarra(el, ico); if (bVI) d.appendChild(bVI); }
       /* SELECIONAR (js/bimselecao.js, 09/10/2026): o esquerdo SELECIONA; a Mão é a ferramenta explícita
