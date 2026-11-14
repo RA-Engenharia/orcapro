@@ -479,7 +479,7 @@
     if (pz) {
       var cp = {}; for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) cp[k] = c[k];
       cp.vistaIso = vi;
-      cp.raster = c.grupo && c.rasters ? (c.rasters[(am.id || am.nomeBase || am.nome) + "|" + c.grupo.id] || null) : null; cp.agruparBaloes = !!(c.grupo && (cp.raster || c.agruparBaloes)); cp.D = D; cp.persp = pz; cp.areaPersp = { x: R2.x, y: R2.y + (DT ? 10 : 6), w: R2.w, h: R2.h - (DT ? 10 : 6) }; cp.semLegenda = true; cp.perspKMax = DT ? DT.perspKMax : K.perspKMax; cp.perspMargem = K.perspMargem; cp.chk = chk; cp.titulo = "";
+      cp.raster = c.grupo && c.rasters ? (c.rasters[(am.id || am.nomeBase || am.nome) + "|" + c.grupo.id] || null) : null; if (!cp.raster && II.rasterDe) cp.raster = II.rasterDe(pz);   /* 14/11/2026: a FOTO do 3D do BIM (a peça como está na tela) quando a geração roda no app */ cp.agruparBaloes = !!(c.grupo && (cp.raster || c.agruparBaloes)); cp.D = D; cp.persp = pz; cp.areaPersp = { x: R2.x, y: R2.y + (DT ? 10 : 6), w: R2.w, h: R2.h - (DT ? 10 : 6) }; cp.semLegenda = true; cp.perspKMax = DT ? DT.perspKMax : K.perspKMax; cp.perspMargem = K.perspMargem; cp.chk = chk; cp.titulo = "";
       var vistosDt = {}, nDt = 0;
       cp.destaque = function (obj, tipo) {   /* peça especial com a chamada em caixa (no máx. 4 por ambiente): redução, inspeção, caixa sifonada, ralo, terminal */
         if (nDt >= 4) return null;

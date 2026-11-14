@@ -2424,6 +2424,45 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (r && iso) { var c = b.getCenter(_V3(0, 0, 0)), d = b.getSize(_V3(0, 0, 0)).length(); voarCam(_V3(c.x + d * iso[0], c.y + d * iso[1], c.z + d * iso[2]), c, 0.6); }
     return r;
   };
+  /* FOTO ISOMÉTRICA DO MODELO PARA A PRANCHA (14/11/2026 — o Rogério: "a prancha tem que sair do mesmo jeito que está na
+     visualização do sistema"; o isométrico redesenhado pelo gerador trocava as conexões prontas por outras, mais feias).
+     Aqui a prancha recebe a IMAGEM DA PRÓPRIA CENA do BIM — as malhas que a tela mostra (tubo, conexão, louça, a arquitetura
+     no modo Instalações) — por uma câmera ORTOGRÁFICA alinhada à projeção isométrica da prancha (o.R = gradiente de u,
+     o.U = −gradiente de v, o.V = para quem olha; o.u0..v1 = o recorte no plano da prancha; o.T = ponto de referência com
+     o.uT/o.vT). Recorte do cômodo por 6 planos SÓ durante a foto (a caixa de corte da pessoa não muda); a régua da caixa
+     fica de fora (cena própria). Tudo volta no finally. */
+  S._fotoIso = function (o) {
+    var W = Math.max(400, Math.min(4096, Math.round(+o.largura || 2200))), du = o.u1 - o.u0, dv = o.v1 - o.v0;
+    if (!(du > 0 && dv > 0)) return { ok: false, erro: 'recorte vazio' };
+    var H = Math.max(200, Math.min(4096, Math.round(W * dv / du))), sR = Math.sqrt(o.R[0] * o.R[0] + o.R[1] * o.R[1] + o.R[2] * o.R[2]), sU = Math.sqrt(o.U[0] * o.U[0] + o.U[1] * o.U[1] + o.U[2] * o.U[2]);
+    var Rn = _V3(o.R[0] / sR, o.R[1] / sR, o.R[2] / sR), Un = _V3(o.U[0] / sU, o.U[1] / sU, o.U[2] / sU), Vn = _V3(o.V[0], o.V[1], o.V[2]).normalize();
+    var T = _V3(o.T[0], o.T[1], o.T[2]), Dd = 200;
+    var cam = new THREE.OrthographicCamera((o.u0 - o.uT) / sR, (o.u1 - o.uT) / sR, -(o.v0 - o.vT) / sU, -(o.v1 - o.vT) / sU, 0.01, Dd * 2);
+    cam.position.copy(T).addScaledVector(Vn, Dd); cam.up.copy(Un); cam.lookAt(T); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    var cv = cvDesenho(), tam = new THREE.Vector2(); renderer.getSize(tam);
+    var bk = { pr: renderer.getPixelRatio(), clip: renderer.clippingPlanes, loc: renderer.localClippingEnabled, g: grid.visible, inst: !!instVista.on, bg: scene.background, sc: renderer.getScissorTest() };
+    var out = null;
+    try {
+      if (o.instalacoes !== false && !bk.inst) setVistaInst(true);
+      grid.visible = false; scene.background = new THREE.Color(0xffffff);
+      var mn = o.min, mx = o.max;
+      renderer.clippingPlanes = [new THREE.Plane(_V3(1, 0, 0), -mn[0]), new THREE.Plane(_V3(-1, 0, 0), mx[0]), new THREE.Plane(_V3(0, 1, 0), -mn[1]),
+        new THREE.Plane(_V3(0, -1, 0), mx[1]), new THREE.Plane(_V3(0, 0, 1), -mn[2]), new THREE.Plane(_V3(0, 0, -1), mx[2])];
+      renderer.localClippingEnabled = false;
+      renderer.setPixelRatio(1); renderer.setSize(W, H, false); renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+      renderer.render(scene, cam);
+      var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+      var x2 = c2.getContext('2d'); x2.fillStyle = '#ffffff'; x2.fillRect(0, 0, W, H); x2.drawImage(cv, 0, 0, W, H, 0, 0, W, H);
+      out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H };
+    } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
+    finally {
+      renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
+      if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
+      renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
+      try { renderer.render(scene, camera); } catch (_) {}
+    }
+    return out;
+  };
   S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
   /* grade do chão liga/desliga (fita Vista › Exibir › Grade, tecla G) — cara nova, 07/10/2026 */
   S._grade = function (on) { if (on != null) { grid.visible = !!on; fundoPref.grade = !!on; BimFundo.gravar(fundoPref); } return grid.visible; };
@@ -20506,6 +20545,7 @@ window.BIM = {
   /* LINHAS OCULTAS (js/bimfita.js): liga (on) nas peças `uids` ou tira (sem uids: de todas); devolve quantas peças */
   linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
   linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
+  fotoIso: function (o) { return (S && S._fotoIso) ? S._fotoIso(o || {}) : { ok: false, erro: 'o 3D do BIM não abriu' }; },
   caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },
   /* HIDRO-3D: o three do BIM (a vista "Isométrico do ambiente" é o render do modelo, js/hidvistaisoui.js, com o MESMO three) */
   three: function () { return THREE; },

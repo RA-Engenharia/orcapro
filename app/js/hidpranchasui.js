@@ -58,13 +58,33 @@
     try { return P.ambientesAuto(ctx.modelo.estado, arr(ctx.pavimentos)); } catch (e) { return []; }
   }
   /* o objeto de opções do HidPranchas.gerar: a configuração + o CARIMBO (empresa, RT, obra) */
+  /* os ÍCONES das peças (img/hid-pecas: a imagem da peça gerada da geometria do modelo) para o QUADRO DE MATERIAIS: PNG → JPEG em
+     fundo branco (o PDF leva JPEG). Carrega uma vez, quando a tela abre; até chegar, o quadro usa o ícone vetorial. */
+  var ICONES_J = {}, icCarregando = null;
+  function precarregarIcones() {
+    var HPc = global.HidPecas, d = global.document; if (icCarregando || !HPc || !HPc.carregarIcones || !HPc.icones || !d) return icCarregando;
+    icCarregando = HPc.carregarIcones(HPc.icones(), 256).then(function (mapa) {
+      return Promise.all(Object.keys(mapa || {}).map(function (nome) {
+        return new Promise(function (res) {
+          var im = new global.Image(); im.onload = function () {
+            try { var cv = d.createElement("canvas"), L = 128; cv.width = L; cv.height = L; var x = cv.getContext("2d"); x.fillStyle = "#ffffff"; x.fillRect(0, 0, L, L); x.drawImage(im, 0, 0, L, L);
+              var url = cv.toDataURL("image/jpeg", 0.9); ICONES_J[nome] = { url: url, jpeg: global.atob(url.replace(/^data:image\/jpeg;base64,/, "")), pxW: L, pxH: L }; } catch (e) { /* ícone fica vetorial */ }
+            res();
+          }; im.onerror = function () { res(); }; im.src = mapa[nome];
+        });
+      }));
+    }).catch(function () { return null; });
+    return icCarregando;
+  }
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = HP().normalizarConfig(cfg);
     return { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao,
              sistemas: c.sistemas, conjuntos: c.conjuntos, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, qr: c.qr, perspectiva: c.perspectiva,
              empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
              obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
-             ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined };
+             ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
+             /* 14/11/2026: perspectiva e isométrico = FOTO da cena do BIM (a peça como está na tela), não um desenho refeito */
+             foto3d: global.BIM && global.BIM.fotoIso ? function (o) { return global.BIM.fotoIso(o); } : undefined, icones: ICONES_J };
   }
   /* o registro das folhas no BIM (Store bim_pranchas): as folhas prontas entram como IMAGEM INTEIRA (a folha gerada fora,
      com carimbo); o desenho em si fica só na sessão (refeito pelo Gerar — a folha nunca guarda uma cópia velha) */
@@ -258,6 +278,7 @@
   }
 
   function abrir(ctx) {
+    try { precarregarIcones(); } catch (eI) { /* sem ícone: vetorial */ }
     var U = global.UI; if (!U || !U.modal) return false;
     var cfg = lerMemoria(ctx.obraKey);
     U.modal("Gerar pranchas — hidrossanitário", html(ctx, cfg), [
@@ -283,7 +304,7 @@
   }
 
   var HidPranchasUI = { abrir: abrir, gerar: gerar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
-    _int: { ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
+    _int: { nIcones: function () { return Object.keys(ICONES_J).length; }, ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
   global.HidPranchasUI = HidPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = HidPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
