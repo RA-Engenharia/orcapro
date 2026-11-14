@@ -1661,13 +1661,16 @@ renderer.localClippingEnabled = false;
 if (o.foco && o.foco.length) {
 try { construirSisIdx(); } catch (_) {}
 var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
-var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.05, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
-var MAT = { af: mF(0x2f6fd6, 1), aq: mF(0xd23c3c, 1), es: mF(0x23a046, 1), meio: mF(0xc4c9cf, 0.45) };
+var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, emissive: op < 1 ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
+var MAT = { af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
 bk.trocas = []; bk.matsFoco = MAT;
 todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK; if (!k || k === 'outros') return;
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
-if (!agua && !esg) return;
+if (!agua && !esg) {
+if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
+return;
+}
 var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
 });

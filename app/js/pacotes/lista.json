@@ -4,10 +4,10 @@
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=4e07663242",
-  "js/bim-pacote.js?v=532293c8f2",
+  "js/pacotes/bim.js?v=594cf9764f",
+  "js/bim-pacote.js?v=61654c7761",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
-  "js/pacotes/hidro.js?v=ebfd1476bf"
+  "js/pacotes/hidro.js?v=24a4f05eed"
  ],
  "pulados": [
   "venda/perfis-clientes.js"

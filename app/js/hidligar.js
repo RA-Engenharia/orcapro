@@ -133,7 +133,7 @@
     var bocaB = null, rebB = null, LBOCA = 0.15;   // hid:ok 15 cm retos antes da boca: o comprimento da bolsa + a folga até a 1ª conexão (o mesmo toco da saída)
     /* SAÍDA DA CAIXA SIFONADA/RALO (13/11/2026): a saída sai no SENTIDO que o usuário girou a peça (rotY, passos de 45° na colocação) — um toco reto
        da boca da saída para fora, na declividade de norma, e a rota segue da ponta dele. DN da saída = o último número do DN da peça (100x100x50 → 50) */
-    var tocoA = null, PkA = A.tipo === "peca" && A.id != null ? arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return String(k.id) === String(A.id); })[0] : null;
+    var tocoLat = null, tocoA = null, PkA = A.tipo === "peca" && A.id != null ? arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return String(k.id) === String(A.id); })[0] : null;
     /* caixa nunca girada (rotY 0, o padrão da colocação): sem toco — o traçado escolhe por onde a saída vai, como antes; o giro da pessoa manda quando existe.
        ⚠ A6 (revisão 13/11/2026): "girada" é o campo saidaGirada (gravado pelo giro e pela colocação girada) — quem girava 8 × 45° voltava a 0° e perdia a
        escolha. Projeto salvo antes do campo: rotY ≠ 0 continua valendo como girada; rotY 0 sem o campo = livre, como sempre foi. */
@@ -163,6 +163,16 @@
       var Lt = 0.15, q0 = bSa ? { x: bSa.x, y: yS, z: bSa.z } : { x: r4(PkA.x + dx * rC), y: yS, z: r4(PkA.z + dz * rC) }, q1 = { x: r4(q0.x + dx * Lt), y: r4(yS - iS * Lt), z: r4(q0.z + dz * Lt) };   // hid:ok 15 cm de toco reto: o comprimento da bolsa + a folga até a 1ª conexão (geometria)
       tocoA = { op: "trecho", id: "lgcx" + (opts.seq || (++SEQ) + "-") + "toco", sistema: "esgoto", material: "pvc_esgoto", dn: dnS, p1: q0, p2: q1 };
       A = { tipo: "ponta", x: q1.x, y: q1.y, z: q1.z, sistema: "esgoto", dn: dnS }; dnA = dnS;
+      /* ⚠ A SAÍDA DE COSTAS PARA O DESTINO (14/11/2026 — print do Rogério: "o tubo não pode ficar passando pelo outro"): a caixa já ligada não gira
+         (giraria as entradas dos tubos dela) e a saída apontava para longe de B — a rota saía da ponta do toco e VOLTAVA por cima dele (dois tubos
+         um dentro do outro). Agora o toco vira de LADO (joelho 90° para o lado de B) antes de a rota seguir. */
+      var vBx = B.x - q1.x, vBz = B.z - q1.z;
+      if (vBx * dx + vBz * dz < 0) {
+        var px = -dz, pz = dx; if (vBx * px + vBz * pz < 0) { px = -px; pz = -pz; }
+        var Ll = 0.2, q2 = { x: r4(q1.x + px * Ll), y: r4(q1.y - iS * Ll), z: r4(q1.z + pz * Ll) };   // hid:ok 20 cm: a perna lateral (bolsa + folga até a próxima conexão)
+        tocoLat = { op: "trecho", id: tocoA.id + "2", sistema: "esgoto", material: "pvc_esgoto", dn: dnS, p1: q1, p2: q2 };
+        A = { tipo: "ponta", x: q2.x, y: q2.y, z: q2.z, sistema: "esgoto", dn: dnS };
+      }
     }
     var con = { id: "c", sistema: sisRota, dn: dnA || num(A.dn, 0), x: A.x, y: A.y, z: A.z };
     if (A.parede) con.parede = A.parede;
@@ -315,11 +325,36 @@
         antes = dividir(estado, B.trecho, fim || B);
       }
       if (A.tipo === "meio" && A.trecho) antes = antes.concat(dividir(estado, A.trecho, A));
-      if (tocoA) ops = [o.toco || JSON.parse(JSON.stringify(tocoA))].concat(ops);
+      var avVent = null, noVent = null;
+      if (tocoA) {
+        var tocoO = o.toco || JSON.parse(JSON.stringify(tocoA)), vt0 = null;
+        if (opts.ventilar !== false && /^caixa_sifonada/.test(String(PkA.peca))) { try { vt0 = ventilacaoDaCaixa(estado, avaliarFam, PkA, tocoO, par.prefixo, num(opts.piso, 0), ops); } catch (eV) { vt0 = null; if (typeof process !== "undefined" && process.env && process.env.HID_DEBUG) console.log("vent:", eV); } }
+        var lat = tocoLat ? JSON.parse(JSON.stringify(tocoLat)) : null;
+        if (lat) {   /* a perna lateral liga a ponta do toco ao 1º ponto da rota (a mesma cota: sem degrau de milímetros) */
+          lat.p1 = { x: tocoO.p2.x, y: tocoO.p2.y, z: tocoO.p2.z };
+          var r1o = ops.filter(function (x) { return x.op === "trecho" && Math.abs(x.p1.x - lat.p2.x) + Math.abs(x.p1.z - lat.p2.z) < 1e-3; })[0];
+          if (r1o) lat.p2 = { x: r1o.p1.x, y: r1o.p1.y, z: r1o.p1.z };
+        }
+        var pre = lat ? [tocoO, lat] : [tocoO];
+        if (vt0) { ops = pre.concat(ops).concat(vt0.ops.slice(2)); avVent = vt0.aviso; noVent = vt0.no; } else ops = pre.concat(ops);
+      }
       if (altSaida) { ops = [JSON.parse(JSON.stringify(altSaida))].concat(ops); o.avisos = arr(o.avisos); o.avisos.push("a saída da " + txt((I.PECAS[PkA.peca] || {}).nome).toLowerCase() + " " + PkA.id + " foi virada para o lado da ligação (a peça girou " + Math.round(PkA.rotY * 180 / Math.PI) + "°)"); }
       if (bocaB) ops.push({ op: "trecho", id: par.prefixo + "boca", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num(bocaB.boca.dn, 40), p1: bocaB.P, p2: { x: bocaB.boca.x, y: bocaB.boca.y, z: bocaB.boca.z } });   // hid:ok DN de reserva
       ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
-      var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
+      /* a VENTILAÇÃO deriva no meio do toco: depois de unir os colineares (o toco e o 1º trecho da rota viram um tubo), esse tubo é dividido no nó */
+      if (noVent) {
+        var nv = [];
+        ops.forEach(function (x) {
+          if (x.op !== "trecho" || x.sistema === "ventilacao") { nv.push(x); return; }
+          var ax = x.p2.x - x.p1.x, ay = x.p2.y - x.p1.y, az = x.p2.z - x.p1.z, L2 = ax * ax + ay * ay + az * az, t = L2 > 0 ? ((noVent.x - x.p1.x) * ax + (noVent.y - x.p1.y) * ay + (noVent.z - x.p1.z) * az) / L2 : -1;
+          var Pq = { x: x.p1.x + ax * t, y: x.p1.y + ay * t, z: x.p1.z + az * t };
+          if (t > 0.01 && t < 0.99 && Math.hypot(Pq.x - noVent.x, Pq.y - noVent.y, Pq.z - noVent.z) < 0.003) {   // hid:ok 3 mm: o nó está no eixo deste tubo
+            var a1 = JSON.parse(JSON.stringify(x)), a2 = JSON.parse(JSON.stringify(x)); a1.p2 = noVent; a2.p1 = noVent; a2.id = x.id + "-v"; nv.push(a1, a2);
+          } else nv.push(x);
+        });
+        ops = nv;
+      }
+      var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (avVent) av.push(avVent); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
       if (rebB) av.push("o corpo da caixa " + txt(PkB0.id) + " desceu " + (rebB.dd * 100).toFixed(1).replace(".", ",") + " cm com o prolongador para a entrada ficar acima do fecho hídrico; os tubos ligados nela desceram junto");
       return { estrategia: o.estrategia, nome: o.nome, ops: arr(rebB && rebB.ops).concat(arr(o.rebaixoOps)).concat(antes.concat(ops)), rebaixoB: rebB ? rebB.dd : 0, comprimento: o.comprimento, avisos: av, boca: bocaB ? bocaB.boca : null, rebaixo: o.rebaixoOps ? true : false };
     });
@@ -334,6 +369,56 @@
      material, na mesma direção e na mesma inclinação, viram UM tubo (a luva só entra quando o comprimento passa da barra — js/biminst.js luvasBarra) */
   /* A8 (revisão 13/11/2026): `existentes` = trechos do modelo — um tubo existente (ou o ramal) que termina no nó intermediário é derivação: os dois
      novos não se fundem ali (antes só os novos contavam, e a derivação perdia o nó) */
+  /* ⚠ VENTILAÇÃO AUTOMÁTICA DA CAIXA SIFONADA (14/11/2026 — o Rogério: "sempre que eu interligar a caixa sifonada à rede, ele já tem que entender
+     que ali sai um tubo de ventilação, e vai para a parede mais próxima"; regra da casa: a ventilação depois da caixa é DN 50). O toco da saída é
+     DIVIDIDO no meio; desse nó sai a ventilação: um trecho horizontal até o eixo da parede mais próxima (subindo para a derivação, que a água não
+     entre nele) e a coluna vertical dentro da parede até KV.alto acima do piso, com a ponta marcada `continua` (segue até o terminal ou a coluna
+     de ventilação). Sem parede no alcance (KV.alcance): a coluna sobe ali mesmo, com aviso. Já existe ventilação a menos de KV.jaTem da caixa:
+     nada é lançado (a pessoa já ventilou). → { ops: [toco1, toco2, vent...], aviso } | null */
+  var KV = { dn: 50, alto: 2.2, alcance: 2.5, jaTem: 1.0, subida: 0.12 };   // hid:ok DN 50 (regra da casa: ventilação depois da caixa), 2,2 m acima do piso, alcance de 2,5 m até a parede, 1 m e 5 cm de geometria
+  function distSeg(a, b, c, d) {   /* menor distância entre dois segmentos 3D (amostrada: o caminho da ventilação é curto) */
+    var m = INF0; for (var i = 0; i <= 24; i++) { var s0 = i / 24, p = [a.x + (b.x - a.x) * s0, a.y + (b.y - a.y) * s0, a.z + (b.z - a.z) * s0];
+      for (var j = 0; j <= 24; j++) { var u = j / 24, q = [c.x + (d.x - c.x) * u, c.y + (d.y - c.y) * u, c.z + (d.z - c.z) * u]; m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])); } }
+    return m;
+  }
+  var INF0 = 1e9;   // hid:ok infinito numérico
+  function ventilacaoDaCaixa(estado, avaliarFam, PkA, toco, prefixo, pisoY, rota) {
+    var H = HR(); if (!toco || !H) return null;
+    var jaTem = arr(estado && estado.instalacoes && estado.instalacoes.trechos).some(function (t) {
+      return t.sistema === "ventilacao" && [t.p1, t.p2].some(function (q) { return Math.hypot(q.x - PkA.x, q.z - PkA.z) <= KV.jaTem; });
+    });
+    if (jaTem) return null;
+    var M = { x: r4((toco.p1.x + toco.p2.x) / 2), y: r4((toco.p1.y + toco.p2.y) / 2), z: r4((toco.p1.z + toco.p2.z) / 2) };
+    var t1 = JSON.parse(JSON.stringify(toco)), t2 = JSON.parse(JSON.stringify(toco)); t1.p2 = M; t2.id = toco.id + "-2"; t2.p1 = M;   /* t1 mantém o id do toco (quem procura o toco acha) */
+    /* os tubos que o caminho da ventilação não pode atravessar: os da rota desta ligação e os que já existem */
+    var outros = arr(rota).filter(function (q) { return q && q.op === "trecho" && q.id !== toco.id; }).concat(arr(estado && estado.instalacoes && estado.instalacoes.trechos));
+    function livre(a, b) { return outros.every(function (q) { if (!q.p1 || !q.p2) return true; var enc = [q.p1, q.p2].some(function (r) { return Math.hypot(r.x - a.x, r.y - a.y, r.z - a.z) < 0.02; }); return enc || distSeg(a, b, q.p1, q.p2) >= (num(q.dn, 50) + KV.dn) / 2000 + 0.01; }); }   // hid:ok 1 cm de folga (geometria)
+    var obs = null; try { obs = H.obstaculosDoBim(estado, avaliarFam); } catch (e) { obs = null; }
+    var cands = [], y0 = r4(M.y + KV.subida);
+    arr(obs && obs.paredes).forEach(function (w) {
+      var ax = w.p2.x - w.p1.x, az = w.p2.z - w.p1.z, L2 = ax * ax + az * az; if (!(L2 > 1e-9)) return;
+      var t = Math.max(0, Math.min(1, ((M.x - w.p1.x) * ax + (M.z - w.p1.z) * az) / L2)), F = { x: w.p1.x + ax * t, z: w.p1.z + az * t }, d = Math.hypot(F.x - M.x, F.z - M.z);
+      if (d <= KV.alcance) cands.push({ d: d, F: F, id: w.id });
+    });
+    cands.sort(function (p, q) { return p.d - q.d; });
+    /* a parede mais próxima cujo caminho (subida + horizontal + coluna) não atravessa nenhum tubo */
+    var melhor = null;
+    cands.forEach(function (c0) {
+      if (melhor) return;
+      var A0 = { x: M.x, y: y0, z: M.z }, Pw = { x: r4(c0.F.x), y: r4(y0 + 0.01 * c0.d), z: r4(c0.F.z) }, Tp = { x: Pw.x, y: Math.max(r4(num(pisoY, 0) + KV.alto), r4(Pw.y + 0.3)), z: Pw.z };   // hid:ok 1 % e 30 cm (geometria)
+      if (livre({ x: M.x, y: M.y + 0.03, z: M.z }, A0) && livre(A0, Pw) && livre(Pw, Tp)) melhor = c0;   // hid:ok 3 cm acima do nó (o próprio toco encosta)
+    });
+    var yTopo = r4(num(pisoY, 0) + KV.alto), sq = (prefixo || "lgv") + "vent", out = [t1, t2];
+    var base = { op: "trecho", sistema: "ventilacao", material: "pvc_esgoto", dn: KV.dn };
+    function T(id, a, b, extra) { var o = {}; Object.keys(base).forEach(function (k) { o[k] = base[k]; }); o.id = sq + id; o.p1 = a; o.p2 = b; if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); out.push(o); }
+    var P0 = { x: M.x, y: y0, z: M.z };
+    T("0", M, P0);   /* a derivação sobe do toco */
+    var topoX = M.x, topoZ = M.z;
+    if (melhor && melhor.d > 0.03) { var Pw = { x: r4(melhor.F.x), y: r4(y0 + 0.01 * melhor.d), z: r4(melhor.F.z) }; T("1", P0, Pw); P0 = Pw; topoX = Pw.x; topoZ = Pw.z; }   // hid:ok 1 %: a horizontal da ventilação sobe para a parede (a água volta para o esgoto)
+    T("2", P0, { x: topoX, y: Math.max(yTopo, r4(P0.y + 0.3)), z: topoZ }, { continua: "p2" });   // hid:ok 30 cm mínimos de coluna (desenho)
+    return { ops: out, no: M, aviso: melhor ? "ventilação DN " + KV.dn + " da caixa " + PkA.id + " sobe na parede " + melhor.id + " (" + (melhor.d * 100).toFixed(0) + " cm) até +" + KV.alto.toFixed(2).replace(".", ",") + " m — continuar até o terminal ou a coluna de ventilação"
+                                       : "ventilação DN " + KV.dn + " da caixa " + PkA.id + ": nenhuma parede a menos de " + KV.alcance.toFixed(1).replace(".", ",") + " m com caminho livre de outros tubos — a coluna sobe ao lado da caixa; confira" };
+  }
   function unirColineares(ops, existentes) {
     var tr = ops.filter(function (x) { return x.op === "trecho"; }), mudou = true, fixo = {};
     function chave(p) { return r4(p.x) + "," + r4(p.y) + "," + r4(p.z); }

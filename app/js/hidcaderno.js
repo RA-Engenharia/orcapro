@@ -307,8 +307,9 @@
     K.escalasPlanta.forEach(function (e) { if (e < (c.denMin || 0)) return; var s = 1000 / e; if (den == null && (box.x1 - box.x0) * s <= disp.w && (box.z1 - box.z0) * s <= disp.h) den = e; });
     if (den == null) den = K.escalasPlanta[K.escalasPlanta.length - 1];   /* nada coube: a menor escala */
     var s = 1000 / den, wP = (box.x1 - box.x0) * s, hP = (box.z1 - box.z0) * s;
-    var ox = R.x + 2 + (disp.w - wP) / 2 - box.x0 * s, oy = R.y + hT + (disp.h - hP) / 2 - box.z0 * s;
-    c.AP.tituloVista(D, R.x + 1, R.y, "PLANTA DO AMBIENTE", "ESC 1:" + den + " - alturas em m do piso acabado");
+    /* o nome da planta EMBAIXO do desenho, com a escala (14/11/2026, pedido do Rogério) */
+    var ox = R.x + 2 + (disp.w - wP) / 2 - box.x0 * s, oy = R.y + 1 + (disp.h - hP) / 2 - box.z0 * s;
+    c.AP.tituloVista(D, R.x + 1, oy + box.z1 * s + 2, "PLANTA DO AMBIENTE", "ESC 1:" + den + " - alturas em m do piso acabado");
     /* 1) arquitetura de fundo, recortada na caixa do ambiente */
     /* HIDRO-3D: tudo o que é arquitetura/louça fica RECORTADO no retângulo da caixa do ambiente (móvel e louça que passam do recorte invadiam o cabeçalho) */
     var clipId = "cpamb" + (c.__clipN = (c.__clipN || 0) + 1) + "_" + Math.round(R.x * 10) + "_" + Math.round(R.y * 10);
@@ -326,8 +327,9 @@
       La.vaos.forEach(function (v) { if (v.x >= box.x0 && v.x <= box.x1 && v.z >= box.z0 && v.z <= box.z1) L2.vaos.push(v); });
       La.moveis.forEach(function (m) { if (m.x >= box.x0 && m.x <= box.x1 && m.z >= box.z0 && m.z <= box.z1) L2.moveis.push(m); });
       /* o nome do ambiente está no cabeçalho do bloco: a planta do recorte não leva o rótulo (ele caía em cima do tubo) */
-      var fa = II.fundoArquitetura(c, { paredes: L2.paredes, pilares: L2.pilares, vaos: L2.vaos, moveis: L2.moveis, ambientes: L2.ambientes }, s, ox, oy);
-      D.add(fa.svg); if (D.caixas) fa.textos.forEach(function (b) { D.caixas.push(b); });
+      if (fotoP) L2.paredes.concat(L2.pilares).forEach(function (w) { D.poli(w.pts.map(function (q) { return [q[0] * s + ox, q[1] * s + oy]; }), "HID-CONTEXTO", true); });   /* com a foto: só o contorno (o cheio escondia o tubo dentro da parede) */
+      else { var fa = II.fundoArquitetura(c, { paredes: L2.paredes, pilares: L2.pilares, vaos: L2.vaos, moveis: L2.moveis, ambientes: L2.ambientes }, s, ox, oy);
+      D.add(fa.svg); if (D.caixas) fa.textos.forEach(function (b) { D.caixas.push(b); }); }
     }
     /* louças e metais hidráulicos pelo contorno real (a silhueta da malha vista de cima), só os do recorte */
     if (!fotoP) try {

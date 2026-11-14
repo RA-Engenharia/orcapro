@@ -1213,8 +1213,34 @@
           criados[0] = ex;
         }
       }
+      /* ⚠ ESGOTO À MÃO CHEGANDO NO MEIO DE UM TUBO (14/11/2026 — print do Rogério: o ramal descia na vertical e entrava no tubo por TÊ). No esgoto a
+         entrada é por JUNÇÃO a 45° a favor do fluxo (NBR 8160): o último trecho do traço é refeito pelo motor do Interligar (js/hidligar.js — a
+         mesma entrada a 45° que confere parede, pilar e os tubos que já existem), saindo do começo dele. Não fechou → fica o traço como foi, com aviso. */
+      var feito45 = false;
+      if (alvo && alvo.tipo === "meio" && S.gravidade && !this._sobe && /^esgoto$|^pluvial$/.test(String(c.sistema)) && global.HidLigar && criados.length) {
+        var ult = criados[criados.length - 1], Q = ult.p1, tAl = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+        var ja45 = false;
+        if (tAl) { var ux = tAl.p2.x - tAl.p1.x, uz = tAl.p2.z - tAl.p1.z, lu = Math.hypot(ux, uz), vx = ult.p2.x - ult.p1.x, vz = ult.p2.z - ult.p1.z, lv = Math.hypot(vx, vz);
+          if (tAl.p1.y < tAl.p2.y) { ux = -ux; uz = -uz; }   /* o fluxo do tubo de destino: do alto para o baixo */
+          ja45 = lu > 1e-6 && lv > 1e-6 && Math.abs((ux * vx + uz * vz) / (lu * lv) - Math.SQRT1_2) < 0.02; }   // hid:ok tolerância do ângulo (geometria)
+        if (tAl && !ja45) {
+          /* a entrada a 45° montada NO FIM do próprio traço: do começo do último trecho (Qv) anda na horizontal até o ponto Pc (recuado para
+             montante e de lado, a d45 do nó), desce na vertical até a cota da junção e entra a 45° em J. O lado é o de onde o traço veio. */
+          var lu2 = Math.hypot(ux, uz), u2x = ux / lu2, u2z = uz / lu2, nx = -u2z, nz = u2x, P0t = criados[0].p1;
+          if ((P0t.x - alvo.x) * nx + (P0t.z - alvo.z) * nz < 0) { nx = -nx; nz = -nz; }
+          var dnN = num(ult.dn, 0) || num(c.dn, 50), d45 = Math.max(0.15, (num(tAl.dn, 50) + dnN) / 2000 + 0.10), iN = num(I.inclinacaoMinima ? I.inclinacaoMinima(c.sistema, dnN) : null, 2) / 100;   // hid:ok 15 cm / meio-DN + 10 cm (a mesma regra do js/hidligar.js) e 2 % de reserva
+          var J = { x: r4(alvo.x), y: r4(alvo.y), z: r4(alvo.z) }, Pc = { x: r4(J.x - u2x * d45 + nx * d45), z: r4(J.z - u2z * d45 + nz * d45) };
+          Pc.y = r6(J.y + iN * Math.hypot(Pc.x - J.x, Pc.z - J.z));
+          var Qv = ult.p1, H1 = { x: Pc.x, y: r6(Qv.y - iN * Math.hypot(Pc.x - Qv.x, Pc.z - Qv.z)), z: Pc.z };
+          if (H1.y >= Pc.y - 1e-6) {
+            var novos = [], ant2 = Qv, self2 = this;
+            [H1, Math.abs(H1.y - Pc.y) > I.TOL ? Pc : null, J].forEach(function (q) { if (!q) return; if (Math.hypot(q.x - ant2.x, q.y - ant2.y, q.z - ant2.z) < 0.005) { ant2 = q; return; } var o2 = self2._opTrecho(ant2, q, ed.ops); if (I.normTrecho(o2)) novos.push(o2); ant2 = q; });   // hid:ok 5 mm: ponto repetido
+            if (novos.length) { criados.pop(); novos.forEach(function (o2) { criados.push(o2); }); pts[pts.length - 1] = J; }
+          } else ctx.hint("Esgoto no meio do tubo: sem altura para a entrada a 45° (a junção pede " + ((Pc.y - H1.y) * 100).toFixed(1).replace(".", ",") + " cm a mais) — ficou o tê; confira.");
+        }
+      }
       /* chegou no MEIO de um tubo: ele é DIVIDIDO no ponto (o tê ou a junção fica no nó) */
-      if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
+      if (!feito45 && alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
       /* ESPAÇO CURTO (13/11/2026): a virada que nem a conexão-conexão comporta anda o mínimo (BimInst.ajustarViradas) — nunca luva no lugar da curva */
       var ajV = null; if (I.ajustarViradas && S.gravidade) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
       if (ajV && ajV.ajustes.length) { criados = ajV.novos; pts[pts.length - 1] = this._sobe && S.gravidade ? criados[criados.length - 1].p1 : criados[criados.length - 1].p2; }

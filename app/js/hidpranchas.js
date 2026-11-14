@@ -407,8 +407,9 @@
     var tit = titulo, sub = "ESC 1:" + esc + (medio ? " - nível de detalhe ALTO" : "");
     return { tipo: "planta", titulo: tit, escala: esc, w: Math.max(bb.x1 - bb.x0, c.AP.largTexto ? c.AP.largTexto(tit, D0().E.T.titulo) : 0) + K2.folgaVista * 2, h: bb.y1 - bb.y0 + K2.titulo + K2.folgaVista,
       desenhar: function (D, x, y, chk) {
-        var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
-        c.AP.tituloVista(D, x + K2.folgaVista, y, tit, sub);
+        /* o NOME da planta vai EMBAIXO do desenho, com a escala (14/11/2026 — o Rogério: "o nome da planta fica embaixo, com a escala, certinho") */
+        var ox = x + K2.folgaVista - bb.x0, oy = y + K2.folgaVista - bb.y0;
+        c.AP.tituloVista(D, x + K2.folgaVista, y + (bb.y1 - bb.y0) + K2.folgaVista * 1.5, tit, sub);
         /* ⚠ PLANTA = A VISTA DE CIMA DO PRÓPRIO MODELO (14/11/2026 — o Rogério marcou em vermelho os joelhos e luvas em "caixa cinza"
            da planta: "nunca mais eu quero falar sobre essa modelagem que não fica com as peças de acordo com o sistema; não quero isso
            nunca mais"). Com o 3D aberto, a foto ortográfica de cima (tubo, conexão e louça como modelados; o sistema da folha em cor, o
@@ -416,7 +417,7 @@
            desenho vetorial de antes. */
         var rp = fotoPlanta(c, sis, trs, pv, bb, s2);
         if (rp) D.add('<image data-im="' + rp.key + '" x="' + n(ox + bb.x0) + '" y="' + n(oy + bb.y0) + '" width="' + n(bb.x1 - bb.x0) + '" height="' + n(bb.y1 - bb.y0) + '" preserveAspectRatio="none" href="' + rp.href + '"/>');
-        var ctxD = ex.ctx; if (rp) { ctxD = {}; for (var kc in ex.ctx) if (Object.prototype.hasOwnProperty.call(ex.ctx, kc)) ctxD[kc] = ex.ctx[kc]; ctxD.loucas = []; }
+        var ctxD = ex.ctx; if (rp) { ctxD = {}; for (var kc in ex.ctx) if (Object.prototype.hasOwnProperty.call(ex.ctx, kc)) ctxD[kc] = ex.ctx[kc]; ctxD.loucas = []; ctxD.soContorno = true; }
         desenharContexto(D, ctxD, s2, ox, oy, medio ? bordasTubo(fm, s2, ox, oy) : []);
         if (sis === "gas") rotulosGas(D, c, pv, s2, ox, oy, chk);
         if (medio) { if (!rp) formasPlanta(D, cc, trs, s2, ox, oy, fm); bordasTubo(fm, s2, ox, oy).forEach(function (q) { chk.tubos.push(q); }); }
@@ -626,6 +627,14 @@
     return { svg: '<g data-fundo-arq="1">' + svg + "</g>", caixas: arr(D2.tb), textos: arr(D2.caixas) };
   }
   function desenharContexto(D, ctx, s, ox, oy, segs) {
+    /* ⚠ COM A FOTO DO MODELO POR BAIXO, a parede é só o CONTORNO (14/11/2026 — o Rogério: "a parede está escondendo as tubulações; tem que ser meio
+       transparente e mostrar a cor forte da disciplina; onde tem parede o tubo tem que aparecer, está ficando cortado"). O cheio cinza da parede
+       vetorial cobria o tubo que corre dentro dela; na foto a parede já sai translúcida (vista Instalações). */
+    if (ctx.soContorno) {
+      var Pc = function (q) { return [q[0] * s + ox, q[1] * s + oy]; };
+      arr(ctx.arq ? ctx.arq.paredes : ctx.paredes).forEach(function (w) { if (w && w.pts) D.poli(w.pts.map(Pc), "HID-CONTEXTO", true); });
+      return;
+    }
     if (ctx.arq) {
       var fa = fundoArquitetura(ctx.c, ctx.arq, s, ox, oy, segs); D.add(fa.svg);
       if (D.caixas) fa.textos.forEach(function (b) { D.caixas.push(b); });   /* os nomes dos ambientes entram na conferência de sobreposição */
@@ -1554,7 +1563,7 @@
     var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
     var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
     var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
-    var r = null; try { r = FOTO3D({ foco: foco, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+    var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
       largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
     if (!r || !r.ok || !r.url) return null;
     var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
