@@ -211,8 +211,8 @@
   var ABA_VISTA = [
     { nome: "Explodida", ids: ["explodir", "explodir-montar", "cotas-vivas"] },
     { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
-    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "ambientes-3d"] },
-    { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "caixa-corte"] },
+    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "ambientes-3d"] },
+    { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "contorno-linhas", "caixa-corte"] },
     { nome: "Gráficos da vista", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
       "estilos-objeto"] },
     { nome: "Plantas e cortes", ids: ["fx-vista-3d", "planta-2d", "planta-nova", "planta-forro", "planta-estrutural", "corte-2d", "chamada-detalhe"] },
@@ -1146,7 +1146,7 @@
       var s = SH(), raiz = s && s._raiz; if (!raiz) return false;
       var novo = on == null ? raiz.getAttribute("data-fx-linhas-finas") !== "1" : !!on;
       if (novo) raiz.setAttribute("data-fx-linhas-finas", "1"); else raiz.removeAttribute("data-fx-linhas-finas");
-      lsSet(CHAVE_FINAS, novo ? "1" : null);
+      lsSet(CHAVE_FINAS, novo ? "1" : "0");   /* "0" = a pessoa desligou de propósito; sem nada gravado vale o padrão (ligado) */
       try { var r = R(); if (r) r.setAtivo("fx-linhas-finas", novo); } catch (e) {}
       status(novo ? "Linhas finas: as vistas 2D com a espessura mínima (a impressão e o PDF continuam com as penas)." : "Linhas finas desligadas: as penas voltam.");
       return novo;
@@ -1596,7 +1596,8 @@
       }
       this._css();
       this._instalarEventos(s._raiz);
-      if (lsGet(CHAVE_FINAS) === "1" && s._raiz.getAttribute("data-fx-linhas-finas") !== "1" && !this._finasLidas) { this._finasLidas = true; s._raiz.setAttribute("data-fx-linhas-finas", "1"); }
+      /* LINHAS FINAS NASCEM LIGADAS (13/11/2026, pedido do Rogério: "linhas finas e limpas em todas as vistas"): só a escolha gravada de desligar ("0") as tira */
+      if (lsGet(CHAVE_FINAS) !== "0" && !s._raiz.hasAttribute("data-fx-finas-init")) { s._raiz.setAttribute("data-fx-finas-init", "1"); s._raiz.setAttribute("data-fx-linhas-finas", "1"); try { var rF = R(); if (rF && rF.comando("fx-linhas-finas")) rF.setAtivo("fx-linhas-finas", true); } catch (eF) {} }
       try { this.pintarQa(); } catch (eQ) {}
       /* depois do desenho (síncrono): os painéis da categoria ganham a marca */
       var self = this;

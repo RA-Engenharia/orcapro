@@ -1136,12 +1136,23 @@
         this._ligarInicio(el);
       }
       el.style.display = "";
+      this._marcarInicio(true);
       this._pintarInicio();
       this._lerIndice().then(function () { self._pintarInicio(); });
       this._servidor().then(function () { self._pintarInicio(); });
       return true;
     },
-    esconderInicio: function () { if (this._inicio) this._inicio.style.display = "none"; },
+    esconderInicio: function () { if (this._inicio) this._inicio.style.display = "none"; this._marcarInicio(false); },
+    /* SEM PROJETO ABERTO, SÓ A TELA INICIAL (13/11/2026, pedido do Rogério): a faixa de ferramentas, as abas e os painéis só
+       aparecem depois de abrir ou criar um projeto. A casca marca `data-rv-inicio` e o css/bim-fino.css esconde (os nós
+       continuam no DOM: as e2e e os comandos por id seguem achando tudo). */
+    _marcarInicio: function (on) {
+      try {
+        var raiz = global.BimShell && global.BimShell.raiz ? global.BimShell.raiz() : null;
+        if (!raiz) return;
+        if (on) raiz.setAttribute("data-rv-inicio", "1"); else raiz.removeAttribute("data-rv-inicio");
+      } catch (e) { /* casca ainda não montada: o próximo mostrar/esconder marca */ }
+    },
     _pintarInicio: function () {
       var el = this._inicio;
       if (!el || el.style.display === "none") return;

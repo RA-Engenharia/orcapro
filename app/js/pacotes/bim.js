@@ -103128,13 +103128,13 @@ try {
 "use strict";
 function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
 var REGISTRO = [
-{ id: "completo", nome: "Todas as disciplinas", curto: "Todas", cor: "#2D6A9C", texto: "#FFFFFF", acento: "#2D6A9C", acentoEscuro: "#3FB5E5", icone: "camadas",
-descricao: "A fita inteira, com as ferramentas de todas as disciplinas." },
-{ id: "civil", nome: "Arquitetura & Civil", curto: "Civil", cor: "#B5532A", texto: "#FFFFFF", acento: "#B5532A", acentoEscuro: "#E8835A", icone: "parede",
+{ id: "completo", nome: "Coordenação", curto: "Coordenação", cor: "#2D6A9C", texto: "#FFFFFF", acento: "#2D6A9C", acentoEscuro: "#3FB5E5", icone: "camadas",
+descricao: "Coordenação: tudo à vista e editável, e a fita inteira, com as ferramentas de todas as disciplinas." },
+{ id: "civil", nome: "Arquitetura & Civil", curto: "Arquitetura", cor: "#B5532A", texto: "#FFFFFF", acento: "#B5532A", acentoEscuro: "#E8835A", icone: "parede",
 descricao: "Parede, piso, forro, telhado, escada, ambiente, porta, janela, alvenaria, acabamentos e terreno." },
 { id: "estrutura", nome: "Estrutura", curto: "Estrutura", cor: "#5F6B78", texto: "#FFFFFF", acento: "#5F6B78", acentoEscuro: "#9AA7B5", icone: "estrutura",
 descricao: "Concreto, fundação, armação e fôrma: pilar, viga, laje, sapata, bloco e estaca." },
-{ id: "hidraulica", nome: "Hidráulica & Sanitária", curto: "Hidráulica", cor: "#1F6FD1", texto: "#FFFFFF", acento: "#1F6FD1", acentoEscuro: "#5AA2F0", icone: "link",
+{ id: "hidraulica", nome: "Hidráulica & Sanitária", curto: "Hidrossanitário", cor: "#1F6FD1", texto: "#FFFFFF", acento: "#1F6FD1", acentoEscuro: "#5AA2F0", icone: "link",
 descricao: "Tubos, conexões, registros, louças, ralos e caixas — água fria, quente, esgoto e pluvial." },
 { id: "eletrica", nome: "Elétrica & Dados", curto: "Elétrica", cor: "#D99A00", texto: "#15181D", acento: "#B07600", acentoEscuro: "#F2B632", icone: "vento",
 descricao: "Eletrodutos, eletrocalhas, tomadas, interruptores, quadros, luminárias e cabos." },
@@ -103175,7 +103175,7 @@ def(COMUM, [
 "planta-2d", "corte-2d", "corte-tecnico", "clash", "planta", "corte", "quatro-d", "tarefas4d", "curva-s", "seis-d",
 "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
 "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
-"visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
+"visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias",
 "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
 "render-ia", "acabamento-ia", "galeria-ia", "render-fisico", "cena", "apresentar-reforma",
 "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
@@ -103570,6 +103570,7 @@ paineis: [
 { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." },
 { id: "caixa-corte", rotulo: "Caixa de\ncorte", icone: "corte", grande: true, tipo: "alterna", requer: "modelo", dica: "Liga a caixa de corte da vista ativa: puxe as setas azuis de cada face para cortar o modelo de cima, de baixo e dos lados." },
 { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." },
+{ id: "contorno-linhas", rotulo: "Linhas de\ncontorno", icone: "desLinha", tipo: "alterna", requer: "modelo", dica: "Liga e desliga as linhas finas de contorno das peças no 3D (arestas de 1 px por cima do sombreado). Só gráfico: não muda o modelo. Fica lembrado neste aparelho." },
 { id: "materiais", rotulo: "Materiais\nrealistas", icone: "azulejo", tipo: "alterna", requer: "modelo", dica: "Veste as peças com a textura do material (tijolo, madeira, telha, concreto, porcelanato…) na escala real. Liga sozinho quando o IFC traz as texturas; usa mais a placa de vídeo." }
 ] },
 { nome: "Janelas", comandos: [
@@ -103844,7 +103845,7 @@ Ribbon.LAYOUT_B1 = [
 { nome: "Plano de içamento", ids: ["icar-equipamento", "icar-posicao", "icar-pontos", "icar-vento", "icar-simular", "icar-plano"] }] },
 { id: "vista", rotulo: "Vista", paineis: [
 { nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
-{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade"] },
+{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade", "contorno-linhas"] },
 { nome: "Janelas", ids: ["nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit"] },
 { nome: "Render por IA", ids: ["render-ia", "galeria-ia"] }] },
 { id: "gerenciar", rotulo: "Gerenciar", paineis: [
@@ -104561,7 +104562,8 @@ if (alvo) r.irPara(alvo);
 }
 this._aplicarDisc();
 this.pintarFita();
-this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns."));
+var fr = ""; try { fr = global.BimFocoUI ? global.BimFocoUI.frase() : ""; } catch (eFr) {}
+this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns.") + (fr ? " " + fr : ""));
 return res;
 },
 disciplina: function () { var dd = D(); return dd ? dd.atual() : "completo"; },
@@ -104584,6 +104586,7 @@ sel.setAttribute("aria-label", "Disciplina: " + reg.nome);
 }
 var selo = raiz.querySelector(".rv-disc-selo");
 if (selo) { selo.textContent = s.texto; selo.setAttribute("data-rv-disc-selo", id); }
+try { if (global.BimFocoUI) global.BimFocoUI.sincronizar(); } catch (eFoco) {}
 },
 _RAPIDOS: [
 { id: "abrir-ifc", rot: "+ IFC", ico: "abrir", pri: true },
@@ -104629,6 +104632,7 @@ if (!fita) return;
 try { if (global.BimFita && global.BimFita.antesDePintar) global.BimFita.antesDePintar(); } catch (eFx) {}
 this._sincAbas();
 this._pintarRapidos();
+try { if (global.BIM && global.BIM.linhasContorno && r.comando("contorno-linhas")) { var cOn = !!global.BIM.linhasContorno(); if (r.ativo("contorno-linhas") !== cOn) r.setAtivo("contorno-linhas", cOn); } } catch (eCt) {}
 var v = r.render();
 fita.innerHTML = "";
 if (this._abaDaFita !== r.abaAtiva()) { this._abaDaFita = r.abaAtiva(); try { fita.scrollLeft = 0; } catch (eSc) {} }
@@ -104668,8 +104672,91 @@ col.appendChild(b);
 });
 pn.appendChild(corpo);
 pn.appendChild(el("div", "rv-painel-nome", p.nome));
+pn.setAttribute("data-ord", String(fita.children.length));
 fita.appendChild(pn);
 });
+this._ajustarFita();
+},
+_ajustarFita: function () {
+var self = this, raiz = this._raiz, fita = raiz && raiz.querySelector(".rv-fita");
+if (!fita) return;
+var reabrir = this._painelAberto || null;
+this._abrirPainelFita(null, false);
+var velho = fita.querySelector(".rv-fita-mais");
+if (velho) {
+var guardados = [].slice.call(velho.querySelectorAll(".rv-fita-mais-corpo > .rv-painel"));
+guardados.forEach(function (p) {
+[].forEach.call(p.querySelectorAll(".rv-cmd"), function (b) { try { delete b.scrollIntoView; } catch (e) {} });
+var ord = +p.getAttribute("data-ord"), antes = null;
+[].forEach.call(fita.children, function (c) { if (!antes && c !== velho && c.getAttribute && c.getAttribute("data-ord") != null && +c.getAttribute("data-ord") > ord) antes = c; });
+fita.insertBefore(p, antes || velho);
+});
+fita.removeChild(velho);
+}
+raiz.removeAttribute("data-rv-recolhe");
+var disp = fita.clientWidth;
+this._fitaLarg = disp;
+try { if (global.localStorage && global.localStorage.getItem("orcapro:bim:fita-mais") === "0") return; } catch (eLs) {}
+if (!disp || fita.offsetParent === null || fita.scrollWidth <= disp + 1 || raiz.getAttribute("data-rv-foco") === "1") return;
+var mais = el("div", "rv-painel rv-fita-mais"), rec = el("button", "rv-painel-rec"), corpo = el("div", "rv-fita-mais-corpo");
+rec.type = "button"; rec.setAttribute("data-rv-rec", "mais"); rec.setAttribute("aria-haspopup", "true"); rec.setAttribute("aria-expanded", "false");
+rec.innerHTML = ico("camadas", 18) + '<span class="rv-painel-rec-nome">Mais painéis</span><span class="rv-painel-rec-seta" aria-hidden="true">▾</span>';
+rec.onclick = function (ev) { if (ev) ev.stopPropagation(); self._abrirPainelFita(mais, mais.getAttribute("data-aberto") !== "1"); };
+mais.appendChild(rec); mais.appendChild(corpo);
+fita.appendChild(mais);
+var paineis = [].filter.call(fita.children, function (c) { return c !== mais && c.classList && c.classList.contains("rv-painel"); });
+var movidos = 0;
+for (var k = paineis.length - 1; k >= 0 && fita.scrollWidth > disp + 1; k--) {
+if (k === 0 && movidos === 0) break;
+corpo.insertBefore(paineis[k], corpo.firstChild); movidos++;
+}
+if (!movidos) { fita.removeChild(mais); return; }
+raiz.setAttribute("data-rv-recolhe", "1");
+rec.setAttribute("data-rv-n", String(movidos));
+rec.title = "Mais painéis (" + movidos + "): abrir os comandos que não couberam na faixa";
+if (corpo.querySelector('.rv-cmd[aria-pressed="true"]')) rec.setAttribute("data-rv-ligado", "1");
+[].forEach.call(corpo.querySelectorAll(".rv-cmd"), function (b) { b.scrollIntoView = function () { self._abrirPainelFita(mais, true); }; });
+if (reabrir) self._abrirPainelFita(mais, true);
+if (!this._roFita && global.ResizeObserver) {
+try {
+this._roFita = new global.ResizeObserver(function () {
+var w = fita.clientWidth;
+if (self._roAg || w === self._fitaLarg) return;
+self._fitaLarg = w;
+self._roAg = true;
+(global.requestAnimationFrame || setTimeout)(function () { self._roAg = false; if (self._raiz) self._ajustarFita(); });
+});
+this._roFita.observe(fita);
+} catch (eRo) { this._roFita = null; }
+}
+},
+_abrirPainelFita: function (mais, abrir) {
+var self = this, raiz = this._raiz; if (!raiz) return;
+[].forEach.call(raiz.querySelectorAll(".rv-fita-mais[data-aberto]"), function (p) {
+if (p === mais && abrir) return;
+p.removeAttribute("data-aberto");
+var r0 = p.querySelector(".rv-painel-rec"); if (r0) r0.setAttribute("aria-expanded", "false");
+});
+if (this._fecharFita) { document.removeEventListener("pointerdown", this._fecharFita, true); document.removeEventListener("keydown", this._fecharFita, true); document.removeEventListener("click", this._fecharFita, true); this._fecharFita = null; }
+this._painelAberto = null;
+if (!mais || !abrir) return;
+mais.setAttribute("data-aberto", "1");
+this._painelAberto = "mais";
+var rec = mais.querySelector(".rv-painel-rec"); if (rec) rec.setAttribute("aria-expanded", "true");
+this._fecharFita = function (ev) {
+if (ev.type === "keydown") { if (ev.key === "Escape") { self._abrirPainelFita(null, false); try { if (rec) rec.focus(); } catch (e) {} } return; }
+var alvo = ev.target;
+if (ev.type === "click") {
+var cm = mais.contains(alvo) && alvo.closest ? alvo.closest(".rv-cmd") : null;
+if (cm && !cm.querySelector(".rv-cmd-seta")) setTimeout(function () { self._abrirPainelFita(null, false); }, 0);
+return;
+}
+if (mais.contains(alvo)) return;
+self._abrirPainelFita(null, false);
+};
+document.addEventListener("pointerdown", this._fecharFita, true);
+document.addEventListener("keydown", this._fecharFita, true);
+document.addEventListener("click", this._fecharFita, true);
 },
 executar: function (id) {
 if (id === "desfazer" || id === "refazer") {
@@ -105127,10 +105214,30 @@ dir.innerHTML = '<span>Elementos: <b data-rv-st="n">0</b></span><span>Selecionad
 d.appendChild(dir);
 return d;
 },
-status: function (texto) {
+status: function (texto, tom) {
 if (!this._raiz) return;
 var s = this._raiz.querySelector(".rv-status-sel");
-if (s) s.textContent = texto || "Pronto";
+if (!s) return;
+if (tom !== "erro" && this._erroAte && Date.now() < this._erroAte) return;
+if (tom !== "erro") this._erroAte = 0;
+s.textContent = texto || "Pronto";
+if (texto && texto.length > 60) s.setAttribute("title", texto); else s.removeAttribute("title");
+if (tom === "erro" || tom === "aviso") s.setAttribute("data-rv-tom", tom); else s.removeAttribute("data-rv-tom");
+},
+aviso: function (texto, tipo, ms) {
+if (!this._raiz || !texto) return;
+var tom = /(^|\s)erro(\s|$)/.test(String(tipo || "")) ? "erro" : (/(^|\s)(aviso|warn)(\s|$)/.test(String(tipo || "")) ? "aviso" : "");
+var uma = String(texto).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+var self = this, dura = Math.max(typeof ms === "number" && ms > 0 ? ms : 0, tom === "erro" ? 9000 : 5000);
+if (tom !== "erro" && this._erroAte && Date.now() < this._erroAte) return;
+if (this._avisoT) clearTimeout(this._avisoT);
+if (tom === "erro") this._erroAte = Date.now() + dura;
+this.status(uma, tom);
+this._avisoT = setTimeout(function () {
+var s = self._raiz && self._raiz.querySelector(".rv-status-sel");
+self._erroAte = 0;
+if (s && s.textContent === uma) self.status("Pronto");
+}, dura);
 },
 contadores: function (n, sel) {
 if (!this._raiz) return;
@@ -168799,6 +168906,7 @@ var ATALHO_TIPO = { fim: "P", meio: "M", intersecao: "I", centro: "C", centroide
 perpendicular: "R", tangente: "T", aparente: "A", extensao: "L", paralelo: "K", rastreamento: "S", eixo: "X",
 proximo: "U", grade: "Y", eixos: "Z", vertice: "V", aresta: "B", face: "W" };
 var CHAVE_NOME = "orcapro:bim:snap-nome:v1";
+var FECHAR = '<button type="button" class="bbs-fechar" data-bbs-fechar="1" aria-label="Fechar (Esc)" title="Fechar (Esc)">✕</button>';
 var BimBarraSnaps = {
 ATALHO_TIPO: ATALHO_TIPO,
 tipoDoAtalho: function (letra) {
@@ -168870,7 +168978,7 @@ var item = function (t) {
 var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
 return '<label class="bbs-pop-item" title="' + esc((DICA_TIPO[t] || "") + (ATALHO_TIPO[t] ? " Atalho: Alt+" + ATALHO_TIPO[t] + "." : "")) + '"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + (COR[t] || "var(--aco)") + '">' + gl + "</span> " + esc(ROT[t] || t) + (ATALHO_TIPO[t] ? ' <span class="bbs-tecla" data-bbs-atalho="' + t + '">Alt+' + ATALHO_TIPO[t] + "</span>" : "") + "</label>";
 };
-pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span></div>' +
+pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span>' + FECHAR + '</div>' +
 '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado (F3)</label>" +
 '<div class="bbs-pop-acoes"><button type="button" class="btn sm ghost" data-bbs-todos="1">Marcar todos</button><button type="button" class="btn sm ghost" data-bbs-todos="0">Nenhum</button>' +
 '<button type="button" class="btn sm ghost" data-bbs-m2p="1" title="O próximo ponto é o MEIO entre dois cliques (cada um com snap) — vale uma vez">Meio entre 2 pontos</button></div>' +
@@ -168881,7 +168989,7 @@ return '<div class="bbs-pop-grupo" data-bbs-grupo="' + esc(g.id) + '"><div class
 '<label class="bbs-pop-item bbs-pop-passo">Passo da grade <input data-bbs-passo="1" inputmode="decimal" autocomplete="off" value="' + esc(fmt(p.passo)) + '"> m</label>' +
 '<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro, quadrante, centro geométrico, inserção, nó) &gt; ponto construído (perpendicular, tangente, interseção aparente, cruzamento de guias) &gt; linha de construção (prolongamento, rastreamento, paralelo) &gt; sobre a peça &gt; grade. Rastreamento e paralelo: pare o cursor ~0,5 s num ponto ou numa linha para adquirir.</div>';
 } else {
-pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span></div>' +
+pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span>' + FECHAR + '</div>' +
 '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-orto="1"' + (p.orto ? " checked" : "") + "> Orto ligado</label>" +
 B.INCREMENTOS.map(function (gr) { return '<label class="bbs-pop-item"><input type="checkbox" data-bbs-inc="' + gr + '"' + (p.inc.indexOf(gr) >= 0 ? " checked" : "") + "> " + gr + "°</label>"; }).join("") +
 '<div class="bbs-pop-nota">Orto ligado: o traço só anda nos múltiplos dos ângulos marcados. Desligado: ângulo livre, atraído a ±' + B.JANELA + "° deles. Shift inverte enquanto está apertado.</div>";
@@ -168899,6 +169007,7 @@ return true;
 _ligarPop: function (pop) {
 var self = this;
 pop.addEventListener("click", function (e) {
+if (e.target && e.target.closest && e.target.closest("[data-bbs-fechar]")) { var bt0 = self.elemento() && self.elemento().querySelector('[data-bbs="' + (self._menu === "snapMenu" ? "snap" : self._menu) + '"]'); self._fechar(); try { if (bt0) bt0.focus(); } catch (eF) {} return; }
 var b = e.target && e.target.closest ? e.target.closest("[data-bbs-todos],[data-bbs-m2p]") : null, B = BO(); if (!b || !B) return;
 if (b.hasAttribute("data-bbs-todos")) { var on = b.getAttribute("data-bbs-todos") === "1"; if (B.tiposTodos) B.tiposTodos(on); status(on ? "Todos os snaps marcados." : "Nenhum tipo de snap marcado (o Snap geral continua como estava)."); return; }
 if (b.hasAttribute("data-bbs-m2p")) {
@@ -169000,6 +169109,11 @@ if (this._ligado || typeof document === "undefined") return;
 this._ligado = true;
 var self = this;
 var B = BO(); if (B && B.assinar) this._sairOuvinte = B.assinar(function () { self.pintar(); });
+document.addEventListener("keydown", function (e) {
+if (e.key !== "Escape" || !self._pop) return;
+e.preventDefault(); e.stopImmediatePropagation();
+self._fechar();
+}, true);
 document.addEventListener("pointerdown", function (e) {
 if (!self._pop) return;
 if (self._pop.contains(e.target)) return;
@@ -173737,8 +173851,8 @@ var ABA_MODIFICAR = [
 var ABA_VISTA = [
 { nome: "Explodida", ids: ["explodir", "explodir-montar", "cotas-vivas"] },
 { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
-{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "ambientes-3d"] },
-{ nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "caixa-corte"] },
+{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "ambientes-3d"] },
+{ nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "contorno-linhas", "caixa-corte"] },
 { nome: "Gráficos da vista", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
 "estilos-objeto"] },
 { nome: "Plantas e cortes", ids: ["fx-vista-3d", "planta-2d", "planta-nova", "planta-forro", "planta-estrutural", "corte-2d", "chamada-detalhe"] },
@@ -174577,7 +174691,7 @@ linhasFinas: function (on) {
 var s = SH(), raiz = s && s._raiz; if (!raiz) return false;
 var novo = on == null ? raiz.getAttribute("data-fx-linhas-finas") !== "1" : !!on;
 if (novo) raiz.setAttribute("data-fx-linhas-finas", "1"); else raiz.removeAttribute("data-fx-linhas-finas");
-lsSet(CHAVE_FINAS, novo ? "1" : null);
+lsSet(CHAVE_FINAS, novo ? "1" : "0");
 try { var r = R(); if (r) r.setAtivo("fx-linhas-finas", novo); } catch (e) {}
 status(novo ? "Linhas finas: as vistas 2D com a espessura mínima (a impressão e o PDF continuam com as penas)." : "Linhas finas desligadas: as penas voltam.");
 return novo;
@@ -174992,7 +175106,7 @@ if (r.comando("fx-medir-longo")) r.setAtivo("fx-medir-longo", !!(this._m2 && thi
 }
 this._css();
 this._instalarEventos(s._raiz);
-if (lsGet(CHAVE_FINAS) === "1" && s._raiz.getAttribute("data-fx-linhas-finas") !== "1" && !this._finasLidas) { this._finasLidas = true; s._raiz.setAttribute("data-fx-linhas-finas", "1"); }
+if (lsGet(CHAVE_FINAS) !== "0" && !s._raiz.hasAttribute("data-fx-finas-init")) { s._raiz.setAttribute("data-fx-finas-init", "1"); s._raiz.setAttribute("data-fx-linhas-finas", "1"); try { var rF = R(); if (rF && rF.comando("fx-linhas-finas")) rF.setAtivo("fx-linhas-finas", true); } catch (eF) {} }
 try { this.pintarQa(); } catch (eQ) {}
 var self = this;
 Promise.resolve().then(function () { self._marcarCtx(); });
@@ -210206,6 +210320,266 @@ global.BimFundo = BimFundo;
 if (typeof module !== "undefined" && module.exports) module.exports = BimFundo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimfoco.js ==== */
+try {
+(function (global) {
+"use strict";
+var DISCIPLINAS = [
+{ id: "arquitetura", rotulo: "Arquitetura" },
+{ id: "hidrossanitario", rotulo: "Hidrossanitário" },
+{ id: "eletrica", rotulo: "Elétrica" },
+{ id: "estrutura", rotulo: "Estrutura" },
+{ id: "coordenacao", rotulo: "Coordenação" }
+];
+var ID_DISC = {}; DISCIPLINAS.forEach(function (d) { ID_DISC[d.id] = d; });
+var CATEGORIAS = [
+{ id: "paredes", rotulo: "Paredes", disc: "arquitetura", re: /^IFC(WALL|CURTAINWALL)/ },
+{ id: "lajes", rotulo: "Lajes e pisos", disc: "arquitetura", re: /^IFCSLAB/ },
+{ id: "coberturas", rotulo: "Coberturas", disc: "arquitetura", re: /^IFCROOF/ },
+{ id: "forros", rotulo: "Forros e acabamentos", disc: "arquitetura", re: /^IFCCOVERING/ },
+{ id: "portas", rotulo: "Portas", disc: "arquitetura", re: /^IFCDOOR/ },
+{ id: "janelas", rotulo: "Janelas", disc: "arquitetura", re: /^IFCWINDOW/ },
+{ id: "escadas", rotulo: "Escadas e guarda-corpos", disc: "arquitetura", re: /^IFC(STAIR|RAMP|RAILING)/ },
+{ id: "mobiliario", rotulo: "Mobiliário", disc: "arquitetura", re: /^IFCFURNISHING|^IFCFURNITURE/ },
+{ id: "terreno", rotulo: "Terreno e entorno", disc: "arquitetura", re: /^IFC(GEOGRAPHICELEMENT|SITE|TRANSPORTELEMENT)/ },
+{ id: "pilares", rotulo: "Pilares", disc: "estrutura", re: /^IFCCOLUMN/ },
+{ id: "vigas", rotulo: "Vigas", disc: "estrutura", re: /^IFCBEAM/ },
+{ id: "fundacoes", rotulo: "Fundações", disc: "estrutura", re: /^IFC(FOOTING|PILE)/ },
+{ id: "perfis", rotulo: "Perfis e chapas", disc: "estrutura", re: /^IFC(MEMBER|PLATE|FASTENER|MECHANICALFASTENER)/ },
+{ id: "armacao", rotulo: "Armação", disc: "estrutura", re: /^IFCREINFORCING/ },
+{ id: "tubos", rotulo: "Tubos", disc: "hidrossanitario", re: /^IFCPIPESEGMENT/ },
+{ id: "conexoes", rotulo: "Conexões", disc: "hidrossanitario", re: /^IFCPIPEFITTING/ },
+{ id: "registros", rotulo: "Registros e válvulas", disc: "hidrossanitario", re: /^IFC(VALVE|FLOWCONTROLLER)/ },
+{ id: "aparelhos", rotulo: "Aparelhos e louças", disc: "hidrossanitario", re: /^IFC(SANITARYTERMINAL|WASTETERMINAL|FLOWTERMINAL)/ },
+{ id: "reservatorios", rotulo: "Reservatórios e caixas", disc: "hidrossanitario", re: /^IFC(FLOWSTORAGEDEVICE|DISTRIBUTIONCHAMBERELEMENT|TANK|FLOWTREATMENTDEVICE)/ },
+{ id: "eletrodutos", rotulo: "Eletrodutos e cabos", disc: "eletrica", re: /^IFC(CABLECARRIER|CABLESEGMENT|CABLEFITTING|CONDUIT)/ },
+{ id: "pontos", rotulo: "Pontos elétricos", disc: "eletrica", re: /^IFC(OUTLET|LIGHTFIXTURE|SWITCHINGDEVICE|ELECTRICAPPLIANCE|LAMP|SENSOR)/ },
+{ id: "quadros", rotulo: "Quadros e caixas", disc: "eletrica", re: /^IFC(ELECTRICDISTRIBUTIONBOARD|JUNCTIONBOX|ELECTRICFLOWSTORAGEDEVICE|ELECTRICDISTRIBUTION)/ }
+];
+var OUTROS = { id: "outros", rotulo: "Outros elementos", disc: null, re: null };
+var POR_ID = {}; CATEGORIAS.concat([OUTROS]).forEach(function (c) { POR_ID[c.id] = c; });
+var ALIAS = { PAREDE: "IFCWALL", LAJE: "IFCSLAB", PILAR: "IFCCOLUMN", VIGA: "IFCBEAM", COBERTURA: "IFCROOF", PORTA: "IFCDOOR", JANELA: "IFCWINDOW",
+TUBO: "IFCPIPESEGMENT", CONEXAO: "IFCPIPEFITTING", REGISTRO: "IFCVALVE", ELETRODUTO: "IFCCABLECARRIERSEGMENT" };
+var DA_FITA = { completo: "coordenacao", civil: "arquitetura", estrutura: "estrutura", hidraulica: "hidrossanitario", eletrica: "eletrica",
+metalica: "estrutura", marcenaria: "arquitetura", marmoraria: "arquitetura" };
+function txt(v) { return v == null ? "" : String(v); }
+function classe(tipo) {
+var t = txt(tipo).toUpperCase().replace(/^\s+|\s+$/g, "");
+if (!t) return "";
+return ALIAS[t] || t;
+}
+function categoriaDe(tipo) {
+var t = classe(tipo);
+if (!t) return OUTROS;
+for (var i = 0; i < CATEGORIAS.length; i++) if (CATEGORIAS[i].re.test(t)) return CATEGORIAS[i];
+return OUTROS;
+}
+function disciplinaDe(tipo, discPeca) {
+var c = categoriaDe(tipo);
+if (c.disc) return c.disc;
+var d = txt(discPeca).toLowerCase();
+if (d === "hidraulica" || d === "hidrossanitario" || d === "hidrossanitaria") return "hidrossanitario";
+if (d === "eletrica") return "eletrica";
+if (d === "estrutura" || d === "metalica") return "estrutura";
+return "arquitetura";
+}
+var DESTACA = { tubos: "hidrossanitario", conexoes: "hidrossanitario", registros: "hidrossanitario", eletrodutos: "eletrica", quadros: "eletrica" };
+var FUNDO_OP = 0.12;
+var ESTADO = { disc: "coordenacao", esmaecer: true, fundoOp: FUNDO_OP, cats: {}, versao: 0 };
+var OPACIDADES = [1, 0.75, 0.5, 0.25];
+function copiaCats(c) { var o = {}; Object.keys(c).forEach(function (k) { o[k] = { vis: c[k].vis !== false, op: c[k].op }; }); return o; }
+function get() { return { disc: ESTADO.disc, esmaecer: ESTADO.esmaecer, fundoOp: ESTADO.fundoOp, cats: copiaCats(ESTADO.cats), versao: ESTADO.versao }; }
+function limpaOp(v) { v = Number(v); if (!(v > 0)) return 1; if (v >= 1) return 1; return Math.max(0.05, Math.round(v * 100) / 100); }
+function set(o) {
+var mudou = false;
+o = o || {};
+if (o.disc != null && ID_DISC[o.disc] && o.disc !== ESTADO.disc) { ESTADO.disc = o.disc; mudou = true; }
+if (o.esmaecer != null && !!o.esmaecer !== ESTADO.esmaecer) { ESTADO.esmaecer = !!o.esmaecer; mudou = true; }
+if (o.cats && typeof o.cats === "object") {
+Object.keys(o.cats).forEach(function (id) {
+if (!POR_ID[id]) return;
+var c = o.cats[id] || {}, at = ESTADO.cats[id] || { vis: true, op: 1 }, vis = c.vis == null ? at.vis !== false : c.vis !== false, op = c.op == null ? limpaOp(at.op) : limpaOp(c.op);
+if (vis !== (at.vis !== false) || op !== limpaOp(at.op)) mudou = true;
+if (vis && op >= 1) delete ESTADO.cats[id]; else ESTADO.cats[id] = { vis: vis, op: op };
+});
+}
+if (mudou) ESTADO.versao++;
+return mudou;
+}
+function restaurarCategorias() { var tinha = Object.keys(ESTADO.cats).length > 0; ESTADO.cats = {}; if (tinha) ESTADO.versao++; return tinha; }
+function reiniciar() { ESTADO.disc = "coordenacao"; ESTADO.esmaecer = true; ESTADO.cats = {}; ESTADO.versao++; }
+function ativo(est) { est = est || ESTADO; return (est.disc !== "coordenacao" && est.esmaecer) || Object.keys(est.cats).length > 0; }
+function avaliar(tipo, discPeca, est) {
+est = est || ESTADO;
+var cat = categoriaDe(tipo), disc = disciplinaDe(tipo, discPeca);
+var c = est.cats[cat.id], oculto = !!(c && c.vis === false), op = c ? limpaOp(c.op) : 1;
+var fundo = est.disc !== "coordenacao" && est.esmaecer && disc !== est.disc;
+if (fundo) op = Math.min(op, est.fundoOp);
+var destaque = null;
+if (!oculto && !fundo && est.esmaecer && est.disc === disc && DESTACA[cat.id] === disc) destaque = disc === "hidrossanitario" ? "sistema" : disc === "eletrica" ? "eletrica" : null;
+return { cat: cat.id, disc: disc, oculto: oculto, fundo: fundo, destaque: destaque, op: oculto ? 0 : op, selecionavel: !oculto && !fundo };
+}
+function resumo(pecas) {
+var cont = {};
+(pecas || []).forEach(function (p) { var c = categoriaDe(p && p.tipo).id; cont[c] = (cont[c] || 0) + 1; });
+var grupos = [];
+DISCIPLINAS.forEach(function (d) {
+if (d.id === "coordenacao") return;
+var itens = CATEGORIAS.filter(function (c) { return c.disc === d.id && cont[c.id]; }).map(function (c) { return { id: c.id, rotulo: c.rotulo, n: cont[c.id] }; });
+if (itens.length) grupos.push({ disc: d.id, rotulo: d.rotulo, itens: itens });
+});
+if (cont.outros) grupos.push({ disc: "outros", rotulo: "Outros", itens: [{ id: "outros", rotulo: OUTROS.rotulo, n: cont.outros }] });
+return grupos;
+}
+function daFita(id) { return DA_FITA[id] || "coordenacao"; }
+var BimFoco = {
+DISCIPLINAS: DISCIPLINAS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
+categoriaDe: categoriaDe, disciplinaDe: disciplinaDe, avaliar: avaliar, resumo: resumo, daFita: daFita,
+get: get, set: set, reiniciar: reiniciar, restaurarCategorias: restaurarCategorias, ativo: ativo,
+versao: function () { return ESTADO.versao; }
+};
+global.BimFoco = BimFoco;
+if (typeof module !== "undefined" && module.exports) module.exports = BimFoco;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimfocoui.js ==== */
+try {
+(function (global) {
+"use strict";
+function F() { return global.BimFoco || null; }
+function B() { return global.BIM || null; }
+function SH() { return global.BimShell || null; }
+function R() { return global.BimRibbon || null; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+function status(t) { try { if (SH() && SH().status) SH().status(t); } catch (e) {} }
+function ico(n, t) { try { return global.Icones ? global.Icones.get(n, t || 14) : ""; } catch (e) { return ""; } }
+var PARA_FITA = { coordenacao: "completo", arquitetura: "civil", hidrossanitario: "hidraulica", eletrica: "eletrica", estrutura: "estrutura" };
+var UI = {
+_painel: null,
+_eventos: false,
+sincronizar: function () {
+var f = F(), dd = global.BimDisciplinas;
+if (!f || !dd) return false;
+var id = "completo"; try { id = dd.atual(); } catch (e) {}
+var mudou = f.set({ disc: f.daFita(id) });
+if (mudou) { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e2) {} this.repintar(); }
+return mudou;
+},
+frase: function () {
+var f = F(); if (!f) return "";
+var e = f.get(), d = null;
+f.DISCIPLINAS.forEach(function (x) { if (x.id === e.disc) d = x; });
+if (!d || e.disc === "coordenacao") return "Coordenação: todas as disciplinas visíveis e editáveis.";
+return d.rotulo + " em foco: as outras disciplinas ficam esmaecidas e sem clique" + (e.esmaecer ? "." : " (desligado no painel Visibilidade por categoria).");
+},
+registrar: function (reg, G) {
+var self = this, r = R(); if (!r || !reg) return false;
+r.acrescentar("vista", "Vista", "Exibir", [
+{ id: "foco-categorias", rotulo: "Visibilidade\npor categoria", icone: "olho", grande: true, tipo: "alterna", requer: "modelo",
+dica: "Liga e desliga cada categoria (paredes, tubos, conexões, pilares…) e muda a transparência dela — e escolhe a disciplina em foco: as outras ficam esmaecidas e sem clique. Só gráfico: não muda o modelo." }
+]);
+reg["foco-categorias"] = function () { self.alternar(); return true; };
+this._ligarEventos();
+return true;
+},
+_ligarEventos: function () {
+var self = this; if (this._eventos) return; this._eventos = true;
+try {
+global.addEventListener("bim:modelos", function () { self.repintar(); });
+global.addEventListener("bim:foco", function () { self.repintar(); });
+} catch (e) {}
+},
+aberto: function () { return !!(this._painel && this._painel.parentNode); },
+alternar: function (on) {
+var quer = on == null ? !this.aberto() : !!on;
+if (quer) return this.abrir(); this.fechar(); return false;
+},
+fechar: function () {
+if (this._painel && this._painel.parentNode) this._painel.parentNode.removeChild(this._painel);
+this._painel = null;
+try { if (R()) { R().setAtivo("foco-categorias", false); if (SH() && SH().pintarFita) SH().pintarFita(); } } catch (e) {}
+},
+abrir: function () {
+var sh = SH(), palco = sh && sh.palco ? sh.palco() : null, f = F();
+if (!palco || !f) return false;
+if (this._painel && this._painel.parentNode) { this.repintar(); return true; }
+var self = this, p = document.createElement("div");
+p.className = "bim-foco-painel";
+p.setAttribute("role", "dialog");
+p.setAttribute("aria-label", "Visibilidade por categoria");
+p.setAttribute("data-bim-foco", "1");
+palco.appendChild(p);
+this._painel = p;
+p.addEventListener("change", function (ev) { self._mudou(ev.target); });
+p.addEventListener("click", function (ev) {
+var b = ev.target && ev.target.closest ? ev.target.closest("[data-bf]") : null; if (!b) return;
+var k = b.getAttribute("data-bf");
+if (k === "fechar") self.fechar();
+else if (k === "tudo") { f.restaurarCategorias(); self._aplicar(); status("Todas as categorias visíveis e opacas."); }
+});
+p.addEventListener("keydown", function (ev) {
+ev.stopPropagation();
+if (ev.key === "Escape") { ev.preventDefault(); self.fechar(); }
+});
+this.repintar();
+try { if (R()) { R().setAtivo("foco-categorias", true); if (sh.pintarFita) sh.pintarFita(); } } catch (e) {}
+try { var c0 = p.querySelector("select,input"); if (c0) c0.focus(); } catch (e2) {}
+return true;
+},
+_aplicar: function () { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e) {} this.repintar(); },
+_mudou: function (t) {
+var f = F(); if (!f || !t) return;
+if (t.hasAttribute("data-bf-disc")) {
+var id = PARA_FITA[t.value] || "completo", sh = SH();
+if (sh && sh.escolherDisciplina) { var res = sh.escolherDisciplina(id); if (res && res.ok === false) { this.repintar(); return; } }
+else { f.set({ disc: t.value }); this._aplicar(); }
+this.repintar();
+return;
+}
+if (t.hasAttribute("data-bf-esm")) { f.set({ esmaecer: !!t.checked }); this._aplicar(); status(this.frase()); return; }
+var cv = t.getAttribute("data-bf-vis"), co = t.getAttribute("data-bf-op");
+if (cv) { var o = {}; o[cv] = { vis: !!t.checked }; f.set({ cats: o }); this._aplicar(); return; }
+if (co) { var o2 = {}; o2[co] = { op: +t.value }; f.set({ cats: o2 }); this._aplicar(); }
+},
+repintar: function () {
+var p = this._painel, f = F(); if (!p || !p.parentNode || !f) return;
+var b = B(), est = f.get(), info = null;
+try { info = b && b.foco ? b.foco() : null; } catch (e) { info = null; }
+var grupos = (info && info.grupos) || [];
+var ativo = document.activeElement;
+var h = '<div class="bf-cab"><b>Visibilidade por categoria</b><button type="button" class="bf-x" data-bf="fechar" aria-label="Fechar" title="Fechar (Esc)">' + ico("fechar", 12) + "</button></div>";
+h += '<div class="bf-disc"><label>Disciplina em foco <select data-bf-disc="1" aria-label="Disciplina em foco">' +
+f.DISCIPLINAS.map(function (d) { return '<option value="' + d.id + '"' + (d.id === est.disc ? " selected" : "") + ">" + esc(d.rotulo) + "</option>"; }).join("") + "</select></label>" +
+'<label class="bf-esm"><input type="checkbox" data-bf-esm="1"' + (est.esmaecer ? " checked" : "") + '> Esmaecer as outras e travar o clique nelas</label></div>';
+if (!grupos.length) h += '<p class="bf-vazio">Abra um modelo para ver as categorias.</p>';
+grupos.forEach(function (g) {
+h += '<div class="bf-grupo"><div class="bf-gtit">' + esc(g.rotulo) + "</div>";
+g.itens.forEach(function (it) {
+var c = est.cats[it.id] || { vis: true, op: 1 }, vis = c.vis !== false, op = c.op == null ? 1 : c.op;
+h += '<div class="bf-lin' + (vis ? "" : " bf-off") + '"><label class="bf-nome"><input type="checkbox" data-bf-vis="' + it.id + '"' + (vis ? " checked" : "") + ' aria-label="Mostrar ' + esc(it.rotulo) + '"> ' + esc(it.rotulo) + '</label><span class="bf-n">' + it.n + "</span>" +
+'<select data-bf-op="' + it.id + '" aria-label="Transparência de ' + esc(it.rotulo) + '"' + (vis ? "" : " disabled") + ">" +
+f.OPACIDADES.map(function (o) { return '<option value="' + o + '"' + (Math.abs(o - op) < 0.01 ? " selected" : "") + ">" + Math.round(o * 100) + " %</option>"; }).join("") + "</select></div>";
+});
+h += "</div>";
+});
+h += '<div class="bf-pe"><button type="button" class="bf-bt" data-bf="tudo">Mostrar tudo</button>' +
+'<span class="bf-leg">' + (info && info.on ? (info.fundo ? info.fundo + " peças esmaecidas" : "") + (info.fundo && info.ocultas ? " · " : "") + (info.ocultas ? info.ocultas + " ocultas" : "") : "Nada esmaecido nem oculto") + "</span></div>";
+if (ativo && p.contains(ativo) && ativo.tagName === "SELECT" && p.getAttribute("data-bf-mexendo") === "1") return;
+var rolou = p.scrollTop;
+p.innerHTML = h;
+p.scrollTop = rolou;
+try {
+if (ativo && ativo.getAttribute) {
+var q = ativo.getAttribute("data-bf-disc") ? "[data-bf-disc]" : ativo.getAttribute("data-bf-esm") ? "[data-bf-esm]" : ativo.getAttribute("data-bf-vis") ? '[data-bf-vis="' + ativo.getAttribute("data-bf-vis") + '"]' : ativo.getAttribute("data-bf-op") ? '[data-bf-op="' + ativo.getAttribute("data-bf-op") + '"]' : "";
+if (q) { var n = p.querySelector(q); if (n) n.focus(); }
+}
+} catch (e3) {}
+}
+};
+global.BimFocoUI = UI;
+if (typeof module !== "undefined" && module.exports) module.exports = UI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimcorescatui.js ==== */
 try {
 (function (global) {
@@ -211609,12 +211983,20 @@ this._inicio = el;
 this._ligarInicio(el);
 }
 el.style.display = "";
+this._marcarInicio(true);
 this._pintarInicio();
 this._lerIndice().then(function () { self._pintarInicio(); });
 this._servidor().then(function () { self._pintarInicio(); });
 return true;
 },
-esconderInicio: function () { if (this._inicio) this._inicio.style.display = "none"; },
+esconderInicio: function () { if (this._inicio) this._inicio.style.display = "none"; this._marcarInicio(false); },
+_marcarInicio: function (on) {
+try {
+var raiz = global.BimShell && global.BimShell.raiz ? global.BimShell.raiz() : null;
+if (!raiz) return;
+if (on) raiz.setAttribute("data-rv-inicio", "1"); else raiz.removeAttribute("data-rv-inicio");
+} catch (e) { }
+},
 _pintarInicio: function () {
 var el = this._inicio;
 if (!el || el.style.display === "none") return;

@@ -803,8 +803,8 @@ function montar(host, opts) {
   // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = tema grafite, cinza escuro)
   var TEMAS = {
     orcapro: { nome: 'OrçaPRO', ativo: '#16a34a', bar: 'linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))', painel: 'rgba(15,39,64,.97)', borda: '#24435f', texto: '#dbe8f5', fundo: 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)' },
-    revit: { nome: 'Grafite', ativo: '#1858A8', bar: 'linear-gradient(180deg,rgba(59,68,75,.96),rgba(59,68,75,0))', painel: 'rgba(42,49,56,.97)', borda: '#565f66', texto: '#e8eaec', fundo: 'radial-gradient(120% 120% at 50% 0%, #4a5158 0%, #2e343a 70%)' },
-    claro: { nome: 'Claro', ativo: '#0e7490', bar: 'linear-gradient(180deg,rgba(235,241,247,.95),rgba(235,241,247,0))', painel: 'rgba(248,250,252,.98)', borda: '#c4d0dc', texto: '#1a2b3c', fundo: 'radial-gradient(120% 120% at 50% 0%, #e6edf4 0%, #c9d6e3 70%)' }
+    revit: { nome: 'Grafite', ativo: '#1858A8', bar: 'linear-gradient(180deg,rgba(59,68,75,.96),rgba(59,68,75,0))', painel: 'rgba(42,49,56,.97)', borda: '#565f66', texto: '#e8eaec', fundo: '#121417' },   /* escuro = preto liso (sem degradê azulado): pedido de 13/11/2026 */
+    claro: { nome: 'Claro', ativo: '#0e7490', bar: 'linear-gradient(180deg,rgba(235,241,247,.95),rgba(235,241,247,0))', painel: 'rgba(248,250,252,.98)', borda: '#c4d0dc', texto: '#1a2b3c', fundo: '#eef0f2' }
   };
   var temaId = 'orcapro';
   try { var t0 = localStorage.getItem('orcapro:bim:tema'); if (t0 && TEMAS[t0]) temaId = t0; } catch (_) {}
@@ -857,7 +857,7 @@ function montar(host, opts) {
   var SIS_ORDEM = ['agua_fria', 'agua_quente', 'esgoto', 'pluvial', 'gas', 'incendio', 'ventilacao', 'outros'];
   var SIS_PADRAO = {
     agua_fria:   { nome: 'Água fria',        cor: '#2563eb' },
-    agua_quente: { nome: 'Água quente',      cor: '#f97316' },
+    agua_quente: { nome: 'Água quente',      cor: '#b4235f' },   /* carmim (14/11/2026): o vermelho #c0392b ficava a ΔE 16 do incêndio (#dc2626) na legenda; carmim fica a ΔE ≥ 46 de todos os outros. Pranchas/PDF seguem com a cor própria (biminstnivel) */
     esgoto:      { nome: 'Esgoto / sanitário', cor: '#7c4a12' },
     pluvial:     { nome: 'Águas pluviais',   cor: '#16a34a' },
     gas:         { nome: 'Gás',              cor: '#eab308' },
@@ -975,6 +975,7 @@ function montar(host, opts) {
 
   var hud = document.createElement('div');
   hud.style.cssText = 'position:absolute;right:10px;bottom:10px;z-index:3;background:rgba(15,39,64,.85);border:1px solid #24435f;border-radius:8px;padding:6px 10px;font-size:12px;color:#bcd0e4';
+  hud.classList.add('bim-hud');   /* css/bim-fino.css: o contador vira texto quieto no canto (o estilo inline acima vale fora da casca) */
   hud.innerHTML = 'Elementos: <b data-h="el">0</b> · Triângulos: <b data-h="tri">0</b>';
   /* contagem de elementos e triângulos é informação de engenheiro; no link
      do cliente ela só ocupava o meio da tela (medido a 390 px) */
@@ -1053,7 +1054,8 @@ function montar(host, opts) {
   // sombra da luz principal (ligada só quando o usuário entra no imersivo — custa GPU no modelo grande)
   try { dir.shadow.mapSize.set(2048, 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
   var fill = new THREE.DirectionalLight(luzNum(0xbfd8ee), 0.35); fill.position.set(-40, 25, -30); scene.add(fill); // luz de preenchimento (sombra menos chapada)
-  var grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.opacity = .5; grid.material.transparent = true; scene.add(grid);
+  /* GRADE QUIETA (13/11/2026): cinza neutro de baixa opacidade, igual nos dois temas — a azulada de antes pesava mais que o modelo */
+  var grid = new THREE.GridHelper(200, 40, 0x6b7685, 0x8d97a3); grid.material.opacity = .28; grid.material.transparent = true; scene.add(grid);
   /* ---- FUNDO (Padrão | Branco | Preto) e GRADE do 3D (27/10/2026, js/bimfundo.js) ----
      Padrão = cena transparente sobre o fundo do tema (+ céu físico quando há sol). Branco/Preto = cor lisa na cena E no contêiner,
      sem céu; luz, sombra e sRGB não mudam (só o fundo). A preferência vale ao reabrir (localStorage, por pessoa e aparelho). */
@@ -1079,7 +1081,7 @@ function montar(host, opts) {
     var t = texSRGB(new THREE.CanvasTexture(c)); return t;
   })();
   var _chao = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: _chaoTex, transparent: true, depthWrite: false, opacity: .9 }));
-  _chao.rotation.x = -Math.PI / 2; _chao.renderOrder = -1; _chao.raycast = function () {}; scene.add(_chao);
+  _chao.rotation.x = -Math.PI / 2; _chao.renderOrder = -1; _chao.raycast = function () {}; _chao.visible = false; scene.add(_chao);   /* a mancha de sombra no chão saiu (13/11/2026): fundo liso, sem borrão sob o modelo */
   var orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping = true; orbit.dampingFactor = .08;
   // web-ifc já entrega a geometria em Y-up (converte o Z-up do IFC) → NÃO rotacionar (rotacionar tombava o modelo)
   var modelRoot = new THREE.Group(); modelRoot.rotation.x = 0; scene.add(modelRoot);
@@ -1625,12 +1627,32 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // OCULTO (modelo desligado no painel, 4D com "futuros" escondidos) na frente do visível — cota da
   // trena e seleção silenciosamente ERRADAS. Na planta, o clipping é só GPU: o raycast CPU ainda
   // acerta o telhado acima do corte. Este filtro resolve as duas famílias.
+  /* FOCO (A3, 14/11/2026): peça de FUNDO do foco (userData._focoOc === 2) fica `visible = false` só porque o desenho dela foi para a malha
+     única `foco-fantasma`. Ela NÃO está "oculta": continua no modelo. Quem lê `visible` para saber "o que está oculto / o que existe" usa
+     focoFundo(m); quem desenha ou exporta o modelo (planta, corte, fachada, RA/GLB, SketchUp) roda dentro de focoSem(), que acende as peças de
+     fundo (e apaga a malha única) só durante a conta e devolve tudo no fim — o foco é um jeito de VER, nunca muda o que sai do arquivo. */
+  function focoFundo(m) { return !!(m && m.userData && m.userData._focoOc === 2); }
+  function focoSuspender() {
+    if (!FOCO || !FOCO.on) return function () {};
+    var acesas = [], gh = FOCO.gh, gv = gh ? gh.grupo.visible : null;
+    todasMalhas(function (m) { if (m.userData && m.userData._focoOc === 2 && m.visible === false) { m.visible = true; acesas.push(m); } });
+    if (gh) gh.grupo.visible = false;
+    S._focoSuspenso = (S._focoSuspenso || 0) + 1;
+    return function () {
+      S._focoSuspenso = Math.max(0, (S._focoSuspenso || 1) - 1);
+      for (var i = 0; i < acesas.length; i++) if (acesas[i].userData && acesas[i].userData._focoOc === 2) acesas[i].visible = false;
+      if (gh && FOCO.gh === gh) gh.grupo.visible = gv;
+    };
+  }
+  function focoSem(fn) { var volta = focoSuspender(); try { return fn(); } finally { volta(); } }
+  S._focoSem = focoSem;
   function cadeiaVisivel(o) { for (var n = o; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; } return true; }
   /* ⚠ A PAREDE CRUA É PEGÁVEL (23/10/2026). Com a alvenaria assentada (js/alvassentamento3d.js) a malha ORIGINAL da parede fica
      `visible = false` e os blocos (instanciados, sem raycast) tomam o lugar na tela. O raio pulava a peça escondida: clicar numa
      parede crua no 3D não selecionava, não hospedava porta nem janela, não agarrava a face — e2e-bim-selecionar vermelha por isso.
      A peça escondida SÓ por esse motivo (`userData._alvOculta`) continua valendo para o raio: o clique acerta onde a parede está. */
   function visivelParaRaio(o) {
+    if (o && o.userData && o.userData._focoNaoSel === true) return false;   /* peça de OUTRA disciplina (fundo) não pega clique: bimfoco.js */
     if (cadeiaVisivel(o)) return true;
     if (!o || !o.userData || o.userData._alvOculta !== true) return false;
     for (var n = o.parent; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; }
@@ -2491,6 +2513,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var w = v.cont.clientWidth, h = v.cont.clientHeight;
     if (w && h) { v.renderer.setSize(w, h, false); v.camera.aspect = w / h; v.camera.updateProjectionMatrix(); }
   }
+  S._selecionarNaVista = function (v, cx, cy, soUid) { return selecionarNaVista(v, cx, cy, soUid); };
   function selecionarNaVista(v, cx0, cy0, soUid) {   /* soUid: só diz QUAL peça está sob o ponto (o clique simples seleciona pela seleção única) */
     if (S._limparRaioX) S._limparRaioX();
     var cv = v.renderer.domElement, r = cv.getBoundingClientRect(), rr = new THREE.Raycaster(), m = new THREE.Vector2();
@@ -2504,6 +2527,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var hits = rr.intersectObjects(modelRoot.children, true), hit = null, pls = v.renderer.clippingPlanes || [];
     for (var i = 0; i < hits.length && !hit; i++) {
       var ob = hits[i].object;
+      if (ob.userData && ob.userData._focoNaoSel === true) continue;   /* FOCO: peça de fundo não pega clique nas vistas 2D/corte (A2) */
       if (v.est ? !(ob.userData && ob.userData.expressID != null && existeNaVista(ob, v.est) && (!ob.parent || ob.parent.visible !== false)) : !cadeiaVisivel(ob)) continue;
       var fora = false; for (var k = 0; k < pls.length; k++) if (pls[k].distanceToPoint(hits[i].point) < -1e-6) fora = true;
       if (!fora) hit = hits[i];
@@ -2520,6 +2544,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* hook de teste: seleciona a peça sem clique — o mesmo que o duplo clique faz */
   S._selecionarUid = function (uid) {
     var m = S.meshPorUid && S.meshPorUid[uid]; if (!m) return false;
+    if (m.userData && m.userData._focoNaoSel === true) return false;   /* FOCO (A2): fundo não seleciona */
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     S.selected = m; S.prevMat = m.material; m.material = selMat; contornoSelecao(m);
     var o = (S && S.opts) || opts;
@@ -3207,6 +3232,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * marcação, quantos forem, em qualquer posição. */
   S._hint = function (msg) {
     S._hintUltimo = msg || '';
+    /* ⚠ DENTRO DA CASCA DO BIM A DICA VAI PARA A BARRA DE STATUS (13/11/2026): balão em cima do 3D cobre a vista. O nó do balão
+       continua montado e atualizado (as e2e leem o texto e o `display`); o css/bim-fino.css só o deixa invisível na casca. */
+    try {
+      var shB = window.BimShell;
+      if (shB && shB._raiz && shB._raiz.isConnected && shB.aviso && msg) shB.aviso(String(msg).replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''), '', 8000);
+    } catch (_) {}
     if (!msg) { hint.style.display = 'none'; return; }
     while (hint.firstChild) hint.removeChild(hint.firstChild);
     var s = String(msg), ini = 0, m;
@@ -6511,7 +6542,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * O estilo é da CENA (como o estilo desenho), lembrado por aparelho e
    * gravado no ponto de vista (`estilo.visual`).
    * ===================================================================== */
-  var EST = { modo: 'sombreado', fixo: false, ar: {}, luz: null, real: null, mat: null, ultimo: null };
+  var EST = { modo: 'sombreado', fixo: false, ar: {}, luz: null, real: null, mat: null, ultimo: null, cont: false, matCont: null, contIdx: {} };
 
   /* =====================================================================
    * ACABAMENTO VISUAL (19/10/2026) — o material de FACE de parede (op `pintar`), o piso de ambiente e o piso externo
@@ -6658,7 +6689,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var idx = new Uint32Array(Math.max(1, tot / 3));
     g.setIndex(new THREE.BufferAttribute(idx, 1)); g.setDrawRange(0, 0);
     if (!EST.mat) EST.mat = new THREE.LineBasicMaterial({ color: BimFundo.contorno(fundoPref.fundo, 0x151515) });
-    var ls = new THREE.LineSegments(g, EST.mat);
+    var ls = new THREE.LineSegments(g, EST.luz ? EST.mat : estContMat());
     ls.position.set(orig[0], orig[1], orig[2]); ls.frustumCulled = false;
     ls.raycast = function () {};   /* aresta é desenho: nunca rouba o clique, a trena nem o encaixe */
     var grupo = new THREE.Group(); grupo.add(ls); grupo.userData.arestasDe = mo.mid;
@@ -6680,11 +6711,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       vivos[mo.mid] = 1;
       e.grupo.position.copy(modelRoot.position); e.grupo.quaternion.copy(modelRoot.quaternion); e.grupo.scale.copy(modelRoot.scale);
       /* o estilo desenho da planta tem as arestas dele: as duas juntas dobrariam o traço */
-      e.grupo.visible = !estiloD.on && modelRoot.visible !== false && mo.grupo.visible !== false;
+      e.grupo.visible = !estiloD.on && modelRoot.visible !== false && mo.grupo.visible !== false && !!(EST.luz || EST.cont);
+      e.ls.material = EST.luz ? EST.mat : estContMat();   /* linha oculta: o traço dela; contorno: o fino e quieto */
       var fx = e.faixas, sig = 0, k, m, mt, vis;
       for (k = 0; k < fx.length; k++) {
         m = fx[k].ref; mt = m.material;
-        vis = m.visible !== false && m.parent === mo.grupo && !(m.userData && m.userData._solta) && !(mt && mt.transparent && mt.opacity < 0.15);
+        vis = m.visible !== false && m.parent === mo.grupo && !(m.userData && (m.userData._solta || m.userData._focoSemCont)) && !(mt && mt.transparent && mt.opacity < 0.15);
         fx[k].vis = vis;
         sig = (sig * 31 + (vis ? 2 : 1)) | 0;
       }
@@ -6705,6 +6737,69 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (feito) S._hint('A vista explodida foi desfeita: o desenho técnico mede o modelo montado.');
     return feito;
   };   /* a explodida desloca os vértices das arestas montadas (js/bimexplodirui.js) */
+  /* =====================================================================
+   * LINHAS DE CONTORNO (13/11/2026) — pedido do Rogério: "o que deixa um programa bonito é linhas finas... está muito amador".
+   * A silhueta fina de cada peça (arestas vivas de 1 px) por cima do sombreado normal, ligada/desligada por um botão
+   * (Vista › Estilo e projeção › Linhas de contorno). É o MESMO motor das arestas da linha oculta (uma LineSegments por
+   * modelo, índice por visibilidade, cache de EdgesGeometry por geometria) com um traço próprio: cinza-grafite de 1 px, meio
+   * transparente, que não briga com a cor da peça. Preferência por aparelho.
+   *
+   * ⚠ DESEMPENHO: EdgesGeometry de ~1.000 malhas (a Casa exemplo tem 1 milhão de triângulos) travaria a tela se rodasse de uma
+   *   vez. O cache é AQUECIDO aos poucos (orçamento de 6 ms por quadro) e só quando as arestas estão prontas o modelo ganha a
+   *   LineSegments — que então sai do cache, sem custo. O sombreado nunca espera por elas.
+   * ⚠ polygonOffset nas faces (o mesmo de estPolyBuckets): sem ele a aresta e a face disputam a profundidade e o traço pisca.
+   * ===================================================================== */
+  var CONT_CHAVE = 'orcapro:bim:contorno:v1';
+  /* ⚠ SEM PLACA DE VÍDEO (renderizador por software: SwiftShader, llvmpipe — o das e2e e de máquina sem GPU) 500 mil segmentos de linha
+     por quadro derrubam a tela e atrasam tudo o que espera o próximo quadro. Sem escolha gravada, o contorno nasce DESLIGADO nesse caso;
+     a escolha da pessoa (ligar) vale sempre. */
+  var _swGL = false;
+  try { var _gl = renderer.getContext(), _dbg = _gl && _gl.getExtension('WEBGL_debug_renderer_info'); _swGL = !!(_dbg && /swiftshader|llvmpipe|software|softpipe/i.test(String(_gl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) || ''))); } catch (_) { _swGL = false; }
+  try { var _cg = localStorage.getItem(CONT_CHAVE); EST.cont = _cg === '1' ? true : _cg === '0' ? false : !_swGL; } catch (_) { EST.cont = !_swGL; }
+  function estContMat() {
+    if (!EST.matCont) EST.matCont = new THREE.LineBasicMaterial({ color: 0x2f353d, transparent: true, opacity: .55, depthWrite: false });
+    return EST.matCont;
+  }
+  /* aquece o cache de arestas dos modelos que ainda não têm a LineSegments; devolve true quando TODOS estão prontos */
+  function estContAquecer(orcamentoMs) {
+    var t0 = performance.now(), pronto = true;
+    for (var i = 0; i < S.modelos.length; i++) {
+      var mo = S.modelos[i], e = EST.ar[mo.mid];
+      if (e && e.mo === mo) continue;
+      var fil = mo.grupo.children, ix = EST.contIdx[mo.mid];
+      if (!ix || ix.mo !== mo) ix = EST.contIdx[mo.mid] = { mo: mo, i: 0 };
+      while (ix.i < fil.length) {
+        var m = fil[ix.i++];
+        if (m.isMesh && m.userData.expressID != null && m.geometry && m.geometry.attributes && m.geometry.attributes.position && nVerts(m.geometry) <= SNAP_MAX_VERT) arestasDe(m.geometry);
+        if (performance.now() - t0 > orcamentoMs) break;
+      }
+      if (ix.i < fil.length) { pronto = false; break; }
+    }
+    return pronto;
+  }
+  function estContornoTick() {
+    if (!S.modelos.length) return;
+    estPolyBuckets(true);
+    if (estContAquecer(6)) {
+      estArestasSync();
+      if (FOCO && FOCO.on && FOCO.gh && !FOCO.gh.linhas && !FOCO.refeito) { FOCO.refeito = true; focoAplicar(); }   /* o aquecimento acabou: o fundo da disciplina em foco ganha o contorno dele (uma vez só: malha densa nunca ganha aresta) */
+    }
+  }
+  function estContorno(on, naoGravar) {
+    on = !!on;
+    EST.cont = on;
+    if (!naoGravar) { try { localStorage.setItem(CONT_CHAVE, on ? '1' : '0'); } catch (_) {} }
+    if (on) { EST.contIdx = {}; estPolyBuckets(true); }
+    else if (!EST.luz) { estArestasLigar(false); estPolyBuckets(false); }
+    try { window.dispatchEvent(new CustomEvent('bim:linhas-contorno', { detail: { on: on } })); } catch (_) {}
+    return on;
+  }
+  S._linhasContorno = function (on) { return on === undefined ? !!EST.cont : estContorno(on); };
+  S._linhasContornoAquecer = function (ms) { var pronto = estContAquecer(ms || 1e9); if (pronto) estArestasSync(); return pronto; };   /* gancho de teste: aquece o cache de arestas de uma vez (o normal é 6 ms por quadro) */
+  S._linhasContornoEstado = function () {
+    var seg = 0, mods = 0; Object.keys(EST.ar).forEach(function (k) { seg += EST.ar[k].segmentos; mods++; });
+    return { on: !!EST.cont, software: _swGL, modelos: mods, segmentos: seg, aquecido: S.modelos.every(function (mo) { return EST.ar[mo.mid] && EST.ar[mo.mid].mo === mo; }) };
+  };
   function estArestasLigar(on) {
     if (on) { estArestasSync(); return; }
     Object.keys(EST.ar).forEach(function (k) { estArestasSoltar(EST.ar[k]); });
@@ -6765,6 +6860,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      e devolve) e nasce sem o polygonOffset e sem a sombra */
   S._tickExtra.push(function () {
     if (EST.luz) { estArestasSync(); estPolyBuckets(true); }
+    else if (EST.cont) estContornoTick();
     if (EST.real) {
       var falta = false;
       S.modelos.forEach(function (mo) { if (mo._agreg && mo._agreg.partes.length && !mo._agreg.partes[0].malha.castShadow) falta = true; });
@@ -6794,7 +6890,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     EST.modo = p.estilo; if (!o.auto) EST.fixo = true;
     if (!o.naoGravar && !o.auto) { try { localStorage.setItem('orcapro:bim:estilo-visual', EST.modo); } catch (_) {} }
     /* 1) sai do que o modo anterior ligou (cada um restaura o seu) */
-    if (!p.arestas) estArestasLigar(false);
+    if (!p.arestas && !EST.cont) estArestasLigar(false);
     if (!p.facesClaras) estLinhaFaces(false);
     if (!p.luzNeutra) estLuz(false);
     if (!p.sombras) estRealista(false);
@@ -7185,7 +7281,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* a seleção única: uids ('edit:e3', '0:1234'); modo 'trocar' | 'somar' | 'alternar' */
   function selAplicar(uids, modo) {
     var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
-    novo = novo.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); });
+    /* FOCO (A2, 14/11/2026): peça de OUTRA disciplina (fundo do foco) não entra na seleção por NENHUM caminho — navegador, caixa, "semelhantes",
+       planta/corte. Sem isto o Delete apagava uma parede com o foco em Hidrossanitário. */
+    novo = novo.filter(function (u) { var m = S.meshPorUid && S.meshPorUid[u]; return !!m && !(m.userData && m.userData._focoNaoSel === true); });
     var mod = modeladorOn() && S._prec && S._prec.api;
     /* DELETE PARA QUALQUER PEÇA (#85, 26/10/2026): o desenho de precisão só guarda parede, família, cobertura, cota e anotação
        (BimPrecisao.tipoNoEstado). Volume, eixo, terreno, telhado, forro e ambiente apareciam na lista mas a seleção ficava VAZIA
@@ -7238,7 +7336,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     pav.manual = true;   /* remover/carregar modelo e "Restaurar tudo" restauram */
     return n;
   };
-  S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
+  S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !m.userData._focoOc && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
   /* M5 (14/10/2026, js/metalcomponenteui.js): a peça de uma PEÇA PRONTA é um COMPONENTE — o clique pega todas as peças dela (o Tab entra na peça) */
   function compExp(u) { try { return window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { return [u]; } }
   S._compExp = compExp;
@@ -10211,7 +10309,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.ctecModal = ctecModal;
   // série de escalas padrão de arquitetura (denominadores que existem em escalímetro)
   var SERIE_ESC = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500];
-  function gerarCorteTec(o) {
+  function gerarCorteTec(o) { return focoSem(function () { return gerarCorteTec0(o); }); }
+  function gerarCorteTec0(o) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {ax,az,bx,bz, escala, tipo:'corte'|'fachada', prof, inv} — coords do MUNDO (metros)
@@ -10451,7 +10550,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (bt) bt.style.outline = '2px solid ' + corAtiva();
       if (!silencioso) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho: massas + arestas no fundo branco (as cores voltam ao sair).');
     } else {
-      _chao.visible = true;
+      _chao.visible = false;
       todasMalhas(function (m) {
         if ('_matAntesEstilo' in m.userData) {
           if (m === S.selected) { if (S.prevMat === estiloD.mat) S.prevMat = m.userData._matAntesEstilo; }
@@ -10629,7 +10728,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return out;
   }
 
-  function gerarPlantaTec(o) {
+  function gerarPlantaTec(o) { return focoSem(function () { return gerarPlantaTec0(o); }); }
+  function gerarPlantaTec0(o) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {y (altura do corte no MUNDO, metros), escala, cotas, prof, rotAlt}
@@ -10889,7 +10989,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(semBlocos);
     return semBlocos();
   }
-  function vista2dCorpo(def) {
+  function vista2dCorpo(def) { return focoSem(function () { return vista2dCorpo0(def); }); }
+  function vista2dCorpo0(def) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -12310,7 +12411,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      pavimento isolado e peça escondida ficam de fora (traverseVisible).
      A matriz é relativa ao modelRoot — no imersivo ele anda e escala, e o
      arquivo tem de sair no tamanho do projeto, não no da miniatura. */
-  function pecasVisiveis() {
+  function pecasVisiveis() { return focoSem(pecasVisiveis0); }
+  function pecasVisiveis0() {
     modelRoot.updateMatrixWorld(true);
     var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), rel = new THREE.Matrix4(), out = [];
     modelRoot.traverseVisible(function (o) {
@@ -12402,7 +12504,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try { return formato === 'glb' ? BimUsdz.gerarGlb(pecas, { modo: modo }) : BimUsdz.gerar(pecas, { modo: modo }); }
     catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
   }
-  S._arquivoRA = arquivoRA;
+  S._arquivoRA = arquivoRA; S._pecasVisiveis = pecasVisiveis;
   S._abrirQuickLook = function (modo) { abrirQuickLook(modo, null); return true; };
 
   function toggleXRPanel() {
@@ -15056,7 +15158,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* ENVIAR PARA O SKETCHUP (S1, 29/10/2026): as malhas do que foi MODELADO (já com a matriz de cada uma, relativa ao modelRoot), o registro de
      parâmetros resolvido (o mesmo da paleta de Propriedades e do IFC, com o mesmo GlobalId) e o estado → js/bimenviarsu.js monta o
      `<projeto>.orcapro-su.json`. Peça oculta fica de fora; InstancedMesh (andaime) também (a contagem vai no aviso). Síncrono: { ok, doc, resumo, avisos }. */
-  S._enviarSU = function (o) {
+  S._enviarSU = function (o) { return focoSem(function () { return S._enviarSU0(o); }); };
+  S._enviarSU0 = function (o) {
     o = o || {};
     if (!window.BimEnviarSU) return { ok: false, erro: 'o exportador do SketchUp (js/bimenviarsu.js) não carregou' };
     var mo = edit.modelo, st = edit.estado;
@@ -17326,7 +17429,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var alvo = {}; uids.forEach(function (u) { alvo[u] = 1; });
     var box = new THREE.Box3(), bm = new THREE.Box3(), achou = 0;
     cadaMalha(function (m) {
-      if (m.userData.expressID == null || !alvo[m.userData.mid + ':' + m.userData.expressID] || !m.geometry || m.visible === false) return;
+      if (m.userData.expressID == null || !alvo[m.userData.mid + ':' + m.userData.expressID] || !m.geometry || (m.visible === false && !focoFundo(m))) return;
       if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
       if (!m.geometry.boundingBox) return;
       bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); box.union(bm); achou++;
@@ -17454,7 +17557,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var alvo = {}, out = {}, bm = new THREE.Box3(); (uids || []).forEach(function (u) { alvo[u] = 1; });
     cadaMalha(function (m) {
       var u = m.userData.expressID == null ? null : m.userData.mid + ':' + m.userData.expressID;
-      if (!u || !alvo[u] || !m.geometry || m.visible === false) return;
+      if (!u || !alvo[u] || !m.geometry || (m.visible === false && !focoFundo(m))) return;
       if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
       if (!m.geometry.boundingBox) return;
       bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
@@ -17560,7 +17663,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (ehFuturo4d(m) || ehRemovidoEd(m)) return;
       var u = m.userData.mid + ':' + m.userData.expressID;
       var r = porUid[u] || (porUid[u] = { vis: false, solido: false });
-      if (m.visible) { r.vis = true; if (!fantasma[m.uuid]) r.solido = true; }
+      if (m.visible || focoFundo(m)) { r.vis = true; if (!fantasma[m.uuid]) r.solido = true; }
     });
     var visiveis = [], ocultos = [], alvoRx = [], semChave = 0;
     (S.elementos || []).forEach(function (e) {
@@ -18093,8 +18196,189 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try { window.dispatchEvent(new CustomEvent('bim:modelos', { detail: { cores: catCor.on } })); } catch (_) {}
   };
 
+  /* =====================================================================
+   * DISCIPLINA ATIVA E VISIBILIDADE POR CATEGORIA (13/11/2026) — o estado e a regra moram no js/bimfoco.js (puro, testado);
+   * aqui só se APLICA: peça de outra disciplina vira fundo cinza translúcido (e não pega clique), categoria desligada some,
+   * categoria com transparência ganha a cópia translúcida do material que já teria. É a aparência-base (matBase), então
+   * vale no 3D, na planta e no imersivo, e sobrevive ao refreshModelo — como a cor por sistema e a por categoria.
+   * ⚠ Só gráfico: nada aqui toca o modelo, o orçamento ou as quantidades.
+   * ⚠ Peça escondida: `visible = false` reafirmado a cada quadro (como a cor por categoria — o 4D e o isolar também mexem nele).
+   * ⚠ Sem foco ligado o custo é uma comparação por quadro: o estilo, a agregação e as arestas seguem exatamente como eram.
+   * ===================================================================== */
+  var FOCO = { on: false, ver: 0, est: null, dIdx: {}, esc: [], sig: '', mats: {}, gh: null, refeito: false };
+  function focoMotor() { return window.BimFoco || null; }
+  function focoSig() { var r = ''; for (var i = 0; i < S.modelos.length; i++) r += S.modelos[i].mid + ':' + S.modelos[i].grupo.children.length + ','; return r; }
+  function focoDe(m) {
+    var u = m.userData, F = focoMotor(); if (!F || !FOCO.est) return null;
+    if (u._fVer === FOCO.ver && u._fR) return u._fR;
+    var r = F.avaliar(u.tipo, FOCO.dIdx[u.mid + ':' + u.expressID], FOCO.est);
+    u._fVer = FOCO.ver; u._fR = r;
+    return r;
+  }
+  function focoCinza(op) {
+    var o = Math.round(Math.max(0.05, Math.min(1, op)) * 100) / 100, k = 'f' + o.toFixed(2);
+    if (!FOCO.mats[k]) { FOCO.mats[k] = new THREE.MeshStandardMaterial({ color: 0xa4abb3, roughness: 0.9, metalness: 0, transparent: true, opacity: o, depthWrite: false, side: THREE.DoubleSide }); FOCO.mats[k].name = 'foco-fundo'; }
+    return FOCO.mats[k];
+  }
+  function focoTransp(base, op) {
+    var o = Math.round(op * 100) / 100, k = 't' + base.id + '|' + o.toFixed(2);
+    if (!FOCO.mats[k]) {
+      var c = base.clone(); c.transparent = true; c.opacity = (base.transparent ? base.opacity : 1) * o; c.depthWrite = false; c.name = 'foco-transp';
+      FOCO.mats[k] = c;
+    }
+    return FOCO.mats[k];
+  }
+  /* ⚠ AS PEÇAS DE FUNDO VIRAM UMA MALHA SÓ (13/11/2026). Uma peça translúcida por chamada de desenho suspendia a agregação do
+     modelo (a mistura de opacidade no mesmo material) e a Casa exemplo caía de 72 para 12 quadros por segundo (4.300 chamadas).
+     Aqui as peças de OUTRA disciplina saem do desenho normal (visible = false: a agregação só vê visibilidade, nunca mistura) e
+     entram, juntas, numa única malha cinza translúcida — uma chamada. Não pega clique (raycast vazio) e as peças escondidas
+     também não pegam: o foco "não selecionável" sai de graça. A malha acompanha o modelRoot a cada quadro. */
+  function focoFantasmaSoltar() {
+    if (!FOCO.gh) return;
+    try { scene.remove(FOCO.gh.grupo); FOCO.gh.geo.dispose(); if (FOCO.gh.linhasGeo) FOCO.gh.linhasGeo.dispose(); } catch (_) {}
+    FOCO.gh = null;
+  }
+  function focoFantasmaMontar(lista) {
+    focoFantasmaSoltar();
+    if (!lista.length) return;
+    var nv = 0, ni = 0, i, j, g;
+    for (i = 0; i < lista.length; i++) { g = lista[i].geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+    var orig = S._origemAgreg || texAncora(), pos = new Float32Array(nv * 3), idx = new Uint32Array(ni), vo = 0, io = 0;
+    for (i = 0; i < lista.length; i++) {
+      var m = lista[i], M = (m.userData._matFechada || m.matrix).elements, a = m.geometry.attributes.position, n = a.count;
+      for (j = 0; j < n; j++) {
+        var x = a.getX(j), y = a.getY(j), z = a.getZ(j), o = (vo + j) * 3;
+        pos[o] = M[0] * x + M[4] * y + M[8] * z + M[12] - orig[0];
+        pos[o + 1] = M[1] * x + M[5] * y + M[9] * z + M[13] - orig[1];
+        pos[o + 2] = M[2] * x + M[6] * y + M[10] * z + M[14] - orig[2];
+      }
+      var ix = m.geometry.index;
+      if (ix) { for (j = 0; j < ix.count; j++) idx[io++] = ix.getX(j) + vo; }
+      else { for (j = 0; j < n; j++) idx[io++] = vo + j; }
+      vo += n;
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    var mat = new THREE.MeshBasicMaterial({ color: 0xa4abb3, transparent: true, opacity: FOCO.est ? FOCO.est.fundoOp : 0.12, depthWrite: false, side: THREE.DoubleSide });
+    mat.name = 'foco-fantasma';
+    var malha = new THREE.Mesh(geo, mat);
+    malha.position.set(orig[0], orig[1], orig[2]); malha.frustumCulled = false; malha.renderOrder = 2;
+    malha.raycast = function () {};   /* é desenho: nunca rouba o clique, a trena nem o encaixe */
+    var grupo = new THREE.Group(); grupo.name = 'foco-fantasma'; grupo.add(malha);
+    /* o contorno das peças de fundo (meio-tom): sai do MESMO cache das linhas de contorno — só entra o que já foi aquecido (calcular
+       aresta aqui travaria a tela); se faltou, o fim do aquecimento refaz a montagem (estContornoTick) */
+    var faltou = false, tot = 0, c;
+    for (i = 0; i < lista.length; i++) { c = arestasCache.get(lista[i].geometry); if (!c) faltou = true; else tot += c.length; }
+    var linhasGeo = null;
+    if (tot) {
+      var lp = new Float32Array(tot), lo = 0;
+      for (i = 0; i < lista.length; i++) {
+        c = arestasCache.get(lista[i].geometry); if (!c) continue;
+        var M2 = (lista[i].userData._matFechada || lista[i].matrix).elements;
+        for (j = 0; j < c.length; j += 3) {
+          var x2 = c[j], y2 = c[j + 1], z2 = c[j + 2];
+          lp[lo++] = M2[0] * x2 + M2[4] * y2 + M2[8] * z2 + M2[12] - orig[0];
+          lp[lo++] = M2[1] * x2 + M2[5] * y2 + M2[9] * z2 + M2[13] - orig[1];
+          lp[lo++] = M2[2] * x2 + M2[6] * y2 + M2[10] * z2 + M2[14] - orig[2];
+        }
+      }
+      linhasGeo = new THREE.BufferGeometry(); linhasGeo.setAttribute('position', new THREE.BufferAttribute(lp, 3));
+      var ln = new THREE.LineSegments(linhasGeo, new THREE.LineBasicMaterial({ color: 0x7d8794, transparent: true, opacity: 0.17, depthWrite: false }));
+      ln.position.set(orig[0], orig[1], orig[2]); ln.frustumCulled = false; ln.renderOrder = 3; ln.raycast = function () {};
+      grupo.add(ln);
+    }
+    scene.add(grupo);
+    FOCO.gh = { grupo: grupo, geo: geo, linhasGeo: linhasGeo, mat: mat, n: lista.length, linhas: !faltou };
+  }
+  /* o material de destaque da peça: a cor do SISTEMA (hidrossanitário) ou o âmbar dos eletrodutos. A classificação do sistema roda uma vez (construirSisIdx)
+     e grava `_sisK` na malha. Cor opaca, na paleta do usuário (Cores por sistema) — não cria material novo por quadro. */
+  var FOCO_ELE = {};
+  function focoCorDestaque(m, tipo) {
+    if (tipo === 'eletrica') {
+      var ke = (m.userData._focoCat === 'quadros') ? 'q' : 'e';
+      if (!FOCO_ELE[ke]) FOCO_ELE[ke] = new THREE.MeshStandardMaterial({ color: ke === 'q' ? 0x8a6400 : 0xe09a00, roughness: 0.55, metalness: 0.05 });
+      return FOCO_ELE[ke];
+    }
+    var ks = m.userData._sisK || 'outros';
+    if (ks === 'outros') {   /* "outros" do Cores por sistema é translúcido (fundo): como destaque vira cinza OPACO — translúcido misturaria opacidade no mesmo material e suspenderia a agregação */
+      if (!FOCO_ELE.o) FOCO_ELE.o = new THREE.MeshStandardMaterial({ color: 0x7f8b99, roughness: 0.6, metalness: 0.05 });
+      return FOCO_ELE.o;
+    }
+    return sisMat(ks, 1);
+  }
+  function focoAplicar() {
+    var F = focoMotor(); if (!F) return false;
+    var est = F.get();
+    FOCO.est = est; FOCO.on = F.ativo(est); FOCO.ver = est.versao; FOCO.sig = focoSig();
+    FOCO.dIdx = {};
+    S.modelos.forEach(function (mo) { (mo.elementos || []).forEach(function (e) { if (e.disciplina) FOCO.dIdx[(e.uid != null ? e.uid : mo.mid + ':' + e.id)] = e.disciplina; }); });
+    var lista = [], fant = [];
+    if (FOCO.on && (est.disc === 'hidrossanitario' || est.disc === 'eletrica') && est.esmaecer) { try { construirSisIdx(); } catch (_) {} }
+    todasMalhas(function (m) {
+      if (!m.isMesh || m.userData.expressID == null) return;
+      var u = m.userData; u._fVer = -1; u._fR = null;
+      var r = FOCO.on ? focoDe(m) : null;
+      u._focoNaoSel = !!(r && !r.selecionavel);
+      u._focoCat = r ? r.cat : null;
+      u._focoSemCont = !!(r && r.destaque === 'eletrica' && r.cat === 'eletrodutos');   /* eletroduto é fino: o contorno escuro tamparia o âmbar */
+      if (r && r.oculto) { u._focoOc = 1; if (m.visible !== false) m.visible = false; lista.push(m); }
+      else if (r && r.fundo && (m.visible !== false || u._focoOc === 2) && !ehFuturo4d(m) && !ehRemovidoEd(m) && m.geometry && m.geometry.attributes && m.geometry.attributes.position) {
+        u._focoOc = 2; m.visible = false; lista.push(m); fant.push(m);   /* vai para a malha única de fundo */
+      }
+      else if (u._focoOc) { delete u._focoOc; if (!ehFuturo4d(m) && !ehRemovidoEd(m)) m.visible = true; }
+    });
+    FOCO.esc = lista;
+    try { estContMat().opacity = (FOCO.on && est.esmaecer) ? 0.3 : 0.55; } catch (_) {}   /* em foco o contorno afina: a cor do tubo é o destaque, não a linha escura */
+    var _tM = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    focoFantasmaMontar(fant);
+    FOCO.msMontar = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - _tM) * 10) / 10;   /* A5: custo da remontagem da malha única de fundo */
+    S.modelos.forEach(function (mo) { refreshModelo(mo); });
+    if (S.selected) S.prevMat = matBase(S.selected);   /* a seleção devolve a base nova */
+    if (S._reaplicarEstilo) S._reaplicarEstilo();
+    try { window.dispatchEvent(new CustomEvent('bim:foco', { detail: { on: FOCO.on, disc: est.disc } })); } catch (_) {}
+    return FOCO.on;
+  }
+  S._focoAplicar = focoAplicar;
+  S._focoMs = function () { return FOCO.msMontar || 0; };
+  S._focoResumo = function () {
+    var F = focoMotor(); if (!F) return { grupos: [], fundo: 0, ocultas: 0, on: false };
+    var pecas = [], vistos = {}, fundo = 0, oc = 0;
+    S.modelos.forEach(function (mo) {
+      if (!mo.visivel) return;
+      mo.grupo.children.forEach(function (m) {
+        if (!m.isMesh || m.userData.expressID == null) return;
+        var uid = mo.mid + ':' + m.userData.expressID; if (vistos[uid]) return; vistos[uid] = 1;
+        if (ehRemovidoEd(m)) return;
+        pecas.push({ tipo: m.userData.tipo });
+        var r = FOCO.on ? focoDe(m) : null; if (r) { if (r.oculto) oc++; else if (r.fundo) fundo++; }
+      });
+    });
+    return { grupos: F.resumo(pecas), fundo: fundo, ocultas: oc, on: FOCO.on, total: pecas.length };
+  };
+  S._tickExtra.push(function () {
+    var F = focoMotor(); if (!F) return;
+    if (F.versao() !== FOCO.ver || (FOCO.on && focoSig() !== FOCO.sig)) { FOCO.refeito = false; focoAplicar(); return; }
+    if (FOCO.gh) {
+      var gg = FOCO.gh.grupo;
+      gg.position.copy(modelRoot.position); gg.quaternion.copy(modelRoot.quaternion); gg.scale.copy(modelRoot.scale);
+      gg.visible = FOCO.on && modelRoot.visible !== false;
+    }
+    var L = FOCO.esc; if (!L.length || !FOCO.on) return;
+    for (var i = 0; i < L.length; i++) if (L[i].visible !== false) L[i].visible = false;
+  });
+
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
+    var b = matBaseSemFoco(m);
+    if (!FOCO || !FOCO.on) return b;
+    var r = focoDe(m);
+    if (!r || (r.op >= 1 && !r.fundo && !r.destaque)) return b;
+    if (r.fundo) { var moF = modeloDe(m.userData.mid); return focoCinza(r.op * (moF ? moF.alpha : 1)); }
+    if (r.destaque) { var cd = focoCorDestaque(m, r.destaque); if (cd) return r.op < 1 ? focoTransp(cd, r.op) : cd; }
+    return focoTransp(b, r.op);
+  }
+  function matBaseSemFoco(m) {
     /* ⚠ B3 — A COR DO CONJUNTO ENTRA AQUI, e não num `m.material = …` solto.
      * `refreshModelo` reescreve o material de toda malha do modelo a cada troca
      * de transparência, disciplina ou estilo. Pintura aplicada por fora seria
@@ -19716,6 +20000,16 @@ window.BIM = {
   /* tema da CENA 3D: 'orcapro' (navy) | 'revit' (grafite, cinza escuro) | 'claro'.
    * A casca do ambiente chama isto para a cena acompanhar a interface. */
   tema: function (id) { return !!(S && S._definirTema && S._definirTema(id)); },
+  /* LINHAS DE CONTORNO: arestas finas das peças no sombreado (sem argumento: lê; true/false: liga/desliga e lembra por aparelho) */
+  linhasContorno: function (on) { return (S && S._linhasContorno) ? S._linhasContorno(on) : false; },   /* ⚠ não é o `contorno*` da laje/telhado (js/bimcontorno.js) */
+  /* DISCIPLINA ATIVA / VISIBILIDADE POR CATEGORIA (js/bimfoco.js): BIM.foco() lê; BIM.foco({ disc, esmaecer, cats }) muda e aplica */
+  foco: function (o) {
+    if (!S || !S._focoAplicar || !window.BimFoco) return null;
+    if (o && typeof o === 'object') { window.BimFoco.set(o); S._focoAplicar(); }
+    var e = window.BimFoco.get(), r = S._focoResumo();
+    return { disc: e.disc, esmaecer: e.esmaecer, cats: e.cats, on: r.on, grupos: r.grupos, fundo: r.fundo, ocultas: r.ocultas, total: r.total, msMontar: S._focoMs ? S._focoMs() : null };
+  },
+  linhasContornoEstado: function () { return (S && S._linhasContornoEstado) ? S._linhasContornoEstado() : { on: false, modelos: 0, segmentos: 0, aquecido: false }; },
   sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
   sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },
   sistemaClassificar: function (texto) { return (S && S._sisClassificar) ? S._sisClassificar(texto) : null; }, // classifica um nome/descrição num sistema (pura; p/ testes e plugins)

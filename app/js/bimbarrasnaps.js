@@ -73,6 +73,8 @@
                       perpendicular: "R", tangente: "T", aparente: "A", extensao: "L", paralelo: "K", rastreamento: "S", eixo: "X",
                       proximo: "U", grade: "Y", eixos: "Z", vertice: "V", aresta: "B", face: "W" };
   var CHAVE_NOME = "orcapro:bim:snap-nome:v1";   /* "0" = sem a dica com o nome do encaixe (preferência do aparelho) */
+  /* o X dos menus da barra (13/11/2026: "X/Esc sempre fecha o painel e sai do modo") */
+  var FECHAR = '<button type="button" class="bbs-fechar" data-bbs-fechar="1" aria-label="Fechar (Esc)" title="Fechar (Esc)">✕</button>';
   var BimBarraSnaps = {
     ATALHO_TIPO: ATALHO_TIPO,
     /* a letra do atalho (maiúscula) → o tipo, ou null */
@@ -158,7 +160,7 @@
           var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
           return '<label class="bbs-pop-item" title="' + esc((DICA_TIPO[t] || "") + (ATALHO_TIPO[t] ? " Atalho: Alt+" + ATALHO_TIPO[t] + "." : "")) + '"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + (COR[t] || "var(--aco)") + '">' + gl + "</span> " + esc(ROT[t] || t) + (ATALHO_TIPO[t] ? ' <span class="bbs-tecla" data-bbs-atalho="' + t + '">Alt+' + ATALHO_TIPO[t] + "</span>" : "") + "</label>";
         };
-        pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span></div>' +
+        pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span>' + FECHAR + '</div>' +
           '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado (F3)</label>" +
           '<div class="bbs-pop-acoes"><button type="button" class="btn sm ghost" data-bbs-todos="1">Marcar todos</button><button type="button" class="btn sm ghost" data-bbs-todos="0">Nenhum</button>' +
           '<button type="button" class="btn sm ghost" data-bbs-m2p="1" title="O próximo ponto é o MEIO entre dois cliques (cada um com snap) — vale uma vez">Meio entre 2 pontos</button></div>' +
@@ -169,7 +171,7 @@
           '<label class="bbs-pop-item bbs-pop-passo">Passo da grade <input data-bbs-passo="1" inputmode="decimal" autocomplete="off" value="' + esc(fmt(p.passo)) + '"> m</label>' +
           '<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro, quadrante, centro geométrico, inserção, nó) &gt; ponto construído (perpendicular, tangente, interseção aparente, cruzamento de guias) &gt; linha de construção (prolongamento, rastreamento, paralelo) &gt; sobre a peça &gt; grade. Rastreamento e paralelo: pare o cursor ~0,5 s num ponto ou numa linha para adquirir.</div>';
       } else {
-        pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span></div>' +
+        pop.innerHTML = '<div class="bbs-pop-tit">Incrementos do Orto <span class="bbs-tecla">F8</span>' + FECHAR + '</div>' +
           '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-orto="1"' + (p.orto ? " checked" : "") + "> Orto ligado</label>" +
           B.INCREMENTOS.map(function (gr) { return '<label class="bbs-pop-item"><input type="checkbox" data-bbs-inc="' + gr + '"' + (p.inc.indexOf(gr) >= 0 ? " checked" : "") + "> " + gr + "°</label>"; }).join("") +
           '<div class="bbs-pop-nota">Orto ligado: o traço só anda nos múltiplos dos ângulos marcados. Desligado: ângulo livre, atraído a ±' + B.JANELA + "° deles. Shift inverte enquanto está apertado.</div>";
@@ -188,6 +190,7 @@
     _ligarPop: function (pop) {
       var self = this;
       pop.addEventListener("click", function (e) {
+        if (e.target && e.target.closest && e.target.closest("[data-bbs-fechar]")) { var bt0 = self.elemento() && self.elemento().querySelector('[data-bbs="' + (self._menu === "snapMenu" ? "snap" : self._menu) + '"]'); self._fechar(); try { if (bt0) bt0.focus(); } catch (eF) {} return; }
         var b = e.target && e.target.closest ? e.target.closest("[data-bbs-todos],[data-bbs-m2p]") : null, B = BO(); if (!b || !B) return;
         if (b.hasAttribute("data-bbs-todos")) { var on = b.getAttribute("data-bbs-todos") === "1"; if (B.tiposTodos) B.tiposTodos(on); status(on ? "Todos os snaps marcados." : "Nenhum tipo de snap marcado (o Snap geral continua como estava)."); return; }
         if (b.hasAttribute("data-bbs-m2p")) {
@@ -308,6 +311,13 @@
       this._ligado = true;
       var self = this;
       var B = BO(); if (B && B.assinar) this._sairOuvinte = B.assinar(function () { self.pintar(); });
+      /* ESC FECHA O MENU ABERTO (snap ou incremento), de onde estiver o foco, e sai do "meio entre 2 pontos" armado: o Esc que
+         fecha o menu não cancela também a ferramenta de criar (capture + stopImmediatePropagation) */
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape" || !self._pop) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        self._fechar();
+      }, true);
       document.addEventListener("pointerdown", function (e) {
         if (!self._pop) return;
         if (self._pop.contains(e.target)) return;

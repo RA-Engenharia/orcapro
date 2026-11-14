@@ -11356,6 +11356,14 @@
         BimShell.status(on ? "Grade ligada (G desliga)." : "Grade desligada (G liga).");
         return on !== null;
       };
+      /* LINHAS DE CONTORNO: o botão e a barra de estado seguem o que está na cena (BIM.contorno lembra por aparelho) */
+      reg["contorno-linhas"] = function (e) {
+        var b = B(); if (!b || !b.linhasContorno) return false;
+        var on = b.linhasContorno(!!e.ligado);
+        try { BimRibbon.setAtivo("contorno-linhas", !!on); } catch (eR) {}
+        BimShell.status(on ? "Linhas de contorno ligadas: arestas finas em cada peça." : "Linhas de contorno desligadas.");
+        return true;
+      };
       reg.paineis = function () {
         BimShell.organizarPaineis(); BimShell.status("Painéis de volta ao lugar e ao tamanho padrão.");
         try { if (typeof BIM !== "undefined" && BIM.vistasRedimensionar) BIM.vistasRedimensionar(); } catch (eR) {}
@@ -11369,6 +11377,7 @@
       try {
         /* o estado inicial dos dois "alterna" novos vem do que está na tela */
         var _bg = B(); BimRibbon.setAtivo("grade", !(_bg && _bg.grade && _bg.grade() === false));
+        BimRibbon.setAtivo("contorno-linhas", !!(_bg && _bg.linhasContorno && _bg.linhasContorno()));
         BimRibbon.setAtivo("pele-revit", !!(BimShell.pele && BimShell.pele()));
       } catch (eNv) {}
       /* MODELADOR B2 (prévia `?previa=modelador`): eixos, parede por tipo, laje por
@@ -11434,6 +11443,8 @@
       try { if (window.BimExplodirUI) BimExplodirUI.registrar(reg, self); } catch (eExp) {}
       /* CORES POR CATEGORIA (14/10/2026): Vista › Gráficos › Cores por categoria + a legenda e o painel — js/bimcorescatui.js (a barra de baixo e as Propriedades da vista chamam o mesmo módulo) */
       try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
+      /* DISCIPLINA ATIVA E VISIBILIDADE POR CATEGORIA (13/11/2026): Vista › Exibir › Visibilidade por categoria — js/bimfocoui.js */
+      try { if (window.BimFocoUI) BimFocoUI.registrar(reg, self); } catch (eFoco) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
       /* ORGANIZAÇÃO DA FITA (18/10/2026): aba Modificar (e a contextual), Vista na ordem de trabalho, barra de acesso
          rápido e Caixa de seleção (BX) — js/bimfita.js. DEPOIS de todos os módulos acrescentarem à fita (ele MOVE comandos) */

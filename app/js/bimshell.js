@@ -562,7 +562,9 @@
       }
       this._aplicarDisc();
       this.pintarFita();
-      this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns."));
+      /* A DISCIPLINA ATIVA TAMBÉM É O FOCO DO 3D (js/bimfocoui.js): as outras ficam esmaecidas e sem clique; Coordenação = tudo normal */
+      var fr = ""; try { fr = global.BimFocoUI ? global.BimFocoUI.frase() : ""; } catch (eFr) {}
+      this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns.") + (fr ? " " + fr : ""));
       return res;
     },
     disciplina: function () { var dd = D(); return dd ? dd.atual() : "completo"; },
@@ -587,6 +589,7 @@
       }
       var selo = raiz.querySelector(".rv-disc-selo");
       if (selo) { selo.textContent = s.texto; selo.setAttribute("data-rv-disc-selo", id); }
+      try { if (global.BimFocoUI) global.BimFocoUI.sincronizar(); } catch (eFoco) {}   /* o foco do 3D segue a disciplina (na montagem e a cada troca) */
     },
 
     /* ------------------------------------------------- BOTÕES RÁPIDOS
@@ -643,6 +646,8 @@
       try { if (global.BimFita && global.BimFita.antesDePintar) global.BimFita.antesDePintar(); } catch (eFx) {}
       this._sincAbas();
       this._pintarRapidos();
+      /* o botão Linhas de contorno acompanha o que está na cena (o BIM lembra a escolha por aparelho; o módulo do 3D carrega depois da fita) */
+      try { if (global.BIM && global.BIM.linhasContorno && r.comando("contorno-linhas")) { var cOn = !!global.BIM.linhasContorno(); if (r.ativo("contorno-linhas") !== cOn) r.setAtivo("contorno-linhas", cOn); } } catch (eCt) {}
       var v = r.render();
       fita.innerHTML = "";
       /* ⚠ trocar de aba volta a rolagem da faixa ao início (03/11/2026): a Vista tem ~4.400 px e a rolagem da aba anterior escondia o primeiro painel */
@@ -696,8 +701,108 @@
         });
         pn.appendChild(corpo);
         pn.appendChild(el("div", "rv-painel-nome", p.nome));
+        pn.setAttribute("data-ord", String(fita.children.length));   /* a ordem de origem: o "Mais" devolve os painéis ao lugar */
         fita.appendChild(pn);
       });
+      this._ajustarFita();
+    },
+
+    /* ------------------------------------------- FAIXA SEM ROLAGEM LATERAL
+     * 13/11/2026 (pedido do Rogério): "nada de rolar para o lado para achar ferramenta". Abas como Arquitetura (4.100 px),
+     * Metálica (5.900) e Vista (4.400) não cabem em tela nenhuma. Quando a faixa não cabe, os painéis da DIREITA vão para UM
+     * botão "Mais painéis" no fim da faixa (a ideia do menu de excesso): o clique abre, por baixo, os painéis que sobraram,
+     * inteiros e na mesma ordem; Esc, clique fora ou comando fecham. Os da esquerda ficam como sempre estiveram — o que cabia
+     * antes continua à vista. Os nós SÃO OS MESMOS (movidos, não refeitos): a delegação de clique e as e2e seguem achando cada
+     * comando, e `scrollIntoView` num comando guardado ABRE o "Mais" (quem rolava a faixa para alcançar o botão segue alcançando).
+     * Reaplica a cada repintura e a cada mudança de LARGURA da faixa. */
+    _ajustarFita: function () {
+      var self = this, raiz = this._raiz, fita = raiz && raiz.querySelector(".rv-fita");
+      if (!fita) return;
+      var reabrir = this._painelAberto || null;
+      this._abrirPainelFita(null, false);
+      /* 1) desfaz o ajuste anterior: devolve os painéis do "Mais" ao lugar e tira o botão */
+      var velho = fita.querySelector(".rv-fita-mais");
+      if (velho) {
+        var guardados = [].slice.call(velho.querySelectorAll(".rv-fita-mais-corpo > .rv-painel"));
+        guardados.forEach(function (p) {
+          [].forEach.call(p.querySelectorAll(".rv-cmd"), function (b) { try { delete b.scrollIntoView; } catch (e) {} });
+          var ord = +p.getAttribute("data-ord"), antes = null;
+          [].forEach.call(fita.children, function (c) { if (!antes && c !== velho && c.getAttribute && c.getAttribute("data-ord") != null && +c.getAttribute("data-ord") > ord) antes = c; });
+          fita.insertBefore(p, antes || velho);
+        });
+        fita.removeChild(velho);
+      }
+      raiz.removeAttribute("data-rv-recolhe");
+      var disp = fita.clientWidth;
+      this._fitaLarg = disp;
+      /* preferência do aparelho: "0" = a faixa rola para o lado como antes (sem o "Mais painéis"). As e2e de clique em massa nos comandos usam. */
+      try { if (global.localStorage && global.localStorage.getItem("orcapro:bim:fita-mais") === "0") return; } catch (eLs) {}
+      if (!disp || fita.offsetParent === null || fita.scrollWidth <= disp + 1 || raiz.getAttribute("data-rv-foco") === "1") return;
+      /* 2) cria o "Mais" e manda para ele, da direita para a esquerda, o que não cabe (o 1º painel só vai se ainda faltar lugar) */
+      var mais = el("div", "rv-painel rv-fita-mais"), rec = el("button", "rv-painel-rec"), corpo = el("div", "rv-fita-mais-corpo");
+      rec.type = "button"; rec.setAttribute("data-rv-rec", "mais"); rec.setAttribute("aria-haspopup", "true"); rec.setAttribute("aria-expanded", "false");
+      rec.innerHTML = ico("camadas", 18) + '<span class="rv-painel-rec-nome">Mais painéis</span><span class="rv-painel-rec-seta" aria-hidden="true">▾</span>';
+      rec.onclick = function (ev) { if (ev) ev.stopPropagation(); self._abrirPainelFita(mais, mais.getAttribute("data-aberto") !== "1"); };
+      mais.appendChild(rec); mais.appendChild(corpo);
+      fita.appendChild(mais);
+      var paineis = [].filter.call(fita.children, function (c) { return c !== mais && c.classList && c.classList.contains("rv-painel"); });
+      var movidos = 0;
+      for (var k = paineis.length - 1; k >= 0 && fita.scrollWidth > disp + 1; k--) {
+        if (k === 0 && movidos === 0) break;
+        corpo.insertBefore(paineis[k], corpo.firstChild); movidos++;
+      }
+      if (!movidos) { fita.removeChild(mais); return; }
+      raiz.setAttribute("data-rv-recolhe", "1");
+      rec.setAttribute("data-rv-n", String(movidos));
+      rec.title = "Mais painéis (" + movidos + "): abrir os comandos que não couberam na faixa";
+      if (corpo.querySelector('.rv-cmd[aria-pressed="true"]')) rec.setAttribute("data-rv-ligado", "1");
+      [].forEach.call(corpo.querySelectorAll(".rv-cmd"), function (b) { b.scrollIntoView = function () { self._abrirPainelFita(mais, true); }; });
+      if (reabrir) self._abrirPainelFita(mais, true);
+      if (!this._roFita && global.ResizeObserver) {
+        try {
+          this._roFita = new global.ResizeObserver(function () {
+            /* ⚠ só a LARGURA conta: mover painéis muda a altura da faixa (a barra de rolagem some e volta) e reagir a isso é laço */
+            var w = fita.clientWidth;
+            if (self._roAg || w === self._fitaLarg) return;
+            self._fitaLarg = w;
+            self._roAg = true;
+            (global.requestAnimationFrame || setTimeout)(function () { self._roAg = false; if (self._raiz) self._ajustarFita(); });
+          });
+          this._roFita.observe(fita);
+        } catch (eRo) { this._roFita = null; }
+      }
+    },
+    _abrirPainelFita: function (mais, abrir) {
+      var self = this, raiz = this._raiz; if (!raiz) return;
+      [].forEach.call(raiz.querySelectorAll(".rv-fita-mais[data-aberto]"), function (p) {
+        if (p === mais && abrir) return;
+        p.removeAttribute("data-aberto");
+        var r0 = p.querySelector(".rv-painel-rec"); if (r0) r0.setAttribute("aria-expanded", "false");
+      });
+      if (this._fecharFita) { document.removeEventListener("pointerdown", this._fecharFita, true); document.removeEventListener("keydown", this._fecharFita, true); document.removeEventListener("click", this._fecharFita, true); this._fecharFita = null; }
+      this._painelAberto = null;
+      if (!mais || !abrir) return;
+      mais.setAttribute("data-aberto", "1");
+      this._painelAberto = "mais";
+      var rec = mais.querySelector(".rv-painel-rec"); if (rec) rec.setAttribute("aria-expanded", "true");
+      this._fecharFita = function (ev) {
+        if (ev.type === "keydown") { if (ev.key === "Escape") { self._abrirPainelFita(null, false); try { if (rec) rec.focus(); } catch (e) {} } return; }
+        var alvo = ev.target;
+        if (ev.type === "click") {
+          /* um comando foi acionado: fecha DEPOIS do clique (⚠ não no pointerdown: o painel some antes do botão soltar e o clique se
+             perde); o menu do comando, se houver, abre por cima */
+          var cm = mais.contains(alvo) && alvo.closest ? alvo.closest(".rv-cmd") : null;
+          /* ⚠ comando de MENU (tem a setinha ▾) abre uma lista presa ao botão dele: fechar o Mais aqui esconderia o botão e a lista
+             nasceria sem âncora (a e2e-bim-ferramentas pegou: "o clique não fez nada visível"). O Mais fecha no clique de fora/Esc. */
+          if (cm && !cm.querySelector(".rv-cmd-seta")) setTimeout(function () { self._abrirPainelFita(null, false); }, 0);
+          return;
+        }
+        if (mais.contains(alvo)) return;
+        self._abrirPainelFita(null, false);
+      };
+      document.addEventListener("pointerdown", this._fecharFita, true);
+      document.addEventListener("keydown", this._fecharFita, true);
+      document.addEventListener("click", this._fecharFita, true);
     },
 
     /* despacha e repinta — é por aqui que TODO clique passa */
@@ -1245,10 +1350,35 @@
     },
     /* texto da esquerda: o que está sob o cursor, em formato de caminho
        ("Pisos : Piso : PI_15cm_Concreto : R0") */
-    status: function (texto) {
+    status: function (texto, tom) {
       if (!this._raiz) return;
       var s = this._raiz.querySelector(".rv-status-sel");
-      if (s) s.textContent = texto || "Pronto";
+      if (!s) return;
+      /* ⚠ ERRO TEM PRIORIDADE (revisão 14/11/2026): dica de ferramenta, "Pronto" e recado "ok" não apagam um erro antes do
+         tempo dele. Só outro erro (ou `forcar` vindo de Esc/limpar) troca o texto. O histórico do sino guarda tudo. */
+      if (tom !== "erro" && this._erroAte && Date.now() < this._erroAte) return;
+      if (tom !== "erro") this._erroAte = 0;
+      s.textContent = texto || "Pronto";
+      /* texto comprido é cortado com reticências: o tooltip traz o inteiro */
+      if (texto && texto.length > 60) s.setAttribute("title", texto); else s.removeAttribute("title");
+      if (tom === "erro" || tom === "aviso") s.setAttribute("data-rv-tom", tom); else s.removeAttribute("data-rv-tom");
+    },
+    /* RECADO (o que era balão/toast): uma linha na barra de status, que volta a "Pronto" sozinha se ninguém escreveu por
+       cima. Erro fica mais tempo e ganha a cor de erro (13/11/2026: nenhum balão cobre a vista). */
+    aviso: function (texto, tipo, ms) {
+      if (!this._raiz || !texto) return;
+      var tom = /(^|\s)erro(\s|$)/.test(String(tipo || "")) ? "erro" : (/(^|\s)(aviso|warn)(\s|$)/.test(String(tipo || "")) ? "aviso" : "");
+      var uma = String(texto).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+      var self = this, dura = Math.max(typeof ms === "number" && ms > 0 ? ms : 0, tom === "erro" ? 9000 : 5000);
+      if (tom !== "erro" && this._erroAte && Date.now() < this._erroAte) return;   /* erro em curso: não troca texto nem mexe no relógio dele */
+      if (this._avisoT) clearTimeout(this._avisoT);
+      if (tom === "erro") this._erroAte = Date.now() + dura;
+      this.status(uma, tom);
+      this._avisoT = setTimeout(function () {
+        var s = self._raiz && self._raiz.querySelector(".rv-status-sel");
+        self._erroAte = 0;
+        if (s && s.textContent === uma) self.status("Pronto");
+      }, dura);
     },
     contadores: function (n, sel) {
       if (!this._raiz) return;

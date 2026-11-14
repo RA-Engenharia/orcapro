@@ -240,6 +240,8 @@
           /* a caixa de corte da vista ativa, com as setas azuis nas seis faces */
           { id: "caixa-corte", rotulo: "Caixa de\ncorte", icone: "corte", grande: true, tipo: "alterna", requer: "modelo", dica: "Liga a caixa de corte da vista ativa: puxe as setas azuis de cada face para cortar o modelo de cima, de baixo e dos lados." },
           { id: "ortogonal", rotulo: "Ortogonal", icone: "grade", tipo: "alterna", requer: "modelo", dica: "Vista ortogonal (sem perspectiva) na vista ativa — também no botão direito do ViewCube." },
+          /* LINHAS DE CONTORNO (13/11/2026): a silhueta fina de cada peça no 3D, por cima do sombreado */
+          { id: "contorno-linhas", rotulo: "Linhas de\ncontorno", icone: "desLinha", tipo: "alterna", requer: "modelo", dica: "Liga e desliga as linhas finas de contorno das peças no 3D (arestas de 1 px por cima do sombreado). Só gráfico: não muda o modelo. Fica lembrado neste aparelho." },
           /* textura por material (js/bimtextura.js): liga sozinho quando o IFC traz a textura dos materiais */
           { id: "materiais", rotulo: "Materiais\nrealistas", icone: "azulejo", tipo: "alterna", requer: "modelo", dica: "Veste as peças com a textura do material (tijolo, madeira, telha, concreto, porcelanato…) na escala real. Liga sozinho quando o IFC traz as texturas; usa mais a placa de vídeo." }
         ] },
@@ -587,7 +589,7 @@
       { nome: "Plano de içamento", ids: ["icar-equipamento", "icar-posicao", "icar-pontos", "icar-vento", "icar-simular", "icar-plano"] }] },
     { id: "vista", rotulo: "Vista", paineis: [
       { nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
-      { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade"] },
+      { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade", "contorno-linhas"] },
       { nome: "Janelas", ids: ["nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit"] },
       { nome: "Render por IA", ids: ["render-ia", "galeria-ia"] }] },
     { id: "gerenciar", rotulo: "Gerenciar", paineis: [

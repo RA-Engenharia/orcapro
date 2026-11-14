@@ -50,13 +50,13 @@
    *   marmoraria  #6E5F52 × branco 6,1 · acento escuro #B8A89A 5,1 (pedra)
    * --------------------------------------------------------------- */
   var REGISTRO = [
-    { id: "completo", nome: "Todas as disciplinas", curto: "Todas", cor: "#2D6A9C", texto: "#FFFFFF", acento: "#2D6A9C", acentoEscuro: "#3FB5E5", icone: "camadas",
-      descricao: "A fita inteira, com as ferramentas de todas as disciplinas." },
-    { id: "civil", nome: "Arquitetura & Civil", curto: "Civil", cor: "#B5532A", texto: "#FFFFFF", acento: "#B5532A", acentoEscuro: "#E8835A", icone: "parede",
+    { id: "completo", nome: "Coordenação", curto: "Coordenação", cor: "#2D6A9C", texto: "#FFFFFF", acento: "#2D6A9C", acentoEscuro: "#3FB5E5", icone: "camadas",
+      descricao: "Coordenação: tudo à vista e editável, e a fita inteira, com as ferramentas de todas as disciplinas." },
+    { id: "civil", nome: "Arquitetura & Civil", curto: "Arquitetura", cor: "#B5532A", texto: "#FFFFFF", acento: "#B5532A", acentoEscuro: "#E8835A", icone: "parede",
       descricao: "Parede, piso, forro, telhado, escada, ambiente, porta, janela, alvenaria, acabamentos e terreno." },
     { id: "estrutura", nome: "Estrutura", curto: "Estrutura", cor: "#5F6B78", texto: "#FFFFFF", acento: "#5F6B78", acentoEscuro: "#9AA7B5", icone: "estrutura",
       descricao: "Concreto, fundação, armação e fôrma: pilar, viga, laje, sapata, bloco e estaca." },
-    { id: "hidraulica", nome: "Hidráulica & Sanitária", curto: "Hidráulica", cor: "#1F6FD1", texto: "#FFFFFF", acento: "#1F6FD1", acentoEscuro: "#5AA2F0", icone: "link",
+    { id: "hidraulica", nome: "Hidráulica & Sanitária", curto: "Hidrossanitário", cor: "#1F6FD1", texto: "#FFFFFF", acento: "#1F6FD1", acentoEscuro: "#5AA2F0", icone: "link",
       descricao: "Tubos, conexões, registros, louças, ralos e caixas — água fria, quente, esgoto e pluvial." },
     { id: "eletrica", nome: "Elétrica & Dados", curto: "Elétrica", cor: "#D99A00", texto: "#15181D", acento: "#B07600", acentoEscuro: "#F2B632", icone: "vento",
       descricao: "Eletrodutos, eletrocalhas, tomadas, interruptores, quadros, luminárias e cabos." },
@@ -122,7 +122,7 @@
     "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
     /* Vista: navegar, exibir, janelas, criar vistas, gráficos, render */
     "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
-    "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
+    "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias",
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
     "render-ia", "acabamento-ia", "galeria-ia", "render-fisico", "cena", "apresentar-reforma",
     "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",

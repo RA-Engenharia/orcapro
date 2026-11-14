@@ -102,9 +102,45 @@
          antigo. ⚠ Não é visibility:hidden de propósito: ele zera o
          `innerText`, que dezenas de e2e leem nos `.toast`. */
       try { this._silenciar(wrap); this._registrarMensagem(t, tipo); } catch (eMs) {}
+      /* ⚠ DENTRO DO BIM O RECADO VAI PARA A BARRA DE STATUS (Rogério, 13/11/2026): balão verde de 5 linhas cobrindo a vista
+         ("A modelagem que estava na obra… foi guardada como o projeto…") não tem lugar num programa de projeto. Com o BIM na
+         tela, o recado vira uma linha fina embaixo (o texto inteiro fica no tooltip e no histórico do sino) e o balão nunca
+         aparece. Com "Mostrar as mensagens na tela" LIGADO o balão volta (preferência vence), e erro/licença/quadro aberto sempre têm balão (abaixo). O elemento continua montado em #toasts (as e2e leem). */
       var dura = (typeof ms === "number" && ms > 0) ? ms : 2600;
+      try {
+        if (this._bimNaTela() && !this.mensagensNaTela()) {
+          if (this._recadoForte(tipo, t.textContent, D)) {
+            /* ⚠ 14/11/2026 (revisão): erro, aviso de licença/dado não gravado (pelo texto) e QUALQUER recado com quadro aberto continuam
+               como balão — a barra de status fica atrás do quadro, e erro numa linha fina some. O balão forte vence o
+               `silencioso` (CSS .tem-forte); os recados "ok" soltos continuam só na barra. */
+            t.classList.add("toast-forte");
+            if (wrap && wrap.classList) wrap.classList.add("tem-forte");
+            setTimeout(function () { try { if (wrap && !wrap.querySelector(".toast-forte")) wrap.classList.remove("tem-forte"); } catch (e) {} }, dura + 400);
+            if (/(^|\s)(erro|aviso|warn)(\s|$)/.test(String(tipo || ""))) global.BimShell.aviso(String(t.textContent || ""), tipo, ms);   /* erro/aviso forte também na barra */
+          } else {
+            if (wrap && wrap.classList) wrap.classList.add("silencioso");
+            global.BimShell.aviso(String(t.textContent || ""), tipo, ms);
+          }
+        }
+      } catch (eBim) {}
       setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, dura);
     },
+
+    /* o recado precisa de balão mesmo com o BIM na tela? erro, licença, dado não gravado, ou quadro aberto */
+    _recadoForte: function (tipo, texto, D) {
+      try { if (D && D.getElementById("modal-bg")) return true; } catch (e) {}
+      /* ⚠ só "erro" — NÃO "aviso": são ~520 usos de "aviso" no app e a maioria é informativa ("Pranchas geradas… fora: Corte A…"); como balão
+         eram 5 linhas sobre a vista (print 390 px, 14/11/2026). Aviso de licença e de dado não gravado são pegos pelo texto, abaixo. */
+      if (/(^|\s)erro(\s|$)/.test(String(tipo || ""))) return true;
+      return /(licen[cç]a|teste (gr[aá]tis )?(encerrado|terminou)|n[aã]o (foi |foram )?(salv|grav)|sem salvar|perd(eu|ido|a de)|falha ao salvar|n[aã]o salvou|n[aã]o ficou guardad|ficar guardad|fica guardad)/i.test(String(texto || ""));
+    },
+
+    /* o BIM está montado e visível? (então os recados vão para a barra de status dele) */
+    _bimNaTela: function () {
+      var B = global.BimShell, r = B && B._raiz;
+      return !!(r && r.isConnected && r.getClientRects().length > 0 && typeof B.aviso === "function" && !this._docAlvoEhPopup());   /* (offsetParent é null em elemento position:fixed — a casca em tela cheia) */
+    },
+    _docAlvoEhPopup: function () { return this._docAlvo() !== document; },
 
     /* ---------- Mensagens guardadas no sino ---------- */
     mensagens: [],

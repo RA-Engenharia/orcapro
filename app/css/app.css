@@ -1654,6 +1654,10 @@ input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
    Sem visibility:hidden — ele zera o innerText que as e2e leem nos .toast */
 .toasts.silencioso { opacity: 0; pointer-events: none; }
 .toasts.silencioso .toast { pointer-events: none; animation: none; }
+/* BIM: erro/licença/quadro aberto seguem como balão mesmo com as mensagens silenciosas (os demais ficam escondidos) */
+.toasts.silencioso.tem-forte { opacity: 1; }
+.toasts.silencioso.tem-forte .toast:not(.toast-forte) { opacity: 0; }
+.toasts.silencioso.tem-forte .toast.toast-forte { pointer-events: auto; }
 .topo-ic-btn.tem-erro::after { content: ""; position: absolute; bottom: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: #dc2626; border: 2px solid var(--navy); }
 .avisos-msgs-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 4px; border-top: 1px solid var(--linha); }
 .avisos-msgs-cab b { font-size: var(--t-micro); font-weight: var(--p-forte); text-transform: uppercase; letter-spacing: .6px; color: var(--texto-fraco); }

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.295",
+versao: "1.2.296",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -15499,8 +15499,31 @@ this._rotulo(t, msg);
 wrap.appendChild(t);
 try { this._silenciar(wrap); this._registrarMensagem(t, tipo); } catch (eMs) {}
 var dura = (typeof ms === "number" && ms > 0) ? ms : 2600;
+try {
+if (this._bimNaTela() && !this.mensagensNaTela()) {
+if (this._recadoForte(tipo, t.textContent, D)) {
+t.classList.add("toast-forte");
+if (wrap && wrap.classList) wrap.classList.add("tem-forte");
+setTimeout(function () { try { if (wrap && !wrap.querySelector(".toast-forte")) wrap.classList.remove("tem-forte"); } catch (e) {} }, dura + 400);
+if (/(^|\s)(erro|aviso|warn)(\s|$)/.test(String(tipo || ""))) global.BimShell.aviso(String(t.textContent || ""), tipo, ms);
+} else {
+if (wrap && wrap.classList) wrap.classList.add("silencioso");
+global.BimShell.aviso(String(t.textContent || ""), tipo, ms);
+}
+}
+} catch (eBim) {}
 setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, dura);
 },
+_recadoForte: function (tipo, texto, D) {
+try { if (D && D.getElementById("modal-bg")) return true; } catch (e) {}
+if (/(^|\s)erro(\s|$)/.test(String(tipo || ""))) return true;
+return /(licen[cç]a|teste (gr[aá]tis )?(encerrado|terminou)|n[aã]o (foi |foram )?(salv|grav)|sem salvar|perd(eu|ido|a de)|falha ao salvar|n[aã]o salvou|n[aã]o ficou guardad|ficar guardad|fica guardad)/i.test(String(texto || ""));
+},
+_bimNaTela: function () {
+var B = global.BimShell, r = B && B._raiz;
+return !!(r && r.isConnected && r.getClientRects().length > 0 && typeof B.aviso === "function" && !this._docAlvoEhPopup());
+},
+_docAlvoEhPopup: function () { return this._docAlvo() !== document; },
 mensagens: [],
 _erroNaoVisto: false,
 _chaveMsgTela: "orcapro:tela:mensagens:v1",

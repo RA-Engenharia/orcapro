@@ -71,6 +71,8 @@
   <link rel="stylesheet" href="css/bimcorescat.css">
   <link rel="stylesheet" href="css/tour360.css">
   <link rel="stylesheet" href="css/visual.css">
+  <!-- BIM com linhas finas: DEPOIS da cara nova (css/visual.css), que ela refina -->
+  <link rel="stylesheet" href="css/bim-fino.css">
 </head>
 <body>
   <div class="app">
@@ -1137,6 +1139,9 @@
   <script src="js/bimcorescat.js"></script>
   <!-- FUNDO E GRADE DO 3D (27/10/2026): Padrão | Branco | Preto e grade liga/desliga, guardados por pessoa e aparelho — motor puro em js/bimfundo.js, aplicado em js/bim.js -->
   <script src="js/bimfundo.js"></script>
+  <!-- DISCIPLINA ATIVA E VISIBILIDADE POR CATEGORIA (13/11/2026): a disciplina em foco esmaece e trava as outras; categoria liga/desliga com transparência — motor puro em js/bimfoco.js, tela em js/bimfocoui.js, aplicado em js/bim.js -->
+  <script src="js/bimfoco.js"></script>
+  <script src="js/bimfocoui.js"></script>
   <script src="js/bimcorescatui.js"></script>
   <!-- PROJETOS BIM (12/10/2026): o BIM abre na tela inicial (nada carrega sozinho); projeto com nome e obra, salvo no sistema (IndexedDB) e na pasta do computador, recentes — motor puro em js/bimprojetos.js, tela e ganchos em js/bimprojetosui.js -->
   <script src="js/bimprojetos.js"></script>
