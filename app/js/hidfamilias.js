@@ -406,7 +406,7 @@
      distribuição pelas faces menos a da saída (+X), marcada "a conferir". Entrada além da 1ª que não recebe tubo é boca TAMPADA — por isso
      `opcional: true` (o motor deve honrar: não é desconexão). Tigre/sem número de entradas: só a 1ª. */
   var ENTRADAS_SIFONADA = [
-    { id: "entrada", nome: "Entrada 1", sistema: "esgoto", dn: "DN_entrada", x: "-Largura/2", y: "-Entrada_prof", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha" }
+    { id: "entrada", nome: "Entrada 1", sistema: "esgoto", dn: "DN_entrada", x: "se(Diametro_corpo > 0; -Diametro_corpo/2; -Largura/2)", y: "-Entrada_prof", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "tipo da ficha: Ø do corpo e altura das entradas da tabela das peças (a mesma do motor de bocas); demais tipos: posição não cotada" }
   ];
   (function () {
     var slots = [   /* [x, z, dir] — fração da Largura/Profundidade; a saída fica na face +X */
@@ -414,7 +414,10 @@
       ["-Largura/4", "-Profundidade/2", "parede"], ["Largura/4", "Profundidade/2", "frente"], ["Largura/4", "-Profundidade/2", "parede"]
     ], k;
     for (k = 0; k < slots.length; k++) {
-      ENTRADAS_SIFONADA.push({ id: "entrada" + (k + 2), nome: "Entrada " + (k + 2), sistema: "esgoto", dn: "DN_entrada", x: slots[k][0], y: "-Entrada_prof", z: slots[k][1], visivel: "Entradas >= " + (k + 2),
+      /* FAMÍLIAS CAIXAS: com o Ø do corpo da ficha (Diametro_corpo), a boca fica NO RAIO do corpo (as diagonais a 45°, como o js/hidbocas.js) */
+      var rx = { "0": "0", "-Largura/4": "-0.7071*Diametro_corpo/2", "Largura/4": "0.7071*Diametro_corpo/2" }[slots[k][0]], rz = (slots[k][0] === "0" ? "" : "0.7071*") + "Diametro_corpo/2";
+      ENTRADAS_SIFONADA.push({ id: "entrada" + (k + 2), nome: "Entrada " + (k + 2), sistema: "esgoto", dn: "DN_entrada", x: "se(Diametro_corpo > 0; " + rx + "; " + slots[k][0] + ")", y: "-Entrada_prof",
+        z: "se(Diametro_corpo > 0; " + (/^-/.test(slots[k][1]) ? "-" : "") + rz + "; " + slots[k][1] + ")", visivel: "Entradas >= " + (k + 2),
         papel: "entrada", dir: dv(slots[k][2]), opcional: true, origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha; boca não usada fica tampada" });
     }
   })();
@@ -434,7 +437,7 @@
     extraDados: [["Fecho_hidrico_mm", "fechoHidrico_mm", "Fecho hídrico"], ["Entradas", "entradas", "Número de entradas"]],
     solidos: CX_CORPO,
     conectores: ENTRADAS_SIFONADA.concat([
-      { id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "Largura/2", y: "-Altura", z: "0", papel: "saida", dir: dv("dir"), origemPos: "extremidade", aConferir: "a ficha não cota onde a saída fica no corpo: lado oposto à 1ª entrada, no fundo" }
+      { id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "se(Diametro_corpo > 0; Diametro_corpo/2; Largura/2)", y: "se(Saida_altura > 0; -Altura + Saida_altura; -Altura)", z: "0", papel: "saida", dir: dv("dir"), origemPos: "extremidade", aConferir: "tipo da ficha: hSaida e Ø do corpo da tabela das peças (a mesma do motor de bocas); demais tipos: no fundo, lado oposto à 1ª entrada" }
     ]), material: "PVC"
   });
   ESPECS.push({
@@ -472,6 +475,16 @@
   }
   ESPECS.push(caixaCil("hid-caixa-gordura", "Caixa de gordura", "caixa_gordura", "C", "Caixa de gordura de PVC (Amanco DN300, Tigre)."));
   ESPECS.push(caixaCil("hid-caixa-inspecao", "Caixa de inspeção", "caixa_inspecao", "C1", "Caixa de inspeção de PVC (Amanco DN300, Tigre)."));
+  /* FAMÍLIAS CAIXAS: no tipo Tigre (Estilo_tigre) as bocas da ficha ficam a Bocas_abaixo_topo do topo do corpo e na ponta das bolsas
+     (Largura_bocais/2): entrada e saída na MESMA cota (ficha Tigre p.1). Os tipos Amanco seguem com as posições de antes. */
+  ESPECS.forEach(function (e) {
+    if (e.id !== "hid-caixa-gordura" && e.id !== "hid-caixa-inspecao") return;
+    e.conectores.forEach(function (k) {
+      if (k.id === "entrada") { k.x = "se(Estilo_tigre; -Largura_bocais/2; -Diametro/2)"; k.y = "se(Estilo_tigre; -Altura; 0)"; }
+      if (k.id === "saida") { k.x = "se(Estilo_tigre; Largura_bocais/2; Diametro/2)"; k.y = "se(Estilo_tigre; -Altura; " + k.y + ")"; k.aConferir = "tipo Tigre da ficha: entrada e saída na MESMA cota, a Bocas_abaixo_topo do topo do corpo, na ponta das bolsas; demais tipos: " + k.aConferir; }
+      if (k.id === "entrada") k.aConferir = "tipo Tigre da ficha: na cota das bocas (Bocas_abaixo_topo), na ponta da bolsa; demais tipos: " + k.aConferir;
+    });
+  });
   /* pluvial (NBR 10844 5.7.3–5.7.5): inspeção aparente ou caixa de areia enterrada — os mesmos produtos de caixa de inspeção do catálogo */
   ESPECS.push(caixaCil("hid-caixa-areia", "Caixa de areia / inspeção (pluvial)", "caixa_inspecao", "C1", "Caixa de areia ou de inspeção do pluvial (produtos de caixa de inspeção do catálogo).", "pluvial"));
 
@@ -981,19 +994,22 @@
       x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
     "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade", cod: "@Codigo" },   /* @: o texto do parâmetro (o modelo do acabamento, catálogo Hydra) */ env: ["0", "-Altura*0.4", "0", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
     "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
-    "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"], x: [] },
+    "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura", pf: "se(Peca_ficha; 1; 0)", dn: "se(DN_saida > 0; DN_saida; 50)" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
+      x: [X("Peca_ficha", "simnao", false, "Forma 3D", "Corpo, grelha e bocas desenhados pelas cotas da ficha (o mesmo motor da peça do traçado, js/biminstgeo.js)"),
+        X("Diametro_corpo", "comprimento", 0, "Dimensões", "Ø do corpo pela ficha (as bocas ficam nesse raio); 0 = a regra antiga (a face da Largura)"),
+        X("Saida_altura", "comprimento", 0, "Dimensões", "Eixo da saída acima do fundo do corpo (hSaida da ficha); 0 = no fundo")] },
     "hid-ralo": { g: "ralo", p: { D: "min(Largura; Profundidade)", H: "Altura", quadrado: "Grelha_quadrada" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
       x: [X("Grelha_quadrada", "simnao", true, "Forma 3D", "Grelha quadrada (lido da descrição do catálogo: QD/QUADRADO); não = redonda", DESC(/\bQD\b|QUADRAD|\bQ\b/i, 1, 0))] },
     /* CAIXAS ENTERRADAS (27/10/2026): cada uma tem a FORMA do produto da Amanco Wavin (FT FTC000003, págs. 7 a 10) — ver o bloco no js/hidlouca.js.
        `Altura` (a profundidade do ponto de saída, usada pelo nivelamento e pelos conectores) NÃO muda: o desenho é que ganhou a forma do catálogo. */
-    "hid-caixa-gordura": { g: "caixa_gordura", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais", Dn: "se(DN_saida > 0; DN_saida; 100)", n3: "1" },   /* hid:ok DN100 da saída (D1 da ficha) quando o tipo não traz */
+    "hid-caixa-gordura": { g: "caixa_gordura", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais", Dn: "se(DN_saida > 0; DN_saida; 100)", n3: "1", tg: "se(Estilo_tigre; 1; 0)", yb: "Bocas_abaixo_topo", Fpt: "Porta_tampa_lado" },   /* hid:ok DN100 da saída (D1 da ficha) quando o tipo não traz */
       env: ["0", "-max(Altura; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura; Tampa_esp + Corpo_altura)", "max(Corpo_diametro; Tampa_lado)"],
       x: [G("Corpo_diametro", 0.308, [0.2, 0.5], L("A"), "Ø do corpo (letra A da ficha, pág. 7)"), G("Corpo_altura", 0.461, [0.3, 0.8], L("B"), "Altura do corpo sob a tampa (letra B, pág. 7)"),   /* hid:ok geometria: o padrão é a DN300 da ficha */
         G("Largura_bocais", 0.422, [0.3, 0.7], L("C"), "Largura total com os bocais (letra C, pág. 7)"), G("Tampa_lado", 0.321, [0.2, 0.5], L("F"), "Lado da tampa quadrada (letra F, pág. 7)"),   /* hid:ok geometria */
-        G("Tampa_esp", 0.047, [0.02, 0.1], L("G"), "Espessura da tampa (letra G, pág. 7)")] },   /* hid:ok geometria */
-    "hid-caixa-inspecao": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)" },   /* hid:ok DN100 dos bocais (D1/D2 da ficha) quando o tipo não traz; o prolongador DN300 (Amanco p.10) é cortado até a profundidade do ponto de saída */
+        G("Tampa_esp", 0.047, [0.02, 0.1], L("G"), "Espessura da tampa (letra G, pág. 7)"), X("Estilo_tigre", "simnao", false, "Forma 3D", "Forma das caixas múltiplas Tigre (corpo cinza-escuro, porta-tampa e tampa reforçada preta) — o tipo da ficha Tigre liga"), X("Bocas_abaixo_topo", "comprimento", 0, "Dimensões", "Eixo das bocas abaixo do topo do corpo (letra C do desenho Tigre); 0 = a regra antiga"), X("Porta_tampa_lado", "comprimento", 0, "Dimensões", "Lado do porta-tampa (Tigre: C = 388 mm); 0 = 1,11 × a tampa")] },   /* hid:ok geometria */
+    "hid-caixa-inspecao": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)", tg: "se(Estilo_tigre; 1; 0)", yb: "Bocas_abaixo_topo", Fpt: "Porta_tampa_lado" },   /* hid:ok DN100 dos bocais (D1/D2 da ficha) quando o tipo não traz; o prolongador DN300 (Amanco p.10) é cortado até a profundidade do ponto de saída */
       env: ["0", "-max(Altura; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura; Tampa_esp + Corpo_altura)", "max(Largura_bocais_z; Tampa_lado)"],
-      x: CX_INSPECAO },
+      x: CX_INSPECAO.concat([X("Estilo_tigre", "simnao", false, "Forma 3D", "Forma das caixas múltiplas Tigre (corpo cinza-escuro, porta-tampa e tampa reforçada preta) — o tipo da ficha Tigre liga"), X("Bocas_abaixo_topo", "comprimento", 0, "Dimensões", "Eixo das bocas abaixo do topo do corpo (letra C do desenho Tigre); 0 = a regra antiga"), X("Porta_tampa_lado", "comprimento", 0, "Dimensões", "Lado do porta-tampa (Tigre: C = 388 mm); 0 = 1,11 × a tampa")]) },
     "hid-caixa-areia": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura + Bolsao - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)" },   /* hid:ok DN100 dos bocais quando o tipo não traz */
       env: ["0", "-max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "max(Largura_bocais_z; Tampa_lado)"],
       x: CX_INSPECAO.concat([X("Bolsao", "comprimento", 0.15, "Dimensões", "Bolsão de areia abaixo do tubo de saída (NBR 10844: ≥ 0,15 m): o tambor da inspeção sobre um prolongador DN300 cortado até a profundidade da saída + o bolsão (Amanco FT p.10, prolongador 300 × 200 ou 300 × 420)")]) },   /* hid:ok 0,15 m: mínimo da NBR 10844 */
@@ -1465,6 +1481,10 @@
     P("Pressao_min_kPa", "numero", 0, "Pressão mínima de operação do catálogo (kPa; 0 = não informa)"), P("Pressao_max_kPa", "numero", 0, "Pressão máxima de operação do catálogo (kPa; 0 = não informa)"),
     P("Pressao_texto", "texto", "", "Pressão como impressa no catálogo"), P("Cotas_ficha", "texto", "", "Cotas brutas da ficha em mm (letras do desenho)"),
     /* LOTE 3-5 (13/11/2026): de onde vêm vazão e pressões do aparelho de consumo — "ficha" (catálogo do fabricante) ou "norma" (NBR 5626) — e a fonte escrita */
+    /* FAMÍLIAS CAIXAS: o link do produto no fabricante e o PREÇO DE REFERÊNCIA (lido, com loja e data) — informativo: o orçamento
+       segue pela composição SINAPI/mapa de sempre (nunca este número) */
+    P("Link_fabricante", "texto", "", "Página do produto no site do fabricante"), P("Preco_referencia", "numero", 0, "Preço de referência lido (R$; 0 = não lido) — NÃO entra no orçamento"),
+    P("Preco_fonte", "texto", "", "Onde o preço de referência foi lido (loja/anúncio)"), P("Preco_data", "texto", "", "Data da leitura do preço de referência (AAAA-MM-DD)"),
     P("Origem_hidraulica", "texto", "", "ficha = valores do catálogo do fabricante; norma = mínimo da NBR 5626 (sem ficha); vazio = não é aparelho de consumo"),
     P("Fonte_hidraulica", "texto", "", "Documento, item/tabela e página de cada valor hidráulico do tipo"),
     P("A_conferir", "simnao", true, "Sim = há cota/posição/DN que o catálogo não dá ou que é leitura de letra do desenho"),
@@ -1612,6 +1632,70 @@
       v.Fonte_hidraulica = fontes.join("; ");
     });
   }
+  /* FAMÍLIAS CAIXAS (14/11/2026, pedido do Rogério: "entra no fabricante, acha o modelo, tem os preços, coloca o link, pega a foto"): os tipos
+     Tigre das caixas múltiplas vinham do catálogo predial SEM cotas (tudo "padrão de reserva"). As cotas são as da FICHA do fabricante:
+       Caixa de Gordura DN 100 (100019323): ficha técnica Tigre "Caixas de Gordura" (nov/2018, p.1 desenho e p.4 tampa) e a página do produto
+       em tigre.com.br (tabela: D = 295, E = 392, h = 449, C = 5, Dn1 50, Dn2 75, Dn3 100); tampa reforçada A = B = 348, porta-tampa C = 388, E = 50.
+       Caixa de Inspeção DN 100 (27801056): AECweb (Tigre) 218 × 300 mm, 3 entradas DN 100 + saída DN 100; a mesma tampa e porta-tampa da linha.
+     O PREÇO é de REFERÊNCIA (parâmetro informativo — o orçamento segue pela composição SINAPI/mapa): o valor lido, a loja e a data. */
+  var FICHA_TIGRE = {
+    "hid-caixa-gordura": { tipo: /^t-tigre-100019323/, v: { Corpo_diametro: 0.295, Corpo_altura: 0.399, Largura_bocais: 0.392, Tampa_lado: 0.348, Tampa_esp: 0.05, Porta_tampa_lado: 0.388, Bocas_abaixo_topo: 0.05,
+        Altura: 0.1, DN_entrada: 75, DN_saida: 100, Diametro: 0.3, Estilo_tigre: true, Volume_retencao_L: 18,   /* DN_entrada 75 = a entrada Dn2 da ficha (as outras duas são DN 50, Dn1); a família tem um DN de entrada só */
+        Cotas_ficha: "D=295; E=392; h=449; C=5 cm; Dn1=50; Dn2=75; Dn3=100; tampa A=B=348, porta-tampa C=388, E=50 (ficha Tigre nov/2018 + tigre.com.br)",
+        Link_fabricante: "https://www.tigre.com.br/produto/caixa-de-gordura-dn-100", Link_ficha: "https://tigresite.s3.amazonaws.com/fichastecnica/default/files/produtos/ficha-tecnica/FT_Caixa%20de%20Gordura-compactado%20%281%29.pdf",
+        Edicao_ficha: "ficha técnica Tigre Caixas de Gordura (nov/2018) e página do produto (lida em 14/11/2026)", Pagina_ficha: 1, Pagina_cotas: 4,
+        Preco_referencia: 373.7, Preco_fonte: "Amazon BR, anúncio Caixa de gordura DN 100 Tigre (busca do Rogério, print de 14/11/2026)", Preco_data: "2026-11-14" },
+      conferir: ["Corpo_altura (h = 449 menos a tampa de 50: leitura do desenho)", "Altura (ponto de saída a C = 5 cm do topo do corpo + a tampa)", "DN_entrada 75 = a entrada Dn2 da ficha; as duas laterais (Dn1) são DN 50"] },
+    "hid-caixa-inspecao": { tipo: /^t-tigre-27801056/, v: { Corpo_diametro: 0.3, Corpo_altura: 0.218, Largura_bocais: 0.42, Largura_bocais_z: 0.42, Tampa_lado: 0.348, Tampa_esp: 0.05, Porta_tampa_lado: 0.388,
+        Bocas_abaixo_topo: 0.109, Altura: 0.159, DN_entrada: 100, DN_saida: 100, Diametro: 0.3, Estilo_tigre: true,
+        Cotas_ficha: "218 x 300 mm; 3 entradas DN 100 + saída DN 100 (AECweb/Tigre); tampa A=B=348, porta-tampa C=388, E=50 (ficha Tigre da linha)",
+        Link_fabricante: "https://www.aecweb.com.br/produto/caixa-de-inspecao-tigre/12995", Link_ficha: "https://www.aecweb.com.br/produto/caixa-de-inspecao-tigre/12995",
+        Edicao_ficha: "AECweb (página da Tigre, lida em 14/11/2026); tampa: ficha técnica Tigre da linha (nov/2018, p.4)", Pagina_ficha: 1, Pagina_cotas: 1,
+        Preco_referencia: 0, Preco_fonte: "sem preço lido do modelo 27801056 (as ofertas da busca são de outros modelos)", Preco_data: "" },
+      conferir: ["Largura_bocais e Largura_bocais_z (Ø 300 + as bolsas DN 100: leitura da foto, a ficha não cota)", "Bocas_abaixo_topo (meia altura do corpo: foto)"] }
+  };
+  /* FAMÍLIAS CAIXAS (14/11/2026, "uma fonte só"): as caixas sifonadas Amanco do catálogo levam as cotas da MESMA tabela que o motor de bocas
+     (js/hidbocas.js) e a peça do traçado (js/biminstgeo.js cotasPeca) usam — js/biminstgeodados.js pecas.caixa_sifonada (ficha Amanco
+     "caixas sifonadas e ralos", p.8): Ø do corpo, altura, hSaida (eixo da saída acima do fundo), DN e número de entradas. As entradas ficam
+     a DN/2 + 5 mm abaixo do topo do corpo (a regra do js/hidbocas.js). */
+  function dadosPecas() { var D = global.HidGeoDados || (typeof require === "function" ? (function () { try { return require("./biminstgeodados.js"); } catch (e) { return null; } })() : null); return (D && (D.pecas || (global.HidGeoDados && global.HidGeoDados.pecas))) || null; }
+  function fichaSifonada(fam) {
+    if (fam.id !== "hid-caixa-sifonada") return;
+    var tab = (dadosPecas() || {}).caixa_sifonada; if (!tab) return;
+    /* decisão da coordenação (14/11): o tipo ANTIGO fica igual ao master (legado: fora da lista, abre e desenha como antes — o projeto salvo
+       não solta cano); a geometria da ficha vai num TIPO NOVO "<id>-ficha", logo antes dele (o padrão da família). Trocar uma caixa antiga: js/hidcaixaficha.js */
+    var novos = [];
+    fam.tipos.forEach(function (t0) {
+      var v0 = t0.valores; if (v0.Fabricante !== "Amanco Wavin" || !/SIFONADA/i.test(String(v0.Descricao_ficha || "")) || !(v0.Largura > 0) || !(v0.Altura > 0)) return;
+      if (!tab[Math.round(v0.Largura * 1000) + "x" + Math.round(v0.Altura * 1000) + "x" + Math.round(v0.DN_saida || 0)]) return;
+      var t = JSON.parse(JSON.stringify(t0)); t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas da ficha"; t0.legado = true; novos.push([t0, t]);
+    });
+    novos.forEach(function (par) { var i = fam.tipos.indexOf(par[0]); fam.tipos.splice(i, 0, par[1]); });   /* antes do antigo: o 1º tipo da família (o padrão de quem coloca) é o da ficha */
+    novos.map(function (par) { return par[1]; }).forEach(function (t) {
+      var v = t.valores; if (v.Fabricante !== "Amanco Wavin" || !/SIFONADA/i.test(String(v.Descricao_ficha || "")) || !(v.Largura > 0) || !(v.Altura > 0)) return;   /* a caixa SECA não é a peça da tabela (sem sifão) */
+      var ct = tab[Math.round(v.Largura * 1000) + "x" + Math.round(v.Altura * 1000) + "x" + Math.round(v.DN_saida || 0)]; if (!ct) return;
+      v.Peca_ficha = true; v.Diametro_corpo = ct.diam / 1000; v.Saida_altura = Math.round(ct.hSaida * 10) / 10000;
+      v.Entrada_prof = Math.round(ct.dnEntrada / 2 + 5) / 1000; v.DN_entrada = ct.dnEntrada; v.Entradas = ct.entradas;
+      v.Cotas_ficha = "Ø corpo " + ct.diam + "; altura " + ct.alt + "; saída a " + ct.hSaida + " do fundo (DN " + ct.dnSaida + "); " + ct.entradas + " entradas DN " + ct.dnEntrada + "; fecho " + ct.fecho + " mm (ficha Amanco p." + ct.pag + ", js/biminstgeodados.js)";
+      var conf = ["Diametro_corpo e Saida_altura: leitura do desenho cotado da ficha (p." + ct.pag + ") — a mesma do motor de bocas"];
+      v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf;
+    });
+  }
+  function fichaTigre(fam) {
+    var F = FICHA_TIGRE[fam.id]; if (!F) return;
+    /* revisão 14/11 (C1): o tipo Tigre do catálogo fica IGUAL ao master (legado: projeto salvo com tubo nas bocas antigas não solta cano nem
+       muda o cálculo — DN, retenção); as cotas da ficha vão num tipo NOVO "<id>-ficha", posto ANTES dele (o padrão de quem coloca a caixa) */
+    var pares = [];
+    fam.tipos.forEach(function (t0) { if (F.tipo.test(t0.id) && !/-ficha$/.test(t0.id)) pares.push(t0); });
+    pares.forEach(function (t0) {
+      var t = JSON.parse(JSON.stringify(t0)); t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas da ficha"; t0.legado = true;
+      Object.keys(F.v).forEach(function (k) { t.valores[k] = F.v[k]; });
+      t.valores.Conferir = F.conferir.join("; "); t.valores.A_conferir = true; t.conferir = F.conferir.slice();
+      t.fonte = "Tigre: " + F.v.Edicao_ficha;
+      fam.tipos.splice(fam.tipos.indexOf(t0), 0, t);
+      fam.tipoIcone = t.id;   /* a miniatura do seletor sai do tipo da ficha Tigre (tools/hid-icones.html) */
+    });
+  }
   function enxugar(fam) {
     var usos = USOS_ENXUTOS[fam.id]; if (!usos) return;
     var fica = {};
@@ -1640,6 +1724,8 @@
       its.forEach(function (x) { fam.tipos.push(montarTipo(e, x)); });
     }
     enxugar(fam);
+    fichaTigre(fam);
+    fichaSifonada(fam);
     hidraulica(fam);
     return fam;
   }

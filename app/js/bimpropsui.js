@@ -877,6 +877,8 @@
       /* N23 (25/10/2026): a peça do hidrossanitário — "Ligar esta peça" (js/hidkitui.js), com o automático desligado ou para refazer */
       try { var HSu = global.HidSubirTuboUI, sHs = HSu && HSu.secaoPaleta ? HSu.secaoPaleta(md.ids) : null; if (sHs) tb.appendChild(self._grupoExtra(doc, sHs, !!rec["extra:" + sHs.nome])); } catch (eHs) {}   /* SUBIR/DESCER TRECHO (js/hidsubirtuboui.js): o tubo horizontal do hidro */
       try { var HKu = global.HidKitUI, sHk = HKu && HKu.secaoPaleta ? HKu.secaoPaleta(md.ids) : null; if (sHk) tb.appendChild(self._grupoExtra(doc, sHk, !!rec["extra:" + sHk.nome])); } catch (eHk) {}
+      /* FAMÍLIAS CAIXAS (14/11/2026): a caixa sifonada LEGADA (projeto salvo) — "Atualizar para as medidas da ficha" (js/hidcaixaficha.js) */
+      try { var HCf = global.HidCaixaFicha, sCf = HCf && HCf.secaoPaleta ? HCf.secaoPaleta(md.ids) : null; if (sCf) tb.appendChild(self._grupoExtra(doc, sCf, !!rec["extra:" + sCf.nome])); } catch (eCf) {}
       if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) {   /* P2-C: extras pode ser função (fresca a cada pintura) */ tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
       raiz.appendChild(tb);
       if (ctx.res.avisos && ctx.res.avisos.length) {

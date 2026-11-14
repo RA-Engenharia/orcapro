@@ -164868,6 +164868,7 @@ try { var EU = global.BimElevarUI, sEl = EU && EU.secaoPaleta ? EU.secaoPaleta(m
 try { var MCu = global.MetalCriarUI, sAc = MCu && MCu.secaoPaleta ? MCu.secaoPaleta(md.ids) : null; if (sAc) tb.appendChild(self._grupoExtra(doc, sAc, !!rec["extra:" + sAc.nome])); } catch (eAc) {}
 try { var HSu = global.HidSubirTuboUI, sHs = HSu && HSu.secaoPaleta ? HSu.secaoPaleta(md.ids) : null; if (sHs) tb.appendChild(self._grupoExtra(doc, sHs, !!rec["extra:" + sHs.nome])); } catch (eHs) {}
 try { var HKu = global.HidKitUI, sHk = HKu && HKu.secaoPaleta ? HKu.secaoPaleta(md.ids) : null; if (sHk) tb.appendChild(self._grupoExtra(doc, sHk, !!rec["extra:" + sHk.nome])); } catch (eHk) {}
+try { var HCf = global.HidCaixaFicha, sCf = HCf && HCf.secaoPaleta ? HCf.secaoPaleta(md.ids) : null; if (sCf) tb.appendChild(self._grupoExtra(doc, sCf, !!rec["extra:" + sCf.nome])); } catch (eCf) {}
 if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) { tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
 raiz.appendChild(tb);
 if (ctx.res.avisos && ctx.res.avisos.length) {

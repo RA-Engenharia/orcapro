@@ -10130,6 +10130,7 @@ var famMats = {};
 var FAM_PBR = {
 'louça branca': { cor: 0xf3f3f0, rug: 0.25, met: 0, cc: 0.5, ccr: 0.15 }, 'branco': { cor: 0xf0f0ee, rug: 0.32, met: 0, cc: 0.4, ccr: 0.18 },
 'metal cromado': { cor: 0xe9ebef, rug: 0.06, met: 1 },
+'pvc cinza tigre': { cor: 0x55606e, rug: 0.5, met: 0, cc: 0.15, ccr: 0.4 }, 'tampa preta tigre': { cor: 0x1f2124, rug: 0.62, met: 0 },
 'metal cromado acetinado': { cor: 0xf2f4f6, rug: 0.3, met: 0.85 },
 'vermelho': { cor: 0xb3201f, rug: 0.45, met: 0.1, cc: 0.3, ccr: 0.25 }, 'polietileno verde': { cor: 0x2f7d34, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 },
 'polietileno amarelo': { cor: 0xe0b114, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 }, 'metal preto': { cor: 0x1f2124, rug: 0.4, met: 0.3, cc: 0.3, ccr: 0.3 },

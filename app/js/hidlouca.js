@@ -939,7 +939,19 @@
     }
     partes.push(pg, gr, fe);
   }
+  /* FAMÍLIAS CAIXAS (14/11/2026): a caixa sifonada da FICHA (Amanco, "caixas sifonadas e ralos" p.8) desenhada pelo MESMO motor da peça do
+     traçado (js/biminstgeo.js HidGeo.peca / cotasPeca) — uma fonte só para o corpo, o porta-grelha, a grelha e as bocas da família e da peça */
+  var PAPEL_PECA = { corpo: "Branco", grelha: "Metal cromado acetinado", fenda: ESCURO };   /* acetinado: a grelha plana com o cromado polido saía preta (js/bim.js FAM_PBR) */
+  function pecaFicha(peca, chave, q) {
+    var G = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+    if (!G || !G.peca) throw new Error("HidGeo.peca indisponível (js/biminstgeo.js)");
+    var r = G.peca({ peca: peca, dn: chave, x: 0, y: 0, z: 0 }, [], { lod: q && q.N <= 20 ? "longe" : "perto" }); if (!r) throw new Error("sem cotas da ficha para " + peca + " " + chave);
+    return r.partes.filter(function (pt) { return pt.malha.idx.length; }).map(function (pt, i) {
+      var p = parte(pt.papel + "-" + i, pt.papel, PAPEL_PECA[pt.papel] || PVC, false); p.m.v = pt.malha.pos.slice(); p.m.f = pt.malha.idx.slice(); return p;
+    });
+  }
   function geoCaixaSifonada(P, q) {
+    if (P.pf > 0.5) return pecaFicha("caixa_sifonada", Math.round(P.W * 1000) + "x" + Math.round(P.H * 1000) + "x" + Math.round(P.dn), q);
     var W = P.W, Pp = P.P, H = P.H, lado = Math.min(W, Pp), partes = [], co = parte("corpo", "Corpo", PVC, false);
     torno(co.m, [[lado * 0.42, -H], [lado * 0.46, -H + 0.01], [lado * 0.47, -0.02], [lado * 0.49, -0.006], [lado * 0.49, -0.004]], q.N, { c: [0, 0, 0] });
     /* entrada lateral e saída embaixo (até os conectores) */
@@ -1024,7 +1036,42 @@
     pf.push([R, yTop - 0.02], [R * 1.05, yTop - 0.014], [R * 1.05, yTop]);
     torno(co.m, pf, N, { c: [0, 0, 0] });
   }
+  /* FAMÍLIAS CAIXAS (14/11/2026): o ESTILO TIGRE das caixas múltiplas (ficha técnica Tigre "Caixas de Gordura", nov/2018, p.1 e p.4; foto do
+     produto): corpo de PVC CINZA-ESCURO que afina para baixo, PORTA-TAMPA quadrado (C = 388) com aba, TAMPA REFORÇADA PRETA quadrada (A = B =
+     348, E = 50) com a grelha de ondas e a marca TIGRE em relevo. As bocas ficam a P.yb do topo do corpo (letra C do desenho). */
+  var CINZA_TIGRE = "PVC cinza Tigre", TAMPA_TIGRE = "Tampa preta Tigre";
+  function tampaTigre(partes, Ft, Gt, Fpt, q) {
+    var tp = parte("tampa", "Tampa reforçada", TAMPA_TIGRE), pt = parte("porta-tampa", "Porta-tampa", CINZA_TIGRE), k, n = q.N > 20 ? 7 : 4;
+    caixaR(pt.m, { x0: -Fpt / 2, x1: Fpt / 2, y0: -Gt, y1: -Gt + 0.018, z0: -Fpt / 2, z1: Fpt / 2, r: 0.004, rad: 0.01 }, q);   /* aba do porta-tampa (388) */
+    caixaR(tp.m, { x0: -Ft / 2, x1: Ft / 2, y0: -Gt + 0.012, y1: -0.004, z0: -Ft / 2, z1: Ft / 2, r: 0.004, rad: 0.012 }, q);   /* tampa 348 */
+    for (k = 0; k < n; k++) {   /* grelha de ondas (faixas onduladas da foto) */
+      var z = -Ft * 0.36 + Ft * 0.72 * k / (n - 1), pts = [], j;
+      for (j = 0; j <= 10; j++) { var x = -Ft * 0.34 + Ft * 0.68 * j / 10; pts.push([x, -0.004, z + 0.006 * Math.sin(j * 0.9)]); }
+      tubo(tp.m, pts, 0.0028, 6, { rc: 0.01, arco: 2 });
+    }
+    partes.push(pt, tp, decal("logo", "TIGRE", "#3A3D42", [0, -0.001, Ft * 0.42], [0, 1, 0], [1, 0, 0], Ft * 0.22, Ft * 0.045));
+  }
+  /* a boca ABERTA da bolsa (o furo escuro da foto): disco escuro rente à ponta, a 1 mm para dentro */
+  function furoBolsa(m, c, ax, r, N) { torno(m, [[0, 0], [r * 0.84, 0], [r * 0.84, 0.0012], [0, 0.0012]], N, { c: c, eixo: ax }); }
+  function corpoTigre(co, R, yTop, yBase, N) {   /* afina 8 % para baixo, com o colarinho do porta-tampa no topo */
+    torno(co.m, [[R * 0.9, yBase], [R * 0.92, yBase + 0.012], [R, yTop - 0.06], [R * 1.04, yTop - 0.03], [R * 1.04, yTop]], N, { c: [0, 0, 0] });
+  }
   function geoCaixaGordura(P, q) {
+    if (P.tg > 0.5) {
+      /* Tigre: 2 entradas DN 50 (laterais ±Z), 1 entrada DN 75 (−X) e a saída DN 100 (+X), todas a C abaixo do topo (ficha p.1) */
+      var Rt = P.D / 2, Bt = P.H, Gtt = P.Gt, pt = [], cot = parte("corpo", "Corpo", CINZA_TIGRE), bot = parte("bocais", "Bocais", CINZA_TIGRE);
+      var yT = -Gtt, yB = -Gtt - Bt, yb = yT - (P.yb > 0 ? P.yb : 0.05), Lt = Math.max(0.03, (P.Cx - P.D) / 2);
+      corpoTigre(cot, Rt, yT, yB, q.N);
+      bocalX(bot.m, Rt * 0.96, Rt + Lt, yb, 0, (P.Dn + 14) / 2000, q.N);
+      bocalX(bot.m, -Rt - Lt, -Rt * 0.96, yb, 0, (75 + 14) / 2000, q.N);
+      bocalZ(bot.m, 0, yb, Rt * 0.96, Rt + Lt * 0.7, (50 + 14) / 2000, q.N);
+      bocalZ(bot.m, 0, yb, -Rt - Lt * 0.7, -Rt * 0.96, (50 + 14) / 2000, q.N);
+      var fu = parte("furos", "Bocas abertas", ESCURO);
+      furoBolsa(fu.m, [Rt + Lt - 0.001, yb, 0], [1, 0, 0], (P.Dn + 14) / 2000, q.N); furoBolsa(fu.m, [-Rt - Lt + 0.001, yb, 0], [-1, 0, 0], (75 + 14) / 2000, q.N);
+      furoBolsa(fu.m, [0, yb, Rt + Lt * 0.7 - 0.001], [0, 0, 1], (50 + 14) / 2000, q.N); furoBolsa(fu.m, [0, yb, -Rt - Lt * 0.7 + 0.001], [0, 0, -1], (50 + 14) / 2000, q.N);
+      pt.push(cot, bot, fu); tampaTigre(pt, P.Ft, Gtt, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
+      return pt;
+    }
     var R = P.D / 2, B = P.H, Gt = P.Gt, N = q.N, partes = [], co = parte("corpo", "Corpo", PVC), tp = parte("tampa", "Tampa", CLARO), bo = parte("bocais", "Bocais", PVC);
     var yTop = -Gt, yBase = -Gt - B, rB = (P.Dn + 14) / 2000;   // bolsa = DN + 14 mm (bolsa de esgoto série normal)
     tamborCaixa(co, R, yTop, yBase, N, 4);
@@ -1037,6 +1084,20 @@
     return partes;
   }
   function geoCaixaInspecao(P, q) {
+    if (P.tg > 0.5) {
+      /* Tigre: 3 entradas DN 100 (−X, ±Z) e a saída DN 100 (+X) à meia altura do corpo (AECweb: 218 × 300; mesmo porta-tampa e tampa da gordura) */
+      var Ri = P.D / 2, Bi = P.H, Gi = P.Gt, pi = [], coi = parte("corpo", "Tambor", CINZA_TIGRE), boi = parte("bocais", "Bocais", CINZA_TIGRE);
+      var yTi = -Gi, yBi = -Gi - Bi, ybi = yTi - (P.yb > 0 ? P.yb : Bi * 0.5), Lx = Math.max(0.02, (P.Cx - P.D) / 2), Lz = Math.max(0.02, (P.Cz - P.D) / 2), rBi = (P.Dn + 14) / 2000;
+      corpoTigre(coi, Ri, yTi, yBi, q.N);
+      if (P.Pr > 0) torno(coi.m, [[0.1535 * 0.98, yBi - P.Pr], [0.1535, yBi - P.Pr + 0.008], [0.1535, yBi + 0.01], [Ri * 0.88, yBi + 0.01]], q.N, { c: [0, 0, 0] });   /* prolongador DN300 (Tigre 27801552) */
+      bocalX(boi.m, Ri * 0.96, Ri + Lx, ybi, 0, rBi, q.N); bocalX(boi.m, -Ri - Lx, -Ri * 0.96, ybi, 0, rBi, q.N);
+      bocalZ(boi.m, 0, ybi, Ri * 0.96, Ri + Lz, rBi, q.N); bocalZ(boi.m, 0, ybi, -Ri - Lz, -Ri * 0.96, rBi, q.N);
+      var fui = parte("furos", "Bocas abertas", ESCURO);
+      furoBolsa(fui.m, [Ri + Lx - 0.001, ybi, 0], [1, 0, 0], rBi, q.N); furoBolsa(fui.m, [-Ri - Lx + 0.001, ybi, 0], [-1, 0, 0], rBi, q.N);
+      furoBolsa(fui.m, [0, ybi, Ri + Lz - 0.001], [0, 0, 1], rBi, q.N); furoBolsa(fui.m, [0, ybi, -Ri - Lz + 0.001], [0, 0, -1], rBi, q.N);
+      pi.push(coi, boi, fui); tampaTigre(pi, P.Ft, Gi, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
+      return pi;
+    }
     var R = P.D / 2, B = P.H, Gt = P.Gt, N = q.N, partes = [], co = parte("corpo", "Tambor", PVC), tp = parte("tampa", "Tampa", CLARO), bo = parte("bocais", "Bocais", PVC);
     var yTop = -Gt, yBase = -Gt - B, rB = (P.Dn + 14) / 2000;
     tamborCaixa(co, R, yTop, yBase, N, 1);
@@ -1517,7 +1578,7 @@
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
-    caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
+    caixa_sifonada: 3500, ralo: 2200, caixa_cil: 2300, caixa_gordura: 4600, caixa_inspecao: 4600, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600
   };

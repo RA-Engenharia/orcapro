@@ -13443,6 +13443,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var FAM_PBR = {
     'louça branca': { cor: 0xf3f3f0, rug: 0.25, met: 0, cc: 0.5, ccr: 0.15 }, 'branco': { cor: 0xf0f0ee, rug: 0.32, met: 0, cc: 0.4, ccr: 0.18 },
     'metal cromado': { cor: 0xe9ebef, rug: 0.06, met: 1 },
+    /* FAMÍLIAS CAIXAS: as caixas múltiplas Tigre (foto do produto: corpo de PVC cinza-azulado escuro, tampa reforçada preta de ABS) */
+    'pvc cinza tigre': { cor: 0x55606e, rug: 0.5, met: 0, cc: 0.15, ccr: 0.4 }, 'tampa preta tigre': { cor: 0x1f2124, rug: 0.62, met: 0 },
     /* FAMÍLIAS R2 (revisão 14/11, decisão da coordenação): o cromado polido acima fica como está para todas as famílias; a placa GRANDE e
        plana da válvula de descarga (que espelhava o chão escuro e saía PRETA no print) usa este, o mesmo tratamento do cromado dos registros
        no tubo (js/biminstgeo.js PAPEL.cromado) — só js/hidlouca.js geoValvula o pede */
