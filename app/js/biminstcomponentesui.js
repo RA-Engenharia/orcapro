@@ -173,7 +173,7 @@
     },
 
     /* ------------------------------------------------ o que o botão Inserir faz: chama a função que já existe */
-    executar: function (it) {
+    executar: function (it, manterAberta) {
       var a = it && it.acao, U = UI();
       if (!a) return false;
       if (a.tipo === "abrirTemplate") return this.abrirTemplate(a.id);
@@ -187,16 +187,16 @@
       else if (a.tipo === "armarAcessorio") { ok = U.armar("acessorio", { famId: a.famId, tipoId: a.tipoId }); if (ok && U._p12) { U._p12.acFam = a.famId; U._p12.acTipo = a.tipoId; } }
       else if (a.tipo === "colocarFamilia") ok = U.colocarFamilia(a.famId, a.tipoId);
       else if (a.tipo === "conexaoManual") ok = U.armarConexaoManual(a.conexao, a.material);
-      if (ok !== false) { this.usar(it.id); var elF = typeof document !== "undefined" ? document.getElementById("bim-componentes") : null; if (elF && elF.getAttribute("data-comp-flutuante")) this.fechar(); }
+      if (ok !== false) { this.usar(it.id); this._armadoId = it.id; if (manterAberta) return true; var elF = typeof document !== "undefined" ? document.getElementById("bim-componentes") : null; if (elF && elF.getAttribute("data-comp-flutuante")) this.fechar(); }
       return ok !== false;
     },
     /* o duplo clique insere UMA vez (revisão 08/11/2026): o 2º clique (ev.detail ≥ 2) e o dblclick do navegador chegam os dois — o segundo, para o
        mesmo item dentro da janela do duplo clique, é ignorado (nem insere de novo, nem grava duas vezes nos recentes). _semTrava = controle negativo */
-    _inserirDuplo: function (id) {
+    _inserirDuplo: function (id, manterAberta) {
       var agora = Date.now(), u = this._ultIns;
       if (!this._semTrava && u && u.id === id && agora - u.t < 600) return false;   // ui: janela do duplo clique (ms)
       this._ultIns = { id: id, t: agora };
-      var it = this.vista(id), ok = !!(it && it.acao && it.acao.disponivel !== false && this.executar(it));
+      var it = this.vista(id), ok = !!(it && it.acao && it.acao.disponivel !== false && this.executar(it, manterAberta));
       this._ultIns.t = Date.now();   /* a janela conta do FIM da inserção (armar a colocação pode passar da janela com a máquina ocupada) */
       return ok;
     },
@@ -233,7 +233,10 @@
     _htmlTipo: function (it, onde) {
       if (!it || !it.tipos || it.tipos.length < 2) return "";
       var at = it.tipoId;
-      return '<select data-comp="tipo" data-cid="' + esc(it.id) + '" aria-label="Tipo de ' + esc(it.nome) + '" title="Tipo que o Inserir coloca" style="display:block;width:100%;min-width:0;box-sizing:border-box;font-size:12px;margin:' + (onde === "linha" ? "2px 0 0" : "6px 0 0") + '">' +
+      /* UM CLIQUE (14/11/2026, marca um-clique-peca-1415): na linha do menu o seletor era um bloco de largura total sob o nome — metade da linha
+         abria a lista de tipos em vez de pegar a peça. Agora é compacto, à direita (a linha inteira pega a peça); escolher o tipo também pega */
+      var css = onde === "linha" ? "flex:none;width:auto;max-width:42%;min-width:0;font-size:11px;margin:0" : "display:block;width:100%;min-width:0;box-sizing:border-box;font-size:12px;margin:6px 0 0";
+      return '<select data-comp="tipo" data-cid="' + esc(it.id) + '" aria-label="Tipo de ' + esc(it.nome) + '" title="Tipo que a peça coloca" style="' + css + '">' +
         it.tipos.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === at ? " selected" : "") + ">" + esc(t.nome) + "</option>"; }).join("") + "</select>";
     },
     _htmlFicha: function (it) {
@@ -269,7 +272,7 @@
       var avisos = it.selos.filter(function (t) { return /^(sem|a conferir|indispon)/.test(t); });
       return '<div class="comp-item" data-comp="item" data-cid="' + esc(it.id) + '" role="button" tabindex="0" style="display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:7px;cursor:pointer;border:1px solid ' + (sel ? "var(--aco,#0d6ebd)" : "transparent") + ";background:" + (sel ? "var(--tinta-aco,rgba(13,110,189,.10))" : "transparent") + '">' +
         (it.icone ? '<img src="' + esc(it.icone) + '" alt="" width="26" height="26" loading="lazy" style="object-fit:contain;flex:none" onerror="this.style.visibility=\'hidden\'">' : '<span style="width:26px;flex:none"></span>') +
-        '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + (this.estado.menu ? this._htmlTipo(it, "linha") : "") + "</span>" +
+        '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + "</span>" + (this.estado.menu ? this._htmlTipo(it, "linha") : "") +
         (avisos.length ? '<span title="' + esc(avisos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
         (this.ehFavorito(it.id) ? '<span style="flex:none;color:var(--aco,#0d6ebd)" aria-label="favorito">★</span>' : "") + "</div>";
     },
@@ -348,7 +351,11 @@
         else if (c === "f-material") e.filtros.material = el.value || undefined;
         else if (c === "f-fabricante") e.filtros.fabricante = el.value || undefined;
         else if (c === "f-cota") e.filtros.soComCota = !!el.checked;
-        else if (c === "tipo") self.escolherTipo(el.getAttribute("data-cid"), el.value);
+        else if (c === "tipo") {
+          var cidT = el.getAttribute("data-cid"); self.escolherTipo(cidT, el.value);
+          var itT = (e.menu || self._armadoId === cidT) ? self.vista(cidT) : null;
+          if (itT && itT.acao && itT.acao.disponivel !== false) { if (e.menu) { self._desarmar(); self.executar(itT); return; } self.executar(itT, true); }
+        }
         else return;
         self.render();
       };
@@ -364,7 +371,11 @@
           self._ultClique = { id: id, t: agora };
           if (duplo) { self._ultClique = null; if (self._inserirDuplo(id)) self.render(); return; }
           /* a ficha abre na hora; a rolagem até ela espera a janela do duplo clique (senão o 2º clique cai em outra linha) */
-          e.sel = id; self.render();
+          e.sel = id;
+          /* UM CLIQUE: a peça já vai para o cursor (antes o 1º clique só abria a ficha e era preciso Inserir ou o duplo clique). A janela fica
+             aberta com a ficha (trocar o tipo nela arma o tipo novo); a trava do duplo clique impede inserir duas vezes */
+          var itU = self.vista(id); if (itU && itU.acao && itU.acao.disponivel !== false && itU.acao.tipo !== "abrirTemplate") self._inserirDuplo(id, true);
+          self.render();
           setTimeout(function () { if (e.sel === id) { self._rolarFicha = true; self._rolarAgora(); } }, 460);
         }
         else if (c === "aba") { e.aba = bt.getAttribute("data-caba"); self.render(); }
