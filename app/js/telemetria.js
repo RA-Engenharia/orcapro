@@ -155,6 +155,9 @@
         if (typeof aoLiberar === "function") aoLiberar();
       } };
     },
+    _semTeste: function () {
+      try { return typeof Produto !== "undefined" && !!Produto.semTesteGratis && Produto.semTesteGratis(); } catch (e) { return false; }
+    },
     _esc: function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); },
     _emailOk: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim()); },
     /* só grava `confirmadoEm` quando telefone E e-mail foram confirmados — é ele que tira o app do modo "adotar cadastro antigo" */
@@ -174,6 +177,8 @@
     _passoCadastro: function (aoLiberar, pre, op) {
       var self = this, esc = this._esc;
       op = op || {};
+      /* CPLPRO não tem teste grátis: vai direto para a entrada por chave (a mesma porta do «Já tenho a chave»). */
+      if (this._semTeste()) { this._jaSouCliente(aoLiberar, op); return; }
       var corpo =
         '<p class="muted" style="margin:0 0 12px">Bem-vindo ao <b>teste grátis de 7 dias</b> — sistema completo, sem cartão. Para começar, informe quem está testando e <b>confirme o seu e-mail e o seu WhatsApp</b> (leva um minuto):</p>' +
         '<div class="field"><label>Seu nome *</label><input id="tg-nome" value="' + esc(pre.nome) + '" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
@@ -398,10 +403,11 @@
     /* TESTE ENCERRADO (aparelho que já testou, ou prazo vencido) — a mensagem clara, com a porta de compra.
        O trabalho continua VISÍVEL; só não edita nem exporta (App._trialBloqueado). Nada do cadastro anterior é mostrado. */
     _encerrado: function (aoLiberar) {
-      var srv = "";
+      var srv = "", cpl = this._semTeste();
       try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
-      UI.modal("⏰ Seu período de teste terminou",
-        '<p style="margin:0 0 10px">O teste grátis deste computador já foi usado. Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+      if (cpl) srv = ""; /* CPLPRO não tem loja nem planos */
+      UI.modal(cpl ? "Acesso do órgão não liberado" : "⏰ Seu período de teste terminou",
+        '<p style="margin:0 0 10px">' + (cpl ? 'Este aparelho está sem a chave de acesso do órgão. Para editar e exportar, ative a chave do CPLPRO ou fale com a RA Engenharia.' : 'O teste grátis deste computador já foi usado. Para continuar editando e exportando, ative uma licença do OrçaPRO.') + '</p>' +
         '<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
         { texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); try { if (typeof App !== "undefined" && App.abrirLicenca) App.abrirLicenca(); } catch (e2) {} } },
         { texto: "Continuar só para consulta", classe: "primary", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); } }
@@ -431,20 +437,33 @@
        e o boot segue — a nuvem da empresa conecta sozinha (app.js, boot) e
        traz orçamentos, obras, diários e financeiro. Sem a chave à mão, o
        /recuperar da loja devolve a chave por e-mail + documento. */
-    _jaSouCliente: function (aoLiberar) {
+    _jaSouCliente: function (aoLiberar, op) {
       var self = this;
+      op = op || {};
+      var cpl = this._semTeste();
+      var cfgP = {};
+      try { cfgP = Produto.cfg() || {}; } catch (eP) {}
       var srv = "";
       try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
-      var corpo =
-        '<p class="muted" style="margin:0 0 12px">Cole a <b>chave de licença</b> que você recebeu por e-mail na compra. Os dados da sua empresa (orçamentos, obras, diários, medições e financeiro) vêm da nuvem para este aparelho.</p>' +
-        '<div class="field"><label>Chave de licença *</label><input id="tg-chave" placeholder="Cole aqui a sua chave" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
-        (srv ? '<p style="margin:6px 0 0;font-size:13px"><a href="' + srv + '/recuperar" target="_blank" rel="noopener">Não encontro a minha chave</a></p>' : '') +
-        '<p class="muted" style="margin:12px 0 0;font-size:12.5px">Depois, cada pessoa da equipe entra com o próprio usuário e senha.</p>';
-      UI.modal("🔑 Entrar com a minha licença", corpo, [
-        { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.gate(aoLiberar); } },
-        { texto: "Entrar e trazer meus dados →", classe: "primary", onClick: function () {
+      var corpo = cpl
+        ? '<p class="muted" style="margin:0 0 12px">' + (cfgP.chaveTexto || "") + '</p>' +
+          '<div class="field"><label>Chave de acesso *</label><input id="tg-chave" placeholder="Cole aqui a chave do órgão" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
+          '<p style="margin:6px 0 0;font-size:13px">' + (cfgP.semChaveTexto || "") + (cfgP.contatoUrl ? ' <a href="' + cfgP.contatoUrl + '" target="_blank" rel="noopener">' + (cfgP.contatoRotulo || "Contato") + '</a>' : '') + '</p>'
+        : '<p class="muted" style="margin:0 0 12px">Cole a <b>chave de licença</b> que você recebeu por e-mail na compra. Os dados da sua empresa (orçamentos, obras, diários, medições e financeiro) vêm da nuvem para este aparelho.</p>' +
+          '<div class="field"><label>Chave de licença *</label><input id="tg-chave" placeholder="Cole aqui a sua chave" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
+          (srv ? '<p style="margin:6px 0 0;font-size:13px"><a href="' + srv + '/recuperar" target="_blank" rel="noopener">Não encontro a minha chave</a></p>' : '') +
+          '<p class="muted" style="margin:12px 0 0;font-size:12.5px">Depois, cada pessoa da equipe entra com o próprio usuário e senha.</p>';
+      var botoes = [];
+      if (cpl) {
+        /* sem tela de teste para voltar: a saída é «Só consultar» (ou «Agora não», para quem já está dentro) */
+        if (op.legado) botoes.push({ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } });
+        else botoes.push(this._botaoSoConsultar(aoLiberar));
+      } else {
+        botoes.push({ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.gate(aoLiberar); } });
+      }
+      botoes.push({ texto: cpl ? "Entrar e trazer os dados do órgão →" : "Entrar e trazer meus dados →", classe: "primary", onClick: function () {
           var chave = String((UI.el("tg-chave") || {}).value || "").trim();
-          if (chave.length < 8) { UI.toast("Cole a sua chave de licença.", "erro"); return; }
+          if (chave.length < 8) { UI.toast(cpl ? "Cole a chave de acesso do órgão." : "Cole a sua chave de licença.", "erro"); return; }
           if (typeof Licenca === "undefined" || !Licenca.ativarOnline) { UI.toast("Não foi possível ativar agora. Tente de novo.", "erro"); return; }
           UI.toast("Conferindo a licença…", "ok");
           Licenca.ativarOnline(chave, function (r) {
@@ -455,8 +474,8 @@
             UI.toast(r.offline ? "Licença ativada. Os dados da nuvem chegam quando houver internet." : "Licença ativada. Trazendo os seus dados da nuvem…", "ok");
             if (typeof aoLiberar === "function") aoLiberar();
           });
-        } }
-      ]);
+        } });
+      UI.modal(cpl ? (cfgP.chaveTitulo || "Entrar no CPLPRO") : "🔑 Entrar com a minha licença", corpo, botoes);
       this._semFechar();
     },
 

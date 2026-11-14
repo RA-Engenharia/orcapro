@@ -286,6 +286,16 @@
        dar OK no reflexo e corrói a que protege de verdade. */
     modalSujo: function (fn) { this._modalDirty = fn || null; this._modalConsulta = false; },
     modalConsulta: function () { this._modalDirty = null; this._modalConsulta = true; },
+    /* O modal do "Analítico do item" (13/11/2026): leitura (nunca pergunta ao fechar)
+       + a classe `an-modal`, que dá a ele largura própria (até 1100 px), cabeçalho
+       e rodapé fixos e a tabela rolando só na vertical (css/app.css, bloco `.an`).
+       Largura/altura moram no CSS, não em `style.maxWidth` solto por chamador. */
+    modalAnalitico: function (bg) {
+      this.modalConsulta();
+      var m = bg && bg.querySelector ? bg.querySelector(".modal") : null;
+      if (m) m.className += " an-modal";
+      return bg;
+    },
     temTrabalhoNaoSalvo: function () {
       var m = this.el("modal-bg"); if (!m) return false;
       if (this._modalConsulta) return false;
@@ -945,8 +955,13 @@
 
     // ---------- Licença ----------
     renderLicenca: function (st) {
-      var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
-      if (st.trial && st.ativo) {
+      var cplL = false;
+      try { cplL = typeof Produto !== "undefined" && Produto.semTesteGratis(); } catch (eP) {}
+      var html = '<p class="muted mb">Status da sua licença do ' + (cplL ? 'CPLPRO' : 'OrçaPRO') + '.</p>';
+      if (cplL && st.trial) {
+        /* CPLPRO não tem teste grátis: sem chave, o app fica só para consulta e a porta é a chave (ou a RA) */
+        html += '<div class="card"><b>Acesso do órgão não liberado neste aparelho</b><br>Cole abaixo a chave de acesso que a RA Engenharia entregou ao órgão. Até lá o app fica só para consulta.</div>';
+      } else if (st.trial && st.ativo) {
         html += '<div class="card"><b>' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
       } else if (st.trial && st.pendente) {
         html += '<div class="card"><b>Falta confirmar o seu telefone e o seu e-mail</b><br>O teste de 7 dias começa quando os dois forem confirmados por código. Até lá o app fica só para consulta. Se você já comprou, cole a chave da licença abaixo.</div>';
@@ -1160,7 +1175,7 @@
                   '<li>Cronograma de Gantt e Excel profissional</li>' +
                   '<li>Proposta comercial e anexo para laudo pericial</li>' +
                 '</ul>') +
-            '<div class="lh-trust">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Roda no seu PC · seus orçamentos ficam salvos no dispositivo</div>' +
+            '<div class="lh-trust">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' ' + (pr && pr.rodape ? Util.esc(pr.rodape) : 'Roda no seu PC · seus orçamentos ficam salvos no dispositivo') + '</div>' +
           '</div></div>' +
           '<div class="login-formside"><div class="login-card">' +
             '<div class="brand"><div class="lc-logo">' + badge + (pr ? '<span class="nome">' + Util.esc(pr.nome) + '</span>' : '<span class="nome">OrçaPRO<span class="ia">IA</span></span>') + '</div>' +
@@ -1211,9 +1226,9 @@
                criar conta. Quem não abrir cria com "Minha Empresa", que é o
                que App.entrar já usava quando o campo vinha vazio, e o nome se
                corrige depois em Cadastro da Empresa. */
-            '<details class="lg-nova"><summary>Primeira vez aqui? Criar conta da empresa</summary>' +
-              '<div class="field" style="margin-top:8px"><label>Empresa / Escritório</label><input id="lg-empresa" autocomplete="organization" placeholder="Ex.: Studio Arq + Eng"></div>' +
-              '<p class="muted" style="font-size:12px;margin:0">Preencha só se esta for a primeira conta da sua empresa. Para entrar numa conta que já existe, use o e-mail ou o usuário acima.</p>' +
+            '<details class="lg-nova"><summary>Primeira vez aqui? Criar ' + (pr && pr.contaNova ? Util.esc(pr.contaNova) : 'conta da empresa') + '</summary>' +
+              '<div class="field" style="margin-top:8px"><label>' + (pr && pr.contaNova ? 'Órgão / Prefeitura' : 'Empresa / Escritório') + '</label><input id="lg-empresa" autocomplete="organization" placeholder="Ex.: Studio Arq + Eng"></div>' +
+              '<p class="muted" style="font-size:12px;margin:0">Preencha só se esta for a primeira conta ' + (pr && pr.contaNova ? 'do seu órgão' : 'da sua empresa') + '. Para entrar numa conta que já existe, use o e-mail ou o usuário acima.</p>' +
             '</details>' +
             '</form>' +
             /* ⚠ O RODAPÉ DIZIA "Conta nova é criada automaticamente no 1º
@@ -1230,7 +1245,7 @@
                de contas registradas é vazia — e justamente ali, onde é mais
                fácil esquecer a senha, não havia "Esqueci a senha". */
             ((contas.length || (typeof Auth !== "undefined" && Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().length) || (typeof Auth !== "undefined" && Auth.resgateAdminPossivel && Auth.resgateAdminPossivel()))
-              ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
+              ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · ' + (pr && pr.rodape ? Util.esc(pr.rodape) : 'seus orçamentos ficam salvos neste navegador') + '</p>'
               : '<p class="muted mt" style="font-size:12px;text-align:center">' + (pr ? 'Já usa o ' + Util.esc(pr.nome) + ' em outro aparelho?' : 'Já usa o OrçaPRO no computador?') + ' Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
             '</div>' +
           '</div></div>' +
@@ -1631,6 +1646,7 @@
           bt("parametros-orc", "parametros", "Parâmetros", ' title="Arredondamento, encargos, incidência do BDI, categoria e licitação"'),
           bt("reimportar-excel", "reimportar", "Reimportar", ' title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado"'),
           bt("cenarios", "cenarios", "Comparar cenários"),
+          bt("orcprec-hub", "ciclo", "Revisões e preços", ' title="Guardar revisões (R00, R01…) e compará-las, atualizar os preços para outra base e comparar bases lado a lado"'),
           bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"'),
           bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"')
         ])
@@ -1847,6 +1863,26 @@
       return out;
     },
 
+    /* BARRA DA SELEÇÃO EM LOTE: quantidade, etapa e exclusão para as linhas selecionadas. Flutua
+       embaixo da tela (a planilha rola por baixo). Vazia quando não há seleção.
+       ⚠ NÃO TEM "BDI": o item não carrega BDI próprio — o BDI é do orçamento inteiro (Parâmetros) —,
+       e inventar um campo por item mudaria o preço de venda de todos os documentos. */
+    renderSelBar: function (orc, sel) {
+      var n = 0; for (var k in sel) { if (sel[k]) n++; }
+      if (!n) return "";
+      var ops = '<option value="">escolher…</option>' + Util.arr(orc.etapas).map(function (e, i) {
+        return '<option value="' + Util.esc(e.id) + '">' + Util.esc((i + 1) + ". " + (e.nome || "Etapa")) + '</option>';
+      }).join("");
+      return '<div class="pl-sel" id="pl-sel-bar" role="region" aria-label="Itens selecionados">' +
+        '<span class="pl-sel-n"><b>' + n + '</b> ' + (n === 1 ? "item selecionado" : "itens selecionados") + '</span>' +
+        '<span class="pl-sel-fim"><button type="button" class="btn sm danger" data-acao="pl-sel-excluir">Excluir</button>' +
+        '<button type="button" class="btn sm ghost" data-acao="pl-sel-limpar" title="Tira a seleção (Esc)">Limpar</button></span>' +
+        '<span class="pl-sel-g"><label class="pl-sel-c"><span class="pl-sel-t">Quantidade</span><input id="pl-sel-qtd" inputmode="decimal" placeholder="ex.: 12,5" aria-label="Quantidade para as linhas selecionadas" autocomplete="off"></label>' +
+        '<button type="button" class="btn sm" data-acao="pl-sel-qtd" title="Define esta quantidade em todas as linhas selecionadas">Aplicar</button></span>' +
+        '<span class="pl-sel-g"><label class="pl-sel-c"><span class="pl-sel-t">Etapa</span><select id="pl-sel-etapa" aria-label="Etapa de destino">' + ops + '</select></label>' +
+        '<button type="button" class="btn sm" data-acao="pl-sel-mover" title="Leva as linhas selecionadas para o fim da etapa escolhida">Mover</button></span></div>';
+    },
+
     renderPlanilha: function (orc) {
       /* MODO LICITAÇÃO (js/licitacao.js): quem passou da referência do órgão
          ganha selo na linha; item do órgão trava quantidade e remoção. Sem
@@ -1875,11 +1911,21 @@
       };
       orc.etapas.forEach(function (e0) { (e0.itens || []).forEach(function (i0) { if (!(Util.num(i0.custoUnitario) > 0) || _insSem(i0)) _semPreco++; }); });
       UI._insSemPreco = _insSem;
+      /* CURVA ABC NA PLANILHA (13/11/2026): a classe de cada item vem de
+         Orcamento.curvaABC — a MESMA do Excel e do relatório (A até 80% do custo,
+         B até 95%, C o resto); a tela não faz conta própria. É preferência de TELA
+         (App._plAbc: "" desligada · "1" marcador · "A" só os itens A). */
+      var _abcModo = (typeof App !== "undefined") ? String(App._plAbc || "") : "";
+      var _abcBotoes = '<button class="btn sm ghost' + (_abcModo ? ' primary' : '') + '" data-acao="pl-abc" aria-pressed="' + (_abcModo ? 'true' : 'false') + '" title="' +
+          (_abcModo ? 'Esconder a marca A, B ou C dos itens' : 'Marcar cada item com a classe da curva ABC: A = os itens que somam 80% do custo, B = os 15% seguintes, C = os 5% finais') + '">Curva ABC</button>' +
+        (_abcModo ? '<button class="btn sm ghost' + (_abcModo === "A" ? ' primary' : '') + '" data-acao="pl-abc-a" aria-pressed="' + (_abcModo === "A" ? 'true' : 'false') + '" title="Mostrar só os itens da classe A (os poucos que decidem o preço)">Só A</button>' : '');
       var html = '<div class="flex between mb"><div>' +
         (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
           (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
         '</div><div style="display:flex;gap:6px;align-items:flex-start">' +
         '<!--colmenu-->' +
+        _abcBotoes +
+        '<button class="btn sm ghost pl-ajuda" data-acao="pl-atalhos" aria-label="Atalhos da planilha" title="Atalhos de teclado e seleção de várias linhas">?</button>' +
         '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
           (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
           (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
@@ -1926,6 +1972,20 @@
       // tela precisa mostrar exatamente o mesmo número do Excel, do relatório e
       // do laudo — o critério de arredondamento é do orçamento, não da tela.
       var _c = Orcamento.calcular(orc);
+      /* SELEÇÃO DE LINHAS (13/11/2026): estado de TELA (App._sel, por orçamento); a linha selecionada
+         ganha `lin-sel`, e a barra de lote flutua embaixo (renderSelBar). */
+      var _sel = (typeof App !== "undefined" && App._selOrc === orc.id && App._sel) ? App._sel : {};
+      var _abcDe = null;
+      if (_abcModo) {
+        _abcDe = {};
+        var _ab = Orcamento.curvaABC(orc, _c);
+        _ab.linhas.forEach(function (x) { _abcDe[x.itemId] = x.classe; });
+        if (_abcModo === "A") {
+          html += '<div class="pl-foco">Mostrando só os <b>' + _ab.resumo.A.qtd + '</b> itens da classe A, que somam <b>' + Util.fmtNum(_ab.resumo.A.pct, 1) + '%</b> do custo direto' +
+            ' <span class="muted">— os subtotais das etapas e os totais do topo continuam sendo do orçamento inteiro</span>' +
+            ' <button class="btn sm ghost" data-acao="pl-abc-a">Ver todos</button></div>';
+        }
+      }
       /* ⚠ O RÓTULO DA COLUNA TEM DE DIZER O QUE ESTÁ NELA. Com o BDI incidindo
          sobre o preço FINAL (`bdiIncidencia: "final"`), `L.precoTotal` é CUSTO
          — o BDI é uma parcela única no fim — e a coluna chamada "Preço Venda"
@@ -1943,6 +2003,7 @@
       var _catX = _lay.cat ? Colunas.categorias(orc, _c, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
       var _refX = _lay.ref ? Colunas.mapaReferencias(orc, _c) : {};
       if (_catX) html += UI._faixaCobCat(_catX.cobertura);
+      html += UI.renderSelBar(orc, _sel);
       html += '<div class="pl-tabela"><table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + (_lay.algumaNova ? ' tbl-plan-larga' : '') + '"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th>' +
@@ -2049,6 +2110,11 @@
           var cadeia = subId ? (subId + " " + e.id) : e.id;
           var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
           var recLinha = rec || recSub;
+          /* "Só A" esconde por classe PRÓPRIA (`abc-fora`), e não por `oculta`: o
+             accordion (_aplicarRecolhidas) tira `oculta` de toda linha da etapa
+             que expande, e traria de volta os itens que o filtro escondeu. */
+          var _abcCls = _abcDe ? _abcDe[it.id] : "";
+          var _abcFora = _abcModo === "A" && _abcCls !== "A";
           /* ⚠ A CLASSE `lin` MARCA "ESTA LINHA TEM AS 9 COLUNAS". Sem ela as
              regras de coluna (largura da Descrição, nowrap do Código) eram
              escritas por `td:nth-child(N)` solto e VAZAVAM para a linha de
@@ -2062,10 +2128,11 @@
           /* ORÇAMENTO AUTOMÁTICO: "Ver itens" destaca as linhas que ficaram com o preço do órgão
              (js/licitacaoautoui.js; App._licAutoVer liga e desliga) */
           var _ehAutoBaixa = !!(it.autoOrc && it.autoOrc.baixa === true && typeof App !== "undefined" && App._licAutoVer === true);
-          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '"' +
+          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-fora' : '') + (_sel[e.id + "|" + it.id] ? ' lin-sel' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '" data-sel="' + e.id + '|' + it.id + '"' +
             (_ehAutoBaixa ? ' title="' + Util.esc("Preço do órgão mantido pelo orçamento automático: " + (LicitacaoAuto.motivoDoItem(orc, it) || "")) + '"' : '') + '>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
-            '<td class="num-item"><b>' + numItem + '</b></td>' +
+            '<td class="num-item" title="Clique para selecionar a linha. Ctrl ou Shift + clique seleciona várias."><b>' + numItem + '</b>' +
+              (_abcCls ? '<span class="abc-marca abc-' + _abcCls.toLowerCase() + '" title="' + (_abcCls === "A" ? "Classe A: entre os itens que somam 80% do custo direto" : _abcCls === "B" ? "Classe B: os 15% seguintes do custo direto" : "Classe C: os 5% finais do custo direto") + '">' + _abcCls + '</span>' : '') + '</td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
               ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet || ehBaseAna ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
@@ -2099,6 +2166,7 @@
             '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
               (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '>' +
               UI._seloAjuste(e.id, it) +
+              (typeof OrcPrecosUI !== "undefined" ? OrcPrecosUI.seloHtml(e.id, it) : "") +
               (_licAv && _licAv.porItem[it.id]
                 ? '<br><span class="pill lic-alerta" title="Preço unitário COM BDI de ' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].precoUnit)) + ' acima da referência do órgão (' + Util.esc(Util.fmtMoeda(_licAv.porItem[it.id].refComBdi)) + ' com BDI). Não bloqueia; confira.">acima do órgão</span>' : '') + '</td>' +
             UI._celulasRefLinha(orc, L, _lay, _refX) +
@@ -2112,6 +2180,7 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
+              (typeof OrcPrecosUI !== "undefined" ? OrcPrecosUI.botaoHtml(e.id, it) : "") +
               (Util.num(it.custoUnitario) > 0 && !(UI._insSemPreco && UI._insSemPreco(it)) ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
               (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
               /* com quantidade pendente o botão do memorial vira o caminho
@@ -2126,7 +2195,7 @@
           if (ehSinapi) {
             var nSem = UI._insumosSemPrecoDe(it.codigo);
             if (nSem > 0) {
-              out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+              out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + (_abcFora ? " abc-fora" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
             }
           }
           return out;
@@ -2356,27 +2425,66 @@
     },
 
     // ----- Modal: composição explodida em insumos (base analítica SINAPI) -----
-    /* `opts` (16/10/2026) = analítico de BASE ESTADUAL (js/analiticobases.js):
-       { fonte, rotulo, competencia, uf, avisos:[html] }. Sem `opts`, é a SINAPI
-       de sempre — nada abaixo muda para ela. */
+    /* `opts.fonte` (16/10/2026) = analítico de BASE ESTADUAL (js/analiticobases.js):
+       { fonte, rotulo, competencia, uf, avisos:[html] }. Sem `opts.fonte`, é a
+       SINAPI de sempre — a conta e as travas abaixo não mudaram.
+       `opts.trilha` (13/11/2026) = códigos das composições por onde o usuário
+       passou até aqui (navegação por sub-composição); com ela aparece o "Voltar".
+
+       DESENHO (13/11/2026, pedido do Rogério: "padronizar as letras, ficar mais
+       fácil visualizar as composições, não perder espaço na tela, tirar a cara de
+       IA"). Antes: 4 cartões grandes, a própria composição repetida como 1ª linha
+       da tabela, selos coloridos C/S/I, coluna Categoria cortada e rolagem
+       horizontal. Agora: resumo + UMA faixa de totais com barra de proporção +
+       tabela só com os insumos, rolando só na vertical (CSS `.an-*` em app.css).
+       Os ganchos que o resto do app e as e2e usam continuam: `.tbl-analitico`,
+       `tr.lin-ins`/`tr.lin-sub`, `a.cod-link[data-ver-insumos]`,
+       `[data-preco-insumo]`, `[data-coef-aj]`, `[data-cp-gestao-ver]`. */
     renderInsumos: function (a, ufAtivo, opts) {
       opts = opts || null;
+      var est = !!(opts && opts.fonte);          // analítico de base estadual
       var catLabel = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
-      function box(rotulo, valor, classe) {
-        return '<div class="kpi"><div class="rotulo">' + rotulo + '</div>' +
-          '<div class="num' + (classe ? " " + classe : "") + '">' + Util.fmtMoeda(valor) + '</div></div>';
-      }
-      var anaUf = opts ? (opts.uf || null) : ((typeof Analitico !== "undefined") ? Analitico.uf : null);
-      var aviso = opts ? (opts.avisos || []).join("") : (ufAtivo && anaUf && ufAtivo !== anaUf)
-        ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
+      var catCurta = { MO: "MO", MAT: "MAT", EQ: "EQ" };
+      var catCls = { MO: "mo", MAT: "mat", EQ: "eq" };
+      function ic(nome) { return (typeof Icones !== 'undefined') ? Icones.get(nome, 15) : ''; }
+      var anaUf = est ? (opts.uf || null) : ((typeof Analitico !== "undefined") ? Analitico.uf : null);
+      var aviso = est ? (opts.avisos || []).join("") : (ufAtivo && anaUf && ufAtivo !== anaUf)
+        ? '<div class="an-aviso" role="note"><span class="an-aviso-ic">' + ic('alerta') + '</span><div>Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div></div>'
         : '';
-      var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
-        (a.grupo ? ' · ' + Util.esc(a.grupo) : '') + '<br>' + Util.esc(a.descricao) +
+
+      /* ----- resumo: quem é a composição (a própria composição NÃO volta a ser
+         linha da tabela: o resumo já diz código, unidade, grupo, descrição e custo) ----- */
+      var trilha = (opts && opts.trilha) || [];
+      var htmlTrilha = '';
+      if (trilha.length) {
+        htmlTrilha = '<nav class="an-trilha" aria-label="Caminho das composições"><button type="button" class="btn ghost" data-an-voltar>' + ic('voltar') + ' Voltar</button><ol>' +
+          trilha.map(function (c) { return '<li>' + Util.esc(c) + '</li>'; }).join("") +
+          '<li aria-current="page">' + Util.esc(a.codigo) + '</li></ol></nav>';
+      }
+      var htmlRes = '<div class="an-res"><div class="an-id"><span class="an-cod">' + Util.esc(a.codigo) + '</span>' +
+        (a.unidade ? '<span class="an-meta">Unidade ' + Util.esc(Util.unidadeExibir(a.unidade)) + '</span>' : '') +
+        (a.grupo ? '<span class="an-meta">' + Util.esc(a.grupo) + '</span>' : '') + '</div>' +
+        '<p class="an-desc-comp">' + Util.esc(a.descricao) + '</p>' +
         /* composição própria com responsável gravado (campo `gestao`) */
-        (a.gestao ? '<br><span data-cp-gestao-ver>Planejamento e gestão: <b>' + Util.esc(a.gestao) + '</b></span>' : '') + '</div>';
-      html += '<div class="kpis">' +
-        box("Mão de obra", a.custoMO) + box("Material", a.custoMAT) +
-        box("Equipamento", a.custoEQ) + box("Custo Unit.", a.custoUnitario, "destaque") + '</div>';
+        (a.gestao ? '<p class="an-meta" data-cp-gestao-ver>Planejamento e gestão: <b>' + Util.esc(a.gestao) + '</b></p>' : '') + '</div>';
+
+      /* ----- faixa de totais: 1 linha, com a proporção MO/MAT/EQ ----- */
+      var vMO = Util.num(a.custoMO), vMAT = Util.num(a.custoMAT), vEQ = Util.num(a.custoEQ);
+      var baseCat = vMO + vMAT + vEQ;
+      function pct(v) { return baseCat > 0 ? Util.fmtNum(v / baseCat * 100, 0) + "%" : ""; }
+      function tot(cls, rotulo, v) {
+        return '<div class="an-t"><span class="an-t-r"><i class="an-pt ' + cls + '" aria-hidden="true"></i>' + rotulo + '</span>' +
+          '<span class="an-t-v">' + Util.fmtMoeda(v) + '</span><span class="an-t-p">' + pct(v) + '</span></div>';
+      }
+      var htmlTot = '<div class="an-tot" role="group" aria-label="Custo unitário por categoria">' +
+        tot("mo", "Mão de obra", vMO) + tot("mat", "Material", vMAT) + tot("eq", "Equipamento", vEQ) +
+        '<div class="an-t an-t-final"><span class="an-t-r">Custo unitário</span><span class="an-t-v">' + Util.fmtMoeda(a.custoUnitario) + '</span></div></div>';
+      if (baseCat > 0) {
+        htmlTot += '<div class="an-barra" role="img" aria-label="Proporção do custo: mão de obra ' + pct(vMO) + ', material ' + pct(vMAT) + ', equipamento ' + pct(vEQ) + '">' +
+          (vMO > 0 ? '<i class="mo" style="flex-grow:' + vMO + '"></i>' : '') +
+          (vMAT > 0 ? '<i class="mat" style="flex-grow:' + vMAT + '"></i>' : '') +
+          (vEQ > 0 ? '<i class="eq" style="flex-grow:' + vEQ + '"></i>' : '') + '</div>';
+      }
 
       // "não coletado": preço zerado NA FONTE para esta UF (o SINAPI publica em
       // branco o que não coletou na região). O usuário COTA e informa o preço
@@ -2387,17 +2495,7 @@
       try { if (typeof Store !== "undefined" && Store.precosInsumos) meusPrecos = Store.precosInsumos(Auth.empresaId()); } catch (eP) {}
       var somaIns = 0, temZero = false, pendentes = 0;
 
-      html += '<table class="tbl tbl-analitico"><thead><tr><th></th><th>Código</th><th>Insumo</th><th>Und</th>' +
-        '<th class="num">Coef.</th><th class="num">Custo Unit</th><th class="num">Custo Total</th><th>Categoria</th></tr></thead><tbody>';
-      // 1ª linha = a PRÓPRIA composição (verde, como o mercado apresenta)
-      html += '<tr class="lin-comp"><td><span class="tag-tipo tag-c" title="Composição">C</span></td>' +
-        '<td><b>' + Util.esc(a.codigo) + '</b></td>' +
-        '<td>' + Util.esc(a.descricao) + '</td>' +
-        '<td>' + Util.esc(a.unidade) + '</td>' +
-        '<td class="num">1,0</td>' +
-        '<td class="num"><b>' + Util.fmtMoeda(a.custoUnitario) + '</b></td>' +
-        '<td class="num"><b>' + Util.fmtMoeda(a.custoUnitario) + '</b></td>' +
-        '<td>' + (a.grupo ? '<span class="pill sinapi">' + Util.esc(a.grupo) + '</span>' : '') + '</td></tr>';
+      var linhas = "";
       Util.arr(a.insumos).forEach(function (it) {
         var sub = (it.tipo === "COMPOSICAO");
         var zerado = !Util.num(it.custoUnitario);
@@ -2405,83 +2503,94 @@
         var celUnit, celTotal, classeExtra = "";
         if (!zerado) {
           somaIns += Util.num(it.custoTotal);
-          celUnit = Util.fmtMoeda(it.custoUnitario);
-          celTotal = Util.fmtMoeda(it.custoTotal);
+          celUnit = Util.fmtNum(it.custoUnitario, 2);
+          celTotal = Util.fmtNum(it.custoTotal, 2);
         } else if (meu && Util.num(meu.preco) > 0) {
           // cotação do usuário preenche a lacuna — some no total e leva o selo
           temZero = true;
           var totMeu = Util.num(it.coeficiente) * Util.num(meu.preco);
           somaIns += totMeu;
-          celUnit = '<input class="preco-user" data-preco-insumo="' + Util.esc(it.codigo) + '" value="' + Util.fmtNum(meu.preco, 2) + '" title="Preço informado por você — edite ou apague para voltar a pendente">';
-          celTotal = Util.fmtMoeda(totMeu) + ' <span class="selo-user" title="Calculado com o preço que você informou">' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>';
+          celUnit = '<input class="preco-user" data-preco-insumo="' + Util.esc(it.codigo) + '" value="' + Util.fmtNum(meu.preco, 2) + '" aria-label="Preço informado por você para ' + Util.esc(it.codigo) + '" title="Preço informado por você — edite ou apague para voltar a pendente">';
+          celTotal = Util.fmtNum(totMeu, 2) + ' <span class="selo-user" title="Calculado com o preço que você informou">' + ic('pessoa') + '</span>';
         } else {
           // PENDENTE: o SINAPI não coletou nesta UF — o usuário precisa cotar
           temZero = true; pendentes++;
           classeExtra = " lin-pendente";
-          celUnit = '<input class="preco-user pendente" data-preco-insumo="' + Util.esc(it.codigo) + '" placeholder="informe R$" title="Preço não coletado pelo SINAPI nesta UF — informe a sua cotação">';
-          celTotal = '<span class="txt-pendente">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' sem preço</span>';
+          celUnit = '<input class="preco-user pendente" data-preco-insumo="' + Util.esc(it.codigo) + '" placeholder="informe R$" aria-label="Informe o preço de ' + Util.esc(it.codigo) + '" title="Preço não coletado pelo SINAPI nesta UF — informe a sua cotação">';
+          celTotal = '<span class="txt-pendente">' + ic('alerta') + ' sem preço</span>';
         }
-        // sub-composição: código clicável abre o detalhamento DELA (drill-down)
+        // sub-composição: código clicável abre o detalhamento DELA (drill-down,
+        // com "Voltar": data-vi-nav empilha a composição atual)
         var celCod = sub
-          ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '"' + (opts && opts.fonte ? ' data-vi-base="' + Util.esc(opts.fonte) + '"' : '') + ' title="Abrir o analítico do item ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
-          : Util.esc(it.codigo);
-        html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
-          '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
-          '<td>' + celCod + '</td>' +
-          '<td>' + Util.esc(it.descricao) + '</td>' +
-          '<td>' + Util.esc(Util.unidadeExibir(it.unidade)) + '</td>' +
-          /* JUSTIFICATIVA DO COEFICIENTE (v1.1.223): quem abre o detalhamento
-             está perguntando "de onde vem esse número". Quando a composição
-             própria responde, a resposta fica ali, não escondida. */
-          '<td class="num">' + UI._celCoeficiente(it) +
-            (it.memoria ? '<div class="watermark-hint" style="max-width:220px;white-space:normal;text-align:left" title="' +
-              Util.esc(it.memoria) + '">' + Util.esc(String(it.memoria).replace(/\n/g, " · ").slice(0, 90)) + '</div>' : "") + '</td>' +
-          '<td class="num">' + celUnit + '</td>' +
-          '<td class="num">' + celTotal + '</td>' +
-          '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || Util.esc(it.categoria)) + '</span></td></tr>';
+          ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-nav="1"' + (est ? ' data-vi-base="' + Util.esc(opts.fonte) + '"' : '') + ' title="Abrir o analítico da composição ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a><span class="an-tag">Comp.</span>'
+          : '<span class="an-cod-ins">' + Util.esc(it.codigo) + '</span>';
+        var undI = Util.unidadeExibir(it.unidade);
+        var descI = Util.esc(it.descricao);
+        var memo = it.memoria ? String(it.memoria).replace(/\n/g, " · ") : "";
+        var catK = String(it.categoria || "");
+        var celCoef = UI._celCoeficiente(it);   // texto (4 casas) ou, vindo de um item do orçamento, o campo editável
+        linhas += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
+          '<td class="an-c-cod">' + celCod + '</td>' +
+          '<td class="an-c-desc"><button type="button" class="an-desc" data-an-desc aria-expanded="false" title="' + descI + '">' + descI + '</button>' +
+            /* JUSTIFICATIVA DO COEFICIENTE (v1.1.223): quem abre o detalhamento
+               está perguntando "de onde vem esse número". Quando a composição
+               própria responde, a resposta fica ali, não escondida. */
+            (memo ? '<span class="an-memo" title="' + Util.esc(memo) + '">' + Util.esc(memo.slice(0, 140)) + '</span>' : '') + '</td>' +
+          '<td class="an-c-und">' + Util.esc(undI) + '</td>' +
+          '<td class="num an-c-coef' + (celCoef.indexOf("<input") > -1 ? " an-ed" : "") + '" data-rot="Coeficiente' + (celCoef.indexOf("<input") > -1 && undI ? " (" + Util.esc(undI) + ")" : "") + '" data-und="' + Util.esc(undI) + '">' + celCoef + '</td>' +
+          '<td class="num an-c-unit" data-rot="Unitário (R$)">' + celUnit + '</td>' +
+          '<td class="num an-c-tot" data-rot="Total (R$)">' + celTotal + '</td>' +
+          '<td class="an-c-cat"><span class="an-cat ' + (catCls[catK] || "") + '" title="' + Util.esc(catLabel[catK] || catK) + '">' + Util.esc(catCurta[catK] || catK) + '</span></td></tr>';
       });
-      html += '</tbody></table>';
+      if (!linhas) linhas = '<tr class="an-vazio"><td colspan="7">Esta composição não traz insumos no detalhamento.</td></tr>';
+      var htmlTab = '<div class="an-rolagem"><table class="tbl-analitico an-tab"><thead><tr>' +
+        '<th scope="col" class="an-c-cod">Código</th><th scope="col" class="an-c-desc">Insumo</th><th scope="col" class="an-c-und">Und</th>' +
+        '<th scope="col" class="num">Coef.</th><th scope="col" class="num">Custo unit. (R$)</th><th scope="col" class="num">Custo total (R$)</th><th scope="col" class="an-c-cat">Categoria</th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody></table></div>';
+
+      var avisos = '';
       if (pendentes > 0) {
-        html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.25);font-size:12px;margin-top:8px">' +
-          '⛔ <b>' + pendentes + ' insumo(s) sem preço coletado' + (anaUf ? ' em ' + Util.esc(anaUf) : '') + '.</b> ' +
-          'Informe a sua cotação nos campos <b>“informe R$”</b> acima — o valor fica salvo para a sua empresa e vale em toda composição que usa o insumo. ' +
-          'Orçamento com item zerado <b>não pode ser finalizado</b>.</div>';
+        avisos += '<div class="an-aviso an-erro" role="alert"><span class="an-aviso-ic">' + ic('alerta') + '</span><div><b>' + pendentes + ' insumo(s) sem preço coletado' + (anaUf ? ' em ' + Util.esc(anaUf) : '') + '.</b> ' +
+          'Informe a sua cotação nos campos <b>“informe R$”</b> — o valor fica salvo para a sua empresa e vale em toda composição que usa o insumo. ' +
+          'Orçamento com item zerado <b>não pode ser finalizado</b>.</div></div>';
       }
       // reconciliação honesta: se a soma dos insumos ficou longe do custo oficial
       // (preços não coletados na UF), avisa — e reafirma que o orçamento não é
       // afetado. O "oficial" vem do cabeçalho analítico e, quando este também
       // está zerado, do SINTÉTICO — que é o preço que o orçamento realmente usa.
       var oficialRef = Util.num(a.custoUnitario);
-      if (opts) {
+      var fonte = '';
+      if (est) {
         /* BASE ESTADUAL: o órgão publica o detalhamento e o preço; quando a
            soma publicada não fecha com o preço, a gente MOSTRA a diferença —
            não ajusta coeficiente para "fechar" (seria inventar composição). */
         if (a.confere === false && oficialRef > 0) {
-          html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin-top:8px">' +
-            '⚠ <b>A soma dos insumos publicada pelo órgão (' + Util.fmtMoeda(a.somaInsumos) + ') difere do preço oficial da composição (' +
+          avisos += '<div class="an-aviso" role="note"><span class="an-aviso-ic">' + ic('alerta') + '</span><div><b>A soma dos insumos publicada pelo órgão (' + Util.fmtMoeda(a.somaInsumos) + ') difere do preço oficial da composição (' +
             Util.fmtMoeda(oficialRef) + ') em ' + Util.fmtMoeda(a.diferenca) + '.</b> Seu orçamento usa o preço oficial. ' +
-            'A diferença vem da própria publicação (arredondamento ou item que o órgão não detalha).</div>';
+            'A diferença vem da própria publicação (arredondamento ou item que o órgão não detalha).</div></div>';
         }
-        if (a.obs) html += '<p class="muted" style="font-size:12px;margin:6px 0 0">' + Util.esc(a.obs) + '</p>';
-        html += '<p class="muted mt" style="font-size:12px">Base analítica ' + Util.esc(opts.rotulo || opts.fonte || "") +
+        if (a.obs) avisos += '<p class="an-nota">' + Util.esc(a.obs) + '</p>';
+        fonte = 'Base analítica ' + Util.esc(opts.rotulo || opts.fonte || "") +
           (opts.competencia ? ' ' + Util.esc(opts.competencia) : '') + (opts.uf ? ' / ' + Util.esc(opts.uf) : '') +
-          ' — composição → insumos com coeficientes, como o órgão publica. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço oficial da composição.</p>';
-        return html;
+          '. Coeficientes como o órgão publica. Clique no código de uma composição para abrir o detalhamento dela. O orçamento usa o preço oficial da composição.';
+      } else {
+        if (!oficialRef && typeof Sinapi !== "undefined" && Sinapi.obter) {
+          var _sRef = Sinapi.obter(a.codigo);
+          if (_sRef) oficialRef = Util.num(_sRef.custoUnitario);
+        }
+        if (temZero && oficialRef > 0 && somaIns < oficialRef * 0.98) {
+          avisos += '<div class="an-aviso" role="note"><span class="an-aviso-ic">' + ic('alerta') + '</span><div><b>Detalhamento parcial nesta UF:</b> o SINAPI não coletou o preço de parte dos insumos ' +
+            (anaUf ? 'em <b>' + Util.esc(anaUf) + '</b>' : 'nesta região') +
+            '. A soma exibida (' + Util.fmtMoeda(somaIns) + ') fica abaixo do preço oficial da composição (<b>' + Util.fmtMoeda(oficialRef) + '</b>), que é o valor usado no seu orçamento.</div></div>';
+        }
+        fonte = 'Base analítica SINAPI ' +
+          (typeof Analitico !== "undefined" ? (Analitico.competencia || "") + " / " + (Analitico.uf || "") : "") +
+          '. Clique no código de uma composição para abrir o detalhamento dela. O orçamento usa o preço da sua competência.';
       }
-      if (!oficialRef && typeof Sinapi !== "undefined" && Sinapi.obter) {
-        var _sRef = Sinapi.obter(a.codigo);
-        if (_sRef) oficialRef = Util.num(_sRef.custoUnitario);
-      }
-      if (temZero && oficialRef > 0 && somaIns < oficialRef * 0.98) {
-        html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin-top:8px">' +
-          '⚠ <b>Detalhamento parcial nesta UF:</b> o SINAPI não coletou o preço de parte dos insumos ' +
-          (anaUf ? 'em <b>' + Util.esc(anaUf) + '</b>' : 'nesta região') +
-          '. A soma exibida (' + Util.fmtMoeda(somaIns) + ') fica abaixo do preço oficial da composição (<b>' + Util.fmtMoeda(oficialRef) + '</b>), que é o valor usado no seu orçamento.</div>';
-      }
-      html += '<p class="muted mt" style="font-size:12px">Base analítica SINAPI ' +
-        (typeof Analitico !== "undefined" ? (Analitico.competencia || "") + " / " + (Analitico.uf || "") : "") +
-        ' — composição → insumos com coeficientes. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço da sua competência.</p>';
-      return html;
+      /* `aviso` (UF de referência / avisos da base) e `avisos` (pendências) ficam
+         ACIMA da tabela e fora da rolagem: o que impede finalizar o orçamento
+         não pode morar no fim de uma lista comprida. */
+      return '<div class="an">' + htmlTrilha + htmlRes + htmlTot + aviso + avisos + htmlTab + '<p class="an-fonte">' + fonte + '</p></div>';
     },
 
     /* -----------------------------------------------------------------
@@ -3837,6 +3946,8 @@
       html += '</tbody></table>';
       var out = M.secao({ titulo: "Curva ABC de Itens", sub: resumo, corpoHtml: html });
 
+      /* preços de fornecedor (cotação ou catálogo) no lugar da base — só quando há (js/cotpreco.js) */
+      if (typeof OrcPrecosUI !== "undefined") out += OrcPrecosUI.secaoRelatorio(orc);
       // Cronograma
       out += this._fisicoFinanceiroEtapa(orc, cron, { link: true });
       return out;
@@ -4255,10 +4366,7 @@
       p = p || Bdi.paramsDoModelo("padrao");
       var modSel = orc.bdi.modeloId;
       if (!CONFIG.bdiPresets[modSel] && modSel !== "dnit") modSel = "custom";
-      var campos = [
-        ["AC", "Administração Central"], ["S", "Seguro"], ["R", "Risco"],
-        ["G", "Garantia"], ["DF", "Despesas Financeiras"], ["L", "Lucro"], ["I", "Impostos (PIS+COFINS+ISS)"]
-      ];
+      var campos = Bdi.PARCELAS;   /* a mesma lista da página "Composição do BDI" da proposta (js/bdi.js) */
       /* SEÇÃO DO KIT (padrão de tela, 08/10/2026): o modelo na cabeça da seção,
          os sete campos no corpo e o resultado com o [Aplicar BDI] no pé. A
          fórmula (Acórdão TCU 2.622/2013) é a linha de contexto, e o rodapé

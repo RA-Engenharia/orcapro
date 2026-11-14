@@ -284,9 +284,9 @@
   var VALIDADE_FONTE = { cotacao: "6 meses até a data prevista do edital", contratacao_similar: "1 ano até a data da pesquisa", midia: "exige data e hora de acesso" };
 
   /* ---------- PAPÉIS (RBAC do órgão) ---------- */
-  var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "ler_tudo", "ler_auditoria"];
+  var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "gerenciar_orgao", "ler_tudo", "ler_auditoria"];
   var PAPEIS = {
-    admin_orgao:      { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "ler_tudo"] },
+    admin_orgao:      { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "gerenciar_orgao", "ler_tudo"] },
     requisitante:     { nome: "Setor requisitante", acoes: ["criar_processo", "editar_dfd", "editar_acervo"] },
     engenharia:       { nome: "Engenharia / planejamento", acoes: ["editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr"] },
     cpl:              { nome: "Agente de contratação / comissão (CPL)", acoes: ["editar_parametros", "gerar_minuta", "enviar_juridico", "responder_ressalva", "analisar_propostas", "publicar"] },
@@ -300,7 +300,7 @@
     editar_orcamento: "editar o orçamento", editar_pesquisa: "editar a pesquisa de preços", editar_etp: "editar o ETP", editar_riscos: "editar os riscos",
     editar_tr: "editar o TR / projeto básico", editar_parametros: "editar os parâmetros do edital", gerar_minuta: "gerar a minuta", enviar_juridico: "enviar ao jurídico",
     emitir_parecer: "emitir parecer jurídico", responder_ressalva: "responder ressalva", aprovar_justificativa: "aprovar justificativa", autorizar_abertura: "autorizar a abertura",
-    publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão",
+    publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão", gerenciar_orgao: "alterar o cadastro do órgão",
     ler_tudo: "ler o processo inteiro", ler_auditoria: "ler a auditoria"
   };
 

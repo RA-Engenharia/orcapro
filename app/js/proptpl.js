@@ -440,6 +440,29 @@
         { id: "tituloContratante", nome: "Título da coluna do contratante", padrao: "Contratante" },
         { id: "textoContratante", nome: "Responsabilidades do contratante (uma por linha)", tipo: "multi", dica: "Vazio = as do orçamento (⚙ Dados) ou o texto padrão do sistema." }
       ]
+    },
+    /* COMPOSIÇÃO DO BDI (13/11/2026). As parcelas que o orçamento guarda
+     * (js/bdi.js: AC, S, R, G, DF, L e I) e a fórmula do Acórdão TCU 2.622/2013.
+     * ⚠ É A ÚNICA PÁGINA QUE ESCREVE "Lucro" E O PERCENTUAL DE CADA PARCELA.
+     *   Para particular isso é segredo comercial (por isso o auditor de
+     *   js/proposta.js barra a palavra); para órgão público é exigência da
+     *   licitação. A página leva `data-tp-bdi` e o auditor ignora só ela —
+     *   a mesma palavra em qualquer outra página continua barrada.
+     * ⚠ NADA É INVENTADO: sem parcelas guardadas (BDI digitado só como
+     *   percentual), a página mostra o percentual e diz que a composição não
+     *   foi detalhada. Nenhum valor em R$ — o auditor acusa o valor do BDI. */
+    {
+      tipo: "bdi",
+      nome: "Composição do BDI",
+      resumo: "As parcelas do BDI do orçamento (administração, seguro, risco, garantia, despesas financeiras, lucro e impostos) e a fórmula do TCU.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "Composição do BDI" },
+        { id: "abertura", nome: "Frase antes da tabela", tipo: "multi",
+          padrao: "O BDI aplicado aos preços desta proposta é composto pelas parcelas abaixo, calculadas conforme a metodologia do Acórdão TCU nº 2.622/2013." },
+        { id: "mostrarFormula", nome: "Escrever a fórmula do TCU", tipo: "sim_nao", padrao: true },
+        { id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Percentuais incidentes sobre o custo direto." }
+      ]
     }
   ];
 
@@ -729,7 +752,8 @@
     incluso:            { regua: true,  marcador: true },
     premissas:          { regua: true,  marcador: true },
     comercial:          { regua: true,  marcador: false },
-    responsabilidades:  { regua: true,  marcador: true }
+    responsabilidades:  { regua: true,  marcador: true },
+    bdi:                { regua: true,  marcador: false }
   };
   PropTpl.formasDoBloco = function (tipo) {
     var d = PropTpl.FORMAS_DO_BLOCO[txt(tipo)];
@@ -1237,8 +1261,9 @@
      *   pendente: ver PENDENCIAS-ORCAMENTO-GUIADO.md.
      * ⚠ "BDI aberto" no modelo de órgão: o percentual e a metodologia
      *   (Acórdão TCU 2.622/2013) saem na apresentação e nas premissas; as
-     *   parcelas do BDI e a planilha analítica saem no Pacote da prefeitura
-     *   (orc-ref), que o passo ④ oferece ao lado.
+     *   parcelas do BDI saem na página "Composição do BDI" (13/11/2026) e a
+     *   planilha analítica, no Pacote da prefeitura (orc-ref), que o passo ④
+     *   oferece ao lado.
      * ================================================================= */
     {
       id: "tpl-tipo-publico",
@@ -1260,8 +1285,9 @@
         { id: "p3", tipo: "escopo_etapas", titulo: "Objeto e etapas", mostrarCodigo: true, mostrarQtdItens: true },
         { id: "p4", tipo: "investimento", titulo: "Planilha de preços", colTrabalho: "Descrição", colValor: "Valor",
           tituloPagamento: "Forma de pagamento", nivel: "resumido", mostrarPeso: true, detalhar: false,
-          nota: "Preços em reais, com o BDI incluído. A planilha analítica e a composição do BDI acompanham o pacote do orçamento." },
+          nota: "Preços em reais, com o BDI incluído. A composição do BDI está na página própria; a planilha analítica acompanha o pacote do orçamento." },
         { id: "p5", tipo: "premissas", titulo: "Premissas e metodologia", fonteDePrecos: "padrao", mostrarRegime: true, mostrarBdiTcu: true },
+        { id: "p5b", tipo: "bdi", titulo: "Composição do BDI", mostrarFormula: true },
         { id: "p6", tipo: "cronograma", titulo: "Cronograma físico-financeiro", modo: "completo", mostrarDesembolso: true, mostrarPremissas: true, mostrarValores: true },
         { id: "p7", tipo: "comercial", titulo: "Condições da proposta", mostrarPagamento: true, mostrarPrazo: true, mostrarValidade: false, mostrarGarantia: false,
           extras: "Validade da proposta | O prazo indicado no edital; se o edital for omisso, 60 (sessenta) dias contados da data de sua apresentação." },
@@ -1561,6 +1587,7 @@
       else if (p.tipo === "incluso") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloIncluso, linhasOu(p.textoIncluso, com.incluso), p.tituloExcluso, linhasOu(p.textoExcluso, com.excluso));
       else if (p.tipo === "premissas") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + premissas(p, d);
       else if (p.tipo === "comercial") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + condicoesComerciais(p, d);
+      else if (p.tipo === "bdi") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + composicaoBdi(p, d);
       else if (p.tipo === "responsabilidades") corpo = '<h2 class="tp-h2">' + esc(tit) + '</h2><div class="tp-rule"></div>' + duasColunas(p.tituloContratada, linhasOu(p.textoContratada, com.respContratada), p.tituloContratante, linhasOu(p.textoContratante, com.respContratante));
 
       var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" || p.tipo === "capa_classica");
@@ -1581,7 +1608,7 @@
       var form = estiloFormas(p.formas || formas(null));
       var junto = [fundo, tipo, form].filter(Boolean).join(";");
       var estilo = junto ? (' style="' + junto + '"') : "";
-      return '<section class="' + cls + '"' + estilo + ">" + corpo + "</section>";
+      return '<section class="' + cls + '"' + estilo + (p.tipo === "bdi" ? ' data-tp-bdi="1"' : "") + ">" + corpo + "</section>";
     }).join("");
 
     return '<div class="tp-doc" style="' + estiloRaiz(m, f) + '">' + partes + "</div>";
@@ -1889,6 +1916,27 @@
     if (p.mostrarRegime && !semBase && txt(ref.regime)) partes.push("regime <b>" + esc(ref.regime) + "</b>");
     if (p.mostrarBdiTcu) partes.push("BDI conforme metodologia do Acórdão TCU nº 2.622/2013");
     if (partes.length) html += '<p class="tp-p">' + partes.join(", ") + ".</p>";
+    return html;
+  }
+
+  /* a página "Composição do BDI": uma linha por parcela, o resultado e a
+     fórmula. Tudo vem de d.bdi (Bdi.composicaoDoOrcamento) — aqui só se desenha. */
+  function composicaoBdi(p, d) {
+    var bd = d.bdi || {}, ps = arr(bd.parcelas);
+    var html = txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "";
+    if (!ps.length) {
+      html += '<p class="tp-p">BDI de <b>' + esc(n2(bd.percentual)) + "%</b> sobre o custo direto. "
+        + "A composição por parcela não foi detalhada neste orçamento.</p>";
+    } else {
+      html += '<table class="tp-tbl tp-bdi"><thead><tr><th class="tp-col-cod">Sigla</th><th>Parcela</th><th class="tp-num">Percentual</th></tr></thead><tbody>'
+        + ps.map(function (x) { return "<tr><td>" + esc(txt(x.sigla)) + "</td><td>" + esc(txt(x.nome)) + '</td><td class="tp-num">' + esc(n2(x.pct)) + "%</td></tr>"; }).join("")
+        + '</tbody><tfoot><tr><td colspan="2">BDI aplicado aos preços</td><td class="tp-num">' + esc(n2(bd.percentual)) + "%</td></tr></tfoot></table>";
+      if (bd.confere === false && bd.calculado != null)
+        html += '<p class="tp-leg">Pela fórmula, as parcelas acima resultam em ' + esc(n2(bd.calculado)) + "%; o percentual aplicado aos preços é o da última linha.</p>";
+    }
+    if (p.mostrarFormula && txt(bd.formula)) html += '<p class="tp-leg"><b>Fórmula:</b> ' + esc(txt(bd.formula)) + "</p>"
+      + '<p class="tp-leg">AC = administração central; S = seguro; R = risco; G = garantia; DF = despesas financeiras; L = lucro; I = impostos. Cada sigla entra em fração (4% = 0,04).</p>';
+    if (txt(p.nota)) html += '<p class="tp-leg">' + escML(p.nota) + "</p>";
     return html;
   }
 
@@ -2447,8 +2495,8 @@
       ".tp-bloco{margin:0 0 5mm;padding:3.5mm 4.5mm;border-left:3px solid var(--tp-destaque2);background:rgba(0,0,0,.025)}",
       ".tp-bloco h3{margin-bottom:1.5mm}",
       ".tp-bloco p{margin:0;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
-      ".tp-res td.tp-col-cod,.tp-res th.tp-col-cod{width:16mm;white-space:nowrap}",
-      ".tp-res tfoot td,.tp-gt tfoot td{background:#eef4fa;font-weight:700}",
+      ".tp-res td.tp-col-cod,.tp-res th.tp-col-cod,.tp-bdi td.tp-col-cod,.tp-bdi th.tp-col-cod{width:16mm;white-space:nowrap}",
+      ".tp-res tfoot td,.tp-gt tfoot td,.tp-bdi tfoot td{background:#eef4fa;font-weight:700}",
       ".tp-ana{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",
       ".tp-ana th,.tp-ana td{padding:2.2mm 2.6mm}",
       ".tp-gt{font-size:calc(9.5pt * var(--tp-esc-txt,1))}",

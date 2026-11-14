@@ -263,7 +263,8 @@
      "rotulo": "Chuveiro elétrico",
      "casar": {
       "fam": [
-       "hid-chuveiro"
+       "hid-chuveiro",
+       "hid-ducha-eletrica"
       ],
       "quando": [
        {

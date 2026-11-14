@@ -40545,7 +40545,7 @@ var usaPadrao = false;
 try {
 var mm = modelo ? T.modelo(modelo) : null;
 usaPadrao = !!(mm && mm.paginas.some(function (p) {
-return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades)$/.test(p.tipo)
+return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades|bdi)$/.test(p.tipo)
 || (p.tipo === "investimento" && p.nivel) || (p.tipo === "cronograma" && (p.modo === "completo" || p.modo === "gantt"));
 }));
 } catch (eU) { usaPadrao = false; }
@@ -40553,6 +40553,9 @@ if (usaPadrao) {
 d.obraNome = "Obra de exemplo";
 d.numero = "0001/26";
 d.referencia = { bases: "SINAPI 09/2026 (UF de exemplo)", nBases: 1, regime: "desonerado", bdiPct: 25 };
+d.bdi = (typeof Bdi !== "undefined" && Bdi.composicaoDoOrcamento)
+? (function () { var o = { bdi: { modeloId: "padrao", params: Bdi.paramsDoModelo("padrao") } }; o.bdi.percentual = Bdi.calcular(o.bdi.params); var c = Bdi.composicaoDoOrcamento(o); c.formula = Bdi.FORMULA_TCU; return c; })()
+: { percentual: 25, parcelas: [], formula: "" };
 d.textos = {
 marcaDagua: (typeof Empresa !== "undefined" && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : d.empresa.nome,
 credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
@@ -45532,9 +45535,9 @@ justificativa: "Menos de 3 preços só mediante justificativa (art. 29)."
 }
 };
 var VALIDADE_FONTE = { cotacao: "6 meses até a data prevista do edital", contratacao_similar: "1 ano até a data da pesquisa", midia: "exige data e hora de acesso" };
-var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "ler_tudo", "ler_auditoria"];
+var ACOES = ["criar_processo", "editar_dfd", "editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr", "editar_parametros", "gerar_minuta", "enviar_juridico", "emitir_parecer", "responder_ressalva", "aprovar_justificativa", "autorizar_abertura", "publicar", "analisar_propostas", "adjudicar", "homologar", "gerenciar_logins", "gerenciar_modelos", "gerenciar_orgao", "ler_tudo", "ler_auditoria"];
 var PAPEIS = {
-admin_orgao: { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "ler_tudo"] },
+admin_orgao: { nome: "Administrador do órgão", acoes: ["gerenciar_logins", "gerenciar_modelos", "gerenciar_orgao", "ler_tudo"] },
 requisitante: { nome: "Setor requisitante", acoes: ["criar_processo", "editar_dfd", "editar_acervo"] },
 engenharia: { nome: "Engenharia / planejamento", acoes: ["editar_acervo", "editar_quantitativos", "editar_orcamento", "editar_pesquisa", "editar_etp", "editar_riscos", "editar_tr"] },
 cpl: { nome: "Agente de contratação / comissão (CPL)", acoes: ["editar_parametros", "gerar_minuta", "enviar_juridico", "responder_ressalva", "analisar_propostas", "publicar"] },
@@ -45548,7 +45551,7 @@ criar_processo: "criar processo", editar_dfd: "editar a demanda", editar_acervo:
 editar_orcamento: "editar o orçamento", editar_pesquisa: "editar a pesquisa de preços", editar_etp: "editar o ETP", editar_riscos: "editar os riscos",
 editar_tr: "editar o TR / projeto básico", editar_parametros: "editar os parâmetros do edital", gerar_minuta: "gerar a minuta", enviar_juridico: "enviar ao jurídico",
 emitir_parecer: "emitir parecer jurídico", responder_ressalva: "responder ressalva", aprovar_justificativa: "aprovar justificativa", autorizar_abertura: "autorizar a abertura",
-publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão",
+publicar: "publicar", analisar_propostas: "analisar propostas", adjudicar: "adjudicar", homologar: "homologar", gerenciar_logins: "gerenciar logins", gerenciar_modelos: "importar os modelos de documento do órgão", gerenciar_orgao: "alterar o cadastro do órgão",
 ler_tudo: "ler o processo inteiro", ler_auditoria: "ler a auditoria"
 };
 var CplproRegras = {
@@ -48573,6 +48576,151 @@ global.CplproHab = Hab;
 if (typeof module !== "undefined" && module.exports) module.exports = Hab;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cplproorgao.js ==== */
+try {
+(function (global) {
+"use strict";
+var ENTIDADE = "cplpro_orgao", ID = "orgao";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function trim(s) { return String(s === null || s === undefined ? "" : s).replace(/^\s+|\s+$/g, ""); }
+function vazio(v) { return trim(v) === ""; }
+var CAMPOS = [
+{ id: "enderecoOrgao", grupo: "Órgão", rotulo: "Endereço completo (sede)", dica: "Rua, número, bairro, cidade/UF e CEP", obrig: true },
+{ id: "emailImpugnacao", grupo: "Órgão", rotulo: "E-mail para impugnação e pedido de esclarecimento", dica: "e-mail oficial do setor de licitações", obrig: true, tipo: "email" },
+{ id: "setorNome", grupo: "Setor de licitações", rotulo: "Setor responsável pelas licitações", dica: "Ex.: Comissão Permanente de Licitação", obrig: true },
+{ id: "setorSala", grupo: "Setor de licitações", rotulo: "Sala / andar", dica: "", obrig: false },
+{ id: "setorTelefone", grupo: "Setor de licitações", rotulo: "Telefone do setor", dica: "(00) 0000-0000", obrig: false },
+{ id: "representanteNome", grupo: "Representante legal", rotulo: "Nome do representante legal do contratante", dica: "", obrig: true },
+{ id: "representanteCargo", grupo: "Representante legal", rotulo: "Cargo", dica: "Ex.: Prefeito Municipal", obrig: true },
+{ id: "representanteAto", grupo: "Representante legal", rotulo: "Ato de nomeação", dica: "Ex.: Termo de posse de 01/01/2025", obrig: true },
+{ id: "foro", grupo: "Contrato", rotulo: "Foro (comarca)", dica: "Ex.: Foro da Comarca de ...", obrig: true },
+{ id: "portalNome", grupo: "Portal de disputa", rotulo: "Portal / plataforma eletrônica", dica: "Ex.: Compras.gov.br", obrig: true },
+{ id: "portalUrl", grupo: "Portal de disputa", rotulo: "Endereço (URL) do portal", dica: "https://...", obrig: true, tipo: "url" },
+{ id: "cadastro", grupo: "Cadastro de fornecedores", rotulo: "Cadastro de fornecedores", tipo: "select", opcoes: [["sicaf", "SICAF (Compras.gov.br)"], ["proprio", "Cadastro próprio do órgão"]], obrig: true },
+{ id: "cadastroProprio", grupo: "Cadastro de fornecedores", rotulo: "Nome do cadastro próprio", dica: "Só se for cadastro próprio", obrig: false, quando: function (o) { return o && o.cadastro === "proprio"; } }
+];
+function exige(c, o) { return c.obrig || (c.id === "cadastroProprio" && o && o.cadastro === "proprio"); }
+function novo(dados) {
+var o = { id: ID, timbrado: null };
+CAMPOS.forEach(function (c) { o[c.id] = ""; });
+if (dados) Object.keys(dados).forEach(function (k) { o[k] = dados[k]; });
+o.id = ID;
+return o;
+}
+function faltantes(o) {
+var out = [];
+CAMPOS.forEach(function (c) {
+if (!exige(c, o)) return;
+if (vazio(o && o[c.id])) out.push({ id: c.id, rotulo: c.rotulo });
+});
+return out;
+}
+function vazioTotal(o) {
+var t = true;
+CAMPOS.forEach(function (c) { if (!vazio(o && o[c.id])) t = false; });
+return t && !(o && o.timbrado);
+}
+function emailOk(v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trim(v)); }
+function urlOk(v) { return /^https?:\/\/[^\s/]+\.[^\s]{2,}$/i.test(trim(v)) || /^https?:\/\/localhost/i.test(trim(v)); }
+function validar(o) {
+var erros = [];
+if (!vazio(o && o.emailImpugnacao) && !emailOk(o.emailImpugnacao)) erros.push({ id: "emailImpugnacao", msg: "E-mail de impugnação inválido." });
+if (!vazio(o && o.portalUrl) && !urlOk(o.portalUrl)) erros.push({ id: "portalUrl", msg: "O endereço do portal deve começar com http:// ou https://." });
+return erros;
+}
+function paraEdital(o) {
+var r = {};
+if (!o) return r;
+var s = trim(o.setorNome);
+if (s) {
+var extra = [];
+if (!vazio(o.setorSala)) extra.push("sala " + trim(o.setorSala).replace(/^sala\s+/i, ""));
+if (!vazio(o.setorTelefone)) extra.push("telefone " + trim(o.setorTelefone));
+r.setorLicitacoes = s + (extra.length ? " (" + extra.join(", ") + ")" : "");
+}
+if (!vazio(o.enderecoOrgao)) r.enderecoOrgao = trim(o.enderecoOrgao);
+if (!vazio(o.emailImpugnacao)) r.emailImpugnacao = trim(o.emailImpugnacao);
+if (!vazio(o.foro)) r.foro = trim(o.foro);
+if (!vazio(o.representanteNome) && !vazio(o.representanteCargo) && !vazio(o.representanteAto)) {
+r.representante = trim(o.representanteNome) + ", " + trim(o.representanteCargo) + ", nomeado(a) pelo ato: " + trim(o.representanteAto);
+}
+if (!vazio(o.portalNome)) r.portal = trim(o.portalNome) + (!vazio(o.portalUrl) ? " — " + trim(o.portalUrl) : "");
+if (o.cadastro === "sicaf" || o.cadastro === "proprio") {
+r.cadastro = o.cadastro;
+if (o.cadastro === "proprio" && !vazio(o.cadastroProprio)) r.cadastroProprio = trim(o.cadastroProprio);
+}
+return r;
+}
+var ORIGEM_NO_CADASTRO = { setorLicitacoes: "setorNome", enderecoOrgao: "enderecoOrgao", emailImpugnacao: "emailImpugnacao", foro: "foro",
+representante: "representanteNome", portal: "portalNome", cadastro: "cadastro", cadastroProprio: "cadastroProprio" };
+var ROTULO_MODALIDADE = { "pregão": "Pregão Eletrônico", "pregao": "Pregão Eletrônico", "concorrência": "Concorrência Eletrônica", "concorrencia": "Concorrência Eletrônica" };
+function rotuloModalidade(m) { var k = trim(m).toLowerCase(); return ROTULO_MODALIDADE[k] || null; }
+function pad3(n) { var s = String(n); while (s.length < 3) s = "0" + s; return s; }
+function proximoNumero(processos, p, modalidade, ano) {
+var mod = trim(modalidade).toLowerCase().replace("ã", "a").replace("ê", "e"), max = 0;
+arr(processos).forEach(function (q) {
+if (!q || (p && q.id === p.id)) return;
+var n = q.edital && q.edital.numero ? trim(q.edital.numero) : "";
+var m = /^(\d{1,6})\/(\d{4})$/.exec(n);
+if (!m || Number(m[2]) !== Number(ano)) return;
+var mqq = trim(modalidadeDe(q)).toLowerCase().replace("ã", "a").replace("ê", "e");
+if (mqq && mod && mqq !== mod) return;
+if (Number(m[1]) > max) max = Number(m[1]);
+});
+return pad3(max + 1) + "/" + ano;
+}
+function valorParametro(p, id) {
+var x = p && p.parametros ? p.parametros[id] : null;
+return x && x.valor !== null && x.valor !== undefined ? x.valor : null;
+}
+function modalidadeDe(p) {
+var x = p && p.parametros ? p.parametros.modalidade : null;
+if (!x) return null;
+return !vazio(x.valor) ? x.valor : (!vazio(x.sugerido) ? x.sugerido : null);
+}
+var HAB_TEXTO = "Habilitação (arts. 62 a 70 da Lei 14.133/2021): (I) habilitação jurídica (art. 66); (II) habilitação fiscal, social e trabalhista (art. 68); " +
+"(III) habilitação econômico-financeira (art. 69); (IV) qualificação técnica (art. 67).";
+var REGRA_ROTINA = "Padrão de rotina do órgão.";
+function padroes(p, ctx) {
+ctx = ctx || {};
+var o = ctx.orgao || null, out = [];
+function add(caminho, valor, regra) { if (valor !== null && valor !== undefined && trim(valor) !== "") out.push({ caminho: caminho, valor: valor, regra: regra }); }
+var ed = paraEdital(o), RC = "Cadastro do órgão (aba «Órgão»).";
+Object.keys(ed).forEach(function (k) { add("edital." + k, ed[k], RC); });
+var mod = modalidadeDe(p), rot = rotuloModalidade(mod);
+if (mod && rot && ctx.ano && !ctx.semNumero) {
+add("edital.numero", proximoNumero(ctx.processos, p, mod, ctx.ano),
+rot + " nº NNN/" + ctx.ano + ": numeração sequencial por órgão, ano e modalidade (próximo número livre entre os processos desta conta).");
+}
+add("edital.habilitacao", HAB_TEXTO, "Os quatro grupos de habilitação da Lei 14.133/2021, arts. 62 a 70 (os mesmos que o módulo já cita no edital).");
+var meses = p && p.cronogramaFisico && p.cronogramaFisico.meses ? Number(p.cronogramaFisico.meses) : 0;
+if (meses > 0) {
+var tr_ = (p && p.tr) || {}, dProv = parseInt(tr_.prazoRecProvisorio, 10), dDef = parseInt(tr_.prazoRecDefinitivo, 10);
+var temRec = dProv > 0 && dDef > 0, m_ = meses + (meses === 1 ? " mês" : " meses");
+add("edital.vigencia", "execução em " + m_ + ", a contar da ordem de serviço; vigência de " + m_ + (temRec ? " mais " + (dProv + dDef) + " dias (recebimento provisório de " + dProv + " dias e definitivo de " + dDef + " dias)" : "") + ", a contar da assinatura do contrato",
+temRec ? "Prazo de execução do cronograma físico (" + m_ + ") somado aos prazos de recebimento declarados no processo (" + dProv + " + " + dDef + " dias)."
+: "Prazo de execução do cronograma físico (" + m_ + "). O processo não declara os prazos de recebimento provisório e definitivo: falta somá-los à vigência.");
+}
+add("edital.sessaoHora", "09:00", REGRA_ROTINA + " Hora da sessão pública: 09:00 (horário de Brasília).");
+add("edital.modoDisputa", "aberto", REGRA_ROTINA + " Modo de disputa: aberto.");
+add("edital.intervaloLances", "0,5%", REGRA_ROTINA + " Intervalo mínimo entre lances: 0,5%.");
+if (!ed.cadastro) add("edital.cadastro", "sicaf", REGRA_ROTINA + " Cadastro de fornecedores: SICAF (quando o cadastro do órgão não diz outro).");
+add("edital.multaContrato", "multa moratória de 0,5% ao dia, limitada a 30 dias de atraso, e multa compensatória de até 10% do valor do contrato",
+REGRA_ROTINA + " Multa moratória de 0,5% ao dia até 30 dias; compensatória de até 10%.");
+add("edital.prazoRepactuacao", "30 dias", REGRA_ROTINA + " Pedido de repactuação analisado em até 30 dias.");
+add("edital.prazoReequilibrio", "30 dias", REGRA_ROTINA + " Pedido de reequilíbrio analisado em até 30 dias.");
+var email = ed.emailImpugnacao || null;
+add("edital.visitaAgendamento", "por e-mail" + (email ? " (" + email + ")" : " ao setor de licitações") + ", com 2 dias úteis de antecedência",
+REGRA_ROTINA + " Vistoria facultativa agendada por e-mail com 2 dias úteis de antecedência.");
+return out;
+}
+function timbradoOk(dataUrl) { return /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(String(dataUrl || "")); }
+var API = { ENTIDADE: ENTIDADE, ID: ID, CAMPOS: CAMPOS, ORIGEM_NO_CADASTRO: ORIGEM_NO_CADASTRO, novo: novo, faltantes: faltantes, vazioTotal: vazioTotal, validar: validar,
+paraEdital: paraEdital, padroes: padroes, proximoNumero: proximoNumero, modalidadeDe: modalidadeDe, rotuloModalidade: rotuloModalidade, timbradoOk: timbradoOk, HAB_TEXTO: HAB_TEXTO };
+global.CplproOrgao = API;
+if (typeof module !== "undefined" && module.exports) module.exports = API;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/cplpropreparo.js ==== */
 try {
 (function (global) {
@@ -48582,6 +48730,7 @@ if (typeof require === "function" && typeof module !== "undefined") {
 if (!R) R = require("./cplproregras.js");
 if (!Cplpro) Cplpro = require("./cplpro.js");
 if (!Fluxo) Fluxo = require("./cplprofluxo.js");
+if (!global.CplproOrgao) { try { global.CplproOrgao = require("./cplproorgao.js"); } catch (eO) {} }
 if (!Docs) { try { Docs = require("./cplprodocs.js"); } catch (e) { Docs = null; } }
 if (!Importador) { try { Importador = require("./importador.js"); } catch (e2) { Importador = null; } }
 }
@@ -49049,6 +49198,7 @@ E.mudou = true;
 }
 });
 } else E.semPermissao.parametros = true;
+if (c.padroes) escreverPadroes(q, rastro, E, agora, pode, c);
 if (prev && (!igual(prev.orcamento, q.preparo.orcamento) || !igual(prev.baseCtx, q.preparo.baseCtx) || !igual(prev.obra, q.preparo.obra) || !igual(prev.oferta, q.preparo.oferta))) E.mudou = true;
 if (E.mudou || !prev) q.preparo.atualizadoEm = agora; else q.preparo.atualizadoEm = prev.atualizadoEm;
 q.preparo.resumo = resumo(q, E, an);
@@ -49057,6 +49207,38 @@ if (!E.mudou && prev && igual(prev.resumo, q.preparo.resumo) && igual(prev.campo
 return { p: clone(p), resumo: q.preparo.resumo, rodada: rodada, mudou: false };
 }
 return { p: q, resumo: q.preparo.resumo, rodada: rodada, mudou: E.mudou };
+}
+function anoDe(agora) { var m = /^(\d{4})/.exec(String(agora || "")); return m ? Number(m[1]) : new Date().getFullYear(); }
+function escreverPadroes(q, rastro, E, agora, pode, c) {
+var Org = global.CplproOrgao;
+if (!Org) return;
+var lista = Org.padroes(q, { orgao: c.orgao || null, processos: c.processos || [], ano: anoDe(agora), semNumero: !!c.semNumero });
+lista.forEach(function (x) {
+var passo = passoDe(x.caminho);
+if (!pode(passo)) { E.semPermissao[passo] = true; return; }
+var atual = pegar(q, x.caminho), rec = rastro[x.caminho];
+if (x.caminho === "edital.numero" && !semValor(atual)) return;
+if (igual(atual, x.valor)) { if (!rec) return; if (rec && !igual(rec.valor, x.valor)) { rastro[x.caminho] = { valor: clone(x.valor), arquivo: null, regra: x.regra, em: agora }; E.mudou = true; } return; }
+if (semValor(atual) || (rec && igual(atual, rec.valor))) {
+colocar(q, x.caminho, clone(x.valor));
+rastro[x.caminho] = { valor: clone(x.valor), arquivo: null, regra: x.regra, em: agora };
+E.porPasso[passo] = (E.porPasso[passo] || 0) + 1;
+if (E.soltos[passo] === undefined && Fluxo && Fluxo.soltarConferencia(q, passo)) E.soltos[passo] = true;
+E.mudou = true;
+if (rec) E.atualizados++; else E.preenchidos++;
+} else E.mantidos.push({ caminho: x.caminho, passo: passo, motivo: "a pessoa editou" });
+});
+}
+function aplicarPadroes(p, ctx) {
+var c = ctx || {}, agora = c.agora || null, q = clone(p);
+var permitidos = c.permitidos || null;
+function pode(passo) { return !permitidos || permitidos[passo] !== false; }
+if (!q.preparo || !q.preparo.campos) q.preparo = { versao: 1, campos: {}, arquivos: [], resumo: null, atualizadoEm: null, orcamento: null, baseCtx: null, obra: null, oferta: null };
+var E = { preenchidos: 0, atualizados: 0, mantidos: [], porPasso: {}, soltos: {}, semPermissao: {}, mudou: false };
+escreverPadroes(q, q.preparo.campos, E, agora, pode, { orgao: c.orgao, processos: c.processos, semNumero: c.semNumero });
+if (!E.mudou) return { p: clone(p), mudou: false, preenchidos: 0, atualizados: 0, mantidos: E.mantidos };
+q.preparo.atualizadoEm = agora;
+return { p: q, mudou: true, preenchidos: E.preenchidos, atualizados: E.atualizados, mantidos: E.mantidos };
 }
 function situacao(q) {
 var pr = Cplpro.progresso(q), faltam = [];
@@ -49154,6 +49336,13 @@ if (!criada && !mudou) return { acao: "nenhuma", motivo: "A obra já estava como
 return { acao: criada ? "criar" : "atualizar", obra: o2, obraId: atual ? atual.id : null, criada: criada, mantidos: mant, assinatura: ass, arquivo: an.memorial.arquivo };
 }
 var PORQUE_ORGAO = "Dado administrativo do órgão: nenhum documento da pasta traz.";
+var PORQUE_CAMPO = {
+inicioExecucao: "Decisão do órgão: em quantos dias da assinatura do contrato ou da ordem de serviço a obra deve começar.",
+garantiaServicoMeses: "Decisão do órgão: meses de garantia complementar do serviço; 0 vale só a garantia legal (Código Civil e CDC).",
+prazoLiquidacao: "Decisão do órgão: em quantos dias úteis o setor financeiro liquida a despesa depois do ateste.",
+indiceAtraso: "Decisão do órgão: índice de correção monetária por atraso de pagamento (INCC, IPCA ou IGP-M).",
+qualificacaoEconomica: "Decisão do órgão: capital ou patrimônio líquido mínimo exigido, até o limite de 10% do valor estimado."
+};
 var PORQUE_LEI = "A lei reserva a decisão ao órgão (o sistema só sugere, com «Por quê?»).";
 function inventario(p) {
 var campos = [], q = p || {}, rastro = q.preparo && q.preparo.campos ? q.preparo.campos : {};
@@ -49197,7 +49386,7 @@ var trCampos = [];
 if (D && D.CAMPOS) D.CAMPOS.forEach(function (c) { if (!D.campoAplica || D.campoAplica(c.id, q)) trCampos.push(c); });
 trCampos.forEach(function (c) {
 var o = c.onde === "tr" ? q.tr : q.edital, v = o ? o[c.id] : null;
-var porque = PORQUE_ORGAO;
+var porque = PORQUE_CAMPO[c.id] || PORQUE_ORGAO;
 if (c.id === "local") porque = "O endereço do terreno não consta nos documentos.";
 else if (c.id === "prazoRecProvisorio" || c.id === "prazoRecDefinitivo") porque = "O critério de recebimento do memorial não diz o prazo em dias.";
 add((c.onde === "tr" ? "tr." : "edital.") + c.id, "Passo 9 — " + c.rotulo, "minuta", v, porque);
@@ -49208,10 +49397,10 @@ brancos: campos.filter(function (c) { return !c.preenchido; }).map(function (c) 
 }
 var CplproPreparo = {
 lerBasePlanilha: lerBasePlanilha, lerArt: lerArt, lerPlanilhaPdf: lerPlanilhaPdf, dadosObra: dadosObra, decidirObra: decidirObra, assinaturaPasta: assinaturaPasta, inventario: inventario, nomeLimpo: nomeLimpo,
-DECISOES: DECISOES, CONTAS: CONTAS,
+DECISOES: DECISOES, CONTAS: CONTAS, PORQUE_CAMPO: PORQUE_CAMPO,
 lerMemorial: lerMemorial, lerPlanilha: lerPlanilha, lerCronograma: lerCronograma,
 analisar: analisar, planoOrcamento: planoOrcamento, assinaturaOrc: assinaturaOrc,
-aplicar: aplicar, seloSistema: seloSistema, situacao: situacao
+aplicar: aplicar, aplicarPadroes: aplicarPadroes, seloSistema: seloSistema, situacao: situacao
 };
 global.CplproPreparo = CplproPreparo;
 if (typeof module !== "undefined" && module.exports) module.exports = CplproPreparo;
@@ -49222,10 +49411,11 @@ try {
 (function (global) {
 "use strict";
 if (typeof global.Gestao === "undefined") return;
-var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo;
+var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo, Org = global.CplproOrgao;
 var ENT_PROC = "cplpro_processos";
 var ENT_PAP = "cplpro_papeis";
 var ENT_MOD = "cplpro_modelos";
+var ENT_ORG = "cplpro_orgao";
 var MODULO = "cplpro";
 var MAX_BYTES = 60 * 1024 * 1024;
 var MODALIDADES = ["concorrência", "pregão", "concurso", "leilão", "diálogo competitivo"];
@@ -49321,7 +49511,7 @@ if (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) return;
 r.el = desenharRetorno(alvo, r, chave);
 });
 }
-var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
 function iniciarAcao(nome, ds) {
 if (NAVEGACAO[nome]) return;
 ds = ds || {};
@@ -49380,6 +49570,7 @@ function ctxDocs(p) {
 var orc = orcDoProc(p), c = calc(orc), pq = c ? F.pesquisar(p, c.linhas, modoDoOrc(c)) : null;
 var emp = (typeof Empresa !== "undefined") ? Empresa : null, logo = null;
 try { logo = emp && emp.logo ? emp.logo() : null; } catch (e) { logo = null; }
+try { var cadT = orgaoCad(); if (cadT.timbrado && Org.timbradoOk(cadT.timbrado)) logo = cadT.timbrado; } catch (eT) {}
 return { orgao: { nome: emp && emp.nomeDoc ? emp.nomeDoc() : "", logoHtml: logo ? '<img src="' + logo + '" alt="logo" style="max-height:70px">' : "" },
 orc: c ? { total: c.precoVenda, custoDireto: c.custoDireto } : null, pesquisa: pq, prazo: F.prazo(p), hoje: hoje() };
 }
@@ -49414,6 +49605,10 @@ var pr = null; try { pr = C.progresso(q); } catch (e) { pr = null; }
 var ach = null;
 if (pr) C.PASSOS.forEach(function (ps) { var x = pr.passos[ps.id]; if (!ach && ps.id !== "minuta" && ps.id !== "conformidade" && x && x.pendencias && x.pendencias.length && x.pendencias[0].corrigir) ach = x.pendencias[0].corrigir; });
 return ach || { passo: "minuta", campo: "" };
+}
+function corrigirDaMinuta(q, faltaOrg) {
+var pp = primeiraPendencia(q);
+return (pp.passo === "minuta" && faltaOrg.length) ? { passo: "orgao", campo: faltaOrg[0].cadastroId } : pp;
 }
 function setFoco(passo, campo) { G._cplPasso = passo; G._cplAba = "passos"; G._cplView = "proc"; G._cplFoco = campo || null; }
 function porque(regra, fonte, conferir, rotulo) {
@@ -49470,12 +49665,12 @@ var html;
 if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
 else {
 if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
-html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : _renderLista(obras));
+html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : (G._cplView === "orgao" ? _renderOrgao(obras) : _renderLista(obras)));
 }
 return html;
 };
 function abasTopo(ativa) {
-var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }];
+var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }, { id: "orgao", rotulo: "Órgão", attrs: 'data-gacao="cpl-aba-orgao"' }];
 if (podeAcao("gerenciar_modelos")) abas.push({ id: "modelos", rotulo: "Modelos do órgão", attrs: 'data-gacao="cpl-aba-modelos"' });
 return M.abas(abas.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === ativa, attrs: a.attrs }; }));
 }
@@ -49549,6 +49744,84 @@ return '<td class="num"><input type="checkbox" data-pap-pessoa="' + esc(pe.id) +
 }).join("") + "</tbody></table>";
 corpo += '<p class="muted" style="margin:12px 0 0">' + Object.keys(R.PAPEIS).map(function (k) { return "<b>" + esc(R.PAPEIS[k].nome) + ":</b> " + esc(R.PAPEIS[k].acoes.map(function (a) { return R.ACOES_ROTULO[a] || a; }).join(", ")); }).join(" · ") + "</p>";
 return html + M.secao({ titulo: "Quem faz o quê", corpoHtml: corpo });
+}
+function orgaoCad() { var o = null; try { o = Store.obter(eid(), ENT_ORG, Org.ID); } catch (e) { o = null; } return o ? Org.novo(o) : Org.novo(); }
+function ctxPadroes() { return { orgao: orgaoCad(), processos: listaProc(), agora: agoraLocal() }; }
+function faltaDoOrgao(p) {
+var cad = orgaoCad(), pe = Org.paraEdital(cad), e = (p && p.edital) || {}, out = [];
+Object.keys(Org.ORIGEM_NO_CADASTRO).forEach(function (id) {
+if (id === "cadastroProprio" && !(e.cadastro === "proprio" || cad.cadastro === "proprio")) return;
+if (!D.campoAplica(id, p || {})) return;
+var rot = ""; D.CAMPOS.forEach(function (c) { if (c.id === id) rot = c.rotulo; });
+if (rot && vazio(e[id]) && vazio(pe[id])) out.push({ id: id, cadastroId: Org.ORIGEM_NO_CADASTRO[id], rotulo: rot });
+});
+return out;
+}
+function propagarOrgao() {
+var todos = listaProc(), n = 0;
+todos.forEach(function (p, i) {
+if (!F.editavel(p)) return;
+var r = Pr.aplicarPadroes(p, { orgao: orgaoCad(), processos: todos, agora: agoraLocal(), semNumero: true });
+if (!r.mudou) return;
+F.registrar(r.p, "padroes_orgao", null, "cadastro do órgão atualizado: " + (r.preenchidos + r.atualizados) + " campo(s)", { nome: nomeAtual(), papel: "admin_orgao" }, agoraLocal());
+var s = salvarProc(r.p); if (s) { todos[i] = s; n++; }
+});
+return n;
+}
+function _renderOrgao(obras) {
+var html = cabLista(obras, "Cadastro do órgão") + abasTopo("orgao");
+var o = orgaoCad(), pode = podeAcao("gerenciar_orgao"), d = pode ? "" : " disabled", falta = Org.faltantes(o);
+var corpo = '<p class="mod-sub" style="margin:0 0 12px">Cadastre <b>uma vez</b> os dados administrativos do órgão. Eles entram em <b>todo processo</b> (edital, TR e contrato) com o selo <span class="cpl-selo-sist">sugerido — confira</span>; o que a pessoa editar num processo o sistema não sobrescreve.</p>';
+if (!pode) corpo += M.aviso({ tom: "info", titulo: "Só leitura.", texto: motivoAcao("gerenciar_orgao") });
+corpo += falta.length
+? M.aviso({ tom: "alerta", titulo: falta.length + " dado(s) do órgão ainda em branco", texto: falta.map(function (x) { return x.rotulo; }).join("; ") + ". Enquanto faltarem, as minutas saem com [PREENCHER]." })
+: M.aviso({ tom: "ok", titulo: "Cadastro do órgão completo.", texto: "Todo documento usa estes dados." });
+var grupos = [], por = {};
+Org.CAMPOS.forEach(function (c) { if (!por[c.grupo]) { por[c.grupo] = []; grupos.push(c.grupo); } por[c.grupo].push(c); });
+corpo += '<div class="cpl-form" id="cpl-f-orgao">' + grupos.map(function (g) {
+return "<h4>" + esc(g) + "</h4>" + por[g].map(function (c) {
+var v = o[c.id] == null ? "" : o[c.id], ctrl;
+if (c.tipo === "select") ctrl = '<select id="cpl-org-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
+else ctrl = '<input id="cpl-org-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
+return campo(esc(c.rotulo) + (c.obrig ? " *" : ""), ctrl, c.id);
+}).join("");
+}).join("") + "</div>";
+corpo += "<h4>Timbrado</h4>" + (o.timbrado ? '<p><img id="cpl-org-timbrado-img" src="' + esc(o.timbrado) + '" alt="timbrado do órgão" style="max-height:90px;max-width:100%"></p>' : '<p class="muted" id="cpl-org-timbrado-vazio">Sem timbrado: os documentos saem com o logo da Empresa (Configurações), se houver.</p>') +
+'<input type="file" id="cpl-org-timbrado-arq" accept="image/png,image/jpeg,image/webp" hidden>' +
+'<div class="cpl-acoes">' + btn(o.timbrado ? "Trocar o timbrado" : "Escolher imagem do timbrado", "cpl-org-timbrado", d, "") + (o.timbrado ? " " + btn("Remover o timbrado", "cpl-org-timbrado-remover", d, "") : "") + "</div>";
+corpo += '<div class="cpl-acoes">' + btn("Salvar cadastro do órgão", "cpl-org-salvar", d, "primary") + "</div>";
+return html + M.secao({ titulo: "Cadastro do órgão", corpoHtml: corpo });
+}
+function reduzirImagem(file, cb) {
+var fr = new FileReader();
+fr.onerror = function () { cb(null); };
+fr.onload = function () {
+var img = new Image();
+img.onerror = function () { cb(null); };
+img.onload = function () {
+var tentativas = [[1100, 0.88], [800, 0.75], [600, 0.6]], i, out = null;
+for (i = 0; i < tentativas.length && !out; i++) {
+var w = Math.min(img.width, tentativas[i][0]), h = Math.round(img.height * (w / img.width));
+var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0, w, h);
+var u = file.type === "image/png" ? cv.toDataURL("image/png") : cv.toDataURL("image/jpeg", tentativas[i][1]);
+if (u.length <= 600000) out = u;
+}
+cb(out);
+};
+img.src = fr.result;
+};
+fr.readAsDataURL(file);
+}
+function importarTimbrado(f) {
+if (!exigir("gerenciar_orgao")) return;
+if (!/^image\//.test(f.type || "")) { toast("O timbrado precisa ser uma imagem (PNG ou JPEG).", "erro"); return; }
+reduzirImagem(f, function (u) {
+if (!u || !Org.timbradoOk(u)) { toast("Não consegui usar essa imagem como timbrado. Tente um PNG ou JPEG menor.", "erro"); return; }
+var o = orgaoCad(); o.timbrado = u; o.atualizadoEm = agoraLocal();
+if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar o timbrado.", "erro"); return; }
+toast("Timbrado do órgão salvo.", "ok"); App.render();
+});
 }
 function modeloDoTipo(tipo) { return arr(K.lista(ENT_MOD)).filter(function (m) { return m.id === tipo; })[0] || null; }
 function _renderModelos(obras) {
@@ -49842,7 +50115,10 @@ return "<h4>" + esc(g) + "</h4>" + porGrupo[g].map(function (c) {
 var v = o[c.id] == null ? "" : o[c.id], ctrl;
 if (c.tipo === "select") ctrl = '<select id="cpl-cf-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
 else ctrl = '<input id="cpl-cf-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
-return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *", ctrl, c.id);
+var dicaOrg = "";
+if (vazio(v) && Pr.PORQUE_CAMPO[c.id]) dicaOrg += ' <span class="muted cpl-porque-campo">Por quê? ' + esc(Pr.PORQUE_CAMPO[c.id]) + '</span>';
+if (Org.ORIGEM_NO_CADASTRO[c.id] && vazio(v) && vazio(Org.paraEdital(orgaoCad())[c.id])) dicaOrg = ' <button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="orgao" data-campo="' + esc(Org.ORIGEM_NO_CADASTRO[c.id]) + '">Preencher no Cadastro do órgão</button>';
+return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *" + selo(p, (onde === "tr" ? "tr." : "edital.") + c.id), ctrl + dicaOrg, c.id);
 }).join("");
 }).join("");
 }
@@ -49957,11 +50233,14 @@ btn("Prévia", "cpl-doc-previa", ' data-doc="' + doc.id + '"', "sm") + " " + btn
 h += "<p>" + (val_ ? M.pilula("Documentos gerados em " + dataHoraBR(pdoc.geradoEm), "ok") : (g.pendentes ? M.pilula(g.pendentes + " campo(s) em branco no total", "alerta") : M.pilula("ainda não gerados", "neutro"))) + "</p>";
 if (!val_ && pdoc.invalidadoEm) h += '<p class="cpl-alerta">A minuta gerada deixou de valer: ' + esc(pdoc.motivo || "o processo mudou") + ". Gere de novo.</p>";
 var e = p.edital || {}, dm = ed && podeAcao("gerar_minuta") ? "" : " disabled";
+var fOrg = faltaDoOrgao(p);
+if (fOrg.length) h += M.aviso({ tom: "alerta", titulo: fOrg.length + " dado(s) do órgão sem cadastro", texto: fOrg.map(function (x) { return x.rotulo; }).join("; ") + ".", acaoHtml: '<button type="button" class="btn sm" id="cpl-ir-orgao" data-gacao="cpl-corrigir" data-passo="orgao" data-campo="' + esc(fOrg[0].cadastroId) + '">Abrir o Cadastro do órgão</button>' });
+h += '<div class="cpl-acoes">' + btn("Aplicar padrões do órgão e de rotina", "cpl-padroes", dm, "") + ' <span class="muted">Preenche, com o selo «sugerido — confira», só o que está em branco ou foi escrito pelo sistema.</span></div>';
 h += '<h3>Dados que completam a minuta</h3><div class="cpl-form" id="cpl-f-edital">' +
-campo("Número do edital", '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
-campo("Documentos de habilitação exigidos", '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
+campo("Número do edital" + selo(p, "edital.numero"), '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
+campo("Documentos de habilitação exigidos" + selo(p, "edital.habilitacao"), '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
 campo("Complemento do regime de sanções do edital (opcional)", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
-campo("Vigência e prazo de execução do contrato", '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
+campo("Vigência e prazo de execução do contrato" + selo(p, "edital.vigencia"), '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
 campo("Complemento do contrato: extinção e sanções contratuais (opcional)", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") +
 '<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Cada um entra no edital ou no contrato no lugar do «XXXX» do modelo; sem eles o texto sai com «[PREENCHER: …]».</p>' + htmlCampos(p, "edital", dm) + "</div>" +
 '<div class="cpl-acoes">' + btn("Salvar dados da minuta", "cpl-salvar-edital", dm, "") + "</div>";
@@ -50446,7 +50725,7 @@ return prepararObraEBases(atual, an, plano, permitidos, avisosExtra).then(functi
 prepGuardado = prep;
 if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra, prep); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
 else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
-var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx });
+var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx, padroes: true, orgao: orgaoCad(), processos: listaProc() });
 G._cplMontando = false;
 if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); avisoDeBases(prep, function () { montarDaPasta(files, opcoes); }); return r; }
 var q = r.p;
@@ -50490,7 +50769,9 @@ return '<div class="cpl-pend" role="listitem"><span><b>' + esc(d.nome) + "</b> �
 '<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="parametros" data-campo="' + esc(d.id) + '" data-item="">Corrigir</button></div>';
 }).join("") + "</div></details>";
 }
-if (dados.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dados.length + ")</b></summary>" + pendCartoes(dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; })) + "</details>";
+var dadosOrg = faltaDoOrgao(p).map(function (x) { return { msg: "Dado do órgão sem cadastro: " + x.rotulo + ".", corrigir: { passo: "orgao", campo: x.cadastroId } }; });
+var dadosTodos = dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; }).concat(dadosOrg);
+if (dadosTodos.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dadosTodos.length + ")</b></summary>" + pendCartoes(dadosTodos) + "</details>";
 var avisos = arr(rs.avisos).concat(arr(rs.lacunas));
 if (avisos.length || arr(rs.mantidos).length) {
 h += '<details id="cpl-preparo-avisos"><summary><b>Avisos</b></summary><ul>' + avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") +
@@ -50655,6 +50936,37 @@ var acoes = {
 "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
 "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
 "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
+"cpl-aba-orgao": function () { G._cplView = "orgao"; App.render(); },
+"cpl-org-salvar": function () {
+if (!exigir("gerenciar_orgao")) return;
+var o = orgaoCad();
+Org.CAMPOS.forEach(function (c) { var el = document.getElementById("cpl-org-" + c.id); if (el) o[c.id] = String(el.value || "").replace(/^\s+|\s+$/g, ""); });
+var er = Org.validar(o);
+if (er.length) { toast(er[0].msg, "erro"); var ef = document.getElementById("cpl-org-" + er[0].id); if (ef && ef.focus) ef.focus(); return; }
+o.atualizadoEm = agoraLocal();
+if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar o cadastro do órgão. Nada foi alterado.", "erro"); return; }
+var n = propagarOrgao();
+toast("Cadastro do órgão salvo." + (n ? " Atualizei " + n + " processo(s) em andamento (só o que o sistema tinha escrito ou estava em branco)." : ""), "ok");
+App.render();
+},
+"cpl-org-timbrado": function () { var el = document.getElementById("cpl-org-timbrado-arq"); if (el) el.click(); },
+"cpl-org-timbrado-remover": function () {
+if (!exigir("gerenciar_orgao")) return;
+var o = orgaoCad(); o.timbrado = null; o.atualizadoEm = agoraLocal();
+if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar.", "erro"); return; }
+toast("Timbrado removido.", "ok"); App.render();
+},
+"cpl-padroes": function () {
+var p = procAtual(); if (!p) return;
+if (!F.editavel(p)) { toast(F.motivoTravado(p), "erro"); return; }
+var permitidos = {}; C.PASSOS.forEach(function (ps) { permitidos[ps.id] = podeAcao(F.ACAO_DO_PASSO[ps.id]); });
+if (permitidos.minuta === false) { toast("Seu perfil não edita a minuta.", "erro"); return; }
+var cx = ctxPadroes(); cx.permitidos = permitidos;
+var r = Pr.aplicarPadroes(p, cx);
+if (!r.mudou) { toast("Nada a aplicar: os campos já estão preenchidos" + (r.mantidos.length ? " (" + r.mantidos.length + " editado(s) por você foram mantidos)." : "."), "info"); return; }
+F.registrar(r.p, "padroes_orgao", null, "padrões do órgão e de rotina: " + (r.preenchidos + r.atualizados) + " campo(s)", quemAtual("cpl"), agoraLocal());
+if (salvarProc(r.p)) { toast("Aplicados " + (r.preenchidos + r.atualizados) + " padrão(ões) do órgão e de rotina, com o selo «sugerido — confira». Confira cada um.", "ok"); App.render(); }
+},
 "cpl-aba-modelos": function () { if (!exigir("gerenciar_modelos")) return; G._cplView = "modelos"; App.render(); },
 "cpl-mod-escolher": function (ds) {
 if (!exigir("gerenciar_modelos")) return;
@@ -50693,7 +51005,10 @@ Store.excluir(eid(), ENT_MOD, reg.id); UI.fecharModal(); toast("Modelo removido.
 "cpl-aba": function (ds) { G._cplAba = ds.aba || "passos"; App.render(); },
 "cpl-passo": function (ds) { G._cplPasso = ds.passo; G._cplFoco = null; App.render(); },
 "cpl-ir-atual": function () { var p = procAtual(); if (!p) return; G._cplPasso = F.passoAtual(p).id; G._cplFoco = null; G._cplAba = "passos"; App.render(); },
-"cpl-corrigir": function (ds) { setFoco(ds.passo, ds.item ? ds.campo + ":" + ds.item : ds.campo); App.render(); },
+"cpl-corrigir": function (ds) {
+if (ds.passo === "orgao") { G._cplView = "orgao"; G._cplFoco = ds.campo || null; App.render(); return; }
+setFoco(ds.passo, ds.item ? ds.campo + ":" + ds.item : ds.campo); App.render();
+},
 "cpl-ir-usuarios": function () { if (typeof App !== "undefined" && App.irPara) App.irPara("usuarios"); },
 "cpl-porque": function (ds) {
 var corpo = "<p>" + Util.esc(ds.regra || "") + "</p><p><b>Fonte:</b> " + Util.esc(ds.fonte || "") + "</p>" +
@@ -50703,17 +51018,19 @@ UI.modal("Por quê? " + (ds.titulo ? "— " + ds.titulo : ""), corpo, [{ texto: 
 "cpl-novo": function () {
 if (!exigir("criar_processo")) return;
 var obras = K.lista("obras");
-var corpoPasta = '<div class="field"><label>Ou suba a pasta do projeto</label><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
-'<button type="button" class="btn primary" id="cpl-n-montar">Montar tudo a partir da pasta</button>' +
-'<div class="cpl-sug">O sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche o que dá para deduzir. Secretaria e objeto abaixo ficam opcionais.</div></div>';
+var corpoPasta = '<div class="field cpl-montar-destaque" id="cpl-n-destaque" style="padding:14px 16px;border:2px solid var(--primaria,#1d4f8c);border-radius:10px;margin-bottom:14px"><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
+'<button type="button" class="btn primary" id="cpl-n-montar" style="width:100%;font-size:1.05em;padding:12px 16px">Montar tudo a partir da pasta</button>' +
+'<div class="cpl-sug" id="cpl-n-montar-txt" style="margin-top:8px">Suba a pasta do projeto: o sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche os 10 passos o quanto os documentos permitirem. É o caminho mais rápido.</div></div>' +
+'<p class="muted" style="margin:0 0 6px"><b>Ou</b> crie o processo em branco, informando só o essencial:</p>';
 var corpo = corpoPasta + campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
 UI.modal("Novo processo de licitação", corpo, [
-{ texto: "Criar processo", classe: "primary", onClick: function () {
+{ texto: "Criar processo em branco", classe: "", onClick: function () {
 var papel = exigir("criar_processo"); if (!papel) return;
 var sec = lerCampo("cpl-n-sec"), obj = lerCampo("cpl-n-obj"), obra = lerCampo("cpl-n-obra");
 if (!sec || !obj) { toast("Informe a secretaria e o objeto.", "erro"); return; }
 var q = C.novoProcesso({ secretaria: sec, objeto: obj, obraId: obra || null }, quemAtual(papel), agoraLocal());
 F.registrar(q, "criar_processo", null, "criado", quemAtual(papel), agoraLocal());
+try { var rpN = Pr.aplicarPadroes(q, ctxPadroes()); if (rpN.mudou) q = rpN.p; } catch (ePad) {}
 var r = salvarProc(q); if (!r) return;
 UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
 } },
@@ -51061,7 +51378,8 @@ F.registrar(q, "gerar_documentos", null, g.pendentes === 0 ? "gerados sem campo 
 q.passos.minuta.conferido = false;
 var r = Store.salvar(eid(), ENT_PROC, q);
 if (!r) { toast("Não consegui gravar o processo.", "erro"); return; }
-toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : primeiraPendencia(q));
+var fOrgG = g.pendentes === 0 ? [] : faltaDoOrgao(q);
+toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos." + (fOrgG.length ? " Faltam dados no Cadastro do órgão: " + fOrgG.map(function (x) { return x.rotulo; }).join("; ") + "." : ""), g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : corrigirDaMinuta(q, fOrgG));
 App.render();
 },
 "cpl-enviar-jur": function () {
@@ -51283,6 +51601,9 @@ if (a) a.onchange = function () { adicionarArquivos(this.files); this.value = ""
 if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
 var pp = document.getElementById("cpl-preparo-pasta");
 if (pp) pp.onchange = function () { var fs_ = Array.prototype.slice.call(this.files || []); this.value = ""; if (fs_.length) montarDaPasta(fs_, null); };
+var ot = document.getElementById("cpl-org-timbrado-arq");
+if (ot) ot.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarTimbrado(f); };
+if (G._cplView === "orgao" && G._cplFoco) { var fo = document.getElementById("cpl-org-" + G._cplFoco); G._cplFoco = null; if (fo && fo.focus) { try { fo.scrollIntoView({ block: "center" }); } catch (eS) {} fo.focus(); } }
 var am = document.getElementById("cpl-mod-arq");
 if (am) am.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarModelo(f, G._cplModTipo); };
 var ha = document.getElementById("cpl-hab-arq"), hp = document.getElementById("cpl-hab-pasta");
@@ -60776,7 +61097,7 @@ var ENTIDADES = [
 "marm_precos", "marm_propostas",
 "remun_param", "remun_apur",
 "pp_config", "pp_lanc", "pp_oc", "pp_fech",
-"cplpro_processos", "cplpro_papeis", "cplpro_modelos",
+"cplpro_processos", "cplpro_papeis", "cplpro_modelos", "cplpro_orgao",
 "portal_padrao",
 "precosinsumos",
 "perfil_impl",
@@ -62621,6 +62942,7 @@ orcAtual: null,
 _addItemEtapaId: null,
 _etapasRecolhidas: {},
 _idxAberto: (function () { try { return localStorage.getItem("orcapro:idxEtapas") === "1"; } catch (e) { return false; } })(),
+_plAbc: (function () { try { var v = localStorage.getItem("orcapro:plAbc"); return (v === "1" || v === "A") ? v : ""; } catch (e) { return ""; } })(),
 _plCompacta: (function () { try { return localStorage.getItem("orcapro:plCompacta") === "1"; } catch (e) { return false; } })(),
 etapaRecolhida: function (orcId, etapaId) {
 var m = this._etapasRecolhidas[orcId];
@@ -62782,7 +63104,7 @@ try { if (Auth.usuario() && typeof this._cronoSelarPendentesAgendar === "functio
 try {
 if (typeof Licenca !== "undefined") {
 var sl = Licenca.status();
-if (sl && sl.trial && sl.ativo && (sl.restanteMs || 0) < 2 * 86400000) {
+if (sl && sl.trial && sl.ativo && (sl.restanteMs || 0) < 2 * 86400000 && !(typeof Produto !== "undefined" && Produto.semTesteGratis())) {
 UI.toast("⏳ Seu teste grátis termina em " + (sl.rotulo || "breve") + ". Garanta sua licença (🔑) e não perca o ritmo — seus orçamentos continuam aqui.", "erro");
 }
 }
@@ -64049,6 +64371,7 @@ if (nd.id === "modal-bg" || (nd.classList && nd.classList.contains("modal-bg")))
 }
 if (!noModal) self.entrar();
 }
+if (self._planilhaTecla(e)) return;
 if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === "k") {
 if (self.tela === "login" || typeof BuscaUI === "undefined") return;
 if (document.fullscreenElement || document.getElementById("tour-overlay")) return;
@@ -64164,7 +64487,8 @@ if (_apM && !(e.target.closest && (e.target.closest("#sidebar") || e.target.clos
 var _conta = document.querySelector(".topbar-conta.aberto");
 if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
 if (e.target.closest && e.target.closest("select, option")) return;
-var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
+if (this._planilhaClick(e)) return;
+var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar],[data-an-voltar],[data-an-desc]");
 if (!t) return;
 if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
 if (t.hasAttribute && t.hasAttribute("data-avisos-abrir")) { if (typeof AvisosUI !== "undefined") AvisosUI.abrir(); return; }
@@ -64173,6 +64497,7 @@ if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.
 if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
 if (t.dataset.acao && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interceptaAtalho && OrcGuiaUI.interceptaAtalho(this, t)) return;
 if (t.dataset.acao && t.dataset.acao.indexOf("orcguia-") === 0) { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.acao(this, t.dataset.acao, t); return; }
+if (t.dataset.acao && t.dataset.acao.indexOf("orcprec-") === 0) { if (typeof OrcPrecosUI !== "undefined") OrcPrecosUI.acao(this, t.dataset.acao, t); return; }
 if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
 if (t.dataset.cpAdd && this._cp) {
 var pAdd = String(t.dataset.cpAdd).split("|");
@@ -64325,6 +64650,13 @@ Colunas.definirLimite(ocP, Colunas.LIMITE_PADRAO);
 this._colMenuAberto = true;
 this._persistirColunas(); this.render(); return;
 }
+if (t.dataset.acao === "pl-atalhos") { this._abrirAtalhos(); return; }
+if (/^pl-sel-/.test(t.dataset.acao || "")) { this._planilhaLote(t.dataset.acao); return; }
+if (t.dataset.acao === "pl-abc" || t.dataset.acao === "pl-abc-a") {
+this._plAbc = t.dataset.acao === "pl-abc" ? (this._plAbc ? "" : "1") : (this._plAbc === "A" ? "1" : "A");
+try { localStorage.setItem("orcapro:plAbc", this._plAbc); } catch (e) {}
+this.render(); return;
+}
 if (t.dataset.acao === "pl-compacta") {
 this._plCompacta = !this._plCompacta;
 try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
@@ -64399,7 +64731,17 @@ if (baseC) this._ajustarCoeficiente(t.dataset.coefRestaurar, baseC.base);
 }
 return;
 }
-if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem, t.dataset.viBase); return; }
+if (t.hasAttribute && t.hasAttribute("data-an-voltar")) {
+var pAn = (this._anPilha || []).pop();
+if (pAn) this.verInsumos(pAn.codigo, pAn.refItem, pAn.fonteBase, "pop");
+return;
+}
+if (t.hasAttribute && t.hasAttribute("data-an-desc")) {
+var abertoAn = t.getAttribute("aria-expanded") === "true";
+t.setAttribute("aria-expanded", abertoAn ? "false" : "true");
+return;
+}
+if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem, t.dataset.viBase, t.dataset.viNav ? "push" : undefined); return; }
 if (t.dataset.baseRemover) {
 if (!this._podeBases()) { this._recusaBases("Remover uma tabela de preço"); return; }
 var fonteRem = String(t.dataset.baseRemover).toUpperCase(), selfRem = this;
@@ -64803,12 +65145,12 @@ UI.toast(precoIns > 0
 ? "Preço de " + codIns + " salvo (" + Util.fmtMoeda(precoIns) + ") — vale em toda composição que usa este insumo."
 : "Preço de " + codIns + " removido — o insumo voltou a pendente.", precoIns > 0 ? "ok" : "erro");
 var compAberta = (document.querySelector("#modal-bg header h2") || {}).textContent || "";
-var mCod = compAberta.match(/Composição(?:\s+própria)?\s+(\S+)/);
+var mCod = compAberta.match(/composição(?:\s+própria)?\s+(\S+)/i);
 if (mCod && typeof Analitico !== "undefined" && Analitico.obter) {
 var aRe = Analitico.obter(mCod[1]);
 if (aRe) {
 var corpoRe = document.querySelector("#modal-bg .modal .body");
-if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null);
+if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null, { trilha: (this._anPilha || []).map(function (x) { return x.codigo; }) });
 }
 }
 if (UI._refreshAvisosInsumo) UI._refreshAvisosInsumo();
@@ -70610,6 +70952,164 @@ removerItem: function (etapaId, itemId) {
 Orcamento.removerItem(this.orcAtual, etapaId, itemId);
 this.persistir(); this.render();
 },
+_sel: {}, _selOrc: "", _selAncora: "",
+_selRefs: function () {
+var orc = this.orcAtual, out = [], self = this;
+if (!orc || this._selOrc !== orc.id) return out;
+var vistas = {};
+Array.prototype.forEach.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (tr) {
+var k = tr.getAttribute("data-sel");
+if (self._sel[k]) { var p = k.split("|"); out.push({ etapaId: p[0], itemId: p[1] }); vistas[k] = 1; }
+});
+for (var k2 in this._sel) {
+if (this._sel[k2] && !vistas[k2]) { var q = k2.split("|"); if (Orcamento._achaItem(orc, { etapaId: q[0], itemId: q[1] })) out.push({ etapaId: q[0], itemId: q[1] }); }
+}
+return out;
+},
+_selPintar: function () {
+var self = this, orc = this.orcAtual; if (!orc) return;
+Array.prototype.forEach.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (tr) {
+var on = !!(self._selOrc === orc.id && self._sel[tr.getAttribute("data-sel")]);
+if (on) tr.classList.add("lin-sel"); else tr.classList.remove("lin-sel");
+});
+var velha = document.getElementById("pl-sel-bar"), qv = "", ev = "";
+if (velha) { qv = (document.getElementById("pl-sel-qtd") || {}).value || ""; ev = (document.getElementById("pl-sel-etapa") || {}).value || ""; }
+var html = UI.renderSelBar(orc, this._selOrc === orc.id ? this._sel : {});
+if (velha) { if (html) velha.outerHTML = html; else velha.parentNode.removeChild(velha); }
+else if (html) {
+var col = document.querySelector("#main .pl-col") || document.getElementById("main");
+if (col) col.insertAdjacentHTML("afterbegin", html);
+}
+if (html && velha) {
+var iq = document.getElementById("pl-sel-qtd"), ie = document.getElementById("pl-sel-etapa");
+if (iq) iq.value = qv;
+if (ie && ev) ie.value = ev;
+}
+},
+_selLimpar: function () { this._sel = {}; this._selAncora = ""; this._selPintar(); },
+_selDefinir: function (refs) {
+var self = this;
+this._sel = {}; this._selOrc = this.orcAtual ? this.orcAtual.id : "";
+Util.arr(refs).forEach(function (r) { self._sel[r.etapaId + "|" + r.itemId] = true; });
+},
+_planilhaClick: function (e) {
+if (this.tela !== "editor" || this.aba !== "planilha" || !this.orcAtual || !e.target || !e.target.closest) return false;
+var tr = e.target.closest("#main tr.lin[data-sel]"); if (!tr) return false;
+if (e.target.closest("input, select, textarea, button, a, label, [data-ver-insumos], [data-memoria], [data-ajuste], [data-del-item], [data-mover-item]")) return false;
+var multi = e.ctrlKey || e.metaKey, faixa = e.shiftKey, emNumero = !!e.target.closest("td.num-item");
+if (!multi && !faixa && !emNumero) return false;
+var orc = this.orcAtual, chave = tr.getAttribute("data-sel");
+if (this._selOrc !== orc.id) { this._sel = {}; this._selOrc = orc.id; this._selAncora = ""; }
+if (faixa && this._selAncora) {
+var linhas = Array.prototype.filter.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (r) { return !/\b(oculta|abc-fora)\b/.test(r.className); });
+var ks = linhas.map(function (r) { return r.getAttribute("data-sel"); });
+var a = ks.indexOf(this._selAncora), b = ks.indexOf(chave);
+if (a > -1 && b > -1) {
+if (!multi) this._sel = {};
+for (var i = Math.min(a, b); i <= Math.max(a, b); i++) this._sel[ks[i]] = true;
+}
+try { window.getSelection().removeAllRanges(); } catch (e1) {}
+} else if (multi) {
+if (this._sel[chave]) delete this._sel[chave]; else this._sel[chave] = true;
+this._selAncora = chave;
+} else {
+var unica = this._sel[chave] && Object.keys(this._sel).length === 1;
+this._sel = {}; if (!unica) this._sel[chave] = true;
+this._selAncora = chave;
+}
+this._selPintar();
+return true;
+},
+_planilhaTecla: function (e) {
+if (this.tela !== "editor" || this.aba !== "planilha" || !this.orcAtual) return false;
+if (document.getElementById("modal-bg") || document.fullscreenElement) return false;
+var k = e.key, ctrl = e.ctrlKey || e.metaKey, alt = e.altKey, el = e.target;
+var emCampo = !!(el && el.matches && el.matches("input, textarea, select, [contenteditable='true']"));
+var trFoco = (el && el.closest) ? el.closest("#main tr.lin[data-sel]") : null;
+if (emCampo && !trFoco) return false;
+var ehIns = (k === "Insert" || (ctrl && !alt && !e.shiftKey && k === "Enter"));
+var ehDup = ctrl && !alt && !e.shiftKey && String(k).toLowerCase() === "d";
+var ehMov = alt && !ctrl && !e.shiftKey && (k === "ArrowUp" || k === "ArrowDown");
+var ehDel = (k === "Delete") && !ctrl && !alt && !e.shiftKey && !emCampo;
+var ehEsc = (k === "Escape") && !emCampo;
+if (!(ehIns || ehDup || ehMov || ehDel || ehEsc)) return false;
+if (ehEsc) { if (!Object.keys(this._sel).length) return false; this._selLimpar(); return true; }
+var orc = this.orcAtual, refs = this._selRefs();
+if (!refs.length && trFoco) { var p0 = trFoco.getAttribute("data-sel").split("|"); refs = [{ etapaId: p0[0], itemId: p0[1] }]; }
+if (!refs.length) return false;
+e.preventDefault();
+if (ehIns) {
+var ult = refs[refs.length - 1], a0 = Orcamento._achaItem(orc, ult);
+this.abrirBuscaSinapi(ult.etapaId, "", (a0 && a0.item.subEtapaId) || "", ult.itemId);
+return true;
+}
+if (ehDup) {
+var novos = [], travados = 0;
+refs.forEach(function (r) { var id = Orcamento.duplicarItem(orc, r.etapaId, r.itemId); if (id) novos.push({ etapaId: r.etapaId, itemId: id }); else travados++; });
+if (!novos.length) { UI.toast("Nada para duplicar: " + (travados ? "item do órgão não se duplica." : "linha não encontrada."), "erro"); return true; }
+this._selDefinir(novos); this.persistir(); this.render();
+UI.toast(novos.length + (novos.length === 1 ? " item duplicado" : " itens duplicados") + " logo abaixo do original" + (travados ? " (" + travados + " do órgão ficou de fora)" : "") + ".", "ok");
+return true;
+}
+if (ehMov) {
+var n = Orcamento.moverItens(orc, refs, k === "ArrowUp" ? -1 : 1);
+if (!n) return true;
+this._selDefinir(refs); this.persistir(); this.render();
+var r1 = document.querySelector("#main tr.lin-sel"); if (r1 && r1.scrollIntoView) r1.scrollIntoView({ block: "nearest" });
+return true;
+}
+if (ehDel) { this._confirmarExcluirLinhas(refs); return true; }
+return false;
+},
+_confirmarExcluirLinhas: function (refs) {
+var self = this, orc = this.orcAtual, custo = 0, n = 0;
+refs.forEach(function (r) { var a = Orcamento._achaItem(orc, r); if (a) { n++; custo += Orcamento.custoItem(a.item); } });
+if (!n) return;
+UI.modal(n === 1 ? "Excluir 1 item?" : "Excluir " + n + " itens?",
+'<p style="margin:0 0 8px">' + (n === 1 ? "O item sai" : "Os " + n + " itens saem") + ' da planilha e o custo direto do orçamento diminui <b>' + Util.esc(Util.fmtMoeda(custo)) + '</b>.</p>' +
+'<p class="muted" style="margin:0;font-size:var(--t-peq)">Medições, compras e cronograma que já usam estes itens não são apagados por aqui.</p>',
+[{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Excluir", classe: "primary", onClick: function () {
+var r = Orcamento.removerItens(orc, refs);
+UI.fecharModal(); self._selDefinir([]); self.persistir(); self.render();
+UI.toast(r.removidos + (r.removidos === 1 ? " item excluído" : " itens excluídos") + (r.travados ? "; " + r.travados + " do órgão não saem no modo licitação" : "") + ".", r.removidos ? "ok" : "erro");
+} }]);
+UI.modalConsulta();
+},
+_planilhaLote: function (acao) {
+var orc = this.orcAtual, refs = this._selRefs();
+if (!orc || !refs.length) return;
+if (acao === "pl-sel-limpar") { this._selLimpar(); return; }
+if (acao === "pl-sel-excluir") { this._confirmarExcluirLinhas(refs); return; }
+if (acao === "pl-sel-qtd") {
+var v = Util.num((document.getElementById("pl-sel-qtd") || {}).value);
+if (!(v > 0)) { UI.toast("Informe uma quantidade maior que zero.", "erro"); return; }
+var r = Orcamento.definirQuantidadeItens(orc, refs, v);
+this.persistir(); this.render();
+UI.toast("Quantidade " + Util.fmtNum(v, 2) + " definida em " + r.alterados + (r.alterados === 1 ? " item" : " itens") + (r.travados ? "; " + r.travados + " do órgão não muda de quantidade no modo licitação" : "") + ".", r.alterados ? "ok" : "erro");
+return;
+}
+if (acao === "pl-sel-mover") {
+var dest = (document.getElementById("pl-sel-etapa") || {}).value || "";
+if (!dest) { UI.toast("Escolha a etapa de destino.", "erro"); return; }
+var m = Orcamento.moverItensParaEtapa(orc, refs, dest);
+if (!m.movidos) { UI.toast(m.mesma ? "Os itens já estão nessa etapa." : "Nenhum item pôde ser movido.", "erro"); return; }
+if (this.expandirEtapa) this.expandirEtapa(dest, "");
+this._selDefinir(m.refs);
+this.persistir(); this.render();
+UI.toast(m.movidos + (m.movidos === 1 ? " item movido" : " itens movidos") + " para o fim da etapa" + (m.travados ? "; " + m.travados + " do órgão ficou de fora" : "") + ".", "ok");
+}
+},
+_abrirAtalhos: function () {
+var L = [["Clique no número do item", "seleciona a linha"], ["Ctrl + clique", "soma ou tira uma linha da seleção"], ["Shift + clique", "seleciona a faixa até a linha clicada"],
+["Insert ou Ctrl + Enter", "inserir item abaixo da linha"], ["Ctrl + D", "duplicar a linha (ou as selecionadas)"], ["Alt + ↑ / ↓", "mover a linha (ou as selecionadas)"],
+["Delete", "excluir, com confirmação"], ["Esc", "limpar a seleção"]];
+UI.modal("Atalhos da planilha",
+'<p class="muted" style="margin:0 0 10px;font-size:var(--t-peq)">Valem na linha em foco ou nas linhas selecionadas. Delete não age enquanto você digita numa célula.</p>' +
+'<dl class="atalhos">' + L.map(function (x) { return '<dt>' + Util.esc(x[0]) + '</dt><dd>' + Util.esc(x[1]) + '</dd>'; }).join("") + '</dl>',
+[{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+UI.modalConsulta();
+},
 fecharValor: function () {
 var self = this, orc = this.orcAtual;
 if (!orc) return;
@@ -71853,8 +72353,25 @@ fonte: f, tipo: (UI.el("bs-tipo") || {}).value || "", deson: (UI.el("bs-deson") 
 }));
 } catch (e) {}
 },
-abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId) {
+_sugestoesHtml: function (q, sug, nRes) {
+if (!sug || String(q).trim().length < 3) return "";
+var L = sug.sugestoes || [];
+if (!L.length) {
+return nRes ? '<div class="bs-sug-nada" role="status">Nenhuma composição encontrada com boa correspondência para “' + Util.esc(q) + '”. Veja os resultados abaixo.</div>' : "";
+}
+return '<section class="bs-sug" aria-label="Melhores correspondências"><h3 class="bs-sug-tit">Melhores correspondências</h3>' +
+L.map(function (r) {
+var it = r.item, niv = r.nivel || {};
+var cls = niv.rotulo === "Alta" ? "alta" : (niv.rotulo === "Média" ? "media" : "baixa");
+return '<div class="sinapi-result bs-sug-it" role="button" tabindex="0" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
+'<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label || r.fonte) + '</span> ' + Util.esc(it.codigo) + ' &nbsp;' + Util.esc(Util.unidadeExibir(it.unidade)) + '</div>' + Util.esc(it.descricao) + '</div>' +
+'<div class="bs-sug-dir"><div class="preco">' + Util.fmtMoeda(it.custoUnitario) + '</div>' +
+'<span class="bs-conf ' + cls + '" title="' + Util.esc(r.motivo || "") + '">Confiança ' + Util.esc(String(niv.rotulo || "").toLowerCase()) + ' ' + r.confianca + '%</span></div></div>';
+}).join("") + '</section>';
+},
+abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId, aposId) {
 this._addItemEtapaId = etapaId;
+this._addItemApos = aposId || "";
 this._addItemSubId = subEtapaId || "";
 var self = this;
 var corpo =
@@ -71924,8 +72441,12 @@ var box = UI.el("bs-results");
 if (!box) return;
 if (q.length < 2) { box.innerHTML = '<div class="vazio">Digite ao menos 2 letras…</div>'; return; }
 var f = ler();
-var res = (typeof Bases !== "undefined") ? Bases.buscar(q, f)
-: Sinapi.buscar(q, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
+var buscarFn = function (qq) {
+return (typeof Bases !== "undefined") ? Bases.buscar(qq, f)
+: Sinapi.buscar(qq, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
+};
+var res = buscarFn(q);
+var sugHtml = self._sugestoesHtml(q, (typeof Escopo !== "undefined" && Escopo.sugerirBusca) ? Escopo.sugerirBusca(q, buscarFn, 3) : null, res.length);
 if (!res.length) {
 var dica = "", temDesonerada = false;
 if (f.tipo === "insumo") {
@@ -71937,7 +72458,7 @@ temDesonerada = true;
 dica = " — nenhuma base carregada declara o regime não desonerado para este termo";
 }
 var ehIns0 = f.tipo === "insumo";
-box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>" +
+box.innerHTML = sugHtml + '<div class="vazio">' + (f.tipo === "insumo" ? "Nenhum insumo encontrado" : "Nenhuma composição encontrada") + ' para "' + Util.esc(q) + '"' + dica + ".</div>" +
 (temDesonerada ? '<button type="button" class="btn primary" id="bs-instalar-des" style="width:100%;margin-top:8px">' +
 (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + ' Instalar a SINAPI desonerada deste estado (3 MB)</button>' : "") +
 '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio com esta descrição" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria com esta descrição") + '</button>';
@@ -71976,9 +72497,10 @@ Util.esc(it.descricao) + "</div>" +
 }).join("");
 html2 += (res.length > ate ? '<button type="button" class="btn ghost" id="bs-mais" style="width:100%;margin-top:8px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Mostrar mais ' + Math.min(PAG, res.length - ate) + " (de " + (res.length - ate) + " restantes)</button>" : "") +
 '<button type="button" class="btn ghost" id="bs-criar-cp" style="width:100%;margin-top:6px;font-size:12px">Nenhum serve? ' + (ehInsR ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria") + ' com esta descrição</button>';
-box.innerHTML = html2;
+box.innerHTML = sugHtml + html2;
 Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
 row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
+row.onkeydown = function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); self.escolherItemSinapi(row.dataset.pick); } };
 });
 var mais = UI.el("bs-mais");
 if (mais) mais.onclick = function () { pintarResultados(ate + PAG); };
@@ -72061,7 +72583,7 @@ var lim = Auth.limite("limiteItensPorOrcamento");
 if (totalItens >= lim) { UI.toast("Limite de itens do plano atingido. Faça upgrade.", "erro"); return; }
 var self = this;
 var termoBusca = String((UI.el("bs-q") || {}).value || "");
-var etapaAlvo = this._addItemEtapaId, subAlvo = this._addItemSubId || "";
+var etapaAlvo = this._addItemEtapaId, subAlvo = this._addItemSubId || "", aposAlvo = this._addItemApos || "";
 UI.fecharModal();
 self._qiItem = item; self._qiMemoria = null;
 function lancar(continuar) {
@@ -72080,13 +72602,18 @@ if (modo !== "total") {
 var rm = Orcamento.aplicarModoCusto(itemAjustado, modo);
 if (!rm.ok) { UI.toast(rm.erro, "erro"); return; }
 }
+var _antes = {}, _etA = Orcamento._etapa(self.orcAtual, etapaAlvo);
+Util.arr(_etA && _etA.itens).forEach(function (x) { _antes[x.id] = 1; });
 Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
+var _novoId = "";
+Util.arr(_etA && _etA.itens).forEach(function (x) { if (!_antes[x.id]) _novoId = x.id; });
+if (aposAlvo && _novoId) Orcamento.inserirApos(self.orcAtual, etapaAlvo, _novoId, aposAlvo);
 if (self.expandirEtapa) self.expandirEtapa(etapaAlvo, subAlvo);
 var gIt = self.persistir(); UI.fecharModal(); self.render();
 if (!self._gravou(gIt)) return;
 if (continuar) {
 UI.toast("Item adicionado — continue lançando.", "ok");
-self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo);
+self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo, aposAlvo ? _novoId : "");
 } else {
 UI.toast("Item adicionado.", "ok");
 }
@@ -72270,9 +72797,12 @@ if (self._gravou(gRx)) UI.toast("✅ " + n + " mudança(s) do Excel aplicadas ao
 } }
 ]);
 },
-verInsumos: function (codigo, refItem, fonteBase) {
+verInsumos: function (codigo, refItem, fonteBase, nav) {
 var self = this;
 var ufAtivo = self._baseUf || Sinapi.uf || null;
+if (nav === "push" && self._anAtual) { (self._anPilha = self._anPilha || []).push(self._anAtual); }
+else if (nav !== "pop") { self._anPilha = []; }
+self._anAtual = { codigo: String(codigo), refItem: refItem, fonteBase: fonteBase };
 UI._ajusteCtx = null;
 if (refItem && this.orcAtual) {
 var pv = String(refItem).split("|");
@@ -72312,13 +72842,12 @@ coeficiente: Util.num(i.coeficiente), custoUnitario: Util.num(i.custoUnitario),
 custoTotal: Util.num(i.coeficiente) * Util.num(i.custoUnitario), categoria: normCat(i.categoria) };
 })
 };
-var bgP = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição própria " + String(codigo), UI.renderInsumos(aP, ufAtivo), [
+var bgP = UI.modal("Analítico do item — composição própria " + String(codigo), UI.renderInsumos(aP, ufAtivo), [
 { texto: "" + (typeof Icones !== "undefined" ? Icones.get("editar", 15) : "") + " Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
-{ texto: "⧉ Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
+{ texto: "" + (typeof Icones !== "undefined" ? Icones.get("copiar", 15) : "") + " Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
 { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
 ]);
-UI.modalConsulta();
-var mP = bgP.querySelector(".modal"); if (mP) mP.style.maxWidth = "900px";
+UI.modalAnalitico(bgP);
 return;
 }
 var _regItem = null;
@@ -72357,11 +72886,11 @@ UI.modal("ℹ️ Sem composição detalhada", '<p style="margin:0 0 8px">O item 
 [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
 return;
 }
-var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição " + codigo, UI.renderInsumos(a, ufAtivo), [
-{ texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
-{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+var bg = UI.modal("Analítico do item — composição " + codigo, UI.renderInsumos(a, ufAtivo, { trilha: (self._anPilha || []).map(function (x) { return x.codigo; }) }), [
+{ texto: "Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
+{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
 ]);
-var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+UI.modalAnalitico(bg);
 }
 var urls = self._prepararAnalitico(null, null, _regItem);
 if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
@@ -72404,21 +72933,20 @@ return;
 var avisos = [];
 var cc = AnaliticoBases.conferirCompetencia(meta, base);
 if (!cc.mesmo) {
-avisos.push('<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
-' Detalhamento de <b>' + Util.esc(cc.mesAnalitico) + '</b>; a base ' + Util.esc(rot) + ' que precifica o orçamento é de <b>' + Util.esc(cc.mesBase) +
-'</b>. Os coeficientes valem; os preços dos insumos são do mês do detalhamento.</div>');
+avisos.push('<div class="an-aviso" role="note"><span class="an-aviso-ic">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+'</span><div>Detalhamento de <b>' + Util.esc(cc.mesAnalitico) + '</b>; a base ' + Util.esc(rot) + ' que precifica o orçamento é de <b>' + Util.esc(cc.mesBase) +
+'</b>. Os coeficientes valem; os preços dos insumos são do mês do detalhamento.</div></div>');
 }
 if (meta && meta.compDiverge) {
-avisos.push('<div class="muted mb" style="font-size:12px">O preço das composições da base ' + Util.esc(rot) + ' instalada vem da tabela de <b>' +
-Util.esc(meta.rotuloComp) + '</b> (o rótulo da base diz ' + Util.esc(meta.mes) + '), e este detalhamento é dessa mesma tabela.</div>');
+avisos.push('<p class="an-nota">O preço das composições da base ' + Util.esc(rot) + ' instalada vem da tabela de <b>' +
+Util.esc(meta.rotuloComp) + '</b> (o rótulo da base diz ' + Util.esc(meta.mes) + '), e este detalhamento é dessa mesma tabela.</p>');
 }
-var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — " + rot + " " + codigo,
-UI.renderInsumos(a, (meta && meta.uf) || "", { fonte: fonte, rotulo: rot, competencia: meta && meta.rotuloComp, uf: meta && meta.uf, avisos: avisos }), [
-{ texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo), fonte); } },
-{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+var bg = UI.modal("Analítico do item — " + rot + " " + codigo,
+UI.renderInsumos(a, (meta && meta.uf) || "", { fonte: fonte, rotulo: rot, competencia: meta && meta.rotuloComp, uf: meta && meta.uf, avisos: avisos, trilha: (self._anPilha || []).map(function (x) { return x.codigo; }) }), [
+{ texto: "Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo), fonte); } },
+{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
 ]);
-UI.modalConsulta();
-var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+UI.modalAnalitico(bg);
 }
 if (!base) {
 semDetalhe("Base " + rot + " não instalada", '<p style="margin:0 0 8px">Para abrir o detalhamento, instale a base <b>' + Util.esc(rot) + '</b> em Tabelas.</p>');
@@ -73959,6 +74487,7 @@ obraNome: (orc.obra && orc.obra.nome) || "",
 numero: orc.numero || "",
 data: hoje,
 referencia: Proposta.referenciaParaModelo ? Proposta.referenciaParaModelo(orc) : {},
+bdi: (m.paginas || []).some(function (x) { return x.tipo === "bdi"; }) && Proposta.bdiParaModelo ? Proposta.bdiParaModelo(orc) : undefined,
 textos: (function () {
 var wm = (temEmp && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : "";
 var nd = (temEmp && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
@@ -74679,8 +75208,11 @@ if (typeof Telemetria !== "undefined" && Telemetria.validarContatos) Telemetria.
 _avisoTesteEncerrado: function () {
 var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
 var self = this;
-UI.modal("⏰ Seu período de teste terminou",
-'<p style="margin:0 0 10px">Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+var cpl = false;
+try { cpl = typeof Produto !== "undefined" && Produto.semTesteGratis(); } catch (eP) {}
+if (cpl) srv = "";
+UI.modal(cpl ? "Acesso do órgão não liberado" : "⏰ Seu período de teste terminou",
+'<p style="margin:0 0 10px">' + (cpl ? 'Para continuar editando e exportando, ative a chave de acesso do CPLPRO (ou fale com a RA Engenharia).' : 'Para continuar editando e exportando, ative uma licença do OrçaPRO.') + '</p>' +
 '<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
 { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "Já tenho a chave", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirLicenca(); } }
@@ -80229,5 +80761,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=65b5a6dcf8"},{"src":"js/bim-pacote.js?v=175c6e3c25","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=820386fed5"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=855d0ae16a"},{"src":"js/bim-pacote.js?v=175c6e3c25","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d75cc327f4"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

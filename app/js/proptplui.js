@@ -516,7 +516,7 @@
     try {
       var mm = modelo ? T.modelo(modelo) : null;
       usaPadrao = !!(mm && mm.paginas.some(function (p) {
-        return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades)$/.test(p.tipo)
+        return /^(capa_classica|apresentacao|escopo_etapas|incluso|premissas|comercial|responsabilidades|bdi)$/.test(p.tipo)
           || (p.tipo === "investimento" && p.nivel) || (p.tipo === "cronograma" && (p.modo === "completo" || p.modo === "gantt"));
       }));
     } catch (eU) { usaPadrao = false; }
@@ -524,6 +524,10 @@
       d.obraNome = "Obra de exemplo";
       d.numero = "0001/26";
       d.referencia = { bases: "SINAPI 09/2026 (UF de exemplo)", nBases: 1, regime: "desonerado", bdiPct: 25 };
+      /* números de exemplo da página "Composição do BDI" — as parcelas do modelo "Padrão" do sistema */
+      d.bdi = (typeof Bdi !== "undefined" && Bdi.composicaoDoOrcamento)
+        ? (function () { var o = { bdi: { modeloId: "padrao", params: Bdi.paramsDoModelo("padrao") } }; o.bdi.percentual = Bdi.calcular(o.bdi.params); var c = Bdi.composicaoDoOrcamento(o); c.formula = Bdi.FORMULA_TCU; return c; })()
+        : { percentual: 25, parcelas: [], formula: "" };
       d.textos = {
         marcaDagua: (typeof Empresa !== "undefined" && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : d.empresa.nome,
         credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",

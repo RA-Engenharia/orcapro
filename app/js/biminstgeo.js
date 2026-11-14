@@ -366,7 +366,7 @@
   };
   var PAPEL = {
     latao: { cor: "#C9A44C", rug: 0.3, met: 1, verniz: 0, nome: "latão" },
-    cromado: { cor: "#E6E9EC", rug: 0.1, met: 1, verniz: 0, nome: "cromado" },
+    cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },   /* LOTE 3-5: rug 0,1 / met 1 espelhava o chão escuro do ambiente e o cromado saía PRETO no print; rug 0,3 / met 0,85 = cromado polido com o reflexo difuso */
     volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
     azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
     grelha: { cor: "#DADDE0", rug: 0.2, met: 1, verniz: 0, nome: "grelha inox" },
@@ -1656,9 +1656,31 @@
     /* castelo: eixo da haste (+y) em (xc, zc); fase em volta de y a partir de z (u = z, w = x) */
     var cs = rg.castelo || {}, pK = function (s) { return W(cs.xc || 0, s, cs.zc || 0); };
     var mCast = /acabamento/.test(a.variante) ? mk : mc;
-    revol(mCast, cs.ext, pK, fr); hexes(mCast, cs.hex, pK, zz, d, fr);
+    /* LOTE 3-5 (13/11/2026, prints do Rogério img 9/10): no ACABAMENTO a família medida termina num CILINDRO liso Ø41 (o "volante" simplificado
+       do objeto BIM) e traz placas de contorno quebrado (a grade escura no print). O acabamento real (Docol/Deca, linha de pressão 3/4") é a
+       canopla cônica (já no perfil medido, Ø74) + o VOLANTE de 6 gomos com a tampa abaulada. Fica o perfil medido ATÉ a canopla (topo da base
+       + canopla, as cotas da família) e o volante vem por cima, no mesmo comprimento total (até o topo medido da haste). */
+    var extCast = cs.ext, volante = null;
+    if (/acabamento/.test(a.variante) && cs.ext && cs.ext.length > 4) {
+      var iV = -1; for (var iq = 1; iq < cs.ext.length; iq++) if (cs.ext[iq][1] > cs.ext[iq - 1][1] + 4 && cs.ext[iq][0] > (cs.ext[0][0] + cs.ext[cs.ext.length - 1][0]) / 2) { iV = iq; break; }
+      if (iV > 0) { volante = { s0: cs.ext[iV][0], s1: cs.ext[cs.ext.length - 1][0], r: Math.max(cs.ext[iV][1], 16) }; extCast = cs.ext.slice(0, iV).concat([[cs.ext[iV][0], cs.ext[iV - 1][1] * 0.6]]); }
+    }
+    revol(mCast, extCast, pK, fr); hexes(mCast, cs.hex, pK, zz, d, fr);
+    var mb = new Malha();
+    if (volante) {
+      /* CRUZETA cromada (img 9/10 do Rogério: acabamento Docol/Deca de pressão): cubo central, 4 alavancas com a ponta abaulada e o BOTÃO
+         indicador azul no centro. Ocupa o mesmo comprimento medido do "volante" da família (do topo da canopla ao topo da haste). */
+      var V0 = volante.s0, V1 = volante.s1, Lv = V1 - V0, rCub = Math.max(volante.r * 0.62, 11), rBr = Math.max(volante.r * 1.55, 30), eBr = 5.5;
+      varrer(mk, reta(pK(V0), fr), escala([[0, 0], [0, rCub * 0.8], [Lv * 0.15, rCub], [Lv * 0.78, rCub], [Lv * 0.9, rCub * 0.86], [Lv * 0.9, 0]]), segs, false);   /* cubo */
+      var w1 = zz, w2 = d;
+      [0, 1, 2, 3].forEach(function (k) {
+        var an = Math.PI / 4 + k * Math.PI / 2, u = add(mul(w1, Math.cos(an)), mul(w2, Math.sin(an))), base = pK(V0 + Lv * 0.5);
+        varrer(mk, reta(base, u), escala([[0, 0], [0, eBr], [rBr * 0.82, eBr * 1.15], [rBr * 0.93, eBr * 1.05], [rBr, eBr * 0.55], [rBr, 0]]), o.lod === "longe" ? 8 : 14, false);   /* alavanca */
+      });
+      varrer(mb, reta(pK(V0 + Lv * 0.9), fr), escala([[0, 0], [0, rCub * 0.7], [Lv * 0.06, rCub * 0.66], [Lv * 0.1, rCub * 0.4], [Lv * 0.1, 0]]), segs, false);   /* botão indicador */
+    }
     /* placa (borboleta / chave): o contorno no plano (u, w) e a espessura no eixo da placa */
-    (rg.placas || []).forEach(function (pl) {
+    (volante ? [] : (rg.placas || [])).forEach(function (pl) {   /* acabamento: as placas de contorno quebrado da família medida saem (ver acima) */
       if (!pl.contorno || pl.contorno.length < 3) return;
       var ax = pl.eixo, EIX = [d, fr, zz], ua = (ax + 1) % 3, wa = (ax + 2) % 3, P2 = pl.contorno.map(function (q) { return [q[0], q[1]]; });
       var area = 0; for (var i = 0; i < P2.length; i++) { var j = (i + 1) % P2.length; area += P2[i][0] * P2[j][1] - P2[j][0] * P2[i][1]; }
@@ -1673,6 +1695,7 @@
     var latao = /bruto|acabamento/.test(a.variante), partes = [cascaSaida(mc, latao ? "latao" : "corpo")];
     if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
     if (mp.idx.length) partes.push(cascaSaida(mp, latao ? "latao" : "corpo"));
+    if (mb.idx.length) partes.push(cascaSaida(mb, "azul"));
     var Lc = rg.conectores.length >= 2 ? Math.abs(rg.conectores[1].x - rg.conectores[0].x) : 0;
     /* as cotas da peça MEDIDA (corpo = o maior diâmetro no meio; altura = do fundo do corpo ao topo) e, onde a ficha da base
        cota diferente, a divergência registrada (decisão da coordenação: vale a família, que é o produto) */
@@ -1723,6 +1746,17 @@
     var sx = [[0, 0], [0, rHex], [Math.min(h * 0.3, 9), rHex], [Math.min(h * 0.3, 9), 0]];
     varrer(mc, reta(add(C, mul(d, -h * MM)), d), escala(sx), 6, false);
     varrer(mc, reta(add(C, mul(d, (h - Math.min(h * 0.3, 9)) * MM)), d), escala(sx), 6, false);
+    /* LOTE 3-5 (13/11/2026, print do Rogério): a VÁLVULA DE RETENÇÃO saía com castelo e VOLANTE DE RODA (cara de registro de gaveta) — a retenção
+       de portinhola não tem comando: é o corpo com a TAMPA (bujão sextavado) por cima, onde fica a portinhola. Proporção do desenho
+       (sem ficha cotada da retenção de bronze no catálogo: a conferir). */
+    if (a.acessorio === "valvula_retencao" && a.variante !== "pe_crivo") {
+      var hT = rBojo + 16, rT = rBojo * 0.82, fr0 = fr;
+      if (Math.abs(d[1]) < 0.9) fr = [0, 1, 0];   /* no tubo deitado a tampa fica PARA CIMA (a portinhola abre por gravidade), não para a frente */
+      varrer(mc, reta(C, fr), escala([[0, 0], [0, rT * 0.9], [hT - 6, rT * 0.9], [hT - 6, 0]]), seg, false);   /* pescoço da tampa */
+      varrer(mc, reta(add(C, mul(fr, (hT - 6) * MM)), fr), escala([[0, 0], [0, rT * 1.08], [7, rT * 1.08], [7, 0]]), 6, false);   /* bujão sextavado */
+      varrer(mc, reta(add(C, mul(fr, (hT + 1) * MM)), fr), escala([[0, 0], [0, rT * 0.5], [2.5, rT * 0.45], [3, 0]]), seg, false);
+      return { partes: [cascaSaida(mc, "latao")], frente: fr0, aConferir: true, cotas: { origem: "desenho", aConferir: "retenção de portinhola: corpo e tampa em proporção do DE (sem ficha cotada da de bronze)" } };
+    }
     /* castelo (perpendicular), porca de aperto sextavada, haste */
     var hc = rc0 ? rc0.altura - rc0.corpo / 2 : de * 1.1 + 22, rc = rc0 ? rBojo * 0.8 : de * 0.42 + 6;
     if (rc0) {   /* castelo da base: pescoço, porca sextavada larga, bucha e a haste estriada até o topo cotado */

@@ -544,7 +544,7 @@
       var cg = ctx.catalogos || {};
       if (cat === "porta" || cat === "janela" || cat === "generico") {
         /* a família da peça vem primeiro, com os tipos dela (como antes) */
-        arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id }); });
+        arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id, legado: !!t.legado }); });
         /* porta e janela: TODAS as outras famílias da mesma categoria (trocar por outra mantém a peça no mesmo vão) */
         if (cat !== "generico" && typeof cg.familiasDaCategoria === "function") {
           arr(cg.familiasDaCategoria(cat)).forEach(function (f) {
@@ -762,7 +762,7 @@
       }
       if (global.BimForro) cat.forro = global.BimForro.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { forroTipoId: t.id } }; });   /* P2-B */
       if (global.BimTelhado) cat.telhado = global.BimTelhado.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { telhadoTipoId: t.id } }; });   /* P3 */
-      cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome }; }) : []; };
+      cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome, legado: !!t.legado }; }) : []; };
       /* SELETOR DE TIPO DE VERDADE (29/10/2026): todas as famílias carregadas da MESMA categoria (biblioteca do sistema + famílias do
          projeto), cada uma com os tipos dela — janela só troca por janela, porta por porta */
       cat.familiasDaCategoria = function (categoria) {
@@ -1086,6 +1086,9 @@
       var famId = null, c0 = elDe(ctx.estado, md.ids[0]); if (c0 && c0.famId) famId = c0.famId;
       var l = this.tiposDisponiveis(ctx, md.tipo.cat, famId), q = txt(busca).trim().toLowerCase();
       if (q) l = l.filter(function (t) { return (txt(t.familia) + " " + txt(t.nome)).toLowerCase().indexOf(q) >= 0; });
+      /* LOTE 3-5 (13/11/2026): torneira e misturador com conjunto ENXUTO — os demais modelos do catálogo ficam "legado" (fora da lista,
+         achados pela busca); o tipo continua na família, então o projeto salvo abre igual e o orçamento não muda */
+      else { var atual = c0 && c0.tipoId != null ? String(c0.tipoId) : ""; l = l.filter(function (t) { return !t.legado || String(t.tipoFam) === atual; }); }   /* o tipo legado JÁ usado pela peça continua na lista */
       /* pilar e viga: o catálogo de perfis (AISC, js/perfisaco.js) entra na busca */
       var PA = global.PerfisAco;
       if (q && PA && PA.buscar && (md.tipo.cat === "pilar" || md.tipo.cat === "viga")) {

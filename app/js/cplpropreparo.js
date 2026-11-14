@@ -32,6 +32,7 @@
     if (!R) R = require("./cplproregras.js");
     if (!Cplpro) Cplpro = require("./cplpro.js");
     if (!Fluxo) Fluxo = require("./cplprofluxo.js");
+    if (!global.CplproOrgao) { try { global.CplproOrgao = require("./cplproorgao.js"); } catch (eO) {} }
     if (!Docs) { try { Docs = require("./cplprodocs.js"); } catch (e) { Docs = null; } }
     if (!Importador) { try { Importador = require("./importador.js"); } catch (e2) { Importador = null; } }
   }
@@ -575,6 +576,9 @@
       });
     } else E.semPermissao.parametros = true;
 
+    /* ---- 7b. cadastro do órgão + padrões de rotina (SÓ quando a tela pede: ctx.padroes) — cada um com o selo «sugerido — confira» ---- */
+    if (c.padroes) escreverPadroes(q, rastro, E, agora, pode, c);
+
     /* leva L: orçamento repreçado, base escolhida, obra e oferta também contam como «mudou» (senão a rodada que só repreça não grava) */
     if (prev && (!igual(prev.orcamento, q.preparo.orcamento) || !igual(prev.baseCtx, q.preparo.baseCtx) || !igual(prev.obra, q.preparo.obra) || !igual(prev.oferta, q.preparo.oferta))) E.mudou = true;
     /* ---- 8. marca de data só anda quando algo mudou (idempotência) ---- */
@@ -586,6 +590,45 @@
       return { p: clone(p), resumo: q.preparo.resumo, rodada: rodada, mudou: false };
     }
     return { p: q, resumo: q.preparo.resumo, rodada: rodada, mudou: E.mudou };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * CADASTRO DO ÓRGÃO + PADRÕES DE ROTINA (js/cplproorgao.js) — mesmo contrato do `campo` de `aplicar`:
+   * campo vazio ou ainda igual ao que o sistema escreveu → escreve/atualiza (com rastro e selo); a pessoa editou → «mantido».
+   * ⚠ O número do edital só nasce em campo VAZIO: renumerar um edital que já tem número, sozinho, seria trocar a identidade do ato.
+   * ------------------------------------------------------------------ */
+  function anoDe(agora) { var m = /^(\d{4})/.exec(String(agora || "")); return m ? Number(m[1]) : new Date().getFullYear(); }
+  function escreverPadroes(q, rastro, E, agora, pode, c) {
+    var Org = global.CplproOrgao;
+    if (!Org) return;
+    var lista = Org.padroes(q, { orgao: c.orgao || null, processos: c.processos || [], ano: anoDe(agora), semNumero: !!c.semNumero });
+    lista.forEach(function (x) {
+      var passo = passoDe(x.caminho);
+      if (!pode(passo)) { E.semPermissao[passo] = true; return; }
+      var atual = pegar(q, x.caminho), rec = rastro[x.caminho];
+      if (x.caminho === "edital.numero" && !semValor(atual)) return;
+      if (igual(atual, x.valor)) { if (!rec) return; if (rec && !igual(rec.valor, x.valor)) { rastro[x.caminho] = { valor: clone(x.valor), arquivo: null, regra: x.regra, em: agora }; E.mudou = true; } return; }
+      if (semValor(atual) || (rec && igual(atual, rec.valor))) {
+        colocar(q, x.caminho, clone(x.valor));
+        rastro[x.caminho] = { valor: clone(x.valor), arquivo: null, regra: x.regra, em: agora };
+        E.porPasso[passo] = (E.porPasso[passo] || 0) + 1;
+        if (E.soltos[passo] === undefined && Fluxo && Fluxo.soltarConferencia(q, passo)) E.soltos[passo] = true;
+        E.mudou = true;
+        if (rec) E.atualizados++; else E.preenchidos++;
+      } else E.mantidos.push({ caminho: x.caminho, passo: passo, motivo: "a pessoa editou" });
+    });
+  }
+  /* uso fora da montagem (processo criado à mão; órgão que editou o cadastro): devolve { p, mudou, preenchidos, atualizados, mantidos } */
+  function aplicarPadroes(p, ctx) {
+    var c = ctx || {}, agora = c.agora || null, q = clone(p);
+    var permitidos = c.permitidos || null;
+    function pode(passo) { return !permitidos || permitidos[passo] !== false; }
+    if (!q.preparo || !q.preparo.campos) q.preparo = { versao: 1, campos: {}, arquivos: [], resumo: null, atualizadoEm: null, orcamento: null, baseCtx: null, obra: null, oferta: null };
+    var E = { preenchidos: 0, atualizados: 0, mantidos: [], porPasso: {}, soltos: {}, semPermissao: {}, mudou: false };
+    escreverPadroes(q, q.preparo.campos, E, agora, pode, { orgao: c.orgao, processos: c.processos, semNumero: c.semNumero });
+    if (!E.mudou) return { p: clone(p), mudou: false, preenchidos: 0, atualizados: 0, mantidos: E.mantidos };
+    q.preparo.atualizadoEm = agora;
+    return { p: q, mudou: true, preenchidos: E.preenchidos, atualizados: E.atualizados, mantidos: E.mantidos };
   }
 
   /* ------------------------------------------------------------------ *
@@ -706,6 +749,14 @@
    * É a régua do pedido «meça quantos campos foram preenchidos antes e depois».
    * ------------------------------------------------------------------ */
   var PORQUE_ORGAO = "Dado administrativo do órgão: nenhum documento da pasta traz.";
+  /* os 5 campos do TR que ficam em branco de propósito: cada um diz O QUE o órgão decide */
+  var PORQUE_CAMPO = {
+    inicioExecucao: "Decisão do órgão: em quantos dias da assinatura do contrato ou da ordem de serviço a obra deve começar.",
+    garantiaServicoMeses: "Decisão do órgão: meses de garantia complementar do serviço; 0 vale só a garantia legal (Código Civil e CDC).",
+    prazoLiquidacao: "Decisão do órgão: em quantos dias úteis o setor financeiro liquida a despesa depois do ateste.",
+    indiceAtraso: "Decisão do órgão: índice de correção monetária por atraso de pagamento (INCC, IPCA ou IGP-M).",
+    qualificacaoEconomica: "Decisão do órgão: capital ou patrimônio líquido mínimo exigido, até o limite de 10% do valor estimado."
+  };
   var PORQUE_LEI = "A lei reserva a decisão ao órgão (o sistema só sugere, com «Por quê?»).";
   function inventario(p) {
     var campos = [], q = p || {}, rastro = q.preparo && q.preparo.campos ? q.preparo.campos : {};
@@ -749,7 +800,7 @@
     if (D && D.CAMPOS) D.CAMPOS.forEach(function (c) { if (!D.campoAplica || D.campoAplica(c.id, q)) trCampos.push(c); });
     trCampos.forEach(function (c) {
       var o = c.onde === "tr" ? q.tr : q.edital, v = o ? o[c.id] : null;
-      var porque = PORQUE_ORGAO;
+      var porque = PORQUE_CAMPO[c.id] || PORQUE_ORGAO;
       if (c.id === "local") porque = "O endereço do terreno não consta nos documentos.";
       else if (c.id === "prazoRecProvisorio" || c.id === "prazoRecDefinitivo") porque = "O critério de recebimento do memorial não diz o prazo em dias.";
       add((c.onde === "tr" ? "tr." : "edital.") + c.id, "Passo 9 — " + c.rotulo, "minuta", v, porque);
@@ -761,10 +812,10 @@
 
   var CplproPreparo = {
     lerBasePlanilha: lerBasePlanilha, lerArt: lerArt, lerPlanilhaPdf: lerPlanilhaPdf, dadosObra: dadosObra, decidirObra: decidirObra, assinaturaPasta: assinaturaPasta, inventario: inventario, nomeLimpo: nomeLimpo,
-    DECISOES: DECISOES, CONTAS: CONTAS,
+    DECISOES: DECISOES, CONTAS: CONTAS, PORQUE_CAMPO: PORQUE_CAMPO,
     lerMemorial: lerMemorial, lerPlanilha: lerPlanilha, lerCronograma: lerCronograma,
     analisar: analisar, planoOrcamento: planoOrcamento, assinaturaOrc: assinaturaOrc,
-    aplicar: aplicar, seloSistema: seloSistema, situacao: situacao
+    aplicar: aplicar, aplicarPadroes: aplicarPadroes, seloSistema: seloSistema, situacao: situacao
   };
   global.CplproPreparo = CplproPreparo;
   if (typeof module !== "undefined" && module.exports) module.exports = CplproPreparo;

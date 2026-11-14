@@ -347,7 +347,10 @@
         { nome: "Tensao", tipoDado: "texto", escopo: "tipo", valor: "Monofásica 220 V", grupo: "Dados" },
         { nome: "Material_corpo", tipoDado: "material", escopo: "tipo", valor: "Polietileno verde", grupo: "Materiais" },
         { nome: "Material_tampa", tipoDado: "material", escopo: "tipo", valor: "Polietileno amarelo", grupo: "Materiais" },
-        { nome: "Material_tubo", tipoDado: "material", escopo: "tipo", valor: "PVC esgoto", grupo: "Materiais" }
+        { nome: "Material_tubo", tipoDado: "material", escopo: "tipo", valor: "PVC esgoto", grupo: "Materiais" },
+        { nome: "Fabricante", tipoDado: "texto", escopo: "tipo", valor: "Águas Claras Engenharia", grupo: "Fonte" },
+        { nome: "Fonte_cota", tipoDado: "texto", escopo: "tipo", valor: "Fonte RA da família bombup230.json (06/10/2026, pasta Padrao RA - Revit): corpo Ø700 × 980 mm, gargalo Ø400 a 885 mm, entrada DN 100 a 816, recalque Ø50 a 715, ventilação Ø50 a 826 mm do fundo; volume 325 L e 2,0 HP do fabricante. As cotas das bocas são leitura das fotos (a ficha publicada não traz desenho cotado): conferir na entrega.", grupo: "Fonte" },
+        { nome: "Nivel_fonte", tipoDado: "texto", escopo: "tipo", valor: "B", grupo: "Fonte" }
       ],
       tipos: [
         { id: "mono220", nome: "2,0 HP - Monofásica 220 V", valores: { Tensao: "Monofásica 220 V" } },
@@ -356,7 +359,9 @@
       ],
       solidos: [
         { id: "corpo", nome: "Reservatório", forma: "cilindro", eixo: "y", x: "0", y: "0", z: "0", raio: "Diametro_corpo/2", altura: "Altura_corpo", material: "Material_corpo" },
-        { id: "ombro", nome: "Ombro (aproximado)", forma: "cilindro", eixo: "y", x: "0", y: "Altura_corpo", z: "0", raio: "(Diametro_corpo + Diametro_gargalo)/4", altura: "Cota_gargalo - Altura_corpo", material: "Material_corpo" },
+        /* LOTE 3-5 (13/11/2026): o ombro em 2 degraus (silhueta da foto do fabricante: Ø700 → Ø400 em 180 mm) — só cilindros, o contrato do exportador (js/familiarevit.js) */
+        { id: "ombro", nome: "Ombro (degrau de baixo)", forma: "cilindro", eixo: "y", x: "0", y: "Altura_corpo", z: "0", raio: "Diametro_corpo*0.44", altura: "(Cota_gargalo - Altura_corpo)/2", material: "Material_corpo" },
+        { id: "ombro2", nome: "Ombro (degrau de cima)", forma: "cilindro", eixo: "y", x: "0", y: "(Altura_corpo + Cota_gargalo)/2", z: "0", raio: "Diametro_corpo*0.36", altura: "(Cota_gargalo - Altura_corpo)/2", material: "Material_corpo" },
         { id: "gargalo", nome: "Gargalo", forma: "cilindro", eixo: "y", x: "0", y: "Cota_gargalo", z: "0", raio: "Diametro_gargalo/2", altura: "0.02", material: "Material_corpo" },
         { id: "tampa", nome: "Tampa", forma: "cilindro", eixo: "y", x: "0", y: "Cota_gargalo + 0.005", z: "0", raio: "Diametro_gargalo/2 + 0.005", altura: "Altura_total - Cota_gargalo - 0.005", material: "Material_tampa" },
         { id: "re", nome: "Ressalto da entrada", forma: "caixa", x: "-0.279", y: "0.64", z: "0", dx: "0.158", dy: "0.253", dz: "0.2", material: "Material_corpo" },
@@ -366,6 +371,12 @@
         { id: "ent", nome: "Entrada DN 100", forma: "cilindro", eixo: "x", x: "-0.472", y: "Cota_entrada", z: "0", raio: "0.0508", altura: "0.172", material: "Material_tubo" },
         { id: "sai", nome: "Saída de recalque Ø50", forma: "cilindro", eixo: "x", x: "0.366", y: "Cota_saida", z: "0", raio: "0.036", altura: "0.029", material: "Material_tubo" },
         { id: "ven", nome: "Ventilação Ø50", forma: "cilindro", eixo: "z", x: "0", y: "Cota_ventilacao", z: "0.362", raio: "0.036", altura: "0.028", material: "Material_tubo" }
+      ],
+      /* LOTE 3-5 (13/11/2026): as BOCAS nas cotas da fonte (bombup230.json): entrada DN 100 em −X a 816 mm, recalque Ø50 em +X a 715 mm, ventilação Ø50 em +Z a 826 mm */
+      conectores: [
+        { id: "entrada", nome: "Entrada de esgoto DN 100", sistema: "esgoto", dn: 100, x: "-0.472", y: "Cota_entrada", z: "0", papel: "entrada", dir: { x: -1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json, leitura das fotos do fabricante)" },
+        { id: "recalque", nome: "Recalque Ø50", sistema: "esgoto", dn: 50, x: "0.395", y: "Cota_saida", z: "0", papel: "recalque", dir: { x: 1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json)" },
+        { id: "ventilacao", nome: "Ventilação Ø50", sistema: "ventilacao", dn: 50, x: "0", y: "Cota_ventilacao", z: "0.39", papel: "saida", dir: { x: 0, y: 0, z: 1 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json)" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Estação elevatória de esgoto BombUp 230 (Águas Claras), 2,0 HP" }
     },

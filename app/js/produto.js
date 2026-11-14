@@ -61,10 +61,19 @@ var Produto = (function () {
         "Orçamento de referência com SINAPI, SICRO e bases estaduais",
         "Minuta, parecer jurídico e acompanhamento do contrato"
       ],
+      loginContaNova: "conta do órgão",
+      loginRodape: "seus processos ficam neste aparelho e sincronizam com a nuvem do órgão",
       semAcessoTitulo: "Seu acesso ao CPLPRO ainda não foi liberado",
       semAcessoTexto: "Esta conta ainda não tem a liberação do CPLPRO. A liberação vem com a chave do órgão: se você já a recebeu, use “Ativar chave”; se não, fale com a RA Engenharia.",
       contatoUrl: CONTATO_WA,
       contatoRotulo: "Falar com a RA Engenharia (WhatsApp)",
+      /* O CPLPRO NÃO TEM TESTE GRÁTIS NEM LOJA (decisão de 13/11/2026): quem entra é o órgão, com a chave, ou pede acesso à RA.
+         Em navegador limpo o gate do OrçaPRO oferecia «Liberar meu teste grátis (7 dias — sistema completo)»: no CPLPRO isso é
+         promessa que o produto não cumpre. `semTesteGratis` desliga a oferta; a entrada é só pela chave. */
+      semTesteGratis: true,
+      chaveTitulo: "Entrar no CPLPRO — acesso do órgão",
+      chaveTexto: "Cole a <b>chave de acesso do órgão</b> que a RA Engenharia entregou. Os dados do órgão (processos, orçamentos e documentos) vêm da nuvem para este aparelho.",
+      semChaveTexto: "Ainda não tem a chave? O acesso ao CPLPRO é liberado pela RA Engenharia — fale com a gente.",
       avisoOrcapro: "O CPLPRO agora tem endereço próprio: app.cplpro.com.br",
       avisoUrl: "https://app.cplpro.com.br/"
     }
@@ -113,6 +122,8 @@ var Produto = (function () {
   }
   function cfg(id) { return TABELA[id || atual()] || TABELA.orcapro; }
   function ehCplpro() { return atual() === "cplpro"; }
+  /* true = este produto não oferece teste grátis nem compra de plano (CPLPRO): ninguém deve ver «teste grátis» nem «ver planos» */
+  function semTesteGratis() { return !!cfg().semTesteGratis; }
   function perfilForcado() { return cfg().perfilForcado || null; }
   function moduloInicial() { return cfg().moduloInicial || ""; }
   /* só para teste: refaz a detecção com outro ambiente */
@@ -188,7 +199,7 @@ var Produto = (function () {
   function login() {
     var c = cfg();
     if (c.id === "orcapro") return null;
-    return { nome: c.nome, titulo: c.loginTitulo, chamada: c.loginChamada, destaque: c.loginDestaque, linhas: c.loginLinhas.slice(), assinatura: c.assinatura };
+    return { nome: c.nome, titulo: c.loginTitulo, chamada: c.loginChamada, destaque: c.loginDestaque, linhas: c.loginLinhas.slice(), assinatura: c.assinatura, contaNova: c.loginContaNova, rodape: c.loginRodape };
   }
 
   /* a tela de "sem liberação": mensagem clara + as portas (ativar chave, contato, sair) */
@@ -217,7 +228,7 @@ var Produto = (function () {
 
   var API = {
     TABELA: TABELA, detectar: detectar, atual: atual, cfg: cfg, ehCplpro: ehCplpro,
-    perfilForcado: perfilForcado, moduloInicial: moduloInicial, temAcesso: temAcesso,
+    perfilForcado: perfilForcado, semTesteGratis: semTesteGratis, moduloInicial: moduloInicial, temAcesso: temAcesso,
     avisoDominioNovo: avisoDominioNovo, aplicarMarca: aplicarMarca, aplicarDocumento: aplicarDocumento,
     seloHtml: seloHtml, login: login, telaSemAcesso: telaSemAcesso, iniciar: iniciar, _redetectar: _redetectar
   };

@@ -46,6 +46,40 @@
       return b;
     },
 
+    /* AS SETE PARCELAS, na ordem e com os rótulos da aba BDI (renderBdi).
+     * Fonte única: a aba BDI e a página "Composição do BDI" da proposta leem
+     * esta lista — se uma renomear a parcela, a outra muda junto. */
+    PARCELAS: [
+      ["AC", "Administração Central"], ["S", "Seguro"], ["R", "Risco"],
+      ["G", "Garantia"], ["DF", "Despesas Financeiras"], ["L", "Lucro"], ["I", "Impostos (PIS+COFINS+ISS)"]
+    ],
+    FORMULA_TCU: "BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) ÷ (1 − I) ] − 1",
+
+    /* AS PARCELAS DE UM ORÇAMENTO, como a aba BDI as mostra.
+     * Devolve { percentual, modeloId, detalhado, parcelas:[{sigla,nome,pct}], calculado, confere }.
+     * ⚠ SÓ HÁ PARCELA QUANDO O ORÇAMENTO A GUARDA (`orc.bdi.params`). Orçamento
+     *   com BDI digitado só como percentual não tem composição: a aba BDI deriva
+     *   o Lucro para fechar a conta, mas escrever essa derivação num documento
+     *   para órgão público seria inventar parcela. Aí `detalhado` é false e a
+     *   proposta mostra só o percentual, dizendo que a composição não foi detalhada.
+     * ⚠ `percentual` é o que os PREÇOS usam (orc.bdi.percentual). `calculado` é o
+     *   que as parcelas resultam na fórmula; se divergirem (> 0,01 ponto), `confere`
+     *   é false e o documento diz as duas coisas em vez de esconder a diferença. */
+    composicaoDoOrcamento: function (orc) {
+      var b = (orc && orc.bdi) || {};
+      var pct = b.percentual;
+      var temParams = !!(b.params && typeof b.params === "object");
+      var out = { percentual: Util.num(pct), modeloId: b.modeloId || "", detalhado: temParams, parcelas: [], calculado: null, confere: true };
+      if (pct == null || !isFinite(Util.num(pct))) {
+        try { out.percentual = Util.num(Orcamento.totais(orc).bdiPercentual); } catch (e) {}
+      }
+      if (!temParams) return out;
+      this.PARCELAS.forEach(function (c) { out.parcelas.push({ sigla: c[0], nome: c[1], pct: Util.num(b.params[c[0]]) }); });
+      out.calculado = this.calcular(b.params);
+      out.confere = Math.abs(out.calculado - out.percentual) <= 0.01;
+      return out;
+    },
+
     /* Aplica BDI sobre um custo direto -> preço de venda. */
     aplicar: function (custoDireto, percentualBdi) {
       return Util.num(custoDireto) * (1 + Util.num(percentualBdi) / 100);

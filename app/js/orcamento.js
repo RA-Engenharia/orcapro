@@ -336,7 +336,7 @@
        documento: o desfazer de 1 nível e o histórico da IA (js/iaedit.js).
        Não atravessam cópia (copiarDe), revisão (novaRevisao) nem a _meta do
        Excel que vai ao cliente (excel.js). Uma lista só, lida pelos três. */
-    CAMPOS_IA_LOCAIS: ["iaEdicao", "iaHistorico"],
+    CAMPOS_IA_LOCAIS: ["iaEdicao", "iaHistorico", "revisoes"],   /* `revisoes` = retratos de js/orcrevisao.js: não atravessam cópia nem revisão de aprovado */
 
     // ---- Etapas ----
     addEtapa: function (orc, nome) {
@@ -511,6 +511,100 @@
       if ((arr[i].subEtapaId || "") !== (arr[j].subEtapaId || "")) return orc;
       var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
       return orc;
+    },
+    /* =====================================================================
+     * OPERAÇÕES DE LINHA da planilha (13/11/2026) — atalhos de teclado e
+     * seleção em lote. `refs` = [{ etapaId, itemId }].
+     *
+     * ⚠ NENHUMA delas mexe em preço ou quantidade: só POSIÇÃO, CÓPIA e
+     *   ETAPA. O número do item (2.1, 2.2…) é derivado da posição, então mover
+     *   renumera sozinho; o `id` do item é o que liga medição, compra e
+     *   cronograma, e por isso o item MOVIDO guarda o id. O DUPLICADO ganha id
+     *   novo — dois itens com o mesmo id fariam a medição somar nos dois.
+     * ⚠ Item que veio da planilha do órgão (modo licitação) não se move,
+     *   não se duplica e não se apaga por aqui: a trava é a mesma de sempre
+     *   (`_travadoOrgao`), e o retorno diz QUANTOS ficaram de fora.
+     * ===================================================================== */
+    _achaItem: function (orc, ref) {
+      var e = this._etapa(orc, ref.etapaId); if (!e) return null;
+      var arr = Util.arr(e.itens);
+      for (var i = 0; i < arr.length; i++) if (arr[i].id === ref.itemId) return { etapa: e, idx: i, item: arr[i] };
+      return null;
+    },
+    /* cópia do item logo abaixo do original, no mesmo grupo. Devolve o id novo ("" se não pôde). */
+    duplicarItem: function (orc, etapaId, itemId) {
+      var a = this._achaItem(orc, { etapaId: etapaId, itemId: itemId });
+      if (!a || this._travadoOrgao(orc, a.item)) return "";
+      var c = Util.clone(a.item);
+      c.id = Util.uid("itm");
+      a.etapa.itens.splice(a.idx + 1, 0, c);
+      return c.id;
+    },
+    /* põe o item `itemId` logo depois de `aposId` (e no mesmo grupo de sub etapa dele) */
+    inserirApos: function (orc, etapaId, itemId, aposId) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      var arr = Util.arr(e.itens), i = -1, j = -1;
+      for (var k = 0; k < arr.length; k++) { if (arr[k].id === itemId) i = k; if (arr[k].id === aposId) j = k; }
+      if (i < 0 || j < 0 || i === j + 1) return orc;
+      var it = arr.splice(i, 1)[0];
+      if (i < j) j--;
+      if (arr[j].subEtapaId) it.subEtapaId = arr[j].subEtapaId; else delete it.subEtapaId;
+      arr.splice(j + 1, 0, it);
+      return orc;
+    },
+    /* sobe (dir < 0) ou desce (dir > 0) o bloco selecionado, sem passar de uma fronteira de
+       sub etapa e sem trocar dois selecionados entre si. Devolve quantos andaram. */
+    moverItens: function (orc, refs, dir) {
+      var self = this, n = 0, porEtapa = {};
+      Util.arr(refs).forEach(function (r) { (porEtapa[r.etapaId] = porEtapa[r.etapaId] || {})[r.itemId] = true; });
+      Object.keys(porEtapa).forEach(function (eid) {
+        var e = self._etapa(orc, eid); if (!e) return;
+        var arr = Util.arr(e.itens), sel = porEtapa[eid], d = dir < 0 ? -1 : 1;
+        var ordem = []; for (var k = 0; k < arr.length; k++) ordem.push(k);
+        if (d > 0) ordem.reverse();
+        ordem.forEach(function (i) {
+          var it = arr[i]; if (!sel[it.id] || self._travadoOrgao(orc, it)) return;
+          var j = i + d; if (j < 0 || j >= arr.length) return;
+          if (sel[arr[j].id] || (arr[i].subEtapaId || "") !== (arr[j].subEtapaId || "")) return;
+          var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp; n++;
+        });
+      });
+      return n;
+    },
+    /* leva os itens para o FIM da etapa de destino (fora de qualquer sub etapa). */
+    moverItensParaEtapa: function (orc, refs, destEtapaId) {
+      var dest = this._etapa(orc, destEtapaId), self = this, r = { movidos: 0, travados: 0, mesma: 0, refs: [] };
+      if (!dest) return r;
+      Util.arr(refs).forEach(function (ref) {
+        var a = self._achaItem(orc, ref); if (!a) return;
+        if (a.etapa.id === dest.id) { r.mesma++; return; }
+        if (self._travadoOrgao(orc, a.item)) { r.travados++; return; }
+        a.etapa.itens.splice(a.idx, 1);
+        delete a.item.subEtapaId;
+        dest.itens.push(a.item); r.movidos++; r.refs.push({ etapaId: dest.id, itemId: a.item.id });
+      });
+      return r;
+    },
+    /* remove os itens (ignora os travados do órgão). Devolve { removidos, travados }. */
+    removerItens: function (orc, refs) {
+      var self = this, r = { removidos: 0, travados: 0 };
+      Util.arr(refs).forEach(function (ref) {
+        var a = self._achaItem(orc, ref); if (!a) return;
+        if (self._travadoOrgao(orc, a.item)) { r.travados++; return; }
+        a.etapa.itens.splice(a.idx, 1); r.removidos++;
+      });
+      return r;
+    },
+    /* quantidade igual para todos (ignora os travados). Devolve { alterados, travados }. */
+    definirQuantidadeItens: function (orc, refs, qtd) {
+      var self = this, r = { alterados: 0, travados: 0 }, q = Util.num(qtd);
+      if (!(q > 0)) return r;
+      Util.arr(refs).forEach(function (ref) {
+        var a = self._achaItem(orc, ref); if (!a) return;
+        if (self._travadoOrgao(orc, a.item)) { r.travados++; return; }
+        a.item.quantidade = q; delete a.item.qtdPendente; r.alterados++;
+      });
+      return r;
     },
     // Renomeia uma etapa sem recriá-la (mantém itens e código).
     /* =====================================================================
@@ -944,6 +1038,8 @@
         this._registrarAjuste(orc, it, "custoUnitario", it.custoUnitario, novo);
         var antesU = Util.num(it.custoUnitario);
         it.custoUnitario = novo;
+        /* preço mexido deixa de ser o da cotação: o carimbo `cotacao` (js/cotpreco.js) sai. Mesmo valor (reimportar Excel) não mexe. */
+        if (it.cotacao && Math.abs(novo - Util.num(it.cotacao.preco)) > 0.004) delete it.cotacao;
         /* ⚠ v1.1.236 — E AS PARCELAS VÃO JUNTO. Gravar só o unitário deixava
            MO/MAT/EQ com os números da base: o item cotado a 80,00 continuava
            com parcelas somando 50,00. Isso não ficava escondido — vazava para
@@ -1706,12 +1802,15 @@
     },
 
     // ---- Curva ABC (itens ordenados por custo, classes A/B/C) ----
-    curvaABC: function (orc) {
+    curvaABC: function (orc, calc) {
       // custo por item JÁ no critério do orçamento — assim o total da curva
       // fecha com o Custo Direto da planilha (o Excel confere isso e imprime
-      // "⚠ verificar" no documento entregue quando não bate)
-      var itens = this.calcular(orc).linhas.map(function (L) {
-        return { codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+      // "⚠ verificar" no documento entregue quando não bate).
+      // `calc` (opcional, 13/11/2026): o Orcamento.calcular que o chamador JÁ fez —
+      // a planilha da tela marca A/B/C por item sem refazer a conta; `itemId`
+      // deixa a tela achar a classe da linha sem casar por código ou descrição.
+      var itens = (calc || this.calcular(orc)).linhas.map(function (L) {
+        return { itemId: L.itemId, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
           quantidade: L.quantidade, custoTotal: L.custoTotal, etapa: L.etapaNome };
       });
       itens.sort(function (a, b) { return b.custoTotal - a.custoTotal; });

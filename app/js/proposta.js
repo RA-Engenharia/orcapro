@@ -1096,6 +1096,15 @@
     return out;
   };
 
+  /* A COMPOSIÇÃO DO BDI para a página "Composição do BDI" do modelo (13/11/2026).
+     As parcelas e o resultado vêm de Bdi.composicaoDoOrcamento — a mesma
+     fonte da aba BDI —, sem conta nova aqui. Só percentuais: nenhum R$. */
+  Proposta.bdiParaModelo = function (orc) {
+    var c = Bdi.composicaoDoOrcamento(orc);
+    c.formula = Bdi.FORMULA_TCU;
+    return c;
+  };
+
   /* as condições comerciais que o modelo escreve, com os nomes que ele espera */
   Proposta.comercialParaModelo = function (orc) {
     var c = (orc && orc.comercial) || {};
@@ -1144,8 +1153,13 @@
   Proposta.auditar = function (html, orc) {
     var achados = [];
     var h = _achatar(html), baixo = h.toLowerCase();
+    /* ⚠ A PÁGINA "COMPOSIÇÃO DO BDI" É A ÚNICA QUE PODE ESCREVER "Lucro" (órgão
+       público exige a composição). Ela vem marcada com data-tp-bdi e só ela sai
+       da checagem de PALAVRAS; os números (custo, valor do BDI em R$) seguem
+       checados no documento inteiro. */
+    var baixoPalavras = _achatar(String(html == null ? "" : html).replace(/<section[^>]*data-tp-bdi="1"[^>]*>[\s\S]*?<\/section>/g, "")).toLowerCase();
     Proposta.PALAVRAS_PROIBIDAS.forEach(function (w) {
-      if (baixo.indexOf(w) > -1) achados.push({ tipo: "palavra", achado: w });
+      if (baixoPalavras.indexOf(w) > -1) achados.push({ tipo: "palavra", achado: w });
     });
 
     var t = Orcamento.totais(orc);

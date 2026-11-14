@@ -49,8 +49,10 @@
     U.FAMS_ACESSORIO = FAMS_AC;
     U._p12 = { acFam: "ra-registro-gaveta", acTipo: "", n: 1, esp: 0.15, lado: 1 };
     function famRA(id) { try { return global.FamiliasRA ? global.FamiliasRA.obter(id, true) : null; } catch (e) { return null; } }
-    function tiposDe(famId) {
-      var f = famRA(famId), out = f ? f.tipos.map(function (t) { return { id: t.id, rotulo: t.nome }; }) : [];
+    /* LOTE 3-5 (revisão 13/11): tipo `legado` (fora do conjunto enxuto, js/hidfamilias.js enxugar) sai da lista — menos o tipo ATUAL da peça,
+       que continua aparecendo (projeto salvo com ele abre e mostra o tipo certo) */
+    function tiposDe(famId, atual) {
+      var f = famRA(famId), out = f ? f.tipos.filter(function (t) { return !t.legado || t.id === atual; }).map(function (t) { return { id: t.id, rotulo: t.nome }; }) : [];
       /* PENDÊNCIAS FINAIS (18/10/2026), só com a prévia hidro: os tipos do motor que a família do master não lista — o registro de
          gaveta de PVC soldável (opcional, sem SINAPI) e a retenção de PVC (pressurização) */
       var Pv = global.BimPrevia, I = BI(), A = I && I.ACESSORIOS && I.ACESSORIO_DA_FAM ? I.ACESSORIOS[I.ACESSORIO_DA_FAM[famId]] : null;
@@ -120,7 +122,7 @@
       }
       tt = Math.max(folga / Lt, Math.min(1 - folga / Lt, tt));
       var q = { x: r6(t.p1.x + (t.p2.x - t.p1.x) * tt), y: r6(t.p1.y + (t.p2.y - t.p1.y) * tt), z: r6(t.p1.z + (t.p2.z - t.p1.z) * tt) };
-      var tipos = tiposDe(famId), tipo = tipoId && tipos.some(function (x) { return x.id === tipoId; }) ? tipoId : (I.varianteAuto && global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro() ? I.varianteAuto(I.ACESSORIO_DA_FAM[famId], t) : (tipos[0] ? tipos[0].id : Object.keys(A.variantes)[0]));   /* pendências finais: com a prévia hidro, o tipo pelo lugar (embutido/aparente) */
+      var tipos = tiposDe(famId, tipoId), tipo = tipoId && tipos.some(function (x) { return x.id === tipoId; }) ? tipoId : (I.varianteAuto && global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro() ? I.varianteAuto(I.ACESSORIO_DA_FAM[famId], t) : (tipos[0] ? tipos[0].id : Object.keys(A.variantes)[0]));   /* pendências finais: com a prévia hidro, o tipo pelo lugar (embutido/aparente) */
       var o = { op: "acessorio", id: U._proxId("ac", ops), famId: famId, tipoId: tipo, trecho: t.id, novoId: U._proxId("t", ops), x: q.x, y: q.y, z: q.z, comprimento: L };
       return { ok: true, op: o, trecho: t, comprimento: L };
     };
@@ -161,7 +163,7 @@
     U.esquemaAcessorio = function () {
       var c = U.cfg, I = BI(), self = U;
       var fams = FAMS_AC.map(function (id) { var f = famRA(id); return { id: id, rotulo: f ? f.nome : id }; });
-      var tipos = tiposDe(c.famId);
+      var tipos = tiposDe(c.famId, c.tipoId);
       return { icone: "link", semEditarTipo: true, titulo: "Acessório de tubo",
         secoes: [{ nome: "Acessório", params: [
           { id: "i:famId", rotulo: "Família", tipo: "lista", valor: c.famId, opcoes: fams },
@@ -228,7 +230,7 @@
     U.propsAcessorio = function (uid, a) {
       var I = BI(), b = B(), est = b.editarEstado(), self = U;
       var sp = I.sinapiDe(I.itemAcessorio(a)), S = I.sistemas(est.estado, b.familiaAvaliar), c = S.de(a.trecho) || S.de(a.novoId);
-      var sec = [{ nome: "Identidade", params: [ro("p12:fam", "Família", a.nome), { id: "p12:tipo", rotulo: "Tipo", tipo: "lista", valor: a.variante, opcoes: tiposDe(a.famId) },
+      var sec = [{ nome: "Identidade", params: [ro("p12:fam", "Família", a.nome), { id: "p12:tipo", rotulo: "Tipo", tipo: "lista", valor: a.variante, opcoes: tiposDe(a.famId, a.variante) },
           ro("p12:sis", "Sistema", I.SISTEMAS[a.sistema].nome), ro("p12:nsis", "Nome do sistema", c ? c.codigo + " — " + c.nome : "—"),
           ro("p12:dn", "DN do tubo", String(a.dn)), ro("p12:ff", "Face a face", fmt(a.comprimento, 3) + " m"), ro("p12:tr", "Trechos", [a.trecho, a.novoId].filter(Boolean).join(" | "), "O tubo foi dividido aqui; apagar o acessório emenda.")] },
         { nome: "Orçamento (SINAPI pelo mapa)", params: sp.status === "ok"
@@ -245,7 +247,7 @@
       var M = I.MATERIAIS[t.material] || {};
       if (I.SISTEMAS[t.sistema].grupo === "agua" && !M.secao && !M.flexivel) out.push({ nome: "Acessório neste tubo", params: [
         { id: "p12:acFam", rotulo: "Família", tipo: "lista", valor: st.acFam, opcoes: FAMS_AC.map(function (id) { var f = famRA(id); return { id: id, rotulo: f ? f.nome : id }; }) },
-        { id: "p12:acTipo", rotulo: "Tipo", tipo: "lista", valor: st.acTipo || (tiposDe(st.acFam)[0] || {}).id, opcoes: tiposDe(st.acFam) },
+        { id: "p12:acTipo", rotulo: "Tipo", tipo: "lista", valor: st.acTipo || (tiposDe(st.acFam)[0] || {}).id, opcoes: tiposDe(st.acFam, st.acTipo) },
         { id: "p12:acColocar", rotulo: "No meio do trecho", tipo: "botao", rotuloBotao: "Colocar (divide o tubo)", fn: function () { self.colocarAcessorioNoMeio(t.id, st.acFam, st.acTipo); } }] });
       if (!t.vertical) out.push({ nome: "Paralelos", params: [
         { id: "p12:n", rotulo: "Quantos", tipo: "numero", passo: "1", valor: st.n },

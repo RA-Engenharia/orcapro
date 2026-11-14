@@ -27,10 +27,11 @@
 
   if (typeof global.Gestao === "undefined") return;
 
-  var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo;
+  var G = global.Gestao, K = G.ui, M = global.Modulo, C = global.Cplpro, R = global.CplproRegras, F = global.CplproFluxo, D = global.CplproDocs, T = global.CplproTpl, H = global.CplproHab, Pr = global.CplproPreparo, Org = global.CplproOrgao;
   var ENT_PROC = "cplpro_processos";
   var ENT_PAP = "cplpro_papeis";
   var ENT_MOD = "cplpro_modelos";   /* ficha do modelo de documento do ÓRGÃO; os bytes do .docx ficam no IndexedDB do aparelho */
+  var ENT_ORG = "cplpro_orgao";     /* o cadastro do ÓRGÃO: um registro por conta (id "orgao"); sincroniza como as demais entidades do CPLPRO */
   var MODULO = "cplpro";
   var MAX_BYTES = 60 * 1024 * 1024;
   var MODALIDADES = ["concorrência", "pregão", "concurso", "leilão", "diálogo competitivo"];   /* Lei 14.133/2021, art. 28 */
@@ -141,7 +142,7 @@
     });
   }
   /* navegação pura: não é «ação com resposta» e não troca o botão de uma ação ainda em curso (importação assíncrona) */
-  var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+  var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
   function iniciarAcao(nome, ds) {
     if (NAVEGACAO[nome]) return;
     ds = ds || {};
@@ -211,6 +212,7 @@
     var orc = orcDoProc(p), c = calc(orc), pq = c ? F.pesquisar(p, c.linhas, modoDoOrc(c)) : null;
     var emp = (typeof Empresa !== "undefined") ? Empresa : null, logo = null;
     try { logo = emp && emp.logo ? emp.logo() : null; } catch (e) { logo = null; }
+    try { var cadT = orgaoCad(); if (cadT.timbrado && Org.timbradoOk(cadT.timbrado)) logo = cadT.timbrado; } catch (eT) {}   /* o timbrado do cadastro do órgão tem prioridade */
     return { orgao: { nome: emp && emp.nomeDoc ? emp.nomeDoc() : "", logoHtml: logo ? '<img src="' + logo + '" alt="logo" style="max-height:70px">' : "" },
       orc: c ? { total: c.precoVenda, custoDireto: c.custoDireto } : null, pesquisa: pq, prazo: F.prazo(p), hoje: hoje() };
   }
@@ -252,6 +254,12 @@
     var ach = null;
     if (pr) C.PASSOS.forEach(function (ps) { var x = pr.passos[ps.id]; if (!ach && ps.id !== "minuta" && ps.id !== "conformidade" && x && x.pendencias && x.pendencias.length && x.pendencias[0].corrigir) ach = x.pendencias[0].corrigir; });
     return ach || { passo: "minuta", campo: "" };
+  }
+  /* o «Corrigir» de quem gerou com campo em branco: a 1ª pendência dos passos anteriores (como sempre); se todos os anteriores estão
+     completos e só falta dado do ÓRGÃO, leva ao Cadastro do órgão */
+  function corrigirDaMinuta(q, faltaOrg) {
+    var pp = primeiraPendencia(q);
+    return (pp.passo === "minuta" && faltaOrg.length) ? { passo: "orgao", campo: faltaOrg[0].cadastroId } : pp;
   }
   function setFoco(passo, campo) { G._cplPasso = passo; G._cplAba = "passos"; G._cplView = "proc"; G._cplFoco = campo || null; }
 
@@ -319,14 +327,14 @@
     if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
     else {
       if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
-      html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : _renderLista(obras));
+      html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : (G._cplView === "orgao" ? _renderOrgao(obras) : _renderLista(obras)));
     }
     return html;
   };
 
   /* «Modelos do órgão» só aparece para quem pode importá-los (administrador do órgão); a trava de verdade é a função */
   function abasTopo(ativa) {
-    var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }];
+    var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }, { id: "orgao", rotulo: "Órgão", attrs: 'data-gacao="cpl-aba-orgao"' }];
     if (podeAcao("gerenciar_modelos")) abas.push({ id: "modelos", rotulo: "Modelos do órgão", attrs: 'data-gacao="cpl-aba-modelos"' });
     return M.abas(abas.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === ativa, attrs: a.attrs }; }));
   }
@@ -405,6 +413,90 @@
       }).join("") + "</tbody></table>";
     corpo += '<p class="muted" style="margin:12px 0 0">' + Object.keys(R.PAPEIS).map(function (k) { return "<b>" + esc(R.PAPEIS[k].nome) + ":</b> " + esc(R.PAPEIS[k].acoes.map(function (a) { return R.ACOES_ROTULO[a] || a; }).join(", ")); }).join(" · ") + "</p>";
     return html + M.secao({ titulo: "Quem faz o quê", corpoHtml: corpo });
+  }
+
+  /* ---------- CADASTRO DO ÓRGÃO (uma vez por conta; entra em todo processo com o selo «sugerido — confira») ---------- */
+  function orgaoCad() { var o = null; try { o = Store.obter(eid(), ENT_ORG, Org.ID); } catch (e) { o = null; } return o ? Org.novo(o) : Org.novo(); }
+  /* contexto dos padrões: o cadastro + todos os processos da conta (a numeração do edital é sequencial por órgão, ano e modalidade) */
+  function ctxPadroes() { return { orgao: orgaoCad(), processos: listaProc(), agora: agoraLocal() }; }
+  /* campos do edital que o CADASTRO alimenta e que continuam em branco porque o cadastro também está em branco: [{ id, cadastroId, rotulo }] */
+  function faltaDoOrgao(p) {
+    var cad = orgaoCad(), pe = Org.paraEdital(cad), e = (p && p.edital) || {}, out = [];
+    Object.keys(Org.ORIGEM_NO_CADASTRO).forEach(function (id) {
+      if (id === "cadastroProprio" && !(e.cadastro === "proprio" || cad.cadastro === "proprio")) return;
+      if (!D.campoAplica(id, p || {})) return;
+      var rot = ""; D.CAMPOS.forEach(function (c) { if (c.id === id) rot = c.rotulo; });
+      if (rot && vazio(e[id]) && vazio(pe[id])) out.push({ id: id, cadastroId: Org.ORIGEM_NO_CADASTRO[id], rotulo: rot });
+    });
+    return out;
+  }
+  /* o órgão editou o cadastro: atualiza os processos em andamento (só o que o sistema escreveu ou está em branco) — SEM numerar editais */
+  function propagarOrgao() {
+    var todos = listaProc(), n = 0;
+    todos.forEach(function (p, i) {
+      if (!F.editavel(p)) return;
+      var r = Pr.aplicarPadroes(p, { orgao: orgaoCad(), processos: todos, agora: agoraLocal(), semNumero: true });
+      if (!r.mudou) return;
+      F.registrar(r.p, "padroes_orgao", null, "cadastro do órgão atualizado: " + (r.preenchidos + r.atualizados) + " campo(s)", { nome: nomeAtual(), papel: "admin_orgao" }, agoraLocal());
+      var s = salvarProc(r.p); if (s) { todos[i] = s; n++; }
+    });
+    return n;
+  }
+  function _renderOrgao(obras) {
+    var html = cabLista(obras, "Cadastro do órgão") + abasTopo("orgao");
+    var o = orgaoCad(), pode = podeAcao("gerenciar_orgao"), d = pode ? "" : " disabled", falta = Org.faltantes(o);
+    var corpo = '<p class="mod-sub" style="margin:0 0 12px">Cadastre <b>uma vez</b> os dados administrativos do órgão. Eles entram em <b>todo processo</b> (edital, TR e contrato) com o selo <span class="cpl-selo-sist">sugerido — confira</span>; o que a pessoa editar num processo o sistema não sobrescreve.</p>';
+    if (!pode) corpo += M.aviso({ tom: "info", titulo: "Só leitura.", texto: motivoAcao("gerenciar_orgao") });
+    corpo += falta.length
+      ? M.aviso({ tom: "alerta", titulo: falta.length + " dado(s) do órgão ainda em branco", texto: falta.map(function (x) { return x.rotulo; }).join("; ") + ". Enquanto faltarem, as minutas saem com [PREENCHER]." })
+      : M.aviso({ tom: "ok", titulo: "Cadastro do órgão completo.", texto: "Todo documento usa estes dados." });
+    var grupos = [], por = {};
+    Org.CAMPOS.forEach(function (c) { if (!por[c.grupo]) { por[c.grupo] = []; grupos.push(c.grupo); } por[c.grupo].push(c); });
+    corpo += '<div class="cpl-form" id="cpl-f-orgao">' + grupos.map(function (g) {
+      return "<h4>" + esc(g) + "</h4>" + por[g].map(function (c) {
+        var v = o[c.id] == null ? "" : o[c.id], ctrl;
+        if (c.tipo === "select") ctrl = '<select id="cpl-org-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
+        else ctrl = '<input id="cpl-org-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
+        return campo(esc(c.rotulo) + (c.obrig ? " *" : ""), ctrl, c.id);
+      }).join("");
+    }).join("") + "</div>";
+    corpo += "<h4>Timbrado</h4>" + (o.timbrado ? '<p><img id="cpl-org-timbrado-img" src="' + esc(o.timbrado) + '" alt="timbrado do órgão" style="max-height:90px;max-width:100%"></p>' : '<p class="muted" id="cpl-org-timbrado-vazio">Sem timbrado: os documentos saem com o logo da Empresa (Configurações), se houver.</p>') +
+      '<input type="file" id="cpl-org-timbrado-arq" accept="image/png,image/jpeg,image/webp" hidden>' +
+      '<div class="cpl-acoes">' + btn(o.timbrado ? "Trocar o timbrado" : "Escolher imagem do timbrado", "cpl-org-timbrado", d, "") + (o.timbrado ? " " + btn("Remover o timbrado", "cpl-org-timbrado-remover", d, "") : "") + "</div>";
+    corpo += '<div class="cpl-acoes">' + btn("Salvar cadastro do órgão", "cpl-org-salvar", d, "primary") + "</div>";
+    return html + M.secao({ titulo: "Cadastro do órgão", corpoHtml: corpo });
+  }
+  /* reduz a imagem (largura máx. 1100 px) antes de gravar: o timbrado vai para o armazenamento e para a nuvem junto com o cadastro */
+  function reduzirImagem(file, cb) {
+    var fr = new FileReader();
+    fr.onerror = function () { cb(null); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { cb(null); };
+      img.onload = function () {
+        var tentativas = [[1100, 0.88], [800, 0.75], [600, 0.6]], i, out = null;
+        for (i = 0; i < tentativas.length && !out; i++) {
+          var w = Math.min(img.width, tentativas[i][0]), h = Math.round(img.height * (w / img.width));
+          var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+          var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0, w, h);
+          var u = file.type === "image/png" ? cv.toDataURL("image/png") : cv.toDataURL("image/jpeg", tentativas[i][1]);
+          if (u.length <= 600000) out = u;
+        }
+        cb(out);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  function importarTimbrado(f) {
+    if (!exigir("gerenciar_orgao")) return;
+    if (!/^image\//.test(f.type || "")) { toast("O timbrado precisa ser uma imagem (PNG ou JPEG).", "erro"); return; }
+    reduzirImagem(f, function (u) {
+      if (!u || !Org.timbradoOk(u)) { toast("Não consegui usar essa imagem como timbrado. Tente um PNG ou JPEG menor.", "erro"); return; }
+      var o = orgaoCad(); o.timbrado = u; o.atualizadoEm = agoraLocal();
+      if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar o timbrado.", "erro"); return; }
+      toast("Timbrado do órgão salvo.", "ok"); App.render();
+    });
   }
 
   /* ---------- MODELOS DO ÓRGÃO (Decreto SP 62.100, art. 16: a procuradoria define as minutas) ---------- */
@@ -727,7 +819,10 @@
         var v = o[c.id] == null ? "" : o[c.id], ctrl;
         if (c.tipo === "select") ctrl = '<select id="cpl-cf-' + c.id + '"' + d + ">" + selOpts(c.opcoes, v, "— escolha —") + "</select>";
         else ctrl = '<input id="cpl-cf-' + c.id + '" value="' + esc(v) + '"' + (c.dica ? ' placeholder="' + esc(c.dica) + '"' : "") + d + ">";
-        return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *", ctrl, c.id);
+        var dicaOrg = "";
+        if (vazio(v) && Pr.PORQUE_CAMPO[c.id]) dicaOrg += ' <span class="muted cpl-porque-campo">Por quê? ' + esc(Pr.PORQUE_CAMPO[c.id]) + '</span>';
+        if (Org.ORIGEM_NO_CADASTRO[c.id] && vazio(v) && vazio(Org.paraEdital(orgaoCad())[c.id])) dicaOrg = ' <button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="orgao" data-campo="' + esc(Org.ORIGEM_NO_CADASTRO[c.id]) + '">Preencher no Cadastro do órgão</button>';
+        return campo(esc(c.rotulo.charAt(0).toUpperCase() + c.rotulo.slice(1)) + " *" + selo(p, (onde === "tr" ? "tr." : "edital.") + c.id), ctrl + dicaOrg, c.id);
       }).join("");
     }).join("");
   }
@@ -854,11 +949,14 @@
     h += "<p>" + (val_ ? M.pilula("Documentos gerados em " + dataHoraBR(pdoc.geradoEm), "ok") : (g.pendentes ? M.pilula(g.pendentes + " campo(s) em branco no total", "alerta") : M.pilula("ainda não gerados", "neutro"))) + "</p>";
     if (!val_ && pdoc.invalidadoEm) h += '<p class="cpl-alerta">A minuta gerada deixou de valer: ' + esc(pdoc.motivo || "o processo mudou") + ". Gere de novo.</p>";
     var e = p.edital || {}, dm = ed && podeAcao("gerar_minuta") ? "" : " disabled";
+    var fOrg = faltaDoOrgao(p);
+    if (fOrg.length) h += M.aviso({ tom: "alerta", titulo: fOrg.length + " dado(s) do órgão sem cadastro", texto: fOrg.map(function (x) { return x.rotulo; }).join("; ") + ".", acaoHtml: '<button type="button" class="btn sm" id="cpl-ir-orgao" data-gacao="cpl-corrigir" data-passo="orgao" data-campo="' + esc(fOrg[0].cadastroId) + '">Abrir o Cadastro do órgão</button>' });
+    h += '<div class="cpl-acoes">' + btn("Aplicar padrões do órgão e de rotina", "cpl-padroes", dm, "") + ' <span class="muted">Preenche, com o selo «sugerido — confira», só o que está em branco ou foi escrito pelo sistema.</span></div>';
     h += '<h3>Dados que completam a minuta</h3><div class="cpl-form" id="cpl-f-edital">' +
-      campo("Número do edital", '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
-      campo("Documentos de habilitação exigidos", '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
+      campo("Número do edital" + selo(p, "edital.numero"), '<input id="cpl-ed-numero" value="' + esc(e.numero || "") + '"' + dm + ">") +
+      campo("Documentos de habilitação exigidos" + selo(p, "edital.habilitacao"), '<textarea id="cpl-ed-habilitacao" rows="3"' + dm + ">" + esc(e.habilitacao || "") + "</textarea>") +
       campo("Complemento do regime de sanções do edital (opcional)", '<textarea id="cpl-ed-sancoes" rows="2"' + dm + ">" + esc(e.sancoes || "") + "</textarea>") +
-      campo("Vigência e prazo de execução do contrato", '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
+      campo("Vigência e prazo de execução do contrato" + selo(p, "edital.vigencia"), '<input id="cpl-ed-vigencia" value="' + esc(e.vigencia || "") + '"' + dm + ">") +
       campo("Complemento do contrato: extinção e sanções contratuais (opcional)", '<textarea id="cpl-ed-rescisao" rows="2"' + dm + ">" + esc(e.rescisaoForo || "") + "</textarea>") +
       '<p class="muted">Os campos abaixo o modelo oficial (AGU/SEGES) deixa em branco para o órgão. Cada um entra no edital ou no contrato no lugar do «XXXX» do modelo; sem eles o texto sai com «[PREENCHER: …]».</p>' + htmlCampos(p, "edital", dm) + "</div>" +
       '<div class="cpl-acoes">' + btn("Salvar dados da minuta", "cpl-salvar-edital", dm, "") + "</div>";
@@ -1387,7 +1485,7 @@
         prepGuardado = prep;
         if (plano && permitidos.orcamento && permitidos.quantitativos) { try { oi = orcamentoDoPreparo(atual, plano, avisosExtra, prep); } catch (e) { avisosExtra.push("Não consegui criar o orçamento: " + (e && e.message ? e.message : e)); } }
         else if (plano) avisosExtra.push("Seu perfil não edita orçamento e quantitativos: a planilha foi lida, mas o orçamento não foi criado.");
-        var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx });
+        var r = Pr.aplicar(atual, an, { agora: agoraLocal(), permitidos: permitidos, orcInfo: oi, obraInfo: prep.obraInfo, baseCtx: prep.baseCtx, padroes: true, orgao: orgaoCad(), processos: listaProc() });
         G._cplMontando = false;
         if (!r.mudou) { toast("Nada novo: o processo já estava montado com esta pasta (rodar de novo não duplica nada).", "info"); App.render(); avisoDeBases(prep, function () { montarDaPasta(files, opcoes); }); return r; }
         var q = r.p;
@@ -1435,7 +1533,9 @@
           '<button type="button" class="btn sm" data-gacao="cpl-corrigir" data-passo="parametros" data-campo="' + esc(d.id) + '" data-item="">Corrigir</button></div>';
       }).join("") + "</div></details>";
     }
-    if (dados.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dados.length + ")</b></summary>" + pendCartoes(dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; })) + "</details>";
+    var dadosOrg = faltaDoOrgao(p).map(function (x) { return { msg: "Dado do órgão sem cadastro: " + x.rotulo + ".", corrigir: { passo: "orgao", campo: x.cadastroId } }; });
+    var dadosTodos = dados.map(function (x) { return { msg: x.msg, corrigir: { passo: x.passo, campo: x.campo, item: x.item === null ? undefined : x.item } }; }).concat(dadosOrg);
+    if (dadosTodos.length) h += '<details id="cpl-preparo-dados"><summary><b>Dados que só o órgão tem (' + dadosTodos.length + ")</b></summary>" + pendCartoes(dadosTodos) + "</details>";
     var avisos = arr(rs.avisos).concat(arr(rs.lacunas));
     if (avisos.length || arr(rs.mantidos).length) {
       h += '<details id="cpl-preparo-avisos"><summary><b>Avisos</b></summary><ul>' + avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") +
@@ -1627,6 +1727,37 @@
     "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
     "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
     "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
+    "cpl-aba-orgao": function () { G._cplView = "orgao"; App.render(); },
+    "cpl-org-salvar": function () {
+      if (!exigir("gerenciar_orgao")) return;
+      var o = orgaoCad();
+      Org.CAMPOS.forEach(function (c) { var el = document.getElementById("cpl-org-" + c.id); if (el) o[c.id] = String(el.value || "").replace(/^\s+|\s+$/g, ""); });
+      var er = Org.validar(o);
+      if (er.length) { toast(er[0].msg, "erro"); var ef = document.getElementById("cpl-org-" + er[0].id); if (ef && ef.focus) ef.focus(); return; }
+      o.atualizadoEm = agoraLocal();
+      if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar o cadastro do órgão. Nada foi alterado.", "erro"); return; }
+      var n = propagarOrgao();
+      toast("Cadastro do órgão salvo." + (n ? " Atualizei " + n + " processo(s) em andamento (só o que o sistema tinha escrito ou estava em branco)." : ""), "ok");
+      App.render();
+    },
+    "cpl-org-timbrado": function () { var el = document.getElementById("cpl-org-timbrado-arq"); if (el) el.click(); },
+    "cpl-org-timbrado-remover": function () {
+      if (!exigir("gerenciar_orgao")) return;
+      var o = orgaoCad(); o.timbrado = null; o.atualizadoEm = agoraLocal();
+      if (!Store.salvar(eid(), ENT_ORG, o)) { toast("Não consegui gravar.", "erro"); return; }
+      toast("Timbrado removido.", "ok"); App.render();
+    },
+    "cpl-padroes": function () {
+      var p = procAtual(); if (!p) return;
+      if (!F.editavel(p)) { toast(F.motivoTravado(p), "erro"); return; }
+      var permitidos = {}; C.PASSOS.forEach(function (ps) { permitidos[ps.id] = podeAcao(F.ACAO_DO_PASSO[ps.id]); });
+      if (permitidos.minuta === false) { toast("Seu perfil não edita a minuta.", "erro"); return; }
+      var cx = ctxPadroes(); cx.permitidos = permitidos;
+      var r = Pr.aplicarPadroes(p, cx);
+      if (!r.mudou) { toast("Nada a aplicar: os campos já estão preenchidos" + (r.mantidos.length ? " (" + r.mantidos.length + " editado(s) por você foram mantidos)." : "."), "info"); return; }
+      F.registrar(r.p, "padroes_orgao", null, "padrões do órgão e de rotina: " + (r.preenchidos + r.atualizados) + " campo(s)", quemAtual("cpl"), agoraLocal());
+      if (salvarProc(r.p)) { toast("Aplicados " + (r.preenchidos + r.atualizados) + " padrão(ões) do órgão e de rotina, com o selo «sugerido — confira». Confira cada um.", "ok"); App.render(); }
+    },
     "cpl-aba-modelos": function () { if (!exigir("gerenciar_modelos")) return; G._cplView = "modelos"; App.render(); },
     /* ---------- modelos do órgão (só o administrador do órgão) ---------- */
     "cpl-mod-escolher": function (ds) {
@@ -1666,7 +1797,10 @@
     "cpl-aba": function (ds) { G._cplAba = ds.aba || "passos"; App.render(); },
     "cpl-passo": function (ds) { G._cplPasso = ds.passo; G._cplFoco = null; App.render(); },
     "cpl-ir-atual": function () { var p = procAtual(); if (!p) return; G._cplPasso = F.passoAtual(p).id; G._cplFoco = null; G._cplAba = "passos"; App.render(); },
-    "cpl-corrigir": function (ds) { setFoco(ds.passo, ds.item ? ds.campo + ":" + ds.item : ds.campo); App.render(); },
+    "cpl-corrigir": function (ds) {
+      if (ds.passo === "orgao") { G._cplView = "orgao"; G._cplFoco = ds.campo || null; App.render(); return; }   /* pendência de dado do ÓRGÃO: leva ao Cadastro do órgão */
+      setFoco(ds.passo, ds.item ? ds.campo + ":" + ds.item : ds.campo); App.render();
+    },
     "cpl-ir-usuarios": function () { if (typeof App !== "undefined" && App.irPara) App.irPara("usuarios"); },
     "cpl-porque": function (ds) {
       var corpo = "<p>" + Util.esc(ds.regra || "") + "</p><p><b>Fonte:</b> " + Util.esc(ds.fonte || "") + "</p>" +
@@ -1678,17 +1812,19 @@
     "cpl-novo": function () {
       if (!exigir("criar_processo")) return;
       var obras = K.lista("obras");
-      var corpoPasta = '<div class="field"><label>Ou suba a pasta do projeto</label><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
-        '<button type="button" class="btn primary" id="cpl-n-montar">Montar tudo a partir da pasta</button>' +
-        '<div class="cpl-sug">O sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche o que dá para deduzir. Secretaria e objeto abaixo ficam opcionais.</div></div>';
+      var corpoPasta = '<div class="field cpl-montar-destaque" id="cpl-n-destaque" style="padding:14px 16px;border:2px solid var(--primaria,#1d4f8c);border-radius:10px;margin-bottom:14px"><input type="file" id="cpl-n-pasta" webkitdirectory multiple hidden>' +
+        '<button type="button" class="btn primary" id="cpl-n-montar" style="width:100%;font-size:1.05em;padding:12px 16px">Montar tudo a partir da pasta</button>' +
+        '<div class="cpl-sug" id="cpl-n-montar-txt" style="margin-top:8px">Suba a pasta do projeto: o sistema lê o memorial, a planilha orçamentária e o cronograma, cria o processo e preenche os 10 passos o quanto os documentos permitirem. É o caminho mais rápido.</div></div>' +
+        '<p class="muted" style="margin:0 0 6px"><b>Ou</b> crie o processo em branco, informando só o essencial:</p>';
       var corpo = corpoPasta + campo("Secretaria requisitante *", '<input id="cpl-n-sec">') + campo("Objeto *", '<textarea id="cpl-n-obj" rows="3"></textarea>') + campo("Obra", '<select id="cpl-n-obra">' + K.optsRec(obras, "nome", G._cplObra, "— sem obra —") + "</select>");
       UI.modal("Novo processo de licitação", corpo, [
-        { texto: "Criar processo", classe: "primary", onClick: function () {
+        { texto: "Criar processo em branco", classe: "", onClick: function () {
           var papel = exigir("criar_processo"); if (!papel) return;
           var sec = lerCampo("cpl-n-sec"), obj = lerCampo("cpl-n-obj"), obra = lerCampo("cpl-n-obra");
           if (!sec || !obj) { toast("Informe a secretaria e o objeto.", "erro"); return; }
           var q = C.novoProcesso({ secretaria: sec, objeto: obj, obraId: obra || null }, quemAtual(papel), agoraLocal());
           F.registrar(q, "criar_processo", null, "criado", quemAtual(papel), agoraLocal());
+          try { var rpN = Pr.aplicarPadroes(q, ctxPadroes()); if (rpN.mudou) q = rpN.p; } catch (ePad) {}   /* cadastro do órgão + padrões de rotina, com selo */
           var r = salvarProc(q); if (!r) return;
           UI.fecharModal(); G._cplId = r.id; G._cplView = "proc"; G._cplAba = "passos"; G._cplPasso = "demanda"; App.render();
         } },
@@ -2060,7 +2196,8 @@
       q.passos.minuta.conferido = false;
       var r = Store.salvar(eid(), ENT_PROC, q);        // sem normalizar: acabamos de fixar a assinatura certa
       if (!r) { toast("Não consegui gravar o processo.", "erro"); return; }
-      toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos.", g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : primeiraPendencia(q));
+      var fOrgG = g.pendentes === 0 ? [] : faltaDoOrgao(q);
+      toast(g.pendentes === 0 ? g.docs.length + " documentos gerados" : "Há " + g.pendentes + " campo(s) em branco: o passo não fica pronto. Baixe como rascunho ou complete os passos." + (fOrgG.length ? " Faltam dados no Cadastro do órgão: " + fOrgG.map(function (x) { return x.rotulo; }).join("; ") + "." : ""), g.pendentes === 0 ? "ok" : "aviso", g.pendentes === 0 ? null : corrigirDaMinuta(q, fOrgG));
       App.render();
     },
 
@@ -2296,6 +2433,9 @@
     if (pa) pa.onchange = function () { adicionarArquivos(this.files); this.value = ""; };
     var pp = document.getElementById("cpl-preparo-pasta");
     if (pp) pp.onchange = function () { var fs_ = Array.prototype.slice.call(this.files || []); this.value = ""; if (fs_.length) montarDaPasta(fs_, null); };
+    var ot = document.getElementById("cpl-org-timbrado-arq");
+    if (ot) ot.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarTimbrado(f); };
+    if (G._cplView === "orgao" && G._cplFoco) { var fo = document.getElementById("cpl-org-" + G._cplFoco); G._cplFoco = null; if (fo && fo.focus) { try { fo.scrollIntoView({ block: "center" }); } catch (eS) {} fo.focus(); } }
     var am = document.getElementById("cpl-mod-arq");
     if (am) am.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) importarModelo(f, G._cplModTipo); };
     var ha = document.getElementById("cpl-hab-arq"), hp = document.getElementById("cpl-hab-pasta");

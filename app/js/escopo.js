@@ -449,6 +449,70 @@
       return Math.round(score * 100);
     },
 
+    /* SUGESTÕES PARA UMA BUSCA DE TEXTO LIVRE (13/11/2026) — "contrapiso 5cm" no
+       "+ Item" devolve até 3 composições, com código, unidade, preço e o NÍVEL de
+       confiança. Reaproveita o que o Escopo já sabe (STOP, UNID, SINONIMOS,
+       nivel); o que muda em relação a `analisarLinha`:
+       - "5cm", "10 mm", "25 mpa" são ESPECIFICAÇÃO do serviço (espessura, bitola,
+         fck), não quantidade: ficam na busca e pesam na confiança. A quantidade
+         de `analisarLinha` descarta todo número, e por isso "contrapiso 5cm"
+         lá devolvia a argamassa e não o contrapiso de espessura 5 cm;
+       - o módulo continua PURO: quem busca (e aplica os filtros de banco, tipo e
+         oneração da tela) é `buscarFn(texto)` -> [{ item, fonte, tipo }]. Nada
+         aqui consulta Bases ou App.
+       NUNCA INVENTA CÓDIGO: só devolve item que `buscarFn` trouxe das bases
+       instaladas. Sem correspondência suficiente (confiança < `minimo`, padrão 40)
+       a lista volta vazia e a tela diz "nenhuma composição encontrada".
+       Confiança = fração das palavras (com sinônimo) e das especificações que
+       aparecem na descrição x 90, +10 quando é composição (serviço), que é o que
+       se lança na planilha; insumo solto não passa de 90. */
+    sugerirBusca: function (texto, buscarFn, max, minimo) {
+      max = max || 3; minimo = minimo == null ? 40 : minimo;
+      var bruto = String(texto || "").trim();
+      var vazio = { termos: [], specs: [], sugestoes: [] };
+      if (bruto.length < 2 || typeof buscarFn !== "function") return vazio;
+      var norm = Util.normalizar(bruto).replace(/(\d)([a-z])/g, "$1 $2");
+      var specs = [], reSp = /(\d+(?:[.,]\d+)?)\s+(cm|mm|mpa|pol)(?=\s|$)/g, m;
+      while ((m = reSp.exec(norm)) !== null) specs.push(m[1].replace(",", ".") + m[2]);
+      var semSpec = norm.replace(reSp, " ");
+      var termos = [];
+      semSpec.split(" ").forEach(function (tk) {
+        if (!tk || /^\d/.test(tk) || UNID[tk] || STOP[tk] || tk.length < 3 || /^(nbr|abnt|norma|iso)$/.test(tk)) return;
+        String(SINONIMOS[tk] || tk).split(/\s+/).forEach(function (a) { if (a && termos.indexOf(a) < 0) termos.push(a); });
+      });
+      /* código digitado (5 a 7 dígitos, e não número de norma): é o caso certo */
+      var cod = (bruto.match(/\b(\d{5,7})\b/) || [])[1];
+      if (cod && new RegExp("\\b(?:NBR|NM|ISO|ABNT|DIN|ASTM|NR|EB|MB)\\s*[:.\\-]?\\s*" + cod + "\\b", "i").test(bruto)) cod = null;
+      var hit = cod ? this._obter(cod) : null;
+      if (hit) return { termos: termos, specs: specs, sugestoes: [{ item: hit.item, fonte: hit.fonte, tipo: (hit.item && hit.item.tipoItem === "insumo") ? "insumo" : "composicao", confianca: 100, nivel: this.nivel(100), motivo: "código informado" }] };
+      var palavras = termos.concat(specs);
+      if (!palavras.length) return vazio;
+      /* três buscas: o texto como foi digitado, o texto com os sinônimos ("reboco" -> "emboco") e só as
+         palavras do serviço, sem a especificação — é ela que traz a MESMA composição em outra espessura
+         (3 cm) ou o insumo, que entram mais abaixo, com confiança menor */
+      var vistos = {}, todos = [];
+      [bruto, palavras.join(" "), termos.join(" ")].forEach(function (q) {
+        if (!q) return;
+        var r = [];
+        try { r = buscarFn(q) || []; } catch (e) { r = []; }
+        r.forEach(function (x) {
+          if (!x || !x.item) return;
+          var k = String(x.fonte) + "|" + String(x.item.codigo);
+          if (vistos[k]) return; vistos[k] = 1; todos.push(x);
+        });
+      });
+      var out = todos.map(function (x, i) {
+        var d = Util.normalizar(x.item.descricao || "").replace(/(\d)\s+(cm|mm|mpa|pol)\b/g, "$1$2");
+        var casam = [], faltam = [];
+        palavras.forEach(function (w) { (d.indexOf(w) > -1 ? casam : faltam).push(w); });
+        var conf = Math.round(casam.length / palavras.length * 90 + (x.tipo === "insumo" ? 0 : 10));
+        return { item: x.item, fonte: x.fonte, tipo: x.tipo, label: x.label, cor: x.cor, confianca: Math.min(100, conf), nivel: Escopo.nivel(conf), _i: i,
+          motivo: (casam.length ? "casa: " + casam.join(", ") : "") + (faltam.length ? (casam.length ? "; " : "") + "falta: " + faltam.join(", ") : "") };
+      }).filter(function (x) { return x.confianca >= minimo; });
+      out.sort(function (a, b) { return (b.confianca - a.confianca) || (a._i - b._i); });
+      return { termos: termos, specs: specs, sugestoes: out.slice(0, max).map(function (x) { delete x._i; return x; }) };
+    },
+
     nivel: function (conf) {
       if (conf >= 70) return { rotulo: "Alta", cor: "verde" };
       if (conf >= 40) return { rotulo: "Média", cor: "amarelo" };

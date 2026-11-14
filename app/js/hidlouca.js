@@ -551,8 +551,11 @@
       /* Lote 1b: a torneira de embutir ficava 5 cm atrás da cuba MESMO que isso a pusesse atrás da parede (cuba funda, Distancia_parede padrão): agora para 3 cm dentro da parede */
       var mt = parte("metais", "Torneira, válvula e sifão", CROMO, true);
       var zT = mod === 1 ? (num(P.Dp, 0) > Pp / 2 ? Math.max(zB - 0.05, -num(P.Dp, 0) + 0.03) : zB - 0.05) : zB + Math.min(0.08, Pp * 0.2), yT = mod === 1 ? 0 : yTopo, alt = mod === 1 ? 0.18 : Math.max(0.16, Hc * 1.2);
-      torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), q, true);
-      valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, q);
+      /* LOTE 3-5 (13/11/2026, cuba de apoio 2.800 → menos triângulos): a válvula fica no fundo da cuba e o corpo dela sob o tampo — o giro com
+         menos faces (12 em vez de N) não muda a silhueta nas 3 vistas; a torneira (a peça que aparece) segue no nível de detalhe cheio */
+      var qVal = { N: Math.min(q.N, 16), n: Math.min(q.n, 8), arco: Math.min(q.arco, 2), k: q.k, kv: q.kv }, qTor = { N: q.N, n: Math.min(q.n, 12), arco: Math.min(q.arco, 3), k: q.k, kv: q.kv };
+      torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), qTor, true);
+      valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, qVal);
       /* sifão de copo: a saída termina no CONECTOR de esgoto — N23 EMBUTIDO (26/10/2026): com a parede atrás (Distancia_parede além do
          fundo da cuba) a saída do sifão vai até a PAREDE, com a canopla (o tubo de saída do sifão entra no ponto de esgoto da parede);
          sem parede (ilha), no eixo (0, −Esgoto_abaixo_tampo, 0), como antes */
@@ -1090,22 +1093,26 @@
      O EIXO segue a fórmula do conector de sucção (0,03 + Largura/2), que é da frente de traçado: com a Largura
      da ficha (156) ele fica 32 mm acima do C da ficha — anotado no doc. */
   function geoBomba(P, q) {
-    var C = P.C, W = P.W, H = P.H, x0 = -C / 2, yc = 0.03 + W / 2, partes = [], N = q.N, k = C / 0.266;
-    var ba = parte("base", "Pé", AZUL), vo = parte("voluta", "Carcaça em voluta e bocais", FERRO), mo = parte("motor", "Motor", AZUL), vt = parte("ventilador", "Tampa traseira", PRETO);
-    var xf = x0 + 0.055 * k, ec = 0.06 * k, xm0 = xf + ec, xm1 = C / 2, rv = W * 0.44, rm = Math.min(W * 0.4, yc - 0.006), xp = (xm0 + xm1) / 2;
+    /* LOTE 3-5 (13/11/2026): P.yc = eixo da sucção (letra C da ficha Dancor) e P.xr = face da sucção → eixo do recalque (B + J); 0 = proporção antiga */
+    var C = P.C, W = P.W, H = P.H, x0 = -C / 2, yc = P.yc > 0 ? P.yc : 0.03 + W / 2, partes = [], N = q.N, k = C / 0.266;
+    /* LOTE 3-5: tipo da ficha Dancor (P.yc > 0) nas cores da foto do catálogo — motor e pé pretos, carcaça em liga de alumínio-silício (p.160) */
+    var dancor = P.yc > 0, cMot = dancor ? "metal preto" : AZUL, cVol = dancor ? "alumínio" : FERRO;
+    var ba = parte("base", "Pé", cMot), vo = parte("voluta", "Carcaça em voluta e bocais", cVol), mo = parte("motor", "Motor", cMot), vt = parte("ventilador", "Tampa traseira", PRETO);
+    var xf = x0 + 0.055 * k, ec = 0.06 * k, xm0 = xf + ec, xm1 = C / 2, rv = Math.min(W * 0.44, yc - 0.004), rm = Math.min(W * 0.4, yc - 0.006), xp = (xm0 + xm1) / 2;
+    var xr = P.xr > 0 ? x0 + P.xr : xf + ec * 0.45;   /* eixo do recalque (o conector da família usa a mesma conta) */
     /* pé central em chapa (base F × 100, alma até o motor) */
     caixaR(ba.m, { x0: xp - 0.05 * k, x1: xp + 0.05 * k, y0: 0, y1: 0.008, z0: -W / 2, z1: W / 2, r: 0.002, rad: 0.01 }, q);
     loft(ba.m, [anelRR(0.008, xp, 0, 0.04 * k, W * 0.36, 0.008, 2), anelRR(yc - rm * 0.8, xp, 0, 0.03 * k, W * 0.2, 0.008, 2)]);
     /* carcaça: disco com a voluta em caracol, 4 parafusos e o bocal de sucção no eixo */
     torno(vo.m, [[rv * 0.4, 0], [rv * 0.92, 0.004], [rv, 0.012], [rv, ec - 0.012], [rv * 0.92, ec - 0.004], [rv * 0.5, ec]], N, { c: [xf, yc, 0], eixo: [1, 0, 0] });
     var esp = [], ns = q.N > 20 ? 18 : 9, kk;
-    for (kk = 0; kk <= ns; kk++) { var f = kk / ns, ph = Math.PI * 0.5 + f * Math.PI * 1.55, r = rv * (0.72 + 0.2 * f); esp.push([xf + ec * 0.45, yc + r * Math.cos(ph), r * Math.sin(ph)]); }
+    for (kk = 0; kk <= ns; kk++) { var f = kk / ns, ph = Math.PI * 0.5 + f * Math.PI * 1.55, r = rv * (0.72 + 0.2 * f); esp.push([xf + ec * 0.45, yc + r * Math.cos(ph), r * Math.sin(ph)]); }   /* voluta no plano da carcaça */
     var ult = esp[esp.length - 1];
-    esp.push([xf + ec * 0.45, ult[1] + 0.012, ult[2] * 0.4], [xf + ec * 0.45, H - 0.05, 0]);
+    esp.push([xf + ec * 0.45, ult[1] + 0.012, ult[2] * 0.4], [xr, H - 0.05, 0]);
     tubo(vo.m, esp, rv * 0.2, Math.max(8, q.n - 2), { rc: 0, arco: q.arco, raio: function (i, n) { return rv * (0.1 + 0.14 * Math.min(1, i / (n * 0.8))); } });
     [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (sg) { torno(vo.m, [[0.007, 0], [0.007, 0.008], [0, 0.009]], 6, { c: [xf, yc + sg[0] * rv * 0.72, sg[1] * rv * 0.72], eixo: [-1, 0, 0] }); });
     /* recalque: pescoço cônico até o topo (conector) e bocal de sucção na frente, no eixo (conector) */
-    torno(vo.m, [[0.016, 0], [0.017, 0.02], [0.022, 0.034], [0.022, 0.05]], q.n + 4, { c: [xf + ec * 0.45, H - 0.05, 0], eixo: [0, 1, 0] });
+    torno(vo.m, [[0.016, 0], [0.017, 0.02], [0.022, 0.034], [0.022, 0.05]], q.n + 4, { c: [xr, H - 0.05, 0], eixo: [0, 1, 0] });
     torno(vo.m, [[0.019, 0], [0.019, xf - x0 - 0.012], [0.023, xf - x0 - 0.01], [0.023, xf - x0]], q.n + 4, { c: [xf, yc, 0], eixo: [-1, 0, 0] });
     /* motor: cilindro liso com aberturas de ventilação, 4 tirantes e a caixa de ligação em cima */
     torno(mo.m, [[rm * 0.9, 0], [rm, 0.006], [rm, xm1 - xm0 - 0.03], [rm * 0.96, xm1 - xm0 - 0.012]], N, { c: [xm0, yc, 0], eixo: [1, 0, 0] });
@@ -1114,6 +1121,71 @@
     torno(vt.m, [[rm * 0.96, 0], [rm * 0.96, 0.014], [rm * 0.7, 0.02], [0, 0.021]], N, { c: [xm1 - 0.02, yc, 0], eixo: [1, 0, 0] });
     [0.25, 0.75].forEach(function (t) { caixaR(vt.m, { x0: xm0 + (xm1 - xm0) * t - 0.02, x1: xm0 + (xm1 - xm0) * t + 0.02, y0: yc - rm * 0.5, y1: yc - rm * 0.3, z0: rm * 0.96, z1: rm * 1.01, r: 0.002, rad: 0.004 }, { k: 1, kv: 1 }); });
     partes.push(ba, vo, mo, vt);
+    return partes;
+  }
+
+  /* ---------- LOTE 3-5 (13/11/2026): DUCHA ELÉTRICA pelo desenho cotado da ficha Zagonel ----------
+     Origem = o PONTO DE ÁGUA (rosca de 1/2"); a parede em Z = 0, a ducha sai para +Z; Y para cima.
+     P.mod = 1 → MOMENT Eletrônica (ficha técnica Zagonel Rev.03 Mar/2026, "Dimensões do produto", p.8 do PDF): 182 (largura) × 350 (da parede
+       à frente) × 126 (do topo do espalhador ao fundo da câmara); 360 até a ponta do puxador; espalhador Ø150 (características técnicas, p.3);
+       a entrada é a rosca vertical no topo, junto da parede.
+     P.mod = 2 → DUCALI Eletrônica (ficha Zagonel Rev.02 Jun/2024, p.8): 476 (da parede à frente) × 265 (largura) × 458 (altura total);
+       237 do topo ao fundo do corpo; espalhador 210 × 130 (p.3); entrada horizontal atrás, no alto do corpo.
+     P.L, P.P, P.H = largura, profundidade e altura total (cotas da ficha); detalhe sem cota (raio de canto, espessura da placa, braço) é
+     proporção do desenho. */
+  function geoDuchaZagonel(P, q) {
+    var W = P.W, Pp = P.P, H = P.H, mod = P.mod > 1.5 ? 2 : 1, partes = [], N = q.N;   /* a mesma régua do conector (Modelo > 1.5 = Ducali) */
+    var co = parte("corpo", "Corpo da ducha", BRANCO), es = parte("espalhador", "Espalhador", CLARO), ac = parte("ligacoes", "Rosca, cordão e puxador", LATAO, true), pu = parte("puxador", "Cordão e puxador", BRANCO, true);
+    if (mod === 2) {
+      /* o espalhador 210 × 130 acompanha a largura e a profundidade do tipo (proporção da ficha: 210/265 e 130/476) */
+      var hc = num(P.Hc, 0.237), ex = num(P.Ex, 0.21 * W / 0.265), ez = num(P.Ez, 0.13 * Pp / 0.476), yT = 0.022, tp = 0.016;
+      /* placa de cima (476): afina para a frente como no desenho lateral (16 → 13 → 9 mm, face de cima reta) com a borda arredondada */
+      [[0.004, Pp * 0.45, tp], [Pp * 0.45, Pp * 0.75, tp * 0.8], [Pp * 0.75, Pp, tp * 0.56]].forEach(function (g) { caixaR(co.m, { x0: -W / 2, x1: W / 2, y0: yT - g[2], y1: yT, z0: g[0], z1: g[1], r: 0.003, rad: 0.008 }, q); });
+      caixaR(co.m, { x0: -W / 2, x1: W / 2, y0: yT - hc, y1: yT - tp + 0.002, z0: 0.004, z1: 0.04, r: 0.008, rad: 0.012 }, q);   /* corpo do aquecedor na parede (237 × 265, ~36 de espessura no desenho) */
+      /* espalhador 210 × 130 sob a frente da placa, com a grade de bicos (76 furos Ø1, p.3) */
+      var zE0 = Pp - 0.02 - ez, zE1 = Pp - 0.02, yE = yT - tp * 0.56 - 0.004;
+      caixaR(es.m, { x0: -ex / 2, x1: ex / 2, y0: yE, y1: yT - tp * 0.56 + 0.001, z0: zE0, z1: zE1, r: 0.002, rad: 0.012 }, q);
+      var bi = parte("bicos", "Bicos do espalhador", ESCURO), nx = q.N > 20 ? 11 : 5, nz = q.N > 20 ? 7 : 3, ib, jb;
+      for (ib = 0; ib < nx; ib++) for (jb = 0; jb < nz; jb++) {
+        var xb = -ex / 2 + 0.012 + (ex - 0.024) * ib / (nx - 1), zb = zE0 + 0.012 + (ez - 0.024) * jb / (nz - 1);
+        torno(bi.m, [[0.0028, 0], [0.0022, 0.004], [0, 0.0045]], q.N > 20 ? 8 : 5, { c: [xb, yE + 0.0005, zb], eixo: [0, -1, 0] });
+      }
+      partes.push(bi);
+      /* faixa da cascata na frente do corpo, logo abaixo da placa (vista frontal: a fileira de 11 bicos) */
+      caixaR(es.m, { x0: -W / 2 + 0.012, x1: W / 2 - 0.012, y0: yT - tp - 0.018, y1: yT - tp + 0.001, z0: 0.038, z1: 0.05, r: 0.002, rad: 0.004 }, q);
+      for (ib = 0; ib < 11; ib++) torno(bi.m, [[0.003, 0], [0.003, 0.005], [0, 0.0055]], 6, { c: [-W / 2 + 0.03 + (W - 0.06) * ib / 10, yT - tp - 0.009, 0.05], eixo: [0, 0, 1] });
+      /* braços diagonais com o PIVÔ embaixo (a abraçadeira com parafuso do desenho) */
+      [-1, 1].forEach(function (sg) {
+        var xa = sg * (W / 2 - 0.012);
+        tubo(co.m, [[xa, yT - hc + 0.035, 0.045], [xa, yT - tp * 0.8 - 0.002, Pp * 0.62]], 0.007, 8, { rc: 0 });
+        caixaR(co.m, { x0: xa - 0.008, x1: xa + 0.008, y0: yT - hc + 0.012, y1: yT - hc + 0.06, z0: 0.035, z1: 0.058, r: 0.003, rad: 0.004 }, q);
+        torno(ac.m, [[0.0045, 0], [0.0045, 0.003], [0, 0.0035]], 8, { c: [xa + sg * 0.008, yT - hc + 0.035, 0.047], eixo: [sg, 0, 0] });
+      });
+      /* painel digital (visor) e o botão redondo da vista frontal */
+      caixaR(es.m, { x0: -0.045, x1: 0.045, y0: yT - hc * 0.62, y1: yT - hc * 0.5, z0: 0.04, z1: 0.043, r: 0.001, rad: 0.004 }, { k: 1, kv: 1 });
+      torno(es.m, [[0.007, 0], [0.007, 0.003], [0.005, 0.005], [0, 0.0052]], 12, { c: [0.06, yT - hc + 0.03, 0.04], eixo: [0, 0, 1] });
+      torno(ac.m, [[0.0105, 0], [0.0105, 0.02], [0.012, 0.022], [0.012, 0.03]], q.n, { c: [0, 0, 0.03], eixo: [0, 0, -1] });   /* rosca de 1/2" para a parede */
+      tubo(pu.m, [[0, yT - hc, 0.025], [0, yT - H + 0.04, 0.025]], 0.0025, 6, { rc: 0 });
+      torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yT - H, 0.025] });
+    } else {
+      /* espalhador e cúpula acompanham a largura do tipo (proporção da ficha: Ø150 em 182) */
+      var R = W / 2, kM = W / 0.182, zc = Pp - R, hE = num(P.Hc, 0.126), rE = num(P.Re, 0.075 * kM), yTop = -0.012;
+      /* cabeça (revisão 13/11 com a foto do produto, img 11): CÚPULA em cima e o ESPALHADOR Ø150 virado PARA BAIXO, com o anel de abas (182) na borda
+         e os 75 furos Ø0,9 em anéis (ficha p.3); 126 = do topo da cúpula à face do espalhador */
+      var yB = yTop - hE;
+      torno(co.m, [[0, 0], [rE * 0.98, 0], [R * 0.97, 0.004], [R, 0.014], [R * 0.95, 0.026], [rE * 0.92, 0.036], [0.066 * kM, 0.055], [0.052 * kM, 0.085], [0.03 * kM, 0.112], [0, hE]], N, { c: [0, yB, zc] });
+      torno(es.m, [[0, 0], [rE, 0], [rE, 0.0015], [0, 0.0015]], N, { c: [0, yB - 0.0015, zc] });   /* face do espalhador */
+      var fu = parte("furos", "Furos do espalhador (75 × Ø0,9)", ESCURO), aneis = [[0.018 * kM, 8], [0.033 * kM, 14], [0.048 * kM, 22], [0.063 * kM, 31]];
+      if (q.N > 20) aneis.forEach(function (an) { for (var kf = 0; kf < an[1]; kf++) { var tf = TAU * kf / an[1]; torno(fu.m, [[0, 0], [0.0016, 0], [0.0016, 0.0008], [0, 0.0008]], 6, { c: [Math.cos(tf) * an[0], yB - 0.0022, zc + Math.sin(tf) * an[0]] }); } });
+      else aneis.forEach(function (an) { torno(fu.m, [[an[0] - 0.0015, 0], [an[0] + 0.0015, 0], [an[0] + 0.0015, 0.0008], [an[0] - 0.0015, 0.0008]], N, { c: [0, yB - 0.0022, zc] }); });   /* longe: os anéis de furos viram faixas */
+      partes.push(fu);
+      /* pescoço até a parede: o "gargalo" do desenho em planta (afina de 2R para ~0,62 × 2R junto da parede) */
+      caixaR(co.m, { x0: -R * 0.62, x1: R * 0.62, y0: yTop - 0.075, y1: yTop - 0.002, z0: 0.004, z1: zc - R * 0.5, r: 0.014, rad: 0.03 }, q);
+      torno(ac.m, [[0.0105, 0], [0.0105, 0.016], [0.012, 0.018], [0.012, 0.024]], q.n, { c: [0, -0.024, 0.03], eixo: [0, 1, 0] });   /* rosca de 1/2" para cima */
+      tubo(pu.m, [[0, yTop - 0.075, 0.07], [0, yTop - H + 0.04, 0.07]], 0.0025, 6, { rc: 0 });   /* o cordão sai de baixo do pescoço */
+      torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yTop - H, 0.07] });
+    }
+    partes.push(co, es, ac, pu);
     return partes;
   }
 
@@ -1371,15 +1443,15 @@
     caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
-    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador
+    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
-    bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
+    bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 950, caixa_descarga_embutida: 1400,
     caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
-    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600
+    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
   var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",

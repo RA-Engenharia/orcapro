@@ -669,6 +669,8 @@
       var r = Perfis.aplicarTeste(novos);
       if (!r.ok) { toast(r.erro || "Não consegui guardar a escolha.", "erro"); return; }
       this._marcarInteresse();
+      /* o assunto escolhido também vai ao registro do teste no servidor (painel do admin); falha de rede não muda nada aqui */
+      try { if (global.Licenca && Licenca.enviarInteresseTeste) Licenca.enviarInteresseTeste(r.interesses || novos); } catch (eSv) {}
       try { UI.fecharModal(); } catch (e) {}
       var primeiro = { orcamento: "orcamentos", bim: "bim", gestao: "obras", licitacao: "orcamentos" }[id] || "orcamentos";
       var liberando = this._liberando;

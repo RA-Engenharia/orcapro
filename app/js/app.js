@@ -22,6 +22,9 @@
     _idxAberto: (function () { try { return localStorage.getItem("orcapro:idxEtapas") === "1"; } catch (e) { return false; } })(),
     /* modo compacto da planilha: linha mais baixa p/ caber mais item na tela.
        Preferência de TELA, igual ao índice — localStorage, não o orçamento. */
+    /* curva ABC na planilha: "" desligada · "1" marcador A/B/C · "A" só os itens A.
+       Preferência de TELA (localStorage), como o modo compacto. */
+    _plAbc: (function () { try { var v = localStorage.getItem("orcapro:plAbc"); return (v === "1" || v === "A") ? v : ""; } catch (e) { return ""; } })(),
     _plCompacta: (function () { try { return localStorage.getItem("orcapro:plCompacta") === "1"; } catch (e) { return false; } })(),
     etapaRecolhida: function (orcId, etapaId) {
       var m = this._etapasRecolhidas[orcId];
@@ -308,7 +311,7 @@
       try {
         if (typeof Licenca !== "undefined") {
           var sl = Licenca.status();
-          if (sl && sl.trial && sl.ativo && (sl.restanteMs || 0) < 2 * 86400000) {
+          if (sl && sl.trial && sl.ativo && (sl.restanteMs || 0) < 2 * 86400000 && !(typeof Produto !== "undefined" && Produto.semTesteGratis())) {
             UI.toast("⏳ Seu teste grátis termina em " + (sl.rotulo || "breve") + ". Garanta sua licença (🔑) e não perca o ritmo — seus orçamentos continuam aqui.", "erro");
           }
         }
@@ -2155,6 +2158,7 @@
           }
           if (!noModal) self.entrar();
         }
+        if (self._planilhaTecla(e)) return;
         // Busca universal: Ctrl+K / Cmd+K de qualquer tela logada — modificadores
         // EXATOS (não sequestra Ctrl+Shift+K/AltGr+K) e nunca por cima de
         // apresentação fullscreen ou tour (gate v1.1.63)
@@ -2361,7 +2365,8 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
+      if (this._planilhaClick(e)) return;
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar],[data-an-voltar],[data-an-desc]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -2374,6 +2379,8 @@
       /* ORÇAMENTO GUIADO (js/orcguiaui.js, prévia ?previa=orcamento): todo `data-acao="orcguia-…"` vai para a fiação própria */
       if (t.dataset.acao && typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interceptaAtalho && OrcGuiaUI.interceptaAtalho(this, t)) return;   // [Dados] e [Parâmetros] do Mais: atalhos para a aba BDI & Parâmetros
       if (t.dataset.acao && t.dataset.acao.indexOf("orcguia-") === 0) { if (typeof OrcGuiaUI !== "undefined") OrcGuiaUI.acao(this, t.dataset.acao, t); return; }
+      /* REVISÕES E PREÇOS (js/orcprecosui.js): cotação no item, revisões R00/R01, atualizar para outra base, comparar bases */
+      if (t.dataset.acao && t.dataset.acao.indexOf("orcprec-") === 0) { if (typeof OrcPrecosUI !== "undefined") OrcPrecosUI.acao(this, t.dataset.acao, t); return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
       // v1.1.123 — criador de composição: adicionar/remover insumo no passo 2
@@ -2592,6 +2599,13 @@
         this._colMenuAberto = true;
         this._persistirColunas(); this.render(); return;
       }
+      if (t.dataset.acao === "pl-atalhos") { this._abrirAtalhos(); return; }
+      if (/^pl-sel-/.test(t.dataset.acao || "")) { this._planilhaLote(t.dataset.acao); return; }
+      if (t.dataset.acao === "pl-abc" || t.dataset.acao === "pl-abc-a") {
+        this._plAbc = t.dataset.acao === "pl-abc" ? (this._plAbc ? "" : "1") : (this._plAbc === "A" ? "1" : "A");
+        try { localStorage.setItem("orcapro:plAbc", this._plAbc); } catch (e) {}
+        this.render(); return;
+      }
       if (t.dataset.acao === "pl-compacta") {
         this._plCompacta = !this._plCompacta;
         try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
@@ -2679,8 +2693,20 @@
         }
         return;
       }
-      // ver insumos (composição explodida)
-      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem, t.dataset.viBase); return; }
+      /* Analítico: "Voltar" (volta uma composição na trilha) e descrição que
+         abre/fecha o texto inteiro (a linha mostra 2 linhas e reticências) */
+      if (t.hasAttribute && t.hasAttribute("data-an-voltar")) {
+        var pAn = (this._anPilha || []).pop();
+        if (pAn) this.verInsumos(pAn.codigo, pAn.refItem, pAn.fonteBase, "pop");
+        return;
+      }
+      if (t.hasAttribute && t.hasAttribute("data-an-desc")) {
+        var abertoAn = t.getAttribute("aria-expanded") === "true";
+        t.setAttribute("aria-expanded", abertoAn ? "false" : "true");
+        return;
+      }
+      // ver insumos (composição explodida) — `data-vi-nav`: veio de dentro de outro analítico (empilha p/ o "Voltar")
+      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem, t.dataset.viBase, t.dataset.viNav ? "push" : undefined); return; }
       // remover base extra — a PROPRIA guarda composições AUTORAIS (não há como
       // reimportar), então exige confirmação explícita antes de apagar
       if (t.dataset.baseRemover) {
@@ -3224,12 +3250,12 @@
         // re-render do modal aberto (mantém a composição na tela)
         var compAberta = (document.querySelector("#modal-bg header h2") || {}).textContent || "";
         // "Composição própria PROP-XXXX" também: pula o adjetivo p/ capturar o código
-        var mCod = compAberta.match(/Composição(?:\s+própria)?\s+(\S+)/);
+        var mCod = compAberta.match(/composição(?:\s+própria)?\s+(\S+)/i);
         if (mCod && typeof Analitico !== "undefined" && Analitico.obter) {
           var aRe = Analitico.obter(mCod[1]);
           if (aRe) {
             var corpoRe = document.querySelector("#modal-bg .modal .body");
-            if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null);
+            if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null, { trilha: (this._anPilha || []).map(function (x) { return x.codigo; }) });
           }
         }
         // os avisos "insumo sem preço" da planilha ATRÁS do modal atualizam na
@@ -12090,6 +12116,177 @@
       Orcamento.removerItem(this.orcAtual, etapaId, itemId);
       this.persistir(); this.render();
     },
+
+    /* =====================================================================
+     * PLANILHA: SELEÇÃO DE LINHAS E ATALHOS (13/11/2026)
+     * Selecionar: clique no número do item; Ctrl+clique soma/tira; Shift+clique faz faixa.
+     * Atalhos (fora de caixa de texto, exceto Ctrl+Enter, Ctrl+D e Alt+setas, que valem também na
+     * linha que está sendo editada): Insert ou Ctrl+Enter = inserir item abaixo; Ctrl+D = duplicar;
+     * Alt+↑/↓ = mover; Delete = excluir (pede confirmação); Esc = limpar a seleção.
+     * A seleção é estado de TELA (por orçamento) e NÃO é gravada. As operações de linha moram em
+     * Orcamento (duplicarItem, moverItens, moverItensParaEtapa, removerItens, definirQuantidadeItens).
+     * ===================================================================== */
+    _sel: {}, _selOrc: "", _selAncora: "",
+    _selRefs: function () {
+      var orc = this.orcAtual, out = [], self = this;
+      if (!orc || this._selOrc !== orc.id) return out;
+      /* na ORDEM DA TELA (a das linhas), não na da chave */
+      var vistas = {};
+      Array.prototype.forEach.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (tr) {
+        var k = tr.getAttribute("data-sel");
+        if (self._sel[k]) { var p = k.split("|"); out.push({ etapaId: p[0], itemId: p[1] }); vistas[k] = 1; }
+      });
+      for (var k2 in this._sel) {
+        if (this._sel[k2] && !vistas[k2]) { var q = k2.split("|"); if (Orcamento._achaItem(orc, { etapaId: q[0], itemId: q[1] })) out.push({ etapaId: q[0], itemId: q[1] }); }
+      }
+      return out;
+    },
+    _selPintar: function () {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      Array.prototype.forEach.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (tr) {
+        var on = !!(self._selOrc === orc.id && self._sel[tr.getAttribute("data-sel")]);
+        if (on) tr.classList.add("lin-sel"); else tr.classList.remove("lin-sel");
+      });
+      var velha = document.getElementById("pl-sel-bar"), qv = "", ev = "";
+      if (velha) { qv = (document.getElementById("pl-sel-qtd") || {}).value || ""; ev = (document.getElementById("pl-sel-etapa") || {}).value || ""; }
+      var html = UI.renderSelBar(orc, this._selOrc === orc.id ? this._sel : {});
+      if (velha) { if (html) velha.outerHTML = html; else velha.parentNode.removeChild(velha); }
+      else if (html) {
+        var col = document.querySelector("#main .pl-col") || document.getElementById("main");
+        if (col) col.insertAdjacentHTML("afterbegin", html);
+      }
+      if (html && velha) {
+        var iq = document.getElementById("pl-sel-qtd"), ie = document.getElementById("pl-sel-etapa");
+        if (iq) iq.value = qv;
+        if (ie && ev) ie.value = ev;
+      }
+    },
+    _selLimpar: function () { this._sel = {}; this._selAncora = ""; this._selPintar(); },
+    _selDefinir: function (refs) {
+      var self = this;
+      this._sel = {}; this._selOrc = this.orcAtual ? this.orcAtual.id : "";
+      Util.arr(refs).forEach(function (r) { self._sel[r.etapaId + "|" + r.itemId] = true; });
+    },
+    /* clique do mouse nas linhas da planilha. Devolve true quando tratou. */
+    _planilhaClick: function (e) {
+      if (this.tela !== "editor" || this.aba !== "planilha" || !this.orcAtual || !e.target || !e.target.closest) return false;
+      var tr = e.target.closest("#main tr.lin[data-sel]"); if (!tr) return false;
+      if (e.target.closest("input, select, textarea, button, a, label, [data-ver-insumos], [data-memoria], [data-ajuste], [data-del-item], [data-mover-item]")) return false;
+      var multi = e.ctrlKey || e.metaKey, faixa = e.shiftKey, emNumero = !!e.target.closest("td.num-item");
+      if (!multi && !faixa && !emNumero) return false;
+      var orc = this.orcAtual, chave = tr.getAttribute("data-sel");
+      if (this._selOrc !== orc.id) { this._sel = {}; this._selOrc = orc.id; this._selAncora = ""; }
+      if (faixa && this._selAncora) {
+        var linhas = Array.prototype.filter.call(document.querySelectorAll("#main tr.lin[data-sel]"), function (r) { return !/\b(oculta|abc-fora)\b/.test(r.className); });
+        var ks = linhas.map(function (r) { return r.getAttribute("data-sel"); });
+        var a = ks.indexOf(this._selAncora), b = ks.indexOf(chave);
+        if (a > -1 && b > -1) {
+          if (!multi) this._sel = {};
+          for (var i = Math.min(a, b); i <= Math.max(a, b); i++) this._sel[ks[i]] = true;
+        }
+        try { window.getSelection().removeAllRanges(); } catch (e1) {}
+      } else if (multi) {
+        if (this._sel[chave]) delete this._sel[chave]; else this._sel[chave] = true;
+        this._selAncora = chave;
+      } else {
+        var unica = this._sel[chave] && Object.keys(this._sel).length === 1;
+        this._sel = {}; if (!unica) this._sel[chave] = true;
+        this._selAncora = chave;
+      }
+      this._selPintar();
+      return true;
+    },
+    /* teclado da planilha. Devolve true quando tratou (e já deu preventDefault). */
+    _planilhaTecla: function (e) {
+      if (this.tela !== "editor" || this.aba !== "planilha" || !this.orcAtual) return false;
+      if (document.getElementById("modal-bg") || document.fullscreenElement) return false;
+      var k = e.key, ctrl = e.ctrlKey || e.metaKey, alt = e.altKey, el = e.target;
+      var emCampo = !!(el && el.matches && el.matches("input, textarea, select, [contenteditable='true']"));
+      var trFoco = (el && el.closest) ? el.closest("#main tr.lin[data-sel]") : null;
+      if (emCampo && !trFoco) return false;                        // campo de fora da planilha (nome, busca…)
+      var ehIns = (k === "Insert" || (ctrl && !alt && !e.shiftKey && k === "Enter"));
+      var ehDup = ctrl && !alt && !e.shiftKey && String(k).toLowerCase() === "d";
+      var ehMov = alt && !ctrl && !e.shiftKey && (k === "ArrowUp" || k === "ArrowDown");
+      var ehDel = (k === "Delete") && !ctrl && !alt && !e.shiftKey && !emCampo;
+      var ehEsc = (k === "Escape") && !emCampo;
+      if (!(ehIns || ehDup || ehMov || ehDel || ehEsc)) return false;
+      if (ehEsc) { if (!Object.keys(this._sel).length) return false; this._selLimpar(); return true; }
+      var orc = this.orcAtual, refs = this._selRefs();
+      if (!refs.length && trFoco) { var p0 = trFoco.getAttribute("data-sel").split("|"); refs = [{ etapaId: p0[0], itemId: p0[1] }]; }
+      if (!refs.length) return false;
+      e.preventDefault();
+      if (ehIns) {
+        var ult = refs[refs.length - 1], a0 = Orcamento._achaItem(orc, ult);
+        this.abrirBuscaSinapi(ult.etapaId, "", (a0 && a0.item.subEtapaId) || "", ult.itemId);
+        return true;
+      }
+      if (ehDup) {
+        var novos = [], travados = 0;
+        refs.forEach(function (r) { var id = Orcamento.duplicarItem(orc, r.etapaId, r.itemId); if (id) novos.push({ etapaId: r.etapaId, itemId: id }); else travados++; });
+        if (!novos.length) { UI.toast("Nada para duplicar: " + (travados ? "item do órgão não se duplica." : "linha não encontrada."), "erro"); return true; }
+        this._selDefinir(novos); this.persistir(); this.render();
+        UI.toast(novos.length + (novos.length === 1 ? " item duplicado" : " itens duplicados") + " logo abaixo do original" + (travados ? " (" + travados + " do órgão ficou de fora)" : "") + ".", "ok");
+        return true;
+      }
+      if (ehMov) {
+        var n = Orcamento.moverItens(orc, refs, k === "ArrowUp" ? -1 : 1);
+        if (!n) return true;                                    // já está na ponta do grupo
+        this._selDefinir(refs); this.persistir(); this.render();
+        var r1 = document.querySelector("#main tr.lin-sel"); if (r1 && r1.scrollIntoView) r1.scrollIntoView({ block: "nearest" });
+        return true;
+      }
+      if (ehDel) { this._confirmarExcluirLinhas(refs); return true; }
+      return false;
+    },
+    _confirmarExcluirLinhas: function (refs) {
+      var self = this, orc = this.orcAtual, custo = 0, n = 0;
+      refs.forEach(function (r) { var a = Orcamento._achaItem(orc, r); if (a) { n++; custo += Orcamento.custoItem(a.item); } });
+      if (!n) return;
+      UI.modal(n === 1 ? "Excluir 1 item?" : "Excluir " + n + " itens?",
+        '<p style="margin:0 0 8px">' + (n === 1 ? "O item sai" : "Os " + n + " itens saem") + ' da planilha e o custo direto do orçamento diminui <b>' + Util.esc(Util.fmtMoeda(custo)) + '</b>.</p>' +
+        '<p class="muted" style="margin:0;font-size:var(--t-peq)">Medições, compras e cronograma que já usam estes itens não são apagados por aqui.</p>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Excluir", classe: "primary", onClick: function () {
+            var r = Orcamento.removerItens(orc, refs);
+            UI.fecharModal(); self._selDefinir([]); self.persistir(); self.render();
+            UI.toast(r.removidos + (r.removidos === 1 ? " item excluído" : " itens excluídos") + (r.travados ? "; " + r.travados + " do órgão não saem no modo licitação" : "") + ".", r.removidos ? "ok" : "erro");
+         } }]);
+      UI.modalConsulta();
+    },
+    _planilhaLote: function (acao) {
+      var orc = this.orcAtual, refs = this._selRefs();
+      if (!orc || !refs.length) return;
+      if (acao === "pl-sel-limpar") { this._selLimpar(); return; }
+      if (acao === "pl-sel-excluir") { this._confirmarExcluirLinhas(refs); return; }
+      if (acao === "pl-sel-qtd") {
+        var v = Util.num((document.getElementById("pl-sel-qtd") || {}).value);
+        if (!(v > 0)) { UI.toast("Informe uma quantidade maior que zero.", "erro"); return; }
+        var r = Orcamento.definirQuantidadeItens(orc, refs, v);
+        this.persistir(); this.render();
+        UI.toast("Quantidade " + Util.fmtNum(v, 2) + " definida em " + r.alterados + (r.alterados === 1 ? " item" : " itens") + (r.travados ? "; " + r.travados + " do órgão não muda de quantidade no modo licitação" : "") + ".", r.alterados ? "ok" : "erro");
+        return;
+      }
+      if (acao === "pl-sel-mover") {
+        var dest = (document.getElementById("pl-sel-etapa") || {}).value || "";
+        if (!dest) { UI.toast("Escolha a etapa de destino.", "erro"); return; }
+        var m = Orcamento.moverItensParaEtapa(orc, refs, dest);
+        if (!m.movidos) { UI.toast(m.mesma ? "Os itens já estão nessa etapa." : "Nenhum item pôde ser movido.", "erro"); return; }
+        if (this.expandirEtapa) this.expandirEtapa(dest, "");
+        this._selDefinir(m.refs);   // a chave da seleção leva a etapa: quem mudou de etapa continua selecionado
+        this.persistir(); this.render();
+        UI.toast(m.movidos + (m.movidos === 1 ? " item movido" : " itens movidos") + " para o fim da etapa" + (m.travados ? "; " + m.travados + " do órgão ficou de fora" : "") + ".", "ok");
+      }
+    },
+    _abrirAtalhos: function () {
+      var L = [["Clique no número do item", "seleciona a linha"], ["Ctrl + clique", "soma ou tira uma linha da seleção"], ["Shift + clique", "seleciona a faixa até a linha clicada"],
+        ["Insert ou Ctrl + Enter", "inserir item abaixo da linha"], ["Ctrl + D", "duplicar a linha (ou as selecionadas)"], ["Alt + ↑ / ↓", "mover a linha (ou as selecionadas)"],
+        ["Delete", "excluir, com confirmação"], ["Esc", "limpar a seleção"]];
+      UI.modal("Atalhos da planilha",
+        '<p class="muted" style="margin:0 0 10px;font-size:var(--t-peq)">Valem na linha em foco ou nas linhas selecionadas. Delete não age enquanto você digita numa célula.</p>' +
+        '<dl class="atalhos">' + L.map(function (x) { return '<dt>' + Util.esc(x[0]) + '</dt><dd>' + Util.esc(x[1]) + '</dd>'; }).join("") + '</dl>',
+        [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      UI.modalConsulta();
+    },
     // FASE 3: memória de cálculo do quantitativo (Lei 14.133) — o Excel (aba
     // "Memória de Cálculo", lote 5) já exporta item.memoriaCalculo; aqui é onde digita.
     /* =================================================================
@@ -13653,8 +13850,30 @@
     /* termoInicial: reabre a busca com o que já estava digitado — é o que
        sustenta o "Adicionar e continuar" (lançar vários itens da mesma busca
        sem redigitar). Chamada sem o 2º argumento continua idêntica. */
-    abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId) {
+    /* O bloco "Melhores correspondências" da busca de item. `sug` vem de
+       Escopo.sugerirBusca (só itens que as bases instaladas trouxeram — nunca
+       código inventado); `nRes` = quantos resultados a busca comum teve. */
+    _sugestoesHtml: function (q, sug, nRes) {
+      if (!sug || String(q).trim().length < 3) return "";
+      var L = sug.sugestoes || [];
+      if (!L.length) {
+        return nRes ? '<div class="bs-sug-nada" role="status">Nenhuma composição encontrada com boa correspondência para “' + Util.esc(q) + '”. Veja os resultados abaixo.</div>' : "";
+      }
+      return '<section class="bs-sug" aria-label="Melhores correspondências"><h3 class="bs-sug-tit">Melhores correspondências</h3>' +
+        L.map(function (r) {
+          var it = r.item, niv = r.nivel || {};
+          var cls = niv.rotulo === "Alta" ? "alta" : (niv.rotulo === "Média" ? "media" : "baixa");
+          return '<div class="sinapi-result bs-sug-it" role="button" tabindex="0" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
+            '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label || r.fonte) + '</span> ' + Util.esc(it.codigo) + ' &nbsp;' + Util.esc(Util.unidadeExibir(it.unidade)) + '</div>' + Util.esc(it.descricao) + '</div>' +
+            '<div class="bs-sug-dir"><div class="preco">' + Util.fmtMoeda(it.custoUnitario) + '</div>' +
+            '<span class="bs-conf ' + cls + '" title="' + Util.esc(r.motivo || "") + '">Confiança ' + Util.esc(String(niv.rotulo || "").toLowerCase()) + ' ' + r.confianca + '%</span></div></div>';
+        }).join("") + '</section>';
+    },
+
+    abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId, aposId) {
       this._addItemEtapaId = etapaId;
+      /* "inserir item abaixo" (Insert / Ctrl+Enter): o item lançado vai logo depois deste, e não ao fim da etapa */
+      this._addItemApos = aposId || "";
       // destino opcional: "+ Item" clicado na linha de uma SUB etapa lança lá dentro
       this._addItemSubId = subEtapaId || "";
       var self = this;
@@ -13734,8 +13953,13 @@
           if (!box) return;
           if (q.length < 2) { box.innerHTML = '<div class="vazio">Digite ao menos 2 letras…</div>'; return; }
           var f = ler();
-          var res = (typeof Bases !== "undefined") ? Bases.buscar(q, f)
-            : Sinapi.buscar(q, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
+          var buscarFn = function (qq) {
+            return (typeof Bases !== "undefined") ? Bases.buscar(qq, f)
+              : Sinapi.buscar(qq, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
+          };
+          var res = buscarFn(q);
+          /* MELHORES CORRESPONDÊNCIAS (13/11/2026): até 3 sugestões das bases instaladas, com a confiança. */
+          var sugHtml = self._sugestoesHtml(q, (typeof Escopo !== "undefined" && Escopo.sugerirBusca) ? Escopo.sugerirBusca(q, buscarFn, 3) : null, res.length);
           if (!res.length) {
             /* ⚠ A DICA DE REGIME TAMBÉM ESTAVA INVERTIDA, pelo mesmo motivo do
                flag: ela avisava "verifique se a base ONERADA está carregada"
@@ -13763,7 +13987,7 @@
             // atalho acompanha o filtro: buscando INSUMO → cadastra insumo próprio;
             // senão → cria composição própria (descrição aproveitada nos dois).
             var ehIns0 = f.tipo === "insumo";
-            box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>" +
+            box.innerHTML = sugHtml + '<div class="vazio">' + (f.tipo === "insumo" ? "Nenhum insumo encontrado" : "Nenhuma composição encontrada") + ' para "' + Util.esc(q) + '"' + dica + ".</div>" +
               (temDesonerada ? '<button type="button" class="btn primary" id="bs-instalar-des" style="width:100%;margin-top:8px">' +
                 (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + ' Instalar a SINAPI desonerada deste estado (3 MB)</button>' : "") +
               '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio com esta descrição" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria com esta descrição") + '</button>';
@@ -13814,9 +14038,10 @@
             html2 += (res.length > ate ? '<button type="button" class="btn ghost" id="bs-mais" style="width:100%;margin-top:8px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Mostrar mais ' + Math.min(PAG, res.length - ate) + " (de " + (res.length - ate) + " restantes)</button>" : "") +
               // v1.1.124 — achou resultados mas nenhum serve? cria DAQUI, sem sair da busca
               '<button type="button" class="btn ghost" id="bs-criar-cp" style="width:100%;margin-top:6px;font-size:12px">Nenhum serve? ' + (ehInsR ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria") + ' com esta descrição</button>';
-            box.innerHTML = html2;
+            box.innerHTML = sugHtml + html2;
             Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
               row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
+              row.onkeydown = function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); self.escolherItemSinapi(row.dataset.pick); } };
             });
             var mais = UI.el("bs-mais");
             if (mais) mais.onclick = function () { pintarResultados(ate + PAG); };
@@ -13911,7 +14136,7 @@
       /* capturado ANTES do fecharModal: ele faz m.remove() e leva junto o
          #bs-q e todo o closure da busca. */
       var termoBusca = String((UI.el("bs-q") || {}).value || "");
-      var etapaAlvo = this._addItemEtapaId, subAlvo = this._addItemSubId || "";
+      var etapaAlvo = this._addItemEtapaId, subAlvo = this._addItemSubId || "", aposAlvo = this._addItemApos || "";
       UI.fecharModal();
       /* uma função só para os dois botões: duplicar o corpo abriria espaço para
          a regra de preço zerado divergir entre "adicionar" e "adicionar e
@@ -13936,7 +14161,12 @@
           var rm = Orcamento.aplicarModoCusto(itemAjustado, modo);
           if (!rm.ok) { UI.toast(rm.erro, "erro"); return; }
         }
+        var _antes = {}, _etA = Orcamento._etapa(self.orcAtual, etapaAlvo);
+        Util.arr(_etA && _etA.itens).forEach(function (x) { _antes[x.id] = 1; });
         Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
+        var _novoId = "";
+        Util.arr(_etA && _etA.itens).forEach(function (x) { if (!_antes[x.id]) _novoId = x.id; });
+        if (aposAlvo && _novoId) Orcamento.inserirApos(self.orcAtual, etapaAlvo, _novoId, aposAlvo);
         /* item novo em etapa (ou sub etapa) recolhida nasceria invisível — o
            usuário reporta como "não lançou". */
         if (self.expandirEtapa) self.expandirEtapa(etapaAlvo, subAlvo);
@@ -13946,7 +14176,7 @@
         if (!self._gravou(gIt)) return;
         if (continuar) {
           UI.toast("Item adicionado — continue lançando.", "ok");
-          self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo);
+          self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo, aposAlvo ? _novoId : "");
         } else {
           UI.toast("Item adicionado.", "ok");
         }
@@ -14175,9 +14405,14 @@
     },
 
     // ---------- Ver composição → insumos (base analítica, por estado) ----------
-    verInsumos: function (codigo, refItem, fonteBase) {
+    /* `nav` (13/11/2026): "push" = abriu uma sub-composição de dentro do analítico
+       (a atual vai para a pilha); "pop" = voltou; vazio = abertura nova, pilha zerada. */
+    verInsumos: function (codigo, refItem, fonteBase, nav) {
       var self = this;
       var ufAtivo = self._baseUf || Sinapi.uf || null;
+      if (nav === "push" && self._anAtual) { (self._anPilha = self._anPilha || []).push(self._anAtual); }
+      else if (nav !== "pop") { self._anPilha = []; }
+      self._anAtual = { codigo: String(codigo), refItem: refItem, fonteBase: fonteBase };
       /* CONTEXTO DE AJUSTE: coeficiente só é editável quando o modal foi aberto
          a partir de um ITEM do orçamento — é lá que o ajuste mora. Abrindo pela
          aba de bases, o detalhamento é somente leitura: mexer ali mudaria a
@@ -14228,13 +14463,12 @@
               custoTotal: Util.num(i.coeficiente) * Util.num(i.custoUnitario), categoria: normCat(i.categoria) };
           })
         };
-        var bgP = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição própria " + String(codigo), UI.renderInsumos(aP, ufAtivo), [
+        var bgP = UI.modal("Analítico do item — composição própria " + String(codigo), UI.renderInsumos(aP, ufAtivo), [
           { texto: "" + (typeof Icones !== "undefined" ? Icones.get("editar", 15) : "") + " Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
-          { texto: "⧉ Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("copiar", 15) : "") + " Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
           { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
-        UI.modalConsulta(); // detalhamento é leitura
-        var mP = bgP.querySelector(".modal"); if (mP) mP.style.maxWidth = "900px";
+        UI.modalAnalitico(bgP); // detalhamento é leitura
         return;
       }
       /* ===== O REGIME DESTE ITEM =====
@@ -14291,12 +14525,12 @@
             [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
           return;
         }
-        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — composição " + codigo, UI.renderInsumos(a, ufAtivo), [
+        var bg = UI.modal("Analítico do item — composição " + codigo, UI.renderInsumos(a, ufAtivo, { trilha: (self._anPilha || []).map(function (x) { return x.codigo; }) }), [
           // v1.1.124 — "quero essa, mas com MEU coeficiente": clona p/ composição própria
-          { texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
-          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+          { texto: "Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
+          { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
-        var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+        UI.modalAnalitico(bg);
       }
       /* ⚠ O REGIME É CONFERIDO ANTES DO ATALHO "já carregado", e é o do ITEM
          CLICADO (_regItem), não o do orçamento. Num orçamento MISTO cada linha
@@ -14356,21 +14590,20 @@
         var avisos = [];
         var cc = AnaliticoBases.conferirCompetencia(meta, base);
         if (!cc.mesmo) {
-          avisos.push('<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
-            ' Detalhamento de <b>' + Util.esc(cc.mesAnalitico) + '</b>; a base ' + Util.esc(rot) + ' que precifica o orçamento é de <b>' + Util.esc(cc.mesBase) +
-            '</b>. Os coeficientes valem; os preços dos insumos são do mês do detalhamento.</div>');
+          avisos.push('<div class="an-aviso" role="note"><span class="an-aviso-ic">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+            '</span><div>Detalhamento de <b>' + Util.esc(cc.mesAnalitico) + '</b>; a base ' + Util.esc(rot) + ' que precifica o orçamento é de <b>' + Util.esc(cc.mesBase) +
+            '</b>. Os coeficientes valem; os preços dos insumos são do mês do detalhamento.</div></div>');
         }
         if (meta && meta.compDiverge) {
-          avisos.push('<div class="muted mb" style="font-size:12px">O preço das composições da base ' + Util.esc(rot) + ' instalada vem da tabela de <b>' +
-            Util.esc(meta.rotuloComp) + '</b> (o rótulo da base diz ' + Util.esc(meta.mes) + '), e este detalhamento é dessa mesma tabela.</div>');
+          avisos.push('<p class="an-nota">O preço das composições da base ' + Util.esc(rot) + ' instalada vem da tabela de <b>' +
+            Util.esc(meta.rotuloComp) + '</b> (o rótulo da base diz ' + Util.esc(meta.mes) + '), e este detalhamento é dessa mesma tabela.</p>');
         }
-        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — " + rot + " " + codigo,
-          UI.renderInsumos(a, (meta && meta.uf) || "", { fonte: fonte, rotulo: rot, competencia: meta && meta.rotuloComp, uf: meta && meta.uf, avisos: avisos }), [
-          { texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo), fonte); } },
-          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+        var bg = UI.modal("Analítico do item — " + rot + " " + codigo,
+          UI.renderInsumos(a, (meta && meta.uf) || "", { fonte: fonte, rotulo: rot, competencia: meta && meta.rotuloComp, uf: meta && meta.uf, avisos: avisos, trilha: (self._anPilha || []).map(function (x) { return x.codigo; }) }), [
+          { texto: "Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo), fonte); } },
+          { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
-        UI.modalConsulta();
-        var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+        UI.modalAnalitico(bg);
       }
       if (!base) {
         semDetalhe("Base " + rot + " não instalada", '<p style="margin:0 0 8px">Para abrir o detalhamento, instale a base <b>' + Util.esc(rot) + '</b> em Tabelas.</p>');
@@ -16532,6 +16765,8 @@
           data: hoje,
           /* base de preços, regime e BDI (%) — o modelo decide se cita */
           referencia: Proposta.referenciaParaModelo ? Proposta.referenciaParaModelo(orc) : {},
+          /* a composição do BDI só viaja quando o modelo tem a página dela: o payload de quem não pediu não muda */
+          bdi: (m.paginas || []).some(function (x) { return x.tipo === "bdi"; }) && Proposta.bdiParaModelo ? Proposta.bdiParaModelo(orc) : undefined,
           /* a marca d'água e o rodapé "nome" leem os MESMOS interruptores de
              ⚙ Empresa › Documentos que o clássico (marcaDaguaTexto/creditos) */
           textos: (function () {
@@ -17500,8 +17735,11 @@
     _avisoTesteEncerrado: function () {
       var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       var self = this;
-      UI.modal("⏰ Seu período de teste terminou",
-        '<p style="margin:0 0 10px">Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+      var cpl = false;
+      try { cpl = typeof Produto !== "undefined" && Produto.semTesteGratis(); } catch (eP) {}
+      if (cpl) srv = ""; /* CPLPRO: sem teste grátis, sem loja e sem planos */
+      UI.modal(cpl ? "Acesso do órgão não liberado" : "⏰ Seu período de teste terminou",
+        '<p style="margin:0 0 10px">' + (cpl ? 'Para continuar editando e exportando, ative a chave de acesso do CPLPRO (ou fale com a RA Engenharia).' : 'Para continuar editando e exportando, ative uma licença do OrçaPRO.') + '</p>' +
         '<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Já tenho a chave", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirLicenca(); } }

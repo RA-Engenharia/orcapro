@@ -482,10 +482,40 @@
           self._postTeste("/api/teste", o, function (d) {
             var mudou = self._aplicarVeredito(d);
             try { if (d && d.ok) localStorage.setItem("orcapro:teste_pingado", "1"); } catch (e) {}
+            try { if (d && d.ok) self.reenviarInteresseTeste(); } catch (eI) {}
             cb(d, mudou);
           });
         });
       } catch (e) { cb(null, false); }
+    },
+    /* O INTERESSE DO TESTE (14/11/2026): o assunto escolhido em "O que você quer conhecer?" vai ao registro do teste no servidor
+       (POST /api/teste/interesse), para o painel do admin contar. É só informação: falha de rede NUNCA atrapalha o teste nem a
+       tela. Só marca como enviado quando o servidor DISSE que gravou (registrado:true); senão o próximo ping tenta de novo.
+       Servidor antigo (404 = desligado) ou sem o módulo: nada é marcado e nada quebra. */
+    enviarInteresseTeste: function (lista, cb) {
+      cb = cb || function () {};
+      try {
+        var self = this, ls = (lista || []).filter(function (x) { return typeof x === "string"; });
+        if (!ls.length) { cb(null); return; }
+        this._idsTeste(function (ids) {
+          ids.interesses = ls;
+          self._postTeste("/api/teste/interesse", ids, function (d) {
+            try { if (d && d.ok && d.registrado === true) localStorage.setItem("orcapro:interesse_enviado", JSON.stringify(ls)); } catch (e) {}
+            cb(d);
+          });
+        });
+      } catch (e2) { cb(null); }
+    },
+    /* no ping do teste: se a escolha local ainda não chegou ao servidor, manda de novo */
+    reenviarInteresseTeste: function () {
+      try {
+        if (typeof Perfis === "undefined" || !Perfis.interessesTeste) return;
+        var atual = Perfis.interessesTeste();
+        if (!atual.length) return;
+        var enviado = null; try { enviado = localStorage.getItem("orcapro:interesse_enviado"); } catch (e) {}
+        if (enviado === JSON.stringify(atual)) return;
+        this.enviarInteresseTeste(atual);
+      } catch (e2) {}
     },
     /* quais canais de código existem agora ({email, telefone}); null = servidor não respondeu → só e-mail */
     canaisTeste: function (cb) {

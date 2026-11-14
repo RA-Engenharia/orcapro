@@ -84,7 +84,7 @@
 
   /* a biblioteca de famílias filtrada (familiaui.js: _filtroId) */
   function aparelhosRegex() {
-    var ids = ["ele-eq-[a-z0-9-]+", "ele-lum-[a-z0-9-]+", "ra-ilum-[a-z0-9-]+", "ra-luminaria", "ra-clim-[a-z0-9-]+", "ra-coz-(geladeira|torre-quente|inferior|ilha|lavadora)", "hid-chuveiro", "hid-bomba", "hid-aquecedor-eletrico-passagem"];
+    var ids = ["ele-eq-[a-z0-9-]+", "ele-lum-[a-z0-9-]+", "ra-ilum-[a-z0-9-]+", "ra-luminaria", "ra-clim-[a-z0-9-]+", "ra-coz-(geladeira|torre-quente|inferior|ilha|lavadora)", "hid-chuveiro", "hid-ducha-eletrica", "hid-bomba", "hid-aquecedor-eletrico-passagem"];
     try { arr(global.EleAparelhosDados && global.EleAparelhosDados.aparelhos).forEach(function (a) { arr(a.casar && a.casar.fam).forEach(function (f) { if (ids.indexOf(f) < 0 && /^[a-z0-9-]+$/.test(f)) ids.push(f); }); }); } catch (e) {}
     return new RegExp("^(" + ids.join("|") + ")$");
   }

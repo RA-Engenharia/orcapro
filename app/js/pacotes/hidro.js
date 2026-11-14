@@ -15953,8 +15953,9 @@ partes.push(lo);
 if (P.metais > 0.5) {
 var mt = parte("metais", "Torneira, válvula e sifão", CROMO, true);
 var zT = mod === 1 ? (num(P.Dp, 0) > Pp / 2 ? Math.max(zB - 0.05, -num(P.Dp, 0) + 0.03) : zB - 0.05) : zB + Math.min(0.08, Pp * 0.2), yT = mod === 1 ? 0 : yTopo, alt = mod === 1 ? 0.18 : Math.max(0.16, Hc * 1.2);
-torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), q, true);
-valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, q);
+var qVal = { N: Math.min(q.N, 16), n: Math.min(q.n, 8), arco: Math.min(q.arco, 2), k: q.k, kv: q.kv }, qTor = { N: q.N, n: Math.min(q.n, 12), arco: Math.min(q.arco, 3), k: q.k, kv: q.kv };
+torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), qTor, true);
+valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, qVal);
 var yE = -Ea, zc = zv + 0.05, naParede = num(P.Dp, 0) > Pp / 2, zS = naParede ? -num(P.Dp, 0) : 0;
 if (yb - 0.03 > yE + 0.07) {
 var qSob = { N: q.N, n: Math.min(q.n, 10), arco: Math.min(q.arco, 2), k: q.k, kv: q.kv };
@@ -16400,19 +16401,21 @@ partes.push(cn);
 return partes;
 }
 function geoBomba(P, q) {
-var C = P.C, W = P.W, H = P.H, x0 = -C / 2, yc = 0.03 + W / 2, partes = [], N = q.N, k = C / 0.266;
-var ba = parte("base", "Pé", AZUL), vo = parte("voluta", "Carcaça em voluta e bocais", FERRO), mo = parte("motor", "Motor", AZUL), vt = parte("ventilador", "Tampa traseira", PRETO);
-var xf = x0 + 0.055 * k, ec = 0.06 * k, xm0 = xf + ec, xm1 = C / 2, rv = W * 0.44, rm = Math.min(W * 0.4, yc - 0.006), xp = (xm0 + xm1) / 2;
+var C = P.C, W = P.W, H = P.H, x0 = -C / 2, yc = P.yc > 0 ? P.yc : 0.03 + W / 2, partes = [], N = q.N, k = C / 0.266;
+var dancor = P.yc > 0, cMot = dancor ? "metal preto" : AZUL, cVol = dancor ? "alumínio" : FERRO;
+var ba = parte("base", "Pé", cMot), vo = parte("voluta", "Carcaça em voluta e bocais", cVol), mo = parte("motor", "Motor", cMot), vt = parte("ventilador", "Tampa traseira", PRETO);
+var xf = x0 + 0.055 * k, ec = 0.06 * k, xm0 = xf + ec, xm1 = C / 2, rv = Math.min(W * 0.44, yc - 0.004), rm = Math.min(W * 0.4, yc - 0.006), xp = (xm0 + xm1) / 2;
+var xr = P.xr > 0 ? x0 + P.xr : xf + ec * 0.45;
 caixaR(ba.m, { x0: xp - 0.05 * k, x1: xp + 0.05 * k, y0: 0, y1: 0.008, z0: -W / 2, z1: W / 2, r: 0.002, rad: 0.01 }, q);
 loft(ba.m, [anelRR(0.008, xp, 0, 0.04 * k, W * 0.36, 0.008, 2), anelRR(yc - rm * 0.8, xp, 0, 0.03 * k, W * 0.2, 0.008, 2)]);
 torno(vo.m, [[rv * 0.4, 0], [rv * 0.92, 0.004], [rv, 0.012], [rv, ec - 0.012], [rv * 0.92, ec - 0.004], [rv * 0.5, ec]], N, { c: [xf, yc, 0], eixo: [1, 0, 0] });
 var esp = [], ns = q.N > 20 ? 18 : 9, kk;
 for (kk = 0; kk <= ns; kk++) { var f = kk / ns, ph = Math.PI * 0.5 + f * Math.PI * 1.55, r = rv * (0.72 + 0.2 * f); esp.push([xf + ec * 0.45, yc + r * Math.cos(ph), r * Math.sin(ph)]); }
 var ult = esp[esp.length - 1];
-esp.push([xf + ec * 0.45, ult[1] + 0.012, ult[2] * 0.4], [xf + ec * 0.45, H - 0.05, 0]);
+esp.push([xf + ec * 0.45, ult[1] + 0.012, ult[2] * 0.4], [xr, H - 0.05, 0]);
 tubo(vo.m, esp, rv * 0.2, Math.max(8, q.n - 2), { rc: 0, arco: q.arco, raio: function (i, n) { return rv * (0.1 + 0.14 * Math.min(1, i / (n * 0.8))); } });
 [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (sg) { torno(vo.m, [[0.007, 0], [0.007, 0.008], [0, 0.009]], 6, { c: [xf, yc + sg[0] * rv * 0.72, sg[1] * rv * 0.72], eixo: [-1, 0, 0] }); });
-torno(vo.m, [[0.016, 0], [0.017, 0.02], [0.022, 0.034], [0.022, 0.05]], q.n + 4, { c: [xf + ec * 0.45, H - 0.05, 0], eixo: [0, 1, 0] });
+torno(vo.m, [[0.016, 0], [0.017, 0.02], [0.022, 0.034], [0.022, 0.05]], q.n + 4, { c: [xr, H - 0.05, 0], eixo: [0, 1, 0] });
 torno(vo.m, [[0.019, 0], [0.019, xf - x0 - 0.012], [0.023, xf - x0 - 0.01], [0.023, xf - x0]], q.n + 4, { c: [xf, yc, 0], eixo: [-1, 0, 0] });
 torno(mo.m, [[rm * 0.9, 0], [rm, 0.006], [rm, xm1 - xm0 - 0.03], [rm * 0.96, xm1 - xm0 - 0.012]], N, { c: [xm0, yc, 0], eixo: [1, 0, 0] });
 [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (sg) { tubo(mo.m, [[xm0, yc + sg[0] * rm * 0.78, sg[1] * rm * 0.78], [xm1 - 0.004, yc + sg[0] * rm * 0.78, sg[1] * rm * 0.78]], 0.0035, 6, { rc: 0 }); });
@@ -16420,6 +16423,51 @@ caixaR(mo.m, { x0: xm0 + (xm1 - xm0) * 0.2, x1: xm0 + (xm1 - xm0) * 0.72, y0: yc
 torno(vt.m, [[rm * 0.96, 0], [rm * 0.96, 0.014], [rm * 0.7, 0.02], [0, 0.021]], N, { c: [xm1 - 0.02, yc, 0], eixo: [1, 0, 0] });
 [0.25, 0.75].forEach(function (t) { caixaR(vt.m, { x0: xm0 + (xm1 - xm0) * t - 0.02, x1: xm0 + (xm1 - xm0) * t + 0.02, y0: yc - rm * 0.5, y1: yc - rm * 0.3, z0: rm * 0.96, z1: rm * 1.01, r: 0.002, rad: 0.004 }, { k: 1, kv: 1 }); });
 partes.push(ba, vo, mo, vt);
+return partes;
+}
+function geoDuchaZagonel(P, q) {
+var W = P.W, Pp = P.P, H = P.H, mod = P.mod > 1.5 ? 2 : 1, partes = [], N = q.N;
+var co = parte("corpo", "Corpo da ducha", BRANCO), es = parte("espalhador", "Espalhador", CLARO), ac = parte("ligacoes", "Rosca, cordão e puxador", LATAO, true), pu = parte("puxador", "Cordão e puxador", BRANCO, true);
+if (mod === 2) {
+var hc = num(P.Hc, 0.237), ex = num(P.Ex, 0.21 * W / 0.265), ez = num(P.Ez, 0.13 * Pp / 0.476), yT = 0.022, tp = 0.016;
+[[0.004, Pp * 0.45, tp], [Pp * 0.45, Pp * 0.75, tp * 0.8], [Pp * 0.75, Pp, tp * 0.56]].forEach(function (g) { caixaR(co.m, { x0: -W / 2, x1: W / 2, y0: yT - g[2], y1: yT, z0: g[0], z1: g[1], r: 0.003, rad: 0.008 }, q); });
+caixaR(co.m, { x0: -W / 2, x1: W / 2, y0: yT - hc, y1: yT - tp + 0.002, z0: 0.004, z1: 0.04, r: 0.008, rad: 0.012 }, q);
+var zE0 = Pp - 0.02 - ez, zE1 = Pp - 0.02, yE = yT - tp * 0.56 - 0.004;
+caixaR(es.m, { x0: -ex / 2, x1: ex / 2, y0: yE, y1: yT - tp * 0.56 + 0.001, z0: zE0, z1: zE1, r: 0.002, rad: 0.012 }, q);
+var bi = parte("bicos", "Bicos do espalhador", ESCURO), nx = q.N > 20 ? 11 : 5, nz = q.N > 20 ? 7 : 3, ib, jb;
+for (ib = 0; ib < nx; ib++) for (jb = 0; jb < nz; jb++) {
+var xb = -ex / 2 + 0.012 + (ex - 0.024) * ib / (nx - 1), zb = zE0 + 0.012 + (ez - 0.024) * jb / (nz - 1);
+torno(bi.m, [[0.0028, 0], [0.0022, 0.004], [0, 0.0045]], q.N > 20 ? 8 : 5, { c: [xb, yE + 0.0005, zb], eixo: [0, -1, 0] });
+}
+partes.push(bi);
+caixaR(es.m, { x0: -W / 2 + 0.012, x1: W / 2 - 0.012, y0: yT - tp - 0.018, y1: yT - tp + 0.001, z0: 0.038, z1: 0.05, r: 0.002, rad: 0.004 }, q);
+for (ib = 0; ib < 11; ib++) torno(bi.m, [[0.003, 0], [0.003, 0.005], [0, 0.0055]], 6, { c: [-W / 2 + 0.03 + (W - 0.06) * ib / 10, yT - tp - 0.009, 0.05], eixo: [0, 0, 1] });
+[-1, 1].forEach(function (sg) {
+var xa = sg * (W / 2 - 0.012);
+tubo(co.m, [[xa, yT - hc + 0.035, 0.045], [xa, yT - tp * 0.8 - 0.002, Pp * 0.62]], 0.007, 8, { rc: 0 });
+caixaR(co.m, { x0: xa - 0.008, x1: xa + 0.008, y0: yT - hc + 0.012, y1: yT - hc + 0.06, z0: 0.035, z1: 0.058, r: 0.003, rad: 0.004 }, q);
+torno(ac.m, [[0.0045, 0], [0.0045, 0.003], [0, 0.0035]], 8, { c: [xa + sg * 0.008, yT - hc + 0.035, 0.047], eixo: [sg, 0, 0] });
+});
+caixaR(es.m, { x0: -0.045, x1: 0.045, y0: yT - hc * 0.62, y1: yT - hc * 0.5, z0: 0.04, z1: 0.043, r: 0.001, rad: 0.004 }, { k: 1, kv: 1 });
+torno(es.m, [[0.007, 0], [0.007, 0.003], [0.005, 0.005], [0, 0.0052]], 12, { c: [0.06, yT - hc + 0.03, 0.04], eixo: [0, 0, 1] });
+torno(ac.m, [[0.0105, 0], [0.0105, 0.02], [0.012, 0.022], [0.012, 0.03]], q.n, { c: [0, 0, 0.03], eixo: [0, 0, -1] });
+tubo(pu.m, [[0, yT - hc, 0.025], [0, yT - H + 0.04, 0.025]], 0.0025, 6, { rc: 0 });
+torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yT - H, 0.025] });
+} else {
+var R = W / 2, kM = W / 0.182, zc = Pp - R, hE = num(P.Hc, 0.126), rE = num(P.Re, 0.075 * kM), yTop = -0.012;
+var yB = yTop - hE;
+torno(co.m, [[0, 0], [rE * 0.98, 0], [R * 0.97, 0.004], [R, 0.014], [R * 0.95, 0.026], [rE * 0.92, 0.036], [0.066 * kM, 0.055], [0.052 * kM, 0.085], [0.03 * kM, 0.112], [0, hE]], N, { c: [0, yB, zc] });
+torno(es.m, [[0, 0], [rE, 0], [rE, 0.0015], [0, 0.0015]], N, { c: [0, yB - 0.0015, zc] });
+var fu = parte("furos", "Furos do espalhador (75 × Ø0,9)", ESCURO), aneis = [[0.018 * kM, 8], [0.033 * kM, 14], [0.048 * kM, 22], [0.063 * kM, 31]];
+if (q.N > 20) aneis.forEach(function (an) { for (var kf = 0; kf < an[1]; kf++) { var tf = TAU * kf / an[1]; torno(fu.m, [[0, 0], [0.0016, 0], [0.0016, 0.0008], [0, 0.0008]], 6, { c: [Math.cos(tf) * an[0], yB - 0.0022, zc + Math.sin(tf) * an[0]] }); } });
+else aneis.forEach(function (an) { torno(fu.m, [[an[0] - 0.0015, 0], [an[0] + 0.0015, 0], [an[0] + 0.0015, 0.0008], [an[0] - 0.0015, 0.0008]], N, { c: [0, yB - 0.0022, zc] }); });
+partes.push(fu);
+caixaR(co.m, { x0: -R * 0.62, x1: R * 0.62, y0: yTop - 0.075, y1: yTop - 0.002, z0: 0.004, z1: zc - R * 0.5, r: 0.014, rad: 0.03 }, q);
+torno(ac.m, [[0.0105, 0], [0.0105, 0.016], [0.012, 0.018], [0.012, 0.024]], q.n, { c: [0, -0.024, 0.03], eixo: [0, 1, 0] });
+tubo(pu.m, [[0, yTop - 0.075, 0.07], [0, yTop - H + 0.04, 0.07]], 0.0025, 6, { rc: 0 });
+torno(pu.m, [[0, 0], [0.006, 0.004], [0.009, 0.03], [0.007, 0.04], [0, 0.041]], q.n, { c: [0, yTop - H, 0.07] });
+}
+partes.push(co, es, ac, pu);
 return partes;
 }
 function geoAquecedor(P, q) {
@@ -16633,14 +16681,14 @@ valvula_descarga: geoValvula, caixa_descarga_embutida: geoCaixaEmbutida, caixa_s
 caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
 reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
 hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
-sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador
+sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel
 };
 var ORCAMENTO = {
-bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
+bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
 chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 950, caixa_descarga_embutida: 1400,
 caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
 hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
-sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600
+sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000
 };
 var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",
 "Ha", "Hr", "eg", "Di", "Li", "Wi", "Lb", "Wb", "Lt", "Wt", "Pp"];
@@ -17123,13 +17171,23 @@ geo: [
 G("Comprimento", 0.55, [0.2, 1.5], null, "Comprimento da base (eixo da bomba)"),
 G("Largura", 0.25, [0.12, 0.8], null, "Largura da base e da voluta"),
 G("Altura", 0.32, [0.15, 1], null, "Altura total até a boca de recalque"),
-DN("DN_succao", null, "DN da sucção"), DN("DN_recalque", null, "DN do recalque")
+DN("DN_succao", null, "DN da sucção"), DN("DN_recalque", null, "DN do recalque"),
+X("Eixo_succao", "comprimento", 0, "Dimensões", "Altura do eixo da sucção acima do piso (letra C da ficha); 0 = proporção antiga (0,03 + Largura/2)"),
+X("Recuo_recalque", "comprimento", 0, "Dimensões", "Distância da face da sucção ao eixo do recalque (letras B + J da ficha); 0 = proporção antiga (30 % do comprimento)")
 ],
 solidos: [],
 conectores: [
-{ id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "0.03 + Largura/2", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" },
-{ id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + Comprimento*0.3", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" }
-], material: "Azul" });
+{ id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "se(Eixo_succao > 0; Eixo_succao; 0.03 + Largura/2)", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "tipo genérico: bocais de reserva; nos tipos Dancor, letra C da ficha" },
+{ id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + se(Recuo_recalque > 0; Recuo_recalque; Comprimento*0.3)", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "tipo genérico: bocais de reserva; nos tipos Dancor, letras B + J e D da ficha" }
+], material: "Azul",
+tiposFicha: [["14", "1/4 cv", 0.186, 6.1], ["13", "1/3 cv", 0.186, 6.1], ["12", "1/2 cv", 0.211, 6.4]].map(function (m) {
+return fichaQ("t-dancor-cam-w4c-" + m[0], "Dancor CAM-W4C " + m[1] + " — " + Math.round((m[2] + 0.055) * 1000) + " × 156 × 170 mm, sucção 1\", recalque 3/4\"",
+{ Fabricante: "Dancor", Linha: "Série CAM — CAM W-4C (centrífuga de aplicação múltipla)", Codigo: "CAM-W4C " + m[1], Descricao_ficha: "Motobomba centrífuga CAM-W4C " + m[1] + ", monofásica, 3.500 rpm",
+Link_ficha: "https://www.dancor.com.br/wp-content/uploads/2021/11/cam-w4c-pbe_cat-1.pdf", Edicao_ficha: "Catálogo Geral 60 Hz, página 160 (arquivo publicado em 11/2021)", Pagina_ficha: 1, Pagina_cotas: 1,
+Cotas_ficha: "A=" + Math.round(m[2] * 1000) + "; B=55; C=76; D=170; E=137; F=156; G=173,5; H=69,8; I=8,7; J=40; peso " + String(m[3]).replace(".", ",") + " kg",
+Comprimento: Math.round((m[2] + 0.055) * 1000) / 1000, Largura: 0.156, Altura: 0.17, Eixo_succao: 0.076, Recuo_recalque: 0.095, DN_succao: 25, DN_recalque: 20 },
+"Dancor, Catálogo Geral 60 Hz, CAM W-4C, p.160 (Dimensionais): A " + Math.round(m[2] * 1000) + ", B 55, C 76, D 170, F 156, J 40 mm", ["Recuo_recalque (B + J: leitura do desenho lateral)"]);
+}) });
 function IC(nome, def, desc) { var g = I(nome, def, null, desc); g.semConferir = true; return g; }
 ESPECS.push({
 id: "hid-base-caixa", nome: "Base de apoio da caixa d'água (madeira ou metálica)", categoria: "equipamento", sistemas: ["agua_fria"], tipos: [], generico: true,
@@ -17157,6 +17215,11 @@ ESPECS.push({
 id: "hid-hidrante-abrigo", nome: "Abrigo de hidrante (mangueira + registro)", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
 descricao: "Abrigo de mangueira com porta de vidro. Origem = piso, centro da caixa; a parede fica em Z = −Profundidade/2.",
 avisos: [AV_GENERICA, AV_CONECTOR],
+tiposFicha: [fichaQ("t-abrigo-sobrepor-90x60x17", "Abrigo de sobrepor 90 × 60 × 17 cm (chapa de aço, porta com visor)",
+{ Fabricante: "(catálogo genérico — EstriboFire/AECweb)", Linha: "Abrigo para mangueira de sobrepor", Codigo: "EstriboFire 90x60x17 (AECweb 95368)", Descricao_ficha: "Abrigo para mangueira de incêndio, de sobrepor, 90 × 60 × 17 cm, chapa de aço com pintura vermelha e visor (a mesma descrição do insumo SINAPI 20963)",
+Link_ficha: "https://www.aecweb.com.br/produto/abrigo-para-mangueira-com-tampa-de-vidro-sobrepor/95368", Edicao_ficha: "descrição do insumo SINAPI 20963 + página do produto EstriboFire no AECweb, lidas em 13/11/2026", Pagina_ficha: 1, Pagina_cotas: 1,
+Cotas_ficha: "altura 900; largura 600; profundidade 170 mm", Largura: 0.6, Altura: 0.9, Profundidade: 0.17 },
+"SINAPI insumo 20963 (abrigo de sobrepor 90 × 60 × 17 cm) e EstriboFire/AECweb 95368 — cota genérica de catálogo", ["Largura, Altura e Profundidade: cota genérica (SINAPI 20963), sem desenho cotado de fabricante — conferir o abrigo comprado", "posição do registro dentro do abrigo: desenho"])],
 geo: [
 G("Largura", 0.75, [0.3, 1.5], null, "Largura do abrigo"),
 G("Altura", 0.9, [0.4, 1.8], null, "Altura do abrigo"),
@@ -17377,7 +17440,7 @@ GEO_FAM["hid-caixa-dagua"] = geoReservatorio(false);
 GEO_FAM["hid-cisterna"] = geoReservatorio(true);
 GEO_FAM["hid-reservatorio-tanque"] = geoReservatorio(false);
 GEO_FAM["hid-bomba"] = function () {
-var yc = "0.03 + Largura/2";
+var yc = "se(Eixo_succao > 0; Eixo_succao; 0.03 + Largura/2)";
 return [cxs("base", "Base", "0", "0", "0", "Comprimento", "0.03", "Largura", "Cinza escuro"),
 cil("motor", "Motor", "x", "-Comprimento/2 + Comprimento*0.4", yc, "0", "Largura*0.4", "Comprimento*0.5", "Azul"),
 cil("ventilador", "Tampa do ventilador", "x", "-Comprimento/2 + Comprimento*0.9", yc, "0", "Largura*0.34", "Comprimento*0.1", "Preto"),
@@ -17402,7 +17465,10 @@ var R = "Diametro/2", H = "Altura";
 return [rev("cilindro", "Cilindro", "0", "0", "0", [[R + "*0.62", "0"], [R, H + "*0.05"], [R, H + "*0.74"], [R + "*0.55", H + "*0.84"], [R + "*0.2", H + "*0.88"]], { mat: "Vermelho" }),
 cil("cabeca", "Cabeça e válvula", "y", "0", H + "*0.88", "0", R + "*0.3", H + "*0.1", "Preto"),
 cxs("alavanca", "Alavanca", "0", H + " - 0.012", "0", "0.03", "0.012", "Diametro*0.9", "Preto"),
-cil("manometro", "Manômetro", "z", "0", H + "*0.9", "0", "0.018", R + "*0.3", CROMO)];
+cil("manometro", "Manômetro", "z", "0", H + "*0.9", "0", "0.018", R + "*0.3", CROMO),
+cil("mangueira", "Mangueira", "y", R + " + 0.008", H + "*0.42", "0", "0.006", H + "*0.46", "Preto"),
+cil("difusor", "Difusor", "y", R + " + 0.008", H + "*0.36", "0", "0.009", H + "*0.06", "Preto"),
+cxs("presilha", "Presilha da mangueira", R + " - 0.002", H + "*0.36", "0", "0.016", "0.012", "0.02", "Preto")];
 };
 GEO_FAM["hid-sprinkler"] = function () {
 return [cil("niple", "Rosca", "y", "0", "-Altura*0.3", "0", "0.0107", "Altura*0.3", "Latão"),
@@ -17488,7 +17554,7 @@ G("Diametro_base", 0, [0.3, 4], N("diametro_base_mm"), "Diâmetro da base (E da 
 x: [G("Altura_corpo", 0, [0.2, 4], N("altura_corpo_mm"), "Altura do corpo sem a tampa; 0 = proporção"), G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")] },
 "hid-reservatorio-tanque": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "0", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "2", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
 x: ADAPT_X.concat([G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_inspecao_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")]) },
-"hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
+"hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura", yc: "Eixo_succao", xr: "Recuo_recalque" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
 "hid-base-caixa": { g: "base_caixa", p: { L: "Lado", H: "Altura", sp: "Secao_pilar", bv: "Base_viga", hv: "Altura_viga", bb: "Base_barrote", hb: "Altura_barrote", nb: "N_barrotes", et: "Espessura_tablado", met: "se(Metalica; 1; 0)" },
 env: ["0", "0", "0", "Lado", "Altura", "Lado"], x: [] },
 "hid-aquecedor-gas": { g: "aquecedor", p: { W: "Largura", H: "Altura", P: "Profundidade", ch: "1" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] },
@@ -17712,13 +17778,58 @@ Link_ficha: "https://www.komeco.com.br/arquivos/datasheet/bombas-pressurizadores
 Cotas_ficha: "165 × 420 × 210 mm; 7,6 kg; conexões 1\"", Largura: 0.165, Altura: 0.42, Profundidade: 0.21, Peso_kg: 7.6 },
 "Komeco, datasheet TP 820/825 G2 (komeco.com.br) e boletim técnico BTAQC 002/17", ["posição das bocas no gabinete (a ficha não cota)", "geração do produto: conferir a geração (G2) na ficha vigente do fabricante"])] });
 NOVAS["hid-pressurizador-compacto"] = { g: "pressurizador", p: { L: "Largura", H: "Altura", Pp: "Profundidade" }, env: ["0", "0", "0", "Largura", "Altura + 0.035", "Profundidade"], x: [] };
-ESPECS.push({ id: "hid-bomba-submersivel", nome: "Motobomba submersível de esgoto (MEDIDAS A CONFERIR)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
-descricao: "Motobomba submersível de esgoto, no fundo do poço úmido. Origem = centro da base; a boca de recalque no alto. Volume em CAIXA: o catálogo com as cotas não foi achado — medida a conferir.",
-avisos: ["MEDIDA A CONFERIR: o catálogo do fabricante com as dimensões não foi localizado; a caixa é uma ordem de grandeza de projeto de referência.", AV_CONECTOR],
-geo: [G("Largura", 0.24, [0.1, 0.8], null, "Largura (X)"), G("Profundidade", 0.18, [0.1, 0.8], null, "Profundidade (Z)"), G("Altura", 0.46, [0.2, 1.5], null, "Altura até a boca de recalque"),
-DN("DN_recalque", null, "DN do recalque")],
+ESPECS.push({ id: "hid-bomba-submersivel", nome: "Motobomba submersível (drenagem e águas servidas)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
+descricao: "Motobomba submersível no fundo do poço úmido. Origem = centro da base; o recalque sai pela lateral (+X) e sobe por uma curva de 90° (tipos da ficha KSB) ou pelo topo (genérico).",
+avisos: ["Tipo genérico: MEDIDA A CONFERIR (caixa de reserva). Tipos KSB KRT Drainer: A, B, C e o recalque pela ficha; o diâmetro do corpo é leitura do desenho (a ficha não cota). Esgoto bruto: conferir a passagem de sólidos exigida.", AV_CONECTOR],
+geo: [G("Largura", 0.24, [0.1, 0.8], null, "Largura (X) — letra A da ficha (até a face do recalque)"), G("Profundidade", 0.18, [0.1, 0.8], null, "Profundidade (Z) — diâmetro do corpo"), G("Altura", 0.46, [0.2, 1.5], null, "Altura total — letra B da ficha"),
+DN("DN_recalque", null, "DN do recalque"),
+X("Saida_lateral", "simnao", false, "Dimensões", "Recalque lateral com curva de 90° (ficha KSB); não = boca no topo (genérico)"),
+X("Cota_recalque", "comprimento", 0, "Dimensões", "Eixo do recalque lateral acima da base — letra C da ficha")],
 solidos: [], material: "Ferro fundido",
-conectores: [{ id: "recalque", nome: "Recalque", sistema: "esgoto", dn: "DN_recalque", x: "0", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "medida a conferir (sem catálogo)" }], });
+conectores: [{ id: "recalque", nome: "Recalque", sistema: "esgoto", dn: "DN_recalque", x: "se(Saida_lateral; Largura/2 + 0.05; 0)", y: "se(Saida_lateral; Cota_recalque + 0.09; Altura)", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "genérico: medida a conferir; KSB: letras A e C da ficha + curva de 90°" }],
+tiposFicha: [["fi-m500", "KRT Drainer FI M 500 (1/2 cv, monofásica)", 0.222, 0.41, 0.13, "35", 13.5], ["fi-m1000", "KRT Drainer FI M 1000.1 (1 cv, monofásica)", 0.222, 0.464, 0.13, "35", 18.5],
+["f1500", "KRT Drainer F 1500 (1,5 cv, trifásica)", 0.32, 0.37, 0.141, "9", 28], ["k1500", "KRT Drainer K 1500 (1,5 cv, trifásica)", 0.334, 0.429, 0.211, "35", 36]].map(function (m) {
+return fichaQ("t-ksb-krt-" + m[0], "KSB " + m[1] + " — A " + Math.round(m[2] * 1000) + " × B " + Math.round(m[3] * 1000) + " mm, recalque 2\" BSP",
+{ Fabricante: "KSB", Linha: "KRT Drainer (submersível)", Codigo: m[1], Descricao_ficha: "Bomba submersível KSB " + m[1] + ", passagem de sólidos " + m[5] + " mm, recalque 2\" BSP",
+Link_ficha: "https://www.ksb.com/pt-br", Arquivo_ficha: "KSB - Catalogo Linha Housing 170418.pdf", Edicao_ficha: "Catálogo Linha Housing (17/04/2018), p.36", Pagina_ficha: 36, Pagina_cotas: 36,
+Cotas_ficha: "A=" + Math.round(m[2] * 1000) + "; B=" + Math.round(m[3] * 1000) + "; C=" + Math.round(m[4] * 1000) + "; recalque 2\" BSP; peso " + String(m[6]).replace(".", ",") + " kg",
+Largura: m[2], Altura: m[3], Profundidade: Math.round(m[2] * 0.62 * 1000) / 1000, Saida_lateral: true, Cota_recalque: m[4], DN_recalque: 50 },
+"KSB, Catálogo Linha Housing 17/04/2018, p.36 (Dimensionais): A " + Math.round(m[2] * 1000) + ", B " + Math.round(m[3] * 1000) + ", C " + Math.round(m[4] * 1000) + " mm",
+["Profundidade (diâmetro do corpo: 0,62 × A, leitura do desenho; a ficha não cota)", "curva de 90° no recalque: desenho de instalação da ficha (item 8)"]);
+}) });
+var FZ_MOMENT = "https://www.zagonel.com.br/uploads/file-1774627382583-930118458.pdf", FZ_DUCALI = "https://novo.zagonel.com.br/uploads/file-1762438448021-923946897.pdf";
+function tipoZagonel(id, nome, mod, W, Pp, H, Hc, pot, tensao, codigo, pVazao) {
+var moment = mod === 1;
+return fichaQ(id, nome, { Fabricante: "Zagonel", Linha: moment ? "Moment Eletrônica" : "Ducali Eletrônica", Codigo: codigo,
+Descricao_ficha: (moment ? "Ducha Moment Eletrônica " : "Ducha Ducali Eletrônica ") + pot + " W " + tensao + " V, branca",
+Link_ficha: moment ? FZ_MOMENT : FZ_DUCALI, Edicao_ficha: moment ? "Ficha técnica Zagonel Rev. 03 — mar/2026" : "Ficha técnica Zagonel Rev. 02 — jun/2024", Pagina_ficha: 3, Pagina_cotas: 8,
+Cotas_ficha: moment ? "182 × 350 (planta); 126 (cabeça); 360 (até o puxador); espalhador Ø150 (75 furos Ø0,9)" : "476 × 265; 237 (corpo); 458 (total); espalhador 210 × 130 (76 furos Ø1)",
+Pressao_min_kPa: pVazao, Pressao_acionamento_kPa: 10, Pressao_max_kPa: 400, Pressao_texto: "acionamento 10 kPa; mínima para vazão (3 L/min) " + pVazao + " kPa; estática máxima 400 kPa",
+Eletrico: true,
+Modelo: mod, Largura: W, Profundidade: Pp, Altura: H, Altura_cabeca: Hc, Potencia_W: pot, Tensao_V: tensao, DN_agua: 20 },
+"Zagonel, ficha técnica " + (moment ? "Moment Eletrônica (Rev.03)" : "Ducali Eletrônica (Rev.02)") + ": desenho cotado p.8 e características técnicas p.3", ["DN_agua (rosca 1/2\" = DN 20 soldável: regra de ligação)"]);
+}
+ESPECS.push({ id: "hid-ducha-eletrica", nome: "Ducha elétrica (Zagonel Moment / Ducali)", categoria: "aparelho", sistemas: ["agua_fria", "eletrica"], tipos: [], generico: true,
+descricao: "Ducha elétrica de parede pelo desenho cotado do fabricante. Origem = o ponto de água (rosca de 1/2\"); a ducha sai da parede para +Z.",
+avisos: ["Tipos com a ficha Zagonel (desenho p.8 e características p.3). Raios, espessura da placa e braços: proporção do desenho."],
+geo: [G("Largura", 0.182, [0.1, 0.6], null, "Largura (ficha)"), G("Profundidade", 0.35, [0.15, 0.7], null, "Da parede à frente (ficha)"), G("Altura", 0.36, [0.1, 0.8], null, "Altura total até a ponta do puxador (ficha)"),
+X("Altura_cabeca", "comprimento", 0.126, "Dimensões", "Moment: topo do espalhador ao fundo da câmara (126); Ducali: topo ao fundo do corpo (237)"),
+X("Modelo", "numero", 1, "Dimensões", "1 = Moment (espalhador redondo, entrada no topo); 2 = Ducali (placa, entrada atrás). Qualquer valor acima de 1,5 vale 2 (geometria e conector usam a mesma régua)"),
+X("Pressao_acionamento_kPa", "numero", 0, "Dados", "Pressão mínima de ACIONAMENTO da resistência (kPa) — ficha; a mínima para vazão vai em Pressao_min_kPa"),
+X("Eletrico", "simnao", true, "Dados", "Aparelho elétrico (entra na carga do quadro como chuveiro elétrico — js/eleaparelhosdados.js)"),
+X("Potencia_W", "numero", 0, "Dados", "Potência nominal (W) da ficha"), X("Tensao_V", "numero", 0, "Dados", "Tensão nominal (V)"), DN("DN_agua", null, "DN da água fria")],
+solidos: [], material: "Branco",
+conectores: [
+{ id: "af", nome: "Água fria (rosca no topo)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0.03", visivel: "Modelo < 1.5", papel: "entrada", dir: dv("cima"), origemPos: "catalogo", aConferir: "rosca de 1/2\" no topo (desenho da ficha)" },
+{ id: "af_parede", nome: "Água fria (rosca na parede)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", visivel: "Modelo > 1.5", papel: "entrada", dir: dv("parede"), origemPos: "catalogo", aConferir: "rosca de 1/2\" atrás do corpo (desenho da ficha)" }],
+tiposFicha: [
+tipoZagonel("t-zagonel-moment-7500-220", "Zagonel Moment Eletrônica 7.500 W 220 V — 182 × 350 × 360 mm", 1, 0.182, 0.35, 0.36, 0.126, 7500, 220, "DMOEL75220BR03", 16),
+tipoZagonel("t-zagonel-moment-6800-220", "Zagonel Moment Eletrônica 6.800 W 220 V — 182 × 350 × 360 mm", 1, 0.182, 0.35, 0.36, 0.126, 6800, 220, "DMOEL68220BR03", 16),
+tipoZagonel("t-zagonel-ducali-7500-220", "Zagonel Ducali Eletrônica 7.500 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 7500, 220, "DDCEL75220BR03", 10),
+tipoZagonel("t-zagonel-ducali-6800-220", "Zagonel Ducali Eletrônica 6.800 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 6800, 220, "DDCEL68220BR03", 10),
+tipoZagonel("t-zagonel-ducali-4400-220", "Zagonel Ducali Eletrônica 4.400 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 4400, 220, "DDCEL44220BR03", 10)] });
+NOVAS["hid-ducha-eletrica"] = { g: "ducha_zagonel", p: { W: "Largura", P: "Profundidade", H: "Altura", Hc: "Altura_cabeca", mod: "se(Modelo > 1.5; 2; 1)" },
+env: ["0", "se(Modelo > 1.5; 0.022 - Altura; -0.012 - Altura)", "Profundidade/2", "Largura", "Altura + 0.012", "Profundidade"], x: [] };
 ESPECS.push({ id: "hid-tela-ponta", nome: "Tela de proteção na ponta do tubo (extravasor / limpeza)", categoria: "equipamento", sistemas: ["pluvial"], tipos: [], generico: true,
 descricao: "Tela ou malha de material resistente na ponta livre do tubo (extravasor em local visível, limpeza sobre a grelha do sumidouro). Origem = ponta do tubo; o tubo chega pelo −X.",
 avisos: ["A área livre das frestas deve passar a da seção interna do tubo (nota do projeto). Produto não especificado: luva + tela de desenho."],
@@ -17726,9 +17837,16 @@ geo: [DN("DN_tubo", null, "DN do tubo")],
 solidos: [], material: "Inox",
 conectores: [{ id: "tubo", nome: "Tubo", sistema: "pluvial", dn: "DN_tubo", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "desenho", aConferir: "produto não especificado no projeto" }], });
 GEO_FAM["hid-bomba-submersivel"] = function () {
-return [cxs("corpo", "Motobomba (volume a conferir)", "0", "0", "0", "Largura", "Altura*0.85", "Profundidade", "Ferro fundido"),
-cil("pescoco", "Boca de recalque", "y", "0", "Altura*0.85", "0", "max(0.02; DN_recalque/2000 + 0.004)", "Altura*0.15", "Ferro fundido"),
-cxs("alca", "Alça de içamento", "0", "Altura*0.85", "Profundidade*0.3", "Largura*0.6", "Altura*0.1", "0.012", "Aço")];
+var L = "Saida_lateral", G0 = "nao(Saida_lateral)", xc = "-Largura/2 + Profundidade/2", R = "Profundidade/2", rr = "max(0.02; DN_recalque/2000 + 0.004)";
+return [cxs("corpo", "Motobomba (volume a conferir)", "0", "0", "0", "Largura", "Altura*0.85", "Profundidade", "Ferro fundido", G0),
+cil("pescoco", "Boca de recalque", "y", "0", "Altura*0.85", "0", rr, "Altura*0.15", "Ferro fundido", G0),
+cxs("alca", "Alça de içamento", "0", "Altura*0.85", "Profundidade*0.3", "Largura*0.6", "Altura*0.1", "0.012", "Aço", G0),
+rev("hidraulica", "Carcaça da hidráulica e pés", xc, "0", "0", [[R + "*0.7", "0"], [R + "*0.98", "0.012"], [R, "Cota_recalque*0.4"], [R, "Cota_recalque + 0.045"], [R + "*0.86", "Cota_recalque + 0.06"]], { mat: "Ferro fundido", vis: L }),
+rev("motor", "Motor (carcaça)", xc, "Cota_recalque + 0.06", "0", [[R + "*0.86", "0"], [R + "*0.86", "(Altura - Cota_recalque)*0.62"], [R + "*0.7", "(Altura - Cota_recalque)*0.7"], ["0", "(Altura - Cota_recalque)*0.72"]], { mat: "Cinza escuro", vis: L }),
+cxs("alca-ksb", "Alça de içamento", xc, "Cota_recalque + 0.06 + (Altura - Cota_recalque)*0.7", "0", "Profundidade*0.55", "Altura - Cota_recalque - 0.06 - (Altura - Cota_recalque)*0.7", "0.014", "Preto", L),
+cil("saida", "Bocal do recalque 2\" BSP", "x", xc + " + " + R + "*0.9", "Cota_recalque", "0", rr, "Largura/2 - (" + xc + " + " + R + "*0.9)", "Ferro fundido", L),
+cil("tubo-curva", "Curva de 90° (trecho horizontal)", "x", "Largura/2", "Cota_recalque", "0", rr + " + 0.004", "0.05 + " + rr, "PVC", L),
+cil("subida", "Curva de 90° (trecho de subida)", "y", "Largura/2 + 0.05", "Cota_recalque - " + rr, "0", rr + " + 0.004", "0.09 + " + rr, "PVC", L)];
 };
 GEO_FAM["hid-tela-ponta"] = function () {
 return [cil("luva", "Luva", "x", "0", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.04", "PVC"),
@@ -17794,6 +17912,8 @@ P("Pagina_ficha", "inteiro", 0, "Página do PDF onde o produto aparece (0 = fam�
 P("Vazao_L_min", "numero", 0, "Vazão do catálogo em L/min (0 = o catálogo não informa; vazão de projeto vem do motor de norma)"),
 P("Pressao_min_kPa", "numero", 0, "Pressão mínima de operação do catálogo (kPa; 0 = não informa)"), P("Pressao_max_kPa", "numero", 0, "Pressão máxima de operação do catálogo (kPa; 0 = não informa)"),
 P("Pressao_texto", "texto", "", "Pressão como impressa no catálogo"), P("Cotas_ficha", "texto", "", "Cotas brutas da ficha em mm (letras do desenho)"),
+P("Origem_hidraulica", "texto", "", "ficha = valores do catálogo do fabricante; norma = mínimo da NBR 5626 (sem ficha); vazio = não é aparelho de consumo"),
+P("Fonte_hidraulica", "texto", "", "Documento, item/tabela e página de cada valor hidráulico do tipo"),
 P("A_conferir", "simnao", true, "Sim = há cota/posição/DN que o catálogo não dá ou que é leitura de letra do desenho"),
 P("Conferir", "texto", "", "Lista do que conferir neste tipo (ver também HidFamilias.avisosDoTipo)"),
 P("Sistemas_RA", "texto", "", "Sistemas dos conectores (biminst)")
@@ -17883,6 +18003,46 @@ var conferir = e.geo.filter(function (g) { return !g.semConferir; }).map(functio
 return { id: "t-generico", nome: "Genérico (sem produto no catálogo) — a conferir",
 valores: { Fabricante: "(sem produto no catálogo)", Conferir: conferir.join("; "), A_conferir: true }, fonte: "", avisos: e.avisos.slice(), conferir: conferir };
 }
+var USOS_ENXUTOS = {
+"hid-torneira": [/Lavatório de Mesa$/, /Lavatório de Mesa Bica Alta$/, /Lavatório de Parede$/, /Lavatório de Mesa PressMatic/, /Cozinha de Mesa 1\/2”$/, /Cozinha de Parede 1\/2” e 3\/4”$/, /Jardim\/Tanque/, /Longa de Parede/],
+"hid-misturador": [/Misturador para Lavatório de Mesa$/, /Misturador para Lavatório de Mesa Bica Alta$/, /Misturador para Lavatório de Parede$/, /Misturador Monocomando para Lavatório de Mesa$/,
+/Misturador para Cozinha de Mesa( 1\/2”)?$/, /Misturador para Cozinha de Parede( 1\/2” e 3\/4”)?$/, /Misturador Monocomando para Cozinha de Mesa$/, /Misturador para Bidê$/]
+};
+var CONSUMO = {
+"hid-bacia-caixa-acoplada": 0.15, "hid-caixa-descarga-embutida": 0.15, "hid-bacia-convencional": 1.7, "hid-valvula-descarga": 1.7,
+"hid-lavatorio-coluna": 0.15, "hid-lavatorio-suspenso": 0.15, "hid-cuba-apoio": 0.15, "hid-pia-cozinha": 0.25, "hid-tanque-lavar": 0.25, "hid-mictorio": 0.15,
+"hid-chuveiro": 0.2, "hid-ducha-higienica": 0.2, "hid-ducha-eletrica": 0.1,
+"hid-torneira": function (n) { return /Cozinha|Pia/i.test(n) ? 0.25 : /Jardim|Tanque|Longa/i.test(n) ? 0.2 : 0.15; },
+"hid-misturador": function (n) { return /Bidê/i.test(n) ? 0.1 : /Cozinha/i.test(n) ? 0.25 : /Banheira/i.test(n) ? 0.3 : /Chuveiro|Ducha/i.test(n) ? 0.2 : 0.15; },
+"hid-aquecedor-gas": null, "hid-aquecedor-eletrico-passagem": null, "hid-boiler-eletrico": null, "hid-boiler-gas": null
+};
+var F_PMIN = "NBR 5626:2020, 6.9.2 (pressão dinâmica mínima no ponto de utilização, 10 kPa)", F_PMAX = "NBR 5626:2020, 6.9.5 (pressão estática máxima, 400 kPa)",
+F_VAZ = "NBR 5626:1998, Tabela A.1 (vazão de projeto; via RHEINHEIMER, TCC UFRGS 2022, p.33 — fonte secundária)";
+function hidraulica(fam) {
+if (!Object.prototype.hasOwnProperty.call(CONSUMO, fam.id)) return;
+var regra = CONSUMO[fam.id];
+fam.tipos.forEach(function (t) {
+var v = t.valores, fontes = [], deNorma = false, temFicha = v.Vazao_L_min > 0 || v.Pressao_min_kPa > 0 || v.Pressao_max_kPa > 0;
+if (!(v.Vazao_L_min > 0)) {
+var q = typeof regra === "function" ? regra(String(t.nome)) : regra;
+if (q > 0) { v.Vazao_L_min = Math.round(q * 60 * 100) / 100; fontes.push("vazão " + v.Vazao_L_min + " L/min: " + F_VAZ); deNorma = true; }
+else fontes.push("vazão: a Tabela A.1 não tem linha para este aparelho — usar a da ficha do modelo");
+} else fontes.push("vazão " + v.Vazao_L_min + " L/min: ficha do fabricante");
+if (!(v.Pressao_min_kPa > 0)) { v.Pressao_min_kPa = 10; fontes.push("pressão mínima 10 kPa: " + F_PMIN); deNorma = true; } else fontes.push("pressão mínima " + v.Pressao_min_kPa + " kPa: ficha do fabricante");
+if (!(v.Pressao_max_kPa > 0)) { v.Pressao_max_kPa = 400; fontes.push("estática máxima 400 kPa: " + F_PMAX); deNorma = true; } else fontes.push("pressão máxima " + v.Pressao_max_kPa + " kPa: ficha do fabricante");
+v.Origem_hidraulica = deNorma ? (temFicha ? "ficha + norma" : "norma") : "ficha";
+v.Fonte_hidraulica = fontes.join("; ");
+});
+}
+function enxugar(fam) {
+var usos = USOS_ENXUTOS[fam.id]; if (!usos) return;
+var fica = {};
+usos.forEach(function (re) {
+var t = fam.tipos.filter(function (x) { return re.test(String(x.nome).replace(/^[^—]*— /, "").trim()); })[0];
+if (t) fica[t.id] = 1;
+});
+fam.tipos.forEach(function (t) { if (!fica[t.id]) t.legado = true; });
+}
 function construir(e) {
 var fam = {
 id: e.id, nome: e.nome, categoria: e.categoria, hospedagem: "livre", pset: PSET, origem: "HidCatalogo", aparelhoPrograma: APARELHO[e.id] || null,
@@ -17899,11 +18059,14 @@ var its = [];
 e.tipos.forEach(function (t) { Cat.porTipo(t).forEach(function (x) { its.push(x); }); });
 its.forEach(function (x) { fam.tipos.push(montarTipo(e, x)); });
 }
+enxugar(fam);
+hidraulica(fam);
 return fam;
 }
 var APARELHO = { "hid-bacia-caixa-acoplada": "bacia", "hid-bacia-convencional": "bacia", "hid-lavatorio-coluna": "lavatorio", "hid-lavatorio-suspenso": "lavatorio",
 "hid-cuba-apoio": "lavatorio", "hid-pia-cozinha": "pia", "hid-tanque-lavar": "tanque", "hid-mictorio": "mictorio", "hid-chuveiro": "chuveiro",
-"hid-ducha-higienica": "ducha_higienica", "hid-torneira": null, "hid-misturador": null };
+"hid-ducha-higienica": "ducha_higienica", "hid-torneira": null, "hid-misturador": null,
+"hid-ducha-eletrica": "chuveiro" };
 var CACHE = null;
 function todas() {
 if (CACHE) return CACHE;

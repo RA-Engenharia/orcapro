@@ -78012,7 +78012,10 @@ parametros: [
 { nome: "Tensao", tipoDado: "texto", escopo: "tipo", valor: "Monofásica 220 V", grupo: "Dados" },
 { nome: "Material_corpo", tipoDado: "material", escopo: "tipo", valor: "Polietileno verde", grupo: "Materiais" },
 { nome: "Material_tampa", tipoDado: "material", escopo: "tipo", valor: "Polietileno amarelo", grupo: "Materiais" },
-{ nome: "Material_tubo", tipoDado: "material", escopo: "tipo", valor: "PVC esgoto", grupo: "Materiais" }
+{ nome: "Material_tubo", tipoDado: "material", escopo: "tipo", valor: "PVC esgoto", grupo: "Materiais" },
+{ nome: "Fabricante", tipoDado: "texto", escopo: "tipo", valor: "Águas Claras Engenharia", grupo: "Fonte" },
+{ nome: "Fonte_cota", tipoDado: "texto", escopo: "tipo", valor: "Fonte RA da família bombup230.json (06/10/2026, pasta Padrao RA - Revit): corpo Ø700 × 980 mm, gargalo Ø400 a 885 mm, entrada DN 100 a 816, recalque Ø50 a 715, ventilação Ø50 a 826 mm do fundo; volume 325 L e 2,0 HP do fabricante. As cotas das bocas são leitura das fotos (a ficha publicada não traz desenho cotado): conferir na entrega.", grupo: "Fonte" },
+{ nome: "Nivel_fonte", tipoDado: "texto", escopo: "tipo", valor: "B", grupo: "Fonte" }
 ],
 tipos: [
 { id: "mono220", nome: "2,0 HP - Monofásica 220 V", valores: { Tensao: "Monofásica 220 V" } },
@@ -78021,7 +78024,8 @@ tipos: [
 ],
 solidos: [
 { id: "corpo", nome: "Reservatório", forma: "cilindro", eixo: "y", x: "0", y: "0", z: "0", raio: "Diametro_corpo/2", altura: "Altura_corpo", material: "Material_corpo" },
-{ id: "ombro", nome: "Ombro (aproximado)", forma: "cilindro", eixo: "y", x: "0", y: "Altura_corpo", z: "0", raio: "(Diametro_corpo + Diametro_gargalo)/4", altura: "Cota_gargalo - Altura_corpo", material: "Material_corpo" },
+{ id: "ombro", nome: "Ombro (degrau de baixo)", forma: "cilindro", eixo: "y", x: "0", y: "Altura_corpo", z: "0", raio: "Diametro_corpo*0.44", altura: "(Cota_gargalo - Altura_corpo)/2", material: "Material_corpo" },
+{ id: "ombro2", nome: "Ombro (degrau de cima)", forma: "cilindro", eixo: "y", x: "0", y: "(Altura_corpo + Cota_gargalo)/2", z: "0", raio: "Diametro_corpo*0.36", altura: "(Cota_gargalo - Altura_corpo)/2", material: "Material_corpo" },
 { id: "gargalo", nome: "Gargalo", forma: "cilindro", eixo: "y", x: "0", y: "Cota_gargalo", z: "0", raio: "Diametro_gargalo/2", altura: "0.02", material: "Material_corpo" },
 { id: "tampa", nome: "Tampa", forma: "cilindro", eixo: "y", x: "0", y: "Cota_gargalo + 0.005", z: "0", raio: "Diametro_gargalo/2 + 0.005", altura: "Altura_total - Cota_gargalo - 0.005", material: "Material_tampa" },
 { id: "re", nome: "Ressalto da entrada", forma: "caixa", x: "-0.279", y: "0.64", z: "0", dx: "0.158", dy: "0.253", dz: "0.2", material: "Material_corpo" },
@@ -78031,6 +78035,11 @@ solidos: [
 { id: "ent", nome: "Entrada DN 100", forma: "cilindro", eixo: "x", x: "-0.472", y: "Cota_entrada", z: "0", raio: "0.0508", altura: "0.172", material: "Material_tubo" },
 { id: "sai", nome: "Saída de recalque Ø50", forma: "cilindro", eixo: "x", x: "0.366", y: "Cota_saida", z: "0", raio: "0.036", altura: "0.029", material: "Material_tubo" },
 { id: "ven", nome: "Ventilação Ø50", forma: "cilindro", eixo: "z", x: "0", y: "Cota_ventilacao", z: "0.362", raio: "0.036", altura: "0.028", material: "Material_tubo" }
+],
+conectores: [
+{ id: "entrada", nome: "Entrada de esgoto DN 100", sistema: "esgoto", dn: 100, x: "-0.472", y: "Cota_entrada", z: "0", papel: "entrada", dir: { x: -1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json, leitura das fotos do fabricante)" },
+{ id: "recalque", nome: "Recalque Ø50", sistema: "esgoto", dn: 50, x: "0.395", y: "Cota_saida", z: "0", papel: "recalque", dir: { x: 1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json)" },
+{ id: "ventilacao", nome: "Ventilação Ø50", sistema: "ventilacao", dn: 50, x: "0", y: "Cota_ventilacao", z: "0.39", papel: "saida", dir: { x: 0, y: 0, z: 1 }, origemPos: "catalogo", aConferir: "cota da fonte RA (bombup230.json)" }
 ],
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Estação elevatória de esgoto BombUp 230 (Águas Claras), 2,0 HP" }
 },
@@ -97142,7 +97151,7 @@ concreto: { cor: "#B3B1AB", rug: 0.88, met: 0, verniz: 0, env: 0.35, nome: "conc
 };
 var PAPEL = {
 latao: { cor: "#C9A44C", rug: 0.3, met: 1, verniz: 0, nome: "latão" },
-cromado: { cor: "#E6E9EC", rug: 0.1, met: 1, verniz: 0, nome: "cromado" },
+cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },
 volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
 azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
 grelha: { cor: "#DADDE0", rug: 0.2, met: 1, verniz: 0, nome: "grelha inox" },
@@ -98148,8 +98157,24 @@ var pC = function (s) { return W(s, 0, 0); };
 revol(mc, rg.corpo.ext, pC, d); hexes(mc, rg.corpo.hex, pC, fr, zz, d);
 var cs = rg.castelo || {}, pK = function (s) { return W(cs.xc || 0, s, cs.zc || 0); };
 var mCast = /acabamento/.test(a.variante) ? mk : mc;
-revol(mCast, cs.ext, pK, fr); hexes(mCast, cs.hex, pK, zz, d, fr);
-(rg.placas || []).forEach(function (pl) {
+var extCast = cs.ext, volante = null;
+if (/acabamento/.test(a.variante) && cs.ext && cs.ext.length > 4) {
+var iV = -1; for (var iq = 1; iq < cs.ext.length; iq++) if (cs.ext[iq][1] > cs.ext[iq - 1][1] + 4 && cs.ext[iq][0] > (cs.ext[0][0] + cs.ext[cs.ext.length - 1][0]) / 2) { iV = iq; break; }
+if (iV > 0) { volante = { s0: cs.ext[iV][0], s1: cs.ext[cs.ext.length - 1][0], r: Math.max(cs.ext[iV][1], 16) }; extCast = cs.ext.slice(0, iV).concat([[cs.ext[iV][0], cs.ext[iV - 1][1] * 0.6]]); }
+}
+revol(mCast, extCast, pK, fr); hexes(mCast, cs.hex, pK, zz, d, fr);
+var mb = new Malha();
+if (volante) {
+var V0 = volante.s0, V1 = volante.s1, Lv = V1 - V0, rCub = Math.max(volante.r * 0.62, 11), rBr = Math.max(volante.r * 1.55, 30), eBr = 5.5;
+varrer(mk, reta(pK(V0), fr), escala([[0, 0], [0, rCub * 0.8], [Lv * 0.15, rCub], [Lv * 0.78, rCub], [Lv * 0.9, rCub * 0.86], [Lv * 0.9, 0]]), segs, false);
+var w1 = zz, w2 = d;
+[0, 1, 2, 3].forEach(function (k) {
+var an = Math.PI / 4 + k * Math.PI / 2, u = add(mul(w1, Math.cos(an)), mul(w2, Math.sin(an))), base = pK(V0 + Lv * 0.5);
+varrer(mk, reta(base, u), escala([[0, 0], [0, eBr], [rBr * 0.82, eBr * 1.15], [rBr * 0.93, eBr * 1.05], [rBr, eBr * 0.55], [rBr, 0]]), o.lod === "longe" ? 8 : 14, false);
+});
+varrer(mb, reta(pK(V0 + Lv * 0.9), fr), escala([[0, 0], [0, rCub * 0.7], [Lv * 0.06, rCub * 0.66], [Lv * 0.1, rCub * 0.4], [Lv * 0.1, 0]]), segs, false);
+}
+(volante ? [] : (rg.placas || [])).forEach(function (pl) {
 if (!pl.contorno || pl.contorno.length < 3) return;
 var ax = pl.eixo, EIX = [d, fr, zz], ua = (ax + 1) % 3, wa = (ax + 2) % 3, P2 = pl.contorno.map(function (q) { return [q[0], q[1]]; });
 var area = 0; for (var i = 0; i < P2.length; i++) { var j = (i + 1) % P2.length; area += P2[i][0] * P2[j][1] - P2[j][0] * P2[i][1]; }
@@ -98163,6 +98188,7 @@ prismaPoligono(mp, base, mul(EIX[ax], (pl.e1 - pl.e0) * MM), P2, topo);
 var latao = /bruto|acabamento/.test(a.variante), partes = [cascaSaida(mc, latao ? "latao" : "corpo")];
 if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
 if (mp.idx.length) partes.push(cascaSaida(mp, latao ? "latao" : "corpo"));
+if (mb.idx.length) partes.push(cascaSaida(mb, "azul"));
 var Lc = rg.conectores.length >= 2 ? Math.abs(rg.conectores[1].x - rg.conectores[0].x) : 0;
 var rMeio = 0; (rg.corpo.ext || []).forEach(function (q) { if (Math.abs(q[0] - xm) <= 20) rMeio = Math.max(rMeio, q[1]); });
 var topo = (cs.ext && cs.ext.length) ? cs.ext[cs.ext.length - 1][0] : rMeio;
@@ -98199,6 +98225,14 @@ varrer(mc, reta(add(C, mul(d, -h * MM)), d), escala(pfC), seg, false);
 var sx = [[0, 0], [0, rHex], [Math.min(h * 0.3, 9), rHex], [Math.min(h * 0.3, 9), 0]];
 varrer(mc, reta(add(C, mul(d, -h * MM)), d), escala(sx), 6, false);
 varrer(mc, reta(add(C, mul(d, (h - Math.min(h * 0.3, 9)) * MM)), d), escala(sx), 6, false);
+if (a.acessorio === "valvula_retencao" && a.variante !== "pe_crivo") {
+var hT = rBojo + 16, rT = rBojo * 0.82, fr0 = fr;
+if (Math.abs(d[1]) < 0.9) fr = [0, 1, 0];
+varrer(mc, reta(C, fr), escala([[0, 0], [0, rT * 0.9], [hT - 6, rT * 0.9], [hT - 6, 0]]), seg, false);
+varrer(mc, reta(add(C, mul(fr, (hT - 6) * MM)), fr), escala([[0, 0], [0, rT * 1.08], [7, rT * 1.08], [7, 0]]), 6, false);
+varrer(mc, reta(add(C, mul(fr, (hT + 1) * MM)), fr), escala([[0, 0], [0, rT * 0.5], [2.5, rT * 0.45], [3, 0]]), seg, false);
+return { partes: [cascaSaida(mc, "latao")], frente: fr0, aConferir: true, cotas: { origem: "desenho", aConferir: "retenção de portinhola: corpo e tampa em proporção do DE (sem ficha cotada da de bronze)" } };
+}
 var hc = rc0 ? rc0.altura - rc0.corpo / 2 : de * 1.1 + 22, rc = rc0 ? rBojo * 0.8 : de * 0.42 + 6;
 if (rc0) {
 varrer(mc, reta(C, fr), escala([[0, 0], [0, rc], [hc * 0.42, rc], [hc * 0.42, rBojo * 0.95], [hc * 0.56, rBojo * 0.95], [hc * 0.56, rc * 0.62], [hc * 0.7, rc * 0.62], [hc * 0.7, 5.5], [hc, 5.5], [hc, 0]]), seg, false);
@@ -110951,8 +110985,8 @@ var FAMS_AC = ["ra-registro-gaveta", "ra-registro-esfera", "ra-registro-pressao"
 U.FAMS_ACESSORIO = FAMS_AC;
 U._p12 = { acFam: "ra-registro-gaveta", acTipo: "", n: 1, esp: 0.15, lado: 1 };
 function famRA(id) { try { return global.FamiliasRA ? global.FamiliasRA.obter(id, true) : null; } catch (e) { return null; } }
-function tiposDe(famId) {
-var f = famRA(famId), out = f ? f.tipos.map(function (t) { return { id: t.id, rotulo: t.nome }; }) : [];
+function tiposDe(famId, atual) {
+var f = famRA(famId), out = f ? f.tipos.filter(function (t) { return !t.legado || t.id === atual; }).map(function (t) { return { id: t.id, rotulo: t.nome }; }) : [];
 var Pv = global.BimPrevia, I = BI(), A = I && I.ACESSORIOS && I.ACESSORIO_DA_FAM ? I.ACESSORIOS[I.ACESSORIO_DA_FAM[famId]] : null;
 if (A && Pv && Pv.hidro && Pv.hidro()) Object.keys(A.variantes).forEach(function (v) { if (!out.some(function (t) { return t.id === v; })) out.push({ id: v, rotulo: A.variantes[v].rot.charAt(0).toUpperCase() + A.variantes[v].rot.slice(1) + (A.variantes[v].semSinapi ? " — sem SINAPI (referência de mercado)" : "") }); });
 return out;
@@ -111013,7 +111047,7 @@ if (L2 > 0) tt = ((p.x - t.p1.x) * dx + (p.z - t.p1.z) * dz) / L2;
 }
 tt = Math.max(folga / Lt, Math.min(1 - folga / Lt, tt));
 var q = { x: r6(t.p1.x + (t.p2.x - t.p1.x) * tt), y: r6(t.p1.y + (t.p2.y - t.p1.y) * tt), z: r6(t.p1.z + (t.p2.z - t.p1.z) * tt) };
-var tipos = tiposDe(famId), tipo = tipoId && tipos.some(function (x) { return x.id === tipoId; }) ? tipoId : (I.varianteAuto && global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro() ? I.varianteAuto(I.ACESSORIO_DA_FAM[famId], t) : (tipos[0] ? tipos[0].id : Object.keys(A.variantes)[0]));
+var tipos = tiposDe(famId, tipoId), tipo = tipoId && tipos.some(function (x) { return x.id === tipoId; }) ? tipoId : (I.varianteAuto && global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro() ? I.varianteAuto(I.ACESSORIO_DA_FAM[famId], t) : (tipos[0] ? tipos[0].id : Object.keys(A.variantes)[0]));
 var o = { op: "acessorio", id: U._proxId("ac", ops), famId: famId, tipoId: tipo, trecho: t.id, novoId: U._proxId("t", ops), x: q.x, y: q.y, z: q.z, comprimento: L };
 return { ok: true, op: o, trecho: t, comprimento: L };
 };
@@ -111053,7 +111087,7 @@ return (A ? A.nome : "Acessório") + ": clique EM CIMA de um tubo de água — e
 U.esquemaAcessorio = function () {
 var c = U.cfg, I = BI(), self = U;
 var fams = FAMS_AC.map(function (id) { var f = famRA(id); return { id: id, rotulo: f ? f.nome : id }; });
-var tipos = tiposDe(c.famId);
+var tipos = tiposDe(c.famId, c.tipoId);
 return { icone: "link", semEditarTipo: true, titulo: "Acessório de tubo",
 secoes: [{ nome: "Acessório", params: [
 { id: "i:famId", rotulo: "Família", tipo: "lista", valor: c.famId, opcoes: fams },
@@ -111112,7 +111146,7 @@ return r;
 U.propsAcessorio = function (uid, a) {
 var I = BI(), b = B(), est = b.editarEstado(), self = U;
 var sp = I.sinapiDe(I.itemAcessorio(a)), S = I.sistemas(est.estado, b.familiaAvaliar), c = S.de(a.trecho) || S.de(a.novoId);
-var sec = [{ nome: "Identidade", params: [ro("p12:fam", "Família", a.nome), { id: "p12:tipo", rotulo: "Tipo", tipo: "lista", valor: a.variante, opcoes: tiposDe(a.famId) },
+var sec = [{ nome: "Identidade", params: [ro("p12:fam", "Família", a.nome), { id: "p12:tipo", rotulo: "Tipo", tipo: "lista", valor: a.variante, opcoes: tiposDe(a.famId, a.variante) },
 ro("p12:sis", "Sistema", I.SISTEMAS[a.sistema].nome), ro("p12:nsis", "Nome do sistema", c ? c.codigo + " — " + c.nome : "—"),
 ro("p12:dn", "DN do tubo", String(a.dn)), ro("p12:ff", "Face a face", fmt(a.comprimento, 3) + " m"), ro("p12:tr", "Trechos", [a.trecho, a.novoId].filter(Boolean).join(" | "), "O tubo foi dividido aqui; apagar o acessório emenda.")] },
 { nome: "Orçamento (SINAPI pelo mapa)", params: sp.status === "ok"
@@ -111129,7 +111163,7 @@ out.push({ nome: "Sistema", params: [ro("p12:codSis", "Número do sistema", c ? 
 var M = I.MATERIAIS[t.material] || {};
 if (I.SISTEMAS[t.sistema].grupo === "agua" && !M.secao && !M.flexivel) out.push({ nome: "Acessório neste tubo", params: [
 { id: "p12:acFam", rotulo: "Família", tipo: "lista", valor: st.acFam, opcoes: FAMS_AC.map(function (id) { var f = famRA(id); return { id: id, rotulo: f ? f.nome : id }; }) },
-{ id: "p12:acTipo", rotulo: "Tipo", tipo: "lista", valor: st.acTipo || (tiposDe(st.acFam)[0] || {}).id, opcoes: tiposDe(st.acFam) },
+{ id: "p12:acTipo", rotulo: "Tipo", tipo: "lista", valor: st.acTipo || (tiposDe(st.acFam)[0] || {}).id, opcoes: tiposDe(st.acFam, st.acTipo) },
 { id: "p12:acColocar", rotulo: "No meio do trecho", tipo: "botao", rotuloBotao: "Colocar (divide o tubo)", fn: function () { self.colocarAcessorioNoMeio(t.id, st.acFam, st.acTipo); } }] });
 if (!t.vertical) out.push({ nome: "Paralelos", params: [
 { id: "p12:n", rotulo: "Quantos", tipo: "numero", passo: "1", valor: st.n },
@@ -163813,7 +163847,7 @@ function add(t) { if (vistos[t.id]) return; vistos[t.id] = 1; out.push(t); }
 var R = BP && BP.REGISTRO[cat], fam = R && R.familia ? R.familia : null;
 var cg = ctx.catalogos || {};
 if (cat === "porta" || cat === "janela" || cat === "generico") {
-arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id }); });
+arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id, legado: !!t.legado }); });
 if (cat !== "generico" && typeof cg.familiasDaCategoria === "function") {
 arr(cg.familiasDaCategoria(cat)).forEach(function (f) {
 if (String(f.id) === String(famId)) return;
@@ -164006,7 +164040,7 @@ cat.escada = A.TIPOS_ESCADA.map(function (t) { return { id: t.id, nome: t.rotulo
 }
 if (global.BimForro) cat.forro = global.BimForro.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { forroTipoId: t.id } }; });
 if (global.BimTelhado) cat.telhado = global.BimTelhado.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { telhadoTipoId: t.id } }; });
-cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome }; }) : []; };
+cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome, legado: !!t.legado }; }) : []; };
 cat.familiasDaCategoria = function (categoria) {
 var l = []; try { l = FU && FU.biblioteca ? FU.biblioteca({ registro: false }) : []; } catch (eB) { l = []; }
 return arr(l).filter(function (f) { return f && f.id && f.categoria === categoria && !f.oculta && arr(f.tipos).length; });
@@ -164295,6 +164329,7 @@ _listaTipos: function (ctx, md, busca) {
 var famId = null, c0 = elDe(ctx.estado, md.ids[0]); if (c0 && c0.famId) famId = c0.famId;
 var l = this.tiposDisponiveis(ctx, md.tipo.cat, famId), q = txt(busca).trim().toLowerCase();
 if (q) l = l.filter(function (t) { return (txt(t.familia) + " " + txt(t.nome)).toLowerCase().indexOf(q) >= 0; });
+else { var atual = c0 && c0.tipoId != null ? String(c0.tipoId) : ""; l = l.filter(function (t) { return !t.legado || String(t.tipoFam) === atual; }); }
 var PA = global.PerfisAco;
 if (q && PA && PA.buscar && (md.tipo.cat === "pilar" || md.tipo.cat === "viga")) {
 arr(PA.buscar(busca, 8)).forEach(function (nm) { if (!l.some(function (t) { return t.nome === nm; })) l.push({ id: "aisc:" + nm, nome: nm, familia: "Catálogo AISC", origem: "aisc", perfilCatalogo: nm }); });
@@ -186673,7 +186708,8 @@ var D = {
 "rotulo": "Chuveiro elétrico",
 "casar": {
 "fam": [
-"hid-chuveiro"
+"hid-chuveiro",
+"hid-ducha-eletrica"
 ],
 "quando": [
 {
@@ -196568,7 +196604,7 @@ status("Projeto elétrico: " + (t.luz || 0) + " luz, " + (t.tug || 0) + " TUG, "
 return res;
 }
 function aparelhosRegex() {
-var ids = ["ele-eq-[a-z0-9-]+", "ele-lum-[a-z0-9-]+", "ra-ilum-[a-z0-9-]+", "ra-luminaria", "ra-clim-[a-z0-9-]+", "ra-coz-(geladeira|torre-quente|inferior|ilha|lavadora)", "hid-chuveiro", "hid-bomba", "hid-aquecedor-eletrico-passagem"];
+var ids = ["ele-eq-[a-z0-9-]+", "ele-lum-[a-z0-9-]+", "ra-ilum-[a-z0-9-]+", "ra-luminaria", "ra-clim-[a-z0-9-]+", "ra-coz-(geladeira|torre-quente|inferior|ilha|lavadora)", "hid-chuveiro", "hid-ducha-eletrica", "hid-bomba", "hid-aquecedor-eletrico-passagem"];
 try { arr(global.EleAparelhosDados && global.EleAparelhosDados.aparelhos).forEach(function (a) { arr(a.casar && a.casar.fam).forEach(function (f) { if (ids.indexOf(f) < 0 && /^[a-z0-9-]+$/.test(f)) ids.push(f); }); }); } catch (e) {}
 return new RegExp("^(" + ids.join("|") + ")$");
 }

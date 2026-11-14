@@ -565,13 +565,26 @@
       G("Comprimento", 0.55, [0.2, 1.5], null, "Comprimento da base (eixo da bomba)"),                                    /* hid:ok geometria de reserva */
       G("Largura", 0.25, [0.12, 0.8], null, "Largura da base e da voluta"),                                               /* hid:ok geometria de reserva */
       G("Altura", 0.32, [0.15, 1], null, "Altura total até a boca de recalque"),                                          /* hid:ok geometria de reserva */
-      DN("DN_succao", null, "DN da sucção"), DN("DN_recalque", null, "DN do recalque")
+      DN("DN_succao", null, "DN da sucção"), DN("DN_recalque", null, "DN do recalque"),
+      /* LOTE 3-5 (13/11/2026): bocas pela ficha (Dancor CAM-W4C, Catálogo Geral 60 Hz p.160, letras C e B+J). 0 = desenho antigo (projeto gravado com o t-generico não mexe) */
+      X("Eixo_succao", "comprimento", 0, "Dimensões", "Altura do eixo da sucção acima do piso (letra C da ficha); 0 = proporção antiga (0,03 + Largura/2)"),
+      X("Recuo_recalque", "comprimento", 0, "Dimensões", "Distância da face da sucção ao eixo do recalque (letras B + J da ficha); 0 = proporção antiga (30 % do comprimento)")
     ],
     solidos: [],
     conectores: [
-      { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "0.03 + Largura/2", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" },
-      { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + Comprimento*0.3", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" }
-    ], material: "Azul" });
+      { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "se(Eixo_succao > 0; Eixo_succao; 0.03 + Largura/2)", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "tipo genérico: bocais de reserva; nos tipos Dancor, letra C da ficha" },
+      { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + se(Recuo_recalque > 0; Recuo_recalque; Comprimento*0.3)", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "tipo genérico: bocais de reserva; nos tipos Dancor, letras B + J e D da ficha" }
+    ], material: "Azul",
+    /* Dancor CAM-W4C (Catálogo Geral 60 Hz, p.160, "Dimensionais (mm)"): A 186 (1/4 e 1/3 cv) / 211 (1/2 cv); B 55; C 76; D 170; E 137; F 156; G 173,5; J 40;
+       sucção 1" e recalque 3/4" BSP. Comprimento = A + B; Largura = F (pé); Altura = D (topo do bocal de recalque); a caixa de ligação chega a G = 173,5 */
+    tiposFicha: [["14", "1/4 cv", 0.186, 6.1], ["13", "1/3 cv", 0.186, 6.1], ["12", "1/2 cv", 0.211, 6.4]].map(function (m) {
+      return fichaQ("t-dancor-cam-w4c-" + m[0], "Dancor CAM-W4C " + m[1] + " — " + Math.round((m[2] + 0.055) * 1000) + " × 156 × 170 mm, sucção 1\", recalque 3/4\"",
+        { Fabricante: "Dancor", Linha: "Série CAM — CAM W-4C (centrífuga de aplicação múltipla)", Codigo: "CAM-W4C " + m[1], Descricao_ficha: "Motobomba centrífuga CAM-W4C " + m[1] + ", monofásica, 3.500 rpm",
+          Link_ficha: "https://www.dancor.com.br/wp-content/uploads/2021/11/cam-w4c-pbe_cat-1.pdf", Edicao_ficha: "Catálogo Geral 60 Hz, página 160 (arquivo publicado em 11/2021)", Pagina_ficha: 1, Pagina_cotas: 1,
+          Cotas_ficha: "A=" + Math.round(m[2] * 1000) + "; B=55; C=76; D=170; E=137; F=156; G=173,5; H=69,8; I=8,7; J=40; peso " + String(m[3]).replace(".", ",") + " kg",
+          Comprimento: Math.round((m[2] + 0.055) * 1000) / 1000, Largura: 0.156, Altura: 0.17, Eixo_succao: 0.076, Recuo_recalque: 0.095, DN_succao: 25, DN_recalque: 20 },   /* hid:ok cotas da ficha Dancor CAM-W4C p.160 */
+        "Dancor, Catálogo Geral 60 Hz, CAM W-4C, p.160 (Dimensionais): A " + Math.round(m[2] * 1000) + ", B 55, C 76, D 170, F 156, J 40 mm", ["Recuo_recalque (B + J: leitura do desenho lateral)"]);
+    }) });
   /* N23 (23/10/2026): BASE DE APOIO da caixa d'água elevada — pedido do Rogério: "se a pressão não atende, sugere elevar a caixa com base
      de apoio, madeira ou metálica, estrutura + caixa em cima, peso cheio no cálculo do apoio, orçada". As cotas e as seções vêm do
      dimensionamento (js/hidbaseapoio.js), gravadas na INSTÂNCIA; o preço da metálica (sem composição SINAPI) vai pela referência
@@ -606,6 +619,14 @@
     id: "hid-hidrante-abrigo", nome: "Abrigo de hidrante (mangueira + registro)", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
     descricao: "Abrigo de mangueira com porta de vidro. Origem = piso, centro da caixa; a parede fica em Z = −Profundidade/2.",
     avisos: [AV_GENERICA, AV_CONECTOR],
+    /* LOTE 3-5 (13/11/2026): o abrigo de sobrepor do mercado é 90 × 60 × 17 cm (altura × largura × profundidade) — SINAPI insumo 20963
+       (abrigo para mangueira de sobrepor 90 × 60 × 17 cm, chapa de aço) e EstriboFire (AECweb, produto 95368, chapa 21, 1 mangueira de 20 a 30 m).
+       É COTA DE CATÁLOGO GENÉRICO (norma/insumo), não de desenho cotado de fabricante: o tipo diz isso em Conferir. */
+    tiposFicha: [fichaQ("t-abrigo-sobrepor-90x60x17", "Abrigo de sobrepor 90 × 60 × 17 cm (chapa de aço, porta com visor)",
+      { Fabricante: "(catálogo genérico — EstriboFire/AECweb)", Linha: "Abrigo para mangueira de sobrepor", Codigo: "EstriboFire 90x60x17 (AECweb 95368)", Descricao_ficha: "Abrigo para mangueira de incêndio, de sobrepor, 90 × 60 × 17 cm, chapa de aço com pintura vermelha e visor (a mesma descrição do insumo SINAPI 20963)",
+        Link_ficha: "https://www.aecweb.com.br/produto/abrigo-para-mangueira-com-tampa-de-vidro-sobrepor/95368", Edicao_ficha: "descrição do insumo SINAPI 20963 + página do produto EstriboFire no AECweb, lidas em 13/11/2026", Pagina_ficha: 1, Pagina_cotas: 1,
+        Cotas_ficha: "altura 900; largura 600; profundidade 170 mm", Largura: 0.6, Altura: 0.9, Profundidade: 0.17 },
+      "SINAPI insumo 20963 (abrigo de sobrepor 90 × 60 × 17 cm) e EstriboFire/AECweb 95368 — cota genérica de catálogo", ["Largura, Altura e Profundidade: cota genérica (SINAPI 20963), sem desenho cotado de fabricante — conferir o abrigo comprado", "posição do registro dentro do abrigo: desenho"])],
     geo: [
       G("Largura", 0.75, [0.3, 1.5], null, "Largura do abrigo"),                                                           /* hid:ok geometria de reserva (peça hidrante_abrigo do biminst) */
       G("Altura", 0.9, [0.4, 1.8], null, "Altura do abrigo"),                                                              /* hid:ok geometria de reserva (peça hidrante_abrigo do biminst) */
@@ -841,7 +862,7 @@
   GEO_FAM["hid-cisterna"] = geoReservatorio(true);
   GEO_FAM["hid-reservatorio-tanque"] = geoReservatorio(false);
   GEO_FAM["hid-bomba"] = function () {
-    var yc = "0.03 + Largura/2";
+    var yc = "se(Eixo_succao > 0; Eixo_succao; 0.03 + Largura/2)";
     return [cxs("base", "Base", "0", "0", "0", "Comprimento", "0.03", "Largura", "Cinza escuro"),
       cil("motor", "Motor", "x", "-Comprimento/2 + Comprimento*0.4", yc, "0", "Largura*0.4", "Comprimento*0.5", "Azul"),
       cil("ventilador", "Tampa do ventilador", "x", "-Comprimento/2 + Comprimento*0.9", yc, "0", "Largura*0.34", "Comprimento*0.1", "Preto"),
@@ -866,7 +887,11 @@
     return [rev("cilindro", "Cilindro", "0", "0", "0", [[R + "*0.62", "0"], [R, H + "*0.05"], [R, H + "*0.74"], [R + "*0.55", H + "*0.84"], [R + "*0.2", H + "*0.88"]], { mat: "Vermelho" }),
       cil("cabeca", "Cabeça e válvula", "y", "0", H + "*0.88", "0", R + "*0.3", H + "*0.1", "Preto"),
       cxs("alavanca", "Alavanca", "0", H + " - 0.012", "0", "0.03", "0.012", "Diametro*0.9", "Preto"),
-      cil("manometro", "Manômetro", "z", "0", H + "*0.9", "0", "0.018", R + "*0.3", CROMO)];
+      cil("manometro", "Manômetro", "z", "0", H + "*0.9", "0", "0.018", R + "*0.3", CROMO),
+      /* LOTE 3-5: mangueira e difusor (Kidde KB-P4ABC55: a mangueira desce pela lateral até a presilha no cilindro) */
+      cil("mangueira", "Mangueira", "y", R + " + 0.008", H + "*0.42", "0", "0.006", H + "*0.46", "Preto"),
+      cil("difusor", "Difusor", "y", R + " + 0.008", H + "*0.36", "0", "0.009", H + "*0.06", "Preto"),
+      cxs("presilha", "Presilha da mangueira", R + " - 0.002", H + "*0.36", "0", "0.016", "0.012", "0.02", "Preto")];
   };
   GEO_FAM["hid-sprinkler"] = function () {
     return [cil("niple", "Rosca", "y", "0", "-Altura*0.3", "0", "0.0107", "Altura*0.3", "Latão"),   /* 1/2\" NPT: Ø externo 21,3 mm */
@@ -972,7 +997,7 @@
       x: [G("Altura_corpo", 0, [0.2, 4], N("altura_corpo_mm"), "Altura do corpo sem a tampa; 0 = proporção"), G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")] },
     "hid-reservatorio-tanque": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "0", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "2", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
       x: ADAPT_X.concat([G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_inspecao_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")]) },
-    "hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
+    "hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura", yc: "Eixo_succao", xr: "Recuo_recalque" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
     "hid-base-caixa": { g: "base_caixa", p: { L: "Lado", H: "Altura", sp: "Secao_pilar", bv: "Base_viga", hv: "Altura_viga", bb: "Base_barrote", hb: "Altura_barrote", nb: "N_barrotes", et: "Espessura_tablado", met: "se(Metalica; 1; 0)" },
       env: ["0", "0", "0", "Lado", "Altura", "Lado"], x: [] },
     "hid-aquecedor-gas": { g: "aquecedor", p: { W: "Largura", H: "Altura", P: "Profundidade", ch: "1" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] },
@@ -1241,14 +1266,66 @@
       "Komeco, datasheet TP 820/825 G2 (komeco.com.br) e boletim técnico BTAQC 002/17", ["posição das bocas no gabinete (a ficha não cota)", "geração do produto: conferir a geração (G2) na ficha vigente do fabricante"])] });
   NOVAS["hid-pressurizador-compacto"] = { g: "pressurizador", p: { L: "Largura", H: "Altura", Pp: "Profundidade" }, env: ["0", "0", "0", "Largura", "Altura + 0.035", "Profundidade"], x: [] };
 
-  /* 6) MOTOBOMBA SUBMERSÍVEL DE ESGOTO — sem ficha com cotas: CAIXA marcada "medida a conferir" (pedido de 06/11/2026) */
-  ESPECS.push({ id: "hid-bomba-submersivel", nome: "Motobomba submersível de esgoto (MEDIDAS A CONFERIR)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
-    descricao: "Motobomba submersível de esgoto, no fundo do poço úmido. Origem = centro da base; a boca de recalque no alto. Volume em CAIXA: o catálogo com as cotas não foi achado — medida a conferir.",
-    avisos: ["MEDIDA A CONFERIR: o catálogo do fabricante com as dimensões não foi localizado; a caixa é uma ordem de grandeza de projeto de referência.", AV_CONECTOR],
-    geo: [G("Largura", 0.24, [0.1, 0.8], null, "Largura (X)"), G("Profundidade", 0.18, [0.1, 0.8], null, "Profundidade (Z)"), G("Altura", 0.46, [0.2, 1.5], null, "Altura até a boca de recalque"),
-      DN("DN_recalque", null, "DN do recalque")],
+  /* 6) MOTOBOMBA SUBMERSÍVEL — LOTE 3-5 (13/11/2026): tipos pela ficha KSB KRT Drainer (Catálogo Linha Housing 17/04/18, p.36, "Dimensionais":
+     A = largura total até a face do recalque lateral, B = altura total, C = eixo do recalque DN2 acima da base). O "t-generico" (projeto antigo)
+     continua com a caixa de reserva e o recalque no topo; nos tipos da ficha a saída é LATERAL e sobe por uma curva de 90° (o desenho de instalação,
+     item 8 da mesma página): o conector "recalque" fica no topo da curva, para cima, como antes. */
+  ESPECS.push({ id: "hid-bomba-submersivel", nome: "Motobomba submersível (drenagem e águas servidas)", categoria: "equipamento", sistemas: ["esgoto"], tipos: [], generico: true,
+    descricao: "Motobomba submersível no fundo do poço úmido. Origem = centro da base; o recalque sai pela lateral (+X) e sobe por uma curva de 90° (tipos da ficha KSB) ou pelo topo (genérico).",
+    avisos: ["Tipo genérico: MEDIDA A CONFERIR (caixa de reserva). Tipos KSB KRT Drainer: A, B, C e o recalque pela ficha; o diâmetro do corpo é leitura do desenho (a ficha não cota). Esgoto bruto: conferir a passagem de sólidos exigida.", AV_CONECTOR],
+    geo: [G("Largura", 0.24, [0.1, 0.8], null, "Largura (X) — letra A da ficha (até a face do recalque)"), G("Profundidade", 0.18, [0.1, 0.8], null, "Profundidade (Z) — diâmetro do corpo"), G("Altura", 0.46, [0.2, 1.5], null, "Altura total — letra B da ficha"),
+      DN("DN_recalque", null, "DN do recalque"),
+      X("Saida_lateral", "simnao", false, "Dimensões", "Recalque lateral com curva de 90° (ficha KSB); não = boca no topo (genérico)"),
+      X("Cota_recalque", "comprimento", 0, "Dimensões", "Eixo do recalque lateral acima da base — letra C da ficha")],
     solidos: [], material: "Ferro fundido",
-    conectores: [{ id: "recalque", nome: "Recalque", sistema: "esgoto", dn: "DN_recalque", x: "0", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "medida a conferir (sem catálogo)" }], });
+    conectores: [{ id: "recalque", nome: "Recalque", sistema: "esgoto", dn: "DN_recalque", x: "se(Saida_lateral; Largura/2 + 0.05; 0)", y: "se(Saida_lateral; Cota_recalque + 0.09; Altura)", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "genérico: medida a conferir; KSB: letras A e C da ficha + curva de 90°" }],
+    tiposFicha: [["fi-m500", "KRT Drainer FI M 500 (1/2 cv, monofásica)", 0.222, 0.41, 0.13, "35", 13.5], ["fi-m1000", "KRT Drainer FI M 1000.1 (1 cv, monofásica)", 0.222, 0.464, 0.13, "35", 18.5],
+      ["f1500", "KRT Drainer F 1500 (1,5 cv, trifásica)", 0.32, 0.37, 0.141, "9", 28], ["k1500", "KRT Drainer K 1500 (1,5 cv, trifásica)", 0.334, 0.429, 0.211, "35", 36]].map(function (m) {
+      return fichaQ("t-ksb-krt-" + m[0], "KSB " + m[1] + " — A " + Math.round(m[2] * 1000) + " × B " + Math.round(m[3] * 1000) + " mm, recalque 2\" BSP",
+        { Fabricante: "KSB", Linha: "KRT Drainer (submersível)", Codigo: m[1], Descricao_ficha: "Bomba submersível KSB " + m[1] + ", passagem de sólidos " + m[5] + " mm, recalque 2\" BSP",
+          Link_ficha: "https://www.ksb.com/pt-br", Arquivo_ficha: "KSB - Catalogo Linha Housing 170418.pdf", Edicao_ficha: "Catálogo Linha Housing (17/04/2018), p.36", Pagina_ficha: 36, Pagina_cotas: 36,
+          Cotas_ficha: "A=" + Math.round(m[2] * 1000) + "; B=" + Math.round(m[3] * 1000) + "; C=" + Math.round(m[4] * 1000) + "; recalque 2\" BSP; peso " + String(m[6]).replace(".", ",") + " kg",
+          Largura: m[2], Altura: m[3], Profundidade: Math.round(m[2] * 0.62 * 1000) / 1000, Saida_lateral: true, Cota_recalque: m[4], DN_recalque: 50 },   /* hid:ok cotas da ficha KSB KRT Drainer p.36 */
+        "KSB, Catálogo Linha Housing 17/04/2018, p.36 (Dimensionais): A " + Math.round(m[2] * 1000) + ", B " + Math.round(m[3] * 1000) + ", C " + Math.round(m[4] * 1000) + " mm",
+        ["Profundidade (diâmetro do corpo: 0,62 × A, leitura do desenho; a ficha não cota)", "curva de 90° no recalque: desenho de instalação da ficha (item 8)"]);
+    }) });
+  /* 8) DUCHA ELÉTRICA ZAGONEL — LOTE 3-5 (13/11/2026, pedido do Rogério com as fichas): Moment Eletrônica e Ducali Eletrônica pelo desenho
+     cotado e pelas características técnicas das fichas do fabricante (js/hidlouca.js geoDuchaZagonel). Origem = o ponto de água. */
+  var FZ_MOMENT = "https://www.zagonel.com.br/uploads/file-1774627382583-930118458.pdf", FZ_DUCALI = "https://novo.zagonel.com.br/uploads/file-1762438448021-923946897.pdf";
+  function tipoZagonel(id, nome, mod, W, Pp, H, Hc, pot, tensao, codigo, pVazao) {
+    var moment = mod === 1;
+    return fichaQ(id, nome, { Fabricante: "Zagonel", Linha: moment ? "Moment Eletrônica" : "Ducali Eletrônica", Codigo: codigo,
+      Descricao_ficha: (moment ? "Ducha Moment Eletrônica " : "Ducha Ducali Eletrônica ") + pot + " W " + tensao + " V, branca",
+      Link_ficha: moment ? FZ_MOMENT : FZ_DUCALI, Edicao_ficha: moment ? "Ficha técnica Zagonel Rev. 03 — mar/2026" : "Ficha técnica Zagonel Rev. 02 — jun/2024", Pagina_ficha: 3, Pagina_cotas: 8,
+      Cotas_ficha: moment ? "182 × 350 (planta); 126 (cabeça); 360 (até o puxador); espalhador Ø150 (75 furos Ø0,9)" : "476 × 265; 237 (corpo); 458 (total); espalhador 210 × 130 (76 furos Ø1)",
+      /* revisão 13/11: a pressão MÍNIMA que o cálculo de cores usa é a "mínima para vazão (3 L/min)" da ficha (Moment 16 kPa, Ducali 10 kPa);
+         a de ACIONAMENTO (10 kPa nas duas) fica no campo próprio */
+      Pressao_min_kPa: pVazao, Pressao_acionamento_kPa: 10, Pressao_max_kPa: 400, Pressao_texto: "acionamento 10 kPa; mínima para vazão (3 L/min) " + pVazao + " kPa; estática máxima 400 kPa",
+      Eletrico: true,
+      Modelo: mod, Largura: W, Profundidade: Pp, Altura: H, Altura_cabeca: Hc, Potencia_W: pot, Tensao_V: tensao, DN_agua: 20 },
+      "Zagonel, ficha técnica " + (moment ? "Moment Eletrônica (Rev.03)" : "Ducali Eletrônica (Rev.02)") + ": desenho cotado p.8 e características técnicas p.3", ["DN_agua (rosca 1/2\" = DN 20 soldável: regra de ligação)"]);
+  }
+  ESPECS.push({ id: "hid-ducha-eletrica", nome: "Ducha elétrica (Zagonel Moment / Ducali)", categoria: "aparelho", sistemas: ["agua_fria", "eletrica"], tipos: [], generico: true,
+    descricao: "Ducha elétrica de parede pelo desenho cotado do fabricante. Origem = o ponto de água (rosca de 1/2\"); a ducha sai da parede para +Z.",
+    avisos: ["Tipos com a ficha Zagonel (desenho p.8 e características p.3). Raios, espessura da placa e braços: proporção do desenho."],
+    geo: [G("Largura", 0.182, [0.1, 0.6], null, "Largura (ficha)"), G("Profundidade", 0.35, [0.15, 0.7], null, "Da parede à frente (ficha)"), G("Altura", 0.36, [0.1, 0.8], null, "Altura total até a ponta do puxador (ficha)"),
+      X("Altura_cabeca", "comprimento", 0.126, "Dimensões", "Moment: topo do espalhador ao fundo da câmara (126); Ducali: topo ao fundo do corpo (237)"),
+      X("Modelo", "numero", 1, "Dimensões", "1 = Moment (espalhador redondo, entrada no topo); 2 = Ducali (placa, entrada atrás). Qualquer valor acima de 1,5 vale 2 (geometria e conector usam a mesma régua)"),
+      X("Pressao_acionamento_kPa", "numero", 0, "Dados", "Pressão mínima de ACIONAMENTO da resistência (kPa) — ficha; a mínima para vazão vai em Pressao_min_kPa"),
+      X("Eletrico", "simnao", true, "Dados", "Aparelho elétrico (entra na carga do quadro como chuveiro elétrico — js/eleaparelhosdados.js)"),
+      X("Potencia_W", "numero", 0, "Dados", "Potência nominal (W) da ficha"), X("Tensao_V", "numero", 0, "Dados", "Tensão nominal (V)"), DN("DN_agua", null, "DN da água fria")],
+    solidos: [], material: "Branco",
+    conectores: [
+      { id: "af", nome: "Água fria (rosca no topo)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0.03", visivel: "Modelo < 1.5", papel: "entrada", dir: dv("cima"), origemPos: "catalogo", aConferir: "rosca de 1/2\" no topo (desenho da ficha)" },
+      { id: "af_parede", nome: "Água fria (rosca na parede)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", visivel: "Modelo > 1.5", papel: "entrada", dir: dv("parede"), origemPos: "catalogo", aConferir: "rosca de 1/2\" atrás do corpo (desenho da ficha)" }],
+    tiposFicha: [
+      tipoZagonel("t-zagonel-moment-7500-220", "Zagonel Moment Eletrônica 7.500 W 220 V — 182 × 350 × 360 mm", 1, 0.182, 0.35, 0.36, 0.126, 7500, 220, "DMOEL75220BR03", 16),
+      tipoZagonel("t-zagonel-moment-6800-220", "Zagonel Moment Eletrônica 6.800 W 220 V — 182 × 350 × 360 mm", 1, 0.182, 0.35, 0.36, 0.126, 6800, 220, "DMOEL68220BR03", 16),
+      tipoZagonel("t-zagonel-ducali-7500-220", "Zagonel Ducali Eletrônica 7.500 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 7500, 220, "DDCEL75220BR03", 10),
+      tipoZagonel("t-zagonel-ducali-6800-220", "Zagonel Ducali Eletrônica 6.800 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 6800, 220, "DDCEL68220BR03", 10),
+      tipoZagonel("t-zagonel-ducali-4400-220", "Zagonel Ducali Eletrônica 4.400 W 220 V — 476 × 265 × 458 mm", 2, 0.265, 0.476, 0.458, 0.237, 4400, 220, "DDCEL44220BR03", 10)] });
+  NOVAS["hid-ducha-eletrica"] = { g: "ducha_zagonel", p: { W: "Largura", P: "Profundidade", H: "Altura", Hc: "Altura_cabeca", mod: "se(Modelo > 1.5; 2; 1)" },
+    env: ["0", "se(Modelo > 1.5; 0.022 - Altura; -0.012 - Altura)", "Profundidade/2", "Largura", "Altura + 0.012", "Profundidade"], x: [] };
 
   /* 7) TELA NA PONTA DO TUBO — saída do extravasor e da limpeza (nota do projeto: "telas ou malhas de material resistente") */
   ESPECS.push({ id: "hid-tela-ponta", nome: "Tela de proteção na ponta do tubo (extravasor / limpeza)", categoria: "equipamento", sistemas: ["pluvial"], tipos: [], generico: true,
@@ -1258,9 +1335,17 @@
     solidos: [], material: "Inox",
     conectores: [{ id: "tubo", nome: "Tubo", sistema: "pluvial", dn: "DN_tubo", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "desenho", aConferir: "produto não especificado no projeto" }], });
   GEO_FAM["hid-bomba-submersivel"] = function () {
-    return [cxs("corpo", "Motobomba (volume a conferir)", "0", "0", "0", "Largura", "Altura*0.85", "Profundidade", "Ferro fundido"),
-      cil("pescoco", "Boca de recalque", "y", "0", "Altura*0.85", "0", "max(0.02; DN_recalque/2000 + 0.004)", "Altura*0.15", "Ferro fundido"),
-      cxs("alca", "Alça de içamento", "0", "Altura*0.85", "Profundidade*0.3", "Largura*0.6", "Altura*0.1", "0.012", "Aço")];
+    /* genérico (Saida_lateral = não): a caixa de reserva de antes. Ficha KSB: corpo redondo (hidráulica embaixo, motor em cima, alça), recalque lateral e curva */
+    var L = "Saida_lateral", G0 = "nao(Saida_lateral)", xc = "-Largura/2 + Profundidade/2", R = "Profundidade/2", rr = "max(0.02; DN_recalque/2000 + 0.004)";
+    return [cxs("corpo", "Motobomba (volume a conferir)", "0", "0", "0", "Largura", "Altura*0.85", "Profundidade", "Ferro fundido", G0),
+      cil("pescoco", "Boca de recalque", "y", "0", "Altura*0.85", "0", rr, "Altura*0.15", "Ferro fundido", G0),
+      cxs("alca", "Alça de içamento", "0", "Altura*0.85", "Profundidade*0.3", "Largura*0.6", "Altura*0.1", "0.012", "Aço", G0),
+      rev("hidraulica", "Carcaça da hidráulica e pés", xc, "0", "0", [[R + "*0.7", "0"], [R + "*0.98", "0.012"], [R, "Cota_recalque*0.4"], [R, "Cota_recalque + 0.045"], [R + "*0.86", "Cota_recalque + 0.06"]], { mat: "Ferro fundido", vis: L }),
+      rev("motor", "Motor (carcaça)", xc, "Cota_recalque + 0.06", "0", [[R + "*0.86", "0"], [R + "*0.86", "(Altura - Cota_recalque)*0.62"], [R + "*0.7", "(Altura - Cota_recalque)*0.7"], ["0", "(Altura - Cota_recalque)*0.72"]], { mat: "Cinza escuro", vis: L }),
+      cxs("alca-ksb", "Alça de içamento", xc, "Cota_recalque + 0.06 + (Altura - Cota_recalque)*0.7", "0", "Profundidade*0.55", "Altura - Cota_recalque - 0.06 - (Altura - Cota_recalque)*0.7", "0.014", "Preto", L),
+      cil("saida", "Bocal do recalque 2\" BSP", "x", xc + " + " + R + "*0.9", "Cota_recalque", "0", rr, "Largura/2 - (" + xc + " + " + R + "*0.9)", "Ferro fundido", L),
+      cil("tubo-curva", "Curva de 90° (trecho horizontal)", "x", "Largura/2", "Cota_recalque", "0", rr + " + 0.004", "0.05 + " + rr, "PVC", L),
+      cil("subida", "Curva de 90° (trecho de subida)", "y", "Largura/2 + 0.05", "Cota_recalque - " + rr, "0", rr + " + 0.004", "0.09 + " + rr, "PVC", L)];
   };
   GEO_FAM["hid-tela-ponta"] = function () {
     return [cil("luva", "Luva", "x", "0", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.04", "PVC"),
@@ -1342,6 +1427,9 @@
     P("Vazao_L_min", "numero", 0, "Vazão do catálogo em L/min (0 = o catálogo não informa; vazão de projeto vem do motor de norma)"),
     P("Pressao_min_kPa", "numero", 0, "Pressão mínima de operação do catálogo (kPa; 0 = não informa)"), P("Pressao_max_kPa", "numero", 0, "Pressão máxima de operação do catálogo (kPa; 0 = não informa)"),
     P("Pressao_texto", "texto", "", "Pressão como impressa no catálogo"), P("Cotas_ficha", "texto", "", "Cotas brutas da ficha em mm (letras do desenho)"),
+    /* LOTE 3-5 (13/11/2026): de onde vêm vazão e pressões do aparelho de consumo — "ficha" (catálogo do fabricante) ou "norma" (NBR 5626) — e a fonte escrita */
+    P("Origem_hidraulica", "texto", "", "ficha = valores do catálogo do fabricante; norma = mínimo da NBR 5626 (sem ficha); vazio = não é aparelho de consumo"),
+    P("Fonte_hidraulica", "texto", "", "Documento, item/tabela e página de cada valor hidráulico do tipo"),
     P("A_conferir", "simnao", true, "Sim = há cota/posição/DN que o catálogo não dá ou que é leitura de letra do desenho"),
     P("Conferir", "texto", "", "Lista do que conferir neste tipo (ver também HidFamilias.avisosDoTipo)"),
     P("Sistemas_RA", "texto", "", "Sistemas dos conectores (biminst)")
@@ -1448,6 +1536,54 @@
       valores: { Fabricante: "(sem produto no catálogo)", Conferir: conferir.join("; "), A_conferir: true }, fonte: "", avisos: e.avisos.slice(), conferir: conferir };
   }
 
+  /* LOTE 3-5 (13/11/2026, pedido do Rogério: "torneira demais — qualidade, não quantidade"): torneira e misturador mostram UM tipo por USO
+     (o 1º modelo do catálogo em cada uso, na ordem do catálogo); os outros ~290 ficam com `legado: true` — fora da lista do seletor e do painel, mas DEFINIDOS:
+     o projeto salvo com qualquer um deles abre igual (mesmo id, mesmos conectores e quantitativo) e a busca do seletor ainda os acha. */
+  var USOS_ENXUTOS = {
+    "hid-torneira": [/Lavatório de Mesa$/, /Lavatório de Mesa Bica Alta$/, /Lavatório de Parede$/, /Lavatório de Mesa PressMatic/, /Cozinha de Mesa 1\/2”$/, /Cozinha de Parede 1\/2” e 3\/4”$/, /Jardim\/Tanque/, /Longa de Parede/],
+    "hid-misturador": [/Misturador para Lavatório de Mesa$/, /Misturador para Lavatório de Mesa Bica Alta$/, /Misturador para Lavatório de Parede$/, /Misturador Monocomando para Lavatório de Mesa$/,
+      /Misturador para Cozinha de Mesa( 1\/2”)?$/, /Misturador para Cozinha de Parede( 1\/2” e 3\/4”)?$/, /Misturador Monocomando para Cozinha de Mesa$/, /Misturador para Bidê$/]
+  };
+  /* LOTE 3-5 (13/11/2026, pedido do Rogério): TODO aparelho de consumo leva vazão, pressão mínima e estática máxima — alimentam o cálculo de
+     pressão em cores do barrilete. Valor da ficha vence; o que a ficha não traz vem da NORMA, com a fonte escrita e Origem_hidraulica = "norma":
+       pressão dinâmica mínima no ponto 10 kPa (NBR 5626:2020, 6.9.2) e estática máxima 400 kPa (6.9.5) — dados-fonte/hidro/normas/nbr5626-2020.json;
+       vazão de projeto da NBR 5626:1998 Tabela A.1 (excluída na edição 2020; lida via TCC UFRGS 2022 — fonte SECUNDÁRIA) — dados-fonte/hidro/normas/nbr5626.json.
+     Nada de valor inventado: aparelho sem linha na Tabela A.1 (aquecedor, boiler) fica sem vazão de norma e diz isso na fonte. */
+  var CONSUMO = {   /* família → vazão de projeto (L/s) da Tabela A.1, por nome do tipo quando a linha depende do uso */
+    "hid-bacia-caixa-acoplada": 0.15, "hid-caixa-descarga-embutida": 0.15, "hid-bacia-convencional": 1.7, "hid-valvula-descarga": 1.7,
+    "hid-lavatorio-coluna": 0.15, "hid-lavatorio-suspenso": 0.15, "hid-cuba-apoio": 0.15, "hid-pia-cozinha": 0.25, "hid-tanque-lavar": 0.25, "hid-mictorio": 0.15,
+    "hid-chuveiro": 0.2, "hid-ducha-higienica": 0.2, "hid-ducha-eletrica": 0.1,   /* Tabela A.1: "Chuveiro elétrico — registro de pressão" 0,10 L/s */
+    "hid-torneira": function (n) { return /Cozinha|Pia/i.test(n) ? 0.25 : /Jardim|Tanque|Longa/i.test(n) ? 0.2 : 0.15; },
+    "hid-misturador": function (n) { return /Bidê/i.test(n) ? 0.1 : /Cozinha/i.test(n) ? 0.25 : /Banheira/i.test(n) ? 0.3 : /Chuveiro|Ducha/i.test(n) ? 0.2 : 0.15; },
+    "hid-aquecedor-gas": null, "hid-aquecedor-eletrico-passagem": null, "hid-boiler-eletrico": null, "hid-boiler-gas": null
+  };
+  var F_PMIN = "NBR 5626:2020, 6.9.2 (pressão dinâmica mínima no ponto de utilização, 10 kPa)", F_PMAX = "NBR 5626:2020, 6.9.5 (pressão estática máxima, 400 kPa)",
+      F_VAZ = "NBR 5626:1998, Tabela A.1 (vazão de projeto; via RHEINHEIMER, TCC UFRGS 2022, p.33 — fonte secundária)";
+  function hidraulica(fam) {
+    if (!Object.prototype.hasOwnProperty.call(CONSUMO, fam.id)) return;
+    var regra = CONSUMO[fam.id];
+    fam.tipos.forEach(function (t) {
+      var v = t.valores, fontes = [], deNorma = false, temFicha = v.Vazao_L_min > 0 || v.Pressao_min_kPa > 0 || v.Pressao_max_kPa > 0;
+      if (!(v.Vazao_L_min > 0)) {
+        var q = typeof regra === "function" ? regra(String(t.nome)) : regra;
+        if (q > 0) { v.Vazao_L_min = Math.round(q * 60 * 100) / 100; fontes.push("vazão " + v.Vazao_L_min + " L/min: " + F_VAZ); deNorma = true; }
+        else fontes.push("vazão: a Tabela A.1 não tem linha para este aparelho — usar a da ficha do modelo");
+      } else fontes.push("vazão " + v.Vazao_L_min + " L/min: ficha do fabricante");
+      if (!(v.Pressao_min_kPa > 0)) { v.Pressao_min_kPa = 10; fontes.push("pressão mínima 10 kPa: " + F_PMIN); deNorma = true; } else fontes.push("pressão mínima " + v.Pressao_min_kPa + " kPa: ficha do fabricante");
+      if (!(v.Pressao_max_kPa > 0)) { v.Pressao_max_kPa = 400; fontes.push("estática máxima 400 kPa: " + F_PMAX); deNorma = true; } else fontes.push("pressão máxima " + v.Pressao_max_kPa + " kPa: ficha do fabricante");
+      v.Origem_hidraulica = deNorma ? (temFicha ? "ficha + norma" : "norma") : "ficha";
+      v.Fonte_hidraulica = fontes.join("; ");
+    });
+  }
+  function enxugar(fam) {
+    var usos = USOS_ENXUTOS[fam.id]; if (!usos) return;
+    var fica = {};
+    usos.forEach(function (re) {
+      var t = fam.tipos.filter(function (x) { return re.test(String(x.nome).replace(/^[^—]*— /, "").trim()); })[0];
+      if (t) fica[t.id] = 1;
+    });
+    fam.tipos.forEach(function (t) { if (!fica[t.id]) t.legado = true; });
+  }
   function construir(e) {
     var fam = {
       id: e.id, nome: e.nome, categoria: e.categoria, hospedagem: "livre", pset: PSET, origem: "HidCatalogo", aparelhoPrograma: APARELHO[e.id] || null,
@@ -1466,6 +1602,8 @@
       e.tipos.forEach(function (t) { Cat.porTipo(t).forEach(function (x) { its.push(x); }); });
       its.forEach(function (x) { fam.tipos.push(montarTipo(e, x)); });
     }
+    enxugar(fam);
+    hidraulica(fam);
     return fam;
   }
 
@@ -1473,7 +1611,8 @@
      null = peça de rede/acessório, não conta como aparelho. Quem mapeia família → chave do HidNormas lê este campo. */
   var APARELHO = { "hid-bacia-caixa-acoplada": "bacia", "hid-bacia-convencional": "bacia", "hid-lavatorio-coluna": "lavatorio", "hid-lavatorio-suspenso": "lavatorio",
     "hid-cuba-apoio": "lavatorio", "hid-pia-cozinha": "pia", "hid-tanque-lavar": "tanque", "hid-mictorio": "mictorio", "hid-chuveiro": "chuveiro",
-    "hid-ducha-higienica": "ducha_higienica", "hid-torneira": null, "hid-misturador": null };
+    "hid-ducha-higienica": "ducha_higienica", "hid-torneira": null, "hid-misturador": null,
+    "hid-ducha-eletrica": "chuveiro" };   /* LOTE 3-5 (revisão 13/11): a ducha elétrica Zagonel entra no programa de aparelhos como chuveiro (peso e vazão) */
   var CACHE = null;
   function todas() {
     if (CACHE) return CACHE;

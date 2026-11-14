@@ -294,7 +294,7 @@
      "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
      "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
      "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
-     "pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis", "cplpro_modelos",
+     "pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis", "cplpro_modelos", "cplpro_orgao",
      "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
     return o;
   })();
