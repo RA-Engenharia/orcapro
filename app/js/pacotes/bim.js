@@ -11896,7 +11896,7 @@ titulo: txt(b.titulo), subtitulo: txt(b.subtitulo) };
 if (t === 'viewport') return viewport(b, o);
 if (t === 'vista') { o.vistaId = txt(b.vistaId); o.origemVista = txt(b.origemVista); if (!o.vistaId && !o.origemVista) return null; }
 if (t === 'imagem') { o.chave = txt(b.chave); if (!o.chave) return null; }
-if (t === 'texto') o.linhas = arr(b.linhas).map(txt);
+if (t === 'texto') { o.linhas = arr(b.linhas).map(txt); var al0 = num(b.alt, 0); if (al0 > 0) o.alt = Math.max(1, Math.min(20, al0)); if (b.negrito) o.negrito = true; }
 if (t === 'tabela') { o.cabecalho = arr(b.cabecalho).map(txt); o.linhas = arr(b.linhas).map(function (l) { return arr(l).map(txt); }); }
 return o;
 }
@@ -12001,6 +12001,7 @@ o.recorte = (r && isFinite(+r.x0) && isFinite(+r.y0) && isFinite(+r.x1) && isFin
 o.numeroDetalhe = txt(b.numeroDetalhe);
 o.tituloVista = txt(b.tituloVista);
 o.mostrarTitulo = b.mostrarTitulo !== false;
+if (b.escalaPropria) o.escalaPropria = true;
 o.titulo = ''; o.subtitulo = '';
 return o;
 }
@@ -12140,7 +12141,7 @@ function cabe(s, h, wmax, negrito) { var w = largTexto(s, h, negrito); return (w
 function carimboRA(pr, folha, projeto, empresa, geo, opts) {
 opts = opts || {};
 var g = geo || geometriaDe(pr), car = g.carimbo, k = car.k || car.w / CARIMBO_RA.w, H0 = CARIMBO_RA.h, W0 = CARIMBO_RA.w;
-var d = dadosCarimbo(pr, folha, projeto, empresa), out = { x: car.x, y: car.y, w: car.w, h: car.h, k: k, retangulos: [], linhas: [], textos: [], logos: [], dados: d };
+var d = dadosCarimbo(pr, folha, projeto, empresa), out = { x: car.x, y: car.y, w: car.w, h: car.h, k: k, retangulos: [], linhas: [], textos: [], logos: [], zonas: [], dados: d };
 function X(x) { return r2(x * k); }
 function Yt(y) { return r2((H0 - y) * k); }
 function ln(x1, y1, x2, y2, cam) { out.linhas.push({ x1: X(x1), y1: Yt(y1), x2: X(x2), y2: Yt(y2), camada: cam || 'RA-CARIMBO-LINHA' }); }
@@ -12187,6 +12188,9 @@ tx(d.aviso, 90, 93.4, 1.45, { al: 'C', camada: 'RA-CARIMBO-ROTULO', wmax: 176, c
 [100.5, 105.25, 110].forEach(function (y) { ln(0, y, W0, y); });
 var COLS = [[0, 'REV'], [10, 'DESCRIÇÃO'], [122, 'DATA'], [141, 'EXEC'], [154, 'VER'], [167, 'APROV']], lim = COLS.map(function (q) { return q[0]; }).concat([W0]);
 COLS.slice(1).forEach(function (q) { ln(q[0], 96, q[0], 115); });
+function zona(campo, x0, y0, x1, y1) { out.zonas.push({ campo: campo, x: X(x0), y: Yt(y1), w: X(x1 - x0), h: X(y1 - y0) }); }
+zona('data', 0, 0, 28, 11.5); zona('codigo', 56, 0, 140, 11.5); zona('conteudo', 0, 14, W0, 23.5);
+zona('local', 0, 26, W0, 30.8); zona('proprietario', 0, 33, W0, 37.8); zona('obra', 0, 40, W0, 44.8); zona('contratante', 90, 47, W0, 52.4);
 COLS.forEach(function (q, j) { tx(q[1], (q[0] + lim[j + 1]) / 2, 111.6, 1.8, { al: 'C', camada: 'RA-CARIMBO-ROTULO', negrito: true, campo: 'rotulo' }); });
 [106.6, 101.85, 97.1].forEach(function (y, j) {
 var r = d.revisoes[j]; if (!r) return;
@@ -12212,6 +12216,34 @@ if (!achou && b && b.tipo === 'viewport' && b.vistaId === vistaId) achou = { pra
 }); }); });
 return achou;
 }
+var ESCALAS_VISTA = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000];
+function vbDe(b, caixa) { return b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : { x: num(caixa && caixa.x, 0), y: num(caixa && caixa.y, 0), w: num(caixa && caixa.w, 1), h: num(caixa && caixa.h, 1) }; }
+function escalaViewport(b, caixa, escala) {
+var e = Math.round(num(escala, 0)); if (!(e >= 1 && e <= 5000)) return null;
+var n = JSON.parse(JSON.stringify(b)), t = tamanhoViewport(caixa || { w: 1, h: 1 }, e, b.recorte), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+n.escala = e; n.escalaPropria = true; n.w = t.w; n.h = t.h; n.x = Math.round((cx - t.w / 2) * 10) / 10; n.y = Math.round((cy - t.h / 2) * 10) / 10;
+return n;
+}
+function deslocarRecorte(b, caixa, dxMm, dyMm) {
+var n = JSON.parse(JSON.stringify(b)), v = vbDe(b, caixa), k = (+b.escala || 50) / 1000;
+var mx = -num(dxMm, 0) * k, my = -num(dyMm, 0) * k;
+n.recorte = { x0: v.x + mx, y0: v.y + my, x1: v.x + v.w + mx, y1: v.y + v.h + my };
+return n;
+}
+function redimensionarViewport(b, caixa, wMm, hMm) {
+var n = JSON.parse(JSON.stringify(b)), v = vbDe(b, caixa), k = (+b.escala || 50) / 1000;
+var w = Math.max(10, num(wMm, b.w)), h = Math.max(10, num(hMm, b.h));
+n.w = Math.round(w * 10) / 10; n.h = Math.round(h * 10) / 10;
+n.recorte = { x0: v.x, y0: v.y, x1: v.x + n.w * k, y1: v.y + n.h * k };
+return n;
+}
+function blocoTexto(linhas, x, y, alt) {
+var L = arr(linhas).map(txt), a = Math.max(1, Math.min(20, num(alt, 2.5))), maior = 1;
+L.forEach(function (l) { maior = Math.max(maior, l.length); });
+return bloco({ tipo: 'texto', x: x, y: y, w: Math.max(8, maior * a * 0.62 + 2), h: Math.max(a * 1.6, L.length * a * 1.35 + 1), linhas: L, alt: a });
+}
+var CAMPOS_CARIMBO_FOLHA = { data: 'dataEmissao', codigo: 'numero', conteudo: 'conteudo' };
+var CAMPOS_CARIMBO_CONJ = { obra: 1, proprietario: 1, local: 1, contratante: 1 };
 function ajustarEixo(v, espaco, origem) { if (!(espaco > 0)) return v; return origem + Math.round((v - origem) / espaco) * espaco; }
 function eixoGuiaLinhas(folha, geo) {
 if (!folha || !folha.eixoGuia) return { xs: [], ys: [] };
@@ -12228,7 +12260,7 @@ function colocarViewport(pr, folha, o, pranchas) {
 pr = normalizar(pr);
 var g = geometriaDe(pr), a = g.area;
 if (!o || !o.vistaId) return { ok: false, erro: 'Vista sem identificação.' };
-var ja = vistaEmFolha(pranchas || [pr], o.vistaId);
+var ja = o.repetir ? null : vistaEmFolha(pranchas || [pr], o.vistaId);
 if (ja) return { ok: false, erro: 'A vista "' + (o.nome || o.vistaId) + '" já está na folha ' + numeroFolha(ja.prancha, ja.folha) + ' (uma vista entra em uma folha só). Duplique a vista para usar em outra folha.' };
 var esc = Math.max(1, Math.round(num(o.escala, 50))), t = tamanhoViewport(o.caixa || { w: 1, h: 1 }, esc, null);
 var cx = isFinite(+o.cx) ? +o.cx : a.x + a.w / 2, cy = isFinite(+o.cy) ? +o.cy : a.y + (a.h - TITULO_VISTA_H) / 2;
@@ -12409,6 +12441,8 @@ PENAS_PAPEL: PENAS_PAPEL, TITULO_VISTA_H: TITULO_VISTA_H, revisao: revisao, revi
 revisaoAtual: revisaoAtual, numeroFolha: numeroFolha, escalaFolha: escalaFolha, nomeArquivo: nomeArquivo, nomeArquivoLote: nomeArquivoLote,
 parametrosFolha: parametrosFolha, mapaParametros: mapaParametros, proximoNumeroDetalhe: proximoNumeroDetalhe, vistaEmFolha: vistaEmFolha,
 ajustarEixo: ajustarEixo, eixoGuiaLinhas: eixoGuiaLinhas, tamanhoViewport: tamanhoViewport, colocarViewport: colocarViewport,
+ESCALAS_VISTA: ESCALAS_VISTA, escalaViewport: escalaViewport, deslocarRecorte: deslocarRecorte, redimensionarViewport: redimensionarViewport, blocoTexto: blocoTexto,
+CAMPOS_CARIMBO_FOLHA: CAMPOS_CARIMBO_FOLHA, CAMPOS_CARIMBO_CONJ: CAMPOS_CARIMBO_CONJ,
 listaFolhas: listaFolhas, listaVistas: listaVistas, tabelaRevisoes: tabelaRevisoes, blocoDeLista: blocoDeLista,
 CARIMBO_RA: CARIMBO_RA, MODELOS_CARIMBO: MODELOS_CARIMBO, CAMADAS_CARIMBO_RA: CAMADAS_CARIMBO_RA, ALT_MAIUSCULA: ALT_MAIUSCULA, ESCALAS_FOLHA: ESCALAS_FOLHA,
 modeloCarimbo: modeloCarimbo, geometriaDe: geometriaDe, dadosCarimbo: dadosCarimbo, carimboRA: carimboRA, tituloCurto: tituloCurto, fmtRegistro: fmtRegistro, cabe: cabe, largTexto: largTexto,
@@ -12441,6 +12475,7 @@ L.textos.forEach(function (t) {
 s.push('<text x="' + n(t.x) + '" y="' + n(t.y) + '" font-size="' + n(t.h / A) + '" text-anchor="' + (t.al === 'C' ? 'middle' : 'start') + '" fill="' + (COR_CAMADA[t.camada] || '#111') + '"' +
 (t.negrito ? ' font-weight="bold"' : '') + (t.param ? ' data-pr-param="' + t.param + '"' : '') + (t.campo ? ' data-cr="' + t.campo + '"' : '') + '>' + esc(t.s) + '</text>');
 });
+if (rec.editor) (L.zonas || []).forEach(function (z) { s.push('<rect data-pv-cr="' + z.campo + '" x="' + n(z.x) + '" y="' + n(z.y) + '" width="' + n(z.w) + '" height="' + n(z.h) + '" fill="#1a6cb5" fill-opacity="0" style="cursor:text"><title>' + (/^(obra|proprietario|local|contratante)$/.test(z.campo) ? 'Clique para editar — vale para todas as folhas deste conjunto' : 'Clique para editar — só esta folha') + '</title></rect>'); });
 return '<div data-pr-carimbo="RA" style="' + abs(k.x, k.y, k.w, k.h, 'background:#fff') + '"><svg xmlns="http://www.w3.org/2000/svg" width="' + mm(L.w) + '" height="' + mm(L.h) + '" viewBox="0 0 ' + n(L.w) + ' ' + n(L.h) + '" style="display:block;overflow:visible;white-space:pre;font-family:Arial,Helvetica,sans-serif">' + s.join('') + '</svg></div>';
 }
 function carimbo(pr, fl, g, rec) {
@@ -12527,7 +12562,7 @@ return '<div style="' + abs(k.x, k.y, k.w, altura, 'border-left:0.35mm solid #11
 function blocoHtml(b, rec, i) {
 var t = '';
 if (b.tipo === 'viewport') {
-var vp = rec.viewports && rec.viewports[b.vistaId];
+var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + '@' + b.escala]) || rec.viewports[b.vistaId]);
 t = vp ? viewportSvg(vp, b)
 : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt;text-align:center">vista "' + esc(b.tituloVista) + '" sem desenho (abra o modelo da obra)</div>';
 return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b) + '</div>';
@@ -12541,14 +12576,15 @@ var im = rec.imagens && rec.imagens[b.chave];
 t = im ? '<img src="' + esc(im) + '" style="width:100%;height:100%;object-fit:contain">'
 : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt">imagem não está neste computador</div>';
 } else if (b.tipo === 'texto') {
-t = '<div style="font-size:8pt;line-height:1.3">' + (b.linhas || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('') + '</div>';
+var fsT = b.alt > 0 ? mm(b.alt / 0.716) : '8pt';
+t = '<div data-pv-texto="1" style="font-size:' + fsT + ';line-height:1.3;white-space:pre' + (b.negrito ? ';font-weight:bold' : '') + '">' + (b.linhas || []).map(function (l) { return '<div>' + (l ? esc(l) : '&#160;') + '</div>'; }).join('') + '</div>';
 } else if (b.tipo === 'tabela') {
 t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
 (b.linhas || []).map(function (l) { return '<tr>' + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;text-align:center">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
 }
 var tit = b.titulo ? '<div style="position:absolute;left:0;top:' + mm(b.h + 1) + ';font-size:10pt;white-space:nowrap">' + esc(b.titulo) +
 (b.subtitulo ? '<div style="font-size:7pt">' + esc(b.subtitulo) + '</div>' : '') + '</div>' : '';
-return '<div style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tit + '</div>';
+return '<div data-pv-bloco="' + i + '" data-pv-tipo="' + b.tipo + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tit + '</div>';
 }
 function eixoGuia(fl, g, rec) {
 var P = global.Prancha; if (!rec.editor || !fl.eixoGuia || !P || !P.eixoGuiaLinhas) return '';
@@ -104760,6 +104796,8 @@ document.addEventListener("click", this._fecharFita, true);
 },
 executar: function (id) {
 if (id === "desfazer" || id === "refazer") {
+var FU = global.BimFolhaUI;
+if (FU && FU.abaAtiva && FU.abaAtiva()) { var okF = !!FU[id](); if (!okF) this.status(id === "desfazer" ? "Nada para desfazer na folha." : "Nada para refazer na folha."); return { ok: okF, id: id, folha: true }; }
 var bim = global.BIM, ok = !!(bim && bim[id] && bim[id]());
 this.status(ok ? (id === "desfazer" ? "Desfeito (Ctrl+Y refaz)." : "Refeito.") : (id === "desfazer" ? "Nada para desfazer na modelagem." : "Nada para refazer."));
 return { ok: ok, id: id };
@@ -109504,7 +109542,7 @@ var m;
 if (pid === "escala") { if (bloqueado("escala")) return true; v.escala = Math.max(1, Math.round(num(valor, v.escala))); this.gravar(); this._redesenhar(id, false); return true; }
 if (pid === "p6:nd") {
 if (bloqueado("nivelDetalhe")) return true; if (NIVEIS_DETALHE[valor]) v.nivelDetalhe = valor; this.gravar(); this._redesenhar(id, true);
-try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) delete global.BimFolhaUI._desenhos[id]; } catch (eF) {}
+try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DF = global.BimFolhaUI._desenhos; Object.keys(DF).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0) delete DF[k]; }); } } catch (eF) {}
 try { if (global.BimInstUI && global.BimInstUI._pintarBotaoNivel) global.BimInstUI._pintarBotaoNivel(); } catch (eB) {}
 return true;
 }
@@ -180041,7 +180079,7 @@ ret(cMold, geo.moldura.x, geo.moldura.y, geo.moldura.w, geo.moldura.h);
 var cTit = doc.camada("FOLHA-TITULO-VISTA", pn.marca), cTitT = doc.camada("FOLHA-TITULO-VISTA-TEXTO", pn.cota);
 (folha.blocos || []).forEach(function (b) {
 if (b.tipo !== "viewport") return;
-var v = vps && vps[b.vistaId];
+var v = vps && ((b.escalaPropria && vps[b.vistaId + "@" + b.escala]) || vps[b.vistaId]);
 if (!v || !v.dados) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem desenho"); return; }
 var esc = +b.escala || 50, f = 1000 / esc, vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : v.vb;
 var s = Math.min(b.w / (vb.w * f), b.h / (vb.h * f)), F = f * s, ox = b.x + (b.w - vb.w * F) / 2, oy = b.y + (b.h - vb.h * F) / 2;
@@ -181170,17 +181208,41 @@ function arr(a) { return Array.isArray(a) ? a : []; }
 var MM_PX = 96 / 25.4;
 var TIPO_ARRASTE = "text/x-orcapro-vista";
 var BimFolhaUI = {
-_G: null, _desenhos: {}, _sel: null, _telas: {}, _ultimoArquivo: null,
+_G: null, _desenhos: {}, _sel: null, _telas: {}, _ultimoArquivo: null, _pilha: [], _refazerP: [], _ferr: null, _menu: null, _editor: null,
 ativo: function () { try { return !!(global.BimPrevia && global.BimPrevia.modelador() && PR() && UI2() && PR().colocarViewport); } catch (e) { return false; } },
 G: function () { return this._G || global.Gestao || null; },
 obraKey: function () { var g = this.G(); return String((g && g._bimSel) || "geral"); },
 empresa: function () { try { return global.Auth && global.Auth.empresaId ? global.Auth.empresaId() : null; } catch (e) { return null; } },
 registros: function () { var g = this.G(); try { return (g && g._prRegs) ? g._prRegs() : []; } catch (e) { return []; } },
-salvarRegistro: function (reg) {
+salvarRegistro: function (reg, semPilha) {
 if (!global.Store) return null;
+this._conferirObra();
+if (!semPilha && reg && reg.id) {
+var antes = this.registros().filter(function (x) { return String(x.id) === String(reg.id); })[0];
+var passo = antes ? this._passo(antes, reg) : null;
+if (passo) { this._pilha.push(passo); if (this._pilha.length > 60) this._pilha.shift(); this._refazerP = []; }
+}
 var r = global.Store.salvar(this.empresa(), "bim_pranchas", reg);
 if (!r) toast("Não consegui salvar a folha (armazenamento cheio?).", "erro");
+else this._marcar(r);
 return r;
+},
+_conferirObra: function () { var k = this.obraKey(); if (this._pilhaObra !== k) { this._pilha = []; this._refazerP = []; this._marcas = {}; this._pilhaObra = k; } return k; },
+_jsonF: function (f) { return JSON.stringify(f == null ? null : f); },
+_marcar: function (r) {
+var self = this; this._marcas = this._marcas || {};
+arr(r.folhas).forEach(function (f) { self._marcas[r.id + "|" + f.id] = self._jsonF(f); });
+this._marcas[r.id + "|carimbo"] = this._jsonF(r.carimbo || null);
+},
+_passo: function (antes, depois) {
+var self = this, folhas = {}, n = 0, ant = {};
+arr(antes.folhas).forEach(function (f) { ant[f.id] = f; });
+arr(depois.folhas).forEach(function (f) { var a = ant[f.id]; if (a && self._jsonF(a) !== self._jsonF(f)) { folhas[f.id] = clone(a); n++; } });
+var car = this._jsonF(antes.carimbo || null) !== this._jsonF(depois.carimbo || null);
+if (!n && !car) return null;
+var p = { obra: this.obraKey(), regId: String(antes.id), folhas: folhas };
+if (car) p.carimbo = clone(antes.carimbo || null);
+return p;
 },
 _chaveProjeto: function () { return "orcapro:bim:projeto:" + this.obraKey(); },
 projeto: function () {
@@ -181200,11 +181262,11 @@ pr.folhas.forEach(function (f, i) { if (f.id === m[2]) ix = i; });
 if (ix < 0) return null;
 return { reg: reg, pr: pr, folha: pr.folhas[ix], ix: ix, geo: PR().geometriaDe(pr) };
 },
-gravarFolha: function (a, f) {
+gravarFolha: function (a, f, semPilha) {
 var reg = a.reg, pr = PR().normalizar(reg);
 pr.folhas[a.ix] = f;
 pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
-return this.salvarRegistro(pr);
+return this.salvarRegistro(pr, semPilha);
 },
 nomeFolha: function (pr, f) { return PR().numeroFolha(pr, f) + " - " + (f.conteudo || "Sem nome"); },
 empresaDados: function () { try { return global.Empresa && global.Empresa.dados ? global.Empresa.dados() : {}; } catch (e) { return {}; } },
@@ -181260,10 +181322,11 @@ if (global.ResizeObserver && !c._pvRO) { c._pvRO = new global.ResizeObserver(fun
 return this.pintar(id);
 },
 desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
-desenho: function (vistaId, refazer) {
+desenho: function (vistaId, refazer, escala) {
 var obraK = this.obraKey();
 if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
-if (!refazer && this._desenhos[vistaId]) return this._desenhos[vistaId];
+var chave = escala ? vistaId + "@" + escala : vistaId;
+if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
 var b2 = B2(), D = D2(); if (!b2 || !D) return null;
 try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
 var d = b2.def(vistaId); if (!d) return null;
@@ -181271,33 +181334,45 @@ var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer) ? c.dados : b2._e
 if (!bruto || !bruto.ok) return null;
 var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
 var est = clone(b2.estilo(vistaId)); est.titulo = false;
+if (escala) est.escala = Math.max(1, Math.round(+escala));
 var exF = { titulo: "" };
 var comHidroF = false; try { comHidroF = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()); } catch (eH) {}
 try { var M6 = b2._p6 ? b2._p6() : null; if (comHidroF && M6 && M6.extraSvg && bruto.p6Estilos) exF = M6.extraSvg(vistaId, bruto, exF) || exF; } catch (eP6) {}
 try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
 var res = D.svg(an, est, exF);
 var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala, def: (function () { try { return clone(d); } catch (eDf) { return null; } })() };
-this._desenhos[vistaId] = o;
+this._desenhos[chave] = o;
 return o;
 },
+chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
+desenhoVp: function (b, refazer) { return b.escalaPropria ? this.desenho(b.vistaId, refazer, b.escala) : this.desenho(b.vistaId, refazer); },
 _sincronizar: function (a) {
 var self = this, mudou = false, f = clone(a.folha);
 f.blocos.forEach(function (b) {
 if (b.tipo !== "viewport") return;
-var dz = self.desenho(b.vistaId); if (!dz) return;
-var t = PR().tamanhoViewport({ w: dz.vb.w, h: dz.vb.h }, dz.escala, b.recorte);
-if (b.escala !== dz.escala || Math.abs(b.w - t.w) > 0.05 || Math.abs(b.h - t.h) > 0.05) { b.escala = dz.escala; b.w = t.w; b.h = t.h; mudou = true; }
+var dz = self.desenhoVp(b); if (!dz) return;
+var e = b.escalaPropria ? b.escala : dz.escala;
+var t = PR().tamanhoViewport({ w: dz.vb.w, h: dz.vb.h }, e, b.recorte);
+if (b.escala !== e || Math.abs(b.w - t.w) > 0.05 || Math.abs(b.h - t.h) > 0.05) { b.escala = e; b.w = t.w; b.h = t.h; mudou = true; }
 });
-if (mudou) { this.gravarFolha(a, f); return this.achar(this.idFolha(a.reg.id, a.folha.id)); }
+if (mudou) { this.gravarFolha(a, f, true); return this.achar(this.idFolha(a.reg.id, a.folha.id)); }
 return a;
 },
 recursos: function (a, editor) {
 var self = this, rec = { imagens: {}, vistas: {}, viewports: {}, projeto: this.projeto(), editor: !!editor };
-a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) rec.viewports[b.vistaId] = dz; } });
+a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) rec.viewports[self.chaveVp(b)] = dz; } });
 try { rec.logo = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (e) {}
 rec.empresa = this.empresaDados();
 var ext = this._imagensExternas || {}; Object.keys(ext).forEach(function (k) { rec.imagens[k] = ext[k]; });
 return rec;
+},
+_barra: function (id) {
+var t = this._telas[id], at = t && t.ativa, pct = t && t.escalaTela ? Math.round(t.escalaTela * 100) : 100;
+var ferr = this._ferr && this._ferr.id === id ? this._ferr.qual : "";
+return '<div class="pv-barra" data-pv-barra="1">' +
+(at ? '<span class="pv-barra-ativa">Vista ativada — arraste para enquadrar · roda amplia · <b>Esc</b> ou 2 cliques fora para sair</span><button type="button" data-pv-acao="sair">Sair da vista</button>'
+: '<button type="button" data-pv-acao="texto"' + (ferr === "texto" ? ' class="on"' : "") + ' title="Texto na folha: clique no papel onde ele começa">A&#8202;<small>Texto</small></button>') +
+'<span class="pv-barra-sep"></span><button type="button" data-pv-acao="menos" title="Afastar (roda do mouse)">−</button><button type="button" data-pv-acao="ajustar" title="Folha inteira na tela" data-pv-zoom="1">' + pct + '%</button><button type="button" data-pv-acao="mais" title="Aproximar (roda do mouse)">+</button></div>';
 },
 pintar: function (id) {
 var t = this._telas[id], a = this.achar(id); if (!t || !t.el) return false;
@@ -181305,28 +181380,53 @@ if (!a) { t.el.innerHTML = '<div class="d2-vazio">Esta folha não existe mais ne
 a = this._sincronizar(a);
 var P = a.geo.papel, html = UI2().folha(a.pr, a.folha, this.recursos(a, true), a.geo);
 var dica = a.folha.blocos.length || a.folha.imagemInteira ? "" : '<div class="pv-dica">Arraste uma planta ou um corte do Navegador para a folha (ou Vista › Posicionar vista).</div>';
-t.el.innerHTML = dica + '<div class="pv-papel-wrap"><div class="pv-papel" style="width:' + P.w + 'mm;height:' + P.h + 'mm">' + html + "</div></div>";
+var sl = t.el.scrollLeft, sc = t.el.scrollTop;
+t.el.innerHTML = this._barra(id) + dica + '<div class="pv-papel-wrap"><div class="pv-papel' + (t.ativa ? " pv-ativa" : "") + '" style="width:' + P.w + 'mm;height:' + P.h + 'mm">' + html + "</div></div>";
 t.papel = t.el.querySelector(".pv-papel"); t.P = P;
+if (t.ativa) { var ba = t.el.querySelector('[data-pv-bloco="' + t.ativa.ix + '"]'); if (ba) ba.setAttribute("data-pv-on", "1"); else t.ativa = null; }
 var sel = this._sel && this._sel.id === id ? this._sel.ix : -1;
-if (sel >= 0) { var bs = t.el.querySelector('[data-pv-bloco="' + sel + '"]'); if (bs) bs.setAttribute("data-pv-sel", "1"); }
+if (sel >= 0) this._marcarSel(id, sel);
 this._ajustar(id);
+t.el.scrollLeft = sl; t.el.scrollTop = sc;
 return true;
+},
+_marcarSel: function (id, ix) {
+var t = this._telas[id]; if (!t || !t.el) return;
+[].forEach.call(t.el.querySelectorAll("[data-pv-alca]"), function (e) { e.parentNode.removeChild(e); });
+[].forEach.call(t.el.querySelectorAll("[data-pv-bloco]"), function (e) { if (+e.getAttribute("data-pv-bloco") === ix) e.setAttribute("data-pv-sel", "1"); else e.removeAttribute("data-pv-sel"); });
+var b = t.el.querySelector('[data-pv-bloco="' + ix + '"][data-pv-vp]');
+if (b && !t.ativa) { var h = document.createElement("div"), lado = 12 / (t.escalaTela || 1); h.setAttribute("data-pv-alca", "1");
+h.style.width = h.style.height = lado + "px"; h.style.right = h.style.bottom = (-lado / 2) + "px"; h.style.borderWidth = (2 / (t.escalaTela || 1)) + "px"; h.title = "Puxe para recortar a vista (o quadro muda, a escala fica)"; b.appendChild(h); }
 },
 _ajustar: function (id) {
 var t = this._telas[id]; if (!t || !t.papel || !t.P) return;
 var W = t.el.clientWidth || 800, H = t.el.clientHeight || 560, pw = t.P.w * MM_PX, ph = t.P.h * MM_PX;
-var f = t.zoom || Math.max(0.05, Math.min((W - 32) / pw, (H - 32) / ph));
+var f = t.zoom || Math.max(0.05, Math.min((W - 32) / pw, (H - 70) / ph));
 t.escalaTela = f;
 t.papel.style.transform = "scale(" + f + ")";
-var w = t.el.querySelector(".pv-papel-wrap"); if (w) { w.style.width = Math.ceil(pw * f) + "px"; w.style.height = Math.ceil(ph * f) + "px"; }
+var w = t.el.querySelector(".pv-papel-wrap"); if (w) { w.style.width = Math.ceil(pw * f) + "px"; w.style.height = Math.ceil(ph * f) + "px"; w.style.margin = t.zoom ? Math.round(H * 0.5) + "px " + Math.round(W * 0.5) + "px" : "0 auto"; }
+var z = t.el.querySelector("[data-pv-zoom]"); if (z) z.textContent = Math.round(f * 100) + "%";
+var al = t.el.querySelector("[data-pv-alca]"); if (al) { var lado = 12 / f; al.style.width = al.style.height = lado + "px"; al.style.right = al.style.bottom = (-lado / 2) + "px"; al.style.borderWidth = (2 / f) + "px"; }
 },
+zoomTela: function (id, fator, cx, cy) {
+var t = this._telas[id]; if (!t || !t.papel || !t.P) return null;
+var c = t.el, rc = c.getBoundingClientRect();
+if (!isFinite(cx)) { cx = rc.left + rc.width / 2; cy = rc.top + rc.height / 2; }
+var r = t.papel.getBoundingClientRect(), ux = (cx - r.left) / (r.width || 1), uy = (cy - r.top) / (r.height || 1);
+var f0 = t.escalaTela || 1, f1 = Math.max(0.05, Math.min(12, f0 * fator));
+t.zoom = f1; this._ajustar(id);
+var r2 = t.papel.getBoundingClientRect();
+c.scrollLeft += (r2.left + ux * r2.width) - cx; c.scrollTop += (r2.top + uy * r2.height) - cy;
+return f1;
+},
+zoomAjustar: function (id) { var t = this._telas[id]; if (!t) return; t.zoom = null; this._ajustar(id); t.el.scrollLeft = 0; t.el.scrollTop = 0; },
 _mm: function (id, ev) {
 var t = this._telas[id]; if (!t || !t.papel || !t.P) return null;
 var r = t.papel.getBoundingClientRect(); if (!r.width) return null;
 return { x: (ev.clientX - r.left) / r.width * t.P.w, y: (ev.clientY - r.top) / r.height * t.P.h };
 },
 _ligar: function (c, id) {
-var self = this, arr0 = null;
+var self = this, arr0 = null, pan = null;
 c.addEventListener("dragover", function (ev) {
 var tipos = ev.dataTransfer ? [].slice.call(ev.dataTransfer.types || []) : [];
 if (tipos.indexOf(TIPO_ARRASTE) >= 0 || tipos.indexOf("text/plain") >= 0) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = "copy"; } catch (e) {} }
@@ -181337,43 +181437,102 @@ var v = ""; try { v = ev.dataTransfer.getData(TIPO_ARRASTE) || ev.dataTransfer.g
 var p = self._mm(id, ev);
 if (v && p) self.posicionar(id, v, p.x, p.y);
 });
+c.addEventListener("wheel", function (ev) {
+if (self._editor) return;
+ev.preventDefault();
+self.zoomTela(id, ev.deltaY < 0 ? 1.2 : 1 / 1.2, ev.clientX, ev.clientY);
+}, { passive: false });
+c.addEventListener("click", function (ev) {
+var bt = ev.target && ev.target.closest ? ev.target.closest("[data-pv-acao]") : null; if (!bt) return;
+var q = bt.getAttribute("data-pv-acao");
+if (q === "texto") { self._ferr = self._ferr && self._ferr.qual === "texto" ? null : { id: id, qual: "texto" }; self._pintarBarra(id); if (self._ferr) status("Texto: clique no papel onde o texto começa (Esc cancela)."); }
+else if (q === "mais") self.zoomTela(id, 1.25);
+else if (q === "menos") self.zoomTela(id, 1 / 1.25);
+else if (q === "ajustar") self.zoomAjustar(id);
+else if (q === "sair") self.desativarNaFolha(id);
+});
 c.addEventListener("pointerdown", function (ev) {
+if (self._editor && !(ev.target && ev.target.closest && ev.target.closest(".pv-edit"))) { ev.preventDefault(); self._fecharEditor(); return; }
+if (ev.target && ev.target.closest && (ev.target.closest(".pv-barra") || ev.target.closest(".pv-menu") || ev.target.closest(".pv-edit"))) return;
+self._fecharMenu();
+try { c.focus({ preventScroll: true }); } catch (eF) {}
+var t = self._telas[id], p = self._mm(id, ev);
+function comecarPan() { pan = { x: ev.clientX, y: ev.clientY, sl: c.scrollLeft, st: c.scrollTop }; try { c.setPointerCapture(ev.pointerId); } catch (e) {} }
+if (ev.button === 1) { ev.preventDefault(); comecarPan(); return; }
+if (ev.button !== 0) return;
+if (self._ferr && self._ferr.id === id && self._ferr.qual === "texto" && p) { ev.preventDefault(); self._ferr = null; self.novoTexto(id, p.x, p.y); return; }
 var b = ev.target && ev.target.closest ? ev.target.closest("[data-pv-bloco]") : null;
-if (!b) { self.selecionar(id, -1); return; }
-var ix = +b.getAttribute("data-pv-bloco"), p = self._mm(id, ev);
+var ix = b ? +b.getAttribute("data-pv-bloco") : -1, a = self.achar(id), bl = a && ix >= 0 ? a.folha.blocos[ix] : null;
+if (t && t.ativa) {
+if (bl && ix === t.ativa.ix && p) { arr0 = { modo: "recorte", ix: ix, x0: p.x, y0: p.y, dx: 0, dy: 0, bl: bl, svg: b.querySelector("svg.pv-vp") }; try { c.setPointerCapture(ev.pointerId); } catch (e1) {} }
+else comecarPan();
+return;
+}
+if (ev.target.closest && ev.target.closest("[data-pv-alca]") && bl && p) {
+arr0 = { modo: "tam", ix: ix, x0: p.x, y0: p.y, dx: 0, dy: 0, bl: bl, el: b }; try { c.setPointerCapture(ev.pointerId); } catch (e2) {} ev.preventDefault(); return;
+}
+var cr = ev.target.closest ? ev.target.closest("[data-pv-cr]") : null;
+if (cr) { ev.preventDefault(); self.editarCampoCarimbo(id, cr.getAttribute("data-pv-cr")); return; }
+if (!b) { self.selecionar(id, -1); comecarPan(); return; }
 self.selecionar(id, ix);
-var a = self.achar(id), bl = a && a.folha.blocos[ix];
-if (bl && bl.tipo === "viewport" && p) { arr0 = { ix: ix, x0: p.x, y0: p.y, bx: bl.x, by: bl.y, el: b, dx: 0, dy: 0 }; try { c.setPointerCapture(ev.pointerId); } catch (e2) {} }
+if (ev.target.closest("[data-pv-escala]") && bl && bl.tipo === "viewport") { ev.preventDefault(); self.menuEscala(id, ix, ev.clientX, ev.clientY); return; }
+if (bl && p) { arr0 = { modo: "mover", ix: ix, x0: p.x, y0: p.y, bx: bl.x, by: bl.y, el: b, dx: 0, dy: 0 }; try { c.setPointerCapture(ev.pointerId); } catch (e3) {} }
 });
 c.addEventListener("pointermove", function (ev) {
+if (pan) { c.scrollLeft = pan.sl - (ev.clientX - pan.x); c.scrollTop = pan.st - (ev.clientY - pan.y); return; }
 if (!arr0) return; var p = self._mm(id, ev); if (!p) return;
 arr0.dx = p.x - arr0.x0; arr0.dy = p.y - arr0.y0;
-arr0.el.style.left = (arr0.bx + arr0.dx) + "mm"; arr0.el.style.top = (arr0.by + arr0.dy) + "mm";
+if (arr0.modo === "mover") { arr0.el.style.left = (arr0.bx + arr0.dx) + "mm"; arr0.el.style.top = (arr0.by + arr0.dy) + "mm"; }
+else if (arr0.modo === "tam") { arr0.el.style.width = Math.max(10, arr0.bl.w + arr0.dx) + "mm"; arr0.el.style.height = Math.max(10, arr0.bl.h + arr0.dy) + "mm"; }
+else if (arr0.modo === "recorte" && arr0.svg) {
+var dz = self.desenhoVp(arr0.bl), nb = dz ? PR().deslocarRecorte(arr0.bl, dz.vb, arr0.dx, arr0.dy) : null;
+if (nb) { var r = nb.recorte; arr0.svg.setAttribute("viewBox", r.x0 + " " + r.y0 + " " + (r.x1 - r.x0) + " " + (r.y1 - r.y0)); }
+}
 });
 c.addEventListener("pointerup", function () {
+if (pan) { pan = null; return; }
 if (!arr0) return; var m = arr0; arr0 = null;
 if (Math.abs(m.dx) < 0.5 && Math.abs(m.dy) < 0.5) return;
-self.moverViewport(id, m.ix, m.bx + m.dx, m.by + m.dy);
+if (m.modo === "mover") self.moverViewport(id, m.ix, m.bx + m.dx, m.by + m.dy);
+else if (m.modo === "tam") self.recortar(id, m.ix, m.bl.w + m.dx, m.bl.h + m.dy);
+else if (m.modo === "recorte") self.enquadrar(id, m.ix, m.dx, m.dy);
 });
 c.addEventListener("dblclick", function (ev) {
-var b = ev.target && ev.target.closest ? ev.target.closest("[data-pv-vp]") : null;
-if (b) self.ativarVista(b.getAttribute("data-pv-vp"));
+var t = self._telas[id];
+var alvo = null; try { alvo = document.elementFromPoint(ev.clientX, ev.clientY); } catch (eP) { alvo = null; }
+alvo = alvo || ev.target;
+var b = alvo && alvo.closest ? alvo.closest("[data-pv-bloco]") : null, ix = b ? +b.getAttribute("data-pv-bloco") : -1;
+if (t && t.ativa) { if (ix !== t.ativa.ix) self.desativarNaFolha(id); return; }
+if (!b) return;
+if (b.hasAttribute("data-pv-vp")) self.ativarNaFolha(id, ix);
+else if (b.getAttribute("data-pv-tipo") === "texto") self.editarTexto(id, ix);
 });
-c.addEventListener("keydown", function (ev) { if ((ev.key === "Delete" || ev.key === "Backspace") && self._sel && self._sel.id === id) { ev.preventDefault(); self.removerSelecionado(); } });
+c.addEventListener("keydown", function (ev) {
+var tg = ev.target, digit = tg && (tg.tagName === "INPUT" || tg.tagName === "TEXTAREA" || tg.isContentEditable);
+if (digit) return;
+var t = self._telas[id];
+if (ev.key === "Escape") {
+if (self._fecharMenu()) { ev.preventDefault(); ev.stopPropagation(); return; }
+if (self._ferr) { self._ferr = null; self._pintarBarra(id); ev.preventDefault(); ev.stopPropagation(); return; }
+if (t && t.ativa) { self.desativarNaFolha(id); ev.preventDefault(); ev.stopPropagation(); return; }
+}
+if ((ev.key === "Delete" || ev.key === "Backspace") && self._sel && self._sel.id === id && !(t && t.ativa)) { ev.preventDefault(); self.removerSelecionado(); }
+});
 c.tabIndex = 0;
 },
+_pintarBarra: function (id) { var t = this._telas[id], b = t && t.el && t.el.querySelector(".pv-barra"); if (!b) return; var d = document.createElement("div"); d.innerHTML = this._barra(id); b.parentNode.replaceChild(d.firstChild, b); this._ajustar(id); },
 posicionar: function (id, vistaId, cx, cy) {
 var a = this.achar(id); if (!a) return { ok: false, erro: "Folha não encontrada." };
 var b2 = B2(); if (!b2 || !b2.ehVista2d(vistaId)) { toast("Arraste uma planta ou um corte do Navegador (Vistas › Plantas de piso / Cortes).", "aviso"); return { ok: false, erro: "não é vista 2D" }; }
 var dz = this.desenho(vistaId, true);
 if (!dz) { toast("Não consegui desenhar a vista: abra o modelo da obra primeiro.", "erro"); return { ok: false, erro: "sem desenho" }; }
 var todas = this.registros().map(function (r) { return PR().normalizar(r); });
-var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy }, todas);
+var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
 if (!r.ok) { toast(r.erro, "aviso"); return r; }
 this.gravarFolha(a, r.folha);
 this._sel = { id: id, ix: r.folha.blocos.length - 1 };
 this.pintar(id); this._pintarProps();
-status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ".");
+status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
 if (r.aviso) toast(r.aviso, "aviso");
 return r;
 },
@@ -181383,10 +181542,208 @@ var f = clone(a.folha), b = f.blocos[ix], eg = f.eixoGuia, ar = a.geo.area;
 if (eg) { x = PR().ajustarEixo(x, eg.espaco, ar.x); y = PR().ajustarEixo(y, eg.espaco, ar.y); }
 b.x = Math.round(x * 10) / 10; b.y = Math.round(y * 10) / 10;
 this.gravarFolha(a, f); this.pintar(id);
-var cf = PR().conferir({ formato: a.pr.formato, orientacao: a.pr.orientacao, folhas: [f] });
-if (!cf.ok) toast("Parte da vista ficou fora da área de desenho (sai cortada na impressão).", "aviso");
+if (this._foraDaArea(a, f, ix)) toast("Parte do bloco ficou fora da área de desenho (sai cortado na impressão).", "aviso");
 return true;
 },
+_foraDaArea: function (a, f, ix) {
+var pr = clone(a.pr); pr.folhas = [f];
+return PR().conferir(pr).fora.some(function (q) { return q.bloco === ix; });
+},
+trocarEscala: function (id, ix, escala) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+var f = clone(a.folha), nb;
+if (escala === "vista") {
+var dzV = this.desenho(b.vistaId); if (!dzV) return false;
+nb = PR().escalaViewport(b, dzV.vb, dzV.escala); if (!nb) return false; delete nb.escalaPropria;
+} else {
+var e = Math.round(+escala); if (!(e >= 1)) return false;
+var dz = this.desenho(b.vistaId, false, e); if (!dz) return false;
+nb = PR().escalaViewport(b, dz.vb, e); if (!nb) return false;
+}
+f.blocos[ix] = PR().bloco(nb);
+this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+status("Escala da cópia " + (b.numeroDetalhe || "") + ": 1:" + f.blocos[ix].escala + (escala === "vista" ? " (a da vista)" : "") + ".");
+if (this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
+return true;
+},
+menuEscala: function (id, ix, cx, cy) {
+var t = this._telas[id], a = this.achar(id), b = a && a.folha.blocos[ix]; if (!t || !b) return null;
+this._fecharMenu();
+var self = this, dz = this.desenho(b.vistaId), ev0 = dz ? dz.escala : b.escala, m = document.createElement("div");
+m.className = "pv-menu"; m.setAttribute("data-pv-menu", "1");
+m.innerHTML = '<div class="pv-menu-tit">Escala desta cópia</div>' + PR().ESCALAS_VISTA.filter(function (e) { return e >= 10 && e <= 500; }).map(function (e) {
+return '<button type="button" data-pv-esc="' + e + '"' + (e === b.escala ? ' class="on"' : "") + ">1:" + e + "</button>";
+}).join("") + '<button type="button" data-pv-esc="vista" class="pv-menu-vista">A da vista (1:' + ev0 + ")</button>";
+var rc = t.el.getBoundingClientRect();
+m.style.left = (cx - rc.left + t.el.scrollLeft) + "px"; m.style.top = (cy - rc.top + t.el.scrollTop + 6) + "px";
+t.el.appendChild(m); this._menu = m;
+var rm = m.getBoundingClientRect();
+if (rm.bottom > rc.bottom - 4) m.style.top = Math.max(t.el.scrollTop + 4, cy - rc.top + t.el.scrollTop - rm.height - 6) + "px";
+if (rm.right > rc.right - 4) m.style.left = Math.max(t.el.scrollLeft + 4, cx - rc.left + t.el.scrollLeft - rm.width) + "px";
+m.addEventListener("click", function (ev) { var q = ev.target.closest("[data-pv-esc]"); if (!q) return; var v = q.getAttribute("data-pv-esc"); self._fecharMenu(); self.trocarEscala(id, ix, v === "vista" ? "vista" : +v); });
+return m;
+},
+_fecharMenu: function () { var m = this._menu; this._menu = null; if (m && m.parentNode) { m.parentNode.removeChild(m); return true; } return false; },
+recortar: function (id, ix, w, h) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+var dz = this.desenhoVp(b); if (!dz) return false;
+var f = clone(a.folha); f.blocos[ix] = PR().bloco(PR().redimensionarViewport(b, dz.vb, w, h));
+this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+status("Recorte da cópia " + (b.numeroDetalhe || "") + ": " + Math.round(f.blocos[ix].w) + " × " + Math.round(f.blocos[ix].h) + " mm.");
+return true;
+},
+enquadrar: function (id, ix, dx, dy) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+var dz = this.desenhoVp(b); if (!dz) return false;
+var f = clone(a.folha); f.blocos[ix] = PR().bloco(PR().deslocarRecorte(b, dz.vb, dx, dy));
+this.gravarFolha(a, f); this.pintar(id);
+return true;
+},
+tirarRecorte: function (id, ix) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+var f = clone(a.folha); f.blocos[ix].recorte = null;
+this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+return true;
+},
+ativarNaFolha: function (id, ix) {
+var t = this._telas[id], a = this.achar(id), b = a && a.folha.blocos[ix]; if (!t || !b || b.tipo !== "viewport") return false;
+t.ativa = { ix: ix, zoom: t.zoom || null, sl: t.el.scrollLeft, st: t.el.scrollTop };
+this._sel = { id: id, ix: ix };
+this.pintar(id);
+var W = t.el.clientWidth || 800, H = t.el.clientHeight || 560, f = Math.max(0.05, Math.min(12, Math.min((W - 60) / (b.w * MM_PX), (H - 110) / ((b.h + 14) * MM_PX))));
+t.zoom = f; this._ajustar(id);
+var el = t.el.querySelector('[data-pv-bloco="' + ix + '"]');
+if (el) { var r = el.getBoundingClientRect(), rc = t.el.getBoundingClientRect(); t.el.scrollLeft += (r.left + r.width / 2) - (rc.left + rc.width / 2); t.el.scrollTop += (r.top + r.height / 2) - (rc.top + rc.height / 2); }
+status("Vista ativada: " + (b.tituloVista || "") + ". Arraste para enquadrar; Esc sai.");
+return true;
+},
+desativarNaFolha: function (id) {
+var t = this._telas[id]; if (!t || !t.ativa) return false;
+var v = t.ativa; t.ativa = null; t.zoom = v.zoom;
+this.pintar(id);
+t.el.scrollLeft = v.sl; t.el.scrollTop = v.st;
+status("Vista desativada.");
+return true;
+},
+_editorEm: function (id, x, y, w, h, valor, multi, fsMm, fim) {
+var t = this._telas[id]; if (!t || !t.papel) return null;
+this._fecharEditor();
+var self = this, e = document.createElement(multi ? "textarea" : "input");
+e.className = "pv-edit"; e.value = valor || ""; e.spellcheck = false;
+e.style.left = x + "mm"; e.style.top = y + "mm"; e.style.width = Math.max(20, w) + "mm"; e.style.height = Math.max(fsMm * 1.6, h) + "mm"; e.style.fontSize = fsMm + "mm";
+var feito = false;
+function acabar(ok) { if (feito) return; feito = true; var v = e.value; self._editor = null; if (e.parentNode) e.parentNode.removeChild(e); try { t.el.focus({ preventScroll: true }); } catch (eF) {} fim(ok ? v : null); }
+e.addEventListener("keydown", function (ev) {
+ev.stopPropagation();
+if (ev.key === "Escape") { ev.preventDefault(); acabar(false); }
+else if (ev.key === "Enter" && (!multi || !ev.shiftKey)) { ev.preventDefault(); acabar(true); }
+});
+e.addEventListener("blur", function () { acabar(true); });
+t.papel.appendChild(e); this._editor = { el: e, acabar: acabar };
+try { e.focus(); e.select(); } catch (eS) {}
+return e;
+},
+_fecharEditor: function () { var ed = this._editor; if (ed) ed.acabar(true); },
+novoTexto: function (id, x, y) {
+var self = this; this._pintarBarra(id);
+return this._editorEm(id, x, y, 60, 6, "", true, 2.5 / 0.716, function (v) {
+if (v == null || !String(v).trim()) { status("Texto cancelado."); return; }
+self.criarTexto(id, x, y, String(v).split(/\r?\n/));
+});
+},
+criarTexto: function (id, x, y, linhas, alt) {
+var a = this.achar(id); if (!a) return null;
+var f = clone(a.folha), b = PR().blocoTexto(linhas, x, y, alt || 2.5); if (!b) return null;
+f.blocos.push(b);
+this.gravarFolha(a, f); this._sel = { id: id, ix: f.blocos.length - 1 }; this.pintar(id); this._pintarProps();
+status("Texto na folha (2 cliques edita; arraste move; Delete apaga).");
+return b;
+},
+editarTexto: function (id, ix) {
+var self = this, a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return null;
+var fs = (b.alt > 0 ? b.alt : 2.82 * 0.716) / 0.716;
+return this._editorEm(id, b.x, b.y, b.w + 10, b.h + 4, (b.linhas || []).join("\n"), true, fs, function (v) {
+if (v == null) return;
+self.mudarTexto(id, ix, String(v).split(/\r?\n/));
+});
+},
+mudarTexto: function (id, ix, linhas) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return false;
+var f = clone(a.folha);
+if (!linhas.join("").trim()) { f.blocos.splice(ix, 1); this._sel = null; }
+else { var nb = PR().blocoTexto(linhas, b.x, b.y, b.alt > 0 ? b.alt : 2.5); if (b.negrito) nb.negrito = true; f.blocos[ix] = nb; }
+this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+return true;
+},
+_mudarBlocoTexto: function (id, ix, campo, valor) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return false;
+var f = clone(a.folha), alt = campo === "alt" ? Math.max(1, Math.min(20, +valor || 2.5)) : (b.alt > 0 ? b.alt : 2.5);
+var nb = PR().blocoTexto(b.linhas, b.x, b.y, alt); if (campo === "negrito" ? !!valor : b.negrito) nb.negrito = true;
+f.blocos[ix] = nb; this.gravarFolha(a, f); this.pintar(id);
+return true;
+},
+valorCampoCarimbo: function (a, campo) {
+var cf = PR().CAMPOS_CARIMBO_FOLHA[campo];
+if (cf) { var pm = PR().mapaParametros(a.pr, a.folha, this.projeto()); return campo === "data" ? (pm.SHEET_ISSUE_DATE || "") : (campo === "codigo" ? (pm.SHEET_NUMBER || "") : (a.folha.conteudo || "")); }
+var c = a.pr.carimbo || {};
+if (campo === "contratante") return c.contratante || "";
+return c[campo] || "";
+},
+editarCampoCarimbo: function (id, campo) {
+var self = this, a = this.achar(id), t = this._telas[id]; if (!a || !t) return null;
+if (!PR().CAMPOS_CARIMBO_FOLHA[campo] && !PR().CAMPOS_CARIMBO_CONJ[campo]) return null;
+var L = PR().carimboRA(a.pr, a.folha, this.projeto(), this.empresaDados(), a.geo, {}), z = (L.zonas || []).filter(function (q) { return q.campo === campo; })[0]; if (!z) return null;
+status(PR().CAMPOS_CARIMBO_CONJ[campo] ? "Carimbo: este campo vale para TODAS as folhas do conjunto. Enter grava, Esc cancela." : "Carimbo: este campo é só desta folha. Enter grava, Esc cancela.");
+return this._editorEm(id, L.x + z.x, L.y + z.y, z.w, z.h, this.valorCampoCarimbo(a, campo), false, Math.max(2, z.h * 0.55), function (v) {
+if (v == null) return;
+self.mudarCampoCarimbo(id, campo, v);
+});
+},
+mudarCampoCarimbo: function (id, campo, valor) {
+var a = this.achar(id); if (!a) return false;
+var cf = PR().CAMPOS_CARIMBO_FOLHA[campo], v = String(valor == null ? "" : valor).trim();
+if (cf) {
+if (v === String(this.valorCampoCarimbo(a, campo))) return false;
+var f = clone(a.folha); f[cf] = v; this.gravarFolha(a, f); this.pintar(id); this._renomearAbas(); this._pintarProps();
+return true;
+}
+if (PR().CAMPOS_CARIMBO_CONJ[campo]) { if (v === String(this.valorCampoCarimbo(a, campo))) return false; return this.mudarCarimbo(id, campo, v); }
+return false;
+},
+abaAtiva: function () { try { var g = this.G(), st = g && g._bimVxEst && g._bimVxEst(); return !!(st && this.ehFolha(st.ativa) && this._telas[st.ativa]); } catch (e) { return false; } },
+_volta: function (de, para, rot) {
+var obraK = this._conferirObra();
+de = de === "pilha" ? this._pilha : this._refazerP; para = para === "pilha" ? this._pilha : this._refazerP;
+var p = de.pop(), self = this; if (!p || !global.Store) return false;
+if (p.obra !== obraK) { this._pilha = []; this._refazerP = []; return false; }
+var atual = this.registros().filter(function (x) { return String(x.id) === String(p.regId); })[0];
+if (!atual) { status("Esse passo era de um conjunto de folhas que não existe mais."); return false; }
+var porId = {}; arr(atual.folhas).forEach(function (f) { porId[f.id] = f; });
+var ids = Object.keys(p.folhas), marcas = this._marcas || {};
+var sumiu = ids.some(function (k) { return !porId[k]; });
+var porFora = ids.some(function (k) { return porId[k] && marcas[p.regId + "|" + k] !== undefined && self._jsonF(porId[k]) !== marcas[p.regId + "|" + k]; }) ||
+(p.carimbo !== undefined && marcas[p.regId + "|carimbo"] !== undefined && this._jsonF(atual.carimbo || null) !== marcas[p.regId + "|carimbo"]);
+if (sumiu || porFora) {
+var tira = function (q) { return q.regId !== p.regId; };
+this._pilha = this._pilha.filter(tira); this._refazerP = this._refazerP.filter(tira);
+toast(sumiu ? "A folha desse passo foi apagada: o desfazer dela foi zerado." : "A folha foi mudada fora deste editor: o desfazer dela foi zerado para não apagar a mudança.", "aviso");
+return false;
+}
+var inv = { obra: obraK, regId: p.regId, folhas: {} };
+ids.forEach(function (k) { inv.folhas[k] = clone(porId[k]); });
+if (p.carimbo !== undefined) inv.carimbo = clone(atual.carimbo || null);
+var novo = clone(atual);
+novo.folhas = arr(novo.folhas).map(function (f) { return p.folhas[f.id] ? clone(p.folhas[f.id]) : f; });
+if (p.carimbo !== undefined) novo.carimbo = clone(p.carimbo);
+var r = global.Store.salvar(this.empresa(), "bim_pranchas", novo);
+if (!r) return false;
+this._marcar(r); para.push(inv); Object.keys(this._telas).forEach(function (k) { var t = self._telas[k]; if (t && t.ativa) t.ativa = null; });
+this._sel = null; this._repintarTodas(); this._renomearAbas();
+status(rot);
+return true;
+},
+desfazer: function () { return this._volta("pilha", "refazer", "Folha: desfeito (Ctrl+Y refaz)."); },
+refazer: function () { return this._volta("refazer", "pilha", "Folha: refeito."); },
 removerSelecionado: function () {
 var s = this._sel; if (!s) return false;
 var a = this.achar(s.id); if (!a || !a.folha.blocos[s.ix]) return false;
@@ -181397,8 +181754,7 @@ return true;
 },
 selecionar: function (id, ix) {
 this._sel = ix >= 0 ? { id: id, ix: ix } : null;
-var t = this._telas[id];
-if (t && t.el) [].forEach.call(t.el.querySelectorAll("[data-pv-bloco]"), function (e) { if (+e.getAttribute("data-pv-bloco") === ix) e.setAttribute("data-pv-sel", "1"); else e.removeAttribute("data-pv-sel"); });
+this._marcarSel(id, ix);
 this._pintarProps();
 },
 _pintarProps: function () { try { if (global.BimShell) global.BimShell.pintarProps(this._sel ? this.propsViewport(this._sel.id, this._sel.ix) : null); } catch (e) {} },
@@ -181413,7 +181769,7 @@ desativarVista: function () {
 var g = this.G(), st = g && g._bimVxEst(), alvo = null;
 if (!st) return false;
 st.lista.forEach(function (v) { if (v.tipo === "folha") alvo = alvo || v.id; });
-var self = this; Object.keys(this._desenhos).forEach(function (k) { if (k === self._ativada) delete self._desenhos[k]; });
+var self = this; Object.keys(this._desenhos).forEach(function (k) { if (k === self._ativada || k.indexOf(self._ativada + "@") === 0) delete self._desenhos[k]; });
 this._ativada = null;
 if (alvo) { g._bimVxAtivar(alvo); this.pintar(alvo); }
 return !!alvo;
@@ -181486,25 +181842,37 @@ if (v && b) { v.nome = "Folha: " + this.nomeFolha(b.pr, b.folha); try { g._bimVx
 },
 propsViewport: function (id, ix) {
 var self = this, a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b) return null;
+if (b.tipo === "texto") return { daVista: true, semEditarTipo: true, titulo: "Texto na folha", icone: "prancha",
+secoes: [{ nome: "Texto", params: [
+{ id: "t:txt", rotulo: "Texto", tipo: "botao", rotuloBotao: "Editar texto…", fn: function () { self.editarTexto(id, ix); } },
+{ id: "t:alt", rotulo: "Altura da letra", tipo: "lista", valor: String(b.alt > 0 ? b.alt : 2.5), opcoes: ["1.8", "2", "2.5", "3", "3.5", "5", "7"].map(function (v) { return { id: v, rotulo: v.replace(".", ",") + " mm" }; }) },
+{ id: "t:negrito", rotulo: "Negrito", tipo: "sim-nao", valor: !!b.negrito },
+{ id: "tirar", rotulo: "Folha", tipo: "botao", rotuloBotao: "Apagar o texto", fn: function () { self.removerSelecionado(); } } ] }],
+onMudar: function (pid, valor) { if (pid === "t:alt") self._mudarBlocoTexto(id, ix, "alt", +valor); else if (pid === "t:negrito") self._mudarBlocoTexto(id, ix, "negrito", !!valor); return self.propsViewport(id, ix); } };
 if (b.tipo !== "viewport") return { daVista: true, semEditarTipo: true, titulo: b.titulo || b.tipo, icone: "prancha", secoes: [{ nome: "Bloco", params: [{ id: "tirar", rotulo: "Bloco", tipo: "botao", rotuloBotao: "Retirar da folha", fn: function () { self.removerSelecionado(); } }] }] };
+var dzV = this.desenho(b.vistaId), escV = dzV ? dzV.escala : b.escala, opEsc = PR().ESCALAS_VISTA.filter(function (e) { return e >= 10 && e <= 500; }).map(function (e) { return { id: String(e), rotulo: "1:" + e }; });
+opEsc.push({ id: "vista", rotulo: "A da vista (1:" + escV + ")" });
 return {
 daVista: true, semEditarTipo: true, titulo: "Viewport: " + b.tituloVista, icone: "planta",
 secoes: [
 { nome: "Gráficos", params: [
-{ id: "escala", rotulo: "Escala da vista", leitura: true, valor: "1:" + b.escala, motivo: "A escala é da VISTA (Propriedades da planta/corte): mudou lá, muda aqui." },
+{ id: "escala", rotulo: "Escala desta cópia", tipo: "lista", valor: b.escalaPropria ? String(b.escala) : "vista", opcoes: opEsc },
 { id: "numeroDetalhe", rotulo: "Número de detalhe", tipo: "texto", valor: b.numeroDetalhe },
 { id: "tituloVista", rotulo: "Título na folha", tipo: "texto", valor: b.tituloVista },
 { id: "mostrarTitulo", rotulo: "Mostrar título", tipo: "sim-nao", valor: b.mostrarTitulo !== false } ] },
 { nome: "Extensões", params: [
-{ id: "recorte", rotulo: "Região de recorte", leitura: true, valor: b.recorte ? "ativa" : "a vista inteira" },
+b.recorte ? { id: "recorte", rotulo: "Região de recorte", tipo: "botao", rotuloBotao: "Tirar o recorte (vista inteira)", fn: function () { self.tirarRecorte(id, ix); } }
+: { id: "recorte", rotulo: "Região de recorte", leitura: true, valor: "a vista inteira (puxe a alça do canto)" },
 { id: "tam", rotulo: "Quadro no papel", leitura: true, valor: Math.round(b.w) + " × " + Math.round(b.h) + " mm" } ] },
 { nome: "Vista", params: [
-{ id: "ativar", rotulo: "Editar a vista", tipo: "botao", rotuloBotao: "Ativar vista", fn: function () { self.ativarVista(b.vistaId); } },
+{ id: "ativarF", rotulo: "Enquadrar", tipo: "botao", rotuloBotao: "Ativar vista na folha", fn: function () { self.ativarNaFolha(id, ix); } },
+{ id: "ativar", rotulo: "Editar o modelo", tipo: "botao", rotuloBotao: "Abrir a vista", fn: function () { self.ativarVista(b.vistaId); } },
 { id: "tirar", rotulo: "Folha", tipo: "botao", rotuloBotao: "Retirar da folha", fn: function () { self.removerSelecionado(); } } ] }
 ],
 onMudar: function (pid, valor) {
 var a2 = self.achar(id); if (!a2 || !a2.folha.blocos[ix]) return null;
 var f = clone(a2.folha), bb = f.blocos[ix];
+if (pid === "escala") { self.trocarEscala(id, ix, valor === "vista" ? "vista" : +valor); return self.propsViewport(id, ix); }
 if (pid === "numeroDetalhe") {
 var v = String(valor || "").trim(), rep = f.blocos.some(function (o, k) { return k !== ix && o.tipo === "viewport" && o.numeroDetalhe === v; });
 if (rep) { toast("O número de detalhe " + v + " já existe nesta folha.", "aviso"); return self.propsViewport(id, ix); }
@@ -181610,7 +181978,7 @@ try {
 if (this.ehFolha(id)) {
 var a = this.achar(id); if (!a) return null;
 var vps = {}, self = this;
-a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) vps[b.vistaId] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
 var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
 var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto(), empresa: this.empresaDados(), logo: !!logoConta });
 var nome = PR().nomeArquivo(a.pr, a.folha, this.projeto(), "dxf");
@@ -182881,7 +183249,7 @@ var d = null, dz = null, dv = null;
 try {
 d = b2.def(bl.vistaId);
 var kSig = obraK + "|" + bl.vistaId, conhecida = self._sigVista[kSig];
-dz = d ? FU.desenho(bl.vistaId, refazer && self._temModelo()) : null;
+dz = d ? (FU.desenhoVp ? FU.desenhoVp(bl, refazer && self._temModelo()) : FU.desenho(bl.vistaId, refazer && self._temModelo())) : null;
 if (dz && self._temModelo()) { if (refazer || !conhecida) self._sigVista[kSig] = sig; else if (conhecida !== sig) f._desatualizada = true; }
 var dv = (dz && dz.def) || d;
 if (dz && dz.def && JSON.stringify(dz.def) !== JSON.stringify(d)) f._desatualizada = true;
@@ -183360,7 +183728,7 @@ im.src = src;
 }
 var k = Math.min(4, 4096 / Math.max(R.w, R.h)), W = Math.max(8, Math.round(R.w * k)), H = Math.max(8, Math.round(R.h * k));
 if (fonte.tipo === "svg" && global.PranchaUI && global.BimFolhaUI) {
-var dz = null; try { dz = BimFolhaUI.desenho(fonte.vistaId); } catch (e) { dz = null; }
+var dz = null; try { dz = (fonte.bloco && BimFolhaUI.desenhoVp) ? BimFolhaUI.desenhoVp(fonte.bloco) : BimFolhaUI.desenho(fonte.vistaId); } catch (e) { dz = null; }
 if (!dz) return Promise.resolve(null);
 var bl = fonte.bloco, vb = lig.vb;
 var s = PranchaUI.viewportSvg(dz, bl)

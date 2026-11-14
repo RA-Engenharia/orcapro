@@ -486,7 +486,7 @@
             d = b2.def(bl.vistaId);
             /* a assinatura conhecida é POR OBRA (o id da vista se repete em toda obra: a da obra A não diz nada da B) */
             var kSig = obraK + "|" + bl.vistaId, conhecida = self._sigVista[kSig];
-            dz = d ? FU.desenho(bl.vistaId, refazer && self._temModelo()) : null;
+            dz = d ? (FU.desenhoVp ? FU.desenhoVp(bl, refazer && self._temModelo()) : FU.desenho(bl.vistaId, refazer && self._temModelo())) : null;   /* a cópia com escala própria */
             if (dz && self._temModelo()) { if (refazer || !conhecida) self._sigVista[kSig] = sig; else if (conhecida !== sig) f._desatualizada = true; }
             /* ⚠ DESENHO E MATRIZ DA MESMA VISTA (revisão, 23/10/2026): com a vista mudada depois de desenhada (a altura do
                corte da planta, a profundidade ou o lado do corte), o desenho guardado é o de antes e a matriz saía da vista
@@ -1015,7 +1015,7 @@
       }
       var k = Math.min(4, 4096 / Math.max(R.w, R.h)), W = Math.max(8, Math.round(R.w * k)), H = Math.max(8, Math.round(R.h * k));
       if (fonte.tipo === "svg" && global.PranchaUI && global.BimFolhaUI) {
-        var dz = null; try { dz = BimFolhaUI.desenho(fonte.vistaId); } catch (e) { dz = null; }
+        var dz = null; try { dz = (fonte.bloco && BimFolhaUI.desenhoVp) ? BimFolhaUI.desenhoVp(fonte.bloco) : BimFolhaUI.desenho(fonte.vistaId); } catch (e) { dz = null; }
         if (!dz) return Promise.resolve(null);
         var bl = fonte.bloco, vb = lig.vb;
         var s = PranchaUI.viewportSvg(dz, bl)

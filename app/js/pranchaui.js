@@ -38,6 +38,8 @@
       s.push('<text x="' + n(t.x) + '" y="' + n(t.y) + '" font-size="' + n(t.h / A) + '" text-anchor="' + (t.al === 'C' ? 'middle' : 'start') + '" fill="' + (COR_CAMADA[t.camada] || '#111') + '"' +
         (t.negrito ? ' font-weight="bold"' : '') + (t.param ? ' data-pr-param="' + t.param + '"' : '') + (t.campo ? ' data-cr="' + t.campo + '"' : '') + '>' + esc(t.s) + '</text>');
     });
+    /* EDITOR da folha: zonas de clique dos campos editáveis (transparentes; o PDF não leva) */
+    if (rec.editor) (L.zonas || []).forEach(function (z) { s.push('<rect data-pv-cr="' + z.campo + '" x="' + n(z.x) + '" y="' + n(z.y) + '" width="' + n(z.w) + '" height="' + n(z.h) + '" fill="#1a6cb5" fill-opacity="0" style="cursor:text"><title>' + (/^(obra|proprietario|local|contratante)$/.test(z.campo) ? 'Clique para editar — vale para todas as folhas deste conjunto' : 'Clique para editar — só esta folha') + '</title></rect>'); });
     return '<div data-pr-carimbo="RA" style="' + abs(k.x, k.y, k.w, k.h, 'background:#fff') + '"><svg xmlns="http://www.w3.org/2000/svg" width="' + mm(L.w) + '" height="' + mm(L.h) + '" viewBox="0 0 ' + n(L.w) + ' ' + n(L.h) + '" style="display:block;overflow:visible;white-space:pre;font-family:Arial,Helvetica,sans-serif">' + s.join('') + '</svg></div>';
   }
 
@@ -147,7 +149,8 @@
   function blocoHtml(b, rec, i) {
     var t = '';
     if (b.tipo === 'viewport') {
-      var vp = rec.viewports && rec.viewports[b.vistaId];
+      /* a cópia com escala própria tem o desenho DELA (anotação na escala da cópia) */
+      var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + '@' + b.escala]) || rec.viewports[b.vistaId]);
       t = vp ? viewportSvg(vp, b)
              : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt;text-align:center">vista "' + esc(b.tituloVista) + '" sem desenho (abra o modelo da obra)</div>';
       return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b) + '</div>';
@@ -161,14 +164,15 @@
       t = im ? '<img src="' + esc(im) + '" style="width:100%;height:100%;object-fit:contain">'
              : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt">imagem não está neste computador</div>';
     } else if (b.tipo === 'texto') {
-      t = '<div style="font-size:8pt;line-height:1.3">' + (b.linhas || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('') + '</div>';
+      var fsT = b.alt > 0 ? mm(b.alt / 0.716) : '8pt';   /* `alt` = altura da maiúscula em mm (como o texto do CAD) */
+      t = '<div data-pv-texto="1" style="font-size:' + fsT + ';line-height:1.3;white-space:pre' + (b.negrito ? ';font-weight:bold' : '') + '">' + (b.linhas || []).map(function (l) { return '<div>' + (l ? esc(l) : '&#160;') + '</div>'; }).join('') + '</div>';
     } else if (b.tipo === 'tabela') {
       t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
         (b.linhas || []).map(function (l) { return '<tr>' + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;text-align:center">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
     }
     var tit = b.titulo ? '<div style="position:absolute;left:0;top:' + mm(b.h + 1) + ';font-size:10pt;white-space:nowrap">' + esc(b.titulo) +
       (b.subtitulo ? '<div style="font-size:7pt">' + esc(b.subtitulo) + '</div>' : '') + '</div>' : '';
-    return '<div style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tit + '</div>';
+    return '<div data-pv-bloco="' + i + '" data-pv-tipo="' + b.tipo + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tit + '</div>';
   }
 
   /* P8: o EIXO GUIA (o "Eixo guia"): só na tela do editor, nunca na impressão */

@@ -810,6 +810,9 @@
       /* Desfazer/Refazer da barra de título: não são comandos da fita — iam ao
          roteador e voltavam "Comando desconhecido." (até 07/10/2026) */
       if (id === "desfazer" || id === "refazer") {
+        /* a aba aberta é uma FOLHA: o Ctrl+Z desfaz a edição da folha (js/bimfolhaui.js), não a modelagem */
+        var FU = global.BimFolhaUI;
+        if (FU && FU.abaAtiva && FU.abaAtiva()) { var okF = !!FU[id](); if (!okF) this.status(id === "desfazer" ? "Nada para desfazer na folha." : "Nada para refazer na folha."); return { ok: okF, id: id, folha: true }; }
         var bim = global.BIM, ok = !!(bim && bim[id] && bim[id]());
         this.status(ok ? (id === "desfazer" ? "Desfeito (Ctrl+Y refaz)." : "Refeito.") : (id === "desfazer" ? "Nada para desfazer na modelagem." : "Nada para refazer."));
         return { ok: ok, id: id };

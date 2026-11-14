@@ -899,7 +899,32 @@
 .pv-papel [data-pv-vp] { cursor: move; }
 .pv-papel [data-pv-bloco][data-pv-sel] { outline: 0.6mm solid #1a6cb5; outline-offset: 0.6mm; }
 .rv-no[data-rv-arrasta] { cursor: grab; }
-.pv-dica { position: sticky; top: 0; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: var(--t-micro); text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.pv-papel [data-pv-tipo="texto"] { cursor: move; }
+.pv-papel [data-pv-escala] { cursor: pointer; border-radius: 0.6mm; }
+.pv-papel [data-pv-escala]:hover { background: rgba(26,108,181,.14); color: #1a6cb5; }
+.pv-papel [data-pv-cr]:hover { fill-opacity: .10; }
+.pv-papel [data-pv-alca] { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; box-sizing: border-box; background: #fff; border: 2px solid #1a6cb5; border-radius: 2px; cursor: nwse-resize; z-index: 3; }
+/* VISTA ATIVADA: o resto da folha esmaece; a vista ativa ganha o contorno laranja */
+.pv-papel.pv-ativa [data-pv-bloco]:not([data-pv-on]), .pv-papel.pv-ativa [data-pr-carimbo] { opacity: .32; }
+.pv-papel.pv-ativa [data-pv-on] { outline: 0.5mm dashed #d9822b; outline-offset: 0.5mm; cursor: grab; }
+.pv-papel.pv-ativa [data-pv-on]:active { cursor: grabbing; }
+.pv-barra { position: sticky; top: 0; left: 0; z-index: 4; display: flex; align-items: center; gap: 2px; width: max-content; max-width: 100%; margin: -8px 0 8px; padding: 3px; border: 1px solid var(--rv-linha); border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); box-shadow: 0 1px 4px rgba(0,0,0,.16); font-size: var(--t-micro); }
+.pv-barra button { min-width: 28px; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pv-barra button small { margin-left: 4px; font-size: inherit; }
+.pv-barra button:hover { background: var(--rv-hover); }
+.pv-barra button.on { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.pv-barra button:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 1px; }
+.pv-barra [data-pv-zoom] { min-width: 52px; font-variant-numeric: tabular-nums; }
+.pv-barra-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--rv-linha); }
+.pv-barra-ativa { padding: 0 8px; color: #d9822b; font-weight: 600; }
+.pv-menu { position: absolute; z-index: 6; display: grid; grid-template-columns: repeat(3, auto); gap: 2px; padding: 6px; border: 1px solid var(--rv-linha-forte); border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); box-shadow: 0 4px 14px rgba(0,0,0,.25); font-size: var(--t-micro); }
+.pv-menu-tit { grid-column: 1 / -1; padding: 2px 4px 4px; color: var(--rv-tx-fraco); }
+.pv-menu button { padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; font-variant-numeric: tabular-nums; }
+.pv-menu button:hover { background: var(--rv-hover); }
+.pv-menu button.on { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); font-weight: 600; }
+.pv-menu .pv-menu-vista { grid-column: 1 / -1; text-align: left; border-top: 1px solid var(--rv-linha); border-radius: 0; margin-top: 2px; }
+.pv-edit { position: absolute; z-index: 5; box-sizing: border-box; margin: 0; padding: 0.4mm 0.8mm; border: 0.35mm solid #1a6cb5; border-radius: 0.4mm; background: #fffef4; color: #111; font-family: Arial, Helvetica, sans-serif; line-height: 1.3; resize: none; outline: none; box-shadow: 0 0 0 1mm rgba(26,108,181,.18); }
+.pv-dica { position: sticky; top: 36px; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: var(--t-micro); text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
 
 /* =====================================================================
  * DISCIPLINA DA MODELAGEM (09/10/2026, js/bimdisciplinas.js) — pedido do

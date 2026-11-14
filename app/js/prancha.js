@@ -96,7 +96,8 @@
     if (t === 'viewport') return viewport(b, o);
     if (t === 'vista') { o.vistaId = txt(b.vistaId); o.origemVista = txt(b.origemVista); if (!o.vistaId && !o.origemVista) return null; }
     if (t === 'imagem') { o.chave = txt(b.chave); if (!o.chave) return null; }
-    if (t === 'texto') o.linhas = arr(b.linhas).map(txt);
+    /* texto livre da folha (edição manual, 14/11/2026): `alt` = altura da letra em mm de papel (0 = o 8 pt de antes) */
+    if (t === 'texto') { o.linhas = arr(b.linhas).map(txt); var al0 = num(b.alt, 0); if (al0 > 0) o.alt = Math.max(1, Math.min(20, al0)); if (b.negrito) o.negrito = true; }
     if (t === 'tabela') { o.cabecalho = arr(b.cabecalho).map(txt); o.linhas = arr(b.linhas).map(function (l) { return arr(l).map(txt); }); }
     return o;
   }
@@ -232,6 +233,8 @@
     o.numeroDetalhe = txt(b.numeroDetalhe);
     o.tituloVista = txt(b.tituloVista);
     o.mostrarTitulo = b.mostrarTitulo !== false;
+    /* escala PRÓPRIA desta cópia (clicou no 1:50 do título e trocou): a folha não segue mais a escala da vista */
+    if (b.escalaPropria) o.escalaPropria = true;
     o.titulo = ''; o.subtitulo = '';   /* o título do viewport é o "título de vista", não o rótulo dos outros blocos */
     return o;
   }
@@ -413,7 +416,7 @@
   function carimboRA(pr, folha, projeto, empresa, geo, opts) {
     opts = opts || {};
     var g = geo || geometriaDe(pr), car = g.carimbo, k = car.k || car.w / CARIMBO_RA.w, H0 = CARIMBO_RA.h, W0 = CARIMBO_RA.w;
-    var d = dadosCarimbo(pr, folha, projeto, empresa), out = { x: car.x, y: car.y, w: car.w, h: car.h, k: k, retangulos: [], linhas: [], textos: [], logos: [], dados: d };
+    var d = dadosCarimbo(pr, folha, projeto, empresa), out = { x: car.x, y: car.y, w: car.w, h: car.h, k: k, retangulos: [], linhas: [], textos: [], logos: [], zonas: [], dados: d };
     function X(x) { return r2(x * k); }
     function Yt(y) { return r2((H0 - y) * k); }
     function ln(x1, y1, x2, y2, cam) { out.linhas.push({ x1: X(x1), y1: Yt(y1), x2: X(x2), y2: Yt(y2), camada: cam || 'RA-CARIMBO-LINHA' }); }
@@ -468,6 +471,10 @@
     [100.5, 105.25, 110].forEach(function (y) { ln(0, y, W0, y); });
     var COLS = [[0, 'REV'], [10, 'DESCRIÇÃO'], [122, 'DATA'], [141, 'EXEC'], [154, 'VER'], [167, 'APROV']], lim = COLS.map(function (q) { return q[0]; }).concat([W0]);
     COLS.slice(1).forEach(function (q) { ln(q[0], 96, q[0], 115); });
+    /* zonas de clique (só o editor da folha usa; PDF e DXF não desenham): o campo inteiro, mesmo vazio */
+    function zona(campo, x0, y0, x1, y1) { out.zonas.push({ campo: campo, x: X(x0), y: Yt(y1), w: X(x1 - x0), h: X(y1 - y0) }); }
+    zona('data', 0, 0, 28, 11.5); zona('codigo', 56, 0, 140, 11.5); zona('conteudo', 0, 14, W0, 23.5);
+    zona('local', 0, 26, W0, 30.8); zona('proprietario', 0, 33, W0, 37.8); zona('obra', 0, 40, W0, 44.8); zona('contratante', 90, 47, W0, 52.4);
     COLS.forEach(function (q, j) { tx(q[1], (q[0] + lim[j + 1]) / 2, 111.6, 1.8, { al: 'C', camada: 'RA-CARIMBO-ROTULO', negrito: true, campo: 'rotulo' }); });
     [106.6, 101.85, 97.1].forEach(function (y, j) {
       var r = d.revisoes[j]; if (!r) return;
@@ -496,6 +503,42 @@
     }); }); });
     return achou;
   }
+  /* ---------------------------------------- edição manual da folha (14/11/2026)
+   * Puras: recebem o bloco e devolvem um bloco NOVO. `caixa` = a caixa do desenho da vista (m). */
+  var ESCALAS_VISTA = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000];
+  function vbDe(b, caixa) { return b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : { x: num(caixa && caixa.x, 0), y: num(caixa && caixa.y, 0), w: num(caixa && caixa.w, 1), h: num(caixa && caixa.h, 1) }; }
+  /* troca a escala de UMA cópia: o quadro muda de tamanho em volta do mesmo centro; o recorte (em metros) fica */
+  function escalaViewport(b, caixa, escala) {
+    var e = Math.round(num(escala, 0)); if (!(e >= 1 && e <= 5000)) return null;
+    var n = JSON.parse(JSON.stringify(b)), t = tamanhoViewport(caixa || { w: 1, h: 1 }, e, b.recorte), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    n.escala = e; n.escalaPropria = true; n.w = t.w; n.h = t.h; n.x = Math.round((cx - t.w / 2) * 10) / 10; n.y = Math.round((cy - t.h / 2) * 10) / 10;
+    return n;
+  }
+  /* "vista ativada": arrastar o desenho DENTRO do quadro (dx, dy em mm de papel) desloca o recorte; o quadro fica parado */
+  function deslocarRecorte(b, caixa, dxMm, dyMm) {
+    var n = JSON.parse(JSON.stringify(b)), v = vbDe(b, caixa), k = (+b.escala || 50) / 1000;
+    var mx = -num(dxMm, 0) * k, my = -num(dyMm, 0) * k;
+    n.recorte = { x0: v.x + mx, y0: v.y + my, x1: v.x + v.w + mx, y1: v.y + v.h + my };
+    return n;
+  }
+  /* puxar o canto do quadro: o quadro (mm) cresce/encolhe e o recorte acompanha na escala da cópia */
+  function redimensionarViewport(b, caixa, wMm, hMm) {
+    var n = JSON.parse(JSON.stringify(b)), v = vbDe(b, caixa), k = (+b.escala || 50) / 1000;
+    var w = Math.max(10, num(wMm, b.w)), h = Math.max(10, num(hMm, b.h));
+    n.w = Math.round(w * 10) / 10; n.h = Math.round(h * 10) / 10;
+    n.recorte = { x0: v.x, y0: v.y, x1: v.x + n.w * k, y1: v.y + n.h * k };
+    return n;
+  }
+  /* texto livre: o quadro do texto pelo conteúdo (a letra em mm; Arial ≈ 0,62 da altura por caractere) */
+  function blocoTexto(linhas, x, y, alt) {
+    var L = arr(linhas).map(txt), a = Math.max(1, Math.min(20, num(alt, 2.5))), maior = 1;
+    L.forEach(function (l) { maior = Math.max(maior, l.length); });
+    return bloco({ tipo: 'texto', x: x, y: y, w: Math.max(8, maior * a * 0.62 + 2), h: Math.max(a * 1.6, L.length * a * 1.35 + 1), linhas: L, alt: a });
+  }
+  /* o campo do carimbo RA que se edita clicando nele: onde mora o valor */
+  var CAMPOS_CARIMBO_FOLHA = { data: 'dataEmissao', codigo: 'numero', conteudo: 'conteudo' };
+  var CAMPOS_CARIMBO_CONJ = { obra: 1, proprietario: 1, local: 1, contratante: 1 };
+
   function ajustarEixo(v, espaco, origem) { if (!(espaco > 0)) return v; return origem + Math.round((v - origem) / espaco) * espaco; }
   /* linhas do eixo guia (só na tela, não imprime) dentro da área de desenho */
   function eixoGuiaLinhas(folha, geo) {
@@ -517,7 +560,9 @@
     pr = normalizar(pr);
     var g = geometriaDe(pr), a = g.area;
     if (!o || !o.vistaId) return { ok: false, erro: 'Vista sem identificação.' };
-    var ja = vistaEmFolha(pranchas || [pr], o.vistaId);
+    /* `repetir` (a folha montada à mão, 14/11/2026): a MESMA vista entra mais de uma vez — cada cópia com escala e
+       recorte próprios. O Gerar pranchas continua com uma vista por folha (não passa `repetir`) */
+    var ja = o.repetir ? null : vistaEmFolha(pranchas || [pr], o.vistaId);
     if (ja) return { ok: false, erro: 'A vista "' + (o.nome || o.vistaId) + '" já está na folha ' + numeroFolha(ja.prancha, ja.folha) + ' (uma vista entra em uma folha só). Duplique a vista para usar em outra folha.' };
     var esc = Math.max(1, Math.round(num(o.escala, 50))), t = tamanhoViewport(o.caixa || { w: 1, h: 1 }, esc, null);
     var cx = isFinite(+o.cx) ? +o.cx : a.x + a.w / 2, cy = isFinite(+o.cy) ? +o.cy : a.y + (a.h - TITULO_VISTA_H) / 2;
@@ -743,6 +788,8 @@
     revisaoAtual: revisaoAtual, numeroFolha: numeroFolha, escalaFolha: escalaFolha, nomeArquivo: nomeArquivo, nomeArquivoLote: nomeArquivoLote,
     parametrosFolha: parametrosFolha, mapaParametros: mapaParametros, proximoNumeroDetalhe: proximoNumeroDetalhe, vistaEmFolha: vistaEmFolha,
     ajustarEixo: ajustarEixo, eixoGuiaLinhas: eixoGuiaLinhas, tamanhoViewport: tamanhoViewport, colocarViewport: colocarViewport,
+    ESCALAS_VISTA: ESCALAS_VISTA, escalaViewport: escalaViewport, deslocarRecorte: deslocarRecorte, redimensionarViewport: redimensionarViewport, blocoTexto: blocoTexto,
+    CAMPOS_CARIMBO_FOLHA: CAMPOS_CARIMBO_FOLHA, CAMPOS_CARIMBO_CONJ: CAMPOS_CARIMBO_CONJ,
     listaFolhas: listaFolhas, listaVistas: listaVistas, tabelaRevisoes: tabelaRevisoes, blocoDeLista: blocoDeLista,
     /* modelo de carimbo RA e o Gerar pranchas (09/10/2026) */
     CARIMBO_RA: CARIMBO_RA, MODELOS_CARIMBO: MODELOS_CARIMBO, CAMADAS_CARIMBO_RA: CAMADAS_CARIMBO_RA, ALT_MAIUSCULA: ALT_MAIUSCULA, ESCALAS_FOLHA: ESCALAS_FOLHA,

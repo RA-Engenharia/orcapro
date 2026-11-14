@@ -691,7 +691,7 @@
     var cTit = doc.camada("FOLHA-TITULO-VISTA", pn.marca), cTitT = doc.camada("FOLHA-TITULO-VISTA-TEXTO", pn.cota);
     (folha.blocos || []).forEach(function (b) {
       if (b.tipo !== "viewport") return;
-      var v = vps && vps[b.vistaId];
+      var v = vps && ((b.escalaPropria && vps[b.vistaId + "@" + b.escala]) || vps[b.vistaId]);   /* a cópia com escala própria */
       if (!v || !v.dados) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem desenho"); return; }
       var esc = +b.escala || 50, f = 1000 / esc, vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : v.vb;
       /* o desenho cabe no quadro centrado (preserveAspectRatio meet, como na tela) */

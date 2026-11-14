@@ -884,7 +884,7 @@
          traço; a folha que mostra esta vista desenha de novo (js/bimfolhaui.js guarda o desenho por vista) */
       if (pid === "p6:nd") {
         if (bloqueado("nivelDetalhe")) return true; if (NIVEIS_DETALHE[valor]) v.nivelDetalhe = valor; this.gravar(); this._redesenhar(id, true);
-        try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) delete global.BimFolhaUI._desenhos[id]; } catch (eF) {}
+        try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DF = global.BimFolhaUI._desenhos; Object.keys(DF).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0) delete DF[k]; }); } } catch (eF) {}
         try { if (global.BimInstUI && global.BimInstUI._pintarBotaoNivel) global.BimInstUI._pintarBotaoNivel(); } catch (eB) {}
         return true;
       }

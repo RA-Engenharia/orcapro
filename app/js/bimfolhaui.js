@@ -41,7 +41,7 @@
   var TIPO_ARRASTE = "text/x-orcapro-vista";
 
   var BimFolhaUI = {
-    _G: null, _desenhos: {}, _sel: null, _telas: {}, _ultimoArquivo: null,
+    _G: null, _desenhos: {}, _sel: null, _telas: {}, _ultimoArquivo: null, _pilha: [], _refazerP: [], _ferr: null, _menu: null, _editor: null,
 
     ativo: function () { try { return !!(global.BimPrevia && global.BimPrevia.modelador() && PR() && UI2() && PR().colocarViewport); } catch (e) { return false; } },
     G: function () { return this._G || global.Gestao || null; },
@@ -50,11 +50,41 @@
 
     /* ---------------------------------------------------------- dados */
     registros: function () { var g = this.G(); try { return (g && g._prRegs) ? g._prRegs() : []; } catch (e) { return []; } },
-    salvarRegistro: function (reg) {
+    /* `semPilha`: gravação que não é do usuário (o quadro acompanhando a vista) não entra no Ctrl+Z */
+    salvarRegistro: function (reg, semPilha) {
       if (!global.Store) return null;
+      /* DESFAZER da folha (revisão 14/11/2026, dado de cliente): o passo guarda SÓ as folhas mexidas (e o carimbo,
+         se mudou) e a OBRA — nunca o registro inteiro: voltar o registro inteiro apagava o que outro painel, o Gerar
+         pranchas ou a nuvem tinham mudado nas outras folhas, e recriava conjunto já apagado */
+      this._conferirObra();
+      if (!semPilha && reg && reg.id) {
+        var antes = this.registros().filter(function (x) { return String(x.id) === String(reg.id); })[0];
+        var passo = antes ? this._passo(antes, reg) : null;
+        if (passo) { this._pilha.push(passo); if (this._pilha.length > 60) this._pilha.shift(); this._refazerP = []; }
+      }
       var r = global.Store.salvar(this.empresa(), "bim_pranchas", reg);
       if (!r) toast("Não consegui salvar a folha (armazenamento cheio?).", "erro");
+      else this._marcar(r);
       return r;
+    },
+    /* a pilha é DA OBRA: trocou de obra, zera (Ctrl+Z na obra B não pode gravar a folha da obra A) */
+    _conferirObra: function () { var k = this.obraKey(); if (this._pilhaObra !== k) { this._pilha = []; this._refazerP = []; this._marcas = {}; this._pilhaObra = k; } return k; },
+    _jsonF: function (f) { return JSON.stringify(f == null ? null : f); },
+    /* o que a FOLHA gravou por último (folha a folha e o carimbo): diferente na hora do Ctrl+Z = mudaram por fora */
+    _marcar: function (r) {
+      var self = this; this._marcas = this._marcas || {};
+      arr(r.folhas).forEach(function (f) { self._marcas[r.id + "|" + f.id] = self._jsonF(f); });
+      this._marcas[r.id + "|carimbo"] = this._jsonF(r.carimbo || null);
+    },
+    _passo: function (antes, depois) {
+      var self = this, folhas = {}, n = 0, ant = {};
+      arr(antes.folhas).forEach(function (f) { ant[f.id] = f; });
+      arr(depois.folhas).forEach(function (f) { var a = ant[f.id]; if (a && self._jsonF(a) !== self._jsonF(f)) { folhas[f.id] = clone(a); n++; } });
+      var car = this._jsonF(antes.carimbo || null) !== this._jsonF(depois.carimbo || null);
+      if (!n && !car) return null;
+      var p = { obra: this.obraKey(), regId: String(antes.id), folhas: folhas };
+      if (car) p.carimbo = clone(antes.carimbo || null);
+      return p;
     },
     _chaveProjeto: function () { return "orcapro:bim:projeto:" + this.obraKey(); },
     projeto: function () {
@@ -76,11 +106,11 @@
       return { reg: reg, pr: pr, folha: pr.folhas[ix], ix: ix, geo: PR().geometriaDe(pr) };
     },
     /* grava a folha `f` (normalizada) de volta no registro */
-    gravarFolha: function (a, f) {
+    gravarFolha: function (a, f, semPilha) {
       var reg = a.reg, pr = PR().normalizar(reg);
       pr.folhas[a.ix] = f;
       pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
-      return this.salvarRegistro(pr);
+      return this.salvarRegistro(pr, semPilha);
     },
     nomeFolha: function (pr, f) { return PR().numeroFolha(pr, f) + " - " + (f.conteudo || "Sem nome"); },
 
@@ -148,20 +178,22 @@
     desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
 
     /* o desenho de uma vista 2D, pronto para o viewport (cache da sessão; "Atualizar" refaz) */
-    desenho: function (vistaId, refazer) {
+    desenho: function (vistaId, refazer, escala) {
       /* ⚠ O DESENHO É DA OBRA (revisão da Prancha Viva, 23/10/2026): o id da vista ("d2p-pav0", "d2c-…") se repete em toda
          obra, e o cache era só por id — abrir a obra A, trocar para a B e a folha da B mostrava a planta da A; o pacote do
          link da Prancha Viva levava essa imagem ao celular do cliente da obra B (tools/test-pranchaviva-rev.js [a]) */
       var obraK = this.obraKey();
       if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
-      if (!refazer && this._desenhos[vistaId]) return this._desenhos[vistaId];
+      var chave = escala ? vistaId + "@" + escala : vistaId;
+      if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
       var b2 = B2(), D = D2(); if (!b2 || !D) return null;
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
       var d = b2.def(vistaId); if (!d) return null;
       var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer) ? c.dados : b2._extrair(d);
       if (!bruto || !bruto.ok) return null;
       var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
-      var est = clone(b2.estilo(vistaId)); est.titulo = false;   /* o título é o do viewport */
+      var est = clone(b2.estilo(vistaId)); est.titulo = false;
+      if (escala) est.escala = Math.max(1, Math.round(+escala));   /* a cópia com escala própria: anotação do tamanho certo nela */   /* o título é o do viewport */
       var exF = { titulo: "" };
       /* NÍVEL DE DETALHE / P6: a folha sai com as PENAS e as cores das linhas da vista (a tubulação em linha única na cor
          do sistema, como na tela) — sem isto a planta de instalações saía toda na mesma pena preta */
@@ -174,29 +206,44 @@
       var res = D.svg(an, est, exF);
       /* `def`: a vista COMO ESTAVA ao desenhar (a Prancha Viva tira a matriz dela: desenho e matriz sempre da mesma vista) */
       var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala, def: (function () { try { return clone(d); } catch (eDf) { return null; } })() };
-      this._desenhos[vistaId] = o;
+      this._desenhos[chave] = o;
       return o;
     },
-    /* o quadro acompanha a escala e o tamanho da vista (o viewport É a vista) */
+    /* a chave do desenho de UMA cópia: com escala própria a anotação (texto, cota, marca) sai do tamanho certo
+       naquela escala — o desenho é refeito nela, não esticado */
+    chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
+    desenhoVp: function (b, refazer) { return b.escalaPropria ? this.desenho(b.vistaId, refazer, b.escala) : this.desenho(b.vistaId, refazer); },
+    /* o quadro acompanha a escala e o tamanho da vista (o viewport É a vista); a cópia com escala própria
+       segue a escala DELA */
     _sincronizar: function (a) {
       var self = this, mudou = false, f = clone(a.folha);
       f.blocos.forEach(function (b) {
         if (b.tipo !== "viewport") return;
-        var dz = self.desenho(b.vistaId); if (!dz) return;
-        var t = PR().tamanhoViewport({ w: dz.vb.w, h: dz.vb.h }, dz.escala, b.recorte);
-        if (b.escala !== dz.escala || Math.abs(b.w - t.w) > 0.05 || Math.abs(b.h - t.h) > 0.05) { b.escala = dz.escala; b.w = t.w; b.h = t.h; mudou = true; }
+        var dz = self.desenhoVp(b); if (!dz) return;
+        var e = b.escalaPropria ? b.escala : dz.escala;
+        var t = PR().tamanhoViewport({ w: dz.vb.w, h: dz.vb.h }, e, b.recorte);
+        if (b.escala !== e || Math.abs(b.w - t.w) > 0.05 || Math.abs(b.h - t.h) > 0.05) { b.escala = e; b.w = t.w; b.h = t.h; mudou = true; }
       });
-      if (mudou) { this.gravarFolha(a, f); return this.achar(this.idFolha(a.reg.id, a.folha.id)); }
+      if (mudou) { this.gravarFolha(a, f, true); return this.achar(this.idFolha(a.reg.id, a.folha.id)); }
       return a;
     },
     recursos: function (a, editor) {
       var self = this, rec = { imagens: {}, vistas: {}, viewports: {}, projeto: this.projeto(), editor: !!editor };
-      a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) rec.viewports[b.vistaId] = dz; } });
+      a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) rec.viewports[self.chaveVp(b)] = dz; } });
       try { rec.logo = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (e) {}
       rec.empresa = this.empresaDados();   /* o carimbo lê nome, CNPJ, RT e registro do cadastro da conta */
       /* as folhas PRONTAS geradas nesta sessão (ex.: "Gerar pranchas" do hidrossanitário): a imagem inteira da folha */
       var ext = this._imagensExternas || {}; Object.keys(ext).forEach(function (k) { rec.imagens[k] = ext[k]; });
       return rec;
+    },
+    /* a barra da folha: texto, zoom e o aviso da vista ativada */
+    _barra: function (id) {
+      var t = this._telas[id], at = t && t.ativa, pct = t && t.escalaTela ? Math.round(t.escalaTela * 100) : 100;
+      var ferr = this._ferr && this._ferr.id === id ? this._ferr.qual : "";
+      return '<div class="pv-barra" data-pv-barra="1">' +
+        (at ? '<span class="pv-barra-ativa">Vista ativada — arraste para enquadrar · roda amplia · <b>Esc</b> ou 2 cliques fora para sair</span><button type="button" data-pv-acao="sair">Sair da vista</button>'
+            : '<button type="button" data-pv-acao="texto"' + (ferr === "texto" ? ' class="on"' : "") + ' title="Texto na folha: clique no papel onde ele começa">A&#8202;<small>Texto</small></button>') +
+        '<span class="pv-barra-sep"></span><button type="button" data-pv-acao="menos" title="Afastar (roda do mouse)">−</button><button type="button" data-pv-acao="ajustar" title="Folha inteira na tela" data-pv-zoom="1">' + pct + '%</button><button type="button" data-pv-acao="mais" title="Aproximar (roda do mouse)">+</button></div>';
     },
     pintar: function (id) {
       var t = this._telas[id], a = this.achar(id); if (!t || !t.el) return false;
@@ -204,21 +251,51 @@
       a = this._sincronizar(a);
       var P = a.geo.papel, html = UI2().folha(a.pr, a.folha, this.recursos(a, true), a.geo);
       var dica = a.folha.blocos.length || a.folha.imagemInteira ? "" : '<div class="pv-dica">Arraste uma planta ou um corte do Navegador para a folha (ou Vista › Posicionar vista).</div>';
-      t.el.innerHTML = dica + '<div class="pv-papel-wrap"><div class="pv-papel" style="width:' + P.w + 'mm;height:' + P.h + 'mm">' + html + "</div></div>";
+      var sl = t.el.scrollLeft, sc = t.el.scrollTop;
+      t.el.innerHTML = this._barra(id) + dica + '<div class="pv-papel-wrap"><div class="pv-papel' + (t.ativa ? " pv-ativa" : "") + '" style="width:' + P.w + 'mm;height:' + P.h + 'mm">' + html + "</div></div>";
       t.papel = t.el.querySelector(".pv-papel"); t.P = P;
+      if (t.ativa) { var ba = t.el.querySelector('[data-pv-bloco="' + t.ativa.ix + '"]'); if (ba) ba.setAttribute("data-pv-on", "1"); else t.ativa = null; }
       var sel = this._sel && this._sel.id === id ? this._sel.ix : -1;
-      if (sel >= 0) { var bs = t.el.querySelector('[data-pv-bloco="' + sel + '"]'); if (bs) bs.setAttribute("data-pv-sel", "1"); }
+      if (sel >= 0) this._marcarSel(id, sel);
       this._ajustar(id);
+      t.el.scrollLeft = sl; t.el.scrollTop = sc;
       return true;
+    },
+    /* seleção: contorno + (viewport fora da vista ativada) a alça do canto para recortar */
+    _marcarSel: function (id, ix) {
+      var t = this._telas[id]; if (!t || !t.el) return;
+      [].forEach.call(t.el.querySelectorAll("[data-pv-alca]"), function (e) { e.parentNode.removeChild(e); });
+      [].forEach.call(t.el.querySelectorAll("[data-pv-bloco]"), function (e) { if (+e.getAttribute("data-pv-bloco") === ix) e.setAttribute("data-pv-sel", "1"); else e.removeAttribute("data-pv-sel"); });
+      var b = t.el.querySelector('[data-pv-bloco="' + ix + '"][data-pv-vp]');
+      if (b && !t.ativa) { var h = document.createElement("div"), lado = 12 / (t.escalaTela || 1); h.setAttribute("data-pv-alca", "1");
+        /* a alça tem 12 px NA TELA em qualquer zoom (em mm ela sumia com a folha inteira na tela) */
+        h.style.width = h.style.height = lado + "px"; h.style.right = h.style.bottom = (-lado / 2) + "px"; h.style.borderWidth = (2 / (t.escalaTela || 1)) + "px"; h.title = "Puxe para recortar a vista (o quadro muda, a escala fica)"; b.appendChild(h); }
     },
     _ajustar: function (id) {
       var t = this._telas[id]; if (!t || !t.papel || !t.P) return;
       var W = t.el.clientWidth || 800, H = t.el.clientHeight || 560, pw = t.P.w * MM_PX, ph = t.P.h * MM_PX;
-      var f = t.zoom || Math.max(0.05, Math.min((W - 32) / pw, (H - 32) / ph));
+      var f = t.zoom || Math.max(0.05, Math.min((W - 32) / pw, (H - 70) / ph));
       t.escalaTela = f;
       t.papel.style.transform = "scale(" + f + ")";
-      var w = t.el.querySelector(".pv-papel-wrap"); if (w) { w.style.width = Math.ceil(pw * f) + "px"; w.style.height = Math.ceil(ph * f) + "px"; }
+      /* ampliada, a folha ganha meia tela de folga em volta: o ponto embaixo do mouse fica parado no zoom e o pan
+         chega à borda (centrada com "margin:auto" ela pulava para o lado a cada passo da roda) */
+      var w = t.el.querySelector(".pv-papel-wrap"); if (w) { w.style.width = Math.ceil(pw * f) + "px"; w.style.height = Math.ceil(ph * f) + "px"; w.style.margin = t.zoom ? Math.round(H * 0.5) + "px " + Math.round(W * 0.5) + "px" : "0 auto"; }
+      var z = t.el.querySelector("[data-pv-zoom]"); if (z) z.textContent = Math.round(f * 100) + "%";
+      var al = t.el.querySelector("[data-pv-alca]"); if (al) { var lado = 12 / f; al.style.width = al.style.height = lado + "px"; al.style.right = al.style.bottom = (-lado / 2) + "px"; al.style.borderWidth = (2 / f) + "px"; }
     },
+    /* ZOOM da folha (roda do mouse / − + ): o ponto do papel embaixo do cursor fica parado */
+    zoomTela: function (id, fator, cx, cy) {
+      var t = this._telas[id]; if (!t || !t.papel || !t.P) return null;
+      var c = t.el, rc = c.getBoundingClientRect();
+      if (!isFinite(cx)) { cx = rc.left + rc.width / 2; cy = rc.top + rc.height / 2; }
+      var r = t.papel.getBoundingClientRect(), ux = (cx - r.left) / (r.width || 1), uy = (cy - r.top) / (r.height || 1);
+      var f0 = t.escalaTela || 1, f1 = Math.max(0.05, Math.min(12, f0 * fator));
+      t.zoom = f1; this._ajustar(id);
+      var r2 = t.papel.getBoundingClientRect();
+      c.scrollLeft += (r2.left + ux * r2.width) - cx; c.scrollTop += (r2.top + uy * r2.height) - cy;
+      return f1;
+    },
+    zoomAjustar: function (id) { var t = this._telas[id]; if (!t) return; t.zoom = null; this._ajustar(id); t.el.scrollLeft = 0; t.el.scrollTop = 0; },
     /* ponto da tela → mm de papel */
     _mm: function (id, ev) {
       var t = this._telas[id]; if (!t || !t.papel || !t.P) return null;
@@ -226,7 +303,7 @@
       return { x: (ev.clientX - r.left) / r.width * t.P.w, y: (ev.clientY - r.top) / r.height * t.P.h };
     },
     _ligar: function (c, id) {
-      var self = this, arr0 = null;
+      var self = this, arr0 = null, pan = null;
       c.addEventListener("dragover", function (ev) {
         var tipos = ev.dataTransfer ? [].slice.call(ev.dataTransfer.types || []) : [];
         if (tipos.indexOf(TIPO_ARRASTE) >= 0 || tipos.indexOf("text/plain") >= 0) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = "copy"; } catch (e) {} }
@@ -237,32 +314,97 @@
         var p = self._mm(id, ev);
         if (v && p) self.posicionar(id, v, p.x, p.y);
       });
+      /* ⚠ `passive:false`: sem ele o preventDefault não vale e a roda rolava a página em vez de ampliar */
+      c.addEventListener("wheel", function (ev) {
+        if (self._editor) return;
+        ev.preventDefault();
+        self.zoomTela(id, ev.deltaY < 0 ? 1.2 : 1 / 1.2, ev.clientX, ev.clientY);
+      }, { passive: false });
+      c.addEventListener("click", function (ev) {
+        var bt = ev.target && ev.target.closest ? ev.target.closest("[data-pv-acao]") : null; if (!bt) return;
+        var q = bt.getAttribute("data-pv-acao");
+        if (q === "texto") { self._ferr = self._ferr && self._ferr.qual === "texto" ? null : { id: id, qual: "texto" }; self._pintarBarra(id); if (self._ferr) status("Texto: clique no papel onde o texto começa (Esc cancela)."); }
+        else if (q === "mais") self.zoomTela(id, 1.25);
+        else if (q === "menos") self.zoomTela(id, 1 / 1.25);
+        else if (q === "ajustar") self.zoomAjustar(id);
+        else if (q === "sair") self.desativarNaFolha(id);
+      });
       c.addEventListener("pointerdown", function (ev) {
+        /* editor de texto aberto: o clique fora só GRAVA o texto (não começa arraste com a folha prestes a repintar) */
+        if (self._editor && !(ev.target && ev.target.closest && ev.target.closest(".pv-edit"))) { ev.preventDefault(); self._fecharEditor(); return; }
+        if (ev.target && ev.target.closest && (ev.target.closest(".pv-barra") || ev.target.closest(".pv-menu") || ev.target.closest(".pv-edit"))) return;
+        self._fecharMenu();
+        try { c.focus({ preventScroll: true }); } catch (eF) {}
+        var t = self._telas[id], p = self._mm(id, ev);
+        function comecarPan() { pan = { x: ev.clientX, y: ev.clientY, sl: c.scrollLeft, st: c.scrollTop }; try { c.setPointerCapture(ev.pointerId); } catch (e) {} }
+        /* botão do meio = arrastar a folha (pan), em qualquer lugar */
+        if (ev.button === 1) { ev.preventDefault(); comecarPan(); return; }
+        if (ev.button !== 0) return;
+        if (self._ferr && self._ferr.id === id && self._ferr.qual === "texto" && p) { ev.preventDefault(); self._ferr = null; self.novoTexto(id, p.x, p.y); return; }
         var b = ev.target && ev.target.closest ? ev.target.closest("[data-pv-bloco]") : null;
-        if (!b) { self.selecionar(id, -1); return; }
-        var ix = +b.getAttribute("data-pv-bloco"), p = self._mm(id, ev);
+        var ix = b ? +b.getAttribute("data-pv-bloco") : -1, a = self.achar(id), bl = a && ix >= 0 ? a.folha.blocos[ix] : null;
+        /* VISTA ATIVADA: arrastar dentro dela desloca o recorte; fora, arrasta a folha */
+        if (t && t.ativa) {
+          if (bl && ix === t.ativa.ix && p) { arr0 = { modo: "recorte", ix: ix, x0: p.x, y0: p.y, dx: 0, dy: 0, bl: bl, svg: b.querySelector("svg.pv-vp") }; try { c.setPointerCapture(ev.pointerId); } catch (e1) {} }
+          else comecarPan();
+          return;
+        }
+        if (ev.target.closest && ev.target.closest("[data-pv-alca]") && bl && p) {
+          arr0 = { modo: "tam", ix: ix, x0: p.x, y0: p.y, dx: 0, dy: 0, bl: bl, el: b }; try { c.setPointerCapture(ev.pointerId); } catch (e2) {} ev.preventDefault(); return;
+        }
+        var cr = ev.target.closest ? ev.target.closest("[data-pv-cr]") : null;
+        if (cr) { ev.preventDefault(); self.editarCampoCarimbo(id, cr.getAttribute("data-pv-cr")); return; }
+        if (!b) { self.selecionar(id, -1); comecarPan(); return; }
         self.selecionar(id, ix);
-        var a = self.achar(id), bl = a && a.folha.blocos[ix];
-        if (bl && bl.tipo === "viewport" && p) { arr0 = { ix: ix, x0: p.x, y0: p.y, bx: bl.x, by: bl.y, el: b, dx: 0, dy: 0 }; try { c.setPointerCapture(ev.pointerId); } catch (e2) {} }
+        if (ev.target.closest("[data-pv-escala]") && bl && bl.tipo === "viewport") { ev.preventDefault(); self.menuEscala(id, ix, ev.clientX, ev.clientY); return; }
+        if (bl && p) { arr0 = { modo: "mover", ix: ix, x0: p.x, y0: p.y, bx: bl.x, by: bl.y, el: b, dx: 0, dy: 0 }; try { c.setPointerCapture(ev.pointerId); } catch (e3) {} }
       });
       c.addEventListener("pointermove", function (ev) {
+        if (pan) { c.scrollLeft = pan.sl - (ev.clientX - pan.x); c.scrollTop = pan.st - (ev.clientY - pan.y); return; }
         if (!arr0) return; var p = self._mm(id, ev); if (!p) return;
         arr0.dx = p.x - arr0.x0; arr0.dy = p.y - arr0.y0;
-        arr0.el.style.left = (arr0.bx + arr0.dx) + "mm"; arr0.el.style.top = (arr0.by + arr0.dy) + "mm";
+        if (arr0.modo === "mover") { arr0.el.style.left = (arr0.bx + arr0.dx) + "mm"; arr0.el.style.top = (arr0.by + arr0.dy) + "mm"; }
+        else if (arr0.modo === "tam") { arr0.el.style.width = Math.max(10, arr0.bl.w + arr0.dx) + "mm"; arr0.el.style.height = Math.max(10, arr0.bl.h + arr0.dy) + "mm"; }
+        else if (arr0.modo === "recorte" && arr0.svg) {
+          var dz = self.desenhoVp(arr0.bl), nb = dz ? PR().deslocarRecorte(arr0.bl, dz.vb, arr0.dx, arr0.dy) : null;
+          if (nb) { var r = nb.recorte; arr0.svg.setAttribute("viewBox", r.x0 + " " + r.y0 + " " + (r.x1 - r.x0) + " " + (r.y1 - r.y0)); }
+        }
       });
       c.addEventListener("pointerup", function () {
+        if (pan) { pan = null; return; }
         if (!arr0) return; var m = arr0; arr0 = null;
         if (Math.abs(m.dx) < 0.5 && Math.abs(m.dy) < 0.5) return;
-        self.moverViewport(id, m.ix, m.bx + m.dx, m.by + m.dy);
+        if (m.modo === "mover") self.moverViewport(id, m.ix, m.bx + m.dx, m.by + m.dy);
+        else if (m.modo === "tam") self.recortar(id, m.ix, m.bl.w + m.dx, m.bl.h + m.dy);
+        else if (m.modo === "recorte") self.enquadrar(id, m.ix, m.dx, m.dy);
       });
-      /* dois cliques no viewport = ATIVAR a vista (abre a planta/corte para editar) */
+      /* dois cliques: no viewport = ATIVAR a vista na folha; no texto = editar; fora da vista ativada = sair */
       c.addEventListener("dblclick", function (ev) {
-        var b = ev.target && ev.target.closest ? ev.target.closest("[data-pv-vp]") : null;
-        if (b) self.ativarVista(b.getAttribute("data-pv-vp"));
+        var t = self._telas[id];
+        /* ⚠ o alvo pelo PONTO, não `ev.target`: o 1º clique pegou o ponteiro (setPointerCapture do arraste) e o
+           navegador manda o dblclick para a tela inteira — "dois cliques na vista" não ativava nada */
+        var alvo = null; try { alvo = document.elementFromPoint(ev.clientX, ev.clientY); } catch (eP) { alvo = null; }
+        alvo = alvo || ev.target;
+        var b = alvo && alvo.closest ? alvo.closest("[data-pv-bloco]") : null, ix = b ? +b.getAttribute("data-pv-bloco") : -1;
+        if (t && t.ativa) { if (ix !== t.ativa.ix) self.desativarNaFolha(id); return; }
+        if (!b) return;
+        if (b.hasAttribute("data-pv-vp")) self.ativarNaFolha(id, ix);
+        else if (b.getAttribute("data-pv-tipo") === "texto") self.editarTexto(id, ix);
       });
-      c.addEventListener("keydown", function (ev) { if ((ev.key === "Delete" || ev.key === "Backspace") && self._sel && self._sel.id === id) { ev.preventDefault(); self.removerSelecionado(); } });
+      c.addEventListener("keydown", function (ev) {
+        var tg = ev.target, digit = tg && (tg.tagName === "INPUT" || tg.tagName === "TEXTAREA" || tg.isContentEditable);
+        if (digit) return;
+        var t = self._telas[id];
+        if (ev.key === "Escape") {
+          if (self._fecharMenu()) { ev.preventDefault(); ev.stopPropagation(); return; }
+          if (self._ferr) { self._ferr = null; self._pintarBarra(id); ev.preventDefault(); ev.stopPropagation(); return; }
+          if (t && t.ativa) { self.desativarNaFolha(id); ev.preventDefault(); ev.stopPropagation(); return; }
+        }
+        if ((ev.key === "Delete" || ev.key === "Backspace") && self._sel && self._sel.id === id && !(t && t.ativa)) { ev.preventDefault(); self.removerSelecionado(); }
+      });
       c.tabIndex = 0;
     },
+    _pintarBarra: function (id) { var t = this._telas[id], b = t && t.el && t.el.querySelector(".pv-barra"); if (!b) return; var d = document.createElement("div"); d.innerHTML = this._barra(id); b.parentNode.replaceChild(d.firstChild, b); this._ajustar(id); },
 
     /* --------------------------------------------- viewport: pôr, mover, tirar */
     posicionar: function (id, vistaId, cx, cy) {
@@ -271,25 +413,242 @@
       var dz = this.desenho(vistaId, true);
       if (!dz) { toast("Não consegui desenhar a vista: abra o modelo da obra primeiro.", "erro"); return { ok: false, erro: "sem desenho" }; }
       var todas = this.registros().map(function (r) { return PR().normalizar(r); });
-      var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy }, todas);
+      /* a folha montada à mão aceita a MESMA vista mais de uma vez (cada cópia com escala e recorte próprios) */
+      var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
       if (!r.ok) { toast(r.erro, "aviso"); return r; }
       this.gravarFolha(a, r.folha);
       this._sel = { id: id, ix: r.folha.blocos.length - 1 };
       this.pintar(id); this._pintarProps();
-      status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ".");
+      status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
       if (r.aviso) toast(r.aviso, "aviso");
       return r;
     },
+    /* mover qualquer bloco (viewport, texto, tabela) — o eixo guia prende */
     moverViewport: function (id, ix, x, y) {
       var a = this.achar(id); if (!a || !a.folha.blocos[ix]) return false;
       var f = clone(a.folha), b = f.blocos[ix], eg = f.eixoGuia, ar = a.geo.area;
       if (eg) { x = PR().ajustarEixo(x, eg.espaco, ar.x); y = PR().ajustarEixo(y, eg.espaco, ar.y); }
       b.x = Math.round(x * 10) / 10; b.y = Math.round(y * 10) / 10;
       this.gravarFolha(a, f); this.pintar(id);
-      var cf = PR().conferir({ formato: a.pr.formato, orientacao: a.pr.orientacao, folhas: [f] });
-      if (!cf.ok) toast("Parte da vista ficou fora da área de desenho (sai cortada na impressão).", "aviso");
+      if (this._foraDaArea(a, f, ix)) toast("Parte do bloco ficou fora da área de desenho (sai cortado na impressão).", "aviso");
       return true;
     },
+    /* o aviso "fora da área" só do bloco que mexeu, com a área do carimbo DESTE conjunto (sem o modelo de
+       carimbo a conta usava a área do carimbo simples e avisava à toa; e um bloco vizinho fora avisava de novo a cada passo) */
+    _foraDaArea: function (a, f, ix) {
+      var pr = clone(a.pr); pr.folhas = [f];
+      return PR().conferir(pr).fora.some(function (q) { return q.bloco === ix; });
+    },
+    /* troca a escala de UMA cópia (o 1:50 do título): o desenho é refeito nessa escala e o quadro muda em volta do centro */
+    trocarEscala: function (id, ix, escala) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+      var f = clone(a.folha), nb;
+      if (escala === "vista") {
+        var dzV = this.desenho(b.vistaId); if (!dzV) return false;
+        nb = PR().escalaViewport(b, dzV.vb, dzV.escala); if (!nb) return false; delete nb.escalaPropria;
+      } else {
+        var e = Math.round(+escala); if (!(e >= 1)) return false;
+        var dz = this.desenho(b.vistaId, false, e); if (!dz) return false;
+        nb = PR().escalaViewport(b, dz.vb, e); if (!nb) return false;
+      }
+      f.blocos[ix] = PR().bloco(nb);
+      this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+      status("Escala da cópia " + (b.numeroDetalhe || "") + ": 1:" + f.blocos[ix].escala + (escala === "vista" ? " (a da vista)" : "") + ".");
+      if (this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
+      return true;
+    },
+    menuEscala: function (id, ix, cx, cy) {
+      var t = this._telas[id], a = this.achar(id), b = a && a.folha.blocos[ix]; if (!t || !b) return null;
+      this._fecharMenu();
+      var self = this, dz = this.desenho(b.vistaId), ev0 = dz ? dz.escala : b.escala, m = document.createElement("div");
+      m.className = "pv-menu"; m.setAttribute("data-pv-menu", "1");
+      m.innerHTML = '<div class="pv-menu-tit">Escala desta cópia</div>' + PR().ESCALAS_VISTA.filter(function (e) { return e >= 10 && e <= 500; }).map(function (e) {
+        return '<button type="button" data-pv-esc="' + e + '"' + (e === b.escala ? ' class="on"' : "") + ">1:" + e + "</button>";
+      }).join("") + '<button type="button" data-pv-esc="vista" class="pv-menu-vista">A da vista (1:' + ev0 + ")</button>";
+      var rc = t.el.getBoundingClientRect();
+      m.style.left = (cx - rc.left + t.el.scrollLeft) + "px"; m.style.top = (cy - rc.top + t.el.scrollTop + 6) + "px";
+      t.el.appendChild(m); this._menu = m;
+      /* perto da borda de baixo/direita o menu abre para cima/esquerda (cortado ele escondia "A da vista") */
+      var rm = m.getBoundingClientRect();
+      if (rm.bottom > rc.bottom - 4) m.style.top = Math.max(t.el.scrollTop + 4, cy - rc.top + t.el.scrollTop - rm.height - 6) + "px";
+      if (rm.right > rc.right - 4) m.style.left = Math.max(t.el.scrollLeft + 4, cx - rc.left + t.el.scrollLeft - rm.width) + "px";
+      m.addEventListener("click", function (ev) { var q = ev.target.closest("[data-pv-esc]"); if (!q) return; var v = q.getAttribute("data-pv-esc"); self._fecharMenu(); self.trocarEscala(id, ix, v === "vista" ? "vista" : +v); });
+      return m;
+    },
+    _fecharMenu: function () { var m = this._menu; this._menu = null; if (m && m.parentNode) { m.parentNode.removeChild(m); return true; } return false; },
+    /* a alça do canto: o quadro muda (mm) e o recorte acompanha na escala da cópia */
+    recortar: function (id, ix, w, h) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+      var dz = this.desenhoVp(b); if (!dz) return false;
+      var f = clone(a.folha); f.blocos[ix] = PR().bloco(PR().redimensionarViewport(b, dz.vb, w, h));
+      this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+      status("Recorte da cópia " + (b.numeroDetalhe || "") + ": " + Math.round(f.blocos[ix].w) + " × " + Math.round(f.blocos[ix].h) + " mm.");
+      return true;
+    },
+    /* vista ativada: o desenho andou dentro do quadro (dx, dy em mm de papel) */
+    enquadrar: function (id, ix, dx, dy) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+      var dz = this.desenhoVp(b); if (!dz) return false;
+      var f = clone(a.folha); f.blocos[ix] = PR().bloco(PR().deslocarRecorte(b, dz.vb, dx, dy));
+      this.gravarFolha(a, f); this.pintar(id);
+      return true;
+    },
+    tirarRecorte: function (id, ix) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
+      var f = clone(a.folha); f.blocos[ix].recorte = null;
+      this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+      return true;
+    },
+    /* dois cliques no viewport: a vista ATIVA na própria folha — o resto apaga, a tela amplia nela;
+       sair volta à escala da tela de antes */
+    ativarNaFolha: function (id, ix) {
+      var t = this._telas[id], a = this.achar(id), b = a && a.folha.blocos[ix]; if (!t || !b || b.tipo !== "viewport") return false;
+      t.ativa = { ix: ix, zoom: t.zoom || null, sl: t.el.scrollLeft, st: t.el.scrollTop };
+      this._sel = { id: id, ix: ix };
+      this.pintar(id);
+      var W = t.el.clientWidth || 800, H = t.el.clientHeight || 560, f = Math.max(0.05, Math.min(12, Math.min((W - 60) / (b.w * MM_PX), (H - 110) / ((b.h + 14) * MM_PX))));
+      t.zoom = f; this._ajustar(id);
+      var el = t.el.querySelector('[data-pv-bloco="' + ix + '"]');
+      if (el) { var r = el.getBoundingClientRect(), rc = t.el.getBoundingClientRect(); t.el.scrollLeft += (r.left + r.width / 2) - (rc.left + rc.width / 2); t.el.scrollTop += (r.top + r.height / 2) - (rc.top + rc.height / 2); }
+      status("Vista ativada: " + (b.tituloVista || "") + ". Arraste para enquadrar; Esc sai.");
+      return true;
+    },
+    desativarNaFolha: function (id) {
+      var t = this._telas[id]; if (!t || !t.ativa) return false;
+      var v = t.ativa; t.ativa = null; t.zoom = v.zoom;
+      this.pintar(id);
+      t.el.scrollLeft = v.sl; t.el.scrollTop = v.st;
+      status("Vista desativada.");
+      return true;
+    },
+
+    /* --------------------------------------------- texto livre na folha */
+    /* o editor em cima do papel (em mm: amplia junto com a folha). fim(valor|null) */
+    _editorEm: function (id, x, y, w, h, valor, multi, fsMm, fim) {
+      var t = this._telas[id]; if (!t || !t.papel) return null;
+      this._fecharEditor();
+      var self = this, e = document.createElement(multi ? "textarea" : "input");
+      e.className = "pv-edit"; e.value = valor || ""; e.spellcheck = false;
+      e.style.left = x + "mm"; e.style.top = y + "mm"; e.style.width = Math.max(20, w) + "mm"; e.style.height = Math.max(fsMm * 1.6, h) + "mm"; e.style.fontSize = fsMm + "mm";
+      var feito = false;
+      function acabar(ok) { if (feito) return; feito = true; var v = e.value; self._editor = null; if (e.parentNode) e.parentNode.removeChild(e); try { t.el.focus({ preventScroll: true }); } catch (eF) {} fim(ok ? v : null); }
+      e.addEventListener("keydown", function (ev) {
+        ev.stopPropagation();
+        if (ev.key === "Escape") { ev.preventDefault(); acabar(false); }
+        else if (ev.key === "Enter" && (!multi || !ev.shiftKey)) { ev.preventDefault(); acabar(true); }
+      });
+      e.addEventListener("blur", function () { acabar(true); });
+      t.papel.appendChild(e); this._editor = { el: e, acabar: acabar };
+      try { e.focus(); e.select(); } catch (eS) {}
+      return e;
+    },
+    _fecharEditor: function () { var ed = this._editor; if (ed) ed.acabar(true); },
+    novoTexto: function (id, x, y) {
+      var self = this; this._pintarBarra(id);
+      return this._editorEm(id, x, y, 60, 6, "", true, 2.5 / 0.716, function (v) {
+        if (v == null || !String(v).trim()) { status("Texto cancelado."); return; }
+        self.criarTexto(id, x, y, String(v).split(/\r?\n/));
+      });
+    },
+    criarTexto: function (id, x, y, linhas, alt) {
+      var a = this.achar(id); if (!a) return null;
+      var f = clone(a.folha), b = PR().blocoTexto(linhas, x, y, alt || 2.5); if (!b) return null;
+      f.blocos.push(b);
+      this.gravarFolha(a, f); this._sel = { id: id, ix: f.blocos.length - 1 }; this.pintar(id); this._pintarProps();
+      status("Texto na folha (2 cliques edita; arraste move; Delete apaga).");
+      return b;
+    },
+    editarTexto: function (id, ix) {
+      var self = this, a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return null;
+      var fs = (b.alt > 0 ? b.alt : 2.82 * 0.716) / 0.716;
+      return this._editorEm(id, b.x, b.y, b.w + 10, b.h + 4, (b.linhas || []).join("\n"), true, fs, function (v) {
+        if (v == null) return;
+        self.mudarTexto(id, ix, String(v).split(/\r?\n/));
+      });
+    },
+    mudarTexto: function (id, ix, linhas) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return false;
+      var f = clone(a.folha);
+      if (!linhas.join("").trim()) { f.blocos.splice(ix, 1); this._sel = null; }
+      else { var nb = PR().blocoTexto(linhas, b.x, b.y, b.alt > 0 ? b.alt : 2.5); if (b.negrito) nb.negrito = true; f.blocos[ix] = nb; }
+      this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
+      return true;
+    },
+    _mudarBlocoTexto: function (id, ix, campo, valor) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "texto") return false;
+      var f = clone(a.folha), alt = campo === "alt" ? Math.max(1, Math.min(20, +valor || 2.5)) : (b.alt > 0 ? b.alt : 2.5);
+      var nb = PR().blocoTexto(b.linhas, b.x, b.y, alt); if (campo === "negrito" ? !!valor : b.negrito) nb.negrito = true;
+      f.blocos[ix] = nb; this.gravarFolha(a, f); this.pintar(id);
+      return true;
+    },
+
+    /* --------------------------------------------- carimbo: clicar no campo e digitar */
+    valorCampoCarimbo: function (a, campo) {
+      var cf = PR().CAMPOS_CARIMBO_FOLHA[campo];
+      if (cf) { var pm = PR().mapaParametros(a.pr, a.folha, this.projeto()); return campo === "data" ? (pm.SHEET_ISSUE_DATE || "") : (campo === "codigo" ? (pm.SHEET_NUMBER || "") : (a.folha.conteudo || "")); }
+      var c = a.pr.carimbo || {};
+      if (campo === "contratante") return c.contratante || "";
+      return c[campo] || "";
+    },
+    editarCampoCarimbo: function (id, campo) {
+      var self = this, a = this.achar(id), t = this._telas[id]; if (!a || !t) return null;
+      if (!PR().CAMPOS_CARIMBO_FOLHA[campo] && !PR().CAMPOS_CARIMBO_CONJ[campo]) return null;
+      var L = PR().carimboRA(a.pr, a.folha, this.projeto(), this.empresaDados(), a.geo, {}), z = (L.zonas || []).filter(function (q) { return q.campo === campo; })[0]; if (!z) return null;
+      status(PR().CAMPOS_CARIMBO_CONJ[campo] ? "Carimbo: este campo vale para TODAS as folhas do conjunto. Enter grava, Esc cancela." : "Carimbo: este campo é só desta folha. Enter grava, Esc cancela.");
+      return this._editorEm(id, L.x + z.x, L.y + z.y, z.w, z.h, this.valorCampoCarimbo(a, campo), false, Math.max(2, z.h * 0.55), function (v) {
+        if (v == null) return;
+        self.mudarCampoCarimbo(id, campo, v);
+      });
+    },
+    mudarCampoCarimbo: function (id, campo, valor) {
+      var a = this.achar(id); if (!a) return false;
+      var cf = PR().CAMPOS_CARIMBO_FOLHA[campo], v = String(valor == null ? "" : valor).trim();
+      if (cf) {
+        if (v === String(this.valorCampoCarimbo(a, campo))) return false;
+        var f = clone(a.folha); f[cf] = v; this.gravarFolha(a, f); this.pintar(id); this._renomearAbas(); this._pintarProps();
+        return true;
+      }
+      if (PR().CAMPOS_CARIMBO_CONJ[campo]) { if (v === String(this.valorCampoCarimbo(a, campo))) return false; return this.mudarCarimbo(id, campo, v); }
+      return false;
+    },
+
+    /* --------------------------------------------- desfazer / refazer (Ctrl+Z / Ctrl+Y na aba da folha) */
+    abaAtiva: function () { try { var g = this.G(), st = g && g._bimVxEst && g._bimVxEst(); return !!(st && this.ehFolha(st.ativa) && this._telas[st.ativa]); } catch (e) { return false; } },
+    _volta: function (de, para, rot) {
+      var obraK = this._conferirObra();
+      de = de === "pilha" ? this._pilha : this._refazerP; para = para === "pilha" ? this._pilha : this._refazerP;
+      var p = de.pop(), self = this; if (!p || !global.Store) return false;
+      if (p.obra !== obraK) { this._pilha = []; this._refazerP = []; return false; }
+      var atual = this.registros().filter(function (x) { return String(x.id) === String(p.regId); })[0];
+      /* o conjunto foi apagado: descarta (gravar aqui RECRIAVA o conjunto apagado) */
+      if (!atual) { status("Esse passo era de um conjunto de folhas que não existe mais."); return false; }
+      var porId = {}; arr(atual.folhas).forEach(function (f) { porId[f.id] = f; });
+      var ids = Object.keys(p.folhas), marcas = this._marcas || {};
+      var sumiu = ids.some(function (k) { return !porId[k]; });
+      var porFora = ids.some(function (k) { return porId[k] && marcas[p.regId + "|" + k] !== undefined && self._jsonF(porId[k]) !== marcas[p.regId + "|" + k]; }) ||
+        (p.carimbo !== undefined && marcas[p.regId + "|carimbo"] !== undefined && this._jsonF(atual.carimbo || null) !== marcas[p.regId + "|carimbo"]);
+      if (sumiu || porFora) {
+        /* mudaram por fora (outro painel, Gerar pranchas, outro aparelho): zera o desfazer DESTE conjunto, não sobrescreve */
+        var tira = function (q) { return q.regId !== p.regId; };
+        this._pilha = this._pilha.filter(tira); this._refazerP = this._refazerP.filter(tira);
+        toast(sumiu ? "A folha desse passo foi apagada: o desfazer dela foi zerado." : "A folha foi mudada fora deste editor: o desfazer dela foi zerado para não apagar a mudança.", "aviso");
+        return false;
+      }
+      var inv = { obra: obraK, regId: p.regId, folhas: {} };
+      ids.forEach(function (k) { inv.folhas[k] = clone(porId[k]); });
+      if (p.carimbo !== undefined) inv.carimbo = clone(atual.carimbo || null);
+      var novo = clone(atual);
+      novo.folhas = arr(novo.folhas).map(function (f) { return p.folhas[f.id] ? clone(p.folhas[f.id]) : f; });
+      if (p.carimbo !== undefined) novo.carimbo = clone(p.carimbo);
+      var r = global.Store.salvar(this.empresa(), "bim_pranchas", novo);
+      if (!r) return false;
+      this._marcar(r); para.push(inv); Object.keys(this._telas).forEach(function (k) { var t = self._telas[k]; if (t && t.ativa) t.ativa = null; });
+      this._sel = null; this._repintarTodas(); this._renomearAbas();
+      status(rot);
+      return true;
+    },
+    desfazer: function () { return this._volta("pilha", "refazer", "Folha: desfeito (Ctrl+Y refaz)."); },
+    refazer: function () { return this._volta("refazer", "pilha", "Folha: refeito."); },
     removerSelecionado: function () {
       var s = this._sel; if (!s) return false;
       var a = this.achar(s.id); if (!a || !a.folha.blocos[s.ix]) return false;
@@ -300,8 +659,7 @@
     },
     selecionar: function (id, ix) {
       this._sel = ix >= 0 ? { id: id, ix: ix } : null;
-      var t = this._telas[id];
-      if (t && t.el) [].forEach.call(t.el.querySelectorAll("[data-pv-bloco]"), function (e) { if (+e.getAttribute("data-pv-bloco") === ix) e.setAttribute("data-pv-sel", "1"); else e.removeAttribute("data-pv-sel"); });
+      this._marcarSel(id, ix);
       this._pintarProps();
     },
     _pintarProps: function () { try { if (global.BimShell) global.BimShell.pintarProps(this._sel ? this.propsViewport(this._sel.id, this._sel.ix) : null); } catch (e) {} },
@@ -317,7 +675,7 @@
       var g = this.G(), st = g && g._bimVxEst(), alvo = null;
       if (!st) return false;
       st.lista.forEach(function (v) { if (v.tipo === "folha") alvo = alvo || v.id; });
-      var self = this; Object.keys(this._desenhos).forEach(function (k) { if (k === self._ativada) delete self._desenhos[k]; });
+      var self = this; Object.keys(this._desenhos).forEach(function (k) { if (k === self._ativada || k.indexOf(self._ativada + "@") === 0) delete self._desenhos[k]; });
       this._ativada = null;
       if (alvo) { g._bimVxAtivar(alvo); this.pintar(alvo); }
       return !!alvo;
@@ -396,25 +754,37 @@
     },
     propsViewport: function (id, ix) {
       var self = this, a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b) return null;
+      if (b.tipo === "texto") return { daVista: true, semEditarTipo: true, titulo: "Texto na folha", icone: "prancha",
+        secoes: [{ nome: "Texto", params: [
+          { id: "t:txt", rotulo: "Texto", tipo: "botao", rotuloBotao: "Editar texto…", fn: function () { self.editarTexto(id, ix); } },
+          { id: "t:alt", rotulo: "Altura da letra", tipo: "lista", valor: String(b.alt > 0 ? b.alt : 2.5), opcoes: ["1.8", "2", "2.5", "3", "3.5", "5", "7"].map(function (v) { return { id: v, rotulo: v.replace(".", ",") + " mm" }; }) },
+          { id: "t:negrito", rotulo: "Negrito", tipo: "sim-nao", valor: !!b.negrito },
+          { id: "tirar", rotulo: "Folha", tipo: "botao", rotuloBotao: "Apagar o texto", fn: function () { self.removerSelecionado(); } } ] }],
+        onMudar: function (pid, valor) { if (pid === "t:alt") self._mudarBlocoTexto(id, ix, "alt", +valor); else if (pid === "t:negrito") self._mudarBlocoTexto(id, ix, "negrito", !!valor); return self.propsViewport(id, ix); } };
       if (b.tipo !== "viewport") return { daVista: true, semEditarTipo: true, titulo: b.titulo || b.tipo, icone: "prancha", secoes: [{ nome: "Bloco", params: [{ id: "tirar", rotulo: "Bloco", tipo: "botao", rotuloBotao: "Retirar da folha", fn: function () { self.removerSelecionado(); } }] }] };
+      var dzV = this.desenho(b.vistaId), escV = dzV ? dzV.escala : b.escala, opEsc = PR().ESCALAS_VISTA.filter(function (e) { return e >= 10 && e <= 500; }).map(function (e) { return { id: String(e), rotulo: "1:" + e }; });
+      opEsc.push({ id: "vista", rotulo: "A da vista (1:" + escV + ")" });
       return {
         daVista: true, semEditarTipo: true, titulo: "Viewport: " + b.tituloVista, icone: "planta",
         secoes: [
           { nome: "Gráficos", params: [
-            { id: "escala", rotulo: "Escala da vista", leitura: true, valor: "1:" + b.escala, motivo: "A escala é da VISTA (Propriedades da planta/corte): mudou lá, muda aqui." },
+            { id: "escala", rotulo: "Escala desta cópia", tipo: "lista", valor: b.escalaPropria ? String(b.escala) : "vista", opcoes: opEsc },
             { id: "numeroDetalhe", rotulo: "Número de detalhe", tipo: "texto", valor: b.numeroDetalhe },
             { id: "tituloVista", rotulo: "Título na folha", tipo: "texto", valor: b.tituloVista },
             { id: "mostrarTitulo", rotulo: "Mostrar título", tipo: "sim-nao", valor: b.mostrarTitulo !== false } ] },
           { nome: "Extensões", params: [
-            { id: "recorte", rotulo: "Região de recorte", leitura: true, valor: b.recorte ? "ativa" : "a vista inteira" },
+            b.recorte ? { id: "recorte", rotulo: "Região de recorte", tipo: "botao", rotuloBotao: "Tirar o recorte (vista inteira)", fn: function () { self.tirarRecorte(id, ix); } }
+                      : { id: "recorte", rotulo: "Região de recorte", leitura: true, valor: "a vista inteira (puxe a alça do canto)" },
             { id: "tam", rotulo: "Quadro no papel", leitura: true, valor: Math.round(b.w) + " × " + Math.round(b.h) + " mm" } ] },
           { nome: "Vista", params: [
-            { id: "ativar", rotulo: "Editar a vista", tipo: "botao", rotuloBotao: "Ativar vista", fn: function () { self.ativarVista(b.vistaId); } },
+            { id: "ativarF", rotulo: "Enquadrar", tipo: "botao", rotuloBotao: "Ativar vista na folha", fn: function () { self.ativarNaFolha(id, ix); } },
+            { id: "ativar", rotulo: "Editar o modelo", tipo: "botao", rotuloBotao: "Abrir a vista", fn: function () { self.ativarVista(b.vistaId); } },
             { id: "tirar", rotulo: "Folha", tipo: "botao", rotuloBotao: "Retirar da folha", fn: function () { self.removerSelecionado(); } } ] }
         ],
         onMudar: function (pid, valor) {
           var a2 = self.achar(id); if (!a2 || !a2.folha.blocos[ix]) return null;
           var f = clone(a2.folha), bb = f.blocos[ix];
+          if (pid === "escala") { self.trocarEscala(id, ix, valor === "vista" ? "vista" : +valor); return self.propsViewport(id, ix); }
           if (pid === "numeroDetalhe") {
             var v = String(valor || "").trim(), rep = f.blocos.some(function (o, k) { return k !== ix && o.tipo === "viewport" && o.numeroDetalhe === v; });
             if (rep) { toast("O número de detalhe " + v + " já existe nesta folha.", "aviso"); return self.propsViewport(id, ix); }
@@ -528,7 +898,7 @@
         if (this.ehFolha(id)) {
           var a = this.achar(id); if (!a) return null;
           var vps = {}, self = this;
-          a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) vps[b.vistaId] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+          a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
           var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto(), empresa: this.empresaDados(), logo: !!logoConta });
           var nome = PR().nomeArquivo(a.pr, a.folha, this.projeto(), "dxf");
