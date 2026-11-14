@@ -68,6 +68,9 @@
   function BIC() { return dep("BimInstColocar", "./biminstcolocar.js"); }
   function BEd() { return dep("BimEdit", "./bimedit.js"); }
   function HBA() { return dep("HidBaseApoio", "./hidbaseapoio.js"); }
+  function HPCo() { return dep("HidPressaoCores", "./hidpressaocores.js"); }
+  /* a cota MÁXIMA possível do fundo da caixa (instância; 0/vazio = sem limite): acima dela a sugestão é o pressurizador */
+  var CHAVE_COTA_MAX = "Cota_max_fundo";
   function arr(a) { return Array.isArray(a) ? a : []; }
   function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function txt(v) { return v == null ? "" : String(v); }
@@ -90,6 +93,7 @@
   var GEO_BAR = {
     declividade: 0.005,     // hid:ok R-C10: 0,5 % é PRÁTICA de memorial (P-C5/P-C9), não está na NBR 5626:2020 (6.6.2 só pede evitar bolsa de ar)
     tocoMin: 0.30,          // hid:ok perna mínima entre duas conexões que o auditor aceita sem acusar toco (m)
+    voltasCota: 5,          // hid:ok voltas da conta da cota mínima (revisão A3): a perda do tubo mais longo converge em 1–2
     tocoSaida: 0.30,        // hid:ok saída da caixa até o tê da ventilação: o registro no meio, à mão, fora do corpo
     ventAcima: 0.15,        // hid:ok a ventilação do barrilete termina acima do TOPO da caixa (acima do nível máximo — Tigre p.72-73)
     saidaLivre: 0.30,       // hid:ok extravasor/limpeza: a ponta livre além da face externa da edificação
@@ -1200,7 +1204,7 @@
     try { r = AF.calcular(en, N.contexto(), null); } catch (eP) { return { caixa: cx.id, erro: String(eP && eP.message || eP), achados: [{ chave: "bar.pressao", texto: "Caixa d'água " + cx.id + ": a conferência de pressão falhou (" + (eP && eP.message ? eP.message : eP) + ") — rode o dimensionamento", elementos: [cx.id] }] }; }
     var out = { caixa: cx.id, status: r.status, pontos: arr(r.pontos).map(function (p) { return { famInst: p.famInst, aparelho: p.aparelho, pdin: p.pressaoDinamica_kpa, pest: p.pressaoEstatica_kpa, pmin: p.pressaoMinima_kpa, ok: p.ok, status: p.status }; }), critico: r.pontoCritico, achados: [] };
     var rho = r.fluido && r.fluido.rho, mDe = function (kpa) { return Hh && Hh.kpaParaM ? Hh.kpaParaM(kpa, rho) : kpa / 9.80665; };   // hid:ok reserva: kPa → mca (g padrão), só sem o HidHidraulica
-    var baixos = arr(r.pontos).filter(function (p) { return p.status === "reprovado" && num(p.pressaoDinamica_kpa, null) != null && num(p.pressaoMinima_kpa, null) != null && p.pressaoDinamica_kpa < p.pressaoMinima_kpa; });
+    var baixos = arr(r.pontos).filter(function (p) { return p.status === "reprovado" && num(p.pressaoDinamica_kpa, null) != null && num(p.pressaoMinima_kpa, null) != null && p.pressaoDinamica_kpa < p.pressaoMinima_kpa; }).map(function (p) { return { famInst: p.famInst, aparelho: p.aparelho, pressaoDinamica_kpa: p.pressaoDinamica_kpa, pressaoMinima_kpa: p.pressaoMinima_kpa }; });
     /* N23: a REDE também (barrilete, colunas, ramais): a NBR 5626:2020 6.9.3 pede a pressão dinâmica mínima em QUALQUER ponto dela (fora a
        tomada vertical, que só não pode ficar negativa). Antes só os pontos de utilização entravam aqui: o cartão não via o barrilete sem
        pressão e o Dimensionar reprovava depois. A rede entra como um "ponto" a mais, com o trecho do nó mais desfavorável */
@@ -1209,29 +1213,61 @@
     out.rede = vRd ? { alvo: String(vRd.alvo), pdin: num(vRd.valor, 0), pmin: num(vRd.limite, 0) } : null;
     out.tomada = vTm ? { alvo: String(vTm.alvo), pdin: num(vTm.valor, 0), pmin: num(vTm.limite, 0) } : null;
     [[vRd, "rede", "rede de distribuição, NBR 5626:2020 6.9.3"], [vTm, "tomada", "tomada vertical, não pode ser negativa"]].forEach(function (q) { if (q[0]) baixos.push({ famInst: String(q[0].alvo), aparelho: q[2], pressaoDinamica_kpa: num(q[0].valor, 0), pressaoMinima_kpa: num(q[0].limite, 0), rede: q[1] }); });
+    /* REVISÃO A1 (14/11/2026): a cota mínima usa a MESMA mínima que pinta o ponto (a maior entre o cálculo e a FAMÍLIA: vazão e acionamento
+       da ficha — js/hidpressaocores.js). Antes o "subir" saía só da mínima do HidAF e a caixa subia menos do que o aparelho pede. */
+    var PCo = HPCo(), mapaC = null;
+    if (PCo) { try { mapaC = PCo.mapa(r, estC, e.avaliarFam); } catch (eM) { mapaC = null; } }
+    if (mapaC) mapaC.pontos.forEach(function (q) {
+      if (q.faixa !== "baixa" || q.pmin == null || q.pdin == null) return;
+      var b = baixos.filter(function (x) { return String(x.famInst) === q.famInst && !x.rede; })[0];
+      if (b) { if (q.pmin > b.pressaoMinima_kpa) b.pressaoMinima_kpa = q.pmin; }
+      else baixos.push({ famInst: q.famInst, aparelho: q.aparelho, pressaoDinamica_kpa: q.pdin, pressaoMinima_kpa: q.pmin, daFamilia: true });
+    });
+    function pmCor(P2, id) { var c = P2 && P2.cores ? arr(P2.cores.pontos).filter(function (x) { return x.famInst === id; })[0] : null; return c && c.pdin != null && c.pmin != null ? { pdin: c.pdin, pmin: c.pmin } : null; }
     if (baixos.length) {
       var falta = Math.max.apply(null, baixos.map(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa; })), pc = baixos.filter(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa === falta; })[0];
       var sub = Math.ceil((mDe(falta) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
-      out.subir = r4(sub);
-      /* a pressão DEPOIS: o barrilete refeito com a caixa elevada e a mesma conferência (NBR 5626) no ponto mais desfavorável */
+      /* a pressão DEPOIS: o barrilete refeito com a caixa elevada e a mesma conferência (NBR 5626 + família) no ponto mais desfavorável.
+         REVISÃO A3: ITERA (o tubo mais longo perde mais) até o ponto atender, no máximo GEO_BAR.voltasCota voltas; sempre confere, com ou sem base */
       var depoisTxt = "";
-      if (!e._semBase && HBA()) {
+      if (!e._semBase) {
         try {
-          var opsUp = arr(e.ops).concat([{ op: "lote", id: "previa-elevar", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }] }]);
-          var R2 = montar({ estado: BE.aplicar(opsUp), avaliarFam: e.avaliarFam, ops: opsUp, parametros: e.parametros, caixa: cx.id, pressao: true, oferta: false, _semBase: true });
-          var P2 = arr(R2.pressao)[0], q2 = P2 ? (pc.rede ? (P2[pc.rede] || { pdin: pc.pressaoMinima_kpa, pmin: pc.pressaoMinima_kpa, semReprovacao: true }) : arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0]) : null;
+          var P2 = null, q2 = null;
+          for (var volta = 0; volta < GEO_BAR.voltasCota; volta++) {
+            var opsUp = arr(e.ops).concat([{ op: "lote", id: "previa-elevar", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }] }]);
+            var R2 = montar({ estado: BE.aplicar(opsUp), avaliarFam: e.avaliarFam, ops: opsUp, parametros: e.parametros, caixa: cx.id, pressao: true, oferta: false, _semBase: true });
+            P2 = arr(R2.pressao)[0];
+            q2 = P2 ? (pc.rede ? (P2[pc.rede] || { pdin: pc.pressaoMinima_kpa, pmin: pc.pressaoMinima_kpa, semReprovacao: true }) : (pmCor(P2, pc.famInst) || arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0])) : null;
+            /* REVISÃO A3 (volta 2): o PIOR ponto do mapa depois de subir (qualquer aparelho, mínima da família inclusive), não só o pc de antes —
+               ao subir para o pc, outro ponto (o chuveiro com a ficha pedindo mais) pode continuar vermelho */
+            var falta2 = q2 && !q2.semReprovacao && q2.pdin < q2.pmin - EPS ? q2.pmin - q2.pdin : 0;
+            if (P2 && P2.cores) arr(P2.cores.pontos).forEach(function (x) { if (x.faixa === "baixa" && x.pmin != null && x.pdin != null) falta2 = Math.max(falta2, x.pmin - x.pdin); });
+            if (P2 && P2.rede && P2.rede.pdin < P2.rede.pmin - EPS) falta2 = Math.max(falta2, P2.rede.pmin - P2.rede.pdin);
+            if (!(falta2 > EPS)) break;
+            sub += Math.ceil((mDe(falta2) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
+          }
           out.depois = q2 ? { famInst: pc.famInst, pdin: q2.pdin, pmin: q2.pmin, ok: q2.pdin >= q2.pmin - EPS } : null;
           if (q2 && q2.semReprovacao) depoisTxt = "na " + (pc.rede === "rede" ? "rede" : "tomada") + " (" + pc.famInst + ") nenhum nó fica abaixo do mínimo (ATENDE)";
           else if (q2) depoisTxt = "no " + pc.famInst + " a pressão dinâmica passa de " + f2(pc.pressaoDinamica_kpa) + " para " + f2(q2.pdin) + " kPa (mínimo " + f2(q2.pmin) + " kPa" + (q2.pdin >= q2.pmin - EPS ? ", ATENDE" : ", ainda não atende") + ")";
         } catch (eD) { depoisTxt = ""; }
       }
-      out.achados.push({ chave: "bar.pressao_baixa", texto: "Pressão: a caixa " + cx.id + " está BAIXA para " + baixos.map(function (p) { return p.famInst + " (" + (p.aparelho || "ponto") + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa)"; }).slice(0, 4).join(", ") + " — NBR 5626:2020 6.9.2 / pressão do fabricante, com os DN do dimensionamento e o nível d'água na saída (o mais desfavorável). Suba a caixa " + f2(sub) + " m (base a " + f2(cx.yb + sub) + " m) ou ponha um pressurizador na saída (Instalações › Pressurização).",   // hid:ok até 4 pontos no texto
+      out.subir = r4(sub);
+      out.achados.push({ chave: "bar.pressao_baixa", texto: "Pressão: a caixa " + cx.id + " está BAIXA para " + baixos.map(function (p) { return p.famInst + " (" + (p.aparelho || "ponto") + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa)"; }).slice(0, 4).join(", ") + " — NBR 5626:2020 6.9.2 / pressão do fabricante, com os DN do dimensionamento e o nível d'água na saída (o mais desfavorável). Cota MÍNIMA do fundo da caixa: " + f2(cx.yb + sub) + " m (subir " + f2(sub) + " m); se não puder subir, pressurizador na saída (sugestão com o modelo abaixo).",   // hid:ok até 4 pontos no texto
         elementos: [cx.id, pc.famInst], acao: { tipo: "ops", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }], texto: "subir a caixa " + f2(sub) + " m" } });
       var bs = basesPara(e, cx, sub, "Pressão baixa no ponto mais desfavorável (" + pc.famInst + "):", depoisTxt);
       /* com as bases, a caixa NUNCA sobe no ar: o Corrigir do achado é a base de madeira; a metálica vem logo abaixo */
       var bsOk = bs.filter(function (b) { return b.acao; });
       if (bsOk.length) { var ach = out.achados[out.achados.length - 1]; ach.acao = bsOk[0].acao; ach.texto = ach.motivo = ach.texto + " Opções: elevar " + f2(sub) + " m sobre base de madeira ou metálica (abaixo)."; }
       bs.forEach(function (b) { out.achados.push(b); });
+    }
+    /* PRESSÃO EM CORES (14/11/2026, pedido do Rogério): verde / amarelo / vermelho em cada ponto e trecho pela pressão do APARELHO
+       (família: mínima de vazão, de acionamento e estática máxima) e as sugestões (VRP, cota mínima do fundo, pressurizador) — js/hidpressaocores.js */
+    if (PCo && mapaC) {
+      try {
+        out.cores = mapaC;
+        var qS = arr(r.trechos).reduce(function (m, t) { return Math.max(m, num(t.vazao_ls, 0)); }, 0);
+        out.sugestoes = PCo.sugestoes(out.cores, { caixa: { id: cx.id, yb: cx.yb, H: cx.H, cotaMax: num(cx.f && cx.f.inst && cx.f.inst[CHAVE_COTA_MAX], 0) }, subir: out.subir != null ? out.subir : null, vazao_ls: qS > 0 ? qS : null });
+      } catch (eC) { out.cores = null; out.sugestoes = []; }
     }
     var vE = arr(r.verificacoes).filter(function (v) { return /pressão estática máxima/.test(String(v.nome)) && v.ok === false; })[0];
     if (vE) {
@@ -1250,8 +1286,12 @@
      orçamento, e o texto diz o ganho de pressão (e a pressão depois, refeita pela NBR 5626 com a caixa elevada). */
   function ehBaseDe(id, cxId) { var b = "base-" + cxId; return String(id) === b || String(id).indexOf(b + "-") === 0; }
   function baseAtual(estado, cx) { var HB = HBA(); return arr(estado && estado.familias).filter(function (f) { return HB && f.famId === HB.FAM && ehBaseDe(f.id, cx.id); })[0] || null; }
+  /* 14/11/2026 (pedido do Rogério: "aquela estrutura que você está criando para a caixa d'água pode eliminar, não preciso. Só a
+     posição"): o barrilete NÃO oferece mais a base/torre de apoio — o Corrigir da pressão baixa só leva a caixa à cota mínima do fundo.
+     A família hid-base-caixa e o js/hidbaseapoio.js continuam DEFINIDOS: o projeto salvo com a base abre igual (mesmo id, mesmo
+     orçamento). Para voltar a oferecer: e.comBase = true ou HidBarrilete.comBase = true (os testes da base usam). */
   function basesPara(e, cx, dh, motivo, depois) {
-    var HB = HBA(); if (!HB || e._semBase || !(dh > 0)) return [];
+    var HB = HBA(); if (!HB || !(e.comBase || HidBarrilete.comBase === true) || e._semBase || !(dh > 0)) return [];
     var bA = baseAtual(e.estado, cx), apoio = bA ? num(bA.y, cx.yb) : cx.yb, total = r4((bA ? Math.max(0, cx.yb - apoio) : 0) + dh), nId = "base-" + cx.id + (bA ? "-" + (Number(String(bA.id).split("-").pop()) + 1 || 2) : "");   // hid:ok o 2º id da base
     var out = [];
     HB.opcoes({ caixa: cx, elevar: total, apoio: apoio, id: nId }).forEach(function (P) {
@@ -1339,9 +1379,9 @@
     return m[1] === "coluna" ? GEO_BAR.dnMinColuna : GEO_BAR.dnMinBarrilete;
   }
 
-  var HidBarrilete = { VERSAO: 1, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
+  var HidBarrilete = { VERSAO: 1, comBase: false, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
     montar: montar, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
-    _int: { suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
+    _int: { CHAVE_COTA_MAX: CHAVE_COTA_MAX, suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
   global.HidBarrilete = HidBarrilete;
   if (typeof module !== "undefined" && module.exports) module.exports = HidBarrilete;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

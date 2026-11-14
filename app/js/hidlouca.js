@@ -1089,6 +1089,9 @@
 
     }
     partes.unshift(co, tp);
+    /* CAIXA PARAMÉTRICA (14/11/2026): a marca do FABRICANTE no corpo, como nas outras famílias da R2 (decal) — só na caixa d'água de
+       polietileno (tipo 0; todos os tipos da família são da ficha Fortlev, Mini Catálogo Rev. Out-25 p.5) e quando a família pede (P.mc). */
+    if (tipo === 0 && P.mc > 0) partes.push(decal("logo", "FORTLEV", "#FFFFFF", [0, B * 0.7, R * 0.953 + 0.0005], [0, 0, 1], [1, 0, 0], R * 0.55, R * 0.55 * 0.17));   // hid:ok posição/tamanho do desenho (raio do perfil a 70 % da altura do corpo)
     /* conexões: adaptador com flange na saída (embaixo, lado +X) e na entrada (em cima, lado −X) */
     /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério: "o nosso está saindo com 50 ou 60 mm"): o adaptador era desenhado com
        Ø 52 mm fixo em qualquer caixa. Agora o corpo e a flange seguem o DN que o Traçar automaticamente (js/hidbarrilete.js) grava na

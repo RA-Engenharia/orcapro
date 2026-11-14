@@ -16608,6 +16608,7 @@ tubo(tp.m, [[c * r0, h0, s * r0], [c * r1, h1, s * r1]], 0.012, 6, { rc: 0 });
 }
 }
 partes.unshift(co, tp);
+if (tipo === 0 && P.mc > 0) partes.push(decal("logo", "FORTLEV", "#FFFFFF", [0, B * 0.7, R * 0.953 + 0.0005], [0, 0, 1], [1, 0, 0], R * 0.55, R * 0.55 * 0.17));
 var cn = parte("conexoes", "Adaptadores com flange", PVC, true);
 var cil = tipo === 1 || tipo === 2, rS = cil ? R * 0.96 : Rb * 1.03, rE = cil ? R * 0.96 : R * 0.97, Rext = C / 2 + 0.004;
 function adapt(dn, ang, y, r0, r1) {
@@ -17808,7 +17809,7 @@ x: CX_INSPECAO },
 "hid-caixa-areia": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura + Bolsao - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)" },
 env: ["0", "-max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "max(Largura_bocais_z; Tampa_lado)"],
 x: CX_INSPECAO.concat([X("Bolsao", "comprimento", 0.15, "Dimensões", "Bolsão de areia abaixo do tubo de saída (NBR 10844: ≥ 0,15 m): o tambor da inspeção sobre um prolongador DN300 cortado até a profundidade da saída + o bolsão (Amanco FT p.10, prolongador 300 × 200 ou 300 × 420)")]) },
-"hid-caixa-dagua": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "Diametro_corpo", Db: "Diametro_base", Dt: "0", tipo: "0", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
+"hid-caixa-dagua": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "Diametro_corpo", Db: "Diametro_base", Dt: "0", tipo: "0", mc: "1", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
 x: ADAPT_X.concat([G("Altura_corpo", 0, [0.2, 4], N("altura_sem_tampa_mm"), "Altura sem a tampa (B da ficha); 0 = proporção do 1000 L"), G("Diametro_corpo", 0, [0.3, 4], N("diametro_sem_tampa_mm"), "Diâmetro sem a tampa (D da ficha); 0 = proporção"),
 G("Diametro_base", 0, [0.3, 4], N("diametro_base_mm"), "Diâmetro da base (E da ficha); 0 = proporção")]) },
 "hid-cisterna": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "1" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
@@ -33039,6 +33040,112 @@ global.HidAQTraco = HidAQTraco;
 if (typeof module !== "undefined" && module.exports) module.exports = HidAQTraco;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/hidpressaocores.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function HH() { return dep("HidHidraulica", "./hidhidraulica.js"); }
+function HPz() { return dep("HidPressao", "./hidpressao.js"); }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function f2(v) { return v == null || !isFinite(v) ? "—" : (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+var FAIXA = { folgaMin: 0.25, folgaMax: 0.10 };
+var HEX = { verde: "#2e9e5b", amarelo: "#e0a100", vermelho: "#d33a2c", pendente: "#8a8f98" };
+var PESO = { verde: 0, amarelo: 1, vermelho: 2 };
+var EPS = 1e-6;
+function pior(a, b) { return a == null ? b : (b == null ? a : (PESO[b] > PESO[a] ? b : a)); }
+function mca(kpa) { var H = HH(); return H && H.kpaParaM ? H.kpaParaM(kpa) : kpa / 9.80665; }
+function classificar(o) {
+var pd = num(o && o.pdin, null), pm = num(o && o.pmin, null), pe = num(o && o.pest, null), px = num(o && o.pmax, null), cor = null, mot = [];
+if (pd == null || pm == null) return { cor: null, motivo: "sem pressão calculada (rode o dimensionamento)", faixa: null };
+if (pd < pm - EPS) { cor = "vermelho"; mot.push("dinâmica " + f2(pd) + " kPa < mínima " + f2(pm) + " kPa"); }
+else if (pd < pm * (1 + FAIXA.folgaMin) - EPS) { cor = "amarelo"; mot.push("dinâmica " + f2(pd) + " kPa, só " + f2(pd - pm) + " kPa acima da mínima " + f2(pm) + " kPa"); }
+else { cor = "verde"; mot.push("dinâmica " + f2(pd) + " kPa ≥ mínima " + f2(pm) + " kPa"); }
+if (pe != null && px != null && px > 0) {
+if (pe > px + EPS) { cor = "vermelho"; mot.push("estática " + f2(pe) + " kPa > máxima " + f2(px) + " kPa"); }
+else if (pe > px * (1 - FAIXA.folgaMax) + EPS) { cor = pior(cor, "amarelo"); mot.push("estática " + f2(pe) + " kPa perto da máxima " + f2(px) + " kPa"); }
+}
+return { cor: cor, motivo: mot.join("; "), faixa: pd < pm - EPS ? "baixa" : (pe != null && px != null && px > 0 && pe > px + EPS ? "alta" : null) };
+}
+function limite(r, re) { var v = arr(r && r.verificacoes).filter(function (x) { return re.test(String(x.nome)) && num(x.limite, null) != null; })[0]; return v ? num(v.limite, null) : null; }
+function mapa(r, estado, avaliarFam, rede) {
+var out = { pontos: [], trechos: {}, cores: {}, limites: { redeMin: limite(r, /pressão dinâmica mínima na rede/), estMax: limite(r, /pressão estática máxima/) }, contagem: { verde: 0, amarelo: 0, vermelho: 0, pendente: 0 } };
+var fams = {}; arr(estado && estado.familias).forEach(function (f) { if (f) fams[String(f.id)] = f; });
+arr(r && r.pontos).forEach(function (p) {
+var f = fams[String(p.famInst)], v = {};
+var semFamilia = false;
+if (f && typeof avaliarFam === "function") { try { var av = avaliarFam(f.famId, f.tipoId, f.inst || {}); if (av && av.valores) v = av.valores; else semFamilia = true; } catch (e) { semFamilia = true; } }
+var mins = [[num(p.pressaoMinima_kpa, null), p.fontePmin ? "cálculo (" + p.fontePmin + ")" : "cálculo (NBR 5626:2020)"], [num(v.Pressao_min_kPa, 0), "família: mínima para vazão (" + (v.Origem_hidraulica || "ficha") + ")"],
+[num(v.Pressao_acionamento_kPa, 0), "família: mínima de acionamento (ficha)"]].filter(function (x) { return x[0] != null && x[0] > 0; }).sort(function (a, b) { return b[0] - a[0]; });
+var maxs = [[out.limites.estMax, "NBR 5626:2020 (estática máxima)"], [num(v.Pressao_max_kPa, 0), "família: estática máxima (" + (v.Origem_hidraulica || "ficha") + ")"]].filter(function (x) { return x[0] != null && x[0] > 0; }).sort(function (a, b) { return a[0] - b[0]; });
+var pmin = mins.length ? mins[0][0] : null, pmax = maxs.length ? maxs[0][0] : null;
+var c = semFamilia ? { cor: "pendente", motivo: "pendente: a família do aparelho não pôde ser lida (pressão do fabricante desconhecida)", faixa: null } : classificar({ pdin: p.pressaoDinamica_kpa, pmin: pmin, pest: p.pressaoEstatica_kpa, pmax: pmax });
+var pos = f ? { x: num(f.x, 0), y: num(p.cota, num(f.inst && f.inst.y != null ? f.inst.y : f.y, 0)), z: num(f.z, 0) } : null;
+out.pontos.push({ famInst: String(p.famInst), aparelho: p.aparelho || null, pdin: num(p.pressaoDinamica_kpa, null), pest: num(p.pressaoEstatica_kpa, null), pmin: pmin, fontePmin: mins.length ? mins[0][1] : null,
+pmax: pmax, fontePmax: maxs.length ? maxs[0][1] : null, cota: num(p.cota, null), yPiso: f ? num(f.inst && f.inst.y != null ? f.inst.y : f.y, null) : null, cor: c.cor, motivo: c.motivo, faixa: c.faixa, pos: pos });
+if (c.cor) { out.contagem[c.cor]++; out.cores[String(p.famInst)] = HEX[c.cor]; }
+});
+var rMin = out.limites.redeMin;
+arr(r && r.trechos).forEach(function (t) {
+if (t == null || t.id == null) return;
+var pm = num(t.pressaoJusante_kpa, null);
+if (pm == null || rMin == null) return;
+if (!(num(t.vazao_ls, 0) > 0)) return;
+out.trechos[String(t.id)] = classificar({ pdin: pm, pmin: rMin }).cor;
+});
+var lig = arr(rede && rede.ligacoes);
+if (!lig.length && BI() && estado) { try { lig = BI().rede(estado, avaliarFam).ligacoes || []; } catch (eR) { lig = []; } }
+var corPto = {}; out.pontos.forEach(function (p) { if (p.cor && p.cor !== "pendente") corPto[p.famInst] = p.cor; });
+lig.forEach(function (l) { var c = corPto[String(l.famInst)] || corPto[String(l.alvo)]; if (c && l.trecho != null) out.trechos[String(l.trecho)] = pior(out.trechos[String(l.trecho)], c); });
+arr(r && r.verificacoes).forEach(function (v) { if (/pressão estática máxima/.test(String(v.nome)) && v.ok === false && v.alvo != null) out.trechos[String(v.alvo)] = "vermelho"; });
+Object.keys(out.trechos).forEach(function (id) { if (out.trechos[id]) out.cores[id] = HEX[out.trechos[id]]; });
+return out;
+}
+function sugestoes(m, o) {
+o = o || {}; var out = [], cx = o.caixa || {}, ps = arr(m && m.pontos);
+var altos = ps.filter(function (p) { return p.faixa === "alta"; }), baixos = ps.filter(function (p) { return p.faixa === "baixa"; });
+if (altos.length) {
+var lim = Math.min.apply(null, altos.map(function (p) { return p.pmax; })), cotaV = Math.max.apply(null, altos.map(function (p) { return num(p.cota, -Infinity); }));
+out.push({ tipo: "vrp", elementos: altos.map(function (p) { return p.famInst; }),
+texto: "Pressão ALTA em " + altos.map(function (p) { return p.famInst + " (" + f2(p.pest) + " kPa > " + f2(p.pmax) + " kPa)"; }).slice(0, 4).join(", ") + ": instale VÁLVULA REDUTORA DE PRESSÃO no início do ramal/coluna que alimenta esses pontos (abaixo da cota " + f2(cotaV) + " m), regulada para no máximo " + f2(lim) + " kPa na saída (NBR 5626:2020 6.9.5), com registro antes e depois e filtro a montante. Modelo: escolha pela ficha do fabricante (o catálogo da RA ainda não tem VRP — pendência).",
+regulagem_kpa: lim });
+}
+if (baixos.length) {
+var sub = num(o.subir, null), cotaMin = sub != null && cx.yb != null ? cx.yb + sub : null, cotaMax = num(cx.cotaMax, 0) > 0 ? num(cx.cotaMax, 0) : null;
+var naoSobe = cotaMin != null && cotaMax != null && cotaMin > cotaMax + EPS;
+if (cotaMin != null) out.push({ tipo: "subir", cotaMinima: cotaMin, subir: sub, possivel: !naoSobe, elementos: [cx.id],
+texto: "Pressão BAIXA em " + baixos.map(function (p) { return p.famInst + " (" + f2(p.pdin) + " < " + f2(p.pmin) + " kPa)"; }).slice(0, 4).join(", ") + ": a cota MÍNIMA do fundo da caixa " + (cx.id || "") + " é " + f2(cotaMin) + " m (subir " + f2(sub) + " m)" + (naoSobe ? " — passa da cota máxima possível informada (" + f2(cotaMax) + " m): use o pressurizador abaixo." : ".") });
+var falta = Math.max.apply(null, baixos.map(function (p) { return p.pmin * (1 + FAIXA.folgaMin) - p.pdin; })), Hman = mca(falta), Q = num(o.vazao_ls, null);
+if (o.cotaPiso == null) { var pisos = ps.map(function (p) { return p.yPiso; }).filter(function (y) { return y != null && (cx.yb == null || y < cx.yb); }); if (pisos.length) o.cotaPiso = Math.max.apply(null, pisos); }
+var pz = pressurizador(Q, Hman, cx, o);
+out.push(pz);
+}
+return out;
+}
+function pressurizador(Q_ls, Hman, cx, o) {
+var Q = Q_ls != null ? Q_ls * 3600 / 1000 : null, base = { tipo: "pressurizador", vazao_m3h: Q, Hman_m: Hman, elementos: [cx.id] };
+var HP = HPz(), esc = null;
+if (HP && HP.selecionar && Q != null && Q > 0) {
+var yb = num(cx.yb, 0), Hc = num(cx.H, 0);
+try {
+var piso = o && o.cotaPiso != null ? o.cotaPiso : yb;
+var s = HP.selecionar({ Q_m3h: Q, Hnec: function () { return Hman; }, yEixo: function (m) { var sc = m && m.conexoes && m.conexoes.succao; return piso + (sc && isFinite(Number(sc.y)) ? Number(sc.y) / 1000 : 0); }, NAmin: yb, NAmax: yb + Hc, hfSuc: function () { return 0; }, margemNpsh: null,
+filtro: function (m) { return m && m.tipo !== "centrifuga"; } });
+esc = s && s.escolha;
+} catch (e) { esc = null; }
+}
+base.modelo = esc ? { id: esc.id, nome: esc.nome, Qop_m3h: esc.Qop, Hop_m: esc.Hop, fonte: esc.fonte } : null;
+base.texto = "Se a caixa não puder subir: PRESSURIZADOR na saída da caixa para " + (Q != null ? f2(Q) + " m³/h (" + f2(Q_ls) + " L/s, vazão de projeto)" : "a vazão de projeto (rode o dimensionamento)") + " e +" + f2(Hman) + " mca (o que falta no ponto pior até a faixa verde)" +
+(esc ? " — referência: " + esc.nome + " (ponto de operação " + f2(esc.Qop) + " m³/h × " + f2(esc.Hop) + " m; ficha: " + (esc.fonte || "catálogo") + "). Use o Corrigir do dimensionamento para modelar a instalação." : " — nenhum modelo do catálogo atende essa curva: pendência (consulte o fabricante).");
+return base;
+}
+var HidPressaoCores = { classificar: classificar, mapa: mapa, sugestoes: sugestoes, pressurizador: pressurizador, HEX: HEX, FAIXA: FAIXA };
+if (typeof module !== "undefined" && module.exports) module.exports = HidPressaoCores;
+global.HidPressaoCores = HidPressaoCores;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/hidbarrilete.js ==== */
 try {
 (function (global) {
@@ -33057,6 +33164,8 @@ function HCt() { return dep("HidCatalogo", "./hidcatalogo.js"); }
 function BIC() { return dep("BimInstColocar", "./biminstcolocar.js"); }
 function BEd() { return dep("BimEdit", "./bimedit.js"); }
 function HBA() { return dep("HidBaseApoio", "./hidbaseapoio.js"); }
+function HPCo() { return dep("HidPressaoCores", "./hidpressaocores.js"); }
+var CHAVE_COTA_MAX = "Cota_max_fundo";
 function arr(a) { return Array.isArray(a) ? a : []; }
 function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
 function txt(v) { return v == null ? "" : String(v); }
@@ -33076,6 +33185,7 @@ var RESERVATORIOS = { "ra-caixa-dagua": 1, "hid-caixa-dagua": 1, "hid-reservator
 var GEO_BAR = {
 declividade: 0.005,
 tocoMin: 0.30,
+voltasCota: 5,
 tocoSaida: 0.30,
 ventAcima: 0.15,
 saidaLivre: 0.30,
@@ -33967,33 +34077,58 @@ try { var fz = K.aparelhosForcados ? K.aparelhosForcados(todos) : {}; if (Object
 try { r = AF.calcular(en, N.contexto(), null); } catch (eP) { return { caixa: cx.id, erro: String(eP && eP.message || eP), achados: [{ chave: "bar.pressao", texto: "Caixa d'água " + cx.id + ": a conferência de pressão falhou (" + (eP && eP.message ? eP.message : eP) + ") — rode o dimensionamento", elementos: [cx.id] }] }; }
 var out = { caixa: cx.id, status: r.status, pontos: arr(r.pontos).map(function (p) { return { famInst: p.famInst, aparelho: p.aparelho, pdin: p.pressaoDinamica_kpa, pest: p.pressaoEstatica_kpa, pmin: p.pressaoMinima_kpa, ok: p.ok, status: p.status }; }), critico: r.pontoCritico, achados: [] };
 var rho = r.fluido && r.fluido.rho, mDe = function (kpa) { return Hh && Hh.kpaParaM ? Hh.kpaParaM(kpa, rho) : kpa / 9.80665; };
-var baixos = arr(r.pontos).filter(function (p) { return p.status === "reprovado" && num(p.pressaoDinamica_kpa, null) != null && num(p.pressaoMinima_kpa, null) != null && p.pressaoDinamica_kpa < p.pressaoMinima_kpa; });
+var baixos = arr(r.pontos).filter(function (p) { return p.status === "reprovado" && num(p.pressaoDinamica_kpa, null) != null && num(p.pressaoMinima_kpa, null) != null && p.pressaoDinamica_kpa < p.pressaoMinima_kpa; }).map(function (p) { return { famInst: p.famInst, aparelho: p.aparelho, pressaoDinamica_kpa: p.pressaoDinamica_kpa, pressaoMinima_kpa: p.pressaoMinima_kpa }; });
 function vrf(re) { return arr(r.verificacoes).filter(function (v) { return re.test(String(v.nome)) && v.ok === false && num(v.valor, null) != null && num(v.limite, null) != null; })[0]; }
 var vRd = vrf(/pressão dinâmica mínima na rede/), vTm = vrf(/pressão na tomada vertical/);
 out.rede = vRd ? { alvo: String(vRd.alvo), pdin: num(vRd.valor, 0), pmin: num(vRd.limite, 0) } : null;
 out.tomada = vTm ? { alvo: String(vTm.alvo), pdin: num(vTm.valor, 0), pmin: num(vTm.limite, 0) } : null;
 [[vRd, "rede", "rede de distribuição, NBR 5626:2020 6.9.3"], [vTm, "tomada", "tomada vertical, não pode ser negativa"]].forEach(function (q) { if (q[0]) baixos.push({ famInst: String(q[0].alvo), aparelho: q[2], pressaoDinamica_kpa: num(q[0].valor, 0), pressaoMinima_kpa: num(q[0].limite, 0), rede: q[1] }); });
+var PCo = HPCo(), mapaC = null;
+if (PCo) { try { mapaC = PCo.mapa(r, estC, e.avaliarFam); } catch (eM) { mapaC = null; } }
+if (mapaC) mapaC.pontos.forEach(function (q) {
+if (q.faixa !== "baixa" || q.pmin == null || q.pdin == null) return;
+var b = baixos.filter(function (x) { return String(x.famInst) === q.famInst && !x.rede; })[0];
+if (b) { if (q.pmin > b.pressaoMinima_kpa) b.pressaoMinima_kpa = q.pmin; }
+else baixos.push({ famInst: q.famInst, aparelho: q.aparelho, pressaoDinamica_kpa: q.pdin, pressaoMinima_kpa: q.pmin, daFamilia: true });
+});
+function pmCor(P2, id) { var c = P2 && P2.cores ? arr(P2.cores.pontos).filter(function (x) { return x.famInst === id; })[0] : null; return c && c.pdin != null && c.pmin != null ? { pdin: c.pdin, pmin: c.pmin } : null; }
 if (baixos.length) {
 var falta = Math.max.apply(null, baixos.map(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa; })), pc = baixos.filter(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa === falta; })[0];
 var sub = Math.ceil((mDe(falta) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
-out.subir = r4(sub);
 var depoisTxt = "";
-if (!e._semBase && HBA()) {
+if (!e._semBase) {
 try {
+var P2 = null, q2 = null;
+for (var volta = 0; volta < GEO_BAR.voltasCota; volta++) {
 var opsUp = arr(e.ops).concat([{ op: "lote", id: "previa-elevar", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }] }]);
 var R2 = montar({ estado: BE.aplicar(opsUp), avaliarFam: e.avaliarFam, ops: opsUp, parametros: e.parametros, caixa: cx.id, pressao: true, oferta: false, _semBase: true });
-var P2 = arr(R2.pressao)[0], q2 = P2 ? (pc.rede ? (P2[pc.rede] || { pdin: pc.pressaoMinima_kpa, pmin: pc.pressaoMinima_kpa, semReprovacao: true }) : arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0]) : null;
+P2 = arr(R2.pressao)[0];
+q2 = P2 ? (pc.rede ? (P2[pc.rede] || { pdin: pc.pressaoMinima_kpa, pmin: pc.pressaoMinima_kpa, semReprovacao: true }) : (pmCor(P2, pc.famInst) || arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0])) : null;
+var falta2 = q2 && !q2.semReprovacao && q2.pdin < q2.pmin - EPS ? q2.pmin - q2.pdin : 0;
+if (P2 && P2.cores) arr(P2.cores.pontos).forEach(function (x) { if (x.faixa === "baixa" && x.pmin != null && x.pdin != null) falta2 = Math.max(falta2, x.pmin - x.pdin); });
+if (P2 && P2.rede && P2.rede.pdin < P2.rede.pmin - EPS) falta2 = Math.max(falta2, P2.rede.pmin - P2.rede.pdin);
+if (!(falta2 > EPS)) break;
+sub += Math.ceil((mDe(falta2) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
+}
 out.depois = q2 ? { famInst: pc.famInst, pdin: q2.pdin, pmin: q2.pmin, ok: q2.pdin >= q2.pmin - EPS } : null;
 if (q2 && q2.semReprovacao) depoisTxt = "na " + (pc.rede === "rede" ? "rede" : "tomada") + " (" + pc.famInst + ") nenhum nó fica abaixo do mínimo (ATENDE)";
 else if (q2) depoisTxt = "no " + pc.famInst + " a pressão dinâmica passa de " + f2(pc.pressaoDinamica_kpa) + " para " + f2(q2.pdin) + " kPa (mínimo " + f2(q2.pmin) + " kPa" + (q2.pdin >= q2.pmin - EPS ? ", ATENDE" : ", ainda não atende") + ")";
 } catch (eD) { depoisTxt = ""; }
 }
-out.achados.push({ chave: "bar.pressao_baixa", texto: "Pressão: a caixa " + cx.id + " está BAIXA para " + baixos.map(function (p) { return p.famInst + " (" + (p.aparelho || "ponto") + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa)"; }).slice(0, 4).join(", ") + " — NBR 5626:2020 6.9.2 / pressão do fabricante, com os DN do dimensionamento e o nível d'água na saída (o mais desfavorável). Suba a caixa " + f2(sub) + " m (base a " + f2(cx.yb + sub) + " m) ou ponha um pressurizador na saída (Instalações › Pressurização).",
+out.subir = r4(sub);
+out.achados.push({ chave: "bar.pressao_baixa", texto: "Pressão: a caixa " + cx.id + " está BAIXA para " + baixos.map(function (p) { return p.famInst + " (" + (p.aparelho || "ponto") + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa)"; }).slice(0, 4).join(", ") + " — NBR 5626:2020 6.9.2 / pressão do fabricante, com os DN do dimensionamento e o nível d'água na saída (o mais desfavorável). Cota MÍNIMA do fundo da caixa: " + f2(cx.yb + sub) + " m (subir " + f2(sub) + " m); se não puder subir, pressurizador na saída (sugestão com o modelo abaixo).",
 elementos: [cx.id, pc.famInst], acao: { tipo: "ops", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }], texto: "subir a caixa " + f2(sub) + " m" } });
 var bs = basesPara(e, cx, sub, "Pressão baixa no ponto mais desfavorável (" + pc.famInst + "):", depoisTxt);
 var bsOk = bs.filter(function (b) { return b.acao; });
 if (bsOk.length) { var ach = out.achados[out.achados.length - 1]; ach.acao = bsOk[0].acao; ach.texto = ach.motivo = ach.texto + " Opções: elevar " + f2(sub) + " m sobre base de madeira ou metálica (abaixo)."; }
 bs.forEach(function (b) { out.achados.push(b); });
+}
+if (PCo && mapaC) {
+try {
+out.cores = mapaC;
+var qS = arr(r.trechos).reduce(function (m, t) { return Math.max(m, num(t.vazao_ls, 0)); }, 0);
+out.sugestoes = PCo.sugestoes(out.cores, { caixa: { id: cx.id, yb: cx.yb, H: cx.H, cotaMax: num(cx.f && cx.f.inst && cx.f.inst[CHAVE_COTA_MAX], 0) }, subir: out.subir != null ? out.subir : null, vazao_ls: qS > 0 ? qS : null });
+} catch (eC) { out.cores = null; out.sugestoes = []; }
 }
 var vE = arr(r.verificacoes).filter(function (v) { return /pressão estática máxima/.test(String(v.nome)) && v.ok === false; })[0];
 if (vE) {
@@ -34008,7 +34143,7 @@ return out;
 function ehBaseDe(id, cxId) { var b = "base-" + cxId; return String(id) === b || String(id).indexOf(b + "-") === 0; }
 function baseAtual(estado, cx) { var HB = HBA(); return arr(estado && estado.familias).filter(function (f) { return HB && f.famId === HB.FAM && ehBaseDe(f.id, cx.id); })[0] || null; }
 function basesPara(e, cx, dh, motivo, depois) {
-var HB = HBA(); if (!HB || e._semBase || !(dh > 0)) return [];
+var HB = HBA(); if (!HB || !(e.comBase || HidBarrilete.comBase === true) || e._semBase || !(dh > 0)) return [];
 var bA = baseAtual(e.estado, cx), apoio = bA ? num(bA.y, cx.yb) : cx.yb, total = r4((bA ? Math.max(0, cx.yb - apoio) : 0) + dh), nId = "base-" + cx.id + (bA ? "-" + (Number(String(bA.id).split("-").pop()) + 1 || 2) : "");
 var out = [];
 HB.opcoes({ caixa: cx, elevar: total, apoio: apoio, id: nId }).forEach(function (P) {
@@ -34084,9 +34219,9 @@ var m = /^bar-.+-(saida|tomada|barrilete|coletor|coluna)-\d+b?$/.exec(String(idT
 if (!m) return null;
 return m[1] === "coluna" ? GEO_BAR.dnMinColuna : GEO_BAR.dnMinBarrilete;
 }
-var HidBarrilete = { VERSAO: 1, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
+var HidBarrilete = { VERSAO: 1, comBase: false, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
 montar: montar, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
-_int: { suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
+_int: { CHAVE_COTA_MAX: CHAVE_COTA_MAX, suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
 global.HidBarrilete = HidBarrilete;
 if (typeof module !== "undefined" && module.exports) module.exports = HidBarrilete;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -34694,6 +34829,7 @@ return K._int && K._int.vizinhosDe ? K._int.vizinhosDe(estado, fi) : [];
 },
 aoReconstruir: function (st) {
 U._st = st || null;
+U._conferirCoresVelhas();
 if (U._agendado || U._ocupado) return;
 U._agendado = true;
 setTimeout(function () { U._agendado = false; var s0 = U._st; U._st = null; try { U.processar(s0); } catch (e) { try { console.warn("HidKitUI", e); } catch (e2) {} }
@@ -35020,11 +35156,36 @@ if (tipo === "aparelho" && U._temEsgoto(c, id)) {
 var atS = U._saidaAtual(c, id), outS = atS === "joelho" ? "curva" : "joelho";
 ps.push({ id: "hid:saida-es", rotulo: "Saída do esgoto", tipo: "botao", rotuloBotao: U._rotuloSaida(atS) + " — trocar para " + U._rotuloSaida(outS), fn: function () { U.escolherSaida(id, outS); } });
 }
+if (tipo === "caixa" && fiA) U._paramsCaixa(c, fiA).forEach(function (p) { ps.push(p); });
 if (HEu && tipo !== "caixa") {
 ps.push({ id: "hid:aparente", rotulo: "Instalação aparente", tipo: "botao", rotuloBotao: apA ? "Aparente — voltar a embutir" : "Embutida — marcar aparente", fn: function () { U.marcarAparente([id], !apA); } });
 ps.push({ id: "hid:aparente-amb", rotulo: "Neste ambiente", tipo: "botao", rotuloBotao: apA ? "Embutir o ambiente inteiro" : "Ambiente inteiro aparente", fn: function () { U.marcarAparente(U._doAmbiente(c, id), !apA); } });
 }
 return { nome: "Instalação hidrossanitária", params: ps };
+},
+_paramsCaixa: function (c, fi) {
+var F = dep("HidFamilias"), fam = F && F.porId ? F.porId(fi.famId) : null, HBR = dep("HidBarrilete"), CH = HBR && HBR._int && HBR._int.CHAVE_COTA_MAX ? HBR._int.CHAVE_COTA_MAX : "Cota_max_fundo";
+var tipos = arr(fam && fam.tipos).filter(function (t) { return !t.legado; }), ps = [], id = String(fi.id);
+function op(o, msg) {
+o.op = "instancia"; o.id = id; var ok = false;
+try { ok = c.b.editarLote({ op: "lote", id: "hidcaixa-" + String(new Date().getTime()), ops: [o] }); } catch (e) { ok = false; }
+if (ok) status(msg);
+try { if (global.BimPropsUI && BimPropsUI.render) BimPropsUI.render(); } catch (eR) {}
+return ok;
+}
+if (tipos.length) ps.push({ id: "hid:cx-volume", rotulo: "Volume da caixa", tipo: "lista", valor: fi.tipoId,
+opcoes: tipos.map(function (t) { var v = t.valores || {}; return { id: t.id, rotulo: (v.Volume_L != null ? v.Volume_L + " L" : t.nome) + (v.Fabricante ? " — " + v.Fabricante + " " + (v.Codigo || "") : "") }; }),
+aoMudar: function (v) { op({ tipoId: String(v) }, "Caixa " + id + ": volume trocado — monte o barrilete de novo para refazer a saída."); } });
+var yb = Number(fi.inst && fi.inst.y != null ? fi.inst.y : fi.y) || 0;
+ps.push({ id: "hid:cx-cota", rotulo: "Cota do fundo", unidade: "m", tipo: "numero", passo: 0.05, valor: Math.round(yb * 100) / 100,
+aoMudar: function (v) { if (isFinite(v)) op({ y: Math.round(v * 10000) / 10000 }, "Caixa " + id + ": fundo na cota " + String(v).replace(".", ",") + " m — monte o barrilete de novo para recalcular a pressão."); } });
+var cm = Number(fi.inst && fi.inst[CH]) || 0;
+ps.push({ id: "hid:cx-cotamax", rotulo: "Cota máxima possível do fundo", unidade: "m", tipo: "numero", passo: 0.05, valor: cm > 0 ? cm : "", title: "Até onde a caixa pode subir (laje/estrutura). Vazio = sem limite. Acima disso a sugestão é o pressurizador.",
+aoMudar: function (v) { var o = {}; o[CH] = isFinite(v) && v > 0 ? v : 0; op({ inst: o }, "Caixa " + id + ": cota máxima do fundo " + (o[CH] ? String(o[CH]).replace(".", ",") + " m" : "sem limite") + "."); } });
+ps.push({ id: "hid:cx-pressao", rotulo: "Pressão nos pontos", tipo: "botao", rotuloBotao: U._pressaoAtual ? "Recalcular cores" : "Pressão em cores", fn: function () { U.conferirPressao(id); } });
+if (U._pressaoAtual) ps.push({ id: "hid:cx-pressao-limpar", rotulo: "Cores de pressão", tipo: "botao", rotuloBotao: "Limpar cores", fn: function () { U.mostrarPressao(null); } });
+ps.push({ id: "hid:cx-conectar", rotulo: "Aparelhos soltos", tipo: "botao", rotuloBotao: "Conectar", fn: function () { U.conectarSoltos(); } });
+return ps;
 },
 _saidaAtual: function (c, famId) {
 var HR = dep("HidRota"), f = arr(c && c.estado && c.estado.familias).filter(function (x) { return String(x.id) === String(famId); })[0];
@@ -35502,7 +35663,7 @@ if (!RB.ops.length && !comAcao.length) return { ok: false, erro: (RB.pendencias.
 var resumo = U._resumo(c, ops);
 resumo.kits = 0; resumo.ambientes = 0; resumo.reaproveitadas = []; resumo.caixasNovas = []; resumo.piscinas = 0;
 var avisos = RB.avisos.slice(); if (RB.ligadas) avisos.unshift({ texto: arr(RB.decisoes).map(function (d) { return d.texto; }).join(" "), elementos: RB.caixas.map(function (x) { return x.id; }) });
-return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, opsNaProposta: nOpsDe(c) };
+return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, pressaoCores: U._juntarCores(RB), opsNaProposta: nOpsDe(c) };
 },
 RESERVATORIO: /^(ra-caixa-dagua|hid-caixa-dagua|hid-reservatorio-tanque)$/,
 aoColocarFamilia: function (d) {
@@ -35521,7 +35682,7 @@ status("Montar barrilete: calculando…");
 var P = U.planejarBarrilete(opcoes || {});
 U._plano = P; U._planoUids = [];
 if (!P.ok) { U.ultimo = { ok: false, erro: P.erro }; U._previa(null); U._cardMostrar(P); U._redesenhar(); status(P.erro); return P; }
-U._previa(P.ops); U._cardMostrar(P);
+U._previa(P.ops); U._cardMostrar(P); if (P.pressaoCores) { U._pressaoPrevia = true; U.mostrarPressao(P.pressaoCores); }
 status("Prévia do barrilete: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões). Enter aplica, Esc cancela.");
 return P;
 },
@@ -35553,6 +35714,7 @@ return true;
 },
 aplicarTracado: function () {
 var P = U._plano, c = U._ctx(); if (!P || !P.ok || !c) return null;
+if (P.pressaoCores) { U._pressaoPrevia = false; U._pressaoOps = null; }
 var Qd = P.criterios && P.criterios.contagem ? P.criterios.contagem.dura : 0;
 if (Qd && !U._confirmar("A prévia tem " + Qd + " PROIBIDO(s) de projetista:\n\n" + P.criterios.apontamentos.filter(function (a) { return a.gravidade === "dura"; }).slice(0, 4).map(function (a) { return "• " + a.titulo + ": " + a.texto; }).join("\n") +
 "\n\nCorrija o modelo (mova o aparelho, a janela/porta ou use outra opção com Tab) e trace de novo.\n\nAplicar mesmo assim? (decisão do RT)")) { status("Traçado NÃO aplicado: há " + Qd + " proibido(s) de projetista na prévia."); return null; }
@@ -35620,7 +35782,72 @@ status(ok ? "Corrigido: " + ac.texto + " (Ctrl+Z desfaz). Refazendo a prévia…
 if (ok) U.tracarAuto({ uids: U._planoUids || [], todos: true });
 return ok;
 },
-cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; return true; },
+cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; if (U._pressaoPrevia) { U._pressaoPrevia = false; U.mostrarPressao(null); } return true; },
+_juntarCores: function (RB) {
+var Ps = arr(RB && RB.pressao).filter(function (x) { return x && x.cores; }); if (!Ps.length) return null;
+var out = { pontos: [], cores: {}, contagem: { verde: 0, amarelo: 0, vermelho: 0, pendente: 0 }, sugestoes: [], caixas: [] };
+Ps.forEach(function (x) {
+out.caixas.push(x.caixa);
+arr(x.cores.pontos).forEach(function (p) { out.pontos.push(p); });
+Object.keys(x.cores.cores || {}).forEach(function (k) { out.cores[k] = x.cores.cores[k]; });
+["verde", "amarelo", "vermelho", "pendente"].forEach(function (k) { out.contagem[k] += Number(x.cores.contagem && x.cores.contagem[k]) || 0; });
+arr(x.sugestoes).forEach(function (sg) { out.sugestoes.push(sg); });
+});
+return out;
+},
+_conferirCoresVelhas: function () {
+if (!U._pressaoAtual || U._pressaoPrevia) return false;
+var b = B(), n = null; try { n = b && b.editarOps ? b.editarOps().length : null; } catch (e) { n = null; }
+if (n == null) return false;
+if (U._pressaoOps == null) { U._pressaoOps = n; return false; }
+if (n === U._pressaoOps) return false;
+U._pressaoAtual = null; U._pressaoOps = null;
+setTimeout(function () { U.mostrarPressao(null); status("Cores de pressão limpas: o modelo mudou — use \"Pressão em cores\" de novo."); }, 0);
+return true;
+},
+mostrarPressao: function (pc) {
+var UI = global.BimInstUI, HX = global.HidPressaoCores ? global.HidPressaoCores.HEX : {};
+U._pressaoAtual = pc || null;
+try { var bA = B(); U._pressaoOps = pc && bA && bA.editarOps ? bA.editarOps().length : null; } catch (eA) { U._pressaoOps = null; }
+if (!UI) return pc;
+UI._corVerif = pc ? pc.cores : null;
+UI._marcasPressao = pc ? pc.pontos.filter(function (p) { return p.cor && p.pos; }).map(function (p) { return { id: p.famInst, x: p.pos.x, y: p.pos.y, z: p.pos.z, cor: HX[p.cor] || p.cor, texto: p.motivo }; }) : null;
+try { var b = B(); if (b && b.editarReconstruir) b.editarReconstruir(); } catch (e) {}
+return pc;
+},
+conferirPressao: function (cxId) {
+var K = dep("HidKit"), BE = dep("BimEdit"), HBR = dep("HidBarrilete"), c = U._ctx(); if (!K || !BE || !HBR || !c) return null;
+var opsA = HBR.anteriores(K.achatar(c.ops), cxId).map(function (idB) { return { op: "apagar", id: idB }; }), todos = c.ops.concat([{ op: "lote", id: "previa", ops: opsA }]);
+var RB = HBR.montar({ estado: BE.aplicar(todos), avaliarFam: c.avaliarFam, ops: todos, parametros: U.parametros(), caixa: cxId, pressao: true, oferta: false, programa: U._programa() });
+var pc = U._juntarCores(RB); U.mostrarPressao(pc);
+if (!pc) { status("Pressão em cores: sem pontos calculados (a caixa precisa de barrilete e aparelhos ligados)."); return null; }
+status("Pressão: " + pc.contagem.verde + " ponto(s) verde(s), " + pc.contagem.amarelo + " amarelo(s), " + pc.contagem.vermelho + " vermelho(s)." + (pc.sugestoes.length ? " " + pc.sugestoes[0].texto : ""));
+return pc;
+},
+_pressaoHtml: function (pc) {
+var H = global.HidPressaoCores ? global.HidPressaoCores.HEX : {}, ORD = { vermelho: 0, amarelo: 1, pendente: 2, verde: 3 };
+function bola(c) { return '<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + (H[c] || "#999") + ';margin-right:4px;vertical-align:middle"></span>'; }
+var h = '<p data-hid-tr-pressao="' + pc.contagem.verde + "/" + pc.contagem.amarelo + "/" + pc.contagem.vermelho + '"><b>Pressão nos pontos:</b> ' + ["verde", "amarelo", "vermelho"].concat(pc.contagem.pendente ? ["pendente"] : []).map(function (k) { return bola(k) + pc.contagem[k] + " " + k; }).join(" · ") + "</p>";
+var ps = pc.pontos.filter(function (p) { return p.cor; }).sort(function (a, b) { return ORD[a.cor] - ORD[b.cor]; });
+if (ps.length) h += '<details data-hid-tr-pontos' + (pc.contagem.vermelho ? " open" : "") + '><summary>Cada ponto</summary><ul style="list-style:none;padding-left:0">' + ps.slice(0, U.MAX_AVISOS * 3).map(function (p) { return '<li data-cor="' + p.cor + '" title="' + esc("mínima: " + (p.fontePmin || "") + (p.fontePmax ? "; máxima: " + p.fontePmax : "")) + '">' + bola(p.cor) + esc(p.famInst + ": " + p.motivo) + "</li>"; }).join("") + "</ul></details>";
+pc.sugestoes.forEach(function (sg) { h += '<p data-hid-tr-sug="' + sg.tipo + '" class="' + (sg.tipo === "pressurizador" && !sg.modelo ? "hid-pend" : "") + '">' + esc(sg.texto) + "</p>"; });
+h += '<p><button type="button" class="btn sm" data-hid-tr="conectar" title="Liga os aparelhos que ainda estão sem tubo (o Traçar automaticamente só neles)">Conectar aparelhos soltos</button></p>';
+return h;
+},
+soltos: function (c) {
+c = c || U._ctx(); var I = dep("BimInst"); if (!c || !I) return [];
+var R = null; try { R = I.rede(c.estado, c.avaliarFam); } catch (e) { R = null; }
+var livres = {}; arr(R && R.conectoresLivres).forEach(function (k) { if (k && k.sistema === "agua_fria") livres[String(k.famInst)] = 1; });
+return U._aparelhosDe(c).map(function (x) { return String(x && x.id != null ? x.id : x).replace(/^edit:/, ""); }).filter(function (id) { return livres[id]; });
+},
+conectarSoltos: function () {
+var c = U._ctx(); if (!c) return null;
+var ids = U.soltos(c);
+if (!ids.length) { status("Conectar: todos os aparelhos já estão ligados."); return { ok: true, ids: [] }; }
+if (U._plano) { U._previa(null); U._cardFechar(); U._plano = null; }
+status("Conectar: ligando " + ids.length + " aparelho(s) solto(s).");
+return U.tracarAuto({ uids: ids.map(function (id) { return "edit:" + id; }), todos: true });
+},
 _previa: function (ops) { var b = B(); try { if (b && b.editarPreviaInst) b.editarPreviaInst(ops && ops.length ? ops : null); } catch (e) {} U._previaPlanta(ops); },
 _previaPlanta: function (ops) {
 var d = global.document, P2 = global.Bim2D, IC = global.BimInstCon, BIi = dep("BimInst"); if (!d || !P2 || !IC || !IC.noDesenho) return;
@@ -35656,6 +35883,7 @@ if (!P.ok) return h + '<p class="hidtr-erro" data-hid-tr-erro>' + esc(P.erro) + 
 var R = P.resumo;
 h += '<p data-hid-tr-resumo><b>' + R.tubos + "</b> tubo(s) · " + String(R.metros).replace(".", ",") + " m · <b>" + R.conexoes + "</b> conexão(ões)" + (R.kits ? " · " + R.kits + " kit(s)" : "") + " · " + R.ambientes + " ambiente(s)</p>";
 h += '<ul class="hidtr-dn">' + Object.keys(R.dns).map(function (k) { return "<li>" + esc(NOMES[k] || k) + ": DN " + R.dns[k].join(", ") + "</li>"; }).join("") + "</ul>";
+if (P.pressaoCores) h += U._pressaoHtml(P.pressaoCores);
 if (R.reaproveitadas.length) h += '<p class="hidtr-ok" data-hid-tr-reaproveita>Aproveitado do que você já pôs: ' + R.reaproveitadas.map(function (x) { return esc(x.id) + " (" + esc(x.papel) + ")"; }).join("; ") + ".</p>";
 if (R.caixasNovas.length) h += '<p class="muted">Caixa sifonada nova: ' + esc(R.caixasNovas.join(", ")) + ".</p>";
 if (R.substituidas) h += '<p class="muted" data-hid-tr-refeito="' + R.substituidas + '">Refazer: ' + R.substituidas + " peça(s) do traçado anterior saem neste lote e dão lugar ao novo (um Ctrl+Z volta tudo).</p>";
@@ -35693,6 +35921,7 @@ var a = b.getAttribute("data-hid-tr");
 if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
 else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n")));
 else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n")));
+else if (a === "conectar") U.conectarSoltos();
 else if (a === "av-ver") U.avisoMostrar(Number(b.getAttribute("data-n"))); else if (a === "av-corrigir") U.avisoCorrigir(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
 });
 d.body.appendChild(el);

@@ -1979,6 +1979,17 @@
         R.pontasLivres.forEach(function (p) { marcar(p, p.trecho); });
         R.conectoresLivres.forEach(function (k) { marcar(k, k.famInst); });
       }
+      /* PRESSÃO EM CORES (14/11/2026, js/hidkitui.js mostrarPressao): uma esfera na cor da pressão (verde/amarelo/vermelho) sobre cada
+         ponto de utilização — marcador de vista (não vai ao IFC nem ao orçamento) */
+      (this._marcasPressao || []).forEach(function (q) {
+        /* REVISÃO A7: UMA geometria de esfera no _geoCache (quem descarta é o cache; o js/bim.js não descarta a marcada instGeoCache) */
+        var Cg = self._geoCache && self._geoCache.THREE === THREE ? self._geoCache : null, eG = Cg ? Cg.m.get("esfera-pressao") : null;
+        if (!eG) { var gE = new THREE.SphereGeometry(0.08, 16, 10); gE.userData.instGeoCache = true; eG = { g: gE, ger: Cg ? Cg.ger : 0 }; if (Cg) Cg.m.set("esfera-pressao", eG); }
+        else eG.ger = Cg.ger;
+        var ms = new THREE.Mesh(eG.g, self._mat(THREE, q.cor));
+        ms.position.set(q.x, q.y + 0.15, q.z); ms.userData.semIfc = true; ms.userData.marcador = true; ms.userData.pressao = q.cor;
+        out.push({ id: "pressao-" + q.id, malhas: [ms], marcador: true, nome: "Pressão: " + q.id + " — " + (q.texto || "") });
+      });
       return out;
     },
 

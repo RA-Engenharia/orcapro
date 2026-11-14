@@ -90,6 +90,7 @@
     },
     aoReconstruir: function (st) {
       U._st = st || null;
+      U._conferirCoresVelhas();
       if (U._agendado || U._ocupado) return;
       U._agendado = true;
       setTimeout(function () { U._agendado = false; var s0 = U._st; U._st = null; try { U.processar(s0); } catch (e) { try { console.warn("HidKitUI", e); } catch (e2) {} }
@@ -464,11 +465,40 @@
         var atS = U._saidaAtual(c, id), outS = atS === "joelho" ? "curva" : "joelho";
         ps.push({ id: "hid:saida-es", rotulo: "Saída do esgoto", tipo: "botao", rotuloBotao: U._rotuloSaida(atS) + " — trocar para " + U._rotuloSaida(outS), fn: function () { U.escolherSaida(id, outS); } });
       }
+      if (tipo === "caixa" && fiA) U._paramsCaixa(c, fiA).forEach(function (p) { ps.push(p); });
       if (HEu && tipo !== "caixa") {
         ps.push({ id: "hid:aparente", rotulo: "Instalação aparente", tipo: "botao", rotuloBotao: apA ? "Aparente — voltar a embutir" : "Embutida — marcar aparente", fn: function () { U.marcarAparente([id], !apA); } });
         ps.push({ id: "hid:aparente-amb", rotulo: "Neste ambiente", tipo: "botao", rotuloBotao: apA ? "Embutir o ambiente inteiro" : "Ambiente inteiro aparente", fn: function () { U.marcarAparente(U._doAmbiente(c, id), !apA); } });
       }
       return { nome: "Instalação hidrossanitária", params: ps };
+    },
+    /* CAIXA D'ÁGUA PARAMÉTRICA (14/11/2026, pedido do Rogério: "selecionar e dizer se é de 250, 500, 750, 1000… quero a caixa com 5 m de
+       altura"): o VOLUME (o tipo da ficha Fortlev), a COTA DO FUNDO (a posição: a caixa fica ali, sem torre embaixo — quem dá o apoio é a
+       laje/estrutura do projeto) e a cota MÁXIMA possível (acima dela a sugestão de pressão é o pressurizador). Cada mudança é uma op
+       "instancia" num lote (um Ctrl+Z desfaz). */
+    _paramsCaixa: function (c, fi) {
+      var F = dep("HidFamilias"), fam = F && F.porId ? F.porId(fi.famId) : null, HBR = dep("HidBarrilete"), CH = HBR && HBR._int && HBR._int.CHAVE_COTA_MAX ? HBR._int.CHAVE_COTA_MAX : "Cota_max_fundo";
+      var tipos = arr(fam && fam.tipos).filter(function (t) { return !t.legado; }), ps = [], id = String(fi.id);
+      function op(o, msg) {
+        o.op = "instancia"; o.id = id; var ok = false;
+        try { ok = c.b.editarLote({ op: "lote", id: "hidcaixa-" + String(new Date().getTime()), ops: [o] }); } catch (e) { ok = false; }
+        if (ok) status(msg);
+        try { if (global.BimPropsUI && BimPropsUI.render) BimPropsUI.render(); } catch (eR) {}
+        return ok;
+      }
+      if (tipos.length) ps.push({ id: "hid:cx-volume", rotulo: "Volume da caixa", tipo: "lista", valor: fi.tipoId,
+        opcoes: tipos.map(function (t) { var v = t.valores || {}; return { id: t.id, rotulo: (v.Volume_L != null ? v.Volume_L + " L" : t.nome) + (v.Fabricante ? " — " + v.Fabricante + " " + (v.Codigo || "") : "") }; }),
+        aoMudar: function (v) { op({ tipoId: String(v) }, "Caixa " + id + ": volume trocado — monte o barrilete de novo para refazer a saída."); } });
+      var yb = Number(fi.inst && fi.inst.y != null ? fi.inst.y : fi.y) || 0;
+      ps.push({ id: "hid:cx-cota", rotulo: "Cota do fundo", unidade: "m", tipo: "numero", passo: 0.05, valor: Math.round(yb * 100) / 100,   // hid:ok 2 casas na tela
+        aoMudar: function (v) { if (isFinite(v)) op({ y: Math.round(v * 10000) / 10000 }, "Caixa " + id + ": fundo na cota " + String(v).replace(".", ",") + " m — monte o barrilete de novo para recalcular a pressão."); } });   // hid:ok 4 casas do biminst
+      var cm = Number(fi.inst && fi.inst[CH]) || 0;
+      ps.push({ id: "hid:cx-cotamax", rotulo: "Cota máxima possível do fundo", unidade: "m", tipo: "numero", passo: 0.05, valor: cm > 0 ? cm : "", title: "Até onde a caixa pode subir (laje/estrutura). Vazio = sem limite. Acima disso a sugestão é o pressurizador.",   // hid:ok passo do campo / tamanho da lista na tela
+        aoMudar: function (v) { var o = {}; o[CH] = isFinite(v) && v > 0 ? v : 0; op({ inst: o }, "Caixa " + id + ": cota máxima do fundo " + (o[CH] ? String(o[CH]).replace(".", ",") + " m" : "sem limite") + "."); } });
+      ps.push({ id: "hid:cx-pressao", rotulo: "Pressão nos pontos", tipo: "botao", rotuloBotao: U._pressaoAtual ? "Recalcular cores" : "Pressão em cores", fn: function () { U.conferirPressao(id); } });
+      if (U._pressaoAtual) ps.push({ id: "hid:cx-pressao-limpar", rotulo: "Cores de pressão", tipo: "botao", rotuloBotao: "Limpar cores", fn: function () { U.mostrarPressao(null); } });
+      ps.push({ id: "hid:cx-conectar", rotulo: "Aparelhos soltos", tipo: "botao", rotuloBotao: "Conectar", fn: function () { U.conectarSoltos(); } });
+      return ps;
     },
     /* ============ SAÍDA DO ESGOTO DO APARELHO (06/11/2026, pedido do Rogério): "Curva longa 90°" (padrão, NBR 8160) ou "Joelho 90°" no
        nó em que a descida do aparelho vira o ramal. Fica no aparelho (parâmetro HidRota.CHAVE_SAIDA_ES) e o Traçar automaticamente a
@@ -1086,7 +1116,7 @@
       var resumo = U._resumo(c, ops);
       resumo.kits = 0; resumo.ambientes = 0; resumo.reaproveitadas = []; resumo.caixasNovas = []; resumo.piscinas = 0;
       var avisos = RB.avisos.slice(); if (RB.ligadas) avisos.unshift({ texto: arr(RB.decisoes).map(function (d) { return d.texto; }).join(" "), elementos: RB.caixas.map(function (x) { return x.id; }) });
-      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, opsNaProposta: nOpsDe(c) };
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, pressaoCores: U._juntarCores(RB), opsNaProposta: nOpsDe(c) };
     },
     /* N23 (23/10/2026) — pedido do Rogério: "colocou a caixa → conecta sozinha: barrilete, colunas, registros, extravasor, limpeza,
        boia". A caixa recém-posta abre a PRÉVIA do barrilete dela (o mesmo cartão: Enter aplica, Esc cancela, um Ctrl+Z desfaz); sem
@@ -1110,7 +1140,7 @@
       var P = U.planejarBarrilete(opcoes || {});
       U._plano = P; U._planoUids = [];
       if (!P.ok) { U.ultimo = { ok: false, erro: P.erro }; U._previa(null); U._cardMostrar(P); U._redesenhar(); status(P.erro); return P; }
-      U._previa(P.ops); U._cardMostrar(P);
+      U._previa(P.ops); U._cardMostrar(P); if (P.pressaoCores) { U._pressaoPrevia = true; U.mostrarPressao(P.pressaoCores); }
       status("Prévia do barrilete: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões). Enter aplica, Esc cancela.");
       return P;
     },
@@ -1143,6 +1173,7 @@
     },
     aplicarTracado: function () {
       var P = U._plano, c = U._ctx(); if (!P || !P.ok || !c) return null;
+      if (P.pressaoCores) { U._pressaoPrevia = false; U._pressaoOps = null; }   /* aplicado: as cores ficam (são deste traçado); a próxima op as limpa */
       /* CRITÉRIO DE PROJETISTA: com PROIBIDO na prévia (o aparelho colado na janela, a ventilação sem saída…) o sistema não aplica
          calado — explica e pergunta; aplicar assim é decisão do RT */
       var Qd = P.criterios && P.criterios.contagem ? P.criterios.contagem.dura : 0;
@@ -1222,7 +1253,78 @@
       if (ok) U.tracarAuto({ uids: U._planoUids || [], todos: true });
       return ok;
     },
-    cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; return true; },
+    cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; if (U._pressaoPrevia) { U._pressaoPrevia = false; U.mostrarPressao(null); } return true; },
+    /* ============ PRESSÃO EM CORES (14/11/2026, pedido do Rogério): verde / amarelo / vermelho em cada ponto (esfera sobre o aparelho)
+       e trecho (a cor da verificação, js/biminstui.js _corVerif) — js/hidpressaocores.js. Fica no 3D até "Limpar cores" ou a próxima conferência. */
+    _juntarCores: function (RB) {
+      var Ps = arr(RB && RB.pressao).filter(function (x) { return x && x.cores; }); if (!Ps.length) return null;
+      var out = { pontos: [], cores: {}, contagem: { verde: 0, amarelo: 0, vermelho: 0, pendente: 0 }, sugestoes: [], caixas: [] };
+      Ps.forEach(function (x) {
+        out.caixas.push(x.caixa);
+        arr(x.cores.pontos).forEach(function (p) { out.pontos.push(p); });
+        Object.keys(x.cores.cores || {}).forEach(function (k) { out.cores[k] = x.cores.cores[k]; });
+        ["verde", "amarelo", "vermelho", "pendente"].forEach(function (k) { out.contagem[k] += Number(x.cores.contagem && x.cores.contagem[k]) || 0; });
+        arr(x.sugestoes).forEach(function (sg) { out.sugestoes.push(sg); });
+      });
+      return out;
+    },
+    _conferirCoresVelhas: function () {
+      if (!U._pressaoAtual || U._pressaoPrevia) return false;
+      var b = B(), n = null; try { n = b && b.editarOps ? b.editarOps().length : null; } catch (e) { n = null; }
+      if (n == null) return false;
+      if (U._pressaoOps == null) { U._pressaoOps = n; return false; }   /* recém-aplicado: as cores são deste modelo */
+      if (n === U._pressaoOps) return false;
+      U._pressaoAtual = null; U._pressaoOps = null;
+      setTimeout(function () { U.mostrarPressao(null); status("Cores de pressão limpas: o modelo mudou — use \"Pressão em cores\" de novo."); }, 0);
+      return true;
+    },
+    mostrarPressao: function (pc) {
+      var UI = global.BimInstUI, HX = global.HidPressaoCores ? global.HidPressaoCores.HEX : {};
+      U._pressaoAtual = pc || null;
+      /* REVISÃO A5: as cores valem para ESTE modelo — a assinatura (nº de ops) é guardada; qualquer op depois (cota, volume, rede) as limpa */
+      try { var bA = B(); U._pressaoOps = pc && bA && bA.editarOps ? bA.editarOps().length : null; } catch (eA) { U._pressaoOps = null; }
+      if (!UI) return pc;
+      UI._corVerif = pc ? pc.cores : null;
+      UI._marcasPressao = pc ? pc.pontos.filter(function (p) { return p.cor && p.pos; }).map(function (p) { return { id: p.famInst, x: p.pos.x, y: p.pos.y, z: p.pos.z, cor: HX[p.cor] || p.cor, texto: p.motivo }; }) : null;
+      try { var b = B(); if (b && b.editarReconstruir) b.editarReconstruir(); } catch (e) {}
+      return pc;
+    },
+    /* "Pressão em cores" (Propriedades da caixa): a conferência no modelo COMO ESTÁ (o barrilete refeito só na conta, nada gravado) */
+    conferirPressao: function (cxId) {
+      var K = dep("HidKit"), BE = dep("BimEdit"), HBR = dep("HidBarrilete"), c = U._ctx(); if (!K || !BE || !HBR || !c) return null;
+      var opsA = HBR.anteriores(K.achatar(c.ops), cxId).map(function (idB) { return { op: "apagar", id: idB }; }), todos = c.ops.concat([{ op: "lote", id: "previa", ops: opsA }]);
+      var RB = HBR.montar({ estado: BE.aplicar(todos), avaliarFam: c.avaliarFam, ops: todos, parametros: U.parametros(), caixa: cxId, pressao: true, oferta: false, programa: U._programa() });
+      var pc = U._juntarCores(RB); U.mostrarPressao(pc);
+      if (!pc) { status("Pressão em cores: sem pontos calculados (a caixa precisa de barrilete e aparelhos ligados)."); return null; }
+      status("Pressão: " + pc.contagem.verde + " ponto(s) verde(s), " + pc.contagem.amarelo + " amarelo(s), " + pc.contagem.vermelho + " vermelho(s)." + (pc.sugestoes.length ? " " + pc.sugestoes[0].texto : ""));
+      return pc;
+    },
+    _pressaoHtml: function (pc) {
+      var H = global.HidPressaoCores ? global.HidPressaoCores.HEX : {}, ORD = { vermelho: 0, amarelo: 1, pendente: 2, verde: 3 };   // hid:ok ordem da lista na tela
+      function bola(c) { return '<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + (H[c] || "#999") + ';margin-right:4px;vertical-align:middle"></span>'; }
+      var h = '<p data-hid-tr-pressao="' + pc.contagem.verde + "/" + pc.contagem.amarelo + "/" + pc.contagem.vermelho + '"><b>Pressão nos pontos:</b> ' + ["verde", "amarelo", "vermelho"].concat(pc.contagem.pendente ? ["pendente"] : []).map(function (k) { return bola(k) + pc.contagem[k] + " " + k; }).join(" · ") + "</p>";
+      var ps = pc.pontos.filter(function (p) { return p.cor; }).sort(function (a, b) { return ORD[a.cor] - ORD[b.cor]; });
+      if (ps.length) h += '<details data-hid-tr-pontos' + (pc.contagem.vermelho ? " open" : "") + '><summary>Cada ponto</summary><ul style="list-style:none;padding-left:0">' + ps.slice(0, U.MAX_AVISOS * 3).map(function (p) { return '<li data-cor="' + p.cor + '" title="' + esc("mínima: " + (p.fontePmin || "") + (p.fontePmax ? "; máxima: " + p.fontePmax : "")) + '">' + bola(p.cor) + esc(p.famInst + ": " + p.motivo) + "</li>"; }).join("") + "</ul></details>";   // hid:ok passo do campo / tamanho da lista na tela
+      pc.sugestoes.forEach(function (sg) { h += '<p data-hid-tr-sug="' + sg.tipo + '" class="' + (sg.tipo === "pressurizador" && !sg.modelo ? "hid-pend" : "") + '">' + esc(sg.texto) + "</p>"; });
+      h += '<p><button type="button" class="btn sm" data-hid-tr="conectar" title="Liga os aparelhos que ainda estão sem tubo (o Traçar automaticamente só neles)">Conectar aparelhos soltos</button></p>';
+      return h;
+    },
+    /* CONECTAR (pedido do Rogério): os aparelhos com a água SEM ligação (conector livre na rede) → o Traçar automaticamente só neles */
+    soltos: function (c) {
+      c = c || U._ctx(); var I = dep("BimInst"); if (!c || !I) return [];
+      var R = null; try { R = I.rede(c.estado, c.avaliarFam); } catch (e) { R = null; }
+      var livres = {}; arr(R && R.conectoresLivres).forEach(function (k) { if (k && k.sistema === "agua_fria") livres[String(k.famInst)] = 1; });
+      return U._aparelhosDe(c).map(function (x) { return String(x && x.id != null ? x.id : x).replace(/^edit:/, ""); }).filter(function (id) { return livres[id]; });
+    },
+    conectarSoltos: function () {
+      var c = U._ctx(); if (!c) return null;
+      var ids = U.soltos(c);
+      if (!ids.length) { status("Conectar: todos os aparelhos já estão ligados."); return { ok: true, ids: [] }; }
+      if (U._plano) { U._previa(null); U._cardFechar(); U._plano = null; }
+      status("Conectar: ligando " + ids.length + " aparelho(s) solto(s).");
+      return U.tracarAuto({ uids: ids.map(function (id) { return "edit:" + id; }), todos: true });
+    },
+
     _previa: function (ops) { var b = B(); try { if (b && b.editarPreviaInst) b.editarPreviaInst(ops && ops.length ? ops : null); } catch (e) {} U._previaPlanta(ops); },
     /* a PRÉVIA nas PLANTAS abertas (o 3D tem a dele, no js/bim.js): os tubos e as peças do lote, translúcidos, por cima do desenho */
     _previaPlanta: function (ops) {
@@ -1259,6 +1361,7 @@
       var R = P.resumo;
       h += '<p data-hid-tr-resumo><b>' + R.tubos + "</b> tubo(s) · " + String(R.metros).replace(".", ",") + " m · <b>" + R.conexoes + "</b> conexão(ões)" + (R.kits ? " · " + R.kits + " kit(s)" : "") + " · " + R.ambientes + " ambiente(s)</p>";
       h += '<ul class="hidtr-dn">' + Object.keys(R.dns).map(function (k) { return "<li>" + esc(NOMES[k] || k) + ": DN " + R.dns[k].join(", ") + "</li>"; }).join("") + "</ul>";
+      if (P.pressaoCores) h += U._pressaoHtml(P.pressaoCores);   /* a pressão logo abaixo do resumo (antes dos avisos, que cortavam a seção) */
       if (R.reaproveitadas.length) h += '<p class="hidtr-ok" data-hid-tr-reaproveita>Aproveitado do que você já pôs: ' + R.reaproveitadas.map(function (x) { return esc(x.id) + " (" + esc(x.papel) + ")"; }).join("; ") + ".</p>";
       if (R.caixasNovas.length) h += '<p class="muted">Caixa sifonada nova: ' + esc(R.caixasNovas.join(", ")) + ".</p>";
       if (R.substituidas) h += '<p class="muted" data-hid-tr-refeito="' + R.substituidas + '">Refazer: ' + R.substituidas + " peça(s) do traçado anterior saem neste lote e dão lugar ao novo (um Ctrl+Z volta tudo).</p>";
@@ -1302,6 +1405,7 @@
           if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
           else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n")));
           else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n")));
+          else if (a === "conectar") U.conectarSoltos();
           else if (a === "av-ver") U.avisoMostrar(Number(b.getAttribute("data-n"))); else if (a === "av-corrigir") U.avisoCorrigir(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
         });
         d.body.appendChild(el);
