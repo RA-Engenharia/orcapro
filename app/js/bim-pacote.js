@@ -10362,6 +10362,13 @@ editDist.style.left = (clientX - rc2.left + 16) + 'px';
 editDist.style.top = (clientY - rc2.top + 12) + 'px';
 var tx = editDist.querySelector('[data-edd="txt"]');
 if (tx) tx.textContent = d.toFixed(2).replace('.', ',') + ' m';
+var sdE = editDist.querySelector('[data-edd="seta"]');
+if (!sdE && tx) { sdE = document.createElement('span'); sdE.setAttribute('data-edd', 'seta'); sdE.setAttribute('data-seta-descida', '1'); sdE.style.cssText = 'display:none;margin-left:4px;font:700 15px/15px sans-serif;color:#b0413e'; sdE.textContent = '\u279c'; tx.parentNode.insertBefore(sdE, tx.nextSibling); }
+var rotI = edit.sub === 'inst' && window.BimInstUI && BimInstUI.rotuloTraco ? BimInstUI.rotuloTraco(edit.p1, p) : null;
+if (rotI && tx) tx.textContent += ' · ' + rotI.texto;
+var sa3 = rotI && rotI.seta && S._telaDe ? S._telaDe(rotI.seta.de.x, rotI.seta.de.y, rotI.seta.de.z) : null, sb3 = rotI && rotI.seta && S._telaDe ? S._telaDe(rotI.seta.para.x, rotI.seta.para.y, rotI.seta.para.z) : null;
+if (sdE && sa3 && sb3 && Math.sqrt(Math.pow(sb3.x - sa3.x, 2) + Math.pow(sb3.y - sa3.y, 2)) > 0.5) { var ang3 = Math.atan2(sb3.y - sa3.y, sb3.x - sa3.x) * 180 / Math.PI; sdE.style.display = 'inline-block'; sdE.style.transform = 'rotate(' + ang3 + 'deg)'; sdE.setAttribute('data-ang', String(Math.round(ang3))); }
+else if (sdE) sdE.style.display = 'none';
 }
 editDist.addEventListener('keydown', function (e) {
 if (e.key === 'Escape') {

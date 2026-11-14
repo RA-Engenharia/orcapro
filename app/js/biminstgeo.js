@@ -1444,6 +1444,9 @@
       }
       if (b < base - 1e-6) { base = b; quem = l.trecho; }
     });
+    /* REBAIXO DE PROJETO (13/11/2026, js/hidbocas.js / js/hidligar.js): o corpo desce pelo menos `rebaixo` (a ligação pôs as bocas nessa cota) —
+       o 3D desenha o corpo rebaixado com o prolongador e o orçamento conta o prolongador (BimInst.prolongadorDe) */
+    var rbx = Math.max(0, num(k.rebaixo, 0)); if (rbx > 0 && baseCat - rbx < base - 1e-6) { base = baseCat - rbx; quem = quem || "rebaixo"; }
     var desce = Math.max(0, baseCat - base);
     return { top: top, base: base, baseCatalogo: baseCat, desce: desce, prolongador: desce > 1e-4 ? desce : 0, porTrecho: quem, cotas: ct, diam: ct.diam };
   }

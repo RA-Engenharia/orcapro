@@ -93886,6 +93886,7 @@ var mat = P.materiais ? (P.materiais.indexOf(o.material) >= 0 ? o.material : P.m
 var dn = P.dns.indexOf(txt(o.dn)) >= 0 ? txt(o.dn) : P.dn;
 var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
 if (o.saidaGirada === true) k.saidaGirada = true;
+if (num(o.rebaixo, 0) > 0) { var limR = limiteRebaixo(o); if (limR > 0) k.rebaixo = r4(Math.min(num(o.rebaixo, 0), limR)); }
 if (o.peca === "extintor" && txt(o.capacidade)) k.capacidade = txt(o.capacidade).slice(0, 40);
 if (P.sistemas[0] === "eletrica") {
 k.alturaPiso = num(o.alturaPiso, null);
@@ -93950,7 +93951,7 @@ return true;
 if (o.op === "instAlterar" && o.id != null) {
 var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
 var novo = copia(alvo);
-["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
 if (o.continua === "") delete novo.continua;
 if (o.pecaIni === "") delete novo.pecaIni;
 if (o.pecaFim === "") delete novo.pecaFim;
@@ -94474,6 +94475,44 @@ if (!pick) return null;
 pick.rest--;
 return { rotulo: pick.s.rotulo, codigo: pick.s.codigo, dnServico: pick.dn, diverge: pick.dn !== txt(dn) };
 }
+function ajustarViradas(estado, avaliarFam, novos, fixoFim) {
+var out = { novos: arr(novos).map(function (o) { return JSON.parse(JSON.stringify(o)); }), extras: [], ajustes: [], avisos: [] };
+var ins = (estado && estado.instalacoes) || {}, base = arr(ins.trechos);
+for (var volta = 0; volta < 6; volta++) {
+var porId = {}, tr = base.map(function (t) { return t; });
+out.extras.forEach(function (o) { porId[o.id] = o; });
+tr = tr.map(function (t) { return porId[t.id] ? normTrecho(porId[t.id]) || t : t; });
+var nv = out.novos.map(function (o) { return normTrecho(o); }).filter(Boolean);
+var e2 = {}; Object.keys(estado || {}).forEach(function (k) { e2[k] = estado[k]; });
+e2.instalacoes = {}; Object.keys(ins).forEach(function (k) { e2.instalacoes[k] = ins[k]; });
+e2.instalacoes.trechos = tr.concat(nv);
+var R = rede(e2, avaliarFam), achou = null;
+arr(R.avisos).forEach(function (a) {
+if (achou || !(a.faltaMm > 0)) return;
+var k = -1; out.novos.forEach(function (o, i) { if (k < 0 && dist(o.p1, a) <= TOL + 1e-6) k = i; });
+if (k < 0) return;
+var curto = e2.instalacoes.trechos.filter(function (t) { return String(t.id) === String(a.trecho); })[0];
+if (curto && String(curto.id) !== String(out.novos[k].id)) achou = { a: a, k: k, t: curto };
+});
+if (!achou) break;
+var t = achou.t, A0 = dist(t.p2, achou.a) <= dist(t.p1, achou.a) ? "p2" : "p1", Bq = A0 === "p2" ? t.p1 : t.p2, Lc = dist(t.p1, t.p2);
+if (!(Lc > 1e-6) || (fixoFim && achou.k >= 0)) { out.avisos.push(achou.a.texto); break; }
+var m = achou.a.faltaMm / 1000, d = { x: (t[A0].x - Bq.x) / Lc * m, y: (t[A0].y - Bq.y) / Lc * m, z: (t[A0].z - Bq.z) / Lc * m };
+function mov(p) { return { x: r4(p.x + d.x), y: r4(p.y + d.y), z: r4(p.z + d.z) }; }
+var ehNovo = -1; out.novos.forEach(function (o, i) { if (String(o.id) === String(t.id)) ehNovo = i; });
+if (ehNovo < 0) {
+var Pa = t[A0], idsNovos = {}; out.novos.forEach(function (o) { idsNovos[o.id] = 1; });
+var outro = e2.instalacoes.trechos.some(function (q) { return String(q.id) !== String(t.id) && !idsNovos[q.id] && (dist(q.p1, Pa) <= TOL || dist(q.p2, Pa) <= TOL || dist(q.p1, Pa) + dist(Pa, q.p2) - dist(q.p1, q.p2) <= TOL); });
+var lig = arr(R.ligacoes).some(function (l) { return String(l.trecho) === String(t.id) && dist(l, Pa) <= TOL + TOL_CONECTOR; });
+if (outro || lig) { out.avisos.push(achou.a.texto + " (a virada não foi movida: a ponta do trecho " + t.id + " está ligada a outro elemento)"); break; }
+}
+if (ehNovo >= 0) out.novos[ehNovo][A0] = mov(out.novos[ehNovo][A0]);
+else { var ex = opDoTrecho(t); ex[A0] = mov(t[A0]); out.extras = out.extras.filter(function (o) { return o.id !== t.id; }).concat([ex]); }
+for (var j = achou.k; j < out.novos.length; j++) { out.novos[j].p1 = mov(out.novos[j].p1); out.novos[j].p2 = mov(out.novos[j].p2); }
+out.ajustes.push({ trecho: t.id, mm: achou.a.faltaMm });
+}
+return out;
+}
 function rede(estado, avaliarFam) {
 var inst = (estado && estado.instalacoes) || { trechos: [], pecas: [] };
 var trechos = arr(inst.trechos), pecas = arr(inst.pecas), acessorios = arr(inst.acessorios);
@@ -94691,12 +94730,16 @@ var clJ = null; try { clJ = HGj.cotasConexao(t.material, "luva", t.dn); } catch 
 var pbJ = clJ ? num(clJ.pb2 || clJ.pb, 0) / 1000 : 0;
 if (!(rA > 0) || !(rB > 0) || !(pbJ > 0) || Lt - rA - rB >= 2 * pbJ - FOLGA_BOLSA) return;
 var ppJ = null; try { ppJ = HGj.perfilProduto ? HGj.perfilProduto(jn.material, jn.principal, jn.dnPrincipal || jn.dn) : null; } catch (eLj) { ppJ = null; }
-if (!ppJ || !arr(ppJ.pernas).some(function (x) { return x.luva; })) return;
+var comPonta = !!(ppJ && arr(ppJ.pernas).some(function (x) { return x.luva; }));
 var gA2 = null; try { gA2 = HGj.no(lA.filter(function (c) { return !(c.tipo === "luva" && String(c.juntaDe) === String(t.id)); }), porIdJ, { tol: TOL }); } catch (eNo2) { gA2 = null; }
 var kP = t.id + ":" + jn.lado, pontaJ = gA2 && gA2.recuos ? ((gA2.recuos[kP] || 0) + ((gA2.faces || {})[kP] || gA2.recuos[kP] || 0)) / 2 : null;
-if (!(pontaJ > 0) || Lt - pontaJ < rB - FOLGA_BOLSA) return;
+var minJ = comPonta && pontaJ > 0 ? pontaJ + rB - FOLGA_BOLSA : rA + rB;
 var fL = rA, fB = rB;
-jn.junta = "direta"; jn.motivo = "trecho de " + Math.round(Lt * 1000) + " mm: entre a luva (fundo a " + Math.round(fL * 1000) + " mm) e a peça seguinte (fundo a " + Math.round(fB * 1000) + " mm) não cabem as duas bolsas";
+jn.junta = "direta"; jn.motivo = "trecho de " + Math.round(Lt * 1000) + " mm: entre a luva (fundo a " + Math.round(fL * 1000) + " mm) e a peça seguinte (fundo a " + Math.round(fB * 1000) + " mm) não cabem as duas bolsas" + (comPonta ? "" : " — o tubo entra direto nas duas bolsas");
+if (Lt < minJ - 1e-4) {
+var faltaJ = Math.ceil((minJ - Lt) * 1000);
+avisosRede.push({ x: r4(Pf.x), y: r4(Pf.y), z: r4(Pf.z), trecho: t.id, faltaMm: faltaJ, texto: "trecho " + t.id + " de " + Math.round(Lt * 1000) + " mm entre duas conexões: nem " + (comPonta ? "a ponta direto na bolsa" : "o tubo entre as duas bolsas") + " cabe (mínimo " + Math.round(minJ * 1000) + " mm) — afaste a virada " + faltaJ + " mm" });
+}
 function eLuva(c) { return c.tipo === "luva" && String(c.juntaDe) === String(t.id) && dist(c, Pi) <= TOL; }
 conexoes = conexoes.filter(function (c) { return !eLuva(c); }); luvasQto = luvasQto.filter(function (c) { return !eLuva(c); });
 });
@@ -94873,6 +94916,13 @@ return { status: "ok", chave: "passante|" + l[0], rotulo: "Passante na laje Ø "
 function dnPassante(t) { return num(t.dn, 0); }
 var PROLONGADOR_CS = { classes: [100, 150, 250], insumos: { "100": [[0.2, "11735", "100 MM X 200 MM"]], "150": [[0.15, "11737", "150 MM X 150 MM"], [0.2, "11738", "150 MM X 200 MM"]] }, comercial: 0.2,
 descricao: "Prolongamento / prolongador para caixa sifonada, PVC (NBR 5688), cortado na medida" };
+function limiteRebaixo(k) {
+if (!k || !/^(caixa_sifonada|ralo_)/.test(txt(k.peca))) return 0;
+var HGl = dep("HidGeo", "./biminstgeo.js"), ct = null; try { ct = HGl && HGl.cotasPeca ? HGl.cotasPeca(k) : null; } catch (eL) { ct = null; }
+var d = ct ? num(ct.diam, 0) : num(txt(k.dn).split("x")[0], 0); if (!(d > 0)) return 0;
+var cls = PROLONGADOR_CS.classes.slice().sort(function (a, b) { return Math.abs(a - d) - Math.abs(b - d); })[0], ls = PROLONGADOR_CS.insumos[String(cls)];
+return ls ? PROLONGADOR_CS.comercial : 0;
+}
 function prolongadorDe(k) {
 var c = k && k.corpo, L = c ? num(c.prolongador, 0) : 0; if (!(L > 0)) return null;
 var cls = PROLONGADOR_CS.classes.slice().sort(function (a, b) { return Math.abs(a - num(c.diam, 0)) - Math.abs(b - num(c.diam, 0)); })[0], ls = PROLONGADOR_CS.insumos[String(cls)];
@@ -95628,7 +95678,7 @@ COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, 
 joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
 normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
 conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
-partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
+ajustarViradas: ajustarViradas, limiteRebaixo: limiteRebaixo, prolongadorDe: prolongadorDe, partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
 quantidadeTrecho: quantidadeTrecho, qto: qto, servicosOrc: servicosOrc, planta: planta,
 ACESSORIOS: ACESSORIOS, ACESSORIO_DA_FAM: ACESSORIO_DA_FAM, DISPOSITIVOS: DISPOSITIVOS, BITOLA_REF: BITOLA_REF, TIPOS_VERIF: TIPOS_VERIF,
 ACESSORIO_MIN: ACESSORIO_MIN, ACESSORIO_MAX: ACESSORIO_MAX, ACESSORIO_PADRAO: ACESSORIO_PADRAO,
@@ -97985,6 +98035,7 @@ b = pt[1] - hRef * MM;
 }
 if (b < base - 1e-6) { base = b; quem = l.trecho; }
 });
+var rbx = Math.max(0, num(k.rebaixo, 0)); if (rbx > 0 && baseCat - rbx < base - 1e-6) { base = baseCat - rbx; quem = quem || "rebaixo"; }
 var desce = Math.max(0, baseCat - base);
 return { top: top, base: base, baseCatalogo: baseCat, desce: desce, prolongador: desce > 1e-4 ? desce : 0, porTrecho: quem, cotas: ct, diam: ct.diam };
 }
@@ -111675,6 +111726,44 @@ larg: M.larg || 0.40, alt: M.alt || 0.25, aplicacao: "", cota: COTA_PADRAO[sis],
 peca: (par && par.peca) || (sis === "eletrica" ? "caixa_4x2" : "ralo_sifonado"), pecaDn: "", pecaMat: "pvc", alturaPiso: 0.30, dh: 2.50, cotaAuto: !!S.gravidade && this._previaHidro() };
 return c;
 },
+setaDescida: function (p1, p2, sistema, inclinacaoPct, sobe) {
+var I = BI(), S = I && I.SISTEMAS[sistema]; if (!S || !S.gravidade || !p1 || !p2) return null;
+var Lh = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.z - p1.z, 2)); if (!(Lh > 1e-3)) return null;
+var dy = num(p2.y, 0) - num(p1.y, 0);
+if (Math.abs(dy) / Lh > 50) return null;
+if (Math.abs(dy) > 1e-6) return dy < 0 ? { de: p1, para: p2 } : { de: p2, para: p1 };
+if (!(num(inclinacaoPct, 0) > 0)) return null;
+return sobe ? { de: p2, para: p1 } : { de: p1, para: p2 };
+},
+rotuloTraco: function (p1, p2) {
+var c = this.cfg; if (!c || c.ferramenta === "peca") return null;
+var I = BI(), S = I && I.SISTEMAS[c.sistema], incl = S && S.gravidade ? num(c.inclinacao, 0) : 0;
+return { texto: "DN " + c.dn + (incl > 0 ? " · " + fmt(incl, 1) + " %" : ""), seta: this.setaDescida(p1, p2, c.sistema, incl, !!this._sobe) };
+},
+_setasPrevia: function (ops) {
+if (typeof document === "undefined") return;
+var self = this, b = B(); if (this._elSetas) this._elSetas.innerHTML = "";
+var tr = (ops || []).filter(function (o) { return o && o.op === "trecho"; }).map(function (t) { return self.setaDescida(t.p1, t.p2, t.sistema, 0, false); }).filter(function (x) { return x; });
+if (!tr.length || !b || !b.telaDe) { if (this._elSetas) this._elSetas.style.display = "none"; return; }
+if (!this._elSetas) { this._elSetas = document.createElement("div"); this._elSetas.className = "bim-inst-setas"; this._elSetas.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;z-index:41;pointer-events:none"; document.body.appendChild(this._elSetas); }
+this._elSetas.style.display = "";
+tr.forEach(function (sD) {
+var sp = document.createElement("span"); sp.setAttribute("data-seta-descida", "1"); sp.textContent = "\u279c";
+sp.style.cssText = "position:absolute;font:700 16px/16px sans-serif;color:#b0413e;text-shadow:0 0 3px #fff;margin:-8px 0 0 -8px";
+sp._s = sD; self._elSetas.appendChild(sp);
+});
+var passo = function () {
+if (!self._ligacao || !self._elSetas || !self._elSetas.children.length) { if (self._elSetas) self._elSetas.style.display = "none"; return; }
+[].slice.call(self._elSetas.children).forEach(function (sp) {
+var sD = sp._s, a = b.telaDe(sD.de.x, sD.de.y, sD.de.z), q = b.telaDe(sD.para.x, sD.para.y, sD.para.z);
+if (!a || !q || a.atras || q.atras) { sp.style.display = "none"; return; }
+var ang = Math.atan2(q.y - a.y, q.x - a.x) * 180 / Math.PI;
+sp.style.display = ""; sp.style.left = ((a.x + q.x) / 2) + "px"; sp.style.top = ((a.y + q.y) / 2) + "px"; sp.style.transform = "rotate(" + ang + "deg)"; sp.setAttribute("data-ang", String(Math.round(ang)));
+});
+if (typeof requestAnimationFrame === "function") requestAnimationFrame(passo);
+};
+passo();
+},
 armada: function () {
 var b = B(), v = b && b._volEstado ? b._volEstado() : null;
 return !!(v && v.on && (v.sub === "inst" || (v.sub === "familia" && this._famInst)));
@@ -111920,13 +112009,21 @@ criados[0] = ex;
 }
 }
 if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
+var ajV = null; if (I.ajustarViradas && S.gravidade) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
+if (ajV && ajV.ajustes.length) { criados = ajV.novos; pts[pts.length - 1] = this._sobe && S.gravidade ? criados[criados.length - 1].p1 : criados[criados.length - 1].p2; }
+var extrasV = ajV && ajV.ajustes.length ? ajV.extras : [];
+if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
+else {
 criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
 ctx.op(criados[criados.length - 1]);
+}
 var fim = pts[pts.length - 1];
 var tot = criados.reduce(function (s, o) { var g = I.geometria(o.p1, o.p2); return s + g.comprimento; }, 0);
 var msg = criados.length + (criados.length > 1 ? " trechos" : " trecho") + " (" + fmt(tot, 2) + " m)";
 if (S.gravidade) msg += ", cota de saída " + fmt(fim.y - base, 3) + " m (desnível " + fmt(p1.y - fim.y, 3) + " m)";
 if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && corteP.p.y > p1.y + 1e-6) || (this._sobe && corteP.p.y < p1.y - 1e-6))) msg += " ⚠ o trecho SOBE contra o escoamento (o esgoto desce de p1 para p2): confira o sentido";
+if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
+if (ajV && ajV.avisos.length) msg += " ⚠ " + ajV.avisos.join("; ");
 if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
 if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
 else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
@@ -112098,8 +112195,16 @@ var dx = r.p.x - ed.p1.x, dy = r.p.y - ed.p1.y, dz = r.p.z - ed.p1.z, L = Math.s
 var vb = c.vb || { w: 10 }, tx = document.createElementNS(NS, "text");
 tx.setAttribute("x", (a.x + q.x) / 2); tx.setAttribute("y", (a.y + q.y) / 2); tx.setAttribute("font-size", String(vb.w / 70)); tx.setAttribute("fill", cor);
 tx.setAttribute("paint-order", "stroke"); tx.setAttribute("stroke", "#fff"); tx.setAttribute("stroke-width", String(vb.w / 400));
-tx.textContent = ({ vertical: "vertical", horizontal: "horizontal", inclinado: "45°", livre: "livre", ligar: "liga em " + (pkH ? pkH.rotulo : "") }[r.tipo] || r.tipo) + " · " + fmt(L, 2) + " m";
+var rotT = this.rotuloTraco(ed.p1, r.p);
+tx.textContent = ({ vertical: "vertical", horizontal: "horizontal", inclinado: "45°", livre: "livre", ligar: "liga em " + (pkH ? pkH.rotulo : "") }[r.tipo] || r.tipo) + " · " + fmt(L, 2) + " m" + (rotT ? " · " + rotT.texto : "");
 g.appendChild(tx);
+var sD = rotT && rotT.seta, sa = sD ? K.noDesenho(def, sD.de) : null, sb = sD ? K.noDesenho(def, sD.para) : null;
+if (sa && sb && Math.sqrt(Math.pow(sb.x - sa.x, 2) + Math.pow(sb.y - sa.y, 2)) > 1e-6) {
+var ang = Math.atan2(sb.y - sa.y, sb.x - sa.x) * 180 / Math.PI, hh = vb.w / 90, pg = document.createElementNS(NS, "polygon");
+pg.setAttribute("points", hh + ",0 " + (-hh) + "," + (hh * 0.6) + " " + (-hh) + "," + (-hh * 0.6)); pg.setAttribute("fill", "#b0413e"); pg.setAttribute("data-seta-descida", "1"); pg.setAttribute("data-ang", String(Math.round(ang)));
+pg.setAttribute("transform", "translate(" + ((a.x + q.x) / 2) + "," + ((a.y + q.y) / 2 + vb.w / 120) + ") rotate(" + ang + ")");
+g.appendChild(pg);
+}
 this._previaCorte = { id: id, tipo: r.tipo, comprimento: L, p: r.p };
 return true;
 },
@@ -112177,12 +112282,13 @@ _previaLigacao: function () {
 var g = this._ligacao, b = B(); if (!g || !b) return;
 var o = g.opcoes[g.i];
 try { b.editarPreviaInst(o.ops); } catch (e) {}
+try { this._setasPrevia(o.ops); } catch (eS) {}
 var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
 ". Clique ou Enter confirma" + (g.opcoes.length > 1 ? "; Tab troca de opção" : "") + "; Esc cancela.";
 status(t); try { g.ctx.hint(t); } catch (eH) {}
 },
 trocarLigacao: function () { var g = this._ligacao; if (!g) return false; g.i = (g.i + 1) % g.opcoes.length; this._previaLigacao(); return true; },
-cancelarLigacao: function () { var b = B(); this._ligacao = null; try { if (b && b.editarPreviaInst) b.editarPreviaInst(null); } catch (e) {} return true; },
+cancelarLigacao: function () { var b = B(); this._ligacao = null; if (this._elSetas) { this._elSetas.innerHTML = ""; this._elSetas.style.display = "none"; } try { if (b && b.editarPreviaInst) b.editarPreviaInst(null); } catch (e) {} return true; },
 confirmarLigacao: function () {
 var g = this._ligacao, b = B(); if (!g || !b) return false;
 var o = g.opcoes[g.i], ctx = g.ctx, ed = ctx.edit;
@@ -115208,7 +115314,7 @@ return o;
 }
 function opPeca(p, y) {
 var o = { op: "peca", id: p.id, peca: p.peca, sistema: p.sistema, material: p.material, dn: p.dn, x: p.x, y: r4(y), z: p.z, rotY: p.rotY || 0 };
-["prof", "alturaPiso", "comentarios", "faseCriada", "faseDemolida"].forEach(function (k) { if (p[k] != null && p[k] !== "") o[k] = p[k]; });
+["prof", "alturaPiso", "saidaGirada", "rebaixo", "comentarios", "faseCriada", "faseDemolida"].forEach(function (k) { if (p[k] != null && p[k] !== "") o[k] = p[k]; });
 return o;
 }
 function zConexao(c, dn) {

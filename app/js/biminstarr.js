@@ -74,7 +74,7 @@
   }
   function opPeca(p, y) {
     var o = { op: "peca", id: p.id, peca: p.peca, sistema: p.sistema, material: p.material, dn: p.dn, x: p.x, y: r4(y), z: p.z, rotY: p.rotY || 0 };
-    ["prof", "alturaPiso", "comentarios", "faseCriada", "faseDemolida"].forEach(function (k) { if (p[k] != null && p[k] !== "") o[k] = p[k]; });
+    ["prof", "alturaPiso", "saidaGirada", "rebaixo", "comentarios", "faseCriada", "faseDemolida"].forEach(function (k) { if (p[k] != null && p[k] !== "") o[k] = p[k]; });
     return o;
   }
   /* o que a ponta da conexão "come" do tubo (mm → m) e a bolsa do tubo: o tubo é CURTO se o que sobra livre entre as

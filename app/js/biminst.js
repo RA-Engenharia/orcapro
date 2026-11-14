@@ -475,7 +475,10 @@
     var mat = P.materiais ? (P.materiais.indexOf(o.material) >= 0 ? o.material : P.material) : P.material;
     var dn = P.dns.indexOf(txt(o.dn)) >= 0 ? txt(o.dn) : P.dn;
     var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
-    if (o.saidaGirada === true) k.saidaGirada = true;   /* A6: a pessoa girou a saída da caixa/ralo (vale até em 0°) — sem o campo, rotY 0 = livre */
+    if (o.saidaGirada === true) k.saidaGirada = true;
+    /* BOCAS (13/11/2026): quanto o CORPO da caixa/ralo desceu com o prolongador (m; a grelha fica no piso acabado). Limitado ao prolongador que existe
+       (limiteRebaixo: 1 peça comercial de 200 mm com insumo SINAPI no Ø da caixa) — o instAlterar não grava valor fora disso (revisão 13/11, achado 5) */
+    if (num(o.rebaixo, 0) > 0) { var limR = limiteRebaixo(o); if (limR > 0) k.rebaixo = r4(Math.min(num(o.rebaixo, 0), limR)); }   /* A6: a pessoa girou a saída da caixa/ralo (vale até em 0°) — sem o campo, rotY 0 = livre */
     if (o.peca === "extintor" && txt(o.capacidade)) k.capacidade = txt(o.capacidade).slice(0, 40);   /* capacidade extintora calculada pelo Hidro (ex.: "3-A:20-B:C"); o incendio a le */
     if (P.sistemas[0] === "eletrica") {
       k.alturaPiso = num(o.alturaPiso, null);
@@ -552,7 +555,7 @@
     if (o.op === "instAlterar" && o.id != null) {
       var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
       var novo = copia(alvo);
-      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
       if (o.continua === "") delete novo.continua;
       if (o.pecaIni === "") delete novo.pecaIni;
       if (o.pecaFim === "") delete novo.pecaFim;
@@ -1215,6 +1218,50 @@
     return { rotulo: pick.s.rotulo, codigo: pick.s.codigo, dnServico: pick.dn, diverge: pick.dn !== txt(dn) };
   }
 
+  /* ESPAÇO CURTO NO TRAÇO (13/11/2026): os trechos NOVOS do traço manual (`novos`, ops trecho em ordem) — onde a rede avisa que nem a conexão-
+     conexão cabe (avisosRede com faltaMm, ver JUNTA DIRETA), a VIRADA anda o mínimo: o trecho curto estica `faltaMm` na direção dele e o resto
+     do traço é transladado junto (a direção de cada perna não muda). `fixoFim` = o último ponto está ligado num alvo: não se move (só avisa).
+     → { novos, extras (ops que atualizam trechos já existentes), ajustes: [{ trecho, mm }], avisos[] } */
+  function ajustarViradas(estado, avaliarFam, novos, fixoFim) {
+    var out = { novos: arr(novos).map(function (o) { return JSON.parse(JSON.stringify(o)); }), extras: [], ajustes: [], avisos: [] };
+    var ins = (estado && estado.instalacoes) || {}, base = arr(ins.trechos);
+    for (var volta = 0; volta < 6; volta++) {
+      var porId = {}, tr = base.map(function (t) { return t; });
+      out.extras.forEach(function (o) { porId[o.id] = o; });
+      tr = tr.map(function (t) { return porId[t.id] ? normTrecho(porId[t.id]) || t : t; });
+      var nv = out.novos.map(function (o) { return normTrecho(o); }).filter(Boolean);
+      var e2 = {}; Object.keys(estado || {}).forEach(function (k) { e2[k] = estado[k]; });
+      e2.instalacoes = {}; Object.keys(ins).forEach(function (k) { e2.instalacoes[k] = ins[k]; });
+      e2.instalacoes.trechos = tr.concat(nv);
+      var R = rede(e2, avaliarFam), achou = null;
+      arr(R.avisos).forEach(function (a) {
+        if (achou || !(a.faltaMm > 0)) return;
+        var k = -1; out.novos.forEach(function (o, i) { if (k < 0 && dist(o.p1, a) <= TOL + 1e-6) k = i; });
+        if (k < 0) return;
+        var curto = e2.instalacoes.trechos.filter(function (t) { return String(t.id) === String(a.trecho); })[0];
+        if (curto && String(curto.id) !== String(out.novos[k].id)) achou = { a: a, k: k, t: curto };
+      });
+      if (!achou) break;
+      var t = achou.t, A0 = dist(t.p2, achou.a) <= dist(t.p1, achou.a) ? "p2" : "p1", Bq = A0 === "p2" ? t.p1 : t.p2, Lc = dist(t.p1, t.p2);
+      if (!(Lc > 1e-6) || (fixoFim && achou.k >= 0)) { out.avisos.push(achou.a.texto); break; }
+      var m = achou.a.faltaMm / 1000, d = { x: (t[A0].x - Bq.x) / Lc * m, y: (t[A0].y - Bq.y) / Lc * m, z: (t[A0].z - Bq.z) / Lc * m };
+      function mov(p) { return { x: r4(p.x + d.x), y: r4(p.y + d.y), z: r4(p.z + d.z) }; }
+      var ehNovo = -1; out.novos.forEach(function (o, i) { if (String(o.id) === String(t.id)) ehNovo = i; });
+      /* revisão 13/11 (achado 4): a ponta do trecho EXISTENTE que esticaria está ligada a outro elemento (outro tubo, tê, peça, aparelho)? Não mexe —
+         esticar soltaria a ligação; só avisa */
+      if (ehNovo < 0) {
+        var Pa = t[A0], idsNovos = {}; out.novos.forEach(function (o) { idsNovos[o.id] = 1; });
+        var outro = e2.instalacoes.trechos.some(function (q) { return String(q.id) !== String(t.id) && !idsNovos[q.id] && (dist(q.p1, Pa) <= TOL || dist(q.p2, Pa) <= TOL || dist(q.p1, Pa) + dist(Pa, q.p2) - dist(q.p1, q.p2) <= TOL); });
+        var lig = arr(R.ligacoes).some(function (l) { return String(l.trecho) === String(t.id) && dist(l, Pa) <= TOL + TOL_CONECTOR; });
+        if (outro || lig) { out.avisos.push(achou.a.texto + " (a virada não foi movida: a ponta do trecho " + t.id + " está ligada a outro elemento)"); break; }
+      }
+      if (ehNovo >= 0) out.novos[ehNovo][A0] = mov(out.novos[ehNovo][A0]);
+      else { var ex = opDoTrecho(t); ex[A0] = mov(t[A0]); out.extras = out.extras.filter(function (o) { return o.id !== t.id; }).concat([ex]); }
+      for (var j = achou.k; j < out.novos.length; j++) { out.novos[j].p1 = mov(out.novos[j].p1); out.novos[j].p2 = mov(out.novos[j].p2); }
+      out.ajustes.push({ trecho: t.id, mm: achou.a.faltaMm });
+    }
+    return out;
+  }
   function rede(estado, avaliarFam) {
     var inst = (estado && estado.instalacoes) || { trechos: [], pecas: [] };
     var trechos = arr(inst.trechos), pecas = arr(inst.pecas), acessorios = arr(inst.acessorios);
@@ -1498,15 +1545,22 @@
         if (!(rA > 0) || !(rB > 0) || !(pbJ > 0) || Lt - rA - rB >= 2 * pbJ - FOLGA_BOLSA) return;
         /* só com a PONTA medida no perfil (a perna com a luva: DN 50 em diante). O perfil do DN 40 tem as duas pernas de bolsa — sem ponta medida
            não se liga "ponta na bolsa"; fica a luva e o auditor de encaixe 3D mostra se encavala */
+        /* ESPAÇO CURTO (13/11/2026, pedido do Rogério: "em espaço curto não consegue fazer a virada de 45°/90°, cria luva"). O trecho curto
+           demais para a luva NUNCA fica com luva no lugar da curva: (a) com a PONTA medida no perfil (DN 50 em diante) a ponta da conexão entra
+           direto na bolsa da seguinte (conexão-conexão, como na obra); (b) sem ponta medida (DN 40: as duas pernas são bolsa) o pedaço de tubo
+           entra nas duas bolsas (bolsa-tubo-bolsa) — nos dois casos sem luva. Se nem assim cabe, a conexão fica e o AVISO diz quantos mm a virada
+           tem de andar (BimInst.minimoVirada: a mesma conta). */
         var ppJ = null; try { ppJ = HGj.perfilProduto ? HGj.perfilProduto(jn.material, jn.principal, jn.dnPrincipal || jn.dn) : null; } catch (eLj) { ppJ = null; }
-        if (!ppJ || !arr(ppJ.pernas).some(function (x) { return x.luva; })) return;
-        /* a ponta CABE na bolsa da seguinte (sem passar do fundo)? A ponta sem a luva: o meio entre o recuo e a face da perna (a mesma conta do auditor).
-           Se nem assim cabe, fica a luva — o traçado é que está curto e o auditor de encaixe 3D mostra */
+        var comPonta = !!(ppJ && arr(ppJ.pernas).some(function (x) { return x.luva; }));
         var gA2 = null; try { gA2 = HGj.no(lA.filter(function (c) { return !(c.tipo === "luva" && String(c.juntaDe) === String(t.id)); }), porIdJ, { tol: TOL }); } catch (eNo2) { gA2 = null; }
         var kP = t.id + ":" + jn.lado, pontaJ = gA2 && gA2.recuos ? ((gA2.recuos[kP] || 0) + ((gA2.faces || {})[kP] || gA2.recuos[kP] || 0)) / 2 : null;
-        if (!(pontaJ > 0) || Lt - pontaJ < rB - FOLGA_BOLSA) return;
+        var minJ = comPonta && pontaJ > 0 ? pontaJ + rB - FOLGA_BOLSA : rA + rB;   /* conexão-conexão: a ponta até o fundo da bolsa seguinte; bolsa-tubo-bolsa: os dois fundos */
         var fL = rA, fB = rB;
-        jn.junta = "direta"; jn.motivo = "trecho de " + Math.round(Lt * 1000) + " mm: entre a luva (fundo a " + Math.round(fL * 1000) + " mm) e a peça seguinte (fundo a " + Math.round(fB * 1000) + " mm) não cabem as duas bolsas";
+        jn.junta = "direta"; jn.motivo = "trecho de " + Math.round(Lt * 1000) + " mm: entre a luva (fundo a " + Math.round(fL * 1000) + " mm) e a peça seguinte (fundo a " + Math.round(fB * 1000) + " mm) não cabem as duas bolsas" + (comPonta ? "" : " — o tubo entra direto nas duas bolsas");
+        if (Lt < minJ - 1e-4) {
+          var faltaJ = Math.ceil((minJ - Lt) * 1000);
+          avisosRede.push({ x: r4(Pf.x), y: r4(Pf.y), z: r4(Pf.z), trecho: t.id, faltaMm: faltaJ, texto: "trecho " + t.id + " de " + Math.round(Lt * 1000) + " mm entre duas conexões: nem " + (comPonta ? "a ponta direto na bolsa" : "o tubo entre as duas bolsas") + " cabe (mínimo " + Math.round(minJ * 1000) + " mm) — afaste a virada " + faltaJ + " mm" });
+        }
         function eLuva(c) { return c.tipo === "luva" && String(c.juntaDe) === String(t.id) && dist(c, Pi) <= TOL; }
         conexoes = conexoes.filter(function (c) { return !eLuva(c); }); luvasQto = luvasQto.filter(function (c) { return !eLuva(c); });
       });
@@ -1756,6 +1810,15 @@
      sem cobrança dupla. O ralo Ø 100 usa o prolongador Ø 100 (encaixe a conferir no catálogo do ralo). Ø 250: sem insumo → pendente. */
   var PROLONGADOR_CS = { classes: [100, 150, 250], insumos: { "100": [[0.2, "11735", "100 MM X 200 MM"]], "150": [[0.15, "11737", "150 MM X 150 MM"], [0.2, "11738", "150 MM X 200 MM"]] }, comercial: 0.2,   // hid:ok códigos e medidas comerciais da SINAPI/Tigre conferidos (fonte acima)
     descricao: "Prolongamento / prolongador para caixa sifonada, PVC (NBR 5688), cortado na medida" };
+  /* o quanto o corpo da caixa sifonada / ralo pode descer por PROJETO (rebaixo): uma peça comercial do prolongador com insumo SINAPI no Ø da
+     caixa (Ø 100: 11735 100×200; Ø 150: 11738 150×200). Ø sem insumo (250): 0 — não desce. O Ø vem da ficha (HidGeo.cotasPeca) */
+  function limiteRebaixo(k) {
+    if (!k || !/^(caixa_sifonada|ralo_)/.test(txt(k.peca))) return 0;
+    var HGl = dep("HidGeo", "./biminstgeo.js"), ct = null; try { ct = HGl && HGl.cotasPeca ? HGl.cotasPeca(k) : null; } catch (eL) { ct = null; }
+    var d = ct ? num(ct.diam, 0) : num(txt(k.dn).split("x")[0], 0); if (!(d > 0)) return 0;
+    var cls = PROLONGADOR_CS.classes.slice().sort(function (a, b) { return Math.abs(a - d) - Math.abs(b - d); })[0], ls = PROLONGADOR_CS.insumos[String(cls)];
+    return ls ? PROLONGADOR_CS.comercial : 0;
+  }
   function prolongadorDe(k) {
     var c = k && k.corpo, L = c ? num(c.prolongador, 0) : 0; if (!(L > 0)) return null;
     var cls = PROLONGADOR_CS.classes.slice().sort(function (a, b) { return Math.abs(a - num(c.diam, 0)) - Math.abs(b - num(c.diam, 0)); })[0], ls = PROLONGADOR_CS.insumos[String(cls)];
@@ -2692,7 +2755,7 @@
     joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
     normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
     conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
-    partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
+    ajustarViradas: ajustarViradas, limiteRebaixo: limiteRebaixo, prolongadorDe: prolongadorDe, partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
     quantidadeTrecho: quantidadeTrecho, qto: qto, servicosOrc: servicosOrc, planta: planta,
     /* P12 */
     ACESSORIOS: ACESSORIOS, ACESSORIO_DA_FAM: ACESSORIO_DA_FAM, DISPOSITIVOS: DISPOSITIVOS, BITOLA_REF: BITOLA_REF, TIPOS_VERIF: TIPOS_VERIF,

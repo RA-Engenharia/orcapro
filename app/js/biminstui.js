@@ -839,6 +839,49 @@
      * controles de tela que parecem "fechar" não soltavam a ferramenta: o ✕ da gaveta Instalações, o ✕ da aba da vista e o
      * Modificar da barra de acesso rápido. Os três chamam isto. Soltar = desarmar o editor (o traço e a prévia saem junto,
      * pelo editTirarProv) — o aoSub(null) abaixo limpa o que é daqui (Propriedades da ferramenta, botão aceso da fita). */
+    /* SETA DA DESCIDA (13/11/2026, pedido do Rogério): o rótulo do traço (DN e inclinação) mostra também PARA ONDE O TUBO CAI. PURO: devolve
+       { de, para } do ponto alto para o baixo (a seta aponta a jusante) — só esgoto/pluvial (gravidade), tubo deitado e com inclinação > 0;
+       vertical e tubo sem inclinação: null (sem seta). `sobe` = traçando para montante (de uma entrada): o 1º ponto é o de baixo. */
+    setaDescida: function (p1, p2, sistema, inclinacaoPct, sobe) {
+      var I = BI(), S = I && I.SISTEMAS[sistema]; if (!S || !S.gravidade || !p1 || !p2) return null;
+      var Lh = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.z - p1.z, 2)); if (!(Lh > 1e-3)) return null;   /* vertical */
+      var dy = num(p2.y, 0) - num(p1.y, 0);
+      if (Math.abs(dy) / Lh > 50) return null;   /* praticamente vertical */
+      if (Math.abs(dy) > 1e-6) return dy < 0 ? { de: p1, para: p2 } : { de: p2, para: p1 };
+      if (!(num(inclinacaoPct, 0) > 0)) return null;   /* sem inclinação: sem seta */
+      return sobe ? { de: p2, para: p1 } : { de: p1, para: p2 };
+    },
+    /* o rótulo do traço em curso: "DN 40 · 2 %" e a seta (o 3D e o corte usam o mesmo) */
+    rotuloTraco: function (p1, p2) {
+      var c = this.cfg; if (!c || c.ferramenta === "peca") return null;
+      var I = BI(), S = I && I.SISTEMAS[c.sistema], incl = S && S.gravidade ? num(c.inclinacao, 0) : 0;
+      return { texto: "DN " + c.dn + (incl > 0 ? " · " + fmt(incl, 1) + " %" : ""), seta: this.setaDescida(p1, p2, c.sistema, incl, !!this._sobe) };
+    },
+    /* as setas sobre a PRÉVIA do ligar por clique (3D: DOM por cima da tela, reposicionado a cada quadro enquanto a prévia existe) */
+    _setasPrevia: function (ops) {
+      if (typeof document === "undefined") return;
+      var self = this, b = B(); if (this._elSetas) this._elSetas.innerHTML = "";
+      var tr = (ops || []).filter(function (o) { return o && o.op === "trecho"; }).map(function (t) { return self.setaDescida(t.p1, t.p2, t.sistema, 0, false); }).filter(function (x) { return x; });
+      if (!tr.length || !b || !b.telaDe) { if (this._elSetas) this._elSetas.style.display = "none"; return; }
+      if (!this._elSetas) { this._elSetas = document.createElement("div"); this._elSetas.className = "bim-inst-setas"; this._elSetas.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;z-index:41;pointer-events:none"; document.body.appendChild(this._elSetas); }
+      this._elSetas.style.display = "";
+      tr.forEach(function (sD) {
+        var sp = document.createElement("span"); sp.setAttribute("data-seta-descida", "1"); sp.textContent = "\u279c";
+        sp.style.cssText = "position:absolute;font:700 16px/16px sans-serif;color:#b0413e;text-shadow:0 0 3px #fff;margin:-8px 0 0 -8px";
+        sp._s = sD; self._elSetas.appendChild(sp);
+      });
+      var passo = function () {
+        if (!self._ligacao || !self._elSetas || !self._elSetas.children.length) { if (self._elSetas) self._elSetas.style.display = "none"; return; }
+        [].slice.call(self._elSetas.children).forEach(function (sp) {
+          var sD = sp._s, a = b.telaDe(sD.de.x, sD.de.y, sD.de.z), q = b.telaDe(sD.para.x, sD.para.y, sD.para.z);
+          if (!a || !q || a.atras || q.atras) { sp.style.display = "none"; return; }
+          var ang = Math.atan2(q.y - a.y, q.x - a.x) * 180 / Math.PI;
+          sp.style.display = ""; sp.style.left = ((a.x + q.x) / 2) + "px"; sp.style.top = ((a.y + q.y) / 2) + "px"; sp.style.transform = "rotate(" + ang + "deg)"; sp.setAttribute("data-ang", String(Math.round(ang)));
+        });
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(passo);
+      };
+      passo();
+    },
     armada: function () {
       var b = B(), v = b && b._volEstado ? b._volEstado() : null;
       return !!(v && v.on && (v.sub === "inst" || (v.sub === "familia" && this._famInst)));
@@ -1150,13 +1193,23 @@
       }
       /* chegou no MEIO de um tubo: ele é DIVIDIDO no ponto (o tê ou a junção fica no nó) */
       if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
-      criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
-      ctx.op(criados[criados.length - 1]);                        /* um rebuild só, no fim */
+      /* ESPAÇO CURTO (13/11/2026): a virada que nem a conexão-conexão comporta anda o mínimo (BimInst.ajustarViradas) — nunca luva no lugar da curva */
+      var ajV = null; if (I.ajustarViradas && S.gravidade) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
+      if (ajV && ajV.ajustes.length) { criados = ajV.novos; pts[pts.length - 1] = this._sobe && S.gravidade ? criados[criados.length - 1].p1 : criados[criados.length - 1].p2; }
+      /* o ajuste da virada mexe num trecho JÁ desenhado: ele e o clique vão num LOTE (um Ctrl+Z desfaz os dois — revisão 13/11, achado 4) */
+      var extrasV = ajV && ajV.ajustes.length ? ajV.extras : [];
+      if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
+      else {
+        criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
+        ctx.op(criados[criados.length - 1]);                        /* um rebuild só, no fim */
+      }
       var fim = pts[pts.length - 1];
       var tot = criados.reduce(function (s, o) { var g = I.geometria(o.p1, o.p2); return s + g.comprimento; }, 0);
       var msg = criados.length + (criados.length > 1 ? " trechos" : " trecho") + " (" + fmt(tot, 2) + " m)";
       if (S.gravidade) msg += ", cota de saída " + fmt(fim.y - base, 3) + " m (desnível " + fmt(p1.y - fim.y, 3) + " m)";
       if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && corteP.p.y > p1.y + 1e-6) || (this._sobe && corteP.p.y < p1.y - 1e-6))) msg += " ⚠ o trecho SOBE contra o escoamento (o esgoto desce de p1 para p2): confira o sentido";
+      if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
+      if (ajV && ajV.avisos.length) msg += " ⚠ " + ajV.avisos.join("; ");
       if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
       if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
       else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
@@ -1356,8 +1409,17 @@
       var vb = c.vb || { w: 10 }, tx = document.createElementNS(NS, "text");
       tx.setAttribute("x", (a.x + q.x) / 2); tx.setAttribute("y", (a.y + q.y) / 2); tx.setAttribute("font-size", String(vb.w / 70)); tx.setAttribute("fill", cor);
       tx.setAttribute("paint-order", "stroke"); tx.setAttribute("stroke", "#fff"); tx.setAttribute("stroke-width", String(vb.w / 400));
-      tx.textContent = ({ vertical: "vertical", horizontal: "horizontal", inclinado: "45°", livre: "livre", ligar: "liga em " + (pkH ? pkH.rotulo : "") }[r.tipo] || r.tipo) + " · " + fmt(L, 2) + " m";
+      var rotT = this.rotuloTraco(ed.p1, r.p);
+      tx.textContent = ({ vertical: "vertical", horizontal: "horizontal", inclinado: "45°", livre: "livre", ligar: "liga em " + (pkH ? pkH.rotulo : "") }[r.tipo] || r.tipo) + " · " + fmt(L, 2) + " m" + (rotT ? " · " + rotT.texto : "");
       g.appendChild(tx);
+      /* SETA DA DESCIDA no corte: no meio da linha, apontando o ponto baixo (a jusante) */
+      var sD = rotT && rotT.seta, sa = sD ? K.noDesenho(def, sD.de) : null, sb = sD ? K.noDesenho(def, sD.para) : null;
+      if (sa && sb && Math.sqrt(Math.pow(sb.x - sa.x, 2) + Math.pow(sb.y - sa.y, 2)) > 1e-6) {
+        var ang = Math.atan2(sb.y - sa.y, sb.x - sa.x) * 180 / Math.PI, hh = vb.w / 90, pg = document.createElementNS(NS, "polygon");
+        pg.setAttribute("points", hh + ",0 " + (-hh) + "," + (hh * 0.6) + " " + (-hh) + "," + (-hh * 0.6)); pg.setAttribute("fill", "#b0413e"); pg.setAttribute("data-seta-descida", "1"); pg.setAttribute("data-ang", String(Math.round(ang)));
+        pg.setAttribute("transform", "translate(" + ((a.x + q.x) / 2) + "," + ((a.y + q.y) / 2 + vb.w / 120) + ") rotate(" + ang + ")");
+        g.appendChild(pg);
+      }
       this._previaCorte = { id: id, tipo: r.tipo, comprimento: L, p: r.p };
       return true;
     },
@@ -1449,12 +1511,13 @@
       var g = this._ligacao, b = B(); if (!g || !b) return;
       var o = g.opcoes[g.i];
       try { b.editarPreviaInst(o.ops); } catch (e) {}
+      try { this._setasPrevia(o.ops); } catch (eS) {}
       var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
         ". Clique ou Enter confirma" + (g.opcoes.length > 1 ? "; Tab troca de opção" : "") + "; Esc cancela.";
       status(t); try { g.ctx.hint(t); } catch (eH) {}
     },
     trocarLigacao: function () { var g = this._ligacao; if (!g) return false; g.i = (g.i + 1) % g.opcoes.length; this._previaLigacao(); return true; },
-    cancelarLigacao: function () { var b = B(); this._ligacao = null; try { if (b && b.editarPreviaInst) b.editarPreviaInst(null); } catch (e) {} return true; },
+    cancelarLigacao: function () { var b = B(); this._ligacao = null; if (this._elSetas) { this._elSetas.innerHTML = ""; this._elSetas.style.display = "none"; } try { if (b && b.editarPreviaInst) b.editarPreviaInst(null); } catch (e) {} return true; },
     confirmarLigacao: function () {
       var g = this._ligacao, b = B(); if (!g || !b) return false;
       var o = g.opcoes[g.i], ctx = g.ctx, ed = ctx.edit;
