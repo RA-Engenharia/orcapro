@@ -94303,7 +94303,7 @@ if (forca) return decidirForcada(forca, ramos, sistema, conector, avisos);
 var out = decidirBase(ramos, sistema, conector, avisos);
 var M0 = MATERIAIS[ramos[0].material] || {};
 if (ramos.length >= 2 && out.length && !M0.larguras && !M0.flexivel) {
-var pr = out.filter(function (c) { return c.tipo !== "reducao"; })[0] || out[0];
+var pr = out.filter(function (c) { return c.tipo !== "reducao" && !c.extra; })[0] || out[0];
 var jaDesvio = avisos.some(function (t) { return /^mudança de direção de/.test(t); });
 conferirPortas({ tipo: pr.tipo, material: pr.material, ramos: ramos, conector: !!conector }).itens.forEach(function (it) {
 if (it.tipo === "deflexao" && jaDesvio) return;
@@ -94405,7 +94405,9 @@ avisos.push("derivação de " + SISTEMAS[sistema].nome.toLowerCase() + " (trecho
 return out;
 }
 }
-if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
+var aguaD = !gravidade && sistema !== "eletrica" && beta >= 25 && beta <= 65;
+if (aguaD) { cx("joelho45", rc.dn, 0, { soQto: true, extra: true }); avisos.push("derivação a " + Math.round(beta) + "° da linha de água: não existe tê a 45° — contados o tê de 90° e um joelho de 45° DN " + rc.dn + "; para o 3D bater, refaça a saída a partir do meio do tubo (o traço põe o toco do tê)"); }
+else if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
 var dnB = rc.dn;
 if (dnB > dnRun + 0.5) { cx(ehJuncao ? "juncao" : "te", dnB); cx("reducao", dnB, dnRun); }
 else if (dnB < dnRun - 0.5) {
@@ -98309,6 +98311,7 @@ var C = pv(a.centro), d = nrmz(pv(a.dir)), Lff = num(a.comprimento, 0.06) / MM, 
 var fr = o.frente ? nrmz(pv(o.frente)) : null;
 if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));
 fr = nrmz(sub(fr, mul(d, dot(fr, d))));
+if (a.acessorio === "registro_gaveta" && a.variante === "bruto" && !/^(aco|inox|cobre)/.test(a.material || "")) return registroGavetaBase(a, o, C, d, fr, de);
 var rP = o.semProduto ? null : registroProduto(a, o, C, d, fr); if (rP) return rP;
 var latao = /latao|bronze/.test(a.varMaterial || "") || a.variante === "bruto" || a.variante === "acabamento" || a.acessorio === "registro_gaveta" || a.acessorio === "valvula_retencao";
 var matTubo = a.material || "pvc_soldavel", vm = a.varMaterial || ({ bruto: "latao", acabamento: "latao", bronze: "bronze", pe_crivo: "bronze" })[a.variante] || "pvc_soldavel";
@@ -98366,6 +98369,38 @@ if (mv.idx.length) partes.push(cascaSaida(mv, latao ? "volante" : "corpo"));
 if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
 return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };
 }
+function registroGavetaBase(a, o, C, d, fr, de) {
+var seg = o.lod === "longe" ? 10 : 28, mc = new Malha();
+var tab = ((dados().pecas || {}).registro || {}).registro_gaveta || {}, rc0 = tab[String(a.dn)] || null;
+var rBojo = rc0 ? rc0.corpo / 2 : de * 0.78 + 6, alt = rc0 ? rc0.altura : rBojo + de * 1.1 + 40, hc = alt - rBojo;
+var Lff = num(a.comprimento, 0) > 0 ? num(a.comprimento, 0) / MM : de * 1.9 + 24, h = Lff / 2;
+var rHex = Math.max(de / 2 + 4, rBojo * 0.78), Lh = Math.min(h * 0.42, de * 0.5 + 6), rRosca = de / 2 + 1.2;
+[1, -1].forEach(function (sg) {
+var F = add(C, mul(d, sg * h * MM)), dIn = mul(d, -sg), fil = [[0, rRosca]];
+for (var k = 0; k < 5; k++) fil.push([k * 2.2 + 1.1, rRosca - 1.0], [k * 2.2 + 2.2, rRosca]);
+varrer(mc, reta(F, dIn), escala([[0, 0], [0, rHex * 0.97], [Lh, rHex * 0.97], [Lh, 0]]), 6, false);
+varrer(mc, reta(add(F, mul(dIn, -0.6 * MM)), dIn), escala([[0, 0]].concat(fil).concat([[11.5, rRosca], [11.5, 0]])), seg, false);
+varrer(mc, reta(add(F, mul(dIn, Lh * MM)), dIn), escala([[0, 0], [0, rHex * 0.86], [2, rHex * 0.8], [2, 0]]), seg, false);
+});
+var Lb = Lff - 2 * (Lh + 2);
+varrer(mc, reta(add(C, mul(d, -Lb / 2 * MM)), d), escala([[0, 0], [0, rHex * 0.82], [Lb * 0.2, rBojo * 0.95], [Lb * 0.5, rBojo], [Lb * 0.8, rBojo * 0.95], [Lb, rHex * 0.82], [Lb, 0]]), seg, false);
+var z = rBojo * 0.8, rP = rBojo * 0.78, hP = hc * 0.14, rN = rBojo * 0.5;
+varrer(mc, reta(C, fr), escala([[0, 0], [0, rBojo * 0.7], [z, rBojo * 0.66], [z, 0]]), seg, false);
+varrer(mc, reta(add(C, mul(fr, z * MM)), fr), escala([[0, 0], [0, rP], [hP, rP], [hP, 0]]), 6, false);
+varrer(mc, reta(add(C, mul(fr, (z + hP) * MM)), fr), escala([[0, 0], [0, rP * 0.9], [1.2, rP * 0.84], [1.2, 0]]), seg, false);
+var z2 = z + hP + 1.2, Lr = hc * 0.2, pr = [[0, 0], [0, rN]];
+for (var q = 0; q < 6; q++) pr.push([Lr * (q + 0.5) / 6, rN * 0.93], [Lr * (q + 1) / 6, rN]);
+pr.push([Lr, 0]); varrer(mc, reta(add(C, mul(fr, z2 * MM)), fr), escala(pr), seg, false);
+var z3 = z2 + Lr, hG = hc * 0.11, rG = rN * 0.92;
+varrer(mc, reta(add(C, mul(fr, z3 * MM)), fr), escala([[0, 0], [0, rG], [hG, rG], [hG, 0]]), 6, false);
+var z4 = z3 + hG, rH = Math.max(3.2, rN * 0.32), Lhaste = Math.max(6, hc - z4 - 9);
+varrer(mc, reta(add(C, mul(fr, z4 * MM)), fr), escala([[0, 0], [0, rH], [Lhaste, rH], [Lhaste, 0]]), 16, false);
+var w1 = perp(fr), w2 = cross(w1, fr);
+caixaM(mc, add(C, mul(fr, (z4 + Lhaste + 4.5) * MM)), [w1, fr, w2], [rH * 0.95 * MM, 4.5 * MM, rH * 0.95 * MM]);
+var partes = [cascaSaida(mc, "latao")];
+return { partes: partes, frente: fr, aConferir: true, comprimento: Lff * MM,
+cotas: { corpo: rBojo * 2, altura: alt, origem: rc0 ? "catalogo" : "proporcao", fonte: rc0 ? fonte(rc0.f, rc0.pag) : null, aConferir: "sextavados, porcas e filetes do castelo em proporção declarada (corpo e altura da ficha da base)" } };
+}
 var RETENCAO_AMANCO = { "25": { A: 86.5, B: 65.5, cod: "98934" }, "32": { A: 96, B: 73.7, cod: "98935" } };
 function registroPvc(a, o, C, d, de, matTubo) {
 var fr = o.frente ? nrmz(pv(o.frente)) : null;
@@ -98403,7 +98438,11 @@ varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.9], [hc * 0.3, rB * 0.9], [hc
 varrer(mc, reta(add(C, mul(fr, hc * 0.3 * MM)), fr), escala([[0, 0], [0, rB * 1.05], [hc * 0.03, rB * 1.15], [hc * 0.1, rB * 1.15], [hc * 0.13, rB * 0.95], [hc * 0.13, rB * 0.68],
 [hc * 0.48, rB * 0.68], [hc * 0.51, rB * 0.5], [hc * 0.56, rB * 0.5], [hc * 0.56, rB * 0.3], [hc * 0.6, rB * 0.3], [hc * 0.6, 0]]), seg, false);
 var acab = a.variante === "acabamento";
-if (!acab) {
+if (!acab && a.acessorio === "registro_pressao") {
+var rVo = rB * 1.12, hVo = Math.max(9, hc * 0.2), zV = hc * 0.6, Cv0 = add(C, mul(fr, zV * MM));
+varrer(mc, reta(add(C, mul(fr, hc * 0.56 * MM)), fr), escala([[0, 0], [0, rB * 0.36], [hc * 0.05, rB * 0.36], [hc * 0.05, 0]]), seg, false);
+varrer(mc, reta(Cv0, fr), escala([[0, 0], [0, rVo * 0.55], [hVo * 0.25, rVo * 0.92], [hVo * 0.45, rVo], [hVo * 0.8, rVo * 0.96], [hVo, rVo * 0.7], [hVo * 1.08, rVo * 0.35], [hVo * 1.1, 0]]), seg + 8, false);
+} else if (!acab) {
 var w1 = perp(fr), w2 = cross(w1, fr);
 caixaM(mc, add(C, mul(fr, hc * 0.88 * MM)), [w1, fr, w2], [rB * 0.62 * MM, hc * 0.12 * MM, rB * 0.13 * MM]);
 } else {
@@ -112176,7 +112215,7 @@ if (enc0) { p = { x: enc0.P.x, y: enc0.P.y, z: enc0.P.z }; ev = Object.assign({}
 var alvo = ev && (ev._corte || ev._forcar || ev._encaixe) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
 var refP = null;
 if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
-refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema);
+refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema, null, ed.p1 || null);
 if (refP) { p = { x: refP.x, y: p.y, z: refP.z }; this._ultimoSnap = refP; }
 }
 if (!ed.p1) {
@@ -112219,6 +112258,11 @@ this._contDe = { id: tC.id, longe: { x: longe.x, y: longe.y, z: longe.z }, perto
 if (S.gravidade && dh > 1e-6 && Math.abs(perto.y - longe.y) > 1e-6) { this._incHerdada = c.inclinacao; c.inclinacao = r4(Math.abs(perto.y - longe.y) / dh * 100); this._sobe = perto.y > longe.y; }
 }
 }
+this._meioAgua = null;
+if (alvo && alvo.tipo === "meio" && !S.gravidade) {
+var tM = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+if (tM) this._meioAgua = { u: { x: tM.p2.x - tM.p1.x, z: tM.p2.z - tM.p1.z }, P: { x: q0.x, z: q0.z }, material: c.material, dn: c.dn };
+}
 if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var dv = I.dividirTrecho(est, alvo.trecho, q0); if (dv.length) { ed.ops.push(dv[0]); ctx.op(dv[1]); } }
 ctx.inicio(q0);
 ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + ". " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
@@ -112238,6 +112282,11 @@ if (!alvo && !corteP && plano.length === 1) {
 var fuga = this._fugirSobreposicao(est, p1, plano[0], p, c.sistema);
 if (fuga === false) { ctx.hint("O tubo sairia por dentro do tubo que já sai desta boca — clique em outra direção."); return; }
 if (fuga) plano = [fuga];
+}
+var mA = this._meioAgua, s45 = null; this._meioAgua = null;
+if (mA && !alvo && !S.gravidade && !corteP && plano.length && Math.abs(p1.x - mA.P.x) + Math.abs(p1.z - mA.P.z) < 1e-6 && global.BimInstConectar && global.BimInstConectar.saida45Agua) {
+s45 = global.BimInstConectar.saida45Agua(mA.u, mA.P, plano[0], mA.material, mA.dn);
+if (s45) plano = [{ x: r4(s45.toco.x), z: r4(s45.toco.z) }].concat(plano.map(function (q) { return { x: r4(q.x + s45.desl.x), z: r4(q.z + s45.desl.z) }; }));
 }
 var sinal = S.gravidade ? (this._sobe ? 1 : -1) : 0, yH = p1.y, ant = p1, pts = [];
 if (corteP && corteP.tipo !== "horizontal") { pts.push(corteP.p); yH = corteP.p.y; }
@@ -112287,6 +112336,7 @@ ctx.op(criados[criados.length - 1]);
 var fim = pts[pts.length - 1];
 var tot = criados.reduce(function (s, o) { var g = I.geometria(o.p1, o.p2); return s + g.comprimento; }, 0);
 var msg = criados.length + (criados.length > 1 ? " trechos" : " trecho") + " (" + fmt(tot, 2) + " m)";
+if (s45) msg += " — saída a 45° no meio do tubo de água: tê de 90° + toco de " + fmt(s45.L * 100, 1) + " cm + joelho de 45° (não existe tê a 45° na água)" + (s45.semMedida ? " ⚠ sem a medida das peças no catálogo: toco de 10 cm, confira" : "");
 if (S.gravidade) msg += ", cota de saída " + fmt(fim.y - base, 3) + " m (desnível " + fmt(p1.y - fim.y, 3) + " m)";
 if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && corteP.p.y > p1.y + 1e-6) || (this._sobe && corteP.p.y < p1.y - 1e-6))) msg += " ⚠ o trecho SOBE contra o escoamento (o esgoto desce de p1 para p2): confira o sentido";
 if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
@@ -112541,7 +112591,22 @@ var est = ctx.edit.estado, ops0 = (ctx.edit.ops || []).slice(0, (ctx.edit.ops ||
 var r = null;
 try { r = L.ligar(est, ctx.famAval, A, Bp, { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" }); } catch (e) { r = { ok: false, erro: e.message }; }
 if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
-this._ligacao = { opcoes: r.opcoes, i: 0, nIni: ini.nIni, ctx: ctx };
+var opcs = r.opcoes.slice(), self = this;
+function maisOpcoes(extra, rotulo) {
+var o2 = { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" };
+Object.keys(extra).forEach(function (k) { o2[k] = extra[k]; });
+var r2 = null; try { r2 = L.ligar(est, ctx.famAval, A, Bp, o2); } catch (e2) { r2 = null; }
+if (r2 && r2.ok && r2.opcoes[0]) { var q = r2.opcoes[0]; q.nome = rotulo + " — " + q.nome; opcs.push(q); }
+}
+if (r.ladosSaida && r.saidaRot != null) {
+if (opcs[0]) opcs[0].nome = "saída a " + Math.round(r.saidaRot * 180 / Math.PI) + "° — " + opcs[0].nome;
+r.ladosSaida.filter(function (q) { return Math.abs(q - r.saidaRot) > 0.01 && Math.abs(Math.abs(q - r.saidaRot) - 2 * Math.PI) > 0.01; }).slice(0, 7).forEach(function (q) { maisOpcoes({ saidaRot: q }, "saída a " + Math.round(q * 180 / Math.PI) + "°"); });
+}
+if (r.entradasB && r.entradasB.length > 1) {
+r.entradasB.slice(1, 7).forEach(function (idE) { maisOpcoes({ entradaId: idE }, "entrada " + String(idE).replace("entrada", "")); });
+}
+void self;
+this._ligacao = { opcoes: opcs, i: 0, nIni: ini.nIni, ctx: ctx };
 this._previaLigacao();
 return true;
 },
@@ -116347,6 +116412,25 @@ if (dotH < 0.01) { erros.push("o tubo " + v.id + " ficaria sem comprimento (arra
 g[k] = nn; g.mudou = true; return;
 }
 if (livreEm(v, f)) { g.p1 = add(v.p1, D); g.p2 = add(v.p2, D); g.mudou = true; g.transl = true; return; }
+if (!fixoPonta(v, f)) {
+var ws = TS.filter(function (w) { return w !== v && !M[w.id] && w.sistema === v.sistema && (dist(w.p1, far) <= TOL || dist(w.p2, far) <= TOL); });
+var w = ws.length === 1 ? ws[0] : null, kw = w ? (dist(w.p1, far) <= TOL ? "p1" : "p2") : null, wo = w ? w[kw === "p1" ? "p2" : "p1"] : null;
+var Lw = w ? hlen(far, wo) : 0;
+if (w && Lw > TOL && !movEm(wo, w.sistema) && !G[w.id].mudou && !fixoPonta(w, kw)) {
+var wd = { x: (wo.x - far.x) / Lw, z: (wo.z - far.z) / Lw }, cosVW = Math.abs(uh.x * wd.x + uh.z * wd.z);
+if (cosVW > 0.5 && cosVW < 0.866) {
+var det = uh.x * wd.z - uh.z * wd.x, bW = (uh.x * D.z - uh.z * D.x) / det;
+var far2 = { x: far.x + wd.x * bW, y: far.y + (wo.y - far.y) / Lw * bW, z: far.z + wd.z * bW }, near2 = add(near, D);
+var Lv2 = (near2.x - far2.x) * uh.x + (near2.z - far2.z) * uh.z, Lw2 = (wo.x - far2.x) * wd.x + (wo.z - far2.z) * wd.z;
+if (Lv2 < 0.01) { erros.push("o trecho a 45° " + v.id + " ficaria sem comprimento (arraste maior que ele)"); return; }
+if (Lw2 < 0.01) { erros.push("o tubo " + w.id + " ficaria sem comprimento: o trecho a 45° " + v.id + " escorregaria além dele"); return; }
+g[k] = near2; g[f] = far2; g.mudou = true;
+var gw = G[w.id]; gw[kw] = cp(far2); gw.mudou = true;
+avisos.push("o trecho " + v.id + " manteve o ângulo de 45°: a ponta dele deslizou " + fmt(Math.abs(bW)) + " m ao longo do " + w.id + ", que " + (bW > 0 ? "encurtou" : "esticou"));
+return;
+}
+}
+}
 g[k] = add(near, D); g.mudou = true; rotacoes.push(v.id);
 });
 if (erros.length) return falha(erros[0] + ".");
@@ -171590,19 +171674,37 @@ for (var q = ini; q + 1 < pts.length; q++) ops.push({ op: "trecho", id: idLivre(
 return { ok: true, ops: ops, rota: pts, cota: cota, ligacao: lig, avisos: avisos, prolonga: prolonga };
 }
 function dPlanSeg(p, t) { var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L2 = dx * dx + dz * dz, s = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - t.p1.x) * dx + (p.z - t.p1.z) * dz) / L2)) : 0, qx = t.p1.x + dx * s - p.x, qz = t.p1.z + dz * s - p.z; return Math.sqrt(qx * qx + qz * qz); }
-function snapProlongamento(trechos, p, sistema, raio) {
+function snapProlongamento(trechos, p, sistema, raio, de) {
 raio = raio || GEO_CON.raioProlonga; var melhor = null;
 arr(trechos).forEach(function (t) {
 if (sistema && t.sistema !== sistema) return;
 var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > EPS) || Math.abs(t.p2.y - t.p1.y) > L) return;
-var ux = dx / L, uz = dz / L, s = (p.x - t.p1.x) * ux + (p.z - t.p1.z) * uz, lat = Math.abs(-(p.x - t.p1.x) * uz + (p.z - t.p1.z) * ux);
+var ux = dx / L, uz = dz / L;
+if (de && Math.abs(-(de.x - t.p1.x) * uz + (de.z - t.p1.z) * ux) <= 0.02) {
+var ex = p.x - de.x, ez = p.z - de.z, Le = Math.sqrt(ex * ex + ez * ez);
+if (Le > EPS && Math.abs(ex * uz - ez * ux) / Le > 0.174) return;
+}
+var s = (p.x - t.p1.x) * ux + (p.z - t.p1.z) * uz, lat = Math.abs(-(p.x - t.p1.x) * uz + (p.z - t.p1.z) * ux);
 var alem = s > L ? s - L : (s < 0 ? -s : 0); if (!(alem > 0) || alem > GEO_CON.alcanceProlonga || lat > raio) return;
 var fr = s / L, q = { tipo: "prolongamento", x: r4(t.p1.x + ux * s), y: r4(t.p1.y + (t.p2.y - t.p1.y) * fr), z: r4(t.p1.z + uz * s), dn: t.dn, trecho: t.id, d: lat };
 if (!melhor || lat < melhor.d) melhor = q;
 });
 return melhor;
 }
-var BimInstConectar = { VERSAO: 1, GEO_CON: GEO_CON, conectarRef: conectarRef, snapProlongamento: snapProlongamento };
+function saida45Agua(u, P, q, material, dn) {
+var Lu = Math.hypot(u.x, u.z), dx = q.x - P.x, dz = q.z - P.z, Lq = Math.hypot(dx, dz);
+if (!(Lu > 1e-9) || !(Lq > 0.005)) return null;
+var cs = Math.abs((u.x * dx + u.z * dz) / (Lu * Lq));
+if (!(cs > 0.5 && cs < 0.866)) return null;
+var nx = -u.z / Lu, nz = u.x / Lu; if (nx * dx + nz * dz < 0) { nx = -nx; nz = -nz; }
+var G = HG(), zt = null, zj = null;
+try { var ct = G && G.cotasConexao ? G.cotasConexao(material, "te", dn) : null, cj = G && G.cotasConexao ? G.cotasConexao(material, "joelho45", dn) : null;
+zt = ct ? num(ct.zb != null ? ct.zb : ct.zr, null) : null; zj = cj ? num(cj.z, null) : null; } catch (e) { zt = zj = null; }
+var sem = !(zt > 0 && zj > 0), L = sem ? 0.10 : (zt + zj + 5) / 1000;
+L = Math.round(L * 1000) / 1000;
+return { toco: { x: P.x + nx * L, z: P.z + nz * L }, desl: { x: nx * L, z: nz * L }, L: L, semMedida: sem };
+}
+var BimInstConectar = { VERSAO: 1, saida45Agua: saida45Agua, GEO_CON: GEO_CON, conectarRef: conectarRef, snapProlongamento: snapProlongamento };
 global.BimInstConectar = BimInstConectar;
 if (typeof module !== "undefined" && module.exports) module.exports = BimInstConectar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

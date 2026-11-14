@@ -313,6 +313,11 @@
     /* HIDRO-3D: tudo o que é arquitetura/louça fica RECORTADO no retângulo da caixa do ambiente (móvel e louça que passam do recorte invadiam o cabeçalho) */
     var clipId = "cpamb" + (c.__clipN = (c.__clipN || 0) + 1) + "_" + Math.round(R.x * 10) + "_" + Math.round(R.y * 10);
     D.add('<clipPath id="' + clipId + '"><rect x="' + n(box.x0 * s + ox) + '" y="' + n(box.z0 * s + oy) + '" width="' + n((box.x1 - box.x0) * s) + '" height="' + n((box.z1 - box.z0) * s) + '"/></clipPath><g clip-path="url(#' + clipId + ')">');
+    /* ⚠ a PLANTA DO AMBIENTE é a vista de cima do MODELO (14/11/2026 — o Rogério marcou as "caixas cinza" desta planta: "não quero isso
+       nunca mais"): com o 3D aberto a foto fica por baixo e o vetor só anota; louça e tubo vetoriais saem (a foto já os tem) */
+    var fotoP = null;
+    if (!am.semRede && d.trs.length && II.fotoPlanta) fotoP = II.fotoPlanta(c, c.grupo ? String(c.grupo.id) : "", d.trs, pv, { x0: box.x0 * s, x1: box.x1 * s, y0: box.z0 * s, y1: box.z1 * s }, s);
+    if (fotoP) D.add('<image data-im="' + fotoP.key + '" x="' + n(box.x0 * s + ox) + '" y="' + n(box.z0 * s + oy) + '" width="' + n((box.x1 - box.x0) * s) + '" height="' + n((box.z1 - box.z0) * s) + '" preserveAspectRatio="none" href="' + fotoP.href + '"/>');
     var La = II.listasArq(c, pv);
     if (La) {
       var L2 = { paredes: [], pilares: [], vaos: [], moveis: [], ambientes: [] };
@@ -325,7 +330,7 @@
       D.add(fa.svg); if (D.caixas) fa.textos.forEach(function (b) { D.caixas.push(b); });
     }
     /* louças e metais hidráulicos pelo contorno real (a silhueta da malha vista de cima), só os do recorte */
-    try {
+    if (!fotoP) try {
       II.linhasLoucas(c.modelo.estado, c.modelo.avaliarFam, [0, 1, 0], function (fi) { return II.APARELHO_RE.test(txt(fi.famId)) && fi.x >= box.x0 && fi.x <= box.x1 && fi.z >= box.z0 && fi.z <= box.z1 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; })
         .forEach(function (sg) { var qx = [sg[0][0], sg[1][0]], qz = [sg[0][2], sg[1][2]]; if (qx[0] < box.x0 || qx[0] > box.x1 || qx[1] < box.x0 || qx[1] > box.x1 || qz[0] < box.z0 || qz[0] > box.z1 || qz[1] < box.z0 || qz[1] > box.z1) return; D.linha(sg[0][0] * s + ox, sg[0][2] * s + oy, sg[1][0] * s + ox, sg[1][2] * s + oy, "HID-LOUCA"); });
     } catch (eL) { c.avisos.push("Ambiente " + am.nome + ": louças pelo contorno real falharam (" + (eL && eL.message) + ")."); }
@@ -376,7 +381,7 @@
     });
     var fm = { polys: polys, segs: segs };
     D.add('<g clip-path="url(#' + clipId + ')">');   /* HIDRO-3D: o tubo que sai do recorte é cortado na caixa do ambiente */
-    II.formasPlanta(D, cc, d.trs, s, ox, oy, fm);
+    if (!fotoP) II.formasPlanta(D, cc, d.trs, s, ox, oy, fm);
     D.add("</g>");
     var bordas = II.bordasTubo(fm, s, ox, oy); bordas.forEach(function (q) { chk.tubos.push(q); });
     /* 3) rótulos: DN, setas, aparelho + ALTURA do ponto */

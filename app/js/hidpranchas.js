@@ -66,8 +66,10 @@
     arq: { preench: "#e4e4e4", contorno: "#8c8c8c", louca: "#9a9a9a", mm: 0.13 }, contornoTubo: 0.09, contornoFrac: 0.12, tuboFinoMm: 1.0,
     escalasCorte: [20, 25, 50, 75], cortePiso: 0.6, corteTopo: 0.3, faixaParede: 0.2, folgaCorte: 14, corteMinPontos: 1,
     qr: 30, qrTexto: 2.5, qrRot: "PORTAL DA OBRA",
+    seta: { c: 1.3, l: 0.45 },
+    fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
     simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35 },
-    esquema: { margem: 8, folgaChamada: 30, pena: 0.35, minRotulo: 9, no: 0.55, chamada: 16, d0: 2.2, alturaMin: 0.6, folgaTopo: 0.6 },
+    esquema: { margem: 8, folgaChamada: 30, pena: 0.35, minRotulo: 9, no: 0.55, chamada: 16, d0: 2.2, penaChamada: 0.32, hachPasso: 1.1, alturaMin: 0.6, folgaTopo: 0.6 },
     quadro: { linha: 12, icone: 10.5, grupo: 7, col: [11, 16, 0, 22, 12, 20], gap: 12, cab: 8, corCab: "#263445", corGrupo: "#e9eef4", corZebra: "#f6f7f9" },
     detalhe: { linhas: 2, colunas: 3 }, barMax: 4, chamadaPlanta: 1.8,
     /* rodada 2: louça real (vinco em graus, quantização de vértice, lados do círculo), vistas agrupadas na folha (mm de papel) */
@@ -153,6 +155,13 @@
       else if (chk && l.tipo === "cota") chk.cotas.push([l.x1 + ox, l.y1 + oy, l.x2 + ox, l.y2 + oy]);
       if (l.oculto) return;
       D.linha(l.x1 + ox, l.y1 + oy, l.x2 + ox, l.y2 + oy, l.tipo === "chamada" ? "HID-CHAMADA" : l.camada, ' data-trecho="' + esc(l.trecho) + '"');
+      /* SETA NA PONTA DA CHAMADA DO BALÃO (14/11/2026 — o Rogério, folha 08: "deixa uma setinha apontando certinho para onde é cada
+         coisa, do jeito que ficou ainda pode dar confusão"). (x1,y1) é a âncora = a peça; a seta cheia encosta nela. */
+      if (l.tipo === "chamada" && l.rot === "codigo") {
+        var dxs = l.x2 - l.x1, dys = l.y2 - l.y1, Ls = Math.hypot(dxs, dys);
+        if (Ls > K2.seta.c * 1.5) { var ux = dxs / Ls, uy = dys / Ls, ax = l.x1 + ox, ay = l.y1 + oy, bx = ax + ux * K2.seta.c, by = ay + uy * K2.seta.c;
+          D.cheio([[ax, ay], [bx - uy * K2.seta.l, by + ux * K2.seta.l], [bx + uy * K2.seta.l, by - ux * K2.seta.l]], "#000"); }
+      }
     });
     var segTubo = arr(prim.linhas).filter(function (l) { return l.tipo === "tubo" && !l.oculto; }).map(function (l) { return [l.x1 + ox, l.y1 + oy, l.x2 + ox, l.y2 + oy]; });
     arr(prim.simbolos).forEach(function (s) {
@@ -162,6 +171,7 @@
       if (s.tipo === "joelho" || s.tipo === "ponto" || s.tipo === "balao" || s.tipo === "prumada") D.circ(x, y, s.r, "HID-SIMBOLO");
       else if (s.tipo === "te") D.ponto(x, y, s.r, "#000");
       else if (s.tipo === "caixa") D.ret(x - s.r, y - s.r, 2 * s.r, 2 * s.r, "HID-SIMBOLO");
+      else if (s.tipo === "registro" && s.ac) { var pr = segTubo.length ? pernasNo(segTubo, x, y, s.r * 1.5) : []; simbReg(D, s.ac, x, y, s.r, pr[0] || [1, 0]); }
       else if (s.tipo === "seta" && s.pts) D.cheio(s.pts.map(function (p) { return [p[0] + ox, p[1] + oy]; }), "#000");
     });
     arr(prim.textos).forEach(function (t) { D.texto(t.x + ox, t.y + oy, t.s, t.h, { al: t.al || "C", attr: ' data-rotulo="' + esc(t.tipo) + '"' + (t.tipo === "destaque" ? ' font-style="italic"' : "") }); });   /* R02: a CHAMADA da peça especial em itálico, como na referência */
@@ -184,6 +194,14 @@
       var a1 = pernas[0], a2 = pernas[1], r = KS.dist * 0.75;
       D.add('<path d="M' + n(x + a1[0] * r) + " " + n(y + a1[1] * r) + " Q" + n(x) + " " + n(y) + " " + n(x + a2[0] * r) + " " + n(y + a2[1] * r) + '" fill="none" stroke="' + (cor || "#000") + '" stroke-width="' + n(KS.pena) + '" data-cam="' + cam + '"/>');
     }
+  }
+  /* REGISTRO EM LINHA ÚNICA, o MESMO da legenda: duas cunhas opostas no eixo do tubo (d) + haste; gaveta com a travessa, pressão com o volante */
+  function simbReg(D, ac, x, y, r, d) {
+    var nx = -d[1], ny = d[0]; if (ny > 0) { nx = -nx; ny = -ny; }   /* haste para CIMA no papel */
+    D.poli([[x - d[0] * r + nx * r, y - d[1] * r + ny * r], [x + d[0] * r - nx * r, y + d[1] * r - ny * r], [x + d[0] * r + nx * r, y + d[1] * r + ny * r], [x - d[0] * r - nx * r, y - d[1] * r - ny * r]], "HID-SIMBOLO", true);
+    var hx = x + nx * r * 1.8, hy = y + ny * r * 1.8; D.linha(x, y, hx, hy, "HID-SIMBOLO");
+    if (/pressao/.test(String(ac))) D.circ(x + nx * r * 2.3, y + ny * r * 2.3, r * 0.5, "HID-SIMBOLO");
+    else D.linha(hx - d[0] * r * 0.7, hy - d[1] * r * 0.7, hx + d[0] * r * 0.7, hy + d[1] * r * 0.7, "HID-SIMBOLO");
   }
   /* as pernas de um nó no papel: as linhas de tubo que encostam nele */
   function pernasNo(segs, x, y, tol) {
@@ -391,9 +409,17 @@
       desenhar: function (D, x, y, chk) {
         var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
         c.AP.tituloVista(D, x + K2.folgaVista, y, tit, sub);
-        desenharContexto(D, ex.ctx, s2, ox, oy, medio ? bordasTubo(fm, s2, ox, oy) : []);
+        /* ⚠ PLANTA = A VISTA DE CIMA DO PRÓPRIO MODELO (14/11/2026 — o Rogério marcou em vermelho os joelhos e luvas em "caixa cinza"
+           da planta: "nunca mais eu quero falar sobre essa modelagem que não fica com as peças de acordo com o sistema; não quero isso
+           nunca mais"). Com o 3D aberto, a foto ortográfica de cima (tubo, conexão e louça como modelados; o sistema da folha em cor, o
+           outro em meio-tom) fica por BAIXO e o vetor só anota (parede hachurada, porta, rótulo, cota, seta). Sem o 3D (Node/teste), o
+           desenho vetorial de antes. */
+        var rp = fotoPlanta(c, sis, trs, pv, bb, s2);
+        if (rp) D.add('<image data-im="' + rp.key + '" x="' + n(ox + bb.x0) + '" y="' + n(oy + bb.y0) + '" width="' + n(bb.x1 - bb.x0) + '" height="' + n(bb.y1 - bb.y0) + '" preserveAspectRatio="none" href="' + rp.href + '"/>');
+        var ctxD = ex.ctx; if (rp) { ctxD = {}; for (var kc in ex.ctx) if (Object.prototype.hasOwnProperty.call(ex.ctx, kc)) ctxD[kc] = ex.ctx[kc]; ctxD.loucas = []; }
+        desenharContexto(D, ctxD, s2, ox, oy, medio ? bordasTubo(fm, s2, ox, oy) : []);
         if (sis === "gas") rotulosGas(D, c, pv, s2, ox, oy, chk);
-        if (medio) { formasPlanta(D, cc, trs, s2, ox, oy, fm); bordasTubo(fm, s2, ox, oy).forEach(function (q) { chk.tubos.push(q); }); }
+        if (medio) { if (!rp) formasPlanta(D, cc, trs, s2, ox, oy, fm); bordasTubo(fm, s2, ox, oy).forEach(function (q) { chk.tubos.push(q); }); }
         desenhar(D, pr, ox, oy, chk);
         c.prims.push(pr);
       } };
@@ -581,8 +607,8 @@
     E.camadas["ARQ-VAO"] = { mm: 0.09, dash: null, cor: F.vao }; E.camadas["ARQ-BATENTE"] = { mm: 0.13, dash: null, cor: F.vao }; E.camadas["ARQ-ARCO"] = { mm: 0.05, dash: null, cor: F.leve };
     _estiloArq = E; return E;
   }
-  function fundoArquitetura(c, L, s, ox, oy, segs) {
-    var d = ARQD(), E = estiloArqCinza(), D2 = d.novo(E, true), M = d.mapa([0, 0, 1, 1], ox, oy, s), porId = {};
+  function fundoArquitetura(c, L, s, ox, oy, segs, Mx) {
+    var d = ARQD(), E = estiloArqCinza(), D2 = d.novo(E, true), M = Mx || d.mapa([0, 0, 1, 1], ox, oy, s), porId = {};
     L.paredes.forEach(function (w) { porId[w.id] = w; });
     d.paredesPlanta(D2, M, L.paredes, "fantasma");
     d.pilaresPlanta(D2, M, L.pilares, "fantasma");
@@ -806,9 +832,9 @@
     });
     ph.acess.forEach(function (a) {
       var p = [X(a.centro), Y(a.centro.y)], r = KI.regC / 2;
-      L.push({ x1: p[0] - r, y1: p[1] - r, x2: p[0] + r, y2: p[1] + r, camada: "HID-SIMBOLO", tipo: "registro", trecho: a.id });
-      L.push({ x1: p[0] - r, y1: p[1] + r, x2: p[0] + r, y2: p[1] - r, camada: "HID-SIMBOLO", tipo: "registro", trecho: a.id });
-      S.push({ tipo: "registro", x: p[0], y: p[1], r: r, camada: "HID-SIMBOLO", box: [p[0] - r, p[1] - r, p[0] + r, p[1] + r], id: a.id, desenhado: true });
+      /* 14/11/2026 — o Rogério (folha 08): "os símbolos de cada peça ficaram errados; coloca os corretos, igual a prancha 6": o registro
+         sai com o símbolo da LEGENDA (gaveta/pressão), deitado no tubo, desenhado em desenhar() */
+      S.push({ tipo: "registro", ac: a.acessorio, x: p[0], y: p[1], r: r, camada: "HID-SIMBOLO", box: [p[0] - r, p[1] - r * 2.6, p[0] + r, p[1] + r], id: a.id });
       var alt = a.centro.y - pv.cota;
       pend.push({ s: txt(({ registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" })[a.acessorio] || "RG") + "  " + (alt >= 0 ? "+" : "") + br(alt, 2), h: KI.hPeq, tipo: "registro", camada: "HID-TEXTO", trecho: a.id, anchors: [p], prio: 1 });
     });
@@ -925,30 +951,62 @@
     it.fonte = "Corte esquemático, sem escala. Calha de chapa metálica (n = 0,011) embutida atrás da platibanda; bocal pela fórmula de Francis e pelo orifício (o maior DN); ladrão como orifício com o bocal obstruído, abaixo do topo da impermeabilização. Valores por telhado no memorial de cálculo (verificações da calha).";
     return it;
   }
+  /* ⚠ DETALHES TÍPICOS COM QUALIDADE (14/11/2026 — o Rogério: "ficou muito fraquinho, feio; preciso que seja mais completo; pode até modelar").
+     Cada painel leva a PEÇA MODELADA (a imagem da família, img/hid-pecas — a mesma geometria do 3D) e um CORTE técnico de verdade: parede com
+     espessura e hachura, terreno/contrapiso hachurados, a água do fecho hídrico pintada, os tubos em linha dupla com a cor do sistema, a grelha
+     com as fendas, a tampa de concreto, a meia-cana do fundo. Sem escala (esquemático): a dimensão vale a do fabricante (tabela do catálogo). */
+  var KD = { agua: "#d7ebf8", aguaLinha: "#5b9bd5", parede: "#d9d9d9", concreto: "#eeeeee", tijolo: "#e8d5c4", passo: 1.0, terraPasso: 2.2 };   // hid:ok cores e passo de hachura do desenho (não norma)
+  function hachRet(D, x, y, w, h, fill) { var P = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]; poliCheio(D, P, fill || KD.parede, "#555", 0.18); hachura(D, P, KD.passo); }
+  function terra(D, x0, x1, y) { D.linha(x0, y, x1, y, "HID-TITULO"); for (var x = x0 + 1; x < x1; x += KD.terraPasso) D.linha(x, y, x - 1.2, y + 1.2, "HID-COTA"); }
+  function tuboSec(D, x0, x1, yc, r, cor) {   /* tubo horizontal em corte longitudinal: as duas geratrizes e o eixo */
+    var a = Math.min(x0, x1), b = Math.max(x0, x1);
+    poliCheio(D, [[a, yc - r], [b, yc - r], [b, yc + r], [a, yc + r]], cor, "#333", 0.2);
+    D.add('<line x1="' + n(a) + '" y1="' + n(yc) + '" x2="' + n(b) + '" y2="' + n(yc) + '" stroke="#333" stroke-width="0.1" stroke-dasharray="1.6 0.5 0.3 0.5" data-cam="HID-EIXO"/>');
+  }
+  function corSisDet(D, cam) { var c0 = D.E.camadas[cam]; return c0 && c0.cor ? c0.cor : "#888"; }
   function pnCaixaSif(D, g) {
-    var w = g.w * 0.5, h = g.h * 0.55, x = g.x + g.w * 0.22, y = g.y + g.h * 0.2, it = [];
-    D.ret(x, y, w, h, "HID-SIMBOLO");
-    for (var i = 1; i < 6; i++) D.linha(x + w * i / 6, y - 1.2, x + w * i / 6, y + 0.4, "HID-SIMBOLO");   /* grelha */
-    D.linha(x - 2, y, x + w + 2, y, "HID-TITULO");
-    D.linha(x - g.w * 0.18, y + h * 0.25, x, y + h * 0.25, "HID-ES-TUBO"); D.linha(x - g.w * 0.18, y + h * 0.42, x, y + h * 0.42, "HID-ES-TUBO");
-    D.linha(x + w, y + h * 0.7, x + w + g.w * 0.2, y + h * 0.72, "HID-ES-TUBO");
-    D.linha(x + w * 0.55, y + h * 0.45, x + w * 0.55, y + h * 0.92, "HID-SIMBOLO");         /* septo (sifão) */
-    D.linha(x + 1, y + h * 0.6, x + w - 1, y + h * 0.6, "HID-EIXO");                         /* nível d'água */
-    it.push({ p: [x + w * 0.3, y], t: "GRELHA / PORTA-GRELHA" });
-    it.push({ p: [x - g.w * 0.12, y + h * 0.25], t: "ENTRADAS (LAVATÓRIO, RALO DO BOX)" });
-    it.push({ p: [x + w * 0.25, y + h * 0.6], t: "FECHO HÍDRICO (nível d'água)" });
-    it.push({ p: [x + w + g.w * 0.12, y + h * 0.71], t: "SAÍDA (DN na planta)" });
+    var w = g.w * 0.56, h = g.h * 0.62, x = g.x + g.w * 0.22, y = g.y + g.h * 0.2, t = Math.max(0.8, w * 0.05), it = [], cES = corSisDet(D, "HID-ES-TUBO");
+    /* contrapiso e piso acabado em volta, terreno embaixo */
+    hachRet(D, g.x, y - 2.2, x - g.x, 2.2, KD.concreto); hachRet(D, x + w, y - 2.2, g.x + g.w - x - w, 2.2, KD.concreto);
+    terra(D, g.x, g.x + g.w, y + h + 2.5);
+    /* corpo em corte: paredes e fundo com espessura */
+    hachRet(D, x, y, t, h); hachRet(D, x + w - t, y, t, h); hachRet(D, x, y + h - t, w, t);
+    var yA = y + h * 0.58; poliCheio(D, [[x + t, yA], [x + w - t, yA], [x + w - t, y + h - t], [x + t, y + h - t]], KD.agua, null, 0);
+    D.add('<line x1="' + n(x + t) + '" y1="' + n(yA) + '" x2="' + n(x + w - t) + '" y2="' + n(yA) + '" stroke="' + KD.aguaLinha + '" stroke-width="0.25" data-cam="HID-EIXO"/>');
+    D.linha(x + w * 0.42, yA - 1.5, x + w * 0.42 + 2, yA - 1.5, "HID-COTA"); D.linha(x + w * 0.42 + 0.5, yA - 0.9, x + w * 0.42 + 1.5, yA - 0.9, "HID-COTA");   /* símbolo de nível d'água */
+    /* septo (sifão): desce do topo até abaixo do nível d'água, deixando a passagem embaixo */
+    hachRet(D, x + w * 0.58, y + h * 0.18, t * 0.8, h * 0.62);
+    /* grelha com as fendas e o porta-grelha */
+    poliCheio(D, [[x - 1.2, y - 1.4], [x + w + 1.2, y - 1.4], [x + w + 1.2, y], [x - 1.2, y]], "#bdbdbd", "#333", 0.2);
+    for (var k = 1; k < 9; k++) D.linha(x + w * k / 9, y - 1.4, x + w * k / 9, y, "HID-SIMBOLO");
+    /* entradas (DN 40) e saída (DN da peça) */
+    var rE = h * 0.035, rS = h * 0.045;
+    tuboSec(D, g.x, x + t, y + h * 0.3, rE, cES); tuboSec(D, x + w - t, g.x + g.w, y + h * 0.72, rS, cES);
+    it.push({ p: [x + w * 0.3, y - 0.7], t: "GRELHA E PORTA-GRELHA (no nível do piso acabado)" });
+    it.push({ p: [g.x + 2, y + h * 0.3], t: "ENTRADAS DN 40 (lavatório, ralo do box) - acima do fecho" });
+    it.push({ p: [x + w * 0.58 + t * 0.4, y + h * 0.3], t: "SEPTO DO SIFÃO" });
+    it.push({ p: [x + w * 0.3, yA], t: "FECHO HÍDRICO >= 50 mm (NBR 8160)" });
+    it.push({ p: [x + w + 3, y + h * 0.72], t: "SAÍDA (DN da planta), i >= mínima do DN" });
+    it.push({ p: [x + 1, y - 1.1], t: "CONTRAPISO / PISO ACABADO" });
     return it;
   }
-  function pnCaixa(D, g, partes, esgoto) {
-    var w = g.w * 0.55, h = g.h * 0.6, x = g.x + g.w * 0.22, y = g.y + g.h * 0.15, it = [];
-    D.ret(x, y, w, h, "HID-SIMBOLO");
-    D.linha(x - 2, y, x + w + 2, y, "HID-TITULO");
-    D.linha(x + 1, y + h * 0.7, x + w - 1, y + h * 0.7, "HID-EIXO");
-    var cam = esgoto ? "HID-ES-TUBO" : "HID-AF-TUBO";
-    D.linha(x - g.w * 0.18, y + h * 0.78, x, y + h * 0.78, cam); D.linha(x + w, y + h * 0.86, x + w + g.w * 0.18, y + h * 0.86, cam);
-    var pts = [[x + w * 0.4, y], [x - g.w * 0.1, y + h * 0.78], [x + w + g.w * 0.1, y + h * 0.86], [x + w * 0.5, y + h * 0.5], [x + w * 0.5, y + h]];
-    partes.forEach(function (t, i) { if (pts[i]) it.push({ p: pts[i], t: t }); });
+  function pnCaixa(D, g, partes, esgoto, alvenaria) {
+    var w = g.w * 0.6, h = g.h * 0.6, x = g.x + g.w * 0.2, y = g.y + g.h * 0.16, t = alvenaria ? Math.max(1.4, w * 0.11) : Math.max(0.8, w * 0.05), it = [];
+    var cam = esgoto ? "HID-ES-TUBO" : "HID-AF-TUBO", cor = corSisDet(D, cam);
+    terra(D, g.x, x, y); terra(D, x + w, g.x + g.w, y);
+    /* paredes (alvenaria de tijolo maciço com reboco, ou corpo de PVC), laje de fundo e tampa de concreto */
+    hachRet(D, x, y, t, h, alvenaria ? KD.tijolo : KD.parede); hachRet(D, x + w - t, y, t, h, alvenaria ? KD.tijolo : KD.parede);
+    hachRet(D, x - (alvenaria ? 1.2 : 0), y + h, w + (alvenaria ? 2.4 : 0), alvenaria ? 2.4 : t, KD.concreto);
+    hachRet(D, x - 0.8, y - 2, w + 1.6, 2, KD.concreto);
+    /* fundo com a meia-cana (calha) e a água */
+    var yF = y + h, cx = x + w / 2, rc = (w - 2 * t) * 0.18, arc = [];
+    var yA = y + h * 0.74; poliCheio(D, [[x + t, yA], [x + w - t, yA], [x + w - t, yF], [x + t, yF]], esgoto ? "#e6efe2" : KD.agua, null, 0);
+    for (var q = 0; q <= 12; q++) { var a = Math.PI * q / 12; arc.push([cx - rc * Math.cos(a), yF - rc * 0.1 - Math.sin(a) * rc * 0.5]); }
+    D.poli(arc, "HID-SIMBOLO", false);
+    var rT = h * 0.04; tuboSec(D, g.x, x + t, y + h * 0.7, rT, cor); tuboSec(D, x + w - t, g.x + g.w, y + h * 0.78, rT, cor);
+    var pts = [[cx, y - 1], [g.x + 3, y + h * 0.7], [x + w + 3, y + h * 0.78], [cx, yF - rc * 0.5], [cx, yF + 1.2], [x + t * 0.5, y + h * 0.4]];
+    partes.forEach(function (tx, i) { if (pts[i]) it.push({ p: pts[i], t: tx }); });
+    if (alvenaria) it.push({ p: [x + t * 0.5, y + h * 0.25], t: "ALVENARIA DE TIJOLO MACIÇO, REBOCO INTERNO IMPERMEÁVEL" });
     return it;
   }
   /* RESERVATÓRIO: o perfil na proporção da caixa colocada (Ø × H da família), com as chamadas funcionais e os valores reais */
@@ -956,9 +1014,11 @@
     var it = [], w = g.w * 0.55, h = g.h * 0.62, tem = q.diametro != null && q.altura != null;
     if (tem) { var k = Math.min(g.w * 0.6 / q.diametro, g.h * 0.7 / q.altura); w = q.diametro * k; h = q.altura * k; }
     var x = g.x + g.w * 0.2, y = g.y + g.h * 0.12;
-    D.ret(x, y, w, h, "HID-SIMBOLO");
-    D.linha(x - 2, y, x + w + 2, y, "HID-TITULO");
-    D.linha(x + 1, y + h * 0.25, x + w - 1, y + h * 0.25, "HID-EIXO");
+    poliCheio(D, [[x + 0.8, y + h * 0.25], [x + w - 0.8, y + h * 0.25], [x + w - 0.8, y + h - 0.8], [x + 0.8, y + h - 0.8]], KD.agua, null, 0);   /* a água até o nível de operação */
+    hachRet(D, x, y + 1.6, 0.8, h - 1.6); hachRet(D, x + w - 0.8, y + 1.6, 0.8, h - 1.6); hachRet(D, x, y + h - 0.8, w, 0.8);
+    poliCheio(D, [[x - 1, y], [x + w + 1, y], [x + w + 1, y + 1.6], [x - 1, y + 1.6]], "#9e9e9e", "#333", 0.2);   /* tampa */
+    hachRet(D, x - 2, y + h, w + 4, 2.2, KD.concreto);   /* base de apoio nivelada */
+    D.add('<line x1="' + n(x + 0.8) + '" y1="' + n(y + h * 0.25) + '" x2="' + n(x + w - 0.8) + '" y2="' + n(y + h * 0.25) + '" stroke="' + KD.aguaLinha + '" stroke-width="0.25" data-cam="HID-EIXO"/>');
     D.linha(x - g.w * 0.16, y + h * 0.12, x, y + h * 0.12, "HID-AF-TUBO");
     D.linha(x + w, y + h * 0.18, x + w + g.w * 0.16, y + h * 0.18, "HID-AF-TUBO");
     D.linha(x + w, y + h * 0.9, x + w + g.w * 0.16, y + h * 0.9, "HID-AF-TUBO");
@@ -1037,15 +1097,23 @@
     pns.forEach(function (pn, i) {
       var px = a.x + 4 + (i % lay.col) * cw, py = a.y + K2.titulo + Math.floor(i / lay.col) * ch, gx = px + 2, gy = py + T.titulo + 6, gw = cw * 0.42, gh = ch * 0.48;
       D.texto(px + 2, py + T.titulo * 0.8, pn.titulo, T.titulo * 0.8, { peso: 0.16 });
+      /* a PEÇA MODELADA (a imagem da família, a mesma geometria do 3D) no canto do painel */
+      var ICD = { cs: "fam-caixa-sifonada", ci: "fam-caixa-inspecao", cg: "fam-caixa-gordura", res: "fam-caixa-dagua", bar: "fam-caixa-dagua" }, ladoI = Math.min(ch * 0.34, cw * 0.32), yI = py + ch - ladoI - h * 2.5;   /* embaixo, à direita: a área livre do painel (a tabela do catálogo fica em cima) */
+      if (ICD[pn.id] && iconeImagem(D, ICD[pn.id], px + cw - ladoI - 3, yI, ladoI)) D.texto(px + cw - ladoI / 2 - 3, yI + ladoI + h * 1.2, "PEÇA MODELADA (família do sistema, 3D)", h * 0.9, { al: "C", cor: "#6b7280" });
       var g = { x: gx, y: gy, w: gw, h: gh }, it;
       if (pn.id === "kit") it = pnKitBacia(D, g);
       else if (pn.id === "cs") it = pnCaixaSif(D, g);
-      else if (pn.id === "ci") it = pnCaixa(D, g, ["TAMPA", "ENTRADA", "SAÍDA", "FUNDO COM CALHA (meia-cana)", "NÍVEL: VER PLANTA"], true);
+      else if (pn.id === "ci") {
+        /* a caixa de inspeção do MODELO: de PVC (Tigre/Amanco, a família) ou de alvenaria (o padrão quando não há a de catálogo) */
+        var pcsCi = arr(c.modelo && c.modelo.estado && c.modelo.estado.instalacoes && c.modelo.estado.instalacoes.pecas).filter(function (k) { return /inspecao/.test(txt(k.peca)); });
+        var alv = !pcsCi.some(function (k) { return /pvc|tigre|amanco/.test(JSON.stringify(k).toLowerCase()); });
+        it = pnCaixa(D, g, ["TAMPA DE CONCRETO (removível, com alças)", "ENTRADA", "SAÍDA", "FUNDO COM CALHA (meia-cana)", "LASTRO / LAJE DE FUNDO DE CONCRETO"], true, alv);
+      }
       else if (pn.id === "cg") {
         /* R04b: a TAMPA vem da caixa de gordura do MODELO (inst.Tampa da família, ex.: "hermética, revestida com o porcelanato do piso"); sem ela, o texto genérico */
         var cgT = arr(c.modelo && c.modelo.estado && c.modelo.estado.familias).filter(function (f) { return f && f.famId === "hid-caixa-gordura" && f.inst && f.inst.Tampa; })
           .map(function (f) { return String(f.inst.Nome || "CG").split(" ")[0] + ": " + String(f.inst.Tampa); });
-        it = pnCaixa(D, g, [cgT.length ? "TAMPA " + cgT.join("; ") : "TAMPA", "ENTRADA (cozinha)", "SAÍDA", "SEPTO / CESTO", "FUNDO"], true);
+        it = pnCaixa(D, g, [cgT.length ? "TAMPA " + cgT.join("; ") : "TAMPA", "ENTRADA (cozinha)", "SAÍDA (abaixo do nível da gordura)", "SEPTO / CESTO", "FUNDO"], true, false);
       }
       else if (pn.id === "bar") it = pnBarrilete(D, g, nomesCol);
       else if (pn.id === "calha") it = pnCalhaEmbutida(D, g, c.r);
@@ -1479,13 +1547,60 @@
     pz.loucas.forEach(function (sg) { junta(pz.P({ x: sg[0][0], y: sg[0][1], z: sg[0][2] })); junta(pz.P({ x: sg[1][0], y: sg[1][1], z: sg[1][2] })); });
     return { u0: Math.min.apply(null, us), u1: Math.max.apply(null, us), v0: Math.min.apply(null, vs), v1: Math.max.apply(null, vs) };
   }
+  /* a foto de CIMA do modelo para a planta: u = x·s, v = z·s (o mesmo papel do vetor), recorte do piso até acima do tubo mais alto */
+  function fotoPlanta(c, sis, trs, pv, bb, s2) {
+    if (!FOTO3D || !trs || !trs.length) return null;
+    var ys = []; trs.forEach(function (t) { ys.push(t.p1.y, t.p2.y); });
+    var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
+    var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
+    var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
+    var r = null; try { r = FOTO3D({ foco: foco, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+      largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
+    if (!r || !r.ok || !r.url) return null;
+    var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
+    if (!bin) return null;
+    IMAGENS = IMAGENS || {}; var key = "f" + (Object.keys(IMAGENS).length + 1);
+    IMAGENS[key] = { jpeg: bin, pxW: r.w, pxH: r.h };
+    return { key: key, href: r.url };
+  }
+  /* recorte de polígono num retângulo (o mesmo do caderno) */
+  function clipPoly(pts, b) {
+    var out = pts.slice();
+    function passa(entrada, dentro, inter) {
+      var res = [];
+      for (var i = 0; i < entrada.length; i++) {
+        var a = entrada[i], c = entrada[(i + 1) % entrada.length], da = dentro(a), dc = dentro(c);
+        if (da) res.push(a);
+        if (da !== dc) res.push(inter(a, c));
+      }
+      return res;
+    }
+    out = passa(out, function (p) { return p[0] >= b.x0; }, function (a, c) { var t = (b.x0 - a[0]) / (c[0] - a[0]); return [b.x0, a[1] + t * (c[1] - a[1])]; });
+    if (out.length) out = passa(out, function (p) { return p[0] <= b.x1; }, function (a, c) { var t = (b.x1 - a[0]) / (c[0] - a[0]); return [b.x1, a[1] + t * (c[1] - a[1])]; });
+    if (out.length) out = passa(out, function (p) { return p[1] >= b.z0; }, function (a, c) { var t = (b.z0 - a[1]) / (c[1] - a[1]); return [a[0] + t * (c[0] - a[0]), b.z0]; });
+    if (out.length) out = passa(out, function (p) { return p[1] <= b.z1; }, function (a, c) { var t = (b.z1 - a[1]) / (c[1] - a[1]); return [a[0] + t * (c[0] - a[0]), b.z1]; });
+    return out;
+  }
+  /* hachura a 45° (no papel) num polígono convexo: as retas paralelas cortadas pelas arestas */
+  function hachura(D, P, passo) {
+    if (!P || P.length < 3) return;
+    var dx = Math.SQRT1_2, dy = -Math.SQRT1_2, nx = -dy, ny = dx, ts = P.map(function (q) { return q[0] * nx + q[1] * ny; });
+    var t0 = Math.min.apply(null, ts), t1 = Math.max.apply(null, ts);
+    for (var t = Math.ceil(t0 / passo) * passo; t < t1; t += passo) {
+      var cut = [];
+      for (var i = 0; i < P.length; i++) { var A = P[i], B = P[(i + 1) % P.length], ta = ts[i], tb = ts[(i + 1) % P.length]; if ((ta - t) * (tb - t) < 0) { var f = (t - ta) / (tb - ta); cut.push([A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f]); } }
+      if (cut.length >= 2) D.add('<line x1="' + n(cut[0][0]) + '" y1="' + n(cut[0][1]) + '" x2="' + n(cut[1][0]) + '" y2="' + n(cut[1][1]) + '" stroke="#8a8f96" stroke-width="0.09" data-cam="HID-CONTEXTO"/>');
+    }
+  }
   function rasterDe(pz) {
     if (!FOTO3D || !pz || !pz.P) return null;
     var P = pz.P, O = P({ x: 0, y: 0, z: 0 }), ex = P({ x: 1, y: 0, z: 0 }), ey = P({ x: 0, y: 1, z: 0 }), ez = P({ x: 0, y: 0, z: 1 });
     var R = [ex.u - O.u, ey.u - O.u, ez.u - O.u], U = [-(ex.v - O.v), -(ey.v - O.v), -(ez.v - O.v)], V = P.viewer;
     var lim = limitesPersp(pz), mg = (lim.u1 - lim.u0) * 0.04; lim.u0 -= mg; lim.u1 += mg; lim.v0 -= mg; lim.v1 += mg;
     var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
-    var r = null; try { r = FOTO3D({ R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+    /* o sistema da FOLHA vai em cor (a da legenda: esgoto VERDE), o outro em meio-tom (o Rogério, HID-R00 (51), 14/11/2026) */
+    var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
+    var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
       /* a parede da FRENTE (do lado de quem olha) fica fora do recorte e a do FUNDO entra: o fundo aparece limpo (o Rogério: "a parede na frente você oculta") */
       min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
       max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
@@ -1541,9 +1656,24 @@
     var ox = a.x + mg + (a.w - 2 * mg - KE.folgaChamada - (u1 - u0) * k) / 2 - u0 * k, oy = a.y + K2.titulo + mg + (a.h - K2.titulo - 2 * mg - (v1 - v0) * k) / 2 - v0 * k;
     function X(p) { return [p.u * k + ox, p.v * k + oy]; }
     function pts(pl) { return pl.map(function (qq) { var p = X(Pm(qq[0], yC, qq[1])); return n(p[0]) + "," + n(p[1]); }).join(" "); }
-    /* 1) piso e paredes chapados */
+    /* 1) piso e paredes chapados. 14/11/2026 — o Rogério (folhas 06/07): "tem que mostrar a PORTA, as paredes com uma hachura bacana,
+       EMENDADAS uma na outra". A planta de arquitetura do pavimento (paredes emendadas, vãos com a folha e o arco) é desenhada pelo
+       MESMO motor da planta (fundoArquitetura), com o mapa (x, z) → piso isométrico; a hachura a 45° vai por cima, parede a parede. */
     D.add('<polygon points="' + pts([[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]]) + '" fill="#ffffff" stroke="#9aa0a6" stroke-width="0.13" data-cam="HID-CONTEXTO"/>');
-    chao.forEach(function (pl) { D.add('<polygon points="' + pts(pl) + '" fill="#e6e6e6" stroke="#7f7f7f" stroke-width="0.18" data-cam="HID-CONTEXTO"/>'); });
+    var Lq = null; try { Lq = listasArq(c, pv); } catch (eL) { Lq = null; }
+    var caixaR = { x0: b.x0 - 0.6, x1: b.x1 + 0.6, z0: b.z0 - 0.6, z1: b.z1 + 0.6 };
+    function dentroR(q) { return q.x >= caixaR.x0 && q.x <= caixaR.x1 && q.z >= caixaR.z0 && q.z <= caixaR.z1; }
+    if (Lq && Lq.paredes.length) {
+      var Pm2 = function (x, z) { return X(Pm(x, yC, z)); };
+      var Mi = { k: k * Math.sqrt(Math.abs((Pm(1, 0, 0).u - Pm(0, 0, 0).u) * (Pm(0, 0, 1).v - Pm(0, 0, 0).v) - (Pm(0, 0, 1).u - Pm(0, 0, 0).u) * (Pm(1, 0, 0).v - Pm(0, 0, 0).v))), ox: 0, oy: 0, caixa: [0, 0, 1, 1],
+        P: Pm2, Pp: function (q) { return Pm2(q[0], q[1]); }, L: function (m) { return m * Mi.k; }, larg: 0, alt: 0 };
+      var Lr = { paredes: [], pilares: [], vaos: [], moveis: [], ambientes: [] };
+      Lq.paredes.forEach(function (w) { var q = clipPoly(w.pts, caixaR); if (q.length >= 3) { var o2 = {}; for (var kw in w) o2[kw] = w[kw]; o2.pts = q; Lr.paredes.push(o2); } });
+      Lq.pilares.forEach(function (w) { var q = clipPoly(w.pts, caixaR); if (q.length >= 3) { var o2 = {}; for (var kw in w) o2[kw] = w[kw]; o2.pts = q; Lr.pilares.push(o2); } });
+      Lq.vaos.forEach(function (v) { if (dentroR(v)) Lr.vaos.push(v); });
+      D.add('<g data-cam="HID-CONTEXTO">' + fundoArquitetura(c, Lr, 1, 0, 0, [], Mi).svg + "</g>");
+      Lr.paredes.forEach(function (w) { hachura(D, w.pts.map(function (q) { return Pm2(q[0], q[1]); }), KE.hachPasso); });
+    } else chao.forEach(function (pl) { D.add('<polygon points="' + pts(pl) + '" fill="#e6e6e6" stroke="#7f7f7f" stroke-width="0.18" data-cam="HID-CONTEXTO"/>'); });
     louca.forEach(function (sg) { var A0 = X(Pm(sg[0][0], yC, sg[0][2])), B0 = X(Pm(sg[1][0], yC, sg[1][2])); D.linha(A0[0], A0[1], B0[0], B0[1], "HID-LOUCA"); });
     var cA = X(Pm((b.x0 + b.x1) / 2, yC, (b.z0 + b.z1) / 2)), e1 = X(Pm(b.x0 + 1, yC, b.z0)), e0 = X(Pm(b.x0, yC, b.z0));
     var angA = Math.atan2(e1[1] - e0[1], e1[0] - e0[0]) * 180 / Math.PI; if (angA > 90) angA -= 180; if (angA < -90) angA += 180;
@@ -1569,7 +1699,7 @@
     var angU = Math.atan2(dU[1], dU[0]) * 180 / Math.PI;
     function chamada(p, sigla, alt, cor) {
       var Lc = KE.chamada, E = [p[0] + dU[0] * Lc, p[1] + dU[1] * Lc];
-      D.add('<line x1="' + n(p[0]) + '" y1="' + n(p[1]) + '" x2="' + n(E[0]) + '" y2="' + n(E[1]) + '" stroke="' + cor + '" stroke-width="0.18" stroke-dasharray="1.6 0.8" data-cam="HID-CHAMADA"/>');
+      D.add('<line x1="' + n(p[0]) + '" y1="' + n(p[1]) + '" x2="' + n(E[0]) + '" y2="' + n(E[1]) + '" stroke="' + cor + '" stroke-width="' + n(KE.penaChamada) + '" stroke-dasharray="1.8 0.7" data-cam="HID-CHAMADA"/>');   /* 14/11/2026: "ficou um pouquinho apagado, deixa mais forte" */
       D.linha(E[0] - 1.2, E[1] + 1.2, E[0] + 1.2, E[1] - 1.2, "HID-SIMBOLO");
       var tA = (alt >= 0 ? "+" : "") + br(alt, 2), xT = E[0] - dU[0] * 1.5 + dU[1] * h * 0.7, yT = E[1] - dU[1] * 1.5 - dU[0] * h * 0.7;
       D.texto(xT, yT, tA, h * 1.05, { al: "D", rot: angU, cor: cor, semCaixa: true });
@@ -1585,8 +1715,7 @@
     });
     pz.acess.forEach(function (ac) {
       var p = X(P(ac.centro)), sg = ({ registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" })[ac.acessorio] || "RG", r0 = KI.regC / 2;
-      D.linha(p[0] - r0, p[1] - r0, p[0] + r0, p[1] + r0, "HID-SIMBOLO"); D.linha(p[0] - r0, p[1] + r0, p[0] + r0, p[1] - r0, "HID-SIMBOLO");
-      D.linha(p[0] - r0, p[1] - r0, p[0] - r0, p[1] + r0, "HID-SIMBOLO"); D.linha(p[0] + r0, p[1] - r0, p[0] + r0, p[1] + r0, "HID-SIMBOLO");
+      var prE = pernasNo(segP, p[0], p[1], r0 * 1.5); simbReg(D, ac.acessorio, p[0], p[1], r0, prE[0] || [1, 0]);
       Sx.push({ tipo: "obst", x: 0, y: 0, r: 0, camada: "HID-SIMBOLO", box: [p[0] - r0, p[1] - r0, p[0] + r0, p[1] + r0] });
       pend.push({ s: sg + " " + (ac.centro.y - pv.cota >= 0 ? "+" : "") + br(ac.centro.y - pv.cota, 2), h: h, tipo: "registro", camada: "HID-TEXTO", trecho: ac.id, anchors: [p], prio: 0, d0: KE.d0 });
     });
@@ -2407,7 +2536,7 @@
     var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
     return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
   }
-  var _int = { rasterDe: rasterDe, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+  var _int = { rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
     paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

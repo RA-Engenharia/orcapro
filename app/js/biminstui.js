@@ -1075,7 +1075,7 @@
          o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
       var refP = null;
       if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
-        refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema);
+        refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema, null, ed.p1 || null);
         if (refP) { p = { x: refP.x, y: p.y, z: refP.z }; this._ultimoSnap = refP; }
       }   /* CORTE: a peça sob o cursor (js/biminstcon.js pickCorte) */
       if (!ed.p1) {
@@ -1133,6 +1133,12 @@
           }
         }
         /* começar no MEIO de um tubo: ele é dividido no ponto */
+        /* ⚠ SAÍDA A 45° NA ÁGUA (14/11/2026): guarda a direção do tubo de onde sai — o 1º trecho diagonal ganha o toco do tê de 90° (js/biminstconectar.js saida45Agua) */
+        this._meioAgua = null;
+        if (alvo && alvo.tipo === "meio" && !S.gravidade) {
+          var tM = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+          if (tM) this._meioAgua = { u: { x: tM.p2.x - tM.p1.x, z: tM.p2.z - tM.p1.z }, P: { x: q0.x, z: q0.z }, material: c.material, dn: c.dn };
+        }
         if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var dv = I.dividirTrecho(est, alvo.trecho, q0); if (dv.length) { ed.ops.push(dv[0]); ctx.op(dv[1]); } }
         ctx.inicio(q0);
         ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + ". " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
@@ -1157,6 +1163,13 @@
         var fuga = this._fugirSobreposicao(est, p1, plano[0], p, c.sistema);
         if (fuga === false) { ctx.hint("O tubo sairia por dentro do tubo que já sai desta boca — clique em outra direção."); return; }
         if (fuga) plano = [fuga];
+      }
+      /* ⚠ SAÍDA A 45° DO MEIO DE UM TUBO DE ÁGUA: não existe tê a 45° — o traço vira tê de 90° + toco mínimo + joelho de 45°, e o 45°
+         que a pessoa desenhou sai do joelho (paralelo ao clicado, deslocado do toco). Só no 1º trecho depois do clique no meio. */
+      var mA = this._meioAgua, s45 = null; this._meioAgua = null;
+      if (mA && !alvo && !S.gravidade && !corteP && plano.length && Math.abs(p1.x - mA.P.x) + Math.abs(p1.z - mA.P.z) < 1e-6 && global.BimInstConectar && global.BimInstConectar.saida45Agua) {
+        s45 = global.BimInstConectar.saida45Agua(mA.u, mA.P, plano[0], mA.material, mA.dn);
+        if (s45) plano = [{ x: r4(s45.toco.x), z: r4(s45.toco.z) }].concat(plano.map(function (q) { return { x: r4(q.x + s45.desl.x), z: r4(q.z + s45.desl.z) }; }));
       }
       var sinal = S.gravidade ? (this._sobe ? 1 : -1) : 0, yH = p1.y, ant = p1, pts = [];
       if (corteP && corteP.tipo !== "horizontal") { pts.push(corteP.p); yH = corteP.p.y; }
@@ -1215,6 +1228,7 @@
       var fim = pts[pts.length - 1];
       var tot = criados.reduce(function (s, o) { var g = I.geometria(o.p1, o.p2); return s + g.comprimento; }, 0);
       var msg = criados.length + (criados.length > 1 ? " trechos" : " trecho") + " (" + fmt(tot, 2) + " m)";
+      if (s45) msg += " — saída a 45° no meio do tubo de água: tê de 90° + toco de " + fmt(s45.L * 100, 1) + " cm + joelho de 45° (não existe tê a 45° na água)" + (s45.semMedida ? " ⚠ sem a medida das peças no catálogo: toco de 10 cm, confira" : "");
       if (S.gravidade) msg += ", cota de saída " + fmt(fim.y - base, 3) + " m (desnível " + fmt(p1.y - fim.y, 3) + " m)";
       if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && corteP.p.y > p1.y + 1e-6) || (this._sobe && corteP.p.y < p1.y - 1e-6))) msg += " ⚠ o trecho SOBE contra o escoamento (o esgoto desce de p1 para p2): confira o sentido";
       if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
@@ -1512,7 +1526,25 @@
       var r = null;
       try { r = L.ligar(est, ctx.famAval, A, Bp, { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" }); } catch (e) { r = { ok: false, erro: e.message }; }
       if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
-      this._ligacao = { opcoes: r.opcoes, i: 0, nIni: ini.nIni, ctx: ctx };
+      /* QUAL BOCA (14/11/2026 — o Rogério: "quando eu clicar numa caixa sifonada, qualquer peça com mais de uma entrada ou saída, pedir de qual eu
+         quero sair, de qual lado, qual entrada"). As alternativas entram como OPÇÕES da prévia: Tab passa por elas (saída virada para cada lado
+         livre da caixa de origem; cada entrada livre da caixa de destino), Enter confirma. Cada opção diz no nome qual boca é. */
+      var opcs = r.opcoes.slice(), self = this;
+      function maisOpcoes(extra, rotulo) {
+        var o2 = { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" };
+        Object.keys(extra).forEach(function (k) { o2[k] = extra[k]; });
+        var r2 = null; try { r2 = L.ligar(est, ctx.famAval, A, Bp, o2); } catch (e2) { r2 = null; }
+        if (r2 && r2.ok && r2.opcoes[0]) { var q = r2.opcoes[0]; q.nome = rotulo + " — " + q.nome; opcs.push(q); }
+      }
+      if (r.ladosSaida && r.saidaRot != null) {
+        if (opcs[0]) opcs[0].nome = "saída a " + Math.round(r.saidaRot * 180 / Math.PI) + "° — " + opcs[0].nome;
+        r.ladosSaida.filter(function (q) { return Math.abs(q - r.saidaRot) > 0.01 && Math.abs(Math.abs(q - r.saidaRot) - 2 * Math.PI) > 0.01; }).slice(0, 7).forEach(function (q) { maisOpcoes({ saidaRot: q }, "saída a " + Math.round(q * 180 / Math.PI) + "°"); });
+      }
+      if (r.entradasB && r.entradasB.length > 1) {
+        r.entradasB.slice(1, 7).forEach(function (idE) { maisOpcoes({ entradaId: idE }, "entrada " + String(idE).replace("entrada", "")); });
+      }
+      void self;
+      this._ligacao = { opcoes: opcs, i: 0, nIni: ini.nIni, ctx: ctx };
       this._previaLigacao();
       return true;
     },

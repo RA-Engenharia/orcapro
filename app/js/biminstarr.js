@@ -242,6 +242,32 @@
         g[k] = nn; g.mudou = true; return;
       }
       if (livreEm(v, f)) { g.p1 = add(v.p1, D); g.p2 = add(v.p2, D); g.mudou = true; g.transl = true; return; }
+      /* ⚠ O TRECHO A 45° NÃO ABRE (pedido do Rogério, 14/11/2026): "quando eu puxo um que tem um 45, ele tinha que vir seguindo
+         aquela linha do 45 — não pode abrir e sair do ângulo, senão estrangula a conexão". Antes o vizinho diagonal girava em torno
+         da outra ponta: o Z reta–45°–reta arrastado 0,5 m de lado ficava a 63,4° (conexão que não existe) e só um aviso saía.
+         Agora: se a outra ponta dele é um JOELHO solto (um tubo só, deitado, não preso, que não anda) e o vizinho é DIAGONAL a esse
+         tubo (30° a 60°), o deslocamento se decompõe em "ao longo do 45°" + "ao longo do tubo de lá": o 45° mantém a direção, só
+         muda de comprimento, e a ponta dele DESLIZA no tubo de lá, que estica ou encurta. O L de 90° continua como era (gira). */
+      if (!fixoPonta(v, f)) {
+        var ws = TS.filter(function (w) { return w !== v && !M[w.id] && w.sistema === v.sistema && (dist(w.p1, far) <= TOL || dist(w.p2, far) <= TOL); });
+        var w = ws.length === 1 ? ws[0] : null, kw = w ? (dist(w.p1, far) <= TOL ? "p1" : "p2") : null, wo = w ? w[kw === "p1" ? "p2" : "p1"] : null;
+        var Lw = w ? hlen(far, wo) : 0;
+        if (w && Lw > TOL && !movEm(wo, w.sistema) && !G[w.id].mudou && !fixoPonta(w, kw)) {
+          var wd = { x: (wo.x - far.x) / Lw, z: (wo.z - far.z) / Lw }, cosVW = Math.abs(uh.x * wd.x + uh.z * wd.z);
+          if (cosVW > 0.5 && cosVW < 0.866) {   // hid:ok diagonal: entre 30° e 60° do tubo de lá
+            var det = uh.x * wd.z - uh.z * wd.x, bW = (uh.x * D.z - uh.z * D.x) / det;
+            var far2 = { x: far.x + wd.x * bW, y: far.y + (wo.y - far.y) / Lw * bW, z: far.z + wd.z * bW }, near2 = add(near, D);
+            var Lv2 = (near2.x - far2.x) * uh.x + (near2.z - far2.z) * uh.z, Lw2 = (wo.x - far2.x) * wd.x + (wo.z - far2.z) * wd.z;
+            if (Lv2 < 0.01) { erros.push("o trecho a 45° " + v.id + " ficaria sem comprimento (arraste maior que ele)"); return; }
+            if (Lw2 < 0.01) { erros.push("o tubo " + w.id + " ficaria sem comprimento: o trecho a 45° " + v.id + " escorregaria além dele"); return; }
+            /* a cota da ponta que desliza segue a reta do tubo de lá (inclinação dele mantida); a do 45° a inclinação passa abaixo */
+            g[k] = near2; g[f] = far2; g.mudou = true;
+            var gw = G[w.id]; gw[kw] = cp(far2); gw.mudou = true;
+            avisos.push("o trecho " + v.id + " manteve o ângulo de 45°: a ponta dele deslizou " + fmt(Math.abs(bW)) + " m ao longo do " + w.id + ", que " + (bW > 0 ? "encurtou" : "esticou"));
+            return;
+          }
+        }
+      }
       g[k] = add(near, D); g.mudou = true; rotacoes.push(v.id);
     });
     if (erros.length) return falha(erros[0] + ".");

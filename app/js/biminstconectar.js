@@ -196,13 +196,22 @@
   function dPlanSeg(p, t) { var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L2 = dx * dx + dz * dz, s = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - t.p1.x) * dx + (p.z - t.p1.z) * dz) / L2)) : 0, qx = t.p1.x + dx * s - p.x, qz = t.p1.z + dz * s - p.z; return Math.sqrt(qx * qx + qz * qz); }
 
   /* ================================================ SNAP: PROLONGAMENTO (alinhamento na reta do tubo, na mesma cota)
-   * snapProlongamento(trechos, p {x,z}, sistema, raio) → { tipo: "prolongamento", x, y, z, dn, trecho, d } | null */
-  function snapProlongamento(trechos, p, sistema, raio) {
+   * snapProlongamento(trechos, p {x,z}, sistema, raio, de? {x,z} — o ponto de onde o traço sai) → { tipo: "prolongamento", x, y, z, dn, trecho, d } | null */
+  function snapProlongamento(trechos, p, sistema, raio, de) {
     raio = raio || GEO_CON.raioProlonga; var melhor = null;
     arr(trechos).forEach(function (t) {
       if (sistema && t.sistema !== sistema) return;
       var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > EPS) || Math.abs(t.p2.y - t.p1.y) > L) return;   /* só o deitado */
-      var ux = dx / L, uz = dz / L, s = (p.x - t.p1.x) * ux + (p.z - t.p1.z) * uz, lat = Math.abs(-(p.x - t.p1.x) * uz + (p.z - t.p1.z) * ux);
+      var ux = dx / L, uz = dz / L;
+      /* ⚠ A PONTINHA DE 45° (pedido do Rogério, 14/11/2026): "sempre que eu tiver numa linha reta e quiser fazer um 45, só com uma
+         pontinha, ele tem que fazer". Desenhando a partir de um ponto NA RETA deste tubo (`de`: a ponta dele, ou a ponta da outra metade quando o tubo foi dividido), o clique a 5 cm na diagonal caía a 3,5 cm
+         da reta dele — dentro dos 15 cm do snap — e era puxado para o prolongamento: o tubo só crescia reto e o 45° não saía. Saindo da
+         reta dele, o prolongamento não é ajuda (o travamento a 90°/45° já faz o reto): só vale se o clique está quase na reta (< 10°). */
+      if (de && Math.abs(-(de.x - t.p1.x) * uz + (de.z - t.p1.z) * ux) <= 0.02) {   // hid:ok o traço sai de um ponto NA RETA deste tubo (a ponta dele ou a da outra metade de um tubo dividido): 2 cm = o nó
+        var ex = p.x - de.x, ez = p.z - de.z, Le = Math.sqrt(ex * ex + ez * ez);
+        if (Le > EPS && Math.abs(ex * uz - ez * ux) / Le > 0.174) return;   // hid:ok sen 10°
+      }
+      var s = (p.x - t.p1.x) * ux + (p.z - t.p1.z) * uz, lat = Math.abs(-(p.x - t.p1.x) * uz + (p.z - t.p1.z) * ux);
       var alem = s > L ? s - L : (s < 0 ? -s : 0); if (!(alem > 0) || alem > GEO_CON.alcanceProlonga || lat > raio) return;
       var fr = s / L, q = { tipo: "prolongamento", x: r4(t.p1.x + ux * s), y: r4(t.p1.y + (t.p2.y - t.p1.y) * fr), z: r4(t.p1.z + uz * s), dn: t.dn, trecho: t.id, d: lat };
       if (!melhor || lat < melhor.d) melhor = q;
@@ -210,7 +219,28 @@
     return melhor;
   }
 
-  var BimInstConectar = { VERSAO: 1, GEO_CON: GEO_CON, conectarRef: conectarRef, snapProlongamento: snapProlongamento };
+  /* ================================================ SAÍDA A 45° DO MEIO DE UM TUBO DE ÁGUA (pedido do Rogério, 14/11/2026)
+   * ⚠ Na água (PVC soldável, PPR, CPVC, cobre) NÃO existe tê com a derivação a 45° — só o de 90°. Sair a 45° do meio do tubo é
+   * TÊ de 90° + toco + JOELHO de 45°. Antes o traço saía direto a 45° do nó e a rede contava um "tê 25" que não existe (com um
+   * "confira" que ninguém lê). No esgoto existe a peça (junção 45°) e nada disto se aplica.
+   * saida45Agua(u, P, q, material, dn) — u {x,z}: a direção do tubo de onde sai; P: o ponto no meio dele; q {x,z}: o 1º ponto do
+   * traço. → null (a saída não é diagonal: segue como está) | { toco: {x,z} (a ponta do toco perpendicular), desl: {x,z} (quanto o
+   * resto do traço anda, para o 45° sair do joelho), L (m), semMedida? }. O toco tem o MÍNIMO para as duas peças se encostarem
+   * (centro do tê → face da derivação + centro do joelho → face + 5 mm de folga), pelas cotas do catálogo (HidGeo.cotasConexao). */
+  function saida45Agua(u, P, q, material, dn) {
+    var Lu = Math.hypot(u.x, u.z), dx = q.x - P.x, dz = q.z - P.z, Lq = Math.hypot(dx, dz);
+    if (!(Lu > 1e-9) || !(Lq > 0.005)) return null;
+    var cs = Math.abs((u.x * dx + u.z * dz) / (Lu * Lq));
+    if (!(cs > 0.5 && cs < 0.866)) return null;   // hid:ok diagonal (30° a 60°): 90° e reto seguem como estão
+    var nx = -u.z / Lu, nz = u.x / Lu; if (nx * dx + nz * dz < 0) { nx = -nx; nz = -nz; }
+    var G = HG(), zt = null, zj = null;
+    try { var ct = G && G.cotasConexao ? G.cotasConexao(material, "te", dn) : null, cj = G && G.cotasConexao ? G.cotasConexao(material, "joelho45", dn) : null;
+      zt = ct ? num(ct.zb != null ? ct.zb : ct.zr, null) : null; zj = cj ? num(cj.z, null) : null; } catch (e) { zt = zj = null; }
+    var sem = !(zt > 0 && zj > 0), L = sem ? 0.10 : (zt + zj + 5) / 1000;   // hid:ok mm → m; sem a medida do catálogo, 10 cm e o aviso
+    L = Math.round(L * 1000) / 1000;
+    return { toco: { x: P.x + nx * L, z: P.z + nz * L }, desl: { x: nx * L, z: nz * L }, L: L, semMedida: sem };
+  }
+  var BimInstConectar = { VERSAO: 1, saida45Agua: saida45Agua, GEO_CON: GEO_CON, conectarRef: conectarRef, snapProlongamento: snapProlongamento };
   global.BimInstConectar = BimInstConectar;
   if (typeof module !== "undefined" && module.exports) module.exports = BimInstConectar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

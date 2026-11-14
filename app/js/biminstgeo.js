@@ -1739,6 +1739,12 @@
     if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));
     fr = nrmz(sub(fr, mul(d, dot(fr, d))));
     /* a peça MEDIDA na família do fabricante, quando há (esfera de PVC, gaveta bruto, pressão com acabamento) */
+    /* ⚠ REGISTRO DE GAVETA BRUTO (14/11/2026 — o Rogério, foto do ícone: "o registro de gaveta não é assim, está muito amador"): a família
+       medida saía com o castelo num CONE CROMADO liso (cara de canopla de acabamento) numa peça que é só a BASE de latão. Agora é a base
+       como se compra: corpo de latão com as duas pontas SEXTAVADAS roscadas (fêmea, com a rosca à vista na boca), o bojo da gaveta, o
+       castelo com a PORCA sextavada grande, o pescoço roscado com os filetes, a porca do engaxetamento e a HASTE com a ponta quadrada
+       (onde entra o acabamento). Cotas da ficha da base (corpo e altura) quando há; o resto em proporção declarada (aConferir). */
+    if (a.acessorio === "registro_gaveta" && a.variante === "bruto" && !/^(aco|inox|cobre)/.test(a.material || "")) return registroGavetaBase(a, o, C, d, fr, de);
     var rP = o.semProduto ? null : registroProduto(a, o, C, d, fr); if (rP) return rP;
     var latao = /latao|bronze/.test(a.varMaterial || "") || a.variante === "bruto" || a.variante === "acabamento" || a.acessorio === "registro_gaveta" || a.acessorio === "valvula_retencao";
     /* RODADA 3 da bancada (18/10/2026): no tubo PLÁSTICO (PVC soldável, CPVC, PPR) o registro é o de PVC soldável da
@@ -1817,6 +1823,42 @@
     return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };
   }
 
+  function registroGavetaBase(a, o, C, d, fr, de) {
+    var seg = o.lod === "longe" ? 10 : 28, mc = new Malha();
+    var tab = ((dados().pecas || {}).registro || {}).registro_gaveta || {}, rc0 = tab[String(a.dn)] || null;
+    var rBojo = rc0 ? rc0.corpo / 2 : de * 0.78 + 6, alt = rc0 ? rc0.altura : rBojo + de * 1.1 + 40, hc = alt - rBojo;
+    var Lff = num(a.comprimento, 0) > 0 ? num(a.comprimento, 0) / MM : de * 1.9 + 24, h = Lff / 2;
+    var rHex = Math.max(de / 2 + 4, rBojo * 0.78), Lh = Math.min(h * 0.42, de * 0.5 + 6), rRosca = de / 2 + 1.2;
+    /* as duas pontas: o sextavado com a BOCA roscada (furo com os filetes) */
+    [1, -1].forEach(function (sg) {
+      var F = add(C, mul(d, sg * h * MM)), dIn = mul(d, -sg), fil = [[0, rRosca]];
+      for (var k = 0; k < 5; k++) fil.push([k * 2.2 + 1.1, rRosca - 1.0], [k * 2.2 + 2.2, rRosca]);
+      varrer(mc, reta(F, dIn), escala([[0, 0], [0, rHex * 0.97], [Lh, rHex * 0.97], [Lh, 0]]), 6, false);   /* o sextavado (6 lados) */
+      varrer(mc, reta(add(F, mul(dIn, -0.6 * MM)), dIn), escala([[0, 0]].concat(fil).concat([[11.5, rRosca], [11.5, 0]])), seg, false);   /* os filetes da rosca na face da boca (sólido fechado: volume positivo) */
+      varrer(mc, reta(add(F, mul(dIn, Lh * MM)), dIn), escala([[0, 0], [0, rHex * 0.86], [2, rHex * 0.8], [2, 0]]), seg, false);       /* o colarinho */
+    });
+    /* o bojo da gaveta, redondo, entre os sextavados */
+    var Lb = Lff - 2 * (Lh + 2);
+    varrer(mc, reta(add(C, mul(d, -Lb / 2 * MM)), d), escala([[0, 0], [0, rHex * 0.82], [Lb * 0.2, rBojo * 0.95], [Lb * 0.5, rBojo], [Lb * 0.8, rBojo * 0.95], [Lb, rHex * 0.82], [Lb, 0]]), seg, false);
+    /* o castelo: pescoço, PORCA sextavada grande, rosca do castelo com filetes, porca do engaxetamento, haste */
+    var z = rBojo * 0.8, rP = rBojo * 0.78, hP = hc * 0.14, rN = rBojo * 0.5;
+    varrer(mc, reta(C, fr), escala([[0, 0], [0, rBojo * 0.7], [z, rBojo * 0.66], [z, 0]]), seg, false);
+    varrer(mc, reta(add(C, mul(fr, z * MM)), fr), escala([[0, 0], [0, rP], [hP, rP], [hP, 0]]), 6, false);                                   /* porca do castelo */
+    varrer(mc, reta(add(C, mul(fr, (z + hP) * MM)), fr), escala([[0, 0], [0, rP * 0.9], [1.2, rP * 0.84], [1.2, 0]]), seg, false);             /* chanfro */
+    var z2 = z + hP + 1.2, Lr = hc * 0.2, pr = [[0, 0], [0, rN]];
+    for (var q = 0; q < 6; q++) pr.push([Lr * (q + 0.5) / 6, rN * 0.93], [Lr * (q + 1) / 6, rN]);
+    pr.push([Lr, 0]); varrer(mc, reta(add(C, mul(fr, z2 * MM)), fr), escala(pr), seg, false);                                                   /* pescoço roscado */
+    var z3 = z2 + Lr, hG = hc * 0.11, rG = rN * 0.92;
+    varrer(mc, reta(add(C, mul(fr, z3 * MM)), fr), escala([[0, 0], [0, rG], [hG, rG], [hG, 0]]), 6, false);                                  /* porca do engaxetamento */
+    var z4 = z3 + hG, rH = Math.max(3.2, rN * 0.32), Lhaste = Math.max(6, hc - z4 - 9);
+    varrer(mc, reta(add(C, mul(fr, z4 * MM)), fr), escala([[0, 0], [0, rH], [Lhaste, rH], [Lhaste, 0]]), 16, false);                          /* haste */
+    var w1 = perp(fr), w2 = cross(w1, fr);
+    caixaM(mc, add(C, mul(fr, (z4 + Lhaste + 4.5) * MM)), [w1, fr, w2], [rH * 0.95 * MM, 4.5 * MM, rH * 0.95 * MM]);                           /* ponta quadrada */
+    var partes = [cascaSaida(mc, "latao")];   /* uma casca só: a base inteira é de latão */
+    return { partes: partes, frente: fr, aConferir: true, comprimento: Lff * MM,
+             cotas: { corpo: rBojo * 2, altura: alt, origem: rc0 ? "catalogo" : "proporcao", fonte: rc0 ? fonte(rc0.f, rc0.pag) : null, aConferir: "sextavados, porcas e filetes do castelo em proporção declarada (corpo e altura da ficha da base)" } };
+  }
+
   /* o REGISTRO DE PVC SOLDÁVEL (rodada 3): bolsas soldáveis da ficha do soldável nas pontas, porcas sextavadas, bojo; o
      castelo (base sextavada, colar, coluna, degrau) e a haste com a CHAVE chata; a altura e o bojo da ficha da base
      (registros-base-cotas) quando há; o resto em proporção declarada (aConferir). Com acabamento, a canopla e a cruzeta
@@ -1867,7 +1909,13 @@
     varrer(mc, reta(add(C, mul(fr, hc * 0.3 * MM)), fr), escala([[0, 0], [0, rB * 1.05], [hc * 0.03, rB * 1.15], [hc * 0.1, rB * 1.15], [hc * 0.13, rB * 0.95], [hc * 0.13, rB * 0.68],
       [hc * 0.48, rB * 0.68], [hc * 0.51, rB * 0.5], [hc * 0.56, rB * 0.5], [hc * 0.56, rB * 0.3], [hc * 0.6, rB * 0.3], [hc * 0.6, 0]]), seg, false);   /* colar, coluna, degrau e haste */
     var acab = a.variante === "acabamento";
-    if (!acab) {   /* a CHAVE chata no topo da haste */
+    if (!acab && a.acessorio === "registro_pressao") {
+      /* ⚠ REGISTRO DE PRESSÃO DE PVC SOLDÁVEL (14/11/2026 — o Rogério: "a modelagem não está completa, está feia"): a peça vendida tem o
+         VOLANTE SIMPLES (a borboleta redonda com os gomos para a mão), não a chave chata do registro de esfera. Volante no topo da haste. */
+      var rVo = rB * 1.12, hVo = Math.max(9, hc * 0.2), zV = hc * 0.6, Cv0 = add(C, mul(fr, zV * MM));
+      varrer(mc, reta(add(C, mul(fr, hc * 0.56 * MM)), fr), escala([[0, 0], [0, rB * 0.36], [hc * 0.05, rB * 0.36], [hc * 0.05, 0]]), seg, false);   /* bucha */
+      varrer(mc, reta(Cv0, fr), escala([[0, 0], [0, rVo * 0.55], [hVo * 0.25, rVo * 0.92], [hVo * 0.45, rVo], [hVo * 0.8, rVo * 0.96], [hVo, rVo * 0.7], [hVo * 1.08, rVo * 0.35], [hVo * 1.1, 0]]), seg + 8, false);   /* volante */
+    } else if (!acab) {   /* a CHAVE chata no topo da haste */
       var w1 = perp(fr), w2 = cross(w1, fr);
       caixaM(mc, add(C, mul(fr, hc * 0.88 * MM)), [w1, fr, w2], [rB * 0.62 * MM, hc * 0.12 * MM, rB * 0.13 * MM]);   /* o topo da chave = o topo cotado da haste */
     } else {   /* canopla e cruzeta cromadas */

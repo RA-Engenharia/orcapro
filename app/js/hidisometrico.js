@@ -297,7 +297,7 @@
     if (melhor.d > (it.chamadaMin != null ? it.chamadaMin : K.chamadaMin) || it.balao) {
       /* chamada: do ponto do tubo até a borda mais próxima da caixa */
       var ex = Math.max(melhor.box[0], Math.min(melhor.an[0], melhor.box[2])), ey = Math.max(melhor.box[1], Math.min(melhor.an[1], melhor.box[3]));
-      L.push({ x1: melhor.an[0], y1: melhor.an[1], x2: ex, y2: ey, camada: "HID-COTA", tipo: "chamada", trecho: it.trecho, pena: K.penas.chamada });
+      L.push({ x1: melhor.an[0], y1: melhor.an[1], x2: ex, y2: ey, camada: "HID-COTA", tipo: "chamada", rot: it.tipo, trecho: it.trecho, pena: K.penas.chamada });
     }
   });
   }

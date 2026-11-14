@@ -100,7 +100,7 @@
     var sA0 = PkA0 ? HB().bocas(estado, PkA0).filter(function (b) { return b.papel === "saida"; })[0] : null;
     if (sA0) dnA = num(sA0.dn, dnA);
     var PkB0 = B.tipo === "peca" && B.id != null ? arr(estado && estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return String(k.id) === String(B.id); })[0] : null;
-    var bocasB = null, avisoBoca = null;
+    var bocasB = null, avisoBoca = null, entradasB = null;
     if (PkB0 && sisRota === "esgoto" && HB()) {
       var dnChega = dnA || 40;   // hid:ok DN de reserva do ramal de descarga (o mesmo do traçado)
       var eB = HB().entradasLivres(estado, PkB0, A, dnChega);
@@ -126,7 +126,9 @@
         return { ok: false, erro: eB.erro + ". Pela NBR 8160 o ramal DN " + dnChega + " vai a uma caixa com entrada DN " + dnChega + " (nenhuma no catálogo) ou, com sifão próprio, ao ramal de esgoto: ligue primeiro a saída da caixa e clique no tubo de saída dela", opcoes: [] };
       }
       else if (!eB.ok) return { ok: false, erro: eB.erro, opcoes: [] };
-      else bocasB = eB.bocas;
+      else { bocasB = eB.bocas; entradasB = bocasB.map(function (b0) { return b0.id; });
+        /* a ENTRADA escolhida pela pessoa (14/11/2026: "quando a peça tem mais de uma entrada, pedir qual") — sem ela, a mais alinhada (antes) */
+        if (opts.entradaId != null) { var bE = bocasB.filter(function (b0) { return String(b0.id) === String(opts.entradaId); }); if (bE.length) bocasB = bE; } }
     }
     var bocaB = null, rebB = null, LBOCA = 0.15;   // hid:ok 15 cm retos antes da boca: o comprimento da bolsa + a folga até a 1ª conexão (o mesmo toco da saída)
     /* SAÍDA DA CAIXA SIFONADA/RALO (13/11/2026): a saída sai no SENTIDO que o usuário girou a peça (rotY, passos de 45° na colocação) — um toco reto
@@ -135,6 +137,22 @@
     /* caixa nunca girada (rotY 0, o padrão da colocação): sem toco — o traçado escolhe por onde a saída vai, como antes; o giro da pessoa manda quando existe.
        ⚠ A6 (revisão 13/11/2026): "girada" é o campo saidaGirada (gravado pelo giro e pela colocação girada) — quem girava 8 × 45° voltava a 0° e perdia a
        escolha. Projeto salvo antes do campo: rotY ≠ 0 continua valendo como girada; rotY 0 sem o campo = livre, como sempre foi. */
+    /* ⚠ SEMPRE PELA BOCA DE SAÍDA (14/11/2026 — o Rogério: "a saída da caixa sifonada tem que sair da saída mesmo, não pode ficar saindo de
+       outro campo; as entradas têm as entradas"). A caixa nunca girada saía do CENTRO (a rota escolhia o lado — e o tubo saía por onde ficava
+       uma entrada). Agora: caixa sem giro e SEM tubo ligado → a saída gira para o lado de B (passos de 45°, o mesmo giro da colocação) e o giro
+       fica gravado na peça (instAlterar); com tubo já ligado nas bocas, o giro de agora vale (girar moveria as entradas dos tubos ligados).
+       opts.saidaRot (rad) = a escolha da pessoa, quando a tela perguntar o lado. */
+    var altSaida = null;
+    if (PkA && sisRota === "esgoto" && /^(caixa_sifonada|ralo_)/.test(String(PkA.peca))) {
+      var girada0 = PkA.saidaGirada === true || Math.abs(num(PkA.rotY, 0)) > EPS, rC0 = num((I.PECAS[PkA.peca] || {}).r, 0.05);   // hid:ok raio de reserva do corpo (geometria)
+      var ligada0 = arr(estado && estado.instalacoes && estado.instalacoes.trechos).some(function (t) { return [t.p1, t.p2].some(function (q) { return Math.hypot(q.x - PkA.x, q.z - PkA.z) <= rC0 + 0.06; }); });   // hid:ok 6 cm: a bolsa da boca (geometria)
+      var rotN = opts.saidaRot != null ? num(opts.saidaRot, 0) : (!girada0 && !ligada0 ? Math.round(Math.atan2(-(B.z - PkA.z), B.x - PkA.x) / (Math.PI / 4)) * (Math.PI / 4) : null);   // hid:ok passos de 45° (o giro da colocação)
+      if (rotN != null && (!girada0 || opts.saidaRot != null)) {
+        var Pk2 = {}; Object.keys(PkA).forEach(function (k) { Pk2[k] = PkA[k]; }); Pk2.rotY = r4(rotN); Pk2.saidaGirada = true; PkA = Pk2;
+        estado = JSON.parse(JSON.stringify(estado)); arr(estado.instalacoes && estado.instalacoes.pecas).forEach(function (k) { if (String(k.id) === String(PkA.id)) { k.rotY = PkA.rotY; k.saidaGirada = true; } });
+        altSaida = { op: "instAlterar", id: PkA.id, rotY: PkA.rotY, saidaGirada: true };
+      } else if (!girada0) { var Pk3 = {}; Object.keys(PkA).forEach(function (k) { Pk3[k] = PkA[k]; }); Pk3.saidaGirada = true; PkA = Pk3; }
+    }
     if (PkA && sisRota === "esgoto" && /^(caixa_sifonada|ralo_)/.test(String(PkA.peca)) && (PkA.saidaGirada === true || Math.abs(num(PkA.rotY, 0)) > EPS)) {
       var PPa = I.PECAS[PkA.peca] || {}, dnS = num(String(PkA.dn || PPa.dn || "").split("x").pop(), 0) || 50, rot = num(PkA.rotY, 0);   // hid:ok tolerância de desenho / DN de reserva (geometria, não norma)
       var dx = Math.cos(rot), dz = -Math.sin(rot), rC = num(PPa.r, 0.05), yS = opts._yToco != null ? opts._yToco : r4(num(PkA.y, 0) - num(PPa.h, 0.1) + dnS / 2000 + 0.01);   // hid:ok 1 cm: a geratriz de baixo da saída acima do fundo do corpo (geometria)
@@ -298,6 +316,7 @@
       }
       if (A.tipo === "meio" && A.trecho) antes = antes.concat(dividir(estado, A.trecho, A));
       if (tocoA) ops = [o.toco || JSON.parse(JSON.stringify(tocoA))].concat(ops);
+      if (altSaida) { ops = [JSON.parse(JSON.stringify(altSaida))].concat(ops); o.avisos = arr(o.avisos); o.avisos.push("a saída da " + txt((I.PECAS[PkA.peca] || {}).nome).toLowerCase() + " " + PkA.id + " foi virada para o lado da ligação (a peça girou " + Math.round(PkA.rotY * 180 / Math.PI) + "°)"); }
       if (bocaB) ops.push({ op: "trecho", id: par.prefixo + "boca", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num(bocaB.boca.dn, 40), p1: bocaB.P, p2: { x: bocaB.boca.x, y: bocaB.boca.y, z: bocaB.boca.z } });   // hid:ok DN de reserva
       ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
       var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
@@ -306,7 +325,9 @@
     });
     if (!opcoes.length && tocoA && B.y != null && num(B.y, 0) > tocoA.p2.y - 0.005) return { ok: false, erro: "a saída da caixa " + txt(PkA.id) + " (cota " + tocoA.p2.y.toFixed(2).replace(".", ",") + " m) fica abaixo do ponto de chegada (cota " + num(B.y, 0).toFixed(2).replace(".", ",") + " m): o esgoto não sobe — ligue a caixa mais a jusante (onde o tubo está mais fundo) ou direto na caixa de inspeção", opcoes: [], descartadas: r.descartadas, pendencias: r.pendencias };   // hid:ok 5 mm: tolerância de desenho
     if (!opcoes.length) return { ok: false, erro: (r.descartadas[0] ? r.descartadas[0].motivo : (r.pendencias[0] ? r.pendencias[0].motivo : "nenhuma rota fechou")), opcoes: [], descartadas: r.descartadas, pendencias: r.pendencias };
-    return { ok: true, opcoes: opcoes, descartadas: r.descartadas, pendencias: r.pendencias };
+    /* as escolhas que a tela pode oferecer (Tab): as entradas livres da caixa de destino e, na caixa de origem sem tubo, os lados da saída */
+    var lados = null; if (altSaida || (PkA && opts.saidaRot != null)) lados = [0, 1, 2, 3, 4, 5, 6, 7].map(function (q) { return r4(q * Math.PI / 4); });   // hid:ok os 8 giros de 45° da colocação
+    return { ok: true, opcoes: opcoes, descartadas: r.descartadas, pendencias: r.pendencias, entradasB: entradasB, saidaRot: PkA && (altSaida || opts.saidaRot != null) ? PkA.rotY : null, ladosSaida: lados };
   }
 
   /* NENHUMA LUVA À TOA (13/11/2026, regra da casa "nenhuma conexão a mais"): dois trechos novos da ligação que se encontram SÓ entre si, no mesmo DN e

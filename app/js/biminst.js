@@ -949,7 +949,7 @@
     /* frente 1b: a peça escolhida tem as bocas (e a deflexão) que o nó tem? Eletrocalha/flexível não têm portas aqui. */
     var M0 = MATERIAIS[ramos[0].material] || {};
     if (ramos.length >= 2 && out.length && !M0.larguras && !M0.flexivel) {
-      var pr = out.filter(function (c) { return c.tipo !== "reducao"; })[0] || out[0];
+      var pr = out.filter(function (c) { return c.tipo !== "reducao" && !c.extra; })[0] || out[0];
       var jaDesvio = avisos.some(function (t) { return /^mudança de direção de/.test(t); });
       conferirPortas({ tipo: pr.tipo, material: pr.material, ramos: ramos, conector: !!conector }).itens.forEach(function (it) {
         if (it.tipo === "deflexao" && jaDesvio) return;   /* o aviso de "fora de 45°/90°" já diz */
@@ -1073,7 +1073,11 @@
           return out;
         }
       }
-      if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
+      /* ⚠ ÁGUA COM DERIVAÇÃO A 45° (14/11/2026): não existe tê a 45° na água. A peça real é o tê de 90° + o joelho de 45° — a contagem leva
+         os dois (antes saía só um "tê" que não existe e o orçamento ficava sem o joelho). O desenho novo já faz o toco (js/biminstui.js). */
+      var aguaD = !gravidade && sistema !== "eletrica" && beta >= 25 && beta <= 65;
+      if (aguaD) { cx("joelho45", rc.dn, 0, { soQto: true, extra: true }); avisos.push("derivação a " + Math.round(beta) + "° da linha de água: não existe tê a 45° — contados o tê de 90° e um joelho de 45° DN " + rc.dn + "; para o 3D bater, refaça a saída a partir do meio do tubo (o traço põe o toco do tê)"); }
+      else if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
       var dnB = rc.dn;
       if (dnB > dnRun + 0.5) { cx(ehJuncao ? "juncao" : "te", dnB); cx("reducao", dnB, dnRun); }
       else if (dnB < dnRun - 0.5) {

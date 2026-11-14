@@ -2449,14 +2449,34 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderer.clippingPlanes = [new THREE.Plane(_V3(1, 0, 0), -mn[0]), new THREE.Plane(_V3(-1, 0, 0), mx[0]), new THREE.Plane(_V3(0, 1, 0), -mn[1]),
         new THREE.Plane(_V3(0, -1, 0), mx[1]), new THREE.Plane(_V3(0, 0, 1), -mn[2]), new THREE.Plane(_V3(0, 0, -1), mx[2])];
       renderer.localClippingEnabled = false;
+      /* FOCO DO SISTEMA (14/11/2026 — o Rogério no HID-R00 (51): "folha de água fria não precisa mostrar o esgoto com cor, deixa ele
+         meio-tom; na de esgoto, o inverso; e o esgoto é VERDE, que é a cor da legenda"). o.foco = ['agua'] | ['esgoto'] | ambos:
+         o sistema da folha sai na cor da LEGENDA da prancha (AF azul, AQ vermelho, ES/VE verde), o outro em cinza claro translúcido.
+         Troca o material só durante a foto (volta no finally); louça e arquitetura ('outros') ficam como estão. */
+      if (o.foco && o.foco.length) {
+        try { construirSisIdx(); } catch (_) {}
+        var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
+        var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.05, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
+        var MAT = { af: mF(0x2f6fd6, 1), aq: mF(0xd23c3c, 1), es: mF(0x23a046, 1), meio: mF(0xc4c9cf, 0.45) };
+        bk.trocas = []; bk.matsFoco = MAT;
+        todasMalhas(function (m) {
+          if (!m.isMesh) return; var k = m.userData._sisK; if (!k || k === 'outros') return;
+          var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+          if (!agua && !esg) return;
+          var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
+          bk.trocas.push([m, m.material]); m.material = nv;
+        });
+        try { sincronizarAgregado(); } catch (_) {}   /* ⚠ o AGREGADO (as peças mescladas) desenha a cor: sem espelhar, a foto saía com a cor antiga */
+      }
       renderer.setPixelRatio(1); renderer.setSize(W, H, false); renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
       renderer.render(scene, cam);
       var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
       var x2 = c2.getContext('2d'); x2.fillStyle = '#ffffff'; x2.fillRect(0, 0, W, H); x2.drawImage(cv, 0, 0, W, H, 0, 0, W, H);
-      out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H };
+      out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H, nFoco: bk.trocas ? bk.trocas.length : 0 };
     } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
     finally {
       renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
+      if (bk.trocas) { bk.trocas.forEach(function (t) { t[0].material = t[1]; }); try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
       if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
       renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
       try { renderer.render(scene, camera); } catch (_) {}
