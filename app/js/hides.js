@@ -523,9 +523,15 @@
         else { req = dTQ; passos.push("ventilação primária = prolongamento do tubo de queda " + kTQ + ": DN ≥ DN do TQ = " + dTQ + " (decisão do RT)"); }
       }
       else aviso(out.avisos, "aviso", "ventilação sem ligação com o esgoto (" + cp.arestas.length + " trecho(s))", cp.arestas.map(function (eid) { return GV.arestas[eid].trecho; }), { texto: "ligar a ventilação ao ramal ou ao tubo de queda" });
+      /* A1 (decisão do Rogério, 13/11/2026; o mesmo critério do motor js/hidambiente.js): a ventilação que termina no TERMINAL de ventilação próprio (o
+         térreo) é DN 50 inteira depois da caixa sifonada sempre que o caminho DN 50 cabe — quem decide o caminho é o motor (só ele vê a parede). Aqui a Tabela 8
+         é o MÍNIMO: o DN do modelo acima dele fica (nunca sugere voltar o DN 50 para DN 40 com a redução no teto) e abaixo dele sobe ao mínimo, como antes */
+      var temTerm = req != null && tipo !== "primaria" && cp.arestas.some(function (eid) { var e = GV.arestas[eid]; return e && e.pa && e.pb && arr(R.pecas).some(function (k) { return k.peca === "terminal_ventilacao" && (Math.hypot(k.x - e.pb.x, k.y - e.pb.y, k.z - e.pb.z) <= 0.02 || Math.hypot(k.x - e.pa.x, k.y - e.pa.y, k.z - e.pa.z) <= 0.02); }); });   // hid:ok 2 cm: a ponta no terminal (a mesma do toco abaixo)
+      if (temTerm) passos.push("termina no terminal de ventilação próprio: a Tabela 8 é o mínimo (DN " + req + "); o DN 50 do projeto depois da caixa (decisão 13/11/2026) fica onde o motor o pôs");
       pendV.forEach(function (p) { ctx.pendencia(/^es\./.test(p) ? p : "es.ventilacao." + tipo, p, "ventilação"); });
       cp.arestas.forEach(function (eid) {
         var e = GV.arestas[eid], trav = !!travados[e.trecho], dn = req == null ? e.dn : (trav ? e.dn : (comercial(e.material, Math.max(req, 0)) || null));
+        if (temTerm && dn != null && num(e.dn, 0) > dn) dn = e.dn;   /* A1: o DN do modelo acima do mínimo da Tabela 8 fica (lado seguro) */
         /* o toco curto que só leva ao terminal (a redução acima do teto da ventilação individual): o catálogo não tem terminal menor, a redução sugerida não existe na obra */
         if (dn != null && dn < e.dn && num(e.comprimento, INF_TOCO) <= TOCO_TERMINAL && arr(R.pecas).some(function (k) { return k.peca === "terminal_ventilacao" && (Math.hypot(k.x - e.pb.x, k.y - e.pb.y, k.z - e.pb.z) <= 0.02 || Math.hypot(k.x - e.pa.x, k.y - e.pa.y, k.z - e.pa.z) <= 0.02); })) dn = e.dn;
         var st = pendV.length ? "pendente" : (trav && req != null && e.dn < req ? "reprovado" : "ok");

@@ -1842,7 +1842,7 @@
         return a + b + 2 * (cL ? (cL.pb2 || cL.pb || 0) / 1000 : 0);
       }
       function subida(c, r, yAte, alvo, rColuna) {
-        var best = null, passoP = geo(par, "passoParede"), nP = Math.round(geo(par, "deslizeParede") / passoP), nPmax = nP * 2;
+        var best = null, passoDes = null, passoP = geo(par, "passoParede"), nP = Math.round(geo(par, "deslizeParede") / passoP), nPmax = nP * 2;
         /* ⚠ o tê fica ACIMA DO EIXO do ramal (4.3.16 b 1): a derivação sobe o que o enchimento sob o piso deixa — o ideal é o
            tubo da ventilação inteiro acima do ramal; o mínimo, o eixo dela na geratriz de cima do ramal */
         var hIdeal = raio(c.dnEs) + r + geo(par, "folga"), hMin = raio(c.dnEs);
@@ -1899,7 +1899,7 @@
           /* a tomada já está SOB a parede (o ramal corre por baixo dela): sobe ali mesmo, sem trecho deitado. ⚠ Só com o tubo INTEIRO na espessura (08/11/2026, a ventilação do tanque da casa: a
              7,5 cm do eixo de uma parede de 15 cm ela subia na face, metade do tubo para fora, 4,3 m assim) */
           /* com aquecedor no modelo a água quente desce na camada funda (js/hidaqtraco.js R-AQ4), depois da ventilação: as camadas ficam para ela e a tomada segue a regra de antes, com pendência quando sobra fora da parede */
-          var sobParede = arr(reservaAQ).length ? d2(c.P, q0) < geo(par, "margemNo") : d2(c.P, q0) + Math.max(r, num(rColuna, 0)) <= num(w.espessura, 0) / 2 + EPS;
+          var sobParede = arr(reservaAQ).length ? d2(c.P, q0) < geo(par, "margemNo") : d2(c.P, q0) + Math.max(r, num(rColuna, 0)) + (!CV && r >= raio(50) - EPS ? COBRE_MIN_V50 : 0) <= num(w.espessura, 0) / 2 + EPS;   /* A1: o DN 50 com a face coberta (3 mm; test-hid-esgoto-direto [3u]) */
           if (sobParede) q0 = { x: c.P.x, z: c.P.z };
           var dx = w.p2.x - w.p1.x, dz = w.p2.z - w.p1.z, Lw = Math.sqrt(dx * dx + dz * dz), u = { x: dx / Lw, z: dz / Lw };
           /* ⚠ o ponto na parede DESLIZA ao longo dela (em L): o ramal da bacia corre perpendicular à parede e a subida no
@@ -1990,19 +1990,19 @@
                a ventilação atravessava o barrilete sob a laje): DESVIO dentro da parede — sobe, corre no eixo (com aclive) por
                baixo do tubo que cruzaria e volta a subir onde a parede está livre */
             if (bate) {
-              var vert = segs[segs.length - 1], niveis = [], nD = Math.ceil(Lw / passoP);   /* o desvio corre a parede inteira, se preciso */
+              var vert = segs[segs.length - 1], niveis = [], passoD = passoDes || geo(par, "passoParede"), nD = passoDes ? Math.round(geo(par, "deslizeParede") * 2 / passoDes) : Math.ceil(Lw / passoD);   /* o desvio corre a parede inteira no passo normal; no deslize fino, de 1 em 1 cm até 2 × o deslize */   /* o desvio corre a parede inteira, se preciso */
               outros.forEach(function (t) {
                 var fx = t.sistema === "agua_fria" ? geo(par, "afastamento") : geo(par, "folga");
                 if (distSeg(t.p1, w.p1, w.p2) > num(w.espessura, 0) + fx && distSeg(t.p2, w.p1, w.p2) > num(w.espessura, 0) + fx) return;
-                var yl = chao4(Math.min(t.p1.y, t.p2.y) - r - raio(num(t.dn, 0)) - fx - nD * passoP * ac);   /* o aclive do desvio sobe até isto */
+                var yl = chao4(Math.min(t.p1.y, t.p2.y) - r - raio(num(t.dn, 0)) - fx - nD * passoD * ac);   /* o aclive do desvio sobe até isto */
                 if (yl > vert.a.y + geo(par, "margemNo") * 2 && yl < vert.b.y && niveis.indexOf(yl) < 0) niveis.push(yl);
               });
               niveis.sort(function (x1, x2) { return x2 - x1; });
               var achou = null;
               niveis.some(function (yD) {
                 for (var jd = 1; jd <= nD && !achou; jd++) for (var sd = -1; sd <= 1 && !achou; sd += 2) {
-                  if (LJdes != null && jd * passoP < LJdes) continue;   /* o desvio mais curto que os dois joelhos dele não se monta */
-                  var dxD = sd * jd * passoP, q2 = { x: r4(q.x + u.x * dxD), z: r4(q.z + u.z * dxD) }, t2 = (q2.x - w.p1.x) * u.x + (q2.z - w.p1.z) * u.z;
+                  if (LJdes != null && jd * passoD < LJdes) continue;   /* o desvio mais curto que os dois joelhos dele não se monta */
+                  var dxD = sd * jd * passoD, q2 = { x: r4(q.x + u.x * dxD), z: r4(q.z + u.z * dxD) }, t2 = (q2.x - w.p1.x) * u.x + (q2.z - w.p1.z) * u.z;
                   if (t2 < geo(par, "afastParede") || t2 > Lw - geo(par, "afastParede")) continue;
                   var yD2 = teto4(yD + Math.abs(dxD) * ac), pD = { x: q.x, y: yD, z: q.z }, pD2 = { x: q2.x, y: yD2, z: q2.z };
                   var top2 = { x: q2.x, y: yAte(q2), z: q2.z }, segsD = segs.slice(0, -1).concat([{ a: vert.a, b: pD }, { a: pD, b: pD2 }, { a: pD2, b: top2 }]);
@@ -2034,7 +2034,34 @@
            descida da pia: a 60 cm a subida passava a 9,75 cm da água — o afastamento é 10 cm) → procura de novo até o DOBRO do deslize
            (o que fecha sem bater vence; o que ainda bate fica como antes, com o aviso) */
         if ((!best || best.bate) && nP < nPmax) { nP = nPmax; varrer(); }
+        /* A1 (decisão do Rogério, 13/11/2026: "a parede sempre comporta o DN 50 — o conflito é de POSIÇÃO"): a ventilação DN 50 depois da caixa que ainda
+           bate (a 10 cm da água, 3 cm de outro esgoto) ou não encaixa as conexões DN 50 procura de novo com o DESVIO dentro da parede de 1 em 1 cm (o tanque da casa:
+           a 25 cm a subida DN 50 ficava a 9,6 cm da prumada de água; a 26 cm, 10,4 cm — o passo de 5 cm pulava a posição livre). A régua é a do próprio varrer (bateEm: afastamento da água e folga de montagem; encaixeFalta: as faces medidas das peças DN 50) — uma só para todo caminho */
+        if (best && !CV && r >= raio(50) - EPS && (best.bate || best.faltaEncaixe - MARGEM_ENCAIXE > EPS_ENCAIXE)) {   // hid:ok DN do terminal de ventilação
+          passoDes = 0.01; nP = nPmax; varrer();   // hid:ok 1 cm (passo do deslize fino da subida dentro da parede, pelo desvio)
+        }
         return best;
+      }
+      /* A1: o caminho DN 50 só vale LIMPO — a mesma régua para a subida, o ramal até a coluna e a individual: 10 cm livres da água e 3 cm de outro esgoto
+         (bateEm, com a zona do tê), sem cruzar outro tubo nem a si mesmo, as conexões DN 50 medidas encaixando (encaixeFalta: pernas ≥ faces das peças) e
+         o aclive (a subida já sai no mínimo da tabela). O que não passa fica no DN da Tabela 8, como antes (nunca um caminho pior para forçar o DN 50) */
+      var COBRE_MIN_V50 = 0.003;   // hid:ok 3 mm de cobertura da face (a régua do test-hid-esgoto-direto [3u])
+      /* M1 da revisão (14/11/2026): a tomada na DESCIDA em DN 50 passa pela mesma régua — limpo50 + as pernas entre as conexões DN 50 (o desvio na parede
+         e a perna até a coluna ≥ pernaMinima do DN 50; ventNaDescida não mede o encaixe). HID_PERNA50_EXTRA (m) é o controle negativo do teste */
+      function limpoDesc(b, dn) {
+        if (!b || b.bate || num(b.c && b.c.dnEs, 0) < dn - EPS || !limpo50(b)) return false;
+        var pm = pernaMinima(raio(dn)); if (pm == null) return true;
+        pm += (typeof process !== "undefined" && process.env && Number(process.env.HID_PERNA50_EXTRA)) || 0;
+        var todas = b.segs.concat(b.extra && b.extra.segs ? b.extra.segs : []);
+        return todas.every(function (sg, k) { return k === todas.length - 1 || d3(sg.a, sg.b) >= pm - EPS; });   /* a derivação da junção também: junção + joelho DN 50 */
+      }
+      function limpo50(b) {
+        if (!b || !b.segs || b.bate || b.semIni) return false;
+        /* nem o tê do ramal + o joelho sob o piso faltando: aceitar isso fazia o refazer do encaixe descer o esgoto do ambiente, e o ramal mais fundo alinhava
+           com a rede externa (luva a mais) e a subida em outra parede tomava o caminho da água quente (auditor, CASA/CASA-AQ, 14/11/2026) */
+        if (b.faltaEncaixe - MARGEM_ENCAIXE > EPS_ENCAIXE) return false;
+        var todas = b.segs.concat(b.extra && b.extra.segs ? b.extra.segs : []);
+        return !atravessaOutro(todas, raio(50)) && !bateProprio(todas, raio(50));   // hid:ok DN do terminal de ventilação
       }
       var melhor = null, CV = destinos.ventilacao || null, coluna = null;
       var cobertos = {}, RAIO_VERT = 0.01, CAMADA_VENT = CAMADA_PAREDE, PERNA_DESVIO_VENT = 0.13;   // hid:ok 1 cm em planta: o trecho é vertical; 13 cm: os dois joelhos e as bolsas do DN 40 (o trecho vertical do desvio)
@@ -2098,7 +2125,27 @@
            que chega à junção) também pede DN 50. Antes subia em DN 40 com a redução 50 × 40 acima do teto, sem motivo. A redução só fica onde há motivo: o
            DN 50 não cabe inteiro na parede (a busca abaixo não acha subida com o raio dele) e o DN do ramal volta, com a redução no teto (M2 da revisão 09/11). */
         var dnsT0 = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnT0 = dnsT0.filter(function (d) { return d >= dnV - EPS; })[0], dnV0r = dnV;
-        cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
+        /* A1 (decisão do Rogério, 13/11/2026): a pia/tanque sai em DN 40 até a caixa, a saída da caixa é DN 50 e a ventilação tomada depois dela é DN 50
+           SEMPRE — nunca DN 40 com redução. O caminho é procurado JÁ com o raio e as conexões do DN 50 (subida: afastamento da água, folga de outro esgoto,
+           faces medidas das peças DN 50, aclive), e não adaptado depois: adaptar o caminho do DN 40 abria defeito em outro cenário (ramo claude/hid-clique) */
+        var m50n = null;
+        if (dnT0 != null && dnT0 > dnV + EPS) cands.forEach(function (c) {
+          if (num(c.dnEs, 0) < dnT0 - EPS) return;   /* a tomada no tubo DN 50 (a saída da caixa, o ramal da bacia): o tê DN 50 × 50 — no braço DN 40 do aparelho a ventilação segue a Tabela 8 */
+          var b = subida(c, raio(dnT0), function () { return ySaida; }); if (limpo50(b) && (!m50n || b.nota < m50n.nota - EPS)) m50n = b;
+        });
+        /* sem subida limpa do ramal (a tomada sob a parede, colada na descida do próprio aparelho, e o enchimento sem altura para o deitado DN 50): a tomada
+           vai à DESCIDA do aparelho por junção de 45° (NBR 8160 4.3.16 a), deslizando dentro da parede — no DN 50 inteiro e só limpa */
+        if (!m50n && dnT0 != null && dnT0 > dnV + EPS) desc.some(function (q) {
+          if (q.caixa || q.bacia || !q.pt) return false;
+          if (!arr(q.cam).some(function (cq) { return num(cq.e.t.dn, 0) >= dnT0 - EPS; })) return false;   /* a descida DN 50 (o tê da junção no mesmo DN) */
+          var dnV1 = dnV; dnV = dnT0; var b = null; try { b = ventNaDescida(q, dnT0, ySaida, null, dnT0); } finally { dnV = dnV1; }
+          if (!limpoDesc(b, dnT0)) return false;
+          desc.forEach(function (q2) { if (!b.c.dists.some(function (d) { return d.ref === q2.ref; })) b.c.dists.push({ ref: q2.ref, el: q2.el || q2.ref, L: null, limite: q2.limite, dn: q2.dn, ok: false }); });
+          b.reserva = q.ref; m50n = b; return true;
+        });
+        if (m50n && m50n.reserva) decide("amb.ventilacao.na_descida", "Ventilação de " + m50n.reserva + " na descida do aparelho, por junção de 45° (NBR 8160 4.3.16 a), em DN " + dnT0 + " inteiro: do ramal a subida DN " + dnT0 + " não tem posição livre (3 cm do esgoto, 10 cm da água) nesta parede.");
+        if (m50n) { melhor = m50n; dnV = dnT0; decide("amb.ventilacao.dn_terminal", "Ventilação de " + (m50n.reserva || desc[0].ref) + " em DN " + dnT0 + " da tomada ao terminal (decisão de projeto 13/11/2026: depois da caixa sifonada a ventilação é DN " + dnT0 + " sempre; a Tabela 8 dava o mínimo DN " + dnV0r + "): caminho escolhido já com o tubo e as conexões DN " + dnT0 + ", sem redução no teto."); }
+        else cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         /* o MESMO caminho (escolhido com o DN da Tabela 8, que já desvia da água) vai inteiro no DN do terminal se o tubo maior não chega mais perto da água
            do que o afastamento da casa (10 cm livres) — ou, se o caminho já estava abaixo disso, não piora além da diferença de raio */
         /* serve50(b): o caminho b comporta o DN do terminal inteiro? */
@@ -2261,7 +2308,7 @@
               if (off && pernaMinima(raio(dnR)) != null && Math.abs(off) < pernaMinima(raio(dnR)) - EPS) return;   /* o desvio deitado comporta os dois joelhos e as bolsas */
               var Q = { x: r4(Eb.x + u0.x * off), z: r4(Eb.z + u0.z * off) };
               if (off) { var tQ = (Q.x - w.p1.x) * u0.x + (Q.z - w.p1.z) * u0.z; if (tQ < geo(par, "afastParede") || tQ > Lw - geo(par, "afastParede")) return; }
-              var yD = off ? teto4(Eb.y + PERNA_DESVIO_VENT) : Eb.y, yD2 = off ? teto4(yD + Math.abs(off) * ac) : Eb.y;
+              var yD = off ? teto4(Eb.y + (!CV && dnR > 40 + EPS ? Math.max(PERNA_DESVIO_VENT, pernaMinima(raio(dnR)) || 0) : PERNA_DESVIO_VENT)) : Eb.y, yD2 = off ? teto4(yD + Math.abs(off) * ac) : Eb.y;
               var top = { x: Q.x, y: teto4(yAlvo), z: Q.z }; if (top.y <= yD2 + geo(par, "margemNo")) return;
               var extra = col ? ateColuna(col)(top) : { segs: [], L: 0, exceto: [] }; if (!extra) return;
               /* a perna deitada até a coluna, entre o joelho e o tê: na camada ao lado da coluna (7,5 cm) as peças se sobrepunham (lavatório do lavabo a 30 cm) */
@@ -2290,11 +2337,18 @@
         var q = desc.filter(function (x) { return x.ref === d.ref; })[0], cs = q ? candidatos(q, true) : [];
         if (q && q.direto) {
           var dnRv = NR.dnVentRamal(0, 0, "ventilação: ramal de " + d.ref); dnRv = dnRv == null ? null : HRcomercial("ventilacao", dnRv);
-          var bV = dnRv != null && coluna ? ventNaDescida(q, dnRv, r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), coluna) : null;
+          /* A1 (decisão do Rogério, 13/11/2026): no térreo, com a coluna DN 50 e a descida DN 50 (a união das cubas), a ventilação dela também é DN 50 inteira —
+             só se o caminho DN 50 passa limpo (3 cm do esgoto, 10 cm da água); senão a Tabela 8, como antes */
+          if (dnRv != null && !CV && num(dnV, 0) >= 50 && dnCol > dnRv + EPS && coluna && arr(q.cam).some(function (cq) { return num(cq.e.t.dn, 0) >= dnCol - EPS; })) {   // hid:ok DN do terminal de ventilação
+            var yTq = r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), bQ = ventNaDescida(q, dnCol, yTq, coluna);
+            if (!limpoDesc(bQ, dnCol)) { bQ = ventNaDescida(q, dnCol, ySaida, null, dnCol); if (limpoDesc(bQ, dnCol)) bQ.individual50 = true; else bQ = null; }
+            if (bQ) dnRv = dnCol;
+          }
+          var bV = bQ && !bQ.individual50 ? bQ : (dnRv != null && coluna && !(bQ && bQ.individual50) ? ventNaDescida(q, dnRv, r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), coluna) : null);
           /* o ramal até a coluna não passa dentro da parede (o tubo da válvula da bacia): ventilação individual, subindo reta (NBR 8160: todo desconector ventilado) */
           var dnsTv = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnTv = dnRv == null ? null : dnsTv.filter(function (x) { return x >= dnRv - EPS; })[0];
           if ((!bV || bV.bate) && dnRv != null && dnTv != null && !CV) {
-            var bVi = ventNaDescida(q, dnRv, ySaida, null, dnTv);
+            var bVi = bQ && bQ.individual50 ? bQ : ventNaDescida(q, dnRv, ySaida, null, dnTv);
             /* com ramal possível só encostando na água, a individual vale se passa limpa */
             if (bVi && (!bV || !bVi.bate)) {
               var colVi = emitir(bVi, dnRv, "ventilacao_ramal", dnTv), idTv = pr + "terminal" + (out.ventilacao.ramais.length + 2);
@@ -2324,7 +2378,30 @@
         dnR = HRcomercial("ventilacao", dnR);
         /* o ramal corre sob o teto e entra na coluna ABAIXO do topo dela (a junção precisa de coluna dos dois lados) */
         var yTopoR = r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), bR = null;
-        cs.forEach(function (c) {
+        /* A1 (decisão do Rogério, 13/11/2026): no térreo, com a coluna já DN 50, o ramal tomado num tubo DN 50 (depois da caixa) também é DN 50 — até a coluna
+           ou, sem caminho limpo até ela, individual até o terminal. Só com o caminho LIMPO (limpo50); senão segue a Tabela 8, como antes */
+        if (!CV && num(dnV, 0) >= 50 && dnCol > dnR + EPS) {   // hid:ok DN do terminal de ventilação
+          var bR50 = null, bT50 = null, cs50 = cs.filter(function (c) { return num(c.dnEs, 0) >= dnCol - EPS; });
+          cs50.forEach(function (c) { var b = subida(c, raio(dnCol), function (qq) { return chao4(yTopoR - (Math.abs(qq.x - coluna.p1.x) + Math.abs(qq.z - coluna.p1.z)) * ac); }, ateColuna(coluna)); if (limpo50(b) && soltoNoAr(b.segs.concat(b.extra ? b.extra.segs : [])) <= geo(par, "margemNo") && (!bR50 || b.nota < bR50.nota - EPS)) bR50 = b; });
+          if (!bR50) cs50.forEach(function (c) { var b = subida(c, raio(dnCol), function () { return ySaida; }, null, raio(dnCol)); if (limpo50(b) && (!bT50 || b.nota < bT50.nota - EPS)) bT50 = b; });
+          /* sem subida limpa do ramal: na DESCIDA do aparelho (junção de 45°, NBR 8160 4.3.16 a), DN 50 inteiro — até a coluna ou individual */
+          if (!bR50 && !bT50 && q && q.pt && !q.caixa && !q.bacia && arr(q.cam).some(function (cq) { return num(cq.e.t.dn, 0) >= dnCol - EPS; })) {
+            var bD = ventNaDescida(q, dnCol, yTopoR, coluna);
+            if (limpoDesc(bD, dnCol)) bR50 = bD;
+            else { bD = ventNaDescida(q, dnCol, ySaida, null, dnCol); if (limpoDesc(bD, dnCol)) bT50 = bD; }
+          }
+          if (bR50) { bR = bR50; dnR = dnCol; }
+          else if (bT50) {
+            var colR5 = emitir(bT50, dnCol, "ventilacao_ramal", dnCol), idT5 = pr + "terminal" + (out.ventilacao.ramais.length + 2);
+            novas.push({ op: "peca", id: idT5, peca: "terminal_ventilacao", sistema: "ventilacao", dn: String(dnCol), x: r4(colR5.p2.x), y: r4(colR5.p2.y), z: r4(colR5.p2.z), amb: ambId, ambParte: "ventilacao_ramal" });
+            var dT5 = bT50.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
+            out.ventilacao.ramais.push({ desconector: d.ref, dn: dnCol, dnTerminal: dnCol, L: dT5.L, limite: dT5.limite, terminal: idT5, individual: true });
+            d.ramal = { dn: dnCol, L: dT5.L, individual: true };
+            decide("amb.ventilacao.individual", "Ventilação individual de " + d.ref + " em DN " + dnCol + " inteira até o terminal (decisão de projeto 13/11/2026: depois da caixa, DN " + dnCol + "; sem redução no teto): o ramal até a coluna não tem caminho limpo; sobe embutido até " + f2(hSaida) + " m do piso (NBR 8160, desconector ventilado a " + f2(dT5.L) + " m).");
+            return;
+          }
+        }
+        if (!bR) cs.forEach(function (c) {
           var b = subida(c, raio(dnR), function (qq) { return chao4(yTopoR - (Math.abs(qq.x - coluna.p1.x) + Math.abs(qq.z - coluna.p1.z)) * ac); }, ateColuna(coluna));
           if (b && (!bR || b.nota < bR.nota - EPS)) bR = b;
         });
