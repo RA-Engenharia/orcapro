@@ -941,7 +941,7 @@
   }
   /* FAMÍLIAS CAIXAS (14/11/2026): a caixa sifonada da FICHA (Amanco, "caixas sifonadas e ralos" p.8) desenhada pelo MESMO motor da peça do
      traçado (js/biminstgeo.js HidGeo.peca / cotasPeca) — uma fonte só para o corpo, o porta-grelha, a grelha e as bocas da família e da peça */
-  var PAPEL_PECA = { corpo: "Branco", grelha: "Metal cromado acetinado", fenda: ESCURO };   /* acetinado: a grelha plana com o cromado polido saía preta (js/bim.js FAM_PBR) */
+  var PAPEL_PECA = { corpo: "Branco", grelha: "Metal cromado acetinado", fenda: ESCURO, sifao: "Branco" };   /* acetinado: a grelha plana com o cromado polido saía preta (js/bim.js FAM_PBR) */
   function pecaFicha(peca, chave, q) {
     var G = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
     if (!G || !G.peca) throw new Error("HidGeo.peca indisponível (js/biminstgeo.js)");
@@ -1042,12 +1042,30 @@
   var CINZA_TIGRE = "PVC cinza Tigre", TAMPA_TIGRE = "Tampa preta Tigre";
   function tampaTigre(partes, Ft, Gt, Fpt, q) {
     var tp = parte("tampa", "Tampa reforçada", TAMPA_TIGRE), pt = parte("porta-tampa", "Porta-tampa", CINZA_TIGRE), k, n = q.N > 20 ? 7 : 4;
-    caixaR(pt.m, { x0: -Fpt / 2, x1: Fpt / 2, y0: -Gt, y1: -Gt + 0.018, z0: -Fpt / 2, z1: Fpt / 2, r: 0.004, rad: 0.01 }, q);   /* aba do porta-tampa (388) */
+    caixaR(pt.m, { x0: -Fpt / 2, x1: Fpt / 2, y0: -Gt + 0.012, y1: -Gt + 0.018, z0: -Fpt / 2, z1: Fpt / 2, r: 0.002, rad: 0.008 }, q);   /* aba do porta-tampa (388) */
+    /* 14/11/2026 — o Rogério (fotos Tigre): o porta-tampa tem a SAIA vertical em volta e as ALETAS triangulares por fora, de 4 em 4 cm.
+       A saia desce do nível da aba até o colarinho do corpo; as aletas são placas finas em cunha (larga embaixo da aba, fina embaixo) */
+    var Hs = KCX.saia, es = KCX.paredeSaia, Fs = Ft + 2 * es, nAl = Math.max(4, Math.round(Fs / KCX.passoAleta)), ia;
+    [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(function (lado) {
+      var xa = lado[0] ? lado[0] * (Fs / 2 - es / 2) : 0, za = lado[1] ? lado[1] * (Fs / 2 - es / 2) : 0;
+      caixaR(pt.m, { x0: lado[0] ? xa - es / 2 : -Fs / 2, x1: lado[0] ? xa + es / 2 : Fs / 2, y0: -Gt + 0.012 - Hs, y1: -Gt + 0.012, z0: lado[1] ? za - es / 2 : -Fs / 2, z1: lado[1] ? za + es / 2 : Fs / 2, r: 0, rad: 0.001 }, q);
+      for (ia = 0; ia <= nAl; ia++) {
+        var t = -Fs / 2 + Fs * ia / nAl, xo = lado[0] ? lado[0] * Fs / 2 : t, zo = lado[1] ? lado[1] * Fs / 2 : t, sai = (Fpt - Fs) / 2;
+        for (var kk = 0; kk < 2; kk++) {   /* a cunha em 2 degraus: sai (Fpt − Fs)/2 em cima e quase nada embaixo */
+          var f = 1 - kk / 2, y1 = -Gt + 0.012 - Hs * kk / 2, y0 = -Gt + 0.012 - Hs * (kk + 1) / 2, d = sai * f;
+          caixaR(pt.m, { x0: lado[0] ? (lado[0] > 0 ? xo : xo - d) : xo - 0.0012, x1: lado[0] ? (lado[0] > 0 ? xo + d : xo) : xo + 0.0012, y0: y0, y1: y1, z0: lado[1] ? (lado[1] > 0 ? zo : zo - d) : zo - 0.0012, z1: lado[1] ? (lado[1] > 0 ? zo + d : zo) : zo + 0.0012, r: 0, rad: 0.0005 }, q);
+        }
+      }
+    });
     caixaR(tp.m, { x0: -Ft / 2, x1: Ft / 2, y0: -Gt + 0.012, y1: -0.004, z0: -Ft / 2, z1: Ft / 2, r: 0.004, rad: 0.012 }, q);   /* tampa 348 */
-    for (k = 0; k < n; k++) {   /* grelha de ondas (faixas onduladas da foto) */
-      var z = -Ft * 0.36 + Ft * 0.72 * k / (n - 1), pts = [], j;
-      for (j = 0; j <= 10; j++) { var x = -Ft * 0.34 + Ft * 0.68 * j / 10; pts.push([x, -0.004, z + 0.006 * Math.sin(j * 0.9)]); }
-      tubo(tp.m, pts, 0.0028, 6, { rc: 0.01, arco: 2 });
+    n = q.N > 20 ? 8 : 5;
+    for (k = 0; k < n; k++) {   /* as RANHURAS onduladas em diagonal da tampa reforçada (foto Tigre): sulcos escuros curvos, do canto ao canto */
+      var off = -Ft * 0.42 + Ft * 0.84 * k / (n - 1), pts = [], j;
+      for (j = 0; j <= 14; j++) {
+        var s0 = -Ft * 0.5 + Ft * j / 14, xx = s0 * 0.82 + off * 0.57, zz = -s0 * 0.57 + off * 0.82 + 0.008 * Math.sin(j * 0.7);
+        if (Math.abs(xx) < Ft * 0.44 && Math.abs(zz) < Ft * 0.44) pts.push([xx, -0.0035, zz]);
+      }
+      if (pts.length >= 2) tubo(tp.m, pts, 0.0022, 6, { rc: 0.01, arco: 2 });
     }
     partes.push(pt, tp, decal("logo", "TIGRE", "#3A3D42", [0, -0.001, Ft * 0.42], [0, 1, 0], [1, 0, 0], Ft * 0.22, Ft * 0.045));
   }
@@ -1056,8 +1074,49 @@
   function corpoTigre(co, R, yTop, yBase, N) {   /* afina 8 % para baixo, com o colarinho do porta-tampa no topo */
     torno(co.m, [[R * 0.9, yBase], [R * 0.92, yBase + 0.012], [R, yTop - 0.06], [R * 1.04, yTop - 0.03], [R * 1.04, yTop]], N, { c: [0, 0, 0] });
   }
+  var KCX = { saia: 0.028, paredeSaia: 0.004, passoAleta: 0.09, bolsa: 0.055, anel: 0.004, nervuras: 8, cesto: 0.38 };   // hid:ok forma das fotos Tigre (não cotada na ficha)
+  /* o BOCAL Tigre da foto: o tubo que sai do corpo, a BOLSA mais larga na ponta com o ANEL de borracha escuro e a boca aberta */
+  function bocalTigre(bo, an, fu, c, ax, dn, Lb, N) {
+    var r = (dn + 14) / 2000, rb = r * 1.12, p0 = c, p1 = [c[0] + ax[0] * (Lb - KCX.bolsa), c[1] + ax[1] * (Lb - KCX.bolsa), c[2] + ax[2] * (Lb - KCX.bolsa)];
+    tubo(bo.m, [p0, p1], r, Math.max(10, N), { rc: 0 });
+    torno(bo.m, [[r, 0], [rb, 0.006], [rb, KCX.bolsa - 0.004], [rb * 0.98, KCX.bolsa], [r * 0.9, KCX.bolsa]], Math.max(10, N), { c: p1, eixo: ax });
+    torno(an.m, [[rb * 1.005, KCX.bolsa * 0.42], [rb * 1.02, KCX.bolsa * 0.45], [rb * 1.02, KCX.bolsa * 0.45 + KCX.anel], [rb * 1.005, KCX.bolsa * 0.48 + KCX.anel]], Math.max(10, N), { c: p1, eixo: ax, fechado: true });
+    furoBolsa(fu.m, [c[0] + ax[0] * (Lb + 0.0003), c[1] + ax[1] * (Lb + 0.0003), c[2] + ax[2] * (Lb + 0.0003)], ax, rb * 0.98, N);   /* a boca aberta: o disco escuro rente à ponta da bolsa (por fora da tampa do torno) */
+  }
+  /* o corpo com as NERVURAS verticais (a caixa de gordura Tigre é lobada em planta: 8 gomos) — o tambor que afina e as costelas por fora */
+  function corpoNervurado(co, R, yTop, yBase, N, n) {
+    corpoTigre(co, R * 0.97, yTop, yBase, N);
+    for (var i = 0; i < n; i++) {
+      var a = (i + 0.5) * TAU / n, cx = Math.cos(a), cz = Math.sin(a), pts = [];
+      tubo(co.m, [[cx * R * 0.88, yBase + 0.012, cz * R * 0.88], [cx * R * 0.985, yTop - 0.06, cz * R * 0.985]], R * 0.11, Math.max(8, N / 2), { rc: 0 });
+      void pts;
+    }
+  }
   function geoCaixaGordura(P, q) {
     if (P.tg > 0.5) {
+      /* ⚠ CAIXA DE GORDURA TIGRE DN 100 (14/11/2026 — fotos e ficha do Rogério: C 5, D 295, E 392, H 449, DN1 50 ×2, DN2 75, DN3 100). Por fora: o
+         corpo cinza LOBADO (nervuras verticais), os bocais com bolsa e anel, o porta-tampa com a saia e as aletas, a tampa preta com as ranhuras.
+         POR DENTRO (o Rogério: "tem que ter tudo, a sifonada tem o sifão dentro"): o SIFÃO da saída (tubo DN 100 que desce do bocal até perto do
+         fundo — a gordura fica em cima, a água sai por baixo) e o CESTO DE LIMPEZA perfurado pendurado sob a tampa, do lado da entrada. */
+      var Rt = P.D / 2, Bt = P.H, Gtt = P.Gt, pt = [], cot = parte("corpo", "Corpo", CINZA_TIGRE), bot = parte("bocais", "Bocais", CINZA_TIGRE), ant = parte("aneis", "Anéis de borracha", ESCURO);
+      var yT = -Gtt, yB = -Gtt - Bt, yb = yT - (P.yb > 0 ? P.yb : 0.05), Lt = Math.max(0.03, (P.Cx - P.D) / 2), fu = parte("furos", "Bocas abertas", "Preto");
+      corpoNervurado(cot, Rt, yT, yB, q.N, KCX.nervuras);
+      bocalTigre(bot, ant, fu, [Rt * 0.9, yb, 0], [1, 0, 0], P.Dn, Lt + Rt * 0.1, q.N);          /* DN3 100: saída */
+      bocalTigre(bot, ant, fu, [-Rt * 0.9, yb, 0], [-1, 0, 0], 75, Lt + Rt * 0.1, q.N);          /* DN2 75: entrada */
+      bocalTigre(bot, ant, fu, [0, yT - 0.035, Rt * 0.9], [0, 0, 1], 50, Lt * 0.7 + Rt * 0.1, q.N);   /* DN1 50 */
+      bocalTigre(bot, ant, fu, [0, yT - 0.035, -Rt * 0.9], [0, 0, -1], 50, Lt * 0.7 + Rt * 0.1, q.N);
+      /* por dentro: o sifão da saída (tê descendo) e o cesto */
+      var sif = parte("sifao", "Sifão da saída (interno)", CINZA_TIGRE), rS = (P.Dn + 14) / 2000;
+      tubo(sif.m, [[Rt * 0.9, yb, 0], [Rt * 0.55, yb, 0], [Rt * 0.55, yB + Bt * 0.2, 0]], rS, Math.max(10, q.N), { rc: rS * 1.2 });
+      var ce = parte("cesto", "Cesto de limpeza (interno)", ESCURO), rc = Rt * KCX.cesto, xc = -Rt * 0.35, yc0 = yT - 0.01, yc1 = yT - Bt * 0.55, nb = 3;
+      for (var k = 0; k <= nb; k++) { var yk = yc0 + (yc1 - yc0) * k / nb; torno(ce.m, [[rc, yk], [rc + 0.0025, yk], [rc + 0.0025, yk + 0.004], [rc, yk + 0.004]], q.N, { c: [xc, 0, 0], fechado: true }); }   /* os aros do cesto */
+      for (k = 0; k < 8; k++) { var ak = k * TAU / 8; tubo(ce.m, [[xc + Math.cos(ak) * rc, yc0, Math.sin(ak) * rc], [xc + Math.cos(ak) * rc * 0.9, yc1, Math.sin(ak) * rc * 0.9]], 0.0018, 4, { rc: 0 }); }   /* as varetas */
+      torno(ce.m, [[0, yc1], [rc * 0.9, yc1], [rc * 0.9, yc1 + 0.003], [0, yc1 + 0.003]], q.N, { c: [xc, 0, 0] });   /* o fundo */
+      tubo(ce.m, [[xc - rc, yc0 + 0.01, 0], [xc, yc0 + 0.05, 0], [xc + rc, yc0 + 0.01, 0]], 0.0025, 6, { rc: 0.03, arco: 4 });   /* a alça */
+      pt.push(cot, bot, ant, fu, sif, ce); tampaTigre(pt, P.Ft, Gtt, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
+      return pt;
+    }
+    if (false) {
       /* Tigre: 2 entradas DN 50 (laterais ±Z), 1 entrada DN 75 (−X) e a saída DN 100 (+X), todas a C abaixo do topo (ficha p.1) */
       var Rt = P.D / 2, Bt = P.H, Gtt = P.Gt, pt = [], cot = parte("corpo", "Corpo", CINZA_TIGRE), bot = parte("bocais", "Bocais", CINZA_TIGRE);
       var yT = -Gtt, yB = -Gtt - Bt, yb = yT - (P.yb > 0 ? P.yb : 0.05), Lt = Math.max(0.03, (P.Cx - P.D) / 2);
@@ -1066,7 +1125,7 @@
       bocalX(bot.m, -Rt - Lt, -Rt * 0.96, yb, 0, (75 + 14) / 2000, q.N);
       bocalZ(bot.m, 0, yb, Rt * 0.96, Rt + Lt * 0.7, (50 + 14) / 2000, q.N);
       bocalZ(bot.m, 0, yb, -Rt - Lt * 0.7, -Rt * 0.96, (50 + 14) / 2000, q.N);
-      var fu = parte("furos", "Bocas abertas", ESCURO);
+      var fu = parte("furos", "Bocas abertas", "Preto");
       furoBolsa(fu.m, [Rt + Lt - 0.001, yb, 0], [1, 0, 0], (P.Dn + 14) / 2000, q.N); furoBolsa(fu.m, [-Rt - Lt + 0.001, yb, 0], [-1, 0, 0], (75 + 14) / 2000, q.N);
       furoBolsa(fu.m, [0, yb, Rt + Lt * 0.7 - 0.001], [0, 0, 1], (50 + 14) / 2000, q.N); furoBolsa(fu.m, [0, yb, -Rt - Lt * 0.7 + 0.001], [0, 0, -1], (50 + 14) / 2000, q.N);
       pt.push(cot, bot, fu); tampaTigre(pt, P.Ft, Gtt, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
@@ -1085,6 +1144,27 @@
   }
   function geoCaixaInspecao(P, q) {
     if (P.tg > 0.5) {
+      /* ⚠ CAIXA DE INSPEÇÃO TIGRE DN 100 (14/11/2026 — fotos e ficha do Rogério: A 388 porta-tampa, C 458 nos bocais, D 300 corpo, H 249, 4 × DN 100).
+         Por fora (fotos): o corpo com os PAINÉIS recortados em arco entre os bocais e os pilares nos cantos, os 4 bocais com bolsa e anel de borracha,
+         o porta-tampa com a saia e as aletas e a tampa reforçada. Por dentro: a CALHA (meia-cana) no fundo, de bocal a bocal, como no corte da ficha. */
+      var Ri = P.D / 2, Bi = P.H, Gi = P.Gt, pi = [], coi = parte("corpo", "Tambor", CINZA_TIGRE), boi = parte("bocais", "Bocais", CINZA_TIGRE), ani = parte("aneis", "Anéis de borracha", ESCURO);
+      var yTi = -Gi, yBi = -Gi - Bi, ybi = yTi - (P.yb > 0 ? P.yb : Bi * 0.5), Lx = Math.max(0.03, (P.Cx - P.D) / 2), Lz = Math.max(0.03, (P.Cz - P.D) / 2), fui = parte("furos", "Bocas abertas", "Preto");
+      torno(coi.m, [[Ri * 0.93, yBi], [Ri * 0.96, yBi + 0.01], [Ri * 0.96, yTi - 0.03], [Ri * 1.04, yTi - 0.02], [Ri * 1.04, yTi]], q.N, { c: [0, 0, 0] });   /* o tambor e o colarinho */
+      for (var kp = 0; kp < 4; kp++) {   /* os pilares de canto (entre os bocais) — os painéis em arco da foto ficam entre eles */
+        var ap = Math.PI / 4 + kp * Math.PI / 2, cpx = Math.cos(ap) * Ri * 0.98, cpz = Math.sin(ap) * Ri * 0.98;
+        caixaR(coi.m, { x0: cpx - 0.02, x1: cpx + 0.02, y0: yBi + 0.004, y1: yTi - 0.02, z0: cpz - 0.02, z1: cpz + 0.02, r: 0.003, rad: 0.008 }, q);
+        tubo(coi.m, [[Math.cos(ap - 0.35) * Ri * 0.97, ybi + 0.06, Math.sin(ap - 0.35) * Ri * 0.97], [Math.cos(ap) * Ri * 1.0, ybi + 0.075, Math.sin(ap) * Ri * 1.0], [Math.cos(ap + 0.35) * Ri * 0.97, ybi + 0.06, Math.sin(ap + 0.35) * Ri * 0.97]], 0.006, 6, { rc: 0.03, arco: 4 });   /* o arco do painel */
+      }
+      if (P.Pr > 0) torno(coi.m, [[0.1535 * 0.98, yBi - P.Pr], [0.1535, yBi - P.Pr + 0.008], [0.1535, yBi + 0.01], [Ri * 0.88, yBi + 0.01]], q.N, { c: [0, 0, 0] });   /* prolongador DN300 */
+      bocalTigre(boi, ani, fui, [Ri * 0.9, ybi, 0], [1, 0, 0], P.Dn, Lx + Ri * 0.1, q.N); bocalTigre(boi, ani, fui, [-Ri * 0.9, ybi, 0], [-1, 0, 0], P.Dn, Lx + Ri * 0.1, q.N);
+      bocalTigre(boi, ani, fui, [0, ybi, Ri * 0.9], [0, 0, 1], P.Dn, Lz + Ri * 0.1, q.N); bocalTigre(boi, ani, fui, [0, ybi, -Ri * 0.9], [0, 0, -1], P.Dn, Lz + Ri * 0.1, q.N);
+      var cal = parte("calha", "Calha (meia-cana) do fundo", CINZA_TIGRE), rCa = (P.Dn + 14) / 2000;
+      caixaR(cal.m, { x0: -Ri * 0.9, x1: Ri * 0.9, y0: yBi + 0.004, y1: ybi - rCa * 0.15, z0: -rCa * 1.15, z1: rCa * 1.15, r: 0.004, rad: 0.01 }, q);   /* o leito da calha */
+      caixaR(cal.m, { x0: -rCa * 1.15, x1: rCa * 1.15, y0: yBi + 0.004, y1: ybi - rCa * 0.15, z0: -Ri * 0.9, z1: Ri * 0.9, r: 0.004, rad: 0.01 }, q);
+      pi.push(coi, boi, ani, fui, cal); tampaTigre(pi, P.Ft, Gi, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
+      return pi;
+    }
+    if (false) {
       /* Tigre: 3 entradas DN 100 (−X, ±Z) e a saída DN 100 (+X) à meia altura do corpo (AECweb: 218 × 300; mesmo porta-tampa e tampa da gordura) */
       var Ri = P.D / 2, Bi = P.H, Gi = P.Gt, pi = [], coi = parte("corpo", "Tambor", CINZA_TIGRE), boi = parte("bocais", "Bocais", CINZA_TIGRE);
       var yTi = -Gi, yBi = -Gi - Bi, ybi = yTi - (P.yb > 0 ? P.yb : Bi * 0.5), Lx = Math.max(0.02, (P.Cx - P.D) / 2), Lz = Math.max(0.02, (P.Cz - P.D) / 2), rBi = (P.Dn + 14) / 2000;
@@ -1092,7 +1172,7 @@
       if (P.Pr > 0) torno(coi.m, [[0.1535 * 0.98, yBi - P.Pr], [0.1535, yBi - P.Pr + 0.008], [0.1535, yBi + 0.01], [Ri * 0.88, yBi + 0.01]], q.N, { c: [0, 0, 0] });   /* prolongador DN300 (Tigre 27801552) */
       bocalX(boi.m, Ri * 0.96, Ri + Lx, ybi, 0, rBi, q.N); bocalX(boi.m, -Ri - Lx, -Ri * 0.96, ybi, 0, rBi, q.N);
       bocalZ(boi.m, 0, ybi, Ri * 0.96, Ri + Lz, rBi, q.N); bocalZ(boi.m, 0, ybi, -Ri - Lz, -Ri * 0.96, rBi, q.N);
-      var fui = parte("furos", "Bocas abertas", ESCURO);
+      var fui = parte("furos", "Bocas abertas", "Preto");
       furoBolsa(fui.m, [Ri + Lx - 0.001, ybi, 0], [1, 0, 0], rBi, q.N); furoBolsa(fui.m, [-Ri - Lx + 0.001, ybi, 0], [-1, 0, 0], rBi, q.N);
       furoBolsa(fui.m, [0, ybi, Ri + Lz - 0.001], [0, 0, 1], rBi, q.N); furoBolsa(fui.m, [0, ybi, -Ri - Lz + 0.001], [0, 0, -1], rBi, q.N);
       pi.push(coi, boi, fui); tampaTigre(pi, P.Ft, Gi, P.Fpt > 0 ? P.Fpt : P.Ft * 1.11, q);
@@ -1578,7 +1658,7 @@
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
-    caixa_sifonada: 3500, ralo: 2200, caixa_cil: 2300, caixa_gordura: 4600, caixa_inspecao: 4600, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
+    caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600
   };

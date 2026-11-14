@@ -97243,6 +97243,8 @@ concreto: { cor: "#B3B1AB", rug: 0.88, met: 0, verniz: 0, env: 0.35, nome: "conc
 };
 var PAPEL = {
 latao: { cor: "#C9A44C", rug: 0.3, met: 1, verniz: 0, nome: "latão" },
+bronze: { cor: "#8A5634", rug: 0.8, met: 0.45, verniz: 0, nome: "bronze fundido (corpo da base Deca, superfície áspera)" },
+porca: { cor: "#3B3632", rug: 0.6, met: 0.3, verniz: 0, nome: "porca do castelo (escura)" },
 cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },
 volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
 azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
@@ -98152,6 +98154,12 @@ angs.forEach(function (an) { bocaRadial([Math.cos(an), 0, Math.sin(an)], H - hf 
 if (!temSaida && k.peca === "caixa_sifonada") bocaRadial([1, 0, 0], hS || H * 0.5, cs, true);
 if (hS == null) aConf = true;
 var partesP = [cascaSaida(m), cascaSaida(mb), cascaSaida(mg, "grelha")]; if (mA.idx.length) partesP.push(cascaSaida(mA, "anel"));
+if (ehCx) {
+var mS = new Malha(), yCopo1 = H - hf - 2, yCopo0 = Math.max(hS != null ? hS - dnS * 0.1 : H * 0.3, H * 0.25), rCo = rb * 0.55;
+varrer(mS, reta(add(topoG, [0, yCopo0 * MM, 0]), Y), escala([[0, rCo - 1.6], [0, rCo], [yCopo1 - yCopo0, rCo], [yCopo1 - yCopo0, rCo - 1.6]]), seg, true);
+varrer(mS, reta(add(topoG, [0, (yCopo1 - 2) * MM, 0]), Y), escala([[0, rCo], [0, rb * 0.92], [2, rb * 0.92], [2, rCo]]), seg, true);
+partesP.push(cascaSaida(mS, "sifao"));
+}
 if (mF.idx.length) partesP.push(cascaSaida(mF, "fenda"));
 if (mP.idx.length) partesP.push(cascaSaida(mP, "prolongador"));
 return { partes: partesP, portas: portas, aConferir: aConf, fontes: fontes, cotas: { alt: alt, diam: diam, dnSaida: dnS, dnEntrada: dnE, entradas: nE, hSaida: hS }, corpo: CP, bocas: bocasLig };
@@ -98311,7 +98319,7 @@ var C = pv(a.centro), d = nrmz(pv(a.dir)), Lff = num(a.comprimento, 0.06) / MM, 
 var fr = o.frente ? nrmz(pv(o.frente)) : null;
 if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));
 fr = nrmz(sub(fr, mul(d, dot(fr, d))));
-if (a.acessorio === "registro_gaveta" && a.variante === "bruto" && !/^(aco|inox|cobre)/.test(a.material || "")) return registroGavetaBase(a, o, C, d, fr, de);
+if ((a.acessorio === "registro_gaveta" || a.acessorio === "registro_pressao") && a.variante === "bruto" && !o.semProduto && !/^(aco|inox|cobre)/.test(a.material || "")) return registroBaseDeca(a, o, C, d, fr, de);
 var rP = o.semProduto ? null : registroProduto(a, o, C, d, fr); if (rP) return rP;
 var latao = /latao|bronze/.test(a.varMaterial || "") || a.variante === "bruto" || a.variante === "acabamento" || a.acessorio === "registro_gaveta" || a.acessorio === "valvula_retencao";
 var matTubo = a.material || "pvc_soldavel", vm = a.varMaterial || ({ bruto: "latao", acabamento: "latao", bronze: "bronze", pe_crivo: "bronze" })[a.variante] || "pvc_soldavel";
@@ -98369,37 +98377,56 @@ if (mv.idx.length) partes.push(cascaSaida(mv, latao ? "volante" : "corpo"));
 if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
 return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };
 }
-function registroGavetaBase(a, o, C, d, fr, de) {
-var seg = o.lod === "longe" ? 10 : 28, mc = new Malha();
-var tab = ((dados().pecas || {}).registro || {}).registro_gaveta || {}, rc0 = tab[String(a.dn)] || null;
-var rBojo = rc0 ? rc0.corpo / 2 : de * 0.78 + 6, alt = rc0 ? rc0.altura : rBojo + de * 1.1 + 40, hc = alt - rBojo;
-var Lff = num(a.comprimento, 0) > 0 ? num(a.comprimento, 0) / MM : de * 1.9 + 24, h = Lff / 2;
-var rHex = Math.max(de / 2 + 4, rBojo * 0.78), Lh = Math.min(h * 0.42, de * 0.5 + 6), rRosca = de / 2 + 1.2;
+var BASE_DECA = {
+registro_gaveta: { L: 52, topo: 100, aneis: [36, 46], rEnd: 17, rCorpo: 14, rCast: 21, rColar: 22.4, cone: [47, 58], nut: [58, 67], rNut: 13, rosca: [67, 87], rHaste: 7.2, ponta: [87, 100], rPonta: 5.6, femeaMacho: false, ficha: "Deca 4509.202 (base de registro de gaveta 3/4\")" },
+registro_pressao: { L: 56, topo: 96, aneis: [30, 40], rEnd: 17.5, rCorpo: 15, rCast: 22, rColar: 22, cone: [52, 55], nut: [55, 63], rNut: 13, rosca: [63, 83], rHaste: 7.2, ponta: [83, 96], rPonta: 5.6, femeaMacho: true, ficha: "Deca base de registro de pressão DN 20 (ficha: 56 × 96, castelo Ø 44)" }
+};
+function casteloDeca(mc, mn, mh, C, fr, K, z0, segs) {
+function cil(m, za, zb, ra, rb, lados) { varrer(m, reta(add(C, mul(fr, za * MM)), fr), escala([[0, 0], [0, ra], [zb - za, rb == null ? ra : rb], [zb - za, 0]]), lados || segs, false); }
+var a1 = K.aneis[0], a2 = K.aneis[1];
+cil(mc, z0, a1 - 0.6, K.rCast);
+cil(mn, a1 - 0.6, a1 + 0.6, K.rCast + 0.5);
+cil(mc, a1 + 0.6, a2 - 0.5, K.rColar);
+cil(mh, a2 - 0.5, a2 + 0.5, K.rColar + 0.4);
+cil(mc, a2 + 0.5, K.cone[0], K.rColar * 0.96);
+cil(mc, K.cone[0], K.cone[1], K.rColar * 0.96, K.rNut * 1.02);
+cil(mn, K.nut[0], K.nut[1], K.rNut, null, 6);
+cil(mn, K.nut[1], K.nut[1] + 1.2, K.rNut * 0.82, K.rNut * 0.7);
+var pr = [[0, 0], [0, K.rHaste]], Lr = K.rosca[1] - K.rosca[0], nF = Math.round(Lr / 1.2);
+for (var q = 0; q < nF; q++) pr.push([Lr * (q + 0.5) / nF, K.rHaste * 0.9], [Lr * (q + 1) / nF, K.rHaste]);
+pr.push([Lr, 0]); varrer(mh, reta(add(C, mul(fr, K.rosca[0] * MM)), fr), escala(pr), segs, false);
+var Lp = K.ponta[1] - K.ponta[0];
+cil(mh, K.ponta[0], K.ponta[0] + Lp * 0.35, K.rPonta * 1.08);
+cil(mh, K.ponta[0] + Lp * 0.35, K.ponta[1] - 0.8, K.rPonta);
+cil(mh, K.ponta[1] - 0.8, K.ponta[1], K.rPonta, K.rPonta * 0.8);
+var e1 = perp(fr), e2 = cross(e1, fr), nE = 16;
+for (var k = 0; k < nE; k++) {
+var an = k * 2 * Math.PI / nE, u = add(mul(e1, Math.cos(an)), mul(e2, Math.sin(an))), t = cross(u, fr);
+caixaM(mh, add(C, add(mul(u, K.rPonta * MM), mul(fr, (K.ponta[0] + Lp * 0.67) * MM))), [u, fr, t], [0.35 * MM, Lp * 0.28 * MM, 0.45 * MM]);
+}
+}
+function registroBaseDeca(a, o, C, d, fr, de) {
+var K = BASE_DECA[a.acessorio], segs = o.lod === "longe" ? 12 : 32, mc = new Malha(), mn = new Malha(), mh = new Malha();
+var Lff = num(a.comprimento, 0) > 0 ? num(a.comprimento, 0) / MM : K.L, h = Lff / 2, Le = Math.min(14, h * 0.5);
 [1, -1].forEach(function (sg) {
-var F = add(C, mul(d, sg * h * MM)), dIn = mul(d, -sg), fil = [[0, rRosca]];
-for (var k = 0; k < 5; k++) fil.push([k * 2.2 + 1.1, rRosca - 1.0], [k * 2.2 + 2.2, rRosca]);
-varrer(mc, reta(F, dIn), escala([[0, 0], [0, rHex * 0.97], [Lh, rHex * 0.97], [Lh, 0]]), 6, false);
-varrer(mc, reta(add(F, mul(dIn, -0.6 * MM)), dIn), escala([[0, 0]].concat(fil).concat([[11.5, rRosca], [11.5, 0]])), seg, false);
-varrer(mc, reta(add(F, mul(dIn, Lh * MM)), dIn), escala([[0, 0], [0, rHex * 0.86], [2, rHex * 0.8], [2, 0]]), seg, false);
+var F = add(C, mul(d, sg * h * MM)), dIn = mul(d, -sg), macho = K.femeaMacho && sg < 0;
+if (macho) {
+var pm = [[0, 0], [0, K.rEnd * 0.8]]; for (var q = 0; q < 8; q++) pm.push([q * 1.4 + 0.7, K.rEnd * 0.74], [q * 1.4 + 1.4, K.rEnd * 0.8]);
+pm.push([Le, K.rEnd * 0.8], [Le, 0]); varrer(mh, reta(F, dIn), escala(pm), segs, false);
+} else {
+varrer(mc, reta(F, dIn), escala([[0, 0], [0, K.rEnd * 0.96], [1, K.rEnd], [Le - 1, K.rEnd], [Le, K.rEnd * 0.9], [Le, 0]]), 8, false);
+varrer(mh, reta(add(F, mul(dIn, -0.3 * MM)), dIn), escala([[0, 0], [0, K.rEnd * 0.78], [0.8, K.rEnd * 0.78], [0.8, 0]]), segs, false);
+}
 });
-var Lb = Lff - 2 * (Lh + 2);
-varrer(mc, reta(add(C, mul(d, -Lb / 2 * MM)), d), escala([[0, 0], [0, rHex * 0.82], [Lb * 0.2, rBojo * 0.95], [Lb * 0.5, rBojo], [Lb * 0.8, rBojo * 0.95], [Lb, rHex * 0.82], [Lb, 0]]), seg, false);
-var z = rBojo * 0.8, rP = rBojo * 0.78, hP = hc * 0.14, rN = rBojo * 0.5;
-varrer(mc, reta(C, fr), escala([[0, 0], [0, rBojo * 0.7], [z, rBojo * 0.66], [z, 0]]), seg, false);
-varrer(mc, reta(add(C, mul(fr, z * MM)), fr), escala([[0, 0], [0, rP], [hP, rP], [hP, 0]]), 6, false);
-varrer(mc, reta(add(C, mul(fr, (z + hP) * MM)), fr), escala([[0, 0], [0, rP * 0.9], [1.2, rP * 0.84], [1.2, 0]]), seg, false);
-var z2 = z + hP + 1.2, Lr = hc * 0.2, pr = [[0, 0], [0, rN]];
-for (var q = 0; q < 6; q++) pr.push([Lr * (q + 0.5) / 6, rN * 0.93], [Lr * (q + 1) / 6, rN]);
-pr.push([Lr, 0]); varrer(mc, reta(add(C, mul(fr, z2 * MM)), fr), escala(pr), seg, false);
-var z3 = z2 + Lr, hG = hc * 0.11, rG = rN * 0.92;
-varrer(mc, reta(add(C, mul(fr, z3 * MM)), fr), escala([[0, 0], [0, rG], [hG, rG], [hG, 0]]), 6, false);
-var z4 = z3 + hG, rH = Math.max(3.2, rN * 0.32), Lhaste = Math.max(6, hc - z4 - 9);
-varrer(mc, reta(add(C, mul(fr, z4 * MM)), fr), escala([[0, 0], [0, rH], [Lhaste, rH], [Lhaste, 0]]), 16, false);
+varrer(mc, reta(add(C, mul(d, -(h - Le) * MM)), d), escala([[0, 0], [0, K.rCorpo], [2 * (h - Le), K.rCorpo], [2 * (h - Le), 0]]), segs, false);
 var w1 = perp(fr), w2 = cross(w1, fr);
-caixaM(mc, add(C, mul(fr, (z4 + Lhaste + 4.5) * MM)), [w1, fr, w2], [rH * 0.95 * MM, 4.5 * MM, rH * 0.95 * MM]);
-var partes = [cascaSaida(mc, "latao")];
+caixaM(mc, add(C, mul(fr, K.rCorpo * 0.7 * MM)), [d, fr, cross(d, fr)], [(h - Le + 1) * MM, K.rCorpo * 0.7 * MM, K.rCorpo * 0.95 * MM]);
+void w1; void w2;
+casteloDeca(mc, mn, mh, C, fr, K, K.rCorpo * 0.9, segs);
+var partes = [cascaSaida(mc, "bronze"), cascaSaida(mn, "porca"), cascaSaida(mh, "latao")];
 return { partes: partes, frente: fr, aConferir: true, comprimento: Lff * MM,
-cotas: { corpo: rBojo * 2, altura: alt, origem: rc0 ? "catalogo" : "proporcao", fonte: rc0 ? fonte(rc0.f, rc0.pag) : null, aConferir: "sextavados, porcas e filetes do castelo em proporção declarada (corpo e altura da ficha da base)" } };
+cotas: { origem: "catalogo", fonte: K.ficha, faceAFace: K.L, topoHaste: K.topo, corpo: K.rCast * 2, altura: K.topo + K.rCorpo,
+aConferir: "raios dos degraus, filetes e estrias em proporção das fotos (a ficha cota face a face, anéis e topo)" } };
 }
 var RETENCAO_AMANCO = { "25": { A: 86.5, B: 65.5, cod: "98934" }, "32": { A: 96, B: 73.7, cod: "98935" } };
 function registroPvc(a, o, C, d, de, matTubo) {
@@ -98434,14 +98461,18 @@ if (a.acessorio === "valvula_retencao") {
 varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.75], [rB * 1.25, rB * 0.75], [rB * 1.25, 0]]), 6, false);
 return { partes: [cascaSaida(mc, "corpo")], frente: fr, aConferir: true, comprimento: Lff * MM, cotas: { corpo: rB * 2, altura: rB * 2.25, bolsa: cs.pb, origem: "proporcao", fonte: null, aConferir: "retenção de PVC: tampa em proporção declarada" } };
 }
-varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.9], [hc * 0.3, rB * 0.9], [hc * 0.3, 0]]), 6, false);
-varrer(mc, reta(add(C, mul(fr, hc * 0.3 * MM)), fr), escala([[0, 0], [0, rB * 1.05], [hc * 0.03, rB * 1.15], [hc * 0.1, rB * 1.15], [hc * 0.13, rB * 0.95], [hc * 0.13, rB * 0.68],
+var castAntigo = a.acessorio !== "registro_pressao" || a.variante === "acabamento";
+if (castAntigo) varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.9], [hc * 0.3, rB * 0.9], [hc * 0.3, 0]]), 6, false);
+if (castAntigo) varrer(mc, reta(add(C, mul(fr, hc * 0.3 * MM)), fr), escala([[0, 0], [0, rB * 1.05], [hc * 0.03, rB * 1.15], [hc * 0.1, rB * 1.15], [hc * 0.13, rB * 0.95], [hc * 0.13, rB * 0.68],
 [hc * 0.48, rB * 0.68], [hc * 0.51, rB * 0.5], [hc * 0.56, rB * 0.5], [hc * 0.56, rB * 0.3], [hc * 0.6, rB * 0.3], [hc * 0.6, 0]]), seg, false);
 var acab = a.variante === "acabamento";
 if (!acab && a.acessorio === "registro_pressao") {
-var rVo = rB * 1.12, hVo = Math.max(9, hc * 0.2), zV = hc * 0.6, Cv0 = add(C, mul(fr, zV * MM));
-varrer(mc, reta(add(C, mul(fr, hc * 0.56 * MM)), fr), escala([[0, 0], [0, rB * 0.36], [hc * 0.05, rB * 0.36], [hc * 0.05, 0]]), seg, false);
-varrer(mc, reta(Cv0, fr), escala([[0, 0], [0, rVo * 0.55], [hVo * 0.25, rVo * 0.92], [hVo * 0.45, rVo], [hVo * 0.8, rVo * 0.96], [hVo, rVo * 0.7], [hVo * 1.08, rVo * 0.35], [hVo * 1.1, 0]]), seg + 8, false);
+var mn2 = new Malha(), mh2 = new Malha(), Kp = BASE_DECA.registro_pressao, kE = (rB * 2) / (Kp.rCast * 2), K2 = {};
+Object.keys(Kp).forEach(function (q) { var v = Kp[q]; K2[q] = typeof v === "number" ? v * kE : (Array.isArray(v) ? v.map(function (x) { return x * kE; }) : v); });
+casteloDeca(mc, mn2, mh2, C, fr, K2, rB * 0.7, seg);
+var partesP = [cascaSaida(mc, "corpo"), cascaSaida(mn2, "porca"), cascaSaida(mh2, "latao")];
+return { partes: partesP, frente: fr, aConferir: true, comprimento: Lff * MM,
+cotas: { corpo: rB * 2, altura: K2.topo + rB, bolsa: cs.pb, origem: rc0 ? "catalogo" : "proporcao", fonte: rc0 ? fonte(rc0.f, rc0.pag) : null, aConferir: "castelo na forma da base Deca de pressão, na escala do corpo de PVC" } };
 } else if (!acab) {
 var w1 = perp(fr), w2 = cross(w1, fr);
 caixaM(mc, add(C, mul(fr, hc * 0.88 * MM)), [w1, fr, w2], [rB * 0.62 * MM, hc * 0.12 * MM, rB * 0.13 * MM]);
