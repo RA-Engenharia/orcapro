@@ -572,7 +572,13 @@
         /* OUTRA FAMÍLIA (29/10/2026): a instância troca de família e fica no MESMO vão — a hospedeira, a posição na parede, o giro e o
            peitoril não mudam (a op `instancia` com famId só troca a família; o `inst` da família velha não vale na nova, então só
            volta o que a nova família também tem: mesmo nome de parâmetro de instância — Largura, Altura, Peitoril…) */
-        if (item.famId != null && typeof dpf.categoriaFam === "function" && dpf.categoriaFam(item.famId) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+        /* 14/11/2026 (print do Rogério: o clique no tipo Tigre da caixa de inspeção não fazia nada): a categoria CRUA da família (equipamento,
+           loucas…) era comparada com a categoria da TELA (generico) — toda família hidro caía aqui com "não é de modelos genéricos". Compara
+           na mesma régua da lista de peças (BimParam.catFamilia). */
+        if (item.famId != null && BP && BP.catFamilia && BP.catFamilia({ famId: item.famId }, dpf) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+        /* revisão 14/11: em "modelos genéricos" (tudo que não é porta/janela/elétrica) a troca é só entre tipos da MESMA família —
+           a caixa de inspeção não vira bacia pelo seletor de tipo */
+        if (cat === "generico" && item.famId != null && ids.some(function (id) { var e0 = elDe(ctx.estado, id); return e0 && String(e0.famId) !== String(item.famId); })) return { ok: false, erro: "Em modelos genéricos o tipo troca só dentro da mesma família." };
         var fNova = item.famId != null && typeof dpf.familia === "function" ? dpf.familia(item.famId) : null;
         ids.forEach(function (id) {
           var el0 = elDe(ctx.estado, id), o = { op: "instancia", id: id, tipoId: String(item.tipoFam) };

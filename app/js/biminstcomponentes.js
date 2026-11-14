@@ -191,8 +191,8 @@
     return "Equipamentos";
   }
   function junta0(c) { return txt(c.junta || ""); }
-  function portasDaFamilia(f) {
-    var tp = arr(f.tipos)[0], v = tp && tp.valores ? tp.valores : {};
+  function portasDaFamilia(f, tp) {
+    tp = tp || arr(f.tipos)[0]; var v = tp && tp.valores ? tp.valores : {};
     return arr(f.conectores).map(function (c) {
       var dn = c.dn;
       if (typeof dn === "string" && v[dn] != null) dn = v[dn];
@@ -204,13 +204,28 @@
   /* o item do "Conferir" do tipo (js/hidfamilias.js montarGenerico / tipos de ficha): DN de regra/dimensionamento = normal; letra lida ou interpretação da ficha = tem fonte */
   /* revisão 08/11/2026: só a LETRA lida na ficha é fonte; a posição "interpretada da ficha" continua aviso ("a conferir: posição interpretada") */
   var DN_REGRA = /DN: o dimensionamento define|DN vindo de regra/i, COM_FONTE = /\((letra [A-Z0-9]+|interpretad[oa] da ficha[^)]*)\)\s*$/i, INTERPRETADO = /\(interpretad[oa] da ficha[^)]*\)\s*$/i;
-  function itemFamilia(f, grupo, origem) {
-    var tipos = arr(f.tipos), v0 = null, i;
-    for (i = 0; i < tipos.length; i++) if (tipos[i] && tipos[i].valores && (tipos[i].valores.Fabricante || tipos[i].valores.Cotas_ficha)) { v0 = tipos[i].valores; break; }
+  /* TIPO ESCOLHÍVEL NO CARTÃO (14/11/2026, print do Rogério: "Inserir sempre põe a Amanco, eu quero a Tigre"): o cartão da família lista os
+     tipos NÃO legados; ficha, portas, fonte e selos são os do tipo escolhido e o Inserir põe esse tipo. O PADRÃO DA TELA (1º ao abrir) da caixa
+     de gordura e da caixa de inspeção é o Tigre "-ficha" (decisão do Rogério: "gosto dessas, acho muito prático"). Só a TELA muda: a ordem dos
+     tipos na família (o 1º = o padrão do motor/traçado automático) e os projetos salvos ficam como estão. */
+  var PADRAO_TELA = { "hid-caixa-gordura": /^t-tigre-100019323.*-ficha$/, "hid-caixa-inspecao": /^t-tigre-27801056.*-ficha$/ };
+  function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado; }); }
+  function tipoPadraoTela(f) {
+    var vis = tiposVisiveis(f), re = PADRAO_TELA[f.id], i;
+    if (re) for (i = 0; i < vis.length; i++) if (re.test(vis[i].id)) return vis[i].id;
+    return vis.length ? vis[0].id : (arr(f.tipos)[0] ? f.tipos[0].id : "");
+  }
+  function resumoTipo(t) { var v = t.valores || {}; return { id: t.id, nome: txt(t.nome), fabricante: txt(v.Fabricante), codigo: txt(v.Codigo), aConferir: !!v.A_conferir }; }
+  function itemFamilia(f, grupo, origem, tipoPedido) {
+    var todosT = arr(f.tipos), vis = tiposVisiveis(f), padrao = tipoPadraoTela(f), i;
+    var tSel = vis.filter(function (t) { return t.id === tipoPedido; })[0] || todosT.filter(function (t) { return t && t.id === padrao; })[0] || todosT[0] || null;
+    var tipos = tSel ? [tSel] : [], v0 = null;   /* selos, cota, fonte e portas: do tipo ESCOLHIDO */
+    if (tSel && tSel.valores && (tSel.valores.Fabricante || tSel.valores.Cotas_ficha)) v0 = tSel.valores;
+    else for (i = 0; i < todosT.length; i++) if (todosT[i] && todosT[i].valores && (todosT[i].valores.Fabricante || todosT[i].valores.Cotas_ficha)) { v0 = todosT[i].valores; break; }
     var fab = v0 ? txt(v0.Fabricante) : "", fonte = v0 ? [txt(v0.Fabricante), txt(v0.Edicao_ficha), v0.Pagina_ficha ? "p. " + v0.Pagina_ficha : ""].filter(function (s) { return s; }).join(", ") : "";
     var dns = [];
-    tipos.forEach(function (t) { var v = t && t.valores; if (!v) return; Object.keys(v).forEach(function (k) { if (/^DN_/.test(k) && typeof v[k] === "number" && v[k] > 0) dns.push(String(v[k])); }); });
-    var portas = portasDaFamilia(f), selos = [];
+    todosT.forEach(function (t) { var v = t && t.valores; if (!v) return; Object.keys(v).forEach(function (k) { if (/^DN_/.test(k) && typeof v[k] === "number" && v[k] > 0) dns.push(String(v[k])); }); });
+    var portas = portasDaFamilia(f, tSel), selos = [];
     var comCota = tipos.some(function (t) { return t && t.valores && t.valores.Cotas_ficha; });
     if (!comCota) selos.push("sem cota de catálogo");
     /* 07/11/2026 (o Rogério: "NÃO ESTOU CONSEGUINDO USAR OS MODELOS DOS COMPONENTES"): o selo "a conferir" só acende quando há COTA ou POSIÇÃO sem
@@ -230,8 +245,8 @@
     if (interp) selos.push("a conferir: posição interpretada");
     if (dnRegra) selos.push("DN: o dimensionamento define");
     if (!portas.length && !/^(Escritório)$/.test(grupo)) selos.push("sem ponto de ligação declarado");
-    var tipo0 = tipos[0] ? tipos[0].id : "";
-    return mk({ id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
+    var tipo0 = tSel ? tSel.id : "";
+    return mk({ tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
       portas: portas, selos: selos, comCota: comCota, icone: PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "").replace(/^ra-/, "") + "-256.png",
       origem: origem, descricao: txt(f.descricao), sinonimos: [],
       acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });
@@ -242,7 +257,7 @@
       arr(lista).forEach(function (f) {
         if (!f || !f.id || vistos[f.id] || f.oculta) return;   /* família SUBSTITUÍDA (js/famhidmigra.js): alias do projeto antigo, fora do menu */
         var g = grupoFn(f); if (!g) return;
-        vistos[f.id] = 1; out.push(itemFamilia(f, g, origem));
+        vistos[f.id] = 1; _fam["familia:" + f.id] = [f, g, origem]; out.push(itemFamilia(f, g, origem));
       });
     }
     var HF = dep("HidFamilias", "./hidfamilias.js"), CF = dep("ClimFamilias", "./climfamilias.js"), HT = dep("HidTanques", "./hidtanques.js"), PF = dep("HidPiscinaFam", "./hidpiscinafam.js"), FR = dep("FamiliasRA", "./familiasra.js");
@@ -258,7 +273,7 @@
     try {
       arr(T && T.fontesEscritorio ? T.fontesEscritorio() : []).forEach(function (f) {
         if (!f || !f.id || vistos[f.id]) return;
-        vistos[f.id] = 1;
+        vistos[f.id] = 1; _fam["familia:" + f.id] = [f, "Escritório", f.origemImportacao || f.fabricante || "Escritório", true];
         var it = itemFamilia(f, "Escritório", f.origemImportacao || f.fabricante || "Escritório");
         it.selos.unshift("do escritório");
         out.push(it);
@@ -281,7 +296,13 @@
   }
 
   /* ------------------------------------------------------------- catálogo (cache por assinatura das fontes) */
-  var _cache = null, _sig = "";
+  var _cache = null, _sig = "", _fam = {};
+  /* o item da família com OUTRO tipo (o seletor do cartão); sem família ou tipo desconhecido = o item do catálogo */
+  function itemComTipo(id, tipoId, base0) {
+    var base = base0 && base0.id === id ? base0 : item(id), r = _fam[id];   /* base0: o item já em mãos (a lista não procura um a um) */ if (!base || !r || !tipoId || tipoId === base.tipoId) return base;
+    var it = itemFamilia(r[0], r[1], r[2], tipoId); if (r[3]) it.selos.unshift("do escritório");
+    return it;
+  }
   function assinatura() {
     var B = BI(), T = TI(), P = HP(), G = GD(), HF = global.HidFamilias, CF = global.ClimFamilias, HT = global.HidTanques, PF = global.HidPiscinaFam;
     var n = 0; try { n = T && T.fontesEscritorio ? T.fontesEscritorio().length : 0; } catch (e) {}
@@ -341,6 +362,18 @@
   /* o alvo (global, função) que cada ação chama — a tela executa por aqui e o teste confere que existe */
   var ALVOS = { armarTubo: ["BimInstUI", "armar"], armarPeca: ["BimInstUI", "armar"], armarAcessorio: ["BimInstUI", "armar"], colocarFamilia: ["BimInstUI", "colocarFamilia"],
                 conexaoManual: ["BimInstUI", "armarConexaoManual"], abrirTemplate: ["HidComponentesUI", "abrirTemplate"] };
+  /* OS MENUS DA FITA (14/11/2026, pedido do Rogério: "essas peças todas têm que ficar lá em Aparelho sanitário… Caixa d'água, tudo ali facinho"):
+     cada botão do grupo Hidrossanitário abre a lista da sua categoria. null = só no catálogo completo (Componentes). */
+  var CAT_GRUPO = { "Tubos": "tubo", "Conexões": "conexao", "Registros e válvulas": "acessorio", "Louças e metais": "aparelho", "Ralos e caixas": "aparelho",
+                    "Reservatórios e tanques": "aparelho", "Equipamentos": "aparelho" };
+  function categoriasFita(it) {
+    if (!it) return [];
+    var c = CAT_GRUPO[it.grupo] || null, n = norm(it.nome), out = c ? [c] : [];
+    if (/boia/.test(n) && out.indexOf("acessorio") < 0) out = ["acessorio"];   /* torneira de boia: acessório de tubo */
+    if (/^conexao:(uniao|adaptador)/.test(it.id)) out.push("acessorio");     /* união e adaptadores: também em Acessório de tubo */
+    return out;
+  }
+  function daCategoria(cat, texto) { return buscar(texto || "", {}).filter(function (it) { return categoriasFita(it).indexOf(cat) >= 0; }); }
   function alvoDaAcao(acao) { return acao && ALVOS[acao.tipo] ? ALVOS[acao.tipo].slice() : null; }
 
   /* ============================================================= CONEXÃO MANUAL (puro) */
@@ -396,7 +429,7 @@
     return { ok: true, op: enc(ops) };
   }
 
-  var HidComponentes = { GRUPOS: GRUPOS, todos: todos, grupos: grupos, buscar: buscar, item: item, filtrosDisponiveis: filtrosDisponiveis, alvoDaAcao: alvoDaAcao, ALVOS: ALVOS,
+  var HidComponentes = { GRUPOS: GRUPOS, todos: todos, grupos: grupos, buscar: buscar, item: item, filtrosDisponiveis: filtrosDisponiveis, itemComTipo: itemComTipo, categoriasFita: categoriasFita, daCategoria: daCategoria, PADRAO_TELA: PADRAO_TELA, alvoDaAcao: alvoDaAcao, ALVOS: ALVOS,
                          noEm: noEm, pontasDoNo: pontasDoNo, escolhaDoNo: escolhaDoNo, opsForcar: opsForcar, opsAutomatico: opsAutomatico,
                          esquecer: function () { _cache = null; _sig = ""; } };
   global.HidComponentes = HidComponentes;

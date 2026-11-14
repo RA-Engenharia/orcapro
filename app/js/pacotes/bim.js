@@ -61149,6 +61149,7 @@ return false;
 var ORDEM_MEDIDAS = ["area", "areaBruta", "volume", "comprimento", "areaForma", "areaProjecao", "areaFora", "areaDentro", "massa", "quantidade"];
 var BimParam = {
 GRUPOS: GRUPOS, DADOS: DADOS, FASES: FASES, FAIXA: FAIXA, COMUM: COMUM, REGISTRO: REG, CALC: CALC, FORA: FORA,
+catFamilia: catFamilia,
 categorias: function () { return Object.keys(REG); },
 definicoes: function (cat) { return defsDe(cat); },
 definicao: function (cat, id) { var l = defsDe(cat); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; },
@@ -114536,8 +114537,8 @@ if (/pisc/.test(id) || /piscina/.test(n)) return "Piscina";
 return "Equipamentos";
 }
 function junta0(c) { return txt(c.junta || ""); }
-function portasDaFamilia(f) {
-var tp = arr(f.tipos)[0], v = tp && tp.valores ? tp.valores : {};
+function portasDaFamilia(f, tp) {
+tp = tp || arr(f.tipos)[0]; var v = tp && tp.valores ? tp.valores : {};
 return arr(f.conectores).map(function (c) {
 var dn = c.dn;
 if (typeof dn === "string" && v[dn] != null) dn = v[dn];
@@ -114547,13 +114548,24 @@ dn: dn == null ? "" : dn, junta: junta0(c), opcional: !!c.opcional, aConferir: !
 });
 }
 var DN_REGRA = /DN: o dimensionamento define|DN vindo de regra/i, COM_FONTE = /\((letra [A-Z0-9]+|interpretad[oa] da ficha[^)]*)\)\s*$/i, INTERPRETADO = /\(interpretad[oa] da ficha[^)]*\)\s*$/i;
-function itemFamilia(f, grupo, origem) {
-var tipos = arr(f.tipos), v0 = null, i;
-for (i = 0; i < tipos.length; i++) if (tipos[i] && tipos[i].valores && (tipos[i].valores.Fabricante || tipos[i].valores.Cotas_ficha)) { v0 = tipos[i].valores; break; }
+var PADRAO_TELA = { "hid-caixa-gordura": /^t-tigre-100019323.*-ficha$/, "hid-caixa-inspecao": /^t-tigre-27801056.*-ficha$/ };
+function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado; }); }
+function tipoPadraoTela(f) {
+var vis = tiposVisiveis(f), re = PADRAO_TELA[f.id], i;
+if (re) for (i = 0; i < vis.length; i++) if (re.test(vis[i].id)) return vis[i].id;
+return vis.length ? vis[0].id : (arr(f.tipos)[0] ? f.tipos[0].id : "");
+}
+function resumoTipo(t) { var v = t.valores || {}; return { id: t.id, nome: txt(t.nome), fabricante: txt(v.Fabricante), codigo: txt(v.Codigo), aConferir: !!v.A_conferir }; }
+function itemFamilia(f, grupo, origem, tipoPedido) {
+var todosT = arr(f.tipos), vis = tiposVisiveis(f), padrao = tipoPadraoTela(f), i;
+var tSel = vis.filter(function (t) { return t.id === tipoPedido; })[0] || todosT.filter(function (t) { return t && t.id === padrao; })[0] || todosT[0] || null;
+var tipos = tSel ? [tSel] : [], v0 = null;
+if (tSel && tSel.valores && (tSel.valores.Fabricante || tSel.valores.Cotas_ficha)) v0 = tSel.valores;
+else for (i = 0; i < todosT.length; i++) if (todosT[i] && todosT[i].valores && (todosT[i].valores.Fabricante || todosT[i].valores.Cotas_ficha)) { v0 = todosT[i].valores; break; }
 var fab = v0 ? txt(v0.Fabricante) : "", fonte = v0 ? [txt(v0.Fabricante), txt(v0.Edicao_ficha), v0.Pagina_ficha ? "p. " + v0.Pagina_ficha : ""].filter(function (s) { return s; }).join(", ") : "";
 var dns = [];
-tipos.forEach(function (t) { var v = t && t.valores; if (!v) return; Object.keys(v).forEach(function (k) { if (/^DN_/.test(k) && typeof v[k] === "number" && v[k] > 0) dns.push(String(v[k])); }); });
-var portas = portasDaFamilia(f), selos = [];
+todosT.forEach(function (t) { var v = t && t.valores; if (!v) return; Object.keys(v).forEach(function (k) { if (/^DN_/.test(k) && typeof v[k] === "number" && v[k] > 0) dns.push(String(v[k])); }); });
+var portas = portasDaFamilia(f, tSel), selos = [];
 var comCota = tipos.some(function (t) { return t && t.valores && t.valores.Cotas_ficha; });
 if (!comCota) selos.push("sem cota de catálogo");
 var dnRegra = false, interp = false, pendente = tipos.some(function (t) {
@@ -114570,8 +114582,8 @@ if (pendente || (!comCota && portas.some(function (p) { return p.aConferir; })))
 if (interp) selos.push("a conferir: posição interpretada");
 if (dnRegra) selos.push("DN: o dimensionamento define");
 if (!portas.length && !/^(Escritório)$/.test(grupo)) selos.push("sem ponto de ligação declarado");
-var tipo0 = tipos[0] ? tipos[0].id : "";
-return mk({ id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
+var tipo0 = tSel ? tSel.id : "";
+return mk({ tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
 portas: portas, selos: selos, comCota: comCota, icone: PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "").replace(/^ra-/, "") + "-256.png",
 origem: origem, descricao: txt(f.descricao), sinonimos: [],
 acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });
@@ -114582,7 +114594,7 @@ function juntar(lista, grupoFn, origem) {
 arr(lista).forEach(function (f) {
 if (!f || !f.id || vistos[f.id] || f.oculta) return;
 var g = grupoFn(f); if (!g) return;
-vistos[f.id] = 1; out.push(itemFamilia(f, g, origem));
+vistos[f.id] = 1; _fam["familia:" + f.id] = [f, g, origem]; out.push(itemFamilia(f, g, origem));
 });
 }
 var HF = dep("HidFamilias", "./hidfamilias.js"), CF = dep("ClimFamilias", "./climfamilias.js"), HT = dep("HidTanques", "./hidtanques.js"), PF = dep("HidPiscinaFam", "./hidpiscinafam.js"), FR = dep("FamiliasRA", "./familiasra.js");
@@ -114596,7 +114608,7 @@ var T = TI();
 try {
 arr(T && T.fontesEscritorio ? T.fontesEscritorio() : []).forEach(function (f) {
 if (!f || !f.id || vistos[f.id]) return;
-vistos[f.id] = 1;
+vistos[f.id] = 1; _fam["familia:" + f.id] = [f, "Escritório", f.origemImportacao || f.fabricante || "Escritório", true];
 var it = itemFamilia(f, "Escritório", f.origemImportacao || f.fabricante || "Escritório");
 it.selos.unshift("do escritório");
 out.push(it);
@@ -114615,7 +114627,12 @@ acao: { tipo: "abrirTemplate", id: d.id } }));
 } catch (e) {}
 return out;
 }
-var _cache = null, _sig = "";
+var _cache = null, _sig = "", _fam = {};
+function itemComTipo(id, tipoId, base0) {
+var base = base0 && base0.id === id ? base0 : item(id), r = _fam[id]; if (!base || !r || !tipoId || tipoId === base.tipoId) return base;
+var it = itemFamilia(r[0], r[1], r[2], tipoId); if (r[3]) it.selos.unshift("do escritório");
+return it;
+}
 function assinatura() {
 var B = BI(), T = TI(), P = HP(), G = GD(), HF = global.HidFamilias, CF = global.ClimFamilias, HT = global.HidTanques, PF = global.HidPiscinaFam;
 var n = 0; try { n = T && T.fontesEscritorio ? T.fontesEscritorio().length : 0; } catch (e) {}
@@ -114674,6 +114691,16 @@ materiais: Object.keys(m).sort().map(function (x) { return { id: x, nome: m[x] }
 }
 var ALVOS = { armarTubo: ["BimInstUI", "armar"], armarPeca: ["BimInstUI", "armar"], armarAcessorio: ["BimInstUI", "armar"], colocarFamilia: ["BimInstUI", "colocarFamilia"],
 conexaoManual: ["BimInstUI", "armarConexaoManual"], abrirTemplate: ["HidComponentesUI", "abrirTemplate"] };
+var CAT_GRUPO = { "Tubos": "tubo", "Conexões": "conexao", "Registros e válvulas": "acessorio", "Louças e metais": "aparelho", "Ralos e caixas": "aparelho",
+"Reservatórios e tanques": "aparelho", "Equipamentos": "aparelho" };
+function categoriasFita(it) {
+if (!it) return [];
+var c = CAT_GRUPO[it.grupo] || null, n = norm(it.nome), out = c ? [c] : [];
+if (/boia/.test(n) && out.indexOf("acessorio") < 0) out = ["acessorio"];
+if (/^conexao:(uniao|adaptador)/.test(it.id)) out.push("acessorio");
+return out;
+}
+function daCategoria(cat, texto) { return buscar(texto || "", {}).filter(function (it) { return categoriasFita(it).indexOf(cat) >= 0; }); }
 function alvoDaAcao(acao) { return acao && ALVOS[acao.tipo] ? ALVOS[acao.tipo].slice() : null; }
 var TOL_PONTA = 0.021;
 function dist3(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
@@ -114723,7 +114750,7 @@ var ops = pontasDoNo(estado, no).filter(function (q) { return q.valor; }).map(fu
 if (!ops.length) return { ok: false, motivo: "Este nó já está no automático." };
 return { ok: true, op: enc(ops) };
 }
-var HidComponentes = { GRUPOS: GRUPOS, todos: todos, grupos: grupos, buscar: buscar, item: item, filtrosDisponiveis: filtrosDisponiveis, alvoDaAcao: alvoDaAcao, ALVOS: ALVOS,
+var HidComponentes = { GRUPOS: GRUPOS, todos: todos, grupos: grupos, buscar: buscar, item: item, filtrosDisponiveis: filtrosDisponiveis, itemComTipo: itemComTipo, categoriasFita: categoriasFita, daCategoria: daCategoria, PADRAO_TELA: PADRAO_TELA, alvoDaAcao: alvoDaAcao, ALVOS: ALVOS,
 noEm: noEm, pontasDoNo: pontasDoNo, escolhaDoNo: escolhaDoNo, opsForcar: opsForcar, opsAutomatico: opsAutomatico,
 esquecer: function () { _cache = null; _sig = ""; } };
 global.HidComponentes = HidComponentes;
@@ -114741,7 +114768,10 @@ function H() { return global.HidComponentes || null; }
 function UI() { return global.BimInstUI || null; }
 function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) {} }
-var CHAVE_FAV = "orcapro:hid:componentes:fav", CHAVE_REC = "orcapro:hid:componentes:rec", MAX_REC = 12, MAX_POR_GRUPO = 60;
+var CHAVE_FAV = "orcapro:hid:componentes:fav", CHAVE_REC = "orcapro:hid:componentes:rec", CHAVE_TIPO = "orcapro:hid:componentes:tipo", MAX_REC = 12, MAX_POR_GRUPO = 60;
+function lerObj(chave) { try { var s = global.localStorage ? global.localStorage.getItem(chave) : null; var v = s ? JSON.parse(s) : null; return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
+var MENU_FITA = { tubo: "tubo", conexao: "conexao", aparelho: "aparelho", "acessorio-tubo": "acessorio" };
+var TITULO_MENU = { tubo: "Tubo", conexao: "Conexão", aparelho: "Aparelho sanitário", acessorio: "Acessório de tubo" };
 function ler(chave) { try { var s = global.localStorage ? global.localStorage.getItem(chave) : null; var v = s ? JSON.parse(s) : null; return Array.isArray(v) ? v : []; } catch (e) { return []; } }
 function gravar(chave, v) { try { if (global.localStorage) global.localStorage.setItem(chave, JSON.stringify(v)); return true; } catch (e) { return false; } }
 var PAPEL = { montante: "entrada (montante)", jusante: "saída (jusante)", derivacao: "derivação", passagem: "passagem", ponto: "ponto (rosca)", tampa: "tampa", entrada: "entrada", saida: "saída" };
@@ -114755,7 +114785,7 @@ return "diagonal " + fortes.join("") + " (" + d.map(function (v) { return String
 }
 var JUNTA = { soldavel: "soldável", rosca: "rosca", termofusao: "termofusão", junta_elastica: "junta elástica", flange: "flange", indefinida: "a conferir" };
 var Painel = {
-estado: { q: "", filtros: {}, aba: "todos", sel: null, abertos: {} },
+estado: { q: "", filtros: {}, aba: "todos", sel: null, abertos: {}, menu: null },
 _G: null,
 favoritos: function () { return ler(CHAVE_FAV); },
 ehFavorito: function (id) { return this.favoritos().indexOf(id) >= 0; },
@@ -114766,16 +114796,28 @@ gravar(CHAVE_FAV, f); return i < 0;
 },
 recentes: function () { return ler(CHAVE_REC); },
 usar: function (id) { var r = this.recentes().filter(function (x) { return x !== id; }); r.unshift(id); gravar(CHAVE_REC, r.slice(0, MAX_REC)); },
+tipoEscolhido: function (it) {
+if (!it || !it.tipos || !it.tipos.length) return it ? it.tipoId || "" : "";
+var m = lerObj(CHAVE_TIPO)[it.id];
+return m && it.tipos.some(function (t) { return t.id === m; }) ? m : (it.tipoPadrao || it.tipoId);
+},
+escolherTipo: function (id, tipoId) { var m = lerObj(CHAVE_TIPO); m[id] = tipoId; return gravar(CHAVE_TIPO, m); },
+vista: function (id) {
+var h = H(), it = id && typeof id === "object" ? id : (h ? h.item(id) : null); if (!it || !it.tipos || !h || !h.itemComTipo) return it;
+var t = this.tipoEscolhido(it);
+return t === it.tipoId ? it : (h.itemComTipo(it.id, t, it) || it);
+},
 alternar: function (e, G) {
-if (e && e.ligado === false) return this.fechar();
+if (this.aberto() && !this.estado.menu) return this.fechar();
 return this.abrir(G);
 },
-abrir: function (G, filtroInicial) {
+abrir: function (G, filtroInicial, ancora) {
 var U = UI();
 this._G = G || (U && U._G) || this._G;
 if (U && U.ativo && !U.ativo()) { toast("Componentes estão na prévia do modelador: abra com ?previa=modelador.", "aviso"); return false; }
 if (filtroInicial) { this.estado.filtros = {}; Object.keys(filtroInicial).forEach(function (k) { Painel.estado.filtros[k] = filtroInicial[k]; }); this.estado.aba = "todos"; }
-if (this._G && this._G._bimAbrirPainel) this._G._bimAbrirPainel("componentes");
+if (this.estado.menu) { this.estado.menu = null; this.estado.q = ""; }
+if (!this._flutuar(ancora || this._botao("componentes"))) { if (this._G && this._G._bimAbrirPainel) this._G._bimAbrirPainel("componentes"); }
 this.render();
 var self = this;
 if (!global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro")) {
@@ -114786,6 +114828,69 @@ return true;
 fechar: function () {
 var el = typeof document !== "undefined" ? document.getElementById("bim-componentes") : null;
 if (el) el.style.display = "none";
+this._soltarFora();
+return true;
+},
+aberto: function () { var el = typeof document !== "undefined" ? document.getElementById("bim-componentes") : null; return !!el && el.style.display !== "none" && el.offsetWidth > 0; },
+_botao: function (id) {
+if (typeof document === "undefined") return null;
+var l = document.querySelectorAll('[data-rv-cmd="' + id + '"]'), i;
+for (i = 0; i < l.length; i++) if (l[i].offsetWidth > 0) return l[i];
+return l[0] || null;
+},
+_flutuar: function (ancora) {
+if (typeof document === "undefined") return false;
+var el = document.getElementById("bim-componentes"); if (!el) return false;
+if (el.parentNode !== document.body) document.body.appendChild(el);
+el.setAttribute("data-comp-flutuante", "1"); el.setAttribute("role", "dialog"); el.setAttribute("aria-label", this.estado.menu ? TITULO_MENU[this.estado.menu] : "Componentes");
+var vw = global.innerWidth || 1200, vh = global.innerHeight || 800, larg = Math.min(380, vw - 16);
+var r = ancora && ancora.getBoundingClientRect ? ancora.getBoundingClientRect() : { left: 80, bottom: 120 };
+el.style.cssText = "display:block;position:fixed;z-index:100002;left:" + Math.max(8, Math.min(r.left, vw - larg - 8)) + "px;top:" + Math.round(r.bottom + 2) + "px;width:" + larg + "px;max-height:" + Math.max(240, Math.round(vh - r.bottom - 16)) + "px;overflow:auto;box-sizing:border-box;padding:8px;" +
+"background:var(--rv-painel-bg,var(--card,#fff));color:var(--rv-painel-tx,var(--texto,#1a1a1a));border:1px solid var(--rv-linha-forte,var(--linha,#b4b4b4));border-radius:8px;box-shadow:0 10px 28px var(--rv-sombra,rgba(0,0,0,.22))";
+this._ancora = ancora || null;
+this._prenderFora(el);
+return true;
+},
+_prenderFora: function (el) {
+var self = this; this._soltarFora();
+this._fora = function (ev) {
+if (ev.type === "keydown" || ev.type === "keyup") { if (ev.key === "Escape" || ev.keyCode === 27) self.fechar(); return; }
+if (el.contains(ev.target) || (self._ancora && self._ancora.contains && self._ancora.contains(ev.target))) return;
+var cmdA = self._ancora && self._ancora.getAttribute ? self._ancora.getAttribute("data-rv-cmd") : null;
+if (cmdA && ev.target && ev.target.closest && ev.target.closest('[data-rv-cmd="' + cmdA + '"]')) return;
+self.fechar();
+};
+document.addEventListener("pointerdown", this._fora, true);
+(global.addEventListener ? global : document).addEventListener("keydown", this._fora, true); (global.addEventListener ? global : document).addEventListener("keyup", this._fora, true);
+},
+_soltarFora: function () {
+if (this._fora && typeof document !== "undefined") { document.removeEventListener("pointerdown", this._fora, true); (global.removeEventListener ? global : document).removeEventListener("keydown", this._fora, true); (global.removeEventListener ? global : document).removeEventListener("keyup", this._fora, true); }
+this._fora = null;
+},
+abrirMenu: function (cat, ancora, G) {
+var U = UI(); this._G = G || (U && U._G) || this._G;
+if (!TITULO_MENU[cat]) return false;
+if (this.estado.menu !== cat) this.estado.q = "";
+this.estado.menu = cat;
+if (!this._flutuar(ancora || this._botao(cat === "acessorio" ? "acessorio-tubo" : cat))) return false;
+this.render();
+var b = document.querySelector('#bim-componentes [data-comp="busca"]'); try { if (b) b.focus(); } catch (e) {}
+var self = this;
+if (!global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro")) Carregar.grupo("hidro").then(function () { if (H()) H().esquecer(); if (self.estado.menu === cat) self.render(); }, function () {});
+return true;
+},
+instalarFita: function (doc) {
+var self = this; doc = doc || (typeof document !== "undefined" ? document : null);
+if (!doc || this._fitaLigada) return false;
+this._fitaLigada = true;
+doc.addEventListener("click", function (ev) {
+var bt = ev.target && ev.target.closest ? ev.target.closest("[data-rv-cmd]") : null; if (!bt) return;
+var cat = MENU_FITA[bt.getAttribute("data-rv-cmd")]; if (!cat || bt.disabled) return;
+var U = UI(); if (!U || (U.ativo && !U.ativo())) return;
+var jaAberto = self.estado.menu === cat && self.aberto();
+var cmdId = bt.getAttribute("data-rv-cmd");
+setTimeout(function () { if (jaAberto) self.fechar(); else self.abrirMenu(cat, self._botao(cmdId) || bt); }, 0);
+}, true);
 return true;
 },
 executar: function (it) {
@@ -114802,14 +114907,22 @@ if (ok && U.cfg) { if (U.cfg.material !== a.material) U.mudarCfg("i:material", a
 else if (a.tipo === "armarAcessorio") { ok = U.armar("acessorio", { famId: a.famId, tipoId: a.tipoId }); if (ok && U._p12) { U._p12.acFam = a.famId; U._p12.acTipo = a.tipoId; } }
 else if (a.tipo === "colocarFamilia") ok = U.colocarFamilia(a.famId, a.tipoId);
 else if (a.tipo === "conexaoManual") ok = U.armarConexaoManual(a.conexao, a.material);
-if (ok !== false) this.usar(it.id);
+if (ok !== false) { this.usar(it.id); var elF = typeof document !== "undefined" ? document.getElementById("bim-componentes") : null; if (elF && elF.getAttribute("data-comp-flutuante")) this.fechar(); }
 return ok !== false;
 },
 _inserirDuplo: function (id) {
 var agora = Date.now(), u = this._ultIns;
 if (!this._semTrava && u && u.id === id && agora - u.t < 600) return false;
 this._ultIns = { id: id, t: agora };
-var it = H().item(id); return !!(it && it.acao && it.acao.disponivel !== false && this.executar(it));
+var it = this.vista(id), ok = !!(it && it.acao && it.acao.disponivel !== false && this.executar(it));
+this._ultIns.t = Date.now();
+return ok;
+},
+_desarmar: function () {
+var U = UI(), b = global.BIM, R = global.BimRibbon;
+try { if (b && b.editarArmar) b.editarArmar(null); } catch (e) {}
+if (U) U.cfg = null;
+try { if (R && R.setAtivo) ["tubo", "aparelho", "eletroduto", "eletrocalha", "acessorio-tubo"].forEach(function (k) { if (R.comando && R.comando(k)) R.setAtivo(k, false); }); if (global.BimShell && BimShell.pintarFita) BimShell.pintarFita(); } catch (e2) {}
 },
 abrirTemplate: function (id) {
 var U = UI(), G = (U && U._G) || this._G;
@@ -114819,7 +114932,9 @@ return false;
 },
 _lista: function () {
 var h = H(); if (!h) return [];
-var e = this.estado, l = h.buscar(e.q, e.filtros);
+var e = this.estado;
+if (e.menu && h.daCategoria) return h.daCategoria(e.menu, e.q);
+var l = h.buscar(e.q, e.filtros);
 if (e.aba === "favoritos") { var f = this.favoritos(); l = l.filter(function (it) { return f.indexOf(it.id) >= 0; }); }
 else if (e.aba === "recentes") { var r = this.recentes(); l = l.filter(function (it) { return r.indexOf(it.id) >= 0; }).sort(function (a, b) { return r.indexOf(a.id) - r.indexOf(b.id); }); }
 return l;
@@ -114828,12 +114943,19 @@ _selo: function (t) {
 var aviso = /^(sem|a conferir|indispon)/.test(t);
 return '<span style="display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:9px;margin:0 3px 3px 0;border:1px solid ' + (aviso ? "var(--amarelo,#b45309)" : "var(--linha,#c9d6e4)") + ";background:" + (aviso ? "var(--tinta-aviso,rgba(170,98,0,.13))" : "var(--surface-2,#eef2f7)") + ';color:var(--texto,#111d2b)">' + esc(t) + "</span>";
 },
+_htmlTipo: function (it, onde) {
+if (!it || !it.tipos || it.tipos.length < 2) return "";
+var at = it.tipoId;
+return '<select data-comp="tipo" data-cid="' + esc(it.id) + '" aria-label="Tipo de ' + esc(it.nome) + '" title="Tipo que o Inserir coloca" style="display:block;width:100%;min-width:0;box-sizing:border-box;font-size:12px;margin:' + (onde === "linha" ? "2px 0 0" : "6px 0 0") + '">' +
+it.tipos.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === at ? " selected" : "") + ">" + esc(t.nome) + "</option>"; }).join("") + "</select>";
+},
 _htmlFicha: function (it) {
 var self = this, h = '<div data-comp="ficha" style="border:1px solid var(--linha,#c9d6e4);border-radius:10px;padding:10px;margin:8px 0;background:var(--surface,#fff)">';
 h += '<div style="display:flex;gap:8px;align-items:flex-start">';
 if (it.icone) h += '<img src="' + esc(it.icone) + '" alt="" width="56" height="56" style="object-fit:contain;border-radius:6px;background:var(--surface-2,#eef2f7)" onerror="this.style.display=\'none\'">';
 h += '<div style="flex:1;min-width:0"><b style="font-size:13.5px">' + esc(it.nome) + '</b><div class="muted" style="font-size:11.5px">' + esc(it.grupo) + (it.origem && it.origem !== "RA" ? " · " + esc(it.origem) : "") + "</div></div>" +
 '<button class="btn sm icone" data-comp="fav" data-cid="' + esc(it.id) + '" title="' + (this.ehFavorito(it.id) ? "Tirar dos favoritos" : "Guardar nos favoritos") + '" aria-label="Favorito">' + (this.ehFavorito(it.id) ? "★" : "☆") + "</button></div>";
+h += this._htmlTipo(it, "ficha");
 if (it.selos.length) h += '<div style="margin-top:6px">' + it.selos.map(function (t) { return self._selo(t); }).join("") + "</div>";
 var lin = [];
 if (it.sistemas.length) { var B = global.BimInst; lin.push(["Sistema", it.sistemas.map(function (s) { return B && B.SISTEMAS[s] ? B.SISTEMAS[s].nome : s; }).join(", ")]); }
@@ -114859,7 +114981,7 @@ _htmlLinha: function (it, sel) {
 var avisos = it.selos.filter(function (t) { return /^(sem|a conferir|indispon)/.test(t); });
 return '<div class="comp-item" data-comp="item" data-cid="' + esc(it.id) + '" role="button" tabindex="0" style="display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:7px;cursor:pointer;border:1px solid ' + (sel ? "var(--aco,#0d6ebd)" : "transparent") + ";background:" + (sel ? "var(--tinta-aco,rgba(13,110,189,.10))" : "transparent") + '">' +
 (it.icone ? '<img src="' + esc(it.icone) + '" alt="" width="26" height="26" loading="lazy" style="object-fit:contain;flex:none" onerror="this.style.visibility=\'hidden\'">' : '<span style="width:26px;flex:none"></span>') +
-'<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + "</span>" +
+'<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + (this.estado.menu ? this._htmlTipo(it, "linha") : "") + "</span>" +
 (avisos.length ? '<span title="' + esc(avisos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
 (this.ehFavorito(it.id) ? '<span style="flex:none;color:var(--aco,#0d6ebd)" aria-label="favorito">★</span>' : "") + "</div>";
 },
@@ -114867,8 +114989,25 @@ render: function () {
 var corpo = typeof document !== "undefined" ? document.getElementById("bim-componentes-corpo") : null; if (!corpo) return false;
 var h = H(), self = this, e = this.estado;
 if (!h) { corpo.innerHTML = '<p class="muted">O catálogo de componentes ainda não carregou.</p>'; return false; }
-var fd = h.filtrosDisponiveis(), lista = this._lista(), sel = e.sel ? h.item(e.sel) : null, html = "";
+var fd = h.filtrosDisponiveis(), lista = this._lista().map(function (it) { return it.tipos ? self.vista(it) || it : it; }), sel = e.sel && !e.menu ? this.vista(e.sel) : null, html = "";
 function opt(l, v, rot) { return '<option value="' + esc(l.id != null ? l.id : l) + '"' + ((l.id != null ? l.id : l) === v ? " selected" : "") + ">" + esc(l.nome != null ? l.nome : l) + "</option>"; }
+if (e.menu) {
+html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="flex:1;font-size:13px">' + esc(TITULO_MENU[e.menu]) + '</b><button class="btn sm icone" data-comp="fechar" aria-label="Fechar" title="Fechar (Esc)">✕</button></div>' +
+'<input type="search" data-comp="busca" placeholder="Buscar em ' + esc(TITULO_MENU[e.menu].toLowerCase()) + '…" value="' + esc(e.q) + '" aria-label="Buscar ' + esc(TITULO_MENU[e.menu]) + '" style="width:100%;box-sizing:border-box;margin-bottom:6px">';
+if (!lista.length) html += '<p class="muted" style="font-size:12.5px">Nada encontrado.</p>';
+var gM = null;
+lista.forEach(function (it) {
+if (it.grupo !== gM) { gM = it.grupo; html += '<div style="font-weight:700;font-size:12px;margin:8px 0 2px;color:var(--texto-fraco,#516375)">' + esc(gM) + "</div>"; }
+html += self._htmlLinha(it, false);
+});
+html += '<p class="muted" style="font-size:11px;margin-top:8px">Clique = colocar no modelo. Catálogo completo: Componentes.</p>';
+var tinhaM = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-comp") === "busca", posM = tinhaM ? document.activeElement.selectionStart : 0;
+corpo.innerHTML = html;
+if (tinhaM) { var bM = corpo.querySelector('[data-comp="busca"]'); if (bM) { bM.focus(); try { bM.setSelectionRange(posM, posM); } catch (eM) {} } }
+this._ligar(corpo);
+return true;
+}
+html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="flex:1;font-size:13px">Componentes</b><button class="btn sm icone" data-comp="fechar" aria-label="Fechar" title="Fechar (Esc)">✕</button></div>';
 html += '<input type="search" data-comp="busca" placeholder="Buscar: joelho azul, caixa sifonada, registro de pressão, boia…" value="' + esc(e.q) + '" aria-label="Buscar componentes" style="width:100%;box-sizing:border-box;margin-bottom:6px">';
 html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:6px">' +
 '<select data-comp="f-grupo" style="width:100%;min-width:0" aria-label="Grupo"><option value="">Todos os grupos</option>' + h.GRUPOS.map(function (g) { return opt(g, e.filtros.grupo); }).join("") + "</select>" +
@@ -114917,12 +115056,16 @@ else if (c === "f-sistema") e.filtros.sistema = el.value || undefined;
 else if (c === "f-material") e.filtros.material = el.value || undefined;
 else if (c === "f-fabricante") e.filtros.fabricante = el.value || undefined;
 else if (c === "f-cota") e.filtros.soComCota = !!el.checked;
+else if (c === "tipo") self.escolherTipo(el.getAttribute("data-cid"), el.value);
 else return;
 self.render();
 };
 corpo.onclick = function (ev) {
 var bt = ev.target.closest ? ev.target.closest("[data-comp]") : null; if (!bt) return;
 var c = bt.getAttribute("data-comp"), id = bt.getAttribute("data-cid");
+if (c === "tipo") return;
+if (c === "fechar") { self.fechar(); return; }
+if (c === "item" && e.menu) { var itM = self.vista(id); if (itM && itM.acao && itM.acao.disponivel !== false) { self._desarmar(); self.executar(itM); } else if (itM) toast(itM.selos[0] || "Indisponível.", "aviso"); return; }
 if (c === "item") {
 var agora = Date.now(), duplo = (ev.detail >= 2 || (self._ultClique && self._ultClique.id === id && agora - self._ultClique.t < 450)) && e.sel === id;
 self._ultClique = { id: id, t: agora };
@@ -114933,18 +115076,20 @@ setTimeout(function () { if (e.sel === id) { self._rolarFicha = true; self._rola
 else if (c === "aba") { e.aba = bt.getAttribute("data-caba"); self.render(); }
 else if (c === "fav") { self.alternarFavorito(id); self.render(); }
 else if (c === "mais") { e.abertos[bt.getAttribute("data-cgrupo")] = true; self.render(); }
-else if (c === "inserir") { var it = H().item(id); if (it && self.executar(it)) self.render(); }
+else if (c === "inserir") { var it = self.vista(id); if (it && self.executar(it) && self.aberto()) self.render(); }
 };
 corpo.ondblclick = function (ev) {
-var bt = ev.target.closest ? ev.target.closest('[data-comp="item"]') : null; if (!bt) return;
+var bt = ev.target.closest ? ev.target.closest('[data-comp="item"]') : null; if (!bt || e.menu || (ev.target.closest && ev.target.closest('[data-comp="tipo"]'))) return;
 if (self._inserirDuplo(bt.getAttribute("data-cid"))) self.render();
 };
 corpo.onkeydown = function (ev) {
+if (e.menu && ev.key === "Enter" && ev.target.getAttribute && ev.target.getAttribute("data-comp") === "item") { ev.preventDefault(); var itK = self.vista(ev.target.getAttribute("data-cid")); if (itK && itK.acao) { self._desarmar(); self.executar(itK); } return; }
 if ((ev.key === "Enter" || ev.key === " ") && ev.target.getAttribute && ev.target.getAttribute("data-comp") === "item") { ev.preventDefault(); e.sel = ev.target.getAttribute("data-cid"); self._rolarFicha = true; self.render(); }
 };
 }
 };
 global.HidComponentesUI = Painel;
+try { if (typeof document !== "undefined" && document.addEventListener) Painel.instalarFita(document); } catch (eF) {}
 if (typeof module !== "undefined" && module.exports) module.exports = Painel;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
@@ -164705,7 +164850,8 @@ ids = ids.filter(function (id) { var p = ctx.res.porId[id]; return p && p.catego
 if (!ids.length) return { ok: false, erro: "As peças já são deste tipo." };
 if (item.origem === "familia") {
 var dpf = ctx.deps || {};
-if (item.famId != null && typeof dpf.categoriaFam === "function" && dpf.categoriaFam(item.famId) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+if (item.famId != null && BP && BP.catFamilia && BP.catFamilia({ famId: item.famId }, dpf) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+if (cat === "generico" && item.famId != null && ids.some(function (id) { var e0 = elDe(ctx.estado, id); return e0 && String(e0.famId) !== String(item.famId); })) return { ok: false, erro: "Em modelos genéricos o tipo troca só dentro da mesma família." };
 var fNova = item.famId != null && typeof dpf.familia === "function" ? dpf.familia(item.famId) : null;
 ids.forEach(function (id) {
 var el0 = elDe(ctx.estado, id), o = { op: "instancia", id: id, tipoId: String(item.tipoFam) };

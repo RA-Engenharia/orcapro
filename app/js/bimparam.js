@@ -1971,6 +1971,7 @@
 
   var BimParam = {
     GRUPOS: GRUPOS, DADOS: DADOS, FASES: FASES, FAIXA: FAIXA, COMUM: COMUM, REGISTRO: REG, CALC: CALC, FORA: FORA,
+    catFamilia: catFamilia,   /* a categoria da TELA de uma instância de família (js/bimpropsui.js opsTrocarTipo usa a mesma régua) */
 
     /* ------------------------------------------------- consulta da tabela */
     categorias: function () { return Object.keys(REG); },
