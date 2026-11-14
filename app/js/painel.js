@@ -42,31 +42,54 @@
   var POR_PAGINA = 12;           /* cartões por página nas abas Todas e Concluídas; Em andamento nunca é cortada */
   var PERIODOS = { mes: 1, "6m": 1, ano: 1, tudo: 1 };
   var STATUS = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
-  /* os blocos da tela, na ordem padrão. `col` = onde mora: "esq" (coluna dos
-     gráficos) ou "cheia" (largura inteira, depois da grade). A fila de
-     decisões não está aqui: ela é a coluna da direita e não se esconde. */
-  /* ORDEM PADRÃO (25/10/2026): depois do resumo do topo (hero, atalhos e obras em
-     cartão), vêm os números do caixa e o FLUXO — o gráfico que conta a história —,
-     depois os de apoio (categorias, previsão, lucratividade, metas). "Posição de
-     hoje" e "Agenda" repetem o que o hero e a fila já dizem, por isso descem;
-     continuam aqui para quem os quer (Organizar painel). Quem já organizou o
-     painel mantém a ordem dele: só entra aqui quem não tem preferência gravada.
-     26/10/2026: a linha do tempo dos 7 dias e o caixa projetado de 30 dias (que mostra a
-     conta inteira: caixa hoje + entradas − vencimentos) sobem logo depois do caixa, porque
-     respondem "o que vem aí e o que sobra"; o fluxo mensal desce um degrau. */
+  /* ORDEM PADRÃO (v2, 13/11/2026 — redesenho completo do Painel). De cima para baixo:
+     resumo do dia (frases do motor), os 6 números que mandam, a faixa "Precisa de você"
+     (fixa, fora desta lista), o financeiro (fluxo e previsão lado a lado), a composição
+     do gasto, a CARTEIRA DE OBRAS (uma tabela só), o comercial, e os de apoio.
+     `larg` = "meia" (duas por linha em tela larga) ou "cheia"; um bloco "meia" sem par
+     na linha ocupa a largura inteira (quem desenha decide, ver PainelUI.agrupar).
+     ⚠ NÚMERO MORA EM UM BLOCO SÓ: "A receber" e "A pagar" estão em `kpis`; "posição de hoje"
+     e "orçado × gasto" deixaram de ser blocos (viraram o KPI e a coluna da carteira). */
+  /* ⚠ v2.1 (14/11/2026): GRADE DE 12 COLUNAS, estilo painel de BI. `cols` é o espaço do bloco numa linha de 12 (em tela larga);
+     a ordem padrão (v3) fecha 12 por linha: faturamento 8 + metas 4 · rankings 4 (Top 10 obras, Top 10 fornecedores e rosca, em abas) + caixa 4 (fluxo, 13 semanas e lucratividade, em abas) + gestão 4 (agenda, comercial e operação, em abas) ·
+     carteira 12. Quem reordena/esconde vê o resto reacomodar (grid-auto-flow: dense).
+     `larg` (meia|cheia) continua para quem lê: meia = menos de 12 colunas. */
   var BLOCOS = [
-    { id: "tiles", nome: "Caixa (recebido, pago, resultado, saldo a faturar)", col: "esq" },
-    { id: "agenda", nome: "Próximos 7 dias (linha do tempo)", col: "esq" },
-    { id: "previsao", nome: "Caixa e previsão, 30 dias", col: "esq" },
-    { id: "fluxo", nome: "Fluxo de caixa por mês", col: "esq" },
-    { id: "composicao", nome: "Despesas por categoria e custo por obra", col: "esq" },
-    { id: "lucro", nome: "Lucratividade por mês", col: "esq" },
-    { id: "metas", nome: "Metas (medidores)", col: "esq" },
-    { id: "posicao", nome: "Posição de hoje (a receber, a pagar)", col: "esq" },
-    { id: "obras", nome: "Obras", col: "cheia" },
-    { id: "orcado", nome: "Orçado × gasto", col: "cheia" },
-    { id: "operacao", nome: "Operação (contadores)", col: "cheia" }
+    { id: "resumo", nome: "Resumo do dia", cols: 4 },
+    { id: "kpis", nome: "Indicadores principais (caixa, a receber, a pagar, margem)", cols: 12 },
+    { id: "faturamento", nome: "Recebido e pago por mês (área)", cols: 8 },
+    { id: "metas", nome: "Metas (medidores)", cols: 4 },
+    { id: "topobras", nome: "Top 10 obras (faturamento ou custo)", cols: 4 },
+    { id: "topdespesas", nome: "Top 10 fornecedores e maiores contas", cols: 4 },
+    { id: "composicao", nome: "Despesas por categoria (rosca)", cols: 4 },
+    { id: "fluxo", nome: "Fluxo de caixa e saldo", cols: 4 },
+    { id: "previsao", nome: "Previsão de caixa, 13 semanas", cols: 6 },
+    { id: "lucro", nome: "Lucratividade por mês", cols: 6 },
+    { id: "agenda", nome: "Próximos 7 dias", cols: 4 },
+    { id: "comercial", nome: "Comercial (orçamentos e propostas)", cols: 4 },
+    { id: "operacao", nome: "Operação (contadores)", cols: 4 },
+    { id: "obras", nome: "Carteira de obras", cols: 12 }
   ];
+  BLOCOS.forEach(function (b) { b.larg = b.cols < 12 ? "meia" : "cheia"; });
+  /* ⚠ v3 (14/11/2026): ABAS. Blocos de gráfico parecidos dividem UM cartão com abas (o painel tinha 2,4 telas de altura): o cartão nasce no lugar do
+     primeiro membro que estiver visível, e cada membro continua com seu id em "Organizar" (esconder um tira só a aba dele; sobrando um, ele volta a ser cartão solto).
+     `cols` = a largura do cartão da aba (os gráficos são desenhados nessa largura). `rotulos` = o texto da aba. */
+  var ABAS_BLOCOS = [
+    { id: "rankings", nome: "Rankings", cols: 4, membros: ["topobras", "topdespesas", "composicao"], rotulos: { topobras: "Top obras", topdespesas: "Top fornecedores", composicao: "Categorias" } },
+    { id: "caixa", nome: "Caixa", cols: 4, membros: ["fluxo", "previsao", "lucro"], rotulos: { fluxo: "Fluxo", previsao: "13 semanas", lucro: "Lucratividade" } },
+    { id: "gestao", nome: "Gestão", cols: 4, membros: ["agenda", "comercial", "operacao"], rotulos: { agenda: "Próximos 7 dias", comercial: "Comercial", operacao: "Operação" } }
+  ];
+  /* VERSÃO DOS BLOCOS GRAVADOS (bv). A 1.2.287 e antes gravavam outra lista (tiles, posicao,
+     orcado…). `migrarBlocos` leva a ordem e o liga/desliga da pessoa para a lista nova sem
+     perder nada e sem jogar o bloco novo no fim da página. */
+  var BLOCOS_V = 3;
+  var BLOCOS_ANTIGOS = { tiles: "kpis", posicao: null, orcado: null };   /* null = o número mudou de casa (kpis / carteira) */
+  var CMP_MODOS = { anterior: 1, ano: 1 };
+  var VISTAS_OBRAS = { tabela: 1, galeria: 1 };
+  var MODELOS = { a: 1, b: 1 };          /* A = Executivo BI claro · B = Central escura */
+  var AUTOS = { 0: 1, 1: 1, 5: 1, 10: 1, 30: 1 };   /* minutos da atualização automática (0 = desligada) */
+  var LIMITE_CUSTO_INCOMPLETO = 0.15;   /* custo pago abaixo de 15% do recebido: a margem não é confiável */
+  var SEMANAS_PREVISAO = 13;
   var GRUPOS = [
     { id: "dinheiro", nome: "Dinheiro parado", aberto: true },
     { id: "prazo", nome: "Prazo", aberto: true },
@@ -109,9 +132,52 @@
   function iso(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
   function somaDias(hojeISO, n) { var d = data(hojeISO); d.setDate(d.getDate() + n); return iso(d); }
   function diasEntre(aISO, bISO) { var a = data(aISO), b = data(bISO); return (a && b) ? Math.round((b - a) / DIA) : null; }
+  /* soma `n` meses (negativo volta) sem estourar o fim do mês: 31/03 menos 1 mês é 28/02 */
+  function addMeses(d, n) {
+    var r = new Date(d.getFullYear(), d.getMonth() + n, 1);
+    var ult = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+    r.setDate(Math.min(d.getDate(), ult));
+    return r;
+  }
+  /* número no padrão BR sem depender do ICU do navegador: 1234.5, 1 → "1.234,5" */
+  function fmtBR(n, dec) {
+    var neg = n < 0, s = Math.abs(n).toFixed(dec), p = s.split("."), inteiro = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return (neg ? "-" : "") + inteiro + (dec ? "," + p[1] : "");
+  }
+  function semZeroFinal(s) { return s.replace(/,0$/, ""); }
+  var NB = "\u00a0";
 
   var PainelDados = {
     CHAVE: CHAVE,
+    BLOCOS_V: BLOCOS_V,
+    LIMITE_CUSTO_INCOMPLETO: LIMITE_CUSTO_INCOMPLETO,
+    SEMANAS_PREVISAO: SEMANAS_PREVISAO,
+    /* ------------------------------------------------------------------
+     * MOEDA ÚNICA DA TELA (v2). O Painel antigo escrevia "12,63 mi" num cartão e
+     * "19,6 mi" noutro porque cada bloco arredondava do seu jeito. Agora UMA régua:
+     *   ≥ R$ 999,5 mil  → "R$ 1,2 mi"      (1 casa; "R$ 2 mi" se redondo)
+     *   ≥ R$ 99,95 mil  → "R$ 699 mil"     (inteiro)
+     *   ≥ R$ 9,995 mil  → "R$ 81,3 mil"    (1 casa)
+     *   abaixo          → "R$ 9.430"       (inteiro, milhar com ponto) · menos de 100 com centavos se tiver
+     * Espaço sem quebra entre "R$", o número e a unidade: o valor nunca se parte em duas linhas.
+     * ⚠ Só para LER rápido. O valor exato continua em fmtMoeda (dica, tabela, relatório).
+     * ------------------------------------------------------------------ */
+    moeda: function (v) {
+      v = num(v);
+      var a = Math.abs(v), sinal = v < 0 && Math.round(a) > 0 ? "\u2212" : "", corpo;
+      if (a >= 999500) corpo = semZeroFinal(fmtBR(a / 1e6, 1)) + NB + "mi";
+      else if (a >= 99950) corpo = fmtBR(Math.round(a / 1e3), 0) + NB + "mil";
+      else if (a >= 9995) corpo = semZeroFinal(fmtBR(a / 1e3, 1)) + NB + "mil";
+      else if (a >= 100) corpo = fmtBR(Math.round(a), 0);
+      else corpo = (Math.abs(a - Math.round(a)) < 0.005) ? fmtBR(Math.round(a), 0) : fmtBR(a, 2);
+      return sinal + "R$" + NB + corpo;
+    },
+    /* "+12%", "−8%", "0%": a variação em texto curto (pontos percentuais levam "pp") */
+    pctTxt: function (pct, pp) {
+      if (pct === null || pct === undefined || !isFinite(pct)) return "";
+      var r = Math.round(pct);
+      return (r > 0 ? "+" : (r < 0 ? "\u2212" : "")) + Math.abs(r) + (pp ? " pp" : "%");
+    },
     DIAS_SUSPEITO: DIAS_SUSPEITO,
     DEFASAGEM_PONTOS: DEFASAGEM_PONTOS,
     DIAS_ADIAR: DIAS_ADIAR,
@@ -119,6 +185,7 @@
     POR_PAGINA: POR_PAGINA,
     BLOCOS: BLOCOS,
     GRUPOS: GRUPOS,
+    ABAS_BLOCOS: ABAS_BLOCOS,
 
     /* ------------------------------------------------------------------
      * PREFERÊNCIAS DE TELA — por pessoa e aparelho, como `paineis.js`.
@@ -167,6 +234,39 @@
       });
       return out.length ? out : null;
     },
+    /* MIGRAÇÃO DOS BLOCOS GRAVADOS (bv 1 → 2). A pessoa que arrumou o Painel na versão
+       antiga tem ids que não existem mais (tiles, posicao, orcado). Cada um vira o seu
+       sucessor (tiles → kpis, com o mesmo liga/desliga) ou some (posicao e orcado: o número
+       foi para o KPI e para a coluna da carteira). O que ela ordenou fica na ordem dela; o
+       que é novo entra no lugar PADRÃO dele (depois do vizinho que já estava) — nunca
+       empurrado para o fim da página. */
+    migrarBlocos: function (v, bv) {
+      if (!ehArr(v)) return null;
+      var lista = v;
+      if (bv !== BLOCOS_V) {
+        lista = [];
+        v.forEach(function (b) {
+          if (!ehObj(b) || typeof b.id !== "string") return;
+          var id = own(BLOCOS_ANTIGOS, b.id) ? BLOCOS_ANTIGOS[b.id] : b.id;
+          if (id) lista.push({ id: id, on: b.on });
+        });
+      }
+      var limpos = this._blocosLimpos(lista);
+      if (!limpos) return null;
+      var presentes = {};
+      limpos.forEach(function (b) { presentes[b.id] = 1; });
+      /* novos entram depois do vizinho padrão mais próximo que já está na lista */
+      BLOCOS.forEach(function (d, i) {
+        if (presentes[d.id]) return;
+        var apos = -1, k, j;
+        for (k = i - 1; k >= 0 && apos < 0; k--) {
+          for (j = 0; j < limpos.length; j++) if (limpos[j].id === BLOCOS[k].id) { apos = j; break; }
+        }
+        limpos.splice(apos + 1, 0, { id: d.id, on: true });
+        presentes[d.id] = 1;
+      });
+      return limpos;
+    },
     _adiadosLimpos: function (v, hojeISO) {
       if (!ehObj(v)) return {};
       var out = {};
@@ -180,7 +280,7 @@
       return out;
     },
     _prefsLimpas: function (f, hojeISO) {
-      var out = { obra: null, per: null, multi: false, status: "", comparar: false, blocos: null, adiados: {} };
+      var out = { obra: null, per: null, multi: false, status: "", comparar: false, cmp: "anterior", vista: "tabela", modelo: "a", auto: 0, compacto: false, blocos: null, adiados: {} };
       if (!ehObj(f)) return out;
       if (typeof f.obra === "string" && f.obra) out.obra = f.obra;
       else if (ehArr(f.obra)) {
@@ -190,8 +290,13 @@
       if (typeof f.per === "string" && own(PERIODOS, f.per)) out.per = f.per;
       out.multi = f.multi === true;
       if (typeof f.status === "string" && own(STATUS, f.status)) out.status = f.status;
-      out.comparar = f.comparar === true;
-      out.blocos = this._blocosLimpos(f.blocos);
+      out.comparar = f.comparar === true;                       /* legado (1.2.287): o botão liga/desliga a linha tracejada; a v2 sempre compara */
+      if (typeof f.cmp === "string" && own(CMP_MODOS, f.cmp)) out.cmp = f.cmp;
+      if (typeof f.vista === "string" && own(VISTAS_OBRAS, f.vista)) out.vista = f.vista;
+      if (typeof f.modelo === "string" && own(MODELOS, f.modelo)) out.modelo = f.modelo;
+      if (typeof f.auto === "number" && own(AUTOS, f.auto)) out.auto = f.auto;
+      out.compacto = f.compacto === true;
+      out.blocos = this.migrarBlocos(f.blocos, f.bv);
       out.adiados = this._adiadosLimpos(f.adiados, hojeISO);
       return out;
     },
@@ -210,7 +315,13 @@
       if (own(p, "multi")) { if (p.multi === true) r.multi = true; else delete r.multi; }
       if (own(p, "status")) { if (typeof p.status === "string" && own(STATUS, p.status)) r.status = p.status; else delete r.status; }
       if (own(p, "comparar")) { if (p.comparar === true) r.comparar = true; else delete r.comparar; }
-      if (own(p, "blocos")) { var b = this._blocosLimpos(p.blocos); if (b) r.blocos = b; else delete r.blocos; }
+      if (own(p, "cmp")) { if (typeof p.cmp === "string" && own(CMP_MODOS, p.cmp) && p.cmp !== "anterior") r.cmp = p.cmp; else delete r.cmp; }
+      if (own(p, "vista")) { if (typeof p.vista === "string" && own(VISTAS_OBRAS, p.vista) && p.vista !== "tabela") r.vista = p.vista; else delete r.vista; }
+      if (own(p, "modelo")) { if (typeof p.modelo === "string" && own(MODELOS, p.modelo) && p.modelo !== "a") r.modelo = p.modelo; else delete r.modelo; }
+      if (own(p, "auto")) { if (typeof p.auto === "number" && own(AUTOS, p.auto) && p.auto > 0) r.auto = p.auto; else delete r.auto; }
+      if (own(p, "compacto")) { if (p.compacto === true) r.compacto = true; else delete r.compacto; }
+      /* `bv` carimba a lista gravada com a versão dos blocos: sem ele a leitura trata a lista como a antiga (e migra) */
+      if (own(p, "blocos")) { var b = this._blocosLimpos(p.blocos); if (b) { r.blocos = b; r.bv = BLOCOS_V; } else { delete r.blocos; delete r.bv; } }
       if (own(p, "adiados")) { var a = this._adiadosLimpos(p.adiados, null); if (Object.keys(a).length) r.adiados = a; else delete r.adiados; }
       t.u[hash] = r;
       return this._gravarTudo(storage, t);
@@ -225,19 +336,18 @@
        novos (de versão mais recente) no fim, ligados */
     blocosOrdenados: function (prefs) {
       var salvos = (prefs && prefs.blocos) || [], out = [], vistos = {};
-      salvos.forEach(function (b) { var d = BLOCOS.filter(function (x) { return x.id === b.id; })[0]; if (d) { vistos[b.id] = 1; out.push({ id: d.id, nome: d.nome, col: d.col, on: b.on !== false }); } });
-      BLOCOS.forEach(function (d) { if (!vistos[d.id]) out.push({ id: d.id, nome: d.nome, col: d.col, on: true }); });
+      salvos.forEach(function (b) { var d = BLOCOS.filter(function (x) { return x.id === b.id; })[0]; if (d) { vistos[b.id] = 1; out.push({ id: d.id, nome: d.nome, larg: d.larg, cols: d.cols, on: b.on !== false }); } });
+      BLOCOS.forEach(function (d) { if (!vistos[d.id]) out.push({ id: d.id, nome: d.nome, larg: d.larg, cols: d.cols, on: true }); });
       return out;
     },
+    /* troca o bloco com o vizinho. Desde a v2 qualquer par pode trocar: a grade se arruma sozinha
+       (bloco "meia" sem par na linha ocupa a largura inteira) */
     moverBloco: function (blocos, id, dir) {
       var i = -1;
       blocos.forEach(function (b, k) { if (b.id === id) i = k; });
       if (i < 0) return blocos;
       var j = dir < 0 ? i - 1 : i + 1;
       if (j < 0 || j >= blocos.length) return blocos;
-      /* só troca dentro da mesma coluna: mover um bloco de largura inteira
-         para o meio dos gráficos não tem onde cair */
-      if (blocos[i].col !== blocos[j].col) return blocos;
       var out = blocos.slice(); var t = out[i]; out[i] = out[j]; out[j] = t;
       return out;
     },
@@ -427,6 +537,68 @@
       return { aba: aba, abas: abas, busca: q, total: ordenadas.length, itens: ordenadas.slice(0, lim), restantes: Math.max(0, ordenadas.length - lim), pagina: POR_PAGINA };
     },
 
+    /* ------------------------------------------------------------------
+     * CARTEIRA DE OBRAS (v2): a tabela-portfólio que substitui os cartões + a lista.
+     * `todas` = `obras.todas` do modelo (sem filtro de status). Abas por status com contagem;
+     * obra "sem movimento" (planejamento/pausada/concluída sem dinheiro, datas ou diário) vai
+     * para o grupo recolhido "mais N" — em andamento NUNCA é escondida. Ordem padrão = quem
+     * precisa de atenção primeiro (a mesma pontuação do cartão antigo); a pessoa troca pela coluna.
+     * ------------------------------------------------------------------ */
+    ORDENS_CARTEIRA: { atencao: 1, nome: 1, desvio: 1, contratado: 1, recebido: 1, custo: 1, margem: 1, orcado: 1, marco: 1 },
+    carteiraObras: function (todas, o) {
+      o = o || {};
+      var self = this, lista = (ehArr(todas) ? todas : []).filter(function (l) { return !!l; });
+      var cont = { andamento: 0, planejamento: 0, pausada: 0, concluida: 0, todas: lista.length };
+      lista.forEach(function (l) { if (own(cont, l.status) && l.status !== "todas") cont[l.status]++; });
+      var aba = (typeof o.aba === "string" && own(cont, o.aba)) ? o.aba : (cont.andamento > 0 ? "andamento" : "todas");
+      var q = this._semAcento(o.busca).replace(/^\s+|\s+$/g, "");
+      var ordem = (typeof o.ordem === "string" && own(this.ORDENS_CARTEIRA, o.ordem)) ? o.ordem : "atencao";
+      var dir = o.dir === "asc" ? 1 : -1;
+      var temMov = function (l) {
+        /* ≠ 0 e não > 0: estorno órfão deixa o custo NEGATIVO, e obra com dinheiro mexido não é obra "sem movimento" */
+        return l.status === "andamento" || num(l.recebido) !== 0 || num(l.custoPago) !== 0 || num(l.base) > 0 || !!(l.prazo && l.prazo.temDatas) || !!l.ultimoDiario;
+      };
+      var sel = lista.map(function (l, i) { return { l: l, i: i }; }).filter(function (x) {
+        if (aba !== "todas" && x.l.status !== aba) return false;
+        if (q && self._semAcento(x.l.nome).indexOf(q) < 0) return false;
+        return true;
+      });
+      /* valor de ordenação por coluna; null vai SEMPRE para o fim, qualquer que seja o sentido */
+      var chave = function (l, k) {
+        if (k === "nome") return self._semAcento(l.nome);
+        if (k === "desvio") return (l.desvio && l.desvio.pontos !== null && l.desvio.pontos !== undefined) ? l.desvio.pontos : null;
+        if (k === "contratado") return num(l.base) > 0 ? num(l.base) : null;
+        if (k === "recebido") return num(l.recebido) > 0 ? num(l.recebido) : null;
+        if (k === "custo") return num(l.custoPago) > 0 ? num(l.custoPago) : null;
+        if (k === "margem") return l.margem === null || l.margem === undefined ? null : l.margem;
+        if (k === "orcado") return l.orcadoPct === null || l.orcadoPct === undefined ? null : l.orcadoPct;
+        if (k === "marco") return (l.prazo && l.prazo.dias !== null && l.prazo.dias !== undefined && !l.entregue) ? l.prazo.dias : null;
+        return (l.atencao && l.atencao.pontos) || 0;
+      };
+      var grupo = { andamento: 0, pausada: 1, planejamento: 2, concluida: 3 };
+      sel.sort(function (x, y) {
+        if (ordem === "atencao") {
+          var ga = own(grupo, x.l.status) ? grupo[x.l.status] : 9, gb = own(grupo, y.l.status) ? grupo[y.l.status] : 9;
+          if (ga !== gb) return ga - gb;
+          var pa = chave(x.l, "atencao"), pb = chave(y.l, "atencao");
+          if (pa !== pb) return pb - pa;
+          var da = (x.l.prazo && x.l.prazo.dias != null) ? x.l.prazo.dias : 1e9, db = (y.l.prazo && y.l.prazo.dias != null) ? y.l.prazo.dias : 1e9;
+          if (da !== db) return da - db;
+          return x.i - y.i;
+        }
+        var ka = chave(x.l, ordem), kb = chave(y.l, ordem);
+        if (ka === null && kb === null) return x.i - y.i;
+        if (ka === null) return 1;
+        if (kb === null) return -1;
+        if (ka === kb) return x.i - y.i;
+        return (ka < kb ? -1 : 1) * (dir === 1 ? 1 : -1);
+      });
+      var visiveis = [], semMov = [];
+      sel.forEach(function (x) { if (temMov(x.l)) visiveis.push(x.l); else semMov.push(x.l); });
+      semMov.sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome)); });
+      return { aba: aba, cont: cont, busca: q, ordem: ordem, dir: dir === 1 ? "asc" : "desc", total: sel.length, itens: visiveis, semMovimento: semMov };
+    },
+
     /* a tela pergunta, antes de desenhar, se a conta do caixa fecha */
     caixa30Total: function (c30) {
       if (!c30) return 0;
@@ -436,6 +608,64 @@
     /* ------------------------------------------------------------------
      * JANELA DO PERÍODO e a janela ANTERIOR (para a variação e a comparação).
      * ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------
+     * COMPARAÇÃO (v2): contra o PERÍODO ANTERIOR ou contra o MESMO PERÍODO DO ANO PASSADO.
+     * A janela de comparação tem o MESMO TAMANHO da atual (mesmos dias corridos), não o mês
+     * anterior inteiro: no dia 13, comparar 13 dias de novembro com outubro cheio dá "−60%" que
+     * não é queda nenhuma. "Desde sempre" não tem contra o que comparar (devolve null).
+     * ------------------------------------------------------------------ */
+    comparacao: function (periodo, modo, hojeISO) {
+      var hoje = data(hojeISO);
+      if (!hoje || !own(PERIODOS, periodo) || periodo === "tudo") return null;
+      var m = own(CMP_MODOS, modo) ? modo : "anterior";
+      var jan = this.janela(periodo, hojeISO);
+      var n = m === "ano" ? 12 : (periodo === "mes" ? 1 : (periodo === "6m" ? 6 : 12));
+      var rotulo = m === "ano" ? "mesmo período do ano passado"
+        : (periodo === "mes" ? "mês anterior" : (periodo === "6m" ? "6 meses anteriores" : "ano passado"));
+      var prep = m === "ano" ? "ao mesmo período do ano passado" : (periodo === "mes" ? "ao mês anterior" : (periodo === "6m" ? "aos 6 meses anteriores" : "ao ano passado"));
+      return { modo: m, periodo: periodo, nMeses: n, rotuloPrep: prep, ini: iso(addMeses(data(jan.ini), -n)), fim: iso(addMeses(hoje, -n)), rotulo: rotulo,
+        rotuloCurto: m === "ano" ? "ano passado" : (periodo === "mes" ? "mês anterior" : (periodo === "6m" ? "6m anteriores" : "ano passado")) };
+    },
+    /* CUSTO INCOMPLETO: lucratividade de 95% com R$ 3 mil de custo sobre R$ 300 mil recebidos
+       não é lucro, é custo que ainda não foi lançado. Abaixo de 15% do recebido (ou sem custo
+       nenhum) o número continua na tela, mas esmaecido e com o selo — nunca como "margem real".
+       Sem receita não há o que comparar (não é "incompleto", é vazio). */
+    custoIncompleto: function (recebido, custoPago) {
+      var r = num(recebido), c = num(custoPago);
+      if (!(r > 0)) return { sim: false, motivo: null, razao: null };
+      if (!(c > 0)) return { sim: true, motivo: "sem-custo", razao: 0 };
+      var razao = c / r;
+      return razao < LIMITE_CUSTO_INCOMPLETO ? { sim: true, motivo: "baixo", razao: razao } : { sim: false, motivo: null, razao: razao };
+    },
+    /* DESVIO DA OBRA, com uma regra só (era a causa do "914 pontos atrás" numa obra 100% medida):
+         · concluída → "Entregue", nunca atrás;
+         · físico ≥ 100% → "Concluir obra", nunca atrás (o calendário não pune quem terminou);
+         · senão pontos = calendário consumido (teto 100) − físico, em pontos percentuais. */
+    desvio: function (l) {
+      if (!l) return { tipo: "nada", pontos: null, tom: "neutro", texto: "" };
+      var pz = l.prazo || {}, av = (l.avanco === undefined || l.avanco === null) ? null : l.avanco;
+      if (l.status === "concluida" || pz.entregue || l.entregue) return { tipo: "entregue", pontos: null, tom: "ok", texto: "Entregue" };
+      if (av !== null && av >= 100) return { tipo: "concluir", pontos: null, tom: "aviso", texto: "Concluir obra" };
+      if (av === null) return { tipo: "sem-medicao", pontos: null, tom: "neutro", texto: "Sem medição" };
+      if (!pz.temDatas) return { tipo: "sem-datas", pontos: null, tom: "neutro", texto: "Sem datas" };
+      if (l.status === "planejamento" && av <= 0 && (pz.prazoPct || 0) <= 0) return { tipo: "planejada", pontos: null, tom: "neutro", texto: "Ainda não começou" };
+      var pontos = Math.min(100, pz.prazoPct || 0) - av;
+      /* prazo vencido e escopo incompleto está atrás MESMO com poucos pontos de diferença (99% medido, prazo estourado):
+         "no ritmo" seria mentira para quem já passou da data */
+      if (pz.vencido && pontos < DEFASAGEM_PONTOS) return { tipo: "atras", pontos: pontos, tom: "alerta", texto: "Prazo vencido, " + av + "% medido" };
+      if (pontos >= DEFASAGEM_PONTOS) return { tipo: "atras", pontos: pontos, tom: (pz.vencido || pz.dias <= 15) ? "alerta" : "aviso", texto: pontos + " pontos atrás" };
+      if (pontos <= -10) return { tipo: "adiantada", pontos: pontos, tom: "ok", texto: (-pontos) + " pontos à frente" };
+      return { tipo: "ritmo", pontos: pontos, tom: "ok", texto: "No ritmo" };
+    },
+    /* a linha "próximo marco" da carteira: só a ENTREGA tem data no cadastro, e o texto diz isso */
+    marcoDaObra: function (l) {
+      var pz = (l && l.prazo) || {};
+      if (l && l.status === "concluida") return { tom: "ok", texto: "Entregue" };
+      if (l && l.avisos && l.avisos.indexOf("entregue-fechar") > -1) return { tom: "aviso", texto: "100% medido: concluir" };
+      var mk = this.proximoMarco(l);
+      if (l && l.status === "planejamento" && pz.temDatas && pz.dias !== null && !pz.vencido) mk = { tom: "neutro", texto: "Entrega em " + pz.dias + " dias" };
+      return mk;
+    },
     janela: function (periodo, hojeISO) {
       var hoje = data(hojeISO);
       var a = hoje.getFullYear(), m = hoje.getMonth();
@@ -515,6 +745,174 @@
     /* ------------------------------------------------------------------
      * calcular(d) — ver cabeçalho do arquivo para o contrato.
      * ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------
+     * PREVISÃO DE 13 SEMANAS (v2). Primeira coluna = VENCIDO (o que já devia ter acontecido e
+     * segue em aberto); depois 13 semanas corridas a partir de hoje (hoje..+6, +7..+13, …).
+     * Regra do caixa projetado (a mesma de `caixa30`): posição inicial = caixa de hoje MENOS o
+     * que já venceu a pagar; receita já atrasada NÃO entra (dinheiro que não chegou não paga
+     * conta) — fica na coluna Vencido, dita à parte. Sem data e depois de 91 dias: de fora, ditos.
+     * `abertos` = [{tipo, valor, data|null}] (financeiro em aberto + boletim aprovado com prazo de receber).
+     * ------------------------------------------------------------------ */
+    previsao13: function (abertos, saldoHoje, hojeISO) {
+      var n = SEMANAS_PREVISAO, i;
+      var mk = function () { return { entradas: 0, saidas: 0, nE: 0, nS: 0 }; };
+      var venc = mk(), semData = mk(), depois = mk(), semanas = [];
+      for (i = 0; i < n; i++) { var w = mk(); w.i = i; w.ini = somaDias(hojeISO, i * 7); w.fim = somaDias(hojeISO, i * 7 + 6); semanas.push(w); }
+      var limite = somaDias(hojeISO, n * 7 - 1);
+      (ehArr(abertos) ? abertos : []).forEach(function (a) {
+        var alvo;
+        if (!a.data) alvo = semData;
+        else if (a.data < hojeISO) alvo = venc;
+        else if (a.data > limite) alvo = depois;
+        else alvo = semanas[Math.min(n - 1, Math.floor(diasEntre(hojeISO, a.data) / 7))];
+        if (a.tipo === "receita") { alvo.entradas += a.valor; alvo.nE++; } else { alvo.saidas += a.valor; alvo.nS++; }
+      });
+      var pos = num(saldoHoje) - venc.saidas, minimo = null, primeiroNegativo = null, soma = { entradas: 0, saidas: 0 };
+      semanas.forEach(function (w) {
+        w.liquido = w.entradas - w.saidas; pos += w.liquido; w.posicao = pos;
+        soma.entradas += w.entradas; soma.saidas += w.saidas;
+        if (minimo === null || pos < minimo.valor) minimo = { valor: pos, semana: w.i };
+        if (pos < 0 && primeiroNegativo === null) primeiroNegativo = w.i;
+      });
+      var movimento = soma.entradas > 0 || soma.saidas > 0;
+      return { semanas: semanas, vencido: venc, semData: semData, depois: depois, saldoInicial: num(saldoHoje) - venc.saidas, saldoHoje: num(saldoHoje),
+        entradas: soma.entradas, saidas: soma.saidas, posicaoFinal: pos, minimo: minimo, primeiroNegativo: primeiroNegativo,
+        temMovimento: movimento, temVencido: venc.nE + venc.nS > 0,
+        /* "vazia" = nada para desenhar nas semanas; o vencido (se houver) vira o destaque do bloco */
+        vazia: !movimento, vazioTotal: !movimento && venc.nE + venc.nS === 0 };
+    },
+    /* o maior primeiro, no máximo `n`: de um mapa {chave: {rotulo, valor, n}} */
+    _topo: function (mapa, n) {
+      var l = [], k;
+      for (k in mapa) if (own(mapa, k)) l.push(mapa[k]);
+      l.sort(function (a, b) { return b.valor - a.valor; });
+      return l.slice(0, n);
+    },
+    /* os últimos `n` meses terminando no mês de hoje ("AAAA-MM") */
+    _ultMeses: function (hojeISO, n) {
+      var h = data(hojeISO), out = [], k;
+      for (k = n - 1; k >= 0; k--) out.push(chaveMes(new Date(h.getFullYear(), h.getMonth() - k, 1)));
+      return out;
+    },
+    /* série de 12 pontos para o KPI: só com dado real (menos de 2 pontos com valor não é tendência) */
+    _serieOk: function (vals) {
+      var ok = (vals || []).filter(function (v) { return v !== null && v !== undefined && isFinite(v); }).length;
+      return ok >= 2 ? vals : null;
+    },
+    /* ------------------------------------------------------------------
+     * COMERCIAL (v2). Fonte única: os MESMOS orçamentos e a MESMA régua da tela Orçamentos
+     * (carteira = soma do preço de venda de todos; valor médio = carteira ÷ quantidade;
+     * conversão = aceitas ÷ enviadas AO CLIENTE — `Orcamento.indicadoresCarteira`). A fiação
+     * entrega a lista pronta [{id, nome, cliente, valor, estado, enviadaEm, resposta}];
+     * o motor só agrupa. Estados (do mais cru ao fechado): em elaboração → em aprovação interna →
+     * aprovado, a enviar → enviado, aguardando resposta → aceito | recusado.
+     * ------------------------------------------------------------------ */
+    comercial: function (lista, hojeISO, diasSemResposta) {
+      var lim = num(diasSemResposta) > 0 ? num(diasSemResposta) : 15;
+      var itens = (ehArr(lista) ? lista : []).filter(function (o) { return !!o && typeof o === "object"; });
+      var DEF = [
+        { id: "elab", rotulo: "Em elaboração", aberto: true },
+        { id: "aprov", rotulo: "Em aprovação interna", aberto: true },
+        { id: "pronto", rotulo: "Aprovados, a enviar", aberto: true },
+        { id: "envi", rotulo: "Enviados, aguardando resposta", aberto: true },
+        { id: "aceit", rotulo: "Aceitos pelo cliente", aberto: false },
+        { id: "recus", rotulo: "Recusados pelo cliente", aberto: false }
+      ];
+      var faixas = {}, tot = 0, enviadas = 0, aceitas = 0, recusadas = 0, semResp = [];
+      DEF.forEach(function (g) { faixas[g.id] = { id: g.id, rotulo: g.rotulo, aberto: g.aberto, n: 0, valor: 0 }; });
+      var classificados = itens.map(function (o) {
+        var v = num(o.valor), env = ehISO(o.enviadaEm) ? String(o.enviadaEm).slice(0, 10) : "", g;
+        if (env) {
+          enviadas++;
+          if (o.resposta === "aceita") { g = "aceit"; aceitas++; }
+          else if (o.resposta === "recusada") { g = "recus"; recusadas++; }
+          else { g = "envi"; var dias = diasEntre(env, hojeISO); if (dias !== null && dias >= lim) semResp.push({ id: o.id, nome: o.nome, valor: v, dias: dias }); }
+        } else if (o.estado === "aprovado") g = "pronto";
+        else if (o.estado === "em_aprovacao") g = "aprov";
+        else g = "elab";
+        faixas[g].n++; faixas[g].valor += v; tot += v;
+        return { id: o.id, nome: o.nome || "", cliente: o.cliente || "", valor: v, faixa: g, rotuloFaixa: faixas[g].rotulo, aberto: faixas[g].aberto };
+      });
+      semResp.sort(function (a, b) { return b.dias - a.dias; });
+      var abertos = classificados.filter(function (o) { return o.aberto; }).sort(function (a, b) { return b.valor - a.valor; });
+      return {
+        temDado: itens.length > 0, total: itens.length, carteira: tot, medio: itens.length ? tot / itens.length : 0,
+        faixas: DEF.map(function (g) { return faixas[g.id]; }),
+        emAberto: { n: abertos.length, valor: abertos.reduce(function (s, o) { return s + o.valor; }, 0) },
+        enviadas: enviadas, aceitas: aceitas, recusadas: recusadas, conversao: enviadas ? aceitas / enviadas * 100 : null,   /* null ≠ 0%: funil que não começou */
+        valorAceito: faixas.aceit.valor, semResposta: semResp, limiteSemResposta: lim,
+        top: abertos.slice(0, 5)
+      };
+    },
+    /* ------------------------------------------------------------------
+     * RESUMO DO DIA (v2): 2 a 3 frases por REGRA, sem IA. Mesmo dado, mesma frase — e o que a
+     * frase diz está em algum bloco abaixo (nada é dito aqui que a tela não mostre).
+     * Cada regra tem prioridade (menor = primeiro). Sem Financeiro (RBAC) as frases de
+     * dinheiro não existem. Devolve [{pri, tom, texto, destino}] já cortado em 3.
+     * ------------------------------------------------------------------ */
+    resumo: function (m) {
+      var self = this, fr = [], R = function (v) { return self.moeda(v); }, din = m.mostrarDinheiro !== false && m.temFinanceiro !== false;
+      var N = function (n, um, varios) { return n + " " + (n === 1 ? um : varios); };
+      var add = function (pri, tom, texto, destino) { fr.push({ pri: pri, tom: tom, texto: texto, destino: destino || "" }); };
+      var cx = m.caixa || {}, c30 = m.caixa30 || {}, venc = m.vencido || { n: 0, valor: 0 }, saldo = num(c30.saldoHoje);
+      if (din) {
+        if (venc.valor > 0) {
+          if (saldo >= venc.valor) {
+            var razao = saldo / venc.valor;
+            add(10, "ok", "Caixa de " + R(saldo) + " cobre " + (razao >= 10 ? String(Math.round(razao)) : fmtBR(razao, 1)) + "× o vencido.", "financeiro");
+          } else if (saldo > 0) add(10, "alerta", "Caixa de " + R(saldo) + " cobre só " + Math.round(saldo / venc.valor * 100) + "% do vencido.", "financeiro");
+          else add(10, "alerta", "Caixa " + (saldo < 0 ? "negativo (" + R(saldo) + ")" : "zerado") + " e " + R(venc.valor) + " vencidos.", "financeiro");
+          add(11, "aviso", N(venc.n, "conta vencida soma", "contas vencidas somam") + " " + R(venc.valor) + ".", "financeiro");
+        } else if (c30.temDado && num(c30.projetado) < 0) add(9, "alerta", "O caixa projetado fica negativo em 30 dias (" + R(c30.projetado) + ").", "financeiro");
+        else if (c30.temDado && saldo > 0) add(30, "ok", "Caixa de " + R(saldo) + " e nenhuma conta vencida.", "financeiro");
+        if (cx.custoIncompleto && cx.custoIncompleto.sim) {
+          add(20, "aviso", cx.custoIncompleto.motivo === "sem-custo" ? "Não há custo pago lançado: a margem real ainda não existe."
+            : "O custo lançado cobre só " + Math.round(cx.custoIncompleto.razao * 100) + "% do recebido: a margem real ainda não é confiável.", "financeiro");
+        }
+        if (m.previsao13 && m.previsao13.primeiroNegativo !== null && m.previsao13.primeiroNegativo !== undefined && !(c30.temDado && num(c30.projetado) < 0))
+          add(12, "alerta", "O caixa fica negativo na semana " + (m.previsao13.primeiroNegativo + 1) + " da previsão.", "financeiro");
+      }
+      var todas = (m.obras && m.obras.todas) || [];
+      var atras = todas.filter(function (l) { return l.status === "andamento" && l.desvio && l.desvio.tipo === "atras"; }).sort(function (a, b) { return b.desvio.pontos - a.desvio.pontos; });
+      if (atras.length) add(13, atras[0].desvio.tom === "alerta" ? "alerta" : "aviso", atras[0].nome + " está " + atras[0].desvio.pontos + " pontos atrás do calendário" + (atras.length > 1 ? " e mais " + N(atras.length - 1, "obra segue atrasada", "obras seguem atrasadas") : "") + ".", "obras");
+      var concl = todas.filter(function (l) { return l.status !== "concluida" && l.desvio && l.desvio.tipo === "concluir"; });
+      if (concl.length) add(25, "info", (concl.length === 1 ? concl[0].nome + " está 100% medida" : N(concl.length, "obra está", "obras estão") + " 100% medidas") + ": falta concluir no cadastro.", "obras");
+      var co = m.comercial;
+      if (co && co.semResposta && co.semResposta.length) add(22, "info", N(co.semResposta.length, "proposta enviada espera", "propostas enviadas esperam") + " resposta há mais de " + co.limiteSemResposta + " dias.", "comercial");
+      fr.sort(function (a, b) { return a.pri - b.pri; });
+      var out = fr.slice(0, 3);
+      if (!out.length) out = [{ pri: 99, tom: "ok", texto: din ? "Nada vencido e nenhuma obra atrás do calendário." : "Nenhuma obra atrás do calendário.", destino: "" }];
+      return out;
+    },
+    /* o que PODE ir para a IA: só números agregados e contagens. Nome de cliente, de obra, de
+       fornecedor ou descrição de lançamento NUNCA entram aqui (tools/test-painel-v2.js varre o JSON). */
+    resumoParaIA: function (m) {
+      var r = function (v) { return Math.round(num(v)); };
+      var cx = m.caixa || {}, c30 = m.caixa30 || {}, venc = m.vencido || { n: 0, valor: 0 }, co = m.comercial || {}, ob = (m.obras && m.obras.todas) || [];
+      return {
+        periodo: m.periodo,
+        caixa: { hoje: r(c30.saldoHoje), projetado30: r(c30.projetado), aReceber: r(cx.aReceber), aPagar: r(cx.aPagar), vencidoValor: r(venc.valor), vencidoQtd: venc.n,
+          margemPct: cx.margem === null || cx.margem === undefined ? null : Math.round(cx.margem), custoIncompleto: !!(cx.custoIncompleto && cx.custoIncompleto.sim) },
+        obras: { total: ob.length, emAndamento: ob.filter(function (l) { return l.status === "andamento"; }).length,
+          atrasadas: ob.filter(function (l) { return l.desvio && l.desvio.tipo === "atras"; }).length, aConcluir: ob.filter(function (l) { return l.desvio && l.desvio.tipo === "concluir" && l.status !== "concluida"; }).length },
+        comercial: { carteira: r(co.carteira), ticketMedio: r(co.medio), conversaoPct: co.conversao === null || co.conversao === undefined ? null : Math.round(co.conversao), enviadasSemResposta: (co.semResposta || []).length },
+        decisoesAbertas: (m.decisoes || []).length
+      };
+    },
+    /* ⚠ v3 (14/11/2026): obra ATIVA = a que ainda pede acompanhamento. Concluída e cancelada não entram na conta de
+       "obras sem orçamento": cobrar orçamento de obra entregue é ruído (era o aviso que ninguém conseguia resolver). */
+    obraAtiva: function (o) { return !!o && o.status !== "concluida" && o.status !== "cancelada"; },
+    /* `obras` já vêm filtradas pelo recorte da tela. Devolve { noRecorte, semOrcamento } só das ATIVAS; o texto
+       "compara X de Y obras" do cartão usa os dois, então os dois falam das mesmas obras. */
+    contarSemOrcamento: function (obras) {
+      var self = this, r = { noRecorte: 0, semOrcamento: 0 };
+      (obras || []).forEach(function (o) {
+        if (!self.obraAtiva(o)) return;
+        r.noRecorte++;
+        if (!o.orcamentoId) r.semOrcamento++;
+      });
+      return r;
+    },
     calcular: function (d) {
       var self = this;
       d = d || {};
@@ -537,12 +935,20 @@
       var nomeObra = {};
       obras.forEach(function (o) { if (o && o.id) nomeObra[o.id] = o.nome || ""; });
       var adiados = this._adiadosLimpos(d.adiados, hoje);
+      var cmp = this.comparacao(periodo, d.comparar, hoje);
+      var cmpAc = { rec: 0, pag: 0 }, saldoAteCmp = 0, semDataReal = 0;
 
       /* ---------- UMA passagem sobre o financeiro ---------- */
       var caixa = { recebido: 0, pago: 0, aReceber: 0, aPagar: 0 };
       var ant = { recebido: 0, pago: 0 };
-      var porMes = {}, porCat = {}, porObraPer = {}, primeiroMes = null;
+      var porMes = {}, porCat = {}, porObraPer = {}, primeiroMes = null, porForn = {}, fornAberto = {};
+      var chaveForn = function (f) { var n = String(f.fornecedor || f.desc || "").replace(/\s+/g, " ").trim(); return n ? n : "Sem descrição"; };
+      var somaForn = function (mapa, f, v) { var nm = chaveForn(f), k = nm.toLowerCase(); if (!mapa[k]) mapa[k] = { rotulo: nm.length > 38 ? nm.slice(0, 37) + "…" : nm, valor: 0, n: 0 }; mapa[k].valor += v; mapa[k].n++; };
       var acum = {};
+      /* ⚠ v3 (14/11/2026): lançamento REALIZADO com data FUTURA (data > hoje) não é dinheiro que já se mexeu: o Caixa hoje
+         só o conta quando a data chegar. `futuro` junta o que ficou de fora do saldo (total e por mês) para o saldo de
+         hoje e a linha do histórico fecharem no mesmo número. Só o saldo muda: recebido/pago do período, por obra e por mês seguem como estavam. */
+      var futuro = { liquido: 0, porMes: {} };
       var contas = [], abertos = [];   /* abertos: tudo em aberto, com data prevista (para a previsão) */
       var limiteContas = somaDias(hoje, metas.contasDias);
       var fimSemana = somaDias(hoje, 7);
@@ -556,17 +962,30 @@
         if (!acum[oid]) acum[oid] = { rec: 0, custo: 0 };
         if (realizado(f)) {
           if (t === "receita") acum[oid].rec += v; else acum[oid].custo += v;
+          /* janela de comparação: soma na MESMA passagem (e o saldo até o fim dela, para o delta do "Caixa hoje") */
+          if (ehISO(f.data)) {
+            var dReal = String(f.data).slice(0, 10);
+            if (cmp) {
+              if (dReal >= cmp.ini && dReal <= cmp.fim) { if (t === "receita") cmpAc.rec += v; else cmpAc.pag += v; }
+              if (dReal <= cmp.fim) saldoAteCmp += (t === "receita" ? v : -v);
+            }
+          } else semDataReal++;
           var mes = ehISO(f.data) ? String(f.data).slice(0, 7) : null;
           if (mes) {
             if (!porMes[mes]) porMes[mes] = { recebido: 0, pago: 0 };
             if (t === "receita") porMes[mes].recebido += v; else porMes[mes].pago += v;
           }
           if (ehISO(f.data)) (t === "receita" ? sparkRec : sparkPag).push({ data: f.data, valor: v });
+          if (ehISO(f.data) && String(f.data).slice(0, 10) > hoje) {
+            var liqF = t === "receita" ? v : -v, mesF = String(f.data).slice(0, 7);
+            futuro.liquido += liqF; futuro.porMes[mesF] = (futuro.porMes[mesF] || 0) + liqF;
+          }
           if (self._noIntervalo(f, jan.ini, jan.fim)) {
             if (mes && (!primeiroMes || mes < primeiroMes)) primeiroMes = mes;
             if (t === "receita") caixa.recebido += v;
             else {
               caixa.pago += v;
+              if (v > 0) somaForn(porForn, f, v);
               var c = f.categoria || "outros";
               porCat[c] = (porCat[c] || 0) + v;
               porObraPer[oid] = (porObraPer[oid] || 0) + v;
@@ -580,6 +999,7 @@
           if (t === "receita") caixa.aReceber += v;
           else {
             caixa.aPagar += v;
+            if (v > 0) somaForn(fornAberto, f, v);
             if (temData && dv <= limiteContas) contas.push({ valor: v, vencimento: dv, vencida: dv < hoje, id: f.id || "", desc: f.desc || f.fornecedor || "", obraId: oid });
             if (temData && dv < hoje && oid) { if (!vencPorObra[oid]) vencPorObra[oid] = { n: 0, valor: 0 }; vencPorObra[oid].n++; vencPorObra[oid].valor += v; }
           }
@@ -595,6 +1015,14 @@
         pago: this._delta(caixa.pago, ant.pago),
         resultado: (ant.recebido > 0 || ant.pago > 0) && Math.abs(ant.recebido - ant.pago) > 0 ? Math.round((caixa.resultado - (ant.recebido - ant.pago)) / Math.abs(ant.recebido - ant.pago) * 100) : null
       };
+      /* v2: custo incompleto do recorte e a janela de comparação (mesmo tamanho; ver `comparacao`) */
+      caixa.custoIncompleto = this.custoIncompleto(caixa.recebido, caixa.pago);
+      var cmpRes = cmpAc.rec - cmpAc.pag, cmpMargem = (cmpAc.rec > 0 && cmpAc.pag > 0) ? cmpRes / cmpAc.rec * 100 : null;
+      caixa.cmp = cmp ? { modo: cmp.modo, rotulo: cmp.rotulo, rotuloPrep: cmp.rotuloPrep, rotuloCurto: cmp.rotuloCurto, ini: cmp.ini, fim: cmp.fim, recebido: cmpAc.rec, pago: cmpAc.pag, resultado: cmpRes, margem: cmpMargem,
+        existe: cmpAc.rec > 0 || cmpAc.pag > 0,
+        custoIncompleto: this.custoIncompleto(cmpAc.rec, cmpAc.pag),
+        delta: { recebido: this.variacao(caixa.recebido, cmpAc.rec), pago: this.variacao(caixa.pago, cmpAc.pag), resultado: this.variacao(caixa.resultado, cmpRes),
+          margemPP: (caixa.margem !== null && cmpMargem !== null) ? caixa.margem - cmpMargem : null } } : null;
       var contasVal = contas.reduce(function (s, c) { return s + c.valor; }, 0);
       caixa.contasVencendo = { n: contas.length, valor: contasVal, ate: limiteContas, dias: metas.contasDias,
         vencidas: contas.filter(function (c) { return c.vencida; }).length };
@@ -626,6 +1054,21 @@
         });
         if (!caixa.porMesAnterior.some(function (x) { return x.recebido > 0 || x.pago > 0; })) caixa.porMesAnterior = null;
       }
+      /* a série de comparação alinhada ao eixo: o mesmo mês, `nMeses` para trás (anterior) ou 12 (ano passado) */
+      caixa.porMesComp = null;
+      if (cmp && eixo.length) {
+        var s3 = 0;
+        caixa.porMesComp = eixo.map(function (ch) {
+          var a0 = parseInt(ch.slice(0, 4), 10), m0 = parseInt(ch.slice(5, 7), 10) - cmp.nMeses;
+          while (m0 <= 0) { m0 += 12; a0--; }
+          var ch2 = a0 + "-" + ("0" + m0).slice(-2), x2 = porMes[ch2] || { recebido: 0, pago: 0 };
+          s3 += x2.recebido - x2.pago;
+          return { mes: ch2, recebido: x2.recebido, pago: x2.pago, saldo: s3 };
+        });
+        if (!caixa.porMesComp.some(function (x) { return x.recebido > 0 || x.pago > 0; })) caixa.porMesComp = null;
+      }
+      /* lucratividade só onde há dado, com o selo de custo incompleto por mês */
+      caixa.porMes.forEach(function (x) { x.incompleto = self.custoIncompleto(x.recebido, x.pago).sim; x.comDado = x.recebido > 0 || x.pago > 0; });
       var melhor = { recebido: null, pago: null, resultado: null };
       caixa.porMes.forEach(function (x) {
         if (x.recebido > 0 && (!melhor.recebido || x.recebido > melhor.recebido.valor)) melhor.recebido = { mes: x.mes, valor: x.recebido };
@@ -714,8 +1157,15 @@
         linha.atraso = null;
         if (o.status === "andamento" && pz.temDatas) {
           if (pz.vencido && !(linha.avanco !== null && linha.avanco >= 100)) linha.atraso = { tom: "alerta", texto: "Atrasada " + (-pz.dias) + (pz.dias === -1 ? " dia" : " dias") };
-          else if (defas !== null && defas >= DEFASAGEM_PONTOS) linha.atraso = { tom: sinal === "alerta" ? "alerta" : "aviso", texto: defas + " pontos atrás do calendário" };
+          /* ⚠ obra 100% medida com prazo vencido caía aqui (defasagem = 1014% − 100%) e saía "914 pontos atrás do
+             calendário": quem terminou o escopo não está atrás de nada — pede para ser CONCLUÍDA (ver `desvio`) */
+          else if (defas !== null && defas >= DEFASAGEM_PONTOS && !(linha.avanco !== null && linha.avanco >= 100)) linha.atraso = { tom: sinal === "alerta" ? "alerta" : "aviso", texto: defas + " pontos atrás do calendário" };
         }
+        /* v2: o que a tabela-portfólio mostra (ver `desvio`, `marcoDaObra`, `custoIncompleto`) */
+        linha.desvio = self.desvio(linha);
+        linha.custoIncompleto = self.custoIncompleto(a.rec, a.custo);
+        linha.marco = self.marcoDaObra(linha);
+        linha.orcadoPct = orcado ? orcado.consumidoPct : null;
         var pts = 0, motivos = [];
         if (o.status === "andamento") {
           if (linha.atraso && linha.atraso.tom === "alerta" && pz.vencido) { pts += 60 + Math.min(40, Math.floor(-pz.dias / 3)); motivos.push({ cod: "vencida", texto: linha.atraso.texto }); }
@@ -781,6 +1231,7 @@
          de fora e são ditos em separado. */
       var saldoHoje = 0, kk;
       for (kk in acum) if (own(acum, kk)) saldoHoje += acum[kk].rec - acum[kk].custo;
+      saldoHoje -= futuro.liquido;   /* realizado com data futura só entra quando a data chegar */
       var caixa30 = { saldoHoje: saldoHoje, entradas: previsao30.entradas, saidas: previsao30.saidas, atrasadasSaidas: atrasadas.saidas, atrasadasEntradas: atrasadas.entradas,
         semData: semData, depois: depois, temDado: previsao30.temDado || saldoHoje !== 0 };
       caixa30.projetado = saldoHoje + previsao30.entradas - previsao30.saidas - atrasadas.saidas;
@@ -953,17 +1404,63 @@
         recebimento: (metas.recebMes > 0 && jan.meses) ? { valor: caixa.recebido, meta: metas.recebMes * jan.meses, metaMes: metas.recebMes, meses: jan.meses, atingido: Math.max(0, Math.min(1.5, caixa.recebido / (metas.recebMes * jan.meses))) } : null
       };
 
-      return {
+      /* ---------- v2: previsão de 13 semanas, vencido, KPIs, comercial e resumo ---------- */
+      var previsao13 = this.previsao13(abertos, saldoHoje, hoje);
+      var vencido = atrasadosCont;   /* {n, valor}: contas a pagar já vencidas e em aberto (a mesma conta da agenda) */
+      var dinheiroOk = d.mostrarDinheiro !== false;
+      var temFinanceiro = dinheiroOk && fin.length > 0;
+      var ult12 = this._ultMeses(hoje, 12);
+      var abre12 = 0;
+      for (var km in porMes) if (own(porMes, km) && km < ult12[0]) abre12 += porMes[km].recebido - porMes[km].pago;
+      var acc12 = abre12;
+      var serieSaldo = ult12.map(function (ch) { var x = porMes[ch] || { recebido: 0, pago: 0 }; acc12 += x.recebido - x.pago - (futuro.porMes[ch] || 0); return acc12; });
+      var serieMargem = ult12.map(function (ch) { var x = porMes[ch]; return (x && x.recebido > 0 && x.pago > 0) ? (x.recebido - x.pago) / x.recebido * 100 : null; });
+      var temHist = ult12.some(function (ch) { return own(porMes, ch); }) || abre12 !== 0;
+      var sem12 = previsao13.semanas.slice(0, 12);
+      var delta = function (v, bom, rotulo) { return v ? { pct: v.pct, dir: v.dir, texto: v.texto, bom: bom, rotulo: rotulo } : null; };
+      var dCaixa = (cmp && semDataReal === 0 && saldoAteCmp !== 0) ? delta(this.variacao(saldoHoje, saldoAteCmp), "alta", "vs. " + cmp.rotuloCurto) : null;
+      var dProj = c30Delta(caixa30.projetado, saldoHoje);
+      if (dProj && dProj.dir === "igual") dProj = null;   /* projetado igual ao caixa de hoje: nada a dizer, não vira "0%" */
+      function c30Delta(a, b) { return b !== 0 ? delta(self.variacao(a, b), "alta", "vs. caixa de hoje") : null; }
+      var dMargem = (caixa.cmp && caixa.cmp.delta.margemPP !== null) ? { pct: caixa.cmp.delta.margemPP, pp: true, dir: caixa.cmp.delta.margemPP > 0.5 ? "alta" : (caixa.cmp.delta.margemPP < -0.5 ? "baixa" : "igual"), bom: "alta", rotulo: "vs. " + cmp.rotuloCurto } : null;
+      var kpis = [
+        { id: "caixaHoje", rotulo: "Caixa hoje", valor: saldoHoje, tom: saldoHoje < 0 ? "neg" : "", delta: dCaixa, spark: temHist ? this._serieOk(serieSaldo) : null, sparkRotulo: "saldo no fim de cada mês, 12 meses", ir: "financeiro",
+          ajuda: "Recebido menos pago desde o início, no recorte, até hoje. Lançamento já pago com data futura só entra quando a data chegar." },
+        { id: "projetado", rotulo: "Caixa em 30 dias", valor: caixa30.projetado, tom: caixa30.projetado < 0 ? "neg" : "", delta: dProj, sub: vencido.valor > 0 ? "já desconta " + this.moeda(vencido.valor) + " vencidos" : "", spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.posicao; })) : null, sparkRotulo: "posição semanal prevista, 12 semanas", ir: "financeiro",
+          ajuda: "Caixa de hoje + o que entra em 30 dias − o que vence em 30 dias − o que já venceu a pagar. Receita atrasada não entra." },
+        { id: "aReceber", rotulo: "A receber", valor: caixa.aReceber, tom: "", delta: null, sub: (aprov.length && caixa.aprovadoNaoPago.valor > 0) ? "+ " + this.moeda(caixa.aprovadoNaoPago.valor) + " em boletins aprovados sem pagamento" : "lançado no Financeiro",
+          spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.entradas; })) : null, sparkRotulo: "entradas previstas por semana, 12 semanas", ir: "financeiro",
+          ajuda: "Receitas em aberto no Financeiro. Boletim aprovado e ainda não pago aparece à parte, no complemento: não é somado." },
+        { id: "aPagar", rotulo: "A pagar", valor: caixa.aPagar, tom: "", delta: null, vencido: vencido.valor > 0 ? { valor: vencido.valor, n: vencido.n } : null, sub: vencido.valor > 0 ? "" : "nada vencido",
+          spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.saidas; })) : null, sparkRotulo: "vencimentos por semana, 12 semanas", ir: "financeiro",
+          ajuda: "Todas as despesas em aberto. O vencido é a parte que já passou da data." },
+        { id: "margem", rotulo: "Margem real", valor: caixa.margem, tom: "", delta: dMargem, custoIncompleto: caixa.custoIncompleto, meta: metas.margem,
+          sub: caixa.margem === null ? (caixa.recebido > 0 ? "sem custo pago no período" : "sem receita no período") : "meta " + fmtBR(metas.margem, 0) + "%",
+          spark: this._serieOk(serieMargem), sparkRotulo: "margem de caixa por mês, só meses com receita e custo", ir: "financeiro",
+          ajuda: "Resultado de caixa ÷ recebido, no período. Com o custo lançado abaixo de 15% do recebido o número não é margem de verdade: aparece esmaecido, com o selo." },
+        { id: "saldoFaturar", rotulo: "Saldo a faturar", valor: contratosOut.saldoFaturar, tom: "", delta: null, sub: "contratado " + this.moeda(contratosOut.valorContratado) + " − medido " + this.moeda(contratosOut.faturado), spark: null, ir: "medicoes",
+          ajuda: "Contratado menos o que já foi medido. Acumulado, não do período." }
+      ];
+
+      var comercial = this.comercial(d.comercial && d.comercial.orcamentos, hoje, 15);
+      var modelo = {
         hoje: hoje, periodo: periodo, janela: jan, filtrado: !!(d.obraIds && d.obraIds.length),
-        caixa: caixa,
+        mostrarDinheiro: dinheiroOk, temFinanceiro: temFinanceiro,
+        caixa: caixa, comparacao: caixa.cmp,
         decisoes: ativas, decisoesAdiadas: adiadas, grupos: grupos, emJogo: emJogo, avisosDoSino: avisosTotal,
         obras: { comMovimento: comMovVis, semMovimento: semMovVis, todas: comMov.concat(semMov), total: obras.length, emAndamento: emAndamento, filtroStatus: statusObras,
           ocultasPeloStatus: (comMov.length - comMovVis.length) + (semMov.length - semMovVis.length), semDatasAndamento: semDatasAndamento, semDatasPlanejamento: semDatasPlanej },
-        categorias: categorias, porObra: porObraPerLista.slice(0, 8), semObraPeriodo: semObraPer,
+        categorias: categorias, porObra: porObraPerLista.slice(0, 10), semObraPeriodo: semObraPer,
+        /* v2.1: rankings dos "Top 10" (só lista o que já está somado: nenhum número novo) */
+        topFornecedores: { pagas: this._topo(porForn, 10), abertas: this._topo(fornAberto, 10) },
+        topFaturamento: comMov.concat(semMov).filter(function (l) { return l.recebido > 0; }).map(function (l) { return { id: l.id, nome: l.nome, valor: l.recebido, status: l.status }; }).sort(function (a, b) { return b.valor - a.valor; }).slice(0, 10),
         contratos: contratosOut, operacao: operacao, metas: metasOut, previsao30: previsao30, caixa30: caixa30, agenda: agenda,
+        previsao13: previsao13, vencido: vencido, kpis: kpis, comercial: comercial,
         spark: { recebido: this.sparkline(hoje, sparkRec), pago: this.sparkline(hoje, sparkPag), obrasComDiario: this.sparkline(hoje, (function () { var seen = {}, out = []; rdos.forEach(function (r) { if (!r || !r.obraId || !ehISO(r.data)) return; var k2 = String(r.data).slice(0, 10) + "|" + r.obraId; if (seen[k2]) return; seen[k2] = 1; out.push({ data: r.data, valor: 1 }); }); return out; })()) },
         prevReal: pr
       };
+      modelo.resumo = this.resumo(modelo);
+      return modelo;
     }
   };
 

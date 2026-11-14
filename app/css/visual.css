@@ -303,22 +303,15 @@ html[data-visual="nova"] .pill { border-radius: 99px; letter-spacing: .03em; }
 html[data-visual="nova"] .toast { border-radius: 14px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 
 /* ================================================================ PAINEL */
-html[data-visual="nova"] .pn-card { border-radius: 20px; border-color: var(--linha); box-shadow: var(--sombra); background: var(--card-bg); }
-html[data-visual="nova"] .pn-cab h1 { font-size: clamp(30px, 3vw, 40px); }
-html[data-visual="nova"] .pn-ctl { border-radius: 99px; height: 36px; }
-html[data-visual="nova"] .pn-ctl:hover { border-color: var(--linha-forte); }
+html[data-visual="nova"] .pv-card, html[data-visual="nova"] .pv-fila { background: var(--card-bg); }
+html[data-visual="nova"] .pn-ctl { border-radius: 99px; }
 html[data-visual="nova"] .pn-filtro select { border-radius: 99px; }
-html[data-visual="nova"] .pn-sec h2,
-html[data-visual="nova"] .pn-sec h3 { font-family: var(--fonte-tit); letter-spacing: -.02em; }
-html[data-visual="nova"] .pn-tiles > * { border-radius: 20px; transition: transform .25s, border-color .25s, box-shadow .25s; }
-html[data-visual="nova"] .pn-tiles > *:hover { transform: translateY(-2px); box-shadow: var(--sombra-hover); }
-html[data-visual="nova"] .pn-val,
-html[data-visual="nova"] .pn-tiles b,
-html[data-visual="nova"] .pn-tiles strong { font-family: var(--fonte-tit); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
-html[data-visual="nova"] .pn-chip { border-radius: 99px; }
-html[data-visual="nova"] .pn-btn,
-html[data-visual="nova"] .pn-btn-p,
-html[data-visual="nova"] .pn-btn-mini { border-radius: 99px; }
+html[data-visual="nova"] .pv-cab h2, html[data-visual="nova"] .pv-fila-cab h2, html[data-visual="nova"] .pv-top h3 { font-family: var(--fonte-tit); letter-spacing: -.02em; }
+html[data-visual="nova"] .pv-kpi-v, html[data-visual="nova"] .pv-st-v, html[data-visual="nova"] .pv-fq b, html[data-visual="nova"] .pv-venc-v,
+html[data-visual="nova"] .pv-cstats dd, html[data-visual="nova"] .pv-op-v, html[data-visual="nova"] .pv-g-val { font-family: var(--fonte-tit); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+html[data-visual="nova"] .pv-fr { font-family: var(--fonte-tit); letter-spacing: -.025em; }
+html[data-visual="nova"] .pv-chip, html[data-visual="nova"] .pn-btn, html[data-visual="nova"] .pn-btn-p, html[data-visual="nova"] .pn-btn-mini { border-radius: 99px; }
+
 
 /* ================================================================= OBRAS
  * A cena escura continua (com foto quando a obra tem). Sem foto, ela ganha a
@@ -508,9 +501,6 @@ html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) 
 }
 html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) select option { background: #0d1626; color: #eaf0f7; }
 
-/* painel de tile do Painel: o número grande na letra do site */
-html[data-visual="nova"] .pn-tile-val { font-family: var(--fonte-tit); letter-spacing: -.04em; font-weight: 700; font-variant-numeric: tabular-nums; }
-
 /* =====================================================================
  * SISTEMA DE INTERFACE — 23/10/2026 (pedido do Rogério: "interface principal
  * fraca e amadora; gráficos melhores; tudo mais interativo")
@@ -577,32 +567,6 @@ html[data-visual="nova"] input[type="date"]:not(.cell):focus-visible {
   outline: var(--foco); outline-offset: 2px; box-shadow: var(--anel);
 }
 html[data-visual="nova"] .sb-item:focus-visible { outline-offset: -2px; }
-
-/* ---- 3. indicadores do Painel */
-html[data-visual="nova"] .pn-tile { padding: 16px 18px 14px; gap: 6px; background: var(--card-bg); }
-html[data-visual="nova"] .pn-t-ok,
-html[data-visual="nova"] .pn-t-alerta,
-html[data-visual="nova"] .pn-t-aco { background: var(--card-bg); }
-html[data-visual="nova"] .pn-tile::before { top: 18px; bottom: auto; height: 26px; width: 4px; border-radius: 0 4px 4px 0; }
-html[data-visual="nova"] .pn-tile-rot { font-weight: 600; color: var(--texto); }
-html[data-visual="nova"] .pn-tile-mini { margin-top: 8px; }
-html[data-visual="nova"] .pn-tile .pn-mini { height: 48px; }
-html[data-visual="nova"] .pn-tile[data-gacao]:hover { box-shadow: var(--sombra-hover); }
-html[data-visual="nova"] .pn-tile[data-gacao]:active { transform: translateY(0); }
-html[data-visual="nova"] .pn-tile:focus-visible { outline: var(--foco); outline-offset: 2px; }
-
-/* ---- 3b. gráficos. `.pn-graf svg { max-width: 560px }` (0,1,1) vencia o `max-width: none` do
-   `.pn-combo` (0,1,0): o fluxo, a previsão e a lucratividade paravam em 560 px e deixavam 20% do
-   cartão vazio à direita. Como o desenho é todo em unidades do viewBox, esticar escala TUDO junto
-   (barra, eixo, rótulo) — nenhuma colisão nova, a letra só fica maior na tela. */
-html[data-visual="nova"] .pn-graf svg.pn-combo,
-html[data-visual="nova"] .pn-graf svg.pn-lucro-svg { max-width: none; }
-@media (min-width: 821px) {
-  html[data-visual="nova"] .pn-donut { grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
-  html[data-visual="nova"] .pn-donut svg { width: 112px; height: 112px; }
-}
-/* o valor no centro da rosca passava do furo ("R$ 215 mil" tocava o anel) */
-html[data-visual="nova"] .pn-d-val { font-size: 11.5px; }
 
 /* ---- 4. tabelas e faixas de indicador */
 html[data-visual="nova"] table.tbl th {

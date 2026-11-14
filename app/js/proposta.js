@@ -282,6 +282,7 @@
 
     /* Gera o documento completo (innerHTML do container de impressão). */
     gerarHTML: function (orc, usuario) {
+      if (!Proposta.mostrarBdi(orc)) orc = Proposta._orcSemBdi(orc);   /* chave «Mostrar BDI na proposta» desligada: nem no texto do usuário */
       var c = Orcamento.garantirComercial(orc);
       var t = Orcamento.totais(orc);
       var sint = Orcamento.sintetico(orc);
@@ -360,8 +361,8 @@
       var citarBase = Proposta.citarBasePrecos();
       P.push(pg(sc("Apresentação"), '<p>' + apresentacao + '</p>' +
         (citarBase ? '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
-        'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
-        'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>' : '')));
+        'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>' +
+        (Proposta.mostrarBdi(orc) ? ', acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>' : '') + '.</p>' : '')));
 
       // 3) ENTENDIMENTO DO ESCOPO
       function liEscopo(s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }
@@ -395,8 +396,8 @@
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
         'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>') +
         (citarBase ? '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
-        ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
-        'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>' : '')));
+        ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>' +
+        (Proposta.mostrarBdi(orc) ? ', BDI conforme metodologia do Acórdão TCU nº 2.622/2013' : '') + '.</p>' : '')));
 
       // 5b) CRONOGRAMA DE EXECUÇÃO (só quando há como calcular)
       var cronoHTML = this._cronograma(orc);
@@ -447,7 +448,7 @@
         '<tbody>' + (linhasSint || '<tr><td colspan="4">—</td></tr>') + '</tbody>' +
         '<tfoot><tr><td colspan="2">VALOR TOTAL DA PROPOSTA</td><td class="r">' + Util.fmtMoeda(TP.total) + '</td><td class="r">100%</td></tr></tfoot></table>' +
         tabOpc +
-        '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(custoRef) + '.</p>'));
+        (Proposta.mostrarBdi(orc) ? '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(custoRef) + '.</p>' : '')));
 
       // 7) CONDIÇÕES COMERCIAIS
       P.push(pg(sc("Condições Comerciais"),
@@ -1081,6 +1082,36 @@
    * ===================================================================== */
   /* ⚙ Empresa › Documentos: a proposta cita a base de preços e o regime?
      Sem o módulo (Node, testes) ou sem a preferência: sim, como sempre. */
+  /* CHAVE «MOSTRAR BDI NA PROPOSTA» (Motor, ?previa=motor): desligada em orc.mor.proposta.mostrarBdi = false, o documento
+     NÃO menciona BDI nenhum (nem percentual, nem metodologia, nem «preços já incluem»). Sem a chave, tudo igual ao de sempre. */
+  /* A FRASE INTEIRA que cita BDI sai (revisão adversária): tirar só a palavra deixava «Valores com 25% incluso.» no papel. Frase = até o
+     ponto/!/? seguido de espaço (o ponto de «2.622/2013» não conta); linha «Título | descrição» perde só a descrição. */
+  Proposta.semBdiTexto = function (t) {
+    if (typeof t !== "string" || !/\bBDI\b/i.test(t)) return t;
+    function frases(txt) { var out = [], re = /([\s\S]*?[.!?]+(?=\s|$))\s*|([\s\S]+$)/g, m; while ((m = re.exec(txt)) && m[0] !== "") out.push((m[1] || m[2] || "").replace(/\s+$/, "")); return out; }
+    return t.split("\n").map(function (linha) {
+      if (!/\bBDI\b/i.test(linha)) return linha;
+      var pref = "", resto = linha, barra = linha.indexOf(" | ");
+      if (barra > -1) { pref = linha.slice(0, barra); resto = linha.slice(barra + 3); }
+      var ok = frases(resto).filter(function (f) { return !/\bBDI\b/i.test(f); }).join(" ");
+      return barra > -1 ? (ok ? pref + " | " + ok : pref) : ok;
+    }).join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+  };
+  Proposta.semBdiDeep = function (o) {
+    if (typeof o === "string") return Proposta.semBdiTexto(o);
+    if (Object.prototype.toString.call(o) === "[object Array]") return o.map(Proposta.semBdiDeep);
+    if (o && typeof o === "object") { var r = {}, k; for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r[k] = Proposta.semBdiDeep(o[k]); return r; }
+    return o;
+  };
+  /* o orçamento para o papel quando a chave está DESLIGADA: textos comerciais do usuário sem as frases de BDI (cópia; o original não muda) */
+  Proposta._orcSemBdi = function (orc) {
+    var c = {}, k; for (k in orc) if (Object.prototype.hasOwnProperty.call(orc, k)) c[k] = orc[k];
+    c.comercial = Proposta.semBdiDeep(orc.comercial || {});
+    return c;
+  };
+  Proposta.mostrarBdi = function (orc) {
+    return !(orc && orc.mor && orc.mor.proposta && orc.mor.proposta.mostrarBdi === false);
+  };
   Proposta.citarBasePrecos = function () {
     try { return !(typeof Empresa !== "undefined" && Empresa && typeof Empresa.citarBasePrecos === "function" && Empresa.citarBasePrecos() === false); }
     catch (e) { return true; }

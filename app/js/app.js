@@ -2366,7 +2366,7 @@
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
       if (this._planilhaClick(e)) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar],[data-an-voltar],[data-an-desc]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-mor-etapa],[data-mor-porque],[data-mor-ok],[data-mor-ok-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar],[data-an-voltar],[data-an-desc]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -2645,6 +2645,11 @@
       }
       // renomear etapa (sem recriar)
       if (t.dataset.editEtapa) { this.renomearEtapa(t.dataset.editEtapa); return; }
+      /* Motor de Orçamento por Regras (prévia ?previa=motor): painel de itens guiados da etapa */
+      if (t.dataset.morEtapa) { if (typeof MorUI !== "undefined") MorUI.abrirEtapa(this, t.dataset.morEtapa); return; }
+      if (t.dataset.morPorque) { if (typeof MorUI !== "undefined") { var mpq = t.dataset.morPorque.split("|"); MorUI.porque(this, mpq[0], mpq[1]); } return; }
+      if (t.dataset.morOk) { if (typeof MorUI !== "undefined") { var mok = t.dataset.morOk.split("|"); MorUI.confirmarOk(this, mok[0], mok[1]); } return; }
+      if (t.dataset.morOkEtapa) { if (typeof MorUI !== "undefined") MorUI.confirmarOk(this, t.dataset.morOkEtapa, ""); return; }
       // remover etapa
       if (t.dataset.delEtapa) { this.removerEtapa(t.dataset.delEtapa); return; }
       // recolher/expandir a etapa (accordion) — só marcação, nada de persistir
@@ -11954,8 +11959,11 @@
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Adicionar", classe: "primary", onClick: function () {
-            Orcamento.addEtapa(self.orcAtual, (UI.el("et-nome") || {}).value || "Nova Etapa");
+            var nomeEt = (UI.el("et-nome") || {}).value || "Nova Etapa";
+            Orcamento.addEtapa(self.orcAtual, nomeEt);
             self.persistir(); UI.fecharModal(); self.render();
+            /* prévia ?previa=motor: etapa que existe no catálogo abre o painel de itens guiados (nada entra sem confirmar) */
+            if (typeof MorUI !== "undefined") { try { MorUI.aoAdicionarEtapa(self, nomeEt); } catch (eMor) {} }
           } }
         ]);
       // o cursor já entra no campo (o assistente abre este modal sozinho ao criar o orçamento)
@@ -16682,6 +16690,8 @@
           { texto: "Gerar em Word", classe: "", onClick: function () { gerar({ word: true }); } },
           { texto: "Gerar", classe: "primary", onClick: function () { gerar(null); } }
         ]);
+      /* ?previa=motor: a chave «Mostrar BDI na proposta» (liga/desliga) no topo, bem à vista */
+      try { if (typeof MorUI !== "undefined") { MorUI._escutarDoc(); MorUI.injetarChaveBdi(self.orcAtual); } } catch (eBc) {}
     },
 
     /* o documento de sempre — o caminho que existia antes dos modelos.
@@ -16743,8 +16753,11 @@
       var m = PropTpl.modelo(raw);
       /* orçamento guiado: a carta de órgão público leva as declarações opcionais marcadas (e a troca da frase da impugnação) numa CÓPIA do modelo */
       if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { try { m = OrcGuiaUI.modeloComDeclaracoes(m, orc); } catch (eMd) {} }
+      /* chave «Mostrar BDI na proposta» (Motor): desligada, nenhuma página do modelo menciona BDI */
+      if (typeof MorUI !== "undefined" && MorUI.semBdiNoModelo) { try { m = MorUI.semBdiNoModelo(m, orc); } catch (eBd) {} }
       var temEmp = typeof Empresa !== "undefined";
       var c = orc.comercial || {};
+      if (Proposta.mostrarBdi && !Proposta.mostrarBdi(orc) && Proposta.semBdiDeep) c = Proposta.semBdiDeep(c);   /* chave de BDI desligada: nem o texto do usuário cita */
       var hoje = Util.agoraISO().slice(0, 10);
 
       /* as composições abertas (nível "composicoes" da página de preços) e o
@@ -16764,9 +16777,9 @@
           numero: orc.numero || "",
           data: hoje,
           /* base de preços, regime e BDI (%) — o modelo decide se cita */
-          referencia: Proposta.referenciaParaModelo ? Proposta.referenciaParaModelo(orc) : {},
+          referencia: (function () { var rf = Proposta.referenciaParaModelo ? Proposta.referenciaParaModelo(orc) : {}; if (Proposta.mostrarBdi && !Proposta.mostrarBdi(orc)) { rf = Util.clone(rf); rf.bdiPct = 0; } return rf; })(),
           /* a composição do BDI só viaja quando o modelo tem a página dela: o payload de quem não pediu não muda */
-          bdi: (m.paginas || []).some(function (x) { return x.tipo === "bdi"; }) && Proposta.bdiParaModelo ? Proposta.bdiParaModelo(orc) : undefined,
+          bdi: (!Proposta.mostrarBdi || Proposta.mostrarBdi(orc)) && (m.paginas || []).some(function (x) { return x.tipo === "bdi"; }) && Proposta.bdiParaModelo ? Proposta.bdiParaModelo(orc) : undefined,
           /* a marca d'água e o rodapé "nome" leem os MESMOS interruptores de
              ⚙ Empresa › Documentos que o clássico (marcaDaguaTexto/creditos) */
           textos: (function () {
@@ -18451,7 +18464,7 @@
        do endereço vira chave arbitrária no aparelho. */
     /* `visual` = cara nova do sistema (07/10/2026): o index.html lê esta chave antes do 1º paint e põe html[data-visual="nova"].
        ⚠ o objeto fica numa LINHA só: tools/test-previa-url.js recorta esta linha para rodar o _previaDaUrl em Node. */
-    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'], orcamento: ["orcapro:tela:orcamento-guiado:v1", '{"guiado":true}'] },
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'], orcamento: ["orcapro:tela:orcamento-guiado:v1", '{"guiado":true}'], motor: ["orcapro:tela:motor:v1", '{"motor":true}'] },
     /* `?previa=icamento` ou uma LISTA `?previa=icamento,cristal` (um atalho liga as duas); `-desligar` em cada nome apaga.
        Nome que não existe em _PREVIAS é ignorado — nunca grava chave inventada. */
     _previaDaUrl: function () {

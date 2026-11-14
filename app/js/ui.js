@@ -2094,6 +2094,7 @@
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
           '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
+          (typeof MorUI !== 'undefined' ? MorUI.botaoEtapa(e) : '') +
           '<button class="btn sm" data-add-sub="' + e.id + '" title="Dividir esta etapa em sub etapas (ex.: 1.1 Canteiro de Obras)">+ Sub etapa</button>' +
           '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
           '<button class="btn sm ico' + (e.opcional ? ' primary' : '') + '" data-opc-etapa="' + e.id + '" title="' + (e.opcional
@@ -2185,6 +2186,7 @@
             /* title com a descrição inteira: no modo compacto a célula corta em
                2 linhas, e sem isto o resto do texto ficaria inalcançável */
             '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
+              (typeof MorUI !== 'undefined' ? MorUI.marcaItem(e, it) : '') +
               (_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
               (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
                 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +

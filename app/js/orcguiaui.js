@@ -40,7 +40,11 @@
       return c;
     },
 
-    passos: function (orc, extra) { return OrcGuia.passos(orc, this.ctx(orc, extra)); },
+    passos: function (orc, extra) {
+      /* ?previa=motor: o roteiro de 6 passos (Tipo de obra → Parâmetros/Documento → Etapas → Conferência → BDI → Proposta) */
+      if (typeof MorUI !== "undefined" && MorUI.ativo() && typeof MorRoteiro !== "undefined") { try { return MorRoteiro.passos(orc, this.ctx(orc, extra)); } catch (eMr) { /* cai no de 4 passos */ } }
+      return OrcGuia.passos(orc, this.ctx(orc, extra));
+    },
 
     /* o HTML do roteiro, para o editor encaixar no topo */
     roteiroHtml: function (orc, extra) {
@@ -72,6 +76,7 @@
       var orc = app.orcAtual; if (!orc) return;
       var p = this.passos(orc).filter(function (x) { return x.id === id; })[0];
       if (!p) return;
+      if (id === "tipo" || id === "parametros" || id === "etapas" || id === "conferencia") { MorUI.irPasso(app, id); return; }
       if (id === "base") {
         /* faltando uma base que o programa sabe instalar: abre o painel e já começa a instalar — "Falta a base X. Clique para instalar" é UM clique */
         var pf = p.pendencias.filter(function (x) { return x.instalar && x.item; })[0];
@@ -100,6 +105,7 @@
           else aba("planilha");
           break;
         case "planilha": case "escopo": aba("planilha"); break;
+        case "tipo": case "parametros": case "etapas": case "conferencia": if (typeof MorUI !== "undefined") MorUI.irPasso(app, alvo); break;
         case "preco": case "quantidade": this.irItemPendente(app, orc, alvo); break;
         case "cliente": case "condicoes": case "bdi":
           aba("bdi");

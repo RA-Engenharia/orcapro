@@ -1673,6 +1673,8 @@
       /* a ficha da obra é um estado DA TELA DE OBRAS: saiu dela, fechou.
          Sem isto, voltar a Obras dias depois reabria a ficha da última obra. */
       if (view !== "obras") this._ovFicha = null;
+      /* o modo TV (Painel, "Expandir") é do Painel: saiu dele, o menu e a barra voltam */
+      if (view !== "dashboard" && this._pnTv && this._pnTvLigar) this._pnTvLigar(false);
       // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       /* licença só do OrçaPRO Modela: fora do BIM (e da Ajuda), a tela trancada — guarda em FUNÇÃO */
@@ -2586,10 +2588,11 @@
      *   `FinStatus` (caixa). O que `PainelDados` acrescenta é a guarda que
      *   faltava (obra concluída, margem sem custo, prazo com teto), a fila
      *   única em grupos, a previsão de 30 dias e a agenda da semana.
-     * ⚠ A TELA É FEITA DE BLOCOS (`PainelDados.BLOCOS`): cada um é um método
-     *   `_pnBl<Nome>` que devolve "" quando não tem o que mostrar. A pessoa
-     *   escolhe ordem e visibilidade em "Organizar painel"; a fila de decisões
-     *   é a coluna da direita e não se esconde.
+     * ⚠ A TELA É FEITA DE BLOCOS (`PainelDados.BLOCOS`): cada um é uma função de
+     *   `PainelUI.blocos` (js/painelui.js) que devolve "" quando não tem o que
+     *   mostrar. A pessoa escolhe ordem e visibilidade em "Organizar painel"; a
+     *   faixa horizontal "Precisa de você hoje" (a fila completa abre numa
+     *   gaveta) é fixa e não se esconde.
      * ⚠ GANCHOS PRESERVADOS: `data-gacao="dash-obra|dash-periodo|
      *   dash-obra-multi|dash-metas|abrir-retencao"`, `data-view`, e os
      *   `data-aviso="pago-sem-receita|aprovada-nao-paga"` continuam no DOM.
@@ -2624,10 +2627,10 @@
       if (this._dashPer == null && f.per) this._dashPer = f.per;
       if (this._dashMulti == null && f.multi) this._dashMulti = true;
       if (this._dashStatus == null && f.status) this._dashStatus = f.status;
-      if (this._dashComparar == null && f.comparar) this._dashComparar = true;
+      if (this._dashCmp == null && f.cmp) this._dashCmp = f.cmp;
     },
     _pnGravarFiltros: function () {
-      this._pnGravar({ obra: this._dashObra, per: this._dashPer, multi: !!this._dashMulti, status: this._dashStatus || "", comparar: !!this._dashComparar });
+      this._pnGravar({ obra: this._dashObra, per: this._dashPer, multi: !!this._dashMulti, status: this._dashStatus || "", cmp: this._dashCmp || "anterior" });
     },
     /* troca de filtro: redesenha só o #main e devolve o scroll; sem DOM (ou
        sem App), cai no App.render() de sempre */
@@ -2642,13 +2645,14 @@
       main.innerHTML = App._avisosDadoGestao() + html;
       if (this.afterRender) this.afterRender("dashboard");
       main.scrollTop = st;
+      /* a gaveta da fila estava aberta (adiar, aprovar, pagar): o Painel por baixo mudou, então a gaveta é refeita com o dado novo */
+      if (this._pnFilaAberta && typeof document !== "undefined" && document.getElementById("modal-bg")) this.painelFilaAbrir();
     },
     dashTrocaStatus: function (s) {
       var ok = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
       this._dashStatus = (s && ok[s]) ? s : "";
       this._pnRender();
     },
-    dashTrocaComparar: function () { this._dashComparar = !this._dashComparar; this._pnRender(); },
     /* adiar não apaga: o ponto volta sozinho quando o prazo vence */
     painelAdiar: function (chave) {
       if (!chave || typeof PainelDados === "undefined") return;
@@ -2670,12 +2674,12 @@
     painelOrganizar: function () {
       if (typeof PainelDados === "undefined" || typeof UI === "undefined" || !UI.modal) return;
       var blocos = PainelDados.blocosOrdenados(this._pnPrefs()), e = Util.esc;
-      var corpo = '<p class="pn-org-sub">Escolha o que aparece e em que ordem. A fila "Precisa de você hoje" fica sempre. Vale para você, neste computador.</p><div class="pn-org">'
+      var corpo = '<p class="pn-org-sub">Escolha o que aparece e em que ordem. Blocos de meia largura formam par; sozinho, o bloco ocupa a linha inteira. A faixa "Precisa de você hoje" fica sempre. Vale para você, neste computador.</p><div class="pn-org">'
         + blocos.map(function (b, i) {
           return '<div class="pn-org-row' + (b.on ? "" : " off") + '">'
             + '<button class="pn-org-chk" data-gacao="painel-bloco-toggle" data-id="' + e(b.id) + '" aria-pressed="' + (b.on ? "true" : "false") + '" title="' + (b.on ? "Esconder" : "Mostrar") + '">' + (b.on ? "&#10003;" : "") + "</button>"
             + '<span class="pn-org-nome">' + e(b.nome) + "</span>"
-            + '<span class="pn-org-col">' + (b.col === "esq" ? "coluna dos gráficos" : "largura inteira") + "</span>"
+            + '<span class="pn-org-col">' + (b.larg === "meia" ? "meia largura" : "largura inteira") + "</span>"
             + '<button class="pn-org-mv" data-gacao="painel-bloco-sobe" data-id="' + e(b.id) + '" title="Subir"' + (i === 0 ? " disabled" : "") + ">&#8593;</button>"
             + '<button class="pn-org-mv" data-gacao="painel-bloco-desce" data-id="' + e(b.id) + '" title="Descer"' + (i === blocos.length - 1 ? " disabled" : "") + ">&#8595;</button>"
             + "</div>";
@@ -2723,6 +2727,7 @@
     renderPainelNovo: function () {
       if (typeof CustoEtapa === "undefined" || !CustoEtapa.totalVivo) return this._moduloNaoCarregado("Painel de Gestão", "js/custoetapa.js");
       if (typeof PainelDados === "undefined") return this._moduloNaoCarregado("Painel de Gestão", "js/painel.js");
+      if (typeof PainelUI === "undefined") return this._moduloNaoCarregado("Painel de Gestão", "js/painelui.js");
       var self = this;
       this._pnLerFiltros();
       var esc = this._dashEscopo(), metas = this._metas(), prefs = this._pnPrefs();
@@ -2775,7 +2780,8 @@
       var retido = (_podeFin && _podeMod("medicoes") && typeof Atencao !== "undefined") ? Atencao.retencaoPresa(med) : 0;
 
       var modelo = PainelDados.calcular({
-        hoje: hoje, periodo: this._dashPer, obraIds: esc.ids, statusObras: this._dashStatus || "", adiados: prefs.adiados,
+        hoje: hoje, periodo: this._dashPer, comparar: this._dashCmp || prefs.cmp || "anterior", obraIds: esc.ids, statusObras: this._dashStatus || "", adiados: prefs.adiados,
+        comercial: _podeMod("orcamentos") ? { orcamentos: this._pnOrcamentos() } : null,
         /* RBAC entra pela porta do motor: sem Medições a lista vai vazia (nada
            de boletim na fila, na agenda, nos contadores); sem Financeiro a fila
            não imprime R$ (`mostrarDinheiro`). O avanço não depende disso: vem
@@ -2797,15 +2803,7 @@
     },
 
     /* ---------- pedaços de texto do Painel novo ---------- */
-    /* ================= ESTILO DOS GRÁFICOS (26/10/2026) =================
-     * O Rogério escolheu o estilo "vidro e profundidade" entre três opções; ele é o
-     * padrão (a barra de prévia e os estilos A e B saíram). O Painel sempre escreve
-     * `data-graf="c"` e a cara vem do CSS (`.pn[data-graf="c"]`); o JS só acrescenta o que
-     * o desenho precisa (degradê, rótulo na ponta, variação na dica, minigráfico).
-     * ⚠ Entrada animada só na 1ª renderização da sessão (`_pnJaAnimou`); o CSS só anima
-     *   com prefers-reduced-motion: no-preference. */
-    _pnGraf: function () { return "c"; },
-    _pnGid: 0,
+    /* ================= PEDAÇOS DE TEXTO DO PAINEL ================= */
     _pnN: function (n, um, varios) { return n + " " + (n === 1 ? um : varios); },
     _pnPeriodoRotulo: function (p) { return ({ mes: "este mês", "6m": "últimos 6 meses", ano: "este ano", tudo: "desde sempre" })[p] || "últimos 6 meses"; },
     _pnPeriodoAnterior: function (p) { return ({ mes: "o mês anterior", "6m": "os 6 meses anteriores", ano: "o ano anterior" })[p] || ""; },
@@ -2818,20 +2816,6 @@
     },
     _pnDataCurta: function (isoStr) { var s = String(isoStr || ""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) : s; },
     _pnMesCurto: function (ch) { return String(ch || "").slice(5, 7) + "/" + String(ch || "").slice(2, 4); },
-    _pnDelta: function (pct, periodo) {
-      if (pct === null || pct === undefined) return "";
-      var ant = this._pnPeriodoAnterior(periodo);
-      if (!ant) return "";
-      var sinal = pct > 0 ? "+" : (pct < 0 ? "−" : "");
-      return '<span class="pn-delta' + (pct < 0 ? " pn-delta-neg" : "") + '">' + sinal + Math.abs(pct) + "% que " + ant + "</span>";
-    },
-    /* sem período anterior (desde sempre), o cartão diz o melhor mês */
-    _pnDeltaOuMelhor: function (pct, periodo, melhor, rotulo) {
-      var d = this._pnDelta(pct, periodo);
-      if (d) return d;
-      if (!melhor) return "";
-      return '<span class="pn-delta pn-delta-neutro">' + rotulo + " " + this._pnMesCurto(melhor.mes) + ", " + Util.esc(this._fmtK(melhor.valor)) + "</span>";
-    },
     _pnDecisao: function (x) {
       var self = this, fk = function (v) { return self._fmtK(v); }, esc = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
       var o = x.obraNome ? esc(x.obraNome) : "";
@@ -2890,758 +2874,220 @@
       }
       if (dest === "medicoes") return App.irPara("medicoes");
     },
-    _pnMiniBarras: function (vals, cor, rotulos, fmt, serie) {
-      if (!vals || !vals.length) return "";
-      /* a faixa ocupa a largura do cartão (preserveAspectRatio="none"): era um risco de 60 px no meio de 300 */
-      var W = 240, H = 48, n = vals.length, passo = W / n, bw = Math.min(16, passo * 0.5);
-      var max = Math.max.apply(null, vals.concat([0])), min = Math.min.apply(null, vals.concat([0]));
-      var esp = (max - min) || 1, y0 = 2 + (max - 0) / esp * (H - 4);
-      var self = this, e = Util.esc, svg = '<svg class="pn-mini" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">';
-      vals.forEach(function (v, i) {
-        var y = 2 + (max - v) / esp * (H - 4), top = Math.min(y, y0), h = Math.max(1, Math.abs(y - y0));
-        svg += '<rect x="' + (i * passo + (passo - bw) / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + cor + '"' + (i === n - 1 ? "" : ' opacity=".55"') + "/>";
-      });
-      /* a coluna de leitura é mais alta que a barra: mês de valor pequeno também se alcança com o mouse */
-      vals.forEach(function (v, i) {
-        svg += '<rect class="g-hit" x="' + (i * passo).toFixed(1) + '" y="0" width="' + passo.toFixed(1) + '" height="' + H + '"' + self._pnGt(rotulos[i], [[serie || "Valor", Util.fmtMoeda(v), cor]], "") + "/>";
-      });
-      return svg + "</svg>";
-    },
-    _pnTile: function (o) {
-      var ir = o.ir ? ' data-gacao="graf-ir" data-destino="' + o.ir + '" tabindex="0" role="link"' : "";
-      return '<div class="pn-tile ' + (o.cls || "") + '"' + ir + (o.titulo ? this._pnGt(o.rotulo, [["Valor exato", o.titulo]], o.ir === "medicoes" ? "Clique: abrir as Medições" : (o.ir ? "Clique: abrir o Financeiro" : "")) : "") + '><div class="pn-tile-cab"><span class="pn-tile-rot">' + o.rotulo + "</span>" + (o.delta || "") + "</div>"
-        + '<div class="pn-tile-val">' + o.valor + "</div>"
-        + (o.sub ? '<div class="pn-tile-sub">' + o.sub + "</div>" : "")
-        + (o.mini ? '<div class="pn-tile-mini">' + o.mini + "</div>" : "") + "</div>";
-    },
-    /* --- ajudantes dos três estilos (só rodam com `?previa=graf-*`) --- */
-    /* degradês do gráfico: as paradas são CLASSES (g-st-*), e quem define a cor é o
-       CSS do estilo escolhido — o mesmo desenho serve aos três */
-    _pnGradDefs: function (gid) {
-      return "<defs>" + ["a", "b", "c"].map(function (k) {
-        return '<linearGradient id="' + gid + "-" + k + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="g-st g-st-' + k + '0"/><stop offset="1" class="g-st g-st-' + k + '1"/></linearGradient>';
-      }).join("") + "</defs>";
-    },
-    /* "+12%", "−8%", "igual", "novo" — a variação que a dica diz ao lado do valor */
-    _pnVarTxt: function (v) {
-      if (!v) return "";
-      if (v.dir === "novo") return "novo";
-      if (v.dir === "sem") return "—";
-      if (v.dir === "igual") return "igual";
-      return (v.pct > 0 ? "+" : "\u2212") + Math.abs(v.pct) + "%";
-    },
-    /* rótulo direto na ponta da barra mais alta de cada série */
-    _pnRotulosPonta: function (itens, chaves, x0de, y, bw, gap, fk) {
-      var svg = "";
-      chaves.forEach(function (s) {
-        var best = -1, bv = 0;
-        itens.forEach(function (it, i) { if (it[s.k] > bv) { bv = it[s.k]; best = i; } });
-        if (best < 0) return;
-        var xa = x0de(best, s.lado);
-        svg += '<text class="g-val g-val-' + s.id + '" data-gt-serie="' + s.id + '" x="' + (s.lado < 0 ? xa + bw : xa).toFixed(1) + '" y="' + (y(bv) - 6).toFixed(1) + '" text-anchor="' + (s.lado < 0 ? "end" : "start") + '">' + Util.esc(fk(bv).replace(/^R\$[\s\u00a0]*/, "")) + "</text>";
-      });
-      return svg;
-    },
-    _pnSvgCombo: function (porMes, anterior) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
-      if (!porMes || !porMes.length) return "";
-      var gf = this._pnGf || "", gid = gf ? "pg" + (++this._pnGid) : "";
-      var W = 560, H = 230, padL = 58, padR = gf ? 36 : 14, padT = 18, padB = 30, iw = W - padL - padR, ih = H - padT - padB;
-      var vals = [0];
-      porMes.forEach(function (m) { vals.push(m.recebido, m.pago, m.saldo); });
-      if (anterior) anterior.forEach(function (m) { vals.push(m.saldo); });
-      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(Math.min.apply(null, vals), Math.max.apply(null, vals), 4) : null;
-      var max = eixo ? eixo.max : Math.max.apply(null, vals), min = eixo ? eixo.min : Math.min.apply(null, vals);
-      if (max === min) max = min + 1;
-      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
-      var n = porMes.length, slot = iw / n, bw = Math.min(22, slot * 0.28), gap = 2;
-      var xc = function (i) { return padL + slot * (i + 0.5); };
-      var rot = function (ch) { return self._pnMesCurto(ch); };
-      var ult = porMes[n - 1];
-      var resumo = "Fluxo de caixa por mês, " + n + " meses: recebido " + fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0)) + ", pago " + fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0)) + ", saldo acumulado ao final " + fk(ult.saldo) + "." + (anterior ? " Linha tracejada: saldo do período anterior." : "");
-      var svg = '<svg class="pn-combo" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + e(resumo) + '">' + (gf ? this._pnGradDefs(gid) : "");
-      var marcas = eixo ? eixo.marcas : [0, 1, 2, 3].map(function (i) { return min + (max - min) * i / 3; });
-      marcas.forEach(function (gv) {
-        svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(gv).toFixed(1) + '"/>'
-          + '<text class="g-eixo" x="' + (padL - 7) + '" y="' + (y(gv) + 3.5).toFixed(1) + '" text-anchor="end">' + e(fk(gv).replace(/^R\$[\s ]*/, "")) + "</text>";
-      });
-      if (min < 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(0).toFixed(1) + '"/>';
-      var y0 = y(0);
-      /* a área sob o saldo: do traço até o pé do gráfico, da cor da série para transparente */
-      if (gf) svg += '<path class="g-area" data-gt-serie="c" d="M' + xc(0).toFixed(1) + "," + (padT + ih) + " L" + porMes.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); }).join(" L") + " L" + xc(n - 1).toFixed(1) + "," + (padT + ih) + ' Z" fill="url(#' + gid + '-c)"/>';
-      porMes.forEach(function (m, i) {
-        var c = xc(i);
-        [["recebido", "var(--graf-a)", -1, "a"], ["pago", "var(--graf-b)", 1, "b"]].forEach(function (s) {
-          var v = m[s[0]], top = Math.min(y(v), y0), h = Math.max(0, Math.abs(y(v) - y0));
-          var x0 = s[2] < 0 ? c - bw - gap / 2 : c + gap / 2;
-          if (h > 0) svg += '<path class="pn-barra" data-gt-serie="' + s[3] + '" d="' + self._barraTopo(x0, top, bw, h, 5) + '" fill="' + (gf ? "url(#" + gid + "-" + s[3] + ")" : s[1]) + '"/>';
-        });
-      });
-      if (gf) svg += this._pnRotulosPonta(porMes, [{ k: "recebido", id: "a", lado: -1 }, { k: "pago", id: "b", lado: 1 }], function (i, lado) { return lado < 0 ? xc(i) - gap / 2 - bw : xc(i) + gap / 2; }, y, bw, gap, fk);
-      if (anterior && anterior.length === n) svg += '<polyline class="g-linha tracejada" data-gt-serie="p" points="' + anterior.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); }).join(" ") + '" stroke="var(--graf-prev)"/>';
-      var pts = porMes.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); });
-      svg += '<polyline class="g-linha' + (gf ? ' g-anim" pathLength="1' : "") + '" data-gt-serie="c"' + ' points="' + pts.join(" ") + '" stroke="var(--graf-c)"/>'
-        + '<circle class="g-fim" data-gt-serie="c" cx="' + xc(n - 1).toFixed(1) + '" cy="' + y(ult.saldo).toFixed(1) + '" r="4.5" fill="var(--graf-c)"/>'
-        + (gf ? '<text class="g-val g-val-c" data-gt-serie="c" x="' + (xc(n - 1) + 6).toFixed(1) + '" y="' + (y(ult.saldo) - 9).toFixed(1) + '" text-anchor="end">saldo ' + e(fk(ult.saldo).replace(/^R\$[\s\u00a0]*/, "")) + "</text>" : "");
-      porMes.forEach(function (m, i) {
-        var c = xc(i), x0 = padL + slot * i, ant = anterior && anterior[i];
-        var fmx = Util.fmtMoeda, linhasGt = [["Recebido", fmx(m.recebido), "var(--graf-a)"], ["Pago", fmx(m.pago), "var(--graf-b)"], ["Resultado do mês", fmx(m.recebido - m.pago)], ["Saldo acumulado", fmx(m.saldo), "var(--graf-c)"]];
-        if (ant) linhasGt.push(["Período anterior (" + rot(ant.mes) + "): saldo", fmx(ant.saldo), "var(--graf-prev)"]);
-        if (gf && m.vs) linhasGt.push(["Recebido vs. " + rot(m.vs.mes), self._pnVarTxt(m.vs.recebido)], ["Pago vs. " + rot(m.vs.mes), self._pnVarTxt(m.vs.pago)], ["Resultado vs. " + rot(m.vs.mes), self._pnVarTxt(m.vs.resultado)]);
-        svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(rot(m.mes) + ": recebido " + fk(m.recebido) + ", pago " + fk(m.pago) + ", saldo " + fk(m.saldo)) + '" data-gacao="graf-ir" data-destino="financeiro"' + self._pnGt(rot(m.mes), linhasGt, gf ? "Clique: abrir o Financeiro e conferir " + rot(m.mes) : "Clique: abrir o Financeiro") + '><rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
-          + '<line class="g-guia" x1="' + c.toFixed(1) + '" y1="' + padT + '" x2="' + c.toFixed(1) + '" y2="' + (padT + ih) + '"/>'
-          + '<circle class="g-pt" cx="' + c.toFixed(1) + '" cy="' + y(m.saldo).toFixed(1) + '" r="4" fill="var(--graf-c)"/>'
-          + '<g class="g-ler"><rect class="g-ler-fundo" x="' + (padL - 2) + '" y="' + (padT - 14) + '" width="' + (iw + 4) + '" height="14" rx="3"/>'
-          + '<text class="g-ler-txt" x="' + (padL + 2) + '" y="' + (padT - 4) + '"><tspan class="g-ler-mes">' + rot(m.mes) + "</tspan>"
-          + '<tspan class="g-ler-a"> · recebido ' + e(fk(m.recebido)) + "</tspan><tspan class=\"g-ler-b\"> · pago " + e(fk(m.pago)) + "</tspan><tspan class=\"g-ler-c\"> · saldo " + e(fk(m.saldo)) + "</tspan>"
-          + (ant ? '<tspan class="g-ler-mes"> · antes (' + rot(ant.mes) + "): " + e(fk(ant.recebido)) + " / " + e(fk(ant.pago)) + "</tspan>" : "") + "</text></g></g>";
-        var passo = Math.max(1, Math.ceil(n / 6));
-        if (i % passo === (n - 1) % passo) svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + c.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
-      });
-      svg += "</svg>";
-      var btLeg = function (serie, corCss, rot, valor, extra) {
-        return '<button type="button" class="g-leg" data-gt-serie-bt="' + serie + '" aria-pressed="true" title="Mostrar ou esconder: ' + e(rot) + '"><i class="g-leg-cor' + (extra || "") + '" style="' + corCss + '"></i>' + rot + " <b>" + e(valor) + "</b></button>";
-      };
-      return '<div class="gt-graf" data-gt-grafico>' + svg + '<div class="g-legenda">'
-        + btLeg("a", "background:var(--graf-a)", "Recebido", fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0)))
-        + btLeg("b", "background:var(--graf-b)", "Pago", fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0)))
-        + btLeg("c", "background:var(--graf-c)", "Saldo ao final", fk(ult.saldo))
-        + (anterior ? btLeg("p", "color:var(--graf-prev)", "Saldo do período anterior", fk(anterior[anterior.length - 1].saldo), " tracejada") : "") + "</div></div>";
-    },
-    /* previsão de 30 dias: entradas e saídas em aberto por semana + posição líquida acumulada */
-    _pnSvgPrevisao: function (p) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
-      var sem = p.semanas, n = sem.length;
-      var gf = this._pnGf || "", gid = gf ? "pg" + (++this._pnGid) : "";
-      var W = 560, H = 210, padL = 58, padR = 14, padT = 18, padB = 34, iw = W - padL - padR, ih = H - padT - padB;
-      var vals = [0];
-      sem.forEach(function (s) { vals.push(s.entradas, s.saidas, s.liquido); });
-      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(Math.min.apply(null, vals), Math.max.apply(null, vals), 4) : null;
-      var max = eixo ? eixo.max : Math.max.apply(null, vals), min = eixo ? eixo.min : Math.min.apply(null, vals);
-      if (max === min) max = min + 1;
-      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
-      var slot = iw / n, bw = Math.min(34, slot * 0.3), gap = 3, xc = function (i) { return padL + slot * (i + 0.5); };
-      var resumo = "Previsão de caixa dos próximos 30 dias, por semana: entradas previstas " + fk(p.entradas) + ", saídas previstas " + fk(p.saidas) + ", posição líquida ao fim " + fk(sem[n - 1].liquido) + ". É previsão do que está em aberto com data, não caixa.";
-      var svg = '<svg class="pn-combo pn-previsao" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + e(resumo) + '">' + (gf ? this._pnGradDefs(gid) : "");
-      var marcas = eixo ? eixo.marcas : [0, 1, 2, 3].map(function (i) { return min + (max - min) * i / 3; });
-      marcas.forEach(function (gv) {
-        svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(gv).toFixed(1) + '"/>'
-          + '<text class="g-eixo" x="' + (padL - 7) + '" y="' + (y(gv) + 3.5).toFixed(1) + '" text-anchor="end">' + e(fk(gv).replace(/^R\$[\s ]*/, "")) + "</text>";
-      });
-      if (min < 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(0).toFixed(1) + '"/>';
-      var y0 = y(0);
-      if (gf) svg += '<path class="g-area" data-gt-serie="c" d="M' + xc(0).toFixed(1) + "," + (padT + ih) + " L" + sem.map(function (s, i) { return xc(i).toFixed(1) + "," + y(s.liquido).toFixed(1); }).join(" L") + " L" + xc(n - 1).toFixed(1) + "," + (padT + ih) + ' Z" fill="url(#' + gid + '-c)"/>';
-      sem.forEach(function (s, i) {
-        var c = xc(i);
-        [["entradas", "var(--graf-a)", -1, "a"], ["saidas", "var(--graf-b)", 1, "b"]].forEach(function (k) {
-          var v = s[k[0]], top = Math.min(y(v), y0), h = Math.max(0, Math.abs(y(v) - y0)), x0 = k[2] < 0 ? c - bw - gap / 2 : c + gap / 2;
-          if (h > 0) svg += '<path class="pn-barra" d="' + self._barraTopo(x0, top, bw, h, 5) + '" fill="' + (gf ? "url(#" + gid + "-" + k[3] + ")" : k[1]) + '" data-gt-serie="' + k[3] + '"/>';
-        });
-      });
-      svg += '<polyline class="g-linha' + (gf ? ' g-anim" pathLength="1' : "") + '" data-gt-serie="c"' + ' points="' + sem.map(function (s, i) { return xc(i).toFixed(1) + "," + y(s.liquido).toFixed(1); }).join(" ") + '" stroke="var(--graf-c)"/>';
-      if (gf) svg += this._pnRotulosPonta(sem, [{ k: "entradas", id: "a", lado: -1 }, { k: "saidas", id: "b", lado: 1 }], function (i, lado) { return lado < 0 ? xc(i) - gap / 2 - bw : xc(i) + gap / 2; }, y, bw, gap, fk);
-      sem.forEach(function (s, i) {
-        svg += '<circle class="g-fim" data-gt-serie="c" cx="' + xc(i).toFixed(1) + '" cy="' + y(s.liquido).toFixed(1) + '" r="4" fill="var(--graf-c)"/>'
-          + '<text class="g-mes' + (i === 0 ? " atual" : "") + '" x="' + xc(i).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle">' + (i === 0 ? "até " : "") + self._pnDataCurta(s.fim) + "</text>"
-          + '<text class="g-eixo" x="' + xc(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + e(fk(s.liquido)) + "</text>";
-      });
-      /* colunas de leitura: uma por semana — dica, foco de teclado e clique para o Financeiro */
-      sem.forEach(function (s, i) {
-        var x0 = padL + slot * i, c = xc(i), fmx = Util.fmtMoeda, tit = (i === 0 ? "Até " : "Semana até ") + self._pnDataCurta(s.fim);
-        svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(tit + ": entradas " + fk(s.entradas) + ", saídas " + fk(s.saidas) + ", posição " + fk(s.liquido)) + '" data-gacao="graf-ir" data-destino="financeiro"'
-          + self._pnGt(tit, [["Entradas previstas", fmx(s.entradas), "var(--graf-a)"], ["Saídas previstas", fmx(s.saidas), "var(--graf-b)"], ["Posição líquida acumulada", fmx(s.liquido), "var(--graf-c)"]].concat(gf && s.vs ? [["Entradas vs. semana anterior", self._pnVarTxt(s.vs.entradas)], ["Saídas vs. semana anterior", self._pnVarTxt(s.vs.saidas)]] : []), gf ? "Clique: abrir o Financeiro e programar o que vence" : "Previsão do que está em aberto. Clique: abrir o Financeiro") + '>'
-          + '<rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
-          + '<line class="g-guia" x1="' + c.toFixed(1) + '" y1="' + padT + '" x2="' + c.toFixed(1) + '" y2="' + (padT + ih) + '"/></g>';
-      });
-      svg += "</svg>";
-      var btLegP = function (serie, rot, valor) {
-        return '<button type="button" class="g-leg" data-gt-serie-bt="' + serie + '" aria-pressed="true" title="Mostrar ou esconder: ' + e(rot) + '"><i class="g-leg-cor" style="background:var(--graf-' + serie + ')"></i>' + rot + " <b>" + e(valor) + "</b></button>";
-      };
-      return '<div class="gt-graf" data-gt-grafico>' + svg + '<div class="g-legenda">'
-        + btLegP("a", "Entradas previstas", fk(p.entradas)) + btLegP("b", "Saídas previstas", fk(p.saidas)) + btLegP("c", "Posição líquida ao fim", fk(sem[n - 1].liquido)) + "</div></div>";
-    },
-    _pnSvgLucro: function (porMes, meta) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
-      if (!porMes || !porMes.length) return "";
-      var W = 560, H = 180, padL = 40, padR = 16, padT = 26, padB = 30, iw = W - padL - padR, ih = H - padT - padB;
-      var vals = porMes.map(function (m) { return m.lucratividade; }).filter(function (v) { return v !== null; });
-      if (!vals.length) return '<p class="pn-vazio">Nenhum mês com receita e pagamento juntos ainda.</p>';
-      var max = Math.max(100, Math.max.apply(null, vals.concat([meta]))), min = Math.min(0, Math.min.apply(null, vals));
-      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
-      var n = porMes.length, x = function (i) { return padL + (n > 1 ? i / (n - 1) : .5) * iw; };
-      var rot = function (ch) { return self._pnMesCurto(ch); };
-      var resumo = "Lucratividade por mês: " + porMes.map(function (m) { return rot(m.mes) + " " + (m.lucratividade === null ? "sem os dois lados" : m.lucratividade + "%"); }).join(", ") + ". Meta " + meta + "%.";
-      var svg = '<svg class="pn-lucro-svg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + e(resumo) + '">';
-      [0, 50, 100].forEach(function (gv) { if (gv >= min && gv <= max) svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(gv).toFixed(1) + '"/><text class="g-eixo" x="' + (padL - 6) + '" y="' + (y(gv) + 3.5).toFixed(1) + '" text-anchor="end">' + gv + "%</text>"; });
-      svg += '<line class="pn-meta-linha" x1="' + padL + '" y1="' + y(meta).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(meta).toFixed(1) + '"/><text class="pn-meta-txt" x="' + (W - padR) + '" y="' + (y(meta) - 4).toFixed(1) + '" text-anchor="end">meta ' + meta + "%</text>";
-      var segs = [], seg = [];
-      porMes.forEach(function (m, i) { if (m.lucratividade === null) { if (seg.length) segs.push(seg); seg = []; } else seg.push(x(i).toFixed(1) + "," + y(m.lucratividade).toFixed(1)); });
-      if (seg.length) segs.push(seg);
-      segs.forEach(function (s) { if (s.length > 1) svg += '<polyline class="g-linha" points="' + s.join(" ") + '" stroke="var(--aco)"/>'; });
-      porMes.forEach(function (m, i) {
-        var v = m.lucratividade;
-        if (v === null) svg += '<text class="g-eixo" x="' + x(i).toFixed(1) + '" y="' + (padT + ih / 2).toFixed(1) + '" text-anchor="middle">—</text>';
-        else {
-          var cls = v < 0 ? "pn-p-alerta" : (v >= meta ? "pn-p-ok" : "pn-p-atencao");
-          svg += '<circle class="pn-ponto ' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="5"/>'
-            + '<text class="pn-ponto-txt" x="' + x(i).toFixed(1) + '" y="' + (y(v) - 10).toFixed(1) + '" text-anchor="middle">' + v + "%</text>";
-        }
-        svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
-        if (v !== null) {
-          var fmx = Util.fmtMoeda, lw = iw / Math.max(1, n - 1);
-          svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(rot(m.mes) + ": lucratividade " + v + "%, meta " + meta + "%") + '"'
-            + self._pnGt(rot(m.mes), [["Recebido", fmx(m.recebido), "var(--graf-a)"], ["Pago", fmx(m.pago), "var(--graf-b)"], ["Lucratividade", String(v).replace(".", ",") + "%"], ["Meta de margem", meta + "%"]], v >= meta ? "Acima da meta" : "Abaixo da meta") + '>'
-            + '<rect class="g-hit" x="' + (x(i) - lw / 2).toFixed(1) + '" y="' + padT + '" width="' + lw.toFixed(1) + '" height="' + ih + '"/>'
-            + '<line class="g-guia" x1="' + x(i).toFixed(1) + '" y1="' + padT + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + ih) + '"/></g>';
-        }
-      });
-      return svg + "</svg>";
-    },
-    _pnGauge: function (rotulo, valorTexto, atingido, metaTexto, titulo) {
-      var gf = this._pnGf || "", gid = gf ? "pg" + (++this._pnGid) : "";
-      var W = 180, H = 108, cx = 90, cy = 92, r = 70;
-      var L = Math.PI * r, frac = (atingido === null || atingido === undefined) ? 0 : Math.max(0, Math.min(1.5, atingido)) / 1.5;
-      var cls = (atingido === null || atingido === undefined) ? " pn-g-vazio" : (atingido >= 1 ? " pn-g-ok" : (atingido >= 0.7 ? " pn-g-atencao" : " pn-g-alerta"));
-      var arco = "M" + (cx - r) + "," + cy + " A" + r + "," + r + " 0 0,1 " + (cx + r) + "," + cy;
-      var am = Math.PI * (1 - 1 / 1.5), mx = cx + r * Math.cos(Math.PI - am), my = cy - r * Math.sin(Math.PI - am);
-      var mx2 = cx + (r + 9) * Math.cos(Math.PI - am), my2 = cy - (r + 9) * Math.sin(Math.PI - am);
-      return '<div class="pn-gauge' + cls + '" data-gacao="graf-ir" data-destino="metas" tabindex="0" role="button"' + this._pnGt(rotulo, [["Atingido", String(valorTexto).replace(/<[^>]*>/g, "")], ["Meta", String(metaTexto).replace(/<[^>]*>/g, "")]], (titulo ? titulo + ". " : "") + "Clique: ajustar as metas") + '><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + Util.esc(rotulo + ": " + valorTexto + ", meta " + metaTexto) + '">'
-        /* degradê do arco: vermelho no começo, âmbar no meio, verde na marca da meta (66,7% do arco = 100% da meta) */
-        + (gf ? '<defs><linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse" x1="' + (cx - r) + '" y1="0" x2="' + (cx + r) + '" y2="0"><stop offset="0" class="g-st g-st-m0"/><stop offset=".4" class="g-st g-st-m1"/><stop offset=".67" class="g-st g-st-m2"/><stop offset="1" class="g-st g-st-m2"/></linearGradient></defs>' : "")
-        + '<path class="pn-g-trilho" d="' + arco + '"/>'
-        + '<path class="pn-g-fill" d="' + arco + '"' + (gf && !(atingido === null || atingido === undefined) ? ' style="stroke:url(#' + gid + ')"' : "") + ' stroke-dasharray="' + (L * frac).toFixed(1) + " " + (L + 2).toFixed(1) + '"/>'
-        + '<line class="pn-g-meta" x1="' + mx.toFixed(1) + '" y1="' + my.toFixed(1) + '" x2="' + mx2.toFixed(1) + '" y2="' + my2.toFixed(1) + '"/>'
-        + '<text class="pn-g-val" x="' + cx + '" y="' + (cy - 6) + '" text-anchor="middle">' + valorTexto + "</text>"
-        + "</svg>" + '<div class="pn-g-rot">' + rotulo + '<span>meta ' + metaTexto + "</span></div></div>";
-    },
-    _pnDonut: function (itens, total, centro, fmt) {
-      var self = this, e = Util.esc, r = 42, C = 2 * Math.PI * r, off = 0, svg = "";
-      var gf = this._pnGf || "", sw = gf ? 14 : 16, folga = gf ? 3 : 2;
-      var tot = total || itens.reduce(function (s, i) { return s + i.valor; }, 0) || 1;
-      itens.forEach(function (it, ix) {
-        var len = it.valor / tot * C;
-        if (len <= 0) return;
-        /* estilos com ponta redonda: a ponta come sw/2 de cada lado, então o traço encolhe sw para as fatias ficarem separadas */
-        var tracoLen = gf ? len - folga - sw : len - folga, redonda = gf && tracoLen > 0.6, dash = redonda ? tracoLen : Math.max(0, len - folga), ini = redonda ? off + (folga + sw) / 2 : off;
-        svg += '<circle class="pn-fatia" r="' + r + '" cx="60" cy="60" fill="none" stroke="' + it.cor + '" stroke-width="' + sw + '"' + (redonda ? ' stroke-linecap="round"' : "") + ' stroke-dasharray="' + dash.toFixed(2) + " " + C.toFixed(2) + '" stroke-dashoffset="' + (-ini).toFixed(2) + '" transform="rotate(-90 60 60)"' + (gf ? ' data-gt-serie="k' + ix + '"' : "") + ' data-gt-k="' + ix + '" tabindex="0" role="img" aria-label="' + e(it.rotulo + ": " + fmt(it.valor) + ", " + Math.round(it.valor / tot * 100) + "%") + '" data-gacao="graf-ir" data-destino="financeiro"' + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor], ["Parte do total", Math.round(it.valor / tot * 100) + "%"]], "Clique: abrir o Financeiro") + '/>';
-        off += len;
-      });
-      var leg = itens.map(function (it, ix) {
-        var miolo = '<i style="background:' + it.cor + '"></i><span class="pn-dl-nome">' + e(it.rotulo) + '</span><span class="pn-dl-val">' + e(fmt(it.valor)) + '</span><span class="pn-dl-pct">' + Math.round(it.valor / tot * 100) + "%</span>";
-        /* legenda clicável: liga e desliga a fatia (mesma regra da legenda dos outros gráficos) */
-        if (gf) return '<li data-gt-k="' + ix + '"' + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor], ["Parte do total", Math.round(it.valor / tot * 100) + "%"]], "Clique na legenda: mostrar ou esconder a fatia") + '><button type="button" class="pn-dl-b" data-gt-serie-bt="k' + ix + '" aria-pressed="true" title="Mostrar ou esconder: ' + e(it.rotulo) + '">' + miolo + "</button></li>";
-        return '<li data-gt-k="' + ix + '"' + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor], ["Parte do total", Math.round(it.valor / tot * 100) + "%"]], "") + ">" + miolo + "</li>";
-      }).join("");
-      return '<div class="pn-donut" data-gt-grafico><svg viewBox="0 0 120 120" role="img" aria-label="' + e(centro.rotulo + " " + centro.valor + ": " + itens.map(function (it) { return it.rotulo + " " + Math.round(it.valor / tot * 100) + "%"; }).join(", ")) + '">' + (gf ? '<g class="pn-fatias">' + svg + "</g>" : svg)
-        + '<text class="pn-d-val" x="60" y="58" text-anchor="middle">' + e(centro.valor) + '</text><text class="pn-d-rot" x="60" y="73" text-anchor="middle">' + e(centro.rotulo) + "</text></svg><ul class=\"pn-dl\">" + leg + "</ul></div>";
-    },
-    /* lista de barras horizontais (nome com espaço: obras, serviços) */
-    _pnBarras: function (itens, total, cor, fmt) {
-      var self = this, e = Util.esc, max = itens.length ? Math.max.apply(null, itens.map(function (i) { return i.valor; })) || 1 : 1, gf = this._pnGf || "";
-      return '<div class="pn-cats">' + itens.map(function (it) {
-        var pct = total > 0 ? Math.round(it.valor / total * 100) : 0;
-        /* estilos: a barra mais longa ocupa 76% da trilha e o valor fica colado na ponta */
-        var wr = gf ? Math.max(1, Math.round(it.valor / max * 76)) : Math.max(1, Math.round(it.valor / max * 100));
-        return '<div class="pn-cat" tabindex="0"' + (it.id ? ' role="button" data-gacao="graf-ir" data-destino="painel-obra" data-id="' + e(it.id) + '"' : "")
-          + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor || cor], ["Parte do total", pct + "%"]], it.id ? "Clique: ver só esta obra no Painel" : "") + '><span class="pn-cat-nome">' + e(it.rotulo) + '</span><span class="pn-cat-barra"><i style="width:' + wr + "%;background:" + (it.cor || cor) + '"></i>' + (gf ? '<b class="pn-cat-ponta" style="left:calc(' + wr + '% + 8px)">' + e(fmt(it.valor)) + "</b>" : "") + '</span><span class="pn-cat-val">' + e(fmt(it.valor)) + '</span><span class="pn-cat-pct">' + pct + "%</span></div>";
-      }).join("") + "</div>";
-    },
-    _pnDupla: function (l) {
-      var e = Util.esc, pz = l.prazo;
-      if (!pz.temDatas) {
-        var txt = pz.entregue ? "entregue" : (l.status === "andamento" ? "sem datas cadastradas" : "sem datas");
-        return '<div class="pn-dupla"><div class="pn-trilhos" title="' + (pz.entregue ? "Obra concluída" : "Cadastre início e previsão de término na obra") + '"><div class="pn-trilho"></div><div class="pn-trilho"></div></div><div class="pn-dupla-leg"><span>' + txt + "</span></div></div>";
-      }
-      var p = Math.min(100, pz.prazoPct), a = l.avanco === null ? null : Math.min(100, Math.max(0, l.avanco));
-      var defasW = (a !== null && p > a) ? (p - a) : 0, grave = l.sinal === "alerta", legDef = "";
-      if (l.avanco === null) legDef = '<span class="pn-d-fraco">medição sem percentual</span>';
-      else if (pz.vencido && a >= 100) legDef = '<span class="pn-d-ok">escopo entregue</span>';
-      else if (l.defasagem !== null && l.defasagem >= PainelDados.DEFASAGEM_PONTOS) legDef = '<span class="' + (grave ? "pn-d-alerta" : "pn-d-aviso") + '">' + l.defasagem + " pontos atrás do calendário</span>";
-      else if (l.defasagem !== null && l.defasagem <= -10) legDef = '<span class="pn-d-ok">' + (-l.defasagem) + " pontos à frente</span>";
-      else if (l.defasagem !== null) legDef = '<span class="pn-d-ok">no ritmo do calendário</span>';
-      var title = e(l.nome) + ": " + pz.prazoTexto + " do calendário consumido" + (a === null ? ", medição sem percentual" : ", " + l.avanco + "% do escopo medido");
-      return '<div class="pn-dupla"><div class="pn-trilhos" role="img" aria-label="' + title + '"' + this._pnGt(l.nome, [["Calendário consumido", pz.prazoTexto], ["Escopo medido", a === null ? "sem percentual" : l.avanco + "%"]], "") + '>'
-        + '<div class="pn-trilho"><i class="pn-prazo" style="width:' + p + '%"></i></div>'
-        + '<div class="pn-trilho">' + (a !== null ? '<i class="pn-medido" style="width:' + a + '%"></i>' : "") + (defasW > 0 ? '<i class="pn-defas' + (grave ? " pn-grave" : "") + '" style="left:' + (a || 0) + "%;width:" + defasW + '%"></i>' : "") + "</div>"
-        + '<span class="pn-hoje-marca" style="left:' + (p >= 100 ? "calc(100% - 2px)" : p + "%") + '"></span></div>'
-        + '<div class="pn-dupla-leg"><span>prazo <b>' + pz.prazoTexto + "</b></span><span>medido <b>" + (a === null ? "—" : l.avanco + "%") + "</b></span>" + legDef + "</div></div>";
-    },
-
-    /* ================= BLOCOS ================= */
-    _pnBlTiles: function (m, c) {
-      if (!c.podeFin) return "";
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, cx = m.caixa;
-      var meses = cx.porMes || [], rotM = meses.map(function (x) { return self._pnMesCurto(x.mes); });
-      var html = '<div class="pn-sec"><h2>Caixa, ' + this._pnPeriodoRotulo(m.periodo) + "</h2><p>só o que entrou e saiu do Financeiro</p></div>";
-      if (!c.temFin) return html + '<p class="pn-vazio">Sem lançamentos no Financeiro ainda. Registre uma receita ou uma despesa e o caixa aparece aqui.</p>';
-      var margemTxt = cx.margem === null ? (cx.recebido > 0 ? "sem despesa paga no período, a margem ainda não existe" : "sem receita no período")
-        : "margem de caixa " + Util.fmtNum(cx.margem, 1) + "%, meta " + Util.fmtNum(c.metas.margem, 0) + "%" + (cx.aPagar > 0 ? ". Não abate " + e(fk(cx.aPagar)) + " a pagar" : "");
-      var ct = m.contratos;
-      return html + '<section class="pn-tiles">'
-        + this._pnTile({ cls: "pn-t-ok", rotulo: "Recebido", valor: e(fk(cx.recebido)), titulo: fm(cx.recebido), delta: this._pnDeltaOuMelhor(cx.delta.recebido, m.periodo, cx.melhorMes.recebido, "melhor mês"), sub: "medições e faturas pagas", mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido; }), "var(--graf-a)", rotM, fk, "Recebido"), ir: "financeiro" })
-        + this._pnTile({ cls: "pn-t-alerta", rotulo: "Pago", valor: "− " + e(fk(cx.pago)), titulo: fm(cx.pago), delta: this._pnDeltaOuMelhor(cx.delta.pago, m.periodo, cx.melhorMes.pago, "maior mês"), sub: "custo desembolsado", mini: this._pnMiniBarras(meses.map(function (x) { return x.pago; }), "var(--graf-b)", rotM, fk, "Pago"), ir: "financeiro" })
-        + this._pnTile({ cls: cx.resultado >= 0 ? "pn-t-aco" : "pn-t-alerta", rotulo: "Resultado de caixa", valor: (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))), titulo: fm(cx.resultado), delta: this._pnDeltaOuMelhor(cx.delta.resultado, m.periodo, cx.melhorMes.resultado, "melhor mês"), sub: margemTxt, mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido - x.pago; }), "var(--graf-c)", rotM, fk, "Resultado"), ir: "financeiro" })
-        + this._pnTile({ cls: "pn-t-neutro", rotulo: "Saldo a faturar", valor: e(fk(ct.saldoFaturar)), titulo: fm(ct.saldoFaturar), delta: "", sub: "contratado " + e(fk(ct.valorContratado)) + " menos " + e(fk(ct.faturado)) + " já medido" + (ct.semContrato.n ? ". " + this._pnN(ct.semContrato.n, "obra entra", "obras entram") + " pelo valor da obra, sem contrato" : "") + ". Acumulado, não do período.", ir: "medicoes" })
-        + "</section>";
-    },
-    _pnBlPosicao: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      var self = this, e = Util.esc, fm = Util.fmtMoeda, fk = function (v) { return self._fmtK(v); }, N = function (n, a, b) { return self._pnN(n, a, b); }, cx = m.caixa, psr = cx.pagoSemReceita;
-      return '<section class="pn-posicao" aria-label="Posição de hoje"><div class="pn-pos-t">Posição de hoje</div>'
-        + '<div class="pn-pos-c"><span class="pn-pos-rot">A receber no Financeiro</span><span class="pn-pos-val">' + e(fm(cx.aReceber)) + "</span></div>"
-        + '<div class="pn-pos-c"><span class="pn-pos-rot">Em boletins aprovados</span><span class="pn-pos-val' + (cx.aprovadoNaoPago.n ? "" : " pn-fraco") + '"' + (cx.aprovadoNaoPago.n ? ' data-aviso="aprovada-nao-paga"' : "") + ">" + e(fm(cx.aprovadoNaoPago.valor)) + '</span><span class="pn-pos-sub">' + (cx.aprovadoNaoPago.n ? N(cx.aprovadoNaoPago.n, "boletim", "boletins") + " sem pagamento registrado" : "nenhum esperando") + "</span></div>"
-        + '<div class="pn-pos-c' + (cx.contasVencendo.n ? " pn-pos-aviso" : "") + '"><span class="pn-pos-rot">A pagar até ' + this._pnDataCurta(cx.contasVencendo.ate) + '</span><span class="pn-pos-val">' + e(fm(cx.contasVencendo.valor)) + '</span><span class="pn-pos-sub">' + (cx.contasVencendo.n ? N(cx.contasVencendo.n, "conta", "contas") + (cx.contasVencendo.vencidas ? ", " + N(cx.contasVencendo.vencidas, "vencida", "vencidas") : "") + ". Em aberto " + e(fk(cx.aPagar)) : "nenhuma. Em aberto " + e(fk(cx.aPagar))) + "</span></div>"
-        + '<div class="pn-pos-c' + (psr && psr.total ? " pn-pos-alerta" : "") + '"><span class="pn-pos-rot">Boletins pagos sem receita</span><span class="pn-pos-val' + (psr && psr.total ? "" : " pn-fraco") + '"' + (psr && psr.total ? ' data-aviso="pago-sem-receita"' : "") + ">" + (psr && psr.total ? e(fm(psr.liquido)) : "R$ 0,00") + '</span><span class="pn-pos-sub">' + (psr && psr.total ? N(psr.total, "boletim", "boletins") + " sem a receita no Financeiro: resolva na fila" : "nenhum") + "</span></div>"
-        + "</section>";
-    },
-    /* LINHA DO TEMPO DA SEMANA (26/10/2026): hoje e os 6 dias seguintes, uma linha por dia.
-       Só entra o que tem data nos dados (ver o motor): entrega de obra, conta a pagar,
-       receita prevista, pagamento previsto de boletim aprovado, entrega de compra, prazo
-       de tarefa e fechamento de medição. Visita e reunião não têm data neste cadastro e
-       por isso não aparecem. RBAC: cada tipo só aparece para quem tem o módulo dele. */
-    _pnBlAgenda: function (m, c) {
-      var a = m.agenda, self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, N = function (n, x, y) { return self._pnN(n, x, y); };
-      var nomes = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-      var rotTipo = { vencimento: "Pagar", entrega: "Entrega da obra", medicao: "Medição", recebimento: "Receber", compra: "Compra", tarefa: "Tarefa" };
-      var visivel = function (ev) {
-        if (ev.tipo === "vencimento" || ev.tipo === "recebimento") return !!c.podeFin;
-        if (ev.tipo === "medicao") return c.podeMod("medicoes");
-        if (ev.tipo === "compra") return c.podeMod("compras");
-        if (ev.tipo === "tarefa") return c.podeMod("tarefas");
-        return true;
-      };
-      var total = 0;
-      var linhas = (a.dias || []).map(function (d) {
-        var evs = d.eventos.filter(visivel);
-        total += evs.length;
-        var dt = new Date(d.data + "T00:00:00");
-        var rot = (d.hoje ? "Hoje" : nomes[dt.getDay()]) + " " + d.data.slice(8, 10);
-        var chips = evs.slice(0, 4).map(function (ev) {
-          var alvo = ev.view ? ' data-view="' + e(ev.view) + '"' : "";
-          var tit = ev.titulo + (ev.obraNome && ev.obraNome !== ev.titulo ? " · " + ev.obraNome : "") + (ev.detalhe ? " · " + ev.detalhe : "");
-          return '<button type="button" class="pn-ev pn-ev-' + e(ev.tipo) + '"' + alvo + ' title="' + e(rotTipo[ev.tipo] + ": " + tit) + '"><i aria-hidden="true"></i><span class="pn-ev-t"><b>' + e(rotTipo[ev.tipo] || "") + "</b> " + e(ev.titulo) + "</span>"
-            + (ev.valor && c.podeFin ? '<span class="pn-ev-v pn-tn">' + e(fk(ev.valor)) + "</span>" : "") + "</button>";
-        }).join("") + (evs.length > 4 ? '<span class="pn-ev-mais">+' + (evs.length - 4) + " mais</span>" : "");
-        return '<li class="pn-sem-dia' + (d.hoje ? " pn-sem-hoje" : "") + '"><span class="pn-sem-rot">' + e(rot) + '</span><div class="pn-sem-evs">' + (chips || '<span class="pn-sem-vazio">nada marcado</span>') + "</div></li>";
-      });
-      var atras = [];
-      if (c.podeFin && a.atrasados && a.atrasados.contas.n) atras.push('<button type="button" class="pn-chip pn-chip-alerta" data-view="financeiro"><b>' + e(fk(a.atrasados.contas.valor)) + "</b> em " + N(a.atrasados.contas.n, "conta já vencida", "contas já vencidas") + "</button>");
-      if (c.podeMod("tarefas") && a.atrasados && a.atrasados.tarefas) atras.push('<button type="button" class="pn-chip pn-chip-alerta" data-view="tarefas"><b>' + N(a.atrasados.tarefas, "tarefa atrasada", "tarefas atrasadas") + "</b></button>");
-      if (c.podeMod("medicoes") && a.medicoesAAprovar) atras.push('<button type="button" class="pn-chip pn-chip-aviso" data-view="medicoes"><b>' + N(a.medicoesAAprovar, "medição", "medições") + "</b> a aprovar</button>");
-      return '<section class="pn-card pn-semana" aria-label="Próximos 7 dias"><div class="pn-sec"><h2>Próximos 7 dias</h2><p>' + (total ? N(total, "compromisso", "compromissos") + " com data" : "nada com data marcada") + "</p></div>"
-        + (atras.length ? '<div class="pn-chips pn-sem-atras"><span class="pn-sem-atras-r">Já passou ou espera por você:</span>' + atras.join("") + "</div>" : "")
-        + '<ol class="pn-sem">' + linhas.join("") + "</ol></section>";
-    },
-    /* CAIXA PROJETADO EM 30 DIAS: a conta aparece inteira, parcela por parcela. O saldo e
-       as contas a pagar são as MESMAS do Financeiro (PorObra.totais): o teste confere. */
-    _pnCaixa30: function (m, c) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, k = m.caixa30;
-      if (!k || !k.temDado) return "";
-      var proj = k.projetado;
-      var it = function (rot, v, titulo, cls) { return '<div class="pn-c30-i' + (cls ? " " + cls : "") + '"' + (titulo ? ' title="' + e(titulo) + '"' : "") + "><small>" + rot + '</small><b class="pn-tn">' + e(fk(v)) + "</b></div>"; };
-      var op = function (s) { return '<span class="pn-c30-op" aria-hidden="true">' + s + "</span>"; };
-      var notas = [];
-      if (k.atrasadasEntradas > 0) notas.push(e(fk(k.atrasadasEntradas)) + " de receita já atrasada não entra na conta: dinheiro que ainda não chegou não paga conta");
-      if (k.semData.n) notas.push(this._pnN(k.semData.n, "lançamento sem data fica", "lançamentos sem data ficam") + " de fora");
-      if (k.depois.n) notas.push("o que vence depois de 30 dias fica de fora");
-      return '<div class="pn-c30" role="group" aria-label="Caixa projetado em 30 dias">'
-        + it("Caixa hoje", k.saldoHoje, "Recebido menos pago, do recorte inteiro: o mesmo saldo de caixa do Financeiro. " + fm(k.saldoHoje))
-        + op("+") + it("A entrar em 30 dias", k.entradas, fm(k.entradas))
-        + op("−") + it("A pagar em 30 dias", k.saidas, fm(k.saidas))
-        + op("−") + it("Vencido e em aberto", k.atrasadasSaidas, "Contas que já venceram e seguem sem pagamento: são dívida de hoje. " + fm(k.atrasadasSaidas), k.atrasadasSaidas > 0 ? "pn-c30-venc" : "")
-        + op("=") + it("Caixa projetado", proj, fm(proj), "pn-c30-res " + (proj < 0 ? "pn-c30-neg" : "pn-c30-pos")) + "</div>"
-        + (notas.length ? '<p class="pn-rodape">' + notas.join(". ") + ".</p>" : "");
-    },
-    _pnBlPrevisao: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      var p = m.previsao30, self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, N = function (n, x, y) { return self._pnN(n, x, y); }, notas = [];
-      if (p.atrasadas.n) notas.push(N(p.atrasadas.n, "lançamento já vencido", "lançamentos já vencidos") + " fora do gráfico: " + e(fk(p.atrasadas.entradas)) + " a entrar, " + e(fk(p.atrasadas.saidas)) + " a sair");
-      if (p.semData.n) notas.push(N(p.semData.n, "lançamento sem data", "lançamentos sem data") + ": " + e(fk(p.semData.entradas)) + " a entrar, " + e(fk(p.semData.saidas)) + " a sair");
-      if (p.depois.n) notas.push("depois de 30 dias: " + e(fk(p.depois.entradas)) + " a entrar, " + e(fk(p.depois.saidas)) + " a sair");
-      return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Previsão de caixa, 30 dias</h2><p>o que está em aberto com data. É previsão, não caixa. Boletim aprovado entra ' + N(c.metas.prazoReceber, "dia", "dias") + " depois da medição.</p></div>"
-        + this._pnCaixa30(m, c)
-        + (p.temDado ? this._pnSvgPrevisao(p) : '<p class="pn-vazio">Nada em aberto com data no Financeiro. Lance as contas a pagar com vencimento e as receitas previstas para ver a semana que vem.</p>')
-        + (notas.length ? '<p class="pn-rodape">' + notas.join(". ") + ".</p>" : "") + "</div>";
-    },
-    _pnBlFluxo: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      var meses = m.caixa.porMes || [], comparar = !!this._dashComparar && !!m.caixa.porMesAnterior;
-      return '<div class="pn-card pn-graf pn-graf-principal"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
-        + (m.caixa.porMesAnterior ? '<button class="pn-ctl pn-ctl-ghost pn-ctl-mini' + (comparar ? " on" : "") + '" data-gacao="dash-comparar" aria-pressed="' + (comparar ? "true" : "false") + '">' + (comparar ? "Comparando com " : "Comparar com ") + this._pnPeriodoAnterior(m.periodo) + "</button>" : "")
-        + (meses.length ? this._pnSvgCombo(meses, comparar ? m.caixa.porMesAnterior : null) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
-    },
-    _pnBlComposicao: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      var self = this, fk = function (v) { return self._fmtK(v); }, cx = m.caixa;
-      return '<div class="pn-tres">'
-        + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Despesas por categoria</h2></div>'
-          + (m.categorias.length ? this._pnDonut(m.categorias.map(function (x) { return { rotulo: rot(P.finCategoria, x.cat), valor: x.valor, cor: self._CORCAT[x.cat] || "var(--cat-outros)" }; }), cx.pago, { rotulo: "pago", valor: fk(cx.pago) }, fk) : '<p class="pn-vazio">Sem despesa paga no período.</p>') + "</div>"
-        + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Custo por obra</h2><p>pago no período</p></div>'
-          + (m.porObra.length ? this._pnBarras(m.porObra.map(function (o) { return { id: o.id, rotulo: o.nome, valor: o.valor }; }).concat(m.semObraPeriodo > 0 ? [{ rotulo: "Sem obra vinculada", valor: m.semObraPeriodo, cor: "var(--cat-outros)" }] : []), cx.pago, "var(--cat-obra)", fk) : '<p class="pn-vazio">Sem despesa paga com obra no período.</p>') + "</div>"
-        + "</div>";
-    },
-    _pnBlLucro: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Lucratividade por mês</h2><p>resultado sobre o recebido, mês a mês, contra a meta de margem</p></div>' + this._pnSvgLucro(m.caixa.porMes || [], Util.num(c.metas.margem)) + "</div>";
-    },
-    _pnBlMetas: function (m, c) {
-      if (!c.podeFin || !c.temFin) return "";
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, cx = m.caixa, N = function (n, x, y) { return self._pnN(n, x, y); };
-      return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Metas</h2><p>o arco vai até 150% da meta; a marca é a meta</p></div><div class="pn-gauges">'
-        + this._pnGauge("Margem de caixa", cx.margem === null ? "—" : Util.fmtNum(cx.margem, 1) + "%", m.metas.margem.atingido, Util.fmtNum(c.metas.margem, 0) + "%", "Resultado de caixa dividido pelo recebido no período")
-        + (m.metas.recebimento ? this._pnGauge("Recebimento", e(fk(m.metas.recebimento.valor)), m.metas.recebimento.atingido, e(fk(m.metas.recebimento.meta)), fm(m.metas.recebimento.metaMes) + " por mês × " + N(m.metas.recebimento.meses, "mês", "meses"))
-          : this._pnGauge("Recebimento", e(fk(cx.recebido)), null, "não definida (defina em Metas)", "Defina em Metas quanto a empresa precisa receber por mês"))
-        + (m.metas.ppc.valor !== null ? this._pnGauge("PPC da semana", m.metas.ppc.valor + "%", m.metas.ppc.atingido, Util.fmtNum(c.metas.ppc, 0) + "%", "Tarefas feitas sobre as comprometidas na semana do Last Planner") : "")
-        + "</div></div>";
-    },
-    _pnBlFila: function (m, c) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, N = function (n, x, y) { return self._pnN(n, x, y); };
-      /* ponto da fila que se resolve sem sair do Painel: cada item usa a ação que o
-         sistema já tem (aprovar-medicao, pagar-medicao, abrir o lançamento) — as mesmas
-         guardas de sempre rodam dentro delas. O botão só aparece para quem pode. */
-      var itensDe = function (x) {
-        if (!x.itens || !x.itens.length) return "";
-        var btn = function (it) {
-          if (x.itensAcao === "aprovar-medicao") return (c.podeAprovar && c.podeMod("medicoes")) ? '<button type="button" class="pn-btn pn-btn-mini pn-btn-p" data-gacao="aprovar-medicao" data-id="' + e(it.id) + '">Aprovar</button>' : "";
-          if (x.itensAcao === "pagar-medicao") return (c.podeFin && c.podeMod("medicoes")) ? '<button type="button" class="pn-btn pn-btn-mini pn-btn-p" data-gacao="pagar-medicao" data-id="' + e(it.id) + '">Registrar pagamento</button>' : "";
-          if (x.itensAcao === "abrir-lancamento") return c.podeFin ? '<button type="button" class="pn-btn pn-btn-mini" data-gopen="financeiro:' + e(it.id) + '">Abrir</button>' : "";
-          return "";
-        };
-        var lis = x.itens.map(function (it) {
-          var b = btn(it); if (!b) return "";
-          return '<li><span class="pn-it-t">' + e(it.rotulo) + (it.sub ? "<small> · " + e(it.sub) + "</small>" : "") + "</span>"
-            + (it.valor !== null && it.valor !== undefined && c.podeFin ? '<span class="pn-it-v pn-tn">' + e(fk(it.valor)) + "</span>" : "") + b + "</li>";
-        }).join("");
-        if (!lis) return "";
-        return '<ul class="pn-itens">' + lis + (x.n > x.itens.length ? '<li class="pn-it-mais">e mais ' + (x.n - x.itens.length) + " na lista completa</li>" : "") + "</ul>";
-      };
-      var linhaDec = function (x) {
-        var t = self._pnDecisao(x);
-        var quanto = x.unidade === "R$" ? e(fk(x.valor)) : (x.unidade === "dias" ? N(x.valor, "dia", "dias") : (x.unidade === "un" ? String(x.valor) : ""));
-        if (!quanto) quanto = '<span class="pn-tag">' + e(x.tag || "") + "</span>";
-        var grav = x.gravidade >= 3 ? "pn-critico" : (x.gravidade === 2 ? "pn-atencao" : "pn-info");
-        return '<li class="pn-decisao ' + grav + (x.adiadoAte ? " pn-adiada" : "") + '"><span class="pn-quanto"><i></i>' + quanto + '</span><span class="pn-oque">' + t.titulo + '</span>'
-          + '<span class="pn-onde">' + t.detalhe + (t.acaoTexto ? '<span class="pn-porque-a">' + t.acaoTexto + "</span>" : "") + (x.adiadoAte ? '<span class="pn-porque-t">Adiado até ' + self._pnDataCurta(x.adiadoAte) + ".</span>" : "") + "</span>"
-          + '<span class="pn-acao">' + self._pnBotao(x, t.botao) + (x.adiadoAte
-            ? '<button class="pn-btn pn-btn-mini" data-gacao="painel-desadiar" data-id="' + e(x.chave) + '" title="Trazer de volta para a fila agora">Trazer de volta</button>'
-            : '<button class="pn-btn pn-btn-mini" data-gacao="painel-adiar" data-id="' + e(x.chave) + '" title="Sai da fila por ' + PainelDados.DIAS_ADIAR + ' dias e volta sozinho">Adiar ' + PainelDados.DIAS_ADIAR + "d</button>") + "</span>" + (x.adiadoAte ? "" : itensDe(x)) + "</li>";
-      };
-      var html = '<div class="pn-card pn-hoje"><div class="pn-sec"><h2>Precisa de você hoje</h2><p>' + (m.decisoes.length ? N(m.decisoes.length, "ponto", "pontos") + (m.emJogo > 0 ? ", " + e(fk(m.emJogo)) + " em jogo" : "") : "nada pendente") + (m.avisosDoSino ? ". Inclui " + N(m.avisosDoSino, "aviso do sino", "avisos do sino") : "") + "</p></div>";
-      if (!m.decisoes.length) html += '<p class="pn-vazio">Nenhuma decisão esperando. Quando um prazo apertar, uma conta vencer ou um dinheiro ficar sem lançar, aparece aqui.</p>';
-      m.grupos.forEach(function (g) {
-        html += '<details class="pn-grupo"' + (g.aberto ? " open" : "") + '><summary><span class="pn-grupo-nome">' + e(g.nome) + '</span><span class="pn-grupo-n">' + N(g.itens.length, "ponto", "pontos") + (g.emJogo > 0 ? ", " + e(fk(g.emJogo)) : "") + "</span></summary><ol>" + g.itens.map(linhaDec).join("") + "</ol></details>";
-      });
-      if (m.decisoesAdiadas.length) html += '<details class="pn-grupo pn-grupo-adiados"><summary><span class="pn-grupo-nome">Adiados</span><span class="pn-grupo-n">' + N(m.decisoesAdiadas.length, "ponto volta", "pontos voltam") + " sozinho quando vencer</span></summary><ol>" + m.decisoesAdiadas.map(linhaDec).join("") + "</ol></details>";
-      return html + "</div>";
-    },
-    _pnBlObras: function (m, c) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); }, podeFin = c.podeFin, metas = c.metas;
-      var linhaObra = function (l) {
-        var pill = l.status === "andamento" ? "pn-pill pn-pill-and" : (l.status === "concluida" ? "pn-pill pn-pill-conc" : (l.avisos.indexOf("status-desatualizado") > -1 ? "pn-pill pn-pill-dup" : "pn-pill"));
-        var rotStatus = ({ andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" })[l.status] || l.status;
-        var quando = "";
-        if (l.prazo.temDatas) {
-          if (l.prazo.vencido) quando = '<span class="pn-quando pn-q-alerta">prazo vencido há ' + N(-l.prazo.dias, "dia", "dias") + "</span>";
-          else if (l.prazo.terminoSuspeito) quando = '<span class="pn-quando pn-q-aviso">término em ' + N(l.prazo.dias, "dia", "dias") + ", confira a data</span>";
-          else quando = '<span class="pn-quando' + (l.prazo.dias <= 15 ? " pn-q-aviso" : "") + '">entrega em ' + N(l.prazo.dias, "dia", "dias") + "</span>";
-        } else if (!l.prazo.entregue) quando = '<span class="pn-quando">sem datas cadastradas</span>';
-        var notas = [];
-        if (l.avisos.indexOf("entregue-fechar") > -1) notas.push('<p class="pn-obra-nota pn-ok">Tudo medido. Marque como concluída para sair da lista de prazo.</p>');
-        if (l.avisos.indexOf("status-desatualizado") > -1) notas.push('<p class="pn-obra-nota">Há dinheiro lançado numa obra em planejamento. O status parece desatualizado: confira em Obras.</p>');
-        if (l.avisos.indexOf("recebeu-sem-contrato") > -1) notas.push('<p class="pn-obra-nota">Recebeu ' + e(fk(l.recebido)) + " sem contrato cadastrado. Cadastre o contrato para o saldo a faturar fechar.</p>");
-        if (l.avisos.indexOf("estouro") > -1) notas.push('<p class="pn-obra-nota">Gasto acima do orçado: ' + e(fk(l.orcado.gasto)) + " contra " + e(fk(l.orcado.previsto)) + " orçados.</p>");
-        var numeros = "";
-        if (podeFin) {
-          numeros = '<dl class="pn-obra-num">'
-            + "<div><dt>" + (l.semContrato ? "Valor da obra" : "Contratado") + '</dt><dd class="pn-tn' + (l.base > 0 ? "" : " pn-fraco") + '"' + (l.semContrato ? ' title="sem contrato assinado: é o valor cadastrado na obra"' : "") + ">" + (l.base > 0 ? e(fm(l.base)) : (l.semContrato ? "sem contrato" : "—")) + "</dd></div>"
-            + '<div><dt>Recebido</dt><dd class="pn-tn' + (l.recebido > 0 ? "" : " pn-fraco") + '">' + (l.recebido > 0 ? e(fm(l.recebido)) : "nenhum") + "</dd></div>"
-            + '<div><dt>Custo pago</dt><dd class="pn-tn' + (l.custoPago > 0 ? "" : " pn-fraco") + '">' + (l.custoPago > 0 ? e(fm(l.custoPago)) : "nenhum lançado") + "</dd></div>"
-            + '<div><dt>Margem s/ recebido</dt><dd class="pn-tn' + (l.margem === null ? " pn-fraco" : (l.margem >= metas.margem ? " pn-ok" : " pn-ruim")) + '"' + (l.margem === null ? ' title="' + (l.recebido > 0 ? "sem despesa paga lançada, a margem ainda não existe" : "sem receita") + '"' : "") + ">" + (l.margem === null ? "—" : Util.fmtNum(l.margem, 1) + "%") + "</dd></div>";
-          if (l.orcado) {
-            var oc = l.orcado;
-            numeros += '<div><dt>Orçado</dt><dd class="pn-tn' + (oc.previsto > 0 ? "" : " pn-fraco") + '">' + (oc.previsto > 0 ? e(fm(oc.previsto)) : "sem orçamento") + "</dd></div>"
-              + '<div><dt>Gasto do orçado</dt><dd class="pn-tn' + (oc.estourou ? " pn-q-alerta" : (oc.consumidoPct !== null && l.avanco !== null && oc.consumidoPct - l.avanco >= PainelDados.DEFASAGEM_PONTOS ? " pn-ruim" : "")) + '" title="competência, acumulado da obra: ' + e(fm(oc.gasto)) + (l.avanco !== null && oc.consumidoPct !== null ? ". Medido " + l.avanco + "% do escopo" : "") + '">' + (oc.consumidoPct === null ? e(fm(oc.gasto)) : oc.consumidoPct + "%") + "</dd></div>";
-          }
-          if (l.custoM2 !== null) numeros += '<div><dt>Custo por m²</dt><dd class="pn-tn">' + e(fm(l.custoM2)) + "/m²</dd></div>";
-          numeros += "</dl>";
-        }
-        return '<li class="pn-obra"><div class="pn-obra-cab"><h3>' + e(l.nome) + '</h3><span class="' + pill + '">' + e(rotStatus) + "</span>" + quando + "</div>" + self._pnDupla(l) + numeros + notas.join("") + "</li>";
-      };
-      var ops = [["", "Todas"], ["andamento", "Em andamento"], ["planejamento", "Planejamento"], ["pausada", "Pausadas"], ["concluida", "Concluídas"]], atual = m.obras.filtroStatus || "";
-      var seg = '<div class="pn-seg" role="group" aria-label="Filtrar obras por status">' + ops.map(function (o) { return '<button class="pn-seg-b' + (atual === o[0] ? " on" : "") + '" data-gacao="dash-status" data-value="' + o[0] + '"' + (atual === o[0] ? ' aria-pressed="true"' : "") + ">" + o[1] + "</button>"; }).join("") + "</div>";
-      var html = '<section class="pn-card pn-obras"><div class="pn-sec pn-sec-obras"><div><h2>Obras</h2><p>' + (podeFin ? "acumulado desde o início, regime de caixa. " : "") + "Barra de cima: calendário consumido. Barra de baixo: escopo medido.</p></div>" + seg + "</div>";
-      if (!m.obras.total) html += '<p class="pn-vazio">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> ou gere a partir de um orçamento.</p>';
-      else if (!m.obras.comMovimento.length && !m.obras.semMovimento.length) html += '<p class="pn-vazio">Nenhuma obra com esse status' + (m.obras.ocultasPeloStatus ? " (" + N(m.obras.ocultasPeloStatus, "obra escondida", "obras escondidas") + " pelo filtro)" : "") + ".</p>";
-      else {
-        html += "<ul>" + m.obras.comMovimento.map(linhaObra).join("") + "</ul>";
-        if (m.obras.semMovimento.length) html += '<details class="pn-sem-mov"><summary>Mais ' + N(m.obras.semMovimento.length, "obra", "obras") + " sem movimento" + (podeFin ? " financeiro" : "") + "</summary><ul>"
-          + m.obras.semMovimento.map(function (l) {
-            var s = l.entregue ? "concluída, entregue" : (l.status === "andamento" && !l.prazo.temDatas ? '<span class="pn-d-aviso">em andamento sem datas</span>' : (l.prazo.terminoSuspeito ? '<span class="pn-d-aviso">término em ' + N(l.prazo.dias, "dia", "dias") + ", confira a data</span>" : (l.status === "planejamento" ? "planejamento" : e(l.status))));
-            return "<li><b>" + e(l.nome) + "</b><span>" + s + "</span></li>";
-          }).join("") + "</ul></details>";
-        if (m.obras.ocultasPeloStatus) html += '<p class="pn-rodape">' + N(m.obras.ocultasPeloStatus, "obra fica fora", "obras ficam fora") + " pelo filtro de status. A fila e o caixa acima seguem o recorte de obra do topo.</p>";
-      }
-      return html + "</section>";
-    },
-    _pnBlOrcado: function (m, c) {
-      var fin = c.fin;
-      if (!c.temFin || !fin.prevReal.length) return "";
-      return '<section class="pn-card pn-graf pn-larga"><div class="pn-sec"><h2>Orçado × gasto' + (fin.porEtapa ? " por etapa" : " por obra") + '</h2><p>competência, acumulado' + (fin.obrasSemOrcamento ? ". " + this._pnN(fin.obrasSemOrcamento, "obra sem orçamento vinculado ficou", "obras sem orçamento vinculado ficaram") + " de fora" : "") + "</p></div>" + this._dashSvgPrevReal(this._dashPrevRealTop(fin.prevReal)) + "</section>";
-    },
-    _pnBlOperacao: function (m, c) {
-      var self = this, e = Util.esc, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); }, op = m.operacao, itens = [], detalhes = [], podeMod = c.podeMod;
-      var contador = function (rot_, val, sub, subCls, attrs) { return '<button class="pn-op-item" ' + attrs + '><span class="pn-op-rot">' + rot_ + '</span><span class="pn-op-val">' + val + "</span>" + (sub ? '<span class="pn-op-sub' + (subCls ? " " + subCls : "") + '">' + sub + "</span>" : "") + "</button>"; };
-      if (podeMod("medicoes")) itens.push(contador("Medições a aprovar", op.medicoesAAprovar, op.aprovadasSemPgto.n ? N(op.aprovadasSemPgto.n, "aprovada aguarda", "aprovadas aguardam") + " pagamento" : "", "", 'data-view="medicoes"'));
-      if (op.pendentes && op.pendentes.total) {
-        var partes = [];
-        if (op.pendentes.medicoes) partes.push(N(op.pendentes.medicoes, "medição", "medições"));
-        if (op.pendentes.compras) partes.push(N(op.pendentes.compras, "pedido", "pedidos"));
-        if (op.pendentes.requisicoes) partes.push(N(op.pendentes.requisicoes, "requisição", "requisições"));
-        if (op.pendentes.producao) partes.push(op.pendentes.producao + " de produção");
-        var viewPend = op.pendentes.medicoes ? "medicoes" : (op.pendentes.compras ? "compras" : (op.pendentes.requisicoes ? "requisicoes" : "producao"));
-        /* fila de trabalho, não indicador: NÃO é filtrada por obra — e diz isso quando há recorte */
-        itens.push(contador("Pendentes de aprovação", op.pendentes.total, partes.join(", ") + (m.filtrado ? ", de todas as obras" : ""), "pn-op-aviso", 'data-view="' + viewPend + '"'));
-      }
-      if (podeMod("compras")) itens.push(contador("Compras em aberto", op.comprasAbertas, "requisições e pedidos", "", 'data-view="compras"'));
-      if (op.lp) {
-        itens.push(contador("Last Planner, semana", (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + ' <small>PPC</small>', op.lp.impedida ? N(op.lp.impedida, "impedimento", "impedimentos") + ", " + op.lp.execucao + " em execução" : op.lp.execucao + " em execução, " + N(op.lp.liberada, "liberada", "liberadas"), op.lp.impedida ? "pn-op-alerta" : "", 'data-view="lastplanner"'));
-        detalhes.push('<details class="pn-detalhe"><summary>Last Planner da semana</summary><div class="pn-detalhe-c"><dl class="pn-obra-num">'
-          + '<div><dt>PPC</dt><dd class="pn-tn' + (op.lp.ppc === null ? " pn-fraco" : (op.lp.ppc * 100 >= c.metas.ppc ? " pn-ok" : " pn-ruim")) + '">' + (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + "</dd></div>"
-          + '<div><dt>Feitas / comprometidas</dt><dd class="pn-tn">' + op.lp.feitas + " / " + op.lp.comprometidas + "</dd></div><div><dt>Em execução</dt><dd class=\"pn-tn\">" + op.lp.execucao + "</dd></div><div><dt>Liberadas</dt><dd class=\"pn-tn\">" + op.lp.liberada + "</dd></div>"
-          + '<div><dt>Impedimentos</dt><dd class="pn-tn' + (op.lp.impedida ? " pn-q-alerta" : " pn-ok") + '">' + op.lp.impedida + '</dd></div></dl><button class="pn-btn" data-view="lastplanner">Abrir o quadro</button></div></details>');
-      }
-      if (op.tarefas && (op.tarefas.afazer || op.tarefas.atrasadas)) itens.push(contador("Tarefas", op.tarefas.afazer + " <small>a fazer</small>", op.tarefas.atrasadas ? N(op.tarefas.atrasadas, "atrasada", "atrasadas") : "", op.tarefas.atrasadas ? "pn-op-alerta" : "", 'data-view="tarefas"'));
-      if (podeMod("rdo")) itens.push(contador("Diários (RDO)", op.rdos, "", "", 'data-view="rdo"'));
-      if (op.m2) {
-        itens.push(contador("Executado nos diários", Util.fmtNum(op.m2.executado, 0) + " <small>m²</small>", Util.fmtNum(op.m2.atribuido, 0) + " m² com dono e aprovados", "", 'data-view="producao"'));
-        if (op.m2.porServico && op.m2.porServico.length) {
-          var fmtM2 = function (v) { return Util.fmtNum(v, 2) + " m²"; };
-          detalhes.push('<details class="pn-detalhe"><summary>Metragem por serviço</summary><div class="pn-detalhe-c">' + ((typeof UI !== "undefined" && UI._barH) ? UI._barH(op.m2.porServico, fmtM2) : "") + (op.m2.aviso ? '<p class="pn-rodape">' + e(op.m2.aviso) + "</p>" : "") + "</div></details>");
-        }
-      }
-      if (op.retencao > 0) itens.push(contador("Retenção presa", e(fm(op.retencao)), "em contratos vivos", "", 'data-gacao="abrir-retencao"'));
-      if (!itens.length) return "";
-      return '<div class="pn-sec pn-sec-solta"><h2>Operação</h2><p>' + e(this._dashEscopoRotulo(c.esc)) + '</p></div><nav class="pn-op" aria-label="Contadores de operação">' + itens.join("") + "</nav>" + (detalhes.length ? '<div class="pn-detalhes">' + detalhes.join("") + "</div>" : "");
-    },
-
-    /* ================= PRIMEIRA TELA (25/10/2026) =================
-     * "Deixa o PAINEL mais atraente, é a primeira tela que o cliente vê."
-     * Três peças novas por cima dos blocos de sempre — NENHUM número novo:
-     * tudo sai do mesmo modelo (`m`) e das mesmas réguas.
-     *   · `_pnHero`: saudação, empresa e os quatro números do dia (a receber,
-     *     a pagar, obras em andamento, fila "Precisa de você hoje");
-     *   · `_pnAtalhos`: o que fazer agora, com o ícone do menu lateral;
-     *   · `_pnObrasCartoes`: a obra como cartão (foto, avanço, próximo marco).
-     * E o ESTADO VAZIO (`_pnComeco`): conta sem obra, lançamento, orçamento
-     * nem diário recebe os passos de começo, nunca uma tela de zeros.
-     * ⚠ O hero é navy nos DOIS temas (como a barra do topo): as cores de texto
-     *   sobre ele são `--sobre-navy*`, medidas contra o navy — não use
-     *   --verde/--graf-* ali, que são do tema e somem.
-     * ⚠ Sem `backdrop-filter` e sem degradê: o Painel mora dentro de #main e
-     *   o vidro quebra os filhos `position:fixed` (orcapro-cara-nova-prototipo). */
+    /* ================= PAINEL V2 (13/11/2026) =================
+     * Redesenho completo. As peças visuais (HTML de cada bloco, gráficos SVG, anticolisão de rótulos) moram em
+     * js/painelui.js e são puras (testadas em Node); aqui fica só a fiação: filtros, ações, fotos, gaveta da fila,
+     * IA opcional. Nenhum número novo mudou de regra: caixa, recebido, pago e margem saem das mesmas réguas.
+     * ⚠ O estado de CONTA NOVA (`_pnComeco`) é navy nos dois temas como a barra do topo: as cores de texto sobre ele
+     *   são `--sobre-navy*`, medidas contra o navy — não use --verde/--graf-* ali, que são do tema e somem.
+     * ⚠ Sem `backdrop-filter` e sem degradê: o Painel mora dentro de #main e o vidro quebra os filhos `position:fixed`. */
+    /* ================= PAINEL V2 (13/11/2026): a fiação ================= */
     _pnPodeMod: function (id) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(id)); },
-    _pnHero: function (m, c) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); };
-      var cx = m.caixa, cells = [], sd = this._pnSaudacao(), gf = this._pnGf || "", spk = (gf && m.spark) ? m.spark : {};
-      var cel = function (o) {
-        var attr = o.gacao ? 'data-gacao="' + o.gacao + '"' : 'data-view="' + o.view + '"';
-        return '<li><button type="button" class="pn-hn' + (o.tom ? " pn-hn-" + o.tom : "") + '" ' + attr + (o.titulo ? ' title="' + e(o.titulo) + '"' : "") + ">"
-          + '<span class="pn-hn-rot">' + o.rot + '</span><span class="pn-hn-val">' + o.val + '</span><span class="pn-hn-sub">' + o.sub + "</span>" + (o.sp || "") + "</button></li>";
-      };
-      if (c.podeFin && c.temFin) {
-        var ap = cx.aprovadoNaoPago || { n: 0, valor: 0 }, cv = cx.contasVencendo || { n: 0, valor: 0, vencidas: 0 };
-        cells.push(cel({ rot: "A receber", val: e(fk(cx.aReceber)), titulo: fm(cx.aReceber), view: "financeiro",
-          sub: ap.n ? "mais " + e(fk(ap.valor)) + " em " + N(ap.n, "boletim aprovado", "boletins aprovados") + " sem pagamento" : "lançado no Financeiro", sp: this._pnSpark(spk.recebido, "alta", "recebido nos últimos 30 dias") }));
-        cells.push(cel({ rot: "A pagar até " + this._pnDataCurta(cv.ate), val: e(fk(cv.valor)), titulo: fm(cv.valor), view: "financeiro", tom: cv.vencidas ? "alerta" : "",
-          sub: cv.n ? N(cv.n, "conta", "contas") + (cv.vencidas ? ", " + N(cv.vencidas, "vencida", "vencidas") : "") : "nenhuma conta vencendo", sp: this._pnSpark(spk.pago, null, "pago nos últimos 30 dias") }));
+    /* ESTADO DE TELA da carteira de obras (aba, busca, ordem, vista): vive na sessão; só a VISTA (tabela ou galeria) é preferência gravada */
+    /* ---- v2.1: modelos A/B, atualizar (com auto), expandir (modo TV), reduzir (compacto), segmentadores ---- */
+    _pnAgoraTxt: function () { var d = new Date(); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); },
+    painelModelo: function (v) { this._pnGravar({ modelo: v === "b" ? "b" : "a" }); this._pnRender(); },
+    /* ATUALIZAR: recalcula tudo AGORA (o Painel lê do Store a cada desenho) e carimba a hora. `silencioso` = a atualização automática. */
+    painelAtualizar: function (silencioso) {
+      this._pnHora = this._pnAgoraTxt();
+      this._pnOrcCache = null;
+      this._pnRender();
+      if (silencioso !== true && typeof UI !== "undefined" && UI.toast) UI.toast("Painel atualizado às " + this._pnHora + ".", "ok");
+    },
+    painelAuto: function (min) {
+      var n = Number(min); if (!(n === 1 || n === 5 || n === 10 || n === 30)) n = 0;
+      this._pnGravar({ auto: n });
+      this._pnAutoLigar();
+      var el = (typeof document !== "undefined") ? document.querySelector("#main [data-pv-atualiz]") : null;
+      if (el) el.textContent = (n ? "Atualiza sozinho a cada " + n + " min. " : "") + "Atualizado às " + (this._pnHora || this._pnAgoraTxt());
+    },
+    /* o relógio: um só para a vida do app. Só atualiza com o painel NA TELA, a aba visível e nenhum modal aberto (não redesenha por baixo de quem edita). */
+    _pnAutoLigar: function () {
+      if (typeof setInterval !== "function") return;
+      var min = 0, self = this;
+      try { min = this._pnPrefs().auto || 0; } catch (eA) { min = 0; }
+      if (this._pnAutoMin === min && this._pnAutoId) return;
+      if (this._pnAutoId) { clearInterval(this._pnAutoId); this._pnAutoId = null; }
+      this._pnAutoMin = min;
+      if (!min) return;
+      this._pnAutoId = setInterval(function () {
+        if (typeof document === "undefined" || !document.querySelector("#main .pn") || document.hidden || document.getElementById("modal-bg")) return;
+        self.painelAtualizar(true);
+      }, min * 60000);
+      if (this._pnAutoId && this._pnAutoId.unref) this._pnAutoId.unref();
+    },
+    /* EXPANDIR: tela cheia, sem o menu lateral nem a barra do topo (modo TV). REDUZIR: sai da tela cheia; fora dela alterna o modo compacto. */
+    _pnTvLigar: function (liga) {
+      if (typeof document === "undefined") return;
+      var h = document.documentElement;
+      this._pnTv = !!liga;
+      if (liga) h.classList.add("pn-tv"); else h.classList.remove("pn-tv");
+      try { if (liga && h.requestFullscreen) { var pr = h.requestFullscreen(); if (pr && pr.catch) pr.catch(function () {}); } else if (!liga && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (eF) {}
+      if (!this._pnTvOuvinte && document.addEventListener) {
+        this._pnTvOuvinte = true;
+        var self = this;
+        document.addEventListener("keydown", function (e) { if (e.key === "Escape" && self._pnTv && !document.getElementById("modal-bg")) self._pnTvLigar(false); });
+        document.addEventListener("fullscreenchange", function () { if (!document.fullscreenElement && self._pnTv) self._pnTvLigar(false); });
       }
-      cells.push(cel({ rot: "Obras em andamento", val: String(m.obras.emAndamento), view: "obras", sub: "de " + N(m.obras.total, "obra", "obras") + (m.filtrado ? " no recorte" : ""), sp: this._pnSpark(spk.obrasComDiario, "alta", "obras com diário, por dia, em 30 dias") }));
-      var nd = m.decisoes.length, crit = m.decisoes.some(function (x) { return x.gravidade >= 3; });
-      cells.push(cel({ rot: "Precisa de você hoje", val: String(nd), gacao: "painel-ir-fila", tom: nd ? (crit ? "alerta" : "aviso") : "ok",
-        sub: nd ? (m.emJogo > 0 ? e(fk(m.emJogo)) + " em jogo, ver a fila" : "ver a fila") : "nada pendente" }));
-      return '<section class="pn-hero" aria-labelledby="pn-hero-t">' + sd + '<ul class="pn-hero-nums">' + cells.join("") + "</ul></section>";
     },
-    /* minigráfico de 30 dias do número do topo. SÓ com dado real: sem série (menos de 2 dias com
-       movimento) devolve "" e o número fica como era. A seta compara os últimos 15 dias com os 15
-       anteriores; `bom` diz qual sentido é bom (alta = verde; o contrário, vermelho; null = neutro). */
-    _pnSpark: function (sp, bom, rot) {
-      if (!sp) return "";
-      var e = Util.esc, W = 120, H = 26, n = sp.dias.length, mx = sp.max || 1, gid = "sk" + (++this._pnGid);
-      var pts = sp.dias.map(function (v, i) { return (i / (n - 1) * W).toFixed(1) + "," + (H - 3 - (v / mx) * (H - 7)).toFixed(1); });
-      var tom = bom ? (sp.dir === bom ? "ok" : (sp.dir === "estavel" ? "neutro" : "alerta")) : "neutro";
-      var seta = sp.dir === "alta" ? "\u25B2" : (sp.dir === "baixa" ? "\u25BC" : "\u25AC");
-      var txt = sp.dir === "estavel" ? "estável" : (sp.pct === null ? (sp.dir === "alta" ? "em alta" : "em queda") : (sp.pct > 0 ? "+" : "\u2212") + Math.abs(sp.pct) + "%");
-      return '<span class="pn-sk pn-sk-' + tom + '" title="' + e(rot + ". A seta compara os últimos 15 dias com os 15 anteriores.") + '"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">'
-        + '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="g-st g-st-s0"/><stop offset="1" class="g-st g-st-s1"/></linearGradient></defs>'
-        + '<path class="pn-sk-a" d="M0,' + H + " L" + pts.join(" L") + " L" + W + "," + H + ' Z" fill="url(#' + gid + ')"/>'
-        + '<polyline class="pn-sk-l" pathLength="1" points="' + pts.join(" ") + '"/></svg>'
-        + '<span class="pn-sk-t"><i aria-hidden="true">' + seta + "</i> <b>" + e(txt) + "</b> <small>" + e(rot) + "</small></span></span>";
+    painelExpandir: function () { this._pnTvLigar(!this._pnTv); this._pnRender(); },
+    painelReduzir: function () {
+      if (this._pnTv) { this._pnTvLigar(false); this._pnRender(); return; }
+      this._pnGravar({ compacto: !this._pnPrefs().compacto });
+      this._pnRender();
     },
-    /* o bloco "empresa + Bom dia, Fulano" do topo (hero e estado vazio). Sem nome
-       de pessoa cadastrado, a saudação vai sem nome: nunca cumprimenta o e-mail. */
-    _pnSaudacao: function (msg) {
-      var e = Util.esc, hora = 12, nome = "", empresa = "";
-      try { hora = new Date().getHours(); } catch (eH) { hora = 12; }
-      try { nome = PainelDados.primeiroNome((typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : ""); } catch (eN) { nome = ""; }
-      try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (eE) { empresa = ""; }
-      return '<div class="pn-hero-id">' + (empresa ? '<p class="pn-hero-emp">' + e(empresa) + "</p>" : "")
-        + '<h2 id="pn-hero-t">' + PainelDados.saudacao(hora) + (nome ? ", " + e(nome) : "") + "</h2>" + (msg ? '<p class="pn-hero-msg">' + msg + "</p>" : "") + "</div>";
+    painelTop: function (d) {
+      var g = d && d.grupo, v = d && d.value;
+      if (!this._pnTop) this._pnTop = { obras: "faturamento", desp: "pagas" };
+      if (g === "obras") this._pnTop.obras = v === "custo" ? "custo" : "faturamento";
+      else if (g === "desp") this._pnTop.desp = v === "abertas" ? "abertas" : "pagas";
+      this._pnRender();
     },
-    _pnAtalhos: function () {
-      var self = this, itens = [];
-      var ic = function (id) { try { return self.iconeModulo(id, 22) || ""; } catch (x) { return ""; } };
-      var at = function (o) {
-        return '<li><button type="button" class="pn-at" ' + o.attr + '><span class="pn-at-ic" aria-hidden="true">' + o.ic + '</span><span class="pn-at-t"><b>' + o.t + "</b><small>" + o.s + "</small></span></button></li>";
-      };
-      if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-acao="novo"', ic: ic("orcamentos"), t: "Novo orçamento", s: "Escopo, SINAPI e BDI" }));
-      if (this._pnPodeMod("obras")) itens.push(at({ attr: 'data-view="obras"', ic: ic("obras"), t: "Abrir obra", s: "Cadastro, diário e medições" }));
-      if (this._pnPodeMod("bim")) itens.push(at({ attr: 'data-view="bim"', ic: ic("bim"), t: "Modelar no BIM", s: "3D, pranchas e quantitativos" }));
-      if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-view="orcamentos"', ic: (typeof Icones !== "undefined" ? Icones.get("proposta", 22) : ""), t: "Gerar proposta", s: "A partir de um orçamento pronto" }));
-      if (!itens.length) return "";
-      return '<nav class="pn-atalhos" aria-label="O que fazer agora"><ul>' + itens.join("") + "</ul></nav>";
+    /* abas do cartão que junta gráficos (PainelDados.ABAS_BLOCOS): troca o painel visível SEM redesenhar a tela inteira e lembra da escolha até fechar o sistema */
+    painelAba: function (d) {
+      var g = d && d.grupo, v = d && d.value;
+      if (!g || !v) return;
+      if (!this._pnAbas) this._pnAbas = {};
+      this._pnAbas[g] = v;
+      if (typeof document === "undefined") return;
+      var cart = document.querySelector('.pv-abas-cartao[data-abas="' + g + '"]');
+      if (!cart) return;
+      Array.prototype.forEach.call(cart.querySelectorAll(".pv-aba-p"), function (p) { p.hidden = p.getAttribute("data-bloco") !== v; });
+      Array.prototype.forEach.call(cart.querySelectorAll('[data-gacao="painel-aba"]'), function (b) { var on = b.getAttribute("data-value") === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
     },
-    /* iniciais para o cartão sem foto: duas letras do nome da obra */
-    _pnIniciais: function (nome) {
-      var p = String(nome || "").replace(/[^A-Za-zÀ-ÿ0-9 ]/g, " ").split(/\s+/).filter(function (x) { return x.length > 1 || /\d/.test(x); });
-      if (!p.length) return "";
-      return (p[0].charAt(0) + (p.length > 1 ? p[1].charAt(0) : (p[0].charAt(1) || ""))).toUpperCase();
+    /* segmentador "Status das obras": filtra a carteira e o Top 10 de obras (nunca o caixa: dinheiro não tem status de obra) */
+    painelStatus: function (v) {
+      var ok = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
+      this._pnStatus = ok[v] ? v : null;
+      this._pnObrasEstado().aba = this._pnStatus;
+      this._pnRender();
     },
-    /* ================= SUAS OBRAS (26/10/2026) =================
-     * Pedido do Rogério: "aqui deve mostrar TODAS as obras". Defeito da 1.2.182:
-     * os cartões liam `m.obras.comMovimento/semMovimento`, que já vêm cortadas
-     * pelo filtro de status do bloco "Obras" (gravado em `orcapro:tela:painel:v1`).
-     * Quem tinha "Concluídas" gravado via só as concluídas, enquanto o topo
-     * contava as 7 em andamento de 24. Agora o cartão lê `m.obras.todas`
-     * (sem filtro nenhum) e tem filtro próprio: abas Em andamento · Todas ·
-     * Concluídas, busca e contador. Em andamento nunca é cortada; Todas e
-     * Concluídas mostram 12 por vez, com "Mostrar mais".
-     * ⚠ A ORDEM É DE QUEM PRECISA DE ATENÇÃO (PainelDados.obrasPainel): prazo
-     *   vencido, defasagem, custo acima do orçado, conta vencida, sem diário
-     *   recente, medição esperando. Cada cartão diz o motivo.
-     * ⚠ AS DUAS BARRAS: Físico = % do escopo medido (a régua `_avancoMedido`);
-     *   Financeiro = % do contrato já RECEBIDO (recebido ÷ contratado, ou o
-     *   valor da obra quando não há contrato). O traço na barra física marca o
-     *   calendário consumido. Nada aqui é inventado: sem dado vira "—". */
+    painelObrasMais: function () { this._pnObrasEstado().todas = true; this._pnAtualizarObras(); },
     _pnObrasEstado: function () {
-      if (!this._pnObras) this._pnObras = { aba: null, busca: "", ate: 12 };
+      if (!this._pnObras) {
+        var vista = "tabela";
+        try { vista = this._pnPrefs().vista || "tabela"; } catch (eV) { vista = "tabela"; }
+        this._pnObras = { aba: null, busca: "", ordem: "atencao", dir: "desc", vista: vista };
+      }
       return this._pnObras;
     },
-    _pnBarraProg: function (rot, v, cls, marca, dica) {
-      var e = Util.esc, w = (v === null || v === undefined) ? 0 : Math.min(100, Math.max(0, v));
-      return '<div class="pn-prog-l"><span class="pn-prog-r">' + rot + '</span>'
-        + '<span class="pn-prog-t" role="img" aria-label="' + e(rot + ": " + (v === null || v === undefined ? "sem dado" : v + "%")) + '"' + (dica ? ' title="' + e(dica) + '"' : "") + '>'
-        + '<i class="pn-prog-' + cls + '" style="width:' + w + '%"></i>'
-        + (marca !== null && marca !== undefined ? '<b class="pn-prog-marca" style="left:' + Math.min(100, Math.max(0, marca)) + '%" title="Calendário consumido: ' + marca + '%"></b>' : "")
-        + '</span><span class="pn-prog-v pn-tn">' + (v === null || v === undefined ? "—" : v + "%") + "</span></div>";
+    /* orçamentos para o bloco Comercial: a MESMA fonte da tela Orçamentos (filtrarLista + o estado comercial da proposta).
+       Memória de uma assinatura barata (quantidade + última edição): trocar filtro do Painel não recalcula 300 totais. */
+    _pnOrcamentos: function () {
+      try {
+        if (typeof Store === "undefined" || typeof Orcamento === "undefined" || !Orcamento.filtrarLista) return [];
+        var orcs = Store.listarOrcamentos(eid()) || [];
+        if (typeof App !== "undefined" && App._orcsDaTela) orcs = App._orcsDaTela(orcs);
+        var ult = "";
+        orcs.forEach(function (o) { var a = String((o && o.atualizadoEm) || ""); if (a > ult) ult = a; });
+        var sig = eid() + "|" + orcs.length + "|" + ult;
+        if (this._pnOrcCache && this._pnOrcCache.sig === sig) return this._pnOrcCache.v;
+        var r = Orcamento.filtrarLista(orcs, {}, String(this._hojeISO()).slice(0, 10));
+        var v = r.lista.map(function (x) {
+          var o = x.orc, resp = o.propostaResposta || {};
+          return { id: o.id, nome: o.nome || o.numero || "", cliente: (o.cliente && o.cliente.nome) || "", valor: Util.num(x.tot && x.tot.precoVenda), estado: x.estado,
+            enviadaEm: String(o.propostaEm || "").slice(0, 10), resposta: resp.estado || "" };
+        });
+        this._pnOrcCache = { sig: sig, v: v };
+        return v;
+      } catch (e) { return []; }
     },
-    _pnCartaoObra: function (l, c, obrasPorId, idx, fotos) {
-      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda;
-      var ob = obrasPorId[l.id] || null, ft = null, credito = "";
-      try { if (ob && idx && ObraVitrine.foto) ft = ObraVitrine.foto(ob, idx[l.id] || null); } catch (eF) { ft = null; }
-      if (ft && ft.ref) { fotos.push({ id: l.id, ref: ft.ref }); if (ft.origem === "diario" && ft.data) credito = "Foto do diário de " + self._pnDataCurta(ft.data); }
-      var ini = self._pnIniciais(l.nome), pz = l.prazo || {};
-      var rotStatus = ({ andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" })[l.status] || l.status;
-      var pill = '<span class="' + (l.status === "andamento" ? "pn-pill pn-pill-and" : (l.status === "concluida" ? "pn-pill pn-pill-conc" : "pn-pill")) + '">' + e(rotStatus) + "</span>";
-      var selo = l.atraso ? '<span class="pn-selo pn-selo-' + l.atraso.tom + '">' + e(l.atraso.texto) + "</span>" : "";
-      var marca = (pz.temDatas && !pz.entregue) ? pz.prazoPct : null;
-      var barras = '<div class="pn-prog">' + this._pnBarraProg("Físico", l.avanco, "fis", marca, l.avanco === null ? "A medição não tem percentual informado" : "Escopo medido: " + l.avanco + "%")
-        + (c.podeFin ? this._pnBarraProg("Financeiro", l.avancoFin, "fin", null, l.avancoFin === null ? "Sem contrato nem valor cadastrado na obra" : "Recebido " + fm(l.recebido) + " de " + fm(l.base)) : "") + "</div>";
-      /* os quatro fatos do cartão — só os que existem nos dados */
-      var fatos = [];
-      if (c.podeFin && l.saldoReceber !== null) fatos.push('<div><dt>Falta receber</dt><dd class="pn-tn' + (l.saldoReceber > 0 ? "" : " pn-fraco") + '" title="' + e((l.semContrato ? "Valor da obra " : "Contratado ") + fm(l.base) + " menos recebido " + fm(l.recebido)) + '">' + e(fk(l.saldoReceber)) + "</dd></div>");
-      if (c.podeMod("rdo")) {
-        var dd = l.ultimoDiario ? self._pnDataCurta(l.ultimoDiario) + (l.diasSemDiario > 0 ? ", há " + l.diasSemDiario + (l.diasSemDiario === 1 ? " dia" : " dias") : ", hoje") : "nenhum lançado";
-        var velho = l.status === "andamento" && (l.ultimoDiario === null || l.diasSemDiario > PainelDados.DIAS_SEM_DIARIO);
-        fatos.push('<div><dt>Último diário</dt><dd class="' + (velho ? "pn-q-aviso" : (l.ultimoDiario ? "" : "pn-fraco")) + '">' + e(dd) + "</dd></div>");
-      }
-      if (c.podeMod("medicoes") && l.status !== "concluida") {
-        var med;
-        if (l.medPendente) med = '<dd class="pn-q-aviso">' + e("Boletim " + (l.medPendente.numero || "") + " aguarda aprovação") + "</dd>";
-        else if (l.medAprovada) med = '<dd class="pn-q-aviso">' + e("Boletim " + (l.medAprovada.numero || "") + " aprovado, falta o pagamento") + "</dd>";
-        else med = '<dd class="pn-fraco">sem boletim em aberto</dd>';
-        fatos.push("<div><dt>Medição</dt>" + med + "</div>");
-      }
-      var mk = PainelDados.proximoMarco(l), rotEnt = "Entrega";
-      if (l.avisos && l.avisos.indexOf("entregue-fechar") > -1) mk = { tom: "aviso", texto: "100% medido, prazo vencido: marque como concluída" };
-      if (l.status === "concluida") { rotEnt = "Situação"; mk = { tom: "ok", texto: "Entregue" }; }
-      else if (l.status === "planejamento" && pz.temDatas) mk = { tom: "neutro", texto: l.prazo.dias === null ? mk.texto : "Entrega em " + pz.dias + " dias" + (l.fim ? ", " + self._pnDataCurta(l.fim) : "") };
-      fatos.push('<div><dt>' + rotEnt + '</dt><dd class="pn-q-' + mk.tom + '">' + e(mk.texto) + "</dd></div>");
-      var motivos = (l.atencao && l.atencao.motivos || []).filter(function (x) { return x.cod === "vencidas" || x.cod === "estouro"; });
-      var mot = motivos.length ? '<p class="pn-oc-mot">' + motivos.map(function (x) { return e(x.texto); }).join(" · ") + "</p>" : "";
-      return '<li class="pn-oc pn-oc-s-' + e(l.status) + '" data-gopen="obras:' + e(l.id) + '">'
-        + '<span class="pn-oc-foto" data-pn-foto="' + e(l.id) + '" data-credito="' + e(credito) + '"><span class="pn-oc-ph" aria-hidden="true">' + (ini ? "<i>" + e(ini) + "</i>" : "") + (self.iconeModulo("obras", 26) || "") + "</span></span>"
-        + '<div class="pn-oc-c"><div class="pn-oc-topo">' + pill + selo + "</div>"
-        + '<button type="button" class="pn-oc-nome" data-gopen="obras:' + e(l.id) + '" title="' + e(l.nome) + '">' + e(l.nome) + "</button>"
-        + barras + '<dl class="pn-oc-fatos">' + fatos.join("") + "</dl>" + mot + "</div></li>";
-    },
-    /* o miolo que muda com a aba, a busca e o "mostrar mais" (o título, as abas e o campo ficam) */
-    _pnObrasCorpo: function (m, c) {
-      var self = this, e = Util.esc, est = this._pnObrasEstado();
-      var v = PainelDados.obrasPainel(m.obras.todas || [], { aba: est.aba, busca: est.busca, ate: est.ate });
-      var obrasPorId = {};
-      lista("obras").forEach(function (o) { if (o) obrasPorId[o.id] = o; });
-      var idx = null, fotos = [];
-      try { if (typeof ObraVitrine !== "undefined" && ObraVitrine.indiceDiarios && c.esc && c.esc.rdo) idx = ObraVitrine.indiceDiarios(c.esc.rdo); } catch (eI) { idx = null; }
-      var html;
-      if (!v.itens.length) {
-        var porque = v.busca ? 'Nenhuma obra com "' + e(est.busca) + '" no nome.' : (v.aba === "andamento" ? "Nenhuma obra em andamento." : (v.aba === "concluidas" ? "Nenhuma obra concluída ainda." : "Nenhuma obra."));
-        html = '<div class="pn-oc-vazio"><div><b>' + porque + "</b><p>" + (v.busca ? "Confira a grafia ou limpe a busca." : (v.aba !== "todas" && v.abas.todas ? "Há " + this._pnN(v.abas.todas, "obra cadastrada", "obras cadastradas") + ". Veja todas." : "")) + "</p></div>"
-          + (v.busca ? '<button type="button" class="pn-btn" data-gacao="painel-obras-limpar">Limpar busca</button>' : (v.aba !== "todas" && v.abas.todas ? '<button type="button" class="pn-btn pn-btn-p" data-gacao="painel-obras-aba" data-value="todas">Ver todas as obras</button>' : "")) + "</div>";
-      } else {
-        html = '<ul class="pn-ocs-grade">' + v.itens.map(function (l) { return self._pnCartaoObra(l, c, obrasPorId, idx, fotos); }).join("") + "</ul>"
-          + (v.restantes ? '<div class="pn-ocs-mais"><button type="button" class="pn-ctl pn-ctl-ghost" data-gacao="painel-obras-mais">Mostrar mais ' + Math.min(v.restantes, v.pagina) + " (restam " + v.restantes + ")</button></div>" : "");
-      }
-      this._pnFotosPend = fotos;
-      var ct = v.busca ? this._pnN(v.total, "obra encontrada", "obras encontradas") : (v.restantes ? "Mostrando " + v.itens.length + " de " + v.total : this._pnN(v.total, "obra", "obras"));
-      return { html: html, ct: ct, aba: v.aba, abas: v.abas };
-    },
-    _pnObrasCartoes: function (m, c) {
-      var self = this, e = Util.esc;
-      this._pnM = m; this._pnC = c;
-      if (!m.obras.total) {
-        return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2></div>'
-          + '<div class="pn-oc-vazio"><span class="pn-oc-vazio-ic" aria-hidden="true">' + (this.iconeModulo("obras", 28) || "") + "</span>"
-          + "<div><b>Nenhuma obra cadastrada</b><p>Cadastre a primeira obra, ou gere uma a partir de um orçamento aprovado. Com a obra criada, o avanço, o prazo e o caixa dela aparecem aqui.</p></div>"
-          + '<button type="button" class="pn-btn pn-btn-p" data-view="obras">Cadastrar obra</button></div></section>';
-      }
-      var corpo = this._pnObrasCorpo(m, c), est = this._pnObrasEstado();
-      var tab = function (id, rot, n) {
-        return '<button type="button" role="tab" class="pn-seg-b' + (corpo.aba === id ? " on" : "") + '" aria-selected="' + (corpo.aba === id ? "true" : "false") + '" data-gacao="painel-obras-aba" data-value="' + id + '">' + rot + ' <span class="pn-seg-n">' + n + "</span></button>";
+    /* o que PainelUI recebe: helpers de formatação, a dica flutuante, a decisão da fila e a medida real da tela
+       (o gráfico nasce na largura do cartão, para o texto do SVG ter 12 px de verdade) */
+    _pnCtxUI: function (m, ctx) {
+      var self = this, main = (typeof document !== "undefined" && document.getElementById) ? document.getElementById("main") : null;
+      var vw = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1920;
+      var util = (main && main.clientWidth ? main.clientWidth : vw - 70) - 68;
+      if (ctx.modelo === "b" && vw >= 1500) util -= 262;   /* a coluna de segmentadores do Modelo B */
+      /* largura REAL de um cartão que ocupa `cols` das 12 colunas (o SVG nasce nela: texto de 12 px é 12 px). Os cortes casam com o CSS (.pv-c*). */
+      var largura = function (cols) {
+        var eff = vw >= 1340 ? cols : (vw >= 1000 ? ({ 4: 6, 6: 6, 8: 12, 12: 12 }[cols] || 12) : 12), gap = 16;
+        var col = (util - 11 * gap) / 12;
+        return Math.max(300, Math.min(1500, Math.round(col * eff + (eff - 1) * gap - 40)));
       };
-      var leg = c.podeFin ? "Físico: % do escopo medido. Financeiro: % do contrato já recebido. O traço na barra física é o calendário consumido."
-        : "Físico: % do escopo medido. O traço na barra é o calendário consumido.";
-      this._pnLigarBusca();
-      return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2><p class="pn-ocs-ct" data-pn-ct aria-live="polite">' + e(corpo.ct) + "</p></div>"
-        + '<div class="pn-ocs-barra"><div class="pn-seg" role="tablist" aria-label="Quais obras mostrar">' + tab("andamento", "Em andamento", corpo.abas.andamento) + tab("todas", "Todas", corpo.abas.todas) + tab("concluidas", "Concluídas", corpo.abas.concluidas) + "</div>"
-        + '<label class="pn-busca"><span class="pn-busca-r">Buscar obra</span><input type="search" data-pn-busca placeholder="Buscar pelo nome" autocomplete="off" value="' + e(est.busca) + '"></label></div>'
-        + '<p class="pn-ocs-leg">' + leg + "</p>"
-        + '<div class="pn-ocs-corpo" data-pn-corpo>' + corpo.html + "</div></section>";
+      var larg = largura(6);
+      var est = this._pnObrasEstado(), obrasPorId = {}, idx = null;
+      if (est.vista === "galeria") {
+        lista("obras").forEach(function (o) { if (o) obrasPorId[o.id] = o; });
+        try { if (typeof ObraVitrine !== "undefined" && ObraVitrine.indiceDiarios && ctx.esc && ctx.esc.rdo) idx = ObraVitrine.indiceDiarios(ctx.esc.rdo); } catch (eI) { idx = null; }
+      }
+      var iaOferta = false;
+      try { iaOferta = !!(typeof CONFIG !== "undefined" && CONFIG.painelIA === true && typeof App !== "undefined" && App._iaPost && typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave()); } catch (eIa) { iaOferta = false; }
+      return {
+        esc: ctx.esc, fin: ctx.fin, podeFin: ctx.podeFin, podeMod: ctx.podeMod, podeAprovar: ctx.podeAprovar, metas: ctx.metas, prefs: ctx.prefs, temFin: ctx.temFin,
+        larguraGraf: larg, largura: largura, top: this._pnTop || { obras: "faturamento", desp: "pagas" }, statusSel: this._pnStatus || null,
+        icone: function (id) { try { return self.iconeModulo(id, 22) || ""; } catch (eI2) { return ""; } }, periodoRotulo: this._pnPeriodoRotulo(m.periodo), escopoRotulo: this._dashEscopoRotulo ? this._dashEscopoRotulo(ctx.esc) : "",
+        fmtMoeda: function (v) { return Util.fmtMoeda(v); },
+        gt: function (t, l, r) { return self._pnGt(t, l, r); },
+        decisao: function (x) { return self._pnDecisao(x); }, botao: function (x, t) { return self._pnBotao(x, t); },
+        catRotulo: function (cat) { return rot(P.finCategoria, cat); }, catCor: function (cat) { return self._CORCAT[cat] || "var(--cat-outros)"; },
+        obrasEstado: est, obrasFotos: [], iniciais: function (n) { return self._pnIniciais(n); },
+        fotoDe: function (l) { var ob = obrasPorId[l.id]; try { return (ob && ObraVitrine.foto) ? ObraVitrine.foto(ob, idx ? idx[l.id] || null : null) : null; } catch (eF) { return null; } },
+        saudacao: this._pnSaudacaoTxt(), iaOferta: iaOferta, iaTexto: this._pnIaTexto || "",
+        barH: function (itens) { return (typeof UI !== "undefined" && UI._barH) ? UI._barH(itens, function (v) { return Util.fmtNum(v, 2) + " m²"; }) : ""; }
+      };
     },
-    /* troca só o miolo (digitar na busca não pode tirar o foco do campo) */
-    _pnAtualizarObras: function () {
-      if (typeof document === "undefined" || !this._pnM || !this._pnC) return;
-      var box = document.querySelector("#main [data-pn-corpo]");
-      if (!box) return;
-      var corpo = this._pnObrasCorpo(this._pnM, this._pnC);
-      box.innerHTML = corpo.html;
-      var ct = document.querySelector("#main [data-pn-ct]");
-      if (ct) ct.textContent = corpo.ct;
-      var abas = document.querySelectorAll("#main .pn-ocs [data-gacao=painel-obras-aba]");
-      Array.prototype.forEach.call(abas, function (b) { var on = b.getAttribute("data-value") === corpo.aba; b.className = "pn-seg-b" + (on ? " on" : ""); b.setAttribute("aria-selected", on ? "true" : "false"); });
-      this._pnLigarFotos();
+    /* "Bom dia, Rogério" — só o texto (o título do resumo do dia). Sem nome de pessoa cadastrado, vai sem nome: nunca cumprimenta o e-mail. */
+    _pnSaudacaoTxt: function () {
+      var hora = 12, nome = "";
+      try { hora = new Date().getHours(); } catch (eH) { hora = 12; }
+      try { nome = PainelDados.primeiroNome((typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : ""); } catch (eN) { nome = ""; }
+      return Util.esc(PainelDados.saudacao(hora) + (nome ? ", " + nome : ""));
+    },
+    _pnDemoChip: function () {
+      if (!this._obraDemoPode() || !ObraDemo.existe()) return "";
+      return '<span class="pv-demo-chip" title="A OBRA TESTE ORÇAPRO está criada, com dados de exemplo em todos os módulos. Ao remover, só os dados de demonstração saem.">Obra de demonstração'
+        + '<button type="button" class="pv-demo-x" data-gacao="obrademo-remover">Remover</button></span>';
+    },
+
+    /* ---- comparação e vista ---- */
+    dashTrocaCmp: function (v) {
+      if (v == null) return;
+      this._dashCmp = v === "ano" ? "ano" : "anterior";
+      this._pnRender();
+    },
+    painelObrasOrdem: function (v) {
+      var est = this._pnObrasEstado();
+      if (!PainelDados.ORDENS_CARTEIRA[v]) return;
+      /* mesma coluna inverte; coluna nova começa pelo que a pessoa quer ver primeiro (o pior, o maior ou o mais próximo) */
+      if (est.ordem === v) est.dir = est.dir === "asc" ? "desc" : "asc";
+      else { est.ordem = v; est.dir = (v === "nome" || v === "marco" || v === "margem") ? "asc" : "desc"; }
+      this._pnAtualizarObras();
+    },
+    painelObrasVista: function (v) {
+      var est = this._pnObrasEstado();
+      est.vista = v === "galeria" ? "galeria" : "tabela";
+      this._pnGravar({ vista: est.vista });
+      this._pnAtualizarObras();
     },
     painelObrasAba: function (v) {
       var est = this._pnObrasEstado();
-      est.aba = (v === "andamento" || v === "todas" || v === "concluidas") ? v : null;
-      est.ate = PainelDados.POR_PAGINA;
+      est.aba = (v === "andamento" || v === "planejamento" || v === "pausada" || v === "concluida" || v === "todas") ? v : null;
       this._pnAtualizarObras();
     },
-    painelObrasMais: function () { var est = this._pnObrasEstado(); est.ate = (est.ate || PainelDados.POR_PAGINA) + PainelDados.POR_PAGINA; this._pnAtualizarObras(); },
     painelObrasLimpar: function () {
-      var est = this._pnObrasEstado(); est.busca = ""; est.ate = PainelDados.POR_PAGINA;
+      var est = this._pnObrasEstado(); est.busca = "";
       var inp = (typeof document !== "undefined") ? document.querySelector("#main [data-pn-busca]") : null;
       if (inp) { inp.value = ""; try { inp.focus(); } catch (eF) {} }
       this._pnAtualizarObras();
+    },
+    /* troca só o miolo da carteira (digitar na busca não pode tirar o foco do campo) */
+    _pnAtualizarObras: function () {
+      if (typeof document === "undefined" || !this._pnM || !this._pnC || typeof PainelUI === "undefined") return;
+      var box = document.querySelector("#main [data-pn-corpo]");
+      if (!box) return;
+      var c = this._pnCtxUI(this._pnM, this._pnC), corpo = PainelUI.obrasCorpo(this._pnM, c);
+      box.innerHTML = corpo.html;
+      var ct = document.querySelector("#main [data-pn-ct]");
+      if (ct) ct.textContent = corpo.ct;
+      Array.prototype.forEach.call(document.querySelectorAll("#main .pv-obras [data-gacao=painel-obras-aba]"), function (b) {
+        var on = b.getAttribute("data-value") === corpo.aba; b.className = "pn-seg-b" + (on ? " on" : ""); b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("#main .pv-obras [data-gacao=painel-obras-vista]"), function (b) {
+        var on = b.getAttribute("data-value") === corpo.vista; b.className = "pn-seg-b" + (on ? " on" : ""); b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      this._pnFotosPend = c.obrasFotos;
+      this._pnLigarFotos();
     },
     /* UM ouvinte para a vida do app: o campo é redesenhado a cada render do Painel */
     _pnLigarBusca: function () {
@@ -3652,15 +3098,13 @@
         var al = ev.target;
         if (!al || !al.hasAttribute || !al.hasAttribute("data-pn-busca")) return;
         var est = self._pnObrasEstado();
-        est.busca = String(al.value || ""); est.ate = PainelDados.POR_PAGINA;
+        est.busca = String(al.value || "");
         if (t) clearTimeout(t);
         t = setTimeout(function () { t = null; self._pnAtualizarObras(); }, 120);
       });
     },
-    /* a foto vem do IndexedDB (Promise): entra depois do HTML na tela, como na
-       lista de Obras. Só carrega a do cartão que está (ou vai estar) à vista —
-       24 obras não leem 24 fotos na abertura. Foto que não chega fica com as
-       iniciais, nunca um ícone de imagem quebrada. */
+    /* a foto vem do IndexedDB (Promise): entra depois do HTML na tela. Só carrega a do cartão à vista. Foto que
+       não chega fica com as iniciais, nunca um ícone de imagem quebrada. */
     _pnLigarFotos: function () {
       var fotos = this._pnFotosPend || [];
       this._pnFotosPend = null;
@@ -3672,15 +3116,14 @@
           var im = document.createElement("img");
           im.alt = ""; im.decoding = "async"; im.src = d;
           box.insertBefore(im, box.firstChild);
-          box.className += " pn-oc-tem";
+          box.className += " pv-gc-tem";
           var cr = box.getAttribute("data-credito");
-          if (cr) { var s = document.createElement("span"); s.className = "pn-oc-cred"; s.textContent = cr; box.appendChild(s); }
+          if (cr) { var s = document.createElement("span"); s.className = "pv-gc-cred"; s.textContent = cr; box.appendChild(s); }
         }).catch(function () {});
       };
       setTimeout(function () {
-        var porId = {};
+        var porId = {}, caixas = [];
         fotos.forEach(function (f) { porId[String(f.id)] = f; });
-        var caixas = [];
         fotos.forEach(function (f) { var b = document.querySelector('#main [data-pn-foto="' + String(f.id).replace(/"/g, "") + '"]'); if (b) caixas.push({ f: f, b: b }); });
         if (typeof IntersectionObserver === "undefined") { caixas.forEach(function (x) { poe(x.f, x.b); }); return; }
         var obs = new IntersectionObserver(function (ents) {
@@ -3693,6 +3136,147 @@
         }, { rootMargin: "240px 0px" });
         caixas.forEach(function (x) { obs.observe(x.b); });
       }, 0);
+    },
+    /* a gaveta com a fila COMPLETA (grupos, Resolver, Adiar, Adiados). Reabre sozinha depois de adiar ou resolver,
+       porque o Painel por baixo é redesenhado. */
+    painelFilaAbrir: function () {
+      if (typeof PainelUI === "undefined" || typeof UI === "undefined" || !UI.modal || !this._pnM || !this._pnC) return;
+      var self = this, c = this._pnCtxUI(this._pnM, this._pnC);
+      this._pnFilaAberta = true;
+      UI.modal("Precisa de você hoje", PainelUI.filaCompleta(this._pnM, c), [{ texto: "Fechar", classe: "primary", onClick: function () { self._pnFilaAberta = false; UI.fecharModal(); } }]);
+    },
+    /* ANALISAR COM IA: manda SÓ números somados (PainelDados.resumoParaIA: sem nome de cliente, obra ou fornecedor).
+       Falhou, sem crédito ou sem rota no servidor: o texto do motor (acima) continua valendo e a tela diz isso. */
+    painelAnalisarIA: function () {
+      var m = this._pnM, self = this, e = Util.esc;
+      if (!m || typeof PainelDados === "undefined" || typeof document === "undefined") return;
+      var caixa = document.querySelector("#main [data-pv-ia]");
+      var mostra = function (html) { if (caixa) { caixa.hidden = false; caixa.innerHTML = html; } };
+      var cai = function (msg) { mostra("<p>" + e(msg) + " O resumo acima segue valendo: ele é calculado aqui, com os mesmos números.</p>"); };
+      if (typeof App === "undefined" || !App._iaPost) { cai("A análise por IA não está disponível neste aparelho."); return; }
+      mostra('<p class="pv-ia-esp">Lendo os números…</p>');
+      try {
+        App._iaPost("/ia/painel", { numeros: PainelDados.resumoParaIA(m) }).then(function (x) {
+          var j = x && x.j, st = x && x.status;
+          if (st === 200 && j && j.ok && typeof j.texto === "string" && j.texto.replace(/\s/g, "")) {
+            self._pnIaTexto = String(j.texto).slice(0, 700);
+            mostra("<p>" + e(self._pnIaTexto) + "</p><small>Leitura da IA sobre números somados. Confira nos blocos abaixo.</small>");
+          } else if (st === 402) cai("Sem crédito de IA para esta análise.");
+          else if (st === 404 || st === 503) cai("O servidor de IA desta licença ainda não tem a análise do Painel.");
+          else cai("A IA não respondeu agora.");
+        }, function () { cai("Sem conexão com a IA agora."); });
+      } catch (eIA) { cai("A análise por IA falhou."); }
+    },
+    /* leva o olho à fila "Precisa de você hoje" e põe o foco nela (teclado) */
+    painelIrFila: function () {
+      if (typeof document === "undefined") return;
+      var el = document.querySelector("#main .pn-hoje");
+      if (!el) return;
+      try { el.scrollIntoView({ block: "start" }); } catch (e) {}
+      var h = el.querySelector("h2");
+      if (h) { h.setAttribute("tabindex", "-1"); try { h.focus({ preventScroll: true }); } catch (e2) { h.focus(); } }
+    },
+
+    _pnHtml: function (m, ctx) {
+      var self = this, e = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
+      var podeFin = ctx.podeFin, esc = ctx.esc, fin = ctx.fin, pref = ctx.prefs || {};
+      ctx.temFin = !!(podeFin && fin && esc.financeiro.length > 0);
+      var obras = lista("obras"), selIds = this._dashObras();
+      var _ehMac = function () { try { return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""); } catch (er) { return false; } };
+      var optO = '<option value="todas"' + (!selIds ? " selected" : "") + '>Todas as obras</option>' + obras.map(function (o) { var mk = !!(selIds && selIds.indexOf(o.id) > -1); return '<option value="' + e(o.id) + '"' + (mk ? " selected" : "") + '>' + e(o.nome) + "</option>"; }).join("");
+      var multi = !!this._dashMulti || !!(selIds && selIds.length > 1);
+      var campoObra = (multi ? '<select data-gacao="dash-obra" multiple size="4" aria-label="Obra" title="Segure ' + (_ehMac() ? "Command" : "Ctrl") + ' para marcar mais de uma obra">' + optO + "</select>" : '<select data-gacao="dash-obra" aria-label="Obra">' + optO + "</select>")
+        + '<button class="pv-chipseg" data-gacao="dash-obra-multi" aria-pressed="' + (multi ? "true" : "false") + '" title="' + (multi ? "Voltar a escolher uma obra por vez" : "Somar mais de uma obra no mesmo recorte") + '">' + (multi ? "uma obra" : "+ somar obras") + "</button>";
+      var _cv = { obras: obras.length, financeiro: esc.financeiro.length, rdo: esc.rdo.length, orcamentos: 0 };
+      if (!_cv.obras && !_cv.financeiro && !_cv.rdo) { try { _cv.orcamentos = Store.listarOrcamentos(eid()).length; } catch (eO) { _cv.orcamentos = 0; } }
+      var vazia = !m.filtrado && PainelDados.contaVazia(_cv);
+      var K = kit(), modelo = pref.modelo === "b" ? "b" : "a";
+      var anima = !this._pnJaAnimou;
+      var demoChip = vazia ? "" : this._pnDemoChip();
+      var criarDemo = (!vazia && this._obraDemoPode() && !ObraDemo.existe()) ? '<button class="btn" data-gacao="obrademo-criar" title="Cria a OBRA TESTE ORÇAPRO com dados de exemplo em todos os módulos">Criar obra de demonstração</button>' : "";
+      var subHtml = e(this._pnDataExtenso(m.hoje) + ". " + (vazia ? "" : N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".")) + (demoChip ? " " + demoChip : "");
+      if (vazia) {
+        var htmlV = '<div class="pn' + (anima ? " pn-anima" : "") + '" data-modelo="' + modelo + '">' + K.cab({ icone: "dashboard", titulo: "Painel de Gestão", subHtml: subHtml, obraHtml: "", acoes: [] });
+        return htmlV + this._pnComeco() + "</div>";
+      }
+      /* a entrada animada é UMA vez por sessão, e só vale a render que tem gráfico */
+      this._pnJaAnimou = true;
+      this._pnM = m; this._pnC = ctx;
+      this._pnLigarBusca();
+      if (!this._pnHora) this._pnHora = this._pnAgoraTxt();
+      this._pnAutoLigar();
+      ctx.modelo = modelo;
+      var cUI = this._pnCtxUI(m, ctx);
+      cUI.seg = { per: this._dashPer, cmp: this._dashCmp === "ano" ? "ano" : "anterior", cmpOff: !m.comparacao, obraHtml: campoObra, status: this._pnStatus || "todas" };
+      cUI.topo = { modelo: modelo, auto: pref.auto || 0, compacto: !!pref.compacto, tv: !!this._pnTv, hora: this._pnHora, subHtml: subHtml,
+        metasHtml: podeFin ? '<button class="btn" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : "", criarDemoHtml: criarDemo };
+      var vis = [], escondidos = 0, abaDe = {}, abaGrupos = PainelDados.ABAS_BLOCOS || [];
+      var ordem = PainelDados.blocosOrdenados(ctx.prefs);
+      /* ABAS: cada gráfico-membro é desenhado na largura do cartão da aba (cols do grupo), não na do bloco solto */
+      abaGrupos.forEach(function (g) { g.membros.forEach(function (id) { abaDe[id] = g; }); });
+      var cAba = {}; abaGrupos.forEach(function (g) { var cg = Object.create(cUI); cg.largura = function () { return cUI.largura(g.cols); }; cg.larguraGraf = cUI.largura(g.cols); cAba[g.id] = cg; });
+      ordem.forEach(function (b) {
+        if (!b.on) { escondidos++; return; }
+        var f = PainelUI.blocos[b.id]; if (!f) return;
+        var h = f(m, abaDe[b.id] ? cAba[abaDe[b.id].id] : cUI);
+        if (h) vis.push({ id: b.id, cols: b.cols || 12, html: h });
+      });
+      /* junta os membros visíveis de cada grupo num cartão com abas (no lugar do primeiro); sobrou um só, ele fica solto */
+      abaGrupos.forEach(function (g) {
+        var mem = vis.filter(function (b) { return g.membros.indexOf(b.id) > -1; });
+        if (mem.length < 2) return;
+        var pos = vis.indexOf(mem[0]);
+        vis = vis.filter(function (b) { return mem.indexOf(b) < 0; });
+        vis.splice(pos, 0, { id: g.id, cols: g.cols, html: PainelUI.abas(g, mem, (self._pnAbas || {})[g.id]) });
+      });
+      /* "Precisa de você hoje" é fixa: entra logo depois do resumo e dos indicadores, qualquer que seja a ordem da pessoa */
+      var k = 0;
+      while (k < vis.length && (vis[k].id === "resumo" || vis[k].id === "kpis")) k++;
+      var wrap = function (b, cols) { return '<div class="pn-bloco pv-c' + (cols || b.cols) + '" data-bloco="' + b.id + '">' + b.html + "</div>"; };
+      var fila = { id: "fila", cols: 12, html: PainelUI.fila(m, cUI) };
+      /* v3: o resumo (4 colunas) e a fila (8) dividem a MESMA linha; sem resumo (escondido), a fila ocupa a linha inteira */
+      var cabeca = function (lista) {
+        var temRes = lista.some(function (b) { return b.id === "resumo"; });
+        return lista.map(function (b) { return wrap(b, b.id === "resumo" ? 4 : b.cols); }).join("")
+          + '<div class="pn-bloco pn-bloco-fila pv-c' + (temRes ? 8 : 12) + '" data-bloco="fila">' + fila.html + "</div>";
+      };
+      var corpo = cabeca(vis.slice(0, k)) + vis.slice(k).map(function (b) { return wrap(b); }).join("");
+      var seg = PainelUI.segmentadores(m, cUI);
+      var topoHtml = PainelUI.topo(m, cUI);
+      /* MODELO A: a faixa navy leva o título, as ações, os segmentadores E a linha de KPIs (o resto fica na grade, no fundo claro) */
+      var kpisFaixa = "";
+      if (modelo === "a") {
+        var iK = -1; vis.forEach(function (b, ix) { if (b.id === "kpis" && ix < k) iK = ix; });
+        if (iK > -1) { kpisFaixa = wrap(vis[iK]); vis.splice(iK, 1); k--; corpo = cabeca(vis.slice(0, k)) + vis.slice(k).map(function (b) { return wrap(b); }).join(""); }
+      } else {
+        /* Modelo B: os indicadores abrem a grade e o resumo + a fila vêm depois, lado a lado */
+        var iKb = -1; vis.forEach(function (b, ix) { if (b.id === "kpis" && ix < k) iKb = ix; });
+        if (iKb > -1) { var kb = vis[iKb]; vis.splice(iKb, 1); k--; corpo = wrap(kb) + cabeca(vis.slice(0, k)) + vis.slice(k).map(function (b) { return wrap(b); }).join(""); }
+      }
+      var grade = '<div class="pv-malha">' + corpo + "</div>";
+      var html = '<div class="pn' + (anima ? " pn-anima" : "") + (pref.compacto ? " pn-compacto" : "") + '" data-modelo="' + modelo + '">' + (modelo === "a" ? '<div class="pv-faixa">' + topoHtml + seg + kpisFaixa + "</div>" : topoHtml)
+        + (modelo === "b" ? '<div class="pv-dash pv-dash-b">' + grade + '<aside class="pv-lateral">' + seg + "</aside></div>" : '<div class="pv-dash">' + grade + "</div>");
+      html += '<div class="pn-fim">' + (escondidos ? "<span>" + N(escondidos, "bloco escondido", "blocos escondidos") + ' em "Organizar painel".</span>' : "") + "</div>";
+      this._pnFotosPend = cUI.obrasFotos;
+      this._pnLigarFotos();
+      return html + "</div>";
+    },
+
+    /* o bloco "empresa + Bom dia, Fulano" do topo (hero e estado vazio). Sem nome
+       de pessoa cadastrado, a saudação vai sem nome: nunca cumprimenta o e-mail. */
+    _pnSaudacao: function (msg) {
+      var e = Util.esc, hora = 12, nome = "", empresa = "";
+      try { hora = new Date().getHours(); } catch (eH) { hora = 12; }
+      try { nome = PainelDados.primeiroNome((typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : ""); } catch (eN) { nome = ""; }
+      try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (eE) { empresa = ""; }
+      return '<div class="pn-hero-id">' + (empresa ? '<p class="pn-hero-emp">' + e(empresa) + "</p>" : "")
+        + '<h2 id="pn-hero-t">' + PainelDados.saudacao(hora) + (nome ? ", " + e(nome) : "") + "</h2>" + (msg ? '<p class="pn-hero-msg">' + msg + "</p>" : "") + "</div>";
+    },
+    /* iniciais para o cartão sem foto: duas letras do nome da obra */
+    _pnIniciais: function (nome) {
+      var p = String(nome || "").replace(/[^A-Za-zÀ-ÿ0-9 ]/g, " ").split(/\s+/).filter(function (x) { return x.length > 1 || /\d/.test(x); });
+      if (!p.length) return "";
+      return (p[0].charAt(0) + (p.length > 1 ? p[1].charAt(0) : (p[0].charAt(1) || ""))).toUpperCase();
     },
     /* ESTADO VAZIO: os passos de começo. Três caminhos curtos, na ordem em que
        costumam servir a quem acabou de entrar: ver pronto (BIM), ver pronto
@@ -3737,81 +3321,6 @@
         setTimeout(esperar, 500);
       })();
     },
-    /* leva o olho à fila "Precisa de você hoje" e põe o foco nela (teclado) */
-    painelIrFila: function () {
-      if (typeof document === "undefined") return;
-      var el = document.querySelector("#main .pn-hoje");
-      if (!el) return;
-      try { el.scrollIntoView({ block: "start" }); } catch (e) {}
-      var h = el.querySelector("h2");
-      if (h) { h.setAttribute("tabindex", "-1"); try { h.focus({ preventScroll: true }); } catch (e2) { h.focus(); } }
-    },
-
-    _pnHtml: function (m, ctx) {
-      var self = this, e = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
-      var podeFin = ctx.podeFin, esc = ctx.esc, fin = ctx.fin;
-      ctx.temFin = !!(podeFin && fin && esc.financeiro.length > 0);
-      var obras = lista("obras"), selIds = this._dashObras();
-      var perRot = { mes: "Este mês", "6m": "Últimos 6 meses", ano: "Este ano", tudo: "Desde sempre" };
-      var _ehMac = function () { try { return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""); } catch (er) { return false; } };
-      var optO = '<option value="todas"' + (!selIds ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' + obras.map(function (o) { var mk = !!(selIds && selIds.indexOf(o.id) > -1); return '<option value="' + e(o.id) + '"' + (mk ? " selected" : "") + '>' + e(o.nome) + "</option>"; }).join("");
-      var multi = !!this._dashMulti || !!(selIds && selIds.length > 1);
-      var campoObra = multi ? '<select data-gacao="dash-obra" multiple size="5" title="Segure ' + (_ehMac() ? "Command" : "Ctrl") + ' para marcar mais de uma obra">' + optO + "</select>" : '<select data-gacao="dash-obra">' + optO + "</select>";
-      var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + ">" + perRot[p] + "</option>"; }).join("");
-      /* PADRÃO DE TELA (ROTEIRO-MODULO.md): o cabeçalho do Painel é o do kit,
-         igual ao de todo módulo — título com o ícone do menu, a linha de
-         contexto e, à direita, o RECORTE (obra, somar obras e período) no slot
-         de obra; das três ações, as duas mais usadas à vista e "Metas" no
-         "Mais" (mesmo botão, mesmo `data-gacao`). Os blocos abaixo são o
-         produto e não mudam. ⚠ O título continua "Painel de Gestão": é o nome
-         que o relatório impresso (`painelImprimir`) e a ajuda usam. */
-      /* PRIMEIRA TELA (25/10/2026): conta sem nada recebe os passos de começo;
-         com dados, entram o hero, os atalhos e as obras em cartão ANTES dos blocos.
-         `contaVazia` só consulta orçamentos (JSON grande) quando o resto já está
-         vazio, e nunca com recorte de obra ativo (recorte ≠ conta nova). */
-      var _cv = { obras: obras.length, financeiro: esc.financeiro.length, rdo: esc.rdo.length, orcamentos: 0 };
-      if (!_cv.obras && !_cv.financeiro && !_cv.rdo) { try { _cv.orcamentos = Store.listarOrcamentos(eid()).length; } catch (eO) { _cv.orcamentos = 0; } }
-      var vazia = !m.filtrado && PainelDados.contaVazia(_cv);
-      var K = kit();
-      var recorte = '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
-        + '<label class="pn-filtro">Obra ' + campoObra + "</label>"
-        + '<button class="pn-ctl pn-ctl-ghost" data-gacao="dash-obra-multi" title="' + (multi ? "Voltar a escolher uma obra por vez" : "Somar mais de uma obra no mesmo recorte") + '">' + (multi ? "uma obra" : "+ somar obras") + "</button>"
-        + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label></div>";
-      var gf = this._pnGraf(), anima = !this._pnJaAnimou;
-      this._pnGf = gf;
-      var html = '<div class="pn' + (anima ? " pn-anima" : "") + '"' + (gf ? ' data-graf="' + gf + '"' : "") + ">" + K.cab({
-        icone: "dashboard", titulo: "Painel de Gestão",
-        sub: this._pnDataExtenso(m.hoje) + ". " + (vazia ? "" : N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + "."),
-        obraHtml: vazia ? "" : recorte,
-        acoes: vazia ? [] : [
-          '<button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>',
-          '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>',
-          podeFin ? '<button class="btn" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : ""
-        ]
-      });
-      if (vazia) return html + this._pnComeco() + "</div>";
-      /* a entrada animada é UMA vez por sessão, e só vale a render que tem gráfico: a 1ª render de
-         conta vazia (que ainda não carregou os dados) não gasta a animação */
-      this._pnJaAnimou = true;
-      html += this._pnHero(m, ctx) + this._pnAtalhos();
-      var obrasHtml = this._pnObrasCartoes(m, ctx);
-      var blocos = PainelDados.blocosOrdenados(ctx.prefs), fn = { tiles: "_pnBlTiles", posicao: "_pnBlPosicao", agenda: "_pnBlAgenda", previsao: "_pnBlPrevisao", fluxo: "_pnBlFluxo", composicao: "_pnBlComposicao", lucro: "_pnBlLucro", metas: "_pnBlMetas", obras: "_pnBlObras", orcado: "_pnBlOrcado", operacao: "_pnBlOperacao" };
-      var esq = "", cheia = "", escondidos = 0;
-      blocos.forEach(function (b) {
-        if (!b.on) { escondidos++; return; }
-        var f = fn[b.id]; if (!f || !self[f]) return;
-        var h = self[f](m, ctx);
-        if (!h) return;
-        if (b.col === "esq") esq += '<div class="pn-bloco" data-bloco="' + b.id + '">' + h + "</div>"; else cheia += '<div class="pn-bloco" data-bloco="' + b.id + '">' + h + "</div>";
-      });
-      /* três áreas (obras, gráficos, fila): em tela larga (>= 1600 px) a fila fica AO LADO das obras */
-      html += '<section class="pn-grid pn-corpo"><div class="pn-grid-obras">' + obrasHtml + '</div><div class="pn-grid-esq">' + esq + '</div><div class="pn-grid-dir">' + this._pnBlFila(m, ctx) + "</div></section>" + cheia;
-      html += '<div class="pn-fim">' + (escondidos ? "<span>" + N(escondidos, "bloco escondido", "blocos escondidos") + ' em "Organizar painel".</span>' : "") + "</div>";
-      html += this._obraDemoCard();
-      this._pnLigarFotos();
-      return html + "</div>";
-    },
-
     _obraDemoPode: function () {
       if (typeof ObraDemo === "undefined") return false;
       if (typeof App !== "undefined" && App._demo) return false;          // vitrine do site: nunca
@@ -4100,9 +3609,11 @@
            orçamento à obra") só aparece quando a lista fica VAZIA — nunca
            quando fica pela metade, que é o caso perigoso. Agora conta-se
            quem ficou de fora, e o cartão diz. */
+        /* ⚠ v3: obra concluída/cancelada não conta como "sem orçamento" (PainelDados.contarSemOrcamento) */
+        var _cOrc = PainelDados.contarSemOrcamento(obras.filter(function (o) { return self._dashNaObra(o.id); }));
+        _obrasNoRecorte = _cOrc.noRecorte; _obrasSemOrc = _cOrc.semOrcamento;
         obras.filter(function (o) { return self._dashNaObra(o.id); }).forEach(function (o) {
-          _obrasNoRecorte++;
-          if (!o.orcamentoId) { _obrasSemOrc++; return; }
+          if (!o.orcamentoId) return;
           var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
           var prev = Orcamento.totais(orc2).custoDireto;
           /* ⚠ A MESMA RÉGUA DA OBRA FILTRADA, E DE TODAS AS OUTRAS TELAS.
@@ -25574,7 +25085,7 @@
       res.innerHTML =
         '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.linhas.length + " serviços · " + r.resumo.nElementos + ' elementos</b><span style="flex:1"></span>' +
         '<button class="btn sm" id="bim-qto-orc" title="Comparar estas quantidades com as do orçamento vinculado a esta obra">' + (typeof Icones !== 'undefined' ? Icones.get('prevreal', 15) : '') + ' Conferir com o orçamento</button>' +
-        '<button class="btn sm success" id="bim-qto-lancar">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançar no orçamento</button></div>' +
+        '<button class="btn sm success" id="bim-qto-lancar">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançar no orçamento</button>' + (window.MorIfcUI && MorIfcUI.botaoHtml ? MorIfcUI.botaoHtml() : '') + '</div>' +
         '<div style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Disciplina / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Elem.</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         avisos +
         (function () { // honestidade: peça criada no editor NÃO vem de BaseQuantities do IFC
@@ -27504,6 +27015,11 @@
         if (bA) { self._bimOrcAplicar(bA.getAttribute("data-orc-aplicar")); return; }
         if (e.target.closest("#bim-orc-voltar")) { self._bimOrcAberto = false; self._bimOrcDespintar(true); self._bimQuantificar(); return; }
         if (e.target.closest("#bim-qto-orc")) { self._bimOrcConferir(); return; }
+        if (e.target.closest("#mor-ifc-orcar")) {   /* F13 (prévia ?previa=motor): orçar pelo modelo — lê o IFC inteiro, confere, OK, lança */
+          var obraM = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null;
+          if (window.MorIfcUI) MorIfcUI.abrir(window.App, { elementos: self._bimElementos || [], obraNome: obraM && obraM.nome });
+          return;
+        }
         if (e.target.closest("#bim-qto-lancar")) {
           var obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null;
           if (window.App && App.criarOrcamentoDoBIM) App.criarOrcamentoDoBIM(self._bimQto, obra && obra.nome);
@@ -52932,7 +52448,7 @@ renderFolha: function () {
      *     cadastro nem abria (contradizendo o próprio contrato). */
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
-      "painel-obras-aba": 1, "painel-obras-mais": 1, "painel-obras-limpar": 1,
+      "painel-obras-aba": 1, "painel-obras-ordem": 1, "painel-obras-vista": 1, "painel-modelo": 1, "painel-atualizar": 1, "painel-auto": 1, "painel-expandir": 1, "painel-reduzir": 1, "painel-top": 1, "painel-aba": 1, "painel-status": 1, "painel-obras-mais": 1, "painel-obras-limpar": 1, "painel-fila-abrir": 1, "dash-cmp": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-obra-multi": 1, "dash-metas": 1, "graf-ir": 1, "tar-filtro": 1, "tar-obra": 1,
       "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1, "req-obra": 1, "cot-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
@@ -53084,13 +52600,25 @@ renderFolha: function () {
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
         case "dash-status": return this.dashTrocaStatus(dataset.value);
-        case "dash-comparar": return this.dashTrocaComparar();
+        case "dash-cmp": return this.dashTrocaCmp(dataset.value);
         case "graf-ir": return this.grafIr(dataset);
         case "painel-organizar": return this.painelOrganizar();
         case "painel-exemplo-bim": return this.painelExemploBim();
         case "painel-ir-fila": return this.painelIrFila();
         case "painel-obras-aba": return this.painelObrasAba(dataset.value);
+        case "painel-obras-ordem": return this.painelObrasOrdem(dataset.value);
+        case "painel-modelo": return this.painelModelo(dataset.value);
+        case "painel-atualizar": return this.painelAtualizar();
+        case "painel-auto": return this.painelAuto(dataset.value);
+        case "painel-expandir": return this.painelExpandir();
+        case "painel-reduzir": return this.painelReduzir();
+        case "painel-top": return this.painelTop(dataset);
+        case "painel-aba": return this.painelAba(dataset);
+        case "painel-status": return this.painelStatus(dataset.value);
         case "painel-obras-mais": return this.painelObrasMais();
+        case "painel-obras-vista": return this.painelObrasVista(dataset.value);
+        case "painel-fila-abrir": return this.painelFilaAbrir();
+        case "painel-analisar-ia": return this.painelAnalisarIA();
         case "painel-obras-limpar": return this.painelObrasLimpar();
         case "painel-bloco-toggle": return this.painelBlocoToggle(dataset.id);
         case "painel-bloco-sobe": return this.painelBlocoMover(dataset.id, -1);

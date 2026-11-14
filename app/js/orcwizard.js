@@ -310,6 +310,8 @@
         '<div class="row"><div class="field"><label>Cliente</label><input id="ow-cliente" value="' + esc(s.cliente) + '" placeholder="Nome do contratante"></div>' +
         '<div class="field"><label>Obra / Local</label><input id="ow-obra" value="' + esc(s.obra) + '" placeholder="Ex.: Bairro Centro"></div></div>' +
         '<div class="field"><label>Categoria da obra</label><select id="ow-categoria">' + cats + "</select></div>" +
+        /* prévia ?previa=motor: tipo de obra → já nascem as etapas padrão + Serviços Preliminares (vazio com a prévia desligada) */
+        (typeof MorUI !== "undefined" ? MorUI.campoTipoSeAtivo(s.morTipologia || "") : "") +
         '<label class="ow-check"><input type="checkbox" id="ow-zerado"' + (s.permitirZerado ? " checked" : "") + '> ' +
         "<span>Permitir insumos com preço zerado <small>(itens sem preço na base entram com R$ 0,00 em vez de bloquear o lançamento)</small></span></label>" +
         /* ONDE O MEMORIAL SAI (v1.1.224). A justificativa de quantidade e de
@@ -350,6 +352,7 @@
       s.cliente = val("ow-cliente").trim();
       s.obra = val("ow-obra").trim();
       s.categoria = val("ow-categoria");
+      if (typeof MorUI !== "undefined" && document.getElementById("mor-tipologia")) s.morTipologia = MorUI.lerTipoDoAssistente();
       s.prazoEntrega = val("ow-prazo");
       s.controlarPrazo = marcado("ow-controlar-prazo");
       s.permitirZerado = marcado("ow-zerado");
@@ -853,6 +856,8 @@
           Aprovacao.carimbarAutor(orc, (Auth.usuario && Auth.usuario()) || {});
         }
       } catch (eA) {}
+      /* prévia ?previa=motor: as etapas da tipologia nascem vazias (nenhum item entra sem o usuário confirmar no painel de cada etapa) */
+      if (typeof MorUI !== "undefined" && s.morTipologia) { try { MorUI.aoCriarOrcamento(orc, s.morTipologia); } catch (eMor) {} }
       Store.salvarOrcamento(Auth.empresaId(), orc);
       UI.fecharModal();
       /* ⚠ F2 — O RESTO DO CRIAR RODA DEPOIS DO `confirm` DAS DIVERGÊNCIAS.

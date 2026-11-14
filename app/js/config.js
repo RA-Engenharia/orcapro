@@ -21,6 +21,8 @@
     // IA na NUVEM (VPS): já vem pronta, sem o cliente configurar chave. A chave fica escondida no servidor.
     // As chamadas de IA enviam a licença (x-licenca) — só quem ativou usa a IA.
     iaBackend: "https://187-127-40-14.sslip.io",
+    /* Painel de Gestão: botão "Analisar com IA" (manda só números somados a /ia/painel). DESLIGADO enquanto o servidor de IA não tiver a rota: ligado sem ela, o botão só diria "ainda não tem" para todo mundo. */
+    painelIA: false,
 
     // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
     licencaServer: "https://187-127-40-14.sslip.io",
@@ -37,7 +39,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.305",
+    versao: "1.2.306",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)

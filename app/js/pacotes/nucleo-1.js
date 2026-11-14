@@ -14,10 +14,11 @@ corAcento: "#16a34a",
 logoTexto: '<span class="marca-top">OrçaPRO<span class="logo-ia">IA</span></span>'
 },
 iaBackend: "https://187-127-40-14.sslip.io",
+painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.305",
+versao: "1.2.306",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -4119,18 +4120,35 @@ var POR_PAGINA = 12;
 var PERIODOS = { mes: 1, "6m": 1, ano: 1, tudo: 1 };
 var STATUS = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
 var BLOCOS = [
-{ id: "tiles", nome: "Caixa (recebido, pago, resultado, saldo a faturar)", col: "esq" },
-{ id: "agenda", nome: "Próximos 7 dias (linha do tempo)", col: "esq" },
-{ id: "previsao", nome: "Caixa e previsão, 30 dias", col: "esq" },
-{ id: "fluxo", nome: "Fluxo de caixa por mês", col: "esq" },
-{ id: "composicao", nome: "Despesas por categoria e custo por obra", col: "esq" },
-{ id: "lucro", nome: "Lucratividade por mês", col: "esq" },
-{ id: "metas", nome: "Metas (medidores)", col: "esq" },
-{ id: "posicao", nome: "Posição de hoje (a receber, a pagar)", col: "esq" },
-{ id: "obras", nome: "Obras", col: "cheia" },
-{ id: "orcado", nome: "Orçado × gasto", col: "cheia" },
-{ id: "operacao", nome: "Operação (contadores)", col: "cheia" }
+{ id: "resumo", nome: "Resumo do dia", cols: 4 },
+{ id: "kpis", nome: "Indicadores principais (caixa, a receber, a pagar, margem)", cols: 12 },
+{ id: "faturamento", nome: "Recebido e pago por mês (área)", cols: 8 },
+{ id: "metas", nome: "Metas (medidores)", cols: 4 },
+{ id: "topobras", nome: "Top 10 obras (faturamento ou custo)", cols: 4 },
+{ id: "topdespesas", nome: "Top 10 fornecedores e maiores contas", cols: 4 },
+{ id: "composicao", nome: "Despesas por categoria (rosca)", cols: 4 },
+{ id: "fluxo", nome: "Fluxo de caixa e saldo", cols: 4 },
+{ id: "previsao", nome: "Previsão de caixa, 13 semanas", cols: 6 },
+{ id: "lucro", nome: "Lucratividade por mês", cols: 6 },
+{ id: "agenda", nome: "Próximos 7 dias", cols: 4 },
+{ id: "comercial", nome: "Comercial (orçamentos e propostas)", cols: 4 },
+{ id: "operacao", nome: "Operação (contadores)", cols: 4 },
+{ id: "obras", nome: "Carteira de obras", cols: 12 }
 ];
+BLOCOS.forEach(function (b) { b.larg = b.cols < 12 ? "meia" : "cheia"; });
+var ABAS_BLOCOS = [
+{ id: "rankings", nome: "Rankings", cols: 4, membros: ["topobras", "topdespesas", "composicao"], rotulos: { topobras: "Top obras", topdespesas: "Top fornecedores", composicao: "Categorias" } },
+{ id: "caixa", nome: "Caixa", cols: 4, membros: ["fluxo", "previsao", "lucro"], rotulos: { fluxo: "Fluxo", previsao: "13 semanas", lucro: "Lucratividade" } },
+{ id: "gestao", nome: "Gestão", cols: 4, membros: ["agenda", "comercial", "operacao"], rotulos: { agenda: "Próximos 7 dias", comercial: "Comercial", operacao: "Operação" } }
+];
+var BLOCOS_V = 3;
+var BLOCOS_ANTIGOS = { tiles: "kpis", posicao: null, orcado: null };
+var CMP_MODOS = { anterior: 1, ano: 1 };
+var VISTAS_OBRAS = { tabela: 1, galeria: 1 };
+var MODELOS = { a: 1, b: 1 };
+var AUTOS = { 0: 1, 1: 1, 5: 1, 10: 1, 30: 1 };
+var LIMITE_CUSTO_INCOMPLETO = 0.15;
+var SEMANAS_PREVISAO = 13;
 var GRUPOS = [
 { id: "dinheiro", nome: "Dinheiro parado", aberto: true },
 { id: "prazo", nome: "Prazo", aberto: true },
@@ -4171,8 +4189,38 @@ function chaveMes(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1))
 function iso(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
 function somaDias(hojeISO, n) { var d = data(hojeISO); d.setDate(d.getDate() + n); return iso(d); }
 function diasEntre(aISO, bISO) { var a = data(aISO), b = data(bISO); return (a && b) ? Math.round((b - a) / DIA) : null; }
+function addMeses(d, n) {
+var r = new Date(d.getFullYear(), d.getMonth() + n, 1);
+var ult = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+r.setDate(Math.min(d.getDate(), ult));
+return r;
+}
+function fmtBR(n, dec) {
+var neg = n < 0, s = Math.abs(n).toFixed(dec), p = s.split("."), inteiro = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+return (neg ? "-" : "") + inteiro + (dec ? "," + p[1] : "");
+}
+function semZeroFinal(s) { return s.replace(/,0$/, ""); }
+var NB = "\u00a0";
 var PainelDados = {
 CHAVE: CHAVE,
+BLOCOS_V: BLOCOS_V,
+LIMITE_CUSTO_INCOMPLETO: LIMITE_CUSTO_INCOMPLETO,
+SEMANAS_PREVISAO: SEMANAS_PREVISAO,
+moeda: function (v) {
+v = num(v);
+var a = Math.abs(v), sinal = v < 0 && Math.round(a) > 0 ? "\u2212" : "", corpo;
+if (a >= 999500) corpo = semZeroFinal(fmtBR(a / 1e6, 1)) + NB + "mi";
+else if (a >= 99950) corpo = fmtBR(Math.round(a / 1e3), 0) + NB + "mil";
+else if (a >= 9995) corpo = semZeroFinal(fmtBR(a / 1e3, 1)) + NB + "mil";
+else if (a >= 100) corpo = fmtBR(Math.round(a), 0);
+else corpo = (Math.abs(a - Math.round(a)) < 0.005) ? fmtBR(Math.round(a), 0) : fmtBR(a, 2);
+return sinal + "R$" + NB + corpo;
+},
+pctTxt: function (pct, pp) {
+if (pct === null || pct === undefined || !isFinite(pct)) return "";
+var r = Math.round(pct);
+return (r > 0 ? "+" : (r < 0 ? "\u2212" : "")) + Math.abs(r) + (pp ? " pp" : "%");
+},
 DIAS_SUSPEITO: DIAS_SUSPEITO,
 DEFASAGEM_PONTOS: DEFASAGEM_PONTOS,
 DIAS_ADIAR: DIAS_ADIAR,
@@ -4180,6 +4228,7 @@ DIAS_SEM_DIARIO: DIAS_SEM_DIARIO,
 POR_PAGINA: POR_PAGINA,
 BLOCOS: BLOCOS,
 GRUPOS: GRUPOS,
+ABAS_BLOCOS: ABAS_BLOCOS,
 hashUsuario: function (empresaId, email) {
 var s = String(empresaId == null ? "" : empresaId) + "|" + String(email == null ? "" : email).replace(/^\s+|\s+$/g, "").toLowerCase();
 var h = 5381, i;
@@ -4214,6 +4263,32 @@ vistos[b.id] = 1; out.push({ id: b.id, on: b.on !== false });
 });
 return out.length ? out : null;
 },
+migrarBlocos: function (v, bv) {
+if (!ehArr(v)) return null;
+var lista = v;
+if (bv !== BLOCOS_V) {
+lista = [];
+v.forEach(function (b) {
+if (!ehObj(b) || typeof b.id !== "string") return;
+var id = own(BLOCOS_ANTIGOS, b.id) ? BLOCOS_ANTIGOS[b.id] : b.id;
+if (id) lista.push({ id: id, on: b.on });
+});
+}
+var limpos = this._blocosLimpos(lista);
+if (!limpos) return null;
+var presentes = {};
+limpos.forEach(function (b) { presentes[b.id] = 1; });
+BLOCOS.forEach(function (d, i) {
+if (presentes[d.id]) return;
+var apos = -1, k, j;
+for (k = i - 1; k >= 0 && apos < 0; k--) {
+for (j = 0; j < limpos.length; j++) if (limpos[j].id === BLOCOS[k].id) { apos = j; break; }
+}
+limpos.splice(apos + 1, 0, { id: d.id, on: true });
+presentes[d.id] = 1;
+});
+return limpos;
+},
 _adiadosLimpos: function (v, hojeISO) {
 if (!ehObj(v)) return {};
 var out = {};
@@ -4227,7 +4302,7 @@ out[k] = String(ate).slice(0, 10);
 return out;
 },
 _prefsLimpas: function (f, hojeISO) {
-var out = { obra: null, per: null, multi: false, status: "", comparar: false, blocos: null, adiados: {} };
+var out = { obra: null, per: null, multi: false, status: "", comparar: false, cmp: "anterior", vista: "tabela", modelo: "a", auto: 0, compacto: false, blocos: null, adiados: {} };
 if (!ehObj(f)) return out;
 if (typeof f.obra === "string" && f.obra) out.obra = f.obra;
 else if (ehArr(f.obra)) {
@@ -4238,7 +4313,12 @@ if (typeof f.per === "string" && own(PERIODOS, f.per)) out.per = f.per;
 out.multi = f.multi === true;
 if (typeof f.status === "string" && own(STATUS, f.status)) out.status = f.status;
 out.comparar = f.comparar === true;
-out.blocos = this._blocosLimpos(f.blocos);
+if (typeof f.cmp === "string" && own(CMP_MODOS, f.cmp)) out.cmp = f.cmp;
+if (typeof f.vista === "string" && own(VISTAS_OBRAS, f.vista)) out.vista = f.vista;
+if (typeof f.modelo === "string" && own(MODELOS, f.modelo)) out.modelo = f.modelo;
+if (typeof f.auto === "number" && own(AUTOS, f.auto)) out.auto = f.auto;
+out.compacto = f.compacto === true;
+out.blocos = this.migrarBlocos(f.blocos, f.bv);
 out.adiados = this._adiadosLimpos(f.adiados, hojeISO);
 return out;
 },
@@ -4256,7 +4336,12 @@ if (own(p, "per")) { if (typeof p.per === "string" && own(PERIODOS, p.per)) r.pe
 if (own(p, "multi")) { if (p.multi === true) r.multi = true; else delete r.multi; }
 if (own(p, "status")) { if (typeof p.status === "string" && own(STATUS, p.status)) r.status = p.status; else delete r.status; }
 if (own(p, "comparar")) { if (p.comparar === true) r.comparar = true; else delete r.comparar; }
-if (own(p, "blocos")) { var b = this._blocosLimpos(p.blocos); if (b) r.blocos = b; else delete r.blocos; }
+if (own(p, "cmp")) { if (typeof p.cmp === "string" && own(CMP_MODOS, p.cmp) && p.cmp !== "anterior") r.cmp = p.cmp; else delete r.cmp; }
+if (own(p, "vista")) { if (typeof p.vista === "string" && own(VISTAS_OBRAS, p.vista) && p.vista !== "tabela") r.vista = p.vista; else delete r.vista; }
+if (own(p, "modelo")) { if (typeof p.modelo === "string" && own(MODELOS, p.modelo) && p.modelo !== "a") r.modelo = p.modelo; else delete r.modelo; }
+if (own(p, "auto")) { if (typeof p.auto === "number" && own(AUTOS, p.auto) && p.auto > 0) r.auto = p.auto; else delete r.auto; }
+if (own(p, "compacto")) { if (p.compacto === true) r.compacto = true; else delete r.compacto; }
+if (own(p, "blocos")) { var b = this._blocosLimpos(p.blocos); if (b) { r.blocos = b; r.bv = BLOCOS_V; } else { delete r.blocos; delete r.bv; } }
 if (own(p, "adiados")) { var a = this._adiadosLimpos(p.adiados, null); if (Object.keys(a).length) r.adiados = a; else delete r.adiados; }
 t.u[hash] = r;
 return this._gravarTudo(storage, t);
@@ -4268,8 +4353,8 @@ return this.gravarPrefs(storage, hash, { obra: f.obra, per: f.per, multi: f.mult
 },
 blocosOrdenados: function (prefs) {
 var salvos = (prefs && prefs.blocos) || [], out = [], vistos = {};
-salvos.forEach(function (b) { var d = BLOCOS.filter(function (x) { return x.id === b.id; })[0]; if (d) { vistos[b.id] = 1; out.push({ id: d.id, nome: d.nome, col: d.col, on: b.on !== false }); } });
-BLOCOS.forEach(function (d) { if (!vistos[d.id]) out.push({ id: d.id, nome: d.nome, col: d.col, on: true }); });
+salvos.forEach(function (b) { var d = BLOCOS.filter(function (x) { return x.id === b.id; })[0]; if (d) { vistos[b.id] = 1; out.push({ id: d.id, nome: d.nome, larg: d.larg, cols: d.cols, on: b.on !== false }); } });
+BLOCOS.forEach(function (d) { if (!vistos[d.id]) out.push({ id: d.id, nome: d.nome, larg: d.larg, cols: d.cols, on: true }); });
 return out;
 },
 moverBloco: function (blocos, id, dir) {
@@ -4278,7 +4363,6 @@ blocos.forEach(function (b, k) { if (b.id === id) i = k; });
 if (i < 0) return blocos;
 var j = dir < 0 ? i - 1 : i + 1;
 if (j < 0 || j >= blocos.length) return blocos;
-if (blocos[i].col !== blocos[j].col) return blocos;
 var out = blocos.slice(); var t = out[i]; out[i] = out[j]; out[j] = t;
 return out;
 },
@@ -4418,9 +4502,102 @@ var corta = aba !== "andamento";
 var lim = corta ? Math.max(POR_PAGINA, Math.floor(num(o.ate)) || POR_PAGINA) : ordenadas.length;
 return { aba: aba, abas: abas, busca: q, total: ordenadas.length, itens: ordenadas.slice(0, lim), restantes: Math.max(0, ordenadas.length - lim), pagina: POR_PAGINA };
 },
+ORDENS_CARTEIRA: { atencao: 1, nome: 1, desvio: 1, contratado: 1, recebido: 1, custo: 1, margem: 1, orcado: 1, marco: 1 },
+carteiraObras: function (todas, o) {
+o = o || {};
+var self = this, lista = (ehArr(todas) ? todas : []).filter(function (l) { return !!l; });
+var cont = { andamento: 0, planejamento: 0, pausada: 0, concluida: 0, todas: lista.length };
+lista.forEach(function (l) { if (own(cont, l.status) && l.status !== "todas") cont[l.status]++; });
+var aba = (typeof o.aba === "string" && own(cont, o.aba)) ? o.aba : (cont.andamento > 0 ? "andamento" : "todas");
+var q = this._semAcento(o.busca).replace(/^\s+|\s+$/g, "");
+var ordem = (typeof o.ordem === "string" && own(this.ORDENS_CARTEIRA, o.ordem)) ? o.ordem : "atencao";
+var dir = o.dir === "asc" ? 1 : -1;
+var temMov = function (l) {
+return l.status === "andamento" || num(l.recebido) !== 0 || num(l.custoPago) !== 0 || num(l.base) > 0 || !!(l.prazo && l.prazo.temDatas) || !!l.ultimoDiario;
+};
+var sel = lista.map(function (l, i) { return { l: l, i: i }; }).filter(function (x) {
+if (aba !== "todas" && x.l.status !== aba) return false;
+if (q && self._semAcento(x.l.nome).indexOf(q) < 0) return false;
+return true;
+});
+var chave = function (l, k) {
+if (k === "nome") return self._semAcento(l.nome);
+if (k === "desvio") return (l.desvio && l.desvio.pontos !== null && l.desvio.pontos !== undefined) ? l.desvio.pontos : null;
+if (k === "contratado") return num(l.base) > 0 ? num(l.base) : null;
+if (k === "recebido") return num(l.recebido) > 0 ? num(l.recebido) : null;
+if (k === "custo") return num(l.custoPago) > 0 ? num(l.custoPago) : null;
+if (k === "margem") return l.margem === null || l.margem === undefined ? null : l.margem;
+if (k === "orcado") return l.orcadoPct === null || l.orcadoPct === undefined ? null : l.orcadoPct;
+if (k === "marco") return (l.prazo && l.prazo.dias !== null && l.prazo.dias !== undefined && !l.entregue) ? l.prazo.dias : null;
+return (l.atencao && l.atencao.pontos) || 0;
+};
+var grupo = { andamento: 0, pausada: 1, planejamento: 2, concluida: 3 };
+sel.sort(function (x, y) {
+if (ordem === "atencao") {
+var ga = own(grupo, x.l.status) ? grupo[x.l.status] : 9, gb = own(grupo, y.l.status) ? grupo[y.l.status] : 9;
+if (ga !== gb) return ga - gb;
+var pa = chave(x.l, "atencao"), pb = chave(y.l, "atencao");
+if (pa !== pb) return pb - pa;
+var da = (x.l.prazo && x.l.prazo.dias != null) ? x.l.prazo.dias : 1e9, db = (y.l.prazo && y.l.prazo.dias != null) ? y.l.prazo.dias : 1e9;
+if (da !== db) return da - db;
+return x.i - y.i;
+}
+var ka = chave(x.l, ordem), kb = chave(y.l, ordem);
+if (ka === null && kb === null) return x.i - y.i;
+if (ka === null) return 1;
+if (kb === null) return -1;
+if (ka === kb) return x.i - y.i;
+return (ka < kb ? -1 : 1) * (dir === 1 ? 1 : -1);
+});
+var visiveis = [], semMov = [];
+sel.forEach(function (x) { if (temMov(x.l)) visiveis.push(x.l); else semMov.push(x.l); });
+semMov.sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome)); });
+return { aba: aba, cont: cont, busca: q, ordem: ordem, dir: dir === 1 ? "asc" : "desc", total: sel.length, itens: visiveis, semMovimento: semMov };
+},
 caixa30Total: function (c30) {
 if (!c30) return 0;
 return c30.saldoHoje + c30.entradas - c30.saidas - c30.atrasadasSaidas;
+},
+comparacao: function (periodo, modo, hojeISO) {
+var hoje = data(hojeISO);
+if (!hoje || !own(PERIODOS, periodo) || periodo === "tudo") return null;
+var m = own(CMP_MODOS, modo) ? modo : "anterior";
+var jan = this.janela(periodo, hojeISO);
+var n = m === "ano" ? 12 : (periodo === "mes" ? 1 : (periodo === "6m" ? 6 : 12));
+var rotulo = m === "ano" ? "mesmo período do ano passado"
+: (periodo === "mes" ? "mês anterior" : (periodo === "6m" ? "6 meses anteriores" : "ano passado"));
+var prep = m === "ano" ? "ao mesmo período do ano passado" : (periodo === "mes" ? "ao mês anterior" : (periodo === "6m" ? "aos 6 meses anteriores" : "ao ano passado"));
+return { modo: m, periodo: periodo, nMeses: n, rotuloPrep: prep, ini: iso(addMeses(data(jan.ini), -n)), fim: iso(addMeses(hoje, -n)), rotulo: rotulo,
+rotuloCurto: m === "ano" ? "ano passado" : (periodo === "mes" ? "mês anterior" : (periodo === "6m" ? "6m anteriores" : "ano passado")) };
+},
+custoIncompleto: function (recebido, custoPago) {
+var r = num(recebido), c = num(custoPago);
+if (!(r > 0)) return { sim: false, motivo: null, razao: null };
+if (!(c > 0)) return { sim: true, motivo: "sem-custo", razao: 0 };
+var razao = c / r;
+return razao < LIMITE_CUSTO_INCOMPLETO ? { sim: true, motivo: "baixo", razao: razao } : { sim: false, motivo: null, razao: razao };
+},
+desvio: function (l) {
+if (!l) return { tipo: "nada", pontos: null, tom: "neutro", texto: "" };
+var pz = l.prazo || {}, av = (l.avanco === undefined || l.avanco === null) ? null : l.avanco;
+if (l.status === "concluida" || pz.entregue || l.entregue) return { tipo: "entregue", pontos: null, tom: "ok", texto: "Entregue" };
+if (av !== null && av >= 100) return { tipo: "concluir", pontos: null, tom: "aviso", texto: "Concluir obra" };
+if (av === null) return { tipo: "sem-medicao", pontos: null, tom: "neutro", texto: "Sem medição" };
+if (!pz.temDatas) return { tipo: "sem-datas", pontos: null, tom: "neutro", texto: "Sem datas" };
+if (l.status === "planejamento" && av <= 0 && (pz.prazoPct || 0) <= 0) return { tipo: "planejada", pontos: null, tom: "neutro", texto: "Ainda não começou" };
+var pontos = Math.min(100, pz.prazoPct || 0) - av;
+if (pz.vencido && pontos < DEFASAGEM_PONTOS) return { tipo: "atras", pontos: pontos, tom: "alerta", texto: "Prazo vencido, " + av + "% medido" };
+if (pontos >= DEFASAGEM_PONTOS) return { tipo: "atras", pontos: pontos, tom: (pz.vencido || pz.dias <= 15) ? "alerta" : "aviso", texto: pontos + " pontos atrás" };
+if (pontos <= -10) return { tipo: "adiantada", pontos: pontos, tom: "ok", texto: (-pontos) + " pontos à frente" };
+return { tipo: "ritmo", pontos: pontos, tom: "ok", texto: "No ritmo" };
+},
+marcoDaObra: function (l) {
+var pz = (l && l.prazo) || {};
+if (l && l.status === "concluida") return { tom: "ok", texto: "Entregue" };
+if (l && l.avisos && l.avisos.indexOf("entregue-fechar") > -1) return { tom: "aviso", texto: "100% medido: concluir" };
+var mk = this.proximoMarco(l);
+if (l && l.status === "planejamento" && pz.temDatas && pz.dias !== null && !pz.vencido) mk = { tom: "neutro", texto: "Entrega em " + pz.dias + " dias" };
+return mk;
 },
 janela: function (periodo, hojeISO) {
 var hoje = data(hojeISO);
@@ -4494,6 +4671,142 @@ return "outros";
 }
 return "outros";
 },
+previsao13: function (abertos, saldoHoje, hojeISO) {
+var n = SEMANAS_PREVISAO, i;
+var mk = function () { return { entradas: 0, saidas: 0, nE: 0, nS: 0 }; };
+var venc = mk(), semData = mk(), depois = mk(), semanas = [];
+for (i = 0; i < n; i++) { var w = mk(); w.i = i; w.ini = somaDias(hojeISO, i * 7); w.fim = somaDias(hojeISO, i * 7 + 6); semanas.push(w); }
+var limite = somaDias(hojeISO, n * 7 - 1);
+(ehArr(abertos) ? abertos : []).forEach(function (a) {
+var alvo;
+if (!a.data) alvo = semData;
+else if (a.data < hojeISO) alvo = venc;
+else if (a.data > limite) alvo = depois;
+else alvo = semanas[Math.min(n - 1, Math.floor(diasEntre(hojeISO, a.data) / 7))];
+if (a.tipo === "receita") { alvo.entradas += a.valor; alvo.nE++; } else { alvo.saidas += a.valor; alvo.nS++; }
+});
+var pos = num(saldoHoje) - venc.saidas, minimo = null, primeiroNegativo = null, soma = { entradas: 0, saidas: 0 };
+semanas.forEach(function (w) {
+w.liquido = w.entradas - w.saidas; pos += w.liquido; w.posicao = pos;
+soma.entradas += w.entradas; soma.saidas += w.saidas;
+if (minimo === null || pos < minimo.valor) minimo = { valor: pos, semana: w.i };
+if (pos < 0 && primeiroNegativo === null) primeiroNegativo = w.i;
+});
+var movimento = soma.entradas > 0 || soma.saidas > 0;
+return { semanas: semanas, vencido: venc, semData: semData, depois: depois, saldoInicial: num(saldoHoje) - venc.saidas, saldoHoje: num(saldoHoje),
+entradas: soma.entradas, saidas: soma.saidas, posicaoFinal: pos, minimo: minimo, primeiroNegativo: primeiroNegativo,
+temMovimento: movimento, temVencido: venc.nE + venc.nS > 0,
+vazia: !movimento, vazioTotal: !movimento && venc.nE + venc.nS === 0 };
+},
+_topo: function (mapa, n) {
+var l = [], k;
+for (k in mapa) if (own(mapa, k)) l.push(mapa[k]);
+l.sort(function (a, b) { return b.valor - a.valor; });
+return l.slice(0, n);
+},
+_ultMeses: function (hojeISO, n) {
+var h = data(hojeISO), out = [], k;
+for (k = n - 1; k >= 0; k--) out.push(chaveMes(new Date(h.getFullYear(), h.getMonth() - k, 1)));
+return out;
+},
+_serieOk: function (vals) {
+var ok = (vals || []).filter(function (v) { return v !== null && v !== undefined && isFinite(v); }).length;
+return ok >= 2 ? vals : null;
+},
+comercial: function (lista, hojeISO, diasSemResposta) {
+var lim = num(diasSemResposta) > 0 ? num(diasSemResposta) : 15;
+var itens = (ehArr(lista) ? lista : []).filter(function (o) { return !!o && typeof o === "object"; });
+var DEF = [
+{ id: "elab", rotulo: "Em elaboração", aberto: true },
+{ id: "aprov", rotulo: "Em aprovação interna", aberto: true },
+{ id: "pronto", rotulo: "Aprovados, a enviar", aberto: true },
+{ id: "envi", rotulo: "Enviados, aguardando resposta", aberto: true },
+{ id: "aceit", rotulo: "Aceitos pelo cliente", aberto: false },
+{ id: "recus", rotulo: "Recusados pelo cliente", aberto: false }
+];
+var faixas = {}, tot = 0, enviadas = 0, aceitas = 0, recusadas = 0, semResp = [];
+DEF.forEach(function (g) { faixas[g.id] = { id: g.id, rotulo: g.rotulo, aberto: g.aberto, n: 0, valor: 0 }; });
+var classificados = itens.map(function (o) {
+var v = num(o.valor), env = ehISO(o.enviadaEm) ? String(o.enviadaEm).slice(0, 10) : "", g;
+if (env) {
+enviadas++;
+if (o.resposta === "aceita") { g = "aceit"; aceitas++; }
+else if (o.resposta === "recusada") { g = "recus"; recusadas++; }
+else { g = "envi"; var dias = diasEntre(env, hojeISO); if (dias !== null && dias >= lim) semResp.push({ id: o.id, nome: o.nome, valor: v, dias: dias }); }
+} else if (o.estado === "aprovado") g = "pronto";
+else if (o.estado === "em_aprovacao") g = "aprov";
+else g = "elab";
+faixas[g].n++; faixas[g].valor += v; tot += v;
+return { id: o.id, nome: o.nome || "", cliente: o.cliente || "", valor: v, faixa: g, rotuloFaixa: faixas[g].rotulo, aberto: faixas[g].aberto };
+});
+semResp.sort(function (a, b) { return b.dias - a.dias; });
+var abertos = classificados.filter(function (o) { return o.aberto; }).sort(function (a, b) { return b.valor - a.valor; });
+return {
+temDado: itens.length > 0, total: itens.length, carteira: tot, medio: itens.length ? tot / itens.length : 0,
+faixas: DEF.map(function (g) { return faixas[g.id]; }),
+emAberto: { n: abertos.length, valor: abertos.reduce(function (s, o) { return s + o.valor; }, 0) },
+enviadas: enviadas, aceitas: aceitas, recusadas: recusadas, conversao: enviadas ? aceitas / enviadas * 100 : null,
+valorAceito: faixas.aceit.valor, semResposta: semResp, limiteSemResposta: lim,
+top: abertos.slice(0, 5)
+};
+},
+resumo: function (m) {
+var self = this, fr = [], R = function (v) { return self.moeda(v); }, din = m.mostrarDinheiro !== false && m.temFinanceiro !== false;
+var N = function (n, um, varios) { return n + " " + (n === 1 ? um : varios); };
+var add = function (pri, tom, texto, destino) { fr.push({ pri: pri, tom: tom, texto: texto, destino: destino || "" }); };
+var cx = m.caixa || {}, c30 = m.caixa30 || {}, venc = m.vencido || { n: 0, valor: 0 }, saldo = num(c30.saldoHoje);
+if (din) {
+if (venc.valor > 0) {
+if (saldo >= venc.valor) {
+var razao = saldo / venc.valor;
+add(10, "ok", "Caixa de " + R(saldo) + " cobre " + (razao >= 10 ? String(Math.round(razao)) : fmtBR(razao, 1)) + "× o vencido.", "financeiro");
+} else if (saldo > 0) add(10, "alerta", "Caixa de " + R(saldo) + " cobre só " + Math.round(saldo / venc.valor * 100) + "% do vencido.", "financeiro");
+else add(10, "alerta", "Caixa " + (saldo < 0 ? "negativo (" + R(saldo) + ")" : "zerado") + " e " + R(venc.valor) + " vencidos.", "financeiro");
+add(11, "aviso", N(venc.n, "conta vencida soma", "contas vencidas somam") + " " + R(venc.valor) + ".", "financeiro");
+} else if (c30.temDado && num(c30.projetado) < 0) add(9, "alerta", "O caixa projetado fica negativo em 30 dias (" + R(c30.projetado) + ").", "financeiro");
+else if (c30.temDado && saldo > 0) add(30, "ok", "Caixa de " + R(saldo) + " e nenhuma conta vencida.", "financeiro");
+if (cx.custoIncompleto && cx.custoIncompleto.sim) {
+add(20, "aviso", cx.custoIncompleto.motivo === "sem-custo" ? "Não há custo pago lançado: a margem real ainda não existe."
+: "O custo lançado cobre só " + Math.round(cx.custoIncompleto.razao * 100) + "% do recebido: a margem real ainda não é confiável.", "financeiro");
+}
+if (m.previsao13 && m.previsao13.primeiroNegativo !== null && m.previsao13.primeiroNegativo !== undefined && !(c30.temDado && num(c30.projetado) < 0))
+add(12, "alerta", "O caixa fica negativo na semana " + (m.previsao13.primeiroNegativo + 1) + " da previsão.", "financeiro");
+}
+var todas = (m.obras && m.obras.todas) || [];
+var atras = todas.filter(function (l) { return l.status === "andamento" && l.desvio && l.desvio.tipo === "atras"; }).sort(function (a, b) { return b.desvio.pontos - a.desvio.pontos; });
+if (atras.length) add(13, atras[0].desvio.tom === "alerta" ? "alerta" : "aviso", atras[0].nome + " está " + atras[0].desvio.pontos + " pontos atrás do calendário" + (atras.length > 1 ? " e mais " + N(atras.length - 1, "obra segue atrasada", "obras seguem atrasadas") : "") + ".", "obras");
+var concl = todas.filter(function (l) { return l.status !== "concluida" && l.desvio && l.desvio.tipo === "concluir"; });
+if (concl.length) add(25, "info", (concl.length === 1 ? concl[0].nome + " está 100% medida" : N(concl.length, "obra está", "obras estão") + " 100% medidas") + ": falta concluir no cadastro.", "obras");
+var co = m.comercial;
+if (co && co.semResposta && co.semResposta.length) add(22, "info", N(co.semResposta.length, "proposta enviada espera", "propostas enviadas esperam") + " resposta há mais de " + co.limiteSemResposta + " dias.", "comercial");
+fr.sort(function (a, b) { return a.pri - b.pri; });
+var out = fr.slice(0, 3);
+if (!out.length) out = [{ pri: 99, tom: "ok", texto: din ? "Nada vencido e nenhuma obra atrás do calendário." : "Nenhuma obra atrás do calendário.", destino: "" }];
+return out;
+},
+resumoParaIA: function (m) {
+var r = function (v) { return Math.round(num(v)); };
+var cx = m.caixa || {}, c30 = m.caixa30 || {}, venc = m.vencido || { n: 0, valor: 0 }, co = m.comercial || {}, ob = (m.obras && m.obras.todas) || [];
+return {
+periodo: m.periodo,
+caixa: { hoje: r(c30.saldoHoje), projetado30: r(c30.projetado), aReceber: r(cx.aReceber), aPagar: r(cx.aPagar), vencidoValor: r(venc.valor), vencidoQtd: venc.n,
+margemPct: cx.margem === null || cx.margem === undefined ? null : Math.round(cx.margem), custoIncompleto: !!(cx.custoIncompleto && cx.custoIncompleto.sim) },
+obras: { total: ob.length, emAndamento: ob.filter(function (l) { return l.status === "andamento"; }).length,
+atrasadas: ob.filter(function (l) { return l.desvio && l.desvio.tipo === "atras"; }).length, aConcluir: ob.filter(function (l) { return l.desvio && l.desvio.tipo === "concluir" && l.status !== "concluida"; }).length },
+comercial: { carteira: r(co.carteira), ticketMedio: r(co.medio), conversaoPct: co.conversao === null || co.conversao === undefined ? null : Math.round(co.conversao), enviadasSemResposta: (co.semResposta || []).length },
+decisoesAbertas: (m.decisoes || []).length
+};
+},
+obraAtiva: function (o) { return !!o && o.status !== "concluida" && o.status !== "cancelada"; },
+contarSemOrcamento: function (obras) {
+var self = this, r = { noRecorte: 0, semOrcamento: 0 };
+(obras || []).forEach(function (o) {
+if (!self.obraAtiva(o)) return;
+r.noRecorte++;
+if (!o.orcamentoId) r.semOrcamento++;
+});
+return r;
+},
 calcular: function (d) {
 var self = this;
 d = d || {};
@@ -4516,10 +4829,15 @@ var statusObras = own(STATUS, d.statusObras) ? d.statusObras : "";
 var nomeObra = {};
 obras.forEach(function (o) { if (o && o.id) nomeObra[o.id] = o.nome || ""; });
 var adiados = this._adiadosLimpos(d.adiados, hoje);
+var cmp = this.comparacao(periodo, d.comparar, hoje);
+var cmpAc = { rec: 0, pag: 0 }, saldoAteCmp = 0, semDataReal = 0;
 var caixa = { recebido: 0, pago: 0, aReceber: 0, aPagar: 0 };
 var ant = { recebido: 0, pago: 0 };
-var porMes = {}, porCat = {}, porObraPer = {}, primeiroMes = null;
+var porMes = {}, porCat = {}, porObraPer = {}, primeiroMes = null, porForn = {}, fornAberto = {};
+var chaveForn = function (f) { var n = String(f.fornecedor || f.desc || "").replace(/\s+/g, " ").trim(); return n ? n : "Sem descrição"; };
+var somaForn = function (mapa, f, v) { var nm = chaveForn(f), k = nm.toLowerCase(); if (!mapa[k]) mapa[k] = { rotulo: nm.length > 38 ? nm.slice(0, 37) + "…" : nm, valor: 0, n: 0 }; mapa[k].valor += v; mapa[k].n++; };
 var acum = {};
+var futuro = { liquido: 0, porMes: {} };
 var contas = [], abertos = [];
 var limiteContas = somaDias(hoje, metas.contasDias);
 var fimSemana = somaDias(hoje, 7);
@@ -4533,17 +4851,29 @@ var oid = f.obraId || "";
 if (!acum[oid]) acum[oid] = { rec: 0, custo: 0 };
 if (realizado(f)) {
 if (t === "receita") acum[oid].rec += v; else acum[oid].custo += v;
+if (ehISO(f.data)) {
+var dReal = String(f.data).slice(0, 10);
+if (cmp) {
+if (dReal >= cmp.ini && dReal <= cmp.fim) { if (t === "receita") cmpAc.rec += v; else cmpAc.pag += v; }
+if (dReal <= cmp.fim) saldoAteCmp += (t === "receita" ? v : -v);
+}
+} else semDataReal++;
 var mes = ehISO(f.data) ? String(f.data).slice(0, 7) : null;
 if (mes) {
 if (!porMes[mes]) porMes[mes] = { recebido: 0, pago: 0 };
 if (t === "receita") porMes[mes].recebido += v; else porMes[mes].pago += v;
 }
 if (ehISO(f.data)) (t === "receita" ? sparkRec : sparkPag).push({ data: f.data, valor: v });
+if (ehISO(f.data) && String(f.data).slice(0, 10) > hoje) {
+var liqF = t === "receita" ? v : -v, mesF = String(f.data).slice(0, 7);
+futuro.liquido += liqF; futuro.porMes[mesF] = (futuro.porMes[mesF] || 0) + liqF;
+}
 if (self._noIntervalo(f, jan.ini, jan.fim)) {
 if (mes && (!primeiroMes || mes < primeiroMes)) primeiroMes = mes;
 if (t === "receita") caixa.recebido += v;
 else {
 caixa.pago += v;
+if (v > 0) somaForn(porForn, f, v);
 var c = f.categoria || "outros";
 porCat[c] = (porCat[c] || 0) + v;
 porObraPer[oid] = (porObraPer[oid] || 0) + v;
@@ -4557,6 +4887,7 @@ var temData = /^\d{4}-\d{2}-\d{2}$/.test(dv);
 if (t === "receita") caixa.aReceber += v;
 else {
 caixa.aPagar += v;
+if (v > 0) somaForn(fornAberto, f, v);
 if (temData && dv <= limiteContas) contas.push({ valor: v, vencimento: dv, vencida: dv < hoje, id: f.id || "", desc: f.desc || f.fornecedor || "", obraId: oid });
 if (temData && dv < hoje && oid) { if (!vencPorObra[oid]) vencPorObra[oid] = { n: 0, valor: 0 }; vencPorObra[oid].n++; vencPorObra[oid].valor += v; }
 }
@@ -4572,6 +4903,13 @@ recebido: this._delta(caixa.recebido, ant.recebido),
 pago: this._delta(caixa.pago, ant.pago),
 resultado: (ant.recebido > 0 || ant.pago > 0) && Math.abs(ant.recebido - ant.pago) > 0 ? Math.round((caixa.resultado - (ant.recebido - ant.pago)) / Math.abs(ant.recebido - ant.pago) * 100) : null
 };
+caixa.custoIncompleto = this.custoIncompleto(caixa.recebido, caixa.pago);
+var cmpRes = cmpAc.rec - cmpAc.pag, cmpMargem = (cmpAc.rec > 0 && cmpAc.pag > 0) ? cmpRes / cmpAc.rec * 100 : null;
+caixa.cmp = cmp ? { modo: cmp.modo, rotulo: cmp.rotulo, rotuloPrep: cmp.rotuloPrep, rotuloCurto: cmp.rotuloCurto, ini: cmp.ini, fim: cmp.fim, recebido: cmpAc.rec, pago: cmpAc.pag, resultado: cmpRes, margem: cmpMargem,
+existe: cmpAc.rec > 0 || cmpAc.pag > 0,
+custoIncompleto: this.custoIncompleto(cmpAc.rec, cmpAc.pag),
+delta: { recebido: this.variacao(caixa.recebido, cmpAc.rec), pago: this.variacao(caixa.pago, cmpAc.pag), resultado: this.variacao(caixa.resultado, cmpRes),
+margemPP: (caixa.margem !== null && cmpMargem !== null) ? caixa.margem - cmpMargem : null } } : null;
 var contasVal = contas.reduce(function (s, c) { return s + c.valor; }, 0);
 caixa.contasVencendo = { n: contas.length, valor: contasVal, ate: limiteContas, dias: metas.contasDias,
 vencidas: contas.filter(function (c) { return c.vencida; }).length };
@@ -4599,6 +4937,19 @@ return { mes: m, recebido: x.recebido, pago: x.pago, saldo: s2 };
 });
 if (!caixa.porMesAnterior.some(function (x) { return x.recebido > 0 || x.pago > 0; })) caixa.porMesAnterior = null;
 }
+caixa.porMesComp = null;
+if (cmp && eixo.length) {
+var s3 = 0;
+caixa.porMesComp = eixo.map(function (ch) {
+var a0 = parseInt(ch.slice(0, 4), 10), m0 = parseInt(ch.slice(5, 7), 10) - cmp.nMeses;
+while (m0 <= 0) { m0 += 12; a0--; }
+var ch2 = a0 + "-" + ("0" + m0).slice(-2), x2 = porMes[ch2] || { recebido: 0, pago: 0 };
+s3 += x2.recebido - x2.pago;
+return { mes: ch2, recebido: x2.recebido, pago: x2.pago, saldo: s3 };
+});
+if (!caixa.porMesComp.some(function (x) { return x.recebido > 0 || x.pago > 0; })) caixa.porMesComp = null;
+}
+caixa.porMes.forEach(function (x) { x.incompleto = self.custoIncompleto(x.recebido, x.pago).sim; x.comDado = x.recebido > 0 || x.pago > 0; });
 var melhor = { recebido: null, pago: null, resultado: null };
 caixa.porMes.forEach(function (x) {
 if (x.recebido > 0 && (!melhor.recebido || x.recebido > melhor.recebido.valor)) melhor.recebido = { mes: x.mes, valor: x.recebido };
@@ -4678,8 +5029,12 @@ linha.medAprovada = medAprovObra[o.id] || null;
 linha.atraso = null;
 if (o.status === "andamento" && pz.temDatas) {
 if (pz.vencido && !(linha.avanco !== null && linha.avanco >= 100)) linha.atraso = { tom: "alerta", texto: "Atrasada " + (-pz.dias) + (pz.dias === -1 ? " dia" : " dias") };
-else if (defas !== null && defas >= DEFASAGEM_PONTOS) linha.atraso = { tom: sinal === "alerta" ? "alerta" : "aviso", texto: defas + " pontos atrás do calendário" };
+else if (defas !== null && defas >= DEFASAGEM_PONTOS && !(linha.avanco !== null && linha.avanco >= 100)) linha.atraso = { tom: sinal === "alerta" ? "alerta" : "aviso", texto: defas + " pontos atrás do calendário" };
 }
+linha.desvio = self.desvio(linha);
+linha.custoIncompleto = self.custoIncompleto(a.rec, a.custo);
+linha.marco = self.marcoDaObra(linha);
+linha.orcadoPct = orcado ? orcado.consumidoPct : null;
 var pts = 0, motivos = [];
 if (o.status === "andamento") {
 if (linha.atraso && linha.atraso.tom === "alerta" && pz.vencido) { pts += 60 + Math.min(40, Math.floor(-pz.dias / 3)); motivos.push({ cod: "vencida", texto: linha.atraso.texto }); }
@@ -4735,6 +5090,7 @@ entradas: semanas.reduce(function (s, x) { return s + x.entradas; }, 0), saidas:
 temDado: abertos.length > 0 };
 var saldoHoje = 0, kk;
 for (kk in acum) if (own(acum, kk)) saldoHoje += acum[kk].rec - acum[kk].custo;
+saldoHoje -= futuro.liquido;
 var caixa30 = { saldoHoje: saldoHoje, entradas: previsao30.entradas, saidas: previsao30.saidas, atrasadasSaidas: atrasadas.saidas, atrasadasEntradas: atrasadas.entradas,
 semData: semData, depois: depois, temDado: previsao30.temDado || saldoHoje !== 0 };
 caixa30.projetado = saldoHoje + previsao30.entradas - previsao30.saidas - atrasadas.saidas;
@@ -4880,21 +5236,894 @@ margem: { valor: caixa.margem, meta: metas.margem, atingido: caixa.margem === nu
 ppc: { valor: (d.lp && d.lp.ppc != null) ? Math.round(d.lp.ppc * 100) : null, meta: metas.ppc, atingido: (d.lp && d.lp.ppc != null) ? Math.max(0, Math.min(1.5, (d.lp.ppc * 100) / metas.ppc)) : null },
 recebimento: (metas.recebMes > 0 && jan.meses) ? { valor: caixa.recebido, meta: metas.recebMes * jan.meses, metaMes: metas.recebMes, meses: jan.meses, atingido: Math.max(0, Math.min(1.5, caixa.recebido / (metas.recebMes * jan.meses))) } : null
 };
-return {
+var previsao13 = this.previsao13(abertos, saldoHoje, hoje);
+var vencido = atrasadosCont;
+var dinheiroOk = d.mostrarDinheiro !== false;
+var temFinanceiro = dinheiroOk && fin.length > 0;
+var ult12 = this._ultMeses(hoje, 12);
+var abre12 = 0;
+for (var km in porMes) if (own(porMes, km) && km < ult12[0]) abre12 += porMes[km].recebido - porMes[km].pago;
+var acc12 = abre12;
+var serieSaldo = ult12.map(function (ch) { var x = porMes[ch] || { recebido: 0, pago: 0 }; acc12 += x.recebido - x.pago - (futuro.porMes[ch] || 0); return acc12; });
+var serieMargem = ult12.map(function (ch) { var x = porMes[ch]; return (x && x.recebido > 0 && x.pago > 0) ? (x.recebido - x.pago) / x.recebido * 100 : null; });
+var temHist = ult12.some(function (ch) { return own(porMes, ch); }) || abre12 !== 0;
+var sem12 = previsao13.semanas.slice(0, 12);
+var delta = function (v, bom, rotulo) { return v ? { pct: v.pct, dir: v.dir, texto: v.texto, bom: bom, rotulo: rotulo } : null; };
+var dCaixa = (cmp && semDataReal === 0 && saldoAteCmp !== 0) ? delta(this.variacao(saldoHoje, saldoAteCmp), "alta", "vs. " + cmp.rotuloCurto) : null;
+var dProj = c30Delta(caixa30.projetado, saldoHoje);
+if (dProj && dProj.dir === "igual") dProj = null;
+function c30Delta(a, b) { return b !== 0 ? delta(self.variacao(a, b), "alta", "vs. caixa de hoje") : null; }
+var dMargem = (caixa.cmp && caixa.cmp.delta.margemPP !== null) ? { pct: caixa.cmp.delta.margemPP, pp: true, dir: caixa.cmp.delta.margemPP > 0.5 ? "alta" : (caixa.cmp.delta.margemPP < -0.5 ? "baixa" : "igual"), bom: "alta", rotulo: "vs. " + cmp.rotuloCurto } : null;
+var kpis = [
+{ id: "caixaHoje", rotulo: "Caixa hoje", valor: saldoHoje, tom: saldoHoje < 0 ? "neg" : "", delta: dCaixa, spark: temHist ? this._serieOk(serieSaldo) : null, sparkRotulo: "saldo no fim de cada mês, 12 meses", ir: "financeiro",
+ajuda: "Recebido menos pago desde o início, no recorte, até hoje. Lançamento já pago com data futura só entra quando a data chegar." },
+{ id: "projetado", rotulo: "Caixa em 30 dias", valor: caixa30.projetado, tom: caixa30.projetado < 0 ? "neg" : "", delta: dProj, sub: vencido.valor > 0 ? "já desconta " + this.moeda(vencido.valor) + " vencidos" : "", spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.posicao; })) : null, sparkRotulo: "posição semanal prevista, 12 semanas", ir: "financeiro",
+ajuda: "Caixa de hoje + o que entra em 30 dias − o que vence em 30 dias − o que já venceu a pagar. Receita atrasada não entra." },
+{ id: "aReceber", rotulo: "A receber", valor: caixa.aReceber, tom: "", delta: null, sub: (aprov.length && caixa.aprovadoNaoPago.valor > 0) ? "+ " + this.moeda(caixa.aprovadoNaoPago.valor) + " em boletins aprovados sem pagamento" : "lançado no Financeiro",
+spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.entradas; })) : null, sparkRotulo: "entradas previstas por semana, 12 semanas", ir: "financeiro",
+ajuda: "Receitas em aberto no Financeiro. Boletim aprovado e ainda não pago aparece à parte, no complemento: não é somado." },
+{ id: "aPagar", rotulo: "A pagar", valor: caixa.aPagar, tom: "", delta: null, vencido: vencido.valor > 0 ? { valor: vencido.valor, n: vencido.n } : null, sub: vencido.valor > 0 ? "" : "nada vencido",
+spark: previsao13.temMovimento ? this._serieOk(sem12.map(function (w) { return w.saidas; })) : null, sparkRotulo: "vencimentos por semana, 12 semanas", ir: "financeiro",
+ajuda: "Todas as despesas em aberto. O vencido é a parte que já passou da data." },
+{ id: "margem", rotulo: "Margem real", valor: caixa.margem, tom: "", delta: dMargem, custoIncompleto: caixa.custoIncompleto, meta: metas.margem,
+sub: caixa.margem === null ? (caixa.recebido > 0 ? "sem custo pago no período" : "sem receita no período") : "meta " + fmtBR(metas.margem, 0) + "%",
+spark: this._serieOk(serieMargem), sparkRotulo: "margem de caixa por mês, só meses com receita e custo", ir: "financeiro",
+ajuda: "Resultado de caixa ÷ recebido, no período. Com o custo lançado abaixo de 15% do recebido o número não é margem de verdade: aparece esmaecido, com o selo." },
+{ id: "saldoFaturar", rotulo: "Saldo a faturar", valor: contratosOut.saldoFaturar, tom: "", delta: null, sub: "contratado " + this.moeda(contratosOut.valorContratado) + " − medido " + this.moeda(contratosOut.faturado), spark: null, ir: "medicoes",
+ajuda: "Contratado menos o que já foi medido. Acumulado, não do período." }
+];
+var comercial = this.comercial(d.comercial && d.comercial.orcamentos, hoje, 15);
+var modelo = {
 hoje: hoje, periodo: periodo, janela: jan, filtrado: !!(d.obraIds && d.obraIds.length),
-caixa: caixa,
+mostrarDinheiro: dinheiroOk, temFinanceiro: temFinanceiro,
+caixa: caixa, comparacao: caixa.cmp,
 decisoes: ativas, decisoesAdiadas: adiadas, grupos: grupos, emJogo: emJogo, avisosDoSino: avisosTotal,
 obras: { comMovimento: comMovVis, semMovimento: semMovVis, todas: comMov.concat(semMov), total: obras.length, emAndamento: emAndamento, filtroStatus: statusObras,
 ocultasPeloStatus: (comMov.length - comMovVis.length) + (semMov.length - semMovVis.length), semDatasAndamento: semDatasAndamento, semDatasPlanejamento: semDatasPlanej },
-categorias: categorias, porObra: porObraPerLista.slice(0, 8), semObraPeriodo: semObraPer,
+categorias: categorias, porObra: porObraPerLista.slice(0, 10), semObraPeriodo: semObraPer,
+topFornecedores: { pagas: this._topo(porForn, 10), abertas: this._topo(fornAberto, 10) },
+topFaturamento: comMov.concat(semMov).filter(function (l) { return l.recebido > 0; }).map(function (l) { return { id: l.id, nome: l.nome, valor: l.recebido, status: l.status }; }).sort(function (a, b) { return b.valor - a.valor; }).slice(0, 10),
 contratos: contratosOut, operacao: operacao, metas: metasOut, previsao30: previsao30, caixa30: caixa30, agenda: agenda,
+previsao13: previsao13, vencido: vencido, kpis: kpis, comercial: comercial,
 spark: { recebido: this.sparkline(hoje, sparkRec), pago: this.sparkline(hoje, sparkPag), obrasComDiario: this.sparkline(hoje, (function () { var seen = {}, out = []; rdos.forEach(function (r) { if (!r || !r.obraId || !ehISO(r.data)) return; var k2 = String(r.data).slice(0, 10) + "|" + r.obraId; if (seen[k2]) return; seen[k2] = 1; out.push({ data: r.data, valor: 1 }); }); return out; })()) },
 prevReal: pr
 };
+modelo.resumo = this.resumo(modelo);
+return modelo;
 }
 };
 global.PainelDados = PainelDados;
 if (typeof module !== "undefined" && module.exports) module.exports = PainelDados;
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/painelui.js ==== */
+try {
+(function (global) {
+"use strict";
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (ch) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]; }); }
+function PD() { return global.PainelDados; }
+function moeda(v) { return PD().moeda(v); }
+function curto(v) { return moeda(v).replace(/^(−?)R\$ /, "$1"); }
+function N(n, um, varios) { return n + " " + (n === 1 ? um : varios); }
+function fixo(n, d) { return Number(n).toFixed(d === undefined ? 1 : d); }
+function fmtNumBR(n, d) { return fixo(n, d).replace(".", ","); }
+function ehNum(v) { return typeof v === "number" && isFinite(v); }
+function escala(min, max, alvo) {
+if (!(max > min)) { max = min + 1; }
+var bruto = (max - min) / Math.max(1, alvo || 4);
+var exp = Math.pow(10, Math.floor(Math.log(bruto) / Math.LN10)), f = bruto / exp;
+var passo = (f <= 1 ? 1 : (f <= 2 ? 2 : (f <= 2.5 ? 2.5 : (f <= 5 ? 5 : 10)))) * exp;
+var mn = Math.floor(min / passo + 1e-9) * passo, mx = Math.ceil(max / passo - 1e-9) * passo, marcas = [], v;
+for (v = mn; v <= mx + passo * 1e-6; v += passo) marcas.push(Math.round(v / passo * 1e6) / 1e6 * passo);
+return { min: mn, max: mx, passo: passo, marcas: marcas };
+}
+function larguraTxt(s) { return String(s).length * 6.7 + 6; }
+function retRotulo(x, y, txt, ancora) {
+var w = larguraTxt(txt), x0 = ancora === "end" ? x - w : (ancora === "start" ? x : x - w / 2);
+return { x0: x0, x1: x0 + w, y0: y - 12, y1: y + 4 };
+}
+function cruzaRet(a, b) { return !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1); }
+function cruzaLinha(r, pts, folga) {
+var i, k, n, x, y, t, d = folga || 1.5;
+for (i = 0; i + 1 < pts.length; i++) {
+var a = pts[i], b = pts[i + 1];
+if (a === null || b === null) continue;
+var dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy);
+n = Math.max(1, Math.ceil(len / 2));
+for (k = 0; k <= n; k++) {
+t = k / n; x = a[0] + dx * t; y = a[1] + dy * t;
+if (x >= r.x0 - d && x <= r.x1 + d && y >= r.y0 - d && y <= r.y1 + d) return true;
+}
+}
+if (pts.length === 1 && pts[0]) { var p = pts[0]; return p[0] >= r.x0 - d && p[0] <= r.x1 + d && p[1] >= r.y0 - d && p[1] <= r.y1 + d; }
+return false;
+}
+function colocar(txt, candidatos, ocupados, obstaculos, limites) {
+var i;
+for (i = 0; i < candidatos.length; i++) {
+var c = candidatos[i], r = retRotulo(c[0], c[1], txt, c[2]);
+if (limites && (r.x0 < limites.x0 || r.x1 > limites.x1 || r.y0 < limites.y0 || r.y1 > limites.y1)) continue;
+var bate = ocupados.some(function (o) { return cruzaRet(r, o); });
+if (!bate) bate = obstaculos.some(function (ob) { return ob.rect ? cruzaRet(r, ob.rect) : cruzaLinha(r, ob.pts); });
+if (bate) continue;
+ocupados.push(r);
+return { x: c[0], y: c[1], ancora: c[2], rect: r };
+}
+return null;
+}
+function spark(serie, rotulo) {
+if (!serie || serie.length < 2) return "";
+var vals = serie.filter(function (v) { return ehNum(v); });
+if (vals.length < 2) return "";
+var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), W = 100, H = 30, n = serie.length;
+var y = function (v) { return mx === mn ? H / 2 : (H - 4) - (v - mn) / (mx - mn) * (H - 8) + 2; };
+var x = function (i) { return i / (n - 1) * W; };
+var segs = [], seg = [], ultimo = null;
+serie.forEach(function (v, i) {
+if (!ehNum(v)) { if (seg.length) segs.push(seg); seg = []; return; }
+seg.push(fixo(x(i), 1) + "," + fixo(y(v), 1)); ultimo = i;
+});
+if (seg.length) segs.push(seg);
+var linhas = segs.map(function (s) { return s.length > 1 ? '<polyline class="pv-spark-l" vector-effect="non-scaling-stroke" points="' + s.join(" ") + '"/>' : ""; }).join("");
+var fim = ultimo === null ? "" : '<i class="pv-spark-ponto" style="left:' + fixo(x(ultimo) / W * 100, 1) + "%;top:" + fixo(y(serie[ultimo]) / H * 100, 1) + '%"></i>';
+return '<span class="pv-spark" role="img" aria-label="' + esc("Tendência: " + (rotulo || "")) + '" title="' + esc(rotulo || "") + '"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' + linhas + "</svg>" + fim + "</span>";
+}
+var SETA = {
+alta: '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M5 1.5 9 7.5H1z" fill="currentColor"/></svg>',
+baixa: '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M5 8.5 1 2.5h8z" fill="currentColor"/></svg>',
+igual: '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M1.5 5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+};
+function delta(d) {
+if (!d) return "";
+if (d.dir === "novo") return '<span class="pv-delta pv-d-neu" title="Sem valor no período de comparação">novo</span>';
+if (d.dir === "sem" || d.pct === null || d.pct === undefined) return "";
+var dir = d.dir === "alta" ? "alta" : (d.dir === "baixa" ? "baixa" : "igual");
+var tom = dir === "igual" ? "neu" : (dir === d.bom ? "bom" : "ruim");
+var txt = PD().pctTxt(d.pct, d.pp);
+return '<span class="pv-delta pv-d-' + tom + '" title="' + esc((d.pp ? "Variação em pontos percentuais " : "Variação ") + (d.rotulo || "")) + '">' + SETA[dir] + "<b>" + esc(txt) + "</b>" + (d.rotulo ? '<span class="pv-d-rot">' + esc(d.rotulo) + "</span>" : "") + "</span>";
+}
+function pilStatus(status) {
+var r = { andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" };
+var cls = { andamento: "pv-pil-and", concluida: "pv-pil-conc", pausada: "pv-pil-paus", planejamento: "pv-pil-plan" };
+return '<span class="pv-pil ' + (cls[status] || "") + '">' + esc(r[status] || status || "") + "</span>";
+}
+function vazio(titulo, texto, acaoHtml) {
+return '<div class="pv-vazio"><b>' + esc(titulo) + "</b>" + (texto ? "<p>" + esc(texto) + "</p>" : "") + (acaoHtml || "") + "</div>";
+}
+var _gid = 0;
+function graficoBL(o) {
+var hid = "pv-hach-" + (++_gid);
+var cols = o.colunas || [], n = cols.length;
+if (!n) return "";
+var W = Math.max(300, Math.round(o.largura || 560)), H = o.altura || 290;
+var compacto = W < 460;
+var maxB = 0, vL = [0], i;
+var maxSemVenc = 0;
+cols.forEach(function (c) {
+maxB = Math.max(maxB, c.a || 0, c.b || 0);
+if (c.tipoCol !== "vencido") maxSemVenc = Math.max(maxSemVenc, c.a || 0, c.b || 0);
+if (ehNum(c.linha)) vL.push(c.linha); if (ehNum(c.comp)) vL.push(c.comp);
+});
+var eL = escala(0, (maxSemVenc > 0 ? maxSemVenc : maxB) > 0 ? (maxSemVenc > 0 ? maxSemVenc : maxB) : 1, 4);
+var minL = Math.min.apply(null, vL), maxL = Math.max.apply(null, vL);
+var eR = escala(minL, maxL, 4);
+var labL = eL.marcas.map(function (v) { return curto(v); }), labR = eR.marcas.map(function (v) { return curto(v); });
+var padL = Math.round(Math.max.apply(null, labL.map(function (s) { return s.length; })) * 6.4 + 14);
+var padR = Math.round(Math.max.apply(null, labR.map(function (s) { return s.length; })) * 6.4 + 16);
+var padT = 26, padB = 34, iw = W - padL - padR, ih = H - padT - padB, base = padT + ih;
+var yL = function (v) { return padT + (1 - (v - eL.min) / (eL.max - eL.min)) * ih; };
+var yR = function (v) { return padT + (1 - (v - eR.min) / (eR.max - eR.min)) * ih; };
+var slot = iw / n, gap = 3, bw = Math.max(4, Math.min(28, (slot - 8 - gap) / 2));
+var xc = function (k) { return padL + slot * (k + 0.5); };
+var svg = '<svg class="pv-graf" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" role="img" aria-label="' + esc(o.resumo || "") + '">';
+eL.marcas.forEach(function (v, k) {
+svg += '<line class="pv-grade" x1="' + padL + '" y1="' + fixo(yL(v), 1) + '" x2="' + (W - padR) + '" y2="' + fixo(yL(v), 1) + '"/>'
++ '<text class="pv-eixo" x="' + (padL - 8) + '" y="' + fixo(yL(v) + 4, 1) + '" text-anchor="end">' + esc(labL[k]) + "</text>";
+});
+var haLinha = vL.length > 1;
+if (haLinha) {
+eR.marcas.forEach(function (v, k) {
+svg += '<line class="pv-marca-r" x1="' + (W - padR) + '" y1="' + fixo(yR(v), 1) + '" x2="' + (W - padR + 4) + '" y2="' + fixo(yR(v), 1) + '"/>'
++ '<text class="pv-eixo pv-eixo-r" x="' + (W - padR + 8) + '" y="' + fixo(yR(v) + 4, 1) + '" text-anchor="start">' + esc(labR[k]) + "</text>";
+});
+if (eR.min < 0 && eR.max > 0) svg += '<line class="pv-zero-r" x1="' + padL + '" y1="' + fixo(yR(0), 1) + '" x2="' + (W - padR) + '" y2="' + fixo(yR(0), 1) + '"/>';
+}
+var barras = [], ocupados = [], obst = [];
+cols.forEach(function (c, k) {
+var cx = xc(k), xa = cx - gap / 2 - bw, xb = cx + gap / 2;
+[["a", c.a, xa, "a"], ["b", c.b, xb, "b"]].forEach(function (s) {
+var v = s[1] || 0;
+if (!(v > 0)) return;
+var topo = yL(v), cortada = topo < padT, h = Math.max(2, base - Math.max(topo, padT));
+barras.push({ serie: s[0], v: v, x: s[2], y: base - h, h: h, col: k, cortada: cortada });
+var hach = c.tipoCol === "vencido" && s[0] === "b";
+var rb = Math.min(4, bw / 2, h), xb0 = s[2], xb1 = s[2] + bw, yb = base - h;
+svg += '<path class="pv-barra pv-barra-' + s[0] + (hach ? " pv-barra-venc" : "") + '" data-gt-serie="' + s[0] + '" d="M' + fixo(xb0, 1) + "," + fixo(base, 1) + " V" + fixo(yb + rb, 1) + " Q" + fixo(xb0, 1) + "," + fixo(yb, 1) + " " + fixo(xb0 + rb, 1) + "," + fixo(yb, 1) + " H" + fixo(xb1 - rb, 1) + " Q" + fixo(xb1, 1) + "," + fixo(yb, 1) + " " + fixo(xb1, 1) + "," + fixo(yb + rb, 1) + " V" + fixo(base, 1) + 'Z"' + (hach ? ' style="fill:url(#' + hid + ')"' : ' style="fill:url(#' + hid + "g" + s[0] + ')"') + "/>";
+obst.push({ rect: { x0: s[2], x1: s[2] + bw, y0: base - h, y1: base } });
+if (cortada) svg += '<path class="pv-quebra" d="M' + fixo(s[2] - 1, 1) + "," + fixo(padT + 9, 1) + " l" + fixo(bw + 2, 1) + ',-5 M' + fixo(s[2] - 1, 1) + "," + fixo(padT + 14, 1) + " l" + fixo(bw + 2, 1) + ',-5"/>';
+});
+});
+var ptsC = cols.map(function (c, k) { return ehNum(c.comp) ? [xc(k), yR(c.comp)] : null; });
+var ptsL = cols.map(function (c, k) { return ehNum(c.linha) ? [xc(k), yR(c.linha)] : null; });
+var densL = ptsL.filter(Boolean).length > 2 ? suave(ptsL.filter(Boolean)) : ptsL.filter(Boolean), densC = ptsC.filter(Boolean).length > 2 ? suave(ptsC.filter(Boolean)) : ptsC.filter(Boolean);
+if (ptsC.some(function (p) { return p; })) svg += '<polyline class="pv-linha-comp" data-gt-serie="p" points="' + ptsTxt(densC) + '"/>';
+if (haLinha) {
+svg += '<polyline class="pv-linha" pathLength="1" data-gt-serie="c" points="' + ptsTxt(densL) + '"/>';
+var kUlt = -1; ptsL.forEach(function (p, k) { if (p) kUlt = k; });
+if (kUlt >= 0) svg += '<circle class="pv-ponto g-fim" data-gt-serie="c" cx="' + fixo(ptsL[kUlt][0], 1) + '" cy="' + fixo(ptsL[kUlt][1], 1) + '" r="4.5"/>';
+}
+var lim = { x0: padL - 2, x1: W - 2, y0: 2, y1: H - 2 };
+var linhaObst = densL.length ? [{ pts: densL }] : [];
+if (densC.length) linhaObst.push({ pts: densC });
+var rotulos = "";
+if (haLinha) {
+var idx = [], vals = ptsL.map(function (p, k) { return p ? k : -1; }).filter(function (k) { return k >= 0; });
+if (vals.length) {
+var kMin = vals[0], kMax = vals[0];
+vals.forEach(function (k) { if (cols[k].linha < cols[kMin].linha) kMin = k; if (cols[k].linha > cols[kMax].linha) kMax = k; });
+[vals[vals.length - 1], kMax, kMin, vals[0]].forEach(function (k) { if (idx.indexOf(k) < 0) idx.push(k); });
+}
+idx.forEach(function (k) {
+var p = ptsL[k], txt = curto(cols[k].linha);
+var pos = colocar(txt, [[p[0], p[1] - 10, "middle"], [p[0], p[1] + 18, "middle"], [p[0] - 8, p[1] - 10, "end"], [p[0] + 8, p[1] - 10, "start"], [p[0] - 8, p[1] + 18, "end"]], ocupados, obst.concat(linhaObst), lim);
+if (pos) rotulos += '<text class="pv-rot pv-rot-c" x="' + fixo(pos.x, 1) + '" y="' + fixo(pos.y, 1) + '" text-anchor="' + pos.ancora + '">' + esc(txt) + "</text>";
+});
+}
+barras.slice().sort(function (p, q) { return q.v - p.v; }).forEach(function (b) {
+var txt = curto(b.v), cx = b.x + bw / 2;
+var pos = colocar(txt, [[cx, b.y - 5, "middle"], [cx - 6, b.y - 5, "end"], [cx + 6, b.y - 5, "start"]].concat(b.cortada ? [[b.x + bw + 5, b.y + 14, "start"]] : []), ocupados, obst.filter(function (ob) { return !(ob.rect && ob.rect.x0 === b.x && ob.rect.y0 === b.y); }).concat(linhaObst), lim);
+if (pos) rotulos += '<text class="pv-rot pv-rot-' + b.serie + '" data-gt-serie="' + b.serie + '" x="' + fixo(pos.x, 1) + '" y="' + fixo(pos.y, 1) + '" text-anchor="' + pos.ancora + '">' + esc(txt) + "</text>";
+});
+svg += rotulos;
+var passo = slot < 50 ? 2 : 1;
+cols.forEach(function (c, k) {
+var ult = k === n - 1;
+var temVenc = cols[0].tipoCol === "vencido", mostra = c.tipoCol === "vencido" || (passo === 1 ? true : (temVenc ? (k >= 3 && (k - 1) % passo === 0) : k % passo === 0));
+if (!mostra) return;
+svg += '<text class="pv-mes' + (c.tipoCol === "vencido" ? " pv-mes-venc" : "") + (c.atual ? " pv-mes-atual" : "") + '" x="' + fixo(xc(k), 1) + '" y="' + (H - 10) + '" text-anchor="middle">' + esc(c.rot) + "</text>";
+});
+cols.forEach(function (c, k) {
+var x0 = padL + slot * k, ptL = ptsL[k];
+svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + esc(c.aria || c.rot) + '"' + (o.destino ? ' data-gacao="graf-ir" data-destino="' + esc(o.destino) + '"' : "") + (o.gt ? o.gt(c.tip) : "") + ">"
++ '<rect class="g-hit" x="' + fixo(x0, 1) + '" y="' + padT + '" width="' + fixo(slot, 1) + '" height="' + ih + '"/>'
++ '<line class="g-guia" x1="' + fixo(xc(k), 1) + '" y1="' + padT + '" x2="' + fixo(xc(k), 1) + '" y2="' + base + '"/>'
++ (ptL ? '<circle class="g-pt" cx="' + fixo(ptL[0], 1) + '" cy="' + fixo(ptL[1], 1) + '" r="5" fill="' + (o.corL || "var(--graf-c)") + '"/>' : "") + "</g>";
+});
+svg += '<defs>' + gradDef(hid + "ga", "var(--graf-a)", 1, 0.72) + gradDef(hid + "gb", "var(--graf-b)", 1, 0.72) + '<pattern id="' + hid + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--graf-b)" opacity=".28"/><rect width="3" height="6" fill="var(--graf-b)"/></pattern></defs>';
+return svg + "</svg>";
+}
+function suave(p, passo) {
+var n = p.length, i, k;
+if (n < 3) return p.slice();
+var dx = [], dy = [], m = [], t = [];
+for (i = 0; i < n - 1; i++) { dx[i] = p[i + 1][0] - p[i][0]; dy[i] = p[i + 1][1] - p[i][1]; m[i] = dx[i] ? dy[i] / dx[i] : 0; }
+t[0] = m[0]; t[n - 1] = m[n - 2];
+for (i = 1; i < n - 1; i++) t[i] = (m[i - 1] * m[i] <= 0) ? 0 : (m[i - 1] + m[i]) / 2;
+for (i = 0; i < n - 1; i++) {
+if (m[i] === 0) { t[i] = 0; t[i + 1] = 0; continue; }
+var a = t[i] / m[i], b = t[i + 1] / m[i], h = a * a + b * b;
+if (h > 9) { k = 3 / Math.sqrt(h); t[i] = k * a * m[i]; t[i + 1] = k * b * m[i]; }
+}
+var out = [];
+for (i = 0; i < n - 1; i++) {
+var steps = Math.max(2, Math.ceil(dx[i] / (passo || 5)));
+for (var s = 0; s < steps; s++) {
+var u = s / steps, u2 = u * u, u3 = u2 * u;
+out.push([p[i][0] + u * dx[i], (2 * u3 - 3 * u2 + 1) * p[i][1] + (u3 - 2 * u2 + u) * dx[i] * t[i] + (-2 * u3 + 3 * u2) * p[i + 1][1] + (u3 - u2) * dx[i] * t[i + 1]]);
+}
+}
+out.push(p[n - 1]);
+return out;
+}
+function ptsTxt(pts) { return pts.map(function (q) { return fixo(q[0], 1) + "," + fixo(q[1], 1); }).join(" "); }
+function gradDef(id, cor, topo, pe) {
+return '<linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:' + cor + '" stop-opacity="' + topo + '"/><stop offset="1" style="stop-color:' + cor + '" stop-opacity="' + pe + '"/></linearGradient>';
+}
+function graficoArea(o) {
+var rot = o.rotulosX || [], n = rot.length, ser = o.series || [];
+if (!n || !ser.length) return "";
+var fmt = o.fmt || curto, W = Math.max(300, Math.round(o.largura || 560)), H = o.altura || 270, hid = "pv-ga-" + (++_gid);
+var vmin = ehNum(o.min) ? o.min : 0, vmax = 0;
+ser.forEach(function (s) { s.valores.forEach(function (v) { if (ehNum(v)) { vmax = Math.max(vmax, v); vmin = Math.min(vmin, v); } }); });
+if (o.meta && ehNum(o.meta.v)) vmax = Math.max(vmax, o.meta.v);
+var topo = vmax + Math.max(Math.abs(vmax), 1) * 0.1;
+var e = escala(vmin, topo > vmin ? topo : vmin + 1, o.ticks || 4);
+var labs = e.marcas.map(function (v) { return fmt(v); });
+var padL = Math.round(Math.max.apply(null, labs.map(function (s) { return String(s).length; })) * 6.4 + 14), padR = 16, padT = 14, padB = 30;
+var iw = W - padL - padR, ih = H - padT - padB, base = padT + ih;
+var y = function (v) { return padT + (1 - (v - e.min) / (e.max - e.min)) * ih; };
+var slot = iw / n, xc = function (i) { return padL + slot * (i + 0.5); };
+var svg = '<svg class="pv-graf pv-graf-area" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" role="img" aria-label="' + esc(o.resumo || "") + '"><defs>';
+ser.forEach(function (s, k) { s.gid = hid + "-" + k; svg += gradDef(s.gid, s.cor, s.area === false ? 0 : (k === 0 ? 0.55 : 0.28), 0.02); });
+svg += "</defs>";
+var eixoTxt = "";
+e.marcas.forEach(function (v, k) { svg += '<line class="pv-grade" x1="' + padL + '" y1="' + fixo(y(v), 1) + '" x2="' + (W - padR) + '" y2="' + fixo(y(v), 1) + '"/>'; eixoTxt += '<text class="pv-eixo" x="' + (padL - 8) + '" y="' + fixo(y(v) + 4, 1) + '" text-anchor="end">' + esc(labs[k]) + "</text>"; });
+if (e.min < 0 && e.max > 0) svg += '<line class="g-zero pv-zero" x1="' + padL + '" y1="' + fixo(y(0), 1) + '" x2="' + (W - padR) + '" y2="' + fixo(y(0), 1) + '"/>';
+if (o.meta && ehNum(o.meta.v)) svg += '<rect class="pv-meta-faixa" x="' + padL + '" y="' + fixo(y(e.max), 1) + '" width="' + iw + '" height="' + fixo(Math.max(0, y(o.meta.v) - y(e.max)), 1) + '"/><line class="pv-meta-linha" x1="' + padL + '" y1="' + fixo(y(o.meta.v), 1) + '" x2="' + (W - padR) + '" y2="' + fixo(y(o.meta.v), 1) + '"/><text class="pv-meta-txt" x="' + (W - padR - 4) + '" y="' + fixo(y(o.meta.v) - 5, 1) + '" text-anchor="end">' + esc(o.meta.txt || "") + "</text>";
+var obst = [], ocupados = [], ptsPorSerie = [];
+ser.forEach(function (s, k) {
+var trecho = [], trechos = [];
+s.valores.forEach(function (v, i) { if (!ehNum(v)) { if (trecho.length) trechos.push(trecho); trecho = []; } else trecho.push([xc(i), y(v), i]); });
+if (trecho.length) trechos.push(trecho);
+s.pts = [];
+trechos.forEach(function (tr) {
+s.pts = s.pts.concat(tr);
+var dens = suave(tr.map(function (q) { return [q[0], q[1]]; }));
+if (dens.length > 1 && s.area !== false) svg += '<path class="pv-area" data-gt-serie="' + s.id + '" style="fill:url(#' + s.gid + ')" d="M' + fixo(dens[0][0], 1) + "," + fixo(base, 1) + " L" + dens.map(function (q) { return fixo(q[0], 1) + "," + fixo(q[1], 1); }).join(" L") + " L" + fixo(dens[dens.length - 1][0], 1) + "," + fixo(base, 1) + ' Z"/>';
+if (dens.length > 1) { svg += '<polyline class="pv-linha pv-linha-ser" data-gt-serie="' + s.id + '" style="stroke:' + s.cor + '" points="' + ptsTxt(dens) + '"/>'; obst.push({ pts: dens }); }
+});
+});
+var lim = { x0: padL - 2, x1: W - 2, y0: 2, y1: base - 1 }, rotulos = "";
+ser.forEach(function (s) {
+s.pts.forEach(function (q) { svg += '<circle class="pv-marc" data-gt-serie="' + s.id + '" style="stroke:' + s.cor + '" cx="' + fixo(q[0], 1) + '" cy="' + fixo(q[1], 1) + '" r="3.6"/>'; });
+});
+ser.forEach(function (s, k) {
+s.pts.slice().sort(function (a, b) { return a[1] - b[1]; }).forEach(function (q) {
+var v = s.valores[q[2]], txt = fmt(v);
+var pos = colocar(txt, k === 0 ? [[q[0], q[1] - 10, "middle"], [q[0], q[1] + 19, "middle"]] : [[q[0], q[1] + 19, "middle"], [q[0], q[1] - 10, "middle"]], ocupados, obst, lim);
+if (pos) rotulos += '<text class="pv-rot pv-rot-ser" data-gt-serie="' + s.id + '" x="' + fixo(pos.x, 1) + '" y="' + fixo(pos.y, 1) + '" text-anchor="' + pos.ancora + '">' + esc(txt) + "</text>";
+});
+});
+svg += eixoTxt + rotulos;
+var passo = slot < 44 ? 2 : 1;
+rot.forEach(function (r, i) { if (passo === 2 && i % 2 !== 0 && i !== n - 1) return; svg += '<text class="pv-mes' + (i === n - 1 ? " pv-mes-atual" : "") + '" x="' + fixo(xc(i), 1) + '" y="' + (H - 9) + '" text-anchor="middle">' + esc(r) + "</text>"; });
+rot.forEach(function (r, i) {
+var tip = (o.tips || [])[i] || { t: r, l: [], r: "" };
+svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + esc(tip.aria || r) + '"' + (o.destino ? ' data-gacao="graf-ir" data-destino="' + esc(o.destino) + '"' : "") + (o.gt ? o.gt(tip) : "") + '><rect class="g-hit" x="' + fixo(padL + slot * i, 1) + '" y="' + padT + '" width="' + fixo(slot, 1) + '" height="' + ih + '"/><line class="g-guia" x1="' + fixo(xc(i), 1) + '" y1="' + padT + '" x2="' + fixo(xc(i), 1) + '" y2="' + base + '"/></g>';
+});
+return svg + "</svg>";
+}
+function topLista(itens, o) {
+o = o || {};
+if (!itens.length) return "";
+var max = Math.max.apply(null, itens.map(function (i) { return i.valor; })) || 1;
+return '<ol class="pv-t10 pv-t10-' + (o.tom || "azul") + '">' + itens.map(function (it, i) {
+var pct = Math.max(2, Math.round(it.valor / max * 100)), w = Math.round(pct * 0.7);
+var acao = it.id ? ' data-gacao="graf-ir" data-destino="painel-obra" data-id="' + esc(it.id) + '"' : "";
+var gt = o.gt ? o.gt(it.rotulo, [[o.rotuloValor || "Valor", o.fmtExato ? o.fmtExato(it.valor) : moeda(it.valor), it.cor || "var(--cat-obra)"]], it.id ? "Clique: ver só esta obra no Painel" : "") : "";
+return '<li><button type="button" class="pv-t10-i"' + acao + gt + (it.id ? "" : " disabled") + '><span class="pv-t10-n" aria-hidden="true">' + (i + 1) + '</span><span class="pv-t10-r" title="' + esc(it.rotulo) + '">' + esc(it.rotulo) + '</span><span class="pv-t10-b"><i style="width:' + w + '%"></i><b class="pv-tn">' + esc(moeda(it.valor)) + "</b></span></button></li>";
+}).join("") + "</ol>";
+}
+function legenda(itens) {
+return '<div class="pv-leg">' + itens.map(function (it) {
+return '<button type="button" class="g-leg pv-leg-b" data-gt-serie-bt="' + it.serie + '" aria-pressed="true" title="Mostrar ou esconder: ' + esc(it.rotulo) + '"><i class="pv-leg-cor pv-leg-' + it.forma + '" style="' + (it.forma === "linha" || it.forma === "tracejada" ? "color:" : "background:") + it.cor + '"></i>'
++ esc(it.rotulo) + (it.valor ? " <b>" + esc(it.valor) + "</b>" : "") + "</button>";
+}).join("") + "</div>";
+}
+function mesCurto(ch) { return String(ch || "").slice(5, 7) + "/" + String(ch || "").slice(2, 4); }
+function diaCurto(iso) { var s = String(iso || ""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) : s; }
+function varTxt(v) {
+if (!v) return "";
+if (v.dir === "novo") return "novo";
+if (v.dir === "sem") return "—";
+if (v.dir === "igual") return "igual";
+return (v.pct > 0 ? "+" : "−") + Math.abs(v.pct) + "%";
+}
+var DESTINO_VIEW = { financeiro: "financeiro", obras: "obras", comercial: "orcamentos", medicoes: "medicoes" };
+function escolherFila(decisoes, max) {
+var lista = (decisoes || []).map(function (x, i) { return { x: x, i: i }; });
+lista.sort(function (a, b) {
+var va = a.x.unidade === "R$" ? a.x.valor : -1, vb = b.x.unidade === "R$" ? b.x.valor : -1;
+if (va !== vb) return vb - va;
+if (b.x.gravidade !== a.x.gravidade) return b.x.gravidade - a.x.gravidade;
+return a.i - b.i;
+});
+return lista.slice(0, max || 4).map(function (o) { return o.x; });
+}
+function quantoDe(x, c) {
+if (x.unidade === "R$") return c.podeFin === false ? "" : moeda(x.valor);
+if (x.unidade === "dias") return N(x.valor, "dia", "dias");
+if (x.unidade === "un") return String(x.valor);
+return "";
+}
+function filaCompleta(m, c) {
+var itensDe = function (x) {
+if (!x.itens || !x.itens.length) return "";
+var btn = function (it) {
+if (x.itensAcao === "aprovar-medicao") return (c.podeAprovar && c.podeMod("medicoes")) ? '<button type="button" class="pn-btn pn-btn-mini pn-btn-p" data-gacao="aprovar-medicao" data-id="' + esc(it.id) + '">Aprovar</button>' : "";
+if (x.itensAcao === "pagar-medicao") return (c.podeFin && c.podeMod("medicoes")) ? '<button type="button" class="pn-btn pn-btn-mini pn-btn-p" data-gacao="pagar-medicao" data-id="' + esc(it.id) + '">Registrar pagamento</button>' : "";
+if (x.itensAcao === "abrir-lancamento") return c.podeFin ? '<button type="button" class="pn-btn pn-btn-mini" data-gopen="financeiro:' + esc(it.id) + '">Abrir</button>' : "";
+return "";
+};
+var lis = x.itens.map(function (it) {
+var b = btn(it); if (!b) return "";
+return '<li><span class="pn-it-t">' + esc(it.rotulo) + (it.sub ? "<small>, " + esc(it.sub) + "</small>" : "") + "</span>"
++ (it.valor !== null && it.valor !== undefined && c.podeFin ? '<span class="pn-it-v pv-tn">' + esc(moeda(it.valor)) + "</span>" : "") + b + "</li>";
+}).join("");
+if (!lis) return "";
+return '<ul class="pn-itens">' + lis + (x.n > x.itens.length ? '<li class="pn-it-mais">e mais ' + (x.n - x.itens.length) + " na lista completa</li>" : "") + "</ul>";
+};
+var linhaDec = function (x) {
+var t = c.decisao(x), quanto = quantoDe(x, c) || '<span class="pn-tag">' + esc(x.tag || "") + "</span>";
+var grav = x.gravidade >= 3 ? "pn-critico" : (x.gravidade === 2 ? "pn-atencao" : "pn-info");
+return '<li class="pn-decisao ' + grav + (x.adiadoAte ? " pn-adiada" : "") + '"><span class="pn-quanto"><i></i>' + quanto + '</span><span class="pn-oque">' + t.titulo + "</span>"
++ '<span class="pn-onde">' + t.detalhe + (t.acaoTexto ? '<span class="pn-porque-a">' + t.acaoTexto + "</span>" : "") + (x.adiadoAte ? '<span class="pn-porque-t">Adiado até ' + diaCurto(x.adiadoAte) + ".</span>" : "") + "</span>"
++ '<span class="pn-acao">' + c.botao(x, t.botao) + (x.adiadoAte
+? '<button class="pn-btn pn-btn-mini" data-gacao="painel-desadiar" data-id="' + esc(x.chave) + '" title="Trazer de volta para a fila agora">Trazer de volta</button>'
+: '<button class="pn-btn pn-btn-mini" data-gacao="painel-adiar" data-id="' + esc(x.chave) + '" title="Sai da fila por ' + PD().DIAS_ADIAR + ' dias e volta sozinho">Adiar ' + PD().DIAS_ADIAR + "d</button>") + "</span>" + (x.adiadoAte ? "" : itensDe(x)) + "</li>";
+};
+var html = '<div class="pn-fila-modal" data-modal-largo>';
+if (!m.decisoes.length) html += '<p class="pv-vazio-p">Nenhuma decisão esperando.</p>';
+m.grupos.forEach(function (g) {
+html += '<details class="pn-grupo"' + (g.aberto ? " open" : "") + '><summary><span class="pn-grupo-nome">' + esc(g.nome) + '</span><span class="pn-grupo-n">' + esc(N(g.itens.length, "ponto", "pontos")) + (g.emJogo > 0 && c.podeFin ? ", " + esc(moeda(g.emJogo)) : "") + "</span></summary><ol>" + g.itens.map(linhaDec).join("") + "</ol></details>";
+});
+if (m.decisoesAdiadas.length) html += '<details class="pn-grupo pn-grupo-adiados"><summary><span class="pn-grupo-nome">Adiados</span><span class="pn-grupo-n">' + esc(N(m.decisoesAdiadas.length, "ponto volta", "pontos voltam")) + " sozinho quando vencer</span></summary><ol>" + m.decisoesAdiadas.map(linhaDec).join("") + "</ol></details>";
+return html + "</div>";
+}
+function blPrevisao(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var p = m.previsao13, sub = "o que está em aberto, com data de vencimento. É previsão, não caixa. Boletim aprovado entra " + N(c.metas.prazoReceber, "dia", "dias") + " depois da medição.";
+var frase = "Nada com vencimento nas próximas 13 semanas. Lance as contas a pagar e as receitas previstas com a data de vencimento no Financeiro para ver o caixa projetado.";
+var vencBox = "";
+if (p.temVencido) {
+var v = p.vencido;
+vencBox = '<div class="pv-venc"><div><span class="pv-venc-r">Já venceu e segue em aberto</span><b class="pv-venc-v">' + esc(moeda(v.saidas)) + "</b><span class=\"pv-venc-s\">" + esc(N(v.nS, "conta a pagar", "contas a pagar"))
++ (v.nE ? "; mais " + esc(moeda(v.entradas)) + " a receber em atraso, que não entram na posição" : "") + "</span></div></div>";
+}
+if (p.vazioTotal) return '<section class="pv-card pv-previsao" aria-labelledby="pv-prev-t">' + cab("Previsão de 13 semanas", sub, "", "pv-prev-t") + vazio("Nada em aberto com data", frase, '<button type="button" class="pn-btn pn-btn-p" data-view="financeiro">Abrir o Financeiro</button>') + "</section>";
+if (p.vazia) return '<section class="pv-card pv-previsao" aria-labelledby="pv-prev-t">' + cab("Previsão de 13 semanas", sub, "", "pv-prev-t") + vencBox + '<p class="pv-frase">' + esc(frase) + '</p><button type="button" class="pn-btn pn-btn-p" data-view="financeiro">Abrir o Financeiro</button></section>';
+var cols = [], v0 = p.vencido;
+if (p.temVencido) {
+cols.push({ rot: "Vencido", tipoCol: "vencido", a: v0.entradas, b: v0.saidas, linha: p.saldoInicial, tip: { t: "Vencido e em aberto", l: [["Receita atrasada", c.fmtMoeda(v0.entradas), "var(--graf-a)"], ["Contas a pagar vencidas", c.fmtMoeda(v0.saidas), "var(--graf-b)"], ["Posição de partida", c.fmtMoeda(p.saldoInicial), "var(--graf-c)"]], r: "Receita atrasada não entra na posição. Clique: abrir o Financeiro" },
+aria: "Vencido: contas a pagar " + moeda(v0.saidas) + ", receita atrasada " + moeda(v0.entradas) });
+}
+p.semanas.forEach(function (w) {
+cols.push({ rot: diaCurto(w.ini), a: w.entradas, b: w.saidas, linha: w.posicao, atual: w.i === 0,
+tip: { t: "Semana de " + diaCurto(w.ini) + " a " + diaCurto(w.fim), l: [["Entradas previstas", c.fmtMoeda(w.entradas), "var(--graf-a)"], ["Saídas previstas", c.fmtMoeda(w.saidas), "var(--graf-b)"], ["Posição ao fim da semana", c.fmtMoeda(w.posicao), "var(--graf-c)"]], r: "Clique: abrir o Financeiro e programar o que vence" },
+aria: "Semana de " + diaCurto(w.ini) + ": entradas " + moeda(w.entradas) + ", saídas " + moeda(w.saidas) + ", posição " + moeda(w.posicao) });
+});
+var resumo = "Previsão de caixa de 13 semanas: entradas previstas " + moeda(p.entradas) + ", saídas previstas " + moeda(p.saidas) + ", posição ao fim " + moeda(p.posicaoFinal) + ". É previsão do que está em aberto com data, não caixa.";
+var svg = graficoBL({ largura: LG(c, 6), colunas: cols, destino: "financeiro", resumo: resumo, altura: 150, gt: function (tip) { return c.gt(tip.t, tip.l, tip.r); } });
+var leg = legenda([{ serie: "a", rotulo: "Entradas previstas", forma: "barra", cor: "var(--graf-a)", valor: moeda(p.entradas) }, { serie: "b", rotulo: "Saídas previstas", forma: "barra", cor: "var(--graf-b)", valor: moeda(p.saidas) }, { serie: "c", rotulo: "Posição de caixa", forma: "linha", cor: "var(--graf-c)", valor: moeda(p.posicaoFinal) }]);
+var notas = [];
+if (p.minimo && p.minimo.valor < p.saldoHoje) notas.push("Ponto mais baixo: " + esc(moeda(p.minimo.valor)) + " na semana " + (p.minimo.semana + 1) + ".");
+if (p.semData.nE + p.semData.nS) notas.push(esc(N(p.semData.nE + p.semData.nS, "lançamento sem data fica", "lançamentos sem data ficam")) + " de fora: " + esc(moeda(p.semData.entradas)) + " a entrar, " + esc(moeda(p.semData.saidas)) + " a sair.");
+if (p.depois.nE + p.depois.nS) notas.push("Depois de 13 semanas: " + esc(moeda(p.depois.entradas)) + " a entrar, " + esc(moeda(p.depois.saidas)) + " a sair.");
+return '<section class="pv-card pv-previsao" aria-labelledby="pv-prev-t">' + cab("Previsão de 13 semanas", sub + " " + notas.join(" "), "", "pv-prev-t") + '<div class="gt-graf pv-graf-box" data-gt-grafico>' + svg + leg + "</div></section>";
+}
+var ROT_STATUS = { andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausadas", concluida: "Concluídas", todas: "Todas" };
+function duplaBarra(l) {
+var pz = l.prazo || {}, av = l.avanco, p = pz.temDatas ? Math.min(100, pz.prazoPct || 0) : null, f = av === null || av === undefined ? null : Math.min(100, Math.max(0, av));
+if (l.status === "concluida" || pz.entregue) return '<span class="pv-dupla pv-dupla-ok"><span class="pv-dupla-b"><span class="pv-dupla-t"><i class="pv-fis" style="width:100%"></i></span></span><span class="pv-dupla-l">entregue</span></span>';
+var tit = l.nome + ": " + (f === null ? "sem medição" : "físico " + av + "%") + (p === null ? ", sem datas" : ", calendário consumido " + (pz.prazoTexto || p + "%"));
+return '<span class="pv-dupla" role="img" aria-label="' + esc(tit) + '" title="' + esc(tit) + '">'
++ '<span class="pv-dupla-b"><span class="pv-dupla-t pv-dupla-fis"><i class="pv-fis" style="width:' + (f === null ? 0 : f) + '%"></i></span>'
++ '<span class="pv-dupla-t pv-dupla-pra">' + (p === null ? "" : '<i class="pv-pra" style="width:' + p + '%"></i>') + "</span>"
++ (p === null ? "" : '<b class="pv-hoje" style="left:' + p + '%" title="Hoje: ' + esc(pz.prazoTexto || p + "%") + ' do calendário"></b>') + "</span>"
++ '<span class="pv-dupla-l"><span>físico <b>' + (f === null ? "—" : av + "%") + "</b></span><span>prazo <b>" + (p === null ? "—" : esc(pz.prazoTexto || p + "%")) + "</b></span></span></span>";
+}
+function orcCelula(l) {
+var o = l.orcado;
+if (!o || !(o.previsto > 0)) return '<span class="pv-fraco" title="Sem orçamento vinculado a esta obra: vincule em Obras para comparar o gasto com o orçado">sem orçamento</span>';
+var pct = o.consumidoPct === null ? 0 : o.consumidoPct, w = Math.min(100, Math.max(0, pct));
+if (o.gasto < 0) return '<span class="pv-orc" title="' + esc("O custo lançado da obra é um crédito (estorno sem a despesa de origem): não há percentual do orçado para mostrar") + '"><b class="pv-tn">crédito</b><small class="pv-orc-s">estorno sem origem</small></span>';
+var adiantado = l.avanco !== null && l.avanco !== undefined && o.consumidoPct !== null && o.consumidoPct - l.avanco >= PD().DEFASAGEM_PONTOS;
+var tit = "Gasto " + (o.gasto ? Number(o.gasto).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "R$ 0,00") + " de " + Number(o.previsto).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) + " orçados" + (l.avanco !== null && l.avanco !== undefined ? ". Medido " + l.avanco + "% do escopo" : "");
+return '<span class="pv-orc' + (o.estourou ? " pv-orc-estouro" : (adiantado ? " pv-orc-atencao" : "")) + '" title="' + esc(tit) + '"><span class="pv-orc-t"><i style="width:' + w + '%"></i></span><b class="pv-tn">' + pct + "%</b>"
++ (o.estourou ? '<small class="pv-orc-s">acima do orçado</small>' : (adiantado ? '<small class="pv-orc-s">gasto à frente da obra</small>' : "")) + "</span>";
+}
+function margemCelula(l, c) {
+if (l.margem === null || l.margem === undefined) return '<span class="pv-fraco" title="' + (l.recebido > 0 ? "Sem custo pago lançado: a margem ainda não existe" : "Sem receita") + '">—</span>';
+var inc = l.custoIncompleto && l.custoIncompleto.sim;
+var tit = inc ? "O custo pago é " + Math.round(l.custoIncompleto.razao * 100) + "% do recebido: a margem ainda não é confiável" : "Resultado sobre o recebido, acumulado da obra";
+return '<span class="pv-margem ' + (inc ? "pv-fraco" : (l.margem >= c.metas.margem ? "pv-ok" : "pv-ruim")) + '" title="' + esc(tit) + '">' + fmtNumBR(l.margem, 1) + "%" + (inc ? '<i class="pv-selo-mini" aria-label="custo incompleto" title="' + esc(tit) + '">!</i>' : "") + "</span>";
+}
+function linhaTab(l, c, fin) {
+var mot = (l.atencao && l.atencao.motivos || []).filter(function (x) { return x.cod === "vencidas" || x.cod === "estouro" || x.cod === "sem-diario"; })[0];
+var d = l.desvio || { tom: "neutro", texto: "" }, mk = l.marco || { tom: "neutro", texto: "" };
+var nome = '<th scope="row" class="pv-ob-nome"><button type="button" class="pv-ob-link" data-gopen="obras:' + esc(l.id) + '" title="' + esc(l.nome) + '">' + esc(l.nome) + "</button>" + pilStatus(l.status) + (mot ? '<small class="pv-ob-mot">' + esc(mot.texto) + "</small>" : "") + "</th>";
+var td = function (rot, cls, html) { return '<td class="' + cls + '" data-rotulo="' + esc(rot) + '">' + html + "</td>"; };
+return '<tr class="pv-ob pv-ob-s-' + esc(l.status) + '">' + nome
++ td("Físico e prazo", "pv-c-dupla", duplaBarra(l))
++ td("Desvio", "pv-c-desv", '<span class="pv-desv pv-desv-' + esc(d.tom) + '">' + esc(d.texto) + "</span>")
++ (fin ? td("Contratado", "pv-num", l.base > 0 ? '<span title="' + esc(c.fmtMoeda(l.base) + (l.semContrato ? " (valor cadastrado na obra, sem contrato)" : "")) + '">' + esc(moeda(l.base)) + (l.semContrato ? '<small class="pv-sc">sem contrato</small>' : "") + "</span>" : '<span class="pv-fraco">—</span>')
++ td("Recebido", "pv-num", l.recebido > 0 ? '<span title="' + esc(c.fmtMoeda(l.recebido)) + '">' + esc(moeda(l.recebido)) + "</span>" : '<span class="pv-fraco">nenhum</span>')
++ td("Custo pago", "pv-num", l.custoPago > 0 ? '<span title="' + esc(c.fmtMoeda(l.custoPago)) + '">' + esc(moeda(l.custoPago)) + "</span>" : '<span class="pv-fraco">nenhum</span>')
++ td("Margem", "pv-num", margemCelula(l, c))
++ td("Orçado e realizado", "pv-c-orc", orcCelula(l)) : "")
++ td("Próximo marco", "pv-c-marco", '<span class="pv-marco pv-marco-' + esc(mk.tom) + '">' + esc(mk.texto) + "</span>") + "</tr>";
+}
+function cardGaleria(l, c, fin) {
+var d = l.desvio || {}, mk = l.marco || {}, ini = c.iniciais(l.nome);
+var ft = c.fotoDe ? c.fotoDe(l) : null, credito = "";
+if (ft && ft.ref) { c.obrasFotos.push({ id: l.id, ref: ft.ref }); if (ft.origem === "diario" && ft.data) credito = "Foto do diário de " + diaCurto(ft.data); }
+var fatos = [];
+if (fin && l.recebido > 0) fatos.push("<div><dt>Recebido</dt><dd>" + esc(moeda(l.recebido)) + "</dd></div>");
+if (fin && l.margem !== null && l.margem !== undefined) fatos.push("<div><dt>Margem</dt><dd>" + margemCelula(l, c) + "</dd></div>");
+if (mk.texto) fatos.push("<div><dt>Marco</dt><dd class=\"pv-marco-" + esc(mk.tom) + '">' + esc(mk.texto) + "</dd></div>");
+return '<li class="pv-gc" data-gopen="obras:' + esc(l.id) + '"><span class="pv-gc-foto" data-pn-foto="' + esc(l.id) + '" data-credito="' + esc(credito) + '"><span class="pv-gc-ph" aria-hidden="true">' + (ini ? "<i>" + esc(ini) + "</i>" : "") + "</span></span>"
++ '<div class="pv-gc-c"><div class="pv-gc-topo">' + pilStatus(l.status) + (d.texto ? '<span class="pv-desv pv-desv-' + esc(d.tom) + '">' + esc(d.texto) + "</span>" : "") + "</div>"
++ '<button type="button" class="pv-gc-nome" data-gopen="obras:' + esc(l.id) + '" title="' + esc(l.nome) + '">' + esc(l.nome) + "</button>" + duplaBarra(l)
++ (fatos.length ? '<dl class="pv-gc-fatos">' + fatos.join("") + "</dl>" : "") + "</div></li>";
+}
+function obrasCorpo(m, c) {
+var est = c.obrasEstado || {}, v = PD().carteiraObras(m.obras.todas || [], { aba: est.aba, busca: est.busca, ordem: est.ordem, dir: est.dir });
+var fin = !!c.podeFin, html, vista = est.vista === "galeria" ? "galeria" : "tabela";
+var limite = est.todas ? 9999 : 6, escondidas = 0;
+if (vista === "tabela" && v.itens.length > limite) { escondidas = v.itens.length - limite; v.itens = v.itens.slice(0, limite); }
+if (!v.itens.length && !v.semMovimento.length) {
+var porque = v.busca ? 'Nenhuma obra com "' + esc(est.busca) + '" no nome.' : "Nenhuma obra " + ({ andamento: "em andamento", planejamento: "em planejamento", pausada: "pausada", concluida: "concluída", todas: "" }[v.aba] || "") + ".";
+html = '<div class="pv-vazio pv-vazio-linha"><b>' + porque + "</b><p>" + (v.busca ? "Confira a grafia ou limpe a busca." : (v.aba !== "todas" && v.cont.todas ? "Há " + N(v.cont.todas, "obra cadastrada", "obras cadastradas") + ". Veja todas." : "")) + "</p>"
++ (v.busca ? '<button type="button" class="pn-btn" data-gacao="painel-obras-limpar">Limpar busca</button>' : (v.aba !== "todas" && v.cont.todas ? '<button type="button" class="pn-btn pn-btn-p" data-gacao="painel-obras-aba" data-value="todas">Ver todas as obras</button>' : "")) + "</div>";
+} else if (vista === "galeria") {
+html = '<ul class="pv-galeria">' + v.itens.concat(v.semMovimento).map(function (l) { return cardGaleria(l, c, fin); }).join("") + "</ul>";
+} else {
+var cols = [{ k: "nome", r: "Obra" }, { k: null, r: "Físico e prazo" }, { k: "desvio", r: "Desvio" }]
+.concat(fin ? [{ k: "contratado", r: "Contratado", n: 1 }, { k: "recebido", r: "Recebido", n: 1 }, { k: "custo", r: "Custo pago", n: 1 }, { k: "margem", r: "Margem", n: 1 }, { k: "orcado", r: "Orçado e realizado" }] : [])
+.concat([{ k: "marco", r: "Próximo marco" }]);
+var th = cols.map(function (col) {
+if (!col.k) return '<th scope="col" class="pv-th-s">' + esc(col.r) + "</th>";
+var ativa = v.ordem === col.k, sort = ativa ? (v.dir === "asc" ? "ascending" : "descending") : "none";
+return '<th scope="col" class="' + (col.n ? "pv-num" : "") + '" aria-sort="' + sort + '"><button type="button" class="pv-th' + (ativa ? " on" : "") + '" data-gacao="painel-obras-ordem" data-value="' + col.k + '" title="Ordenar por ' + esc(col.r.toLowerCase()) + '">' + esc(col.r)
++ '<svg viewBox="0 0 8 12" width="8" height="12" aria-hidden="true"><path d="M4 1 7 4.6H1z" fill="currentColor" opacity="' + (ativa && v.dir === "asc" ? 1 : 0.35) + '"/><path d="M4 11 1 7.4h6z" fill="currentColor" opacity="' + (ativa && v.dir === "desc" ? 1 : 0.35) + '"/></svg></button></th>';
+}).join("");
+var corpo = v.itens.map(function (l) { return linhaTab(l, c, fin); }).join("");
+var soma = { b: 0, r: 0, c: 0 };
+v.itens.forEach(function (l) { soma.b += l.base || 0; soma.r += l.recebido || 0; soma.c += l.custoPago || 0; });
+var pe = fin && v.itens.length > 1 ? '<tfoot><tr><th scope="row" colspan="3">Total de ' + N(v.itens.length, "obra", "obras") + '</th><td class="pv-num" data-rotulo="Contratado">' + esc(moeda(soma.b)) + '</td><td class="pv-num" data-rotulo="Recebido">' + esc(moeda(soma.r)) + '</td><td class="pv-num" data-rotulo="Custo pago">' + esc(moeda(soma.c)) + '</td><td colspan="3"></td></tr></tfoot>' : "";
+html = '<div class="pv-tabela-wrap"><table class="pv-tab pv-tab-obras"><caption class="pv-sr">Carteira de obras: físico, prazo, desvio' + (fin ? ", valores e orçado" : "") + ' e próximo marco</caption><thead><tr>' + th + "</tr></thead><tbody>" + corpo + "</tbody>" + pe + "</table></div>";
+if (escondidas) html += '<div class="pv-vertodas"><button type="button" class="pn-ctl" data-gacao="painel-obras-mais">Ver todas as ' + (v.itens.length + escondidas) + " obras</button></div>";
+if (v.semMovimento.length) {
+html += '<details class="pv-semmov"><summary>Mais ' + N(v.semMovimento.length, "obra", "obras") + " sem movimento</summary><ul>"
++ v.semMovimento.map(function (l) { return '<li><button type="button" class="pv-ob-link" data-gopen="obras:' + esc(l.id) + '">' + esc(l.nome) + "</button>" + pilStatus(l.status) + "</li>"; }).join("") + "</ul></details>";
+}
+}
+var ct = v.busca ? N(v.total, "obra encontrada", "obras encontradas") : N(v.total, "obra", "obras");
+return { html: html, ct: ct, aba: v.aba, cont: v.cont, ordem: v.ordem, dir: v.dir, vista: vista };
+}
+function blObras(m, c) {
+var fin = !!c.podeFin;
+if (!m.obras.total) {
+return '<section class="pv-card pv-obras" aria-labelledby="pv-ob-t">' + cab("Carteira de obras", "", "", "pv-ob-t")
++ vazio("Nenhuma obra cadastrada", "Cadastre a primeira obra, ou gere uma a partir de um orçamento aprovado. Com a obra criada, o avanço, o prazo e o caixa dela aparecem aqui.", '<button type="button" class="pn-btn pn-btn-p" data-view="obras">Cadastrar obra</button>') + "</section>";
+}
+var corpo = obrasCorpo(m, c), est = c.obrasEstado || {};
+var tab = function (id) {
+var n = id === "todas" ? corpo.cont.todas : corpo.cont[id], on = corpo.aba === id;
+if (!n && !on && id !== "andamento" && id !== "todas") return "";
+return '<button type="button" role="tab" class="pn-seg-b' + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '" data-gacao="painel-obras-aba" data-value="' + id + '">' + esc(ROT_STATUS[id]) + ' <span class="pn-seg-n">' + n + "</span></button>";
+};
+var vistaBt = function (id, rot) { var on = corpo.vista === id; return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="painel-obras-vista" data-value="' + id + '">' + rot + "</button>"; };
+var dir = '<div class="pn-seg" role="group" aria-label="Como mostrar as obras">' + vistaBt("tabela", "Tabela") + vistaBt("galeria", "Galeria") + "</div>";
+var sub = (fin ? "Valores acumulados desde o início, em regime de caixa. " : "") + "Barra de cima: o físico medido; a de baixo, o calendário consumido; a marca é hoje.";
+var nota = "";
+var sem = c.fin && c.fin.obrasSemOrcamento ? c.fin.obrasSemOrcamento : 0;
+if (fin && sem) nota = '<p class="pv-nota">' + esc(N(sem, "obra sem orçamento vinculado fica", "obras sem orçamento vinculado ficam")) + " sem a coluna de orçado. Vincule o orçamento em Obras para comparar o gasto com o previsto.</p>";
+return '<section class="pv-card pv-obras" aria-labelledby="pv-ob-t">' + cab("Carteira de obras", sub + (nota ? " " + semHtml(nota) : ""), '<span class="pv-ct" data-pn-ct aria-live="polite">' + esc(corpo.ct) + '</span><label class="pn-busca"><span class="pn-busca-r">Buscar obra</span><input type="search" data-pn-busca placeholder="Buscar obra" autocomplete="off" value="' + esc(est.busca || "") + '"></label>' + dir, "pv-ob-t")
++ '<div class="pv-obras-corpo" data-pn-corpo>' + corpo.html + "</div></section>";
+}
+var CTX = null;
+function semHtml(s) { return String(s == null ? "" : s).replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim(); }
+function info(titulo, txt, extra) {
+var t = semHtml(txt);
+if (!t || !CTX || !CTX.gt) return "";
+return '<button type="button" class="pv-info" aria-label="Sobre ' + esc(titulo) + '"' + CTX.gt(titulo, extra || [], t) + ">i</button>";
+}
+function cab(titulo, sub, direita, id) {
+return '<div class="pv-cab"><div class="pv-cab-t"><h2' + (id ? ' id="' + id + '"' : "") + ">" + esc(titulo) + "</h2>" + info(titulo, sub) + "</div>" + (direita ? '<div class="pv-cab-d">' + direita + "</div>" : "") + "</div>";
+}
+function LG(c, cols) { return c.largura ? c.largura(cols) : (c.larguraGraf || 560); }
+var ICONES = {
+caixaHoje: '<path d="M3 7.5h15a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5zm0 0V6a2 2 0 0 1 2-2h11"/><circle cx="16.2" cy="13.8" r="1.3"/>',
+projetado: '<path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/>',
+aReceber: '<path d="M4 4v16h16"/><path d="M19 5l-9 9"/><path d="M10 8.5V14h5.5"/>',
+aPagar: '<path d="M5 19L19 5"/><path d="M9.5 5H19v9.5"/><path d="M4 20h16"/>',
+margem: '<circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/><path d="M18 5.5L6 18.5"/>',
+saldoFaturar: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.5 10h7M8.5 14h7M8.5 17.5h4"/>',
+dash: '<rect x="3" y="3" width="7" height="9" rx="1.2"/><rect x="14" y="3" width="7" height="5" rx="1.2"/><rect x="14" y="12" width="7" height="9" rx="1.2"/><rect x="3" y="16" width="7" height="5" rx="1.2"/>'
+};
+function icone(id) { return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONES[id] || "") + "</svg>"; }
+function blResumo(m, c) {
+var lis = (m.resumo || []).map(function (f) {
+var alvo = DESTINO_VIEW[f.destino], txt = esc(f.texto);
+var corpo = alvo ? '<button type="button" class="pv-fr-t" data-view="' + alvo + '">' + txt + "</button>" : '<span class="pv-fr-t">' + txt + "</span>";
+return '<li class="pv-fr pv-fr-' + esc(f.tom) + '"><i aria-hidden="true"></i>' + corpo + "</li>";
+}).join("");
+var ia = "";
+if (c.iaOferta) {
+ia = '<div class="pv-ia"><button type="button" class="pn-ctl pv-ia-bt" data-gacao="painel-analisar-ia" title="Manda só números somados (nada de nome de cliente, obra ou fornecedor) e traz uma leitura em texto. Se falhar, vale o resumo ao lado.">Analisar com IA</button>'
++ '<div class="pv-ia-saida" data-pv-ia aria-live="polite"' + (c.iaTexto ? "" : " hidden") + ">" + (c.iaTexto ? "<p>" + esc(c.iaTexto) + "</p><small>Leitura da IA sobre números somados. Confira nos blocos abaixo.</small>" : "") + "</div></div>";
+}
+return '<section class="pv-resumo" aria-labelledby="pv-res-t"><p class="pv-saud" id="pv-res-t">' + (c.saudacao || "Resumo do dia") + '</p><ul class="pv-frases">' + lis + "</ul>" + ia + "</section>";
+}
+function kpiHtml(k, m, c) {
+var margem = k.id === "margem", valorTxt = margem ? (k.valor === null ? "—" : fmtNumBR(k.valor, 1) + "%") : moeda(k.valor);
+var inc = margem && k.custoIncompleto && k.custoIncompleto.sim, fraco = margem && (k.valor === null || inc);
+var cls = "pv-kpi pv-k-" + k.id + (k.tom === "neg" ? " pv-kpi-neg" : "") + (fraco ? " pv-kpi-fraco" : "");
+var linhasGt = margem ? [["Margem de caixa", k.valor === null ? "sem dado" : fmtNumBR(k.valor, 1) + "%"], ["Meta", fmtNumBR(k.meta, 0) + "%"]] : [["Valor exato", c.fmtMoeda(k.valor)]];
+if (k.vencido) linhasGt.push(["Vencido", c.fmtMoeda(k.vencido.valor)]);
+var destino = k.ir === "medicoes" ? ' data-view="medicoes"' : ' data-gacao="graf-ir" data-destino="financeiro"', selo = "";
+if (inc) {
+var por = k.custoIncompleto.motivo === "sem-custo" ? "Nenhum custo pago lançado no período." : "O custo pago é " + Math.round(k.custoIncompleto.razao * 100) + "% do recebido. Abaixo de 15% a margem ainda não é confiável.";
+selo = '<span class="pv-selo pv-selo-aviso" title="' + esc(por) + '">custo incompleto</span>';
+linhasGt.push(["Atenção", por]);
+}
+var sub = "";
+if (k.vencido) sub = '<span class="pv-kpi-venc"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M6 1.2 11 10.5H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 4.6v2.8M6 8.8v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><b>' + esc(moeda(k.vencido.valor)) + "</b> " + esc(N(k.vencido.n, "vencida", "vencidas")) + "</span>";
+else if (k.sub) sub = '<span class="pv-kpi-sub">' + esc(k.sub) + "</span>";
+return '<li class="pv-kpi-li"><button type="button" class="' + cls + '"' + destino + c.gt(k.rotulo, linhasGt, k.ajuda || "") + ">"
++ '<span class="pv-k-ic" aria-hidden="true">' + icone(k.id) + "</span>"
++ '<span class="pv-k-corpo"><span class="pv-kpi-r">' + esc(k.rotulo) + selo + '</span><span class="pv-kpi-v">' + esc(valorTxt) + "</span>"
++ (k.delta ? '<span class="pv-kpi-d">' + delta(k.delta) + "</span>" : "") + sub + "</span>" + spark(k.spark, k.sparkRotulo) + "</button></li>";
+}
+function blKpis(m, c) {
+if (!c.podeFin) return "";
+if (!c.temFin) return '<section class="pv-card pv-card-vazio"><h2 class="pv-sr">Indicadores principais</h2>' + vazio("Sem lançamentos no Financeiro ainda", "Registre uma receita ou uma despesa e o caixa, a previsão e a margem aparecem aqui.", '<button type="button" class="pn-btn pn-btn-p" data-view="financeiro">Abrir o Financeiro</button>') + "</section>";
+var cmp = m.comparacao;
+var nota = (cmp ? (cmp.existe ? "As variações são em relação " + cmp.rotuloPrep + " (" + diaCurto(cmp.ini) + " a " + diaCurto(cmp.fim) + "). " : "Não há lançamento pago " + cmp.rotuloPrep + " (" + diaCurto(cmp.ini) + " a " + diaCurto(cmp.fim) + "): sem variação para mostrar. ") : "Em “desde sempre” não há período para comparar. ")
++ "Setas sem variação: o sistema só guarda o que está em aberto agora, sem histórico.";
+return '<section class="pv-kpis-sec" aria-labelledby="pv-kpis-t"><h2 class="pv-sr" id="pv-kpis-t">Indicadores principais</h2><ul class="pv-kpis">' + m.kpis.map(function (k) { return kpiHtml(k, m, c); }).join("") + "</ul>"
++ '<span class="pv-kpis-info">' + info("Variações dos indicadores", nota) + "</span></section>";
+}
+function blFila(m, c) {
+var dec = m.decisoes || [], n = dec.length;
+var cab_ = '<div class="pv-fila-cab"><h2 id="pv-fila-t">Precisa de você hoje</h2><p class="pv-sub">' + (n ? esc(N(n, "ponto", "pontos")) + (m.emJogo > 0 && c.podeFin ? ", " + esc(moeda(m.emJogo)) + " em jogo" : "") + (m.avisosDoSino ? ", inclui " + esc(N(m.avisosDoSino, "aviso do sino", "avisos do sino")) : "") : "nada pendente") + "</p>"
++ (n ? '<button type="button" class="pn-ctl pv-fila-todos" data-gacao="painel-fila-abrir">Ver ' + (n > 4 ? "os " + n : "todos") + "</button>" : "") + "</div>";
+if (!n) return '<section class="pv-fila pv-fila-vazia pn-hoje" aria-labelledby="pv-fila-t">' + cab_ + '<p class="pv-fila-ok">Nenhuma decisão esperando.</p></section>';
+var cards = escolherFila(dec, 4).map(function (x) {
+var t = c.decisao(x), quanto = quantoDe(x, c) || '<span class="pv-fq-tag">' + esc(x.tag || "") + "</span>";
+var grav = x.gravidade >= 3 ? "pv-g3" : (x.gravidade === 2 ? "pv-g2" : "pv-g1"), rotGrav = x.gravidade >= 3 ? "urgente" : (x.gravidade === 2 ? "atenção" : "informação");
+return '<li class="pv-fcard ' + grav + '"><span class="pv-fq"><i aria-hidden="true"></i><b>' + quanto + '</b><small class="pv-sr">' + rotGrav + "</small></span>"
++ '<span class="pv-ft" title="' + esc(String(t.titulo).replace(/<[^>]*>/g, "")) + '">' + t.titulo + "</span>"
++ '<span class="pv-fa">' + c.botao(x, t.botao) + "</span></li>";
+}).join("");
+return '<section class="pv-fila pn-hoje" aria-labelledby="pv-fila-t">' + cab_ + '<ol class="pv-fila-lista">' + cards + "</ol></section>";
+}
+function blFaturamento(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var meses = m.caixa.porMes || [], cx = m.caixa, cmp = cx.cmp, n = meses.length;
+var inf = c.periodoRotulo + ", mês a mês. A área azul é o que foi recebido; a laranja, o que foi pago. Cada ponto traz o valor; passe o mouse ou toque na coluna para ver o mês inteiro. Variações em relação " + (cmp ? cmp.rotuloPrep : "ao período anterior") + ".";
+if (!n) return '<section class="pv-card pv-faturamento">' + cab("Recebido e pago por mês", inf) + vazio("Sem lançamentos pagos no período", "Quando houver receita ou despesa paga neste período, as áreas aparecem aqui.") + "</section>";
+var d = cmp && cmp.existe ? cmp.delta : {};
+var st = function (rot, valor, dl, bom, cor) { return '<li><span class="pv-st-r"><i style="background:' + cor + '"></i>' + rot + '</span><b class="pv-st-v">' + esc(moeda(valor)) + "</b>" + (dl ? delta({ pct: dl.pct, dir: dl.dir, bom: bom, rotulo: dl.pct === null || dl.pct === undefined ? "" : "vs. " + cmp.rotuloCurto }) : "") + "</li>"; };
+var totais = '<ul class="pv-stats">' + st("Recebido", cx.recebido, d.recebido, "alta", "var(--graf-a)") + st("Pago", cx.pago, d.pago, "baixa", "var(--graf-b)") + st("Resultado", cx.resultado, d.resultado, "alta", "var(--graf-c)") + "</ul>";
+var tips = meses.map(function (x) { var rot = mesCurto(x.mes); return { t: rot, l: [["Recebido", c.fmtMoeda(x.recebido), "var(--graf-a)"], ["Pago", c.fmtMoeda(x.pago), "var(--graf-b)"], ["Resultado do mês", c.fmtMoeda(x.recebido - x.pago)], ["Saldo acumulado", c.fmtMoeda(x.saldo), "var(--graf-c)"]], r: "Clique: abrir o Financeiro", aria: rot + ": recebido " + moeda(x.recebido) + ", pago " + moeda(x.pago) }; });
+var svg = graficoArea({ largura: LG(c, 8), altura: 140, rotulosX: meses.map(function (x) { return mesCurto(x.mes); }), series: [{ id: "a", cor: "var(--graf-a)", valores: meses.map(function (x) { return x.recebido; }) }, { id: "b", cor: "var(--graf-b)", valores: meses.map(function (x) { return x.pago; }) }], tips: tips, destino: "financeiro",
+resumo: "Recebido e pago por mês: recebido " + moeda(cx.recebido) + ", pago " + moeda(cx.pago) + ".", gt: function (tip) { return c.gt(tip.t, tip.l, tip.r); } });
+var leg = legenda([{ serie: "a", rotulo: "Recebido", forma: "barra", cor: "var(--graf-a)" }, { serie: "b", rotulo: "Pago", forma: "barra", cor: "var(--graf-b)" }]);
+return '<section class="pv-card pv-faturamento" aria-labelledby="pv-fat-t">' + cab("Recebido e pago por mês", inf, totais, "pv-fat-t") + '<div class="gt-graf pv-graf-box" data-gt-grafico>' + svg + leg + "</div></section>";
+}
+function blFluxo(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var meses = m.caixa.porMes || [], cx = m.caixa, comp = cx.porMesComp, cmp = cx.cmp, n = meses.length;
+var inf = c.periodoRotulo + ", por mês. Barras no eixo da esquerda: recebido e pago. Linha no eixo da direita: saldo acumulado" + (comp ? ". Tracejado: o saldo " + (cmp ? cmp.rotuloPrep : "do período de comparação") : "") + ".";
+if (!n) return '<section class="pv-card pv-fluxo">' + cab("Fluxo de caixa e saldo", inf) + vazio("Sem lançamentos pagos no período", "Quando houver receita ou despesa paga neste período, as barras e o saldo aparecem aqui.") + "</section>";
+var cols = meses.map(function (x, i) {
+var rot = mesCurto(x.mes), cp = comp && comp[i] ? comp[i] : null, linhas = [["Recebido", c.fmtMoeda(x.recebido), "var(--graf-a)"], ["Pago", c.fmtMoeda(x.pago), "var(--graf-b)"], ["Resultado do mês", c.fmtMoeda(x.recebido - x.pago)], ["Saldo acumulado", c.fmtMoeda(x.saldo), "var(--graf-c)"]];
+if (cp) linhas.push(["Saldo na comparação (" + mesCurto(cp.mes) + ")", c.fmtMoeda(cp.saldo), "var(--texto-fraco)"]);
+return { rot: rot, a: x.recebido, b: x.pago, linha: x.saldo, comp: cp ? cp.saldo : null, atual: i === n - 1, tip: { t: rot, l: linhas, r: "Clique: abrir o Financeiro" }, aria: rot + ": recebido " + moeda(x.recebido) + ", pago " + moeda(x.pago) + ", saldo " + moeda(x.saldo) };
+});
+var ult = meses[n - 1];
+var svg = graficoBL({ largura: LG(c, 4), altura: 152, colunas: cols, destino: "financeiro", resumo: "Fluxo de caixa por mês, " + n + (n === 1 ? " mês" : " meses") + ": recebido " + moeda(cx.recebido) + ", pago " + moeda(cx.pago) + ", saldo acumulado ao final " + moeda(ult.saldo) + ".", gt: function (tip) { return c.gt(tip.t, tip.l, tip.r); } });
+var leg = legenda([{ serie: "a", rotulo: "Recebido", forma: "barra", cor: "var(--graf-a)" }, { serie: "b", rotulo: "Pago", forma: "barra", cor: "var(--graf-b)" }, { serie: "c", rotulo: "Saldo", forma: "linha", cor: "var(--graf-c)", valor: moeda(ult.saldo) }].concat(comp ? [{ serie: "p", rotulo: "Comparação", forma: "tracejada", cor: "var(--texto-fraco)" }] : []));
+var aviso = cx.custoIncompleto && cx.custoIncompleto.sim ? " Atenção: o pago cobre só " + Math.round((cx.custoIncompleto.razao || 0) * 100) + "% do recebido, então o saldo parece mais folgado do que o custo real da obra permite." : "";
+return '<section class="pv-card pv-fluxo" aria-labelledby="pv-fluxo-t">' + cab("Fluxo de caixa e saldo", inf + aviso, "", "pv-fluxo-t") + '<div class="gt-graf pv-graf-box" data-gt-grafico>' + svg + leg + "</div></section>";
+}
+function seg2(acao, grupo, atual, opcoes) {
+return '<div class="pn-seg pv-seg2" role="group" aria-label="Escolher o ranking">' + opcoes.map(function (o) { var on = atual === o[0]; return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="' + acao + '" data-grupo="' + grupo + '" data-value="' + o[0] + '">' + o[1] + "</button>"; }).join("") + "</div>";
+}
+function blTopObras(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var modo = (c.top && c.top.obras) === "custo" ? "custo" : "faturamento";
+var itens = modo === "custo" ? m.porObra.map(function (o) { return { id: o.id, rotulo: o.nome, valor: o.valor, cor: "var(--graf-b)" }; }) : (m.topFaturamento || []).map(function (o) { return { id: o.id, rotulo: o.nome, valor: o.valor, cor: "var(--graf-a)" }; });
+var inf = modo === "custo" ? "As obras que mais gastaram, em dinheiro pago " + c.periodoRotulo + ". Clique numa obra para ver só ela no painel." : "As obras que mais receberam, acumulado desde o início (regime de caixa). Clique numa obra para ver só ela no painel.";
+var corpo = itens.length ? topLista(itens, { tom: modo === "custo" ? "laranja" : "verde", gt: c.gt, rotuloValor: modo === "custo" ? "Pago no período" : "Recebido (acumulado)", fmtExato: c.fmtMoeda }) : vazio(modo === "custo" ? "Sem despesa paga com obra" : "Nenhuma obra recebeu ainda", "Escolha a obra ao lançar a receita ou a despesa e o ranking aparece aqui.");
+return '<section class="pv-card pv-topobras" aria-labelledby="pv-tob-t">' + cab("Top 10 obras", inf, seg2("painel-top", "obras", modo, [["faturamento", "Faturamento"], ["custo", "Custo"]]), "pv-tob-t") + corpo + "</section>";
+}
+function blTopDespesas(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var modo = (c.top && c.top.desp) === "abertas" ? "abertas" : "pagas", f = m.topFornecedores || { pagas: [], abertas: [] };
+var itens = (modo === "abertas" ? f.abertas : f.pagas).map(function (x) { return { rotulo: x.rotulo, valor: x.valor, cor: modo === "abertas" ? "var(--graf-d)" : "var(--cat-material)" }; });
+var inf = modo === "abertas" ? "Os fornecedores (ou descrições) com mais contas ainda em aberto, somando tudo que falta pagar." : "Os fornecedores (ou descrições) que mais receberam em dinheiro pago " + c.periodoRotulo + ". O nome é o do fornecedor do lançamento; sem ele, a descrição.";
+var corpo = itens.length ? topLista(itens, { tom: modo === "abertas" ? "roxo" : "laranja", gt: c.gt, rotuloValor: modo === "abertas" ? "Em aberto" : "Pago no período", fmtExato: c.fmtMoeda }) : vazio(modo === "abertas" ? "Nada em aberto" : "Sem despesa paga no período", "Lance as despesas com o fornecedor e o ranking aparece aqui.");
+return '<section class="pv-card pv-topdesp" aria-labelledby="pv-tdp-t">' + cab("Top 10 fornecedores e contas", inf, seg2("painel-top", "desp", modo, [["pagas", "Pagos"], ["abertas", "A pagar"]]), "pv-tdp-t") + corpo + "</section>";
+}
+function donut(itens, total, centro, c) {
+var R = 48, SW = 20, CC = 2 * Math.PI * R, off = 0, svg = "", rotAnel = "", tot = total > 0 ? total : 1;
+itens.forEach(function (it, ix) {
+var len = it.valor / tot * CC, folga = itens.length > 1 ? 2.5 : 0, dash = Math.max(0.6, len - folga), pct = Math.round(it.valor / tot * 100);
+svg += '<circle class="pv-fatia" cx="70" cy="70" r="' + R + '" fill="none" stroke="' + it.cor + '" stroke-width="' + SW + '" stroke-dasharray="' + fixo(dash, 2) + " " + fixo(CC, 2) + '" stroke-dashoffset="' + fixo(-off, 2) + '" transform="rotate(-90 70 70)" data-gt-serie="k' + ix + '" data-gt-k="' + ix + '" tabindex="0" role="img" aria-label="' + esc(it.rotulo + ": " + moeda(it.valor) + ", " + pct + "%") + '" data-gacao="graf-ir" data-destino="financeiro"'
++ c.gt(it.rotulo, [["Pago no período", c.fmtMoeda(it.valor), it.cor], ["Parte do total", pct + "%"]], "Clique: abrir o Financeiro") + "/>";
+if (pct >= 7) { var ang = (off + len / 2) / CC * 2 * Math.PI - Math.PI / 2; rotAnel += '<text class="pv-d-pct" data-gt-serie="k' + ix + '" x="' + fixo(70 + R * Math.cos(ang), 1) + '" y="' + fixo(70 + R * Math.sin(ang) + 3.5, 1) + '" text-anchor="middle">' + pct + "%</text>"; }
+off += len;
+});
+var leg = itens.map(function (it, ix) {
+var pct = Math.round(it.valor / tot * 100);
+return '<li data-gt-k="' + ix + '"><button type="button" class="pv-dl-b" data-gt-serie-bt="k' + ix + '" aria-pressed="true" title="Mostrar ou esconder: ' + esc(it.rotulo) + '"><i style="background:' + it.cor + '"></i><span class="pv-dl-n">' + esc(it.rotulo) + '</span><b class="pv-tn">' + esc(moeda(it.valor)) + '</b><em class="pv-tn">' + (pct === 0 && it.valor > 0 ? "<1" : pct) + "%</em></button></li>";
+}).join("");
+return '<div class="pv-donut" data-gt-grafico><svg viewBox="0 0 140 140" role="img" aria-label="' + esc(centro.rotulo + " " + centro.valor + ": " + itens.map(function (it) { return it.rotulo + " " + Math.round(it.valor / tot * 100) + "%"; }).join(", ")) + '"><circle cx="70" cy="70" r="' + R + '" fill="none" class="pv-trilho-d" stroke-width="' + SW + '"/>' + svg + rotAnel
++ (function () { var pt = String(centro.valor).split("\u00a0"), l1 = pt.length >= 3 ? pt[0] + " " + pt[1] : centro.valor, l2 = (pt.length >= 3 ? pt[2] + " " : "") + centro.rotulo; return '<text class="pv-d-val" x="70" y="68" text-anchor="middle">' + esc(l1) + '</text><text class="pv-d-rot" x="70" y="83" text-anchor="middle">' + esc(l2) + "</text>"; })() + '</svg><ul class="pv-dl">' + leg + "</ul></div>";
+}
+function blComposicao(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var cx = m.caixa, cats = m.categorias.map(function (x) { return { rotulo: c.catRotulo(x.cat), valor: x.valor, cor: c.catCor(x.cat) }; });
+if (cats.length > 6) { var resto = cats.slice(5).reduce(function (s, x) { return s + x.valor; }, 0); cats = cats.slice(0, 5).concat([{ rotulo: "Outras categorias", valor: resto, cor: "var(--cat-outros)" }]); }
+return '<section class="pv-card pv-composicao" aria-labelledby="pv-cat-t">' + cab("Despesas por categoria", "Dinheiro pago " + c.periodoRotulo + ", dividido pela categoria do lançamento. Clique numa fatia para abrir o Financeiro; clique na legenda para esconder uma categoria.", "", "pv-cat-t")
++ (cats.length ? donut(cats, cx.pago, { rotulo: "pago", valor: moeda(cx.pago) }, c) : vazio("Sem despesa paga no período", "Lance as despesas pagas no Financeiro, com a categoria, e a divisão aparece aqui.")) + "</section>";
+}
+function blLucro(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var meta = c.metas.margem, todos = m.caixa.porMes || [], dados = todos.filter(function (x) { return x.comDado; }), vazios = todos.length - dados.length;
+var notas = [];
+if (dados.some(function (x) { return x.incompleto; })) notas.push("Marcador tracejado com asterisco: custo pago abaixo de 15% do recebido, o número ainda não é margem de verdade e não entra na curva.");
+if (dados.some(function (x) { return x.lucratividade === null; })) notas.push("Mês só com receita ou só com despesa não tem lucratividade para calcular e fica sem ponto.");
+if (vazios > 0) notas.push(N(vazios, "mês sem nenhum lançamento ficou", "meses sem nenhum lançamento ficaram") + " fora do gráfico.");
+var inf = "Resultado sobre o recebido, mês a mês, contra a meta de margem (a faixa verde é a zona acima da meta). " + notas.join(" ");
+if (!dados.length) return '<section class="pv-card pv-lucro" aria-labelledby="pv-luc-t">' + cab("Lucratividade por mês", inf, "", "pv-luc-t") + vazio("Nenhum mês com lançamento no período", "Quando houver receita e despesa pagas no mesmo mês, a lucratividade dele aparece aqui.") + "</section>";
+var boas = dados.map(function (x) { return (x.lucratividade !== null && !x.incompleto) ? x.lucratividade : null; });
+var fracas = dados.map(function (x) { return (x.lucratividade !== null && x.incompleto) ? x.lucratividade : null; });
+var tips = dados.map(function (x) {
+var rot = mesCurto(x.mes), v = x.lucratividade, linhas = [["Recebido", c.fmtMoeda(x.recebido), "var(--graf-a)"], ["Pago", c.fmtMoeda(x.pago), "var(--graf-b)"]];
+if (v === null) linhas.push(["Lucratividade", x.recebido > 0 ? "sem custo lançado" : "sem receita"]); else { linhas.push(["Lucratividade", fmtNumBR(v, 0) + "%"], ["Meta de margem", meta + "%"]); if (x.incompleto) linhas.push(["Atenção", "custo pago abaixo de 15% do recebido: o número não é margem de verdade"]); }
+return { t: rot, l: linhas, r: "", aria: rot + ": " + (v === null ? "sem custo lançado" : "lucratividade " + v + "%") };
+});
+var pct = function (v) { return fmtNumBR(v, 0) + "%"; };
+var svg = graficoArea({ largura: LG(c, 6), altura: 152, rotulosX: dados.map(function (x) { return mesCurto(x.mes); }), min: Math.min(0, Math.min.apply(null, dados.map(function (x) { return x.lucratividade === null ? 0 : x.lucratividade; }))),
+series: [{ id: "a", cor: "var(--verde)", valores: boas, fmt: pct }, { id: "c", cor: "var(--texto-fraco)", valores: fracas, area: false, fmt: function (v) { return pct(v) + "*"; } }],
+ticks: 5, fmt: function (v) { return Math.round(v) + "%"; }, meta: { v: meta, txt: "meta " + meta + "%" }, tips: tips,
+resumo: "Lucratividade por mês: " + dados.map(function (x) { return mesCurto(x.mes) + " " + (x.lucratividade === null ? "sem custo lançado" : x.lucratividade + "%" + (x.incompleto ? " (custo incompleto)" : "")); }).join(", ") + ". Meta " + meta + "%.", gt: function (tip) { return c.gt(tip.t, tip.l, tip.r); } });
+return '<section class="pv-card pv-lucro" aria-labelledby="pv-luc-t">' + cab("Lucratividade por mês", inf, "", "pv-luc-t") + '<div class="gt-graf pv-graf-box" data-gt-grafico>' + svg + "</div></section>";
+}
+function chip(acao, valor, rot, on, extra) { return '<button type="button" class="pv-chipseg' + (on ? " on" : "") + '" data-gacao="' + acao + '" data-value="' + esc(valor) + '" aria-pressed="' + (on ? "true" : "false") + '"' + (extra || "") + ">" + esc(rot) + "</button>"; }
+function segmentadores(m, c) {
+var s = c.seg || {};
+var html = '<section class="pv-seg" aria-label="Filtros do painel">';
+html += '<div class="pv-seg-g"><span class="pv-seg-t">Período</span><div class="pv-seg-c">' + ["mes", "6m", "ano", "tudo"].map(function (p) { return chip("dash-periodo", p, { mes: "Este mês", "6m": "6 meses", ano: "Este ano", tudo: "Tudo" }[p], s.per === p); }).join("") + "</div></div>";
+if (c.podeFin) html += '<div class="pv-seg-g"><span class="pv-seg-t">Comparar com</span><div class="pv-seg-c">' + chip("dash-cmp", "anterior", "Período anterior", s.cmp === "anterior", s.cmpOff ? " disabled" : "") + chip("dash-cmp", "ano", "Ano passado", s.cmp === "ano", s.cmpOff ? " disabled" : "") + "</div></div>";
+html += '<div class="pv-seg-g pv-seg-obra"><span class="pv-seg-t">Obra</span><div class="pv-seg-c">' + (s.obraHtml || "") + "</div></div>";
+html += '<div class="pv-seg-g"><span class="pv-seg-t">Status das obras</span><div class="pv-seg-c">' + ["todas", "andamento", "planejamento", "pausada", "concluida"].map(function (st) { return chip("painel-status", st, ROT_STATUS[st], (s.status || "todas") === st); }).join("") + "</div></div>";
+return html + "</section>";
+}
+function topo(m, c) {
+var t = c.topo || {}, ic = '<span class="mod-ic" aria-hidden="true">' + (c.icone ? c.icone("dashboard") : "") + "</span>";
+var modelo = '<div class="pn-seg pv-modelo" role="group" aria-label="Modelo do painel">' + [["a", "Modelo A"], ["b", "Modelo B"]].map(function (o) { var on = t.modelo === o[0]; return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="painel-modelo" data-value="' + o[0] + '" title="' + (o[0] === "a" ? "Executivo BI, claro" : "Central escura") + '">' + o[1] + "</button>"; }).join("") + "</div>";
+var auto = '<label class="pn-filtro pv-auto">Auto <select data-gacao="painel-auto" title="Atualiza sozinho a cada N minutos, enquanto o painel está aberto">' + [[0, "desligada"], [1, "1 min"], [5, "5 min"], [10, "10 min"], [30, "30 min"]].map(function (o) { return '<option value="' + o[0] + '"' + (t.auto === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>";
+var mais = (typeof global.Modulo !== "undefined" && global.Modulo.mais) ? global.Modulo.mais([t.metasHtml || "", t.criarDemoHtml || ""].filter(Boolean)) : "";
+return '<header class="mod-cab pv-topo"><div class="mod-tit">' + ic + '<div><h1>Painel de Gestão</h1><p class="mod-sub">' + (t.subHtml || "") + "</p></div></div>"
++ '<div class="pv-acoes">' + modelo
++ '<div class="pv-atualiza"><button type="button" class="pv-bt pv-bt-prim" data-gacao="painel-atualizar" title="Recalcula tudo agora">Atualizar</button><span class="pv-atualiz" data-pv-atualiz aria-live="polite">Atualizado às ' + esc(t.hora || "") + "</span>" + auto + "</div>"
++ '<div class="pv-vistas"><button type="button" class="pn-ctl pv-bt" data-gacao="painel-expandir" aria-pressed="' + (t.tv ? "true" : "false") + '" title="Tela cheia, sem o menu lateral (modo TV). Esc sai.">Expandir</button><button type="button" class="pn-ctl pv-bt" data-gacao="painel-reduzir" aria-pressed="' + (t.compacto ? "true" : "false") + '" title="' + (t.tv ? "Sai da tela cheia" : "Modo compacto: menos espaço entre os cartões") + '">Reduzir</button></div>'
++ '<div class="pv-vistas"><button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button><button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar</button>' + mais + "</div></div></header>";
+}
+function blComercial(m, c) {
+if (!c.podeMod("orcamentos")) return "";
+var co = m.comercial;
+if (!co || !co.temDado) return '<section class="pv-card pv-comercial" aria-labelledby="pv-com-t">' + cab("Comercial", "orçamentos e propostas", "", "pv-com-t")
++ vazio("Nenhum orçamento ainda", "Crie o primeiro orçamento: o funil, o valor médio e a conversão em venda passam a aparecer aqui.", '<button type="button" class="pn-btn pn-btn-p" data-acao="novo">Novo orçamento</button>') + "</section>";
+var maxV = Math.max.apply(null, co.faixas.map(function (f) { return f.valor; })) || 1;
+var visiveis = co.faixas.filter(function (f) { return f.n > 0; }), ocultas = co.faixas.length - visiveis.length;
+var funil = '<ol class="pv-funil">' + visiveis.map(function (f) {
+var w = f.n ? Math.max(3, Math.round(f.valor / maxV * 100)) : 0;
+return '<li class="pv-fu pv-fu-' + f.id + (f.n ? "" : " pv-fu-zero") + '"><span class="pv-fu-n">' + esc(f.rotulo) + '</span><span class="pv-fu-b"><i style="width:' + w + '%"></i></span><b class="pv-tn">' + f.n + '</b><span class="pv-fu-v pv-tn">' + (f.n ? esc(moeda(f.valor)) : "—") + "</span></li>";
+}).join("") + "</ol>" + "";
+var conv = co.conversao === null ? '<span class="pv-fraco">sem proposta enviada</span>' : fmtNumBR(co.conversao, 0) + "%";
+var stats = '<dl class="pv-cstats">'
++ '<div><dt>Carteira</dt><dd class="pv-tn" title="Soma do preço de venda de todos os orçamentos: o mesmo número da tela Orçamentos">' + esc(moeda(co.carteira)) + "</dd><small>" + esc(N(co.total, "orçamento", "orçamentos")) + "</small></div>"
++ '<div><dt>Valor médio</dt><dd class="pv-tn">' + esc(moeda(co.medio)) + "</dd><small>por orçamento</small></div>"
++ '<div><dt>Conversão</dt><dd class="pv-tn" title="Propostas aceitas dividido pelas enviadas ao cliente">' + conv + "</dd><small>" + (co.enviadas ? esc(co.aceitas + " de " + N(co.enviadas, "enviada", "enviadas")) : "aceitas de enviadas") + "</small></div>"
++ '<div><dt>Em aberto</dt><dd class="pv-tn">' + esc(moeda(co.emAberto.valor)) + "</dd><small>" + esc(N(co.emAberto.n, "orçamento", "orçamentos")) + "</small></div></dl>";
+var top = co.top.length ? '<div class="pv-top"><h3>Maiores em aberto</h3><ol>' + co.top.slice(0, 5).map(function (o) {
+return '<li><button type="button" class="pv-top-i" data-abrir="' + esc(o.id) + '" title="Abrir o orçamento"><span class="pv-top-n">' + esc(o.nome || "Sem nome") + (o.cliente ? "<small>" + esc(o.cliente) + "</small>" : "") + '</span><span class="pv-top-s">' + esc(o.rotuloFaixa) + '</span><b class="pv-tn">' + esc(moeda(o.valor)) + "</b></button></li>";
+}).join("") + "</ol></div>" : "";
+var alertaTxt = co.semResposta.length ? esc(N(co.semResposta.length, "proposta enviada espera", "propostas enviadas esperam")) + " resposta há mais de " + co.limiteSemResposta + " dias (" + esc(moeda(co.semResposta.reduce(function (s, x) { return s + x.valor; }, 0))) + "). Um telefonema resolve mais que uma proposta nova." : "";
+return '<section class="pv-card pv-comercial" aria-labelledby="pv-com-t">' + cab("Comercial", "Todos os orçamentos da empresa, em qualquer obra. Carteira = soma do preço de venda; conversão = aceitas ÷ enviadas ao cliente. " + alertaTxt, '<button type="button" class="pn-ctl" data-view="orcamentos">Abrir Orçamentos</button>', "pv-com-t")
++ '<div class="pv-com-grade"><div class="pv-com-esq">' + stats + funil + "</div>" + top + "</div></section>";
+}
+function gauge(rotulo, valorTxt, atingido, metaTxt, titulo, fraco, c) {
+var W = 180, H = 104, cx = 90, cy = 90, r = 70, L = Math.PI * r;
+var vazio_ = atingido === null || atingido === undefined;
+var frac = vazio_ ? 0 : Math.max(0, Math.min(1.5, atingido)) / 1.5;
+var cls = vazio_ ? "pv-g-vazio" : (atingido >= 1 ? "pv-g-ok" : (atingido >= 0.7 ? "pv-g-aten" : "pv-g-ruim"));
+var arco = "M" + (cx - r) + "," + cy + " A" + r + "," + r + " 0 0,1 " + (cx + r) + "," + cy;
+var am = Math.PI * (1 - 1 / 1.5), mx = cx + r * Math.cos(Math.PI - am), my = cy - r * Math.sin(Math.PI - am), mx2 = cx + (r + 11) * Math.cos(Math.PI - am), my2 = cy - (r + 11) * Math.sin(Math.PI - am);
+return '<div class="pv-gauge ' + cls + (fraco ? " pv-g-fraco" : "") + '" data-gacao="graf-ir" data-destino="metas" tabindex="0" role="button"' + c.gt(rotulo, [["Atingido", valorTxt], ["Meta", metaTxt]], (titulo ? titulo + ". " : "") + "Clique: ajustar as metas") + '><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(rotulo + ": " + valorTxt + ", meta " + metaTxt) + '">'
++ '<path class="pv-g-trilho" d="' + arco + '"/><path class="pv-g-fill" d="' + arco + '" stroke-dasharray="' + fixo(L * frac, 1) + " " + fixo(L + 2, 1) + '"/><line class="pv-g-meta" x1="' + fixo(mx, 1) + '" y1="' + fixo(my, 1) + '" x2="' + fixo(mx2, 1) + '" y2="' + fixo(my2, 1) + '"/>'
++ '<text class="pv-g-val" x="' + cx + '" y="' + (cy - 8) + '" text-anchor="middle">' + esc(valorTxt) + "</text></svg>"
++ '<div class="pv-g-rot">' + esc(rotulo) + "<span>meta " + esc(metaTxt) + "</span></div></div>";
+}
+function blMetas(m, c) {
+if (!c.podeFin || !c.temFin) return "";
+var cx = m.caixa, ms = m.metas, itens = [], chips = [], inc = cx.custoIncompleto && cx.custoIncompleto.sim;
+itens.push(gauge("Margem de caixa", cx.margem === null ? "—" : fmtNumBR(cx.margem, 1) + "%", cx.margem === null ? null : ms.margem.atingido, fmtNumBR(c.metas.margem, 0) + "%", inc ? "Custo incompleto: o número ainda não é margem de verdade" : "Resultado de caixa dividido pelo recebido no período", inc || cx.margem === null, c));
+if (ms.recebimento) itens.push(gauge("Recebimento", moeda(ms.recebimento.valor), ms.recebimento.atingido, moeda(ms.recebimento.meta), c.fmtMoeda(ms.recebimento.metaMes) + " por mês, " + N(ms.recebimento.meses, "mês", "meses"), false, c));
+else chips.push('<button type="button" class="pv-chip-meta" data-gacao="dash-metas">Definir meta de recebimento</button>');
+if (ms.ppc.valor !== null) itens.push(gauge("PPC da semana", ms.ppc.valor + "%", ms.ppc.atingido, fmtNumBR(c.metas.ppc, 0) + "%", "Tarefas feitas sobre as comprometidas na semana do Last Planner", false, c));
+return '<section class="pv-card pv-metas" aria-labelledby="pv-met-t">' + cab("Metas", "O arco vai até 150% da meta; a marca é a meta. Meta indefinida vira o botão “Definir meta”.", '<button type="button" class="pn-ctl" data-gacao="dash-metas">Ajustar metas</button>', "pv-met-t")
++ '<div class="pv-gauges">' + itens.join("") + "</div>" + (chips.length ? '<div class="pv-chips-meta">' + chips.join("") + "</div>" : "") + "</section>";
+}
+function blAgenda(m, c) {
+var a = m.agenda, nomes = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+var rotTipo = { vencimento: "Pagar", entrega: "Entrega da obra", medicao: "Medição", recebimento: "Receber", compra: "Compra", tarefa: "Tarefa" };
+var visivel = function (ev) {
+if (ev.tipo === "vencimento" || ev.tipo === "recebimento") return !!c.podeFin;
+if (ev.tipo === "medicao") return c.podeMod("medicoes");
+if (ev.tipo === "compra") return c.podeMod("compras");
+if (ev.tipo === "tarefa") return c.podeMod("tarefas");
+return true;
+};
+var total = 0;
+var dias = (a.dias || []).map(function (d) { var evs = d.eventos.filter(visivel); total += evs.length; return { d: d, evs: evs }; }).filter(function (x) { return x.evs.length; });
+var linhas = dias.map(function (x) {
+var dt = new Date(x.d.data + "T00:00:00"), rot = (x.d.hoje ? "Hoje" : nomes[dt.getDay()]) + " " + x.d.data.slice(8, 10);
+var chips = x.evs.slice(0, 4).map(function (ev) {
+var alvo = ev.view ? ' data-view="' + esc(ev.view) + '"' : "";
+var tit = ev.titulo + (ev.obraNome && ev.obraNome !== ev.titulo ? ", " + ev.obraNome : "") + (ev.detalhe ? ", " + ev.detalhe : "");
+return '<button type="button" class="pv-ev pv-ev-' + esc(ev.tipo) + '"' + alvo + ' title="' + esc(rotTipo[ev.tipo] + ": " + tit) + '"><i aria-hidden="true"></i><span class="pv-ev-t"><b>' + esc(rotTipo[ev.tipo] || "") + "</b> " + esc(ev.titulo) + "</span>"
++ (ev.valor && c.podeFin ? '<span class="pv-ev-v pv-tn">' + esc(moeda(ev.valor)) + "</span>" : "") + "</button>";
+}).join("") + (x.evs.length > 4 ? '<span class="pv-ev-mais">+' + (x.evs.length - 4) + " mais</span>" : "");
+return '<li class="pv-dia' + (x.d.hoje ? " pv-dia-hoje" : "") + '"><span class="pv-dia-r">' + esc(rot) + '</span><div class="pv-dia-e">' + chips + "</div></li>";
+});
+var atras = [];
+if (c.podeFin && a.atrasados && a.atrasados.contas.n) atras.push('<button type="button" class="pv-chip pv-chip-alerta" data-view="financeiro"><b>' + esc(moeda(a.atrasados.contas.valor)) + "</b> em " + esc(N(a.atrasados.contas.n, "conta já vencida", "contas já vencidas")) + "</button>");
+if (c.podeMod("tarefas") && a.atrasados && a.atrasados.tarefas) atras.push('<button type="button" class="pv-chip pv-chip-alerta" data-view="tarefas"><b>' + esc(N(a.atrasados.tarefas, "tarefa atrasada", "tarefas atrasadas")) + "</b></button>");
+if (c.podeMod("medicoes") && a.medicoesAAprovar) atras.push('<button type="button" class="pv-chip pv-chip-aviso" data-view="medicoes"><b>' + esc(N(a.medicoesAAprovar, "medição", "medições")) + "</b> a aprovar</button>");
+return '<section class="pv-card pv-agenda" aria-labelledby="pv-ag-t">' + cab("Próximos 7 dias", total ? esc(N(total, "compromisso", "compromissos")) + " com data" : "", "", "pv-ag-t")
++ (atras.length ? '<div class="pv-chips"><span class="pv-chips-r">Já passou ou espera por você</span>' + atras.join("") + "</div>" : "")
++ (linhas.length ? '<ol class="pv-semana">' + linhas.join("") + "</ol>" : '<p class="pv-vazio-linha-t">Nada marcado nos próximos 7 dias.</p>') + "</section>";
+}
+function blOperacao(m, c) {
+var op = m.operacao, itens = [], detalhes = [], podeMod = c.podeMod;
+var cont = function (rot, val, sub, subCls, attrs) { return '<li><button type="button" class="pv-op" ' + attrs + '><span class="pv-op-r">' + rot + '</span><b class="pv-op-v pv-tn">' + val + "</b>" + (sub ? '<span class="pv-op-s' + (subCls ? " " + subCls : "") + '">' + sub + "</span>" : "") + "</button></li>"; };
+if (podeMod("medicoes")) itens.push(cont("Medições a aprovar", op.medicoesAAprovar, op.aprovadasSemPgto.n ? esc(N(op.aprovadasSemPgto.n, "aprovada aguarda", "aprovadas aguardam")) + " pagamento" : "", "", 'data-view="medicoes"'));
+if (op.pendentes && op.pendentes.total) {
+var partes = [];
+if (op.pendentes.medicoes) partes.push(N(op.pendentes.medicoes, "medição", "medições"));
+if (op.pendentes.compras) partes.push(N(op.pendentes.compras, "pedido", "pedidos"));
+if (op.pendentes.requisicoes) partes.push(N(op.pendentes.requisicoes, "requisição", "requisições"));
+if (op.pendentes.producao) partes.push(op.pendentes.producao + " de produção");
+var viewPend = op.pendentes.medicoes ? "medicoes" : (op.pendentes.compras ? "compras" : (op.pendentes.requisicoes ? "requisicoes" : "producao"));
+itens.push(cont("Pendentes de aprovação", op.pendentes.total, esc(partes.join(", ") + (m.filtrado ? ", de todas as obras" : "")), "pv-op-aviso", 'data-view="' + viewPend + '"'));
+}
+if (podeMod("compras")) itens.push(cont("Compras em aberto", op.comprasAbertas, "requisições e pedidos", "", 'data-view="compras"'));
+if (op.lp) {
+itens.push(cont("Last Planner, semana", (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + " <small>PPC</small>", esc(op.lp.impedida ? N(op.lp.impedida, "impedimento", "impedimentos") + ", " + op.lp.execucao + " em execução" : op.lp.execucao + " em execução, " + N(op.lp.liberada, "liberada", "liberadas")), op.lp.impedida ? "pv-op-alerta" : "", 'data-view="lastplanner"'));
+detalhes.push('<details class="pv-detalhe"><summary>Last Planner da semana</summary><div class="pv-detalhe-c"><dl class="pv-fatos">'
++ "<div><dt>PPC</dt><dd class=\"pv-tn" + (op.lp.ppc === null ? " pv-fraco" : (op.lp.ppc * 100 >= c.metas.ppc ? " pv-ok" : " pv-ruim")) + '">' + (op.lp.ppc === null ? "—" : Math.round(op.lp.ppc * 100) + "%") + "</dd></div>"
++ '<div><dt>Feitas e comprometidas</dt><dd class="pv-tn">' + op.lp.feitas + " de " + op.lp.comprometidas + "</dd></div><div><dt>Em execução</dt><dd class=\"pv-tn\">" + op.lp.execucao + "</dd></div><div><dt>Liberadas</dt><dd class=\"pv-tn\">" + op.lp.liberada + "</dd></div>"
++ '<div><dt>Impedimentos</dt><dd class="pv-tn' + (op.lp.impedida ? " pv-alerta" : " pv-ok") + '">' + op.lp.impedida + '</dd></div></dl><button type="button" class="pn-btn" data-view="lastplanner">Abrir o quadro</button></div></details>');
+}
+if (op.tarefas && (op.tarefas.afazer || op.tarefas.atrasadas)) itens.push(cont("Tarefas", op.tarefas.afazer + " <small>a fazer</small>", op.tarefas.atrasadas ? esc(N(op.tarefas.atrasadas, "atrasada", "atrasadas")) : "", op.tarefas.atrasadas ? "pv-op-alerta" : "", 'data-view="tarefas"'));
+if (podeMod("rdo")) itens.push(cont("Diários (RDO)", op.rdos, "", "", 'data-view="rdo"'));
+if (op.m2) {
+itens.push(cont("Executado nos diários", esc(fmtNumBR(op.m2.executado, 0)) + " <small>m²</small>", esc(fmtNumBR(op.m2.atribuido, 0)) + " m² com dono e aprovados", "", 'data-view="producao"'));
+if (op.m2.porServico && op.m2.porServico.length) detalhes.push('<details class="pv-detalhe"><summary>Metragem por serviço</summary><div class="pv-detalhe-c">' + (c.barH ? c.barH(op.m2.porServico) : "") + (op.m2.aviso ? '<p class="pv-nota">' + esc(op.m2.aviso) + "</p>" : "") + "</div></details>");
+}
+if (op.retencao > 0 && c.podeFin) itens.push(cont("Retenção presa", esc(moeda(op.retencao)), "em contratos vivos", "", 'data-gacao="abrir-retencao"'));
+if (!itens.length) return "";
+return '<section class="pv-card pv-operacao" aria-labelledby="pv-op-t">' + cab("Operação", "Contadores de " + (c.escopoRotulo || "todas as obras") + ". Last Planner e metragem expandem abaixo.", "", "pv-op-t") + '<ul class="pv-ops" aria-label="Contadores de operação">' + itens.join("") + "</ul>" + (detalhes.length ? '<div class="pv-detalhes">' + detalhes.join("") + "</div>" : "") + "</section>";
+}
+function agrupar(lista) {
+var out = [], i = 0;
+while (i < lista.length) {
+var b = lista[i];
+if (b.larg === "meia" && lista[i + 1] && lista[i + 1].larg === "meia") { out.push({ tipo: "par", itens: [b, lista[i + 1]] }); i += 2; }
+else { out.push({ tipo: "cheia", itens: [b] }); i++; }
+}
+return out;
+}
+function abas(g, membros, ativo) {
+if (!membros || !membros.length) return "";
+var ids = membros.map(function (x) { return x.id; });
+if (ids.indexOf(ativo) < 0) ativo = ids[0];
+var bt = membros.map(function (x) {
+var on = x.id === ativo;
+return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="painel-aba" data-grupo="' + esc(g.id) + '" data-value="' + esc(x.id) + '">' + esc((g.rotulos && g.rotulos[x.id]) || x.id) + "</button>";
+}).join("");
+var ps = membros.map(function (x) { return '<div class="pv-aba-p" data-bloco="' + esc(x.id) + '"' + (x.id === ativo ? "" : " hidden") + ">" + x.html + "</div>"; }).join("");
+return '<div class="pv-abas-cartao" data-abas="' + esc(g.id) + '"><div class="pn-seg pv-abas" role="group" aria-label="' + esc(g.nome) + ': escolher o gráfico">' + bt + "</div>" + ps + "</div>";
+}
+var PainelUI = {
+abas: abas,
+escala: escala, colocar: colocar, retRotulo: retRotulo, cruzaLinha: cruzaLinha, graficoBL: graficoBL, spark: spark, delta: delta, agrupar: agrupar, escolherFila: escolherFila,
+obrasCorpo: function (m, c) { CTX = c; return obrasCorpo(m, c); }, filaCompleta: filaCompleta, duplaBarra: duplaBarra,
+topo: topo, segmentadores: segmentadores, graficoArea: graficoArea, suave: suave, topLista: topLista, icone: icone,
+blocos: (function () { var b = { resumo: blResumo, kpis: blKpis, faturamento: blFaturamento, composicao: blComposicao, fluxo: blFluxo, topobras: blTopObras, topdespesas: blTopDespesas, obras: blObras, comercial: blComercial, lucro: blLucro, previsao: blPrevisao, metas: blMetas, agenda: blAgenda, operacao: blOperacao }, o = {};
+Object.keys(b).forEach(function (k) { o[k] = function (m, c) { CTX = c; return b[k](m, c); }; });
+return o; })(),
+fila: function (m, c) { CTX = c; return blFila(m, c); }
+};
+global.PainelUI = PainelUI;
+if (typeof module !== "undefined" && module.exports) module.exports = PainelUI;
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/janelas.js ==== */
@@ -8751,7 +9980,10 @@ try { c.provisorio = x.provisorio != null ? x.provisorio : (Orcamento.itensPreco
 try { c.validar = Proposta.validar(orc); } catch (e6) {}
 return c;
 },
-passos: function (orc, extra) { return OrcGuia.passos(orc, this.ctx(orc, extra)); },
+passos: function (orc, extra) {
+if (typeof MorUI !== "undefined" && MorUI.ativo() && typeof MorRoteiro !== "undefined") { try { return MorRoteiro.passos(orc, this.ctx(orc, extra)); } catch (eMr) { } }
+return OrcGuia.passos(orc, this.ctx(orc, extra));
+},
 roteiroHtml: function (orc, extra) {
 try {
 return Modulo.roteiro(this.passos(orc, extra), { id: "orcguia-roteiro", rotulo: "Roteiro do orçamento até a proposta" });
@@ -8777,6 +10009,7 @@ passo: function (app, id) {
 var orc = app.orcAtual; if (!orc) return;
 var p = this.passos(orc).filter(function (x) { return x.id === id; })[0];
 if (!p) return;
+if (id === "tipo" || id === "parametros" || id === "etapas" || id === "conferencia") { MorUI.irPasso(app, id); return; }
 if (id === "base") {
 var pf = p.pendencias.filter(function (x) { return x.instalar && x.item; })[0];
 if (pf && p.estado === "falta") this.abrirBases(app, orc, { foco: pf.item.catId, instalarAuto: pf.item.catId });
@@ -8801,6 +10034,7 @@ if (!(global.Orcamento && Orcamento.totais(orc).qtdItens > 0)) { aba("planilha")
 else aba("planilha");
 break;
 case "planilha": case "escopo": aba("planilha"); break;
+case "tipo": case "parametros": case "etapas": case "conferencia": if (typeof MorUI !== "undefined") MorUI.irPasso(app, alvo); break;
 case "preco": case "quantidade": this.irItemPendente(app, orc, alvo); break;
 case "cliente": case "condicoes": case "bdi":
 aba("bdi");
@@ -13423,6 +14657,7 @@ return '<div class="row"><div class="field"><label>Código do orçamento</label>
 '<div class="row"><div class="field"><label>Cliente</label><input id="ow-cliente" value="' + esc(s.cliente) + '" placeholder="Nome do contratante"></div>' +
 '<div class="field"><label>Obra / Local</label><input id="ow-obra" value="' + esc(s.obra) + '" placeholder="Ex.: Bairro Centro"></div></div>' +
 '<div class="field"><label>Categoria da obra</label><select id="ow-categoria">' + cats + "</select></div>" +
+(typeof MorUI !== "undefined" ? MorUI.campoTipoSeAtivo(s.morTipologia || "") : "") +
 '<label class="ow-check"><input type="checkbox" id="ow-zerado"' + (s.permitirZerado ? " checked" : "") + '> ' +
 "<span>Permitir insumos com preço zerado <small>(itens sem preço na base entram com R$ 0,00 em vez de bloquear o lançamento)</small></span></label>" +
 '<label class="ow-check"><input type="checkbox" id="ow-mem-laudo"' + (s.memorial.laudo ? " checked" : "") + '> ' +
@@ -13450,6 +14685,7 @@ s.nome = val("ow-nome").trim();
 s.cliente = val("ow-cliente").trim();
 s.obra = val("ow-obra").trim();
 s.categoria = val("ow-categoria");
+if (typeof MorUI !== "undefined" && document.getElementById("mor-tipologia")) s.morTipologia = MorUI.lerTipoDoAssistente();
 s.prazoEntrega = val("ow-prazo");
 s.controlarPrazo = marcado("ow-controlar-prazo");
 s.permitirZerado = marcado("ow-zerado");
@@ -13823,6 +15059,7 @@ if (typeof Aprovacao !== "undefined" && Aprovacao.carimbarAutor) {
 Aprovacao.carimbarAutor(orc, (Auth.usuario && Auth.usuario()) || {});
 }
 } catch (eA) {}
+if (typeof MorUI !== "undefined" && s.morTipologia) { try { MorUI.aoCriarOrcamento(orc, s.morTipologia); } catch (eMor) {} }
 Store.salvarOrcamento(Auth.empresaId(), orc);
 UI.fecharModal();
 var t0Dv = Date.now(), trocarDv = null;
@@ -14269,6 +15506,7 @@ return '<h3 style="margin-top:16px">Cronograma físico-financeiro</h3>' +
 'A medição e o faturamento seguem as condições comerciais desta proposta.</p>' + notaOpc;
 },
 gerarHTML: function (orc, usuario) {
+if (!Proposta.mostrarBdi(orc)) orc = Proposta._orcSemBdi(orc);
 var c = Orcamento.garantirComercial(orc);
 var t = Orcamento.totais(orc);
 var sint = Orcamento.sintetico(orc);
@@ -14319,8 +15557,8 @@ rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(TP.tota
 var citarBase = Proposta.citarBasePrecos();
 P.push(pg(sc("Apresentação"), '<p>' + apresentacao + '</p>' +
 (citarBase ? '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
-'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
-'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>' : '')));
+'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>' +
+(Proposta.mostrarBdi(orc) ? ', acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>' : '') + '.</p>' : '')));
 function liEscopo(s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }
 var escopoLi = sintObr.map(liEscopo).join("");
 var escopoOpcLi = sintOpc.map(liEscopo).join("");
@@ -14338,8 +15576,8 @@ P.push(pg(sc("Premissas e Metodologia"),
 '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
 'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>') +
 (citarBase ? '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
-', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
-'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>' : '')));
+', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>' +
+(Proposta.mostrarBdi(orc) ? ', BDI conforme metodologia do Acórdão TCU nº 2.622/2013' : '') + '.</p>' : '')));
 var cronoHTML = this._cronograma(orc);
 if (cronoHTML) P.push(pg(sc("Cronograma de Execução"), cronoHTML));
 var custoRef = t.custoDireto;
@@ -14363,7 +15601,7 @@ P.push(pg(sc("Resumo Financeiro"),
 '<tbody>' + (linhasSint || '<tr><td colspan="4">—</td></tr>') + '</tbody>' +
 '<tfoot><tr><td colspan="2">VALOR TOTAL DA PROPOSTA</td><td class="r">' + Util.fmtMoeda(TP.total) + '</td><td class="r">100%</td></tr></tfoot></table>' +
 tabOpc +
-'<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(custoRef) + '.</p>'));
+(Proposta.mostrarBdi(orc) ? '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(custoRef) + '.</p>' : '')));
 P.push(pg(sc("Condições Comerciais"),
 bloco("Forma de pagamento", c.condicoesPagamento) +
 bloco("Prazo de execução", c.prazoExecucao) +
@@ -14722,6 +15960,31 @@ total: unit * coef * q
 });
 });
 return out.length ? out : null;
+};
+Proposta.semBdiTexto = function (t) {
+if (typeof t !== "string" || !/\bBDI\b/i.test(t)) return t;
+function frases(txt) { var out = [], re = /([\s\S]*?[.!?]+(?=\s|$))\s*|([\s\S]+$)/g, m; while ((m = re.exec(txt)) && m[0] !== "") out.push((m[1] || m[2] || "").replace(/\s+$/, "")); return out; }
+return t.split("\n").map(function (linha) {
+if (!/\bBDI\b/i.test(linha)) return linha;
+var pref = "", resto = linha, barra = linha.indexOf(" | ");
+if (barra > -1) { pref = linha.slice(0, barra); resto = linha.slice(barra + 3); }
+var ok = frases(resto).filter(function (f) { return !/\bBDI\b/i.test(f); }).join(" ");
+return barra > -1 ? (ok ? pref + " | " + ok : pref) : ok;
+}).join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+};
+Proposta.semBdiDeep = function (o) {
+if (typeof o === "string") return Proposta.semBdiTexto(o);
+if (Object.prototype.toString.call(o) === "[object Array]") return o.map(Proposta.semBdiDeep);
+if (o && typeof o === "object") { var r = {}, k; for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r[k] = Proposta.semBdiDeep(o[k]); return r; }
+return o;
+};
+Proposta._orcSemBdi = function (orc) {
+var c = {}, k; for (k in orc) if (Object.prototype.hasOwnProperty.call(orc, k)) c[k] = orc[k];
+c.comercial = Proposta.semBdiDeep(orc.comercial || {});
+return c;
+};
+Proposta.mostrarBdi = function (orc) {
+return !(orc && orc.mor && orc.mor.proposta && orc.mor.proposta.mostrarBdi === false);
 };
 Proposta.citarBasePrecos = function () {
 try { return !(typeof Empresa !== "undefined" && Empresa && typeof Empresa.citarBasePrecos === "function" && Empresa.citarBasePrecos() === false); }
@@ -16816,6 +18079,7 @@ UI._celulasCatSub(_lay, _catX && _catX.porEtapa[ei]) +
 '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
 '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
 '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
+(typeof MorUI !== 'undefined' ? MorUI.botaoEtapa(e) : '') +
 '<button class="btn sm" data-add-sub="' + e.id + '" title="Dividir esta etapa em sub etapas (ex.: 1.1 Canteiro de Obras)">+ Sub etapa</button>' +
 '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
 '<button class="btn sm ico' + (e.opcional ? ' primary' : '') + '" data-opc-etapa="' + e.id + '" title="' + (e.opcional
@@ -16869,6 +18133,7 @@ var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-for
 : (fonte !== "SINAPI" && fonte !== "PROPRIO" && fonte !== "SINAPI_DES" ? '<br><span class="pill ' + pillCls + '" style="font-size:9px;padding:1px 6px">' + Util.esc(rotuloFonte) + '</span>' : ''))
 : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
 '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
+(typeof MorUI !== 'undefined' ? MorUI.marcaItem(e, it) : '') +
 (_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
 (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
@@ -22988,6 +24253,6495 @@ return "[" + l.etapa + "] " + (l.codigo ? l.codigo + " · " : "") + l.descricao 
 };
 if (typeof module !== "undefined" && module.exports) module.exports = OrcParam;
 global.OrcParam = OrcParam;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/regras.js ==== */
+try {
+(function (global) {
+"use strict";
+var FUNCOES = {
+sqrt: { n: 1, f: Math.sqrt }, abs: { n: 1, f: Math.abs },
+ceil: { n: 1, f: Math.ceil }, floor: { n: 1, f: Math.floor },
+round: { n: 1, f: Math.round }, cos: { n: 1, f: Math.cos }, atan: { n: 1, f: Math.atan },
+max: { n: -1, f: Math.max }, min: { n: -1, f: Math.min },
+se: { n: 3, f: null }
+};
+function MorRegrasErro(msg, expr, pos) {
+var e = new Error(msg + (expr != null ? "  [expressão: " + expr + (pos != null && pos >= 0 ? " — posição " + pos : "") + "]" : ""));
+e.name = "MorRegrasErro"; e.posicao = pos == null ? -1 : pos; e.expressao = expr;
+return e;
+}
+function tokenizar(src) {
+var t = [], i = 0, n = src.length, c, m;
+while (i < n) {
+c = src.charAt(i);
+if (/\s/.test(c)) { i++; continue; }
+if (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(src.charAt(i + 1)))) {
+m = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/.exec(src.slice(i));
+t.push({ k: "num", v: parseFloat(m[0]), p: i }); i += m[0].length; continue;
+}
+if (/[A-Za-z_]/.test(c)) {
+m = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/.exec(src.slice(i));
+t.push({ k: "id", v: m[0], p: i }); i += m[0].length; continue;
+}
+if (c === "'" || c === '"') {
+var j = i + 1, s = "";
+while (j < n && src.charAt(j) !== c) s += src.charAt(j++);
+if (j >= n) throw MorRegrasErro("Texto sem aspas de fechamento", src, i);
+t.push({ k: "str", v: s, p: i }); i = j + 1; continue;
+}
+var d = src.substr(i, 2);
+if (d === "&&" || d === "||" || d === "==" || d === "!=" || d === "<=" || d === ">=") { t.push({ k: "op", v: d, p: i }); i += 2; continue; }
+if ("+-*/%<>!(),".indexOf(c) > -1) { t.push({ k: "op", v: c, p: i }); i++; continue; }
+if (c === "=") throw MorRegrasErro("Use == para comparar (o = sozinho não é aceito)", src, i);
+if (c === "&" || c === "|") throw MorRegrasErro("Use && ou || (símbolo único não é aceito)", src, i);
+throw MorRegrasErro("Caractere não permitido «" + c + "»", src, i);
+}
+t.push({ k: "fim", v: "", p: n });
+return t;
+}
+function parse(src) {
+var tk = tokenizar(src), i = 0, vars = [];
+function ver() { return tk[i]; }
+function op(v) { return tk[i].k === "op" && tk[i].v === v; }
+function come(v) {
+if (!op(v)) throw MorRegrasErro("Esperava «" + v + "» e achei «" + (tk[i].v === "" ? "fim da expressão" : tk[i].v) + "»", src, tk[i].p);
+i++;
+}
+function ou() { var a = e(); while (op("||")) { i++; a = { t: "||", a: a, b: e() }; } return a; }
+function e() { var a = igual(); while (op("&&")) { i++; a = { t: "&&", a: a, b: igual() }; } return a; }
+function igual() { var a = rel(); while (op("==") || op("!=")) { var o = tk[i++].v; a = { t: o, a: a, b: rel() }; } return a; }
+function rel() { var a = soma(); while (op("<") || op("<=") || op(">") || op(">=")) { var p = tk[i].p, o = tk[i++].v; a = { t: o, a: a, b: soma(), p: p }; } return a; }
+function soma() { var a = prod(); while (op("+") || op("-")) { var p = tk[i].p, o = tk[i++].v; a = { t: o, a: a, b: prod(), p: p }; } return a; }
+function prod() { var a = un(); while (op("*") || op("/") || op("%")) { var p = tk[i].p, o = tk[i++].v; a = { t: o, a: a, b: un(), p: p }; } return a; }
+function un() {
+var p = tk[i].p;
+if (op("!")) { i++; return { t: "!", a: un() }; }
+if (op("-")) { i++; return { t: "neg", a: un(), p: p }; }
+if (op("+")) { i++; return { t: "pos", a: un(), p: p }; }
+return atomo();
+}
+function atomo() {
+var k = ver();
+if (k.k === "num") { i++; return { t: "lit", v: k.v }; }
+if (k.k === "str") { i++; return { t: "lit", v: k.v }; }
+if (k.k === "id") {
+i++;
+if (k.v === "true") return { t: "lit", v: true };
+if (k.v === "false") return { t: "lit", v: false };
+if (op("(")) {
+if (!Object.prototype.hasOwnProperty.call(FUNCOES, k.v)) throw MorRegrasErro("Função «" + k.v + "» não existe (permitidas: " + Object.keys(FUNCOES).join(", ") + ")", src, k.p);
+i++;
+var args = [];
+if (!op(")")) { args.push(ou()); while (op(",")) { i++; args.push(ou()); } }
+come(")");
+var f = FUNCOES[k.v];
+if (f.n >= 0 && args.length !== f.n) throw MorRegrasErro("Função «" + k.v + "» pede " + f.n + " argumento(s) e recebeu " + args.length, src, k.p);
+if (f.n < 0 && !args.length) throw MorRegrasErro("Função «" + k.v + "» pede ao menos 1 argumento", src, k.p);
+return { t: "fn", n: k.v, args: args, p: k.p };
+}
+if (vars.indexOf(k.v) < 0) vars.push(k.v);
+return { t: "var", n: k.v, p: k.p };
+}
+if (op("(")) { i++; var x = ou(); come(")"); return x; }
+throw MorRegrasErro(k.k === "fim" ? "Expressão incompleta" : "Não esperava «" + k.v + "»", src, k.p);
+}
+if (tk.length === 1) throw MorRegrasErro("Expressão vazia", src, 0);
+var raiz = ou();
+if (ver().k !== "fim") throw MorRegrasErro("Sobrou «" + ver().v + "» depois do fim da expressão", src, ver().p);
+return { raiz: raiz, vars: vars };
+}
+function num(v, src, pos, rotulo) {
+if (typeof v !== "number") throw MorRegrasErro("«" + rotulo + "» exige número, mas recebeu " + (typeof v === "boolean" ? "verdadeiro/falso" : "texto"), src, pos);
+return v;
+}
+function ev(n, ctx, src) {
+var a, b;
+switch (n.t) {
+case "lit": return n.v;
+case "var":
+if (!ctx || !Object.prototype.hasOwnProperty.call(ctx, n.n) || ctx[n.n] === undefined || ctx[n.n] === null) throw MorRegrasErro("Variável «" + n.n + "» não está definida (responda a pergunta ou informe o parâmetro)", src, n.p);
+return ctx[n.n];
+case "!": return !ev(n.a, ctx, src);
+case "neg": return -num(ev(n.a, ctx, src), src, n.p, "-");
+case "pos": return num(ev(n.a, ctx, src), src, n.p, "+");
+case "||": return !!ev(n.a, ctx, src) || !!ev(n.b, ctx, src);
+case "&&": return !!ev(n.a, ctx, src) && !!ev(n.b, ctx, src);
+case "==": return ev(n.a, ctx, src) === ev(n.b, ctx, src);
+case "!=": return ev(n.a, ctx, src) !== ev(n.b, ctx, src);
+case "fn":
+if (n.n === "se") return ev(n.args[0], ctx, src) ? ev(n.args[1], ctx, src) : ev(n.args[2], ctx, src);
+var xs = n.args.map(function (x) { return num(ev(x, ctx, src), src, n.p, n.n + "()"); });
+return FUNCOES[n.n].f.apply(null, xs);
+}
+a = ev(n.a, ctx, src); b = ev(n.b, ctx, src);
+if (n.t === "+" && (typeof a === "string" || typeof b === "string")) throw MorRegrasErro("Não some texto com número; use só números em contas", src, n.p);
+a = num(a, src, n.p, n.t); b = num(b, src, n.p, n.t);
+switch (n.t) {
+case "+": return a + b;
+case "-": return a - b;
+case "*": return a * b;
+case "/": if (b === 0) throw MorRegrasErro("Divisão por zero", src, n.p); return a / b;
+case "%": if (b === 0) throw MorRegrasErro("Divisão por zero", src, n.p); return a % b;
+case "<": return a < b;
+case "<=": return a <= b;
+case ">": return a > b;
+case ">=": return a >= b;
+}
+throw MorRegrasErro("Operador desconhecido «" + n.t + "»", src, n.p);
+}
+var CACHE = {}, NCACHE = 0;
+function compilar(expr) {
+var src = String(expr == null ? "" : expr);
+if (Object.prototype.hasOwnProperty.call(CACHE, src)) return CACHE[src];
+var p = parse(src);
+var c = {
+fonte: src, variaveis: p.vars,
+avaliar: function (ctx) {
+var v = ev(p.raiz, ctx || {}, src);
+if (typeof v === "number" && !isFinite(v)) throw MorRegrasErro("O resultado não é um número válido", src, -1);
+return v;
+}
+};
+if (NCACHE > 4000) { CACHE = {}; NCACHE = 0; }
+CACHE[src] = c; NCACHE++;
+return c;
+}
+var MorRegras = {
+MorRegrasErro: MorRegrasErro,
+FUNCOES: Object.keys(FUNCOES),
+compilar: compilar,
+avaliar: function (expr, ctx) { return compilar(expr).avaliar(ctx); },
+tentar: function (expr, ctx) {
+try { return { ok: true, valor: compilar(expr).avaliar(ctx), erro: "" }; }
+catch (e) { return { ok: false, valor: null, erro: String((e && e.message) || e) }; }
+},
+validar: function (expr) {
+try { var c = compilar(expr); return { ok: true, erro: "", variaveis: c.variaveis.slice() }; }
+catch (e) { return { ok: false, erro: String((e && e.message) || e), variaveis: [] }; }
+},
+variaveis: function (expr) { return compilar(expr).variaveis.slice(); }
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorRegras;
+global.MorRegras = MorRegras;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/geometria.js ==== */
+try {
+(function (global) {
+"use strict";
+function r2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+function cima(x) { return Math.max(0, Math.ceil((Number(x) || 0) - 1e-9)); }
+function num(v, padrao) {
+if (typeof v === "number") return isFinite(v) ? v : padrao;
+var s = String(v == null ? "" : v).replace(/^\s+|\s+$/g, "");
+if (!s) return padrao;
+if (/,/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+var n = parseFloat(s);
+return isFinite(n) ? n : padrao;
+}
+function f2(x) { return String(r2(x)).replace(".", ","); }
+var PADROES = { popular: "Popular", normal: "Normal", alto: "Alto" };
+var COBERTURAS = {
+ceramica: { rotulo: "Telha cerâmica", incl: 35 },
+concreto: { rotulo: "Telha de concreto", incl: 30 },
+fibrocimento: { rotulo: "Telha de fibrocimento", incl: 15 },
+metalica: { rotulo: "Telha metálica termoacústica", incl: 10 },
+laje: { rotulo: "Laje impermeabilizada (sem telhado)", incl: 0 }
+};
+var TIPOS = { residencial: "Residencial", comercial: "Comercial / salão" };
+var FORROS = { gesso: "Forro de gesso", laje: "Laje (forro em laje pré-moldada)", nenhum: "Sem forro" };
+var PISOS = { ceramica: "Cerâmica", porcelanato: "Porcelanato" };
+var PREMISSAS_DERIVADAS = {
+Ap: "Área de projeção = área construída ÷ pavimentos.",
+P: "Perímetro externo = 4,5 × √Ap (planta retangular 1:1,5 com recortes de fachada ~10 %); o informado vence.",
+Li: "Paredes internas por pavimento = 0,50 m por m² de pavimento (residência de 2–3 quartos); 0,25 em salão comercial.",
+h: "Pé-direito informado (2,30–6,00 m); fora da faixa vale 2,80 m.",
+Lmaior: "Lado maior da planta = √(1,5 × Ap) (retângulo 1:1,5).",
+Autil: "Área útil (piso, forro) = 88 % da construída — as paredes ocupam ~12 %.",
+Aj: "Área de janelas = 1/8 da área útil (iluminação 1/6 nos cômodos de permanência, 1/8 na média).",
+Nj: "Janelas = área de janela ÷ 1,44 m² (janela típica 1,20 × 1,20).",
+Npi: "Portas internas = 1 a cada 14 m² construídos, 0,70 × 2,10 m.",
+Npe: "Portas externas = 2 em residência (social + serviço), 1 em comercial; 0,90 × 2,10 m.",
+Avaos: "Vãos = janelas + portas internas (0,70 × 2,10) + portas externas (0,90 × 2,10).",
+Npil: "Pilares por pavimento = 1 a cada 12 m² (malha ~3,5 m), mínimo 4; seção 14×30 cm.",
+sap: "Sapata quadrada de 1,2 m (3+ pav.), 1,0 m (2 pav.) ou 0,8 m (1 pav.), h média 0,30 m, assente a 1,0 m — confirmar com sondagem e projeto.",
+Lb: "Baldrame sob todas as paredes do térreo = P + Li; viga 15×30 cm.",
+i: "Inclinação do telhado em decimal = inclinação (%) ÷ 100.",
+fi: "Fator de inclinação = √(1 + i²) (= 1/cos(atan i)): área inclinada ÷ área em projeção.",
+fb: "Fator de beiral = 1 + 0,30 × beiral (m); calibrado em 1,15 para o beiral de 0,50 m.",
+Acob: "Área de telhado = Ap × fb × fi (projeção, beiral e inclinação).",
+Lmenor: "Lado menor da planta = √(Ap ÷ 1,5) (retângulo 1:1,5).",
+Lcumeeira: "Cumeeira = lado maior da projeção (√(1,5 × Ap)) — telhado de 2 águas.",
+Lcalha: "Calha = 2 beirais × lado maior da projeção.",
+Hdesc: "Altura de cada descida pluvial = pé-direito × pavimentos + 0,50 m; 4 descidas."
+};
+var MorGeometria = {
+PADROES: PADROES, COBERTURAS: COBERTURAS, TIPOS: TIPOS, FORROS: FORROS, PISOS: PISOS,
+PREMISSAS_DERIVADAS: PREMISSAS_DERIVADAS,
+r2: r2, cima: cima, num: num, f2: f2,
+normalizar: function (entrada) {
+var e = entrada || {}, prem = [], erros = [];
+var p = {};
+p.tipo = TIPOS[e.tipo] ? e.tipo : "residencial";
+p.area = num(e.area, 0);
+if (!(p.area > 0)) erros.push("Informe a área construída (m²).");
+if (p.area > 20000) erros.push("Área acima de 20.000 m²: use o orçamento por planilha — a estimativa paramétrica não serve para esse porte.");
+p.pavimentos = Math.max(1, Math.min(4, Math.round(num(e.pavimentos, 1))));
+if (e.pavimentos == null || e.pavimentos === "") prem.push("1 pavimento (não informado).");
+p.peDireito = num(e.peDireito, 0);
+if (!(p.peDireito >= 2.3 && p.peDireito <= 6)) { if (p.peDireito) prem.push("Pé-direito fora de 2,30–6,00 m; adotado 2,80 m."); else prem.push("Pé-direito 2,80 m (não informado)."); p.peDireito = 2.8; }
+p.padrao = PADROES[e.padrao] ? e.padrao : "normal";
+p.cobertura = COBERTURAS[e.cobertura] ? e.cobertura : "ceramica";
+p.forro = FORROS[e.forro] ? e.forro : (p.cobertura === "laje" ? "laje" : (p.padrao === "popular" ? "nenhum" : "gesso"));
+if (p.cobertura === "laje") p.forro = "laje";
+p.piso = PISOS[e.piso] ? e.piso : (p.padrao === "alto" ? "porcelanato" : "ceramica");
+var Ap = p.area / p.pavimentos;
+p.quartos = Math.round(num(e.quartos, 0));
+if (!(p.quartos >= 0) || e.quartos == null || e.quartos === "") {
+p.quartos = p.tipo === "comercial" ? 0 : Math.max(1, Math.min(6, Math.round(p.area / 30)));
+if (p.tipo !== "comercial") prem.push(p.quartos + " quarto(s) — estimado por 1 a cada 30 m² (não informado).");
+}
+p.banheiros = Math.round(num(e.banheiros, 0));
+if (!(p.banheiros >= 1) || e.banheiros == null || e.banheiros === "") {
+p.banheiros = Math.max(1, Math.min(6, Math.round(p.area / 50)));
+prem.push(p.banheiros + " banheiro(s) — estimado por 1 a cada 50 m² (não informado).");
+}
+p.perimetro = num(e.perimetro, 0);
+p.esgoto = e.esgoto === "fossa" ? "fossa" : "rede";
+return { ok: !erros.length, erros: erros, p: p, premissas: prem, Ap: Ap };
+},
+derivar: function (p) {
+var g = {}, prem = [];
+g.Ap = r2(p.area / p.pavimentos);
+if (p.perimetro > 0) { g.P = r2(p.perimetro); g.Pf = "perímetro informado"; }
+else { g.P = r2(4.5 * Math.sqrt(g.Ap)); g.Pf = "4,5 × √Ap (planta retangular 1:1,5 com recortes)"; prem.push("Perímetro externo estimado em " + f2(g.P) + " m = 4,5 × √" + f2(g.Ap) + " (informe o real para mais precisão)."); }
+var kLi = p.tipo === "comercial" ? 0.25 : 0.50;
+g.Li = r2(kLi * g.Ap); g.Lif = f2(kLi) + " × Ap";
+prem.push("Paredes internas: " + f2(kLi) + " m por m² de pavimento (" + f2(g.Li) + " m por pavimento).");
+g.h = p.peDireito;
+g.Lmaior = r2(Math.sqrt(1.5 * g.Ap));
+g.Autil = r2(0.88 * p.area);
+prem.push("Área útil (piso, forro) = 88 % da construída = " + f2(g.Autil) + " m².");
+g.Aj = r2(0.125 * g.Autil);
+g.Nj = cima(g.Aj / 1.44);
+g.Npi = cima(p.area / 14);
+g.Npe = p.tipo === "comercial" ? 1 : 2;
+prem.push("Janelas = 1/8 da área útil (" + f2(g.Aj) + " m², " + g.Nj + " un de 1,20×1,20); " + g.Npi + " porta(s) interna(s) 0,70×2,10; " + g.Npe + " externa(s) 0,90×2,10.");
+g.Avaos = r2(g.Aj + g.Npi * 0.70 * 2.10 + g.Npe * 0.90 * 2.10);
+g.Npil = Math.max(4, cima(g.Ap / 12));
+prem.push(g.Npil + " pilares por pavimento (um a cada 12 m², malha ~3,5 m), seção 14×30 cm; vigas 14×30 cm sobre todas as paredes.");
+g.sap = p.pavimentos >= 3 ? 1.2 : (p.pavimentos === 2 ? 1.0 : 0.8);
+prem.push("Fundação rasa: sapatas " + f2(g.sap) + "×" + f2(g.sap) + " m (h média 0,30 m, assentes a 1,0 m) e vigas baldrame 15×30 cm. Confirmar com sondagem e projeto.");
+g.Lb = r2(g.P + g.Li);
+return { g: g, premissas: prem };
+},
+cobertura: function (g, p, inclinacaoPct, beiral) {
+var i = inclinacaoPct / 100;
+var fi = Math.sqrt(1 + i * i);
+var fb = 1 + 0.30 * beiral;
+return {
+i: i, fi: fi, fb: fb,
+Acob: g.Ap * fb * fi,
+Lmenor: Math.sqrt(g.Ap / 1.5),
+Lcumeeira: g.Lmaior,
+Lcalha: 2 * g.Lmaior,
+Hdesc: g.h * p.pavimentos + 0.5
+};
+},
+respostasLegado: function (p) {
+return { "cob.tipo": p.cobertura, "forro.tipo": p.forro, "piso.tipo": p.piso, "esgoto.tipo": p.esgoto };
+},
+contexto: function (p, g) {
+var c = {};
+c.area = p.area; c.pav = p.pavimentos; c.h = g.h;
+c.padrao = p.padrao; c.tipo = p.tipo; c.quartos = p.quartos; c.banheiros = p.banheiros;
+["Ap", "P", "Li", "Lmaior", "Autil", "Aj", "Nj", "Npi", "Npe", "Avaos", "Npil", "sap", "Lb"].forEach(function (k) { c[k] = g[k]; });
+return c;
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorGeometria;
+global.MorGeometria = MorGeometria;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/codigos.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var LEGADO = {
+limpeza: ["98524","LIMPEZA MANUAL DE VEGETAÇÃO EM TERRENO COM ENXADA","m²"],
+locacao: ["99059","LOCAÇÃO CONVENCIONAL DE OBRA, GABARITO DE TÁBUAS CORRIDAS PONTALETADAS A CADA 2,00M","m"],
+placa: ["103689","PLACA DE OBRA COM CHAPA GALVANIZADA E ESTRUTURA DE MADEIRA","m²"],
+escBald: ["96527","ESCAVAÇÃO MANUAL PARA VIGA BALDRAME OU SAPATA CORRIDA","m³"],
+escSap: ["96523","ESCAVAÇÃO MANUAL PARA BLOCO DE COROAMENTO OU SAPATA","m³"],
+lastroSap: ["96619","LASTRO DE CONCRETO MAGRO, APLICADO EM BLOCOS DE COROAMENTO OU SAPATAS, ESPESSURA DE 5 CM","m²"],
+concSap: ["96556","CONCRETAGEM DE SAPATA, FCK 30 MPA, COM USO DE JERICA","m³"],
+arm10f: ["104919","ARMAÇÃO DE SAPATA ISOLADA, VIGA BALDRAME E SAPATA CORRIDA AÇO CA-50 DE 10 MM","kg"],
+arm5f: ["104916","ARMAÇÃO DE SAPATA ISOLADA, VIGA BALDRAME E SAPATA CORRIDA AÇO CA-60 DE 5 MM","kg"],
+formaBald: ["96533","FÔRMA PARA VIGA BALDRAME, EM MADEIRA SERRADA, E=25 MM, 2 UTILIZAÇÕES","m²"],
+concBald: ["96555","CONCRETAGEM DE BLOCO DE COROAMENTO OU VIGA BALDRAME, FCK 30 MPA, COM USO DE JERICA","m³"],
+impBald: ["98557","IMPERMEABILIZAÇÃO DE SUPERFÍCIE COM EMULSÃO ASFÁLTICA, 2 DEMÃOS","m²"],
+reaterro: ["93382","REATERRO MANUAL DE VALAS, COM COMPACTADOR DE SOLOS DE PERCUSSÃO","m³"],
+formaPil: ["92411","MONTAGEM E DESMONTAGEM DE FÔRMA DE PILARES RETANGULARES, PÉ-DIREITO SIMPLES, MADEIRA SERRADA, 2 UTILIZAÇÕES","m²"],
+formaViga: ["92448","MONTAGEM E DESMONTAGEM DE FÔRMA DE VIGA, ESCORAMENTO COM PONTALETE, PÉ-DIREITO SIMPLES, MADEIRA SERRADA, 4 UTILIZAÇÕES","m²"],
+arm10e: ["92762","ARMAÇÃO DE PILAR OU VIGA DE ESTRUTURA CONVENCIONAL DE CONCRETO ARMADO AÇO CA-50 DE 10,0 MM","kg"],
+arm5e: ["92759","ARMAÇÃO DE PILAR OU VIGA DE ESTRUTURA CONVENCIONAL DE CONCRETO ARMADO AÇO CA-60 DE 5,0 MM","kg"],
+concPil: ["103669","CONCRETAGEM DE PILARES, FCK = 25 MPA, COM USO DE BALDES","m³"],
+lajePiso: ["106056","LAJE PRÉ-MOLDADA UNIDIRECIONAL, BIAPOIADA, PARA PISO, ENCHIMENTO EM CERÂMICA, LT = 12 CM","m²"],
+lajeForro: ["101964","LAJE PRÉ-MOLDADA UNIDIRECIONAL, BIAPOIADA, PARA FORRO, ENCHIMENTO EM CERÂMICA, VIGOTA CONVENCIONAL, LT = 12 CM","m²"],
+alvenaria: ["103328","ALVENARIA DE VEDAÇÃO DE BLOCOS CERÂMICOS FURADOS NA HORIZONTAL DE 9X19X19 CM, PREPARO EM BETONEIRA","m²"],
+verga: ["105024","VERGA MOLDADA IN LOCO EM CONCRETO, ESPESSURA DE 10 CM","m"],
+contraverga: ["105030","CONTRAVERGA MOLDADA IN LOCO EM CONCRETO, ESPESSURA DE 10 CM","m"],
+encunhamento: ["93200","FIXAÇÃO (ENCUNHAMENTO) DE ALVENARIA DE VEDAÇÃO COM ARGAMASSA APLICADA COM BISNAGA","m"],
+trama2: ["92539","TRAMA DE MADEIRA COMPOSTA POR RIPAS, CAIBROS E TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA CERÂMICA OU DE CONCRETO","m²"],
+tramaTerca: ["92543","TRAMA DE MADEIRA COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA","m²"],
+telhaCer: ["94201","TELHAMENTO COM TELHA CERÂMICA CAPA-CANAL, TIPO COLONIAL, COM ATÉ 2 ÁGUAS","m²"],
+telhaConc: ["94189","TELHAMENTO COM TELHA DE CONCRETO DE ENCAIXE, COM ATÉ 2 ÁGUAS","m²"],
+telhaFibro: ["94207","TELHAMENTO COM TELHA ONDULADA DE FIBROCIMENTO E = 6 MM, INCLINAÇÃO MAIOR QUE 10°, ATÉ 2 ÁGUAS","m²"],
+telhaMet: ["94216","TELHAMENTO COM TELHA METÁLICA TERMOACÚSTICA E = 30 MM, COM ATÉ 2 ÁGUAS","m²"],
+cumeCer: ["94221","CUMEEIRA PARA TELHA CERÂMICA EMBOÇADA COM ARGAMASSA TRAÇO 1:2:9, ATÉ 2 ÁGUAS","m"],
+cumeConc: ["94222","CUMEEIRA PARA TELHA DE CONCRETO EMBOÇADA COM ARGAMASSA TRAÇO 1:2:9, ATÉ 2 ÁGUAS","m"],
+calha: ["94228","CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 50 CM","m"],
+impLaje: ["98556","IMPERMEABILIZAÇÃO DE SUPERFÍCIE COM ARGAMASSA POLIMÉRICA / MEMBRANA ACRÍLICA, 4 DEMÃOS, VÉU DE POLIÉSTER","m²"],
+chapInt: ["87879","CHAPISCO APLICADO EM ALVENARIAS E ESTRUTURAS DE CONCRETO INTERNAS, COM COLHER DE PEDREIRO, TRAÇO 1:3","m²"],
+massaInt: ["87529","MASSA ÚNICA, EM ARGAMASSA TRAÇO 1:2:8, PREPARO MECÂNICO, APLICADA MANUALMENTE EM PAREDES INTERNAS, E = 17,5MM, COM TALISCAS","m²"],
+emboco: ["87535","EMBOÇO, EM ARGAMASSA TRAÇO 1:2:8, PREPARO MECÂNICO, APLICADO MANUALMENTE EM PAREDES INTERNAS, E = 17,5MM, COM TALISCAS","m²"],
+cerParede: ["87265","REVESTIMENTO CERÂMICO PARA PAREDES INTERNAS COM PLACAS TIPO ESMALTADA DE 20X20 CM NA ALTURA INTEIRA DAS PAREDES","m²"],
+chapExt: ["87905","CHAPISCO APLICADO EM ALVENARIA (COM PRESENÇA DE VÃOS) E ESTRUTURAS DE CONCRETO DE FACHADA, COM COLHER DE PEDREIRO","m²"],
+massaExt: ["87775","EMBOÇO OU MASSA ÚNICA EM ARGAMASSA TRAÇO 1:2:8, BETONEIRA 400 L, PANOS DE FACHADA COM PRESENÇA DE VÃOS, ESPESSURA DE 25 MM","m²"],
+lastroPiso: ["95241","LASTRO DE CONCRETO MAGRO, APLICADO EM PISOS, LAJES SOBRE SOLO OU RADIERS, ESPESSURA DE 5 CM","m²"],
+contrapiso: ["87643","CONTRAPISO EM ARGAMASSA PRONTA, PREPARO MECÂNICO, APLICADO EM ÁREAS SECAS SOBRE LAJE, ADERIDO, ESPESSURA 4CM","m²"],
+pisoCer: ["87248","REVESTIMENTO CERÂMICO PARA PISO COM PLACAS TIPO ESMALTADA DE DIMENSÕES 35X35 CM, AMBIENTES DE ÁREA MAIOR QUE 10 M2","m²"],
+pisoPorc: ["87263","REVESTIMENTO CERÂMICO PARA PISO COM PLACAS TIPO PORCELANATO DE DIMENSÕES 60X60 CM, AMBIENTES DE ÁREA MAIOR QUE 10 M²","m²"],
+rodape: ["88649","RODAPÉ CERÂMICO DE 7CM DE ALTURA COM PLACAS TIPO ESMALTADA DE DIMENSÕES 45X45CM","m"],
+impMolh: ["98555","IMPERMEABILIZAÇÃO DE SUPERFÍCIE COM ARGAMASSA POLIMÉRICA / MEMBRANA ACRÍLICA, 3 DEMÃOS","m²"],
+soleira: ["98689","SOLEIRA EM GRANITO, LARGURA 15 CM, ESPESSURA 2,0 CM","m"],
+peitoril: ["101965","PEITORIL LINEAR EM GRANITO OU MÁRMORE, L = 15CM, ASSENTADO COM ARGAMASSA 1:6 COM ADITIVO","m"],
+forroGesso: ["96109","FORRO EM PLACAS DE GESSO, PARA AMBIENTES RESIDENCIAIS","m²"],
+janela: ["94570","JANELA DE ALUMÍNIO DE CORRER COM 2 FOLHAS PARA VIDROS (VIDROS INCLUSOS)","m²"],
+portaInt: ["100681","KIT DE PORTA DE MADEIRA FRISADA, SEMI-OCA, PADRÃO MÉDIO, 70X210CM, COM FECHADURA","un"],
+portaExt: ["106146","PORTA DE AÇO DE ABRIR, P/ VIDRO, C/ GUARNIÇÃO, 90X210CM, FIXAÇÃO COM ARGAMASSA","un"],
+massaPar1: ["88495","EMASSAMENTO COM MASSA LÁTEX, APLICAÇÃO EM PAREDE, UMA DEMÃO, LIXAMENTO MANUAL","m²"],
+massaPar2: ["88497","EMASSAMENTO COM MASSA LÁTEX, APLICAÇÃO EM PAREDE, DUAS DEMÃOS, LIXAMENTO MANUAL","m²"],
+massaTeto: ["88494","EMASSAMENTO COM MASSA LÁTEX, APLICAÇÃO EM TETO, UMA DEMÃO, LIXAMENTO MANUAL","m²"],
+tintaParEco: ["104641","PINTURA LÁTEX ACRÍLICA ECONÔMICA, APLICAÇÃO MANUAL EM PAREDES, DUAS DEMÃOS","m²"],
+tintaParStd: ["104642","PINTURA LÁTEX ACRÍLICA STANDARD, APLICAÇÃO MANUAL EM PAREDES, DUAS DEMÃOS","m²"],
+tintaParPrem: ["88489","PINTURA LÁTEX ACRÍLICA PREMIUM, APLICAÇÃO MANUAL EM PAREDES, DUAS DEMÃOS","m²"],
+tintaTetoEco: ["104639","PINTURA LÁTEX ACRÍLICA ECONÔMICA, APLICAÇÃO MANUAL EM TETO, DUAS DEMÃOS","m²"],
+tintaTetoStd: ["104640","PINTURA LÁTEX ACRÍLICA STANDARD, APLICAÇÃO MANUAL EM TETO, DUAS DEMÃOS","m²"],
+tintaTetoPrem: ["88488","PINTURA LÁTEX ACRÍLICA PREMIUM, APLICAÇÃO MANUAL EM TETO, DUAS DEMÃOS","m²"],
+seladorExt: ["88415","APLICAÇÃO MANUAL DE FUNDO SELADOR ACRÍLICO EM PAREDES EXTERNAS DE CASAS","m²"],
+entrada: ["101501","ENTRADA DE ENERGIA ELÉTRICA, AÉREA, BIFÁSICA, COM CAIXA DE EMBUTIR, CABO DE 10 MM2 E DISJUNTOR DIN 50A","un"],
+quadro: ["101875","QUADRO DE DISTRIBUIÇÃO DE ENERGIA EM CHAPA DE AÇO GALVANIZADO, DE EMBUTIR, PARA 12 DISJUNTORES DIN 100A","un"],
+disj16: ["93654","DISJUNTOR MONOPOLAR TIPO DIN, CORRENTE NOMINAL DE 16A","un"],
+disj40: ["93665","DISJUNTOR BIPOLAR TIPO DIN, CORRENTE NOMINAL DE 40A","un"],
+eletroduto: ["91855","ELETRODUTO FLEXÍVEL CORRUGADO REFORÇADO, PVC, DN 25 MM (3/4\"), PARA CIRCUITOS TERMINAIS, INSTALADO EM PAREDE","m"],
+cabo: ["91926","CABO DE COBRE FLEXÍVEL ISOLADO, 2,5 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS","m"],
+caixaBaixa: ["91941","CAIXA RETANGULAR 4\" X 2\" BAIXA (0,30 M DO PISO), PVC, INSTALADA EM PAREDE","un"],
+caixaMedia: ["91940","CAIXA RETANGULAR 4\" X 2\" MÉDIA (1,30 M DO PISO), PVC, INSTALADA EM PAREDE","un"],
+tomada: ["91996","TOMADA MÉDIA DE EMBUTIR (1 MÓDULO), 2P+T 10 A, INCLUINDO SUPORTE E PLACA","un"],
+interruptor: ["91953","INTERRUPTOR SIMPLES (1 MÓDULO), 10A/250V, INCLUINDO SUPORTE E PLACA","un"],
+luminaria: ["103782","LUMINÁRIA TIPO PLAFON CIRCULAR, DE SOBREPOR, COM LED DE 12/13 W","un"],
+haste: ["96985","HASTE DE ATERRAMENTO, DIÂMETRO 5/8\", COM 3 METROS","un"],
+tubo25: ["89402","TUBO, PVC, SOLDÁVEL, DE 25MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA","m"],
+registro: ["89987","REGISTRO DE GAVETA BRUTO, LATÃO, ROSCÁVEL, 3/4\", COM ACABAMENTO E CANOPLA CROMADOS","un"],
+caixaDagua: ["102623","CAIXA D´ÁGUA EM POLIETILENO, 1000 LITROS (INCLUSOS TUBOS, CONEXÕES E TORNEIRA DE BÓIA)","un"],
+tubo40: ["89711","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+tubo100: ["89714","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+sifonada: ["89707","CAIXA SIFONADA, PVC, DN 100 X 100 X 50 MM, JUNTA ELÁSTICA","un"],
+gordura: ["98108","CAIXA DE GORDURA DUPLA (CAPACIDADE: 126 L), EM ALVENARIA COM BLOCOS DE CONCRETO","un"],
+fossa: ["98052","TANQUE SÉPTICO CIRCULAR, EM CONCRETO PRÉ-MOLDADO, DIÂMETRO INTERNO = 1,10 M, PARA 5 CONTRIBUINTES","un"],
+sumidouro: ["98062","SUMIDOURO CIRCULAR, EM CONCRETO PRÉ-MOLDADO, DIÂMETRO INTERNO = 1,88 M, ALTURA INTERNA = 2,00 M","un"],
+baciaPop: ["86931","BACIA SANITÁRIA COM CAIXA ACOPLADA LOUÇA BRANCA, ENGATE FLEXÍVEL EM PLÁSTICO","un"],
+baciaMed: ["86932","BACIA SANITÁRIA COM CAIXA ACOPLADA LOUÇA BRANCA - PADRÃO MÉDIO, ENGATE FLEXÍVEL EM METAL CROMADO","un"],
+lavPop: ["86939","LAVATÓRIO LOUÇA BRANCA COM COLUNA, 44 X 35 CM, PADRÃO POPULAR, COM SIFÃO, VÁLVULA E TORNEIRA","un"],
+lavMed: ["86903","LAVATÓRIO LOUÇA BRANCA COM COLUNA, 54 X 44 CM OU EQUIVALENTE, PADRÃO MÉDIO","un"],
+lavAlto: ["86940","LAVATÓRIO LOUÇA BRANCA COM COLUNA, 45 X 55 CM, PADRÃO MÉDIO, COM SIFÃO, VÁLVULA, ENGATE E MISTURADOR","un"],
+chuveiro: ["100860","CHUVEIRO ELÉTRICO COMUM CORPO PLÁSTICO, TIPO DUCHA","un"],
+pia: ["93442","BANCADA MÁRMORE BRANCO 150 X 60 CM, COM CUBA DE EMBUTIR DE AÇO, VÁLVULA, SIFÃO, ENGATE E TORNEIRA, PIA COZINHA","un"],
+tanque: ["86920","TANQUE DE LOUÇA BRANCA COM COLUNA, 30L, COM SIFÃO, VÁLVULA PLÁSTICA E TORNEIRA PADRÃO POPULAR","un"],
+calcada: ["94995","EXECUÇÃO DE PASSEIO (CALÇADA) OU PISO DE CONCRETO, CONCRETO USINADO, ESPESSURA 8 CM, ARMADO","m²"]
+};
+var F2 = {
+trAcoCer: ["92574", "TRAMA DE AÇO COMPOSTA POR RIPAS, CAIBROS E TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA CERÂMICA CAPA-CANAL", "m²"],
+trAcoConc: ["92568", "TRAMA DE AÇO COMPOSTA POR RIPAS, CAIBROS E TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA DE ENCAIXE DE CERÂMICA OU DE CONCRETO", "m²"],
+trAcoOnd: ["92580", "TRAMA DE AÇO COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA", "m²"],
+rufo: ["94231", "RUFO EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, CORTE DE 25 CM, INCLUSO TRANSPORTE VERTICAL", "m"],
+cumeFibro: ["94223", "CUMEEIRA PARA TELHA DE FIBROCIMENTO ONDULADA E = 6 MM, INCLUSO ACESSÓRIOS DE FIXAÇÃO E IÇAMENTO", "m"]
+};
+var TUDO = {}, k;
+for (k in LEGADO) if (Object.prototype.hasOwnProperty.call(LEGADO, k)) TUDO[k] = LEGADO[k];
+for (k in F2) if (Object.prototype.hasOwnProperty.call(F2, k)) TUDO[k] = F2[k];
+D.codigos = { LEGADO: LEGADO, F2: F2, TUDO: TUDO };
+if (typeof module !== "undefined" && module.exports) module.exports = D.codigos;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/codigos-f3.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var F3 = {
+formaSap: ["96532","FABRICAÇÃO, MONTAGEM E DESMONTAGEM DE FÔRMA PARA SAPATA, EM MADEIRA SERRADA, E=25 MM, 2 UTILIZAÇÕES","m²"],
+cargaSolo: ["100978","CARGA, MANOBRA E DESCARGA DE SOLOS E MATERIAIS GRANULARES EM CAMINHÃO BASCULANTE 10 M³ - CARGA COM ESCAVADEIRA HIDRÁULICA (CAÇAMBA DE 1,20 M³ / 155 HP) E DESCARGA LIVRE (UNIDADE: M3)","m³"],
+transpSolo: ["95875","TRANSPORTE COM CAMINHÃO BASCULANTE DE 10 M³, EM VIA URBANA PAVIMENTADA, DMT ATÉ 30 KM (UNIDADE: M3XKM)","m³xkm"],
+estaca25: ["101174","ESTACA BROCA DE CONCRETO, DIÂMETRO DE 25CM, ESCAVAÇÃO MANUAL COM TRADO CONCHA, COM ARMADURA DE ARRANQUE","m"],
+arrasEstaca: ["95601","ARRASAMENTO MECANICO DE ESTACA DE CONCRETO ARMADO, DIAMETROS DE ATÉ 40 CM","un"],
+formaBloco: ["96531","FABRICAÇÃO, MONTAGEM E DESMONTAGEM DE FÔRMA PARA BLOCO DE COROAMENTO, EM MADEIRA SERRADA, E=25 MM, 2 UTILIZAÇÕES","m²"],
+concBloco: ["96555","CONCRETAGEM DE BLOCO DE COROAMENTO OU VIGA BALDRAME, FCK 30 MPA, COM USO DE JERICA - LANÇAMENTO, ADENSAMENTO E ACABAMENTO","m³"],
+radLona: ["97087","CAMADA SEPARADORA PARA EXECUÇÃO DE RADIER, PISO DE CONCRETO OU LAJE SOBRE SOLO, EM LONA PLÁSTICA","m²"],
+radComp: ["97084","COMPACTAÇÃO MECÂNICA DE SOLO PARA EXECUÇÃO DE RADIER, PISO DE CONCRETO OU LAJE SOBRE SOLO, COM COMPACTADOR DE SOLOS TIPO PLACA VIBRATÓRIA","m²"],
+radTela: ["97090","ARMAÇÃO PARA EXECUÇÃO DE RADIER, PISO DE CONCRETO OU LAJE SOBRE SOLO, COM USO DE TELA Q-138","kg"],
+radConc: ["97096","CONCRETAGEM DE RADIER, PISO DE CONCRETO OU LAJE SOBRE SOLO, FCK 30 MPA - LANÇAMENTO, ADENSAMENTO E ACABAMENTO","m³"],
+formaLajeM: ["92514","MONTAGEM E DESMONTAGEM DE FÔRMA DE LAJE MACIÇA, PÉ-DIREITO SIMPLES, EM CHAPA DE MADEIRA COMPENSADA RESINADA, 4 UTILIZAÇÕES","m²"],
+escLaje: ["101792","ESCORAMENTO DE FÔRMAS DE LAJE EM MADEIRA NÃO APARELHADA, PÉ-DIREITO SIMPLES, INCLUSO TRAVAMENTO, 4 UTILIZAÇÕES","m³"],
+concViga: ["103675","CONCRETAGEM DE VIGAS E LAJES, FCK=25 MPA, PARA LAJES MACIÇAS OU NERVURADAS COM USO DE BOMBA - LANÇAMENTO, ADENSAMENTO E ACABAMENTO. AF_02/2022_PS","m³"],
+armLaje8: ["92770","ARMAÇÃO DE LAJE DE ESTRUTURA CONVENCIONAL DE CONCRETO ARMADO UTILIZANDO AÇO CA-50 DE 8,0 MM - MONTAGEM","kg"],
+alv14: ["103368","ALVENARIA DE VEDAÇÃO DE BLOCOS CERÂMICOS FURADOS NA HORIZONTAL DE 14X19X39 CM (ESPESSURA 14 CM) E ARGAMASSA DE ASSENTAMENTO COM PREPARO EM BETONEIRA","m²"],
+alv19: ["103370","ALVENARIA DE VEDAÇÃO DE BLOCOS CERÂMICOS FURADOS NA HORIZONTAL DE 19X19X39 CM (ESPESSURA 19 CM) E ARGAMASSA DE ASSENTAMENTO COM PREPARO EM BETONEIRA","m²"],
+alvCelular15: ["101155","ALVENARIA DE VEDAÇÃO DE BLOCOS DE CONCRETO CELULAR DE 15X30X60CM (ESPESSURA 15CM) E ARGAMASSA DE ASSENTAMENTO COM PREPARO EM BETONEIRA","m²"],
+dry2f: ["96358","PAREDE COM SISTEMA EM CHAPAS DE GESSO PARA DRYWALL, USO INTERNO, COM DUAS FACES SIMPLES E ESTRUTURA METÁLICA COM GUIAS SIMPLES, SEM VÃOS. AF_07/2023_PS","m²"],
+andaimeMont: ["97063","MONTAGEM E DESMONTAGEM DE ANDAIME MODULAR FACHADEIRO, COM PISO METÁLICO, PARA EDIFÍCIOS COM MULTIPLOS PAVIMENTOS (EXCLUSIVE ANDAIME E LIMPEZA)","m²"],
+andaimeLoc: ["10527","LOCACAO DE ANDAIME METALICO TUBULAR DE ENCAIXE, TIPO DE TORRE, CADA PAINEL COM LARGURA DE 1 ATE 1,5 M E ALTURA DE *1,00* M, INCLUINDO DIAGONAL, BARRAS DE LIGACAO, SAPATAS OU RODIZIOS E DEMAIS ITENS NECESSARIOS A MONTAGEM (NAO INCLUI INSTALACAO)","mxmes"],
+impParede: ["98555","IMPERMEABILIZAÇÃO DE SUPERFÍCIE COM ARGAMASSA POLIMÉRICA / MEMBRANA ACRÍLICA, 3 DEMÃOS","m²"],
+manta1: ["98546","IMPERMEABILIZAÇÃO DE SUPERFÍCIE COM MANTA ASFÁLTICA, UMA CAMADA, INCLUSIVE APLICAÇÃO DE PRIMER ASFÁLTICO, E=4MM","m²"],
+protMec: ["98565","PROTEÇÃO MECÂNICA DE SUPERFICIE HORIZONTAL COM ARGAMASSA DE CIMENTO E AREIA, TRAÇO 1:3, E=3CM","m²"],
+chapTeto: ["87882","CHAPISCO APLICADO NO TETO OU EM ALVENARIA E ESTRUTURA, COM ROLO PARA TEXTURA ACRÍLICA. ARGAMASSA TRAÇO 1:4 E EMULSÃO POLIMÉRICA (ADESIVO) COM PREPARO EM BETONEIRA 400L","m²"],
+massaUnicaTeto: ["90406","MASSA ÚNICA, EM ARGAMASSA TRAÇO 1:2:8, PREPARO MECÂNICO, APLICADA MANUALMENTE EM TETO, E = 17,5MM, COM TALISCAS","m²"],
+vinilico: ["101727","PISO VINÍLICO SEMI-FLEXÍVEL EM PLACAS, PADRÃO LISO, ESPESSURA 3,2 MM, FIXADO COM COLA","m²"],
+rodapePorc: ["88650","RODAPÉ CERÂMICO DE 7CM DE ALTURA COM PLACAS TIPO ESMALTADA DE DIMENSÕES 60X60CM","m"],
+pisoCimentado: ["106788","PISO CIMENTADO, TRAÇO 1:3 (CIMENTO E AREIA), ACABAMENTO LISO, ESPESSURA 1,5 CM, PREPARO MECÂNICO DA ARGAMASSA","m²"],
+pisoInd12: ["103913","EXECUÇÃO DE PISO INDUSTRIAL DE CONCRETO ARMADO, FCK = 20 MPA, ESPESSURA DE 12,0 CM","m²"],
+pisoInd14: ["103914","EXECUÇÃO DE PISO INDUSTRIAL DE CONCRETO ARMADO, FCK = 20 MPA, ESPESSURA DE 14,0 CM","m²"],
+pisoInd15: ["103915","EXECUÇÃO DE PISO INDUSTRIAL DE CONCRETO ARMADO, FCK = 20 MPA, ESPESSURA DE 15,0 CM","m²"],
+forroPvc: ["96111","FORRO EM RÉGUAS DE PVC, FRISADO, PARA AMBIENTES RESIDENCIAIS, INCLUSIVE ESTRUTURA UNIDIRECIONAL DE FIXAÇÃO. AF_08/2023_PS","m²"],
+forroDry: ["96110","FORRO EM DRYWALL PARA AMBIENTES RESIDENCIAIS, INCLUSIVE ESTRUTURA UNIDIRECIONAL DE FIXAÇÃO. AF_08/2023_PS","m²"],
+forroMadeira: ["104756","FORRO EM MADEIRA PINUS, PARA AMBIENTES RESIDENCIAIS E COMERCIAIS, INCLUSIVE ESTRUTURA BIDIRECIONAL DE FIXAÇÃO","m²"],
+forroMineral: ["104757","FORRO EM FIBRA MINERAL, PARA AMBIENTES COMERCIAIS, INCLUSIVE ESTRUTURA DE FIXAÇÃO. AF_08/2023_PS","m²"],
+portaPopular70: ["100682","KIT DE PORTA DE MADEIRA FRISADA, SEMI-OCA (LEVE OU MÉDIA), PADRÃO POPULAR, 70X210CM, ESPESSURA DE 3CM, ITENS INCLUSOS: DOBRADIÇAS, MONTAGEM E INSTALAÇÃO DE BATENTE, FECHADURA COM EXECUÇÃO DO FURO - FORNECIMENTO E INSTALAÇÃO","un"],
+janelaMaxim: ["100668","JANELA DE MADEIRA CEDRINHO/ ANGELIM COMERCIAL/ CURUPIXA/ CUMARU OU EQUIVALENTE DA REGIÃO, TIPO MAXIMA AR, PARA VIDRO (VIDRO NÃO INCLUSO), CAIXA DO BATENTE/ MARCO DE 10 CM, COM GUARNIÇÕES/ ALIZAR E FERRAGENS, SEM ACABAMENTO, FIXAÇÃO COM PARAFUSOS E ESPUMA EXPANSIVA, EXCLUSIVE CONTRAMARCO - FORNECIMENTO E INSTALAÇÃO","m²"],
+contramarcoAlu: ["94589","CONTRAMARCO DE ALUMÍNIO, FIXAÇÃO COM ARGAMASSA - FORNECIMENTO E INSTALAÇÃO","m"],
+janelaAcoBasc: ["94559","JANELA DE AÇO TIPO BASCULANTE, PARA VIDROS (VIDROS NÃO INCLUSOS), BATENTE/ REQUADRO INCLUSO (6,5 A 14 CM), DIMENSÕES 60X60 CM, COM COM PINTURA ANTICORROSIVA, SEM ACABAMENTO, COM FERRAGENS, FIXAÇÃO COM ARGAMASSA, EXCLUSIVE CONTRAMARCO - FORNECIMENTO E INSTALAÇÃO","m²"],
+selTeto: ["88484","FUNDO SELADOR ACRÍLICO, APLICAÇÃO MANUAL EM TETO, UMA DEMÃO","m²"],
+paredeExt: ["95626","APLICAÇÃO MANUAL DE TINTA LÁTEX ACRÍLICA EM PAREDE EXTERNAS DE CASAS, DUAS DEMÃOS","m²"],
+esmalteMetal: ["100758","PINTURA COM TINTA ALQUÍDICA DE ACABAMENTO (ESMALTE SINTÉTICO ACETINADO) APLICADA A ROLO OU PINCEL SOBRE SUPERFÍCIES METÁLICAS (EXCETO PERFIL) EXECUTADO EM OBRA (02 DEMÃOS)","m²"],
+vernizMadeira2: ["102213","PINTURA VERNIZ (INCOLOR) ALQUÍDICO EM MADEIRA, USO INTERNO E EXTERNO, 2 DEMÃOS","m²"],
+selParInt: ["88485","FUNDO SELADOR ACRÍLICO, APLICAÇÃO MANUAL EM PAREDE, UMA DEMÃO","m²"],
+cabo6: ["91930","CABO DE COBRE FLEXÍVEL ISOLADO, 6 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS - FORNECIMENTO E INSTALAÇÃO","m"],
+tomada20: ["38075","TOMADA 2P+T 20A 250V, CONJUNTO MONTADO PARA EMBUTIR 4\" X 2\" (PLACA + SUPORTE + MODULO)","un"],
+dps: ["106027","DISPOSITIVO DPS 20KA-175V OU 275V - FORNECIMENTO E INSTALAÇÃO","un"],
+regPressao: ["89985","REGISTRO DE PRESSÃO BRUTO, LATÃO, ROSCÁVEL, 3/4\", COM ACABAMENTO E CANOPLA CROMADOS - FORNECIMENTO E INSTALAÇÃO","un"],
+torneiraJardim: ["11762","TORNEIRA METALICA CROMADA PARA JARDIM / TANQUE, COM BICO PLASTICO, CANO LONGO, DE PAREDE, PADRAO POPULAR / USO GERAL, 1/2\" OU 3/4\"","un"],
+adesivoPVC: ["122","ADESIVO PLASTICO PARA PVC, FRASCO COM *850* GR","un"],
+solucaoLimp: ["20083","SOLUCAO PREPARADORA / LIMPADORA PARA PVC, FRASCO COM 1000 CM3","un"],
+lixaPVC: ["38383","LIXA D'AGUA EM FOLHA, COR PRETA, GRAO 100","un"],
+tubo100pr: ["89800","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, FORNECIDO E INSTALADO EM PRUMADA DE ESGOTO SANITÁRIO OU VENTILAÇÃO","m"],
+terminal100: ["104356","TERMINAL DE VENTILAÇÃO, PVC, SÉRIE NORMAL, ESGOTO PREDIAL, DN 100 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM PRUMADA DE ESGOTO SANITÁRIO OU VENTILAÇÃO","un"],
+ralo: ["89709","RALO SIFONADO, PVC, DN 100 X 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU EM RAMAL DE ESGOTO SANITÁRIO","un"],
+plu100v: ["89578","TUBO PVC, SÉRIE R, ÁGUA PLUVIAL, DN 100 MM, FORNECIDO E INSTALADO EM CONDUTORES VERTICAIS DE ÁGUAS PLUVIAIS","m"],
+plu100r: ["89512","TUBO PVC, SÉRIE R, ÁGUA PLUVIAL, DN 100 MM, FORNECIDO E INSTALADO EM RAMAL DE ENCAMINHAMENTO","m"],
+plu150v: ["89580","TUBO PVC, SÉRIE R, ÁGUA PLUVIAL, DN 150 MM, FORNECIDO E INSTALADO EM CONDUTORES VERTICAIS DE ÁGUAS PLUVIAIS","m"],
+bocaLobo: ["97961","CAIXA PARA BOCA DE LOBO COMBINADA COM GRELHA RETANGULAR, EM ALVENARIA COM BLOCOS DE CONCRETO, DIMENSÕES INTERNAS: 1,3X1X1,2 M","un"],
+assento: ["100849","ASSENTO SANITÁRIO CONVENCIONAL - FORNECIMENTO E INSTALAÇÃO","un"],
+misturaLav: ["86905","APARELHO MISTURADOR DE MESA PARA LAVATÓRIO, PADRÃO MÉDIO - FORNECIMENTO E INSTALAÇÃO","un"],
+barraL70: ["100863","BARRA DE APOIO EM \"L\", EM AÇO INOX POLIDO 70 X 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO","un"],
+captor: ["96989","CAPTOR TIPO FRANKLIN PARA SPDA - FORNECIMENTO E INSTALAÇÃO","un"],
+mastro: ["96987","BASE METÁLICA PARA MASTRO 1 ½\" PARA SPDA - FORNECIMENTO E INSTALAÇÃO","un"],
+caboNu50: ["867","CABO DE COBRE NU 50 MM2 MEIO-DURO","m"],
+extPQS: ["101911","EXTINTOR DE INCÊNDIO PORTÁTIL COM CARGA DE PQS DE 12 KG, CLASSE BC - FORNECIMENTO E INSTALAÇÃO. AF_01/2026_PE","un"],
+extCO2: ["101906","EXTINTOR DE INCÊNDIO PORTÁTIL COM CARGA DE CO2 DE 4 KG, CLASSE BC - FORNECIMENTO E INSTALAÇÃO. AF_01/2026_PE","un"],
+sinalFoto: ["37557","PLACA DE SINALIZACAO DE SEGURANCA CONTRA INCENDIO, FOTOLUMINESCENTE, QUADRADA, *14 X 14* CM, EM PVC *2* MM ANTI-CHAMAS (SIMBOLOS, CORES E PICTOGRAMAS CONFORME NBR 16820)","un"],
+emerg: ["97599","LUMINÁRIA DE EMERGÊNCIA, COM 30 LÂMPADAS LED DE 2 W, SEM REATOR - FORNECIMENTO E INSTALAÇÃO","un"],
+abrigoHid: ["96765","ABRIGO PARA HIDRANTE, 90X60X17CM, COM REGISTRO GLOBO ANGULAR 45 GRAUS 2 1/2\", ADAPTADOR STORZ 2 1/2\", MANGUEIRA DE INCÊNDIO 20M, REDUÇÃO 2 1/2\" X 1 1/2\" E ESGUICHO EM LATÃO 1 1/2\" - FORNECIMENTO E INSTALAÇÃO","un"],
+mangueira: ["21029","MANGUEIRA DE INCENDIO, TIPO 1, DE 1 1/2\", COMPRIMENTO = 15 M, TECIDO EM FIO DE POLIESTER E TUBO INTERNO EM BORRACHA SINTETICA, COM UNIOES ENGATE RAPIDO","un"],
+entulhoA: ["106122","REMOÇÃO DE ENTULHO CLASSE A (ALVENARIA, CONCRETO, ARGAMASSAS E CERÂMICOS) POR DUTO DE ENTULHO E ACONDICIONAMENTO FINAL EM CAÇAMBA ESTACIONÁRIA. EXCLUSO FRETE","m³"],
+rasgoEle: ["90447","RASGO LINEAR MANUAL EM ALVENARIA, PARA ELETRODUTOS, DIÂMETROS MENORES OU IGUAIS A 40 MM","m"],
+chumbEle: ["104766","CHUMBAMENTO LINEAR EM ALVENARIA PARA ELETRODUTOS COM DIÂMETROS MENORES OU IGUAIS A 40 MM","m"],
+rasgoHid: ["90443","RASGO LINEAR MANUAL EM ALVENARIA, PARA RAMAIS/ DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS, DIÂMETROS MENORES OU IGUAIS A 40 MM","m"],
+chumbHid: ["90466","CHUMBAMENTO LINEAR EM ALVENARIA PARA RAMAIS/DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS COM DIÂMETROS MENORES OU IGUAIS A 40 MM","m"],
+fitaIsol: ["20111","FITA ISOLANTE ADESIVA ANTICHAMA, USO ATE 750 V, EM ROLO DE 19 MM X 20 M","un"],
+luvaEle: ["91882","LUVA PARA ELETRODUTO, PVC, ROSCÁVEL, DN 20 MM (1/2\"), PARA CIRCUITOS TERMINAIS, INSTALADA EM PAREDE - FORNECIMENTO E INSTALAÇÃO","un"],
+sarjetaReta: ["94281","EXECUÇÃO DE SARJETA DE CONCRETO USINADO, MOLDADA IN LOCO EM TRECHO RETO, 30 CM BASE X 15 CM ALTURA","m"],
+meioFio: ["94275","ASSENTAMENTO DE GUIA (MEIO-FIO) EM TRECHO RETO, CONFECCIONADA EM CONCRETO PRÉ-FABRICADO, DIMENSÕES 100X15X13X20 CM (COMPRIMENTO X BASE INFERIOR X BASE SUPERIOR X ALTURA)","m"],
+bgs15: ["96396","CONSTRUÇÃO DE BASE E SUB-BASE PARA PAVIMENTAÇÃO DE BRITA GRADUADA SIMPLES, COM ESPESSURA DE 15 CM - EXCLUSIVE CARGA E TRANSPORTE","m³"],
+interT8: ["92404","EXECUÇÃO DE PAVIMENTO EM PISO INTERTRAVADO, COM BLOCO 16 FACES DE 22 X 11 CM, ESPESSURA 8 CM","m²"],
+regSub: ["100576","REGULARIZAÇÃO E COMPACTAÇÃO DE SUBLEITO DE SOLO PREDOMINANTEMENTE ARGILOSO, PARA OBRAS DE CONSTRUÇÃO DE PAVIMENTOS","m²"],
+cbuq: ["1518","CONCRETO BETUMINOSO USINADO A QUENTE (CBUQ) PARA PAVIMENTACAO ASFALTICA, PADRAO DNIT, FAIXA C, COM CAP 50/70 - AQUISICAO POSTO USINA","t"],
+imprim: ["11609","SOLUCAO ASFALTICA ELASTOMERICA PARA IMPRIMACAO, APLICACAO A FRIO","l"],
+faixaPed: ["102501","PINTURA DE FAIXA DE PEDESTRE OU ZEBRADA COM TINTA ACRÍLICA, E = 30 CM, APLICAÇÃO MANUAL","m²"],
+drenoPe: ["102722","DRENO EM MURO DE CONTENÇÃO, EXECUTADO NO PÉ DO MURO, COM TUBO DE PEAD CORRUGADO FLEXÍVEL PERFURADO, ENCHIMENTO COM BRITA, ENVOLVIDO COM MANTA GEOTÊXTIL","m"],
+chapim: ["101979","CHAPIM (RUFO CAPA) EM AÇO GALVANIZADO, CORTE 33","m"],
+gabiao: ["3314","GABIAO TIPO CAIXA MALHA HEXAGONAL 8 X 10 CM (ZN/AL REVESTIDO COM POLIMERO), FIO 2,4 MM, H = 0,50 M","m³"],
+pilarMad: ["105042","PILAR DE MADEIRA ROLIÇA, EUCALIPTO OU EQUIVALENTE DA REGIÃO, FIXADO COM VERGALHÃO, DIÂMETRO DE 12 A 15 CM, APOIO ARTICULADO, COMPRIMENTO DE 3 M","m"],
+vigaMad: ["105099","VIGA DE MADEIRA ROLIÇA, EUCALIPTO OU EQUIVALENTE DA REGIÃO, DIÂMETRO DE 12 A 15 CM","m"],
+podo: ["104658","PISO PODOTÁTIL DE ALERTA OU DIRECIONAL, DE CONCRETO, ASSENTADO SOBRE ARGAMASSA","m²"],
+rampa: ["105004","RAMPA DE ACESSIBILIDADE EM CONCRETO MOLDADO IN LOCO, EM CALÇADA NOVA COM LARGURA MENOR À 3,00 M, FCK 25MPA, COM PISO PODOTÁTIL","m²"],
+corrimao: ["99860","CORRIMÃO DUPLO FIXADO EM PAREDE, DIÂMETRO EXTERNO = 1 1/2\", EM ALUMÍNIO","m"],
+grama: ["98504","PLANTIO DE GRAMA BATATAIS EM PLACAS","m²"],
+arvore: ["98510","PLANTIO DE ÁRVORE ORNAMENTAL COM ALTURA DE MUDA MENOR OU IGUAL A 2,00 M ","un"],
+demolAlv: ["97622","DEMOLIÇÃO DE ALVENARIA DE BLOCO FURADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m³"],
+demolCer: ["97633","DEMOLIÇÃO DE REVESTIMENTO CERÂMICO, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m²"],
+demolPiso: ["104789","DEMOLIÇÃO DE PISO DE CONCRETO SIMPLES, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m³"],
+retTelha: ["97647","REMOÇÃO DE TELHAS DE FIBROCIMENTO METÁLICA E CERÂMICA, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m²"],
+retForro: ["97641","REMOÇÃO DE FORRO DE GESSO, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m²"],
+retCalha: ["104803","REMOÇÃO CALHAS E RUFOS, DE FORMA MANUAL, SEM REAPROVEITAMENTO","m"],
+regMotoniv: ["100575","REGULARIZAÇÃO DE SUPERFÍCIES COM MOTONIVELADORA","m²"],
+limpPiso: ["99810","LIMPEZA DE PISO CERÂMICO/ PORCELANATO/ MÁRMORE/ GRANITO UTILIZANDO DETERGENTE NEUTRO E ESCOVAÇÃO MANUAL. AF_10/2025_PS","m²"],
+limpPar: ["99813","LIMPEZA DE REVESTIMENTO CERÂMICO/ MÁRMORE/ GRANITO EM PAREDE UTILIZANDO DETERGENTE NEUTRO E ESCOVAÇÃO MANUAL. AF_10/2025_PS","m²"],
+limpVidro: ["99821","LIMPEZA DE JANELA DE VIDRO COM CAIXILHO EM AÇO/ALUMÍNIO/PVC. AF_10/2025_PS","m²"],
+limpLouca: ["99818","LIMPEZA DE BACIA SANITÁRIA, BIDÊ OU MICTÓRIO EM LOUÇA, INCLUSIVE METAIS CORRESPONDENTES. AF_10/2025_PS","un"],
+sifaoLav: ["86881","SIFÃO DO TIPO GARRAFA EM METAL CROMADO 1\" X 1.1/2\" - FORNECIMENTO E INSTALAÇÃO","un"],
+valvLav: ["86877","VÁLVULA EM METAL CROMADO 1.1/2\" X 1.1/2\" PARA TANQUE OU LAVATÓRIO, COM OU SEM LADRÃO - FORNECIMENTO E INSTALAÇÃO","un"],
+engateInox: ["86887","ENGATE FLEXÍVEL EM INOX, 1/2\" X 40 CM - FORNECIMENTO E INSTALAÇÃO","un"],
+solar400: ["103520","RESERVATÓRIO TÉRMICO/BOILER SOLAR EM AÇO INOX 400 L COM 2 PLACAS COLETORAS EM VIDRO TEMPERADO COM SERPENTINA EM TUBO DE COBRE 2 X 1 M - FORNECIMENTO E INSTALAÇÃO","un"],
+isolTubo25: ["39739","TUBO DE BORRACHA ELASTOMERICA FLEXIVEL, PRETA, PARA ISOLAMENTO TERMICO DE TUBULACAO, DN 1\" (25 MM), E= 32 MM, COEFICIENTE DE CONDUTIVIDADE TERMICA 0,036W/MK, VAPOR DE AGUA MAIOR OU IGUAL A 10.000","m"]
+};
+var T = (D.codigos && D.codigos.TUDO) || {}, k;
+for (k in F3) if (Object.prototype.hasOwnProperty.call(F3, k)) { if (T[k]) throw new Error("codigos-f3: chave repetida «" + k + "»"); T[k] = F3[k]; }
+if (D.codigos) D.codigos.F3 = F3; else D.codigos = { LEGADO: {}, F2: {}, F3: F3, TUDO: T };
+if (typeof module !== "undefined" && module.exports) module.exports = F3;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/preliminares.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+(D.etapas = D.etapas || []).push({
+id: "preliminares", etapa: "SERVIÇOS PRELIMINARES", ordem: 1,
+premissas: ["Placa de obra 2,00 × 1,00 m; canteiro dimensionado pela área construída (barracão de 6 m² até 150 m², 9 m² acima)."],
+perguntas: [],
+itens: [
+{ chave: "limpeza", cod: "limpeza", qtd: "Ap*1.5", formula: "Ap × 1,5 (projeção + faixa de trabalho)", intencao: "limpeza do terreno" },
+{ chave: "locacao", cod: "locacao", qtd: "P+12", formula: "P + 12 (gabarito afastado 1,50 m)", intencao: "locação da obra gabarito" },
+{ chave: "placa", cod: "placa", qtd: "2", formula: "placa 2,00 × 1,00 m", intencao: "placa de obra" },
+{ chave: "ligacaoProvisoria", qtd: "1", desc: "LIGAÇÃO PROVISÓRIA DE ÁGUA E ENERGIA ELÉTRICA PARA CANTEIRO DE OBRA", un: "un", formula: "1 conjunto (água e energia provisórias)", intencao: "ligação provisória água energia canteiro" },
+{ chave: "barracao", qtd: "se(area>150,9,6)", desc: "BARRACÃO DE OBRA PARA DEPÓSITO E SANITÁRIO, EM CHAPA DE MADEIRA COMPENSADA", un: "m²", formula: "9 m² (obra acima de 150 m²) ou 6 m² (até 150 m²)", intencao: "barracão de obra depósito sanitário" },
+{ chave: "mobilizacao", quando: "modo!='legado'", qtd: "1", desc: "MOBILIZAÇÃO E DESMOBILIZAÇÃO DE CANTEIRO DE OBRAS (EQUIPE, EQUIPAMENTOS E FERRAMENTAS)", un: "vb", formula: "1 verba — o valor depende da distância e do porte; compor no orçamento", intencao: "mobilização desmobilização canteiro" },
+{ chave: "art", quando: "modo!='legado'", qtd: "1", desc: "ART/RRT DE EXECUÇÃO DA OBRA (TAXA DO CONSELHO PROFISSIONAL)", un: "un", formula: "1 por obra — a taxa depende do valor do contrato e da tabela vigente do conselho", intencao: "ART RRT execução obra taxa" }
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/cobertura.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var NAO_LAJE = "cob.tipo!='laje'";
+var MADEIRA = NAO_LAJE + " && cob.estrutura=='madeira'";
+var METALICA = NAO_LAJE + " && cob.estrutura=='metalica'";
+var CER_CONC = "(cob.tipo=='ceramica'||cob.tipo=='concreto')";
+var FIBRO_MET = "(cob.tipo=='fibrocimento'||cob.tipo=='metalica')";
+(D.etapas = D.etapas || []).push({
+id: "cobertura", etapa: "COBERTURA", ordem: 5,
+geometria: "cobertura",
+premissas: [
+"Telhado de 2 águas sobre planta retangular 1:1,5; área de telhado = Ap × fator de beiral × fator de inclinação.",
+"Inclinação padrão por tipo de telha: cerâmica 35 %, concreto 30 %, fibrocimento 15 %, metálica termoacústica 10 % (a inclinação mínima do fabricante vale mais que este padrão)."
+],
+perguntas: [
+{ id: "cob.tipo", txt: "Tipo de cobertura", op: ["ceramica", "concreto", "fibrocimento", "metalica", "laje"],
+rotulos: { ceramica: "Telha cerâmica", concreto: "Telha de concreto", fibrocimento: "Telha de fibrocimento", metalica: "Telha metálica termoacústica (sanduíche)", laje: "Laje impermeabilizada (sem telhado)" }, padrao: "ceramica" },
+{ id: "cob.estrutura", txt: "Estrutura do telhado", op: ["madeira", "metalica"], rotulos: { madeira: "Madeira", metalica: "Aço (metálica)" }, quando: NAO_LAJE, padrao: "madeira" },
+{ id: "cob.inclinacao", txt: "Inclinação (%)", num: true, quando: NAO_LAJE, padraoDe: "cob.tipo", mapa: { ceramica: 35, concreto: 30, fibrocimento: 15, metalica: 10, laje: 0 }, min: 0, max: 100 },
+{ id: "cob.beiral", txt: "Beiral (m)", num: true, quando: NAO_LAJE, padrao: 0.5, min: 0, max: 2 },
+{ id: "cob.cumeeira", txt: "Cumeeira", bool: true, quando: NAO_LAJE, padraoExpr: CER_CONC },
+{ id: "cob.calha", txt: "Calha e condutores de água pluvial", bool: true, quando: NAO_LAJE, padraoExpr: "padrao!='popular'" },
+{ id: "cob.rufo", txt: "Rufo nas empenas", bool: true, quando: NAO_LAJE, padrao: false }
+],
+itens: [
+{ chave: "impLaje", cod: "impLaje", quando: "cob.tipo=='laje'", qtd: "Ap*1.10", formula: "Ap × 1,10 (rodapé de 30 cm na platibanda)", intencao: "impermeabilização de laje de cobertura" },
+{ chave: "tramaMadeira", cod: "trama2", quando: MADEIRA + " && " + CER_CONC, qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "trama de madeira ripas caibros terças telha cerâmica ou concreto" },
+{ chave: "tramaMadeiraTerca", cod: "tramaTerca", quando: MADEIRA + " && " + FIBRO_MET, qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "trama de madeira terças telha ondulada fibrocimento metálica" },
+{ chave: "tesouraMadeira", quando: MADEIRA, qtd: "max(2,ceil(Lmaior/3-1e-9)+1)", desc: "FABRICAÇÃO E INSTALAÇÃO DE TESOURA INTEIRA EM MADEIRA NÃO APARELHADA, VÃO ATÉ 8 M, PARA TELHADO", un: "un", formula: "lado maior ÷ 3,00 m + 1 (tesouras a cada 3 m)", intencao: "tesoura de madeira telhado" },
+{ chave: "tramaAcoCer", cod: "trAcoCer", quando: METALICA + " && cob.tipo=='ceramica'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "trama de aço ripas caibros terças telha cerâmica" },
+{ chave: "tramaAcoConc", cod: "trAcoConc", quando: METALICA + " && cob.tipo=='concreto'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "trama de aço ripas caibros terças telha de encaixe concreto" },
+{ chave: "tramaAcoOnd", cod: "trAcoOnd", quando: METALICA + " && " + FIBRO_MET, qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "trama de aço terças telha ondulada fibrocimento metálica termoacústica" },
+{ chave: "tesouraAco", quando: METALICA, qtd: null, desc: "FABRICAÇÃO E INSTALAÇÃO DE TESOURA (INTEIRA OU MEIA) EM AÇO, INCLUSO IÇAMENTO, EXCLUSIVE PINTURA", un: "kg", formula: "peso da estrutura depende do projeto estrutural (vão e carga) — informar a quantidade", intencao: "tesoura de aço telhado" },
+{ chave: "telhaCer", cod: "telhaCer", quando: "cob.tipo=='ceramica'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "telhamento telha cerâmica" },
+{ chave: "telhaConc", cod: "telhaConc", quando: "cob.tipo=='concreto'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "telhamento telha de concreto" },
+{ chave: "telhaFibro", cod: "telhaFibro", quando: "cob.tipo=='fibrocimento'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "telhamento telha ondulada fibrocimento" },
+{ chave: "telhaMet", cod: "telhaMet", quando: "cob.tipo=='metalica'", qtd: "Acob", formula: "Acob = Ap × fator de beiral × fator de inclinação", intencao: "telhamento telha metálica termoacústica" },
+{ chave: "cumeCer", cod: "cumeCer", quando: "cob.cumeeira && cob.tipo=='ceramica'", qtd: "Lcumeeira", formula: "lado maior da projeção = √(1,5 × Ap)", intencao: "cumeeira telha cerâmica" },
+{ chave: "cumeConc", cod: "cumeConc", quando: "cob.cumeeira && cob.tipo=='concreto'", qtd: "Lcumeeira", formula: "lado maior da projeção = √(1,5 × Ap)", intencao: "cumeeira telha de concreto" },
+{ chave: "cumeFibro", cod: "cumeFibro", quando: "cob.cumeeira && cob.tipo=='fibrocimento'", qtd: "Lcumeeira", formula: "lado maior da projeção = √(1,5 × Ap)", intencao: "cumeeira telha ondulada fibrocimento" },
+{ chave: "cumeMet", quando: "cob.cumeeira && cob.tipo=='metalica'", qtd: "Lcumeeira", desc: "CUMEEIRA PARA TELHA METÁLICA TERMOACÚSTICA, INCLUSO ACESSÓRIOS DE FIXAÇÃO", un: "m", formula: "lado maior da projeção = √(1,5 × Ap)", intencao: "cumeeira telha metálica termoacústica" },
+{ chave: "calha", cod: "calha", quando: NAO_LAJE + " && cob.calha", qtd: "Lcalha", formula: "2 beirais × lado maior da projeção", intencao: "calha de aço galvanizado" },
+{ chave: "condutor", quando: NAO_LAJE + " && cob.calha", qtd: "4*Hdesc", desc: "TUBO PVC SÉRIE R ÁGUA PLUVIAL DN 100 MM, CONDUTOR VERTICAL", un: "m", formula: "4 descidas × (pé-direito × pavimentos + 0,50 m)", intencao: "condutor vertical água pluvial pvc dn 100" },
+{ chave: "rufo", cod: "rufo", quando: NAO_LAJE + " && cob.rufo", qtd: "2*Lmenor*fi", formula: "empenas: 2 empenas × 2 águas × (lado menor ÷ 2) × fator de inclinação = 2 × lado menor × fi", intencao: "rufo de aço galvanizado empena" }
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/residencial.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var E = (D.etapas = D.etapas || []);
+var SINT = ["Sint", "(P+2*Li)*h*pav-(Aj+2*Npi*1.47+Npe*1.89)"];
+var ACER = ["Acer", "banheiros*7.5*h+se(tipo=='comercial',0,10*1.5)"];
+var AEXT = ["Aext", "P*(h*pav+0.50)-(Aj+Npe*1.89)"];
+E.push({
+id: "infra", etapa: "INFRAESTRUTURA (FUNDAÇÕES)", ordem: 2,
+premissas: ["Fundação rasa: sapatas e vigas baldrame; confirmar com sondagem e projeto estrutural."],
+perguntas: [],
+vars: [["nS", "Npil"], ["escB", "Lb*0.40*0.50"], ["escS", "nS*(sap+0.2)*(sap+0.2)*1.0"], ["vB", "Lb*0.15*0.30"], ["vS", "nS*sap*sap*0.30"]],
+itens: [
+{ chave: "escBald", cod: "escBald", qtd: "escB", formula: "Lb × 0,40 × 0,50 (vala); Lb = P + Li" },
+{ chave: "escSap", cod: "escSap", qtd: "escS", formula: "sapatas × (lado + 0,20)² × 1,00" },
+{ chave: "lastroSap", cod: "lastroSap", qtd: "nS*sap*sap", formula: "sapatas × lado²" },
+{ chave: "arm10f", cod: "arm10f", qtd: "vS*50+Lb*4*0.617*1.10", formula: "sapatas 50 kg/m³ × volume + baldrame 4Ø10 (0,617 kg/m, +10 % traspasse) × Lb" },
+{ chave: "arm5f", cod: "arm5f", qtd: "Lb*0.82", formula: "estribos Ø5 c/15 (0,80 m × 0,154 kg/m ÷ 0,15) = 0,82 kg/m × Lb" },
+{ chave: "formaBald", cod: "formaBald", qtd: "Lb*2*0.30", formula: "2 faces × 0,30 m × Lb" },
+{ chave: "concSap", cod: "concSap", qtd: "vS", formula: "sapatas × lado² × 0,30" },
+{ chave: "concBald", cod: "concBald", qtd: "vB", formula: "0,15 × 0,30 × Lb" },
+{ chave: "impBald", cod: "impBald", qtd: "Lb*0.75", formula: "(topo 0,15 + 2 faces × 0,30) × Lb" },
+{ chave: "reaterro", cod: "reaterro", qtd: "(escB+escS)-(vB+vS)", formula: "escavação − concreto enterrado" }
+]
+});
+E.push({
+id: "super", etapa: "SUPERESTRUTURA", ordem: 3, usa: ["forro.tipo"],
+premissas: ["Pilares 14×30 cm e vigas 14×30 cm sobre todas as paredes; laje pré-moldada nos pavimentos superiores."],
+perguntas: [],
+vars: [["hp", "h+0.30"], ["nP", "Npil*pav"], ["Lv", "(P+Li)*pav"]],
+itens: [
+{ chave: "formaPil", cod: "formaPil", qtd: "nP*2*(0.14+0.30)*hp", formula: "pilares × perímetro 0,88 m × (h + 0,30)" },
+{ chave: "formaViga", cod: "formaViga", qtd: "Lv*0.60", formula: "2 faces × 0,30 × comprimento de viga (fundo = alvenaria)" },
+{ chave: "arm10e", cod: "arm10e", qtd: "(nP*hp+Lv)*4*0.617*1.15", formula: "4Ø10 (0,617 kg/m, +15 % traspasse) × (pilares × altura + vigas)" },
+{ chave: "arm5e", cod: "arm5e", qtd: "(nP*hp+Lv)*0.82", formula: "estribos Ø5 c/15 = 0,82 kg/m × (pilares × altura + vigas)" },
+{ chave: "concPil", cod: "concPil", qtd: "nP*0.14*0.30*hp", formula: "pilares × 0,14 × 0,30 × (h + 0,30)" },
+{ chave: "concViga", qtd: "Lv*0.14*0.30", desc: "CONCRETAGEM DE VIGAS, FCK 25 MPA, LANÇAMENTO COM BALDES, ADENSAMENTO E ACABAMENTO", un: "m³", formula: "0,14 × 0,30 × comprimento de viga", intencao: "concretagem de vigas fck 25" },
+{ chave: "lajePiso", cod: "lajePiso", quando: "pav>1", qtd: "Ap*(pav-1)", formula: "(pavimentos − 1) lajes de piso × Ap" },
+{ chave: "lajeForro", cod: "lajeForro", quando: "forro.tipo=='laje'", qtd: "Ap", formula: "laje de cobertura/forro = Ap" }
+]
+});
+E.push({
+id: "alvenaria", etapa: "ALVENARIA E VEDAÇÃO", ordem: 4,
+premissas: ["Alvenaria de bloco cerâmico 9×19×19 cm em todas as paredes; vergas e contravergas 0,30 m além do vão."],
+perguntas: [],
+vars: [["Aalv", "(P+Li)*(h-0.30)*pav-Avaos"]],
+itens: [
+{ chave: "alvenaria", cod: "alvenaria", qtd: "Aalv", formula: "(P + Li) × (h − 0,30) × pav − vãos" },
+{ chave: "verga", cod: "verga", qtd: "Nj*(1.20+0.60)+(Npi+Npe)*(0.80+0.60)", formula: "vão + 0,30 de cada lado: janelas × 1,80 + portas × 1,40" },
+{ chave: "contraverga", cod: "contraverga", qtd: "Nj*(1.20+0.60)", formula: "janelas × 1,80" },
+{ chave: "encunhamento", cod: "encunhamento", qtd: "(P+Li)*pav", formula: "topo de todas as paredes = (P + Li) × pav" }
+]
+});
+E.push({
+id: "revestimento", etapa: "REVESTIMENTOS DE PAREDE", ordem: 6,
+premissas: ["Cerâmica de parede em banheiros (7,5 m de parede por banheiro, altura inteira) e, em residência, cozinha/serviço (10 m × 1,50 m)."],
+perguntas: [],
+vars: [SINT, ACER, AEXT],
+itens: [
+{ chave: "chapInt", cod: "chapInt", qtd: "Sint", formula: "faces internas (P + 2 Li) × h × pav − vãos" },
+{ chave: "massaInt", cod: "massaInt", qtd: "Sint-Acer", formula: "faces internas − áreas com cerâmica" },
+{ chave: "emboco", cod: "emboco", qtd: "Acer", formula: "banheiros × 7,5 m × h (+ cozinha/serviço 10 m × 1,50 em residência)" },
+{ chave: "cerParede", cod: "cerParede", qtd: "Acer", formula: "a mesma área do emboço" },
+{ chave: "chapExt", cod: "chapExt", qtd: "Aext", formula: "P × (h × pav + 0,50 platibanda/oitão) − vãos externos" },
+{ chave: "massaExt", cod: "massaExt", qtd: "Aext", formula: "a mesma área do chapisco externo" }
+]
+});
+E.push({
+id: "pisos", etapa: "PISOS", ordem: 7,
+premissas: ["Piso em toda a área útil; calçada perimetral de 0,60 m fora do padrão popular."],
+perguntas: [
+{ id: "piso.tipo", txt: "Piso", op: ["ceramica", "porcelanato"], rotulos: { ceramica: "Cerâmica", porcelanato: "Porcelanato" }, padraoExpr: "se(padrao=='alto','porcelanato','ceramica')" }
+],
+vars: [["AutilT", "round(Autil/pav*100)/100"]],
+itens: [
+{ chave: "compactacao", qtd: "Ap", desc: "COMPACTAÇÃO MECÂNICA DE SOLO PARA EXECUÇÃO DE PISO SOBRE SOLO, COM PLACA VIBRATÓRIA", un: "m²", formula: "projeção do térreo = Ap", intencao: "compactação mecânica de solo piso" },
+{ chave: "lastroPiso", cod: "lastroPiso", qtd: "AutilT", formula: "área útil do térreo" },
+{ chave: "contrapiso", cod: "contrapiso", qtd: "Autil", formula: "área útil total" },
+{ chave: "pisoPorc", cod: "pisoPorc", quando: "piso.tipo=='porcelanato'", qtd: "Autil", formula: "área útil total" },
+{ chave: "pisoCer", cod: "pisoCer", quando: "piso.tipo!='porcelanato'", qtd: "Autil", formula: "área útil total" },
+{ chave: "rodape", cod: "rodape", qtd: "(P+2*Li)*pav-(Npi*2+Npe)*0.80-banheiros*7.5", formula: "perímetro dos cômodos (P + 2 Li) × pav − portas − banheiros (com cerâmica)" },
+{ chave: "impMolh", cod: "impMolh", qtd: "banheiros*5+se(tipo=='comercial',0,4)", formula: "banheiros × 5 m² (piso + rodapé do box) (+ 4 m² área de serviço em residência)" },
+{ chave: "soleira", cod: "soleira", qtd: "Npe*0.90+banheiros*0.70", formula: "portas externas × 0,90 + banheiros × 0,70" },
+{ chave: "peitoril", cod: "peitoril", qtd: "Nj*1.20", formula: "janelas × 1,20 m" },
+{ chave: "calcada", cod: "calcada", quando: "padrao!='popular'", qtd: "P*0.60", formula: "calçada perimetral 0,60 m × P" }
+]
+});
+E.push({
+id: "forro", etapa: "FORRO", ordem: 8,
+premissas: ["Forro de gesso em toda a área útil; laje é tratada na superestrutura."],
+perguntas: [
+{ id: "forro.tipo", txt: "Forro", op: ["gesso", "laje", "nenhum"], rotulos: { gesso: "Forro de gesso", laje: "Laje (forro em laje pré-moldada)", nenhum: "Sem forro" }, padraoExpr: "se(cob.tipo=='laje','laje',se(padrao=='popular','nenhum','gesso'))" }
+],
+itens: [
+{ chave: "forroGesso", cod: "forroGesso", quando: "forro.tipo=='gesso'", qtd: "Autil", formula: "área útil total" }
+]
+});
+E.push({
+id: "esquadrias", etapa: "ESQUADRIAS", ordem: 9,
+premissas: ["Janelas de alumínio de correr 1,20 × 1,20 m; portas internas 0,70 × 2,10 m; portas externas 0,90 × 2,10 m."],
+perguntas: [],
+itens: [
+{ chave: "janela", cod: "janela", qtd: "Aj", formula: "1/8 da área útil" },
+{ chave: "portaInt", cod: "portaInt", qtd: "Npi", formula: "1 porta a cada 14 m² construídos" },
+{ chave: "portaExt", cod: "portaExt", qtd: "Npe", formula: "acesso social + serviço (1 acesso em comercial)" }
+]
+});
+E.push({
+id: "pintura", etapa: "PINTURA", ordem: 10,
+premissas: ["Massa corrida nas paredes internas no padrão normal (1 demão) e alto (2 demãos); látex econômico, standard ou premium conforme o padrão."],
+perguntas: [],
+vars: [SINT, ACER, AEXT, ["Apint", "Sint-Acer"], ["Ateto", "Autil"]],
+itens: [
+{ chave: "massaPar2", cod: "massaPar2", quando: "padrao=='alto'", qtd: "Apint", formula: "paredes internas com massa única" },
+{ chave: "massaPar1", cod: "massaPar1", quando: "padrao=='normal'", qtd: "Apint", formula: "paredes internas com massa única" },
+{ chave: "massaTeto", cod: "massaTeto", quando: "padrao!='popular'", qtd: "Ateto", formula: "teto = área útil" },
+{ chave: "tintaParEco", cod: "tintaParEco", quando: "padrao=='popular'", qtd: "Apint+Aext", formula: "paredes internas + fachada" },
+{ chave: "tintaParStd", cod: "tintaParStd", quando: "padrao=='normal'", qtd: "Apint+Aext", formula: "paredes internas + fachada" },
+{ chave: "tintaParPrem", cod: "tintaParPrem", quando: "padrao=='alto'", qtd: "Apint+Aext", formula: "paredes internas + fachada" },
+{ chave: "tintaTetoEco", cod: "tintaTetoEco", quando: "padrao=='popular'", qtd: "Ateto", formula: "teto = área útil" },
+{ chave: "tintaTetoStd", cod: "tintaTetoStd", quando: "padrao=='normal'", qtd: "Ateto", formula: "teto = área útil" },
+{ chave: "tintaTetoPrem", cod: "tintaTetoPrem", quando: "padrao=='alto'", qtd: "Ateto", formula: "teto = área útil" },
+{ chave: "seladorExt", cod: "seladorExt", qtd: "Aext", formula: "fachada" }
+]
+});
+E.push({
+id: "eletrica", etapa: "INSTALAÇÕES ELÉTRICAS", ordem: 11,
+premissas: [
+"Elétrica: {Nt} tomadas (1 a cada 5 m², NBR 5410 pede 1 a cada 5 m de perímetro), {Nl} pontos de luz e interruptores (1 a cada 9 m²), 5 m de eletroduto por ponto."
+],
+perguntas: [],
+vars: [["Nt", "ceil(area/5-1e-9)"], ["Nl", "ceil(area/9-1e-9)"], ["Leletro", "5*(Nt+2*Nl)"]],
+itens: [
+{ chave: "entrada", cod: "entrada", qtd: "1", formula: "1 entrada bifásica" },
+{ chave: "quadro", cod: "quadro", qtd: "pav", formula: "1 quadro por pavimento" },
+{ chave: "disj16", cod: "disj16", qtd: "ceil(Nt/6-1e-9)+ceil(Nl/10-1e-9)", formula: "circuitos: tomadas ÷ 6 + iluminação ÷ 10" },
+{ chave: "disj40", cod: "disj40", qtd: "banheiros", formula: "1 circuito de chuveiro por banheiro" },
+{ chave: "eletroduto", cod: "eletroduto", qtd: "Leletro", formula: "5 m × (tomadas + luzes + interruptores)" },
+{ chave: "cabo", cod: "cabo", qtd: "Leletro*3", formula: "3 condutores (F + N + T) × eletroduto" },
+{ chave: "caixaBaixa", cod: "caixaBaixa", qtd: "Nt", formula: "1 por tomada" },
+{ chave: "caixaMedia", cod: "caixaMedia", qtd: "Nl", formula: "1 por interruptor" },
+{ chave: "tomada", cod: "tomada", qtd: "Nt", formula: "1 a cada 5 m²" },
+{ chave: "interruptor", cod: "interruptor", qtd: "Nl", formula: "1 por ponto de luz" },
+{ chave: "luminaria", cod: "luminaria", qtd: "Nl", formula: "1 a cada 9 m²" }
+]
+});
+E.push({
+id: "hidro", etapa: "INSTALAÇÕES HIDROSSANITÁRIAS", ordem: 12,
+premissas: [
+{ quando: "tipo!='comercial'", texto: "Hidráulica: {Npa} pontos de água (3 por banheiro + pia, tanque e máquina); reservação de 1 dia = {litros} L ({morad} pessoas × 150 L)." },
+{ quando: "tipo=='comercial'", texto: "Hidráulica: {Npa} pontos de água (3 por banheiro + copa); reservação de 1 dia = {litros} L ({morad} pessoas × 50 L)." }
+],
+perguntas: [
+{ id: "esgoto.tipo", txt: "Destino do esgoto", op: ["rede", "fossa"], rotulos: { rede: "Rede pública", fossa: "Fossa séptica + sumidouro" }, padrao: "rede" }
+],
+vars: [["Npa", "3*banheiros+se(tipo=='comercial',1,3)"], ["morad", "se(tipo=='comercial',max(2,ceil(area/10-1e-9)),2*quartos)"], ["litros", "se(tipo=='comercial',50,150)*morad"]],
+itens: [
+{ chave: "tubo25", cod: "tubo25", qtd: "Npa*4+3*h*pav", formula: "pontos × 4 m + barrilete/prumada" },
+{ chave: "registro", cod: "registro", qtd: "banheiros+2", formula: "1 por banheiro + cozinha + área de serviço" },
+{ chave: "caixaDagua", cod: "caixaDagua", qtd: "max(1,ceil(litros/1000-1e-9))", formula: "reservação ÷ 1.000 L" },
+{ chave: "tubo40", cod: "tubo40", qtd: "banheiros*6+4", formula: "banheiros × 6 m + 4 m (cozinha e serviço)" },
+{ chave: "tubo100", cod: "tubo100", qtd: "banheiros*4+P/2", formula: "banheiros × 4 m (bacia) + coletor P/2" },
+{ chave: "sifonada", cod: "sifonada", qtd: "banheiros+1", formula: "1 por banheiro + área de serviço" },
+{ chave: "gordura", cod: "gordura", quando: "tipo!='comercial'", qtd: "1", formula: "1 caixa de gordura" },
+{ chave: "caixaInspecao", qtd: "2", desc: "CAIXA DE INSPEÇÃO DE ESGOTO EM ALVENARIA, 60 X 60 CM, COM TAMPA DE CONCRETO", un: "un", formula: "2 caixas (mudança de direção e saída)", intencao: "caixa de inspeção de esgoto alvenaria 60x60" },
+{ chave: "fossa", cod: "fossa", quando: "esgoto.tipo=='fossa'", qtd: "ceil(morad/5-1e-9)", formula: "1 tanque para cada 5 contribuintes" },
+{ chave: "sumidouro", cod: "sumidouro", quando: "esgoto.tipo=='fossa'", qtd: "ceil(morad/5-1e-9)", formula: "1 sumidouro por tanque séptico" },
+{ chave: "baciaPop", cod: "baciaPop", quando: "padrao=='popular'", qtd: "banheiros", formula: "1 por banheiro" },
+{ chave: "baciaMed", cod: "baciaMed", quando: "padrao!='popular'", qtd: "banheiros", formula: "1 por banheiro" },
+{ chave: "lavPop", cod: "lavPop", quando: "padrao=='popular'", qtd: "banheiros", formula: "1 por banheiro" },
+{ chave: "lavMed", cod: "lavMed", quando: "padrao=='normal'", qtd: "banheiros", formula: "1 por banheiro" },
+{ chave: "lavAlto", cod: "lavAlto", quando: "padrao=='alto'", qtd: "banheiros", formula: "1 por banheiro" },
+{ chave: "chuveiro", cod: "chuveiro", qtd: "se(tipo=='comercial',0,banheiros)", formula: "1 por banheiro (só em residência)" },
+{ chave: "pia", cod: "pia", quando: "tipo!='comercial'", qtd: "1", formula: "pia da cozinha" },
+{ chave: "tanque", cod: "tanque", quando: "tipo!='comercial'", qtd: "1", formula: "tanque da área de serviço" }
+]
+});
+E.push({
+id: "finais", etapa: "SERVIÇOS FINAIS", ordem: 13,
+premissas: [],
+perguntas: [],
+itens: [
+{ chave: "limpezaFinal", qtd: "area", desc: "LIMPEZA FINAL DE OBRA, INCLUSIVE REMOÇÃO DE ENTULHO", un: "m²", formula: "área construída", intencao: "limpeza final de obra" }
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/extensoes.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var M = "modo!='legado'";
+function pend(chave, cod, formula, intencao, quando, extra) {
+var o = { chave: chave, quando: quando || M, qtd: null, formula: formula, intencao: intencao }, k;
+if (cod) o.cod = cod;
+if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+return o;
+}
+D.extensoes = [
+{ id: "cobertura",
+ajustes: { condutor: { quando: "modo=='legado' && cob.tipo!='laje' && cob.calha" } },
+itens: [
+{ chave: "condutorSinapi", cod: "plu100v", quando: M + " && cob.tipo!='laje' && cob.calha", qtd: "4*Hdesc", formula: "4 descidas × (pé-direito × pavimentos + 0,50 m)", intencao: "condutor vertical água pluvial pvc dn 100", implicito: true,
+porque: "o condutor do orçamento antigo não tinha código; a SINAPI tem a composição 89578 (PVC série R DN 100, condutor vertical) e ela passa a valer no lugar dele" }
+] },
+{ id: "infra",
+premissas: [
+"Armação de sapata/baldrame por TAXA (50 kg/m³ de sapata e 4Ø10 no baldrame) é SUGESTÃO de estimativa — o projeto estrutural decide.",
+"Bota-fora: o solo escavado que não volta como reaterro vai embora com empolamento (padrão 25 %, confirmar com a sondagem); o transporte só tem número com a distância ao bota-fora."
+],
+perguntas: [
+{ id: "infra.tipo", txt: "Tipo de fundação", op: ["sapata", "estaca", "radier"], rotulos: { sapata: "Sapata + baldrame (rasa)", estaca: "Estaca + bloco de coroamento + baldrame", radier: "Radier (laje sobre o solo)" }, padrao: "sapata" },
+{ id: "infra.empolamento", txt: "Empolamento do solo escavado (fração, 0,25 = 25 %)", num: true, padrao: 0.25, min: 0, max: 0.6 },
+{ id: "infra.dmt", txt: "Distância até o bota-fora (km) — 0 = a definir", num: true, padrao: 0, min: 0, max: 100 },
+{ id: "infra.espRadier", txt: "Espessura do radier (m)", num: true, quando: "infra.tipo=='radier'", padrao: 0.15, min: 0.08, max: 0.5 }
+],
+vars: [["Vesc", "escB+escS"], ["Vreat", "(escB+escS)-(vB+vS)"], ["Vbota", "max(0,Vesc-Vreat)*(1+infra.empolamento)"]],
+ajustes: {
+escSap: { quando: "infra.tipo=='sapata'" }, lastroSap: { quando: "infra.tipo=='sapata'" }, concSap: { quando: "infra.tipo=='sapata'" },
+arm10f: { quando: "infra.tipo=='sapata'", sugestao: true }, arm5f: { sugestao: true }
+},
+itens: [
+{ chave: "lastroBald", cod: "lastroSap", quando: M, qtd: "Lb*0.40", formula: "largura da vala 0,40 m × Lb", intencao: "lastro de concreto magro baldrame", implicito: true,
+porque: "o baldrame não assenta direto no solo: leva lastro de concreto magro de 5 cm em toda a largura da vala" },
+{ chave: "formaSap", cod: "formaSap", quando: M + " && infra.tipo=='sapata'", qtd: "nS*4*sap*0.30", formula: "4 faces × lado × 0,30 m de altura × nº de sapatas", intencao: "fôrma de sapata madeira serrada", implicito: true,
+porque: "a sapata de {sap} m tem 0,30 m de altura e precisa de fôrma nas 4 faces (o orçamento antigo só previa a do baldrame)" },
+{ chave: "arm10fBald", cod: "arm10f", quando: M + " && infra.tipo!='sapata'", qtd: "Lb*4*0.617*1.10", formula: "baldrame 4Ø10 (0,617 kg/m, +10 % traspasse) × Lb", intencao: "armação de viga baldrame", sugestao: true,
+porque: "sem sapata, a armação de Ø10 do orçamento antigo (que somava sapata e baldrame) vira só a do baldrame" },
+{ chave: "botaForaCarga", cod: "cargaSolo", quando: M, qtd: "Vbota", formula: "(escavação − reaterro) × (1 + empolamento)", intencao: "carga manobra e descarga de solo em caminhão basculante", implicito: true,
+porque: "o que foi escavado e não volta como reaterro ({infra.empolamento} de empolamento) tem de ser carregado e levado embora" },
+{ chave: "botaForaTransp", cod: "transpSolo", quando: M + " && infra.dmt>0", qtd: "Vbota*infra.dmt", formula: "volume solto de bota-fora × distância (km)", intencao: "transporte com caminhão basculante de solo" },
+pend("botaForaTranspPend", "transpSolo", "volume solto de bota-fora × distância (km): informe a distância ao bota-fora", "transporte com caminhão basculante de solo", M + " && infra.dmt==0"),
+pend("estacaBroca", "estaca25", "comprimento total das estacas = nº de estacas × profundidade (projeto de fundações + sondagem)", "estaca broca de concreto", M + " && infra.tipo=='estaca'", { implicito: false }),
+pend("estacaArrasamento", "arrasEstaca", "1 por estaca (nº de estacas do projeto)", "arrasamento de estaca", M + " && infra.tipo=='estaca'"),
+pend("blocoForma", "formaBloco", "área de fôrma dos blocos de coroamento (projeto)", "fôrma de bloco de coroamento", M + " && infra.tipo=='estaca'"),
+pend("blocoArmacao", null, "peso de aço dos blocos de coroamento (projeto estrutural)", "armação de bloco de coroamento", M + " && infra.tipo=='estaca'", { desc: "ARMAÇÃO DE BLOCO DE COROAMENTO COM AÇO CA-50 (BITOLAS DO PROJETO)", un: "kg" }),
+pend("blocoConcreto", "concBloco", "volume dos blocos de coroamento (projeto)", "concretagem de bloco de coroamento", M + " && infra.tipo=='estaca'"),
+{ chave: "radierCompact", cod: "radComp", quando: M + " && infra.tipo=='radier'", qtd: "Ap", formula: "área de projeção Ap", intencao: "compactação mecânica de solo para radier" },
+{ chave: "radierLona", cod: "radLona", quando: M + " && infra.tipo=='radier'", qtd: "Ap", formula: "área de projeção Ap", intencao: "camada separadora lona plástica radier", implicito: true,
+porque: "a lona evita que o solo roube água do concreto e separa a laje do lastro" },
+{ chave: "radierLastro", cod: "lastroPiso", quando: M + " && infra.tipo=='radier'", qtd: "Ap", formula: "área de projeção Ap", intencao: "lastro de concreto magro sob radier" },
+{ chave: "radierTela", cod: "radTela", quando: M + " && infra.tipo=='radier'", qtd: "Ap*2.20", formula: "tela Q-138 (2,20 kg/m², peso nominal do fabricante) × Ap", intencao: "armação de radier com tela soldada Q-138", sugestao: true,
+porque: "a tela Q-138 é SUGESTÃO de armação para radier de edificação leve; o projeto estrutural define a tela" },
+{ chave: "radierConcreto", cod: "radConc", quando: M + " && infra.tipo=='radier'", qtd: "Ap*infra.espRadier", formula: "Ap × espessura do radier", intencao: "concretagem de radier fck 30" }
+] },
+{ id: "super",
+premissas: [
+"Escoramento: a fôrma de viga (92448) e a laje pré-moldada (106056/101964) da SINAPI JÁ trazem os pontaletes; a fôrma de laje maciça (92514) também traz o escoramento (escora telescópica 10749 no analítico) — o 101792 não se soma.",
+"Armação da laje maciça por taxa (80 kg/m³) é SUGESTÃO de estimativa — o projeto estrutural decide."
+],
+perguntas: [
+{ id: "super.laje", txt: "Tipo de laje", op: ["premoldada", "macica"], rotulos: { premoldada: "Pré-moldada (vigota + enchimento)", macica: "Maciça de concreto armado" }, padrao: "premoldada" },
+{ id: "super.espLaje", txt: "Espessura da laje maciça (m)", num: true, quando: "super.laje=='macica'", padrao: 0.12, min: 0.08, max: 0.30 }
+],
+vars: [["Alm", "se(super.laje=='macica',Ap*(pav-1)+se(forro.tipo=='laje',Ap,0),0)"]],
+ajustes: {
+lajePiso: { quando: "pav>1 && super.laje=='premoldada'" },
+lajeForro: { quando: "forro.tipo=='laje' && super.laje=='premoldada'" },
+concViga: { quando: "modo=='legado'" }
+},
+itens: [
+{ chave: "concVigaSinapi", cod: "concViga", quando: M, qtd: "Lv*0.14*0.30", formula: "0,14 × 0,30 × comprimento de viga", intencao: "concretagem de vigas fck 25 bomba",
+porque: "a composição SINAPI 103675 (vigas e lajes, fck 25 MPa, bomba) substitui o item sem código do orçamento antigo" },
+{ chave: "lajeMacForma", cod: "formaLajeM", quando: M + " && Alm>0", qtd: "Alm", formula: "área de laje maciça (pavimentos acima do térreo + laje de cobertura)", intencao: "fôrma de laje maciça compensado resinado" },
+{ chave: "lajeMacArmacao", cod: "armLaje8", quando: M + " && Alm>0", qtd: "Alm*super.espLaje*80", formula: "taxa de 80 kg/m³ × volume da laje", intencao: "armação de laje aço CA-50", sugestao: true },
+{ chave: "lajeMacConcreto", cod: "concViga", quando: M + " && Alm>0", qtd: "Alm*super.espLaje", formula: "área × espessura", intencao: "concretagem de laje maciça fck 25 bomba" }
+] },
+{ id: "alvenaria",
+premissas: [
+"Vergas e contravergas: a conta já vem do orçamento antigo (vão + 0,30 m de cada lado). Desconto de vãos: a área de janelas (1/8 da área útil) e as portas (1,89 m² cada externa, 1,47 m² cada interna) saem POR INTEIRO da alvenaria, sem o limite de 2 m² que a SINAPI aplica por vão (a SINAPI não desconta vão menor que 2 m²: aqui a alvenaria fica um pouco MENOR que na regra dela).",
+"Andaime: a parede acima de 1,50 m não se alcança do piso; a montagem do andaime entra com quantidade (fachada) e a locação com o prazo da etapa, que o orçamentista confirma."
+],
+perguntas: [
+{ id: "alv.bloco", txt: "Bloco de vedação", op: ["ceramico9", "ceramico14", "ceramico19", "celular15"], rotulos: { ceramico9: "Cerâmico 9×19×19 (parede de 9 cm)", ceramico14: "Cerâmico 14×19×39 (parede de 14 cm)", ceramico19: "Cerâmico 19×19×39 (parede de 19 cm)", celular15: "Concreto celular 15×30×60" }, padrao: "ceramico9" },
+{ id: "alv.drywall", txt: "Divisórias internas em drywall", bool: true, padrao: false }
+],
+vars: [["AalvExt", "P*(h-0.30)*pav-(Aj+Npe*1.89)"], ["Adry", "max(0,Li*h*pav-Npi*1.47)"], ["Aalv2", "se(alv.drywall,AalvExt,Aalv)"]],
+ajustes: { alvenaria: { quando: "alv.bloco=='ceramico9' && !alv.drywall" } },
+itens: [
+{ chave: "alvCer9Ext", cod: "alvenaria", quando: M + " && alv.bloco=='ceramico9' && alv.drywall", qtd: "AalvExt", formula: "só as paredes externas: P × (h − 0,30) × pav − vãos externos", intencao: "alvenaria de vedação bloco cerâmico 9x19x19" },
+{ chave: "alvCer14", cod: "alv14", quando: M + " && alv.bloco=='ceramico14'", qtd: "Aalv2", formula: "(P + Li) × (h − 0,30) × pav − vãos (ou só externas, com drywall)", intencao: "alvenaria de vedação bloco cerâmico 14x19x39" },
+{ chave: "alvCer19", cod: "alv19", quando: M + " && alv.bloco=='ceramico19'", qtd: "Aalv2", formula: "(P + Li) × (h − 0,30) × pav − vãos (ou só externas, com drywall)", intencao: "alvenaria de vedação bloco cerâmico 19x19x39" },
+{ chave: "alvCelular15", cod: "alvCelular15", quando: M + " && alv.bloco=='celular15'", qtd: "Aalv2", formula: "(P + Li) × (h − 0,30) × pav − vãos (ou só externas, com drywall)", intencao: "alvenaria de vedação bloco de concreto celular 15" },
+{ chave: "drywallInterno", cod: "dry2f", quando: M + " && alv.drywall", qtd: "Adry", formula: "paredes internas Li × h × pav − portas internas (1,47 m² cada)", intencao: "parede de drywall duas faces simples guias simples" },
+{ chave: "andaimeMontagem", cod: "andaimeMont", quando: M + " && h>1.5", qtd: "P*(h*pav+0.50)", formula: "fachada = perímetro × (pé-direito × pavimentos + 0,50 m)", intencao: "montagem e desmontagem de andaime fachadeiro", implicito: true,
+porque: "andaime porque a parede tem {h} m de pé-direito e o pedreiro alcança até 1,50 m do piso" },
+pend("andaimeLocacao", "andaimeLoc", "painéis de andaime × meses de uso (prazo da etapa de alvenaria): a confirmar", "locação de andaime metálico tubular", M + " && h>1.5", { implicito: true, porque: "o andaime montado é alugado por mês: o prazo da alvenaria decide o consumo" })
+] },
+{ id: "revestimento", usa: ["forro.tipo"],
+premissas: ["Cerâmica de parede: a composição SINAPI (87265) JÁ traz argamassa colante AC-I e rejunte — não se lançam à parte."],
+itens: [
+{ chave: "chapiscoTeto", cod: "chapTeto", quando: M + " && forro.tipo=='laje'", qtd: "Autil", formula: "área do teto = área útil", intencao: "chapisco no teto laje", implicito: true,
+porque: "teto de laje aparente leva chapisco + massa antes da pintura" },
+{ chave: "massaTetoLaje", cod: "massaUnicaTeto", quando: M + " && forro.tipo=='laje'", qtd: "Autil", formula: "área do teto = área útil", intencao: "massa única em teto", implicito: true }
+] },
+{ id: "pisos",
+premissas: ["Cerâmica e porcelanato de piso: a composição SINAPI JÁ traz argamassa colante e rejunte. Soleira nas portas externas e nos banheiros; rodapé desconta portas e banheiros."],
+ajustesPerguntas: { "piso.tipo": { op: ["ceramica", "porcelanato", "vinilico", "cimentado"], rotulos: { ceramica: "Cerâmica", porcelanato: "Porcelanato", vinilico: "Vinílico em placas", cimentado: "Cimentado liso" } } },
+ajustes: { pisoCer: { quando: "piso.tipo=='ceramica'" }, rodape: { quando: "modo=='legado' || piso.tipo!='porcelanato'" } },
+itens: [
+{ chave: "pisoVinilico", cod: "vinilico", quando: M + " && piso.tipo=='vinilico'", qtd: "Autil", formula: "área útil total", intencao: "piso vinílico semi-flexível em placas" },
+{ chave: "pisoCimentado", cod: "pisoCimentado", quando: M + " && piso.tipo=='cimentado'", qtd: "Autil", formula: "área útil total", intencao: "piso cimentado liso" },
+{ chave: "rodapePorcelanato", cod: "rodapePorc", quando: M + " && piso.tipo=='porcelanato'", qtd: "(P+2*Li)*pav-(Npi*2+Npe)*0.80-banheiros*7.5", formula: "perímetro dos cômodos − portas − banheiros (mesma conta do rodapé cerâmico)", intencao: "rodapé cerâmico 7 cm 60x60" }
+] },
+{ id: "forro",
+ajustesPerguntas: { "forro.tipo": { op: ["gesso", "laje", "nenhum", "pvc", "drywall", "madeira", "mineral"], rotulos: { gesso: "Forro de gesso", laje: "Laje (forro em laje pré-moldada)", nenhum: "Sem forro", pvc: "Forro de PVC", drywall: "Forro de drywall", madeira: "Forro de madeira (pinus)", mineral: "Forro de fibra mineral (comercial)" } } },
+itens: [
+{ chave: "forroPvc", cod: "forroPvc", quando: M + " && forro.tipo=='pvc'", qtd: "Autil", formula: "área útil total", intencao: "forro de réguas de PVC" },
+{ chave: "forroDrywall", cod: "forroDry", quando: M + " && forro.tipo=='drywall'", qtd: "Autil", formula: "área útil total", intencao: "forro de drywall" },
+{ chave: "forroMadeira", cod: "forroMadeira", quando: M + " && forro.tipo=='madeira'", qtd: "Autil", formula: "área útil total", intencao: "forro de madeira pinus" },
+{ chave: "forroMineral", cod: "forroMineral", quando: M + " && forro.tipo=='mineral'", qtd: "Autil", formula: "área útil total", intencao: "forro de fibra mineral" }
+] },
+{ id: "esquadrias",
+premissas: ["Porta interna: kit de madeira (porta + batente + fechadura) padrão popular no padrão popular e padrão médio nos demais. Janela de alumínio e de aço trazem requadro; vidro só na de alumínio."],
+perguntas: [
+{ id: "esq.janela", txt: "Janela", op: ["aluminio", "aco", "madeira"], rotulos: { aluminio: "Alumínio de correr (vidro incluso)", aco: "Aço basculante (vidro à parte)", madeira: "Madeira maxim-ar" }, padrao: "aluminio" }
+],
+ajustes: { janela: { quando: "modo=='legado' || esq.janela=='aluminio'" }, portaInt: { quando: "modo=='legado' || padrao!='popular'" } },
+itens: [
+{ chave: "portaIntPopular", cod: "portaPopular70", quando: M + " && padrao=='popular'", qtd: "Npi", formula: "1 porta a cada 14 m² construídos", intencao: "kit porta de madeira padrão popular 70x210" },
+{ chave: "janelaAco", cod: "janelaAcoBasc", quando: M + " && esq.janela=='aco'", qtd: "Aj", formula: "1/8 da área útil", intencao: "janela de aço basculante" },
+{ chave: "janelaMadeira", cod: "janelaMaxim", quando: M + " && esq.janela=='madeira'", qtd: "Aj", formula: "1/8 da área útil", intencao: "janela de madeira maxim-ar" },
+{ chave: "contramarco", cod: "contramarcoAlu", quando: M + " && esq.janela=='aluminio'", qtd: "Nj*4.8", formula: "janelas × perímetro 4,80 m (1,20 × 1,20)", intencao: "contramarco de alumínio", implicito: true,
+porque: "o contramarco é o quadro que fica na alvenaria e recebe a janela de alumínio" }
+] },
+{ id: "pintura",
+premissas: ["Massa corrida: 1 demão no padrão normal e 2 no alto (nenhuma no popular); selador antes da massa e da tinta; tinta em 2 demãos (a SINAPI traz as demãos na própria composição)."],
+itens: [
+{ chave: "seladorParInt", cod: "selParInt", quando: M, qtd: "Apint", formula: "paredes internas com massa única", intencao: "fundo selador acrílico paredes internas", implicito: true, porque: "o selador uniformiza a absorção da parede antes da massa e da tinta" },
+{ chave: "seladorTeto", cod: "selTeto", quando: M + " && padrao!='popular'", qtd: "Ateto", formula: "teto = área útil", intencao: "fundo selador acrílico teto", implicito: true }
+] },
+{ id: "eletrica",
+perguntas: [{ id: "ele.tue", txt: "Tomadas de uso específico 20 A (ar-condicionado, forno…)", num: true, padrao: 0, min: 0, max: 40 }],
+itens: [
+{ chave: "dps", cod: "dps", quando: M + " && padrao!='popular'", qtd: "2*pav", formula: "2 fases × 1 quadro por pavimento", intencao: "dispositivo DPS no quadro de distribuição", sugestao: true,
+porque: "proteção contra surtos no quadro; a exigência depende da NBR 5410 e da análise de risco do projeto elétrico (decisão do engenheiro)" },
+{ chave: "tue", cod: "tomada20", quando: M + " && ele.tue>0", qtd: "ele.tue", formula: "uma por equipamento de uso específico", intencao: "tomada 2P+T 20 A" },
+pend("caboChuveiro", "cabo6", "comprimento do circuito de cada chuveiro (3 condutores de 6 mm²) vem do projeto elétrico", "cabo de cobre 6 mm² circuito do chuveiro", M),
+{ chave: "rasgoEletroduto", cod: "rasgoEle", quando: M, qtd: "Leletro", formula: "= comprimento de eletroduto (suposto todo embutido em alvenaria)", intencao: "rasgo linear em alvenaria para eletrodutos", sugestao: true, implicito: true,
+porque: "eletroduto embutido em parede exige rasgo; o trecho que vai em laje ou forro não leva — reduza se for o caso" },
+{ chave: "chumbamentoEletroduto", cod: "chumbEle", quando: M, qtd: "Leletro", formula: "= comprimento de eletroduto (suposto todo embutido em alvenaria)", intencao: "chumbamento linear em alvenaria para eletrodutos", sugestao: true, implicito: true },
+pend("luvasCurvasEletroduto", "luvaEle", "luvas, curvas e buchas: consumo por metro de eletroduto a confirmar", "luva curva bucha para eletroduto", M, { implicito: true, porque: "as composições SINAPI de eletroduto não trazem as conexões; sem fonte de consumo, ficam pendentes" }),
+pend("fitaIsolante", "fitaIsol", "consumo de fita isolante e terminais por ponto: a confirmar", "fita isolante e terminais", M, { implicito: true })
+] },
+{ id: "hidro",
+premissas: [
+"Tubo PVC soldável instalado (SINAPI) já traz a lixa; a conexão instalada traz adesivo, solução limpadora e lixa. Por isso adesivo, solução e lixa só entram para conexões lançadas como insumo avulso, pelo consumo da composição SINAPI de joelho (códigos 89404, 89408, 89413, 103980, 103984).",
+"Lavatório padrão normal (86903) vem sem misturador, sifão, válvula e engate: entram à parte, como na composição 86940 (padrão alto)."
+],
+perguntas: [
+{ id: "hid.quente", txt: "Água quente (aquecedor solar)", bool: true, padrao: false },
+{ id: "hid.juntas", txt: "Conexões PVC soldável lançadas como insumo avulso (nº) — 0 = nenhuma", num: true, padrao: 0, min: 0, max: 5000 },
+{ id: "hid.dnJunta", txt: "DN das conexões avulsas (mm)", op: ["20", "25", "32", "40", "50"], quando: "hid.juntas>0", padrao: "25" }
+],
+vars: [
+["kAdes", "se(hid.dnJunta=='20',0.0047,se(hid.dnJunta=='25',0.0071,se(hid.dnJunta=='32',0.0094,se(hid.dnJunta=='40',0.0118,0.0165))))"],
+["kSol", "se(hid.dnJunta=='20',0.006,se(hid.dnJunta=='25',0.008,se(hid.dnJunta=='32',0.011,se(hid.dnJunta=='40',0.014,0.022))))"],
+["kLixa", "se(hid.dnJunta=='20',0.026,se(hid.dnJunta=='25',0.0302,se(hid.dnJunta=='32',0.036,se(hid.dnJunta=='40',0.0427,0.051))))"]
+],
+itens: [
+{ chave: "registroPressao", cod: "regPressao", quando: M, qtd: "banheiros", formula: "1 registro de pressão do chuveiro por banheiro", intencao: "registro de pressão 3/4 com acabamento" },
+{ chave: "torneiraJardim", cod: "torneiraJardim", quando: M + " && tipo!='comercial'", qtd: "1", formula: "1 torneira externa (jardim/lavagem)", intencao: "torneira de jardim", sugestao: true },
+{ chave: "rasgoHidraulica", cod: "rasgoHid", quando: M, qtd: "Npa*4", formula: "= comprimento de ramais (pontos × 4 m)", intencao: "rasgo linear em alvenaria para instalações hidráulicas", sugestao: true, implicito: true,
+porque: "ramal embutido em parede exige rasgo e chumbamento" },
+{ chave: "chumbamentoHidraulica", cod: "chumbHid", quando: M, qtd: "Npa*4", formula: "= comprimento de ramais (pontos × 4 m)", intencao: "chumbamento linear em alvenaria para instalações hidráulicas", sugestao: true, implicito: true },
+{ chave: "adesivoPvc", cod: "adesivoPVC", quando: M + " && hid.juntas>0", qtd: "hid.juntas*kAdes", formula: "nº de conexões × consumo por conexão (frasco de 850 g) da composição SINAPI de joelho (DN escolhido)", intencao: "adesivo plástico para PVC", implicito: true,
+porque: "cada junta soldada consome adesivo; a composição de conexão instalada já o traz, por isso só entra para conexão avulsa" },
+{ chave: "solucaoLimpadora", cod: "solucaoLimp", quando: M + " && hid.juntas>0", qtd: "hid.juntas*kSol", formula: "nº de conexões × consumo por conexão (frasco de 1 L) da composição SINAPI", intencao: "solução preparadora limpadora para PVC", implicito: true },
+{ chave: "lixaPvc", cod: "lixaPVC", quando: M + " && hid.juntas>0", qtd: "hid.juntas*kLixa", formula: "nº de conexões × consumo de lixa d'água por conexão da composição SINAPI", intencao: "lixa d'água para PVC", implicito: true },
+pend("juntasPvcAvulsas", "adesivoPVC", "informe quantas conexões PVC soldável serão lançadas como insumo avulso: adesivo, solução limpadora e lixa saem pelo consumo por conexão da SINAPI", "adesivo solução limpadora e lixa para PVC soldável", M + " && hid.juntas==0", { implicito: true, porque: "se as conexões forem lançadas pela composição SINAPI 'instalada', adesivo, solução e lixa JÁ estão nela; ignore este aviso" }),
+pend("aquecedorSolar", "solar400", "dimensionamento do aquecimento (nº de pessoas × consumo) vem do projeto", "aquecedor solar com reservatório térmico", M + " && hid.quente"),
+pend("tuboAguaQuente", null, "metros de tubulação de água quente (CPVC ou PPR) do projeto — a base não tem composição de ramal", "tubulação de água quente cpvc ppr ramal", M + " && hid.quente", { desc: "TUBULAÇÃO DE ÁGUA QUENTE EM CPVC OU PPR, RAMAIS (FORNECIMENTO E INSTALAÇÃO)", un: "m" }),
+pend("isolamentoQuente", "isolTubo25", "mesmo comprimento da tubulação de água quente", "isolamento térmico de tubulação de água quente", M + " && hid.quente", { implicito: true, porque: "a tubulação de água quente perde calor sem isolamento" }),
+{ chave: "raloBox", cod: "ralo", quando: M, qtd: "banheiros", formula: "1 ralo sifonado por box", intencao: "ralo sifonado pvc 100x40", sugestao: true },
+{ chave: "colunaVentilacao", cod: "tubo100pr", quando: M, qtd: "h*pav+0.50", formula: "1 coluna de ventilação/queda × (pé-direito × pavimentos + 0,50 m)", intencao: "tubo pvc esgoto dn 100 prumada ventilação", sugestao: true },
+{ chave: "terminalVentilacao", cod: "terminal100", quando: M, qtd: "1", formula: "1 terminal por coluna de ventilação", intencao: "terminal de ventilação pvc 100", implicito: true },
+pend("testeEstanqueidade", null, "1 verba por obra: teste de estanqueidade das redes de água e esgoto", "teste de estanqueidade rede hidráulica e esgoto", M, { desc: "TESTE DE ESTANQUEIDADE DAS REDES DE ÁGUA E ESGOTO", un: "vb", implicito: true }),
+{ chave: "assentoSanitario", cod: "assento", quando: M, qtd: "banheiros", formula: "1 por bacia (1 bacia por banheiro)", intencao: "assento sanitário convencional", implicito: true },
+{ chave: "misturadorLavatorio", cod: "misturaLav", quando: M + " && padrao=='normal'", qtd: "banheiros", formula: "1 por lavatório", intencao: "aparelho misturador de mesa para lavatório padrão médio", implicito: true },
+{ chave: "sifaoLavatorio", cod: "sifaoLav", quando: M + " && padrao=='normal'", qtd: "banheiros", formula: "1 por lavatório", intencao: "sifão tipo garrafa metal cromado", implicito: true },
+{ chave: "valvulaLavatorio", cod: "valvLav", quando: M + " && padrao=='normal'", qtd: "banheiros", formula: "1 por lavatório", intencao: "válvula metal cromado para lavatório", implicito: true },
+{ chave: "engateLavatorio", cod: "engateInox", quando: M + " && padrao=='normal'", qtd: "banheiros*2", formula: "2 por lavatório (água fria e quente)", intencao: "engate flexível inox 1/2 x 40", implicito: true }
+] },
+{ id: "finais",
+vars: [["AcerF", "banheiros*7.5*h+se(tipo=='comercial',0,10*1.5)"]],
+ajustes: { limpezaFinal: { quando: "modo=='legado'" } },
+premissas: ["Limpeza final por serviço (piso, revestimento, vidros e louças), com as composições de limpeza da SINAPI; a limpeza genérica do orçamento antigo sai no lugar delas."],
+itens: [
+{ chave: "limpezaPiso", cod: "limpPiso", quando: M, qtd: "Autil", formula: "área útil total", intencao: "limpeza de piso cerâmico detergente neutro" },
+{ chave: "limpezaRevestimento", cod: "limpPar", quando: M, qtd: "AcerF", formula: "mesma área de cerâmica de parede", intencao: "limpeza de revestimento cerâmico parede" },
+{ chave: "limpezaVidros", cod: "limpVidro", quando: M, qtd: "Aj", formula: "área de janelas = 1/8 da área útil", intencao: "limpeza de janela de vidro" },
+{ chave: "limpezaLoucas", cod: "limpLouca", quando: M, qtd: "banheiros*2+se(tipo=='comercial',0,2)", formula: "banheiros × (bacia + lavatório) + pia e tanque em residência", intencao: "limpeza de bacia sanitária lavatório louça", sugestao: true },
+pend("retiradaEntulho", "entulhoA", "volume de entulho da obra (m³): informar", "remoção de entulho classe A caçamba", M, { implicito: true, porque: "toda obra gera entulho de alvenaria, argamassa e cerâmica que a caçamba leva" })
+] }
+];
+if (typeof module !== "undefined" && module.exports) module.exports = D.extensoes;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/etapas-estrutura.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+function pend(chave, cod, formula, intencao, quando, extra) {
+var o = { chave: chave, quando: quando || "", qtd: null, formula: formula, intencao: intencao }, k;
+if (cod) o.cod = cod;
+if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+return o;
+}
+var E = (D.etapas = D.etapas || []);
+E.push({
+id: "movterra", etapa: "MOVIMENTO DE TERRA", ordem: 1.5, novo: true,
+premissas: ["Volumes de corte e aterro dependem do levantamento planialtimétrico e do projeto de terraplenagem: ficam pendentes; só a regularização da área de projeção tem número."],
+perguntas: [],
+itens: [
+{ chave: "regularizacao", cod: "regMotoniv", qtd: "Ap", formula: "área de projeção Ap", intencao: "regularização de superfície com motoniveladora" },
+pend("corte", null, "volume de corte (projeto de terraplenagem)", "escavação mecânica de corte carga e transporte", "", { desc: "ESCAVAÇÃO MECANIZADA DE CORTE, CARGA E TRANSPORTE DE SOLO DE 1ª CATEGORIA", un: "m³" }),
+pend("aterro", null, "volume de aterro compactado (projeto de terraplenagem)", "aterro compactado com material de empréstimo", "", { desc: "ATERRO COMPACTADO COM MATERIAL DE EMPRÉSTIMO, EM CAMADAS", un: "m³" })
+]
+});
+E.push({
+id: "imperm", etapa: "IMPERMEABILIZAÇÃO", ordem: 4.5, novo: true,
+premissas: [
+"Já estão em outras etapas: baldrame (INFRAESTRUTURA), piso de área molhada (PISOS) e laje de cobertura (COBERTURA). Aqui ficam as paredes das áreas molhadas, terraços/sacadas e reservatórios.",
+"Parede de banheiro impermeabilizada até 1,50 m em todo o perímetro molhado (7,5 m por banheiro, o mesmo do revestimento); box até o teto: acrescentar na quantidade."
+],
+perguntas: [
+{ id: "imp.terraco", txt: "Área descoberta a impermeabilizar: terraço, sacada, marquise (m²)", num: true, padrao: 0, min: 0, max: 5000 }
+],
+itens: [
+{ chave: "paredesMolhadas", cod: "impParede", qtd: "banheiros*7.5*1.5", formula: "banheiros × 7,5 m de parede × 1,50 m de altura", intencao: "impermeabilização de parede de área molhada argamassa polimérica", implicito: true,
+porque: "a umidade do chuveiro e da lavagem sobe pela parede: impermeabiliza-se até 1,50 m (e o box até o teto)" },
+{ chave: "terracoManta", cod: "manta1", quando: "imp.terraco>0", qtd: "imp.terraco*1.10", formula: "área × 1,10 (rodapé de 30 cm na platibanda, a mesma conta da laje de cobertura)", intencao: "impermeabilização com manta asfáltica de 4 mm" },
+{ chave: "terracoProtecao", cod: "protMec", quando: "imp.terraco>0", qtd: "imp.terraco", formula: "mesma área do terraço", intencao: "proteção mecânica de superfície horizontal argamassa 1:3 e=3 cm", implicito: true,
+porque: "a manta asfáltica descoberta precisa de proteção mecânica para não furar com o trânsito" },
+pend("terracoInformar", "manta1", "informe a área descoberta (terraço, sacada, marquise); sem área não há quantidade", "impermeabilização de terraço manta asfáltica", "imp.terraco==0"),
+pend("reservatorio", null, "área interna do reservatório (projeto) — a base não tem composição de impermeabilização cristalizante", "impermeabilização de reservatório com argamassa cristalizante", "", { desc: "IMPERMEABILIZAÇÃO DE RESERVATÓRIO COM ARGAMASSA CRISTALIZANTE (FUNDO E PAREDES)", un: "m²" })
+]
+});
+E.push({
+id: "estmetal", etapa: "ESTRUTURA METÁLICA", ordem: 21, novo: true,
+premissas: ["A SINAPI não tem composição de fabricação e montagem de estrutura metálica por kg: o peso vem do projeto (ou do OrçaPRO Metálica) e o preço da cotação do fabricante."],
+perguntas: [],
+itens: [
+pend("estruturaAco", null, "peso de aço da estrutura (pilares, vigas, terças) do projeto metálico", "fabricação e montagem de estrutura metálica", "", { desc: "FABRICAÇÃO E MONTAGEM DE ESTRUTURA METÁLICA (PILARES, VIGAS E TERÇAS) EM AÇO", un: "kg" }),
+pend("chumbadores", null, "nº de chumbadores das bases de pilar (projeto)", "chumbadores das bases de pilar", "", { desc: "CHUMBADORES DE AÇO PARA BASES DE PILAR METÁLICO, COM PORCA E ARRUELA", un: "un" }),
+pend("contraventamento", null, "peso do contraventamento (projeto)", "contraventamento tirantes estrutura metálica", "", { desc: "CONTRAVENTAMENTO EM TIRANTES DE AÇO", un: "kg" }),
+pend("pinturaEstrutura", "esmalteMetal", "área de superfície da estrutura (m²): depende do peso e dos perfis", "pintura de estrutura metálica esmalte sintético", "")
+]
+});
+E.push({
+id: "fechamentos", etapa: "FECHAMENTOS E VEDAÇÃO", ordem: 22, novo: true,
+premissas: ["Mureta de alvenaria de 1,20 m no perímetro e, acima dela, telha metálica de fechamento: é a composição usual de galpão, mas é SUGESTÃO — confirmar com o projeto."],
+perguntas: [],
+itens: [
+{ chave: "mureta", cod: "alv14", qtd: "P*1.20", formula: "perímetro × 1,20 m de altura", intencao: "mureta de alvenaria de bloco cerâmico 14x19x39 galpão", sugestao: true },
+{ chave: "fechamentoTelha", qtd: "P*(h-1.20)", desc: "FECHAMENTO LATERAL EM TELHA METÁLICA TRAPEZOIDAL, INCLUSO ACESSÓRIOS DE FIXAÇÃO", un: "m²", formula: "perímetro × (pé-direito − 1,20 m da mureta)", intencao: "fechamento lateral telha metálica trapezoidal", sugestao: true },
+pend("vergasPortoes", null, "vãos de portões e portas do galpão (projeto)", "vergas e requadros de portões", "", { desc: "VERGAS E PILARETES DE REQUADRO DE PORTÕES E PORTAS", un: "m" })
+]
+});
+E.push({
+id: "pisoind", etapa: "PISO INDUSTRIAL", ordem: 23, novo: true,
+premissas: ["Piso industrial SINAPI já traz a lona plástica, a tela, as barras de transferência e o concreto; fica só a compactação do subleito e as juntas."],
+perguntas: [
+{ id: "pisoind.esp", txt: "Espessura do piso industrial", op: ["12", "14", "15"], rotulos: { "12": "12 cm", "14": "14 cm", "15": "15 cm" }, padrao: "12" }
+],
+itens: [
+{ chave: "compactacaoSubleito", cod: "radComp", qtd: "Ap", formula: "área de projeção Ap", intencao: "compactação mecânica do solo para piso sobre solo" },
+{ chave: "piso12", cod: "pisoInd12", quando: "pisoind.esp=='12'", qtd: "Ap", formula: "área de projeção Ap", intencao: "piso industrial de concreto armado fck 20 espessura 12 cm" },
+{ chave: "piso14", cod: "pisoInd14", quando: "pisoind.esp=='14'", qtd: "Ap", formula: "área de projeção Ap", intencao: "piso industrial de concreto armado fck 20 espessura 14 cm" },
+{ chave: "piso15", cod: "pisoInd15", quando: "pisoind.esp=='15'", qtd: "Ap", formula: "área de projeção Ap", intencao: "piso industrial de concreto armado fck 20 espessura 15 cm" },
+pend("juntasPiso", null, "metros de corte e selagem de juntas (paginação do piso)", "corte e selagem de juntas de piso industrial", "", { desc: "CORTE E SELAGEM DE JUNTAS EM PISO INDUSTRIAL", un: "m", implicito: true, porque: "o piso industrial retrai: as juntas serradas controlam a fissura e precisam de selante" })
+]
+});
+E.push({
+id: "estmadeira", etapa: "ESTRUTURA DE MADEIRA", ordem: 24, novo: true,
+premissas: ["Comprimentos de pilares, vigas e ligações vêm do projeto (OrçaPRO Madeira): ficam pendentes. A trama do telhado está na etapa COBERTURA."],
+perguntas: [],
+itens: [
+pend("pilaresMadeira", "pilarMad", "comprimento total dos pilares de madeira roliça (projeto)", "pilar de madeira roliça eucalipto", ""),
+pend("vigasMadeira", "vigaMad", "comprimento total das vigas de madeira roliça (projeto)", "viga de madeira roliça eucalipto", ""),
+pend("ligacoesMetalicas", null, "nº de ligações (chapas, parafusos, estribos) do projeto", "ligações metálicas da estrutura de madeira", "", { desc: "LIGAÇÕES METÁLICAS DA ESTRUTURA DE MADEIRA (CHAPAS, PARAFUSOS E ESTRIBOS)", un: "kg", implicito: true, porque: "as peças de madeira só trabalham juntas por meio das ligações metálicas, que o desenho de peça não mostra" })
+]
+});
+E.push({
+id: "trmadeira", etapa: "TRATAMENTO E PINTURA DA MADEIRA", ordem: 25, novo: true,
+premissas: ["A área de madeira a tratar e pintar vem do projeto/levantamento das peças."],
+perguntas: [],
+itens: [
+pend("tratamentoPreservativo", null, "área de superfície das peças de madeira (levantamento)", "tratamento preservativo da madeira contra cupim e fungos", "", { desc: "TRATAMENTO PRESERVATIVO DE MADEIRA (CUPINICIDA E FUNGICIDA), APLICAÇÃO MANUAL", un: "m²", implicito: true }),
+pend("vernizMadeira", "vernizMadeira2", "área de superfície das peças de madeira (levantamento)", "verniz incolor em madeira duas demãos", "")
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/etapas-acabamento.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+function pend(chave, cod, formula, intencao, quando, extra) {
+var o = { chave: chave, quando: quando || "", qtd: null, formula: formula, intencao: intencao }, k;
+if (cod) o.cod = cod;
+if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+return o;
+}
+var E = (D.etapas = D.etapas || []);
+E.push({
+id: "demolicoes", etapa: "DEMOLIÇÕES E RETIRADAS", ordem: 1.2, novo: true,
+premissas: ["Medir no local: o que sai (alvenaria, revestimento, piso, forro, telhas, calhas) e o que se reaproveita. A remoção do entulho acompanha em caçamba."],
+perguntas: [],
+itens: [
+pend("demolicaoAlvenaria", "demolAlv", "volume de alvenaria a demolir (levantamento no local)", "demolição de alvenaria de bloco furado sem reaproveitamento", ""),
+pend("demolicaoRevestimento", "demolCer", "área de revestimento cerâmico a demolir (levantamento)", "demolição de revestimento cerâmico", ""),
+pend("demolicaoPiso", "demolPiso", "volume de piso de concreto a demolir (levantamento)", "demolição de piso de concreto simples", ""),
+pend("retiradaTelhas", "retTelha", "área de telhado a retirar (levantamento)", "remoção de telhas", ""),
+pend("retiradaForro", "retForro", "área de forro a retirar (levantamento)", "remoção de forro de gesso", ""),
+pend("retiradaCalhas", "retCalha", "comprimento de calhas e rufos a retirar (levantamento)", "remoção de calhas e rufos", ""),
+pend("retiradaEntulhoReforma", "entulhoA", "volume de entulho: soma dos volumes demolidos × empolamento", "remoção de entulho classe A caçamba", "", { implicito: true, porque: "tudo o que se demole vira entulho e precisa de caçamba e destino licenciado" })
+]
+});
+E.push({
+id: "acessibilidade", etapa: "ACESSIBILIDADE", ordem: 26, novo: true,
+premissas: ["Rotas acessíveis, sanitários e sinalização (NBR 9050) seguem o projeto de acessibilidade: as quantidades ficam pendentes."],
+perguntas: [],
+itens: [
+pend("pisoTatil", "podo", "metros quadrados de piso tátil de alerta e direcional (projeto)", "piso podotátil de alerta ou direcional de concreto", ""),
+pend("rampaAcessivel", "rampa", "metros quadrados de rampa (projeto)", "rampa de acessibilidade em concreto", ""),
+pend("corrimaoAcessivel", "corrimao", "metros de corrimão duplo (projeto)", "corrimão duplo fixado em parede", ""),
+pend("barraApoio", "barraL70", "nº de barras de apoio dos sanitários acessíveis (projeto)", "barra de apoio em L em aço inox", "")
+]
+});
+E.push({
+id: "areasext", etapa: "ÁREAS EXTERNAS E PAISAGISMO", ordem: 27, novo: true,
+premissas: ["Áreas externas, paisagismo e playground seguem o projeto de implantação: as quantidades ficam pendentes."],
+perguntas: [],
+itens: [
+pend("calcadaExterna", "calcada", "metros quadrados de calçada e passeios (implantação)", "execução de passeio calçada de concreto", ""),
+pend("gramaExterna", "grama", "metros quadrados de gramado (implantação)", "plantio de grama batatais em placas", ""),
+pend("arvoresExternas", "arvore", "nº de árvores (projeto de paisagismo)", "plantio de árvore ornamental", "")
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/etapas-instalacoes.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+function pend(chave, cod, formula, intencao, quando, extra) {
+var o = { chave: chave, quando: quando || "", qtd: null, formula: formula, intencao: intencao }, k;
+if (cod) o.cod = cod;
+if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+return o;
+}
+var E = (D.etapas = D.etapas || []);
+E.push({
+id: "pluvial", etapa: "INSTALAÇÕES PLUVIAIS", ordem: 12.5, novo: true,
+premissas: ["Calha, condutor vertical e rufo estão na etapa COBERTURA. Aqui ficam a rede horizontal e as caixas, cuja extensão depende da implantação e do ponto de lançamento."],
+perguntas: [],
+itens: [
+pend("ramalPluvial", "plu100r", "comprimento da rede horizontal até o ponto de lançamento (implantação)", "tubo pvc série r água pluvial dn 100 ramal de encaminhamento", ""),
+pend("coletor150", "plu150v", "trecho de DN 150 mm, se a vazão pedir (cálculo da rede pluvial)", "tubo pvc série r água pluvial dn 150", ""),
+pend("caixaAreia", null, "nº de caixas de areia/passagem nas mudanças de direção (implantação)", "caixa de areia e passagem pluvial em alvenaria", "", { desc: "CAIXA DE AREIA/PASSAGEM PLUVIAL EM ALVENARIA, COM TAMPA", un: "un", implicito: true, porque: "a rede horizontal precisa de caixa onde muda de direção para limpeza e retenção de areia" }),
+pend("bocaLobo", "bocaLobo", "nº de bocas de lobo (implantação, junto à sarjeta)", "caixa para boca de lobo com grelha", "")
+]
+});
+E.push({
+id: "spda", etapa: "SPDA (PARA-RAIOS)", ordem: 12.6, novo: true,
+premissas: ["O SPDA se dimensiona pela NBR 5419 (nível de proteção, esfera rolante, malha): captores, descidas e hastes vêm do projeto específico — as quantidades ficam pendentes."],
+perguntas: [],
+itens: [
+pend("captor", "captor", "nº de captores do projeto de SPDA", "captor franklin para spda", ""),
+pend("mastro", "mastro", "nº de bases de mastro do projeto de SPDA", "base metálica para mastro spda", ""),
+pend("cabosDescida", "caboNu50", "comprimento de cabo de descida e de malha do projeto de SPDA", "cabo de cobre nu 50 mm2 spda", ""),
+pend("hastesSpda", "haste", "nº de hastes de aterramento do projeto de SPDA", "haste de aterramento 5/8 3 metros", ""),
+pend("caixaInspecaoSpda", null, "1 caixa de inspeção por haste (projeto)", "caixa de inspeção de aterramento", "", { desc: "CAIXA DE INSPEÇÃO PARA ATERRAMENTO COM TAMPA", un: "un", implicito: true, porque: "cada haste de aterramento tem de poder ser inspecionada e medida" })
+]
+});
+E.push({
+id: "incendio", etapa: "INSTALAÇÕES DE PREVENÇÃO E COMBATE A INCÊNDIO", ordem: 12.7, novo: true,
+premissas: ["O projeto de segurança contra incêndio aprovado no Corpo de Bombeiros define o que a obra leva (extintores, sinalização, iluminação de emergência, hidrantes): as quantidades ficam pendentes."],
+perguntas: [],
+itens: [
+pend("extintorPQS", "extPQS", "nº de extintores de pó químico do projeto aprovado", "extintor de incêndio portátil pó químico", ""),
+pend("extintorCO2", "extCO2", "nº de extintores de CO2 (quadros elétricos) do projeto aprovado", "extintor de incêndio portátil co2", ""),
+pend("sinalizacaoEmergencia", "sinalFoto", "nº de placas fotoluminescentes (saídas, extintores) do projeto aprovado", "placa de sinalização de segurança contra incêndio fotoluminescente", ""),
+pend("luminariaEmergencia", "emerg", "nº de luminárias de emergência do projeto aprovado", "luminária de emergência led", ""),
+pend("abrigoHidrante", "abrigoHid", "nº de hidrantes do projeto aprovado (obrigatório só em algumas edificações)", "abrigo para hidrante com registro e adaptador storz", ""),
+pend("mangueiraIncendio", "mangueira", "1 mangueira por hidrante (projeto aprovado)", "mangueira de incêndio tipo 1 de 1 1/2 polegada", "")
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/etapas-tipologias.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+function pend(chave, cod, formula, intencao, quando, extra) {
+var o = { chave: chave, quando: quando || "", qtd: null, formula: formula, intencao: intencao }, k;
+if (cod) o.cod = cod;
+if (extra) for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+return o;
+}
+var E = (D.etapas = D.etapas || []);
+E.push({
+id: "muro", etapa: "ESTRUTURA DO MURO / ARRIMO", ordem: 30, novo: true,
+premissas: ["Muro de divisa de alvenaria de bloco cerâmico com cinta de amarração; arrimo (gabião ou concreto armado) só com projeto de contenção e sondagem: as quantidades ficam pendentes. A fundação do muro (baldrame/sapata corrida) está em INFRAESTRUTURA — ajustar o comprimento ao do muro."],
+perguntas: [
+{ id: "mur.tipo", txt: "Tipo de muro", op: ["alvenaria", "gabiao", "concreto"], rotulos: { alvenaria: "Alvenaria de bloco (divisa)", gabiao: "Arrimo em gabião", concreto: "Arrimo em concreto armado" }, padrao: "alvenaria" },
+{ id: "mur.comprimento", txt: "Comprimento do muro (m) — 0 = a informar", num: true, padrao: 0, min: 0, max: 5000 },
+{ id: "mur.altura", txt: "Altura do muro (m)", num: true, padrao: 2, min: 0.5, max: 8 }
+],
+itens: [
+{ chave: "muroAlvenaria", cod: "alv14", quando: "mur.tipo=='alvenaria'", qtd: "mur.comprimento*mur.altura", formula: "comprimento × altura", intencao: "alvenaria de vedação bloco cerâmico 14x19x39 muro" },
+{ chave: "muroCintaConcreto", cod: "concViga", quando: "mur.tipo=='alvenaria'", qtd: "mur.comprimento*0.14*0.20", formula: "cinta de amarração 14 × 20 cm × comprimento", intencao: "concretagem de cinta de amarração fck 25", sugestao: true,
+porque: "o muro precisa de cinta no topo para travar a alvenaria; a seção 14×20 cm é SUGESTÃO (o projeto define)" },
+{ chave: "muroCintaArmacao", cod: "arm10e", quando: "mur.tipo=='alvenaria'", qtd: "mur.comprimento*4*0.617*1.15", formula: "4Ø10 (0,617 kg/m, +15 % traspasse) × comprimento", intencao: "armação de cinta aço CA-50 10 mm", sugestao: true },
+{ chave: "muroChapim", cod: "chapim", quando: "mur.tipo=='alvenaria'", qtd: "mur.comprimento", formula: "comprimento do muro", intencao: "chapim rufo capa em aço galvanizado", implicito: true,
+porque: "o topo do muro sem chapim deixa a água entrar na alvenaria" },
+pend("muroInformar", "alv14", "informe o comprimento do muro; sem ele não há quantidade", "alvenaria de muro de divisa", "mur.comprimento==0"),
+pend("gabiaoMuro", "gabiao", "volume de gabião do projeto de contenção (caixas de 1,0 m)", "gabião tipo caixa malha hexagonal", "mur.tipo=='gabiao'"),
+pend("arrimoConcreto", null, "volumes de fôrma, aço e concreto do projeto de contenção", "muro de arrimo em concreto armado fôrma armação e concreto", "mur.tipo=='concreto'", { desc: "MURO DE ARRIMO EM CONCRETO ARMADO (FÔRMA, ARMAÇÃO E CONCRETAGEM)", un: "m³" })
+]
+});
+E.push({
+id: "murodren", etapa: "DRENAGEM", ordem: 31, novo: true,
+premissas: ["Muro de contenção sem drenagem acumula água atrás e cai: dreno no pé e barbacãs são obrigatórios em arrimo; o comprimento é o do muro (pergunta da etapa ESTRUTURA DO MURO / ARRIMO)."],
+perguntas: [],
+usa: ["mur.tipo", "mur.comprimento"],
+itens: [
+{ chave: "drenoPe", cod: "drenoPe", quando: "mur.tipo!='alvenaria' && mur.comprimento>0", qtd: "mur.comprimento", formula: "comprimento do muro", intencao: "dreno no pé do muro de contenção com tubo perfurado e brita", implicito: true,
+porque: "o dreno no pé do arrimo tira a água que se acumula atrás do muro e aumenta o empuxo" },
+pend("drenoInformar", "drenoPe", "informe o comprimento do muro de arrimo; sem ele não há quantidade", "dreno no pé do muro de contenção", "mur.tipo!='alvenaria' && mur.comprimento==0"),
+pend("barbacas", null, "nº de barbacãs (espaçamento do projeto de contenção)", "barbacãs em tubo pvc para drenagem de muro", "mur.tipo!='alvenaria'", { desc: "BARBACÃS EM TUBO PVC DN 50 MM PARA DRENAGEM DO MURO DE CONTENÇÃO", un: "un", implicito: true }),
+pend("geotextil", null, "área de manta geotêxtil atrás do muro (projeto de contenção)", "manta geotêxtil atrás de muro de contenção", "mur.tipo!='alvenaria'", { desc: "MANTA GEOTÊXTIL ATRÁS DO MURO DE CONTENÇÃO", un: "m²", implicito: true })
+]
+});
+E.push({
+id: "murorev", etapa: "REVESTIMENTOS E ACABAMENTOS", ordem: 32, novo: true,
+premissas: ["Muro de alvenaria: chapisco, massa única e pintura nas duas faces."],
+perguntas: [],
+usa: ["mur.tipo", "mur.comprimento", "mur.altura"],
+itens: [
+{ chave: "muroChapisco", cod: "chapExt", quando: "mur.tipo=='alvenaria'", qtd: "2*mur.comprimento*mur.altura", formula: "2 faces × comprimento × altura", intencao: "chapisco em alvenaria de fachada muro" },
+{ chave: "muroMassa", cod: "massaExt", quando: "mur.tipo=='alvenaria'", qtd: "2*mur.comprimento*mur.altura", formula: "2 faces × comprimento × altura", intencao: "emboço ou massa única em muro" },
+{ chave: "muroPintura", cod: "paredeExt", quando: "mur.tipo=='alvenaria'", qtd: "2*mur.comprimento*mur.altura", formula: "2 faces × comprimento × altura", intencao: "tinta látex acrílica paredes externas duas demãos" }
+]
+});
+E.push({
+id: "pavmedidas", etapa: "TERRAPLENAGEM", ordem: 33, novo: true,
+premissas: ["A medida da via (área de pavimento) é informada aqui e vale para as etapas de drenagem, pavimento, meio-fio e sinalização."],
+perguntas: [
+{ id: "pav.area", txt: "Área de pavimento (m²) — 0 = a informar", num: true, padrao: 0, min: 0, max: 200000 },
+{ id: "pav.tipo", txt: "Revestimento do pavimento", op: ["intertravado", "cbuq"], rotulos: { intertravado: "Bloco de concreto intertravado (8 cm)", cbuq: "Concreto betuminoso usinado a quente (CBUQ)" }, padrao: "intertravado" },
+{ id: "pav.meiofio", txt: "Meio-fio e sarjeta (m) — 0 = a informar", num: true, padrao: 0, min: 0, max: 100000 }
+],
+itens: [
+{ chave: "regularizacaoSubleito", cod: "regSub", quando: "pav.area>0", qtd: "pav.area", formula: "área de pavimento", intencao: "regularização e compactação de subleito argiloso" },
+pend("pavInformar", "regSub", "informe a área do pavimento; sem ela não há quantidade", "regularização e compactação do subleito", "pav.area==0"),
+pend("cortesAterros", null, "volumes de corte e aterro da via (projeto geométrico/terraplenagem)", "corte e aterro da plataforma da via", "", { desc: "ESCAVAÇÃO E ATERRO COMPACTADO DA PLATAFORMA DA VIA", un: "m³" })
+]
+});
+E.push({
+id: "pavdren", etapa: "DRENAGEM SUPERFICIAL", ordem: 34, novo: true,
+premissas: ["Bocas de lobo, tubulação e poços de visita seguem o projeto de drenagem: ficam pendentes."],
+perguntas: [],
+itens: [
+pend("bocasLoboVia", "bocaLobo", "nº de bocas de lobo (projeto de drenagem)", "caixa para boca de lobo com grelha", ""),
+pend("redeDrenagem", null, "comprimento e diâmetro da rede de tubos de concreto (projeto de drenagem)", "assentamento de tubo de concreto para drenagem", "", { desc: "TUBO DE CONCRETO PARA REDE DE DRENAGEM PLUVIAL, ASSENTAMENTO E REJUNTE (DIÂMETRO DO PROJETO)", un: "m" })
+]
+});
+E.push({
+id: "pavimento", etapa: "PAVIMENTO (SUB-BASE, BASE E REVESTIMENTO)", ordem: 35, novo: true,
+premissas: ["Base de brita graduada simples de 15 cm (a espessura é SUGESTÃO — o dimensionamento do pavimento define). CBUQ: a quantidade em toneladas depende da espessura e da densidade do projeto: fica pendente."],
+perguntas: [],
+usa: ["pav.area", "pav.tipo"],
+itens: [
+{ chave: "baseBGS", cod: "bgs15", quando: "pav.area>0", qtd: "pav.area*0.15", formula: "área × 0,15 m de espessura", intencao: "base e sub-base de brita graduada simples 15 cm", sugestao: true },
+{ chave: "revIntertravado", cod: "interT8", quando: "pav.area>0 && pav.tipo=='intertravado'", qtd: "pav.area", formula: "área de pavimento", intencao: "pavimento de bloco intertravado 8 cm" },
+pend("revCbuq", "cbuq", "toneladas = área × espessura da camada × densidade (projeto do pavimento)", "concreto betuminoso usinado a quente cbuq", "pav.tipo=='cbuq'"),
+pend("imprimacao", "imprim", "litros de ligante = área × taxa de aplicação (projeto do pavimento)", "imprimação com ligante asfáltico", "pav.tipo=='cbuq'", { implicito: true, porque: "a base de brita é imprimada antes do CBUQ para o asfalto aderir" }),
+pend("pavimentoInformar", "bgs15", "informe a área do pavimento; sem ela não há quantidade", "base de brita graduada simples", "pav.area==0")
+]
+});
+E.push({
+id: "meiofio", etapa: "MEIO-FIO E SARJETAS", ordem: 36, novo: true,
+premissas: ["Meio-fio pré-fabricado de 100×15×13×30 cm e sarjeta moldada in loco de 30×15 cm, em trecho reto."],
+perguntas: [],
+usa: ["pav.meiofio"],
+itens: [
+{ chave: "guia", cod: "meioFio", quando: "pav.meiofio>0", qtd: "pav.meiofio", formula: "metros de meio-fio informados", intencao: "assentamento de guia meio-fio em trecho reto" },
+{ chave: "sarjeta", cod: "sarjetaReta", quando: "pav.meiofio>0", qtd: "pav.meiofio", formula: "mesmo comprimento do meio-fio", intencao: "sarjeta de concreto moldada in loco em trecho reto", implicito: true,
+porque: "a sarjeta é a calha que leva a água do pavimento até a boca de lobo e acompanha o meio-fio" },
+pend("meiofioInformar", "meioFio", "informe os metros de meio-fio; sem eles não há quantidade", "assentamento de guia meio-fio", "pav.meiofio==0")
+]
+});
+E.push({
+id: "sinalizacao", etapa: "SINALIZAÇÃO", ordem: 37, novo: true,
+premissas: ["Sinalização horizontal e vertical seguem o projeto de sinalização: ficam pendentes."],
+perguntas: [],
+itens: [
+pend("faixaPedestre", "faixaPed", "área das faixas de pedestre (projeto de sinalização)", "pintura de faixa de pedestre com tinta acrílica", ""),
+pend("placasTransito", null, "nº de placas e suportes (projeto de sinalização)", "placa de sinalização viária com suporte", "", { desc: "PLACA DE SINALIZAÇÃO VIÁRIA COM SUPORTE METÁLICO (FORNECIMENTO E INSTALAÇÃO)", un: "un" })
+]
+});
+if (typeof module !== "undefined" && module.exports) module.exports = D.etapas;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/tipologias.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var PRELIM = "SERVIÇOS PRELIMINARES";
+var ACABAMENTO_RES = ["ALVENARIA E VEDAÇÃO", "IMPERMEABILIZAÇÃO", "COBERTURA", "REVESTIMENTOS DE PAREDE", "PISOS", "FORRO", "ESQUADRIAS", "PINTURA", "INSTALAÇÕES ELÉTRICAS", "INSTALAÇÕES HIDROSSANITÁRIAS", "INSTALAÇÕES PLUVIAIS"];
+D.tipologias = [
+{ id: "residencial_unifamiliar", rotulo: "Residencial unifamiliar (casa / sobrado)", base: "residencial",
+etapas: [PRELIM, "INFRAESTRUTURA (FUNDAÇÕES)", "SUPERESTRUTURA"].concat(ACABAMENTO_RES, ["SERVIÇOS FINAIS"]) },
+{ id: "residencial_multifamiliar", rotulo: "Residencial multifamiliar (edifício / conjunto)", base: "residencial",
+etapas: [PRELIM, "MOVIMENTO DE TERRA", "INFRAESTRUTURA (FUNDAÇÕES)", "SUPERESTRUTURA"].concat(ACABAMENTO_RES, ["SPDA (PARA-RAIOS)", "INSTALAÇÕES DE PREVENÇÃO E COMBATE A INCÊNDIO", "ELEVADORES", "ÁREAS COMUNS E PAISAGISMO", "SERVIÇOS FINAIS"]) },
+{ id: "comercial", rotulo: "Comercial (loja / sala / escritório)", base: "comercial",
+etapas: [PRELIM, "INFRAESTRUTURA (FUNDAÇÕES)", "SUPERESTRUTURA"].concat(ACABAMENTO_RES, ["SPDA (PARA-RAIOS)", "INSTALAÇÕES DE PREVENÇÃO E COMBATE A INCÊNDIO", "CLIMATIZAÇÃO", "SERVIÇOS FINAIS"]) },
+{ id: "galpao_industrial", rotulo: "Galpão / industrial", base: "comercial",
+etapas: [PRELIM, "MOVIMENTO DE TERRA", "INFRAESTRUTURA (FUNDAÇÕES)", "SUPERESTRUTURA", "ESTRUTURA METÁLICA", "COBERTURA", "FECHAMENTOS E VEDAÇÃO", "PISO INDUSTRIAL", "ESQUADRIAS", "PINTURA", "INSTALAÇÕES ELÉTRICAS", "INSTALAÇÕES HIDROSSANITÁRIAS", "INSTALAÇÕES PLUVIAIS", "SPDA (PARA-RAIOS)", "INSTALAÇÕES DE PREVENÇÃO E COMBATE A INCÊNDIO", "SERVIÇOS FINAIS"] },
+{ id: "reforma", rotulo: "Reforma", base: "residencial",
+etapas: [PRELIM, "DEMOLIÇÕES E RETIRADAS", "ALVENARIA E VEDAÇÃO", "IMPERMEABILIZAÇÃO", "COBERTURA", "REVESTIMENTOS DE PAREDE", "PISOS", "FORRO", "ESQUADRIAS", "PINTURA", "INSTALAÇÕES ELÉTRICAS", "INSTALAÇÕES HIDROSSANITÁRIAS", "SERVIÇOS FINAIS"] },
+{ id: "escola_creche", rotulo: "Escola / creche", base: "comercial",
+etapas: [PRELIM, "INFRAESTRUTURA (FUNDAÇÕES)", "SUPERESTRUTURA"].concat(ACABAMENTO_RES, ["ACESSIBILIDADE", "SPDA (PARA-RAIOS)", "INSTALAÇÕES DE PREVENÇÃO E COMBATE A INCÊNDIO", "ÁREAS EXTERNAS E PAISAGISMO", "SERVIÇOS FINAIS"]) },
+{ id: "quiosque_madeira", rotulo: "Quiosque / estrutura de madeira", base: "comercial",
+etapas: [PRELIM, "INFRAESTRUTURA (FUNDAÇÕES)", "ESTRUTURA DE MADEIRA", "COBERTURA", "PISOS", "ESQUADRIAS", "TRATAMENTO E PINTURA DA MADEIRA", "INSTALAÇÕES ELÉTRICAS", "INSTALAÇÕES HIDROSSANITÁRIAS", "SERVIÇOS FINAIS"] },
+{ id: "muro_arrimo", rotulo: "Muro / arrimo", base: "comercial",
+etapas: [PRELIM, "MOVIMENTO DE TERRA", "INFRAESTRUTURA (FUNDAÇÕES)", "ESTRUTURA DO MURO / ARRIMO", "DRENAGEM", "REVESTIMENTOS E ACABAMENTOS", "SERVIÇOS FINAIS"] },
+{ id: "pavimentacao", rotulo: "Pavimentação", base: "comercial",
+etapas: [PRELIM, "TERRAPLENAGEM", "DRENAGEM SUPERFICIAL", "PAVIMENTO (SUB-BASE, BASE E REVESTIMENTO)", "MEIO-FIO E SARJETAS", "SINALIZAÇÃO", "SERVIÇOS FINAIS"] }
+];
+if (typeof module !== "undefined" && module.exports) module.exports = D.tipologias;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/implicitos.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+var F13 = {
+afT20: ["89401","TUBO, PVC, SOLDÁVEL, DE 20MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","m"],
+afT25: ["89402","TUBO, PVC, SOLDÁVEL, DE 25MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","m"],
+afT32: ["89403","TUBO, PVC, SOLDÁVEL, DE 32MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","m"],
+afT40: ["103978","TUBO, PVC, SOLDÁVEL, DE 40MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","m"],
+afT50: ["103979","TUBO, PVC, SOLDÁVEL, DE 50MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","m"],
+afJ90d20: ["89404","JOELHO 90 GRAUS, PVC, SOLDÁVEL, DN 20MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ90d25: ["89408","JOELHO 90 GRAUS, PVC, SOLDÁVEL, DN 25MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ90d32: ["89413","JOELHO 90 GRAUS, PVC, SOLDÁVEL, DN 32MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ90d40: ["103980","JOELHO 90 GRAUS, PVC, SOLDÁVEL, DN 40MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ90d50: ["103984","JOELHO 90 GRAUS, PVC, SOLDÁVEL, DN 50MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ45d20: ["89405","JOELHO 45 GRAUS, PVC, SOLDÁVEL, DN 20MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ45d25: ["89409","JOELHO 45 GRAUS, PVC, SOLDÁVEL, DN 25MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ45d32: ["89414","JOELHO 45 GRAUS, PVC, SOLDÁVEL, DN 32MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ45d40: ["103981","JOELHO 45 GRAUS, PVC, SOLDÁVEL, DN 40MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afJ45d50: ["103985","JOELHO 45 GRAUS, PVC, SOLDÁVEL, DN 50MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afLuva20: ["89418","LUVA DE CORRER, PVC, SOLDÁVEL, DN 20MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afLuva25: ["89425","LUVA DE CORRER, PVC, SOLDÁVEL, DN 25MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afLuva32: ["89432","LUVA DE CORRER, PVC, SOLDÁVEL, DN 32MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA FORNECIMENTO E INSTALAÇÃO","un"],
+afLuva40: ["104159","LUVA DE CORRER, PVC, SOLDÁVEL, DN 40MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+afLuva50: ["103996","LUVA DE CORRER, PVC, SOLDÁVEL, DN 50MM, INSTALADO EM RAMAL DE DISTRIBUIÇÃO DE ÁGUA - FORNECIMENTO E INSTALAÇÃO","un"],
+esT40: ["89711","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+esT50: ["89712","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 MM, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+esT75: ["89713","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 MM, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+esT100: ["89714","TUBO PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","m"],
+esJ90d40: ["89724","JOELHO 90 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ90d50: ["89731","JOELHO 90 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ90d75: ["89737","JOELHO 90 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ90d100: ["89744","JOELHO 90 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ45d40: ["89726","JOELHO 45 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ45d50: ["89732","JOELHO 45 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ45d75: ["89739","JOELHO 45 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJ45d100: ["89746","JOELHO 45 GRAUS, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esLuva40: ["89752","LUVA SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esLuva50: ["89753","LUVA SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esLuva75: ["89774","LUVA SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esLuva100: ["89778","LUVA SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esTe40: ["89782","TE, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 X 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esTe50: ["89784","TE, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 X 50 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esTe75: ["89786","TE, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 X 75 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esTe100: ["89796","TE, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 X 100 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJun40: ["89783","JUNÇÃO SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 40 MM, JUNTA SOLDÁVEL, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJun50: ["89785","JUNÇÃO SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 50 X 50 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJun75: ["89795","JUNÇÃO SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 75 X 75 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+esJun100: ["89797","JUNÇÃO SIMPLES, PVC, SERIE NORMAL, ESGOTO PREDIAL, DN 100 X 100 MM, JUNTA ELÁSTICA, FORNECIDO E INSTALADO EM RAMAL DE DESCARGA OU RAMAL DE ESGOTO SANITÁRIO","un"],
+eletroduto20: ["91853","ELETRODUTO FLEXÍVEL CORRUGADO REFORÇADO, PVC, DN 20 MM (1/2\"), PARA CIRCUITOS TERMINAIS, INSTALADO EM PAREDE - FORNECIMENTO E INSTALAÇÃO","m"],
+eletroduto32: ["91857","ELETRODUTO FLEXÍVEL CORRUGADO REFORÇADO, PVC, DN 32 MM (1\"), PARA CIRCUITOS TERMINAIS, INSTALADO EM PAREDE - FORNECIMENTO E INSTALAÇÃO","m"],
+cabo15: ["91924","CABO DE COBRE FLEXÍVEL ISOLADO, 1,5 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS - FORNECIMENTO E INSTALAÇÃO","m"],
+cabo4: ["91928","CABO DE COBRE FLEXÍVEL ISOLADO, 4 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS - FORNECIMENTO E INSTALAÇÃO","m"],
+cabo10: ["91932","CABO DE COBRE FLEXÍVEL ISOLADO, 10 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS - FORNECIMENTO E INSTALAÇÃO","m"],
+cabo16: ["91934","CABO DE COBRE FLEXÍVEL ISOLADO, 16 MM², ANTI-CHAMA 450/750 V, PARA CIRCUITOS TERMINAIS - FORNECIMENTO E INSTALAÇÃO","m"],
+contrapisoMol: ["87768","CONTRAPISO EM ARGAMASSA PRONTA, PREPARO MECÂNICO COM MISTURADOR 300 KG, APLICADO EM ÁREAS MOLHADAS SOBRE IMPERMEABILIZAÇÃO, ACABAMENTO NÃO REFORÇADO, ESPESSURA 4CM","m²"],
+regEsf20: ["103047","REGISTRO DE ESFERA, PVC, SOLDÁVEL, COM VOLANTE, DN 20 MM - FORNECIMENTO E INSTALAÇÃO","un"],
+regEsf25: ["94489","REGISTRO DE ESFERA, PVC, SOLDÁVEL, COM VOLANTE, DN 25 MM - FORNECIMENTO E INSTALAÇÃO","un"],
+regEsf32: ["94490","REGISTRO DE ESFERA, PVC, SOLDÁVEL, COM VOLANTE, DN 32 MM - FORNECIMENTO E INSTALAÇÃO","un"],
+regEsf40: ["94491","REGISTRO DE ESFERA, PVC, SOLDÁVEL, COM VOLANTE, DN 40 MM - FORNECIMENTO E INSTALAÇÃO","un"],
+caixa44Media: ["91943","CAIXA RETANGULAR 4\" X 4\" MÉDIA (1,30 M DO PISO), PVC, INSTALADA EM PAREDE - FORNECIMENTO E INSTALAÇÃO","un"] };
+var DNA = ["20", "25", "32", "40", "50"], DNE = ["40", "50", "75", "100"], i;
+var TUBO_AF = {}, TUBO_ES = {}, CONEXAO = {};
+for (i = 0; i < DNA.length; i++) {
+TUBO_AF[DNA[i]] = "afT" + DNA[i];
+CONEXAO["agua-fria|joelho|90|" + DNA[i]] = "afJ90d" + DNA[i]; CONEXAO["agua-fria|joelho|45|" + DNA[i]] = "afJ45d" + DNA[i];
+CONEXAO["agua-fria|luva|90|" + DNA[i]] = "afLuva" + DNA[i]; CONEXAO["agua-fria|luva|45|" + DNA[i]] = "afLuva" + DNA[i];
+}
+for (i = 0; i < DNE.length; i++) {
+TUBO_ES[DNE[i]] = "esT" + DNE[i];
+CONEXAO["esgoto|joelho|90|" + DNE[i]] = "esJ90d" + DNE[i]; CONEXAO["esgoto|joelho|45|" + DNE[i]] = "esJ45d" + DNE[i];
+CONEXAO["esgoto|luva|90|" + DNE[i]] = "esLuva" + DNE[i]; CONEXAO["esgoto|luva|45|" + DNE[i]] = "esLuva" + DNE[i];
+CONEXAO["esgoto|te|90|" + DNE[i]] = "esTe" + DNE[i]; CONEXAO["esgoto|te|45|" + DNE[i]] = "esTe" + DNE[i];
+CONEXAO["esgoto|juncao|90|" + DNE[i]] = "esJun" + DNE[i]; CONEXAO["esgoto|juncao|45|" + DNE[i]] = "esJun" + DNE[i];
+}
+function kj(a, b, c, d, e) { return "se(dn==20," + a + ",se(dn==25," + b + ",se(dn==32," + c + ",se(dn==40," + d + "," + e + "))))"; }
+var AF = "(sis=='agua-fria' || sis=='agua-quente')";
+function R(id, tipo, alvo, etapa, o) { var r = { id: id, tipo: tipo, etapa: etapa }, k; if (typeof alvo === "string") r.escopo = alvo; else r.papeis = alvo; for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r[k] = o[k]; return r; }
+var CF = "catalogo", MD = "modelo", PR = "pratica", CP = "composicao";
+function sup(q, m) { return [{ quando: q, motivo: m }]; }
+var PAREDE = ["parede-alvenaria"];
+var regras = [
+R("med.alv9", "medido", PAREDE, "alvenaria", { cod: "alvenaria", quando: "alvCasa==1 && ecm>=8 && ecm<=10 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede = área bruta − vãos maiores que 2 m² (critério SINAPI)", intencao: "alvenaria bloco cerâmico 9 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede + vãos (IfcRelVoidsElement)" } }),
+R("med.alv14", "medido", PAREDE, "alvenaria", { cod: "alv14", quando: "alvCasa==1 && ecm>=13 && ecm<=15 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 14 cm)", intencao: "alvenaria bloco cerâmico 14 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
+R("med.alv19", "medido", PAREDE, "alvenaria", { cod: "alv19", quando: "alvCasa==1 && ecm>=18 && ecm<=20 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 19 cm)", intencao: "alvenaria bloco cerâmico 19 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
+R("med.alvCelular15", "medido", PAREDE, "alvenaria", { cod: "alvCelular15", quando: "alvCasa==1 && mat=='celular' && ecm>=14 && ecm<=16", qtd: "Aliq", formula: "área líquida da parede (concreto celular 15 cm)", intencao: "alvenaria concreto celular 15 cm", origem: { tipo: MD, ref: "Qto da parede" } }),
+R("med.alvPendente", "medido", PAREDE, "alvenaria", { desc: "ALVENARIA DE VEDAÇÃO ({mat}, e = {ecm} cm) — espessura/material do modelo sem composição no catálogo", un: "m²", quando: "alvCasa==0", qtd: "Aliq", formula: "área líquida da parede; o código fica pendente porque a espessura/material lidos não têm composição no catálogo", intencao: "alvenaria de vedação", agrupar: ["ecm", "mat"], origem: { tipo: MD, ref: "Qto da parede" } }),
+R("med.drywall", "medido", ["parede-drywall"], "alvenaria", { cod: "dry2f", qtd: "Aliq", formula: "área líquida da parede de gesso acartonado (duas faces simples, guias simples)", intencao: "parede drywall duas faces", origem: { tipo: MD, ref: "Qto da parede" } }),
+R("med.paredeConcreto", "medido", ["parede-concreto"], "super", { desc: "PAREDE DE CONCRETO ARMADO MOLDADA IN LOCO (concreto, fôrma e armação)", un: "m³", qtd: "V", formula: "volume do elemento", intencao: "parede de concreto armado", origem: { tipo: MD, ref: "Qto da parede" } }),
+R("par.chapiscoSeca", "implicito", PAREDE, "revestimento", { cod: "chapInt", quando: "Af_seca>0", qtd: "Af_seca", formula: "face interna seca = área líquida da parede", intencao: "chapisco interno", porque: "toda alvenaria recebe chapisco antes do emboço/massa única; o modelo não desenha a camada", origem: { tipo: CF, ref: "revestimento.chapInt (F3)" }, suprime: sup("camChapisco>0", "o IFC traz a camada de chapisco na parede (medida pela camada)") }),
+R("par.massaSeca", "implicito", PAREDE, "revestimento", { cod: "massaInt", quando: "Af_seca>0", qtd: "Af_seca", formula: "face interna seca = área líquida da parede", intencao: "massa única interna", porque: "a alvenaria precisa de reboco/massa única antes da pintura; o modelo não desenha a camada", origem: { tipo: CF, ref: "revestimento.massaInt (F3)" }, suprime: sup("camEmboco>0", "o IFC traz a camada de reboco na parede") }),
+R("par.chapiscoExt", "implicito", PAREDE, "revestimento", { cod: "chapExt", quando: "Af_ext>0", qtd: "Af_ext", formula: "face externa = área líquida da parede", intencao: "chapisco fachada", porque: "a face externa leva chapisco antes do emboço de fachada", origem: { tipo: CF, ref: "revestimento.chapExt (F3)" }, suprime: sup("camChapisco>0", "o IFC traz a camada de chapisco na parede") }),
+R("par.massaExt", "implicito", PAREDE, "revestimento", { cod: "massaExt", quando: "Af_ext>0", qtd: "Af_ext", formula: "face externa = área líquida da parede", intencao: "emboço fachada", porque: "a face externa leva emboço/massa única de fachada", origem: { tipo: CF, ref: "revestimento.massaExt (F3)" }, suprime: sup("camEmboco>0", "o IFC traz a camada de reboco na parede") }),
+R("par.chapiscoMol", "implicito", PAREDE, "revestimento", { cod: "chapInt", quando: "Af_mol>0", qtd: "Af_mol", formula: "face em ambiente molhado = área líquida da parede", intencao: "chapisco interno área molhada", porque: "parede de área molhada recebe chapisco antes do emboço e da cerâmica", origem: { tipo: CF, ref: "revestimento.chapInt (F3)" }, suprime: sup("camChapisco>0", "o IFC traz a camada de chapisco na parede") }),
+R("par.embocoMol", "implicito", PAREDE, "revestimento", { cod: "emboco", quando: "Af_mol>0", qtd: "Af_mol", formula: "face em ambiente molhado = área líquida da parede", intencao: "emboço área molhada", porque: "a cerâmica de parede assenta sobre emboço", origem: { tipo: CF, ref: "revestimento.emboco (F3)" }, suprime: sup("camEmboco>0", "o IFC traz a camada de reboco na parede") }),
+R("par.ceramicaMol", "implicito", PAREDE, "revestimento", { cod: "cerParede", quando: "Af_mol>0", qtd: "Af_mol", formula: "face em ambiente molhado = área líquida da parede, na altura inteira (a composição 87265 é «na altura inteira das paredes»)", intencao: "revestimento cerâmico parede", porque: "parede de banheiro/cozinha/área de serviço leva revestimento cerâmico; o modelo não desenha", origem: { tipo: CF, ref: "revestimento.cerParede (F3)" }, sug: true, suprime: sup("camCeramica>0", "o IFC traz a camada de cerâmica na parede") }),
+R("par.cerColante", "incluso", PAREDE, "revestimento", { quando: "Af_mol>0", rotulo: "argamassa colante e rejunte da cerâmica de parede", comps: [{ comp: "87265", itens: ["1381", "34357"] }], motivo: "a composição 87265 já traz argamassa colante AC I (1381) e rejunte cimentício (34357)", origem: { tipo: CP, ref: "SINAPI 87265" } }),
+R("par.impMol", "implicito", PAREDE, "imperm", { cod: "impMolh", quando: "Lf_mol>0", qtd: "Lf_mol*min(1.5,H)", formula: "comprimento da face molhada × 1,50 m (ou a altura da parede, se menor); o modelo não diz onde é o box", intencao: "impermeabilização parede área molhada", porque: "parede de ambiente molhado leva impermeabilização até 1,50 m do piso (box: até o teto — ver item do box)", origem: { tipo: PR, ref: "§16.2 da especificação; catálogo imperm.paredesMolhadas (1,50 m)" }, sug: true }),
+R("par.impBox", "implicito", PAREDE, "imperm", { desc: "IMPERMEABILIZAÇÃO ATÉ O TETO NAS PAREDES DO BOX DO CHUVEIRO", un: "m²", quando: "Lf_mol>0", qtd: null, formula: "o IFC não diz quais paredes são do box: informe o comprimento (m) × pé-direito", intencao: "impermeabilização box até o teto", porque: "no box a impermeabilização sobe até o teto; sem a posição do box no modelo a quantidade não se calcula", origem: { tipo: PR, ref: "§16.2 da especificação" } }),
+R("par.cantoneira", "implicito", PAREDE, "revestimento", { desc: "CANTONEIRA/PERFIL DE QUINA PARA REVESTIMENTO CERÂMICO", un: "m", quando: "Af_mol>0", qtd: null, formula: "comprimento das quinas externas do revestimento: o IFC não traz; sem composição SINAPI de cantoneira de cerâmica na base MG", intencao: "cantoneira perfil quina cerâmica", porque: "as quinas vivas do revestimento cerâmico levam cantoneira de acabamento", origem: { tipo: PR, ref: "§16.2 da especificação" }, suprime: sup("camCeramica>0", "o IFC traz a camada de cerâmica na parede") }),
+R("par.encunhamento", "implicito", PAREDE, "alvenaria", { cod: "encunhamento", quando: "L>0", qtd: "L", formula: "comprimento da parede (aperto contra a laje/viga no topo)", intencao: "encunhamento alvenaria", porque: "o respiro de cima da alvenaria é fechado depois (encunhamento); o modelo não desenha", origem: { tipo: CF, ref: "alvenaria.encunhamento (F3): (P+Li)*pav" } }),
+R("par.verga", "implicito", PAREDE, "alvenaria", { cod: "verga", quando: "Lverga>0", qtd: "Lverga", formula: "Σ (largura do vão + 2 × 0,30 m) de cada vão da parede", intencao: "verga de concreto sobre vão", porque: "todo vão leva verga com apoio de 30 cm em cada lado", origem: { tipo: PR, ref: "§16.2 (L = vão + 2×0,30); catálogo alvenaria.verga" }, menos: { papel: "verga-modelada", variavel: "L", motivo: "verga já modelada no IFC (IfcBeam LINTEL)" } }),
+R("par.contraverga", "implicito", PAREDE, "alvenaria", { cod: "contraverga", quando: "Lcontra>0", qtd: "Lcontra", formula: "Σ (largura da janela + 2 × 0,30 m) das janelas da parede", intencao: "contraverga sob janela", porque: "toda janela leva contraverga sob o peitoril, com apoio de 30 cm em cada lado", origem: { tipo: PR, ref: "§16.2; catálogo alvenaria.contraverga" } }),
+R("par.tela", "incluso", PAREDE, "alvenaria", { quando: "alvCasa==1", rotulo: "tela de aço e pino de ligação com pilar/viga (ferro-cabelo)", comps: [{ comp: "103328", itens: ["34557", "37395"] }, { comp: "103368", itens: ["34547", "37395"] }, { comp: "103370", itens: ["34548", "37395"] }, { comp: "101155", itens: ["34547"] }], motivo: "a composição de alvenaria já traz a tela de aço soldada para alvenaria (e o pino de aço): lançar de novo seria dupla contagem", origem: { tipo: CP, ref: "SINAPI 103328/103368/103370/101155 (analítico MG 2026-06)" } }),
+R("par.andaime", "implicito", PAREDE, "alvenaria", { cod: "andaimeMont", quando: "externa==1 && L>0 && H>0 && edifAlta==1", qtd: "L*H", formula: "comprimento × altura da face EXTERNA da parede (a face de trabalho de fachada)", intencao: "andaime fachadeiro montagem desmontagem", porque: "andaime na fachada porque a edificação tem {nPavimentos} pavimento(s) e cerca de {alturaEdif} m de altura (acima de 1 pavimento ou de 4 m o pedreiro não alcança a fachada do piso); a parede interna e a edificação térrea baixa não levam andaime de fachada", origem: { tipo: PR, ref: "§16.4 da especificação; catálogo alvenaria.andaimeMontagem (fachada de edificação com mais de 1 pavimento ou mais de 4 m)" }, sug: true }),
+R("par.andaimeLoc", "implicito", PAREDE, "alvenaria", { cod: "andaimeLoc", quando: "externa==1 && L>0 && H>0 && edifAlta==1", qtd: null, formula: "metros de andaime × meses de uso: o prazo da etapa não é conhecido pelo modelo (informe ou deixe o cronograma calcular)", intencao: "locação de andaime metálico", porque: "o andaime é alugado por período; sem o prazo da etapa a quantidade fica pendente", origem: { tipo: CF, ref: "alvenaria.andaimeLocacao (F3), qtd pendente" } }),
+R("pin.seladorInt", "implicito", PAREDE, "pintura", { cod: "selParInt", quando: "Af_seca>0", qtd: "Af_seca", formula: "face interna seca", intencao: "selador acrílico parede interna", porque: "o selador uniformiza a absorção do reboco antes da massa e da tinta", origem: { tipo: CF, ref: "pintura.seladorParInt (F3)" }, suprime: sup("camPintura>0", "o IFC traz a camada de pintura na parede") }),
+R("pin.massaInt", "implicito", PAREDE, "pintura", { codPor: { normal: "massaPar1", alto: "massaPar2" }, quando: "Af_seca>0 && padrao!='popular'", qtd: "Af_seca", formula: "face interna seca (1 demão no padrão normal, 2 no alto)", intencao: "massa látex parede", porque: "padrão {padrao}: a parede leva massa corrida antes da tinta (no padrão popular não)", origem: { tipo: CF, ref: "pintura.massaPar1/massaPar2 (padrão)" }, suprime: sup("camPintura>0", "o IFC traz a camada de pintura na parede") }),
+R("pin.tintaInt", "implicito", PAREDE, "pintura", { codPor: { popular: "tintaParEco", normal: "tintaParStd", alto: "tintaParPrem" }, quando: "Af_seca>0", qtd: "Af_seca", formula: "face interna seca, 2 demãos", intencao: "pintura látex acrílica parede", porque: "toda parede interna seca recebe pintura; a tinta escolhida segue o padrão do orçamento ({padrao})", origem: { tipo: CF, ref: "pintura.tintaPar* (padrão)" }, sug: true, suprime: sup("camPintura>0", "o IFC traz a camada de pintura na parede") }),
+R("pin.seladorExt", "implicito", PAREDE, "pintura", { cod: "seladorExt", quando: "Af_ext>0", qtd: "Af_ext", formula: "face externa", intencao: "selador acrílico parede externa", porque: "selador na fachada antes da tinta", origem: { tipo: CF, ref: "pintura.seladorExt" }, suprime: sup("camPintura>0", "o IFC traz a camada de pintura na parede") }),
+R("pin.tintaExt", "implicito", PAREDE, "pintura", { codPor: { popular: "tintaParEco", normal: "tintaParStd", alto: "tintaParPrem" }, quando: "Af_ext>0", qtd: "Af_ext", formula: "face externa, 2 demãos", intencao: "pintura látex acrílica fachada", porque: "fachada recebe pintura; tinta pelo padrão ({padrao})", origem: { tipo: CF, ref: "pintura.tintaPar* (padrão)" }, sug: true, suprime: sup("camPintura>0", "o IFC traz a camada de pintura na parede") }),
+R("med.porta", "medido", ["porta"], "esquadrias", { codPor: { popular: "portaPopular70", normal: "portaInt", alto: "portaInt" }, porMaterial: { aco: "portaExt" }, matVar: "mat", quando: "ext==0", qtd: "1", formula: "1 por porta do modelo (kit completo: folha + batente + fechadura)", intencao: "kit de porta de madeira", agrupar: ["mat"], notas: [{ quando: "abs(W-0.7)>0.06 || abs(Hj-2.1)>0.06", texto: "a composição é de kit 70×210 cm; há porta de outra medida no modelo (confira o preço)" }], origem: { tipo: MD, ref: "IfcDoor + padrão" } }),
+R("med.portaExt", "medido", ["porta"], "esquadrias", { cod: "portaExt", quando: "ext==1", qtd: "1", formula: "1 por porta externa do modelo", intencao: "porta de aço de abrir externa", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "porta externa: o material não vem do IFC — assumida porta de aço do catálogo (confirme)" }], origem: { tipo: MD, ref: "IfcDoor externa" } }),
+R("esq.kitPorta", "incluso", ["porta"], "esquadrias", { quando: "ext==0", rotulo: "batente, alizar, fechadura e dobradiças da porta", comps: [{ comp: "100681", itens: ["90806", "91306", "100659"] }], motivo: "o kit de porta 100681 já traz batente, fechadura e alizar", origem: { tipo: CP, ref: "SINAPI 100681" } }),
+R("med.janelaAl", "medido", ["janela"], "esquadrias", { cod: "janela", quando: "mat=='' || mat=='aluminio' || mat=='vidro'", qtd: "Aj", formula: "largura × altura de cada janela do modelo", intencao: "janela de alumínio de correr", sugestaoSe: "mat==''", notas: [{ quando: "mat==''", texto: "material da janela não informado no IFC: assumido alumínio (padrão do catálogo)" }], origem: { tipo: MD, ref: "IfcWindow (largura × altura)" } }),
+R("med.janelaAco", "medido", ["janela"], "esquadrias", { cod: "janelaAcoBasc", quando: "mat=='aco'", qtd: "Aj", formula: "largura × altura da janela de aço", intencao: "janela de aço basculante", origem: { tipo: MD, ref: "IfcWindow (largura × altura)" } }),
+R("med.janelaMad", "medido", ["janela"], "esquadrias", { cod: "janelaMaxim", quando: "mat=='madeira'", qtd: "Aj", formula: "largura × altura da janela de madeira", intencao: "janela de madeira maxim-ar", origem: { tipo: MD, ref: "IfcWindow (largura × altura)" } }),
+R("med.janelaOutra", "medido", ["janela"], "esquadrias", { desc: "JANELA ({mat}) — sem composição no catálogo", un: "m²", quando: "mat!='' && mat!='aluminio' && mat!='vidro' && mat!='aco' && mat!='madeira'", qtd: "Aj", formula: "largura × altura da janela", intencao: "janela esquadria", agrupar: ["mat"], origem: { tipo: MD, ref: "IfcWindow" } }),
+R("esq.contramarco", "implicito", ["janela"], "esquadrias", { cod: "contramarcoAlu", quando: "mat=='' || mat=='aluminio' || mat=='vidro'", qtd: "2*(W+Hj)", formula: "perímetro do vão = 2 × (largura + altura)", intencao: "contramarco de alumínio", porque: "esquadria de alumínio assenta em contramarco chumbado na alvenaria", origem: { tipo: CF, ref: "esquadrias.contramarco (F3: Nj×4,8 m)" }, sug: true }),
+R("esq.peitoril", "implicito", ["janela"], "esquadrias", { cod: "peitoril", quando: "W>0", qtd: "W", formula: "largura do vão (comprimento do peitoril)", intencao: "peitoril de granito", porque: "toda janela tem peitoril sob o vão", origem: { tipo: CF, ref: "pisos.peitoril (F3: Nj × 1,20 m)" }, sug: true }),
+R("esq.pingadeira", "implicito", ["janela"], "esquadrias", { desc: "PINGADEIRA/PEITORIL EXTERNO COM CAIMENTO", un: "m", quando: "ext==1", qtd: "W", formula: "largura do vão da janela externa", intencao: "pingadeira peitoril externo", porque: "janela de fachada leva pingadeira para a água não escorrer pela parede; sem composição própria na base MG", origem: { tipo: PR, ref: "§16.2 da especificação" } }),
+R("esq.vedacaoJanela", "incluso", ["janela"], "esquadrias", { quando: "mat=='' || mat=='aluminio' || mat=='vidro'", rotulo: "assentamento, silicone, parafusos e vidros da janela de alumínio", comps: [{ comp: "94570", itens: ["39961", "4377", "36896"] }], motivo: "a composição 94570 é «vidros inclusos» e já traz silicone, parafusos e o assentamento", origem: { tipo: CP, ref: "SINAPI 94570" } }),
+R("fun.concSapata", "medido", ["sapata", "sapata-corrida"], "infra", { cod: "concSap", qtd: "V", formula: "volume do elemento (Qto do IFC)", intencao: "concretagem de sapata", origem: { tipo: MD, ref: "Qto_FootingBaseQuantities" } }),
+R("fun.concBaldrame", "medido", ["baldrame"], "infra", { cod: "concBald", qtd: "V", formula: "volume do elemento (Qto do IFC)", intencao: "concretagem de viga baldrame", origem: { tipo: MD, ref: "Qto_FootingBaseQuantities" } }),
+R("fun.concBloco", "medido", ["bloco"], "infra", { cod: "concBloco", qtd: "V", formula: "volume do bloco de coroamento", intencao: "concretagem de bloco de coroamento", origem: { tipo: MD, ref: "Qto_FootingBaseQuantities" } }),
+R("fun.escavacao", "implicito", ["sapata", "sapata-corrida", "bloco"], "infra", { cod: "escSap", quando: "A>0", qtd: "A*profEsc", formula: "área da fundação em planta × profundidade escavada (= altura + 5 cm de lastro, se a profundidade não for informada)", intencao: "escavação manual sapata bloco", porque: "para concretar é preciso abrir a cava; o modelo desenha a peça, não o buraco", origem: { tipo: CF, ref: "infra.escSap (F3); lastro 5 cm = composição 96619" }, sug: true }),
+R("fun.escavacaoBald", "implicito", ["baldrame"], "infra", { cod: "escBald", quando: "A>0", qtd: "A*profEsc", formula: "comprimento × largura × profundidade escavada (= altura + 5 cm de lastro, se não informada)", intencao: "escavação manual viga baldrame", porque: "a vala do baldrame precisa ser aberta antes da fôrma", origem: { tipo: CF, ref: "infra.escBald (F3)" }, sug: true }),
+R("fun.sobrescavacao", "implicito", ["sapata", "sapata-corrida", "bloco", "baldrame"], "infra", { desc: "SOBRESCAVAÇÃO DE TRABALHO (folga lateral para fôrma e circulação)", un: "m³", quando: "P>0 && Hs>0", qtd: "P*folga*Hs", formula: "perímetro × folga lateral × altura (a folga é do engenheiro: informe o parâmetro «folga», em m)", intencao: "sobrescavação de trabalho", porque: "a vala é mais larga que a peça para caber a fôrma e o operário; a folga depende do tipo de fôrma e do solo — o motor não a inventa", origem: { tipo: PR, ref: "§16.2 da especificação (+ sobrescavação de trabalho)" } }),
+R("fun.lastro", "implicito", ["sapata", "sapata-corrida", "bloco", "baldrame"], "infra", { cod: "lastroSap", quando: "A>0", qtd: "A", formula: "área da fundação em planta (baldrame: comprimento × largura)", intencao: "lastro de concreto magro", porque: "concreto magro de 5 cm regulariza o fundo da cava e isola o concreto do solo", origem: { tipo: CF, ref: "infra.lastroSap/lastroBald (F3)" } }),
+R("fun.formaSapata", "implicito", ["sapata", "sapata-corrida"], "infra", { cod: "formaSap", quando: "P>0 && Hs>0", qtd: "P*Hs", formula: "perímetro em planta × altura (fôrma lateral)", intencao: "fôrma de sapata", porque: "o concreto da sapata é moldado entre fôrmas laterais de madeira", origem: { tipo: CF, ref: "infra.formaSap (F3)" } }),
+R("fun.formaBloco", "implicito", ["bloco"], "infra", { cod: "formaBloco", quando: "P>0 && Hs>0", qtd: "P*Hs", formula: "perímetro em planta × altura (fôrma lateral)", intencao: "fôrma de bloco de coroamento", porque: "o concreto do bloco é moldado entre fôrmas laterais", origem: { tipo: CF, ref: "infra.blocoForma (F3)" } }),
+R("fun.formaBaldrame", "implicito", ["baldrame"], "infra", { cod: "formaBald", quando: "L>0 && Hs>0", qtd: "2*Hs*L", formula: "2 faces laterais × altura × comprimento", intencao: "fôrma de viga baldrame", porque: "o baldrame é moldado entre duas fôrmas laterais", origem: { tipo: CF, ref: "infra.formaBald (F3): Lb×2×0,30" } }),
+R("fun.armSapata", "sugerido", ["sapata", "sapata-corrida", "bloco"], "infra", { cod: "arm10f", quando: "V>0 && (temTaxa>0 || papel!='bloco')", qtd: "V*se(temTaxa>0,taxaAco,50)", formula: "volume × taxa de aço (a do Pset do modelo, se houver; senão 50 kg/m³ do catálogo)", intencao: "armação de sapata aço CA-50", porque: "o aço da sapata não é desenhado no IFC; a taxa é SUGESTÃO — o projeto estrutural manda (a bitola real pode ser outra)", origem: { tipo: CF, ref: "infra.arm10f (F3): 50 kg/m³ — sugestão; ou Pset de taxa do IFC" }, sug: true }),
+R("fun.armBaldrame10", "sugerido", ["baldrame"], "infra", { cod: "arm10f", quando: "L>0", qtd: "se(temTaxa>0,V*taxaAco,L*4*0.617*1.10)", formula: "Pset de taxa × volume; senão 4 barras Ø10 mm × 0,617 kg/m × 1,10 de perda × comprimento (catálogo F3)", intencao: "armação de baldrame aço CA-50 10 mm", porque: "o aço do baldrame não é desenhado; 4Ø10 é SUGESTÃO do catálogo — o projeto estrutural manda", origem: { tipo: CF, ref: "infra.arm10fBald (F3) — sugestão" }, sug: true }),
+R("fun.armBaldrame5", "sugerido", ["baldrame"], "infra", { cod: "arm5f", quando: "L>0 && temTaxa==0", qtd: "L*0.82", formula: "estribos: 0,82 kg por metro de baldrame (catálogo F3)", intencao: "estribos de baldrame aço CA-60 5 mm", porque: "os estribos do baldrame não são desenhados; 0,82 kg/m é SUGESTÃO do catálogo", origem: { tipo: CF, ref: "infra.arm5f (F3) — sugestão" }, sug: true }),
+R("fun.armBlocoPend", "implicito", ["bloco"], "infra", { desc: "ARMAÇÃO DE BLOCO DE COROAMENTO", un: "kg", quando: "temTaxa==0", qtd: null, formula: "o IFC não traz taxa de aço do bloco (o catálogo F3 também a deixa pendente): informe o peso do detalhamento", intencao: "armação de bloco de coroamento", porque: "bloco sobre estacas é muito armado e a taxa varia com a carga: sem o projeto não há número honesto", origem: { tipo: CF, ref: "infra.blocoArmacao (F3), pendente" } }),
+R("fun.impBaldrame", "implicito", ["baldrame"], "infra", { cod: "impBald", quando: "L>0 && B>0 && Hs>0", qtd: "(2*Hs+B)*L", formula: "2 faces laterais + face superior × comprimento", intencao: "impermeabilização de baldrame emulsão asfáltica", porque: "o baldrame fica em contato com o solo úmido e sobe umidade para a alvenaria: leva impermeabilização nas faces laterais e no topo", origem: { tipo: CF, ref: "infra.impBald (F3): Lb×0,75 = (2×0,30+0,15)×Lb" } }),
+R("fun.reaterro", "implicito", ["sapata", "sapata-corrida", "bloco", "baldrame"], "infra", { cod: "reaterro", quando: "A>0", qtd: "A*profEsc-V-A*0.05", formula: "volume escavado − concreto − lastro (5 cm)", intencao: "reaterro compactado", porque: "depois de concretar a fundação a cava é reaterrada e compactada; se a profundidade não for informada o reaterro dá zero (a cava só tem o tamanho da peça)", origem: { tipo: CF, ref: "infra.reaterro (F3)" }, sug: true }),
+R("fun.botaFora", "implicito", ["sapata", "sapata-corrida", "bloco", "baldrame"], "movterra", { cod: "cargaSolo", quando: "A>0", qtd: "(V+0.05*A)*(1+empolamento)", formula: "(concreto + lastro) × (1 + empolamento): o solo que sai e não volta como reaterro", intencao: "carga de solo bota-fora", porque: "o solo escavado que não volta como reaterro vai embora, empolado (empolamento de 25 % do catálogo; confirmar com a sondagem)", origem: { tipo: CF, ref: "infra.botaForaCarga (F3); empolamento 25 %" }, sug: true }),
+R("fun.botaForaTransp", "implicito", ["sapata", "sapata-corrida", "bloco", "baldrame"], "movterra", { cod: "transpSolo", quando: "A>0", qtd: "(V+0.05*A)*(1+empolamento)*dmt", formula: "volume do bota-fora × distância ao bota-fora (informe o parâmetro «dmt», em km)", intencao: "transporte de solo bota-fora", porque: "o transporte só tem número com a distância até o bota-fora, que o modelo não conhece", origem: { tipo: CF, ref: "infra.botaForaTransp (F3): exige dmt" } }),
+R("fun.estaca", "medido", ["estaca"], "infra", { cod: "estaca25", quando: "dcm==25", qtd: "L", formula: "comprimento da estaca (Ø 25 cm)", intencao: "estaca broca Ø25", origem: { tipo: MD, ref: "IfcPile (comprimento)" } }),
+R("fun.estacaOutra", "medido", ["estaca"], "infra", { desc: "ESTACA Ø {dcm} cm — sem composição no catálogo (só há Ø 25 cm)", un: "m", quando: "dcm!=25", qtd: "L", formula: "comprimento da estaca", intencao: "estaca", agrupar: ["dcm"], origem: { tipo: MD, ref: "IfcPile (comprimento)" } }),
+R("fun.arrasamento", "implicito", ["estaca"], "infra", { cod: "arrasEstaca", quando: "dcm<=40", qtd: "1", formula: "1 por estaca", intencao: "arrasamento de estaca", porque: "o topo da estaca é arrasado até a cota do bloco para expor a armadura", origem: { tipo: CF, ref: "infra.estacaArrasamento (F3)" } }),
+R("fun.radConcreto", "medido", ["radier"], "infra", { cod: "radConc", qtd: "V", formula: "volume do radier (Qto do IFC)", intencao: "concretagem de radier", origem: { tipo: MD, ref: "Qto_SlabBaseQuantities" } }),
+R("fun.radCompactacao", "implicito", ["radier"], "infra", { cod: "radComp", quando: "A>0", qtd: "A", formula: "área do radier", intencao: "compactação para radier", porque: "o solo sob o radier é compactado antes da lona e do lastro", origem: { tipo: CF, ref: "infra.radierCompact (F3)" } }),
+R("fun.radLona", "implicito", ["radier"], "infra", { cod: "radLona", quando: "A>0", qtd: "A", formula: "área do radier", intencao: "lona plástica sob radier", porque: "a lona separa o concreto do solo", origem: { tipo: CF, ref: "infra.radierLona (F3)" } }),
+R("fun.radLastro", "implicito", ["radier"], "infra", { cod: "lastroPiso", quando: "A>0", qtd: "A", formula: "área do radier", intencao: "lastro de concreto magro radier", porque: "lastro de 5 cm regulariza a base do radier", origem: { tipo: CF, ref: "infra.radierLastro (F3)" } }),
+R("fun.radTela", "sugerido", ["radier"], "infra", { cod: "radTela", quando: "A>0", qtd: "A*2.20", formula: "área × 2,20 kg/m² de tela Q-138 (catálogo F3)", intencao: "armação de radier com tela", porque: "a armação do radier não é desenhada; 2,20 kg/m² (tela Q-138) é SUGESTÃO do catálogo", origem: { tipo: CF, ref: "infra.radierTela (F3) — sugestão" }, sug: true }),
+R("est.concPilar", "medido", ["pilar-concreto"], "super", { cod: "concPil", qtd: "V", formula: "volume do pilar (Qto do IFC)", intencao: "concretagem de pilares", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto_ColumnBaseQuantities" } }),
+R("est.formaPilar", "implicito", ["pilar-concreto"], "super", { cod: "formaPil", quando: "L>0", qtd: "P*L", formula: "perímetro da seção × altura do pilar (área de contato da fôrma)", intencao: "fôrma de pilares retangulares", porque: "o concreto do pilar é moldado em fôrma de madeira que cobre as quatro faces", origem: { tipo: CF, ref: "super.formaPil (F3)" } }),
+R("est.armPilar10", "sugerido", ["pilar-concreto"], "super", { cod: "arm10e", quando: "L>0", qtd: "se(temTaxa>0,V*taxaAco,L*4*0.617*1.15)", formula: "Pset de taxa × volume; senão 4 barras Ø10 × 0,617 kg/m × 1,15 de perda × comprimento (catálogo F3)", intencao: "armação de pilar aço CA-50 10 mm", porque: "o aço do pilar não é desenhado; 4Ø10 é SUGESTÃO do catálogo — o projeto estrutural manda", origem: { tipo: CF, ref: "super.arm10e (F3) — sugestão" }, sug: true }),
+R("est.armPilar5", "sugerido", ["pilar-concreto"], "super", { cod: "arm5e", quando: "L>0 && temTaxa==0", qtd: "L*0.82", formula: "estribos: 0,82 kg por metro (catálogo F3)", intencao: "estribos de pilar aço CA-60 5 mm", porque: "os estribos não são desenhados; 0,82 kg/m é SUGESTÃO do catálogo", origem: { tipo: CF, ref: "super.arm5e (F3) — sugestão" }, sug: true }),
+R("est.desforma", "incluso", ["pilar-concreto", "viga-concreto"], "super", { rotulo: "desforma", comps: [{ comp: "92411", itens: ["92269"] }, { comp: "92448", itens: ["92270"] }], motivo: "as composições de fôrma são «montagem e desmontagem»: a desforma já está dentro", origem: { tipo: CP, ref: "SINAPI 92411/92448" } }),
+R("est.concViga", "medido", ["viga-concreto"], "super", { cod: "concViga", qtd: "V", formula: "volume da viga (Qto do IFC)", intencao: "concretagem de vigas e lajes", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto_BeamBaseQuantities" } }),
+R("est.formaViga", "implicito", ["viga-concreto"], "super", { cod: "formaViga", quando: "L>0 && B>0 && Hs>0", qtd: "(2*Hs+B)*L", formula: "(2 laterais + fundo) × comprimento = área de contato", intencao: "fôrma de viga com escoramento", porque: "a viga é moldada em fôrma de madeira (2 laterais + fundo)", origem: { tipo: CF, ref: "super.formaViga (F3)" } }),
+R("est.escoraViga", "incluso", ["viga-concreto"], "super", { rotulo: "escoramento da viga", comps: [{ comp: "92448", itens: ["92273"] }], motivo: "a fôrma de viga 92448 já inclui o escoramento com pontalete de madeira (composição 92273): lançar escoramento à parte seria dupla contagem", origem: { tipo: CP, ref: "SINAPI 92448" } }),
+R("est.armViga10", "sugerido", ["viga-concreto"], "super", { cod: "arm10e", quando: "L>0", qtd: "se(temTaxa>0,V*taxaAco,L*4*0.617*1.15)", formula: "Pset de taxa × volume; senão 4Ø10 × 0,617 kg/m × 1,15 × comprimento (catálogo F3)", intencao: "armação de viga aço CA-50 10 mm", porque: "o aço da viga não é desenhado; 4Ø10 é SUGESTÃO do catálogo — o projeto estrutural manda", origem: { tipo: CF, ref: "super.arm10e (F3) — sugestão" }, sug: true }),
+R("est.armViga5", "sugerido", ["viga-concreto"], "super", { cod: "arm5e", quando: "L>0 && temTaxa==0", qtd: "L*0.82", formula: "estribos: 0,82 kg por metro (catálogo F3)", intencao: "estribos de viga aço CA-60 5 mm", porque: "os estribos não são desenhados; 0,82 kg/m é SUGESTÃO do catálogo", origem: { tipo: CF, ref: "super.arm5e (F3) — sugestão" }, sug: true }),
+R("est.concLaje", "medido", ["laje", "laje-cobertura"], "super", { cod: "concViga", qtd: "V", formula: "volume da laje (Qto do IFC)", intencao: "concretagem de laje maciça", origem: { tipo: MD, ref: "Qto_SlabBaseQuantities" } }),
+R("est.formaLaje", "implicito", ["laje", "laje-cobertura"], "super", { cod: "formaLajeM", quando: "A>0", qtd: "A", formula: "área inferior da laje", intencao: "fôrma de laje maciça compensado resinado", porque: "a laje é moldada sobre fôrma de compensado; o modelo não desenha", origem: { tipo: CF, ref: "super.lajeMacForma (F3)" } }),
+R("est.escoraLaje", "incluso", ["laje", "laje-cobertura"], "super", { rotulo: "escoramento da laje", comps: [{ comp: "92514", itens: ["10749", "40270"] }], motivo: "a fôrma de laje maciça 92514 já traz viga de escoramento H20 (40270) e a locação de escora metálica telescópica (10749): somar a composição 101792 seria dupla contagem", origem: { tipo: CP, ref: "SINAPI 92514 (analítico MG 2026-06)" } }),
+R("est.armLaje", "sugerido", ["laje", "laje-cobertura"], "super", { cod: "armLaje8", quando: "V>0", qtd: "V*se(temTaxa>0,taxaAco,80)", formula: "volume × taxa de aço (a do Pset; senão 80 kg/m³ do catálogo)", intencao: "armação de laje aço CA-50 8 mm", porque: "o aço da laje não é desenhado; 80 kg/m³ é SUGESTÃO do catálogo — o projeto estrutural manda", origem: { tipo: CF, ref: "super.lajeMacArmacao (F3): espLaje×80 — sugestão" }, sug: true }),
+R("est.curaLaje", "implicito", ["laje", "laje-cobertura"], "super", { desc: "CURA DO CONCRETO DA LAJE (molhagem/manta úmida)", un: "m²", quando: "A>0", qtd: "A", formula: "área da laje; sem composição SINAPI de cura na base MG", intencao: "cura de concreto laje", porque: "o concreto precisa de cura úmida nos primeiros dias para não fissurar", origem: { tipo: PR, ref: "§16.2 da especificação (laje: cura)" } }),
+R("est.impLajeCob", "implicito", ["laje-cobertura"], "imperm", { cod: "impLaje", quando: "A>0", qtd: "A", formula: "área da laje de cobertura", intencao: "impermeabilização de laje de cobertura", porque: "laje de cobertura exposta à chuva leva impermeabilização", origem: { tipo: CF, ref: "imperm.impLaje (F3)" }, sug: true }),
+R("est.armadoModelada", "incluso", ["armadura-modelada"], "super", { rotulo: "taxa de aço sugerida", comps: [], motivo: "o modelo traz a armadura (IfcReinforcingBar): troque a taxa sugerida pelo peso lido — confira antes de aceitar a armação sugerida", origem: { tipo: MD, ref: "IfcReinforcingBar" } }),
+R("med.piso", "medido", ["piso-acabamento", "piso-laje"], "pisos", { codPor: { popular: "pisoCer", normal: "pisoCer", alto: "pisoPorc" }, porMaterial: { ceramica: "pisoCer", porcelanato: "pisoPorc", vinilico: "vinilico" }, matVar: "matAcab", quando: "A>0", qtd: "A", formula: "área do piso modelado (Qto do IFC)", intencao: "revestimento de piso", agrupar: ["matAcab"], origem: { tipo: MD, ref: "IfcCovering FLOORING / camada de piso" } }),
+R("amb.contrapiso", "implicito", "ambiente", "pisos", { cod: "contrapiso", quando: "molhado==0 && externo==0 && Apiso>0", qtd: "Apiso", formula: "área de piso do ambiente (IfcSpace)", intencao: "contrapiso argamassa áreas secas", porque: "o piso acabado assenta sobre contrapiso regularizado; o modelo não desenha", origem: { tipo: CF, ref: "pisos.contrapiso (F3)" } }),
+R("amb.contrapisoMol", "implicito", "ambiente", "pisos", { cod: "contrapisoMol", quando: "molhado==1 && Apiso>0", qtd: "Apiso", formula: "área de piso do ambiente molhado (IfcSpace)", intencao: "contrapiso argamassa áreas molhadas sobre impermeabilização", porque: "em área molhada o contrapiso é feito SOBRE a impermeabilização, com caimento", origem: { tipo: CP, ref: "SINAPI 87768 (áreas molhadas sobre impermeabilização)" } }),
+R("amb.impPiso", "implicito", "ambiente", "imperm", { cod: "impMolh", quando: "molhado==1 && Apiso>0", qtd: "Apiso", formula: "área de piso do ambiente molhado (IfcSpace)", intencao: "impermeabilização de piso área molhada", porque: "piso de área molhada leva impermeabilização antes do contrapiso", origem: { tipo: CF, ref: "pisos.impMolh (F3)" } }),
+R("amb.piso", "sugerido", "ambiente", "pisos", { codPor: { popular: "pisoCer", normal: "pisoCer", alto: "pisoPorc" }, quando: "externo==0 && Apiso>0", qtd: "Apiso", formula: "área de piso do ambiente (IfcSpace); o material vem do padrão do orçamento porque o modelo não desenhou o piso", intencao: "revestimento de piso por padrão", porque: "o IFC não traz o revestimento do piso: padrão {padrao} → cerâmica (popular/normal) ou porcelanato (alto), como no catálogo F3", origem: { tipo: CF, ref: "pisos.pisoCer/pisoPorc (padrão)" }, sug: true, suprime: sup("nPisoModelado>0", "o piso está modelado no IFC (medido pelo elemento)") }),
+R("amb.pisoColante", "incluso", "ambiente", "pisos", { quando: "externo==0 && Apiso>0 && nPisoModelado==0", rotulo: "argamassa colante e rejunte do piso", comps: [{ comp: "87248", itens: ["1381", "34357"] }, { comp: "87263", itens: ["37595", "34357"] }], motivo: "as composições de piso cerâmico/porcelanato já trazem argamassa colante e rejunte", origem: { tipo: CP, ref: "SINAPI 87248/87263" } }),
+R("amb.rodape", "implicito", "ambiente", "pisos", { codPor: { popular: "rodape", normal: "rodape", alto: "rodapePorc" }, quando: "molhado==0 && externo==0 && Apiso>0", qtd: "Pp-Lportas", formula: "perímetro do ambiente − largura das portas (informe o perímetro se o IfcSpace não trouxer o Qto)", intencao: "rodapé cerâmico", porque: "o encontro piso × parede leva rodapé; nas portas não há rodapé", origem: { tipo: CF, ref: "pisos.rodape (F3): perímetro − portas" } }),
+R("amb.soleira", "implicito", "obra", "pisos", { cod: "soleira", quando: "Lsoleira>0", qtd: "Lsoleira", formula: "Σ largura das portas externas ou de ambiente molhado (cada porta conta UMA vez, mesmo que separe dois ambientes)", intencao: "soleira de granito", porque: "a porta de área molhada ou externa leva soleira para separar o piso e conter a água", origem: { tipo: CF, ref: "pisos.soleira (F3)" }, sug: true }),
+R("amb.chapiscoTeto", "implicito", "ambiente", "revestimento", { cod: "chapTeto", quando: "externo==0 && Apiso>0", qtd: "Apiso", formula: "área do ambiente (teto = laje exposta, sem forro modelado)", intencao: "chapisco no teto", porque: "sem forro, o teto é a face de baixo da laje e recebe chapisco e massa", origem: { tipo: CF, ref: "revestimento.chapiscoTeto (F3)" }, suprime: sup("nForro>0", "há forro modelado no IFC") }),
+R("amb.massaTeto", "implicito", "ambiente", "revestimento", { cod: "massaUnicaTeto", quando: "externo==0 && Apiso>0", qtd: "Apiso", formula: "área do ambiente (teto sem forro modelado)", intencao: "massa única no teto", porque: "sem forro, o teto recebe massa única antes da pintura", origem: { tipo: CF, ref: "revestimento.massaTetoLaje (F3)" }, suprime: sup("nForro>0", "há forro modelado no IFC") }),
+R("amb.seladorTeto", "implicito", "ambiente", "pintura", { cod: "selTeto", quando: "externo==0 && Apiso>0 && padrao!='popular'", qtd: "Apiso", formula: "área do ambiente", intencao: "selador acrílico teto", porque: "selador no teto antes da massa e da tinta", origem: { tipo: CF, ref: "pintura.seladorTeto (F3)" }, suprime: sup("nForro>0", "há forro modelado no IFC") }),
+R("amb.massaPinturaTeto", "implicito", "ambiente", "pintura", { cod: "massaTeto", quando: "externo==0 && Apiso>0 && padrao!='popular'", qtd: "Apiso", formula: "área do ambiente", intencao: "massa látex teto", porque: "no padrão {padrao} o teto leva massa corrida", origem: { tipo: CF, ref: "pintura.massaTeto (F3)" }, suprime: sup("nForro>0", "há forro modelado no IFC") }),
+R("amb.tintaTeto", "implicito", "ambiente", "pintura", { codPor: { popular: "tintaTetoEco", normal: "tintaTetoStd", alto: "tintaTetoPrem" }, quando: "externo==0 && Apiso>0", qtd: "Apiso", formula: "área do ambiente, 2 demãos", intencao: "pintura látex acrílica teto", porque: "teto pintado; tinta pelo padrão ({padrao})", origem: { tipo: CF, ref: "pintura.tintaTeto* (padrão)" }, sug: true, suprime: sup("nForro>0", "há forro modelado no IFC") }),
+R("med.forro", "medido", ["forro"], "forro", { desc: "FORRO ({mat}) — tipo/composição a definir", un: "m²", qtd: "A", formula: "área do forro modelado (Qto do IFC)", intencao: "forro", agrupar: ["mat"], origem: { tipo: MD, ref: "IfcCovering CEILING" } }),
+R("med.revParede", "medido", ["revestimento-parede"], "revestimento", { desc: "REVESTIMENTO DE PAREDE ({mat}) — lançado como modelado", un: "m²", qtd: "A", formula: "área do revestimento modelado (Qto do IFC)", intencao: "revestimento de parede", agrupar: ["mat"], origem: { tipo: MD, ref: "IfcCovering CLADDING" } }),
+R("med.rodape", "medido", ["rodape"], "pisos", { cod: "rodape", qtd: "L", formula: "comprimento do rodapé modelado", intencao: "rodapé", origem: { tipo: MD, ref: "IfcCovering SKIRTINGBOARD" } }),
+R("med.guardaCorpo", "medido", ["guarda-corpo"], "acessibilidade", { desc: "GUARDA-CORPO / CORRIMÃO — material a definir", un: "m", qtd: "L", formula: "comprimento do guarda-corpo modelado", intencao: "guarda-corpo corrimão", origem: { tipo: MD, ref: "IfcRailing" } }),
+R("med.telhamento", "medido", ["cobertura-telhado"], "cobertura", { cods: { ceramica: "telhaCer", fibro: "telhaFibro", metalica: "telhaMet", concreto: "telhaConc" }, chaveCod: "telha", desc: "TELHAMENTO ({telha}) — tipo de telha não informado no IFC", un: "m²", qtd: "A", formula: "área do telhado lida do modelo (se vier projetada em planta, a quantidade fica menor que a superfície inclinada: conferir)", intencao: "telhamento", agrupar: ["telha"], origem: { tipo: MD, ref: "IfcRoof/IfcCovering ROOFING (Qto de área)" } }),
+R("cob.trama", "implicito", ["cobertura-telhado"], "cobertura", { cods: { ceramica: "trama2", concreto: "trama2", fibro: "tramaTerca", metalica: "tramaTerca" }, chaveCod: "telha", quando: "telha!=''", qtd: "A", formula: "mesma área do telhamento", intencao: "trama de madeira do telhado", agrupar: ["telha"], porque: "a telha precisa da trama (ripas, caibros e terças); como o IFC não desenha a estrutura do telhado, ela entra pela área (se a estrutura for de aço, troque a composição)", origem: { tipo: CF, ref: "cobertura.trama* (F3)" }, sug: true, suprime: sup("nEstTelhado>0", "a estrutura do telhado está modelada no IFC (IfcMember)") }),
+R("cob.cumeeira", "implicito", ["cobertura-telhado"], "cobertura", { cods: { ceramica: "cumeCer", concreto: "cumeConc", fibro: "cumeFibro" }, chaveCod: "telha", desc: "CUMEEIRA PARA TELHA ({telha})", un: "m", quando: "A>0", qtd: null, formula: "comprimento das cumeeiras: o IFC não traz (depende da forma do telhado) — informe", intencao: "cumeeira de telhado", porque: "toda água-mestra do telhado fecha com cumeeira", origem: { tipo: CF, ref: "cobertura.cume* (F3): Lcumeeira" } }),
+R("cob.rufo", "implicito", ["cobertura-telhado"], "cobertura", { cod: "rufo", quando: "A>0", qtd: null, formula: "comprimento de encontros com parede: o IFC não traz — informe", intencao: "rufo de chapa galvanizada", porque: "o encontro do telhado com a parede é protegido por rufo", origem: { tipo: CF, ref: "cobertura.rufo (F3)" } }),
+R("cob.calha", "implicito", ["cobertura-telhado"], "cobertura", { cod: "calha", quando: "A>0", qtd: null, formula: "comprimento das calhas: o IFC não traz — informe", intencao: "calha de chapa galvanizada", porque: "a água do telhado precisa de calha e condutores até o solo", origem: { tipo: CF, ref: "cobertura.calha (F3)" }, suprime: sup("nCalhaModelada>0", "há calha modelada no IFC") }),
+R("med.estTelhado", "medido", ["estrutura-telhado"], "cobertura", { desc: "ESTRUTURA DO TELHADO MODELADA ({mat}) — peça por peça (ver módulo de madeira/metálica)", un: "m", qtd: "L", formula: "comprimento das peças modeladas", intencao: "estrutura de telhado", agrupar: ["mat"], origem: { tipo: MD, ref: "IfcMember (RAFTER/PURLIN/…)" } }),
+R("med.tuboAF", "medido", ["tubo"], "hidro", { tabela: TUBO_AF, chaveTab: "dn", quando: "sis=='agua-fria' && mat=='pvc'", desc: "TUBO PVC SOLDÁVEL DN {dn} mm — sem composição no catálogo", un: "m", qtd: "L", formula: "comprimento do trecho lido do modelo", intencao: "tubo pvc soldável água fria", agrupar: ["sis", "mat", "dn"], notas: [{ quando: "1==1", texto: "composição de RAMAL DE DISTRIBUIÇÃO: o IFC não diz ramal × prumada (a prumada é mais barata)" }], origem: { tipo: MD, ref: "IfcPipeSegment (comprimento)" } }),
+R("med.tuboES", "medido", ["tubo"], "hidro", { tabela: TUBO_ES, chaveTab: "dn", quando: "sis=='esgoto' && mat=='pvc'", desc: "TUBO PVC ESGOTO DN {dn} mm — sem composição no catálogo", un: "m", qtd: "L", formula: "comprimento do trecho lido do modelo", intencao: "tubo pvc esgoto predial", agrupar: ["sis", "mat", "dn"], notas: [{ quando: "1==1", texto: "composição de RAMAL DE DESCARGA/ESGOTO: o IFC não diz ramal × prumada × subcoletor" }], origem: { tipo: MD, ref: "IfcPipeSegment (comprimento)" } }),
+R("med.tuboPluvial", "medido", ["tubo"], "pluvial", { desc: "TUBULAÇÃO PLUVIAL DN {dn} mm — sem composição fechada (condutor × ramal não vem do IFC)", un: "m", quando: "sis=='pluvial'", qtd: "L", formula: "comprimento do trecho lido do modelo", intencao: "tubo pvc água pluvial", agrupar: ["dn"], origem: { tipo: MD, ref: "IfcPipeSegment (pluvial)" } }),
+R("med.tuboOutro", "medido", ["tubo"], "hidro", { desc: "TUBULAÇÃO {sis} ({mat}) DN {dn} mm — sem composição no catálogo para esta combinação", un: "m", quando: "!(sis=='agua-fria' && mat=='pvc') && !(sis=='esgoto' && mat=='pvc') && sis!='pluvial'", qtd: "L", formula: "comprimento do trecho lido do modelo", intencao: "tubulação instalações", agrupar: ["sis", "mat", "dn"], origem: { tipo: MD, ref: "IfcPipeSegment (comprimento)" } }),
+R("med.conexao", "medido", ["conexao"], "hidro", { tabela: CONEXAO, chaveTab: "sis|tp|ang|dn", desc: "CONEXÃO {tp} DN {dn} mm ({sis}) — sem composição no catálogo", un: "un", qtd: "1", formula: "1 por conexão do modelo (composição «instalada»: adesivo, solução e lixa já estão dentro)", intencao: "conexão pvc", agrupar: ["sis", "tp", "ang", "dn"], origem: { tipo: MD, ref: "IfcPipeFitting (contagem)" } }),
+R("hid.conexaoInclui", "incluso", ["conexao"], "hidro", { quando: "semCodConexao==0 && sis=='agua-fria'", rotulo: "adesivo, solução limpadora e lixa das conexões e tubos PVC soldáveis", comps: [{ comp: "89408", itens: ["122", "20083", "38383"] }, { comp: "89404", itens: ["122", "20083", "38383"] }, { comp: "89413", itens: ["122", "20083", "38383"] }, { comp: "103980", itens: ["122", "20083", "38383"] }, { comp: "103984", itens: ["122", "20083", "38383"] }, { comp: "89402", itens: ["38383"] }], motivo: "a conexão PVC soldável instalada já traz adesivo (122), solução limpadora (20083) e lixa (38383); o tubo instalado traz a lixa: lançar à parte seria dupla contagem", origem: { tipo: CP, ref: "SINAPI 89404/89408/89413/103980/103984/89402" } }),
+R("hid.adesivo", "implicito", ["conexao"], "hidro", { cod: "adesivoPVC", quando: "semCodConexao==1 && " + AF + " && dn>=20 && dn<=50", vars: [["kAdes", kj("0.0047", "0.0071", "0.0094", "0.0118", "0.0165")]], qtd: "n*kAdes", formula: "nº de conexões sem composição × consumo de adesivo por conexão (frasco 850 g) da composição SINAPI de joelho do mesmo DN", intencao: "adesivo plástico para PVC", porque: "esta conexão não tem composição «instalada» no catálogo (fica como insumo avulso), então a cola não está incluída: cada junta soldada consome adesivo", origem: { tipo: CP, ref: "consumos da SINAPI 89404/89408/89413/103980/103984 (mesmos de extensoes.js)" }, agrupar: ["dn"] }),
+R("hid.solucao", "implicito", ["conexao"], "hidro", { cod: "solucaoLimp", quando: "semCodConexao==1 && " + AF + " && dn>=20 && dn<=50", vars: [["kSol", kj("0.006", "0.008", "0.011", "0.014", "0.022")]], qtd: "n*kSol", formula: "nº de conexões sem composição × consumo de solução limpadora (frasco 1 L) da composição SINAPI", intencao: "solução preparadora limpadora para PVC", porque: "a junta soldada é limpa com solução antes da cola", origem: { tipo: CP, ref: "consumos da SINAPI de joelho (mesmos de extensoes.js)" }, agrupar: ["dn"] }),
+R("hid.lixa", "implicito", ["conexao"], "hidro", { cod: "lixaPVC", quando: "semCodConexao==1 && " + AF + " && dn>=20 && dn<=50", vars: [["kLixa", kj("0.026", "0.0302", "0.036", "0.0427", "0.051")]], qtd: "n*kLixa", formula: "nº de conexões sem composição × consumo de lixa d'água da composição SINAPI", intencao: "lixa d'água para PVC", porque: "a ponta do tubo é lixada antes da limpeza e da cola", origem: { tipo: CP, ref: "consumos da SINAPI de joelho (mesmos de extensoes.js)" }, agrupar: ["dn"] }),
+R("hid.rasgo", "implicito", ["tubo"], "hidro", { cod: "rasgoHid", quando: AF + " && dn>0 && dn<=40", qtd: "L", formula: "comprimento do tubo de água (suposto todo embutido em alvenaria)", intencao: "rasgo em alvenaria para instalações hidráulicas", porque: "ramal embutido em parede exige rasgo; o trecho que vai em laje, piso ou forro não leva — reduza se for o caso", origem: { tipo: CF, ref: "hidro.rasgoHidraulica (F3)" }, sug: true }),
+R("hid.chumb", "implicito", ["tubo"], "hidro", { cod: "chumbHid", quando: AF + " && dn>0 && dn<=40", qtd: "L", formula: "comprimento do tubo de água (suposto todo embutido em alvenaria)", intencao: "chumbamento em alvenaria para instalações hidráulicas", porque: "depois do rasgo, o tubo é chumbado com argamassa", origem: { tipo: CF, ref: "hidro.chumbamentoHidraulica (F3)" }, sug: true }),
+R("hid.suporte", "implicito", ["tubo"], "hidro", { desc: "ABRAÇADEIRAS/SUPORTES PARA TUBULAÇÃO {sis} DN {dn} mm", un: "un", quando: "L>0", qtd: "L/espSuporte", formula: "comprimento ÷ espaçamento entre suportes (informe o parâmetro «espSuporte», em m, do fabricante/norma do tubo)", intencao: "abraçadeira suporte de tubulação", agrupar: ["sis", "dn"], porque: "tubo aparente ou em forro precisa de suportes a intervalos que dependem do material e do DN; sem a tabela do fabricante o motor não inventa o espaçamento", origem: { tipo: PR, ref: "§16.2 (suportes a cada X m por DN)" } }),
+R("hid.isolamento", "implicito", ["tubo"], "hidro", { cod: "isolTubo25", quando: "sis=='agua-quente' && dn==25", qtd: "L", formula: "mesmo comprimento da tubulação de água quente DN 25", intencao: "isolamento térmico de tubulação de água quente", porque: "a tubulação de água quente perde calor sem isolamento", origem: { tipo: CF, ref: "hidro.isolamentoQuente (F3)" } }),
+R("hid.isolamentoPend", "implicito", ["tubo"], "hidro", { desc: "ISOLAMENTO TÉRMICO DE TUBULAÇÃO DE ÁGUA QUENTE DN {dn} mm", un: "m", quando: "sis=='agua-quente' && dn!=25", qtd: "L", formula: "comprimento da tubulação de água quente (a base MG só tem isolamento para DN 25)", intencao: "isolamento térmico de tubulação de água quente", agrupar: ["dn"], porque: "a tubulação de água quente perde calor sem isolamento", origem: { tipo: CF, ref: "hidro.isolamentoQuente (F3)" } }),
+R("med.bacia", "medido", ["louca"], "hidro", { codPor: { popular: "baciaPop", normal: "baciaMed", alto: "baciaMed" }, quando: "sub=='bacia'", qtd: "1", formula: "1 por bacia do modelo", intencao: "bacia sanitária com caixa acoplada", origem: { tipo: MD, ref: "IfcSanitaryTerminal WC + padrão" } }),
+R("med.lavatorio", "medido", ["louca"], "hidro", { codPor: { popular: "lavPop", normal: "lavMed", alto: "lavAlto" }, quando: "sub=='lavatorio'", qtd: "1", formula: "1 por lavatório do modelo", intencao: "lavatório louça branca", origem: { tipo: MD, ref: "IfcSanitaryTerminal WASHHANDBASIN + padrão" } }),
+R("med.chuveiro", "medido", ["louca"], "hidro", { cod: "chuveiro", quando: "sub=='chuveiro'", qtd: "1", formula: "1 por chuveiro do modelo", intencao: "chuveiro elétrico", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "o tipo do chuveiro (elétrico/ducha) não vem do IFC: assumido elétrico comum (catálogo)" }], origem: { tipo: MD, ref: "IfcSanitaryTerminal SHOWER" } }),
+R("med.pia", "medido", ["louca"], "hidro", { cod: "pia", quando: "sub=='pia'", qtd: "1", formula: "1 por pia do modelo", intencao: "bancada com cuba e torneira", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "bancada de mármore 150×60 do catálogo; a medida real da pia vem do projeto" }], origem: { tipo: MD, ref: "IfcSanitaryTerminal SINK" } }),
+R("med.tanque", "medido", ["louca"], "hidro", { cod: "tanque", quando: "sub=='tanque'", qtd: "1", formula: "1 por tanque do modelo", intencao: "tanque de louça", origem: { tipo: MD, ref: "IfcSanitaryTerminal" } }),
+R("med.loucaOutra", "medido", ["louca"], "hidro", { desc: "LOUÇA/APARELHO ({sub}) — sem composição no catálogo", un: "un", quando: "sub!='bacia' && sub!='lavatorio' && sub!='chuveiro' && sub!='pia' && sub!='tanque'", qtd: "1", formula: "1 por aparelho do modelo", intencao: "aparelho sanitário", agrupar: ["sub"], origem: { tipo: MD, ref: "IfcSanitaryTerminal" } }),
+R("lou.assento", "implicito", ["louca"], "hidro", { cod: "assento", quando: "sub=='bacia'", qtd: "1", formula: "1 por bacia", intencao: "assento sanitário", porque: "a composição da bacia não traz o assento", origem: { tipo: CF, ref: "hidro.assentoSanitario (F3)" } }),
+R("lou.engateBacia", "incluso", ["louca"], "hidro", { quando: "sub=='bacia'", rotulo: "engate flexível da bacia", comps: [{ comp: "86931", itens: ["86885"] }, { comp: "86932", itens: ["86887"] }], motivo: "a composição da bacia (86931 popular, 86932 médio) já inclui o engate flexível", origem: { tipo: CP, ref: "SINAPI 86931" } }),
+R("lou.misturador", "implicito", ["louca"], "hidro", { cod: "misturaLav", quando: "sub=='lavatorio' && padrao=='normal'", qtd: "1", formula: "1 por lavatório (padrão normal)", intencao: "misturador de mesa para lavatório", porque: "o lavatório padrão normal (86903) vem sem misturador; no popular (86939) e no alto (86940) a composição já traz", origem: { tipo: CF, ref: "hidro.misturadorLavatorio (F3)" } }),
+R("lou.sifao", "implicito", ["louca"], "hidro", { cod: "sifaoLav", quando: "sub=='lavatorio' && padrao=='normal'", qtd: "1", formula: "1 por lavatório (padrão normal)", intencao: "sifão metálico para lavatório", porque: "o lavatório padrão normal (86903) vem sem sifão", origem: { tipo: CF, ref: "hidro.sifaoLavatorio (F3)" } }),
+R("lou.valvula", "implicito", ["louca"], "hidro", { cod: "valvLav", quando: "sub=='lavatorio' && padrao=='normal'", qtd: "1", formula: "1 por lavatório (padrão normal)", intencao: "válvula para lavatório", porque: "o lavatório padrão normal (86903) vem sem válvula", origem: { tipo: CF, ref: "hidro.valvulaLavatorio (F3)" } }),
+R("lou.engateLav", "implicito", ["louca"], "hidro", { cod: "engateInox", quando: "sub=='lavatorio' && padrao=='normal'", qtd: "2", formula: "2 por lavatório (água fria e quente)", intencao: "engate flexível inox", porque: "o lavatório padrão normal (86903) vem sem engates", origem: { tipo: CF, ref: "hidro.engateLavatorio (F3)" } }),
+R("lou.regPressao", "implicito", ["louca"], "hidro", { cod: "regPressao", quando: "sub=='chuveiro'", qtd: "1", formula: "1 registro de pressão por chuveiro", intencao: "registro de pressão", porque: "o chuveiro tem registro de pressão na parede, que o modelo não desenha", origem: { tipo: CF, ref: "hidro.registroPressao (F3)" } }),
+R("lou.ralo", "implicito", ["louca"], "hidro", { cod: "ralo", quando: "sub=='chuveiro'", qtd: "1", formula: "1 ralo sifonado por box (não há ralo modelado)", intencao: "ralo sifonado pvc", porque: "todo box tem ralo sifonado para escoar a água; o modelo não tem IfcWasteTerminal", origem: { tipo: CF, ref: "hidro.raloBox (F3)" }, sug: true, suprime: sup("nRalo>0", "ralo modelado no IFC (IfcWasteTerminal)") }),
+R("med.ralo", "medido", ["ralo"], "hidro", { cod: "ralo", qtd: "1", formula: "1 por ralo do modelo", intencao: "ralo sifonado", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "o DN do ralo não vem do IFC: assumido sifonado 100×40 do catálogo" }], origem: { tipo: MD, ref: "IfcWasteTerminal" } }),
+R("med.registro", "medido", ["registro"], "hidro", { tabela: { "20": "regEsf20", "25": "regEsf25", "32": "regEsf32", "40": "regEsf40" }, chaveTab: "dn", desc: "REGISTRO DN {dn} mm — sem composição no catálogo", un: "un", qtd: "1", formula: "1 por válvula do modelo", intencao: "registro de esfera", agrupar: ["dn"], sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "o tipo da válvula (gaveta, esfera, pressão) não vem do IFC: assumido registro de esfera PVC soldável" }], origem: { tipo: MD, ref: "IfcValve" } }),
+R("hid.teste", "implicito", "obra", "hidro", { desc: "TESTE DE ESTANQUEIDADE DAS REDES DE ÁGUA E ESGOTO", un: "vb", quando: "nTubos>0", qtd: null, formula: "1 verba por obra: sem composição SINAPI de teste de estanqueidade", intencao: "teste de estanqueidade rede hidráulica e esgoto", porque: "toda rede de água e esgoto é testada antes de fechar rasgos e forros", origem: { tipo: CF, ref: "hidro.testeEstanqueidade (F3)" } }),
+R("med.tomada", "medido", ["tomada"], "eletrica", { cods: { "10A": "tomada", "20A": "tomada20" }, chaveCod: "sub", desc: "TOMADA ({sub})", un: "un", qtd: "1", formula: "1 por tomada do modelo", intencao: "tomada", agrupar: ["sub"], origem: { tipo: MD, ref: "IfcOutlet" } }),
+R("med.interruptor", "medido", ["interruptor"], "eletrica", { cod: "interruptor", qtd: "1", formula: "1 por interruptor do modelo", intencao: "interruptor simples", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "o número de módulos do interruptor não vem do IFC: assumido 1 módulo" }], origem: { tipo: MD, ref: "IfcSwitchingDevice" } }),
+R("med.luminaria", "medido", ["luminaria"], "eletrica", { cod: "luminaria", qtd: "1", formula: "1 por luminária do modelo", intencao: "luminária", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "o modelo/potência da luminária não vem do IFC: assumido plafon LED 12 W do catálogo" }], origem: { tipo: MD, ref: "IfcLightFixture" } }),
+R("med.quadro", "medido", ["quadro-eletrico"], "eletrica", { cod: "quadro", qtd: "1", formula: "1 por quadro do modelo", intencao: "quadro de distribuição", sugestaoSe: "1==1", notas: [{ quando: "1==1", texto: "número de circuitos do quadro não vem do IFC: assumido quadro de embutir para 12 disjuntores" }], origem: { tipo: MD, ref: "IfcElectricDistributionBoard" } }),
+R("med.disjuntor", "medido", ["disjuntor"], "eletrica", { desc: "DISJUNTOR (corrente nominal conforme projeto)", un: "un", qtd: "1", formula: "1 por dispositivo do modelo", intencao: "disjuntor", origem: { tipo: MD, ref: "IfcProtectiveDevice" } }),
+R("med.eletroduto", "medido", ["eletroduto"], "eletrica", { tabela: { "20": "eletroduto20", "25": "eletroduto", "32": "eletroduto32" }, chaveTab: "dn", desc: "ELETRODUTO DN {dn} mm — sem composição no catálogo", un: "m", qtd: "L", formula: "comprimento do eletroduto lido do modelo", intencao: "eletroduto", agrupar: ["dn"], notas: [{ quando: "1==1", texto: "composição de eletroduto flexível reforçado EM PAREDE; se for em laje ou piso, troque" }], origem: { tipo: MD, ref: "IfcCableCarrierSegment (comprimento)" } }),
+R("med.cabo", "medido", ["cabo"], "eletrica", { tabela: { "1.5": "cabo15", "2.5": "cabo", "4": "cabo4", "6": "cabo6", "10": "cabo10", "16": "cabo16" }, chaveTab: "secmm", desc: "CABO DE COBRE {secmm} mm² — sem composição no catálogo", un: "m", qtd: "L", formula: "comprimento do cabo lido do modelo (a composição SINAPI é por condutor)", intencao: "cabo de cobre flexível", agrupar: ["secmm"], origem: { tipo: MD, ref: "IfcCableSegment (comprimento)" } }),
+R("ele.caixa", "implicito", ["tomada", "interruptor"], "eletrica", { cod: "caixaMedia", qtd: "1", formula: "1 caixa 4×2 por ponto (tomada ou interruptor)", intencao: "caixa retangular 4x2 embutida", porque: "a composição da tomada/interruptor traz o suporte e a placa, mas NÃO a caixa embutida na parede; altura 1,30 m (a mesma do suporte incluso)", origem: { tipo: CP, ref: "SINAPI 91996/91953 (suporte 91946 incluso, caixa não)" }, sug: true }),
+R("ele.rasgo", "implicito", ["eletroduto"], "eletrica", { cod: "rasgoEle", qtd: "L", formula: "comprimento do eletroduto (suposto todo embutido em alvenaria)", intencao: "rasgo em alvenaria para eletrodutos", porque: "eletroduto embutido em parede exige rasgo; o trecho que vai em laje ou forro não leva — reduza se for o caso", origem: { tipo: CF, ref: "eletrica.rasgoEletroduto (F3)" }, sug: true }),
+R("ele.chumb", "implicito", ["eletroduto"], "eletrica", { cod: "chumbEle", qtd: "L", formula: "comprimento do eletroduto (suposto todo embutido em alvenaria)", intencao: "chumbamento em alvenaria para eletrodutos", porque: "depois do rasgo o eletroduto é chumbado", origem: { tipo: CF, ref: "eletrica.chumbamentoEletroduto (F3)" }, sug: true }),
+R("ele.luvasCurvas", "implicito", "obra", "eletrica", { cod: "luvaEle", quando: "nEletroduto>0", qtd: null, formula: "luvas, curvas e buchas: consumo por metro de eletroduto sem fonte (a composição de eletroduto não os traz) — informe", intencao: "luva curva bucha para eletroduto", porque: "as composições SINAPI de eletroduto não trazem as conexões; sem fonte de consumo ficam pendentes", origem: { tipo: CF, ref: "eletrica.luvasCurvasEletroduto (F3), pendente" } }),
+R("ele.cabo", "implicito", "obra", "eletrica", { cod: "cabo", quando: "nEletroduto>0", qtd: null, formula: "cabo = comprimento de eletroduto × nº de condutores + sobra: o IFC não traz os condutores — informe", intencao: "cabo de cobre enfiação", porque: "o eletroduto não vale nada sem a fiação; o modelo não tem IfcCableSegment", origem: { tipo: PR, ref: "§16.2 (enfiação: eletroduto × nº de condutores + sobra)" }, suprime: sup("nCabo>0", "cabo modelado no IFC (IfcCableSegment)") }),
+R("ele.fita", "incluso", "obra", "eletrica", { quando: "nCabo>0 || nEletroduto>0", rotulo: "fita isolante, terminais e enfiação", comps: [{ comp: "91926", itens: ["21127", "88264"] }, { comp: "91930", itens: ["21127", "88264"] }, { comp: "91924", itens: ["21127", "88264"] }, { comp: "91928", itens: ["21127", "88264"] }], motivo: "a composição do cabo já traz fita isolante (21127) e a mão de obra de enfiação do eletricista (88264): o catálogo F3 deixa «fita isolante» pendente, mas ela já está no cabo", origem: { tipo: CP, ref: "SINAPI 91924/91926/91928/91930 (analítico MG 2026-06)" } }),
+R("med.extintor", "medido", ["incendio-terminal"], "incendio", { cods: { pqs: "extPQS", co2: "extCO2" }, chaveCod: "sub", desc: "EXTINTOR/APARELHO DE COMBATE A INCÊNDIO ({sub}) — tipo/carga conforme projeto", un: "un", qtd: "1", formula: "1 por aparelho do modelo", intencao: "extintor de incêndio", agrupar: ["sub"], origem: { tipo: MD, ref: "IfcFireSuppressionTerminal" } }),
+R("aux.icamento", "implicito", "obra", "preliminares", { desc: "GUINDASTE/MUNCK PARA IÇAMENTO DE PEÇAS PESADAS", un: "h", quando: "nPecasPesadas>0", qtd: null, formula: "o modelo traz peso para {nPecasPesadas} peça(s) (maior: {pesoMax} kg): dimensione o equipamento e as horas pelo plano de içamento", intencao: "guindaste munck içamento", porque: "peça pesada não sobe à mão; o peso vem do Pset/Qto do modelo, mas a escolha do equipamento e o prazo são do engenheiro", origem: { tipo: PR, ref: "§16.4 (guindaste/munck por volume e peso)" } }),
+R("obra.limpezaPiso", "implicito", "obra", "finais", { cod: "limpPiso", quando: "Autil>0", qtd: "Autil", formula: "Σ área de piso dos ambientes internos (IfcSpace)", intencao: "limpeza de piso", porque: "a obra entrega limpa: piso, revestimentos, vidros e louças", origem: { tipo: CF, ref: "finais.limpezaPiso (F3)" } }),
+R("obra.limpezaParede", "implicito", "obra", "finais", { cod: "limpPar", quando: "Amol>0", qtd: "Amol", formula: "Σ área de revestimento cerâmico de parede (faces em ambiente molhado)", intencao: "limpeza de revestimento cerâmico parede", porque: "o revestimento cerâmico é limpo ao fim da obra", origem: { tipo: CF, ref: "finais.limpezaRevestimento (F3)" } }),
+R("obra.limpezaVidros", "implicito", "obra", "finais", { cod: "limpVidro", quando: "Aj_total>0", qtd: "Aj_total", formula: "Σ área das janelas do modelo", intencao: "limpeza de janela de vidro", porque: "os vidros saem sujos de obra", origem: { tipo: CF, ref: "finais.limpezaVidros (F3)" } }),
+R("obra.limpezaLouca", "implicito", "obra", "finais", { cod: "limpLouca", quando: "nBacia+nLav>0", qtd: "nBacia+nLav", formula: "bacias + lavatórios do modelo", intencao: "limpeza de bacia sanitária e lavatório", porque: "as louças são limpas ao fim da obra", origem: { tipo: CF, ref: "finais.limpezaLoucas (F3)" } }),
+R("obra.entulho", "implicito", "obra", "finais", { cod: "entulhoA", quando: "nElementos>0", qtd: null, formula: "volume de entulho da obra (m³): informar (o motor não chuta; a caçamba é por m³ de demolição/sobra)", intencao: "remoção de entulho classe A caçamba", porque: "toda obra gera entulho de alvenaria, argamassa e cerâmica que a caçamba leva", origem: { tipo: CF, ref: "finais.retiradaEntulho (F3), pendente" } })
+];
+var pares = [
+{ id: "alv-chapisco", disciplina: "arquitetura", quando: "n_parede_alvenaria>0", exige: ["par.chapiscoSeca", "par.chapiscoExt", "par.chapiscoMol"], aviso: "Alvenaria sem chapisco: o modelo não traz a camada e a regra não gerou (faces sem ambiente identificado?)." },
+{ id: "alv-emboco", disciplina: "arquitetura", quando: "n_parede_alvenaria>0", exige: ["par.massaSeca", "par.massaExt", "par.embocoMol"], aviso: "Alvenaria sem reboco/massa única." },
+{ id: "alv-encunhamento", disciplina: "arquitetura", quando: "n_parede_alvenaria>0", exige: ["par.encunhamento"], aviso: "Alvenaria sem encunhamento." },
+{ id: "vao-verga", disciplina: "arquitetura", quando: "n_porta+n_janela>0 && n_parede_alvenaria>0", exige: ["par.verga"], aviso: "Há portas/janelas e nenhuma verga (nem modelada)." },
+{ id: "janela-contraverga", disciplina: "arquitetura", quando: "n_janela>0 && n_parede_alvenaria>0", exige: ["par.contraverga"], aviso: "Há janelas e nenhuma contraverga." },
+{ id: "janela-peitoril", disciplina: "arquitetura", quando: "n_janela>0", exige: ["esq.peitoril"], aviso: "Janela sem peitoril." },
+{ id: "pintura", disciplina: "arquitetura", quando: "n_parede_alvenaria>0", exige: ["pin.tintaInt", "pin.tintaExt"], aviso: "Parede sem pintura (nem camada de pintura modelada)." },
+{ id: "piso-contrapiso", disciplina: "arquitetura", quando: "n_ambiente>0", exige: ["amb.contrapiso", "amb.contrapisoMol"], aviso: "Ambiente sem contrapiso." },
+{ id: "molhado-imp", disciplina: "arquitetura", quando: "n_ambiente_molhado>0", exige: ["amb.impPiso"], aviso: "Ambiente molhado sem impermeabilização de piso." },
+{ id: "molhado-parede", disciplina: "arquitetura", quando: "n_ambiente_molhado>0 && n_parede_alvenaria>0", exige: ["par.impMol", "par.ceramicaMol"], aviso: "Ambiente molhado sem impermeabilização/cerâmica de parede (as paredes não foram ligadas ao ambiente?)." },
+{ id: "piso-acabamento", disciplina: "arquitetura", quando: "n_ambiente>0", exige: ["amb.piso", "med.piso"], aviso: "Ambiente sem revestimento de piso." },
+{ id: "cobertura-trama", disciplina: "arquitetura", quando: "n_cobertura_telhado>0", exige: ["cob.trama", "med.estTelhado"], aviso: "Telhado sem trama/estrutura." },
+{ id: "cobertura-calha", disciplina: "arquitetura", quando: "n_cobertura_telhado>0", exige: ["cob.calha"], aviso: "Telhado sem calha/rufo previstos." },
+{ id: "baldrame-imp", disciplina: "estrutura", quando: "n_baldrame>0", exige: ["fun.impBaldrame"], aviso: "Baldrame sem impermeabilização." },
+{ id: "fundacao-lastro", disciplina: "estrutura", quando: "n_sapata+n_sapata_corrida+n_bloco>0", exige: ["fun.lastro"], aviso: "Fundação sem lastro de concreto magro." },
+{ id: "fundacao-forma", disciplina: "estrutura", quando: "n_sapata+n_sapata_corrida+n_bloco+n_baldrame>0", exige: ["fun.formaSapata", "fun.formaBloco", "fun.formaBaldrame"], aviso: "Fundação sem fôrma." },
+{ id: "fundacao-armacao", disciplina: "estrutura", quando: "n_sapata+n_sapata_corrida+n_bloco+n_baldrame>0", exige: ["fun.armSapata", "fun.armBaldrame10", "fun.armBlocoPend", "est.armadoModelada"], aviso: "Fundação sem armação (nem sugerida, nem modelada)." },
+{ id: "fundacao-reaterro", disciplina: "estrutura", quando: "n_sapata+n_sapata_corrida+n_bloco+n_baldrame>0", exige: ["fun.reaterro"], aviso: "Fundação sem reaterro (a profundidade escavada não foi informada: reaterro = 0)." },
+{ id: "pilar-forma", disciplina: "estrutura", quando: "n_pilar_concreto>0", exige: ["est.formaPilar"], aviso: "Pilar sem fôrma (falta o perímetro da seção)." },
+{ id: "viga-forma", disciplina: "estrutura", quando: "n_viga_concreto>0", exige: ["est.formaViga"], aviso: "Viga sem fôrma (falta a largura/altura da seção)." },
+{ id: "viga-escora", disciplina: "estrutura", quando: "n_viga_concreto>0", exige: ["est.escoraViga"], aviso: "Viga sem escoramento (nem incluso na fôrma)." },
+{ id: "laje-forma", disciplina: "estrutura", quando: "n_laje+n_laje_cobertura>0", exige: ["est.formaLaje"], aviso: "Laje sem fôrma." },
+{ id: "laje-escora", disciplina: "estrutura", quando: "n_laje+n_laje_cobertura>0", exige: ["est.escoraLaje"], aviso: "Laje sem escoramento (nem incluso na fôrma)." },
+{ id: "laje-armacao", disciplina: "estrutura", quando: "n_laje+n_laje_cobertura>0", exige: ["est.armLaje", "est.armadoModelada"], aviso: "Laje sem armação (nem sugerida, nem modelada)." },
+{ id: "tubo-conexao", disciplina: "hidraulica", quando: "n_tubo>0", exige: ["med.conexao"], aviso: "Tubulação sem nenhuma conexão no modelo: confira se as conexões (joelhos, tês, luvas) foram modeladas." },
+{ id: "conexao-adesivo", disciplina: "hidraulica", quando: "n_conexao>0", exige: ["hid.conexaoInclui", "hid.adesivo"], aviso: "Conexão PVC soldável sem adesivo (nem incluso na composição instalada)." },
+{ id: "tubo-rasgo", disciplina: "hidraulica", quando: "n_tubo>0", exige: ["hid.rasgo", "hid.suporte"], aviso: "Tubo de água sem rasgo/chumbamento nem suporte." },
+{ id: "louca-acessorios", disciplina: "hidraulica", quando: "n_louca>0", exige: ["lou.assento", "lou.misturador", "lou.engateBacia", "lou.regPressao"], aviso: "Louça sem acessórios." },
+{ id: "box-ralo", disciplina: "esgoto", quando: "n_ambiente_molhado>0", exige: ["lou.ralo", "med.ralo"], aviso: "Ambiente molhado sem ralo." },
+{ id: "eletroduto-cabo", disciplina: "eletrica", quando: "n_eletroduto>0", exige: ["med.cabo", "ele.cabo"], aviso: "Eletroduto sem cabo (nem modelado, nem pendente)." },
+{ id: "ponto-caixa", disciplina: "eletrica", quando: "n_tomada+n_interruptor>0", exige: ["ele.caixa"], aviso: "Ponto elétrico sem caixa 4×2." },
+{ id: "eletroduto-rasgo", disciplina: "eletrica", quando: "n_eletroduto>0", exige: ["ele.rasgo"], aviso: "Eletroduto sem rasgo e chumbamento." },
+{ id: "quadro-disj", disciplina: "eletrica", quando: "n_quadro_eletrico>0", exige: ["med.disjuntor"], aviso: "Quadro de distribuição sem disjuntores no modelo (entram pelo projeto elétrico)." },
+{ id: "obra-limpeza", disciplina: "geral", quando: "nElementos>0", exige: ["obra.limpezaPiso", "obra.limpezaVidros", "obra.limpezaLouca"], aviso: "Obra sem limpeza final." }
+];
+D.codigos = D.codigos || { LEGADO: {}, F2: {}, F3: {}, TUDO: {} };
+D.codigos.F13 = F13;
+D.implicitos = { versao: 1, F13: F13, regras: regras, pares: pares, tabelas: { TUBO_AF: TUBO_AF, TUBO_ES: TUBO_ES, CONEXAO: CONEXAO }, empolamento: 0.25 };
+if (typeof module !== "undefined" && module.exports) module.exports = D.implicitos;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo.js ==== */
+try {
+(function (global) {
+"use strict";
+var R = global.MorRegras || (typeof require === "function" ? require("./regras.js") : null);
+var _pronto = null;
+function semAcento(s) {
+var t = String(s == null ? "" : s);
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+return t.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").toUpperCase();
+}
+function dados() {
+var D = global.MorDados;
+if ((!D || !D.etapas || !D.codigos || !D.tipologias) && typeof require === "function") {
+["codigos", "codigos-f3", "preliminares", "cobertura", "residencial", "extensoes", "etapas-estrutura", "etapas-acabamento", "etapas-instalacoes", "etapas-tipologias", "tipologias"].forEach(function (n) {
+try { require("./catalogo-dados/" + n + ".js"); } catch (e) { }
+});
+D = global.MorDados;
+}
+return D || {};
+}
+var PERGUNTAS_OBRA = [
+{ id: "area", txt: "Área construída (m²)", num: true, obrigatoria: true, min: 1, max: 20000 },
+{ id: "pavimentos", txt: "Pavimentos", num: true, padrao: 1, min: 1, max: 4 },
+{ id: "peDireito", txt: "Pé-direito (m)", num: true, padrao: 2.8, min: 2.3, max: 6 },
+{ id: "padrao", txt: "Padrão de acabamento", op: ["popular", "normal", "alto"], rotulos: { popular: "Popular", normal: "Normal", alto: "Alto" }, padrao: "normal" },
+{ id: "banheiros", txt: "Banheiros (vazio = estimar)", num: true, opcional: true, min: 1, max: 6 },
+{ id: "quartos", txt: "Quartos (vazio = estimar)", num: true, opcional: true, min: 0, max: 6 },
+{ id: "perimetro", txt: "Perímetro externo (m) (vazio = estimar)", num: true, opcional: true, min: 1, max: 2000 }
+];
+var _errosExt = [];
+function mesclar(e, x) {
+var m = {}, k;
+for (k in e) if (Object.prototype.hasOwnProperty.call(e, k)) m[k] = e[k];
+m.perguntas = (e.perguntas || []).map(function (q) { var c = {}, z; for (z in q) if (Object.prototype.hasOwnProperty.call(q, z)) c[z] = q[z]; return c; });
+m.itens = (e.itens || []).map(function (it) { var c = {}, z; for (z in it) if (Object.prototype.hasOwnProperty.call(it, z)) c[z] = it[z]; return c; });
+m.vars = (e.vars || []).slice(); m.premissas = (e.premissas || []).slice(); m.usa = (e.usa || []).slice();
+(x.perguntas || []).forEach(function (q) { m.perguntas.push(q); });
+(x.vars || []).forEach(function (v) { m.vars.push(v); });
+(x.premissas || []).forEach(function (p) { m.premissas.push(p); });
+(x.usa || []).forEach(function (u) { if (m.usa.indexOf(u) < 0) m.usa.push(u); });
+var aj = x.ajustes || {}, ch;
+for (ch in aj) if (Object.prototype.hasOwnProperty.call(aj, ch)) {
+var alvo = null; m.itens.forEach(function (it) { if (it.chave === ch) alvo = it; });
+if (!alvo) { _errosExt.push("extensão de «" + e.id + "»: o item «" + ch + "» não existe"); continue; }
+for (var f in aj[ch]) if (Object.prototype.hasOwnProperty.call(aj[ch], f)) alvo[f] = aj[ch][f];
+}
+var ap = x.ajustesPerguntas || {}, pid;
+for (pid in ap) if (Object.prototype.hasOwnProperty.call(ap, pid)) {
+var qa = null; m.perguntas.forEach(function (q) { if (q.id === pid) qa = q; });
+if (!qa) { _errosExt.push("extensão de «" + e.id + "»: a pergunta «" + pid + "» não existe"); continue; }
+for (var g in ap[pid]) if (Object.prototype.hasOwnProperty.call(ap[pid], g)) qa[g] = ap[pid][g];
+}
+(x.itens || []).forEach(function (it) { m.itens.push(it); });
+return m;
+}
+function normalizarEtapa(e) {
+var T = dados().codigos.TUDO;
+var out = {
+id: e.id, etapa: e.etapa, ordem: e.ordem, novo: !!e.novo, geometria: e.geometria || "", usa: (e.usa || []).slice(),
+premissas: (e.premissas || []).map(function (p) { return typeof p === "string" ? { texto: p } : { quando: p.quando || "", texto: p.texto }; }),
+vars: (e.vars || []).map(function (v) { return [v[0], v[1]]; }),
+perguntas: (e.perguntas || []).map(function (q) { var c = {}; for (var k in q) if (Object.prototype.hasOwnProperty.call(q, k)) c[k] = q[k]; return c; }),
+itens: (e.itens || []).map(function (it) {
+var c = {}, k;
+for (k in it) if (Object.prototype.hasOwnProperty.call(it, k)) c[k] = it[k];
+var codigos = it.codigos ? it.codigos.slice() : (it.cod && T[it.cod] ? [T[it.cod][0]] : []);
+c.codigos = codigos;
+if (it.cod && T[it.cod]) { c.desc = it.desc || T[it.cod][1]; c.un = it.un || T[it.cod][2]; }
+c.qtd = it.qtd === undefined ? null : it.qtd;
+c.quando = it.quando || "";
+c.intencao = it.intencao || String(c.desc || "").toLowerCase();
+c.pendente = !codigos.length;
+return c;
+})
+};
+return out;
+}
+function montar() {
+if (_pronto) return _pronto;
+var D = dados();
+var ext = {}; _errosExt = [];
+(D.extensoes || []).forEach(function (x) { (ext[x.id] = ext[x.id] || []).push(x); });
+var etapas = (D.etapas || []).map(function (e) {
+var m = e;
+(ext[e.id] || []).forEach(function (x) { m = mesclar(m, x); });
+return normalizarEtapa(m);
+}).sort(function (a, b) { return a.ordem - b.ordem; });
+(D.extensoes || []).forEach(function (x) { if (!(D.etapas || []).some(function (e) { return e.id === x.id; })) _errosExt.push("extensão para a etapa «" + x.id + "», que não existe"); });
+var porId = {}, porNome = {}, perguntas = {}, ordemPerg = [];
+etapas.forEach(function (e) {
+porId[e.id] = e; porNome[semAcento(e.etapa)] = e;
+e.perguntas.forEach(function (q) { perguntas[q.id] = q; ordemPerg.push(q.id); });
+});
+_pronto = { etapas: etapas, porId: porId, porNome: porNome, perguntas: perguntas, ordemPerg: ordemPerg, tipologias: (D.tipologias || []).slice() };
+return _pronto;
+}
+var MorCatalogo = {
+PERGUNTAS_OBRA: PERGUNTAS_OBRA,
+semAcento: semAcento,
+_reiniciar: function () { _pronto = null; },
+etapas: function () { return montar().etapas.slice(); },
+etapa: function (id) { return montar().porId[id] || null; },
+etapaPorNome: function (nome) { return montar().porNome[semAcento(nome)] || null; },
+pergunta: function (id) { return montar().perguntas[id] || null; },
+ordemPerguntas: function () { return montar().ordemPerg.slice(); },
+tipologias: function () { return montar().tipologias.map(function (t) { return t; }); },
+tipologia: function (id) { var l = montar().tipologias; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; },
+codigos: function () { return dados().codigos.TUDO; },
+validar: function () {
+var c = montar(), erros = _errosExt.slice(), T = dados().codigos.TUDO;
+function expr(onde, s) {
+if (s === "" || s == null) return;
+var v = R.validar(s);
+if (!v.ok) erros.push(onde + ": " + v.erro);
+}
+c.etapas.forEach(function (e) {
+var vistos = {};
+e.premissas.forEach(function (p, i) { if (p.quando) expr(e.id + ".premissas[" + i + "].quando", p.quando); });
+e.vars.forEach(function (v) { expr(e.id + ".vars." + v[0], v[1]); });
+e.perguntas.forEach(function (q) {
+var tipo = (q.op ? 1 : 0) + (q.num ? 1 : 0) + (q.bool ? 1 : 0);
+if (tipo !== 1) erros.push(e.id + "." + q.id + ": a pergunta precisa de exatamente um tipo (op, num ou bool)");
+expr(e.id + "." + q.id + ".quando", q.quando);
+expr(e.id + "." + q.id + ".padraoExpr", q.padraoExpr);
+if (q.padraoDe && !q.mapa) erros.push(e.id + "." + q.id + ": padraoDe exige mapa");
+if (!(q.padrao !== undefined || q.padraoExpr || q.padraoDe)) erros.push(e.id + "." + q.id + ": a pergunta não tem padrão");
+});
+e.itens.forEach(function (it) {
+var onde = e.id + "." + it.chave;
+if (!it.chave) erros.push(e.id + ": item sem chave");
+if (vistos[it.chave]) erros.push(onde + ": chave repetida"); vistos[it.chave] = 1;
+expr(onde + ".quando", it.quando);
+if (it.qtd !== null) expr(onde + ".qtd", it.qtd);
+if (it.cod && !T[it.cod]) erros.push(onde + ": cod «" + it.cod + "» não está na tabela de códigos");
+if (!it.desc) erros.push(onde + ": sem descrição");
+if (!it.un) erros.push(onde + ": sem unidade");
+if (!it.formula) erros.push(onde + ": sem a conta escrita (formula)");
+});
+});
+c.tipologias.forEach(function (t) {
+if (t.etapas[0] !== "SERVIÇOS PRELIMINARES") erros.push("tipologia " + t.id + ": a primeira etapa deve ser SERVIÇOS PRELIMINARES");
+if (t.base !== "residencial" && t.base !== "comercial") erros.push("tipologia " + t.id + ": base inválida");
+});
+return { ok: !erros.length, erros: erros };
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorCatalogo;
+global.MorCatalogo = MorCatalogo;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/conversoes.js ==== */
+try {
+(function (global) {
+"use strict";
+var r6 = function (x) { return Math.round(x * 1e6) / 1e6; };
+function semAcento(s) {
+var t = String(s == null ? "" : s);
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+return t.toUpperCase().replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+}
+function numBR(s) {
+var t = String(s == null ? "" : s).replace(/\*/g, "").replace(/\s/g, "");
+if (!t) return NaN;
+if (t.indexOf(",") > -1) t = t.replace(/\./g, "").replace(",", ".");
+return parseFloat(t);
+}
+var CHAVE = {
+"M2": "m2", "M²": "m2", "M3": "m3", "M³": "m3", "UN": "un", "UND": "un", "UNID": "un", "UNIDADE": "un", "UNIDADES": "un", "PC": "un", "PECA": "un", "PECAS": "un", "PÇ": "un",
+"KG": "kg", "G": "g", "GR": "g", "L": "l", "LT": "l", "LITRO": "l", "LITROS": "l", "ML": "ml", "M": "m", "MT": "m", "CM": "cm", "MM": "mm",
+"CX": "cx", "CAIXA": "cx", "SC": "sc", "SACO": "sc", "LATA": "lata", "GALAO": "gl", "GL": "gl", "ROLO": "rolo", "T": "t", "CJ": "cj", "JG": "jg", "H": "h"
+};
+function chaveUn(u) {
+var k = semAcento(u).replace(/\s+/g, "");
+return CHAVE[k] || k.toLowerCase();
+}
+var ESCALA = { "g>kg": 0.001, "kg>g": 1000, "ml>l": 0.001, "l>ml": 1000, "cm>m": 0.01, "m>cm": 100, "mm>m": 0.001, "m>mm": 1000, "t>kg": 1000, "kg>t": 0.001 };
+var NUM = "(\\d+(?:[.,]\\d+)?)";
+var UNID_RE = "(KG|G|GR|L|LT|LITROS?|ML|M2|M3|M|UN|UND|UNIDADES?|PECAS?|PCS?)";
+var PADROES = [
+{ id: "igualdade", re: new RegExp(NUM + "\\s*" + UNID_RE + "\\s*=\\s*" + NUM + "\\s*" + UNID_RE + "\\b", "g"),
+f: function (m) { var a = numBR(m[1]), b = numBR(m[3]); if (!(a > 0 && b > 0)) return null; return { de: chaveUn(m[2]), para: chaveUn(m[4]), fator: r6(b / a), regra: "igualdade escrita na descrição" }; } },
+{ id: "rolo", re: new RegExp("\\bROLO(?:\\s+(?:DE|COM))?\\s+\\*?" + NUM + "\\*?\\s*M\\b", "g"),
+f: function (m) { var n = numBR(m[1]); if (!(n > 0)) return null; return { de: "un", para: "m", fator: n, regra: "comprimento do rolo escrito na descrição", exige: ["un"] }; } },
+{ id: "embalagem", re: new RegExp("\\bEMBALAGEM(?:\\s+(?:DE|COM))?\\s+\\*?" + NUM + "\\*?\\s*(KG|G|GR|LITROS?|L|ML)\\b", "g"),
+f: function (m) { var n = numBR(m[1]); if (!(n > 0)) return null; return { de: "un", para: chaveUn(m[2]), fator: n, regra: "conteúdo da embalagem escrito na descrição", exige: ["un"] }; } },
+{ id: "saco-lata", re: new RegExp("\\b(SACO|SACA|SC|LATA|GALAO|GL|BALDE)(?:\\s+(?:DE|COM))?\\s+\\*?" + NUM + "\\*?\\s*(KG|G|LITROS?|L|ML)\\b", "g"),
+f: function (m) { var n = numBR(m[2]); if (!(n > 0)) return null; return { de: "un", para: chaveUn(m[3]), fator: n, regra: "conteúdo do " + m[1].toLowerCase() + " escrito na descrição", exige: ["un", "sc", "lata", "gl"] }; } },
+{ id: "caixa-m2", re: new RegExp("\\b(?:CAIXA|CX)(?:\\s+(?:COM|DE))?\\s*[:=]?\\s*\\*?" + NUM + "\\*?\\s*M2\\b", "g"),
+f: function (m) { var n = numBR(m[1]); if (!(n > 0)) return null; return { de: "cx", para: "m2", fator: n, regra: "rendimento da caixa escrito na descrição", exige: ["un", "cx"] }; } },
+{ id: "m2-por-caixa", re: new RegExp("\\*?" + NUM + "\\*?\\s*M2\\s*/\\s*(?:CAIXA|CX)\\b", "g"),
+f: function (m) { var n = numBR(m[1]); if (!(n > 0)) return null; return { de: "cx", para: "m2", fator: n, regra: "rendimento da caixa escrito na descrição", exige: ["un", "cx"] }; } }
+];
+function montarTabela() {
+var t = [];
+Object.keys(ESCALA).forEach(function (k) { var p = k.split(">"); t.push({ tipo: "escala", de: p[0], para: p[1], fator: ESCALA[k], fonte: "definição de unidade (mesma grandeza)" }); });
+PADROES.forEach(function (p) { t.push({ tipo: "descricao", padrao: p.id, fonte: "texto da descrição do item da base (o fator é o que está escrito)", exemplo: p.exemplo }); });
+t.push({ tipo: "geometria", de: "m2", para: "m3", fonte: "geometria: m³ = m² × espessura (informada)" });
+t.push({ tipo: "geometria", de: "un", para: "m2", fonte: "geometria: área da peça = A × B das dimensões da descrição" });
+return t;
+}
+var EXEMPLOS = { igualdade: "(1KG = 1025 UNIDADES)", rolo: "ROLO DE 30 M", embalagem: "EMBALAGEM DE *400* GR", "saco-lata": "SACO DE 50 KG · LATA DE 18 LITROS", "caixa-m2": "CAIXA COM 2,5 M2", "m2-por-caixa": "2,0 M2/CX" };
+PADROES.forEach(function (p) { p.exemplo = EXEMPLOS[p.id] || ""; });
+function numerosDoTrecho(tr) {
+var out = [], re = /\d+(?:[.,]\d+)?/g, m;
+while ((m = re.exec(tr))) {
+var ant = m.index > 0 ? tr.charAt(m.index - 1) : " ";
+if (/[A-Z]/.test(ant)) continue;
+var v = numBR(m[0]); if (v === v) out.push(v);
+}
+return out;
+}
+var Conv = {
+tabela: montarTabela,
+chaveUn: chaveUn, numBR: numBR, semAcento: semAcento,
+extrair: function (descricao) {
+var d = semAcento(descricao).replace(/²/g, "2").replace(/³/g, "3"), out = [], vistos = {};
+PADROES.forEach(function (p) {
+p.re.lastIndex = 0;
+var m;
+while ((m = p.re.exec(d))) {
+var f = p.f(m);
+if (!f) continue;
+var k = f.de + ">" + f.para + "=" + f.fator;
+if (vistos[k]) continue; vistos[k] = 1;
+f.fonte = "descricao"; f.padrao = p.id; f.trecho = m[0];
+out.push(f);
+}
+});
+return out;
+},
+porEspessura: function (espCm) {
+var e = Number(espCm);
+if (!(e > 0)) return { ok: false, motivo: "espessura não informada" };
+return { ok: true, de: "m2", para: "m3", fator: r6(e / 100), fonte: "geometria", regra: "m³ = m² × espessura (" + e + " cm informada)", trecho: "espessura " + e + " cm" };
+},
+areaDaPeca: function (descricao) {
+var d = semAcento(descricao).replace(/²/g, "2");
+var re = new RegExp("\\*?" + NUM + "\\*?\\s*X\\s*\\*?" + NUM + "\\*?\\s*(CM|M)\\b", "g"), m, ach = [];
+while ((m = re.exec(d))) {
+var a = numBR(m[1]), b = numBR(m[2]);
+if (a > 0 && b > 0) ach.push({ a: a, b: b, un: m[3], trecho: m[0], pos: m.index });
+}
+if (!ach.length) return { ok: false, motivo: "sem dimensões da peça (A X B CM) na descrição" };
+var esc = ach[0], i;
+for (i = 0; i < ach.length; i++) {
+var antes = d.slice(Math.max(0, ach[i].pos - 14), ach[i].pos);
+if (/(PLACAS? DE|DIMENSOES( DE)?|FORMATO( DE)?) ?$/.test(antes)) { esc = ach[i]; break; }
+}
+var k = esc.un === "CM" ? 0.0001 : 1;
+return { ok: true, de: "un", para: "m2", fator: r6(esc.a * esc.b * k), fonte: "geometria", regra: "área da peça = A × B das dimensões da descrição", trecho: esc.trecho };
+},
+conferir: function (fator, descricao) {
+if (!fator || typeof fator !== "object") return { ok: false, motivo: "fator ausente" };
+if (!fator.fonte) return { ok: false, motivo: "fator sem fonte" };
+if (!(Number(fator.fator) > 0)) return { ok: false, motivo: "fator não positivo" };
+if (fator.fonte === "geometria") {
+if (fator.para === "m3" && fator.de === "m2") {
+var m = /espessura (\d+(?:\.\d+)?) cm/.exec(String(fator.trecho || ""));
+return m && Math.abs(Number(m[1]) / 100 - fator.fator) < 1e-6 ? { ok: true } : { ok: false, motivo: "fator geométrico não bate com a espessura informada" };
+}
+if (fator.de === "un" && fator.para === "m2") {
+var g = Conv.areaDaPeca(descricao);
+return g.ok && Math.abs(g.fator - fator.fator) < 1e-6 ? { ok: true } : { ok: false, motivo: "área da peça não bate com as dimensões da descrição" };
+}
+return { ok: false, motivo: "fator geométrico desconhecido" };
+}
+if (fator.fonte !== "descricao") return { ok: false, motivo: "fonte «" + fator.fonte + "» não é aceita (só descricao ou geometria)" };
+var dN = semAcento(descricao).replace(/²/g, "2").replace(/³/g, "3"), tr = String(fator.trecho || "");
+if (!tr || dN.indexOf(tr) < 0) return { ok: false, motivo: "o trecho «" + tr + "» NÃO está na descrição — fator sem origem" };
+var ns = numerosDoTrecho(tr), esperado = ns.length >= 2 ? ns[ns.length - 1] / ns[0] : (ns.length === 1 ? ns[0] : NaN);
+if (!(Math.abs(esperado - fator.fator) < 1e-6)) return { ok: false, motivo: "o fator " + fator.fator + " não sai dos números do trecho «" + tr + "» (daria " + r6(esperado) + ") — inventado?" };
+var achou = Conv.extrair(descricao).some(function (x) { return x.de === fator.de && x.para === fator.para && Math.abs(x.fator - fator.fator) < 1e-6; });
+return achou ? { ok: true } : { ok: false, motivo: "o fator " + fator.fator + " (" + fator.de + "→" + fator.para + ") NÃO está escrito na descrição — inventado?" };
+},
+converter: function (qtd, de, para, fatores) {
+var a = chaveUn(de), b = chaveUn(para), q = Number(qtd);
+if (!(q === q)) return { ok: false, motivo: "quantidade inválida" };
+if (a === b) return { ok: true, valor: q, fator: 1, fonte: "identidade", regra: "mesma unidade" };
+var esc = ESCALA[a + ">" + b];
+if (esc) return { ok: true, valor: r6(q * esc), fator: esc, fonte: "escala", regra: "mesma grandeza (" + a + "→" + b + ")" };
+var i, f;
+fatores = fatores || [];
+for (i = 0; i < fatores.length; i++) {
+f = fatores[i];
+if (f.de === a && f.para === b) return { ok: true, valor: r6(q * f.fator), fator: f.fator, fonte: f.fonte, regra: f.regra, trecho: f.trecho };
+if (f.de === b && f.para === a) return { ok: true, valor: r6(q / f.fator), fator: r6(1 / f.fator), fonte: f.fonte, regra: f.regra + " (inverso)", trecho: f.trecho };
+}
+for (i = 0; i < fatores.length; i++) {
+f = fatores[i];
+var e1 = ESCALA[a + ">" + f.de];
+if (e1 && f.para === b) return { ok: true, valor: r6(q * e1 * f.fator), fator: r6(e1 * f.fator), fonte: f.fonte, regra: f.regra + " (com escala " + a + "→" + f.de + ")", trecho: f.trecho };
+var e2 = ESCALA[f.para + ">" + b];
+if (f.de === a && e2) return { ok: true, valor: r6(q * f.fator * e2), fator: r6(f.fator * e2), fonte: f.fonte, regra: f.regra + " (com escala " + f.para + "→" + b + ")", trecho: f.trecho };
+}
+return { ok: false, motivo: "unidade incompatível: não há fator escrito na base nem geometria que leve " + a + " a " + b };
+},
+fatoresDe: function (descricao, opts) {
+opts = opts || {};
+var uItem = opts.unidade ? chaveUn(opts.unidade) : null;
+var fs = Conv.extrair(descricao).filter(function (f) {
+if (f.exige && uItem && f.exige.indexOf(uItem) < 0) return false;
+return Conv.conferir(f, descricao).ok;
+});
+if (opts.espessuraCm) { var e = Conv.porEspessura(opts.espessuraCm); if (e.ok) fs.push(e); }
+if (opts.peca) { var p = Conv.areaDaPeca(descricao); if (p.ok) fs.push(p); }
+return fs;
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Conv;
+global.MorConversoes = Conv;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/familias.js ==== */
+try {
+(function (global) {
+"use strict";
+var C = global.MorConversoes || (typeof require === "function" ? require("./conversoes.js") : null);
+var sa = function (s) { return C.semAcento(s).replace(/²/g, "2").replace(/³/g, "3"); };
+var nb = function (s) { return C.numBR(s); };
+var r6 = function (x) { return Math.round(x * 1e6) / 1e6; };
+var r4 = function (x) { return Math.round(x * 1e4) / 1e4; };
+function fmt(n) { return String(r6(n)).replace(".", ","); }
+function semAF(D) { return D.replace(/\s*AF_\S*\s*$/, "").replace(/\.\s*$/, "").replace(/\s+/g, " ").trim(); }
+function ehMO(i) { return String(i.categoria || "").toUpperCase() === "MO" || String(i.tipoInsumo || "") === "mao_obra"; }
+function ehEQ(i) { return String(i.categoria || "").toUpperCase() === "EQ"; }
+function ehMAT(i) { return !ehMO(i) && !ehEQ(i); }
+function mesmoCod(a, b) { return String(a.codigo) === String(b.codigo); }
+var J_CM = 1;
+var NUMRE = "(\\d+(?:,\\d+)?)";
+var DIMS = new RegExp(NUMRE + "X" + NUMRE + "X" + NUMRE + " CM");
+function dimsDoTexto(D) {
+var m = new RegExp(NUMRE + " ?X ?" + NUMRE + " ?X ?" + NUMRE + " ?CM").exec(D);
+return m ? [nb(m[1]), nb(m[2]), nb(m[3])] : null;
+}
+function blocosPorM2(c, a) { return 1 / (((c + J_CM) / 100) * ((a + J_CM) / 100)); }
+function volJunta(esp, c, a) { return (esp / 100) * (1 - (c * a) / ((c + J_CM) * (a + J_CM))); }
+var ALVENARIA = {
+id: "alvenaria-bloco", nome: "Alvenaria de vedação em bloco", unidades: ["m2"],
+reconhece: function (desc) {
+var D = sa(desc);
+if (!/^ALVENARIA DE VEDACAO DE BLOCOS/.test(D)) return null;
+var m = DIMS.exec(D); if (!m) return null;
+var e = new RegExp("ESPESSURA " + NUMRE + " CM").exec(D), L = nb(m[1]);
+return { L: L, A: nb(m[2]), C: nb(m[3]), esp: e ? nb(e[1]) : L };
+},
+chave: function (desc) {
+return semAF(sa(desc)).replace(DIMS, "#").replace(new RegExp("ESPESSURA " + NUMRE + " CM"), "ESPESSURA #");
+},
+distancia: function (r, a) {
+return (r.esp !== a.esp ? 1000 : 0) + Math.abs(Math.log((r.C * r.A) / (a.C * a.A))) * 10 + Math.abs(r.L - a.L) / 100;
+},
+variante: function (refs, p, opts) {
+opts = opts || {};
+var R = refs[0], pr = R.params, out = { insumos: [], regras: [], premissas: [], faltou: [] };
+var moBloco = opts.moPorBloco !== false && pr.esp === p.esp;
+var nR = blocosPorM2(pr.C, pr.A), nA = blocosPorM2(p.C, p.A);
+var vR = volJunta(pr.esp, pr.C, pr.A), vA = volJunta(p.esp, p.C, p.A);
+if (pr.esp !== p.esp) out.premissas.push("Referência " + R.codigo + " tem espessura " + fmt(pr.esp) + " cm e o serviço pede " + fmt(p.esp) + " cm: a argamassa de assentamento muda de espessura e o erro medido na SINAPI é maior (ver test-mor-compositor.js). Confira.");
+var permut = null;
+R.comp.insumos.forEach(function (i) {
+var D = sa(i.descricao), plano = { ref: i, coef: Number(i.coeficiente), regra: "mantido da referência" };
+if (i.unidade && C.chaveUn(i.unidade) === "un" && /^(BLOCO|TIJOLO)/.test(D)) {
+var bd = dimsDoTexto(D), sv = [pr.L, pr.A, pr.C];
+if (!bd) { out.faltou.push("não achei as dimensões do bloco na descrição do insumo " + i.codigo); out.insumos.push(plano); return; }
+var perm = [], usado = [false, false, false], k, j;
+for (k = 0; k < 3; k++) { perm[k] = -1; for (j = 0; j < 3; j++) if (!usado[j] && Math.abs(sv[j] - bd[k]) < 1e-9) { perm[k] = j; usado[j] = true; break; } }
+if (perm.some(function (x) { return x < 0; })) { out.faltou.push("as dimensões do bloco da referência (" + bd.join(" x ") + ") não correspondem às do serviço — não sei mapear"); out.insumos.push(plano); return; }
+var sa3 = [p.L, p.A, p.C], nd = [sa3[perm[0]], sa3[perm[1]], sa3[perm[2]]];
+plano.coef = r4(Number(i.coeficiente) * nA / nR);
+plano.regra = "bloco/m² = 1 ÷ ((C+j)×(A+j)) com j = " + J_CM + " cm: " + fmt(r4(nR)) + " → " + fmt(r4(nA)) + " pç/m² da face " + fmt(p.C) + "×" + fmt(p.A) + "; a perda da referência é mantida (coef × " + fmt(r4(nA / nR)) + ")";
+var alvoDims = nd.map(fmt).join(" X ");
+plano.troca = {
+rotulo: "bloco " + alvoDims + " cm",
+descBusca: String(i.descricao).replace(new RegExp(NUMRE + " ?X ?" + NUMRE + " ?X ?" + NUMRE + " ?CM", "i"), alvoDims + " CM"),
+dims: nd,
+aceita: function (item) {
+var d2 = sa(item.descricao), b2 = dimsDoTexto(d2);
+return !!b2 && b2[0] === nd[0] && b2[1] === nd[1] && b2[2] === nd[2] && /^(BLOCO|TIJOLO)/.test(d2) && C.chaveUn(item.unidade) === "un";
+}
+};
+} else if (/^ARGAMASSA/.test(D)) {
+plano.coef = r4(Number(i.coeficiente) * vA / vR);
+plano.regra = "argamassa de junta ∝ volume geométrico esp × (1 − C·A/((C+j)(A+j))): coef × " + fmt(r4(vA / vR)) + "; a perda da referência é mantida";
+} else if (ehMO(i) && moBloco) {
+plano.coef = r4(Number(i.coeficiente) * nA / nR);
+plano.regra = "MO ∝ nº de blocos/m² (padrão ligado, só na mesma espessura; opts.moPorBloco=false mantém a da referência): coef × " + fmt(r4(nA / nR));
+} else if (ehMO(i) || ehEQ(i)) {
+plano.regra = "MO/EQ mantido da referência (sem escalar): a SINAPI não publica fator de produtividade por bloco";
+} else {
+plano.regra = "mantido da referência (consumo por m² de parede independe do bloco: tela, pino…)";
+}
+out.insumos.push(plano);
+});
+out.regras.push("Família alvenaria de bloco: referência " + R.codigo + " (" + pr.L + "x" + pr.A + "x" + pr.C + ", esp " + fmt(pr.esp) + " cm) → " + p.L + "x" + p.A + "x" + p.C + ", esp " + fmt(p.esp) + " cm.");
+out.premissas.push(moBloco ? "MO escalada pelo nº de blocos/m² (padrão decidido pelo engenheiro; só na mesma espessura da referência " + R.codigo + ")." : "MO e equipamento mantidos da referência " + R.codigo + " (sem escalar por bloco; na SINAPI a MO acompanha o nº de blocos/m² dentro da mesma espessura — decisão do engenheiro).");
+return out;
+}
+};
+var CER_DIM = new RegExp("DIMENSOES(?: DE)? " + NUMRE + "X" + NUMRE + " CM");
+var FAIXA_RE = /FORMATO (MENOR OU IGUAL A|MAIOR QUE|MAIOR A) (\d+)(?: ATE (\d+))? CM2/;
+function faixaDe(desc) {
+var m = FAIXA_RE.exec(sa(desc)); if (!m) return null;
+var x = Number(m[2]);
+if (m[1] === "MENOR OU IGUAL A") return { min: 0, max: x, texto: m[0] };
+return { min: x, max: m[3] ? Number(m[3]) : Infinity, texto: m[0] };
+}
+function areaNaFaixa(a, f) { return a > f.min && a <= f.max || (f.min === 0 && a <= f.max); }
+function semFaixa(desc) { return sa(desc).replace(FAIXA_RE, "FORMATO #").replace(/,\s*$/, "").replace(/\s+/g, " "); }
+var CERAMICA = {
+id: "revestimento-ceramico", nome: "Revestimento cerâmico (placas esmaltada/porcelanato)", unidades: ["m2"],
+reconhece: function (desc) {
+var D = sa(desc);
+if (!/^REVESTIMENTO CERAMICO PARA (PAREDES|PISO) .*PLACAS TIPO (ESMALTADA|PORCELANATO) /.test(D)) return null;
+var m = CER_DIM.exec(D); if (!m) return null;
+var a = nb(m[1]), b = nb(m[2]);
+return { a: a, b: b, area: a * b };
+},
+chave: function (desc) { return semAF(sa(desc)).replace(CER_DIM, "DIMENSOES #"); },
+distancia: function (r, a) { return Math.abs(Math.log(r.area / a.area)) + (faixaDeArea(r.area) !== faixaDeArea(a.area) ? 0.5 : 0); },
+variante: function (refs, p) {
+var R = refs[0], pr = R.params, out = { insumos: [], regras: [], premissas: [], faltou: [] };
+var perim = function (x) { return (x.a + x.b) / (x.a * x.b); };
+R.comp.insumos.forEach(function (i) {
+var D = sa(i.descricao), plano = { ref: i, coef: Number(i.coeficiente), regra: "mantido da referência" };
+var un = C.chaveUn(i.unidade);
+if (/^REJUNTE/.test(D)) {
+plano.coef = r4(Number(i.coeficiente) * perim(p) / perim(pr));
+plano.regra = "rejunte ∝ (a+b)/(a·b) da peça (largura e espessura de junta e densidade se cancelam): coef × " + fmt(r4(perim(p) / perim(pr)));
+} else if (un === "m2" && /^(PISO EM|REVESTIMENTO|PORCELANATO)/.test(D)) {
+var f = faixaDe(i.descricao);
+plano.regra = "peça por m² = 1 + perda, perda mantida da referência (coef " + fmt(Number(i.coeficiente)) + ")";
+if (f && !areaNaFaixa(p.area, f)) {
+var cab = /^PISO/.test(D) ? "PISO" : "REVESTIMENTO", tipo = /PORCELANATO/.test(D) ? "PORCELANATO" : "CERAMICA ESMALTADA";
+plano.troca = {
+rotulo: "peça cerâmica de formato " + fmt(p.area) + " cm²",
+descBusca: String(i.descricao).replace(/FORMATO (MENOR OU IGUAL A|MAIOR QUE|MAIOR A) \d+(?: ATE \d+)? CM2/i, "FORMATO " + (p.area > f.max ? "MAIOR QUE " + fmt(f.max) : "MENOR OU IGUAL A " + fmt(f.max)) + " CM2"),
+aceita: function (item) {
+var f2 = faixaDe(item.descricao);
+var d2 = sa(item.descricao);
+return !!f2 && areaNaFaixa(p.area, f2) && d2.indexOf(cab) === 0 && d2.indexOf(tipo) > -1 && C.chaveUn(item.unidade) === "m2";
+}
+};
+}
+} else if (un === "un" && /CERAMIC|PORCELANATO|PISO|REVESTIMENTO/.test(D)) {
+plano.coef = r4(Number(i.coeficiente) * pr.area / p.area);
+plano.regra = "peça (un) por m² = (1+perda) ÷ área da peça: coef × " + fmt(r4(pr.area / p.area)) + " (perda da referência mantida)";
+} else if (/^ARGAMASSA COLANTE/.test(D)) {
+plano.regra = "argamassa colante mantida da referência (a SINAPI a muda por classe de formato; erro medido em test-mor-compositor.js)";
+} else if (ehMO(i) || ehEQ(i)) {
+plano.regra = "MO/EQ mantido da referência (sem escalar): a SINAPI cresce com o formato mas não publica o fator";
+}
+out.insumos.push(plano);
+});
+out.regras.push("Família revestimento cerâmico: referência " + R.codigo + " (" + fmt(pr.a) + "x" + fmt(pr.b) + " cm) → " + fmt(p.a) + "x" + fmt(p.b) + " cm.");
+out.premissas.push("MO mantida da referência " + R.codigo + " (SINAPI usa mais horas para formato maior; o erro medido está no teste).");
+return out;
+}
+};
+function faixaDeArea(a) { return a <= 2025 ? 0 : 1; }
+var ESPRE = new RegExp("ESPESSURA " + NUMRE + " ?CM");
+var CONTRAPISO = {
+id: "contrapiso-espessura", nome: "Contrapiso / argamassa por espessura", unidades: ["m2"],
+reconhece: function (desc) {
+var D = sa(desc);
+if (!/^CONTRAPISO/.test(D)) return null;
+var m = ESPRE.exec(D); if (!m) return null;
+return { esp: nb(m[1]) };
+},
+chave: function (desc) { return semAF(sa(desc)).replace(ESPRE, "ESPESSURA #"); },
+distancia: function (r, a) { return Math.abs(r.esp - a.esp); },
+variante: function (refs, p) {
+var R = refs[0], pr = R.params, out = { insumos: [], regras: [], premissas: [], faltou: [] };
+var R2 = null, k;
+for (k = 1; k < refs.length; k++) if (refs[k].params.esp !== pr.esp) { R2 = refs[k]; break; }
+R.comp.insumos.forEach(function (i) {
+var D = sa(i.descricao), plano = { ref: i, coef: Number(i.coeficiente), regra: "mantido da referência" };
+if (ehMAT(i) && /^ARGAMASSA/.test(D)) {
+var i2 = R2 ? R2.comp.insumos.filter(function (x) { return mesmoCod(x, i); })[0] : null;
+if (i2) {
+var c1 = Number(i.coeficiente), c2 = Number(i2.coeficiente), e1 = pr.esp, e2 = R2.params.esp;
+var c = c1 + (c2 - c1) * (p.esp - e1) / (e2 - e1);
+if (c > 0) {
+plano.coef = r4(c);
+plano.regra = "argamassa por espessura: reta entre as composições SINAPI " + R.codigo + " (" + fmt(e1) + " cm → " + fmt(c1) + ") e " + R2.codigo + " (" + fmt(e2) + " cm → " + fmt(c2) + ") em " + fmt(p.esp) + " cm";
+out.insumos.push(plano); return;
+}
+}
+plano.coef = r4(Number(i.coeficiente) * p.esp / pr.esp);
+plano.regra = "argamassa ∝ espessura (volume = área × e): coef × " + fmt(r4(p.esp / pr.esp)) + " (" + fmt(pr.esp) + " → " + fmt(p.esp) + " cm); a SINAPI tem perda decrescente com a espessura (erro medido no teste)";
+} else if (ehMO(i) || ehEQ(i)) {
+plano.regra = "MO/EQ mantido da referência (sem escalar)";
+} else {
+plano.regra = "mantido da referência (consumo fixo por m²: aditivo, cimento de ponte…)";
+}
+out.insumos.push(plano);
+});
+out.regras.push("Família contrapiso por espessura: referência " + R.codigo + " (" + fmt(pr.esp) + " cm)" + (R2 ? " e " + R2.codigo + " (" + fmt(R2.params.esp) + " cm)" : "") + " → " + fmt(p.esp) + " cm.");
+out.premissas.push("MO mantida da referência " + R.codigo + " (sem escalar por espessura).");
+return out;
+}
+};
+var DEMAO_RE = /\b(UMA|DUAS|TRES|QUATRO|CINCO|\d+) DEMAOS?\b/;
+var NOMES_N = { UMA: 1, DUAS: 2, TRES: 3, QUATRO: 4, CINCO: 5 };
+var PINTURA = {
+id: "pintura-demaos", nome: "Pintura / massa / selador por demãos", unidades: ["m2"],
+reconhece: function (desc) {
+var D = sa(desc), m = DEMAO_RE.exec(D); if (!m) return null;
+if (/^IMPERMEABILIZACAO/.test(D)) return null;
+var n = NOMES_N[m[1]] || Number(m[1]);
+return n > 0 ? { n: n } : null;
+},
+chave: function (desc) { return semAF(sa(desc)).replace(DEMAO_RE, "# DEMAO"); },
+distancia: function (r, a) { return Math.abs(r.n - a.n); },
+variante: function (refs, p, opts) {
+opts = opts || {};
+var R = refs[0], pr = R.params, out = { insumos: [], regras: [], premissas: [], faltou: [] };
+var moProp = opts.moPorDemao !== "manter";
+var f = p.n / pr.n;
+R.comp.insumos.forEach(function (i) {
+var plano = { ref: i, coef: Number(i.coeficiente), regra: "mantido da referência" };
+if (ehMAT(i) && /^(FITA|SELADOR|FUNDO)/.test(sa(i.descricao))) {
+plano.regra = "mantido da referência (selador/fita crepe não escalam com as demãos da tinta: SINAPI 102491 × 102492)";
+} else if (ehMAT(i)) {
+plano.coef = r4(Number(i.coeficiente) * f);
+plano.regra = "material ∝ nº de demãos: coef × " + p.n + "/" + pr.n;
+} else if (ehMO(i) && moProp) {
+plano.coef = r4(Number(i.coeficiente) * f);
+plano.regra = "MO ∝ nº de demãos (opção moPorDemao=proporcional): coef × " + p.n + "/" + pr.n;
+} else {
+plano.regra = "MO/EQ mantido da referência (sem escalar por demão)";
+}
+out.insumos.push(plano);
+});
+out.regras.push("Família pintura por demãos: referência " + R.codigo + " (" + pr.n + " demão/demãos) → " + p.n + ".");
+out.premissas.push(moProp ? "MO proporcional ao nº de demãos (padrão decidido pelo engenheiro; a SINAPI mostra de 1,47× a 2× por dobro de demãos)." : "MO mantida da referência " + R.codigo + " (sem escalar por demão; a SINAPI mostra de 1,47× a 2× por dobro de demãos — decisão do engenheiro).");
+return out;
+}
+};
+var FCK_RE = /FCK ?=? ?(\d+) ?MPA/;
+var CLASSE_RE = /CLASSE DE RESISTENCIA C(\d+)/;
+var SLUMP_RE = /SLUMP ?= ?(\d+) ?\+\/- ?\d+ ?MM/;
+function semClasse(D) { return D.replace(CLASSE_RE, "CLASSE DE RESISTENCIA C#").replace(SLUMP_RE, "SLUMP #"); }
+function slumpDe(D) { var m = SLUMP_RE.exec(D); return m ? Number(m[1]) : null; }
+var CONCRETO = {
+id: "concreto-fck", nome: "Concreto por fck (troca do insumo concreto)", unidades: null,
+reconhece: function (desc) {
+var m = FCK_RE.exec(sa(desc)); if (!m) return null;
+return { fck: Number(m[1]) };
+},
+chave: function (desc) { return semAF(sa(desc)).replace(FCK_RE, "FCK #"); },
+distancia: function (r, a) { return Math.abs(r.fck - a.fck); },
+variante: function (refs, p) {
+var R = refs[0], pr = R.params, out = { insumos: [], regras: [], premissas: [], faltou: [] }, trocou = 0;
+R.comp.insumos.forEach(function (i) {
+var D = sa(i.descricao), plano = { ref: i, coef: Number(i.coeficiente), regra: "mantido da referência (mesmo consumo, mesma MO)" };
+var m = CLASSE_RE.exec(D);
+if (/^CONCRETO/.test(D) && m && Number(m[1]) === pr.fck) {
+var base = semClasse(D), un = C.chaveUn(i.unidade);
+plano.regra = "insumo concreto trocado de C" + pr.fck + " para C" + p.fck + " (classe escrita na descrição da base); coeficiente igual ao da referência";
+plano.troca = {
+rotulo: "concreto C" + p.fck,
+nota: function (item) {
+var a = slumpDe(D), b = slumpDe(sa(item.descricao));
+return (a !== null && b !== null && a !== b) ? "ATENÇÃO: o concreto C" + p.fck + " da base tem slump " + b + " mm (a referência usa " + a + " mm) — não existe C" + p.fck + " com o mesmo slump; confira." : "";
+},
+descBusca: String(i.descricao).replace(/CLASSE DE RESISTENCIA C\d+/i, "CLASSE DE RESISTENCIA C" + p.fck),
+aceita: function (item) {
+var d2 = sa(item.descricao), m2 = CLASSE_RE.exec(d2);
+return !!m2 && Number(m2[1]) === p.fck && semClasse(d2) === base && C.chaveUn(item.unidade) === un;
+}
+};
+trocou++;
+}
+out.insumos.push(plano);
+});
+if (!trocou) out.faltou.push("a referência " + R.codigo + " não tem insumo «CONCRETO … CLASSE DE RESISTENCIA Cnn» para trocar (concreto produzido na obra tem outro traço)");
+out.regras.push("Família concreto por fck: referência " + R.codigo + " (fck " + pr.fck + ") → fck " + p.fck + ".");
+out.premissas.push("MO e equipamento iguais aos da referência " + R.codigo + " (na SINAPI não mudam entre classes de concreto usinado).");
+return out;
+}
+};
+var LISTA = [ALVENARIA, CERAMICA, CONTRAPISO, PINTURA, CONCRETO];
+var LIMITE_CONFERIR = 15;
+var ERRO_CUSTO = {
+"alvenaria-bloco": { mesma: 7.1, outra: 15.7, nota: "mão de obra proporcional aos blocos só na mesma espessura; argamassa de junta erra mais em outra espessura" },
+"revestimento-ceramico": { todos: 27, medido: 26.9, nota: "MO mantida da referência (a SINAPI usa mais horas em formato maior) e argamassa colante por classe de formato" },
+"contrapiso-espessura": { todos: 16.4, nota: "argamassa por espessura (reta entre irmãs) e MO mantida" },
+"pintura-demaos": { todos: 32.2, nota: "MO proporcional às demãos (a SINAPI cresce de 1,47× a 2× por dobro de demãos)" },
+"concreto-fck": { todos: 19.4, nota: "coeficientes e insumo idênticos à SINAPI; a diferença vem do slump/preço do concreto escolhido" }
+};
+function erroCusto(famId, pRef, pAlvo) {
+var e = ERRO_CUSTO[famId]; if (!e) return { erro: 0, nota: "" };
+if (famId === "alvenaria-bloco") return { erro: (pRef && pAlvo && pRef.esp === pAlvo.esp) ? e.mesma : e.outra, nota: e.nota };
+return { erro: e.todos, nota: e.nota };
+}
+var Fam = {
+lista: function () { return LISTA.slice(); },
+porId: function (id) { return LISTA.filter(function (f) { return f.id === id; })[0] || null; },
+detectar: function (desc, unidade) {
+var uk = unidade ? C.chaveUn(unidade) : null, i;
+for (i = 0; i < LISTA.length; i++) {
+var f = LISTA[i];
+if (f.unidades && uk && f.unidades.indexOf(uk) < 0) continue;
+var p = f.reconhece(desc);
+if (p) return { familia: f, params: p };
+}
+return null;
+},
+nomes: function () { return LISTA.map(function (f) { return f.nome; }); },
+ERRO_CUSTO: ERRO_CUSTO, LIMITE_CONFERIR: LIMITE_CONFERIR, erroCusto: erroCusto,
+_interno: { faixaDe: faixaDe, areaNaFaixa: areaNaFaixa, semFaixa: semFaixa, semClasse: semClasse, blocosPorM2: blocosPorM2, volJunta: volJunta, dimsDoTexto: dimsDoTexto, J_CM: J_CM }
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Fam;
+global.MorFamilias = Fam;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/casador.js ==== */
+try {
+(function (global) {
+"use strict";
+var OR = function () { return global.Orcamentista || (typeof require === "function" ? require("../orcamentista.js") : null); };
+function numerosCanon(txt, O) {
+var out = [];
+(O.numerosDe(txt) || []).forEach(function (n) {
+var v = parseFloat(String(n).replace(",", "."));
+if (v === v && out.indexOf(v) < 0) out.push(v);
+});
+return out;
+}
+function semCarimbo(s) { return String(s || "").replace(/\bAF_\S*/gi, " "); }
+function negacao(txt, norm) { return /(^| )(nao|sem)( |$)/.test(" " + norm(txt) + " "); }
+var Casador = {
+medidasEUnidade: function (item, cand, ctx) {
+var O = OR(), uk = ctx.unidadeChave || function (u) { return String(u || "").toLowerCase(); };
+var desc = String(item.descricao || item.desc || ""), un = item.unidade || item.un || "";
+if (!un || !cand.unidade) return { ok: false, regra: "unidade", motivo: "sem unidade para conferir (" + (un || "?") + " × " + (cand.unidade || "?") + ")" };
+if (uk(un) !== uk(cand.unidade)) return { ok: false, regra: "unidade", motivo: "unidade " + cand.unidade + " ≠ " + un };
+var nA = numerosCanon(semCarimbo(desc), O), nB = numerosCanon(semCarimbo(cand.descricao), O);
+var falta = nA.filter(function (v) { return nB.indexOf(v) < 0; });
+if (falta.length) return { ok: false, regra: "medida", motivo: "a medida " + falta.join(", ") + " não aparece na descrição do código (" + String(cand.descricao).slice(0, 50) + ")" };
+return { ok: true };
+},
+regras: function (item, cand, ctx) {
+var O = OR(), norm = ctx.normalizar || function (s) { return String(s || "").toLowerCase(); }, uk = ctx.unidadeChave || function (u) { return String(u || "").toLowerCase(); };
+var desc = String(item.descricao || item.desc || ""), un = item.unidade || item.un || "";
+if (un && cand.unidade && uk(un) !== uk(cand.unidade)) return { ok: false, regra: "unidade", motivo: "unidade " + cand.unidade + " ≠ " + un };
+if (norm(desc).replace(/\s+/g, " ") === norm(cand.descricao).replace(/\s+/g, " ")) return { ok: true, identica: true };
+var nA = numerosCanon(semCarimbo(desc), O), nB = numerosCanon(semCarimbo(cand.descricao), O);
+var falta = nA.filter(function (v) { return nB.indexOf(v) < 0; });
+if (falta.length) return { ok: false, regra: "medida", motivo: "a medida " + falta.join(", ") + " não aparece na descrição do candidato" };
+if (negacao(desc, norm) !== negacao(cand.descricao, norm)) return { ok: false, regra: "negacao", motivo: "negação diverge (não/sem × com)" };
+var ta = O.tokens(desc, norm).filter(function (t) { return t.length >= 4 && !/\d/.test(t); }), cab = ta[0];
+if (cab) {
+var tb = O.tokens(cand.descricao, norm), raiz = cab.slice(0, Math.min(5, cab.length));
+var tem = tb.some(function (x) { return x === cab || x.indexOf(raiz) === 0 || (x.length >= 4 && cab.indexOf(x.slice(0, Math.min(5, x.length))) === 0); });
+if (!tem) return { ok: false, regra: "objeto", motivo: "o objeto «" + cab + "» não aparece no candidato" };
+}
+var cobre = function (tb, t) { var r = t.slice(0, Math.min(5, t.length)); return tb.some(function (x) { return x === t || x.indexOf(r) === 0 || (x.length >= 4 && t.indexOf(x.slice(0, Math.min(5, x.length))) === 0); }); };
+var tbAll = O.tokens(cand.descricao, norm);
+if (item.intencao) {
+var perdidas = O.tokens(item.intencao, norm).filter(function (t) { return t.length >= 4 && !/\d/.test(t) && !cobre(tbAll, t); });
+if (perdidas.length) return { ok: false, regra: "intencao", motivo: "a intenção pede «" + perdidas.join(", ") + "» e o candidato não tem" };
+}
+var dsig = O.tokens(desc, norm).filter(function (t) { return t.length >= 5 && !/\d/.test(t); });
+if (dsig.length >= 3) {
+var tem2 = dsig.filter(function (t) { return cobre(tbAll, t); }).length / dsig.length;
+if (tem2 < 0.7) return { ok: false, regra: "cobertura", motivo: "o candidato cobre só " + Math.round(tem2 * 100) + "% das palavras da descrição" };
+}
+return { ok: true };
+},
+_candidatos: function (item, ctx) {
+var O = OR(), norm = ctx.normalizar || function (s) { return String(s || "").toLowerCase(); };
+var desc = String(item.descricao || item.desc || ""), intencao = String(item.intencao || ""), un = item.unidade || item.un || "";
+var vistos = {}, out = [];
+var add = function (fonte, it, via) {
+var k = fonte + ":" + it.codigo; if (vistos[k]) return; vistos[k] = 1;
+var s1 = O.similaridade(desc, it.descricao, un, it.unidade, ctx), s2 = intencao ? O.similaridade(intencao, it.descricao, un, it.unidade, ctx) : 0;
+out.push({ fonte: fonte, item: it, sim: Math.max(s1, s2), via: via });
+};
+var cx = {}, z;
+for (z in ctx) if (Object.prototype.hasOwnProperty.call(ctx, z)) cx[z] = ctx[z];
+cx.semPendente = true; cx.elaborar = null; cx._idxDesc = ctx._idxDesc; cx._compCache = null;
+[desc, intencao].forEach(function (d, k) {
+if (!d) return;
+var L = O.decidir({ descricao: d, unidade: un, quantidade: 1, codigo: "" }, 0, k, cx);
+(L.candidatos || []).forEach(function (c) { if (c.item && c.item.codigo) add(c.fonte, c.item, c.via || "descricao"); });
+});
+ctx._idxDesc = cx._idxDesc;
+if (typeof ctx.buscar === "function") {
+[desc, intencao].forEach(function (d) {
+if (!d) return;
+var termos = O.termosDeBusca(d, norm), pal = termos.filter(function (t) { return !/\d/.test(t); }), nums = termos.filter(function (t) { return /\d/.test(t); });
+var q = [];
+if (pal.length >= 3) q.push(pal.slice(0, 3).join(" "));
+if (pal.length >= 2) { q.push(pal.slice(0, 2).join(" ")); q.push(pal[0] + " " + pal[pal.length - 1]); }
+if (pal.length >= 3) q.push(pal[1] + " " + pal[2]);
+if (pal.length && nums.length) q.push(pal[0] + " " + nums[0]);
+if (pal.length) q.push(pal[0]);
+var seen = {};
+q.forEach(function (t) {
+if (!t || seen[t]) return; seen[t] = 1;
+(ctx.buscar(t, { fontes: ctx.fontes, max: t.indexOf(" ") < 0 ? 200 : 120 }) || []).forEach(function (r) { add(r.fonte, r.item, "busca"); });
+});
+});
+}
+return out;
+},
+casar: function (item, ctx, opts) {
+opts = opts || {};
+var O = OR(), lim = (ctx && ctx.limiares) || O.LIMIARES, auto = opts.limiar != null ? opts.limiar : lim.auto, folga = opts.folga != null ? opts.folga : 0.02;
+var desc = String(item.descricao || item.desc || "").trim();
+if (!desc) return { ok: false, motivo: "item sem descrição", sugestoes: [], rejeitados: [] };
+if (!ctx || typeof ctx.buscar !== "function") return { ok: false, motivo: "sem base de busca no contexto", sugestoes: [], rejeitados: [] };
+var cands = this._candidatos(item, ctx), self = this, bons = [], rej = [], quase = [];
+cands.forEach(function (c) {
+if (!(Number(c.item.custoUnitario) > 0)) { rej.push({ codigo: c.item.codigo, fonte: c.fonte, regra: "preco", motivo: "sem preço na base" }); return; }
+var r = self.regras(item, c.item, ctx);
+if (!r.ok) {
+rej.push({ codigo: c.item.codigo, fonte: c.fonte, regra: r.regra, motivo: r.motivo, sim: c.sim });
+if ((r.regra === "intencao" || r.regra === "cobertura") && c.sim >= 0.5) quase.push(c);
+return;
+}
+bons.push(c);
+});
+bons.sort(function (a, b) { return (b.sim - a.sim) || (String(a.item.codigo) < String(b.item.codigo) ? -1 : 1); });
+var sug = bons.slice(0, 3).map(function (c) { return { codigo: String(c.item.codigo), fonte: c.fonte, descricao: c.item.descricao, unidade: c.item.unidade, custoUnitario: c.item.custoUnitario, confianca: Math.round(c.sim * 100) / 100 }; });
+var sugQ = quase.sort(function (a, b) { return b.sim - a.sim; }).slice(0, 3).map(function (c) { return { codigo: String(c.item.codigo), fonte: c.fonte, descricao: c.item.descricao, unidade: c.item.unidade, custoUnitario: c.item.custoUnitario, confianca: Math.round(c.sim * 100) / 100, aviso: "reprovado nas regras de palavras — confira" }; });
+if (!bons.length) return { ok: false, motivo: cands.length ? "nenhum candidato passou nas regras (unidade, medidas, negação, objeto, intenção)" : "a busca não achou nada nas bases", sugestoes: sugQ, rejeitados: rej.slice(0, 8) };
+var top = bons[0];
+if (top.sim < auto) return { ok: false, motivo: "melhor candidato fraco (" + Math.round(top.sim * 100) + "% < " + Math.round(auto * 100) + "%): " + top.item.codigo, sugestoes: sug, rejeitados: rej.slice(0, 8) };
+var empate = bons.filter(function (c) { return c !== top && top.sim - c.sim <= folga && String(c.item.codigo) !== String(top.item.codigo); });
+if (empate.length) return { ok: false, motivo: "empate entre " + (empate.length + 1) + " candidatos (" + [top].concat(empate).slice(0, 3).map(function (c) { return c.item.codigo; }).join(", ") + ") — decisão do orçamentista", sugestoes: sug, rejeitados: rej.slice(0, 8) };
+return {
+ok: true, codigo: String(top.item.codigo), fonte: top.fonte, confianca: Math.round(top.sim * 100) / 100, via: top.via,
+descricaoBase: top.item.descricao, unidadeBase: top.item.unidade, custoUnitario: Number(top.item.custoUnitario),
+motivo: "casou com " + top.fonte + " " + top.item.codigo + " (semelhança " + Math.round(top.sim * 100) + "%, mesma unidade, medidas e objeto conferidos)",
+sugestoes: sug.slice(1), rejeitados: rej.slice(0, 8)
+};
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Casador;
+global.MorCasador = Casador;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/compositor.js ==== */
+try {
+(function (global) {
+"use strict";
+var C = global.MorConversoes || (typeof require === "function" ? require("./conversoes.js") : null);
+var F = global.MorFamilias || (typeof require === "function" ? require("./familias.js") : null);
+var CP = function () { return global.ComposicaoPropria || (typeof require === "function" ? require("../composicaopropria.js") : null); };
+var OR = function () { return global.Orcamentista || (typeof require === "function" ? require("../orcamentista.js") : null); };
+var r2 = function (x) { return Math.round(x * 100) / 100; };
+function gerarCodigoAuto(existentes) {
+var max = 0;
+(existentes || []).forEach(function (c) {
+var m = String(c || "").match(/^PROP-AUTO-(\d{1,6})$/i);
+if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+});
+var s = String(max + 1);
+while (s.length < 4) s = "0" + s;
+return "PROP-AUTO-" + s;
+}
+function acharInsumo(troca, refIns, ctx) {
+var orc = OR(), cx = {}, k;
+for (k in ctx) if (Object.prototype.hasOwnProperty.call(ctx, k)) cx[k] = ctx[k];
+var soInsumo = String(refIns.tipo || "").toUpperCase() !== "COMPOSICAO";
+cx.buscar = function (q, o) {
+var o2 = {}, z; for (z in (o || {})) o2[z] = o[z];
+if (soInsumo) o2.tipo = "insumo";
+return ctx.buscar(q, o2);
+};
+var cands = orc.candidatosInsumo(troca.descBusca, cx) || [];
+try {
+var norm = ctx.normalizar || function (x) { return String(x || "").toLowerCase(); };
+var exata = orc.tokens(troca.descBusca, norm).join(" "), vistos = {};
+cands.forEach(function (r) { vistos[(r.fonte || "SINAPI") + ":" + r.item.codigo] = 1; });
+(cx.buscar(exata, { fontes: ctx.fontesInsumo || ctx.fontes, max: 200 }) || []).forEach(function (r) {
+var key = (r.fonte || "SINAPI") + ":" + r.item.codigo; if (vistos[key]) return; vistos[key] = 1; cands.push(r);
+});
+} catch (eEx) { }
+var bons = cands.filter(function (r) { return r && r.item && Number(r.item.custoUnitario) > 0 && troca.aceita(r.item); });
+if (!bons.length) return { ok: false, motivo: "falta na base o insumo «" + troca.rotulo + "» (busca: " + troca.descBusca.slice(0, 90) + ")", candidatosVistos: cands.length };
+bons = bons.map(function (r) { return { r: r, s: orc.pontuarInsumo(troca.descBusca, refIns.unidade, r.item, cx) }; });
+bons.sort(function (a, b) { return (b.s - a.s) || (String(a.r.item.codigo) < String(b.r.item.codigo) ? -1 : 1); });
+return { ok: true, item: bons[0].r.item, fonte: bons[0].r.fonte || "SINAPI", alternativas: bons.slice(1, 4).map(function (b) { return b.r.item.codigo; }) };
+}
+var Comp = {
+gerarCodigoAuto: gerarCodigoAuto,
+referencias: function (descricao, unidade, fam, pAlvo, ctx, opts) {
+opts = opts || {};
+var uk = C.chaveUn(unidade), chaveAlvo = fam.chave(descricao), cands = [], oficial = null;
+(ctx.analitico || []).forEach(function (c) {
+if (!c || !c.insumos || !c.insumos.length) return;
+if (opts.excluirCodigo && String(c.codigo) === String(opts.excluirCodigo)) return;
+if (C.chaveUn(c.unidade) !== uk) return;
+var p = fam.reconhece(c.descricao); if (!p) return;
+if (fam.chave(c.descricao) !== chaveAlvo) return;
+if (fam.distancia(p, pAlvo) === 0) { if (!oficial) oficial = String(c.codigo); return; }
+cands.push({ comp: c, params: p, codigo: String(c.codigo), d: fam.distancia(p, pAlvo) });
+});
+if (!cands.length) return { refs: [], oficial: oficial };
+var score = {};
+try {
+CP().analogas(descricao, cands.map(function (x) { return x.comp; }), cands.length, { semFiltro: true }).forEach(function (a) { score[String(a.codigo)] = a.score; });
+} catch (e) { }
+cands.sort(function (a, b) { return (a.d - b.d) || ((score[b.codigo] || 0) - (score[a.codigo] || 0)) || (a.codigo < b.codigo ? -1 : 1); });
+return { refs: cands, oficial: oficial };
+},
+compor: function (descricao, unidade, ctx, opts) {
+opts = opts || {};
+var desc = String(descricao || "").trim(), cp = CP(), faltou = [];
+var fail = function (motivo, extra) {
+var r = { ok: false, motivo: motivo, faltou: faltou.slice(), familia: null, regras: [] };
+var k; for (k in (extra || {})) r[k] = extra[k];
+return r;
+};
+if (desc.length < 10) return fail("descrição curta demais para reconhecer a família");
+if (!unidade) return fail("sem unidade — o coeficiente é POR unidade do serviço");
+if (!ctx || !ctx.analitico || !ctx.analitico.length) { faltou.push("base analítica carregada"); return fail("sem base analítica: é dela que saem os coeficientes"); }
+var det = F.detectar(desc, unidade);
+if (!det) {
+faltou.push("família tabelada para este serviço (hoje: " + F.nomes().join("; ") + ")");
+return fail("nenhuma família tabelada reconhece este serviço (ou a unidade não é a da família)");
+}
+var fam = det.familia, pAlvo = det.params;
+var R = this.referencias(desc, unidade, fam, pAlvo, ctx, opts);
+if (R.oficial) return fail("a base já tem este serviço (" + R.oficial + ") — use o código oficial, não crie composição", { familia: fam.id, rota: "oficial", codigoOficial: R.oficial });
+var refs = R.refs;
+if (opts.referencia) {
+var forc = refs.filter(function (x) { return x.codigo === String(opts.referencia); })[0];
+if (!forc) return fail("a referência " + opts.referencia + " não é da mesma família/unidade do serviço", { familia: fam.id });
+refs = [forc].concat(refs.filter(function (x) { return x !== forc; }));
+}
+if (!refs.length) {
+faltou.push("composição SINAPI da família «" + fam.nome + "» com o mesmo serviço e outro parâmetro");
+return fail("a família foi reconhecida, mas a base não tem composição irmã (mesmo serviço, parâmetro diferente, mesma unidade)", { familia: fam.id });
+}
+var v = fam.variante(refs, pAlvo, opts);
+v.faltou.forEach(function (f) { faltou.push(f); });
+if (faltou.length) return fail("a família não consegue aplicar a regra", { familia: fam.id });
+var ref = refs[0], prop = cp.daReferencia(ref.comp, { resolve: ctx.resolve }), regras = v.regras.slice(), avisos = [], insumos = [];
+v.insumos.forEach(function (pl, idx) {
+var base = prop.insumos[idx] || {};
+var ins = {
+codigo: String(pl.ref.codigo), descricao: pl.ref.descricao, unidade: pl.ref.unidade,
+coeficiente: pl.coef, custoUnitario: Number(base.custoUnitario) > 0 ? Number(base.custoUnitario) : Number(pl.ref.custoUnitario) || 0,
+categoria: pl.ref.categoria || pl.ref.tipoInsumo || "", tipo: pl.ref.tipo || "insumo", fonte: "SINAPI", memoria: pl.regra
+};
+if (pl.troca) {
+var a = acharInsumo(pl.troca, pl.ref, ctx);
+if (!a.ok) { faltou.push(a.motivo); return; }
+ins.codigo = String(a.item.codigo); ins.descricao = a.item.descricao; ins.unidade = a.item.unidade || ins.unidade;
+ins.custoUnitario = Number(a.item.custoUnitario); ins.fonte = a.fonte || "SINAPI";
+ins.memoria = pl.regra + " — insumo da referência " + pl.ref.codigo + " substituído por " + a.item.codigo + (a.alternativas.length ? " (outras opções: " + a.alternativas.join(", ") + ")" : "");
+regras.push("insumo " + pl.ref.codigo + " → " + a.item.codigo + " (" + pl.troca.rotulo + ")");
+var nota = pl.troca.nota ? pl.troca.nota(a.item) : "";
+if (nota) { avisos.push(nota); ins.memoria += " — " + nota; regras.push(nota); }
+}
+insumos.push(ins);
+});
+if (faltou.length) return fail("falta insumo na base para aplicar a regra", { familia: fam.id });
+var origemRef = { fonte: "SINAPI", codigo: ref.codigo, competencia: ctx.competencia || "" };
+var grupo = cp.grupoDoCriador(opts.grupo || ref.comp.grupo || "");
+var comp = {
+codigo: gerarCodigoAuto(ctx.codigosExistentes || []),
+codigoSec: "",
+descricao: desc,
+grupo: grupo,
+unidade: String(unidade).toLowerCase(),
+modeloRef: "SINAPI",
+metodo: "truncar2",
+maoDeObra: insumos.some(function (i) { return cp.catDe(i.categoria) === "MO"; }),
+observacao: "Composição gerada pelo Motor (família «" + fam.nome + "») a partir da SINAPI " + ref.codigo + " — " + String(ref.comp.descricao).slice(0, 80) + ". " + v.premissas.join(" "),
+insumos: insumos,
+origem: { familia: fam.id, referencia: origemRef, regras: regras.concat(v.premissas) }
+};
+var val = cp.validar(comp, {
+codigosExistentes: ctx.codigosExistentes || [],
+resolve: ctx.resolve || null,
+referencia: { codigo: ref.codigo, insumos: ref.comp.insumos }
+});
+if (!val.ok) { val.erros.forEach(function (e) { faltou.push(e); }); return fail("a validação da composição reprovou: " + val.erros.join(" | "), { familia: fam.id, erros: val.erros }); }
+(val.avisos || []).forEach(function (a) { avisos.push(a); });
+var igualEsp = pAlvo.esp !== undefined && ref.params.esp !== undefined ? pAlvo.esp === ref.params.esp : true;
+var ec = F.erroCusto(fam.id, ref.params, pAlvo), conferir = ec.erro > F.LIMITE_CONFERIR;
+if (conferir) {
+var aviso = "CONFERIR: nos ensaios sobre a SINAPI MG 2026-06 o custo total desta família divergiu até " + String(ec.erro).replace(".", ",") + "% da composição oficial (" + ec.nota + "). Confira insumo por insumo antes de usar.";
+comp.origem.regras.push(aviso); comp.origem.conferir = true; comp.origem.erroCustoMedido = ec.erro; comp.observacao += " " + aviso; v.premissas.push(aviso);
+} else comp.origem.erroCustoMedido = ec.erro;
+var conf = (fam.id === "concreto-fck" && !conferir) ? "alta" : "media";
+if (!igualEsp) conf = "media";
+return {
+ok: true, comp: comp, custo: val.custo, familia: fam.id, referencia: origemRef,
+refDescricao: ref.comp.descricao, refPreco: ref.comp.custoUnitario,
+regras: comp.origem.regras, premissas: v.premissas, confianca: conf, conferir: conferir, erroCustoMedido: ec.erro, avisos: avisos, faltou: [], params: pAlvo
+};
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Comp;
+global.MorCompositor = Comp;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/motor.js ==== */
+try {
+(function (global) {
+"use strict";
+var R = global.MorRegras || (typeof require === "function" ? require("./regras.js") : null);
+var G = global.MorGeometria || (typeof require === "function" ? require("./geometria.js") : null);
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+var r2 = function (x) { return Math.round((Number(x) || 0) * 100) / 100; };
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function vazio(v) { return v === undefined || v === null || v === ""; }
+function fmt(v) {
+if (typeof v === "number") return Math.floor(v) === v ? String(v) : String(r2(v)).replace(".", ",");
+return String(v);
+}
+function interpolar(txt, ctx) {
+return String(txt).replace(/\{([A-Za-z_][A-Za-z0-9_.]*)\}/g, function (m, n) { return tem(ctx, n) ? fmt(ctx[n]) : m; });
+}
+function coagir(q, v) {
+if (q.bool) {
+if (v === true || v === "true" || v === "sim" || v === 1 || v === "1") return true;
+if (v === false || v === "false" || v === "nao" || v === "não" || v === 0 || v === "0") return false;
+return undefined;
+}
+if (q.num) {
+var n = G.num(v, null);
+if (n === null) return undefined;
+if ((q.min != null && n < q.min) || (q.max != null && n > q.max)) return undefined;
+return n;
+}
+if (q.op) return q.op.indexOf(v) > -1 ? v : undefined;
+return undefined;
+}
+function resolver(ctx, respostas) {
+var origem = {}, avisos = [];
+C.ordemPerguntas().forEach(function (id) {
+var q = C.pergunta(id), v;
+if (respostas && tem(respostas, id) && !vazio(respostas[id])) {
+v = coagir(q, respostas[id]);
+if (v === undefined) avisos.push("A resposta «" + respostas[id] + "» para «" + q.txt + "» não vale (fora da lista ou da faixa); usei o padrão.");
+else { ctx[id] = v; origem[id] = "resposta"; return; }
+}
+if (q.padraoExpr) {
+var t = R.tentar(q.padraoExpr, ctx);
+if (t.ok) v = t.valor; else { avisos.push("Padrão de «" + q.txt + "» com erro: " + t.erro); return; }
+} else if (q.padraoDe) {
+v = q.mapa[ctx[q.padraoDe]];
+if (v === undefined) { avisos.push("Sem padrão de «" + q.txt + "» para «" + ctx[q.padraoDe] + "»."); return; }
+} else v = q.padrao;
+ctx[id] = v; origem[id] = "padrao";
+});
+return { origem: origem, avisos: avisos };
+}
+function codigoDe(it) { return it.codigos && it.codigos.length ? it.codigos[0] : ""; }
+function variaveisDe(expr, ctx, defs) {
+var out = {}, fila = [], vistos = {}, porNome = {};
+(defs || []).forEach(function (d) { porNome[d[0]] = d[1]; });
+if (expr === null || expr === undefined) return out;
+fila.push(String(expr));
+while (fila.length) {
+(fila.shift().match(/[A-Za-z_][A-Za-z0-9_.]*/g) || []).forEach(function (nome) {
+if (vistos[nome]) return; vistos[nome] = 1;
+if (tem(ctx, nome) && (typeof ctx[nome] === "number" || typeof ctx[nome] === "boolean" || typeof ctx[nome] === "string")) out[nome] = typeof ctx[nome] === "number" ? r2(ctx[nome]) : ctx[nome];
+if (tem(porNome, nome)) fila.push(String(porNome[nome]));
+});
+}
+return out;
+}
+function avaliarEtapa(etapa, base, opts) {
+opts = opts || {};
+var ctx = {}, k, erros = [], linhas = [], itens = [];
+for (k in base.ctx) if (tem(base.ctx, k)) ctx[k] = base.ctx[k];
+if (etapa.geometria === "cobertura") {
+var cb = G.cobertura(base.g, base.p, ctx["cob.inclinacao"], ctx["cob.beiral"]);
+for (k in cb) if (tem(cb, k)) ctx[k] = cb[k];
+}
+etapa.vars.forEach(function (v) {
+var t = R.tentar(v[1], ctx);
+if (t.ok) ctx[v[0]] = t.valor; else erros.push(etapa.id + "." + v[0] + ": " + t.erro);
+});
+var premissas = [];
+etapa.premissas.forEach(function (p) {
+if (p.quando) { var q = R.tentar(p.quando, ctx); if (!q.ok || !q.valor) return; }
+premissas.push(interpolar(p.texto, ctx));
+});
+etapa.itens.forEach(function (it) {
+var regra = etapa.id + "." + it.chave, quando = true, tq;
+if (it.quando) {
+tq = R.tentar(it.quando, ctx);
+if (!tq.ok) { erros.push(regra + ": " + tq.erro); itens.push(item(it, regra, 0, tq.erro, premissas, "erro")); return; }
+quando = !!tq.valor;
+}
+if (!quando) return;
+if (it.qtd === null) { itens.push(item(it, regra, 0, "", premissas, "qtdpendente")); return; }
+var t = R.tentar(it.qtd, ctx);
+if (!t.ok) { erros.push(regra + ": " + t.erro); itens.push(item(it, regra, 0, t.erro, premissas, "erro")); return; }
+var q = r2(t.valor);
+if (!(q > 0)) return;
+itens.push(item(it, regra, q, "", premissas, "ok"));
+});
+function item(it, regra, q, erro, prem, estado) {
+var cod = codigoDe(it);
+return {
+etapa: etapa.etapa,
+codigo: cod,
+fonte: cod ? "SINAPI" : "",
+descricao: it.desc,
+unidade: it.un,
+quantidade: q,
+formula: it.formula,
+parametrico: true,
+estado: estado,
+erro: erro,
+mor: {
+regra: regra, formula: it.qtd === null ? "" : it.qtd, premissas: prem.slice(), origem: "catalogo",
+qtdOrigem: it.sugestao ? "sugerido" : (it.implicito ? "implicito" : "estimado"),
+porque: it.porque ? interpolar(it.porque, ctx) : "",
+confianca: (cod && estado === "ok") ? "alta" : "pendente",
+codigos: it.codigos.slice(), intencao: it.intencao,
+vars: variaveisDe(it.qtd, ctx, etapa.vars)
+}
+};
+}
+itens.forEach(function (l) {
+if (l.estado === "qtdpendente" && !opts.pendentes) return;
+linhas.push(l);
+});
+return { etapa: etapa, linhas: linhas, erros: erros, premissas: premissas, ctx: ctx };
+}
+function preparar(entrada, respostas, modo) {
+var n = G.normalizar(entrada);
+if (!n.ok) return { ok: false, erros: n.erros, premissas: n.premissas };
+var geo = G.derivar(n.p);
+var ctx = G.contexto(n.p, geo.g);
+ctx.modo = modo;
+var res = resolver(ctx, respostas);
+return { ok: true, erros: [], p: n.p, g: geo.g, ctx: ctx, premissas: n.premissas.concat(geo.premissas), origem: res.origem, avisos: res.avisos };
+}
+function mod(g, nome, caminho) {
+if (global[g]) return global[g];
+if (typeof require === "function") { try { return require(caminho); } catch (e) { return null; } }
+return null;
+}
+function resolverUm(it, ctx, opts) {
+opts = opts || {};
+var CAS = mod("MorCasador", "MorCasador", "./casador.js"), CMP = mod("MorCompositor", "MorCompositor", "./compositor.js");
+var out = { estado: "pendente", codigo: "", fonte: "", confianca: 0, motivo: "", casador: null, compositor: null, composicao: null };
+if (!CAS || !ctx) { out.motivo = "casador indisponível"; return out; }
+var MEM = opts.memoria ? mod("MorMemoria", "MorMemoria", "./memoria.js") : null, memSug = [];
+if (MEM) {
+var chaveM = it.descricao;
+var h = it.unidade ? MEM.consultarCasamento(opts.memoria, chaveM, it.unidade) : null;
+if (h && typeof ctx.obter === "function") {
+var bm = ctx.obter(h.fonte, h.codigo);
+var conf = bm ? CAS.medidasEUnidade({ descricao: it.descricao, unidade: it.unidade }, bm, ctx) : { ok: false, motivo: "o código não existe mais na base" };
+if (bm && Number(bm.custoUnitario) > 0 && conf.ok) {
+out.estado = "casado"; out.codigo = h.codigo; out.fonte = h.fonte; out.confianca = 1; out.confiancaTexto = "memória"; out.via = "memoria"; out.memoria = h;
+out.motivo = "decidido igual nas vezes anteriores (" + h.usos + " uso(s)" + (h.corrigido ? ", corrigido por você" : "") + "; mesma descrição, medidas e unidade) — confiança: memória";
+out.casador = { ok: true, sugestoes: [], via: "memoria" };
+return out;
+}
+}
+memSug = [];
+if (it.unidade && typeof ctx.obter === "function") MEM.sugerirCasamentos(opts.memoria, chaveM, it.unidade).forEach(function (g) {
+var bg = ctx.obter(g.fonte, g.codigo);
+var ukS = ctx.unidadeChave || function (u) { return String(u || "").toLowerCase(); };
+if (bg && Number(bg.custoUnitario) > 0 && ukS(bg.unidade) === ukS(it.unidade)) memSug.push({ codigo: String(g.codigo), fonte: g.fonte, descricao: bg.descricao, unidade: bg.unidade, custoUnitario: bg.custoUnitario, confianca: 0.95, memoria: true, aviso: "memória: usado antes para «" + String(g.intencao).slice(0, 50) + "» — confira a medida" });
+});
+var cm = it.unidade ? MEM.composicaoDaMemoria(opts.memoria, chaveM, it.unidade) : null;
+if (cm) {
+var og = cm.origem || {};
+out.estado = "composto"; out.codigo = cm.comp.codigo; out.fonte = "PROPRIA"; out.confianca = 0.9; out.confiancaTexto = "memória"; out.via = "memoria";
+out.composicao = { ok: true, comp: cm.comp, familia: og.familia || "", referencia: og.referencia || {}, regras: og.regras || [], premissas: [], confianca: "alta", daMemoria: true };
+out.motivo = "composição aceita antes (" + cm.usos + " uso(s)) — confiança: memória";
+return out;
+}
+}
+var c = CAS.casar({ descricao: it.descricao, unidade: it.unidade, intencao: it.intencao }, ctx, opts.casador);
+if (!c.ok && memSug.length) c.sugestoes = memSug.concat((c.sugestoes || []).filter(function (g) { return !memSug.some(function (m2) { return String(m2.codigo) === String(g.codigo); }); })).slice(0, 3);
+out.casador = c;
+if (c.ok) {
+out.estado = "casado"; out.codigo = c.codigo; out.fonte = c.fonte; out.confianca = c.confianca; out.motivo = c.motivo;
+return out;
+}
+if (CMP && ctx.analitico && ctx.analitico.length) {
+ctx._morComp = ctx._morComp || {};
+var chave = String(it.descricao).replace(/\s+/g, " ").toUpperCase() + "|" + String(it.unidade || "").toLowerCase();
+var k = ctx._morComp[chave];
+if (!k) { k = CMP.compor(it.descricao, it.unidade, ctx, opts.compositor); ctx._morComp[chave] = k; if (k.ok) { ctx.codigosExistentes = (ctx.codigosExistentes || []).concat([k.comp.codigo]); } }
+out.compositor = k;
+if (k.ok) {
+out.estado = "composto"; out.codigo = k.comp.codigo; out.fonte = "PROPRIA"; out.confianca = k.confianca === "alta" ? 0.9 : 0.6; out.composicao = k;
+out.motivo = "composição própria " + k.comp.codigo + " (família " + k.familia + ", referência SINAPI " + k.referencia.codigo + ")";
+return out;
+}
+}
+out.motivo = "casador: " + c.motivo + (out.compositor ? " · compositor: " + out.compositor.motivo : "");
+return out;
+}
+var Mor = {
+r2: r2, interpolar: interpolar,
+gerar: function (entrada) {
+var n = G.normalizar(entrada);
+if (!n.ok) return { ok: false, erros: n.erros, linhas: [], premissas: n.premissas };
+var pr = preparar(entrada, G.respostasLegado(n.p), "legado");
+var linhas = [], erros = [], prem = pr.premissas.slice();
+C.etapas().forEach(function (e) {
+if (e.novo) return;
+var r = avaliarEtapa(e, pr, { pendentes: false });
+r.linhas.forEach(function (l) { linhas.push(l); });
+r.erros.forEach(function (x) { erros.push(x); });
+r.premissas.forEach(function (x) { if (prem.indexOf(x) < 0 && /^(Elétrica|Hidráulica):/.test(x)) prem.push(x); });
+});
+return { ok: true, erros: [], p: pr.p, g: pr.g, linhas: linhas, premissas: prem, pendencias: erros };
+},
+resolverUm: resolverUm,
+resolverPendentes: function (linhas, ctx, opts) {
+var rel = { total: 0, casados: 0, compostos: 0, pendentes: 0, itens: [] };
+(linhas || []).forEach(function (l) {
+if (l.codigo || l.estado === "erro") return;
+rel.total++;
+var r = resolverUm({ descricao: l.descricao, unidade: l.unidade, intencao: l.mor && l.mor.intencao }, ctx, opts);
+l.mor = l.mor || {};
+if (r.estado === "casado") {
+l.codigo = r.codigo; l.fonte = r.fonte; l.mor.origem = "casador";
+l.mor.confianca = (l.estado === "ok" && r.confianca >= 0.9) ? "alta" : (l.estado === "ok" ? "media" : "pendente");
+l.mor.casamento = { confianca: r.confianca, motivo: r.motivo, sugestoes: r.casador.sugestoes || [] };
+rel.casados++;
+} else if (r.estado === "composto") {
+l.codigo = r.codigo; l.fonte = "PROPRIA"; l.mor.origem = "composta";
+l.mor.confianca = l.estado === "ok" ? "media" : "pendente";
+l.mor.composicao = { codigo: r.codigo, familia: r.composicao.familia, referencia: r.composicao.referencia, regras: r.composicao.regras, premissas: r.composicao.premissas, confianca: r.composicao.confianca };
+l.compPropria = r.composicao.comp;
+if (r.composicao.conferir) { l.mor.conferirMotivo = "custo total da família divergiu até " + r.composicao.erroCustoMedido + "% da SINAPI nos ensaios"; l.mor.confianca = "media"; }
+rel.compostos++;
+} else {
+l.mor.pendencia = {
+casador: r.casador ? r.casador.motivo : "", sugestoes: r.casador ? (r.casador.sugestoes || []) : [],
+compositor: r.compositor ? r.compositor.motivo : "", faltou: r.compositor ? (r.compositor.faltou || []) : []
+};
+rel.pendentes++;
+}
+rel.itens.push({ regra: l.mor.regra || "", descricao: l.descricao, estado: r.estado, codigo: r.codigo, confianca: r.confianca, motivo: r.motivo });
+});
+return rel;
+},
+resolverCatalogo: function (ctx, opts) {
+var linhas = [];
+C.etapas().forEach(function (e) {
+e.itens.forEach(function (it) {
+if (it.codigos && it.codigos.length) return;
+linhas.push({ etapa: e.etapa, codigo: "", fonte: "", descricao: it.desc, unidade: it.un, estado: "ok", mor: { regra: e.id + "." + it.chave, intencao: it.intencao, confianca: "pendente" } });
+});
+});
+var rel = Mor.resolverPendentes(linhas, ctx, opts);
+rel.linhas = linhas;
+return rel;
+},
+previaEtapa: function (etapaId, obra, respostas) {
+var e = C.etapa(etapaId);
+if (!e) return { ok: false, erros: ["Etapa «" + etapaId + "» não existe no catálogo."], perguntas: [], itens: [] };
+var pr = preparar(obra, respostas || {}, "manual");
+if (!pr.ok) return { ok: false, erros: pr.erros, perguntas: [], itens: [], precisaObra: true };
+var r = avaliarEtapa(e, pr, { pendentes: true });
+var ids = e.perguntas.map(function (q) { return q.id; });
+e.usa.forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+var perguntas = [];
+ids.forEach(function (id) {
+var q = C.pergunta(id); if (!q) return;
+if (q.quando) { var t = R.tentar(q.quando, pr.ctx); if (t.ok && !t.valor) return; }
+perguntas.push({
+id: id, txt: q.txt, tipo: q.op ? "op" : (q.num ? "num" : "bool"), op: q.op || null, rotulos: q.rotulos || null,
+valor: pr.ctx[id], respondida: pr.origem[id] === "resposta", min: q.min, max: q.max
+});
+});
+return { ok: true, erros: [], perguntas: perguntas, itens: r.linhas, pendencias: r.erros, premissas: pr.premissas.concat(r.premissas), avisos: pr.avisos, p: pr.p, g: pr.g };
+}
+};
+Mor._interno = { resolver: resolver, avaliarEtapa: avaliarEtapa, preparar: preparar, coagir: coagir };
+if (typeof module !== "undefined" && module.exports) module.exports = Mor;
+global.Mor = Mor;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/intencoes.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+D.intencoes = [
+["residencia|casa|residencial|moradia|casa terrea|unifamiliar|sobrado", "", { _tipologia: "residencial_unifamiliar" }, "", "T"],
+["edificio|predio|multifamiliar|condominio residencial|apartamentos", "", { _tipologia: "residencial_multifamiliar" }, "", "T"],
+["loja|escritorio|sala comercial|comercial|clinica|consultorio|restaurante", "", { _tipologia: "comercial" }, "", "T"],
+["galpao|barracao industrial|galpao industrial|armazem|deposito industrial", "", { _tipologia: "galpao_industrial" }, "", "T"],
+["reforma|reformar|requalificacao|retrofit|adequacao", "", { _tipologia: "reforma" }, "", "T"],
+["escola|creche|unidade de ensino|ensino infantil", "", { _tipologia: "escola_creche" }, "", "T"],
+["quiosque|quiosque de madeira|pergolado", "", { _tipologia: "quiosque_madeira" }, "", "T"],
+["muro de arrimo|contencao|arrimo|talude contido", "", { _tipologia: "muro_arrimo" }, "", "T"],
+["pavimentacao|via urbana|rua|estacionamento|pavimentar", "", { _tipologia: "pavimentacao" }, "", "T"],
+["demolir|demolicao|derrubar|derrubada|quebrar", "demolicoes", {}, "demolicao", "A"],
+["remover|remocao|retirar|retirada|desmontar|desmontagem", "demolicoes", {}, "remocao retirada", "A"],
+["substituir|substituicao|trocar|troca|reposicao|repor", "", {}, "", "A"],
+["executar|execucao|colocar|colocacao|fazer|construir|construcao|instalar|instalacao|assentar|assentamento|aplicar|aplicacao|fornecer|fornecimento|montar|montagem|implantar|implantacao|refazer", "", {}, "", "A"],
+["recuperar|reparar|reparo|restaurar|consertar|conserto", "", {}, "", "A"],
+["canteiro|canteiro de obras|mobilizacao|desmobilizacao|instalacoes provisorias", "preliminares", {}, "canteiro de obras", "S"],
+["tapume|fechamento provisorio", "preliminares", {}, "tapume", "S"],
+["placa de obra|placa da obra", "preliminares", {}, "placa de obra", "S"],
+["locacao|locacao da obra|gabarito", "preliminares", {}, "locacao gabarito", "S"],
+["ligacao provisoria|energia provisoria|agua provisoria|barracao de obra", "preliminares", {}, "ligacao provisoria canteiro", "S"],
+["art|rrt|anotacao de responsabilidade", "preliminares", {}, "art rrt", "S"],
+["andaime|andaime fachadeiro", "preliminares", {}, "andaime", "S"],
+["escavacao|escavar|vala|abertura de valas", "movterra", {}, "escavacao", "S"],
+["aterro|aterrar|reaterro|reaterrar", "movterra", {}, "aterro compactado", "S"],
+["terraplanagem|terraplenagem|corte e aterro|nivelamento do terreno", "movterra", {}, "terraplenagem corte aterro", "S"],
+["compactacao|compactar|compactacao de solo", "movterra", {}, "compactacao mecanica de solo", "S"],
+["bota fora|transporte de terra|empolamento", "movterra", {}, "transporte de solo", "S"],
+["fundacao|fundacoes|infraestrutura", "infra", {}, "fundacao", "S"],
+["sapata|sapatas|sapata isolada|sapatas isoladas|sapata corrida|sapatas corridas", "infra", { "infra.tipo": "sapata" }, "sapata", "M"],
+["estaca|estacas|broca|brocas|estaca broca|estaca escavada|estaca helice", "infra", { "infra.tipo": "estaca" }, "estaca", "M"],
+["radier|radiers", "infra", { "infra.tipo": "radier" }, "radier", "M"],
+["baldrame|baldrames|viga baldrame|vigas baldrame|viga de fundacao", "infra", {}, "baldrame", "S"],
+["bloco de coroamento|blocos de coroamento|bloco de fundacao", "infra", {}, "bloco de coroamento", "S"],
+["lastro|lastro de concreto|concreto magro", "infra", {}, "lastro concreto magro", "S"],
+["impermeabilizacao de baldrame|pintura betuminosa", "infra", {}, "impermeabilizacao baldrame", "S"],
+["superestrutura|estrutura de concreto|concreto armado", "super", {}, "concreto armado estrutura", "S"],
+["pilar de concreto|pilares de concreto|viga de concreto|vigas de concreto|pilares em concreto|vigas em concreto", "super", {}, "pilar viga concreto", "S"],
+["pilar|pilares|viga|vigas", "", {}, "pilar viga", "W"],
+["vergas|verga|contraverga|cinta|cintas", "super", {}, "viga concreto", "S"],
+["parede|paredes|muro existente", "", {}, "parede", "W"],
+["teto|tetos", "", {}, "teto", "W"],
+["laje pre moldada|laje premoldada|laje trelicada|laje de vigotas|vigota|vigotas|trelicada", "super", { "super.laje": "premoldada" }, "laje pre moldada", "M"],
+["laje macica|laje de concreto armado|laje nervurada|laje", "super", {}, "laje concreto", "S"],
+["forma|formas|formas de madeira|escoramento|cimbramento", "super", {}, "forma escoramento", "S"],
+["armacao|armadura|ferragem|aco ca-50|ca 50|vergalhao", "super", {}, "armacao aco ca-50", "S"],
+["concretagem|concreto usinado|concreto fck|fck", "super", {}, "concretagem", "S"],
+["escada de concreto|escada", "super", {}, "escada concreto", "S"],
+["alvenaria|alvenarias|vedacao|alvenaria de vedacao", "alvenaria", {}, "alvenaria de vedacao", "S"],
+["bloco ceramico|blocos ceramicos|tijolo|tijolos|tijolo furado|tijolo baiano|bloco de vedacao", "alvenaria", {}, "alvenaria vedacao blocos ceramicos furados", "S"],
+["bloco de concreto|blocos de concreto|bloco estrutural|alvenaria estrutural", "alvenaria", {}, "alvenaria bloco de concreto", "S"],
+["bloco celular|concreto celular|ytong|bloco autoclavado", "alvenaria", { "alv.bloco": "celular15" }, "alvenaria bloco concreto celular", "M"],
+["drywall|gesso acartonado|parede de gesso|divisoria de gesso|steel frame", "alvenaria", { "alv.drywall": true }, "drywall parede", "M"],
+["verga de porta|verga de janela|cintamento", "alvenaria", {}, "verga", "S"],
+["encunhamento|fixacao da alvenaria|aperto de alvenaria", "alvenaria", {}, "encunhamento alvenaria", "S"],
+["tela de ligacao|tela de alvenaria|ferro de arranque", "alvenaria", {}, "tela alvenaria", "S"],
+["impermeabilizacao|impermeabilizar|impermeabilizante", "imperm", {}, "impermeabilizacao superficie", "S"],
+["manta asfaltica|manta|manta liquida", "imperm", {}, "impermeabilizacao superficie manta asfaltica", "S"],
+["argamassa polimerica|cristalizante|membrana acrilica", "imperm", {}, "impermeabilizacao argamassa polimerica", "S"],
+["box|boxes|area molhada|areas molhadas", "imperm", {}, "impermeabilizacao area molhada", "S"],
+["terraco|laje impermeabilizada|laje de cobertura impermeabilizada", "imperm", {}, "impermeabilizacao terraco", "S"],
+["reservatorio impermeabilizado|caixa dagua|caixa d agua", "imperm", {}, "impermeabilizacao reservatorio", "S"],
+["cobertura|telhado|telhamento|telhar", "cobertura", {}, "telhado", "S"],
+["telha ceramica|telhas ceramicas|telha colonial|telha portuguesa|telha de barro|telha romana", "cobertura", { "cob.tipo": "ceramica" }, "telhamento telha ceramica", "M"],
+["telha de concreto|telhas de concreto", "cobertura", { "cob.tipo": "concreto" }, "telha de concreto", "M"],
+["telha de fibrocimento|telha fibrocimento|telha ondulada|fibrocimento|eternit|brasilit", "cobertura", { "cob.tipo": "fibrocimento" }, "telha fibrocimento", "M"],
+["telha metalica|telhas metalicas|telha de aco|telha zincada|telha galvanizada|telha trapezoidal|telha termoacustica|telha sanduiche|telha de zinco|zinco", "cobertura", { "cob.tipo": "metalica" }, "telha metalica", "M"],
+["estrutura de madeira|madeiramento|tesoura de madeira|trama de madeira|caibro|caibros|ripa|ripas|terca de madeira", "cobertura", { "cob.estrutura": "madeira" }, "madeiramento telhado", "M"],
+["estrutura metalica do telhado|tesoura metalica|tesoura de aco|terca metalica|trama metalica", "cobertura", { "cob.estrutura": "metalica" }, "tesoura aco telhado", "M"],
+["calha|calhas|calha de chapa|calha galvanizada", "cobertura", { "cob.calha": true }, "calha", "M"],
+["rufo|rufos|rufo galvanizado|contra rufo", "cobertura", { "cob.rufo": true }, "rufo", "M"],
+["cumeeira|cumeeiras|espigao|espigoes", "cobertura", { "cob.cumeeira": true }, "cumeeira", "M"],
+["beiral|beirais|oitao|platibanda", "cobertura", {}, "beiral", "S"],
+["condutor pluvial|tubo de queda|descida de agua", "pluvial", {}, "condutor pluvial", "S"],
+["laje de cobertura|cobertura em laje", "cobertura", { "cob.tipo": "laje" }, "laje cobertura", "M"],
+["revestimento|revestimentos|revestimento de parede", "revestimento", {}, "revestimento", "S"],
+["chapisco|chapiscar|salpico", "revestimento", {}, "chapisco alvenaria", "S"],
+["emboco|reboco|massa unica|massa fina|rebocar|embocar", "revestimento", {}, "emboco argamassa", "S"],
+["revestimento ceramico|azulejo|azulejos|ceramica de parede|revestimento de parede ceramico|pastilha|pastilhas", "revestimento", {}, "revestimento ceramico paredes internas placas esmaltada", "S"],
+["gesso liso|gesso projetado|reboco de gesso", "revestimento", {}, "gesso parede", "S"],
+["textura|grafiato|massa corrida|massa acrilica|emassamento|emassar|selador|fundo selador", "revestimento", {}, "massa emassamento", "S"],
+["rodape|rodapes|soleira|soleiras|peitoril|peitoris|filete", "pisos", {}, "rodape", "S"],
+["piso|pisos|pavimento interno|revestimento de piso", "pisos", {}, "piso", "S"],
+["porcelanato|porcelanatos|piso porcelanato", "pisos", { "piso.tipo": "porcelanato" }, "revestimento ceramico piso placas porcelanato", "M"],
+["ceramica|piso ceramico|ceramico|piso de ceramica|ceramica esmaltada", "pisos", { "piso.tipo": "ceramica" }, "revestimento ceramico piso placas esmaltada", "M"],
+["vinilico|piso vinilico|laminado|piso laminado|manta vinilica|piso de vinil", "pisos", { "piso.tipo": "vinilico" }, "piso vinilico", "M"],
+["cimentado|piso cimentado|cimento queimado|queimado|piso de cimento|granilite", "pisos", { "piso.tipo": "cimentado" }, "piso cimentado", "M"],
+["contrapiso|contrapisos|regularizacao do piso|regularizacao de base", "pisos", {}, "contrapiso argamassa", "S"],
+["piso tatil|piso podotatil|podotatil", "acessibilidade", {}, "piso tatil", "S"],
+["intertravado|bloquete|piso intertravado|paver", "pavimento", {}, "piso intertravado", "S"],
+["forro|forros|rebaixamento", "forro", {}, "forro", "S"],
+["forro de gesso|forro em gesso|forro gesso|forro de gesso acartonado", "forro", { "forro.tipo": "gesso" }, "forro gesso", "M"],
+["forro de pvc|forro em pvc|forro pvc", "forro", { "forro.tipo": "pvc" }, "forro reguas pvc", "M"],
+["forro de madeira|forro em madeira|forro de lambri|lambri", "forro", { "forro.tipo": "madeira" }, "forro madeira", "M"],
+["forro mineral|forro modular|forro de fibra mineral|forro de isopor", "forro", { "forro.tipo": "mineral" }, "forro mineral", "M"],
+["forro de drywall|forro em drywall", "forro", { "forro.tipo": "drywall" }, "forro drywall", "M"],
+["forro de laje|laje aparente", "forro", { "forro.tipo": "laje" }, "", "M"],
+["esquadria|esquadrias|janela|janelas|vitro|basculante|veneziana", "esquadrias", {}, "janela", "S"],
+["janela de aluminio|janelas de aluminio|esquadria de aluminio|aluminio|janela em aluminio|janelas em aluminio", "esquadrias", { "esq.janela": "aluminio" }, "janela aluminio vidro incluso", "M"],
+["janela de aco|janelas de aco|esquadria de aco|janela metalica|janela em aco", "esquadrias", { "esq.janela": "aco" }, "janela aco", "M"],
+["janela de madeira|janelas de madeira|esquadria de madeira|janela em madeira", "esquadrias", { "esq.janela": "madeira" }, "janela madeira", "M"],
+["porta|portas|porta de madeira|porta interna|porta externa|batente|batentes|fechadura|fechaduras|dobradica|dobradicas", "esquadrias", {}, "porta", "S"],
+["portao|portoes|portao de aco|portao de correr|portao basculante|portao de enrolar|porta de enrolar", "fechamentos", {}, "portao", "S"],
+["vidro|vidros|vidro temperado|vidro liso|vidro laminado|espelho", "esquadrias", {}, "vidro", "S"],
+["corrimao|corrimaos|guarda corpo|grade|grades|gradil", "esquadrias", {}, "guarda corpo corrimao", "S"],
+["pintura|pintar|tinta|tintas|demao|demaos|duas demaos", "pintura", {}, "pintura latex acrilica paredes", "S"],
+["latex|tinta latex|latex acrilica|tinta acrilica|acrilica|pva", "pintura", {}, "pintura latex acrilica paredes", "S"],
+["esmalte|tinta esmalte|esmalte sintetico|tinta a oleo|verniz|stain", "pintura", {}, "pintura esmalte", "S"],
+["pintura de teto|pintura do teto|pintura de forro", "pintura", {}, "pintura teto", "S"],
+["pintura de piso|demarcacao|pintura de demarcacao", "pintura", {}, "pintura piso demarcacao", "S"],
+["instalacao eletrica|instalacoes eletricas|eletrica|rede eletrica|ponto eletrico|pontos eletricos", "eletrica", {}, "instalacao eletrica", "S"],
+["tomada|tomadas|ponto de tomada|pontos de tomada|tue|tomadas de uso especifico", "eletrica", {}, "tomada baixa embutir", "S"],
+["interruptor|interruptores|ponto de luz|pontos de luz|ponto de iluminacao|pontos de iluminacao|iluminacao", "eletrica", {}, "interruptor simples embutir", "S"],
+["luminaria|luminarias|lampada|lampadas|led|refletor|refletores", "eletrica", {}, "luminaria", "S"],
+["eletroduto|eletrodutos|conduite|conduites|eletrocalha|canaleta", "eletrica", {}, "eletroduto", "S"],
+["cabo|cabos|fiacao|fio|fios|condutor eletrico|condutores eletricos", "eletrica", {}, "cabo cobre", "S"],
+["quadro de distribuicao|quadro eletrico|quadro de luz|disjuntor|disjuntores|dps|diferencial", "eletrica", {}, "quadro distribuicao", "S"],
+["entrada de energia|padrao de entrada|medidor|cabine de medicao|ramal de entrada", "eletrica", {}, "entrada de energia", "S"],
+["aterramento|haste de aterramento|malha de terra", "spda", {}, "aterramento haste", "S"],
+["chuveiro eletrico", "hidro", {}, "chuveiro eletrico fornecimento instalacao", "S"],
+["gerador|grupo gerador|nobreak", "eletrica", {}, "gerador", "S"],
+["cabeamento estruturado|rede de dados|ponto de rede|telefonia|interfone|cftv|alarme", "eletrica", {}, "cabeamento", "S"],
+["instalacao hidraulica|instalacoes hidraulicas|hidraulica|hidrossanitaria|hidrossanitarias|encanamento|tubulacao|tubulacoes", "hidro", {}, "tubulacao pvc agua", "S"],
+["esgoto|esgotamento|esgoto sanitario|rede de esgoto|ramal de esgoto", "hidro", {}, "esgoto", "S"],
+["ligado a rede publica|ligacao na rede|rede publica de esgoto|rede coletora|ligacao a rede", "hidro", { "esgoto.tipo": "rede" }, "ligacao rede esgoto", "M"],
+["fossa|fossa septica|sumidouro|filtro anaerobio|tanque septico", "hidro", { "esgoto.tipo": "fossa" }, "fossa septica sumidouro", "M"],
+["agua quente|aquecedor|aquecimento solar|boiler|aquecimento a gas|pressurizador", "hidro", { "hid.quente": true }, "agua quente", "M"],
+["caixa de inspecao|caixa de gordura|caixa sifonada|caixa de passagem|poco de visita", "hidro", {}, "caixa de inspecao esgoto", "S"],
+["vaso sanitario|bacia sanitaria|bacia|vaso|privada|assento sanitario", "hidro", {}, "bacia sanitaria", "S"],
+["lavatorio|pia|pias|cuba|cubas|bancada|bancadas|tanque|tanques|mictorio|bide", "hidro", {}, "lavatorio pia cuba", "S"],
+["torneira|torneiras|registro|registros|chuveiro|ducha|duchas|misturador|sifao|ralo|ralos|ralo sifonado", "hidro", {}, "torneira registro", "S"],
+["reservatorio|caixa dagua de fibra|cisterna|hidrometro|cavalete|ramal predial", "hidro", {}, "reservatorio agua", "S"],
+["joelho|joelhos|luva|luvas|conexao|conexoes|adaptador|tubo de pvc|tubos de pvc|tubo pvc|tubo em pvc|cano pvc|pvc soldavel|cpvc|ppr", "hidro", {}, "tubo pvc conexao", "S"],
+["teste de estanqueidade|teste hidrostatico|teste de pressao", "hidro", {}, "teste estanqueidade", "S"],
+["aguas pluviais|agua pluvial|drenagem pluvial|rede pluvial|caixa de areia|bueiro|boca de lobo", "pluvial", {}, "agua pluvial", "S"],
+["spda|para raios|pararaios|captor|captores|descida de spda|descidas", "spda", {}, "spda captor", "S"],
+["incendio|combate a incendio|prevencao de incendio|extintor|extintores|hidrante|hidrantes|sprinkler|sprinklers|sinalizacao de emergencia|luz de emergencia|iluminacao de emergencia|alarme de incendio|saida de emergencia", "incendio", {}, "incendio extintor hidrante", "S"],
+["ar condicionado|climatizacao|split|splits|exaustor|exaustao|ventilacao", "eletrica", {}, "ar condicionado split", "S"],
+["gas|rede de gas|glp|central de gas|ponto de gas", "hidro", {}, "gas", "S"],
+["estrutura metalica|estruturas metalicas|perfil metalico|perfis metalicos|perfil laminado|perfil soldado|perfil dobrado|aco estrutural|aco a572|astm a36", "estmetal", {}, "estrutura metalica", "S"],
+["pilar metalico|pilares metalicos|viga metalica|vigas metalicas|terca|tercas|contraventamento|contraventada|tirante|tirantes|mao francesa|chumbador|chumbadores|chapa de base", "estmetal", {}, "estrutura metalica contraventamento", "S"],
+["fechamento lateral|fechamento em telha|tapamento|tapamentos|fechamento de galpao|fechamento", "fechamentos", {}, "fechamento lateral telha", "S"],
+["mureta|muretas|alvenaria ate|alvenaria de fechamento", "fechamentos", {}, "mureta alvenaria", "S"],
+["piso industrial|piso de concreto industrial|concreto polido|juntas serradas|juntas de piso|junta serrada|endurecedor de superficie", "pisoind", {}, "piso industrial", "S"],
+["madeira serrada|pergola|deck|deck de madeira|madeira de lei|madeira tratada", "estmadeira", {}, "estrutura de madeira", "S"],
+["tratamento da madeira|cupinicida|fungicida|verniz da madeira|preservativo|imunizante", "trmadeira", {}, "tratamento madeira", "S"],
+["muro|muros|muro de fechamento|muro de divisa|muro de alvenaria|muro em alvenaria", "muro", { "mur.tipo": "alvenaria" }, "muro alvenaria", "M"],
+["gabiao|gabioes|muro de gabiao|muro de gabioes", "muro", { "mur.tipo": "gabiao" }, "gabiao", "M"],
+["muro de concreto|muro de arrimo em concreto|arrimo de concreto|cortina de concreto|parede diafragma", "muro", { "mur.tipo": "concreto" }, "muro concreto armado", "M"],
+["dreno|drenos|drenagem|barbacas|manta geotextil|geotextil|brita de dreno", "murodren", {}, "drenagem muro", "S"],
+["meio fio|sarjeta|sarjetas|guia|guias", "meiofio", {}, "meio fio sarjeta", "S"],
+["sub base|base de brita|base granular|brita graduada|bgs|macadame", "pavimento", {}, "base brita graduada", "S"],
+["cbuq|asfalto|concreto asfaltico|pavimento asfaltico|capa asfaltica|imprimacao|pintura de ligacao", "pavimento", { "pav.tipo": "cbuq" }, "cbuq", "M"],
+["placa de sinalizacao|placas de sinalizacao|sinalizacao viaria|sinalizacao horizontal|sinalizacao vertical|faixa de pedestre", "sinalizacao", {}, "sinalizacao", "S"],
+["calcada|calcadas|passeio|passeios|rampa|rampas|rampa de acessibilidade", "acessibilidade", {}, "calcada passeio", "S"],
+["paisagismo|grama|gramado|plantio|jardim|jardins|arvore|arvores|muda|mudas|irrigacao", "areasext", {}, "grama paisagismo", "S"],
+["alambrado|cerca|cercas|cerca de arame|portao de alambrado", "areasext", {}, "alambrado cerca", "S"],
+["entulho|cacamba|cacambas|limpeza de entulho", "demolicoes", {}, "entulho cacamba", "S"],
+["limpeza|limpeza final|limpeza geral|limpeza pos obra|limpeza de obra|entrega da obra|habite-se", "finais", {}, "limpeza final de obra", "S"],
+["acessibilidade|banheiro adaptado|barra de apoio|barras de apoio|nbr 9050|pcd", "acessibilidade", {}, "acessibilidade barra de apoio", "S"],
+["elevador|plataforma elevatoria|escada rolante", "", {}, "elevador", "S"],
+["fachada|fachadas|pele de vidro|acm", "revestimento", {}, "revestimento fachada", "S"],
+["projeto|projetos|memorial|memorial descritivo|especificacao|especificacoes|caderno de encargos|planilha orcamentaria|conforme projeto|abnt|nbr|norma tecnica|normas tecnicas", "", {}, "", "N"],
+["prazo|prazo de execucao|cronograma|dias corridos|dias uteis|meses|medicao|medicoes", "", {}, "", "N"]
+];
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/intencoes.js ==== */
+try {
+(function (global) {
+"use strict";
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+function dados() {
+if (!global.MorDados || !global.MorDados.intencoes) {
+if (typeof require === "function") { try { require("./catalogo-dados/intencoes.js"); } catch (e) { } }
+}
+return (global.MorDados && global.MorDados.intencoes) || [];
+}
+function escopoSin() {
+var E = global.Escopo || (typeof require === "function" ? (function () { try { return require("../escopo.js"); } catch (e) { return null; } })() : null);
+return (E && E.SINONIMOS) || null;
+}
+function normalizar(s) {
+var t = String(s == null ? "" : s);
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+return t.toLowerCase().replace(/[\-\/_]/g, " ").replace(/²/g, "2").replace(/³/g, "3").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+}
+function radical(t) {
+if (t.length > 4 && /oes$/.test(t)) return t.slice(0, -3) + "ao";
+if (t.length > 3 && /s$/.test(t) && !/ss$/.test(t)) return t.slice(0, -1);
+return t;
+}
+function frase(s) { return normalizar(s).split(" ").filter(Boolean).map(radical).join(" "); }
+var ETAPA_DE = [
+[/demoli|remoc|retirada|entulho|cacamba/, "demolicoes"],
+[/tapume|container|placa$|locacao|gabarito|andaime/, "preliminares"],
+[/escavac|vala|aterro|reaterro|terraplan|compactac|lastro|brita|areia/, "movterra"],
+[/sapata|baldrame|estaca|radier/, "infra"],
+[/concreto|armacao|forma|escoramento|graute|laje|viga|pilar/, "super"],
+[/bloco|alvenaria|tijolo|acartonado|divisoria|vedacao/, "alvenaria"],
+[/impermeabiliz|manta/, "imperm"],
+[/telha|trama|cumeeira|calha|rufo|cobertura/, "cobertura"],
+[/emboco|chapisco|ceramico|porcelanato|pastilha|textura|gesso/, "revestimento"],
+[/piso|contrapiso|cimentado|granilite|vinilico|laminado|rodape|soleira|peitoril|intertravado/, "pisos"],
+[/forro/, "forro"],
+[/janela|porta|portao|vidro|basculante|veneziana|fechadura|dobradica|corrimao|grade/, "esquadrias"],
+[/tinta|latex|acrilica|selador|verniz|esmalte|pintura/, "pintura"],
+[/cabo|tomada|interruptor|disjuntor|eletroduto|luminaria|lampada|quadro|haste|aterramento/, "eletrica"],
+[/tubo|pvc|esgoto|agua|joelho|conexoes|registro|torneira|chuveiro|ralo|sifao|bacia|mictorio|lavatorio|sanitario|tanque|reservatorio|hidrometro|cavalete/, "hidro"],
+[/dreno|sarjeta|passeio|alambrado|cerca/, "areasext"],
+[/limpeza/, "finais"]
+];
+function etapaDe(valor, chave) {
+var v = normalizar(valor) + " " + normalizar(chave), i;
+for (i = 0; i < ETAPA_DE.length; i++) if (ETAPA_DE[i][0].test(v)) return ETAPA_DE[i][1];
+return "";
+}
+var _idx = null;
+function montar() {
+if (_idx) return _idx;
+var entradas = [], mapa = {}, max = 1, formas = 0;
+function por(e) {
+e.formas.forEach(function (f) {
+var k = frase(f); if (!k) return;
+if (mapa[k]) return;
+mapa[k] = e; formas++;
+var n = k.split(" ").length; if (n > max) max = n;
+});
+}
+dados().forEach(function (r) {
+var e = { id: String(r[0]).split("|")[0], formas: String(r[0]).split("|"), etapa: r[1] || "", resp: r[2] || {}, busca: r[3] || "", tipo: r[4] || "S", origem: "dicionario" };
+entradas.push(e); por(e);
+});
+var sin = escopoSin(), doEscopo = 0;
+if (sin) {
+Object.keys(sin).forEach(function (k) {
+if (mapa[frase(k)]) return;
+var e = { id: k, formas: [k], etapa: etapaDe(sin[k], k), resp: {}, busca: String(sin[k]), tipo: "S", origem: "escopo" };
+entradas.push(e); por(e); doEscopo++;
+});
+}
+_idx = { entradas: entradas, mapa: mapa, max: max, formas: formas, doEscopo: doEscopo };
+return _idx;
+}
+var MorInt = {
+normalizar: normalizar, radical: radical, frase: frase, etapaDe: etapaDe,
+_reiniciar: function () { _idx = null; },
+entradas: function () { return montar().entradas.slice(); },
+totalTermos: function () { return montar().formas; },
+totalDoDicionario: function () { var n = 0; dados().forEach(function (r) { n += String(r[0]).split("|").length; }); return n; },
+reconhece: function (termo) { return !!montar().mapa[frase(termo)]; },
+entradaDe: function (termo) { return montar().mapa[frase(termo)] || null; },
+indiceExtra: function (frases) {
+var mapa = {}, max = 1, n = 0;
+(frases || []).forEach(function (f) {
+var base = montar().mapa[frase(f.entrada)] || null;
+if (!base) return;
+var k = frase(f.frase); if (!k) return;
+var e = { id: base.id, formas: [f.frase], etapa: base.etapa, resp: base.resp, busca: base.busca, tipo: base.tipo, origem: "ensinada" };
+mapa[k] = e; n++;
+var c = k.split(" ").length; if (c > max) max = c;
+});
+return { mapa: mapa, max: max, n: n };
+},
+achar: function (palavras, extra) {
+var I = montar(), rad = palavras.map(function (p) { return /^[a-z]/.test(p) ? radical(p) : p; }), out = [], i = 0;
+while (i < rad.length) {
+var achou = null, n;
+if (extra && extra.n) {
+for (n = Math.min(extra.max, rad.length - i); n >= 1; n--) {
+var kx = rad.slice(i, i + n).join(" ");
+if (extra.mapa[kx]) { achou = { ini: i, fim: i + n, forma: kx, entrada: extra.mapa[kx] }; break; }
+}
+}
+for (n = Math.min(I.max, rad.length - i); !achou && n >= 1; n--) {
+var k = rad.slice(i, i + n).join(" ");
+if (I.mapa[k]) { achou = { ini: i, fim: i + n, forma: k, entrada: I.mapa[k] }; break; }
+}
+if (achou) { out.push(achou); i = achou.fim; } else i++;
+}
+return out;
+},
+validar: function () {
+var erros = [];
+dados().forEach(function (r) {
+var id = String(r[0]).split("|")[0], et = r[1], resp = r[2] || {}, k;
+if (et && !C.etapa(et)) erros.push(id + ": etapa «" + et + "» não existe no catálogo");
+if (!/^[STMANOW]$/.test(r[4] || "")) erros.push(id + ": tipo inválido");
+for (k in resp) if (Object.prototype.hasOwnProperty.call(resp, k)) {
+if (k === "_tipologia") { if (!C.tipologia(resp[k])) erros.push(id + ": tipologia «" + resp[k] + "» não existe"); continue; }
+var q = C.pergunta(k);
+if (!q) { erros.push(id + ": pergunta «" + k + "» não existe"); continue; }
+if (q.op && q.op.indexOf(resp[k]) < 0) erros.push(id + ": «" + resp[k] + "» não é opção de " + k);
+if (q.bool && typeof resp[k] !== "boolean") erros.push(id + ": " + k + " é sim/não");
+}
+if (/\d{4,}/.test(r[3] || "")) erros.push(id + ": a busca parece ter código (nunca código no dicionário)");
+});
+return { ok: erros.length === 0, erros: erros };
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorInt;
+global.MorIntencoes = MorInt;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/leitor.js ==== */
+try {
+(function (global) {
+"use strict";
+var I = global.MorIntencoes || (typeof require === "function" ? require("./intencoes.js") : null);
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function numBR(s) {
+var t = String(s).replace(/\s/g, "");
+if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+else if (t.indexOf(",") > -1) t = t.replace(",", ".");
+else if (/^\d+\.\d{3}$/.test(t)) t = t.replace(".", "");
+var v = parseFloat(t); return v === v ? v : NaN;
+}
+function r4(x) { return Math.round(x * 10000) / 10000; }
+var NEGADORES = { sem: 1, nao: 1, exceto: 1, exclusive: 1, menos: 1, dispensa: 1, dispensado: 1, dispensada: 1, exclui: 1, excluido: 1, excluida: 1 };
+var UN_CANON = [
+[/^(m 2|m2|metros? quadrados?)$/, "m²"], [/^(m 3|m3|metros? cubicos?)$/, "m³"], [/^(ml|metros? lineares?|metros?|m)$/, "m"],
+[/^(un|und|unid|unidades?|unidade|pecas?|pcs?|pc|pontos?|ponto)$/, "un"], [/^(kg|quilos?|quilogramas?)$/, "kg"], [/^(toneladas?|t)$/, "t"],
+[/^(litros?|l)$/, "l"], [/^(vb|verba)$/, "vb"], [/^(cj|conjuntos?)$/, "cj"], [/^(dias?|meses|mes)$/, "dia"]
+];
+function unCanon(u) { for (var i = 0; i < UN_CANON.length; i++) if (UN_CANON[i][0].test(u)) return UN_CANON[i][1]; return ""; }
+var UNID = "(m 2|m2|m 3|m3|metros? quadrados?|metros? cubicos?|metros? lineares?|metros?|ml|m|unidades?|unidade|unid|und|un|pecas?|pcs?|pc|pontos?|kg|quilos?|quilogramas?|toneladas?|t|litros?|l|vb|verba|cj|conjuntos?|dias?|meses|mes)";
+var QTD_RE = "(\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)\\s*" + UNID + "\\b";
+var NUM_RE = "(\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)";
+var ANTES_MEDIDA = /(dn|fck|espessura|\be\s*=|diametro|bitola|altura|largura|profundidade|comprimento|pe direito|ate|ate a|acima de|abaixo de|vao|vaos|ø|fi)\s*=?\s*(de\s+)?$/;
+var DEPOIS_MEDIDA = /^\s*(de\s+)?(comprimento|altura|espessura|largura|profundidade|de pe direito|de vao|de diametro|de lado)/;
+function palavras(norm) { return norm.match(/[a-z]+|\d+(?:[.,]\d+)*|[,;:.!?()]/g) || []; }
+function medidasDe(norm) {
+var m = {}, r;
+if ((r = /\bdn\s*(\d+)/.exec(norm))) m.dn = Number(r[1]);
+else if (/\b(tubo|tubos|tubulacao|cano|canos|pvc|cpvc|ppr|conexao|conexoes|joelho|luva|registro|eletroduto|ramal|esgoto)\b/.test(norm) && (r = /\b(\d{2,3})\s*mm\b/.exec(norm))) m.dn = Number(r[1]);
+if ((r = /(?:espessura|\be)\s*=?\s*(?:de\s+)?(\d+(?:[.,]\d+)?)\s*(cm|mm)/.exec(norm)) || (r = /(\d+(?:[.,]\d+)?)\s*(cm|mm)\s+de\s+espessura/.exec(norm))) m.espessuraCm = r[2] === "mm" ? numBR(r[1]) / 10 : numBR(r[1]);
+if ((r = /\bfck\s*=?\s*(\d+)/.exec(norm))) m.fck = Number(r[1]);
+if ((r = /(?:diametro|bitola|(?:^|[\s(])ø|\bfi)\s*(?:de\s+)?(\d+(?:[.,]\d+)?)\s*mm/.exec(norm))) m.bitolaMm = numBR(r[1]);
+if ((r = /(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)(?:\s*x\s*(\d+(?:[.,]\d+)?))?\s*(cm|mm|m)?\b/.exec(norm))) {
+m.dimsPos = r.index; m.dims = [numBR(r[1]), numBR(r[2])]; if (r[3]) m.dims.push(numBR(r[3])); m.dimsUn = r[4] || "cm";
+}
+return m;
+}
+function textoMedidas(m) {
+var t = [];
+if (m.dn) t.push("dn " + m.dn);
+if (m.fck) t.push("fck " + m.fck);
+if (m.dims) t.push(m.dims.join(" x ") + " " + (m.dimsUn || "cm"));
+return t.join(" ");
+}
+function paramsDeObra(norm, usados) {
+var p = {}, r;
+function marca(re) { var m = re.exec(norm); if (m) usados.push([m.index, m.index + m[0].length]); return m; }
+if ((r = marca(new RegExp("area\\s+(?:construida\\s+|total\\s+|util\\s+|de\\s+|=\\s*)?(?:de\\s+)?" + NUM_RE + "\\s*(?:m 2|m2)")))) p.area = numBR(r[1]);
+else if ((r = marca(new RegExp(NUM_RE + "\\s*(?:m 2|m2)\\s+de\\s+area(?:\\s+construida|\\s+total|\\s+util)?")))) p.area = numBR(r[1]);
+if ((r = marca(/(\d+)\s*(?:pavimentos?|andares?|pisos)\b/))) p.pavimentos = Number(r[1]);
+else if (/\b(terrea|terreo)\b/.test(norm)) p.pavimentos = 1;
+else if (/\bsobrado\b/.test(norm)) p.pavimentos = 2;
+if ((r = marca(/(\d+)\s*(?:quartos?|dormitorios?|suites?)\b/))) p.quartos = Number(r[1]);
+if ((r = marca(/(\d+)\s*(?:banheiros?|wcs?|lavabos?)\b/))) p.banheiros = Number(r[1]);
+if ((r = marca(new RegExp("pe direito\\s*(?:de\\s+|=\\s*)?" + NUM_RE + "\\s*m?\\b")))) p.peDireito = numBR(r[1]);
+if ((r = marca(new RegExp("perimetro\\s*(?:externo\\s+)?(?:de\\s+|=\\s*)?" + NUM_RE + "\\s*m\\b")))) p.perimetro = numBR(r[1]);
+if (/\b(alto padrao|padrao alto|luxo|alto luxo)\b/.test(norm)) p.padrao = "alto";
+else if (/\b(padrao popular|popular|economico|baixo padrao|padrao baixo)\b/.test(norm)) p.padrao = "popular";
+else if (/\bpadrao\s+(normal|medio)\b/.test(norm)) p.padrao = "normal";
+return p;
+}
+function respostasNumericas(norm, ents, med) {
+var out = {}, r, etapas = {};
+ents.forEach(function (e) { if (e.etapa) etapas[e.etapa] = 1; });
+if (etapas.alvenaria && /\b(bloco ceramico|tijolo|blocos ceramicos|bloco de vedacao)/.test(norm)) {
+var e1 = /(?:de\s+)?(9|14|19)\s*cm\b/.exec(norm); if (e1) out["alv.bloco"] = "ceramico" + e1[1];
+}
+if (etapas.pisoind && med.espessuraCm && [12, 14, 15].indexOf(med.espessuraCm) > -1) out["pisoind.esp"] = String(med.espessuraCm);
+if (etapas.muro) {
+if ((r = new RegExp(NUM_RE + "\\s*m\\s+de\\s+comprimento").exec(norm))) out["mur.comprimento"] = numBR(r[1]);
+if ((r = new RegExp(NUM_RE + "\\s*m\\s+de\\s+altura").exec(norm))) out["mur.altura"] = numBR(r[1]);
+}
+if (etapas.cobertura && (r = /inclinacao\s*(?:de\s+)?(\d+(?:[.,]\d+)?)\s*%/.exec(norm))) out["cob.inclinacao"] = numBR(r[1]);
+if (etapas.cobertura && (r = new RegExp("beiral\\s*(?:de\\s+)?" + NUM_RE + "\\s*m").exec(norm))) out["cob.beiral"] = numBR(r[1]);
+return out;
+}
+var ACAO_DE = { demolir: "demolir", remover: "remover", substituir: "substituir", executar: "executar", recuperar: "recuperar" };
+function analisarLinha(bruto, opts) {
+var norm = I.normalizar(bruto), tk = palavras(norm);
+var L = { bruto: bruto, entendida: false, tipologias: [], obra: {}, respostas: {}, negados: [], etapas: [], acao: "", itens: [], confl: [], medidas: medidasDe(norm), prazo: null, termos: [] };
+var ms = I.achar(tk, opts && opts.extra);
+if (ms.some(function (mm) { return mm.entrada.etapa === "estmetal"; })) ms = ms.filter(function (mm) { return !(mm.entrada.origem === "escopo" && mm.entrada.etapa === "super"); });
+var neg = new Array(tk.length), i, j;
+for (i = 0; i < tk.length; i++) neg[i] = false;
+for (i = 0; i < tk.length; i++) {
+if (NEGADORES[tk[i]] && !(tk[i] === "nao" && tk[i + 1] === "so")) {
+for (j = i + 1; j < tk.length && j <= i + 5 && !/^[,;:.!?]$/.test(tk[j]); j++) neg[j] = true;
+}
+}
+ms.forEach(function (m) { m.negado = neg[m.ini] === true; });
+var usados = [], po = paramsDeObra(norm, usados), k;
+for (k in po) if (tem(po, k)) L.obra[k] = po[k];
+var qtds = [], re = new RegExp(QTD_RE, "g"), m;
+while ((m = re.exec(norm))) {
+var ini = m.index, fim = ini + m[0].length;
+if (usados.some(function (u) { return ini >= u[0] && ini < u[1]; })) continue;
+var antes = norm.slice(Math.max(0, ini - 22), ini).replace(/\s+$/, ""), depois = norm.slice(fim, fim + 24);
+var un = unCanon(m[2]), v = numBR(m[1]);
+if (!un || !(v > 0)) continue;
+if (ANTES_MEDIDA.test(antes) || DEPOIS_MEDIDA.test(depois)) continue;
+if (un === "dia") { L.prazo = { valor: v, unidade: /mes/.test(m[2]) ? "meses" : "dias" }; continue; }
+qtds.push({ pos: ini, fim: fim, valor: v, un: un, texto: m[0] });
+}
+var pos = 0, offsets = [];
+tk.forEach(function (t) { var at = norm.indexOf(t, pos); offsets.push(at < 0 ? pos : at); pos = (at < 0 ? pos : at) + t.length; });
+ms.forEach(function (mm) {
+if (mm.negado || !/^[SM]$/.test(mm.entrada.tipo)) return;
+var a = mm.ini - 1; if (a < 0 || !/^\d+$/.test(tk[a])) return;
+var off = offsets[a];
+if (usados.some(function (u) { return off >= u[0] && off < u[1]; })) return;
+if (qtds.some(function (q) { return off >= q.pos && off < q.fim; })) return;
+if (ANTES_MEDIDA.test(norm.slice(Math.max(0, off - 22), off).replace(/\s+$/, ""))) return;
+var v = Number(tk[a]); if (v > 0 && v < 100000) qtds.push({ pos: off, fim: off + tk[a].length, valor: v, un: "un", texto: tk[a] + " " + tk[mm.ini], porSubstantivo: true });
+});
+qtds.sort(function (x, y) { return x.pos - y.pos; });
+ms.forEach(function (mm) {
+if (mm.negado) return;
+var rt = mm.entrada.resp && mm.entrada.resp._tipologia;
+if (rt && L.tipologias.indexOf(rt) < 0) L.tipologias.push(rt);
+});
+if (L.tipologias.length && qtds.length && L.obra.area === undefined) {
+var qa = qtds.filter(function (q) { return q.un === "m²"; })[0];
+if (qa) { L.obra.area = qa.valor; qtds.splice(qtds.indexOf(qa), 1); }
+}
+var vivos = [];
+ms.forEach(function (mm) {
+var e = mm.entrada;
+L.termos.push({ forma: mm.forma, id: e.id, tipo: e.tipo, etapa: e.etapa, negado: mm.negado });
+if (mm.negado) {
+L.negados.push({ termo: e.id, etapa: e.etapa });
+var kk; for (kk in e.resp) if (tem(e.resp, kk) && kk !== "_tipologia" && typeof e.resp[kk] === "boolean") L.respostas[kk] = !e.resp[kk];
+return;
+}
+if (e.tipo === "T") return;
+vivos.push(mm);
+if (e.etapa && L.etapas.indexOf(e.etapa) < 0) L.etapas.push(e.etapa);
+var k2; for (k2 in e.resp) if (tem(e.resp, k2) && k2 !== "_tipologia") {
+if (!tem(L.respostas, k2)) L.respostas[k2] = e.resp[k2];
+else if (L.respostas[k2] !== e.resp[k2]) L.confl.push({ id: k2, valores: [L.respostas[k2], e.resp[k2]] });
+}
+if (e.tipo === "A" && !L.acao) L.acao = ACAO_DE[e.id] || "executar";
+});
+var rn = respostasNumericas(norm, vivos.map(function (mm) { return mm.entrada; }), L.medidas), k3;
+for (k3 in rn) if (tem(rn, k3)) L.respostas[k3] = rn[k3];
+var serv = vivos.filter(function (mm) { return /^[SM]$/.test(mm.entrada.tipo); });
+if (!serv.length) serv = vivos.filter(function (mm) { return mm.entrada.tipo === "W"; });
+var acoesNaLinha = vivos.filter(function (mm) { return mm.entrada.tipo === "A"; });
+function acaoEm(ini) {
+var a = "";
+acoesNaLinha.forEach(function (v) { if (v.ini < ini) a = ACAO_DE[v.entrada.id] || "executar"; });
+return a || (acoesNaLinha.length ? (ACAO_DE[acoesNaLinha[0].entrada.id] || "executar") : (L.acao || "executar"));
+}
+var dedup = function (t) { var v = {}, o = []; String(t).split(" ").forEach(function (w) { if (w && !v[w]) { v[w] = 1; o.push(w); } }); return o.join(" "); };
+var temTeto = vivos.some(function (mm) { return mm.entrada.id === "teto" && tk[mm.ini - 1] !== "ate" && !(tk[mm.ini - 1] === "o" && tk[mm.ini - 2] === "ate"); });
+function cadeia(best) {
+var out = [best], i, mm, entre = function (a, b) { for (var z = a; z < b; z++) if (!/^(,|e|ou)$/.test(tk[z])) return false; return true; };
+var idx = serv.indexOf(best), prev = best, j;
+for (j = idx - 1; j >= 0; j--) { mm = serv[j]; if (!entre(mm.fim, prev.ini)) break; out.unshift(mm); prev = mm; }
+prev = best;
+for (j = idx + 1; j < serv.length; j++) { mm = serv[j]; if (!entre(prev.fim, mm.ini)) break; out.push(mm); prev = mm; }
+var vistos = {}, res = [];
+out.forEach(function (m2) { if (!vistos[m2.entrada.id]) { vistos[m2.entrada.id] = 1; res.push(m2); } });
+return res;
+}
+function fazItem(q, best, opcoes) {
+opcoes = opcoes || {};
+var et = best.entrada.etapa, acao = acaoEm(best.ini);
+var med = {}, mk; for (mk in L.medidas) if (tem(L.medidas, mk)) med[mk] = L.medidas[mk];
+if (med.dims && med.dimsPos !== undefined) {
+var prox = null, pd = 1e9;
+serv.forEach(function (mm) { var dd = Math.abs(offsets[mm.ini] - med.dimsPos); if (dd < pd) { pd = dd; prox = mm; } });
+if (prox !== best) { delete med.dims; delete med.dimsUn; delete med.dimsPos; }
+}
+var demol = acao === "demolir" || acao === "remover";
+var b0 = best.entrada.busca || best.forma;
+if (temTeto && !demol && (et === "pintura" || et === "revestimento")) b0 = /\bparedes?\b/.test(b0) ? b0.replace(/\bparedes?\b/, "teto") : b0 + " teto";
+var busca = dedup((demol ? (acao === "demolir" ? "demolicao " : "remocao ") : "") + b0);
+var it = {
+bruto: bruto, quantidade: r4(q.valor), unidade: q.un, quantidadeTexto: q.texto,
+etapa: demol ? "demolicoes" : et, acao: acao, intencao: best.entrada.id, busca: busca,
+medidas: med, descricao: (busca + " " + textoMedidas(med)).replace(/\s+/g, " ").trim()
+};
+if (opcoes.herdada) it.herdada = true;
+L.itens.push(it);
+return it;
+}
+var jaTem = {};
+qtds.forEach(function (q) {
+var tkQ = 0, t2;
+for (t2 = 0; t2 < offsets.length; t2++) { if (offsets[t2] >= q.pos) { tkQ = t2; break; } tkQ = t2 + 1; }
+var best = null, bd = 1e9;
+serv.forEach(function (mm) {
+var d = mm.fim <= tkQ ? tkQ - mm.fim : mm.ini - tkQ - (q.porSubstantivo ? 0 : 1);
+if (mm.fim > tkQ && mm.ini <= tkQ) d = 0;
+if (mm.ini === tkQ + 1) d = -1;
+var pref = mm.fim <= tkQ ? 0 : 0.5;
+if (d + pref < bd && d <= 9) { bd = d + pref; best = mm; }
+});
+if (!best) return;
+var distQ = best.fim <= tkQ ? tkQ - best.fim : best.ini - tkQ;
+(distQ <= 2 ? cadeia(best) : [best]).forEach(function (m2) { var it = fazItem(q, m2); jaTem[m2.entrada.id] = it; });
+});
+var demols = L.itens.filter(function (it) { return it.acao === "demolir" || it.acao === "remover"; });
+if (demols.length === 1 && L.itens.length === 1) {
+var base0 = demols[0], vistosH = {};
+serv.forEach(function (mm) {
+if (jaTem[mm.entrada.id] || vistosH[mm.entrada.id] || mm.entrada.tipo === "W") return;
+if (acaoEm(mm.ini) !== "executar") return;
+vistosH[mm.entrada.id] = 1;
+fazItem({ valor: base0.quantidade, un: base0.unidade, texto: base0.quantidadeTexto + " (herdada da remoção)" }, mm, { herdada: true });
+});
+}
+var temObra = false, kx; for (kx in L.obra) if (tem(L.obra, kx)) temObra = true;
+L.entendida = temObra || ms.length > 0 || qtds.length > 0 || !!L.prazo;
+return L;
+}
+function oracoes(texto) {
+var out = [];
+String(texto == null ? "" : texto).split(/\r?\n/).forEach(function (linha) {
+var s = linha.replace(/^\s*(?:[-•*·]+|\d+(?:\.\d+)*[.)]\s*(?=[A-Za-zÀ-ú]{3,}))\s*/, "").trim();
+if (!s) return;
+var ini = 0, i;
+for (i = 0; i < s.length; i++) {
+var c = s.charAt(i), pr = s.charAt(i - 1), nx = s.charAt(i + 1), nn = s.charAt(i + 2);
+if (c === ";" || (c === "." && /[A-Za-zÀ-ú)\]²³]/.test(pr) && nx === " " && /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(nn) && !/\b(art|no|nº|sr|dr|eng)$/i.test(s.slice(Math.max(0, i - 4), i)))) {
+var p = s.slice(ini, i).trim(); if (p) out.push(p); ini = i + 1;
+}
+}
+var resto = s.slice(ini).trim(); if (resto) out.push(resto);
+});
+return out.filter(function (x) { return x.replace(/[^A-Za-zÀ-ú0-9]/g, "").length >= 3; });
+}
+function valida(q, v) {
+if (!q) return { ok: false, motivo: "pergunta fora do catálogo" };
+if (q.bool) return typeof v === "boolean" ? { ok: true, v: v } : { ok: false, motivo: "esperava sim/não" };
+if (q.num) { var n = Number(v); if (!(n === n)) return { ok: false, motivo: "não é número" }; if ((q.min != null && n < q.min) || (q.max != null && n > q.max)) return { ok: false, motivo: "fora da faixa " + q.min + "–" + q.max }; return { ok: true, v: n }; }
+if (q.op) return q.op.indexOf(String(v)) > -1 ? { ok: true, v: String(v) } : { ok: false, motivo: "fora das opções" };
+return { ok: false, motivo: "tipo de pergunta desconhecido" };
+}
+var Leitor = {
+oracoes: oracoes, analisarLinha: analisarLinha,
+lerTexto: function (texto, opts) {
+opts = opts || {};
+var R = { ok: true, linhas: [], tipologia: "", tipologiasCitadas: [], obra: {}, respostas: {}, etapas: [], itens: [], negados: [], conflitos: [], naoEntendidas: [], prazo: null, avisos: [] };
+var vistaResp = {}, vistaObra = {};
+var extra = (opts.frases && I.indiceExtra) ? I.indiceExtra(opts.frases) : null;
+oracoes(texto).forEach(function (ora) {
+var L = analisarLinha(ora, { extra: extra });
+R.linhas.push(L);
+if (!L.entendida) { R.naoEntendidas.push({ bruto: ora, motivo: "nenhum termo do dicionário, quantidade ou parâmetro de obra reconhecido" }); return; }
+L.tipologias.forEach(function (t) { if (R.tipologiasCitadas.indexOf(t) < 0) R.tipologiasCitadas.push(t); });
+var k;
+for (k in L.obra) if (tem(L.obra, k)) {
+var q = C.PERGUNTAS_OBRA.filter(function (x) { return x.id === k; })[0], vv = q ? valida(q, L.obra[k]) : { ok: true, v: L.obra[k] };
+if (q && q.op) vv = valida(q, L.obra[k]);
+if (!vv.ok) { R.conflitos.push({ id: k, tipo: "faixa", valor: L.obra[k], motivo: "«" + (q ? q.txt : k) + "» = " + L.obra[k] + ": " + vv.motivo + " — não usei; o Manual vai pedir", linha: ora }); continue; }
+if (tem(vistaObra, k) && vistaObra[k] !== vv.v) { R.conflitos.push({ id: k, tipo: "duplo", valores: [vistaObra[k], vv.v], usado: vistaObra[k], motivo: "«" + k + "» citado com dois valores (" + vistaObra[k] + " e " + vv.v + ") — usei o 1º", linha: ora }); continue; }
+vistaObra[k] = vv.v; R.obra[k] = vv.v;
+}
+for (k in L.respostas) if (tem(L.respostas, k)) {
+var pq = C.pergunta(k), v2 = valida(pq, L.respostas[k]);
+if (!v2.ok) { R.conflitos.push({ id: k, tipo: "faixa", valor: L.respostas[k], motivo: "«" + (pq ? pq.txt : k) + "» = " + L.respostas[k] + ": " + v2.motivo + " — não usei; vale o padrão do catálogo", linha: ora }); continue; }
+if (tem(vistaResp, k) && vistaResp[k] !== v2.v) { R.conflitos.push({ id: k, tipo: "duplo", valores: [vistaResp[k], v2.v], usado: vistaResp[k], motivo: "«" + (pq ? pq.txt : k) + "»: o texto cita " + vistaResp[k] + " e " + v2.v + " — usei " + vistaResp[k] + " (o 1º); confira", linha: ora }); continue; }
+vistaResp[k] = v2.v; R.respostas[k] = v2.v;
+}
+L.confl.forEach(function (c) { var pq2 = C.pergunta(c.id); R.conflitos.push({ id: c.id, tipo: "duplo", valores: c.valores, usado: c.valores[0], motivo: "«" + (pq2 ? pq2.txt : c.id) + "»: a mesma frase cita " + c.valores[0] + " e " + c.valores[1] + " — usei " + c.valores[0] + " (o 1º); confira", linha: ora }); });
+L.etapas.forEach(function (e) { if (R.etapas.indexOf(e) < 0) R.etapas.push(e); });
+L.negados.forEach(function (n) { R.negados.push({ termo: n.termo, etapa: n.etapa, linha: ora }); });
+L.itens.forEach(function (it) { R.itens.push(it); });
+if (L.prazo && !R.prazo) R.prazo = L.prazo;
+});
+R.tipologia = R.tipologiasCitadas[0] || "";
+if (R.tipologiasCitadas.length > 1) R.conflitos.push({ id: "_tipologia", tipo: "duplo", valores: R.tipologiasCitadas.slice(), usado: R.tipologia, motivo: "o texto cita mais de um tipo de obra (" + R.tipologiasCitadas.join(", ") + ") — usei o 1º" });
+R.etapas = R.etapas.filter(function (e) { return !!C.etapa(e); });
+if (R.obra.area === undefined) R.avisos.push("O texto não diz a área: o Manual vai pedir (sem ela não há quantidade por regra).");
+return R;
+},
+deMemorial: function (texto, opts) {
+var R = Leitor.lerTexto(texto, opts);
+R.origem = "memorial";
+var E = (opts && opts.Escopo) || global.Escopo;
+if (E && E.deTextos) {
+try { var amb = E.deTextos(String(texto || "").split(/\r?\n/)); if (amb && amb.ok) { R.ambientes = amb.ambientes; R.areaAmbientes = amb.total; if (R.obra.area === undefined) R.avisos.push("Os ambientes somam " + amb.total + " m² (área útil escrita no documento) — confirme se é a área construída."); } } catch (e) { }
+}
+return R;
+},
+dePlanilha: function (matriz, opts) {
+opts = opts || {};
+var Imp = opts.Importador || global.Importador;
+var R = { ok: true, origem: "planilha", linhas: [], tipologia: "", obra: {}, respostas: {}, etapas: [], itens: [], negados: [], conflitos: [], naoEntendidas: [], prazo: null, avisos: [], etapasPlanilha: [] };
+if (!Imp || !Imp.analisar) { R.ok = false; R.avisos.push("Importador indisponível."); return R; }
+var a = Imp.analisar(matriz, opts.analise || {});
+if (a.erro) { R.ok = false; R.avisos = (a.avisos || []).concat([a.erro]); return R; }
+(a.avisos || []).forEach(function (x) { R.avisos.push(x); });
+(a.etapas || []).forEach(function (et) {
+var cat = C.etapaPorNome(et.nome);
+R.etapasPlanilha.push({ nome: et.nome, catalogo: cat ? cat.id : "" });
+if (cat && R.etapas.indexOf(cat.id) < 0) R.etapas.push(cat.id);
+(et.itens || []).forEach(function (it) {
+var L = analisarLinha(it.descricao);
+L.etapas.forEach(function (e) { if (C.etapa(e) && R.etapas.indexOf(e) < 0 && !cat) R.etapas.push(e); });
+var k; for (k in L.respostas) if (tem(L.respostas, k) && !tem(R.respostas, k)) { var v = valida(C.pergunta(k), L.respostas[k]); if (v.ok) R.respostas[k] = v.v; }
+var un = String(it.unidade || ""), uk = un.toLowerCase().replace("²", "2").replace("³", "3");
+var uc = unCanon(I.normalizar(un).replace(/²/g, "2")) || unCanon(uk) || un;
+R.itens.push({
+bruto: it.descricao, quantidade: it.quantidade, unidade: uc || un, etapa: cat ? cat.id : (L.etapas[0] || ""), etapaNome: et.nome,
+acao: L.acao || "executar", intencao: (L.termos[0] && L.termos[0].id) || "", busca: it.descricao, medidas: L.medidas,
+descricao: it.descricao, codigo: it.codigo || "", fonte: it.fonte || "", custoPlanilha: it.custoUnitario || 0, daPlanilha: true
+});
+if (!L.termos.length) R.naoEntendidas.push({ bruto: it.descricao, motivo: "item da planilha sem termo do dicionário (segue para o casador pela descrição inteira)", daPlanilha: true });
+});
+});
+return R;
+},
+deEdital: function (texto, opts) {
+opts = opts || {};
+var t = I.normalizar(texto), orig = String(texto || ""), E = { ok: true, origem: "edital", bases: [], competencia: "", uf: "", desonerado: null, bdi: null, regime: "", obraEngenharia: null, presetId: "", presetMotivo: "", avisos: [] };
+var BASES = [["SINAPI", /\bsinapi\b/], ["SICRO", /\bsicro\b/], ["ORSE", /\borse\b/], ["SEINFRA", /\bseinfra\b/], ["CPOS", /\bcpos\b|\bcdhu\b/], ["SBC", /\bsbc\b/], ["IOPES", /\biopes\b|\bder es\b/], ["SUDECAP", /\bsudecap\b/], ["GOINFRA", /\bgoinfra\b|\bagetop\b/], ["SETOP", /\bsetop\b/], ["EMOP", /\bemop\b/], ["DNIT", /\bdnit\b/], ["TCPO", /\btcpo\b/], ["SIURB", /\bsiurb\b/], ["FDE", /\bfde\b/]];
+BASES.forEach(function (b) { var m = b[1].exec(t); if (m) E.bases.push({ fonte: b[0], pos: m.index }); });
+E.bases.sort(function (a, b) { return a.pos - b.pos; });
+E.bases = E.bases.map(function (b, i) { return { fonte: b.fonte, ordem: i + 1 }; });
+var te = String(texto || ""); try { te = te.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (eN) {}
+te = te.toLowerCase().replace(/\s+/g, " ");
+var mc = /(?:data[ -]?base|data de referencia|referencia|competencia|mes base|mes de referencia)\s*[:\-]?\s*(?:de\s+)?(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})/.exec(te) || /\b(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})\b/.exec(te);
+if (mc) E.competencia = mc[2] + "-" + (mc[1].length < 2 ? "0" + mc[1] : mc[1]);
+var ESTADOS = { "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA", "ceara": "CE", "distrito federal": "DF", "espirito santo": "ES", "goias": "GO", "maranhao": "MA", "mato grosso do sul": "MS", "mato grosso": "MT", "minas gerais": "MG", "para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE", "piaui": "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR", "santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO" };
+var ks = Object.keys(ESTADOS).sort(function (x, y) { return y.length - x.length; }), iu;
+var pb = /\b(?:sinapi|sicro|orse|seinfra)\b/.exec(te);
+if (pb) { var janela = te.slice(pb.index, pb.index + 90); for (iu = 0; iu < ks.length; iu++) if (new RegExp("\\b" + ks[iu] + "\\b").test(janela)) { E.uf = ESTADOS[ks[iu]]; break; } }
+if (!E.uf) { var mu2 = /\b(?:uf|estado)\s*(?:de|do|da)?\s*[:\-]?\s*([a-z]{2})\b/.exec(te); if (mu2) E.uf = mu2[1].toUpperCase(); }
+if (/sem desoneracao|nao desonerad|\bonerad[oa]/.test(te)) E.desonerado = false;
+else if (/com desoneracao|\bdesonerad[oa]|desoneracao/.test(te)) E.desonerado = true;
+var mb = /\bbdi\b[^0-9]{0,70}(\d{1,2}(?:[.,]\d+)?)\s*%/.exec(t);
+if (mb) E.bdi = { percentual: numBR(mb[1]), texto: mb[0] };
+if (/preco global|empreitada por preco global/.test(t)) E.regime = "empreitada_global";
+else if (/preco unitario|empreitada por preco unitario/.test(t)) E.regime = "empreitada_unitario";
+else if (/contratacao integrada|empreitada integral|regime integral/.test(t)) E.regime = "integral";
+else if (/\btarefa\b/.test(t)) E.regime = "tarefa";
+var tt = t.replace(/materia(?:l|is) de construcao/g, "material");
+var compra = /aquisicao de|fornecimento de material|compra de|registro de precos para aquisicao/.test(tt) && !/obra|reforma|construcao|engenharia/.test(tt);
+if (/obra de engenharia|servico de engenharia|obras? e servicos? de engenharia|reforma|construcao|ampliacao|pavimentacao|execucao de obra/.test(tt)) E.obraEngenharia = true;
+else if (compra || /servico comum|servicos comuns/.test(tt)) E.obraEngenharia = false;
+var Lic = opts.LicitacaoAuto || global.LicitacaoAuto;
+if (compra) { E.presetId = "compra"; E.presetMotivo = "o edital fala em aquisição/compra e não em obra"; }
+else if (Lic && Lic.escolherPreset) {
+var p = Lic.escolherPreset({ obra_engenharia: E.obraEngenharia === null ? undefined : E.obraEngenharia, regime_execucao: E.regime || undefined });
+E.presetId = p.id; E.presetMotivo = p.motivo;
+} else E.avisos.push("LicitacaoAuto indisponível: tipo do edital não deduzido.");
+E.premissas = [];
+if (!E.uf && opts.ufEmpresa) { E.uf = String(opts.ufEmpresa).toUpperCase(); E.ufPremissa = true; E.premissas.push("O edital não diz a UF das tabelas: usei a UF da empresa (" + E.uf + ") — confira."); }
+if (!E.bases.length) E.avisos.push("O edital não cita base de preços (SINAPI, SICRO…): a escolha fica com o orçamentista.");
+if (!E.bdi) E.avisos.push("Nenhum BDI escrito no edital.");
+var itens = Leitor.lerTexto(orig, opts); E.objeto = itens;
+return E;
+},
+montar: function (leitura, ctx, opts) {
+opts = opts || {};
+var M = opts.Mor || global.Mor || (typeof require === "function" ? (function () { try { return require("./motor.js"); } catch (e) { return null; } })() : null);
+var plano = {
+ok: leitura.ok !== false, origem: leitura.origem || "texto", tipologia: leitura.tipologia || "", obra: leitura.obra || {}, respostas: leitura.respostas || {},
+etapas: (leitura.etapas || []).map(function (id) { var e = C.etapa(id); return { id: id, nome: e ? e.etapa : id }; }),
+itens: [], negados: leitura.negados || [], conflitos: leitura.conflitos || [], naoEntendidas: leitura.naoEntendidas || [], avisos: (leitura.avisos || []).slice(), prazo: leitura.prazo || null,
+relatorio: { itens: 0, comCodigoDoDocumento: 0, casados: 0, compostos: 0, pendentes: 0, naoResolvidos: 0 }
+};
+(leitura.itens || []).forEach(function (it) {
+var x = {}, k; for (k in it) if (tem(it, k)) x[k] = it[k];
+plano.relatorio.itens++;
+if (it.codigo && ctx && typeof ctx.obter === "function") {
+var base = null, fontes = (ctx.fontes || ["SINAPI"]), f;
+for (f = 0; f < fontes.length && !base; f++) { base = ctx.obter(fontes[f], it.codigo); if (base) x.fonte = fontes[f]; }
+var O = global.Orcamentista || (typeof require === "function" ? (function () { try { return require("../orcamentista.js"); } catch (e) { return null; } })() : null);
+var CAS = global.MorCasador || (typeof require === "function" ? (function () { try { return require("./casador.js"); } catch (e) { return null; } })() : null);
+var motivoCod = "";
+if (!base) motivoCod = "o código " + it.codigo + " não existe nas bases carregadas";
+else {
+var mu = CAS && CAS.medidasEUnidade ? CAS.medidasEUnidade({ descricao: it.descricao, unidade: it.unidade }, base, ctx) : { ok: true };
+var sim = O ? O.similaridade(it.descricao, base.descricao, it.unidade, base.unidade, ctx) : 1;
+if (!mu.ok) motivoCod = mu.motivo; else if (sim < 0.6) motivoCod = "a semelhança com a descrição do código é só " + Math.round(sim * 100) + "% (mínimo 60%): «" + String(base.descricao).slice(0, 60) + "»";
+if (!motivoCod) { x.resolucao = { estado: "codigo-do-documento", codigo: String(it.codigo), fonte: x.fonte, confianca: sim, motivo: "código do documento achado na base " + x.fonte + ", mesma unidade, medidas e descrição conferem" }; plano.relatorio.comCodigoDoDocumento++; plano.itens.push(x); return; }
+}
+x.avisoCodigo = "código do documento não confere: " + motivoCod;
+var rSug = (M && M.resolverUm && ctx) ? M.resolverUm({ descricao: x.descricao, unidade: x.unidade, intencao: x.busca }, ctx, { memoria: opts.memoria }) : null;
+var sugC = rSug && rSug.casador ? (rSug.casador.sugestoes || []).slice() : [];
+if (rSug && rSug.estado === "casado" && rSug.codigo) sugC.unshift({ codigo: rSug.codigo, fonte: rSug.fonte, descricao: rSug.descricaoBase || "", unidade: x.unidade, custoUnitario: 0, confianca: rSug.confianca, aviso: "achado pela descrição (o código do documento não conferiu)" });
+x.resolucao = { estado: "pendente", codigo: "", fonte: "", confianca: 0, motivo: x.avisoCodigo, sugestoes: sugC.slice(0, 3) };
+plano.relatorio.pendentes++; plano.itens.push(x); return;
+}
+if (!ctx || !M || !M.resolverUm) { x.resolucao = { estado: "nao-resolvido", motivo: "sem bases carregadas neste momento" }; plano.relatorio.naoResolvidos++; plano.itens.push(x); return; }
+var rOpts = {}, zk; for (zk in (opts.resolver || {})) if (tem(opts.resolver, zk)) rOpts[zk] = opts.resolver[zk];
+if (opts.memoria) rOpts.memoria = opts.memoria;
+var r = M.resolverUm({ descricao: x.descricao, unidade: x.unidade, intencao: x.busca }, ctx, rOpts);
+x.resolucao = { estado: r.estado, codigo: r.codigo, fonte: r.fonte, confianca: r.confianca, motivo: r.motivo, composicao: r.composicao ? { codigo: r.composicao.comp.codigo, familia: r.composicao.familia, referencia: r.composicao.referencia, regras: r.composicao.regras, conferir: !!r.composicao.conferir, erroCustoMedido: r.composicao.erroCustoMedido, comp: r.composicao.comp } : null, sugestoes: ((r.casador && r.casador.sugestoes) || []).slice(0, 3), via: r.via || "" };
+if (r.estado === "casado") plano.relatorio.casados++; else if (r.estado === "composto") plano.relatorio.compostos++; else plano.relatorio.pendentes++;
+plano.itens.push(x);
+});
+return plano;
+},
+resumo: function (plano) {
+var l = [];
+l.push("Tipo de obra: " + (plano.tipologia || "não identificado") + " · área: " + (plano.obra.area !== undefined ? plano.obra.area + " m²" : "não informada"));
+l.push("Etapas: " + (plano.etapas.map(function (e) { return e.nome; }).join("; ") || "nenhuma"));
+l.push("Respostas implícitas: " + (Object.keys(plano.respostas).map(function (k) { return k + " = " + plano.respostas[k]; }).join("; ") || "nenhuma"));
+l.push("Itens com quantidade escrita: " + plano.itens.length + " · casados " + plano.relatorio.casados + " · compostos " + plano.relatorio.compostos + " · pendentes " + plano.relatorio.pendentes + " · com código do documento " + plano.relatorio.comCodigoDoDocumento);
+if (plano.conflitos.length) l.push("Conflitos: " + plano.conflitos.map(function (c) { return c.motivo; }).join(" | "));
+if (plano.naoEntendidas.length) l.push("Não entendi (" + plano.naoEntendidas.length + "): " + plano.naoEntendidas.map(function (n) { return "«" + n.bruto.slice(0, 60) + "»"; }).join(" · "));
+return l.join("\n");
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Leitor;
+global.MorLeitor = Leitor;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/memoria.js ==== */
+try {
+(function (global) {
+"use strict";
+var VERSAO = 1;
+var CHAVE = "orcapro:mor:memoria:v1";
+var MAX_PERFIS = 300, MAX_COMPOSICOES = 200, MAX_HIST = 5;
+var I = global.MorIntencoes || (typeof require === "function" ? (function () { try { return require("./intencoes.js"); } catch (e) { return null; } })() : null);
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function agoraISO() { return new Date().toISOString(); }
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+var STOP = { de: 1, da: 1, do: 1, das: 1, dos: 1, e: 1, em: 1, com: 1, para: 1, a: 1, o: 1, na: 1, no: 1, por: 1, ou: 1, um: 1, uma: 1 };
+function chaveDe(texto) {
+var t = I ? I.normalizar(texto) : String(texto || "").toLowerCase();
+var ps = t.split(" ").filter(Boolean).map(function (p) { return I ? I.radical(p) : p; });
+var v = {}, out = [];
+ps.forEach(function (p) { if (STOP[p]) return; if (/\d/.test(p)) { out.push(p); return; } if (!v[p]) { v[p] = 1; out.push(p); } });
+return out.sort().join(" ");
+}
+function vazia() {
+var a = agoraISO();
+return { v: VERSAO, criadoEm: a, atualizadoEm: a, casamentos: {}, composicoes: [], respostas: {}, perfis: [], frases: {} };
+}
+function migrar(obj) {
+var avisos = [], m = vazia(), migrou = false;
+if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { mem: m, migrou: false, avisos: ["conteúdo inválido — memória começou vazia"], invalido: true };
+var v = Number(obj.v);
+if (!(v >= 0)) { v = 0; }
+if (v > VERSAO) return { mem: m, migrou: false, avisos: ["memória de uma versão mais nova (v" + v + ") — não mexi; começou vazia neste aparelho"], futuro: true };
+if (v === 0) {
+migrou = true;
+if (Array.isArray(obj.casamentos)) obj.casamentos.forEach(function (c) { if (c && c.intencao && c.codigo) m.casamentos[chaveCasamento(c.intencao, c.unidade || "")] = { intencao: String(c.intencao), codigo: String(c.codigo), fonte: String(c.fonte || "SINAPI"), usos: Number(c.usos) || 1, corrigido: false, ultima: String(c.data || m.criadoEm), historico: [] }; });
+avisos.push("memória v0 migrada para v1");
+} else {
+if (obj.casamentos && typeof obj.casamentos === "object") Object.keys(obj.casamentos).forEach(function (k) {
+var c = obj.casamentos[k];
+if (c && c.codigo) m.casamentos[k.indexOf("|") > -1 ? k : k + "|" + unidadeChave(c.unidade)] = { intencao: String(c.intencao || k), unidade: String(c.unidade || ""), base: c.base || chaveBase(c.intencao || k), numeros: c.numeros || numerosDe(c.intencao || k), codigo: String(c.codigo), fonte: String(c.fonte || "SINAPI"), usos: Math.max(1, Number(c.usos) || 1), corrigido: c.corrigido === true, ultima: String(c.ultima || ""), historico: Array.isArray(c.historico) ? c.historico.slice(-MAX_HIST) : [] };
+});
+if (Array.isArray(obj.composicoes)) m.composicoes = obj.composicoes.filter(function (c) { return c && c.chave && c.comp && c.comp.codigo; }).slice(-MAX_COMPOSICOES);
+if (obj.respostas && typeof obj.respostas === "object") Object.keys(obj.respostas).forEach(function (tp) {
+var pt = obj.respostas[tp]; if (!pt || typeof pt !== "object") return;
+m.respostas[tp] = {};
+Object.keys(pt).forEach(function (pid) { var vs = pt[pid]; if (!vs || typeof vs !== "object") return; m.respostas[tp][pid] = {}; Object.keys(vs).forEach(function (val) { var n = Number(vs[val]); if (n > 0) m.respostas[tp][pid][val] = Math.floor(n); }); });
+});
+if (Array.isArray(obj.perfis)) m.perfis = obj.perfis.filter(function (p) { return p && p.orcId && p.etapas && typeof p.etapas === "object"; }).slice(-MAX_PERFIS);
+if (obj.frases && typeof obj.frases === "object") Object.keys(obj.frases).forEach(function (k) { var f = obj.frases[k]; if (f && f.entrada && f.frase) m.frases[k] = { frase: String(f.frase), entrada: String(f.entrada), usos: Math.max(1, Number(f.usos) || 1), em: String(f.em || "") }; });
+if (obj.criadoEm) m.criadoEm = String(obj.criadoEm);
+if (obj.atualizadoEm) m.atualizadoEm = String(obj.atualizadoEm);
+}
+m.v = VERSAO;
+return { mem: m, migrou: migrou, avisos: avisos };
+}
+function unidadeChave(u) { return String(u == null ? "" : u).toLowerCase().replace(/²/g, "2").replace(/³/g, "3").replace(/\s+/g, ""); }
+function chaveCasamento(texto, unidade) { return chaveDe(texto) + "|" + unidadeChave(unidade); }
+function chaveBase(texto) {
+var t = I ? I.normalizar(texto) : String(texto || "").toLowerCase();
+var ps = t.split(" ").filter(Boolean).map(function (p) { return I ? I.radical(p) : p; }).filter(function (p) { return !STOP[p] && !/\d/.test(p) && !/^(x|cm|mm|m|dn|fck|mpa|kg|un|l)$/.test(p); });
+var v = {}, out = [];
+ps.forEach(function (p) { if (!v[p]) { v[p] = 1; out.push(p); } });
+return out.sort().join(" ");
+}
+function numerosDe(texto) {
+var out = [];
+(String(texto || "").replace(/²/g, "2").match(/\d+(?:[.,]\d+)?/g) || []).forEach(function (n) { var v = parseFloat(String(n).replace(",", ".")); if (v === v) out.push(v); });
+return out.sort(function (a, b) { return a - b; });
+}
+function registrarCasamento(mem, intencao, escolha, opts) {
+opts = opts || {};
+var k = chaveCasamento(intencao, opts.unidade); if (!chaveDe(intencao) || !escolha || !escolha.codigo) return { ok: false, motivo: "intenção ou código ausente" };
+var agora = opts.agora || agoraISO(), at = mem.casamentos[k], cod = String(escolha.codigo), fonte = String(escolha.fonte || "SINAPI");
+var corr = opts.corrigido === true;
+if (!at) {
+mem.casamentos[k] = { intencao: String(intencao), unidade: String(opts.unidade || ""), base: chaveBase(intencao), numeros: numerosDe(intencao), codigo: cod, fonte: fonte, usos: 1, corrigido: corr, ultima: agora, historico: [] };
+return { ok: true, acao: "novo" };
+}
+if (at.codigo === cod && at.fonte === fonte) { at.usos++; at.ultima = agora; if (corr) at.corrigido = true; return { ok: true, acao: "reforcado", usos: at.usos }; }
+if (!corr && at.corrigido) return { ok: false, acao: "ignorado", motivo: "o casamento guardado foi CORRIGIDO pelo usuário — a escolha automática não o troca" };
+if (!corr && at.usos >= 3) return { ok: false, acao: "ignorado", motivo: "o guardado tem " + at.usos + " usos; uma escolha isolada não o troca" };
+at.historico.push({ codigo: at.codigo, fonte: at.fonte, ate: agora, usos: at.usos }); at.historico = at.historico.slice(-MAX_HIST);
+at.codigo = cod; at.fonte = fonte; at.usos = 1; at.ultima = agora; at.corrigido = corr;
+return { ok: true, acao: "trocado" };
+}
+function consultarCasamento(mem, intencao, unidade) {
+var c = mem.casamentos[chaveCasamento(intencao, unidade)];
+return c ? { codigo: c.codigo, fonte: c.fonte, usos: c.usos, corrigido: c.corrigido, ultima: c.ultima, intencao: c.intencao, unidade: c.unidade || "", numeros: c.numeros || [], confianca: "memória" } : null;
+}
+function sugerirCasamentos(mem, intencao, unidade) {
+var base = chaveBase(intencao), exata = chaveCasamento(intencao, unidade), uk = unidadeChave(unidade), out = [];
+if (!base) return out;
+Object.keys(mem.casamentos).forEach(function (k) {
+if (k === exata) return;
+var c = mem.casamentos[k];
+if ((c.base || chaveBase(c.intencao)) !== base) return;
+if (c.unidade && unidadeChave(c.unidade) !== uk) return;
+out.push({ codigo: c.codigo, fonte: c.fonte, usos: c.usos, corrigido: c.corrigido, intencao: c.intencao, confianca: "memória" });
+});
+out.sort(function (a, b) { return (b.corrigido ? 1 : 0) - (a.corrigido ? 1 : 0) || b.usos - a.usos; });
+return out.slice(0, 3);
+}
+function registrarComposicao(mem, intencao, comp, opts) {
+opts = opts || {};
+var un = opts.unidade !== undefined ? opts.unidade : (comp && comp.unidade);
+var k = chaveCasamento(intencao, un); if (!chaveDe(intencao) || !comp || !comp.codigo || !(comp.insumos || []).length) return { ok: false, motivo: "composição incompleta" };
+var i, agora = opts.agora || agoraISO();
+for (i = 0; i < mem.composicoes.length; i++) if (mem.composicoes[i].chave === k && mem.composicoes[i].comp.codigo === comp.codigo) { mem.composicoes[i].usos++; mem.composicoes[i].ultima = agora; return { ok: true, acao: "reforcada" }; }
+mem.composicoes.push({ chave: k, intencao: String(intencao), unidade: String(un || ""), comp: copia(comp), origem: comp.origem ? copia(comp.origem) : null, usos: 1, aceitaEm: agora, ultima: agora });
+if (mem.composicoes.length > MAX_COMPOSICOES) mem.composicoes = mem.composicoes.slice(-MAX_COMPOSICOES);
+return { ok: true, acao: "nova" };
+}
+function composicaoDaMemoria(mem, intencao, unidade) {
+var k = chaveCasamento(intencao, unidade), melhor = null;
+mem.composicoes.forEach(function (c) { if (c.chave === k && (!melhor || c.usos > melhor.usos)) melhor = c; });
+return melhor ? { comp: copia(melhor.comp), usos: melhor.usos, origem: melhor.origem, confianca: "memória" } : null;
+}
+function registrarResposta(mem, tipologia, perguntaId, valor) {
+var tp = String(tipologia || "_"), v = String(valor);
+mem.respostas[tp] = mem.respostas[tp] || {};
+mem.respostas[tp][perguntaId] = mem.respostas[tp][perguntaId] || {};
+mem.respostas[tp][perguntaId][v] = (mem.respostas[tp][perguntaId][v] || 0) + 1;
+}
+function padraoDe(mem, tipologia, perguntaId) {
+var vs = ((mem.respostas[String(tipologia || "_")] || {})[perguntaId]) || {}, ks = Object.keys(vs);
+if (!ks.length) return null;
+ks.sort(function (a, b) { return vs[b] - vs[a]; });
+if (vs[ks[0]] < 2) return null;
+if (ks.length > 1 && vs[ks[1]] === vs[ks[0]]) return null;
+return ks[0];
+}
+function padroes(mem, tipologia, catalogo) {
+var out = {}, pt = mem.respostas[String(tipologia || "_")] || {};
+Object.keys(pt).forEach(function (pid) {
+var v = padraoDe(mem, tipologia, pid); if (v === null) return;
+var q = catalogo && catalogo.pergunta ? catalogo.pergunta(pid) : null;
+if (q && q.bool) out[pid] = v === "true"; else if (q && q.num) { var n = Number(v); if (n === n) out[pid] = n; } else if (q) { if (!q.op || q.op.indexOf(v) > -1) out[pid] = v; }
+});
+return out;
+}
+function registrarPerfil(mem, perfil, opts) {
+opts = opts || {};
+if (!perfil || !perfil.orcId || !(Number(perfil.area) > 0)) return { ok: false, motivo: "perfil sem orçamento ou sem área" };
+var etapas = {}, n = 0;
+Object.keys(perfil.etapas || {}).forEach(function (id) { var c = Number(perfil.etapas[id]); if (c > 0) { etapas[id] = Math.round(c / Number(perfil.area) * 100) / 100; n++; } });
+if (!n) return { ok: false, motivo: "nenhuma etapa com custo" };
+var novo = { orcId: String(perfil.orcId), tipologia: String(perfil.tipologia || "_"), area: Number(perfil.area), em: opts.agora || agoraISO(), etapas: etapas };
+var i; for (i = 0; i < mem.perfis.length; i++) if (mem.perfis[i].orcId === novo.orcId) { mem.perfis.splice(i, 1); break; }
+mem.perfis.push(novo);
+if (mem.perfis.length > MAX_PERFIS) mem.perfis = mem.perfis.slice(-MAX_PERFIS);
+return { ok: true, etapas: n };
+}
+function faixa(mem, tipologia, etapaId, custoM2, opts) {
+opts = opts || {};
+var N = opts.n || 6, tp = String(tipologia || "_"), vals = [];
+for (var i = mem.perfis.length - 1; i >= 0 && vals.length < N; i--) {
+var p = mem.perfis[i];
+if (p.tipologia !== tp || (opts.ignorarOrc && p.orcId === opts.ignorarOrc)) continue;
+if (tem(p.etapas, etapaId)) vals.push(p.etapas[etapaId]);
+}
+if (vals.length < 3) return { n: vals.length, alerta: false, motivo: "histórico curto (" + vals.length + " anterior(es); preciso de 3)" };
+var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), c = Number(custoM2);
+var fora = c < mn || c > mx;
+return { n: vals.length, min: mn, max: mx, alerta: fora, atual: c, direcao: c > mx ? "acima" : (c < mn ? "abaixo" : ""), texto: fora ? "saiu R$ " + String(Math.round(c)).replace(".", ",") + "/m², seus últimos " + vals.length + " ficaram entre " + Math.round(mn) + " e " + Math.round(mx) : "" };
+}
+function ensinarFrase(mem, frase, entradaId, opts) {
+var k = chaveDe(frase); if (!k) return { ok: false, motivo: "frase vazia" };
+if (I && !I.entradaDe(entradaId)) return { ok: false, motivo: "«" + entradaId + "» não é uma intenção do dicionário" };
+var at = mem.frases[k], agora = (opts && opts.agora) || agoraISO();
+if (at && at.entrada === entradaId) { at.usos++; at.em = agora; return { ok: true, acao: "reforcada" }; }
+mem.frases[k] = { frase: String(frase).trim(), entrada: String(entradaId), usos: 1, em: agora };
+return { ok: true, acao: at ? "trocada" : "nova" };
+}
+function frasesEnsinadas(mem) { return Object.keys(mem.frases).map(function (k) { return { chave: k, frase: mem.frases[k].frase, entrada: mem.frases[k].entrada }; }); }
+function esquecer(mem, tipo, chave) {
+if (tipo === "casamento") { if (!mem.casamentos[chave]) return false; delete mem.casamentos[chave]; return true; }
+if (tipo === "frase") { if (!mem.frases[chave]) return false; delete mem.frases[chave]; return true; }
+if (tipo === "composicao") { var n = mem.composicoes.length; mem.composicoes = mem.composicoes.filter(function (c) { return c.comp.codigo !== chave; }); return mem.composicoes.length < n; }
+if (tipo === "perfil") { var m = mem.perfis.length; mem.perfis = mem.perfis.filter(function (p) { return p.orcId !== chave; }); return mem.perfis.length < m; }
+if (tipo === "respostas") { if (!mem.respostas[chave]) return false; delete mem.respostas[chave]; return true; }
+if (tipo === "tudo") { var v = vazia(); mem.casamentos = v.casamentos; mem.composicoes = v.composicoes; mem.respostas = v.respostas; mem.perfis = v.perfis; mem.frases = v.frases; return true; }
+return false;
+}
+function exportar(mem) { return JSON.stringify(mem, null, 1); }
+function importar(atual, texto, modo) {
+var obj; try { obj = JSON.parse(String(texto)); } catch (e) { return { ok: false, motivo: "o arquivo não é JSON válido", mem: atual }; }
+var r = migrar(obj);
+if (r.invalido || r.futuro) return { ok: false, motivo: r.avisos[0], mem: atual };
+if (modo === "substituir") return { ok: true, mem: r.mem, avisos: r.avisos };
+var m = copia(atual), n = r.mem;
+Object.keys(n.casamentos).forEach(function (k) {
+var b = n.casamentos[k], a = m.casamentos[k];
+if (!a) { m.casamentos[k] = copia(b); return; }
+if (a.codigo === b.codigo && a.fonte === b.fonte) { a.usos += b.usos; a.corrigido = a.corrigido || b.corrigido; if (b.ultima > a.ultima) a.ultima = b.ultima; return; }
+if (a.corrigido && !b.corrigido) return;
+if (b.corrigido && !a.corrigido) { m.casamentos[k] = copia(b); return; }
+if (String(b.ultima) > String(a.ultima)) m.casamentos[k] = copia(b);
+});
+n.composicoes.forEach(function (c) { if (!m.composicoes.some(function (x) { return x.chave === c.chave && x.comp.codigo === c.comp.codigo; })) m.composicoes.push(copia(c)); });
+Object.keys(n.respostas).forEach(function (tp) { Object.keys(n.respostas[tp]).forEach(function (pid) { Object.keys(n.respostas[tp][pid]).forEach(function (val) { m.respostas[tp] = m.respostas[tp] || {}; m.respostas[tp][pid] = m.respostas[tp][pid] || {}; m.respostas[tp][pid][val] = (m.respostas[tp][pid][val] || 0) + n.respostas[tp][pid][val]; }); }); });
+n.perfis.forEach(function (p) { if (!m.perfis.some(function (x) { return x.orcId === p.orcId; })) m.perfis.push(copia(p)); });
+Object.keys(n.frases).forEach(function (k) { if (!m.frases[k]) m.frases[k] = copia(n.frases[k]); });
+m.atualizadoEm = agoraISO();
+return { ok: true, mem: m, avisos: r.avisos };
+}
+function chaveDaEmpresa(empresaId) { return CHAVE + (empresaId ? ":" + empresaId : ""); }
+function carregar(storage, empresaId) {
+var chave = chaveDaEmpresa(empresaId), cru = null;
+try { cru = storage ? storage.getItem(chave) : null; } catch (e) { return { mem: vazia(), avisos: ["armazenamento indisponível"], isolado: false }; }
+if (cru === null || cru === undefined || cru === "") return { mem: vazia(), avisos: [], isolado: false, novo: true };
+var obj;
+try { obj = JSON.parse(cru); } catch (e2) {
+var iso = chave + ":corrompido:" + agoraISO().replace(/[^0-9]/g, "").slice(0, 14);
+try { storage.setItem(iso, cru); } catch (e3) { }
+return { mem: vazia(), avisos: ["memória corrompida: isolada em «" + iso + "»; o motor segue com memória vazia"], isolado: true, copia: iso };
+}
+var r = migrar(obj);
+if (r.invalido || r.futuro) {
+var iso2 = chave + ":isolado:" + agoraISO().replace(/[^0-9]/g, "").slice(0, 14);
+try { storage.setItem(iso2, cru); } catch (e4) { }
+return { mem: r.mem, avisos: r.avisos.concat(["conteúdo antigo guardado em «" + iso2 + "»"]), isolado: true, copia: iso2 };
+}
+return { mem: r.mem, avisos: r.avisos, isolado: false, migrou: r.migrou };
+}
+function salvar(storage, empresaId, mem) {
+var chave = chaveDaEmpresa(empresaId), txt;
+try {
+mem.atualizadoEm = mem.atualizadoEm || agoraISO();
+txt = JSON.stringify(mem);
+if (storage.getItem(chave) === txt) return { ok: true, igual: true };
+storage.setItem(chave, txt);
+return { ok: true, igual: false };
+} catch (e) { return { ok: false, motivo: String((e && e.message) || e) }; }
+}
+var Mem = {
+VERSAO: VERSAO, CHAVE: CHAVE, chaveDe: chaveDe, chaveDaEmpresa: chaveDaEmpresa, vazia: vazia, migrar: migrar,
+chaveCasamento: chaveCasamento, chaveBase: chaveBase, sugerirCasamentos: sugerirCasamentos, registrarCasamento: registrarCasamento, consultarCasamento: consultarCasamento,
+registrarComposicao: registrarComposicao, composicaoDaMemoria: composicaoDaMemoria,
+registrarResposta: registrarResposta, padraoDe: padraoDe, padroes: padroes,
+registrarPerfil: registrarPerfil, faixa: faixa,
+ensinarFrase: ensinarFrase, frasesEnsinadas: frasesEnsinadas,
+esquecer: esquecer, exportar: exportar, importar: importar, carregar: carregar, salvar: salvar,
+resumo: function (mem) { return { casamentos: Object.keys(mem.casamentos).length, corrigidos: Object.keys(mem.casamentos).filter(function (k) { return mem.casamentos[k].corrigido; }).length, composicoes: mem.composicoes.length, perfis: mem.perfis.length, frases: Object.keys(mem.frases).length, respostas: Object.keys(mem.respostas).length }; }
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Mem;
+global.MorMemoria = Mem;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/porque.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function fmt(v) { return typeof v === "number" ? String(Math.round(v * 100) / 100).replace(".", ",") : String(v); }
+var ROTULOS = {
+medido: "medido — a quantidade está escrita no documento",
+implicito: "implícito — consequência de outro serviço",
+sugerido: "sugerido — o motor sugere; só vale com o seu OK",
+memoria: "memória — decidido igual nas vezes anteriores",
+casador: "casado pelo texto — o código foi achado pela descrição",
+composta: "composição própria por família — a partir de uma composição SINAPI irmã",
+estimado: "estimado — regra por área/geometria do catálogo"
+};
+function origemDe(mor) {
+mor = mor || {};
+if (mor.origem === "memoria" || (mor.casamento && mor.casamento.memoria) || mor.via === "memoria") return "memoria";
+if (mor.origem === "composta") return "composta";
+if (mor.origem === "casador") return "casador";
+if (mor.origem === "documento") return "medido";
+if (mor.origem === "ifc" && ROTULOS[mor.qtdOrigem]) return mor.qtdOrigem;
+if (mor.qtdOrigem === "sugerido") return "sugerido";
+if (mor.qtdOrigem === "implicito") return "implicito";
+return "estimado";
+}
+function formulaComNumeros(mor, quantidade) {
+var f = mor && mor.formula; if (f === undefined || f === null || f === "") return "";
+var vars = (mor && mor.vars) || {}, achou = false;
+var t = String(f).replace(/[A-Za-z_][A-Za-z0-9_.]*/g, function (nome) {
+if (Object.prototype.hasOwnProperty.call(vars, nome)) { achou = true; return typeof vars[nome] === "boolean" ? (vars[nome] ? "sim" : "não") : fmt(vars[nome]); }
+return nome;
+}).replace(/\*/g, " × ").replace(/\//g, " ÷ ").replace(/\s+/g, " ");
+return t + (quantidade !== undefined && quantidade !== null ? " = " + fmt(Number(quantidade)) : "") + (achou ? "" : "");
+}
+function explicar(it) {
+var mor = (it && it.mor) || null;
+if (!mor) return { tem: false };
+var o = origemDe(mor);
+return {
+tem: true,
+regra: mor.regra || "",
+formula: mor.formula || "",
+formulaNumeros: formulaComNumeros(mor, it.quantidade),
+variaveis: mor.vars || {},
+premissas: arr(mor.premissas),
+origem: { codigo: o, rotulo: ROTULOS[o] },
+elemento: mor.elementoOrigem || "",
+porque: mor.porque || "",
+casamento: mor.casamento || null,
+composicao: mor.composicao || null,
+confianca: mor.confianca || "",
+conferido: mor.conferido === true,
+conferidoEm: mor.conferidoEm || "",
+conferir: precisaConferir(it)
+};
+}
+function precisaConferir(it) {
+var mor = it && it.mor; if (!mor || mor.conferido === true) return false;
+var o = origemDe(mor);
+if (o === "sugerido" || o === "memoria" || o === "casador" || o === "composta" || o === "implicito") return true;
+return mor.confianca !== "alta";
+}
+function contar(orc, etapaId) {
+var n = 0;
+arr(orc && orc.etapas).forEach(function (e) { if (etapaId && e.id !== etapaId) return; arr(e.itens).forEach(function (it) { if (precisaConferir(it)) n++; }); });
+return n;
+}
+function conferir(orc, etapaId, itemId, quem, agora) {
+var n = 0, em = agora || new Date().toISOString();
+arr(orc && orc.etapas).forEach(function (e) {
+if (etapaId && e.id !== etapaId) return;
+arr(e.itens).forEach(function (it) {
+if (itemId && it.id !== itemId) return;
+if (!precisaConferir(it)) return;
+it.mor.conferido = true; it.mor.conferidoEm = em; it.mor.conferidoPor = quem || "";
+n++;
+});
+});
+return n;
+}
+var Porque = { ROTULOS: ROTULOS, origemDe: origemDe, explicar: explicar, precisaConferir: precisaConferir, contar: contar, conferir: conferir, formulaComNumeros: formulaComNumeros };
+if (typeof module !== "undefined" && module.exports) module.exports = Porque;
+global.MorPorque = Porque;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/relatorio.js ==== */
+try {
+(function (global) {
+"use strict";
+var P = global.MorPorque || (typeof require === "function" ? require("./porque.js") : null);
+var Mem = function () { return global.MorMemoria || (typeof require === "function" ? (function () { try { return require("./memoria.js"); } catch (e) { return null; } })() : null); };
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function f2(x) { return String(Math.round((Number(x) || 0) * 100) / 100).replace(".", ","); }
+function montar(orc, opts) {
+opts = opts || {};
+var C = opts.catalogo || global.MorCatalogo, mor = (orc && orc.mor) || {}, R = {
+orcamento: { nome: (orc && orc.nome) || "", numero: (orc && orc.numero) || "" },
+tipologia: mor.tipologia || "", obra: mor.params || {},
+perguntas: [], premissas: [], itensPorOrigem: {}, totalItens: 0, conferir: 0, conferidos: 0,
+pendencias: [], naoEntendidas: [], conflitos: [], alertasFaixa: [], documento: mor.documento ? { origem: mor.documento.origem, em: mor.documento.em } : null
+};
+var tp = C && mor.tipologia ? C.tipologia(mor.tipologia) : null;
+if (tp) R.tipologiaRotulo = tp.rotulo;
+Object.keys(mor.respostas || {}).forEach(function (id) {
+var q = C && C.pergunta ? C.pergunta(id) : null, v = mor.respostas[id];
+R.perguntas.push({ id: id, txt: q ? q.txt : id, valor: (q && q.rotulos && q.rotulos[v]) || (typeof v === "boolean" ? (v ? "sim" : "não") : v) });
+});
+var vistas = {};
+arr(orc && orc.etapas).forEach(function (e) {
+arr(e.itens).forEach(function (it) {
+if (!it.mor) return;
+R.totalItens++;
+var o = P.origemDe(it.mor), g = R.itensPorOrigem[o] = R.itensPorOrigem[o] || { rotulo: P.ROTULOS[o], n: 0, itens: [] };
+g.n++; g.itens.push({ etapa: e.nome, descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade, regra: it.mor.regra, conferido: it.mor.conferido === true });
+if (P.precisaConferir(it)) R.conferir++; else if (it.mor.conferido === true) R.conferidos++;
+arr(it.mor.premissas).forEach(function (p) { if (!vistas[p]) { vistas[p] = 1; R.premissas.push(p); } });
+if (it.mor.confianca === "pendente" || !(Number(it.custoUnitario) > 0) || it.qtdPendente) {
+R.pendencias.push({ etapa: e.nome, descricao: it.descricao, motivo: !(Number(it.custoUnitario) > 0) ? "sem preço na base" : (it.qtdPendente ? "quantidade do projeto" : (it.mor.motivo || "confiança pendente")) });
+}
+});
+});
+if (mor.documento) {
+arr(mor.documento.pendentes).forEach(function (p) { R.pendencias.push({ etapa: p.etapa || "", descricao: p.bruto, motivo: "do documento, sem código: " + (p.motivo || "") + (arr(p.sugestoes).length ? " (sugestões: " + p.sugestoes.join(", ") + ")" : "") }); });
+R.naoEntendidas = arr(mor.documento.naoEntendidas).map(function (n) { return n.bruto; });
+R.conflitos = arr(mor.documento.conflitos).map(function (c) { return c.motivo; });
+}
+var M = Mem();
+if (M && opts.memoria && opts.perfil && Number(opts.perfil.area) > 0 && opts.perfil.tipologia) {
+Object.keys(opts.perfil.etapas || {}).forEach(function (id) {
+var f = M.faixa(opts.memoria, opts.perfil.tipologia, id, opts.perfil.etapas[id] / opts.perfil.area, { ignorarOrc: orc && orc.id });
+if (f.alerta) R.alertasFaixa.push({ etapa: (C && C.etapa(id) ? C.etapa(id).etapa : id), texto: f.texto, direcao: f.direcao });
+});
+}
+return R;
+}
+function lista(itens, vazio) { return itens.length ? "<ul>" + itens.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : '<p class="mut">' + esc(vazio) + "</p>"; }
+function html(R, opts) {
+opts = opts || {};
+var h = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Como este orçamento foi montado</title><style>' +
+"@page{size:A4;margin:16mm}body{font:13px/1.45 Arial,Helvetica,sans-serif;color:#1a2632}h1{font-size:19px;margin:0 0 2px}h2{font-size:14px;margin:18px 0 6px;border-bottom:1px solid #c9d3dc;padding-bottom:3px}.sub{color:#5b6b79;margin:0 0 10px}" +
+"table{border-collapse:collapse;width:100%}th,td{border:1px solid #d5dde4;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eef2f6}.mut{color:#5b6b79}.alerta{background:#fff7d6;border:1px solid #e6cf6a;padding:6px 8px}.r{text-align:right}</style></head><body>";
+h += "<h1>Como este orçamento foi montado</h1><p class=\"sub\">" + esc(R.orcamento.nome) + (R.orcamento.numero ? " · " + esc(R.orcamento.numero) : "") + (opts.empresa ? " · " + esc(opts.empresa) : "") + (opts.data ? " · " + esc(opts.data) : "") + "</p>";
+h += "<h2>Obra</h2><p>" + esc(R.tipologiaRotulo || R.tipologia || "tipo de obra não informado") + " · área: " + (R.obra.area !== undefined ? f2(R.obra.area) + " m²" : "não informada") +
+["pavimentos", "quartos", "banheiros", "peDireito", "padrao", "perimetro"].filter(function (k) { return R.obra[k] !== undefined; }).map(function (k) { return " · " + k + ": " + esc(R.obra[k]); }).join("") + "</p>";
+if (R.documento) h += '<p class="mut">Gerado em parte a partir de um documento (' + esc(R.documento.origem || "texto") + ").</p>";
+h += "<h2>Perguntas respondidas</h2>" + (R.perguntas.length ? "<table><thead><tr><th>Pergunta</th><th>Resposta</th></tr></thead><tbody>" + R.perguntas.map(function (q) { return "<tr><td>" + esc(q.txt) + "</td><td>" + esc(q.valor) + "</td></tr>"; }).join("") + "</tbody></table>" : '<p class="mut">Nenhuma pergunta foi respondida — valeram os padrões do catálogo.</p>');
+h += "<h2>Premissas</h2>" + lista(R.premissas, "Nenhuma premissa registrada.");
+h += "<h2>Itens por origem</h2>";
+var os = Object.keys(R.itensPorOrigem);
+h += os.length ? "<table><thead><tr><th>Origem</th><th class=\"r\">Itens</th><th>O que significa</th></tr></thead><tbody>" + os.map(function (o) { var g = R.itensPorOrigem[o]; return "<tr><td>" + esc(o) + '</td><td class="r">' + g.n + "</td><td>" + esc(g.rotulo) + "</td></tr>"; }).join("") + "</tbody></table>" : '<p class="mut">Nenhum item foi gerado pelo motor.</p>';
+h += "<p>" + R.totalItens + " item(ns) do motor · <b>" + R.conferir + "</b> ainda a conferir · " + R.conferidos + " conferido(s) com OK.</p>";
+h += "<h2>Pendências</h2>" + (R.pendencias.length ? "<table><thead><tr><th>Etapa</th><th>Item</th><th>Motivo</th></tr></thead><tbody>" + R.pendencias.map(function (p) { return "<tr><td>" + esc(p.etapa) + "</td><td>" + esc(p.descricao) + "</td><td>" + esc(p.motivo) + "</td></tr>"; }).join("") + "</tbody></table>" : '<p class="mut">Nenhuma pendência.</p>');
+if (R.naoEntendidas.length) h += "<h2>Frases do documento que o motor não entendeu</h2>" + lista(R.naoEntendidas, "");
+if (R.conflitos.length) h += "<h2>Conflitos no documento</h2>" + lista(R.conflitos, "");
+h += "<h2>Alertas de faixa de custo</h2>" + (R.alertasFaixa.length ? R.alertasFaixa.map(function (a) { return '<p class="alerta"><b>' + esc(a.etapa) + "</b> " + esc(a.texto) + ".</p>"; }).join("") : '<p class="mut">Nenhuma etapa fora da faixa dos seus orçamentos anteriores (ou histórico curto: preciso de 3 anteriores).</p>');
+h += "</body></html>";
+return h;
+}
+var Rel = { montar: montar, html: html };
+if (typeof module !== "undefined" && module.exports) module.exports = Rel;
+global.MorRelatorio = Rel;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/roteiro.js ==== */
+try {
+(function (global) {
+"use strict";
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+var P = global.MorPorque || (typeof require === "function" ? require("./porque.js") : null);
+var G = function () { return global.OrcGuia || (typeof require === "function" ? (function () { try { return require("../orcguia.js"); } catch (e) { return null; } })() : null); };
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+var ROTULOS = ["Tipo de obra", "Parâmetros / Documento", "Etapas & prévias", "Conferência", "BDI e condições", "Proposta"];
+function passos(orc, ctx) {
+var base = G().passos(orc, ctx || {});
+var pBase = base[0], pItens = base[1], pBdi = base[2], pProp = base[3];
+var mor = (orc && orc.mor) || {}, t = (ctx && ctx.totais) || {}, nItens = num(t.qtdItens);
+var tp = mor.tipologia ? C.tipologia(mor.tipologia) : null;
+var p1 = tp ? { estado: "ok", resumo: tp.rotulo + " — " + tp.etapas.length + " etapas padrão.", pendencias: [] }
+: { estado: "falta", resumo: "Escolha o tipo de obra: as etapas padrão e os Serviços Preliminares já nascem.", pendencias: [{ texto: "Falta o tipo de obra.", alvo: "tipo" }] };
+var area = num(mor.params && mor.params.area), doc = mor.documento || null, pend2 = [];
+if (!(area > 0)) pend2.push({ texto: "Falta a área da obra (sem ela não há quantidade por regra).", alvo: "parametros" });
+var p2 = { estado: pend2.length ? "falta" : "ok", pendencias: pend2 };
+if (doc && arr(doc.naoEntendidas).length) { p2.pendencias.push({ texto: arr(doc.naoEntendidas).length + " frase(s) do documento não foram entendidas — ensine ou ignore.", alvo: "parametros" }); if (p2.estado === "ok") p2.estado = "aviso"; }
+p2.resumo = area > 0 ? ("Área " + String(area).replace(".", ",") + " m²" + (doc ? " · lido de documento (" + (doc.origem || "texto") + ")" : "") + (p2.pendencias.length && area > 0 ? " · " + p2.pendencias[0].texto : "")) : pend2[0].texto;
+var etapasDoTipo = tp ? tp.etapas.length : 0, comItem = 0;
+arr(orc && orc.etapas).forEach(function (e) { if (arr(e.itens).length && C.etapaPorNome(e.nome)) comItem++; });
+var pend3 = [];
+if (pBase.estado === "falta") pBase.pendencias.forEach(function (x) { pend3.push(x); });
+if (nItens < 1) pend3.push({ texto: "Nenhuma etapa tem item ainda: abra «Itens guiados» em cada etapa.", alvo: "etapas" });
+var p3 = { estado: pend3.length ? "falta" : "ok", pendencias: pend3, resumo: pend3.length ? pend3[0].texto : (comItem + " de " + etapasDoTipo + " etapas com itens · " + nItens + " item(ns).") };
+if (!pend3.length && pItens.estado === "falta") { p3.estado = "falta"; p3.pendencias = pItens.pendencias; p3.resumo = pItens.resumo; }
+var aConferir = P.contar(orc), semPreco = arr(ctx && ctx.semPreco).length, pend4 = [];
+if (semPreco) pend4.push({ texto: semPreco + (semPreco === 1 ? " item sem preço." : " itens sem preço."), alvo: "preco" });
+if (aConferir) pend4.push({ texto: aConferir + (aConferir === 1 ? " linha do motor ainda espera o seu OK." : " linhas do motor ainda esperam o seu OK."), alvo: "conferencia" });
+var p4 = { estado: semPreco ? "falta" : (aConferir ? "aviso" : "ok"), pendencias: pend4, resumo: pend4.length ? pend4.map(function (p) { return p.texto.replace(/\.$/, ""); }).join("; ") + "." : (nItens ? "Tudo conferido." : "Nada a conferir ainda.") };
+if (!nItens) { p4.estado = "falta"; p4.resumo = "Nada a conferir ainda: gere os itens primeiro."; p4.pendencias = []; }
+var lista = [p1, p2, p3, p4, pBdi, pProp], atual = -1;
+lista.forEach(function (p, i) { if (atual < 0 && p.estado === "falta") atual = i; });
+if (atual < 0) atual = lista.length - 1;
+return lista.map(function (p, i) {
+var ids = ["tipo", "parametros", "etapas", "conferencia", "bdi", "proposta"];
+return { id: ids[i], rotulo: ROTULOS[i], num: i + 1, estado: p.estado, resumo: p.resumo, pendencias: p.pendencias, atual: i === atual };
+});
+}
+var Roteiro = { ROTULOS: ROTULOS, passos: passos };
+if (typeof module !== "undefined" && module.exports) module.exports = Roteiro;
+global.MorRoteiro = Roteiro;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/catalogo-dados/coerencia.js ==== */
+try {
+(function (global) {
+"use strict";
+var D = global.MorDados = global.MorDados || {};
+D.coerencia = [
+{
+id: "alvenaria-revestimento",
+se: { chaves: ["alvenaria.alvenaria", "muro.muroAlvenaria"], texto: "^alvenaria" },
+exige: { chaves: ["revestimento.massaInt", "revestimento.emboco", "revestimento.massaExt", "murorev.muroChapisco", "murorev.muroMassa"], texto: "chapisco|reboco|emboco|massa unica" },
+aviso: "Há alvenaria, mas nenhum chapisco/reboco/emboço/massa única. Se a parede é aparente, ignore; senão falta o revestimento."
+},
+{
+id: "telha-estrutura",
+se: { chaves: ["cobertura.telhaCer", "cobertura.telhaConc", "cobertura.telhaFibro", "cobertura.telhaMet"], texto: "^telhamento|^telha " },
+exige: { chaves: ["cobertura.tramaMadeira", "cobertura.tramaMadeiraTerca", "cobertura.tesouraMadeira", "cobertura.tramaAcoCer", "cobertura.tramaAcoConc", "cobertura.tramaAcoOnd", "cobertura.tesouraAco", "estmetal.estruturaAco"], texto: "trama|tesoura|caibro|ripa|terca|engradamento|estrutura (de |em )?(madeira|aco|metalica)" },
+aviso: "Há telha, mas nenhuma estrutura de apoio (trama, tesoura, caibro, ripa, terça). Se a estrutura vem em outro pacote, ignore."
+},
+{
+id: "piso-contrapiso",
+se: { chaves: ["pisos.pisoPorc", "pisos.pisoCer"], texto: "^revestimento ceramico (para )?piso|^piso (ceramic|porcelanat|vinilic|laminad)|^porcelanato" },
+exige: { chaves: ["pisos.contrapiso"], texto: "contrapiso|camada regularizadora|regularizacao de piso" },
+aviso: "Há piso de acabamento, mas nenhum contrapiso/camada regularizadora. Se a base já vem regularizada (laje nivelada, piso industrial), ignore."
+},
+{
+id: "tomada-eletroduto",
+se: { chaves: ["eletrica.tomada"], texto: "^tomada" },
+exige: { chaves: ["eletrica.eletroduto"], texto: "eletroduto|conduite|canaleta" },
+aviso: "Há tomada, mas nenhum eletroduto/conduíte/canaleta para levar o fio. Se a instalação é de outro contratado, ignore."
+}
+];
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/coerencia.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function norm(s) {
+var t = String(s == null ? "" : s).toLowerCase();
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) { }
+return t.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+}
+function regras() {
+var D = global.MorDados;
+if (!D || !D.coerencia) { try { if (typeof require === "function") require("./catalogo-dados/coerencia.js"); } catch (e) { } D = global.MorDados; }
+return arr(D && D.coerencia);
+}
+function re(src) { try { return src ? new RegExp(src) : null; } catch (e) { return null; } }
+function casa(it, cond) {
+if (!cond) return false;
+var reg = it && it.mor && it.mor.regra ? String(it.mor.regra) : "";
+if (reg && arr(cond.chaves).indexOf(reg) >= 0) return true;
+var r = re(cond.texto);
+return !!(r && r.test(norm(it && it.descricao)));
+}
+function verificar(orc, lista) {
+var out = { avisos: [], ok: [], naoAplicadas: [] }, itens = [];
+arr(orc && orc.etapas).forEach(function (e) { arr(e && e.itens).forEach(function (it) { if (it) itens.push({ e: e, it: it }); }); });
+arr(lista || regras()).forEach(function (r) {
+if (!r || !r.id) return;
+var gat = itens.filter(function (x) { return casa(x.it, r.se); });
+if (!gat.length) { out.naoAplicadas.push(r.id); return; }
+var par = itens.some(function (x) { return casa(x.it, r.exige); });
+if (par) { out.ok.push(r.id); return; }
+out.avisos.push({ id: r.id, aviso: r.aviso, gatilhos: gat.map(function (x) { return { etapaId: x.e.id, itemId: x.it.id, descricao: x.it.descricao || "" }; }) });
+});
+return out;
+}
+var Coerencia = { regras: regras, verificar: verificar, _norm: norm };
+if (typeof module !== "undefined" && module.exports) module.exports = Coerencia;
+global.MorCoerencia = Coerencia;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/abc.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+function r2(x) { return Math.round(num(x) * 100) / 100; }
+var LIM_A = 80, LIM_B = 95;
+function curva(orc, opts) {
+opts = opts || {};
+var limA = opts.limiteA || LIM_A, limB = opts.limiteB || LIM_B, todos = [], semValor = 0, total = 0;
+arr(orc && orc.etapas).forEach(function (e) {
+arr(e && e.itens).forEach(function (it) {
+if (!it) return;
+var v = num(it.quantidade) * num(it.custoUnitario);
+if (!(v > 0)) { semValor++; return; }
+total += v;
+todos.push({ ord: todos.length, etapaId: e.id, etapa: e.nome || "", itemId: it.id, codigo: String(it.codigo == null ? "" : it.codigo), descricao: it.descricao || "", unidade: it.unidade || "", quantidade: num(it.quantidade), custoUnitario: num(it.custoUnitario), valor: v, cotado: !!(it.cotacao && typeof it.cotacao === "object") });
+});
+});
+todos.sort(function (a, b) { return (b.valor - a.valor) || (a.ord - b.ord); });
+var ac = 0, S = { A: { n: 0, valor: 0, pct: 0 }, B: { n: 0, valor: 0, pct: 0 }, C: { n: 0, valor: 0, pct: 0 } };
+todos.forEach(function (l) {
+var antes = total > 0 ? (ac / total) * 100 : 0;
+l.classe = antes < limA ? "A" : (antes < limB ? "B" : "C");
+ac += l.valor;
+l.pct = total > 0 ? r2((l.valor / total) * 100) : 0;
+l.acumPct = total > 0 ? r2((ac / total) * 100) : 0;
+l.valor = r2(l.valor);
+S[l.classe].n++; S[l.classe].valor += l.valor;
+});
+["A", "B", "C"].forEach(function (k) { S[k].valor = r2(S[k].valor); S[k].pct = total > 0 ? r2((S[k].valor / total) * 100) : 0; });
+var n = todos.length;
+var resumo = { A: S.A, B: S.B, C: S.C, total: r2(total), nItens: n, semValor: semValor, pctItensA: n ? r2((S.A.n / n) * 100) : 0 };
+var cotar = todos.filter(function (l) { return l.classe === "A" && !l.cotado; });
+var texto;
+if (!n) texto = "Sem itens com valor: não há curva ABC a mostrar.";
+else texto = S.A.n + " de " + n + " itens (" + String(resumo.pctItensA).replace(".", ",") + "%) são " + String(S.A.pct).replace(".", ",") + "% do valor (classe A)." +
+(cotar.length ? " Cotar primeiro: " + cotar.slice(0, 5).map(function (l) { return l.descricao.slice(0, 40); }).join("; ") + (cotar.length > 5 ? " e mais " + (cotar.length - 5) : "") + "." : " Todos os itens A já têm cotação de fornecedor.");
+return { linhas: todos, resumo: resumo, cotarPrimeiro: cotar, texto: texto };
+}
+var Abc = { LIM_A: LIM_A, LIM_B: LIM_B, curva: curva };
+if (typeof module !== "undefined" && module.exports) module.exports = Abc;
+global.MorAbc = Abc;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/recotar.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+function r2(x) { return Math.round(num(x) * 100) / 100; }
+function up(s) { return String(s == null ? "" : s).toUpperCase(); }
+var IGUAL = 0.005;
+function fonteDe(it) { return String(it.baseFonte || it.origem || "").trim(); }
+function propria(f) { var u = up(f); return !u || u === "PROPRIO" || u === "PROPRIA"; }
+function semCodigo(c) { var s = String(c == null ? "" : c).trim(); return !s || s === "—" || s === "-"; }
+function precoDaBase(it, b) {
+if (it.modoCusto === "mo") return num(b.custoMO);
+if (it.modoCusto === "matEq") return num(b.custoMAT) + num(b.custoEQ);
+return num(b.custoUnitario);
+}
+function preservado(it) {
+if (it.cotacao && typeof it.cotacao === "object") return "preço de cotação (" + String(it.cotacao.fornecedor || "fornecedor") + ") — não é sobrescrito";
+if (it.ajustes && it.ajustes.custoUnitario) return "preço ajustado por você — não é sobrescrito";
+return "";
+}
+function mesmaUf(a, b) { return up(a) === up(b); }
+function analisar(orc, ctx, opts, modo) {
+opts = opts || {};
+var linhas = [], R = { nItens: 0, nMudaram: 0, nIguais: 0, nAusentes: 0, nPendentes: 0, nPreservados: 0, nSemPreco: 0, nIgnorados: 0, totalAntes: 0, totalDepois: 0, diferenca: 0, valorPendente: 0, pct: 0 };
+var ufBase = opts.uf !== undefined ? String(opts.uf || "") : String((ctx && ctx.uf) || ""), compBase = opts.competencia !== undefined ? String(opts.competencia || "") : String((ctx && ctx.competencia) || "");
+var contexto = {
+ufOrc: String((orc && orc.uf) || ""), compOrc: String((orc && orc.competenciaSinapi) || ""), ufBase: ufBase, compBase: compBase,
+troca: !!((ufBase && orc && orc.uf && !mesmaUf(ufBase, orc.uf)) || (compBase && orc && orc.competenciaSinapi && compBase !== orc.competenciaSinapi))
+};
+if (!orc || !ctx || typeof ctx.obter !== "function") return { modo: modo, ok: false, motivo: "sem orçamento ou sem base carregada", linhas: [], resumo: R, contexto: contexto };
+arr(orc.etapas).forEach(function (e) {
+arr(e && e.itens).forEach(function (it) {
+if (!it) return;
+R.nItens++;
+var q = num(it.quantidade), antes = num(it.custoUnitario), fonte = fonteDe(it);
+var L = { etapaId: e.id, etapa: e.nome || "", itemId: it.id, codigo: String(it.codigo == null ? "" : it.codigo), fonte: fonte, descricao: it.descricao || "", unidade: it.unidade || "", quantidade: q, antes: antes, depois: antes, diferenca: 0, estado: "", motivo: "" };
+var base = null, pres;
+if (semCodigo(it.codigo)) { L.estado = "sem-codigo"; L.motivo = "item sem código: não há o que consultar na base"; R.nIgnorados++; }
+else if (propria(fonte)) { L.estado = "proprio"; L.motivo = "item próprio: não tem base de preço"; R.nIgnorados++; }
+else if ((pres = preservado(it))) { L.estado = "preservado"; L.motivo = pres; R.nPreservados++; }
+else {
+try { base = ctx.obter(fonte, it.codigo); } catch (eo) { base = null; }
+if (!base) {
+if (modo === "recasar") { L.estado = "pendente"; L.motivo = "o código " + L.codigo + " não existe na base " + (ufBase || "nova") + (compBase ? " " + compBase : "") + " — fica pendente (nada é trocado por parecido)"; R.nPendentes++; R.valorPendente += antes * q; }
+else { L.estado = "ausente"; L.motivo = "o código " + L.codigo + " não está na base carregada"; R.nAusentes++; }
+} else if (typeof it.desonerado === "boolean" && typeof opts.desonerado === "boolean" && it.desonerado !== opts.desonerado) {
+L.estado = "regime"; L.motivo = "item gravado " + (it.desonerado ? "desonerado" : "não desonerado") + " e a base é " + (opts.desonerado ? "desonerada" : "não desonerada") + " — não comparável"; R.nIgnorados++;
+} else {
+var dep = precoDaBase(it, base);
+if (!(dep > 0)) { L.estado = "sem-preco"; L.motivo = "a base tem o código, mas sem preço — o item não é zerado"; R.nSemPreco++; }
+else {
+L.depois = dep; L.base = { custoUnitario: num(base.custoUnitario), custoMO: num(base.custoMO), custoMAT: num(base.custoMAT), custoEQ: num(base.custoEQ) };
+if (Math.abs(dep - antes) < IGUAL) { L.estado = "igual"; R.nIguais++; }
+else {
+L.estado = "mudou"; L.diferenca = r2((dep - antes) * q); R.nMudaram++;
+R.totalAntes += antes * q; R.totalDepois += dep * q; R.diferenca += L.diferenca;
+}
+}
+}
+}
+linhas.push(L);
+});
+});
+R.totalAntes = r2(R.totalAntes); R.totalDepois = r2(R.totalDepois); R.diferenca = r2(R.diferenca); R.valorPendente = r2(R.valorPendente);
+R.pct = R.totalAntes > 0 ? r2((R.diferenca / R.totalAntes) * 100) : 0;
+return { modo: modo, ok: true, linhas: linhas, resumo: R, contexto: contexto };
+}
+function achar(orc, etapaId, itemId) {
+var r = null;
+arr(orc && orc.etapas).forEach(function (e) { if (e && e.id === etapaId) arr(e.itens).forEach(function (i) { if (i && i.id === itemId) r = i; }); });
+return r;
+}
+var Recotar = {
+IGUAL: IGUAL,
+precoDaBase: precoDaBase,
+comparar: function (orc, ctx, opts) { return analisar(orc, ctx, opts, "recotar"); },
+recasar: function (orc, ctx, opts) { return analisar(orc, ctx, opts, "recasar"); },
+aplicar: function (orc, plano, opts) {
+opts = opts || {};
+if (opts.confirmado !== true) return { ok: false, aplicados: 0, pendentes: 0, motivo: "falta o OK do usuário — nada foi alterado" };
+if (opts.travado) return { ok: false, aplicados: 0, pendentes: 0, motivo: "orçamento aprovado não muda o preço: crie uma revisão" };
+if (!plano || !plano.ok) return { ok: false, aplicados: 0, pendentes: 0, motivo: "plano inválido" };
+var so = null, em = opts.agora || new Date().toISOString(), nA = 0, nP = 0;
+if (opts.ids) { so = {}; arr(opts.ids).forEach(function (i) { so[i] = 1; }); }
+var ctxo = plano.contexto || {};
+plano.linhas.forEach(function (L) {
+if (so && !so[L.itemId]) return;
+var it = achar(orc, L.etapaId, L.itemId); if (!it) return;
+if (L.estado === "mudou") {
+it.custoUnitario = L.depois;
+if (L.base) { it.custoMO = L.base.custoMO; it.custoMAT = L.base.custoMAT; it.custoEQ = L.base.custoEQ; if (it.custoBase != null) it.custoBase = L.base.custoUnitario; }
+it.mor = it.mor || {};
+it.mor.recotado = { antes: L.antes, depois: L.depois, em: em, por: opts.quem || "", uf: ctxo.ufBase || "", competencia: ctxo.compBase || "" };
+if (it.mor.pendenteBase) delete it.mor.pendenteBase;
+nA++;
+} else if (L.estado === "pendente") {
+it.mor = it.mor || {};
+it.mor.pendenteBase = { motivo: L.motivo, uf: ctxo.ufBase || "", competencia: ctxo.compBase || "", em: em };
+nP++;
+} else if (L.estado === "igual" && it.mor && it.mor.pendenteBase) { delete it.mor.pendenteBase; }
+});
+if (plano.modo === "recasar" && opts.atualizarOrcamento === true && orc) {
+if (ctxo.ufBase) orc.uf = ctxo.ufBase;
+if (ctxo.compBase) orc.competenciaSinapi = ctxo.compBase;
+}
+return { ok: true, aplicados: nA, pendentes: nP, motivo: "" };
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = Recotar;
+global.MorRecotar = Recotar;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/faixa.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+function r2(x) { return Math.round(num(x) * 100) / 100; }
+function br(x) { return String(Math.round(num(x))).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+function chaveEtapa(n) {
+var t = String(n == null ? "" : n);
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) { }
+return t.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").toUpperCase();
+}
+var MIN_OBRAS = 3;
+function perfil(orc, area) {
+var tot = 0, et = {}, rot = {};
+arr(orc && orc.etapas).forEach(function (e) {
+var s = 0;
+arr(e && e.itens).forEach(function (it) { if (it) s += num(it.quantidade) * num(it.custoUnitario); });
+if (s > 0) { var k = chaveEtapa(e.nome); et[k] = (et[k] || 0) + s; rot[k] = rot[k] || e.nome; tot += s; }
+});
+var o = { total: tot, etapas: {}, rotulos: rot };
+if (area > 0) { o.totalM2 = tot / area; Object.keys(et).forEach(function (k) { o.etapas[k] = et[k] / area; }); }
+return o;
+}
+function areaDe(orc) { return num(orc && orc.mor && orc.mor.params && orc.mor.params.area); }
+function estat(vals, atual) {
+var n = vals.length;
+if (n < MIN_OBRAS) return { estado: "sem-referencia", n: n, alerta: false, texto: n ? "histórico curto (" + n + " obra(s) anterior(es); preciso de " + MIN_OBRAS + ")" : "sem referência (nenhuma obra anterior comparável)" };
+var s = vals.slice().sort(function (a, b) { return a - b; }), mn = s[0], mx = s[n - 1], med = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+var fora = atual < mn || atual > mx;
+return { estado: fora ? "fora" : "ok", n: n, min: r2(mn), max: r2(mx), mediana: r2(med), atual: r2(atual), alerta: fora, direcao: atual > mx ? "acima" : (atual < mn ? "abaixo" : ""),
+texto: (fora ? "R$ " + br(atual) + "/m² está " + (atual > mx ? "ACIMA" : "ABAIXO") + " das suas " + n + " obras anteriores (" : "R$ " + br(atual) + "/m² está dentro das suas " + n + " obras anteriores (") + "R$ " + br(mn) + " a " + br(mx) + "/m², mediana " + br(med) + ")" };
+}
+function analisar(orc, historico, opts) {
+opts = opts || {};
+var area = opts.area !== undefined ? num(opts.area) : areaDe(orc), tp = orc && orc.mor && orc.mor.tipologia ? String(orc.mor.tipologia) : "";
+var out = { area: area, atual: null, total: null, etapas: [], cub: null, textos: [], nUsadas: 0 };
+if (!(area > 0)) {
+out.total = { estado: "sem-area", alerta: false, texto: "sem área da obra: informe a área para calcular o custo por m²" };
+out.cub = { estado: "sem-area", texto: out.total.texto }; out.textos.push(out.total.texto);
+return out;
+}
+var at = perfil(orc, area); out.atual = { total: r2(at.total), totalM2: r2(at.totalM2 || 0), etapas: {} };
+Object.keys(at.etapas).forEach(function (k) { out.atual.etapas[k] = r2(at.etapas[k]); });
+if (!(at.total > 0)) { out.total = { estado: "sem-valor", alerta: false, texto: "o orçamento ainda não tem valor: nada a comparar" }; out.textos.push(out.total.texto); out.cub = { estado: "sem-valor", texto: out.total.texto }; return out; }
+var ant = [];
+arr(historico).forEach(function (h) {
+if (!h || (orc && h.id && h.id === orc.id)) return;
+var a = areaDe(h); if (!(a > 0)) return;
+if (tp && String((h.mor && h.mor.tipologia) || "") !== tp) return;
+var p = perfil(h, a); if (!(p.total > 0)) return;
+ant.push(p);
+});
+out.nUsadas = ant.length;
+out.total = estat(ant.map(function (p) { return p.totalM2; }), at.totalM2);
+out.textos.push("Total: " + out.total.texto + ".");
+Object.keys(at.etapas).forEach(function (k) {
+var vals = []; ant.forEach(function (p) { if (p.etapas[k] > 0) vals.push(p.etapas[k]); });
+var e = estat(vals, at.etapas[k]); e.etapa = at.rotulos[k] || k; e.atualM2 = r2(at.etapas[k]);
+out.etapas.push(e);
+if (e.alerta) out.textos.push(e.etapa + ": " + e.texto + ".");
+});
+var cub = opts.cub;
+if (cub && num(cub.valorM2) > 0) {
+var razao = at.totalM2 / num(cub.valorM2);
+out.cub = { estado: "informativo", valorM2: r2(cub.valorM2), uf: cub.uf || "", competencia: cub.competencia || "", razao: r2(razao), alerta: false,
+texto: "Custo direto por m² = " + String(r2(razao * 100)).replace(".", ",") + "% do CUB" + (cub.uf ? " " + cub.uf : "") + (cub.competencia ? " " + cub.competencia : "") + " (R$ " + br(cub.valorM2) + "/m²). Só informativo." };
+if (cub.uf && orc && orc.uf && String(cub.uf).toUpperCase() !== String(orc.uf).toUpperCase()) out.cub.texto += " Atenção: o CUB é de " + cub.uf + " e o orçamento é de " + orc.uf + ".";
+} else out.cub = { estado: "sem-referencia", texto: "CUB: sem referência (não há CUB importado)" };
+out.textos.push(out.cub.texto + ".");
+return out;
+}
+var Faixa = { MIN_OBRAS: MIN_OBRAS, analisar: analisar };
+if (typeof module !== "undefined" && module.exports) module.exports = Faixa;
+global.MorFaixa = Faixa;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/pedidocot.js ==== */
+try {
+(function (global) {
+"use strict";
+var FONTE = "cotação fornecedor";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+function r2(x) { return Math.round(num(x) * 100) / 100; }
+function txt(v) { return v == null ? "" : String(v).replace(/^\s+|\s+$/g, ""); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function qtdBr(q) { return String(Math.round(num(q) * 1000) / 1000).replace(".", ","); }
+function unChave(u) { return txt(u).toLowerCase().replace(/²/g, "2").replace(/³/g, "3").replace(/\s+/g, "").replace(/\./g, ""); }
+var SOB_CONSULTA = /sob consulta|a cotar|sob medida/i;
+function itensParaCotar(orc) {
+var out = [];
+arr(orc && orc.etapas).forEach(function (e) {
+arr(e && e.itens).forEach(function (it) {
+if (!it) return;
+var cotado = !!(it.cotacao && typeof it.cotacao === "object") && num(it.custoUnitario) > 0;
+if (cotado) return;
+var motivo = "";
+if (!(num(it.custoUnitario) > 0)) motivo = "sem preço";
+else if (SOB_CONSULTA.test(String(it.descricao || "")) || SOB_CONSULTA.test(String(it.codigo || ""))) motivo = "sob consulta";
+if (!motivo) return;
+out.push({ etapaId: e.id, itemId: it.id, etapa: e.nome || "", descricao: txt(it.descricao), unidade: txt(it.unidade), quantidade: num(it.quantidade), motivo: motivo });
+});
+});
+return out;
+}
+function dataBr(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ""); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; }
+function gerar(orc, itens, opts) {
+opts = opts || {};
+var lista = arr(itens).filter(function (x) { return x && txt(x.descricao); });
+var cidade = txt(opts.cidade) || txt(orc && orc.obra && orc.obra.local) || "";
+var empresa = txt(opts.empresa), contato = txt(opts.contato), prazo = num(opts.prazoDias);
+var hoje = dataBr(String(opts.agora || new Date().toISOString()));
+var local = cidade || "a informar";
+var linhaQtd = function (x) { return num(x.quantidade) > 0 ? qtdBr(x.quantidade) + " " + x.unidade : "quantidade a confirmar (" + (x.unidade || "un") + ")"; };
+var t = ["Olá! Pedido de cotação" + (empresa ? " — " + empresa : "") + ".", "Obra em: " + local + ".", "Preciso do preço unitário POSTO NA OBRA (com frete) e prazo de entrega de:", ""];
+lista.forEach(function (x, i) { t.push((i + 1) + ") " + x.descricao + " — " + linhaQtd(x)); });
+t.push("");
+t.push("Por favor responda, para cada item: preço unitário, frete, prazo de entrega, validade da proposta" + (prazo > 0 ? " e responda em até " + prazo + " dia(s)" : "") + ".");
+if (contato) t.push("Contato: " + contato + ".");
+t.push("Obrigado!");
+var texto = t.join("\n");
+var assunto = "Pedido de cotação — obra em " + local + (empresa ? " — " + empresa : "");
+var email = "Prezados,\n\n" + t.slice(1).join("\n") + (empresa ? "\n\n" + empresa : "");
+var h = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + esc(assunto) + '</title><style>' +
+"body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px}h1{font-size:18px;margin:0 0 4px}p{margin:4px 0;font-size:13px}" +
+"table{border-collapse:collapse;width:100%;margin-top:12px;font-size:12.5px}th,td{border:1px solid #444;padding:6px;vertical-align:top;text-align:left}th{background:#eee}" +
+".r{text-align:right;white-space:nowrap}.v{height:28px}@media print{body{margin:10mm}}</style></head><body>" +
+"<h1>Pedido de cotação</h1>" + (empresa ? "<p><b>" + esc(empresa) + "</b></p>" : "") +
+"<p>Obra em: <b>" + esc(local) + "</b> · Data do pedido: " + esc(hoje) + "</p>" +
+"<p>Informe o preço unitário POSTO NA OBRA (com frete), o prazo de entrega e a validade da proposta." + (prazo > 0 ? " Resposta em até " + prazo + " dia(s)." : "") + "</p>" +
+(contato ? "<p>Contato: " + esc(contato) + "</p>" : "") +
+'<table><thead><tr><th>Item</th><th>Especificação</th><th>Un</th><th class="r">Qtd</th><th>Preço unitário (R$)</th><th>Frete (R$)</th><th>Prazo (dias)</th></tr></thead><tbody>' +
+lista.map(function (x, i) { return "<tr><td>" + (i + 1) + "</td><td>" + esc(x.descricao) + "</td><td>" + esc(x.unidade) + '</td><td class="r">' + (num(x.quantidade) > 0 ? esc(qtdBr(x.quantidade)) : "a confirmar") + '</td><td class="v"></td><td class="v"></td><td class="v"></td></tr>'; }).join("") +
+'</tbody></table><p style="margin-top:14px">Fornecedor: ______________________________ CNPJ: ____________________ Data: ___/___/______ Assinatura: ____________________</p></body></html>';
+return { texto: texto, assunto: assunto, email: email, html: h, itens: lista };
+}
+function dataValida(s) {
+s = txt(s);
+var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s), a, mm, d;
+if (m) { a = +m[1]; mm = +m[2]; d = +m[3]; }
+else { m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s); if (!m) return ""; d = +m[1]; mm = +m[2]; a = +m[3]; }
+var dt = new Date(Date.UTC(a, mm - 1, d));
+if (dt.getUTCFullYear() !== a || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== d) return "";
+return (a < 10 ? "000" + a : a) + "-" + (mm < 10 ? "0" + mm : mm) + "-" + (d < 10 ? "0" + d : d);
+}
+function achar(orc, etapaId, itemId) {
+var r = null;
+arr(orc && orc.etapas).forEach(function (e) { if (e && e.id === etapaId) arr(e.itens).forEach(function (i) { if (i && i.id === itemId) r = i; }); });
+return r;
+}
+function registrarResposta(orc, etapaId, itemId, resp, opts) {
+opts = opts || {}; resp = resp || {};
+var it = achar(orc, etapaId, itemId);
+if (!it) return { ok: false, motivo: "item não encontrado" };
+if (opts.travado) return { ok: false, motivo: "orçamento aprovado não muda o preço: crie uma revisão" };
+var preco = (typeof resp.preco === "string") ? Number(resp.preco.replace(/\./g, "").replace(",", ".")) : Number(resp.preco);
+if (!isFinite(preco) || !(preco > 0)) return { ok: false, motivo: "o preço precisa ser maior que zero" };
+preco = r2(preco);
+var forn = txt(resp.fornecedor);
+if (!forn) return { ok: false, motivo: "informe o fornecedor" };
+var data = dataValida(resp.data);
+if (!data) return { ok: false, motivo: "data inválida (use DD/MM/AAAA)" };
+if (txt(resp.unidade) && unChave(resp.unidade) !== unChave(it.unidade)) return { ok: false, motivo: "unidade diferente (item em " + txt(it.unidade) + ", resposta em " + txt(resp.unidade) + "): o preço não é comparável" };
+if (it.modoCusto === "mo") return { ok: false, motivo: "este item cobra só mão de obra; preço de fornecedor é de material" };
+var antes = it.cotacao && it.cotacao.antes != null ? num(it.cotacao.antes) : num(it.custoUnitario);
+var O = opts.Orcamento;
+if (O && typeof O.atualizarItem === "function") { try { O.atualizarItem(orc, etapaId, itemId, { custoUnitario: preco }); } catch (e) { } }
+if (num(it.custoUnitario) !== preco) it.custoUnitario = preco;
+it.cotacao = { origem: "cotacao", fonte: FONTE, cotacaoId: "", numero: "", data: data, status: "", fornecedorId: "", fornecedor: forn, cnpj: txt(resp.cnpj), link: txt(resp.link), preco: preco, antes: antes, em: txt(opts.agora), por: txt(opts.quem) };
+return { ok: true, motivo: "", preco: preco, antes: antes };
+}
+var PedidoCot = { FONTE: FONTE, itensParaCotar: itensParaCotar, gerar: gerar, registrarResposta: registrarResposta, _dataValida: dataValida };
+if (typeof module !== "undefined" && module.exports) module.exports = PedidoCot;
+global.MorPedidoCot = PedidoCot;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/manual.js ==== */
+try {
+(function (global) {
+"use strict";
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+var M = global.Mor || (typeof require === "function" ? require("./motor.js") : null);
+var CAMPOS_OBRA = ["area", "pavimentos", "peDireito", "padrao", "banheiros", "quartos", "perimetro"];
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function vazio(v) { return v === undefined || v === null || v === ""; }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+var MorManual = {
+CAMPOS_OBRA: CAMPOS_OBRA,
+garantir: function (orc) {
+if (!orc.mor || typeof orc.mor !== "object") orc.mor = { v: 1, tipologia: "", params: {}, respostas: {} };
+if (!orc.mor.params || typeof orc.mor.params !== "object") orc.mor.params = {};
+if (!orc.mor.respostas || typeof orc.mor.respostas !== "object") orc.mor.respostas = {};
+return orc.mor;
+},
+nascer: function (orc, tipologiaId, Orc) {
+var t = C.tipologia(tipologiaId);
+if (!t) return { criadas: [], jaExistiam: [], erro: "Tipo de obra «" + tipologiaId + "» não existe no catálogo." };
+var mor = this.garantir(orc), criadas = [], ja = [];
+mor.tipologia = t.id;
+var existentes = {};
+arr(orc.etapas).forEach(function (e) { existentes[C.semAcento(e.nome)] = true; });
+t.etapas.forEach(function (nome) {
+if (existentes[C.semAcento(nome)]) { ja.push(nome); return; }
+Orc.addEtapa(orc, nome); existentes[C.semAcento(nome)] = true; criadas.push(nome);
+});
+return { criadas: criadas, jaExistiam: ja, erro: "" };
+},
+entradaObra: function (orc, sobre) {
+var mor = this.garantir(orc), t = C.tipologia(mor.tipologia), e = { tipo: t ? t.base : "residencial" }, k;
+CAMPOS_OBRA.forEach(function (c) { if (!vazio(mor.params[c])) e[c] = mor.params[c]; });
+if (sobre) for (k in sobre) if (tem(sobre, k) && !vazio(sobre[k])) e[k] = sobre[k];
+return e;
+},
+definirParams: function (orc, obj) {
+var mor = this.garantir(orc);
+CAMPOS_OBRA.forEach(function (c) { if (obj && tem(obj, c)) { if (vazio(obj[c])) delete mor.params[c]; else mor.params[c] = obj[c]; } });
+return mor.params;
+},
+definirResposta: function (orc, id, valor) {
+var mor = this.garantir(orc);
+if (vazio(valor)) delete mor.respostas[id]; else mor.respostas[id] = valor;
+},
+etapaDoCatalogo: function (nomeEtapa) { return C.etapaPorNome(nomeEtapa); },
+previa: function (orc, etapaCatId, respostas, obra, padroes) {
+var mor = this.garantir(orc), r = {}, k;
+if (padroes) for (k in padroes) if (tem(padroes, k)) r[k] = padroes[k];
+for (k in mor.respostas) if (tem(mor.respostas, k)) r[k] = mor.respostas[k];
+if (respostas) for (k in respostas) if (tem(respostas, k)) { if (vazio(respostas[k])) delete r[k]; else r[k] = respostas[k]; }
+var pv = M.previaEtapa(etapaCatId, this.entradaObra(orc, obra), r);
+if (padroes && pv.perguntas) pv.perguntas.forEach(function (q) {
+if (tem(padroes, q.id) && !tem(mor.respostas, q.id) && !(respostas && tem(respostas, q.id) && !vazio(respostas[q.id])) && String(q.valor) === String(padroes[q.id])) q.daMemoria = true;
+});
+return pv;
+},
+inserir: function (orc, etapaOrcId, previa, marcadas, deps) {
+var O = deps.Orcamento, res = { inseridos: 0, jaExistiam: 0, semPreco: [], pendentes: 0, recusado: "" };
+var etapa = null;
+arr(orc.etapas).forEach(function (e) { if (e.id === etapaOrcId) etapa = e; });
+if (!etapa) { res.recusado = "A etapa não existe mais neste orçamento."; return res; }
+if (O.travadoPorAprovacao && O.travadoPorAprovacao(orc)) { res.recusado = "Este orçamento está aprovado — crie uma revisão para acrescentar itens."; return res; }
+var jaTem = {};
+arr(etapa.itens).forEach(function (it) { if (it.mor && it.mor.regra) jaTem[it.mor.regra] = true; });
+var marc = {}; arr(marcadas).forEach(function (c) { marc[c] = true; });
+var total = deps.totalItens || 0;
+arr(previa && previa.itens).forEach(function (l) {
+var chave = l.mor.regra;
+if (!marc[chave]) return;
+if (jaTem[chave]) { res.jaExistiam++; return; }
+if (l.estado === "erro") { res.pendentes++; return; }
+if (deps.limiteItens && total >= deps.limiteItens) { res.recusado = "Limite de itens do plano atingido."; return; }
+var base = l.codigo ? deps.obter(l.codigo, l.fonte) : null;
+var cu = base ? Number(base.custoUnitario) || 0 : 0;
+if (!(cu > 0) && !deps.permitirZerado) { res.semPreco.push(l.descricao); return; }
+var origem = base ? JSON.parse(JSON.stringify(base)) : { codigo: "", descricao: l.descricao, unidade: l.unidade, custoUnitario: 0 };
+if (base && l.fonte && !origem.baseFonte) origem.baseFonte = l.fonte;
+origem.memoriaCalculo = "Motor de Orçamento por Regras — " + l.formula + (l.mor.formula ? " [" + l.mor.formula + "]" : "");
+var antes = {}; arr(etapa.itens).forEach(function (it) { antes[it.id] = true; });
+O.addItem(orc, etapa.id, origem, l.quantidade);
+var novo = null;
+arr(etapa.itens).forEach(function (it) { if (!antes[it.id]) novo = it; });
+if (novo) {
+novo.mor = {
+regra: l.mor.regra, formula: l.mor.formula, premissas: l.mor.premissas.slice(), origem: l.mor.origem || "catalogo",
+qtdOrigem: l.mor.qtdOrigem || "estimado", porque: l.mor.porque || "",
+confianca: base && l.estado === "ok" ? l.mor.confianca : "pendente", codigos: l.mor.codigos.slice(), intencao: l.mor.intencao,
+vars: l.mor.vars || {}, elementoOrigem: l.mor.elementoOrigem || "", conferido: false
+};
+if (l.mor.casamento) novo.mor.casamento = { confianca: l.mor.casamento.confianca, motivo: l.mor.casamento.motivo };
+if (l.codigo && !base) novo.mor.motivo = "o código " + l.codigo + " não está na base instalada neste orçamento";
+}
+jaTem[chave] = true; total++; res.inseridos++;
+if (!base || l.estado !== "ok") res.pendentes++;
+});
+return res;
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorManual;
+global.MorManual = MorManual;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/ui.js ==== */
+try {
+(function (global) {
+"use strict";
+var CHAVE = "orcapro:tela:motor:v1";
+var C = global.MorCatalogo || (typeof require === "function" ? require("./catalogo.js") : null);
+var MM = global.MorManual || (typeof require === "function" ? require("./manual.js") : null);
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function f2(x) { return String(Math.round((Number(x) || 0) * 100) / 100).replace(".", ","); }
+function vazio(v) { return v === undefined || v === null || v === ""; }
+var CONFIANCA = { alta: "ok", media: "info", pendente: "alerta" };
+function pilula(txt, tom) { return (global.Modulo && Modulo.pilula) ? Modulo.pilula(txt, tom) : '<span class="mod-pil mod-pil-' + tom + '">' + esc(txt) + "</span>"; }
+var MorUI = {
+CHAVE: CHAVE,
+_st: null,
+ativo: function () {
+try { var v = typeof localStorage !== "undefined" ? localStorage.getItem(CHAVE) : null; return !!v && JSON.parse(v).motor === true; } catch (e) { return false; }
+},
+campoTipo: function (valor) {
+var ops = '<option value="">— não usar o assistente de etapas —</option>' + C.tipologias().map(function (t) {
+return '<option value="' + esc(t.id) + '"' + (t.id === valor ? " selected" : "") + ">" + esc(t.rotulo) + "</option>";
+}).join("");
+return '<div class="field" id="mor-campo-tipo"><label for="mor-tipologia">Tipo de obra <span class="muted" style="font-weight:400">(prévia)</span></label>' +
+'<select id="mor-tipologia">' + ops + "</select>" +
+'<span class="muted" style="font-size:12px">Escolhendo, o orçamento já nasce com as etapas padrão e os Serviços Preliminares. Nenhum item entra sozinho: cada etapa abre um painel com perguntas e a prévia dos itens.</span>' +
+MorUI.blocoDocumento() + "</div>";
+},
+blocoDocumento: function () {
+return '<details id="mor-doc" style="margin-top:8px"><summary><b>Gerar a partir de documento</b> <span class="muted" style="font-weight:400">(prévia — sem IA)</span></summary>' +
+'<div class="field"><label for="mor-doc-txt">Cole o escopo, o memorial ou o objeto do edital</label><textarea id="mor-doc-txt" rows="5" placeholder="Ex.: Casa térrea de 120 m², 3 quartos, fundação em sapatas, telha cerâmica…"></textarea></div>' +
+'<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="mor-doc-arq" accept=".txt,.pdf,.docx,.xlsx,.xls,.csv" aria-label="Arquivo do documento"> <button type="button" class="btn sm" id="mor-doc-ler">Ler o documento</button> <button type="button" class="btn sm ghost" id="mor-doc-mem">Memória do Motor</button></div>' +
+'<div id="mor-doc-res" aria-live="polite"></div></details>';
+},
+htmlPlano: function (pl) {
+var h = '<div class="mor-doc-plano" style="margin-top:8px">';
+var rows = [["Tipo de obra", pl.tipologia ? ((C.tipologia(pl.tipologia) || {}).rotulo || pl.tipologia) : "não identificado"], ["Área", pl.obra && pl.obra.area !== undefined ? f2(pl.obra.area) + " m²" : "não informada — o Manual vai pedir"]];
+["pavimentos", "quartos", "banheiros", "peDireito", "padrao", "perimetro"].forEach(function (k) { if (pl.obra && pl.obra[k] !== undefined) rows.push([k, String(pl.obra[k])]); });
+rows.push(["Etapas encontradas", pl.etapas.length ? pl.etapas.map(function (e) { return e.nome; }).join("; ") : "nenhuma"]);
+var rp = Object.keys(pl.respostas || {}).map(function (k) { var q = C.pergunta(k); return (q ? q.txt : k) + " = " + ((q && q.rotulos && q.rotulos[pl.respostas[k]]) || pl.respostas[k]); });
+rows.push(["Respostas implícitas", rp.length ? rp.join("; ") : "nenhuma"]);
+if (pl.prazo) rows.push(["Prazo", pl.prazo.valor + " " + pl.prazo.unidade]);
+if (pl.edital) rows.push(["Edital", (pl.edital.bases || []).map(function (b) { return b.ordem + "º " + b.fonte; }).join(", ") + (pl.edital.competencia ? " · " + pl.edital.competencia : "") + (pl.edital.uf ? " · " + pl.edital.uf : "") + (pl.edital.bdi ? " · BDI " + f2(pl.edital.bdi.percentual) + "%" : "") + (pl.edital.presetId ? " · tipo: " + pl.edital.presetId : "")]);
+h += '<table class="tbl"><tbody>' + rows.map(function (r) { return "<tr><th>" + esc(r[0]) + "</th><td>" + esc(r[1]) + "</td></tr>"; }).join("") + "</tbody></table>";
+if (pl.itens.length) {
+h += '<div class="row" style="gap:6px;margin-top:8px"><span class="muted" style="font-size:12px">Só entra no orçamento o que estiver marcado. Vêm marcados os de confiança alta; confira os demais.</span> <button type="button" class="btn sm ghost" data-mor-doc-todos="1">Marcar todos com código</button> <button type="button" class="btn sm ghost" data-mor-doc-todos="0">Desmarcar</button></div>';
+h += '<table class="tbl" style="margin-top:6px"><thead><tr><th>Entra</th><th>Item do documento</th><th>Un</th><th class="right">Qtd</th><th>Base</th></tr></thead><tbody>' + pl.itens.map(function (x, idx) {
+var s = x.resolucao || {}, rot, tom;
+if (s.estado === "casado" || s.estado === "codigo-do-documento") { rot = (s.fonte || "SINAPI") + " " + s.codigo + (s.estado === "casado" ? " · casado (" + Math.round((s.confianca || 0) * 100) + "%) — confira" : " · código do documento"); tom = s.estado === "casado" ? "info" : "ok"; }
+else if (s.estado === "composto") { rot = "composição sugerida " + (s.composicao ? s.composicao.familia : "") + " — a gravar"; tom = "alerta"; }
+else { rot = "pendente — " + String(s.motivo || "").slice(0, 80); tom = "alerta"; }
+var aceitar = (s.estado === "composto" && s.composicao && s.composicao.comp) ? ' <button type="button" class="btn sm" data-mor-aceitar="' + idx + '" title="Grava esta composição na base PRÓPRIA e na memória da empresa (só com o seu clique)">Aceitar composição</button>' : "";
+if (s.via === "memoria" || s.confiancaTexto === "memória") rot = (s.fonte || "SINAPI") + " " + s.codigo + " · memória (decidido igual antes)";
+if (s.escolhido) rot = (s.fonte || "SINAPI") + " " + s.codigo + " · escolhido por você";
+var sug = "";
+if (!s.codigo) sug = MorUI.htmlSugestoes(idx, s);
+var caixa = (s.codigo && (s.estado === "casado" || s.estado === "codigo-do-documento")) ? '<input type="checkbox" data-mor-doc-item="' + idx + '"' + (x.marcado === true ? " checked" : "") + ' aria-label="Incluir ' + esc(x.bruto) + '">' : '<span class="muted">—</span>';
+return "<tr><td>" + caixa + "</td><td>" + esc(x.bruto) + "</td><td>" + esc(x.unidade) + '</td><td class="right">' + f2(x.quantidade) + "</td><td>" + pilula(rot, tom) + aceitar + sug + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+if (pl.conflitos.length) h += '<p class="muted" style="font-size:12px"><b>Conflitos (' + pl.conflitos.length + "):</b> " + pl.conflitos.map(function (c) { return esc(c.motivo); }).join(" · ") + "</p>";
+if (pl.negados.length) h += '<p class="muted" style="font-size:12px"><b>Marcado como “sem/não” (' + pl.negados.length + "):</b> " + pl.negados.map(function (n) { return esc(n.termo); }).join(", ") + "</p>";
+if (pl.naoEntendidas.length) h += '<div class="mod-aviso mod-aviso-alerta" role="status"><div class="mod-aviso-txt"><b>Não entendi ' + pl.naoEntendidas.length + " frase(s)</b><span>" + pl.naoEntendidas.map(function (n, i) { return "«" + esc(n.bruto.slice(0, 120)) + "»" + MorUI.htmlEnsinar(i, n.bruto); }).join(" ") + "</span></div></div>";
+(pl.avisos || []).forEach(function (a) { h += '<p class="muted" style="font-size:12px">' + esc(a) + "</p>"; });
+h += '<p class="muted" style="font-size:12px">Ao criar o orçamento entram: as etapas, as respostas e os itens com código na base. O que ficou pendente é guardado no orçamento (orc.mor.documento) — nada some e nada é inventado.</p></div>';
+return h;
+},
+marcaItem: function (e, it) {
+if (!MorUI.ativo() || !it || !it.mor || !global.MorPorque) return "";
+var par = esc(e.id + "|" + it.id);
+var h = ' <button type="button" class="btn sm ico" data-mor-porque="' + par + '" title="Por quê? — a regra, a conta e a origem desta linha" aria-label="Por quê?">?</button>';
+if (global.MorPorque.precisaConferir(it)) h += ' <span class="g-pill" style="background:#f6d94d66;color:#7a5f00;font-weight:700;font-size:10px" title="Linha do motor que espera o seu OK">conferir</span> <button type="button" class="btn sm" data-mor-ok="' + par + '" title="Está certo: tirar a marca">OK</button>';
+else if (it.mor.conferido === true) h += ' <span class="muted" style="font-size:10px" title="Conferido por ' + esc(it.mor.conferidoPor || "") + '">✓ conferido</span>';
+return h;
+},
+htmlPorque: function (it) {
+var x = global.MorPorque.explicar(it); if (!x.tem) return '<p class="muted">Esta linha não foi gerada pelo motor (foi digitada ou importada).</p>';
+var vars = Object.keys(x.variaveis).map(function (k) { return "<code>" + esc(k) + "</code> = " + esc(typeof x.variaveis[k] === "number" ? f2(x.variaveis[k]) : String(x.variaveis[k])); }).join(" · ");
+var h = '<table class="tbl"><tbody>' +
+"<tr><th>Regra</th><td><code>" + esc(x.regra || "—") + "</code></td></tr>" +
+"<tr><th>Conta</th><td>" + (x.formulaNumeros ? "<b>" + esc(x.formulaNumeros) + "</b>" : "—") + (x.formula ? '<div class="muted" style="font-size:12px">fórmula: <code>' + esc(x.formula) + "</code></div>" : "") + (vars ? '<div class="muted" style="font-size:12px">' + vars + "</div>" : "") + "</td></tr>" +
+"<tr><th>Origem</th><td>" + esc(x.origem.rotulo) + "</td></tr>" +
+(x.porque ? "<tr><th>Por que entrou</th><td>" + esc(x.porque) + "</td></tr>" : "") +
+"<tr><th>Elemento de origem</th><td>" + (x.elemento ? esc(x.elemento) : '<span class="muted">— (não veio de um elemento do modelo/documento)</span>') + "</td></tr>" +
+(x.casamento ? "<tr><th>Código</th><td>" + esc(x.casamento.motivo || "") + "</td></tr>" : "") +
+"<tr><th>Premissas</th><td>" + (x.premissas.length ? "<ul style=\"margin:0;padding-left:18px\">" + x.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul>" : "—") + "</td></tr>" +
+"<tr><th>Situação</th><td>" + (x.conferido ? "conferido (OK) em " + esc(x.conferidoEm.slice(0, 10)) : (x.conferir ? pilula("conferir", "alerta") + " espera o seu OK" : "sem pendência")) + "</td></tr></tbody></table>";
+return h;
+},
+_acharItem: function (orc, etapaId, itemId) {
+var r = null; (orc.etapas || []).forEach(function (e) { if (e.id === etapaId) (e.itens || []).forEach(function (i) { if (i.id === itemId) r = { e: e, it: i }; }); });
+return r;
+},
+porque: function (app, etapaId, itemId) {
+var orc = app && app.orcAtual, a = orc ? MorUI._acharItem(orc, etapaId, itemId) : null; if (!a) return;
+var bt = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+if (global.MorPorque.precisaConferir(a.it)) bt.push({ texto: "OK, está certo", classe: "primary", onClick: function () { MorUI.confirmarOk(app, etapaId, itemId); UI.fecharModal(); } });
+UI.modal("Por quê? — " + String(a.it.descricao).slice(0, 70), MorUI.htmlPorque(a.it), bt);
+},
+confirmarOk: function (app, etapaId, itemId) {
+var orc = app && app.orcAtual; if (!orc) return 0;
+var quem = ""; try { quem = (typeof Auth !== "undefined" && Auth.usuario && (Auth.usuario() || {}).nome) || ""; } catch (e) {}
+var n = global.MorPorque.conferir(orc, etapaId, itemId, quem);
+if (n) { try { app.persistir(); } catch (e2) {} try { app.render(); } catch (e3) {} UI.toast(n + " linha(s) conferida(s) — marca «conferir» retirada.", "ok"); }
+return n;
+},
+htmlConferencia: function (orc) {
+var linhas = [];
+(orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { if (global.MorPorque.precisaConferir(it)) linhas.push({ e: e, it: it }); }); });
+if (!linhas.length) return '<p class="muted">Nada a conferir: todas as linhas do motor têm OK (ou não precisam).</p>';
+return '<table class="tbl"><thead><tr><th>Etapa</th><th>Linha</th><th>Origem</th><th></th></tr></thead><tbody>' + linhas.map(function (l) {
+var o = global.MorPorque.origemDe(l.it.mor), par = esc(l.e.id + "|" + l.it.id);
+return "<tr><td>" + esc(l.e.nome) + "</td><td>" + esc(l.it.descricao) + "</td><td>" + esc(o) + '</td><td><button type="button" class="btn sm" data-mor-porque="' + par + '">Por quê?</button> <button type="button" class="btn sm" data-mor-ok="' + par + '">OK</button></td></tr>';
+}).join("") + "</tbody></table>";
+},
+abrirConferencia: function (app) {
+var orc = app && app.orcAtual; if (!orc) return;
+UI.modal("Conferência — linhas do motor", MorUI.htmlConferencia(orc), [
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Como foi montado (relatório)", classe: "", onClick: function () { MorUI.abrirRelatorio(app); } },
+{ texto: "Automações", classe: "", onClick: function () { MorUI.abrirAutomacoes(app); } },
+{ texto: "OK todos", classe: "primary", onClick: function () { MorUI.confirmarOk(app, "", ""); UI.fecharModal(); } }
+]);
+},
+_auto: null,
+_autoBase: function () { var S = global.Sinapi; return { uf: String((S && S.uf) || (global.App && global.App._baseUf) || ""), competencia: String((S && S.competencia) || "") }; },
+_historicoOrc: function (orc) {
+try { if (typeof Store === "undefined" || !Store.listarOrcamentos) return []; return Store.listarOrcamentos(MorUI._empresaId()).filter(function (o) { return o && o.id !== orc.id; }); } catch (e) { return []; }
+},
+autoCalcular: function (orc, ctx) {
+var est = { orc: orc };
+est.abc = global.MorAbc.curva(orc);
+est.coer = global.MorCoerencia.verificar(orc);
+est.faixa = global.MorFaixa.analisar(orc, MorUI._historicoOrc(orc), { cub: null });
+est.pedido = global.MorPedidoCot.itensParaCotar(orc);
+est.base = MorUI._autoBase();
+est.plano = null;
+return est;
+},
+htmlPlanoRecot: function (pl) {
+if (!pl) return '<p class="muted">Ainda não comparado. Use os botões acima (a base carregada é a UF/competência vigente neste aparelho).</p>';
+if (!pl.ok) return '<p class="muted">' + esc(pl.motivo || "Sem base carregada.") + "</p>";
+var R = pl.resumo, c = pl.contexto, h = '<p class="muted" style="font-size:12.5px">Orçamento: ' + esc((c.ufOrc || "?") + " " + (c.compOrc || "")) + " · base carregada: " + esc((c.ufBase || "?") + " " + (c.compBase || "")) + (c.troca ? " — <b>troca de UF/competência</b>" : "") + ".</p>";
+h += "<p><b>" + R.nMudaram + "</b> preço(s) mudaram · " + R.nIguais + " iguais · " + R.nPreservados + " preservados (cotação/ajuste seu)" + (pl.modo === "recasar" ? " · <b>" + R.nPendentes + " pendente(s)</b> (código não existe na base nova; valor ainda na base antiga R$ " + f2(R.valorPendente) + ")" : " · " + R.nAusentes + " sem código na base") + (R.nSemPreco ? " · " + R.nSemPreco + " sem preço na base" : "") + ".</p>";
+h += "<p>Antes R$ " + f2(R.totalAntes) + " → depois R$ " + f2(R.totalDepois) + " · diferença <b>R$ " + f2(R.diferenca) + "</b> (" + f2(R.pct) + "%) nos itens que mudaram.</p>";
+var ls = pl.linhas.filter(function (l) { return l.estado === "mudou" || l.estado === "pendente"; });
+if (ls.length) h += '<table class="tbl"><thead><tr><th>Item</th><th class="right">Antes</th><th class="right">Depois</th><th class="right">Diferença</th></tr></thead><tbody>' + ls.slice(0, 200).map(function (l) {
+return "<tr><td>" + esc(l.codigo + " — " + l.descricao) + (l.estado === "pendente" ? "<br>" + pilula("pendente", "alerta") : "") + '</td><td class="right">' + f2(l.antes) + '</td><td class="right">' + (l.estado === "pendente" ? "—" : f2(l.depois)) + '</td><td class="right">' + (l.estado === "pendente" ? "—" : f2(l.diferenca)) + "</td></tr>";
+}).join("") + "</tbody></table>" + (ls.length > 200 ? '<p class="muted">…e mais ' + (ls.length - 200) + " (todos entram ao aplicar).</p>" : "");
+if (ls.length) h += '<button type="button" class="btn sm primary" data-mor-auto="aplicar">Aplicar ' + (pl.modo === "recasar" ? "a troca" : "a recotação") + " (peço o seu OK)</button>";
+return h;
+},
+htmlAutomacoes: function (est) {
+var A = est.abc, h = '<div class="mor-auto">';
+h += '<h3 style="margin:0 0 4px">1 e 2 · Recotação e troca de UF/competência</h3><div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-mor-auto="recotar">Recotar na base carregada</button> <button type="button" class="btn sm" data-mor-auto="recasar">Re-casar na base carregada (troca de UF/competência)</button></div><div id="mor-auto-plano" aria-live="polite">' + MorUI.htmlPlanoRecot(est.plano) + "</div>";
+h += '<h3 style="margin:14px 0 4px">3 · Pedido de cotação a fornecedor</h3>';
+if (!est.pedido.length) h += '<p class="muted">Nenhum item sob consulta ou sem preço.</p>';
+else h += "<p>" + est.pedido.length + ' item(ns) sem preço / sob consulta.</p><button type="button" class="btn sm" data-mor-auto="pedido">Gerar o pedido (WhatsApp, e-mail e página para imprimir)</button><div id="mor-auto-pedido"></div>' +
+'<table class="tbl" style="margin-top:6px"><thead><tr><th>Item</th><th>Resposta do fornecedor (preço · fornecedor · data DD/MM/AAAA)</th></tr></thead><tbody>' + est.pedido.map(function (p, i) {
+return "<tr><td>" + esc(p.descricao) + '<br><span class="muted">' + esc(p.motivo) + " · " + esc(f2(p.quantidade) + " " + p.unidade) + '</span></td><td><input id="mor-resp-p-' + i + '" placeholder="preço un." size="8" aria-label="Preço"> <input id="mor-resp-f-' + i + '" placeholder="fornecedor" size="14" aria-label="Fornecedor"> <input id="mor-resp-d-' + i + '" placeholder="DD/MM/AAAA" size="10" aria-label="Data"> <button type="button" class="btn sm" data-mor-auto="resp|' + i + '">Gravar no item</button></td></tr>';
+}).join("") + "</tbody></table>";
+h += '<h3 style="margin:14px 0 4px">4 · Curva ABC</h3><p>' + esc(A.texto) + "</p>";
+if (A.linhas.length) h += '<table class="tbl"><thead><tr><th>Cl.</th><th>Item</th><th class="right">Valor</th><th class="right">% acum.</th></tr></thead><tbody>' + A.linhas.slice(0, 25).map(function (l) { return "<tr><td>" + l.classe + "</td><td>" + esc(l.descricao) + (l.classe === "A" && !l.cotado ? " " + pilula("cotar primeiro", "alerta") : "") + '</td><td class="right">' + f2(l.valor) + '</td><td class="right">' + f2(l.acumPct) + "</td></tr>"; }).join("") + "</tbody></table>" + (A.linhas.length > 25 ? '<p class="muted">Mostrando os 25 maiores de ' + A.linhas.length + ".</p>" : "");
+h += '<h3 style="margin:14px 0 4px">5 · Coerência</h3>';
+if (!est.coer.avisos.length) h += '<p class="muted">Nenhum par faltando' + (est.coer.ok.length ? " (" + est.coer.ok.length + " regra(s) conferida(s))" : "") + ".</p>";
+else h += est.coer.avisos.map(function (a) { return '<div class="mod-aviso mod-aviso-alerta" role="status"><div class="mod-aviso-txt"><b>' + esc(a.gatilhos.length + " item(ns): " + a.gatilhos[0].descricao.slice(0, 60)) + "</b><span>" + esc(a.aviso) + "</span></div></div>"; }).join("");
+h += '<h3 style="margin:14px 0 4px">6 · Faixa de custo por m²</h3>' + est.faixa.textos.map(function (t) { return "<p>" + esc(t) + "</p>"; }).join("");
+return h + "</div>";
+},
+abrirAutomacoes: function (app) {
+var orc = app && app.orcAtual; if (!orc) return;
+if (!global.MorAbc || !global.MorRecotar || !global.MorCoerencia || !global.MorFaixa || !global.MorPedidoCot) { UI.toast("Automações indisponíveis nesta versão.", "erro"); return; }
+MorUI._auto = MorUI.autoCalcular(orc, null);
+UI.modal("Automações do orçamento", '<div id="mor-auto-corpo">' + MorUI.htmlAutomacoes(MorUI._auto) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { MorUI._auto = null; UI.fecharModal(); } }]);
+},
+_autoRefazer: function () {
+var st = MorUI._auto, c = document.getElementById("mor-auto-corpo"); if (!st || !c) return;
+var plano = st.plano; MorUI._auto = MorUI.autoCalcular(st.orc, null); MorUI._auto.plano = plano; c.innerHTML = MorUI.htmlAutomacoes(MorUI._auto);
+},
+_autoCtx: function (app) { var c = MorUI._ctxBases(app), b = MorUI._autoBase(); if (c) { c.uf = b.uf; c.competencia = b.competencia; } return c; },
+acaoAutomacao: function (acao) {
+var st = MorUI._auto, app = global.App; if (!st || !app || !app.orcAtual) return;
+var orc = app.orcAtual, ps = String(acao).split("|"), quem = "";
+try { quem = (typeof Auth !== "undefined" && Auth.usuario && (Auth.usuario() || {}).nome) || ""; } catch (e0) {}
+var travado = false; try { travado = !!(global.Orcamento && global.Orcamento.travadoPorAprovacao && global.Orcamento.travadoPorAprovacao(orc)); } catch (e1) {}
+var mostrar = function () { var b = document.getElementById("mor-auto-plano"); if (b) b.innerHTML = MorUI.htmlPlanoRecot(st.plano); };
+if (ps[0] === "recotar" || ps[0] === "recasar") {
+var ctx = MorUI._autoCtx(app); if (!ctx) { UI.toast("Base de preços indisponível.", "erro"); return; }
+st.plano = ps[0] === "recotar" ? global.MorRecotar.comparar(orc, ctx, st.base) : global.MorRecotar.recasar(orc, ctx, st.base);
+mostrar(); return;
+}
+if (ps[0] === "aplicar") {
+var pl = st.plano; if (!pl || !pl.ok) return;
+var msg = pl.modo === "recasar" ? "Aplicar a troca? " + pl.resumo.nMudaram + " preço(s) mudam (diferença R$ " + f2(pl.resumo.diferenca) + "), " + pl.resumo.nPendentes + " item(ns) ficam pendentes e o orçamento passa para " + (pl.contexto.ufBase || "?") + " " + (pl.contexto.compBase || "") + "."
+: "Aplicar a recotação? " + pl.resumo.nMudaram + " preço(s) mudam; diferença total R$ " + f2(pl.resumo.diferenca) + ". Cotações de fornecedor e ajustes seus são preservados.";
+if (typeof window !== "undefined" && window.confirm && !window.confirm(msg)) return;
+var r = global.MorRecotar.aplicar(orc, pl, { confirmado: true, travado: travado, quem: quem, atualizarOrcamento: pl.modo === "recasar" });
+if (!r.ok) { UI.toast(r.motivo, "erro"); return; }
+try { var g = app.persistir(); app.render(); if (app._gravou && !app._gravou(g)) return; } catch (e2) {}
+st.plano = null; MorUI._autoRefazer();
+UI.toast(r.aplicados + " preço(s) atualizado(s)" + (r.pendentes ? "; " + r.pendentes + " item(ns) pendente(s) na base nova" : "") + ".", "ok"); return;
+}
+if (ps[0] === "pedido") {
+var emp = ""; try { emp = (typeof Empresa !== "undefined" && Empresa.dados && (Empresa.dados() || {}).nome) || ""; } catch (e3) {}
+var P = global.MorPedidoCot.gerar(orc, st.pedido, { empresa: emp });
+MorUI._auto.ultimoPedido = P;
+var box = document.getElementById("mor-auto-pedido");
+if (box) box.innerHTML = '<label for="mor-auto-ptxt">Texto para WhatsApp / e-mail (copie)</label><textarea id="mor-auto-ptxt" rows="8" style="width:100%">' + esc(P.texto) + '</textarea><button type="button" class="btn sm" data-mor-auto="pagina">Abrir a página para imprimir</button>';
+return;
+}
+if (ps[0] === "pagina") { if (st.ultimoPedido) MorUI.imprimirRelatorio(st.ultimoPedido.html); return; }
+if (ps[0] === "resp") {
+var i = Number(ps[1]), p = st.pedido[i]; if (!p) return;
+var gv = function (k) { var el = document.getElementById("mor-resp-" + k + "-" + i); return el ? el.value : ""; };
+var rr = global.MorPedidoCot.registrarResposta(orc, p.etapaId, p.itemId, { preco: gv("p"), fornecedor: gv("f"), data: gv("d") }, { travado: travado, quem: quem, agora: new Date().toISOString(), Orcamento: global.Orcamento });
+if (!rr.ok) { UI.toast(rr.motivo, "erro"); return; }
+try { var g2 = app.persistir(); app.render(); if (app._gravou && !app._gravou(g2)) return; } catch (e4) {}
+MorUI._autoRefazer(); UI.toast("Preço gravado no item com a fonte «cotação fornecedor».", "ok");
+}
+},
+relatorioHtml: function (orc) {
+var m = MorUI.memoria(), perfil = null;
+try { perfil = MorUI.perfilDe(orc); } catch (e) { perfil = null; }
+var R = global.MorRelatorio.montar(orc, { catalogo: C, memoria: m ? m.mem : null, perfil: perfil });
+var emp = ""; try { emp = (typeof Empresa !== "undefined" && Empresa.dados && (Empresa.dados() || {}).nome) || ""; } catch (e2) {}
+return { rel: R, html: global.MorRelatorio.html(R, { empresa: emp, data: new Date().toISOString().slice(0, 10) }) };
+},
+imprimirRelatorio: function (html) {
+var w = window.open("", "_blank"); if (!w) { UI.toast("O navegador bloqueou a janela do relatório — libere pop-ups.", "erro"); return false; }
+w.document.open(); w.document.write(html.replace("</body>", "<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body>")); w.document.close();
+return true;
+},
+abrirRelatorio: function (app) {
+var orc = app && app.orcAtual; if (!orc) return;
+var r = MorUI.relatorioHtml(orc);
+UI.modal("Como este orçamento foi montado", '<iframe title="Relatório" style="width:100%;height:52vh;border:1px solid var(--linha)" srcdoc="' + esc(r.html) + '"></iframe>', [
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Baixar em PDF", classe: "primary", onClick: function () { MorUI.imprimirRelatorio(r.html); } }
+]);
+},
+irPasso: function (app, id) {
+var orc = app && app.orcAtual; if (!orc) return;
+if (id === "tipo") return MorUI.abrirTipo(app);
+if (id === "parametros") return MorUI.abrirParametros(app);
+if (id === "conferencia") return MorUI.abrirConferencia(app);
+if (id === "etapas") {
+var alvo = null; (orc.etapas || []).forEach(function (e) { if (!alvo && !(e.itens || []).length && C.etapaPorNome(e.nome)) alvo = e; });
+if (alvo) { if (app.aba !== "planilha") app.aba = "planilha"; try { app.render(); } catch (e) {} MorUI.abrirEtapa(app, alvo.id); }
+else { if (app.aba !== "planilha") app.aba = "planilha"; try { app.render(); } catch (e2) {} }
+}
+},
+abrirTipo: function (app) {
+var orc = app.orcAtual, mor = MM.garantir(orc);
+UI.modal("Tipo de obra", '<p class="muted">As etapas padrão e os Serviços Preliminares já nascem (nenhum item entra sozinho).</p>' + MorUI.campoTipo(mor.tipologia || ""), [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Criar as etapas", classe: "primary", onClick: function () {
+var t = MorUI.lerTipoDoAssistente(); if (!t) { UI.toast("Escolha o tipo de obra.", "info"); return; }
+var r = MM.nascer(orc, t, global.Orcamento); try { app.persistir(); } catch (e) {} UI.fecharModal(); app.render();
+UI.toast(r.erro ? r.erro : (r.criadas.length + " etapa(s) criada(s)."), r.erro ? "erro" : "ok");
+} }
+]);
+MorUI._escutarDoc();
+},
+abrirParametros: function (app) {
+var orc = app.orcAtual, mor = MM.garantir(orc), obra = {};
+MM.CAMPOS_OBRA.forEach(function (c) { if (!vazio(mor.params[c])) obra[c] = mor.params[c]; });
+var campos = '<div class="row" style="flex-wrap:wrap;gap:8px">' + C.PERGUNTAS_OBRA.map(function (q) {
+var v = vazio(obra[q.id]) ? (q.opcional ? "" : q.padrao) : obra[q.id];
+return '<div style="flex:1 1 150px">' + MorUI._campo({ id: q.id, txt: q.txt, op: q.op, rotulos: q.rotulos, num: q.num }, v, "mor-o-") + "</div>";
+}).join("") + "</div>";
+UI.modal("Parâmetros da obra / documento", campos + MorUI.blocoDocumento(), [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Salvar parâmetros", classe: "primary", onClick: function () {
+var o = {}; C.PERGUNTAS_OBRA.forEach(function (q) { var el = document.getElementById("mor-o-" + q.id); if (el) o[q.id] = String(el.value || "").replace(/^\s+|\s+$/g, ""); });
+MM.definirParams(orc, o);
+if (MorUI._plano) { try { var rr = MorUI._aplicarPlano(orc, MorUI._plano); UI.toast("Documento aplicado: " + rr.inseridos + " item(ns), " + rr.pendentes + " pendente(s).", "ok"); } catch (e) { UI.toast("Não consegui aplicar o documento: " + ((e && e.message) || e), "erro"); } MorUI._plano = null; }
+try { app.persistir(); } catch (e2) {} UI.fecharModal(); app.render();
+} }
+]);
+MorUI._escutarDoc();
+},
+bdiOculto: function (orc) { return !!(orc && orc.mor && orc.mor.proposta && orc.mor.proposta.mostrarBdi === false); },
+textoPreviaBdi: function (orc, ligado) {
+var pct = 0; try { pct = Number(orc.bdi && orc.bdi.percentual) || 0; } catch (e) {}
+return ligado ? ('A proposta cita o BDI (' + f2(pct) + '%): «Os preços já incluem o BDI (' + f2(pct) + '%)», a metodologia do Acórdão TCU e a nota «Valores com BDI de ' + f2(pct) + '% incluso».')
+: "O documento não terá NENHUMA menção a BDI: nem percentual, nem metodologia, nem «preços já incluem». Os preços seguem iguais; o BDI só não é dito.";
+},
+chaveBdi: function (orc) {
+var lig = !MorUI.bdiOculto(orc);
+return '<div id="mor-bdi-chave" class="mod-aviso" style="margin:0 0 10px;padding:10px;border:2px solid var(--p-aco,#2e6f9e);border-radius:6px"><label style="display:flex;gap:10px;align-items:center;font-size:15px;font-weight:700;cursor:pointer"><input type="checkbox" id="mor-bdi-ck" data-mor-bdi="1" style="width:22px;height:22px"' + (lig ? " checked" : "") + '> Mostrar BDI na proposta <span id="mor-bdi-est" class="g-pill" style="background:' + (lig ? "#16a34a22;color:#16a34a" : "#b4231822;color:#b42318") + ';font-weight:700">' + (lig ? "LIGADO" : "DESLIGADO") + '</span></label><div id="mor-bdi-previa" class="muted" style="font-size:12.5px;margin-top:4px">' + esc(MorUI.textoPreviaBdi(orc, lig)) + "</div></div>";
+},
+definirMostrarBdi: function (orc, ligado) {
+var mor = MM.garantir(orc); mor.proposta = mor.proposta || {}; mor.proposta.mostrarBdi = !!ligado; return mor.proposta.mostrarBdi;
+},
+injetarChaveBdi: function (orc) {
+if (!MorUI.ativo() || typeof document === "undefined") return false;
+var corpo = document.querySelector("#modal-bg .body"); if (!corpo || document.getElementById("mor-bdi-chave")) return false;
+var d = document.createElement("div"); d.innerHTML = MorUI.chaveBdi(orc); corpo.insertBefore(d.firstChild, corpo.firstChild); return true;
+},
+semBdiNoModelo: function (m, orc) {
+if (!MorUI.bdiOculto(orc)) return m;
+var c = JSON.parse(JSON.stringify(m));
+(c.paginas || []).forEach(function (p) {
+if (p.mostrarBdi !== undefined) p.mostrarBdi = false;
+if (p.mostrarBdiTcu !== undefined) p.mostrarBdiTcu = false;
+p.mostrarBdi = false; p.mostrarBdiTcu = false;
+var limpar = function (o) {
+Object.keys(o).forEach(function (k) {
+if (typeof o[k] === "string") o[k] = global.Proposta && global.Proposta.semBdiTexto ? global.Proposta.semBdiTexto(o[k]) : o[k];
+else if (o[k] && typeof o[k] === "object") limpar(o[k]);
+});
+};
+limpar(p);
+});
+return c;
+},
+aceitarComposicao: function (idx) {
+var pl = MorUI._plano, A = global.App; if (!pl || !pl.itens[idx]) return { ok: false, motivo: "item inexistente" };
+var x = pl.itens[idx], s = x.resolucao || {}, comp = s.composicao && s.composicao.comp;
+if (s.estado !== "composto" || !comp) return { ok: false, motivo: "este item não tem composição proposta" };
+if (!A || typeof A._propriaGravarVarios !== "function") return { ok: false, motivo: "a base PRÓPRIA não está disponível aqui" };
+var existentes = A._cpCodigosExistentes ? A._cpCodigosExistentes() : [];
+var c = JSON.parse(JSON.stringify(comp));
+if (existentes.some(function (k) { return String(k).toLowerCase() === String(c.codigo).toLowerCase(); }) && global.MorCompositor) c.codigo = global.MorCompositor.gerarCodigoAuto(existentes);
+var agora = new Date().toISOString(); c.criadoEm = c.criadoEm || agora; c.atualizadoEm = agora;
+try { A._propriaGravarVarios([c]); } catch (e) { return { ok: false, motivo: "não consegui gravar: " + ((e && e.message) || e) }; }
+var m = MorUI.memoria();
+if (m) { global.MorMemoria.registrarComposicao(m.mem, x.descricao, c, { unidade: x.unidade }); m.salvar(); }
+x.marcado = true;
+x.resolucao = { estado: "casado", codigo: c.codigo, fonte: "PROPRIA", confianca: 0.9, escolhido: true, aceita: true, motivo: "composição própria aceita por você (" + (s.composicao.familia || "") + ")", sugestoes: [] };
+pl.relatorio.compostos = Math.max(0, pl.relatorio.compostos - 1); pl.relatorio.casados++;
+return { ok: true, codigo: c.codigo };
+},
+_obterBase: function (cod, fonte) {
+try {
+var f = String(fonte || "").toUpperCase(), c = String(cod);
+if (f && f !== "SINAPI" && typeof Bases !== "undefined" && Bases.obter) { var b = Bases.obter(f, c); return b || null; }
+if (/^PROP/i.test(c) && typeof Bases !== "undefined" && Bases.obter) { var p = Bases.obter("PROPRIA", c); if (p) return p; }
+return (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(c) : null;
+} catch (e) { return null; }
+},
+confiancaAlta: function (x) {
+var s = (x && x.resolucao) || {};
+if (!s.codigo) return false;
+if (s.estado === "codigo-do-documento" || s.escolhido === true || s.aceita === true || s.via === "memoria") return true;
+return s.estado === "casado" && Number(s.confianca) >= 0.9;
+},
+htmlSugestoes: function (idx, s) {
+var l = (s.sugestoes || []).filter(function (g) { return Number(g.confianca) >= 0.7; }).slice(0, 3);
+if (!l.length) return "";
+return '<div class="mor-sugs" style="margin-top:4px;display:flex;flex-direction:column;gap:3px">' + l.map(function (g) {
+return '<button type="button" class="btn sm ghost" data-mor-sug="' + idx + "|" + esc(g.codigo) + "|" + esc(g.fonte || "SINAPI") + '" title="' + esc((g.aviso ? g.aviso + " — " : "") + g.descricao) + '">' + (g.memoria ? "<b>memória</b> · " : "") + esc((g.fonte || "SINAPI") + " " + g.codigo) + " · " + (g.memoria ? "usado antes" : Math.round((g.confianca || 0) * 100) + "%") + " — " + esc(String(g.descricao).slice(0, 70)) + "</button>";
+}).join("") + "</div>";
+},
+htmlEnsinar: function (i, frase) {
+var ops = global.MorIntencoes ? global.MorIntencoes.entradas().filter(function (e) { return e.origem === "dicionario" && /^[SM]$/.test(e.tipo); }).map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.id) + "</option>"; }).join("") : "";
+return ' <details style="display:inline-block"><summary class="muted" style="font-size:12px;cursor:pointer">ensinar</summary><span class="row" style="gap:4px;flex-wrap:wrap"><input data-mor-ens-txt="' + i + '" value="' + esc(frase.slice(0, 120)) + '" aria-label="Trecho da frase" style="min-width:220px"><select data-mor-ens-int="' + i + '" aria-label="Intenção">' + ops + '</select><button type="button" class="btn sm" data-mor-ens="' + i + '">Ensinar</button></span></details>';
+},
+_ufEmpresa: function () { try { var A = global.App; return String((A && A._baseUf) || (typeof Sinapi !== "undefined" && Sinapi.uf) || "").toUpperCase(); } catch (e) { return ""; } },
+_empresaId: function () { try { return (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : ""; } catch (e) { return ""; } },
+memoria: function () {
+if (!global.MorMemoria || typeof localStorage === "undefined") return null;
+var emp = MorUI._empresaId();
+if (!MorUI._mem || MorUI._memEmp !== emp) {
+var r = global.MorMemoria.carregar(localStorage, emp);
+MorUI._mem = { mem: r.mem, avisos: r.avisos, salvar: function () { return global.MorMemoria.salvar(localStorage, emp, MorUI._mem.mem); } };
+MorUI._memEmp = emp;
+}
+return MorUI._mem;
+},
+_optsLeitor: function () { var m = MorUI.memoria(); return { frases: m ? global.MorMemoria.frasesEnsinadas(m.mem) : [], ufEmpresa: MorUI._ufEmpresa() }; },
+_padroes: function (orc) {
+try { var m = MorUI.memoria(); if (!m) return null; var tp = orc && orc.mor && orc.mor.tipologia; return tp ? global.MorMemoria.padroes(m.mem, tp, C) : null; } catch (e) { return null; }
+},
+escolherSugestao: function (idx, codigo, fonte) {
+var pl = MorUI._plano; if (!pl || !pl.itens[idx]) return false;
+var x = pl.itens[idx], s = x.resolucao || {}, g = (s.sugestoes || []).filter(function (q) { return String(q.codigo) === String(codigo); })[0];
+x.resolucao = { estado: "casado", codigo: String(codigo), fonte: fonte || "SINAPI", confianca: g ? g.confianca : 0, escolhido: true, motivo: "escolhido por você entre as sugestões", sugestoes: s.sugestoes || [] }; x.marcado = true;
+pl.relatorio.pendentes = Math.max(0, pl.relatorio.pendentes - 1); pl.relatorio.casados++;
+var m = MorUI.memoria();
+if (m) { global.MorMemoria.registrarCasamento(m.mem, x.descricao, { codigo: codigo, fonte: fonte || "SINAPI" }, { corrigido: true, unidade: x.unidade }); m.salvar(); }
+return true;
+},
+ensinar: function (i, trecho, entradaId) {
+var m = MorUI.memoria(); if (!m) return { ok: false, motivo: "sem armazenamento neste aparelho" };
+var r = global.MorMemoria.ensinarFrase(m.mem, trecho, entradaId); if (r.ok) m.salvar(); return r;
+},
+perfilDe: function (orc) {
+var c = global.Orcamento.calcular(orc), area = Number(orc.mor && orc.mor.params && orc.mor.params.area), et = {};
+(orc.etapas || []).forEach(function (e, i) { var cat = C.etapaPorNome(e.nome); if (cat && c.porEtapa[i] && c.porEtapa[i].custoDireto > 0) et[cat.id] = c.porEtapa[i].custoDireto; });
+return { orcId: orc.id, tipologia: orc.mor && orc.mor.tipologia, area: area, etapas: et };
+},
+perfilEAlertas: function (orc) {
+var m = MorUI.memoria(); if (!m || !global.Orcamento) return [];
+var p = MorUI.perfilDe(orc), out = [];
+if (!(p.area > 0) || !p.tipologia) return out;
+Object.keys(p.etapas).forEach(function (id) {
+var f = global.MorMemoria.faixa(m.mem, p.tipologia, id, p.etapas[id] / p.area, { ignorarOrc: orc.id });
+if (f.alerta) out.push((C.etapa(id) || {}).etapa + " " + f.texto);
+});
+global.MorMemoria.registrarPerfil(m.mem, p); m.salvar();
+return out;
+},
+htmlMemoria: function (mem) {
+var r = global.MorMemoria.resumo(mem), h = '<div class="mor-memoria">';
+h += '<p class="muted">O motor aprende com o que você escolhe. Fica neste aparelho (não vai para a nuvem). Resumo: <b>' + r.casamentos + "</b> casamento(s) (" + r.corrigidos + " corrigido(s) por você), <b>" + r.composicoes + "</b> composição(ões) aceita(s), <b>" + r.perfis + "</b> orçamento(s) no perfil de custo, <b>" + r.frases + "</b> frase(s) ensinada(s).</p>";
+var ks = Object.keys(mem.casamentos);
+if (ks.length) h += '<table class="tbl"><thead><tr><th>Intenção</th><th>Código</th><th class="right">Usos</th><th></th></tr></thead><tbody>' + ks.map(function (k) { var c = mem.casamentos[k]; return "<tr><td>" + esc(c.intencao) + "</td><td>" + esc(c.fonte + " " + c.codigo) + (c.corrigido ? " " + pilula("corrigido por você", "ok") : "") + '</td><td class="right">' + c.usos + '</td><td><button type="button" class="btn sm ghost" data-mor-esq="casamento|' + esc(k) + '">Esquecer</button></td></tr>'; }).join("") + "</tbody></table>";
+var fs = Object.keys(mem.frases);
+if (fs.length) h += '<table class="tbl" style="margin-top:6px"><thead><tr><th>Frase ensinada</th><th>Intenção</th><th></th></tr></thead><tbody>' + fs.map(function (k) { var f = mem.frases[k]; return "<tr><td>" + esc(f.frase) + "</td><td>" + esc(f.entrada) + '</td><td><button type="button" class="btn sm ghost" data-mor-esq="frase|' + esc(k) + '">Esquecer</button></td></tr>'; }).join("") + "</tbody></table>";
+h += '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="btn sm" data-mor-mem="exportar">Exportar JSON</button> <input type="file" id="mor-mem-arq" accept=".json" aria-label="Importar memória (JSON)"> <button type="button" class="btn sm" data-mor-mem="importar">Importar (somar)</button> <button type="button" class="btn sm ghost" data-mor-esq="tudo|">Esquecer tudo</button></div><textarea id="mor-mem-json" rows="4" style="width:100%;margin-top:6px" placeholder="O JSON exportado aparece aqui"></textarea></div>';
+return h;
+},
+abrirMemoria: function () {
+var m = MorUI.memoria(); if (!m) { UI.toast("Sem armazenamento neste aparelho.", "erro"); return; }
+UI.modal("Memória do Motor", '<div id="mor-mem-corpo">' + MorUI.htmlMemoria(m.mem) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+},
+_lerArquivo: function (file, cb) {
+var nome = String(file.name || "").toLowerCase(), A = global.App;
+if (/\.(xlsx|xls|csv)$/.test(nome)) {
+if (!A || !A._lerPlanilha) { cb(null, "Leitor de planilha indisponível."); return; }
+A._lerPlanilha(file, function (matriz, err) {
+if (!matriz) { cb(null, err || "Não consegui ler a planilha."); return; }
+cb(global.MorLeitor.dePlanilha(matriz, MorUI._optsLeitor()), null);
+});
+return;
+}
+if (/\.(pdf|docx)$/.test(nome)) {
+if (typeof CplproTpl === "undefined" || !CplproTpl.memorialParaEscopo) { cb(null, "Leitor de memorial indisponível."); return; }
+var fim = function (r) { if (!r.ok) cb(null, r.erro); else cb(global.MorLeitor.deMemorial(r.texto, MorUI._optsLeitor()), null); };
+if (/\.pdf$/.test(nome)) { CplproTpl.memorialParaEscopo(file.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? function (cb2) { Gestao._pdfTexto(file, cb2); } : null).then(fim); return; }
+var fr = new FileReader();
+fr.onload = function () {
+var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
+CplproTpl.memorialParaEscopo(file.name, new Uint8Array(fr.result), inflar, null).then(fim);
+};
+fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
+fr.readAsArrayBuffer(file);
+return;
+}
+var fr2 = new FileReader();
+fr2.onload = function () { cb(global.MorLeitor.deMemorial(String(fr2.result), MorUI._optsLeitor()), null); };
+fr2.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
+fr2.readAsText(file);
+},
+lerDocumento: function () {
+var d = document, res = d.getElementById("mor-doc-res"), A = global.App;
+if (!res || !global.MorLeitor) return;
+var arq = d.getElementById("mor-doc-arq"), txt = d.getElementById("mor-doc-txt");
+var seguir = function (leitura, erro) {
+if (!leitura) { res.innerHTML = '<p class="muted">' + esc(erro || "Não consegui ler.") + "</p>"; return; }
+var ctx = MorUI._ctxBases(A), mem = MorUI.memoria();
+var plano = global.MorLeitor.montar(leitura, ctx, { memoria: mem ? mem.mem : null });
+MorUI._leitura = leitura;
+if (txt && /edital|licita/i.test(String(txt.value).slice(0, 400))) { try { plano.edital = global.MorLeitor.deEdital(String(txt.value), { ufEmpresa: MorUI._ufEmpresa() }); } catch (e) { } }
+plano.itens.forEach(function (x) { x.marcado = MorUI.confiancaAlta(x); });
+MorUI._plano = plano;
+res.innerHTML = MorUI.htmlPlano(plano);
+var sel = d.getElementById("mor-tipologia");
+if (sel && plano.tipologia && C.tipologia(plano.tipologia)) sel.value = plano.tipologia;
+};
+if (arq && arq.files && arq.files[0]) { res.innerHTML = '<p class="muted">Lendo…</p>'; MorUI._lerArquivo(arq.files[0], seguir); return; }
+if (!txt || !String(txt.value || "").trim()) { res.innerHTML = '<p class="muted">Cole um texto ou escolha um arquivo.</p>'; return; }
+seguir(global.MorLeitor.deMemorial(String(txt.value), MorUI._optsLeitor()), null);
+},
+_escutarDoc: function () {
+if (MorUI._escutando || typeof document === "undefined") return;
+MorUI._escutando = true;
+document.addEventListener("change", function (ev) {
+var t = ev.target;
+if (t && t.getAttribute && t.getAttribute("data-mor-bdi")) {
+var A = global.App, orc = A && A.orcAtual; if (!orc) return;
+var lig = !!t.checked; MorUI.definirMostrarBdi(orc, lig); try { A.persistir({ semBackupModal: true }); } catch (e) {}
+var est = document.getElementById("mor-bdi-est"), pv = document.getElementById("mor-bdi-previa");
+if (est) { est.textContent = lig ? "LIGADO" : "DESLIGADO"; est.style.background = lig ? "#16a34a22" : "#b4231822"; est.style.color = lig ? "#16a34a" : "#b42318"; }
+if (pv) pv.textContent = MorUI.textoPreviaBdi(orc, lig);
+}
+});
+document.addEventListener("click", function (ev) {
+var t = ev.target;
+var di = t && t.getAttribute && t.getAttribute("data-mor-doc-item");
+if (di !== null && di !== undefined && di !== "" && MorUI._plano && MorUI._plano.itens[Number(di)]) { MorUI._plano.itens[Number(di)].marcado = !!t.checked; return; }
+var dt = t && t.getAttribute && t.getAttribute("data-mor-doc-todos");
+if (dt !== null && dt !== undefined && MorUI._plano) {
+MorUI._plano.itens.forEach(function (x) { var s0 = x.resolucao || {}; if (s0.codigo && (s0.estado === "casado" || s0.estado === "codigo-do-documento")) x.marcado = dt === "1"; });
+var rr1 = document.getElementById("mor-doc-res"); if (rr1) rr1.innerHTML = MorUI.htmlPlano(MorUI._plano); return;
+}
+var ac = t && t.getAttribute && t.getAttribute("data-mor-aceitar");
+if (ac !== null && ac !== undefined && ac !== "" ) {
+var ra = MorUI.aceitarComposicao(Number(ac));
+if (ra.ok) { var rr0 = document.getElementById("mor-doc-res"); if (rr0) rr0.innerHTML = MorUI.htmlPlano(MorUI._plano); UI.toast("Composição " + ra.codigo + " gravada na base PRÓPRIA e na memória.", "ok"); } else UI.toast(ra.motivo, "erro");
+return;
+}
+var inModal = t && t.closest && t.closest("#modal-bg");
+if (inModal && t.getAttribute && t.getAttribute("data-mor-porque")) { var pq = t.getAttribute("data-mor-porque").split("|"); MorUI.porque(global.App, pq[0], pq[1]); return; }
+if (inModal && t.getAttribute && t.getAttribute("data-mor-ok")) { var ok = t.getAttribute("data-mor-ok").split("|"); MorUI.confirmarOk(global.App, ok[0], ok[1]); var cc = document.querySelector("#modal-bg .body"); if (cc && /Conferência/.test(((document.querySelector("#modal-bg h2") || {}).textContent) || "")) cc.innerHTML = MorUI.htmlConferencia(global.App.orcAtual); return; }
+var sg = t && t.getAttribute && t.getAttribute("data-mor-sug");
+if (sg) { var pp = sg.split("|"); if (MorUI.escolherSugestao(Number(pp[0]), pp[1], pp[2])) { var rr = document.getElementById("mor-doc-res"); if (rr) rr.innerHTML = MorUI.htmlPlano(MorUI._plano); } return; }
+var en = t && t.getAttribute && t.getAttribute("data-mor-ens");
+if (en) {
+var tx = document.querySelector('[data-mor-ens-txt="' + en + '"]'), sl = document.querySelector('[data-mor-ens-int="' + en + '"]');
+var re = tx && sl ? MorUI.ensinar(Number(en), tx.value, sl.value) : { ok: false, motivo: "campos ausentes" };
+if (re.ok) MorUI.lerDocumento(); else UI.toast(re.motivo || "Não consegui ensinar.", "erro");
+return;
+}
+var esq = t && t.getAttribute && t.getAttribute("data-mor-esq");
+if (esq) { var ps2 = esq.split("|"), mm = MorUI.memoria(); if (mm && global.MorMemoria.esquecer(mm.mem, ps2[0], ps2[1])) { mm.salvar(); var cb2 = document.getElementById("mor-mem-corpo"); if (cb2) cb2.innerHTML = MorUI.htmlMemoria(mm.mem); } return; }
+var mo = t && t.getAttribute && t.getAttribute("data-mor-mem");
+if (mo) {
+var mm2 = MorUI.memoria(), ta = document.getElementById("mor-mem-json");
+if (mo === "exportar" && mm2 && ta) ta.value = global.MorMemoria.exportar(mm2.mem);
+if (mo === "importar" && mm2) {
+var ar = document.getElementById("mor-mem-arq"), usar = function (txt) { var ri = global.MorMemoria.importar(mm2.mem, txt, "mesclar"); if (!ri.ok) { UI.toast(ri.motivo, "erro"); return; } mm2.mem = ri.mem; MorUI._mem.mem = ri.mem; mm2.salvar(); var cb3 = document.getElementById("mor-mem-corpo"); if (cb3) cb3.innerHTML = MorUI.htmlMemoria(ri.mem); UI.toast("Memória importada (somada à atual; correções suas vencem).", "ok"); };
+if (ar && ar.files && ar.files[0]) { var fr3 = new FileReader(); fr3.onload = function () { usar(String(fr3.result)); }; fr3.readAsText(ar.files[0]); } else if (ta && ta.value.trim()) usar(ta.value);
+else UI.toast("Escolha um arquivo .json ou cole o JSON.", "info");
+}
+return;
+}
+var au = t && t.getAttribute && t.getAttribute("data-mor-auto");
+if (au) { try { MorUI.acaoAutomacao(au); } catch (eAu) { UI.toast("Falha na automação: " + ((eAu && eAu.message) || eAu), "erro"); } return; }
+if (t && t.id === "mor-doc-mem") { ev.preventDefault(); MorUI.abrirMemoria(); return; }
+if (t && t.id === "mor-doc-ler") { ev.preventDefault(); try { MorUI.lerDocumento(); } catch (e) { var r = document.getElementById("mor-doc-res"); if (r) r.innerHTML = '<p class="muted">Falha ao ler: ' + esc((e && e.message) || e) + "</p>"; } }
+});
+},
+_aplicarPlano: function (orc, pl) {
+var O = global.Orcamento, mor = MM.garantir(orc), k, res = { etapas: 0, inseridos: 0, pendentes: 0, semPreco: 0 };
+MM.definirParams(orc, pl.obra || {});
+for (k in (pl.respostas || {})) if (Object.prototype.hasOwnProperty.call(pl.respostas, k)) MM.definirResposta(orc, k, pl.respostas[k]);
+var existentes = {}; (orc.etapas || []).forEach(function (e) { existentes[C.semAcento(e.nome)] = e; });
+pl.etapas.forEach(function (e) { if (!existentes[C.semAcento(e.nome)]) { O.addEtapa(orc, e.nome); res.etapas++; } });
+(orc.etapas || []).forEach(function (e) { existentes[C.semAcento(e.nome)] = e; });
+var cfg = O.garantirConfig ? O.garantirConfig(orc) : {}, porEtapa = {}, pend = [];
+pl.itens.forEach(function (x, i) {
+var s = x.resolucao || {};
+if ((s.estado === "casado" || s.estado === "codigo-do-documento") && s.codigo && x.marcado === true) {
+var cat = x.etapa ? C.etapa(x.etapa) : null, nomeEt = cat ? cat.etapa : (x.etapaNome || "SERVIÇOS DO DOCUMENTO");
+var et = existentes[C.semAcento(nomeEt)];
+if (!et) { O.addEtapa(orc, nomeEt); (orc.etapas || []).forEach(function (e) { existentes[C.semAcento(e.nome)] = e; }); et = existentes[C.semAcento(nomeEt)]; }
+(porEtapa[et.id] = porEtapa[et.id] || []).push({
+etapa: nomeEt, codigo: s.codigo, fonte: s.fonte || "SINAPI", descricao: x.descricao, unidade: x.unidade, quantidade: x.quantidade, formula: "do documento: " + x.bruto, estado: "ok",
+mor: { regra: "doc." + (i + 1), formula: "", premissas: ["Quantidade escrita no documento: " + x.bruto], origem: s.aceita ? "composta" : (s.estado === "casado" ? (s.via === "memoria" ? "memoria" : "casador") : "documento"), confianca: s.estado === "casado" ? "media" : "alta", codigos: [s.codigo], intencao: x.busca || "", elementoOrigem: x.bruto || "", vars: {}, conferido: false, casamento: s.estado === "casado" ? { confianca: s.confianca, motivo: s.motivo } : undefined }
+});
+} else pend.push({ bruto: x.bruto, quantidade: x.quantidade, unidade: x.unidade, etapa: x.etapa || x.etapaNome || "", motivo: ((s.estado === "casado" || s.estado === "codigo-do-documento") && s.codigo) ? "resolvido (" + s.fonte + " " + s.codigo + ") mas NÃO marcado na prévia — marque para entrar" : (s.motivo || ""), sugestoes: (s.sugestoes || []).map(function (g) { return g.codigo; }), composicao: s.composicao ? { codigo: s.composicao.codigo, familia: s.composicao.familia, referencia: s.composicao.referencia } : null });
+});
+Object.keys(porEtapa).forEach(function (etId) {
+var linhas = porEtapa[etId], marc = linhas.map(function (l) { return l.mor.regra; });
+var r = MM.inserir(orc, etId, { itens: linhas }, marc, {
+Orcamento: O, permitirZerado: !!cfg.permitirZerado,
+obter: function (cod, fonte) { return MorUI._obterBase(cod, fonte); },
+totalItens: O.totais(orc).qtdItens, limiteItens: (typeof Auth !== "undefined" && Auth.limite) ? Auth.limite("limiteItensPorOrcamento") : 0
+});
+res.inseridos += r.inseridos; res.semPreco += r.semPreco.length;
+});
+res.pendentes = pend.length;
+mor.documento = { v: 1, origem: pl.origem, tipologia: pl.tipologia, pendentes: pend, naoEntendidas: pl.naoEntendidas, conflitos: pl.conflitos, negados: pl.negados, prazo: pl.prazo || null, edital: pl.edital || null, relatorio: pl.relatorio, em: new Date().toISOString() };
+return res;
+},
+_campo: function (q, valor, prefixo) {
+var id = prefixo + q.id, v = valor;
+if (q.tipo === "bool" || q.bool) return '<label class="ow-check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="' + esc(id) + '"' + (v ? " checked" : "") + "> <span>" + esc(q.txt) + "</span></label>";
+var h = '<div class="field"><label for="' + esc(id) + '">' + esc(q.txt) + (q.daMemoria ? ' <span class="muted" style="font-weight:400;font-size:12px">(padrão da sua empresa)</span>' : "") + "</label>";
+if (q.op) {
+h += '<select id="' + esc(id) + '">' + q.op.map(function (o) { return '<option value="' + esc(o) + '"' + (o === v ? " selected" : "") + ">" + esc((q.rotulos && q.rotulos[o]) || o) + "</option>"; }).join("") + "</select>";
+} else {
+h += '<input id="' + esc(id) + '" inputmode="decimal" value="' + esc(vazio(v) ? "" : String(v).replace(".", ",")) + '">';
+}
+return h + "</div>";
+},
+htmlPainel: function (st) {
+var p = st.previa, h = "";
+var faltaArea = !!(p && p.precisaObra) || vazio(st.obra.area);
+h += '<details' + (faltaArea ? " open" : "") + ' class="mor-obra"><summary><b>Parâmetros da obra</b>' + (st.tipologiaRotulo ? ' <span class="muted">— ' + esc(st.tipologiaRotulo) + "</span>" : "") + "</summary>" +
+'<div class="row" style="flex-wrap:wrap;gap:8px">' + C.PERGUNTAS_OBRA.map(function (q) {
+var pq = { id: q.id, txt: q.txt, op: q.op, rotulos: q.rotulos, num: q.num };
+var v = vazio(st.obra[q.id]) ? (q.opcional ? "" : q.padrao) : st.obra[q.id];
+return '<div style="flex:1 1 150px">' + MorUI._campo(pq, v, "mor-o-") + "</div>";
+}).join("") + "</div>" +
+'<span class="muted" style="font-size:12px">Sem banheiros, quartos e perímetro o motor estima (e diz isso nas premissas). Informe o real para mais precisão.</span></details>';
+if (!p || !p.ok) {
+return h + '<div class="mod-aviso mod-aviso-alerta" role="status" style="margin-top:10px"><div class="mod-aviso-txt"><b>Falta um dado para calcular</b><span>' + esc(((p && p.erros) || ["Informe a área da obra."]).join(" ")) + "</span></div></div>";
+}
+if (p.perguntas.length) {
+h += '<div class="mod-sec" style="margin-top:10px"><div class="mod-sec-cab"><div><h2>Perguntas desta etapa</h2><p class="mod-sub">Já vêm com o padrão marcado — mude só o que for diferente.</p></div></div><div class="mod-sec-corpo"><div class="row" style="flex-wrap:wrap;gap:8px">' +
+p.perguntas.map(function (q) { return '<div style="flex:1 1 200px">' + MorUI._campo(q, q.valor, "mor-q-") + "</div>"; }).join("") + "</div></div></div>";
+}
+var n = p.itens.length, marc = 0;
+p.itens.forEach(function (l) { if (st.marcadas[l.mor.regra]) marc++; });
+h += '<div class="mod-sec" style="margin-top:10px"><div class="mod-sec-cab"><div><h2>Prévia dos itens</h2><p class="mod-sub">' + n + " item(ns) · " + marc + ' marcado(s). Nada entra no orçamento até confirmar.</p></div>' +
+'<div class="mod-sec-acoes"><button type="button" class="btn sm" data-mor-todos="1">Marcar todos</button> <button type="button" class="btn sm ghost" data-mor-todos="0">Desmarcar</button></div></div>' +
+'<div class="mod-sec-corpo">';
+if (!n) h += '<p class="muted">Com estas respostas nenhum item desta etapa se aplica.</p>';
+else {
+h += '<table class="tbl"><thead><tr><th></th><th>Item</th><th>Un</th><th class="right">Qtd</th><th>Origem</th></tr></thead><tbody>' + p.itens.map(function (l) {
+var ck = st.marcadas[l.mor.regra] ? " checked" : "";
+var tom = l.estado === "erro" ? "erro" : (CONFIANCA[l.mor.confianca] || "neutro");
+var rot = l.estado === "erro" ? "Fórmula inválida" : (l.estado === "qtdpendente" ? "Quantidade do projeto" : (l.codigo ? "SINAPI " + l.codigo : "Sem código — pendente"));
+if (l.mor.origem === "casador" && l.codigo) rot = (l.fonte || "SINAPI") + " " + l.codigo + " · casado pelo texto (" + Math.round((l.mor.casamento && l.mor.casamento.confianca || 0) * 100) + "%) — confira";
+else if (l.mor.propostaComposicao) rot = "Composição sugerida (" + l.mor.propostaComposicao.familia + ", ref. SINAPI " + l.mor.propostaComposicao.referencia.codigo + ") — a gravar na base própria";
+return '<tr><td><input type="checkbox" data-mor-item="' + esc(l.mor.regra) + '"' + ck + ' aria-label="Incluir ' + esc(l.descricao) + '"></td>' +
+"<td><b>" + esc(l.descricao) + '</b><div class="muted" style="font-size:12px">' + esc(l.formula) + (l.erro ? " — " + esc(l.erro) : "") + "</div></td>" +
+"<td>" + esc(l.unidade) + '</td><td class="right" title="' + esc(l.mor.formula) + '">' + (l.estado === "qtdpendente" || l.estado === "erro" ? "—" : f2(l.quantidade)) + "</td>" +
+"<td>" + pilula(rot, tom) + "</td></tr>";
+}).join("") + "</tbody></table>";
+}
+h += "</div></div>";
+if (p.premissas && p.premissas.length) h += '<details style="margin-top:8px"><summary>Premissas desta estimativa (' + p.premissas.length + ")</summary><ul>" + p.premissas.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details>";
+if (p.avisos && p.avisos.length) h += '<p class="muted" style="font-size:12px">' + p.avisos.map(esc).join(" ") + "</p>";
+return h;
+},
+campoTipoSeAtivo: function (valor) { if (!MorUI.ativo()) return ""; MorUI._escutarDoc(); return MorUI.campoTipo(valor); },
+lerTipoDoAssistente: function () { var el = typeof document !== "undefined" ? document.getElementById("mor-tipologia") : null; return el ? String(el.value || "") : ""; },
+aoCriarOrcamento: function (orc, tipologiaId) {
+if (!MorUI.ativo() || !tipologiaId) return null;
+try {
+var r = MM.nascer(orc, tipologiaId, global.Orcamento);
+if (MorUI._plano) { try { r.documento = MorUI._aplicarPlano(orc, MorUI._plano); } catch (e2) { r.documento = { erro: String((e2 && e2.message) || e2) }; } MorUI._plano = null; }
+return r;
+} catch (e) { return { criadas: [], jaExistiam: [], erro: String((e && e.message) || e) }; }
+},
+botaoEtapa: function (etapa) {
+if (!MorUI.ativo() || !etapa || !C.etapaPorNome(etapa.nome)) return "";
+var nConf = 0; try { var oa = global.App && global.App.orcAtual; if (oa && global.MorPorque) nConf = global.MorPorque.contar(oa, etapa.id); } catch (eC) { nConf = 0; }
+return '<button class="btn sm" data-mor-etapa="' + esc(etapa.id) + '" title="Perguntas desta etapa e prévia dos itens (você confirma o que entra)">Itens guiados</button>' +
+(nConf ? ' <button class="btn sm" data-mor-ok-etapa="' + esc(etapa.id) + '" title="Tirar a marca «conferir» de todas as linhas desta etapa">OK todos (' + nConf + ")</button>" : "");
+},
+aoAdicionarEtapa: function (app, nome) {
+if (!MorUI.ativo() || !app || !app.orcAtual || !C.etapaPorNome(nome)) return false;
+var et = null, ls = app.orcAtual.etapas || [];
+for (var i = ls.length - 1; i >= 0; i--) if (C.semAcento(ls[i].nome) === C.semAcento(nome)) { et = ls[i]; break; }
+if (!et) return false;
+MorUI.abrirEtapa(app, et.id);
+return true;
+},
+_ctxBases: function (app) {
+try {
+if (!app || typeof app._orcmCtx !== "function") return null;
+var ctx = app._orcmCtx({ fontes: ["SINAPI"], elaborar: false });
+var tem = typeof Analitico !== "undefined" && Analitico.carregado;
+if (tem) {
+ctx.analitico = Analitico.todos();
+ctx.competencia = Analitico.competencia || "";
+ctx.resolve = function (cod, fonte) { return app._cpResolve ? app._cpResolve(cod, fonte) : null; };
+ctx.codigosExistentes = app._cpCodigosExistentes ? app._cpCodigosExistentes() : [];
+}
+return ctx;
+} catch (e) { return null; }
+},
+_resolver: function (st) {
+try {
+var p = st.previa; if (!p || !p.ok || !global.Mor || !global.Mor.resolverPendentes) return;
+var pend = p.itens.filter(function (l) { return !l.codigo && l.estado !== "erro"; });
+if (!pend.length) return;
+st.cacheRes = st.cacheRes || {};
+var novos = [];
+pend.forEach(function (l) {
+var c = st.cacheRes[l.mor.regra];
+if (c) { l.codigo = c.codigo; l.fonte = c.fonte; l.mor = c.mor; if (c.compPropria) l.compPropria = c.compPropria; } else novos.push(l);
+});
+if (!novos.length) return;
+if (!st.ctxBases) st.ctxBases = MorUI._ctxBases(st.app);
+if (!st.ctxBases) return;
+global.Mor.resolverPendentes(novos, st.ctxBases, {});
+novos.forEach(function (l) {
+if (l.mor.origem === "composta") {
+l.mor.propostaComposicao = l.mor.composicao; delete l.mor.composicao; delete l.compPropria;
+l.codigo = ""; l.fonte = ""; l.mor.origem = "catalogo"; l.mor.confianca = "pendente";
+}
+st.cacheRes[l.mor.regra] = { codigo: l.codigo, fonte: l.fonte, mor: l.mor };
+});
+} catch (e) { }
+},
+_marcarTudo: function (v) {
+var st = MorUI._st; if (!st || !st.previa || !st.previa.itens) return;
+st.previa.itens.forEach(function (l) { if (v) st.marcadas[l.mor.regra] = true; else delete st.marcadas[l.mor.regra]; });
+},
+_recalcular: function () {
+var st = MorUI._st, d = document, k;
+if (!st) return;
+C.PERGUNTAS_OBRA.forEach(function (q) { var el = d.getElementById("mor-o-" + q.id); if (el) st.obra[q.id] = String(el.value || "").replace(/^\s+|\s+$/g, ""); });
+var ps = st.previa && st.previa.perguntas || [];
+ps.forEach(function (q) {
+var el = d.getElementById("mor-q-" + q.id); if (!el) return;
+var v = q.tipo === "bool" ? el.checked : el.value;
+if (String(v) !== String(q.valor)) st.respostas[q.id] = v;
+});
+Array.prototype.forEach.call(d.querySelectorAll("[data-mor-item]"), function (el) { if (el.checked) st.marcadas[el.getAttribute("data-mor-item")] = true; else delete st.marcadas[el.getAttribute("data-mor-item")]; });
+MorUI._atualizar();
+},
+_atualizar: function () {
+var st = MorUI._st, app = st.app, orc = app.orcAtual;
+st.previa = MM.previa(orc, st.catId, st.respostas, st.obra, MorUI._padroes(orc));
+MorUI._resolver(st);
+var box = document.getElementById("mor-corpo");
+if (box) { box.innerHTML = MorUI.htmlPainel(st); MorUI._ligar(box); }
+},
+_ligar: function (box) {
+Array.prototype.forEach.call(box.querySelectorAll("input,select"), function (el) {
+el.addEventListener("change", function () { MorUI._recalcular(); });
+});
+Array.prototype.forEach.call(box.querySelectorAll("[data-mor-todos]"), function (el) {
+el.addEventListener("click", function () { MorUI._marcarTudo(el.getAttribute("data-mor-todos") === "1"); MorUI._atualizar(); });
+});
+},
+abrirEtapa: function (app, etapaOrcId) {
+var orc = app && app.orcAtual; if (!orc) return;
+var et = null; (orc.etapas || []).forEach(function (e) { if (e.id === etapaOrcId) et = e; });
+var cat = et ? C.etapaPorNome(et.nome) : null;
+if (!cat) { UI.toast("Esta etapa ainda não tem itens guiados no catálogo.", "info"); return; }
+if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) { UI.toast("Este orçamento está aprovado — crie uma revisão para acrescentar itens.", "erro"); return; }
+var mor = MM.garantir(orc), t = C.tipologia(mor.tipologia);
+var obra = {}; MM.CAMPOS_OBRA.forEach(function (c) { if (!vazio(mor.params[c])) obra[c] = mor.params[c]; });
+MorUI._st = { app: app, etapaOrcId: et.id, catId: cat.id, obra: obra, respostas: {}, marcadas: {}, previa: null, tipologiaRotulo: t ? t.rotulo : "" };
+MorUI._st.previa = MM.previa(orc, cat.id, {}, obra, MorUI._padroes(orc));
+MorUI._resolver(MorUI._st);
+UI.modal("Itens guiados — " + et.nome,
+'<div id="mor-corpo">' + MorUI.htmlPainel(MorUI._st) + "</div>",
+[
+{ texto: "Cancelar", classe: "ghost", onClick: function () { MorUI._st = null; UI.fecharModal(); } },
+{ texto: "Inserir os itens marcados", classe: "primary", onClick: function () { MorUI.confirmar(); } }
+]);
+var box = document.getElementById("mor-corpo"); if (box) MorUI._ligar(box);
+},
+confirmar: function () {
+var st = MorUI._st; if (!st) return;
+MorUI._recalcular();
+var app = st.app, orc = app.orcAtual, p = st.previa;
+if (!p || !p.ok) { UI.toast("Informe a área da obra para calcular as quantidades.", "erro"); return; }
+var chaves = Object.keys(st.marcadas);
+if (!chaves.length) { UI.toast("Marque ao menos um item na prévia.", "info"); return; }
+MM.definirParams(orc, st.obra);
+Object.keys(st.respostas).forEach(function (id) { MM.definirResposta(orc, id, st.respostas[id]); });
+var cfg = Orcamento.garantirConfig(orc);
+var res = MM.inserir(orc, st.etapaOrcId, p, chaves, {
+Orcamento: Orcamento, permitirZerado: !!cfg.permitirZerado,
+obter: function (cod, fonte) { return MorUI._obterBase(cod, fonte); },
+totalItens: Orcamento.totais(orc).qtdItens, limiteItens: Auth.limite("limiteItensPorOrcamento")
+});
+if (res.recusado && !res.inseridos) { UI.toast(res.recusado, "erro"); return; }
+if (app.expandirEtapa) { try { app.expandirEtapa(st.etapaOrcId, ""); } catch (e1) {} }
+var memo = MorUI.memoria(), alertas = [];
+if (memo) {
+var tpl = orc.mor && orc.mor.tipologia;
+Object.keys(st.respostas).forEach(function (id) { global.MorMemoria.registrarResposta(memo.mem, tpl, id, st.respostas[id]); });
+memo.salvar();
+}
+try { alertas = MorUI.perfilEAlertas(orc); } catch (eP) { alertas = []; }
+var g = app.persistir(); UI.fecharModal(); app.render(); MorUI._st = null;
+if (app._gravou && !app._gravou(g)) return;
+var msg = res.inseridos + " item(ns) inserido(s)";
+if (res.jaExistiam) msg += "; " + res.jaExistiam + " já estava(m) na etapa";
+if (res.pendentes) msg += "; " + res.pendentes + " pendente(s) de código ou quantidade";
+if (res.semPreco.length) msg += ". " + res.semPreco.length + " ficou(aram) de fora por falta de preço na base — libere “Permitir insumos com preço zerado” em Parâmetros ou resolva no Orçamentista";
+if (alertas.length) msg += ". Confira a faixa: " + alertas.slice(0, 3).join("; ");
+UI.toast(msg + ".", (res.semPreco.length || alertas.length) ? "info" : "ok", (res.semPreco.length || alertas.length) ? 9000 : 4000);
+}
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorUI;
+global.MorUI = MorUI;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/ifcler.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function r4(x) { return Math.round(x * 10000) / 10000; }
+function sa(s) {
+var t = String(s == null ? "" : s);
+try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) { }
+return t.toLowerCase();
+}
+function decodificar(s) {
+if (s.indexOf("\\") < 0) return s;
+s = s.replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g, function (m, h) {
+var o = ""; for (var i = 0; i + 3 < h.length + 1; i += 4) o += String.fromCharCode(parseInt(h.substr(i, 4), 16)); return o;
+});
+s = s.replace(/\\X\\([0-9A-Fa-f]{2})/g, function (m, h) { return String.fromCharCode(parseInt(h, 16)); });
+s = s.replace(/\\S\\(.)/g, function (m, c) { return String.fromCharCode(c.charCodeAt(0) + 128); });
+return s.replace(/\\\\/g, "\\");
+}
+function parseArgs(raw) {
+var i = 0, n = raw.length;
+function ws() { while (i < n && raw.charCodeAt(i) <= 32) i++; }
+function valor() {
+ws();
+var c = raw.charAt(i), m, j;
+if (c === "$") { i++; return null; }
+if (c === "*") { i++; return "*"; }
+if (c === "'") {
+j = i + 1; var s = "";
+while (j < n) {
+if (raw.charAt(j) === "'") { if (raw.charAt(j + 1) === "'") { s += "'"; j += 2; continue; } break; }
+s += raw.charAt(j); j++;
+}
+i = j + 1; return decodificar(s);
+}
+if (c === "#") { m = /^#(\d+)/.exec(raw.substr(i, 14)); i += m[0].length; return { r: parseInt(m[1], 10) }; }
+if (c === ".") { m = /^\.([A-Za-z0-9_]*)\./.exec(raw.substr(i, 80)); if (m) { i += m[0].length; return { e: m[1].toUpperCase() }; } }
+if (c === "(") { i++; var l = []; ws(); if (raw.charAt(i) === ")") { i++; return l; } while (i < n) { l.push(valor()); ws(); if (raw.charAt(i) === ",") { i++; continue; } if (raw.charAt(i) === ")") { i++; break; } i++; } return l; }
+m = /^[-+]?[0-9]*\.?[0-9]*(?:[eE][-+]?[0-9]+)?/.exec(raw.substr(i, 40));
+if (m && m[0] !== "" && m[0] !== "-" && m[0] !== "+") { i += m[0].length; return parseFloat(m[0]); }
+m = /^([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(raw.substr(i, 60));
+if (m) { i += m[0].length; var v = []; ws(); if (raw.charAt(i) === ")") { i++; } else { while (i < n) { v.push(valor()); ws(); if (raw.charAt(i) === ",") { i++; continue; } if (raw.charAt(i) === ")") { i++; break; } i++; } } return { t: m[1].toUpperCase(), v: v.length === 1 ? v[0] : v }; }
+i++; return null;
+}
+ws();
+var out = [];
+while (i < n) { out.push(valor()); ws(); if (raw.charAt(i) === ",") i++; else break; }
+return out;
+}
+function varrer(texto) {
+var ents = {}, total = 0, complexas = 0, esquema = "", p = texto.indexOf("FILE_SCHEMA");
+if (p >= 0) { var mm = /FILE_SCHEMA\s*\(\s*\(\s*'([^']*)'/.exec(texto.substr(p, 200)); if (mm) esquema = mm[1]; }
+var ini = texto.indexOf("DATA;"); if (ini < 0) return { ents: ents, total: 0, complexas: 0, esquema: esquema, erro: "O arquivo não tem a seção DATA; — não parece um IFC." };
+ini += 5;
+var fim = texto.indexOf("ENDSEC;", ini); if (fim < 0) fim = texto.length;
+var i = ini, dentro = false, cs = ini, c;
+while (i < fim) {
+c = texto.charCodeAt(i);
+if (c === 39) { if (dentro && texto.charCodeAt(i + 1) === 39) { i += 2; continue; } dentro = !dentro; }
+else if (!dentro) {
+if (c === 47 && texto.charCodeAt(i + 1) === 42) { var e = texto.indexOf("*/", i + 2); i = e < 0 ? fim : e + 2; continue; }
+if (c === 59) {
+var st = texto.substring(cs, i), m = /^\s*#(\d+)\s*=\s*([A-Za-z0-9_]+)\s*\(([\s\S]*)\)\s*$/.exec(st);
+if (m) { ents[m[1]] = { t: m[2].toUpperCase(), raw: m[3] }; total++; }
+else if (/^\s*#\d+\s*=\s*\(/.test(st)) complexas++;
+cs = i + 1;
+}
+}
+i++;
+}
+return { ents: ents, total: total, complexas: complexas, esquema: esquema, erro: "" };
+}
+var ESPACIAL = { IFCPROJECT: 1, IFCSITE: 1, IFCBUILDING: 1, IFCBUILDINGSTOREY: 1 };
+function categoriaNaoElemento(t) {
+if (t.indexOf("IFCREL") === 0) return "relação";
+if (/TYPE$/.test(t)) return "tipo";
+if (/^IFC(PROPERTY|QUANTITY|ELEMENTQUANTITY|COMPLEXPROPERTY|PHYSICALCOMPLEXQUANTITY|PROPERTYSET)/.test(t)) return "propriedade/quantidade";
+if (/^IFC(MATERIAL|CLASSIFICATION)/.test(t)) return "material/classificação";
+if (/^IFC(CARTESIAN|DIRECTION|AXIS|LOCALPLACEMENT|POLYLINE|POLYLOOP|FACE|EXTRUDED|SHAPE|PRODUCTDEFINITION|REPRESENTATION|MAPPED|ARBITRARY|RECTANGLE|CIRCLE|ISHAPE|BOUNDINGBOX|TRIMMED|COMPOSITECURVE|GEOMETRIC|STYLED|SURFACESTYLE|PRESENTATION|COLOUR|INDEXED|POLYGONAL|TRIANGULATED|FACETED|CLOSEDSHELL|OPENSHELL|BSPLINE|LINE|VECTOR|CURVE|PLANE|HALFSPACE|BOOLEAN|REVOLVED|SWEPT|SURFACE|CONNECTED|ADVANCED|SWEPTDISKSOLID|GRID|CARTESIANPOINTLIST|CARTESIANTRANSFORMATION|ELLIPSE|PCURVE|DERIVEDPROFILE|COMPOSITEPROFILE|TSHAPE|LSHAPE|USHAPE|CSHAPE|ZSHAPE|CENTERLINE|ASYMMETRIC|PARAMETERIZED|TRAPEZIUM|OFFSETCURVE)/.test(t)) return "geometria";
+if (/^IFC(SIUNIT|UNITASSIGNMENT|DERIVEDUNIT|CONVERSIONBASEDUNIT|MEASUREWITHUNIT|NAMEDUNIT|DIMENSIONALEXPONENTS|MONETARYUNIT)/.test(t)) return "unidade";
+if (/^IFC(OWNERHISTORY|PERSON|ORGANIZATION|APPLICATION|ACTOR|PERSONANDORGANIZATION|TELECOMADDRESS|POSTALADDRESS|CALENDAR|DOCUMENT|LIBRARY|TIME|DATE|LOCALTIME|COORDINATEDUNIVERSALTIME|APPROVAL|COST|PROJECTLIBRARY|SPATIALZONE|ANNOTATION)/.test(t)) return "metadado";
+if (/^IFC(PRESENTATIONLAYER|ANNOTATION|DRAUGHTING|TEXT|FILLAREA|SYMBOL)/.test(t)) return "apresentação";
+if (/^IFC(GROUP|SYSTEM|DISTRIBUTIONSYSTEM|ZONE|BUILDINGSYSTEM|DISTRIBUTIONCIRCUIT|PERMIT|WORKPLAN|TASK|PROCEDURE|STRUCTURALANALYSIS)/.test(t)) return "grupo/sistema";
+if (/^IFC(DISTRIBUTIONPORT|PORT)/.test(t)) return "porta de conexão";
+return null;
+}
+function materialClasse(txt) {
+var t = sa(txt); if (!t) return "";
+if (/drywall|gesso acartonado|placa de gesso|steel ?frame/.test(t)) return "drywall";
+if (/concreto celular|siporex|autoclavad|celular/.test(t)) return "celular";
+if (/bloco.*(de )?concreto|bloco estrutural|bloco vazado/.test(t)) return "bloco-concreto";
+if (/bloco|tijolo/.test(t) && /ceram|furado|baiano|vazado|furo/.test(t)) return "bloco-ceramico";
+if (/bloco|tijolo/.test(t)) return "bloco-ceramico";
+if (/chapisco/.test(t)) return "chapisco";
+if (/reboco|emboco|massa unica|argamassa|massa corrida/.test(t)) return "argamassa";
+if (/pintura|tinta|latex|acrilic|esmalte|verniz/.test(t)) return "pintura";
+if (/porcelanato/.test(t)) return "porcelanato";
+if (/vinilic/.test(t)) return "vinilico";
+if (/ceram|azulejo|pastilha|revestimento ceram/.test(t)) return "ceramica";
+if (/granito|marmore|pedra|quartzo/.test(t)) return "pedra";
+if (/concreto|fck|c\d{2}\b|cimento armado|armado/.test(t)) return "concreto";
+if (/madeira|pinus|eucalipto|cedrinho|angelim|cumaru|ipe|peroba|compensado|osb|mdf/.test(t)) return "madeira";
+if (/aluminio|alumínio/.test(t)) return "aluminio";
+if (/inox|aco|steel|metal|galvaniz|ferro|chapa/.test(t)) return "aco";
+if (/vidro|glass/.test(t)) return "vidro";
+if (/cpvc|ppr|pex|cobre|ferro fundido|pead|polietileno/.test(t)) return t.match(/cpvc|ppr|pex|cobre|ferro fundido|pead|polietileno/)[0].replace(/\s/g, "-");
+if (/pvc|plastic/.test(t)) return "pvc";
+if (/telha/.test(t)) return "telha";
+if (/manta|asfalt|impermeabil/.test(t)) return "imperm";
+if (/gesso/.test(t)) return "gesso";
+if (/alvenaria/.test(t)) return "alvenaria";
+if (/isolante|la de|poliestireno|eps|xps/.test(t)) return "isolante";
+return "";
+}
+function ambienteCat(nome) {
+var t = sa(nome); if (!t) return "";
+if (/varanda|sacada|terraco|quintal|jardim|garagem|area externa|externo|externa|calcada|pergola|deck|piscina/.test(t)) return "externo";
+if (/banheiro|wc|lavabo|sanitari|bwc|chuveiro|cozinha|copa\b|lavanderia|area de servico|a\. ?serv|servico|suite/.test(t) && !/^suite$/.test(t)) {
+if (/suite/.test(t) && !/banheiro|wc|bwc/.test(t)) return "seco";
+return "molhado";
+}
+return "seco";
+}
+var PREFIXO = { EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9, MEGA: 1e6, KILO: 1e3, HECTO: 1e2, DECA: 10, DECI: 0.1, CENTI: 0.01, MILLI: 0.001, MICRO: 1e-6, NANO: 1e-9 };
+function lerUnidades(ctx) {
+var U = { comprimento: 1, area: null, volume: null, massa: 1, avisos: [] }, id, e;
+var unidades = [];
+Object.keys(ctx.ents).forEach(function (k) { if (ctx.ents[k].t === "IFCUNITASSIGNMENT") { var a = ctx.args(+k); arr(a[0]).forEach(function (r) { if (r && r.r) unidades.push(r.r); }); } });
+function fator(uid) {
+var e2 = ctx.ents[uid]; if (!e2) return null;
+var a = ctx.args(uid);
+if (e2.t === "IFCSIUNIT") { var pre = a[2] && a[2].e ? PREFIXO[a[2].e] || 1 : 1; return { tipo: a[1] && a[1].e, f: pre, nome: a[3] && a[3].e }; }
+if (e2.t === "IFCCONVERSIONBASEDUNIT") {
+var mu = a[3] && a[3].r ? ctx.args(a[3].r) : null, comp = mu ? (mu[0] && mu[0].v !== undefined ? mu[0].v : mu[0]) : 1, base = mu && mu[1] && mu[1].r ? fator(mu[1].r) : { f: 1 };
+return { tipo: a[1] && a[1].e, f: (typeof comp === "number" ? comp : 1) * (base ? base.f : 1), nome: String(a[2] || "") };
+}
+return null;
+}
+unidades.forEach(function (uid) {
+var f = fator(uid); if (!f) return;
+if (f.tipo === "LENGTHUNIT") U.comprimento = f.f;
+else if (f.tipo === "AREAUNIT") U.area = f.f;
+else if (f.tipo === "VOLUMEUNIT") U.volume = f.f;
+else if (f.tipo === "MASSUNIT") U.massa = f.nome === "GRAM" ? f.f / 1000 : f.f;
+});
+if (U.area === null) U.area = U.comprimento * U.comprimento;
+if (U.volume === null) U.volume = U.comprimento * U.comprimento * U.comprimento;
+if (U.comprimento !== 1) U.avisos.push("unidade de comprimento do arquivo: fator " + U.comprimento + " para metro (convertido).");
+return U;
+}
+var NOMEQ = [
+["comprimento", /^(length|comprimento|netlength|grosslength)$/], ["largura", /^(width|largura|espessura|thickness)$/], ["altura", /^(height|altura|overallheight|nominalheight)$/],
+["profundidade", /^(depth|profundidade)$/],
+["areaLateral", /^(netsidearea|area lateral)$/], ["areaLateralBruta", /^(grosssidearea|area lateral bruta)$/], ["areaBruta", /^(grossarea|grossfootprintarea|grossfloorarea|area bruta)$/],
+["area", /^(netarea|area|netfootprintarea|netfloorarea|projectedarea|area liquida)$/],
+["volume", /^(netvolume|volume)$/], ["volumeBruto", /^(grossvolume)$/], ["perimetro", /^(perimeter|perimetro|netperimeter|grossperimeter|crosssectionperimeter)$/],
+["areaSecao", /^(crosssectionarea)$/], ["peso", /^(netweight|grossweight|weight|peso)$/], ["altura", /^(nominalheight)$/]
+];
+function chaveQ(nome) { var t = sa(nome).replace(/\s+/g, " ").trim(); for (var i = 0; i < NOMEQ.length; i++) if (NOMEQ[i][1].test(t)) return NOMEQ[i][0]; return ""; }
+function ler(texto, opts) {
+opts = opts || {};
+var v = varrer(String(texto || ""));
+var res = { ok: false, erro: v.erro || "", esquema: v.esquema, elementos: [], espacos: [], avisos: [], cobertura: null, unidades: null, modelo: { projeto: "", pavimentos: [] } };
+if (v.erro) return res;
+var ents = v.ents, cacheArgs = {};
+function args(id) { var c = cacheArgs[id]; if (c) return c; var e = ents[id]; if (!e) return []; c = cacheArgs[id] = parseArgs(e.raw); return c; }
+function tipoDe(id) { return ents[id] ? ents[id].t : ""; }
+var ctx = { ents: ents, args: args };
+var U = lerUnidades(ctx); res.unidades = U; U.avisos.forEach(function (a) { res.avisos.push(a); });
+var ids = Object.keys(ents).map(Number);
+var porProps = {}, porTipo = {}, porMat = {}, porClass = {}, contido = {}, agregado = {}, bordas = {}, vazios = {}, preenche = {}, grupos = {}, vaoDe = {};
+function lista(v2) { return arr(v2).map(function (r) { return r && r.r; }).filter(Boolean); }
+function push(o, k, val) { (o[k] = o[k] || []).push(val); }
+ids.forEach(function (id) {
+var t = ents[id].t; if (t.indexOf("IFCREL") !== 0) return;
+var a = args(id), k;
+if (t === "IFCRELDEFINESBYPROPERTIES") { lista(a[4]).forEach(function (o) { if (a[5] && a[5].r) push(porProps, o, a[5].r); }); }
+else if (t === "IFCRELDEFINESBYTYPE") { lista(a[4]).forEach(function (o) { if (a[5] && a[5].r) porTipo[o] = a[5].r; }); }
+else if (t === "IFCRELASSOCIATESMATERIAL") { lista(a[4]).forEach(function (o) { if (a[5] && a[5].r) porMat[o] = a[5].r; }); }
+else if (t === "IFCRELASSOCIATESCLASSIFICATION") { lista(a[4]).forEach(function (o) { if (a[5] && a[5].r) push(porClass, o, a[5].r); }); }
+else if (t === "IFCRELCONTAINEDINSPATIALSTRUCTURE") { lista(a[4]).forEach(function (o) { if (a[5] && a[5].r) contido[o] = a[5].r; }); }
+else if (t === "IFCRELAGGREGATES") { lista(a[5]).forEach(function (o) { if (a[4] && a[4].r) agregado[o] = a[4].r; }); }
+else if (t.indexOf("IFCRELSPACEBOUNDARY") === 0) { if (a[4] && a[4].r && a[5] && a[5].r) { push(bordas, a[5].r, a[4].r); } }
+else if (t === "IFCRELVOIDSELEMENT") { if (a[4] && a[4].r && a[5] && a[5].r) { push(vazios, a[4].r, a[5].r); } }
+else if (t === "IFCRELFILLSELEMENT") { if (a[4] && a[4].r && a[5] && a[5].r) preenche[a[4].r] = a[5].r; }
+else if (t === "IFCRELASSIGNSTOGROUP") { lista(a[4]).forEach(function (o) { if (a[6] && a[6].r) push(grupos, o, a[6].r); }); }
+else if (t === "IFCRELSPACEBOUNDARY") { }
+k = 0;
+});
+function valorProp(x) {
+if (x === null || x === undefined) return null;
+if (typeof x === "object" && x.t !== undefined) return valorProp(x.v);
+if (typeof x === "object" && x.e !== undefined) return x.e === "T" ? true : (x.e === "F" ? false : x.e);
+if (arr(x).length) return valorProp(x[0]);
+return x;
+}
+function lerDef(did, psets, qto, dimQ) {
+var t = tipoDe(did), a = args(did);
+if (t === "IFCPROPERTYSET") {
+var nome = String(a[2] || "Pset"), o = psets[nome] = psets[nome] || {};
+lista(a[4]).forEach(function (pid) {
+var pt = tipoDe(pid), pa = args(pid);
+if (pt === "IFCPROPERTYSINGLEVALUE") o[String(pa[0])] = valorProp(pa[2]);
+else if (pt === "IFCPROPERTYENUMERATEDVALUE") o[String(pa[0])] = valorProp(pa[2]);
+else if (pt === "IFCPROPERTYLISTVALUE") o[String(pa[0])] = valorProp(pa[2]);
+else if (pt === "IFCCOMPLEXPROPERTY") { lista(pa[3]).forEach(function (q) { var qa = args(q); o[String(pa[0]) + "." + String(qa[0])] = valorProp(qa[2]); }); }
+});
+} else if (t === "IFCELEMENTQUANTITY") {
+var nq = String(a[2] || "Qto"), oq = psets[nq] = psets[nq] || {};
+lista(a[5]).forEach(function (qid) {
+var qt = tipoDe(qid), qa = args(qid), nm = String(qa[0] || ""), val = qa[3], k = chaveQ(nm), f;
+if (typeof val !== "number") return;
+if (qt === "IFCQUANTITYLENGTH") f = U.comprimento; else if (qt === "IFCQUANTITYAREA") f = U.area; else if (qt === "IFCQUANTITYVOLUME") f = U.volume; else if (qt === "IFCQUANTITYWEIGHT") f = U.massa; else { oq[nm] = val; if (qt === "IFCQUANTITYCOUNT" && /count|quantidade/i.test(nm)) qto._contagem = val; return; }
+oq[nm] = val * f;
+if (k && !(k in qto)) qto[k] = val * f;
+});
+}
+}
+function lerMaterial(mid) {
+var t = tipoDe(mid), a = args(mid), out = { nomes: [], camadas: [], conj: false };
+function mat(rid) { var m = rid && rid.r ? args(rid.r) : []; return rid && rid.r && tipoDe(rid.r) === "IFCMATERIAL" ? String(m[0] || "") : ""; }
+if (t === "IFCMATERIAL") out.nomes.push(String(a[0] || ""));
+else if (t === "IFCMATERIALLAYERSETUSAGE") { var ls = a[0] && a[0].r; if (ls) { var sub = lerMaterial(ls); out.camadas = sub.camadas; out.nomes = sub.nomes; out.conjuntoNome = sub.conjuntoNome; } }
+else if (t === "IFCMATERIALLAYERSET") {
+out.conjuntoNome = String(a[1] || "");
+lista(a[0]).forEach(function (lid) { var la = args(lid), nm = mat(la[0]), esp = typeof la[1] === "number" ? la[1] * U.comprimento : null; out.camadas.push({ material: nm, espessura: esp, nome: String(la[3] || "") }); if (nm) out.nomes.push(nm); });
+if (out.conjuntoNome) out.nomes.push(out.conjuntoNome);
+} else if (t === "IFCMATERIALLAYER") { var nm2 = mat(a[0]); out.camadas.push({ material: nm2, espessura: typeof a[1] === "number" ? a[1] * U.comprimento : null, nome: String(a[3] || "") }); if (nm2) out.nomes.push(nm2); }
+else if (t === "IFCMATERIALCONSTITUENTSET") { out.conj = true; lista(a[2]).forEach(function (cid) { var ca = args(cid), nm3 = mat(ca[2]); if (nm3) out.nomes.push(nm3); if (ca[0]) out.nomes.push(String(ca[0])); }); }
+else if (t === "IFCMATERIALCONSTITUENT") { var nm4 = mat(a[2]); if (nm4) out.nomes.push(nm4); }
+else if (t === "IFCMATERIALLIST") { lista(a[0]).forEach(function (m2) { var ma = args(m2); if (ma[0]) out.nomes.push(String(ma[0])); }); }
+else if (t === "IFCMATERIALPROFILESETUSAGE" || t === "IFCMATERIALPROFILESET") { var ps = t === "IFCMATERIALPROFILESETUSAGE" ? (a[0] && a[0].r) : mid; if (ps) { lista(args(ps)[2]).forEach(function (pid2) { var pa2 = args(pid2), nm5 = mat(pa2[1]); if (nm5) out.nomes.push(nm5); if (pa2[0]) out.nomes.push(String(pa2[0])); }); } }
+return out;
+}
+function ponto(pid) { var a = args(pid); return arr(a[0]).map(function (n) { return typeof n === "number" ? n * U.comprimento : 0; }); }
+function perfil(sid) {
+var t = tipoDe(sid), a = args(sid);
+if (t === "IFCRECTANGLEPROFILEDEF") { var x = a[3] * U.comprimento, y = a[4] * U.comprimento; if (!(x > 0 && y > 0)) return null; return { forma: "ret", x: x, y: y, area: x * y, perimetro: 2 * (x + y) }; }
+if (t === "IFCCIRCLEPROFILEDEF") { var r = a[3] * U.comprimento; if (!(r > 0)) return null; return { forma: "circ", r: r, x: 2 * r, y: 2 * r, area: Math.PI * r * r, perimetro: 2 * Math.PI * r }; }
+if (t === "IFCARBITRARYCLOSEDPROFILEDEF" || t === "IFCARBITRARYPROFILEDEFWITHVOIDS") {
+var cv = a[2] && a[2].r, pts = [];
+if (cv && tipoDe(cv) === "IFCPOLYLINE") pts = lista(args(cv)[0]).map(ponto);
+if (pts.length < 3) return null;
+var s = 0, p = 0, i, xs = [], ys = [];
+for (i = 0; i < pts.length; i++) { var q = pts[i], w = pts[(i + 1) % pts.length]; s += q[0] * w[1] - w[0] * q[1]; p += Math.sqrt(Math.pow(w[0] - q[0], 2) + Math.pow(w[1] - q[1], 2)); xs.push(q[0]); ys.push(q[1]); }
+var bx = Math.max.apply(null, xs) - Math.min.apply(null, xs), by = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+return { forma: "poli", x: bx, y: by, area: Math.abs(s / 2), perimetro: p };
+}
+return null;
+}
+function itensCorpo(rid, prof) {
+var out = [];
+if (prof > 4) return out;
+var ps = args(rid), reps = tipoDe(rid) === "IFCPRODUCTDEFINITIONSHAPE" ? lista(ps[2]) : [rid];
+var escolhida = null;
+reps.forEach(function (r) { var ra = args(r); if (!escolhida && /body|corpo/i.test(String(ra[1] || ""))) escolhida = r; });
+if (!escolhida) escolhida = reps[0];
+if (!escolhida) return out;
+lista(args(escolhida)[3]).forEach(function (it) {
+var t = tipoDe(it), a = args(it);
+if (t === "IFCEXTRUDEDAREASOLID") { var pf = a[0] && a[0].r ? perfil(a[0].r) : null; if (pf && typeof a[3] === "number") out.push({ perfil: pf, profundidade: a[3] * U.comprimento }); }
+else if (t === "IFCMAPPEDITEM") { var src = a[0] && a[0].r, rm = src ? args(src) : []; if (rm[1] && rm[1].r) { var sub = [{ r: 0 }]; var rr = rm[1].r; var sa2 = args(rr); lista(sa2[3]).forEach(function (it2) { var a2 = args(it2); if (tipoDe(it2) === "IFCEXTRUDEDAREASOLID") { var pf2 = a2[0] && a2[0].r ? perfil(a2[0].r) : null; if (pf2 && typeof a2[3] === "number") out.push({ perfil: pf2, profundidade: a2[3] * U.comprimento }); } }); sub = null; } }
+});
+return out;
+}
+function geometria(id) {
+var a = args(id), rid = a[6] && a[6].r; if (!rid) return null;
+var its = itensCorpo(rid, 0); if (!its.length) return null;
+var it = its[0];
+return { perfil: it.perfil, profundidade: it.profundidade, nSolidos: its.length };
+}
+function ehProduto(t, a) {
+if (ESPACIAL[t] || categoriaNaoElemento(t)) return false;
+if (typeof a[0] === "string" && a[0].length === 22) return true;
+return false;
+}
+var estat = { entidades: v.total, complexas: v.complexas, naoElemento: {}, espacial: 0, tiposVistos: 0, produtos: 0, desconhecidas: {} };
+var produtos = [], espacos = [], opens = {};
+ids.forEach(function (id) {
+var t = ents[id].t;
+if (ESPACIAL[t]) { estat.espacial++; if (t === "IFCPROJECT") res.modelo.projeto = String(args(id)[2] || ""); if (t === "IFCBUILDINGSTOREY") res.modelo.pavimentos.push({ id: id, nome: String(args(id)[2] || ""), cota: typeof args(id)[9] === "number" ? args(id)[9] * U.comprimento : null }); return; }
+var cat = categoriaNaoElemento(t);
+if (cat) { estat.naoElemento[cat] = (estat.naoElemento[cat] || 0) + 1; if (cat === "tipo") estat.tiposVistos++; return; }
+var a = args(id);
+if (!ehProduto(t, a)) { estat.desconhecidas[t] = (estat.desconhecidas[t] || 0) + 1; return; }
+if (t === "IFCSPACE") espacos.push(id); else if (t === "IFCOPENINGELEMENT" || t === "IFCOPENINGSTANDARDCASE") opens[id] = 1; else produtos.push(id);
+});
+estat.produtos = produtos.length;
+function psetsDe(id, tipoId) {
+var psets = {}, qto = {};
+if (tipoId && ents[tipoId]) { var ta = args(tipoId); lista(ta[5]).forEach(function (d) { lerDef(d, psets, {}, false); }); }
+(porProps[id] || []).forEach(function (d) { lerDef(d, psets, qto, true); });
+return { psets: psets, qto: qto };
+}
+function pavimentoDe(id) {
+var c = contido[id], guard = 0;
+while (c && guard++ < 8) { if (tipoDe(c) === "IFCBUILDINGSTOREY") return String(args(c)[2] || ""); var pai = agregado[c] || contido[c]; if (tipoDe(c) === "IFCSPACE" && contido[c]) { c = contido[c]; continue; } c = pai; }
+var p2 = agregado[id]; guard = 0; while (p2 && guard++ < 8) { if (tipoDe(p2) === "IFCBUILDINGSTOREY") return String(args(p2)[2] || ""); p2 = agregado[p2]; }
+return "";
+}
+function predefDe(a, tipoId) {
+var i, p = null;
+for (i = 8; i < a.length; i++) { if (a[i] && typeof a[i] === "object" && a[i].e) { p = a[i].e; break; } }
+if ((!p || p === "NOTDEFINED" || p === "USERDEFINED") && tipoId) { var ta = args(tipoId); for (i = 9; i < ta.length; i++) { if (ta[i] && typeof ta[i] === "object" && ta[i].e && ta[i].e !== "NOTDEFINED") { p = ta[i].e; break; } } }
+return p || "";
+}
+function montar(id, ehEspaco) {
+var t = ents[id].t, a = args(id), tipoId = porTipo[id] || null;
+var pq = psetsDe(id, tipoId), qto = pq.qto, psets = pq.psets;
+var mat = porMat[id] ? lerMaterial(porMat[id]) : (tipoId && porMat[tipoId] ? lerMaterial(porMat[tipoId]) : { nomes: [], camadas: [] });
+var tipoNome = tipoId ? String(args(tipoId)[2] || "") : "";
+var el = {
+id: id, globalId: String(a[0] || ""), classe: t, predef: predefDe(a, tipoId), nome: String(a[2] || ""), objetoTipo: typeof a[4] === "string" ? a[4] : "", tipoNome: tipoNome,
+tag: typeof a[7] === "string" ? a[7] : "", pavimento: pavimentoDe(id), psets: psets, qto: {}, qtoFonte: {}, materiais: mat.nomes.filter(function (x, i, l) { return x && l.indexOf(x) === i; }),
+camadas: mat.camadas, conjuntoNome: mat.conjuntoNome || "", ambientes: [], ambienteCat: "", externo: null, classificacao: [], vaos: [], sistema: "", chave: String(a[0] || "") ? "ifc::" + a[0] : ""
+};
+var k; for (k in qto) if (tem(qto, k) && k !== "_contagem") { el.qto[k] = qto[k]; el.qtoFonte[k] = "ifc"; }
+if ((t === "IFCDOOR" || t === "IFCWINDOW") && typeof a[8] === "number" && typeof a[9] === "number") {
+if (!el.qto.altura) { el.qto.altura = a[8] * U.comprimento; el.qtoFonte.altura = "ifc"; }
+if (!el.qto.largura) { el.qto.largura = a[9] * U.comprimento; el.qtoFonte.largura = "ifc"; }
+}
+Object.keys(psets).forEach(function (pn) { var p = psets[pn]; if (p && p.IsExternal !== undefined && p.IsExternal !== null) el.externo = (p.IsExternal === true || p.IsExternal === "T"); });
+(porClass[id] || (tipoId && porClass[tipoId]) || []).forEach(function (cid) {
+var ca = args(cid), fonte = ca[3] && ca[3].r ? args(ca[3].r) : [];
+el.classificacao.push({ sistema: String(fonte[3] || fonte[0] || ""), codigo: String(ca[1] || ""), nome: String(ca[2] || "") });
+});
+Object.keys(psets).forEach(function (pn) { var p = psets[pn]; Object.keys(p).forEach(function (pk) { if (/sinapi|omniclass|uniformat|classifica|codigo de servi|c[oó]digo sinapi/i.test(sa(pk)) && p[pk] !== null && String(p[pk]) !== "") el.classificacao.push({ sistema: pk, codigo: String(p[pk]), nome: pn }); }); });
+(grupos[id] || []).forEach(function (g) { var ga = args(g); if (ga[2] || (ga[5] && ga[5].e)) el.sistema += (el.sistema ? " | " : "") + String(ga[2] || "") + (ga[5] && ga[5].e ? " [" + ga[5].e + "]" : ""); });
+var g = geometria(id);
+if (g) {
+el._geo = { forma: g.perfil.forma, x: r4(g.perfil.x), y: r4(g.perfil.y), areaSecao: r4(g.perfil.area), perimetroSecao: r4(g.perfil.perimetro), profundidade: r4(g.profundidade), n: g.nSolidos };
+}
+return el;
+}
+produtos.forEach(function (id) { res.elementos.push(montar(id, false)); });
+var porId = {}; res.elementos.forEach(function (e) { porId[e.id] = e; });
+espacos.forEach(function (id) {
+var e = montar(id, true), a = args(id); completarQto(e);
+var nome = e.nome || String(a[7] || ""), longo = typeof a[7] === "string" ? a[7] : "";
+e.longNome = longo; e.nomeCompleto = (nome + " " + longo).trim();
+var cat = ambienteCat(e.nomeCompleto);
+Object.keys(e.psets).forEach(function (pn) { var p = e.psets[pn]; if (p && p.IsExternal === true) cat = "externo"; });
+e.categoria = cat;
+e.areaPiso = e.qto.area || e.qto.areaBruta || 0; e.perimetroPiso = e.qto.perimetro || 0; e.altura = e.qto.altura || 0;
+res.espacos.push(e);
+});
+var espPorId = {}; res.espacos.forEach(function (e) { espPorId[e.id] = e; });
+var contidoEmEspaco = {}; Object.keys(contido).forEach(function (o) { if (espPorId[contido[o]]) push(contidoEmEspaco, o, contido[o]); });
+res.elementos.forEach(function (e) {
+var sp = (bordas[e.id] || []).concat(contidoEmEspaco[e.id] || []);
+sp.forEach(function (s) { if (espPorId[s] && e.ambientes.indexOf(s) < 0) e.ambientes.push(s); });
+e.ambientesNome = e.ambientes.map(function (s) { return espPorId[s].nomeCompleto; });
+e.ambientesCat = e.ambientes.map(function (s) { return espPorId[s].categoria; });
+e.ambienteCat = e.ambientesCat.indexOf("molhado") >= 0 ? "molhado" : (e.ambientesCat.indexOf("externo") >= 0 ? "externo" : (e.ambientesCat.length ? "seco" : ""));
+});
+Object.keys(vazios).forEach(function (wid) {
+var w = porId[wid]; if (!w) return;
+vazios[wid].forEach(function (oid) {
+var fill = preenche[oid], f = fill ? porId[fill] : null;
+var largura = f ? f.qto.largura : 0, altura = f ? f.qto.altura : 0, area = 0, fonte = f ? "ifc" : "";
+if (!(largura > 0 && altura > 0)) { var op = montar(oid, false); largura = op.qto.largura || (op._geo ? Math.max(op._geo.x, op._geo.y) : 0); altura = op.qto.altura || op.qto.profundidade || 0; if (op._geo && !(altura > 0)) altura = op._geo.profundidade; fonte = (op.qto.largura && op.qto.altura) ? "ifc" : "estimado"; }
+area = largura * altura;
+w.vaos.push({ abertura: oid, esquadria: fill || null, classe: f ? f.classe : "IFCOPENINGELEMENT", largura: largura, altura: altura, area: area, fonte: fonte });
+vaoDe[fill || oid] = wid;
+});
+});
+var sem = [], por = {}, classificados = 0, semQto = 0, porDisc = {};
+res.elementos.forEach(function (e) {
+completarQto(e);
+var c = classificar(e);
+e.papel = c.papel; e.disciplina = c.disciplina; e.regra = c.regra; e.sub = c.sub || ""; e.semRegra = !c.papel; e.motivo = c.motivo || "";
+if (c.dn !== undefined) e.dn = c.dn; if (c.mat) e.matTubo = c.mat; if (c.tipoConexao !== undefined) { e.tipoConexao = c.tipoConexao; e.angulo = c.angulo; }
+if (c.papel) { classificados++; por[c.papel] = (por[c.papel] || 0) + 1; } else sem.push({ id: e.id, globalId: e.globalId, classe: e.classe, predef: e.predef, nome: e.nome, tipo: e.tipoNome, material: e.materiais.join(" / "), psets: Object.keys(e.psets), motivo: c.motivo });
+porDisc[e.disciplina || "indefinida"] = (porDisc[e.disciplina || "indefinida"] || 0) + 1;
+if (!(e.qto.comprimento > 0 || e.qto.area > 0 || e.qto.volume > 0 || e.qto.volumeBruto > 0 || e.qto.areaLateral > 0 || e.qto.peso > 0) && /^(parede|laje|piso|pilar|viga|sapata|baldrame|bloco|estaca|radier|tubo|cobertura|forro)/.test(e.papel || "")) semQto++;
+});
+res.cobertura = {
+entidades: estat.entidades, estruturaEspacial: estat.espacial, ambientes: res.espacos.length, tipos: estat.tiposVistos,
+lidos: res.elementos.length, classificados: classificados, semRegra: sem, porPapel: por, porDisciplina: porDisc,
+naoElemento: estat.naoElemento, naoReconhecidas: estat.desconhecidas, complexas: estat.complexas, semQuantidade: semQto,
+completa: sem.length + classificados === res.elementos.length
+};
+res.ok = true;
+return res;
+}
+function completarQto(e) {
+var g = e._geo; if (!g) return;
+function poe(k, v2) { if (k === "volume" && e.qto.volumeBruto > 0) return; if (!(e.qto[k] > 0) && v2 > 0) { e.qto[k] = r4(v2); e.qtoFonte[k] = "estimado"; } }
+var c = e.classe;
+if (/^IFC(COLUMN|PILE)/.test(c)) { poe("comprimento", g.profundidade); poe("areaSecao", g.areaSecao); poe("perimetro", g.perimetroSecao); poe("volume", g.areaSecao * g.profundidade); if (g.forma === "ret") { poe("largura", Math.min(g.x, g.y)); poe("altura", Math.max(g.x, g.y)); } }
+else if (/^IFC(BEAM|MEMBER)/.test(c)) { poe("comprimento", g.profundidade); poe("areaSecao", g.areaSecao); poe("perimetro", g.perimetroSecao); poe("volume", g.areaSecao * g.profundidade); if (g.forma === "ret") { poe("largura", Math.min(g.x, g.y)); poe("altura", Math.max(g.x, g.y)); } }
+else if (/^IFC(FOOTING)/.test(c)) { poe("volume", g.areaSecao * g.profundidade); poe("area", g.areaSecao); poe("perimetro", g.perimetroSecao); poe("altura", g.profundidade); if (g.forma === "ret") { poe("comprimento", Math.max(g.x, g.y)); poe("largura", Math.min(g.x, g.y)); } }
+else if (/^IFC(SLAB|COVERING|ROOF|PLATE)/.test(c)) { poe("area", g.areaSecao); poe("volume", g.areaSecao * g.profundidade); poe("perimetro", g.perimetroSecao); poe("largura", g.profundidade); }
+else if (/^IFC(WALL)/.test(c) && g.forma === "ret") { var L = Math.max(g.x, g.y), esp = Math.min(g.x, g.y); poe("comprimento", L); poe("largura", esp); poe("altura", g.profundidade); poe("areaLateral", L * g.profundidade); poe("volume", L * esp * g.profundidade); }
+else if (/^IFC(PIPESEGMENT|CABLE|DUCT|FLOWSEGMENT)/.test(c)) { poe("comprimento", g.profundidade); if (g.forma === "circ") poe("diametro", g.x); }
+else if (/^IFC(DOOR|WINDOW)/.test(c)) { }
+else if (c === "IFCSPACE") { poe("area", g.areaSecao); poe("perimetro", g.perimetroSecao); poe("altura", g.profundidade); }
+else if (/^IFC(STAIR|RAMP)/.test(c)) { }
+}
+function txtEl(e) { return sa([e.nome, e.tipoNome, e.objetoTipo, e.conjuntoNome, e.materiais.join(" "), e.sistema].join(" ")); }
+function matEl(e) {
+var c = e.camadas || [], best = null, i;
+for (i = 0; i < c.length; i++) { if (c[i].material && (!best || (c[i].espessura || 0) > (best.espessura || 0))) best = c[i]; }
+var m = best ? materialClasse(best.material) : "";
+if (!m) { for (i = 0; i < e.materiais.length && !m; i++) m = materialClasse(e.materiais[i]); }
+if (!m) m = materialClasse(e.nome + " " + e.tipoNome);
+return m;
+}
+function sistemaTubo(e) {
+var t = txtEl(e), p = e.psets, k, x = "";
+Object.keys(p).forEach(function (pn) { Object.keys(p[pn]).forEach(function (pk) { if (/system|sistema|classification/i.test(sa(pk)) && typeof p[pn][pk] === "string") x += " " + sa(p[pn][pk]); }); });
+t += " " + x;
+if (/esgoto|sanitari|sewage|waste|vent(ilacao)?\b|residual|cloaca/.test(t)) return "esgoto";
+if (/pluvial|stormwater|drenag|chuva|calha|gutter|rainwater/.test(t) || e.predef === "GUTTER") return "pluvial";
+if (/incendio|fire|hidrante|sprinkler/.test(t)) return "incendio";
+if (/gas|glp/.test(t) && !/agua/.test(t)) return "gas";
+if (/quente|hotwater|domestichotwater|aquecid/.test(t)) return "agua-quente";
+if (/fria|coldwater|domesticcoldwater|agua|potavel|abastec|hidraul/.test(t)) return "agua-fria";
+if (/ar condicionado|refriger|climatiz|condensad|dreno/.test(t)) return "climatizacao";
+return "";
+}
+function diametroMm(e) {
+var p = e.psets, v2 = 0;
+Object.keys(p).forEach(function (pn) { Object.keys(p[pn]).forEach(function (pk) { var k2 = sa(pk); if (/nominaldiameter|diametro nominal|diameter|diametro|dn$|^dn/.test(k2) && typeof p[pn][pk] === "number" && !(v2 > 0)) v2 = p[pn][pk]; }); });
+if (!(v2 > 0)) { var mm = /(?:dn|d|ø|diam(?:etro)?)\s*[=:]?\s*(\d{2,3})(?!\d)/i.exec(e.nome + " " + e.tipoNome); if (mm) v2 = +mm[1]; }
+if (!(v2 > 0) && e.qto.diametro > 0) v2 = e.qto.diametro;
+if (v2 > 0 && v2 < 1) v2 = v2 * 1000;
+else if (v2 > 0 && v2 < 3 && /pol|inch|"/.test(sa(JSON.stringify(p)))) v2 = v2 * 25.4;
+return v2 > 0 ? Math.round(v2) : 0;
+}
+function classificar(e) {
+var c = e.classe, pd = e.predef, t = txtEl(e), m = matEl(e), R;
+function ok(papel, disc, regra, sub) { return { papel: papel, disciplina: disc, regra: regra, sub: sub || "" }; }
+function nao(motivo, disc) { return { papel: null, disciplina: disc || "", regra: "", motivo: motivo }; }
+if (/^IFCWALL/.test(c) || c === "IFCCURTAINWALL") {
+if (c === "IFCCURTAINWALL") return nao("pele de vidro/fachada cortina: sem composição de catálogo na F13 (sob cotação)", "arquitetura");
+if (pd === "PARAPET" || /platibanda|parapeito/.test(t)) return ok("parede-alvenaria", "arquitetura", "classe IFCWALL + PARAPET/nome «platibanda»", "platibanda");
+if (/arrimo|contencao|retaining/.test(t) || pd === "RETAININGWALL") return ok("muro-arrimo", "estrutura", "IFCWALL arrimo/contenção");
+if (m === "drywall" || pd === "PARTITIONING" && m === "gesso") return ok("parede-drywall", "arquitetura", "IFCWALL + material de gesso acartonado");
+if (m === "concreto") return ok("parede-concreto", "estrutura", "IFCWALL + material concreto");
+if (m === "bloco-ceramico" || m === "alvenaria" || m === "bloco-concreto" || m === "celular" || m === "") return ok("parede-alvenaria", "arquitetura", "IFCWALL" + (m ? " + material " + m : " (material não informado: assumida alvenaria de vedação)"), m === "" ? "material-assumido" : "");
+if (m === "madeira") return ok("parede-madeira", "arquitetura", "IFCWALL + madeira");
+return ok("parede-alvenaria", "arquitetura", "IFCWALL + material «" + m + "» tratado como vedação (confirmar)", "material-assumido");
+}
+if (c === "IFCSLAB" || c === "IFCSLABSTANDARDCASE" || c === "IFCSLABELEMENTEDCASE") {
+if (pd === "BASESLAB" || /radier/.test(t)) return ok("radier", "estrutura", "IFCSLAB BASESLAB/«radier»");
+if (pd === "ROOF") return ok(m === "concreto" || m === "" ? "laje-cobertura" : "cobertura-telhado", "arquitetura", "IFCSLAB ROOF");
+if (pd === "LANDING") return ok("laje", "estrutura", "IFCSLAB LANDING (patamar)");
+if (/piso|contrapiso|acabamento/.test(sa(e.nome + e.tipoNome)) && m !== "concreto") return ok("piso-laje", "arquitetura", "IFCSLAB modelado como piso (nome/camadas)");
+return ok("laje", "estrutura", "IFCSLAB " + (pd || "FLOOR"));
+}
+if (c === "IFCCOVERING") {
+if (pd === "FLOORING") return ok("piso-acabamento", "arquitetura", "IFCCOVERING FLOORING");
+if (pd === "CEILING") return ok("forro", "arquitetura", "IFCCOVERING CEILING");
+if (pd === "CLADDING") return ok("revestimento-parede", "arquitetura", "IFCCOVERING CLADDING");
+if (pd === "ROOFING") return ok("cobertura-telhado", "arquitetura", "IFCCOVERING ROOFING");
+if (pd === "MOLDING" || pd === "SKIRTINGBOARD" || /rodape/.test(t)) return ok("rodape", "arquitetura", "IFCCOVERING MOLDING/SKIRTINGBOARD");
+if (/forro/.test(t)) return ok("forro", "arquitetura", "IFCCOVERING «forro»");
+if (/piso/.test(t)) return ok("piso-acabamento", "arquitetura", "IFCCOVERING «piso»");
+if (/revest|ceramic|azulejo/.test(t)) return ok("revestimento-parede", "arquitetura", "IFCCOVERING «revestimento»");
+return nao("IFCCOVERING sem PredefinedType nem nome que diga o que é (piso, forro, revestimento…): informe o tipo no modelo", "arquitetura");
+}
+if (c === "IFCROOF") return ok("cobertura-telhado", "arquitetura", "IFCROOF");
+if (c === "IFCBEAM" || c === "IFCBEAMSTANDARDCASE") {
+if (pd === "LINTEL") return ok("verga-modelada", "estrutura", "IFCBEAM LINTEL (verga já modelada)");
+if (m === "aco") return nao("viga de aço: o orçamento da estrutura metálica é do módulo Metálica (peso e perfil), fora das regras da F13", "estrutura");
+if (m === "madeira") return nao("viga de madeira: sem composição de catálogo na F13 (módulo Madeira)", "estrutura");
+return ok("viga-concreto", "estrutura", "IFCBEAM" + (m ? " + " + m : " (material não informado: assumido concreto)"), m ? "" : "material-assumido");
+}
+if (c === "IFCCOLUMN" || c === "IFCCOLUMNSTANDARDCASE") {
+if (m === "aco") return nao("pilar de aço: o orçamento da estrutura metálica é do módulo Metálica, fora das regras da F13", "estrutura");
+if (m === "madeira") return nao("pilar de madeira: sem composição de catálogo na F13 (módulo Madeira)", "estrutura");
+return ok("pilar-concreto", "estrutura", "IFCCOLUMN" + (m ? " + " + m : " (material não informado: assumido concreto)"), m ? "" : "material-assumido");
+}
+if (c === "IFCFOOTING") {
+if (pd === "PILE_CAP" || /bloco/.test(t)) return ok("bloco", "estrutura", "IFCFOOTING PILE_CAP");
+if (pd === "FOOTING_BEAM" || /baldrame/.test(t)) return ok("baldrame", "estrutura", "IFCFOOTING FOOTING_BEAM/«baldrame»");
+if (pd === "STRIP_FOOTING" || /corrida/.test(t)) return ok("sapata-corrida", "estrutura", "IFCFOOTING STRIP_FOOTING");
+return ok("sapata", "estrutura", "IFCFOOTING " + (pd || "PAD_FOOTING"));
+}
+if (c === "IFCPILE") return ok("estaca", "estrutura", "IFCPILE");
+if (c === "IFCREINFORCINGBAR" || c === "IFCREINFORCINGMESH") return ok("armadura-modelada", "estrutura", c + " (armação modelada: a taxa sugerida deixa de valer)");
+if (c === "IFCDOOR") return ok("porta", "arquitetura", "IFCDOOR" + (m ? " + " + m : ""));
+if (c === "IFCWINDOW") return ok("janela", "arquitetura", "IFCWINDOW" + (m ? " + " + m : ""));
+if (c === "IFCSTAIR" || c === "IFCSTAIRFLIGHT") return nao("escada: sem composição de catálogo na F13 (a medida do modelo não define o tipo: concreto, metálica ou madeira)", "arquitetura");
+if (c === "IFCRAMP" || c === "IFCRAMPFLIGHT") return nao("rampa: sem composição de catálogo na F13", "arquitetura");
+if (c === "IFCRAILING") return ok("guarda-corpo", "arquitetura", "IFCRAILING");
+if (c === "IFCPLATE") return nao("chapa/placa (IfcPlate): sem regra — informe o uso (forro, tampo, chapa de aço…)", "arquitetura");
+if (c === "IFCMEMBER") { if (/terca|caibro|ripa|tesoura|trama|rafter|purlin/.test(t) || pd === "RAFTER" || pd === "PURLIN" || pd === "CHORD" || pd === "BRACE" || pd === "POST" || pd === "STRUT") return ok("estrutura-telhado", "arquitetura", "IFCMEMBER de telhado (" + (pd || "nome") + ")"); return nao("IfcMember sem papel claro (estrutura de telhado, perfil metálico…): sem regra", "estrutura"); }
+if (c === "IFCFURNISHINGELEMENT" || c === "IFCFURNITURE" || c === "IFCSYSTEMFURNITUREELEMENT") return nao("mobiliário: fora do escopo do orçamento de obra (sem regra; entra só por decisão do engenheiro)", "arquitetura");
+if (c === "IFCBUILDINGELEMENTPROXY") return nao("elemento genérico (IfcBuildingElementProxy): sem classe — o conversor do BIM (bimifcconv) pode reclassificar; aqui fica «sem regra»", "indefinida");
+if (c === "IFCCHIMNEY" || c === "IFCSHADINGDEVICE" || c === "IFCBUILDINGELEMENTPART") return nao(c + ": sem regra", "arquitetura");
+if (c === "IFCPIPESEGMENT" || c === "IFCFLOWSEGMENT") {
+var s = sistemaTubo(e); var dn = diametroMm(e);
+var mt = m === "cpvc" || m === "ppr" || m === "pex" || m === "cobre" || m === "aco" || m === "pead" || m === "ferro-fundido" ? m : (m === "pvc" || m === "" ? "pvc" : m);
+var disc = s === "esgoto" ? "esgoto" : (s === "pluvial" ? "pluvial" : (s === "incendio" ? "incendio" : (s === "climatizacao" ? "climatizacao" : "hidraulica")));
+var r2 = ok("tubo", disc, "IFCPIPESEGMENT" + (s ? " + sistema " + s : " (sistema não informado)") + (dn ? " DN " + dn : ""), s);
+r2.mat = mt; r2.dn = dn; return r2;
+}
+if (c === "IFCPIPEFITTING" || c === "IFCFLOWFITTING") {
+var s2 = sistemaTubo(e), dn2 = diametroMm(e), disc2 = s2 === "esgoto" ? "esgoto" : (s2 === "pluvial" ? "pluvial" : (s2 === "incendio" ? "incendio" : "hidraulica"));
+var tp = /joelho|elbow|bend|curva/.test(t) || pd === "BEND" ? "joelho" : (/\bte\b|tee|\bt\b/.test(t) || pd === "JUNCTION" ? "te" : (/luva|coupling|connector/.test(t) || pd === "CONNECTOR" ? "luva" : (/juncao|y\b/.test(t) ? "juncao" : (pd === "TRANSITION" || /reducao|redutor/.test(t) ? "reducao" : ""))));
+var ang = /45/.test(t) ? 45 : 90;
+var r3 = ok("conexao", disc2, "IFCPIPEFITTING" + (tp ? " " + tp : " (tipo não identificado)"), s2); r3.dn = dn2; r3.tipoConexao = tp; r3.angulo = ang; return r3;
+}
+if (c === "IFCSANITARYTERMINAL") {
+var tl = pd === "WC" || pd === "TOILETPAN" || /bacia|vaso|wc\b|sanitaria|toilet/.test(t) ? "bacia" : (pd === "WASHHANDBASIN" || /lavatorio|lavabo|washbasin|handbasin/.test(t) ? "lavatorio" : (pd === "SHOWER" || /chuveiro|ducha|shower|box/.test(t) ? "chuveiro" : (pd === "SINK" || /pia|cuba|sink/.test(t) ? "pia" : (/tanque|laundry/.test(t) ? "tanque" : (pd === "URINAL" || /mictorio/.test(t) ? "mictorio" : (pd === "BATH" || /banheira/.test(t) ? "banheira" : (pd === "BIDET" || /bide/.test(t) ? "bide" : "")))))));
+if (!tl) return nao("IfcSanitaryTerminal sem tipo identificável (bacia, lavatório, chuveiro, pia…): informe o PredefinedType", "hidraulica");
+var r4_ = ok("louca", "hidraulica", "IFCSANITARYTERMINAL " + tl); r4_.sub = tl; return r4_;
+}
+if (c === "IFCWASTETERMINAL") return ok("ralo", "esgoto", "IFCWASTETERMINAL " + (pd || ""));
+if (c === "IFCVALVE") return ok("registro", "hidraulica", "IFCVALVE" + (pd ? " " + pd : ""));
+if (c === "IFCTANK") return ok("reservatorio", "hidraulica", "IFCTANK");
+if (c === "IFCPUMP") return nao("bomba: equipamento sob cotação (sem composição no catálogo da F13)", "hidraulica");
+if (c === "IFCBOILER" || c === "IFCWATERHEATER") return nao("aquecedor: equipamento sob cotação/projeto (sem composição fechada no catálogo da F13)", "hidraulica");
+if (c === "IFCFIRESUPPRESSIONTERMINAL") { var ex = /co2/.test(t) ? "co2" : (/pqs|po quimico|\bbc\b|abc/.test(t) ? "pqs" : ""); var r5 = ok("incendio-terminal", "incendio", "IFCFIRESUPPRESSIONTERMINAL " + (pd || "")); r5.sub = ex || (pd === "FIREEXTINGUISHER" || /extintor/.test(t) ? "extintor" : (pd === "HOSEREEL" || /hidrante|mangueira/.test(t) ? "hidrante" : "outro")); return r5; }
+if (c === "IFCOUTLET" || c === "IFCELECTRICAPPLIANCE" && /tomada/.test(t)) { var r6 = ok("tomada", "eletrica", "IFCOUTLET " + (pd || "")); r6.sub = /20 ?a|uso especifico|tue/.test(t) ? "20A" : "10A"; return r6; }
+if (c === "IFCSWITCHINGDEVICE") return ok("interruptor", "eletrica", "IFCSWITCHINGDEVICE " + (pd || ""));
+if (c === "IFCLIGHTFIXTURE") return ok("luminaria", "eletrica", "IFCLIGHTFIXTURE");
+if (c === "IFCLAMP") return nao("lâmpada avulsa: sem regra (a luminária já inclui a lâmpada nas composições LED)", "eletrica");
+if (c === "IFCELECTRICDISTRIBUTIONBOARD" || c === "IFCELECTRICDISTRIBUTIONPOINT") return ok("quadro-eletrico", "eletrica", c);
+if (c === "IFCJUNCTIONBOX") return ok("caixa-passagem", "eletrica", "IFCJUNCTIONBOX");
+if (c === "IFCCABLESEGMENT") return ok("cabo", "eletrica", "IFCCABLESEGMENT");
+if (c === "IFCCABLECARRIERSEGMENT" || c === "IFCCABLECARRIERFITTING") { var eld = diametroMm(e), r7 = ok(c === "IFCCABLECARRIERFITTING" ? "eletroduto-conexao" : "eletroduto", "eletrica", c + (pd ? " " + pd : "")); r7.dn = eld; return r7; }
+if (c === "IFCPROTECTIVEDEVICE") return ok("disjuntor", "eletrica", "IFCPROTECTIVEDEVICE");
+if (c === "IFCLIGHTNINGPROTECTION" || /spda|para-?raio|captor/.test(t)) return nao("SPDA modelado: o catálogo trata SPDA por quantidade de captores/hastes do projeto — sem regra automática da F13", "spda");
+if (/^IFC(AIRTERMINAL|DUCT|UNITARYEQUIPMENT|FAN|CHILLER|COIL|COMPRESSOR|CONDENSER|EVAPORATOR|COOLED|HEATEXCHANGER|AIRTOAIR|DAMPER|FILTER)/.test(c)) return nao("climatização/ventilação (" + c + "): equipamento e rede sob projeto/cotação — sem composição no catálogo da F13", "climatizacao");
+if (/^IFC(COMMUNICATIONSAPPLIANCE|AUDIOVISUAL|SENSOR|ACTUATOR|ALARM|CONTROLLER|FLOWMETER|FLOWINSTRUMENT|TRANSFORMER|MOTORCONNECTION|GENERATOR|ELECTRICFLOWSTORAGE|SOLARDEVICE|ELECTRICGENERATOR|ELECTRICMOTOR|ELECTRICTIMECONTROL|TELECOM)/.test(c)) return nao("elétrica/telecom/automação (" + c + "): sem regra na F13 (SPDA, CFTV, alarme etc. entram por projeto)", "eletrica");
+if (c === "IFCGEOGRAPHICELEMENT" || c === "IFCCIVILELEMENT" || c === "IFCTRANSPORTELEMENT" || c === "IFCSOLARDEVICE") return nao(c + ": terreno/obra civil/transporte vertical — sem regra na F13 (movimento de terra e elevador entram por projeto)", "terreno");
+if (c === "IFCDISTRIBUTIONCHAMBERELEMENT") return nao("caixa/câmara de inspeção: sem composição fechada no catálogo da F13", "esgoto");
+if (c === "IFCPLATE" || c === "IFCOPENINGELEMENT") return nao(c + ": sem regra", "");
+return nao("classe " + c + " sem regra na F13 (não reconhecida): listada para decisão do engenheiro", "indefinida");
+}
+function deElementosViewer(els) {
+var res = { ok: true, erro: "", esquema: "viewer", elementos: [], espacos: [], avisos: ["Leitura pelas peças já abertas no BIM: o viewer não traz Psets, camadas nem ambientes — o que depende disso fica «sem regra» ou sugerido. Para a leitura completa, escolha o arquivo .ifc."], cobertura: null, unidades: { comprimento: 1 }, modelo: { projeto: "", pavimentos: [] } };
+var sem = [], por = {}, cl = 0, porDisc = {}, naoEl = {};
+arr(els).forEach(function (x, i) {
+if (!x || !x.tipo) return;
+var q = x.qto || {};
+var e = {
+id: x.uid || x.id || i, globalId: x.globalId || "", classe: String(x.tipo).toUpperCase().replace(/[^A-Z0-9]/g, ""), predef: "", nome: x.nomeIfc || x.nome || "", objetoTipo: "", tipoNome: x.familia || "", tag: x.tag || "", pavimento: x.pavimento || "",
+psets: {}, qto: {}, qtoFonte: {}, materiais: arr(x.materiais).map(function (m) { return typeof m === "string" ? m : (m && (m.nome || m.material)) || ""; }).filter(Boolean), camadas: [], conjuntoNome: "", ambientes: [], ambienteCat: "", externo: null,
+classificacao: [], vaos: [], sistema: x.sistemaIfc || "", chave: x.chave || ""
+};
+var mapa = { comprimento: "comprimento", area: "area", volume: "volume", peso: "peso", largura: "largura", altura: "altura" }, k;
+for (k in mapa) if (q[k] > 0) { e.qto[mapa[k]] = q[k]; e.qtoFonte[mapa[k]] = "ifc"; }
+if (x.aabb && x.aabb.min && x.aabb.max) {
+var d = [Math.abs(x.aabb.max[0] - x.aabb.min[0]), Math.abs(x.aabb.max[1] - x.aabb.min[1]), Math.abs(x.aabb.max[2] - x.aabb.min[2])].sort(function (a, b) { return b - a; });
+if (!(e.qto.comprimento > 0)) { e.qto.comprimento = d[0]; e.qtoFonte.comprimento = "estimado"; }
+if (!(e.qto.area > 0)) { e.qto.area = d[0] * d[1]; e.qtoFonte.area = "estimado"; }
+if (!(e.qto.volume > 0)) { e.qto.volume = d[0] * d[1] * d[2]; e.qtoFonte.volume = "estimado"; }
+}
+if (/^IFC(SPACE|SITE|BUILDING|BUILDINGSTOREY|PROJECT|GRID|ANNOTATION)$|^IFC(OPENING|VIRTUAL)/.test(e.classe)) { naoEl.espacialOuVazio = (naoEl.espacialOuVazio || 0) + 1; return; }
+var c = classificar(e);
+e.papel = c.papel; e.disciplina = c.disciplina; e.regra = c.regra; e.sub = c.sub || ""; e.semRegra = !c.papel; e.motivo = c.motivo || "";
+if (c.dn !== undefined) e.dn = c.dn; if (c.mat) e.matTubo = c.mat; if (c.tipoConexao !== undefined) { e.tipoConexao = c.tipoConexao; e.angulo = c.angulo; }
+if (c.papel) { cl++; por[c.papel] = (por[c.papel] || 0) + 1; } else sem.push({ id: e.id, classe: e.classe, nome: e.nome, tipo: e.tipoNome, material: e.materiais.join(" / "), motivo: c.motivo });
+porDisc[e.disciplina || "indefinida"] = (porDisc[e.disciplina || "indefinida"] || 0) + 1;
+res.elementos.push(e);
+});
+res.cobertura = { entidades: res.elementos.length, estruturaEspacial: 0, ambientes: 0, tipos: 0, lidos: res.elementos.length, classificados: cl, semRegra: sem, porPapel: por, porDisciplina: porDisc, naoElemento: naoEl, naoReconhecidas: {}, complexas: 0, semQuantidade: 0, completa: sem.length + cl === res.elementos.length };
+return res;
+}
+function textoCobertura(res) {
+var c = res && res.cobertura; if (!c) return "";
+var l = [c.lidos + " elemento(s) lido(s) → " + c.classificados + " classificado(s), " + c.semRegra.length + " sem regra" + (c.completa ? " (cobertura 100 %: nada descartado)" : " — ATENÇÃO: contagem não fecha")];
+c.semRegra.forEach(function (s) { l.push("  sem regra: " + s.classe + (s.predef ? " " + s.predef : "") + " «" + s.nome + "»" + (s.material ? " [" + s.material + "]" : "") + " — " + s.motivo); });
+return l.join("\n");
+}
+var MorIfcLer = {
+ler: ler, deElementosViewer: deElementosViewer, textoCobertura: textoCobertura,
+classificar: classificar, materialClasse: materialClasse, ambienteCat: ambienteCat, sistemaTubo: sistemaTubo,
+_parseArgs: parseArgs, _varrer: varrer, _decodificar: decodificar, _diametroMm: diametroMm, _matEl: matEl, _txtEl: txtEl
+};
+if (typeof module !== "undefined" && module.exports) module.exports = MorIfcLer;
+global.MorIfcLer = MorIfcLer;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/ifcorc.js ==== */
+try {
+(function (global) {
+"use strict";
+function mod(g, caminho) { if (global[g]) return global[g]; if (typeof require === "function") { try { return require(caminho); } catch (e) { return null; } } return null; }
+var R = mod("MorRegras", "./regras.js"), C = mod("MorCatalogo", "./catalogo.js");
+function dadosImpl() {
+if (!(global.MorDados && global.MorDados.implicitos) && typeof require === "function") { try { require("./catalogo-dados/implicitos.js"); } catch (e) { } }
+return global.MorDados && global.MorDados.implicitos;
+}
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function r2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+function fmt(v) { return typeof v === "number" ? (Math.floor(v) === v ? String(v) : String(r2(v)).replace(".", ",")) : String(v); }
+function sa(s) { var t = String(s == null ? "" : s); try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) { } return t.toLowerCase(); }
+var PADRAO = { baixo: "popular", popular: "popular", medio: "normal", "médio": "normal", normal: "normal", alto: "alto" };
+function tabelaCodigos() {
+if (C && C.etapas) C.etapas();
+var D = global.MorDados || {}, cod = D.codigos || {}, out = {}, k;
+[cod.TUDO || {}, cod.F13 || {}].forEach(function (t) { for (k in t) if (tem(t, k) && !tem(out, k)) out[k] = t[k]; });
+return out;
+}
+function numOu(v) { return typeof v === "number" && isFinite(v) ? v : undefined; }
+function maior0(v) { return typeof v === "number" && v > 0 ? v : undefined; }
+function taxaAcoDe(e) {
+var t = 0;
+Object.keys(e.psets || {}).forEach(function (pn) { Object.keys(e.psets[pn]).forEach(function (pk) { var k = sa(pk), v = e.psets[pn][pk]; if (typeof v === "number" && v > 0 && !(t > 0) && /taxa.*(aco|armad)|reinforcementvolumeratio|taxa de armadura|aco.*m3/.test(k)) t = v; }); });
+return t;
+}
+function telhaDe(e) {
+var t = sa([e.nome, e.tipoNome, e.conjuntoNome, (e.materiais || []).join(" ")].join(" "));
+if (/fibrocimento|eternit|onduline|brasilit/.test(t)) return "fibro";
+if (/metalic|zinco|sanduiche|termoacustic|aluzinc|trapezoidal|galvaliume/.test(t)) return "metalica";
+if (/telha.*concreto|concreto.*telha|encaixe/.test(t)) return "concreto";
+if (/ceramic|barro|colonial|romana|portuguesa|paulista|francesa/.test(t)) return "ceramica";
+return "";
+}
+function secmmDe(e) {
+var m = /(\d+(?:[.,]\d+)?)\s*(?:mm2|mm²|mm\^2|mm)/i.exec([e.nome, e.tipoNome].join(" ")), v = m ? parseFloat(m[1].replace(",", ".")) : 0;
+Object.keys(e.psets || {}).forEach(function (pn) { Object.keys(e.psets[pn]).forEach(function (pk) { if (!(v > 0) && /secao|section|bitola|cross.*area/.test(sa(pk)) && typeof e.psets[pn][pk] === "number") { v = e.psets[pn][pk]; if (v < 0.001) v = v * 1e6; } }); });
+return v > 0 ? String(Math.round(v * 10) / 10) : "";
+}
+function nucleoParede(e, Ler) {
+var cam = arr(e.camadas), core = null, i, cl;
+for (i = 0; i < cam.length; i++) { cl = Ler.materialClasse(cam[i].material); if ((cl === "bloco-ceramico" || cl === "alvenaria" || cl === "bloco-concreto" || cl === "celular" || cl === "") && cam[i].espessura > 0 && (!core || cam[i].espessura > core.espessura)) core = cam[i]; }
+if (!core) for (i = 0; i < cam.length; i++) if (cam[i].espessura > 0 && (!core || cam[i].espessura > core.espessura)) core = cam[i];
+return core ? { esp: core.espessura, conhecido: true } : { esp: e.qto.largura || 0, conhecido: false };
+}
+function contaCamada(e, Ler, classes) {
+var n = 0; arr(e.camadas).forEach(function (c) { if (classes.indexOf(Ler.materialClasse(c.material + " " + (c.nome || ""))) >= 0) n++; });
+return n;
+}
+function ctxElemento(e, G) {
+var q = e.qto || {}, c = { papel: e.papel, padrao: G.padrao, empolamento: G.empolamento, mat: G.Ler._matEl(e) }, p = e.papel, i;
+var L = maior0(q.comprimento), B = maior0(q.largura), Hs = maior0(q.altura), A = maior0(q.area) || maior0(q.areaBruta), V = maior0(q.volume) || maior0(q.volumeBruto), P = maior0(q.perimetro);
+c.mat = c.mat || "";
+c.ext = 0; c.peso = q.peso > 0 ? q.peso : 0;
+var taxa = taxaAcoDe(e); c.taxaAco = taxa; c.temTaxa = taxa > 0 ? 1 : 0;
+c.matAssumido = e.sub === "material-assumido" ? 1 : 0;
+if (G.params.folga !== undefined) c.folga = G.params.folga;
+if (G.params.dmt !== undefined) c.dmt = G.params.dmt;
+if (G.params.espSuporte !== undefined) c.espSuporte = G.params.espSuporte;
+if (L !== undefined) c.L = L;
+if (V !== undefined) c.V = V;
+if (P !== undefined) c.P = P;
+if (p === "parede-alvenaria" || p === "parede-drywall" || p === "parede-concreto") {
+var H = maior0(q.altura), Hw = H;
+if (H !== undefined) c.H = H;
+if (B !== undefined) c.B = B;
+var vaos = arr(e.vaos), Avaos = 0, AvaosDesc = 0, Lverga = 0, Lcontra = 0, ve;
+for (i = 0; i < vaos.length; i++) { ve = vaos[i]; Avaos += ve.area || 0; if ((ve.area || 0) > 2) AvaosDesc += ve.area; if (ve.largura > 0) { Lverga += ve.largura + 0.6; if (ve.classe === "IFCWINDOW") Lcontra += ve.largura + 0.6; } }
+var bruta = maior0(q.areaLateralBruta) || (L !== undefined && Hw !== undefined ? L * Hw : 0), liquida = maior0(q.areaLateral), Ab = bruta, nota = "";
+if (!Ab && liquida) { Ab = liquida + Avaos; nota = "área bruta = área líquida do IFC + vãos"; }
+var Aliq = Ab ? Ab - AvaosDesc : (liquida || 0);
+c.Abruta = Ab || 0; c.Avaos = Avaos; c.AvaosDesc = AvaosDesc; c.nVaos = vaos.length; c.Lverga = Lverga; c.Lcontra = Lcontra;
+if (Aliq > 0) c.Aliq = Aliq;
+var cats = arr(e.ambientesCat), nMol = 0, nExt = 0;
+for (i = 0; i < cats.length; i++) { if (cats[i] === "molhado") nMol++; else if (cats[i] === "externo") nExt++; }
+var fExt = (e.externo === true || nExt > 0) ? 1 : 0, resto = 2 - fExt, fMol = Math.min(resto, nMol >= 2 ? 2 : (nMol === 1 ? 1 : 0)), fSeco = resto - fMol;
+var Af = c.Aliq || 0;
+c.Af_ext = fExt * Af; c.Af_mol = fMol * Af; c.Af_seca = fSeco * Af; c.Lf_mol = fMol * (L || 0);
+c.externa = fExt;
+c.camChapisco = contaCamada(e, G.Ler, ["chapisco"]); c.camEmboco = contaCamada(e, G.Ler, ["argamassa"]); c.camCeramica = contaCamada(e, G.Ler, ["ceramica", "porcelanato"]); c.camPintura = contaCamada(e, G.Ler, ["pintura"]);
+var nuc = nucleoParede(e, G.Ler), ecm = Math.round(nuc.esp * 100); c.ecm = ecm;
+var cm = c.mat; c.alvCasa = !nuc.conhecido ? 0 : ((ecm >= 8 && ecm <= 10 && cm !== "celular") || (ecm >= 13 && ecm <= 15 && cm !== "celular") || (ecm >= 18 && ecm <= 20 && cm !== "celular") || (cm === "celular" && ecm >= 14 && ecm <= 16)) ? 1 : 0;
+c._notas = [];
+if (nota) c._notas.push(nota);
+if (!nuc.conhecido) c._notas.push("espessura total do modelo, núcleo desconhecido; confira o bloco");
+} else if (p === "porta" || p === "janela") {
+var W = maior0(q.largura), Hj = maior0(q.altura);
+if (W !== undefined) c.W = W; if (Hj !== undefined) { c.Hj = Hj; } if (W !== undefined && Hj !== undefined) c.Aj = W * Hj;
+c.ext = (e.externo === true || arr(e.ambientesCat).indexOf("externo") >= 0) ? 1 : 0;
+} else if (p === "sapata" || p === "sapata-corrida" || p === "bloco" || p === "baldrame") {
+if (B !== undefined) c.B = B; if (Hs !== undefined) c.Hs = Hs;
+var Af2 = p === "baldrame" ? (L !== undefined && B !== undefined ? L * B : undefined) : (A !== undefined ? A : (L !== undefined && B !== undefined ? L * B : undefined));
+if (Af2 !== undefined) c.A = Af2;
+if (c.P === undefined && L !== undefined && B !== undefined) c.P = 2 * (L + B);
+c._notas = [];
+if (G.params.profEsc !== undefined) {
+c.profEsc = G.params.profEsc;
+if (Hs !== undefined && c.profEsc < Hs + 0.05) c._notas.push("profundidade de escavação informada (" + fmt(r2(c.profEsc)) + " m) menor que a altura da peça + lastro de 5 cm (" + fmt(r2(Hs + 0.05)) + " m): reaterro e escavação não são confiáveis, confira");
+} else if (Hs !== undefined) c.profEsc = Hs + 0.05;
+} else if (p === "pilar-concreto" || p === "viga-concreto") {
+if (B !== undefined) c.B = B; if (Hs !== undefined) c.Hs = Hs;
+} else if (p === "laje" || p === "laje-cobertura" || p === "radier" || p === "piso-acabamento" || p === "piso-laje" || p === "forro" || p === "revestimento-parede" || p === "cobertura-telhado") {
+if (A !== undefined) c.A = A; if (B !== undefined) c.B = B;
+if (p === "piso-acabamento" || p === "piso-laje") c.matAcab = G.Ler.materialClasse((e.materiais || []).join(" ")) || G.Ler.materialClasse(e.nome + " " + e.tipoNome) || "";
+if (p === "cobertura-telhado") c.telha = telhaDe(e);
+} else if (p === "estaca") {
+var dcm = e._geo && e._geo.forma === "circ" ? Math.round(e._geo.x * 100) : Math.round((G.Ler._diametroMm(e) || 0) / 10);
+c.dcm = dcm;
+} else if (p === "tubo") {
+c.sis = e.sub || ""; c.mat = e.matTubo || c.mat || "pvc"; c.dn = e.dn || 0;
+} else if (p === "conexao") {
+c.sis = e.sub || ""; c.dn = e.dn || 0; c.tp = e.tipoConexao || ""; c.ang = e.angulo || 90; c.n = 1; c.mat = c.mat || "pvc";
+} else if (p === "louca") { c.sub = e.sub || ""; }
+else if (p === "tomada") { c.sub = e.sub || "10A"; }
+else if (p === "eletroduto" || p === "eletroduto-conexao") { c.dn = e.dn || 0; }
+else if (p === "cabo") { c.secmm = secmmDe(e); }
+else if (p === "incendio-terminal") { c.sub = e.sub || "outro"; }
+else if (p === "estrutura-telhado") { c.mat = e.matTubo || c.mat || ""; }
+c.nPecasPesadas = 0;
+return c;
+}
+function ctxAmbiente(sp, G) {
+var c = { padrao: G.padrao, empolamento: G.empolamento }, i, e, soma = 0;
+c.molhado = sp.categoria === "molhado" ? 1 : 0; c.externo = sp.categoria === "externo" ? 1 : 0;
+if (sp.areaPiso > 0) c.Apiso = sp.areaPiso;
+if (sp.perimetroPiso > 0) c.Pp = sp.perimetroPiso;
+if (sp.altura > 0) c.Hp = sp.altura;
+for (i = 0; i < G.elementos.length; i++) {
+e = G.elementos[i]; if (e.papel !== "porta" || arr(e.ambientes).indexOf(sp.id) < 0) continue;
+soma += e.qto.largura || 0;
+}
+c.Lportas = soma;
+var nf = G.obra.nForroSemAmb || 0, np = G.obra.nPisoSemAmb || 0;
+for (i = 0; i < G.elementos.length; i++) {
+e = G.elementos[i]; if (arr(e.ambientes).indexOf(sp.id) < 0) continue;
+if (e.papel === "forro") nf++; else if (e.papel === "piso-acabamento" || e.papel === "piso-laje") np++;
+}
+c.nForro = nf; c.nPisoModelado = np;
+return c;
+}
+function montarObra(G) {
+var el = G.elementos, o = {}, i, e, n = {};
+el.forEach(function (x) { if (x.papel) { var k = "n_" + x.papel.replace(/-/g, "_"); n[k] = (n[k] || 0) + 1; } });
+n.n_ambiente = G.espacos.length; n.n_ambiente_molhado = G.espacos.filter(function (s) { return s.categoria === "molhado"; }).length;
+n.n_louca = n.n_louca || 0;
+var k2; for (k2 in n) o[k2] = n[k2];
+var I2 = dadosImpl(); (I2 ? I2.pares : []).forEach(function (pp) { (String(pp.quando).match(/n_[a-z_]+/g) || []).forEach(function (t) { if (!(t in o)) o[t] = 0; }); });
+var cont = function (papel) { return el.filter(function (x) { return x.papel === papel; }).length; };
+var soma = function (papel, f) { var s = 0; el.forEach(function (x) { if (x.papel === papel) s += f(x) || 0; }); return s; };
+o.nElementos = el.filter(function (x) { return !!x.papel; }).length;
+o.nForro = cont("forro"); o.nPisoModelado = cont("piso-acabamento") + cont("piso-laje");
+o.nForroSemAmb = el.filter(function (x) { return x.papel === "forro" && !arr(x.ambientes).length; }).length;
+o.nPisoSemAmb = el.filter(function (x) { return (x.papel === "piso-acabamento" || x.papel === "piso-laje") && !arr(x.ambientes).length; }).length;
+o.Lsoleira = 0;
+el.forEach(function (x) {
+if (x.papel !== "porta" || !arr(x.ambientes).length) return;
+if (x.externo === true || arr(x.ambientesCat).indexOf("externo") >= 0 || arr(x.ambientesCat).indexOf("molhado") >= 0) o.Lsoleira += (x.qto && x.qto.largura) || 0;
+});
+var pavs = {}, cotas = [], hMax = 0;
+el.forEach(function (x) { if (x.pavimento) { pavs[x.pavimento] = true; if (G.pavCota && typeof G.pavCota[x.pavimento] === "number") cotas.push(G.pavCota[x.pavimento]); } if (x.papel === "parede-alvenaria" || x.papel === "parede-concreto" || x.papel === "parede-drywall") hMax = Math.max(hMax, (x.qto && x.qto.altura) || 0); });
+o.nPavimentos = Object.keys(pavs).length;
+o.alturaEdif = hMax + (cotas.length > 1 ? Math.max.apply(null, cotas) - Math.min.apply(null, cotas) : 0);
+o.edifAlta = (o.nPavimentos > 1 || o.alturaEdif > 4) ? 1 : 0;
+o.nEstTelhado = cont("estrutura-telhado"); o.nRalo = cont("ralo"); o.nCabo = cont("cabo");
+o.nEletroduto = soma("eletroduto", function (x) { return x.qto.comprimento; });
+o.nTubos = cont("tubo");
+o.nCalhaModelada = el.filter(function (x) { return x.predef === "GUTTER"; }).length;
+o.nBacia = el.filter(function (x) { return x.papel === "louca" && x.sub === "bacia"; }).length;
+o.nLav = el.filter(function (x) { return x.papel === "louca" && x.sub === "lavatorio"; }).length;
+o.Aj_total = soma("janela", function (x) { var w = x.qto.largura, h = x.qto.altura; return w > 0 && h > 0 ? w * h : 0; });
+o.Autil = G.espacos.reduce(function (s, x) { return s + (x.categoria !== "externo" && x.areaPiso > 0 ? x.areaPiso : 0); }, 0);
+var pesados = el.filter(function (x) { return x.qto && x.qto.peso > 0; });
+o.nPecasPesadas = pesados.length; o.pesoMax = pesados.reduce(function (m, x) { return Math.max(m, x.qto.peso); }, 0);
+o.padrao = G.padrao; o.empolamento = G.empolamento;
+["folga", "dmt", "espSuporte"].forEach(function (k) { if (G.params[k] !== undefined) o[k] = G.params[k]; });
+return o;
+}
+function interpolar(txt, ctx) {
+return String(txt).replace(/\{([A-Za-z_][A-Za-z0-9_.]*)\}/g, function (m, n) {
+if (!tem(ctx, n) || ctx[n] === undefined || ctx[n] === null) return "não informado";
+var v = ctx[n]; if ((n === "dn" || n === "dcm" || n === "ecm") && v === 0) return "não informado";
+if (v === "") return "não informado";
+return fmt(v);
+});
+}
+function tentar(expr, ctx) { try { return R.tentar(expr, ctx); } catch (e) { return { ok: false, erro: String(e.message || e) }; } }
+function ident(expr) { return (String(expr || "").match(/[A-Za-z_][A-Za-z0-9_]*/g) || []); }
+var QTOCHAVES = { L: ["comprimento"], H: ["altura"], B: ["largura"], Hs: ["altura"], A: ["area", "areaBruta"], V: ["volume", "volumeBruto"], P: ["perimetro"], W: ["largura"], Hj: ["altura"], Aj: ["largura", "altura"], Aliq: ["areaLateral", "areaLateralBruta", "comprimento", "altura"], Af_seca: ["areaLateral", "areaLateralBruta", "comprimento", "altura"], Af_ext: ["areaLateral", "areaLateralBruta", "comprimento", "altura"], Af_mol: ["areaLateral", "areaLateralBruta", "comprimento", "altura"], Lf_mol: ["comprimento"], Lverga: ["largura"], Lcontra: ["largura"] };
+function fonteDe(expr, e) {
+var ids = ident(expr), est = false, ifc = false;
+ids.forEach(function (id) { arr(QTOCHAVES[id]).forEach(function (k) { if (e.qtoFonte && e.qtoFonte[k] === "estimado") est = true; if (e.qtoFonte && e.qtoFonte[k] === "ifc") ifc = true; }); });
+return est ? "estimado" : (ifc ? "ifc" : "");
+}
+function escolherCodigo(r, ctx) {
+var m;
+if (r.cod) return { chave: r.cod, via: "fixo" };
+if (r.codPor) {
+if (r.porMaterial && r.matVar && tem(ctx, r.matVar) && tem(r.porMaterial, ctx[r.matVar])) return { chave: r.porMaterial[ctx[r.matVar]], via: "ifc" };
+m = r.codPor[ctx.padrao]; return m ? { chave: m, via: "padrao" } : null;
+}
+if (r.cods) { m = r.cods[ctx[r.chaveCod]]; return m ? { chave: m, via: "tabela" } : null; }
+if (r.tabela) {
+var partes = String(r.chaveTab).split("|"), k = partes.map(function (n) { var v = ctx[n]; return v === undefined || v === null ? "" : String(v); }).join("|");
+m = r.tabela[k]; if (m === undefined && r.chaveTab === "dn") m = r.tabela[String(ctx.dn)];
+return m ? { chave: m, via: "tabela" } : null;
+}
+return null;
+}
+function orcar(modelo, opts) {
+opts = opts || {};
+var I = dadosImpl(), Ler = mod("MorIfcLer", "./ifcler.js");
+if (!I || !R || !C || !Ler) return { ok: false, erro: "Os dados do motor (implicitos.js, regras, catálogo ou leitor) não carregaram.", linhas: [] };
+if (!modelo || !modelo.ok) return { ok: false, erro: (modelo && modelo.erro) || "Modelo IFC não lido.", linhas: [] };
+var tab = tabelaCodigos();
+var G = { Ler: Ler, padrao: PADRAO[sa(opts.padrao || "normal")] || "normal", empolamento: I.empolamento, params: {}, elementos: arr(modelo.elementos).filter(function (x) { return !!x.papel; }), espacos: arr(modelo.espacos), obra: {}, pavCota: {} };
+arr(modelo.modelo && modelo.modelo.pavimentos).forEach(function (pv) { if (pv && pv.nome && typeof pv.cota === "number") G.pavCota[pv.nome] = pv.cota; });
+var pr = opts.params || {}, kk;
+for (kk in pr) if (tem(pr, kk) && typeof pr[kk] === "number" && isFinite(pr[kk])) G.params[kk] = pr[kk];
+if (G.params.empolamento !== undefined) G.empolamento = G.params.empolamento;
+G.obra = montarObra(G);
+G.obra.nForro = G.obra.nForro || 0;
+var ctxEl = {};
+G.elementos.forEach(function (e) { ctxEl[e.id] = ctxElemento(e, G); });
+var porPapel = {}; G.elementos.forEach(function (e) { (porPapel[e.papel] = porPapel[e.papel] || []).push(e); });
+G.obra.Amol = G.elementos.reduce(function (s, e) { return s + (e.papel === "parede-alvenaria" ? (ctxEl[e.id].Af_mol || 0) : 0); }, 0);
+var grupos = {}, ordemGrupos = [], incluidos = [], presentes = {}, semMedida = {}, zerados = [], semCod = {}, pendIncl = {};
+function pegar(chave, r) { if (!grupos[chave]) { grupos[chave] = { chave: chave, regra: r, contrib: [], erros: [], ctx0: null }; ordemGrupos.push(chave); } return grupos[chave]; }
+function registrarIncluso(r, alvos, motivoExtra) { incluidos.push({ regra: r.id, tipo: motivoExtra ? "modelado" : "incluso", rotulo: r.rotulo || "", motivo: motivoExtra || r.motivo, comps: arr(r.comps), origem: r.origem || null, elementos: alvos.map(function (x) { return x.id; }), etapa: r.etapa }); presentes[r.id] = true; }
+I.regras.forEach(function (r) {
+var alvos, tipoAlvo;
+if (r.papeis) { alvos = []; r.papeis.forEach(function (pp) { arr(porPapel[pp]).forEach(function (e) { alvos.push(e); }); }); tipoAlvo = "elemento"; alvos.sort(function (a, b) { return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); }); }
+else if (r.escopo === "ambiente") { alvos = G.espacos.slice(); tipoAlvo = "ambiente"; }
+else { alvos = [{ id: "obra", nome: "a obra", classe: "obra" }]; tipoAlvo = "obra"; }
+var incTrig = [], modelados = {};
+alvos.forEach(function (t) {
+var ctx;
+if (tipoAlvo === "elemento") { ctx = {}; var b = ctxEl[t.id], k; for (k in b) ctx[k] = b[k]; for (k in G.obra) if (!tem(ctx, k)) ctx[k] = G.obra[k]; ctx.semCodConexao = semCod[t.id] ? 1 : 0; }
+else if (tipoAlvo === "ambiente") { ctx = ctxAmbiente(t, G); var k3; for (k3 in G.obra) if (!tem(ctx, k3)) ctx[k3] = G.obra[k3]; }
+else { ctx = {}; var k4; for (k4 in G.obra) ctx[k4] = G.obra[k4]; }
+arr(r.vars).forEach(function (v) { var tv = tentar(v[1], ctx); if (tv.ok) ctx[v[0]] = tv.valor; });
+var sp = arr(r.suprime), sup = null;
+for (var s = 0; s < sp.length; s++) { var ts = tentar(sp[s].quando, ctx); if (ts.ok && ts.valor) { sup = sp[s]; break; } }
+if (sup) { (modelados[sup.motivo] = modelados[sup.motivo] || []).push(t); return; }
+if (r.quando) {
+var tq = tentar(r.quando, ctx);
+if (!tq.ok) { if (r.tipo !== "incluso") { var sk = r.id + "|" + tq.erro; if (!semMedida[sk]) semMedida[sk] = { regra: r.id, erro: tq.erro, elementos: [] }; semMedida[sk].elementos.push(t.id); } return; }
+if (!tq.valor) return;
+}
+if (r.tipo === "incluso") { incTrig.push(t); return; }
+var suf = arr(r.agrupar).map(function (n) { return n + "=" + (ctx[n] === undefined ? "" : ctx[n]); }).join(",");
+var g = pegar(r.id + (suf ? "#" + suf : ""), r); g.ctx0 = g.ctx0 || ctx;
+var esc = escolherCodigo(r, ctx);
+if (r.id === "med.conexao" && !esc) semCod[t.id] = true;
+var q = null, err = "";
+if (r.qtd === null) err = r.formula;
+else { var tt = tentar(r.qtd, ctx); if (tt.ok) q = tt.valor; else err = tt.erro; }
+var nota = []; arr(r.notas).forEach(function (n) { var tn = tentar(n.quando, ctx); if (tn.ok && tn.valor && nota.indexOf(n.texto) < 0) nota.push(n.texto); });
+arr(ctx._notas).forEach(function (n2) { if (nota.indexOf(n2) < 0) nota.push(n2); });
+var sg = false; if (r.sugestaoSe) { var tg = tentar(r.sugestaoSe, ctx); sg = tg.ok && !!tg.valor; }
+var contr = { el: t, q: q, erro: err, fonte: tipoAlvo === "elemento" && r.qtd !== null ? fonteDe(r.qtd, t) : "", notas: nota, sugerido: sg, esc: esc };
+if (r.menos) contr.menosVar = null;
+g.contrib.push(contr);
+if (g.erros.length === 0 || true) { if (err) g.erros.push({ el: t, erro: err }); }
+if (!g.ctxCod) { g.ctxCod = ctx; g.esc = esc; }
+if (q !== null) g.ultimoQ = q;
+});
+if (r.tipo === "incluso" && incTrig.length) {
+if (arr(r.comps).length) pendIncl[r.id] = incTrig;
+else registrarIncluso(r, incTrig);
+}
+Object.keys(modelados).forEach(function (mot) { registrarIncluso(r, modelados[mot], mot); incluidos[incluidos.length - 1].tipo = "modelado"; });
+});
+var linhas = [], descartados = [];
+ordemGrupos.forEach(function (gk) {
+var g = grupos[gk], r = g.regra, ctx = g.ctxCod || g.ctx0 || {}, esc = g.esc || null;
+var tot = 0, nOk = 0, nErro = 0, fontes = {}, notas = [], sugerido = false, elementos = [];
+g.contrib.forEach(function (c) {
+elementos.push(c.el);
+if (c.q !== null && c.q !== undefined) { tot += Math.max(0, c.q); nOk++; if (c.fonte) fontes[c.fonte] = 1; } else nErro++;
+c.notas.forEach(function (n) { if (notas.indexOf(n) < 0) notas.push(n); });
+if (c.sugerido) sugerido = true;
+});
+var menosTxt = "";
+if (r.menos && nOk > 0) { var m = 0; arr(porPapel[r.menos.papel]).forEach(function (x) { m += (x.qto && x.qto.comprimento) || 0; }); if (!(m > 0) && arr(porPapel[r.menos.papel]).length) menosTxt = "há " + arr(porPapel[r.menos.papel]).length + " peça(s) modelada(s) (" + r.menos.papel + ") SEM comprimento no IFC: nada foi descontado — confira";
+if (m > 0) { tot = Math.max(0, tot - m); menosTxt = r.menos.motivo + " (−" + fmt(r2(m)) + ")"; incluidos.push({ regra: r.id, tipo: "modelado", rotulo: "verga", motivo: r.menos.motivo, comps: [], elementos: arr(porPapel[r.menos.papel]).map(function (x) { return x.id; }), etapa: r.etapa }); } }
+var q = r2(tot);
+var pendenteTotal = nOk === 0;
+if (!pendenteTotal && !(q > 0)) { zerados.push({ regra: r.id, motivo: "a quantidade calculada é zero" + (r.id === "fun.reaterro" ? " (a profundidade escavada não foi informada: a cava só tem o tamanho da peça)" : ""), elementos: elementos.length }); return; }
+var tabC = esc ? tab[esc.chave] : null;
+var dsc = tabC ? tabC[1] : interpolar(r.desc || r.intencao || r.id, ctx);
+var un = tabC ? tabC[2] : (r.un || "un");
+var estado = "ok", motivos = [];
+if (pendenteTotal) { estado = "pendente"; motivos.push(g.erros.length ? g.erros[0].erro : "falta a medida"); }
+else if (nErro > 0) { estado = "pendente"; motivos.push(nErro + " de " + (nOk + nErro) + " elemento(s) sem a medida necessária (" + g.erros[0].erro + "): a quantidade é PARCIAL"); }
+if (!tabC) { estado = "pendente"; motivos.push(esc ? "a chave «" + esc.chave + "» não existe nas tabelas de código" : "sem composição no catálogo para esta combinação (o código fica pendente)"); }
+if (opts.obter && tabC && !opts.obter(String(tabC[0]), "SINAPI")) { estado = "pendente"; motivos.push("o código " + tabC[0] + " não está na base instalada"); }
+var fonteQ = fontes.estimado ? (fontes.ifc ? "misto" : "estimado") : (fontes.ifc ? "ifc" : "");
+var origem;
+if (estado === "pendente") origem = "pendente";
+else if (r.tipo === "medido") origem = sugerido ? "sugerido" : (fonteQ === "estimado" || fonteQ === "misto" ? "estimado" : "medido");
+else if (r.tipo === "sugerido" || r.sug) origem = "sugerido";
+else origem = "implicito";
+if (r.tipo === "medido" && origem === "medido" && esc && esc.via === "padrao") origem = "sugerido";
+var numeros = {}; ident(r.qtd).concat(ident(r.quando)).forEach(function (n) { if (tem(ctx, n) && typeof ctx[n] === "number") numeros[n] = r2(ctx[n]); });
+var nomes = elementos.slice(0, 6).map(function (x) { return (x.nome || x.classe || String(x.id)); });
+var porqueTxt = r.porque ? interpolar(r.porque, ctx) : "";
+var prem = [];
+if (esc && esc.via === "padrao") prem.push("material pelo padrão do orçamento («" + G.padrao + "»): o IFC não diz o material");
+if (esc && esc.via === "ifc") prem.push("material do IFC («" + (ctx[r.matVar] || "") + "») vence o padrão");
+if (fonteQ === "estimado" || fonteQ === "misto") prem.push("quantidade ESTIMADA pela geometria do arquivo (o IFC não trouxe o Qto): conferir");
+notas.forEach(function (n) { prem.push(n); });
+if (menosTxt) prem.push(menosTxt);
+var et = C.etapa(r.etapa) || {}, linha = {
+id: gk, etapa: et.etapa || r.etapa, etapaId: r.etapa, ordemEtapa: et.ordem || 99,
+codigo: tabC ? String(tabC[0]) : "", fonte: tabC ? "SINAPI" : "", descricao: dsc, unidade: un,
+quantidade: pendenteTotal ? 0 : q, formula: r.formula, parametrico: true, estado: estado, erro: motivos.join(" · "),
+origem: origem, qtdFonte: fonteQ, ifc: true,
+elementos: elementos.map(function (x) { return { id: x.id, chave: x.chave || "", nome: x.nome || "", classe: x.classe || "" }; }),
+mor: {
+regra: gk, formula: r.qtd === null ? "" : r.qtd, premissas: prem, origem: "ifc", qtdOrigem: origem === "pendente" ? (r.tipo === "medido" ? "medido" : (r.tipo === "sugerido" || r.sug ? "sugerido" : "implicito")) : origem,
+porque: porqueTxt, confianca: estado === "ok" ? (origem === "medido" ? "alta" : "media") : "pendente", codigos: tabC ? [String(tabC[0])] : [], intencao: r.intencao || "",
+vars: numeros, elementoOrigem: elementos.length + " elemento(s): " + nomes.join("; ") + (elementos.length > 6 ? "…" : ""), conferido: false,
+ifc: { tipoRegra: r.tipo, origemRegra: r.origem || null, fonteQuantidade: fonteQ, via: esc ? esc.via : "", nElementos: elementos.length, motivo: motivos.join(" · ") }
+}
+};
+if (!tabC) { linha.mor.pendencia = { casador: "", sugestoes: [], compositor: "", faltou: motivos.slice() }; }
+linhas.push(linha); presentes[r.id] = true;
+});
+var codigosLancados = {}; linhas.forEach(function (l) { if (l.codigo) codigosLancados[l.codigo] = true; });
+I.regras.forEach(function (r) {
+if (!pendIncl[r.id]) return;
+var usadas = arr(r.comps).filter(function (c2) { return codigosLancados[c2.comp]; });
+if (usadas.length) { var rr = {}, k; for (k in r) rr[k] = r[k]; rr.comps = usadas; registrarIncluso(rr, pendIncl[r.id]); }
+});
+var idxGrupo = {}; ordemGrupos.forEach(function (gk, ix) { idxGrupo[gk] = ix; });
+linhas.sort(function (a, b) { return a.ordemEtapa !== b.ordemEtapa ? a.ordemEtapa - b.ordemEtapa : idxGrupo[a.id] - idxGrupo[b.id]; });
+var ctxPar = {}; for (kk in G.obra) ctxPar[kk] = G.obra[kk];
+var check = [];
+I.pares.forEach(function (p) {
+var tq = tentar(p.quando, ctxPar);
+if (!tq.ok) { tq = { ok: true, valor: false }; }
+if (!tq.valor) return;
+var ok = arr(p.exige).some(function (id) { return presentes[id]; });
+check.push({ id: p.id, disciplina: p.disciplina, ok: ok, aviso: ok ? "" : p.aviso, exige: p.exige.slice() });
+});
+var prem = ["Padrão do orçamento: «" + G.padrao + "» (baixo = popular, médio = normal, alto = alto do catálogo). Só preenche o que o IFC não diz; material informado no IFC vence."];
+var semAmb = G.elementos.filter(function (e) { return e.papel === "parede-alvenaria" && !arr(e.ambientes).length && e.externo === null; }).length;
+if (semAmb) prem.push(semAmb + " parede(s) sem ambiente (IfcSpace) e sem Pset IsExternal: as duas faces foram tratadas como INTERNAS SECAS (revestimento e pintura saem como sugestão — confira fachada e áreas molhadas).");
+if (!G.espacos.length) prem.push("O IFC não tem ambientes (IfcSpace): piso, rodapé, contrapiso e teto não têm perímetro/área por ambiente — saem pendentes ou não saem; informe os ambientes no modelo.");
+var nEst = G.elementos.filter(function (e) { return Object.keys(e.qtoFonte || {}).some(function (k) { return e.qtoFonte[k] === "estimado"; }); }).length;
+if (nEst) prem.push(nEst + " elemento(s) sem Qto no IFC tiveram a quantidade ESTIMADA pela geometria simples do arquivo (extrusão): aparecem como «estimado», nunca como medido.");
+if (G.elementos.some(function (e) { return e.papel === "viga-concreto"; })) prem.push("Viga: largura = menor lado e altura = maior lado da seção (o IFC não diz a orientação).");
+prem.push("Desconto de vãos: só vãos maiores que 2 m² são descontados da alvenaria e do revestimento (critério SINAPI da especificação); conferir com o critério de medição do contrato.");
+prem.push("Rasgo/chumbamento: supõe todo eletroduto e todo tubo de água ≤ DN 40 embutidos em alvenaria (reduza o que vai em laje, piso ou forro).");
+prem.push("Escavação: sem a cota do terreno no IFC, a profundidade = altura da peça + 5 cm de lastro; informe «profEsc» (m) para reaterro e bota-fora reais. Sobrescavação, distância de bota-fora (dmt) e espaçamento de suportes não têm padrão: ficam pendentes até a pessoa informar.");
+var contagem = { medido: 0, estimado: 0, implicito: 0, sugerido: 0, pendente: 0 };
+linhas.forEach(function (l) { contagem[l.origem] = (contagem[l.origem] || 0) + 1; });
+var etapas = [], idxE = {};
+linhas.forEach(function (l) { if (!(l.etapaId in idxE)) { idxE[l.etapaId] = etapas.length; etapas.push({ id: l.etapaId, nome: l.etapa, ordem: l.ordemEtapa, linhas: [] }); } etapas[idxE[l.etapaId]].linhas.push(l); });
+return {
+ok: true, erro: "", padrao: G.padrao, linhas: linhas, etapas: etapas, incluidos: incluidos, zerados: zerados, semMedida: Object.keys(semMedida).map(function (k) { return semMedida[k]; }), checklist: check,
+faltas: check.filter(function (c3) { return !c3.ok; }), premissas: prem, params: G.params, contagem: contagem,
+cobertura: modelo.cobertura, avisos: arr(modelo.avisos).slice()
+};
+}
+function duplaContagem(linhas, analitico) {
+var out = [], porCod = {};
+arr(linhas).forEach(function (l) { if (l.codigo) (porCod[l.codigo] = porCod[l.codigo] || []).push(l); });
+arr(linhas).forEach(function (a) {
+if (!a.codigo) return;
+var comp = analitico && analitico[a.codigo]; if (!comp) return;
+arr(comp.insumos).forEach(function (ins) {
+var cod = String(ins.codigo);
+if (cod === a.codigo) return;
+arr(porCod[cod]).forEach(function (b) {
+if (b === a) return;
+var ea = arr(a.elementos).map(function (x) { return x.id; }), eb = arr(b.elementos).map(function (x) { return x.id; });
+if (ea.length && eb.length && !ea.some(function (x) { return eb.indexOf(x) >= 0; })) return;
+out.push({ linha: b.id, codigo: cod, incluidaEm: a.id, composicao: a.codigo });
+});
+});
+});
+return out;
+}
+function resumoEtapa(et) {
+var c = { medido: 0, estimado: 0, implicito: 0, sugerido: 0, pendente: 0 };
+arr(et.linhas).forEach(function (l) { c[l.origem] = (c[l.origem] || 0) + 1; });
+return c;
+}
+var MorIfcOrc = { orcar: orcar, duplaContagem: duplaContagem, resumoEtapa: resumoEtapa, PADRAO: PADRAO, _tabelaCodigos: tabelaCodigos, _ctxElemento: ctxElemento };
+if (typeof module !== "undefined" && module.exports) module.exports = MorIfcOrc;
+global.MorIfcOrc = MorIfcOrc;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/ifcui.js ==== */
+try {
+(function (global) {
+"use strict";
+function mod(g, caminho) { if (global[g]) return global[g]; if (typeof require === "function") { try { return require(caminho); } catch (e) { return null; } } return null; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function f2(x) { return String(Math.round((Number(x) || 0) * 100) / 100).replace(".", ","); }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+var COR = { medido: "#2e7d32", estimado: "#b26a00", implicito: "#b26a00", sugerido: "#b26a00", pendente: "#c62828" };
+var ROTULO = { medido: "medido", estimado: "estimado", implicito: "implícito", sugerido: "sugerido", pendente: "pendente" };
+var DICA = {
+medido: "Verde: a quantidade está no IFC (Qto do arquivo).",
+estimado: "Amarelo: o IFC não trouxe o Qto — estimado pela geometria simples do arquivo. Estimado não vale como medido: confira.",
+implicito: "Amarelo: o modelo não desenha, mas a obra consome — só entra com o seu OK.",
+sugerido: "Amarelo: padrão do orçamento ou taxa do catálogo — só entra com o seu OK.",
+pendente: "Vermelho: falta medida, composição ou parâmetro — o motivo está na linha."
+};
+function pilula(origem) { return '<span title="' + esc(DICA[origem] || "") + '" style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:11.5px;font-weight:600;color:#fff;background:' + (COR[origem] || "#666") + '">' + esc(ROTULO[origem] || origem) + "</span>"; }
+function marcadaDeSaida(l) { return l.origem === "medido" && l.estado === "ok" && l.codigo && l.quantidade > 0; }
+function podeMarcar(l) { return l.estado === "ok" && !!l.codigo && l.quantidade > 0; }
+var MorIfcUI = {
+_st: null,
+COR: COR,
+ativo: function () { var U = mod("MorUI", "./ui.js"); return !!(U && U.ativo && U.ativo()); },
+botaoHtml: function () {
+if (!MorIfcUI.ativo()) return "";
+return '<button class="btn sm" id="mor-ifc-orcar" title="Lê o modelo inteiro (todas as disciplinas) e monta o orçamento completo: medido, implícito, sugerido e pendente — você confere e dá OK antes de entrar (prévia)">' + (typeof Icones !== "undefined" ? Icones.get("calc", 15) : "") + " Orçar pelo modelo</button>";
+},
+htmlConfiguracao: function (temViewer) {
+return '<div id="mor-ifc-cfg">' +
+'<p class="muted" style="margin:0 0 8px;font-size:12.5px">Lê o IFC inteiro e orça o que o modelo mostra <b>e o que a obra consome sem estar desenhado</b> (chapisco, fôrma, impermeabilização…). Cada linha diz de onde veio; <b>nada implícito entra sem o seu OK</b>.</p>' +
+'<div class="field"><label for="mor-ifc-padrao">Padrão do orçamento</label><select id="mor-ifc-padrao"><option value="baixo">Baixo (popular)</option><option value="medio" selected>Médio (normal)</option><option value="alto">Alto</option></select>' +
+'<span class="muted" style="font-size:12px">O padrão só escolhe o material onde o IFC não diz; o material informado no IFC vence.</span></div>' +
+'<div class="field"><label for="mor-ifc-arq">Arquivo IFC</label><input type="file" id="mor-ifc-arq" accept=".ifc" aria-label="Arquivo IFC">' +
+(temViewer ? ' <span class="muted" style="font-size:12px">ou deixe em branco para usar as peças já abertas no BIM (leitura parcial: sem Psets, camadas nem ambientes).</span>' : "") + "</div>" +
+'<details><summary><b>Parâmetros que o IFC não traz</b> <span class="muted" style="font-weight:400">(em branco = o item fica pendente)</span></summary>' +
+'<div class="row" style="gap:8px;flex-wrap:wrap">' +
+MorIfcUI._campo("mor-ifc-p-profEsc", "Profundidade escavada das fundações (m)") + MorIfcUI._campo("mor-ifc-p-folga", "Folga de trabalho da cava (m)") + MorIfcUI._campo("mor-ifc-p-dmt", "Distância ao bota-fora (km)") +
+MorIfcUI._campo("mor-ifc-p-espSuporte", "Espaçamento entre suportes de tubo (m)") + MorIfcUI._campo("mor-ifc-p-empolamento", "Empolamento do solo (0,25 = 25 %; padrão 0,25)") + "</div></details>" +
+'<div id="mor-ifc-res" aria-live="polite" style="margin-top:10px"></div></div>';
+},
+_campo: function (id, rot) { return '<div class="field" style="min-width:210px"><label for="' + id + '">' + esc(rot) + '</label><input type="text" inputmode="decimal" id="' + id + '" style="width:100%"></div>'; },
+htmlCobertura: function (res) {
+var c = res.cobertura; if (!c) return "";
+var h = '<div class="muted" style="font-size:12.5px;margin-bottom:6px"><b>Leitura do modelo:</b> ' + c.lidos + " elemento(s) lido(s) → <b>" + c.classificados + "</b> classificado(s), <b>" + c.semRegra.length + "</b> sem regra" +
+(c.completa ? " <span style=\"color:#2e7d32\">(nada foi descartado em silêncio)</span>" : ' <span style="color:#c62828">(a contagem não fecha — avise o suporte)</span>') + ". Ambientes (IfcSpace): " + c.ambientes + ".</div>";
+if (c.semRegra.length) h += '<details style="margin-bottom:6px"><summary style="font-size:12.5px"><b>' + c.semRegra.length + ' elemento(s) sem regra</b> (não entram no orçamento; decida caso a caso)</summary><ul style="margin:4px 0 0 18px;font-size:12px">' +
+c.semRegra.slice(0, 80).map(function (s) { return "<li>" + esc(s.classe) + (s.predef ? " " + esc(s.predef) : "") + " «" + esc(s.nome) + "»" + (s.material ? " [" + esc(s.material) + "]" : "") + " — " + esc(s.motivo) + "</li>"; }).join("") + (c.semRegra.length > 80 ? "<li>… e mais " + (c.semRegra.length - 80) + "</li>" : "") + "</ul></details>";
+return h;
+},
+htmlConferencia: function (st) {
+var res = st.res, h = MorIfcUI.htmlCobertura(res);
+var ct = res.contagem || {};
+h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0">' + ["medido", "estimado", "implicito", "sugerido", "pendente"].map(function (o) { return pilula(o) + " <b>" + (ct[o] || 0) + "</b>"; }).join(" &nbsp; ") + "</div>";
+arr(res.premissas).length && (h += '<details style="margin-bottom:6px"><summary style="font-size:12.5px"><b>Premissas</b> (' + res.premissas.length + ')</summary><ul style="margin:4px 0 0 18px;font-size:12px">' + res.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul></details>");
+res.etapas.forEach(function (et) {
+var rs = global.MorIfcOrc ? global.MorIfcOrc.resumoEtapa(et) : {};
+h += '<div class="card" style="margin:8px 0;padding:8px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="flex:1">' + esc(et.nome) + '</b>' +
+["medido", "estimado", "implicito", "sugerido", "pendente"].filter(function (o) { return rs[o]; }).map(function (o) { return pilula(o) + " " + rs[o]; }).join(" ") +
+' <button type="button" class="btn sm" data-mor-ifc-okEtapa="' + esc(et.id) + '" title="Dá OK em todas as linhas desta etapa que têm código e quantidade">OK todos da etapa</button></div>' +
+'<div style="overflow:auto"><table class="tbl" style="width:100%"><thead><tr><th style="width:28px"></th><th>Origem</th><th>Serviço</th><th>Un</th><th class="num">Qtd</th><th></th></tr></thead><tbody>' +
+et.linhas.map(function (l) {
+var marc = !!st.marcadas[l.id], pode = podeMarcar(l), aceito = !!st.aceitos[l.id];
+var fonte = l.qtdFonte ? ' <span class="muted" style="font-size:11px" title="Fonte da quantidade: ifc = Qto do arquivo; estimado = geometria simples; misto = os dois">(' + esc(l.qtdFonte) + ")</span>" : "";
+return '<tr data-mor-ifc-linha="' + esc(l.id) + '"' + (l.estado === "pendente" ? ' style="background:rgba(198,40,40,.06)"' : "") + '><td><input type="checkbox" data-mor-ifc-marca="' + esc(l.id) + '"' + (marc ? " checked" : "") + (pode ? "" : " disabled") + ' aria-label="Lançar esta linha"></td>' +
+"<td>" + pilula(l.origem) + (aceito ? ' <span title="OK dado" style="color:#2e7d32">✓</span>' : "") + "</td>" +
+"<td>" + esc(l.descricao) + (l.codigo ? ' <span class="muted" style="font-size:11px">' + esc(l.codigo) + "</span>" : "") + (l.erro ? '<br><span style="font-size:11.5px;color:#c62828">' + esc(l.erro) + "</span>" : "") + "</td>" +
+"<td>" + esc(l.unidade) + '</td><td class="num">' + f2(l.quantidade) + fonte + '</td><td style="white-space:nowrap"><button type="button" class="btn sm" data-mor-ifc-porque="' + esc(l.id) + '">Por quê?</button>' +
+(pode && !aceito && l.origem !== "medido" ? ' <button type="button" class="btn sm" data-mor-ifc-ok="' + esc(l.id) + '">OK</button>' : "") + "</td></tr>";
+}).join("") + "</tbody></table></div></div>";
+});
+var inc = arr(res.incluidos);
+if (inc.length) h += '<details style="margin:8px 0"><summary style="font-size:12.5px"><b>Já incluso na composição — NÃO lançado (' + inc.length + ")</b> (evita dupla contagem)</summary><ul style=\"margin:4px 0 0 18px;font-size:12px\">" +
+inc.map(function (i) { return "<li><b>" + esc(i.rotulo || i.regra) + "</b>" + (i.tipo === "modelado" ? " (já modelado no IFC)" : "") + " — " + esc(i.motivo) + "</li>"; }).join("") + "</ul></details>";
+var faltas = arr(res.faltas);
+h += '<div class="card" style="margin:8px 0;padding:8px"><b>Checklist de completude por disciplina</b> <span class="muted" style="font-size:12px">(par obrigatório: o que costuma faltar)</span>' +
+(faltas.length ? '<ul style="margin:4px 0 0 18px;font-size:12.5px">' + faltas.map(function (f) { return '<li style="color:#c62828"><b>' + esc(f.disciplina) + ":</b> " + esc(f.aviso) + "</li>"; }).join("") + "</ul>" : '<p style="margin:4px 0 0;color:#2e7d32;font-size:12.5px">Todos os pares obrigatórios fecham.</p>') + "</div>";
+var sm = arr(res.semMedida);
+if (sm.length) h += '<details style="margin:8px 0"><summary style="font-size:12.5px"><b>Regras que não puderam ser avaliadas por falta de medida no IFC (' + sm.length + ")</b></summary><ul style=\"margin:4px 0 0 18px;font-size:12px\">" + sm.map(function (s) { return "<li>" + esc(s.regra) + " — " + esc(s.erro) + " (" + s.elementos.length + " elemento(s))</li>"; }).join("") + "</ul></details>";
+return h;
+},
+htmlPorque: function (l) {
+var P = global.MorPorque || mod("MorPorque", "./porque.js"), x = P ? P.explicar(l) : { tem: false };
+var h = '<div style="font-size:13px">' + pilula(l.origem) + ' <b>' + esc(l.descricao) + "</b>" + (l.codigo ? ' <span class="muted">(' + esc(l.codigo) + ")</span>" : "") + "<br>";
+if (l.mor && l.mor.porque) h += '<p style="margin:8px 0 4px"><b>Por quê:</b> ' + esc(l.mor.porque) + "</p>";
+h += "<p style=\"margin:4px 0\"><b>Conta:</b> " + esc((x && x.formulaNumeros) || l.formula || "") + (l.quantidade ? " → <b>" + f2(l.quantidade) + " " + esc(l.unidade) + "</b>" : "") + "</p>";
+h += '<p style="margin:4px 0"><b>Regra:</b> ' + esc((l.mor && l.mor.regra) || "") + (l.mor && l.mor.ifc && l.mor.ifc.origemRegra ? " — origem: " + esc(l.mor.ifc.origemRegra.tipo) + " (" + esc(l.mor.ifc.origemRegra.ref) + ")" : "") + "</p>";
+if (l.formula) h += '<p style="margin:4px 0" class="muted">' + esc(l.formula) + "</p>";
+if (l.qtdFonte) h += '<p style="margin:4px 0"><b>Fonte da quantidade:</b> ' + esc(l.qtdFonte) + (l.qtdFonte === "estimado" || l.qtdFonte === "misto" ? " — estimado pela geometria simples do arquivo; <b>não é medida do modelo</b>" : " — Qto do arquivo IFC") + "</p>";
+if (l.mor && arr(l.mor.premissas).length) h += '<p style="margin:4px 0"><b>Premissas:</b></p><ul style="margin:0 0 0 18px">' + l.mor.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul>";
+if (l.erro) h += '<p style="margin:4px 0;color:#c62828"><b>Pendência:</b> ' + esc(l.erro) + "</p>";
+h += '<p style="margin:8px 0 2px"><b>Elemento(s) de origem</b> (' + arr(l.elementos).length + "):</p><ul style=\"margin:0 0 0 18px;max-height:180px;overflow:auto\">" +
+arr(l.elementos).slice(0, 40).map(function (e) { return "<li>" + esc(e.classe) + " «" + esc(e.nome) + "»</li>"; }).join("") + (arr(l.elementos).length > 40 ? "<li>…</li>" : "") + "</ul>";
+return h + "</div>";
+},
+_num: function (id) {
+var el = typeof document !== "undefined" ? document.getElementById(id) : null; if (!el) return undefined;
+var v = String(el.value || "").trim().replace(",", "."); if (!v) return undefined;
+var n = Number(v); return isFinite(n) && n >= 0 ? n : undefined;
+},
+_params: function () {
+var p = {}, k, ids = { profEsc: "mor-ifc-p-profEsc", folga: "mor-ifc-p-folga", dmt: "mor-ifc-p-dmt", espSuporte: "mor-ifc-p-espSuporte", empolamento: "mor-ifc-p-empolamento" };
+for (k in ids) { var v = MorIfcUI._num(ids[k]); if (v !== undefined && (k !== "espSuporte" || v > 0)) p[k] = v; }
+return p;
+},
+_obterBase: function (cod, fonte) { var U = global.MorUI; return U && U._obterBase ? U._obterBase(cod, fonte) : null; },
+_rodar: function (st, cb) {
+var Ler = global.MorIfcLer, Orc = global.MorIfcOrc, padrao = (document.getElementById("mor-ifc-padrao") || {}).value || "medio", params = MorIfcUI._params();
+var fim = function (modelo) {
+try {
+var res = Orc.orcar(modelo, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } });
+if (!res.ok) { cb(null, res.erro); return; }
+cb(res, null);
+} catch (e) { cb(null, "Falha ao orçar: " + e.message); }
+};
+var inp = document.getElementById("mor-ifc-arq"), file = inp && inp.files && inp.files[0];
+if (file) {
+if (file.size > 150 * 1024 * 1024) { cb(null, "Arquivo com mais de 150 MB: a leitura completa trava a aba. Abra o modelo no BIM e use «as peças já abertas» (leitura parcial)."); return; }
+var rd = function (txt) { try { var m = Ler.ler(txt); if (!m.ok) { cb(null, m.erro); return; } st.arquivo = file.name; fim(m); } catch (e) { cb(null, "Não consegui ler o IFC: " + e.message); } };
+if (file.text) file.text().then(rd, function () { cb(null, "Falha ao ler o arquivo."); });
+else { var fr = new FileReader(); fr.onload = function () { rd(String(fr.result)); }; fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); }; fr.readAsText(file); }
+return;
+}
+if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; fim(Ler.deElementosViewer(st.elementosViewer)); return; }
+cb(null, "Escolha o arquivo .ifc (ou abra um modelo no BIM).");
+},
+_repintar: function () {
+var st = MorIfcUI._st, box = document.getElementById("mor-ifc-res"); if (!st || !box || !st.res) return;
+box.innerHTML = MorIfcUI.htmlConferencia(st);
+MorIfcUI._ligar(box);
+},
+_achar: function (id) { var st = MorIfcUI._st, l = null; if (st && st.res) st.res.linhas.forEach(function (x) { if (x.id === id) l = x; }); return l; },
+_ok: function (id) { var st = MorIfcUI._st, l = MorIfcUI._achar(id); if (!st || !l || !podeMarcar(l)) return; st.aceitos[id] = true; st.marcadas[id] = true; },
+_okEtapa: function (etapaId) { var st = MorIfcUI._st; if (!st) return; st.res.linhas.forEach(function (l) { if (l.etapaId === etapaId && podeMarcar(l)) { st.aceitos[l.id] = true; st.marcadas[l.id] = true; } }); },
+_destacar: function (l) {
+var st = MorIfcUI._st; if (!global.BIM || !global.BIM.pintarChaves) { UI.toast("O visualizador 3D não está aberto.", "info"); return; }
+var porGid = {}; arr(st.elementosViewer).forEach(function (e) { if (e.globalId && e.chave) porGid[e.globalId] = e.chave; });
+var mapa = {}, n = 0;
+arr(l.elementos).forEach(function (e) { var gidE = String(e.chave || "").replace(/^ifc::/, ""), ch = porGid[gidE] || (st.chavesDireto ? e.chave : ""); if (ch) { mapa[ch] = "#ffd400"; n++; } });
+if (!n) { UI.toast("Não achei estas peças no modelo aberto no BIM (abra o mesmo arquivo no visualizador).", "info"); return; }
+global.BIM.pintarChaves(mapa, "mor-orc"); UI.toast(n + " peça(s) destacada(s) no 3D.", "ok");
+},
+_ligar: function (box) {
+Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-marca]"), function (el) { el.addEventListener("change", function () { var id = el.getAttribute("data-mor-ifc-marca"), l = MorIfcUI._achar(id); if (!l) return; if (el.checked && l.origem !== "medido" && !MorIfcUI._st.aceitos[id]) { MorIfcUI._ok(id); } else if (el.checked) MorIfcUI._st.marcadas[id] = true; else { delete MorIfcUI._st.marcadas[id]; delete MorIfcUI._st.aceitos[id]; } MorIfcUI._repintar(); }); });
+Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-ok]"), function (el) { el.addEventListener("click", function () { MorIfcUI._ok(el.getAttribute("data-mor-ifc-ok")); MorIfcUI._repintar(); }); });
+Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-okEtapa]"), function (el) { el.addEventListener("click", function () { MorIfcUI._okEtapa(el.getAttribute("data-mor-ifc-okEtapa")); MorIfcUI._repintar(); }); });
+Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-porque]"), function (el) {
+el.addEventListener("click", function () {
+var l = MorIfcUI._achar(el.getAttribute("data-mor-ifc-porque")); if (!l) return;
+UI.modal("Por quê? — " + String(l.descricao).slice(0, 70), MorIfcUI.htmlPorque(l), [
+{ texto: "Ver no 3D", classe: "", onClick: function () { MorIfcUI._destacar(l); } },
+{ texto: "Fechar", classe: "primary", onClick: function () { MorIfcUI.abrirConferenciaDe(MorIfcUI._st); } }
+]);
+});
+});
+},
+abrirConferenciaDe: function (st) {
+MorIfcUI._st = st;
+UI.modal("Orçar pelo modelo — conferência", '<div id="mor-ifc-res">' + MorIfcUI.htmlConferencia(st) + "</div>", [
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Lançar os marcados", classe: "primary", onClick: function () { MorIfcUI.lancar(); } }
+]);
+var box = document.getElementById("mor-ifc-res"); if (box) MorIfcUI._ligar(box);
+},
+abrir: function (app, opts) {
+opts = opts || {};
+if (!MorIfcUI.ativo()) { UI.toast("«Orçar pelo modelo» é uma prévia: abra o app com ?previa=motor.", "info"); return; }
+var st = { app: app, res: null, marcadas: {}, aceitos: {}, elementosViewer: arr(opts.elementos), obraNome: opts.obraNome || "", arquivo: "" };
+MorIfcUI._st = st;
+UI.modal("Orçar pelo modelo (prévia)", MorIfcUI.htmlConfiguracao(st.elementosViewer.length > 0), [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { MorIfcUI._st = null; UI.fecharModal(); } },
+{ texto: "Ler o modelo e orçar", classe: "primary", onClick: function () {
+var box = document.getElementById("mor-ifc-res"); if (box) box.innerHTML = '<p class="muted">Lendo o modelo…</p>';
+MorIfcUI._rodar(st, function (res, erro) {
+if (!res) { if (box) box.innerHTML = '<p style="color:#c62828">' + esc(erro) + "</p>"; return; }
+st.res = res; st.marcadas = {}; st.aceitos = {};
+res.linhas.forEach(function (l) { if (marcadaDeSaida(l)) st.marcadas[l.id] = true; });
+MorIfcUI.abrirConferenciaDe(st);
+});
+} }
+]);
+},
+lancar: function () {
+var st = MorIfcUI._st; if (!st || !st.res) return;
+var app = st.app, MM = global.MorManual, C = global.MorCatalogo, PQ = global.MorPorque;
+var chaves = Object.keys(st.marcadas).filter(function (k) { return st.marcadas[k]; });
+if (!chaves.length) { UI.toast("Marque ao menos uma linha (ou dê OK nas amarelas).", "info"); return; }
+var orc = app && app.orcAtual, novo = false;
+if (!orc) {
+if (app && app._orcNovoRecusado && app._orcNovoRecusado()) return;
+orc = Orcamento.novo({ nome: "Orçamento pelo modelo IFC" + (st.obraNome ? " — " + st.obraNome : "") }); novo = true;
+}
+if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) { UI.toast("Este orçamento está aprovado — crie uma revisão para acrescentar itens.", "erro"); return; }
+var cfg = Orcamento.garantirConfig(orc), tot = { inseridos: 0, ja: 0, semPreco: [], pendentes: 0 }, quem = "";
+try { quem = (typeof Auth !== "undefined" && Auth.usuario && (Auth.usuario() || {}).nome) || ""; } catch (e0) { }
+st.res.etapas.forEach(function (et) {
+var marc = et.linhas.filter(function (l) { return st.marcadas[l.id]; }).map(function (l) { return l.id; }); if (!marc.length) return;
+var existe = null; (orc.etapas || []).forEach(function (e) { if (C.semAcento(e.nome) === C.semAcento(et.nome)) existe = e; });
+if (!existe) { Orcamento.addEtapa(orc, et.nome); existe = orc.etapas[orc.etapas.length - 1]; }
+var r = MM.inserir(orc, existe.id, { itens: et.linhas }, marc, { Orcamento: Orcamento, permitirZerado: !!cfg.permitirZerado, obter: function (c, f) { return MorIfcUI._obterBase(c, f); }, totalItens: Orcamento.totais(orc).qtdItens, limiteItens: Auth.limite("limiteItensPorOrcamento") });
+tot.inseridos += r.inseridos; tot.ja += r.jaExistiam; tot.pendentes += r.pendentes; r.semPreco.forEach(function (d) { tot.semPreco.push(d); });
+(existe.itens || []).forEach(function (it) { if (it.mor && st.aceitos[it.mor.regra] && PQ && PQ.precisaConferir(it)) { it.mor.conferido = true; it.mor.conferidoEm = new Date().toISOString(); it.mor.conferidoPor = quem; } });
+});
+orc.mor = orc.mor || { v: 1, tipologia: "", params: {}, respostas: {} };
+orc.mor.ifc = { v: 1, arquivo: st.arquivo, padrao: st.res.padrao, params: st.res.params, lidos: st.res.cobertura && st.res.cobertura.lidos, classificados: st.res.cobertura && st.res.cobertura.classificados, semRegra: st.res.cobertura && st.res.cobertura.semRegra.length, geradoEm: new Date().toISOString() };
+if (novo) { try { Store.salvarOrcamento(Auth.empresaId(), orc); } catch (e1) { UI.toast("Não consegui salvar o orçamento novo.", "erro"); return; } app.orcAtual = orc; app.tela = "editor"; app.aba = "planilha"; }
+var g = app.persistir ? app.persistir() : null; UI.fecharModal(); if (app.render) app.render(); MorIfcUI._st = null;
+if (g && app._gravou && !app._gravou(g)) return;
+var msg = tot.inseridos + " linha(s) lançada(s)";
+if (tot.ja) msg += "; " + tot.ja + " já estava(m) na etapa";
+if (tot.semPreco.length) msg += ". " + tot.semPreco.length + " ficou(aram) de fora por falta de preço na base (libere «Permitir insumos com preço zerado» ou resolva no Orçamentista)";
+UI.toast(msg + ".", tot.semPreco.length ? "info" : "ok", tot.semPreco.length ? 9000 : 4000);
+}
+};
+MorIfcUI._interno = { marcadaDeSaida: marcadaDeSaida, podeMarcar: podeMarcar, pilula: pilula };
+if (typeof module !== "undefined" && module.exports) module.exports = MorIfcUI;
+global.MorIfcUI = MorIfcUI;
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/analitico.js ==== */
@@ -84416,3210 +92170,5 @@ fechar: fecharTour
 global.Tour = Tour;
 if (typeof module !== "undefined" && module.exports) module.exports = Tour;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/apresentacao.js ==== */
-try {
-(function (global) {
-"use strict";
-var MAX_LINHAS = 14;
-var MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
-"julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-function num(v) {
-if (typeof v === "number") return isFinite(v) ? v : 0;
-if (v == null) return 0;
-var s = String(v).trim();
-if (!s) return 0;
-s = s.replace(/[^0-9.,\-]/g, "");
-if (!s) return 0;
-var temV = s.indexOf(",") > -1, temP = s.indexOf(".") > -1;
-if (temV && temP) {
-if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
-else s = s.replace(/,/g, "");
-} else if (temV) {
-s = (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
-} else if (temP && (s.match(/\./g) || []).length > 1) {
-if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
-else { var iP = s.lastIndexOf("."); s = s.slice(0, iP).replace(/\./g, "") + "." + s.slice(iP + 1); }
-} else if (temP && /^-?\d{1,3}(\.\d{3})+$/.test(s) && !/^-?0\./.test(s)) {
-s = s.replace(/\./g, "");
-}
-var n = parseFloat(s);
-return isFinite(n) ? n : 0;
-}
-function esc(s) {
-return String(s == null ? "" : s)
-.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function fmtBR(n, casas) {
-casas = (casas == null) ? 2 : casas;
-n = num(n);
-var neg = n < 0 ? "-" : "";
-var s = Math.abs(n).toFixed(casas);
-var partes = s.split(".");
-var inteiro = partes[0], dec = partes.length > 1 ? partes[1] : "";
-var out = "";
-while (inteiro.length > 3) { out = "." + inteiro.slice(-3) + out; inteiro = inteiro.slice(0, -3); }
-return neg + inteiro + out + (dec ? "," + dec : "");
-}
-function fmtMoeda(n) { return "R$ " + fmtBR(n, 2); }
-function r2(n) { return Math.round(num(n) * 100) / 100; }
-function aplicarBdi(custo, pct) { return num(custo) * (1 + num(pct) / 100); }
-function dataExtenso(d) {
-d = d || new Date();
-return d.getDate() + " de " + MESES[d.getMonth()] + " de " + d.getFullYear();
-}
-function nomeDe(v) {
-if (v == null) return "";
-if (typeof v === "object") return String(v.nome || "");
-return String(v);
-}
-function valorComercial(c, chaves) {
-if (!c || typeof c !== "object") return "";
-for (var i = 0; i < chaves.length; i++) {
-var v = c[chaves[i]];
-if (v != null && String(v).trim() !== "") return String(v);
-}
-return "";
-}
-var Apresentacao = {
-slides: function (orc, empresa, basesTxt, dados) {
-orc = orc || {};
-empresa = empresa || {};
-var pct = num(orc.bdi && orc.bdi.percentual);
-var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
-var linhas = [], custoTotal = 0, precoTotal = 0, valorBdi = 0;
-if (dados && dados.etapas) {
-for (var di = 0; di < dados.etapas.length; di++) {
-var de = dados.etapas[di] || {};
-linhas.push({ codigo: de.codigo, nome: de.nome, custo: num(de.custoDireto), preco: num(de.precoVenda), opcional: !!de.opcional });
-}
-custoTotal = num(dados.custoDireto);
-precoTotal = num(dados.precoVenda);
-valorBdi = num(dados.bdiValor);
-if (dados.pct != null) pct = num(dados.pct);
-} else {
-etapas.forEach(function (e) {
-if (!e) return;
-var c = 0;
-(Array.isArray(e.itens) ? e.itens : []).forEach(function (it) {
-if (it) c += num(it.quantidade) * num(it.custoUnitario);
-});
-linhas.push({ codigo: e.codigo, nome: e.nome, custo: c, preco: aplicarBdi(c, pct), opcional: !!e.opcional });
-custoTotal += c;
-});
-precoTotal = aplicarBdi(custoTotal, pct);
-valorBdi = precoTotal - custoTotal;
-}
-var temOpc = false, custoOpcL = 0, precoOpcL = 0, precoAdic = 0;
-for (var li = 0; li < linhas.length; li++) {
-if (linhas[li].opcional) { temOpc = true; custoOpcL += linhas[li].custo; precoOpcL += linhas[li].preco; }
-}
-if (temOpc) {
-var custoOpc, precoObr;
-if (dados && dados.precoObrigatorio != null) {
-precoObr = num(dados.precoObrigatorio);
-precoAdic = num(dados.precoOpcional);
-custoOpc = dados.custoOpcional != null ? num(dados.custoOpcional) : custoOpcL;
-} else {
-precoAdic = precoOpcL;
-precoObr = precoTotal - precoOpcL;
-custoOpc = custoOpcL;
-}
-custoTotal = r2(custoTotal - custoOpc);
-precoTotal = r2(precoObr);
-valorBdi = r2(precoTotal - custoTotal);
-}
-var linhasObr = temOpc ? linhas.filter(function (l) { return !l.opcional; }) : linhas;
-var linhasOpc = temOpc ? linhas.filter(function (l) { return l.opcional; }) : [];
-var out = [];
-var cliente = nomeDe(orc.cliente), obra = nomeDe(orc.obra);
-var htmlCapa = '<div class="ap-capa">' +
-(empresa.logoHTML ? '<div class="ap-logo">' + empresa.logoHTML + "</div>" : "") +
-(empresa.nome ? '<div class="ap-emp">' + esc(empresa.nome) + "</div>" : "") +
-'<h1 class="ap-titulo">' + esc(orc.nome || "Orçamento de Obra") + "</h1>" +
-((cliente || obra)
-? '<div class="ap-sub">' + esc(cliente) + (cliente && obra ? " · " : "") + esc(obra) + "</div>"
-: "") +
-'<div class="ap-meta">' + (orc.numero ? "Proposta " + esc(orc.numero) + " · " : "") +
-dataExtenso() + "</div>" +
-"</div>";
-out.push({ id: "capa", titulo: "Capa", html: htmlCapa });
-var htmlNums = '<h2 class="ap-h2">Investimento</h2>' +
-'<div class="ap-nums">' +
-'<div class="ap-num"><div class="ap-num-rotulo">Custo direto</div>' +
-'<div class="ap-num-valor">' + fmtMoeda(custoTotal) + "</div></div>" +
-'<div class="ap-num"><div class="ap-num-rotulo">BDI ' + fmtBR(pct, 2) + "%</div>" +
-'<div class="ap-num-valor">' + fmtMoeda(valorBdi) + "</div></div>" +
-'<div class="ap-num ap-venda"><div class="ap-num-rotulo">Preço de venda</div>' +
-'<div class="ap-num-valor">' + fmtMoeda(precoTotal) + "</div></div>" +
-"</div>" +
-(precoAdic > 0 ? '<div class="ap-opc">+ Adicionais opcionais: ' + fmtMoeda(precoAdic) + " — não incluídos no preço de venda</div>" : "") +
-(basesTxt ? '<div class="ap-bases">Bases de preço: ' + esc(basesTxt) + "</div>" : "");
-out.push({ id: "numeros", titulo: "Investimento", html: htmlNums });
-if (linhasObr.length) {
-var blocos = [];
-for (var i = 0; i < linhasObr.length; i += MAX_LINHAS) blocos.push(linhasObr.slice(i, i + MAX_LINHAS));
-blocos.forEach(function (bloco, bi) {
-var titulo = blocos.length > 1 ? "Etapas (" + (bi + 1) + "/" + blocos.length + ")" : "Etapas";
-var rows = "";
-bloco.forEach(function (l) {
-var preco = (l.preco != null) ? l.preco : aplicarBdi(l.custo, pct);
-var p = precoTotal > 0 ? (preco / precoTotal) * 100 : 0;
-rows += '<tr data-pct="' + p.toFixed(4) + '">' +
-'<td class="ap-cod">' + esc(l.codigo) + "</td>" +
-"<td>" + esc(l.nome) + "</td>" +
-'<td class="ap-dir">' + fmtMoeda(l.custo) + "</td>" +
-'<td class="ap-dir">' + fmtMoeda(preco) + "</td>" +
-'<td class="ap-dir">' + fmtBR(p, 1) + "%</td></tr>";
-});
-var html = '<h2 class="ap-h2">' + esc(titulo) + "</h2>" +
-'<table class="ap-tbl"><thead><tr>' +
-"<th>Código</th><th>Etapa</th>" +
-'<th class="ap-dir">Custo direto</th><th class="ap-dir">Preço c/ BDI</th>' +
-'<th class="ap-dir">% do total</th>' +
-"</tr></thead><tbody>" + rows + "</tbody></table>";
-out.push({ id: blocos.length > 1 ? "etapas-" + (bi + 1) : "etapas", titulo: titulo, html: html });
-});
-}
-if (linhasOpc.length) {
-var blocosO = [];
-for (var oi = 0; oi < linhasOpc.length; oi += MAX_LINHAS) blocosO.push(linhasOpc.slice(oi, oi + MAX_LINHAS));
-blocosO.forEach(function (bloco, bi) {
-var tituloO = blocosO.length > 1 ? "Adicionais opcionais (" + (bi + 1) + "/" + blocosO.length + ")" : "Adicionais opcionais";
-var rowsO = "";
-bloco.forEach(function (l) {
-rowsO += '<tr data-opcional="1">' +
-'<td class="ap-cod">' + esc(l.codigo) + "</td>" +
-"<td>" + esc(l.nome) + "</td>" +
-'<td class="ap-dir">' + fmtMoeda(l.custo) + "</td>" +
-'<td class="ap-dir">' + fmtMoeda(l.preco) + "</td></tr>";
-});
-var rodO = bi === blocosO.length - 1
-? '<tfoot><tr><td colspan="3">Total dos adicionais</td><td class="ap-dir">' + fmtMoeda(precoAdic) + "</td></tr></tfoot>"
-: "";
-var htmlO = '<h2 class="ap-h2">' + esc(tituloO) + "</h2>" +
-'<div class="ap-opc-nota">Orçados à parte — não incluídos no preço de venda.</div>' +
-'<table class="ap-tbl"><thead><tr>' +
-"<th>Código</th><th>Etapa</th>" +
-'<th class="ap-dir">Custo direto</th><th class="ap-dir">Preço c/ BDI</th>' +
-"</tr></thead><tbody>" + rowsO + "</tbody>" + rodO + "</table>";
-out.push({ id: blocosO.length > 1 ? "adicionais-" + (bi + 1) : "adicionais", titulo: tituloO, html: htmlO });
-});
-}
-var prazo = valorComercial(orc.comercial, ["prazoExecucao", "prazo"]);
-var pagamento = valorComercial(orc.comercial, ["condicoesPagamento", "pagamento"]);
-var validade = valorComercial(orc.comercial, ["validadeProposta", "validade"]);
-if (prazo || pagamento || validade) {
-var conds = "";
-if (prazo) conds += '<div class="ap-cond"><div class="ap-cond-rotulo">Prazo de execução</div>' +
-'<div class="ap-cond-txt">' + esc(prazo) + "</div></div>";
-if (pagamento) conds += '<div class="ap-cond"><div class="ap-cond-rotulo">Condições de pagamento</div>' +
-'<div class="ap-cond-txt">' + esc(pagamento) + "</div></div>";
-if (validade) conds += '<div class="ap-cond"><div class="ap-cond-rotulo">Validade da proposta</div>' +
-'<div class="ap-cond-txt">' + esc(validade) + "</div></div>";
-out.push({
-id: "condicoes", titulo: "Condições Comerciais",
-html: '<h2 class="ap-h2">Condições Comerciais</h2><div class="ap-conds">' + conds + "</div>"
-});
-}
-var mDias = validade ? String(validade).match(/(\d+)\s*dias?/i) : null;
-var linhaValidade = "";
-if (mDias) linhaValidade = "Proposta válida por " + mDias[1] + " dias.";
-else if (validade) linhaValidade = "Validade: " + esc(validade);
-var htmlFech = '<div class="ap-fech">' +
-'<div class="ap-fech-obrigado">Obrigado.</div>' +
-(linhaValidade ? '<div class="ap-fech-validade">' + linhaValidade + "</div>" : "") +
-((empresa.nome || empresa.contato)
-? '<div class="ap-fech-emp">' + esc(empresa.nome || "") +
-(empresa.nome && empresa.contato ? " · " : "") + esc(empresa.contato || "") + "</div>"
-: "") +
-'<div class="ap-fech-msg">À disposição para ajustarmos o que for preciso.</div>' +
-"</div>";
-out.push({ id: "fechamento", titulo: "Fechamento", html: htmlFech });
-return out;
-},
-abrir: function (orc) {
-if (typeof document === "undefined") return null;
-this._injetarCss();
-if (this._atual && this._atual.fechar) { try { this._atual.fechar(); } catch (e0) {} }
-var empresa = {};
-try {
-if (typeof global.Empresa !== "undefined" && global.Empresa.dados) {
-var d = global.Empresa.dados() || {};
-empresa.nome = d.nome || "";
-empresa.contato = d.contato || "";
-if (global.Empresa.logo && global.Empresa.logo()) empresa.logoHTML = global.Empresa.logoHTML(110);
-}
-} catch (e1) {}
-try {
-if (!empresa.nome && typeof global.Auth !== "undefined" && global.Auth.usuario && global.Auth.usuario()) {
-empresa.nome = (global.Empresa && global.Empresa.nomeDoc && global.Empresa.nomeDoc()) ||
-global.Auth.usuario().empresa || "";
-}
-} catch (e2) {}
-var basesTxt = "";
-try {
-if (typeof global.Orcamento !== "undefined" && global.Orcamento.basesUsadasTexto) {
-basesTxt = global.Orcamento.basesUsadasTexto(orc);
-var _rb = global.Orcamento.ressalvaBasesTexto ? global.Orcamento.ressalvaBasesTexto(orc) : "";
-if (_rb) basesTxt += " — " + _rb;
-}
-} catch (e3) {}
-var dados = null;
-try {
-if (typeof global.Orcamento !== "undefined" && global.Orcamento.calcular) {
-var T = global.Orcamento.totais(orc), S = global.Orcamento.sintetico(orc);
-dados = {
-custoDireto: T.custoDireto, bdiValor: T.bdiValor, precoVenda: T.precoVenda,
-precoObrigatorio: T.precoObrigatorio, precoOpcional: T.precoOpcional,
-custoOpcional: global.Orcamento.calcular(orc).custoOpcional,
-pct: T.bdiPercentual, etapas: S
-};
-}
-} catch (e3) { dados = null; }
-var slides = this.slides(orc, empresa, basesTxt, dados);
-var n = slides.length, idx = 0;
-var el = document.createElement("div");
-el.className = "apres-overlay";
-var htmlSlides = "";
-for (var i = 0; i < n; i++) {
-htmlSlides += '<section class="apres-slide' + (i === 0 ? " on" : "") +
-'" data-id="' + esc(slides[i].id) + '">' + slides[i].html + "</section>";
-}
-el.innerHTML =
-'<div class="apres-palco">' + htmlSlides + "</div>" +
-'<button type="button" class="apres-nav apres-ant" aria-label="Slide anterior">&lsaquo;</button>' +
-'<button type="button" class="apres-nav apres-prox" aria-label="Próximo slide">&rsaquo;</button>' +
-'<div class="apres-contador">1 / ' + n + "</div>" +
-'<button type="button" class="apres-fechar" aria-label="Fechar apresentação (Esc)">&#10005;</button>';
-document.body.appendChild(el);
-try { el.setAttribute("tabindex", "-1"); el.focus({ preventScroll: true }); } catch (eF) {}
-var nodes = el.querySelectorAll(".apres-slide");
-var contador = el.querySelector(".apres-contador");
-var self = this;
-function ir(i) {
-if (i < 0) i = 0;
-if (i > n - 1) i = n - 1;
-idx = i;
-for (var k = 0; k < nodes.length; k++) {
-nodes[k].className = "apres-slide" + (k === idx ? " on" : (k < idx ? " antes" : ""));
-}
-if (contador) contador.textContent = (idx + 1) + " / " + n;
-}
-function aoTeclar(e) {
-var k = e.key || e.keyCode;
-if (k === "ArrowRight" || k === 39 || k === "PageDown" || k === 34) {
-if (e.preventDefault) e.preventDefault(); ir(idx + 1);
-} else if (k === "ArrowLeft" || k === 37 || k === "PageUp" || k === 33) {
-if (e.preventDefault) e.preventDefault(); ir(idx - 1);
-} else if (k === " " || k === "Spacebar" || k === 32 || k === "Enter" || k === 13) {
-if (e.preventDefault) e.preventDefault();
-ir(e.shiftKey ? idx - 1 : idx + 1);
-} else if (k === "Escape" || k === "Esc" || k === 27) {
-if (e.preventDefault) e.preventDefault(); fechar();
-}
-}
-function aoClicar(e) {
-var alvo = e.target;
-while (alvo && alvo !== el) {
-if (alvo.tagName === "BUTTON" || alvo.tagName === "A") return;
-alvo = alvo.parentNode;
-}
-var r = el.getBoundingClientRect();
-if (e.clientX - r.left < r.width / 2) ir(idx - 1); else ir(idx + 1);
-}
-var toqueX = null;
-function aoTocar(e) {
-var t = e.touches && e.touches[0];
-toqueX = t ? t.clientX : null;
-}
-function aoSoltar(e) {
-if (toqueX == null) return;
-var t = e.changedTouches && e.changedTouches[0];
-var x0 = toqueX; toqueX = null;
-if (!t) return;
-var dx = t.clientX - x0;
-if (dx < -40) ir(idx + 1);
-else if (dx > 40) ir(idx - 1);
-}
-function fechar() {
-document.removeEventListener("keydown", aoTeclar, true);
-el.removeEventListener("click", aoClicar);
-el.removeEventListener("touchstart", aoTocar);
-el.removeEventListener("touchend", aoSoltar);
-try {
-var fs = document.fullscreenElement || document.webkitFullscreenElement;
-if (fs) {
-if (document.exitFullscreen) {
-var p = document.exitFullscreen();
-if (p && p.catch) p.catch(function () {});
-} else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-}
-} catch (e5) {}
-if (el.parentNode) el.parentNode.removeChild(el);
-if (self._atual && self._atual.el === el) self._atual = null;
-}
-document.addEventListener("keydown", aoTeclar, true);
-el.addEventListener("click", aoClicar);
-el.addEventListener("touchstart", aoTocar);
-el.addEventListener("touchend", aoSoltar);
-el.querySelector(".apres-ant").addEventListener("click", function () { ir(idx - 1); });
-el.querySelector(".apres-prox").addEventListener("click", function () { ir(idx + 1); });
-el.querySelector(".apres-fechar").addEventListener("click", function () { fechar(); });
-try {
-var req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-if (req) {
-var pr = req.call(el);
-if (pr && pr.catch) pr.catch(function () {});
-}
-} catch (e4) {}
-this._atual = { el: el, ir: ir, fechar: fechar };
-return this._atual;
-},
-_injetarCss: function () {
-if (typeof document === "undefined" || document.getElementById("apres-css")) return;
-var css = "" +
-'.apres-overlay{position:fixed;inset:0;z-index:99999;color:#f2f7fc;overflow:hidden;cursor:pointer;' +
-"user-select:none;-webkit-user-select:none;" +
-'font-family:var(--fonte,"Inter","Segoe UI",system-ui,-apple-system,sans-serif);' +
-"background:radial-gradient(1200px 800px at 72% -12%,rgba(90,155,201,.20) 0%,rgba(90,155,201,0) 55%)," +
-"radial-gradient(900px 620px at -8% 112%,rgba(34,197,94,.10) 0%,rgba(34,197,94,0) 58%)," +
-"var(--navy,#0f2740)}" +
-".apres-palco{position:absolute;inset:0}" +
-".apres-slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-y:auto;" +
-"padding:clamp(24px,5vw,72px);opacity:0;transform:translateX(48px);" +
-"transition:opacity .38s ease,transform .38s ease;pointer-events:none}" +
-".apres-slide.antes{transform:translateX(-48px)}" +
-".apres-slide.on{opacity:1;transform:none;pointer-events:auto}" +
-".apres-overlay .ap-h2{font-size:clamp(26px,3.4vw,44px);margin:0 0 30px;font-weight:800;letter-spacing:-.5px;color:#dce9f5}" +
-".ap-capa{text-align:center;max-width:1200px}" +
-".ap-logo{margin-bottom:20px}" +
-".ap-emp{font-size:clamp(14px,1.6vw,20px);letter-spacing:.24em;text-transform:uppercase;color:var(--aco-claro,#5a9bc9);font-weight:700;margin-bottom:3vh}" +
-".ap-titulo{font-size:clamp(34px,7vw,92px);line-height:1.04;margin:0 0 3vh;font-weight:900;letter-spacing:-1.5px}" +
-".ap-sub{font-size:clamp(18px,2.6vw,34px);color:#cfe0ef;margin-bottom:2vh}" +
-".ap-meta{font-size:clamp(13px,1.5vw,19px);color:#8fa9c2}" +
-".ap-nums{display:flex;gap:clamp(20px,4vw,64px);align-items:flex-end;justify-content:center;flex-wrap:wrap}" +
-".ap-num{text-align:center}" +
-".ap-num-rotulo{font-size:clamp(13px,1.5vw,20px);text-transform:uppercase;letter-spacing:.14em;color:#8fa9c2;font-weight:700;margin-bottom:12px}" +
-".ap-num-valor{font-size:clamp(30px,4.6vw,64px);font-weight:800;letter-spacing:-1px;white-space:nowrap}" +
-".ap-venda .ap-num-valor{font-size:clamp(44px,8vw,110px);color:var(--verde-claro,#22c55e)}" +
-".ap-bases{margin-top:6vh;font-size:clamp(12px,1.3vw,17px);color:#7f99b3}" +
-".ap-opc{margin-top:4vh;font-size:clamp(15px,1.9vw,26px);color:#fbbf24;font-weight:700;text-align:center}" +
-".ap-opc-nota{margin:-16px 0 22px;font-size:clamp(13px,1.5vw,19px);color:#fbbf24}" +
-".ap-tbl tfoot td{padding:12px 16px;border-top:2px solid rgba(255,255,255,.18);font-weight:800}" +
-".ap-tbl{border-collapse:collapse;font-size:clamp(16px,1.7vw,22px);width:min(92vw,1280px)}" +
-".ap-tbl th{font-size:clamp(12px,1.2vw,15px);text-transform:uppercase;letter-spacing:.1em;color:#8fa9c2;" +
-"text-align:left;padding:10px 16px;border-bottom:2px solid rgba(255,255,255,.18)}" +
-".ap-tbl td{padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.07)}" +
-".ap-tbl tbody tr:nth-child(even){background:rgba(255,255,255,.045)}" +
-".ap-tbl .ap-dir{text-align:right;white-space:nowrap}" +
-".ap-cod{color:var(--aco-claro,#5a9bc9);font-weight:700;white-space:nowrap}" +
-".ap-conds{display:flex;flex-direction:column;gap:28px;max-width:1100px;width:100%}" +
-".ap-cond-rotulo{font-size:clamp(13px,1.4vw,18px);text-transform:uppercase;letter-spacing:.14em;color:var(--aco-claro,#5a9bc9);font-weight:700;margin-bottom:6px}" +
-".ap-cond-txt{font-size:clamp(17px,2vw,26px);color:#e8f0f8;line-height:1.5;white-space:pre-line}" +
-".ap-fech{text-align:center;max-width:1100px}" +
-".ap-fech-obrigado{font-size:clamp(40px,7vw,96px);font-weight:900;letter-spacing:-1.5px;margin-bottom:4vh}" +
-".ap-fech-validade{font-size:clamp(18px,2.4vw,30px);color:var(--verde-claro,#22c55e);font-weight:700;margin-bottom:2.5vh}" +
-".ap-fech-emp{font-size:clamp(15px,1.8vw,22px);color:#cfe0ef;margin-bottom:1.4vh}" +
-".ap-fech-msg{font-size:clamp(13px,1.5vw,18px);color:#8fa9c2}" +
-".apres-nav{position:absolute;top:50%;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;" +
-"border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#e6eef7;" +
-"font-size:28px;line-height:1;cursor:pointer;opacity:.45;transition:opacity .2s,background .2s;z-index:2}" +
-".apres-nav:hover{opacity:1;background:rgba(255,255,255,.12)}" +
-".apres-ant{left:18px}.apres-prox{right:18px}" +
-".apres-contador{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);" +
-"font-size:14px;color:#8fa9c2;letter-spacing:.12em;z-index:2}" +
-".apres-fechar{position:absolute;top:16px;right:18px;width:44px;height:44px;border-radius:50%;" +
-"border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#e6eef7;" +
-"font-size:17px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .2s,background .2s;z-index:2}" +
-".apres-fechar:hover{opacity:1;background:rgba(220,38,38,.4)}";
-var st = document.createElement("style");
-st.id = "apres-css";
-st.textContent = css;
-document.head.appendChild(st);
-}
-};
-global.Apresentacao = Apresentacao;
-if (typeof module !== "undefined" && module.exports) module.exports = Apresentacao;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/telemetria.js ==== */
-try {
-(function (global) {
-"use strict";
-var KEYREG = "orcapro:trialreg", KEYMODS = "orcapro:telemetria:mods";
-var Telemetria = {
-_timer: null, _sessao: null,
-reg: function () { try { return JSON.parse(localStorage.getItem(KEYREG) || "null"); } catch (e) { return null; } },
-salvarReg: function (r) { try { localStorage.setItem(KEYREG, JSON.stringify(r)); } catch (e) {} },
-ehTrial: function () {
-try { var s = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; return !!(s && s.trial && s.ativo); }
-catch (e) { return false; }
-},
-ehLicenciado: function () {
-try { var s = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; return !!(s && s.ativo && !s.trial); }
-catch (e) { return false; }
-},
-_ativo: function () { return this.ehTrial() ? !!this.reg() : this.ehLicenciado(); },
-_mods: function () { try { return JSON.parse(localStorage.getItem(KEYMODS) || "{}"); } catch (e) { return {}; } },
-_naPrevia: function () {
-try {
-return typeof PreviewCli !== "undefined" && typeof Auth !== "undefined"
-&& PreviewCli.ehPrevia(Auth.empresaId());
-} catch (e) { return false; }
-},
-contaModulo: function (v) {
-if (!v || this._naPrevia()) return;
-try { var m = this._mods(); m[v] = (m[v] || 0) + 1; localStorage.setItem(KEYMODS, JSON.stringify(m)); } catch (e) {}
-},
-_licInfo: function () {
-var A = (typeof Auth !== "undefined") ? Auth : null;
-var u = (A && A.usuario) ? (A.usuario() || {}) : {};
-var email = "";
-try { if (typeof Licenca !== "undefined" && Licenca._ler) email = (Licenca._ler() || {}).email || ""; } catch (e) {}
-var dev = "";
-try { if (typeof Licenca !== "undefined" && Licenca.deviceId) dev = Licenca.deviceId(); } catch (e2) {}
-var foto = "";
-try { if (typeof Empresa !== "undefined" && Empresa.fotoUsuario) foto = Empresa.fotoUsuario() || ""; } catch (e3) {}
-return {
-empresa: u.empresa || "Minha Empresa",
-usuario: (A && A.nome) ? A.nome() : (u.nome || u.email || "Usuário"),
-papel: (A && A.papel) ? A.papel() : "admin",
-foto: foto,
-licencaEmail: email, deviceId: dev
-};
-},
-enviar: function (evento) {
-if (this._naPrevia()) return;
-try {
-if (!this._ativo()) return;
-if (!this._sessao) this._sessao = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
-if (!base) return;
-var ev = evento === "boot" ? "boot" : "ping";
-var ver = (typeof CONFIG !== "undefined") ? CONFIG.versao : "";
-var body;
-if (this.ehTrial()) {
-var r = this.reg(); if (!r) return;
-var email = r.email || "";
-try { if (!email && typeof Auth !== "undefined" && Auth.usuario) email = (Auth.usuario() || {}).email || ""; } catch (e2) {}
-body = { tipo: "trial", evento: ev, sessaoId: this._sessao, nome: r.nome || "", telefone: r.telefone || "", email: email, versao: ver, modulos: this._mods() };
-} else {
-var i = this._licInfo();
-body = { tipo: "licenciado", evento: ev, sessaoId: this._sessao, empresa: i.empresa, usuario: i.usuario, papel: i.papel, licencaEmail: i.licencaEmail, deviceId: i.deviceId, versao: ver, modulos: this._mods() };
-if (ev === "boot") body.foto = i.foto || "";
-}
-fetch(base + "/api/telemetria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(function () {});
-} catch (e) {}
-},
-perfilMudou: function () { try { if (this._sessao) this.enviar("boot"); } catch (e) {} },
-iniciar: function () {
-var self = this;
-if (!this._ativo()) return;
-try { localStorage.setItem(KEYMODS, "{}"); } catch (e) {}
-this.enviar("boot");
-if (this._timer) clearInterval(this._timer);
-this._timer = setInterval(function () { self.enviar("ping"); }, 5 * 60 * 1000);
-},
-gate: function (aoLiberar) {
-var s0 = null;
-try { s0 = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e0) { s0 = null; }
-if (!(s0 && s0.trial && s0.pendente)) return false;
-if (this._soConsulta) return false;
-return this.exigirValidacao(aoLiberar);
-},
-exigirValidacao: function (aoLiberar) {
-if (this._cadastroAberto || this._soConsulta) return true;
-var rPre = this.reg() || {};
-var nomePre = rPre.nome || "", fonePre = rPre.telefone || "", emailPre = rPre.email || "";
-try { if (!emailPre && typeof Auth !== "undefined" && Auth.usuario) emailPre = (Auth.usuario() || {}).email || ""; } catch (e) {}
-this._cadastroAberto = true;
-var self = this;
-var liberar = function () { self._cadastroAberto = false; if (typeof aoLiberar === "function") aoLiberar(); };
-this._passoCadastro(liberar, { nome: nomePre, fone: fonePre, email: emailPre }, {});
-this._semFechar();
-return true;
-},
-_botaoSoConsultar: function (aoLiberar) {
-var self = this;
-return { texto: "Só consultar", classe: "ghost", onClick: function () {
-self._soConsulta = true; self._cadastroAberto = false;
-try { UI.fecharModal(); } catch (e) {}
-if (typeof aoLiberar === "function") aoLiberar();
-} };
-},
-_semTeste: function () {
-try { return typeof Produto !== "undefined" && !!Produto.semTesteGratis && Produto.semTesteGratis(); } catch (e) { return false; }
-},
-_esc: function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); },
-_emailOk: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim()); },
-_salvarCadastro: function (d, validado) {
-var r = { nome: d.nome, telefone: d.fone, email: d.email, em: new Date().toISOString() };
-if (validado) r.confirmadoEm = Date.now();
-this.salvarReg(r);
-},
-_fmtFone: function (n) {
-var d = String(n || "").replace(/\D/g, "");
-return d.length === 13 ? "+" + d.slice(0, 2) + " " + d.slice(2, 4) + " " + d.slice(4, 9) + "-" + d.slice(9) : (d ? "+" + d : "");
-},
-_passoCadastro: function (aoLiberar, pre, op) {
-var self = this, esc = this._esc;
-op = op || {};
-if (this._semTeste()) { this._jaSouCliente(aoLiberar, op); return; }
-var corpo =
-'<p class="muted" style="margin:0 0 12px">Bem-vindo ao <b>teste grátis de 7 dias</b> — sistema completo, sem cartão. Para começar, informe quem está testando e <b>confirme o seu e-mail e o seu WhatsApp</b> (leva um minuto):</p>' +
-'<div class="field"><label>Seu nome *</label><input id="tg-nome" value="' + esc(pre.nome) + '" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
-'<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" value="' + esc(pre.fone) + '" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"><div class="muted" style="font-size:11.5px;margin-top:3px">Use um número de celular com WhatsApp.</div></div>' +
-'<div class="field"><label>E-mail *</label><input id="tg-email" value="' + esc(pre.email) + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
-'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:12.5px;color:var(--texto-fraco);margin-top:6px"><input type="checkbox" id="tg-ok" style="margin-top:3px">Autorizo o contato da RA Engenharia sobre o meu teste e o uso dos meus dados para esse fim (LGPD).</label>' +
-'<p class="muted" style="font-size:11.5px;margin:8px 0 0">Para evitar o uso repetido do teste, guardamos também um identificador deste aparelho, em formato codificado (hash) — não é possível ler dele nenhum dado seu. Detalhes na Política de Privacidade.</p>';
-var botoesC = [{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar); } }];
-if (!op.legado) botoesC.push(this._botaoSoConsultar(aoLiberar));
-if (op.legado) botoesC.push({ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } });
-botoesC.push(
-{ texto: "Continuar →", classe: "primary", onClick: function () {
-var nome = (UI.el("tg-nome") || {}).value || "", fone = (UI.el("tg-fone") || {}).value || "";
-var email = (UI.el("tg-email") || {}).value || "", ok = (UI.el("tg-ok") || {}).checked;
-if (nome.replace(/\s+/g, " ").trim().length < 3) { UI.toast("Informe o seu nome.", "erro"); return; }
-if (fone.replace(/\D/g, "").length < 10) { UI.toast("Informe um telefone válido com DDD.", "erro"); return; }
-if (!self._emailOk(email)) { UI.toast("Informe um e-mail válido.", "erro"); return; }
-if (!ok) { UI.toast("Marque o consentimento pra liberar o teste.", "erro"); return; }
-UI.fecharModal();
-self._iniciarValidacao(aoLiberar, { nome: nome.trim(), fone: fone.trim(), email: email.trim() }, { falta: op.falta || ["telefone", "email"], legado: !!op.legado });
-} });
-UI.modal("🚀 Liberar meu teste grátis", corpo, botoesC);
-},
-_iniciarValidacao: function (aoLiberar, dados, op) {
-var self = this;
-Licenca.canaisTeste(function (c) {
-if (c && c.desligado) {
-if (op.legado) return;
-self._salvarCadastro(dados, false);
-try { Licenca.iniciarFluxoAntigo(); } catch (eFa) {}
-self._cadastroAberto = false;
-if (typeof aoLiberar === "function") aoLiberar();
-return;
-}
-if (c && c.podeIniciar) { self._passoValidar(aoLiberar, dados, op); return; }
-if (op.legado) {
-UI.toast("Não consegui abrir a validação do telefone e do e-mail agora. Seu teste continua; vamos pedir de novo na próxima abertura.", "erro", 9000);
-return;
-}
-self._canalFora(aoLiberar, dados, op, c);
-});
-},
-_canalFora: function (aoLiberar, dados, op, c) {
-var self = this, srv = "";
-try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
-var semServidor = !c;
-UI.modal("📡 Não consegui enviar o código agora",
-'<p style="margin:0 0 10px">' + (semServidor ? 'Não consegui falar com o servidor.' : 'O envio dos códigos de confirmação está fora do ar neste momento.') + ' <b>Tente novamente em instantes.</b></p>' +
-'<p class="muted" style="margin:0">Se continuar, fale com a RA Engenharia' + (srv ? ' pelo <a href="' + srv + '/planos" target="_blank" rel="noopener">site</a>' : ' pelo site') + '. O teste só começa depois de confirmar o telefone e o e-mail.</p>', [
-{ texto: "Corrigir dados", classe: "ghost", onClick: function () { UI.fecharModal(); self._passoCadastro(aoLiberar, { nome: dados.nome, fone: dados.fone, email: dados.email }, op); self._semFechar(); } },
-{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar); } },
-(op.legado ? { texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } } : self._botaoSoConsultar(aoLiberar)),
-{ texto: "Tentar novamente", classe: "primary", onClick: function () { UI.fecharModal(); self._iniciarValidacao(aoLiberar, dados, op); self._semFechar(); } }
-]);
-this._semFechar();
-},
-_passoValidar: function (aoLiberar, dados, op) {
-var self = this, esc = this._esc;
-var S = { ref: "", emailOk: op.falta.indexOf("email") < 0, telOk: op.falta.indexOf("telefone") < 0, cod: null, timer: null, ate: 0, fim: false };
-var parar = function () { S.fim = true; if (S.timer) { clearInterval(S.timer); S.timer = null; } };
-var base = function () { return { nome: dados.nome, telefone: dados.fone, email: dados.email }; };
-var ver = function (id) { return UI.el(id); };
-var resultado = function (d) {
-if (d && d.ref) S.ref = d.ref;
-if (!d || !d.ok) return;
-if (d.falta) { S.emailOk = d.falta.indexOf("email") < 0; S.telOk = d.falta.indexOf("telefone") < 0; }
-pintar();
-if (d.validado === true && d.liberado !== false) {
-parar(); self._cadastroAberto = false;
-self._salvarCadastro(dados, true);
-UI.fecharModal();
-if (d.expirado) { self._encerrado(aoLiberar); return; }
-UI.toast("Telefone e e-mail confirmados. Seu teste está liberado.", "ok");
-if (typeof aoLiberar === "function") aoLiberar();
-}
-};
-var pintar = function () {
-var e = ver("tv-email-st"), t = ver("tv-tel-st");
-if (e) e.innerHTML = S.emailOk ? '<b style="color:var(--verde,#16a34a)">✓ E-mail confirmado</b>' : '<span class="muted">Aguardando o código do e-mail</span>';
-if (t) t.innerHTML = S.telOk ? '<b style="color:var(--verde,#16a34a)">✓ Telefone confirmado</b>' : '<span class="muted">Aguardando a sua mensagem no WhatsApp…</span>';
-var eb = ver("tv-email-bloco"), tb = ver("tv-tel-bloco");
-if (eb && S.emailOk) eb.style.display = "none";
-if (tb && S.telOk) tb.style.display = "none";
-};
-var consultar = function () {
-if (S.fim || !S.cod || S.telOk) return;
-if (!ver("tv-raiz")) { parar(); return; }
-if (Date.now() > S.ate) { var t0 = ver("tv-tel-st"); if (t0) t0.innerHTML = '<span style="color:#b91c1c">O código venceu.</span> Gere um código novo.'; parar(); var nb = ver("tv-novo-cod"); if (nb) nb.style.display = ""; return; }
-var o = base(); o.destino = dados.fone; o.codigo = S.cod.codigo; o.ref = S.ref;
-Licenca.acompanharTelefoneTeste(o, function (d) {
-if (S.fim) return;
-var tSt = ver("tv-tel-st");
-if (!d) { if (tSt && !S.telOk) tSt.innerHTML = '<span style="color:#b45309">Sem resposta do servidor agora — tentando de novo…</span>'; return; }
-if (d.ok === false && !d.vencido) { if (tSt) tSt.innerHTML = '<span style="color:#b91c1c">' + esc(d.erro || "Não consegui consultar agora.") + '</span>'; return; }
-if (d.aguardando && tSt && (Date.now() - (S.cod.criadoLocal || Date.now())) > 180000) {
-tSt.innerHTML = '<span style="color:#b45309">Ainda aguardando a sua mensagem. Confira se você enviou <b>do número informado</b>, ' + esc(dados.fone) + ', toque em <b>Gerar código novo</b> se preferir recomeçar, ou fale com a RA Engenharia pelo site.</span>';
-}
-if (d && d.vencido) { var t1 = ver("tv-tel-st"); if (t1) t1.innerHTML = '<span style="color:#b91c1c">O código venceu.</span> Gere um código novo.'; parar(); var nb2 = ver("tv-novo-cod"); if (nb2) nb2.style.display = ""; return; }
-if (d && d.ok && d.codigoOk) resultado(d);
-});
-};
-var pedirTelefone = function (depois) {
-var o = base(); o.canal = "telefone"; o.destino = dados.fone;
-Licenca.pedirCodigoTeste(o, function (d) {
-if (!d) { UI.toast("Sem resposta do servidor. Tente de novo em instantes.", "erro", 8000); return; }
-if (d.expirado) { parar(); UI.fecharModal(); self._encerrado(aoLiberar); return; }
-if (!d.ok) { UI.toast(d.erro || "Não consegui gerar o código do WhatsApp agora. Tente novamente em instantes.", "erro", 9000); return; }
-S.cod = d; S.cod.criadoLocal = Date.now(); S.ate = Date.now() + (Number(d.validadeMin) || 15) * 60000;
-if (typeof depois === "function") depois();
-});
-};
-var ehMovel = function () { try { return (typeof window !== "undefined") && ((window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || (Number(window.innerWidth) > 0 && window.innerWidth < 600)); } catch (e) { return false; } };
-var desenharTel = function () {
-var d = S.cod, box = ver("tv-tel-corpo"); if (!box || !d) return;
-var qr = (typeof QR !== "undefined" && QR.svg) ? QR.svg(d.link, { tamanhoPx: 150 }) : "";
-var botaoZap = '<a href="' + esc(d.link) + '" target="_blank" rel="noopener" class="btn primary" style="display:inline-block;padding:9px 16px;border-radius:8px;text-decoration:none">Abrir o WhatsApp</a>';
-var codigo = '<p style="margin:0 0 8px;font-size:20px;letter-spacing:1px;font-weight:700;text-align:center;font-family:var(--fonte-num,monospace)">' + esc(d.texto) + '</p>';
-var rodape = '<p class="muted" style="font-size:11.5px;margin:8px 0 0">O código vale ' + esc(d.validadeMin || 15) + ' minutos. Use um número de celular com WhatsApp.</p>';
-if (ehMovel()) {
-box.innerHTML =
-'<p style="margin:0 0 8px;font-size:13px">Toque no botão para abrir o WhatsApp e envie a mensagem, <b>do telefone que você informou</b>, ' + esc(dados.fone) + ':</p>' +
-'<div style="text-align:center;margin:0 0 8px">' + botaoZap + '</div>' + codigo +
-'<div style="text-align:center"><button type="button" class="btn ghost" id="tv-qr-toggle">Mostrar QR</button></div>' +
-'<div id="tv-qr-caixa" style="display:none;margin-top:8px;text-align:center"><div style="display:inline-block;background:#fff;padding:4px;border-radius:8px">' + qr + '</div></div>' + rodape;
-var tg = ver("tv-qr-toggle");
-if (tg) tg.onclick = function () { var cx = ver("tv-qr-caixa"); if (!cx) return; var abre = cx.style.display === "none"; cx.style.display = abre ? "" : "none"; tg.textContent = abre ? "Esconder QR" : "Mostrar QR"; };
-return;
-}
-box.innerHTML =
-'<p style="margin:0 0 6px;font-size:13px">Envie esta mensagem pelo WhatsApp, <b>do telefone que você informou</b>, para o número da RA (' + esc(self._fmtFone(d.numero)) + '):</p>' + codigo +
-'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center">' +
-(qr ? '<div style="background:#fff;padding:4px;border-radius:8px" title="Aponte a câmera do celular">' + qr + '</div>' : '') +
-'<div style="font-size:12.5px;max-width:230px">' + (qr ? 'No computador, aponte a câmera do celular para o QR ao lado. ' : '') +
-'<span style="display:block;margin-top:6px">' + botaoZap + '</span></div></div>' + rodape;
-};
-var corpo = '<div id="tv-raiz">' +
-'<div id="tv-email-bloco" style="' + (S.emailOk ? 'display:none;' : '') + 'margin:0 0 14px;padding:10px 12px;border:1px solid var(--linha,#d8e0ea);border-radius:8px">' +
-'<b>1. E-mail</b> <span class="muted" style="font-size:12px">— ' + (op.legado ? 'toque em "Enviar código" para receber um código de 6 dígitos em ' : 'enviamos um código de 6 dígitos para ') + esc(dados.email) + ' (olhe também o spam)</span>' +
-'<div class="field" style="margin-top:8px"><input id="tg-cod" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="font-size:20px;letter-spacing:5px;text-align:center"></div>' +
-'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn ghost" id="tv-email-reenviar">' + (op.legado ? 'Enviar código' : 'Reenviar e-mail') + '</button><button type="button" class="btn primary" id="tv-email-confirmar">Confirmar e-mail</button></div></div>' +
-'<div id="tv-tel-bloco" style="' + (S.telOk ? 'display:none;' : '') + 'margin:0 0 10px;padding:10px 12px;border:1px solid var(--linha,#d8e0ea);border-radius:8px">' +
-'<b>2. WhatsApp</b> <span class="muted" style="font-size:12px">— ' + esc(dados.fone) + '</span>' +
-'<div id="tv-tel-corpo" style="margin-top:8px"><span class="muted">Gerando o seu código…</span></div>' +
-'<button type="button" class="btn ghost" id="tv-novo-cod" style="margin-top:8px">Gerar código novo</button></div>' +
-'<div style="font-size:12.5px;display:flex;flex-direction:column;gap:2px"><div id="tv-email-st"></div><div id="tv-tel-st"></div></div></div>';
-var botoes = [
-{ texto: "Corrigir dados", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); self._passoCadastro(aoLiberar, { nome: dados.nome, fone: dados.fone, email: dados.email }, op); self._semFechar(); } },
-{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar || function () { try { if (typeof App !== "undefined" && App.render) App.render(); } catch (e) {} }); } }
-];
-if (op.legado) botoes.push({ texto: "Agora não", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); } });
-else { var bSc = this._botaoSoConsultar(aoLiberar), fSc = bSc.onClick; bSc.onClick = function () { parar(); fSc(); }; botoes.push(bSc); }
-UI.modal("✉️ Confirme o seu e-mail e o seu WhatsApp", corpo, botoes);
-this._semFechar();
-pintar();
-var pedirEmail = function (silencioso) {
-var o = base(); o.canal = "email"; o.destino = dados.email;
-Licenca.pedirCodigoTeste(o, function (d) {
-if (!d) { UI.toast("Sem resposta do servidor. Tente de novo em instantes.", "erro", 8000); return; }
-if (d.expirado) { parar(); UI.fecharModal(); self._encerrado(aoLiberar); return; }
-if (!d.ok && d.espereSeg) { if (!silencioso) UI.toast(d.erro, "erro", 8000); return; }
-if (!d.ok) { UI.toast(d.erro || "Não consegui enviar o e-mail agora. Tente novamente em instantes.", "erro", 9000); return; }
-if (!silencioso) UI.toast("Código reenviado para o seu e-mail.", "ok");
-});
-};
-if (!S.emailOk) {
-if (!op.legado) pedirEmail(true);
-var bc = ver("tv-email-confirmar"), br = ver("tv-email-reenviar");
-if (br) br.onclick = function () { pedirEmail(false); };
-if (bc) bc.onclick = function () {
-if (S.enviando) return;
-var cod = ((ver("tg-cod") || {}).value || "").replace(/\D/g, "");
-if (cod.length !== 6) { UI.toast("Digite os 6 números do código do e-mail.", "erro"); return; }
-S.enviando = true;
-var o = base(); o.canal = "email"; o.destino = dados.email; o.codigo = cod; o.ref = S.ref;
-Licenca.confirmarCodigoTeste(o, function (d) {
-S.enviando = false;
-if (!d) { UI.toast("Sem resposta do servidor. Tente de novo — o código continua valendo.", "erro", 8000); return; }
-if (d.ok) { resultado(d); return; }
-UI.toast(d.erro || "Não consegui confirmar o código.", "erro", 8000);
-});
-};
-}
-if (!S.telOk) {
-var iniciarTel = function () {
-S.fim = false;
-pedirTelefone(function () { desenharTel(); if (S.timer) clearInterval(S.timer); S.timer = setInterval(consultar, 3000); });
-};
-iniciarTel();
-var nc = ver("tv-novo-cod"); if (nc) nc.onclick = iniciarTel;
-}
-},
-_encerrado: function (aoLiberar) {
-var srv = "", cpl = this._semTeste();
-try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
-if (cpl) srv = "";
-UI.modal(cpl ? "Acesso do órgão não liberado" : "⏰ Seu período de teste terminou",
-'<p style="margin:0 0 10px">' + (cpl ? 'Este aparelho está sem a chave de acesso do órgão. Para editar e exportar, ative a chave do CPLPRO ou fale com a RA Engenharia.' : 'O teste grátis deste computador já foi usado. Para continuar editando e exportando, ative uma licença do OrçaPRO.') + '</p>' +
-'<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
-{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); try { if (typeof App !== "undefined" && App.abrirLicenca) App.abrirLicenca(); } catch (e2) {} } },
-{ texto: "Continuar só para consulta", classe: "primary", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); } }
-]);
-this._semFechar();
-},
-validarContatos: function (op) {
-op = op || {};
-var r = this.reg() || {};
-var falta = (op.falta && op.falta.length) ? op.falta : ["telefone", "email"];
-var temFone = String(r.telefone || "").replace(/\D/g, "").length >= 10;
-if (!this._emailOk(r.email) || !temFone) {
-var self = this;
-this._passoCadastro(null, { nome: r.nome || "", fone: r.telefone || "", email: r.email || "" }, { legado: true, falta: falta });
-return true;
-}
-this._iniciarValidacao(null, { nome: r.nome || "", fone: r.telefone, email: r.email }, { falta: falta, legado: true });
-return true;
-},
-_jaSouCliente: function (aoLiberar, op) {
-var self = this;
-op = op || {};
-var cpl = this._semTeste();
-var cfgP = {};
-try { cfgP = Produto.cfg() || {}; } catch (eP) {}
-var srv = "";
-try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
-var corpo = cpl
-? '<p class="muted" style="margin:0 0 12px">' + (cfgP.chaveTexto || "") + '</p>' +
-'<div class="field"><label>Chave de acesso *</label><input id="tg-chave" placeholder="Cole aqui a chave do órgão" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
-'<p style="margin:6px 0 0;font-size:13px">' + (cfgP.semChaveTexto || "") + (cfgP.contatoUrl ? ' <a href="' + cfgP.contatoUrl + '" target="_blank" rel="noopener">' + (cfgP.contatoRotulo || "Contato") + '</a>' : '') + '</p>'
-: '<p class="muted" style="margin:0 0 12px">Cole a <b>chave de licença</b> que você recebeu por e-mail na compra. Os dados da sua empresa (orçamentos, obras, diários, medições e financeiro) vêm da nuvem para este aparelho.</p>' +
-'<div class="field"><label>Chave de licença *</label><input id="tg-chave" placeholder="Cole aqui a sua chave" autocomplete="off" spellcheck="false" style="font-family:var(--fonte-num,monospace)"></div>' +
-(srv ? '<p style="margin:6px 0 0;font-size:13px"><a href="' + srv + '/recuperar" target="_blank" rel="noopener">Não encontro a minha chave</a></p>' : '') +
-'<p class="muted" style="margin:12px 0 0;font-size:12.5px">Depois, cada pessoa da equipe entra com o próprio usuário e senha.</p>';
-var botoes = [];
-if (cpl) {
-if (op.legado) botoes.push({ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } });
-else botoes.push(this._botaoSoConsultar(aoLiberar));
-} else {
-botoes.push({ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.gate(aoLiberar); } });
-}
-botoes.push({ texto: cpl ? "Entrar e trazer os dados do órgão →" : "Entrar e trazer meus dados →", classe: "primary", onClick: function () {
-var chave = String((UI.el("tg-chave") || {}).value || "").trim();
-if (chave.length < 8) { UI.toast(cpl ? "Cole a chave de acesso do órgão." : "Cole a sua chave de licença.", "erro"); return; }
-if (typeof Licenca === "undefined" || !Licenca.ativarOnline) { UI.toast("Não foi possível ativar agora. Tente de novo.", "erro"); return; }
-UI.toast("Conferindo a licença…", "ok");
-Licenca.ativarOnline(chave, function (r) {
-if (!r || !r.ok) { UI.toast((r && r.erro) || "Chave inválida.", "erro"); return; }
-try { if (typeof Nuvem !== "undefined" && Nuvem.trocouDeLicenca) Nuvem.trocouDeLicenca(); } catch (eN) {}
-UI.fecharModal();
-UI.toast(r.offline ? "Licença ativada. Os dados da nuvem chegam quando houver internet." : "Licença ativada. Trazendo os seus dados da nuvem…", "ok");
-if (typeof aoLiberar === "function") aoLiberar();
-});
-} });
-UI.modal(cpl ? (cfgP.chaveTitulo || "Entrar no CPLPRO") : "🔑 Entrar com a minha licença", corpo, botoes);
-this._semFechar();
-},
-_semFechar: function () {
-try {
-var bgT = document.querySelector(".modal-bg");
-if (bgT) {
-var xT = bgT.querySelector("[data-fechar], .modal-x");
-if (xT && xT.parentNode) xT.parentNode.removeChild(xT);
-bgT.dataset.semFecharFora = "1";
-}
-} catch (eX) {}
-}
-};
-global.Telemetria = Telemetria;
-if (typeof module !== "undefined" && module.exports) module.exports = Telemetria;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/demo.js ==== */
-try {
-(function (global) {
-"use strict";
-function it(codigo, desc, un, qtd, cu, fMO, fMAT) {
-var mo = Math.round(cu * fMO * 100) / 100;
-var mat = Math.round(cu * fMAT * 100) / 100;
-var eq = Math.round((cu - mo - mat) * 100) / 100;
-return {
-id: Util.uid("itm"),
-origem: codigo ? "SINAPI" : "PROPRIO",
-baseFonte: codigo ? "SINAPI" : null,
-codigo: codigo || "—",
-descricao: desc, unidade: un,
-quantidade: qtd, custoUnitario: cu,
-custoMO: mo, custoMAT: mat, custoEQ: eq
-};
-}
-function eta(codigo, nome, itens) { return { id: Util.uid("eta"), codigo: codigo, nome: nome, itens: itens }; }
-var OrcDemo = {
-build: function () {
-var orc = Orcamento.novo({ numero: "ORC-2026-0820", nome: "Residência Unifamiliar — 120 m²" });
-orc.cliente = { nome: "Construtora Modelo Ltda", doc: "00.000.000/0001-00", contato: "contato@construtoramodelo.com.br" };
-orc.obra = { nome: "Residência Unifamiliar 120 m²", local: "Uberlândia / MG", regime: "Empreitada" };
-orc.art = "BR20260000000";
-orc.competenciaSinapi = orc.competenciaSinapi || "2026-05";
-orc.uf = orc.uf || "MG";
-orc.etapas = [
-eta("1.0", "Serviços Preliminares", [
-it("98525", "Placa de obra em chapa galvanizada", "m²", 6, 612.00, .25, .70),
-it("99059", "Limpeza mecanizada do terreno", "m²", 120, 5.80, .20, .00),
-it("96995", "Locação de obra com gabarito de tábuas", "m²", 120, 28.40, .65, .30)
-]),
-eta("2.0", "Fundações", [
-it("96523", "Escavação manual de valas (fundação)", "m³", 18, 95.00, .90, .00),
-it("94965", "Concreto magro para lastro, e=5cm", "m³", 4, 520.00, .25, .70),
-it("94970", "Concreto usinado fck=25MPa para sapatas", "m³", 12, 620.00, .25, .70),
-it("92449", "Fôrma de madeira para fundação", "m²", 60, 78.00, .55, .42),
-it("92759", "Armação de aço CA-50 (fundação)", "kg", 850, 12.40, .25, .73)
-]),
-eta("3.0", "Estrutura de Concreto Armado", [
-it("94972", "Concreto usinado fck=25MPa (pilares/vigas/lajes)", "m³", 28, 640.00, .25, .70),
-it("92447", "Fôrma de madeira para estrutura", "m²", 320, 82.00, .55, .42),
-it("92761", "Armação de aço CA-50 (estrutura)", "kg", 2100, 12.40, .25, .73),
-it("98557", "Laje pré-moldada para piso/forro", "m²", 90, 145.00, .35, .62)
-]),
-eta("4.0", "Alvenaria e Vedações", [
-it("103333", "Alvenaria de bloco cerâmico 14x19x29cm", "m²", 240, 78.00, .45, .53),
-it("93183", "Vergas e contravergas em concreto armado", "m", 40, 38.00, .45, .53)
-]),
-eta("5.0", "Cobertura", [
-it("92541", "Estrutura de madeira para telha cerâmica", "m²", 150, 92.00, .45, .53),
-it("94216", "Telha cerâmica tipo portuguesa", "m²", 150, 48.00, .40, .58)
-]),
-eta("6.0", "Revestimentos e Acabamentos", [
-it("87905", "Chapisco em paredes internas/externas", "m²", 480, 9.80, .55, .43),
-it("87529", "Massa única (reboco) para recebimento de pintura", "m²", 480, 38.00, .58, .40),
-it("87703", "Contrapiso em argamassa, e=4cm", "m²", 120, 42.00, .45, .53),
-it("87263", "Revestimento cerâmico (porcelanato) para piso", "m²", 120, 118.00, .40, .58),
-it("88489", "Pintura látex acrílica, 2 demãos", "m²", 480, 26.00, .55, .43),
-it("87275", "Revestimento cerâmico de parede (áreas molhadas)", "m²", 60, 85.00, .45, .53)
-]),
-eta("7.0", "Instalações", [
-it("89714", "Ponto de instalação hidrossanitária", "pto", 28, 185.00, .50, .47),
-it("93128", "Ponto de instalação elétrica", "pto", 42, 142.00, .50, .47),
-it(null, "Louças, metais e acessórios (verba)", "vb", 1, 6800.00, .20, .78)
-])
-];
-orc.cronogramaMeses = 6;
-orc.cronograma = { params: { equipes: 4, paralelismo: 0.30, diasUteisSemana: 5, custoDiaEquipe: 750 } };
-try { Orcamento.sincronizarPrazo(orc); } catch (e) {}
-try {
-if (typeof DnitBdi !== "undefined") Orcamento.aplicarBdi(orc, "dnit", DnitBdi.params());
-} catch (e) {}
-orc.criadoEm = Util.agoraISO();
-orc.atualizadoEm = orc.criadoEm;
-return orc;
-}
-};
-global.OrcDemo = OrcDemo;
-})(window);
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/demo-gestao.js ==== */
-try {
-(function (global) {
-"use strict";
-var EID = "demo";
-var DemoGestao = {
-seed: function (opts) {
-opts = opts || {};
-var nomeObra = String(opts.obra || "").trim().slice(0, 60) || "Residencial Vila Verde — 8 casas";
-try {
-if (typeof Store === "undefined") return false;
-var ja = (Store.listar(EID, "obras") || []).filter(function (o) { return o.id === "dg-obra1"; })[0];
-if (ja) {
-if (ja.nome !== nomeObra) { ja.nome = nomeObra; Store.salvar(EID, "obras", ja); }
-return true;
-}
-Store.salvar(EID, "clientes", {
-id: "dg-cli1", nome: "Incorporadora Horizonte Ltda", tipo: "PJ", doc: "12.345.678/0001-90",
-telefone: "(34) 99876-5432", email: "obras@horizonte.com.br", cidade: "Uberlândia", uf: "MG",
-status: "ativo", origem: "indicacao"
-});
-Store.salvar(EID, "clientes", {
-id: "dg-cli2", nome: "Prefeitura Municipal Modelo", tipo: "PJ", doc: "00.000.000/0002-00",
-telefone: "(34) 0000-0000", email: "licitacao@prefeituramodelo.com.br", cidade: "Cidade Modelo", uf: "MG",
-status: "ativo", origem: "licitacao"
-});
-Store.salvar(EID, "obras", {
-id: "dg-obra1", nome: nomeObra, clienteId: "dg-cli1",
-tipo: "residencial", fase: "estrutura", status: "andamento",
-local: "Uberlândia / MG", endereco: "Rua das Palmeiras, 450 — B. Jardim Colina",
-valor: 1850000, inicio: "2026-03-02", termino: "2026-12-18",
-responsavel: "Eng. João da Silva"
-});
-Store.salvar(EID, "obras", {
-id: "dg-obra2", nome: "Reforma Loja Center Sul", clienteId: "dg-cli1",
-tipo: "reforma", fase: "acabamento", status: "andamento",
-local: "Uberlândia / MG", valor: 240000, inicio: "2026-05-11", termino: "2026-08-30"
-});
-Store.salvar(EID, "obras", {
-id: "dg-obra3", nome: "Galpão Logístico BR-050", clienteId: "dg-cli2",
-tipo: "industrial", fase: "entregue", status: "concluida",
-local: "Cidade Modelo / MG", endereco: "Rod. BR-000, km 12 — Distrito Industrial",
-valor: 3200000, inicio: "2025-04-07", termino: "2026-02-27",
-responsavel: "Eng. João da Silva"
-});
-Store.salvar(EID, "obras", {
-id: "dg-obra4", nome: "Escola Municipal Jardim Europa", clienteId: "dg-cli2",
-tipo: "institucional", fase: "entregue", status: "concluida",
-local: "Cidade Modelo / MG", endereco: "Av. das Palmeiras, 1.240",
-valor: 1420000, inicio: "2025-08-18", termino: "2026-05-29",
-responsavel: "Eng. Carla Rodrigues"
-});
-Store.salvar(EID, "obras", {
-id: "dg-obra5", nome: "Condomínio Vista Serra — 24 unidades", clienteId: "dg-cli1",
-tipo: "residencial", fase: "projeto", status: "planejamento",
-local: "Uberlândia / MG", endereco: "Rua Bernardo Guimarães, 980 — B. Tabajaras",
-valor: 5600000, inicio: "2026-11-03", termino: "2028-04-14",
-responsavel: "Eng. João da Silva"
-});
-Store.salvar(EID, "contratos", {
-id: "dg-ct1", numero: "CT-2026-014", clienteId: "dg-cli1", clienteNome: "Incorporadora Horizonte Ltda",
-obraId: "dg-obra1", tipo: "empreitada_unitario", regime: "indireta", formaPgto: "medicao_retencao",
-valor: 1850000, retencaoPct: 5, status: "ativo", assinadoEm: "2026-02-20"
-});
-["dg-col1|José Carlos Pereira|Mestre de obras|4200",
-"dg-col2|Antônio Souza|Pedreiro|2800",
-"dg-col3|Marcos Lima|Servente|1900"].forEach(function (s) {
-var p = s.split("|");
-Store.salvar(EID, "colaboradores", { id: p[0], nome: p[1], funcao: p[2], salario: Number(p[3]), status: "ativo", obraId: "dg-obra1", admissao: "2026-03-02" });
-});
-Store.salvar(EID, "rdo", {
-id: "dg-rdo1", numero: "RDO-0042", obraId: "dg-obra1", data: "2026-07-03",
-climaManha: "ensolarado", climaTarde: "ensolarado", efetivoDireto: 7, efetivoIndireto: 2,
-atividades: "Concretagem da laje do bloco B (32 m³, fck 25). Início da alvenaria estrutural das casas 5 e 6. Recebimento de 12 t de aço CA-50.",
-ocorrencias: "Sem ocorrências. Vistoria do cliente às 10h — sem apontamentos.",
-equipamentos: "1 betoneira 400L · 1 vibrador de imersão · andaimes fachadeiros",
-responsavel: "José Carlos Pereira", status: "finalizado", fotos: []
-});
-Store.salvar(EID, "rdo", {
-id: "dg-rdo2", numero: "RDO-0043", obraId: "dg-obra1", data: "2026-07-04",
-climaManha: "ensolarado", climaTarde: "nublado", efetivoDireto: 6, efetivoIndireto: 2,
-atividades: "Desforma da laje do bloco B. Alvenaria estrutural casas 5 e 6 (fiadas 4 a 9). Marcação das instalações elétricas do bloco A.",
-ocorrencias: "Atraso de 2h na entrega de blocos (fornecedor) — remanejada a equipe para desforma.",
-equipamentos: "andaimes fachadeiros · serra circular de bancada",
-responsavel: "José Carlos Pereira", status: "finalizado", fotos: []
-});
-Store.salvar(EID, "medicoes", {
-id: "dg-med1", numero: "BM-02", obraId: "dg-obra1", orcamentoNumero: "ORC-2026-0820",
-periodoInicio: "2026-05-01", periodoFim: "2026-05-31",
-percentual: 11.2, valor: 207200, retencaoPct: 5, status: "paga"
-});
-Store.salvar(EID, "medicoes", {
-id: "dg-med2", numero: "BM-03", obraId: "dg-obra1", orcamentoNumero: "ORC-2026-0820",
-periodoInicio: "2026-06-01", periodoFim: "2026-06-30",
-percentual: 18.5, valor: 342500, retencaoPct: 5, status: "aprovada",
-itens: [
-{ itemId: "dgi1", etapa: "2.0 Estrutura", codigo: "103670", descricao: "Laje maciça de concreto armado, fck 25 MPa", unidade: "m³", qtdContratada: 180, precoUnit: 2350, pctAnterior: 35, pctPeriodo: 20, qtdMedida: 36, valor: 84600 },
-{ itemId: "dgi2", etapa: "3.0 Alvenaria", codigo: "89464", descricao: "Alvenaria de blocos de concreto estrutural 14x19x39", unidade: "m²", qtdContratada: 2200, precoUnit: 92.5, pctAnterior: 18, pctPeriodo: 25, qtdMedida: 550, valor: 50875 },
-{ itemId: "dgi3", etapa: "4.0 Instalações", codigo: "91926", descricao: "Eletroduto flexível corrugado 25 mm com fiação", unidade: "m", qtdContratada: 3400, precoUnit: 18.4, pctAnterior: 0, pctPeriodo: 12, qtdMedida: 408, valor: 7507.2 }
-]
-});
-[["dg-f1", "2026-06-05", "Medição BM-02 recebida", "medicao", "receita", 207200, "pago"],
-["dg-f2", "2026-06-12", "Aço CA-50 (12 t) — Gerdau", "material", "despesa", 58800, "pago"],
-["dg-f3", "2026-06-20", "Folha de pessoal — junho", "mao_obra", "despesa", 41300, "pago"],
-["dg-f4", "2026-07-02", "Locação de andaimes — julho", "equipamento", "despesa", 6400, "pendente"]].forEach(function (a) {
-Store.salvar(EID, "financeiro", { id: a[0], data: a[1], desc: a[2], categoria: a[3], obraId: "dg-obra1", tipo: a[4], valor: a[5], status: a[6] });
-});
-return true;
-} catch (e) { return false; }
-}
-};
-global.DemoGestao = DemoGestao;
-if (typeof module !== "undefined" && module.exports) module.exports = DemoGestao;
-})(typeof window !== "undefined" ? window : this);
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/obrademo.js ==== */
-try {
-(function (global) {
-"use strict";
-var PRE = "demo-ot-";
-function eid() { return (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : "local"; }
-function pad2(n) { return (n < 10 ? "0" : "") + n; }
-function iso(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
-function dias(base, n) { var d = new Date(base.getTime()); d.setDate(d.getDate() + n); return d; }
-function segunda(d) { var x = new Date(d.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; }
-function diaUtil(nAtras) {
-var d = dias(new Date(), -nAtras);
-while (d.getDay() === 0 || d.getDay() === 6) d = dias(d, -1);
-return d;
-}
-function salvar(chave, obj) {
-var r = Store.salvar(eid(), chave, obj);
-if (r == null) throw new Error("Sem espaço no armazenamento do navegador (" + chave + ") — faça um backup/limpeza e tente de novo.");
-return r;
-}
-function foto(rotulo, cor) {
-try {
-var c = document.createElement("canvas"); c.width = 480; c.height = 320;
-var g = c.getContext("2d");
-var grad = g.createLinearGradient(0, 0, 0, 320);
-grad.addColorStop(0, cor || "#8fa8bd"); grad.addColorStop(1, "#3f5a72");
-g.fillStyle = grad; g.fillRect(0, 0, 480, 320);
-g.fillStyle = "rgba(255,255,255,.25)";
-for (var i = 0; i < 6; i++) g.fillRect(30 + i * 75, 150 - (i % 3) * 18, 52, 170);
-g.fillStyle = "#0f2740"; g.fillRect(0, 258, 480, 62);
-g.fillStyle = "#ffffff"; g.font = "bold 20px Segoe UI, sans-serif";
-g.fillText("OBRA TESTE ORÇAPRO", 16, 284);
-g.font = "13px Segoe UI, sans-serif"; g.fillText(rotulo, 16, 306);
-return c.toDataURL("image/jpeg", 0.5);
-} catch (e) { return ""; }
-}
-var ObraDemo = {
-existe: function () { return !!Store.obter(eid(), "obras", PRE + "obra"); },
-criar: function () {
-if (typeof global.LastPlanner === "undefined" || typeof global.Orcamento === "undefined") {
-throw new Error("Módulos ainda carregando — tente de novo em instantes.");
-}
-var jaMexido = this.planoDeRemocao().mantem;
-if (jaMexido.length) {
-throw new Error("Você editou " + jaMexido.length + " registro(s) que vieram da demonstração (" +
-jaMexido.slice(0, 3).map(function (x) { return x.rot; }).join(", ") +
-(jaMexido.length > 3 ? "…" : "") + "). Recriar a demonstração escreveria por cima deles. " +
-"Remova a demonstração primeiro (os editados ficam) ou apague-os à mão.");
-}
-this._criouAlgo = true;
-this.remover({ apagarMexidos: true });
-var hoje = new Date();
-var iniObra = segunda(dias(hoje, -70));
-var obraId = PRE + "obra";
-var LP = global.LastPlanner;
-var semAtual = LP.chaveSemana(hoje);
-var sem = function (n) { return LP.chaveSemana(dias(new Date(semAtual + "T00:00:00"), n * 7)); };
-salvar("clientes", {
-id: PRE + "cli", nome: "Construtora Horizonte Ltda", tipo: "PJ",
-doc: "12.345.678/0001-90", ie: "003.456.789.0012", telefone: "(34) 99123-4567",
-email: "contato@horizonteconstrutora.com.br", endereco: "Av. Brasil, 1200 — Centro",
-cidade: "Uberlândia", uf: "MG", cep: "38400-000", status: "ativo", origem: "indicacao",
-obs: "Cliente da OBRA TESTE ORÇAPRO (dados de demonstração)."
-});
-salvar("fornecedores", { id: PRE + "for1", nome: "Depósito São José", categoria: "material", tipo: "PJ", doc: "98.765.432/0001-10", ie: "", telefone: "(34) 3212-4455", email: "vendas@depositosaojose.com.br", contato: "Sr. Antônio", endereco: "Rua das Indústrias, 85", cidade: "Uberlândia", uf: "MG", status: "homologado", produtos: "Cimento, areia, brita, blocos, argamassa", obs: "" });
-salvar("fornecedores", { id: PRE + "for2", nome: "Concreteira Forte", categoria: "material", tipo: "PJ", doc: "11.222.333/0001-44", ie: "", telefone: "(34) 3230-7788", email: "comercial@concreteiraforte.com.br", contato: "Fernanda", endereco: "Rod. BR-050, km 78", cidade: "Uberlândia", uf: "MG", status: "ativo", produtos: "Concreto usinado FCK 25/30/35", obs: "" });
-salvar("fornecedores", { id: PRE + "for3", nome: "LocaMáquinas Equipamentos", categoria: "locacao", tipo: "PJ", doc: "55.666.777/0001-88", ie: "", telefone: "(34) 3216-9900", email: "locacao@locamaquinas.com.br", contato: "Paulo", endereco: "Av. dos Contornos, 400", cidade: "Uberlândia", uf: "MG", status: "ativo", produtos: "Andaimes, betoneiras, escoras, geradores", obs: "" });
-salvar("colaboradores", { id: PRE + "col1", nome: "José Carlos Mendes", funcao: "Mestre de obras", tipoContrato: "clt", cpf: "111.222.333-44", telefone: "(34) 99811-1111", remuneracao: 4200, unidadeRem: "mensal", admissao: iso(dias(iniObra, -30)), obraId: obraId, status: "ativo" });
-salvar("colaboradores", { id: PRE + "col2", nome: "Rosivaldo Ferreira", funcao: "Pedreiro", tipoContrato: "diarista", cpf: "222.333.444-55", telefone: "(34) 99822-2222", remuneracao: 166, unidadeRem: "diaria", admissao: iso(iniObra), obraId: obraId, status: "ativo" });
-salvar("colaboradores", { id: PRE + "col3", nome: "Marcos Paulo Lima", funcao: "Pedreiro", tipoContrato: "diarista", cpf: "333.444.555-66", telefone: "(34) 99833-3333", remuneracao: 166, unidadeRem: "diaria", admissao: iso(iniObra), obraId: obraId, status: "ativo" });
-salvar("colaboradores", { id: PRE + "col4", nome: "Ana Beatriz Souza", funcao: "Servente", tipoContrato: "diarista", cpf: "444.555.666-77", telefone: "(34) 99844-4444", remuneracao: 120, unidadeRem: "diaria", admissao: iso(dias(iniObra, 7)), obraId: obraId, status: "ativo" });
-salvar("colaboradores", { id: PRE + "col5", nome: "Eng. Carla Rodrigues", funcao: "Engenheira civil", tipoContrato: "clt", cpf: "555.666.777-88", telefone: "(34) 99855-5555", remuneracao: 8500, unidadeRem: "mensal", admissao: iso(dias(iniObra, -60)), obraId: obraId, status: "ativo" });
-var orc = Orcamento.novo({ nome: "OBRA TESTE ORÇAPRO — Residência 180 m²", cliente: "Construtora Horizonte Ltda", obra: "OBRA TESTE ORÇAPRO" });
-orc.id = PRE + "orc";
-orc.cliente = { nome: "Construtora Horizonte Ltda", doc: "12.345.678/0001-90", contato: "contato@horizonteconstrutora.com.br" };
-orc.obra = { nome: "OBRA TESTE ORÇAPRO", local: "Rua dos Ipês, 250 — Jardim Karaíba, Uberlândia/MG", regime: "Empreitada" };
-var addE = function (nome) { Orcamento.addEtapa(orc, nome); return orc.etapas[orc.etapas.length - 1]; };
-var addB = function (etapa, codigo, qtd, fbDesc, fbUn, fbCusto) {
-var b = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(codigo) : null;
-var si = b
-? { codigo: String(b.codigo), descricao: b.descricao, unidade: b.unidade || "un", custoUnitario: Util.num(b.custoUnitario), custoMO: Util.num(b.custoMO), custoMAT: Util.num(b.custoMAT), custoEQ: Util.num(b.custoEQ) }
-: { codigo: "", descricao: fbDesc, unidade: fbUn, custoUnitario: fbCusto, custoMO: 0, custoMAT: 0, custoEQ: 0 };
-Orcamento.addItem(orc, etapa.id, si, qtd);
-};
-var addP = function (etapa, desc, un, cMO, cMAT, cEQ, qtd) {
-Orcamento.addItem(orc, etapa.id, { codigo: "", descricao: desc, unidade: un, custoUnitario: cMO + cMAT + cEQ, custoMO: cMO, custoMAT: cMAT, custoEQ: cEQ }, qtd);
-};
-var e1 = addE("Serviços Preliminares");
-addB(e1, "99059", 180, "Locação convencional da obra com gabarito", "m2", 7.3);
-addP(e1, "Instalação provisória de canteiro (água/energia/tapume)", "un", 1200, 2300, 0, 1);
-var e2 = addE("Fundações");
-addB(e2, "96523", 42, "Escavação manual para sapatas", "m3", 58.4);
-addP(e2, "Concreto magro para lastro (preparo em obra)", "m3", 92, 388, 15, 6);
-addB(e2, "94965", 28, "Concreto FCK 25 MPa preparo mecânico", "m3", 608);
-var e3 = addE("Estrutura");
-addP(e3, "Concretagem de pilares e vigas FCK 30 (com bomba)", "m3", 132, 498, 30, 34);
-addB(e3, "92917", 2800, "Armação de estruturas de concreto armado", "kg", 9.2);
-addP(e3, "Forma de madeira para estrutura (3 reaproveitamentos)", "m2", 28, 34, 0, 310);
-var e4 = addE("Alvenaria e Vedações");
-addB(e4, "103355", 420, "Alvenaria de vedação em blocos cerâmicos", "m2", 62.8);
-addB(e4, "87905", 780, "Chapisco em alvenaria", "m2", 6.4);
-addB(e4, "87775", 780, "Emboço/massa única em argamassa 1:2:8", "m2", 24.2);
-var e5 = addE("Instalações");
-addP(e5, "Instalações elétricas — ponto completo (tubulação+fiação+dispositivo)", "un", 68, 74, 0, 96);
-addP(e5, "Instalações hidrossanitárias — ponto de água/esgoto completo", "un", 82, 96, 0, 54);
-var e6 = addE("Acabamentos");
-addB(e6, "87263", 180, "Revestimento cerâmico para piso", "m2", 68.5);
-addB(e6, "88489", 920, "Pintura látex acrílica, duas demãos", "m2", 16);
-try { Store.desenterrar(eid(), "orcamentos", [orc.id]); } catch (eDs) {}
-if (Store.salvarOrcamento(eid(), orc) == null) {
-var rec = Store.ultimaRecusa;
-if (rec && rec.tipo === "corrompido") throw new Error("A lista de orçamentos deste aparelho está ilegível (arquivo corrompido) — nada foi gravado por cima. Restaure o backup (💾) antes de criar a demonstração.");
-if (rec) throw new Error("O orçamento da demonstração foi alterado em outra janela (ou em outro aparelho) enquanto ela era recriada — nada foi gravado por cima. Feche a outra janela e tente de novo.");
-throw new Error("Sem espaço no armazenamento do navegador (orçamento) — faça um backup/limpeza e tente de novo.");
-}
-var precoVenda = Math.round(Orcamento.totais(orc).precoVenda);
-salvar("obras", {
-id: obraId, nome: "OBRA TESTE ORÇAPRO", clienteId: PRE + "cli", clienteNome: "Construtora Horizonte Ltda",
-tipo: "residencial", fase: "estrutura", status: "andamento", valor: precoVenda,
-local: "Rua dos Ipês, 250 — Jardim Karaíba, Uberlândia/MG",
-inicio: iso(iniObra), termino: iso(dias(iniObra, 240)),
-areaConstruida: 180, areaTerreno: 360, orcamentoId: PRE + "orc",
-obs: "Obra de DEMONSTRAÇÃO do OrçaPRO — todos os módulos alimentados. Remova pelo Painel quando quiser."
-});
-salvar("contratos", {
-id: PRE + "con", numero: "CT-" + hoje.getFullYear() + "-OT1", status: "ativo",
-clienteId: PRE + "cli", clienteNome: "Construtora Horizonte Ltda", obraId: obraId,
-tipo: "empreitada_global", regime: "direta", valor: precoVenda, formaPgto: "medicao_retencao",
-dataAssinatura: iso(dias(iniObra, -7)), inicio: iso(iniObra), termino: iso(dias(iniObra, 240)),
-orcamentoId: PRE + "orc", descricao: "Execução completa de residência unifamiliar de 180 m² conforme orçamento ORÇAPRO vinculado.",
-rtContratada: "Eng. Carla Rodrigues", creaContratada: "CREA-MG 123456/D", artContratada: "BR20260000001",
-garantiaServicos: 60, tipoGarantia: "caucao", multaAtraso: 0.1, clausulasEspeciais: ""
-});
-var med1v = Math.round(precoVenda * 0.18);
-salvar("medicoes", {
-id: PRE + "med1", numero: "01ª", status: "paga", obraId: obraId, contratoId: PRE + "con",
-orcamentoId: null, itens: null,
-periodoInicio: iso(iniObra), periodoFim: iso(dias(iniObra, 28)),
-percentual: 18, valor: med1v, retencao: 5,
-descricao: "Serviços preliminares e fundações concluídas.",
-aprovadoPor: "Eng. Carla Rodrigues", aprovadoEm: iso(dias(iniObra, 30)), dataPgto: iso(dias(iniObra, 35))
-});
-salvar("medicoes", {
-id: PRE + "med2", numero: "02ª", status: "pendente", obraId: obraId, contratoId: PRE + "con",
-orcamentoId: null, itens: null,
-periodoInicio: iso(dias(iniObra, 29)), periodoFim: iso(diaUtil(2)),
-percentual: 14, valor: Math.round(precoVenda * 0.14), retencao: 5,
-descricao: "Estrutura do pavimento térreo e início da alvenaria."
-});
-var lpSeed = [
-{ id: PRE + "lp1", titulo: "Concretar sapatas do bloco A", responsavel: "Equipe estrutura", frente: "Fundações", semana: sem(-2), comprometida: true, status: "feito", causa: "", concluidaEm: sem(-2), restricoes: [] },
-{ id: PRE + "lp2", titulo: "Impermeabilizar baldrames", responsavel: "Rosivaldo Ferreira", frente: "Fundações", semana: sem(-2), comprometida: true, status: "feito", causa: "", concluidaEm: sem(-2), restricoes: [] },
-{ id: PRE + "lp3", titulo: "Montar armadura dos pilares P1–P8", responsavel: "Equipe estrutura", frente: "Estrutura", semana: sem(-2), comprometida: true, status: "naofeito", causa: "Material", restricoes: [] },
-{ id: PRE + "lp4", titulo: "Montar armadura dos pilares P1–P8 (replanejada)", responsavel: "Equipe estrutura", frente: "Estrutura", semana: sem(-1), comprometida: true, status: "feito", causa: "", concluidaEm: sem(-1), restricoes: [] },
-{ id: PRE + "lp5", titulo: "Formas dos pilares do térreo", responsavel: "Marcos Paulo Lima", frente: "Estrutura", semana: sem(-1), comprometida: true, status: "feito", causa: "", concluidaEm: sem(-1), restricoes: [] },
-{ id: PRE + "lp6", titulo: "Concretar pilares P1–P8", responsavel: "Equipe estrutura", frente: "Estrutura", semana: sem(-1), comprometida: true, status: "naofeito", causa: "Clima", restricoes: [] },
-{ id: PRE + "lp7", titulo: "Locar alvenaria do térreo", responsavel: "José Carlos Mendes", frente: "Alvenaria", semana: sem(-1), comprometida: true, status: "feito", causa: "", concluidaEm: sem(-1), restricoes: [] },
-{ id: PRE + "lp8", titulo: "Concretar pilares P1–P8 (replanejada)", responsavel: "Equipe estrutura", frente: "Estrutura", semana: semAtual, comprometida: true, status: "feito", causa: "", concluidaEm: iso(diaUtil(1)), concluidaVia: "rdo", restricoes: [] },
-{ id: PRE + "lp9", titulo: "Formas e escoramento das vigas do térreo", responsavel: "Marcos Paulo Lima", frente: "Estrutura", semana: semAtual, comprometida: true, status: "afazer", causa: "", restricoes: [] },
-{ id: PRE + "lp10", titulo: "Alvenaria do térreo — panos 1 a 4", responsavel: "Rosivaldo Ferreira", frente: "Alvenaria", semana: semAtual, comprometida: true, status: "afazer", causa: "", restricoes: [] },
-{ id: PRE + "lp11", titulo: "Chapisco das paredes externas", responsavel: "Ana Beatriz Souza", frente: "Alvenaria", semana: semAtual, comprometida: false, status: "afazer", causa: "", restricoes: [] },
-{ id: PRE + "lp12", titulo: "Instalações elétricas — infra da laje", responsavel: "Equipe elétrica", frente: "Instalações", semana: semAtual, comprometida: false, status: "afazer", causa: "", restricoes: [{ id: "r-demo-1", tipo: "Material", descricao: "Eletrodutos ainda não entregues (Depósito São José)", prazo: iso(dias(hoje, 2)), removida: false }] },
-{ id: PRE + "lp13", titulo: "Concretar laje do térreo", responsavel: "Equipe estrutura", frente: "Estrutura", semana: sem(1), comprometida: false, status: "afazer", causa: "", restricoes: [] },
-{ id: PRE + "lp14", titulo: "Alvenaria do pavimento superior", responsavel: "Rosivaldo Ferreira", frente: "Alvenaria", semana: sem(2), comprometida: false, status: "afazer", causa: "", restricoes: [{ id: "r-demo-2", tipo: "Mão de obra", descricao: "Contratar 1 pedreiro adicional", prazo: iso(dias(hoje, 9)), removida: false }] },
-{ id: PRE + "lp15", titulo: "Contramarcos e vergas", responsavel: "Marcos Paulo Lima", frente: "Alvenaria", semana: sem(2), comprometida: false, status: "afazer", causa: "", restricoes: [] }
-];
-lpSeed.forEach(function (t) { t.obraId = obraId; salvar("lp_tarefas", t); });
-salvar("tarefas", { id: PRE + "tar1", titulo: "Renovar seguro de responsabilidade civil da obra", responsavelId: PRE + "col5", obraId: obraId, prazo: iso(dias(hoje, -3)), prioridade: "alta", status: "afazer", descricao: "Apólice vence esta semana.", concluidaEm: "" });
-salvar("tarefas", { id: PRE + "tar2", titulo: "Cotar caçamba de entulho", responsavelId: PRE + "col1", obraId: obraId, prazo: iso(dias(hoje, 4)), prioridade: "normal", status: "fazendo", descricao: "", concluidaEm: "" });
-salvar("tarefas", { id: PRE + "tar3", titulo: "Agendar visita do cliente à obra", responsavelId: PRE + "col5", obraId: obraId, prazo: iso(dias(hoje, 7)), prioridade: "normal", status: "afazer", descricao: "Mostrar avanço da estrutura.", concluidaEm: "" });
-salvar("tarefas", { id: PRE + "tar4", titulo: "Enviar ART de execução ao CREA", responsavelId: PRE + "col5", obraId: obraId, prazo: iso(dias(hoje, -20)), prioridade: "urgente", status: "feita", descricao: "", concluidaEm: iso(dias(hoje, -18)) });
-var f1 = foto("Concretagem dos pilares — bloco A", "#7d94a8");
-var f2 = foto("Armação das vigas do térreo", "#9a8f7d");
-var f3 = foto("Alvenaria do térreo — pano 2", "#8aa78d");
-var rdos = [
-{ n: 1, at: diaUtil(6), atv: "Montagem das formas dos pilares P1–P8. Conferência de prumo e travamento.", oc: "Sem ocorrências.", ed: 7, ei: 2, eq: "Serra circular, prumo a laser", fotos: [] },
-{ n: 2, at: diaUtil(4), atv: "Armação dos pilares concluída. Início da montagem do escoramento das vigas.", oc: "Sem ocorrências.", ed: 8, ei: 2, eq: "Policorte, andaimes", fotos: f2 ? [{ d: f2, leg: "Armação das vigas do térreo" }] : [] },
-{ n: 3, at: diaUtil(3), atv: "Chuva forte pela manhã — serviços externos suspensos até 10h. À tarde, preparação para concretagem.", oc: "Chuva forte das 7h às 10h — frente externa paralisada (2h30 de improdutividade).", ed: 8, ei: 2, eq: "Bomba de concreto agendada", fotos: [] },
-{ n: 4, at: diaUtil(1), atv: "Concretagem dos pilares P1–P8 com concreto usinado FCK 30 (Concreteira Forte). Cura iniciada.", oc: "Sem ocorrências.", ed: 9, ei: 2, eq: "Bomba lança, vibradores", lp: PRE + "lp8", fotos: f1 ? [{ d: f1, leg: "Concretagem dos pilares — bloco A" }] : [] },
-{ n: 5, at: diaUtil(0), atv: "Início da alvenaria do térreo (panos 1 e 2). Marcação da primeira fiada conferida pelo mestre.", oc: "Sem ocorrências.", ed: 8, ei: 2, eq: "Betoneira 400L, nível a laser", fotos: f3 ? [{ d: f3, leg: "Alvenaria do térreo — pano 2" }] : [] }
-];
-var itensRdo = {
-1: [{ pid: "p1", numero: "1.1", descricao: "Forma de pilar", etapa: "Estrutura", unidade: "m2",
-qtdPrevista: 320, qtdExecutada: 48,
-producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 28 },
-{ colaboradorId: PRE + "col3", nome: "Marcos Paulo Lima", qtd: 20 }] }],
-2: [{ pid: "p1", numero: "1.1", descricao: "Forma de pilar", etapa: "Estrutura", unidade: "m2",
-qtdPrevista: 320, qtdExecutada: 52,
-producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 30 },
-{ colaboradorId: PRE + "col3", nome: "Marcos Paulo Lima", qtd: 22 }] }],
-4: [{ pid: "p2", numero: "1.2", descricao: "Concretagem de pilar", etapa: "Estrutura", unidade: "m3",
-qtdPrevista: 34, qtdExecutada: 12.5, producao: [] }],
-5: [{ pid: "p3", numero: "2.1", descricao: "Alvenaria de bloco cerâmico", etapa: "Alvenaria", unidade: "m2",
-qtdPrevista: 610, qtdExecutada: 36,
-producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 21 }] }]
-};
-rdos.forEach(function (r) {
-salvar("rdo", {
-id: PRE + "rdo" + r.n, numero: "RDO-" + ("0000" + r.n).slice(-4),
-data: iso(r.at), status: "finalizado", obraId: obraId, obraNome: "OBRA TESTE ORÇAPRO",
-atividadesItens: itensRdo[r.n] || [],
-climaManha: r.n === 3 ? "chuva_forte" : "ensolarado", climaTarde: r.n === 3 ? "nublado" : "ensolarado",
-condicao: r.n === 3 ? "parcial" : "praticavel",
-efetivoDireto: r.ed, efetivoIndireto: r.ei, terceiros: r.n === 4 ? "Equipe da concreteira (3)" : "",
-atividades: r.atv, ocorrencias: r.oc, equipamentos: r.eq,
-responsavel: "Eng. Carla Rodrigues", autor: "José Carlos Mendes", lpTarefaId: r.lp || "", fotos: r.fotos
-});
-});
-var ano = hoje.getFullYear();
-salvar("requisicoes", {
-id: PRE + "req1", numero: "REQ-" + ano + "-OT1", data: iso(diaUtil(5)), obraId: obraId,
-solicitante: "José Carlos Mendes", prioridade: "alta", status: "comprada", observacoes: "Material da alvenaria do térreo.",
-itens: [
-{ codigo: "", descricao: "Bloco cerâmico 14x19x39", unidade: "un", quantidade: 4200, precoRef: 2.35, categoria: "MAT", fonte: "" },
-{ codigo: "", descricao: "Argamassa de assentamento", unidade: "sc", quantidade: 90, precoRef: 14.5, categoria: "MAT", fonte: "" }
-],
-descricao: "Bloco cerâmico 14x19x39 (+1 item)", valorEstimado: 4200 * 2.35 + 90 * 14.5,
-quantidade: 4200, unidade: "un",
-aprovadoPor: "Eng. Carla Rodrigues", aprovadoEm: iso(diaUtil(4))
-});
-salvar("cotacoes", {
-id: PRE + "cot1", numero: "COT-" + ano + "-OT1", data: iso(diaUtil(4)), obraId: obraId,
-requisicaoId: PRE + "req1", descricao: "Materiais da alvenaria do térreo", status: "concluida", cenario: "unico",
-itens: [
-{ codigo: "", descricao: "Bloco cerâmico 14x19x39", unidade: "un", quantidade: 4200, precoRef: 2.35 },
-{ codigo: "", descricao: "Argamassa de assentamento", unidade: "sc", quantidade: 90, precoRef: 14.5 }
-],
-fornecedores: [
-{ fornecedorId: PRE + "for1", nome: "Depósito São José", frete: 0, prazoDias: 3, condPgto: "28 dias", precos: { "0": 2.28, "1": 13.9 } },
-{ fornecedorId: null, nome: "Casa do Construtor UDI", frete: 180, prazoDias: 2, condPgto: "à vista", precos: { "0": 2.41, "1": 13.5 } }
-]
-});
-salvar("compras", {
-id: PRE + "com1", numero: "PC-" + ano + "-OT1", fornecedorId: PRE + "for1", fornecedorNome: "Depósito São José",
-obraId: obraId, descricao: "Bloco cerâmico 14x19x39 (4.200 un) + argamassa (90 sc) — alvenaria do térreo",
-valor: Math.round(4200 * 2.28 + 90 * 13.9), categoria: "material", formaPgto: "parcelado",
-data: iso(diaUtil(3)), previsaoEntrega: iso(diaUtil(1)), obs: "", status: "recebido",
-itens: [
-{ codigo: "", descricao: "Bloco cerâmico 14x19x39", unidade: "un", quantidade: 4200, precoRef: 2.28 },
-{ codigo: "", descricao: "Argamassa de assentamento", unidade: "sc", quantidade: 90, precoRef: 13.9 }
-],
-requisicaoId: PRE + "req1", cotacaoId: PRE + "cot1",
-aprovadoPor: "Eng. Carla Rodrigues", aprovadoEm: iso(diaUtil(3)), dataRecebimento: iso(diaUtil(1))
-});
-salvar("compras", {
-id: PRE + "com2", numero: "PC-" + ano + "-OT2", fornecedorId: PRE + "for2", fornecedorNome: "Concreteira Forte",
-obraId: obraId, descricao: "Concreto usinado FCK 30 — laje do térreo (12 m³)", valor: 12 * 620,
-categoria: "material", formaPgto: "avista", data: iso(diaUtil(1)), previsaoEntrega: iso(dias(hoje, 6)),
-obs: "Agendar bomba.", status: "aprovado", aprovadoPor: "Eng. Carla Rodrigues", aprovadoEm: iso(diaUtil(1))
-});
-salvar("compras", {
-id: PRE + "com3", numero: "PC-" + ano + "-OT3", fornecedorId: PRE + "for3", fornecedorNome: "LocaMáquinas Equipamentos",
-obraId: obraId, descricao: "Locação de escoras metálicas (200 un × 45 dias)", valor: 3600,
-categoria: "locacao", formaPgto: "parcelado", data: iso(diaUtil(0)), previsaoEntrega: "", obs: "", status: "cotacao"
-});
-salvar("estoque", { id: PRE + "est1", nome: "Cimento CP-II 50 kg", categoria: "cimento", unidade: "sc", saldo: 46, estoqueMin: 30, custoUnit: 32.9, obraId: obraId, localizacao: "Depósito da obra", obs: "" });
-salvar("estoque", { id: PRE + "est2", nome: "Bloco cerâmico 14x19x39", categoria: "outros", unidade: "un", saldo: 3100, estoqueMin: 500, custoUnit: 2.28, obraId: obraId, localizacao: "Pátio", obs: "" });
-salvar("estoque", { id: PRE + "est3", nome: "Vergalhão CA-50 10mm", categoria: "aco", unidade: "br", saldo: 18, estoqueMin: 40, custoUnit: 58.7, obraId: obraId, localizacao: "Baia coberta", obs: "Repor antes da laje." });
-salvar("estoque", { id: PRE + "est4", nome: "Capacete classe B", categoria: "epi", unidade: "un", saldo: 12, estoqueMin: 6, custoUnit: 25.9, obraId: obraId, localizacao: "Almoxarifado", obs: "" });
-salvar("estoque_mov", { id: PRE + "mov1", itemId: PRE + "est2", itemNome: "Bloco cerâmico 14x19x39", tipo: "entrada", qtd: 4200, custoUnit: 2.28, data: iso(diaUtil(1)), obraId: obraId });
-salvar("estoque_mov", { id: PRE + "mov2", itemId: PRE + "est2", itemNome: "Bloco cerâmico 14x19x39", tipo: "saida", qtd: 1100, custoUnit: 2.28, data: iso(diaUtil(0)), obraId: obraId });
-salvar("epi", {
-id: PRE + "epi1", numero: "EPI-" + ano + "-OT1", data: iso(diaUtil(6)), colaboradorId: PRE + "col2",
-colaboradorNome: "Rosivaldo Ferreira", colaboradorFuncao: "Pedreiro", colaboradorCpf: "222.333.444-55",
-obraId: obraId, observacoes: "Kit de admissão na frente de alvenaria.",
-itens: [
-{ epiId: "demo", nome: "Capacete classe B", ca: "31469", validade: iso(dias(hoje, 400)), quantidade: 1, valorUnit: 25.9 },
-{ epiId: "demo", nome: "Luva de raspa", ca: "29895", validade: iso(dias(hoje, 45)), quantidade: 2, valorUnit: 12.5 },
-{ epiId: "demo", nome: "Botina de segurança", ca: "27810", validade: iso(dias(hoje, 500)), quantidade: 1, valorUnit: 89.9 }
-],
-valorTotal: 25.9 + 2 * 12.5 + 89.9
-});
-salvar("epi", {
-id: PRE + "epi2", numero: "EPI-" + ano + "-OT2", data: iso(diaUtil(2)), colaboradorId: PRE + "col4",
-colaboradorNome: "Ana Beatriz Souza", colaboradorFuncao: "Servente", colaboradorCpf: "444.555.666-77",
-obraId: obraId, observacoes: "",
-itens: [
-{ epiId: "demo", nome: "Óculos de proteção incolor", ca: "34082", validade: iso(dias(hoje, 30)), quantidade: 1, valorUnit: 9.9 },
-{ epiId: "demo", nome: "Protetor auricular plug", ca: "5674", validade: iso(dias(hoje, 200)), quantidade: 1, valorUnit: 3.5 }
-],
-valorTotal: 9.9 + 3.5
-});
-var comp = hoje.getFullYear() + "-" + pad2(hoje.getMonth() + 1);
-salvar("ponto", { id: PRE + "pon1", competencia: comp, colaboradorId: PRE + "col1", colaboradorNome: "José Carlos Mendes", obraId: obraId, dias: 22, faltas: 0, horasExtras: 6, valor: 4200, status: "aberto", obs: "" });
-salvar("ponto", { id: PRE + "pon2", competencia: comp, colaboradorId: PRE + "col5", colaboradorNome: "Eng. Carla Rodrigues", obraId: obraId, dias: 22, faltas: 1, horasExtras: 0, valor: 8500, status: "aberto", obs: "" });
-salvar("faltas", { id: PRE + "fal1", colaboradorId: PRE + "col3", colaboradorNome: "Marcos Paulo Lima", data: iso(dias(new Date(semAtual + "T00:00:00"), 2)), motivo: "injustificada" });
-salvar("faltas", { id: PRE + "fal2", colaboradorId: PRE + "col5", colaboradorNome: "Eng. Carla Rodrigues", data: iso(diaUtil(4)), motivo: "atestado" });
-salvar("faltas", { id: PRE + "fal3", colaboradorId: PRE + "col4", colaboradorNome: "Ana Beatriz Souza", data: iso(diaUtil(6)), motivo: "folga" });
-salvar("folha", { id: PRE + "fol1", competencia: comp, colaboradorId: PRE + "col1", obraId: obraId, salarioBase: 4200, encargosPct: 68, horasExtras: 180, descontos: 0, status: "lancada", custoTotal: Math.round(4200 + 4200 * 0.68 + 180) });
-salvar("folha", { id: PRE + "fol2", competencia: comp, colaboradorId: PRE + "col5", obraId: obraId, salarioBase: 8500, encargosPct: 68, horasExtras: 0, descontos: 0, status: "aberta", custoTotal: Math.round(8500 * 1.68) });
-var fsDias = { seg: 166, ter: 166, qua: 166, qui: 166, sex: 166 };
-salvar("fs_lancamentos", { id: PRE + "fs1", semana: semAtual, obraId: obraId, colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", funcao: "Pedreiro", favorecido: "Rosivaldo Ferreira", chavePix: "34998222222", tipo: "diaria", dias: fsDias, faltas: [], he: 80, valor: 0, obs: "", usarValor: false });
-salvar("fs_lancamentos", { id: PRE + "fs2", semana: semAtual, obraId: obraId, colaboradorId: PRE + "col3", nome: "Marcos Paulo Lima", funcao: "Pedreiro", favorecido: "Marcos Paulo Lima", chavePix: "34998333333", tipo: "diaria", dias: { seg: 166, ter: 166, qui: 166, sex: 166 }, faltas: ["qua"], he: 0, valor: 0, obs: "Falta qua (injustificada).", usarValor: false });
-salvar("fs_lancamentos", { id: PRE + "fs3", semana: semAtual, obraId: obraId, colaboradorId: PRE + "col4", nome: "Ana Beatriz Souza", funcao: "Servente", favorecido: "Ana Beatriz Souza", chavePix: "34998444444", tipo: "diaria", dias: { seg: 120, ter: 120, qua: 120, qui: 120, sex: 120 }, faltas: [], he: 0, valor: 0, obs: "", usarValor: false });
-salvar("fs_lancamentos", { id: PRE + "fs4", semana: semAtual, obraId: obraId, colaboradorId: "", nome: "Gesso & Cia (empreita)", funcao: "Gesseiro", favorecido: "Gesso & Cia", chavePix: "gesso@pix.com.br", tipo: "empreita", dias: {}, faltas: [], he: 0, valor: 1450, obs: "Forro do escritório do canteiro.", usarValor: false });
-salvar("fs_pagamentos", { id: PRE + "fsp1", semana: semAtual, favKey: "ROSIVALDO FERREIRA|34998222222", pago: true, em: new Date().toISOString(), valor: 166 * 5 + 80, obras: [obraId] });
-salvar("frota", { id: PRE + "fro1", nome: "Caminhão Mercedes Atego", tipo: "caminhao", placa: "RTZ-2B47", modelo: "Mercedes-Benz Atego 1719", ano: "2019", posse: "proprio", valor: 285000, status: "em_uso", obraId: obraId, km: 148230, obs: "" });
-salvar("frota", { id: PRE + "fro2", nome: "Betoneira 400L", tipo: "equipamento", placa: "PAT-BET01", modelo: "CSM 400L", ano: "2022", posse: "proprio", valor: 4800, status: "em_uso", obraId: obraId, km: 0, obs: "" });
-salvar("frota_mov", { id: PRE + "fmv1", frotaId: PRE + "fro1", frotaNome: "Caminhão Mercedes Atego", tipo: "combustivel", valor: 620, km: 148230, data: iso(diaUtil(2)), obraId: obraId, descricao: "Diesel S10 — 200 L" });
-salvar("frota_mov", { id: PRE + "fmv2", frotaId: PRE + "fro2", frotaNome: "Betoneira 400L", tipo: "manutencao", valor: 260, km: 0, data: iso(diaUtil(4)), obraId: obraId, descricao: "Troca de correia e revisão" });
-salvar("patrimonio", { id: PRE + "pat1", descricao: "Notebook Dell Latitude (engenharia)", categoria: "informatica", numeroPatrimonio: "PAT-OT01", valorAquisicao: 6800, dataAquisicao: iso(dias(hoje, -730)), depreciacaoAnual: 20, estado: "bom", obraId: "", localizacao: "Escritório central", obs: "" });
-salvar("patrimonio", { id: PRE + "pat2", descricao: "Andaime fachadeiro 60 m²", categoria: "equipamento", numeroPatrimonio: "PAT-OT02", valorAquisicao: 14500, dataAquisicao: iso(dias(hoje, -365)), depreciacaoAnual: 10, estado: "bom", obraId: obraId, localizacao: "OBRA TESTE ORÇAPRO", obs: "" });
-var etFundacoes = e2.id, etEstrutura = e3.id, etAlvenaria = e4.id;
-var fin = [
-{ id: PRE + "fin1", data: iso(dias(iniObra, 2)), tipo: "receita", desc: "Entrada do contrato CT-" + ano + "-OT1 (20%)", categoria: "obra", valor: Math.round(precoVenda * 0.2), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" },
-{ id: PRE + "fin2", data: iso(dias(iniObra, 35)), tipo: "receita", desc: "Medição 01ª — líquido (retenção 5%)", categoria: "medicao", valor: Math.round(med1v * 0.95), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con", docTipo: "MED", docId: PRE + "med1", docNumero: "01ª" },
-{ id: PRE + "fin3", data: iso(diaUtil(1)), tipo: "despesa", desc: "PC-" + ano + "-OT1 — blocos e argamassa (Depósito São José)", categoria: "material", valor: Math.round(4200 * 2.28 + 90 * 13.9), status: "pendente", fornecedor: "Depósito São José", formaPgto: "parcelado", docTipo: "PC", docId: PRE + "com1", docNumero: "PC-" + ano + "-OT1" },
-{ id: PRE + "fin4", data: iso(dias(iniObra, 20)), tipo: "despesa", desc: "Concreto usinado FCK 25 — fundações", categoria: "material", valor: 17360, status: "pago", fornecedor: "Concreteira Forte", etapaId: etFundacoes },
-{ id: PRE + "fin10", data: iso(dias(iniObra, 12)), tipo: "despesa", desc: "Escavação e empreiteiro de fundações", categoria: "mao_obra", valor: 14800, status: "pago", fornecedor: "", etapaId: etFundacoes },
-{ id: PRE + "fin11", data: iso(dias(iniObra, 34)), tipo: "despesa", desc: "Aço CA-50 — vergalhões da estrutura", categoria: "material", valor: 24900, status: "pago", fornecedor: "Depósito São José", etapaId: etEstrutura },
-{ id: PRE + "fin12", data: iso(dias(iniObra, 45)), tipo: "despesa", desc: "Empreiteiro de estrutura (formas e concretagem)", categoria: "mao_obra", valor: 29800, status: "pago", fornecedor: "", etapaId: etEstrutura },
-{ id: PRE + "fin13", data: iso(dias(iniObra, 40)), tipo: "despesa", desc: "Locação de escoras e formas metálicas", categoria: "equipamento", valor: 6400, status: "pago", fornecedor: "LocaMáquinas Equipamentos", etapaId: etEstrutura },
-{ id: PRE + "fin14", data: iso(diaUtil(2)), tipo: "despesa", desc: "Blocos e argamassa — 1ª remessa alvenaria", categoria: "material", valor: 12600, status: "pago", fornecedor: "Depósito São José", etapaId: etAlvenaria },
-{ id: PRE + "fin5", data: iso(diaUtil(1)), tipo: "despesa", desc: "Folha " + comp + " — José Carlos Mendes (encargos)", categoria: "mao_obra", valor: Math.round(4200 + 4200 * 0.68 + 180), status: "pago", fornecedor: "", docTipo: "FOL", docId: PRE + "fol1", docNumero: comp },
-{ id: PRE + "fin6", data: iso(diaUtil(2)), tipo: "despesa", desc: "Combustível - Caminhão Mercedes Atego", categoria: "equipamento", valor: 620, status: "pago", fornecedor: "Caminhão Mercedes Atego", docTipo: "FRT", docId: PRE + "fmv1", docNumero: "" },
-{ id: PRE + "fin7", data: iso(diaUtil(4)), tipo: "despesa", desc: "Manutenção - Betoneira 400L", categoria: "equipamento", valor: 260, status: "pago", fornecedor: "Betoneira 400L", docTipo: "FRT", docId: PRE + "fmv2", docNumero: "" },
-{ id: PRE + "fin8", data: iso(diaUtil(5)), tipo: "despesa", desc: "Taxas e ART da obra", categoria: "impostos", valor: 890, status: "pago", fornecedor: "CREA-MG" },
-{ id: PRE + "fin15", data: iso(dias(hoje, 5)), tipo: "receita", desc: "Aluguel de equipamento ocioso p/ obra vizinha", categoria: "outros", valor: 3200, status: "pendente", fornecedor: "Construtora Vizinhança ME" }
-];
-fin.forEach(function (f) { f.obraId = obraId; if (f.etapaId == null) f.etapaId = ""; f.obs = ""; salvar("financeiro", f); });
-salvar("fiscal", { id: PRE + "nf1", numero: "48213", serie: "1", tipo: "entrada", status: "emitida", naturezaOp: "Venda de mercadoria", parceiro: "Depósito São José", obraId: obraId, dataEmissao: iso(diaUtil(1)), valorProdutos: 10827, valorImpostos: 1245, valorTotal: 10827, chaveAcesso: "" });
-salvar("fiscal", { id: PRE + "nf2", numero: "126", serie: "1", tipo: "saida", status: "emitida", naturezaOp: "Prestação de serviço de construção", parceiro: "Construtora Horizonte Ltda", obraId: obraId, dataEmissao: iso(dias(iniObra, 35)), valorProdutos: Math.round(med1v * 0.95), valorImpostos: Math.round(med1v * 0.95 * 0.0865), valorTotal: Math.round(med1v * 0.95), chaveAcesso: "" });
-salvar("centrocusto", { id: PRE + "cc1", codigo: "CC-OT1", nome: "OBRA TESTE ORÇAPRO", tipo: "direto", obraId: obraId, valorOrcado: Math.round(Orcamento.totais(orc).custoDireto), obs: "Centro de custo da obra de demonstração." });
-try { ObraDemo.marcarOriginais(); } catch (e) {}
-return { obraId: obraId, precoVenda: precoVenda };
-},
-CHAVES: ["clientes", "fornecedores", "colaboradores", "obras", "contratos", "medicoes", "lp_tarefas", "tarefas", "rdo", "requisicoes", "cotacoes", "compras", "estoque", "estoque_mov", "epi", "ponto", "faltas", "folha", "fs_lancamentos", "fs_pagamentos", "frota", "frota_mov", "patrimonio", "financeiro", "fiscal", "centrocusto", "cc_regras", "cc_aprop"],
-POR_OBRA: ["centrocusto", "cc_regras", "cc_aprop"],
-_digital: function (r) {
-return JSON.stringify([r && r.numero, r && r.data, r && r.nome, r && r.descricao,
-r && r.atividades, r && r.valor, r && r.obraId]);
-},
-_chaveDigital: function (e) { return "orcapro:demo:digital:" + e; },
-marcarOriginais: function () {
-var e = eid(), mapa = {}, self = this;
-this.CHAVES.forEach(function (ch) {
-Store.listar(e, ch).forEach(function (r) {
-if (r && String(r.id).indexOf(PRE) === 0) mapa[ch + "|" + r.id] = self._digital(r);
-});
-});
-try { localStorage.setItem(this._chaveDigital(e), JSON.stringify(mapa)); } catch (err) {}
-return mapa;
-},
-planoDeRemocao: function () {
-var e = eid(), mapa = {}, self = this;
-try { mapa = JSON.parse(localStorage.getItem(this._chaveDigital(e)) || "{}"); } catch (err) {}
-var temMapa = Object.keys(mapa).length > 0;
-var apaga = [], mantem = [];
-this.CHAVES.forEach(function (ch) {
-Store.listar(e, ch).forEach(function (r) {
-if (!r || String(r.id).indexOf(PRE) !== 0) return;
-var orig = mapa[ch + "|" + r.id];
-var mexido = temMapa ? (orig !== undefined && orig !== self._digital(r))
-: (ch === "rdo" || ch === "medicoes" || ch === "contratos");
-(mexido ? mantem : apaga).push({ ch: ch, id: r.id, rot: r.numero || r.nome || r.descricao || r.id });
-});
-});
-var saiObra = apaga.some(function (x) { return x.ch === "obras" && x.id === PRE + "obra"; });
-if (saiObra) {
-var jaVai = {};
-apaga.concat(mantem).forEach(function (x) { jaVai[x.ch + "|" + x.id] = 1; });
-this.POR_OBRA.forEach(function (ch) {
-Store.listar(e, ch).forEach(function (r) {
-if (!r || String(r.obraId || "") !== PRE + "obra") return;
-if (jaVai[ch + "|" + r.id]) return;
-apaga.push({ ch: ch, id: r.id, rot: r.nome || r.codigo || r.id, porObra: true });
-});
-});
-}
-return { apaga: apaga, mantem: mantem, temMapa: temMapa };
-},
-remover: function (opts) {
-opts = opts || {};
-var e = eid(), plano = this.planoDeRemocao(), n = 0;
-var porEnt = {};
-var junta = function (x) { (porEnt[x.ch] = porEnt[x.ch] || []).push(x.id); };
-plano.apaga.forEach(junta);
-if (opts.apagarMexidos === true) plano.mantem.forEach(junta);
-for (var ch in porEnt) {
-if (!Object.prototype.hasOwnProperty.call(porEnt, ch)) continue;
-var saiu = Store.excluirVarios(e, ch, porEnt[ch], false);
-if (saiu) Store.lapidarLote(e, ch, porEnt[ch], "obra-demo");
-n += saiu;
-}
-try { if (Store.obterOrcamento(e, PRE + "orc")) { Store.excluirOrcamento(e, PRE + "orc"); n++; } } catch (err) {}
-return { removidos: n, mantidos: (opts.apagarMexidos === true ? [] : plano.mantem) };
-}
-};
-global.ObraDemo = ObraDemo;
-})(typeof window !== "undefined" ? window : this);
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/empresa.js ==== */
-try {
-(function (global) {
-"use strict";
-var DEFAULT = {
-nome: "",
-cnpj: "",
-responsavel: "",
-titulo: "Engenheiro Civil",
-crea: "",
-registroNacional: "",
-cidade: "",
-endereco: "",
-contato: "",
-telefone: "",
-whatsapp: "",
-email: "",
-site: "",
-instagram: "",
-gestao: "",
-regimeTributario: "",
-inscricaoMunicipal: "",
-banco: "",
-agencia: "",
-conta: "",
-socioNome: "",
-socioCargo: "",
-rtNome: "",
-rtCrea: "",
-timbradoTopo: "",
-timbradoFundo: ""
-};
-var Empresa = {
-campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario",
-"inscricaoMunicipal", "banco", "agencia", "conta", "socioNome", "socioCargo", "rtNome", "rtCrea", "timbradoTopo", "timbradoFundo"],
-REGIMES: { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" },
-regime: function () {
-var r = String(this.dados().regimeTributario || "").toLowerCase();
-return this.REGIMES[r] ? r : "";
-},
-regimeRotulo: function () { var r = this.regime(); return r ? this.REGIMES[r] : ""; },
-_prefs: function () {
-try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }
-catch (e) { return {}; }
-},
-dados: function () {
-var rt = (this._prefs().responsavelTecnico) || {};
-var d = {};
-this.campos.forEach(function (k) { d[k] = (rt[k] != null && String(rt[k]).trim() !== "") ? rt[k] : DEFAULT[k]; });
-return d;
-},
-logo: function () { return this._prefs().logo || null; },
-logoHTML: function (maxH) {
-var l = this.logo();
-if (l) return '<img src="' + l + '" alt="logo" style="max-height:' + (maxH || 80) + 'px;max-width:260px;object-fit:contain">';
-return '<div class="logo-ph">[LOGO ' + (typeof Util !== "undefined" ? Util.esc(this.dados().nome) : this.dados().nome) + ']</div>';
-},
-salvar: function (dados, logoBase64) {
-var p = this._prefs();
-var antes = (p.responsavelTecnico && typeof p.responsavelTecnico === "object") ? String(p.responsavelTecnico.gestao || "") : "";
-if (dados && String(dados.gestao || "") !== antes) p.gestaoEm = new Date().toISOString();
-p.responsavelTecnico = dados;
-if (logoBase64 !== undefined) { if (logoBase64) p.logo = logoBase64; else delete p.logo; }
-Store.salvarPrefs(Auth.empresaId(), p);
-return true;
-},
-salvarGestao: function (valor) {
-if (typeof Auth !== "undefined" && Auth.podeEditarGestao && !Auth.podeEditarGestao()) {
-return { ok: false, erro: "Seu usuário não tem permissão para definir o responsável pelo planejamento e gestão. Peça ao administrador da conta (Usuários → editar → marcar a permissão)." };
-}
-var p = this._prefs();
-var rt = (p.responsavelTecnico && typeof p.responsavelTecnico === "object") ? p.responsavelTecnico : {};
-rt.gestao = String(valor == null ? "" : valor).trim();
-p.responsavelTecnico = rt;
-p.gestaoEm = new Date().toISOString();
-Store.salvarPrefs(Auth.empresaId(), p);
-return { ok: true, valor: rt.gestao };
-},
-salvarLogo: function (logoBase64) {
-var p = this._prefs(); p.logo = logoBase64; Store.salvarPrefs(Auth.empresaId(), p);
-},
-docsCfg: function () {
-var d = this._prefs().docs || {};
-return {
-creditos: d.creditos !== false,
-marcaDagua: d.marcaDagua || "empresa",
-qr: d.qr !== false,
-citarBase: d.citarBase !== false
-};
-},
-salvarDocsCfg: function (cfg) {
-var p = this._prefs();
-p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr, citarBase: cfg.citarBase !== false };
-Store.salvarPrefs(Auth.empresaId(), p);
-},
-citarBasePrecos: function () { return this.docsCfg().citarBase; },
-nomeDoc: function () {
-var n = this.dados().nome;
-if (n) return n;
-try { var u = (typeof Auth !== "undefined") && Auth.usuario(); if (u && u.empresa) return u.empresa; } catch (e) {}
-return "";
-},
-marcaDaguaTexto: function () {
-return this.docsCfg().marcaDagua === "nenhuma" ? "" : this.nomeDoc();
-},
-creditoTexto: function () {
-if (!this.docsCfg().creditos) return "";
-return "Gerado pelo " + ((typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO IA");
-},
-creditoHTML: function (comData) {
-var t = this.creditoTexto();
-if (!t) return "";
-return "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>" + t +
-(comData ? " em " + new Date().toLocaleDateString("pt-BR") : "") + "</div>";
-},
-excelCreator: function () {
-if (this.docsCfg().creditos) return (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO IA";
-return this.nomeDoc() || " ";
-},
-DEFAULT: DEFAULT,
-fotoUsuario: function () {
-try {
-var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-if (u.usuarioId) {
-var m = (Store.listar(Auth.empresaId(), "equipe") || []).filter(function (x) { return x && x.id === u.usuarioId; })[0];
-return (m && m.foto) || "";
-}
-return this._prefs().fotoDono || "";
-} catch (e) { return ""; }
-},
-salvarFotoUsuario: function (dataURI) {
-var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-if (u.usuarioId) {
-var eq = Store.listar(Auth.empresaId(), "equipe") || [];
-var m = eq.filter(function (x) { return x && x.id === u.usuarioId; })[0];
-if (!m) return false;
-if (dataURI) m.foto = dataURI; else delete m.foto;
-Store.salvar(Auth.empresaId(), "equipe", m);
-this._avisarPerfil();
-return true;
-}
-var p = this._prefs();
-if (dataURI) p.fotoDono = dataURI; else delete p.fotoDono;
-Store.salvarPrefs(Auth.empresaId(), p);
-this._avisarPerfil();
-return true;
-},
-_avisarPerfil: function () {
-try { if (typeof Telemetria !== "undefined" && Telemetria.perfilMudou) Telemetria.perfilMudou(); } catch (e) {}
-},
-nomeUsuario: function () {
-try {
-var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-if (u.usuarioId) {
-var m = (Store.listar(Auth.empresaId(), "equipe") || []).filter(function (x) { return x && x.id === u.usuarioId; })[0];
-return (m && m.nome) || "";
-}
-return String(this._prefs().nomeDono || "").trim();
-} catch (e) { return ""; }
-},
-salvarNomeUsuario: function (nome) {
-var n = String(nome == null ? "" : nome).trim();
-if (n.length > 60) n = n.substring(0, 60);
-var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-if (u.usuarioId) {
-return "somente-admin";
-}
-if (u.papel && u.papel !== "admin") return "somente-admin";
-var p = this._prefs();
-if (n) {
-p.nomeDono = n;
-p.nomeDonoEm = new Date().toISOString();
-} else {
-delete p.nomeDono;
-p.nomeDonoEm = new Date().toISOString();
-}
-Store.salvarPrefs(Auth.empresaId(), p);
-try {
-if (typeof Auth !== "undefined") {
-if (Auth.esquecerNome) Auth.esquecerNome();
-var s = Auth.usuario && Auth.usuario();
-if (s) s.nomePessoal = n;
-}
-} catch (e2) {}
-try { if (typeof Telemetria !== "undefined" && Telemetria.perfilMudou) Telemetria.perfilMudou(); } catch (e3) {}
-return true;
-},
-iniciais: function (nome) {
-var n = String(nome || "").trim();
-if (!n) return "?";
-var p = n.split(/\s+/).filter(function (x) { return x.length > 1; });
-if (!p.length) return n.charAt(0).toUpperCase();
-if (p.length === 1) return p[0].substring(0, 2).toUpperCase();
-return (p[0].charAt(0) + p[p.length - 1].charAt(0)).toUpperCase();
-}
-};
-global.Empresa = Empresa;
-if (typeof module !== "undefined" && module.exports) module.exports = Empresa;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/licenca.js ==== */
-try {
-(function (global) {
-"use strict";
-var TRIAL_MS = 7 * 24 * 3600 * 1000;
-var GRACE_MS = 7 * 24 * 3600 * 1000;
-var KEY = "orcapro:licenca";
-function agora() { return new Date().getTime(); }
-function rotuloTempo(ms) {
-if (ms <= 0) return "encerrado";
-var d = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000), m = Math.floor((ms % 3600000) / 60000);
-if (d > 0) return d + "d " + h + "h";
-return h > 0 ? (h + "h" + (m < 10 ? "0" : "") + m) : (m + "min");
-}
-var Licenca = {
-_ler: function () { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } },
-_gravar: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
-chave: function () { var l = this._ler() || {}; return l.chave || ""; },
-_modoVisor: function () {
-try {
-if (typeof location === "undefined") return false;
-var q = String(location.search || ""), h = String(location.hash || "");
-if (/[?&]demo=1/.test(q)) return true;
-if (/^#placa=[a-z2-9]{6,16}/.test(h)) return true;
-if (/[?&]t=[a-f0-9]{12,40}/.test(h + q) && /(^|[#&/])rv\b/i.test(h || q)) return true;
-} catch (e) {}
-return false;
-},
-sincronizarDevice: function () {
-try {
-if (this._modoVisor()) return;
-if (typeof fetch === "undefined" || typeof localStorage === "undefined") return;
-var cur = null; try { cur = localStorage.getItem("orcapro:deviceid"); } catch (e) {}
-fetch("/__device" + (cur ? "?seed=" + encodeURIComponent(cur) : ""))
-.then(function (r) { return r.json(); })
-.then(function (j) {
-if (!j || !j.ok || !j.id) return;
-try { if (localStorage.getItem("orcapro:deviceid") !== j.id && !cur) localStorage.setItem("orcapro:deviceid", j.id); } catch (e2) {}
-})["catch"](function () {});
-} catch (e3) {}
-try { this._idbDevSync(); } catch (e4) {}
-},
-_cookieDev: function () {
-try {
-if (typeof document === "undefined") return "";
-var m = String(document.cookie || "").match(/(?:^|;\s*)orcapro_dev=([\w-]{8,64})/);
-return m ? m[1] : "";
-} catch (e) { return ""; }
-},
-_gravarCookieDev: function (d) {
-try { if (typeof document !== "undefined" && d && d !== "nodev") document.cookie = "orcapro_dev=" + d + "; max-age=315360000; path=/; SameSite=Lax"; } catch (e) {}
-},
-deviceId: function () {
-var k = "orcapro:deviceid", d = "", lsOk = true;
-if (this._modoVisor()) return "nodev";
-try { d = localStorage.getItem(k) || ""; } catch (e) { lsOk = false; }
-if (!d) d = this._cookieDev();
-if (!d && this._devMem) d = this._devMem;
-if (!d) {
-if (!lsOk) return "nodev";
-d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
-try { localStorage.setItem(k, d); } catch (e2) { return "nodev"; }
-this._devNovo = true;
-} else if (lsOk) {
-try { if (localStorage.getItem(k) !== d) localStorage.setItem(k, d); } catch (e3) {}
-}
-this._gravarCookieDev(d);
-return d;
-},
-_idbDev: function (cb) {
-try {
-if (typeof indexedDB === "undefined") { cb(""); return; }
-var rq = indexedDB.open("orcapro-ident", 1);
-rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
-rq.onerror = function () { cb(""); };
-rq.onsuccess = function () {
-try {
-var g = rq.result.transaction("k", "readonly").objectStore("k").get("deviceid");
-g.onsuccess = function () { cb(typeof g.result === "string" ? g.result : ""); };
-g.onerror = function () { cb(""); };
-} catch (e) { cb(""); }
-};
-} catch (e2) { cb(""); }
-},
-_idbGravarDev: function (id) {
-try {
-if (typeof indexedDB === "undefined" || !id || id === "nodev") return;
-var rq = indexedDB.open("orcapro-ident", 1);
-rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
-rq.onsuccess = function () { try { rq.result.transaction("k", "readwrite").objectStore("k").put(id, "deviceid"); } catch (e) {} };
-} catch (e2) {}
-},
-_idbDevSync: function () {
-var self = this;
-this._idbDev(function (guardado) {
-try {
-var atual = self.deviceId();
-if (guardado && guardado !== atual) {
-var l = self._ler() || {};
-if ((self._devNovo || atual === "nodev") && !(l.verificado && l.deviceId === atual)) {
-try { localStorage.setItem("orcapro:deviceid", guardado); } catch (e) { self._devMem = guardado; }
-self._gravarCookieDev(guardado); self._devNovo = false;
-} else self._idbGravarDev(atual);
-} else if (!guardado && atual !== "nodev") self._idbGravarDev(atual);
-} catch (e2) {}
-});
-},
-_fnv: function (str, seed) {
-var h = seed >>> 0, i;
-for (i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; }
-return ("00000000" + h.toString(16)).slice(-8);
-},
-_fp: function () {
-try {
-var nv = (typeof navigator !== "undefined") ? navigator : {}, sc = (typeof screen !== "undefined") ? screen : {};
-var txt = [nv.userAgent, nv.language, nv.platform, sc.width + "x" + sc.height + "x" + sc.colorDepth, new Date().getTimezoneOffset(), nv.hardwareConcurrency, nv.deviceMemory].join("|");
-return this._fnv(txt, 2166136261) + this._fnv(txt, 5381);
-} catch (e) { return ""; }
-},
-_hw: function (cb) {
-var self = this;
-if (this._hwCache !== undefined) { cb(this._hwCache); return; }
-try {
-if (typeof fetch === "undefined") { cb(null); return; }
-var feito = false, fim = function (v) { if (feito) return; feito = true; self._hwCache = v; cb(v); };
-var tm = setTimeout(function () { fim(null); }, 8000); if (tm && tm.unref) tm.unref();
-fetch("/__hw").then(function (r) { return r.ok ? r.json() : null; })
-.then(function (j) { fim(j && j.ok ? { hw: j.hw || "", hwm: j.hwm || "" } : null); })["catch"](function () { fim(null); });
-} catch (e) { cb(null); }
-},
-_servidor: function () { return (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
-_ehV2: function (chave) { return String(chave || "").indexOf("v2.") === 0; },
-_lerExpDe: function (chave) {
-try {
-var c = String(chave || "").trim(), s;
-if (c.indexOf("v2.") === 0) {
-var parts = c.split("."); if (parts.length !== 3) return null;
-s = parts[1].replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "=";
-} else {
-var i = c.lastIndexOf("-"); if (i < 0) return null;
-s = c.slice(0, i);
-}
-var payload = (typeof atob !== "undefined") ? atob(s) : Buffer.from(s, "base64").toString();
-var seg = payload.split("|");
-return { email: seg[0], exp: parseInt(seg[1], 10) || 0, tier: seg[2] || "" };
-} catch (e) { return null; }
-},
-TIERS: ["base", "plus", "bim"],
-TIER_MODELA: "modela",
-_maiorTier: function (a, b) {
-var T = this.TIERS;
-var ia = T.indexOf(String(a || "").toLowerCase());
-var ib = T.indexOf(String(b || "").toLowerCase());
-if (ia < 0 && ib < 0) return String(a || b || "");
-return (ib > ia) ? T[ib] : (ia >= 0 ? T[ia] : T[ib]);
-},
-_aplicarEquipe: function (l, d) {
-if (!d || Number(d.equipeV) !== 1) return false;
-var t = d.tipoLicenca == null ? "" : String(d.tipoLicenca);
-if (t && t !== "equipe" && t !== "titular") return false;
-var n = function (x) { x = parseInt(x, 10); return (x >= 0 && x <= 999) ? x : null; };
-var foto = function () { return JSON.stringify([l.tipoLicenca || "", l.usuariosMax, l.equipe || null, l.dispositivosMax || null, l.upgrade || null]); };
-var antes = foto();
-if (t === "equipe") {
-l.tipoLicenca = "equipe"; l.usuariosMax = n(d.usuariosMax) || 0; delete l.equipe;
-l.dispositivosMax = n(d.dispositivosMax);
-var up = (d.upgrade && typeof d.upgrade === "object") ? d.upgrade : null;
-l.upgrade = up ? { nome: String(up.nome || ""), valor: Number(up.valor) || 0, periodo: String(up.periodo || "") } : null;
-var zap = String(d.whatsapp || "").replace(/\D/g, "");
-if (zap) l.whatsappRA = zap;
-} else if (t === "titular") {
-var e = d.equipe || {}, mx = n(e.max) || 0, ind = n(e.independentes) || 0;
-l.tipoLicenca = "titular";
-l.equipe = this._equipeDe(e);
-l.usuariosMax = (n(d.usuariosMax) != null) ? n(d.usuariosMax) : Math.max(0, mx - ind);
-delete l.dispositivosMax; delete l.upgrade;
-} else {
-delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade;
-}
-l.equipeEm = agora();
-return antes !== foto();
-},
-_equipeDe: function (e) {
-e = e || {};
-var n = function (x) { x = parseInt(x, 10); return (x >= 0 && x <= 999) ? x : null; };
-var mx = n(e.max) || 0, o = { max: mx, independentes: n(e.independentes) || 0, empresa: n(e.empresa), dispositivos: n(e.dispositivos) || 3 };
-if (n(e.indepMax) != null && n(e.indepMax) < mx) o.indepMax = n(e.indepMax);
-if (n(e.usuariosPorIndependente)) o.usuariosPorIndependente = n(e.usuariosPorIndependente);
-return o;
-},
-_com: function (o, l) {
-var t = (l && (l.tipoLicenca === "equipe" || l.tipoLicenca === "titular")) ? l.tipoLicenca : "";
-o.tipoLicenca = t;
-o.usuariosMax = t === "equipe" ? (Number(l.usuariosMax) || 0) : ((t === "titular" && typeof l.usuariosMax === "number") ? l.usuariosMax : null);
-o.equipe = t === "titular" ? (l.equipe || null) : null;
-o.dispositivosMax = t === "equipe" ? (l.dispositivosMax || null) : null;
-o.upgrade = t === "equipe" ? (l.upgrade || null) : null;
-o.whatsappRA = (l && l.whatsappRA) || "";
-return o;
-},
-_aplicarRenovacao: function (l, d) {
-if (!d || Number(d.renovV) !== 1) return false;
-var antes = Number(l.renovadaAte) || 0, ren = Number(d.expiraRenovada) || 0;
-if (ren > 0) l.renovadaAte = ren; else delete l.renovadaAte;
-return (Number(l.renovadaAte) || 0) !== antes;
-},
-_expEfetiva: function (l, info) {
-var e = (info && info.exp) || 0;
-return (e > 0 && Number(l.renovadaAte) > e) ? Number(l.renovadaAte) : e;
-},
-_aplicarModulos: function (l, d) {
-if (!d || !Array.isArray(d.modulos)) return false;
-var antes = JSON.stringify(l.modulosServidor || null), novo = [];
-d.modulos.forEach(function (m) { m = String(m || "").trim().toLowerCase(); if (m && novo.indexOf(m) < 0) novo.push(m); });
-l.modulosServidor = novo;
-return JSON.stringify(novo) !== antes;
-},
-modulosExtras: function () {
-try {
-var l = this._ler() || {};
-if (!l.chave || !l.verificado || !Array.isArray(l.modulosServidor) || !l.modulosServidor.length) return [];
-var info = this._lerExpDe(l.chave), expEf = this._expEfetiva(l, info);
-if (expEf && expEf < agora()) return [];
-if (l.deviceId && l.deviceId !== this.deviceId()) return [];
-if (!(agora() < (l.validadoEm || 0) + GRACE_MS)) return [];
-if (this._suspensaPorCobranca(l.chave)) return [];
-return l.modulosServidor.slice();
-} catch (e) { return []; }
-},
-_ativarLocal: function (chave, v, verificado) {
-var l = this._ler() || {}, nova = String(chave).trim();
-if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; delete l.modulosServidor; }
-l.chave = nova; l.email = v.email; l.expira = v.expira;
-if (v.tier) l.tierServidor = this._maiorTier(l.tierServidor, v.tier);
-l.ativadoEm = agora(); l.deviceId = this.deviceId();
-l.verificado = !!verificado; if (verificado) l.validadoEm = agora();
-this._aplicarEquipe(l, v);
-this._aplicarRenovacao(l, v);
-this._aplicarModulos(l, v);
-this._gravar(l);
-},
-ativarOnline: function (chave, cb) {
-var self = this, c = String(chave || "").trim();
-if (!this._ehV2(c)) { cb({ ok: false, erro: "Chave inválida." }); return; }
-var srv = this._servidor();
-if (!srv || typeof fetch === "undefined") { cb({ ok: false, erro: "Ative com a internet ligada — a licença é validada no servidor." }); return; }
-fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: c, deviceId: this.deviceId() }) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-if (d && d.ok) { self._ativarLocal(c, d, true); cb({ ok: true, email: d.email, expira: d.expira, tier: d.tier || "", tipoLicenca: d.tipoLicenca || "" }); }
-else cb({ ok: false, erro: (d && d.erro) || "Não foi possível ativar." });
-}, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença. Tente novamente com a internet." }); });
-},
-revalidar: function (cb) {
-cb = cb || function () {};
-var self = this, l = this._ler() || {};
-if (!l.chave || !l.verificado) { cb({ ok: true, skip: true }); return; }
-var srv = this._servidor(); if (!srv || typeof fetch === "undefined") { cb({ ok: true, offline: true }); return; }
-fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, deviceId: this.deviceId() }) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-if (d && d.ok) {
-l.validadoEm = agora(); l.email = d.email; l.expira = d.expira;
-if (d.tier) l.tierServidor = self._maiorTier(l.tierServidor, d.tier);
-var mudou = self._aplicarEquipe(l, d);
-var mudouRen = self._aplicarRenovacao(l, d);
-var mudouMod = self._aplicarModulos(l, d);
-self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, mudouModulos: mudouMod, tipoLicenca: l.tipoLicenca || "" });
-}
-else if (d && d.bloqueado) { try { localStorage.removeItem(KEY); } catch (e) {} cb({ ok: false, bloqueado: true, erro: d.erro }); }
-else {
-var mudouR = false;
-if (d && Number(d.renovV) === 1) mudouR = self._aplicarRenovacao(l, d);
-else if (d && /expirad/i.test(String(d.erro || "")) && l.renovadaAte) {
-var infoR = self._lerExpDe(l.chave);
-if (infoR && infoR.exp > 0 && infoR.exp < agora()) { delete l.renovadaAte; mudouR = true; }
-}
-if (mudouR) self._gravar(l);
-cb({ ok: true, mudouRenovacao: mudouR });
-}
-}, function () { cb({ ok: true, offline: true }); });
-},
-_veredito: function () {
-try { var v = JSON.parse(localStorage.getItem("orcapro:testectl") || "null"); return (v && typeof v === "object") ? v : null; } catch (e) { return null; }
-},
-_gravarVeredito: function (v) { try { localStorage.setItem("orcapro:testectl", JSON.stringify(v)); } catch (e) {} },
-_aplicarVeredito: function (d) {
-if (!d || d.semVeredito || d.pago || d.desligado) return false;
-var encerrado = d.expirado === true && Number(d.trialInicio) > 0;
-if (d.ok !== true && !encerrado) return false;
-var antes = this._veredito(), v = antes || {}, mudou = false;
-if (Number(d.trialInicio) > 0) {
-var ini = Number(d.trialInicio);
-v = { inicio: ini, fim: Number(d.trialFim) > ini ? Number(d.trialFim) : ini + TRIAL_MS, expirado: d.expirado === true, motivo: String(d.motivo || ""),
-confirmado: d.confirmado === true, validado: d.validado !== false, falta: (d.falta && d.falta.length !== undefined) ? d.falta : [],
-precisaConfirmar: d.precisaConfirmar === true, diasUsados: Number(d.diasUsados) || 0, em: agora() };
-try { var l = this._ler() || {}; if (!l.trialServidor || ini < l.trialServidor) { l.trialServidor = ini; this._gravar(l); } } catch (e) {}
-mudou = !antes || antes.inicio !== v.inicio || antes.fim !== v.fim || antes.expirado !== v.expirado || antes.motivo !== v.motivo ||
-antes.validado !== v.validado || antes.precisaConfirmar !== v.precisaConfirmar;
-} else if (d.precisaConfirmar === true) {
-mudou = !antes || antes.precisaConfirmar !== true || Number(antes.inicio) > 0;
-v = { precisaConfirmar: true, falta: d.falta || ["telefone", "email"], em: agora() };
-}
-else return false;
-this._gravarVeredito(v);
-return mudou;
-},
-_regTeste: function () { try { return JSON.parse(localStorage.getItem("orcapro:trialreg") || "null"); } catch (e) { return null; } },
-_idsTeste: function (cb) {
-var self = this, dev = this.deviceId();
-this._hw(function (h) {
-var o = { ctl: 2, fp: self._fp() };
-if (dev && dev !== "nodev") o.deviceId = dev;
-if (h) { if (h.hw) o.hw = h.hw; if (h.hwm) o.hwm = h.hwm; }
-try { if (typeof CONFIG !== "undefined" && CONFIG.versao) o.v = CONFIG.versao; } catch (e) {}
-cb(o);
-});
-},
-_postTeste: function (rota, corpo, cb) {
-var srv = this._servidor();
-if (!srv || typeof fetch === "undefined") { cb(null); return; }
-var feito = false, tm = null, fim = function (d) { if (feito) return; feito = true; try { clearTimeout(tm); } catch (e) {} cb(d); };
-tm = setTimeout(function () { fim(null); }, 15000); if (tm && tm.unref) tm.unref();
-try {
-fetch(srv + rota, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
-.then(function (r) {
-return r.json().then(function (d) { return d; }, function () { return r && r.status === 404 ? { ok: true, desligado: true } : null; });
-}).then(function (d) { fim(d || null); }, function () { fim(null); });
-} catch (e2) { fim(null); }
-},
-registrarTeste: function (cb) {
-cb = cb || function () {};
-try {
-var self = this;
-if (!this._servidor() || typeof fetch === "undefined") { cb(null, false); return; }
-this._idsTeste(function (o) {
-var reg = self._regTeste() || {}, l = self._ler() || {};
-if (reg.telefone) o.telefone = String(reg.telefone);
-if (reg.email) o.email = String(reg.email);
-if (reg.nome) o.nome = String(reg.nome);
-if (l.chave) o.chave = l.chave;
-self._postTeste("/api/teste", o, function (d) {
-var mudou = self._aplicarVeredito(d);
-try { if (d && d.ok) localStorage.setItem("orcapro:teste_pingado", "1"); } catch (e) {}
-try { if (d && d.ok) self.reenviarInteresseTeste(); } catch (eI) {}
-cb(d, mudou);
-});
-});
-} catch (e) { cb(null, false); }
-},
-enviarInteresseTeste: function (lista, cb) {
-cb = cb || function () {};
-try {
-var self = this, ls = (lista || []).filter(function (x) { return typeof x === "string"; });
-if (!ls.length) { cb(null); return; }
-this._idsTeste(function (ids) {
-ids.interesses = ls;
-self._postTeste("/api/teste/interesse", ids, function (d) {
-try { if (d && d.ok && d.registrado === true) localStorage.setItem("orcapro:interesse_enviado", JSON.stringify(ls)); } catch (e) {}
-cb(d);
-});
-});
-} catch (e2) { cb(null); }
-},
-reenviarInteresseTeste: function () {
-try {
-if (typeof Perfis === "undefined" || !Perfis.interessesTeste) return;
-var atual = Perfis.interessesTeste();
-if (!atual.length) return;
-var enviado = null; try { enviado = localStorage.getItem("orcapro:interesse_enviado"); } catch (e) {}
-if (enviado === JSON.stringify(atual)) return;
-this.enviarInteresseTeste(atual);
-} catch (e2) {}
-},
-canaisTeste: function (cb) {
-this._postTeste("/api/teste/canais", { ctl: 2 }, function (d) {
-if (d && d.desligado) { cb({ desligado: true }); return; }
-cb(d && d.ok && d.canais ? d.canais : null);
-});
-},
-pedirCodigoTeste: function (o, cb) {
-var self = this;
-this._idsTeste(function (ids) {
-ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino;
-ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
-self._postTeste("/api/teste/codigo", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
-});
-},
-confirmarCodigoTeste: function (o, cb) {
-var self = this;
-this._idsTeste(function (ids) {
-ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino; ids.codigo = o.codigo;
-ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || ""; ids.ref = o.ref || "";
-self._postTeste("/api/teste/confirmar", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
-});
-},
-acompanharTelefoneTeste: function (o, cb) {
-var self = this;
-this._idsTeste(function (ids) {
-ids.canal = "telefone"; ids.destino = o.destino; ids.codigo = o.codigo; ids.ref = o.ref || "";
-ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
-self._postTeste("/api/teste/telefone/estado", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
-});
-},
-iniciarFluxoAntigo: function () {
-var t = agora();
-this._gravarVeredito({ inicio: t, fim: t + TRIAL_MS, expirado: false, motivo: "ok", confirmado: false, validado: true, falta: [], precisaConfirmar: false, diasUsados: 0, em: t, antigo: true });
-},
-testePendente: function () { try { var s = this.status(); return !!(s && s.trial && s.pendente); } catch (e) { return false; } },
-testeEncerrado: function () { try { var s = this.status(); return !!(s && s.trial && s.expirado); } catch (e) { return false; } },
-emitirIndependente: function (nome, email, usuariosEmpresa, cb) {
-var self = this, srv = this._servidor(), l = this._ler() || {};
-if (!srv || !l.chave || typeof fetch === "undefined") { cb({ ok: false, erro: "Emitir licença independente precisa de internet." }); return; }
-var corpo = { chave: l.chave, nome: nome, email: email };
-if (typeof usuariosEmpresa === "number" && usuariosEmpresa >= 0) corpo.usuariosEmpresa = usuariosEmpresa;
-fetch(srv + "/api/licenca/filha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-if (d && d.ok) {
-var m = self._ler() || {};
-if (m.tipoLicenca === "titular" && m.equipe) {
-if (typeof d.emitidas === "number") m.equipe.independentes = d.emitidas;
-if (typeof d.max === "number") m.equipe.max = d.max;
-if (typeof d.empresa === "number") m.equipe.empresa = d.empresa;
-if (typeof d.indepMax === "number" && d.indepMax < (m.equipe.max || 0)) m.equipe.indepMax = d.indepMax;
-m.usuariosMax = Math.max(0, (m.equipe.max || 0) - (m.equipe.independentes || 0));
-self._gravar(m);
-}
-}
-cb(d || { ok: false, erro: "Resposta vazia do servidor de licença." });
-}, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença. Tente de novo com a internet." }); });
-},
-informarUso: function (usuariosEmpresa) {
-try {
-var self = this, l = this._ler() || {}, srv = this._servidor();
-if (l.tipoLicenca !== "titular" || !l.chave || !srv || typeof fetch === "undefined") return;
-var n = parseInt(usuariosEmpresa, 10); if (!(n >= 0 && n <= 999)) return;
-if (l.equipe && l.equipe.empresa === n && l.usoInformadoEm) return;
-fetch(srv + "/api/licenca/uso", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, usuariosEmpresa: n }) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-if (!d || !d.ok || d.ignorado) return;
-var m = self._ler() || {}; if (m.tipoLicenca !== "titular") return;
-if (d.equipe) m.equipe = self._equipeDe(d.equipe);
-if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
-m.usoInformadoEm = agora(); self._gravar(m);
-})["catch"](function () {});
-} catch (e) {}
-},
-atualizarEquipe: function (usuariosEmpresa, cb) {
-cb = cb || function () {};
-try {
-var self = this, l = this._ler() || {}, srv = this._servidor(), n = parseInt(usuariosEmpresa, 10);
-if (l.tipoLicenca !== "titular" || !l.chave || !srv || typeof fetch === "undefined" || !(n >= 0 && n <= 999)) { cb(null); return; }
-var feito = false, fim = function (x) { if (!feito) { feito = true; cb(x); } };
-setTimeout(function () { fim(null); }, 6000);
-fetch(srv + "/api/licenca/uso", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, usuariosEmpresa: n }) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-if (!d || !d.ok || d.ignorado || !d.equipe) { fim(null); return; }
-var m = self._ler() || {}; if (m.tipoLicenca !== "titular") { fim(null); return; }
-m.equipe = self._equipeDe(d.equipe);
-if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
-m.usoInformadoEm = agora(); self._gravar(m);
-fim(m.equipe);
-}, function () { fim(null); });
-} catch (e) { cb(null); }
-},
-listarIndependentes: function (cb) {
-var srv = this._servidor(), l = this._ler() || {};
-if (!srv || !l.chave || typeof fetch === "undefined") { cb({ ok: false, erro: "A lista precisa de internet." }); return; }
-fetch(srv + "/api/licenca/filhas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave }) })
-.then(function (r) { return r.json(); })
-.then(function (d) { cb(d || { ok: false, erro: "Resposta vazia do servidor de licença." }); }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença." }); });
-},
-_suspensaPorCobranca: function (chave) {
-try {
-var c = JSON.parse(localStorage.getItem("orcapro:cobranca") || "null");
-return !!(c && c.suspensa === true && c.chaveRef && c.chaveRef === String(chave || "").slice(-16));
-} catch (e) { return false; }
-},
-tierDaLicenca: function () {
-var l = this._ler() || {};
-if (!l.chave || !l.verificado) return "";
-var info = this._lerExpDe(l.chave);
-return String(this._maiorTier((info && info.tier) || "", l.tierServidor || "")).toLowerCase();
-},
-soModela: function () {
-return this.tierDaLicenca() === this.TIER_MODELA;
-},
-status: function () {
-var l = this._ler() || {};
-if (l.chave) {
-var info = this._lerExpDe(l.chave);
-var expEf = this._expEfetiva(l, info);
-var expirada = !!(expEf && expEf < agora());
-if (l.verificado) {
-if (expirada) return this._com({ ativo: false, trial: false, expirada: true, expira: expEf, email: (l.email || (info && info.email)) }, l);
-if (l.deviceId && l.deviceId !== this.deviceId()) return this._com({ ativo: false, trial: false, outroDispositivo: true }, l);
-var dias = expEf ? Math.ceil((expEf - agora()) / 86400000) : null;
-if (agora() < (l.validadoEm || 0) + GRACE_MS) {
-var stA = this._com({ ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
-tier: this._maiorTier((info && info.tier) || "", l.tierServidor || "") }, l);
-if (this._suspensaPorCobranca(l.chave)) stA.suspensa = true;
-return stA;
-}
-return this._com({ ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }, l);
-}
-}
-var ini = l.trialServidor || l.trialInicio;
-var fim = ini ? ini + TRIAL_MS : 0;
-var v = this._veredito(), encerradoPeloServidor = false, motivo = "", validar = false, faltaVal = [];
-if (v && Number(v.inicio) > 0) {
-ini = Number(v.inicio);
-fim = Number(v.fim) > ini ? Number(v.fim) : ini + TRIAL_MS;
-encerradoPeloServidor = v.expirado === true;
-motivo = String(v.motivo || "");
-validar = v.validado === false;
-faltaVal = v.falta || [];
-} else if ((v && v.precisaConfirmar === true) || !ini) {
-return this._com({ ativo: false, trial: true, expirado: false, pendente: true, expira: 0, restanteMs: 0, rotulo: "aguardando confirmação",
-testeMotivo: "confirmar", testeValidar: false, testeFalta: (v && v.falta) || ["telefone", "email"] }, {});
-}
-var rest = fim - agora();
-var vencido = encerradoPeloServidor || rest <= 0;
-return this._com({ ativo: !vencido, trial: true, expira: fim, expirado: vencido, restanteMs: vencido ? 0 : Math.max(0, rest), rotulo: rotuloTempo(vencido ? 0 : rest),
-testeMotivo: motivo, testeValidar: validar && !vencido, testeFalta: faltaVal }, {});
-}
-};
-global.Licenca = Licenca;
-try { if (typeof window !== "undefined") Licenca.sincronizarDevice(); } catch (eSd) {}
-if (typeof module !== "undefined" && module.exports) { module.exports = Licenca; }
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/modelaui.js ==== */
-try {
-(function (global) {
-"use strict";
-function M() { return global.Modela || null; }
-function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-function data(ms) { try { return new Date(ms).toLocaleDateString("pt-BR"); } catch (e) { return ""; } }
-function nome(id) { var m = M(); return m ? m.nome(id) : id; }
-function dias(n) { return n + (n === 1 ? " dia" : " dias"); }
-var ModelaUI = {
-rotulo: function (s) {
-if (!s) return "";
-if (s.motivo === "demo") return "Modela · demonstração";
-if (s.motivo === "vitalicia") return "Modela · completo";
-if (s.motivo === "teste") return "Modela · teste: " + dias(Math.max(1, s.teste.dias));
-if (s.motivo === "teste-disponivel") return "Modela · teste de 7 dias";
-if (s.motivo === "teste-1h") return "Modela · teste de 1 hora";
-if (s.motivo === "compra") {
-if (s.completo) return "Modela · completo";
-if (s.disciplinas.length <= 2) return "Modela · " + s.disciplinas.map(nome).join(" + ");
-return "Modela · " + s.disciplinas.length + " disciplinas";
-}
-if (s.motivo === "revalidar") return "Modela · conecte à internet";
-return "Modela · teste encerrado";
-},
-aviso: function (s, disc, url) {
-var m = M(), linhas = [], t = "OrçaPRO Modela", abre;
-disc = disc ? String(disc).toLowerCase() : "";
-if (disc && s.disciplinas.indexOf(disc) < 0) {
-abre = "A disciplina <b>" + esc(nome(disc)) + "</b> não está no seu OrçaPRO Modela.";
-} else if (s.motivo === "teste") {
-abre = "Você está no teste do OrçaPRO Modela completo: faltam <b>" + dias(Math.max(1, s.teste.dias)) +
-"</b> (até " + esc(data(s.teste.fim)) + "). Depois do teste ficam liberadas só as disciplinas contratadas.";
-} else if (s.motivo === "revalidar") {
-abre = "O OrçaPRO Modela precisa confirmar a sua contratação com o servidor. Conecte à internet e abra o BIM de novo.";
-} else if (!s.liberado) {
-abre = "Seu teste do OrçaPRO Modela terminou. A modelagem (paredes, lajes, famílias, instalações, pranchas e render) " +
-"é contratada por disciplina ou no pacote completo.";
-} else {
-abre = "A modelagem (paredes, lajes, famílias, instalações, pranchas e render) é contratada por disciplina ou no pacote completo.";
-}
-linhas.push("<p>" + abre + "</p>");
-var li = (m ? m.DISCIPLINAS : []).map(function (d) {
-var ate = s.compradas && s.compradas[d.id];
-var st = s.completo && s.motivo !== "compra" && s.motivo !== "teste-1h" ? (s.motivo === "teste" ? "no teste" : "liberada")
-: ate ? "contratada até " + data(ate)
-: (s.teste1h && s.teste1h[d.id]) ? "em teste (1 hora de uso)"
-: (s.vencidos1h && s.vencidos1h[d.id]) ? (s.vencidos1h[d.id] === "pausado" ? "teste pausado (sem internet)" : "teste de 1 hora encerrado")
-: "não contratada";
-return "<li><b>" + esc(d.nome) + "</b> — " + esc(st) + "</li>";
-}).join("");
-linhas.push("<p style=\"margin-top:10px\">Disciplinas:</p><ul style=\"margin:4px 0 0 18px\">" + li + "</ul>");
-var comprar = "";
-if (s.play) {
-linhas.push("<p style=\"margin-top:10px;opacity:.85\">Este aplicativo não faz contratações. As disciplinas liberadas para a sua conta aparecem aqui sozinhas.</p>");
-} else if (s.podeComprar && url) {
-comprar = url;
-}
-return { titulo: t, html: linhas.join(""), comprar: comprar };
-},
-abrirAviso: function (disc) {
-var m = M(); if (!m) return false;
-var s = m.status();
-var plano = disc && m.IDS.indexOf(String(disc).toLowerCase()) >= 0 ? "modela_" + String(disc).toLowerCase() + "_mensal" : "modela_completo_mensal";
-var a = this.aviso(s, disc, s.podeComprar ? m.urlCompra(plano) : "");
-var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { try { global.UI.fecharModal(); } catch (e) {} } }];
-if (a.comprar) bts.push({ texto: "Comprar", classe: "primary", onClick: function () {
-try { global.open(a.comprar, "_blank", "noopener"); } catch (e) {}
-try { global.UI.fecharModal(); } catch (e2) {}
-} });
-try {
-if (global.UI && global.UI.modal) { global.UI.modal(a.titulo, a.html, bts); return true; }
-} catch (e) {}
-return false;
-},
-montarSelo: function (raiz) {
-var m = M(); if (!m || !raiz || !raiz.querySelector || !global.document) return null;
-var alvo = raiz.querySelector(".rv-titulo-nome") || raiz.querySelector(".rv-titulo") || null;
-if (!alvo) return null;
-var velho = alvo.querySelector(".modela-selo"); if (velho) velho.remove();
-var b = global.document.createElement("button");
-b.type = "button"; b.className = "modela-selo";
-b.style.cssText = "margin-left:10px;padding:2px 9px;border-radius:99px;border:1px solid currentColor;background:transparent;color:inherit;opacity:.8;font-size:11px;cursor:pointer;white-space:nowrap";
-var self = this;
-function pintar() {
-var s = m.status();
-b.textContent = self.rotulo(s);
-b.title = "OrçaPRO Modela — ver as disciplinas liberadas";
-b.setAttribute("data-modela", s.motivo);
-}
-b.onclick = function () { self.abrirAviso(); };
-pintar();
-alvo.appendChild(b);
-try {
-if (self._pintar) global.removeEventListener("orcapro:modela", self._pintar);
-self._pintar = pintar; global.addEventListener("orcapro:modela", pintar);
-} catch (e) {}
-m.atualizar(function () {
-pintar();
-var s = m.status();
-if (!s.liberado && !s.demo) {
-var ja = false; try { ja = global.sessionStorage.getItem("orcapro:modela:avisado") === "1"; global.sessionStorage.setItem("orcapro:modela:avisado", "1"); } catch (e) {}
-if (!ja) self.abrirAviso();
-}
-});
-return b;
-}
-};
-global.ModelaUI = ModelaUI;
-if (typeof module !== "undefined" && module.exports) module.exports = ModelaUI;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/testemoduloui.js ==== */
-try {
-(function (global) {
-"use strict";
-var MIN = 60000;
-function TM() { return global.TesteModulo || null; }
-function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-function minutos(ms) { return Math.ceil(Math.max(0, ms) / MIN) + " min"; }
-function toast(t, k, ms) { try { if (global.UI && UI.toast) UI.toast(t, k || "info", ms); } catch (e) {} }
-function play() {
-try { if (global.document.documentElement.getAttribute("data-origem") === "play") return true; } catch (e) {}
-try { return global.localStorage.getItem("orcapro:origem") === "play"; } catch (e2) { return false; }
-}
-var Pref = {
-_usuario: function () {
-var A = global.Auth, u = null;
-try { u = A && A.usuario ? A.usuario() : null; } catch (e) { u = null; }
-return String((u && (u.usuarioId || u.email)) || "dono").toLowerCase();
-},
-_eid: function () { try { return global.Auth && Auth.empresaId ? Auth.empresaId() : "default"; } catch (e) { return "default"; } },
-ler: function () {
-var S = global.Store; if (!S || !S.lerPrefs) return false;
-try { var p = S.lerPrefs(this._eid()) || {}, t = p.testeModulos || {}, x = t.soComprados ? t.soComprados[this._usuario()] : null; return x === true || !!(x && x.v === true); } catch (e) { return false; }
-},
-gravar: function (ligar) {
-var S = global.Store; if (!S || !S.lerPrefs || !S.salvarPrefs) return false;
-var eid = this._eid(), u = this._usuario();
-try {
-var p = S.lerPrefs(eid) || {};
-p.testeModulos = p.testeModulos || {}; p.testeModulos.soComprados = p.testeModulos.soComprados || {};
-p.testeModulos.soComprados[u] = { v: !!ligar, em: Date.now() };
-S.salvarPrefs(eid, p);
-} catch (e) { return false; }
-var T = TM();
-try { if (T) { T._registrar("preferencia", "", { soComprados: !!ligar }); T.redesenhar(); } } catch (e2) {}
-return true;
-}
-};
-global.TesteModuloPref = Pref;
-var UIT = {
-Pref: Pref,
-rotulo: function (id, info) {
-if (!id || !info) return "";
-if (info.estado === "teste") return "Teste: " + minutos(info.restanteMs);
-if (info.estado === "vencido") return "Teste encerrado · comprar";
-if (info.estado === "pausado") return "Teste pausado · sem internet";
-return "";
-},
-_doSelo: function () {
-var T = TM(); if (!T) return "";
-var s = T.status(); if (!s.regime) return "";
-var ativos = T.ativos();
-for (var i = 0; i < ativos.length; i++) {
-var m = s.mods[ativos[i]];
-if (m && (m.estado === "teste" || m.estado === "vencido" || m.estado === "pausado")) return ativos[i];
-}
-return "";
-},
-_css: function () {
-var d = global.document; if (!d || d.getElementById("teste-modulo-css")) return;
-var st = d.createElement("style"); st.id = "teste-modulo-css";
-st.textContent = "#teste-modulo-selo{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:9500;padding:3px 10px;border-radius:99px;border:1px solid #d97706;background:rgba(255,251,235,.96);color:#92400e;font:600 11.5px/1.4 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap}"
-+ "#teste-modulo-selo[data-estado=vencido]{border-color:#b91c1c;background:#fef2f2;color:#991b1b}"
-+ "#teste-modulo-selo[data-estado=pausado]{border-color:#64748b;background:#f8fafc;color:#334155}"
-+ "#teste-modulo-selo:focus-visible{outline:2px solid #2563eb;outline-offset:2px}"
-+ "body.bim-app #teste-modulo-selo{bottom:36px}"
-+ ".teste-faixa{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 14px;border:1px solid #fca5a5;background:#fef2f2;color:#7f1d1d;border-radius:10px;font-size:13.5px}"
-+ ".teste-faixa .btn{margin-left:auto}"
-+ "@media print{"
-+ "html[data-teste-marca] body::before{content:'VERSÃO DE TESTE — OrçaPRO (teste de 1 hora do módulo)';position:fixed;top:0;left:0;right:0;z-index:2147483647;text-align:center;font:700 9pt Arial,sans-serif;color:#b91c1c;background:#fff;border-bottom:1px solid #b91c1c;padding:2px 0}"
-+ "html[data-teste-marca] body::after{content:'VERSÃO DE TESTE';position:fixed;top:42%;left:0;right:0;z-index:2147483647;text-align:center;font:700 64pt Arial,sans-serif;color:rgba(185,28,28,.14);transform:rotate(-28deg);pointer-events:none}"
-+ "html[data-teste-bloqueio] body>*{display:none!important}"
-+ "html[data-teste-bloqueio] body::before{content:'Teste encerrado: este entregável sai depois da compra do módulo. O seu trabalho continua salvo no OrçaPRO.';display:block;padding:40px;font:600 14pt Arial,sans-serif;color:#7f1d1d}"
-+ "#teste-modulo-selo{display:none!important}}";
-(d.head || d.documentElement).appendChild(st);
-},
-pintar: function () {
-var d = global.document, T = TM(); if (!d || !d.body || !T) return null;
-this._css();
-var id = this._doSelo(), info = id ? T.info(id) : null, txt = this.rotulo(id, info);
-var b = d.getElementById("teste-modulo-selo");
-try {
-if (T.marcaAtiva()) d.documentElement.setAttribute("data-teste-marca", "1"); else d.documentElement.removeAttribute("data-teste-marca");
-if (T.guardaGravacao()) d.documentElement.setAttribute("data-teste-bloqueio", "1"); else d.documentElement.removeAttribute("data-teste-bloqueio");
-} catch (eM) {}
-if (!txt) { if (b) b.remove(); return null; }
-if (!b) {
-b = d.createElement("button"); b.type = "button"; b.id = "teste-modulo-selo";
-b.onclick = function () { UIT.oferta(b.getAttribute("data-teste-selo") || "", null, { forcar: true }); };
-d.body.appendChild(b);
-}
-b.textContent = txt;
-b.setAttribute("data-teste-selo", id);
-b.setAttribute("data-estado", info.estado);
-b.title = T.nome(id) + " — teste de " + (info.limiteMs / MIN) + " minutos de uso (conta só enquanto você usa). Clique para ver a oferta.";
-return b;
-},
-aoEvento: function (ev) {
-var T = TM(); if (!T || !ev) return;
-var nome = T.nome(ev.modulo);
-if (ev.tipo === "inicio") toast("Começou o teste de 1 hora de " + nome + ". O relógio só anda enquanto você usa o módulo.", "info", 7000);
-else if (ev.tipo === "aviso") toast("Teste de " + nome + ": falta" + (ev.min === 1 ? " 1 minuto" : "m " + ev.min + " minutos") + ". O que você fizer continua salvo.", "aviso", 9000);
-else if (ev.tipo === "fim") {
-try { T.redesenhar(); } catch (e) {}
-this.oferta(ev.modulo, "O teste de 1 hora de " + nome + " terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
-}
-},
-faixa: function (view) {
-var T = TM(); if (!T) return "";
-var id = T.moduloDaView(view), e = id ? T.estado(id) : "";
-if (e !== "vencido" && e !== "pausado") return "";
-var txt = e === "pausado" ? "O teste de <b>" + esc(T.nome(id)) + "</b> está pausado: o OrçaPRO não conseguiu confirmar o tempo de uso com o servidor. Conecte à internet e ele continua de onde parou."
-: "O teste de 1 hora de <b>" + esc(T.nome(id)) + "</b> terminou. O que você fez continua aqui, só para consulta: editar e exportar voltam com a compra.";
-return '<div class="teste-faixa" data-teste-faixa="' + esc(id) + '" role="status"><span>' + txt + "</span>"
-+ (e === "vencido" ? '<button class="btn primary sm" data-teste-acao="oferta" data-mod="' + esc(id) + '">Ver a oferta</button>'
-+ '<button class="btn ghost sm" data-teste-acao="so-comprados">Não mostrar mais os módulos que não comprei</button>' : "")
-+ "</div>";
-},
-conteudo: function (id, motivo, extra) {
-var T = TM(); extra = extra || {};
-var m = T ? T.modulo(id) : null, info = T ? T.info(id) : null;
-var nome = m ? m.nome : String(id || ""), h = [];
-var est = info ? info.estado : "";
-var abre = motivo || (est === "teste" ? "Você está testando <b>" + esc(nome) + "</b>: restam <b>" + minutos(info.restanteMs) + "</b> de uso (o relógio só anda enquanto você usa o módulo). Durante o teste tudo funciona; o que você exportar sai com a marca \"Versão de teste\"."
-: est === "pausado" ? "O teste de <b>" + esc(nome) + "</b> está pausado: o OrçaPRO não fala com o servidor há algumas horas. Conecte à internet e ele continua de onde parou."
-: "O teste de 1 hora de <b>" + esc(nome) + "</b> terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
-h.push("<p data-teste-oferta=\"" + esc(id) + "\">" + (motivo ? esc(motivo) : abre) + "</p>");
-if (m && m.oque) h.push("<p class=\"muted\" style=\"margin-top:8px\">" + esc(m.oque) + "</p>");
-if (arr(extra.planos).length && !play()) {
-h.push("<ul style=\"margin:8px 0 0 18px\">" + extra.planos.map(function (p) {
-if (p.parcelasMax > 1 && global.Modela && Modela.textoPlano) return "<li>" + esc(Modela.textoPlano(p)) + "</li>";
-return "<li><b>" + esc(p.nome) + "</b> — R$ " + esc(fmt(p.valor)) + " " + esc(p.periodo || "") + "</li>";
-}).join("") + "</ul>");
-}
-if (extra.semVenda) h.push("<p class=\"muted\" style=\"margin-top:8px\">A venda deste módulo abre em breve. Para usar agora, fale com a RA Engenharia.</p>");
-if (play()) h.push("<p class=\"muted\" style=\"margin-top:10px\">Este aplicativo não faz contratações. O que for liberado para a sua conta aparece aqui sozinho.</p>");
-h.push("<p style=\"margin-top:12px;font-size:12.5px\"><a href=\"#\" data-teste-acao=\"so-comprados\">Não mostrar mais os módulos que não comprei</a> <span class=\"muted\">(volta em Configurações › Licença)</span></p>");
-return { titulo: nome, html: h.join(""), url: play() ? "" : (extra.url || ""), zap: play() ? "" : (extra.zap || "") };
-},
-_srv: function () { return (global.CONFIG && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
-_chave: function () { try { return global.Licenca && Licenca.chave ? Licenca.chave() : ""; } catch (e) { return ""; } },
-_compra: function (id, cb) {
-var T = TM(), m = T ? T.modulo(id) : null, srv = this._srv(), self = this, st = T ? T._estado() : {};
-var cfgSrv = (st && st.cfg) || {}, zap = String(cfgSrv.whatsapp || "").replace(/\D/g, "");
-var zapUrl = zap ? "https://wa.me/" + zap + "?text=" + encodeURIComponent("Olá! Testei o módulo " + (m ? m.nome : id) + " no OrçaPRO e quero liberar na minha licença.") : "";
-if (!m) { cb({ zap: zapUrl }); return; }
-if (m.tipo === "plano") {
-var link = cfgSrv.compra && cfgSrv.compra[id] ? String(cfgSrv.compra[id]) : "";
-cb({ url: link && /^\/[A-Za-z0-9_\-\/?=&.#]*$/.test(link) && srv ? srv + link : "", zap: zapUrl });
-return;
-}
-if (!srv || typeof global.fetch === "undefined") { cb({ zap: zapUrl }); return; }
-var alvo = m.tipo === "disciplina" ? m.disciplina : m.extra, k = self._chave();
-try {
-global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
-var p = (d && d.planos) || {}, re = new RegExp("^modela_" + alvo + "_");
-var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista }; });
-if (!lista.length) { cb({ semVenda: true, zap: zapUrl }); return; }
-cb({ planos: lista, url: srv + "/modelagem?plano=" + encodeURIComponent(lista[0].id) + (k ? "#lic=" + encodeURIComponent(k) : ""), zap: zapUrl });
-}, function () { cb({ zap: zapUrl }); });
-} catch (e) { cb({ zap: zapUrl }); }
-},
-oferta: function (id, motivo, opts) {
-var self = this;
-if (!id) return false;
-var aberto = false; try { aberto = !!(global.document && global.document.getElementById("modal-bg")); } catch (eA) {}
-if (aberto && !(opts && opts.forcar)) {
-var T0 = TM();
-toast((motivo || ("O teste de 1 hora de " + (T0 ? T0.nome(id) : id) + " terminou.")) + " Nada foi gravado. A oferta está no selo do canto da tela.", "erro", 10000);
-try { this.pintar(); } catch (eP) {}
-return false;
-}
-this._compra(id, function (extra) {
-var a = self.conteudo(id, motivo, extra);
-var bts = [{ texto: "Agora não", classe: "ghost", onClick: function () { try { UI.fecharModal(); } catch (e) {} } }];
-if (a.zap) bts.push({ texto: "Falar com a RA", classe: "ghost", onClick: function () { try { global.open(a.zap, "_blank", "noopener"); } catch (e) {} } });
-if (a.url) bts.push({ texto: "Comprar", classe: "primary", onClick: function () {
-try { global.open(a.url, "_blank", "noopener"); } catch (e) {}
-try { var T = TM(); if (T) T._registrar("oferta-comprar", id, null); } catch (e2) {}
-try { UI.fecharModal(); } catch (e3) {}
-} });
-try { if (global.UI && UI.modal) UI.modal(a.titulo, a.html, bts); } catch (e) {}
-});
-return true;
-},
-cartaoLicenca: function () {
-var T = TM(); if (!T) return "";
-var s = T.status(), on = Pref.ler();
-if (!s.regime && !on) return "";
-var linhas = T.MODULOS.filter(function (m) { var x = s.mods[m.id]; return x && (x.estado === "teste" || x.estado === "vencido" || x.estado === "pausado"); })
-.map(function (m) {
-var x = s.mods[m.id];
-return "<li>" + esc(m.nome) + " — " + (x.estado === "teste" ? (x.usadoMs > 0 ? "em teste: restam " + minutos(x.restanteMs) : "teste de " + (x.limiteMs / MIN) + " min disponível") : x.estado === "pausado" ? "teste pausado (sem internet)" : "teste encerrado") + "</li>";
-}).join("");
-return '<div class="card" style="margin-top:8px" data-teste-cartao="1"><b>Módulos para testar</b>'
-+ '<p class="muted" style="margin:4px 0 6px;font-size:13px">Cada módulo que não está na sua licença pode ser usado por 1 hora de uso ativo. Vencida a hora, o que você fez continua salvo e o módulo pede a compra.</p>'
-+ (linhas ? '<ul style="margin:0 0 8px 18px;font-size:13px">' + linhas + "</ul>" : "")
-+ '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-teste-acao="pref"' + (on ? " checked" : "") + "> Mostrar só o que comprei (esconde os módulos que não estão na licença)</label></div>";
-},
-_ligado: false,
-ligar: function () {
-if (this._ligado || !global.document) return;
-this._ligado = true;
-var self = this;
-global.document.addEventListener("click", function (ev) {
-var el = ev.target && ev.target.closest ? ev.target.closest("[data-teste-acao]") : null;
-if (!el || el.tagName === "INPUT") return;
-var ac = el.getAttribute("data-teste-acao");
-if (ac === "oferta") { ev.preventDefault(); self.oferta(el.getAttribute("data-mod") || "", null, { forcar: true }); }
-else if (ac === "so-comprados") {
-ev.preventDefault();
-try { UI.fecharModal(); } catch (e) {}
-Pref.gravar(true);
-toast("Pronto: aparece só o que você comprou. Para mostrar de novo, Configurações › Licença › \"Mostrar só o que comprei\".", "ok", 9000);
-}
-}, true);
-global.document.addEventListener("change", function (ev) {
-var el = ev.target; if (!el || !el.getAttribute || el.getAttribute("data-teste-acao") !== "pref") return;
-Pref.gravar(!!el.checked);
-toast(el.checked ? "Só o que você comprou fica à vista." : "Os módulos para testar voltaram ao menu.", "ok");
-}, true);
-try { global.addEventListener("beforeprint", function () { self.pintar(); }); } catch (e) {}
-try { global.addEventListener("orcapro:teste-modulo", function () { self.pintar(); }); } catch (e) {}
-}
-};
-function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
-function fmt(v) { var n = Number(v) || 0; try { return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); } catch (e) { return n.toFixed(2); } }
-global.TesteModuloUI = UIT;
-try { if (typeof window !== "undefined" && global.document) { if (global.document.readyState === "loading") global.document.addEventListener("DOMContentLoaded", function () { UIT.ligar(); }); else UIT.ligar(); } } catch (eL) {}
-if (typeof module !== "undefined" && module.exports) module.exports = UIT;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/cobranca.js ==== */
-try {
-(function (global) {
-"use strict";
-var KEY = "orcapro:cobranca";
-var ID_TELA = "cobranca-aviso";
-var TICK_MS = 60000;
-var FOLGA_MS = TICK_MS / 2;
-var SEM_AVISO_MIN = 15;
-function agora() { return new Date().getTime(); }
-function pad(n) { return (n < 10 ? "0" : "") + n; }
-function el(tag, attrs, texto) {
-var e = document.createElement(tag);
-if (attrs) {
-for (var k in attrs) {
-if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
-if (k === "className") e.className = attrs[k]; else e.setAttribute(k, attrs[k]);
-}
-}
-if (texto != null) e.textContent = String(texto);
-return e;
-}
-var Cobranca = {
-REF_LEN: 16,
-brl: function (v) {
-var n = Math.round((Number(v) || 0) * 100), neg = n < 0;
-if (neg) n = -n;
-var inteiro = String(Math.floor(n / 100)), cent = String(n % 100);
-if (cent.length < 2) cent = "0" + cent;
-inteiro = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-return (neg ? "-" : "") + "R$ " + inteiro + "," + cent;
-},
-dataBR: function (iso) {
-var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
-return m ? m[3] + "/" + m[2] + "/" + m[1] : "";
-},
-_dh: function (ms) {
-var d = new Date(Number(ms) || 0);
-return { data: pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(), hora: pad(d.getHours()) + "h" + pad(d.getMinutes()) };
-},
-urlSegura: function (u) { u = String(u || ""); return /^https:\/\/([a-z0-9-]+\.)*asaas\.com\//i.test(u) ? u : ""; },
-_numeroDe: function (rotulo) { var m = /Parcela\s+(\d+)/i.exec(String(rotulo || "")); return m ? m[1] : ""; },
-_juntar: function (l) { return l.length <= 1 ? l.join("") : l.slice(0, -1).join(", ") + " e " + l[l.length - 1]; },
-_textoEquipe: function (av) {
-var susp = av.estado === "suspensa", dh = av.prazoEm ? this._dh(av.prazoEm) : null;
-var preservado = "Os dados ficam preservados e o acesso volta automaticamente quando o pagamento for regularizado.";
-var titulo, conseq;
-if (susp) titulo = "LICENÇA DA EQUIPE SUSPENSA POR PAGAMENTO EM ATRASO";
-else if (dh) titulo = "ATENÇÃO: LICENÇA DA EQUIPE SERÁ SUSPENSA EM " + dh.data + " ÀS " + dh.hora;
-else titulo = "ATENÇÃO: LICENÇA DA EQUIPE COM PAGAMENTO EM ATRASO";
-if (susp) conseq = (dh ? "Desde " + dh.data + " às " + dh.hora + ", o" : "O") + " sistema não salva nem exporta neste acesso. " + preservado;
-else if (dh) conseq = "Sem a regularização até a data acima, o sistema para de salvar e exportar neste acesso. " + preservado;
-else conseq = "Sem a regularização, o sistema pode parar de salvar e exportar neste acesso. " + preservado;
-return {
-titulo: titulo,
-saudacao: "",
-intro: "A licença de equipe a que este acesso pertence tem pagamento em atraso com quem a contratou.",
-linhas: [],
-total: "",
-consequencia: conseq,
-instrucao: "Para regularizar, fale com quem contratou a licença da sua equipe.",
-assinatura: "RA Engenharia — Setor Financeiro"
-};
-},
-texto: function (av) {
-av = av || {};
-if (av.equipe) return this._textoEquipe(av);
-var self = this, susp = av.estado === "suspensa";
-var nums = (av.parcelas || []).map(function (p) { return self._numeroDe(p.rotulo); }).filter(Boolean);
-var produto = av.produto ? "da licença " + av.produto : "da sua licença do OrçaPRO";
-var dh = av.prazoEm ? this._dh(av.prazoEm) : null;
-var titulo, intro, conseq;
-if (susp) titulo = "LICENÇA SUSPENSA POR FALTA DE PAGAMENTO";
-else if (dh) titulo = "ATENÇÃO: LICENÇA SERÁ SUSPENSA EM " + dh.data + " ÀS " + dh.hora;
-else titulo = "ATENÇÃO: PARCELAS EM ATRASO — LICENÇA SUJEITA A SUSPENSÃO";
-if (nums.length > 1) intro = "As parcelas " + this._juntar(nums) + " " + produto + " estão vencidas e não foram pagas:";
-else if (nums.length === 1) intro = "A parcela " + nums[0] + " " + produto + " está vencida e não foi paga:";
-else intro = "Há parcelas " + produto + " vencidas e não pagas:";
-var preservado = "Os dados ficam preservados e o acesso volta automaticamente quando o pagamento compensar.";
-if (susp) conseq = (dh ? "Desde " + dh.data + " às " + dh.hora + ", o" : "O") + " sistema não salva nem exporta em nenhum computador da empresa. " + preservado;
-else if (dh) conseq = "Sem a regularização até a data acima, o sistema para de salvar e exportar em todos os computadores da empresa. " + preservado;
-else conseq = "Sem a regularização em até " + (Number(av.horas) || 24) + " horas, o sistema para de salvar e exportar em todos os computadores da empresa. " + preservado;
-return {
-titulo: titulo,
-saudacao: av.empresa ? String(av.empresa) + "," : "",
-intro: intro,
-linhas: (av.parcelas || []).map(function (p) {
-return String(p.rotulo || "Parcela") + " — " + self.brl(p.valor) + " — venceu em " + self.dataBR(p.venc);
-}),
-total: "Total vencido: " + this.brl(av.totalVencido),
-consequencia: conseq,
-instrucao: av.respondido ? "Sua resposta já chegou ao setor financeiro." : "Informe abaixo o motivo do atraso ou a data prevista de pagamento.",
-assinatura: "RA Engenharia — Setor Financeiro"
-};
-},
-aplicar: function (loc, resp, ref, t) {
-var n = {}, k;
-if (loc && loc.chaveRef === ref) { for (k in loc) { if (Object.prototype.hasOwnProperty.call(loc, k)) n[k] = loc[k]; } }
-n.chaveRef = ref;
-if (!resp || resp.ok !== true || resp.v !== 1) return n;
-n.aviso = resp.aviso || null;
-n.suspensa = !!(resp.aviso && resp.aviso.estado === "suspensa");
-n.atualizadoEm = t;
-return n;
-},
-deveExibir: function (loc, av, t, noBoot) {
-if (!av || !av.id) return false;
-if (av.equipe) return !!noBoot;
-loc = loc || {};
-var respondido = !!av.respondido || loc.respondidoId === av.id;
-if (respondido) return !!(noBoot && av.estado === "suspensa");
-if (noBoot) return true;
-var ult = (loc.exibidoId === av.id) ? (Number(loc.ultimaExibicao) || 0) : 0;
-return t - ult >= (Number(av.repetirMin) || 5) * 60000 - FOLGA_MS;
-},
-_ler: function () { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } },
-_gravar: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
-_chave: function () {
-if (typeof Licenca === "undefined") return "";
-try { var st = Licenca.status(); if (!st || st.trial) return ""; } catch (e) { return ""; }
-return Licenca.chave ? String(Licenca.chave() || "") : "";
-},
-_post: function (rota, corpo) {
-var srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : "";
-if (!srv || typeof fetch === "undefined") return Promise.reject(new Error("sem servidor"));
-return fetch(srv + rota, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
-.then(function (r) { return r.json(); });
-},
-consultar: function (noBoot) {
-var self = this, chave = this._chave();
-if (!chave || this._consultando) return;
-var t = agora(), ref = chave.slice(-this.REF_LEN);
-var loc = this._ler() || {};
-if (loc.chaveRef !== ref) loc = { chaveRef: ref };
-var oculto = typeof document !== "undefined" && document.hidden;
-var ciclo = ((loc.aviso && Number(loc.aviso.repetirMin)) || 5) * 60000;
-var exibindo = !oculto && (!!noBoot || t - (Number(loc.ultimaExibicao) || 0) >= ciclo - FOLGA_MS);
-this._consultando = true; this._ultimaConsulta = t;
-this._post("/api/licenca/aviso", { licenca: chave, deviceId: Licenca.deviceId(), exibindo: exibindo })
-.then(function (resp) {
-self._consultando = false;
-var n = self.aplicar(self._ler(), resp, ref, agora());
-self._gravar(n);
-if (n.aviso) { if (exibindo && self.deveExibir(n, n.aviso, agora(), noBoot)) self.mostrar(n.aviso); }
-else if (resp && resp.ok === true) self.fechar();
-}, function () { self._consultando = false; });
-},
-iniciar: function () {
-if (this._ligado || typeof window === "undefined" || !this._chave()) return;
-this._ligado = true;
-var self = this;
-this.consultar(true);
-this._timer = setInterval(function () { self._tick(); }, TICK_MS);
-try { document.addEventListener("visibilitychange", function () { if (!document.hidden) self._tick(); }); } catch (e) {}
-},
-_tick: function () {
-if (typeof document !== "undefined" && document.hidden) return;
-var loc = this._ler() || {};
-var min = loc.aviso ? ((Number(loc.aviso.repetirMin)) || 5) : SEM_AVISO_MIN;
-if (agora() - (this._ultimaConsulta || 0) >= min * 60000) this.consultar(false);
-},
-mostrarAgora: function () {
-var loc = this._ler() || {};
-if (loc.aviso) { this.mostrar(loc.aviso); return true; }
-return false;
-},
-responder: function (av, texto, cb) {
-var self = this, chave = this._chave();
-if (!chave) { cb({ ok: false, erro: "Licença não encontrada neste aparelho." }); return; }
-var usuario = "";
-try { var u = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null; usuario = u ? String(u.nome || u.email || "") : ""; } catch (e) {}
-this._post("/api/licenca/aviso/resposta", { licenca: chave, deviceId: Licenca.deviceId(), avisoId: av.id, texto: texto, usuario: usuario })
-.then(function (r) {
-if (r && r.ok) {
-var loc = self._ler() || {};
-loc.respondidoId = av.id;
-if (loc.aviso && loc.aviso.id === av.id) loc.aviso.respondido = true;
-self._gravar(loc);
-}
-cb(r || { ok: false, erro: "Resposta inesperada do servidor." });
-}, function () {
-cb({ ok: false, erro: "Sem conexão com o servidor. Verifique a internet e tente de novo — o texto continua aqui." });
-});
-},
-fechar: function () {
-if (this._contador) { clearInterval(this._contador); this._contador = null; }
-var e = (typeof document !== "undefined") ? document.getElementById(ID_TELA) : null;
-if (e && e.parentNode) e.parentNode.removeChild(e);
-},
-_css: function () {
-if (document.getElementById("cobranca-css")) return;
-var s = el("style", { id: "cobranca-css" });
-s.textContent =
-"#cobranca-aviso{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;background:rgba(8,15,25,.72);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}" +
-"#cobranca-aviso .cob-card{background:#fff;color:#1f2937;width:100%;max-width:580px;max-height:100%;overflow:auto;box-sizing:border-box;border-radius:12px;border-top:6px solid #b91c1c;box-shadow:0 20px 60px rgba(0,0,0,.45);padding:22px 24px 16px;outline:none}" +
-"#cobranca-aviso .cob-card.suspensa{border-top-color:#7f1d1d}" +
-"#cobranca-aviso h2{margin:0 0 14px;font-size:17px;line-height:1.35;font-weight:600;color:#b91c1c;letter-spacing:.2px}" +
-"#cobranca-aviso .cob-card.suspensa h2{color:#7f1d1d}" +
-"#cobranca-aviso .cob-corpo p{margin:0 0 10px;font-size:14px;line-height:1.5}" +
-"#cobranca-aviso .cob-saud{font-weight:600}" +
-"#cobranca-aviso .cob-parcelas{margin:0 0 8px;padding-left:20px;font-size:14px;line-height:1.65}" +
-"#cobranca-aviso .cob-total{font-weight:600;font-size:15px}" +
-"#cobranca-aviso .cob-pagar{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}" +
-"#cobranca-aviso .cob-btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid transparent;cursor:pointer;text-decoration:none;font-family:inherit;box-sizing:border-box}" +
-"#cobranca-aviso .cob-btn-pagar{background:#15803d;color:#fff}" +
-"#cobranca-aviso .cob-btn-enviar{background:#1d4ed8;color:#fff}" +
-"#cobranca-aviso .cob-btn-enviar[disabled]{background:#9ca3af;cursor:not-allowed}" +
-"#cobranca-aviso .cob-btn-fechar{background:#fff;color:#374151;border-color:#d1d5db}" +
-"#cobranca-aviso .cob-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}" +
-"#cobranca-aviso .cob-lbl{display:block;font-size:13.5px;font-weight:600;margin:4px 0 6px;color:#374151}" +
-"#cobranca-aviso textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;resize:vertical;min-height:70px;color:#111827;background:#fff}" +
-"#cobranca-aviso .cob-resp{display:flex;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap}" +
-"#cobranca-aviso .cob-status{font-size:13px;color:#4b5563}" +
-"#cobranca-aviso .cob-status.ok{color:#15803d}#cobranca-aviso .cob-status.erro{color:#b91c1c}" +
-"#cobranca-aviso .cob-rodape{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px}" +
-"#cobranca-aviso .cob-assin{font-size:12.5px;color:#6b7280;flex:1;min-width:180px}" +
-"#cobranca-aviso .cob-contador{font-size:12.5px;color:#6b7280}";
-document.head.appendChild(s);
-},
-_assinatura: function (av) {
-var self = this;
-try {
-return JSON.stringify([String(av.id || ""), String(av.estado || ""), this.texto(av),
-(av.parcelas || []).map(function (p) { return self.urlSegura(p && p.url); })]);
-} catch (e) { return "sem-assinatura-" + agora(); }
-},
-mostrar: function (av) {
-if (!av || typeof document === "undefined" || !document.body) return;
-var self = this;
-var telaAberta = document.getElementById(ID_TELA), taAberto = document.getElementById("cob-motivo");
-var escrevendoJa = !!(telaAberta && taAberto && !taAberto.readOnly &&
-(String(taAberto.value || "").trim() || document.activeElement === taAberto));
-var mesmoAviso = !!(telaAberta && telaAberta.getAttribute("data-id") === String(av.id));
-var assin = this._assinatura(av);
-var enviando = !!(telaAberta && telaAberta.getAttribute("data-enviando"));
-if (mesmoAviso && (enviando || (escrevendoJa && telaAberta.getAttribute("data-assin") === assin))) {
-var locE = this._ler() || {};
-locE.exibidoId = av.id; locE.ultimaExibicao = agora();
-this._gravar(locE);
-return;
-}
-var rascunho = (escrevendoJa && mesmoAviso) ? String(taAberto.value || "") : "";
-var focoNaCaixa = !!(taAberto && document.activeElement === taAberto);
-var tx = this.texto(av);
-this.fechar();
-this._css();
-var respondido = !!av.respondido || ((this._ler() || {}).respondidoId === av.id);
-var bg = el("div", { id: ID_TELA, role: "alertdialog", "aria-modal": "true", "aria-labelledby": "cob-titulo", "aria-describedby": "cob-corpo",
-"data-id": String(av.id || ""), "data-estado": String(av.estado || ""), "data-assin": assin });
-var card = el("div", { className: "cob-card" + (av.estado === "suspensa" ? " suspensa" : ""), tabindex: "-1" });
-card.appendChild(el("h2", { id: "cob-titulo" }, tx.titulo));
-var corpo = el("div", { id: "cob-corpo", className: "cob-corpo" });
-if (tx.saudacao) corpo.appendChild(el("p", { className: "cob-saud" }, tx.saudacao));
-corpo.appendChild(el("p", null, tx.intro));
-if (tx.linhas.length) {
-var ul = el("ul", { className: "cob-parcelas" });
-tx.linhas.forEach(function (l) { ul.appendChild(el("li", null, l)); });
-corpo.appendChild(ul);
-}
-if (tx.total) corpo.appendChild(el("p", { className: "cob-total" }, tx.total));
-corpo.appendChild(el("p", null, tx.consequencia));
-card.appendChild(corpo);
-var pag = el("div", { className: "cob-pagar" });
-(av.parcelas || []).forEach(function (p) {
-var u = self.urlSegura(p.url);
-if (!u) return;
-pag.appendChild(el("a", { href: u, target: "_blank", rel: "noopener noreferrer", className: "cob-btn cob-btn-pagar" }, "Pagar parcela " + self._numeroDe(p.rotulo)));
-});
-if (pag.childNodes.length) card.appendChild(pag);
-var ta = null;
-if (!respondido && !av.equipe) {
-card.appendChild(el("label", { "for": "cob-motivo", className: "cob-lbl" }, tx.instrucao));
-ta = el("textarea", { id: "cob-motivo", maxlength: "1000", rows: "3", placeholder: "Ex.: pagamento previsto para o dia 15; ou: já pagamos no dia 10." });
-card.appendChild(ta);
-var linha = el("div", { className: "cob-resp" });
-var btn = el("button", { type: "button", className: "cob-btn cob-btn-enviar", disabled: "disabled" }, "Enviar resposta");
-var st = el("span", { className: "cob-status", "aria-live": "polite" }, "");
-linha.appendChild(btn); linha.appendChild(st);
-card.appendChild(linha);
-ta.addEventListener("input", function () {
-if (ta.readOnly) return;
-if (String(ta.value || "").trim().length >= 10) btn.removeAttribute("disabled"); else btn.setAttribute("disabled", "disabled");
-});
-if (rascunho) { ta.value = rascunho; if (rascunho.trim().length >= 10) btn.removeAttribute("disabled"); }
-btn.addEventListener("click", function () {
-var texto = String(ta.value || "").trim();
-if (texto.length < 10) return;
-btn.setAttribute("disabled", "disabled");
-st.className = "cob-status"; st.textContent = "Enviando…";
-bg.setAttribute("data-enviando", "1");
-ta.setAttribute("readonly", "readonly");
-self.responder(av, texto, function (r) {
-if (!bg.parentNode) return;
-bg.removeAttribute("data-enviando");
-if (r && (r.ok || r.encerrada)) {
-st.className = "cob-status ok";
-st.textContent = r.ok ? "Resposta enviada ao setor financeiro. Obrigado." : (r.erro || "");
-ta.setAttribute("readonly", "readonly");
-setTimeout(function () { if (bg.parentNode) self.fechar(); }, 2500);
-return;
-}
-st.className = "cob-status erro"; st.textContent = (r && r.erro) || "Não foi possível enviar.";
-ta.removeAttribute("readonly");
-btn.removeAttribute("disabled");
-});
-});
-} else {
-card.appendChild(el("p", { className: "cob-lbl" }, tx.instrucao));
-}
-var rod = el("div", { className: "cob-rodape" });
-var cont = el("span", { className: "cob-contador", "aria-live": "off" }, "");
-var bFechar = el("button", { type: "button", className: "cob-btn cob-btn-fechar" }, "Fechar");
-bFechar.style.display = "none";
-bFechar.addEventListener("click", function () { self.fechar(); });
-rod.appendChild(el("span", { className: "cob-assin" }, tx.assinatura));
-rod.appendChild(cont); rod.appendChild(bFechar);
-card.appendChild(rod);
-bg.appendChild(card);
-document.body.appendChild(bg);
-try { card.focus(); } catch (eF) {}
-if ((rascunho || focoNaCaixa) && ta) { try { ta.focus(); } catch (eT) {} }
-var loc = this._ler() || {};
-loc.exibidoId = av.id; loc.ultimaExibicao = agora();
-this._gravar(loc);
-var fim = agora() + Math.max(5, Number(av.segundos) || 30) * 1000;
-var escrevendo = function () {
-if (bg.getAttribute("data-enviando")) return true;
-return !!(ta && !ta.readOnly && (String(ta.value || "").trim() || document.activeElement === ta));
-};
-var passo = function () {
-var resta = Math.ceil((fim - agora()) / 1000);
-if (resta > 0) { cont.textContent = "Esta mensagem fecha em " + resta + " s"; return; }
-if (self._contador) { clearInterval(self._contador); self._contador = null; }
-bFechar.style.display = "";
-if (escrevendo()) { cont.textContent = "Termine a resposta e envie, ou feche."; return; }
-self.fechar();
-};
-passo();
-this._contador = setInterval(passo, 1000);
-}
-};
-global.Cobranca = Cobranca;
-if (typeof module !== "undefined" && module.exports) { module.exports = Cobranca; }
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/assinatura.js ==== */
-try {
-(function (global) {
-"use strict";
-var Assinatura = {
-brl: function (v) {
-var n = Math.round((Number(v) || 0) * 100), neg = n < 0;
-if (neg) n = -n;
-var inteiro = String(Math.floor(n / 100)), cent = String(n % 100);
-if (cent.length < 2) cent = "0" + cent;
-inteiro = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-return (neg ? "-" : "") + "R$ " + inteiro + "," + cent;
-},
-dataBR: function (iso) {
-var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
-return m ? m[3] + "/" + m[2] + "/" + m[1] : "";
-},
-linkValido: function (u) {
-var s = String(u || "");
-return /^https:\/\/(www\.)?(sandbox\.)?asaas\.com\//.test(s);
-},
-texto: function (d) {
-var r = this._textoBase(d);
-var play = false;
-try { play = typeof document !== "undefined" && document.documentElement.getAttribute("data-origem") === "play"; } catch (e) {}
-if (play && r && (r.botao || r.url)) {
-r = { tom: r.tom === "oferta" ? "neutro" : r.tom, titulo: r.tom === "oferta" ? "Renovação automática" : r.titulo,
-texto: r.tom === "oferta" ? "Pelo app da Google Play não há compra nem assinatura. Sua licença continua valendo normalmente." : r.texto,
-botao: "", url: "" };
-}
-return r;
-},
-_textoBase: function (d) {
-var self = this;
-if (!d || !d.ok) {
-return { tom: "aviso", titulo: "Renovação automática",
-texto: "Não foi possível consultar agora. Tente de novo com a internet ligada, ou fale com a RA Engenharia para renovar.", botao: "", url: "" };
-}
-if (d.permanente) {
-return { tom: "neutro", titulo: "Licença permanente",
-texto: "Esta licença não vence: não há mensalidade para assinar.", botao: "", url: "" };
-}
-var a = d.assinatura;
-if (a && a.aguardandoCartao) {
-var okUrl = self.linkValido(a.invoiceUrl);
-return { tom: "aviso", titulo: "Falta cadastrar o cartão",
-texto: "Sua renovação automática de " + self.brl(a.valor) + " (" + (a.porExtenso || "") +
-") já está aberta, mas o cartão ainda não foi cadastrado — enquanto isso ela não cobra e a licença continua vencendo no prazo normal." +
-(okUrl ? "" : " Fale com a RA Engenharia para receber o link."),
-botao: okUrl ? "Cadastrar cartão" : "", url: okUrl ? a.invoiceUrl : "" };
-}
-if (a) {
-return { tom: "ok", titulo: "Renovação automática ativa",
-texto: "Cobramos " + self.brl(a.valor) + " no seu cartão " + (a.porExtenso || "") +
-(a.proximaEm ? ", a próxima em " + self.dataBR(a.proximaEm) : "") +
-". Sua licença não vence mais sozinha." +
-(a.cobrancas ? " Renovações já feitas: " + a.cobrancas + "." : ""),
-botao: "", url: "" };
-}
-if (!d.podeAssinar) {
-return { tom: "neutro", titulo: "Renovação automática",
-texto: d.motivo || "Indisponível para esta licença.", botao: "", url: "" };
-}
-var o = d.oferta || {};
-var quando = d.vencida
-? "A primeira cobrança sai hoje e sua licença volta a valer assim que o pagamento for confirmado."
-: (d.vence ? "A primeira cobrança sai só no vencimento (" +
-self.dataBR(new Date(d.vence - 3 * 3600000).toISOString()) + "): você não paga duas vezes pelo mesmo período." : "");
-return { tom: "oferta", titulo: "Nunca mais deixe vencer",
-texto: "Assine a renovação automática: " + self.brl(o.valor) + " no cartão, " + (o.porExtenso || "") +
-". " + quando + " Você cadastra o cartão uma vez, na página do Asaas — o OrçaPRO não guarda os dados do seu cartão. Pode cancelar quando quiser falando com a RA Engenharia.",
-botao: "Assinar renovação automática", url: "" };
-},
-_srv: function () {
-try { return (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; }
-catch (e) { return ""; }
-},
-_chave: function () {
-try { return (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : ""; }
-catch (e) { return ""; }
-},
-consultar: function (cb) {
-var srv = this._srv(), chave = this._chave();
-if (!srv || !chave || typeof fetch === "undefined") { cb({ ok: false, erro: "sem servidor" }); return; }
-fetch(srv + "/api/licenca/assinatura", {
-method: "POST", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ chave: chave })
-}).then(function (r) { return r.json(); })
-.then(function (d) { cb(d && typeof d === "object" ? d : { ok: false }); })
-["catch"](function () { cb({ ok: false, erro: "rede" }); });
-},
-criar: function (cb) {
-var srv = this._srv(), chave = this._chave();
-if (!srv || !chave || typeof fetch === "undefined") { cb({ ok: false, erro: "Ativar a renovação automática precisa de internet." }); return; }
-fetch(srv + "/api/licenca/assinatura/criar", {
-method: "POST", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ chave: chave })
-}).then(function (r) { return r.json(); })
-.then(function (d) { cb(d && typeof d === "object" ? d : { ok: false, erro: "Resposta inesperada do servidor." }); })
-["catch"](function () { cb({ ok: false, erro: "Não foi possível falar com o servidor. Tente de novo com a internet ligada." }); });
-},
-montar: function (idAlvo) {
-var self = this;
-var alvo = (typeof document !== "undefined") ? document.getElementById(idAlvo) : null;
-if (!alvo) return;
-alvo.textContent = "Consultando renovação automática…";
-this.consultar(function (d) {
-var el = document.getElementById(idAlvo);
-if (!el) return;
-self._desenhar(el, self.texto(d), d);
-});
-},
-_desenhar: function (el, t, d) {
-var self = this;
-while (el.firstChild) el.removeChild(el.firstChild);
-var cores = { ok: "#16a34a", oferta: "#0f2740", aviso: "#b45309", neutro: "#64748b" };
-var card = document.createElement("div");
-card.className = "card";
-card.style.marginTop = "10px";
-card.style.borderLeft = "3px solid " + (cores[t.tom] || cores.neutro);
-var h = document.createElement("b");
-h.textContent = t.titulo;
-h.style.color = cores[t.tom] || cores.neutro;
-card.appendChild(h);
-var p = document.createElement("div");
-p.style.marginTop = "4px";
-p.style.fontSize = "13px";
-p.textContent = t.texto;
-card.appendChild(p);
-if (t.botao) {
-var b = document.createElement("button");
-b.className = "btn sm primary";
-b.style.marginTop = "10px";
-b.textContent = t.botao;
-b.onclick = function () {
-if (t.url) { self._abrir(t.url); return; }
-b.disabled = true;
-b.textContent = "Abrindo…";
-self.criar(function (r) {
-if (!r || !r.ok) {
-b.disabled = false; b.textContent = t.botao;
-if (typeof UI !== "undefined" && UI.toast) UI.toast((r && r.erro) || "Não foi possível abrir a assinatura.", "erro");
-return;
-}
-if (self.linkValido(r.invoiceUrl)) {
-self._abrir(r.invoiceUrl);
-self._desenhar(el, self.texto({ ok: true, vence: d && d.vence, vencida: d && d.vencida,
-assinatura: { aguardandoCartao: true, valor: r.valor, porExtenso: r.porExtenso, invoiceUrl: r.invoiceUrl } }), d);
-} else {
-b.disabled = false; b.textContent = t.botao;
-if (typeof UI !== "undefined" && UI.toast) UI.toast("Assinatura aberta, mas o link do cartão não veio. Fale com a RA Engenharia.", "erro");
-}
-});
-};
-card.appendChild(b);
-}
-el.appendChild(card);
-},
-_abrir: function (url) {
-if (!this.linkValido(url)) return false;
-try { global.open(url, "_blank", "noopener"); return true; } catch (e) { return false; }
-}
-};
-global.Assinatura = Assinatura;
-if (typeof module !== "undefined" && module.exports) module.exports = Assinatura;
-})(typeof window !== "undefined" ? window : this);
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/laudo.js ==== */
-try {
-(function (global) {
-"use strict";
-var Laudo = {
-validar: function (orc) {
-var f = [];
-if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) f.push("Requerente/Cliente");
-if (Orcamento.totais(orc).qtdItens < 1) f.push("Ao menos 1 item");
-if (!Util.naoVazio(orc.art)) f.push("ART/RRT (preencha em ⚙ Dados)");
-var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null;
-if (!emp || !Util.naoVazio(emp.crea)) f.push("Registro CREA/CAU (preencha em ⚙ Empresa)");
-if (!Util.naoVazio(orc.dataVistoria)) f.push("Data da vistoria (preencha em ⚙ Dados)");
-var semQtdL = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
-if (semQtdL.length) f.push("Quantidade em " + semQtdL.length + " item(ns) — use o botao Calcular na linha");
-return { ok: f.length === 0, faltando: f };
-},
-_momateq: function (orc) {
-if (typeof Analitico === "undefined" || !Analitico.carregado) return null;
-var mo = 0, mat = 0, eq = 0;
-var _K = null;
-try { _K = (typeof Colunas !== "undefined" && typeof App !== "undefined" && App._colunasCtx) ? Colunas.categorias(orc, null, App._colunasCtx(orc)) : null; } catch (eK) { _K = null; }
-Util.arr(orc.etapas).forEach(function (e) {
-Util.arr(e.itens).forEach(function (it) {
-var lk = _K && _K.porLinha ? _K.porLinha[it.id] : null;
-if (lk && lk.tem) { mo += lk.mo; mat += lk.mat; eq += lk.eq; return; }
-var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-var a = Orcamento.ehSinapi(it.origem) ? Analitico.obter(it.codigo) : null;
-var rep = (typeof Orcamento !== "undefined" && Orcamento.repartirCusto)
-? Orcamento.repartirCusto(it, ct) : null;
-if (rep) {
-mo += rep.mo; mat += rep.mat; eq += rep.eq;
-} else if (a && a.custoUnitario > 0) {
-mo += ct * ((a.custoMO || 0) / a.custoUnitario);
-mat += ct * ((a.custoMAT || 0) / a.custoUnitario);
-eq += ct * ((a.custoEQ || 0) / a.custoUnitario);
-} else { mat += ct; }
-});
-});
-return { mo: mo, mat: mat, eq: eq, total: (mo + mat + eq) || 1 };
-},
-gerarHTML: function (orc, usuario) {
-var t = Orcamento.totais(orc);
-var sint = Orcamento.sintetico(orc);
-var marca = CONFIG.marca;
-var emp = (typeof Empresa !== "undefined") ? Empresa.dados() : null;
-var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || "Sua Empresa";
-var logoHTML = (typeof Empresa !== "undefined") ? Empresa.logoHTML(90) : '<div class="logo-ph">[LOGO ' + Util.esc(empresa) + ']</div>';
-var hoje = new Date().toLocaleDateString("pt-BR");
-var local = (orc.obra && orc.obra.local) ? orc.obra.local : ((orc.obra && orc.obra.nome) || "—");
-var pct = orc.bdi ? orc.bdi.percentual : 0;
-var mme = this._momateq(orc);
-var P = [];
-P.push('<section class="pg capa">' +
-'<div class="capa-top">' + logoHTML + '</div>' +
-'<div class="capa-mid"><div class="kicker">ANEXO TÉCNICO — ORÇAMENTO DE REPAROS</div>' +
-'<h1>' + Util.esc(orc.nome) + '</h1>' +
-'<div class="capa-obra">' + Util.esc(orc.obra && orc.obra.nome ? orc.obra.nome : "Imóvel periciado") + '</div></div>' +
-'<div class="capa-info">' +
-row("Requerente / Cliente", orc.cliente.nome) +
-row("Imóvel / Local", local) +
-row("Orçamento nº", orc.numero) +
-row("Data da vistoria", Util.naoVazio(orc.dataVistoria) ? orc.dataVistoria : "[____]") +
-row("Data de referência", hoje) +
-row((Orcamento.basesUsadas(orc).length > 1 ? "Bases de preços" : "Base de preços"), Orcamento.basesUsadasTexto(orc)) +
-((Orcamento.ressalvaBasesTexto && Orcamento.ressalvaBasesTexto(orc))
-? rowRaw("Ressalva", '<span style="color:#b45309">' + Util.esc(Orcamento.ressalvaBasesTexto(orc)) + "</span>") : "") +
-rowRaw("Valor total estimado", '<b style="color:var(--p-verde,#16a34a)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
-'</div>' +
-'<div class="capa-rod">' + Util.esc(empresa) + ' · Documento técnico de subsídio ao laudo pericial</div></section>');
-P.push(pg("1. Identificação",
-'<div class="cols"><div><h3>Responsável Técnico</h3><p><b>' + Util.esc(empresa) + '</b>' +
-(emp && emp.cnpj ? '<br>CNPJ: ' + Util.esc(emp.cnpj) : '') + '<br>' +
-Util.esc((emp && emp.responsavel) || '[Eng./Arq. Responsável]') + (emp && emp.titulo ? ' — ' + Util.esc(emp.titulo) : '') + '<br>' +
-'Registro ' + Util.esc((emp && emp.crea) || 'CREA/CAU nº [____]') +
-(emp && emp.registroNacional ? '<br>Reg. Nacional: ' + Util.esc(emp.registroNacional) : '') +
-'<br>ART/RRT nº ' + (Util.naoVazio(orc.art) ? '<b>' + Util.esc(orc.art) + '</b>' : '[&nbsp;&nbsp;&nbsp;&nbsp;]') + '</p></div>' +
-'<div><h3>Objeto Periciado</h3><p>Requerente: <b>' + Util.esc(orc.cliente.nome) + '</b>' +
-(orc.cliente.doc ? '<br>' + Util.esc(orc.cliente.doc) : '') +
-'<br>Imóvel: ' + Util.esc(local) + '</p></div></div>'));
-P.push(pg("2. Objeto",
-'<p>O presente documento constitui <b>anexo técnico</b> ao laudo de constatação de vícios e não conformidades construtivas, e tem por objeto apresentar o <b>orçamento detalhado dos serviços necessários à correção</b> dos vícios identificados no imóvel objeto da perícia.</p>' +
-'<p>Os custos aqui apresentados destinam-se à quantificação do valor de reparo, servindo de subsídio técnico-financeiro à instrução do laudo, sem caráter de proposta comercial.</p>'));
-P.push(pg("3. Metodologia e Critérios de Orçamentação",
-'<p>' + ((function () {
-var bs = Orcamento.basesUsadas(orc);
-if (bs.length === 1 && bs[0].fonte === "SINAPI") {
-return 'Os preços foram compostos a partir do <b>Sistema Nacional de Pesquisa de Custos e Índices da Construção Civil — SINAPI</b>, mantido pela Caixa Econômica Federal e pelo IBGE, na competência <b>' + Util.esc(orc.competenciaSinapi || "—") + ' (' + Util.esc(orc.uf || "—") + ')</b>, adotando-se:';
-}
-return 'Os preços foram compostos a partir das seguintes bases oficiais de referência de custos: <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>' + (bs.some(function (x) { return x.fonte === "SINAPI"; }) ? ' (a SINAPI é mantida pela Caixa Econômica Federal e pelo IBGE)' : '') + ', adotando-se:';
-})()) + '</p>' +
-'<ul>' +
-'<li>composições oficiais de custo unitário, com quebra de mão de obra, material e equipamento, em regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? "desonerado" : "onerado")) + '</b>;</li>' +
-'<li>itens sem correspondência direta nas bases adotadas, orçados por <b>cotação de mercado</b> ou composição própria, identificados na planilha;</li>' +
-'<li><b>BDI</b> (Benefícios e Despesas Indiretas) de <b>' + Util.fmtPct(pct) + '</b>, em conformidade com a metodologia do Acórdão <b>TCU nº 2.622/2013</b>;</li>' +
-'<li>quantitativos apurados a partir do levantamento técnico realizado em vistoria <i>in loco</i>' + (Util.naoVazio(orc.dataVistoria) ? ' em <b>' + Util.esc(orc.dataVistoria) + '</b>' : '') + '.</li>' +
-'</ul>' +
-'<p>Aplicam-se, no que couber, as normas <b>ABNT NBR 13.752</b> (perícias de engenharia na construção civil) e demais normas técnicas vigentes.</p>'));
-var sintLi = sint.map(function (s) {
-return '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(s.custoDireto) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(s.precoVenda) + '</td>' +
-'<td class="r">' + Util.fmtPct(s.peso, 1) + '</td></tr>';
-}).join("");
-P.push(pg("4. Planilha Orçamentária Sintética",
-'<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Descrição</th><th class="r">Custo direto</th><th class="r">Com BDI</th><th class="r">Peso</th></tr></thead>' +
-'<tbody>' + (sintLi || '<tr><td colspan="5">—</td></tr>') + '</tbody>' +
-'<tfoot><tr><td colspan="2">TOTAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>'));
-var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {}, _pg = {};
-_calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
-Util.arr(_calc.grupos).forEach(function (g) { _pg[g.subEtapaId] = g; });
-var _uiOk = typeof Colunas !== "undefined" && typeof UI !== "undefined" && UI._celulasRefLinha && UI._celulasCatLinha;
-var _layL = _uiOk ? Colunas.layout(orc) : { pubdi: false, cat: false, ref: false, nPre: 0, nPos: 0 };
-var _catL = _layL.cat ? Colunas.categorias(orc, _calc, (typeof App !== "undefined" && App._colunasCtx) ? App._colunasCtx(orc) : null) : null;
-var _refL = _layL.ref ? Colunas.mapaReferencias(orc, _calc) : {};
-var _paraL = function (h) { return String(h || "").replace(/class="num/g, 'class="r'); };
-var _totL = 7 + _layL.nPre + _layL.nPos;
-Util.arr(orc.etapas).forEach(function (e, ei) {
-analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="' + (_totL - 1) + '"><b>' + Util.esc(e.nome) + '</b></td></tr>';
-var _subLau = null;
-Util.arr(e.itens).forEach(function (it, ii) {
-var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0, numero: "" };
-if ((L.subEtapaId || "") !== _subLau) {
-_subLau = L.subEtapaId || "";
-if (_subLau) {
-var gL = _pg[_subLau] || { numero: "", nome: "" };
-analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="' + (_totL - 1) + '" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
-}
-}
-analHtml += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
-'<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
-'<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
-'<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
-(_uiOk ? _paraL(UI._celulasRefLinha(orc, L, _layL, _refL)) : '') +
-'<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
-(_uiOk ? _paraL(UI._celulasCatLinha(_layL, _catL && _catL.porLinha[it.id])) : '') + '</tr>';
-});
-});
-P.push(pg("5. Planilha Orçamentária Analítica",
-'<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th>' +
-(_layL.pubdi ? '<th class="r">Preço unit. c/ BDI</th>' : '') +
-(_layL.ref ? '<th class="r">Preço ref.</th><th class="r">Dif. %</th>' : '') +
-'<th class="r">Custo total</th>' +
-(_layL.cat ? '<th class="r">Custo MO</th><th class="r">Custo MAT</th><th class="r">Custo EQ</th>' : '') + '</tr></thead>' +
-'<tbody>' + analHtml + '</tbody>' +
-'<tfoot><tr><td colspan="' + (6 + _layL.nPre) + '">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td>' +
-(_uiOk ? _paraL(UI._celulasCatSub(_layL, _catL && _catL.total)) : '') + '</tr></tfoot></table>' +
-(_layL.cat && _catL && _catL.total.sem ? '<p style="font-size:10.5px"><sup>*</sup> ' + _catL.total.sem + ' item(ns) sem discriminação MO/MAT/EQ fora dos subtotais; nada é rateado. ' + Util.esc(Colunas.textoCobertura(_catL.cobertura)) + ' (' + Util.esc(Colunas.textoMotivos(_catL.cobertura)) + ').</p>' : '')));
-var _cfgMem = (orc.config && orc.config.memorial) || null;
-var _saiMem = !_cfgMem || _cfgMem.laudo !== false;
-var memHtml = '';
-Util.arr(_saiMem ? orc.etapas : []).forEach(function (e) {
-Util.arr(e.itens).forEach(function (it) {
-if (!Util.naoVazio(it.memoriaCalculo)) return;
-memHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
-'<td class="r">' + Util.fmtNum(it.quantidade, 2) + ' ' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
-'<td>' + Util.esc(it.memoriaCalculo) + '</td></tr>';
-});
-});
-if (memHtml) {
-P.push(pg("5.1 Memória de Cálculo dos Quantitativos",
-'<p>Justificativa dos quantitativos adotados, conforme levantamento técnico (art. 23 da Lei nº 14.133/2021):</p>' +
-'<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Código</th><th>Serviço</th><th class="r">Qtd</th><th>Memória de cálculo</th></tr></thead>' +
-'<tbody>' + memHtml + '</tbody></table>'));
-}
-var mmeHtml = mme ? ('<h3 style="margin-top:18px">Composição do custo</h3><table class="prop-tbl"><tbody>' +
-'<tr><td>Mão de obra</td><td class="r">' + Util.fmtMoeda(mme.mo) + '</td><td class="r">' + Util.fmtPct(mme.mo / mme.total * 100, 1) + '</td></tr>' +
-'<tr><td>Material</td><td class="r">' + Util.fmtMoeda(mme.mat) + '</td><td class="r">' + Util.fmtPct(mme.mat / mme.total * 100, 1) + '</td></tr>' +
-'<tr><td>Equipamento</td><td class="r">' + Util.fmtMoeda(mme.eq) + '</td><td class="r">' + Util.fmtPct(mme.eq / mme.total * 100, 1) + '</td></tr>' +
-'</tbody></table>') : '';
-P.push(pg("6. Resumo Financeiro",
-'<table class="prop-tbl"><tbody>' +
-'<tr><td>Custo direto (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
-'<tr><td>BDI (' + Util.fmtPct(pct) + ')</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>' +
-'</tbody><tfoot><tr><td>VALOR TOTAL ESTIMADO PARA REPAROS</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>' + mmeHtml));
-P.push(pg("7. Premissas e Considerações Técnicas",
-'<ul>' +
-'<li>Os preços referem-se às bases de referência adotadas (<b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>) e estão sujeitos a reajuste conforme a data efetiva de execução;</li>' +
-'<li>Os quantitativos decorrem do levantamento em vistoria e poderão ser confirmados em projeto executivo;</li>' +
-'<li>O valor não inclui projetos complementares, taxas, licenças e serviços não identificáveis na vistoria;</li>' +
-'<li>O BDI adotado reflete despesas indiretas, tributos e remuneração, conforme metodologia consagrada;</li>' +
-'<li>Este orçamento tem finalidade técnico-pericial, não constituindo proposta comercial.</li>' +
-'</ul>'));
-P.push(pg("8. Encerramento",
-'<p>O presente orçamento foi elaborado segundo critérios técnicos e preços oficiais de referência, constituindo subsídio à quantificação dos custos necessários à correção dos vícios construtivos constatados na perícia.</p>' +
-'<div class="assinaturas" style="margin-top:54px"><div class="assin"><div class="linha-assin"></div>' +
-Util.esc((emp && emp.responsavel) || empresa) + '<br><span>' + Util.esc(empresa) + ' — ' +
-Util.esc((emp && emp.crea) || 'CREA/CAU') + ' · ART/RRT nº ' + (Util.naoVazio(orc.art) ? Util.esc(orc.art) : '[&nbsp;&nbsp;&nbsp;]') + '</span></div></div>' +
-'<p class="nota mt">' + Util.esc(local) + ', ' + hoje + '.</p>'));
-return P.join("");
-}
-};
-function row(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + Util.esc(v) + '</b></div>'; }
-function rowRaw(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + v + '</b></div>'; }
-function pg(titulo, corpo) {
-var temEmp = typeof Empresa !== "undefined";
-var wm = temEmp && Empresa.marcaDaguaTexto ? Empresa.marcaDaguaTexto() : "";
-var rod = ((temEmp && Empresa.nomeDoc && Empresa.nomeDoc()) || "") + " · Anexo técnico de orçamento";
-var cred = temEmp && Empresa.creditoTexto ? Empresa.creditoTexto() : "";
-if (cred) rod += " · " + cred;
-return '<section class="pg interna">' + (wm ? '<div class="wm">' + Util.esc(wm) + '</div>' : '') +
-'<h2 class="pg-tit">' + Util.esc(titulo) + '</h2>' + corpo +
-'<div class="pg-rod">' + Util.esc(rod.replace(/^ · /, "")) + '</div></section>';
-}
-global.Laudo = Laudo;
-})(window);
 } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-1.js.map
