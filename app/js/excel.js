@@ -374,6 +374,15 @@
     var wsi = wb.addWorksheet(SH_SINT, { properties: { tabColor: { argb: aco } },  views: [{ state: 'frozen', ySplit: 6 }] });
     var wa  = wb.addWorksheet(SH_ANAL, { properties: { tabColor: { argb: navy } }, views: [{ state: 'frozen', ySplit: 6 }] });
     var abc = deps.abc, crono = deps.crono, insMap = deps.insumosMap; // opcionais
+    /* SAÍDAS (js/saidas.js): `deps.secoes` = { id: false } desliga abas OPCIONAIS. Sem a opção (ou com o id ausente) nada muda:
+       o arquivo é byte a byte o de antes. Só mexe no que já era condicional a dado (abc, crono, insumosMap, Gantt, gráficos,
+       memória) — Resumo/Sintética/Analítica ficam sempre, porque as fórmulas das outras abas apontam para elas. A
+       "Justificativa de Preços" também não é desligável: é o quadro que o analista do órgão lê (Lei 14.133). */
+    var _sc = deps.secoes || {};
+    var _off = function (id) { return _sc[id] === false; };
+    if (_off('curvaAbc')) abc = null;
+    if (_off('cronograma')) crono = null;
+    if (_off('quantitativos')) insMap = null;
     // FASE 2 lote 6: aba Parâmetros (matriz de desembolso) — criada aqui p/ ficar
     // logo após a Analítica na ordem das abas; preenchida mais abaixo.
     var wpar = crono ? wb.addWorksheet('Parâmetros', { properties: { tabColor: { argb: 'FFF59E0B' } }, views: [{ state: 'frozen', ySplit: 5 }] }) : null;
@@ -1067,7 +1076,7 @@
      * ⚠ Rede com CICLO não vira fórmula: referência circular trava o Excel
      * inteiro em aviso. Nesse caso (raro; a tela já avisa) saem os valores
      * fixos da emissão, e a linha 3 diz isso. */
-    var cronoAg = deps.cronoAgente, wg = null, wfer = null, gantVivo = false;
+    var cronoAg = _off('cronograma') ? null : deps.cronoAgente, wg = null, wfer = null, gantVivo = false;
     if (cronoAg && cronoAg.etapas && cronoAg.etapas.length) {
       var fmtData = function (d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString('pt-BR') : ''; };
       // data "pura" em UTC: o ExcelJS grava serial pela hora UTC; meia-noite
@@ -1507,6 +1516,9 @@
     // ===================== GRÁFICOS (imagens PNG geradas no browser) =====================
     // Só embute se deps.graficos existir (browser). Em Node (testes) é undefined → aba não é criada.
     var G = deps.graficos;
+    if (G && (_off('curvaAbc') || _off('cronograma'))) {   // gráfico de seção desligada sai junto
+      G = { abc: _off('curvaAbc') ? null : G.abc, curvaS: _off('cronograma') ? null : G.curvaS, moMatEq: G.moMatEq };
+    }
     if (G && (G.abc || G.curvaS || G.moMatEq)) {
       var wg2 = wb.addWorksheet("Gráficos", { properties: { tabColor: { argb: 'FFEC4899' } } });
       wg2.columns = [{ width: 3 }, { width: 130 }];
@@ -1549,13 +1561,13 @@
     // ===================== FASE 3: memória de cálculo (Lei 14.133) =====================
     // Só entra se algum item tiver o campo memoriaCalculo preenchido no app.
     // (_memNoExcel foi resolvido lá em cima, antes da Analítica — a coluna L usa o mesmo parâmetro)
-    var wmem = null, comMem = _memNoExcel ? itensFlat.filter(function (x) { return x.it && x.it.memoriaCalculo; }) : [];
+    var wmem = null, comMem = (_memNoExcel && !_off('memoriaCalculo')) ? itensFlat.filter(function (x) { return x.it && x.it.memoriaCalculo; }) : [];
     /* JUSTIFICATIVA DOS COEFICIENTES (v1.1.225): a composição própria passou a
        guardar o "por quê" de cada coeficiente. Ele defende o preço tanto quanto
        a memória de quantidade — e quem confere a planilha não tem o app aberto
        do lado para clicar no detalhamento. */
     var coefMem = [];
-    if (_memNoExcel) {
+    if (_memNoExcel && !_off('memoriaCalculo')) {
       try {
         var vistosCM = {};
         itensFlat.forEach(function (x) {
@@ -2150,6 +2162,7 @@
               analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",
               responsavel: _resp
             };
+            if (opcoes.secoes) deps.secoes = opcoes.secoes;   /* js/saidas.js: seções desligadas; sem a opção, igual a antes */
             // Gera os PNGs dos gráficos NO BROWSER (canvas). Node nunca passa por aqui.
             try { deps.graficos = gerarGraficos(orc, deps); } catch (eg) { console.warn('[excel graficos]', eg); deps.graficos = null; }
             // construir devolve Promise (proteção de abas é assíncrona no ExcelJS)

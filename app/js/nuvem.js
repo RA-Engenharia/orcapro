@@ -301,6 +301,15 @@
        MERGE_ESPECIAL do `_merge`. Tem `obraId` (menos o evento de
        orçamento), e por isso entra na cascata e no escopo por obra. */
     "crono_alt",
+    /* A MEMÓRIA DO MOTOR DE ORÇAMENTO (js/mor/memoria.js, js/mor/memnuvem.js): o casamento que o orçamentista
+       corrigiu, a composição própria que aceitou e a frase que ensinou. É da EMPRESA (sem obraId) e é TRABALHO
+       dele — sem sincronizar, a correção feita no computador não vale no celular nem para o colega.
+       ⚠ UM REGISTRO PLANO POR ITEM, com o item inteiro em TEXTO no campo `dados`: o Firestore recusa lista dentro
+         de lista (a composição tem `insumos`, o casamento tem `historico`) e cada documento tem teto de 1 MiB —
+         memória orcapro-nuvem-lista-em-lista. O id é estável (tipo + hash da chave), então dois aparelhos que
+         aprenderam a mesma coisa juntam no merge por id em vez de duplicar. A regra fina (correção vence,
+         `usos` = máximo) roda em MorMemNuvem.mesclar, na leitura. */
+    "mor_memoria",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"

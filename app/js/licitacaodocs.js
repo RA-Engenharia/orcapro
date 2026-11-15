@@ -1763,9 +1763,13 @@
   }
 
   /* html(dados): raiz com as seções em ordem + os modelos de cabeçalho/rodapé. Ainda NÃO paginado. */
-  function html(d) {
-    var corpo = (d.cartaDoEdital ? "" : secCarta(d)) + secResumo(d) + secSintetico(d) + secCustosItem(d) + secAnalitico(d) + secProprias(d) + secAuxiliares(d) +
-      secQuantitativos(d) + secCurva(d) + secCronograma(d) + secBdi(d) + secEncargos(d);
+  function html(d, secoes) {
+    /* `secoes` (js/saidas.js): { id: false } pula a seção. Sem ele, o corpo é o de sempre (testado byte a byte em tools/test-saidas.js). */
+    var lig = function (id) { return !(secoes && secoes[id] === false); };
+    var corpo = (d.cartaDoEdital || !lig("carta") ? "" : secCarta(d)) + (lig("resumoEtapas") ? secResumo(d) : "") + (lig("sintetico") ? secSintetico(d) : "") +
+      (lig("custosItem") ? secCustosItem(d) : "") + (lig("analitico") ? secAnalitico(d) : "") + (lig("composicoesProprias") ? secProprias(d) : "") +
+      (lig("auxiliares") ? secAuxiliares(d) : "") + (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "") +
+      (lig("cronograma") ? secCronograma(d) : "") + (lig("bdi") ? secBdi(d) : "") + (lig("encargos") ? secEncargos(d) : "");
     var tpAttr = '';
     if (modoPagina(d)) {
       var mmDe = function (cm) { return String(+(Number(cm) * 10).toFixed(2)); };   // 3,6 cm -> "36" (e não 36.00000000000001)
@@ -1779,7 +1783,7 @@
   function gerar(orc, empresa, opcoes) {
     var r = montar(orc, empresa, opcoes);
     if (!r.ok) return r;
-    return { ok: true, html: html(r.dados), dados: r.dados, pendencias: r.pendencias };
+    return { ok: true, html: html(r.dados, opcoes && opcoes.secoes), dados: r.dados, pendencias: r.pendencias };
   }
 
   /* =====================================================================

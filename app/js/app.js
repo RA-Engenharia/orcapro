@@ -2920,6 +2920,7 @@
         case "cp-salvar": this.cpSalvar(); break;
         case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
+        case "saidas-doc": if (typeof SaidasUI !== "undefined") SaidasUI.abrir(this); break;   // prévia ?previa=motor
         case "insumos-carregar-base": this._insumosCarregarBase(); break;
         case "insumos-csv": this._insumosCsv(); break;
         case "reimportar-excel": this.reimportarExcel(); break;
@@ -2936,6 +2937,7 @@
         case "qi-calcular": this.qiCalcular(); break;
         // memorial de cálculo: agente, IA de reforço e calculadora
         case "fechar-valor": this.fecharValor(); break;
+        case "margem-abrir": if (typeof MargemUI !== "undefined") MargemUI.abrir(this); break;   // prévia ?previa=motor (js/margemui.js)
         case "fechar-desfazer": this.fecharDesfazer(); break;
         case "lic-desconto": this.licitacaoDesconto(); break;
         case "lic-pacote": this.licitacaoPacote(); break;
@@ -12667,6 +12669,13 @@
         {
           var emp = cx.emp;
           var opc = { base: base };
+          /* "O que sai no documento" (prévia ?previa=motor): o modelo em uso decide quais seções do pacote saem. Sem prévia ou sem modelo, é o pacote de sempre. */
+          try {
+            if (typeof Saidas !== "undefined" && Saidas.previaLigada()) {
+              var escSai = Saidas.ativo();
+              if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.secoes).length) opc.secoes = ogSai.secoes; }
+            }
+          } catch (eSai) { /* sem o modelo, sai o pacote completo */ }
           var pr = LicitacaoDocs.pendencias(orc, emp, opc);
           if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
           var gerar = function () {
@@ -14294,12 +14303,13 @@
     },
 
     // Excel profissional: workbook vivo com 3 abas (Resumo/Sintética/Analítica) + fórmulas
-    exportarExcel: function () {
+    /* opc.secoes (js/saidas.js): seções desligadas; sem opc o Excel é o de sempre */
+    exportarExcel: function (opc) {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
       if (Orcamento.totais(this.orcAtual).qtdItens < 1) { UI.toast("Adicione itens antes de exportar.", "erro"); return; }
       var orc = this.orcAtual;
-      this._analiticoDoOrc(orc, function () { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); ExcelOrc.gerar(orc); });
+      this._analiticoDoOrc(orc, function () { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); if (opc && opc.secoes) ExcelOrc.gerar(orc, { secoes: opc.secoes }); else ExcelOrc.gerar(orc); });
     },
 
     /* ⚠ O analítico é o DO ORÇAMENTO (orc.uf / orc.competenciaSinapi), não o
@@ -16755,6 +16765,18 @@
       if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.ativa()) { try { m = OrcGuiaUI.modeloComDeclaracoes(m, orc); } catch (eMd) {} }
       /* chave «Mostrar BDI na proposta» (Motor): desligada, nenhuma página do modelo menciona BDI */
       if (typeof MorUI !== "undefined" && MorUI.semBdiNoModelo) { try { m = MorUI.semBdiNoModelo(m, orc); } catch (eBd) {} }
+      /* "O que sai no documento" (prévia ?previa=motor): o modelo em uso tira páginas (capa, incluso, premissas, fotos, BDI) e acrescenta os textos-padrão editados */
+      try {
+        if (typeof Saidas !== "undefined" && Saidas.previaLigada() && PropTpl.aplicarSaidas) {
+          var escSai = Saidas.ativo();
+          if (escSai) {
+            var cSai = orc.comercial || {};
+            var apSai = PropTpl.aplicarSaidas(m, Saidas.opcoesGerador(escSai), { prazo: cSai.prazoExecucao, validade: cSai.validadeDias });
+            m = PropTpl.modelo(apSai.modelo);
+            if (apSai.avisos.length) UI.toast(apSai.avisos[0] + (apSai.avisos.length > 1 ? " (e mais " + (apSai.avisos.length - 1) + ")" : ""), "aviso");
+          }
+        }
+      } catch (eSai2) { /* sem o modelo de saídas, vale o modelo de proposta como veio */ }
       var temEmp = typeof Empresa !== "undefined";
       var c = orc.comercial || {};
       if (Proposta.mostrarBdi && !Proposta.mostrarBdi(orc) && Proposta.semBdiDeep) c = Proposta.semBdiDeep(c);   /* chave de BDI desligada: nem o texto do usuário cita */

@@ -1190,6 +1190,16 @@
 
     /* Papel + a área ÚTIL em mm, que é o que decide quantas colunas de mês e
        quantas linhas cabem numa folha. `utilA` já desconta o rodapé. */
+    /* Cronograma do ORÇAMENTO em outro estilo (js/cronoestilo.js): "oficial", "simples" ou "gantt" (SVG com setas de dependência).
+       Devolve { ok, erro, html, documento } — `documento` é a página completa (Gantt em A3 paisagem). Não toca no resto deste arquivo. */
+    htmlEstilo: function (orc, estilo, opts) {
+      var CE = typeof CronoEstilo !== "undefined" ? CronoEstilo : (typeof require === "function" ? require("./cronoestilo.js") : null);
+      if (!CE || !CE.estiloValido(estilo)) return { ok: false, erro: "Estilo de cronograma desconhecido." };
+      var o = opts || {}, m = CE.modelo(orc, { atividades: estilo === "gantt", hoje: o.hoje, avanco: o.avanco, valores: o.valores });
+      if (!m.ok) return { ok: false, erro: m.erro };
+      return { ok: true, html: CE.html(m, estilo, o), documento: CE.documento(m, estilo, o), modelo: m };
+    },
+
     papel: function (id) {
       var k = String(id == null ? "" : id).toLowerCase().replace(/\s+/g, "-");
       if (k === "a4") k = "a4-paisagem";

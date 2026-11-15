@@ -426,8 +426,14 @@
       if (!global.MorMemoria || typeof localStorage === "undefined") return null;
       var emp = MorUI._empresaId();
       if (!MorUI._mem || MorUI._memEmp !== emp) {
-        var r = global.MorMemoria.carregar(localStorage, emp);
-        MorUI._mem = { mem: r.mem, avisos: r.avisos, salvar: function () { return global.MorMemoria.salvar(localStorage, emp, MorUI._mem.mem); } };
+        /* NUVEM (js/mor/memnuvem.js): lê o local + a entidade «mor_memoria» do Store e mescla; ao salvar grava o local como
+           sempre e só os itens que mudaram no Store. Sem MorMemNuvem/Store (ou com erro neles) segue só local, sem erro. */
+        var Nv = global.MorMemNuvem, St = (typeof Store !== "undefined") ? Store : null, r;
+        try { r = Nv ? Nv.carregar(global.MorMemoria, localStorage, emp, St) : global.MorMemoria.carregar(localStorage, emp); } catch (eN) { r = global.MorMemoria.carregar(localStorage, emp); }
+        MorUI._mem = { mem: r.mem, avisos: r.avisos, conhecidos: r.conhecidos || {}, salvar: function () {
+          if (!Nv) return global.MorMemoria.salvar(localStorage, emp, MorUI._mem.mem);
+          try { return Nv.salvar(global.MorMemoria, localStorage, emp, MorUI._mem.mem, St, MorUI._mem.conhecidos); } catch (eS) { return global.MorMemoria.salvar(localStorage, emp, MorUI._mem.mem); }
+        } };
         MorUI._memEmp = emp;
       }
       return MorUI._mem;

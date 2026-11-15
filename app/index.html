@@ -157,6 +157,11 @@
   <!-- orçamento guiado (prévia ?previa=orcamento): o motor do roteiro e a fiação. Depois do baseexigida.js, que o motor consulta -->
   <script src="js/orcguia.js"></script>
   <script src="js/orcguiaui.js"></script>
+  <!-- "O que sai no documento": catálogo de seções, perfis por tipo de obra e meus modelos (prévia ?previa=motor) -->
+  <script src="js/saidas.js"></script>
+  <script src="js/saidasui.js"></script>
+  <script src="js/cronoestilo.js"></script>   <!-- estilos de cronograma: oficial, simples, Gantt (usa js/cronograma.js) -->
+  <script src="js/saidasxls.js"></script>   <!-- planilha por perfil (usa orcrefxls.js e cronoestilo.js, que carregam depois) -->
   <script src="js/propriasync.js"></script>
   <script src="js/atualizacao.js"></script>
   <script src="js/escopo.js"></script>
@@ -204,6 +209,7 @@
   <script src="js/mor/intencoes.js"></script>
   <script src="js/mor/leitor.js"></script>
   <script src="js/mor/memoria.js"></script>
+  <script src="js/mor/memnuvem.js"></script>
   <script src="js/mor/porque.js"></script>
   <script src="js/mor/relatorio.js"></script>
   <script src="js/mor/roteiro.js"></script>
@@ -759,6 +765,8 @@
   <script src="js/fisico.js"></script>
   <script src="js/ajustes.js"></script>
   <script src="js/fechamento.js"></script>
+  <script src="js/margem.js"></script>   <!-- margem de lucro: lucro do preço e meta de lucro pelo BDI (motor puro; tela atrás de ?previa=motor) -->
+  <script src="js/margemui.js"></script>
   <script src="js/licitacao.js"></script>
   <script src="js/plfixa.js"></script>   <!-- planilha: cabeçalho e TOTAL GERAL fixos ao rolar -->
   <script src="js/colunas.js"></script>   <!-- colunas extras da planilha: preço c/ BDI, custo MO/MAT/EQ, preço de referência (licitação) -->
@@ -849,6 +857,15 @@
   <script src="js/elevacao.js"></script>
   <script src="js/imgplanta.js"></script>
   <script src="js/pdfvetor.js"></script>
+  <!-- projeto (DXF/PDF) → orçamento: motores puros; a fiação é o js/mor/ifcui.js (prévia ?previa=motor) -->
+  <script src="js/projclass-dados.js"></script>
+  <script src="js/projclass.js"></script>
+  <script src="js/projler.js"></script>
+  <script src="js/projpdf.js"></script>
+  <script src="js/projeletr.js"></script>
+  <script src="js/projtriagem.js"></script>
+  <script src="js/projorc.js"></script>
+  <script src="js/projmodelar.js"></script>
   </template>
   <template data-grupo="bim">
   <!-- DISCIPLINAS do modelador (09/10/2026): registro, cor e o mapa comando → disciplina; a fita pergunta aqui o que mostrar -->

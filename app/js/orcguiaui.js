@@ -472,6 +472,8 @@
 
     /* semeia os modelos por tipo de cliente (idempotente; só com a prévia ligada) */
     semearModelos: function () {
+      /* os modelos de saída por tipo de obra (js/saidas.js): só com a prévia ?previa=motor; idempotente */
+      try { if (global.Saidas && Saidas.previaLigada && Saidas.previaLigada()) Saidas.semearPerfis(); } catch (eS) {}
       try { return (global.Gestao && Gestao.propModelosSemearTipos) ? Gestao.propModelosSemearTipos() : 0; } catch (e) { return 0; }
     },
 

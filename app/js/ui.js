@@ -1675,7 +1675,10 @@
 
       /* a ordem do "Mais" segue o trabalho: montar → ajustar → planilha →
          conferir → aprovar → entregar → acompanhar */
-      var acoes = [bIA, bExcel]
+      /* "O que sai no documento" (js/saidasui.js): só com a prévia ?previa=motor ligada neste aparelho. Desligada, a lista de ações é a de sempre. */
+      var bSaidas = (typeof Saidas !== "undefined" && Saidas.previaLigada && Saidas.previaLigada() && !vazio)
+        ? bt("saidas-doc", "proposta", "O que sai", ' title="Escolha as seções do documento por tipo de obra (prefeitura, edital, residencial…) e salve como modelo seu"') : "";
+      var acoes = [bIA, bExcel].concat(bSaidas ? [bSaidas] : [])
         .concat(vazio ? [] : [bEscopo, bOrcm])
         .concat([
           bt("config-orc", "dados", "Dados", ' title="Cliente, obra, endereço, validade e os textos da proposta"'),
@@ -1782,6 +1785,12 @@
         }
         subPreco += '<button class="btn ghost sm n3" data-acao="fechar-valor" title="Chegar a um valor final definido, distribuindo a diferença no BDI, nos itens ou numa parcela">' +
           ic("dinheiro", 14) + 'Fechar em um valor…</button>';
+      }
+      /* MARGEM DE LUCRO (prévia ?previa=motor): colada ao preço de venda, ao lado do "Fechar em um valor…" — é a pergunta
+         "quanto sobra de lucro neste preço?" e a inversa. Fora da prévia o botão não existe. */
+      if (typeof Margem !== "undefined" && Margem.previa()) {
+        subPreco += '<button class="btn ghost sm n3" data-acao="margem-abrir" title="Quanto sobra de lucro neste preço (em R$ e em %) e o BDI que leva ao lucro que você quer">' +
+          ic("dinheiro", 14) + 'Margem de lucro</button>';
       }
       cab2 += M.kpis([
         { rotulo: "custo direto", valor: Util.fmtMoeda(t.custoDireto) },

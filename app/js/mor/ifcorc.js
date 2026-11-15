@@ -71,7 +71,14 @@
     var cam = arr(e.camadas), core = null, i, cl;
     for (i = 0; i < cam.length; i++) { cl = Ler.materialClasse(cam[i].material); if ((cl === "bloco-ceramico" || cl === "alvenaria" || cl === "bloco-concreto" || cl === "celular" || cl === "") && cam[i].espessura > 0 && (!core || cam[i].espessura > core.espessura)) core = cam[i]; }
     if (!core) for (i = 0; i < cam.length; i++) if (cam[i].espessura > 0 && (!core || cam[i].espessura > core.espessura)) core = cam[i];
-    return core ? { esp: core.espessura, conhecido: true } : { esp: e.qto.largura || 0, conhecido: false };   /* sem IfcMaterialLayerSet a largura é a espessura TOTAL (com reboco): o núcleo é desconhecido */
+    if (core) return { esp: core.espessura, conhecido: true };
+    var tot = (e.qto && e.qto.largura) || 0;
+    if (e.classe === "DXF-PAREDE" && tot > 0) {   /* projeto DXF/PDF: a espessura desenhada é a TOTAL; o núcleo sai da tabela NUCLEO_TOTAL */
+      var I = dadosImpl(), tab = I && I.tabelas ? arr(I.tabelas.NUCLEO_TOTAL) : [], tcm = Math.round(tot * 100), k;
+      for (k = 0; k < tab.length; k++) if (tcm >= tab[k].de && tcm <= tab[k].ate) return { esp: tab[k].nucleo / 100, conhecido: true, deduzido: true, total: tcm, nucleo: tab[k].nucleo };
+      return { esp: tot, conhecido: false, total: tcm, semFaixa: true };
+    }
+    return { esp: tot, conhecido: false };   /* sem IfcMaterialLayerSet a largura é a espessura TOTAL (com reboco): o núcleo é desconhecido */
   }
   function contaCamada(e, Ler, classes) {
     var n = 0; arr(e.camadas).forEach(function (c) { if (classes.indexOf(Ler.materialClasse(c.material + " " + (c.nome || ""))) >= 0) n++; });
@@ -114,7 +121,10 @@
       var cm = c.mat; c.alvCasa = !nuc.conhecido ? 0 : ((ecm >= 8 && ecm <= 10 && cm !== "celular") || (ecm >= 13 && ecm <= 15 && cm !== "celular") || (ecm >= 18 && ecm <= 20 && cm !== "celular") || (cm === "celular" && ecm >= 14 && ecm <= 16)) ? 1 : 0;
       c._notas = [];
       if (nota) c._notas.push(nota);
-      if (!nuc.conhecido) c._notas.push("espessura total do modelo, núcleo desconhecido; confira o bloco");
+      c.nucDeduzido = nuc.deduzido ? 1 : 0;
+      if (nuc.deduzido) c._notas.push("espessura total " + nuc.total + " cm medida no projeto → núcleo de " + nuc.nucleo + " cm adotado (bloco " + nuc.nucleo + " + revestimento de " + fmt(r2((nuc.total - nuc.nucleo) / 2)) + " cm em cada face); DEDUZIDO, confira o bloco");
+      else if (nuc.semFaixa) c._notas.push("espessura total " + nuc.total + " cm medida no projeto não fecha com nenhum bloco do catálogo + revestimento de 1,5 a 3 cm por face (9→12–15, 14→17–20, 19→22–25 cm): pode ser drywall, bloco sem reboco, parede dupla ou estrutura; confira");
+      else if (!nuc.conhecido) c._notas.push("espessura total do modelo, núcleo desconhecido; confira o bloco");
     } else if (p === "porta" || p === "janela") {
       var W = maior0(q.largura), Hj = maior0(q.altura);
       if (W !== undefined) c.W = W; if (Hj !== undefined) { c.Hj = Hj; } if (W !== undefined && Hj !== undefined) c.Aj = W * Hj;

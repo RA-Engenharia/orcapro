@@ -295,7 +295,7 @@
      "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
      "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
      "pp_config", "pp_lanc", "pp_oc", "pp_fech", "cplpro_processos", "cplpro_papeis", "cplpro_modelos", "cplpro_orgao",
-     "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
+     "precosinsumos", "perfil_impl", "crono_alt", "mor_memoria", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
     return o;
   })();
   var DB_DADOS = "orcapro-dados", DB_DADOS_VER = 1, ST_ENT = "ent", ST_VER = "ver";

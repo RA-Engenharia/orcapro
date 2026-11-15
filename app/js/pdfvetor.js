@@ -83,12 +83,14 @@
       var pilha = [], segs = [], larg = 1;
       var nPath = 0, nCurva = 0, nRet = 0, nForm = 0, estourou = false;
 
-      function bota(x1, y1, x2, y2, esc) {
+      function bota(x1, y1, x2, y2, esc, curva) {
         if (segs.length >= maxSeg) { estourou = true; return; }
         var dx = x2 - x1, dy = y2 - y1;
         if (dx * dx + dy * dy < compMin * compMin) return;
-        segs.push({ x1: r3(x1), y1: r3(y1), x2: r3(x2), y2: r3(y2),
-                    layer: "pdf", largura: r3(larg * esc) });
+        var sg = { x1: r3(x1), y1: r3(y1), x2: r3(x2), y2: r3(y2),
+                    layer: "pdf", largura: r3(larg * esc) };
+        if (curva) sg.curva = true;   /* pedaço de curva (arco de porta): o leitor de projeto usa para achar a porta no vão */
+        segs.push(sg);
       }
 
       for (var i = 0; i < fn.length && !estourou; i++) {
@@ -160,7 +162,7 @@
               var u = t / this.PEDACOS_CURVA, v = 1 - u;
               var bx = v * v * v * q0x + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * fim2[0];
               var by = v * v * v * q0y + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * fim2[1];
-              bota(px, py, bx, by, esc);
+              bota(px, py, bx, by, esc, true);
               px = bx; py = by;
             }
             cx = fim2[0]; cy = fim2[1]; temAtual = true;

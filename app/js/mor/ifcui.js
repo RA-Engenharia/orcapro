@@ -12,6 +12,9 @@
  * ⚠ Respeita o bimorc.js: não vincula sozinho por parecença, não converte unidade, mostra a fonte da quantidade
  *   (estimado ≠ medido) e não muda orçamento aprovado.
  * Os builders de HTML são puros e testáveis em Node; os que tocam DOM/Store/UI só rodam no navegador.
+ * F6 (projeto): com o js/projorc.js carregado, aceita VÁRIOS arquivos — .ifc, .dxf, .pdf (arquitetura vetorial e elétrico
+ *   pelo texto) e .dwg (só o aviso de exportar DXF) — e roda o pipeline num clique (triagem → extratores → junção →
+ *   ifcorc). A conferência ganha o painel «O que foi lido» por arquivo e a prévia 2D (SVG) de cada planta.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -54,7 +57,10 @@
         '<p class="muted" style="margin:0 0 8px;font-size:12.5px">Lê o IFC inteiro e orça o que o modelo mostra <b>e o que a obra consome sem estar desenhado</b> (chapisco, fôrma, impermeabilização…). Cada linha diz de onde veio; <b>nada implícito entra sem o seu OK</b>.</p>' +
         '<div class="field"><label for="mor-ifc-padrao">Padrão do orçamento</label><select id="mor-ifc-padrao"><option value="baixo">Baixo (popular)</option><option value="medio" selected>Médio (normal)</option><option value="alto">Alto</option></select>' +
         '<span class="muted" style="font-size:12px">O padrão só escolhe o material onde o IFC não diz; o material informado no IFC vence.</span></div>' +
-        '<div class="field"><label for="mor-ifc-arq">Arquivo IFC</label><input type="file" id="mor-ifc-arq" accept=".ifc" aria-label="Arquivo IFC">' +
+        (MorIfcUI.projeto()
+          ? '<div class="field"><label for="mor-ifc-arq">Arquivos do projeto</label><input type="file" id="mor-ifc-arq" accept=".ifc,.dxf,.pdf,.dwg" multiple aria-label="Arquivos do projeto (IFC, DXF, PDF)">' +
+            '<span class="muted" style="font-size:12px">Solte de uma vez o IFC, os DXF e os PDF (arquitetura, elétrico). O sistema decide a disciplina, a escala e o pavimento sozinho; o que não reconhecer fica fora do orçamento, contado. DWG: exporte em DXF.</span>'
+          : '<div class="field"><label for="mor-ifc-arq">Arquivo IFC</label><input type="file" id="mor-ifc-arq" accept=".ifc" aria-label="Arquivo IFC">') +
         (temViewer ? ' <span class="muted" style="font-size:12px">ou deixe em branco para usar as peças já abertas no BIM (leitura parcial: sem Psets, camadas nem ambientes).</span>' : "") + "</div>" +
         '<details><summary><b>Parâmetros que o IFC não traz</b> <span class="muted" style="font-weight:400">(em branco = o item fica pendente)</span></summary>' +
         '<div class="row" style="gap:8px;flex-wrap:wrap">' +
@@ -62,6 +68,30 @@
         MorIfcUI._campo("mor-ifc-p-espSuporte", "Espaçamento entre suportes de tubo (m)") + MorIfcUI._campo("mor-ifc-p-empolamento", "Empolamento do solo (0,25 = 25 %; padrão 0,25)") + "</div></details>" +
         '<div id="mor-ifc-res" aria-live="polite" style="margin-top:10px"></div></div>';
     },
+    /* o pipeline de projeto (DXF/PDF) está carregado? */
+    projeto: function () { return !!mod("ProjOrcar", "../projorc.js"); },
+
+    /* painel «O que foi lido» por arquivo + prévia 2D de cada planta (puro) */
+    htmlLido: function (lidos) {
+      var PO = mod("ProjOrcar", "../projorc.js");
+      return '<details open id="mor-proj-lido" style="margin-bottom:8px"><summary style="font-size:13px"><b>O que foi lido</b> (' + arr(lidos).length + ' arquivo(s))</summary>' + arr(lidos).map(function (l) {
+        var r = l.resumo || {}, el = r.eletrica || {}, h = '<div class="card" data-proj-arquivo="' + esc(l.arquivo) + '" style="margin:6px 0;padding:8px;font-size:12.5px"><b>' + esc(l.arquivo) + '</b> <span class="muted">(' + esc(String(l.tipo).toUpperCase()) + ")</span>";
+        if (l.erro) h += '<div data-proj-erro="1" style="color:#c62828;margin-top:4px">' + esc(l.erro) + "</div>";
+        if (arr(l.disciplinas).length) h += '<div style="margin-top:4px"><b>Disciplina:</b> ' + esc(l.disciplinas.join(", ")) + ' <span class="muted">— ' + esc(String(l.porqueDisciplina).slice(0, 300)) + "</span></div>";
+        if (l.escala) h += "<div><b>Escala/fator:</b> " + esc(l.escala) + (l.escalaComo ? ' <span class="muted">— ' + esc(l.escalaComo) + "</span>" : "") + "</div>";
+        if (arr(l.pavimentos).length) h += "<div><b>Pavimentos:</b> " + esc(l.pavimentos.join(" · ")) + "</div>";
+        if (l.tipo !== "ifc" && l.resumo) {
+          var esps = Object.keys(r.paredePorEsp || {}).map(function (k) { return f2(r.paredePorEsp[k]) + " m de " + k; });
+          var lou = Object.keys(r.loucas || {}).map(function (k) { return r.loucas[k] + " " + k; });
+          h += '<div data-proj-contagens="1"><b>Contagens:</b> parede ' + (esps.length ? esps.join(", ") : "0 m") + " · " + r.portas + " porta(s) · " + r.janelas + " janela(s) · " + r.ambientes + " ambiente(s)" + (r.ambientesSemNome ? " (" + r.ambientesSemNome + " sem nome)" : "") + (r.ambientesPendentes ? ' <span style="color:#c62828">(' + r.ambientesPendentes + " pendente(s))</span>" : "") +
+            " · louças: " + (lou.length ? lou.join(", ") : "0") + " · elétrica: " + el.luz + " luz, " + el.tomadas + " tomada(s), " + el.quadros + " quadro(s), " + el.disjuntores + " disjuntor(es)</div>";
+        }
+        if (arr(l.avisos).length) h += '<ul style="margin:4px 0 0 18px;color:#8a5a00">' + l.avisos.slice(0, 12).map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + (l.avisos.length > 12 ? "<li>… e mais " + (l.avisos.length - 12) + "</li>" : "") + "</ul>";
+        if (PO && arr(l.plantas).length) h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' + l.plantas.slice(0, 8).map(function (p) { return '<figure style="margin:0;flex:1 1 300px"><figcaption class="muted" style="font-size:11.5px">' + esc(p.nome) + ' — <span style="color:#d32f2f">parede</span> · <span style="color:#2e7d32">porta</span> · <span style="color:#1565c0">janela</span></figcaption>' + PO.svgPlanta(p, { largura: 520 }) + "</figure>"; }).join("") + "</div>";
+        return h + "</div>";
+      }).join("") + "</details>";
+    },
+
     _campo: function (id, rot) { return '<div class="field" style="min-width:210px"><label for="' + id + '">' + esc(rot) + '</label><input type="text" inputmode="decimal" id="' + id + '" style="width:100%"></div>'; },
 
     /* cabeçalho de cobertura (o que foi lido, o que não tem regra) */
@@ -76,7 +106,11 @@
 
     /* A conferência inteira. st = { res, marcadas:{id:true}, aceitos:{id:true} } */
     htmlConferencia: function (st) {
-      var res = st.res, h = MorIfcUI.htmlCobertura(res);
+      var res = st.res, h = st.lidos ? MorIfcUI.htmlLido(st.lidos) : "";
+      var nNao = res.cobertura && res.cobertura.naoReconhecidos;
+      if (st.lidos) h += '<div data-proj-naorec="' + (nNao || 0) + '" style="margin:6px 0;font-size:12.5px;color:' + (nNao ? "#c62828" : "#2e7d32") + '"><b>Não reconhecido: ' + (nNao || 0) + " item(ns)</b> — fora do orçamento" + (nNao ? " (lista em «sem regra», abaixo)" : "") + "</div>";
+      if (st.lidos && st.modeloProj && mod("ProjModelar", "../projmodelar.js")) h += '<div style="margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn" data-proj-modelar="1" title="Cria no BIM as paredes (cortadas nos vãos pelas portas e janelas), as louças e os pavimentos — tudo numa operação só: Ctrl+Z desfaz">Modelar no 3D</button><span id="mor-proj-modelado" class="muted" style="font-size:12.5px">' + (st.modelado ? esc(st.modelado.texto) : "") + "</span></div>";
+      h += MorIfcUI.htmlCobertura(res);
       var ct = res.contagem || {};
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0">' + ["medido", "estimado", "implicito", "sugerido", "pendente"].map(function (o) { return pilula(o) + " <b>" + (ct[o] || 0) + "</b>"; }).join(" &nbsp; ") + "</div>";
       arr(res.premissas).length && (h += '<details style="margin-bottom:6px"><summary style="font-size:12.5px"><b>Premissas</b> (' + res.premissas.length + ')</summary><ul style="margin:4px 0 0 18px;font-size:12px">' + res.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul></details>");
@@ -118,7 +152,7 @@
       if (l.mor && arr(l.mor.premissas).length) h += '<p style="margin:4px 0"><b>Premissas:</b></p><ul style="margin:0 0 0 18px">' + l.mor.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul>";
       if (l.erro) h += '<p style="margin:4px 0;color:#c62828"><b>Pendência:</b> ' + esc(l.erro) + "</p>";
       h += '<p style="margin:8px 0 2px"><b>Elemento(s) de origem</b> (' + arr(l.elementos).length + "):</p><ul style=\"margin:0 0 0 18px;max-height:180px;overflow:auto\">" +
-        arr(l.elementos).slice(0, 40).map(function (e) { return "<li>" + esc(e.classe) + " «" + esc(e.nome) + "»</li>"; }).join("") + (arr(l.elementos).length > 40 ? "<li>…</li>" : "") + "</ul>";
+        arr(l.elementos).slice(0, 40).map(function (e) { var o = MorIfcUI._st && MorIfcUI._st.origemPorId && MorIfcUI._st.origemPorId[e.id]; return "<li>" + esc(e.classe) + " «" + esc(e.nome) + "»" + (o ? ' <span class="muted" data-proj-origem="1">— ' + esc(o.arquivo) + ", " + esc(o.folha) + (o.vista ? ", " + esc(o.vista) : "") + " (" + esc(o.disciplina) + ")</span>" : "") + "</li>"; }).join("") + (arr(l.elementos).length > 40 ? "<li>…</li>" : "") + "</ul>";
       return h + "</div>";
     },
 
@@ -146,7 +180,9 @@
           cb(res, null);
         } catch (e) { cb(null, "Falha ao orçar: " + e.message); }
       };
-      var inp = document.getElementById("mor-ifc-arq"), file = inp && inp.files && inp.files[0];
+      var inp = document.getElementById("mor-ifc-arq"), files = inp && inp.files ? Array.prototype.slice.call(inp.files) : [], file = files[0];
+      st.lidos = null; st.origemPorId = null; st.modeloProj = null; st.modelado = null;
+      if (files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(file.name))) { MorIfcUI._rodarProjeto(st, files, padrao, params, cb); return; }
       if (file) {
         if (file.size > 150 * 1024 * 1024) { cb(null, "Arquivo com mais de 150 MB: a leitura completa trava a aba. Abra o modelo no BIM e use «as peças já abertas» (leitura parcial)."); return; }
         var rd = function (txt) { try { var m = Ler.ler(txt); if (!m.ok) { cb(null, m.erro); return; } st.arquivo = file.name; fim(m); } catch (e) { cb(null, "Não consegui ler o IFC: " + e.message); } };
@@ -156,6 +192,83 @@
       }
       if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; fim(Ler.deElementosViewer(st.elementosViewer)); return; }
       cb(null, "Escolha o arquivo .ifc (ou abra um modelo no BIM).");
+    },
+
+    /* F6: vários arquivos → ProjOrcar (triagem, extratores, junção, ifcorc). Um arquivo por vez (memória da aba). */
+    _rodarProjeto: function (st, files, padrao, params, cb) {
+      var PO = global.ProjOrcar, Ler = global.MorIfcLer, lidos = [], i = 0;
+      function falho(f, t, msg) { var l = PO.outro(f.name); l.tipo = t; l.erro = msg; return l; }
+      function prox() {
+        if (i >= files.length) {
+          var r;
+          st.lidos = lidos; st.arquivo = files.map(function (f) { return f.name; }).join(", ");
+          try { r = PO.orcar(lidos, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } }); } catch (e) { cb(null, "Falha ao orçar: " + e.message); return; }
+          if (!r.ok) { cb(null, r.erro); return; }
+          st.origemPorId = r.origemPorId; st.modeloProj = r.modelo; st.modelado = null; cb(r.res, null); return;
+        }
+        var f = files[i++], t = PO.tipo(f.name);
+        if (f.size > 150 * 1024 * 1024) { lidos.push(falho(f, t, "arquivo com mais de 150 MB: não lido (trava a aba)")); prox(); return; }
+        if (t === "dwg") { lidos.push(PO.dwg(f.name)); prox(); return; }
+        if (t === "outro") { lidos.push(PO.outro(f.name)); prox(); return; }
+        MorIfcUI._bytes(f, function (buf) {
+          if (!buf) { lidos.push(falho(f, t, "falha ao ler o arquivo")); prox(); return; }
+          if (t !== "pdf") {
+            try {
+              if (t === "ifc") lidos.push(PO.deIfc(Ler.ler(MorIfcUI._texto(buf, false)), f.name));
+              else lidos.push(PO.lerDxf(MorIfcUI._texto(buf, true), f.name, { mem: MorIfcUI._mem() }));
+            } catch (e) { lidos.push(falho(f, t, "não consegui ler: " + e.message)); }
+            setTimeout(prox, 0); return;
+          }
+          MorIfcUI._pdfPaginas(buf, function (pgs, total, erro) {
+            try { var lp = PO.lerPdf(pgs || [], f.name, { totalPaginas: total }); if (erro && !lp.ok) lp.erro = erro; lidos.push(lp); }
+            catch (e2) { lidos.push(falho(f, "pdf", "não consegui ler o PDF: " + e2.message)); }
+            setTimeout(prox, 0);
+          });
+        });
+      }
+      prox();
+    },
+    _bytes: function (f, cb) {
+      if (f.arrayBuffer) { f.arrayBuffer().then(function (b) { cb(b); }, function () { cb(null); }); return; }
+      var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null); }; fr.readAsArrayBuffer(f);
+    },
+    /* DXF antigo é ANSI: «TÉRREO» chega estragado em UTF-8 → cai para windows-1252 */
+    _texto: function (buf, ansi) {
+      var b = new Uint8Array(buf), t = new TextDecoder("utf-8").decode(b);
+      if (ansi && t.indexOf("\uFFFD") >= 0) { try { t = new TextDecoder("windows-1252").decode(b); } catch (e) { /* fica o utf-8 */ } }
+      return t;
+    },
+    /* memória do motor (camada/bloco que a pessoa já corrigiu): só leitura aqui */
+    _mem: function () { try { var Mm = global.MorMemoria; return Mm && Mm.carregar && typeof localStorage !== "undefined" ? (Mm.carregar(localStorage, Auth.empresaId()) || {}).mem || null : null; } catch (e) { return null; } },
+    /* pdf.js local (o mesmo do leitor de prancha, sem CDN): traço vetorial + texto + linhas de cada página */
+    _pdfPaginas: function (buf, cb) {
+      var G = global.Gestao, PV = global.PdfVetor, PO = global.ProjOrcar;
+      if (!G || !G._estPdfLib) { cb([], 0, "o leitor de PDF não está disponível nesta tela"); return; }
+      G._estPdfLib(function (lib) {
+        if (!lib) { cb([], 0, "não carregou o leitor de PDF local"); return; }
+        lib.getDocument({ data: new Uint8Array(buf) }).promise.then(function (doc) {
+          var n = Math.min(doc.numPages, PO.MAX_PAGINAS), pgs = [], ch = Promise.resolve();
+          for (var p = 1; p <= n; p++) (function (k) {
+            ch = ch.then(function () { return doc.getPage(k).then(function (page) {
+              var vp = page.getViewport({ scale: 1 });
+              return Promise.all([page.getOperatorList(), page.getTextContent()]).then(function (rr) {
+                var vs = PV ? PV.segmentos(rr[0], lib.OPS, { base: vp.transform }) : { ok: false }, segs = vs && vs.ok ? vs.segmentos : [];
+                if (segs.length && PV.tirarMoldura) { var sm = PV.tirarMoldura(segs); if (sm && sm.segmentos) segs = sm.segmentos; }
+                var textos = [], porY = {}, ys = [];
+                (rr[1].items || []).forEach(function (it) {
+                  if (!it.str || !String(it.str).trim()) return;
+                  var m = lib.Util.transform(vp.transform, it.transform); textos.push({ s: it.str, x: m[4], y: m[5] });
+                  var ky = Math.round(m[5] / 3); if (!porY[ky]) { porY[ky] = []; ys.push(ky); } porY[ky].push({ x: m[4], s: it.str });
+                });
+                ys.sort(function (a, b) { return a - b; });
+                var linhas = ys.map(function (ky) { return porY[ky].sort(function (a, b) { return a.x - b.x; }).map(function (q) { return q.s; }).join(" "); });
+                pgs.push({ segmentos: segs, textos: textos, linhas: linhas });
+              });
+            }); });
+          })(p);
+          ch.then(function () { cb(pgs, doc.numPages, ""); }, function (e) { cb(pgs, doc.numPages, "falha ao ler a página: " + (e && e.message)); });
+        }, function () { cb([], 0, "o PDF não abriu (protegido ou corrompido?)"); });
+      });
     },
 
     _repintar: function () {
@@ -177,7 +290,59 @@
       global.BIM.pintarChaves(mapa, "mor-orc"); UI.toast(n + " peça(s) destacada(s) no 3D.", "ok");
     },
 
+    /* F5: «Modelar no 3D» — o lote do js/projmodelar.js entra no BIM aberto (ou na área de teste) num clique, sem pergunta */
+    _familiaCat: function (famId) {
+      var HF = global.HidFamilias, RA = global.FamiliasRA, f = null;
+      try { f = (HF && HF.porId ? HF.porId(famId) : null) || (RA && RA.obter ? RA.obter(famId, true) : null); } catch (e) { f = null; }
+      return f;
+    },
+    modelar3D: function (cb) {
+      var st = MorIfcUI._st, PM = global.ProjModelar, self = MorIfcUI;
+      function fim(t, ok) { if (st) st.modelado = { texto: t, ok: ok }; var el = document.getElementById("mor-proj-modelado"); if (el) el.textContent = t; UI.toast(t, ok ? "ok" : "info", 9000); if (cb) cb(ok); }
+      if (!st || !st.modeloProj || !PM) { fim("Leia um projeto (DXF/PDF) antes de modelar.", false); return; }
+      /* o lote é montado na hora de gravar: o catálogo de famílias (louças) só fica completo com o grupo do BIM carregado */
+      function montar() {
+        return PM.gerar(st.modeloProj, {
+          novoId: function (p) { return (p || "pm") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
+          temFamilia: function (f) { return !!self._familiaCat(f); },
+          tipoDe: function (f) { var x = self._familiaCat(f); return x && x.tipos && x.tipos[0] ? String(x.tipos[0].id) : ""; }
+        });
+      }
+      var tent = 0;
+      function pronto() { var b = global.BIM; try { return !!(b && b.editarLote && b.editarEstado && b.editarEstado()); } catch (e) { return false; } }
+      function gravar() {
+        var b = global.BIM, P = global.BimProjetosUI;
+        /* BIM sem projeto aberto (tela inicial): entra na ÁREA DE TESTE sem o seletor de template (zero perguntas) — o mesmo
+           que BimProjetosUI.areaTeste faz, menos o «começar com qual template?», que a modelagem dispensa */
+        try {
+          if (P && P.inicioVisivel && P.inicioVisivel()) {
+            if (P.descarregarCena) P.descarregarCena();
+            if (global.Gestao && global.Gestao.bimTrocaObra) global.Gestao.bimTrocaObra("", {});
+            if (P.esconderInicio) P.esconderInicio(); if (P.pintarTitulo) P.pintarTitulo();
+            setTimeout(gravar, 600); return;
+          }
+        } catch (e0) {}
+        var g = montar(); if (!g.ok) { fim("Nada a modelar: " + (g.erro || "sem paredes"), false); return; }
+        var ok = false; try { ok = !!b.editarLote(g.lote); } catch (e) { ok = false; }
+        if (!ok) { fim("O editor recusou a modelagem (nada mudou).", false); return; }
+        var c = g.criadas, t = "Modelado no 3D: " + c.parede + " parede(s), " + c.porta + " porta(s), " + c.janela + " janela(s), " + c.louca + " louça(s)" + (c.generico ? ", " + c.generico + " genérico(s) marcado(s)" : "") + " em " + g.pavimentos.length + " pavimento(s). Ctrl+Z desfaz tudo.";
+        st.modeladoLote = { id: g.lote.id, criadas: c, avisos: g.avisos, nOps: g.ops.length };
+        fim(t, true);
+      }
+      var tCat = 0;
+      function catalogo() { try { return !!(global.HidFamilias && global.HidFamilias.todas().length && global.FamiliasRA); } catch (e) { return false; } }
+      /* ⚠ CORRIDA (14/11/2026, PCD real): o BIM fica pronto antes do catálogo de famílias hidráulicas — as 40 louças viravam
+         genérico. Espera o catálogo até ~10 s; sem ele, segue (o que não tiver família sai genérico, marcado). */
+      function esperar() { if (pronto() && (catalogo() || ++tCat > 40)) { gravar(); return; } if (++tent > 120) { fim("O BIM não abriu a tempo: abra o BIM e clique de novo.", false); return; } setTimeout(esperar, 250); }
+      if (!pronto()) {
+        try { if (UI.fecharModal) UI.fecharModal(); } catch (e1) {}
+        try { if (st.app && st.app.irPara) st.app.irPara("bim"); else if (global.App && global.App.irPara) global.App.irPara("bim"); } catch (e2) {}
+      }
+      esperar();
+    },
+
     _ligar: function (box) {
+      Array.prototype.forEach.call(box.querySelectorAll("[data-proj-modelar]"), function (el) { el.addEventListener("click", function () { MorIfcUI.modelar3D(); }); });
       Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-marca]"), function (el) { el.addEventListener("change", function () { var id = el.getAttribute("data-mor-ifc-marca"), l = MorIfcUI._achar(id); if (!l) return; if (el.checked && l.origem !== "medido" && !MorIfcUI._st.aceitos[id]) { MorIfcUI._ok(id); } else if (el.checked) MorIfcUI._st.marcadas[id] = true; else { delete MorIfcUI._st.marcadas[id]; delete MorIfcUI._st.aceitos[id]; } MorIfcUI._repintar(); }); });
       Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-ok]"), function (el) { el.addEventListener("click", function () { MorIfcUI._ok(el.getAttribute("data-mor-ifc-ok")); MorIfcUI._repintar(); }); });
       Array.prototype.forEach.call(box.querySelectorAll("[data-mor-ifc-okEtapa]"), function (el) { el.addEventListener("click", function () { MorIfcUI._okEtapa(el.getAttribute("data-mor-ifc-okEtapa")); MorIfcUI._repintar(); }); });
@@ -212,7 +377,7 @@
         { texto: "Ler o modelo e orçar", classe: "primary", onClick: function () {
           var box = document.getElementById("mor-ifc-res"); if (box) box.innerHTML = '<p class="muted">Lendo o modelo…</p>';
           MorIfcUI._rodar(st, function (res, erro) {
-            if (!res) { if (box) box.innerHTML = '<p style="color:#c62828">' + esc(erro) + "</p>"; return; }
+            if (!res) { if (box) box.innerHTML = '<p style="color:#c62828">' + esc(erro) + "</p>" + (st.lidos ? MorIfcUI.htmlLido(st.lidos) : ""); return; }
             st.res = res; st.marcadas = {}; st.aceitos = {};
             res.linhas.forEach(function (l) { if (marcadaDeSaida(l)) st.marcadas[l.id] = true; });
             MorIfcUI.abrirConferenciaDe(st);

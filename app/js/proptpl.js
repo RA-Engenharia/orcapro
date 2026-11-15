@@ -185,7 +185,8 @@
         { id: "nota", nome: "Nota abaixo da tabela", tipo: "multi", dica: "Ex.: Valores válidos para pagamento conforme as condições desta proposta." },
         { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
         { id: "textoOpcionais", nome: "Frase acima dos adicionais", tipo: "multi",
-          padrao: "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início." }
+          padrao: "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início." },
+        { id: "ocultarPagamento", nome: "Não escrever a forma de pagamento nesta página", tipo: "sim_nao", padrao: false }
       ]
     },
     {
@@ -1415,6 +1416,56 @@
     return '<img class="' + classe + '" src="' + esc(d) + '" alt="' + esc(alt || "") + '">';
   }
 
+  /* =====================================================================
+   * SAÍDAS NA PROPOSTA (js/saidas.js, prévia ?previa=motor) — 14/11/2026
+   *
+   * O modelo de "O que sai no documento" escolhe seções (capa, resumo, incluso, premissas, condições de pagamento, garantias, fotos
+   * de referência, BDI embutido) e edita os textos-padrão do tipo de obra. Aqui isso vira uma CÓPIA do modelo de proposta:
+   *   capa → páginas capa/capa_classica · resumo → apresentacao · incluso → incluso · premissas → premissas · fotosReferencia → imagens ·
+   *   condicoesPagamento → o bloco de pagamento da página de investimento e a página comercial · garantias → condicoes.usarGarantia ·
+   *   bdiOculto → sem a página bdi e sem o percentual de BDI em nenhuma página.
+   * ⚠ NÃO MEXE no que o preço É: a tabela de investimento (resumo por etapa) nunca sai — proposta sem preço não é proposta.
+   * ⚠ Seção que o modelo de proposta não tem simplesmente não existe (nada é criado); seção ligada não faz página aparecer.
+   * Os textos-padrão editados entram como parágrafos da página "condicoes". `{chave}` é preenchida por `mapa`; parágrafo com chave
+   * SEM valor NÃO sai (uma chave entre chaves num documento de cliente é erro de imprensa) e vai em `avisos`.
+   * Sem `op` (ou sem `op.ligadas`) devolve o modelo como veio. Entrada: modelo já normalizado por PropTpl.modelo. Não altera o original.
+   * ===================================================================== */
+  var PAGINAS_DA_SECAO = { capa: ["capa", "capa_classica"], resumo: ["apresentacao"], incluso: ["incluso"], premissas: ["premissas"], fotosReferencia: ["imagens"], condicoesPagamento: ["comercial"] };
+  var TEXTOS_DA_PROPOSTA = ["pagamento", "garantia", "horario", "interferencia", "assembleia", "rateio", "aviso", "visita", "imprevistos", "excluso", "seguranca", "art", "paradas", "medicao"];
+  PropTpl.aplicarSaidas = function (modelo, op, mapa) {
+    var avisos = [];
+    if (!modelo || !op || !op.ligadas) return { modelo: modelo, avisos: avisos };
+    var m = JSON.parse(JSON.stringify(modelo)), lig = op.ligadas, tira = {};
+    Object.keys(PAGINAS_DA_SECAO).forEach(function (id) {
+      if (lig[id] === false) PAGINAS_DA_SECAO[id].forEach(function (tp) { tira[tp] = true; });
+    });
+    if (lig.bdiOculto === true) tira.bdi = true;
+    m.paginas = (m.paginas || []).filter(function (p) { return !tira[p.tipo]; });
+    m.paginas.forEach(function (p) {
+      if (p.tipo === "condicoes" && lig.garantias === false) p.usarGarantia = false;
+      if (p.tipo === "investimento" && lig.condicoesPagamento === false) p.ocultarPagamento = true;
+      if (lig.bdiOculto === true) { if (p.mostrarBdi) p.mostrarBdi = false; if (p.mostrarBdiTcu) p.mostrarBdiTcu = false; }
+    });
+    var textos = op.textos || {}, novos = [];
+    TEXTOS_DA_PROPOSTA.forEach(function (id) {
+      var tx = txt(textos[id]); if (!tx) return;
+      if (id === "pagamento" && lig.condicoesPagamento === false) return;
+      if (id === "garantia" && lig.garantias === false) return;
+      var falta = [], pronto = tx.replace(/\{([^}]+)\}/g, function (x, k) { var v = mapa && mapa[k]; if (v == null || v === "") { falta.push(k); return x; } return String(v); });
+      if (falta.length) { avisos.push("O texto \"" + id + "\" ficou de fora da proposta: falta " + falta.map(function (k) { return "{" + k + "}"; }).join(", ") + "."); return; }
+      novos.push(pronto);
+    });
+    if (novos.length) {
+      var pc = m.paginas.filter(function (p) { return p.tipo === "condicoes"; })[0];
+      if (pc) {
+        var jaTem = linhasDe(pc.paragrafos);
+        novos.forEach(function (x) { if (jaTem.indexOf(x) < 0) jaTem.push(x); });
+        pc.paragrafos = jaTem.join("\n");
+      } else avisos.push("Os textos do modelo não entraram: este modelo de proposta não tem a página \"Condições da entrega\".");
+    }
+    return { modelo: m, avisos: avisos };
+  };
+
   PropTpl.html = function (t, dados) {
     var m = PropTpl.modelo(t);
     var d = dados || {};
@@ -1533,7 +1584,7 @@
         corpo = '<h2 class="tp-h1c">' + esc(tit) + "</h2>" + tabela(p, b, m)
           + (txt(p.nota) ? '<p class="tp-leg">' + escML(p.nota) + "</p>" : "")
           + tabelaOpcionais(p, b);
-        var pag = txt(com.condicoesPagamento);
+        var pag = p.ocultarPagamento ? "" : txt(com.condicoesPagamento);
         if (pag) {
           corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
             + '<p class="tp-pag">' + escML(pag) + "</p>";

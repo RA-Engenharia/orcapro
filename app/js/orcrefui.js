@@ -40,7 +40,8 @@
     return { tipoObra: val("orcref-tipo"), recursoFederal: !!(e && e.checked), processo: val("orcref-proc"), rtNome: val("orcref-rt"), rtReg: val("orcref-reg"), artTipo: val("orcref-arttipo"), artNum: val("orcref-art") };
   }
 
-  function abrir(orc) {
+  /* extras (js/saidasui.js, prévia ?previa=motor): { secoes, formatos } — o que sai no pacote. Sem extras, é o diálogo de sempre. */
+  function abrir(orc, extras) {
     var UI = global.UI, OR = global.OrcamentoReferencia;
     if (!orc || !OR || !UI) return;
     var salvo = lerSalvo(orc.id), emp = (global.Empresa && global.Empresa.dados) ? global.Empresa.dados() : {};
@@ -72,7 +73,13 @@
           var r = mostrarPend();
           if (!r.ok) { UI.toast(r.erro, "erro"); return; }
           UI.toast("Montando o pacote…", "ok");
-          OR.baixar(orc, opcoesDe(orc, f)).then(function (res) {
+          var opBaixar = opcoesDe(orc, f);
+          if (extras && extras.secoes) opBaixar.secoes = extras.secoes;
+          if (extras && extras.formatos && extras.formatos.length) opBaixar.formatos = extras.formatos;
+          /* perfil, estilo do cronograma, seções ligadas e textos-padrão do modelo (js/saidas.js → opcoesGerador) */
+          if (extras && extras.perfil) { opBaixar.perfil = extras.perfil; opBaixar.ligadas = extras.ligadas; opBaixar.textos = extras.textos; }
+          if (extras && extras.estiloCronograma) opBaixar.estiloCronograma = extras.estiloCronograma;
+          OR.baixar(orc, opBaixar).then(function (res) {
             UI.toast("Pacote gerado: " + res.saidas.map(function (x) { return x.formato.toUpperCase() + (x.paginas ? " (" + x.paginas + " pág.)" : ""); }).join(" e ") + (res.dados.pronto ? "." : ". Atenção: há pendências, o arquivo sai marcado NÃO PUBLICAR."), res.dados.pronto ? "ok" : "aviso");
           }, function (e) { UI.toast("Não consegui gerar o pacote: " + (e && e.message ? e.message : e), "erro"); });
         } }

@@ -14,8 +14,9 @@
  *   (e) FRASES       o que o usuário ENSINOU: frase não entendida → intenção do dicionário.
  * ⚠ Dado corrompido é ISOLADO (copiado para `…:corrompido:<data>`), nunca apagado nem travando a tela: o motor
  *   segue com memória vazia. Esquecer/editar, exportar e importar JSON estão aqui; a tela está em ui.js.
- * ⚠ ESPELHO NA NUVEM: NÃO feito. O espelho de js/propriasync.js depende de registrar uma entidade nova na
- *   nuvem (js/nuvem.js, com tombstones e merge por id/atualizadoEm) — não é cópia fácil. Fica LOCAL.
+ * ⚠ NUVEM: casamentos, composições aceitas e frases sincronizam pela entidade «mor_memoria» (js/nuvem.js), um
+ *   registro plano por item — ver js/mor/memnuvem.js. Respostas e perfis de custo seguem LOCAIS. Este arquivo
+ *   continua sem saber de nuvem: a leitura/gravação com o Store é do MorMemNuvem.carregar/salvar.
  * Puro, ES5. O armazenamento entra por parâmetro (`localStorage` no navegador).
  * ===================================================================== */
 (function (global) {
@@ -43,7 +44,7 @@
 
   function vazia() {
     var a = agoraISO();
-    return { v: VERSAO, criadoEm: a, atualizadoEm: a, casamentos: {}, composicoes: [], respostas: {}, perfis: [], frases: {} };
+    return { v: VERSAO, criadoEm: a, atualizadoEm: a, casamentos: {}, composicoes: [], respostas: {}, perfis: [], frases: {}, camadas: {} };
   }
 
   /* Migração: aceita o que veio de qualquer versão e devolve { mem, migrou, avisos }. Nunca lança. */
@@ -71,6 +72,8 @@
       });
       if (Array.isArray(obj.perfis)) m.perfis = obj.perfis.filter(function (p) { return p && p.orcId && p.etapas && typeof p.etapas === "object"; }).slice(-MAX_PERFIS);
       if (obj.frases && typeof obj.frases === "object") Object.keys(obj.frases).forEach(function (k) { var f = obj.frases[k]; if (f && f.entrada && f.frase) m.frases[k] = { frase: String(f.frase), entrada: String(f.entrada), usos: Math.max(1, Number(f.usos) || 1), em: String(f.em || "") }; });
+      /* (f) CAMADAS/BLOCOS do projeto ensinados pelo usuário (js/projclass.js): «camada|nome» / «bloco|nome» → classe */
+      if (obj.camadas && typeof obj.camadas === "object") Object.keys(obj.camadas).forEach(function (k) { var c = obj.camadas[k]; if (c && c.classe && /^(camada|bloco)\|/.test(k)) m.camadas[k] = { tipo: String(c.tipo || k.split("|")[0]), nome: String(c.nome || ""), classe: String(c.classe), sub: String(c.sub || ""), usos: Math.max(1, Number(c.usos) || 1), corrigido: c.corrigido !== false, ultima: String(c.ultima || "") }; });
       if (obj.criadoEm) m.criadoEm = String(obj.criadoEm);
       if (obj.atualizadoEm) m.atualizadoEm = String(obj.atualizadoEm);
     }
@@ -224,11 +227,12 @@
   /* ---------------- esquecer ---------------- */
   function esquecer(mem, tipo, chave) {
     if (tipo === "casamento") { if (!mem.casamentos[chave]) return false; delete mem.casamentos[chave]; return true; }
+    if (tipo === "camada" || tipo === "bloco") { mem.camadas = mem.camadas || {}; if (!mem.camadas[chave]) return false; delete mem.camadas[chave]; return true; }
     if (tipo === "frase") { if (!mem.frases[chave]) return false; delete mem.frases[chave]; return true; }
     if (tipo === "composicao") { var n = mem.composicoes.length; mem.composicoes = mem.composicoes.filter(function (c) { return c.comp.codigo !== chave; }); return mem.composicoes.length < n; }
     if (tipo === "perfil") { var m = mem.perfis.length; mem.perfis = mem.perfis.filter(function (p) { return p.orcId !== chave; }); return mem.perfis.length < m; }
     if (tipo === "respostas") { if (!mem.respostas[chave]) return false; delete mem.respostas[chave]; return true; }
-    if (tipo === "tudo") { var v = vazia(); mem.casamentos = v.casamentos; mem.composicoes = v.composicoes; mem.respostas = v.respostas; mem.perfis = v.perfis; mem.frases = v.frases; return true; }
+    if (tipo === "tudo") { var v = vazia(); mem.casamentos = v.casamentos; mem.composicoes = v.composicoes; mem.respostas = v.respostas; mem.perfis = v.perfis; mem.frases = v.frases; mem.camadas = v.camadas; return true; }
     return false;
   }
 
@@ -253,6 +257,8 @@
     Object.keys(n.respostas).forEach(function (tp) { Object.keys(n.respostas[tp]).forEach(function (pid) { Object.keys(n.respostas[tp][pid]).forEach(function (val) { m.respostas[tp] = m.respostas[tp] || {}; m.respostas[tp][pid] = m.respostas[tp][pid] || {}; m.respostas[tp][pid][val] = (m.respostas[tp][pid][val] || 0) + n.respostas[tp][pid][val]; }); }); });
     n.perfis.forEach(function (p) { if (!m.perfis.some(function (x) { return x.orcId === p.orcId; })) m.perfis.push(copia(p)); });
     Object.keys(n.frases).forEach(function (k) { if (!m.frases[k]) m.frases[k] = copia(n.frases[k]); });
+    m.camadas = m.camadas || {};
+    Object.keys(n.camadas || {}).forEach(function (k) { var a = m.camadas[k], b = n.camadas[k]; if (!a || String(b.ultima) > String(a.ultima)) m.camadas[k] = copia(b); });
     m.atualizadoEm = agoraISO();
     return { ok: true, mem: m, avisos: r.avisos };
   }

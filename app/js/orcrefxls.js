@@ -22,7 +22,7 @@
   function nomeAba(n) { return s(n).replace(/[:\\\/?*\[\]]/g, "-").slice(0, 31); }
   function colL(n) { var r = ""; while (n > 0) { var m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; }
 
-  function construir(ExcelJS, d) {
+  function construir(ExcelJS, d, secoes) {
     var A = global.Arred || (typeof require === "function" ? require("./arredondamento.js") : null);
     var modo = d.modo;
     function wrap(expr, uni) {
@@ -420,11 +420,19 @@
       d.pend.bloqueios.forEach(function (x) { wpe.getCell(rp, 1).value = "EM ABERTO"; wpe.getCell(rp, 1).font = { bold: true, color: { argb: VERM } }; wpe.getCell(rp, 2).value = x; wpe.getCell(rp, 2).alignment = { wrapText: true }; rp++; });
       d.pend.conferir.forEach(function (x) { wpe.getCell(rp, 1).value = "CONFERIR"; wpe.getCell(rp, 2).value = x; wpe.getCell(rp, 2).alignment = { wrapText: true }; rp++; });
     }
+    /* SAÍDAS (js/saidas.js): `secoes` = { id: false } tira a aba. Só as abas que nenhuma fórmula referencia (conferido: as fórmulas
+       só apontam para Resumo, Sintética e Analítica — essas três ficam sempre). Sem `secoes`, o arquivo é o de antes. */
+    if (secoes) {
+      [["bdi", [wbd]], ["encargos", [wen]], ["curvaAbc", [wa1, wa2]], ["cronograma", [wcr]], ["memoriaCalculo", [wme]], ["cotacoes", [wco]],
+       ["declaracoes", [wde]], ["pendencias", [wpe]]].forEach(function (g) {
+        if (secoes[g[0]] === false) g[1].forEach(function (w) { if (w) wb.removeWorksheet(w.id); });
+      });
+    }
     return wb;
   }
 
-  function gerar(ExcelJS, d) {
-    var wb = construir(ExcelJS, d);
+  function gerar(ExcelJS, d, secoes) {
+    var wb = construir(ExcelJS, d, secoes);
     return Promise.resolve(wb.xlsx.writeBuffer()).then(function (buf) {
       return typeof Blob !== "undefined" ? new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }) : buf;
     });

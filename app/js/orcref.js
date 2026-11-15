@@ -23,7 +23,7 @@
   function _dep(nome) {
     if (global[nome]) return global[nome];
     if (typeof require === "function") {
-      var arq = { Orcamento: "orcamento", Arred: "arredondamento", Bdi: "bdi", Util: "util", EncargosTab: "encargostab", LicitacaoDocs: "licitacaodocs", Bases: "bases", Analitico: "analitico", Licitacao: "licitacao" }[nome];
+      var arq = { Orcamento: "orcamento", Arred: "arredondamento", Bdi: "bdi", Util: "util", EncargosTab: "encargostab", LicitacaoDocs: "licitacaodocs", Bases: "bases", Analitico: "analitico", Licitacao: "licitacao", CronoEstilo: "cronoestilo" }[nome];
       if (arq) { try { var m = require("./" + arq + ".js"); if (m) return m; } catch (e) {} }
     }
     return null;
@@ -382,6 +382,15 @@
     } else {
       cronoMotivo = "O orçamento não tem cronograma elaborado (durações e dependências das etapas). A distribuição proporcional ao valor não é cronograma e não foi usada.";
     }
+    /* ESTILO DO CRONOGRAMA (js/cronoestilo.js, prévia ?previa=motor): só quando a pessoa escolheu "simples" ou "gantt". Sem a opção, nada muda.
+       O modelo usa o MESMO valor por etapa do pacote (total fechado ao centavo) e as datas do js/cronograma.js. */
+    var cronoEstilo = null;
+    if (crono && (opcoes.estiloCronograma === "simples" || opcoes.estiloCronograma === "gantt") && _dep("CronoEstilo")) {
+      var valsE = []; etapas.forEach(function (E) { valsE[E.idx] = E.total; });
+      var mE = _dep("CronoEstilo").modelo(orc, { atividades: opcoes.estiloCronograma === "gantt", hoje: opcoes.hoje, avanco: opcoes.avanco, valores: valsE.some(function (v) { return v == null; }) ? undefined : valsE });
+      if (mE.ok) cronoEstilo = { estilo: opcoes.estiloCronograma, modelo: mE };
+      else pend.conferir.push("Estilo de cronograma \"" + opcoes.estiloCronograma + "\" indisponível (" + mE.erro + "); saiu o físico-financeiro oficial.");
+    }
     if (!crono) pend.bloqueios.push("Cronograma físico-financeiro: " + cronoMotivo);
 
     /* ---- memória de cálculo ---- */
@@ -421,7 +430,7 @@
       modo: modo, bdiNoPU: bdiNoPU, bdiPct: pct,
       etapas: etapas, itens: itens,
       tot: { custoDireto: custoDireto, bdi: bdiValor, precoVenda: totalPacote, qtdItens: itens.length, qtdEtapas: etapas.length },
-      bdi: bdi, enc: enc, abcServ: abcServ, abcIns: abcIns, crono: crono, cronoMotivo: cronoMotivo, cot: cot, caixa: caixa,
+      bdi: bdi, enc: enc, abcServ: abcServ, abcIns: abcIns, crono: crono, cronoMotivo: cronoMotivo, cronoEstilo: cronoEstilo, cot: cot, caixa: caixa,
       bases: bases, pend: pend, pronto: pend.bloqueios.length === 0,
       declaracoes: declaracoes(cab, rt, art, bases, pct, cot)
     };
@@ -620,6 +629,12 @@
     return sec("Cronograma", h);
   }
 
+  /* cronograma em outro estilo (simples ou Gantt): o fragmento vem de js/cronoestilo.js */
+  function secCronoEstilo(d) {
+    var ce = d.cronoEstilo, rt = d.rt || {};
+    return sec("Cronograma", _dep("CronoEstilo").html(ce.modelo, ce.estilo, { rt: { nome: rt.nome, registro: rt.registro, art: d.art && d.art.numero, tipoArt: d.art && d.art.tipo } }));
+  }
+
   function secMemoria(d) {
     var h = '<div class="ld-tit">Memória de cálculo dos quantitativos</div>';
     var t = '<table class="ld-t ld-split">' + col([13, 17, 52, 9, 17, 78]) + '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UN.</th><th>QUANT.</th><th>MEMÓRIA DE CÁLCULO</th></tr></thead><tbody>';
@@ -711,10 +726,13 @@
     return c;
   }
 
-  function html(d) {
+  function html(d, secoes) {
     var LD = _dep("LicitacaoDocs");
-    var corpo = secSintetica(d) + secAnalitica(d) + secBdi(d) + secEncargos(d) + secAbc(d, "serv") + secAbc(d, "ins") + secCronograma(d) + secMemoria(d) + secCotacao(d) +
-      (d.caixa ? secCaixa(d) : "") + secDeclaracoes(d) + secPendencias(d);
+    /* `secoes` (js/saidas.js): { id: false } pula a seção; sem ele o corpo é o de sempre. O repasse CAIXA não tem id: sai sempre que existe. */
+    var lig = function (id) { return !(secoes && secoes[id] === false); };
+    var corpo = (lig("sintetico") ? secSintetica(d) : "") + (lig("analitico") ? secAnalitica(d) : "") + (lig("bdi") ? secBdi(d) : "") + (lig("encargos") ? secEncargos(d) : "") +
+      (lig("curvaAbc") ? secAbc(d, "serv") + secAbc(d, "ins") : "") + (lig("cronograma") ? (d.cronoEstilo ? secCronoEstilo(d) : secCronograma(d)) : "") + (lig("memoriaCalculo") ? secMemoria(d) : "") +
+      (lig("cotacoes") ? secCotacao(d) : "") + (d.caixa ? secCaixa(d) : "") + (lig("declaracoes") ? secDeclaracoes(d) : "") + (lig("pendencias") ? secPendencias(d) : "");
     return '<div class="ld-raiz rel-doc orcref"><style>' + (LD ? LD.css : "") + cssImagens(d) + '</style><div class="ld-fonte">' + corpo + '</div>' + tplTimbrado(d) + '<div class="ld-paginas"></div></div>';
   }
 
@@ -728,12 +746,12 @@
   }
 
   /* PDF direto (browser): monta, pagina fora da tela, grava e devolve { blob, paginas } */
-  function pdf(d) {
+  function pdf(d, secoes) {
     var PD = global.PdfDireto, doc = global.document;
     if (!PD || !doc) return Promise.reject(new Error("O gerador de PDF não carregou nesta página."));
     var host = doc.createElement("div");
     host.setAttribute("style", "position:absolute;left:-99999px;top:0;width:210mm");
-    host.innerHTML = html(d);
+    host.innerHTML = html(d, secoes);
     doc.body.appendChild(host);
     var limpar = function () { try { doc.body.removeChild(host); } catch (e) {} };
     try { paginar(host.querySelector(".ld-raiz")); } catch (e) { limpar(); return Promise.reject(e); }
@@ -753,13 +771,20 @@
       if (PD && PD.baixar) PD.baixar(blob, arq);
     }
     var tarefas = [];
-    if (formatos.indexOf("pdf") >= 0) tarefas.push(pdf(d).then(function (res) { entrega(res.blob, nome + ".pdf"); return { formato: "pdf", paginas: res.paginas }; }));
+    if (formatos.indexOf("pdf") >= 0) tarefas.push(pdf(d, opcoes.secoes).then(function (res) { entrega(res.blob, nome + ".pdf"); return { formato: "pdf", paginas: res.paginas }; }));
     if (formatos.indexOf("xlsx") >= 0) {
       tarefas.push(new Promise(function (ok) {
         var X = global.OrcamentoReferenciaXls, Ex = global.ExcelOrc;
         if (!X || !Ex) throw new Error("O gerador de Excel não carregou.");
         Ex.ensureExcelJS(function () { ok(); });
-      }).then(function () { return global.OrcamentoReferenciaXls.gerar(global.ExcelJS, d); }).then(function (blob) { entrega(blob, nome + ".xlsx"); return { formato: "xlsx" }; }));
+      }).then(function () {
+        /* planilha por perfil (js/saidasxls.js, prévia ?previa=motor): só quando o modelo escolheu um perfil; sem ele, a de sempre */
+        if (opcoes.perfil && global.SaidasXls) {
+          var logo = null; try { logo = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) { logo = null; }
+          return global.SaidasXls.gerar(global.ExcelJS, opcoes.perfil, d, { orc: orc, secoes: opcoes.secoes, ligadas: opcoes.ligadas, textos: opcoes.textos, estiloCronograma: opcoes.estiloCronograma, empresa: opcoes.empresa || d.emp, logo: logo, hoje: opcoes.hoje });
+        }
+        return global.OrcamentoReferenciaXls.gerar(global.ExcelJS, d, opcoes.secoes);
+      }).then(function (blob) { entrega(blob, nome + ".xlsx"); return { formato: "xlsx" }; }));
     }
     return Promise.all(tarefas).then(function (saidas) { return { ok: true, dados: d, saidas: saidas, pendencias: r.pendencias }; });
   }

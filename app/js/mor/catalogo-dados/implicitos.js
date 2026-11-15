@@ -30,7 +30,7 @@
  *   elemento: L comprimento · H altura da parede · B espessura/largura · Hs altura da seção · A área · V volume ·
  *     P perímetro · peso · padrao · mat · matAcab · telha · ext · externa — e por papel:
  *     parede: Abruta Avaos AvaosDesc Aliq nVaos Lverga Lcontra Af_seca Af_ext Af_mol Lf_mol camChapisco camEmboco
- *       camCeramica camPintura alvCasa ecm matAssumido; abertura: W Hj Aj; tubo: dn mat sis; conexão: n dn tp ang sis
+ *       camCeramica camPintura alvCasa ecm matAssumido nucDeduzido (núcleo pela espessura total do projeto); abertura: W Hj Aj; tubo: dn mat sis; conexão: n dn tp ang sis
  *       semCodConexao; taxaAco/temTaxa (Pset de taxa de aço); dcm (diâmetro de estaca, cm); secmm (cabo).
  *   ambiente: Apiso Pp Hp Lportas nForro nPisoModelado (do ambiente: só o forro/piso associado àquele IfcSpace) (+ molhado/externo)
  *   obra: Lsoleira (porta contada uma vez) edifAlta nPavimentos alturaEdif Autil Amol Aj_total nBacia nLav nPontosEle nEletroduto(m) nCabo nRalo nForro nTelhaEstrutura …
@@ -132,9 +132,9 @@
   var regras = [
 
     /* ============================ MEDIDOS — vedação ============================ */
-    R("med.alv9", "medido", PAREDE, "alvenaria", { cod: "alvenaria", quando: "alvCasa==1 && ecm>=8 && ecm<=10 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede = área bruta − vãos maiores que 2 m² (critério SINAPI)", intencao: "alvenaria bloco cerâmico 9 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede + vãos (IfcRelVoidsElement)" } }),
-    R("med.alv14", "medido", PAREDE, "alvenaria", { cod: "alv14", quando: "alvCasa==1 && ecm>=13 && ecm<=15 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 14 cm)", intencao: "alvenaria bloco cerâmico 14 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
-    R("med.alv19", "medido", PAREDE, "alvenaria", { cod: "alv19", quando: "alvCasa==1 && ecm>=18 && ecm<=20 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 19 cm)", intencao: "alvenaria bloco cerâmico 19 cm", sugestaoSe: "matAssumido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
+    R("med.alv9", "medido", PAREDE, "alvenaria", { cod: "alvenaria", quando: "alvCasa==1 && ecm>=8 && ecm<=10 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede = área bruta − vãos maiores que 2 m² (critério SINAPI)", intencao: "alvenaria bloco cerâmico 9 cm", sugestaoSe: "matAssumido==1 || nucDeduzido==1", origem: { tipo: MD, ref: "Qto da parede + vãos (IfcRelVoidsElement)" } }),
+    R("med.alv14", "medido", PAREDE, "alvenaria", { cod: "alv14", quando: "alvCasa==1 && ecm>=13 && ecm<=15 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 14 cm)", intencao: "alvenaria bloco cerâmico 14 cm", sugestaoSe: "matAssumido==1 || nucDeduzido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
+    R("med.alv19", "medido", PAREDE, "alvenaria", { cod: "alv19", quando: "alvCasa==1 && ecm>=18 && ecm<=20 && mat!='celular'", qtd: "Aliq", formula: "área líquida da parede (espessura do núcleo 19 cm)", intencao: "alvenaria bloco cerâmico 19 cm", sugestaoSe: "matAssumido==1 || nucDeduzido==1", origem: { tipo: MD, ref: "Qto da parede" } }),
     R("med.alvCelular15", "medido", PAREDE, "alvenaria", { cod: "alvCelular15", quando: "alvCasa==1 && mat=='celular' && ecm>=14 && ecm<=16", qtd: "Aliq", formula: "área líquida da parede (concreto celular 15 cm)", intencao: "alvenaria concreto celular 15 cm", origem: { tipo: MD, ref: "Qto da parede" } }),
     R("med.alvPendente", "medido", PAREDE, "alvenaria", { desc: "ALVENARIA DE VEDAÇÃO ({mat}, e = {ecm} cm) — espessura/material do modelo sem composição no catálogo", un: "m²", quando: "alvCasa==0", qtd: "Aliq", formula: "área líquida da parede; o código fica pendente porque a espessura/material lidos não têm composição no catálogo", intencao: "alvenaria de vedação", agrupar: ["ecm", "mat"], origem: { tipo: MD, ref: "Qto da parede" } }),
     R("med.drywall", "medido", ["parede-drywall"], "alvenaria", { cod: "dry2f", qtd: "Aliq", formula: "área líquida da parede de gesso acartonado (duas faces simples, guias simples)", intencao: "parede drywall duas faces", origem: { tipo: MD, ref: "Qto da parede" } }),
@@ -351,8 +351,19 @@
     { id: "obra-limpeza", disciplina: "geral", quando: "nElementos>0", exige: ["obra.limpezaPiso", "obra.limpezaVidros", "obra.limpezaLouca"], aviso: "Obra sem limpeza final." }
   ];
 
+  /* NÚCLEO PELA ESPESSURA TOTAL (projeto DXF/PDF): o desenho dá a parede ACABADA (bloco + revestimento das duas faces),
+     não o bloco. Núcleo adotado = o bloco do catálogo (med.alv9/14/19, códigos já existentes) cujo núcleo + revestimento
+     das duas faces (de 2×1,5 a 2×3,0 cm: chapisco + emboço/massa única) dá a espessura medida. Faixas sem sobreposição;
+     o que cai fora (≤ 11, 16, 21, ≥ 26 cm: drywall, bloco sem reboco, parede dupla, estrutura) fica PENDENTE com o motivo
+     — nunca chutado. O item sai AMARELO (deduzido) com o «Por quê?» «espessura total X → núcleo Y adotado». */
+  var NUCLEO_TOTAL = [
+    { de: 12, ate: 15, nucleo: 9 },
+    { de: 17, ate: 20, nucleo: 14 },
+    { de: 22, ate: 25, nucleo: 19 }
+  ];
+
   D.codigos = D.codigos || { LEGADO: {}, F2: {}, F3: {}, TUDO: {} };
   D.codigos.F13 = F13;
-  D.implicitos = { versao: 1, F13: F13, regras: regras, pares: pares, tabelas: { TUBO_AF: TUBO_AF, TUBO_ES: TUBO_ES, CONEXAO: CONEXAO }, empolamento: 0.25 };
+  D.implicitos = { versao: 1, F13: F13, regras: regras, pares: pares, tabelas: { TUBO_AF: TUBO_AF, TUBO_ES: TUBO_ES, CONEXAO: CONEXAO, NUCLEO_TOTAL: NUCLEO_TOTAL }, empolamento: 0.25 };
   if (typeof module !== "undefined" && module.exports) module.exports = D.implicitos;
 })(typeof window !== "undefined" ? window : globalThis);
