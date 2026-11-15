@@ -397,6 +397,7 @@
           var vd = o.volume, cat = VOL_IFC[vd.categoria] ? vd.categoria : "generico";
           vols[o.id] = { id: o.id, tipo: "volume", categoria: cat, ifc: VOL_IFC[cat], material: String(vd.material || "Concreto").slice(0, 60),
                          nome: String(vd.nome || "").slice(0, 80), receita: JSON.parse(JSON.stringify(vd.receita)) };
+          if (vd.recortavel === true) vols[o.id].recortavel = true;   /* deck/terreno: a piscina recorta na hora (js/piscinaderiv.js) */
           if (ordemV.indexOf(o.id) < 0) ordemV.push(o.id);
         } else if (o.op === "volBool" && vols[o.id] && vols[o.ferramenta] && o.ferramenta !== o.id && (o.tipo === "uniao" || o.tipo === "subtracao" || o.tipo === "intersecao")) {
           /* união/subtração: o ALVO fica com a receita combinada e a FERRAMENTA

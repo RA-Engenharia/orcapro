@@ -441,6 +441,7 @@
           { sep: 1 },
           { a: "mover", r: "Mover", tecla: "MV", off: !(ed && mod) },
           { a: "copiar", r: "Copiar", tecla: "CO", off: !(ed && mod) },
+          { a: "girar90", r: "Girar 90°", tecla: "Espaço", off: !(ed && mod && global.BimGirar90 && BimGirar90.pode()) },   /* peça solta (js/bimgirar90.js) */
           { a: "elevar", r: "Elevar…", tecla: "EL", n: alvosN, off: !(ed && mod && global.BimElevarUI) },   /* ELEVAR (js/bimelevarui.js) */
           { a: "apoiar", r: "Apoiar em…", tecla: "AE", n: alvosN, off: !(ed && mod && global.BimApoiarUI) },   /* APOIAR EM… (js/bimapoiarui.js) */
           { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
@@ -496,6 +497,7 @@
       if (a === "mostrar") return this.mostrarTodos();
       if (a === "mover") return this.comando("mover-preciso");
       if (a === "copiar") return this.comando("copiar");
+      if (a === "girar90") return !!(global.BimGirar90 && BimGirar90.girar(90));
       if (a === "elevar") return this.comando("elevar");
       if (a === "apoiar") return this.comando("apoiar");
       if (a === "props") return this.propriedades();

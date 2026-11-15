@@ -384,6 +384,8 @@
         var D = D2(), df = D && D.def ? D.def(id) : null, yc = df && df.nivel && isFinite(df.nivel.y) ? df.nivel.y + (+df.altura || 1.2) : null;
         var v = global.BimVaoArr.naPlanta(this._estado(), this._avaliar(), { x: p[0], z: p[1] }, yc); if (v) l = ["edit:" + v];
       }
+      /* o tubo derivado da piscina (js/piscinaderiv.js) não é peça que se pegue: quem anda é a piscina ou a casa de máquinas */
+      if (global.PiscinaDeriv) l = l.filter(function (u) { return !PiscinaDeriv.ehDerivado(String(u).replace(/^edit:/, "")); });
       return l;
     },
     /* a peça sob o ponto: a 1ª candidata — ou a escolhida com Tab, enquanto o cursor não sai do lugar */

@@ -689,6 +689,11 @@
       var FAn = global.FamiliasAndaime || (typeof require === "function" ? (function () { try { return require("./familiasandaime.js"); } catch (eR) { return null; } })() : null);
       if (FAn) FAn.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador do andaime (js/familiasandaime.js) não carregou"); }
     }
+    /* PISCINA PRONTA E CASA DE MÁQUINAS (js/familiaspiscina.js + js/piscinageo.js): a malha sai dos parâmetros, com as cotas do fabricante */
+    if (fam.geometria === "piscinageo") {
+      var FPg = global.FamiliasPiscina || (typeof require === "function" ? (function () { try { return require("./familiaspiscina.js"); } catch (eR) { return null; } })() : null);
+      if (FPg && FPg.completar) FPg.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador da piscina (js/familiaspiscina.js) não carregou"); }
+    }
     /* MARMORARIA (js/marmoraria.js): bancada de pedra com a cuba e a torneira — a pedra recortada, os pontos do hidro e o quantitativo */
     if (fam.geometria === "marmoraria") {
       var MM = global.Marmoraria || (typeof require === "function" ? (function () { try { return require("./marmoraria.js"); } catch (eR) { return null; } })() : null);

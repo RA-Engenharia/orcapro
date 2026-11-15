@@ -158,6 +158,7 @@
     c("ctx-desconexoes", "Mostrar\ndesconexões", "alerta", "Mostra as pontas livres da rede (o mesmo de Instalações › Sistemas).", { grande: true, alias: "desconexoes" }),
     c("ctx-inspetor", "Inspetor de\nsistema", "buscar", "Confere o sistema da seleção: inclinação mínima, desconexões, diâmetros e o que falta (o mesmo de Instalações › Verificar sistemas).", { grande: true, alias: "verificar-sistemas" }),
     c("ctx-cotar-tubo", "Cotar\ntubo", "regua", "Cota o tubo selecionado (diâmetro, inclinação e comprimento) — o mesmo de Instalações › Rede.", { grande: true, alias: "cota" }),
+    c("ctx-girar90", "Girar\n90°", "ciclo", "Gira 90° a peça solta selecionada em volta do centro dela (piscina, casa de máquinas, móvel, equipamento). Atalho: Espaço. Um Ctrl+Z desfaz.", { grande: true }),
     c("ctx-sel-tipo", "Selecionar\ndo tipo", "lista", "Seleciona no projeto todos os elementos do mesmo tipo do selecionado.", { grande: true }),
     c("ctx-andaime-pranchas", "Pranchas\nexecutivas", "grade", "Gera o jogo completo de pranchas (AND-01..05, A1) do andaime selecionado: PDF para imprimir e DXF com o carimbo RA. Só vale para uma peça de andaime.", { grande: true }),
     c("ctx-sel-cat", "Selecionar\na categoria", "categorias", "Seleciona no projeto todos os elementos da mesma categoria do selecionado.", { grande: true })
@@ -382,10 +383,10 @@
     tubos: [{ nome: "Tubo", ids: ["ctx-tipo", "ctx-dn", "ctx-inclinacao", "ctx-isolamento"] },
       { nome: "Conexões", ids: ["ctx-conectar", "ctx-conectar-altura", "ctx-desconexoes"] },
       { nome: "Sistema", ids: ["ctx-inspetor", "ctx-cotar-tubo", "ctx-sel-tipo"] }],
-    pecas: [{ nome: "Peça", ids: ["ctx-tipo", "ctx-dn"] },
+    pecas: [{ nome: "Posição", ids: ["ctx-girar90"] }, { nome: "Peça", ids: ["ctx-tipo", "ctx-dn"] },
       { nome: "Conexões", ids: ["ctx-desconexoes"] },
       { nome: "Sistema", ids: ["ctx-inspetor", "ctx-sel-tipo", "ctx-sel-cat"] }],
-    geral: [{ nome: "Tipo", ids: ["ctx-tipo"] }, { nome: "Seleção", ids: ["ctx-sel-tipo", "ctx-sel-cat"] }]
+    geral: [{ nome: "Tipo", ids: ["ctx-tipo"] }, { nome: "Posição", ids: ["ctx-girar90"] }, { nome: "Seleção", ids: ["ctx-sel-tipo", "ctx-sel-cat"] }]
   };
 
   /* barra de acesso rápido: o padrão (o pedido do Rogério, nesta ordem) */
@@ -565,6 +566,7 @@
       m.paineis = arr(m.paineis).filter(function (p) { return !self._ehCtx(p); });
       if (cat) {
         (CTX_PAINEIS[cat.k] || CTX_PAINEIS.geral).forEach(function (p) {
+          if (p.nome === "Posição" && !(global.BimGirar90 && BimGirar90.pode())) return;   /* parede e porta não giram por aqui: só a peça solta */
           var cs = p.ids.map(function (id) { return self._ctxCmd(id); }).filter(Boolean);
           if (cs.length) m.paineis.push({ nome: p.nome, comandos: cs });
         });
@@ -747,6 +749,10 @@
       a["ctx-dn"] = function () {
         if (self._focarProp(["it:dn", "ik:dn"], "Diâmetro/tamanho em Propriedades: escolha na lista (um Ctrl+Z desfaz).")) return true;
         var t = "Este elemento não tem diâmetro para trocar."; status(t); toast(t, "aviso"); return true;
+      };
+      a["ctx-girar90"] = function () {
+        if (global.BimGirar90 && BimGirar90.girar(90)) return true;
+        var t = "Selecione uma peça solta para girar (a porta e a janela seguem a parede)."; status(t); toast(t, "aviso"); return true;
       };
       a["ctx-sel-tipo"] = function () { return self._selPor("tipo"); };
       a["ctx-sel-cat"] = function () { return self._selPor("cat"); };
@@ -1588,6 +1594,7 @@
           this._ctxAssin = assin;
           var cat = assin ? this.categoriaSelecao() : null;
           this.aplicarContexto(cat);
+          if (global.BimGirar90) BimGirar90.atualizar();
           if (cat) s._raiz.setAttribute("data-fx-ctx", "1"); else s._raiz.removeAttribute("data-fx-ctx");
         }
         /* os atalhos (alias) acendem junto com o comando de verdade */

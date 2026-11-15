@@ -415,8 +415,93 @@
     };
   }
 
+  /* ===================================================================== PISCINA PRONTA (malha pelas cotas do fabricante) */
+  /* Tradicional 4,00 x 2,00 x 1,40: folha 01/01 da Splash (Tradicional-4x1-40m.pdf). As outras medidas têm só a tabela do site: a forma é a mesma,
+     proporcional, e o campo Conferir diz isso. O desenho da Dry Pump vem da imagem "CASA DE MÁQUINAS - DRY PUMP" (Splash/iGUi). */
+  var TRADICIONAIS = [
+    { id: "tradicional-400-140", nome: "Tradicional 4,00 x 2,00 x 1,40", C: 4.00, L: 2.00, Pf: 1.40, folha: true },
+    { id: "tradicional-400-100", nome: "Tradicional 4,00 x 2,00 x 1,00", C: 4.00, L: 2.00, Pf: 1.00 },
+    { id: "tradicional-350-140", nome: "Tradicional 3,50 x 1,80 x 1,40", C: 3.50, L: 1.80, Pf: 1.40 },
+    { id: "tradicional-350-100", nome: "Tradicional 3,50 x 1,80 x 1,00", C: 3.50, L: 1.80, Pf: 1.00 }
+  ];
+  var FONTE_SPLASH = "Tabela: https://www.splashpiscinas.com/piscinas/tradicional (03/11/2026)";
+  var CONFERIR_COMUM = "Volume é cálculo da RA pela forma: o fabricante não publica. Posição de skimmer, ralo, retornos e aspiração é premissa RA. Folga da cava 20 cm é da Fibralagos: pedir o manual da Splash. Sem hidroterapia no desenho.";
+  function famTradicional() {
+    var pr = [
+      P("Fabricante", "texto", "tipo", "Splash Piscinas", G_PRD, "Fabricante"), P("Modelo_catalogo", "texto", "tipo", "", G_PRD, "Modelo no catálogo"),
+      P("Fonte", "texto", "tipo", "", G_PRD, "De onde vêm as medidas"), P("Conferir", "texto", "tipo", "", G_CONF, "O que o fabricante não traz ou é premissa do desenho"),
+      P("Comprimento", "comprimento", "tipo", 4.00, G_DIM, "Comprimento externo com a borda de fibra (catálogo)"), P("Largura", "comprimento", "tipo", 2.00, G_DIM, "Largura externa com a borda de fibra (catálogo)"),
+      P("Profundidade", "comprimento", "tipo", 1.40, G_DIM, "Profundidade total (catálogo)"), P("Borda_fibra", "comprimento", "tipo", 0.10, G_DIM, "Borda de fibra (folha do fabricante)"),
+      P("Aba", "comprimento", "tipo", 0.04, G_DIM, "Aba da borda (folha do fabricante)"), P("Raio_borda", "comprimento", "tipo", 0.21, G_DIM, "Raio do canto, medido no desenho"),
+      P("Linha_agua", "comprimento", "tipo", 0.17, G_DIM, "Linha 0,17 abaixo da borda (folha do fabricante)"), P("Rampa_fundo", "comprimento", "tipo", 0.37, G_DIM, "Da face externa até o fundo plano (folha do fabricante)"),
+      P("Alt_degrau", "comprimento", "tipo", 0.28, G_DIM, "Altura do degrau (folha do fabricante)"), P("Piso_degrau", "comprimento", "tipo", 0.28, G_DIM, "Piso do degrau (folha do fabricante)"),
+      P("Assento_abaixo", "comprimento", "tipo", 0.56, G_DIM, "Assento do banco abaixo da borda (folha do fabricante)"),
+      P("Espelhar", "simnao", "instancia", false, G_DIM, "Troca de lado a escada e os dispositivos"),
+      P("Com_agua", "simnao", "instancia", true, G_DIM, "Desenhar a água"), P("Com_dispositivos", "simnao", "instancia", true, G_DIM, "Desenhar skimmer, ralo, retornos e aspiração"),
+      P("Com_tubulacao", "simnao", "instancia", true, G_DIM, "Desenhar os tubos até a casa de máquinas mais perto (acompanham a piscina e a casa)"),
+      P("Borda_atermica", "comprimento", "instancia", 0.30, G_INST, AVISO_PREMISSA + "largura da borda atérmica além da fibra; é ela que define o recorte do deck"),
+      P("Folga_cava", "comprimento", "instancia", 0.20, G_INST, "Folga da cava por lado — Fibralagos, Manual de Instalação"), P("Lastro", "comprimento", "instancia", 0.10, G_INST, "Base sob o casco — Fibralagos: 5 a 10 cm"),
+      P("DN_succao", "comprimento", "tipo", 0.04, G_INST, "Sucção: ~40 mm lidos do desenho da Dry Pump. Conferir no kit do fabricante"), P("DN_retorno", "comprimento", "tipo", 0.025, G_INST, "Retorno: ~26 mm lidos do desenho da Dry Pump. Conferir no kit do fabricante"),
+      F("Cava_C", "comprimento", "Comprimento + 2*Folga_cava", G_QTD, "Comprimento da cava"), F("Cava_L", "comprimento", "Largura + 2*Folga_cava", G_QTD, "Largura da cava"),
+      F("Cava_H", "comprimento", "Profundidade + Lastro", G_QTD, "Profundidade da cava"), F("Vol_escavacao", "volume", "Cava_C*Cava_L*Cava_H", G_QTD, "Volume escavado (prisma; sem talude)"),
+      F("Vol_lastro", "volume", "Cava_C*Cava_L*Lastro", G_QTD, "Lastro sob o casco"),
+      F("Area_atermica", "area", "(Comprimento + 2*Borda_atermica)*(Largura + 2*Borda_atermica) - Comprimento*Largura", G_QTD, "Borda atérmica (m²)")
+    ];
+    return { id: "ra-piscina-splash-tradicional", nome: "Piscina Splash Tradicional (com escada, banco e borda atérmica)", categoria: "generico", hospedagem: "livre", previa: "modelador", geometria: "piscinageo", geo: "piscina",
+      descricao: "Arraste e gire no modelo: o deck e o terreno marcados como recortáveis abrem sozinhos e os tubos até a casa de máquinas acompanham. Origem no centro, no nível da borda. Casco e hidráulica: orçar à parte.",
+      parametros: pr, solidos: [],
+      tipos: TRADICIONAIS.map(function (t) {
+        return { id: t.id, nome: t.nome, valores: { Modelo_catalogo: t.nome, Comprimento: t.C, Largura: t.L, Profundidade: t.Pf,
+          Fonte: t.folha ? "Folha 01/01 da Splash (Tradicional-4x1-40m.pdf); " + FONTE_SPLASH : FONTE_SPLASH,
+          Conferir: (t.folha ? "" : "Só a tabela do site: forma proporcional à folha do modelo 4,00 x 1,40. ") + CONFERIR_COMUM } };
+      }),
+      servicos: [S("escavacao", "Escavação da cava da piscina", "m3", "Vol_escavacao"), S("lastro", "Lastro sob o casco da piscina", "m3", "Vol_lastro"), S("atermica", "Borda atérmica", "m2", "Area_atermica")],
+      quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Piscina de fibra com hidráulica do fabricante (orçar à parte)" } };
+  }
+  function famDryPump() {
+    var pr = [
+      P("Fabricante", "texto", "tipo", "Splash Piscinas / iGUi", G_PRD, "Fabricante"), P("Modelo_catalogo", "texto", "tipo", "Dry Pump", G_PRD, "Modelo"),
+      P("Fonte", "texto", "tipo", "Imagem CASA DE MÁQUINAS - DRY PUMP (cotas 776/524 x 443/184, alturas 314/329/383); https://www.splashpiscinas.com/piscinas/tradicional (03/11/2026)", G_PRD, "De onde vêm as medidas"),
+      P("Motobomba", "texto", "tipo", "1/2 CV autoescorvante", G_PRD, "Site do fabricante"), P("Filtragem", "texto", "tipo", "11,688 m³/h; área 0,29 m²; 6 micra", G_PRD, "Site do fabricante"),
+      P("Registros", "texto", "tipo", "retorno, drenagem, hidroterapia", G_PRD, "Site do fabricante"),
+      P("Conferir", "texto", "tipo", "Cor da tampa, interior que o desenho não mostra e altura de instalação em relação à água são premissa RA. Manual da Dry Pump não encontrado: pedir ao fabricante. Tensão e consumo não publicados.", G_CONF, "Premissas"),
+      P("Com_base", "simnao", "instancia", true, G_INST, AVISO_PREMISSA + "base de concreto sob o equipamento"), P("Base_C", "comprimento", "instancia", 0.86, G_INST, AVISO_PREMISSA + "comprimento da base"),
+      P("Base_L", "comprimento", "instancia", 0.50, G_INST, AVISO_PREMISSA + "largura da base"), P("Base_esp", "comprimento", "instancia", 0.07, G_INST, AVISO_PREMISSA + "espessura da base"),
+      P("Base_acima", "comprimento", "instancia", 0.01, G_INST, AVISO_PREMISSA + "quanto a base fica acima do deck")
+    ];
+    return { id: "ra-casa-maquinas-dry-pump", nome: "Casa de máquinas Dry Pump (tampa, bomba, motor, pré-filtro e registros)", categoria: "generico", hospedagem: "livre", previa: "modelador", geometria: "piscinageo", geo: "drypump",
+      descricao: "Peça única: arraste e gire no modelo que a base, a bomba, o motor e os tubos vão junto. A abertura dos registros fica no lado -Z local. Origem no centro da tampa, no deck.",
+      parametros: pr, solidos: [], tipos: [{ id: "dry-pump", nome: "Dry Pump", valores: {} }],
+      servicos: [S("equipamento", "Casa de máquinas Dry Pump (fornecimento do fabricante)", "un", "1")],
+      quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Casa de máquinas Dry Pump (orçar à parte)" } };
+  }
+  /* cores da malha: nome do material no gerador → cor do desenho */
+  var CORES_GEO = { "Fibra Splash azul": ["#3f9fd0", 0], "Agua da piscina RA": ["#1f9fce", 0.72], "Dispositivo branco": ["#f2f3f1", 0], "Dispositivo preto": ["#1c1e20", 0], "Borda atermica": ["#e9e6df", 0],
+    "Tampa Dry Pump": ["#c7ccd0", 0], "Etiqueta Dry Pump": ["#2a2d31", 0], "Equipamento cinza escuro": ["#3a3e43", 0], "Equipamento preto RA": ["#17191c", 0], "Equipamento cinza claro": ["#a9afb5", 0],
+    "PVC branco": ["#eef0ef", 0], "Concreto base": ["#b9b7b0", 0] };
+  var CACHE_GEO = {};
+  /* o gancho de js/familia.js: a malha é refeita só quando os parâmetros mudam (posição e giro não entram na chave) */
+  function completar(fam, tipo, inst, saida) {
+    var G = global.PiscinaGeo || (typeof require === "function" ? (function () { try { return require("./piscinageo.js"); } catch (e) { return null; } })() : null);
+    if (!G) { saida.ok = false; saida.erros.push("o gerador da piscina (js/piscinageo.js) não carregou"); return saida; }
+    var v = saida.valores || {}, ch = fam.geo + "|" + JSON.stringify(v), r = CACHE_GEO[ch];
+    if (!r) { r = fam.geo === "drypump" ? G.dryPump(v) : G.piscina(v); CACHE_GEO[ch] = r; }
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    saida.solidos = r.grupos.map(function (g, i) {
+      for (var k = 0; k + 2 < g.v.length; k += 3) { x0 = Math.min(x0, g.v[k]); x1 = Math.max(x1, g.v[k]); y0 = Math.min(y0, g.v[k + 1]); y1 = Math.max(y1, g.v[k + 1]); z0 = Math.min(z0, g.v[k + 2]); z1 = Math.max(z1, g.v[k + 2]); }
+      var c = CORES_GEO[g.material] || ["#999999", 0];
+      /* "Água da piscina" é o nome que o desenho 2D reconhece: fora da planta, a lâmina não tampa os degraus nem o banco (js/bim.js, sem2d) */
+      var nomeMat = g.material === "Agua da piscina RA" ? "Água da piscina" : g.material;
+      return { id: "g" + (i + 1), nome: nomeMat, forma: "malha", suave: true, x: 0, y: 0, z: 0, rot: 0, v: g.v, f: g.f, material: nomeMat, cor: c[0], transparencia: c[1], volume: null };
+    });
+    saida.caixa = { x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1 };
+    if (r.avisos && r.avisos.length) saida.avisos = (saida.avisos || []).concat(r.avisos);
+    if (fam.geo !== "drypump" && r.volumeAguaL != null) { saida.volumeAguaL = r.volumeAguaL; }
+    return saida;
+  }
+
   function montar() {
-    var l = [famPiscina(), famCasaMaquinas(), famVidro("ra-vidro-retratil", "Pele de vidro recolhível (em abertura de parede)", true),
+    var l = [famPiscina(), famCasaMaquinas(), famTradicional(), famDryPump(), famVidro("ra-vidro-retratil", "Pele de vidro recolhível (em abertura de parede)", true),
              famVidro("ra-vidro-retratil-livre", "Pele de vidro recolhível (livre entre pilares)", false)];
     l.forEach(function (f) { if (f.abertura === undefined) delete f.abertura; });
     return l;
@@ -425,6 +510,7 @@
   var FamiliasPiscina = {
     MODELOS: MODELOS, CONJUNTOS: CONJUNTOS, SISTEMAS: SISTEMAS, MAX_FOLHAS: MAX_FOLHAS,
     lista: function () { if (!CACHE) CACHE = montar(); return JSON.parse(JSON.stringify(CACHE)); },
+    completar: completar,
     obter: function (id) { var l = this.lista(); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
   };
   global.FamiliasPiscina = FamiliasPiscina;

@@ -256,6 +256,117 @@
   /* EXTRUSÃO: contorno (no plano) puxado `altura` na direção da normal do
      plano (negativa = para o outro lado). Prisma reto: a área da base vezes a
      altura é o volume, e é por isso que ela vai ao IFC como IfcExtrudedAreaSolid. */
+  /* FUROS CONVEXOS NA EXTRUSÃO (04/11/2026, js/piscinaderiv.js): o deck perde o retângulo da piscina a cada replay. Sem CSG de propósito:
+     o three-bvh-csg carrega depois da cena, e o deck ficava "pendente" a cada arraste. O furo pode passar da borda do contorno. */
+  function furoCcw(f) {
+    var c = limparContorno(f); if (!c || c.length < 3) return null;
+    return area2(c) < 0 ? c.slice().reverse() : c;
+  }
+  /* corta o polígono convexo pela reta a→b: [o lado de dentro (esquerda), o lado de fora] */
+  function cortarPoligono(pol, a, b) {
+    var den = [], fora = [], n = pol.length;
+    function lado(p) { return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); }
+    for (var i = 0; i < n; i++) {
+      var p = pol[i], q = pol[(i + 1) % n], dp = lado(p), dq = lado(q);
+      if (dp >= -1e-9) den.push(p);
+      if (dp <= 1e-9) fora.push(p);
+      if ((dp > 1e-9 && dq < -1e-9) || (dp < -1e-9 && dq > 1e-9)) { var t = dp / (dp - dq), m = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; den.push(m); fora.push(m); }
+    }
+    return [den.length >= 3 ? den : null, fora.length >= 3 ? fora : null];
+  }
+  function menosConvexo(pecas, h) {
+    var out = [];
+    pecas.forEach(function (pc) {
+      var cur = pc;
+      for (var i = 0; i < h.length && cur; i++) { var r = cortarPoligono(cur, h[i], h[(i + 1) % h.length]); if (r[1] && Math.abs(area2(r[1])) > 1e-10) out.push(r[1]); cur = r[0]; }
+    });
+    return out;
+  }
+  function dentroConvexo(p, h) {
+    for (var i = 0; i < h.length; i++) { var a = h[i], b = h[(i + 1) % h.length]; if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) <= 1e-9) return false; }
+    return true;
+  }
+  function dentroPoligono(p, c) {
+    var d = false;
+    for (var i = 0, j = c.length - 1; i < c.length; j = i++) if ((c[i][1] > p[1]) !== (c[j][1] > p[1]) && p[0] < (c[j][0] - c[i][0]) * (p[1] - c[i][1]) / (c[j][1] - c[i][1]) + c[i][0]) d = !d;
+    return d;
+  }
+  /* os pedaços do segmento a→b, partido onde cruza as arestas das listas, que passam em `fica(ponto do meio)` */
+  function pedacos(a, b, listas, fica) {
+    var ts = [0, 1], dx = b[0] - a[0], dy = b[1] - a[1];
+    listas.forEach(function (c) {
+      for (var i = 0; i < c.length; i++) {
+        var p = c[i], q = c[(i + 1) % c.length], ex = q[0] - p[0], ey = q[1] - p[1], den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-12) continue;
+        var t = ((p[0] - a[0]) * ey - (p[1] - a[1]) * ex) / den, u = ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / den;
+        if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+      }
+    });
+    ts.sort(function (x, y) { return x - y; });
+    var out = [];
+    for (var k = 0; k + 1 < ts.length; k++) {
+      if (ts[k + 1] - ts[k] < 1e-9) continue;
+      var tm = (ts[k] + ts[k + 1]) / 2;
+      if (fica([a[0] + dx * tm, a[1] + dy * tm])) out.push([[a[0] + dx * ts[k], a[1] + dy * ts[k]], [a[0] + dx * ts[k + 1], a[1] + dy * ts[k + 1]]]);
+    }
+    return out;
+  }
+  function extrusaoComFuros(c, tris, hs, pl, o, h) {
+    var pecas = tris.map(function (t) { return [c[t[0]], c[t[1]], c[t[2]]]; });
+    hs.forEach(function (f) { pecas = menosConvexo(pecas, f); });
+    if (!pecas.length) return null;
+    var m = new Malha(), areaT = 0;
+    function P(q, alto) { var u = add(o, add(mul(pl.u, q[0]), mul(pl.v, q[1]))); return m.pt(alto ? add(u, mul(pl.n, h)) : u); }
+    /* SEM JUNTA EM T: o vértice de uma peça que cai no meio da aresta da vizinha entra nela também. Sem isso a emenda das peças
+       (coplanares) não solda e aparece como linha na planta, cortando o deck */
+    var todos = []; pecas.forEach(function (pc) { pc.forEach(function (q) { todos.push(q); }); });
+    pecas.forEach(function (pc) {
+      areaT += Math.abs(area2(pc));
+      var cheio = [], cx = 0, cy = 0;
+      pc.forEach(function (a, i) {
+        var b = pc[(i + 1) % pc.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, meio = [];
+        todos.forEach(function (q) {
+          var t = ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2, ex = a[0] + dx * t - q[0], ey = a[1] + dy * t - q[1];
+          if (t > 1e-6 && t < 1 - 1e-6 && ex * ex + ey * ey < 1e-12) meio.push({ t: t, q: q });
+        });
+        meio.sort(function (x, y) { return x.t - y.t; });
+        cheio.push(a); var ult = -1;
+        meio.forEach(function (x) { if (x.t - ult > 1e-6) { cheio.push(x.q); ult = x.t; } });
+      });
+      pc.forEach(function (q) { cx += q[0]; cy += q[1]; });
+      var c0 = [cx / pc.length, cy / pc.length];   /* a peça é convexa: leque pelo centro, sem triângulo degenerado nos pontos alinhados */
+      for (var i = 0; i < cheio.length; i++) {
+        var q0 = cheio[i], q1 = cheio[(i + 1) % cheio.length];
+        m.tri(P(c0, false), P(q1, false), P(q0, false));
+        m.tri(P(c0, true), P(q0, true), P(q1, true));
+      }
+    });
+    function parede(a0, b0) {
+      /* a parede parte nos mesmos vértices do topo e do fundo (senão a junta em T volta aqui) */
+      var dx = b0[0] - a0[0], dy = b0[1] - a0[1], L2 = dx * dx + dy * dy, ts = [];
+      todos.forEach(function (q) {
+        var t = ((q[0] - a0[0]) * dx + (q[1] - a0[1]) * dy) / L2, ex = a0[0] + dx * t - q[0], ey = a0[1] + dy * t - q[1];
+        if (t > 1e-6 && t < 1 - 1e-6 && ex * ex + ey * ey < 1e-12) ts.push(t);
+      });
+      ts.sort(function (x, y) { return x - y; });
+      var seq = [a0], ult = -1;
+      ts.forEach(function (t) { if (t - ult > 1e-6) { seq.push([a0[0] + dx * t, a0[1] + dy * t]); ult = t; } });
+      seq.push(b0);
+      for (var k = 0; k + 1 < seq.length; k++) { var a = seq[k], b = seq[k + 1], ba = P(a, false), bb = P(b, false), ta = P(a, true), tb = P(b, true); m.tri(ba, bb, tb); m.tri(ba, tb, ta); }
+    }
+    function foraDosFuros(p) { return !hs.some(function (f) { return dentroConvexo(p, f); }); }
+    /* paredes externas: o contorno, menos o que caiu dentro de um furo */
+    for (var i = 0; i < c.length; i++) pedacos(c[i], c[(i + 1) % c.length], hs, foraDosFuros).forEach(function (s) { parede(s[0], s[1]); });
+    /* paredes do furo, viradas para dentro do buraco: só o que está dentro do contorno e fora dos outros furos */
+    hs.forEach(function (f, ih) {
+      var outros = hs.filter(function (x, k) { return k !== ih; });
+      for (var j = 0; j < f.length; j++) {
+        pedacos(f[j], f[(j + 1) % f.length], [c].concat(outros), function (p) { return dentroPoligono(p, c) && !outros.some(function (x) { return dentroConvexo(p, x); }); })
+          .forEach(function (s) { parede(s[1], s[0]); });
+      }
+    });
+    return { malha: soldar({ v: m.v, f: m.f }, TOL), area: areaT };
+  }
   function extrusao(def) {
     def = def || {};
     var pl = lerPlano(def.plano); if (!pl) return erro("plano de trabalho inválido");
@@ -266,6 +377,12 @@
     if (A < 0) c = c.slice().reverse();
     var o = pl.o; if (h < 0) { o = add(o, mul(pl.n, h)); h = -h; }
     var tris = triangular(c); if (!tris) return erro("não consegui triangular o contorno");
+    var hsF = arr(def.furos).map(furoCcw).filter(Boolean);
+    if (hsF.length) {
+      var cf = extrusaoComFuros(c, tris, hsF, pl, o, h); if (!cf) return erro("os furos consumiram o contorno inteiro");
+      var perF = 0; for (var kf = 0; kf < c.length; kf++) perF += Math.hypot(c[(kf + 1) % c.length][0] - c[kf][0], c[(kf + 1) % c.length][1] - c[kf][1]);
+      return { ok: true, malha: cf.malha, meta: { areaBase: cf.area, perimetro: perF, altura: h, contorno: c, furos: hsF, plano: { o: o, u: pl.u, v: pl.v, n: pl.n } } };
+    }
     var m = new Malha(), n = c.length, bi = [], ti = [];
     c.forEach(function (q) { var p = add(o, add(mul(pl.u, q[0]), mul(pl.v, q[1]))); bi.push(m.pt(p)); });
     c.forEach(function (q) { var p = add(o, add(mul(pl.u, q[0]), add(mul(pl.v, q[1]), mul(pl.n, h)))); ti.push(m.pt(p)); });
@@ -587,7 +704,7 @@
     var dx = 0, dy = 0, dz = 0, r = receita;
     while (r && r.forma === "mover") { dx += num(r.dx, 0); dy += num(r.dy, 0); dz += num(r.dz, 0); r = r.base; }
     if (!r || r.forma !== "extrusao") return null;
-    var ex = extrusao(r); if (!ex.ok) return null;
+    var ex = extrusao(r); if (!ex.ok || ex.meta.furos) return null;   /* com furo não é prisma puro: o IFC levaria o deck inteiro */
     var pl = ex.meta.plano;
     return { contorno: ex.meta.contorno, plano: { o: add(pl.o, [dx, dy, dz]), u: pl.u, v: pl.v, n: pl.n }, altura: ex.meta.altura, areaBase: ex.meta.areaBase };
   }

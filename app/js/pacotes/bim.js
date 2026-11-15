@@ -13578,6 +13578,108 @@ out.costuras = mudou;
 return out;
 }
 function erro(msg) { return { ok: false, erro: msg }; }
+function furoCcw(f) {
+var c = limparContorno(f); if (!c || c.length < 3) return null;
+return area2(c) < 0 ? c.slice().reverse() : c;
+}
+function cortarPoligono(pol, a, b) {
+var den = [], fora = [], n = pol.length;
+function lado(p) { return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); }
+for (var i = 0; i < n; i++) {
+var p = pol[i], q = pol[(i + 1) % n], dp = lado(p), dq = lado(q);
+if (dp >= -1e-9) den.push(p);
+if (dp <= 1e-9) fora.push(p);
+if ((dp > 1e-9 && dq < -1e-9) || (dp < -1e-9 && dq > 1e-9)) { var t = dp / (dp - dq), m = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; den.push(m); fora.push(m); }
+}
+return [den.length >= 3 ? den : null, fora.length >= 3 ? fora : null];
+}
+function menosConvexo(pecas, h) {
+var out = [];
+pecas.forEach(function (pc) {
+var cur = pc;
+for (var i = 0; i < h.length && cur; i++) { var r = cortarPoligono(cur, h[i], h[(i + 1) % h.length]); if (r[1] && Math.abs(area2(r[1])) > 1e-10) out.push(r[1]); cur = r[0]; }
+});
+return out;
+}
+function dentroConvexo(p, h) {
+for (var i = 0; i < h.length; i++) { var a = h[i], b = h[(i + 1) % h.length]; if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) <= 1e-9) return false; }
+return true;
+}
+function dentroPoligono(p, c) {
+var d = false;
+for (var i = 0, j = c.length - 1; i < c.length; j = i++) if ((c[i][1] > p[1]) !== (c[j][1] > p[1]) && p[0] < (c[j][0] - c[i][0]) * (p[1] - c[i][1]) / (c[j][1] - c[i][1]) + c[i][0]) d = !d;
+return d;
+}
+function pedacos(a, b, listas, fica) {
+var ts = [0, 1], dx = b[0] - a[0], dy = b[1] - a[1];
+listas.forEach(function (c) {
+for (var i = 0; i < c.length; i++) {
+var p = c[i], q = c[(i + 1) % c.length], ex = q[0] - p[0], ey = q[1] - p[1], den = dx * ey - dy * ex;
+if (Math.abs(den) < 1e-12) continue;
+var t = ((p[0] - a[0]) * ey - (p[1] - a[1]) * ex) / den, u = ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / den;
+if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+}
+});
+ts.sort(function (x, y) { return x - y; });
+var out = [];
+for (var k = 0; k + 1 < ts.length; k++) {
+if (ts[k + 1] - ts[k] < 1e-9) continue;
+var tm = (ts[k] + ts[k + 1]) / 2;
+if (fica([a[0] + dx * tm, a[1] + dy * tm])) out.push([[a[0] + dx * ts[k], a[1] + dy * ts[k]], [a[0] + dx * ts[k + 1], a[1] + dy * ts[k + 1]]]);
+}
+return out;
+}
+function extrusaoComFuros(c, tris, hs, pl, o, h) {
+var pecas = tris.map(function (t) { return [c[t[0]], c[t[1]], c[t[2]]]; });
+hs.forEach(function (f) { pecas = menosConvexo(pecas, f); });
+if (!pecas.length) return null;
+var m = new Malha(), areaT = 0;
+function P(q, alto) { var u = add(o, add(mul(pl.u, q[0]), mul(pl.v, q[1]))); return m.pt(alto ? add(u, mul(pl.n, h)) : u); }
+var todos = []; pecas.forEach(function (pc) { pc.forEach(function (q) { todos.push(q); }); });
+pecas.forEach(function (pc) {
+areaT += Math.abs(area2(pc));
+var cheio = [], cx = 0, cy = 0;
+pc.forEach(function (a, i) {
+var b = pc[(i + 1) % pc.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, meio = [];
+todos.forEach(function (q) {
+var t = ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2, ex = a[0] + dx * t - q[0], ey = a[1] + dy * t - q[1];
+if (t > 1e-6 && t < 1 - 1e-6 && ex * ex + ey * ey < 1e-12) meio.push({ t: t, q: q });
+});
+meio.sort(function (x, y) { return x.t - y.t; });
+cheio.push(a); var ult = -1;
+meio.forEach(function (x) { if (x.t - ult > 1e-6) { cheio.push(x.q); ult = x.t; } });
+});
+pc.forEach(function (q) { cx += q[0]; cy += q[1]; });
+var c0 = [cx / pc.length, cy / pc.length];
+for (var i = 0; i < cheio.length; i++) {
+var q0 = cheio[i], q1 = cheio[(i + 1) % cheio.length];
+m.tri(P(c0, false), P(q1, false), P(q0, false));
+m.tri(P(c0, true), P(q0, true), P(q1, true));
+}
+});
+function parede(a0, b0) {
+var dx = b0[0] - a0[0], dy = b0[1] - a0[1], L2 = dx * dx + dy * dy, ts = [];
+todos.forEach(function (q) {
+var t = ((q[0] - a0[0]) * dx + (q[1] - a0[1]) * dy) / L2, ex = a0[0] + dx * t - q[0], ey = a0[1] + dy * t - q[1];
+if (t > 1e-6 && t < 1 - 1e-6 && ex * ex + ey * ey < 1e-12) ts.push(t);
+});
+ts.sort(function (x, y) { return x - y; });
+var seq = [a0], ult = -1;
+ts.forEach(function (t) { if (t - ult > 1e-6) { seq.push([a0[0] + dx * t, a0[1] + dy * t]); ult = t; } });
+seq.push(b0);
+for (var k = 0; k + 1 < seq.length; k++) { var a = seq[k], b = seq[k + 1], ba = P(a, false), bb = P(b, false), ta = P(a, true), tb = P(b, true); m.tri(ba, bb, tb); m.tri(ba, tb, ta); }
+}
+function foraDosFuros(p) { return !hs.some(function (f) { return dentroConvexo(p, f); }); }
+for (var i = 0; i < c.length; i++) pedacos(c[i], c[(i + 1) % c.length], hs, foraDosFuros).forEach(function (s) { parede(s[0], s[1]); });
+hs.forEach(function (f, ih) {
+var outros = hs.filter(function (x, k) { return k !== ih; });
+for (var j = 0; j < f.length; j++) {
+pedacos(f[j], f[(j + 1) % f.length], [c].concat(outros), function (p) { return dentroPoligono(p, c) && !outros.some(function (x) { return dentroConvexo(p, x); }); })
+.forEach(function (s) { parede(s[1], s[0]); });
+}
+});
+return { malha: soldar({ v: m.v, f: m.f }, TOL), area: areaT };
+}
 function extrusao(def) {
 def = def || {};
 var pl = lerPlano(def.plano); if (!pl) return erro("plano de trabalho inválido");
@@ -13588,6 +13690,12 @@ var h = num(def.altura, NaN); if (!isFinite(h) || Math.abs(h) < 1e-6) return err
 if (A < 0) c = c.slice().reverse();
 var o = pl.o; if (h < 0) { o = add(o, mul(pl.n, h)); h = -h; }
 var tris = triangular(c); if (!tris) return erro("não consegui triangular o contorno");
+var hsF = arr(def.furos).map(furoCcw).filter(Boolean);
+if (hsF.length) {
+var cf = extrusaoComFuros(c, tris, hsF, pl, o, h); if (!cf) return erro("os furos consumiram o contorno inteiro");
+var perF = 0; for (var kf = 0; kf < c.length; kf++) perF += Math.hypot(c[(kf + 1) % c.length][0] - c[kf][0], c[(kf + 1) % c.length][1] - c[kf][1]);
+return { ok: true, malha: cf.malha, meta: { areaBase: cf.area, perimetro: perF, altura: h, contorno: c, furos: hsF, plano: { o: o, u: pl.u, v: pl.v, n: pl.n } } };
+}
 var m = new Malha(), n = c.length, bi = [], ti = [];
 c.forEach(function (q) { var p = add(o, add(mul(pl.u, q[0]), mul(pl.v, q[1]))); bi.push(m.pt(p)); });
 c.forEach(function (q) { var p = add(o, add(mul(pl.u, q[0]), add(mul(pl.v, q[1]), mul(pl.n, h)))); ti.push(m.pt(p)); });
@@ -13863,7 +13971,7 @@ function prismaDe(receita) {
 var dx = 0, dy = 0, dz = 0, r = receita;
 while (r && r.forma === "mover") { dx += num(r.dx, 0); dy += num(r.dy, 0); dz += num(r.dz, 0); r = r.base; }
 if (!r || r.forma !== "extrusao") return null;
-var ex = extrusao(r); if (!ex.ok) return null;
+var ex = extrusao(r); if (!ex.ok || ex.meta.furos) return null;
 var pl = ex.meta.plano;
 return { contorno: ex.meta.contorno, plano: { o: add(pl.o, [dx, dy, dz]), u: pl.u, v: pl.v, n: pl.n }, altura: ex.meta.altura, areaBase: ex.meta.areaBase };
 }
@@ -14156,6 +14264,7 @@ if (o.y != null) fams[o.id].y = num(o.y, fams[o.id].y);
 var vd = o.volume, cat = VOL_IFC[vd.categoria] ? vd.categoria : "generico";
 vols[o.id] = { id: o.id, tipo: "volume", categoria: cat, ifc: VOL_IFC[cat], material: String(vd.material || "Concreto").slice(0, 60),
 nome: String(vd.nome || "").slice(0, 80), receita: JSON.parse(JSON.stringify(vd.receita)) };
+if (vd.recortavel === true) vols[o.id].recortavel = true;
 if (ordemV.indexOf(o.id) < 0) ordemV.push(o.id);
 } else if (o.op === "volBool" && vols[o.id] && vols[o.ferramenta] && o.ferramenta !== o.id && (o.tipo === "uniao" || o.tipo === "subtracao" || o.tipo === "intersecao")) {
 vols[o.id].receita = { forma: "bool", tipo: o.tipo, a: vols[o.id].receita, b: vols[o.ferramenta].receita };
@@ -57776,6 +57885,10 @@ if (fam.geometria === "andaime") {
 var FAn = global.FamiliasAndaime || (typeof require === "function" ? (function () { try { return require("./familiasandaime.js"); } catch (eR) { return null; } })() : null);
 if (FAn) FAn.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador do andaime (js/familiasandaime.js) não carregou"); }
 }
+if (fam.geometria === "piscinageo") {
+var FPg = global.FamiliasPiscina || (typeof require === "function" ? (function () { try { return require("./familiaspiscina.js"); } catch (eR) { return null; } })() : null);
+if (FPg && FPg.completar) FPg.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador da piscina (js/familiaspiscina.js) não carregou"); }
+}
 if (fam.geometria === "marmoraria") {
 var MM = global.Marmoraria || (typeof require === "function" ? (function () { try { return require("./marmoraria.js"); } catch (eR) { return null; } })() : null);
 if (MM) MM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marmoraria (js/marmoraria.js) não carregou"); }
@@ -77076,6 +77189,739 @@ global.BimGerenciar = BimGerenciar;
 if (typeof module !== "undefined" && module.exports) module.exports = BimGerenciar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/piscinageo.js ==== */
+try {
+(function (global) {
+"use strict";
+function arred(v) { return Math.round(v * 1e5) / 1e5 + 0; }
+function rad(g) { return g * Math.PI / 180; }
+function ehNum(v) { return typeof v === "number" && isFinite(v); }
+function booleano(v, def) { return (v === undefined || v === null) ? def : !!v; }
+function Malha() { this.v = []; this.grupos = {}; this.ordem = []; }
+Malha.prototype._grupo = function (mat) {
+if (!Object.prototype.hasOwnProperty.call(this.grupos, mat)) { this.grupos[mat] = []; this.ordem.push(mat); }
+return this.grupos[mat];
+};
+Malha.prototype.pts = function (lista) {
+var i0 = this.v.length;
+for (var i = 0; i < lista.length; i++) this.v.push([+lista[i][0], +lista[i][1], +lista[i][2]]);
+return i0;
+};
+Malha.prototype.tri = function (mat, a, b, c) {
+var p = this.v[a], q = this.v[b], r = this.v[c];
+var u0 = q[0] - p[0], u1 = q[1] - p[1], u2 = q[2] - p[2], w0 = r[0] - p[0], w1 = r[1] - p[1], w2 = r[2] - p[2];
+var n0 = u1 * w2 - u2 * w1, n1 = u2 * w0 - u0 * w2, n2 = u0 * w1 - u1 * w0;
+if (n0 * n0 + n1 * n1 + n2 * n2 < 1e-16) return;
+var g = this._grupo(mat); g.push(a, b, c);
+};
+Malha.prototype.quad = function (mat, a, b, c, d) {
+var i = this.pts([a, b, c, d]); this.tri(mat, i, i + 1, i + 2); this.tri(mat, i, i + 2, i + 3);
+};
+Malha.prototype.dupla = function (mat, a, b, c, d) { this.quad(mat, a, b, c, d); this.quad(mat, d, c, b, a); };
+Malha.prototype.costura = function (mat, A, B, paraDentro) {
+var n = A.length, ia = this.pts(A), ib = this.pts(B);
+for (var k = 0; k < n; k++) {
+var a0 = ia + k, a1 = ia + (k + 1) % n, b0 = ib + k, b1 = ib + (k + 1) % n;
+if (paraDentro) { this.tri(mat, a0, a1, b1); this.tri(mat, a0, b1, b0); }
+else { this.tri(mat, a0, b0, b1); this.tri(mat, a0, b1, a1); }
+}
+};
+Malha.prototype.tampa = function (mat, anelPts, paraCima) {
+var n = anelPts.length, sx = 0, sy = 0, k;
+for (k = 0; k < n; k++) { sx += anelPts[k][0]; sy += anelPts[k][1]; }
+var i0 = this.pts([[sx / n, sy / n, anelPts[0][2]]]), ia = this.pts(anelPts);
+for (k = 0; k < n; k++) {
+if (paraCima) this.tri(mat, i0, ia + k, ia + (k + 1) % n);
+else this.tri(mat, i0, ia + (k + 1) % n, ia + k);
+}
+};
+Malha.prototype.prisma = function (mat, base, topo) {
+var n = base.length, k, j;
+for (k = 0; k < n; k++) { j = (k + 1) % n; this.quad(mat, base[k], base[j], topo[j], topo[k]); }
+this.quadFan(mat, base.slice().reverse()); this.quadFan(mat, topo);
+};
+Malha.prototype.caixa = function (mat, x0, x1, y0, y1, z0, z1, recuoTopo) {
+var r = recuoTopo || 0;
+this.prisma(mat, [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]],
+[[x0 + r, y0 + r, z1], [x1 - r, y0 + r, z1], [x1 - r, y1 - r, z1], [x0 + r, y1 - r, z1]]);
+};
+Malha.prototype.quadFan = function (mat, pts) {
+var i = this.pts(pts);
+for (var k = 1; k < pts.length - 1; k++) this.tri(mat, i, i + k, i + k + 1);
+};
+Malha.prototype.revolucao = function (mat, cx, cy, perfil, seg, eixo, cz) {
+seg = seg || 28; eixo = eixo || "z"; cz = cz || 0;
+function P(r, h, a) {
+var c = r * Math.cos(a), s = r * Math.sin(a);
+if (eixo === "z") return [cx + c, cy + s, h];
+if (eixo === "x") return [h, cy + s, cz + c];
+return [cx + c, h, cz + s];
+}
+for (var k = 0; k < perfil.length - 1; k++) {
+var r0 = perfil[k][0], h0 = perfil[k][1], r1 = perfil[k + 1][0], h1 = perfil[k + 1][1];
+for (var q = 0; q < seg; q++) {
+var a0 = 2 * Math.PI * q / seg, a1 = 2 * Math.PI * (q + 1) / seg;
+var a = P(r0, h0, a0), b = P(r0, h0, a1), c = P(r1, h1, a1), d = P(r1, h1, a0);
+if (eixo === "z" || eixo === "y") this.quad(mat, a, b, c, d); else this.quad(mat, d, c, b, a);
+}
+}
+};
+Malha.prototype.tubo = function (mat, caminho, raio, seg) {
+seg = seg || 12;
+var self = this;
+for (var t = 0; t < caminho.length - 1; t++) {
+var a = caminho[t], b = caminho[t + 1];
+var d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+if (L < 1e-6) continue;
+d = [d[0] / L, d[1] / L, d[2] / L];
+var e = Math.abs(d[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+var u = [d[1] * e[2] - d[2] * e[1], d[2] * e[0] - d[0] * e[2], d[0] * e[1] - d[1] * e[0]];
+var nu = Math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); u = [u[0] / nu, u[1] / nu, u[2] / nu];
+var w = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+var Cc = (function (u, w) {
+return function (p, q) {
+var an = 2 * Math.PI * q / seg, ca = Math.cos(an) * raio, sa = Math.sin(an) * raio;
+return [p[0] + u[0] * ca + w[0] * sa, p[1] + u[1] * ca + w[1] * sa, p[2] + u[2] * ca + w[2] * sa];
+};
+})(u, w);
+for (var q = 0; q < seg; q++) self.quad(mat, Cc(a, q), Cc(b, q), Cc(b, q + 1), Cc(a, q + 1));
+}
+for (var i = 0; i < caminho.length; i++) {
+var p = caminho[i];
+this.revolucao(mat, p[0], p[1], [[0, p[2] - raio], [raio * 0.8, p[2] - raio * 0.6], [raio, p[2]], [raio * 0.8, p[2] + raio * 0.6], [0, p[2] + raio]], seg);
+}
+};
+Malha.prototype.extrusaoY = function (mat, poligono, y0, y1) {
+var A = [], B = [], pl = [];
+for (var i = 0; i < poligono.length; i++) { A.push([poligono[i][0], y0, poligono[i][1]]); B.push([poligono[i][0], y1, poligono[i][1]]); pl.push([poligono[i][0], poligono[i][1]]); }
+this._ext(mat, A, B, pl);
+};
+Malha.prototype.extrusaoX = function (mat, poligono, x0, x1) {
+var A = [], B = [], pl = [];
+for (var i = 0; i < poligono.length; i++) { A.push([x0, poligono[i][0], poligono[i][1]]); B.push([x1, poligono[i][0], poligono[i][1]]); pl.push([poligono[i][0], poligono[i][1]]); }
+this._ext(mat, A, B, pl);
+};
+Malha.prototype._ext = function (mat, A, B, plano) {
+var tri = orelhas(plano), n = A.length, ia = this.pts(A), ib = this.pts(B), i, t, k, j;
+for (i = 0; i < tri.length; i++) {
+t = tri[i];
+this.tri(mat, ia + t[0], ia + t[1], ia + t[2]); this.tri(mat, ia + t[2], ia + t[1], ia + t[0]);
+this.tri(mat, ib + t[0], ib + t[1], ib + t[2]); this.tri(mat, ib + t[2], ib + t[1], ib + t[0]);
+}
+for (k = 0; k < n; k++) {
+j = (k + 1) % n;
+this.tri(mat, ia + k, ia + j, ib + j); this.tri(mat, ia + k, ib + j, ib + k);
+this.tri(mat, ib + j, ia + j, ia + k); this.tri(mat, ib + k, ib + j, ia + k);
+}
+};
+Malha.prototype.transladar = function (dx, dy, dz) {
+for (var i = 0; i < this.v.length; i++) { this.v[i][0] += dx; this.v[i][1] += dy; this.v[i][2] += dz; }
+};
+Malha.prototype.saida = function (espelhar) {
+var grupos = [];
+for (var o = 0; o < this.ordem.length; o++) {
+var mat = this.ordem[o], g = this.grupos[mat];
+if (!g.length) continue;
+var mapa = {}, v = [], f = [];
+for (var t = 0; t < g.length; t += 3) {
+var ids = [g[t], g[t + 1], g[t + 2]];
+if (espelhar) ids = [ids[0], ids[2], ids[1]];
+for (var s = 0; s < 3; s++) {
+var id = ids[s];
+if (mapa[id] === undefined) {
+var p = this.v[id], y = espelhar ? -p[1] : p[1];
+mapa[id] = v.length / 3;
+v.push(arred(p[0]), arred(p[2]), arred(-y));
+}
+f.push(mapa[id]);
+}
+}
+grupos.push({ material: mat, v: v, f: f });
+}
+return grupos;
+};
+function orelhas(pol) {
+var n = pol.length, area = 0, i, j;
+for (i = 0; i < n; i++) { j = (i + 1) % n; area += pol[i][0] * pol[j][1] - pol[j][0] * pol[i][1]; }
+area /= 2;
+var idx = []; for (i = 0; i < n; i++) idx.push(i);
+if (!(area > 0)) idx.reverse();
+function cruz(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
+var out = [], guarda = 0;
+while (idx.length > 3 && guarda < 20000) {
+guarda++;
+var achou = false;
+for (var k = 0; k < idx.length; k++) {
+var i0 = idx[(k - 1 + idx.length) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
+var a = pol[i0], b = pol[i1], c = pol[i2];
+if (cruz(a, b, c) <= 1e-12) continue;
+var dentro = false;
+for (var m = 0; m < idx.length; m++) {
+var q = idx[m];
+if (q === i0 || q === i1 || q === i2) continue;
+var pq = pol[q];
+if (cruz(a, b, pq) >= -1e-12 && cruz(b, c, pq) >= -1e-12 && cruz(c, a, pq) >= -1e-12) { dentro = true; break; }
+}
+if (dentro) continue;
+out.push([i0, i1, i2]); idx.splice(k, 1); achou = true; break;
+}
+if (!achou) throw new Error("poligono nao triangulou");
+}
+out.push(idx.slice());
+return out;
+}
+function anel(xmin, xmax, b, rL, rR, z, n, ymin) {
+n = n || 6;
+if (ymin === undefined || ymin === null) ymin = -b;
+var pts = [], cantos = [[xmax - rR, b - rR, rR, 0], [xmin + rL, b - rL, rL, 90], [xmin + rL, ymin + rL, rL, 180], [xmax - rR, ymin + rR, rR, 270]];
+for (var c = 0; c < 4; c++) {
+for (var k = 0; k <= n; k++) {
+var a = rad(cantos[c][3] + 90.0 * k / n);
+pts.push([cantos[c][0] + cantos[c][2] * Math.cos(a), cantos[c][1] + cantos[c][2] * Math.sin(a), z]);
+}
+}
+return pts;
+}
+var PADRAO = {
+Comprimento: 4.0, Largura: 2.0, Profundidade: 1.4, Borda_fibra: 0.10, Aba: 0.04, Raio_borda: 0.21, Linha_agua: 0.17,
+Rampa_fundo: 0.37, Alt_degrau: 0.28, Piso_degrau: 0.28, Espelho_avanco: 0.055, Assento_abaixo: 0.56,
+Borda_atermica: 0.30, Esp_atermica: 0.06, Folga_cava: 0.20, Lastro: 0.10
+};
+var MINIMO = {
+Comprimento: 1.0, Largura: 1.0, Profundidade: 0.6, Borda_fibra: 0.03, Aba: 0, Raio_borda: 0.01, Linha_agua: 0.05,
+Rampa_fundo: 0.15, Alt_degrau: 0.1, Piso_degrau: 0.05, Espelho_avanco: 0, Assento_abaixo: 0.3,
+Borda_atermica: 0, Esp_atermica: 0.005, Folga_cava: 0, Lastro: 0
+};
+function normalizar(p) {
+p = p || {};
+var avisos = [], q = {}, nome;
+for (nome in PADRAO) {
+if (!Object.prototype.hasOwnProperty.call(PADRAO, nome)) continue;
+var v = p[nome];
+if (v === undefined || v === null) { q[nome] = PADRAO[nome]; continue; }
+if (!ehNum(v) || v < MINIMO[nome]) {
+avisos.push("Parâmetro " + nome + " inválido (" + v + "): usei o padrão " + PADRAO[nome] + ".");
+q[nome] = PADRAO[nome];
+} else q[nome] = v;
+}
+q.Com_agua = booleano(p.Com_agua, true);
+q.Com_dispositivos = booleano(p.Com_dispositivos, true);
+q.Espelhar = booleano(p.Espelhar, false);
+q.Com_degrau_escada = booleano(p.Com_degrau_escada, true);
+var P = q.Profundidade, hl = q.Largura / 2;
+if (q.Linha_agua > P - 0.3) { avisos.push("Linha_agua incompatível com a Profundidade: ajustada."); q.Linha_agua = Math.max(0.05, P - 0.3); }
+if (q.Assento_abaixo < q.Linha_agua + 0.1) { avisos.push("Assento_abaixo muito perto da linha d'água: ajustado."); q.Assento_abaixo = q.Linha_agua + 0.1; }
+if (q.Assento_abaixo > P - 0.15) { avisos.push("Assento_abaixo muito fundo para a Profundidade: ajustado."); q.Assento_abaixo = P - 0.15; }
+if (q.Rampa_fundo < q.Borda_fibra + 0.05) { avisos.push("Rampa_fundo menor que a borda: ajustada."); q.Rampa_fundo = q.Borda_fibra + 0.05; }
+if (hl - q.Rampa_fundo < 0.3) { avisos.push("Rampa_fundo come a largura do fundo: ajustada."); q.Rampa_fundo = hl - 0.3; }
+q.avisos = avisos;
+return q;
+}
+function geometria(q) {
+var hc = q.Comprimento / 2, hl = q.Largura / 2, P = q.Profundidade, LA = q.Linha_agua, A = q.Assento_abaixo;
+var a = hc - q.Borda_fibra, b = hl - q.Borda_fibra;
+var incl = (q.Rampa_fundo - q.Borda_fibra - 0.025) / (P - LA);
+var g = { hc: hc, hl: hl, P: P, LA: LA, A: A, a: a, b: b, incl: incl, avisos: [] };
+g.meiaLarg = function (z) { return (b - 0.025) - (Math.abs(z) - LA) * incl; };
+g.fundoX = function (z) { return (a - 0.025) - (Math.abs(z) - LA) * incl; };
+g.paredeEscada = function (z) { return (hc - 0.125) - (Math.abs(z) - LA) * (0.075 / (A - LA)); };
+var N = Math.max(1, Math.round((P - A) / q.Alt_degrau)), h = (P - A) / N;
+var Xb = hc - 0.754, esp = q.Espelho_avanco, piso = q.Piso_degrau;
+var xFimMin = -(hc - q.Rampa_fundo) + 0.3, xFim = Xb - N * esp - (N - 1) * piso;
+if (xFim < xFimMin) {
+if (N > 1) {
+var novo = (Xb - N * esp - xFimMin) / (N - 1);
+if (novo < 0.05) novo = 0.05;
+g.avisos.push("Escada do fundo não cabe no comprimento: Piso_degrau reduzido de " + piso.toFixed(3) + " para " + novo.toFixed(3) + " m.");
+piso = novo;
+} else g.avisos.push("Escada do fundo não cabe no comprimento: aumente Comprimento ou reduza Rampa_fundo.");
+}
+var rows = [
+{ z: 0, xd: a, rR: 0.12 },
+{ z: -LA, xd: hc - 0.125, rR: 0.12 },
+{ z: -A, xd: hc - 0.20, rR: 0.10 },
+{ z: -A, xd: Xb, rR: 0.03 }
+];
+var x = Xb;
+for (var k = 1; k <= N; k++) {
+var z = (k === N) ? -P : -A - k * h;
+x -= esp; rows.push({ z: z, xd: x, rR: 0.03 });
+if (k < N) { x -= piso; rows.push({ z: z, xd: x, rR: 0.03 }); }
+}
+g.rows = rows; g.N = N; g.h = h; g.piso = piso;
+g.esc = {
+xTopo: hc - 0.44, xBase: hc - 0.495, yTopo: -(hl - 0.73), yBase: -(hl - 0.70),
+zBase: -A, zTopo: -(A - q.Alt_degrau)
+};
+return g;
+}
+function pilhaAneis(g, folga) {
+var out = [];
+for (var i = 0; i < g.rows.length; i++) {
+var r = g.rows[i], zz = r.z < -0.01 ? r.z - folga : r.z;
+var xe = (i === 0) ? g.a : g.fundoX(r.z), yb = (i === 0) ? g.b : g.meiaLarg(r.z);
+out.push(anel(-xe - folga, r.xd + folga, yb + folga, 0.12 + folga, r.rR + folga, zz));
+}
+return out;
+}
+function volumeAgua(q, g) {
+var rows = g.rows;
+function xdEm(z) {
+for (var i = 1; i < rows.length - 1; i++) {
+var z0 = rows[i].z, z1 = rows[i + 1].z;
+if (z0 > z1 && z <= z0 && z >= z1) return rows[i].xd + (rows[i + 1].xd - rows[i].xd) * (z0 - z) / (z0 - z1);
+}
+return rows[rows.length - 1].xd;
+}
+var n = Math.max(100, Math.round((g.P - g.LA) * 1000)), dz = (g.P - g.LA) / n, L = 0;
+for (var i = 0; i < n; i++) {
+var z = -g.LA - (i + 0.5) * dz;
+L += (g.fundoX(z) + xdEm(z)) * (g.meiaLarg(z) * 2) * dz;
+}
+if (q.Com_degrau_escada) {
+var e = g.esc, zm = -(g.A - q.Alt_degrau / 2);
+L -= (g.paredeEscada(zm) - (e.xTopo + e.xBase) / 2) * (g.meiaLarg(zm) - (Math.abs(e.yTopo) + Math.abs(e.yBase)) / 2) * q.Alt_degrau;
+}
+return L * 1000.0;
+}
+function arredObj(o) { var r = {}, c; for (c in o) if (Object.prototype.hasOwnProperty.call(o, c)) r[c] = (typeof o[c] === "number") ? arred(o[c]) : o[c]; return r; }
+function portasDe(q, g) {
+var hc = g.hc, hl = g.hl, sg = q.Espelhar ? -1 : 1;
+return {
+skimmer: arredObj({ x: hc - 1.145, y: -0.60, z: sg * (hl + 0.15) }),
+ralo: arredObj({ x: -hc + 1.45, y: -g.P, z: 0 }),
+retornos: [arredObj({ x: hc - 1.46, y: -0.40, z: sg * g.meiaLarg(-0.40) }), arredObj({ x: -hc + 0.84, y: -0.40, z: sg * g.meiaLarg(-0.40) })],
+aspiracao: arredObj({ x: -0.36 * (hc / 2), y: -0.35, z: sg * g.meiaLarg(-0.35) }),
+lado: sg
+};
+}
+function recorteDe(q) { return { hC: arred(q.Comprimento / 2 + q.Borda_atermica), hL: arred(q.Largura / 2 + q.Borda_atermica) }; }
+function portasPiscina(p) { var q = normalizar(p); return portasDe(q, geometria(q)); }
+function recortePiscina(p) { return recorteDe(normalizar(p)); }
+function piscina(p) {
+var q = normalizar(p), g = geometria(q), avisos = q.avisos.concat(g.avisos);
+var m = new Malha(), F = "Fibra Splash azul", MA = "Borda atermica", MB = "Dispositivo branco", MP = "Dispositivo preto";
+var hc = g.hc, hl = g.hl, P = g.P, LA = g.LA, i, k, j, n;
+var A = pilhaAneis(g, 0);
+for (i = 0; i < A.length - 1; i++) m.costura(F, A[i], A[i + 1], true);
+m.tampa(F, A[A.length - 1], true);
+if (q.Com_degrau_escada) {
+var e = g.esc, zb = e.zBase, zt = e.zTopo;
+var xwB = g.paredeEscada(zb) + 0.03, xwT = g.paredeEscada(zt) + 0.03;
+var ywB = -g.meiaLarg(zb) - 0.03, ywT = -g.meiaLarg(zt) - 0.03;
+m.quad(F, [e.xTopo, ywT, zt], [xwT, ywT, zt], [xwT, e.yTopo, zt], [e.xTopo, e.yTopo, zt]);
+m.quad(F, [e.xBase, ywB, zb], [e.xTopo, ywT, zt], [e.xTopo, e.yTopo, zt], [e.xBase, e.yBase, zb]);
+m.quad(F, [e.xBase, e.yBase, zb], [e.xTopo, e.yTopo, zt], [xwT, e.yTopo, zt], [xwB, e.yBase, zb]);
+}
+var B = pilhaAneis(g, 0.015);
+B[0] = B[0].map(function (pt) { return [pt[0], pt[1], -q.Aba]; });
+for (i = 0; i < B.length - 1; i++) m.costura(F, B[i], B[i + 1], false);
+m.tampa(F, B[B.length - 1], false);
+var ext = anel(-hc, hc, hl, q.Raio_borda, q.Raio_borda, 0);
+var extB = ext.map(function (pt) { return [pt[0], pt[1], -q.Aba]; });
+n = ext.length;
+for (k = 0; k < n; k++) { j = (k + 1) % n; m.quad(F, ext[k], ext[j], A[0][j], A[0][k]); }
+m.costura(F, ext, extB, false);
+for (k = 0; k < n; k++) { j = (k + 1) % n; m.quad(F, extB[j], extB[k], B[0][k], B[0][j]); }
+if (q.Borda_atermica > 0) {
+var hC = hc + q.Borda_atermica, hL = hl + q.Borda_atermica, ez = -q.Esp_atermica;
+var O = anel(-hC, hC, hL, 0.001, 0.001, 0), Ob = O.map(function (pt) { return [pt[0], pt[1], ez]; });
+var Ib = ext.map(function (pt) { return [pt[0], pt[1], ez]; });
+for (k = 0; k < n; k++) {
+j = (k + 1) % n;
+m.quad(MA, O[k], O[j], ext[j], ext[k]);
+m.quad(MA, Ib[k], Ib[j], Ob[j], Ob[k]);
+}
+m.costura(MA, O, Ob, false);
+m.costura(MA, ext, Ib, true);
+}
+if (q.Com_agua) {
+var agua = anel(-g.fundoX(-LA) - 0.002, (hc - 0.125) + 0.002, g.meiaLarg(-LA) + 0.002, 0.12, 0.12, -LA);
+m.tampa("Agua da piscina RA", agua, true); m.tampa("Agua da piscina RA", agua, false);
+}
+var Xsk = hc - 1.145, XrA = hc - 1.46, XrB = -hc + 0.84, Xasp = -0.36 * (hc / 2), Xralo = -hc + 1.45;
+var yw = -g.meiaLarg(-(LA + 0.02));
+if (q.Com_dispositivos) {
+m.caixa(MB, Xsk - 0.11, Xsk + 0.11, yw - 0.02, yw + 0.006, -LA - 0.09, -LA + 0.05);
+m.caixa(MP, Xsk - 0.09, Xsk + 0.09, yw + 0.0035, yw + 0.0075, -LA - 0.075, -LA + 0.035);
+m.caixa(MB, Xsk - 0.13, Xsk + 0.13, -(hl + 0.30), -(hl - 0.10), -0.60, -0.05);
+m.revolucao(MB, Xsk, -(hl + 0.15), [[0, -0.05], [0.115, -0.05], [0.115, 0.008], [0.10, 0.012], [0, 0.012]]);
+var bocas = [[XrA, 0.028, -0.40], [XrB, 0.028, -0.40], [Xasp, 0.036, -0.35]];
+for (i = 0; i < bocas.length; i++) {
+var X = bocas[i][0], r = bocas[i][1], z0 = bocas[i][2], y0 = -g.meiaLarg(z0);
+m.revolucao(MB, X, 0, [[0, y0 + 0.018], [r * 0.55, y0 + 0.018], [r, y0 + 0.006], [r, y0 - 0.01], [0, y0 - 0.01]], 28, "y", z0);
+}
+m.revolucao(MB, Xralo, 0, [[0, -P], [0.11, -P], [0.11, -P + 0.008], [0.09, -P + 0.013], [0, -P + 0.013]]);
+}
+var portas = portasDe(q, g);
+return {
+grupos: m.saida(q.Espelhar), portas: portas,
+recorte: recorteDe(q),
+cava: { C: arred(q.Comprimento + 2 * q.Folga_cava), L: arred(q.Largura + 2 * q.Folga_cava), H: arred(P + q.Lastro) },
+volumeAguaL: Math.round(volumeAgua(q, g) * 10) / 10,
+avisos: avisos
+};
+}
+function dryNorm(p) {
+p = p || {};
+var avisos = [], conf = { Base_C: 0.86, Base_L: 0.50, Base_esp: 0.07, Base_acima: 0.01 }, nome;
+var q = { Com_base: booleano(p.Com_base, true) };
+for (nome in conf) {
+if (!Object.prototype.hasOwnProperty.call(conf, nome)) continue;
+var v = p[nome];
+if (v === undefined || v === null) q[nome] = conf[nome];
+else if (!ehNum(v) || v <= 0) { avisos.push("Parâmetro " + nome + " inválido (" + v + "): usei o padrão " + conf[nome] + "."); q[nome] = conf[nome]; }
+else q[nome] = v;
+}
+q.avisos = avisos;
+return q;
+}
+function dryPortas(q) {
+function mm(v) { return v / 1000.0; }
+var sobe = q.Com_base ? q.Base_acima : 0, zr = arred(-(mm(135) - 0.2215)), X = function (v) { return mm(v) - 0.258; };
+return {
+succao: { x: arred(X(733)), y: arred(sobe + mm(12)), z: 0 },
+retorno: { x: arred(X(168)), y: arred(sobe + mm(93)), z: zr },
+hidroterapia: { x: arred(X(248)), y: arred(sobe + mm(93)), z: zr },
+drenagem: { x: arred(X(327)), y: arred(sobe + mm(93)), z: zr }
+};
+}
+function portasDryPump(p) { return dryPortas(dryNorm(p)); }
+function dryPump(p) {
+var q = dryNorm(p), avisos = q.avisos;
+var m = new Malha(), T = "Tampa Dry Pump", E = "Equipamento cinza escuro", PR = "Equipamento preto RA", C = "Equipamento cinza claro", B = "PVC branco", L = "Etiqueta Dry Pump";
+var ox = 0.258, oy = 0.2215;
+function mm(v) { return v / 1000.0; }
+function X(v) { return mm(v) - ox; }
+function Y(v) { return mm(v) - oy; }
+var Z = mm, esp = 4;
+function arco(cx, cz, r, a0, a1, n) {
+n = n || 6; var o = [];
+for (var k = 0; k <= n; k++) { var an = rad(a0 + (a1 - a0) * k / n); o.push([cx + r * Math.cos(an), cz + r * Math.sin(an)]); }
+return o;
+}
+function lista(pares, fx, fy) { return pares.map(function (t) { return [fx(t[0]), fy(t[1])]; }); }
+var i, k;
+var frente = [[20, 0], [73, 0]].concat(arco(125, 215, 34, 180, 90), arco(403, 215, 34, 90, 0), [[456, 0], [500, 0], [500, 282], [20, 282]]);
+m.extrusaoY(T, lista(frente, X, Z), Y(15), Y(15 + esp));
+m.extrusaoY(T, lista([[20, 0], [500, 0], [500, 329], [20, 329]], X, Z), Y(426 - esp), Y(426));
+var perfil = [[15, 0], [426, 0], [426, 329], [203, 329], [57, 325], [15, 282]];
+m.extrusaoX(T, lista(perfil, Y, Z), X(16), X(20));
+var dir = [[15, 0], [113, 0]].concat(arco(221, 150, 91, 180, 0, 10), [[327, 0], [426, 0], [426, 329], [203, 329], [57, 325], [15, 282]]);
+m.extrusaoX(T, lista(dir, Y, Z), X(500), X(500 + esp));
+function Pt(a, b, h) { return [X(a), Y(b), Z(h)]; }
+var xa = 16, xb = 504;
+m.dupla(T, Pt(xa, 15, 282), Pt(xb, 15, 282), Pt(xb, 57, 325), Pt(xa, 57, 325));
+m.dupla(T, Pt(xa, 57, 325), Pt(xb, 57, 325), Pt(xb, 203, 329), Pt(xa, 203, 329));
+var tx0 = 127, tx1 = 403, ty0 = 246, ty1 = 382, h0 = 329, h1 = 383;
+m.dupla(T, Pt(xa, 203, h0), Pt(xb, 203, h0), Pt(tx1, ty0, h1), Pt(tx0, ty0, h1));
+m.dupla(T, Pt(xb, 203, h0), Pt(xb, 426, h0), Pt(tx1, ty1, h1), Pt(tx1, ty0, h1));
+m.dupla(T, Pt(xb, 426, h0), Pt(xa, 426, h0), Pt(tx0, ty1, h1), Pt(tx1, ty1, h1));
+m.dupla(T, Pt(xa, 426, h0), Pt(xa, 203, h0), Pt(tx0, ty0, h1), Pt(tx0, ty1, h1));
+m.dupla(T, Pt(tx0, ty0, h1), Pt(tx1, ty0, h1), Pt(tx1, ty1, h1), Pt(tx0, ty1, h1));
+m.caixa(L, X(180), X(341), Y(282), Y(353), Z(383), Z(385));
+m.caixa(T, X(16), X(504), Y(13), Y(15), Z(278), Z(282));
+var abas = [[0, 516, 426, 443], [0, 73, 0, 15], [456, 516, 0, 15], [0, 16, 15, 426], [504, 516, 15, 113], [504, 516, 327, 426]];
+for (i = 0; i < abas.length; i++) m.caixa(T, X(abas[i][0]), X(abas[i][1]), Y(abas[i][2]), Y(abas[i][3]), Z(0), Z(8));
+var xns = [40, 450];
+for (i = 0; i < 2; i++) {
+m.caixa(T, X(xns[i]), X(xns[i] + 26), Y(0), Y(15), Z(0), Z(157));
+m.caixa(T, X(xns[i]), X(xns[i] + 26), Y(426), Y(443), Z(0), Z(247));
+}
+m.caixa(E, X(136), X(660), Y(129.5), Y(313.5), Z(0), Z(43), mm(6));
+m.caixa(E, X(238), X(337), Y(165), Y(278), Z(43), Z(58), mm(6));
+m.caixa(E, X(262), X(313), Y(190), Y(253), Z(58), Z(80), mm(6));
+var yc = Y(221.5), zc = Z(135);
+m.revolucao(PR, 0, yc, [[0, X(200)], [mm(52), X(200)], [mm(60), X(214)], [mm(60), X(372)], [mm(52), X(384)], [0, X(384)]], 28, "x", zc);
+for (k = 0; k < 16; k++) {
+var an = 2 * Math.PI * k / 16;
+m.caixa(PR, X(218), X(368), yc + mm(62) * Math.cos(an) - mm(2.5), yc + mm(62) * Math.cos(an) + mm(2.5), zc + mm(62) * Math.sin(an) - mm(2.5), zc + mm(62) * Math.sin(an) + mm(2.5));
+}
+m.revolucao(E, 0, yc, [[0, X(384)], [mm(58), X(384)], [mm(58), X(397)], [mm(92), X(397)], [mm(92), X(403)], [mm(70), X(403)], [mm(70), X(425)], [mm(92), X(425)], [mm(92), X(431)], [mm(86), X(445)], [mm(66), X(535)], [0, X(535)]], 28, "x", zc);
+var pars = [[60, 60], [-60, 60], [60, -60], [-60, -60]];
+for (i = 0; i < 4; i++) m.revolucao(PR, 0, yc + mm(pars[i][0]), [[0, X(392)], [mm(7), X(392)], [mm(7), X(436)], [0, X(436)]], 8, "x", zc + mm(pars[i][1]));
+var nerv = [34, -34];
+for (i = 0; i < 2; i++) m.caixa(E, X(505), X(590), yc - mm(55), yc + mm(55), zc + mm(nerv[i]) - mm(5), zc + mm(nerv[i]) + mm(5));
+var xp = X(589), yp = Y(221.5);
+m.revolucao(E, xp, yp, [[0, Z(43)], [mm(64), Z(43)], [mm(63.5), Z(60)], [mm(60), Z(268)], [mm(64), Z(273)], [0, Z(273)]]);
+m.revolucao(PR, xp, yp, [[0, Z(268)], [mm(75.5), Z(273)], [mm(75.5), Z(299)], [mm(68), Z(303)], [mm(50), Z(311)], [mm(25), Z(314)], [0, Z(314)]], 36);
+for (k = 0; k < 20; k++) {
+var an2 = 2 * Math.PI * k / 20, cx = xp + mm(75.5) * Math.cos(an2), cy = yp + mm(75.5) * Math.sin(an2);
+m.caixa(PR, cx - mm(3), cx + mm(3), cy - mm(3), cy + mm(3), Z(275), Z(298));
+}
+m.revolucao(C, xp, yp, [[mm(40), Z(310.5)], [mm(40), Z(312.5)], [0, Z(315)]], 24);
+var zt = Z(233), xv = X(733);
+m.revolucao(E, 0, yp, [[0, X(640)], [mm(29.5), X(640)], [mm(29.5), X(679)], [mm(33), X(679)], [mm(33), X(688)], [mm(29.5), X(688)], [mm(29.5), X(703)], [0, X(703)]], 28, "x", zt);
+var cam = [];
+for (var ag = 0; ag <= 90; ag += 15) cam.push([X(703) + mm(30) * Math.sin(rad(ag)), yp, zt - mm(30) + mm(30) * Math.cos(rad(ag))]);
+for (i = 0; i < cam.length - 1; i++) m.tubo(E, [cam[i], cam[i + 1]], mm(28), 16);
+m.revolucao(E, xv, yp, [[0, Z(185)], [mm(28), Z(185)], [mm(28), Z(203)], [0, Z(203)]]);
+m.revolucao(PR, xv, yp, [[0, Z(166)], [mm(24), Z(166)], [mm(24), Z(185)], [0, Z(185)]]);
+m.revolucao(PR, xv, yp, [[0, Z(135)], [mm(45), Z(135)], [mm(45), Z(165)], [0, Z(165)]], 32);
+m.revolucao(PR, xv, yp, [[0, Z(116)], [mm(26), Z(116)], [mm(26), Z(135)], [0, Z(135)]]);
+m.revolucao(B, xv, yp, [[0, Z(12)], [mm(20), Z(12)], [mm(20), Z(116)], [0, Z(116)]]);
+var yv = Y(135), regs = [168, 248, 327];
+for (i = 0; i < 3; i++) {
+var xr = X(regs[i]);
+m.revolucao(E, xr, yv, [[0, Z(237)], [mm(22), Z(242)], [0, Z(242)]]);
+m.revolucao(E, xr, yv, [[mm(34.5), Z(218)], [mm(34.5), Z(237)], [0, Z(237)]], 24);
+m.revolucao(C, xr, yv, [[0, Z(183)], [mm(28), Z(183)], [mm(35.5), Z(195)], [mm(35.5), Z(206)], [mm(28), Z(218)], [0, Z(218)]], 24);
+m.revolucao(C, xr, yv, [[0, Z(157)], [mm(19), Z(157)], [mm(19), Z(183)], [0, Z(183)]]);
+m.revolucao(E, xr, yv, [[0, Z(138)], [mm(34.5), Z(138)], [mm(34.5), Z(157)], [0, Z(157)]], 24);
+m.revolucao(PR, xr, yv, [[0, Z(117)], [mm(14), Z(117)], [mm(14), Z(138)], [0, Z(138)]]);
+m.revolucao(B, xr, yv, [[0, Z(93)], [mm(13), Z(93)], [mm(13), Z(117)], [0, Z(117)]]);
+m.caixa(PR, xr - mm(22), xr + mm(22), yv - mm(37), yv - mm(33), Z(192), Z(209));
+m.tubo(E, [[xr, yv, Z(226)], [xr, Y(172), Z(226)]], mm(15), 10);
+}
+m.tubo(E, [[X(150), Y(172), Z(226)], [X(345), Y(172), Z(226)], [X(345), Y(172), Z(160)], [X(345), yp, Z(160)]], mm(16), 10);
+m.caixa(E, X(148), X(199), Y(115), Y(160), Z(43), Z(92));
+var sobe = 0;
+if (q.Com_base) {
+sobe = q.Base_acima;
+m.transladar(0, 0, sobe);
+var cxb = 0.12, ex = q.Base_C / 0.86, ey = q.Base_L / 0.50;
+m.caixa("Concreto base", cxb + (-0.31 - cxb) * ex, cxb + (0.55 - cxb) * ex, -0.25 * ey, 0.25 * ey, sobe - q.Base_esp, sobe);
+}
+var portas = dryPortas(q);
+return { grupos: m.saida(false), portas: portas, avisos: avisos };
+}
+var PiscinaGeo = { piscina: piscina, dryPump: dryPump, portasPiscina: portasPiscina, portasDryPump: portasDryPump, recortePiscina: recortePiscina, padrao: PADRAO, _anel: anel, _orelhas: orelhas };
+global.PiscinaGeo = PiscinaGeo;
+if (typeof module !== "undefined" && module.exports) module.exports = PiscinaGeo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/piscinaderiv.js ==== */
+try {
+(function (global) {
+"use strict";
+var FAM_PISCINA = "ra-piscina-splash-tradicional", FAM_CASA = "ra-casa-maquinas-dry-pump";
+var AFASTA = 0.12;
+var Y_SUCCAO = -0.66, Y_RETORNO = -0.72, Y_DRENO = -0.30, Y_TAMPADO = -0.05;
+var MAT_SUCCAO = "PVC branco", MAT_RETORNO = "PVC marrom";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+var CACHE_FAM = {};
+function famDef(id) {
+if (CACHE_FAM[id]) return CACHE_FAM[id];
+var FP = dep("FamiliasPiscina", "./familiaspiscina.js"), f = FP && FP.obter ? FP.obter(id) : null;
+if (f) CACHE_FAM[id] = f;
+return f;
+}
+function valores(famId, tipoId, inst) {
+var f = famDef(famId), v = {}; if (!f) return v;
+arr(f.parametros).forEach(function (p) { if (!p.formula && p.valor !== undefined) v[p.nome] = p.valor; });
+var t = arr(f.tipos).filter(function (x) { return x.id === tipoId; })[0] || arr(f.tipos)[0];
+if (t && t.valores) Object.keys(t.valores).forEach(function (k) { v[k] = t.valores[k]; });
+var i = inst || {};
+if (i.$tipo) Object.keys(i.$tipo).forEach(function (k) { v[k] = i.$tipo[k]; });
+Object.keys(i).forEach(function (k) { if (k !== "$tipo") v[k] = i[k]; });
+return v;
+}
+function paraMundo(f, p) {
+var c = Math.cos(f.rotY || 0), s = Math.sin(f.rotY || 0);
+return [r4(f.x + p.x * c + p.z * s), r4((f.y || 0) + p.y), r4(f.z - p.x * s + p.z * c)];
+}
+function paraLocal(f, x, z) {
+var c = Math.cos(f.rotY || 0), s = Math.sin(f.rotY || 0), dx = x - f.x, dz = z - f.z;
+return { x: r4(dx * c - dz * s), z: r4(dx * s + dz * c) };
+}
+function contornoRecorte(f, hC, hL) {
+return [[-hC, -hL], [hC, -hL], [hC, hL], [-hC, hL]].map(function (q) { var m = paraMundo(f, { x: q[0], y: 0, z: q[1] }); return [m[0], -m[2]]; });
+}
+function caixaDe(pts) {
+var c = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+pts.forEach(function (q) { c.x0 = Math.min(c.x0, q[0]); c.x1 = Math.max(c.x1, q[0]); c.y0 = Math.min(c.y0, q[1]); c.y1 = Math.max(c.y1, q[1]); });
+return c;
+}
+function recortar(vol, contorno) {
+var r = vol.receita;
+if (!r || r.forma !== "extrusao" || !arr(r.contorno).length) return false;
+var pl = r.plano; if (pl && (!pl.u || !pl.v || pl.u[0] !== 1 || pl.v[2] !== -1)) return false;
+var a = caixaDe(r.contorno), b = caixaDe(contorno);
+if (b.x0 >= a.x1 || b.x1 <= a.x0 || b.y0 >= a.y1 || b.y1 <= a.y0) return false;
+r.furos = arr(r.furos).concat([contorno]);
+return true;
+}
+function Vala(hx, hz) { this.hx = hx; this.hz = hz; this.per = 4 * (hx + hz); }
+Vala.prototype.s = function (p) {
+var hx = this.hx, hz = this.hz;
+if (Math.abs(p.x - hx) < 1e-3) return p.z + hz;
+if (Math.abs(p.z - hz) < 1e-3) return 2 * hz + (hx - p.x);
+if (Math.abs(p.x + hx) < 1e-3) return 2 * hz + 2 * hx + (hz - p.z);
+return 4 * hz + 2 * hx + (p.x + hx);
+};
+Vala.prototype.cantos = function () {
+var hx = this.hx, hz = this.hz;
+return [{ x: hx, z: hz, s: 2 * hz }, { x: -hx, z: hz, s: 2 * hz + 2 * hx }, { x: -hx, z: -hz, s: 4 * hz + 2 * hx }, { x: hx, z: -hz, s: this.per }];
+};
+Vala.prototype.projeta = function (p) {
+var hx = this.hx, hz = this.hz, x = Math.max(-hx, Math.min(hx, p.x)), z = Math.max(-hz, Math.min(hz, p.z));
+if (Math.abs(p.x) <= hx && Math.abs(p.z) <= hz) {
+if (hx - Math.abs(p.x) < hz - Math.abs(p.z)) x = p.x >= 0 ? hx : -hx; else z = p.z >= 0 ? hz : -hz;
+} else if (Math.abs(x) < hx && Math.abs(z) < hz) {
+x = p.x >= 0 ? hx : -hx;
+}
+return { x: x, z: z };
+};
+Vala.prototype.caminho = function (a, b) {
+var sa = this.s(a), sb = this.s(b), per = this.per, ida = ((sb - sa) % per + per) % per, volta = per - ida;
+var pts = [a], cs = this.cantos(), dir = ida <= volta ? 1 : -1, compr = Math.min(ida, volta);
+var meio = [];
+cs.forEach(function (c) {
+var d = dir > 0 ? ((c.s - sa) % per + per) % per : ((sa - c.s) % per + per) % per;
+if (d > 1e-3 && d < compr - 1e-3) meio.push({ d: d, x: c.x, z: c.z });
+});
+meio.sort(function (q, w) { return q.d - w.d; });
+meio.forEach(function (q) { pts.push({ x: q.x, z: q.z }); });
+pts.push(b);
+return pts;
+};
+function compr(c) { var L = 0; for (var i = 1; i < c.length; i++) L += Math.sqrt(Math.pow(c[i][0] - c[i - 1][0], 2) + Math.pow(c[i][1] - c[i - 1][1], 2) + Math.pow(c[i][2] - c[i - 1][2], 2)); return L; }
+function tubosDe(piscina, casa, vP, vC) {
+var G = dep("PiscinaGeo", "./piscinageo.js"); if (!G) return [];
+var pp = G.portasPiscina(vP), pc = G.portasDryPump(vC);
+var V = new Vala(vP.Comprimento / 2 + AFASTA, vP.Largura / 2 + AFASTA);
+function daCasa(p) {
+var m = paraMundo(casa, p), l = paraLocal(piscina, m[0], m[2]);
+return { x: l.x, y: m[1] - (piscina.y || 0), z: l.z };
+}
+function comY(lista, y) { return lista.map(function (q) { return { x: q.x, y: y, z: q.z }; }); }
+function semDobra(l) {
+var c = l.slice(), mudou = true;
+while (mudou) {
+mudou = false;
+for (var i = 1; i < c.length; i++) {
+var a = c[i - 1], b = c[i], e = c[i + 1];
+var ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+if (Math.abs(ux) + Math.abs(uy) + Math.abs(uz) < 2e-3) { c.splice(i, 1); mudou = true; break; }
+if (!e) continue;
+var vx = e.x - b.x, vy = e.y - b.y, vz = e.z - b.z, dot = ux * vx + uy * vy + uz * vz;
+var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+if (dot < 0 && Math.abs(cx) + Math.abs(cy) + Math.abs(cz) < 1e-3) { c.splice(i, 1); mudou = true; break; }
+}
+}
+return c;
+}
+function mundo(lista) { return semDobra(lista).map(function (q) { return paraMundo(piscina, q); }); }
+function ate(porta, y) {
+var P = daCasa(porta), E = V.projeta(P), trecho = [{ x: P.x, y: P.y, z: P.z }, { x: P.x, y: y, z: P.z }];
+if (Math.abs(E.x - P.x) > 1e-6 && Math.abs(E.z - P.z) > 1e-6) trecho.push({ x: E.x, y: y, z: P.z });
+trecho.push({ x: E.x, y: y, z: E.z });
+return { trecho: trecho, E: E };
+}
+var lado = pp.lado || -1, zl = lado * V.hz, linhas = [];
+function linha(id, nome, material, dn, pts) { linhas.push({ id: id, nome: nome, material: material, dn: dn, caminho: mundo(pts) }); }
+var dn1 = vP.DN_succao || 0.04, dn2 = vP.DN_retorno || 0.025;
+var S = ate(pc.succao, Y_SUCCAO), Psk = { x: pp.skimmer.x, z: zl };
+var trS = S.trecho.concat(comY(V.caminho(S.E, Psk).slice(1), Y_SUCCAO));
+trS.push({ x: pp.skimmer.x, y: Y_SUCCAO, z: pp.skimmer.z }, { x: pp.skimmer.x, y: pp.skimmer.y, z: pp.skimmer.z });
+linha("succao", "Piscina: sucção DN 40 (skimmer)", MAT_SUCCAO, dn1, trS);
+var Pr = { x: pp.ralo.x, z: zl }, viaR = V.caminho(Pr, Psk);
+linha("ralo", "Piscina: sucção DN 40 (ralo de fundo)", MAT_SUCCAO, dn1,
+[{ x: pp.ralo.x, y: pp.ralo.y, z: 0 }, { x: pp.ralo.x, y: pp.ralo.y - 0.06, z: 0 }, { x: pp.ralo.x, y: pp.ralo.y - 0.06, z: zl }].concat(comY(viaR, Y_SUCCAO)));
+var Pa = { x: pp.aspiracao.x, z: zl };
+linha("aspiracao", "Piscina: aspiração DN 40", MAT_SUCCAO, dn1, [{ x: pp.aspiracao.x, y: pp.aspiracao.y, z: pp.aspiracao.z }, { x: pp.aspiracao.x, y: pp.aspiracao.y, z: zl }, { x: pp.aspiracao.x, y: Y_SUCCAO, z: zl }]);
+var R = ate(pc.retorno, Y_RETORNO), bocais = arr(pp.retornos).map(function (b) { return { b: b, q: { x: b.x, z: zl } }; });
+bocais.sort(function (a, b) { return Math.abs(V.s(a.q) - V.s(R.E)) - Math.abs(V.s(b.q) - V.s(R.E)); });
+var trR = R.trecho.slice(), atual = R.E;
+bocais.forEach(function (bq) { trR = trR.concat(comY(V.caminho(atual, bq.q).slice(1), Y_RETORNO)); atual = bq.q; });
+linha("retorno", "Piscina: retorno DN 25", MAT_RETORNO, dn2, trR);
+bocais.forEach(function (bq, i) { linha("retorno-" + (i + 1), "Piscina: bocal de retorno " + (i + 1), MAT_RETORNO, dn2, [{ x: bq.q.x, y: Y_RETORNO, z: zl }, { x: bq.q.x, y: bq.b.y, z: zl }, { x: bq.q.x, y: bq.b.y, z: bq.b.z }]); });
+var Dp = daCasa(pc.drenagem);
+linha("drenagem", "Piscina: drenagem DN 25 (ligar na rede pluvial)", MAT_RETORNO, dn2, [{ x: Dp.x, y: Dp.y, z: Dp.z }, { x: Dp.x, y: Y_DRENO, z: Dp.z }, { x: Dp.x + 0.3, y: Y_DRENO, z: Dp.z }]);
+var Hp = daCasa(pc.hidroterapia);
+linha("hidroterapia", "Piscina: hidroterapia tampada", MAT_RETORNO, dn2, [{ x: Hp.x, y: Hp.y, z: Hp.z }, { x: Hp.x, y: Y_TAMPADO, z: Hp.z }]);
+return linhas;
+}
+var PiscinaDeriv = {
+FAM_PISCINA: FAM_PISCINA, FAM_CASA: FAM_CASA, valores: valores, Vala: Vala, tubosDe: tubosDe,
+ehDerivado: function (id) { return /^psc-tubo:/.test(String(id)); },
+aplicar: function (saida) {
+var fams = arr(saida && saida.familias), P = fams.filter(function (f) { return f.famId === FAM_PISCINA; }), C = fams.filter(function (f) { return f.famId === FAM_CASA; });
+if (!P.length && !C.length) return;
+var vols = arr(saida.volumes), G = dep("PiscinaGeo", "./piscinageo.js");
+if (G) P.forEach(function (f) {
+var v = valores(f.famId, f.tipoId, f.inst), rc = G.recortePiscina(v), cont = contornoRecorte(f, rc.hC, rc.hL);
+vols.forEach(function (vol) { if (vol.recortavel) recortar(vol, cont); });
+});
+var BV = dep("BimVolume", "./bimvolume.js");
+if (!G || !BV || !BV.perfilCirculo) return;
+C.forEach(function (c) {
+var melhor = null, dm = Infinity;
+P.forEach(function (f) { var d = Math.pow(f.x - c.x, 2) + Math.pow(f.z - c.z, 2); if (d < dm) { dm = d; melhor = f; } });
+if (!melhor) return;
+var vP = valores(melhor.famId, melhor.tipoId, melhor.inst);
+if (vP.Com_tubulacao === false) return;
+tubosDe(melhor, c, vP, valores(c.famId, c.tipoId, c.inst)).forEach(function (l) {
+saida.volumes.push({ id: "psc-tubo:" + c.id + ":" + l.id, tipo: "volume", categoria: "generico", ifc: "IFCPIPESEGMENT", material: l.material, derivado: true,
+nome: l.nome + " (L = " + (Math.round(compr(l.caminho) * 100) / 100).toFixed(2).replace(".", ",") + " m)",
+receita: { forma: "varredura", perfil: BV.perfilCirculo(l.dn, 10), caminho: l.caminho } });
+});
+});
+}
+};
+function registrar() {
+var BE = global.BimEdit || (typeof require === "function" ? (function () { try { return require("./bimedit.js"); } catch (e) { return null; } })() : null);
+if (BE && BE.estender) BE.estender({ nome: "piscinaDeriv", valida: function () { return undefined; }, aplicar: function () { return false; }, fim: function (ctx, saida) { PiscinaDeriv.aplicar(saida); } });
+return !!BE;
+}
+registrar();
+PiscinaDeriv.registrar = registrar;
+global.PiscinaDeriv = PiscinaDeriv;
+if (typeof module !== "undefined" && module.exports) module.exports = PiscinaDeriv;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimgirar90.js ==== */
+try {
+(function (global) {
+"use strict";
+function B() { return global.BIM || null; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+var BimGirar90 = {
+alvos: function () {
+var b = B(), api = null, st = null;
+try { api = b && b.precisao ? b.precisao() : null; st = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e) { return []; }
+if (!api || !api.selecao || !st) return [];
+var ids = arr(api.selecao()).map(String), fams = {};
+arr(st.familias).forEach(function (f) { fams[String(f.id)] = f; });
+return ids.map(function (i) { return fams[i]; }).filter(function (f) { return f && !f.host; });
+},
+pode: function () { return this.alvos().length > 0; },
+atualizar: function () {
+var d = global.document; if (!d) return;
+var raiz = d.querySelector(".bim-revit"), b = d.getElementById("bim-girar90"), mostra = !!raiz && this.pode();
+if (!mostra) { if (b) b.style.display = "none"; return; }
+if (!b || b.parentNode !== raiz) {
+if (b && b.parentNode) b.parentNode.removeChild(b);
+b = d.createElement("button"); b.id = "bim-girar90"; b.type = "button"; b.textContent = "⟳ Girar 90°  (Espaço)";
+b.style.cssText = "position:absolute;left:50%;bottom:104px;transform:translateX(-50%);z-index:60;padding:8px 16px;border:0;border-radius:999px;background:#17324d;color:#fff;font:600 13px/1 inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)";
+b.addEventListener("click", function () { BimGirar90.girar(90); });
+raiz.appendChild(b);
+}
+b.style.display = "block";
+},
+girar: function (graus) {
+var b = B(), lista = this.alvos(), g = graus == null ? 90 : graus;
+if (!lista.length || !b || !b.editarLote) return false;
+return !!b.editarLote({ op: "lote", id: "girar90-" + Date.now().toString(36), origem: "girar90", pedido: "Girar " + g + "°",
+ops: lista.map(function (f) { return { op: "transformar", ids: [f.id], T: { tipo: "girar", cx: f.x, cz: f.z, graus: g }, copia: false }; }) });
+}
+};
+try {
+if (global.document && global.document.addEventListener) global.document.addEventListener("keydown", function (e) {
+if ((e.key !== " " && e.code !== "Space") || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat) return;
+var t = e.target, tag = t && t.tagName ? String(t.tagName).toLowerCase() : "";
+if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || (t && t.isContentEditable)) return;
+var raiz = global.document.querySelector(".bim-revit");
+if (!raiz || !raiz.getClientRects().length) return;
+if (BimGirar90.girar(90)) { e.preventDefault(); e.stopPropagation(); }
+});
+} catch (eK) {}
+global.BimGirar90 = BimGirar90;
+if (typeof module !== "undefined" && module.exports) module.exports = BimGirar90;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/familiaspiscina.js ==== */
 try {
 (function (global) {
@@ -77413,8 +78259,86 @@ S("folhas", "Folhas (perfis, roldanas e ferragens do sistema)", "un", "N_folhas"
 quantitativo: { unidade: "m2", quantidade: "Area_vidro", codigo: "", fonte: "", descricao: "Pele de vidro recolhível (orçar à parte)" }
 };
 }
+var TRADICIONAIS = [
+{ id: "tradicional-400-140", nome: "Tradicional 4,00 x 2,00 x 1,40", C: 4.00, L: 2.00, Pf: 1.40, folha: true },
+{ id: "tradicional-400-100", nome: "Tradicional 4,00 x 2,00 x 1,00", C: 4.00, L: 2.00, Pf: 1.00 },
+{ id: "tradicional-350-140", nome: "Tradicional 3,50 x 1,80 x 1,40", C: 3.50, L: 1.80, Pf: 1.40 },
+{ id: "tradicional-350-100", nome: "Tradicional 3,50 x 1,80 x 1,00", C: 3.50, L: 1.80, Pf: 1.00 }
+];
+var FONTE_SPLASH = "Tabela: https://www.splashpiscinas.com/piscinas/tradicional (03/11/2026)";
+var CONFERIR_COMUM = "Volume é cálculo da RA pela forma: o fabricante não publica. Posição de skimmer, ralo, retornos e aspiração é premissa RA. Folga da cava 20 cm é da Fibralagos: pedir o manual da Splash. Sem hidroterapia no desenho.";
+function famTradicional() {
+var pr = [
+P("Fabricante", "texto", "tipo", "Splash Piscinas", G_PRD, "Fabricante"), P("Modelo_catalogo", "texto", "tipo", "", G_PRD, "Modelo no catálogo"),
+P("Fonte", "texto", "tipo", "", G_PRD, "De onde vêm as medidas"), P("Conferir", "texto", "tipo", "", G_CONF, "O que o fabricante não traz ou é premissa do desenho"),
+P("Comprimento", "comprimento", "tipo", 4.00, G_DIM, "Comprimento externo com a borda de fibra (catálogo)"), P("Largura", "comprimento", "tipo", 2.00, G_DIM, "Largura externa com a borda de fibra (catálogo)"),
+P("Profundidade", "comprimento", "tipo", 1.40, G_DIM, "Profundidade total (catálogo)"), P("Borda_fibra", "comprimento", "tipo", 0.10, G_DIM, "Borda de fibra (folha do fabricante)"),
+P("Aba", "comprimento", "tipo", 0.04, G_DIM, "Aba da borda (folha do fabricante)"), P("Raio_borda", "comprimento", "tipo", 0.21, G_DIM, "Raio do canto, medido no desenho"),
+P("Linha_agua", "comprimento", "tipo", 0.17, G_DIM, "Linha 0,17 abaixo da borda (folha do fabricante)"), P("Rampa_fundo", "comprimento", "tipo", 0.37, G_DIM, "Da face externa até o fundo plano (folha do fabricante)"),
+P("Alt_degrau", "comprimento", "tipo", 0.28, G_DIM, "Altura do degrau (folha do fabricante)"), P("Piso_degrau", "comprimento", "tipo", 0.28, G_DIM, "Piso do degrau (folha do fabricante)"),
+P("Assento_abaixo", "comprimento", "tipo", 0.56, G_DIM, "Assento do banco abaixo da borda (folha do fabricante)"),
+P("Espelhar", "simnao", "instancia", false, G_DIM, "Troca de lado a escada e os dispositivos"),
+P("Com_agua", "simnao", "instancia", true, G_DIM, "Desenhar a água"), P("Com_dispositivos", "simnao", "instancia", true, G_DIM, "Desenhar skimmer, ralo, retornos e aspiração"),
+P("Com_tubulacao", "simnao", "instancia", true, G_DIM, "Desenhar os tubos até a casa de máquinas mais perto (acompanham a piscina e a casa)"),
+P("Borda_atermica", "comprimento", "instancia", 0.30, G_INST, AVISO_PREMISSA + "largura da borda atérmica além da fibra; é ela que define o recorte do deck"),
+P("Folga_cava", "comprimento", "instancia", 0.20, G_INST, "Folga da cava por lado — Fibralagos, Manual de Instalação"), P("Lastro", "comprimento", "instancia", 0.10, G_INST, "Base sob o casco — Fibralagos: 5 a 10 cm"),
+P("DN_succao", "comprimento", "tipo", 0.04, G_INST, "Sucção: ~40 mm lidos do desenho da Dry Pump. Conferir no kit do fabricante"), P("DN_retorno", "comprimento", "tipo", 0.025, G_INST, "Retorno: ~26 mm lidos do desenho da Dry Pump. Conferir no kit do fabricante"),
+F("Cava_C", "comprimento", "Comprimento + 2*Folga_cava", G_QTD, "Comprimento da cava"), F("Cava_L", "comprimento", "Largura + 2*Folga_cava", G_QTD, "Largura da cava"),
+F("Cava_H", "comprimento", "Profundidade + Lastro", G_QTD, "Profundidade da cava"), F("Vol_escavacao", "volume", "Cava_C*Cava_L*Cava_H", G_QTD, "Volume escavado (prisma; sem talude)"),
+F("Vol_lastro", "volume", "Cava_C*Cava_L*Lastro", G_QTD, "Lastro sob o casco"),
+F("Area_atermica", "area", "(Comprimento + 2*Borda_atermica)*(Largura + 2*Borda_atermica) - Comprimento*Largura", G_QTD, "Borda atérmica (m²)")
+];
+return { id: "ra-piscina-splash-tradicional", nome: "Piscina Splash Tradicional (com escada, banco e borda atérmica)", categoria: "generico", hospedagem: "livre", previa: "modelador", geometria: "piscinageo", geo: "piscina",
+descricao: "Arraste e gire no modelo: o deck e o terreno marcados como recortáveis abrem sozinhos e os tubos até a casa de máquinas acompanham. Origem no centro, no nível da borda. Casco e hidráulica: orçar à parte.",
+parametros: pr, solidos: [],
+tipos: TRADICIONAIS.map(function (t) {
+return { id: t.id, nome: t.nome, valores: { Modelo_catalogo: t.nome, Comprimento: t.C, Largura: t.L, Profundidade: t.Pf,
+Fonte: t.folha ? "Folha 01/01 da Splash (Tradicional-4x1-40m.pdf); " + FONTE_SPLASH : FONTE_SPLASH,
+Conferir: (t.folha ? "" : "Só a tabela do site: forma proporcional à folha do modelo 4,00 x 1,40. ") + CONFERIR_COMUM } };
+}),
+servicos: [S("escavacao", "Escavação da cava da piscina", "m3", "Vol_escavacao"), S("lastro", "Lastro sob o casco da piscina", "m3", "Vol_lastro"), S("atermica", "Borda atérmica", "m2", "Area_atermica")],
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Piscina de fibra com hidráulica do fabricante (orçar à parte)" } };
+}
+function famDryPump() {
+var pr = [
+P("Fabricante", "texto", "tipo", "Splash Piscinas / iGUi", G_PRD, "Fabricante"), P("Modelo_catalogo", "texto", "tipo", "Dry Pump", G_PRD, "Modelo"),
+P("Fonte", "texto", "tipo", "Imagem CASA DE MÁQUINAS - DRY PUMP (cotas 776/524 x 443/184, alturas 314/329/383); https://www.splashpiscinas.com/piscinas/tradicional (03/11/2026)", G_PRD, "De onde vêm as medidas"),
+P("Motobomba", "texto", "tipo", "1/2 CV autoescorvante", G_PRD, "Site do fabricante"), P("Filtragem", "texto", "tipo", "11,688 m³/h; área 0,29 m²; 6 micra", G_PRD, "Site do fabricante"),
+P("Registros", "texto", "tipo", "retorno, drenagem, hidroterapia", G_PRD, "Site do fabricante"),
+P("Conferir", "texto", "tipo", "Cor da tampa, interior que o desenho não mostra e altura de instalação em relação à água são premissa RA. Manual da Dry Pump não encontrado: pedir ao fabricante. Tensão e consumo não publicados.", G_CONF, "Premissas"),
+P("Com_base", "simnao", "instancia", true, G_INST, AVISO_PREMISSA + "base de concreto sob o equipamento"), P("Base_C", "comprimento", "instancia", 0.86, G_INST, AVISO_PREMISSA + "comprimento da base"),
+P("Base_L", "comprimento", "instancia", 0.50, G_INST, AVISO_PREMISSA + "largura da base"), P("Base_esp", "comprimento", "instancia", 0.07, G_INST, AVISO_PREMISSA + "espessura da base"),
+P("Base_acima", "comprimento", "instancia", 0.01, G_INST, AVISO_PREMISSA + "quanto a base fica acima do deck")
+];
+return { id: "ra-casa-maquinas-dry-pump", nome: "Casa de máquinas Dry Pump (tampa, bomba, motor, pré-filtro e registros)", categoria: "generico", hospedagem: "livre", previa: "modelador", geometria: "piscinageo", geo: "drypump",
+descricao: "Peça única: arraste e gire no modelo que a base, a bomba, o motor e os tubos vão junto. A abertura dos registros fica no lado -Z local. Origem no centro da tampa, no deck.",
+parametros: pr, solidos: [], tipos: [{ id: "dry-pump", nome: "Dry Pump", valores: {} }],
+servicos: [S("equipamento", "Casa de máquinas Dry Pump (fornecimento do fabricante)", "un", "1")],
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Casa de máquinas Dry Pump (orçar à parte)" } };
+}
+var CORES_GEO = { "Fibra Splash azul": ["#3f9fd0", 0], "Agua da piscina RA": ["#1f9fce", 0.72], "Dispositivo branco": ["#f2f3f1", 0], "Dispositivo preto": ["#1c1e20", 0], "Borda atermica": ["#e9e6df", 0],
+"Tampa Dry Pump": ["#c7ccd0", 0], "Etiqueta Dry Pump": ["#2a2d31", 0], "Equipamento cinza escuro": ["#3a3e43", 0], "Equipamento preto RA": ["#17191c", 0], "Equipamento cinza claro": ["#a9afb5", 0],
+"PVC branco": ["#eef0ef", 0], "Concreto base": ["#b9b7b0", 0] };
+var CACHE_GEO = {};
+function completar(fam, tipo, inst, saida) {
+var G = global.PiscinaGeo || (typeof require === "function" ? (function () { try { return require("./piscinageo.js"); } catch (e) { return null; } })() : null);
+if (!G) { saida.ok = false; saida.erros.push("o gerador da piscina (js/piscinageo.js) não carregou"); return saida; }
+var v = saida.valores || {}, ch = fam.geo + "|" + JSON.stringify(v), r = CACHE_GEO[ch];
+if (!r) { r = fam.geo === "drypump" ? G.dryPump(v) : G.piscina(v); CACHE_GEO[ch] = r; }
+var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+saida.solidos = r.grupos.map(function (g, i) {
+for (var k = 0; k + 2 < g.v.length; k += 3) { x0 = Math.min(x0, g.v[k]); x1 = Math.max(x1, g.v[k]); y0 = Math.min(y0, g.v[k + 1]); y1 = Math.max(y1, g.v[k + 1]); z0 = Math.min(z0, g.v[k + 2]); z1 = Math.max(z1, g.v[k + 2]); }
+var c = CORES_GEO[g.material] || ["#999999", 0];
+var nomeMat = g.material === "Agua da piscina RA" ? "Água da piscina" : g.material;
+return { id: "g" + (i + 1), nome: nomeMat, forma: "malha", suave: true, x: 0, y: 0, z: 0, rot: 0, v: g.v, f: g.f, material: nomeMat, cor: c[0], transparencia: c[1], volume: null };
+});
+saida.caixa = { x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1 };
+if (r.avisos && r.avisos.length) saida.avisos = (saida.avisos || []).concat(r.avisos);
+if (fam.geo !== "drypump" && r.volumeAguaL != null) { saida.volumeAguaL = r.volumeAguaL; }
+return saida;
+}
 function montar() {
-var l = [famPiscina(), famCasaMaquinas(), famVidro("ra-vidro-retratil", "Pele de vidro recolhível (em abertura de parede)", true),
+var l = [famPiscina(), famCasaMaquinas(), famTradicional(), famDryPump(), famVidro("ra-vidro-retratil", "Pele de vidro recolhível (em abertura de parede)", true),
 famVidro("ra-vidro-retratil-livre", "Pele de vidro recolhível (livre entre pilares)", false)];
 l.forEach(function (f) { if (f.abertura === undefined) delete f.abertura; });
 return l;
@@ -77423,6 +78347,7 @@ var CACHE = null;
 var FamiliasPiscina = {
 MODELOS: MODELOS, CONJUNTOS: CONJUNTOS, SISTEMAS: SISTEMAS, MAX_FOLHAS: MAX_FOLHAS,
 lista: function () { if (!CACHE) CACHE = montar(); return JSON.parse(JSON.stringify(CACHE)); },
+completar: completar,
 obter: function (id) { var l = this.lista(); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
 };
 global.FamiliasPiscina = FamiliasPiscina;
@@ -172264,6 +173189,7 @@ if (!l.length && p && global.BimVaoArr && global.BimVaoArr.naPlanta && this._ehP
 var D = D2(), df = D && D.def ? D.def(id) : null, yc = df && df.nivel && isFinite(df.nivel.y) ? df.nivel.y + (+df.altura || 1.2) : null;
 var v = global.BimVaoArr.naPlanta(this._estado(), this._avaliar(), { x: p[0], z: p[1] }, yc); if (v) l = ["edit:" + v];
 }
+if (global.PiscinaDeriv) l = l.filter(function (u) { return !PiscinaDeriv.ehDerivado(String(u).replace(/^edit:/, "")); });
 return l;
 },
 pecaEm: function (id, p) {
@@ -174486,6 +175412,7 @@ c("ctx-conectar-altura", "Conectar\npela altura", "link", "Liga a ponta livre do
 c("ctx-desconexoes", "Mostrar\ndesconexões", "alerta", "Mostra as pontas livres da rede (o mesmo de Instalações › Sistemas).", { grande: true, alias: "desconexoes" }),
 c("ctx-inspetor", "Inspetor de\nsistema", "buscar", "Confere o sistema da seleção: inclinação mínima, desconexões, diâmetros e o que falta (o mesmo de Instalações › Verificar sistemas).", { grande: true, alias: "verificar-sistemas" }),
 c("ctx-cotar-tubo", "Cotar\ntubo", "regua", "Cota o tubo selecionado (diâmetro, inclinação e comprimento) — o mesmo de Instalações › Rede.", { grande: true, alias: "cota" }),
+c("ctx-girar90", "Girar\n90°", "ciclo", "Gira 90° a peça solta selecionada em volta do centro dela (piscina, casa de máquinas, móvel, equipamento). Atalho: Espaço. Um Ctrl+Z desfaz.", { grande: true }),
 c("ctx-sel-tipo", "Selecionar\ndo tipo", "lista", "Seleciona no projeto todos os elementos do mesmo tipo do selecionado.", { grande: true }),
 c("ctx-andaime-pranchas", "Pranchas\nexecutivas", "grade", "Gera o jogo completo de pranchas (AND-01..05, A1) do andaime selecionado: PDF para imprimir e DXF com o carimbo RA. Só vale para uma peça de andaime.", { grande: true }),
 c("ctx-sel-cat", "Selecionar\na categoria", "categorias", "Seleciona no projeto todos os elementos da mesma categoria do selecionado.", { grande: true })
@@ -174672,10 +175599,10 @@ var CTX_PAINEIS = {
 tubos: [{ nome: "Tubo", ids: ["ctx-tipo", "ctx-dn", "ctx-inclinacao", "ctx-isolamento"] },
 { nome: "Conexões", ids: ["ctx-conectar", "ctx-conectar-altura", "ctx-desconexoes"] },
 { nome: "Sistema", ids: ["ctx-inspetor", "ctx-cotar-tubo", "ctx-sel-tipo"] }],
-pecas: [{ nome: "Peça", ids: ["ctx-tipo", "ctx-dn"] },
+pecas: [{ nome: "Posição", ids: ["ctx-girar90"] }, { nome: "Peça", ids: ["ctx-tipo", "ctx-dn"] },
 { nome: "Conexões", ids: ["ctx-desconexoes"] },
 { nome: "Sistema", ids: ["ctx-inspetor", "ctx-sel-tipo", "ctx-sel-cat"] }],
-geral: [{ nome: "Tipo", ids: ["ctx-tipo"] }, { nome: "Seleção", ids: ["ctx-sel-tipo", "ctx-sel-cat"] }]
+geral: [{ nome: "Tipo", ids: ["ctx-tipo"] }, { nome: "Posição", ids: ["ctx-girar90"] }, { nome: "Seleção", ids: ["ctx-sel-tipo", "ctx-sel-cat"] }]
 };
 var CHAVE_QA = "orcapro:bim:acesso-rapido:v1";
 var QA_PADRAO = ["salvar-modelo", "fx-modificar", "desfazer", "refazer", "medir", "p7-cota-alinhada", "identificar-categoria", "p7-texto",
@@ -174822,6 +175749,7 @@ var self = this;
 m.paineis = arr(m.paineis).filter(function (p) { return !self._ehCtx(p); });
 if (cat) {
 (CTX_PAINEIS[cat.k] || CTX_PAINEIS.geral).forEach(function (p) {
+if (p.nome === "Posição" && !(global.BimGirar90 && BimGirar90.pode())) return;
 var cs = p.ids.map(function (id) { return self._ctxCmd(id); }).filter(Boolean);
 if (cs.length) m.paineis.push({ nome: p.nome, comandos: cs });
 });
@@ -174994,6 +175922,10 @@ return false;
 a["ctx-dn"] = function () {
 if (self._focarProp(["it:dn", "ik:dn"], "Diâmetro/tamanho em Propriedades: escolha na lista (um Ctrl+Z desfaz).")) return true;
 var t = "Este elemento não tem diâmetro para trocar."; status(t); toast(t, "aviso"); return true;
+};
+a["ctx-girar90"] = function () {
+if (global.BimGirar90 && BimGirar90.girar(90)) return true;
+var t = "Selecione uma peça solta para girar (a porta e a janela seguem a parede)."; status(t); toast(t, "aviso"); return true;
 };
 a["ctx-sel-tipo"] = function () { return self._selPor("tipo"); };
 a["ctx-sel-cat"] = function () { return self._selPor("cat"); };
@@ -175761,6 +176693,7 @@ if (assin !== this._ctxAssin) {
 this._ctxAssin = assin;
 var cat = assin ? this.categoriaSelecao() : null;
 this.aplicarContexto(cat);
+if (global.BimGirar90) BimGirar90.atualizar();
 if (cat) s._raiz.setAttribute("data-fx-ctx", "1"); else s._raiz.removeAttribute("data-fx-ctx");
 }
 var self0 = this;
@@ -179494,6 +180427,7 @@ var acoes = [
 { sep: 1 },
 { a: "mover", r: "Mover", tecla: "MV", off: !(ed && mod) },
 { a: "copiar", r: "Copiar", tecla: "CO", off: !(ed && mod) },
+{ a: "girar90", r: "Girar 90°", tecla: "Espaço", off: !(ed && mod && global.BimGirar90 && BimGirar90.pode()) },
 { a: "elevar", r: "Elevar…", tecla: "EL", n: alvosN, off: !(ed && mod && global.BimElevarUI) },
 { a: "apoiar", r: "Apoiar em…", tecla: "AE", n: alvosN, off: !(ed && mod && global.BimApoiarUI) },
 { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
@@ -179549,6 +180483,7 @@ if (a === "ocultar-cat") return this.ocultarCategoria(it ? it.cat : null);
 if (a === "mostrar") return this.mostrarTodos();
 if (a === "mover") return this.comando("mover-preciso");
 if (a === "copiar") return this.comando("copiar");
+if (a === "girar90") return !!(global.BimGirar90 && BimGirar90.girar(90));
 if (a === "elevar") return this.comando("elevar");
 if (a === "apoiar") return this.comando("apoiar");
 if (a === "props") return this.propriedades();
