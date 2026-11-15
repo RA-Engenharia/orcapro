@@ -7611,8 +7611,9 @@ if (d2(Ab2, ponto) > EPS) K.trecho("vd-desct", "agua_fria", "pvc_descarga", DNd,
 }
 out.materiais.push({ item: "Válvula de descarga " + txt(tv.nome), fonte: bit ? bit.fonte : "" });
 out.materiais.push({ item: "Tubo PVC soldável DE " + de + " (bitola " + bit.bitola + "): coluna/ramal exclusivo acima da válvula", fonte: "NBR 5648 (DE × referência, biminst)" });
-out.materiais.push({ item: "Tubo de descarga para bacia DN" + BI().MATERIAIS.pvc_descarga.dn + " (PVC azul): da saída da válvula até a bacia", fonte: "kit da bacia com válvula; SINAPI sem composição (pendente)" });
-out.materiais.push({ item: "Curva de descarga DN" + BI().MATERIAIS.pvc_descarga.dn + " com anel de vedação", fonte: "kit de ligação da bacia (peça própria, não o joelho soldável); SINAPI sem composição (pendente)" });
+var hDesc = r4(Ad.y - ponto.y);
+out.materiais.push({ item: "Tubo de descida com joelho azul 1 1/2\" x 82 cm (com anéis)", fonte: "peça de catálogo (aecweb TVDV 120798; Krona acessórios 01/2023); SINAPI sem composição (pendente)" });
+if (hDesc > 0.82 + 1e-6) aviso("a descida da válvula à bacia pede " + f2(hDesc * 100) + " cm e a peça de catálogo tem 82 cm: cortar/emendar — a conferir");
 out.materiais.push({ item: "Ligação à entrada da bacia (espude/luva com anel)", fonte: "acessório da bacia; a conferir com o catálogo" });
 }
 decide("kit.valvula.ponto", "Válvula " + txt(tv.nome) + " a " + f2(aVD.valor) + " m (" + aVD.fonte.doc.split(",")[0] + ", p." + aVD.fonte.pagina + (aVD.conferencias.length ? "; " + aVD.conferencias.join("; ") : "") + ").");
@@ -16773,21 +16774,54 @@ partes.push(ac);
 return partes;
 }
 function geoValvula(P, q) {
-var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo (dentro da parede)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
-var E = P.emb > 0 ? P.emb : Pp * 0.55, rb = 0.030, rs = 0.0275;
-torno(cp.m, [[rs, H * 0.5], [rs, H * 0.5 - 0.03], [rb, H * 0.5 - 0.035], [rb, -H * 0.5 + 0.035], [rs * 0.72, -H * 0.5 + 0.03], [rs * 0.72, -H * 0.5]], q.n, { c: [0, 0, -E], eixo: [0, 1, 0] });
-torno(cp.m, [[0.020, 0], [0.020, E - 0.012], [0.025, E - 0.010], [0.025, E - 0.004]], q.n, { c: [0, 0, -E], eixo: [0, 0, 1] });
+var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo da base (latão fundido)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
+var E = P.emb > 0 ? P.emb : 0.075, zc = -E, zr = zc - 0.045, hT = H / 2, yB = -H / 2, rb = 0.026, k;
+torno(cp.m, [[0, 0], [0.016, 0], [0.0225, 0.002], [0.0252, 0.006], [rb, 0.012], [rb, 0.0735], [0.029, 0.0745], [0.0335, 0.0755], [0.034, 0.0765], [0.034, 0.0825], [0.0332, 0.083], [0, 0.083]], q.N, { c: [0, 0, zr], eixo: [0, 0, 1] });
+var rh = (rb * 2 * 0.6 / 2) / Math.cos(Math.PI / 6);
+torno(cp.m, [[0, 0], [0.0215, 0], [0.0215, hT - 0.0145], [0.0232, hT - 0.0132], [0.0215, hT - 0.0128], [0, hT - 0.0128]], q.N, { c: [0, 0, zc], eixo: [0, 1, 0] });
+torno(cp.m, [[rh * 0.97, hT - 0.0132], [rh, hT - 0.0125], [rh, hT - 0.0027], [rh * 0.9, hT - 0.0005], [0, hT - 0.0005]], 6, { c: [0, 0, zc], eixo: [0, 1, 0] });
+var rosca = parte("rosca", "Rosca fêmea da entrada", PRETO);
+torno(rosca.m, [[0.0105, hT - 0.0005], [0.0105, hT], [0, hT]], q.n, { c: [0, 0, zc], eixo: [0, 1, 0] });
+torno(cp.m, [[0, -0.014], [0.0155, -0.014], [0.0155, yB + 0.009], [0, yB + 0.009]], q.n, { c: [0, 0, zc], eixo: [0, 1, 0] });
+var pn = parte("porca-nylon", "Porca de nylon da saída (recartilhada)", BRANCO), nF = q.N >= 32 ? 72 : (q.N >= 20 ? 48 : 24), fr = nF / 4, Ro = 0.0285, Ri = 0.0165, y0 = yB, y1 = yB + 0.025;
+var perfN = [[Ri, y1, 0], [Ro - 0.0025, y1, 0], [Ro, y1 - 0.0025, 1], [Ro, y0 + 0.003, 1], [Ro - 0.002, y0, 0], [Ri, y0, 0]], aneisN = [];
+perfN.forEach(function (pq) {
+var pts = [], j, rr;
+for (j = 0; j < nF; j++) { var t = TAU * j / nF; rr = pq[0] - (pq[2] ? 0.0012 * (0.5 - 0.5 * Math.cos(fr * t)) : 0); pts.push([rr * Math.cos(t), pq[1], zc + rr * Math.sin(t)]); }
+aneisN.push(Q(pts, true));
+});
+loft(pn.m, aneisN, { fechado: true });
+var orelhas = [];
+[-1, 1].forEach(function (sx) {
+var oe = parte(sx < 0 ? "orelha-esq" : "orelha-dir", sx < 0 ? "Orelha de fixação esquerda" : "Orelha de fixação direita", LATAO);
+torno(oe.m, [[0.0025, 0], [0.0048, 0], [0.005, 0.0004], [0.005, 0.0036], [0.0048, 0.004], [0.0025, 0.004]], q.n + 4, { c: [sx * 0.04, 0, zr + 0.079], eixo: [0, 0, 1], fechado: true });
+caixaRz(oe.m, { x0: sx < 0 ? -0.0362 : 0.027, x1: sx < 0 ? -0.027 : 0.0362, y0: -0.0045, y1: 0.0045, z0: zr + 0.079, z1: zr + 0.083, r: 0.0008, rad: 0.0012 }, q);
+orelhas.push(oe);
+});
+var cs = parte("castelo", "Castelo do registro integrado", LATAO), hs = parte("haste", "Haste de acionamento", CROMO), ml = parte("mola", "Mola espiral", INOX), pq2 = parte("plaqueta", "Plaqueta cromada de acionamento", CROMO), pf = parte("parafuso", "Parafuso de latão", LATAO);
+torno(cs.m, [[0, 0.0825], [0.0198, 0.0825], [0.0205, 0.0832], [0.0205, 0.0975], [0.0185, 0.1003], [0.0125, 0.1005], [0, 0.1005]], q.N, { c: [0, 0, zr], eixo: [0, 0, 1] });
+torno(hs.m, [[0, 0.1003], [0.005, 0.1003], [0.005, 0.1165], [0, 0.1165]], q.n, { c: [0, 0, zr], eixo: [0, 0, 1] });
+var hel = [], nv = 4, pp = Math.max(8, q.n);
+for (k = 0; k <= nv * pp; k++) { var ta = TAU * k / pp; hel.push([0.0095 * Math.cos(ta), 0.0095 * Math.sin(ta), zr + 0.1003 + 0.0165 * k / (nv * pp)]); }
+tubo(ml.m, hel, 0.0011, Math.max(5, q.n - 6), { rc: 0 });
+caixaRz(pq2.m, { x0: -0.012, x1: 0.012, y0: -0.0085, y1: 0.0085, z0: zr + 0.1165, z1: zr + 0.1205, r: 0.0012, rad: 0.003 }, q);
+torno(pf.m, [[0, 0.1205], [0.0045, 0.1205], [0.0045, 0.1213], [0.0036, 0.122], [0, 0.122]], q.n, { c: [0, 0, zr], eixo: [0, 0, 1] });
+var base = [cp, rosca, pn, orelhas[0], orelhas[1], cs, hs, ml, pq2, pf];
 var A0 = acabHydra(P.cod), yc = A0 && A0.alav ? 0.028 : 0;
 if (A0) {
-acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp);
+acabamentoHydra(partes, ac, A0, yc, q); partes = base.concat(partes);
 partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });
 if (!A0.D) partes.push(decal("logo", "Deca", "#6F747B", [0, yc - A0.A * 0.4, (A0.placa || A0.P * 0.62) + 0.0002], [0, 0, 1], [1, 0, 0], A0.L * 0.2, A0.L * 0.05));
 return partes;
 }
-caixaRz(ac.m, { x0: -W / 2, x1: W / 2, y0: yc - H * 0.3, y1: yc + H * 0.3, z0: 0, z1: 0.008, r: 0.003, rad: W * 0.22 }, q);
-torno(ac.m, [[W * 0.24, 0], [W * 0.24, 0.006], [W * 0.22, 0.012], [W * 0.15, 0.016], [0, 0.017]], q.N, { c: [0, yc, 0.008], eixo: [0, 0, 1] });
-partes.push(cp, ac);
-return partes;
+var Dp = 0.11;
+if (P.acab === 1) caixaRz(ac.m, { x0: -Dp / 2, x1: Dp / 2, y0: yc - Dp / 2, y1: yc + Dp / 2, z0: 0, z1: 0.004, r: 0.0012, rad: 0.006 }, q);
+else torno(ac.m, [[Dp / 2, 0], [Dp / 2, 0.003], [Dp / 2 * 0.97, 0.004], [0, 0.004]], q.N, { c: [0, yc, 0], eixo: [0, 0, 1] });
+var bt0 = parte("botao", "Botão", CROMO);
+torno(bt0.m, [[0.0155, 0.0038], [0.0155, 0.007], [0.0135, 0.0092], [0.008, 0.0098], [0, 0.0098]], q.N, { c: [0, yc, 0], eixo: [0, 0, 1] });
+partes.push(ac, bt0);
+partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });
+return base.concat(partes);
 }
 var HYDRA = {
 "2553": { m: "Slim", L: 0.130, A: 0.130, P: 0.016, placa: 0.010, bt: "quadrado", kb: 0.23, pag: 437 },
@@ -17716,7 +17750,7 @@ porca_sextavada: geoPorcaSext, motobomba_bc: geoMotobombaBC, casa_reservatorios:
 };
 var ORCAMENTO = {
 bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1250, caixa_descarga_embutida: 1400,
+chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 5600, caixa_descarga_embutida: 1400,
 caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000, registro_tubo: 4000, reservatorio: 12500, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
 hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
 sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,
@@ -17824,6 +17858,16 @@ if (!base || mod === 0) return base;
 var hc = it && it.dim ? L("C")(it) : null, h = hc && hc.v >= CUBA_H.min && hc.v <= CUBA_H.max ? hc.v : CUBA_H.def;
 var fundo = mod === 1 ? h : h * SEMI_FUNDO;
 return { v: Math.max(base.v, Math.round((fundo + VALV_SIFAO) * 1000) / 1000), origem: "interpretado" };
+}
+function ENV_VD(eixo) {
+return function (it) {
+if (!Lou || !Lou.existe("valvula_descarga")) return null;
+var g = Lou.gerar("valvula_descarga", { W: 0.09, H: 0.089, P: 0.122, emb: 0.05, cod: it ? txt(it.codigo) : "" }, { nivel: 2 });
+if (!g || !g.ok) return null;
+var lo = 1e9, hi = -1e9, k = eixo, i;
+g.partes.forEach(function (p) { for (i = 0; i < p.v.length; i += 3) { lo = Math.min(lo, p.v[i + k]); hi = Math.max(hi, p.v[i + k]); } });
+return { v: Math.round((hi - lo) * 10000) / 10000, origem: "interpretado" };
+};
 }
 function DECADADO(cod, chave) { return function () { var r = regra(cod), v = r && r.dados ? r.dados[chave] : null; return typeof v === "number" ? { v: mm(v), origem: "interpretado" } : null; }; }
 function PONTO_MIC(letra) { return function (it) { var d = it.dim || {}; return typeof d[letra] === "number" && typeof d.D === "number" && typeof d.C === "number" ? { v: mm(d[letra] - (d.D - d.C)), origem: "interpretado" } : null; }; }
@@ -18045,19 +18089,23 @@ ESPECS.push(registro("hid-registro-pressao", "Registro de pressão", ["registro_
 ESPECS.push(registro("hid-registro-esfera", "Registro de esfera", ["registro_esfera"], "Registro de esfera, soldável e roscável."));
 ESPECS.push({
 id: "hid-valvula-descarga", nome: "Válvula de descarga", categoria: "acessorio_tubo", sistemas: ["agua_fria"], tipos: ["valvula_descarga"], volume: true,
-descricao: "Válvula de descarga Deca (Hydra e Slim). Origem = ponto da entrada de água; a bitola (DN32/DN40) é a do catálogo.",
+descricao: "Válvula de descarga Deca (Hydra e Slim). Origem = ponto da entrada de água; a bitola (DN32/DN40) é a do catálogo. Forma da BASE: ficha técnica da base de válvula de descarga 1 1/2\" embutida do fabricante (122 × 89 mm, orelhas a 80 mm, 90 mm de largura), enviada pelo usuário em 15/11/2026.",
 avisos: [AV_ESQ, "Vazão em L/s não consta do catálogo Deca (só o volume de descarga, em texto): fica por conta do motor de norma."],
 geo: [
-G("Largura", 0.1, null, null, "Largura do volume envolvente"),
-G("Altura", 0.2, null, null, "Altura do volume envolvente"),
-G("Profundidade", 0.1, null, null, "Projeção"),
+G("Largura", 0.09, null, ENV_VD(0), "Largura do volume envolvente: a base com as orelhas (ficha: 90 mm) ou a placa de acabamento do modelo, a maior"),
+G("Altura", 0.089, null, ENV_VD(1), "Altura do volume envolvente: a base (ficha: 89 mm) ou a placa de acabamento do modelo, a maior"),
+G("Profundidade", 0.122, null, ENV_VD(2), "Comprimento do volume envolvente: da face de trás do corpo (ficha: 122 mm até a ponta do acionador) à frente do acabamento do modelo"),
+X("Altura_base", "comprimento", 0.089, "Dimensões", "Altura total da BASE, do topo do sextavado ao pé da porca de nylon (ficha da base de válvula de descarga 1 1/2\": 89 mm); a entrada (topo) e a saída (pé) ficam nas pontas", null),
 I("Altura_acionamento", 0, DECADADO(D_VALV, "alturaDoAcionamentoDaValvula_mm"), "Altura do acionamento sobre o piso (dica de instalação Hydra, pág. 31)"),
 DN("DN_agua", function (it) { var c = arr(it.conectores)[0]; return c && typeof c.dn === "number" ? { v: c.dn, origem: "catalogo" } : null; }, "DN da entrada"),
+X("Formato_acabamento", "inteiro", 0, "Forma 3D", "Acabamento de parede quando não há o modelo do catálogo (Código): 0 = placa cromada redonda com botão, 1 = quadrada com botão"),
+X("Pressao_recomendada", "texto", "2 a 40 mca", "Instalação", "Pressão de serviço recomendada na ficha da base (informativo; o cálculo usa a norma e o catálogo)"),
+X("Instalacao_eixo", "texto", "1,10 a 1,20 m do piso", "Instalação", "Altura do eixo do acionador (ficha; informativo): tubo de descarga DN 40 (1 1/2\") até a bacia"),
 X("Embutir", "comprimento", 0.05, "Instalação", "Eixo do corpo atrás da face da parede (m): o kit passa o mesmo do tubo embutido. Válvula EM LINHA: entrada no topo do corpo, saída no pé, sem joelho")
 ],
 solidos: [{ id: "corpo", nome: "Volume envolvente", forma: "caixa", x: "0", y: "0", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
-conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "Altura*0.5", z: "-Embutir", papel: "entrada", dir: dv("cima"), origemPos: "extremidade", aConferir: "a ficha Deca só dá o acionamento; entrada no topo do corpo (em linha), proporção a conferir" },
-{ id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.5", z: "-Embutir", papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "pé do corpo, no mesmo prumo da entrada (sem cota no catálogo)" }], material: "Metal"
+conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "Altura_base*0.5", z: "-Embutir", papel: "entrada", dir: dv("cima"), origemPos: "extremidade", aConferir: "a ficha Deca só dá o acionamento; entrada no topo do corpo (em linha), proporção a conferir" },
+{ id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura_base*0.5", z: "-Embutir", papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "pé do corpo, no mesmo prumo da entrada (sem cota no catálogo)" }], material: "Metal"
 });
 ESPECS.push({
 id: "hid-caixa-descarga-embutida", nome: "Caixa de descarga embutida", categoria: "equipamento", sistemas: ["agua_fria"], tipos: ["caixa_descarga_embutida"], volume: true,
@@ -18441,10 +18489,21 @@ GEO_FAM["hid-registro-gaveta"] = geoRegistro("gaveta");
 GEO_FAM["hid-registro-pressao"] = geoRegistro("pressao");
 GEO_FAM["hid-registro-esfera"] = geoRegistro("esfera");
 GEO_FAM["hid-valvula-descarga"] = function () {
-return [cxs("placa", "Acabamento na parede", "0", "-Altura*0.4", "0.005", "Largura", "Altura", "0.01", CROMO),
-cil("botao", "Botão", "z", "0", "Altura*0.1", "0.01", "Largura*0.28", "0.015", CROMO),
-cil("tubo", "Tubo de ligação", "z", "0", "0", "0.01", "0.016", "Profundidade - 0.01", CROMO),
-cil("tubo-saida", "Tubo de saída (descarga)", "z", "0", "-Altura*0.4", "0.01", "0.016", "Profundidade - 0.01", CROMO)];
+var zr = "-Embutir-0.045";
+return [cil("corpo", "Corpo da base", "z", "0", "0", zr, "0.026", "0.083", "Latão"),
+cil("flange", "Flange do assento do castelo", "z", "0", "0", zr + "+0.0745", "0.034", "0.0085", "Latão"),
+cil("entrada", "Bocal de entrada (rosca fêmea)", "y", "0", "0", "-Embutir", "0.0215", "Altura_base*0.5-0.0125", "Latão"),
+cil("sextavado", "Sextavado da entrada", "y", "0", "Altura_base*0.5-0.0125", "-Embutir", "0.018", "0.0125", "Latão"),
+cil("saida", "Bocal de saída", "y", "0", "-Altura_base*0.5+0.009", "-Embutir", "0.0155", "Altura_base*0.5-0.009-0.014", "Latão"),
+cil("porca-nylon", "Porca de nylon da saída", "y", "0", "-Altura_base*0.5", "-Embutir", "0.0285", "0.025", "Branco"),
+cxs("orelha-esq", "Orelha de fixação esquerda", "-0.03125", "0", zr + "+0.081", "0.0275", "0.009", "0.004", "Latão"),
+cxs("orelha-dir", "Orelha de fixação direita", "0.03125", "0", zr + "+0.081", "0.0275", "0.009", "0.004", "Latão"),
+cil("castelo", "Castelo", "z", "0", "0", zr + "+0.0825", "0.0205", "0.018", "Latão"),
+cil("haste", "Haste de acionamento", "z", "0", "0", zr + "+0.1003", "0.005", "0.0162", CROMO),
+cxs("plaqueta", "Plaqueta cromada", "0", "0", zr + "+0.1185", "0.024", "0.017", "0.004", CROMO),
+cil("parafuso", "Parafuso de latão", "z", "0", "0", zr + "+0.1205", "0.0045", "0.0015", "Latão"),
+cxs("placa", "Acabamento na parede", "0", "0", "0.002", "0.11", "0.11", "0.004", CROMO),
+cil("botao", "Botão", "z", "0", "0", "0.004", "0.0155", "0.006", CROMO)];
 };
 GEO_FAM["hid-caixa-descarga-embutida"] = function () {
 return [cxs("corpo", "Caixa embutida", "0", "0", "-Espessura*0.075", "Largura", "Altura", "Espessura*0.85", "Branco"),
@@ -18584,7 +18643,7 @@ x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo,
 x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
 "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
 x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
-"hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade", emb: "Embutir", cod: "@Codigo" }, env: ["0", "0", "-Embutir/2", "Largura", "Altura", "Profundidade"], x: [] },
+"hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura_base", P: "Profundidade", emb: "Embutir", acab: "Formato_acabamento", cod: "@Codigo" }, env: ["0", "0", "-Embutir+0.016", "Largura", "Altura", "Profundidade"], x: [] },
 "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
 "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura", pf: "se(Peca_ficha; 1; 0)", dn: "se(DN_saida > 0; DN_saida; 50)" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
 x: [X("Peca_ficha", "simnao", false, "Forma 3D", "Corpo, grelha e bocas desenhados pelas cotas da ficha (o mesmo motor da peça do traçado, js/biminstgeo.js)"),

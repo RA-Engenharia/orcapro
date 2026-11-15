@@ -831,30 +831,72 @@
   }
   /* ---------- válvula de descarga: corpo no interior da parede, acabamento e botão ---------- */
   function geoValvula(P, q) {
-    var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo (dentro da parede)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
-    /* VÁLVULA EM LINHA (15/11/2026, print do Rogério: "por que tem esse joelho aqui? onde está a válvula de descarga?"): o corpo é VERTICAL
-       dentro da parede, no eixo do tubo embutido (z = −Embutir): a entrada (conector "af") é o TOPO do corpo (o prumo de água chega de cima,
-       sem joelho) e a saída (conector "descarga") o PÉ, na FACE da parede, de onde o tubo de descarga desce até a bacia. O acionamento (botão)
-       fica na origem (altura da tabela, "VD +1,10"). Cotas do corpo = proporção do volume esquemático (Altura 0,5 acima e abaixo = a envolvente): A CONFERIR
-       com o desenho cotado do fabricante (a ficha só cota a placa e o acionamento). */
-    var E = P.emb > 0 ? P.emb : Pp * 0.55, rb = 0.030, rs = 0.0275;   /* corpo Ø60 (a conferir); bolsa soldável DE 50 → Ø55 externo da bolsa */
-    torno(cp.m, [[rs, H * 0.5], [rs, H * 0.5 - 0.03], [rb, H * 0.5 - 0.035], [rb, -H * 0.5 + 0.035], [rs * 0.72, -H * 0.5 + 0.03], [rs * 0.72, -H * 0.5]], q.n, { c: [0, 0, -E], eixo: [0, 1, 0] });
-    /* castelo do registro integrado: da frente do corpo até a placa, no eixo do botão (y = 0) */
-    torno(cp.m, [[0.020, 0], [0.020, E - 0.012], [0.025, E - 0.010], [0.025, E - 0.004]], q.n, { c: [0, 0, -E], eixo: [0, 0, 1] });
-    /* SAÍDA: a bolsa do pé do corpo (z = −Embutir, y = −0,5 H, conector "descarga"): dali o TUBO DE DESCARGA (PVC azul DN 40) desce EMBUTIDO no
-       mesmo prumo, até a curva de descarga com anel perto do piso (js/hidkit.js) */
+    var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo da base (latão fundido)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
+    /* BASE DE VÁLVULA DE DESCARGA 1 1/2" EMBUTIDA (15/11/2026, ficha técnica da base enviada pelo Rogério; fonte: "ficha técnica da base de válvula de descarga
+       1 1/2" do fabricante", cotas em mm). Antes: um cilindro cinza e uma placa — o Rogério recusou. Agora a forma da ficha, em revolução/varredura:
+       vista lateral = 122 (da ponta do acionador à face de trás do corpo) × 89 (do topo do sextavado ao pé da porca de nylon); vista frontal = orelhas de
+       fixação com furos a 80 e largura total 90, flange redondo do assento do castelo centrado; mecanismo = castelo, mola espiral, haste e plaqueta cromada
+       com parafuso de latão. O corpo é um cilindro DEITADO no eixo do acionador (z, perpendicular à parede); o bocal de entrada (sextavado, rosca fêmea) sobe e a
+       saída (porca de nylon branca recartilhada) desce, os dois no MESMO prumo vertical (x = 0, z = −Embutir): os conectores "af" (topo) e "descarga" (pé)
+       ficam em ±H/2 — o kit não muda. A cota que a ficha não dá (diâmetro do corpo Ø52, porca Ø57, sextavado = 60 % do corpo, posição do prumo a 45 mm da
+       face de trás) é a PROPORÇÃO da figura: a conferir com a peça. As cotas do corpo são as da ficha e não escalam com W/P (só H leva o prumo: as hastes
+       dos bocais esticam). */
+    var E = P.emb > 0 ? P.emb : 0.075, zc = -E, zr = zc - 0.045, hT = H / 2, yB = -H / 2, rb = 0.026, k;
+    /* corpo cilíndrico deitado + flange redondo do assento do castelo (z crescente para a frente; zr = face de trás) */
+    torno(cp.m, [[0, 0], [0.016, 0], [0.0225, 0.002], [0.0252, 0.006], [rb, 0.012], [rb, 0.0735], [0.029, 0.0745], [0.0335, 0.0755], [0.034, 0.0765], [0.034, 0.0825], [0.0332, 0.083], [0, 0.083]], q.N, { c: [0, 0, zr], eixo: [0, 0, 1] });
+    /* bocal de entrada: colar redondo e SEXTAVADO no topo (largura entre faces = 60 % do corpo), com a rosca fêmea escura no furo */
+    var rh = (rb * 2 * 0.6 / 2) / Math.cos(Math.PI / 6);
+    torno(cp.m, [[0, 0], [0.0215, 0], [0.0215, hT - 0.0145], [0.0232, hT - 0.0132], [0.0215, hT - 0.0128], [0, hT - 0.0128]], q.N, { c: [0, 0, zc], eixo: [0, 1, 0] });
+    torno(cp.m, [[rh * 0.97, hT - 0.0132], [rh, hT - 0.0125], [rh, hT - 0.0027], [rh * 0.9, hT - 0.0005], [0, hT - 0.0005]], 6, { c: [0, 0, zc], eixo: [0, 1, 0] });
+    var rosca = parte("rosca", "Rosca fêmea da entrada", PRETO);
+    torno(rosca.m, [[0.0105, hT - 0.0005], [0.0105, hT], [0, hT]], q.n, { c: [0, 0, zc], eixo: [0, 1, 0] });
+    /* bocal de saída: o pescoço de latão que desce do corpo e entra na porca (a boca da saída fica recuada, dentro da porca) */
+    torno(cp.m, [[0, -0.014], [0.0155, -0.014], [0.0155, yB + 0.009], [0, yB + 0.009]], q.n, { c: [0, 0, zc], eixo: [0, 1, 0] });
+    /* PORCA DE NYLON branca recartilhada (frisos verticais), mais larga que o corpo; anel fechado (a saída passa pelo furo) */
+    var pn = parte("porca-nylon", "Porca de nylon da saída (recartilhada)", BRANCO), nF = q.N >= 32 ? 72 : (q.N >= 20 ? 48 : 24), fr = nF / 4, Ro = 0.0285, Ri = 0.0165, y0 = yB, y1 = yB + 0.025;
+    var perfN = [[Ri, y1, 0], [Ro - 0.0025, y1, 0], [Ro, y1 - 0.0025, 1], [Ro, y0 + 0.003, 1], [Ro - 0.002, y0, 0], [Ri, y0, 0]], aneisN = [];
+    perfN.forEach(function (pq) {
+      var pts = [], j, rr;
+      for (j = 0; j < nF; j++) { var t = TAU * j / nF; rr = pq[0] - (pq[2] ? 0.0012 * (0.5 - 0.5 * Math.cos(fr * t)) : 0); pts.push([rr * Math.cos(t), pq[1], zc + rr * Math.sin(t)]); }
+      aneisN.push(Q(pts, true));
+    });
+    loft(pn.m, aneisN, { fechado: true });
+    /* ORELHAS DE FIXAÇÃO: abas laterais com furo, centro dos furos a ±40 (80 entre furos), largura total 90, no plano do flange */
+    var orelhas = [];
+    [-1, 1].forEach(function (sx) {
+      var oe = parte(sx < 0 ? "orelha-esq" : "orelha-dir", sx < 0 ? "Orelha de fixação esquerda" : "Orelha de fixação direita", LATAO);
+      torno(oe.m, [[0.0025, 0], [0.0048, 0], [0.005, 0.0004], [0.005, 0.0036], [0.0048, 0.004], [0.0025, 0.004]], q.n + 4, { c: [sx * 0.04, 0, zr + 0.079], eixo: [0, 0, 1], fechado: true });
+      caixaRz(oe.m, { x0: sx < 0 ? -0.0362 : 0.027, x1: sx < 0 ? -0.027 : 0.0362, y0: -0.0045, y1: 0.0045, z0: zr + 0.079, z1: zr + 0.083, r: 0.0008, rad: 0.0012 }, q);
+      orelhas.push(oe);
+    });
+    /* MECANISMO FRONTAL: castelo, mola espiral, haste, plaqueta cromada de acionamento e parafuso de latão (a ponta do parafuso = 122 mm da face de trás) */
+    var cs = parte("castelo", "Castelo do registro integrado", LATAO), hs = parte("haste", "Haste de acionamento", CROMO), ml = parte("mola", "Mola espiral", INOX), pq2 = parte("plaqueta", "Plaqueta cromada de acionamento", CROMO), pf = parte("parafuso", "Parafuso de latão", LATAO);
+    torno(cs.m, [[0, 0.0825], [0.0198, 0.0825], [0.0205, 0.0832], [0.0205, 0.0975], [0.0185, 0.1003], [0.0125, 0.1005], [0, 0.1005]], q.N, { c: [0, 0, zr], eixo: [0, 0, 1] });
+    torno(hs.m, [[0, 0.1003], [0.005, 0.1003], [0.005, 0.1165], [0, 0.1165]], q.n, { c: [0, 0, zr], eixo: [0, 0, 1] });
+    var hel = [], nv = 4, pp = Math.max(8, q.n);
+    for (k = 0; k <= nv * pp; k++) { var ta = TAU * k / pp; hel.push([0.0095 * Math.cos(ta), 0.0095 * Math.sin(ta), zr + 0.1003 + 0.0165 * k / (nv * pp)]); }
+    tubo(ml.m, hel, 0.0011, Math.max(5, q.n - 6), { rc: 0 });
+    caixaRz(pq2.m, { x0: -0.012, x1: 0.012, y0: -0.0085, y1: 0.0085, z0: zr + 0.1165, z1: zr + 0.1205, r: 0.0012, rad: 0.003 }, q);
+    torno(pf.m, [[0, 0.1205], [0.0045, 0.1205], [0.0045, 0.1213], [0.0036, 0.122], [0, 0.122]], q.n, { c: [0, 0, zr], eixo: [0, 0, 1] });
+    var base = [cp, rosca, pn, orelhas[0], orelhas[1], cs, hs, ml, pq2, pf];
     var A0 = acabHydra(P.cod), yc = A0 && A0.alav ? 0.028 : 0;   /* botão na ORIGEM = altura do acionamento da tabela; no Conforto a alavanca (173 mm) pende abaixo do botão: sobe a placa para ela caber na envolvente */
     if (A0) {
-      acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp);
+      acabamentoHydra(partes, ac, A0, yc, q); partes = base.concat(partes);
       partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });   /* FAMÍLIAS R2: a placa plana saía preta com o cromado polido (js/bim.js FAM_PBR) */
       /* FAMÍLIAS R2: a marca "Deca" gravada no pé da placa (foto do Catálogo Válvulas Hydra, p.437); a Retrô (espelho redondo) não leva */
       if (!A0.D) partes.push(decal("logo", "Deca", "#6F747B", [0, yc - A0.A * 0.4, (A0.placa || A0.P * 0.62) + 0.0002], [0, 0, 1], [1, 0, 0], A0.L * 0.2, A0.L * 0.05));
       return partes;
     }
-    caixaRz(ac.m, { x0: -W / 2, x1: W / 2, y0: yc - H * 0.3, y1: yc + H * 0.3, z0: 0, z1: 0.008, r: 0.003, rad: W * 0.22 }, q);
-    torno(ac.m, [[W * 0.24, 0], [W * 0.24, 0.006], [W * 0.22, 0.012], [W * 0.15, 0.016], [0, 0.017]], q.N, { c: [0, yc, 0.008], eixo: [0, 0, 1] });
-    partes.push(cp, ac);
-    return partes;
+    /* sem o modelo do catálogo: acabamento de parede GENÉRICO, parâmetro Formato_acabamento (0 = placa cromada redonda, 1 = quadrada), botão no centro; na face da
+       parede (z ≥ 0), fina (a ficha: saliente no máximo 1 mm além da parede acabada, embutimento até 19 mm — a conferir com o acabamento escolhido) */
+    var Dp = 0.11;
+    if (P.acab === 1) caixaRz(ac.m, { x0: -Dp / 2, x1: Dp / 2, y0: yc - Dp / 2, y1: yc + Dp / 2, z0: 0, z1: 0.004, r: 0.0012, rad: 0.006 }, q);
+    else torno(ac.m, [[Dp / 2, 0], [Dp / 2, 0.003], [Dp / 2 * 0.97, 0.004], [0, 0.004]], q.N, { c: [0, yc, 0], eixo: [0, 0, 1] });
+    var bt0 = parte("botao", "Botão", CROMO);
+    torno(bt0.m, [[0.0155, 0.0038], [0.0155, 0.007], [0.0135, 0.0092], [0.008, 0.0098], [0, 0.0098]], q.N, { c: [0, yc, 0], eixo: [0, 0, 1] });
+    partes.push(ac, bt0);
+    partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });
+    return base.concat(partes);
   }
   /* FAMÍLIAS REAIS (07/11/2026): o ACABAMENTO da válvula pelo MODELO do tipo (o código Deca), com as cotas do desenho do
      Catálogo Válvulas Hydra (Deca, AECweb — págs. impressas 437 a 448): largura L × altura A da placa e a profundidade P
@@ -2020,7 +2062,7 @@
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1250, caixa_descarga_embutida: 1400,
+    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 5600, caixa_descarga_embutida: 1400,   /* 15/11/2026: a base da ficha (orelhas com furo, mola espiral, porca recartilhada, sextavado, castelo) — antes 1250 com o cilindro e a placa */
     caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,

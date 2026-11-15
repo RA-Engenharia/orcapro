@@ -94670,7 +94670,7 @@ pvc_soldavel: { nome: "PVC soldável (marrom)", norma: "ABNT NBR 5648", dns: [20
 pvc_esgoto: { nome: "PVC esgoto série normal", norma: "ABNT NBR 5688", dns: [40, 50, 75, 100, 150], dn: 100 },
 pvc_serie_r: { nome: "PVC série reforçada (R)", norma: "ABNT NBR 5688", dns: [40, 50, 75, 100, 150], dn: 100 },
 pvc_esgoto_enterrado: { nome: "PVC ocre enterrado (coletor/ramal predial)", norma: "ABNT NBR 7362:2025", dns: [100, 150, 200, 250, 300, 350, 400, 450, 500, 630, 710, 800, 900, 1000], dn: 150, semSinapi: true },
-pvc_descarga: { nome: "Tubo de descarga para bacia (PVC azul)", norma: "tubo de ligação da válvula de descarga (norma do produto a conferir)", dns: [40], dn: 40, semSinapi: true },
+pvc_descarga: { nome: "Tubo de descida da válvula para bacia (PVC branco, joelho azul)", norma: "peça de catálogo 'tubo de descida com joelho azul' 1 1/2\" x 82 cm (aecweb TVDV 120798; Krona acessórios 01/2023): norma do produto a conferir", dns: [40], dn: 40, semSinapi: true },
 ppr: { nome: "PPR (polipropileno)", norma: "ABNT NBR 15813", dns: [20, 25, 32, 40, 50, 63, 75, 90, 110], dn: 25, pns: ["12", "20", "25"], pn: "25" },
 cpvc: { nome: "CPVC", norma: "ABNT NBR 15884", dns: [15, 22, 28, 35, 42, 54, 73, 89, 114], dn: 22 },
 cobre: { nome: "Cobre rígido", norma: "ABNT NBR 13206", dns: [15, 22, 28, 35, 42, 54, 66, 79, 104], dn: 22, classes: ["E", "A"], classe: "E", isos: ["sem", "com"], iso: "sem" },
@@ -94773,7 +94773,7 @@ return !!(PM && PM.ref && material === "pvc_esgoto" && PM.ref("te_inspecao_esgot
 }
 function nomeConexao(tipo, material) {
 if (material === "eletrocalha") return { joelho90: "Curva 90° de eletrocalha", te: "Tê 90° de eletrocalha", reducao: "Redução de eletrocalha" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " de eletrocalha";
-if (material === "pvc_descarga") return { joelho90: "Curva de descarga com anel", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";
+if (material === "pvc_descarga") return { joelho90: "Joelho azul do tubo de descida com anéis", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";
 if (/^elet_/.test(material || "") && (tipo === "joelho90" || tipo === "joelho45")) return tipo === "joelho90" ? "Curva 90°" : "Curva 135° (desvio de 45°)";
 if (tipo === "reducao" && (material === "pvc_esgoto" || material === "pvc_serie_r" || material === "pvc_esgoto_enterrado")) return "Redução excêntrica";
 return NOMES_CONEXAO[tipo] || tipo;
@@ -98265,7 +98265,7 @@ pvc_esgoto: { cor: "#E2E2DE", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC
 fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série normal, págs. 22-23): mediana #E7E7E7 sob a luz da foto — branco frio, nunca o branco puro (antes: ficha Amanco, junção pág. 18, #E6DECC)" },
 pvc_serie_r: { cor: "#9DA39C", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC série reforçada cinza",
 fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série reforçada, pág. 24): mediana #A8ADA7 em 12 peças — cinza levemente esverdeado; NBR 5688:2018: série R cinza" },
-pvc_descarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC azul (tubo de descarga)", fonteCor: "azul do tubo de ligação da válvula de descarga (tom a conferir com a foto do produto)" },
+pvc_descarga: { cor: "#E6E6E1", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC branco (tubo de descida da válvula)", fonteCor: "tubo branco da peça de catálogo 'tubo de descida com joelho azul' (aecweb TVDV 120798; Krona acessórios 01/2023); tom a conferir com a foto do produto" },
 pvc_esgoto_enterrado: { cor: "#BF7638", rug: 0.58, met: 0, verniz: 0, env: 0.45, nome: "PVC ocre enterrado", fonteCor: "NBR 7362:2025, tubo ocre (tom a conferir com foto do produto)" },
 ppr: { cor: "#4F8A3C", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PPR verde", fonteCor: "verde da linha PPR (tom a conferir com foto da ficha)" },
 cpvc: { cor: "#E0D2AA", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "CPVC creme", fonteCor: "bege/creme da linha CPVC (tom a conferir com foto da ficha)" },
@@ -98292,6 +98292,7 @@ bronze: { cor: "#8A5634", rug: 0.8, met: 0.45, verniz: 0, nome: "bronze fundido 
 porca: { cor: "#3B3632", rug: 0.6, met: 0.3, verniz: 0, nome: "porca do castelo (escura)" },
 cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },
 volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
+azulDescarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "joelho azul do tubo de descida da válvula (com anéis)" },
 azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
 grelha: { cor: "#DADDE0", rug: 0.2, met: 1, verniz: 0, nome: "grelha inox" },
 pintura_incendio: { cor: "#B3201F", rug: 0.45, met: 0.1, verniz: 0.15, nome: "aço pintado de vermelho (IT 17 5.16.5)" },
@@ -98477,6 +98478,14 @@ guardar(k, rel);
 return g;
 }
 function conexao(c, eixos, o) {
+var g = conexaoCaching(c, eixos, o);
+if (g && c && c.material === "pvc_descarga" && g.partes) g.partes = g.partes.map(function (pt) {
+if (pt.papel && pt.papel !== "corpo") return pt;
+var q = {}; Object.keys(pt).forEach(function (k) { q[k] = pt[k]; }); q.papel = "azulDescarga"; return q;
+});
+return g;
+}
+function conexaoCaching(c, eixos, o) {
 if (!CACHE.ligado || !c || !eixos) return conexaoBruta(c, eixos, o);
 var oo = o || {}, TR = oo.trechos || null;
 var P = pv(c), ex = eixos.map(function (e) { var tr = TR && TR[e.trecho]; return { l: e.lado, d: e.dir, dn: e.dn, m: e.material, p: !!e.passante, x: tr && tr.excentrica ? tr.excentrica : null }; });
@@ -115382,7 +115391,7 @@ var TUBOS = [
 semMaterial: "O tubo de PVC roscável ainda não é material do OrçaPRO (falta a tabela de DN da norma e o mapa SINAPI): por ora, use o soldável." },
 { id: "af-ppr-pn12", nome: "AF_Tubo PPR - PN12", sistema: "agua_fria", material: "ppr", pn: "12" },
 { id: "af-cobre", nome: "AF_Tubo de Cobre", sistema: "agua_fria", material: "cobre" },
-{ id: "af-descarga", nome: "AF_Tubo de descarga p/ bacia (azul)", sistema: "agua_fria", material: "pvc_descarga" },
+{ id: "af-descarga", nome: "AF_Tubo de descida da válvula (branco, joelho azul)", sistema: "agua_fria", material: "pvc_descarga" },
 { id: "aq-cpvc", nome: "AQ_Tubo CPVC", sistema: "agua_quente", material: "cpvc" },
 { id: "aq-ppr-pn12", nome: "AQ_Tubo PPR - PN12", sistema: "agua_quente", material: "ppr", pn: "12" },
 { id: "aq-ppr-pn20", nome: "AQ_Tubo PPR - PN20", sistema: "agua_quente", material: "ppr", pn: "20" },

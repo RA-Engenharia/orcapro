@@ -134,7 +134,7 @@
        válvula de descarga até a bacia — PVC AZUL, DN 40 (1 1/2"), junta com anel de vedação, com a CURVA de descarga própria (peça do kit de ligação,
        diferente do joelho soldável). Sistema: água fria, a jusante da válvula. semSinapi: a SINAPI 06/2026 só tem "tubo de descarga tipo bengala" e a
        "ligação para vaso em plástico branco" (outros produtos) — pendente, nunca a parecida. A norma e as cotas do produto: a conferir com o catálogo. */
-    pvc_descarga: { nome: "Tubo de descarga para bacia (PVC azul)", norma: "tubo de ligação da válvula de descarga (norma do produto a conferir)", dns: [40], dn: 40, semSinapi: true },
+    pvc_descarga: { nome: "Tubo de descida da válvula para bacia (PVC branco, joelho azul)", norma: "peça de catálogo 'tubo de descida com joelho azul' 1 1/2\" x 82 cm (aecweb TVDV 120798; Krona acessórios 01/2023): norma do produto a conferir", dns: [40], dn: 40, semSinapi: true },
     ppr:          { nome: "PPR (polipropileno)", norma: "ABNT NBR 15813", dns: [20, 25, 32, 40, 50, 63, 75, 90, 110], dn: 25, pns: ["12", "20", "25"], pn: "25" },
     cpvc:         { nome: "CPVC", norma: "ABNT NBR 15884", dns: [15, 22, 28, 35, 42, 54, 73, 89, 114], dn: 22 },
     cobre:        { nome: "Cobre rígido", norma: "ABNT NBR 13206", dns: [15, 22, 28, 35, 42, 54, 66, 79, 104], dn: 22, classes: ["E", "A"], classe: "E", isos: ["sem", "com"], iso: "sem" },
@@ -309,7 +309,7 @@
   }
   function nomeConexao(tipo, material) {
     if (material === "eletrocalha") return { joelho90: "Curva 90° de eletrocalha", te: "Tê 90° de eletrocalha", reducao: "Redução de eletrocalha" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " de eletrocalha";   /* P12 */
-    if (material === "pvc_descarga") return { joelho90: "Curva de descarga com anel", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";   /* kit da bacia com válvula (15/11/2026) */
+    if (material === "pvc_descarga") return { joelho90: "Joelho azul do tubo de descida com anéis", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";   /* kit da bacia com válvula (15/11/2026) */
     if (/^elet_/.test(material || "") && (tipo === "joelho90" || tipo === "joelho45")) return tipo === "joelho90" ? "Curva 90°" : "Curva 135° (desvio de 45°)";
     /* a redução do ESGOTO e do PLUVIAL é a EXCÊNTRICA (geratriz superior alinhada — regra RA de 20/10/2026, js/biminstgeo.js); na água fica "Redução" */
     if (tipo === "reducao" && (material === "pvc_esgoto" || material === "pvc_serie_r" || material === "pvc_esgoto_enterrado")) return "Redução excêntrica";

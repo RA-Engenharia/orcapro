@@ -532,7 +532,7 @@
             var sobe = K.trecho("vd-ramal", "agua_fria", "pvc_soldavel", de, { x: Av.x, y: yTop, z: Av.z }, Av, "valvula", { continua: "p1" });
             if (aRG.ok && piso + aRG.valor > Av.y + geo(par, "margemNo") && piso + aRG.valor < yTop - geo(par, "margemNo")) K.acessorio("vd-rg", "ra-registro-gaveta", "acabamento", sobe, { x: Av.x, y: r4(piso + aRG.valor), z: Av.z }, "valvula");
             else if (aRG.ok) aviso("registro de gaveta da válvula não coube entre a válvula (" + f2(Av.y) + " m) e a espera (" + f2(yTop) + " m): ponha à mão");
-            /* TUBO DE DESCARGA (depois da válvula): PVC AZUL DN 40 (1 1/2"), material próprio (pvc_descarga) — NÃO é o marrom da coluna. Nasce na SAÍDA da
+            /* TUBO DE DESCARGA (depois da válvula): tubo de PVC BRANCO DN 40 (1 1/2") com o joelho do pé AZUL, material próprio (pvc_descarga) — NÃO é o marrom da coluna. Nasce na SAÍDA da
                válvula (conector "descarga", pé do corpo, mesmo prumo da entrada), desce embutido até a altura do tubo de ligação da bacia (BS) e ali faz a
                CURVA DE DESCARGA COM ANEL (peça própria do material) até o ponto da bacia. Sem o conector (família antiga) a ponta fica SOLTA e o
                verificador acusa — nunca "continua". */
@@ -545,8 +545,11 @@
             }
             out.materiais.push({ item: "Válvula de descarga " + txt(tv.nome), fonte: bit ? bit.fonte : "" });
             out.materiais.push({ item: "Tubo PVC soldável DE " + de + " (bitola " + bit.bitola + "): coluna/ramal exclusivo acima da válvula", fonte: "NBR 5648 (DE × referência, biminst)" });
-            out.materiais.push({ item: "Tubo de descarga para bacia DN" + BI().MATERIAIS.pvc_descarga.dn + " (PVC azul): da saída da válvula até a bacia", fonte: "kit da bacia com válvula; SINAPI sem composição (pendente)" });
-            out.materiais.push({ item: "Curva de descarga DN" + BI().MATERIAIS.pvc_descarga.dn + " com anel de vedação", fonte: "kit de ligação da bacia (peça própria, não o joelho soldável); SINAPI sem composição (pendente)" });
+            /* PEÇA ÚNICA DE CATÁLOGO (Rogério + pesquisa, 15/11/2026): "tubo de descida com joelho azul" — tubo de PVC BRANCO 1 1/2" (DN 40) de 82 cm com o
+               joelho 90° AZUL na ponta de baixo, já com anéis de vedação (aecweb, produto TVDV 120798; Krona, catálogo técnico de acessórios 01/2023). Entra UMA vez na lista. */
+            var hDesc = r4(Ad.y - ponto.y);
+            out.materiais.push({ item: "Tubo de descida com joelho azul 1 1/2\" x 82 cm (com anéis)", fonte: "peça de catálogo (aecweb TVDV 120798; Krona acessórios 01/2023); SINAPI sem composição (pendente)" });
+            if (hDesc > 0.82 + 1e-6) aviso("a descida da válvula à bacia pede " + f2(hDesc * 100) + " cm e a peça de catálogo tem 82 cm: cortar/emendar — a conferir");
             out.materiais.push({ item: "Ligação à entrada da bacia (espude/luva com anel)", fonte: "acessório da bacia; a conferir com o catálogo" });
           }
           decide("kit.valvula.ponto", "Válvula " + txt(tv.nome) + " a " + f2(aVD.valor) + " m (" + aVD.fonte.doc.split(",")[0] + ", p." + aVD.fonte.pagina + (aVD.conferencias.length ? "; " + aVD.conferencias.join("; ") : "") + ").");

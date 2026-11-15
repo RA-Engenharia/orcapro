@@ -344,7 +344,9 @@
     pvc_serie_r: { cor: "#9DA39C", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC série reforçada cinza",
                    fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série reforçada, pág. 24): mediana #A8ADA7 em 12 peças — cinza levemente esverdeado; NBR 5688:2018: série R cinza" },
     /* tubo de descarga da válvula (15/11/2026): AZUL de fábrica — não o azul do sistema de água fria da tela (#1E6FD9); tom a conferir com a foto do produto */
-    pvc_descarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC azul (tubo de descarga)", fonteCor: "azul do tubo de ligação da válvula de descarga (tom a conferir com a foto do produto)" },
+    /* tubo de descida da válvula (revisto 15/11/2026): o TUBO é de PVC BRANCO e só o JOELHO do pé é azul (papel "azulDescarga") — peça de catálogo "tubo de descida com joelho azul"
+       (aecweb, produto TVDV 120798; Krona, catálogo técnico de acessórios 01/2023): tom do branco e do azul a conferir com a foto do produto */
+    pvc_descarga: { cor: "#E6E6E1", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC branco (tubo de descida da válvula)", fonteCor: "tubo branco da peça de catálogo 'tubo de descida com joelho azul' (aecweb TVDV 120798; Krona acessórios 01/2023); tom a conferir com a foto do produto" },
     pvc_esgoto_enterrado: { cor: "#BF7638", rug: 0.58, met: 0, verniz: 0, env: 0.45, nome: "PVC ocre enterrado", fonteCor: "NBR 7362:2025, tubo ocre (tom a conferir com foto do produto)" },
     ppr: { cor: "#4F8A3C", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PPR verde", fonteCor: "verde da linha PPR (tom a conferir com foto da ficha)" },
     cpvc: { cor: "#E0D2AA", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "CPVC creme", fonteCor: "bege/creme da linha CPVC (tom a conferir com foto da ficha)" },
@@ -372,6 +374,7 @@
     porca: { cor: "#3B3632", rug: 0.6, met: 0.3, verniz: 0, nome: "porca do castelo (escura)" },
     cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },   /* LOTE 3-5: rug 0,1 / met 1 espelhava o chão escuro do ambiente e o cromado saía PRETO no print; rug 0,3 / met 0,85 = cromado polido com o reflexo difuso */
     volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
+    azulDescarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "joelho azul do tubo de descida da válvula (com anéis)" },
     azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
     grelha: { cor: "#DADDE0", rug: 0.2, met: 1, verniz: 0, nome: "grelha inox" },
     pintura_incendio: { cor: "#B3201F", rug: 0.45, met: 0.1, verniz: 0.15, nome: "aço pintado de vermelho (IT 17 5.16.5)" },
@@ -627,7 +630,17 @@
     guardar(k, rel);
     return g;
   }
+  /* JOELHO/CURVA DO TUBO DE DESCIDA DA VÁLVULA (15/11/2026): o tubo é BRANCO e a curva do pé é AZUL de fábrica, com anéis (peça de catálogo "tubo de descida com
+     joelho azul"): as peças do material pvc_descarga ganham o papel "azulDescarga" (o anel de borracha e as marcas ficam como estão) */
   function conexao(c, eixos, o) {
+    var g = conexaoCaching(c, eixos, o);
+    if (g && c && c.material === "pvc_descarga" && g.partes) g.partes = g.partes.map(function (pt) {
+      if (pt.papel && pt.papel !== "corpo") return pt;
+      var q = {}; Object.keys(pt).forEach(function (k) { q[k] = pt[k]; }); q.papel = "azulDescarga"; return q;
+    });
+    return g;
+  }
+  function conexaoCaching(c, eixos, o) {
     if (!CACHE.ligado || !c || !eixos) return conexaoBruta(c, eixos, o);
     /* o.trechos (o no() passa TODOS os trechos, com posição) só serve à redução excêntrica: entra na chave só a
        orientação dela em cada ramo — com o mapa inteiro a chave era única por lugar e enorme */
