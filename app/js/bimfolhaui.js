@@ -178,13 +178,15 @@
     desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
 
     /* o desenho de uma vista 2D, pronto para o viewport (cache da sessão; "Atualizar" refaz) */
-    desenho: function (vistaId, refazer, escala) {
+    desenho: function (vistaId, refazer, escala, semInst) {
       /* ⚠ O DESENHO É DA OBRA (revisão da Prancha Viva, 23/10/2026): o id da vista ("d2p-pav0", "d2c-…") se repete em toda
          obra, e o cache era só por id — abrir a obra A, trocar para a B e a folha da B mostrava a planta da A; o pacote do
          link da Prancha Viva levava essa imagem ao celular do cliente da obra B (tools/test-pranchaviva-rev.js [a]) */
       var obraK = this.obraKey();
       if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
-      var chave = escala ? vistaId + "@" + escala : vistaId;
+      /* `semInst` ("arquitetura" | "estrutural") vem do VIEWPORT da folha gerada (b.semInst), não da vista: a mesma vista pode estar numa folha sem tubo e noutra com */
+      var tagSI = semInst === "arquitetura" || semInst === "estrutural" ? semInst : "";
+      var chave = (escala ? vistaId + "@" + escala : vistaId) + (tagSI ? "#" + tagSI : "");
       if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
       var b2 = B2(), D = D2(); if (!b2 || !D) return null;
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
@@ -203,16 +205,21 @@
       try { var M6 = b2._p6 ? b2._p6() : null; if (comHidroF && M6 && M6.extraSvg && bruto.p6Estilos) exF = M6.extraSvg(vistaId, bruto, exF) || exF; } catch (eP6) {}
       /* CORES POR CATEGORIA: a folha sai SEM as cores, a menos que a vista peça "imprimir com as cores" (js/bimcorescatui.js) */
       try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
+      /* ARQUITETURA/ESTRUTURAL: o tubo sai dos DADOS (linhas, cortes, instalação desenhada) ANTES de desenhar — vale nos dois caminhos (com e sem a prévia P6) e a cota/enquadramento
+         já não veem o tubo. As penas do pedido (arquitetura) também nos dois: o caminho comum agrupa por categoria (exF.porCategoria) para o SVG carregar o data-cat. */
+      if (tagSI) an = this.semTuboDados(an);
+      if (tagSI === "arquitetura") exF.porCategoria = true;
       var res = D.svg(an, est, exF);
       /* `def`: a vista COMO ESTAVA ao desenhar (a Prancha Viva tira a matriz dela: desenho e matriz sempre da mesma vista) */
-      var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala, def: (function () { try { return clone(d); } catch (eDf) { return null; } })() };
+      var svgV = tagSI ? this.semInstalacao(res.svg) : res.svg; if (tagSI === "arquitetura") svgV = this.penasArq(svgV);   /* arquitetura: as penas do pedido */   /* só a vista GERADA como arquitetura/estrutural (diálogo) vai sem tubulação; a padrão da vista não decide */
+      var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: svgV, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala, def: (function () { try { return clone(d); } catch (eDf) { return null; } })() };
       this._desenhos[chave] = o;
       return o;
     },
     /* a chave do desenho de UMA cópia: com escala própria a anotação (texto, cota, marca) sai do tamanho certo
        naquela escala — o desenho é refeito nela, não esticado */
     chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
-    desenhoVp: function (b, refazer) { return b.escalaPropria ? this.desenho(b.vistaId, refazer, b.escala) : this.desenho(b.vistaId, refazer); },
+    desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst); },
     /* o quadro acompanha a escala e o tamanho da vista (o viewport É a vista); a cópia com escala própria
        segue a escala DELA */
     _sincronizar: function (a) {
@@ -675,7 +682,7 @@
       var g = this.G(), st = g && g._bimVxEst(), alvo = null;
       if (!st) return false;
       st.lista.forEach(function (v) { if (v.tipo === "folha") alvo = alvo || v.id; });
-      var self = this; Object.keys(this._desenhos).forEach(function (k) { if (k === self._ativada || k.indexOf(self._ativada + "@") === 0) delete self._desenhos[k]; });
+      var self = this; self._esquecerDesenhos(self._ativada);
       this._ativada = null;
       if (alvo) { g._bimVxAtivar(alvo); this.pintar(alvo); }
       return !!alvo;
@@ -984,7 +991,78 @@
      * Duas passadas: a 1ª escolhe a escala com folga (o desenho cresce um
      * pouco ao mudar de escala — textos e cotas são em mm de papel); a 2ª mede
      * o desenho já na escala escolhida e posiciona exato. */
-    vistasParaGerar: function () {
+    /* DISCIPLINA (15/11/2026). Roteiro do defeito: o "Gerar pranchas" abria com TODAS as vistas marcadas (arquitetura, estrutural, hidráulica, elétrica) e a folha de
+       arquitetura saía com a tubulação do hidro. Agora o diálogo abre só na disciplina escolhida (Arquitetura por padrão); vista de hidro/elétrica só entra quando a
+       disciplina dela é a escolhida (ou "todas"); e a vista de arquitetura/estrutural vai para a folha SEM as categorias de instalação (semInstalacao). */
+    DISCIPLINAS_INST: ["hidraulica", "eletrica", "mecanica"],
+    filtrarDisciplina: function (lista, disc) {
+      var d = String(disc || "").toLowerCase();
+      if (!d || d === "todas") return arr(lista);
+      return arr(lista).filter(function (v) { return String((v && v.disciplina) || "arquitetura").toLowerCase() === d; });
+    },
+    /* tira do SVG da vista o que é instalação (chave de estilo "|inst:" = tubo/conexão/caixa; "|fundo:" = louça em meio-tom da apresentação de instalação) e a imagem da cena
+       por baixo (data-d2-inst-img). O resto do desenho (parede, porta, cota, texto) fica byte a byte. */
+    semInstalacao: function (svg) {
+      return String(svg == null ? "" : svg)
+        .replace(/<path[^>]*data-cat="[^"]*\|(?:inst|fundo):[^"]*"[^>]*\/>/g, "")
+        .replace(/<image[^>]*data-d2-inst-img="[^"]*"[^>]*\/>/g, "");
+    },
+    /* QUEM TIRA O TUBO (15/11/2026, revisão 15/11): o VIEWPORT da folha gerada com disciplina "arquitetura" ou "estrutural" leva b.semInst (js/prancha.js guarda); a vista em si NÃO
+       é marcada (nada global, nada em localStorage): a mesma vista numa folha de hidro/"Todas" segue com o tubo. A disciplina PADRÃO da vista não decide. */
+    _esquecerDesenhos: function (id) {
+      var self = this; id = String(id);
+      Object.keys(this._desenhos).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0 || k.indexOf(id + "#") === 0) delete self._desenhos[k]; });
+    },
+    /* é tubo/conexão/caixa/louça de fundo da instalação? (a mesma regra do rótulo: user data da linha, classe IFC de tubulação e a chave de estilo "|inst:"/"|fundo:") */
+    _ehInstLinha: function (dados, i) {
+      var U = dados.linhasUd || [], I = dados.linhasIfc || [], K = dados.linhasK || [];
+      return !!((U[i] && U[i].inst) || /^IFC(PIPE|FLOW|DUCT|CABLE|VALVE)/.test(String(I[i] || "")) || /\|(?:inst|fundo):/.test(String(K[i] || "")));
+    },
+    _ehInstCorte: function (c) { return !!(c && (c.inst || /\|(?:inst|fundo):/.test(String(c.k || "")))); },
+    /* o `an` (dados anotados da vista) sem a instalação: cópia rasa com linhas/linhasK/linhasUd/linhasIfc/linhasFase filtradas pelo mesmo índice, cortes filtrados e `inst` (a linha unifilar
+       desenhada pela apresentação) retirada. O objeto original não muda (o da vista de hidro continua inteiro). */
+    semTuboDados: function (an) {
+      var self = this, o = {}; Object.keys(an || {}).forEach(function (k) { o[k] = an[k]; });
+      var L = arr(an && an.linhas), ficam = [];
+      L.forEach(function (l, i) { if (!self._ehInstLinha(an, i)) ficam.push(i); });
+      ["linhas", "linhasK", "linhasUd", "linhasIfc"].forEach(function (k) { if (Array.isArray(an[k]) && an[k].length === L.length) o[k] = ficam.map(function (i) { return an[k][i]; }); });
+      if (Array.isArray(an.cortes)) o.cortes = an.cortes.filter(function (c) { return !self._ehInstCorte(c); });
+      if (o.inst) o.inst = null;
+      return o;
+    },
+    /* tira do SVG da vista a imagem da cena por baixo da instalação (data-d2-inst-img) e, por segurança, o que ainda tenha chave "|inst:"/"|fundo:" (já saiu dos dados) */
+    semInstalacao: function (svg) {
+      return String(svg == null ? "" : svg)
+        .replace(/<path[^>]*data-cat="[^"]*\|(?:inst|fundo):[^"]*"[^>]*\/>/g, "")
+        .replace(/<image[^>]*data-d2-inst-img="[^"]*"[^>]*\/>/g, "");
+    },
+    /* PENAS DA ARQUITETURA NO CAMINHO DO BIM (etapa 2): os valores vêm de ArqEstilo.PENAS_ARQ (js/arqestilo.js, o único lugar). Reescreve `data-mm` (a pena de PAPEL que o js/pranchaui.js usa) e a cor
+       do traço por categoria: parede cortada (OST_Walls, corte) 0,35 mm · forro (OST_Ceilings) vermelho 223/0/0 a 0,13 mm · demais linhas de vista/projeção 0,13 mm. Não há categoria de
+       "revestimento" nem de "linha de chamada" no desenho 2D do BIM: ficam como estão (pendência registrada). Sem ArqEstilo carregado, devolve o SVG como veio. */
+    penasArq: function (svg, PA) {
+      var E = global.ArqEstilo; PA = PA || (E && E.PENAS_ARQ); if (!PA || !E || !E.hex) return String(svg == null ? "" : svg);
+      return String(svg == null ? "" : svg).replace(/<path\b[^>]*data-cat="([^"]*)"[^>]*>/g, function (tag, key) {
+        var cat = key.split("|")[0], cls = (/class="([^"]*)"/.exec(tag) || ["", ""])[1], mm = null, cor = null;
+        if (cat === "OST_Ceilings") { mm = PA.forro.mm; cor = E.hex(PA.forro.cor); }
+        else if (cat === "OST_Walls" && /d2-corte/.test(cls)) mm = PA.parede_cortada.mm;
+        else if (/d2-vista/.test(cls)) mm = PA.vista.mm;
+        if (mm == null) return tag;
+        tag = /data-mm="[^"]*"/.test(tag) ? tag.replace(/data-mm="[^"]*"/, 'data-mm="' + mm + '"') : tag.replace(/<path\b/, '<path data-mm="' + mm + '"');
+        if (cor) tag = /style="stroke:[^";]*/.test(tag) ? tag.replace(/style="stroke:[^";]*/, 'style="stroke:' + cor) : tag;
+        return tag;
+      });
+    },
+    discSemTubo: function (disc) { var d = String(disc || "").toLowerCase(); return d === "arquitetura" || d === "estrutural"; },
+    disciplinaDe: function (vistaId) {
+      var M = global.BimModeloVista, d = "arquitetura";
+      try { if (M && M.ativo && M.ativo() && M.itensVistas) M.itensVistas().forEach(function (it) { if (String(it.id) === String(vistaId) && it.disciplina) d = String(it.disciplina); }); } catch (e) {}
+      return d;
+    },
+    vistasParaGerar: function (disc) {
+      var lista = this._vistasParaGerar0();
+      return this.filtrarDisciplina(lista, disc);
+    },
+    _vistasParaGerar0: function () {
       var b2 = B2(), M = global.BimModeloVista, itens = []; if (!b2) return [];
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
       try { if (M && M.ativo && M.ativo() && M.itensVistas) itens = M.itensVistas(); } catch (e) { itens = []; }
@@ -1025,7 +1103,7 @@
         if (M && M.ativo && M.ativo()) { var v = M.vistaObj(id, b2.def(id)); if (v) v.escala = esc; }
         b2._gravar();
       } catch (x) { return false; }
-      delete this._desenhos[id];
+      this._esquecerDesenhos(id);
       try { if (b2._cache[id]) b2.redesenhar(id, false); } catch (e2) {}
       return true;
     },
@@ -1036,8 +1114,10 @@
       var podePv = !!(opts.pranchaViva && PR() && UI2() && PR().colocarViewport && PR().gerarJogo && global.PranchaVivaModulo && global.PranchaVivaModulo.liberado());
       if (!this.ativo() && !podePv) return null;
       var self = this, PRm = PR(), b2 = B2(), g = this.G();
-      var todas = this.vistasParaGerar(), ids = opts.vistas ? opts.vistas.map(String) : null;
+      var todas = this.vistasParaGerar(opts.disciplina), ids = opts.vistas ? opts.vistas.map(String) : null;
+
       var escolhidas = todas.filter(function (v) { return !ids || ids.indexOf(v.id) >= 0; });
+      var semInstGer = this.discSemTubo(opts.disciplina) ? String(opts.disciplina).toLowerCase() : "";   /* arquitetura/estrutural: os VIEWPORTS gerados levam b.semInst (sem tubo); "Todas"/Hidráulica/…: o tubo fica */
       if (!escolhidas.length) { toast("Nenhuma vista para pôr em folha: crie as plantas, os cortes ou as elevações (Navegador › Vistas).", "aviso"); return null; }
       /* FORMATO AUTOMÁTICO (23/10/2026, opts.formato "auto"): o menor formato (A3 → A0) onde tudo cabe em escala legível, e a escala
          travada por um modelo de vista RA (o que a vista criada já traz, não uma escolha) vira ponto de partida — desce a escala
@@ -1049,7 +1129,7 @@
       var outras = this.registros().filter(function (r) { return !reg.id || String(r.id) !== String(reg.id); }), soltas = [], avisoFormato = "";
       function vistas(fixas) {
         return escolhidas.filter(function (v) { return !fixas || fixas[v.id]; }).map(function (v) {
-          var trav = self.escalaTravada(v.id), dz = self.desenho(v.id, true), esc = fixas ? fixas[v.id] : self.escalaPadrao(v.tipo);
+          var trav = self.escalaTravada(v.id), dz = self.desenho(v.id, true, undefined, semInstGer), esc = fixas ? fixas[v.id] : self.escalaPadrao(v.tipo);
           if (trav) { try { esc = b2.estilo(v.id).escala; } catch (e) {} }
           return { id: v.id, nome: dz ? dz.nome : v.nome, tipo: v.tipo, disciplina: v.disciplina, ordem: v.ordem, escala: esc, fixa: !!fixas || (trav && !(auto && self.travaSolta(v.id))),
                    caixa: dz ? { w: dz.vb.w, h: dz.vb.h } : null };
@@ -1069,6 +1149,9 @@
       var r = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(r1.escalas), outras: outras, folga: 1 });
       r.puladas = r1.puladas.concat(r.puladas);
       var pr = r.prancha; pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+      /* a marca "sem tubo" mora no VIEWPORT gerado (folhas automáticas desta geração), não na vista */
+      var idsEsc = {}; escolhidas.forEach(function (v) { idsEsc[String(v.id)] = 1; });
+      pr.folhas.forEach(function (f) { if (!f.auto) return; (f.blocos || []).forEach(function (bl) { if (bl.tipo !== "viewport" || !idsEsc[String(bl.vistaId)]) return; if (semInstGer) bl.semInst = semInstGer; else delete bl.semInst; }); });
       if (!pr.id) delete pr.id;
       var salvo = this.salvarRegistro(pr); if (!salvo) return null;
       this._repintarTodas(); this._renomearAbas();
@@ -1108,22 +1191,33 @@
       var self = this, vs = this.vistasParaGerar(), reg = this.registros().filter(function (r) { return r.origem === "folhas"; })[0], f0 = (reg && reg.formato) || "A1";
       if (!vs.length) { toast("Nenhuma planta, corte ou elevação ainda: abra o modelo da obra e crie as vistas (Navegador › Vistas).", "aviso"); return false; }
       var DISC = { arquitetura: "Arquitetura", estrutural: "Estrutural", hidraulica: "Hidráulica", eletrica: "Elétrica", mecanica: "Mecânica", coordenacao: "Coordenação" };
+      /* DISCIPLINA: abre na Arquitetura (a 1ª que tem vista); só as vistas dela vêm marcadas. "Todas" é escolha explícita. */
+      var temDisc = {}; vs.forEach(function (v) { temDisc[v.disciplina] = 1; });
+      var disc0 = temDisc.arquitetura ? "arquitetura" : (Object.keys(temDisc)[0] || "arquitetura");
       var TIPO = { planta: "planta", corte: "corte", elevacao: "elevação" };
-      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Uma folha por planta; os cortes e as elevações juntos. Escala do Padrão de detalhamento (1:50) ou a maior que couber; carimbo do escritório; numeração código-nn. Gerar de novo <b>atualiza</b> as mesmas folhas (não duplica) e não mexe nas folhas feitas à mão.</p>' +
+      var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Escolha a <b>disciplina</b>: a folha de arquitetura não leva a tubulação do hidro. Uma folha por planta; os cortes e as elevações juntos. Escala do Padrão de detalhamento (1:50) ou a maior que couber; carimbo do escritório; numeração código-nn. Gerar de novo <b>atualiza</b> as mesmas folhas (não duplica) e não mexe nas folhas feitas à mão.</p>' +
         '<label style="font-size:12.5px">Formato <select id="pv-ger-formato">' + ["A0", "A1", "A2", "A3", "A4", "auto"].map(function (f) { return '<option value="' + f + '"' + (f === f0 ? " selected" : "") + ">" + (f === "auto" ? "Automático (o menor onde tudo cabe)" : f) + "</option>"; }).join("") + "</select></label>" +
+        ' <label style="font-size:12.5px;margin-left:12px">Disciplina <select id="pv-ger-disc">' + Object.keys(temDisc).map(function (k) { return '<option value="' + esc(k) + '"' + (k === disc0 ? " selected" : "") + ">" + esc(DISC[k] || k) + "</option>"; }).join("") + '<option value="todas">Todas</option></select></label>' +
         '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
-          return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
+          return '<label data-pv-disc="' + esc(v.disciplina) + '" style="display:' + (v.disciplina === disc0 ? "block" : "none") + ';font-size:12.5px;padding:2px 0"><input type="checkbox"' + (v.disciplina === disc0 ? " checked" : "") + ' data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
         }).join("") + "</div>";
       if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
       global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
         { texto: "Gerar", classe: this.temHidro() ? "" : "primary", onClick: function () {
           var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
-          var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-ger"); });
+          var dsel = (document.getElementById("pv-ger-disc") || {}).value || disc0;
+          var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { var lb = c.parentNode; return c.checked && (dsel === "todas" || (lb && lb.getAttribute("data-pv-disc") === dsel)); }).map(function (c) { return c.getAttribute("data-pv-ger"); });
           global.UI.fecharModal();
           if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
-          self.gerar({ formato: fm, vistas: ids });
+          self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
         } },
         { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));
+      /* trocar a disciplina mostra só as vistas dela e marca todas elas (as das outras ficam desmarcadas) */
+      setTimeout(function () {
+        var sel = document.getElementById("pv-ger-disc"); if (!sel) return;
+        function aplicar() { [].slice.call(document.querySelectorAll("[data-pv-disc]")).forEach(function (lb) { var vale = sel.value === "todas" || lb.getAttribute("data-pv-disc") === sel.value; lb.style.display = vale ? "block" : "none"; var c = lb.querySelector("input"); if (c) c.checked = vale; }); }
+        sel.addEventListener("change", aplicar);
+      }, 0);
       return true;
     },
     /* "Pranchas" (barra de título): onde ficam as folhas e o que fazer com elas */

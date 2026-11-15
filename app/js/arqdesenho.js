@@ -42,16 +42,16 @@
   /* CONVENÇÃO DE REFORMA DAS PRANCHAS: demolir amarelo e construir vermelho, parede cortada com preenchimento chapado (padrão, chave `cores`) */
   function conv() { return S.CONVENCAO; }
 
-  var PN = S.PENAS;
+  var PN = S.PENAS, PA = S.PENAS_ARQ, HX = S.hex;   /* PA = as penas do pedido (js/arqestilo.js): nenhum número de pena/cor dessas categorias mora neste arquivo */
   var K = {
-    pena: { corte: PN.parede_cortada, vista: PN.folha_de_esquadria, fina: PN.marcenaria_em_vista, cota: PN.linha_de_cota, hachura: PN.hachura, titulo: PN.sublinhado_titulo, moldura: PN.moldura_da_folha,
+    pena: { corte: PA.parede_cortada.mm, vista: PA.vista.mm, fina: PN.marcenaria_em_vista, cota: PN.linha_de_cota, hachura: PN.hachura, titulo: PN.sublinhado_titulo, moldura: PN.moldura_da_folha,
             movel: PN.mobiliario_em_planta, leader: PN.leader_de_nota, luminaria: PN.simbolo_luminotecnico,
             /* sem papel no padrão de interiores: pena da casa */
             divisa: 0.35, tabela: 0.25, telhado: 0.25, cumeeira: 0.5 },
     hLetra: { rotulo: S.TEXTOS.legenda, rotuloMenor: 2.2, vao: S.TEXTOS.legenda, nota: S.TEXTOS.nota_de_material },
     passoHachura: 1.6, margemCotas: 44 /* R01: 28 → 44 mm: cabem as cadeias até as divisas (recuos e lote inteiro) */,
-    cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: "#8a8a8a" /* R01: o manual de referência (pág. GRAFICAÇÃO): parede cinza escuro RGB 138 com contorno preto 0,35 */, pocheCinza: "#bdbdbd",
-    tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: S.TRACEJADO
+    cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: HX(PA.parede_cortada.poche) /* R01: o manual de referência (pág. GRAFICAÇÃO): parede cinza escuro RGB 138 com contorno preto 0,35 */, pocheCinza: "#bdbdbd",
+    tracoEixo: PA.chamada.traco, tracoOculta: S.TRACEJADO
   };
 
   /* ------------------------------------------------------------ ESTILO (camadas ARQ-* sobre o estilo da casa) */
@@ -60,18 +60,18 @@
     function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || PRETO }; }
     /* parede cortada: contorno 0,30 preto por cima do preenchimento (cor da convenção) */
     cam("ARQ-PAREDE", K.pena.corte, PRETO); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, cEx);
-    cam("ARQ-PAREDE-NOVO", K.pena.corte, PRETO); cam("ARQ-PAREDE-DEMOLIDO", K.pena.corte, PRETO);
+    cam("ARQ-PAREDE-NOVO", K.pena.corte, PRETO); cam("ARQ-PAREDE-DEMOLIDO", K.pena.corte, PRETO, C.demolido.tracejado);   /* o que sai: amarelo (fill) e contorno TRACEJADO */
     /* esquadria: batente 0,30 (bancada_e_batente), folha 0,09, arco de giro em cabelo; novo em vermelho, demolido tracejado, existente na cor do existente */
     cam("ARQ-BATENTE", PN.bancada_e_batente, PRETO); cam("ARQ-BATENTE-EXISTENTE", PN.bancada_e_batente, cEx); cam("ARQ-BATENTE-NOVO", PN.bancada_e_batente, C.novo.cor); cam("ARQ-BATENTE-DEMOLIDO", PN.bancada_e_batente, PRETO, S.TRACEJADO);
     cam("ARQ-VAO", K.pena.vista, PRETO); cam("ARQ-VAO-EXISTENTE", K.pena.vista, cEx); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, PRETO, S.TRACEJADO);
     cam("ARQ-ARCO", K.pena.cota, PRETO); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, PRETO, S.TRACEJADO);
     cam("ARQ-MOVEL", K.pena.movel, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.movel, K.cinzaLouca);
     cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.cor); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
-    cam("ARQ-DIVISA", K.pena.divisa, PRETO, K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, PRETO, K.tracoEixo); cam("ARQ-OCULTA", K.pena.cota, PRETO, K.tracoOculta);
-    cam("ARQ-TELHADO", K.pena.telhado, PRETO); cam("ARQ-CUMEEIRA", K.pena.cumeeira, PRETO); cam("ARQ-ESPIGAO", 0.35, PRETO); cam("ARQ-BEIRAL", K.pena.cota, PRETO, K.tracoOculta);
-    cam("ARQ-CORTE", 0.35, PRETO, K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, PRETO); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a"); cam("ARQ-FINA", K.pena.fina, PRETO);
-    cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.leader, PRETO); cam("ARQ-SIMBOLO", K.pena.fina, PRETO);
-    cam("ARQ-FORRO", 0.35, PRETO); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.luminaria, S.CORES.luminotecnico); cam("ARQ-SANCA", K.pena.cota, PRETO, K.tracoOculta);
+    cam("ARQ-DIVISA", K.pena.divisa, PRETO, K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, PRETO, K.tracoEixo); cam("ARQ-OCULTA", PA.vista.mm, PRETO, K.tracoOculta);
+    cam("ARQ-TELHADO", K.pena.telhado, PRETO); cam("ARQ-CUMEEIRA", K.pena.cumeeira, PRETO); cam("ARQ-ESPIGAO", 0.35, PRETO); cam("ARQ-BEIRAL", PA.vista.mm, PRETO, K.tracoOculta);
+    cam("ARQ-CORTE", PA.chamada.mm, HX(PA.chamada.cor), PA.chamada.traco); cam("ARQ-NIVEL", K.pena.fina, PRETO); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a"); cam("ARQ-FINA", K.pena.fina, PRETO);
+    cam("ARQ-PISO", PA.revestimento.mm, HX(PA.revestimento.cor)); cam("ARQ-PISO-RECORTE", PA.revestimento.mm, "#c00000"); cam("ARQ-LIDER", K.pena.leader, PRETO); cam("ARQ-SIMBOLO", K.pena.fina, PRETO);
+    cam("ARQ-FORRO", PA.forro.mm, HX(PA.forro.cor)); cam("ARQ-FORRO-HACHURA", K.pena.hachura, HX(PA.forro.hachura)); cam("ARQ-HACHURA-PAREDE", K.pena.hachura, HX(PA.parede_cortada.hachura)); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.luminaria, S.CORES.luminotecnico); cam("ARQ-SANCA", K.pena.cota, PRETO, K.tracoOculta);
     cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, PRETO); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
     cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, PRETO); cam("ARQ-MOLDURA", K.pena.moldura, PRETO);
     cam("ARQ-QUADRO", PN.moldura_interna, PRETO); cam("ARQ-QUADRO-DIV", PN.linha_de_cota, PRETO);
@@ -82,7 +82,7 @@
   }
 
   /* ------------------------------------------------------------ O DESENHO (AcoPranchas.Desenho + marcas para a conferência) */
-  var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO|ARQ-QUADRO)/;
+  var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-FORRO-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO|ARQ-QUADRO)/;
   function novo(E, depurar) {
     var A = AP(), caixas = depurar === false ? null : [], D = new A.Desenho(E, caixas);
     D.sgc = []; D._cam = null; D.K = K; D.fundoCam = {};
@@ -199,7 +199,7 @@
     }
     if (modo === "fantasma") return { cam: "ARQ-CONTEXTO", fill: "#ececec", hach: null, fator: 1 };
     if (modo === "humanizada") return { cam: "ARQ-HUM", fill: "#3a3a3a", hach: null, fator: 1 };
-    return { cam: "ARQ-PAREDE", fill: K.pocheEscuro, hach: null, fator: 2 };
+    return { cam: "ARQ-PAREDE", fill: K.pocheEscuro, hach: "ARQ-HACHURA-PAREDE", fator: 2 };
   }
   /* ENCONTROS FECHADOS (R01, 29/10/2026 — pedido do Rogério na Casa 487: "os encontros das paredes precisam estar fechadinhos").
      Cada parede chega aqui como um retângulo eixo ± meia espessura; no canto em L as duas terminam no cruzamento dos EIXOS e
@@ -245,9 +245,63 @@
     });
   }
   /* as paredes em poché: contorno largo + miolo (a passada 2 apaga a metade de dentro do contorno e as emendas) */
-  function paredesPlanta(D, M, paredes, modo) {
+  /* A PAREDE ABRE NO VÃO (15/11/2026). Roteiro do defeito: o vão era só uma máscara BRANCA desenhada POR CIMA da parede inteira (vaosPlanta → fundoPol "#fff"). No SVG da tela parecia aberto, mas no
+     DXF/DWG a máscara vira um polígono sem preenchimento e a parede (contorno, poché/HATCH) passava contínua pelo vão, com a folha e o arco por cima. Agora a geometria da parede é RECORTADA nos vãos
+     ANTES de desenhar: cada parede com vão vira trechos (retângulos entre os vãos), cada trecho com o contorno fechado (as ombreiras) e a hachura própria; sem máscara. A parede de `emendarParedes`
+     é sempre um retângulo (retCaixa): eixo = o 1º lado, espessura = o 2º. O vão só corta a parede do seu id (v.parede) e que ele toque (a distância lateral ao eixo cabe na espessura). */
+  function cortarParedesNosVaos(paredes, vaos, cortados) {   /* cortados (opcional): recebe os vãos que de fato abriram a SUA parede (só esses dispensam a máscara) */
+    var G = GEO(), por = {}, out = [];
+    arr(vaos).forEach(function (v) { if (v && v.parede != null && num(v.largura, 0) > 0) (por[v.parede] = por[v.parede] || []).push(v); });
+    /* retângulos dos vãos no plano (a parede dona do vão dá o eixo e a espessura): uma OUTRA parede cuja ponta entra nesse retângulo (T de parede que morre no vão) também é aparada na ponta */
+    var retVaos = [], porId = {};
+    arr(paredes).forEach(function (w) { if (w && w.id != null) porId[w.id] = w; });
+    arr(vaos).forEach(function (v) {
+      var W0 = v && porId[v.parede], Q = W0 && W0.pts; if (!Q || Q.length !== 4 || !(num(v.largura, 0) > 0)) return;
+      var fx = [Q[1][0] - Q[0][0], Q[1][1] - Q[0][1]], fy = [Q[2][0] - Q[1][0], Q[2][1] - Q[1][1]], fl = Math.sqrt(fx[0] * fx[0] + fx[1] * fx[1]), ft = Math.sqrt(fy[0] * fy[0] + fy[1] * fy[1]);
+      if (!(fl > 0.05) || !(ft > 0.01)) return;
+      var ux = fx[0] / fl, uz = fx[1] / fl, nx = fy[0] / ft, nz = fy[1] / ft, h = num(v.largura, 0) / 2, hv = ft / 2, cx = num(v.x, 0), cz = num(v.z, 0);
+      retVaos.push({ id: v.parede, c: [[cx - ux * h - nx * hv, cz - uz * h - nz * hv], [cx + ux * h - nx * hv, cz + uz * h - nz * hv], [cx + ux * h + nx * hv, cz + uz * h + nz * hv], [cx - ux * h + nx * hv, cz - uz * h + nz * hv]] });
+    });
+    arr(paredes).forEach(function (w) {
+      var vs = por[w.id], P = w.pts;
+      if (!P || P.length !== 4 || (!vs && !retVaos.length)) { out.push(w); return; }
+      vs = vs || [];
+      var ex = [P[1][0] - P[0][0], P[1][1] - P[0][1]], ey = [P[2][0] - P[1][0], P[2][1] - P[1][1]], Lw = Math.sqrt(ex[0] * ex[0] + ex[1] * ex[1]), t = Math.sqrt(ey[0] * ey[0] + ey[1] * ey[1]);
+      if (!(Lw > 0.05) || !(t > 0.01)) { out.push(w); return; }
+      var u = [ex[0] / Lw, ex[1] / Lw], nv = [ey[0] / t, ey[1] / t], c = [(P[0][0] + P[2][0]) / 2, (P[0][1] + P[2][1]) / 2], cortes = [];
+      vs.forEach(function (v) {
+        var rx = num(v.x, 0) - c[0], rz = num(v.z, 0) - c[1], s0 = rx * u[0] + rz * u[1], lat = rx * nv[0] + rz * nv[1];
+        if (Math.abs(lat) > t / 2 + 0.05) return;
+        var h = num(v.largura, 0) / 2, a = Math.max(-Lw / 2, s0 - h), b = Math.min(Lw / 2, s0 + h);
+        if (b - a > 0.001) { cortes.push([a, b]); if (cortados && cortados.indexOf(v) < 0) cortados.push(v); }
+      });
+      retVaos.forEach(function (rv) {
+        if (rv.id === w.id) return;
+        var smin = 1e9, smax = -1e9, lmin = 1e9, lmax = -1e9;
+        rv.c.forEach(function (p) { var rx = p[0] - c[0], rz = p[1] - c[1], s1 = rx * u[0] + rz * u[1], l1 = rx * nv[0] + rz * nv[1]; smin = Math.min(smin, s1); smax = Math.max(smax, s1); lmin = Math.min(lmin, l1); lmax = Math.max(lmax, l1); });
+        if (lmax < -t / 2 + 0.001 || lmin > t / 2 - 0.001) return;     /* não toca a espessura desta parede */
+        if (smax < -Lw / 2 + 0.001 || smin > Lw / 2 - 0.001) return;   /* fora do comprimento */
+        var a = Math.max(-Lw / 2, smin - 0.004), b = Math.min(Lw / 2, smax + 0.004);
+        if (a <= -Lw / 2 + 0.002 || b >= Lw / 2 - 0.002) { if (b - a > 0.001 && b - a < Lw - 0.05) cortes.push([a, b]); }   /* só ponta */
+      });
+      if (!cortes.length) { out.push(w); return; }
+      cortes.sort(function (p, q) { return p[0] - q[0]; });
+      var rotY = Math.atan2(-u[1], u[0]), cur = -Lw / 2;
+      function trecho(s1, s2) {
+        if (s2 - s1 <= 0.001) return;
+        var m = (s1 + s2) / 2, o = {}; Object.keys(w).forEach(function (k) { o[k] = w[k]; });
+        o.pts = G.retCaixa(c[0] + u[0] * m, c[1] + u[1] * m, s2 - s1, t, rotY); o.cortadaNosVaos = true;
+        out.push(o);
+      }
+      cortes.forEach(function (q) { if (q[0] > cur) trecho(cur, q[0]); if (q[1] > cur) cur = q[1]; });
+      trecho(cur, Lw / 2);
+    });
+    return out;
+  }
+  function paredesPlanta(D, M, paredes, modo, vaos) {
     var grupos = {};
     paredes = emendarParedes(paredes);
+    if (vaos && ArqDesenho.cortarVaos !== false) { D._vaosCortados = D._vaosCortados || []; paredes = cortarParedesNosVaos(paredes, vaos, D._vaosCortados); }   /* a lista é POR VÃO: parede oblíqua/recortada (≠ 4 pontos) não é cortada e o vão dela mantém a máscara */
     paredes.forEach(function (w) { (grupos[w.status] = grupos[w.status] || []).push(w); });
     Object.keys(grupos).sort(function (a, b) { return ordemFase(a) - ordemFase(b); }).forEach(function (st) {
       var es = estiloParede(modo, st), G = GEO(), L = grupos[st];
@@ -257,7 +311,7 @@
         D.add('<polygon points="' + pts(P) + '" fill="' + es.fill + '"' + atr(D, es.cam, es.fator) + ' data-w="' + esc(w.id) + '"/>');
       });
       if (es.fator > 1) L.forEach(function (w) { fundoPol(D, polyPapel(M, w.pts), es.fill); });
-      if (es.hach) L.forEach(function (w) {
+      if (es.hach && typeof D.linha === "function") L.forEach(function (w) {
         var P = polyPapel(M, w.pts);
         G.hachuraLinhas(P, K.passoHachura, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], es.hach); });
       });
@@ -305,7 +359,7 @@
       var th = num(v.rotY, w.rotY), cs = Math.cos(th), sn = Math.sin(th), u = [cs, -sn], nv = [sn, cs], h = v.largura / 2, e2 = w.espessura / 2 + 0.003;
       function Q(a, b) { return M.P(v.x + u[0] * a + nv[0] * b, v.z + u[1] * a + nv[1] * b); }
       var gap = [Q(-h, -e2), Q(h, -e2), Q(h, e2), Q(-h, e2)];
-      fundoPol(D, gap, "#fff");
+      if (!(D._vaosCortados && D._vaosCortados.indexOf(v) >= 0)) fundoPol(D, gap, "#fff");   /* só o vão que abriu a parede dispensa a máscara; o que não foi cortado mantém */
       var camB = camVao(modo, v.status, "ARQ-VAO"), camA = v.status === "novo" && modo === "demolir" ? "ARQ-ARCO-NOVO" : (v.status === "demolido" && modo === "demolir" ? "ARQ-ARCO-DEMOLIDO" : "ARQ-ARCO");
       var camJ = camVao(modo, v.status, "ARQ-BATENTE");   /* o batente em pena de bancada/batente; a folha e as linhas da janela em pena de esquadria */
       D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camJ); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camJ);
@@ -751,7 +805,7 @@
   }
 
   var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cotaTxt: cotaTxt, cm1: cotaTxt, escalaCota: escalaCota, titulo: titulo, nivelTxt: nivelTxt, esc: esc, n: n,
-    rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, cotasDivisas: cotasDivisas, niveisAmbientes: niveisAmbientes, rotuloLivre: rotuloLivre, mascara: mascara, emendarParedes: emendarParedes, rotulosMuros: rotulosMuros, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
+    rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, cortarParedesNosVaos: cortarParedesNosVaos, cortarVaos: true, cotasDivisas: cotasDivisas, niveisAmbientes: niveisAmbientes, rotuloLivre: rotuloLivre, mascara: mascara, emendarParedes: emendarParedes, rotulosMuros: rotulosMuros, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
     rotulosAmbientes: rotulosAmbientes, etiquetasVaos: etiquetasVaos, norte: norte, escalaGrafica: escalaGrafica, marcaCorte: marcaCorte, escolherLinhaCorte: escolherLinhaCorte, colunaNotas: colunaNotas, conferir: conferir,
     estiloParede: estiloParede, conv: conv, S: S, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
   global.ArqDesenho = ArqDesenho;

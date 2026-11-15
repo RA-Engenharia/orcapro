@@ -300,7 +300,8 @@
       var b0 = blocos[q.id]; if (!b0 || !b0.box) return;
       var b = o.numerar === false ? b0 : renumerar(b0, pos[q.id]);
       var X = area.x + q.x, Y = area.y + q.y, dx = X - b.box[0], dy = Y - b.box[1], s = deslocarBloco(b, dx, dy);
-      D.s.push('<g data-bloco="' + q.id.replace(/"/g, "'") + '" data-x="' + n3(X) + '" data-y="' + n3(Y) + '" data-w="' + n3(q.w) + '" data-h="' + n3(q.h) + '">');
+      var escB = o.escalas && /^1\s*:\s*\d+$/.test(String(o.escalas[q.id] || "")) ? ' data-escala="' + String(o.escalas[q.id]).replace(/\s/g, "") + '"' : "";   /* o arquivo CAD único (js/arqcad.js) lê a escala do desenho daqui */
+      D.s.push('<g data-bloco="' + q.id.replace(/"/g, "'") + '" data-x="' + n3(X) + '" data-y="' + n3(Y) + '" data-w="' + n3(q.w) + '" data-h="' + n3(q.h) + '"' + escB + '>');
       s.s.forEach(function (p) { D.s.push(p); });
       D.s.push("</g>");
       s.sg.forEach(function (g, i) { D.sg.push(g); D.sgc[D.sg.length - 1] = s.sgc[i]; });

@@ -49,7 +49,7 @@
   /* o objeto de opções do ArqPranchas.gerar: a configuração + o CARIMBO (empresa, RT, obra) */
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = AQ().normalizarConfig(cfg);
-    var o = { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
+    var o = { jogo: c.jogo, pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
       arranjo: c.arranjo, fixos: c.fixos, arranjoFormato: c.arranjoFormato, formatosFolha: c.formatosFolha, interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
       empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
       obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
@@ -96,6 +96,7 @@
     var A = AQ(), em = ctx.empresa || {}, ob = ctx.obra || {}, L = cfg.limites || {}, mun = IX().MUNICIPIOS;
     var h = '<div data-arq="tela" data-modal-largo="1" style="max-height:72vh;overflow:auto;padding-right:4px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Folha e escala</b></legend>' +
+      '<label>Jogo <select data-arq="jogo"><option value="executivo"' + (cfg.jogo !== "legal" ? " selected" : "") + '>Executivo (layout, forro, piso, esquadrias, humanizada…)</option><option value="legal"' + (cfg.jogo === "legal" ? " selected" : "") + '>Legal / prefeitura (situação, demolir/construir, planta, cortes, fachadas)</option></select></label><br>' +
       '<label>Folha <select data-arq="formato">' + A.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (menos folhas, ocupação ≥ 55 %)" : f) + "</option>"; }).join("") + "</select></label><br>" +
       '<label>Escala da planta <select data-arq="escala">' + ["auto", "50", "75", "100"].map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (1:50 se couber)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
       '<label><input type="checkbox" data-arq="cotasint"' + marcado(cfg.cotasInternas) + "> Cotas internas dos ambientes</label></fieldset>";
@@ -117,7 +118,10 @@
       A.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-arq-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(A.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") + "</fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Carimbo e saída</b></legend>' +
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "(sem obra selecionada)") + "</div>" +
-      '<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label>' +
+      '<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label><label style="display:block"><input type="checkbox" data-arq-out="cad"> Arquivo CAD único (ZIP: DXF com um layout por folha + CTB das penas)</label>' +
+      '<label style="display:block"><input type="checkbox" data-arq-out="dwg" disabled> <span data-arq="dwg-rotulo">DWG (ZIP: DWG R2000 com um layout por folha + CTB + LEIA-ME)</span></label><div class="muted" data-arq="dwg-aviso" style="font-size:12px;margin:0 0 4px 22px">Verificando se este computador gera DWG…</div>' +
+      '<div style="margin:2px 0 6px 0"><button type="button" class="btn ghost" data-arq="instalar-ctb">Instalar penas RA no AutoCAD</button> <span class="muted" data-arq="ctb-msg" style="font-size:12px">O AutoCAD só acha o .ctb na pasta Plot Styles dele (sem isso: \"RA_Arquitetura.ctb (missing)\").</span></div>' +
+      '<label style="display:block"><input type="checkbox" data-arq-out="zip"> ZIP com um PDF por folha (PE_&lt;CLIENTE&gt;_&lt;PRANCHA&gt;_RXX)</label><label style="display:block"><input type="checkbox" data-arq-out="pdfFolhas"> Baixar os PDFs por folha soltos (um download por folha)</label>' +
       '<label style="display:block"><input type="checkbox" data-arq-out="abas" checked> Abrir nas abas de folha do BIM</label></fieldset>';
     /* ocupa a LARGURA TODA da grade (grid-column:1/-1) e põe ambientes e folhas lado a lado: preso numa coluna só deixava um vazio enorme à direita */
     h += '<fieldset style="grid-column:1/-1;border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Caderno de interiores</b></legend>' +
@@ -131,6 +135,7 @@
   function configDaTela(raiz, base) {
     var c = clone(base), q = function (s) { return raiz.querySelector(s); }, qa = function (s) { return Array.prototype.slice.call(raiz.querySelectorAll(s)); };
     function v(k) { var e = q('[data-arq="' + k + '"]'); return e ? e.value : null; }
+    if (v("jogo") != null) c.jogo = v("jogo");
     if (v("formato") != null) c.formato = v("formato");
     if (v("escala") != null) c.escala = v("escala") === "auto" ? "auto" : +v("escala");
     if (v("prefixo") != null) c.prefixo = v("prefixo");
@@ -157,7 +162,118 @@
   }
   function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) { /* sem toast */ } }
 
+  /* ------------------------------------------------------------ DWG (só no app instalado: o servidor local roda o dxf2dwg do LibreDWG; server/dwg.js) */
+  var DWG_SO_NO_APP = "DWG só no app instalado; o DXF abre no AutoCAD (Salvar como → DWG).";
+  function buscar() { return typeof global.fetch === "function" ? global.fetch.bind(global) : null; }
+  /* TODA chamada ao servidor local tem prazo (AbortController): servidor travado não prende a tela. A geração tem 260 s (o servidor encerra em 240 s); status/preparar, 15 s. */
+  function comPrazo(f, url, init, ms) {
+    init = init || {};
+    if (typeof global.AbortController !== "function") return f(url, init);
+    var ac = new global.AbortController(), t = setTimeout(function () { try { ac.abort(); } catch (e) { /* já encerrada */ } }, ms);
+    init.signal = ac.signal;
+    return f(url, init).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+  }
+  /* o servidor local gera DWG? → Promise({ disponivel, motivo }). Navegador puro/PWA (sem /__dwg/gerar-status) → indisponível, nunca erro. */
+  function sondarDwg(opc) {
+    var f = (opc && opc.buscar) || buscar();
+    if (!f) return Promise.resolve({ disponivel: false, motivo: DWG_SO_NO_APP });
+    return comPrazo(f, "/__dwg/gerar-status", { cache: "no-store" }, 15000).then(function (r) { return r && r.ok ? r.json() : null; }).then(function (j) {
+      if (j && j.disponivel === true) return { disponivel: true, conversor: j.conversor || "LibreDWG" };
+      if (j && j.preparar === true) return { disponivel: true, preparar: true, conversor: "LibreDWG" };   /* ainda não baixado: baixa na 1ª vez, ao gerar */
+      return { disponivel: false, motivo: DWG_SO_NO_APP, detalhe: j && j.motivo ? String(j.motivo) : "" };
+    }, function () { return { disponivel: false, motivo: DWG_SO_NO_APP }; });
+  }
+  /* 1ª vez: o conversor ainda não foi baixado → pede ao servidor local (POST /__dwg/preparar) e espera ficar pronto, acompanhando /__dwg/gerar-status.
+     opc.buscar / opc.espera / opc.limite (testes). → Promise({ ok:true } | { ok:false, erro }) */
+  var DWG_PREPARANDO = "Preparando o conversor DWG (só na primeira vez, ~12 MB)…";
+  function prepararDwg(opc) {
+    opc = opc || {};
+    var f = opc.buscar || buscar(); if (!f) return Promise.resolve({ ok: false, erro: DWG_SO_NO_APP });
+    var espera = opc.espera === undefined ? 1500 : opc.espera, limite = opc.limite || 200;
+    function status() { return comPrazo(f, "/__dwg/gerar-status", { cache: "no-store" }, 15000).then(function (r) { return r && r.ok ? r.json() : null; }); }
+    function falha(j) { return { ok: false, erro: (j && j.motivo ? String(j.motivo) : "O conversor DWG não ficou pronto.") + " O DXF continua disponível e abre no AutoCAD." }; }
+    return status().then(function (j) {
+      if (j && j.disponivel === true) return { ok: true };
+      if (!j || (!j.preparar && j.estado !== "baixando")) return falha(j);
+      toast(DWG_PREPARANDO, "info");
+      var inicio = j.estado === "baixando" ? Promise.resolve() : comPrazo(f, "/__dwg/preparar", { method: "POST" }, 15000);
+      return inicio.then(function () {
+        var n = 0;
+        function volta() {
+          return new Promise(function (r) { setTimeout(r, espera); }).then(status).then(function (s) {
+            if (s && s.disponivel === true) return { ok: true };
+            if (s && s.estado === "baixando" && ++n < limite) return volta();
+            return falha(s);
+          });
+        }
+        return volta();
+      });
+    }).then(null, function () { return { ok: false, erro: "Sem conexão com o servidor local para preparar o DWG. O DXF continua disponível e abre no AutoCAD." }; });
+  }
+  /* gera o DWG de r (o resultado de ArqPranchas.gerar): monta o DXF, manda ao servidor local, volta o ZIP com DWG + CTB + LEIA-ME.
+     → Promise({ ok, zip (Uint8Array), nome, avisos } | { ok:false, erro }). opc.postar(dxfTexto) → Promise({ ok, bytes (Uint8Array) | erro }) troca o envio (testes). */
+  function gerarDwg(r, opc) {
+    opc = opc || {};
+    var CD = dep("ArqCad", "./arqcad.js"), A = AQ();
+    if (!CD || !A || !r || !r.ok) return Promise.resolve({ ok: false, erro: "Sem pranchas geradas para converter em DWG." });
+    var base = A.nomeArquivo(r.cliente, r.jogo === "legal" ? "JOGO-LEGAL" : "JOGO-EXECUTIVO", r.revisao), o = null;
+    try { o = CD.paraCad(r, { dxfNome: base + ".dxf", dwgNome: base + ".dwg" }); } catch (e) { return Promise.resolve({ ok: false, erro: "O arquivo CAD não montou: " + (e && e.message ? e.message : e) }); }
+    if (!o) return Promise.resolve({ ok: false, erro: "O arquivo CAD não montou." });
+    var postar = opc.postar || function (dxf) {
+      var f = buscar(); if (!f) return Promise.resolve({ ok: false, erro: DWG_SO_NO_APP });
+      return prepararDwg({ buscar: f }).then(function (pr) { return pr.ok ? enviarDxf(f, dxf) : pr; });
+    };
+    function enviarDxf(f, dxf) {
+      return comPrazo(f, "/__dwg/gerar", { method: "POST", headers: { "Content-Type": "application/dxf" }, body: dxf }, 260000).then(function (resp) {
+        if (!resp.ok) return resp.json().then(function (j) { return { ok: false, erro: (j && j.erro) || ("o conversor respondeu " + resp.status) }; }, function () { return { ok: false, erro: DWG_SO_NO_APP }; });
+        return resp.arrayBuffer().then(function (ab) { return { ok: true, bytes: new Uint8Array(ab), avisos: +resp.headers.get("X-Avisos") || 0 }; });
+      }, function () { return { ok: false, erro: DWG_SO_NO_APP }; });
+    }
+    return postar(o.dxfDwg || o.dxf).then(function (p) {
+      if (!p || !p.ok || !p.bytes) return { ok: false, erro: (p && p.erro) || "O conversor não devolveu o DWG." };
+      var b = p.bytes;
+      if (b.length < 256 || String.fromCharCode(b[0], b[1], b[2], b[3], b[4], b[5]) !== "AC1015") return { ok: false, erro: "O conversor devolveu um arquivo que não é DWG." };
+      var z = CD.zipDwg(o, b);
+      return z ? { ok: true, zip: z, nome: base + "-DWG.zip", avisos: p.avisos || 0, dwg: b } : { ok: false, erro: "O ZIP do DWG não montou." };
+    }, function (e) { return { ok: false, erro: "Falha ao converter em DWG: " + (e && e.message ? e.message : e) }; });
+  }
+  /* PENAS RA NO AUTOCAD: o AutoCAD procura o CTB na pasta Plot Styles do usuário, não ao lado do DWG. O servidor local (app instalado) copia para todas as versões; PWA/navegador: indisponível.
+     → Promise({ ok, mensagem, instalados }). opc.postar(bytes, nome) → Promise({ ok, status, json }) troca o envio (testes). */
+  var CTB_SO_NO_APP = "Instalar as penas no AutoCAD só funciona no app instalado; copie o .ctb do ZIP para a pasta Plot Styles (comando STYLESMANAGER no AutoCAD).";
+  function instalarCtbNoAutoCad(r, opc) {
+    opc = opc || {};
+    var CD = dep("ArqCad", "./arqcad.js");
+    if (!CD || !r || !r.ok) return Promise.resolve({ ok: false, mensagem: "Gere as pranchas uma vez antes (as penas saem dessa geração)." });
+    var o = null; try { o = CD.paraCad(r, { dxfNome: "x.dxf" }); } catch (e) { o = null; }
+    if (!o || !o.ctb) return Promise.resolve({ ok: false, mensagem: "O plot style (CTB) não montou." });
+    var postar = opc.postar || function (bytes, nome) {
+      var f = buscar(); if (!f) return Promise.resolve({ ok: false, status: 0, json: null });
+      return comPrazo(f, "/__dwg/instalar-ctb", { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Ctb-Nome": encodeURIComponent(nome) }, body: bytes }, 20000)
+        .then(function (resp) { return resp.json().then(function (j) { return { ok: resp.ok, status: resp.status, json: j }; }, function () { return { ok: false, status: resp.status, json: null }; }); }, function () { return { ok: false, status: 0, json: null }; });
+    };
+    return postar(o.ctb, o.ctbNome).then(function (p) {
+      var j = p && p.json;
+      if (!j) return { ok: false, mensagem: CTB_SO_NO_APP };
+      if (!j.ok) return { ok: false, mensagem: String(j.erro || CTB_SO_NO_APP) };
+      var rot = { novo: "instalado", igual: "já estava", atualizado: "atualizado (o seu estava diferente: ficou cópia .bak)", erro: "falhou" };
+      var lista = (j.instalados || []).map(function (i) { return i.versao + " — " + (rot[i.acao] || i.acao); });
+      return { ok: true, instalados: j.instalados || [], mensagem: "Penas RA (" + o.ctbNome + "): " + lista.join("; ") + ". Feche e abra o DWG de novo." };
+    });
+  }
+  /* liga a opção DWG da tela: habilita só se o servidor local gera DWG; senão desabilita e explica */
+  function ligarDwgNaTela(raiz) {
+    if (!raiz || !raiz.querySelector) return Promise.resolve(null);
+    var cb = raiz.querySelector('[data-arq-out="dwg"]'), av = raiz.querySelector('[data-arq="dwg-aviso"]');
+    return sondarDwg().then(function (s) {
+      if (cb) { cb.disabled = !s.disponivel; cb.checked = false; }
+      if (av) av.textContent = s.disponivel && s.preparar ? "Na primeira vez o OrcaPRO baixa o conversor DWG (~12 MB, uma só vez) e depois gera. Sem internet, use o DXF." : s.disponivel ? "Gera o DWG neste computador (" + s.conversor + "). Leva alguns segundos." : s.motivo;
+      return s;
+    });
+  }
+
   /* ------------------------------------------------------------ gerar */
+  /* o nome do PDF/DXF ÚNICO (o de sempre); os por folha e o ZIP levam PE_<CLIENTE>_<PRANCHA>_RXX */
+  function nomeUnico(r) { return (r.prefixo || "ARQ") + "-" + (r.revisao || "R00") + (r.jogo === "legal" ? " projeto legal" : " projeto de arquitetura"); }
   function gerar(ctx, cfg, saida) {
     var A = AQ(); saida = saida || { pdf: true, dxf: true, abas: true };
     if (!A) return { ok: false, avisos: ["js/arqpranchas.js não carregou."] };
@@ -166,10 +282,21 @@
     ULTIMO.r = r; ULTIMO.ctx = ctx; ULTIMO.cfg = c;
     if (!r || !r.ok) return r || { ok: false, avisos: [] };
     gravarMemoria(ctx.obraKey, c);
-    var nome = (r.prefixo || "ARQ") + "-" + (r.revisao || "R00") + " projeto de arquitetura";
+    var nome = nomeUnico(r);
     r.arquivos = [];
     if (saida.pdf) { var pdf = A.exportar(r, "pdf"); if (pdf && baixar(nome + ".pdf", pdf, "application/pdf")) r.arquivos.push(nome + ".pdf"); }
     if (saida.dxf) { var dxf = A.exportar(r, "dxf"); if (dxf && baixar(nome + ".dxf", dxf, "application/dxf")) r.arquivos.push(nome + ".dxf"); }
+    if (saida.cad) { var cad = A.exportar(r, "cad"), nc = A.nomeArquivo(r.cliente, r.jogo === "legal" ? "JOGO-LEGAL" : "JOGO-EXECUTIVO", r.revisao) + "-CAD.zip"; if (cad && baixar(nc, cad, "application/zip")) r.arquivos.push(nc); }
+    if (saida.dwg) {   /* assíncrono: o servidor local converte; a promessa fica em r.dwgPromessa (o r volta já com o resto) */
+      r.dwgPromessa = gerarDwg(r, { postar: saida.dwgPostar }).then(function (d) {
+        if (d.ok && baixar(d.nome, d.zip, "application/zip")) { r.arquivos.push(d.nome); toast("DWG gerado: " + d.nome + (d.avisos ? " · " + d.avisos + " aviso(s) do conversor" : ""), d.avisos ? "aviso" : "ok"); }
+        else toast("DWG não saiu: " + (d.erro || "falha ao baixar") + (/DWG só no app/.test(d.erro || "") ? "" : " O DXF continua disponível e abre no AutoCAD."), "aviso");
+        return d;
+      });
+    }
+    /* um PDF por folha e o ZIP delas: PE_<CLIENTE>_<PRANCHA>_RXX (cliente do cadastro da obra; revisão da obra, R00 se não houver) */
+    if (saida.pdfFolhas) A.arquivosPorFolha(r).forEach(function (a) { if (baixar(a.nome, a.dados, "application/pdf")) r.arquivos.push(a.nome); });
+    if (saida.zip) { var zip = A.zipDasFolhas(r), nz = A.nomeArquivo(r.cliente, r.jogo === "legal" ? "JOGO-LEGAL" : "JOGO-EXECUTIVO", r.revisao) + ".zip"; if (zip && baixar(nz, zip, "application/zip")) r.arquivos.push(nz); }
     if (saida.abas) r.abas = abrirNasAbas(r, ctx);
     return r;
   }
@@ -351,11 +478,17 @@
         toast(resumoInteriores(r, c) + r.folhas.length + " folha(s) de arquitetura · sobreposição: texto×texto " + v.textoTexto + ", texto×linha " + v.textoLinha + ", fora da moldura " + v.foraJanela + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), v.total ? "aviso" : "ok");
       } }
     ]);
+    /* a opção DWG só liga se o servidor local do app instalado gera DWG (navegador puro/PWA: desabilitada, com o motivo) */
+    try { var rzD = global.document.querySelector('[data-arq="tela"]'); ligarDwgNaTela(rzD && rzD.parentNode); } catch (eD) { /* sem DOM */ }
+    try {
+      var rzC = global.document.querySelector('[data-arq="tela"]'), bC = rzC && rzC.parentNode && rzC.parentNode.querySelector('[data-arq="instalar-ctb"]'), mC = rzC && rzC.parentNode && rzC.parentNode.querySelector('[data-arq="ctb-msg"]');
+      if (bC) bC.addEventListener('click', function () { bC.disabled = true; instalarCtbNoAutoCad(ULTIMO.r).then(function (x) { bC.disabled = false; if (mC) mC.textContent = x.mensagem; toast(x.mensagem, x.ok ? 'ok' : 'aviso'); }); });
+    } catch (eC) { /* sem DOM */ }
     return true;
   }
 
-  var ArqPranchasUI = { abrir: abrir, gerar: gerar, gerarCaderno: gerarCaderno, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
-    _int: { conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
+  var ArqPranchasUI = { abrir: abrir, gerar: gerar, gerarDwg: gerarDwg, sondarDwg: sondarDwg, prepararDwg: prepararDwg, instalarCtbNoAutoCad: instalarCtbNoAutoCad, DWG_SO_NO_APP: DWG_SO_NO_APP, gerarCaderno: gerarCaderno, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
+    _int: { ligarDwgNaTela: ligarDwgNaTela,  conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
   global.ArqPranchasUI = ArqPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

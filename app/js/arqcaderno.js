@@ -42,6 +42,7 @@
   function FS() { return dep("BimFases", "./bimfases.js"); }
   function ES() { return dep("ArqEstilo", "./arqestilo.js"); }
   function HP() { return dep("HidPranchas", "./hidpranchas.js"); }
+  function DET() { return dep("ArqDetalhes", "./arqdetalhes.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
   function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
@@ -429,7 +430,12 @@
     /* condicionais: só com o elemento */
     cond.escada.forEach(function (e, i) { planejar({ id: "escada-" + i, tipo: "escada", titulo: "ESCADA" + (cond.escada.length > 1 ? " " + (i + 1) : ""), el: e }); });
     if (cond.guarda.length) planejar({ id: "guarda", tipo: "guarda", titulo: "GUARDA-CORPO", els: cond.guarda });
-    [["sacada", "SACADA"], ["gas", "CASA DO GÁS"], ["lareira", "LAREIRA"], ["churrasqueira", "CHURRASQUEIRA E FOGÃO A LENHA"]].forEach(function (p) { if (cond[p[0]].length) planejar({ id: p[0], tipo: p[0], titulo: p[1], els: cond[p[0]] }); });
+    /* sacada, casa do gás, lareira, churrasqueira: UMA PÁGINA POR ELEMENTO (planta e corte do próprio elemento, js/arqdetalhes.js). O elemento que o modelo traz como família ou caixa
+       vale mais que o ambiente que só tem o nome na lista (o "Gourmet com churrasqueira" é a sala inteira): com os dois, só o primeiro vira página. */
+    [["sacada", "SACADA"], ["gas", "CASA DO GÁS"], ["lareira", "LAREIRA"], ["churrasqueira", "CHURRASQUEIRA E FOGÃO A LENHA"]].forEach(function (p) {
+      var todos = cond[p[0]], fortes = todos.filter(function (e) { return e.movel || e.cx; }), lista = fortes.length ? fortes : todos;
+      lista.forEach(function (e, i) { planejar({ id: p[0] + (lista.length > 1 ? "-" + i : ""), tipo: p[0], titulo: p[1] + (lista.length > 1 ? " " + (i + 1) : ""), els: [e], det: true }); });
+    });
     var pavsForro = {}; cond.forro.forEach(function (f) { pavsForro[f.pav] = 1; });
     Object.keys(pavsForro).sort().forEach(function (k) { var i = +k; planejar({ id: "forro-" + i, tipo: "forro", pav: i, titulo: "FORRO DE GESSO" + (pavs.length > 1 ? " - " + txt((pavs[i] || {}).nome).toUpperCase() : "") }); });
     var pontos = pontosDoModelo(modelo, d, pavs);
@@ -449,7 +455,7 @@
     function novaD() { return DS().novo(E, true); }
     /* desenha a página; se a conferência achar sobreposição, refaz com a área encolhida (o desenho escolhe uma escala menor)(largura ×1,05 e ×1,1 antes: o desenho ganha uma escala maior; depois 88 %, 76 %, 64 %) — fica a melhor */
     function paginaDesenho(p, desenhar, tipoNotas, fatores) {
-      var def = { id: p.id, tipo: tipoNotas || p.tipo, pav: p.pav, titulo: p.titulo, numero: p.numero }, melhor = null, fat = fatores || [[1, 1], [1.05, 1], [1.1, 1], [0.88, 0.88], [0.76, 0.76], [0.64, 0.64]], ia;
+      var def = { id: p.id, tipo: tipoNotas || p.tipo, sub: p.tipo, pav: p.pav, titulo: p.titulo, numero: p.numero }, melhor = null, fat = fatores || [[1, 1], [1.05, 1], [1.1, 1], [0.88, 0.88], [0.76, 0.76], [0.64, 0.64]], ia;
       for (ia = 0; ia < fat.length; ia++) {
         var D = novaD(), res = {}, nAv = avisos.length;
         c.A = { x: A.x, y: A.y, w: A.w * fat[ia][0], h: A.h * fat[ia][1] }; c.D = D; c.def = def; c.avisos = avisos;
@@ -535,7 +541,8 @@
       return { numero: p.numero, pagina: p.pagina, titulo: p.titulo, tipo: p.tipo, id: p.id, formato: "A3", escala: escala, svg: svg };
     }
     var nomeArq = nomeArquivo({ proprietario: ctx.proprietario, revisao: ctx.rev });
-    return { ok: true, paginas: paginas, indice: indice, verificacao: verificacao, rev: ctx.rev, paleta: pal, completa: completa, nomeArquivo: nomeArq, quadroAreas: c._quadro || null, total: tot, formato: "A3", escalaPlanta: c.plano.escala, indices: c.idx, checklist: completa ? itensChecklist(c, st) : null, ctx: ctx };
+    var pendDet = []; feitas.forEach(function (f) { if (feitasPorId[f.p.id] === f && f.res && f.res.pendencias) f.res.pendencias.forEach(function (q) { var o = {}; Object.keys(q).forEach(function (kq) { o[kq] = q[kq]; }); o.pagina = f.p.numero; pendDet.push(o); }); });   /* as pendências dos detalhes (sacada, gás, lareira, churrasqueira): o que o modelo ou o BIM não traz */
+    return { ok: true, pendenciasDetalhes: pendDet, paginas: paginas, indice: indice, verificacao: verificacao, rev: ctx.rev, paleta: pal, completa: completa, nomeArquivo: nomeArq, quadroAreas: c._quadro || null, total: tot, formato: "A3", escalaPlanta: c.plano.escala, indices: c.idx, checklist: completa ? itensChecklist(c, st) : null, ctx: ctx };
   }
 
   /* ---- planta de esquadrias (só paredes e aberturas; siglas por TIPO; nota de aferição) */
@@ -628,13 +635,15 @@
   }
 
   /* ---- detalhamentos condicionais: ficha com os dados do modelo (e o desenho paramétrico quando o modelo calcula) + a planta do pavimento com o elemento circulado em marsala */
-  function plantaComDestaque(c, D, pav, yTop, els, titulo) {
-    var Pl = PL(), A0 = c.A, p0 = c.plano, cx = p0.caixa, G = GEO(), esc = 300, T = D.E.T, hDisp = A0.h - (yTop - A0.y);
+  function plantaComDestaque(c, D, pav, yTop, els, titulo, mg) {
+    var Pl = PL(), A0 = c.A, p0 = c.plano, cx = p0.caixa, G = GEO(), esc = 300, T = D.E.T, hDisp = A0.h - (yTop - A0.y), mW = mg ? mg.w : 100, mH = mg ? mg.h : 110;   /* mg: as margens (mm) que a planta pede em volta: o detalhe, que mostra só a posição, usa menos */
     var lista = [75, 100, 125, 150, 200, 250, 300], i, ok = false;
-    for (i = 0; i < lista.length && !ok; i++) { esc = lista[i]; var k0 = 1000 / esc; ok = (cx[2] - cx[0]) * k0 + 100 <= A0.w && (cx[3] - cx[1]) * k0 + 94 + 16 <= hDisp; }
+    for (i = 0; i < lista.length && !ok; i++) { esc = lista[i]; var k0 = 1000 / esc; ok = (cx[2] - cx[0]) * k0 + mW <= A0.w && (cx[3] - cx[1]) * k0 + mH <= hDisp; }
     c.plano = { k: 1000 / esc, escala: esc, caixa: cx }; c.A = { x: A0.x, y: yTop, w: A0.w, h: hDisp };
-    var res;
-    try { res = Pl.planta(c, { modo: "layout", pav: pav, titulo: titulo, cotas: false, cotasInt: false, completo: false, esquadrias: true }); } finally { c.A = A0; c.plano = p0; }
+    var res, K0 = DS().K, mc0 = K0.margemCotas;
+    /* a planta reserva 44 mm de margem para as cadeias de cota em cada lado; aqui não há cota: o detalhe pede menos (mg.mc) e a posição ganha escala. Sempre devolvida no finally. */
+    if (mg && mg.mc != null) K0.margemCotas = mg.mc;
+    try { res = Pl.planta(c, { modo: "layout", pav: pav, titulo: titulo, cotas: false, cotasInt: false, completo: false, esquadrias: true }); } finally { K0.margemCotas = mc0; c.A = A0; c.plano = p0; }
     var M = res.M, P = K.pena, n0 = 0;
     els.forEach(function (e) {
       if (arr(e.pts).length < 3) return;
@@ -656,7 +665,25 @@
     });
     return res;
   }
+  /* sacada / casa do gás / lareira / churrasqueira: planta e corte do elemento (js/arqdetalhes.js) em cima; embaixo a ficha com os dados do modelo, as pendências e a posição na planta */
+  function desenharDetalhe(c, D, p, cond) {
+    var A = c.A, T = D.E.T, d = DS(), yTop = A.y + 2, el = p.els[0], DT = DET(), QDm = QD();
+    if (!DT) { c.avisos.push("Página " + p.numero + ": o motor dos detalhes (js/arqdetalhes.js) não carregou."); return { escala: "SEM ESCALA" }; }
+    var hRow = Math.min(134, Math.floor((A.y + A.h - yTop) * 0.58)), det = DT.desenhar(c, D, { x: A.x + 4, y: yTop, w: A.w - 8, h: hRow }, p.tipo, el, cond);
+    var wL = 108, yL = yTop + Math.max(det.alt, 40) + 4, wR = A.w - 8 - det.larg - 8, aoLado = wR >= 96;
+    var tb = QDm.tabela(D, A.x + 4, yL, wL, "FICHA DO ELEMENTO (dados do modelo)", [{ t: "ITEM", f: 3, al: "E" }, { t: "VALOR", f: 2, al: "D" }], det.ficha); yL += tb.h + 4;
+    det.pendencias.forEach(function (t0) {
+      AP().quebrar("PENDÊNCIA: " + t0, T.nota * 0.95, wL).forEach(function (ln) { if (yL + T.nota * 1.4 < A.y + A.h - 1) { D.texto(A.x + 4, yL + T.nota * 0.8, ln, T.nota * 0.95, { cor: VERMELHO }); yL += T.nota * 1.4; } });
+      c.avisos.push("Página " + p.numero + " (" + p.titulo + "): " + t0);
+    });
+    /* a posição na planta: ao lado do desenho quando sobra largura; senão embaixo, à direita da ficha */
+    var pav = el.pav || 0, A0 = c.A, tit = "POSIÇÃO NA PLANTA" + (c.dados.pavimentos.length > 1 ? " - " + txt((c.dados.pavimentos[pav] || {}).nome).toUpperCase() : "");
+    c.A = aoLado ? { x: A.x + 4 + det.larg + 8, y: yTop, w: wR, h: A.y + A.h - yTop } : { x: A.x + 4 + wL + 8, y: yTop + Math.max(det.alt, 40) + 4, w: A.w - 8 - wL - 8, h: A.y + A.h - (yTop + Math.max(det.alt, 40) + 4) };
+    try { plantaComDestaque(c, D, pav, c.A.y, [el], tit, { w: 44, h: 64, mc: 8 }); } finally { c.A = A0; }
+    return { escala: det.escala, pendencias: det.pendencias.map(function (t1) { return { pagina: p.numero, tipo: p.tipo, elemento: txt(el.nome), texto: t1 }; }) };
+  }
   function desenharCondicional(c, D, p, cond, modelo) {
+    if (p.det) return desenharDetalhe(c, D, p, cond);
     var A = c.A, T = D.E.T, d = DS(), hT = d.titulo(D, A.x + 4, A.y + 2, p.titulo, "SEM ESCALA", 1), x = A.x + 4, y = A.y + 2 + hT + 6, QDm = QD(), G = GEO();
     var els = p.els || [p.el], linhas = [], yFim = y;
     function inform(v, f) { return v != null && isFinite(v) ? f(v) : { t: "informe", cor: VERMELHO }; }

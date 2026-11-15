@@ -47,6 +47,7 @@
   function QD() { return dep("ArqQuadros", "./arqquadros.js"); }
   function INT() { return dep("ArqInteriores", "./arqinteriores.js"); }
   function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
+  function DET() { return dep("ArqDetalhes", "./arqdetalhes.js"); }
   function FS() { return dep("BimFases", "./bimfases.js"); }
   function BE() { return dep("BimEdit", "./bimedit.js"); }
   function PDF() { return dep("SvgPdf", "./svgpdf.js"); }
@@ -74,11 +75,12 @@
   function configPadrao() {
     var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
     cj.capa = true;   /* a CAPA com o índice do caderno vem LIGADA no padrão da tela (normalizarConfig({}) a deixa desligada: só sai quando pedida, como as esquadrias) */
-    return { formato: "AUTO", arranjo: "auto", fixos: {}, formatosFolha: {}, escala: "auto", prefixo: "ARQ", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO", conjuntos: cj, interiores: { ativo: false, ambientes: null, prefixo: "INT", formato: "AUTO" },
+    return { jogo: "executivo", formato: "AUTO", arranjo: "auto", fixos: {}, formatosFolha: {}, escala: "auto", prefixo: "ARQ", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO", conjuntos: cj, interiores: { ativo: false, ambientes: null, prefixo: "INT", formato: "AUTO" },
       municipio: "", limites: { nome: "", ocupacaoMax: null, permeavelMin: null, aproveitamentoMax: null, conferir: false }, rua: "", cotasInternas: true, beiralNaProjecao: false, fatores: { deckVazado: 1 } };
   }
   function normalizarConfig(c) {
     var p = configPadrao(), o = c || {}, r = {};
+    r.jogo = txt(o.jogo).toLowerCase() === "legal" ? "legal" : "executivo";   /* 15/11/2026: "legal" = o jogo da prefeitura, separado do executivo (ver JOGO_LEGAL) */
     r.formato = FORMATOS_OK.indexOf(txt(o.formato).toUpperCase()) >= 0 ? txt(o.formato).toUpperCase() : p.formato;
     r.arranjo = txt(o.arranjo).toLowerCase() === "serie" ? "serie" : "auto";
     r.fixos = {}; Object.keys(o.fixos && typeof o.fixos === "object" ? o.fixos : {}).forEach(function (k) { var f = o.fixos[k]; if (f && isFinite(+f.folha) && isFinite(+f.x) && isFinite(+f.y)) r.fixos[k] = { folha: Math.max(1, Math.round(+f.folha)), x: +f.x, y: +f.y }; });
@@ -107,6 +109,30 @@
     r.fatores = { deckVazado: o.fatores && isFinite(+o.fatores.deckVazado) ? +o.fatores.deckVazado : 1 };
     return r;
   }
+
+  /* ------------------------------------------------------------ O JOGO LEGAL (15/11/2026, etapa 3)
+     Dois jogos saem do mesmo gerador: o EXECUTIVO (tudo o que já existia: layout, forro, piso, esquadrias, humanizada…) e o LEGAL, o conjunto que se protocola:
+     situação/localização (com o quadro de áreas e os índices), planta de demolir/construir (só sai em reforma), planta proposta, cortes e fachadas, todos com o carimbo RA.
+     Só regra técnica: o que o jogo leva é decidido AQUI, numa lista; a tela e o modelo não escolhem o conteúdo do jogo legal. O prefixo padrão ARQ vira LEG para as folhas
+     do legal não terem o mesmo código das do executivo (os arquivos PE_<CLIENTE>_<PRANCHA>_RXX não podem colidir). */
+  var JOGO_LEGAL = ["situacao", "demolir", "layout", "cortes", "fachadas"];
+  function aplicarJogo(cfg) {
+    if (!cfg || cfg.jogo !== "legal") return cfg;
+    var o = {}; Object.keys(cfg).forEach(function (k) { o[k] = cfg[k]; });
+    o.conjuntos = {}; CONJUNTOS.forEach(function (k) { o.conjuntos[k] = JOGO_LEGAL.indexOf(k) >= 0 && cfg.conjuntos[k] !== false; });
+    o.conjuntos.esquadrias = false; o.conjuntos.capa = false;
+    o.interiores = { ativo: false, ambientes: null, folhas: {}, prefixo: cfg.interiores ? cfg.interiores.prefixo : "INT", formato: "AUTO" };
+    if (o.prefixo === "ARQ") o.prefixo = "LEG";
+    return o;
+  }
+  var TITULO_JOGO = { legal: "Arquitetura - projeto legal", executivo: "Arquitetura - projeto executivo" };
+
+  /* ------------------------------------------------------------ NOME DOS ARQUIVOS: PE_<CLIENTE>_<PRANCHA>_RXX
+     CLIENTE = o do cadastro da obra (proprietário), em MAIÚSCULAS, sem acento, espaço vira hífen; PRANCHA = o código da folha (ARQ-03); RXX = a revisão da obra (R00 se não houver). */
+  function semAcento(t) { var s = txt(t); return s.normalize ? s.normalize("NFD").replace(/[̀-ͯ]/g, "") : s; }
+  function slugNome(t, padrao) { var s = semAcento(t).toUpperCase().replace(/\s+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, ""); return s || padrao; }
+  function revisaoXX(rev) { var m = /(\d+)/.exec(txt(rev)); return "R" + (m ? dois(Math.min(99, +m[1])) : "00"); }
+  function nomeArquivo(cliente, prancha, revisao) { return "PE_" + slugNome(cliente, "CLIENTE") + "_" + slugNome(prancha, "PRANCHA") + "_" + revisaoXX(revisao); }
 
   /* ------------------------------------------------------------ AS SITUAÇÕES ANTES / DEPOIS (os ambientes dependem das paredes que sobram) */
   function idsPorStatus(estado, dados) {
@@ -143,25 +169,26 @@
 
   /* ------------------------------------------------------------ FORMATO E ESCALA */
   var ESC_PLANTA = [50, 75, 100, 125, 150];
-  function caixaPlano(dados) {
+  function caixaPlano(dados, semMuros) {
     var g = GEO(), xs = [], zs = [];
     function add(P) { arr(P).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); }
-    dados.paredes.forEach(function (w) { add(w.pts); }); /* R01: os muros de divisa também entram no quadro da planta (a planta vai de uma divisa à outra) */ dados.pilares.forEach(function (w) { add(w.pts); }); dados.lajes.forEach(function (l) { add(l.pts); });
+    dados.paredes.forEach(function (w) { if (!(semMuros && w.muro)) add(w.pts); }); /* R01: os muros de divisa também entram no quadro da planta (a planta vai de uma divisa à outra); com semMuros (15/11/2026) o recorte é só a edificação + a margem das cotas: o muro e o terreno ficam na situação e nas fachadas */ dados.pilares.forEach(function (w) { add(w.pts); }); dados.lajes.forEach(function (l) { add(l.pts); });
     dados.telhados.forEach(function (t) { add(t.pBeiral || t.pts); });
     if (!xs.length) return dados.caixa;
     void g;
     return [Math.min.apply(null, xs), Math.min.apply(null, zs), Math.max.apply(null, xs), Math.max.apply(null, zs)];
   }
-  function cabePlanta(geo, cx, esc) {
+  function cabePlanta(geo, cx, esc, extraH) {
     var d = DS(), k = 1000 / esc, a = geo.area, mg = d.K.margemCotas;
-    return (cx[2] - cx[0]) * k + 2 * mg + 12 <= a.w && (cx[3] - cx[1]) * k + 2 * mg + 16 + 34 <= a.h;
+    return (cx[2] - cx[0]) * k + 2 * mg + 12 <= a.w && (cx[3] - cx[1]) * k + 2 * mg + 16 + 34 + (extraH || 0) <= a.h;
   }
   function cabeFachadas(geo, dados, esc) {
     var k = 1000 / esc, a = geo.area, w = dados.caixa[2] - dados.caixa[0] + 1.8, h = 0;
     dados.paredes.forEach(function (x) { h = Math.max(h, x.topo); }); dados.telhados.forEach(function (t) { h = Math.max(h, t.cotaCumeeira); });
     return w * k + 44 <= a.w / 2 - 4 && (h + 0.3) * k + 32 <= a.h / 2 - 2;
   }
-  function escolherFormatoEscala(dados, cfg, avisos) {
+  /* serie = a série antiga (uma folha por conteúdo): sobrando área na folha, a planta CRESCE até 1:25 (antes ficava em 1:50 ocupando 1/3 da A1) */
+  function escolherFormatoEscala(dados, cfg, avisos, serie) {
     var P = PR(), cx = caixaPlano(dados), fmts = cfg.formato === "AUTO" ? ["A2", "A1", "A0"] : [cfg.formato], escs = cfg.escala === "auto" ? ESC_PLANTA : [cfg.escala];
     var melhor = null;
     for (var ie = 0; ie < escs.length && !melhor; ie++) for (var i = 0; i < fmts.length && !melhor; i++) {
@@ -173,6 +200,16 @@
       melhor = { formato: f, escala: e, caixa: cx, estourou: true };
       avisos.push("A planta não cabe em " + f + " nem em 1:" + e + ": use a folha maior ou reduza a escala (a planta sai cortada pela moldura).");
     } else if (cfg.formato === "AUTO" && cfg.escala === "auto" && melhor.escala !== 50) avisos.push("A planta saiu em 1:" + melhor.escala + " (1:50 não cabe em " + melhor.formato + "): use A0 para 1:50.");
+    /* até 1:25 (15/11/2026): sem o muro de divisa e o terreno na caixa (o recorte é a edificação + a margem das cotas), com o quadro de áreas SOB a planta ou AO LADO dela (coluna lateral)
+       quando falta altura. Se com o muro (R01) a planta já cabe nessa escala, ele continua na planta; senão ele e a cadeia do lote ficam na situação e nas fachadas (aviso). */
+    if (serie && cfg.escala === "auto" && !melhor.estourou && melhor.escala === 50) {
+      var g25 = P.geometria(melhor.formato, "paisagem", "RA"), nA = arr(dados.ambientes).length, mg = DS().K.margemCotas, ce = caixaPlano(dados, true);
+      var abaixo = cabePlanta(g25, ce, 25, 40 + (nA + 2) * 5.5), aoLado = cabePlanta(g25, ce, 25, 0) && (ce[2] - ce[0]) * 40 + 2 * mg + 12 + 140 <= g25.area.w;
+      if (abaixo || aoLado) {
+        melhor.escala = 25;
+        if (!cabePlanta(g25, cx, 25, 40 + (nA + 2) * 5.5)) { melhor.caixa = ce; melhor.semMuros = true; avisos.push("Plantas em 1:25: o muro de divisa e a cadeia do lote não cabem nessa escala e ficam na planta de situação e nas fachadas."); }
+      }
+    }
     return melhor;
   }
   function escolherEscalaSituacao(idx, geo) {
@@ -186,7 +223,7 @@
   /* o QUADRO DE LEGENDAS do padrão (js/arqestilo.js): DEMOLIR e CONSTRUIR PAREDE, mais o existente que fica (a planta tem parede cinza) */
   function legendaFases() {
     var C = DS().conv();
-    return [{ t: C.demolido.rotulo, fill: C.demolido.fill }, { t: C.novo.rotulo, fill: C.novo.fill }, { t: C.existente.rotulo, fill: C.existente.fill }];
+    return [{ t: C.demolido.rotulo, fill: C.demolido.fill, tracejado: C.demolido.tracejado }, { t: C.novo.rotulo, fill: C.novo.fill }, { t: C.existente.rotulo, fill: C.existente.fill }];
   }
   var NOTAS_GERAIS = [
     "Cotas, níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
@@ -235,7 +272,7 @@
     var B = [];
     if (def.tipo === "demolir") B.push({ quadro: { itens: legendaFases() } });
     if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") { var le = legendaElementos(c, def.tipo); if (le.length) B.push({ titulo: "LEGENDA DOS ELEMENTOS", itens: le }); }
-    if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas: ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ").", "AA e BB: planos de corte (folha " + c.numeroDe("cortes") + ")."] });
+    if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas" + (c.numeroDe("quadros") === "(não gerada)" ? "." : ": ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ")."), "AA e BB: planos de corte" + (c.numeroDe("cortes") === "(não gerada)" ? "." : " (folha " + c.numeroDe("cortes") + ").")] });
     if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."].concat(arr(c.dados.calhas).length ? ["Retângulo tracejado junto à platibanda: calha embutida. Círculo cheio: descida pluvial. Quadrado: buzinote e ladrão da área técnica (laje descoberta com caimento de 1 % para eles)."] : []) });
     if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
     if (def.tipo === "piso") B.push({ titulo: "LEGENDA", itens: ["Linha cheia: peça inteira. Linha vermelha: peça cortada.", "Quantidade com reserva de 10 % (receita da paginação do ambiente)."] });
@@ -247,6 +284,7 @@
     if (def.tipo === "int-luz") B.push({ titulo: "LUMINOTÉCNICO", itens: ["Luminárias, fitas e interruptores do modelo em vermelho.", "A letra junto do ponto é o circuito ou o comando; cotas de eixo a eixo."] });
     if (def.tipo === "int-pedras") B.push({ titulo: "PEDRAS", itens: ["Bancadas de pedra do modelo; o material sai da família (vermelho = informar)."] });
     if (def.tipo === "int-imagens") B.push({ titulo: "IMAGENS", itens: ["Espaço reservado para os renders do ambiente."] });
+    if (def.tipo === "cond" && DET() && DET().NOTAS[def.sub]) { B.push({ titulo: "DETALHE", itens: DET().NOTAS[def.sub] }); B.push({ titulo: "LEGENDA", itens: DET().NOTAS.comum }); }   /* sacada, casa do gás, lareira, churrasqueira (js/arqdetalhes.js) */
     if (def.tipo === "cortes" && c.usouPerfil) B.push({ titulo: "TERRENO", itens: ["Hachura: solo. A linha do terreno é o perfil do topossólido do modelo (talude), tirado ao longo da linha de cada corte."] });
     if (def.tipo === "renders") B.push({ titulo: "IMAGENS DO MODELO", itens: ["Fotos da própria cena 3D da obra (câmera ortográfica): perspectivas isométricas. Nada é desenhado por fora do modelo.", "Mostra o modelo como está no 3D, com todas as fases visíveis; não substitui as pranchas executivas."] });
     if (def.tipo === "humanizada") B.push({ titulo: "APRESENTAÇÃO", itens: ["Planta ilustrativa para apresentação ao cliente; não substitui as pranchas executivas."] });
@@ -345,12 +383,12 @@
   function gerar(modelo, opcoes) {
     var op = opcoes || {}, r;
     FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {};
-    try { r = gerar0(modelo, opcoes); r.imagensPorChave = IMAGENS; }
+    try { r = gerar0(modelo, opcoes); r.imagensPorChave = IMAGENS; r.jogo = normalizarConfig(opcoes).jogo; r.cliente = txt(op.proprietario || op.contratante); }
     finally { FOTO3D = null; IMAGENS = null; FOTOS = null; }
     return r;
   }
   function gerar0(modelo, opcoes) {
-    var cfg = normalizarConfig(opcoes), op = opcoes || {}, avisos = [], P = PR(), Md = MD();
+    var cfg = aplicarJogo(normalizarConfig(opcoes)), op = opcoes || {}, avisos = [], P = PR(), Md = MD();
     if (!modelo || !modelo.estado) return { ok: false, folhas: [], avisos: ["Modelo vazio: não há o que apresentar."] };
     if (!P || !P.carimboRA || !AP() || !DS() || !Md || !IX() || !PL() || !CT() || !QD()) return { ok: false, folhas: [], avisos: ["Os motores das pranchas de arquitetura não carregaram (js/arq*.js, js/prancha.js, js/acopranchas.js)."] };
     var dados = Md.extrair(modelo, { pavimentos: op.pavimentos, fase: op.fase });
@@ -364,14 +402,14 @@
     var idx = IX().calcular(dadosIx, { limites: lim, contornoLote: op.contornoLote, areaTerreno: op.areaTerreno, permeaveis: op.permeaveis, fatores: cfg.fatores, beiralNaProjecao: cfg.beiralNaProjecao, frente: op.frente });
     idx.avisos.forEach(function (a) { avisos.push(a); });
     if (cfg.arranjo !== "serie" && DG()) return gerarEmBlocos(modelo, op, cfg, dados, sit, idx, avisos);   /* o arranjo (js/arqdiagrama.js); "serie" = uma folha por conteúdo, como antes */
-    var fe = escolherFormatoEscala(dados, cfg, avisos), geo = P.geometria(fe.formato, "paisagem", "RA");
+    var fe = escolherFormatoEscala(dados, cfg, avisos, true), geo = P.geometria(fe.formato, "paisagem", "RA");
     var E = DS().estilo(op.padrao);
     var codigo = cfg.prefixo, rev = cfg.revisao, data = txt(op.data).trim() || hoje();
     var emp = op.empresa, empObj = emp && typeof emp === "object" ? emp : null;
 
     /* contexto comum das folhas */
     var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo, estiloCorte: op.estiloCorte, passeio: op.passeio, ruaMeia: op.ruaMeia, coresFachada: op.coresFachada, situacao: op.situacao, baldrame: op.baldrame }, cfg: cfg, avisos: avisos, avisosFolha: {},
-      plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
+      plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa, semMuros: !!fe.semMuros }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
 
     /* a lista de folhas */
     var defs = [], pavs = dados.pavimentos, cj = cfg.conjuntos;
@@ -386,6 +424,7 @@
     });
     if (cj.esquadrias) for (var ie0 = 0; ie0 < pavs.length; ie0++) add("esquadrias", ie0);   /* R01: a planta de esquadrias (opt-in) vai depois da série */
     defs = defs.filter(function (d0) { if (d0.tipo === "renders" && !FOTO3D) { avisos.push("Folha " + d0.titulo + ": não gerada — " + MOTIVO_SEM_FOTO); return false; } return true; });
+    defs = defs.filter(function (d0) { var vz = conteudoVazio({ dados: dados, depois: sit.depois }, d0); if (vz) avisos.push("Folha " + d0.titulo + ": não gerada — " + vz); return !vz; });   /* só sai folha com conteúdo */
     if (!defs.length && !cfg.interiores.ativo) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhuma folha marcada para gerar."]) };
     defs.forEach(function (d, i) { d.rotulo = dois(i + 1); d.numero = codigo + "-" + d.rotulo; });
     c.total = defs.length;
@@ -432,7 +471,7 @@
     });
 
     var emp0 = empObj ? "" : txt(emp), revNum = rev.replace(/^R/i, "") || "00";
-    var pr = P.normalizar({ id: "arqpranchas", nome: "Arquitetura - projeto executivo", formato: fe.formato, orientacao: "paisagem", origem: "arquitetura",
+    var pr = P.normalizar({ id: "arqpranchas", nome: TITULO_JOGO[cfg.jogo] || TITULO_JOGO.executivo, formato: fe.formato, orientacao: "paisagem", origem: "arquitetura",
       carimbo: { modelo: "RA", empresa: emp0, responsavel: txt(op.responsavel), registro: txt(op.registro), titulo: txt(op.tituloProfissional), obra: txt(op.obra), proprietario: txt(op.proprietario),
                  contratante: txt(op.contratante), local: txt(op.local), codigo: codigo, data: data, revisoes: [[revNum, cfg.descricaoRevisao, data]] },
       folhas: defs.map(function (d, i) { return { id: d.id, n: i + 1, conteudo: d.titulo, escala: feitas[d.id].escala, numero: codigo + " " + rev }; }) });
@@ -543,12 +582,21 @@
   /* a planta existente sem nada existente, a de demolir/construir sem demolição (nem existente + novo juntos) não têm o que mostrar: devolve o motivo, ou "" */
   function conteudoVazio(c, def) {
     if (def.tipo === "renders") return FOTO3D ? "" : MOTIVO_SEM_FOTO;
+    /* SÉRIE SEM FOLHA VAZIA (15/11/2026): a folha de um pavimento só sai se ele tem o que mostrar (parede e, para forro/piso/humanizada, ambiente). Roteiro do defeito: a série
+       gerava layout/forro/piso/humanizada de TODO pavimento, e o desenho usava sempre o térreo (pav 0) — o Superior saía repetido ou vazio (ARQ-09 = 10, 13 = 14, 16 = 17). */
+    if (def.pav != null && /^(layout|forro|piso|humanizada|esquadrias)$/.test(def.tipo)) {
+      var dd = c.dados, pvv = function (x) { return x.pav === def.pav; }, ambs = arr(c.depois && c.depois.ambientes).filter(pvv);
+      var temParede = arr(dd.paredes).some(function (w) { return !w.muro && pvv(w) && w.status !== "demolido"; });
+      if (!temParede) return "o pavimento não tem parede nesta fase.";
+      if (def.tipo === "forro" && !(arr(c.depois && c.depois.forros).some(function (f) { return f.status !== "demolido" && (f.pav == null ? def.pav === 0 : f.pav === def.pav); }) || ambs.length)) return "o pavimento não tem ambiente nem forro.";
+      if ((def.tipo === "piso" || def.tipo === "humanizada") && !ambs.length) return "o pavimento não tem ambiente delimitado.";
+    }
     if (def.tipo !== "existente" && def.tipo !== "demolir") return "";
     var d = c.dados, pv = function (x) { return def.pav == null || x.pav === def.pav; };
     var els = arr(d.paredes).filter(function (w) { return !w.muro && pv(w); }).concat(arr(d.pilares).filter(pv)).concat(arr(d.lajes).filter(pv));
     function tem(st) { return els.some(function (e) { return e.status === st; }); }
     if (def.tipo === "existente") return tem("existente") || tem("demolido") ? "" : "o modelo não tem nada existente (obra nova).";
-    return tem("demolido") || (tem("existente") && tem("novo")) ? "" : "o modelo não tem demolição nem reforma (tudo é a construir).";
+    return tem("demolido") || (tem("existente") && tem("novo")) ? "" : (tem("existente") ? "o modelo só tem elementos existentes: não há demolição nem construção nova (a planta existente já mostra o levantamento)." : "o modelo não tem demolição nem reforma (tudo é a construir).");
   }
   /* desenha todos os conteúdos para o formato `fmt` e devolve os BLOCOS (cada um rígido, na escala dele). av = os avisos desta rodada */
   function renderarBlocos(ctx, fmt, fe, av) {
@@ -735,19 +783,19 @@
       var porId2 = {}; blocosFinais.forEach(function (b) { porId2[b.id] = b; });
       numMap = {}; pack.folhas.forEach(function (f, i) { f.itens.forEach(function (q) { var b = porId2[q.id]; if (b && !numMap[b.tipo] && (b.tipo !== "quadros" || /:esquadrias$/.test(b.id))) numMap[b.tipo] = numF(i); }); });
       c.total = pack.folhas.length;
-      function mkPr(fF) { return P.normalizar({ id: "arqpranchas", nome: "Arquitetura - projeto executivo", formato: fF, orientacao: "paisagem", origem: "arquitetura",
+      function mkPr(fF) { return P.normalizar({ id: "arqpranchas", nome: TITULO_JOGO[cfg.jogo] || TITULO_JOGO.executivo, formato: fF, orientacao: "paisagem", origem: "arquitetura",
         carimbo: { modelo: "RA", empresa: emp0, responsavel: txt(op.responsavel), registro: txt(op.registro), titulo: txt(op.tituloProfissional), obra: txt(op.obra), proprietario: txt(op.proprietario),
                    contratante: txt(op.contratante), local: txt(op.local), codigo: codigo, data: data, revisoes: [[revNum, cfg.descricaoRevisao, data]] },
         folhas: pack.folhas.map(function (f, i) { var bl = f.itens.map(function (q) { return porId2[q.id]; }).filter(Boolean); return { id: "folha-" + dois(i + 1), n: i + 1, conteudo: tituloDaFolha(bl, blocosFinais), escala: escalaDe(bl), numero: codigo + " " + rev }; }) }); }
       pr = mkPr(fmt);
       var mapaBl = {}, prPorFmt = {}, geoPorFmt = {};
-      blocosFinais.forEach(function (b) { mapaBl[b.id] = b.bloco; });
+      var mapaEsc = {}; blocosFinais.forEach(function (b) { mapaBl[b.id] = b.bloco; mapaEsc[b.id] = b.escala; });
       pack.folhas.forEach(function (f, i) {
         /* ⚠ FORMATO POR FOLHA: a folha leva a geometria (moldura, carimbo, área útil) e o carimbo do PRÓPRIO formato; os blocos ficam onde o arranjo ou o usuário os pôs */
         var fmtF = formatosFolha[String(i + 1)] || fmt;
         if (!geoPorFmt[fmtF]) { geoPorFmt[fmtF] = P.geometria(fmtF, "paisagem", "RA"); prPorFmt[fmtF] = fmtF === fmt ? pr : mkPr(fmtF); }
         var geoF = geoPorFmt[fmtF], prF = prPorFmt[fmtF], A = geoF.area, janela = [A.x - 1, A.y - 1, A.x + A.w + 1, A.y + A.h + 1];
-        var bl = f.itens.map(function (q) { return porId2[q.id]; }).filter(Boolean), rot = dois(i + 1), D = DS().novo(E, true), cp = G.compor(D, f, mapaBl, A);
+        var bl = f.itens.map(function (q) { return porId2[q.id]; }).filter(Boolean), rot = dois(i + 1), D = DS().novo(E, true), cp = G.compor(D, f, mapaBl, A, { escalas: mapaEsc });
         var conf = DS().conferir(D, janela), cb = G.conferir(cp.colocados, A);
         verificacao.textoTexto += conf.textoTexto.length; verificacao.textoLinha += conf.textoLinha.length; verificacao.foraJanela += conf.foraJanela.length;
         verificacao.blocosSobrepostos += cb.sobrepostos.length; verificacao.blocosCortados += cb.cortados.length; verificacao.blocosPerto += cb.pertoDemais.length;
@@ -845,10 +893,31 @@
   }
   function desenharLayout(c, def) {
     var Pl = PL(), Qd = QD(), D = c.D, A = c.A, pl = c.plano;
-    var r = Pl.planta(c, { modo: "layout", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: true, cortes: true });
+    var legalBl = c.emBlocos && c.cfg.jogo === "legal" && typeof c.bloco === "function";
+    var plantaL = function () { return Pl.planta(c, { modo: "layout", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: true, cortes: true }); };
+    var r = legalBl ? c.bloco("planta", plantaL) : plantaL();
+    /* JOGO LEGAL: o quadro de áreas por ambiente é um bloco da própria folha da planta (o arranjo o põe ao lado ou sob a planta); o de esquadrias não é do jogo legal */
+    if (legalBl) {
+      var ambsG = arr(c.depois.ambientes).filter(function (a) { return a.status !== "demolido" && (def.pav == null || a.pav === def.pav); }), pavNome = def.pav != null && arr(c.dados.pavimentos).length > 1 ? " - " + txt(c.dados.pavimentos[def.pav].nome).toUpperCase() : "";
+      if (ambsG.length && Qd.quadroAreasAmbientes) c.bloco("quadro-areas", function () { Qd.quadroAreasAmbientes(D, A.x + 4, A.y + 4, 128, ambsG, "QUADRO DE ÁREAS" + pavNome); }, "QUADRO DE ÁREAS" + pavNome);
+      else c.avisos.push(def.numero + ": o modelo não tem ambiente delimitado neste pavimento: o quadro de áreas por ambiente não saiu (o total está na folha de situação).");
+      return r;
+    }
     /* o quadro de esquadrias compacto sob a planta, se couber; senão a nota remete ao ARQ de quadros */
     var yT = r.y + 14, esq = arr(c.dados.esquadrias).length, hl = Math.max(4.4, D.E.T.tabela * 1.85), hT = (esq + 1) * hl + D.E.T.tabelaCab * 2 + 4;
+    /* QUADRO DE ÁREAS POR AMBIENTE na folha do layout (série): área do modelo + total do pavimento, à esquerda do quadro de esquadrias; sem lugar, avisa (nunca sobrepõe) */
+    if (!c.emBlocos && Qd.quadroAreasAmbientes) {
+      var ambsL = arr(c.depois.ambientes).filter(function (a) { return a.status !== "demolido" && (def.pav == null || a.pav === def.pav); }), hQ = (ambsL.length + 2) * hl + D.E.T.tabelaCab * 2 + 6, yQ = yT + 22;
+      if (ambsL.length && yQ + hQ <= A.y + A.h - 2 && A.w > 200) Qd.quadroAreasAmbientes(D, A.x + 4, yQ, 128, ambsL, "QUADRO DE ÁREAS" + (def.pav != null && arr(c.dados.pavimentos).length > 1 ? " - " + txt(c.dados.pavimentos[def.pav].nome).toUpperCase() : ""));
+      else if (ambsL.length && r.M && A.w > 200) {   /* sem altura sob a planta: o quadro vai AO LADO dela (coluna lateral da área de desenho) */
+        var xL = r.M.ox + r.M.larg + DS().K.margemCotas + 6;
+        if (xL + 128 <= A.x + A.w - 2 && A.y + 16 + hQ <= A.y + A.h - 2) Qd.quadroAreasAmbientes(D, xL, A.y + 16, 128, ambsL, "QUADRO DE ÁREAS" + (def.pav != null && arr(c.dados.pavimentos).length > 1 ? " - " + txt(c.dados.pavimentos[def.pav].nome).toUpperCase() : ""));
+        else c.avisos.push(def.numero + ": o quadro de áreas por ambiente não coube na folha (use formato maior).");
+      }
+      else if (ambsL.length) c.avisos.push(def.numero + ": o quadro de áreas por ambiente não coube sob a planta (use escala menor ou formato maior).");
+    }
     if (c.emBlocos) { /* no arranjo o quadro de esquadrias é um bloco próprio (folha dos quadros) */ }
+    else if (c.cfg && c.cfg.jogo === "legal") { /* JOGO LEGAL em série: o quadro de esquadrias não é do jogo (nem tentativa, nem aviso de "não coube") */ }
     else if (esq && yT + hT <= A.y + A.h - 2 && A.w > 200) Qd.quadroEsquadrias(D, A.x + 140, yT - 8, Math.min(A.w - 144, 330), c.dados.esquadrias);
     else if (esq) c.avisos.push(def.numero + ": o quadro de esquadrias não coube sob a planta; está na folha " + c.numeroDe("quadros") + ".");
     void pl;
@@ -941,7 +1010,25 @@
     if (formato === "svg") return r.folhas.map(function (f) { return { nome: f.numero + " " + f.titulo + ".svg", svg: f.svg }; });
     if (formato === "pdf") { var S = PDF(); return S ? S.pdf(r.folhas.map(function (f) { return f.svg; }), { titulo: "Projeto de arquitetura", imagensPorChave: r.imagensPorChave || {} }) : null; }
     if (formato === "dxf") return paraDxf(r);
+    if (formato === "cad") { var CD = dep("ArqCad", "./arqcad.js"); return CD ? CD.zip(r, { dxfNome: nomeArquivo(r.cliente, r.jogo === "legal" ? "JOGO-LEGAL" : "JOGO-EXECUTIVO", r.revisao) + ".dxf" }) : null; }   /* ZIP: DXF único (model em escala real + um layout por folha) + CTB + LEIA-ME (js/arqcad.js) */
     return null;
+  }
+
+  /* UM PDF POR FOLHA e o ZIP delas, com o nome PE_<CLIENTE>_<PRANCHA>_RXX (o PDF único continua em exportar(r, "pdf")). Sem `cliente` no resultado, vem de opcoes.cliente. */
+  function arquivosPorFolha(r, opcoes) {
+    var S = PDF(), o = opcoes || {}; if (!r || !r.ok || !S) return [];
+    var cli = txt(o.cliente || r.cliente), rev = o.revisao || r.revisao, usados = {};
+    return r.folhas.map(function (f) {
+      var base = nomeArquivo(cli, f.numero, rev), k = base, i = 1;
+      while (usados[k]) { i++; k = base + "-" + i; }   /* nunca dois arquivos com o mesmo nome (a mesma folha de dois pavimentos não existe, mas a garantia fica) */
+      usados[k] = 1;
+      return { nome: k + ".pdf", numero: f.numero, titulo: f.titulo, dados: S.pdf([f.svg], { titulo: f.numero + " - " + f.titulo, imagensPorChave: r.imagensPorChave || {} }) };
+    });
+  }
+  function zipDasFolhas(r, opcoes) {
+    var B = dep("BimBcf", "./bimbcf.js"), L = arquivosPorFolha(r, opcoes); if (!B || !B.zipEscrever || !L.length) return null;
+    var o = {}; L.forEach(function (a) { o[a.nome] = a.dados; });
+    return B.zipEscrever(o);
   }
 
   /* os ambientes que a tela do caderno de interiores oferece = os MESMOS que o gerador usa (situação de DEPOIS). ⚠ Antes a tela listava os do modelo inteiro e o gerador
@@ -953,7 +1040,7 @@
     return { lista: I.listarAmbientes(dados, sit.depois), avisos: av };
   }
 
-  var ArqPranchas = { VERSAO: 1, gerar: gerar, ambientesInteriores: ambientesInteriores, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
+  var ArqPranchas = { VERSAO: 1, gerar: gerar, nomeArquivo: nomeArquivo, arquivosPorFolha: arquivosPorFolha, zipDasFolhas: zipDasFolhas, JOGO_LEGAL: JOGO_LEGAL, aplicarJogo: aplicarJogo, ambientesInteriores: ambientesInteriores, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
     _cad: paraCaderno,
     _int: { K_FOTO: K_FOTO, argsPlanta: argsPlanta, argsIso: argsIso, situacoes: situacoes, estadoSem: estadoSem, idsPorStatus: idsPorStatus, escolherFormatoEscala: escolherFormatoEscala, caixaPlano: caixaPlano, blocosNotas: blocosNotas } };
   global.ArqPranchas = ArqPranchas;

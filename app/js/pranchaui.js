@@ -103,7 +103,13 @@
     '.pv-vp .d2-marca-circ{fill:#fff;stroke:#111}.pv-vp pattern line{stroke:#111}.pv-vp .d2-cad-l{stroke:#9aa3ad;fill:none}.pv-vp .d2-cad-tx{fill:#9aa3ad}' +
     '.pv-vp .d2-amb-alvo{fill:none;stroke:none}.pv-vp .d2-amb-sep{stroke:#2b2b2b}.pv-vp .d2-amb-cor{stroke:none}.pv-vp .d2-amb-leg-cor{stroke:#111}.pv-vp .d2-amb-sel-l{display:none}' +
     /* ACIMA DO CORTE (js/desenho2d.js Acima): projeção tracejada em cinza escuro no papel (sai legível em P&B) */
-    '.pv-vp .d2-acima-l{stroke:#4a4f57;fill:none}.pv-vp .d2-acima-tx{fill:#4a4f57;font-family:Arial,Helvetica,sans-serif}';
+    '.pv-vp .d2-acima-l{stroke:#4a4f57;fill:none}.pv-vp .d2-acima-tx{fill:#4a4f57;font-family:Arial,Helvetica,sans-serif}' +
+    /* TARJA PRETA NO PDF (15/11/2026). Roteiro do defeito: o PDF em lote abre numa JANELA NOVA que só tem este <style>; as classes que o app pinta com o css/ da tela
+       (paginação de piso: recorte e bolha; o aviso "REPAGINAR") ficavam SEM regra e o <path> sem fill sai PRETO no SVG — um bloco preto cobrindo o texto. Cada classe de
+       forma sem fill do js/desenho2d.js precisa de regra aqui (tools/test-folha-sem-tarja.js confere), e o que escapar das classes d2-pag-* vira SEM preenchimento, nunca preto (a regra geral por tag foi tirada: apagava o preenchimento das setas e marcas de corte). */
+    '.pv-vp .d2-pag-rec{fill:#f4dcb4;stroke:none}.pv-vp .d2-pag-bol{fill:#f0b3b3;stroke:none}.pv-vp .d2-pag-pc{stroke:#6b7682;stroke-linejoin:miter;fill:none}.pv-vp .d2-pag-rev{stroke:#1a6cb5;fill:none}' +
+    '.pv-vp .d2-pag-velha .d2-pag-pc,.pv-vp .d2-pag-velha .d2-pag-rev{stroke:#b42318}.pv-vp .d2-pag-aviso{fill:#b42318;font-family:Arial,Helvetica,sans-serif;font-weight:600}' +
+    ':where(.pv-vp [class*="d2-pag-"]:not([fill])){fill:none}';
   function penaMm(px, vp) {
     var r = vp.penasPx || {}, P = global.Prancha, t = vp.penasMm || (P && P.PENAS_PAPEL && P.PENAS_PAPEL[vp.pena]) || {};
     for (var k in r) if (r.hasOwnProperty(k) && Math.abs(+r[k] - px) < 1e-6 && t[k] != null) return t[k];

@@ -82,6 +82,13 @@
     return tabela(D, x, y, w, "QUADRO DE ACABAMENTOS POR AMBIENTE", [{ t: "Nº", f: 0.8 }, { t: "AMBIENTE", f: 2.6, al: "E" }, { t: ["ÁREA", "(m²)"], f: 1.2 }, { t: "PISO", f: 3.2, al: "E" }, { t: "RODAPÉ", f: 2, al: "E" },
       { t: "PAREDES", f: 3.2, al: "E" }, { t: "FORRO", f: 3.2, al: "E" }, { t: ["PÉ-DIREITO", "(m)"], f: 1.5 }], L);
   }
+  /* ÁREAS POR AMBIENTE da planta (área do MODELO, nunca digitada) + o total do pavimento; ambiente sem área vira "informe" */
+  function quadroAreasAmbientes(D, x, y, w, ambs, titulo) {
+    var tot = 0, L = arr(ambs).map(function (a, i) { var ar = isFinite(+a.area) && a.area > 0 ? +a.area : null; if (ar != null) tot += ar; return [txt(a.numero) || String(i + 1), txt(a.nome).toUpperCase(), ar != null ? c2(ar) : { t: "informe", cor: VERMELHO }]; });
+    if (!L.length) L = [[{ t: "sem ambiente no modelo", cor: VERMELHO }, "", ""]];
+    else L.push({ total: ["", "TOTAL", c2(tot)] });
+    return tabela(D, x, y, w, titulo || "QUADRO DE ÁREAS POR AMBIENTE", [{ t: "Nº", f: 0.8 }, { t: "AMBIENTE", f: 3.2, al: "E" }, { t: ["ÁREA", "(m²)"], f: 1.3 }], L);
+  }
   function quadroForros(D, x, y, w, forros, ambs, nLum) {
     var por = {}; arr(ambs).forEach(function (a) { por[a.id] = a; });
     var L = arr(forros).map(function (f) { var a = por[f.ambienteId]; return [txt(a ? a.nome : f.id).toUpperCase(), txt(f.tipo) || { t: "informe", cor: VERMELHO }, (f.cota > 0 ? "+" : "") + c2(f.cota), c2(f.area)]; });
@@ -128,7 +135,7 @@
     return { w: usada, h: (cy + rowH) - y };
   }
 
-  var ArqQuadros = { quadroAreas: quadroAreas, quadroIndices: quadroIndices, quadroRecuos: quadroRecuos, quadroEsquadrias: quadroEsquadrias, quadroAcabamentos: quadroAcabamentos, quadroForros: quadroForros, detalheEsquadrias: detalheEsquadrias, tabela: tabela };
+  var ArqQuadros = { quadroAreas: quadroAreas, quadroAreasAmbientes: quadroAreasAmbientes, quadroIndices: quadroIndices, quadroRecuos: quadroRecuos, quadroEsquadrias: quadroEsquadrias, quadroAcabamentos: quadroAcabamentos, quadroForros: quadroForros, detalheEsquadrias: detalheEsquadrias, tabela: tabela };
   global.ArqQuadros = ArqQuadros;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqQuadros;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

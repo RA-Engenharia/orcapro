@@ -49,6 +49,21 @@
   };
   ES.TRACEJADO = ES.PENAS.tracejado.traco + " " + ES.PENAS.tracejado.espaco;
 
+  /* PENAS DO PEDIDO DO ROGÉRIO (15/11/2026, etapa 2 das pranchas de arquitetura) — O ÚNICO LUGAR desses números: arqdesenho.js (planta, corte, fachada) e bimfolhaui.js (folha do BIM)
+     leem daqui. Cor em RGB 0–255 (hex derivado em ES.hex); espessura em mm de papel.
+     INTERPRETAÇÃO registrada: "parede cortada 0,35 mm, hachura RGB 232/138" = contorno PRETO 0,35 mm; poché (preenchimento) cinza 138 — o cinza escuro que o manual de referência já
+     mede na planta (tools/test-arqmanual-r01.js) — e HACHURA de 45° em cinza claro 232 por cima dele. A leitura inversa (fundo 232, traço 138) é só trocar `poche` e `hachura` abaixo.
+     "forro vermelho 223/0/0 0,13 mm, hachura 248": contorno vermelho 223/0/0 e hachura do rebaixo em cinza 248. "revestimento cor 121": cinza 121/121/121 (paginação de piso).
+     "linha de chamada/corte marsala 155/38/38 0,18 mm traço-ponto": a linha do plano de corte e as chamadas, no traço-ponto do padrão (mesmo `eixo`). */
+  ES.PENAS_ARQ = {
+    parede_cortada: { mm: 0.35, cor: [0, 0, 0], poche: [138, 138, 138], hachura: [232, 232, 232] },
+    vista:          { mm: 0.13, cor: [0, 0, 0] },
+    chamada:        { mm: 0.18, cor: [155, 38, 38], traco: "9.6 1.6 0.4 1.6" },
+    forro:          { mm: 0.13, cor: [223, 0, 0], hachura: [248, 248, 248] },
+    revestimento:   { mm: 0.13, cor: [121, 121, 121] }
+  };
+  ES.hex = function (rgb) { return "#" + [0, 1, 2].map(function (i) { var h = Math.max(0, Math.min(255, Math.round(+rgb[i] || 0))).toString(16); return h.length < 2 ? "0" + h : h; }).join(""); };
+
   /* chave `cores` */
   ES.CORES = { construir: "#D61B0A", demolir: "#F5E642", luminotecnico: "#D61B0A", texto_secundario: "#BABABA", vidro_reflexo: "#DBDBDB", preto: "#000" };
 
@@ -103,7 +118,7 @@
      contorno de parede cortada (0,30) por cima. O desenho 2D do BIM (js/desenho2d.js) tem a convenção dele e não muda. */
   ES.CONVENCAO = {
     novo:      { rotulo: "CONSTRUIR PAREDE", cor: ES.CORES.construir, fill: ES.CORES.construir, hachura: null, tracejado: null },
-    demolido:  { rotulo: "DEMOLIR", cor: ES.CORES.demolir, fill: ES.CORES.demolir, hachura: null, tracejado: null },
+    demolido:  { rotulo: "DEMOLIR", cor: ES.CORES.demolir, fill: ES.CORES.demolir, hachura: null, tracejado: ES.TRACEJADO },   /* 15/11/2026: amarelo TRACEJADO (preenchimento amarelo + contorno tracejado); construir vermelho; existente cinza */
     existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
   };
 
@@ -372,7 +387,7 @@
     ls.forEach(function (it, i) {
       var y0 = y + hT + i * hL, ys = y0 + (hL - Lg.amostra_h) / 2;
       if (i) D.linha(x, y0, x + ww, y0, "ARQ-QUADRO-DIV");
-      D.add('<rect x="' + n(x + Lg.amostra_da_borda) + '" y="' + n(ys) + '" width="' + n(Lg.amostra_w) + '" height="' + n(Lg.amostra_h) + '" fill="' + (it.fill || "#fff") + '"' + D.estilo("ARQ-QUADRO") + "/>");
+      D.add('<rect x="' + n(x + Lg.amostra_da_borda) + '" y="' + n(ys) + '" width="' + n(Lg.amostra_w) + '" height="' + n(Lg.amostra_h) + '" fill="' + (it.fill || "#fff") + '"' + D.estilo("ARQ-QUADRO") + (it.tracejado ? ' stroke-dasharray="' + esc(it.tracejado) + '"' : "") + "/>");
       D.texto(x + Lg.texto_x, y0 + hL / 2, ES.maiusc(it.t), hl, { meio: true });
     });
     var yo = y + H + Lg.obs_abaixo;

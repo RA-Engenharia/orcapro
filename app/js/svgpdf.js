@@ -8,7 +8,7 @@
  * g com translate, stroke/fill/stroke-width/stroke-dasharray em mm. Esse
  * subconjunto vira operadores do PDF, um a um, na MESMA escala (1 mm de
  * papel = 1 mm no PDF): o PDF sai vetorial, imprime na escala e abre em
- * qualquer leitor. Não é um conversor de SVG genérico (path, gradiente,
+ * qualquer leitor. Não é um conversor de SVG genérico (path simples sim; gradiente,
  * clip, image e CSS ficam de fora — a imagem do logo do carimbo é pulada).
  *
  * Letra: Helvetica (fonte padrão do PDF, sem embutir) com as larguras do
@@ -54,14 +54,35 @@
   }
   function desEsc(s) { return txt(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&"); }
   var NOMES = { black: "#000000", white: "#ffffff", red: "#ff0000", gray: "#808080", grey: "#808080" };
-  function cor(v) {
+  /* COR: hex (#rgb/#rrggbb/#rrggbbaa), nome, rgb()/rgba(), url(#padrão) e currentColor. ⚠ Antes qualquer formato que não fosse hex virava PRETO (rgba de fundo de texto,
+     url(#hachura) do desenho 2D): era a "tarja preta" sobre o texto no PDF. Agora: alfa mistura com o branco; url() = cinza claro (a hachura não existe no PDF);
+     formato desconhecido = sem cor (null). `alfa` (0..1, opcional) vem de fill-opacity/opacity. */
+  function misturar(c, a) { return a >= 1 ? c : [1 - a + c[0] * a, 1 - a + c[1] * a, 1 - a + c[2] * a]; }
+  function cor(v, alfa) {
     var s = txt(v).trim().toLowerCase(); if (!s || s === "none" || s === "transparent") return null;
+    var al = alfa == null || !isFinite(alfa) ? 1 : Math.max(0, Math.min(1, alfa)), r;
+    if (al <= 0) return null;
     if (NOMES[s]) s = NOMES[s];
-    var m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s); if (m) s = "#" + m[1] + m[1] + m[2] + m[2] + m[3] + m[3];
-    m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(s); if (!m) return [0, 0, 0];
-    return [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
+    if (/^url\(/.test(s)) return misturar([0.82, 0.82, 0.82], al);
+    if (s === "currentcolor") return misturar([0, 0, 0], al);
+    var m = /^rgba?\(\s*([\d.]+%?)[\s,]+([\d.]+%?)[\s,]+([\d.]+%?)(?:[\s,\/]+([\d.]+%?))?\s*\)$/.exec(s);
+    if (m) {
+      var ch = function (x) { return /%$/.test(x) ? parseFloat(x) / 100 : parseFloat(x) / 255; };
+      var a2 = m[4] == null ? 1 : (/%$/.test(m[4]) ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+      if (a2 <= 0) return null;
+      return misturar([Math.min(1, ch(m[1])), Math.min(1, ch(m[2])), Math.min(1, ch(m[3]))], Math.min(1, a2) * al);
+    }
+    m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s); if (m) s = "#" + m[1] + m[1] + m[2] + m[2] + m[3] + m[3];
+    m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})?$/.exec(s); if (!m) return null;
+    r = [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
+    return misturar(r, (m[4] ? parseInt(m[4], 16) / 255 : 1) * al);
   }
-  function attrs(s) { var o = {}, re = /([\w:-]+)\s*=\s*"([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = desEsc(m[2]); return o; }
+  function attrs(s) {
+    var o = {}, re = /([\w:-]+)\s*=\s*"([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = desEsc(m[2]);
+    /* style="fill:#fff;stroke:#000" vale como atributo (e manda nele); antes era ignorado e a forma saía preta */
+    if (o.style) o.style.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim(); if (/^(fill|stroke|stroke-width|stroke-dasharray|fill-opacity|stroke-opacity|opacity|font-size|font-weight|text-anchor|display)$/.test(k)) o[k] = v; });
+    return o;
+  }
   function pontos(s) { var v = txt(s).trim().split(/[\s,]+/).map(Number), o = []; for (var i = 0; i + 1 < v.length; i += 2) o.push([v[i], v[i + 1]]); return o; }
   function translate(t) { var m = /translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*\)/.exec(txt(t)); return m ? [+m[1], +m[2]] : [0, 0]; }
   function rotate(t) { var m = /rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)/.exec(txt(t)); return m ? { a: +m[1], cx: m[2] != null ? +m[2] : null, cy: m[3] != null ? +m[3] : null } : null; }
@@ -82,12 +103,33 @@
       return n;
     }
     function pintar(a, g, fechado, ehForma) {
-      var fl = cor(a.fill != null ? a.fill : (g.fill != null ? g.fill : (ehForma ? "#000" : "none"))), st = cor(a.stroke != null ? a.stroke : g.stroke);
-      var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25);
+      var op = num(a.opacity, 1), fl = cor(a.fill != null ? a.fill : (g.fill != null ? g.fill : (ehForma ? "#000" : "none")), num(a["fill-opacity"], 1) * op), st = cor(a.stroke != null ? a.stroke : g.stroke, num(a["stroke-opacity"], 1) * op);
+      var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25), eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
       if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
       if (fl) ops.push(f(fl[0]) + " " + f(fl[1]) + " " + f(fl[2]) + " rg");
-      ops.push(fl && st ? (fechado ? "b" : "B") : (fl ? "f" : (st ? (fechado ? "s" : "S") : "n")));
+      ops.push(fl && st ? (fechado ? "b" + eo : "B" + eo) : (fl ? "f" + eo : (st ? (fechado ? "s" : "S") : "n")));
       nTraco++;
+    }
+    /* <path d="…">: M L H V C Q A Z (maiúsculas e minúsculas); o arco vira reta até o ponto final. Várias partes (M) = um só caminho (fill-rule evenodd respeitado) */
+    function caminhoD(d, g) {
+      var tk = txt(d).match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [], i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, tem = false, fechou = false;
+      function nx() { return parseFloat(tk[i++]); }
+      function P(a, b) { return f(X(a, g)) + " " + f(Y(b, g)); }
+      while (i < tk.length) {
+        if (/^[a-zA-Z]$/.test(tk[i])) cmd = tk[i++]; else if (cmd === "M") cmd = "L"; else if (cmd === "m") cmd = "l";
+        var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel ? x : 0, oy = rel ? y : 0, a, b, c1, c2, e, h;
+        if (C === "Z") { ops.push("h"); x = sx; y = sy; fechou = true; continue; }
+        if (C === "M") { a = nx() + ox; b = nx() + oy; ops.push(P(a, b) + " m"); x = sx = a; y = sy = b; tem = true; }
+        else if (C === "L") { a = nx() + ox; b = nx() + oy; ops.push(P(a, b) + " l"); x = a; y = b; }
+        else if (C === "H") { a = nx() + ox; ops.push(P(a, y) + " l"); x = a; }
+        else if (C === "V") { b = nx() + oy; ops.push(P(x, b) + " l"); y = b; }
+        else if (C === "C") { c1 = [nx() + ox, nx() + oy]; c2 = [nx() + ox, nx() + oy]; e = [nx() + ox, nx() + oy]; ops.push(P(c1[0], c1[1]) + " " + P(c2[0], c2[1]) + " " + P(e[0], e[1]) + " c"); x = e[0]; y = e[1]; }
+        else if (C === "Q") { c1 = [nx() + ox, nx() + oy]; e = [nx() + ox, nx() + oy]; ops.push(P(x + 2 / 3 * (c1[0] - x), y + 2 / 3 * (c1[1] - y)) + " " + P(e[0] + 2 / 3 * (c1[0] - e[0]), e[1] + 2 / 3 * (c1[1] - e[1])) + " " + P(e[0], e[1]) + " c"); x = e[0]; y = e[1]; }
+        else if (C === "A") { i += 5; a = nx() + ox; b = nx() + oy; ops.push(P(a, b) + " l"); x = a; y = b; }
+        else { i++; }   /* comando desconhecido: pula o token (nunca trava) */
+        h = 0;
+      }
+      return tem ? { fechado: fechou } : null;
     }
     function caminho(P, g, fechado) {
       if (!P.length) return false;
@@ -131,6 +173,7 @@
       }
       if (fecha) continue;
       if (nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a, g, false, false); }
+      else if (nome === "path") { if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a, g, rp.fechado, true); } }
       else if (nome === "polyline") { if (caminho(pontos(a.points), g, false)) pintar(a, g, false, true); }
       else if (nome === "polygon") { if (caminho(pontos(a.points), g, true)) pintar(a, g, true, true); }
       else if (nome === "rect") {

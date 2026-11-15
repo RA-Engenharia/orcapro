@@ -505,20 +505,36 @@
     if (d.tipo === "planta" && d.acima && d.acima.length) p.push(svgAcima(d.acima, e, pena, d.acimaRotulo, extra && extra.p6 ? extra.p6 : null));
     if (p6) p.push(p6.corpo); else {   /* P6: 1) e 2) pelos estilos de objeto RA */
     /* 1) o que se VÊ além do corte — pena fina, por baixo */
-    var lin = "";
-    (d.linhas || []).forEach(function (l) { lin += "M" + n4(l[0]) + " " + n4(l[1]) + "L" + n4(l[2]) + " " + n4(l[3]); });
-    if (lin) p.push('<path d="' + lin + '" class="d2-vista" stroke-width="' + pena.vista + '" ' + NS + "/>");
+    var lin = "", porCat = !!(extra && extra.porCategoria);
+    if (porCat) {
+      /* PENAS POR CATEGORIA no caminho comum (sem a prévia P6): um <path> por chave de estilo, com data-cat — o MESMO desenho; só a marca para BimFolhaUI.penasArq */
+      var gLc = {}, ordLc = [];
+      (d.linhas || []).forEach(function (l, i) { var kc = (d.linhasK && d.linhasK[i]) || "_"; if (!(kc in gLc)) { gLc[kc] = ""; ordLc.push(kc); } gLc[kc] += "M" + n4(l[0]) + " " + n4(l[1]) + "L" + n4(l[2]) + " " + n4(l[3]); });
+      ordLc.forEach(function (kc) { p.push('<path d="' + gLc[kc] + '" class="d2-vista" data-cat="' + esc(kc) + '" stroke-width="' + pena.vista + '" ' + NS + "/>"); });
+    } else {
+      (d.linhas || []).forEach(function (l) { lin += "M" + n4(l[0]) + " " + n4(l[1]) + "L" + n4(l[2]) + " " + n4(l[3]); });
+      if (lin) p.push('<path d="' + lin + '" class="d2-vista" stroke-width="' + pena.vista + '" ' + NS + "/>");
+    }
     /* 2) o que é CORTADO — preenchimento + contorno na pena grossa */
     var fill = e.preenchimento === "hachura" ? "url(#d2-hach)" : e.preenchimento === "solido" ? "#3a3a3a" : e.preenchimento === "cinza" ? "#cfd3d8" : "none";
-    var fechados = "", abertos = "", fase = {};
+    var fechados = "", abertos = "", fase = {}, porCatC = {};
     (d.cortes || []).forEach(function (c) {
       if (c.fase) { var q = fase[c.fase] || (fase[c.fase] = { f: "", a: "" }); if (c.fechado) q.f += caminho(c.pts, true); else q.a += caminho(c.pts, false); return; }   /* P10 */
       if (c.fechado) fechados += caminho(c.pts, true, c.arcos); else abertos += caminho(c.pts, false, c.arcos);   /* CURVA: c.arcos */
+      if (porCat) { var kk = c.k || "_"; var q2 = porCatC[kk] || (porCatC[kk] = { f: "", a: "" }); if (c.fechado) q2.f += caminho(c.pts, true, c.arcos); else q2.a += caminho(c.pts, false, c.arcos); }
     });
     /* CONVENÇÃO DE REFORMA: o que não tem fase marcada é a CONSTRUIR (a fase de agora) — vermelho com hachura; style inline vence a classe */
     var stN = conv ? ' style="stroke:' + conv.novo.cor + '"' : "";
-    if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
-    if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+    if (porCat) {
+      Object.keys(porCatC).forEach(function (kc) {
+        var q2 = porCatC[kc], dc = ' data-cat="' + esc(kc) + '"';
+        if (q2.f) p.push('<path d="' + q2.f + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+        if (q2.a) p.push('<path d="' + q2.a + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+      });
+    } else {
+      if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+      if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+    }
     }
     /* CONVENÇÃO DE REFORMA com os estilos de objeto (P6): o que é a construir é repintado em vermelho com hachura por cima do corpo */
     if (conv && p6) {

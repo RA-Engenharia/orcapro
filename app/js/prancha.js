@@ -235,6 +235,7 @@
     o.mostrarTitulo = b.mostrarTitulo !== false;
     /* escala PRÓPRIA desta cópia (clicou no 1:50 do título e trocou): a folha não segue mais a escala da vista */
     if (b.escalaPropria) o.escalaPropria = true;
+    if (b.semInst === 'arquitetura' || b.semInst === 'estrutural') o.semInst = b.semInst;   /* a folha gerada SEM a instalação (js/bimfolhaui.js): fica no viewport, não na vista */
     o.titulo = ''; o.subtitulo = '';   /* o título do viewport é o "título de vista", não o rótulo dos outros blocos */
     return o;
   }

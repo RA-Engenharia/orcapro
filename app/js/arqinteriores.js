@@ -499,8 +499,8 @@
       if (q) paredes.push({ id: w.id, pts: q, status: w.status, espessura: w.espessura, rotY: w.rotY });
     });
     arr(dados.pilares).forEach(function (p) { if (!VIVO[p.status] || p.pav !== amb.pav || !inter(p.pts)) return; var q = recortarRet(p.pts, W); if (q) pilares.push({ id: p.id, pts: q, status: p.status }); });
-    d.paredesPlanta(D, M, paredes, "layout"); d.pilaresPlanta(D, M, pilares, "layout");
     var vaos = arr(dados.vaos).filter(function (v) { return VIVO[v.status] && porId[v.parede] && v.x >= W[0] && v.x <= W[2] && v.z >= W[1] && v.z <= W[3]; });
+    d.paredesPlanta(D, M, paredes, "layout", vaos); d.pilaresPlanta(D, M, pilares, "layout");
     d.vaosPlanta(D, M, vaos, porId, "layout");
     return { M: M, k: k, es: es, W: W, avisos: avisos, porId: porId };
   }

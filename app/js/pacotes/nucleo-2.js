@@ -85957,5 +85957,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=ecc0d225ff"},{"src":"js/bim-pacote.js?v=1c21ee5efc","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=9a0051f662"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=ab491e8d2e"},{"src":"js/bim-pacote.js?v=1c21ee5efc","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=9a0051f662"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

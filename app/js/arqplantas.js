@@ -35,6 +35,8 @@
 
   /* quais fases entram em cada modo de planta */
   var FASES_MODO = { existente: { existente: 1, demolido: 1 }, demolir: { existente: 1, demolido: 1, novo: 1 }, layout: { existente: 1, novo: 1 }, fantasma: { existente: 1, novo: 1 }, humanizada: { existente: 1, novo: 1 } };
+  /* o pavimento da folha em desenho (series e arranjo): c.def.pav; sem ele, o térreo (0) — antes era sempre 0 e o Superior saía igual ao Térreo */
+  function pavDef(c) { return c && c.def && c.def.pav != null ? c.def.pav : 0; }
   function listas(c, modo, pav) {
     var d = c.dados, F = FASES_MODO[modo] || FASES_MODO.layout;
     function ok(x) { return F[x.status] && (pav == null || x.pav === pav); }
@@ -42,7 +44,7 @@
     return {
       paredes: arr(d.paredes).filter(function (w) { return ok(w) && !w.muro; }), pilares: arr(d.pilares).filter(ok),
       vaos: arr(d.vaos).filter(ok), moveis: arr(d.moveis).filter(ok), lajes: arr(d.lajes).filter(ok), luminarias: arr(d.luminarias).filter(ok),
-      ambientes: arr((base || d).ambientes).filter(function (a) { return pav == null || a.pav === pav; }), muros: arr(d.paredes).filter(function (w) { return ok(w) && w.muro; })
+      ambientes: arr((base || d).ambientes).filter(function (a) { return pav == null || a.pav === pav; }), muros: c.plano && c.plano.semMuros && !(c.def && c.def.tipo === "situacao") ? [] : arr(d.paredes).filter(function (w) { return ok(w) && w.muro; })   /* plano.semMuros: a planta recortou a edificação; o muro fica na situação e nas fachadas */
     };
   }
   function porId(L) { var m = {}; L.forEach(function (w) { m[w.id] = w; }); return m; }
@@ -53,7 +55,7 @@
     var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), modo = o.modo, Lc = listas(c, modo, o.pav);
     var hT = titulo(c, A.x + 4, A.y + 2, o.titulo, "ESC 1:" + pl.escala), semLugar = [];
     /* R01: os MUROS DE DIVISA aparecem na planta (antes saíam só na situação e nas fachadas: a planta não mostrava o limite do terreno), em cada fase, com o rótulo "MURO H=x,xx m" como no manual */
-    d.paredesPlanta(D, M, Lc.paredes.concat(o.semMuros ? [] : Lc.muros), modo === "layout" ? "layout" : modo);
+    d.paredesPlanta(D, M, Lc.paredes.concat(o.semMuros ? [] : Lc.muros), modo === "layout" ? "layout" : modo, Lc.vaos);   /* com os vãos: a parede é recortada neles (sem máscara branca) */
     d.pilaresPlanta(D, M, Lc.pilares, modo);
     if (modo === "layout" && !o.esquadrias) d.moveisPlanta(D, M, Lc.moveis);
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), modo);
@@ -269,9 +271,9 @@
 
   /* ================================================================ ARQ-06 FORRO */
   function forro(c) {
-    var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", 0), g = G(), cH = c.depois;
+    var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", pavDef(c)), g = G(), cH = c.depois;
     titulo(c, A.x + 4, A.y + 2, "PLANTA DE FORRO", "ESC 1:" + pl.escala);
-    d.paredesPlanta(D, M, Lc.paredes, "fantasma");
+    d.paredesPlanta(D, M, Lc.paredes, "fantasma", Lc.vaos);
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "fantasma");
     var Fs = arr(cH.forros).filter(function (f) { return f.status !== "demolido"; }), ambPorId = {};
     arr(cH.ambientes).forEach(function (a) { ambPorId[a.id] = a; });
@@ -279,7 +281,7 @@
       var P = f.pts.map(function (p) { return M.Pp(p); });
       D.poli(P, "ARQ-FORRO", true);
       /* R02 (manual p.34–35): o REBAIXO DE GESSO leva HACHURA (forro de gesso ou drywall); laje ou outro tipo fica só no contorno */
-      if (/(gesso|drywall)/i.test(txt(f.tipo)) && g.areaPol(P) > 20) g.hachuraLinhas(P, 2.4, 45).forEach(function (s0) { D.linha(s0[0], s0[1], s0[2], s0[3], "ARQ-HACHURA"); });
+      if (/(gesso|drywall)/i.test(txt(f.tipo)) && g.areaPol(P) > 20) g.hachuraLinhas(P, 2.4, 45).forEach(function (s0) { D.linha(s0[0], s0[1], s0[2], s0[3], "ARQ-FORRO-HACHURA"); });
       var amb = ambPorId[f.ambienteId], sanca = /sanca/i.test(f.tipo) || /sanca/i.test(txt(amb && amb.forro)) || !!f.sanca;
       if (sanca) {
         var b = g.bbox(P), r = 0.15 * pl.k;   /* sanca: recuo de 15 cm do contorno (retângulo) */
@@ -320,12 +322,12 @@
     } catch (e) { return null; }
   }
   function paginacao(c) {
-    var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", 0), est = c.estadoDepois, sem = [], linhas = [];
+    var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", pavDef(c)), est = c.estadoDepois, sem = [], linhas = [];
     titulo(c, A.x + 4, A.y + 2, "PAGINAÇÃO DE PISO", "ESC 1:" + pl.escala);
-    d.paredesPlanta(D, M, Lc.paredes, "fantasma");
+    d.paredesPlanta(D, M, Lc.paredes, "fantasma", Lc.vaos);
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "fantasma");
     arr(est && est.ambientes).forEach(function (a) {
-      var am = arr(c.depois.ambientes).filter(function (x) { return x.id === String(a.id); })[0]; if (!am || am.pav !== 0) return;
+      var am = arr(c.depois.ambientes).filter(function (x) { return x.id === String(a.id); })[0]; if (!am || am.pav !== pavDef(c)) return;
       if (PERM_RE.test(txt(am.piso) + " " + txt(am.nome))) return;   /* jardim, gramado: sem paginação de piso */
       var pg = paginacaoAmbiente(est, a);
       if (!pg || !pg.res) { sem.push(am.nome); return; }
@@ -514,7 +516,7 @@
   }
   function humanizada(c) {
     var D = c.D, d = DS(), A = c.A, g = G(), T = c.dados.terreno, pl = planoHumanizado(c);
-    var M = d.mapa(pl.caixa, A.x + 4 + 6, A.y + 16 + 6, pl.k), Lc = listas(c, "humanizada", 0);
+    var M = d.mapa(pl.caixa, A.x + 4 + 6, A.y + 16 + 6, pl.k), Lc = listas(c, "humanizada", pavDef(c));
     titulo(c, A.x + 4, A.y + 2, "PLANTA HUMANIZADA", "ESC 1:" + pl.escala);
     /* terreno: o lote em verde claro e as sub-regiões por material */
     if (T.divisa) {
@@ -539,8 +541,8 @@
       d.fundoPol(D, l.pts.map(function (p) { return M.Pp(p); }), "#e4dcc9", "ARQ-HUM");
     });
     /* sombra leve das paredes: o contorno deslocado 1 mm para baixo e para a direita */
-    Lc.paredes.forEach(function (w) { d.fundoPol(D, w.pts.map(function (p) { var q = M.Pp(p); return [q[0] + 1.0, q[1] + 1.0]; }), "#a8a8a8", "ARQ-HUM"); });
-    d.paredesPlanta(D, M, Lc.paredes, "humanizada");
+    (d.cortarParedesNosVaos ? d.cortarParedesNosVaos(d.emendarParedes ? d.emendarParedes(Lc.paredes) : Lc.paredes, arr(Lc.vaos).map(function (v) { var o = {}; Object.keys(v).forEach(function (k) { o[k] = v[k]; }); o.largura = (+v.largura || 0) + 2 * (1.0 / pl.k) + 0.004; return o; })) : Lc.paredes).forEach(function (w) { d.fundoPol(D, w.pts.map(function (p) { var q = M.Pp(p); return [q[0] + 1.0, q[1] + 1.0]; }), "#a8a8a8", "ARQ-HUM"); });   /* a sombra também abre no vão */
+    d.paredesPlanta(D, M, Lc.paredes, "humanizada", Lc.vaos);
     d.pilaresPlanta(D, M, Lc.pilares, "humanizada");
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "humanizada");
     /* mobiliário colorido com sombra */

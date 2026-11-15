@@ -423,22 +423,33 @@
     var D = c.D, d = DS(), A = c.A, cts = c.cortes, mcs = cts.map(function (ct) { return modeloCorte(c, ct); });
     var ws = cts.map(function (ct, i) { var m = mcs[i]; return ct.u1 - ct.u0 + 1.8 + (m.rua ? m.rua.passeio + m.rua.meia + 0.6 : 0); }), hs = mcs.map(function (m) { return (m.yMax - m.yMin) + 0.1; });
     var ex = { fx: 24 + 36 + 40, fy: 14 + 6 + 20 };
-    var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, [50, 75, 100, 125, 150, 200], ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
+    var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, (c.bloco ? [50, 75, 100, 125, 150, 200] : [25, 50, 75, 100, 125, 150, 200]), ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
+    /* SÉRIE (sem c.bloco), 15/11/2026: cada corte na SUA maior escala (1:25 a 1:200) — o corte BB atravessa o lote e a rua (28 m) e puxava o AA para 1:75; agora cada um usa a maior
+       escala em que cabe na largura e, empilhados, na altura da folha (o título de cada corte diz a escala dele). O arranjo (c.bloco) segue com UMA escala para os blocos. */
+    var escs = null;
+    if (!c.bloco) {
+      var LISTA = [25, 50, 75, 100, 125, 150, 200], iMax = ws.map(function (w) { for (var q = 0; q < LISTA.length; q++) if (w * 1000 / LISTA[q] + ex.fx <= A.w - 4) return q; return LISTA.length - 1; });
+      for (var L = 0; L < LISTA.length && !escs; L++) {
+        var idx = iMax.map(function (m0) { return Math.max(m0, L); }), tot = 0; idx.forEach(function (q, j) { tot += hs[j] * 1000 / LISTA[q] + ex.fy; });
+        if (tot <= A.h - 4) escs = idx.map(function (q) { return LISTA[q]; });
+      }
+      if (!escs) escs = iMax.map(function () { return LISTA[LISTA.length - 1]; });
+    }
     mcs.forEach(function (mc, i) {
-      var ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
+      var k = escs ? 1000 / escs[i] : el.k, escI = escs ? escs[i] : el.escala, ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
       /* c.bloco (js/arqdiagrama.js): cada corte é um BLOCO que o motor de diagramação põe onde couber */
       (c.bloco || function (nome, fn) { return fn(); })("corte-" + ct.letra + ct.letra, function () {
-        d.escalaCota(D, el.escala); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala, i + 1);
+        d.escalaCota(D, escI); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + escI, i + 1);
         var X = x + 24 + (0.9 + (mc.rua && mc.frente < 0 ? mc.rua.passeio + mc.rua.meia + 0.6 : 0)) * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;   /* Yb = o papel da cota mc.yMin */
         var Fi = desenharCorte(c, ct, mc, X, Yb, k);
         cotasCorte(c, ct, mc, Fi, k); cotasInternasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
         sem = sem.concat(rotulosCorte(c, ct, mc, Fi, k));
       }, "CORTE " + ct.letra + ct.letra);
-      if (el.modo === "lado") x += wm; else y += hm;
+      if (!escs && el.modo === "lado") x += wm; else y += hm;
     });
-    if (el.estourou) c.avisos.push("ARQ-07: os cortes não cabem em 1:" + el.escala + " nesta folha: aumente o formato.");
+    if (!escs && el.estourou) c.avisos.push("ARQ-07: os cortes não cabem em 1:" + el.escala + " nesta folha: aumente o formato.");
     if (sem.length) c.avisos.push("ARQ-07: sem lugar livre para o rótulo de " + sem.join(", ") + ".");
-    return { escala: "1:" + el.escala, modelos: mcs };
+    return { escala: escs ? escs.filter(function (e, q) { return escs.indexOf(e) === q; }).map(function (e) { return "1:" + e; }).join(" / ") : "1:" + el.escala, modelos: mcs };
   }
 
   /* ================================================================ FACHADAS */
@@ -628,7 +639,7 @@
     var D = c.D, d = DS(), A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
     var ws = mfs.map(function (m) { return m.uMax - m.uMin + 1.8; }), hs = mfs.map(function (m) { return m.yMax - m.yMin + 0.3; });
     var cel = { w: A.w / 2 - 4, h: A.h / 2 - 2 }, ex = { fx: 14 + 30, fy: 14 + 18 };
-    var esc = [50, 75, 100, 125, 150, 200], k = 0.005, ch = null;
+    var esc = c.bloco ? [50, 75, 100, 125, 150, 200] : [25, 50, 75, 100, 125, 150, 200], k = 0.005, ch = null;   /* série (sem c.bloco): a maior escala que cabe, até 1:25 */
     for (var i = 0; i < esc.length && !ch; i++) {
       var kk = 1000 / esc[i], ok = true;
       for (var j = 0; j < mfs.length; j++) if (ws[j] * kk + ex.fx > cel.w || hs[j] * kk + ex.fy > cel.h) ok = false;
