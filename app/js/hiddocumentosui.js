@@ -74,7 +74,13 @@
       var HP = dep("HidPranchas");
       if (cfg.pranchas !== false && HP && HP.gerar) {
         try {
-          var m = C.modeloAtual ? C.modeloAtual() : null, em = ent.em, pr = m ? HP.gerar(C.estado.resultado, { estado: m.estado, avaliarFam: m.avaliarFam }, { pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d && em.d.nome ? em.d : "", responsavel: em.d.responsavel || "", registro: em.d.crea || "", tituloProfissional: em.d.titulo || "", obra: em.obra.nome || "", proprietario: em.obra.clienteNome || "", contratante: em.obra.clienteNome || "", local: em.obra.local || "", logo: em.logo || null, revisao: cfg.rev }) : null;
+          var m = C.modeloAtual ? C.modeloAtual() : null, em = ent.em, HPU = dep("HidPranchasUI"), pr = null;
+          /* UMA fonte só (15/11/2026): as mesmas opções do botão de pranchas do BIM (foto do modelo, ícones, configuração da obra) */
+          if (m && HPU && HPU.montar) {
+            var G = global.Gestao, obraSel = String((G && G._bimSel) || "");
+            pr = HPU.montar({ resultado: C.estado.resultado, modelo: { estado: m.estado, avaliarFam: m.avaliarFam }, pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d || {}, obra: em.obra || {}, logo: em.logo || null,
+                              obraKey: obraSel || "geral", obraId: obraSel }, { revisao: cfg.rev });
+          } else if (m) pr = HP.gerar(C.estado.resultado, { estado: m.estado, avaliarFam: m.avaliarFam }, { pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d && em.d.nome ? em.d : "", responsavel: em.d.responsavel || "", registro: em.d.crea || "", tituloProfissional: em.d.titulo || "", obra: em.obra.nome || "", proprietario: em.obra.clienteNome || "", contratante: em.obra.clienteNome || "", local: em.obra.local || "", logo: em.logo || null, revisao: cfg.rev });
           if (pr && pr.ok) {
             ent.en.pranchas = pr.folhas.map(function (f) { return { id: f.id, numero: f.numero, titulo: f.titulo }; });
             var pdf = HP.exportar(pr, "pdf");

@@ -28804,7 +28804,7 @@ var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(
 var defs = [], prims = [];
 var ctxV = { modelo: modelo, rede: rede, ix: ix, colunas: colunas, nomeAp: nomeAp, avisos: avisos, geo: geo, pavs: pavs, AP: A, cfg: cfg, prims: prims, n: 0, ambientes: ambientes };
 if (CJ.plantas || CJ.cortes) pavs.forEach(function (pv) {
-var ps = CJ.plantas ? sistemas.map(function (sis) { return { sis: sis, trs: trechosDoPav(rede, sis, pv) }; }).filter(function (x) { return x.trs.length; }) : [];
+var ps = CJ.plantas ? sistemas.map(function (sis) { return { sis: sis, trs: trechosDoPav(rede, sis, pv) }; }).filter(function (x) { return x.trs.some(function (t) { return !t.vertical; }); }) : [];
 var cortes = [];
 if (CJ.cortes) paredesHidraulicas(ctxV, pv).forEach(function (ph, i) { ph.pv = pv; ph.n = i + 1; cortes.push(prepCorte(ctxV, ph, geo.area)); });
 function montar(esc0) {
@@ -29146,6 +29146,12 @@ if (saida.dxf) { var dxf = P.exportar(r, "dxf"); if (dxf && baixar(nome + ".dxf"
 if (saida.abas) r.abas = abrirNasAbas(r, ctx, saida.registro);
 return r;
 }
+function montar(ctx, cfg) {
+var P = HP(); if (!P) return { ok: false, folhas: [], avisos: ["js/hidpranchas.js não carregou."] };
+if (!ctx || !ctx.resultado) return { ok: false, folhas: [], avisos: ["Dimensione primeiro: sem resultado não há o que apresentar."] };
+var base = lerMemoria(ctx.obraKey), c; Object.keys(cfg || {}).forEach(function (k) { base[k] = cfg[k]; }); c = P.normalizarConfig(base);
+return P.gerar(ctx.resultado, ctx.modelo, opcoesDe(ctx, c));
+}
 function abrirNasAbas(r, ctx, o) {
 o = o || {};
 var BF = global.BimFolhaUI; if (!BF || !BF.salvarRegistro || !global.Store) return null;
@@ -29264,7 +29270,7 @@ if (a) abrir3dAmbiente(a, ctx);
 };
 return true;
 }
-var HidPranchasUI = { abrir: abrir, gerar: gerar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
+var HidPranchasUI = { abrir: abrir, gerar: gerar, montar: montar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
 _int: { nIcones: function () { return Object.keys(ICONES_J).length; }, ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
 global.HidPranchasUI = HidPranchasUI;
 if (typeof module !== "undefined" && module.exports) module.exports = HidPranchasUI;
@@ -33222,7 +33228,12 @@ if (PC) ent.en.icones = PC.iconesEmCache(PC.TAMANHOS[0]);
 var HP = dep("HidPranchas");
 if (cfg.pranchas !== false && HP && HP.gerar) {
 try {
-var m = C.modeloAtual ? C.modeloAtual() : null, em = ent.em, pr = m ? HP.gerar(C.estado.resultado, { estado: m.estado, avaliarFam: m.avaliarFam }, { pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d && em.d.nome ? em.d : "", responsavel: em.d.responsavel || "", registro: em.d.crea || "", tituloProfissional: em.d.titulo || "", obra: em.obra.nome || "", proprietario: em.obra.clienteNome || "", contratante: em.obra.clienteNome || "", local: em.obra.local || "", logo: em.logo || null, revisao: cfg.rev }) : null;
+var m = C.modeloAtual ? C.modeloAtual() : null, em = ent.em, HPU = dep("HidPranchasUI"), pr = null;
+if (m && HPU && HPU.montar) {
+var G = global.Gestao, obraSel = String((G && G._bimSel) || "");
+pr = HPU.montar({ resultado: C.estado.resultado, modelo: { estado: m.estado, avaliarFam: m.avaliarFam }, pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d || {}, obra: em.obra || {}, logo: em.logo || null,
+obraKey: obraSel || "geral", obraId: obraSel }, { revisao: cfg.rev });
+} else if (m) pr = HP.gerar(C.estado.resultado, { estado: m.estado, avaliarFam: m.avaliarFam }, { pavimentos: C.pavimentos ? C.pavimentos() : [], empresa: em.d && em.d.nome ? em.d : "", responsavel: em.d.responsavel || "", registro: em.d.crea || "", tituloProfissional: em.d.titulo || "", obra: em.obra.nome || "", proprietario: em.obra.clienteNome || "", contratante: em.obra.clienteNome || "", local: em.obra.local || "", logo: em.logo || null, revisao: cfg.rev });
 if (pr && pr.ok) {
 ent.en.pranchas = pr.folhas.map(function (f) { return { id: f.id, numero: f.numero, titulo: f.titulo }; });
 var pdf = HP.exportar(pr, "pdf");

@@ -176,6 +176,14 @@
     if (saida.abas) r.abas = abrirNasAbas(r, ctx, saida.registro);
     return r;
   }
+  /* 15/11/2026: UMA fonte só para "gerar as folhas": o Gerar documentos (hiddocumentosui.js) chama aqui e leva as MESMAS opções do botão de
+     pranchas do BIM (foto do modelo, ícones, configuração memorizada da obra). Sem efeito colateral: não baixa, não grava, não abre aba. */
+  function montar(ctx, cfg) {
+    var P = HP(); if (!P) return { ok: false, folhas: [], avisos: ["js/hidpranchas.js não carregou."] };
+    if (!ctx || !ctx.resultado) return { ok: false, folhas: [], avisos: ["Dimensione primeiro: sem resultado não há o que apresentar."] };
+    var base = lerMemoria(ctx.obraKey), c; Object.keys(cfg || {}).forEach(function (k) { base[k] = cfg[k]; }); c = P.normalizarConfig(base);
+    return P.gerar(ctx.resultado, ctx.modelo, opcoesDe(ctx, c));
+  }
   /* as folhas nas ABAS DE FOLHA do BIM: um registro só por obra (o Gerar de novo SUBSTITUI as folhas — idempotente) */
   function abrirNasAbas(r, ctx, o) {
     o = o || {};
@@ -307,7 +315,7 @@
     return true;
   }
 
-  var HidPranchasUI = { abrir: abrir, gerar: gerar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
+  var HidPranchasUI = { abrir: abrir, gerar: gerar, montar: montar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
     _int: { nIcones: function () { return Object.keys(ICONES_J).length; }, ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
   global.HidPranchasUI = HidPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = HidPranchasUI;

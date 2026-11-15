@@ -1094,7 +1094,10 @@
     /* o tipo PRÓPRIO tem perfil medido (curva curta, junção dupla, luva de correr…)? senão o do tipo-base — menos o plug, que não é o cap */
     var ppP = null, cP = c;
     if (c && tipoOrig !== c.tipo && perfilProduto(c.material, tipoOrig, c.dn)) { cP = {}; Object.keys(c).forEach(function (k) { cP[k] = c[k]; }); cP.tipo = tipoOrig; }
-    if (c && tipoOrig !== "plug") ppP = perfilProduto(cP.material, cP.tipo, cP.dn);
+    /* LUVA DN 40 DO ESGOTO SN (15/11/2026): a ficha (Tigre FT Esgoto Série Normal, p.7) dá a junta do DN 40 SOLDÁVEL — sem anel de borracha, sem canaleta —; o perfil
+       medido tinha frisos de anel. Fica a construção genérica da luva com as cotas da ficha (A 39 · B 18), boca soldável */
+    var luva40SN = !!(c && c.material === "pvc_esgoto" && c.tipo === "luva" && num(c.dn, 0) === 40);
+    if (c && tipoOrig !== "plug" && !luva40SN) ppP = perfilProduto(cP.material, cP.tipo, cP.dn);
     if (ppP && eixos && eixos.length) { var rP = conexaoProduto(cP, eixos, o, ppP); if (rP) return rP; }
     var P = pv(c), tipo = c.tipo, mat = c.material, J = JUNTA[mat];
     if (!J || !eixos || !eixos.length) return null;
@@ -1263,6 +1266,7 @@
       var e1 = eixos[0], e2 = eixos[1];
       if (tipo === "luva") {
         cot = cotasConexao(mat, "luva", c.dn);
+        if (mat === "pvc_esgoto" && num(c.dn, 0) === 40) { var fl = dep("HidCatalogoSN", "./hidcatalogosn.js"), lf = fl && fl.luva(40); if (lf) { var cs = {}; Object.keys(cot).forEach(function (kk) { cs[kk] = cot[kk]; }); cs.junta = fl.junta(40); cs.L = lf.A; cs.pb = lf.B; cs.pb2 = lf.B; cs.origem = { L: "catalogo", pb: "catalogo", od: cot.origem && cot.origem.od, junta: "catalogo" }; cs.fontes = [lf.fonte]; cs.produto = false; cs.aConferir = false; cot = cs; } }
         /* luva de esgoto com bolsas diferentes (anel × curta, ver o gerador): cada uma do seu lado, a junta no meio das duas */
         var c2 = cot.pb2 && cot.pb2 !== cot.pb ? { de: cot.de, od: cot.od, pb: cot.pb2, e: cot.e, junta: J } : cot, z1 = cot.L * cot.pb / (cot.pb + c2.pb), z2 = cot.L - z1;
         var camL = reta(add(P, mul(e1.dir, z1 * MM)), e2.dir);

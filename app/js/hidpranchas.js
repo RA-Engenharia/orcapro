@@ -2903,7 +2903,9 @@
     /* PLANTAS e CORTES do pavimento como VISTAS empacotadas (rodada 2): a escala das plantas é a maior da lista usual que cabe;
        vistas pequenas dividem a folha (AF e ES lado a lado; planta + cortes), o bloco centrado na área útil */
     if (CJ.plantas || CJ.cortes) pavs.forEach(function (pv) {
-      var ps = CJ.plantas ? sistemas.map(function (sis) { return { sis: sis, trs: trechosDoPav(rede, sis, pv) }; }).filter(function (x) { return x.trs.length; }) : [];
+      var ps = CJ.plantas ? sistemas.map(function (sis) { return { sis: sis, trs: trechosDoPav(rede, sis, pv) }; }).filter(function (x) { return x.trs.some(function (t) { return !t.vertical; }); }) : [];
+      /* 15/11/2026: pavimento em que só passa COLUNA (trecho vertical, sem ramal horizontal: sem aparelho nem ambiente hidráulico) não
+         vira folha própria — a coluna aparece no esquema vertical; antes saíam folhas quase vazias (laje, platibanda, forro, caixote, calha) */
       var cortes = [];
       if (CJ.cortes) paredesHidraulicas(ctxV, pv).forEach(function (ph, i) { ph.pv = pv; ph.n = i + 1; cortes.push(prepCorte(ctxV, ph, geo.area)); });
       function montar(esc0) {
