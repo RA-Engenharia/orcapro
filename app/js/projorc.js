@@ -126,6 +126,24 @@
     if (!D || !PC || !PL || !T) { lido.erro = "os motores do DXF não carregaram"; return fechar(lido); }
     var dx;
     try { dx = D.parse(String(texto || ""), { blocos: true }); } catch (e) { lido.erro = "não consegui ler o DXF: " + e.message; return fechar(lido); }
+    return lerDxfDe(dx, lido, nome, opts, D, PC, PL, T);
+  }
+  /* leitura em fatias (a tela respira e a barra de progresso anda): aoProg(fracao 0..1, fase) ; cb(lido) — o mesmo `lido` do lerDxf.
+     O que vem depois do parse (classificar, medir) é um bloco só, sem medida contínua: aoProg("medir", null). */
+  function lerDxfAsync(texto, nome, opts, aoProg, cb, cancelado) {
+    opts = opts || {};
+    var lido = novoLido(nome, "dxf"), D = M("DXF"), PC = M("ProjClass"), PL = M("ProjLer"), T = M("ProjTriagem");
+    if (!D || !PC || !PL || !T) { lido.erro = "os motores do DXF não carregaram"; cb(fechar(lido)); return; }
+    if (!D.parseAsync) { cb(lerDxf(texto, nome, opts)); return; }
+    D.parseAsync(String(texto || ""), { blocos: true }, aoProg, function (dx, erro) {
+      if (!dx) { if (erro === "cancelado") { lido.erro = "leitura cancelada"; cb(fechar(lido), "cancelado"); return; } lido.erro = "não consegui ler o DXF: " + erro; cb(fechar(lido)); return; }
+      if (aoProg) aoProg(null, "medir");
+      setTimeout(function () {
+        try { cb(lerDxfDe(dx, lido, nome, opts, D, PC, PL, T)); } catch (e) { lido.erro = "não consegui ler o DXF: " + (e && e.message || e); cb(fechar(lido)); }
+      }, 20);
+    }, cancelado);
+  }
+  function lerDxfDe(dx, lido, nome, opts, D, PC, PL, T) {
     if (!dx || !arr(dx.segmentos).length) { lido.erro = "o DXF não tem linhas legíveis (LINE, LWPOLYLINE, ARC…)"; return fechar(lido); }
     var tri = T.triar({ nomeArquivo: nome, texto: arr(dx.textos).slice(0, 4000).map(function (t) { return t.txt; }), camadas: Object.keys(dx.layers || {}) });
     lido.disciplinas = tri.disciplinas; lido.porqueDisciplina = tri.porque;
@@ -250,7 +268,7 @@
     return '<svg xmlns="http://www.w3.org/2000/svg" data-proj-svg="1" style="display:block;width:100%;height:auto;max-width:' + larg + 'px;max-height:' + Math.min(alt, 520) + 'px;background:#fff;border:1px solid #ccc" viewBox="' + n(b.x0 - m) + " " + n(-b.y1 - m) + " " + n(W) + " " + n(H) + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Prévia da planta «' + esc(p.nome) + '»">' + s + "</svg>";
   }
 
-  var ProjOrcar = { AVISO_DWG: AVISO_DWG, MAX_PAGINAS: MAX_PAGINAS, tipo: tipo, lerDxf: lerDxf, lerPdf: lerPdf, deIfc: deIfc, dwg: dwg, outro: outro, orcar: orcar, resumo: resumo, svgPlanta: svgPlanta, tipoVista: tipoVista, filtrarVistas: filtrarVistas };
+  var ProjOrcar = { AVISO_DWG: AVISO_DWG, MAX_PAGINAS: MAX_PAGINAS, tipo: tipo, lerDxf: lerDxf, lerDxfAsync: lerDxfAsync, lerPdf: lerPdf, deIfc: deIfc, dwg: dwg, outro: outro, orcar: orcar, resumo: resumo, svgPlanta: svgPlanta, tipoVista: tipoVista, filtrarVistas: filtrarVistas };
   global.ProjOrcar = ProjOrcar;
   if (typeof module !== "undefined" && module.exports) module.exports = ProjOrcar;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -17404,8 +17404,15 @@
       if (g.avisos.length) UI.toast(g.avisos.join(" "), "erro");
       try { this.backupAuto({ urgente: true }); } catch (eB) {}
     },
-    _lerPlanilha: function (file, cb) {
+    /* prog (opcional): o rastreador de js/mor/progresso.js — etapas «ler» (bytes de verdade, FileReader.onprogress) e «interpretar» (sem medida contínua) */
+    _lerPlanilha: function (file, cb, prog) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
+      if (prog) {
+        fr.onprogress = function (ev) { if (ev && ev.lengthComputable) prog.avancar("ler", ev.loaded, ev.total, { unidade: "bytes" }); };
+        fr.addEventListener("load", function () { prog.concluir("ler"); prog.iniciar("interpretar"); });
+        prog.aoCancelar(function () { try { fr.abort(); } catch (eA) { /* já terminou */ } });
+        prog.avancar("ler", 0, file.size || 1, { unidade: "bytes" });
+      }
       /* PLANILHA ORÇAMENTÁRIA EM PDF (leva M, 10/11/2026): o PDF que a prefeitura manda entra pelo MESMO funil do .xlsx — vira uma matriz
          (Item, Código, Fonte, Descrição, Und, Quantidade, Preço, Total) que o Importador já sabe ler — e leva junto a conferência
          (soma × total impresso, subtotais, numeração) em meta.pdf para a prévia mostrar a nota e as linhas duvidosas. */

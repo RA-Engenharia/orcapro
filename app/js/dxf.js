@@ -194,7 +194,10 @@
     //   blocos:{nome:{n, usos}} }
     // opts.fatorUnidade: override do usuário (metros por unidade do arquivo)
     // opts.blocos: true → a geometria de dentro dos blocos vira segmento (com `bloco`)
-    parse: function (texto, opts) {
+    /* ⚠ _job: a mesma leitura de sempre, só que PARTIDA em passos (passo1 = fluxo de pares, passo2 = emissão da geometria, concluir = unidade/extents).
+       parse() roda os três de uma vez (comportamento idêntico ao de antes); parseAsync() roda em fatias com setTimeout para a tela respirar e
+       para a barra de progresso (js/mor/progresso.js) mostrar o avanço de verdade. */
+    _job: function (texto, opts) {
       opts = opts || {};
       var L0 = new Leitor(texto);
       var segs = [], textos = [], layers = {}, insunits = 0, pontos = [];   /* P11: pontos cotados (POINT) */
@@ -213,12 +216,16 @@
         ultimoInsert = (e.tipo === "INSERT" && e.temAtrib) ? e : null;
         if (alvo) alvo.push(e);
       }
-      while ((pr = L0.par()) !== null) {
+      var fim1 = false;
+      function passo1(limite) {
+      var n0 = 0;
+      while (!fim1 && n0++ < limite) {
+        pr = L0.par(); if (pr === null) { fechar(); fim1 = true; break; }
         var cod = pr[0], val = pr[1];
         if (cod === 0 && val === "SECTION") { fechar(); esperaNomeSecao = true; secao = ""; continue; }
         if (esperaNomeSecao && cod === 2) { secao = val; esperaNomeSecao = false; alvo = secao === "ENTITIES" ? topo : null; continue; }
         if (cod === 0 && val === "ENDSEC") { fechar(); if (secao === "ENTITIES") { secao = ""; alvo = null; } else { secao = ""; alvo = null; } bloco = null; continue; }
-        if (cod === 0 && val === "EOF") { fechar(); break; }
+        if (cod === 0 && val === "EOF") { fechar(); fim1 = true; break; }
         if (secao === "HEADER") {
           if (cod === 9) insuFlag = val === "$INSUNITS";
           else if (insuFlag && cod === 70) { insunits = parseInt(val, 10) || 0; insuFlag = false; }
@@ -244,7 +251,8 @@
         }
         if (ent) alimentar(ent, cod, val);
       }
-      fechar();
+      return fim1;
+      }
 
       /* ---- 2ª passada: emitir a geometria (topo + blocos expandidos) com a transformação de cada inserção */
       var caixaCache = {};
@@ -373,7 +381,14 @@
           for (var k = 0; k < B.ents.length; k++) emitir(B.ents[k], T2, L, nivel + 1, nome, p2, coletor);
         }
       }
-      for (var it = 0; it < topo.length; it++) emitir(topo[it], IDENT, null, 0, "", [], null);
+      var iTopo = 0;
+      function passo2(limite) {
+        var n1 = 0;
+        while (iTopo < topo.length && n1++ < limite) emitir(topo[iTopo++], IDENT, null, 0, "", [], null);
+        return iTopo >= topo.length;
+      }
+
+      function concluir() {
 
       // extents (na unidade CRUA do arquivo)
       var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -415,7 +430,35 @@
         inserts: inserts, hachuras: hachuras, blocos: resBlocos, cotas: cotas,
         stats: { segmentos: segs.length, textos: textos.length, ignoradas: sem.ignoradas, inserts: inserts.length, hachuras: hachuras.length, dimensoes: stats2.dimensoes, blocos: Object.keys(blocos).length, blocosFaltando: stats2.blocosFaltando, ciclos: stats2.ciclos, profundos: stats2.profundos, atributos: stats2.atributos }
       };
+      }
+      return {
+        passo1: passo1, passo2: passo2, concluir: concluir,
+        prog: function () { return { pos: L0.p, n: L0.n, topo: iTopo, ntopo: topo.length }; }
+      };
     }
+  };
+
+  /* leitura de uma vez (o que sempre existiu) */
+  DXF.parse = function (texto, opts) {
+    var j = DXF._job(texto, opts);
+    while (!j.passo1(1e9)) { /* até o EOF */ }
+    while (!j.passo2(1e9)) { /* até a última entidade */ }
+    return j.concluir();
+  };
+  /* leitura em fatias: aoProg(fracao 0..1, fase) a cada fatia; cancelado() → cb(null, "cancelado"); cb(resultado, erro) */
+  DXF.parseAsync = function (texto, opts, aoProg, cb, cancelado) {
+    var j, fase = 1;
+    try { j = DXF._job(texto, opts); } catch (e) { cb(null, e.message || String(e)); return; }
+    function tique() {
+      try {
+        if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+        var pg, feito;
+        if (fase === 1) { feito = j.passo1(20000); pg = j.prog(); if (aoProg) aoProg(pg.n ? Math.min(1, pg.pos / pg.n) * 0.6 : 0, "linhas"); if (feito) fase = 2; }
+        else { feito = j.passo2(4000); pg = j.prog(); if (aoProg) aoProg(0.6 + (pg.ntopo ? pg.topo / pg.ntopo : 1) * 0.4, "geometria"); if (feito) { cb(j.concluir(), null); return; } }
+        setTimeout(tique, 0);
+      } catch (e2) { cb(null, e2.message || String(e2)); }
+    }
+    tique();
   };
 
   global.DXF = DXF;

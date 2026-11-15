@@ -43994,12 +43994,14 @@ return out + "\n";
 }
 function extrair(lib) {
 var fr = new FileReader();
+if (opts && opts.aoProgresso) fr.onprogress = function (ev) { if (ev && ev.lengthComputable) opts.aoProgresso("bytes", ev.loaded, ev.total); };
 fr.onload = function () {
+if (opts && opts.aoProgresso) opts.aoProgresso("bytes", 1, 1);
 lib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
 var teto = (opts && opts.paginas > 0) ? opts.paginas : 10;
 var texto = "", n = Math.min(pdf.numPages, teto), chain = Promise.resolve();
 if (pdf.numPages > teto && !(opts && opts.paginas)) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
-for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += porLinha ? juntarLinhas(tc.items) : tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
+for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { if (opts && opts.cancelado && opts.cancelado()) throw new Error("cancelado"); return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += porLinha ? juntarLinhas(tc.items) : tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; if (opts && opts.aoProgresso) opts.aoProgresso("paginas", pg, n); }); }); }); })(p);
 chain.then(function () { cb(texto); });
 })["catch"](function () { cb(""); });
 };
@@ -80125,8 +80127,14 @@ UI.toast("Orçamento importado da planilha completa: " + orc.etapas.length + " e
 if (g.avisos.length) UI.toast(g.avisos.join(" "), "erro");
 try { this.backupAuto({ urgente: true }); } catch (eB) {}
 },
-_lerPlanilha: function (file, cb) {
+_lerPlanilha: function (file, cb, prog) {
 var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
+if (prog) {
+fr.onprogress = function (ev) { if (ev && ev.lengthComputable) prog.avancar("ler", ev.loaded, ev.total, { unidade: "bytes" }); };
+fr.addEventListener("load", function () { prog.concluir("ler"); prog.iniciar("interpretar"); });
+prog.aoCancelar(function () { try { fr.abort(); } catch (eA) { } });
+prog.avancar("ler", 0, file.size || 1, { unidade: "bytes" });
+}
 if (/\.pdf$/.test(nome)) {
 if (typeof PlanilhaPDF === "undefined" || !PlanilhaPDF.ler) { cb(null, "o leitor de planilha em PDF (js/planilhapdf.js) não está carregado nesta instalação. Atualize o OrçaPRO."); return; }
 fr.onload = function () {

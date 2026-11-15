@@ -52,8 +52,9 @@
 
     /* ---------------- builders puros ---------------- */
 
-    htmlConfiguracao: function (temViewer) {
+    htmlConfiguracao: function (temViewer, pre) {
       return '<div id="mor-ifc-cfg">' +
+        (arr(pre).length ? '<p data-mor-ifc-pre="1" style="margin:0 0 8px;font-size:12.5px"><b>Arquivo já escolhido:</b> ' + arr(pre).map(function (x) { return esc(x.name); }).join(", ") + ' <span class="muted">(vindo do leitor de documento — para trocar, escolha outro abaixo)</span></p>' : "") +
         '<p class="muted" style="margin:0 0 8px;font-size:12.5px">Lê o IFC inteiro e orça o que o modelo mostra <b>e o que a obra consome sem estar desenhado</b> (chapisco, fôrma, impermeabilização…). Cada linha diz de onde veio; <b>nada implícito entra sem o seu OK</b>.</p>' +
         '<div class="field"><label for="mor-ifc-padrao">Padrão do orçamento</label><select id="mor-ifc-padrao"><option value="baixo">Baixo (popular)</option><option value="medio" selected>Médio (normal)</option><option value="alto">Alto</option></select>' +
         '<span class="muted" style="font-size:12px">O padrão só escolhe o material onde o IFC não diz; o material informado no IFC vence.</span></div>' +
@@ -170,67 +171,130 @@
     },
     _obterBase: function (cod, fonte) { var U = global.MorUI; return U && U._obterBase ? U._obterBase(cod, fonte) : null; },
 
-    /* roda: lê o IFC (arquivo ou peças do viewer) e orça. cb(res, erro) */
-    _rodar: function (st, cb) {
+    /* arquivos que a pessoa escolheu: o input da tela ou, vindo do leitor de documento, o arquivo já escolhido lá (st.arquivosPre) */
+    _arquivos: function (st) {
+      var inp = typeof document !== "undefined" ? document.getElementById("mor-ifc-arq") : null;
+      var fs = inp && inp.files && inp.files.length ? Array.prototype.slice.call(inp.files) : [];
+      return fs.length ? fs : arr(st && st.arquivosPre);
+    },
+    /* as etapas da barra de progresso (js/mor/progresso.js). ⚠ Etapa sem medida contínua (medir, juntar/orçar) é declarada medida:false:
+       a barra fica indeterminada e mostra só etapa + tempo — nunca um % inventado. */
+    _etapas: function (st, files) {
+      var projeto = files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(files[0].name));
+      if (!files.length) return [{ id: "ler", nome: "Lendo as peças abertas no BIM", medida: false }, { id: "orcar", nome: "Orçando", medida: false }];
+      if (!projeto) return [{ id: "abrir", nome: "Abrindo o arquivo", peso: 2 }, { id: "entidades", nome: "Lendo as entidades do modelo", peso: 6 }, { id: "medir", nome: "Medindo o modelo", peso: 2, medida: false }, { id: "orcar", nome: "Orçando", peso: 1, medida: false }];
+      var et = files.map(function (f, i) { return { id: "f" + i, nome: "Lendo " + f.name + " (" + (i + 1) + " de " + files.length + ")", peso: Math.max(1, Math.round((f.size || 0) / 1024)) }; });
+      var tot = et.reduce(function (s, e) { return s + e.peso; }, 0);
+      et.push({ id: "juntar", nome: "Juntando os arquivos e orçando", peso: Math.max(1, Math.round(tot / 10)), medida: false });
+      return et;
+    },
+
+    /* roda: lê o IFC (arquivo ou peças do viewer) e orça. cb(res, erro). tr = rastreador de progresso (opcional; cancelado → erro «cancelado») */
+    _rodar: function (st, cb, tr) {
       var Ler = global.MorIfcLer, Orc = global.MorIfcOrc, padrao = (document.getElementById("mor-ifc-padrao") || {}).value || "medio", params = MorIfcUI._params();
+      tr = tr || (global.MorProgresso ? global.MorProgresso.criar([]) : { avancar: function () {}, iniciar: function () {}, concluir: function () {}, aoCancelar: function () {}, cancelado: false });
+      var canc = function () { return !!tr.cancelado; };
       var fim = function (modelo) {
-        try {
-          var res = Orc.orcar(modelo, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } });
-          if (!res.ok) { cb(null, res.erro); return; }
-          cb(res, null);
-        } catch (e) { cb(null, "Falha ao orçar: " + e.message); }
+        tr.iniciar("orcar");
+        /* uma batida de relógio antes do cálculo, para a tela pintar «Orçando» (o cálculo roda de uma vez) */
+        setTimeout(function () {
+          try {
+            if (canc()) { cb(null, "cancelado"); return; }
+            var res = Orc.orcar(modelo, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } });
+            if (!res.ok) { cb(null, res.erro); return; }
+            cb(res, null);
+          } catch (e) { cb(null, "Falha ao orçar: " + e.message); }
+        }, 20);
       };
-      var inp = document.getElementById("mor-ifc-arq"), files = inp && inp.files ? Array.prototype.slice.call(inp.files) : [], file = files[0];
+      var files = MorIfcUI._arquivos(st), file = files[0];
       st.lidos = null; st.origemPorId = null; st.modeloProj = null; st.modelado = null;
-      if (files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(file.name))) { MorIfcUI._rodarProjeto(st, files, padrao, params, cb); return; }
+      if (files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(file.name))) { MorIfcUI._rodarProjeto(st, files, padrao, params, cb, tr); return; }
       if (file) {
         if (file.size > 150 * 1024 * 1024) { cb(null, "Arquivo com mais de 150 MB: a leitura completa trava a aba. Abra o modelo no BIM e use «as peças já abertas» (leitura parcial)."); return; }
-        var rd = function (txt) { try { var m = Ler.ler(txt); if (!m.ok) { cb(null, m.erro); return; } st.arquivo = file.name; fim(m); } catch (e) { cb(null, "Não consegui ler o IFC: " + e.message); } };
-        if (file.text) file.text().then(rd, function () { cb(null, "Falha ao ler o arquivo."); });
-        else { var fr = new FileReader(); fr.onload = function () { rd(String(fr.result)); }; fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); }; fr.readAsText(file); }
+        var P = global.MorProgresso;
+        if (!P) { cb(null, "O módulo de progresso não carregou: atualize a página (Ctrl+F5)."); return; }
+        P.lerArquivo(file, "texto", tr, "abrir", function (txt, err) {
+          if (txt === null || txt === undefined) { cb(null, err || "Falha ao ler o arquivo."); return; }
+          Ler.lerAsync(txt, {}, function (fase, fr) {
+            if (fase === "entidades") tr.avancar("entidades", Math.round(fr * 1000), 1000, { detalhe: "varrendo " + P.fmtBytes(file.size) + " de texto do IFC" });
+            else tr.avancar("medir", null, null, { detalhe: "calculando as quantidades de cada peça (roda de uma vez)" });
+          }, function (m, e) {
+            if (!m) { cb(null, e === "cancelado" ? "cancelado" : (e || "Não consegui ler o IFC.")); return; }
+            st.arquivo = file.name; fim(m);
+          }, canc);
+        });
         return;
       }
-      if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; fim(Ler.deElementosViewer(st.elementosViewer)); return; }
+      if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; tr.iniciar("ler"); fim(Ler.deElementosViewer(st.elementosViewer)); return; }
       cb(null, "Escolha o arquivo .ifc (ou abra um modelo no BIM).");
     },
 
-    /* F6: vários arquivos → ProjOrcar (triagem, extratores, junção, ifcorc). Um arquivo por vez (memória da aba). */
-    _rodarProjeto: function (st, files, padrao, params, cb) {
-      var PO = global.ProjOrcar, Ler = global.MorIfcLer, lidos = [], i = 0;
+    /* F6: vários arquivos → ProjOrcar (triagem, extratores, junção, ifcorc). Um arquivo por vez (memória da aba).
+       Progresso REAL por arquivo (cada um é uma etapa da barra): bytes lidos 10 %, leitura 80–90 % (caracteres do IFC, linhas do DXF,
+       páginas do PDF), e o que não tem medida contínua (medir/classificar, juntar) vira «etapa + tempo» sem %. */
+    _rodarProjeto: function (st, files, padrao, params, cb, tr) {
+      var PO = global.ProjOrcar, Ler = global.MorIfcLer, P = global.MorProgresso, lidos = [], i = 0, N = files.length;
+      var canc = function () { return !!(tr && tr.cancelado); };
       function falho(f, t, msg) { var l = PO.outro(f.name); l.tipo = t; l.erro = msg; return l; }
       function prox() {
+        if (canc()) { cb(null, "cancelado"); return; }
         if (i >= files.length) {
-          var r;
-          st.lidos = lidos; st.arquivo = files.map(function (f) { return f.name; }).join(", ");
-          try { r = PO.orcar(lidos, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } }); } catch (e) { cb(null, "Falha ao orçar: " + e.message); return; }
-          if (!r.ok) { cb(null, r.erro); return; }
-          st.origemPorId = r.origemPorId; st.modeloProj = r.modelo; st.modelado = null; cb(r.res, null); return;
+          if (tr) tr.iniciar("juntar", "juntando as plantas, os pavimentos e as quantidades (roda de uma vez)");
+          setTimeout(function () {
+            var r;
+            if (canc()) { cb(null, "cancelado"); return; }
+            st.lidos = lidos; st.arquivo = files.map(function (f) { return f.name; }).join(", ");
+            try { r = PO.orcar(lidos, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } }); } catch (e) { cb(null, "Falha ao orçar: " + e.message); return; }
+            if (!r.ok) { cb(null, r.erro); return; }
+            st.origemPorId = r.origemPorId; st.modeloProj = r.modelo; st.modelado = null; cb(r.res, null);
+          }, 20);
+          return;
         }
-        var f = files[i++], t = PO.tipo(f.name);
-        if (f.size > 150 * 1024 * 1024) { lidos.push(falho(f, t, "arquivo com mais de 150 MB: não lido (trava a aba)")); prox(); return; }
-        if (t === "dwg") { lidos.push(PO.dwg(f.name)); prox(); return; }
-        if (t === "outro") { lidos.push(PO.outro(f.name)); prox(); return; }
+        var idx = i, f = files[i++], t = PO.tipo(f.name), id = "f" + idx, pre = "arquivo " + (idx + 1) + " de " + N + " · " + f.name + " · ";
+        function prog(frac, det) { if (!tr) return; if (frac === null) tr.avancar(id, null, null, { detalhe: pre + det }); else tr.avancar(id, Math.round(frac * 1000), 1000, { detalhe: pre + det }); }
+        function pronto(l) { lidos.push(l); if (tr) tr.concluir(id); setTimeout(prox, 0); }
+        if (tr) tr.iniciar(id, pre + "abrindo");
+        if (f.size > 150 * 1024 * 1024) { pronto(falho(f, t, "arquivo com mais de 150 MB: não lido (trava a aba)")); return; }
+        if (t === "dwg") { pronto(PO.dwg(f.name)); return; }
+        if (t === "outro") { pronto(PO.outro(f.name)); return; }
         MorIfcUI._bytes(f, function (buf) {
-          if (!buf) { lidos.push(falho(f, t, "falha ao ler o arquivo")); prox(); return; }
+          if (canc()) { cb(null, "cancelado"); return; }
+          if (!buf) { pronto(falho(f, t, "falha ao ler o arquivo")); return; }
+          if (t === "ifc") {
+            Ler.lerAsync(MorIfcUI._texto(buf, false), {}, function (fase, fr) {
+              if (fase === "entidades") prog(0.1 + 0.8 * fr, "lendo as entidades do IFC");
+              else prog(null, "medindo o modelo (roda de uma vez)");
+            }, function (m, e) {
+              if (e === "cancelado") { cb(null, "cancelado"); return; }
+              try { pronto(m ? PO.deIfc(m, f.name) : falho(f, t, "não consegui ler: " + e)); } catch (e1) { pronto(falho(f, t, "não consegui ler: " + e1.message)); }
+            }, canc);
+            return;
+          }
           if (t !== "pdf") {
-            try {
-              if (t === "ifc") lidos.push(PO.deIfc(Ler.ler(MorIfcUI._texto(buf, false)), f.name));
-              else lidos.push(PO.lerDxf(MorIfcUI._texto(buf, true), f.name, { mem: MorIfcUI._mem() }));
-            } catch (e) { lidos.push(falho(f, t, "não consegui ler: " + e.message)); }
-            setTimeout(prox, 0); return;
+            PO.lerDxfAsync(MorIfcUI._texto(buf, true), f.name, { mem: MorIfcUI._mem() }, function (fr, fase) {
+              if (fr === null || fase === "medir") prog(null, "classificando camadas e medindo (roda de uma vez)");
+              else prog(0.1 + 0.8 * fr, fase === "linhas" ? "lendo as linhas do DXF" : "montando a geometria");
+            }, function (l, e) { if (e === "cancelado") { cb(null, "cancelado"); return; } pronto(l); }, canc);
+            return;
           }
           MorIfcUI._pdfPaginas(buf, function (pgs, total, erro) {
-            try { var lp = PO.lerPdf(pgs || [], f.name, { totalPaginas: total }); if (erro && !lp.ok) lp.erro = erro; lidos.push(lp); }
-            catch (e2) { lidos.push(falho(f, "pdf", "não consegui ler o PDF: " + e2.message)); }
-            setTimeout(prox, 0);
-          });
-        });
+            if (erro === "cancelado" || canc()) { cb(null, "cancelado"); return; }
+            prog(null, "interpretando as páginas (roda de uma vez)");
+            setTimeout(function () {
+              try { var lp = PO.lerPdf(pgs || [], f.name, { totalPaginas: total }); if (erro && !lp.ok) lp.erro = erro; pronto(lp); }
+              catch (e2) { pronto(falho(f, "pdf", "não consegui ler o PDF: " + e2.message)); }
+            }, 20);
+          }, function (k, n) { prog(0.1 + 0.9 * (k / n), "página " + k + " de " + n); }, canc);
+        }, function (ev, tot) { if (P && tot) prog(0.1 * ev / tot, P.fmtBytes(ev) + " de " + P.fmtBytes(tot)); });
       }
       prox();
     },
-    _bytes: function (f, cb) {
-      if (f.arrayBuffer) { f.arrayBuffer().then(function (b) { cb(b); }, function () { cb(null); }); return; }
-      var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null); }; fr.readAsArrayBuffer(f);
+    /* bytes do arquivo; aoProg(lidos, total) é opcional (FileReader.onprogress) */
+    _bytes: function (f, cb, aoProg) {
+      if (!aoProg && f.arrayBuffer) { f.arrayBuffer().then(function (b) { cb(b); }, function () { cb(null); }); return; }
+      var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null); };
+      if (aoProg) fr.onprogress = function (ev) { if (ev && ev.lengthComputable) aoProg(ev.loaded, ev.total); };
+      fr.readAsArrayBuffer(f);
     },
     /* DXF antigo é ANSI: «TÉRREO» chega estragado em UTF-8 → cai para windows-1252 */
     _texto: function (buf, ansi) {
@@ -241,7 +305,7 @@
     /* memória do motor (camada/bloco que a pessoa já corrigiu): só leitura aqui */
     _mem: function () { try { var Mm = global.MorMemoria; return Mm && Mm.carregar && typeof localStorage !== "undefined" ? (Mm.carregar(localStorage, Auth.empresaId()) || {}).mem || null : null; } catch (e) { return null; } },
     /* pdf.js local (o mesmo do leitor de prancha, sem CDN): traço vetorial + texto + linhas de cada página */
-    _pdfPaginas: function (buf, cb) {
+    _pdfPaginas: function (buf, cb, aoPagina, cancelado) {
       var G = global.Gestao, PV = global.PdfVetor, PO = global.ProjOrcar;
       if (!G || !G._estPdfLib) { cb([], 0, "o leitor de PDF não está disponível nesta tela"); return; }
       G._estPdfLib(function (lib) {
@@ -249,7 +313,7 @@
         lib.getDocument({ data: new Uint8Array(buf) }).promise.then(function (doc) {
           var n = Math.min(doc.numPages, PO.MAX_PAGINAS), pgs = [], ch = Promise.resolve();
           for (var p = 1; p <= n; p++) (function (k) {
-            ch = ch.then(function () { return doc.getPage(k).then(function (page) {
+            ch = ch.then(function () { if (cancelado && cancelado()) throw new Error("cancelado"); return doc.getPage(k).then(function (page) {
               var vp = page.getViewport({ scale: 1 });
               return Promise.all([page.getOperatorList(), page.getTextContent()]).then(function (rr) {
                 var vs = PV ? PV.segmentos(rr[0], lib.OPS, { base: vp.transform }) : { ok: false }, segs = vs && vs.ok ? vs.segmentos : [];
@@ -263,10 +327,11 @@
                 ys.sort(function (a, b) { return a - b; });
                 var linhas = ys.map(function (ky) { return porY[ky].sort(function (a, b) { return a.x - b.x; }).map(function (q) { return q.s; }).join(" "); });
                 pgs.push({ segmentos: segs, textos: textos, linhas: linhas });
+                if (aoPagina) aoPagina(k, n);
               });
             }); });
           })(p);
-          ch.then(function () { cb(pgs, doc.numPages, ""); }, function (e) { cb(pgs, doc.numPages, "falha ao ler a página: " + (e && e.message)); });
+          ch.then(function () { cb(pgs, doc.numPages, ""); }, function (e) { cb(pgs, doc.numPages, e && e.message === "cancelado" ? "cancelado" : "falha ao ler a página: " + (e && e.message)); });
         }, function () { cb([], 0, "o PDF não abriu (protegido ou corrompido?)"); });
       });
     },
@@ -367,23 +432,43 @@
       var box = document.getElementById("mor-ifc-res"); if (box) MorIfcUI._ligar(box);
     },
 
+    /* clique em «Ler o modelo e orçar» (ou automático, vindo do leitor de documento): barra de progresso real + Cancelar */
+    _executar: function (st) {
+      var box = document.getElementById("mor-ifc-res"), P = global.MorProgresso;
+      if (st.tr && !st.tr.finalizado) return;   /* já está lendo: segundo clique não dispara outra leitura */
+      var files = MorIfcUI._arquivos(st), tam = files.reduce(function (s, x) { return s + (x.size || 0); }, 0);
+      var tr = P ? P.criar(MorIfcUI._etapas(st, files), { tamanho: tam, cancelavel: true }) : null, vis = null;
+      st.tr = tr;
+      if (box) { if (tr) vis = P.montar(box, tr); else box.innerHTML = '<p class="muted">Lendo o modelo…</p>'; }
+      MorIfcUI._rodar(st, function (res, erro) {
+        if (vis) vis.parar();
+        if (st !== MorIfcUI._st) return;   /* a janela foi fechada no meio: não reabre sozinha */
+        box = document.getElementById("mor-ifc-res") || box;
+        if (tr && tr.cancelado) { if (box) box.innerHTML = '<p class="muted">Leitura cancelada. Nada foi lançado — clique em «Ler o modelo e orçar» para tentar de novo.</p>'; return; }
+        if (!res) {
+          if (tr) tr.falhar(erro);
+          if (box) box.innerHTML = (tr ? P.html(tr.snap(), { acao: "confira o arquivo (ele abre no programa que o gerou?). Se for muito grande, exporte só as disciplinas que você quer orçar, ou use «as peças já abertas» no BIM." }) : '<p style="color:#c62828">' + esc(erro) + "</p>") + (st.lidos ? MorIfcUI.htmlLido(st.lidos) : "");
+          return;
+        }
+        if (tr) tr.finalizar();
+        st.res = res; st.marcadas = {}; st.aceitos = {};
+        res.linhas.forEach(function (l) { if (marcadaDeSaida(l)) st.marcadas[l.id] = true; });
+        MorIfcUI.abrirConferenciaDe(st);
+      }, tr);
+    },
+
+    /* opts.arquivos (File[]) + opts.auto: o leitor de documento encaminha um .ifc/.dxf/.dwg para cá — o arquivo já escolhido entra sem
+       a pessoa ter que escolher de novo, e com auto a leitura começa na hora */
     abrir: function (app, opts) {
       opts = opts || {};
       if (!MorIfcUI.ativo()) { UI.toast("«Orçar pelo modelo» é uma prévia: abra o app com ?previa=motor.", "info"); return; }
-      var st = { app: app, res: null, marcadas: {}, aceitos: {}, elementosViewer: arr(opts.elementos), obraNome: opts.obraNome || "", arquivo: "" };
+      var st = { app: app, res: null, marcadas: {}, aceitos: {}, elementosViewer: arr(opts.elementos), obraNome: opts.obraNome || "", arquivo: "", arquivosPre: arr(opts.arquivos), tr: null };
       MorIfcUI._st = st;
-      UI.modal("Orçar pelo modelo (prévia)", MorIfcUI.htmlConfiguracao(st.elementosViewer.length > 0), [
-        { texto: "Cancelar", classe: "ghost", onClick: function () { MorIfcUI._st = null; UI.fecharModal(); } },
-        { texto: "Ler o modelo e orçar", classe: "primary", onClick: function () {
-          var box = document.getElementById("mor-ifc-res"); if (box) box.innerHTML = '<p class="muted">Lendo o modelo…</p>';
-          MorIfcUI._rodar(st, function (res, erro) {
-            if (!res) { if (box) box.innerHTML = '<p style="color:#c62828">' + esc(erro) + "</p>" + (st.lidos ? MorIfcUI.htmlLido(st.lidos) : ""); return; }
-            st.res = res; st.marcadas = {}; st.aceitos = {};
-            res.linhas.forEach(function (l) { if (marcadaDeSaida(l)) st.marcadas[l.id] = true; });
-            MorIfcUI.abrirConferenciaDe(st);
-          });
-        } }
+      UI.modal("Orçar pelo modelo (prévia)", MorIfcUI.htmlConfiguracao(st.elementosViewer.length > 0, st.arquivosPre), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { if (st.tr) st.tr.cancelar(); MorIfcUI._st = null; UI.fecharModal(); } },
+        { texto: "Ler o modelo e orçar", classe: "primary", onClick: function () { MorIfcUI._executar(st); } }
       ]);
+      if (opts.auto && st.arquivosPre.length) MorIfcUI._executar(st);
     },
 
     /* lança as linhas marcadas no orçamento aberto (ou num novo): só as marcadas, só com preço da base, idempotente */

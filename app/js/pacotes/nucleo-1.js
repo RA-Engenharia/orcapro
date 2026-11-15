@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.313",
+versao: "1.2.314",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -30456,6 +30456,177 @@ if (typeof module !== "undefined" && module.exports) module.exports = MorManual;
 global.MorManual = MorManual;
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mor/progresso.js ==== */
+try {
+(function (global) {
+"use strict";
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function num(x) { return typeof x === "number" && isFinite(x); }
+var LIMITE_PARADO_MS = 60000;
+function fmtBytes(b) {
+b = Number(b) || 0;
+if (b < 1024) return Math.round(b) + " B";
+if (b < 1024 * 1024) return (Math.round(b / 102.4) / 10).toString().replace(".", ",") + " KB";
+return (Math.round(b / (1024 * 102.4)) / 10).toString().replace(".", ",") + " MB";
+}
+function fmtTempo(ms) {
+var s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+if (s < 60) return s + " s";
+var m = Math.floor(s / 60), r = s % 60;
+return m + " min " + (r < 10 ? "0" : "") + r + " s";
+}
+function criar(etapas, opts) {
+opts = opts || {};
+var agora = opts.agora || function () { return Date.now(); };
+var lista = [], porId = {}, i;
+for (i = 0; i < (etapas || []).length; i++) {
+var e = etapas[i], x = { id: String(e.id), nome: String(e.nome || e.id), peso: num(e.peso) && e.peso > 0 ? e.peso : 1, medida: e.medida !== false, feito: 0, total: 0, indet: e.medida === false, estado: "espera", detalhe: "", unidade: "" };
+lista.push(x); porId[x.id] = x;
+}
+var t0 = agora(), ultimo = t0;
+var T = {
+cancelavel: !!opts.cancelavel, tamanho: num(opts.tamanho) ? opts.tamanho : 0, limiteParadoMs: num(opts.limiteParadoMs) ? opts.limiteParadoMs : LIMITE_PARADO_MS,
+cancelado: false, finalizado: false, erro: "", _ouv: [], _canc: []
+};
+function avisar() { for (var k = 0; k < T._ouv.length; k++) { try { T._ouv[k](T); } catch (e1) { } } }
+function ativar(x) {
+var k, achou = false;
+for (k = 0; k < lista.length; k++) {
+if (lista[k] === x) { achou = true; break; }
+if (lista[k].estado !== "ok") { lista[k].estado = "ok"; if (lista[k].medida && lista[k].total) lista[k].feito = lista[k].total; lista[k].indet = false; }
+}
+if (achou && x.estado !== "ativa") x.estado = "ativa";
+}
+T.etapas = function () { return lista; };
+T.iniciar = function (id, detalhe) {
+var x = porId[id]; if (!x || T.finalizado) return T;
+ativar(x); ultimo = agora(); if (detalhe !== undefined) x.detalhe = detalhe; avisar(); return T;
+};
+T.avancar = function (id, feito, total, extra) {
+var x = porId[id]; if (!x || T.finalizado) return T;
+ativar(x); extra = extra || {};
+var novoDet = extra.detalhe !== undefined ? extra.detalhe : x.detalhe;
+if (extra.unidade) x.unidade = extra.unidade;
+if (extra.nome) x.nome = extra.nome;
+if (num(feito) && num(total) && total > 0) {
+var f = Math.max(0, Math.min(feito, total));
+if (f !== x.feito || total !== x.total || x.indet) ultimo = agora();
+x.feito = f; x.total = total; x.indet = false;
+} else {
+if (x.indet !== true || novoDet !== x.detalhe) ultimo = agora();
+x.indet = true;
+}
+x.detalhe = novoDet; avisar(); return T;
+};
+T.concluir = function (id) {
+var x = porId[id]; if (!x || T.finalizado) return T;
+ativar(x); x.estado = "ok"; x.indet = false; if (x.medida && x.total) x.feito = x.total; ultimo = agora(); avisar(); return T;
+};
+T.bater = function () { ultimo = agora(); return T; };
+T.finalizar = function () {
+if (T.finalizado) return T;
+for (var k = 0; k < lista.length; k++) { lista[k].estado = "ok"; lista[k].indet = false; if (lista[k].medida && lista[k].total) lista[k].feito = lista[k].total; }
+T.finalizado = true; ultimo = agora(); T._fim = ultimo; avisar(); return T;
+};
+T.falhar = function (msg) { if (T.finalizado) return T; T.erro = String(msg || "erro sem mensagem"); T.finalizado = true; T._fim = agora(); avisar(); return T; };
+T.cancelar = function () {
+if (T.cancelado || T.finalizado) return T;
+T.cancelado = true; T.finalizado = true; T._fim = agora();
+for (var k = 0; k < T._canc.length; k++) { try { T._canc[k](); } catch (e2) { } }
+avisar(); return T;
+};
+T.aoCancelar = function (fn) { T._canc.push(fn); return T; };
+T.ouvir = function (fn) { T._ouv.push(fn); return T; };
+T.ativa = function () { for (var k = 0; k < lista.length; k++) if (lista[k].estado === "ativa") return lista[k]; return null; };
+T.pct = function () {
+if (T.erro || T.cancelado) { }
+var tot = 0, feito = 0, k, x, a = null;
+for (k = 0; k < lista.length; k++) tot += lista[k].peso;
+if (!tot) return null;
+if (T.finalizado && !T.erro && !T.cancelado) return 100;
+for (k = 0; k < lista.length; k++) {
+x = lista[k];
+if (x.estado === "ok") feito += x.peso;
+else if (x.estado === "ativa") { a = x; if (!x.medida || x.indet || !x.total) return null; feito += x.peso * (x.feito / x.total); }
+}
+if (!a && !feito) return 0;
+return Math.min(99, Math.floor(feito / tot * 100));
+};
+T.decorrido = function () { return Math.max(0, (T._fim || agora()) - t0); };
+T.semAvancoHa = function () { return Math.max(0, agora() - ultimo); };
+T.parado = function () { return !T.finalizado && T.semAvancoHa() >= T.limiteParadoMs; };
+T.texto = function () {
+var a = T.ativa(), p = T.pct(), partes = [];
+if (T.erro) return "Não foi possível terminar a leitura";
+if (T.cancelado) return "Leitura cancelada";
+if (T.finalizado) return "Leitura concluída";
+if (!a) return "Preparando…";
+partes.push(a.nome + (p === null ? "" : " " + p + "%"));
+if (a.detalhe) partes.push(a.detalhe);
+else if (!a.indet && a.total) {
+if (a.unidade === "bytes") partes.push(fmtBytes(a.feito) + " de " + fmtBytes(a.total));
+else if (a.unidade === "paginas") partes.push("página " + Math.max(1, Math.min(a.total, Math.ceil(a.feito))) + " de " + a.total);
+else if (a.unidade === "itens") partes.push(a.feito + " de " + a.total);
+}
+return partes.join(" · ");
+};
+T.snap = function () {
+return { pct: T.pct(), texto: T.texto(), decorrido: T.decorrido(), parado: T.parado(), cancelado: T.cancelado, erro: T.erro, fim: T.finalizado, cancelavel: T.cancelavel && !T.finalizado, tamanho: T.tamanho, ativa: (T.ativa() || {}).id || "" };
+};
+return T;
+}
+function html(snap, opts) {
+opts = opts || {};
+var p = snap.pct, indet = p === null || p === undefined, ocup = !snap.fim, h;
+h = '<div class="mor-prog" data-mor-prog="1" style="margin:6px 0">';
+h += '<div data-mor-prog-texto="1" style="font-size:13px"' + (snap.erro ? ' role="alert"' : "") + ">" + esc(snap.texto) + "</div>";
+if (!snap.erro && !snap.cancelado) {
+h += '<div role="progressbar" aria-label="' + esc(opts.rotulo || "Progresso da leitura") + '" aria-valuemin="0" aria-valuemax="100"' + (indet ? "" : ' aria-valuenow="' + p + '"') + ' aria-valuetext="' + esc(snap.texto) + '"' +
+' style="height:10px;border-radius:5px;background:rgba(128,128,128,.25);overflow:hidden;margin:4px 0;position:relative">' +
+(indet ? '<div data-mor-prog-indet="1" style="height:100%;width:100%;background:repeating-linear-gradient(45deg,rgba(21,101,192,.55) 0 10px,rgba(21,101,192,.25) 10px 20px)"></div>'
+: '<div data-mor-prog-fill="1" style="height:100%;width:' + p + '%;background:#1565c0"></div>') + "</div>";
+}
+h += '<div style="font-size:12px" class="muted">' + esc(fmtTempo(snap.decorrido)) + " decorridos" +
+(snap.cancelavel ? ' <button type="button" class="btn sm ghost" data-mor-prog-cancelar="1">Cancelar</button>' : "") + "</div>";
+if (ocup && snap.parado) h += '<div role="status" data-mor-prog-parado="1" style="font-size:12.5px;color:#8a5a00;margin-top:4px">Ainda trabalhando — arquivos grandes podem levar alguns minutos' + (snap.tamanho ? " (" + esc(fmtBytes(snap.tamanho)) + ")" : "") + ". Não feche a tela.</div>";
+if (snap.erro) h += '<div data-mor-prog-erro="1" style="font-size:12.5px;color:#c62828;margin-top:4px">' + esc(snap.erro) + '<br><b>O que fazer:</b> ' + esc(opts.acao || "tente de novo; se repetir, salve o arquivo em formato mais leve (ou dividido em partes) e escolha-o outra vez.") + "</div>";
+return h + "</div>";
+}
+function montar(el, tr, opts) {
+opts = opts || {};
+if (!el) return { parar: function () {} };
+var tim = null, parou = false;
+function pintar() { try { el.innerHTML = html(tr.snap(), opts); } catch (e) { } }
+function clique(ev) {
+var t = ev && ev.target;
+if (t && t.getAttribute && t.getAttribute("data-mor-prog-cancelar")) { tr.cancelar(); }
+}
+if (el.addEventListener) el.addEventListener("click", clique);
+var ult = 0;
+tr.ouvir(function () { var n = Date.now(); if (parou) return; if (n - ult >= 100 || tr.finalizado) { ult = n; pintar(); } });
+pintar();
+if (typeof setInterval === "function") tim = setInterval(function () { if (!parou) pintar(); }, 400);
+return {
+parar: function () { parou = true; if (tim) clearInterval(tim); if (el.removeEventListener) el.removeEventListener("click", clique); },
+repintar: pintar
+};
+}
+function lerArquivo(file, modo, tr, id, cb) {
+var fr = new FileReader(), feito = false;
+function fim(r, e) { if (feito) return; feito = true; cb(r, e); }
+fr.onprogress = function (ev) { if (tr && ev && ev.lengthComputable) tr.avancar(id, ev.loaded, ev.total, { unidade: "bytes" }); };
+fr.onload = function () { if (tr) tr.concluir(id); fim(fr.result, null); };
+fr.onerror = function () { fim(null, "Não consegui ler o arquivo (ele pode estar aberto em outro programa ou sem permissão)."); };
+fr.onabort = function () { fim(null, "cancelado"); };
+if (tr) tr.aoCancelar(function () { try { fr.abort(); } catch (e) { } });
+if (tr) tr.avancar(id, 0, file.size || 1, { unidade: "bytes" });
+if (modo === "buffer") fr.readAsArrayBuffer(file); else fr.readAsText(file);
+}
+var MorProgresso = { criar: criar, html: html, montar: montar, lerArquivo: lerArquivo, fmtBytes: fmtBytes, fmtTempo: fmtTempo, LIMITE_PARADO_MS: LIMITE_PARADO_MS };
+if (typeof module !== "undefined" && module.exports) module.exports = MorProgresso;
+global.MorProgresso = MorProgresso;
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/mor/ui.js ==== */
 try {
 (function (global) {
@@ -30486,7 +30657,7 @@ MorUI.blocoDocumento() + "</div>";
 blocoDocumento: function () {
 return '<details id="mor-doc" style="margin-top:8px"><summary><b>Gerar a partir de documento</b> <span class="muted" style="font-weight:400">(prévia — sem IA)</span></summary>' +
 '<div class="field"><label for="mor-doc-txt">Cole o escopo, o memorial ou o objeto do edital</label><textarea id="mor-doc-txt" rows="5" placeholder="Ex.: Casa térrea de 120 m², 3 quartos, fundação em sapatas, telha cerâmica…"></textarea></div>' +
-'<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="mor-doc-arq" accept=".txt,.pdf,.docx,.xlsx,.xls,.csv" aria-label="Arquivo do documento"> <button type="button" class="btn sm" id="mor-doc-ler">Ler o documento</button> <button type="button" class="btn sm ghost" id="mor-doc-mem">Memória do Motor</button></div>' +
+'<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="mor-doc-arq" accept=".txt,.pdf,.docx,.xlsx,.xls,.csv,.ifc,.dxf,.dwg" aria-label="Arquivo do documento (texto, PDF, Word, planilha; projeto IFC/DXF/DWG vai para o Orçar pelo modelo)"> <button type="button" class="btn sm" id="mor-doc-ler">Ler o documento</button> <button type="button" class="btn sm ghost" id="mor-doc-mem">Memória do Motor</button></div>' +
 '<div id="mor-doc-res" aria-live="polite"></div></details>';
 },
 htmlPlano: function (pl) {
@@ -30876,33 +31047,61 @@ abrirMemoria: function () {
 var m = MorUI.memoria(); if (!m) { UI.toast("Sem armazenamento neste aparelho.", "erro"); return; }
 UI.modal("Memória do Motor", '<div id="mor-mem-corpo">' + MorUI.htmlMemoria(m.mem) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
 },
-_lerArquivo: function (file, cb) {
-var nome = String(file.name || "").toLowerCase(), A = global.App;
+_etapasArquivo: function (nome) {
+if (/\.(xlsx|xls|csv)$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "interpretar", nome: "Interpretando a planilha", peso: 1, medida: false }];
+if (/\.pdf$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 1 }, { id: "paginas", nome: "Lendo as páginas do PDF", peso: 4 }, { id: "interpretar", nome: "Interpretando o escopo", peso: 1, medida: false }];
+if (/\.docx$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "abrir", nome: "Abrindo o documento Word", peso: 2, medida: false }, { id: "interpretar", nome: "Interpretando o escopo", peso: 1, medida: false }];
+return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "interpretar", nome: "Interpretando o texto", peso: 1, medida: false }];
+},
+_lerArquivo: function (file, cb, tr) {
+var nome = String(file.name || "").toLowerCase(), A = global.App, P = global.MorProgresso;
+var ler = function (modo, id, depois) {
+if (P && tr) { P.lerArquivo(file, modo, tr, id, function (r, e) { if (r === null || r === undefined) { cb(null, e === "cancelado" ? "cancelado" : (e || "Falha ao ler o arquivo.")); return; } depois(r); }); return; }
+var fr0 = new FileReader();
+fr0.onload = function () { depois(fr0.result); };
+fr0.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
+if (modo === "buffer") fr0.readAsArrayBuffer(file); else fr0.readAsText(file);
+};
 if (/\.(xlsx|xls|csv)$/.test(nome)) {
 if (!A || !A._lerPlanilha) { cb(null, "Leitor de planilha indisponível."); return; }
 A._lerPlanilha(file, function (matriz, err) {
 if (!matriz) { cb(null, err || "Não consegui ler a planilha."); return; }
 cb(global.MorLeitor.dePlanilha(matriz, MorUI._optsLeitor()), null);
-});
+}, tr);
 return;
 }
 if (/\.(pdf|docx)$/.test(nome)) {
 if (typeof CplproTpl === "undefined" || !CplproTpl.memorialParaEscopo) { cb(null, "Leitor de memorial indisponível."); return; }
-var fim = function (r) { if (!r.ok) cb(null, r.erro); else cb(global.MorLeitor.deMemorial(r.texto, MorUI._optsLeitor()), null); };
-if (/\.pdf$/.test(nome)) { CplproTpl.memorialParaEscopo(file.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? function (cb2) { Gestao._pdfTexto(file, cb2); } : null).then(fim); return; }
-var fr = new FileReader();
-fr.onload = function () {
-var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
-CplproTpl.memorialParaEscopo(file.name, new Uint8Array(fr.result), inflar, null).then(fim);
-};
-fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
-fr.readAsArrayBuffer(file);
+var fim = function (r) { if (tr && tr.cancelado) { cb(null, "cancelado"); return; } if (!r.ok) cb(null, r.erro); else cb(global.MorLeitor.deMemorial(r.texto, MorUI._optsLeitor()), null); };
+if (/\.pdf$/.test(nome)) {
+var optsPdf = tr ? { aoProgresso: function (tp, feito, total) { tr.avancar(tp === "bytes" ? "ler" : "paginas", feito, total, { unidade: tp }); }, cancelado: function () { return !!tr.cancelado; } } : undefined;
+CplproTpl.memorialParaEscopo(file.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? function (cb2) { Gestao._pdfTexto(file, function (t) { if (tr) tr.iniciar("interpretar"); cb2(t); }, optsPdf); } : null).then(fim);
 return;
 }
-var fr2 = new FileReader();
-fr2.onload = function () { cb(global.MorLeitor.deMemorial(String(fr2.result), MorUI._optsLeitor()), null); };
-fr2.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
-fr2.readAsText(file);
+ler("buffer", "ler", function (buf) {
+if (tr) tr.iniciar("abrir");
+var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
+CplproTpl.memorialParaEscopo(file.name, new Uint8Array(buf), inflar, null).then(function (r) { if (tr) tr.iniciar("interpretar"); fim(r); });
+});
+return;
+}
+ler("texto", "ler", function (txt) { if (tr) tr.iniciar("interpretar"); cb(global.MorLeitor.deMemorial(String(txt), MorUI._optsLeitor()), null); });
+},
+_encaminharProjeto: function (file, res) {
+var nm = String(file.name || ""), dwg = /\.dwg$/i.test(nm), PO = global.ProjOrcar;
+MorUI._arqProjeto = file;
+var aviso = dwg ? ((PO && PO.AVISO_DWG) || "DWG é formato fechado: o sistema não lê. Abra no AutoCAD e use Salvar como → DXF, depois escolha o DXF.") : "";
+var pode = !!(global.MorIfcUI && global.MorIfcUI.abrir);
+res.innerHTML = '<div data-mor-doc-projeto="1" role="status" style="margin-top:8px;padding:8px;border:1px solid rgba(128,128,128,.4);border-radius:6px;font-size:13px">' +
+"<b>«" + esc(nm) + "»</b> é um arquivo de projeto (" + esc((nm.split(".").pop() || "").toUpperCase()) + "), não um documento de texto — o leitor de documento não lê projeto. " +
+(dwg ? "<br>" + esc(aviso) + "<br>" : "") +
+(pode ? 'Quem lê projeto e monta o orçamento é o <b>Orçar pelo modelo</b>. <button type="button" class="btn sm" data-mor-doc-abrir-projeto="1">Abrir Orçar pelo modelo</button> <span class="muted" style="font-size:12px">(o arquivo já vai escolhido; esta janela fecha)</span>'
+: "Use o botão «Orçar pelo modelo» do quantitativo (BIM) para ler este arquivo.") + "</div>";
+},
+abrirProjeto: function () {
+var f = MorUI._arqProjeto; if (!f) return;
+if (!global.MorIfcUI || !global.MorIfcUI.abrir) { UI.toast("«Orçar pelo modelo» não está disponível nesta tela.", "info"); return; }
+global.MorIfcUI.abrir(global.App, { elementos: [], arquivos: [f], auto: !/\.dwg$/i.test(f.name) });
 },
 lerDocumento: function () {
 var d = document, res = d.getElementById("mor-doc-res"), A = global.App;
@@ -30920,7 +31119,24 @@ res.innerHTML = MorUI.htmlPlano(plano);
 var sel = d.getElementById("mor-tipologia");
 if (sel && plano.tipologia && C.tipologia(plano.tipologia)) sel.value = plano.tipologia;
 };
-if (arq && arq.files && arq.files[0]) { res.innerHTML = '<p class="muted">Lendo…</p>'; MorUI._lerArquivo(arq.files[0], seguir); return; }
+if (arq && arq.files && arq.files[0]) {
+var f0 = arq.files[0], nm0 = String(f0.name || "").toLowerCase(), P = global.MorProgresso;
+if (/\.(ifc|dxf|dwg)$/.test(nm0)) { MorUI._encaminharProjeto(f0, res); return; }
+var tr = P ? P.criar(MorUI._etapasArquivo(nm0), { tamanho: f0.size, cancelavel: true }) : null;
+var vis = tr ? P.montar(res, tr, { acao: "tente de novo; se repetir, salve o documento como .txt ou .pdf menor (ou divida em partes) e escolha-o outra vez." }) : null;
+if (!tr) res.innerHTML = '<p class="muted">Lendo…</p>';
+var acabou = false;
+var fim0 = function (leit, err) {
+if (acabou) return; acabou = true;
+if (vis) vis.parar();
+if (tr && tr.cancelado) { res.innerHTML = '<p class="muted">Leitura cancelada. Escolha o arquivo de novo quando quiser.</p>'; return; }
+if (!leit && tr) { tr.falhar(err || "Não consegui ler o arquivo."); res.innerHTML = P.html(tr.snap(), { acao: "tente de novo; se repetir, salve o documento como .txt ou .pdf menor (ou divida em partes) e escolha-o outra vez." }); return; }
+if (tr) tr.finalizar();
+try { seguir(leit, err); } catch (e9) { res.innerHTML = '<p class="muted">Falha ao ler: ' + esc((e9 && e9.message) || e9) + "</p>"; }
+};
+try { MorUI._lerArquivo(f0, fim0, tr); } catch (e8) { fim0(null, "Falha ao ler: " + ((e8 && e8.message) || e8)); }
+return;
+}
 if (!txt || !String(txt.value || "").trim()) { res.innerHTML = '<p class="muted">Cole um texto ou escolha um arquivo.</p>'; return; }
 seguir(global.MorLeitor.deMemorial(String(txt.value), MorUI._optsLeitor()), null);
 },
@@ -30946,6 +31162,7 @@ if (dt !== null && dt !== undefined && MorUI._plano) {
 MorUI._plano.itens.forEach(function (x) { var s0 = x.resolucao || {}; if (s0.codigo && (s0.estado === "casado" || s0.estado === "codigo-do-documento")) x.marcado = dt === "1"; });
 var rr1 = document.getElementById("mor-doc-res"); if (rr1) rr1.innerHTML = MorUI.htmlPlano(MorUI._plano); return;
 }
+if (t && t.getAttribute && t.getAttribute("data-mor-doc-abrir-projeto")) { ev.preventDefault(); MorUI.abrirProjeto(); return; }
 var ac = t && t.getAttribute && t.getAttribute("data-mor-aceitar");
 if (ac !== null && ac !== undefined && ac !== "" ) {
 var ra = MorUI.aceitarComposicao(Number(ac));
@@ -31270,14 +31487,17 @@ var out = [];
 while (i < n) { out.push(valor()); ws(); if (raw.charAt(i) === ",") i++; else break; }
 return out;
 }
-function varrer(texto) {
+function varredor(texto) {
 var ents = {}, total = 0, complexas = 0, esquema = "", p = texto.indexOf("FILE_SCHEMA");
 if (p >= 0) { var mm = /FILE_SCHEMA\s*\(\s*\(\s*'([^']*)'/.exec(texto.substr(p, 200)); if (mm) esquema = mm[1]; }
-var ini = texto.indexOf("DATA;"); if (ini < 0) return { ents: ents, total: 0, complexas: 0, esquema: esquema, erro: "O arquivo não tem a seção DATA; — não parece um IFC." };
+var ini = texto.indexOf("DATA;");
+if (ini < 0) { var r0 = { ents: ents, total: 0, complexas: 0, esquema: esquema, erro: "O arquivo não tem a seção DATA; — não parece um IFC." }; return { passo: function () { return true; }, frac: function () { return 1; }, resultado: function () { return r0; } }; }
 ini += 5;
 var fim = texto.indexOf("ENDSEC;", ini); if (fim < 0) fim = texto.length;
 var i = ini, dentro = false, cs = ini, c;
-while (i < fim) {
+function passo(limite) {
+var teto = i + limite; if (!(teto < fim)) teto = fim;
+while (i < teto) {
 c = texto.charCodeAt(i);
 if (c === 39) { if (dentro && texto.charCodeAt(i + 1) === 39) { i += 2; continue; } dentro = !dentro; }
 else if (!dentro) {
@@ -31291,8 +31511,15 @@ cs = i + 1;
 }
 i++;
 }
-return { ents: ents, total: total, complexas: complexas, esquema: esquema, erro: "" };
+return i >= fim;
 }
+return {
+passo: passo,
+frac: function () { return fim > ini ? Math.min(1, (i - ini) / (fim - ini)) : 1; },
+resultado: function () { return { ents: ents, total: total, complexas: complexas, esquema: esquema, erro: "" }; }
+};
+}
+function varrer(texto) { var v = varredor(texto); while (!v.passo(1e9)) { } return v.resultado(); }
 var ESPACIAL = { IFCPROJECT: 1, IFCSITE: 1, IFCBUILDING: 1, IFCBUILDINGSTOREY: 1 };
 function categoriaNaoElemento(t) {
 if (t.indexOf("IFCREL") === 0) return "relação";
@@ -31382,7 +31609,7 @@ var NOMEQ = [
 function chaveQ(nome) { var t = sa(nome).replace(/\s+/g, " ").trim(); for (var i = 0; i < NOMEQ.length; i++) if (NOMEQ[i][1].test(t)) return NOMEQ[i][0]; return ""; }
 function ler(texto, opts) {
 opts = opts || {};
-var v = varrer(String(texto || ""));
+var v = opts.varrido || varrer(String(texto || ""));
 var res = { ok: false, erro: v.erro || "", esquema: v.esquema, elementos: [], espacos: [], avisos: [], cobertura: null, unidades: null, modelo: { projeto: "", pavimentos: [] } };
 if (v.erro) return res;
 var ents = v.ents, cacheArgs = {};
@@ -31790,8 +32017,31 @@ var l = [c.lidos + " elemento(s) lido(s) → " + c.classificados + " classificad
 c.semRegra.forEach(function (s) { l.push("  sem regra: " + s.classe + (s.predef ? " " + s.predef : "") + " «" + s.nome + "»" + (s.material ? " [" + s.material + "]" : "") + " — " + s.motivo); });
 return l.join("\n");
 }
+function lerAsync(texto, opts, aoProg, cb, cancelado) {
+var tx = String(texto || ""), v, ult = -1;
+try { v = varredor(tx); } catch (e) { cb(null, "Não consegui ler o IFC: " + (e && e.message || e)); return; }
+function tique() {
+try {
+if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+var fim = v.passo(3000000);
+if (aoProg) aoProg("entidades", v.frac());
+if (!fim) { setTimeout(tique, 0); return; }
+if (aoProg) aoProg("medir", null);
+setTimeout(function () {
+try {
+if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+var o = {}; for (var k in (opts || {})) o[k] = opts[k]; o.varrido = v.resultado();
+var m = ler(tx, o);
+if (!m.ok) { cb(null, m.erro); return; }
+cb(m, null);
+} catch (e2) { cb(null, "Não consegui ler o IFC: " + (e2 && e2.message || e2)); }
+}, 20);
+} catch (e1) { cb(null, "Não consegui ler o IFC: " + (e1 && e1.message || e1)); }
+}
+tique();
+}
 var MorIfcLer = {
-ler: ler, deElementosViewer: deElementosViewer, textoCobertura: textoCobertura,
+ler: ler, lerAsync: lerAsync, deElementosViewer: deElementosViewer, textoCobertura: textoCobertura,
 classificar: classificar, materialClasse: materialClasse, ambienteCat: ambienteCat, sistemaTubo: sistemaTubo,
 _parseArgs: parseArgs, _varrer: varrer, _decodificar: decodificar, _diametroMm: diametroMm, _matEl: matEl, _txtEl: txtEl
 };
@@ -32234,8 +32484,9 @@ botaoHtml: function () {
 if (!MorIfcUI.ativo()) return "";
 return '<button class="btn sm" id="mor-ifc-orcar" title="Lê o modelo inteiro (todas as disciplinas) e monta o orçamento completo: medido, implícito, sugerido e pendente — você confere e dá OK antes de entrar (prévia)">' + (typeof Icones !== "undefined" ? Icones.get("calc", 15) : "") + " Orçar pelo modelo</button>";
 },
-htmlConfiguracao: function (temViewer) {
+htmlConfiguracao: function (temViewer, pre) {
 return '<div id="mor-ifc-cfg">' +
+(arr(pre).length ? '<p data-mor-ifc-pre="1" style="margin:0 0 8px;font-size:12.5px"><b>Arquivo já escolhido:</b> ' + arr(pre).map(function (x) { return esc(x.name); }).join(", ") + ' <span class="muted">(vindo do leitor de documento — para trocar, escolha outro abaixo)</span></p>' : "") +
 '<p class="muted" style="margin:0 0 8px;font-size:12.5px">Lê o IFC inteiro e orça o que o modelo mostra <b>e o que a obra consome sem estar desenhado</b> (chapisco, fôrma, impermeabilização…). Cada linha diz de onde veio; <b>nada implícito entra sem o seu OK</b>.</p>' +
 '<div class="field"><label for="mor-ifc-padrao">Padrão do orçamento</label><select id="mor-ifc-padrao"><option value="baixo">Baixo (popular)</option><option value="medio" selected>Médio (normal)</option><option value="alto">Alto</option></select>' +
 '<span class="muted" style="font-size:12px">O padrão só escolhe o material onde o IFC não diz; o material informado no IFC vence.</span></div>' +
@@ -32339,64 +32590,119 @@ for (k in ids) { var v = MorIfcUI._num(ids[k]); if (v !== undefined && (k !== "e
 return p;
 },
 _obterBase: function (cod, fonte) { var U = global.MorUI; return U && U._obterBase ? U._obterBase(cod, fonte) : null; },
-_rodar: function (st, cb) {
+_arquivos: function (st) {
+var inp = typeof document !== "undefined" ? document.getElementById("mor-ifc-arq") : null;
+var fs = inp && inp.files && inp.files.length ? Array.prototype.slice.call(inp.files) : [];
+return fs.length ? fs : arr(st && st.arquivosPre);
+},
+_etapas: function (st, files) {
+var projeto = files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(files[0].name));
+if (!files.length) return [{ id: "ler", nome: "Lendo as peças abertas no BIM", medida: false }, { id: "orcar", nome: "Orçando", medida: false }];
+if (!projeto) return [{ id: "abrir", nome: "Abrindo o arquivo", peso: 2 }, { id: "entidades", nome: "Lendo as entidades do modelo", peso: 6 }, { id: "medir", nome: "Medindo o modelo", peso: 2, medida: false }, { id: "orcar", nome: "Orçando", peso: 1, medida: false }];
+var et = files.map(function (f, i) { return { id: "f" + i, nome: "Lendo " + f.name + " (" + (i + 1) + " de " + files.length + ")", peso: Math.max(1, Math.round((f.size || 0) / 1024)) }; });
+var tot = et.reduce(function (s, e) { return s + e.peso; }, 0);
+et.push({ id: "juntar", nome: "Juntando os arquivos e orçando", peso: Math.max(1, Math.round(tot / 10)), medida: false });
+return et;
+},
+_rodar: function (st, cb, tr) {
 var Ler = global.MorIfcLer, Orc = global.MorIfcOrc, padrao = (document.getElementById("mor-ifc-padrao") || {}).value || "medio", params = MorIfcUI._params();
+tr = tr || (global.MorProgresso ? global.MorProgresso.criar([]) : { avancar: function () {}, iniciar: function () {}, concluir: function () {}, aoCancelar: function () {}, cancelado: false });
+var canc = function () { return !!tr.cancelado; };
 var fim = function (modelo) {
+tr.iniciar("orcar");
+setTimeout(function () {
 try {
+if (canc()) { cb(null, "cancelado"); return; }
 var res = Orc.orcar(modelo, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } });
 if (!res.ok) { cb(null, res.erro); return; }
 cb(res, null);
 } catch (e) { cb(null, "Falha ao orçar: " + e.message); }
+}, 20);
 };
-var inp = document.getElementById("mor-ifc-arq"), files = inp && inp.files ? Array.prototype.slice.call(inp.files) : [], file = files[0];
+var files = MorIfcUI._arquivos(st), file = files[0];
 st.lidos = null; st.origemPorId = null; st.modeloProj = null; st.modelado = null;
-if (files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(file.name))) { MorIfcUI._rodarProjeto(st, files, padrao, params, cb); return; }
+if (files.length && MorIfcUI.projeto() && !(files.length === 1 && /\.ifc$/i.test(file.name))) { MorIfcUI._rodarProjeto(st, files, padrao, params, cb, tr); return; }
 if (file) {
 if (file.size > 150 * 1024 * 1024) { cb(null, "Arquivo com mais de 150 MB: a leitura completa trava a aba. Abra o modelo no BIM e use «as peças já abertas» (leitura parcial)."); return; }
-var rd = function (txt) { try { var m = Ler.ler(txt); if (!m.ok) { cb(null, m.erro); return; } st.arquivo = file.name; fim(m); } catch (e) { cb(null, "Não consegui ler o IFC: " + e.message); } };
-if (file.text) file.text().then(rd, function () { cb(null, "Falha ao ler o arquivo."); });
-else { var fr = new FileReader(); fr.onload = function () { rd(String(fr.result)); }; fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); }; fr.readAsText(file); }
+var P = global.MorProgresso;
+if (!P) { cb(null, "O módulo de progresso não carregou: atualize a página (Ctrl+F5)."); return; }
+P.lerArquivo(file, "texto", tr, "abrir", function (txt, err) {
+if (txt === null || txt === undefined) { cb(null, err || "Falha ao ler o arquivo."); return; }
+Ler.lerAsync(txt, {}, function (fase, fr) {
+if (fase === "entidades") tr.avancar("entidades", Math.round(fr * 1000), 1000, { detalhe: "varrendo " + P.fmtBytes(file.size) + " de texto do IFC" });
+else tr.avancar("medir", null, null, { detalhe: "calculando as quantidades de cada peça (roda de uma vez)" });
+}, function (m, e) {
+if (!m) { cb(null, e === "cancelado" ? "cancelado" : (e || "Não consegui ler o IFC.")); return; }
+st.arquivo = file.name; fim(m);
+}, canc);
+});
 return;
 }
-if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; fim(Ler.deElementosViewer(st.elementosViewer)); return; }
+if (st.elementosViewer && st.elementosViewer.length) { st.arquivo = "(peças abertas no BIM)"; tr.iniciar("ler"); fim(Ler.deElementosViewer(st.elementosViewer)); return; }
 cb(null, "Escolha o arquivo .ifc (ou abra um modelo no BIM).");
 },
-_rodarProjeto: function (st, files, padrao, params, cb) {
-var PO = global.ProjOrcar, Ler = global.MorIfcLer, lidos = [], i = 0;
+_rodarProjeto: function (st, files, padrao, params, cb, tr) {
+var PO = global.ProjOrcar, Ler = global.MorIfcLer, P = global.MorProgresso, lidos = [], i = 0, N = files.length;
+var canc = function () { return !!(tr && tr.cancelado); };
 function falho(f, t, msg) { var l = PO.outro(f.name); l.tipo = t; l.erro = msg; return l; }
 function prox() {
+if (canc()) { cb(null, "cancelado"); return; }
 if (i >= files.length) {
+if (tr) tr.iniciar("juntar", "juntando as plantas, os pavimentos e as quantidades (roda de uma vez)");
+setTimeout(function () {
 var r;
+if (canc()) { cb(null, "cancelado"); return; }
 st.lidos = lidos; st.arquivo = files.map(function (f) { return f.name; }).join(", ");
 try { r = PO.orcar(lidos, { padrao: padrao, params: params, obter: function (c, f) { return MorIfcUI._obterBase(c, f); } }); } catch (e) { cb(null, "Falha ao orçar: " + e.message); return; }
 if (!r.ok) { cb(null, r.erro); return; }
-st.origemPorId = r.origemPorId; st.modeloProj = r.modelo; st.modelado = null; cb(r.res, null); return;
+st.origemPorId = r.origemPorId; st.modeloProj = r.modelo; st.modelado = null; cb(r.res, null);
+}, 20);
+return;
 }
-var f = files[i++], t = PO.tipo(f.name);
-if (f.size > 150 * 1024 * 1024) { lidos.push(falho(f, t, "arquivo com mais de 150 MB: não lido (trava a aba)")); prox(); return; }
-if (t === "dwg") { lidos.push(PO.dwg(f.name)); prox(); return; }
-if (t === "outro") { lidos.push(PO.outro(f.name)); prox(); return; }
+var idx = i, f = files[i++], t = PO.tipo(f.name), id = "f" + idx, pre = "arquivo " + (idx + 1) + " de " + N + " · " + f.name + " · ";
+function prog(frac, det) { if (!tr) return; if (frac === null) tr.avancar(id, null, null, { detalhe: pre + det }); else tr.avancar(id, Math.round(frac * 1000), 1000, { detalhe: pre + det }); }
+function pronto(l) { lidos.push(l); if (tr) tr.concluir(id); setTimeout(prox, 0); }
+if (tr) tr.iniciar(id, pre + "abrindo");
+if (f.size > 150 * 1024 * 1024) { pronto(falho(f, t, "arquivo com mais de 150 MB: não lido (trava a aba)")); return; }
+if (t === "dwg") { pronto(PO.dwg(f.name)); return; }
+if (t === "outro") { pronto(PO.outro(f.name)); return; }
 MorIfcUI._bytes(f, function (buf) {
-if (!buf) { lidos.push(falho(f, t, "falha ao ler o arquivo")); prox(); return; }
+if (canc()) { cb(null, "cancelado"); return; }
+if (!buf) { pronto(falho(f, t, "falha ao ler o arquivo")); return; }
+if (t === "ifc") {
+Ler.lerAsync(MorIfcUI._texto(buf, false), {}, function (fase, fr) {
+if (fase === "entidades") prog(0.1 + 0.8 * fr, "lendo as entidades do IFC");
+else prog(null, "medindo o modelo (roda de uma vez)");
+}, function (m, e) {
+if (e === "cancelado") { cb(null, "cancelado"); return; }
+try { pronto(m ? PO.deIfc(m, f.name) : falho(f, t, "não consegui ler: " + e)); } catch (e1) { pronto(falho(f, t, "não consegui ler: " + e1.message)); }
+}, canc);
+return;
+}
 if (t !== "pdf") {
-try {
-if (t === "ifc") lidos.push(PO.deIfc(Ler.ler(MorIfcUI._texto(buf, false)), f.name));
-else lidos.push(PO.lerDxf(MorIfcUI._texto(buf, true), f.name, { mem: MorIfcUI._mem() }));
-} catch (e) { lidos.push(falho(f, t, "não consegui ler: " + e.message)); }
-setTimeout(prox, 0); return;
+PO.lerDxfAsync(MorIfcUI._texto(buf, true), f.name, { mem: MorIfcUI._mem() }, function (fr, fase) {
+if (fr === null || fase === "medir") prog(null, "classificando camadas e medindo (roda de uma vez)");
+else prog(0.1 + 0.8 * fr, fase === "linhas" ? "lendo as linhas do DXF" : "montando a geometria");
+}, function (l, e) { if (e === "cancelado") { cb(null, "cancelado"); return; } pronto(l); }, canc);
+return;
 }
 MorIfcUI._pdfPaginas(buf, function (pgs, total, erro) {
-try { var lp = PO.lerPdf(pgs || [], f.name, { totalPaginas: total }); if (erro && !lp.ok) lp.erro = erro; lidos.push(lp); }
-catch (e2) { lidos.push(falho(f, "pdf", "não consegui ler o PDF: " + e2.message)); }
-setTimeout(prox, 0);
-});
-});
+if (erro === "cancelado" || canc()) { cb(null, "cancelado"); return; }
+prog(null, "interpretando as páginas (roda de uma vez)");
+setTimeout(function () {
+try { var lp = PO.lerPdf(pgs || [], f.name, { totalPaginas: total }); if (erro && !lp.ok) lp.erro = erro; pronto(lp); }
+catch (e2) { pronto(falho(f, "pdf", "não consegui ler o PDF: " + e2.message)); }
+}, 20);
+}, function (k, n) { prog(0.1 + 0.9 * (k / n), "página " + k + " de " + n); }, canc);
+}, function (ev, tot) { if (P && tot) prog(0.1 * ev / tot, P.fmtBytes(ev) + " de " + P.fmtBytes(tot)); });
 }
 prox();
 },
-_bytes: function (f, cb) {
-if (f.arrayBuffer) { f.arrayBuffer().then(function (b) { cb(b); }, function () { cb(null); }); return; }
-var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null); }; fr.readAsArrayBuffer(f);
+_bytes: function (f, cb, aoProg) {
+if (!aoProg && f.arrayBuffer) { f.arrayBuffer().then(function (b) { cb(b); }, function () { cb(null); }); return; }
+var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null); };
+if (aoProg) fr.onprogress = function (ev) { if (ev && ev.lengthComputable) aoProg(ev.loaded, ev.total); };
+fr.readAsArrayBuffer(f);
 },
 _texto: function (buf, ansi) {
 var b = new Uint8Array(buf), t = new TextDecoder("utf-8").decode(b);
@@ -32404,7 +32710,7 @@ if (ansi && t.indexOf("\uFFFD") >= 0) { try { t = new TextDecoder("windows-1252"
 return t;
 },
 _mem: function () { try { var Mm = global.MorMemoria; return Mm && Mm.carregar && typeof localStorage !== "undefined" ? (Mm.carregar(localStorage, Auth.empresaId()) || {}).mem || null : null; } catch (e) { return null; } },
-_pdfPaginas: function (buf, cb) {
+_pdfPaginas: function (buf, cb, aoPagina, cancelado) {
 var G = global.Gestao, PV = global.PdfVetor, PO = global.ProjOrcar;
 if (!G || !G._estPdfLib) { cb([], 0, "o leitor de PDF não está disponível nesta tela"); return; }
 G._estPdfLib(function (lib) {
@@ -32412,7 +32718,7 @@ if (!lib) { cb([], 0, "não carregou o leitor de PDF local"); return; }
 lib.getDocument({ data: new Uint8Array(buf) }).promise.then(function (doc) {
 var n = Math.min(doc.numPages, PO.MAX_PAGINAS), pgs = [], ch = Promise.resolve();
 for (var p = 1; p <= n; p++) (function (k) {
-ch = ch.then(function () { return doc.getPage(k).then(function (page) {
+ch = ch.then(function () { if (cancelado && cancelado()) throw new Error("cancelado"); return doc.getPage(k).then(function (page) {
 var vp = page.getViewport({ scale: 1 });
 return Promise.all([page.getOperatorList(), page.getTextContent()]).then(function (rr) {
 var vs = PV ? PV.segmentos(rr[0], lib.OPS, { base: vp.transform }) : { ok: false }, segs = vs && vs.ok ? vs.segmentos : [];
@@ -32426,10 +32732,11 @@ var ky = Math.round(m[5] / 3); if (!porY[ky]) { porY[ky] = []; ys.push(ky); } po
 ys.sort(function (a, b) { return a - b; });
 var linhas = ys.map(function (ky) { return porY[ky].sort(function (a, b) { return a.x - b.x; }).map(function (q) { return q.s; }).join(" "); });
 pgs.push({ segmentos: segs, textos: textos, linhas: linhas });
+if (aoPagina) aoPagina(k, n);
 });
 }); });
 })(p);
-ch.then(function () { cb(pgs, doc.numPages, ""); }, function (e) { cb(pgs, doc.numPages, "falha ao ler a página: " + (e && e.message)); });
+ch.then(function () { cb(pgs, doc.numPages, ""); }, function (e) { cb(pgs, doc.numPages, e && e.message === "cancelado" ? "cancelado" : "falha ao ler a página: " + (e && e.message)); });
 }, function () { cb([], 0, "o PDF não abriu (protegido ou corrompido?)"); });
 });
 },
@@ -32516,23 +32823,39 @@ UI.modal("Orçar pelo modelo — conferência", '<div id="mor-ifc-res">' + MorIf
 ]);
 var box = document.getElementById("mor-ifc-res"); if (box) MorIfcUI._ligar(box);
 },
-abrir: function (app, opts) {
-opts = opts || {};
-if (!MorIfcUI.ativo()) { UI.toast("«Orçar pelo modelo» é uma prévia: abra o app com ?previa=motor.", "info"); return; }
-var st = { app: app, res: null, marcadas: {}, aceitos: {}, elementosViewer: arr(opts.elementos), obraNome: opts.obraNome || "", arquivo: "" };
-MorIfcUI._st = st;
-UI.modal("Orçar pelo modelo (prévia)", MorIfcUI.htmlConfiguracao(st.elementosViewer.length > 0), [
-{ texto: "Cancelar", classe: "ghost", onClick: function () { MorIfcUI._st = null; UI.fecharModal(); } },
-{ texto: "Ler o modelo e orçar", classe: "primary", onClick: function () {
-var box = document.getElementById("mor-ifc-res"); if (box) box.innerHTML = '<p class="muted">Lendo o modelo…</p>';
+_executar: function (st) {
+var box = document.getElementById("mor-ifc-res"), P = global.MorProgresso;
+if (st.tr && !st.tr.finalizado) return;
+var files = MorIfcUI._arquivos(st), tam = files.reduce(function (s, x) { return s + (x.size || 0); }, 0);
+var tr = P ? P.criar(MorIfcUI._etapas(st, files), { tamanho: tam, cancelavel: true }) : null, vis = null;
+st.tr = tr;
+if (box) { if (tr) vis = P.montar(box, tr); else box.innerHTML = '<p class="muted">Lendo o modelo…</p>'; }
 MorIfcUI._rodar(st, function (res, erro) {
-if (!res) { if (box) box.innerHTML = '<p style="color:#c62828">' + esc(erro) + "</p>" + (st.lidos ? MorIfcUI.htmlLido(st.lidos) : ""); return; }
+if (vis) vis.parar();
+if (st !== MorIfcUI._st) return;
+box = document.getElementById("mor-ifc-res") || box;
+if (tr && tr.cancelado) { if (box) box.innerHTML = '<p class="muted">Leitura cancelada. Nada foi lançado — clique em «Ler o modelo e orçar» para tentar de novo.</p>'; return; }
+if (!res) {
+if (tr) tr.falhar(erro);
+if (box) box.innerHTML = (tr ? P.html(tr.snap(), { acao: "confira o arquivo (ele abre no programa que o gerou?). Se for muito grande, exporte só as disciplinas que você quer orçar, ou use «as peças já abertas» no BIM." }) : '<p style="color:#c62828">' + esc(erro) + "</p>") + (st.lidos ? MorIfcUI.htmlLido(st.lidos) : "");
+return;
+}
+if (tr) tr.finalizar();
 st.res = res; st.marcadas = {}; st.aceitos = {};
 res.linhas.forEach(function (l) { if (marcadaDeSaida(l)) st.marcadas[l.id] = true; });
 MorIfcUI.abrirConferenciaDe(st);
-});
-} }
+}, tr);
+},
+abrir: function (app, opts) {
+opts = opts || {};
+if (!MorIfcUI.ativo()) { UI.toast("«Orçar pelo modelo» é uma prévia: abra o app com ?previa=motor.", "info"); return; }
+var st = { app: app, res: null, marcadas: {}, aceitos: {}, elementosViewer: arr(opts.elementos), obraNome: opts.obraNome || "", arquivo: "", arquivosPre: arr(opts.arquivos), tr: null };
+MorIfcUI._st = st;
+UI.modal("Orçar pelo modelo (prévia)", MorIfcUI.htmlConfiguracao(st.elementosViewer.length > 0, st.arquivosPre), [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { if (st.tr) st.tr.cancelar(); MorIfcUI._st = null; UI.fecharModal(); } },
+{ texto: "Ler o modelo e orçar", classe: "primary", onClick: function () { MorIfcUI._executar(st); } }
 ]);
+if (opts.auto && st.arquivosPre.length) MorIfcUI._executar(st);
 },
 lancar: function () {
 var st = MorIfcUI._st; if (!st || !st.res) return;
@@ -62965,7 +63288,7 @@ function areaPoli(pts) { var s = 0; for (var i = 0; i < pts.length; i++) { var a
 var DXF = {
 UNIDADES: INSUNITS,
 _decodTxt: decodTxt,
-parse: function (texto, opts) {
+_job: function (texto, opts) {
 opts = opts || {};
 var L0 = new Leitor(texto);
 var segs = [], textos = [], layers = {}, insunits = 0, pontos = [];
@@ -62982,12 +63305,16 @@ if (e.tipo === "VERTEX" || e.tipo === "SEQEND" || e.tipo === "ENDBLK" || e.tipo 
 ultimoInsert = (e.tipo === "INSERT" && e.temAtrib) ? e : null;
 if (alvo) alvo.push(e);
 }
-while ((pr = L0.par()) !== null) {
+var fim1 = false;
+function passo1(limite) {
+var n0 = 0;
+while (!fim1 && n0++ < limite) {
+pr = L0.par(); if (pr === null) { fechar(); fim1 = true; break; }
 var cod = pr[0], val = pr[1];
 if (cod === 0 && val === "SECTION") { fechar(); esperaNomeSecao = true; secao = ""; continue; }
 if (esperaNomeSecao && cod === 2) { secao = val; esperaNomeSecao = false; alvo = secao === "ENTITIES" ? topo : null; continue; }
 if (cod === 0 && val === "ENDSEC") { fechar(); if (secao === "ENTITIES") { secao = ""; alvo = null; } else { secao = ""; alvo = null; } bloco = null; continue; }
-if (cod === 0 && val === "EOF") { fechar(); break; }
+if (cod === 0 && val === "EOF") { fechar(); fim1 = true; break; }
 if (secao === "HEADER") {
 if (cod === 9) insuFlag = val === "$INSUNITS";
 else if (insuFlag && cod === 70) { insunits = parseInt(val, 10) || 0; insuFlag = false; }
@@ -63012,7 +63339,8 @@ continue;
 }
 if (ent) alimentar(ent, cod, val);
 }
-fechar();
+return fim1;
+}
 var caixaCache = {};
 function caixaBloco(nome, pilha) {
 if (caixaCache[nome] !== undefined) return caixaCache[nome];
@@ -63137,7 +63465,13 @@ var p2 = pilha.concat([nome]);
 for (var k = 0; k < B.ents.length; k++) emitir(B.ents[k], T2, L, nivel + 1, nome, p2, coletor);
 }
 }
-for (var it = 0; it < topo.length; it++) emitir(topo[it], IDENT, null, 0, "", [], null);
+var iTopo = 0;
+function passo2(limite) {
+var n1 = 0;
+while (iTopo < topo.length && n1++ < limite) emitir(topo[iTopo++], IDENT, null, 0, "", [], null);
+return iTopo >= topo.length;
+}
+function concluir() {
 var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
 segs.forEach(function (s) {
 if (s.x1 < x0) x0 = s.x1; if (s.x2 < x0) x0 = s.x2;
@@ -63174,6 +63508,31 @@ inserts: inserts, hachuras: hachuras, blocos: resBlocos, cotas: cotas,
 stats: { segmentos: segs.length, textos: textos.length, ignoradas: sem.ignoradas, inserts: inserts.length, hachuras: hachuras.length, dimensoes: stats2.dimensoes, blocos: Object.keys(blocos).length, blocosFaltando: stats2.blocosFaltando, ciclos: stats2.ciclos, profundos: stats2.profundos, atributos: stats2.atributos }
 };
 }
+return {
+passo1: passo1, passo2: passo2, concluir: concluir,
+prog: function () { return { pos: L0.p, n: L0.n, topo: iTopo, ntopo: topo.length }; }
+};
+}
+};
+DXF.parse = function (texto, opts) {
+var j = DXF._job(texto, opts);
+while (!j.passo1(1e9)) { }
+while (!j.passo2(1e9)) { }
+return j.concluir();
+};
+DXF.parseAsync = function (texto, opts, aoProg, cb, cancelado) {
+var j, fase = 1;
+try { j = DXF._job(texto, opts); } catch (e) { cb(null, e.message || String(e)); return; }
+function tique() {
+try {
+if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+var pg, feito;
+if (fase === 1) { feito = j.passo1(20000); pg = j.prog(); if (aoProg) aoProg(pg.n ? Math.min(1, pg.pos / pg.n) * 0.6 : 0, "linhas"); if (feito) fase = 2; }
+else { feito = j.passo2(4000); pg = j.prog(); if (aoProg) aoProg(0.6 + (pg.ntopo ? pg.topo / pg.ntopo : 1) * 0.4, "geometria"); if (feito) { cb(j.concluir(), null); return; } }
+setTimeout(tique, 0);
+} catch (e2) { cb(null, e2.message || String(e2)); }
+}
+tique();
 };
 global.DXF = DXF;
 if (typeof module !== "undefined" && module.exports) module.exports = DXF;
@@ -92610,6 +92969,22 @@ var lido = novoLido(nome, "dxf"), D = M("DXF"), PC = M("ProjClass"), PL = M("Pro
 if (!D || !PC || !PL || !T) { lido.erro = "os motores do DXF não carregaram"; return fechar(lido); }
 var dx;
 try { dx = D.parse(String(texto || ""), { blocos: true }); } catch (e) { lido.erro = "não consegui ler o DXF: " + e.message; return fechar(lido); }
+return lerDxfDe(dx, lido, nome, opts, D, PC, PL, T);
+}
+function lerDxfAsync(texto, nome, opts, aoProg, cb, cancelado) {
+opts = opts || {};
+var lido = novoLido(nome, "dxf"), D = M("DXF"), PC = M("ProjClass"), PL = M("ProjLer"), T = M("ProjTriagem");
+if (!D || !PC || !PL || !T) { lido.erro = "os motores do DXF não carregaram"; cb(fechar(lido)); return; }
+if (!D.parseAsync) { cb(lerDxf(texto, nome, opts)); return; }
+D.parseAsync(String(texto || ""), { blocos: true }, aoProg, function (dx, erro) {
+if (!dx) { if (erro === "cancelado") { lido.erro = "leitura cancelada"; cb(fechar(lido), "cancelado"); return; } lido.erro = "não consegui ler o DXF: " + erro; cb(fechar(lido)); return; }
+if (aoProg) aoProg(null, "medir");
+setTimeout(function () {
+try { cb(lerDxfDe(dx, lido, nome, opts, D, PC, PL, T)); } catch (e) { lido.erro = "não consegui ler o DXF: " + (e && e.message || e); cb(fechar(lido)); }
+}, 20);
+}, cancelado);
+}
+function lerDxfDe(dx, lido, nome, opts, D, PC, PL, T) {
 if (!dx || !arr(dx.segmentos).length) { lido.erro = "o DXF não tem linhas legíveis (LINE, LWPOLYLINE, ARC…)"; return fechar(lido); }
 var tri = T.triar({ nomeArquivo: nome, texto: arr(dx.textos).slice(0, 4000).map(function (t) { return t.txt; }), camadas: Object.keys(dx.layers || {}) });
 lido.disciplinas = tri.disciplinas; lido.porqueDisciplina = tri.porque;
@@ -92724,7 +93099,7 @@ var fs = Math.max(0.25, Math.min(W, H) / 40);
 arr(p.ambientes).forEach(function (a) { s += '<text x="' + n(a.x) + '" y="' + n(-a.y) + '" font-size="' + n(fs) + '" fill="' + (a.pendente ? "#c62828" : "#333") + '" text-anchor="middle">' + esc(a.nome) + (a.area ? " " + fmt(a.area) + " m²" : "") + "</text>"; });
 return '<svg xmlns="http://www.w3.org/2000/svg" data-proj-svg="1" style="display:block;width:100%;height:auto;max-width:' + larg + 'px;max-height:' + Math.min(alt, 520) + 'px;background:#fff;border:1px solid #ccc" viewBox="' + n(b.x0 - m) + " " + n(-b.y1 - m) + " " + n(W) + " " + n(H) + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Prévia da planta «' + esc(p.nome) + '»">' + s + "</svg>";
 }
-var ProjOrcar = { AVISO_DWG: AVISO_DWG, MAX_PAGINAS: MAX_PAGINAS, tipo: tipo, lerDxf: lerDxf, lerPdf: lerPdf, deIfc: deIfc, dwg: dwg, outro: outro, orcar: orcar, resumo: resumo, svgPlanta: svgPlanta, tipoVista: tipoVista, filtrarVistas: filtrarVistas };
+var ProjOrcar = { AVISO_DWG: AVISO_DWG, MAX_PAGINAS: MAX_PAGINAS, tipo: tipo, lerDxf: lerDxf, lerDxfAsync: lerDxfAsync, lerPdf: lerPdf, deIfc: deIfc, dwg: dwg, outro: outro, orcar: orcar, resumo: resumo, svgPlanta: svgPlanta, tipoVista: tipoVista, filtrarVistas: filtrarVistas };
 global.ProjOrcar = ProjOrcar;
 if (typeof module !== "undefined" && module.exports) module.exports = ProjOrcar;
 })(typeof window !== "undefined" ? window : globalThis);

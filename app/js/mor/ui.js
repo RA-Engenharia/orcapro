@@ -56,7 +56,7 @@
     blocoDocumento: function () {
       return '<details id="mor-doc" style="margin-top:8px"><summary><b>Gerar a partir de documento</b> <span class="muted" style="font-weight:400">(prévia — sem IA)</span></summary>' +
         '<div class="field"><label for="mor-doc-txt">Cole o escopo, o memorial ou o objeto do edital</label><textarea id="mor-doc-txt" rows="5" placeholder="Ex.: Casa térrea de 120 m², 3 quartos, fundação em sapatas, telha cerâmica…"></textarea></div>' +
-        '<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="mor-doc-arq" accept=".txt,.pdf,.docx,.xlsx,.xls,.csv" aria-label="Arquivo do documento"> <button type="button" class="btn sm" id="mor-doc-ler">Ler o documento</button> <button type="button" class="btn sm ghost" id="mor-doc-mem">Memória do Motor</button></div>' +
+        '<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="mor-doc-arq" accept=".txt,.pdf,.docx,.xlsx,.xls,.csv,.ifc,.dxf,.dwg" aria-label="Arquivo do documento (texto, PDF, Word, planilha; projeto IFC/DXF/DWG vai para o Orçar pelo modelo)"> <button type="button" class="btn sm" id="mor-doc-ler">Ler o documento</button> <button type="button" class="btn sm ghost" id="mor-doc-mem">Memória do Motor</button></div>' +
         '<div id="mor-doc-res" aria-live="polite"></div></details>';
     },
 
@@ -491,34 +491,70 @@
       UI.modal("Memória do Motor", '<div id="mor-mem-corpo">' + MorUI.htmlMemoria(m.mem) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
 
-    /* texto do arquivo (txt/pdf/docx) ou matriz (planilha) → leitura. cb(leitura, erro) */
-    _lerArquivo: function (file, cb) {
-      var nome = String(file.name || "").toLowerCase(), A = global.App;
+    /* as etapas da barra de progresso de cada tipo de documento. ⚠ «interpretar»/«abrir» não têm medida contínua (rodam de uma vez):
+       a barra fica indeterminada nelas — só etapa + tempo, nunca % inventado. */
+    _etapasArquivo: function (nome) {
+      if (/\.(xlsx|xls|csv)$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "interpretar", nome: "Interpretando a planilha", peso: 1, medida: false }];
+      if (/\.pdf$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 1 }, { id: "paginas", nome: "Lendo as páginas do PDF", peso: 4 }, { id: "interpretar", nome: "Interpretando o escopo", peso: 1, medida: false }];
+      if (/\.docx$/.test(nome)) return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "abrir", nome: "Abrindo o documento Word", peso: 2, medida: false }, { id: "interpretar", nome: "Interpretando o escopo", peso: 1, medida: false }];
+      return [{ id: "ler", nome: "Lendo o arquivo", peso: 3 }, { id: "interpretar", nome: "Interpretando o texto", peso: 1, medida: false }];
+    },
+
+    /* texto do arquivo (txt/pdf/docx) ou matriz (planilha) → leitura. cb(leitura, erro). tr = rastreador de progresso (opcional) */
+    _lerArquivo: function (file, cb, tr) {
+      var nome = String(file.name || "").toLowerCase(), A = global.App, P = global.MorProgresso;
+      var ler = function (modo, id, depois) {
+        if (P && tr) { P.lerArquivo(file, modo, tr, id, function (r, e) { if (r === null || r === undefined) { cb(null, e === "cancelado" ? "cancelado" : (e || "Falha ao ler o arquivo.")); return; } depois(r); }); return; }
+        var fr0 = new FileReader();
+        fr0.onload = function () { depois(fr0.result); };
+        fr0.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
+        if (modo === "buffer") fr0.readAsArrayBuffer(file); else fr0.readAsText(file);
+      };
       if (/\.(xlsx|xls|csv)$/.test(nome)) {
         if (!A || !A._lerPlanilha) { cb(null, "Leitor de planilha indisponível."); return; }
         A._lerPlanilha(file, function (matriz, err) {
           if (!matriz) { cb(null, err || "Não consegui ler a planilha."); return; }
           cb(global.MorLeitor.dePlanilha(matriz, MorUI._optsLeitor()), null);
-        });
+        }, tr);
         return;
       }
       if (/\.(pdf|docx)$/.test(nome)) {
         if (typeof CplproTpl === "undefined" || !CplproTpl.memorialParaEscopo) { cb(null, "Leitor de memorial indisponível."); return; }
-        var fim = function (r) { if (!r.ok) cb(null, r.erro); else cb(global.MorLeitor.deMemorial(r.texto, MorUI._optsLeitor()), null); };
-        if (/\.pdf$/.test(nome)) { CplproTpl.memorialParaEscopo(file.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? function (cb2) { Gestao._pdfTexto(file, cb2); } : null).then(fim); return; }
-        var fr = new FileReader();
-        fr.onload = function () {
+        var fim = function (r) { if (tr && tr.cancelado) { cb(null, "cancelado"); return; } if (!r.ok) cb(null, r.erro); else cb(global.MorLeitor.deMemorial(r.texto, MorUI._optsLeitor()), null); };
+        if (/\.pdf$/.test(nome)) {
+          /* o leitor de PDF informa bytes e páginas de verdade (opts.aoProgresso do Gestao._pdfTexto) e para entre páginas se a pessoa cancelar */
+          var optsPdf = tr ? { aoProgresso: function (tp, feito, total) { tr.avancar(tp === "bytes" ? "ler" : "paginas", feito, total, { unidade: tp }); }, cancelado: function () { return !!tr.cancelado; } } : undefined;
+          CplproTpl.memorialParaEscopo(file.name, null, null, (typeof Gestao !== "undefined" && Gestao._pdfTexto) ? function (cb2) { Gestao._pdfTexto(file, function (t) { if (tr) tr.iniciar("interpretar"); cb2(t); }, optsPdf); } : null).then(fim);
+          return;
+        }
+        ler("buffer", "ler", function (buf) {
+          if (tr) tr.iniciar("abrir");
           var inflar = (typeof DecompressionStream === "undefined" || typeof Response === "undefined") ? null : function (b) { var ds = new DecompressionStream("deflate-raw"); return new Response(new Blob([b]).stream().pipeThrough(ds)).arrayBuffer().then(function (x) { return new Uint8Array(x); }); };
-          CplproTpl.memorialParaEscopo(file.name, new Uint8Array(fr.result), inflar, null).then(fim);
-        };
-        fr.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
-        fr.readAsArrayBuffer(file);
+          CplproTpl.memorialParaEscopo(file.name, new Uint8Array(buf), inflar, null).then(function (r) { if (tr) tr.iniciar("interpretar"); fim(r); });
+        });
         return;
       }
-      var fr2 = new FileReader();
-      fr2.onload = function () { cb(global.MorLeitor.deMemorial(String(fr2.result), MorUI._optsLeitor()), null); };
-      fr2.onerror = function () { cb(null, "Falha ao ler o arquivo."); };
-      fr2.readAsText(file);
+      ler("texto", "ler", function (txt) { if (tr) tr.iniciar("interpretar"); cb(global.MorLeitor.deMemorial(String(txt), MorUI._optsLeitor()), null); });
+    },
+
+    /* .ifc/.dxf/.dwg no leitor de documento: não é texto de escopo — quem lê projeto é o «Orçar pelo modelo/projeto».
+       ⚠ Antes, o arquivo ficava preso em «Lendo…» para sempre. Aqui a resposta é imediata e clara, com o botão que leva o arquivo já escolhido.
+       Não abre a outra janela sozinho: ela SUBSTITUI esta (UI.modal é uma só) e o que a pessoa já digitou nos parâmetros se perderia. */
+    _encaminharProjeto: function (file, res) {
+      var nm = String(file.name || ""), dwg = /\.dwg$/i.test(nm), PO = global.ProjOrcar;
+      MorUI._arqProjeto = file;
+      var aviso = dwg ? ((PO && PO.AVISO_DWG) || "DWG é formato fechado: o sistema não lê. Abra no AutoCAD e use Salvar como → DXF, depois escolha o DXF.") : "";
+      var pode = !!(global.MorIfcUI && global.MorIfcUI.abrir);
+      res.innerHTML = '<div data-mor-doc-projeto="1" role="status" style="margin-top:8px;padding:8px;border:1px solid rgba(128,128,128,.4);border-radius:6px;font-size:13px">' +
+        "<b>«" + esc(nm) + "»</b> é um arquivo de projeto (" + esc((nm.split(".").pop() || "").toUpperCase()) + "), não um documento de texto — o leitor de documento não lê projeto. " +
+        (dwg ? "<br>" + esc(aviso) + "<br>" : "") +
+        (pode ? 'Quem lê projeto e monta o orçamento é o <b>Orçar pelo modelo</b>. <button type="button" class="btn sm" data-mor-doc-abrir-projeto="1">Abrir Orçar pelo modelo</button> <span class="muted" style="font-size:12px">(o arquivo já vai escolhido; esta janela fecha)</span>'
+          : "Use o botão «Orçar pelo modelo» do quantitativo (BIM) para ler este arquivo.") + "</div>";
+    },
+    abrirProjeto: function () {
+      var f = MorUI._arqProjeto; if (!f) return;
+      if (!global.MorIfcUI || !global.MorIfcUI.abrir) { UI.toast("«Orçar pelo modelo» não está disponível nesta tela.", "info"); return; }
+      global.MorIfcUI.abrir(global.App, { elementos: [], arquivos: [f], auto: !/\.dwg$/i.test(f.name) });
     },
 
     /* o botão «Ler o documento»: lê, entende, resolve cada item nas bases e mostra. Não grava nada. */
@@ -538,7 +574,25 @@
         var sel = d.getElementById("mor-tipologia");
         if (sel && plano.tipologia && C.tipologia(plano.tipologia)) sel.value = plano.tipologia;
       };
-      if (arq && arq.files && arq.files[0]) { res.innerHTML = '<p class="muted">Lendo…</p>'; MorUI._lerArquivo(arq.files[0], seguir); return; }
+      if (arq && arq.files && arq.files[0]) {
+        var f0 = arq.files[0], nm0 = String(f0.name || "").toLowerCase(), P = global.MorProgresso;
+        if (/\.(ifc|dxf|dwg)$/.test(nm0)) { MorUI._encaminharProjeto(f0, res); return; }
+        /* barra de progresso REAL (bytes, páginas), tempo, Cancelar e o vigia de 60 s — nunca mais «Lendo…» mudo */
+        var tr = P ? P.criar(MorUI._etapasArquivo(nm0), { tamanho: f0.size, cancelavel: true }) : null;
+        var vis = tr ? P.montar(res, tr, { acao: "tente de novo; se repetir, salve o documento como .txt ou .pdf menor (ou divida em partes) e escolha-o outra vez." }) : null;
+        if (!tr) res.innerHTML = '<p class="muted">Lendo…</p>';
+        var acabou = false;
+        var fim0 = function (leit, err) {
+          if (acabou) return; acabou = true;
+          if (vis) vis.parar();
+          if (tr && tr.cancelado) { res.innerHTML = '<p class="muted">Leitura cancelada. Escolha o arquivo de novo quando quiser.</p>'; return; }
+          if (!leit && tr) { tr.falhar(err || "Não consegui ler o arquivo."); res.innerHTML = P.html(tr.snap(), { acao: "tente de novo; se repetir, salve o documento como .txt ou .pdf menor (ou divida em partes) e escolha-o outra vez." }); return; }
+          if (tr) tr.finalizar();
+          try { seguir(leit, err); } catch (e9) { res.innerHTML = '<p class="muted">Falha ao ler: ' + esc((e9 && e9.message) || e9) + "</p>"; }
+        };
+        try { MorUI._lerArquivo(f0, fim0, tr); } catch (e8) { fim0(null, "Falha ao ler: " + ((e8 && e8.message) || e8)); }
+        return;
+      }
       if (!txt || !String(txt.value || "").trim()) { res.innerHTML = '<p class="muted">Cole um texto ou escolha um arquivo.</p>'; return; }
       seguir(global.MorLeitor.deMemorial(String(txt.value), MorUI._optsLeitor()), null);
     },
@@ -565,6 +619,7 @@
           MorUI._plano.itens.forEach(function (x) { var s0 = x.resolucao || {}; if (s0.codigo && (s0.estado === "casado" || s0.estado === "codigo-do-documento")) x.marcado = dt === "1"; });
           var rr1 = document.getElementById("mor-doc-res"); if (rr1) rr1.innerHTML = MorUI.htmlPlano(MorUI._plano); return;
         }
+        if (t && t.getAttribute && t.getAttribute("data-mor-doc-abrir-projeto")) { ev.preventDefault(); MorUI.abrirProjeto(); return; }
         var ac = t && t.getAttribute && t.getAttribute("data-mor-aceitar");
         if (ac !== null && ac !== undefined && ac !== "" ) {
           var ra = MorUI.aceitarComposicao(Number(ac));

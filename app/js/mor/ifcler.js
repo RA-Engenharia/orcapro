@@ -73,29 +73,41 @@
     return out;
   }
 
-  function varrer(texto) {
+  /* ⚠ O varredor é PARTIDO em passos (passo(limite) anda `limite` caracteres) para a leitura em fatias: com IFC de dezenas de MB a tela
+     ficava parada em «Lendo…» sem mostrar nada. varrer() faz tudo de uma vez (o de sempre); lerAsync() fatia e informa a fração. */
+  function varredor(texto) {
     var ents = {}, total = 0, complexas = 0, esquema = "", p = texto.indexOf("FILE_SCHEMA");
     if (p >= 0) { var mm = /FILE_SCHEMA\s*\(\s*\(\s*'([^']*)'/.exec(texto.substr(p, 200)); if (mm) esquema = mm[1]; }
-    var ini = texto.indexOf("DATA;"); if (ini < 0) return { ents: ents, total: 0, complexas: 0, esquema: esquema, erro: "O arquivo não tem a seção DATA; — não parece um IFC." };
+    var ini = texto.indexOf("DATA;");
+    if (ini < 0) { var r0 = { ents: ents, total: 0, complexas: 0, esquema: esquema, erro: "O arquivo não tem a seção DATA; — não parece um IFC." }; return { passo: function () { return true; }, frac: function () { return 1; }, resultado: function () { return r0; } }; }
     ini += 5;
     var fim = texto.indexOf("ENDSEC;", ini); if (fim < 0) fim = texto.length;
     var i = ini, dentro = false, cs = ini, c;
-    while (i < fim) {
-      c = texto.charCodeAt(i);
-      if (c === 39) { if (dentro && texto.charCodeAt(i + 1) === 39) { i += 2; continue; } dentro = !dentro; }
-      else if (!dentro) {
-        if (c === 47 && texto.charCodeAt(i + 1) === 42) { var e = texto.indexOf("*/", i + 2); i = e < 0 ? fim : e + 2; continue; }
-        if (c === 59) {
-          var st = texto.substring(cs, i), m = /^\s*#(\d+)\s*=\s*([A-Za-z0-9_]+)\s*\(([\s\S]*)\)\s*$/.exec(st);
-          if (m) { ents[m[1]] = { t: m[2].toUpperCase(), raw: m[3] }; total++; }
-          else if (/^\s*#\d+\s*=\s*\(/.test(st)) complexas++;
-          cs = i + 1;
+    function passo(limite) {
+      var teto = i + limite; if (!(teto < fim)) teto = fim;
+      while (i < teto) {
+        c = texto.charCodeAt(i);
+        if (c === 39) { if (dentro && texto.charCodeAt(i + 1) === 39) { i += 2; continue; } dentro = !dentro; }
+        else if (!dentro) {
+          if (c === 47 && texto.charCodeAt(i + 1) === 42) { var e = texto.indexOf("*/", i + 2); i = e < 0 ? fim : e + 2; continue; }
+          if (c === 59) {
+            var st = texto.substring(cs, i), m = /^\s*#(\d+)\s*=\s*([A-Za-z0-9_]+)\s*\(([\s\S]*)\)\s*$/.exec(st);
+            if (m) { ents[m[1]] = { t: m[2].toUpperCase(), raw: m[3] }; total++; }
+            else if (/^\s*#\d+\s*=\s*\(/.test(st)) complexas++;
+            cs = i + 1;
+          }
         }
+        i++;
       }
-      i++;
+      return i >= fim;
     }
-    return { ents: ents, total: total, complexas: complexas, esquema: esquema, erro: "" };
+    return {
+      passo: passo,
+      frac: function () { return fim > ini ? Math.min(1, (i - ini) / (fim - ini)) : 1; },
+      resultado: function () { return { ents: ents, total: total, complexas: complexas, esquema: esquema, erro: "" }; }
+    };
   }
+  function varrer(texto) { var v = varredor(texto); while (!v.passo(1e9)) { /* até o ENDSEC */ } return v.resultado(); }
 
   /* ---------------------------------------------------------------- classes: o que é o quê */
   var ESPACIAL = { IFCPROJECT: 1, IFCSITE: 1, IFCBUILDING: 1, IFCBUILDINGSTOREY: 1 };
@@ -197,7 +209,7 @@
   /* ---------------------------------------------------------------- o leitor */
   function ler(texto, opts) {
     opts = opts || {};
-    var v = varrer(String(texto || ""));
+    var v = opts.varrido || varrer(String(texto || ""));   /* varrido: o resultado do lerAsync (a varredura já foi feita em fatias) */
     var res = { ok: false, erro: v.erro || "", esquema: v.esquema, elementos: [], espacos: [], avisos: [], cobertura: null, unidades: null, modelo: { projeto: "", pavimentos: [] } };
     if (v.erro) return res;
     var ents = v.ents, cacheArgs = {};
@@ -639,8 +651,34 @@
     return l.join("\n");
   }
 
+  /* leitura em fatias: aoProg(fase, fracao|null, rotulo) — «entidades» com fração real (caracteres varridos); «medir» não tem medida contínua (fracao null).
+     cancelado() → cb(null, "cancelado"). cb(modelo, erro) com o mesmo modelo que ler() devolve. */
+  function lerAsync(texto, opts, aoProg, cb, cancelado) {
+    var tx = String(texto || ""), v, ult = -1;
+    try { v = varredor(tx); } catch (e) { cb(null, "Não consegui ler o IFC: " + (e && e.message || e)); return; }
+    function tique() {
+      try {
+        if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+        var fim = v.passo(3000000);
+        if (aoProg) aoProg("entidades", v.frac());
+        if (!fim) { setTimeout(tique, 0); return; }
+        if (aoProg) aoProg("medir", null);
+        setTimeout(function () {
+          try {
+            if (cancelado && cancelado()) { cb(null, "cancelado"); return; }
+            var o = {}; for (var k in (opts || {})) o[k] = opts[k]; o.varrido = v.resultado();
+            var m = ler(tx, o);
+            if (!m.ok) { cb(null, m.erro); return; }
+            cb(m, null);
+          } catch (e2) { cb(null, "Não consegui ler o IFC: " + (e2 && e2.message || e2)); }
+        }, 20);
+      } catch (e1) { cb(null, "Não consegui ler o IFC: " + (e1 && e1.message || e1)); }
+    }
+    tique();
+  }
+
   var MorIfcLer = {
-    ler: ler, deElementosViewer: deElementosViewer, textoCobertura: textoCobertura,
+    ler: ler, lerAsync: lerAsync, deElementosViewer: deElementosViewer, textoCobertura: textoCobertura,
     classificar: classificar, materialClasse: materialClasse, ambienteCat: ambienteCat, sistemaTubo: sistemaTubo,
     _parseArgs: parseArgs, _varrer: varrer, _decodificar: decodificar, _diametroMm: diametroMm, _matEl: matEl, _txtEl: txtEl
   };
