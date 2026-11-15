@@ -115,7 +115,9 @@
       '<label>Nome da rua <input data-arq="rua" value="' + esc(cfg.rua) + '" style="width:100%" placeholder="vazio = marcado em vermelho"></label></fieldset>';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>O que gerar</b></legend>' +
       '<label style="display:block"><input type="checkbox" data-arq-cj="capa"' + marcado(cfg.conjuntos.capa === true) + "> Capa com o índice de todas as folhas (ARQ-00)</label>" +
-      A.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-arq-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(A.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") + "</fieldset>";
+      A.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-arq-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(A.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") +
+      /* a FOLHA EXECUTIVA DE CORTES (js/arqexecutiva.js): desmarcada por padrão; no jogo legal fica desmarcada e travada (o jogo legal nunca a leva) */
+      '<label style="display:block"><input type="checkbox" data-arq-cj="executiva"' + marcado(cfg.conjuntos.executiva === true && cfg.jogo !== "legal") + (cfg.jogo === "legal" ? " disabled" : "") + "> " + esc(A.ROTULO_CONJUNTO.executiva) + "</label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Carimbo e saída</b></legend>' +
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "(sem obra selecionada)") + "</div>" +
       '<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label><label style="display:block"><input type="checkbox" data-arq-out="cad"> Arquivo CAD único (ZIP: DXF com um layout por folha + CTB das penas)</label>' +
@@ -152,7 +154,15 @@
     var fls = {}; qa("[data-arq-int-f]").forEach(function (e) { fls[e.getAttribute("data-arq-int-f")] = !!e.checked; });
     if (ci) { c.interiores = { folhas: fls, ativo: !!ci.checked, ambientes: ams.length ? ams.filter(function (e) { return e.checked; }).map(function (e) { return e.getAttribute("data-arq-int-amb"); }) : null, prefixo: (base && base.interiores && base.interiores.prefixo) || "INT" }; }
     c.conjuntos = c.conjuntos || {}; qa("[data-arq-cj]").forEach(function (e) { c.conjuntos[e.getAttribute("data-arq-cj")] = !!e.checked; });
+    if (c.jogo === "legal") c.conjuntos.executiva = false;   /* o jogo legal nunca leva a folha executiva, mesmo com a caixa marcada antes de trocar o jogo */
     return AQ().normalizarConfig(c);
+  }
+  /* trocou o jogo na tela: no legal a caixa da folha executiva fica desmarcada e travada; no executivo volta a poder ser marcada */
+  function sincronizarExecutiva(raiz) {
+    var j = raiz.querySelector('[data-arq="jogo"]'), cb = raiz.querySelector('[data-arq-cj="executiva"]');
+    if (!j || !cb) return false;
+    var legal = j.value === "legal"; if (legal) cb.checked = false; cb.disabled = legal;
+    return legal;
   }
   function baixar(nome, dados, mime) {
     /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
@@ -481,6 +491,10 @@
     /* a opção DWG só liga se o servidor local do app instalado gera DWG (navegador puro/PWA: desabilitada, com o motivo) */
     try { var rzD = global.document.querySelector('[data-arq="tela"]'); ligarDwgNaTela(rzD && rzD.parentNode); } catch (eD) { /* sem DOM */ }
     try {
+      var rzJ = global.document.querySelector('[data-arq="tela"]'), sj = rzJ && rzJ.parentNode && rzJ.parentNode.querySelector('[data-arq="jogo"]');
+      if (sj) sj.addEventListener('change', function () { sincronizarExecutiva(rzJ.parentNode); });
+    } catch (eJ) { /* sem DOM */ }
+    try {
       var rzC = global.document.querySelector('[data-arq="tela"]'), bC = rzC && rzC.parentNode && rzC.parentNode.querySelector('[data-arq="instalar-ctb"]'), mC = rzC && rzC.parentNode && rzC.parentNode.querySelector('[data-arq="ctb-msg"]');
       if (bC) bC.addEventListener('click', function () { bC.disabled = true; instalarCtbNoAutoCad(ULTIMO.r).then(function (x) { bC.disabled = false; if (mC) mC.textContent = x.mensagem; toast(x.mensagem, x.ok ? 'ok' : 'aviso'); }); });
     } catch (eC) { /* sem DOM */ }
@@ -488,7 +502,7 @@
   }
 
   var ArqPranchasUI = { abrir: abrir, gerar: gerar, gerarDwg: gerarDwg, sondarDwg: sondarDwg, prepararDwg: prepararDwg, instalarCtbNoAutoCad: instalarCtbNoAutoCad, DWG_SO_NO_APP: DWG_SO_NO_APP, gerarCaderno: gerarCaderno, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
-    _int: { ligarDwgNaTela: ligarDwgNaTela,  conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
+    _int: { html: html, sincronizarExecutiva: sincronizarExecutiva, ligarDwgNaTela: ligarDwgNaTela,  conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
   global.ArqPranchasUI = ArqPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

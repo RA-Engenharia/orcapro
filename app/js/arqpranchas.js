@@ -53,6 +53,7 @@
   function PDF() { return dep("SvgPdf", "./svgpdf.js"); }
   function DXF() { return dep("BimDxf", "./bimdxf.js"); }
   function DG() { return dep("ArqDiagrama", "./arqdiagrama.js"); }
+  function EX() { return dep("ArqExecutiva", "./arqexecutiva.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
   function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
@@ -66,10 +67,10 @@
   var CONJUNTOS = ["situacao", "existente", "demolir", "layout", "cobertura", "forro", "cortes", "fachadas", "piso", "quadros", "humanizada", "renders"];
   var ROTULO_CONJUNTO = { situacao: "Situação e implantação (índices, recuos, norte)", existente: "Planta existente (cotada)", demolir: "Planta de demolir / construir (convenção de reforma)",
     layout: "Planta proposta / layout (cotas, ambientes, esquadrias)", cobertura: "Planta de cobertura", forro: "Planta de forro", cortes: "Cortes AA e BB", fachadas: "Fachadas",
-    piso: "Paginação de piso", quadros: "Quadros: esquadrias, acabamentos e lista de folhas", humanizada: "Planta humanizada (apresentação ao cliente)", renders: "Renders: fotos do modelo 3D (planta e perspectivas), no fim do caderno" };
+    piso: "Paginação de piso", quadros: "Quadros: esquadrias, acabamentos e lista de folhas", humanizada: "Planta humanizada (apresentação ao cliente)", renders: "Renders: fotos do modelo 3D (planta e perspectivas), no fim do caderno", executiva: "Folha executiva de cortes (dois cortes completos, perspectivado e 3D, detalhe 1:25, quadros e legenda)" };
   var TITULO = { situacao: "SITUAÇÃO E IMPLANTAÇÃO", existente: "PLANTA EXISTENTE", demolir: "PLANTA DE DEMOLIR E CONSTRUIR", layout: "PLANTA BAIXA PROPOSTA - LAYOUT", cobertura: "PLANTA DE COBERTURA",
     forro: "PLANTA DE FORRO", cortes: "CORTES AA E BB", fachadas: "FACHADAS", piso: "PAGINAÇÃO DE PISO", quadros: "QUADRO DE ESQUADRIAS E ACABAMENTOS", humanizada: "PLANTA HUMANIZADA", renders: "IMAGENS DO MODELO 3D (RENDERS)",
-    esquadrias: "PLANTA-BAIXA DE ESQUADRIAS" };
+    esquadrias: "PLANTA-BAIXA DE ESQUADRIAS", executiva: "CORTES, DETALHE, CORTE PERSPECTIVADO E 3D, QUADROS E LEGENDA" };
   var FORMATOS_OK = ["AUTO", "A0", "A1", "A2", "A3"];
 
   function configPadrao() {
@@ -96,6 +97,8 @@
     r.conjuntos.esquadrias = !!(o.conjuntos && o.conjuntos.esquadrias === true);
     /* F1: a CAPA com o índice de folhas (ARQ-00, antes da série) também só sai quando pedida (capa: true); a tela e o padrão a pedem */
     r.conjuntos.capa = !!(o.conjuntos && o.conjuntos.capa === true);
+    /* a FOLHA EXECUTIVA DE CORTES (js/arqexecutiva.js: dois cortes completos, perspectivado e 3D, detalhe 1:25, quadros e legenda) também é opt-in: só sai quando pedida (executiva: true), depois da série */
+    r.conjuntos.executiva = !!(o.conjuntos && o.conjuntos.executiva === true);
     /* CADERNO DE INTERIORES (js/arqinteriores.js): fora da série padrão; `ambientes` = ids escolhidos (null = os que têm mobiliário ou marcenaria) */
     var oi = o.interiores && typeof o.interiores === "object" ? o.interiores : {};
     var fl = {}; Object.keys(oi.folhas && typeof oi.folhas === "object" ? oi.folhas : {}).forEach(function (kf) { fl[kf] = !!oi.folhas[kf]; });
@@ -286,6 +289,7 @@
     if (def.tipo === "int-imagens") B.push({ titulo: "IMAGENS", itens: ["Espaço reservado para os renders do ambiente."] });
     if (def.tipo === "cond" && DET() && DET().NOTAS[def.sub]) { B.push({ titulo: "DETALHE", itens: DET().NOTAS[def.sub] }); B.push({ titulo: "LEGENDA", itens: DET().NOTAS.comum }); }   /* sacada, casa do gás, lareira, churrasqueira (js/arqdetalhes.js) */
     if (def.tipo === "cortes" && c.usouPerfil) B.push({ titulo: "TERRENO", itens: ["Hachura: solo. A linha do terreno é o perfil do topossólido do modelo (talude), tirado ao longo da linha de cada corte."] });
+    if (def.tipo === "executiva") B.push({ titulo: "LEGENDA", itens: ["Cortes AA e BB tirados do modelo: laje, viga e pilar de concreto cortados em vermelho; terreno hachurado.", "Chamada com linha: só para o que o modelo tem e o plano de corte atravessa.", "Cotas verticais encadeadas: piso, peitoril, verga, forro, laje, platibanda e cobertura.", "Detalhe 1:25: recorte de um dos cortes, marcado no corte pelo círculo número / folha.", "Quadros: as quantidades são as do modelo e do orçamento."] });
     if (def.tipo === "renders") B.push({ titulo: "IMAGENS DO MODELO", itens: ["Fotos da própria cena 3D da obra (câmera ortográfica): perspectivas isométricas. Nada é desenhado por fora do modelo.", "Mostra o modelo como está no 3D, com todas as fases visíveis; não substitui as pranchas executivas."] });
     if (def.tipo === "humanizada") B.push({ titulo: "APRESENTAÇÃO", itens: ["Planta ilustrativa para apresentação ao cliente; não substitui as pranchas executivas."] });
     B.push({ titulo: "NOTAS GERAIS", numerar: true, itens: NOTAS_GERAIS });
@@ -316,8 +320,9 @@
   var VISTAS_ISO = [{ id: "iso1", az: 45, nome: "PERSPECTIVA ISOMÉTRICA 1" }, { id: "iso2", az: 135, nome: "PERSPECTIVA ISOMÉTRICA 2" }, { id: "iso3", az: 225, nome: "PERSPECTIVA ISOMÉTRICA 3" }, { id: "iso4", az: 315, nome: "PERSPECTIVA ISOMÉTRICA 4" }];
   var K_FOTO = { planta: false, corte: 1.5, abaixo: 0.25, largPx: 2000, margem: 0.03, mmIso: 400, elev: Math.atan(1 / Math.sqrt(2)) };
   var MOTIVO_SEM_FOTO = "as imagens saem da própria cena 3D do BIM (BIM.fotoIso) e o 3D não está aberto; nada é desenhado por fora.";
-  function caixaModelo(dados) {
-    var cx = caixaPlano(dados), y0 = 0, y1 = 3;
+  /* semEntorno (folha executiva): a caixa é só a EDIFICAÇÃO (sem o muro de divisa, a vegetação e o terreno de fora): a foto de corte nunca mostra o entorno */
+  function caixaModelo(dados, semEntorno) {
+    var cx = caixaPlano(dados, !!semEntorno), y0 = 0, y1 = 3;
     arr(dados.paredes).forEach(function (w) { y0 = Math.min(y0, num(w.base, 0)); y1 = Math.max(y1, num(w.topo, 0)); });
     arr(dados.telhados).forEach(function (t) { y1 = Math.max(y1, num(t.cotaCumeeira, 0)); });
     return { x0: cx[0] - 0.5, z0: cx[1] - 0.5, x1: cx[2] + 0.5, z1: cx[3] + 0.5, y0: y0 - 0.1, y1: y1 + 0.3 };
@@ -383,7 +388,11 @@
   function gerar(modelo, opcoes) {
     var op = opcoes || {}, r;
     FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {};
-    try { r = gerar0(modelo, opcoes); r.imagensPorChave = IMAGENS; r.jogo = normalizarConfig(opcoes).jogo; r.cliente = txt(op.proprietario || op.contratante); }
+    try {
+      r = gerar0(modelo, opcoes);
+      if (r.ok && aplicarJogo(normalizarConfig(opcoes)).conjuntos.executiva) r = juntarExecutiva(r, modelo, opcoes);
+      r.imagensPorChave = IMAGENS; r.jogo = normalizarConfig(opcoes).jogo; r.cliente = txt(op.proprietario || op.contratante);
+    }
     finally { FOTO3D = null; IMAGENS = null; FOTOS = null; }
     return r;
   }
@@ -509,14 +518,82 @@
     return { ok: true, folhas: folhas, formato: fe.formato, escalaPlanta: fe.escala, indices: idx, lista: lista, avisos: avisos, verificacao: verificacao, prefixo: codigo, revisao: rev };
   }
 
+  /* ================================================================ A FOLHA EXECUTIVA DE CORTES (js/arqexecutiva.js)
+     Uma folha A1 (A0 se não couber): cortes AA e BB completos, perspectivado e 3D, detalhe 1:25, quadros e legenda. Vem DEPOIS da série (opt-in: conjuntos.executiva) ou sozinha
+     (ArqPranchas.gerarExecutiva). Desenha no contexto do caderno (paraCaderno) com a geometria do formato; o resto (carimbo RA, notas, moldura) é o das outras folhas. */
+  function executiva0(modelo, opcoes, ext) {
+    var op = opcoes || {}, cfg = aplicarJogo(normalizarConfig(opcoes)), P = PR(), Ex = EX(), avisos = [];
+    if (!Ex || !P) return { ok: false, folhas: [], avisos: ["O motor da folha executiva (js/arqexecutiva.js) não carregou."] };
+    var e = ext || {}, codigo = cfg.prefixo, numero = e.numero || (codigo + "-01"), rotulo = numero.replace(/^.*-/, ""), data = txt(op.data).trim() || hoje(), rev = cfg.revisao, revNum = rev.replace(/^R/i, "") || "00";
+    var emp = op.empresa, empObj = emp && typeof emp === "object" ? emp : null, emp0 = empObj ? "" : txt(emp), total = e.total || 1;
+    var fmts = cfg.formato === "AUTO" ? ["A1", "A0"] : [cfg.formato], res = null, motivos = [];
+    for (var i = 0; i < fmts.length && !res; i++) {
+      var geo = P.geometria(fmts[i], "paisagem", "RA"), fmt = fmts[i];
+      var o = paraCaderno(modelo, opcoes, geo, function (c, F) {
+        var m = Ex.montar(c, F, geo, { numeroFolha: numero });
+        if (!m.ok) return { ok: false, motivo: m.motivo };
+        var def = { id: "executiva", tipo: "executiva", titulo: TITULO.executiva, numero: numero, rotulo: rotulo, carimboFolha: rotulo + "/" + dois(total) };
+        c.total = total; c.prefixo = codigo; c.formatoNome = fmt;
+        m.avisos.forEach(function (a) { c.avisos.push(a); });
+        c.avisosFolha[def.id] = m.avisos.slice();
+        var escTxt = "1:" + m.escCorte + (m.detalhe ? " / 1:25" : "");
+        var pr = P.normalizar({ id: "arqexecutiva", nome: TITULO_JOGO[cfg.jogo] || TITULO_JOGO.executivo, formato: fmt, orientacao: "paisagem", origem: "arquitetura",
+          carimbo: { modelo: "RA", empresa: emp0, responsavel: txt(op.responsavel), registro: txt(op.registro), titulo: txt(op.tituloProfissional), obra: txt(op.obra), proprietario: txt(op.proprietario),
+                     contratante: txt(op.contratante), local: txt(op.local), codigo: codigo, data: data, revisoes: [[revNum, cfg.descricaoRevisao, data]] },
+          folhas: [{ id: def.id, n: 1, conteudo: def.titulo, escala: escTxt, numero: codigo + " " + rev }] });
+        var svg = montarFolha(c, def, m.D, {}, pr, pr.folhas[0], rotulo, geo, c.E);
+        return { ok: true, m: m, svg: svg, def: def, escala: escTxt, idx: c.idx };
+      });
+      if (o.ok && o.svg) res = { o: o, fmt: fmt }; else motivos.push(fmt + ": " + txt(o.motivo || (o.avisos && o.avisos[0]) || "não coube"));
+    }
+    if (!res) return { ok: false, folhas: [], avisos: avisos.concat(["Folha executiva de cortes: não gerada — " + motivos.join(" | ")]) };
+    var o2 = res.o, m = o2.m, A = P.geometria(res.fmt, "paisagem", "RA").area, f = { id: "executiva", tipo: "executiva", rotulo: rotulo, numero: numero, titulo: TITULO.executiva, formato: res.fmt, escala: o2.escala, svg: o2.svg, blocos: Object.keys(m.escalas).concat(m.colocados.map(function (q) { return q.id; })).filter(function (x, k, L) { return L.indexOf(x) === k; }) };
+    if (op.depurar) f.caixasTexto = m.D.caixas;
+    var conf = m.conferencia, cb = m.blocos, ver = { total: conf.total + cb.total, textoTexto: conf.textoTexto.length, textoLinha: conf.textoLinha.length, foraJanela: conf.foraJanela.length, blocosSobrepostos: cb.sobrepostos.length, blocosCortados: cb.cortados.length, blocosPerto: cb.pertoDemais.length,
+      porFolha: [{ numero: numero, textoTexto: conf.textoTexto, textoLinha: conf.textoLinha, foraJanela: conf.foraJanela, detalhe: conf.detalhe || [], blocos: cb }] };
+    void A;
+    return { ok: true, folhas: [f], formato: res.fmt, indices: o2.idx, lista: [{ numero: numero, titulo: f.titulo, formato: res.fmt, escala: o2.escala }], avisos: o2.avisos || [], verificacao: ver, prefixo: codigo, revisao: rev,
+      executiva: { fatos: m.fatos, quantitativos: m.quantitativos, chamadas: m.chamadas, chamadasDetalhe: m.chamadasDetalhe, leaders: m.leaders, leadersDetalhe: m.leadersDetalhe, ocupacao: m.ocupacao, moveisVista: m.moveisVista, aberturas: m.aberturas, tagsPos: m.tagsPos, desenho: m.D, colocados: m.colocados.map(function (q) { return { id: q.id, x: q.x, y: q.y, w: q.w, h: q.h }; }), tags: m.tags, detalhe: m.detalhe, pend3d: m.pend3d, escCorte: m.escCorte, escalas: m.escalas, cortes: m.cortes.map(function (ct) { return { letra: ct.letra, eixo: ct.eixo, coord: ct.coord }; }), tabelas: m.tabelasIds } };
+  }
+  /* o próximo número de folha do prefixo (as folhas de outro prefixo, como INT-nn do caderno de interiores, não contam); o prefixo entra escapado no RegExp */
+  function escRe(t) { return txt(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function proximoNumero(folhas, cod) {
+    var re = new RegExp("^" + escRe(cod) + "-(\\d+)$"), maior = 0;
+    arr(folhas).forEach(function (f) { var mm = re.exec(txt(f && f.numero)); if (mm) maior = Math.max(maior, +mm[1]); });
+    return maior + 1;
+  }
+  /* depois da série: a folha executiva leva o próximo número; a numeração das outras folhas não muda */
+  function juntarExecutiva(r, modelo, opcoes) {
+    var cod = r.prefixo, n = proximoNumero(r.folhas, cod), e = executiva0(modelo, opcoes, { numero: cod + "-" + dois(n), total: n });
+    (e.avisos || []).forEach(function (a) { r.avisos.push(a); });
+    if (!e.ok) return r;
+    e.folhas.forEach(function (f) { r.folhas.push(f); });
+    e.lista.forEach(function (q) { r.lista.push(q); });
+    r.verificacao.total += e.verificacao.total; r.verificacao.textoTexto += e.verificacao.textoTexto; r.verificacao.textoLinha += e.verificacao.textoLinha; r.verificacao.foraJanela += e.verificacao.foraJanela;
+    ["blocosSobrepostos", "blocosCortados", "blocosPerto"].forEach(function (k) { if (r.verificacao[k] != null) r.verificacao[k] += e.verificacao[k]; });
+    e.verificacao.porFolha.forEach(function (p) { r.verificacao.porFolha.push(p); });
+    r.executiva = e.executiva;
+    return r;
+  }
+  /* a folha executiva SOZINHA (mesma assinatura de gerar): { ok, folhas: [uma], avisos, verificacao, executiva: { fatos, quantitativos, chamadas, tags, detalhe… } } */
+  function gerarExecutiva(modelo, opcoes, ext) {
+    var op = opcoes || {}, r, e = ext || (op.numeroFolha ? { numero: txt(op.numeroFolha) } : null);   /* ext = { numero, total }: o código da folha vem de quem chama; é o mesmo no carimbo e na chamada do detalhe */
+    FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {};
+    try {
+      if (!modelo || !modelo.estado) return { ok: false, folhas: [], avisos: ["Modelo vazio: não há o que apresentar."] };
+      r = executiva0(modelo, opcoes, e); r.imagensPorChave = IMAGENS; r.jogo = normalizarConfig(opcoes).jogo; r.cliente = txt(op.proprietario || op.contratante);
+    } finally { FOTO3D = null; IMAGENS = null; FOTOS = null; }
+    return r;
+  }
+
   /* ================================================================ CADERNO EXECUTIVO (js/arqcaderno.js, 15/11/2026)
      O caderno é um documento A3 de uma página por assunto; ele NÃO redesenha: pede aqui o contexto de desenho (dados do modelo, índices, situações, escala) numa ÁREA PRÓPRIA
      (a área útil da página do caderno, não a da prancha) e chama os mesmos desenhos das pranchas (desenharDef, desenharSituacao, desenharRenders…).
      `geo` = { area:{x,y,w,h}, coluna:{…}, carimbo:{…} } (a mesma forma de P.geometria); `fn(c, F)` roda com as fotos do 3D ligadas e devolve o que o caderno monta. */
   var ESC_CADERNO = [50, 75, 100, 125, 150, 200, 250, 300];
   function paraCaderno(modelo, opcoes, geo, fn) {
-    var op = opcoes || {}, cfg = normalizarConfig(opcoes), avisos = [], Md = MD(), P = PR(), out;
-    FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {};
+    var op = opcoes || {}, cfg = normalizarConfig(opcoes), avisos = [], Md = MD(), P = PR(), out, herda = IMAGENS !== null;   /* herda: já dentro de um gerar() (a folha executiva depois da série): o 3D e as fotos são os dele */
+    if (!herda) { FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {}; }
     try {
       if (!modelo || !modelo.estado) return { ok: false, avisos: ["Modelo vazio: não há o que apresentar."] };
       if (!P || !AP() || !DS() || !Md || !IX() || !PL() || !CT() || !QD()) return { ok: false, avisos: ["Os motores das pranchas de arquitetura não carregaram (js/arq*.js)."] };
@@ -540,7 +617,7 @@
       out = fn(c, F) || {};
       out.imagensPorChave = IMAGENS; out.avisos = avisos; out.ok = out.ok !== false;
       return out;
-    } finally { FOTO3D = null; IMAGENS = null; FOTOS = null; }
+    } finally { if (!herda) { FOTO3D = null; IMAGENS = null; FOTOS = null; } }
   }
 
   /* ================================================================ O ARRANJO: blocos → folhas (js/arqdiagrama.js) */
@@ -1040,7 +1117,7 @@
     return { lista: I.listarAmbientes(dados, sit.depois), avisos: av };
   }
 
-  var ArqPranchas = { VERSAO: 1, gerar: gerar, nomeArquivo: nomeArquivo, arquivosPorFolha: arquivosPorFolha, zipDasFolhas: zipDasFolhas, JOGO_LEGAL: JOGO_LEGAL, aplicarJogo: aplicarJogo, ambientesInteriores: ambientesInteriores, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
+  var ArqPranchas = { VERSAO: 1, gerar: gerar, gerarExecutiva: gerarExecutiva, proximoNumero: proximoNumero, nomeArquivo: nomeArquivo, arquivosPorFolha: arquivosPorFolha, zipDasFolhas: zipDasFolhas, JOGO_LEGAL: JOGO_LEGAL, aplicarJogo: aplicarJogo, ambientesInteriores: ambientesInteriores, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
     _cad: paraCaderno,
     _int: { K_FOTO: K_FOTO, argsPlanta: argsPlanta, argsIso: argsIso, situacoes: situacoes, estadoSem: estadoSem, idsPorStatus: idsPorStatus, escolherFormatoEscala: escolherFormatoEscala, caixaPlano: caixaPlano, blocosNotas: blocosNotas } };
   global.ArqPranchas = ArqPranchas;

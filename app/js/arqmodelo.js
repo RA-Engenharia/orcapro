@@ -147,6 +147,21 @@
     return k;
   }
 
+  /* PINGADEIRA DO PEITORIL (folha executiva de cortes): a família da janela traz a peça "pi" (Pingadeira) e o parâmetro Com_pingadeira; sem a peça, ou com o parâmetro desligado,
+     não há pingadeira (nada é inventado): devolve { comprimento, material } ou null. */
+  function pingadeiraDe(av, ins, cat, larg) {
+    if (cat !== "janela") return null;
+    var pi = null; arr(av && av.solidos).forEach(function (so) { if (so && so.id === "pi") pi = so; });
+    var vv = (av && av.valores) || {}, off = function (v) { return v === false || v === "false"; };
+    if (!pi || off(vv.Com_pingadeira) || off(ins && ins.Com_pingadeira)) return null;
+    return { comprimento: r4(num(pi.dx, larg)), material: txt(pi.material) };
+  }
+  /* o material do telhamento (a camada "Telhamento" do tipo; sem ela, o rótulo do tipo): o texto da chamada da cobertura vem daqui */
+  function materialTelhado(t) {
+    var tt = t && t.tipoTelhado, ca = null;
+    arr(tt && tt.camadas).forEach(function (k) { if (!ca && k && /telh/i.test(txt(k.rotulo)) && txt(k.material)) ca = k; });
+    return ca ? txt(ca.material) : txt(tt && tt.rotulo);
+  }
   function extrair(modelo, opcoes) {
     var G = GEO(), est = (modelo && modelo.estado) || {}, aval = modelo && modelo.avaliarFam, op = opcoes || {}, avisos = [];
     var S = statusFn(est, op), out = { lista: S.lista, fase: S.fase, faseado: S.faseado, avisos: avisos };
@@ -230,7 +245,8 @@
         if (padrao) avisos.push("Vão " + f.id + " (" + f.famId + "): sem dimensão avaliada, usei " + larg + " x " + alt + " m (conferir).");
         var ins = f.inst || {}, ab2 = ins.Abre_para_fora === true || ins.Abre_para_fora === "true";
         out.vaos.push({ id: String(f.id), tipo: cat, famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), parede: String(f.host.id), x: num(f.x, 0), z: num(f.z, 0), rotY: num(f.rotY, par.rotY),
-          largura: r4(larg), altura: r4(alt), peitoril: r4(peit), dimPadrao: padrao, abreFora: ab2, maoDireita: ins.Mao_direita === true || ins.Mao_direita === "true", status: st, pav: par.pav, material: txt(ins.Material_folha || ins.Material_marco || ""), marca: txt(f.marca) });
+          largura: r4(larg), altura: r4(alt), peitoril: r4(peit), dimPadrao: padrao, abreFora: ab2, abreForaDef: ins.Abre_para_fora !== undefined && ins.Abre_para_fora !== null && ins.Abre_para_fora !== "", maoDireita: ins.Mao_direita === true || ins.Mao_direita === "true", status: st, pav: par.pav, material: txt(ins.Material_folha || ins.Material_marco || ""), marca: txt(f.marca),
+          pingadeira: pingadeiraDe(av, ins, cat, larg) });
         return;
       }
       var pts = pegadaFamilia(av, f);
@@ -278,9 +294,35 @@
       var st = S.de(t); if (!VIVOS[st]) return null;
       return { id: String(t.id), pts: t.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), beiral: num(t.beiral, 0), inclinacao: num(t.inclinacao, 0), area: num(t.area, 0), areaProjecao: num(t.areaProjecao, 0), cumeeira: num(t.cumeeira, 0),
         pBeiral: (function () { var P = arr(t.arestasCalc).map(function (a) { return a && a.beiral && a.beiral.a ? [num(a.beiral.a.x, 0), num(a.beiral.a.z, 0)] : null; }); return P.length >= 3 && P.every(function (q) { return !!q; }) ? P : null; })(),
-        espigao: num(t.espigao, 0), rincao: num(t.rincao, 0), nAguas: num(t.nAguas, 0), cotaCumeeira: num(t.cotaCumeeira, 0), cotaApoio: num(t.cotaApoio, 0), tipo: txt(t.tipoTelhado && t.tipoTelhado.rotulo), aguas: arr(t.aguasCalc), arestas: arr(t.arestasCalc), status: st };
+        espigao: num(t.espigao, 0), rincao: num(t.rincao, 0), nAguas: num(t.nAguas, 0), cotaCumeeira: num(t.cotaCumeeira, 0), cotaApoio: num(t.cotaApoio, 0), tipo: txt(t.tipoTelhado && t.tipoTelhado.rotulo), material: materialTelhado(t), aguas: arr(t.aguasCalc), arestas: arr(t.arestasCalc), status: st };
     }).filter(function (t) { return !!t; });
     out.bordas = arr(est.bordas);
+    /* COBERTURA COMPLETA (js/bimcobertura.js, js/bimtelhado.js): platibanda, bordas do beiral (calha, rufo, testeira), calha embutida e rufo de encontro, com a fase e o comprimento do MODELO.
+       O corte executivo (js/arqexecutiva.js) e os quadros de rufo e calha leem daqui; nada é calculado por fora do modelo. */
+    out.cobertura = { platibandas: [], bordas: [], calhasEmbutidas: [], rufosEncontro: [] };
+    function pt2(q) { return [num(q && q.x, 0), num(q && q.z, 0)]; }
+    arr(est.platibandas).forEach(function (p) {
+      if (!p || p.ok === false) return; var st = S.de(p); if (!VIVOS[st]) return;
+      var matPl = []; arr(p.camadas).forEach(function (k) { var mm = txt(k && (k.material || k.rotulo)); if (mm && matPl.indexOf(mm) < 0) matPl.push(mm); });   /* o material da platibanda é o que ela herdou da parede de baixo; sem camadas no modelo, não há material */
+      out.cobertura.platibandas.push({ id: String(p.id), telhado: String(p.telhado), status: st, material: matPl.join(" / "), faseCriada: txt(p.faseCriada), base: num(p.base, 0), topo: num(p.topo, 0), espessura: num(p.espessuraEf, num(p.espessura, 0)), comprimento: num(p.comprimento, 0),
+        segs: arr(p.segs).map(function (sg) { return { quad: arr(sg.quad).map(pt2), a: pt2(sg.a), b: pt2(sg.b), comprimento: num(sg.comprimento, 0) }; }),
+        rufoCapa: p.rufoCapa ? { comprimento: num(p.rufoCapa.comprimento, 0), corteM: isFinite(+p.rufoCapa.corteM) ? +p.rufoCapa.corteM : null, descricao: txt(p.rufoCapa.sinapi && p.rufoCapa.sinapi.descricao) } : null,
+        contraRufo: p.contraRufo ? { comprimento: num(p.contraRufo.comprimento, 0), descricao: txt(p.contraRufo.sinapi && p.contraRufo.sinapi.descricao) } : null });
+    });
+    arr(est.bordas).forEach(function (b) {
+      if (!b || b.ok === false) return; var st = S.de(b); if (!VIVOS[st]) return;
+      out.cobertura.bordas.push({ id: String(b.id), tipoBorda: txt(b.tipoBorda), telhado: String(b.telhado), status: st, comprimento: num(b.comprimento, 0), area: num(b.area, 0), largura: num(b.larguraEf, 0), altura: num(b.alturaEf, 0),
+        segs: arr(b.segs).map(function (sg) { return { a: [num(sg.a && sg.a.x, 0), num(sg.a && sg.a.y, 0), num(sg.a && sg.a.z, 0)], b: [num(sg.b && sg.b.x, 0), num(sg.b && sg.b.y, 0), num(sg.b && sg.b.z, 0)] }; }) });
+    });
+    arr(est.calhasEmbutidas).forEach(function (k) {
+      if (!k || k.ok === false) return; var st = S.de(k); if (!VIVOS[st]) return;
+      out.cobertura.calhasEmbutidas.push({ id: String(k.id), telhado: String(k.telhado), status: st, comprimento: num(k.comprimento, 0), largura: num(k.larguraEf, 0), altura: num(k.alturaEf, 0), material: txt(k.material) });
+    });
+    arr(est.rufosEncontro).forEach(function (r) {
+      if (!r || r.ok === false) return; var st = S.de(r); if (!VIVOS[st]) return;
+      var somaPc = 0; arr(r.pecasRufo).forEach(function (pc) { somaPc += num(pc && pc.comprimento, 0); });   /* o orçamento lê a soma das peças do rufo (js/bimcobertura.js quantitativo), não comprimentoRufo */
+      out.cobertura.rufosEncontro.push({ id: String(r.id), status: st, comprimentoRufo: num(r.comprimentoRufo, 0), comprimentoPecas: somaPc, comprimentoContra: num(r.comprimentoContra, 0), material: txt(r.chapa) });
+    });
     out.forros = arr(est.forros).filter(function (f) { return f && f.ok !== false && arr(f.contorno).length >= 3; }).map(function (f) {
       var st = S.de(f); if (!VIVOS[st]) return null;
       return { id: String(f.id), pts: f.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), cota: num(f.cota, 0), tipo: txt(f.tipoForro && f.tipoForro.rotulo), tipoId: txt(f.tipoId), area: num(f.area, 0), ambienteId: txt(f.ambienteId), inclinacao: num(f.inclinacao, 0), sanca: f.sanca || null, status: st };

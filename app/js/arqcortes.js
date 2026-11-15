@@ -88,7 +88,7 @@
         d.vaos.filter(function (v) { return VIVO[v.status] && v.parede === w.id; }).forEach(function (v) {
           interv(ct, caixaVao(v, w)).forEach(function (jv) {
             var u0 = Math.max(jv[0], iv[0]), u1 = Math.min(jv[1], iv[1]); if (u1 - u0 < 0.02) return;
-            p.aberturas.push({ u0: u0, u1: u1, y0: w.base + v.peitoril, y1: w.base + v.peitoril + v.altura, tipo: v.tipo, cod: v.cod });
+            p.aberturas.push({ u0: u0, u1: u1, y0: w.base + v.peitoril, y1: w.base + v.peitoril + v.altura, tipo: v.tipo, cod: v.cod, nome: v.nome });
           });
         });
         out.paredes.push(p); out.yMax = Math.max(out.yMax, w.topo); out.yMin = Math.min(out.yMin, w.base);
@@ -106,7 +106,7 @@
           interv(ct, poli).forEach(function (iv) {
             function Y(u) { var x = ct.eixo === "x" ? u : ct.coord, z = ct.eixo === "x" ? ct.coord : u; return num(pl.a, 0) + num(pl.bx, 0) * x + num(pl.bz, 0) * z; }
             var ya = Y(iv[0]), yb = Y(iv[1]), cosT = 1 / Math.sqrt(1 + Math.pow(num(pl.s, 0), 2));
-            out.telhado.push({ u0: iv[0], u1: iv[1], ya: ya, yb: yb, esp: esp / cosT, status: t.status });
+            out.telhado.push({ u0: iv[0], u1: iv[1], ya: ya, yb: yb, esp: esp / cosT, status: t.status, pct: num(ag.inclinacao, num(t.inclinacao, 0)), material: t.material, tipo: t.tipo });
             out.yMax = Math.max(out.yMax, ya, yb); out.yMin = Math.min(out.yMin, Math.min(ya, yb) - esp);
           });
         });
@@ -117,18 +117,20 @@
        patamar, alçapão, abrigo), a caixa d'água e o deck: o que o plano de corte atravessa, cada um no seu material (25/10/2026, projeto exemplo) */
     out.pecas = [];
     function alarga(y0, y1) { out.yMin = Math.min(out.yMin, y0); out.yMax = Math.max(out.yMax, y1); }
-    function cortar(pts, y0, y1, cls, status) { interv(ct, pts).forEach(function (iv) { out.pecas.push({ u0: iv[0], u1: iv[1], y0: y0, y1: y1, cls: cls, status: status || "novo" }); alarga(y0, y1); }); }
+    function cortar(pts, y0, y1, cls, status, extra) { interv(ct, pts).forEach(function (iv) { var pc = { u0: iv[0], u1: iv[1], y0: y0, y1: y1, cls: cls, status: status || "novo" }; if (extra) Object.keys(extra).forEach(function (kx) { pc[kx] = extra[kx]; }); out.pecas.push(pc); alarga(y0, y1); }); }
     function quadEm(x, z, h) { return [[x - h, z - h], [x + h, z - h], [x + h, z + h], [x - h, z + h]]; }
     arr(d.fundacoes).forEach(function (f) {
       cortar(f.pts, f.base, f.topo, "conc", f.status);
       arr(f.estacas).forEach(function (e) { if (f.ponta != null && f.dEstaca > 0) cortar(quadEm(e.x, e.z, f.dEstaca / 2), f.ponta, f.base, "conc", f.status); });
     });
-    arr(d.vigas).forEach(function (v) { if (VIVO[v.status]) cortar(v.pts, v.base, v.topo, v.madeira ? "madeira" : "conc", v.status); });
-    arr(d.pilares).forEach(function (p) { if (VIVO[p.status]) cortar(p.pts, p.base, p.topo, "conc", p.status); });
-    arr(d.calhas).forEach(function (k) { cortar(k.pts, k.base, k.topo, "aco", k.status); });
+    arr(d.vigas).forEach(function (v) { if (VIVO[v.status]) cortar(v.pts, v.base, v.topo, v.madeira ? "madeira" : "conc", v.status, { viga: true, id: v.id }); });
+    arr(d.pilares).forEach(function (p) { if (VIVO[p.status]) cortar(p.pts, p.base, p.topo, "conc", p.status, { pilar: true, id: p.id }); });
+    arr(d.calhas).forEach(function (k) { cortar(k.pts, k.base, k.topo, "aco", k.status, { calhaEmb: true, id: k.id }); });
+    /* PLATIBANDA (js/bimcobertura.js): alvenaria da base ao topo; o rufo de capa vai no topo dela. Chamada e nível da folha executiva leem `plat` e `rufoCapa`. */
+    arr(d.cobertura && d.cobertura.platibandas).forEach(function (p) { if (VIVO[p.status]) arr(p.segs).forEach(function (sg) { cortar(sg.quad, p.base, p.topo, "alv", p.status, { plat: p.id, rufoCapa: p.rufoCapa || null, material: p.material }); }); });
     arr(d.moveis).forEach(function (m) {
       if (!VIVO[m.status] || !(m.h1 > m.h0)) return;
-      if (m.famId === "hid-caixa-dagua") cortar(m.pts, m.h0, m.h1, "agua", m.status);
+      if (m.famId === "hid-caixa-dagua") cortar(m.pts, m.h0, m.h1, "agua", m.status, { caixaDagua: true, id: m.id, capacidadeL: isFinite(+(m.valores && m.valores.Volume_L)) && +m.valores.Volume_L > 0 ? +m.valores.Volume_L : null });
       else if (m.famId === "ra-pais-deck") cortar(m.pts, m.h0, m.h1, "madeira", m.status);
     });
     arr(d.metais).forEach(function (m) {
@@ -152,14 +154,35 @@
       }
     });
     arr((c.depois || d).ambientes).forEach(function (a) {
-      interv(ct, a.pts).forEach(function (iv) { out.ambientes.push({ u0: iv[0], u1: iv[1], nome: a.nome, base: a.base, pe: a.pe }); });
+      interv(ct, a.pts).forEach(function (iv) { out.ambientes.push({ u0: iv[0], u1: iv[1], nome: a.nome, base: a.base, pe: a.pe, area: a.area, id: a.id }); });
     });
     /* R01 — O LOTE NO CORTE (manual p.11: alinhamento do lote, meio-fio, passeio público, eixo da rua). O lote é o intervalo da linha dentro da divisa;
        a frente é o lado da linha que dá para a rua (normal de fora da divisa da frente × direção da linha). Passeio e meia-rua são CONVENÇÃO do
        desenho (opcoes.passeio = 2,00 m e opcoes.ruaMeia = 3,50 m): o modelo não tem a rua, e o desenho avisa "esquemático" ao lado. */
     var DV = (c.idx && c.idx.terreno && c.idx.terreno.contorno) || (d.terreno && d.terreno.divisa && d.terreno.divisa.pts) || null;
+    /* BORDAS DO BEIRAL (calha, rufo, testeira): o ponto onde o segmento (a, b em x, y, z) fura o plano do corte — só o que o plano atravessa tem lugar no corte */
+    out.cob = { calhas: [], rufos: [] };
+    arr(d.cobertura && d.cobertura.bordas).forEach(function (b) {
+      if (!VIVO[b.status]) return;
+      arr(b.segs).forEach(function (sg) {
+        var pa = ct.eixo === "x" ? sg.a[2] : sg.a[0], pb = ct.eixo === "x" ? sg.b[2] : sg.b[0];
+        if (Math.abs(pa - pb) < 1e-6) return;
+        var tq = (ct.coord - pa) / (pb - pa); if (tq < -1e-6 || tq > 1 + 1e-6) return;
+        var uq = ct.eixo === "x" ? sg.a[0] + tq * (sg.b[0] - sg.a[0]) : sg.a[2] + tq * (sg.b[2] - sg.a[2]), yq = sg.a[1] + tq * (sg.b[1] - sg.a[1]);
+        if (uq < ct.u0 - 1.2 || uq > ct.u1 + 1.2) return;
+        var it = { u: uq, y: yq, id: b.id, tipo: b.tipoBorda, largura: b.largura, altura: b.altura };
+        if (b.tipoBorda === "calha") out.cob.calhas.push(it); else if (b.tipoBorda === "rufo" || b.tipoBorda === "testeira") out.cob.rufos.push(it);
+        if (ct.exec) alarga(yq - 0.1, yq + 0.1);   /* só a folha executiva alarga o desenho pela calha/rufo: o corte comum fica como era */
+      });
+    });
+    /* CALÇADA DE PROTEÇÃO: a subregião do terreno que o modelo chama de calçada ou passeio (nome ou material); a linha do corte a atravessa em intervalos */
+    out.calcada = [];
+    arr(d.terreno && d.terreno.subregioes).forEach(function (sr) {
+      if (!/cal[cç]ada|passeio/i.test(txt(sr.nome) + " " + txt(sr.material))) return;
+      interv(ct, sr.pts).forEach(function (iv) { out.calcada.push({ u0: iv[0], u1: iv[1], id: sr.id, nome: sr.nome, material: sr.material }); });
+    });
     out.lote = null; out.frente = 0; out.rua = null;
-    if (DV && DV.length >= 3) {
+    if (DV && DV.length >= 3 && !ct.semRua) {
       var ivL = interv(ct, DV), gg = G();
       if (ivL.length) {
         out.lote = [Math.min.apply(null, ivL.map(function (v) { return v[0]; })), Math.max.apply(null, ivL.map(function (v) { return v[1]; }))];
@@ -187,7 +210,7 @@
       var item = { u0: u0, u1: u1, yb: w.base, yt: w.topo, prof: prof, muro: w.muro, status: w.status, aberturas: [] };
       d.vaos.filter(function (v) { return VIVO[v.status] && v.parede === w.id; }).forEach(function (v) {
         var Pq = caixaVao(v, w).map(function (q) { return ct.eixo === "x" ? q[0] : q[1]; }), a0 = Math.min.apply(null, Pq), a1 = Math.max.apply(null, Pq);
-        if (a1 - a0 > 0.1) item.aberturas.push({ u0: Math.max(a0, u0), u1: Math.min(a1, u1), y0: w.base + v.peitoril, y1: w.base + v.peitoril + v.altura, tipo: v.tipo });
+        if (a1 - a0 > 0.1) item.aberturas.push({ u0: Math.max(a0, u0), u1: Math.min(a1, u1), y0: w.base + v.peitoril, y1: w.base + v.peitoril + v.altura, tipo: v.tipo, cod: v.cod, nome: v.nome });
       });
       out.vista.push(item); out.yMax = Math.max(out.yMax, w.topo);
     });
@@ -230,8 +253,20 @@
     return out;
   }
 
+  /* a abertura `a` da parede vista de índice i está ESCONDIDA por uma parede mais perto (a lista vem do mais longe para o mais perto) cujo retângulo cobre o centro dela — mesmo que
+     ali haja o vão da parede da frente (o vão é desenhado cheio e cobre o que está atrás): a folha executiva não desenha nem etiqueta o que não se enxerga (a janela do térreo atrás
+     da porta da divisória aparecia como "J01" dentro da porta, com a maçaneta dela) */
+  function escondida(vista, i, a) {
+    var uc = (a.u0 + a.u1) / 2, yc = (a.y0 + a.y1) / 2;
+    for (var j = i + 1; j < vista.length; j++) {
+      var w = vista[j];
+      if (w.muro || uc < w.u0 || uc > w.u1 || yc < w.yb || yc > w.yt) continue;
+      return true;
+    }
+    return false;
+  }
   /* ------------------------------------------------------------ desenho de UM corte numa janela (x, y) do papel */
-  function desenharCorte(c, ct, mc, X, Yb, k) {
+  function desenharCorte(c, ct, mc, X, Yb, k, ex) {
     var D = c.D, d = DS(), g = G(), C = d.conv();
     function U(u) { return X + (u - ct.u0) * k; }
     function Y(y) { return Yb - (y - mc.yMin) * k; }
@@ -243,11 +278,12 @@
     var fill = reforma ? { novo: C.novo.fill, existente: C.existente.fill } : { novo: d.K.pocheEscuro, existente: d.K.pocheEscuro };
     /* TERRENO: a linha do terreno e uma FAIXA DE SOLO com hachura diagonal abaixo dela (até 1,0 m abaixo da fundação mais funda, no mínimo 1,0 m),
        do fim do corte até o eixo da rua quando a linha dá para a frente */
-    var uL = ct.u0 - 0.9, uR = ct.u1 + 0.9;
+    var mgS = ex && ex.margem != null ? ex.margem : 0.9, uL = ct.u0 - mgS, uR = ct.u1 + mgS;   /* ex.margem: a faixa de solo além do corte (a folha executiva usa pouco: as chamadas ficam coladas) */
     if (mc.rua && mc.frente > 0) uR = (mc.lote ? mc.lote[1] : ct.u1) + mc.rua.passeio + mc.rua.meia + 0.4;
     if (mc.rua && mc.frente < 0) uL = (mc.lote ? mc.lote[0] : ct.u0) - mc.rua.passeio - mc.rua.meia - 0.4;
     var prof = mc.prof || 1.0;
     var solo = [[U(uL), Y(0)], [U(uR), Y(0)], [U(uR), Y(-prof)], [U(uL), Y(-prof)]];
+    if (!(ex && ex.semSolo)) {   /* o detalhe ampliado (recorte do corte) não tem terreno nem baldrame: só o que está na janela */
     if (mc.perfil && mc.perfil.length >= 2) {   /* F1: o talude do topossólido: o topo do solo é o PERFIL (mesmas pontas uL e uR) */
       solo = mc.perfil.map(function (q) { return [U(q[0]), Y(q[1])]; }).concat([[U(mc.perfil[mc.perfil.length - 1][0]), Y(-prof)], [U(mc.perfil[0][0]), Y(-prof)]]);
     }
@@ -255,27 +291,40 @@
     g.hachuraLinhas(solo, 1.6, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA"); });
     D._cam = "ARQ-TERRENO"; D.traco(solo, true); D._cam = null;
     if (!(mc.perfil && mc.perfil.length >= 2)) D.linha(U(uL), Y(0), U(uR), Y(0), "ARQ-TERRENO");
+    }
     /* O QUE É VISTO (linha fina, do mais longe para o mais perto), antes do que é cortado */
-    arr(mc.vista).forEach(function (v) {
+    arr(mc.vista).forEach(function (v, iv) {
       var Pv = R(v.u0, v.yb, v.u1, v.yt);
-      d.fundoPol(D, Pv, "#fff"); D._cam = "ARQ-FINA"; D.traco(Pv, true); D._cam = null; D.add('<polygon points="' + d.pts(Pv) + '" fill="none"' + d.atr(D, "ARQ-FINA", 1) + "/>");
+      d.fundoPol(D, Pv, ex && ex.vistaFill ? ex.vistaFill : "#fff"); D._cam = "ARQ-FINA"; D.traco(Pv, true); D._cam = null; D.add('<polygon points="' + d.pts(Pv) + '" fill="none"' + d.atr(D, "ARQ-FINA", 1) + "/>");
       v.aberturas.forEach(function (a) {
+        if (ex && ex.vistaSolida && escondida(mc.vista, iv, a)) return;
+        if (ex && ex.log) ex.log.push({ onde: "vista", tipo: a.tipo, cod: a.cod, nome: a.nome, u0: a.u0, u1: a.u1, y0: a.y0, y1: a.y1 });
         var Pa = R(a.u0, a.y0, a.u1, a.y1);
-        d.fundoPol(D, Pa, "#fff"); D._cam = "ARQ-OCULTA"; D.traco(Pa, true); D._cam = null; D.add('<polygon points="' + d.pts(Pa) + '" fill="none"' + d.atr(D, "ARQ-OCULTA", 1) + "/>");   /* a abertura vista em linha fina tracejada (manual: "aberturas com linhas tracejadas") */
-        if (a.tipo === "janela") { var ym = (Y(a.y0) + Y(a.y1)) / 2; D.linha(Pa[0][0], ym, Pa[1][0], ym, "ARQ-FINA"); }
+        d.fundoPol(D, Pa, ex && ex.vistaFill ? (a.tipo === "janela" ? "#dbe9f4" : "#e3d3b8") : "#fff"); var camA = ex && ex.vistaSolida ? "ARQ-FINA" : "ARQ-OCULTA"; D._cam = camA; D.traco(Pa, true); D._cam = null; D.add('<polygon points="' + d.pts(Pa) + '" fill="none"' + d.atr(D, camA, 1) + "/>");   /* a abertura vista em linha fina tracejada (manual: "aberturas com linhas tracejadas"); na folha executiva (ex.vistaSolida) a porta/janela da parede do FUNDO sai em elevação: contorno cheio fino e a folha (o tracejado fica só para o que está oculto) */
+        if (ex && ex.vistaSolida) {
+          var ins = Math.max(0.5, Math.min(1.4, (Pa[1][0] - Pa[0][0]) / 7)), Pf = [[Pa[0][0] + ins, Pa[0][1] + ins], [Pa[1][0] - ins, Pa[1][1] + ins], [Pa[2][0] - ins, Pa[2][1] - ins], [Pa[3][0] + ins, Pa[3][1] - ins]];
+          if (Pf[1][0] - Pf[0][0] > 0.5 && Pf[3][1] - Pf[0][1] > 0.5) { D._cam = "ARQ-FINA"; D.traco(Pf, true); D._cam = null; D.add('<polygon points="' + d.pts(Pf) + '" fill="none"' + d.atr(D, "ARQ-FINA", 1) + "/>"); }
+          if (a.tipo === "porta") { var yp = (Pa[0][1] + Pa[3][1]) / 2; D.linha(Pf[1][0] - 2.4, yp - 1.6, Pf[1][0] - 2.4, yp + 1.6, "ARQ-FINA"); }   /* a maçaneta */
+        }
+        if (a.tipo === "janela") {
+          if (ex && ex.vistaSolida && /correr/i.test(txt(a.nome))) { var xm = (Pa[0][0] + Pa[1][0]) / 2; D.linha(xm, Pa[0][1], xm, Pa[3][1], "ARQ-FINA"); }   /* a janela de correr de 2 folhas: a divisão das folhas */
+          else { var ym = (Y(a.y0) + Y(a.y1)) / 2; D.linha(Pa[0][0], ym, Pa[1][0], ym, "ARQ-FINA"); }
+        }
       });
     });
     /* lajes, depois paredes (poché) */
-    function poche(P, st) {
-      d.fundoPol(D, P, fill[st] || "#bdbdbd");
+    function poche(P, st, cor) {
+      d.fundoPol(D, P, cor || fill[st] || "#bdbdbd");
       D._cam = cam[st]; D.traco(P, true); D._cam = null;
       D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, cam[st] || "ARQ-PAREDE", 1) + "/>");
       if (reforma && st === "novo") g.hachuraLinhas(P, 1.6, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA-NOVO"); });
     }
-    mc.lajes.forEach(function (l) { poche(R(l.u0, l.y0, l.u1, l.y1), l.status); });
+    /* FOLHA EXECUTIVA (js/arqexecutiva.js): `ex` = { conc, parede } — laje, viga e pilar de concreto cortados em cheio na cor da convenção (vermelho do padrão) e a alvenaria em cinza claro */
+    mc.lajes.forEach(function (l) { poche(R(l.u0, l.y0, l.u1, l.y1), l.status, ex && ex.conc); });
     mc.paredes.forEach(function (p) {
-      poche(R(p.u0, p.yb, p.u1, p.yt), p.status);
+      poche(R(p.u0, p.yb, p.u1, p.yt), p.status, ex && ex.parede);
       p.aberturas.forEach(function (a) {
+        if (ex && ex.log) ex.log.push({ onde: "corte", tipo: a.tipo, cod: a.cod, nome: a.nome, u0: a.u0, u1: a.u1, y0: a.y0, y1: a.y1 });
         var P = R(a.u0, a.y0, a.u1, a.y1);
         d.fundoPol(D, P, "#fff");
         D.linha(P[0][0], P[0][1], P[1][0], P[1][1], "ARQ-VAO"); D.linha(P[3][0], P[3][1], P[2][0], P[2][1], "ARQ-VAO");
@@ -284,7 +333,7 @@
     });
     /* R02 — BALDRAME (convenção): o modelo não traz fundação nem viga; sob cada parede cortada desenha-se a viga baldrame em linha tracejada, com a nota
        "conforme projeto estrutural" (terreno plano). Só quando o modelo não tem peça de concreto abaixo do piso. */
-    if (!(c.op && c.op.baldrame === false) && !arr(mc.pecas).some(function (p) { return p.y1 <= 0.05; })) {
+    if (!(ex && ex.semSolo) && !(c.op && c.op.baldrame === false) && !arr(mc.pecas).some(function (p) { return p.y1 <= 0.05; })) {
       var hb = 0.40, nbal = 0;
       mc.paredes.forEach(function (p) {
         if (p.muro) return; var Pb = R(p.u0 - 0.04, -hb, p.u1 + 0.04, 0);
@@ -300,7 +349,8 @@
     var FILL = { madeira: "#e4cfae", aco: "#9fb0c0", agua: "#cfe3f3" };
     arr(mc.pecas).forEach(function (p) {
       var P = p.poli ? p.poli.map(function (q) { return [U(q[0]), Y(q[1])]; }) : R(p.u0, p.y0, p.u1, p.y1);
-      if (p.cls === "conc") { poche(P, p.status === "existente" ? "existente" : "novo"); return; }
+      if (p.cls === "conc") { poche(P, p.status === "existente" ? "existente" : "novo", ex && ex.conc); return; }
+      if (p.cls === "alv") { poche(P, p.status === "existente" ? "existente" : "novo", ex && ex.parede); return; }
       d.fundoPol(D, P, FILL[p.cls] || "#bdbdbd");
       D._cam = "ARQ-VAO"; D.traco(P, true); D._cam = null;
       D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, "ARQ-VAO", 1) + "/>");
@@ -658,7 +708,8 @@
     return { escala: "1:" + ch };
   }
 
-  var ArqCortes = { escolherCortes: escolherCortes, cortes: cortes, fachadas: fachadas, escolherEscala: escolherEscala, modeloCorte: modeloCorte, modeloFachada: modeloFachada, vetoresVista: vetoresVista };
+  var ArqCortes = { escolherCortes: escolherCortes, cortes: cortes, fachadas: fachadas, escolherEscala: escolherEscala, modeloCorte: modeloCorte, modeloFachada: modeloFachada, vetoresVista: vetoresVista,
+    desenharCorte: desenharCorte, colocarNiveis: colocarNiveis, cumeeiraReal: cumeeiraReal, escondida: escondida };
   global.ArqCortes = ArqCortes;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqCortes;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
