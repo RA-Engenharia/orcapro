@@ -411,7 +411,7 @@
       if (!arr(c.ramos).some(function (id) { return ids[id]; })) return;
       var tr = null; c.ramos.forEach(function (id) { if (ids[id] && !tr) tr = P[id].t; });
       if (!tr || (tr.sistema !== sis && !(sis === "esgoto" && tr.sistema === "ventilacao"))) return;
-      var p = proj(c, k), tipo = c.tipo === "te" ? "te" : (/^joelho/.test(c.tipo) ? "joelho" : (c.tipo === "reducao" ? "reducao" : "conexao"));
+      var p = proj(c, k), tipo = c.tipo === "te" ? "te" : (/^joelho/.test(c.tipo) ? "joelho" : (c.tipo === "reducao" ? "reducao" : (c.tipo === "curva_transposicao" ? "transposicao" : "conexao")));   /* 15/11/2026: a curva de transposição tem símbolo próprio (arco sobre o tubo) */
       if (tipo === "reducao" || tipo === "conexao") return;
       var r = tipo === "te" ? K.rTe : K.rJoelho;
       S.push({ tipo: tipo, x: p[0], y: p[1], r: r, camada: "HID-SIMBOLO", box: [p[0] - r, p[1] - r, p[0] + r, p[1] + r], id: c.id });

@@ -112426,6 +112426,11 @@ saida0.forEach(function (q) { var o0 = this._opTrecho(ant0, q, ed.ops); if (I.no
 if (oi.length) { ed.ops.pop(); ctx.op(oi[oi.length - 1]); q0 = ant0; ctx.marcar(); nIni = oi.length; }
 }
 this._inicio = alvo ? { alvo: JSON.parse(JSON.stringify(alvo)), nIni: nIni, y: q0.y } : null;
+this._dnOrigem = (function () {
+var m = alvo && alvo.dn != null ? Number(alvo.dn) || 0 : 0;
+((est.instalacoes || {}).trechos || []).forEach(function (t0) { if (t0.sistema === c.sistema && [t0.p1, t0.p2].some(function (q) { return Math.abs(q.x - q0.x) + Math.abs(q.z - q0.z) + Math.abs(q.y - q0.y) <= 3 * I.TOL + 1e-6; })) m = Math.max(m, Number(t0.dn) || 0); });
+return m || null;
+})();
 this._contDe = null;
 if (this._incHerdada != null) { c.inclinacao = this._incHerdada; this._incHerdada = null; }
 if (alvo && alvo.tipo === "ponta" && alvo.trecho != null && !saida0) {
@@ -112455,12 +112460,21 @@ var corteP = ev && ev._corte && !alvo ? this.pontoCorte(p1, p, livre) : null;
 if (corteP && corteP.tipo === "horizontal" && ev._mudaPlano) corteP = null;
 if (alvo && !livre && this._inicio && this.tentarLigacao(ctx, this._inicio, alvo, base)) return;
 this._inicio = null;
-var bocaT = null, avisoBocaT = null, LBOCA_T = 0.15;
+var bocaT = null, avisoBocaT = null, dnChegaT = null, LBOCA_T = 0.15;
 if (alvo && alvo.tipo === "peca" && !livre && !corteP && S.gravidade && !this._sobe && /^esgoto$|^pluvial$/.test(String(c.sistema)) && global.HidBocas) {
 var pkT = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
 if (pkT && global.HidBocas.bocas(est, pkT).length) {
 var eT = global.HidBocas.entradasLivres(est, pkT, p1, c.dn);
 if (eT.ok && eT.bocas.length) bocaT = eT.bocas[0];
+else if (eT.dnDiferente && num(eT.dnBoca, 0) > 0 && num(eT.dnBoca, 0) < num(c.dn, 0)) {
+var dnO = this._dnOrigem;
+if (dnO != null && dnO > num(eT.dnBoca, 0)) avisoBocaT = "o tubo vem de um ramal DN " + dnO + " (bacia / ramal de esgoto) e não entra na caixa sifonada, que só recebe ramal de descarga DN " + eT.dnBoca + " (NBR 8160) - ligue na caixa de inspeção ou no tubo de queda";
+else {
+var eT2 = global.HidBocas.entradasLivres(est, pkT, p1, eT.dnBoca);
+if (eT2.ok && eT2.bocas.length) { bocaT = eT2.bocas[0]; dnChegaT = num(eT.dnBoca, 0); }
+else if (eT2.erro) avisoBocaT = eT2.erro;
+}
+}
 else if (eT.erro) avisoBocaT = eT.erro;
 }
 }
@@ -112502,6 +112516,7 @@ var o = this._sobe && S.gravidade ? this._opTrecho(pts[i], ini, ed.ops) : this._
 if (!I.normTrecho(o)) { ctx.hint("Trecho inválido (comprimento zero?)."); return; }
 criados.push(o); ini = pts[i];
 }
+if (dnChegaT) criados.forEach(function (o9) { o9.dn = dnChegaT; });
 var self = this;
 var cD = this._contDe; this._contDe = null;
 if (cD && criados.length && !this._ligacao) {
@@ -112558,6 +112573,7 @@ if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && co
 if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
 if (ajV && ajV.avisos.length) msg += " ⚠ " + ajV.avisos.join("; ");
 if (bocaT) msg += " — termina na " + bocaT.id + " da " + self._rotAlvo(alvo) + (subiuBoca ? " ⚠ o traço veio MAIS BAIXO que a entrada: o último pedaço sobe contra o escoamento — suba a altura de trabalho" : "");
+if (dnChegaT) msg += " - o tubo chega na caixa no DN da entrada (DN " + dnChegaT + ")";
 if (avisoBocaT) msg += " ⚠ " + avisoBocaT + ": o traço ficou como foi, ao centro da peça";
 if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
 if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }

@@ -230,7 +230,7 @@
   function tabelasDe(c, d) {
     var II = d.II, B = d.B, cod = {}, linhasCx = [], contPref = {}, mapaCx = {};
     function codigoDe(chave, sistema) {
-      if (cod[chave]) return cod[chave];
+      if (cod[chave]) return cod[chave]; if (/\|curva_transposicao\|/.test(chave)) { cod[chave] = II.K2.simbCx.sigla; return cod[chave]; }   /* 15/11/2026: a curva de transposição leva a sigla CT no balão e na tabela, não F-n */
       var p = PREFIXO_COD[sistema] || "X"; contPref[p] = (contPref[p] || 0) + 1; cod[chave] = p + "-" + contPref[p]; return cod[chave];
     }
     var grupos = {}, ordem = [];
@@ -569,34 +569,19 @@
     D.texto(R.x + 1, R.y + 3.2, titulo + (n0 > 1 ? "S" : "") + " - cotas em cm", 2.6, { peso: 0.2, cor: K.cor.tinta });
     var yy = R.y + 6;
     phs.forEach(function (ph, idx) {
-      ph.louca = true; ph.cotaV = 15; ph.n = idx + 1;
-      var den = null, d = null, bb = null, esc = [20, 25, 30, 40, 50, 75, 100], padL = 17, padR = 4, hRod = 10;
+      ph.louca = true; ph.cotaV = II.K2.elev.cotaV; ph.n = idx + 1;
+      var EL = II.K2.elev, den = null, d = null, bb = null, esc = [20, 25, 30, 40, 50, 75, 100], padL = EL.cotaV + EL.margemV, padR = padL, hRod = EL.folgaH + EL.folgaTit * 2 + EL.alturaTit;   /* as cadeias de cota dos DOIS lados e o título embaixo */
       for (var i = 0; i < esc.length && den == null; i++) {
         var dd = II.desenhoCorte(c, ph, 1000 / esc[i]), b = bboxPrim(dd);
         if (b.x1 - b.x0 + padL + padR <= R.w && b.y1 - b.y0 + hRod + 6 <= hEach) { den = esc[i]; d = dd; bb = b; }
       }
       if (den == null) { den = esc[esc.length - 1]; d = II.desenhoCorte(c, ph, 1000 / den); bb = bboxPrim(d); a0.push("Ambiente " + am.nome + ": a vista cotada não coube nem na 1:" + den + "."); }
-      var ox = R.x + padL + (R.w - padL - padR - (bb.x1 - bb.x0)) / 2 - bb.x0, oy = yy + 6 - bb.y0;
-      D.texto(R.x + 1, yy + 2.4, "PAREDE " + (idx + 1) + " - " + am.nome + "  (ESC 1:" + den + ")", 2.3, { peso: 0.16, cor: K.cor.grafite });
+      var ox = R.x + padL + (R.w - padL - padR - (bb.x1 - bb.x0)) / 2 - bb.x0, oy = yy + 2 - bb.y0;
       II.desenhar(D, d, ox, oy, chk);
       var s0 = 1000 / den;
-      /* cota horizontal (entre os pontos ao longo da parede), embaixo do piso */
-      var cxs = d.cotaXs.filter(function (xx, i, A) { return i === 0 || xx - A[i - 1] >= 4 || i === A.length - 1; });
-      if (cxs.length > 2) {
-        var P = cxs.map(function (xx) { return [xx + ox, d.yFundo + oy + 5]; }), vals = [];
-        for (var q = 0; q + 1 < cxs.length; q++) vals.push(String(Math.round((cxs[q + 1] - cxs[q]) / s0 * 100)));
-        var nSg = D.sg ? D.sg.length : 0; D.cadeia(P, 0, vals, {});
-        if (D.sg) for (var q2 = nSg; q2 < D.sg.length; q2++) chk.cotas.push(D.sg[q2]);
-      }
-      /* cota vertical: do piso acabado até cada altura de ponto (cm) */
-      var ys = d.cotaYs.slice().sort(function (p0, q0) { return q0 - p0; });   /* papel: de baixo para cima */
-      var ysF = [d.yPiso].concat(ys.filter(function (v, i2, A) { return Math.abs(v - (i2 === 0 ? d.yPiso : A[i2 - 1])) >= 4 && Math.abs(v - d.yPiso) >= 4; }));
-      if (ysF.length > 1 && !o.semCotaV) {
-        var xv = ox - ph.cotaV, PV = ysF.map(function (v) { return [xv, v + oy]; }), vv = [];
-        for (var r = 0; r + 1 < ysF.length; r++) vv.push(String(Math.round((ysF[r] - ysF[r + 1]) / s0 * 100)));
-        var nSg2 = D.sg ? D.sg.length : 0; D.cadeia(PV, 0, vv, { desde: PV.map(function () { return false; }) });
-        if (D.sg) for (var q3 = nSg2; q3 < D.sg.length; q3++) chk.cotas.push(D.sg[q3]);
-      }
+      II.cadeiasElevacao(D, d, ph, s0, ox, oy, chk, { folgaH: EL.folgaH, semCotaV: !!o.semCotaV });
+      /* o título da elevação EMBAIXO, com o número da parede no círculo e a escala (referência do Rogério: "ELEVAÇÃO HID - WC 1:20") */
+      c.AP.tituloVista(D, Math.max(R.x + 1, ox + bb.x0), d.yFundo + oy + EL.folgaH + EL.folgaTit * 2, EL.titulo + " - " + txt(am.nome).toUpperCase(), "ESC 1:" + den, idx + 1);
       arr(d.avisos).forEach(function (m) { a0.push("Ambiente " + am.nome + " (vista): " + m); });
       c.prims.push(d);
       yy += hEach;

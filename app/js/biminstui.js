@@ -1124,6 +1124,12 @@
         /* LIGAR A → B: o ponto de partida fica guardado — se o próximo clique for outro ponto de ligação, o traçado
            liga os dois sozinho (js/hidligar.js). Um clique solto no meio do caminho volta ao desenho ponto a ponto. */
         this._inicio = alvo ? { alvo: JSON.parse(JSON.stringify(alvo)), nIni: nIni, y: q0.y } : null;
+        /* 15/11/2026: o DN do tubo/aparelho DE ONDE o traço sai. A caixa sifonada só recebe ramal de descarga (DN 40/50, NBR 8160): quem vem de um ramal DN 100 (bacia, ramal de esgoto) não entra nela */
+        this._dnOrigem = (function () {
+          var m = alvo && alvo.dn != null ? Number(alvo.dn) || 0 : 0;
+          ((est.instalacoes || {}).trechos || []).forEach(function (t0) { if (t0.sistema === c.sistema && [t0.p1, t0.p2].some(function (q) { return Math.abs(q.x - q0.x) + Math.abs(q.z - q0.z) + Math.abs(q.y - q0.y) <= 3 * I.TOL + 1e-6; })) m = Math.max(m, Number(t0.dn) || 0); });
+          return m || null;
+        })();
         /* CONTINUAR UM TUBO (13/11/2026): começou na PONTA de um tubo existente → o traço segue a MESMA inclinação dele e, se o 1º trecho sai na mesma
            direção, o tubo existente só cresce (nenhuma luva no meio; a luva só entra na barra de 6 m — js/biminst.js luvas da barra) */
         this._contDe = null;
@@ -1166,12 +1172,23 @@
          Como no Interligar (js/hidligar.js): o traço termina EXATAMENTE numa ENTRADA LIVRE do catálogo (js/hidbocas.js entradasLivres — a mais
          alinhada com a chegada), na cota da boca: chega à frente dela (LBOCA, a bolsa), desce/sobe na vertical ali e entra reto na boca.
          Sem entrada livre do DN: fica como estava e avisa o motivo. Peça sem boca no catálogo: segue ao centro (como antes). */
-      var bocaT = null, avisoBocaT = null, LBOCA_T = 0.15;   // hid:ok 15 cm retos antes da boca: a mesma bolsa do js/hidligar.js
+      var bocaT = null, avisoBocaT = null, dnChegaT = null, LBOCA_T = 0.15;   // hid:ok 15 cm retos antes da boca: a mesma bolsa do js/hidligar.js
       if (alvo && alvo.tipo === "peca" && !livre && !corteP && S.gravidade && !this._sobe && /^esgoto$|^pluvial$/.test(String(c.sistema)) && global.HidBocas) {
         var pkT = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
         if (pkT && global.HidBocas.bocas(est, pkT).length) {
           var eT = global.HidBocas.entradasLivres(est, pkT, p1, c.dn);
           if (eT.ok && eT.bocas.length) bocaT = eT.bocas[0];
+          else if (eT.dnDiferente && num(eT.dnBoca, 0) > 0 && num(eT.dnBoca, 0) < num(c.dn, 0)) {
+            /* 15/11/2026: o DN da ferramenta (esgoto 100) é MAIOR que o das entradas da caixa (40/50): o ramal de descarga entra na caixa no DN DELA (NBR 8160) —
+               exceto o que vem de um ramal DN maior que a entrada (bacia, ramal de esgoto DN 100): esse não descarrega na caixa sifonada */
+            var dnO = this._dnOrigem;
+            if (dnO != null && dnO > num(eT.dnBoca, 0)) avisoBocaT = "o tubo vem de um ramal DN " + dnO + " (bacia / ramal de esgoto) e não entra na caixa sifonada, que só recebe ramal de descarga DN " + eT.dnBoca + " (NBR 8160) - ligue na caixa de inspeção ou no tubo de queda";
+            else {
+              var eT2 = global.HidBocas.entradasLivres(est, pkT, p1, eT.dnBoca);
+              if (eT2.ok && eT2.bocas.length) { bocaT = eT2.bocas[0]; dnChegaT = num(eT.dnBoca, 0); }
+              else if (eT2.erro) avisoBocaT = eT2.erro;
+            }
+          }
           else if (eT.erro) avisoBocaT = eT.erro;
         }
       }
@@ -1223,6 +1240,7 @@
         if (!I.normTrecho(o)) { ctx.hint("Trecho inválido (comprimento zero?)."); return; }
         criados.push(o); ini = pts[i];
       }
+      if (dnChegaT) criados.forEach(function (o9) { o9.dn = dnChegaT; });   /* o trecho que chega na caixa assume o DN da ENTRADA (a redução, se precisar, entra no nó) */
       var self = this;
       /* CONTINUAR UM TUBO: o 1º trecho na mesma direção (planta) e inclinação do tubo de onde saiu = o MESMO tubo, mais comprido (sem luva) */
       var cD = this._contDe; this._contDe = null;
@@ -1288,6 +1306,7 @@
       if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
       if (ajV && ajV.avisos.length) msg += " ⚠ " + ajV.avisos.join("; ");
       if (bocaT) msg += " — termina na " + bocaT.id + " da " + self._rotAlvo(alvo) + (subiuBoca ? " ⚠ o traço veio MAIS BAIXO que a entrada: o último pedaço sobe contra o escoamento — suba a altura de trabalho" : "");
+      if (dnChegaT) msg += " - o tubo chega na caixa no DN da entrada (DN " + dnChegaT + ")";
       if (avisoBocaT) msg += " ⚠ " + avisoBocaT + ": o traço ficou como foi, ao centro da peça";
       if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
       if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
