@@ -2365,11 +2365,13 @@
         else if (gx) ms = gx.partes.map(function (pt) {
           if (pt.decal) return self.modoCor === "sistema" ? null : self._malhaDecal(THREE, pt);
           if (pt.papel === "marca") { var mm = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mm) return null; var mgC = self._malhaG(THREE, pt.malha, mm); mgC.userData.semIfc = true; return mgC; }   /* a faixa do fabricante é só textura da tela: não vai ao IFC/SketchUp */
-          return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null));
+          /* ⚠ CONEXÃO DE ÁGUA EM MARROM (14/11/2026 — o Rogério: "o tubo fica azul e as conexões de marrom", como na folha de referência): no modo
+             "cor por sistema" a conexão de água fria/quente fica no MATERIAL dela (o PVC soldável marrom); só o tubo leva o azul do sistema */
+          return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null, /^agua/.test(String(c.sistema))));
         }).filter(Boolean);
         else {   /* duto, eletrocalha ou material sem família de junta: um bloco do tamanho da seção (nunca mais a bolota) */
           var porT = (c.ramos || []).map(function (id) { return porId[id]; }).filter(Boolean)[0], s0 = porT && porT.larg ? Math.max(porT.larg, porT.alt) * 1.08 : Math.max((c.dn || 40) / 1000, 0.016) * 1.3;
-          var mb = new THREE.Mesh(new THREE.BoxGeometry(s0, porT && porT.alt ? porT.alt * 1.08 : s0, s0), G ? self._matPeca(THREE, c.material, c.sistema, "corpo", null) : self._mat(THREE, I.SISTEMAS[c.sistema].cor));
+          var mb = new THREE.Mesh(new THREE.BoxGeometry(s0, porT && porT.alt ? porT.alt * 1.08 : s0, s0), G ? self._matPeca(THREE, c.material, c.sistema, "corpo", null, /^agua/.test(String(c.sistema))) : self._mat(THREE, I.SISTEMAS[c.sistema].cor));
           mb.position.set(c.x, c.y, c.z); ms = [mb];
         }
         out.push({ id: c.id, ifc: ifcCx(c.sistema), malhas: papel(ms, "conexao"), disciplina: discDe(c.sistema), nome: c.nome + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " (conexão automática" + (gx && gx.aConferir ? "; forma com cota a conferir" : "") + ")", qto: { contagem: 1 }, derivada: true });
