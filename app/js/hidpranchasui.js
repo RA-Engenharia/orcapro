@@ -79,7 +79,7 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = HP().normalizarConfig(cfg);
     return { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao,
-             sistemas: c.sistemas, conjuntos: c.conjuntos, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, qr: c.qr, perspectiva: c.perspectiva,
+             sistemas: c.sistemas, conjuntos: c.conjuntos, isoFormato: c.isoFormato, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, qr: c.qr, perspectiva: c.perspectiva,
              empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
              obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
              ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
@@ -119,7 +119,8 @@
       '<label>Revisão <input data-hpr="revisao" value="' + esc(cfg.revisao) + '" size="4"></label><br>' +
       '<label>Descrição <input data-hpr="descrev" value="' + esc(cfg.descricaoRevisao) + '" style="width:100%"></label></fieldset>';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>O que gerar</b></legend>' +
-      P.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-hpr-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(P.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") + "</fieldset>";
+      P.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-hpr-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(P.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") +
+      '<label style="display:block;margin-top:6px">Folha dos isométricos (prancha única) <select data-hpr="isoformato">' + P.K2.isos.formatos.map(function (f) { return '<option value="' + f + '"' + (cfg.isoFormato === f ? " selected" : "") + ">" + f + "</option>"; }).join("") + "</select></label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Perspectiva 3D por ambiente</b></legend>' +
       (ambs.length ? ambs.map(function (a) { return '<div style="display:flex;gap:6px;align-items:center"><label style="flex:1"><input type="checkbox" data-hpr-amb="' + esc(a.nome) + '"' + marcado(!cfg.perspectiva.ambientes.length || cfg.perspectiva.ambientes.indexOf(a.nome) >= 0) + "> " + esc(a.nome) + '</label><button class="btn sm ghost" data-hpr-3d="' + esc(a.id) + '" title="Prévia: abre o 3D só deste ambiente (caixa de corte e arquitetura translúcida)">3D do ambiente</button></div>'; }).join("")
         : '<p class="muted">Nenhum ambiente com aparelho no modelo.</p>') +
@@ -138,6 +139,7 @@
     c.sistemas = marc.length === sis.length ? [] : marc;
     if (q('[data-hpr="formato"]')) c.formato = q('[data-hpr="formato"]').value;
     if (q('[data-hpr="escala"]')) c.escala = q('[data-hpr="escala"]').value;
+    if (q('[data-hpr="isoformato"]')) c.isoFormato = q('[data-hpr="isoformato"]').value;
     if (q('[data-hpr="nivel"]')) c.nivelPlanta = q('[data-hpr="nivel"]').value;
     if (q('[data-hpr="arq"]')) c.arquitetura = !!q('[data-hpr="arq"]').checked;
     if (q('[data-hpr="calc"]')) c.mostrarCalculo = !!q('[data-hpr="calc"]').checked;
