@@ -1488,6 +1488,64 @@
       la: "Bomba_comprimento_total", ld: "Bomba_carcaca_comprimento", hj: "Bomba_eixo_altura", lb: "Bomba_largura_pes", fb: "Bomba_pe_motor_b", fc: "Bomba_pe_motor_c", ff: "Bomba_topo_recalque", gg: "Bomba_pos_recalque", kk: "Bomba_lado_recalque", ll: "Bomba_lado_caixa_ligacao", bs: "Bomba_dn_succao", br: "Bomba_dn_recalque" },
     env: ["-(" + XMAXC + " + " + XMINC + ")/2", "0", "(Dist_barrilete + Base_folga - 0.7)/2", XMAXC + " - " + XMINC, "Base_altura + 1.49*" + ESC, "2*" + RCX + " + Dist_barrilete + Base_folga + 0.9"], x: [] };
 
+  /* 9) CENTRAL DE ÁGUA QUENTE E FRIA COM BOILER (referência do Rogério, 15/11/2026) — boiler de ALTA PRESSÃO horizontal (800 L), 1 a 3 caixas d'água de polietileno (1.500 L) sobre ESTRADO de
+     madeira, pressurizador (a motobomba BC-22 de 3 cv, a da mesma geração do conjunto de reservatórios), vaso de expansão, barrilete de ÁGUA FRIA com N saídas numeradas AF-1…AF-n (cada uma
+     com registro e etiqueta) e barrilete de ÁGUA QUENTE com M saídas AQ-1…AQ-m (CPVC), recirculação em amarelo. O desenho é o js/hidlouca.js geoCentralAgua (a MESMA geoReservatorio da caixa
+     d'água e a MESMA geoMotobombaBC). Origem = eixo da subida do recalque (início do barrilete AF), no piso, Z = o barrilete AF; frente = +Z; as caixas ficam atrás, à esquerda.
+     QUANTIDADE DE SAÍDAS: a família declara um conector por saída até o MÁXIMO (24 AF, 16 AQ) e cada um só aparece se N_saidas ≥ seu número (`visivel`), o mesmo limite do gerador —
+     mudar N_saidas muda o número de saídas desenhadas e de conectores juntos (test-hid-central-agua-boiler.js). */
+  var ECE = "((Volume_caixa_L/3000)^(1/3))", RCE = "(1.14*" + ECE + ")", RRE = "(1.11*" + ECE + ")", SBE = "((Volume_boiler_L/800)^(1/3))";
+  var NQE = "min(3; max(1; arred(N_caixas; 0)))", NAFE = "min(24; max(1; arred(N_saidas_AF; 0)))", NAQE = "min(16; max(1; arred(N_saidas_AQ; 0)))", PAE = "(2*" + RCE + " + Espaco_caixas)";
+  var XAQ0E = "(Dist_boiler + 0.3*1.95*" + SBE + ")", ZCXE = "(-Dist_barrilete - " + RRE + " - 0.49)", RVE = "(" + RCE + " + 0.164 + DN_extravasor/2000 + 0.002)", X0UE = "(-Dist_caixas - 0.1 - " + RCE + " - (" + NQE + " - 1)*" + PAE + ")";
+  var XRECE = "max(" + XAQ0E + " + (" + NAQE + " - 1)*Passo_saidas + 0.2; Dist_boiler + 0.975*" + SBE + " + 0.3)";
+  var XMAXE = "(max(" + XRECE + "; 0.15 + (" + NAFE + " - 1)*Passo_saidas + 0.1) + 0.1)", XMINE = "(" + X0UE + " - " + RCE + " - 0.55)";
+  var ZMINE = "(" + ZCXE + " - (" + RRE + "*0.97 + 0.06 + Alimentacao_extensao) - 0.05)", ZMAXE = "(Espaco_barriletes + 0.1)";
+  var CENTRAL_CONECT = [];
+  (function () {
+    var k;
+    for (k = 1; k <= 24; k++) CENTRAL_CONECT.push({ id: "af-" + k, nome: "Saída AF-" + k + " (ponta com registro e etiqueta, pronta para a coluna)", sistema: "agua_fria", dn: "DN_saida_AF", x: "0.15 + " + (k - 1) + "*Passo_saidas", y: "Altura_barrilete_AF + Saida_altura", z: "0",
+      visivel: NAFE + " >= " + k, papel: "saida", dir: dv("cima"), origemPos: "desenho", aConferir: "ponta da saída numerada (a etiqueta AF-" + k + " é a do desenho)" });
+    for (k = 1; k <= 16; k++) CENTRAL_CONECT.push({ id: "aq-" + k, nome: "Saída AQ-" + k + " (ponta com registro e etiqueta, pronta para a coluna)", sistema: "agua_quente", dn: "DN_saida_AQ", x: XAQ0E + " + " + (k - 1) + "*Passo_saidas", y: "Altura_barrilete_AQ + Saida_altura", z: "Espaco_barriletes",
+      visivel: NAQE + " >= " + k, papel: "saida", dir: dv("cima"), origemPos: "desenho", aConferir: "ponta da saída numerada (a etiqueta AQ-" + k + " é a do desenho)" });
+  })();
+  CENTRAL_CONECT.push({ id: "alimentacao", nome: "Alimentação das caixas (boia da 1ª caixa)", sistema: "agua_fria", dn: "DN_alimentacao", x: "-Dist_caixas - 0.1 - " + RCE, y: "Estrado_altura + 1.21*" + ECE + "*0.86",
+    z: ZCXE + " - (" + RRE + "*0.97 + 0.06 + Alimentacao_extensao)", papel: "entrada", dir: dv("parede"), origemPos: "desenho", aConferir: "ponta da alimentação da 1ª caixa (a posição acompanha o desenho)" });
+  CENTRAL_CONECT.push({ id: "extravasor", nome: "Extravasor e limpeza (ponta do coletor)", sistema: "pluvial", dn: "DN_extravasor", visivel: "Com_ligacoes", x: X0UE + " - " + RVE + " - 0.3", y: "Estrado_altura + 0.02", z: ZCXE + " - " + RRE + " - 0.5",
+    papel: "saida", dir: dv("esq"), origemPos: "desenho", aConferir: "destino do extravasor é do projeto (nunca no esgoto sanitário)" });
+  var CENTRAL_BOMBA = PBC.map(function (a) { return G("Bomba_" + a[0].toLowerCase(), a[1], a[2], null, "Pressurizador (motobomba): " + a[3]); });
+  var LIG_CENTRAL = {}; Object.keys(LIGACOES).forEach(function (k2) { LIG_CENTRAL[k2] = LIGACOES[k2]; });
+  ESPECS.push({ id: "hid-central-agua-boiler", nome: "Central de água quente e fria com boiler", categoria: "equipamento", sistemas: ["agua_fria", "agua_quente", "pluvial"], tipos: [], generico: true,
+    descricao: "Central de água quente e fria: boiler de alta pressão horizontal (800 L, sobre pés), 1 a 3 caixas d'água de polietileno (1.500 L) sobre estrado de madeira, pressurizador e vaso de expansão, barrilete de água fria com N saídas numeradas AF-1…AF-n e barrilete de água quente com M saídas AQ-1…AQ-m (cada saída com registro e etiqueta), recirculação em amarelo. Origem = eixo da subida do recalque (início do barrilete AF), no piso; frente = +Z; as caixas atrás, à esquerda.",
+    avisos: [AV_CONECTOR, "Boiler: cotas da ficha Komeco \"Reservatório térmico 800 AP\" (880 × 1950 mm, 40 m.c.a.); outro volume por semelhança ∛(V/800) (a conferir). Posição dos bocais, altura dos pés (0,25 m) e cor (verde/cinza da referência do Rogério) não vêm da ficha. Caixas: Fortlev 3000 L escalada por ∛(V/3000), como no conjunto de reservatórios. Pressurizador: a BC-22 de 3 cv (lâmina Schneider 2023); a bomba sobe em ø25 e o barrilete AF é ø50 (a ampliação não é modelada). AQ em CPVC (NBR 15884; DN 35 existe no CPVC, não no PVC soldável); a saída AQ de DN 28 é o CPVC mais próximo do ø25 pedido. Estrado: madeira do desenho (o dimensionamento é do projeto). Vazão e pressão do pressurizador e o ponto do vaso de expansão: do projeto."],
+    geo: [X("N_saidas_AF", "inteiro", 12, "Dimensões", "Número de saídas de água fria (AF-1…AF-n; 1 a 24)"), X("N_saidas_AQ", "inteiro", 8, "Dimensões", "Número de saídas de água quente (AQ-1…AQ-m; 1 a 16)"),
+      X("Volume_boiler_L", "numero", 800, "Dimensões", "Volume do boiler (L): a ficha Komeco 800 AP (880 × 1950 mm); outro volume por semelhança"), X("Volume_caixa_L", "numero", 1500, "Dimensões", "Volume de cada caixa d'água (L) — por semelhança com a Fortlev 3000 L"),
+      X("N_caixas", "inteiro", 2, "Dimensões", "Número de caixas d'água (1 a 3)"), X("Com_pressurizador", "simnao", true, "Instalação", "Com pressurizador (motobomba) e vaso de expansão entre as caixas e o barrilete"),
+      G("Passo_saidas", 0.22, [0.15, 0.5], null, "Distância entre saídas vizinhas do mesmo barrilete"), G("Altura_barrilete_AF", 1, [0.8, 1.5], null, "Altura do eixo do barrilete de água fria"),
+      G("Altura_barrilete_AQ", 1.6, [1.2, 2.2], null, "Altura do eixo do barrilete de água quente (acima das pontas da água fria)"), G("Saida_altura", 0.45, [0.3, 0.5], null, "Quanto cada saída sobe acima do barrilete (limitada: a AQ passa sobre as pontas da AF)"),
+      G("Espaco_barriletes", 0.55, [0.4, 1.5], null, "Distância entre o barrilete AF e o AQ (em Z)"), G("Dist_barrilete", 0.9, [0.7, 2], null, "Do barrilete AF ao eixo da sucção da bomba e do boiler"),
+      G("Dist_caixas", 0.9, [0.6, 3], null, "Do eixo da subida do recalque à borda do estrado (à esquerda)"), G("Dist_boiler", 2.4, [1.4, 4], null, "Do eixo da subida do recalque ao centro do boiler"),
+      G("Pe_boiler_altura", 0.25, [0.1, 0.6], null, "Altura dos pés do boiler (do piso ao corpo): desenho, a ficha não cota"), G("Estrado_altura", 0.22, [0.15, 0.5], null, "Altura do estrado de madeira (pés, vigas e tábuas)"),
+      G("Espaco_caixas", 0.45, [0.3, 1.5], null, "Espaço entre caixas vizinhas (passa o tubo descendente do extravasor)"), G("Alimentacao_extensao", 0.4, [0.1, 2], null, "Quanto a alimentação (boia) avança para trás depois do adaptador"),
+      dnPadrao("DN_barrilete_AF", 50, "DN do barrilete de água fria (ø50 na referência)"), dnPadrao("DN_barrilete_AQ", 35, "DN do barrilete de água quente (CPVC ø35: existe no CPVC, não no PVC soldável)"),
+      dnPadrao("DN_saida_AF", 25, "DN de cada saída de água fria (ramal; ø25 na referência)"), dnPadrao("DN_saida_AQ", 28, "DN de cada saída de água quente (CPVC 28: o mais próximo do ø25 da referência)"),
+      dnPadrao("DN_succao", 50, "DN do barrilete de sucção das caixas"), dnPadrao("DN_alimentacao", 25, "DN da alimentação das caixas"), dnPadrao("DN_extravasor", 50, "DN do extravasor/limpeza e do coletor (adotado: a conferir no projeto)"), LIG_CENTRAL]
+      .concat(CENTRAL_BOMBA).concat([X("Bomba_dn_succao", "numero", 32, "Pressurizador", "DN do bocal de sucção (BC-22 R 1 B: 1 1/4\" = DN 32)"), X("Bomba_dn_recalque", "numero", 25, "Pressurizador", "DN do bocal de recalque (1\" = DN 25)"),
+        X("Potencia_cv", "numero", 3, "Hidráulica", "Potência do pressurizador (cv)"), X("Vazao_m3h", "numero", 0, "Hidráulica", "Vazão do ponto de operação (m³/h) — do projeto; 0 = a definir"),
+        X("Altura_manometrica_m", "numero", 0, "Hidráulica", "Altura manométrica (m.c.a.) — do projeto; 0 = a definir"), X("Modelo_bomba", "texto", "Schneider BC-22 R 1 B 3 cv", "Identificação", "Fabricante e modelo do pressurizador (texto)")]),
+    solidos: [], material: "equipamento verde", conectores: CENTRAL_CONECT,
+    tiposFicha: [fichaQ("t-boiler-800-ap", "Boiler de alta pressão 800 L horizontal (Komeco 800 AP: 880 × 1950 mm, 40 m.c.a.)",
+      { Fabricante: "Komeco", Linha: "Reservatório térmico 800 AP (alta pressão)", Codigo: "800 AP", Descricao_ficha: "Reservatório térmico de alta pressão 800 L, horizontal ou vertical, pressão máxima de trabalho 40 m.c.a. (392 kPa)",
+        Link_ficha: "https://komeco.com.br/arquivos/datasheet/aquecimento-solar/reservatorio-termico/datasheet-reservatorio-termico-prime.pdf", Edicao_ficha: "Datasheet Reservatório Térmico Prime (folheto Komeco), \"Dimensões dos reservatórios\": 800 AP = 880 × 1950 mm", Pagina_ficha: 1, Pagina_cotas: 1, Cotas_ficha: "diâmetro externo=880; comprimento=1950",
+        Volume_boiler_L: 800 }, "Komeco, datasheet do reservatório térmico (https://komeco.com.br/arquivos/datasheet/aquecimento-solar/reservatorio-termico/datasheet-reservatorio-termico-prime.pdf)",
+      ["posição e diâmetro dos bocais (a lâmina não cota: o desenho põe AF no tampo esquerdo, AQ no topo e recirculação no tampo direito)", "altura dos pés e cor verde/cinza (a referência do Rogério; a Komeco é em aço inox)", "outro volume por semelhança ∛(V/800): a linha Komeco não é semelhante entre volumes (600 AP = 700 × 2280)"])] });
+  NOVAS["hid-central-agua-boiler"] = { g: "central_agua", p: { nAF: "N_saidas_AF", nAQ: "N_saidas_AQ", n: "N_caixas", Vc: "Volume_caixa_L", Vb: "Volume_boiler_L", hs: "Pe_boiler_altura", he: "Estrado_altura", hj: "Bomba_eixo_altura", db: "Dist_barrilete", dc: "Dist_caixas", gt: "Espaco_caixas",
+      xb: "Dist_boiler", pa: "Passo_saidas", eb: "Espaco_barriletes", haf: "Altura_barrilete_AF", haq: "Altura_barrilete_AQ", sa: "Saida_altura", pr: "se(Com_pressurizador; 1; 0)", lg: "se(Com_ligacoes; 1; 0)", ext: "Alimentacao_extensao",
+      dS: "se(DN_succao > 0; DN_succao; 50)", dA: "se(DN_alimentacao > 0; DN_alimentacao; 25)", dX: "se(DN_extravasor > 0; DN_extravasor; 50)", dAF: "se(DN_barrilete_AF > 0; DN_barrilete_AF; 50)", dAQ: "se(DN_barrilete_AQ > 0; DN_barrilete_AQ; 35)", dQ: "se(DN_barrilete_AQ > 0; DN_barrilete_AQ; 35)",
+      dsAF: "se(DN_saida_AF > 0; DN_saida_AF; 25)", dsAQ: "se(DN_saida_AQ > 0; DN_saida_AQ; 28)", dV: "se(Bomba_dn_recalque > 0; Bomba_dn_recalque; 25)",
+      la: "Bomba_comprimento_total", ld: "Bomba_carcaca_comprimento", lb: "Bomba_largura_pes", fb: "Bomba_pe_motor_b", fc: "Bomba_pe_motor_c", ff: "Bomba_topo_recalque", gg: "Bomba_pos_recalque", kk: "Bomba_lado_recalque", ll: "Bomba_lado_caixa_ligacao", bs: "Bomba_dn_succao", br: "Bomba_dn_recalque" },
+    env: ["(" + XMAXE + " + " + XMINE + ")/2", "0", "(" + ZMAXE + " + " + ZMINE + ")/2", XMAXE + " - " + XMINE, "Altura_barrilete_AQ + Saida_altura + 0.1", ZMAXE + " - " + ZMINE], x: [] };
+  ESPECS.forEach(function (e) { if (e.id === "hid-central-agua-boiler") e.geo.forEach(function (g) { g.instancia = true; }); });   /* montada por INSTÂNCIA: N de saídas, volumes, DN e distâncias são do projeto */
+
   /* o conjunto é montado por INSTÂNCIA (cada casa de reservatórios tem o seu N, volume, vão e DN): todos os parâmetros dele são da instância; na motobomba, o ponto de operação (vazão e altura) é do projeto */
   ESPECS.forEach(function (e) {
     if (e.id === "hid-conjunto-reservatorios-motobomba") e.geo.forEach(function (g) { g.instancia = true; });
