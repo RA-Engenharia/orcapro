@@ -1248,9 +1248,65 @@
     adapt(dS, 0, 0.03, rS, R + 0.03);   // hid:ok 0,03 = a cota do conector "saida" (js/hidfamilias.js)
     adapt(dE, Math.PI, B * 0.86, rE, rE + 0.06);
     if (P.a2 > 0) adapt(P.a2, P.g2 || 0, 0.03, rS, R + 0.03);   // hid:ok a 2ª saída na cota da 1ª
-    if (P.aX > 0 && P.yX > 0) adapt(P.aX, P.gX || 0, P.yX, R * 0.96, Rext);
-    if (P.aL > 0 && P.yL > 0) adapt(P.aL, P.gL || 0, P.yL, cil ? R * 0.96 : Rb, Rext);
+    /* ⚠ com as LIGAÇÕES MODELADAS (P.lg) o extravasor e a limpeza saem do bloco abaixo (adaptador + tubo + registro), não daqui — senão o adaptador sairia em dobro */
+    if (!(tipo === 0 && P.lg > 0)) {
+      if (P.aX > 0 && P.yX > 0) adapt(P.aX, P.gX || 0, P.yX, R * 0.96, Rext);
+      if (P.aL > 0 && P.yL > 0) adapt(P.aL, P.gL || 0, P.yL, cil ? R * 0.96 : Rb, Rext);
+    }
     partes.push(cn);
+    /* LIGAÇÕES DA CAIXA (14/11/2026, pedido do Rogério com a foto da caixa azul Fortlev de cobertura): a caixa já sai com as quatro bocas
+       modeladas — ENTRADA com a torneira de boia por dentro, SAÍDA com o toco e o registro de gaveta, EXTRAVASOR com o tubo descendo por
+       fora e LIMPEZA com registro ligada ao MESMO tubo descendente ("extravasor e limpeza" da referência). Só na caixa de polietileno (tipo 0)
+       e só quando a família pede (P.lg: Com_ligacoes = sim e SEM o Traçar ter gravado Ad_*; com o Traçar os tubos, o registro e a boia
+       reais são os do barrilete, e desenhar de novo duplicaria tudo). Cada parte tem id "lig-…" (o teste de famílias reais conta por esse id).
+       DN: P.dE/dS/dX/dL (DN_entrada/saída/extravasor/limpeza; 0 = o padrão 25/32/32/32). Ângulos em planta: entrada −X, saída +X, extravasor
+       e limpeza +Z (o mesmo azimute do conector do extravasor) — fixos de propósito: o Ang_* da família é do Traçar. */
+    if (tipo === 0 && P.lg > 0) {
+      var dE2 = P.dE > 0 ? P.dE : 25, dS2 = P.dS > 0 ? P.dS : 32, dX2 = P.dX > 0 ? P.dX : 32, dL2 = P.dL > 0 ? P.dL : 32;   // hid:ok DN padrão de cada boca (25 entrada, 32 saída/extravasor/limpeza)
+      var rg = {}, cr = function (a) { return Math.cos(a); }, sr = function (a) { return -Math.sin(a); };   /* a mesma convenção do adapt(): ang → (cos, −sen) em (X, Z) */
+      var pL = function (ang, r, y) { return [cr(ang) * r, y, sr(ang) * r]; };
+      var rt = function (dn) { return dn / 2000 + 0.002; };   // hid:ok raio externo do tubo = DN/2 + 2 mm de parede (desenho)
+      /* registro de gaveta bruto = o MESMO desenho do tubo/peça avulsa (HidGeo.registro, variante bruto): uma fonte só. Os pedaços saem por papel
+         (latão, volante…) e ficam em partes "lig-…-reg" para o material de cada um ir certo. ⚠ não desenhar à mão: o Rogério já recusou o registro "amador" */
+      var Gg = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+      Gg = global.HidGeo || Gg;
+      var reg = function (id, nome, dn, ang, r0, y, Lr) {
+        if (!Gg || !Gg.registro) throw new Error("HidGeo.registro indisponível (js/biminstgeo.js)");
+        var rc = r0 + Lr / 2, o = Gg.registro({ centro: [cr(ang) * rc, y, sr(ang) * rc], dir: [cr(ang), 0, sr(ang)], comprimento: Lr, dn: dn, material: "pvc_soldavel", variante: "bruto", acessorio: "registro_gaveta", varMaterial: "latao" },
+          { lod: q.N > 20 ? "perto" : "longe", frente: [0, 1, 0] });
+        (o.partes || []).forEach(function (p) {
+          var k = id + "-" + p.papel, pt = rg[k] || (rg[k] = parte(k, nome + " (" + p.papel + ")", REG_MAT[p.papel] || LATAO, true)), b0 = pt.m.v.length / 3, i;
+          for (i = 0; i < p.malha.pos.length; i++) pt.m.v.push(p.malha.pos[i]);
+          for (i = 0; i < p.malha.idx.length; i++) pt.m.f.push(p.malha.idx[i] + b0);
+        });
+      };
+      var Lr = 0.07;   // hid:ok comprimento face a face do registro de gaveta bruto (a ficha Deca dá por DN; este é o de reserva do desenho)
+      /* ENTRADA — a torneira de boia por dentro: corpo horizontal saindo da parede para o centro, haste que desce e a boia esférica (a que
+         flutua e fecha a água). A boia fica DENTRO da caixa (como na foto): o alcance cabe no raio da caixa (min com 0,35·R). */
+      var pb = parte("lig-boia", "Torneira de boia (haste e boia)", PLAST, true), aE = Math.PI, yE = B * 0.86, rBo = Math.min(0.09, R * 0.14), lin = Math.min(0.22, R * 0.35);   // hid:ok boia Ø 18 cm máx.; alcance interno máx. 22 cm
+      var w0 = pL(aE, rE - 0.004, yE), w1 = pL(aE, rE - 0.004 - lin * 0.5, yE), w2 = pL(aE, rE - 0.004 - lin, yE - lin * 0.45), w3 = pL(aE, rE - 0.004 - lin, yE - lin * 0.45 - rBo);
+      torno(pb.m, [[rt(dE2) + 0.004, 0], [rt(dE2) + 0.004, lin * 0.5], [0, lin * 0.5]], q.n, { c: w0, eixo: [-cr(aE), 0, -sr(aE)] });   /* corpo da torneira, para dentro */
+      tubo(pb.m, [w1, w2, w3], 0.004, 6, { rc: 0.02 });   // hid:ok haste (Ø 8 mm) e curva da haste
+      var sf = [], k2;
+      for (k2 = 0; k2 <= 12; k2++) sf.push([rBo * Math.sin(Math.PI * k2 / 12), -rBo * Math.cos(Math.PI * k2 / 12)]);   // hid:ok esfera: 12 passos de meio círculo
+      torno(pb.m, sf, q.N > 20 ? 24 : 10, { c: [w3[0], w3[1] - rBo * 0.4, w3[2]] });   /* boia esférica logo abaixo da ponta da haste */
+      /* SAÍDA — do adaptador (já desenhado acima) sai o toco de tubo e, logo depois, o registro de gaveta; depois mais um toco (onde o tubo do barrilete pega) */
+      var ps = parte("lig-saida", "Saída: toco de tubo (consumo)", PVC, true), aS2 = 0, r0S = R + 0.03, ySa = 0.03;   // hid:ok o adaptador da saída termina em R + 3 cm, 3 cm acima da base (iguais ao conector)
+      tubo(ps.m, [pL(aS2, r0S - 0.005, ySa), pL(aS2, r0S + 0.04, ySa)], rt(dS2), q.n, { rc: 0 });   // hid:ok toco antes do registro (4 cm)
+      reg("lig-saida-reg", "Saída: registro de gaveta", dS2, aS2, r0S + 0.04, ySa, Lr);
+      tubo(ps.m, [pL(aS2, r0S + 0.04 + Lr, ySa), pL(aS2, r0S + 0.04 + Lr + 0.05, ySa)], rt(dS2), q.n, { rc: 0 });   // hid:ok toco depois do registro (5 cm)
+      /* EXTRAVASOR + LIMPEZA — o mesmo azimute (+Z): o extravasor perto do topo, a limpeza baixa; os dois horizontais encontram UM tubo
+         descendente por fora, a rV do eixo. A limpeza leva registro; o extravasor não (nunca fecha o ladrão). ⚠ a junção é na mesma linha vertical */
+      var aV = -Math.PI / 2, yX = B * 0.93, yL = 0.07, rV = Rext + 0.04 + Lr + 0.05 + rt(dL2), px = parte("lig-extravasor", "Extravasor e limpeza (tubo descendente)", PVC, true);   // hid:ok o extravasor a 93 % do corpo (o conector); limpeza 7 cm acima da base; tubo descendente depois do registro da limpeza
+      adapt(dX2, aV, yX, R * 0.96, Rext);
+      adapt(dL2, aV, yL, Rb, Rext);
+      tubo(px.m, [pL(aV, Rext - 0.005, yX), pL(aV, rV, yX), pL(aV, rV, 0.02)], rt(dX2), q.n, { rc: 0.03 });   // hid:ok extravasor sai pela parede, vai ao tubo descendente e desce até 2 cm do piso; raio da curva 3 cm
+      tubo(px.m, [pL(aV, Rext - 0.005, yL), pL(aV, Rext + 0.04, yL)], rt(dL2), q.n, { rc: 0 });   // hid:ok toco da limpeza antes do registro (4 cm)
+      reg("lig-limpeza-reg", "Limpeza: registro de gaveta", dL2, aV, Rext + 0.04, yL, Lr);
+      tubo(px.m, [pL(aV, Rext + 0.04 + Lr, yL), pL(aV, rV, yL)], rt(dL2), q.n, { rc: 0 });   /* da saída do registro até o tubo descendente */
+      partes.push(pb, ps, px);
+      Object.keys(rg).forEach(function (k) { partes.push(rg[k]); });
+    }
     return partes;
   }
 
@@ -1658,7 +1714,7 @@
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
-    caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
+    caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600
   };
