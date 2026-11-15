@@ -419,7 +419,7 @@
         var a1b = [a1[0] + nx * 0.15 * k, a1[1] + ny * 0.15 * k], b1b = [b1[0] + nx * 0.15 * k, b1[1] + ny * 0.15 * k];
         D.linha(a1b[0] - ex1, a1b[1] - ey1, b1b[0] + ex1, b1b[1] + ey1, "ARQ-CONTEXTO");   /* a espessura do meio-fio (15 cm) */
         var angR = Math.atan2(fy, fx) * 180 / Math.PI; if (angR > 90) angR -= 180; if (angR < -90) angR += 180;
-        var horizF = Math.abs(fy) < Math.abs(fx), xl = Math.min(fa[0], fb[0]) + 20;
+        var horizF = Math.abs(fy) < Math.abs(fx), xl = Math.min(fa[0], fb[0]) + Math.min(20, Math.max(10.5, Math.abs(fx) * 0.2));   /* 15/11/2026 (caderno): em lote estreito na escala pequena o rótulo do passeio ia para cima do número da cota da testada */
         [[ps * 0.5, "PASSEIO " + d.br(psM, 2) + " m"], [ps + 0.15 * k + 2.4, "MEIO-FIO"], [ps + mr + 2.4, "EIXO DA RUA"]].forEach(function (q, iq) {
           var pc = horizF ? [xl, fa[1] + ny * q[0]] : [(fa[0] + fb[0]) / 2 + nx * q[0] - ux1 * 26, (fa[1] + fb[1]) / 2 + ny * q[0] - uy1 * 26];
           D.texto(pc[0], pc[1] + (iq === 0 ? 0.7 : 0.4), q[1], iq === 0 ? 2.2 : 2.0, { al: "C", rot: horizF ? 0 : angR, meio: true });

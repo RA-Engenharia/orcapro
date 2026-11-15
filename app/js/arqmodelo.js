@@ -262,12 +262,12 @@
       out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, pecas: pecasM, valores: valM, parMat: parMat, temEstado: temEstado, inst: f.inst || {}, caixaLocal: (av && av.caixa) || null, h0: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y0, 0)), h1: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y1, 0)), mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
         solidos: arr(av && av.solidos).slice(0, 40).map(function (s) { return { forma: s.forma, x: s.x, y: s.y, z: s.z, dx: s.dx, dy: s.dy, dz: s.dz, raio: s.raio, altura: s.altura, eixo: s.eixo, material: s.material, cor: s.cor }; }) });
     });
-    /* marcas P1, P2… J1, J2…: um código por TIPO de vão (família + tipo + tamanho), na ordem em que aparecem */
+    /* marcas P01, P02… J01, J02…: um código por TIPO de vão (família + tipo + tamanho), na ordem em que aparecem */
     var cods = { porta: [], janela: [] }, quad = {};
     out.vaos.forEach(function (v) {
       var chave = [v.famId, v.tipoId, v.largura, v.altura, v.peitoril].join("|"), L = cods[v.tipo];
       if (L.indexOf(chave) < 0) L.push(chave);
-      v.cod = (v.tipo === "porta" ? "P" : "J") + (L.indexOf(chave) + 1);
+      var nC = L.indexOf(chave) + 1; v.cod = (v.tipo === "porta" ? "P" : "J") + (nC < 10 ? "0" : "") + nC;   /* P01, J01 (o Rogério, 15/11/2026: "siglas P01/J01", padrão de escritório) */
       var q = quad[v.cod] || (quad[v.cod] = { cod: v.cod, tipo: v.tipo, famId: v.famId, nome: v.nome, largura: v.largura, altura: v.altura, peitoril: v.peitoril, material: v.material, dimPadrao: v.dimPadrao, qtd: { novo: 0, existente: 0, demolido: 0 }, ids: [] });
       q.qtd[v.status] = (q.qtd[v.status] || 0) + 1; q.ids.push(v.id);
     });

@@ -21,6 +21,7 @@
     return null;
   }
   function AQ() { return dep("ArqPranchas", "./arqpranchas.js"); }
+  function AC() { return dep("ArqCaderno", "./arqcaderno.js"); }
   function IX() { return dep("ArqIndices", "./arqindices.js"); }
   function INT() { return dep("ArqInteriores", "./arqinteriores.js"); }
   function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
@@ -172,6 +173,20 @@
     if (saida.abas) r.abas = abrirNasAbas(r, ctx);
     return r;
   }
+  /* CADERNO EXECUTIVO (A3, uma página por assunto — js/arqcaderno.js): gera e baixa o PDF; o nome é PE_<CLIENTE>_<CONTEÚDO>_R<nn> */
+  function gerarCaderno(ctx, cfg, versao) {
+    var C = AC(); if (!C) return { ok: false, avisos: ["js/arqcaderno.js não carregou."] };
+    if (!ctx || !ctx.modelo || !ctx.modelo.estado) return { ok: false, avisos: ["Abra o modelo da obra no BIM: sem modelo não há o que apresentar."] };
+    var c = AQ().normalizarConfig(cfg), o = opcoesDe(ctx, c);
+    if (ctx.obra && ctx.obra.paleta && typeof ctx.obra.paleta === "object") o.paleta = ctx.obra.paleta;   /* a cor do template é a PALETA DA OBRA (cadastro) */
+    o.versao = versao === "cliente" ? "cliente" : "completa";
+    var r = C.gerar(ctx.modelo, o);
+    if (!r || !r.ok) return r || { ok: false, avisos: [] };
+    r.arquivos = [];
+    var pdf = C.exportar(r, "pdf"); if (pdf && baixar(r.nomeArquivo + ".pdf", pdf, "application/pdf")) r.arquivos.push(r.nomeArquivo + ".pdf");
+    ULTIMO.caderno = r;
+    return r;
+  }
   /* o que o caderno de interiores fez, em uma frase (nunca silencioso: desligado, sem folha e o porquê, ou N folhas) */
   function resumoInteriores(r, c) {
     var fl = arr(r && r.folhas).filter(function (f) { return /^int-/.test(String(f.tipo || "")); }), av = arr(r && r.avisos).filter(function (a) { return /^Caderno de interiores/.test(String(a)); });
@@ -317,6 +332,13 @@
     U.modal("Gerar pranchas de arquitetura — reforma e ampliação", html(ctx, cfg), [
       { texto: "Cancelar", classe: "ghost", onClick: function () { U.fecharModal(); } },
       { texto: "Arranjo…", classe: "ghost", onClick: function () { U.fecharModal(); abrirArranjo(ctx); } },
+      { texto: "Caderno executivo (A3)", classe: "ghost", onClick: function () {
+        var raiz = global.document.querySelector('[data-arq="tela"]').parentNode, c = configDaTela(raiz, cfg), msg = raiz.querySelector('[data-arq="msg"]'), r = null;
+        try { r = gerarCaderno(ctx, c, "completa"); } catch (e) { r = { ok: false, avisos: [e && e.message ? e.message : String(e)] }; }
+        if (!r || !r.ok) { if (msg) msg.textContent = "O caderno não saiu: " + arr(r && r.avisos).join(" "); return; }
+        U.fecharModal(); var v = r.verificacao || {};
+        toast("Caderno executivo: " + r.paginas.length + " página(s) A3 · " + (r.arquivos[0] || "PDF não baixado") + " · sobreposição " + v.total + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), v.total ? "aviso" : "ok");
+      } },
       { texto: "Padrão", onClick: function () { gravarMemoria(ctx.obraKey, AQ().configPadrao()); U.fecharModal(); abrir(ctx); } },
       { texto: "Gerar pranchas", classe: "primary", onClick: function () {
         var raiz = global.document.querySelector('[data-arq="tela"]').parentNode, c = configDaTela(raiz, cfg), msg = raiz.querySelector('[data-arq="msg"]');
@@ -332,7 +354,7 @@
     return true;
   }
 
-  var ArqPranchasUI = { abrir: abrir, gerar: gerar, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
+  var ArqPranchasUI = { abrir: abrir, gerar: gerar, gerarCaderno: gerarCaderno, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
     _int: { conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
   global.ArqPranchasUI = ArqPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;

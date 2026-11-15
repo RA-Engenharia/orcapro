@@ -470,6 +470,40 @@
     return { ok: true, folhas: folhas, formato: fe.formato, escalaPlanta: fe.escala, indices: idx, lista: lista, avisos: avisos, verificacao: verificacao, prefixo: codigo, revisao: rev };
   }
 
+  /* ================================================================ CADERNO EXECUTIVO (js/arqcaderno.js, 15/11/2026)
+     O caderno é um documento A3 de uma página por assunto; ele NÃO redesenha: pede aqui o contexto de desenho (dados do modelo, índices, situações, escala) numa ÁREA PRÓPRIA
+     (a área útil da página do caderno, não a da prancha) e chama os mesmos desenhos das pranchas (desenharDef, desenharSituacao, desenharRenders…).
+     `geo` = { area:{x,y,w,h}, coluna:{…}, carimbo:{…} } (a mesma forma de P.geometria); `fn(c, F)` roda com as fotos do 3D ligadas e devolve o que o caderno monta. */
+  var ESC_CADERNO = [50, 75, 100, 125, 150, 200, 250, 300];
+  function paraCaderno(modelo, opcoes, geo, fn) {
+    var op = opcoes || {}, cfg = normalizarConfig(opcoes), avisos = [], Md = MD(), P = PR(), out;
+    FOTO3D = typeof op.foto3d === "function" ? op.foto3d : null; IMAGENS = {}; FOTOS = {};
+    try {
+      if (!modelo || !modelo.estado) return { ok: false, avisos: ["Modelo vazio: não há o que apresentar."] };
+      if (!P || !AP() || !DS() || !Md || !IX() || !PL() || !CT() || !QD()) return { ok: false, avisos: ["Os motores das pranchas de arquitetura não carregaram (js/arq*.js)."] };
+      var dados = Md.extrair(modelo, { pavimentos: op.pavimentos, fase: op.fase });
+      dados.avisos.forEach(function (a) { avisos.push(a); });
+      if (!dados.paredes.length) return { ok: false, avisos: avisos.concat(["O modelo não tem paredes na fase de agora: não há planta para gerar."]) };
+      var sit = situacoes(modelo, dados, { pavimentos: op.pavimentos, fase: op.fase }, avisos);
+      var dadosIx = {}; Object.keys(dados).forEach(function (k) { dadosIx[k] = dados[k]; });
+      dadosIx.ambientes = arr(sit.depois.ambientes).concat(arr(sit.antes.ambientes).filter(function (a) { return a.status === "demolido"; }));
+      var lim = IX().limitesDe(cfg.limites && (cfg.limites.ocupacaoMax != null || cfg.limites.permeavelMin != null || cfg.limites.aproveitamentoMax != null) ? cfg.limites : (cfg.municipio || {}));
+      var idx = IX().calcular(dadosIx, { limites: lim, contornoLote: op.contornoLote, areaTerreno: op.areaTerreno, permeaveis: op.permeaveis, fatores: cfg.fatores, beiralNaProjecao: cfg.beiralNaProjecao, frente: op.frente });
+      idx.avisos.forEach(function (a) { avisos.push(a); });
+      var cx = caixaPlano(dados), escP = null;
+      for (var ie = 0; ie < ESC_CADERNO.length && !escP; ie++) if (cabePlanta({ area: geo.area }, cx, ESC_CADERNO[ie])) escP = ESC_CADERNO[ie];
+      if (!escP) { escP = ESC_CADERNO[ESC_CADERNO.length - 1]; avisos.push("A planta não cabe na página do caderno nem em 1:" + escP + ": confira o contorno do modelo."); }
+      var E = DS().estilo(op.padrao), emp = op.empresa, empObj = emp && typeof emp === "object" ? emp : null, numMap = {};
+      var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo, estiloCorte: op.estiloCorte, passeio: op.passeio, ruaMeia: op.ruaMeia, coresFachada: op.coresFachada, situacao: op.situacao, baldrame: op.baldrame }, cfg: cfg, avisos: avisos, avisosFolha: {},
+        plano: { k: 1000 / escP, escala: escP, caixa: cx }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: "CAD", rev: cfg.revisao, empObj: empObj, total: 0, formatoNome: "A3",
+        numeroDe: function (tipo) { return numMap[tipo] || "(não gerada)"; }, depurar: op.depurar };
+      var F = { numMap: numMap, desenharDef: function (def) { return desenharDef(c, def, []); }, desenharSituacao: desenharSituacao, desenharRenders: desenharRenders, blocosNotas: blocosNotas, aviso: VERMELHO, hoje: hoje, MOTIVO_SEM_FOTO: MOTIVO_SEM_FOTO, caixaModelo: caixaModelo, fotoDe: fotoDe, argsIso: argsIso, argsPlanta: argsPlanta, VISTAS_ISO: VISTAS_ISO, K_FOTO: K_FOTO, temFoto: !!FOTO3D };
+      out = fn(c, F) || {};
+      out.imagensPorChave = IMAGENS; out.avisos = avisos; out.ok = out.ok !== false;
+      return out;
+    } finally { FOTO3D = null; IMAGENS = null; FOTOS = null; }
+  }
+
   /* ================================================================ O ARRANJO: blocos → folhas (js/arqdiagrama.js) */
   var GRUPO_TIPO = { situacao: "situacao", existente: "reforma", demolir: "reforma", layout: "projeto", cortes: "projeto", fachadas: "projeto", cobertura: "complementar", forro: "complementar", piso: "complementar", quadros: "quadros", humanizada: "humanizada", esquadrias: "projeto", renders: "renders" };
   var AVISO_FIXO = { "01": "situacao", "05": "cobertura", "06": "forro", "07": "cortes", "08": "fachadas", "09": "piso" };   /* os avisos dos desenhos citam "ARQ-05"… da série antiga: no arranjo vira o número da folha onde o conteúdo caiu */
@@ -920,6 +954,7 @@
   }
 
   var ArqPranchas = { VERSAO: 1, gerar: gerar, ambientesInteriores: ambientesInteriores, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
+    _cad: paraCaderno,
     _int: { K_FOTO: K_FOTO, argsPlanta: argsPlanta, argsIso: argsIso, situacoes: situacoes, estadoSem: estadoSem, idsPorStatus: idsPorStatus, escolherFormatoEscala: escolherFormatoEscala, caixaPlano: caixaPlano, blocosNotas: blocosNotas } };
   global.ArqPranchas = ArqPranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchas;

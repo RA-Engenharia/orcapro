@@ -597,9 +597,11 @@
       else desenhaParede(it);
     });
     /* as chamadas: uma por cor, do maior pano visível até a margem direita (rótulos empilhados sem se tocar) */
-    var ORD = ["muro", "novo", "existente"], nomes = ORD.filter(function (k) { return chamadas[k]; }), xm = U(mf.uMax) + 2, yTop = Y(mf.yMax) + 4;
+    var ORD = ["muro", "novo", "existente"], nomes = ORD.filter(function (k) { return chamadas[k]; }), xm = U(mf.uMax) + 2, topP = 0;
+    mf.items.forEach(function (it0) { if (it0.tipo === "parede") topP = Math.max(topP, it0.yt); });
+    var yTop = Y(topP > 0.05 ? topP : mf.yMax) + 4.5;   /* 15/11/2026 (caderno): as chamadas começam ABAIXO do nível do topo da parede (antes o rótulo C1 caía em cima do "+2,80 topo da parede") */
     nomes.forEach(function (nm, i) {
-      var ch = chamadas[nm], maior = ch.itens.sort(function (a, b) { return b.a - a.a; })[0], cen = g.centroide(maior.P), yy = yTop + i * 7;
+      var ch = chamadas[nm], maior = ch.itens.sort(function (a, b) { return b.a - a.a; })[0], cen = g.centroide(maior.P), yy = yTop + i * 4.4;
       D.add('<line x1="' + d.n(cen[0]) + '" y1="' + d.n(cen[1]) + '" x2="' + d.n(xm + 6) + '" y2="' + d.n(yy) + '" stroke="#9B2626" stroke-width="0.18" stroke-dasharray="1.6 0.8" data-cam="ARQ-LIDER"/>');
       D.add('<circle cx="' + d.n(cen[0]) + '" cy="' + d.n(cen[1]) + '" r="0.7" fill="#9B2626" stroke="none" data-cam="ARQ-LIDER"/>');
       D.add('<rect x="' + d.n(xm + 6.4) + '" y="' + d.n(yy - 2.2) + '" width="3.6" height="3.6" fill="' + ch.cor.traco + '" stroke="#000" stroke-width="0.12"/>');
