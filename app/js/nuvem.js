@@ -1337,11 +1337,20 @@
     _anotarPendente: function (ent, p, tam) {
       /* por CONTA e entidade: a gravação da conta antiga que nunca termina (ver `_naFaixa`) não conta como "no ar" na nova */
       var self = this, k = String(this.uid || "") + "|" + ent;
-      var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0 });
-      if (!e.n) e.desde = Date.now();
+      /* `ini` = início de CADA chamada ainda aberta. Antes havia um só `desde`, zerado só quando n chegava a 0: com
+         edição contínua do BIM as subidas se sobrepõem, n nunca zera e a "idade" virava "tempo ocupado" (vigia de
+         15/11/2026 acusou 694 s em bim_edicoes sem nenhuma gravação presa). A idade agora é a da chamada mais velha. */
+      var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0, ini: [] });
+      var t0 = Date.now();
+      if (!e.n) e.desde = t0;
       e.n++;
+      (e.ini || (e.ini = [])).push(t0);
       if (typeof tam === "number" && isFinite(tam)) e.tam = tam;
-      var fim = function () { var x = self._pend[k]; if (x && --x.n <= 0) delete self._pend[k]; };
+      var fim = function () {
+        var x = self._pend[k]; if (!x) return;
+        if (x.ini) { var i = x.ini.indexOf(t0); if (i >= 0) x.ini.splice(i, 1); x.desde = x.ini.length ? Math.min.apply(null, x.ini) : x.desde; }
+        if (--x.n <= 0) delete self._pend[k];
+      };
       Promise.resolve(p).then(fim, fim);
     },
     /* a entidade tem gravação no ar ou esperando a vez (a fila dela) */

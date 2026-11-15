@@ -1010,6 +1010,9 @@
             var wu = { x: w.p2.x - w.p1.x, z: w.p2.z - w.p1.z }, Lw = Math.sqrt(wu.x * wu.x + wu.z * wu.z), tw = ((face.x - w.p1.x) * wu.x + (face.z - w.p1.z) * wu.z) / Lw;
             var mg = geo(par, "afastParede") + w.esp / 2 + (colKit ? lat : 0);   /* longe da ponta da parede (canto); com válvula, cabe o barrilete curto */
             if (tw < mg || tw > Lw - mg) return false;
+            /* ⚠ (15/11/2026, Casa 487) nunca no VÃO de porta/janela: a ponta da fileira do banheiro do fundo caía na porta da lavanderia vizinha
+               (a mesma parede continua) e a água fria ficava "sem caminho livre" — a zona da abertura é proibida para o tubo */
+            if (arr(obst.aberturas).some(function (a) { return a && a.p1 && a.p2 && distSeg(ax, a.p1, a.p2) < num(a.espessura, 0) / 2 + geo(par, "afastParede") + geo(par, "embutir"); })) return false;   // amb:esperaForaDoVao
             if (tV != null && Math.abs(c.t - tV) < geo(par, "afastamento") * 2) return false;   /* não em cima da prumada da válvula */
             return true;
           }).sort(function (a, b) { return tV != null ? Math.abs(a.t - tV) - Math.abs(b.t - tV) : Math.abs(a.t) - Math.abs(b.t); });

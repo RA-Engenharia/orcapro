@@ -115,6 +115,17 @@
         var rj = local("joelho90", material, dn, J, v, uso, variante, extra); if (rj) rj.tipo = "joelho_bucha";
         return rj;
       }
+      /* CURVA DE TRANSPOSIÇÃO (15/11/2026, pedido do Rogério): a tabela de comprimento equivalente não tem a peça. SEM linha própria (nem Leq nem K), vale o equivalente de
+         2 curvas de 45° — o S da peça são dois desvios de 45° de ida e volta — com a marca "a conferir" (a ficha do fabricante não traz K nem Leq da peça). Com linha na tabela, a tabela manda. */
+      if (conexao === "curva_transposicao" && !(tabLeq && NR().consulta("af.perda.localizada.leq", { material: material, conexao: conexao, dn: dn }, "leq_m").ok)
+          && !(tabK && NR().consulta("af.perda.localizada.k", { material: material, conexao: conexao }, "k").ok)) {
+        var r45 = local("joelho45", material, dn, J, v, uso, variante, extra);
+        if (!r45) return null;
+        premissa("perda localizada da curva de transposição", "sem Leq nem K da peça na tabela: adotado o equivalente de 2 curvas de 45° (2 × joelho 45° do mesmo DN) — A CONFERIR com a ficha do fabricante");
+        var rt = { tipo: conexao, perda_m: 2 * r45.perda_m, equivalente: "2 × joelho 45°", aConferir: true };
+        if (r45.leq_m != null) rt.leq_m = 2 * r45.leq_m; if (r45.k != null) rt.k = 2 * r45.k;
+        return rt;
+      }
       var fLeq = { material: material, conexao: conexao, dn: dn };
       /* ⚠ FICHA DA PEÇA (js/hidpecas.js, docs/hidro/CONTRATO.md §7): a peça REAL do nó (joelho 90 de PVC soldável
          DE 25, válvula de PÉ com crivo…) diz qual linha da tabela é a dela; o valor sai da tabela carregada pela

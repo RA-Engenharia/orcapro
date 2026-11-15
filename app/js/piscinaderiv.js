@@ -204,7 +204,7 @@
         vols.forEach(function (vol) { if (vol.recortavel) recortar(vol, cont); });
       });
       /* 2) tubos: cada casa, a piscina mais perto */
-      var BV = dep("BimVolume", "./bimvolume.js");
+      var BV = dep("BimVolume", "./bimvolume.js"), BI = dep("BimInst", "./biminst.js");
       if (!G || !BV || !BV.perfilCirculo) return;
       C.forEach(function (c) {
         var melhor = null, dm = Infinity;
@@ -213,6 +213,20 @@
         var vP = valores(melhor.famId, melhor.tipoId, melhor.inst);
         if (vP.Com_tubulacao === false) return;
         tubosDe(melhor, c, vP, valores(c.famId, c.tipoId, c.inst)).forEach(function (l) {
+          /* ⚠ 15/11/2026 (Rogério: "as conexões não são reais, igual ao catálogo"): com o motor de instalações carregado, cada linha
+             vira TRECHOS do sistema "piscina" — a rede() deduz joelho, tê e luva do catálogo nos encontros, e eles entram no
+             quantitativo e no Verificar. As pontas na piscina e na casa de máquinas são "continua" (as famílias não têm conector
+             MEP: sem isso o Verificar apontava ponta solta em cada bocal). Sem o motor (teste isolado), fica a varredura de antes. */
+          if (BI && BI.normTrecho && saida.instalacoes && Array.isArray(saida.instalacoes.trechos)) {
+            var cam = l.caminho, n = cam.length - 1;
+            for (var k = 0; k < n; k++) {
+              var t = BI.normTrecho({ id: "psc-tubo:" + c.id + ":" + l.id + ":" + k, sistema: "piscina", material: "pvc_soldavel", dn: Math.round(l.dn * 1000),
+                p1: { x: cam[k][0], y: cam[k][1], z: cam[k][2] }, p2: { x: cam[k + 1][0], y: cam[k + 1][1], z: cam[k + 1][2] },
+                continua: n === 1 ? "ambos" : (k === 0 ? "p1" : (k === n - 1 ? "p2" : undefined)) });
+              if (t) { t.derivado = true; t.nomeLinha = l.nome; saida.instalacoes.trechos.push(t); }
+            }
+            return;
+          }
           saida.volumes.push({ id: "psc-tubo:" + c.id + ":" + l.id, tipo: "volume", categoria: "generico", ifc: "IFCPIPESEGMENT", material: l.material, derivado: true,
             nome: l.nome + " (L = " + (Math.round(compr(l.caminho) * 100) / 100).toFixed(2).replace(".", ",") + " m)",
             receita: { forma: "varredura", perfil: BV.perfilCirculo(l.dn, 10), caminho: l.caminho } });

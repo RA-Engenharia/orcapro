@@ -1744,6 +1744,10 @@ todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
 if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+if (o.reservTransl && m.userData.instFam && String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE') {
+if (!MAT.reserv) MAT.reserv = new THREE.MeshBasicMaterial({ color: 0xbcd6f2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+bk.trocas.push([m, m.material]); m.material = MAT.reserv; return;
+}
 if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
 if (!agua && !esg) {
 if (o.pisoOp != null && instVista.on && instVistaFundo(m) && /^IFC(SLAB|COVERING)/.test(String(m.userData.tipo || '').toUpperCase())) {

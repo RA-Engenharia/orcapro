@@ -66881,11 +66881,17 @@ return p;
 _pend: {},
 _anotarPendente: function (ent, p, tam) {
 var self = this, k = String(this.uid || "") + "|" + ent;
-var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0 });
-if (!e.n) e.desde = Date.now();
+var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0, ini: [] });
+var t0 = Date.now();
+if (!e.n) e.desde = t0;
 e.n++;
+(e.ini || (e.ini = [])).push(t0);
 if (typeof tam === "number" && isFinite(tam)) e.tam = tam;
-var fim = function () { var x = self._pend[k]; if (x && --x.n <= 0) delete self._pend[k]; };
+var fim = function () {
+var x = self._pend[k]; if (!x) return;
+if (x.ini) { var i = x.ini.indexOf(t0); if (i >= 0) x.ini.splice(i, 1); x.desde = x.ini.length ? Math.min.apply(null, x.ini) : x.desde; }
+if (--x.n <= 0) delete self._pend[k];
+};
 Promise.resolve(p).then(fim, fim);
 },
 _temNoAr: function (ent) {
@@ -85957,5 +85963,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=ab491e8d2e"},{"src":"js/bim-pacote.js?v=1c21ee5efc","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=9a0051f662"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=cf242cfa08"},{"src":"js/bim-pacote.js?v=b3c3c0703a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f5057e8302"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

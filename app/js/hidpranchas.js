@@ -1672,13 +1672,13 @@
     return { u0: Math.min.apply(null, us), u1: Math.max.apply(null, us), v0: Math.min.apply(null, vs), v1: Math.max.apply(null, vs) };
   }
   /* a foto de CIMA do modelo para a planta: u = x·s, v = z·s (o mesmo papel do vetor), recorte do piso até acima do tubo mais alto */
-  function fotoPlanta(c, sis, trs, pv, bb, s2) {
+  function fotoPlanta(c, sis, trs, pv, bb, s2, opc) {
     if (!FOTO3D || !trs || !trs.length) return null;
     var ys = []; trs.forEach(function (t) { ys.push(t.p1.y, t.p2.y); });
     var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
     var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
     var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
-    var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, pisoOp: K2.pisoOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+    var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, reservTransl: !!(opc && opc.reservTransl), pisoOp: K2.pisoOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
       largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
     if (!r || !r.ok || !r.url) return null;
     var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
@@ -1849,7 +1849,7 @@
         });
         var pvF = { nome: pv.nome, cota: q.y, topo: q.y + alt + R.folgaFoto, base: -Infinity, sup: Infinity };
         var ref = trs.length ? trs : [{ p1: { x: cx, y: q.y, z: cz }, p2: { x: cx, y: q.y + (alt || R.altFoto), z: cz } }], rp = null;
-        try { rp = fotoPlanta(c, "agua_fria", ref, pvF, bb, s); } catch (e1) { rp = null; }
+        try { rp = fotoPlanta(c, "agua_fria", ref, pvF, bb, s, { reservTransl: true }); } catch (e1) { rp = null; }
         if (rp) D.add('<image data-im="' + rp.key + '" x="' + n(ox + bb.x0) + '" y="' + n(oy + bb.y0) + '" width="' + n(bb.x1 - bb.x0) + '" height="' + n(bb.y1 - bb.y0) + '" preserveAspectRatio="none" href="' + rp.href + '"/>');
         /* parede só em contorno, recortada na caixa da vista */
         paredes.forEach(function (w) { var cp = clipPoly(w.pts, { x0: bx0, x1: bx1, z0: bz0, z1: bz1 }); if (cp.length >= R.minPoli) D.poli(cp.map(function (p) { return [p[0] * s + ox, p[1] * s + oy]; }), "HID-CONTEXTO", true); });

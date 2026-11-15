@@ -88,6 +88,7 @@
       semMaterial: "O tubo de PVC roscável ainda não é material do OrçaPRO (falta a tabela de DN da norma e o mapa SINAPI): por ora, use o soldável." },
     { id: "af-ppr-pn12", nome: "AF_Tubo PPR - PN12", sistema: "agua_fria", material: "ppr", pn: "12" },
     { id: "af-cobre", nome: "AF_Tubo de Cobre", sistema: "agua_fria", material: "cobre" },
+    { id: "af-descarga", nome: "AF_Tubo de descarga p/ bacia (azul)", sistema: "agua_fria", material: "pvc_descarga" },
     { id: "aq-cpvc", nome: "AQ_Tubo CPVC", sistema: "agua_quente", material: "cpvc" },
     { id: "aq-ppr-pn12", nome: "AQ_Tubo PPR - PN12", sistema: "agua_quente", material: "ppr", pn: "12" },
     { id: "aq-ppr-pn20", nome: "AQ_Tubo PPR - PN20", sistema: "agua_quente", material: "ppr", pn: "20" },

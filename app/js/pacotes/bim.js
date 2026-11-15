@@ -77888,7 +77888,7 @@ if (G) P.forEach(function (f) {
 var v = valores(f.famId, f.tipoId, f.inst), rc = G.recortePiscina(v), cont = contornoRecorte(f, rc.hC, rc.hL);
 vols.forEach(function (vol) { if (vol.recortavel) recortar(vol, cont); });
 });
-var BV = dep("BimVolume", "./bimvolume.js");
+var BV = dep("BimVolume", "./bimvolume.js"), BI = dep("BimInst", "./biminst.js");
 if (!G || !BV || !BV.perfilCirculo) return;
 C.forEach(function (c) {
 var melhor = null, dm = Infinity;
@@ -77897,6 +77897,16 @@ if (!melhor) return;
 var vP = valores(melhor.famId, melhor.tipoId, melhor.inst);
 if (vP.Com_tubulacao === false) return;
 tubosDe(melhor, c, vP, valores(c.famId, c.tipoId, c.inst)).forEach(function (l) {
+if (BI && BI.normTrecho && saida.instalacoes && Array.isArray(saida.instalacoes.trechos)) {
+var cam = l.caminho, n = cam.length - 1;
+for (var k = 0; k < n; k++) {
+var t = BI.normTrecho({ id: "psc-tubo:" + c.id + ":" + l.id + ":" + k, sistema: "piscina", material: "pvc_soldavel", dn: Math.round(l.dn * 1000),
+p1: { x: cam[k][0], y: cam[k][1], z: cam[k][2] }, p2: { x: cam[k + 1][0], y: cam[k + 1][1], z: cam[k + 1][2] },
+continua: n === 1 ? "ambos" : (k === 0 ? "p1" : (k === n - 1 ? "p2" : undefined)) });
+if (t) { t.derivado = true; t.nomeLinha = l.nome; saida.instalacoes.trechos.push(t); }
+}
+return;
+}
 saida.volumes.push({ id: "psc-tubo:" + c.id + ":" + l.id, tipo: "volume", categoria: "generico", ifc: "IFCPIPESEGMENT", material: l.material, derivado: true,
 nome: l.nome + " (L = " + (Math.round(compr(l.caminho) * 100) / 100).toFixed(2).replace(".", ",") + " m)",
 receita: { forma: "varredura", perfil: BV.perfilCirculo(l.dn, 10), caminho: l.caminho } });
@@ -94617,7 +94627,7 @@ if (typeof require === "function") { try { return require(arquivo); } catch (e) 
 return null;
 }
 var SISTEMAS = {
-agua_fria: { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre"], material: "pvc_soldavel" },
+agua_fria: { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre", "pvc_descarga"], material: "pvc_soldavel" },
 agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
 esgoto: { nome: "Esgoto", abrev: "ES", cor: "#2E9E44", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
 ventilacao: { nome: "Ventilação", abrev: "VE", cor: "#8C8C8C", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
@@ -94629,6 +94639,7 @@ dreno: { nome: "Dreno de condensado", abrev: "DR", cor: "#5DADE2", grupo: "dreno
 incendio: { nome: "Incêndio (hidrantes e chuveiros)", abrev: "IN", cor: "#C62828", grupo: "incendio", gravidade: false, materiais: ["aco_galvanizado", "aco_preto", "cobre"], material: "aco_galvanizado" },
 industrial: { nome: "Fluidos industriais", abrev: "IND", cor: "#6D4C41", grupo: "industrial", gravidade: false, materiais: ["aco_carbono", "inox", "cobre", "pead"], material: "aco_carbono" },
 gas: { nome: "Gás combustível (GLP)", abrev: "GAS", cor: "#C9A400", grupo: "industrial", gravidade: false, materiais: ["cobre"], material: "cobre" },
+piscina: { nome: "Piscina (filtragem)", abrev: "PSC", cor: "#00897B", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel" },
 bandeja: { nome: "Eletrocalha (bandeja de cabos)", abrev: "EC", cor: "#8A7F1F", grupo: "bandeja", gravidade: false, materiais: ["eletrocalha"], material: "eletrocalha" }
 };
 var COR_CAIXA_ELETRICA = "#F57C00";
@@ -94659,6 +94670,7 @@ pvc_soldavel: { nome: "PVC soldável (marrom)", norma: "ABNT NBR 5648", dns: [20
 pvc_esgoto: { nome: "PVC esgoto série normal", norma: "ABNT NBR 5688", dns: [40, 50, 75, 100, 150], dn: 100 },
 pvc_serie_r: { nome: "PVC série reforçada (R)", norma: "ABNT NBR 5688", dns: [40, 50, 75, 100, 150], dn: 100 },
 pvc_esgoto_enterrado: { nome: "PVC ocre enterrado (coletor/ramal predial)", norma: "ABNT NBR 7362:2025", dns: [100, 150, 200, 250, 300, 350, 400, 450, 500, 630, 710, 800, 900, 1000], dn: 150, semSinapi: true },
+pvc_descarga: { nome: "Tubo de descarga para bacia (PVC azul)", norma: "tubo de ligação da válvula de descarga (norma do produto a conferir)", dns: [40], dn: 40, semSinapi: true },
 ppr: { nome: "PPR (polipropileno)", norma: "ABNT NBR 15813", dns: [20, 25, 32, 40, 50, 63, 75, 90, 110], dn: 25, pns: ["12", "20", "25"], pn: "25" },
 cpvc: { nome: "CPVC", norma: "ABNT NBR 15884", dns: [15, 22, 28, 35, 42, 54, 73, 89, 114], dn: 22 },
 cobre: { nome: "Cobre rígido", norma: "ABNT NBR 13206", dns: [15, 22, 28, 35, 42, 54, 66, 79, 104], dn: 22, classes: ["E", "A"], classe: "E", isos: ["sem", "com"], iso: "sem" },
@@ -94761,6 +94773,7 @@ return !!(PM && PM.ref && material === "pvc_esgoto" && PM.ref("te_inspecao_esgot
 }
 function nomeConexao(tipo, material) {
 if (material === "eletrocalha") return { joelho90: "Curva 90° de eletrocalha", te: "Tê 90° de eletrocalha", reducao: "Redução de eletrocalha" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " de eletrocalha";
+if (material === "pvc_descarga") return { joelho90: "Curva de descarga com anel", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";
 if (/^elet_/.test(material || "") && (tipo === "joelho90" || tipo === "joelho45")) return tipo === "joelho90" ? "Curva 90°" : "Curva 135° (desvio de 45°)";
 if (tipo === "reducao" && (material === "pvc_esgoto" || material === "pvc_serie_r" || material === "pvc_esgoto_enterrado")) return "Redução excêntrica";
 return NOMES_CONEXAO[tipo] || tipo;
@@ -94843,6 +94856,7 @@ if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
 if (o.emenda === "luva" || o.emenda === "bolsa") t.emenda = o.emenda;
 if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
 ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });
+if (o.transpLado && isFinite(Number(o.transpLado.x)) && isFinite(Number(o.transpLado.z))) { var tlx = Number(o.transpLado.x), tlz = Number(o.transpLado.z), tln = Math.sqrt(tlx * tlx + tlz * tlz); if (tln > 0.5) t.transpLado = { x: tlx / tln, z: tlz / tln }; }
 camposObra(o, t);
 if (s.grupo === "esgoto" && (o.redeParte === "coletor" || o.redeParte === "saida")) t.redeParte = o.redeParte;
 var apls = APLICACOES[s.grupo] || {};
@@ -95090,6 +95104,7 @@ return i;
 function opDoTrecho(t) {
 var o = { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: t.p1.x, y: t.p1.y, z: t.p1.z }, p2: { x: t.p2.x, y: t.p2.y, z: t.p2.z } };
 ["pn", "classe", "iso", "serie", "linha", "continua", "larg", "alt", "bitola", "pecaIni", "pecaFim"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
+if (t.transpLado) o.transpLado = { x: t.transpLado.x, z: t.transpLado.z };
 if (!t.aplicacaoAuto && t.aplicacao) o.aplicacao = t.aplicacao;
 return o;
 }
@@ -95267,7 +95282,9 @@ return base;
 }
 av0.forEach(function (t) { if (/^transição de material/.test(t)) avisos.push(t); });
 aviso.forEach(function (t) { avisos.push(t); });
-return [{ tipo: tipo, sistema: sistema, material: mat, aplicacao: maior.aplicacao, dn: dnM, dn2: dnM === dnm ? 0 : dnm, forcada: true }];
+var cxF = { tipo: tipo, sistema: sistema, material: mat, aplicacao: maior.aplicacao, dn: dnM, dn2: dnM === dnm ? 0 : dnm, forcada: true };
+if (tipo === "curva_transposicao") { var rL = ramos.filter(function (r) { return r.pecaLinha === tipo && r.transpLado; })[0]; if (rL) cxF.cima = [rL.transpLado.x, 0, rL.transpLado.z]; }
+return [cxF];
 }
 function decidir(ramos, sistema, conector, avisos) {
 var forca = forcadaDoNo(ramos, sistema);
@@ -95582,7 +95599,7 @@ no.pontas.forEach(function (i) {
 var pa = pontas[i], s = pa.t.sistema;
 (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical, comprimento: pa.t.comprimento,
 lado: pa.lado, jus: pa.lado === 0, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
-pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim });
+pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim, transpLado: pa.t.transpLado });
 });
 trechos.forEach(function (t) {
 if (!porSis[t.sistema]) return;
@@ -98115,7 +98132,7 @@ m.t(A[j2], B[j2], A[j3]); m.t(A[j3], B[j2], B[j3]);
 }
 m.fechar();
 }
-var JUNTA = { pvc_soldavel: "soldavel", cpvc: "soldavel", pvc_esgoto: "anel", pvc_serie_r: "anel", pvc_esgoto_enterrado: "anel", ppr: "termo", pead: "termo",
+var JUNTA = { pvc_descarga: "anel", pvc_soldavel: "soldavel", cpvc: "soldavel", pvc_esgoto: "anel", pvc_serie_r: "anel", pvc_esgoto_enterrado: "anel", ppr: "termo", pead: "termo",
 cobre: "capilar", cobre_frigorigeno: "capilar", aco_galvanizado: "rosca", aco_preto: "rosca", aco_carbono: "rosca", inox: "rosca",
 elet_roscavel: "eletro", elet_soldavel: "eletro", elet_corrugado: "eletro", elet_corrugado_ref: "eletro" };
 var PROP = {
@@ -98248,6 +98265,7 @@ pvc_esgoto: { cor: "#E2E2DE", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC
 fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série normal, págs. 22-23): mediana #E7E7E7 sob a luz da foto — branco frio, nunca o branco puro (antes: ficha Amanco, junção pág. 18, #E6DECC)" },
 pvc_serie_r: { cor: "#9DA39C", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC série reforçada cinza",
 fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série reforçada, pág. 24): mediana #A8ADA7 em 12 peças — cinza levemente esverdeado; NBR 5688:2018: série R cinza" },
+pvc_descarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC azul (tubo de descarga)", fonteCor: "azul do tubo de ligação da válvula de descarga (tom a conferir com a foto do produto)" },
 pvc_esgoto_enterrado: { cor: "#BF7638", rug: 0.58, met: 0, verniz: 0, env: 0.45, nome: "PVC ocre enterrado", fonteCor: "NBR 7362:2025, tubo ocre (tom a conferir com foto do produto)" },
 ppr: { cor: "#4F8A3C", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PPR verde", fonteCor: "verde da linha PPR (tom a conferir com foto da ficha)" },
 cpvc: { cor: "#E0D2AA", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "CPVC creme", fonteCor: "bege/creme da linha CPVC (tom a conferir com foto da ficha)" },
@@ -98924,7 +98942,9 @@ if (eixos.length < 2) return null;
 var tr1 = eixos[0], tr2 = eixos[1];
 cot = cotasConexao(mat, "curva_transposicao", c.dn);
 var Lt = Math.max(cot.L || 2 * cot.A || 0, 2 * cot.pb + 8), Ht = (cot.R != null ? cot.R : cot.de) + cot.de / 2, pbT = cot.pb, segT = segsDe(lod, cot.de);
-var axT = nrmz(sub(tr2.dir, tr1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perp(axT), sideT = nrmz(cross(axT, upT));
+var axT = nrmz(sub(tr2.dir, tr1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perp(axT), sideT;
+if (c.cima) { var cuT = c.cima, cqT = sub(cuT, mul(axT, dot(cuT, axT))); if (Math.sqrt(dot(cqT, cqT)) > 0.5) upT = nrmz(cqT); }
+sideT = nrmz(cross(axT, upT));
 var Fa0 = add(P, mul(tr1.dir, (Lt / 2) * MM)), s0T = pbT * MM, s1T = (Lt - pbT) * MM, estT = [], nT = lod === "longe" ? 4 : 16;
 for (var iT = 0; iT <= nT; iT++) estT.push(s0T + (s1T - s0T) * iT / nT);
 var camT = { estacoes: estT, em: function (s) {
@@ -99382,7 +99402,7 @@ var pvcR = /^pvc/.test(vm) && !/^(aco|inox|cobre)/.test(matTubo);
 if (/^pvc/.test(vm) && /^(aco|inox|cobre)/.test(matTubo)) latao = true;
 if (pvcR) return registroPvc(a, o, C, d, de, matTubo);
 var seg = o.lod === "longe" ? 8 : 16, mc = new Malha(), mv = new Malha(), mk = new Malha();
-var rHex = de * 0.62 + 4, rBojo = de * 0.78 + 6, h = Lff / 2;
+var rHex = de * 0.62 + 4, rBojo = Math.min(de * 0.78 + 6, de * 0.6 + 9), h = Lff / 2;
 var tab = ((dados().pecas || {}).registro || {})[a.acessorio === "registro_pressao" ? "registro_pressao" : "registro_gaveta"] || {}, rc0 = tab[String(a.dn)] || null;
 if (rc0) { rBojo = rc0.corpo / 2; rHex = Math.min(rBojo * 0.92, Math.max(de / 2 + 3, rHex)); }
 var pfC = [[0, 0], [0, rHex * 0.82], [Math.min(h * 0.32, 10), rHex * 0.82]];
@@ -99407,11 +99427,12 @@ varrer(mc, reta(add(C, mul(fr, hc * 0.42 * MM)), fr), escala([[0, 0], [0, rBojo]
 varrer(mc, reta(C, fr), escala([[0, 0], [0, rc], [hc * 0.55, rc], [hc * 0.55, rc * 1.18], [hc * 0.75, rc * 1.18], [hc * 0.75, rc * 0.62], [hc, rc * 0.62], [hc, 0]]), seg, false);
 var acab = a.variante === "acabamento";
 if (acab) {
-var DB = { canoplaD: 58, canoplaH: 40, volanteD: 57, volanteH: 25 };
+var ksA = rc0 ? 1 : Math.max(1, Math.min(1.5, de / 36));
+var DB = { canoplaD: 58 * ksA, canoplaH: 40 * ksA, volanteD: 57 * ksA, volanteH: 25 * ksA };
 var hCan = Math.max(hc * 0.55, hc - DB.canoplaH + 8), rCan = DB.canoplaD / 2;
-varrer(mk, reta(add(C, mul(fr, hCan * MM)), fr), escala([[0, 0], [0, rCan * 0.9], [3, rCan], [8, rCan * 0.97], [DB.canoplaH, rCan * 0.62], [DB.canoplaH + 2, rCan * 0.55], [DB.canoplaH + 2, 0]]), seg + 8, false);
+varrer(mk, reta(add(C, mul(fr, hCan * MM)), fr), escala([[0, 0], [0, rCan * 0.9], [3 * ksA, rCan], [8 * ksA, rCan * 0.97], [DB.canoplaH, rCan * 0.62], [DB.canoplaH + 2 * ksA, rCan * 0.55], [DB.canoplaH + 2 * ksA, 0]]), seg + 8, false);
 var rV = DB.volanteD / 2 * 0.98, Cv0 = add(C, mul(fr, (hCan + DB.canoplaH) * MM));
-varrer(mk, reta(Cv0, fr), escala([[0, 0], [0, rV * 0.5], [4, rV * 0.92], [10, rV], [16, rV], [21, rV * 0.9], [24.5, rV * 0.35], [DB.volanteH, 0]]), seg + 8, false);
+varrer(mk, reta(Cv0, fr), escala([[0, 0], [0, rV * 0.5], [4 * ksA, rV * 0.92], [10 * ksA, rV], [16 * ksA, rV], [21 * ksA, rV * 0.9], [24.5 * ksA, rV * 0.35], [DB.volanteH, 0]]), seg + 8, false);
 } else {
 var Rv = de * 0.75 + 16, Cv = add(C, mul(fr, (hc + 4) * MM));
 toro(mv, Cv, fr, Rv * MM, 2.6 * MM, o.lod === "longe" ? 12 : 24, 8);
@@ -99965,7 +99986,7 @@ function transposicaoTigre(G, c, eixos, o, base, t) {
 var lod = o.lod, e1 = eixos[0], e2 = eixos[1], de = G.cotasTubo("pvc_soldavel", c.dn).de, Lt = t.L, pb = Lt / 2 - t.conector;
 if (Math.abs(dot(e1.dir, e2.dir) + 1) > 0.02) return null;
 var axT = nrmz(sub(e2.dir, e1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perpDe(axT);
-if (o.cima) { var cu = pv(o.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
+if (o.cima || c.cima) { var cu = pv(o.cima || c.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
 var sideT = nrmz(cross(axT, upT)), Ht = t.crista, W0 = t.B > Ht ? 2 * t.B : 0, w1 = W0 ? W0 / 4 : 0, R = W0 ? (w1 * w1 + Ht * Ht / 4) / Ht : Math.max(t.raio || Ht, Ht / 2 + 0.5);
 if (!W0) { var cth = 1 - Ht / (2 * R); w1 = R * Math.sqrt(Math.max(0, 1 - cth * cth)); }
 var W = 4 * w1;
@@ -100235,7 +100256,7 @@ function transposicaoReal(G, c, eixos, o, cot, portaDe, real) {
 var lod = o.lod, e1 = eixos[0], e2 = eixos[1], p1 = portaDe(e1), p2 = portaDe(e2), de = G.cotasTubo("pvc_soldavel", c.dn).de;
 var Lt = (p1 ? p1.z / MM : cot.L / 2) + (p2 ? p2.z / MM : cot.L / 2), pb = p1 ? p1.pb / MM : cot.pb;
 var axT = nrmz(sub(e2.dir, e1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perpDe(axT);
-if (o.cima) { var cu = pv(o.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
+if (o.cima || c.cima) { var cu = pv(o.cima || c.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
 var sideT = nrmz(cross(axT, upT));
 var rT = (cot.od != null ? Math.min(cot.od / 2 - 1.2, de / 2 + 1.6) : de / 2 + 1.6), Ht = (cot.R != null ? cot.R : de) + de / 2;
 var Fa0 = add(pv(c), mul(e1.dir, (Lt / 2) * MM)), s0 = (pb + 4) * MM, s1 = (Lt - pb - 4) * MM, est = [], n = lod === "longe" ? 6 : 24;
@@ -115239,6 +115260,7 @@ var TUBOS = [
 semMaterial: "O tubo de PVC roscável ainda não é material do OrçaPRO (falta a tabela de DN da norma e o mapa SINAPI): por ora, use o soldável." },
 { id: "af-ppr-pn12", nome: "AF_Tubo PPR - PN12", sistema: "agua_fria", material: "ppr", pn: "12" },
 { id: "af-cobre", nome: "AF_Tubo de Cobre", sistema: "agua_fria", material: "cobre" },
+{ id: "af-descarga", nome: "AF_Tubo de descarga p/ bacia (azul)", sistema: "agua_fria", material: "pvc_descarga" },
 { id: "aq-cpvc", nome: "AQ_Tubo CPVC", sistema: "agua_quente", material: "cpvc" },
 { id: "aq-ppr-pn12", nome: "AQ_Tubo PPR - PN12", sistema: "agua_quente", material: "ppr", pn: "12" },
 { id: "aq-ppr-pn20", nome: "AQ_Tubo PPR - PN20", sistema: "agua_quente", material: "ppr", pn: "20" },

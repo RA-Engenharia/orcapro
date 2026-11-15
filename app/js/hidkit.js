@@ -522,27 +522,32 @@
           var T = tetoDe(estado, faceV, piso), yTop = r4(T.y - geo(par, "margemTopo"));
           if (T.assumido) aviso("ponto de espera da válvula no " + T.origem, { tipo: "parametro", campo: "peDireito" });
           if (de) {
-            var Av = eixo(faceV, nV, eV);
-            K.trecho("vd-toco", "agua_fria", "pvc_soldavel", de, Av, faceV, "valvula");
+            /* VÁLVULA EM LINHA (15/11/2026, print do Rogério: joelho na altura da válvula e outro no pé): o prumo de água embutido entra pelo
+               TOPO da válvula (conector "af": z = −Embutir) e a descarga sai pelo PÉ dela, na face da parede (conector "descarga"), e desce
+               pela face até o tubo de ligação da bacia (BS) — tudo vertical, SEM joelho de AF. A válvula leva a medida do embutido (inst.Embutir) */
+            vop.inst = { Embutir: r4(eV) };
+            var csV = conectores(avaliarFam, { id: vop.id, famId: vop.famId, tipoId: vop.tipoId, inst: vop.inst, x: vop.x, y: vop.y, z: vop.z, rotY: vop.rotY });
+            var entV = porCid(csV, "af"), saiV = porCid(csV, "descarga");
+            var Av = entV ? { x: entV.x, y: entV.y, z: entV.z } : eixo(faceV, nV, eV);
             var sobe = K.trecho("vd-ramal", "agua_fria", "pvc_soldavel", de, { x: Av.x, y: yTop, z: Av.z }, Av, "valvula", { continua: "p1" });
-            if (aRG.ok && piso + aRG.valor > yv + geo(par, "margemNo") && piso + aRG.valor < yTop - geo(par, "margemNo")) K.acessorio("vd-rg", "ra-registro-gaveta", "acabamento", sobe, { x: Av.x, y: r4(piso + aRG.valor), z: Av.z }, "valvula");
-            else if (aRG.ok) aviso("registro de gaveta da válvula não coube entre a válvula (" + f2(yv) + " m) e a espera (" + f2(yTop) + " m): ponha à mão");
-            /* descida (DESCARGA, depois da válvula) até o ponto do tubo de ligação da bacia.
-               ⚠ NASCE NA SAÍDA DA VÁLVULA (frente A, 19/10/2026 — D-02): o conector "descarga" da família é o começo — um toco
-               sai dele para o eixo da parede (espelho do toco da entrada) e a descida segue embutida. Antes a descida começava
-               no ar, 8 cm abaixo da válvula, marcada "continua": o verificador não acusava e o ponto da bacia ficava numa rede
-               de água isolada. Sem o conector (família antiga) a ponta fica SOLTA e o verificador acusa — nunca "continua". */
-            var csV = conectores(avaliarFam, { id: vop.id, famId: vop.famId, tipoId: vop.tipoId, inst: {}, x: vop.x, y: vop.y, z: vop.z, rotY: vop.rotY });
-            var saiV = porCid(csV, "descarga");
-            var yDesc = r4(saiV ? saiV.y : yv - geo(par, "folgaValvula")), Ab = eixo(ponto, nV, eV);
-            if (yDesc > ponto.y + geo(par, "margemNo")) {
-              var Ad = { x: Ab.x, y: yDesc, z: Ab.z };
-              if (saiV && d2(saiV, Ad) > EPS) K.trecho("vd-dtoco", "agua_fria", "pvc_soldavel", de, { x: saiV.x, y: yDesc, z: saiV.z }, Ad, "descida");
-              K.trecho("vd-desc", "agua_fria", "pvc_soldavel", de, Ad, Ab, "descida");
-              K.trecho("vd-desct", "agua_fria", "pvc_soldavel", de, Ab, { x: ponto.x, y: ponto.y, z: ponto.z }, "descida");
+            if (aRG.ok && piso + aRG.valor > Av.y + geo(par, "margemNo") && piso + aRG.valor < yTop - geo(par, "margemNo")) K.acessorio("vd-rg", "ra-registro-gaveta", "acabamento", sobe, { x: Av.x, y: r4(piso + aRG.valor), z: Av.z }, "valvula");
+            else if (aRG.ok) aviso("registro de gaveta da válvula não coube entre a válvula (" + f2(Av.y) + " m) e a espera (" + f2(yTop) + " m): ponha à mão");
+            /* TUBO DE DESCARGA (depois da válvula): PVC AZUL DN 40 (1 1/2"), material próprio (pvc_descarga) — NÃO é o marrom da coluna. Nasce na SAÍDA da
+               válvula (conector "descarga", pé do corpo, mesmo prumo da entrada), desce embutido até a altura do tubo de ligação da bacia (BS) e ali faz a
+               CURVA DE DESCARGA COM ANEL (peça própria do material) até o ponto da bacia. Sem o conector (família antiga) a ponta fica SOLTA e o
+               verificador acusa — nunca "continua". */
+            var Ab = eixo(ponto, nV, eV), DNd = BI().MATERIAIS.pvc_descarga.dn;
+            var Ad = saiV ? { x: saiV.x, y: saiV.y, z: saiV.z } : { x: Ab.x, y: r4(yv - geo(par, "folgaValvula")), z: Ab.z };
+            if (Ad.y > ponto.y + geo(par, "margemNo")) {
+              var Ab2 = { x: Ad.x, y: Ab.y, z: Ad.z };
+              K.trecho("vd-desc", "agua_fria", "pvc_descarga", DNd, Ad, { x: Ab2.x, y: ponto.y, z: Ab2.z }, "descida");
+              if (d2(Ab2, ponto) > EPS) K.trecho("vd-desct", "agua_fria", "pvc_descarga", DNd, { x: Ab2.x, y: ponto.y, z: Ab2.z }, { x: ponto.x, y: ponto.y, z: ponto.z }, "descida");
             }
             out.materiais.push({ item: "Válvula de descarga " + txt(tv.nome), fonte: bit ? bit.fonte : "" });
-            out.materiais.push({ item: "Tubo PVC soldável DE " + de + " (bitola " + bit.bitola + "): ramal exclusivo e descida da válvula", fonte: "NBR 5648 (DE × referência, biminst)" });
+            out.materiais.push({ item: "Tubo PVC soldável DE " + de + " (bitola " + bit.bitola + "): coluna/ramal exclusivo acima da válvula", fonte: "NBR 5648 (DE × referência, biminst)" });
+            out.materiais.push({ item: "Tubo de descarga para bacia DN" + BI().MATERIAIS.pvc_descarga.dn + " (PVC azul): da saída da válvula até a bacia", fonte: "kit da bacia com válvula; SINAPI sem composição (pendente)" });
+            out.materiais.push({ item: "Curva de descarga DN" + BI().MATERIAIS.pvc_descarga.dn + " com anel de vedação", fonte: "kit de ligação da bacia (peça própria, não o joelho soldável); SINAPI sem composição (pendente)" });
+            out.materiais.push({ item: "Ligação à entrada da bacia (espude/luva com anel)", fonte: "acessório da bacia; a conferir com o catálogo" });
           }
           decide("kit.valvula.ponto", "Válvula " + txt(tv.nome) + " a " + f2(aVD.valor) + " m (" + aVD.fonte.doc.split(",")[0] + ", p." + aVD.fonte.pagina + (aVD.conferencias.length ? "; " + aVD.conferencias.join("; ") : "") + ").");
           decide("kit.valvula.ramal_exclusivo", "Espera em " + f2(yTop) + " m (" + T.origem + ").");

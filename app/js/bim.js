@@ -2569,6 +2569,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
           if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }   /* a conexão sem sistema no nome: o sistema vem da rede (instSis) */   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+          /* RESERVATÓRIO TRANSLÚCIDO NA PLANTA DA CAIXA (15/11/2026 — o Rogério: "a caixa d'água é um disco azul opaco cobrindo tudo; quero contorno com
+             preenchimento leve e os tubos e registros visíveis por cima"): a família de reservatório (IFCFLOWSTORAGEDEVICE) caía em 'agua' pelo nome e saía
+             sólida na cor do sistema; com o.reservTransl vira um véu azul claro que não escreve profundidade (o tubo e o registro aparecem por cima, o contorno é da folha) */
+          if (o.reservTransl && m.userData.instFam && String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE') {
+            if (!MAT.reserv) MAT.reserv = new THREE.MeshBasicMaterial({ color: 0xbcd6f2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+            bk.trocas.push([m, m.material]); m.material = MAT.reserv; return;
+          }
           /* ISOMÉTRICO NA LINHA DA REFERÊNCIA (14/11/2026 — o Rogério mandou a vista: tubos do modelo em cor forte, a parede só como CONTORNO
              cinza no piso, sem volume): o.semArquitetura esconde a arquitetura (o fundo da vista Instalações) só durante a foto */
           if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }

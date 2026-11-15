@@ -832,14 +832,18 @@
   /* ---------- válvula de descarga: corpo no interior da parede, acabamento e botão ---------- */
   function geoValvula(P, q) {
     var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo (dentro da parede)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
-    /* o corpo desce 0,4 H abaixo da entrada: a SAÍDA para a bacia (conector "descarga", js/hidfamilias.js — D-02, 19/10/2026) fica
-       na base do volume, com a mesma altura total H */
-    torno(cp.m, [[0.028, -H * 0.4], [0.028, H * 0.5], [0.02, H * 0.6]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 1, 0] });
-    torno(cp.m, [[0.012, 0], [0.012, Pp * 0.55]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 0, 1] });   /* FAMÍLIAS R2: a entrada no eixo do conector "af" (y = 0); antes 2 cm acima e o tubo entrava torto */
-    /* FAMÍLIAS R2 (print no tubo): a SAÍDA para a bacia sai do pé do corpo e vem até a face da parede, no ponto do conector "descarga"
-       (0, −0,4 H, 0) — antes o tubo da descida começava 5 cm à frente do corpo, solto no ar */
-    torno(cp.m, [[0.0195, 0], [0.0195, Pp * 0.55 + 0.0195], [0, Pp * 0.55 + 0.0195]], Math.min(q.n, 10), { c: [0, -H * 0.4 + 0.0195, -Pp * 0.55], eixo: [0, 0, 1] });   /* o tubo da descida entra por baixo, no ponto do conector */
-    var yc = H * 0.2, A0 = acabHydra(P.cod);
+    /* VÁLVULA EM LINHA (15/11/2026, print do Rogério: "por que tem esse joelho aqui? onde está a válvula de descarga?"): o corpo é VERTICAL
+       dentro da parede, no eixo do tubo embutido (z = −Embutir): a entrada (conector "af") é o TOPO do corpo (o prumo de água chega de cima,
+       sem joelho) e a saída (conector "descarga") o PÉ, na FACE da parede, de onde o tubo de descarga desce até a bacia. O acionamento (botão)
+       fica na origem (altura da tabela, "VD +1,10"). Cotas do corpo = proporção do volume esquemático (Altura 0,5 acima e abaixo = a envolvente): A CONFERIR
+       com o desenho cotado do fabricante (a ficha só cota a placa e o acionamento). */
+    var E = P.emb > 0 ? P.emb : Pp * 0.55, rb = 0.030, rs = 0.0275;   /* corpo Ø60 (a conferir); bolsa soldável DE 50 → Ø55 externo da bolsa */
+    torno(cp.m, [[rs, H * 0.5], [rs, H * 0.5 - 0.03], [rb, H * 0.5 - 0.035], [rb, -H * 0.5 + 0.035], [rs * 0.72, -H * 0.5 + 0.03], [rs * 0.72, -H * 0.5]], q.n, { c: [0, 0, -E], eixo: [0, 1, 0] });
+    /* castelo do registro integrado: da frente do corpo até a placa, no eixo do botão (y = 0) */
+    torno(cp.m, [[0.020, 0], [0.020, E - 0.012], [0.025, E - 0.010], [0.025, E - 0.004]], q.n, { c: [0, 0, -E], eixo: [0, 0, 1] });
+    /* SAÍDA: a bolsa do pé do corpo (z = −Embutir, y = −0,5 H, conector "descarga"): dali o TUBO DE DESCARGA (PVC azul DN 40) desce EMBUTIDO no
+       mesmo prumo, até a curva de descarga com anel perto do piso (js/hidkit.js) */
+    var A0 = acabHydra(P.cod), yc = A0 && A0.alav ? 0.028 : 0;   /* botão na ORIGEM = altura do acionamento da tabela; no Conforto a alavanca (173 mm) pende abaixo do botão: sobe a placa para ela caber na envolvente */
     if (A0) {
       acabamentoHydra(partes, ac, A0, yc, q); partes.unshift(cp);
       partes.forEach(function (pt) { if (pt.material === CROMO) pt.material = "Metal cromado acetinado"; });   /* FAMÍLIAS R2: a placa plana saía preta com o cromado polido (js/bim.js FAM_PBR) */
@@ -2016,7 +2020,7 @@
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
+    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1250, caixa_descarga_embutida: 1400,
     caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,

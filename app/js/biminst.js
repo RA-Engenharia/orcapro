@@ -49,7 +49,7 @@
    * gravidade: o tubo DESCE no sentido do traço (p1 → p2) pela inclinação.
    * grupo: que aplicações valem (água, esgoto, pluvial, elétrica, ar). */
   var SISTEMAS = {
-    agua_fria:   { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre"], material: "pvc_soldavel" },
+    agua_fria:   { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre", "pvc_descarga"], material: "pvc_soldavel" },
     agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
     esgoto:      { nome: "Esgoto", abrev: "ES", cor: "#2E9E44", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
     ventilacao:  { nome: "Ventilação", abrev: "VE", cor: "#8C8C8C", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
@@ -72,6 +72,10 @@
        COR: o desenho usa AMARELO-ESCURO por legibilidade (sobre meio-tom cinza); a PINTURA da tubulação aparente (abrigo, ponto) segue a NBR 6493
        (gases liquefeitos = cor-de-alumínio; gás não liquefeito = amarelo-segurança) — fonte secundária, a conferir no exemplar licenciado. */
     gas:         { nome: "Gás combustível (GLP)", abrev: "GAS", cor: "#C9A400", grupo: "industrial", gravidade: false, materiais: ["cobre"], material: "cobre" },
+    /* PISCINA (15/11/2026, Casa 487): a filtragem da piscina pronta (sucção, retorno, drenagem) vira tubo de verdade, com as conexões
+       do catálogo deduzidas pela rede(). Sistema PRÓPRIO, não "agua_fria": ⚠ o Traçar automaticamente e o dimensionamento da água fria
+       filtram por sistema === "agua_fria" — com a filtragem lá dentro, o ramal de um banheiro podia sair do retorno da piscina. */
+    piscina:     { nome: "Piscina (filtragem)", abrev: "PSC", cor: "#00897B", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel" },
     /* P12: a bandeja de cabos (eletrocalha) — cor OLIVA (família do amarelo da elétrica, mais escura) */
     bandeja:     { nome: "Eletrocalha (bandeja de cabos)", abrev: "EC", cor: "#8A7F1F", grupo: "bandeja", gravidade: false, materiais: ["eletrocalha"], material: "eletrocalha" }
   };
@@ -126,6 +130,11 @@
        "TUBO COLETOR DE ESGOTO PVC, JEI (NBR 7362)", mas nenhuma composição foi classificada no mapa (data/sinapi-familias-mapa.json)
        → pendente, nunca a parecida. */
     pvc_esgoto_enterrado: { nome: "PVC ocre enterrado (coletor/ramal predial)", norma: "ABNT NBR 7362:2025", dns: [100, 150, 200, 250, 300, 350, 400, 450, 500, 630, 710, 800, 900, 1000], dn: 150, semSinapi: true },
+    /* TUBO DE DESCARGA PARA BACIA (15/11/2026, print do Rogério: "o tubo de descarga é azul de fábrica, não é o PVC marrom"): o tubo de ligação da
+       válvula de descarga até a bacia — PVC AZUL, DN 40 (1 1/2"), junta com anel de vedação, com a CURVA de descarga própria (peça do kit de ligação,
+       diferente do joelho soldável). Sistema: água fria, a jusante da válvula. semSinapi: a SINAPI 06/2026 só tem "tubo de descarga tipo bengala" e a
+       "ligação para vaso em plástico branco" (outros produtos) — pendente, nunca a parecida. A norma e as cotas do produto: a conferir com o catálogo. */
+    pvc_descarga: { nome: "Tubo de descarga para bacia (PVC azul)", norma: "tubo de ligação da válvula de descarga (norma do produto a conferir)", dns: [40], dn: 40, semSinapi: true },
     ppr:          { nome: "PPR (polipropileno)", norma: "ABNT NBR 15813", dns: [20, 25, 32, 40, 50, 63, 75, 90, 110], dn: 25, pns: ["12", "20", "25"], pn: "25" },
     cpvc:         { nome: "CPVC", norma: "ABNT NBR 15884", dns: [15, 22, 28, 35, 42, 54, 73, 89, 114], dn: 22 },
     cobre:        { nome: "Cobre rígido", norma: "ABNT NBR 13206", dns: [15, 22, 28, 35, 42, 54, 66, 79, 104], dn: 22, classes: ["E", "A"], classe: "E", isos: ["sem", "com"], iso: "sem" },
@@ -300,6 +309,7 @@
   }
   function nomeConexao(tipo, material) {
     if (material === "eletrocalha") return { joelho90: "Curva 90° de eletrocalha", te: "Tê 90° de eletrocalha", reducao: "Redução de eletrocalha" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " de eletrocalha";   /* P12 */
+    if (material === "pvc_descarga") return { joelho90: "Curva de descarga com anel", luva: "Luva de ligação com anel (espude)" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " do tubo de descarga";   /* kit da bacia com válvula (15/11/2026) */
     if (/^elet_/.test(material || "") && (tipo === "joelho90" || tipo === "joelho45")) return tipo === "joelho90" ? "Curva 90°" : "Curva 135° (desvio de 45°)";
     /* a redução do ESGOTO e do PLUVIAL é a EXCÊNTRICA (geratriz superior alinhada — regra RA de 20/10/2026, js/biminstgeo.js); na água fica "Redução" */
     if (tipo === "reducao" && (material === "pvc_esgoto" || material === "pvc_serie_r" || material === "pvc_esgoto_enterrado")) return "Redução excêntrica";
@@ -415,7 +425,9 @@
     if (o.emenda === "luva" || o.emenda === "bolsa") t.emenda = o.emenda;
     if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
     /* PENDÊNCIAS FINAIS: a peça em linha na ponta (união / tê de inspeção), só no grupo de sistema que a usa */
-    ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });   /* frente 3: conexão manual (qualquer tipo de HidPortas) */
+    ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });
+    /* CURVA DE TRANSPOSIÇÃO atrás de uma subida vertical: o lado (horizontal, unitário) para onde o arco da peça se afasta do eixo — sem ele o arco é para cima (+y) */
+    if (o.transpLado && isFinite(Number(o.transpLado.x)) && isFinite(Number(o.transpLado.z))) { var tlx = Number(o.transpLado.x), tlz = Number(o.transpLado.z), tln = Math.sqrt(tlx * tlx + tlz * tlz); if (tln > 0.5) t.transpLado = { x: tlx / tln, z: tlz / tln }; }   /* frente 3: conexão manual (qualquer tipo de HidPortas) */
     camposObra(o, t);   /* FLUIDEZ: comentários e fase da instância */
     if (s.grupo === "esgoto" && (o.redeParte === "coletor" || o.redeParte === "saida")) t.redeParte = o.redeParte;   /* o coletor e a saída da rede externa (js/hidrede.js): o HidES os trata como coletor mesmo sem tubo de queda */
     var apls = APLICACOES[s.grupo] || {};
@@ -737,6 +749,7 @@
   function opDoTrecho(t) {
     var o = { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: t.p1.x, y: t.p1.y, z: t.p1.z }, p2: { x: t.p2.x, y: t.p2.y, z: t.p2.z } };
     ["pn", "classe", "iso", "serie", "linha", "continua", "larg", "alt", "bitola", "pecaIni", "pecaFim"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
+    if (t.transpLado) o.transpLado = { x: t.transpLado.x, z: t.transpLado.z };
     if (!t.aplicacaoAuto && t.aplicacao) o.aplicacao = t.aplicacao;
     return o;
   }
@@ -946,7 +959,10 @@
     }
     av0.forEach(function (t) { if (/^transição de material/.test(t)) avisos.push(t); });
     aviso.forEach(function (t) { avisos.push(t); });
-    return [{ tipo: tipo, sistema: sistema, material: mat, aplicacao: maior.aplicacao, dn: dnM, dn2: dnM === dnm ? 0 : dnm, forcada: true }];
+    var cxF = { tipo: tipo, sistema: sistema, material: mat, aplicacao: maior.aplicacao, dn: dnM, dn2: dnM === dnm ? 0 : dnm, forcada: true };
+    /* a curva de transposição atrás de uma subida vertical: o lado do arco (horizontal) vem do trecho que leva a peça (transpLado); sem ele o arco é para cima */
+    if (tipo === "curva_transposicao") { var rL = ramos.filter(function (r) { return r.pecaLinha === tipo && r.transpLado; })[0]; if (rL) cxF.cima = [rL.transpLado.x, 0, rL.transpLado.z]; }
+    return [cxF];
   }
   /* decide a conexão de UM nó de UM sistema. ramos = [{trecho, dir, dn, material, aplicacao, passante}] */
   function decidir(ramos, sistema, conector, avisos) {
@@ -1337,7 +1353,7 @@
         var pa = pontas[i], s = pa.t.sistema;
         (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical, comprimento: pa.t.comprimento,
                                              lado: pa.lado, jus: pa.lado === 0, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
-                                             pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim });
+                                             pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim, transpLado: pa.t.transpLado });
       });
       /* ponta caindo no MEIO de outro trecho do mesmo sistema: ele passa pelo nó (dois ramos) */
       trechos.forEach(function (t) {

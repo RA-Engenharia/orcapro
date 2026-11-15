@@ -176,7 +176,8 @@
     }
     var con = { id: "c", sistema: sisRota, dn: dnA || num(A.dn, 0), x: A.x, y: A.y, z: A.z };
     if (A.parede) con.parede = A.parede;
-    var par = { estrategias: opts.estrategias || (sisRota === "esgoto" ? ["piso", "forro"] : ["parede", "piso", "forro"]), prefixo: PREFIXO + (opts.seq || (++SEQ) + "-"), dn: {}, terreo: opts.terreo !== false };
+    var par = { estrategias: opts.estrategias || (sisRota === "esgoto" ? ["piso", "forro"] : ["parede", "piso", "forro"]), prefixo: PREFIXO + (opts.seq || (++SEQ) + "-"), dn: {}, terreo: opts.terreo !== false,
+               tracadoParcial: false /* rota:parcial só vale no traçado automático de AMBIENTE; a ligação pontual (1 aparelho → 1 destino) recusa com o motivo, nunca "liga" sem o tubo */ };
     if (tocoA) par.quedaMin = 0.001;   /* a ponta do toco da caixa já está na cota da rota: sem a descida mínima do ponto de APARELHO (é tubo, não louça) */   // hid:ok 1 mm: só para não ser zero
     /* o id do "aparelho" é o da FAMÍLIA do ponto: a conferência tubo × louça sabe que o toco que chega nele é dela */
     var apId = A.famInst != null ? String(A.famInst) : "A";

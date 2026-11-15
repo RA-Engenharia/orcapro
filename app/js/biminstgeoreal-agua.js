@@ -430,7 +430,7 @@
     var lod = o.lod, e1 = eixos[0], e2 = eixos[1], de = G.cotasTubo("pvc_soldavel", c.dn).de, Lt = t.L, pb = Lt / 2 - t.conector;
     if (Math.abs(dot(e1.dir, e2.dir) + 1) > 0.02) return null;
     var axT = nrmz(sub(e2.dir, e1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perpDe(axT);
-    if (o.cima) { var cu = pv(o.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
+    if (o.cima || c.cima) { var cu = pv(o.cima || c.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }
     /* o "S" do produto: quatro arcos tangentes de raio R (o "Raio" da família) até a crista H — sobe, passa por cima, desce */
     /* a largura do "S": 2·B (a cota B da família, do meio à base do arco); o raio dos arcos sai da largura e da crista */
     var sideT = nrmz(cross(axT, upT)), Ht = t.crista, W0 = t.B > Ht ? 2 * t.B : 0, w1 = W0 ? W0 / 4 : 0, R = W0 ? (w1 * w1 + Ht * Ht / 4) / Ht : Math.max(t.raio || Ht, Ht / 2 + 0.5);
@@ -722,7 +722,7 @@
     var lod = o.lod, e1 = eixos[0], e2 = eixos[1], p1 = portaDe(e1), p2 = portaDe(e2), de = G.cotasTubo("pvc_soldavel", c.dn).de;
     var Lt = (p1 ? p1.z / MM : cot.L / 2) + (p2 ? p2.z / MM : cot.L / 2), pb = p1 ? p1.pb / MM : cot.pb;
     var axT = nrmz(sub(e2.dir, e1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perpDe(axT);
-    if (o.cima) { var cu = pv(o.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }   /* o lado do arco (por cima do tubo cruzado) */
+    if (o.cima || c.cima) { var cu = pv(o.cima || c.cima), cq = sub(cu, mul(axT, dot(cu, axT))); if (Math.sqrt(dot(cq, cq)) > 0.5) upT = nrmz(cq); }   /* o lado do arco (por cima do tubo cruzado) */
     var sideT = nrmz(cross(axT, upT));
     /* a peça de verdade é TUBO (Ø D + parede) dobrado, com as bolsas no Ø B da ficha; a crista a R + D/2 (o raio lido) */
     var rT = (cot.od != null ? Math.min(cot.od / 2 - 1.2, de / 2 + 1.6) : de / 2 + 1.6), Ht = (cot.R != null ? cot.R : de) + de / 2;

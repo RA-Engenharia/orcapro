@@ -146,6 +146,9 @@
   regra("economia.zigueZague", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio desnecessário (zigue-zague)",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O tubo sai da linha e volta sem nada no caminho: duas a quatro conexões a mais, perda de carga e leitura ruim.",
     fonte: "critério de projeto (menor comprimento e menor número de conexões)", corrigir: "Refazer o trecho em linha reta" });
+  regra("economia.desvioTransposicao", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio de 4 joelhos onde cabe a curva de transposição",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "O ramal de água fria sai da linha, passa ao lado de uma subida/descida de água e volta (4 joelhos). A curva de transposição de PVC soldável passa por trás do tubo com UMA peça: menos conexões, menos perda de carga e menos material.",
+    fonte: "critério de projeto (menor número de conexões) + curva de transposição Amanco Wavin FT FTC000001 pág. 17 (js/biminsttransp.js)", corrigir: "Trocar o desvio de 4 joelhos por uma curva de transposição no eixo do tubo" });
   regra("economia.luva", { gravidade: "sugestao", custo: 0.5, titulo: "Emenda desnecessária",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Dois trechos alinhados, do mesmo diâmetro, emendados no meio sem derivação: uma luva a mais à toa.",
     fonte: "critério de projeto", corrigir: "Juntar os dois trechos" });
@@ -826,6 +829,57 @@
       });
     });
 
+    /* DESVIO DE 4 JOELHOS ATRÁS DE UMA SUBIDA DE ÁGUA (15/11/2026, pedido do Rogério): o ramal de água fria sai da linha, passa ao lado de uma subida/descida
+       vertical de água e volta — onde a curva de transposição (PVC soldável DN 20/25/32, DE cruzado ≤ 20) resolve com UMA peça. O zigue-zague acima NÃO pega este
+       caso (o tubo no caminho justifica o desvio); aqui ele vira sugestão com Corrigir. Só vale se a regra da peça (HidTransp.avaliar) passar com as retas livres reais. */
+    (function () {
+      var HT = dep("HidTransp", "./biminsttransp.js"); if (!HT) return;
+      var HRr = HR(), margemT = HRr && HRr._int && HRr._int.parametros ? num(HRr._int.parametros({}).margemNo, 0.08) : 0.08;   // hid:ok a folga de nó do HidRota (0,08 m)
+      function nuncaNo(n) { return n.t.length === 2 && !marcado(n.p); }
+      function oMaterial(t) { return t.sistema === "agua_fria" && t.material === HT.MATERIAL && t.horiz && !t.vert; }
+      T.forEach(function (Bt) {
+        if (!oMaterial(Bt) || Bt.Lh > G.desvioMax || Bt.Lh <= EPS || !HT.regra(Bt.dn)) return;
+        [[Bt.n1, Bt.n2], [Bt.n2, Bt.n1]].forEach(function (par) {
+          var N1 = par[0], N2 = par[1], vb = vet(N1, Bt);
+          if (!nuncaNo(N1) || !nuncaNo(N2)) return;
+          N1.t.forEach(function (At) {
+            if (At === Bt || !oMaterial(At) || At.dn !== Bt.dn) return;
+            var va = vet(N1, At); if (Math.abs(va.x * vb.x + va.z * vb.z) / (va.L * vb.L) > G.tolAngulo) return;   /* A ⟂ B */
+            var dirA = { x: -va.x / va.L, z: -va.z / va.L };   /* o sentido de quem chega por A */
+            N2.t.forEach(function (Ct) {
+              if (Ct === Bt || !oMaterial(Ct) || Ct.dn !== Bt.dn) return;
+              var vc = vet(N2, Ct); if ((vc.x * dirA.x + vc.z * dirA.z) / vc.L < 1 - G.tolAngulo) return;   /* C segue no sentido de A */
+              var N3 = outra(N2, Ct); if (!nuncaNo(N3)) return;
+              N3.t.forEach(function (Dt) {
+                if (Dt === Ct || !oMaterial(Dt) || Dt.dn !== Bt.dn) return;
+                var vd = vet(N3, Dt); if ((vd.x * vb.x + vd.z * vb.z) / (vd.L * vb.L) > -1 + G.tolAngulo || Math.abs(vd.L - vb.L) > G.tolNo * 2) return;   // hid:ok volta do mesmo tamanho (±2 cm)
+                var N4 = outra(N3, Dt); if (!nuncaNo(N4)) return;
+                var Et = N4.t.filter(function (q) { return q !== Dt; })[0]; if (!Et || !oMaterial(Et) || Et.dn !== Bt.dn) return;
+                var ve = vet(N4, Et); if ((ve.x * dirA.x + ve.z * dirA.z) / ve.L < 1 - G.tolAngulo) return;   /* E volta à linha, no sentido de A */
+                if (Math.abs(N1.p.y - N4.p.y) > G.tolNo / 4 || Math.abs(N1.p.y - N2.p.y) > G.tolNo / 4) return;   // hid:ok mesma cota (5 mm)
+                /* a subida/descida vertical de água NA LINHA entre os dois cantos (o eixo de A/E): a razão do desvio */
+                var s4 = (N4.p.x - N1.p.x) * dirA.x + (N4.p.z - N1.p.z) * dirA.z, ids = {}; [At, Bt, Ct, Dt, Et].forEach(function (q) { ids[q.id] = 1; });
+                var Vt = T.filter(function (q) {
+                  if (ids[q.id] || !q.vert || !AGUA[q.sistema]) return false;
+                  var qx = q.p1.x - N1.p.x, qz = q.p1.z - N1.p.z, s = qx * dirA.x + qz * dirA.z, e = Math.abs(-qx * dirA.z + qz * dirA.x);
+                  return e <= G.tolNo / 4 && s > margemT / 2 && s < s4 - margemT / 2 && N1.p.y >= Math.min(q.p1.y, q.p2.y) - G.tolNo / 4 && N1.p.y <= Math.max(q.p1.y, q.p2.y) + G.tolNo / 4;   // hid:ok 5 mm
+                })[0];
+                if (!Vt) return;
+                /* a peça cabe? (DN, DE do cruzado, 90°, mesma cota, retas livres de cada lado até o nó vizinho) */
+                var X = { x: Vt.p1.x, y: N1.p.y, z: Vt.p1.z }, Ap = outra(N1, At).p, Ep = outra(N4, Et).p;
+                var av = HT.avaliar({ sistema: "agua_fria", material: HT.MATERIAL, dn: Bt.dn, cruzadoSistema: Vt.sistema, cruzadoDn: Math.round(Vt.de * 1000), cos: 0, dy: 0,
+                                      retaAntes: d2(X, Ap), retaDepois: d2(X, Ep), margem: margemT });
+                if (!av.ok) return;
+                var ub = { x: vb.x / vb.L, z: vb.z / vb.L };
+                add("economia.desvioTransposicao", [At.id, Bt.id, Ct.id, Dt.id, Et.id], N2.p, "O tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha para passar a subida/descida " + Vt.id + " e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + ", 4 joelhos): uma curva de transposição DN " + Bt.dn + " resolve com 1 peça.",
+                    { corrigir: { tipo: "transposicao", ids: [At.id, Bt.id, Ct.id, Dt.id, Et.id], vertical: Vt.id, x: r4(X.x), y: r4(X.y), z: r4(X.z), lado: { x: r4(ub.x), z: r4(ub.z) }, nA: { x: N1.p.x, y: N1.p.y, z: N1.p.z }, nE: { x: N4.p.x, y: N4.p.y, z: N4.p.z }, texto: R["economia.desvioTransposicao"].corrigir } });
+              });
+            });
+          });
+        });
+      });
+    })();
+
     /* ---------- REGISTRO: atrás da porta e fora de alcance */
     var portas = aberturas.filter(function (A) { return txt(A.a.tipo) !== "janela"; });
     arr(E.acessorios).forEach(function (q) {
@@ -1182,6 +1236,27 @@
     if (!np.ok) return { ok: false, motivo: np.motivo };
     return { ok: true, ops: ops, texto: "os trechos " + ta.id + " e " + tb.id + " viram um só (a emenda sai)", mudados: [String(ta.id)], apagados: [String(tb.id)] };
   }
+  /* DESVIO DE 4 JOELHOS → CURVA DE TRANSPOSIÇÃO (critério economia.desvioTransposicao): os 5 trechos (A, B, C, D, E) viram dois — A até o cruzamento com a peça na ponta
+     (pecaFim/pecaIni + o lado do arco) e E a partir dele; B, C e D saem. A peça só entra se a regra dela (HidTransp.avaliar) passou na detecção; o modelo não pode piorar. */
+  function corrigirTransposicao(ctx, a) {
+    var T = porIdTr(ctx.estado), c = a.corrigir || {}, ids = arr(c.ids), HT = dep("HidTransp", "./biminsttransp.js");
+    if (!HT || ids.length !== 5 || !c.lado || !c.nA || !c.nE) return { ok: false, motivo: "desvio não reconhecido" };   // hid:ok o padrão tem 5 trechos (A, B, C, D, E)
+    var tr = ids.map(function (id) { return T[id]; }); if (tr.some(function (t) { return !t; })) return { ok: false, motivo: "trechos do desvio não encontrados" };
+    var At = tr[0], Et = tr[4], X = { x: c.x, y: c.y, z: c.z }, nA = c.nA, nE = c.nE;
+    function perto(p, q) { return d3c(p, q) <= 0.02; }   // hid:ok tolerância de ponta do motor (2 cm)
+    function P3(p) { return { x: r4(p.x), y: r4(p.y), z: r4(p.z) }; }
+    /* A: a ponta que está no canto (nA) vai ao cruzamento e leva a peça; E: a ponta no canto (nE) vem do cruzamento */
+    var oA = opTrecho(At, At.p1, At.p2, ctx), oE = opTrecho(Et, Et.p1, Et.p2, ctx);
+    if (perto(At.p2, nA)) { oA.p2 = P3(X); oA.pecaFim = HT.TIPO; delete oA.pecaIni; }
+    else if (perto(At.p1, nA)) { oA.p1 = P3(X); oA.pecaIni = HT.TIPO; delete oA.pecaFim; }
+    else return { ok: false, motivo: "o trecho " + At.id + " não termina no canto do desvio" };
+    if (perto(Et.p1, nE)) oE.p1 = P3(X); else if (perto(Et.p2, nE)) oE.p2 = P3(X);
+    else return { ok: false, motivo: "o trecho " + Et.id + " não termina no canto do desvio" };
+    oA.transpLado = { x: c.lado.x, z: c.lado.z };
+    var ops = [{ op: "apagar", id: String(tr[1].id) }, { op: "apagar", id: String(tr[2].id) }, { op: "apagar", id: String(tr[3].id) }, oA, oE];
+    var np = naoPiora(ctx, ops, "transposicao", null); if (!np.ok) return { ok: false, motivo: np.motivo };
+    return { ok: true, ops: ops, texto: "desvio de 4 joelhos (" + tr[1].id + ", " + tr[2].id + ", " + tr[3].id + ") trocado por uma curva de transposição no cruzamento com " + c.vertical, mudados: [String(At.id), String(Et.id)], apagados: [String(tr[1].id), String(tr[2].id), String(tr[3].id)] };
+  }
   /* FURO NA LAJE sem passante (critério estrutura.laje): o passante lançado no ponto da travessia (HidCriterios.lancarPassantes —
      a mesma conta do alerta), orçado pela SINAPI do passante */
   function corrigirPassante(ctx, a) {
@@ -1216,6 +1291,7 @@
     }
     var c = a.corrigir; if (!c) return null;
     if (a.regra === "economia.luva" && c.tipo === "juntar") return { tipo: "luva", texto: c.texto || "Juntar os dois trechos" };
+    if (a.regra === "economia.desvioTransposicao" && c.tipo === "transposicao") return { tipo: "transposicao", texto: c.texto };
     if (a.regra === "estrutura.laje") return { tipo: "passante", texto: "Lançar o passante na laje" };
     if (a.regra === "instalacao.aparente" && c.tipo === "embutir") return { tipo: "embutir", texto: c.texto };
     if (c.tipo === "ops" && arr(c.ops).length) return { tipo: "ops", texto: c.texto, ops: c.ops };
@@ -1247,6 +1323,7 @@
       else if (c.tipo === "bitola") r = corrigirBitola(ctx, a);
       else if (c.tipo === "luva") r = corrigirLuva(ctx, a);
       else if (c.tipo === "passante") r = corrigirPassante(ctx, a);
+      else if (c.tipo === "transposicao") r = corrigirTransposicao(ctx, a);
       else if (c.tipo === "embutir") r = corrigirEmbutir(ctx, a);
       else if (c.tipo === "ops") r = { ok: true, ops: JSON.parse(JSON.stringify(c.ops)), texto: c.texto, mudados: c.ops.map(function (o) { return String(o.id); }), apagados: c.ops.filter(function (o) { return o.op === "apagar"; }).map(function (o) { return String(o.id); }) };
       else return { ok: false, tela: c.tipo, motivo: c.texto, famInst: c.famInst || null, aparelhos: c.aparelhos || null };   /* ligarPeca / tracar / rt: a tela faz (prévia do Traçar) */

@@ -163,7 +163,7 @@
    *   capilar:  bolsa fina de soldar (cobre);
    *   rosca:    conexão de ferro maleável com reforço (aço);
    *   eletro:   curva longa de eletroduto. */
-  var JUNTA = { pvc_soldavel: "soldavel", cpvc: "soldavel", pvc_esgoto: "anel", pvc_serie_r: "anel", pvc_esgoto_enterrado: "anel", ppr: "termo", pead: "termo",
+  var JUNTA = { pvc_descarga: "anel", pvc_soldavel: "soldavel", cpvc: "soldavel", pvc_esgoto: "anel", pvc_serie_r: "anel", pvc_esgoto_enterrado: "anel", ppr: "termo", pead: "termo",
                 cobre: "capilar", cobre_frigorigeno: "capilar", aco_galvanizado: "rosca", aco_preto: "rosca", aco_carbono: "rosca", inox: "rosca",
                 elet_roscavel: "eletro", elet_soldavel: "eletro", elet_corrugado: "eletro", elet_corrugado_ref: "eletro" };
 
@@ -343,6 +343,8 @@
                   fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série normal, págs. 22-23): mediana #E7E7E7 sob a luz da foto — branco frio, nunca o branco puro (antes: ficha Amanco, junção pág. 18, #E6DECC)" },
     pvc_serie_r: { cor: "#9DA39C", rug: 0.42, met: 0, verniz: 0, env: 0.5, nome: "PVC série reforçada cinza",
                    fonteCor: "foto do catálogo Tigre Predial 2025 (esgoto série reforçada, pág. 24): mediana #A8ADA7 em 12 peças — cinza levemente esverdeado; NBR 5688:2018: série R cinza" },
+    /* tubo de descarga da válvula (15/11/2026): AZUL de fábrica — não o azul do sistema de água fria da tela (#1E6FD9); tom a conferir com a foto do produto */
+    pvc_descarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "PVC azul (tubo de descarga)", fonteCor: "azul do tubo de ligação da válvula de descarga (tom a conferir com a foto do produto)" },
     pvc_esgoto_enterrado: { cor: "#BF7638", rug: 0.58, met: 0, verniz: 0, env: 0.45, nome: "PVC ocre enterrado", fonteCor: "NBR 7362:2025, tubo ocre (tom a conferir com foto do produto)" },
     ppr: { cor: "#4F8A3C", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "PPR verde", fonteCor: "verde da linha PPR (tom a conferir com foto da ficha)" },
     cpvc: { cor: "#E0D2AA", rug: 0.55, met: 0, verniz: 0, env: 0.5, nome: "CPVC creme", fonteCor: "bege/creme da linha CPVC (tom a conferir com foto da ficha)" },
@@ -1225,7 +1227,9 @@
       var tr1 = eixos[0], tr2 = eixos[1];
       cot = cotasConexao(mat, "curva_transposicao", c.dn);
       var Lt = Math.max(cot.L || 2 * cot.A || 0, 2 * cot.pb + 8), Ht = (cot.R != null ? cot.R : cot.de) + cot.de / 2, pbT = cot.pb, segT = segsDe(lod, cot.de);
-      var axT = nrmz(sub(tr2.dir, tr1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perp(axT), sideT = nrmz(cross(axT, upT));
+      var axT = nrmz(sub(tr2.dir, tr1.dir)), upT = Math.abs(axT[1]) < 0.9 ? [0, 1, 0] : perp(axT), sideT;
+      if (c.cima) { var cuT = c.cima, cqT = sub(cuT, mul(axT, dot(cuT, axT))); if (Math.sqrt(dot(cqT, cqT)) > 0.5) upT = nrmz(cqT); }   /* o arco passa ATRÁS de uma subida: o lado vem do traçado (transpLado) */
+      sideT = nrmz(cross(axT, upT));
       var Fa0 = add(P, mul(tr1.dir, (Lt / 2) * MM)), s0T = pbT * MM, s1T = (Lt - pbT) * MM, estT = [], nT = lod === "longe" ? 4 : 16;
       for (var iT = 0; iT <= nT; iT++) estT.push(s0T + (s1T - s0T) * iT / nT);
       var camT = { estacoes: estT, em: function (s) {
@@ -1810,7 +1814,10 @@
     if (/^pvc/.test(vm) && /^(aco|inox|cobre)/.test(matTubo)) latao = true;   /* PVC no tubo de metal não casa (pendente no orçamento): o desenho fica o de metal */
     if (pvcR) return registroPvc(a, o, C, d, de, matTubo);
     var seg = o.lod === "longe" ? 8 : 16, mc = new Malha(), mv = new Malha(), mk = new Malha();
-    var rHex = de * 0.62 + 4, rBojo = de * 0.78 + 6, h = Lff / 2;
+    /* REGISTRO GRANDE (15/11/2026, print do Rogério: "blocos amorfos colados no tubo"): sem ficha cotada (só há DN 20 e 25), o bojo saía com
+       raio 0,78 DE + 6 — no DE 50 um barril de Ø 90 que engolia o castelo e deixava a canopla de DE 25 minúscula. Agora o bojo cresce
+       com 0,6 DE + 9 (DE 50: Ø 78) e o ACABAMENTO (canopla + volante) escala com ele; proporção a conferir com o catálogo do DN. */
+    var rHex = de * 0.62 + 4, rBojo = Math.min(de * 0.78 + 6, de * 0.6 + 9), h = Lff / 2;
     /* RODADA 2: com a ficha do registro BASE (vista frontal cotada: corpo ø42, altura do fundo do corpo ao topo da haste
        105 na gaveta e 100 na pressão), o bojo e a altura do castelo saem dela; o resto do castelo (degraus e porca) é a
        forma do desenho, em proporção da altura cotada */
@@ -1846,11 +1853,12 @@
       /* ACABAMENTO DocolBase (Docol, catálogo geral pág. 44 — a mesma ficha do js/hidlouca.js): canopla CÔNICA Ø 58 com 40 de
          altura sobre a face da parede e o VOLANTE Ø 57 por cima. A parede fica na altura da base (castelo) — o acabamento
          cobre o que sai dela. Perfil da saia do volante: forma de desenho. */
-      var DB = { canoplaD: 58, canoplaH: 40, volanteD: 57, volanteH: 25 };   /* Docol, catálogo geral pág. 44 */
+      var ksA = rc0 ? 1 : Math.max(1, Math.min(1.5, de / 36));   /* Docol pág. 44 é o DN 25: DN maior escala o acabamento até 1,5x (a conferir) */
+      var DB = { canoplaD: 58 * ksA, canoplaH: 40 * ksA, volanteD: 57 * ksA, volanteH: 25 * ksA };   /* Docol, catálogo geral pág. 44 (DN 25) */
       var hCan = Math.max(hc * 0.55, hc - DB.canoplaH + 8), rCan = DB.canoplaD / 2;
-      varrer(mk, reta(add(C, mul(fr, hCan * MM)), fr), escala([[0, 0], [0, rCan * 0.9], [3, rCan], [8, rCan * 0.97], [DB.canoplaH, rCan * 0.62], [DB.canoplaH + 2, rCan * 0.55], [DB.canoplaH + 2, 0]]), seg + 8, false);
+      varrer(mk, reta(add(C, mul(fr, hCan * MM)), fr), escala([[0, 0], [0, rCan * 0.9], [3 * ksA, rCan], [8 * ksA, rCan * 0.97], [DB.canoplaH, rCan * 0.62], [DB.canoplaH + 2 * ksA, rCan * 0.55], [DB.canoplaH + 2 * ksA, 0]]), seg + 8, false);
       var rV = DB.volanteD / 2 * 0.98, Cv0 = add(C, mul(fr, (hCan + DB.canoplaH) * MM));
-      varrer(mk, reta(Cv0, fr), escala([[0, 0], [0, rV * 0.5], [4, rV * 0.92], [10, rV], [16, rV], [21, rV * 0.9], [24.5, rV * 0.35], [DB.volanteH, 0]]), seg + 8, false);
+      varrer(mk, reta(Cv0, fr), escala([[0, 0], [0, rV * 0.5], [4 * ksA, rV * 0.92], [10 * ksA, rV], [16 * ksA, rV], [21 * ksA, rV * 0.9], [24.5 * ksA, rV * 0.35], [DB.volanteH, 0]]), seg + 8, false);
     } else {   /* volante de roda */
       var Rv = de * 0.75 + 16, Cv = add(C, mul(fr, (hc + 4) * MM));
       toro(mv, Cv, fr, Rv * MM, 2.6 * MM, o.lod === "longe" ? 12 : 24, 8);

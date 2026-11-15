@@ -196,6 +196,8 @@
   /* =============================================== GEOMETRIA 2D (planta x,z) */
   function d2(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
   function d3(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
+  function dentroPoli2(p, L) { var c = false; for (var i = 0, j = L.length - 1; i < L.length; j = i++) { var a = L[i], b = L[j]; if ((a.z > p.z) !== (b.z > p.z) && p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x) c = !c; } return c; }
+  function bordaPoli2(p, L) { var m = INF; for (var i = 0, j = L.length - 1; i < L.length; j = i++) m = Math.min(m, ptSeg2(p, L[j], L[i]).d); return m; }
   function un2(a, b) { var L = d2(a, b) || 1; return { x: (b.x - a.x) / L, z: (b.z - a.z) / L }; }
   function ptSeg2(p, a, b) {
     var dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz, t = L2 > 0 ? ((p.x - a.x) * dx + (p.z - a.z) * dz) / L2 : 0;
@@ -276,6 +278,8 @@
     if (!p.estrategias.length) p.estrategias = ORDEM.slice();
     p.terreo = !!src.terreo;
     p.atravessarViga = !!src.atravessarViga;
+    p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);   /* rota:margemAmpla — 0 desliga a 2ª busca */
+    p.tracadoParcial = src.tracadoParcial !== false;   /* rota:parcial — false = o comportamento antigo (falha de um sistema derruba a estratégia) */
     p.transposicao = src.transposicao !== false;   /* a curva de transposição (js/biminsttransp.js) no traçado da água; false = só o desvio de sempre */
     p.limiteDnCintaMm = num(src.limite_dn_embutir_cinta_mm != null ? src.limite_dn_embutir_cinta_mm : src.limiteDnEmbutirCintaMm, LIMITE_DN_CINTA_MM);   /* cinta: até este DN (mm) o tubo embute */
     p.embutirExtraAF = Math.max(0, num(src.embutirExtraAF, 0));   /* v3-água: com aquecedor no modelo a água fria corre uma camada MAIS FUNDO que a quente (embutir + este extra) */
@@ -477,7 +481,10 @@
       if (![x0, x1, z0, z1, topo].every(isFinite) || !(e > LAJE_MIN)) return;
       lajes.push({ id: l.id, x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), topo: topo, fundo: topo - e });
     });
-    return { lista: out, lajes: lajes, familias: fams };
+    /* ⚠ O LOTE (15/11/2026): com a área de busca ampla (rota:margemAmpla) a rota da lavanderia da Casa 487 saía por fora do muro (x = −2,47)
+       e o critério "nada fora do lote" descartava a estratégia inteira. A divisa vira limite duro do traçado (o tubo nem nasce fora). */
+    var lotes = arr(o.divisas).filter(function (dv) { return dv && arr(dv.contorno).length >= PONTOS_CANTO; }).map(function (dv) { return dv.contorno.map(function (q) { return { x: num(q.x, 0), z: num(q.z, 0) }; }); });
+    return { lista: out, lajes: lajes, familias: fams, lotes: lotes };
   }
   var LAJE_MIN = 0.06;   // hid:ok placa até 6 cm = revestimento/contrapiso, não laje estrutural
   var JANELA_PERTO = 0.30;   // hid:ok janela a até 30 cm (em planta) dos pontos do ambiente conta para a cota do ramal na parede
@@ -528,7 +535,7 @@
   // constantes do ALGORITMO (não são norma): as direções da grade ortogonal, o estado "sem direção"
   // do ponto de partida, as tentativas de encolher um desvio, os pontos mínimos para haver canto e
   // quantos pontos de junção se descartam antes de aceitar um tê de 90° (com aviso)
-  var AGUA_TRANSP = { agua_fria: 1, agua_quente: 1 }, MAX_SALTO = 50, MAX_PASSOS_SALTO = 12;   // hid:ok o tubo cruzado de água (curva de transposição), o raio do teste de cruzamento (m) e o máximo de nós da faixa
+  var AGUA_TRANSP = { agua_fria: 1, agua_quente: 1 }, MAX_SALTO = 50, MAX_PASSOS_SALTO = 12, TOL_EIXO = 0.005, MIN_CRUZ = 0.02, CUSTO_TRANSP = 0.02;   /* CUSTO_TRANSP (m equivalentes, só atrás de SUBIDA vertical; no cruzamento horizontal vale uma conexão): quanto a curva de transposição custa no A*, no máximo — bem menos que uma conexão e que o deslocamento da linha inteira (+5 cm de tubo). Decisão do Rogério 15/11/2026: economiza peça e perda, então ela ganha do deslocamento; segue acima de zero para não cruzar à toa */   // hid:ok o tubo cruzado de água (curva de transposição), o raio do teste de cruzamento (m) e o máximo de nós da faixa
   var NDIR = 4, SEM_DIR = 4, TENTATIVAS = 3, PONTOS_CANTO = 3, PONTOS_DEGRAU = 4, MAX_DEGRAUS = 200, MAX_VOLTAS = 20;   // hid:ok
   Grade.prototype.viz = function (k, d) {
     var i = k % this.nx + DI[d], j = Math.floor(k / this.nx) + DJ[d];
@@ -689,7 +696,7 @@
 
   /* contexto de UMA rota: livre(k) e aresta(a,b) para o A* */
   function contextoRota(W, G, o) {
-    var P = W.P, cacheN = {}, r = o.r, obst = W.O.lista.filter(function (ob) { return faixaCruza(ob.y0, ob.y1, o.b0, o.b1); });
+    var P = W.P, cacheN = {}, r = o.r, obst = W.O.lista.filter(function (ob) { return faixaCruza(ob.tipo === "familia" && o.b0 === -INF ? ob.y0 + FAMILIA_RASA : ob.y0, ob.y1, o.b0, o.b1); });
     /* cinta (modo "cinta"): bloqueia só o tubo acima do DN-limite; até lá o tubo passa embutido */
     function proib(ob) { return ob.modo === "proibido" || (ob.modo === "cinta" && 2 * r * 1000 > num(ob.limiteMm, LIMITE_DN_CINTA_MM) + EPS); }   // hid:ok m → mm
     var paredes = obst.filter(function (ob) { return ob.tipo === "parede"; });
@@ -712,6 +719,7 @@
     /* ⚠ folgas comparadas com 1 mm de sobra (o arredondamento a 4 casas mexe 0,1 mm): o nó EXATAMENTE no limite (bacia a 10 cm)
        virava livre ou bloqueado conforme o arredondamento da origem — a rota mudava com a obra deslocada */
     function livrePt(p, terminal, corredor, semTubo) {
+      if (W.O.lotes && W.O.lotes.length && !W.O.lotes.some(function (L) { return dentroPoli2(p, L) && bordaPoli2(p, L) >= r + P.folga - FOLGA_LIMITE; })) return false;   // rota:lote
       for (var i = 0; i < obst.length; i++) if (proib(obst[i]) && !o.ignorar[obst[i].id] && dentro(obst[i], p.x, p.z, r + P.folga)) return false;
       if (terminal) return true;
       if (o.modo === "parede" && !naParede(p.x, p.z) && !(o.raiz && d2(p, o.raiz) <= P.raioTerminal + EPS)) return false;
@@ -771,12 +779,33 @@
         var T = tubos[i], cT = T.sistema === o.sistema ? P.folga : P.afastamento;
         if (ptSeg2(q1, T.a, T.b).d < r + T.r + cT - FOLGA_LIMITE) { nB++; T1 = T; }
       }
-      if (nB !== 1 || !AGUA_TRANSP[T1.sistema] || d2(T1.a, T1.b) < EPS || Math.abs(T1.a.y - T1.b.y) > EPS) return null;
-      var cr = HT.cruzamento({ p1: { x: p.x, y: cotaT, z: p.z }, p2: { x: p.x + ux * MAX_SALTO, y: cotaT, z: p.z + uz * MAX_SALTO } }, { p1: T1.a, p2: T1.b });
-      if (!cr || Math.min(cr.sb, cr.Lb - cr.sb) < P.margemNo) return null;
+      var subida = nB === 1 && d2(T1.a, T1.b) < EPS;   /* o tubo cruzado é VERTICAL (prumada/descida de água): em planta é um ponto — o arco passa ATRÁS dele, no plano horizontal */
+      if (nB !== 1 || !AGUA_TRANSP[T1.sistema] || (!subida && Math.abs(T1.a.y - T1.b.y) > EPS)) return null;
+      var cr, ladoArco = null;
+      if (subida) {
+        var qx = T1.a.x - p.x, qz = T1.a.z - p.z, sS = qx * ux + qz * uz;
+        /* a reta do ramal passa pelo EIXO da subida (±5 mm) e a cota do ramal está dentro do trecho vertical */
+        if (Math.abs(-qx * uz + qz * ux) > TOL_EIXO || sS < MIN_CRUZ || cotaT < Math.min(T1.a.y, T1.b.y) - TOL_EIXO || cotaT > Math.max(T1.a.y, T1.b.y) + TOL_EIXO) return null;
+        cr = { x: T1.a.x, z: T1.a.z, sa: sS, sb: INF, Lb: INF, cos: 0, dy: 0 };
+      } else {
+        cr = HT.cruzamento({ p1: { x: p.x, y: cotaT, z: p.z }, p2: { x: p.x + ux * MAX_SALTO, y: cotaT, z: p.z + uz * MAX_SALTO } }, { p1: T1.a, p2: T1.b });
+        if (!cr || Math.min(cr.sb, cr.Lb - cr.sb) < P.margemNo) return null;
+      }
       var av = HT.avaliar({ sistema: o.sistema, material: o.transp.material, dn: o.transp.dn, cruzadoSistema: T1.sistema, cruzadoDn: Math.round(T1.r * 2 * 1000), cos: cr.cos, dy: cr.dy,
                             retaAntes: MAX_SALTO, retaDepois: MAX_SALTO, margem: P.margemNo });
       if (!av.ok) return null;
+      if (subida) {
+        /* o LADO do arco: perpendicular ao ramal, com a crista (R + D/2 + o raio do tubo) livre. No modo parede vai ATRÁS da subida — para o miolo da parede;
+           fora dela, o primeiro lado livre. Nenhum lado livre = não há peça (o desvio assume). */
+        var nsP = [{ x: -uz, z: ux }, { x: uz, z: -ux }], hC = av.regra.hArco + r, pw = null;
+        for (var iw = 0; iw < paredes.length && !pw; iw++) if (dentro(paredes[iw], cr.x, cr.z, 0)) pw = paredes[iw];
+        if (pw) { var lw = local(pw, cr.x, cr.z).v; nsP.sort(function (a, b) { return (a.x * -pw.uz + a.z * pw.ux) * lw - (b.x * -pw.uz + b.z * pw.ux) * lw; }); }   /* o lado que se aproxima do eixo da parede primeiro */
+        for (var il = 0; il < nsP.length && !ladoArco; il++) {
+          var qc = { x: cr.x + nsP[il].x * hC, z: cr.z + nsP[il].z * hC };
+          if (livrePt(qc, false, null, T1)) ladoArco = nsP[il];
+        }
+        if (!ladoArco) return null;
+      }
       /* a peça ocupa A de cada lado do cruzamento e sobra margemNo até o nó vizinho: o pouso fica a esse "need" do cruzamento (a reta DEPOIS vem daqui;
          a reta ANTES o A* confere com o comprimento da reta com que chegou — rn); nenhuma junção (alvo) dentro dessa faixa */
       var X = { x: cr.x, z: cr.z }, need = av.regra.A + P.margemNo, c = 0, ant = k, v = v1, passos = 0, pousou = false;
@@ -793,7 +822,7 @@
         if (++passos > MAX_PASSOS_SALTO) return null;
         ant = v; v = G.viz(v, d); if (v < 0) return null;
       }
-      return { v: v, c: c + o.curva, sa: cr.sa, need: need, x: r4(cr.x), z: r4(cr.z), ux: ux, uz: uz, ref: T1.ref, grupo: T1.grupo, dnCruzado: Math.round(T1.r * 2 * 1000), regra: av.regra };
+      return { v: v, c: c + (subida ? Math.min(o.curva, CUSTO_TRANSP) : o.curva), sa: cr.sa, need: need, x: r4(cr.x), z: r4(cr.z), ux: ux, uz: uz, ref: T1.ref, grupo: T1.grupo, dnCruzado: Math.round(T1.r * 2 * 1000), regra: av.regra, vertical: subida, lado: ladoArco };
     }
     var ctxObj = {
       livre: function (k) { if (cacheN[k] == null) cacheN[k] = livrePt(G.pt(k), k === o.ini, (o.corredor && o.corredor[k]) || null) ? 1 : 0; return cacheN[k] === 1; },
@@ -865,6 +894,12 @@
     if (!(fA > 0) || !(fB > 0)) return m;
     return Math.max(m, r4(fA + fB + FOLGA_ENCAIXE));
   }
+  /* ⚠ FAMÍLIA RASA (15/11/2026, Casa 487): o trilho do vidro retrátil da área gourmet entra 3,5 cm no piso (y0 = −0,035) e, no térreo (faixa
+     do esgoto sem fundo), virava parede sob o piso inteiro do gourmet — o banheiro do fundo ficava sem esgoto. A família que só encosta no
+     piso (até 6 cm abaixo) não barra o esgoto ENTERRADO do térreo; a conferência 3D (rota:conferenciaFamilia) ainda descarta o tubo que de
+     fato a atravesse. Fora do térreo (faixa com fundo) nada muda. */
+  var FAMILIA_RASA = 0.06;   // hid:ok 6 cm: embutimento de trilho/soleira/pé no contrapiso (m) — rota:familiaRasa
+  var MARGEM_AMPLA = 3.0;   // hid:ok área de busca ampla (m) — a 2ª tentativa do esgoto (rota:margemAmpla)
   var FOLGA_ENCAIXE = 0.005;   // hid:ok 5 mm de tubo à vista entre as duas peças (corte na obra)
   function simplificar(pts) {
     var out = [];
@@ -1068,7 +1103,7 @@
          INSERCAO_CONTRA_FLUXO da área de serviço): uFim = o sentido do escoamento da aresta de chegada */
       var uFim = juncao && av.length && alvo.tipo === "aresta" ? un2(arv.nos[arv.arestas[juncao.aresta].de], arv.nos[arv.arestas[juncao.aresta].para]) : null;
       if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r);
-      melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra }; }) };
+      melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra, vertical: sj.sl.vertical, lado: sj.sl.lado }; }) };
       if (!falhos.length) break;
       var novo = false;
       falhos.forEach(function (c) { var k = G.idx(c.x, c.z); if (k >= 0 && !semCurva[k]) { semCurva[k] = 1; novo = true; } });
@@ -1307,9 +1342,15 @@
        nele com a junção de 45°. A 1ª ordem segue valendo quando fecha. */
     if (outros.length && receptores.length) filas.push(ord(bacias).concat(ord(outros), ord(receptores), ord(diretos), ordIguais(paraCaixa)));
     var cruz0 = copia(W.cruz), idsCruz0 = copia(W.idsCruz), falha0 = null;
-    for (var iF = 0; iF < filas.length; iF++) {
+    /* ⚠ ÁREA DE BUSCA AMPLA (15/11/2026, Casa 487: banheiro do fundo e lavanderia SEM NENHUM tubo). A grade é a caixa dos pontos + a
+       margem (0,60 m): com a espera a 22 m, na frente, ela virava um corredor de 2,6 m de largura e a porta de correr de 3,60 m entre a área
+       gourmet e a cozinha fechava o corredor inteiro — "sem caminho livre até o destino", embora houvesse passagem 1 m ao lado. Na falha, a
+       busca refaz com a margem ampla (o caminho físico por fora do corredor estreito); com a margem normal fechando, nada muda. */
+    var mAmpla = num(P.margemAmpla, 0), margens = [P.margem]; if (mAmpla > P.margem + EPS) margens.push(mAmpla);
+    for (var iF = 0, iM = 0; iF < filas.length || (falha0 && ++iM < margens.length && (iF = 0) === 0); iF++) {
+      if (iM && iF === 0) { var Pm = copia(P); Pm.margem = margens[iM]; G = grade(folhas.concat([raizD]), Pm, raizD); falha0 = null; }   // rota:margemAmpla
       var fila = filas[iF];
-      if (iF) { arv = new Arvore("esgoto", g.id); avisos = []; usadaRaiz = false; caixaAlvo = {}; W.cruz = copia(cruz0); W.idsCruz = copia(idsCruz0); }
+      if (iF || iM) { arv = new Arvore("esgoto", g.id); avisos = []; usadaRaiz = false; caixaAlvo = {}; W.cruz = copia(cruz0); W.idsCruz = copia(idsCruz0); }
       var fEr = tracarFila(fila);
       if (!fEr) { if (iF) saida.justificativa.push("esgoto: " + outros.map(function (f) { return f.ref; }).join(", ") + " no mesmo ramal — o mais a montante traçado primeiro, os outros entram nele com junção de 45° antes do destino"); falha0 = null; break; }
       if (!falha0) falha0 = fEr;
@@ -1726,7 +1767,7 @@
           var aT = arv.arestas[ia]; if (!aT.vivo) continue;
           var AT = arv.nos[aT.de], BT = arv.nos[aT.para], Xt = { x: tp.x, z: tp.z };
           if (ptSeg2(Xt, AT, BT).d > EPS || d2(Xt, AT) < EPS || d2(Xt, BT) < EPS) continue;
-          var nT = arv.dividir(aT.id, tp.x, tp.z); arv.nos[nT].transp = { ref: tp.ref, ux: tp.ux, uz: tp.uz, regra: tp.regra }; break;
+          var nT = arv.dividir(aT.id, tp.x, tp.z); arv.nos[nT].transp = { ref: tp.ref, ux: tp.ux, uz: tp.uz, regra: tp.regra, vertical: tp.vertical, lado: tp.lado }; break;
         }
         proibirPerto.push({ x: tp.x, z: tp.z, raio: tp.regra.A + P.margemNo });
       });
@@ -2112,13 +2153,16 @@
       var g = EN.grupos[gi], iniGrupo = trechos.length;
       /* -------- esgoto */
       var es = emitirEsgoto(g, gi);
-      if (es.erro) return es;
+      /* ⚠ TRAÇADO PARCIAL (15/11/2026, Casa 487): só no 2º passe do proporLocal (nenhuma estratégia fechou inteira) — a falha de UM sistema
+         vira pendência com o motivo e o resto do ambiente segue. Antes o esgoto sem rota apagava também a água fria: o banheiro do fundo e a
+         lavanderia ficavam SEM NENHUM tubo. No 1º passe a falha continua derrubando a estratégia (é ela que escolhe entre parede/piso/forro). */
+      if (es.erro) { if (!P.parcial) return es; saida.pendencias.push(pend("rota.parcial.esgoto", "ESGOTO NÃO TRAÇADO (" + g.id + "): " + es.erro + " — a água fria foi traçada; ligue o esgoto à mão ou libere o caminho", arr(es.elementos), es.acao || null)); }   // rota:parcial
       /* -------- pia (e o que o projeto mandar) → CAIXA DE GORDURA */
-      if (g.gordura.length) { var eg = gordura(g, gi); if (eg) return eg; }
+      if (g.gordura.length) { var eg = gordura(g, gi); if (eg) { if (!P.parcial) return eg; saida.pendencias.push(pend("rota.parcial.gordura", "PIA SEM ESGOTO (" + g.id + "): " + eg.erro + " — o resto do ambiente foi traçado; ligue a pia à caixa de gordura à mão", arr(eg.elementos), eg.acao || null)); } }
       iniGrupo = trechos.length;
       /* -------- água fria */
       var af = rotearAgua(W, g, gi, saida);
-      if (af.erro) return af;
+      if (af.erro) { if (!P.parcial) return af; saida.pendencias.push(pend("rota.parcial.agua_fria", "ÁGUA FRIA NÃO TRAÇADA (" + g.id + "): " + af.erro + " — o esgoto foi traçado; ligue a água à mão ou libere o caminho", arr(af.elementos), af.acao || null)); }
       if (af.arv) {
         var at = af.arv, cota = at.cota, primeiro = null;
         trechosDaArvore(at).forEach(function (t) {
@@ -2137,7 +2181,8 @@
           var tT = trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria" && d2(t.p2, nT) < EPS && Math.abs(t.p1.y - t.p2.y) < EPS && d2(t.p1, t.p2) > EPS; })[0];
           if (!tT) return;
           tT.pecaFim = nT.transp.regra.tipo; tT.transposicao = nT.transp.ref; nTransp++;
-          saida.justificativa.push("água fria: curva de transposição em " + fxz(nT.x, nT.z) + " (cruza " + nT.transp.ref + " por cima, a 90°, DN " + nT.transp.regra.dn + "; reta livre de " + f2(nT.transp.regra.A + P.margemNo) + " m de cada lado; " + nT.transp.regra.fonte + ") — no lugar do desvio, que custaria mais conexões");
+          if (nT.transp.vertical && nT.transp.lado) tT.transpLado = { x: r4(nT.transp.lado.x), z: r4(nT.transp.lado.z) };   /* o arco passa ATRÁS da subida: o lado (horizontal, perpendicular ao ramal) vai com a peça */
+          saida.justificativa.push("água fria: curva de transposição em " + fxz(nT.x, nT.z) + " (cruza " + nT.transp.ref + (nT.transp.vertical ? " — subida/descida vertical —, o arco passa atrás dela, no plano horizontal, a 90°, DN " : " por cima, a 90°, DN ") + nT.transp.regra.dn + "; reta livre de " + f2(nT.transp.regra.A + P.margemNo) + " m de cada lado; " + nT.transp.regra.fonte + ") — no lugar do desvio, que custaria mais conexões");
         });
         at.nos.forEach(function (n) {
           var f = n.folha; if (!f) return;
@@ -2170,6 +2215,7 @@
       t.id = novoId(t.sistema);
       var oT = { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn, p1: { x: r4(t.p1.x), y: r4(t.p1.y), z: r4(t.p1.z) }, p2: { x: r4(t.p2.x), y: r4(t.p2.y), z: r4(t.p2.z) } };
       if (t.pecaFim) oT.pecaFim = t.pecaFim;
+      if (t.transpLado) oT.transpLado = t.transpLado;   /* curva de transposição atrás de uma subida: o lado do arco */
       if (t.aplicacao) oT.aplicacao = t.aplicacao;
       saida.ops.push(oT);
     });
@@ -2458,7 +2504,7 @@
     function descarte(chave, r) {
       return { estrategia: chave, nome: ESTRATEGIAS[chave].nome, motivo: r.erro, texto: r.erro, elementos: arr(r.elementos), acao: r.acao || null };
     }
-    if (EN.aparelhos.length) P.estrategias.forEach(function (chave) {
+    function tentar(chave) {
       var O = normObstaculos(entrada.obstaculos, P);
       var EN2 = { aparelhos: copia(EN.aparelhos), pecas: copia(EN.pecas), grupos: copia(EN.grupos), caixasGordura: copia(EN.caixasGordura) };
       var r = estrategia(chave, entrada, EN2, P, O, NRM);
@@ -2533,7 +2579,11 @@
                     travessias: { parede: r.cruz.parede, laje: r.furosLaje, viga: r.cruz.viga }, elementosTravessia: copia(r.idsCruz || {}),
                     custo: r4(custo), justificativa: just, avisos: avisos.map(function (a) { return a.texto; }), problemas: avisos, pendencias: r.pendencias,
                     criterios: r.criterios ? { nota: r.criterios.nota, conceito: r.criterios.conceito, contagem: r.criterios.contagem, custo: r.criterios.custoMotor, apontamentos: r.criterios.apontamentos } : null });
-    });
+      if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; op0.avisos.unshift("TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"); }
+    }
+    if (EN.aparelhos.length) P.estrategias.forEach(tentar);
+    /* rota:parcial — nenhuma estratégia fechou inteira: o 2º passe traça o que tem caminho (a falha de um sistema não apaga o outro) */
+    if (!opcoes.length && EN.aparelhos.length && P.tracadoParcial) { P.parcial = true; P.estrategias.forEach(tentar); P.parcial = false; }
     /* ⚠ ordem = custo (empate: a ordem das estratégias) — a 1ª nunca é pior */
     opcoes.sort(function (a, b) { return a.custo - b.custo || ORDEM.indexOf(a.estrategia) - ORDEM.indexOf(b.estrategia); });   // rota:ordem
     opcoes = opcoes.slice(0, ORDEM.length);

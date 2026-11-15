@@ -88,6 +88,41 @@
         return K._int && K._int.vizinhosDe ? K._int.vizinhosDe(estado, fi) : [];
       };
     },
+    /* assinatura (tipo + parâmetros de instância que mexem no corpo) de cada reservatório do modelo: mudou = a caixa foi trocada/editada */
+    _cxSig: null,
+    _sigCaixas: function (c) {
+      var o = {}; arr(c && c.estado && c.estado.familias).forEach(function (f) {
+        if (!U.RESERVATORIO.test(String(f.famId)) || /cisterna/.test(String(f.famId))) return;
+        var i = {}, k = {}, av = null, i0 = f.inst || {};
+        Object.keys(i0).filter(function (n) { return !/^(Ad_|Ang_|Y_)/.test(n); }).sort().forEach(function (n) { i[n] = i0[n]; });
+        try { av = c.avaliarFam ? c.avaliarFam(f.famId, f.tipoId, i) : null; } catch (eA) { av = null; }
+        if (av && av.valores) Object.keys(av.valores).sort().forEach(function (n) { var v = av.valores[n]; if (typeof v === "number" || typeof v === "string") k[n] = v; });   /* o tipo avaliado: pega também o "Editar tipo" */
+        o[String(f.id)] = String(f.famId) + "|" + String(f.tipoId) + "|" + JSON.stringify(i) + "|" + JSON.stringify(k);
+      });
+      return o;
+    },
+    _caixasTrocadas: function (nova) { var v = U._cxSig || {}; return Object.keys(nova).filter(function (id) { return v[id] != null && v[id] !== nova[id]; }); },
+    /* TROCOU A CAPACIDADE/TIPO DA CAIXA (ex.: 500 → 250 L): as ligações já seguem as cotas do tipo novo (conectores da família); aqui o barrilete
+       dela se refaz — apaga o anterior e monta de novo (HidBarrilete.montar: saída, ventilação, extravasor, limpeza, boia, colunas AF) — num
+       lote só, aplicado direto (sem prévia), encadeado com a troca (um Ctrl+Z desfaz os dois). Só com caixa que já tinha barrilete montado. */
+    _refazerCaixas: function (c, ids) {
+      if (U._plano || U._ocupado || !U._sincAuto()) return false;
+      var K = dep("HidKit"), HBR = dep("HidBarrilete"), BE = dep("BimEdit"); if (!K || !HBR || !BE) return false;
+      var ops = [], todos = c.ops, feitos = 0;
+      ids.forEach(function (id) {
+        var ant = HBR.anteriores(K.achatar(todos), id); if (!ant.length) return;
+        ant.forEach(function (idB) { ops.push({ op: "apagar", id: idB }); });
+        todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]);
+        var RB = HBR.montar({ estado: BE.aplicar(todos), avaliarFam: c.avaliarFam, ops: todos, parametros: U.parametros(), caixa: id, pressao: true, oferta: false, programa: U._programa() });
+        RB.ops.forEach(function (o) { ops.push(o); }); feitos++;
+        todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]);
+      });
+      if (!feitos || !ops.length) return false;
+      var ok = U._gravar(c, ops, "hidcaixa-tipo");
+      if (ok) { var c2 = U._ctx(); if (c2) { U._lote = { len: U._len, encadear: true }; U._cxSig = U._sigCaixas(c2); } U._redesenhar(); }
+      status(ok ? "Caixa d'água trocada: o barrilete foi refeito nas cotas do tipo novo (extravasor, limpeza, boia, saída e colunas). Ctrl+Z desfaz." : "O editor recusou o refazer do barrilete da caixa.");
+      return ok;
+    },
     aoReconstruir: function (st) {
       U._st = st || null;
       U._conferirCoresVelhas();
@@ -102,7 +137,8 @@
       var K = dep("HidKit"), c = U._ctx(st); if (!K || !c) return null;
       var fams = arr(c.estado.familias), len = nOpsDe(c), ids = fams.map(function (f) { return String(f.id); });
       U._ligarNivel();
-      if (U._vistos == null) { U._vistos = ids; U._len = len; U._nivelBase(c.estado); return null; }   /* abriu o projeto: o que já está lá não ganha kit sozinho (nem religa pelo nível) */
+      var sigCx = U._sigCaixas(c);
+      if (U._vistos == null) { U._vistos = ids; U._len = len; U._nivelBase(c.estado); U._cxSig = sigCx; return null; }   /* abriu o projeto: o que já está lá não ganha kit sozinho (nem religa pelo nível) */
       if (len < U._len) {
         /* ⚠ UM Ctrl+Z desfaz a AÇÃO inteira: se o que saiu foi o lote AUTOMÁTICO do kit (posicionar, mover, apagar o aparelho),
            sai junto a op da pessoa que o disparou — senão "apagar o chuveiro" precisava de dois Ctrl+Z e o primeiro deixava o
@@ -115,12 +151,15 @@
         U._lote = null;
         /* Ctrl+Z: o desencontro que ficou é o que o usuário quis — aceita a pose atual */
         K.reconciliar({ estado: c.estado, avaliarFam: c.avaliarFam, ops: c.ops }).forEach(function (a) { var fi = fams.filter(function (f) { return String(f.id) === a.famInst; })[0]; U._ignorar[a.famInst] = fi ? K.assinatura(fi) : "apagado"; });
-        U._len = len; U._vistos = ids; return null;
+        U._len = len; U._vistos = ids; U._cxSig = sigCx; return null;
       }
       /* ⚠ a lista de ops SALTOU mais de uma (replay: abriu outra obra, importou, sincronizou): o que veio já estava
          pronto — vira a nova base, sem gerar kit (cada ação da pessoa grava UMA op; o lote do kit é uma op) */
-      if (len > U._len + 1) { U._len = len; U._vistos = ids; return null; }
+      if (len > U._len + 1) { U._len = len; U._vistos = ids; U._cxSig = sigCx; return null; }
       U._len = len;
+      /* 15/11/2026: o tipo (capacidade) da caixa d'água mudou pelas propriedades/Editar tipo → o barrilete dela se refaz (um lote) */
+      var cxTroc = U._caixasTrocadas(sigCx); U._cxSig = sigCx;
+      if (cxTroc.length && U._refazerCaixas(c, cxTroc)) return null;
       var novos = ids.filter(function (id) { return U._vistos.indexOf(id) < 0; });
       U._vistos = ids;
       U._sincAuto();   /* N23: a escolha "Lançar a instalação automaticamente" do projeto aberto */
@@ -890,6 +929,18 @@
         try {
           var todosB = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]);
           var RB = HBR.montar({ estado: BE.aplicar(todosB), avaliarFam: c.avaliarFam, ops: todosB, parametros: par, pressao: true, oferta: true, programa: U._programa() });
+          /* 15/11/2026 (pedido do Rogério: "apaguei a caixa, rodei o Traçar e voltou a caixa antiga"): sem caixa no modelo o Traçar PÕE a caixa
+             PARAMÉTRICA (família hid-caixa-dagua, com alimentação/boia, saída, extravasor e limpeza), no tipo comercial que atende a reservação
+             do programa (HidBarrilete.ofertar), e monta o barrilete dela no MESMO lote — antes só avisava (o Corrigir punha a caixa). */
+          if (RB.oferta && RB.oferta.acao && RB.oferta.op && !RB.ligadas) {
+            var opCx = JSON.parse(JSON.stringify(RB.oferta.op)), todosC = c.ops.concat([{ op: "lote", id: "previa", ops: ops.concat([opCx]) }]);
+            var RB2 = HBR.montar({ estado: BE.aplicar(todosC), avaliarFam: c.avaliarFam, ops: todosC, parametros: par, pressao: true, oferta: false, programa: U._programa() });
+            if (RB2.ligadas) {
+              ops.push(opCx);
+              var txCx = RB.oferta.aviso && RB.oferta.aviso.texto ? String(RB.oferta.aviso.texto).replace(/^Sem caixa d'água no modelo: proponho/, "Sem caixa d'água no modelo: pus").replace(/ O Corrigir põe a caixa; o Traçar monta o barrilete\.$/, "") : "Caixa d'água posta.";
+              RB = RB2; RB.avisos = [{ texto: txCx, elementos: [opCx.id] }].concat(RB2.avisos);
+            }
+          }
           RB.ops.forEach(function (o) { ops.push(o); });
           RB.pendencias.forEach(function (p) { pendencias.push(p); });
           RB.avisos.forEach(function (a) { avisos.push(a); });

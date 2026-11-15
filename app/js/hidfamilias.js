@@ -376,14 +376,15 @@
       G("Altura", 0.2, null, null, "Altura do volume envolvente"),                                                    /* hid:ok geometria */
       G("Profundidade", 0.1, null, null, "Projeção"),                                                                 /* hid:ok geometria */
       I("Altura_acionamento", 0, DECADADO(D_VALV, "alturaDoAcionamentoDaValvula_mm"), "Altura do acionamento sobre o piso (dica de instalação Hydra, pág. 31)"),
-      DN("DN_agua", function (it) { var c = arr(it.conectores)[0]; return c && typeof c.dn === "number" ? { v: c.dn, origem: "catalogo" } : null; }, "DN da entrada")
+      DN("DN_agua", function (it) { var c = arr(it.conectores)[0]; return c && typeof c.dn === "number" ? { v: c.dn, origem: "catalogo" } : null; }, "DN da entrada"),
+      X("Embutir", "comprimento", 0.05, "Instalação", "Eixo do corpo atrás da face da parede (m): o kit passa o mesmo do tubo embutido. Válvula EM LINHA: entrada no topo do corpo, saída no pé, sem joelho")   /* hid:ok geometria — o kit sobrescreve com a medida da parede */
     ],
-    solidos: [{ id: "corpo", nome: "Volume envolvente", forma: "caixa", x: "0", y: "-Altura*0.4", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
+    solidos: [{ id: "corpo", nome: "Volume envolvente", forma: "caixa", x: "0", y: "0", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
     /* ⚠ a SAÍDA (descarga para a bacia) é um conector de verdade (frente A, 19/10/2026 — D-02 do diagnóstico): sem ele a
        descida do kit começava no ar, abaixo da válvula, marcada "continua" para o verificador não acusar a ponta solta.
        Posição no volume envolvente esquemático (AV_ESQ): abaixo da entrada, no mesmo prumo */
-    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "a ficha Deca só dá o acionamento; ponto na origem, tubo pela parede" },
-                 { id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.4", z: "0", papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "posição do volume esquemático (sem cota no catálogo)" }], material: "Metal"   /* hid:ok geometria do volume esquemático */
+    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "Altura*0.5", z: "-Embutir", papel: "entrada", dir: dv("cima"), origemPos: "extremidade", aConferir: "a ficha Deca só dá o acionamento; entrada no topo do corpo (em linha), proporção a conferir" },
+                 { id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.5", z: "-Embutir", papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "pé do corpo, no mesmo prumo da entrada (sem cota no catálogo)" }], material: "Metal"   /* hid:ok geometria do volume esquemático */
   });
   ESPECS.push({
     id: "hid-caixa-descarga-embutida", nome: "Caixa de descarga embutida", categoria: "equipamento", sistemas: ["agua_fria"], tipos: ["caixa_descarga_embutida"], volume: true,
@@ -999,7 +1000,7 @@
       x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
     "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
       x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
-    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade", cod: "@Codigo" },   /* @: o texto do parâmetro (o modelo do acabamento, catálogo Hydra) */ env: ["0", "-Altura*0.4", "0", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
+    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade", emb: "Embutir", cod: "@Codigo" },   /* @: o texto do parâmetro (o modelo do acabamento, catálogo Hydra) */ env: ["0", "0", "-Embutir/2", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
     "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
     "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura", pf: "se(Peca_ficha; 1; 0)", dn: "se(DN_saida > 0; DN_saida; 50)" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
       x: [X("Peca_ficha", "simnao", false, "Forma 3D", "Corpo, grelha e bocas desenhados pelas cotas da ficha (o mesmo motor da peça do traçado, js/biminstgeo.js)"),
