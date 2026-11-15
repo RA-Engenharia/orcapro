@@ -1270,9 +1270,11 @@
          (latão, volante…) e ficam em partes "lig-…-reg" para o material de cada um ir certo. ⚠ não desenhar à mão: o Rogério já recusou o registro "amador" */
       var Gg = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
       Gg = global.HidGeo || Gg;
-      var reg = function (id, nome, dn, ang, r0, y, Lr) {
+      /* esf = 1 → REGISTRO DE ESFERA soldável (RE) em vez do de gaveta: o conjunto de reservatórios com motobomba (geoCasaReservatorios) pede RE na saída
+         de cada caixa (barrilete de sucção); o padrão da caixa avulsa segue o de gaveta bruto (P.rs = 0) */
+      var reg = function (id, nome, dn, ang, r0, y, Lr, esf) {
         if (!Gg || !Gg.registro) throw new Error("HidGeo.registro indisponível (js/biminstgeo.js)");
-        var rc = r0 + Lr / 2, o = Gg.registro({ centro: [cr(ang) * rc, y, sr(ang) * rc], dir: [cr(ang), 0, sr(ang)], comprimento: Lr, dn: dn, material: "pvc_soldavel", variante: "bruto", acessorio: "registro_gaveta", varMaterial: "latao" },
+        var rc = r0 + Lr / 2, o = Gg.registro({ centro: [cr(ang) * rc, y, sr(ang) * rc], dir: [cr(ang), 0, sr(ang)], comprimento: Lr, dn: dn, material: "pvc_soldavel", variante: esf ? "soldavel" : "bruto", acessorio: esf ? "registro_esfera" : "registro_gaveta", varMaterial: esf ? "pvc_soldavel" : "latao" },
           { lod: q.N > 20 ? "perto" : "longe", frente: [0, 1, 0] });
         (o.partes || []).forEach(function (p) {
           var k = id + "-" + p.papel, pt = rg[k] || (rg[k] = parte(k, nome + " (" + p.papel + ")", REG_MAT[p.papel] || LATAO, true)), b0 = pt.m.v.length / 3, i;
@@ -1293,7 +1295,7 @@
       /* SAÍDA — do adaptador (já desenhado acima) sai o toco de tubo e, logo depois, o registro de gaveta; depois mais um toco (onde o tubo do barrilete pega) */
       var ps = parte("lig-saida", "Saída: toco de tubo (consumo)", PVC, true), aS2 = 0, r0S = R + 0.03, ySa = 0.03;   // hid:ok o adaptador da saída termina em R + 3 cm, 3 cm acima da base (iguais ao conector)
       tubo(ps.m, [pL(aS2, r0S - 0.005, ySa), pL(aS2, r0S + 0.04, ySa)], rt(dS2), q.n, { rc: 0 });   // hid:ok toco antes do registro (4 cm)
-      reg("lig-saida-reg", "Saída: registro de gaveta", dS2, aS2, r0S + 0.04, ySa, Lr);
+      reg("lig-saida-reg", P.rs > 0 ? "Saída: registro de esfera (RE)" : "Saída: registro de gaveta", dS2, aS2, r0S + 0.04, ySa, Lr, P.rs > 0);
       tubo(ps.m, [pL(aS2, r0S + 0.04 + Lr, ySa), pL(aS2, r0S + 0.04 + Lr + 0.05, ySa)], rt(dS2), q.n, { rc: 0 });   // hid:ok toco depois do registro (5 cm)
       /* EXTRAVASOR + LIMPEZA — o mesmo azimute (+Z): o extravasor perto do topo, a limpeza baixa; os dois horizontais encontram UM tubo
          descendente por fora, a rV do eixo. A limpeza leva registro; o extravasor não (nunca fecha o ladrão). ⚠ a junção é na mesma linha vertical */
@@ -1699,6 +1701,164 @@
     return [ga, bo];
   }
 
+  /* ---------- MOTOBOMBA CENTRÍFUGA MONOESTÁGIO — Schneider BC-22 R (bocais roscados), lâmina técnica BC-22 (2023), "Dimensões do produto" ----------
+     (15/11/2026, pedido do Rogério: "casa de reservatórios inferiores" com a BC-22 R). Origem = centro do comprimento A no PISO, eixo da bomba ao longo do X,
+     SUCÇÃO em −X (face da carcaça), motor para +X, recalque para cima do lado +Z, caixa de ligação do motor do lado −Z. Cotas da lâmina (mm → m):
+       A comprimento total · D da face da sucção ao flange do motor (carcaça + intermediário) · J eixo acima da base · H largura dos pés · B e C dos pés do motor
+       (B entre furos, C do flange ao primeiro pé) · F do eixo ao topo da boca de recalque · G da face da sucção ao eixo do recalque · K do eixo ao lado do recalque
+       · L do eixo ao lado da caixa de ligação.
+     O QUE A LÂMINA NÃO COTA fica em proporção da foto/desenho, marcada aConferir na família: raio do motor (0,92·J) e da carcaça (0,95·J), aletas, tampa do
+     ventilador, ombro da voluta, e a leitura de F, G e K como distâncias ao EIXO (o desenho tem os colchetes; a leitura é nossa). */
+  function geoMotobombaBC(P, q) {
+    var A = P.la, D = P.ld, J = P.hj, F = P.ff, K = P.kk, Lz = P.ll, G = P.gg, Hb = P.lb, Bf = P.fb, Cf = P.fc, N = q.N, i, j;
+    var xs = -A / 2, xf = xs + D, xm1 = A / 2, rm = J * 0.92, rv = J * 0.95, rbS = P.ds / 2000 + 0.014, rbR = P.dr / 2000 + 0.014;
+    var xr = xs + G, zr = K - rbR * 1.25, xmc = xf + (xm1 - xf) * 0.45;
+    var ba = parte("base", "Pés", PRETO), vo = parte("carcaca", "Carcaça (caracol) e bocais", AZUL), mo = parte("motor", "Motor elétrico", AZUL), vt = parte("ventilador", "Tampa do ventilador", ESCURO);
+    /* pés: dois do motor (C do flange ao 1º, B entre eles) e um sob a carcaça; chapa de apoio + alma até o corpo */
+    [xf + Cf, xf + Cf + Bf].forEach(function (xc) {
+      caixaR(ba.m, { x0: xc - 0.025, x1: xc + 0.025, y0: 0, y1: 0.012, z0: -Hb / 2, z1: Hb / 2, r: 0.002, rad: 0.008 }, q);
+      caixaR(ba.m, { x0: xc - 0.02, x1: xc + 0.02, y0: 0.012, y1: J - rm * 0.5, z0: -Hb * 0.3, z1: Hb * 0.3, r: 0.002, rad: 0.006 }, q);
+    });
+    caixaR(ba.m, { x0: xs + D * 0.45 - 0.03, x1: xs + D * 0.45 + 0.03, y0: 0, y1: 0.012, z0: -Hb / 2, z1: Hb / 2, r: 0.002, rad: 0.008 }, q);
+    caixaR(ba.m, { x0: xs + D * 0.45 - 0.025, x1: xs + D * 0.45 + 0.025, y0: 0.012, y1: J - rv * 0.55, z0: -Hb * 0.3, z1: Hb * 0.3, r: 0.002, rad: 0.006 }, q);
+    /* carcaça: disco em caracol (tampa frontal, corpo, intermediário) e o bocal de sucção axial com a rosca BSP */
+    torno(vo.m, [[rv * 0.35, xs + 0.04], [rv * 0.9, xs + 0.045], [rv, xs + 0.06], [rv, xf - 0.045], [rv * 0.9, xf - 0.03], [rv * 0.55, xf - 0.022]], N, { c: [0, J, 0], eixo: [1, 0, 0] });
+    torno(vo.m, [[rbS * 0.85, xs], [rbS * 1.05, xs + 0.003], [rbS * 1.05, xs + 0.05], [rv * 0.4, xs + 0.06]], N, { c: [0, J, 0], eixo: [1, 0, 0] });
+    torno(vo.m, [[rv * 0.55, xf - 0.025], [rv * 0.62, xf - 0.02], [rv * 0.62, xf], [rm * 0.8, xf]], N, { c: [0, J, 0], eixo: [1, 0, 0] });   /* intermediário até o flange do motor */
+    /* ombro da voluta até o lado do recalque e o bocal de recalque subindo até o topo (F acima do eixo), com a rosca BSP no alto */
+    caixaR(vo.m, { x0: xs + 0.05, x1: xf - 0.04, y0: J + rv * 0.1, y1: J + rv * 0.95, z0: 0, z1: zr + rbR, r: 0.01, rad: 0.03 }, q);
+    torno(vo.m, [[rbR * 1.25, J + rv * 0.7], [rbR * 1.1, J + F - 0.04], [rbR * 1.2, J + F - 0.03], [rbR * 1.2, J + F - 0.012], [rbR * 0.9, J + F]], N, { c: [xr, 0, zr], eixo: [0, 1, 0] });
+    [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (sg) { torno(vo.m, [[0.007, 0], [0.007, 0.008], [0, 0.009]], 6, { c: [xs + 0.06, J + sg[0] * rv * 0.78, sg[1] * rv * 0.78], eixo: [-1, 0, 0] }); });
+    /* motor: corpo com aletas de resfriamento, tampa do ventilador com nervuras e a caixa de ligação lateral (−Z) com o prensa-cabo */
+    var Lm = xm1 - 0.1 - xf, pf = [[rm * 0.8, xf], [rm, xf + 0.006], [rm, xf + 0.03]];
+    for (i = 1; i <= 7; i++) { var xa = xf + 0.03 + (Lm - 0.03) * i / 8; pf.push([rm, xa - 0.008], [rm * 0.955, xa - 0.004], [rm * 0.955, xa + 0.004], [rm, xa + 0.008]); }
+    pf.push([rm, xm1 - 0.1], [rm * 0.96, xm1 - 0.09]);
+    torno(mo.m, pf, N, { c: [0, J, 0], eixo: [1, 0, 0] });
+    torno(vt.m, [[rm * 0.96, xm1 - 0.1], [rm * 0.98, xm1 - 0.095], [rm * 0.98, xm1 - 0.02], [rm * 0.7, xm1 - 0.005], [0, xm1]], N, { c: [0, J, 0], eixo: [1, 0, 0] });
+    for (j = 0; j < 8; j++) { var ag = TAU * j / 8, rr2 = rm * 0.985; tubo(vt.m, [[xm1 - 0.095, J + rr2 * Math.cos(ag), rr2 * Math.sin(ag)], [xm1 - 0.02, J + rr2 * Math.cos(ag), rr2 * Math.sin(ag)]], 0.003, 6, { rc: 0 }); }
+    caixaR(mo.m, { x0: xmc - 0.04, x1: xmc + 0.04, y0: J - 0.04, y1: J + 0.045, z0: -(Lz - 0.022), z1: -rm * 0.6, r: 0.006, rad: 0.012 }, q);
+    torno(mo.m, [[0.012, 0], [0.012, 0.02], [0.008, 0.022]], 8, { c: [xmc, J, -(Lz - 0.022)], eixo: [0, 0, -1] });   /* o prensa-cabo termina exatamente em L */
+    return [ba, vo, mo, vt];
+  }
+
+  /* ---------- CONJUNTO DE RESERVATÓRIOS COM MOTOBOMBA ("casa de reservatórios inferiores", referência do Rogério, 15/11/2026) ----------
+     Referência: dois reservatórios de 3.000 L (água potável e aproveitamento pluvial) sobre base de concreto; motobomba Schneider BC-22 R entre eles; barrilete de
+     SUCÇÃO e de RECALQUE com registros de esfera (RE) e válvulas de retenção (VR); extravasor e limpeza de todas as caixas juntando num tubo até um ralo de
+     coleta; entrada "vem do hidrômetro" (ALP-01) e recalque seguindo para o reservatório superior (AR-01).
+     COMO É FEITO (nada é desenhado de novo): cada caixa é a MESMA geoReservatorio (caixa Fortlev com as ligações modeladas — boia, saída, extravasor e limpeza), girada
+     +90° em volta de Y: a SAÍDA aponta para −Z (frente, onde corre o barrilete), a ENTRADA (boia) para +Z (trás, onde chega a alimentação) e o tubo descendente do
+     extravasor/limpeza para +X. A saída de cada caixa sai com REGISTRO DE ESFERA (P.rs) e leva uma VÁLVULA DE RETENÇÃO logo depois; os registros/retenções são os do
+     HidGeo.registro (a mesma fonte da peça avulsa). A motobomba é a geoMotobombaBC no vão entre as caixas, com a sucção virada para o barrilete.
+     LAYOUT (m, origem = centro do vão da bomba no eixo das caixas, Y = 0 no piso da base): n caixas em fila ao longo de X, piso(n/2) à esquerda do vão e o resto à
+     direita; Vão = P.vao; entre caixas = P.gt. Barrilete a z = −(RC + P.db), no eixo da bomba (y = hb + J). Recalque sobe ao lado da carcaça, com VR e RE, e termina numa
+     placa "AR-01". Alimentação: o tubo da boia de cada caixa avança P.ext para trás; na 1ª caixa termina na placa "ALP-01".
+     VOLUME: as cotas da caixa são as da Fortlev 3000 L (catálogo 0.202.000.5: C 2,28 · A 1,49 · B 1,21 · D 2,22 · E 1,72 m) ESCALADAS por ∛(V/3000) — um volume
+     paramétrico por semelhança (aConferir: para o produto real, o tipo da caixa d'água). Limite 1 a 3 caixas. Declividade do coletor: tubo horizontal no desenho
+     (a do projeto é do Traçar, NBR 10844/8160). ORÇAMENTO de triângulos: caixas (~12 mil cada, 2 registros) + bomba + ~8 registros/retenções. */
+  function geoCasaReservatorios(P, q) {
+    var n = Math.max(1, Math.min(3, Math.round(P.n))), s = Math.pow(P.V / 3000, 1 / 3), partes = [], i;   // V0 = 3000 L da referência
+    var C = 2.28 * s, A = 1.49 * s, B = 1.21 * s, Dc = 2.22 * s, E = 1.72 * s, RC = C / 2, R = Dc / 2, hb = P.hb, J = P.hj, Lr = 0.07, LrV = 0.09;   // Fortlev 3000 L; Lr = o do registro da caixa; LrV = comprimento da retenção
+    var rt = function (dn) { return dn / 2000 + 0.002; };   // raio externo do tubo = DN/2 + 2 mm
+    var Gg = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+    Gg = global.HidGeo || Gg;
+    if (!Gg || !Gg.registro) throw new Error("HidGeo.registro indisponível (js/biminstgeo.js)");
+    /* cores da convenção RA (js/bimfoco.js): água fria em AZUL (barrilete e alimentação); o coletor do extravasor/limpeza em cinza escuro (pluvial/descarte) */
+    var pt = {};   /* partes por id */
+    function P0(id, nome, mat, ac) { return pt[id] || (pt[id] = parte(id, nome, mat, ac)); }
+    function cam(id, nome, mat, pts, dn) { tubo(P0(id, nome, mat, true).m, pts, rt(dn), q.n, { rc: Math.min(0.05, rt(dn) * 3) }); }
+    function reg(id, nome, ac, dn, c, dir, L, fr) {
+      var vr = ac === "valvula_retencao", o = Gg.registro({ centro: c, dir: dir, comprimento: L, dn: dn, material: "pvc_soldavel", variante: vr ? "pvc" : "soldavel", acessorio: ac, varMaterial: "pvc_soldavel" },
+        { lod: q.N > 20 ? "perto" : "longe", frente: fr });
+      (o.partes || []).forEach(function (p) {
+        var kk = id + "-" + p.papel, pp = P0(kk, nome + " (" + p.papel + ")", REG_MAT[p.papel] || PVC, true), b0 = pp.m.v.length / 3, ii;
+        for (ii = 0; ii < p.malha.pos.length; ii++) pp.m.v.push(p.malha.pos[ii]);
+        for (ii = 0; ii < p.malha.idx.length; ii++) pp.m.f.push(p.malha.idx[ii] + b0);
+      });
+    }
+    /* posição das caixas (centros em X) */
+    var m = Math.floor(n / 2), xc = [];
+    for (i = 0; i < m; i++) xc.push(-(P.vao / 2 + RC + i * (2 * RC + P.gt)));
+    for (i = 0; i < n - m; i++) xc.push(P.vao / 2 + RC + i * (2 * RC + P.gt));
+    xc.sort(function (a, b) { return a - b; });
+    /* 1) as caixas: a geoReservatorio (com as ligações) girada +90° e posta no lugar. rs = 1: saída com registro de esfera */
+    var cx = geoReservatorio({ D: C, H: A, Hc: B, Dc: Dc, Db: E, Dt: 0, tipo: 0, mc: 1, aS: 0, aE: P.dA, a2: 0, g2: 0, aX: 0, gX: 0, yX: 0, aL: 0, gL: 0, yL: 0, lg: P.lg > 0 ? 1 : 0, dE: P.dA, dS: P.dS, dX: P.dX, dL: P.dX, rs: 1 }, q);
+    xc.forEach(function (x0, idx) {
+      cx.forEach(function (p) {
+        var c = parte("cx" + (idx + 1) + "-" + p.id, p.nome + " (caixa " + (idx + 1) + ")", p.material, p.acessorio), v = p.m.v, ii;
+        for (ii = 0; ii < v.length; ii += 3) c.m.v.push(v[ii + 2] + x0, v[ii + 1] + hb, -v[ii]);   /* (x, y, z) → (z + x0, y + hb, −x): giro de +90° em Y */
+        c.m.f = p.m.f.slice(); if (p.m.uv) c.m.uv = p.m.uv.slice(); if (p.marca) c.marca = p.marca;
+        partes.push(c);
+      });
+    });
+    /* 2) base de concreto, em planta cobrindo as caixas, o barrilete, a bomba e o ralo */
+    var zh = -(RC + P.db), zs = zh + P.dp, zb = zs + P.la / 2, zc = RC + 0.5, yh = hb + J, ys = hb + 0.03, xf = [], rV = RC + 0.004 + 0.04 + Lr + 0.05 + rt(P.dX);   // 0,5 m: o coletor corre atrás das caixas; ys = a cota da saída da caixa; rV = o do tubo descendente da caixa
+    xc.forEach(function (x0) { xf.push(x0 + rV); });
+    var xR = Math.max.apply(null, xf) + 0.5, xmin = Math.min(xc[0] - RC, -0.3), xmax = xR + 0.3;
+    var bs = parte("base", "Base de concreto", "Concreto");
+    caixaR(bs.m, { x0: xmin - P.fo, x1: xmax, y0: 0, y1: hb, z0: zh - P.fo - 0.1, z1: zc + 0.3, r: 0.01, rad: 0.03 }, q);
+    partes.push(bs);
+    /* 3) barrilete de sucção: de cada caixa (RE já na saída) a retenção, a subida até o eixo da bomba e o coletor; dele, o ramal à bomba com RE */
+    xc.forEach(function (x0, idx) {
+      var zE = -(R + 0.19);   // a ponta do toco de saída da caixa: R + 0,03 + 0,04 + registro + 0,05 (geoReservatorio)
+      cam("barr-succao", "Barrilete de sucção", AZUL, [[x0, ys, zE + 0.002], [x0, ys, zE - 0.03]], P.dS);
+      reg("vr-succao-" + (idx + 1), "Retenção da sucção " + (idx + 1), "valvula_retencao", P.dS, [x0, ys, zE - 0.03 - LrV / 2], [0, 0, -1], LrV, [0, 1, 0]);
+      cam("barr-succao", "Barrilete de sucção", AZUL, [[x0, ys, zE - 0.03 - LrV], [x0, ys, zh], [x0, yh, zh]], P.dS);
+    });
+    cam("barr-succao", "Barrilete de sucção", AZUL, [[xc[0], yh, zh], [xc[xc.length - 1], yh, zh]], P.dS);
+    var zRE = zh + (P.dp - Lr) / 2;   /* RE do ramal da bomba, no meio */
+    cam("barr-succao", "Barrilete de sucção", AZUL, [[0, yh, zh], [0, yh, zRE]], P.dS);
+    reg("re-bomba", "Registro de esfera da sucção da bomba", "registro_esfera", P.dS, [0, yh, zRE + Lr / 2], [0, 0, 1], Lr, [0, 1, 0]);
+    cam("barr-succao", "Barrilete de sucção", AZUL, [[0, yh, zRE + Lr], [0, yh, zs + 0.03]], P.dS);
+    /* 4) a motobomba, girada para a sucção (−X) olhar o barrilete (−Z): (x, y, z) → (−z, y + hb, x + zb) */
+    var mb = geoMotobombaBC({ la: P.la, ld: P.ld, hj: J, ff: P.ff, kk: P.kk, ll: P.ll, gg: P.gg, lb: P.lb, fb: P.fb, fc: P.fc, ds: P.bs, dr: P.br }, q);
+    mb.forEach(function (p) {
+      var c = parte("bomba-" + p.id, p.nome, p.material, p.acessorio), v = p.m.v, ii;
+      for (ii = 0; ii < v.length; ii += 3) c.m.v.push(-v[ii + 2], v[ii + 1] + hb, v[ii] + zb);
+      c.m.f = p.m.f.slice(); partes.push(c);
+    });
+    /* 5) recalque: sobe do bocal da bomba com VR e depois RE e termina na ponta marcada AR-01 */
+    var xr = -(P.kk - (P.br / 2000 + 0.014) * 1.25), zr = zs + P.gg, yt = hb + J + P.ff, y0 = yt + 0.12, y1 = y0 + LrV + 0.1, yE = yt + P.ha;
+    cam("barr-recalque", "Barrilete de recalque", AZUL, [[xr, yt - 0.01, zr], [xr, y0, zr]], P.dR);
+    reg("vr-recalque", "Retenção do recalque", "valvula_retencao", P.dR, [xr, y0 + LrV / 2, zr], [0, 1, 0], LrV, [1, 0, 0]);
+    cam("barr-recalque", "Barrilete de recalque", AZUL, [[xr, y0 + LrV, zr], [xr, y1, zr]], P.dR);
+    reg("re-recalque", "Registro de esfera do recalque", "registro_esfera", P.dR, [xr, y1 + Lr / 2, zr], [0, 1, 0], Lr, [1, 0, 0]);
+    cam("barr-recalque", "Barrilete de recalque", AZUL, [[xr, y1 + Lr, zr], [xr, yE, zr]], P.dR);
+    /* ponta que segue: flange e seta + placa com a etiqueta AR-01 (a da referência do Rogério; as etiquetas são fixas no desenho) */
+    var pm = P0("marca-ar01", "Ponta marcada AR-01 (segue para o reservatório superior)", BRANCO, true);
+    torno(pm.m, [[rt(P.dR) + 0.012, 0], [rt(P.dR) + 0.012, 0.01], [rt(P.dR) * 1.5, 0.01], [0, 0.05]], q.n + 4, { c: [xr, yE, zr], eixo: [0, 1, 0] });
+    caixaR(pm.m, { x0: xr, x1: xr + 0.11, y0: yE - 0.05, y1: yE - 0.005, z0: zr - 0.002, z1: zr + 0.002, r: 0.001, rad: 0.004 }, { k: 1, kv: 1 });
+    partes.push(decal("etiqueta-ar01", "AR-01", "#1A1A1A", [xr + 0.055, yE - 0.0275, zr + 0.002], [0, 0, 1], [1, 0, 0], 0.1, 0.04));
+    /* 6) alimentação: do adaptador da boia (atrás, +Z) o tubo avança P.ext; na 1ª caixa, a placa ALP-01 (vem do hidrômetro) */
+    var yA = hb + B * 0.86, zA = R * 0.97 + 0.06;
+    xc.forEach(function (x0, idx) {
+      cam("alimentacao", "Alimentação (boia)", AZUL, [[x0, yA, zA - 0.005], [x0, yA, zA + P.ext]], P.dA);
+      if (idx === 0) {
+        var pa = P0("marca-alp01", "Entrada marcada ALP-01 (vem do hidrômetro)", BRANCO, true);
+        caixaR(pa.m, { x0: x0 + 0.02, x1: x0 + 0.13, y0: yA - 0.025, y1: yA + 0.025, z0: zA + P.ext - 0.002, z1: zA + P.ext + 0.002, r: 0.001, rad: 0.004 }, { k: 1, kv: 1 });
+        torno(pa.m, [[rt(P.dA) + 0.012, 0], [rt(P.dA) + 0.012, 0.01], [rt(P.dA) * 0.6, 0.01]], q.n + 4, { c: [x0, yA, zA + P.ext - 0.01], eixo: [0, 0, 1] });
+        partes.push(decal("etiqueta-alp01", "ALP-01", "#1A1A1A", [x0 + 0.075, yA, zA + P.ext + 0.002], [0, 0, 1], [1, 0, 0], 0.1, 0.04));
+      }
+    });
+    /* 7) extravasor e limpeza de TODAS as caixas: do pé do tubo descendente (+X de cada caixa) ao coletor atrás das caixas e ao ralo de coleta */
+    if (P.lg > 0) {
+      var yc = hb + 0.02;
+      xf.forEach(function (x1) { cam("coletor", "Coletor de extravasor e limpeza", ESCURO, [[x1, yc, 0], [x1, yc, zc]], P.dX); });
+      cam("coletor", "Coletor de extravasor e limpeza", ESCURO, [[xf[0], yc, zc], [xR, yc, zc], [xR, hb + 0.005, zc]], P.dX);
+    }
+    var rl = geoRalo({ D: 0.15, H: Math.min(hb, 0.1), quadrado: 1 }, q);   // ralo quadrado 15 cm; embutido na base (topo rente)
+    rl.forEach(function (p) {
+      var c = parte("ralo-" + p.id, "Ralo de coleta (" + p.nome + ")", p.material, true), v = p.m.v, ii;
+      for (ii = 0; ii < v.length; ii += 3) c.m.v.push(v[ii] + xR, v[ii + 1] + hb, v[ii + 2] + zc);
+      c.m.f = p.m.f.slice(); if (p.m.uv) c.m.uv = p.m.uv.slice(); partes.push(c);
+    });
+    Object.keys(pt).forEach(function (kk) { partes.push(pt[kk]); });
+    /* FRENTE VOLTADA PARA +Z: a convenção da família (js/familia.js: Z para fora, onde está quem olha). Todo o desenho acima foi montado com o barrilete em −Z;
+       um giro de 180° em Y (x → −x, z → −z) leva o barrilete, a bomba e as etiquetas para a frente (as etiquetas giram junto: seguem legíveis de frente) e a alimentação
+       e o coletor para trás. Giro próprio: a ordem das faces não muda. Os conectores da família (js/hidfamilias.js) usam as coordenadas JÁ giradas. */
+    partes.forEach(function (p) { var v = p.m.v, ii; for (ii = 0; ii < v.length; ii += 3) { v[ii] = -v[ii]; v[ii + 2] = -v[ii + 2]; } });
+    return partes;
+  }
+
   var GERADORES = {
     bacia_caixa: function (P, q) { return geoBacia(P, q, true); },
     bacia_valvula: function (P, q) { return geoBacia(P, q, false); },
@@ -1708,7 +1868,8 @@
     caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
-    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel, boia: geoBoia
+    sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel, boia: geoBoia,
+    motobomba_bc: geoMotobombaBC, casa_reservatorios: geoCasaReservatorios
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
@@ -1716,7 +1877,8 @@
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 1050, caixa_descarga_embutida: 1400,
     caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
-    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600
+    sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,
+    motobomba_bc: 7000, casa_reservatorios: 42000
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
   var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",

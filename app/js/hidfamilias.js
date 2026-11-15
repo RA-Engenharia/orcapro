@@ -1409,6 +1409,90 @@
     return [cil("luva", "Luva", "x", "0", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.04", "PVC"),
       cil("tela", "Tela", "x", "0.04", "0", "0", "max(0.012; DN_tubo/2000 + 0.004)", "0.003", "Inox")];
   };
+  /* 7) MOTOBOMBA CENTRÍFUGA MONOESTÁGIO SCHNEIDER BC-22 R — "Dimensões do produto" da lâmina técnica BC-22 (2023, p.2), 60 Hz, motor trifásico, bocais roscados BSP
+     (15/11/2026, pedido do Rogério: casa de reservatórios inferiores). Fonte das cotas:
+     https://schneidermotobombas.blob.core.windows.net/media/324812/schneider_lamina_tecnica_bc-22_2023.pdf (e a tabela de seleção 2024,
+     https://schneidermotobombas.blob.core.windows.net/media/321009/schneider_tabela_selecao_2024_web.pdf, que dá sucção × recalque de cada modelo).
+     ⚠ A lâmina NÃO tem a BC-22 R 1 1/4 de 3 cv: o 3 cv existe na BC-22 R 1 A/B (sucção 1 1/4", recalque 1"); a R 1 1/4 começa em 5 cv (sucção 1 1/2", recalque 1 1/4").
+     A família traz os quatro: o 3 cv R 1 B (padrão — é o do projeto de referência: bocal de recalque 1" = DN 25 = o AR-01) e a R 1 1/4 de 5, 7,5 e 10 cv. */
+  var PBC = [["Comprimento_total", 0.454, [0.2, 1.2], "Comprimento total da motobomba (A da lâmina)"], ["Carcaca_comprimento", 0.168, [0.08, 0.4], "Da face da sucção ao flange do motor (D)"],
+    ["Eixo_altura", 0.09, [0.04, 0.3], "Eixo da bomba acima da base (J)"], ["Largura_pes", 0.14, [0.08, 0.4], "Largura dos pés (H)"],
+    ["Pe_motor_B", 0.1, [0.05, 0.3], "Distância entre os furos dos pés do motor (B)"], ["Pe_motor_C", 0.056, [0.02, 0.2], "Do flange ao 1º pé do motor (C)"],
+    ["Topo_recalque", 0.148, [0.06, 0.4], "Do eixo ao topo da boca de recalque (F — leitura do desenho: conferir)"], ["Pos_recalque", 0.056, [0.02, 0.2], "Da face da sucção ao eixo do recalque (G — leitura do desenho: conferir)"],
+    ["Lado_recalque", 0.133, [0.06, 0.3], "Do eixo ao lado do recalque (K)"], ["Lado_caixa_ligacao", 0.149, [0.06, 0.4], "Do eixo ao lado da caixa de ligação do motor (L)"]];
+  var BC_LAMINA = "Schneider Motobombas (Franklin Electric), lâmina técnica BC-22 (2023), p.2 \"Dimensões do produto\" — https://schneidermotobombas.blob.core.windows.net/media/324812/schneider_lamina_tecnica_bc-22_2023.pdf";
+  var BC_CONFERIR = ["raio do motor e da carcaça, aletas, tampa do ventilador e ombro da voluta (proporção do desenho: a lâmina só cota o conjunto)", "F, G e K lidos como distâncias ao EIXO (leitura nossa dos colchetes do desenho)",
+    "vazão e altura manométrica (a lâmina dimensional não traz: o ponto de operação é do projeto)", "DN nominal equivalente à rosca BSP (1\" = DN 25, 1 1/4\" = DN 32, 1 1/2\" = DN 40)", "cor (a lâmina não mostra o produto)"];
+  function mmq(v) { return Math.round(v * 1000); }
+  function tipoBC(id, mod, cv, sucBSP, recBSP, dnS, dnR, d) {
+    var ch = "A=" + mmq(d.A) + "; B=" + mmq(d.B) + "; C=" + mmq(d.C) + "; D=" + mmq(d.D) + "; E=" + mmq(d.E) + "; F=" + mmq(d.F) + "; G=" + mmq(d.G) + "; H=" + mmq(d.H) + "; J=" + mmq(d.J) + "; K=" + mmq(d.K) + "; L=" + mmq(d.L) + "; M=" + mmq(d.M);
+    return fichaQ(id, "Schneider " + mod + " " + cv + " cv trifásica — " + mmq(d.A) + " mm de comprimento, sucção " + sucBSP + "\", recalque " + recBSP + "\"",
+      { Fabricante: "Schneider Motobombas", Linha: "Série BC-22 (centrífuga monoestágio, bocais roscados)", Codigo: mod + " " + cv + " cv", Descricao_ficha: "Motobomba centrífuga monoestágio " + mod + ", " + cv + " cv, trifásica, 60 Hz, bocais roscados BSP, sucção " + sucBSP + " × recalque " + recBSP,
+        Link_ficha: "https://schneidermotobombas.blob.core.windows.net/media/324812/schneider_lamina_tecnica_bc-22_2023.pdf", Edicao_ficha: "Lâmina técnica BC-22 (2023), Dimensões do produto, 60 Hz", Pagina_ficha: 2, Pagina_cotas: 2, Cotas_ficha: ch,
+        Comprimento_total: d.A, Carcaca_comprimento: d.D, Eixo_altura: d.J, Largura_pes: d.H, Pe_motor_B: d.B, Pe_motor_C: d.C, Topo_recalque: d.F, Pos_recalque: d.G, Lado_recalque: d.K, Lado_caixa_ligacao: d.L,
+        DN_succao: dnS, DN_recalque: dnR, Potencia_cv: cv, Modelo: mod + " " + cv + " cv" }, BC_LAMINA, BC_CONFERIR);
+  }
+  ESPECS.push({ id: "hid-motobomba-centrifuga", nome: "Motobomba centrífuga monoestágio (Schneider BC-22, rosca BSP)", categoria: "equipamento", sistemas: ["agua_fria"], tipos: [], generico: true,
+    descricao: "Motobomba centrífuga monoestágio com motor trifásico e bocais roscados. Origem = centro do comprimento, no piso; eixo ao longo do X, sucção em −X (face da carcaça), motor para +X, recalque para cima do lado +Z, caixa de ligação do lado −Z.",
+    avisos: [AV_CONECTOR, "Cotas da lâmina técnica Schneider BC-22 (2023): comprimento, pés, eixo, bocais e lados. Raio do motor/carcaça, aletas e ventilador são proporção do desenho; F, G e K são lidos como distâncias ao eixo. Vazão e altura manométrica: o ponto de operação é do projeto (a lâmina dimensional não traz)."],
+    geo: PBC.map(function (a) { return G(a[0], a[1], a[2], null, a[3]); }).concat([DN("DN_succao", null, "DN da sucção (rosca BSP de cada modelo)"), DN("DN_recalque", null, "DN do recalque (rosca BSP de cada modelo)"),
+      X("Potencia_cv", "numero", 0, "Hidráulica", "Potência nominal do motor (cv)"), X("Vazao_m3h", "numero", 0, "Hidráulica", "Vazão do ponto de operação (m³/h) — do projeto; 0 = a definir"),
+      X("Altura_manometrica_m", "numero", 0, "Hidráulica", "Altura manométrica do ponto de operação (m.c.a.) — do projeto; 0 = a definir"), X("Modelo", "texto", "", "Identificação", "Modelo do fabricante (texto)")]),
+    solidos: [], material: "Azul",
+    conectores: [
+      { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento_total/2", y: "Eixo_altura", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "face da carcaça no eixo (J da lâmina)" },
+      { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento_total/2 + Pos_recalque", y: "Eixo_altura + Topo_recalque", z: "Lado_recalque - (DN_recalque/2000 + 0.014)*1.25", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "F, G e K lidos como distâncias ao eixo (leitura do desenho da lâmina)" }],
+    tiposFicha: [
+      tipoBC("t-schneider-bc22-r1b-3cv", "BC-22 R 1 B", 3, "1 1/4", "1", 32, 25, { A: 0.454, B: 0.1, C: 0.056, D: 0.168, E: 0.135, F: 0.148, G: 0.056, H: 0.14, J: 0.09, K: 0.133, L: 0.149, M: 0.303 }),
+      tipoBC("t-schneider-bc22-r114-5cv", "BC-22 R 1 1/4", 5, "1 1/2", "1 1/4", 40, 32, { A: 0.49, B: 0.14, C: 0.063, D: 0.173, E: 0.141, F: 0.148, G: 0.061, H: 0.16, J: 0.1, K: 0.133, L: 0.167, M: 0.326 }),
+      tipoBC("t-schneider-bc22-r114-75cv", "BC-22 R 1 1/4", 7.5, "1 1/2", "1 1/4", 40, 32, { A: 0.507, B: 0.14, C: 0.07, D: 0.173, E: 0.141, F: 0.148, G: 0.061, H: 0.19, J: 0.112, K: 0.133, L: 0.192, M: 0.346 }),
+      tipoBC("t-schneider-bc22-r114-10cv", "BC-22 R 1 1/4", 10, "1 1/2", "1 1/4", 40, 32, { A: 0.546, B: 0.14, C: 0.089, D: 0.173, E: 0.141, F: 0.148, G: 0.061, H: 0.216, J: 0.132, K: 0.133, L: 0.192, M: 0.373 })] });
+  NOVAS["hid-motobomba-centrifuga"] = { g: "motobomba_bc", p: { la: "Comprimento_total", ld: "Carcaca_comprimento", hj: "Eixo_altura", lb: "Largura_pes", fb: "Pe_motor_B", fc: "Pe_motor_C", ff: "Topo_recalque", gg: "Pos_recalque", kk: "Lado_recalque", ll: "Lado_caixa_ligacao",
+      ds: "se(DN_succao > 0; DN_succao; 32)", dr: "se(DN_recalque > 0; DN_recalque; 25)" },
+    env: ["0", "0", "(Lado_recalque - Lado_caixa_ligacao)/2", "Comprimento_total", "Eixo_altura + Topo_recalque", "Lado_recalque + Lado_caixa_ligacao"], x: [] };
+
+  /* 8) CONJUNTO DE RESERVATÓRIOS COM MOTOBOMBA ("casa de reservatórios inferiores", referência do Rogério, 15/11/2026) — 1 a 3 reservatórios de volume paramétrico lado a lado
+     sobre base de concreto, a motobomba no vão, barrilete de sucção e de recalque com RE e VR, extravasor + limpeza até o ralo de coleta, alimentação ALP-01 e recalque AR-01.
+     O desenho é o js/hidlouca.js geoCasaReservatorios (usa a MESMA geoReservatorio da caixa d'água, com as ligações, e a geoMotobombaBC). Origem = centro do vão da bomba, no eixo das
+     caixas, no piso da base; FRENTE (barrilete e bomba) para +Z; alimentação e coletor atrás (−Z). Os conectores abaixo usam essas coordenadas (o gerador já devolve o conjunto girado). */
+  var ESC = "((Volume_L/3000)^(1/3))", RCX = "(1.14*" + ESC + ")", RRX = "(1.11*" + ESC + ")", NQ = "min(3; max(1; arred(Quantidade_reservatorios; 0)))", MQ = "piso(" + NQ + "/2)", PASSO = "(2*" + RCX + " + Espaco_caixas)";
+  /* extremos em X do conjunto (antes do giro de 180°: o gerador devolve x → −x): esquerda = a borda da caixa mais afastada (ou −0,3 m da bomba) − a folga da base; direita = o ralo + 0,3 m */
+  var XMINC = "(se(" + MQ + " > 0; -(Vao_bomba/2 + 2*" + RCX + " + (" + MQ + " - 1)*" + PASSO + "); -0.3) - Base_folga)", XMAXC = "(Vao_bomba/2 + " + RCX + " + (" + NQ + " - " + MQ + " - 1)*" + PASSO + " + " + RCX + " + 0.164 + DN_extravasor/2000 + 0.002 + 0.8)";
+  function dnPadrao(nome, def, desc) { var g = DN(nome, null, desc); g.def = def; return g; }
+  var LIG_CASA = {}; Object.keys(LIGACOES).forEach(function (k2) { LIG_CASA[k2] = LIGACOES[k2]; });   /* cópia: marcar a do conjunto como da instância não pode mexer na caixa d'água avulsa */
+  var CASA_BOMBA = PBC.map(function (a) { return G("Bomba_" + a[0].toLowerCase(), a[1], a[2], null, "Motobomba: " + a[3]); });
+  ESPECS.push({ id: "hid-conjunto-reservatorios-motobomba", nome: "Conjunto de reservatórios com motobomba (casa de reservatórios inferiores)", categoria: "equipamento", sistemas: ["agua_fria", "pluvial"], tipos: [], generico: true,
+    descricao: "Casa de reservatórios inferiores: 1 a 3 reservatórios (volume paramétrico) lado a lado sobre base de concreto, motobomba centrífuga no vão entre eles, barrilete de sucção e de recalque com registros de esfera (RE) e válvulas de retenção (VR), extravasor e limpeza de todas as caixas juntando num tubo até o ralo de coleta, entrada de alimentação ALP-01 (vem do hidrômetro) e recalque AR-01 (segue para o reservatório superior). Origem = centro do vão da bomba, no piso da base; frente (barrilete e bomba) para +Z.",
+    avisos: [AV_CONECTOR, "Cotas do reservatório: as da caixa Fortlev 3000 L (catálogo 0.202.000.5) ESCALADAS por ∛(Volume/3000) — volume paramétrico por semelhança (a conferir; para o produto real use o tipo da caixa d'água). Motobomba: Schneider BC-22 R 1 B 3 cv (lâmina técnica 2023). Vazão 14,8 m³/h e altura manométrica 43,12 m são o ponto de projeto da referência do Rogério (a bomba do catálogo dá a curva: conferir o ponto). Etiquetas ALP-01 e AR-01 fixas no desenho; DN do coletor, dimensões da base e distâncias do barrilete são de desenho (a conferir no projeto)."],
+    geo: [X("Quantidade_reservatorios", "inteiro", 2, "Dimensões", "Número de reservatórios (1 a 3)"), X("Volume_L", "numero", 3000, "Dimensões", "Volume de cada reservatório (L) — por semelhança com a Fortlev 3000 L"),
+      G("Base_altura", 0.15, [0.05, 0.6], null, "Altura da base de concreto"), G("Base_folga", 0.3, [0.1, 1], null, "Folga da base além das caixas e do barrilete"),
+      G("Vao_bomba", 1.2, [0.8, 3], null, "Vão entre as caixas onde fica a motobomba"), G("Espaco_caixas", 0.45, [0.3, 1.5], null, "Espaço entre caixas vizinhas (passa o tubo descendente do extravasor)"),
+      G("Dist_barrilete", 0.55, [0.4, 1.5], null, "Do fundo das caixas (frente) ao eixo do barrilete de sucção"), G("Dist_bomba", 0.45, [0.35, 1.5], null, "Do barrilete à face de sucção da bomba (cabe o RE)"),
+      G("Recalque_altura", 1, [0.4, 3], null, "Do topo da bomba à ponta marcada do recalque (AR-01)"), G("Alimentacao_extensao", 0.4, [0.1, 2], null, "Quanto a alimentação (boia) avança para trás depois do adaptador"),
+      dnPadrao("DN_succao", 40, "DN do barrilete de sucção"), dnPadrao("DN_recalque", 25, "DN do recalque (AR-01: ø25 na referência)"), dnPadrao("DN_alimentacao", 25, "DN da alimentação (ALP-01: ø25 na referência)"),
+      dnPadrao("DN_extravasor", 50, "DN do extravasor/limpeza e do coletor até o ralo (adotado: a conferir no projeto)"), LIG_CASA]
+      .concat(CASA_BOMBA).concat([X("Bomba_dn_succao", "numero", 32, "Motobomba", "DN do bocal de sucção da bomba (BC-22 R 1 B: 1 1/4\" = DN 32)"), X("Bomba_dn_recalque", "numero", 25, "Motobomba", "DN do bocal de recalque da bomba (1\" = DN 25)"),
+        X("Potencia_cv", "numero", 3, "Hidráulica", "Potência do motor (cv) — a referência do Rogério"), X("Vazao_m3h", "numero", 14.8, "Hidráulica", "Vazão de operação (m³/h) — ponto de projeto da referência do Rogério (a bomba: 4,525 m³/h de projeto)"),
+        X("Altura_manometrica_m", "numero", 43.12, "Hidráulica", "Altura manométrica (m.c.a.) — ponto de projeto da referência do Rogério"), X("Modelo_bomba", "texto", "Schneider BC-22 R 1 B 3 cv", "Identificação", "Fabricante e modelo da motobomba (texto)")]),
+    solidos: [], material: "Concreto",
+    conectores: [
+      { id: "alimentacao", nome: "Alimentação ALP-01 (vem do hidrômetro)", sistema: "agua_fria", dn: "DN_alimentacao", x: "se(" + MQ + " > 0; Vao_bomba/2 + " + RCX + " + (" + MQ + " - 1)*" + PASSO + "; -(Vao_bomba/2 + " + RCX + "))", y: "Base_altura + 1.21*" + ESC + "*0.86",
+        z: "-(" + RRX + "*0.97 + 0.06 + Alimentacao_extensao)", papel: "entrada", dir: dv("parede"), origemPos: "desenho", aConferir: "etiqueta ALP-01 da referência; ponta da alimentação da 1ª caixa (a posição acompanha o desenho do conjunto)" },
+      { id: "recalque", nome: "Recalque AR-01 (segue para o reservatório superior)", sistema: "agua_fria", dn: "DN_recalque", x: "Bomba_lado_recalque - (Bomba_dn_recalque/2000 + 0.014)*1.25", y: "Base_altura + Bomba_eixo_altura + Bomba_topo_recalque + Recalque_altura",
+        z: RCX + " + Dist_barrilete - Dist_bomba - Bomba_pos_recalque", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "etiqueta AR-01 da referência; ponta do recalque acima da bomba" },
+      { id: "ralo", nome: "Ralo de coleta (extravasor e limpeza)", sistema: "pluvial", dn: "DN_extravasor", visivel: "Com_ligacoes",
+        x: "-(Vao_bomba/2 + " + RCX + " + (" + NQ + " - " + MQ + " - 1)*" + PASSO + " + " + RCX + " + 0.164 + DN_extravasor/2000 + 0.002 + 0.5)", y: "Base_altura - min(Base_altura; 0.1)", z: "-(" + RCX + " + 0.5)",
+        papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "descarga do ralo: o destino é do projeto (nunca no esgoto sanitário: nota do projeto)" }] });
+  NOVAS["hid-conjunto-reservatorios-motobomba"] = { g: "casa_reservatorios", p: { n: "Quantidade_reservatorios", V: "Volume_L", hb: "Base_altura", fo: "Base_folga", vao: "Vao_bomba", gt: "Espaco_caixas", db: "Dist_barrilete", dp: "Dist_bomba", ha: "Recalque_altura", ext: "Alimentacao_extensao",
+      dS: "se(DN_succao > 0; DN_succao; 40)", dR: "se(DN_recalque > 0; DN_recalque; 25)", dA: "se(DN_alimentacao > 0; DN_alimentacao; 25)", dX: "se(DN_extravasor > 0; DN_extravasor; 50)", lg: "se(Com_ligacoes; 1; 0)",
+      la: "Bomba_comprimento_total", ld: "Bomba_carcaca_comprimento", hj: "Bomba_eixo_altura", lb: "Bomba_largura_pes", fb: "Bomba_pe_motor_b", fc: "Bomba_pe_motor_c", ff: "Bomba_topo_recalque", gg: "Bomba_pos_recalque", kk: "Bomba_lado_recalque", ll: "Bomba_lado_caixa_ligacao", bs: "Bomba_dn_succao", br: "Bomba_dn_recalque" },
+    env: ["-(" + XMAXC + " + " + XMINC + ")/2", "0", "(Dist_barrilete + Base_folga - 0.7)/2", XMAXC + " - " + XMINC, "Base_altura + 1.49*" + ESC, "2*" + RCX + " + Dist_barrilete + Base_folga + 0.9"], x: [] };
+
+  /* o conjunto é montado por INSTÂNCIA (cada casa de reservatórios tem o seu N, volume, vão e DN): todos os parâmetros dele são da instância; na motobomba, o ponto de operação (vazão e altura) é do projeto */
+  ESPECS.forEach(function (e) {
+    if (e.id === "hid-conjunto-reservatorios-motobomba") e.geo.forEach(function (g) { g.instancia = true; });
+    if (e.id === "hid-motobomba-centrifuga") e.geo.forEach(function (g) { if (g.nome === "Vazao_m3h" || g.nome === "Altura_manometrica_m") g.instancia = true; });
+  });
   Object.keys(NOVAS).forEach(function (k) { GERADA[k] = NOVAS[k]; });
   function solidoGerado(e, d) {
     return { id: "forma", nome: e.nome, forma: "gerada", gerador: d.g, x: "0", y: "0", z: "0", p: JSON.parse(JSON.stringify(d.p)), material: "Material",
