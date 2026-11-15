@@ -74,6 +74,14 @@
     fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
     simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35 },
     esquema: { margem: 8, folgaChamada: 30, pena: 0.35, minRotulo: 9, no: 0.55, chamada: 16, d0: 2.2, penaChamada: 0.32, hachPasso: 1.1, alturaMin: 0.6, folgaTopo: 0.6 },
+    /* LEGENDA - PONTOS HIDRÁULICOS (15/11/2026, folha de referência do Rogério): tabela PEÇA DE UTILIZAÇÃO x ABREVIATURA na coluna da legenda, só com as peças do modelo.
+       linha = altura mínima da linha em múltiplos da letra; folga = respiro vertical; colSigla = largura da coluna da sigla (mm); as siglas são as MESMAS dos rótulos da folha */
+    legTab: { titulo: "LEGENDA - PONTOS HIDRÁULICOS", cab: ["PEÇA DE UTILIZAÇÃO", "ABREVIATURA"], linha: 1.9, folga: 1.2, colSigla: 24, corCab: "#d3d8de", corZebra: "#f1f3f5",
+      pecas: [["BS", "BACIA SANITÁRIA"], ["BCA", "BACIA SANITÁRIA COM CAIXA ACOPLADA"], ["LV", "LAVATÓRIO"], ["MLR", "MÁQUINA DE LAVAR ROUPAS"], ["MLL", "MÁQUINA DE LAVAR LOUÇAS"],
+        ["CH", "CHUVEIRO"], ["DC", "DUCHA HIGIÊNICA"], ["PIA", "PIA"], ["TANQUE", "TANQUE"], ["MIC", "MICTÓRIO"], ["BI", "BIDÊ"], ["BH", "BANHEIRA"], ["TL", "TORNEIRA DE LIMPEZA"], ["TJ", "TORNEIRA DE JARDIM"],
+        ["VD", "VÁLVULA DE DESCARGA"], ["RP", "REGISTRO DE PRESSÃO"], ["RG", "REGISTRO DE GAVETA"], ["RE", "REGISTRO DE ESFERA"], ["VR", "VÁLVULA DE RETENÇÃO"],
+        ["CS", "CAIXA SIFONADA"], ["RS", "RALO SIFONADO"], ["RSE", "RALO SECO"], ["RL", "RALO LINEAR"]],
+      acess: { registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" } },
     quadro: { linha: 12, icone: 10.5, grupo: 7, col: [11, 16, 0, 22, 12, 20], gap: 12, cab: 8, corCab: "#263445", corGrupo: "#e9eef4", corZebra: "#f6f7f9" },
     detalhe: { linhas: 2, colunas: 3 }, barMax: 4, chamadaPlanta: 1.8,
     /* rodada 2: louça real (vinco em graus, quantização de vértice, lados do círculo), vistas agrupadas na folha (mm de papel) */
@@ -1259,6 +1267,10 @@
     var col = 0, y = a.y + K2.titulo + 2, yMax = a.y + a.h - 2;
     function prox() { col++; y = a.y + K2.titulo + 2; }
     arr(c.blocosExtra).forEach(function (b) {
+      if (b.tabela) {
+        var hT = medirTabela(c.AP, b, h, cw, T.titulo * 0.8); if (y + hT > yMax) prox();
+        y = desenharTabela(D, c.AP, b, a.x + col * (cw + 10), y, cw, h, T.titulo * 0.8); return;
+      }
       if (y + h * 3 > yMax) prox();
       var x = a.x + col * (cw + 10);
       D.texto(x, y + T.titulo * 0.76, b.titulo, T.titulo * 0.8, { peso: 0.26, cor: b.cor }); y += T.titulo * 1.4;
@@ -2366,14 +2378,46 @@
   var CONVENCOES = ["AF água fria · AQ água quente · ES esgoto · VE ventilação · AP águas pluviais",
     "AF-n coluna de água fria · TQ-n tubo de queda · CS caixa sifonada · CI caixa de inspeção · CG caixa de gordura",
     "RG registro de gaveta · RP registro de pressão · RE registro de esfera · VR válvula de retenção · VD válvula de descarga",
-    "BS bacia · BCA bacia c/ caixa acoplada · LV lavatório · CH chuveiro · DC ducha higiênica · PIA pia · MIC mictório · MLR máquina de lavar",
     "ø diâmetro nominal (mm) · i declividade (%) · +0,60 altura do piso acabado (m)"];
+  /* LEGENDA - PONTOS HIDRÁULICOS: as linhas (peça, sigla) SÓ das peças que existem no modelo; a sigla vem dos mesmos lugares dos rótulos da folha
+     (nomeAparelhoFn = tabela de alturas do kit; rotuloPeca/siglaPeca = caixas e ralos; a sigla do registro = a da planta) */
+  function linhasLegendaPontos(modelo, rede, nomeAp) {
+    var LT = K2.legTab, tem = {}, NV = NIV();
+    arr(modelo && modelo.estado && modelo.estado.familias).forEach(function (f) { var sg = nomeAp(f.id); if (sg) tem[sg] = 1; });
+    arr(rede && rede.acessorios).forEach(function (a) { var sg = LT.acess[a.acessorio]; if (sg) tem[sg] = 1; });
+    arr(rede && rede.pecas).forEach(function (k) { var sg = NV && NV.siglaPeca ? NV.siglaPeca(k.peca) : null; if (sg) tem[sg] = 1; });
+    return LT.pecas.filter(function (r) { return tem[r[0]]; }).map(function (r) { return [r[1], r[0]]; });
+  }
+  function alturaLinhaTab(AP0, nome, h, w) { var LT = K2.legTab, ls = AP0.quebrar(nome, h, w - LT.colSigla - LT.folga * 2); return Math.max(h * LT.linha, ls.length * h * K2.notaLinha + LT.folga); }
+  function medirTabela(AP0, b, h, w, hTit) {
+    var tot = hTit * K2.tituloEntre + 1.5 + h * K2.legTab.linha;
+    b.tabela.forEach(function (r) { tot += alturaLinhaTab(AP0, r[0], h, w); });
+    return tot + K2.blocoEntre;
+  }
+  /* desenha o título, o cabeçalho cinza e as linhas zebradas (estilo do quadro de materiais); devolve o y seguinte */
+  function desenharTabela(D, AP0, b, x0, y, w, h, hTit) {
+    var LT = K2.legTab, hc = h * LT.linha, xs = x0 + w - LT.colSigla;
+    D.texto(x0, y + hTit * KI0(), b.titulo, hTit, { peso: 0.26 }); y += hTit * K2.tituloEntre + 1.5;
+    D.fundo(x0, y, w, hc, LT.corCab);
+    D.texto(x0 + LT.folga, y + hc / 2 + h * 0.36, LT.cab[0], h, { peso: 0.2 }); D.texto(xs + LT.colSigla / 2, y + hc / 2 + h * 0.36, LT.cab[1], h, { al: "C", peso: 0.2 });
+    var yIni = y; y += hc;
+    b.tabela.forEach(function (r, i) {
+      var ls = AP0.quebrar(r[0], h, w - LT.colSigla - LT.folga * 2), ah = alturaLinhaTab(AP0, r[0], h, w);
+      if (i % 2 === 0) D.fundo(x0, y, w, ah, LT.corZebra);
+      ls.forEach(function (sl, q) { D.texto(x0 + LT.folga, y + ah / 2 - (ls.length - 1) * h * K2.notaLinha / 2 + q * h * K2.notaLinha + h * 0.36, sl, h, {}); });
+      D.texto(xs + LT.colSigla / 2, y + ah / 2 + h * 0.36, r[1], h, { al: "C", peso: 0.2 });
+      y += ah; D.linha(x0, y, x0 + w, y, "HID-COTA");
+    });
+    D.linha(x0, yIni, x0, y, "HID-TABELA"); D.linha(x0 + w, yIni, x0 + w, y, "HID-TABELA"); D.linha(xs, yIni, xs, y, "HID-TABELA"); D.linha(x0, yIni, x0 + w, yIni, "HID-TABELA");
+    return y + K2.blocoEntre;
+  }
   /* a altura que a coluna precisa com a letra h (legenda + blocos) */
   function medirColuna(leg, blocos, h, wmax, hLegTit) {
     var AP0 = AP(), tot = hLegTit * K2.tituloEntre + 1.5;
     leg.forEach(function (it) { tot += Math.max(K2.legLinha, AP0.quebrar(it[1], h, wmax - K2.legTexto).length * h * K2.notaLinha + K2.notaEntre); });
     tot += K2.blocoEntre;
     blocos.forEach(function (b) {
+      if (b.tabela) { tot += medirTabela(AP0, b, h, wmax, hLegTit); return; }
       tot += hLegTit * K2.tituloEntre + 1.5;
       b.itens.forEach(function (it, i) { var t = it && typeof it === "object" ? it.t : it, pre = b.numerar ? (i + 1) + "- " : "- "; tot += AP0.quebrar(t, h, wmax - larg(pre, h)).length * h * K2.notaLinha + K2.notaEntre; });
       tot += K2.blocoEntre;
@@ -2384,7 +2428,7 @@
   function planejarColuna(geo, blocos, r, temQr) {
     var T = AP().estilo().T, col = geo.coluna, car = geo.carimbo, wmax = col.w - 7, leg = legendaItens(r), hLegTit = T.quadro * K2.tituloQuadro;
     var disp = (car.y - 3) - (col.y + 4) - (temQr ? K2.qr + K2.qrTexto * 2 + K2.blocoEntre : 0);
-    var ficam = blocos.slice(), saem = [], ordemSai = ["NORMAS USADAS NO CÁLCULO", "NOTAS GERAIS", "CONVENÇÕES", "ITENS A CONFIRMAR"];
+    var ficam = blocos.slice(), saem = [], ordemSai = ["NORMAS USADAS NO CÁLCULO", "NOTAS GERAIS", "CONVENÇÕES", K2.legTab.titulo, "ITENS A CONFIRMAR"];
     var hs = [T.nota, T.nota * 0.92, T.nota * 0.84, T.minimo];
     function cabe(lista, extra) { for (var i = 0; i < hs.length; i++) if (medirColuna(leg, lista.concat(extra || []), hs[i], wmax, hLegTit) <= disp) return hs[i]; return null; }
     var aviso = { titulo: "VER FOLHA DE NOTAS", itens: [{ t: "-" }] }, h = cabe(ficam);
@@ -2416,6 +2460,7 @@
     }).filter(Boolean);
     if (plano.saem.length) blocos.push({ titulo: "VER FOLHA " + opc.folhaNotas, itens: [{ t: plano.saem.map(function (b) { return b.titulo; }).join(", ") + ": na folha " + opc.folhaNotas + "." , cor: plano.saem.some(function (b) { return b.titulo === "ITENS A CONFIRMAR"; }) ? K2.vermelho : null }] });
     blocos.forEach(function (b) {
+      if (b.tabela) { y = desenharTabela(D, AP0, b, x0, y, wmax, h, hLegTit); return; }
       D.texto(x0, y + hLegTit * KI0(), b.titulo, hLegTit, { peso: 0.26, cor: b.cor });
       y += hLegTit * K2.tituloEntre + 1.5;
       b.itens.forEach(function (it, i) {
@@ -2662,6 +2707,8 @@
     /* a coluna: legenda + convenções + notas + normas + pendências; o que não couber vai para a folha de NOTAS */
     var blocos = notasDe({ r: resultado, cfg: cfg }), qrTxt = portalDe(cfg);
     blocos.splice(0, 0, { titulo: "CONVENÇÕES", itens: CONVENCOES.slice() });
+    var linPts = linhasLegendaPontos(modelo, rede, nomeAp);
+    if (linPts.length) blocos.splice(0, 0, { titulo: K2.legTab.titulo, tabela: linPts });
     var plano = planejarColuna(geo, blocos, resultado, !!qrTxt);
     if (plano.saem.length) defs.push({ id: "notas", titulo: "NOTAS GERAIS, CONVENÇÕES E NORMAS", tipo: "notas", grupo: "notas" });
     var feitas = [], offs = [];
@@ -2756,7 +2803,7 @@
     var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
     return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
   }
-  var _int = { K2: K2, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+  var _int = { K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
     paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

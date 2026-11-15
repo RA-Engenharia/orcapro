@@ -2545,8 +2545,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         try { construirSisIdx(); } catch (_) {}
         var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
         var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, emissive: op < 1 ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
-        var MAT = { af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */
-        bk.trocas = []; bk.matsFoco = MAT;
+        var MAT = { cx: mF(0x7a5a3e, 1), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */
+        bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, papeis: {} };   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
         todasMalhas(function (m) {
           if (!m.isMesh) return; var k = m.userData._sisK || 'outros';   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
@@ -2559,6 +2559,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
             return;
           }
+          /* CONEXÃO DE ÁGUA EM MARROM (pedido do Rogério 14/11/2026, folha de outro projetista: "o tubo fica azul e as conexões de marrom"):
+             a malha de papel 'conexao' (joelho, tê, luva...) ou 'pontoAgua' (a conexão do ponto de utilização) sai no marrom do PVC soldável (APAR.pvc_soldavel #6A5442, mais vivo para a foto);
+             o tubo segue na cor do sistema e o registro/válvula (papel 'acessorio', latão) mantém o material dele */
+          window.__focoDiag.papeis[m.userData.instPapel || '-'] = (window.__focoDiag.papeis[m.userData.instPapel || '-'] || 0) + (agua ? 1 : 0);
+          var pp = m.userData.instPapel;
+          if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; return; }
           var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
           bk.trocas.push([m, m.material]); m.material = nv;
         });

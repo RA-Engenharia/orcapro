@@ -1725,8 +1725,8 @@ if (o.foco && o.foco.length) {
 try { construirSisIdx(); } catch (_) {}
 var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
 var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, emissive: op < 1 ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
-var MAT = { af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
-bk.trocas = []; bk.matsFoco = MAT;
+var MAT = { cx: mF(0x7a5a3e, 1), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
+bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, papeis: {} };
 todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros';
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
@@ -1735,6 +1735,9 @@ if (!agua && !esg) {
 if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
 return;
 }
+window.__focoDiag.papeis[m.userData.instPapel || '-'] = (window.__focoDiag.papeis[m.userData.instPapel || '-'] || 0) + (agua ? 1 : 0);
+var pp = m.userData.instPapel;
+if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; return; }
 var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
 });
