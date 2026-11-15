@@ -104601,8 +104601,8 @@ menu.setAttribute("role", "menu"); menu.hidden = true;
 itens.forEach(function (i) { menu.appendChild(i); });
 wrap.appendChild(bt); wrap.appendChild(menu);
 function algum() { return itens.some(function (i) { return !i.hidden; }); }
-function sinc() { wrap.hidden = !algum(); if (wrap.hidden) fechar(); }
-function fechar() { menu.hidden = true; bt.setAttribute("aria-expanded", "false"); document.removeEventListener("pointerdown", fora, true); document.removeEventListener("keydown", tecla, true); global.removeEventListener("resize", fechar); }
+function sinc() { var h = !algum(); if (wrap.hidden !== h) wrap.hidden = h; if (h && !menu.hidden) fechar(); }
+function fechar() { if (!menu.hidden) menu.hidden = true; if (bt.getAttribute("aria-expanded") !== "false") bt.setAttribute("aria-expanded", "false"); document.removeEventListener("pointerdown", fora, true); document.removeEventListener("keydown", tecla, true); global.removeEventListener("resize", fechar); }
 function fora(ev) { if (!wrap.contains(ev.target)) fechar(); }
 function visiveis() { return [].filter.call(menu.querySelectorAll("button"), function (b) { return !b.disabled && b.getClientRects().length > 0; }); }
 function tecla(ev) {
@@ -104628,7 +104628,7 @@ document.addEventListener("pointerdown", fora, true); document.addEventListener(
 var p1 = visiveis()[0]; if (p1) { try { p1.focus(); } catch (e3) {} }
 };
 menu.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("button") : null; if (b && b.getAttribute("data-pt") !== "modo") setTimeout(fechar, 0); });
-try { if (global.MutationObserver) new global.MutationObserver(sinc).observe(menu, { attributes: true, subtree: true, attributeFilter: ["hidden"] }); } catch (eMo) {}
+try { if (global.MutationObserver) new global.MutationObserver(function (lista) { if (lista.some(function (m) { return m.target !== menu; })) sinc(); }).observe(menu, { attributes: true, subtree: true, attributeFilter: ["hidden"] }); } catch (eMo) {}
 sinc();
 return wrap;
 },
