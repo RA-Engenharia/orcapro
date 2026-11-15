@@ -2544,9 +2544,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (o.foco && o.foco.length) {
         try { construirSisIdx(); } catch (_) {}
         var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
-        var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, emissive: op < 1 ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
-        var MAT = { cx: mF(0x7a5a3e, 1), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */
-        bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, papeis: {} };   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
+        var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMaterial({ color: c, emissive: ((op < 1 && !solida) || semBrilho) ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: (op >= 1 || !!solida), side: THREE.DoubleSide }); };
+        /* CONEXÕES COM 10% DE TRANSPARÊNCIA (pedido do Rogério 15/11/2026, HID-R00 (58): "água fria MARROM, esgoto BRANCA, transparência de uns 10% somente nelas"):
+           opacidade 0,9 com depthWrite LIGADO (solida=true); a BRANCA sem brilho próprio (semBrilho): com emissive ela estourava para 255 e sumia no fundo branco da folha — a conexão enxerga o que está atrás sem sumir/piscar atrás do tubo; tubo segue opaco */
+        var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */
+        bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
+        window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };   /* soma de todas as fotos da geração (a última foto pode ser de esgoto) */   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
         todasMalhas(function (m) {
           if (!m.isMesh) return; var k = m.userData._sisK || 'outros';   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
@@ -2563,8 +2566,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              a malha de papel 'conexao' (joelho, tê, luva...) ou 'pontoAgua' (a conexão do ponto de utilização) sai no marrom do PVC soldável (APAR.pvc_soldavel #6A5442, mais vivo para a foto);
              o tubo segue na cor do sistema e o registro/válvula (papel 'acessorio', latão) mantém o material dele */
           window.__focoDiag.papeis[m.userData.instPapel || '-'] = (window.__focoDiag.papeis[m.userData.instPapel || '-'] || 0) + (agua ? 1 : 0);
+          if (esg) { window.__focoDiag.papeisEsg = window.__focoDiag.papeisEsg || {}; window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] = (window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] || 0) + 1; }
           var pp = m.userData.instPapel;
-          if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; return; }
+          if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
+          /* ESGOTO/VENTILAÇÃO: a conexão (joelho, junção, luva, TE...) sai BRANCA (PVC esgoto série normal), o tubo segue verde */
+          if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
           var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
           bk.trocas.push([m, m.material]); m.material = nv;
         });
@@ -20361,6 +20367,8 @@ window.BIM = {
   instMedir: function () { return (S && S._instMedir) ? S._instMedir() : { malhas: 0, tri: 0, porPapel: {} }; },
   _instCtx: function () { return (S && S._instCtx) ? S._instCtx() : null; },
   _andaime3d: function () { return (S && S._andaime3d) ? S._andaime3d.resumo() : null; },   // gancho de teste: o que o js/andaime3d.js montou (tipos, malhas, instâncias, triângulos, nível)
+  /* gancho de teste (e2e-hid-pranchas, 15/11/2026): troca o PAPEL (userData.instPapel) das malhas de um sistema ('esgoto', 'agua_fria'...) de `de` para `para` e devolve quantas — prova a cor da conexão do foco quando a cena do teste não tem a conexão modelada */
+  _trocarPapelTeste: function (sisK, de, para) { if (!S || !S.scene) return 0; try { construirSisIdx(); } catch (_) {} var n = 0; S.scene.traverse(function (m) { if (m.isMesh && m.userData && m.userData._sisK === sisK && m.userData.instPapel === de) { m.userData.instPapel = para; n++; } }); return n; },
   _malhaEdit: function (id) { return (S && S.meshPorUid) ? (S.meshPorUid['edit:' + id] || null) : null; },   // gancho de teste (e2e-andaime-encaixe): a malha de uma peça criada aqui (o tubo do andaime)
   _andaimeObjetos: function () { var o = []; if (S && S.scene) S.scene.traverse(function (m) { if (m.isInstancedMesh && m.userData && m.userData.andaime3d) o.push(m); }); return o; },   // gancho de teste (e2e-andaime-encaixe): os InstancedMesh do andaime, com a matriz real de cada instância
   _grade: function (liga) { if (!S || !S.scene) return 0; var n = 0; S.scene.traverse(function (o) { if (o.isGridHelper || (o.type === "GridHelper")) { o.visible = !!liga; n++; } }); return n; },   // gancho de teste: a GRADE do chão (GridHelper) é a das linhas horizontais longas da cena

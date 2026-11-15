@@ -2290,6 +2290,7 @@
       this._lod = nivel === "medio" ? "longe" : "perto";
       var lodEle = nivel !== "alto" ? "longe" : "perto";   // eletrica-v2 L6/revisão B7: só o eletroduto (material elet_*) liso no Baixo e no Médio; o hidro fica como no master
       var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
+      this.semPecaCx = [];   /* as conexões sem peça de catálogo desta montagem (o auditor lê) */
       var baixo = nivel === "baixo";
       var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
       R.trechos.forEach(function (t) { porId[t.id] = t; });
@@ -2418,12 +2419,19 @@
              "cor por sistema" a conexão de água fria/quente fica no MATERIAL dela (o PVC soldável marrom); só o tubo leva o azul do sistema */
           return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null, /^agua/.test(String(c.sistema))));
         }).filter(Boolean);
+        else if (G && G.JUNTA && G.JUNTA[c.material] && !(I.MATERIAIS[c.material] || {}).secao) {
+          /* ⚠ CONEXÃO SEM PEÇA DE CATÁLOGO (15/11/2026, print do Rogério: "cubo cinza" no nó de três tubos): o cubo lia como peça da obra e escondia o defeito. Agora
+             a conexão que o motor não soube desenhar sai como um TOCO fino e vazado, cor de alerta, com o nome dizendo o que fazer, e entra na lista do auditor
+             (self.semPecaCx). Nunca mais um bloco calado. */
+          var rA = Math.max((c.dn || 40) / 2000, 0.012) * 1.25, mA2 = new THREE.Mesh(new THREE.CylinderGeometry(rA, rA, rA * 3, 16, 1, true), self._mat(THREE, 0xe03131));
+          mA2.position.set(c.x, c.y, c.z); ms = [mA2]; (self.semPecaCx = self.semPecaCx || []).push({ id: c.id, nome: c.nome, dn: c.dn });
+        }
         else {   /* duto, eletrocalha ou material sem família de junta: um bloco do tamanho da seção (nunca mais a bolota) */
           var porT = (c.ramos || []).map(function (id) { return porId[id]; }).filter(Boolean)[0], s0 = porT && porT.larg ? Math.max(porT.larg, porT.alt) * 1.08 : Math.max((c.dn || 40) / 1000, 0.016) * 1.3;
           var mb = new THREE.Mesh(new THREE.BoxGeometry(s0, porT && porT.alt ? porT.alt * 1.08 : s0, s0), G ? self._matPeca(THREE, c.material, c.sistema, "corpo", null, /^agua/.test(String(c.sistema))) : self._mat(THREE, I.SISTEMAS[c.sistema].cor));
           mb.position.set(c.x, c.y, c.z); ms = [mb];
         }
-        out.push({ id: c.id, ifc: ifcCx(c.sistema), malhas: papel(ms, "conexao"), disciplina: discDe(c.sistema), nome: c.nome + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " (conexão automática" + (gx && gx.aConferir ? "; forma com cota a conferir" : "") + ")", qto: { contagem: 1 }, derivada: true });
+        out.push({ id: c.id, ifc: ifcCx(c.sistema), malhas: papel(ms, "conexao"), disciplina: discDe(c.sistema), nome: c.nome + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " (conexão automática" + (!gx && !baixo && G && G.JUNTA && G.JUNTA[c.material] && !(I.MATERIAIS[c.material] || {}).secao ? "; CONEXÃO SEM PEÇA DE CATÁLOGO NESTE NÓ — reveja o traçado" : "") + (gx && gx.aConferir ? "; forma com cota a conferir" : "") + ")", qto: { contagem: 1 }, derivada: true });
       });
       R.pecas.forEach(function (k) {
         var P = I.PECAS[k.peca], cor = P.sistemas[0] === "eletrica" ? I.COR_CAIXA_ELETRICA : I.SISTEMAS[k.sistema].cor, ms, gp = pecaGeo[k.id];

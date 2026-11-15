@@ -1199,10 +1199,15 @@
   }
 
   /* ------------------------------------------------------------ QUADRO DE MATERIAIS (com o ícone da peça) */
+  /* O QUADRO DAS PRANCHAS DO HIDRO É SÓ DO HIDRO (15/11/2026 — HID-R00 (58) saiu com um grupo "ELÉTRICA" — caixa 4x2, caixa octogonal, eletroduto corrugado —
+     que é da prancha da elétrica): fica só quem tem camada de sistema do hidrossanitário (CAMADA_SIS: AF, AQ, ES, VE, AP, incêndio, indústria, gás) e o grupo
+     "louças, metais e equipamentos" (sistema ""). Elétrica, ar, frigorígeno, bandeja e dreno de climatização saem. */
+  function soHidro(L) { return arr(L).filter(function (x) { var s = txt(x && x.sistema); return s === "" || Object.prototype.hasOwnProperty.call(CAMADA_SIS, s); }); }
   function linhasQuadro(c) {
     var PC = PEC(), B = BI(), est = c.modelo && c.modelo.estado, L = null;
     try { if (PC && B && est) L = PC.listaMaterial(B.qto(est, c.modelo.avaliarFam), arr(est.familias)); } catch (e) { L = null; }
     if (!L) return null;
+    L = soHidro(L);
     var por = {}, ordem = [], SO = ["agua_fria", "agua_quente", "esgoto", "ventilacao", "pluvial", "incendio", "industrial", "gas", ""];
     L.forEach(function (x) {
       var k = txt(x.sistema) + "|" + txt(x.descricao) + "|" + txt(x.unidade);
@@ -3005,7 +3010,7 @@
     var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
     return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
   }
-  var _int = { K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+  var _int = { soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
     paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

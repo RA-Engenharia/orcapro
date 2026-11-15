@@ -353,8 +353,22 @@ var out = [], op = opcoes || {};
 q = q || {};
 arr(q.tubos).forEach(function (g) { out.push(linha(tubo(g.material, g.dn), { classe: "tubo", descricao: "Tubo " + nomeMaterial(g.material) + " DN " + g.dn, unidade: g.unidade || "m", dn: g.dn, quantidade: g.quantidade, sistema: g.sistema, aplicacao: g.aplicacao })); });
 arr(q.conexoes).forEach(function (g) {
-var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF);
+var dn2n = Number(g.dn2), temDn2 = isFinite(dn2n) && dn2n > 0 && dn2n !== Number(g.dn);
+var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" && temDn2 ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF), aprox = false;
+if (!fcx && temDn2 && (g.tipo === "reducao" || g.tipo === "bucha_longa" || g.tipo === "luva_reducao")) fcx = conexao("bucha", g.material, g.dn + "x" + g.dn2);
+if (!fcx) { fcx = conexao(g.tipo === "bucha_longa" || g.tipo === "luva_reducao" ? "reducao" : (g.tipo === "juncao_reducao" ? "juncao" : g.tipo), g.material, g.dn); aprox = !!fcx; }
 var l = linha(fcx, { classe: "conexao", descricao: g.nome || g.tipo, unidade: "un", dn: g.dn, dn2: g.dn2, quantidade: g.n, sistema: g.sistema, aplicacao: g.aplicacao });
+var dnTxt = g.dn + (temDn2 ? " x " + g.dn2 : "");
+if (fcx) {
+if (temDn2 && /DN \d+ mm/.test(l.descricao) && !/ x \d+ mm/.test(l.descricao)) l.descricao = l.descricao.replace(/DN (\d+) mm/, "DN $1 x " + dn2n + " mm");
+if (/longa/i.test(txt(g.nome)) && !/longa/i.test(l.descricao)) l.descricao = l.descricao.replace(/Bucha de redução/, "Bucha de redução longa");
+if (aprox) { l.preco = { pendente: true, valor: null, criterio: "ficha de preço do DN " + g.dn + " não vale para a peça " + dnTxt + " — conferir no Orçamento do modelo" }; l.total = null; }
+} else {
+var nm = txt(g.nome || g.tipo), mat = nomeMaterial(g.material);
+l.descricao = nm + (mat && nm.toLowerCase().indexOf(mat.toLowerCase()) < 0 ? " " + mat : "") + " DN " + dnTxt + (/ mm$/.test(dnTxt) ? "" : " mm");
+var tp = ({ bucha_longa: "bucha", luva_reducao: "bucha", reducao: temDn2 ? "bucha" : "reducao", juncao_reducao: "juncao" })[g.tipo] || g.tipo, ic = "cx-" + tp.replace(/_/g, "-") + "-" + txt(g.material).replace(/_/g, "-");
+if (icones().indexOf(ic) >= 0) l.icone = ic;
+}
 if (g.premissa) l.premissas = [g.premissa];
 if (g.incluso) { l.incluso = g.incluso; l.total = null; l.preco = { pendente: false, valor: null, incluso: true, criterio: g.incluso }; }
 out.push(l);
@@ -365,7 +379,13 @@ l.premissas = [p.texto || "ponto de água sem rosca padrão — peça de ligaç�
 out.push(l);
 });
 arr(q.acessorios).forEach(function (g) { out.push(linha(acessorio(g.acessorio || g.peca, g.variante, g.dnTubo || g.dn), { classe: "acessorio", descricao: g.nome || g.acessorio, unidade: "un", quantidade: g.n, sistema: g.sistema })); });
-arr(q.pecas).forEach(function (g) { out.push(linha(peca(g.peca, g.dn), { classe: "peca", descricao: g.nome || g.peca, unidade: "un", dn: g.dn, quantidade: g.n, sistema: g.sistema, aplicacao: g.sistema === "pluvial" ? "pluvial" : "esgoto" })); });
+arr(q.pecas).forEach(function (g) {
+var fpc = peca(g.peca, g.dn);
+if (!fpc && g.peca === "caixa_inspecao") { var nmc = txt(g.nome).toLowerCase(); fpc = peca("caixa_inspecao", /alvenaria/.test(nmc) ? "alvenaria" : /pr[eé]-?moldad/.test(nmc) ? "premoldado" : /pvc/.test(nmc) ? "pvc300" : "__"); }
+var lp = linha(fpc, { classe: "peca", descricao: g.nome || g.peca, unidade: "un", dn: g.dn, quantidade: g.n, sistema: g.sistema, aplicacao: g.sistema === "pluvial" ? "pluvial" : "esgoto" });
+if (fpc && g.peca === "caixa_inspecao" && g.nome) lp.descricao = txt(g.nome);
+out.push(lp);
+});
 var grupos = {}, ordem = [];
 arr(familias).forEach(function (f) {
 if (!f || !f.famId) return;
@@ -6841,7 +6861,12 @@ ux /= Lu; uz /= Lu;
 var nx = -uz, nz = ux; if ((A.x - B.x) * nx + (A.z - B.z) * nz < 0) { nx = -nx; nz = -nz; }
 var obs45 = H.obstaculosDoBim(estado, avaliarFam);
 var dnB = num(Tb.dn, 100), d45 = Math.max(0.15, (dnB + dnA) / 2000 + 0.10), iB = num(I.inclinacaoMinima ? I.inclinacaoMinima("esgoto", dnA || 40) : null, 2) / 100;
-var J = { x: r4(B.x), y: r4(B.y), z: r4(B.z) }, Ld = d45 * Math.SQRT2;
+var J = { x: r4(B.x), y: r4(B.y), z: r4(B.z) }, Ld = d45 * Math.SQRT2, deslocJ = 0;
+var sA = (A.x - up.x) * ux + (A.z - up.z) * uz, sJ0 = (J.x - up.x) * ux + (J.z - up.z) * uz, sJ1 = sA + d45;
+if (sJ1 > sJ0 + 0.01 && sJ1 <= Lu - 0.15) {
+var fJ = sJ1 / Lu; deslocJ = sJ1 - sJ0;
+J = { x: r4(up.x + ux * sJ1), y: r4(up.y + (dw.y - up.y) * fJ), z: r4(up.z + uz * sJ1) };
+}
 var Pp = null, mot = [];
 [1, -1].forEach(function (sg) {
 if (Pp) return;
@@ -6851,7 +6876,7 @@ var b45 = bate45(estado, obs45, Pc, J, dnA || 40, Tb.id);
 if (b45) mot.push((sg > 0 ? "do lado de A " : "do outro lado ") + b45); else Pp = Pc;
 });
 if (!Pp) return { ok: false, erro: "a entrada a 45° no tubo " + txt(Tb.id) + " não cabe: " + mot.join("; ") + " — escolha outro ponto do tubo (mais longe da parede) ou ligue numa ponta/caixa", opcoes: [] };
-entra45 = { J: J, P: Pp };
+entra45 = { J: J, P: Pp, deslocJ: deslocJ };
 B = { tipo: "ponto", x: Pp.x, y: Pp.y, z: Pp.z, sistema: B.sistema, dn: dnA, trecho: B.trecho };
 }
 }
@@ -6970,18 +6995,19 @@ if (altSaida) { ops = [JSON.parse(JSON.stringify(altSaida))].concat(ops); o.avis
 if (bocaB) ops.push({ op: "trecho", id: par.prefixo + "boca", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num(bocaB.boca.dn, 40), p1: bocaB.P, p2: { x: bocaB.boca.x, y: bocaB.boca.y, z: bocaB.boca.z } });
 ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
 if (noVent) {
-var nv = [];
+var nv = [], tomadaVent = null;
 ops.forEach(function (x) {
 if (x.op !== "trecho" || x.sistema === "ventilacao") { nv.push(x); return; }
 var ax = x.p2.x - x.p1.x, ay = x.p2.y - x.p1.y, az = x.p2.z - x.p1.z, L2 = ax * ax + ay * ay + az * az, t = L2 > 0 ? ((noVent.x - x.p1.x) * ax + (noVent.y - x.p1.y) * ay + (noVent.z - x.p1.z) * az) / L2 : -1;
 var Pq = { x: x.p1.x + ax * t, y: x.p1.y + ay * t, z: x.p1.z + az * t };
 if (t > 0.01 && t < 0.99 && Math.hypot(Pq.x - noVent.x, Pq.y - noVent.y, Pq.z - noVent.z) < 0.003) {
-var a1 = JSON.parse(JSON.stringify(x)), a2 = JSON.parse(JSON.stringify(x)); a1.p2 = noVent; a2.p1 = noVent; a2.id = x.id + "-v"; nv.push(a1, a2);
+nv.push(x); tomadaVent = x.id;
 } else nv.push(x);
 });
+if (tomadaVent) nv.forEach(function (x) { if (x.op === "trecho" && x.sistema === "ventilacao" && Math.hypot(x.p1.x - noVent.x, x.p1.y - noVent.y, x.p1.z - noVent.z) < 0.003) { x.continua = "p1"; x.tomada = tomadaVent; } });
 ops = nv;
 }
-var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (avVent) av.push(avVent); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
+var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (avVent) av.push(avVent); if (entra45 && entra45.deslocJ > 0.005) av.push("a junção no tubo " + txt(B.trecho) + " andou " + (entra45.deslocJ * 100).toFixed(0) + " cm a jusante do ponto clicado: a junção a 45° é a favor do fluxo, o ramal tem de chegar de montante dela"); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
 if (rebB) av.push("o corpo da caixa " + txt(PkB0.id) + " desceu " + (rebB.dd * 100).toFixed(1).replace(".", ",") + " cm com o prolongador para a entrada ficar acima do fecho hídrico; os tubos ligados nela desceram junto");
 return { estrategia: o.estrategia, nome: o.nome, ops: arr(rebB && rebB.ops).concat(arr(o.rebaixoOps)).concat(antes.concat(ops)), rebaixoB: rebB ? rebB.dd : 0, comprimento: o.comprimento, avisos: av, boca: bocaB ? bocaB.boca : null, rebaixo: o.rebaixoOps ? true : false };
 });
@@ -27248,10 +27274,12 @@ else D.texto(px + 2, yT + h, "Registros e DN conforme o esquema vertical e a pla
 c.prims.push({ linhas: [], simbolos: [], textos: [], trechos: [] });
 return { escala: "SEM ESCALA" };
 }
+function soHidro(L) { return arr(L).filter(function (x) { var s = txt(x && x.sistema); return s === "" || Object.prototype.hasOwnProperty.call(CAMADA_SIS, s); }); }
 function linhasQuadro(c) {
 var PC = PEC(), B = BI(), est = c.modelo && c.modelo.estado, L = null;
 try { if (PC && B && est) L = PC.listaMaterial(B.qto(est, c.modelo.avaliarFam), arr(est.familias)); } catch (e) { L = null; }
 if (!L) return null;
+L = soHidro(L);
 var por = {}, ordem = [], SO = ["agua_fria", "agua_quente", "esgoto", "ventilacao", "pluvial", "incendio", "industrial", "gas", ""];
 L.forEach(function (x) {
 var k = txt(x.sistema) + "|" + txt(x.descricao) + "|" + txt(x.unidade);
@@ -28872,7 +28900,7 @@ var colunas = colunasPublicas(H, arr(rede.trechos).filter(function (t) { return 
 var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
 return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
 }
-var _int = { K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+var _int = { soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
 bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
 CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
 paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

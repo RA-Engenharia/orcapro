@@ -194,7 +194,17 @@
           var nx = -uz, nz = ux; if ((A.x - B.x) * nx + (A.z - B.z) * nz < 0) { nx = -nx; nz = -nz; }
           var obs45 = H.obstaculosDoBim(estado, avaliarFam);
           var dnB = num(Tb.dn, 100), d45 = Math.max(0.15, (dnB + dnA) / 2000 + 0.10), iB = num(I.inclinacaoMinima ? I.inclinacaoMinima("esgoto", dnA || 40) : null, 2) / 100;   // hid:ok 15 cm mínimo / meio-DN + 10 cm: a derivação sai da bolsa da junção antes do joelho 45° (geometria)
-          var J = { x: r4(B.x), y: r4(B.y), z: r4(B.z) }, Ld = d45 * Math.SQRT2;
+          var J = { x: r4(B.x), y: r4(B.y), z: r4(B.z) }, Ld = d45 * Math.SQRT2, deslocJ = 0;
+          /* A JUNÇÃO NUNCA A MONTANTE DE QUEM LIGA (15/11/2026, Casa 487: caixa sifonada em frente ao ponto clicado no DN 100): a junção a 45° é a favor do
+             fluxo — o ramal tem de vir de MONTANTE dela. Com a caixa na altura do clique (ou depois dele), a rota fazia um zigue-zague (diagonal, volta de
+             37 mm contra o fluxo e joelho 90° no horizontal: a caixa "não encaixava" no traçado). A junção anda a jusante, no mesmo tubo, até ficar
+             a d45 (a distância da diagonal) à frente da caixa em planta: a rota é uma reta + UM joelho 45° + a junção. Só anda se couber no tubo (≥ 15 cm
+             da ponta de jusante); senão fica como o clique e a rota se vira como antes. */
+          var sA = (A.x - up.x) * ux + (A.z - up.z) * uz, sJ0 = (J.x - up.x) * ux + (J.z - up.z) * uz, sJ1 = sA + d45;
+          if (sJ1 > sJ0 + 0.01 && sJ1 <= Lu - 0.15) {   // hid:ok 1 cm de tolerância / 15 cm até a ponta do tubo (geometria, não norma)
+            var fJ = sJ1 / Lu; deslocJ = sJ1 - sJ0;
+            J = { x: r4(up.x + ux * sJ1), y: r4(up.y + (dw.y - up.y) * fJ), z: r4(up.z + uz * sJ1) };
+          }
           /* o lado de A primeiro; colidiu (parede, pilar, outro tubo) → o lado oposto; os dois colidem → recusa com o motivo */
           var Pp = null, mot = [];
           [1, -1].forEach(function (sg) {
@@ -205,7 +215,7 @@
             if (b45) mot.push((sg > 0 ? "do lado de A " : "do outro lado ") + b45); else Pp = Pc;
           });
           if (!Pp) return { ok: false, erro: "a entrada a 45° no tubo " + txt(Tb.id) + " não cabe: " + mot.join("; ") + " — escolha outro ponto do tubo (mais longe da parede) ou ligue numa ponta/caixa", opcoes: [] };
-          entra45 = { J: J, P: Pp };
+          entra45 = { J: J, P: Pp, deslocJ: deslocJ };
           B = { tipo: "ponto", x: Pp.x, y: Pp.y, z: Pp.z, sistema: B.sistema, dn: dnA, trecho: B.trecho };
         }
       }
@@ -343,18 +353,23 @@
       ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
       /* a VENTILAÇÃO deriva no meio do toco: depois de unir os colineares (o toco e o 1º trecho da rota viram um tubo), esse tubo é dividido no nó */
       if (noVent) {
-        var nv = [];
+        var nv = [], tomadaVent = null;
         ops.forEach(function (x) {
           if (x.op !== "trecho" || x.sistema === "ventilacao") { nv.push(x); return; }
           var ax = x.p2.x - x.p1.x, ay = x.p2.y - x.p1.y, az = x.p2.z - x.p1.z, L2 = ax * ax + ay * ay + az * az, t = L2 > 0 ? ((noVent.x - x.p1.x) * ax + (noVent.y - x.p1.y) * ay + (noVent.z - x.p1.z) * az) / L2 : -1;
           var Pq = { x: x.p1.x + ax * t, y: x.p1.y + ay * t, z: x.p1.z + az * t };
           if (t > 0.01 && t < 0.99 && Math.hypot(Pq.x - noVent.x, Pq.y - noVent.y, Pq.z - noVent.z) < 0.003) {   // hid:ok 3 mm: o nó está no eixo deste tubo
-            var a1 = JSON.parse(JSON.stringify(x)), a2 = JSON.parse(JSON.stringify(x)); a1.p2 = noVent; a2.p1 = noVent; a2.id = x.id + "-v"; nv.push(a1, a2);
+            /* 15/11/2026 (Casa 487, caixa 150x185x75): o tubo NÃO é cortado no nó. Cortado em dois, o nó virava esgoto × esgoto × ventilação — o
+               motor da rede diz "sistemas diferentes se tocam: não se ligam", põe uma luva no lugar do tê e sobra um toco de 75 mm entre a luva e o
+               joelho (o auditor: ENCAIXE_SOBREPOSTO + LUVA_DESNECESSARIA). Inteiro, a derivação da ventilação (marcada "continua" no pé + "tomada" = este
+               tubo) vira o TÊ no meio dele, que é o que a obra monta. */
+            nv.push(x); tomadaVent = x.id;
           } else nv.push(x);
         });
+        if (tomadaVent) nv.forEach(function (x) { if (x.op === "trecho" && x.sistema === "ventilacao" && Math.hypot(x.p1.x - noVent.x, x.p1.y - noVent.y, x.p1.z - noVent.z) < 0.003) { x.continua = "p1"; x.tomada = tomadaVent; } });   // hid:ok 3 mm: o pé da derivação está no nó
         ops = nv;
       }
-      var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (avVent) av.push(avVent); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
+      var av = o.avisos.slice(); if (avisoBoca) av.push(avisoBoca); if (avVent) av.push(avVent); if (entra45 && entra45.deslocJ > 0.005) av.push("a junção no tubo " + txt(B.trecho) + " andou " + (entra45.deslocJ * 100).toFixed(0) + " cm a jusante do ponto clicado: a junção a 45° é a favor do fluxo, o ramal tem de chegar de montante dela"); if (bocaB) av.push("entra na " + bocaB.boca.id.replace("entrada", "entrada ") + " (DN " + bocaB.boca.dn + ") da caixa " + txt(PkB0.id));
       if (rebB) av.push("o corpo da caixa " + txt(PkB0.id) + " desceu " + (rebB.dd * 100).toFixed(1).replace(".", ",") + " cm com o prolongador para a entrada ficar acima do fecho hídrico; os tubos ligados nela desceram junto");
       return { estrategia: o.estrategia, nome: o.nome, ops: arr(rebB && rebB.ops).concat(arr(o.rebaixoOps)).concat(antes.concat(ops)), rebaixoB: rebB ? rebB.dd : 0, comprimento: o.comprimento, avisos: av, boca: bocaB ? bocaB.boca : null, rebaixo: o.rebaixoOps ? true : false };
     });

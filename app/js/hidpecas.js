@@ -245,8 +245,26 @@
     arr(q.tubos).forEach(function (g) { out.push(linha(tubo(g.material, g.dn), { classe: "tubo", descricao: "Tubo " + nomeMaterial(g.material) + " DN " + g.dn, unidade: g.unidade || "m", dn: g.dn, quantidade: g.quantidade, sistema: g.sistema, aplicacao: g.aplicacao })); });
     /* peça de rosca/composta (ponto de água "25 × 1/2\"", adaptador do registro): a ficha é da chave "DNxROSCA"; a premissa da dedução (a rosca adotada) vai na linha */
     arr(q.conexoes).forEach(function (g) {
-      var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF);
+      /* 15/11/2026 (HID-R00 (58): "Junção simples" sem DN/material e com o quadradinho do ícone vazio): a junção/bucha vinda do Interligar e de partesConexao
+         traz o DN da derivação como TEXTO ("50"); a chave "100x50" não existe na ficha e a linha caía sem ficha, com o nome cru. Aqui a ficha é procurada
+         por TODAS as chaves possíveis (composta, apelido de tipo, DN da linha) e, sem ficha, a descrição sai montada (nome + material + DN) com o ícone da peça
+         equivalente. Preço: só o que a ficha EXATA da peça diz — a ficha do DN da linha usada só para descrição/ícone NUNCA empresta preço (fica pendente). */
+      var dn2n = Number(g.dn2), temDn2 = isFinite(dn2n) && dn2n > 0 && dn2n !== Number(g.dn);
+      var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" && temDn2 ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF), aprox = false;
+      if (!fcx && temDn2 && (g.tipo === "reducao" || g.tipo === "bucha_longa" || g.tipo === "luva_reducao")) fcx = conexao("bucha", g.material, g.dn + "x" + g.dn2);
+      if (!fcx) { fcx = conexao(g.tipo === "bucha_longa" || g.tipo === "luva_reducao" ? "reducao" : (g.tipo === "juncao_reducao" ? "juncao" : g.tipo), g.material, g.dn); aprox = !!fcx; }
       var l = linha(fcx, { classe: "conexao", descricao: g.nome || g.tipo, unidade: "un", dn: g.dn, dn2: g.dn2, quantidade: g.n, sistema: g.sistema, aplicacao: g.aplicacao });
+      var dnTxt = g.dn + (temDn2 ? " x " + g.dn2 : "");
+      if (fcx) {
+        if (temDn2 && /DN \d+ mm/.test(l.descricao) && !/ x \d+ mm/.test(l.descricao)) l.descricao = l.descricao.replace(/DN (\d+) mm/, "DN $1 x " + dn2n + " mm");
+        if (/longa/i.test(txt(g.nome)) && !/longa/i.test(l.descricao)) l.descricao = l.descricao.replace(/Bucha de redução/, "Bucha de redução longa");
+        if (aprox) { l.preco = { pendente: true, valor: null, criterio: "ficha de preço do DN " + g.dn + " não vale para a peça " + dnTxt + " — conferir no Orçamento do modelo" }; l.total = null; }
+      } else {
+        var nm = txt(g.nome || g.tipo), mat = nomeMaterial(g.material);
+        l.descricao = nm + (mat && nm.toLowerCase().indexOf(mat.toLowerCase()) < 0 ? " " + mat : "") + " DN " + dnTxt + (/ mm$/.test(dnTxt) ? "" : " mm");
+        var tp = ({ bucha_longa: "bucha", luva_reducao: "bucha", reducao: temDn2 ? "bucha" : "reducao", juncao_reducao: "juncao" })[g.tipo] || g.tipo, ic = "cx-" + tp.replace(/_/g, "-") + "-" + txt(g.material).replace(/_/g, "-");
+        if (icones().indexOf(ic) >= 0) l.icone = ic;
+      }
       if (g.premissa) l.premissas = [g.premissa];
       if (g.incluso) { l.incluso = g.incluso; l.total = null; l.preco = { pendente: false, valor: null, incluso: true, criterio: g.incluso }; }
       out.push(l);
@@ -258,7 +276,14 @@
       out.push(l);
     });
     arr(q.acessorios).forEach(function (g) { out.push(linha(acessorio(g.acessorio || g.peca, g.variante, g.dnTubo || g.dn), { classe: "acessorio", descricao: g.nome || g.acessorio, unidade: "un", quantidade: g.n, sistema: g.sistema })); });
-    arr(q.pecas).forEach(function (g) { out.push(linha(peca(g.peca, g.dn), { classe: "peca", descricao: g.nome || g.peca, unidade: "un", dn: g.dn, quantidade: g.n, sistema: g.sistema, aplicacao: g.sistema === "pluvial" ? "pluvial" : "esgoto" })); });
+    arr(q.pecas).forEach(function (g) {
+      /* a caixa de inspeção vem com o DN "600"/"300" e o TIPO no nome (alvenaria, pré-moldada, PVC): a ficha é pc.caixa_inspecao.<tipo>; sem ela a linha saía sem ícone */
+      var fpc = peca(g.peca, g.dn);
+      if (!fpc && g.peca === "caixa_inspecao") { var nmc = txt(g.nome).toLowerCase(); fpc = peca("caixa_inspecao", /alvenaria/.test(nmc) ? "alvenaria" : /pr[eé]-?moldad/.test(nmc) ? "premoldado" : /pvc/.test(nmc) ? "pvc300" : "__"); }
+      var lp = linha(fpc, { classe: "peca", descricao: g.nome || g.peca, unidade: "un", dn: g.dn, quantidade: g.n, sistema: g.sistema, aplicacao: g.sistema === "pluvial" ? "pluvial" : "esgoto" });
+      if (fpc && g.peca === "caixa_inspecao" && g.nome) lp.descricao = txt(g.nome);   /* o nome do orçamento (com a profundidade) é o que o projetista leu */
+      out.push(lp);
+    });
     /* louças, metais e equipamentos: uma linha por família × produto (o código do fabricante é do tipo escolhido) */
     var grupos = {}, ordem = [];
     arr(familias).forEach(function (f) {

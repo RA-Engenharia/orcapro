@@ -73172,7 +73172,7 @@ return Math.round(Math.max(0.45, mm * 5.5) * (JOGO[jogo] || 1) * 100) / 100;
 }
 var BASE_COTA = { fonte: "Arial", texto: 2.5, pena: 1, penaMarca: 4, marca: "obliquo", tamMarca: 1.5,
 extLinha: 1.5, extChamada: 1.5, intervalo: 1.0, deslocTexto: 0.8, unidade: "m", casas: 2,
-prefixo: "", sufixo: "", textoEq: "EQ", fundo: "Opaco", sequencia: "Contínuo",
+prefixo: "", sufixo: "", textoEq: "EQ", fundo: "Transparente", sequencia: "Contínuo",
 negrito: false, italico: false, sublinhado: false, fatorLargura: 1, cor: "" };
 function tipoC(id, nome, estilo, extra) {
 var o = clone(BASE_COTA); o.id = id; o.nome = nome; o.estilo = estilo; o.ra = true;
@@ -73938,7 +73938,7 @@ return lnS(sub(q, mul(o, tk / 2)), add(q, mul(o, tk / 2)), w, "a7-marca");
 function svgCota(it, m, t, k, jogo, sel) {
 var wL = penaPx(t.pena, jogo), wM = penaPx(t.penaMarca, jogo), h = num(t.texto, 2.5) * k, s = "", cor = stroke(t.cor);
 var gap = num(t.intervalo, 1) * k, extC = num(t.extChamada, 1.5) * k, extL = num(t.extLinha, 1.5) * k, dT = num(t.deslocTexto, 0.8) * k;
-var opaco = t.fundo !== "Transparente";
+var opaco = false;
 function tmv(i) { var q = it.tmov && it.tmov[String(i)]; return q && fin(+q.x) && fin(+q.y) ? [+q.x, +q.y] : [0, 0]; }
 function seg(str, i) { return str.replace("<text ", '<text data-a7-seg="' + i + '" '); }
 if (m.tipo === "coordenada") {
@@ -97984,6 +97984,7 @@ pf = pf.map(function (x) { return [zFace - x[0], x[1]]; });
 varrer(m, reta(pv(P), dir), escala(pf), segsDe(lod, tp.de), false);
 return { partes: [cascaSaida(m)], recuo: (zFace + sai - pbP) * MM, cotas: cp, aConferir: true };
 }
+var GARANTIA = { ligada: true };
 function no(lista, trechosPorId, o) {
 o = o || {};
 if (!lista || !lista.length) return null;
@@ -97991,12 +97992,13 @@ var c0 = lista[0], P = [c0.x, c0.y, c0.z], ramos = [];
 lista.forEach(function (c) { (c.ramos || []).forEach(function (r) { if (ramos.indexOf(r) < 0) ramos.push(r); }); });
 var eixos = eixosDoNo(P, ramos, trechosPorId, o.tol), out = { pecas: [], recuos: {}, bolsas: {} };
 var princ = lista.filter(function (c) { return c.tipo !== "reducao" && !c.juntaDe; })[0], reds = lista.filter(function (c) { return c.tipo === "reducao"; });
-var luvas = lista.filter(function (c) { return c.juntaDe != null; });
+var luvas = lista.filter(function (c) { return c.juntaDe != null; }), gPrinc = null;
 function recuo(p) { var k = p.trecho + ":" + p.lado; out.recuos[k] = Math.max(out.recuos[k] || 0, p.recuo); if (p.z != null) { out.faces = out.faces || {}; out.faces[k] = Math.max(out.faces[k] || 0, p.z); } if (p.bolsaAtras != null) out.bolsas[k] = p.bolsaAtras; if (p.desloc) { out.deslocs = out.deslocs || {}; out.deslocs[k] = p.desloc; } }
 var oT = {}; Object.keys(o).forEach(function (k) { oT[k] = o[k]; }); oT.trechos = trechosPorId;
 if (princ) {
 var g = conexao(princ, eixos, oT);
 if (!g) return null;
+gPrinc = g;
 out.pecas.push({ id: princ.id, partes: g.partes.filter(function (pt) { return pt.luvaEixo == null; }), aConferir: g.aConferir, cotas: g.cotas });
 g.portas.forEach(function (p) {
 var e = eixos.filter(function (x) { return x.trecho === p.trecho && x.lado === p.lado; })[0];
@@ -98031,6 +98033,27 @@ if (lv2) { var lg2 = luvaNaPonta(reds[0].material, p.dn, P, p.dir, p.z / MM, !!l
 else recuo(p);
 });
 }
+out.semPeca = [];
+lista.forEach(function (c) {
+if (c.soQto || c.juntaDe != null || out.pecas.some(function (q) { return q.id === c.id; })) return;
+if (!GARANTIA.ligada) { out.semPeca.push(c.id); return; }
+var pOrf = null;
+try {
+if (c.tipo === "reducao") {
+var eR = princ ? eixos.filter(function (x) { return x.dn < princ.dn - 0.5 && Math.abs((c.dn2 || x.dn) - x.dn) < 0.5; })[0] : null;
+if (eR) {
+var zF = gPrinc && gPrinc.portas && gPrinc.portas.length ? gPrinc.portas[0].z / MM : cotasConexao(princ.material, "luva", princ.dn).pb;
+var bu2 = bucha(princ.material, princ.dn, eR.dn, P, eR.dir, zF, o.lod);
+pOrf = { id: c.id, partes: bu2.partes, aConferir: true, cotas: bu2.cotas };
+if (!eR.passante) recuo({ trecho: eR.trecho, lado: eR.lado, recuo: bu2.recuo, z: Math.max(0, bu2.recuo) });
+}
+} else if (c.tipo !== "luva") {
+var g3 = conexao(c, eixos, oT);
+if (g3 && g3.partes && g3.partes.length) { pOrf = { id: c.id, partes: g3.partes, aConferir: true, cotas: g3.cotas }; g3.portas.forEach(function (p3) { recuo(p3); }); }
+}
+} catch (eG) { pOrf = null; }
+if (pOrf) out.pecas.push(pOrf); else out.semPeca.push(c.id);
+});
 return out;
 }
 function espelharLuva(partes, P, d) {
@@ -98556,6 +98579,7 @@ return { partes: [cascaSaida(m, "marcador")] };
 var HidGeo = {
 cache: { get ligado() { return CACHE.ligado; }, set ligado(v) { CACHE.ligado = !!v; }, get acertos() { return CACHE.acertos; }, get faltas() { return CACHE.faltas; },
 get tamanho() { return CACHE.m.size; }, limpar: function () { CACHE.m.clear(); CACHE.acertos = 0; CACHE.faltas = 0; } },
+get garantiaPeca() { return GARANTIA.ligada; }, set garantiaPeca(v) { GARANTIA.ligada = !!v; CACHE.m.clear(); },
 get perfisNovos() { return PERFIS_NOVOS.ligado; }, set perfisNovos(v) { PERFIS_NOVOS.ligado = !!v; CACHE.m.clear(); },
 VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
 Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,
@@ -113394,6 +113418,7 @@ this._nivelFeito = nivel; this._segsDe = segsDe;
 this._lod = nivel === "medio" ? "longe" : "perto";
 var lodEle = nivel !== "alto" ? "longe" : "perto";
 var lod = this._lod, porId = {}, recuos = {}, cxGeo = {}, bolsasT = {}, deslocsT = {};
+this.semPecaCx = [];
 var baixo = nivel === "baixo";
 var papel = function (ms, p) { (ms || []).forEach(function (mm) { mm.userData.instPapel = p; mm.userData.instNivel = nivel; }); return ms; };
 R.trechos.forEach(function (t) { porId[t.id] = t; });
@@ -113509,12 +113534,16 @@ if (pt.decal) return self.modoCor === "sistema" ? null : self._malhaDecal(THREE,
 if (pt.papel === "marca") { var mm = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mm) return null; var mgC = self._malhaG(THREE, pt.malha, mm); mgC.userData.semIfc = true; return mgC; }
 return self._malhaG(THREE, pt.malha, self._matPeca(THREE, c.material, c.sistema, pt.papel, null, /^agua/.test(String(c.sistema))));
 }).filter(Boolean);
+else if (G && G.JUNTA && G.JUNTA[c.material] && !(I.MATERIAIS[c.material] || {}).secao) {
+var rA = Math.max((c.dn || 40) / 2000, 0.012) * 1.25, mA2 = new THREE.Mesh(new THREE.CylinderGeometry(rA, rA, rA * 3, 16, 1, true), self._mat(THREE, 0xe03131));
+mA2.position.set(c.x, c.y, c.z); ms = [mA2]; (self.semPecaCx = self.semPecaCx || []).push({ id: c.id, nome: c.nome, dn: c.dn });
+}
 else {
 var porT = (c.ramos || []).map(function (id) { return porId[id]; }).filter(Boolean)[0], s0 = porT && porT.larg ? Math.max(porT.larg, porT.alt) * 1.08 : Math.max((c.dn || 40) / 1000, 0.016) * 1.3;
 var mb = new THREE.Mesh(new THREE.BoxGeometry(s0, porT && porT.alt ? porT.alt * 1.08 : s0, s0), G ? self._matPeca(THREE, c.material, c.sistema, "corpo", null, /^agua/.test(String(c.sistema))) : self._mat(THREE, I.SISTEMAS[c.sistema].cor));
 mb.position.set(c.x, c.y, c.z); ms = [mb];
 }
-out.push({ id: c.id, ifc: ifcCx(c.sistema), malhas: papel(ms, "conexao"), disciplina: discDe(c.sistema), nome: c.nome + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " (conexão automática" + (gx && gx.aConferir ? "; forma com cota a conferir" : "") + ")", qto: { contagem: 1 }, derivada: true });
+out.push({ id: c.id, ifc: ifcCx(c.sistema), malhas: papel(ms, "conexao"), disciplina: discDe(c.sistema), nome: c.nome + " DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " (conexão automática" + (!gx && !baixo && G && G.JUNTA && G.JUNTA[c.material] && !(I.MATERIAIS[c.material] || {}).secao ? "; CONEXÃO SEM PEÇA DE CATÁLOGO NESTE NÓ — reveja o traçado" : "") + (gx && gx.aConferir ? "; forma com cota a conferir" : "") + ")", qto: { contagem: 1 }, derivada: true });
 });
 R.pecas.forEach(function (k) {
 var P = I.PECAS[k.peca], cor = P.sistemas[0] === "eletrica" ? I.COR_CAIXA_ELETRICA : I.SISTEMAS[k.sistema].cor, ms, gp = pecaGeo[k.id];

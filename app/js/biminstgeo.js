@@ -1324,6 +1324,7 @@
   /* o NÓ inteiro: as conexões deduzidas no mesmo ponto (joelho + redução, tê + redução…) viram UMA peça
      principal + buchas. lista = conexões do biminst.rede() com o mesmo x,y,z; trechosPorId = {id: trecho}.
      Devolve { pecas: [{id, partes, aConferir}], recuos: {"<trecho>:<lado>": m} } */
+  var GARANTIA = { ligada: true };
   function no(lista, trechosPorId, o) {
     o = o || {};
     if (!lista || !lista.length) return null;
@@ -1332,12 +1333,13 @@
     var eixos = eixosDoNo(P, ramos, trechosPorId, o.tol), out = { pecas: [], recuos: {}, bolsas: {} };
     /* a LUVA da ponta (biminst.juntasDaPonta: c.juntaDe) não é a peça principal do nó: ela abraça a ponta da principal */
     var princ = lista.filter(function (c) { return c.tipo !== "reducao" && !c.juntaDe; })[0], reds = lista.filter(function (c) { return c.tipo === "reducao"; });
-    var luvas = lista.filter(function (c) { return c.juntaDe != null; });
+    var luvas = lista.filter(function (c) { return c.juntaDe != null; }), gPrinc = null;
     function recuo(p) { var k = p.trecho + ":" + p.lado; out.recuos[k] = Math.max(out.recuos[k] || 0, p.recuo); if (p.z != null) { out.faces = out.faces || {}; out.faces[k] = Math.max(out.faces[k] || 0, p.z); } if (p.bolsaAtras != null) out.bolsas[k] = p.bolsaAtras; if (p.desloc) { out.deslocs = out.deslocs || {}; out.deslocs[k] = p.desloc; } }
     var oT = {}; Object.keys(o).forEach(function (k) { oT[k] = o[k]; }); oT.trechos = trechosPorId;   /* a redução excêntrica lê a orientação no trecho */
     if (princ) {
       var g = conexao(princ, eixos, oT);
       if (!g) return null;
+      gPrinc = g;
       /* a luva da família (luvaEixo) não é da peça principal: vai para a luva da regra das juntas ou sai */
       out.pecas.push({ id: princ.id, partes: g.partes.filter(function (pt) { return pt.luvaEixo == null; }), aConferir: g.aConferir, cotas: g.cotas });
       g.portas.forEach(function (p) {
@@ -1379,6 +1381,33 @@
         else recuo(p);
       });
     }
+    /* ⚠ GARANTIA DE PEÇA (15/11/2026, print do Rogério: "cubo cinza no nó de três tubos"): toda conexão do nó que a rede deduziu (e não é só de
+       contagem) sai com PEÇA de catálogo — o 3D desenha o que o orçamento conta. Antes só a principal e as reduções casadas com uma PORTA da principal
+       tinham peça: a redução que cai sobre um tubo que PASSA pelo nó (DN 100 que termina no meio de uma linha DN 50: o eixo passante não tem porta) e
+       uma segunda principal no mesmo ponto ficavam sem forma, e a tela punha um BLOCO no lugar. Agora: redução órfã = bucha no eixo de DN menor
+       (a conferir); outra principal = a peça dela pelos mesmos eixos. O que ainda não tiver forma vai em out.semPeca (a tela avisa, nunca cala).
+       HidGeo.garantiaPeca = false liga o desenho de antes (controle negativo do teste). */
+    out.semPeca = [];
+    lista.forEach(function (c) {
+      if (c.soQto || c.juntaDe != null || out.pecas.some(function (q) { return q.id === c.id; })) return;
+      if (!GARANTIA.ligada) { out.semPeca.push(c.id); return; }
+      var pOrf = null;
+      try {
+        if (c.tipo === "reducao") {
+          var eR = princ ? eixos.filter(function (x) { return x.dn < princ.dn - 0.5 && Math.abs((c.dn2 || x.dn) - x.dn) < 0.5; })[0] : null;
+          if (eR) {
+            var zF = gPrinc && gPrinc.portas && gPrinc.portas.length ? gPrinc.portas[0].z / MM : cotasConexao(princ.material, "luva", princ.dn).pb;
+            var bu2 = bucha(princ.material, princ.dn, eR.dn, P, eR.dir, zF, o.lod);
+            pOrf = { id: c.id, partes: bu2.partes, aConferir: true, cotas: bu2.cotas };
+            if (!eR.passante) recuo({ trecho: eR.trecho, lado: eR.lado, recuo: bu2.recuo, z: Math.max(0, bu2.recuo) });
+          }
+        } else if (c.tipo !== "luva") {
+          var g3 = conexao(c, eixos, oT);
+          if (g3 && g3.partes && g3.partes.length) { pOrf = { id: c.id, partes: g3.partes, aConferir: true, cotas: g3.cotas }; g3.portas.forEach(function (p3) { recuo(p3); }); }
+        }
+      } catch (eG) { pOrf = null; }
+      if (pOrf) out.pecas.push(pOrf); else out.semPeca.push(c.id);
+    });
     return out;
   }
 
@@ -2055,6 +2084,7 @@
   var HidGeo = {
     cache: { get ligado() { return CACHE.ligado; }, set ligado(v) { CACHE.ligado = !!v; }, get acertos() { return CACHE.acertos; }, get faltas() { return CACHE.faltas; },
              get tamanho() { return CACHE.m.size; }, limpar: function () { CACHE.m.clear(); CACHE.acertos = 0; CACHE.faltas = 0; } },
+    get garantiaPeca() { return GARANTIA.ligada; }, set garantiaPeca(v) { GARANTIA.ligada = !!v; CACHE.m.clear(); },
     get perfisNovos() { return PERFIS_NOVOS.ligado; }, set perfisNovos(v) { PERFIS_NOVOS.ligado = !!v; CACHE.m.clear(); },
     VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
     Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,   /* caixaM: a caixa de inspeção de alvenaria (js/hidcigeo.js) */

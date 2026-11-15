@@ -1724,9 +1724,10 @@ renderer.localClippingEnabled = false;
 if (o.foco && o.foco.length) {
 try { construirSisIdx(); } catch (_) {}
 var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
-var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, emissive: op < 1 ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: op >= 1, side: THREE.DoubleSide }); };
-var MAT = { cx: mF(0x7a5a3e, 1), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
-bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, papeis: {} };
+var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMaterial({ color: c, emissive: ((op < 1 && !solida) || semBrilho) ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: (op >= 1 || !!solida), side: THREE.DoubleSide }); };
+var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
+bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
+window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };
 todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros';
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
@@ -1736,8 +1737,10 @@ if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m,
 return;
 }
 window.__focoDiag.papeis[m.userData.instPapel || '-'] = (window.__focoDiag.papeis[m.userData.instPapel || '-'] || 0) + (agua ? 1 : 0);
+if (esg) { window.__focoDiag.papeisEsg = window.__focoDiag.papeisEsg || {}; window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] = (window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] || 0) + 1; }
 var pp = m.userData.instPapel;
-if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; return; }
+if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
+if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
 var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
 });
@@ -15545,6 +15548,7 @@ instNivelRefazer: function () { return (S && S._instNivelRefazer) ? S._instNivel
 instMedir: function () { return (S && S._instMedir) ? S._instMedir() : { malhas: 0, tri: 0, porPapel: {} }; },
 _instCtx: function () { return (S && S._instCtx) ? S._instCtx() : null; },
 _andaime3d: function () { return (S && S._andaime3d) ? S._andaime3d.resumo() : null; },
+_trocarPapelTeste: function (sisK, de, para) { if (!S || !S.scene) return 0; try { construirSisIdx(); } catch (_) {} var n = 0; S.scene.traverse(function (m) { if (m.isMesh && m.userData && m.userData._sisK === sisK && m.userData.instPapel === de) { m.userData.instPapel = para; n++; } }); return n; },
 _malhaEdit: function (id) { return (S && S.meshPorUid) ? (S.meshPorUid['edit:' + id] || null) : null; },
 _andaimeObjetos: function () { var o = []; if (S && S.scene) S.scene.traverse(function (m) { if (m.isInstancedMesh && m.userData && m.userData.andaime3d) o.push(m); }); return o; },
 _grade: function (liga) { if (!S || !S.scene) return 0; var n = 0; S.scene.traverse(function (o) { if (o.isGridHelper || (o.type === "GridHelper")) { o.visible = !!liga; n++; } }); return n; },

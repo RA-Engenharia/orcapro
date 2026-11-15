@@ -7,6 +7,8 @@
 .a7-l, .a7-marca, .a7-hach { stroke: var(--d2-tinta, #111); fill: none; }
 .a7-l { stroke-linecap: butt; }
 .a7-tx { fill: var(--d2-tinta, #111); font-family: Arial, "IBM Plex Sans", "Segoe UI", sans-serif; }
+/* halo fino e translúcido: separa o número do traço sem apagar a louça nem o tubo atrás */
+.a7-tx { paint-order: stroke; stroke: var(--d2-papel, #fff); stroke-opacity: .6; stroke-width: .6px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .a7-fraco { opacity: .6; }
 .a7-cheio, .a7-hach-p, .a7-solido { fill: var(--d2-tinta, #111); }
 .a7-solido { stroke: none; }

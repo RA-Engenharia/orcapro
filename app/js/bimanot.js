@@ -608,7 +608,7 @@
    * ComprimentoDoArco, CotaDeElevação, InclinaçãoDePonto). */
   var BASE_COTA = { fonte: "Arial", texto: 2.5, pena: 1, penaMarca: 4, marca: "obliquo", tamMarca: 1.5,
                     extLinha: 1.5, extChamada: 1.5, intervalo: 1.0, deslocTexto: 0.8, unidade: "m", casas: 2,
-                    prefixo: "", sufixo: "", textoEq: "EQ", fundo: "Opaco", sequencia: "Contínuo",
+                    prefixo: "", sufixo: "", textoEq: "EQ", fundo: "Transparente", sequencia: "Contínuo",
                     negrito: false, italico: false, sublinhado: false, fatorLargura: 1, cor: "" };
   function tipoC(id, nome, estilo, extra) {
     var o = clone(BASE_COTA); o.id = id; o.nome = nome; o.estilo = estilo; o.ra = true;
@@ -1480,7 +1480,9 @@
   function svgCota(it, m, t, k, jogo, sel) {
     var wL = penaPx(t.pena, jogo), wM = penaPx(t.penaMarca, jogo), h = num(t.texto, 2.5) * k, s = "", cor = stroke(t.cor);
     var gap = num(t.intervalo, 1) * k, extC = num(t.extChamada, 1.5) * k, extL = num(t.extLinha, 1.5) * k, dT = num(t.deslocTexto, 0.8) * k;
-    var opaco = t.fundo !== "Transparente";
+    /* COTA NUNCA ESCONDE O DESENHO (15/11/2026, banheiro social da Casa 487: o fundo opaco do número tapava o vaso e o tubo).
+       Sem retângulo do papel: só um halo fino e translúcido no texto (CSS .a7-tx). Mesmo um tipo antigo com fundo "Opaco" sai transparente. */
+    var opaco = false;
     /* COTAS: o texto movido (arrastar o texto: tmov {"<trecho>": {x, y}}) e o trecho de cada texto (data-a7-seg) */
     function tmv(i) { var q = it.tmov && it.tmov[String(i)]; return q && fin(+q.x) && fin(+q.y) ? [+q.x, +q.y] : [0, 0]; }
     function seg(str, i) { return str.replace("<text ", '<text data-a7-seg="' + i + '" '); }
