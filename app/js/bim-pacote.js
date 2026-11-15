@@ -13315,6 +13315,14 @@ return n;
 }
 function limparPintura() { S._pintura = null; S._pinturaDono = null; S.modelos.forEach(function (mo) { refreshModelo(mo); }); }
 S._isolarChaves = isolarChaves; S._pintarChaves = pintarChaves; S._limparPintura = limparPintura;
+function pintarUids(mapa, dono) {
+var porUid = {}, n = 0; Object.keys(mapa || {}).forEach(function (u) { if (mapa[u]) { porUid[u] = mapa[u]; n++; } });
+if (!n) { if (S._pinturaDono === (dono || "?")) limparPintura(); return 0; }
+S._pintura = porUid; S._pinturaDono = dono || "?";
+S.modelos.forEach(function (mo) { refreshModelo(mo); });
+return n;
+}
+S._pintarUids = pintarUids;
 S._uidsDeChaves = uidsDeChaves;
 var _lnAtraso = null, _lnAtrasoMat = null;
 var MAX_CONTORNO = 4000;
@@ -15229,6 +15237,7 @@ valoresDe: function (campo) { return (S && S._valoresDe) ? S._valoresDe(campo) :
 uidsDeChaves: function (chaves) { return (S && S._uidsDeChaves) ? S._uidsDeChaves(chaves) : []; },
 isolarChaves: function (chaves) { return (S && S._isolarChaves) ? S._isolarChaves(chaves) : 0; },
 pintarChaves: function (mapa, dono) { return (S && S._pintarChaves) ? S._pintarChaves(mapa, dono) : 0; },
+pintarUids: function (mapa, dono) { return (S && S._pintarUids) ? S._pintarUids(mapa, dono) : 0; },
 limparPintura: function () { if (S && S._limparPintura) S._limparPintura(); },
 aplicar4DTarefas: function (sim) { return (S && S._aplicar4DTarefas) ? S._aplicar4DTarefas(sim) : { ok: false, erro: 'visualizador não montado' }; },
 limpar4DTarefas: function () { if (S && S._limpar4DTarefas) S._limpar4DTarefas(); },

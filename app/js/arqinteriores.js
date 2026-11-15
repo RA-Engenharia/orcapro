@@ -71,6 +71,30 @@
     });
   }
 
+  /* QUAIS ambientes entram no caderno. ⚠ Os ambientes valem os da situação de DEPOIS (c.depois): numa reforma a parede demolida UNE dois cômodos e o id de um deles
+     some. Antes o id marcado que não existia mais era descartado SEM AVISO e o caderno saía sem aquele ambiente (ou vazio). Agora todo id marcado que não gera
+     folha diz o porquê, e lista vazia marcada ("nenhum") não vira o padrão escondido. */
+  function escolherAmbientes(c, cfgInt, avisos) {
+    var amis = arr((c.depois || c.dados).ambientes).filter(function (a) { return a && VIVO[a.status]; });
+    var explicita = cfgInt && Array.isArray(cfgInt.ambientes), sel = explicita ? cfgInt.ambientes.map(String) : null;
+    if (explicita && !sel.length) { avisos.push("Caderno de interiores: o caderno está ligado mas nenhum ambiente está marcado. Marque ao menos um ambiente na lista."); return []; }
+    var escolhidos = amis.filter(function (a) {
+      if (sel) return sel.indexOf(String(a.id)) >= 0;
+      return arr(c.dados.moveis).some(function (m) { return movelNoAmbiente(m, a) && movelGatilho(m); });
+    });
+    if (!sel) arr(c.dados.ambientes).forEach(function (a0) {   /* sem lista do usuário: o ambiente que TEM móvel no modelo mas sumiu na situação proposta também é avisado */
+      if (!a0 || !VIVO[a0.status] || amis.some(function (a) { return String(a.id) === String(a0.id); })) return;
+      if (arr(c.dados.moveis).some(function (m) { return movelNoAmbiente(m, a0) && movelGatilho(m); })) avisos.push("Caderno de interiores: o ambiente \"" + txt(a0.nome) + "\" (" + a0.id + ") tem mobiliário, mas não existe na situação proposta (foi demolido ou unido a outro cômodo pela reforma): não gerei folha dele; o mobiliário entra no ambiente que o absorveu.");
+    });
+    if (sel) sel.forEach(function (id) {
+      if (amis.some(function (a) { return String(a.id) === id; })) return;
+      var ant = null; arr(c.dados.ambientes).forEach(function (a) { if (a && String(a.id) === id) ant = a; });
+      avisos.push("Caderno de interiores: o ambiente " + (ant ? '"' + txt(ant.nome) + '" ' : "") + "(" + id + ") não existe na situação proposta (foi demolido ou unido a outro cômodo pela reforma): não gerei folha dele. Marque o ambiente que o substitui.");
+    });
+    if (!escolhidos.length) avisos.push(sel ? "Caderno de interiores: nenhum dos ambientes marcados existe na situação proposta." : "Caderno de interiores: nenhum ambiente com mobiliário ou marcenaria no modelo. Marque os ambientes na lista (sem móvel sai a planta e as vistas das paredes, com aviso).");
+    return escolhidos;
+  }
+
   /* ------------------------------------------------------------ CONTORNO DO AMBIENTE → PAREDES (arestas) */
   function limpar(P0) {
     var P = arr(P0).map(function (p) { return [p[0], p[1]]; });
@@ -224,6 +248,14 @@
       }
       if (arestaDe && ele.some(function (e) { return arestaDe[e.id] === i; })) vistasEle.push(montaVista(ed, i, "ele"));
     });
+    /* ⚠ AMBIENTE SEM MOBILIÁRIO (ou sem móvel encostado em parede): o caderno NUNCA sai mudo. Gera a planta e a vista de TODAS as paredes (vãos, pé-direito,
+       cotas), sem peça, e AVISA. Antes saía só a planta, e quando a lista do usuário (checkbox marcado) tinha ambiente sem móvel parecia que o caderno não gerava. */
+    var semMobiliario = false;
+    if (!vistas.length && P.v) {
+      E.forEach(function (ed, i) { vistas.push(montaVista(ed, i, "mov")); });
+      semMobiliario = vistas.length > 0;
+      if (semMobiliario) avisos.push(moveis.some(movelGatilho) ? "nenhum móvel está encostado em parede (a 10 cm do plano): as vistas das paredes saíram só com vãos e cotas, sem mobiliário" : "sem mobiliário no modelo neste ambiente: a planta e as vistas das paredes saíram só com vãos e cotas (modele o mobiliário para detalhar)");
+    }
     ordenar(vistas); ordenar(vistasEle);
     /* os cortes 1:20: um por módulo de marcenaria encostado com profundidade relevante (a partir de 30 cm); as letras seguem as das vistas */
     var cortes = [];
@@ -245,7 +277,7 @@
     var alts = [], semAlt = false;
     ele.forEach(function (e) { if (e.alt == null) semAlt = true; else if (alts.indexOf(Math.round(e.alt * 100) / 100) < 0) alts.push(Math.round(e.alt * 100) / 100); });
     alts.sort(function (a, b) { return a - b; });
-    return { amb: amb, moveis: moveis, vistas: P.v ? vistas : [], vistasEle: P.v ? vistasEle : [], cortes: P.v ? cortes : [], eletricos: ele, luzes: luzes, alturasEle: alts, semAltura: semAlt, pe: P, avisos: avisos };
+    return { amb: amb, semMobiliario: semMobiliario, moveis: moveis, vistas: P.v ? vistas : [], vistasEle: P.v ? vistasEle : [], cortes: P.v ? cortes : [], eletricos: ele, luzes: luzes, alturasEle: alts, semAltura: semAlt, pe: P, avisos: avisos };
   }
 
   var CAMPOS_OUTROS = { fabricante: /^(fabricante|marca)$/i, ferragem: /^(ferragem|dobradica|dobradiça|corredica|corrediça|puxador)$/i, cor: /^cor$/i };
@@ -521,7 +553,7 @@
   }
   function marcadorA(c, ctx, v, pr, avisos) {
     var D = c.D, S = ES(), amb = ctx.amb, M = ctx.M, k = ctx.k, ed = v.ed;
-    var us = (v.itens.length ? v.itens.map(function (it) { return (it.u0 + it.u1) / 2; }) : v.pontos.map(function (p) { return p.u; })), umid = us.reduce(function (a, b) { return a + b; }, 0) / us.length;
+    var us = (v.itens.length ? v.itens.map(function (it) { return (it.u0 + it.u1) / 2; }) : v.pontos.map(function (p) { return p.u; })), umid = us.length ? us.reduce(function (a, b) { return a + b; }, 0) / us.length : v.L / 2;   /* ⚠ vista sem peça nem ponto (ambiente sem mobiliário): o meio da parede; antes 0/0 = NaN no desenho */
     var ang = (Math.atan2(ed.d[0], -ed.d[1]) * 180) / Math.PI, achou = null, med = null;
     /* 1ª rodada: a caixa livre é a do marcador inteiro (a barra tem 22 mm, com o PR nn abaixo); 2ª: só o corpo (15 mm) quando o ambiente é apertado */
     [{ hu: 11.5 / k, ap: 8.5 / k, tr: 9 / k }, { hu: 7.5 / k, ap: 7.9 / k, tr: 7.2 / k }, { hu: 7.5 / k, ap: 7.9 / k, tr: 7.2 / k, solto: true }].forEach(function (md) { if (achou) return; med = md; busca(); });
@@ -644,13 +676,9 @@
   function novoCtx(c, cI, E, def) { var Dn = DS().novo(E, c.depurar === false ? false : true), cc = {}; Object.keys(cI).forEach(function (k) { cc[k] = cI[k]; }); cc.D = Dn; cc.def = def; return cc; }
 
   function montar(c, cfgInt, geoI, E) {
-    var d = DS(), itens = [], avisos = [], sel = cfgInt && arr(cfgInt.ambientes).length ? cfgInt.ambientes.map(String) : null, FL = flagsDe(cfgInt), Xt = X();
-    var amis = arr((c.depois || c.dados).ambientes).filter(function (a) { return a && VIVO[a.status]; });
-    var escolhidos = amis.filter(function (a) {
-      if (sel) return sel.indexOf(String(a.id)) >= 0;
-      return arr(c.dados.moveis).some(function (m) { return movelNoAmbiente(m, a) && movelGatilho(m); });
-    });
-    if (!escolhidos.length) { avisos.push("Caderno de interiores: nenhum ambiente com mobiliário ou marcenaria (ou nenhum escolhido)."); return { itens: itens, avisos: avisos }; }
+    var d = DS(), itens = [], avisos = [], FL = flagsDe(cfgInt), Xt = X();
+    var escolhidos = escolherAmbientes(c, cfgInt, avisos);
+    if (!escolhidos.length) return { itens: itens, avisos: avisos };
     var prefixo = txt(cfgInt && cfgInt.prefixo) || "INT", seq = 0, A = geoI.area;
     var cI = {}; Object.keys(c).forEach(function (k) { cI[k] = c[k]; });
     cI.geo = geoI; cI.A = A;
@@ -768,14 +796,10 @@
   }
   function montarBlocos(c, cfgInt, geoI, E, o) {
     o = o || {};
-    var DG = dep("ArqDiagrama", "./arqdiagrama.js"), d = DS(), avisos = [], sel = cfgInt && arr(cfgInt.ambientes).length ? cfgInt.ambientes.map(String) : null, FL = flagsDe(cfgInt), Xt = X(), fixos = o.fixos || {};
-    var amis = arr((c.depois || c.dados).ambientes).filter(function (a) { return a && VIVO[a.status]; });
-    var escolhidos = amis.filter(function (a) {
-      if (sel) return sel.indexOf(String(a.id)) >= 0;
-      return arr(c.dados.moveis).some(function (m) { return movelNoAmbiente(m, a) && movelGatilho(m); });
-    });
+    var DG = dep("ArqDiagrama", "./arqdiagrama.js"), d = DS(), avisos = [], FL = flagsDe(cfgInt), Xt = X(), fixos = o.fixos || {};
+    var escolhidos = escolherAmbientes(c, cfgInt, avisos);
     if (!DG) return { itens: [], avisos: ["O motor de diagramação (js/arqdiagrama.js) não carregou."], blocos: [] };
-    if (!escolhidos.length) { avisos.push("Caderno de interiores: nenhum ambiente com mobiliário ou marcenaria (ou nenhum escolhido)."); return { itens: [], avisos: avisos, blocos: [] }; }
+    if (!escolhidos.length) return { itens: [], avisos: avisos, blocos: [] };
     var prefixo = txt(cfgInt && cfgInt.prefixo) || "INT", A = geoI.area, areaWH = { w: A.w, h: A.h };
     var cI = {}; Object.keys(c).forEach(function (k) { cI[k] = c[k]; }); cI.geo = geoI; cI.A = A;
     var depurar = c.depurar === false ? false : true;

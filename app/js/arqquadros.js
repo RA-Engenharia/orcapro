@@ -9,6 +9,7 @@
  *   quadroEsquadrias(D, x, y, w, esq)       ESQUADRIAS: código, tipo, dimensão, peitoril, material, quantidade por fase
  *   quadroAcabamentos(D, x, y, w, ambs)     ACABAMENTOS por ambiente: área, piso, rodapé, parede, forro, pé-direito
  *   quadroLuminarias(D, x, y, w, ...)       resumo do forro
+ *   detalheEsquadrias(D, x, y, w, esq, o)   elevação 1:25 cotada de cada tipo do quadro de esquadrias (P1, J1…), só com os dados do modelo
  * O que a lei do município pede e o modelo não traz sai com a palavra "informe" — nunca um número inventado.
  * Teste: tools/ (pranchas de arquitetura)
  * ===================================================================== */
@@ -88,7 +89,46 @@
     return tabela(D, x, y, w, "QUADRO DE FORROS", [{ t: "AMBIENTE", f: 2.6, al: "E" }, { t: "TIPO", f: 3.4, al: "E" }, { t: "NÍVEL (m)", f: 1.4 }, { t: ["ÁREA", "(m²)"], f: 1.2 }], L);
   }
 
-  var ArqQuadros = { quadroAreas: quadroAreas, quadroIndices: quadroIndices, quadroRecuos: quadroRecuos, quadroEsquadrias: quadroEsquadrias, quadroAcabamentos: quadroAcabamentos, quadroForros: quadroForros, tabela: tabela };
+  /* DETALHE DAS ESQUADRIAS (F1, 14/11/2026 — o padrão do Rogério: "tabelas de portas e janelas com detalhe"): a ELEVAÇÃO de cada tipo do quadro (P1, J1…) em 1:25, cotada,
+     só com o que o modelo traz: largura, altura, peitoril, o nome da família e o material (informe, em vermelho, quando falta). A divisão das folhas vem do NOME da família
+     (de correr = duas folhas com a seta do movimento; o resto = uma folha): o modelo não traz ferragem, vidro nem perfil, e o detalhe NÃO inventa. medir: só devolve a altura. */
+  function detalheEsquadrias(D, x, y, w, esq, o) {
+    o = o || {};
+    var T = D.E.T, K = 40, lista = arr(esq), hTit = T.tabelaCab * 1.5 + 1.2, hL = T.nota * 1.6 + 1.5, cx = x, cy = y + hTit, rowH = 0, usada = 0, AD = global.ArqDesenho || (typeof require === "function" ? require("./arqdesenho.js") : null);
+    function lw(s) { return AD ? AD.largTexto(s, T.nota) : s.length * T.nota * 0.62; }
+    if (!o.medir) D.texto(x, y + T.tabelaCab * 0.8, "DETALHE DAS ESQUADRIAS - ELEVAÇÃO (ESC 1:25)", T.tabelaCab, { peso: 0.2 });
+    if (!lista.length) return { w: 0, h: 0 };
+    lista.forEach(function (q) {
+      var L = Math.max(0.1, +q.largura || 0) * K, pe = Math.max(0, +q.peitoril || 0), A = Math.max(0.1, +q.altura || 0) * K, Hv = pe * K + A;
+      var nome = txt(q.nome).toUpperCase().slice(0, 28), rot = txt(q.cod) + " - " + (nome || (q.tipo === "porta" ? "PORTA" : "JANELA")), mat = txt(q.material);
+      var cw = Math.max(L + 30, lw(rot) + 4, 52), ch = hL + Hv + 12 + 6;
+      if (cx > x && cx + cw > x + w) { cx = x; cy += rowH + 5; rowH = 0; }
+      rowH = Math.max(rowH, ch); usada = Math.max(usada, cx + cw - x);
+      if (!o.medir) {
+        var x0 = cx + 18 + (cw - 30 - L) / 2, yb = cy + hL + Hv + 1.5, yt = yb - Hv, corre = /correr/i.test(txt(q.famId) + " " + txt(q.nome));
+        D.texto(cx, cy + T.nota * 0.8, rot, T.nota);
+        D.linha(x0 - 6, yb, x0 + L + 6, yb, "ARQ-TERRENO");                                   /* o piso acabado */
+        var yv0 = yb - pe * K;                                                              /* a base do vão (peitoril) */
+        D.ret(x0, yt, L, yv0 - yt, "ARQ-VAO");                                              /* o vão */
+        D.ret(x0 + 0.8, yt + 0.8, L - 1.6, yv0 - yt - 1.6, "ARQ-FINA");                     /* o marco (folga de 2 cm no papel) */
+        if (corre) {
+          D.linha(x0 + L / 2, yt + 0.8, x0 + L / 2, yv0 - 0.8, "ARQ-FINA");
+          var ym = (yt + yv0) / 2; D.linha(x0 + 3, ym, x0 + L / 2 - 3, ym, "ARQ-FINA"); D.cheio([[x0 + L / 2 - 3, ym], [x0 + L / 2 - 5.2, ym - 0.9], [x0 + L / 2 - 5.2, ym + 0.9]], "#000");
+          D.linha(x0 + L / 2 + 3, ym, x0 + L - 3, ym, "ARQ-FINA"); D.cheio([[x0 + L / 2 + 3, ym], [x0 + L / 2 + 5.2, ym - 0.9], [x0 + L / 2 + 5.2, ym + 0.9]], "#000");
+        }
+        /* cotas: largura embaixo; altura (e o peitoril, quando há) à esquerda */
+        D.cota(x0, yb + 5, x0 + L, yb + 5, 0, AD ? AD.cotaTxt(+q.largura) : br(+q.largura, 2), { desde: [false, false], semExt: true });
+        var xv = x0 - 6, pv = pe > 0.005 ? [[xv, yb], [xv, yv0], [xv, yt]] : [[xv, yb], [xv, yt]], vv = pe > 0.005 ? [AD ? AD.cotaTxt(pe) : br(pe, 2), AD ? AD.cotaTxt(+q.altura) : br(+q.altura, 2)] : [AD ? AD.cotaTxt(+q.altura) : br(+q.altura, 2)];
+        D.cadeia(pv, 0, vv, { offs: [4.5], desde: pv.map(function () { return false; }), semExt: true });
+        if (q.dimPadrao) D.texto(cx + cw - 2, cy + T.nota * 0.8, "CONFERIR MEDIDA", T.nota * 0.8, { al: "D", cor: VERMELHO });
+        if (!mat) D.texto(cx + cw - 2, yb + 5 + T.nota * 1.4, "MATERIAL: INFORME", T.nota * 0.8, { al: "D", cor: VERMELHO });
+      }
+      cx += cw + 4;
+    });
+    return { w: usada, h: (cy + rowH) - y };
+  }
+
+  var ArqQuadros = { quadroAreas: quadroAreas, quadroIndices: quadroIndices, quadroRecuos: quadroRecuos, quadroEsquadrias: quadroEsquadrias, quadroAcabamentos: quadroAcabamentos, quadroForros: quadroForros, detalheEsquadrias: detalheEsquadrias, tabela: tabela };
   global.ArqQuadros = ArqQuadros;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqQuadros;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

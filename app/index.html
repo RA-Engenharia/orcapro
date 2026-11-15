@@ -1143,6 +1143,32 @@
   <script src="js/conclanc.js"></script>
   <script src="js/concauditor.js"></script>
   <script src="js/concui.js"></script>
+  <!-- VISTA DE ESTRUTURA (S2, 14/11/2026): planta de fôrma por nível (estrutura em cor sobre a arquitetura em meio-tom), eixos cotados, cortes e tabelas; usa o carimbo RA, o estilo e a conferência de sobreposição das pranchas de arquitetura -->
+  <script src="js/concvista.js"></script>
+  <!-- CALCULAR A ESTRUTURA LANÇADA (S2, 14/11/2026): roda C1–C4 (concanalise, concviga, conclaje, concpilar) e diz verde / vermelho / laranja por peça, com a seção sugerida; cálculo de apoio -->
+  <script src="js/conccalcular.js"></script>
+  <!-- MOTOR DE CÁLCULO DE CONCRETO, fase C1 (14/11/2026): números com fonte (gerado de dados-fonte/concreto/calculo.json), modelo analítico, cargas, combinações e análise sobre o AcoAnalise -->
+  <script src="js/concdadoscalc.js"></script>
+  <script src="js/concmodelo.js"></script>
+  <script src="js/conccargas.js"></script>
+  <script src="js/conccombina.js"></script>
+  <script src="js/concanalise.js"></script>
+  <!-- MOTOR DE CÁLCULO DE CONCRETO, fase C2 (14/11/2026): dimensionamento de VIGAS (flexão, cortante, ancoragem, flecha, fissuração) com cada passo registrado para o memorial -->
+  <script src="js/concviga.js"></script>
+  <!-- LAJES PRÉ-FABRICADAS (14/11/2026): catálogo de fabricantes com fonte (gerado de dados-fonte/concreto/lajes-pre), motor da escolha da altura, geometria (vigota, enchimento, nervura, capa) e a família ra-laje-pre — o conclaje.js (C3, laje treliçada) lê o catálogo para a tabela do fabricante; ligação na geometria do BIM (bim.js) NÃO está feita -->
+  <script src="js/lajespredados.js"></script>
+  <script src="js/lajespre.js"></script>
+  <script src="js/lajespregeo.js"></script>
+  <script src="js/familiaslajepre.js"></script>
+  <!-- LAJES MISTAS E SECAS (14/11/2026): steel deck (Perfilor, Metform) e Painel Wall (Decorlit, Eternit), catálogo com fonte, motor escolher/quantitativos, geometria e famílias; o conclaje.js lê o catálogo para steel-deck e painel-wall -->
+  <script src="js/lajesmistadados.js"></script>
+  <script src="js/lajesmista.js"></script>
+  <script src="js/lajesmistageo.js"></script>
+  <script src="js/familiaslajemista.js"></script>
+  <!-- MOTOR DE CÁLCULO DE CONCRETO, fase C3 (14/11/2026): dimensionamento de LAJES (tabelas de Bares, uma direção, balanço, compatibilização, flecha, fissuração, treliçada) -->
+  <script src="js/conclaje.js"></script>
+  <!-- MOTOR DE CÁLCULO DE CONCRETO, fase C4 (14/11/2026): dimensionamento de PILARES (λ, 2ª ordem local, flexão composta normal e oblíqua por integração da seção, armadura e estribos) -->
+  <script src="js/concpilar.js"></script>
   <!-- CIRCUITOS, QUADRO, CONDUTORES E ELETRODUTOS (frente E2, 21/10/2026): tabelas da NBR 5410 conferidas na imagem (cópia não licenciada), traçado, dimensionamento, auditor, pranchas e a tela -->
   <script src="js/eletabelas.js"></script>
   <script src="js/elecatalogodados.js"></script>   <!-- eletrica-v2 L1: catálogo real dos produtos elétricos (cotas + fonte), gerado por tools/gerar-elecatalogo.js -->
@@ -1179,6 +1205,8 @@
   <script src="js/arqinteriores.js"></script>   <!-- … o caderno de interiores por ambiente (planta de móveis + vistas) -->
   <script src="js/arqdiagrama.js"></script>   <!-- … o motor de diagramação: blocos em folhas (menos folhas, menos branco) -->
   <script src="js/arqpranchas.js"></script>   <!-- … o gerador da série ARQ-01…11 (PDF/DXF) -->
+  <script src="js/folhaseditor.js"></script>   <!-- … EDITOR DE FOLHAS (motor puro): formato por folha, mover bloco, validar; serve a todas as disciplinas -->
+  <script src="js/folhaseditorui.js"></script>   <!-- … a tela do editor de folhas (folha grande, miniaturas, arrastar) -->
   <script src="js/arqpranchasui.js"></script>   <!-- … a tela "Gerar pranchas de arquitetura" -->
   <!-- P10: fases, grupos, opções de projeto e utilidades na tela (fita, diálogos, gráficos de fase no 3D) — só com a prévia do modelador -->
   <script src="js/bimp10ui.js"></script>

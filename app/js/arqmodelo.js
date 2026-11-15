@@ -325,6 +325,8 @@
     out.terreno = {
       divisa: dv ? { id: String(dv.id), nome: txt(dv.nome), pts: dv.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), area: num(dv.area, 0), perimetro: num(dv.perimetro, 0), segmentos: arr(dv.segmentos) } : null,
       subregioes: arr(T.subregioes).filter(function (s) { return s && arr(s.contorno).length >= 3; }).map(function (s) { return { id: String(s.id), nome: txt(s.nome), material: txt(s.material), pts: s.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }) }; }),
+      /* F1: o TOPOSSÓLIDO (pontos cotados do levantamento) — o corte tira dele o perfil do terreno (talude); sem ele o terreno sai plano e o corte avisa */
+      topos: arr(T.topos).filter(function (tp) { return tp && arr(tp.pontos).length >= 3; }).map(function (tp) { return { id: String(tp.id), nome: txt(tp.nome), pontos: tp.pontos.map(function (q) { return { x: num(q.x, 0), z: num(q.z, 0), y: num(q.y, 0) }; }) }; }),
       componentes: arr(T.componentes).map(function (c) { return { id: String(c.id), tipo: txt(c.tipoComp), rotulo: txt(c.rotulo), x: num(c.x, 0), z: num(c.z, 0), altura: num(c.alturaEf || c.altura, 0) }; }),
       norte: T.implantacao && isFinite(+T.implantacao.anguloNorte) ? +T.implantacao.anguloNorte : 0
     };

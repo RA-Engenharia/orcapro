@@ -17395,6 +17395,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function limparPintura() { S._pintura = null; S._pinturaDono = null; S.modelos.forEach(function (mo) { refreshModelo(mo); }); }
   S._isolarChaves = isolarChaves; S._pintarChaves = pintarChaves; S._limparPintura = limparPintura;
+  /* PINTAR POR UID (S2, 14/11/2026 — "Calcular" da estrutura: verde / vermelho / laranja por peça): a peça do editor tem o uid "edit:<id>". Escreve no MESMO
+     `S._pintura` (e por isso sobrevive ao refreshModelo e vale no 3D, na planta e no imersivo — ver a nota "A CENA TEM UM DONO DE CADA VEZ"). `mapa` vazio/nulo tira a pintura
+     só se o dono for o mesmo (quem pintou depois, por exemplo o 4D, não é apagado por quem pintou antes). */
+  function pintarUids(mapa, dono) {
+    var porUid = {}, n = 0; Object.keys(mapa || {}).forEach(function (u) { if (mapa[u]) { porUid[u] = mapa[u]; n++; } });
+    if (!n) { if (S._pinturaDono === (dono || "?")) limparPintura(); return 0; }
+    S._pintura = porUid; S._pinturaDono = dono || "?";
+    S.modelos.forEach(function (mo) { refreshModelo(mo); });
+    return n;
+  }
+  S._pintarUids = pintarUids;
   S._uidsDeChaves = uidsDeChaves;
 
   /* =====================================================================
@@ -19937,6 +19948,7 @@ window.BIM = {
      para outro, inclusive logo depois de pintar. Argumento novo em função
      interna precisa atravessar a porta de entrada também. */
   pintarChaves: function (mapa, dono) { return (S && S._pintarChaves) ? S._pintarChaves(mapa, dono) : 0; },
+  pintarUids: function (mapa, dono) { return (S && S._pintarUids) ? S._pintarUids(mapa, dono) : 0; },   /* S2: { 'edit:<id>': '#rrggbb' } — o Calcular da estrutura */
   limparPintura: function () { if (S && S._limparPintura) S._limparPintura(); },
   /* ---- B4: pontos de vista ----
      `cameraAtual` e o que a vista GUARDA; `aplicarVista` e como se volta para

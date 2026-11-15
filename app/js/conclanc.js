@@ -318,15 +318,23 @@
   }
 
   /* ---------------------------------------------------------------- seção de partida do pilar pela parede */
-  function secaoPelaParede(larg) {
+  /* p12 = opção de projeto permitirPilar12 (decisão do Rogério, 14/11/2026, FORA da 6118:2023): só então um lado de 12 a 14 cm é aceito, e só
+     quando a PAREDE é fina (< 14 cm) — a sugestão automática continua começando em 14 cm. γn = 1,95 − 0,05·b (a fórmula da Tab. 13.1 estendida). */
+  function secaoPelaParede(larg, p12) {
     var cmL = cm(larg), bMin = crit("pilarLadoMinimoCm", 19), bEsp = crit("pilarLadoEspecialCm", 14), aMin = crit("pilarAreaMinimaCm2", 360);
     if (cmL >= bMin) return { b: bMin / 100, L: bMin / 100, embutido: true, gamaN: 1.0, regra: "parede ≥ " + bMin + " cm → " + bMin + " × " + bMin };
-    var Lc = Math.max(26, Math.ceil(aMin / bEsp - 1e-9));   /* 14 × 26 = 364 cm² ≥ 360 (a tabela da pesquisa: parede de 14 → 14 × 26) */
-    return { b: bEsp / 100, L: Lc / 100, embutido: cmL >= bEsp, gamaN: 1.25, regra: cmL >= bEsp ? "parede de " + bEsp + " a " + bMin + " cm → " + bEsp + " × " + Lc + " (γn 1,25 no cálculo)" : "parede < " + bEsp + " cm → " + bEsp + " × " + Lc + " SOBRESSAINDO da parede" };
+    var b12 = !!p12 && cmL < bEsp, bUsa = b12 ? Math.max(crit("pilarLadoOpcao12Cm", 12), cmL) : bEsp;
+    var Lc = Math.max(26, Math.ceil(aMin / bUsa - 1e-9));   /* 14 × 26 = 364 cm² ≥ 360 (a tabela da pesquisa: parede de 14 → 14 × 26; 12 × 30 = 360) */
+    return { b: bUsa / 100, L: Lc / 100, embutido: cmL >= bUsa, b12: b12, gamaN: bUsa >= 19 ? 1.0 : Math.round((1.95 - 0.05 * bUsa) * 1000) / 1000,
+             regra: cmL >= bUsa ? "parede de " + bUsa + " a " + bMin + " cm → " + bUsa + " × " + Lc + " (γn " + virg(1.95 - 0.05 * bUsa) + " no cálculo)" : "parede < " + bUsa + " cm → " + bUsa + " × " + Lc + " faceando um lado da parede e SOBRESSAINDO " + virg(bUsa - cmL) + " cm do outro" };
   }
 
-  /* o pilar no nó: direção do lado maior, deslocamento para ficar dentro da parede e fora dos vãos */
-  function pilarNoNo(no) {
+  /* o pilar no nó: direção do lado maior, deslocamento para ficar dentro da parede e fora dos vãos.
+     ⚠ ANCORAGEM DA VIGA (15/11/2026): a viga que TERMINA no pilar ancora a armadura no apoio extremo (6118 18.3.2.4.1) e só conta com a dimensão do pilar AO LONGO dela. Roteiro do defeito: o
+     pilar saía 14 × 26 com o lado maior sempre na linha de maior braço, e a viga que chegava de lado via 14 cm − cobrimento = 10 cm, menos que o piso de ℓb,mín (11,3 cm) — reprovava a
+     ancoragem em vigas de baldrame e de cinta. Agora, no CANTO (as duas linhas terminam e só uma recebe o lado maior) o lado menor sobe ao apoio mínimo da ancoragem (ConcViga.apoioMinimoExtremo), SÓ quando a parede comporta esse lado (o pilar
+     continua embutido nela, sem sobra); em parede mais fina fica como era e o Calcular sugere alargar o apoio. NÃO virar o lado maior ao longo da ponta do T: o pilar deixa de caber numa parede só e o auditor de precisão o barra ("fora da parede"). opts = { fck, caa } */
+  function pilarNoNo(no, p12, opts) {
     var cands = [];
     no.bracos.forEach(function (b) { if (!cands.some(function (c) { return c.l === b.l; })) cands.push({ l: b.l }); });
     cands.forEach(function (c) {
@@ -337,10 +345,18 @@
       c.aNeg = menos ? menos.comp : meia; c.aPos = mais ? mais.comp : meia;
       c.comp = (mais ? mais.comp : 0) + (menos ? menos.comp : 0);
     });
-    cands.sort(function (a, b) { return (b.passa ? 1 : 0) - (a.passa ? 1 : 0) || b.comp - a.comp; });
-    var melhor = null;
-    for (var i = 0; i < cands.length; i++) {
-      var c = cands[i], sec = secaoPelaParede(c.l.larg), it = no.linhas.filter(function (x) { return x.l === c.l; })[0];
+    var CVG = dep("ConcViga", "./concviga.js"), ancMin = null;
+    if (no.tipo === "canto" && CVG && CVG.apoioMinimoExtremo) {
+      var caaT = { I: 1, II: 2, III: 3, IV: 4 }, caaN = opts && opts.caa != null ? (caaT[String(opts.caa)] || num(opts.caa, 2)) : (caaT[String(crit("caaPadrao", "II"))] || 2);
+      ancMin = CVG.apoioMinimoExtremo(num(opts && opts.fck, crit("fckPadraoMPa", 25)), caaN, 10);
+    }
+    function avalia(c) {
+      var sec = secaoPelaParede(c.l.larg, p12), it = no.linhas.filter(function (x) { return x.l === c.l; })[0];
+      if (ancMin && !sec.b12 && cm(sec.b) < Math.ceil(ancMin.cm - 1e-9) && Math.ceil(ancMin.cm - 1e-9) <= cm(c.l.larg)) {   /* só quando a PAREDE permite: o pilar continua embutido nela (parede mais fina que o apoio mínimo: fica como era e o Calcular sugere alargar o apoio) */
+        var bN = Math.ceil(ancMin.cm - 1e-9), LN = Math.max(cm(sec.L), Math.ceil(crit("pilarAreaMinimaCm2", 360) / bN - 1e-9));
+        sec = { b: bN / 100, L: LN / 100, embutido: cm(c.l.larg) >= bN, b12: false, gamaN: bN >= crit("pilarLadoMinimoCm", 19) ? 1.0 : Math.round((1.95 - 0.05 * bN) * 1000) / 1000,
+                regra: sec.regra + " · canto: lado menor " + bN + " cm para a viga que chega de lado ancorar (apoio mínimo = cobrimento + ℓb,mín, 18.3.2.4.1)" };
+      }
       var lo = -c.aNeg + sec.L / 2, hi = c.aPos - sec.L / 2, off = lo <= hi ? Math.min(Math.max(0, lo), hi) : (lo + hi) / 2;
       var centro = add(no.p, mul(c.l.u, off)), s = it.s + off;
       var conf = conflitoAbertura(c.l, s - sec.L / 2, s + sec.L / 2);
@@ -349,9 +365,13 @@
         var sc = dot(o.l.u, centro), h = Math.abs(dot(o.l.u, c.l.u)) * sec.L / 2 + Math.abs(dot(o.l.u, c.l.n)) * sec.b / 2;
         conf = conflitoAbertura(o.l, sc - h, sc + h);
       });
-      var cand = { centro: centro, l: c.l, u: c.l.u, sec: sec, cabe: lo <= hi + 1e-9, conflito: conf };
+      return { centro: centro, l: c.l, u: c.l.u, sec: sec, cabe: lo <= hi + 1e-9, conflito: conf };
+    }
+    var antigos = cands.slice().sort(function (a, b) { return (b.passa ? 1 : 0) - (a.passa ? 1 : 0) || b.comp - a.comp; }), melhor = null, i, cand;
+    for (i = 0; i < antigos.length; i++) {
+      cand = avalia(antigos[i]);
       if (!melhor) melhor = cand;
-      if (!conf) { melhor = cand; break; }
+      if (!cand.conflito) { melhor = cand; break; }
     }
     return melhor;
   }
@@ -417,6 +437,165 @@
     return S;
   }
 
+  /* ================================================================ S1 — eixos, níveis, tabelas e auditor de precisão (14/11/2026)
+   * Fase S1 do fluxo "Sugerir estrutura" (docs/concreto/FLUXO-SUGERIR-ESTRUTURA.md). Tudo daqui é PURO e sai do que o gerar() acabou de
+   * lançar, para a Vista de Estrutura (fase S2) desenhar sem recalcular: a Vista lê estes dados, não refaz a geometria.
+   * ⚠ O auditor recalcula a geometria das CAIXAS (não confia no que o lançador "achou"): se o lançador errar, ele pega. */
+  var LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  function letraDe(i) { return i < 26 ? LETRAS.charAt(i) : letraDe(Math.floor(i / 26) - 1) + LETRAS.charAt(i % 26); }
+  /* agrupa valores com diferença de até `tol` em relação ao primeiro do grupo (5 cm: a parede desenhada "quase alinhada" é o MESMO eixo) */
+  function agrupar(vals, tol) {
+    var s = vals.slice().sort(function (a, b) { return a.v - b.v; }), out = [];
+    s.forEach(function (x) { var g = out[out.length - 1]; if (g && x.v - g.ini <= tol + 1e-9) g.itens.push(x); else out.push({ ini: x.v, itens: [x] }); });
+    out.forEach(function (g) {
+      g.pos = r4(g.itens.reduce(function (a, x) { return a + x.v; }, 0) / g.itens.length);
+      g.s0 = Math.min.apply(null, g.itens.map(function (x) { return x.s0; })); g.s1 = Math.max.apply(null, g.itens.map(function (x) { return x.s1; }));
+      g.paredes = g.itens.map(function (x) { return x.id; });
+    });
+    return out;
+  }
+  /* grade de eixos das paredes úteis: LETRAS nos eixos horizontais (z constante), NÚMEROS nos verticais (x constante), em ordem */
+  function eixosDe(paredes, tol) {
+    tol = tol == null ? 0.05 : tol;
+    var H = [], V = [], inc = [];
+    arr(paredes).forEach(function (w) {
+      var d = sub(w.b, w.a), L = len(d); if (!(L > 0.05)) return;
+      if (Math.abs(d.z) / L < 0.01) H.push({ v: (w.a.z + w.b.z) / 2, id: w.id, s0: Math.min(w.a.x, w.b.x), s1: Math.max(w.a.x, w.b.x) });
+      else if (Math.abs(d.x) / L < 0.01) V.push({ v: (w.a.x + w.b.x) / 2, id: w.id, s0: Math.min(w.a.z, w.b.z), s1: Math.max(w.a.z, w.b.z) });
+      else inc.push(String(w.id));
+    });
+    var hs = agrupar(H, tol).map(function (g, i) { return { nome: letraDe(i), z: g.pos, de: r4(g.s0), ate: r4(g.s1), paredes: g.paredes, n: g.itens.length }; });
+    var vs = agrupar(V, tol).map(function (g, i) { return { nome: String(i + 1), x: g.pos, de: r4(g.s0), ate: r4(g.s1), paredes: g.paredes, n: g.itens.length }; });
+    return { horizontais: hs, verticais: vs, inclinadas: inc, tolAgrupar: tol };
+  }
+  /* o eixo que ATRAVESSA a pegada do pilar (tolerância = meio lado dele naquela direção; o pilar de canto fica rente à face externa e o eixo passa
+     por dentro dele, não pelo centro). Sem eixo = o texto diz a que distância do eixo mais próximo (pilar intermediário, ponta solta). */
+  function presoAosEixos(eixos, p, tolX, tolZ) {
+    if (tolZ == null) tolZ = tolX;
+    function perto(L, k, tol) { var m = null; L.forEach(function (e) { var d = Math.abs(e[k] - p[k]); if (d <= tol + 0.005 && (!m || d < m.d)) m = { e: e, d: d }; }); return m; }
+    function rel(L, k) { var m = null; L.forEach(function (e) { var d = Math.abs(e[k] - p[k]); if (!m || d < m.d) m = { e: e, d: d }; }); return m ? m.e.nome + (p[k] >= m.e[k] ? " + " : " − ") + virg(m.d) + " m" : "?"; }
+    var h = perto(eixos.horizontais, "z", tolZ), vv = perto(eixos.verticais, "x", tolX);
+    return { h: h ? h.e.nome : null, v: vv ? vv.e.nome : null, texto: (h ? h.e.nome : rel(eixos.horizontais, "z")) + " / " + (vv ? vv.e.nome : rel(eixos.verticais, "x")), presoH: !!h, presoV: !!vv };
+  }
+  function caixaRet(c) { var th = num(c.rotY, 0); return { o: v(num(c.cx, 0), num(c.cz, 0)), ux: v(Math.cos(th), -Math.sin(th)), uz: v(Math.sin(th), Math.cos(th)), a: num(c.comprimento, 0) / 2, b: num(c.espessura, 0) / 2 }; }
+  function pilarContraParede(P, w) {
+    var d = sub(w.b, w.a), L = len(d), u = mul(d, 1 / L), n = v(-u.z, u.x), rel = sub(P.o, mul(add(w.a, w.b), 0.5));
+    return { t: dot(rel, u), off: Math.abs(dot(rel, n)), h: Math.abs(dot(u, P.ux)) * P.a + Math.abs(dot(u, P.uz)) * P.b, hn: Math.abs(dot(n, P.ux)) * P.a + Math.abs(dot(n, P.uz)) * P.b, L: L, u: u, n: n };
+  }
+  function metadeAoLongo(P, u) { return Math.abs(dot(u, P.ux)) * P.a + Math.abs(dot(u, P.uz)) * P.b; }
+  function pontasDaViga(c) { var th = num(c.rotY, 0), u = v(Math.cos(th), -Math.sin(th)), o = v(num(c.cx, 0), num(c.cz, 0)), m = num(c.comprimento, 0) / 2; return { u: u, p0: sub(o, mul(u, m)), p1: add(o, mul(u, m)) }; }
+
+  /* o auditor de precisão (BLOQUEIA): pilar fora da parede, pilar em vão, prumada desalinhada, viga sem apoio, eixos < 30 cm, seção abaixo do mínimo */
+  function auditarS1(pavs, pecas, vaos, eixos, opc) {
+    var bloq = [], av = [], p12 = !!opc.permitirPilar12, bMin = (p12 ? crit("pilarLadoOpcao12Cm", 12) : crit("pilarLadoEspecialCm", 14)) / 100, aMin = crit("pilarAreaMinimaCm2", 360);
+    function B(id, texto, pecasIds) { bloq.push({ id: id, nivel: "bloqueio", texto: texto, pecas: pecasIds || [] }); }
+    var pil = pecas.filter(function (c) { return c.conc && c.conc.papel === "pilar"; }), vig = pecas.filter(function (c) { return c.conc && c.conc.papel === "viga"; });
+    pil.forEach(function (c) {
+      var pav = pavs[c.conc.pav], P = caixaRet(c), nome = c.marca + " (" + c.conc.pavNome + ")", b = 2 * P.b, L = 2 * P.a;
+      /* seção mínima (6118 13.2.3 — 14 cm e 360 cm²; 12 cm só com a opção do projeto) */
+      if (Math.min(b, L) < bMin - 0.0005 || Math.min(b, L) * Math.max(b, L) * 10000 < aMin - 0.5) B("S1-06", "Pilar " + nome + " com " + cm(Math.min(b, L)) + " × " + cm(Math.max(b, L)) + ": abaixo do mínimo (lado " + cm(bMin) + " cm" + (p12 ? ", opção 12 cm do projeto ligada" : "") + " e " + aMin + " cm²).", [c.id]);
+      /* dentro da parede: em ALGUMA parede do pavimento, a face rente (a sobra é só a declarada: pilar mais grosso que a parede fina) */
+      var dentroDe = null, toca = [];
+      pav.paredes.forEach(function (w) {
+        var q = pilarContraParede(P, w);
+        if (q.off - q.hn < w.esp / 2 - 1e-6 && Math.abs(q.t) - q.h < q.L / 2 + 0.2) toca.push({ w: w, q: q });
+        var sobra = Math.max(0, b - w.esp);
+        if (Math.abs(q.t) + q.h <= q.L / 2 + 0.2 && q.off + q.hn <= w.esp / 2 + sobra + 0.011) dentroDe = dentroDe || w;
+      });
+      if (!dentroDe) B("S1-01", "Pilar " + nome + " fora da parede: nenhuma parede do pavimento o contém (face a face).", [c.id]);
+      /* em vão de porta/janela: a pegada do pilar contra cada abertura das paredes que ele toca */
+      toca.forEach(function (tq) {
+        var vz = vaos[tq.w.id]; if (!vz) return;
+        arr(vz.aceitos).forEach(function (a) { if (tq.q.t + tq.q.h > a.x0 + 0.005 && tq.q.t - tq.q.h < a.x1 - 0.005) B("S1-02", "Pilar " + nome + " cai no vão " + a.id + " (parede " + tq.w.id + "): desloque até o batente.", [c.id]); });
+      });
+    });
+    /* prumada */
+    var porMarca = {};
+    pil.forEach(function (c) { (porMarca[c.marca] = porMarca[c.marca] || []).push(c); });
+    Object.keys(porMarca).forEach(function (k) {
+      var L = porMarca[k].slice().sort(function (a, b) { return a.conc.pav - b.conc.pav; }), a0 = L[0];
+      L.forEach(function (c) {
+        var d = dist(v(c.conc.px, c.conc.pz), v(a0.conc.px, a0.conc.pz));
+        if (d > 0.06) B("S1-03", "Prumada desalinhada: o pilar " + k + " do " + c.conc.pavNome + " está " + cm(d) + " cm fora do prumo do " + a0.conc.pavNome + ".", [c.id]);
+      });
+    });
+    pil.forEach(function (c) {
+      if (c.conc.pav < 1) return;
+      var embaixo = pil.some(function (o) { return o.conc.pav === c.conc.pav - 1 && dist(v(o.conc.px, o.conc.pz), v(c.conc.px, c.conc.pz)) <= 0.06; });
+      if (!embaixo) B("S1-03", "Prumada desalinhada: o pilar " + c.marca + " do " + c.conc.pavNome + " não tem pilar embaixo (transição) — alinhe ao de baixo.", [c.id]);
+    });
+    pil.forEach(function (c) {
+      if (c.conc.pav + 1 >= pavs.length) return;
+      var emCima = pil.some(function (o) { return o.conc.pav === c.conc.pav + 1 && dist(v(o.conc.px, o.conc.pz), v(c.conc.px, c.conc.pz)) <= 0.06; });
+      if (!emCima) av.push({ id: "S1-A1", nivel: "aviso", texto: "Pilar " + c.marca + " termina no " + c.conc.pavNome + ": a arquitetura de cima não tem parede sobre ele.", pecas: [c.id] });
+    });
+    /* viga sem apoio: cada ponta cai num pilar (do mesmo pavimento) ou sobre outra viga; a ponta livre do balanço é a única sem apoio */
+    vig.forEach(function (c) {
+      var E = pontasDaViga(c), nome = (c.marca || c.id) + " (" + c.conc.pavNome + ")", bal = !!c.conc.balanco;
+      [[E.p0, "início"], [E.p1, "fim"]].forEach(function (pt) {
+        var apoiaPilar = pil.some(function (p) { if (p.conc.pav !== c.conc.pav) return false; var P = caixaRet(p), d = sub(pt[0], P.o); return dist(pt[0], P.o) <= Math.max(P.a, P.b) + 0.1 || (Math.abs(dot(d, P.ux)) <= P.a + 0.1 && Math.abs(dot(d, P.uz)) <= P.b + 0.1); });
+        var apoiaViga = vig.some(function (o) { if (o === c || o.conc.pav !== c.conc.pav || !!o.conc.baldrame !== !!c.conc.baldrame) return false; var q = pontasDaViga(o); return distSeg(pt[0], q.p0, q.p1) <= num(o.espessura, 0.14) / 2 + 0.1; });
+        if (apoiaPilar || apoiaViga) return;
+        if (bal && c.conc.pontaLivre === pt[1]) return;
+        B("S1-04", "Viga " + nome + " sem apoio no " + pt[1] + ": nem pilar nem outra viga.", [c.id]);
+      });
+    });
+    /* eixos: 30 cm de distância mínima entre eixos da mesma direção */
+    [["horizontais", "z"], ["verticais", "x"]].forEach(function (k) {
+      var L = eixos[k[0]];
+      for (var i = 0; i + 1 < L.length; i++) { var d = L[i + 1][k[1]] - L[i][k[1]]; if (d < 0.30 - 1e-9) B("S1-05", "Eixos " + L[i].nome + " e " + L[i + 1].nome + " a " + cm(d) + " cm (mínimo 30 cm): junte as paredes ou corrija o desenho.", L[i].paredes.concat(L[i + 1].paredes)); }
+    });
+    eixos.inclinadas.forEach(function (id) { av.push({ id: "S1-A2", nivel: "aviso", texto: "Parede " + id + " inclinada: sem eixo na grade (lance o pilar e a viga à mão).", pecas: [id] }); });
+    return { bloqueia: bloq.length > 0, bloqueios: bloq, avisos: av, regras: ["S1-01 pilar fora da parede", "S1-02 pilar em vão", "S1-03 prumada", "S1-04 viga sem apoio", "S1-05 eixos < 30 cm", "S1-06 seção mínima"] };
+  }
+
+  /* monta os dados da Vista de Estrutura: eixos, níveis, locação, vigas */
+  function dadosS1(pavs, pecas, PU) {
+    var eixos = eixosDe(PU.usadas, 0.05), pil = pecas.filter(function (c) { return c.conc.papel === "pilar"; }), vig = pecas.filter(function (c) { return c.conc.papel === "viga"; });
+    var locacao = pil.map(function (c) {
+      var P0 = caixaRet(c), ap = presoAosEixos(eixos, P0.o, Math.abs(P0.ux.x) * P0.a + Math.abs(P0.uz.x) * P0.b, Math.abs(P0.ux.z) * P0.a + Math.abs(P0.uz.z) * P0.b), b = cm(c.espessura), L = cm(c.comprimento), base = r3(num(c.cy, 0) - num(c.altura, 0) / 2), topo = r3(num(c.cy, 0) + num(c.altura, 0) / 2);
+      return { id: c.id, marca: c.marca, pavimento: c.conc.pavNome, pav: c.conc.pav, eixos: ap.texto, eixoH: ap.h, eixoV: ap.v, x: r3(num(c.cx, 0)), y: r3(num(c.cz, 0)), secao: b + " × " + L, b: b, L: L, base: base, topo: topo,
+        nivelBase: pavs[c.conc.pav].nivelBase, nivelTopo: pavs[c.conc.pav].nivelTopo, apoio: c.conc.pav === 0 ? "fundação / baldrame (a dimensionar: sem sondagem SPT)" : "pilar do pavimento de baixo",
+        sobraCm: c.conc.sobraCm || 0, tipoNo: c.conc.tipoNo };
+    });
+    var eixoDoPilar = {}; locacao.forEach(function (l) { eixoDoPilar[l.id] = l.eixos; });
+    locacao.sort(function (a, b) { return a.pav - b.pav || String(a.eixoH || "~").localeCompare(String(b.eixoH || "~")) || a.x - b.x; });
+    function pilarNaPonta(c, p) { var m = null; pil.forEach(function (q) { if (q.conc.pav !== c.conc.pav) return; var d = dist(p, v(q.conc.px, q.conc.pz)); if (d <= 0.45 && (!m || d < m.d)) m = { q: q, d: d }; }); return m && m.q; }
+    var tabVigas = vig.map(function (c) {
+      var E = pontasDaViga(c), h = num(c.altura, 0), topo = r3(num(c.topoViga, num(c.cy, 0) + h / 2)), ini = E.p0, fim = E.p1, u = E.u;
+      var q0 = pilarNaPonta(c, ini), q1 = pilarNaPonta(c, fim), f0 = q0 ? add(ini, mul(u, metadeAoLongo(caixaRet(q0), u))) : ini, f1 = q1 ? sub(fim, mul(u, metadeAoLongo(caixaRet(q1), u))) : fim;
+      return { id: c.id, marca: c.marca, pavimento: c.conc.pavNome, pav: c.conc.pav, papel: c.conc.balanco ? "balanço" : (c.conc.baldrame ? "baldrame" : "viga"),
+        inicio: { x: r3(f0.x), y: r3(f0.z), eixo: q0 ? eixoDoPilar[q0.id] : presoAosEixos(eixos, ini, 0.05).texto, apoio: q0 ? q0.marca : (c.conc.balanco && c.conc.pontaLivre === "início" ? "livre (balanço)" : "viga") },
+        fim: { x: r3(f1.x), y: r3(f1.z), eixo: q1 ? eixoDoPilar[q1.id] : presoAosEixos(eixos, fim, 0.05).texto, apoio: q1 ? q1.marca : (c.conc.balanco && c.conc.pontaLivre === "fim" ? "livre (balanço)" : "viga") },
+        vaoEixo: r3(len(sub(fim, ini))), vaoLivre: r3(len(sub(f1, f0))), topo: topo, fundo: r3(topo - h), secao: cm(num(c.espessura, 0)) + " × " + cm(h), b: cm(num(c.espessura, 0)), h: cm(h) };
+    });
+    var ordem = { baldrame: 0, viga: 1, "balanço": 2 };
+    tabVigas.sort(function (a, b) { return a.pav - b.pav || ordem[a.papel] - ordem[b.papel] || String(a.marca).localeCompare(String(b.marca), "pt", { numeric: true }); });
+    /* níveis: baldrame, térreo, pisos, respaldo e cobertura (cada um com cota) */
+    var bald = vig.filter(function (c) { return c.conc.baldrame; }), niveis = [];
+    var hBald = bald.length ? Math.max.apply(null, bald.map(function (c) { return num(c.altura, 0); })) : null;
+    niveis.push({ tipo: "baldrame", nome: "Baldrame (topo)", cota: r3(pavs[0].yb), fundo: hBald != null ? r3(pavs[0].yb - hBald) : null, nivelId: pavs[0].nivelBase, nota: hBald != null ? "viga baldrame lançada: topo na base das paredes" : "baldrame não lançado (opc.baldrame); a cota é a base das paredes" });
+    pavs.forEach(function (p, i) {
+      niveis.push({ tipo: i === 0 ? "terreo" : "piso", nome: p.nome, cota: r3(p.yb), nivelId: p.nivelBase });
+      niveis.push({ tipo: p.ultimo ? "cobertura" : "respaldo", nome: p.ultimo ? "Cobertura (respaldo do último pavimento)" : "Respaldo — " + p.nome, cota: r3(p.topo), nivelId: p.nivelTopo, nota: p.ultimo ? "topo da cinta/laje; o telhado é do projeto de cobertura" : "topo das vigas e da laje" });
+    });
+    return { eixos: eixos, niveis: niveis, locacao: locacao, vigas: tabVigas };
+  }
+
+  /* os dados da Vista de Estrutura a partir do MODELO já lançado (sem lançar nada): eixos, níveis, locação, vigas — o mesmo cálculo do gerar() (dadosS1),
+     lido das peças pré-lançadas que estão no estado. É o que permite refazer a vista depois de reabrir o projeto ou de mexer no modelo. */
+  function dadosDoModelo(estado, opc) {
+    opc = opc || {};
+    if (!estado) return { ok: false, motivo: "Sem modelo aberto." };
+    var PU = paredesUteis(estado, opc);
+    if (!PU.usadas.length) return { ok: false, motivo: "Nenhuma parede para a grade de eixos." };
+    var pavs = pavimentosDe(PU.usadas, opc.niveis), pecas = arr(estado.caixas).filter(function (c) { return ehPreLanc(c) && c.conc && pavs[c.conc.pav]; });
+    if (!pecas.length) return { ok: false, motivo: "Não há estrutura pré-lançada no modelo." };
+    var s = dadosS1(pavs, pecas, PU);
+    return { ok: true, eixos: s.eixos, niveis: s.niveis, locacao: s.locacao, tabelaVigas: s.vigas,
+      pavimentos: pavs.map(function (p) { return { idx: p.idx, nome: p.nome, base: p.yb, topo: p.topo, nivelBase: p.nivelBase, nivelTopo: p.nivelTopo, paredes: arr(p.paredes).length, linhas: arr(p.linhas).length }; }) };
+  }
+
   /* ================================================================ GERAR */
   function gerar(estado, opc) {
     opc = opc || {};
@@ -425,12 +604,14 @@
     if (!DD) return { ok: false, motivo: "Os critérios do concreto (js/concdados.js) não carregaram." };
     if (!estado) return { ok: false, motivo: "Sem modelo aberto." };
     var avisos = [], pendencias = [], premissas = [];
-    var vaoMax = num(opc.vaoMax, crit("vaoEconomicoMaxM", 5.5)), hMinViga = crit("vigaAlturaMinimaCm", 25) / 100;
+    var vaoMax = num(opc.vaoMax, crit("vaoEconomicoMaxM", 5.5)), hMinViga = crit("vigaAlturaMinimaCm", 25) / 100, p12 = opc.permitirPilar12 === true;
     var PU = paredesUteis(estado, opc);
     if (!PU.usadas.length) return { ok: false, motivo: "Nenhuma parede para apoiar a estrutura" + (PU.ignoradas.length ? " (" + PU.ignoradas.length + " ignorada(s): " + PU.ignoradas[0].motivo + ")" : "") + ". Lance as paredes da arquitetura antes." };
     var vaos = typeof opc.avaliarFam === "function" ? BE.vaosDasParedes(estado, opc.avaliarFam) : {};
     if (typeof opc.avaliarFam !== "function") avisos.push("Sem o catálogo das famílias: as portas e janelas NÃO foram conferidas (pilar e verga).");
     var pavs = pavimentosDe(PU.usadas, opc.niveis);
+    /* ⚠ espessura mínima da laje por USO (6118:2023 13.2.4.1): "cobertura" (7 cm) só vale com mais de um pavimento — a mesma régua do ConcCargas (uso "cobertura" exige niveis > 1). Edifício de um pavimento só: a laje é tratada como de piso (8 cm, sobrecarga do ambiente). Antes o lançamento dava 7 cm e o Calcular reprovava a mesma laje como piso (revisão 14/11/2026). */
+    function cobUso(p) { return !!p.ultimo && pavs.length > 1; }
     if (pavs.length > 4) avisos.push("Mais de 4 pavimentos: fora do pré-lançamento automático (ESCALAR o engenheiro — 6118 15.5.2).");
 
     /* o que o usuário mexeu à mão (fica) e as peças do pré-lançamento anterior (saem) */
@@ -462,7 +643,7 @@
           var lp = no.linhas[0].l;
           if (lp.comprimento < crit("trechoCurtoSemVigaM", 1.0)) { lp.semViga = true; return; }
         }
-        var pc = pilarNoNo(no); if (!pc) return;
+        var pc = pilarNoNo(no, p12, { fck: opc.fck, caa: opc.caa }); if (!pc) return;
         pav.pilares.push({ p: pc.centro, u: pc.u, l: pc.l, sec: pc.sec, tipoNo: no.tipo, cabe: pc.cabe, conflito: pc.conflito ? pc.conflito.id : null,
           yb: Math.min.apply(null, no.linhas.map(function (it) { return it.l.yb; })),
           regras: [no.tipo === "ponta" ? "pilarPontaLivre" : "pilarNosEncontros", "pilarEmbutido"] });
@@ -478,7 +659,7 @@
       pavs[k].pilares.forEach(function (pp) {
         if (achaPilar(pavs[k - 1], pp.p)) return;
         var lb = linhaSob(pavs[k - 1], pp.p);
-        if (lb) pavs[k - 1].pilares.push({ p: pp.p, u: pp.u, l: lb, yb: lb.yb, sec: secaoPelaParede(lb.larg), tipoNo: "prumo", cabe: true, conflito: null, regras: ["pilarPrumo", "pilarEmbutido"] });
+        if (lb) pavs[k - 1].pilares.push({ p: pp.p, u: pp.u, l: lb, yb: lb.yb, sec: secaoPelaParede(lb.larg, p12), tipoNo: "prumo", cabe: true, conflito: null, regras: ["pilarPrumo", "pilarEmbutido"] });
         else if (!pp.transicao) { pp.transicao = true; avisos.push("Pilar do " + pavs[k].nome + " sem parede embaixo: nasce em viga (TRANSIÇÃO) — ESCALAR o engenheiro."); }
       });
     }
@@ -486,7 +667,7 @@
       pavs[k2].pilares.forEach(function (pp) {
         if (achaPilar(pavs[k2 + 1], pp.p)) return;
         var la = linhaSob(pavs[k2 + 1], pp.p);
-        if (la) pavs[k2 + 1].pilares.push({ p: pp.p, u: pp.u, l: la, yb: la.yb, sec: secaoPelaParede(la.larg), tipoNo: "prumo", cabe: true, conflito: null, regras: ["pilarPrumo", "pilarEmbutido"] });
+        if (la) pavs[k2 + 1].pilares.push({ p: pp.p, u: pp.u, l: la, yb: la.yb, sec: secaoPelaParede(la.larg, p12), tipoNo: "prumo", cabe: true, conflito: null, regras: ["pilarPrumo", "pilarEmbutido"] });
       });
     }
     }
@@ -499,7 +680,7 @@
         var ss = pav.pilares.filter(function (p) { return naLinha(l, p.p); }).map(function (p) { return dot(l.u, p.p); }).sort(function (a, b) { return a - b; });
         for (var i = 0; i + 1 < ss.length; i++) {
           var g = ss[i + 1] - ss[i]; if (g <= vaoMax + 1e-9) continue;
-          var n = Math.ceil(g / vaoMax - 1e-9), sec = secaoPelaParede(l.larg);
+          var n = Math.ceil(g / vaoMax - 1e-9), sec = secaoPelaParede(l.larg, p12);
           for (var k = 1; k < n; k++) {
             var alvo = ss[i] + g * k / n, raio = Math.max(0.3, g / n / 2 - 0.4), viz = prumoPerto(pav, l, alvo, raio), s = viz != null && !conflitoAbertura(l, viz - sec.L / 2, viz + sec.L / 2) ? viz : posLivre(l, alvo, sec.L, raio);
             if (s == null) { avisos.push("Vão de " + virg(g) + " m numa parede do " + pav.nome + " sem lugar livre de porta/janela para o pilar intermediário: conferir."); continue; }
@@ -580,22 +761,23 @@
         /* BORDA LIVRE = BALANÇO (revisão 21/10/2026): a varanda delimitada por separador (sem outro ambiente do outro lado),
            por mureta/muro (não recebe viga) ou por nada saía como laje apoiada — 7 cm na cobertura, abaixo dos 10 cm da
            6118 13.2.4.1-c para laje em balanço, e treliçada "biapoiada" em balanço. Agora: maciça, ≥ 10 cm, ESCALAR. */
-        var livres = lados.filter(function (ld) {
+        var livresLd = lados.filter(function (ld) {
           var comp = Math.sqrt(Math.pow(num(ld.x1, 0) - num(ld.x0, 0), 2) + Math.pow(num(ld.z1, 0) - num(ld.z0, 0), 2)); if (!(comp >= 0.2)) return false;
           var f = ld.fonte; if (!f) return true;
           if (f.tipo === "separador") return (sepDe[f.id] || []).length < 2;
           if (f.tipo === "parede") { var mot = ignoradaId[String(f.id)]; return !!mot && !paredesPav[String(f.id)] && !/^existente/.test(mot); }
           return false;
-        }).map(function (ld) { return virg(Math.sqrt(Math.pow(num(ld.x1, 0) - num(ld.x0, 0), 2) + Math.pow(num(ld.z1, 0) - num(ld.z0, 0), 2))) + " m"; });
+        });
+        var livres = livresLd.map(function (ld) { return virg(Math.sqrt(Math.pow(num(ld.x1, 0) - num(ld.x0, 0), 2) + Math.pow(num(ld.z1, 0) - num(ld.z0, 0), 2))) + " m"; });
         var balanco = livres.length > 0;
         var tipo = balanco ? "macica" : (tipoPref === "auto" ? (lx <= crit("lajeMacicaVaoMaxM", 5.0) + 1e-9 ? "macica" : "trelicada") : tipoPref);
         var hCm, regras = [], av = [];
         if (balanco) av.push("BALANÇO: " + livres.length + " borda(s) livre(s) (" + livres.join(", ") + ") — maciça com o mínimo de " + crit("lajeMinBalancoCm", 10) + " cm (" + fonteDe("lajeMinBalancoCm") + ") e γn; ESCALAR o engenheiro");
         if (balanco && tipoPref === "trelicada") av.push("treliçada pedida, mas a laje é em balanço: vai maciça (a treliçada da NBR 14859-1 é biapoiada)");
         if (tipo === "macica") {
-          var lE = Math.min(lx, 0.7 * ly), d = (2.5 - 0.1 * nEng) * lE, hMin = balanco ? crit("lajeMinBalancoCm", 10) : (pav.ultimo ? crit("lajeMinCoberturaCm", 7) : crit("lajeMinPisoCm", 8));
+          var lE = Math.min(lx, 0.7 * ly), d = (2.5 - 0.1 * nEng) * lE, hMin = balanco ? crit("lajeMinBalancoCm", 10) : (cobUso(pav) ? crit("lajeMinCoberturaCm", 7) : crit("lajeMinPisoCm", 8));
           hCm = Math.max(hMin, Math.round(d + 2.5));
-          regras.push("lajeAlturaFormula", balanco ? "lajeMinBalancoCm" : (pav.ultimo ? "lajeMinCoberturaCm" : "lajeMinPisoCm"));
+          regras.push("lajeAlturaFormula", balanco ? "lajeMinBalancoCm" : (cobUso(pav) ? "lajeMinCoberturaCm" : "lajeMinPisoCm"));
           if (lx > crit("lajeMacicaVaoMaxM", 5.0) + 1e-9) av.push("maciça com vão de " + virg(lx) + " m (acima de 5,0 m)");
         } else {
           var alts = crit("trelicadaAlturasCm", [12, 16, 20, 25]), alvo = Math.max(12, lx * 100 / crit("trelicadaHPorVao", 25));
@@ -617,7 +799,8 @@
         });
         if (escIds.length) av.push("vão da escada " + escIds.join(", ") + " aberto na laje (furo pela planta da escada) — o engenheiro confere a borda do vão");
         pav.lajes.push({ amb: a, P: a._P, tipo: tipo, hCm: hCm, lx: r3(lx), ly: r3(ly), nEng: nEng, umaDirecao: ly / lx > crit("lajeUmaDirecaoRazao", 2), regras: regras, avisos: av,
-          area: Math.max(0, areaPoli(a._P) - furos.reduce(function (s0, F) { return s0 + areaPoli(F); }, 0)), balanco: balanco, furos: furos, escadas: escIds });
+          area: Math.max(0, areaPoli(a._P) - furos.reduce(function (s0, F) { return s0 + areaPoli(F); }, 0)), balanco: balanco, furos: furos, escadas: escIds,
+          livresLd: livresLd, apoiosLd: lados.filter(function (ld) { return ld.fonte && ld.fonte.tipo === "parede" && paredesPav[String(ld.fonte.id)]; }) });
       });
     }); }
     var ESC = escadasDe(estado);
@@ -676,18 +859,23 @@
     pavs.forEach(function (pav) {
       pav.pilares.forEach(function (pp) {
         var b = pp.bFinal, L = pp.Lfinal, yb0 = baseEm(pav, pp.p, pp.yb), H = pav.topo - yb0;   /* a base da parede dele (desnível no pavimento) */
-        var c = BA.pilarPerfil({ x: r4(pp.p.x), z: r4(pp.p.z) }, { perfil: { forma: "ret", b: r4(L), h: r4(b) }, material: "concreto", base: r4(yb0), altura: r4(H), rotY: rotYde(pp.u) });
+        /* PAREDE MAIS FINA QUE O PILAR (11,5 cm × 14 cm): o pilar faceia UM lado da parede e a sobra fica do outro — nunca centrado, que
+           deixaria metade da sobra para cada lado e o pilar aparecendo nas duas faces (fluxo S1, etapa 3). O eixo (px, pz) fica na parede. */
+        var desl = b > pp.l.larg + 1e-9 ? (b - pp.l.larg) / 2 : 0, pcx = pp.p.x + pp.l.n.x * desl, pcz = pp.p.z + pp.l.n.z * desl;
+        var c = BA.pilarPerfil({ x: r4(pcx), z: r4(pcz) }, { perfil: { forma: "ret", b: r4(L), h: r4(b) }, material: "concreto", base: r4(yb0), altura: r4(H), rotY: rotYde(pp.u) });
         if (!c) return;
         c.id = "cp-p" + pav.idx + "-" + coord(pp.p.x) + "_" + coord(pp.p.z);
         c.marca = pp.prumada.marca;
         if (pav.nivelBase) c.nivelId = pav.nivelBase;
         var reg = pp.regras.slice(); if (L > pp.sec.L + 1e-9) reg.push("pilarAlfa", "pilarCargaPartidaKNm2");
         var g = guardar(c, "pilar", pav, { secao: cm(b) + " × " + cm(L), tipoNo: pp.tipoNo, posicao: pp.pos, Ai: r3(pp.ai), Ac: pp.Ac, regras: reg,
-          gamaN: cm(b) < crit("pilarLadoMinimoCm", 19) ? 1.25 : 1.0, sobressai: !pp.sec.embutido || !pp.cabe, transicao: !!pp.transicao, conflito: pp.conflito });
+          gamaN: cm(b) >= crit("pilarLadoMinimoCm", 19) ? 1.0 : Math.round((1.95 - 0.05 * cm(b)) * 1000) / 1000, sobressai: !pp.sec.embutido || !pp.cabe, transicao: !!pp.transicao, conflito: pp.conflito,
+          px: r4(pp.p.x), pz: r4(pp.p.z), desl: r4(desl), sobraCm: desl > 0 ? Math.round((b - pp.l.larg) * 1000) / 10 : 0, opcao12: cm(b) < crit("pilarLadoEspecialCm", 14) });
         if (!g) return;
+        if (desl > 0) avisos.push("Pilar " + c.marca + " (" + cm(b) + " × " + cm(L) + ") em parede de " + virg(pp.l.larg * 100, 1) + " cm: faceia um lado da parede e sobra " + virg((b - pp.l.larg) * 100, 1) + " cm do outro lado" + (cm(b) < crit("pilarLadoEspecialCm", 14) ? " (lado abaixo de 14 cm: opção do projeto, FORA da NBR 6118:2023 13.2.3 — habilitado pelo RT)" : "") + ".");
         uniaoDe[c.id] = pav.paredes.filter(function (w) { return distSeg(pp.p, w.a, w.b) <= w.esp / 2 + Math.max(b, L) / 2 + 0.02 && w.yb < pav.topo - 0.1 && w.yt > yb0 + 0.1; }).map(function (w) { return w.id; });
         pilares.push({ id: c.id, marca: c.marca, pav: pav.nome, secao: cm(b) + " × " + cm(L), tipoNo: pp.tipoNo, posicao: pp.pos, Ai: r3(pp.ai), Ac: pp.Ac, x: r3(pp.p.x), z: r3(pp.p.z),
-          regra: pp.sec.regra + (L > pp.sec.L + 1e-9 ? "; área de influência pede " + pp.Ac + " cm² → " + cm(b) + " × " + cm(L) : ""), transicao: !!pp.transicao, conflito: pp.conflito });
+          regra: pp.sec.regra + (L > pp.sec.L + 1e-9 ? "; área de influência pede " + pp.Ac + " cm² → " + cm(b) + " × " + cm(L) : ""), transicao: !!pp.transicao, conflito: pp.conflito, x: r3(pcx), z: r3(pcz), sobraCm: desl > 0 ? Math.round((b - pp.l.larg) * 1000) / 10 : 0 });
         if (cm(L) > crit("pilarParedeRazao", 5) * cm(b)) avisos.push("Pilar " + c.marca + " (" + cm(b) + " × " + cm(L) + ") virou pilar-parede: ESCALAR o engenheiro (6118 14.4.2.4).");
         if (pp.conflito) avisos.push("Pilar " + c.marca + " no " + pav.nome + " encosta no vão " + pp.conflito + ": veja o auditor.");
       });
@@ -706,7 +894,7 @@
     pavs.forEach(function (pav) {
       var apoios = pav.pilares.map(function (pp) { return { p: pp.p }; }).concat(pav.manuaisPil.map(function (c) { return { p: v(c.cx, c.cz), mao: c.id }; }));
       var manuaisViga = existentes.filter(function (c) { return c.tipo === "viga" && Math.abs((num(c.cy, 0) + num(c.altura, 0) / 2) - pav.topo) < 0.16; });
-      var porLinha = [];
+      var porLinha = []; pav.porLinha = porLinha;
       pav.linhas.forEach(function (l) {
         if (l.semViga) return;
         var ss = apoios.filter(function (a) { return naLinha(l, a.p, 0.05); }).map(function (a) { return dot(l.u, a.p); }).sort(function (a, b) { return a - b; });
@@ -716,11 +904,13 @@
         for (var i = 0; i + 1 < ss.length; i++) tr.push({ a: ss[i], b: ss[i + 1], ext: i === 0 || i + 2 === ss.length });
         var hLinha = 0;
         tr.forEach(function (t) { t.L = t.b - t.a; t.k = t.ext ? crit("vigaAlturaExtremo", 10) : crit("vigaAlturaInterno", 12); t.hReq = Math.max(hMinViga, teto5(t.L / t.k)); hLinha = Math.max(hLinha, t.hReq); });
-        porLinha.push({ l: l, tr: tr, h: hLinha });
+        porLinha.push({ l: l, tr: tr, h: hLinha }); (pav.hLinha = pav.hLinha || {})[l.id] = hLinha;
       });
       porLinha.forEach(function (pl) {
-        var l = pl.l, bCm = Math.max(crit("vigaLarguraMinimaCm", 12), Math.min(20, Math.floor(cm(l.larg) + 1e-6))), b = bCm / 100;
+        var l = pl.l, bCm = Math.max(crit("baldrameLarguraMinCm", 14), Math.floor(cm(l.larg) + 1e-6)), b = bCm / 100;   /* bw = espessura da parede, mín. 14 (pré-dimensionamento usual, Pinheiro/Bastos — decisão do produto 14/11/2026) */
         pl.tr.forEach(function (t) {
+          /* h = máx(30 cm; ℓ/12), em múltiplo de 5 cm (vigaAlturaPassoCm): o vão do trecho, não o da viga de cima */
+          var hBald = Math.max(crit("baldrameAlturaMinCm", 30), Math.ceil(t.L * 100 / crit("baldrameAlturaPorVao", 12) / crit("vigaAlturaPassoCm", 5) - 1e-9) * crit("vigaAlturaPassoCm", 5)) / 100;
           var pa = ponto(l, t.a), pb = ponto(l, t.b);
           var mao = manuaisViga.filter(function (c) {
             var e = BE.eixoDaCaixa(c), m = mul(add(v(e[0].x, e[0].z), v(e[1].x, e[1].z)), 0.5);
@@ -767,11 +957,74 @@
         var g = guardar(c, "laje", pav, { tipoLaje: lj.tipo, h: lj.hCm, lx: lj.lx, ly: lj.ly, bordasEngastadas: lj.nEng, umaDirecao: lj.umaDirecao, ambiente: String(lj.amb.id), regras: lj.regras, avisos: lj.avisos, balanco: !!lj.balanco, escadas: arr(lj.escadas) });
         if (!g) return;
         lajes.push({ id: c.id, marca: c.marca, amb: lj.amb.nome || lj.amb.id, pav: pav.nome, tipo: lj.tipo, h: lj.hCm, lx: lj.lx, ly: lj.ly, nEng: lj.nEng,
-          regra: lj.tipo === "macica" ? "d = (2,5 − 0,1·" + lj.nEng + ")·min(lx; 0,7 ly) + 2,5 cm → " + lj.hCm + " cm (mínimo " + (lj.balanco ? "10 cm em balanço" : (pav.ultimo ? "7 cm cobertura" : "8 cm piso")) + ", 6118 13.2.4.1)" : "treliçada: altura da NBR 14859-1 Tabela 1 ≥ lx/25 → " + lj.hCm + " cm (conferir na tabela do fabricante)",
+          regra: lj.tipo === "macica" ? "d = (2,5 − 0,1·" + lj.nEng + ")·min(lx; 0,7 ly) + 2,5 cm → " + lj.hCm + " cm (mínimo " + (lj.balanco ? "10 cm em balanço" : (cobUso(pav) ? "7 cm cobertura" : "8 cm piso")) + ", 6118 13.2.4.1)" : "treliçada: altura da NBR 14859-1 Tabela 1 ≥ lx/25 → " + lj.hCm + " cm (conferir na tabela do fabricante)",
           avisos: lj.avisos });
         lj.avisos.forEach(function (t) { avisos.push("Laje " + c.marca + " (" + (lj.amb.nome || lj.amb.id) + "): " + t + "."); });
       });
     });
+
+    /* --- VIGA BALDRAME (opc.baldrame, fluxo S1 etapa 5): sob as paredes do 1º pavimento, nos mesmos trechos pilar a pilar e com a mesma seção da viga de cima
+       (decisão do produto: a 6118 não dá h de baldrame; o engenheiro dimensiona junto da fundação, que sem sondagem SPT não é lançada — NBR 6122:2022 4.3) */
+    if (opc.baldrame === true && pavs.length) {
+      var pav0 = pavs[0], contB = 0, manB = existentes.filter(function (c) { return c.tipo === "viga" && !ehPreLanc(c); });
+      (pav0.porLinha || []).forEach(function (pl) {
+        var l = pl.l, bCm = Math.max(crit("baldrameLarguraMinCm", 14), Math.floor(cm(l.larg) + 1e-6)), b = bCm / 100;   /* bw = espessura da parede, mín. 14 (pré-dimensionamento usual, Pinheiro/Bastos — decisão do produto 14/11/2026) */
+        pl.tr.forEach(function (t) {
+          /* h = máx(30 cm; ℓ/12), em múltiplo de 5 cm (vigaAlturaPassoCm): o vão do trecho, não o da viga de cima */
+          var hBald = Math.max(crit("baldrameAlturaMinCm", 30), Math.ceil(t.L * 100 / crit("baldrameAlturaPorVao", 12) / crit("vigaAlturaPassoCm", 5) - 1e-9) * crit("vigaAlturaPassoCm", 5)) / 100;
+          var pa = ponto(l, t.a), pb = ponto(l, t.b);
+          var mao = manB.filter(function (c) { var e = BE.eixoDaCaixa(c), m = mul(add(v(e[0].x, e[0].z), v(e[1].x, e[1].z)), 0.5); return Math.abs((num(c.cy, 0) + num(c.altura, 0) / 2) - l.yb) < 0.16 && naLinha(l, m, 0.05) && dot(l.u, m) > t.a && dot(l.u, m) < t.b; })[0];
+          if (mao) return;
+          var c = BA.vigaPerfil({ x: r4(pa.x), z: r4(pa.z) }, { x: r4(pb.x), z: r4(pb.z) }, { perfil: { forma: "ret", b: b, h: r4(hBald) }, material: "concreto", topo: r4(l.yb) });
+          if (!c) return;
+          c.id = "cp-vb0-" + coord(pa.x) + "_" + coord(pa.z) + "-" + coord(pb.x) + "_" + coord(pb.z);
+          contB++; c.marca = "VB" + contB;
+          var g = guardar(c, "viga", pav0, { secao: bCm + " × " + cm(hBald), vao: r3(t.L), tramo: t.ext ? "extremo" : "intermediario", baldrame: true, regras: ["baldrameAlturaPorVao", "baldrameAlturaMinCm", "baldrameLarguraMinCm"], sobressai: cm(l.esp) < bCm });
+          if (!g) return;
+          vigas.push({ id: c.id, marca: c.marca, pav: pav0.nome, baldrame: true, secao: bCm + " × " + cm(hBald), vao: r3(t.L), regra: "baldrame: bw = espessura da parede (mín. 14 cm), h = máx(30 cm; ℓ/12) — pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto — A CALCULAR com a fundação" });
+        });
+      });
+      if (contB) pendencias.push("Viga baldrame (" + contB + " trecho(s)): bw = espessura da parede (mín. 14 cm) e h = máx(30 cm; ℓ/12), pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto; o engenheiro dimensiona com a fundação (sem sondagem SPT, NBR 6122:2022 4.3).");
+    }
+    /* --- VIGA EM BALANÇO (sacada): a laje em balanço apoiada numa parede tem as bordas LATERAIS (perpendiculares à parede de apoio) livres;
+       ali nasce uma viga em balanço, engastada na viga de apoio, até o fim da laje. Sem regra com fonte para a altura: a da viga de apoio, ESCALAR. */
+    pavs.forEach(function (pav) {
+      var contBal = 0;
+      pav.lajes.forEach(function (lj) {
+        if (!lj.P || !lj.balanco || !arr(lj.apoiosLd).length) return;
+        var ap = lj.apoiosLd.slice().sort(function (a, b) { return len(sub(v(b.x1, b.z1), v(b.x0, b.z0))) - len(sub(v(a.x1, a.z1), v(a.x0, a.z0))); })[0];
+        var dA = sub(v(ap.x1, ap.z1), v(ap.x0, ap.z0)); if (!(len(dA) > 0.05)) return; dA = mul(dA, 1 / len(dA));
+        arr(lj.livresLd).forEach(function (ld) {
+          var q0 = v(ld.x0, ld.z0), q1 = v(ld.x1, ld.z1), dd = sub(q1, q0), Ld = len(dd); if (!(Ld > 0.3)) return;
+          if (Math.abs(dot(mul(dd, 1 / Ld), dA)) > 0.3) return;   /* só as bordas perpendiculares à parede de apoio */
+          var nA = v(-dA.z, dA.x), cA = dot(nA, v(ap.x0, ap.z0));
+          var perto = Math.abs(dot(nA, q0) - cA) <= Math.abs(dot(nA, q1) - cA) ? q0 : q1, longe = perto === q0 ? q1 : q0;
+          var linha = pav.linhas.filter(function (l) { return Math.abs(dot(l.n, perto) - l.c) <= l.esp / 2 + 0.06 && dot(l.u, perto) >= l.s0 - 0.06 && dot(l.u, perto) <= l.s1 + 0.06; })[0];
+          if (!linha) { avisos.push("Balanço da laje " + (lj.amb.nome || lj.amb.id) + ": sem viga de apoio para a viga em balanço (conferir)."); return; }
+          var ini = sub(perto, mul(linha.n, dot(linha.n, perto) - linha.c)), Lb = dist(ini, longe);
+          var hApoio = (pav.hLinha && pav.hLinha[linha.id]) || hMinViga, pas = crit("vigaAlturaPassoCm", 5),
+            hB = Math.max(hApoio, Math.ceil(Lb * 100 / crit("vigaBalancoAlturaPorVao", 5) / pas - 1e-9) * pas / 100),   /* h = máx(ℓ do balanço/5; h da viga de apoio) em múltiplo de 5 cm — pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto 14/11/2026 */
+            bCm = Math.max(crit("vigaLarguraMinimaCm", 12), Math.min(20, Math.floor(cm(linha.larg) + 1e-6)));
+          var c = BA.vigaPerfil({ x: r4(ini.x), z: r4(ini.z) }, { x: r4(longe.x), z: r4(longe.z) }, { perfil: { forma: "ret", b: bCm / 100, h: r4(hB) }, material: "concreto", topo: pav.topo });
+          if (!c) return;
+          c.id = "cp-vbal" + pav.idx + "-" + coord(ini.x) + "_" + coord(ini.z) + "-" + coord(longe.x) + "_" + coord(longe.z);
+          if (pav.nivelTopo) c.nivelId = pav.nivelTopo;
+          contBal++; c.marca = "VBAL" + (pavs.length > 1 ? (pav.idx + 1) * 100 + contBal : contBal);
+          var gB = guardar(c, "viga", pav, { secao: bCm + " × " + cm(hB), vao: r3(Lb), tramo: "balanço", balanco: true, pontaLivre: "fim", regras: ["lajeMinBalancoCm", "vigaBalancoAlturaPorVao"], sobressai: false });
+          if (!gB) return;
+          vigas.push({ id: c.id, marca: c.marca, pav: pav.nome, balanco: true, secao: bCm + " × " + cm(hB), vao: r3(Lb), regra: "viga em balanço (" + virg(Lb) + " m) engastada na viga de apoio; h = máx(ℓ/5; h da viga de apoio), pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto — ESCALAR o engenheiro" });
+          avisos.push("Viga em balanço " + c.marca + " (" + virg(Lb) + " m, " + bCm + " × " + cm(hB) + ") na sacada " + (lj.amb.nome || lj.amb.id) + ": altura = máx(ℓ/5; h da viga de apoio), pré-dimensionamento usual (Pinheiro/Bastos) — A CALCULAR (ESCALAR o engenheiro; carga da mureta/guarda-corpo e engaste na viga/pilar).");
+        });
+      });
+    });
+
+    /* --- S1: eixos, níveis, locação e vigas para a Vista de Estrutura + o auditor de precisão (bloqueia) */
+    var s1 = dadosS1(pavs, pecas, PU);
+    /* o contexto da geometria fica ESCONDIDO (não enumerável: não entra em JSON nem em cópia) — o teste do auditor injeta defeitos nas peças e roda de novo */
+    Object.defineProperty(s1, "ctx", { value: { pavs: pavs, vaos: vaos }, enumerable: false });
+    s1.auditoria = auditarS1(pavs, pecas, vaos, s1.eixos, opc);
+    s1.auditoria.bloqueios.forEach(function (b) { avisos.push("BLOQUEIO " + b.id + " — " + b.texto); });
+    s1.auditoria.avisos.forEach(function (b) { avisos.push(b.texto); });
 
     if (!pecas.length) return { ok: false, motivo: "Nada a lançar: " + (PU.ignoradas.length ? PU.ignoradas.length + " parede(s) fora (" + PU.ignoradas.map(function (x) { return x.motivo; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).join("; ") + ")" : "o que existe já atende") + ".", avisos: avisos };
 
@@ -810,7 +1063,8 @@
       pavimentos: pavs.map(function (p) { return { idx: p.idx, nome: p.nome, base: p.yb, topo: p.topo, nivelBase: p.nivelBase, nivelTopo: p.nivelTopo, paredes: p.paredes.length, linhas: p.linhas.length }; }),
       avisos: avisos, pendencias: pendencias, premissas: premissas, rotulo: ROTULO,
       manuais: { editados: MN.editados, apagados: MN.apagados, mantidos: puladasMao, pilaresAMao: [].concat.apply([], pavs.map(function (p) { return p.manuaisPil.map(function (c) { return c.id; }); })) },
-      ignoradas: PU.ignoradas };
+      ignoradas: PU.ignoradas, s1: s1, eixos: s1.eixos, niveis: s1.niveis, locacao: s1.locacao, tabelaVigas: s1.vigas, auditoria: s1.auditoria };
+    if (opc.s1 === true && s1.auditoria.bloqueia) { res.ok = false; res.bloqueado = true; res.motivo = "O auditor de precisão BLOQUEOU o lançamento (" + s1.auditoria.bloqueios.length + "): " + s1.auditoria.bloqueios.slice(0, 3).map(function (b) { return b.texto; }).join(" | "); }
     res.resumo = resumo(criadas, nPav);
     return res;
   }
@@ -891,7 +1145,7 @@
   var ConcLanc = {
     VERSAO: 1, LOTE: LOTE, ROTULO: ROTULO, contarPavimentos: contarPavimentos, estruturaModelada: estruturaModelada,
     gerar: gerar, quantitativo: quantitativo, opsSubstituir: opsSubstituir, ifcConferir: ifcConferir, manuais: manuais,
-    ehPreLanc: ehPreLanc, ehConcreto: ehConcreto, tipoLajeDe: tipoLajeDe, servicosDe: servicosDe, secaoPelaParede: secaoPelaParede, fonteDe: fonteDe, crit: crit,
+    ehPreLanc: ehPreLanc, ehConcreto: ehConcreto, tipoLajeDe: tipoLajeDe, servicosDe: servicosDe, secaoPelaParede: secaoPelaParede, fonteDe: fonteDe, crit: crit, eixosDe: eixosDe, presoAosEixos: presoAosEixos, auditarS1: auditarS1, dadosS1: dadosS1, dadosDoModelo: dadosDoModelo,
     /* geometria reaproveitada pelo auditor */
     _geo: { escadasDe: escadasDe, furoEscada: furoEscada, paredesUteis: paredesUteis, pavimentosDe: pavimentosDe, linhasDe: linhasDe, naLinha: naLinha, conflitoAbertura: conflitoAbertura, posLivre: posLivre, ponto: ponto, dentro: dentro, distBorda: distBorda, caixaDe: caixaDe, areaPoli: areaPoli }
   };

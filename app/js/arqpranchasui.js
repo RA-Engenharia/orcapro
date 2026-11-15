@@ -24,6 +24,8 @@
   function IX() { return dep("ArqIndices", "./arqindices.js"); }
   function INT() { return dep("ArqInteriores", "./arqinteriores.js"); }
   function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
+  function PRN() { return dep("Prancha", "./prancha.js"); }
+  function FEUI() { return dep("FolhasEditorUI", "./folhaseditorui.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
   function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -37,7 +39,7 @@
   function lerMemoria(obraKey, ls) {
     var L = ls || (global.localStorage || null), v = null;
     try { v = L ? JSON.parse(L.getItem(chave(obraKey)) || "null") : null; } catch (e) { v = null; }
-    return AQ().normalizarConfig(v || {});
+    return AQ().normalizarConfig(v || AQ().configPadrao());   /* obra sem memória começa no PADRÃO (com a capa ligada), não no normalizarConfig({}) */
   }
   function gravarMemoria(obraKey, cfg, ls) {
     var L = ls || (global.localStorage || null);
@@ -47,10 +49,13 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = AQ().normalizarConfig(cfg);
     var o = { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
-      arranjo: c.arranjo, fixos: c.fixos, arranjoFormato: c.arranjoFormato, interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
+      arranjo: c.arranjo, fixos: c.fixos, arranjoFormato: c.arranjoFormato, formatosFolha: c.formatosFolha, interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
       empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
       obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
     if (ctx && ctx.contornoLote) o.contornoLote = ctx.contornoLote;
+    /* F1: a folha de renders é a FOTO da cena 3D (BIM.fotoIso), como no hidro; sem o 3D aberto a folha não sai (o gerador avisa) */
+    var f3 = (ctx && typeof ctx.foto3d === "function") ? ctx.foto3d : (global.BIM && global.BIM.fotoIso ? function (x) { return global.BIM.fotoIso(x); } : null);
+    if (f3) o.foto3d = f3;
     if (ctx && ctx.extras && typeof ctx.extras === "object") Object.keys(ctx.extras).forEach(function (k) { if (o[k] == null) o[k] = ctx.extras[k]; });   /* R02: opções do projeto (cores da fachada, rampa, caixa d'água…) */
     if (ctx && ctx.cortes) o.cortes = ctx.cortes;   /* a linha dos cortes AA (z) e BB (x) escolhida por quem projeta (o exemplo: pela escada e pela caixa d'água) */
     return o;
@@ -69,13 +74,16 @@
   function marcado(v) { return v ? " checked" : ""; }
   /* a lista de ambientes do caderno de interiores (checkboxes); sem modelo ou sem o motor, uma frase */
   function ambientesInt(ctx, cfg) {
-    var I = INT(), M = MD(), lista = [], sel = cfg.interiores && Array.isArray(cfg.interiores.ambientes) ? cfg.interiores.ambientes.map(String) : null;
-    try { if (I && M && ctx && ctx.modelo) lista = I.listarAmbientes(M.extrair(ctx.modelo, { pavimentos: ctx.pavimentos })); } catch (e) { lista = []; }
-    if (!lista.length) return '<span class="muted" style="font-size:12px">Nenhum ambiente com mobiliário ou marcenaria no modelo.</span>';
-    return lista.map(function (a) {
-      var on = sel ? sel.indexOf(String(a.id)) >= 0 : a.padrao;
-      return '<label style="display:block"><input type="checkbox" data-arq-int-amb="' + esc(a.id) + '"' + marcado(on) + "> " + esc(a.nome) + ' <span class="muted">(' + a.nMoveis + " móvel(is), " + a.nMarcenaria + " de marcenaria)</span></label>";
+    var lista = [], sel = cfg.interiores && Array.isArray(cfg.interiores.ambientes) ? cfg.interiores.ambientes.map(String) : null, erro = "";
+    /* ⚠ a MESMA lista do gerador (situação de DEPOIS): ArqPranchas.ambientesInteriores. Antes saía do modelo inteiro e o ambiente unido por demolição aparecia marcado sem gerar */
+    try { if (AQ() && AQ().ambientesInteriores && ctx && ctx.modelo) lista = AQ().ambientesInteriores(ctx.modelo, { pavimentos: ctx.pavimentos }).lista; } catch (e) { lista = []; erro = e && e.message ? e.message : String(e); }
+    if (!lista.length) return '<span class="muted" style="font-size:12px">' + (erro ? "Não consegui ler os ambientes do modelo: " + esc(erro) : "O modelo não tem ambiente delimitado na situação proposta: crie os ambientes (sala, quarto…) no BIM para gerar o caderno.") + "</span>";
+    var h = '<div data-arq="int-ambientes" style="max-height:260px;overflow:auto;columns:2 200px;column-gap:16px">';
+    h += lista.map(function (a) {
+      var on = sel ? sel.indexOf(String(a.id)) >= 0 : a.padrao, vazio = !a.nMoveis;
+      return '<label style="display:block;break-inside:avoid"><input type="checkbox" data-arq-int-amb="' + esc(a.id) + '"' + marcado(on) + "> " + esc(a.nome) + ' <span class="muted">(' + (vazio ? "sem mobiliário: sai a planta e as vistas das paredes" : a.nMoveis + " móvel(is), " + a.nMarcenaria + " de marcenaria") + ")</span></label>";
     }).join("");
+    return h + "</div>";
   }
   var ROTULO_FOLHA = { planta: "Planta de móveis (marcadores de vista e de corte)", vistas: "Vistas dos móveis 1:25 (notas de material)", cortes: "Cortes 1:20 da marcenaria", eletrico: "Elétrico (planta e vistas com a altura dos pontos)",
     luminotecnico: "Luminotécnico (planta, legenda e o detalhe 1:10 da sanca, se houver)", pedras: "Pedras (folha geral: bancadas)", imagens: "00 Imagens ilustrativas (espaço para os renders)" };
@@ -85,7 +93,7 @@
   }
   function html(ctx, cfg) {
     var A = AQ(), em = ctx.empresa || {}, ob = ctx.obra || {}, L = cfg.limites || {}, mun = IX().MUNICIPIOS;
-    var h = '<div data-arq="tela" data-modal-largo="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
+    var h = '<div data-arq="tela" data-modal-largo="1" style="max-height:72vh;overflow:auto;padding-right:4px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Folha e escala</b></legend>' +
       '<label>Folha <select data-arq="formato">' + A.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (menos folhas, ocupação ≥ 55 %)" : f) + "</option>"; }).join("") + "</select></label><br>" +
       '<label>Escala da planta <select data-arq="escala">' + ["auto", "50", "75", "100"].map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (1:50 se couber)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
@@ -104,15 +112,18 @@
       '<label><input type="checkbox" data-arq="beiral"' + marcado(cfg.beiralNaProjecao) + "> Contar o beiral na projeção (ocupação)</label><br>" +
       '<label>Nome da rua <input data-arq="rua" value="' + esc(cfg.rua) + '" style="width:100%" placeholder="vazio = marcado em vermelho"></label></fieldset>';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>O que gerar</b></legend>' +
+      '<label style="display:block"><input type="checkbox" data-arq-cj="capa"' + marcado(cfg.conjuntos.capa === true) + "> Capa com o índice de todas as folhas (ARQ-00)</label>" +
       A.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-arq-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(A.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") + "</fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Carimbo e saída</b></legend>' +
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "(sem obra selecionada)") + "</div>" +
       '<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label>' +
       '<label style="display:block"><input type="checkbox" data-arq-out="abas" checked> Abrir nas abas de folha do BIM</label></fieldset>';
-    h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Caderno de interiores</b></legend>' +
+    /* ocupa a LARGURA TODA da grade (grid-column:1/-1) e põe ambientes e folhas lado a lado: preso numa coluna só deixava um vazio enorme à direita */
+    h += '<fieldset style="grid-column:1/-1;border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Caderno de interiores</b></legend>' +
       '<label style="display:block"><input type="checkbox" data-arq-int="ativo"' + marcado(cfg.interiores && cfg.interiores.ativo) + "> Gerar o caderno de interiores (planta de móveis + vistas por ambiente, folhas A3)</label>" +
-      '<div class="muted" style="font-size:12px;margin:4px 0">Ambientes (marcados: os que têm mobiliário ou marcenaria):</div>' + ambientesInt(ctx, cfg) +
-      '<div class="muted" style="font-size:12px;margin:6px 0 2px">Folhas de cada ambiente:</div>' + folhasInt(cfg) + "</fieldset>";
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:4px">' +
+      '<div><div class="muted" style="font-size:12px;margin:0 0 4px">Ambientes (já marcados: os que têm mobiliário ou marcenaria; marque outros e sai a planta e as vistas das paredes, com aviso):</div>' + ambientesInt(ctx, cfg) + "</div>" +
+      '<div><div class="muted" style="font-size:12px;margin:0 0 4px">Folhas de cada ambiente:</div>' + folhasInt(cfg) + "</div></div></fieldset>";
     return h + '</div><div data-arq="msg" class="muted" style="margin-top:8px;font-size:12.5px"></div>';
   }
   /* lê a tela → configuração (puro sobre um "leitor" de elementos; no navegador é o document) */
@@ -161,6 +172,13 @@
     if (saida.abas) r.abas = abrirNasAbas(r, ctx);
     return r;
   }
+  /* o que o caderno de interiores fez, em uma frase (nunca silencioso: desligado, sem folha e o porquê, ou N folhas) */
+  function resumoInteriores(r, c) {
+    var fl = arr(r && r.folhas).filter(function (f) { return /^int-/.test(String(f.tipo || "")); }), av = arr(r && r.avisos).filter(function (a) { return /^Caderno de interiores/.test(String(a)); });
+    if (!(c && c.interiores && c.interiores.ativo)) return "Caderno de interiores DESLIGADO (marque \"Gerar o caderno de interiores\") · ";
+    if (!fl.length) return "Caderno de interiores SEM FOLHA: " + (av[0] || "veja os avisos") + " · ";
+    return "Caderno de interiores: " + fl.length + " folha(s)" + (av.length ? " (" + av.length + " ambiente(s) com aviso)" : "") + " · ";
+  }
   /* as folhas nas ABAS DE FOLHA do BIM: um registro só por obra (o Gerar de novo SUBSTITUI as folhas — idempotente) */
   function abrirNasAbas(r, ctx) {
     var BF = global.BimFolhaUI; if (!BF || !BF.salvarRegistro || !global.Store) return null;
@@ -207,7 +225,66 @@
     return f;
   }
   /* a tela "Arranjo das folhas": move blocos de folha/posição e reorganiza (também aberta pelo menu da folha do BIM) */
+  /* ------------------------------------------------------------ O EDITOR DE FOLHAS (js/folhaseditor.js + js/folhaseditorui.js) ligado à arquitetura */
+  /* o conjunto do editor = o diagrama da geração (folhas da série ARQ com formato e blocos). id da folha = o número dela (ARQ-01…); o do bloco = o do gerador */
+  function conjuntoDoDiagrama(r) {
+    var d = r && r.diagrama, out = { versao: 1, folhas: [] }, cont = {};
+    arr(d && d.folhas).forEach(function (f) { arr(f.blocos).forEach(function (b) { var t = b.titulo || b.id; cont[t] = (cont[t] || 0) + 1; }); });
+    arr(d && d.folhas).forEach(function (f, i) {
+      var fo = arr(r.folhas).filter(function (x) { return x.numero === f.numero; })[0] || {};
+      out.folhas.push({ id: f.numero, titulo: fo.titulo || "", formato: f.formato || (d && d.formato) || "A1", orientacao: "paisagem",
+        blocos: arr(f.blocos).map(function (b) { return { id: b.id, desenho: cont[b.titulo || b.id] > 1 ? (b.titulo || b.id) + " (" + (String(b.id).indexOf(":") >= 0 ? String(b.id).split(":").slice(1).join(":") : String(b.id)) + ")" : (b.titulo || b.id), x: b.x, y: b.y, w: b.w, h: b.h, escala: "", fixo: !!b.fixo }; }) });
+    });
+    return out;
+  }
+  /* a geometria do carimbo RA: área útil, papel e o retângulo do carimbo (para a tela desenhar o papel e para o motor saber onde o carimbo está) */
+  function areaDeFormato(fmt, ori) {
+    var P = PRN(), g = P && P.geometria ? P.geometria(fmt, ori === "retrato" ? "retrato" : "paisagem", "RA") : null;
+    if (!g) return { w: 300, h: 200 };
+    return { w: g.area.w, h: g.area.h, papel: { w: g.papel.w, h: g.papel.h, x: g.area.x, y: g.area.y }, carimboPapel: g.carimbo ? { x: g.carimbo.x, y: g.carimbo.y, w: g.carimbo.w, h: g.carimbo.h } : null };
+  }
+  function miniaturasDe(r) { var m = {}; arr(r && r.folhas).forEach(function (f) { if (f.svg) m[f.numero] = dataUrlSvg(f.svg); }); return m; }
+  /* o que o editor devolve vira configuração da obra (fixos, formatosFolha, arranjoFormato) e é respeitado na geração seguinte. Os fixos do caderno de interiores (int:…) não são do editor: ficam */
+  function aplicarConfigDoEditor(cfg, conf) {
+    var c = AQ().normalizarConfig(cfg), novos = {};
+    Object.keys(c.fixos || {}).forEach(function (k) { if (/^int:/.test(k)) novos[k] = c.fixos[k]; });
+    Object.keys(conf.fixos || {}).forEach(function (k) { novos[k] = conf.fixos[k]; });
+    c.fixos = novos; c.formatosFolha = conf.formatosFolha || {}; c.arranjoFormato = conf.arranjoFormato || null;
+    return AQ().normalizarConfig(c);
+  }
+  /* salvar = gravar a configuração da obra e REGERAR (a tela passa a mostrar o que o gerador de fato fez: idempotente) */
+  function salvarDoEditor(ctx, resEd, saida) {
+    var c = aplicarConfigDoEditor(ULTIMO.cfg || lerMemoria(ctx.obraKey), resEd.config);
+    var r2 = gerar(ctx, c, saida || { pdf: false, dxf: false, abas: true });
+    if (!r2 || !r2.ok) { toast("Não regerei as folhas: " + arr(r2 && r2.avisos).join(" "), "aviso"); return false; }
+    return { conjunto: conjuntoDoDiagrama(r2), miniaturas: miniaturasDe(r2), r: r2 };
+  }
+  function abrirEditor(ctx) {
+    var FU = FEUI(), r0 = ULTIMO.r;
+    ctx = ctx || ULTIMO.ctx || ctxAtual();
+    if (!FU || !FU.abrir) return false;
+    if (!ctx || !ctx.modelo) { toast("Abra o modelo da obra no BIM antes de editar as folhas.", "aviso"); return false; }
+    if (!r0 || !r0.diagrama) { r0 = gerar(ctx, lerMemoria(ctx.obraKey), { pdf: false, dxf: false, abas: false }); }
+    if (!r0 || !r0.ok || !r0.diagrama) { toast("Não consegui gerar as pranchas para abrir o editor: " + arr(r0 && r0.avisos).join(" "), "aviso"); return false; }
+    var cfg = ULTIMO.cfg || lerMemoria(ctx.obraKey);
+    var ctrl = FU.abrir({
+      titulo: "Editor de folhas — arquitetura", conjunto: conjuntoDoDiagrama(r0), areaDe: areaDeFormato, formatoBase: (r0.diagrama && r0.diagrama.formato) || "A1", miniaturas: miniaturasDe(r0),
+      onSalvar: function (res) { return salvarDoEditor(ctx, res); },
+      onPDF: function (res) {
+        var s = salvarDoEditor(ctx, res, { pdf: false, dxf: false, abas: true }); if (!s) return;
+        var pdf = AQ().exportar(s.r, "pdf"), nome = (s.r.prefixo || "ARQ") + "-" + (s.r.revisao || "R00") + " projeto de arquitetura";
+        if (pdf && baixar(nome + ".pdf", pdf, "application/pdf")) toast("PDF gerado com o arranjo salvo: " + nome + ".pdf", "ok"); else toast("O PDF não saiu.", "aviso");
+      },
+      onReorganizar: function () { var c = AQ().normalizarConfig(ULTIMO.cfg || cfg); c.fixos = {}; c.formatosFolha = {}; c.arranjoFormato = null; var r2 = gerar(ctx, c, { pdf: false, dxf: false, abas: false }); return r2 && r2.ok ? conjuntoDoDiagrama(r2) : null; }
+    });
+    return !!ctrl;
+  }
   function abrirArranjo(ctx) {
+    if (FEUI() && FEUI().abrir) return abrirEditor(ctx);
+    return abrirArranjoTabela(ctx);
+  }
+  /* o arranjo antigo (tabela de números): plano B se o editor não carregou */
+  function abrirArranjoTabela(ctx) {
     var U = global.UI; if (!U || !U.modal) return false;
     ctx = ctx || ULTIMO.ctx || ctxAtual();
     var r = ULTIMO.r; if (!r || !r.diagrama) { toast("Gere as pranchas de arquitetura primeiro: o arranjo sai delas.", "aviso"); return false; }
@@ -248,14 +325,15 @@
         if (!r || !r.ok) { if (msg) msg.textContent = "Não gerou: " + arr(r && r.avisos).join(" "); return; }
         U.fecharModal();
         var v = r.verificacao || {};
-        toast(r.folhas.length + " folha(s) de arquitetura · sobreposição: texto×texto " + v.textoTexto + ", texto×linha " + v.textoLinha + ", fora da moldura " + v.foraJanela + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), v.total ? "aviso" : "ok");
+        if (r.diagrama && FEUI() && FEUI().abrir) setTimeout(function () { abrirEditor(ctx); }, 0);   /* o fim de "Gerar pranchas" abre o editor com o resultado (a tela do toast continua) */
+        toast(resumoInteriores(r, c) + r.folhas.length + " folha(s) de arquitetura · sobreposição: texto×texto " + v.textoTexto + ", texto×linha " + v.textoLinha + ", fora da moldura " + v.foraJanela + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), v.total ? "aviso" : "ok");
       } }
     ]);
     return true;
   }
 
-  var ArqPranchasUI = { abrir: abrir, gerar: gerar, abrirArranjo: abrirArranjo, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
-    _int: { chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
+  var ArqPranchasUI = { abrir: abrir, gerar: gerar, abrirArranjo: abrirArranjo, abrirEditor: abrirEditor, abrirArranjoTabela: abrirArranjoTabela, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
+    _int: { conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
   global.ArqPranchasUI = ArqPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

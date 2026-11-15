@@ -159,17 +159,20 @@
   };
 
   /* uma rodada: ordem (nome) e modo ("bssf" | "bl"); `agrupar`: os blocos do mesmo grupo vão juntos, o grupo maior primeiro */
-  function rodada(itens, W, H, gap, margem, ordem, modo, agrupar) {
+  function rodada(itens, W, H, gap, margem, ordem, modo, agrupar, areas) {
     var CW = W - 2 * margem + gap, CH = H - 2 * margem + gap, folhas = [], naoCabe = [], avisos = [];
-    function nova() { var f = new Folha(CW, CH); folhas.push(f); return f; }
+    /* ⚠ FORMATO POR FOLHA (editor de folhas): areas[k] = { w, h } é a área útil da folha de número k (a que o usuário trocou de A2 para A1, por exemplo).
+       A folha nasce com o tamanho dela; as demais, com o padrão. Cada folha leva a PRÓPRIA área (f.area): a ocupação e a posição fixada contam nela, não na do padrão. */
+    function nova() { var k = folhas.length + 1, a = areas && areas[k] ? areas[k] : { w: W, h: H }, f = new Folha(a.w - 2 * margem + gap, a.h - 2 * margem + gap); f.area = { w: a.w, h: a.h }; folhas.push(f); return f; }
     var fixos = itens.filter(function (it) { return it.fixo; }), livres = itens.filter(function (it) { return !it.fixo; });
     fixos.sort(function (a, b) { return a.fixo.folha - b.fixo.folha; });
     var soltos = [];
     fixos.forEach(function (it) {
       var k = Math.max(1, Math.round(it.fixo.folha)), x = it.fixo.x - margem, y = it.fixo.y - margem, w = it.w + gap, h = it.h + gap;
-      if (x < -EPS || y < -EPS || x + w > CW + EPS || y + h > CH + EPS || k > 60) { avisos.push("bloco " + it.id + ": a posição fixada saiu da área: voltou ao automático"); soltos.push(it); return; }
+      if (k > 60) { avisos.push("bloco " + it.id + ": a posição fixada saiu da área: voltou ao automático"); soltos.push(it); return; }
       while (folhas.length < k) nova();
       var f = folhas[k - 1];
+      if (x < -EPS || y < -EPS || x + w > f.W + EPS || y + h > f.H + EPS) { avisos.push("bloco " + it.id + ": a posição fixada saiu da área: voltou ao automático"); soltos.push(it); return; }
       if (!f.livreEm(x, y, w, h)) { avisos.push("bloco " + it.id + ": a posição fixada bate em outro bloco: voltou ao automático"); soltos.push(it); return; }
       f.ocupar(x, y, w, h); f.itens.push({ it: it, x: x + margem, y: y + margem, fixo: true });
     });
@@ -208,8 +211,9 @@
     folhas.forEach(function (f) { var n = {}; f.itens.forEach(function (q) { var g = q.it.grupo; if (g) n[g] = (n[g] || 0) + 1; }); Object.keys(n).forEach(function (g) { s += n[g] * (n[g] - 1) / 2; }); });
     return s;
   }
+  function areaDaFolha(f, area) { return f.area || area; }
   function pontuacao(r, area) {
-    var A = area.w * area.h, ocup = r.folhas.map(function (f) { var u = 0; f.itens.forEach(function (q) { u += q.it.w * q.it.h; }); return u / A; });
+    var ocup = r.folhas.map(function (f) { var u = 0, A = areaDaFolha(f, area).w * areaDaFolha(f, area).h; f.itens.forEach(function (q) { u += q.it.w * q.it.h; }); return u / A; });
     var sq = ocup.reduce(function (s, o) { return s + o * o; }, 0);
     return { n: r.folhas.length - r.folhas.filter(function (f) { return !f.itens.length; }).length, naoCabe: r.naoCabe.length, sq: sq, af: afinidade(r.folhas) };
   }
@@ -223,15 +227,15 @@
     var melhor = null, melhorP = null;
     var cfg = [["area", "bssf", false], ["area", "bssf", true], ["altura", "bssf", false], ["largura", "bssf", false], ["lado", "bssf", false], ["area", "bl", false], ["altura", "bl", false], ["largura", "bl", true], ["serie", "bssf", false], ["serie", "bl", false], ["lado", "bl", true]];
     cfg.forEach(function (c) {
-      var r = rodada(itens, W, H, gap, margem, c[0], c[1], c[2]), p = pontuacao(r, area);
+      var r = rodada(itens, W, H, gap, margem, c[0], c[1], c[2], o.areas), p = pontuacao(r, area);
       if (!melhor || p.naoCabe < melhorP.naoCabe || (p.naoCabe === melhorP.naoCabe && (p.n < melhorP.n || (p.n === melhorP.n && (p.af > melhorP.af || (p.af === melhorP.af && p.sq > melhorP.sq)))))) { melhor = r; melhorP = p; }
     });
     return finalizar(melhor, area, itens);
   }
   /* as folhas na ordem de série; a folha que tem bloco fixado ocupa o número fixado */
   function finalizar(r, area, itens) {
-    var A = area.w * area.h, folhas = r.folhas.filter(function (f) { return f.itens.length; }).map(function (f) {
-      var min = Infinity, pin = null, u = 0;
+    var folhas = r.folhas.filter(function (f) { return f.itens.length; }).map(function (f) {
+      var min = Infinity, pin = null, u = 0, A = areaDaFolha(f, area).w * areaDaFolha(f, area).h;
       f.itens.forEach(function (q) { min = Math.min(min, q.it.ordem); if (q.fixo && (pin == null || q.it.fixo.folha < pin)) pin = q.it.fixo.folha; u += q.it.w * q.it.h; });
       return { f: f, min: min, pin: pin, ocup: u / A };
     });
@@ -243,7 +247,7 @@
     folhas.filter(function (x) { return x.pin == null; }).sort(function (a, b) { return a.min - b.min; }).forEach(function (x) { for (var k = 0; k < N; k++) if (!saida[k]) { saida[k] = x; break; } });
     var res = { folhas: [], naoCabe: r.naoCabe.slice(), avisos: r.avisos.slice(), area: { w: area.w, h: area.h } };
     saida.forEach(function (x) {
-      res.folhas.push({ itens: x.f.itens.map(function (q) { return { id: q.it.id, x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100, w: q.it.w, h: q.it.h, fixo: !!q.fixo, naoCabe: !!q.naoCabe }; }), ocupacao: x.ocup });
+      res.folhas.push({ itens: x.f.itens.map(function (q) { return { id: q.it.id, x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100, w: q.it.w, h: q.it.h, fixo: !!q.fixo, naoCabe: !!q.naoCabe }; }), ocupacao: x.ocup, area: { w: areaDaFolha(x.f, area).w, h: areaDaFolha(x.f, area).h } });
     });
     res.ocupacaoMedia = res.folhas.length ? res.folhas.reduce(function (s, f) { return s + f.ocupacao; }, 0) / res.folhas.length : 0;
     void itens;

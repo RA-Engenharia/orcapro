@@ -25,6 +25,7 @@
   }
   function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
   function G() { return dep("ArqGeo", "./arqgeo.js"); }
+  function BT() { return dep("BimTerreno", "./bimterreno.js"); }
   function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
@@ -191,6 +192,40 @@
       out.vista.push(item); out.yMax = Math.max(out.yMax, w.topo);
     });
     out.vista.sort(function (a, b) { return b.prof - a.prof; });
+    /* F1 — O TALUDE: o perfil do terreno vem do TOPOSSÓLIDO do modelo (js/bimterreno.js: triangulação dos pontos cotados), amostrado ao longo da linha do corte.
+       Fora da triangulação o terreno continua na cota da borda (nada é extrapolado em inclinação) e o aviso diz. Sem topossólido, ou com o terreno todo na mesma cota,
+       o corte fica como sempre foi (terreno plano na cota 0,00); sem topossólido a falta vira pendência. */
+    out.perfil = null;
+    var BTm = BT(), toposM = arr(d.terreno && d.terreno.topos);
+    if (!toposM.length) {
+      var msgT = "ARQ-07: o modelo não traz topossólido (terreno cotado): o terreno dos cortes sai PLANO na cota 0,00; para mostrar o talude, modele o terreno com os pontos cotados.";
+      if (c.avisos && c.avisos.indexOf(msgT) < 0) c.avisos.push(msgT);
+    } else if (BTm && BTm.superficie && BTm.cota) {
+      var uLp = ct.u0 - 0.9, uRp = ct.u1 + 0.9;
+      if (out.rua && out.frente > 0) uRp = (out.lote ? out.lote[1] : ct.u1) + out.rua.passeio + out.rua.meia + 0.4;
+      if (out.rua && out.frente < 0) uLp = (out.lote ? out.lote[0] : ct.u0) - out.rua.passeio - out.rua.meia - 0.4;
+      var Sp = BTm.superficie(toposM[0].pontos);
+      if (Sp && Sp.ok) {
+        var passo = Math.max(0.1, (uRp - uLp) / 300), pf = [], fora = false, ys = [];
+        for (var uq = uLp; uq <= uRp + 1e-9; uq += passo) {
+          var xq = ct.eixo === "x" ? uq : ct.coord, zq = ct.eixo === "x" ? ct.coord : uq, yq = BTm.cota(Sp, xq, zq);
+          pf.push([uq, yq]); if (yq != null) ys.push(yq);
+        }
+        if (ys.length >= 2) {
+          var iA = 0, iB = pf.length - 1;
+          while (iA < pf.length && pf[iA][1] == null) iA++;
+          while (iB >= 0 && pf[iB][1] == null) iB--;
+          pf.forEach(function (q, i) { if (q[1] == null) { fora = true; q[1] = i < iA ? pf[iA][1] : (i > iB ? pf[iB][1] : null); } });
+          pf = pf.filter(function (q) { return q[1] != null; });
+          var yMn = Math.min.apply(null, ys), yMx = Math.max.apply(null, ys);
+          if (yMx - yMn > 0.02) {
+            out.perfil = pf; out.perfilForaTopo = fora; out.yMin = Math.min(out.yMin, yMn); out.yMax = Math.max(out.yMax, yMx);
+            c.usouPerfil = true;
+            if (fora) { var msgF = "ARQ-07: o topossólido não cobre toda a linha do corte; fora dele o terreno segue na cota da borda (o modelo não tem dado ali)."; if (c.avisos && c.avisos.indexOf(msgF) < 0) c.avisos.push(msgF); }
+          }
+        }
+      }
+    }
     out.prof = Math.max(1.0, -out.yMin + 0.6); out.yMin = -out.prof;   /* a faixa de solo entra na altura do desenho */
     return out;
   }
@@ -213,10 +248,13 @@
     if (mc.rua && mc.frente < 0) uL = (mc.lote ? mc.lote[0] : ct.u0) - mc.rua.passeio - mc.rua.meia - 0.4;
     var prof = mc.prof || 1.0;
     var solo = [[U(uL), Y(0)], [U(uR), Y(0)], [U(uR), Y(-prof)], [U(uL), Y(-prof)]];
+    if (mc.perfil && mc.perfil.length >= 2) {   /* F1: o talude do topossólido: o topo do solo é o PERFIL (mesmas pontas uL e uR) */
+      solo = mc.perfil.map(function (q) { return [U(q[0]), Y(q[1])]; }).concat([[U(mc.perfil[mc.perfil.length - 1][0]), Y(-prof)], [U(mc.perfil[0][0]), Y(-prof)]]);
+    }
     d.fundoPol(D, solo, "#fff");
     g.hachuraLinhas(solo, 1.6, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA"); });
     D._cam = "ARQ-TERRENO"; D.traco(solo, true); D._cam = null;
-    D.linha(U(uL), Y(0), U(uR), Y(0), "ARQ-TERRENO");
+    if (!(mc.perfil && mc.perfil.length >= 2)) D.linha(U(uL), Y(0), U(uR), Y(0), "ARQ-TERRENO");
     /* O QUE É VISTO (linha fina, do mais longe para o mais perto), antes do que é cortado */
     arr(mc.vista).forEach(function (v) {
       var Pv = R(v.u0, v.yb, v.u1, v.yt);
@@ -458,16 +496,54 @@
       items.push({ tipo: "tubo", ua: ua, ya: t.a[1], ub: ub, yb: t.b[1], dn: t.dn / 1000, prof: (prof(pa) + prof(pb)) / 2 + 0.02, status: "novo" });
       ext(Math.min(ua, ub) - t.dn / 2000, Math.max(ua, ub) + t.dn / 2000, Math.min(t.a[1], t.b[1]), Math.max(t.a[1], t.b[1]));
     });
+    /* F1 — O TALUDE NAS FACHADAS: o terreno vem do TOPOSSÓLIDO do modelo (o mesmo dos cortes), amostrado ao longo da fachada na linha da face mais próxima de quem olha
+       (a face da parede que aparece). Fora da triangulação o terreno segue na cota da borda e o aviso diz; sem topossólido ou com o terreno todo na mesma cota, a fachada
+       fica com a linha plana de sempre (sem topossólido, a falta vira aviso: nada é inventado). */
+    var perfil = null, BTm = BT(), toposM = arr(d.terreno && d.terreno.topos);
+    if (!toposM.length) {
+      var msgT = "ARQ-08: o modelo não traz topossólido (terreno cotado): o terreno das fachadas sai PLANO na cota 0,00; para mostrar o talude, modele o terreno com os pontos cotados.";
+      if (c.avisos && c.avisos.indexOf(msgT) < 0) c.avisos.push(msgT);
+    } else if (BTm && BTm.superficie && BTm.cota && isFinite(uMin) && pars.length) {
+      var dep = -Infinity; pars.forEach(function (w) { w.pts.forEach(function (q) { dep = Math.max(dep, prof(q)); }); });
+      var Sp = BTm.superficie(toposM[0].pontos);
+      if (Sp && Sp.ok) {
+        var uL = uMin - 0.9, uR = uMax + 0.9, passo = Math.max(0.1, (uR - uL) / 300), pf = [], ys = [], fora = false;
+        for (var uq = uL; uq <= uR + 1e-9; uq += passo) {
+          var xq = uq * r[0] + dep * v[0], zq = uq * r[1] + dep * v[1], yq = BTm.cota(Sp, xq, zq);
+          pf.push([uq, yq]); if (yq != null) ys.push(yq);
+        }
+        if (ys.length >= 2) {
+          var iA = 0, iB = pf.length - 1;
+          while (iA < pf.length && pf[iA][1] == null) iA++;
+          while (iB >= 0 && pf[iB][1] == null) iB--;
+          pf.forEach(function (q, i) { if (q[1] == null) { fora = true; q[1] = i < iA ? pf[iA][1] : (i > iB ? pf[iB][1] : null); } });
+          pf = pf.filter(function (q) { return q[1] != null; });
+          var yMn = Math.min.apply(null, ys), yMx = Math.max.apply(null, ys);
+          if (yMx - yMn > 0.02) {
+            perfil = pf; yMax = Math.max(yMax, yMx); yMin = Math.min(yMin, yMn - 0.25);   /* a faixa de solo abaixo do perfil entra na altura do desenho */
+            c.usouPerfil = true;
+            if (fora) { var msgF = "ARQ-08: o topossólido não cobre toda a largura da fachada; fora dele o terreno segue na cota da borda (o modelo não tem dado ali)."; if (c.avisos && c.avisos.indexOf(msgF) < 0) c.avisos.push(msgF); }
+          }
+        }
+      }
+    }
     var ordem = items.slice().sort(function (a, b) { return a.prof - b.prof; });
     var vaos = d.vaos.filter(function (q) { return VIVO[q.status]; });
-    return { items: ordem, vaos: vaos, uMin: uMin, uMax: uMax, yMax: yMax, yMin: yMin, r: r, v: v, proj: proj, prof: prof };
+    return { items: ordem, vaos: vaos, uMin: uMin, uMax: uMax, yMax: yMax, yMin: yMin, r: r, v: v, proj: proj, prof: prof, perfil: perfil };
   }
   function desenharFachada(c, vv, mf, X, Yb, k) {
     var D = c.D, d = DS(), g = G();
     function U(u) { return X + (u - mf.uMin) * k; }
     function Y(y) { return Yb - (y - mf.yMin) * k; }
-    D.linha(U(mf.uMin - 0.9), Y(0), U(mf.uMax + 0.9), Y(0), "ARQ-TERRENO");
-    for (var xx = U(mf.uMin - 0.9); xx < U(mf.uMax + 0.9); xx += 2.2) D.linha(xx, Y(0), xx - 1.6, Y(0) + 1.6, "ARQ-HACHURA");
+    if (mf.perfil && mf.perfil.length >= 2) {   /* F1: o talude do topossólido: faixa de solo hachurada sob o perfil (a mesma linguagem dos cortes) */
+      var yb0 = Math.min.apply(null, mf.perfil.map(function (q) { return q[1]; })) - 0.25, ult = mf.perfil[mf.perfil.length - 1], solo = mf.perfil.map(function (q) { return [U(q[0]), Y(q[1])]; }).concat([[U(ult[0]), Y(yb0)], [U(mf.perfil[0][0]), Y(yb0)]]);
+      d.fundoPol(D, solo, "#fff");
+      g.hachuraLinhas(solo, 1.6, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA"); });
+      D._cam = "ARQ-TERRENO"; D.traco(solo, true); D._cam = null;
+    } else {
+      D.linha(U(mf.uMin - 0.9), Y(0), U(mf.uMax + 0.9), Y(0), "ARQ-TERRENO");
+      for (var xx = U(mf.uMin - 0.9); xx < U(mf.uMax + 0.9); xx += 2.2) D.linha(xx, Y(0), xx - 1.6, Y(0) + 1.6, "ARQ-HACHURA");
+    }
     var nPar = 0, chamadas = {};
     /* R02 — HACHURA POR COR e LINHAS DE CHAMADA (manual p.14: "hachura por cor"): c.op.coresFachada = { novo, existente, muro } = { nome, cor } — cada classe de parede ganha a
        cor e a hachura da paleta e uma chamada (linha marsala tracejada, ponto na extremidade) com o nome da tinta */
@@ -569,7 +645,7 @@
     return { escala: "1:" + ch };
   }
 
-  var ArqCortes = { escolherCortes: escolherCortes, cortes: cortes, fachadas: fachadas, escolherEscala: escolherEscala, modeloCorte: modeloCorte, vetoresVista: vetoresVista };
+  var ArqCortes = { escolherCortes: escolherCortes, cortes: cortes, fachadas: fachadas, escolherEscala: escolherEscala, modeloCorte: modeloCorte, modeloFachada: modeloFachada, vetoresVista: vetoresVista };
   global.ArqCortes = ArqCortes;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqCortes;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

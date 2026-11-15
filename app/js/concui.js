@@ -63,31 +63,268 @@
   function mostrar(ids) { var PC = global.ProblemaCard; if (PC && PC.mostrarNo3D) PC.mostrarNo3D(ids); }
 
   /* ----------------------------------------------------------- comandos */
-  function prelancar(modo) {
-    var T = "Pré-lançar estrutura (concreto)";
+  function prelancar(modo) { return lancar(modo, null, "Pré-lançar estrutura (concreto)"); }
+
+  /* ----------------------------------------------------------- SUGERIR ESTRUTURA (S2, 14/11/2026)
+     O mesmo lançador (um só), agora com o auditor de precisão BLOQUEANTE (s1), a viga baldrame e a opção de PROJETO do pilar de 12 a 14 cm
+     (desligada por padrão: decisão do Rogério, 14/11/2026). Guardada por obra no aparelho: o texto do memorial e a marca laranja dependem dela. */
+  function obraKey() { var G = global.Gestao; return String((G && G._bimSel) || "geral"); }
+  function lerOpcao() { try { var v = JSON.parse(global.localStorage.getItem("orcapro:conc:opc:" + obraKey()) || "null"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
+  function gravarOpcao(o) { try { global.localStorage.setItem("orcapro:conc:opc:" + obraKey(), JSON.stringify(o)); return true; } catch (e) { return false; } }
+  function permitirPilar12() { return lerOpcao().permitirPilar12 === true; }
+  function definirPilar12(on) { var o = lerOpcao(); o.permitirPilar12 = !!on; return gravarOpcao(o) ? !!on : permitirPilar12(); }
+  /* o que cada bloqueio do auditor de precisão significa, em palavras simples (regra do dono: todo problema tem o que é + Corrigir + Mostrar no 3D) */
+  var S1_TIT = { "S1-01": "Pilar fora da parede", "S1-02": "Pilar em vão de porta ou janela", "S1-03": "Pilar fora de prumo entre os pavimentos", "S1-04": "Viga sem apoio", "S1-05": "Eixos a menos de 30 cm um do outro", "S1-06": "Pilar abaixo da seção mínima" };
+  var S1_QUE = {
+    "S1-01": "O pilar sugerido ficaria para fora da parede que ele deveria acompanhar. O pré-lançamento não aplica um pilar fora do lugar.",
+    "S1-02": "O pilar sugerido cairia onde há porta ou janela. O pré-lançamento não aplica pilar dentro de vão.",
+    "S1-03": "O pilar de um pavimento não está na mesma prumada do pilar de baixo.",
+    "S1-04": "Uma viga sugerida termina sem pilar nem outra viga que a apoie (só a ponta livre do balanço é permitida).",
+    "S1-05": "Duas paredes do mesmo alinhamento estão a menos de 30 cm uma da outra, e a grade de eixos ficaria confusa.",
+    "S1-06": "A seção do pilar ficou abaixo do mínimo da NBR 6118:2023 (lado de 14 cm e área de 360 cm²)."
+  };
+  function problemasDosBloqueios(res, extra) {
+    return arr(res.auditoria && res.auditoria.bloqueios).map(function (b) {
+      var sol = [];
+      if (b.id === "S1-05") sol.push({ id: "juntar", texto: "O melhor é juntar as paredes que estão a menos de 30 cm (ou apagar a duplicada) e rodar o Sugerir estrutura de novo", pecas: arr(b.pecas) });   /* sem botão: não há como o sistema escolher qual parede vale */
+      sol.push({ id: "assim-mesmo", texto: "Lançar assim mesmo e deixar este ponto no Auditar (o lote é aplicado; um Ctrl+Z desfaz tudo)", pecas: arr(b.pecas) });
+      if (b.id === "S1-06" && !permitirPilar12() && !(extra && extra.permitirPilar12)) sol.push({ id: "pilar12", texto: "Ligar a opção do projeto “Permitir pilar 12–14 cm (fora da NBR 6118:2023)”: decisão do responsável técnico, entra no memorial", pecas: arr(b.pecas) });
+      return { tipo: b.id, titulo: S1_TIT[b.id] || b.id, texto: S1_QUE[b.id] ? S1_QUE[b.id] + " " + b.texto : b.texto, gravidade: "erro", pecas: arr(b.pecas), solucoes: sol };
+    });
+  }
+  function aoCorrigirBloqueio(solId) {
+    if (solId === "pilar12") { definirPilar12(true); status("Opção ligada: pilar de 12 a 14 cm (fora da NBR 6118:2023, decisão do RT)."); return sugerir(); }
+    if (solId === "assim-mesmo") return sugerir({ assimMesmo: true });
+    return null;
+  }
+  function janelaBloqueios(T, res, extra) {
+    var PC = global.ProblemaCard, probs = problemasDosBloqueios(res, extra);
+    var html = faixa() + "<p><b>Nada foi aplicado.</b> O auditor de precisão achou " + probs.length + " ponto(s) que impedem o lançamento. Cada um diz o que é e como corrigir:</p>" +
+      (PC ? PC.lista(probs, { titulo: "Bloqueios do auditor de precisão (" + probs.length + ")", gravidade: "erro", prefixoIndice: "e", acoes: function (s) { return s && (s.id === "assim-mesmo" || s.id === "pilar12") ? (s.texto || true) : false; } }) : lista("Bloqueios", probs.map(function (p) { return p.titulo + " — " + p.texto; }))) +
+      lista("Avisos", res.avisos);
+    var ov = janela(T, html);
+    if (ov && PC) PC.ligar(ov, { corrigir: aoCorrigirBloqueio, mostrar: function (ids) { PC.mostrarNo3D(ids); } });
+    status("Sugerir estrutura: o auditor de precisão bloqueou (" + probs.length + ").");
+  }
+  function sugerir(o) {
+    o = o || {};
+    return lancar("auto", { s1: o.assimMesmo ? false : true, baldrame: true, permitirPilar12: permitirPilar12(), assimMesmo: !!o.assimMesmo }, "Sugerir estrutura");
+  }
+
+  /* ----------------------------------------------------------- VISTA DE ESTRUTURA (S2, 14/11/2026)
+     Criada sempre que se lança ou se altera estrutura: um registro de folhas por obra (origem "estrutura-vista", sempre o MESMO id — gerar de novo
+     SUBSTITUI as folhas, nunca duplica) nas abas de folha do BIM. Regenera quando o modelo muda: a assinatura (js/concvista.js) das peças e paredes
+     fica gravada no registro e um vigia leve compara quando o editor mexe. Tudo sai do modelo (ConcLanc.dadosDoModelo); a folha leva o rótulo de pré-dimensionamento. */
+  var ORIGEM_VISTA = "estrutura-vista";
+  function BF() { return global.BimFolhaUI || null; }
+  function dataUrlSvg(svg) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); }
+  function registroDaVista() { var b = BF(); if (!b || !b.registros) return null; try { return arr(b.registros()).filter(function (x) { return x && x.origem === ORIGEM_VISTA; })[0] || null; } catch (e) { return null; } }
+  function ctxCarimbo() {
+    var em = {}, ob = {}, logo = null, G = global.Gestao;
+    try { if (global.Empresa && global.Empresa.dados) em = global.Empresa.dados() || {}; if (global.Empresa && global.Empresa.logo) logo = global.Empresa.logo(); } catch (e1) { /* sem empresa */ }
+    try { if (G && G._bimSel && global.Store && global.Auth) ob = global.Store.obter(global.Auth.empresaId(), "obras", G._bimSel) || {}; } catch (e2) { /* sem obra */ }
+    return { empresa: em, obra: ob, logo: logo, obraId: String((G && G._bimSel) || "") };
+  }
+  function registroFolhas(r, existente, ctx, ass) {
+    var folhas = r.folhas.map(function (f, i) { return { id: "est-" + f.id, n: i + 1, conteudo: f.numero + " - " + f.titulo, escala: f.escala, blocos: [], imagemInteira: "estsvg:" + f.id }; });
+    var reg = { nome: "Vista de Estrutura", origem: ORIGEM_VISTA, formato: r.formato, orientacao: "paisagem", carimbo: { modelo: "RA" }, folhas: folhas, assinaturaModelo: ass };
+    if (existente && existente.id) { reg.id = existente.id; reg.criadoEm = existente.criadoEm; }
+    reg.obraId = txt(ctx && ctx.obraId);
+    return reg;
+  }
+  function txt(v) { return v == null ? "" : String(v); }
+  function vistaEstrutura(o) {
+    o = o || {};
+    var V = global.ConcVista, C = CL(), b = BF(), st = estado();
+    if (!V || !C || !st || !b || !b.salvarRegistro) return { ok: false, motivo: "A vista de estrutura precisa do editor 3D e das abas de folha abertos." };
+    var ass = V.assinatura(st), exist = registroDaVista();
+    if (!o.forcar && exist && exist.assinaturaModelo === ass) return { ok: true, igual: true, registro: exist.id };
+    var d = C.dadosDoModelo(st, { avaliarFam: avaliar(), categoriaFam: catFam(), niveis: niveis() });
+    if (!d.ok) return { ok: false, motivo: d.motivo };
+    var cx = ctxCarimbo(), em = cx.empresa || {}, ob = cx.obra || {};
+    var r = V.gerar({ estado: st, res: d }, { empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo), obra: txt(ob.nome),
+      proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: cx.logo || null });
+    if (!r.ok) return { ok: false, motivo: arr(r.avisos).join(" ") };
+    var salvo = b.salvarRegistro(registroFolhas(r, exist, cx, ass));
+    if (!salvo) return { ok: false, motivo: "Não consegui guardar as folhas da vista de estrutura neste aparelho." };
+    b._imagensExternas = b._imagensExternas || {};
+    r.folhas.forEach(function (f) { b._imagensExternas["estsvg:" + f.id] = dataUrlSvg(f.svg); });
+    r.registro = salvo.id; r.primeira = b.idFolha ? b.idFolha(salvo.id, "est-" + r.folhas[0].id) : null; r.assinatura = ass;
+    if (o.abrir && r.primeira) { try { if (b.ativo && b.ativo()) b.abrir(r.primeira); } catch (eA) { /* sem a casca do BIM: fica no registro */ } }
+    var v = r.verificacao || {};
+    status("Vista de Estrutura: " + r.folhas.length + " folha(s) · sobreposição: texto×texto " + v.textoTexto + ", texto×linha " + v.textoLinha + ", fora da moldura " + v.foraJanela + (o.abrir ? "" : " — abra em Estrutura › Vista de estrutura."));
+    return r;
+  }
+  /* o vigia leve: só compara a assinatura quando o editor mexeu (conta barata primeiro) e só refaz se já existe vista nesta obra */
+  var VIGIA = { cheap: null, timer: null };
+  function chaveBarata() { var o = ops(), u = o.length ? o[o.length - 1] : null; return o.length + ":" + (u ? (u.id || u.op || "") : ""); }
+  function vigiarVista() {
+    var cheap = chaveBarata(); if (cheap === VIGIA.cheap) return false;
+    VIGIA.cheap = cheap;
+    var reg = registroDaVista(); if (!reg || !global.ConcVista) return false;
+    var st = estado(); if (!st || global.ConcVista.assinatura(st) === reg.assinaturaModelo) return false;
+    var r = vistaEstrutura({ forcar: true }); return !!(r && r.ok && !r.igual);
+  }
+  function ligarVigia() {
+    if (VIGIA.timer || typeof setInterval !== "function" || typeof document === "undefined") return false;
+    VIGIA.timer = setInterval(function () { try { vigiarVista(); } catch (e) { /* o vigia nunca derruba a tela */ } }, 4000);
+    return true;
+  }
+
+  /* ----------------------------------------------------------- OCULTAR ARQUITETURA e CALCULAR (S2, 14/11/2026, etapa 8)
+     Ocultar = visibilidade por CATEGORIA do foco de disciplina (js/bimfoco.js): é só gráfico de vista, nunca de dado. A categoria "Lajes e pisos" fica de fora de propósito:
+     a laje de concreto lançada é IfcSlab, a mesma classe do piso da arquitetura, e esconder a categoria esconderia a estrutura junto.
+     Calcular = C1–C4 (js/conccalcular.js) sobre o que está lançado; cada peça fica VERDE (atende), VERMELHA (reprovada) ou LARANJA (pilar de 12 a 14 cm: atende na conta,
+     mas fora da NBR 6118:2023), pintada por BIM.pintarUids; a vermelha traz a seção sugerida, que se aplica com 1 clique (a operação grava a seção ABSOLUTA: idempotente). */
+  function catsArquitetura() { var F = global.BimFoco; return F && F.CATEGORIAS ? F.CATEGORIAS.filter(function (c) { return c.disc === "arquitetura" && c.id !== "lajes"; }).map(function (c) { return c.id; }) : []; }
+  function arquiteturaOculta() {
+    var B = global.BIM, ids = catsArquitetura(); if (!B || !B.foco || !ids.length) return false;
+    var f = B.foco(); return ids.every(function (id) { return f.cats && f.cats[id] && f.cats[id].vis === false; });
+  }
+  function ocultarArquitetura(on) {
+    var B = global.BIM, ids = catsArquitetura();
+    if (!B || !B.foco || !ids.length) { status("O editor 3D não está aberto."); return null; }
+    var quer = on == null ? !arquiteturaOculta() : !!on, cats = {};
+    ids.forEach(function (id) { cats[id] = { vis: !quer }; });
+    var r = B.foco({ cats: cats });
+    status(quer ? "Arquitetura oculta (" + (r && r.ocultas != null ? r.ocultas : "?") + " peça(s)); a estrutura fica sozinha. Clique de novo para mostrar." : "Arquitetura visível de novo.");
+    return { oculta: quer, ocultas: r ? r.ocultas : null };
+  }
+  var ULTIMO_CALC = null;
+  function estadoRotulo(p) { var K = global.ConcCalcular; return K && K.ROTULO_ESTADO[p.estado] || p.estado; }
+  function problemasDoCalculo(r) {
+    var K = global.ConcCalcular, nome = { pilar: "Pilar", viga: "Viga", laje: "Laje" };
+    return arr(r.pecas).filter(function (p) { return p.estado === "falha" || p.estado === "fora-norma"; }).map(function (p) {
+      var apr = p.aproveitamento != null && isFinite(p.aproveitamento) ? " (aproveitamento " + f2(p.aproveitamento) + ")" : "";
+      if (p.estado === "fora-norma") return { tipo: "calc-12", titulo: nome[p.tipo] + " " + p.marca + " " + p.secao + " — LARANJA", gravidade: "aviso", pecas: [p.id], solucoes: [{ id: "nota", texto: "A peça atende na conta (γn estendido, área ≥ 360 cm²), mas a NBR 6118:2023 (13.2.3) NÃO cobre pilar abaixo de 14 cm. O uso é decisão do responsável técnico e entra no memorial; para voltar à norma, aumente a seção." }],
+        texto: "Pilar de 12 a 14 cm: habilitado pela opção do projeto. " + (p.motivo || "") };
+      var sol = []; if (p.sugestao) sol.push({ id: "secao", texto: p.sugestao.texto, ops: p.sugestao.ops, pecas: p.sugestao.pecas || [p.id] }); else sol.push({ id: "nota", texto: "O motor não achou uma seção que feche: o engenheiro concebe outra solução (vão, apoio ou altura)." });
+      return { tipo: "calc-" + p.tipo, titulo: nome[p.tipo] + " " + p.marca + " " + p.secao + " — REPROVADO" + apr, gravidade: "erro", pecas: [p.id], solucoes: sol,
+        texto: "Não atende nas verificações do cálculo de apoio (C1–C4). " + (p.motivo || "") };
+    });
+  }
+  function aplicarSugestao(sol, p) {
+    if (!sol || !arr(sol.ops).length) return false;
+    var ok = aplicar({ op: "lote", id: "conc-sug-" + (p && p.id ? p.id : "x") + "-" + String(p && p.sugestao ? p.sugestao.secao : "").replace(/[^0-9x]+/g, "x"), origem: "conc-calcular", pedido: ("Seção sugerida pelo Calcular: " + sol.texto).slice(0, 300), ops: sol.ops });
+    if (ok) { status("Seção aplicada: " + sol.texto + " (Ctrl+Z desfaz). Calculando de novo…"); try { vistaEstrutura({ forcar: true }); } catch (eV) { /* o vigia refaz */ } }
+    return ok;
+  }
+  /* ⚠ O "CALCULAR" NA TELA NUNCA RODA EM LAÇO SÍNCRONO (14/11/2026): sobrado de 18 pilares levava ~20 s com o navegador congelado. Com tela (document), o cálculo é a fila de
+   * passos de ConcCalcular.iniciar(), um passo por setTimeout, com barra de progresso e "Cancelar". Sem tela (teste em Node) ou sem iniciar(), cai no caminho síncrono de
+   * sempre — o mesmo resultado. CALCULANDO impede dois cálculos ao mesmo tempo (clique duplo). */
+  var CALCULANDO = null;
+  function calcular() {
+    var T = "Calcular estrutura (C1–C4)";
+    if (trancou(T)) return null;
+    var st = estado(), K = global.ConcCalcular; if (!st || !K) { status("O editor 3D não está aberto."); return null; }
+    if (CALCULANDO) { status("O cálculo já está rodando — aguarde ou cancele."); return null; }
+    var opcCalc = { ops: ops(), niveis: niveis(), permitirPilar12: permitirPilar12() };
+    if (typeof document === "undefined" || !K.iniciar || typeof setTimeout !== "function") {
+      status("Calculando a estrutura (pórtico, vigas, lajes e pilares)… pode levar alguns segundos.");
+      return mostrarCalculo(K.rodar(st, opcCalc), T);
+    }
+    var tarefa = K.iniciar(st, opcCalc), cancelado = false, ov = null, t0 = Date.now();
+    function pintarProgresso() {
+      var feitos = tarefa.feitos || 0, total = feitos + (tarefa.restantes ? tarefa.restantes() : 0), pct = total ? Math.round(100 * feitos / total) : 0;
+      status("Calculando… " + pct + "% (" + (tarefa.rotulo || "iniciando") + ")");
+      var barra = ov && ov.querySelector ? ov.querySelector("[data-conc-prog]") : null, txt = ov && ov.querySelector ? ov.querySelector("[data-conc-prog-txt]") : null;
+      if (barra) barra.style.width = pct + "%"; if (txt) txt.textContent = pct + "% — " + (tarefa.rotulo || "iniciando") + " (" + Math.round((Date.now() - t0) / 1000) + " s)";
+    }
+    CALCULANDO = tarefa;
+    ov = janela(T, '<p>Calculando a estrutura (pórtico, vigas, lajes e pilares). A tela continua livre: o cálculo roda em pedaços.</p>' +
+      '<div style="height:12px;border-radius:6px;background:rgba(127,127,127,.25);overflow:hidden;margin:8px 0"><div data-conc-prog style="height:100%;width:0;background:#2e9e4f;transition:width .15s"></div></div>' +
+      '<p data-conc-prog-txt style="margin:0 0 8px;font-size:12px">0%</p><button type="button" class="btn sm" data-conc-cancelar>Cancelar o cálculo</button>');
+    if (ov) ov.addEventListener("click", function (e) {
+      var t = e.target; if (!t || !t.hasAttribute) return;
+      if (t.hasAttribute("data-conc-cancelar") || t.hasAttribute("data-conc-fechar") || t === ov) { if (CALCULANDO === tarefa && !tarefa.feito) { cancelado = true; CALCULANDO = null; status("Cálculo cancelado. Nada foi pintado nem alterado no modelo."); } }
+    });
+    function andar() {
+      if (cancelado) return;
+      var fim = Date.now() + 40;   /* dá pra juntar passos curtos (laje, viga) numa fatia; um pilar já passa disso e devolve a vez à tela */
+      do { tarefa.passo(); } while (!tarefa.feito && Date.now() < fim);
+      if (cancelado) return;
+      if (!tarefa.feito) { pintarProgresso(); setTimeout(andar, 0); return; }
+      CALCULANDO = null;
+      mostrarCalculo(tarefa.resultado, T);
+    }
+    setTimeout(andar, 0);
+    return null;
+  }
+  function mostrarCalculo(r, T) {
+    var B = global.BIM, K = global.ConcCalcular;
+    if (!r.ok) { janela(T, faixa() + "<p>" + esc(r.motivo) + "</p>" + lista("Avisos", r.avisos)); status(r.motivo); return r; }
+    ULTIMO_CALC = r;
+    var pintou = B && B.pintarUids ? B.pintarUids(r.pintura, "conc-calcular") : 0, R = r.resumo, probs = problemasDoCalculo(r), PC = global.ProblemaCard;
+    function selo(cor, t) { return '<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + cor + ';margin-right:4px;vertical-align:-1px"></span>' + t; }
+    var sem = arr(r.pecas).filter(function (p) { return p.estado === "sem-calculo"; });
+    var html = faixa() + "<p><b>" + R.total + "</b> peça(s) calculadas pelo C1–C4 (C" + r.fck + ", CAA " + r.caa + "): " + selo(K.COR.ok, "<b>" + R.ok + "</b> atendem") + " · " + selo(K.COR.falha, "<b>" + R.falha + "</b> reprovadas") + " · " +
+      selo(K.COR["fora-norma"], "<b>" + R.foraNorma + "</b> fora da norma (pilar 12–14 cm)") + (R.semCalculo ? " · " + R.semCalculo + " sem cálculo" : "") + ". " + (pintou ? "As cores já estão no 3D." : "") +
+      ' <button type="button" class="btn ghost sm" data-conc-limpar>Tirar as cores</button> <button type="button" class="btn ghost sm" data-conc-ocultar>' + (arquiteturaOculta() ? "Mostrar" : "Ocultar") + " arquitetura</button></p>" +
+      (probs.length ? "" : "<p><b>Nenhuma peça reprovada.</b></p>");
+    var erros = probs.filter(function (p) { return p.gravidade === "erro"; }), avs = probs.filter(function (p) { return p.gravidade !== "erro"; });
+    function bloco(L, tit, grav) { if (!L.length) return ""; var o = { titulo: tit, gravidade: grav, prefixoIndice: grav === "aviso" ? "a" : "e", acoes: function (s) { return s && arr(s.ops).length ? (s.texto || true) : false; } }; return PC ? PC.lista(L, o) : lista(tit, L.map(function (p) { return p.titulo + " — " + p.texto; })); }
+    html += bloco(erros, "Reprovadas (" + erros.length + ") — a seção sugerida se aplica com 1 clique", "erro") + bloco(avs, "Fora da NBR 6118:2023 (" + avs.length + ")", "aviso") +
+      (sem.length ? lista("Sem cálculo (ficam sem cor)", sem.map(function (p) { return p.tipo + " " + p.marca + " — " + p.motivo; })) : "") +
+      (r.memorialPilar12 ? "<details><summary>Texto do memorial (pilar de 12 a 14 cm)</summary><p style=\"font-size:12px\">" + esc(typeof r.memorialPilar12 === "string" ? r.memorialPilar12 : JSON.stringify(r.memorialPilar12)) + "</p></details>" : "") +
+      lista("Avisos", r.avisos) + lista("Pendências", r.pendencias);
+    var ov = janela(T, html);
+    if (ov) {
+      ov.addEventListener("click", function (e) { var t = e.target; if (!t || !t.hasAttribute) return; if (t.hasAttribute("data-conc-limpar")) limparCores(); if (t.hasAttribute("data-conc-ocultar")) { ocultarArquitetura(); t.textContent = (arquiteturaOculta() ? "Mostrar" : "Ocultar") + " arquitetura"; } });
+      if (PC) PC.ligar(ov, {
+        corrigir: function (solId, k) { var L = String(k).charAt(0) === "a" ? avs : erros, p = L[+String(k).slice(1)], pe = p && arr(r.pecas).filter(function (x) { return x.id === p.pecas[0]; })[0], s = p && arr(p.solucoes).filter(function (x) { return x.id === solId; })[0]; if (aplicarSugestao(s, pe)) calcular(); },
+        mostrar: function (ids) { PC.mostrarNo3D(ids); }
+      });
+    }
+    status("Calcular: " + R.ok + " atendem · " + R.falha + " reprovadas · " + R.foraNorma + " fora da norma (cálculo de apoio — o engenheiro confere e assina).");
+    return r;
+  }
+  function limparCores() { var B = global.BIM; if (B && B.pintarUids) B.pintarUids({}, "conc-calcular"); status("Cores do cálculo retiradas."); return true; }
+
+  function lancar(modo, extra, T) {
     if (trancou(T)) return null;
     var st = estado(), C = CL(); if (!st || !C) { status("O editor 3D não está aberto."); return null; }
-    var res = C.gerar(st, { avaliarFam: avaliar(), categoriaFam: catFam(), niveis: niveis(), ops: ops(), forcar: modo === "refazer", tipoLaje: modo === "macica" || modo === "trelicada" ? modo : "auto" });
+    var opc = { avaliarFam: avaliar(), categoriaFam: catFam(), niveis: niveis(), ops: ops(), forcar: modo === "refazer", tipoLaje: modo === "macica" || modo === "trelicada" ? modo : "auto" };
+    if (extra) Object.keys(extra).forEach(function (k) { if (k !== "assimMesmo") opc[k] = extra[k]; });
+    var res = C.gerar(st, opc);
+    if (res.bloqueado) { janelaBloqueios(T, res, extra); return res; }
     if (!res.ok) { janela(T, faixa() + "<p>" + esc(res.motivo) + "</p>" + lista("Avisos", res.avisos)); status(res.motivo); return res; }
-    var ok = aplicar(res.lote), R = res.resumo;
+    var ok = aplicar(res.lote), R = res.resumo, vz = null;
+    if (ok) { try { vz = vistaEstrutura({ forcar: true }); } catch (eV) { vz = { ok: false, motivo: String((eV && eV.message) || eV) }; } }   /* a vista nasce junto com a estrutura */
+    /* lançou com o auditor desligado (“assim mesmo”): os pontos ficam listados para conferir, nunca em silêncio */
+    var conferir = extra && extra.assimMesmo ? arr(res.auditoria && res.auditoria.bloqueios).map(function (b) { return (S1_TIT[b.id] || b.id) + " — " + b.texto; }) : [];
     var html = faixa() + "<p><b>" + res.pecas.length + "</b> peça(s): " + R.pilar.n + " pilar(es), " + R.viga.n + " viga(s), " + R.laje.n + " laje(s) em " + res.pavimentos.length + " pavimento(s)" +
-      (ok ? " — aplicado num lote (Ctrl+Z desfaz tudo)." : " — <b>não aplicado</b>.") + ' <button type="button" class="btn ghost sm" data-conc-ver>Mostrar no 3D</button></p>' +
+      (ok ? " — aplicado num lote (Ctrl+Z desfaz tudo)." : " — <b>não aplicado</b>.") + (vz && vz.ok ? " Vista de Estrutura: " + vz.folhas.length + " folha(s) (Estrutura › Vista de estrutura)." : (vz && vz.motivo ? " Vista de Estrutura não saiu: " + esc(vz.motivo) : "")) + ' <button type="button" class="btn ghost sm" data-conc-ver>Mostrar no 3D</button></p>' +
       (res.manuais.mantidos.length ? "<p>Mexido à mão e mantido como está: " + esc(res.manuais.mantidos.join(", ")) + ' (para refazer tudo: Pré-lançar › "Refazer tudo").</p>' : "") +
       "<p>Estimativa (já no orçamento do modelo, marcada): concreto " + f2(R.m3, 3) + " m³ · fôrma " + f2(R.forma) + " m² · aço " + f2(R.aco, 0) + " kg (taxa " + R.taxa + " kg/m³)" + (R.trelicadaM2 ? " · laje treliçada " + f2(R.trelicadaM2) + " m²" : "") + ".</p>" +
       "<h4 style=\"margin:10px 0 4px\">Pilares</h4>" + tabela(["Marca", "Pavimento", "Seção (cm)", "Onde", "Ai (m²)", "Regra"], res.pilares.map(function (p) { return [p.marca, p.pav, p.secao, p.tipoNo + (p.transicao ? " · TRANSIÇÃO" : "") + (p.conflito ? " · encosta em " + p.conflito : ""), f2(p.Ai), p.regra]; })) +
       "<h4 style=\"margin:10px 0 4px\">Vigas</h4>" + tabela(["Peça", "Pavimento", "Seção (cm)", "Vão (m)", "Regra"], res.vigas.filter(function (x) { return !x.pulada; }).map(function (x) { return [x.id, x.pav, x.secao, f2(x.vao), x.regra]; })) +
       "<h4 style=\"margin:10px 0 4px\">Lajes</h4>" + tabela(["Marca", "Ambiente", "Tipo", "h (cm)", "lx × ly (m)", "Regra"], res.lajes.filter(function (x) { return !x.pulada; }).map(function (x) { return [x.marca, x.amb, x.tipo === "macica" ? "maciça" : "treliçada", String(x.h), f2(x.lx) + " × " + f2(x.ly), x.regra]; })) +
-      lista("Avisos", res.avisos) + lista("Premissas e fontes", res.premissas) + lista("Pendências", res.pendencias) +
-      '<p style="margin-top:8px"><button type="button" class="btn primary sm" data-conc-auditar>Auditar a estrutura</button> <button type="button" class="btn ghost sm" data-conc-ifc>IFC para o cálculo</button></p>';
+      lista("Conferir (auditor de precisão)", conferir) + lista("Avisos", res.avisos) + lista("Premissas e fontes", res.premissas) + lista("Pendências", res.pendencias) +
+      '<p style="margin-top:8px"><button type="button" class="btn primary sm" data-conc-auditar>Auditar a estrutura</button> <button type="button" class="btn ghost sm" data-conc-ifc>IFC para o cálculo</button> <button type="button" class="btn primary sm" data-conc-calcular>Calcular</button> <button type="button" class="btn ghost sm" data-conc-ocultar>Ocultar arquitetura</button></p>';
     var ov = janela(T, html);
     if (ov) ov.addEventListener("click", function (e) {
       var t = e.target; if (!t || !t.hasAttribute) return;
       if (t.hasAttribute("data-conc-ver")) mostrar(res.pecas.map(function (c) { return c.id; }));
       if (t.hasAttribute("data-conc-auditar")) auditar();
       if (t.hasAttribute("data-conc-ifc")) ifc();
+      if (t.hasAttribute("data-conc-calcular")) calcular();
+      if (t.hasAttribute("data-conc-ocultar")) ocultarArquitetura();
     });
-    status("Pré-lançamento: " + R.pilar.n + " pilar(es), " + R.viga.n + " viga(s), " + R.laje.n + " laje(s) — PRÉ-DIMENSIONAMENTO, A CALCULAR.");
+    status(T + ": " + R.pilar.n + " pilar(es), " + R.viga.n + " viga(s), " + R.laje.n + " laje(s) — PRÉ-DIMENSIONAMENTO, A CALCULAR.");
     return res;
+  }
+  function opcoes() {
+    var T = "Opções da estrutura";
+    var on = permitirPilar12();
+    var ov = janela(T, faixa() + '<label style="display:block;margin:6px 0"><input type="checkbox" data-conc-p12' + (on ? " checked" : "") + '> <b>Permitir pilar 12–14 cm (fora da NBR 6118:2023)</b></label>' +
+      '<p style="font-size:12px">Desligada por padrão; a sugestão automática começa em 14 cm. Ligada, a peça aparece em laranja e o memorial leva a seção própria: ' +
+      "“A ABNT NBR 6118 em vigor NÃO cobre essas peças… o uso desta seção é decisão do responsável técnico, que o assume com a assinatura do memorial e da ART”. " +
+      "Regra do cálculo: lado ≥ 12 cm, Ac ≥ 360 cm², γn = 1,95 − 0,05·b (a fórmula da Tabela 13.1, estendida). Status do dado: decisão do produto.</p>");
+    if (ov) ov.addEventListener("change", function (e) {
+      var t = e.target; if (!t || !t.hasAttribute || !t.hasAttribute("data-conc-p12")) return;
+      var v = definirPilar12(t.checked); t.checked = v; status("Pilar de 12 a 14 cm: " + (v ? "LIGADO (fora da NBR 6118:2023, decisão do RT)." : "desligado."));
+    });
+    return on;
   }
   function auditar() {
     var T = "Auditar estrutura (concreto)";
@@ -109,7 +346,7 @@
       corrigir: function (solId, k) {
         var L = String(k).charAt(0) === "a" ? avs : erros, p = L[+String(k).slice(1)], s = p && arr(p.solucoes).filter(function (x) { return x.id === solId; })[0];
         if (!s || !arr(s.ops).length) return;
-        if (aplicar({ op: "lote", id: "conc-corr-" + Date.now().toString(36), origem: "conc-auditor", pedido: ("Corrigir: " + s.texto).slice(0, 300), ops: s.ops })) { status("Corrigido: " + s.texto + " (Ctrl+Z desfaz)."); auditar(); }
+        if (aplicar({ op: "lote", id: "conc-corr-" + Date.now().toString(36), origem: "conc-auditor", pedido: ("Corrigir: " + s.texto).slice(0, 300), ops: s.ops })) { status("Corrigido: " + s.texto + " (Ctrl+Z desfaz)."); try { vistaEstrutura({ forcar: true }); } catch (eV) { /* a vista é refeita pelo vigia */ } auditar(); }
       },
       mostrar: function (ids) { PC.mostrarNo3D(ids); }
     });
@@ -178,12 +415,25 @@
           dica: "Sobre a arquitetura: pilares nos cantos, encontros e pontas das paredes (dentro delas, fora das portas e janelas, em prumo nos pavimentos, vão até 5,5 m), vigas sob as paredes de pilar a pilar (h = ℓ/10 ou ℓ/12) e lajes por ambiente (maciça até 5 m, treliçada acima). PRÉ-DIMENSIONAMENTO — A CALCULAR. Um Ctrl+Z desfaz; rodar de novo não duplica nem passa por cima do que você mexeu.",
           itens: [{ id: "conc-pre-auto", rotulo: "Laje automática (maciça até 5 m, treliçada acima)", icone: "estrutura" }, { id: "conc-pre-macica", rotulo: "Todas as lajes maciças", icone: "estrutura" },
                   { id: "conc-pre-trelicada", rotulo: "Todas as lajes treliçadas", icone: "estrutura" }, { id: "conc-pre-refazer", rotulo: "Refazer tudo (descarta o que mexi no pré-lançamento)", icone: "estrutura" }] },
+        { id: "conc-sugerir", rotulo: "Sugerir\nestrutura", icone: "estrutura", grande: true,
+          dica: "Lê a arquitetura e sugere a estrutura inteira com precisão: grade de eixos (A, B… e 1, 2…), pilares dentro das paredes e fora dos vãos, vigas com a viga baldrame e as vigas em balanço, lajes por ambiente. Com o auditor de precisão bloqueando o que estiver fora do lugar (cada ponto com o que é e como corrigir). PRÉ-DIMENSIONAMENTO — A CALCULAR. Um Ctrl+Z desfaz." },
+        { id: "conc-ocultar", rotulo: "Ocultar\narquitetura", icone: "estrutura", grande: true, dica: "Esconde a arquitetura (paredes, coberturas, forros, portas, janelas, escadas, mobiliário) para ver só a estrutura; clique de novo para mostrar. É só a vista: não muda o modelo, o orçamento nem a quantidade." },
+        { id: "conc-calcular", rotulo: "Calcular\nestrutura", icone: "calculadora", grande: true, dica: "Roda o cálculo de apoio C1–C4 (pórtico, vigas, lajes e pilares) sobre o que está lançado e pinta cada peça: verde (atende), vermelho (reprovada, com a seção sugerida em 1 clique) e laranja (pilar de 12 a 14 cm, fora da NBR 6118:2023). Pode levar alguns segundos." },
+        { id: "conc-vista", rotulo: "Vista de\nestrutura", icone: "estrutura", grande: true,
+          dica: "Abre a Vista de Estrutura (criada e atualizada sozinha quando se lança ou se altera a estrutura): uma planta de fôrma por nível com a estrutura em cor sobre a arquitetura em meio-tom, grade de eixos com bolhas e cotas parciais e acumuladas, nome e seção de cada peça, cortes automáticos pelos eixos principais e as tabelas de locação dos pilares, níveis e vigas." },
+        { id: "conc-opc", rotulo: "Opções da\nestrutura", icone: "regua", grande: true, dica: "Opções do projeto: permitir o pilar de 12 a 14 cm (fora da NBR 6118:2023; decisão do responsável técnico, entra no memorial). Desligada por padrão." },
         { id: "conc-auditar", rotulo: "Auditar\nestrutura", icone: "calculadora", grande: true, dica: "Confere qualquer estrutura de concreto do modelo: pilar no vão de porta/janela, viga cortando janela, vão de viga e de laje acima do limite, balanço, pilar desalinhado ou sem continuidade, viga sem apoio, seções mínimas da NBR 6118 — cada item com Corrigir e Mostrar no 3D." },
         { id: "conc-quant", rotulo: "Quantitativo\npreliminar", icone: "regua", grande: true, dica: "Concreto (m³), fôrma (m²) e aço por taxa de fonte declarada das peças pré-lançadas — ESTIMATIVA marcada, já no orçamento do modelo (sem cobrar em dobro o que foi orçado à mão)." },
         { id: "conc-ifc", rotulo: "IFC para\no cálculo", icone: "estrutura", grande: true, dica: "Exporta o IFC4 com os pilares, vigas e lajes pré-lançados como IfcColumn, IfcBeam e IfcSlab com a seção — para o programa de cálculo." },
         { id: "conc-criterios", rotulo: "Critérios do\npré-lançamento", icone: "regua", grande: true, dica: "Os números usados, com a fonte e o status: norma lida (edição), literatura ou regra do produto." }
       ]);
       reg["conc-prelancar"] = function () { return true; };
+      reg["conc-sugerir"] = function () { sugerir(); return true; };
+      reg["conc-opc"] = function () { opcoes(); return true; };
+      reg["conc-ocultar"] = function () { ocultarArquitetura(); return true; };
+      reg["conc-calcular"] = function () { calcular(); return true; };
+      reg["conc-vista"] = function () { var r = vistaEstrutura({ forcar: true, abrir: true }); if (!r || !r.ok) { janela("Vista de Estrutura", faixa() + "<p>" + esc((r && r.motivo) || "Não saiu.") + "</p>"); } return true; };
+      ligarVigia();
       reg["conc-pre-auto"] = function () { prelancar("auto"); return true; };
       reg["conc-pre-macica"] = function () { prelancar("macica"); return true; };
       reg["conc-pre-trelicada"] = function () { prelancar("trelicada"); return true; };
@@ -194,6 +444,8 @@
       reg["conc-criterios"] = function () { criterios(); return true; };
       return true;
     },
+    ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; },
+    sugerir: sugerir, opcoes: opcoes, vistaEstrutura: vistaEstrutura, vigiarVista: vigiarVista, registroDaVista: registroDaVista, permitirPilar12: permitirPilar12, definirPilar12: definirPilar12, problemasDosBloqueios: problemasDosBloqueios, aoCorrigirBloqueio: aoCorrigirBloqueio,
     prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada
   };
   global.ConcUI = ConcUI;

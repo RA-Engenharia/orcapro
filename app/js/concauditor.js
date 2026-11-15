@@ -190,6 +190,8 @@
 
     /* ---- A-02 viga cortando porta/janela; A-06 largura; A-10 viga-parede; A-03 vão; A-09/A-11 apoios */
     vig.forEach(function (V) {
+      /* VIGA BALDRAME (S2, opc.baldrame): apoia-se no terreno/fundação, e o pilar NASCE no topo dela — a regra "ponta apoiada em pilar na altura da viga" não vale (o auditor acusava A-11 em toda baldrame lançada pelo Sugerir estrutura; o S1 já confere a baldrame por conta própria) */
+      if (V.c && V.c.conc && V.c.conc.baldrame) return;
       var nm = V.c.marca || V.id;
       paredes.forEach(function (w) {
         if (!w.aberturas.length || Math.abs(dot(w.u, V.u)) < 0.99) return;
