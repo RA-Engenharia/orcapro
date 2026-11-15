@@ -66,7 +66,7 @@
     return dist(add(a, mul(ab, s)), q) <= tol ? s : null;
   }
   /* campos da instância que a op "trecho" (recriar) não pode perder */
-  var EXTRAS = ["juntaIni", "juntaFim", "juntaMotivo", "comentarios", "faseCriada", "faseDemolida"];
+  var EXTRAS = ["juntaIni", "juntaFim", "juntaMotivo", "emenda", "comentarios", "faseCriada", "faseDemolida"];
   function opTrecho(I, t, p1, p2) {
     var o = I.opDoTrecho(t); o.p1 = r4p(p1); o.p2 = r4p(p2);
     EXTRAS.forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });

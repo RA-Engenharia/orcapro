@@ -3859,7 +3859,12 @@ saida.pendencias.push(pend("es8160.declividade_maxima", "declividade máxima do 
 R = capCI < lo - EPS && lo <= R + EPS ? teto4(lo) : capCI;
 } else if (capCI < R) {
 var Rnat = R, entR = arv.nos[arv.raiz].entram;
-function iUlt(a) { return Math.max(iMax, a.decl.i); }
+function iUlt(a) { return naLinhaDeJuncao(a) ? a.decl.i : Math.max(iMax, a.decl.i); }
+function naLinhaDeJuncao(a) {
+var nd = arv.nos[a.de]; if (!nd || nd.entram.length < 2) return false;
+var ux = arv.nos[a.para].x - nd.x, uz = arv.nos[a.para].z - nd.z, lu = Math.hypot(ux, uz) || 1;
+return nd.entram.some(function (eid) { var b = arv.arestas[eid], vx = nd.x - arv.nos[b.de].x, vz = nd.z - arv.nos[b.de].z, lv = Math.hypot(vx, vz) || 1; return (ux * vx + uz * vz) / (lu * lv) > 0.94; });
+}
 function Lde(a) { return d2(arv.nos[a.de], arv.nos[a.para]); }
 var Rfim = -INF; entR.forEach(function (aid) { var a = arv.arestas[aid], yDe = teto4(Rnat + a.decl.i / 100 * Lde(a)); Rfim = Math.max(Rfim, teto4(yDe - iUlt(a) / 100 * Lde(a))); });
 var desce = Math.max(0, Rfim - capCI);
@@ -10610,7 +10615,7 @@ if (ux * vx + uz * vz < COS_EMENDA) return null;
 var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01 && Math.abs(num(q.y, 0) - (A.y + (W.y - A.y) * s / La)) < 0.02; }); });
 if (meio) return null;
 var i = BI().declMinDn("esgoto", dn) / 100, Lt = La + Lb;
-if ((num(A.y, 0) - yFim) / Lt < i - EPS) return null;
+if ((num(A.y, 0) - yFim + 1.0001e-4) / Lt < i - EPS) return null;
 var orig = vivas(ops).filter(function (o) { return o.op === "trecho" && o.id === t.id; }).pop(); if (!orig || orig.redeParte === "espera") return null;
 var n = copia(orig); delete n.continua;
 n.p1 = { x: A.x, y: A.y, z: A.z }; n.p2 = { x: c.x, y: yFim, z: c.z };
@@ -42060,6 +42065,138 @@ global.HidPressaoUI = HidPressaoUI;
 if (typeof module !== "undefined" && module.exports) module.exports = HidPressaoUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/hidcalcvivo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function HH() { return dep("HidHidraulica", "./hidhidraulica.js"); }
+function HPC() { return dep("HidPressaoCores", "./hidpressaocores.js"); }
+function NR() { return dep("HidNormas", "./hidnormas.js"); }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function f2(v) { return v == null || !isFinite(v) ? "—" : (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+var TOP = 5;
+var G = 9.80665;
+var PESO = { verde: 0, amarelo: 1, vermelho: 2 };
+var JOELHOS = { joelho90: 1, joelho45: 1, joelho_bucha: 1 };
+function mKpa(h, rho) { var H = HH(); return H && H.mParaKpa ? H.mParaKpa(h, rho) : h * 1000 * G / 1000; }
+function pior(a, b) { return PESO[b] > PESO[a] ? b : a; }
+function kTabela(material, conexao) {
+var N = NR(), t = N && N.tabela ? N.tabela("af.perda.localizada.k") : null; if (!t) return null;
+var l = arr(t.linhas).filter(function (x) { return x.material === material && x.conexao === conexao && (x.variante == null || x.variante === "padrao"); })[0];
+return l && num(l.k, null) != null ? { k: num(l.k, null), fonte: l.fonte || null, premissa: l.premissa || "" } : null;
+}
+function ondePerde(af, rho) {
+var itens = [], agg = {};
+arr(af && af.trechos).forEach(function (t) {
+if (t == null || t.id == null) return;
+var dist = mKpa(num(t.perdaDistribuida_m, 0), rho), loc = mKpa(num(t.perdaLocalizada_m, 0), rho), tot = mKpa(num(t.perda_m, 0), rho), porTipo = {};
+arr(t.conexoes).forEach(function (c) {
+var k = mKpa(num(c.perda_m, 0), rho); if (!(k > 0)) return;
+var r = porTipo[c.tipo] = porTipo[c.tipo] || { tipo: c.tipo, n: 0, perda_kpa: 0 }; r.n++; r.perda_kpa += k;
+var g = agg[c.tipo] = agg[c.tipo] || { tipo: c.tipo, n: 0, perda_kpa: 0 }; g.n++; g.perda_kpa += k;
+});
+if (!(tot > 0)) return;
+var cx = Object.keys(porTipo).map(function (k) { return porTipo[k]; }).sort(function (a, b) { return b.perda_kpa - a.perda_kpa; });
+var dominante = loc > dist ? "localizada" : "distribuida";
+itens.push({ trecho: String(t.id), dn: t.dn, perda_kpa: tot, distribuida_kpa: dist, localizada_kpa: loc, pctLocalizada: tot > 0 ? Math.round(loc / tot * 100) : 0, dominante: dominante, conexoes: cx,
+texto: "trecho " + t.id + " (DN " + (t.dn == null ? "—" : t.dn) + "): perde " + f2(tot) + " kPa — " + f2(dist) + " kPa no tubo (atrito) e " + f2(loc) + " kPa nas conexões" + (cx.length ? " (" + cx.map(function (c) { return c.n + "× " + c.tipo + " " + f2(c.perda_kpa) + " kPa"; }).join(", ") + ")" : "") });
+});
+itens.sort(function (a, b) { return b.perda_kpa - a.perda_kpa; });
+var porConexao = Object.keys(agg).map(function (k) { return agg[k]; }).sort(function (a, b) { return b.perda_kpa - a.perda_kpa; });
+return { top: itens.slice(0, TOP), todos: itens, porConexao: porConexao };
+}
+function solucoesDN(R, af, op, opc, folgaAtual) {
+var out = [], porId = {}, ops = arr(R && R.ops).filter(function (o) { return o && o.op === "instAlterar" && o.id != null && num(o.dn, null) != null; });
+arr(af && af.trechos).forEach(function (t) { if (t && t.id != null) porId[String(t.id)] = t; });
+var nSim = 0, MAXSIM = num(opc.maxSim, 3);
+function ganhoDe(lista) {
+if (typeof opc.simular !== "function" || nSim >= MAXSIM) return null;
+nSim++;
+try {
+var R2 = opc.simular(lista), c2 = R2 && R2.sistemas && R2.sistemas.agua_fria && R2.sistemas.agua_fria.pontoCritico;
+return c2 && num(c2.folga_kpa, null) != null && folgaAtual != null ? num(c2.folga_kpa, 0) - folgaAtual : null;
+} catch (e) { return null; }
+}
+var vistos = {};
+op.top.forEach(function (it) {
+var mine = ops.filter(function (o) { return String(o.id) === it.trecho; }); if (!mine.length) return;
+var t = porId[it.trecho], de = t && t.dnModelo, para = num(mine[0].dn, null); if (para == null) return;
+vistos[it.trecho] = 1;
+out.push({ tipo: "dn", trecho: it.trecho, ops: JSON.parse(JSON.stringify(mine)), ganho_kpa: ganhoDe(mine),
+texto: "Aumentar o diâmetro do trecho " + it.trecho + (de != null ? " de DN " + de : "") + " para DN " + para + " (o dimensionamento já calculou esse DN; perde " + f2(it.perda_kpa) + " kPa hoje)" });
+});
+var resto = ops.filter(function (o) { return !vistos[String(o.id)]; });
+if (ops.length && (resto.length || !out.length)) out.push({ tipo: "dn", trecho: null, ops: JSON.parse(JSON.stringify(ops)), ganho_kpa: ganhoDe(ops),
+texto: "Aplicar todos os diâmetros calculados (" + ops.length + " trecho(s) a aumentar)" });
+return out;
+}
+function solucoesCurva(op, af) {
+var out = [], porId = {};
+arr(af && af.trechos).forEach(function (t) { if (t && t.id != null) porId[String(t.id)] = t; });
+op.top.forEach(function (it) {
+var t = porId[it.trecho]; if (!t) return;
+var js = arr(t.conexoes).filter(function (c) { return JOELHOS[c.tipo] && num(c.perda_m, 0) > 0; }); if (!js.length) return;
+var n = js.length, perdaJ = js.reduce(function (s, c) { return s + mKpa(num(c.perda_m, 0)); }, 0);
+var kj = kTabela(t.material, "joelho90"), kc = kTabela(t.material, "curva90"), v = num(t.velocidade_ms, null), ganho = null, nota;
+if (kj && kc && kc.k < kj.k - 1e-9 && v != null) {
+ganho = mKpa((kj.k - kc.k) * n * v * v / (2 * G));
+nota = n + " joelho(s) do trecho " + it.trecho + " custam " + f2(perdaJ) + " kPa; trocar por curva 90° (K " + f2(kc.k) + " contra " + f2(kj.k) + " do joelho, tabela do fabricante) ganha cerca de " + f2(ganho) + " kPa";
+} else {
+nota = n + " joelho(s) do trecho " + it.trecho + " custam " + f2(perdaJ) + " kPa. A curva de raio longo perde menos, mas a tabela de norma carregada " +
+(kc ? "adota para a curva o mesmo K do joelho (" + (kc.premissa || "sem K próprio do fabricante") + ")" : "não traz comprimento equivalente nem K da curva para este material") +
+": ganho A CONFIRMAR na ficha do fabricante, sem número. O editor não troca a conexão por botão (as conexões saem da geometria): redesenhe o ponto com uma curva (dois trechos de 45°)";
+}
+out.push({ tipo: "curva", trecho: it.trecho, ops: null, ganho_kpa: ganho, nota: nota, texto: "Trocar joelho por curva no trecho " + it.trecho + " — " + nota });
+});
+return out;
+}
+function analisar(R, estado, avaliarFam, opc) {
+opc = opc || {};
+var af = R && R.sistemas && R.sistemas.agua_fria, rs = (R && R.resumo) || {}, PC = HPC();
+var out = { situacao: "sem-calculo", motivos: [], contagem: { verde: 0, amarelo: 0, vermelho: 0, pendente: 0 }, trechosAF: [], pontos: [], pontoCritico: null, ondePerde: [], perdaPorConexao: [], solucoes: [], soltas: [], mapa: null };
+if (!af || !PC) return out;
+var rho, mp = PC.mapa(af, estado, avaliarFam, opc.rede);
+out.mapa = mp; out.contagem = mp.contagem;
+arr(af.trechos).forEach(function (t) {
+if (t == null || t.id == null || t.pressaoMontante_kpa === undefined) return;
+out.trechosAF.push({ id: String(t.id), dn: t.dn == null ? null : t.dn, q: num(t.vazao_ls, null), v: num(t.velocidade_ms, null), pMontante_kpa: num(t.pressaoMontante_kpa, null), pJusante_kpa: num(t.pressaoJusante_kpa, null),
+perda_kpa: num(t.perda_m, null) == null ? null : mKpa(num(t.perda_m, 0), rho), cor: mp.trechos[String(t.id)] || null });
+});
+out.pontos = mp.pontos.map(function (p) {
+return { aparelho: p.aparelho, famInst: p.famInst, pdin: p.pdin, pmin: p.pmin, pest: p.pest, pmax: p.pmax, cor: p.cor, motivo: p.motivo, folga: p.pdin != null && p.pmin != null ? p.pdin - p.pmin : null };
+});
+var pc = af.pontoCritico;
+if (pc) { var pp = out.pontos.filter(function (p) { return String(p.famInst) === String(pc.famInst); })[0]; out.pontoCritico = { famInst: pc.famInst, aparelho: pc.aparelho, folga_kpa: num(pc.folga_kpa, null), pdin: pp ? pp.pdin : null, pmin: pp ? pp.pmin : null, cor: pp ? pp.cor : null }; }
+var op = ondePerde(af, rho); out.ondePerde = op.top; out.perdaPorConexao = op.porConexao;
+try {
+var cv = typeof opc.conectividade === "function" ? opc.conectividade() : (BI() && BI().conectividade ? BI().conectividade(estado, avaliarFam) : null);
+out.soltas = arr(cv && cv.soltas).map(function (s) { return { trecho: s.trecho, sistema: s.sistema || null, motivo: s.motivo || "ponta solta", x: s.x, y: s.y, z: s.z }; });
+} catch (e) { out.soltas = []; }
+var sit = "verde";
+if (mp.contagem.vermelho > 0) { sit = "vermelho"; out.motivos.push(mp.contagem.vermelho + " ponto(s) sem a pressão exigida"); }
+if (num(rs.reprovadas, 0) > 0 || num(rs.erros, 0) > 0) { sit = "vermelho"; out.motivos.push(num(rs.reprovadas, 0) + " verificação(ões) reprovada(s)"); }
+if (mp.contagem.amarelo > 0) { sit = pior(sit, "amarelo"); out.motivos.push(mp.contagem.amarelo + " ponto(s) passando raspando"); }
+if (mp.contagem.pendente > 0 || num(rs.pendentes, 0) > 0) { sit = pior(sit, "amarelo"); out.motivos.push((mp.contagem.pendente || num(rs.pendentes, 0)) + " item(ns) não verificado(s)"); }
+if (out.soltas.length) { sit = pior(sit, "amarelo"); out.motivos.push(out.soltas.length + " ponta(s) solta(s)"); }
+if (!out.pontos.length && !out.trechosAF.length) { sit = "sem-calculo"; out.motivos = ["a rede de água fria não tem pontos calculados"]; }
+out.situacao = sit;
+if (sit === "vermelho" || sit === "amarelo") {
+var folga = pc ? num(pc.folga_kpa, null) : null;
+out.solucoes = solucoesDN(R, af, op, opc, folga).concat(solucoesCurva(op, af));
+if (mp.contagem.vermelho > 0 || mp.contagem.amarelo > 0) {
+try { arr(PC.sugestoes(mp, opc.sug || {})).forEach(function (sg) { out.solucoes.push({ tipo: sg.tipo, ops: null, ganho_kpa: null, texto: sg.texto, nota: sg.texto, elementos: sg.elementos || null }); }); } catch (eS) {}
+}
+}
+return out;
+}
+var HidCalcVivo = { analisar: analisar, ondePerde: ondePerde, kTabela: kTabela, TOP: TOP };
+if (typeof module !== "undefined" && module.exports) module.exports = HidCalcVivo;
+global.HidCalcVivo = HidCalcVivo;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/hidcalcui.js ==== */
 try {
 (function (global) {
@@ -42099,8 +42236,12 @@ ind: { ligado: false, fluido: "ar", estado: "saturado", temperatura: "", pressao
 tpl: { id: "", antes: null, mudancas: [], decisoes: [], nome: "", avisos: [] }, clima: null, hidTemplate: null,
 destinosAP: {},
 resultado: null, opsNoCalculo: null, modeloNoCalculo: null, msg: null, memorialHtml: null, memorial: null,
-lib: { fab: "", fam: "", busca: "" }, _raiz: null, _indice: null
+lib: { fab: "", fam: "", busca: "" }, _raiz: null, _indice: null,
+vivo: null, vivoPontas: {}, auto: true, ui: { det: {} }, _autoChave: null, _autoQuieto: 0, _autoTimer: null, _autoOcupado: false, _autoUltimo: 0, _pintouPressao: false
 };
+var CHAVE_AUTO = "orcapro:hid:auto";
+function lerAuto() { try { E.auto = global.localStorage.getItem(CHAVE_AUTO) !== "0"; } catch (e) {} }
+function salvarAuto() { try { global.localStorage.setItem(CHAVE_AUTO, E.auto ? "1" : "0"); } catch (e) {} }
 function salvarLS() { try { global.localStorage.setItem(CHAVE_LS, JSON.stringify({ uso: E.uso, valores: E.valores, populacao: E.populacao, alim: E.alim, rec: E.rec, aq: E.aq, ap: E.ap, inc: E.inc, tr: E.tr, ind: E.ind })); } catch (e) {} }
 function lerLS() {
 try {
@@ -42162,7 +42303,7 @@ arr(R.continuacoes).forEach(function (p) { if (sis[p.trecho] === "agua_fria") ou
 return out;
 }
 function garantirPadroes(m) {
-if (!lido) { lido = true; lerLS(); }
+if (!lido) { lido = true; lerLS(); lerAuto(); }
 var us = usos();
 if (!E.uso || us.indexOf(E.uso) < 0) E.uso = us.indexOf("residencial_unifamiliar") >= 0 ? "residencial_unifamiliar" : (us[0] || null);
 if (E.valores.pavimentos == null || E.valores.pavimentos === "") { var pv = pavimentos().length; E.valores.pavimentos = pv > 0 ? pv : INICIAL.pavimentos; }
@@ -42256,19 +42397,89 @@ E.msg = { k: "aviso", t: "O modelo mudou desde o cálculo — Dimensionar de nov
 redesenhar();
 return true;
 }
-function dimensionar() {
+function simularOps(ops) {
+var m = modelo(), HD = dep("HidDimensionar"), BE = dep("BimEdit"); if (!m || !HD || !BE) return null;
+try {
+var est = BE.aplicar(m.ops.concat([{ op: "lote", id: "previa-viva", ops: JSON.parse(JSON.stringify(ops)) }]));
+return HD.calcular(entrada({ estado: est, ops: m.ops, avaliarFam: m.avaliarFam }));
+} catch (e) { return null; }
+}
+function achadosPonta(A, m) {
+var out = {}, HC = global.HidCorrigir;
+if (!HC || !A || !arr(A.soltas).length || !m) return out;
+try {
+HC.achados({ estado: m.estado, avaliarFam: m.avaliarFam, ops: m.ops }).forEach(function (a) {
+if (a.tipo === "ponta" && a.correcao) arr(a.ids).forEach(function (id) { if (!out[id]) out[id] = a; });
+});
+} catch (e) {}
+return out;
+}
+function analisarVivo(R, m) {
+var V = dep("HidCalcVivo"); if (!V || !R) return null;
+var af = R.sistemas && R.sistemas.agua_fria, vz = 0, rs = reservatorios(m);
+arr(af && af.trechos).forEach(function (t) { var q = num(t.vazao_ls, 0); if (q > vz) vz = q; });
+var A = null;
+try { A = V.analisar(R, m.estado, m.avaliarFam, { simular: simularOps, sug: { caixa: { id: rs.length ? rs[0].id : null }, vazao_ls: vz > 0 ? vz : null } }); } catch (e) { A = null; }
+E.vivoPontas = achadosPonta(A, m);
+return A;
+}
+function pintarPressao(statusCores) {
+var HK = dep("HidKitUI"), A = E.vivo; if (!HK || !HK.mostrarPressao || !A || !A.mapa) return false;
+if (HK._plano || HK._pressaoPrevia) return false;
+var cores = {}; Object.keys(statusCores || {}).forEach(function (k) { cores[k] = statusCores[k]; });
+var idsAF = {}; arr(A.trechosAF).forEach(function (t) { idsAF[String(t.id)] = 1; });
+Object.keys(A.mapa.cores || {}).forEach(function (k) { if (cores[k] == null || idsAF[k] || !statusCores[k]) cores[k] = A.mapa.cores[k]; });
+HK.mostrarPressao({ cores: cores, pontos: A.mapa.pontos, contagem: A.mapa.contagem, sugestoes: [] });
+E._pintouPressao = true; return true;
+}
+function dimensionar(auto) {
+auto = auto === true;
 var m = modelo(), HD = dep("HidDimensionar");
-if (!HD) { E.msg = { k: "erro", t: "Dimensionamento: módulo não carregado (js/hiddimensionar.js)." }; redesenhar(); return null; }
-if (!m) { E.msg = { k: "erro", t: "Abra o BIM para dimensionar." }; redesenhar(); return null; }
+if (!HD) { if (!auto) { E.msg = { k: "erro", t: "Dimensionamento: módulo não carregado (js/hiddimensionar.js)." }; redesenhar(); } return null; }
+if (!m) { if (!auto) { E.msg = { k: "erro", t: "Abra o BIM para dimensionar." }; redesenhar(); } return null; }
 var R = null;
-try { var HBd = dep("HidBiblioteca"); if (HBd && HBd.marcarDimensionado) HBd.marcarDimensionado(); } catch (eM) {}
+if (!auto) { try { var HBd = dep("HidBiblioteca"); if (HBd && HBd.marcarDimensionado) HBd.marcarDimensionado(); } catch (eM) {} }
 try { R = HD.calcular(entrada(m)); } catch (e) { E.msg = { k: "erro", t: "O cálculo falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
-E.resultado = R; E.opsNoCalculo = assinatura(m); E.msg = null; E.memorialHtml = null;
-aplicarCores(R);
+E.resultado = R; E.opsNoCalculo = assinatura(m); if (!auto) E.msg = null; E.memorialHtml = null;
+E.vivo = analisarVivo(R, m);
+var st = aplicarCores(R);
+pintarPressao(st);
 salvarLS();
 redesenhar();
 return R;
 }
+function corrigirSolta(trecho) {
+var HC = global.HidCorrigir, m = modelo(), b = B(), ach = E.vivoPontas[String(trecho)];
+if (!HC || !m || !b || !b.editarLote || !ach) { E.msg = { k: "aviso", t: "Esta ponta não tem correção automática: ligue-a no 3D." }; redesenhar(); return false; }
+var r = HC.propor({ estado: m.estado, avaliarFam: m.avaliarFam, ops: m.ops }, ach);
+if (!r || !r.ok || !arr(r.ops).length) { E.msg = { k: "aviso", t: "Ponta do trecho " + trecho + ": " + (r && r.motivo ? r.motivo : "sem correção automática") + "." }; redesenhar(); return false; }
+var ok = b.editarLote({ op: "lote", id: "hid-solta-" + String(new Date().getTime()), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(r.ops)) });
+E.msg = ok ? { k: "ok", t: "Ponta ligada: " + (r.texto || trecho) + ". Ctrl+Z desfaz." } : { k: "erro", t: "O editor recusou a correção da ponta." };
+if (ok) { dimensionar(); return true; }
+redesenhar(); return false;
+}
+var AUTO_PASSO_MS = 750, AUTO_QUIETO = 2;
+function chaveModelo() {
+var b = B(); try { var o = b && b.editarOps ? b.editarOps() : null; if (!o) return null; var u = o[o.length - 1]; return o.length + ":" + (u && (u.id != null ? u.id : "")) + ":" + (u && u.op); } catch (e) { return null; }
+}
+function temAguaFria(m) { return !!m && arr(m.estado && m.estado.instalacoes && m.estado.instalacoes.trechos).some(function (t) { return t && t.sistema === "agua_fria"; }); }
+function autoTick() {
+var raiz = E._raiz;
+if (!raiz || !doc || !doc.body || !doc.body.contains(raiz)) { pararAuto(); return false; }
+if (!E.auto || E._autoOcupado) return false;
+var HK = dep("HidKitUI"); if (HK && (HK._plano || HK._pressaoPrevia)) return false;
+var k = chaveModelo(); if (k == null) return false;
+if (k !== E._autoChave) { E._autoChave = k; E._autoQuieto = 0; return false; }
+if (E._autoQuieto < AUTO_QUIETO) { E._autoQuieto++; if (E._autoQuieto < AUTO_QUIETO) return false; }
+if (k === E._autoFeito) return false;
+var m = modelo();
+if (!temAguaFria(m) || (E.resultado && !modeloMudou())) { E._autoFeito = k; return false; }
+E._autoOcupado = true;
+try { dimensionar(true); } catch (e) {} finally { E._autoOcupado = false; E._autoFeito = chaveModelo(); }
+return true;
+}
+function iniciarAuto() { if (E._autoTimer || typeof global.setInterval !== "function") return; E._autoTimer = global.setInterval(autoTick, AUTO_PASSO_MS); }
+function pararAuto() { if (E._autoTimer && typeof global.clearInterval === "function") global.clearInterval(E._autoTimer); E._autoTimer = null; }
 function aplicarOps(ops, rotuloMsg) {
 var b = B();
 if (!b || !b.editarLote) { E.msg = { k: "erro", t: "O editor do BIM não está disponível para aplicar." }; redesenhar(); return false; }
@@ -43300,8 +43511,9 @@ h += '<p data-hid="situacao" style="font-size:13px;margin:6px 0">Situação: ' +
 var af = R.sistemas && R.sistemas.agua_fria, es = R.sistemas && R.sistemas.esgoto;
 if (af && arr(af.trechos).length) {
 h += "<b>Água fria</b> " + pilula(af.status === "vazio" ? "pendente" : af.status);
-h += '<table class="tbl" data-hid="tab-af" style="font-size:12px;margin:4px 0 8px"><thead><tr><th>Trecho</th><th>DN modelo</th><th>DN calc.</th><th>Q (L/s)</th><th>V (m/s)</th><th>Perda (m)</th><th>P jusante (kPa)</th><th>Situação</th></tr></thead><tbody>';
-af.trechos.forEach(function (t) { h += "<tr><td>" + esc(t.id) + "</td><td>" + (t.dnModelo == null ? "—" : t.dnModelo) + "</td><td><b>" + (t.dn == null ? "—" : t.dn) + "</b></td><td>" + fmt(t.vazao_ls, CASAS_Q) + "</td><td>" + fmt(t.velocidade_ms, 2) + "</td><td>" + fmt(t.perda_m, CASAS_Q) + "</td><td>" + fmt(t.pressaoJusante_kpa, 1) + "</td><td>" + pilula(t.status) + "</td></tr>"; });
+h += '<table class="tbl" data-hid="tab-af" style="font-size:12px;margin:4px 0 8px"><thead><tr><th>Trecho</th><th>DN modelo</th><th>DN calc.</th><th>Q (L/s)</th><th>V (m/s)</th><th>Perda (m)</th><th>P montante (kPa)</th><th>P jusante (kPa)</th><th>Situação</th></tr></thead><tbody>';
+var corTr = {}; arr(E.vivo && E.vivo.trechosAF).forEach(function (x) { if (x.cor) corTr[x.id] = x.cor; });
+af.trechos.forEach(function (t) { h += "<tr><td>" + esc(t.id) + "</td><td>" + (t.dnModelo == null ? "—" : t.dnModelo) + "</td><td><b>" + (t.dn == null ? "—" : t.dn) + "</b></td><td>" + fmt(t.vazao_ls, CASAS_Q) + "</td><td>" + fmt(t.velocidade_ms, 2) + "</td><td>" + fmt(t.perda_m, CASAS_Q) + "</td><td>" + fmt(t.pressaoMontante_kpa, 1) + "</td><td>" + fmt(t.pressaoJusante_kpa, 1) + "</td><td>" + bolaPressao(corTr[String(t.id)]) + pilula(t.status) + "</td></tr>"; });
 h += "</tbody></table>";
 if (af.pontoCritico) h += '<p data-hid="critico" style="font-size:12px;margin:2px 0 8px">Ponto mais desfavorável: <b>' + esc(rotulo(af.pontoCritico.aparelho || af.pontoCritico.famInst || af.pontoCritico.no)) + "</b> (" + esc(af.pontoCritico.famInst || "") + "), folga de pressão " + fmt(af.pontoCritico.folga_kpa, 1) + " kPa.</p>";
 }
@@ -43327,6 +43539,58 @@ R.pendencias.slice(0, LIMITE_LISTA).map(function (p) { return "<li><b>não verif
 }
 return h;
 }
+var COR_SIT = { verde: "#2e9e5b", amarelo: "#e0a100", vermelho: "#d33a2c", "sem-calculo": "#8a8f98" };
+var TXT_SIT = { verde: "Passou", amarelo: "Atenção", vermelho: "Não passou", "sem-calculo": "Sem cálculo" };
+function bolaPressao(cor) { return cor && COR_SIT[cor] ? '<span aria-hidden="true" title="pressão: ' + esc(cor) + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + COR_SIT[cor] + ';margin-right:5px;vertical-align:middle"></span>' : ""; }
+function det(nome, titulo, corpo, abertoPadrao, extra) {
+var ab = E.ui.det[nome] != null ? !!E.ui.det[nome] : !!abertoPadrao;
+return '<details data-det="' + nome + '"' + (ab ? " open" : "") + ' style="margin:8px 0;' + (extra || "") + '"><summary style="cursor:pointer;font-weight:600;font-size:12.5px">' + esc(titulo) + "</summary>" + corpo + "</details>";
+}
+function mostrarBt(ids) { return ids && ids.length ? '<button type="button" class="btn ghost sm" data-pc-acao="mostrar" data-pc-pecas="' + esc(ids.join(",")) + '" title="Seleciona e enquadra no 3D">Mostrar</button>' : ""; }
+function htmlVivo(m) {
+var R = E.resultado, A = E.vivo, obsoleto = !!(R && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo);
+var sit = A ? A.situacao : "sem-calculo", cor = COR_SIT[sit] || COR_SIT["sem-calculo"];
+var h = '<div data-hid="vivo" data-sit="' + sit + '" style="border:1px solid ' + cor + ';border-left:6px solid ' + cor + ';border-radius:10px;padding:8px 10px;margin:8px 0">';
+h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13.5px">Resultado do cálculo</b>' +
+'<label data-hid="vivo-auto" style="display:flex;align-items:center;gap:5px;font-size:11.5px" title="Ligado: a água fria é dimensionada sozinha quando o modelo muda (1,5 s depois de você parar de mexer) e as cores de pressão vão ao 3D. Fica gravado neste navegador."><input type="checkbox" data-hid-campo="vivo:auto"' + (E.auto ? " checked" : "") + "> Calcular sozinho</label></div>";
+if (!R || !A) {
+h += '<p class="muted" data-hid="vivo-vazio" style="font-size:12px;margin:6px 0">' + (E.auto ? "O cálculo roda sozinho assim que houver água fria no modelo. Para calcular agora, clique em <b>Dimensionar</b>." : "Clique em <b>Dimensionar</b> para calcular (o cálculo automático está desligado).") + "</p></div>";
+return h;
+}
+var cnt = A.mapa && A.mapa.contagem || {};
+h += '<p data-hid="vivo-situacao" style="font-size:13px;margin:6px 0"><span aria-hidden="true" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + cor + ';margin-right:6px;vertical-align:middle"></span><b>' + TXT_SIT[sit] + "</b>" +
+(A.motivos.length ? " — " + esc(A.motivos.join(" · ")) : (sit === "verde" ? " — todos os pontos de água fria têm a pressão exigida" : "")) + "</p>";
+if (obsoleto) h += '<p data-hid="vivo-obsoleto" style="font-size:12px;margin:4px 0;color:' + CORES.aviso + '"><b>O modelo mudou depois do cálculo.</b> ' + (E.auto ? "Recalculando sozinho…" : "Clique em Dimensionar.") + "</p>";
+h += '<p style="font-size:12px;margin:4px 0">Pontos: ' + ["verde", "amarelo", "vermelho"].map(function (k) { return bolaPressao(k) + (cnt[k] || 0) + " " + k; }).join(" · ") + (cnt.pendente ? " · " + cnt.pendente + " pendente(s)" : "") + "</p>";
+var pc = A.pontoCritico;
+if (pc) h += '<p data-hid="vivo-critico" style="font-size:12px;margin:4px 0">Ponto crítico: <b>' + esc(rotulo(pc.aparelho || pc.famInst)) + "</b> (" + esc(pc.famInst || "") + ") — " + bolaPressao(pc.cor) + "pressão " + fmt(pc.pdin, 1) + " kPa, mínima " + fmt(pc.pmin, 1) + " kPa, folga " + fmt(pc.folga_kpa, 1) + " kPa " + mostrarBt([pc.famInst]) + "</p>";
+var PCd = dep("ProblemaCard");
+if (A.soltas.length && PCd) {
+var probsS = A.soltas.slice(0, LIMITE_LISTA).map(function (sl) {
+var ach = E.vivoPontas[String(sl.trecho)];
+return { tipo: "vivo-solta", titulo: "Peça solta: " + (sl.motivo || "ponta solta") + " — trecho " + sl.trecho + (sl.sistema ? " (" + rotulo(sl.sistema) + ")" : ""), gravidade: "aviso", pecas: [String(sl.trecho)],
+solucoes: ach ? [{ id: "sl:" + sl.trecho, texto: ach.correcao && ach.correcao.texto || "levar a ponta até o ponto/tubo mais perto", temOps: true }] : [{ id: "sl-x:" + sl.trecho, texto: "ligue a ponta ao tubo ou à peça mais perto (ou marque a espera, se for permitida)", temOps: false }] };
+});
+h += '<div data-hid="vivo-soltas">' + PCd.lista(probsS, { titulo: "Peças e pontas soltas (" + A.soltas.length + ")", prefixoIndice: "vs", acoes: function (sol) { return sol.temOps ? sol.texto : false; }, gravidade: "aviso" }) + "</div>";
+}
+if (A.ondePerde.length) {
+var itens = A.ondePerde.map(function (it) {
+return "<li>" + bolaPressao(it.dominante === "localizada" ? "amarelo" : null) + esc(it.texto) + " " + mostrarBt([it.trecho]) + "</li>";
+}).join("");
+var conx = A.perdaPorConexao.length ? '<p class="muted" style="font-size:11.5px;margin:2px 0">No projeto todo, por conexão: ' + A.perdaPorConexao.slice(0, 5).map(function (c) { return c.n + "× " + esc(rotulo(c.tipo)) + " " + fmt(c.perda_kpa, 1) + " kPa"; }).join(" · ") + ".</p>" : "";
+h += det("vivo-perde", "Onde perde pressão (" + A.ondePerde.length + " trecho(s) que mais perdem)", '<ol data-hid="vivo-perde" style="font-size:12px;margin:4px 0;padding-left:20px">' + itens + "</ol>" + conx, sit !== "verde");
+}
+if (A.solucoes.length && PCd) {
+var probsC = A.solucoes.map(function (so) {
+var rot = { dn: "Aumentar o diâmetro", curva: "Trocar joelho por curva", vrp: "Pressão alta", subir: "Subir a caixa", pressurizador: "Pressurizador" }[so.tipo] || "Solução";
+var ganho = so.ganho_kpa != null ? " — ganho de cerca de " + fmt(so.ganho_kpa, 1) + " kPa no ponto crítico (recalculado)" : (so.tipo === "dn" ? " — o ganho exato aparece ao aplicar" : "");
+return { tipo: "vivo-sol-" + so.tipo, titulo: rot + ganho, texto: so.texto, gravidade: "aviso", pecas: so.trecho ? [String(so.trecho)] : arr(so.elementos).map(String), _so: so,
+solucoes: so.ops && so.ops.length ? [{ id: "vv", texto: so.tipo === "dn" ? (so.trecho ? "aumentar o DN do trecho " + so.trecho : "aplicar todos os diâmetros calculados") : "aplicar", temOps: true }] : [] };
+});
+h += '<div data-hid="vivo-solucoes">' + PCd.lista(probsC, { titulo: "Soluções (" + A.solucoes.length + ")", prefixoIndice: "vv", acoes: function (sol) { return sol.temOps ? sol.texto : false; }, gravidade: "aviso" }) + "</div>";
+}
+return h + "</div>";
+}
 function htmlBiblioteca() {
 var ix = indiceBiblioteca(), h = '<div data-hid="biblioteca"><b>Famílias hidrossanitárias</b>';
 if (!ix.itens.length) return h + '<p class="muted" style="font-size:12px">Famílias hidrossanitárias: módulo não carregado (js/hidfamilias.js).</p></div>';
@@ -43351,19 +43615,22 @@ var h = '<details open data-hid="raiz" style="margin-top:14px;border-top:1px sol
 if (!m) return h + '<p class="muted">Abra o BIM para dimensionar.</p></details>';
 if (dep("HidKitUI") && dep("HidKitUI").htmlTopo) h += dep("HidKitUI").htmlTopo();
 h += htmlMemorial(m);
-h += htmlTemplates() + htmlPrograma(m) + htmlAlimentacao(m) + htmlSistemas(m) + htmlSistemas2() + (dep("HidKitUI") ? dep("HidKitUI").html(m) : "") + (dep("HidPiscinaUI") ? dep("HidPiscinaUI").html(m) : "") + htmlRota(m);
+h += htmlVivo(m);
 if (E.msg) h += '<div data-hid="msg" data-k="' + esc(E.msg.k) + '" style="border:1px solid ' + (E.msg.k === "erro" ? CORES.falha : (E.msg.k === "aviso" ? CORES.aviso : CORES.ok)) + ';border-radius:8px;padding:6px 10px;margin:8px 0;font-size:12px">' + esc(E.msg.t) + "</div>";
 var tem = !!E.resultado, nops = tem ? arr(E.resultado.ops).length : 0;
-h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn sm primary" data-hid="dimensionar">Dimensionar</button>' +
+h += '<div data-hid="acoes-principais" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn sm primary" data-hid="dimensionar" title="Calcula agora (o cálculo também roda sozinho quando o modelo muda)">Dimensionar</button>' +
+'<button class="btn sm primary" data-hid="autocorrigir" title="Corrigir tudo: dimensiona, põe no modelo os diâmetros que o cálculo pede, refaz o cálculo (até 3 voltas), aplica o Corrigir automático de inclinação e bitola e, se o maior DN não bastar, acrescenta uma 2ª linha. O que sobra fica como pendência com o motivo.">Corrigir tudo</button>' +
+'<button class="btn sm primary" data-hid="documentos"' + (tem ? "" : " disabled") + ' title="Memorial de cálculo único, memorial descritivo, manual de execução e uso, planilhas e pranchas — PDF, Word e HTML, num clique">Gerar documentos</button></div>';
+h += det("mais-acoes", "Mais ações", '<div data-hid="acoes-mais" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">' +
+'<button class="btn sm" data-hid="aplicar"' + (nops ? "" : " disabled") + ' title="Troca os diâmetros do modelo pelos calculados e põe as peças de incêndio propostas; Ctrl+Z desfaz tudo de uma vez">Aplicar diâmetros no modelo' + (nops ? " (" + nops + ")" : "") + "</button>" +
 '<button class="btn sm" data-hid="pluvial-rua" title="Leva a água da chuva até a rua: descida embutida na parede (ou shaft de drywall por fora), caixas CP, ralos nas áreas externas e na piscina, saída na divisa. Parte dos condutores deixados pelo Rufos, calhas e descidas. Ctrl+Z desfaz tudo.">Pluvial até a rua</button>' +
 '<button class="btn sm" data-hid="ligar-caixas" title="Liga as caixas de inspeção em ordem de montante para jusante (CI-01 → CI-02 → …) pelo lado de fora, com a declividade mínima, e leva a última à saída para a rua.">Ligar caixas</button>' +
 '<button class="btn sm" data-hid="nomear-caixas" title="Dá nome às caixas de inspeção, gordura e pluvial (CI-01, CG-01, CP-01…) de montante para jusante; o nome que você escreveu fica.">Nomear caixas</button>' +
-'<button class="btn sm primary" data-hid="autocorrigir" title="Dimensiona, põe no modelo os diâmetros que o cálculo pede, refaz o cálculo (até 3 voltas), aplica o Corrigir automático de inclinação e bitola e, se o maior DN não bastar, acrescenta uma 2ª linha. O que sobra fica como pendência com o motivo.">Corrigir sozinho</button>' +
-'<button class="btn sm primary" data-hid="documentos"' + (tem ? "" : " disabled") + ' title="Memorial de cálculo único, memorial descritivo, manual de execução e uso, planilhas e pranchas — PDF, Word e HTML, num clique">Gerar documentos</button>' +
-'<button class="btn sm" data-hid="aplicar"' + (nops ? "" : " disabled") + ' title="Troca os diâmetros do modelo pelos calculados e põe as peças de incêndio propostas; Ctrl+Z desfaz tudo de uma vez">Aplicar diâmetros no modelo' + (nops ? " (" + nops + ")" : "") + "</button>" +
 '<button class="btn sm" data-hid="memorial"' + (tem ? "" : " disabled") + '>Memorial</button><button class="btn sm" data-hid="manual"' + (tem ? "" : " disabled") + ' title="Manual de execução e uso, com fonte e página; o que não tem fonte sai PENDENTE">Manual</button><button class="btn sm" data-hid="planilhas"' + (tem ? "" : " disabled") + '>Planilhas (.xlsx)</button><button class="btn sm" data-hid="pranchas"' + (tem ? "" : " disabled") + ' title="Gerar pranchas: plantas, cortes, isométricos, perspectivas 3D, esquema, detalhes e quadro (PDF, DXF e abas de folha)">Gerar pranchas</button>' +
-(tem ? '<button class="btn sm ghost" data-hid="limpar" title="Tira as cores do 3D e o resultado">Limpar</button>' : "") + "</div>";
-h += htmlResultado(m) + htmlListaMaterial(m) + htmlBiblioteca();
+(tem ? '<button class="btn sm ghost" data-hid="limpar" title="Tira as cores do 3D e o resultado">Limpar</button>' : "") + "</div>", false);
+h += htmlResultado(m) + htmlListaMaterial(m);
+h += det("dados-projeto", "Dados do projeto", htmlTemplates() + htmlPrograma(m) + htmlAlimentacao(m) + htmlSistemas(m) + htmlSistemas2() + (dep("HidKitUI") ? dep("HidKitUI").html(m) : "") + (dep("HidPiscinaUI") ? dep("HidPiscinaUI").html(m) : "") + htmlRota(m) + htmlBiblioteca(), false,
+"border-top:1px solid rgba(127,127,127,.25);padding-top:6px");
 return h + "</details>";
 }
 function css() {
@@ -43373,6 +43640,7 @@ st.textContent = "#hid-calc table.tbl{width:100%;border-collapse:collapse} #hid-
 "#hid-calc table.tbl td{padding:5px 8px;vertical-align:top} #hid-calc .hid-rola{overflow-x:auto;margin:4px 0 8px}" +
 "#hid-calc table.hid-lista{font-size:12px} #hid-calc table.hid-lista td{vertical-align:middle;padding:4px 6px} #hid-calc table.hid-lista th.n,#hid-calc table.hid-lista td.n{text-align:right;white-space:nowrap}" +
 "#hid-calc td.hid-ico{width:58px;padding:3px;background:#fff;border:1px solid rgba(127,127,127,.18);border-radius:8px} #hid-calc td.hid-ico img{width:52px;height:52px;object-fit:contain;display:block}" +
+"#hid-calc .pc-acoes button{white-space:normal;text-align:left;height:auto;line-height:1.3;max-width:100%} #hid-calc .pc-tit{margin:4px 0} " +
 "#hid-calc .hid-nome{font-weight:600;line-height:1.25} #hid-calc .hid-sub{font-size:11px;opacity:.75;line-height:1.3;margin-top:1px} #hid-calc .hid-pend{color:var(--amarelo,#b45309)}";
 doc.head.appendChild(st);
 }
@@ -43381,7 +43649,7 @@ function desenhar(raiz) {
 var m = modelo();
 css();
 garantirPadroes(m);
-if (E.resultado && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo && !E.obsoletoAvisado) { E.obsoletoAvisado = true; aplicarCores(null); }
+if (E.resultado && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo && !E.obsoletoAvisado) { E.obsoletoAvisado = true; aplicarCores(null); if (E._pintouPressao && dep("HidKitUI") && dep("HidKitUI").mostrarPressao && !dep("HidKitUI")._pressaoPrevia) { dep("HidKitUI").mostrarPressao(null); E._pintouPressao = false; } }
 if (E.resultado && m && assinatura(m) === E.opsNoCalculo) E.obsoletoAvisado = false;
 raiz.innerHTML = htmlTudo(m).replace(/(<table class="tbl")/g, '<div class="hid-rola">$1').replace(/<\/table>/g, "</table></div>");
 if (dep("ProblemaCard")) {
@@ -43392,6 +43660,9 @@ if (msc) { corrigirSemCalculo(msc[1], msc[2]); return; }
 var mr = /^r(\d+)_(\d+)$/.exec(String(solId)), md = /^d(\d+)$/.exec(String(solId));
 if (mr) { var op = E.rota.res && E.rota.res.opcoes[Number(mr[1])], pr = op && arr(op.problemas)[Number(mr[2])]; if (pr) corrigirRota(pr.acao, pr.elementos); return; }
 if (md) { var ds = E.rota.res && E.rota.res.descartadas[Number(md[1])]; if (ds) corrigirRota(ds.acao, ds.elementos); return; }
+if (/^vv$/.test(String(solId))) { var so = E.vivo && E.vivo.solucoes[Number(String(k).replace(/^vv/, ""))]; if (so && arr(so.ops).length) aplicarOps(so.ops, "Solução aplicada"); return; }
+var msl = /^sl:(.+)$/.exec(String(solId));
+if (msl) { corrigirSolta(msl[1]); return; }
 var mpz = /^pz(\d+)_(\d+)$/.exec(String(solId));
 if (mpz && dep("HidPressaoUI")) { dep("HidPressaoUI").aplicar(Number(mpz[1]), Number(mpz[2])); return; }
 var md2 = /^dc(\d+)_(\d+)$/.exec(String(solId));
@@ -43443,6 +43714,7 @@ var fid = FAMILIA_DO_GRUPO[bt.getAttribute("data-grupo")], F = dep("HidFamilias"
 if (f && f.tipos.length) colocar(fid, f.tipos[0].id); else { E.msg = { k: "erro", t: "Família para colocar não encontrada (js/hidfamilias.js)." }; redesenhar(); }
 }
 };
+if (raiz.addEventListener) raiz.addEventListener("toggle", function (ev) { var d = ev.target; if (d && d.getAttribute && d.getAttribute("data-det")) E.ui.det[d.getAttribute("data-det")] = !!d.open; }, true);
 raiz.onmouseover = function (ev) { var c = ev.target && ev.target.closest ? ev.target.closest("[data-rota-op]") : null; if (c) previaRota(Number(c.getAttribute("data-rota-op"))); };
 raiz.onmouseout = function (ev) { var rel = ev.relatedTarget; if (!rel || !rel.closest || !rel.closest("[data-rota-op]")) previaRota(null); };
 raiz.onchange = function (ev) {
@@ -43450,6 +43722,7 @@ var el = ev.target, n = el && el.getAttribute ? el.getAttribute("data-hid-campo"
 var v = el.type === "checkbox" ? el.checked : el.value;
 if (n.indexOf("kit:") === 0 && dep("HidKitUI")) { dep("HidKitUI").campo(n, v); return; }
 if (n.indexOf("pisc:") === 0 && dep("HidPiscinaUI")) { dep("HidPiscinaUI").campo(n, v); redesenhar(); return; }
+if (n === "vivo:auto") { E.auto = !!v; salvarAuto(); E._autoFeito = null; redesenhar(); return; }
 if (n === "memorial") { var HBi = dep("HidBiblioteca"); if (HBi && HBi.definirMemorial) HBi.definirMemorial(null, !!v); redesenhar(); return; }
 if (n === "uso") E.uso = v;
 else if (n === "populacao") E.populacao = v;
@@ -43482,12 +43755,13 @@ montar: function (corpo) {
 if (!corpo || !doc) return false;
 var raiz = doc.createElement("div"); raiz.id = "hid-calc"; corpo.appendChild(raiz);
 E._raiz = raiz; ligar(raiz); desenhar(raiz);
+E._autoChave = null; E._autoQuieto = 0; E._autoFeito = null; iniciarAuto();
 return true;
 },
-dimensionar: dimensionar, aplicar: aplicar, memorial: memorial, planilhas: planilhas, pranchas: pranchas, redesenhar: redesenhar,
+dimensionar: dimensionar, vivo: function () { return E.vivo; }, autoTick: function () { return autoTick(); }, aplicar: aplicar, memorial: memorial, planilhas: planilhas, pranchas: pranchas, redesenhar: redesenhar,
 dadosEmpresa: dadosEmpresa, pavimentos: pavimentos, materiaisProjeto: materiaisDoModelo, modeloAtual: function () { return modelo(); },
 listaMaterial: function () { return listaMaterialDoModelo(modelo()); }, comIcones: comIcones,
-programa: function () { if (!lido) { lido = true; lerLS(); } return E.uso ? programaEntrada() : null; },
+programa: function () { if (!lido) { lido = true; lerLS(); lerAuto(); } return E.uso ? programaEntrada() : null; },
 entrada: function () { var m = modelo(); if (m) garantirPadroes(m); return m ? entrada(m) : null; },
 propor: propor, aplicarRota: aplicarRota, corrigirRota: corrigirRota, areasCobertura: areasCobertura, htmlConfirmacoes: htmlConfirmacoes, confAdicionar: confAdicionar, uniaoPoligonos: uniaoPoligonos, aplicarTratamento: aplicarTratamento, redeInd: redeInd, aplicarTemplate: aplicarTemplate, trocarTipo: trocarTipo, acaoTrocarTipo: acaoTrocarTipo, desfazerTemplate: desfazerTemplate, baixarTemplate: baixarTemplate, manual: manual, poligonosPorNivel: poligonosPorNivel, assinatura: assinatura, modeloMudou: modeloMudou, pecasExistentes: pecasExistentes, problemas: problemas, aplicarCores: aplicarCores, indiceBiblioteca: indiceBiblioteca
 };

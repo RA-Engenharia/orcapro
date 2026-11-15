@@ -184,6 +184,12 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais[data-aberto="1"] > .rv-fita-mais-corpo { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 4px 0; position: fixed; z-index: 70; width: max-content; padding: 8px 6px 4px; background: var(--rv-painel-bg); border: 1px solid var(--rv-linha-forte); border-radius: 6px; box-shadow: 0 12px 32px var(--rv-sombra); overflow: auto; overscroll-behavior: contain; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais-corpo > .rv-painel { border-bottom: 0; height: auto; }
 html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-fita-mais-corpo > .rv-painel:last-child { border-right: 1px solid var(--rv-linha); }
+/* 15/11/2026 — o "Mais painéis" é FUNÇÃO, não aparência: em qualquer pele (inclusive .bim-pele-revit, que ficava sem regra) o corpo
+ * fica escondido e, aberto, FLUTUA sobre a vista. Sem isto a faixa crescia até a tela inteira e escondia o modelo. */
+html .bim-revit.bim-revit.bim-revit.bim-revit .rv-fita-mais { position: relative; margin-left: auto; }
+html .bim-revit.bim-revit.bim-revit.bim-revit .rv-fita-mais > .rv-fita-mais-corpo { display: none; }
+html .bim-revit.bim-revit.bim-revit.bim-revit .rv-fita-mais[data-aberto="1"] > .rv-fita-mais-corpo { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; position: fixed; z-index: 70; width: max-content; padding: 8px 6px 4px; background: var(--rv-painel-bg, #fff); border: 1px solid var(--rv-linha-forte, #bbb); border-radius: 6px; box-shadow: 0 12px 32px rgba(0,0,0,.25); overflow: auto; overscroll-behavior: contain; }
+html .bim-revit.bim-revit.bim-revit.bim-revit .rv-fita-mais-corpo > .rv-painel { height: auto; }
 
 @media (min-width: 901px) {
   /* a ALTURA FIXA: nenhuma aba, nenhum comando, nenhum "Mais" muda isto */

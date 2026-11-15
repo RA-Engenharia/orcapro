@@ -410,6 +410,9 @@
        (padrão, ausente) ou "inferior" (o projetista girou com Espaço) */
     if (o.excentrica === "inferior" || o.excentrica === "superior") t.excentrica = o.excentrica;
     if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
+    /* EMENDA DA BARRA (15/11/2026): "bolsa" (padrão, ausente — a bolsa da própria barra, de acordo com o catálogo; nenhuma luva no orçamento) ou
+       "luva" (luva de emenda a cada barra comercial). Vale para o PVC de esgoto/série R (anel) e o soldável (NBR 5648) */
+    if (o.emenda === "luva" || o.emenda === "bolsa") t.emenda = o.emenda;
     if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
     /* PENDÊNCIAS FINAIS: a peça em linha na ponta (união / tê de inspeção), só no grupo de sistema que a usa */
     ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });   /* frente 3: conexão manual (qualquer tipo de HidPortas) */
@@ -555,7 +558,7 @@
     if (o.op === "instAlterar" && o.id != null) {
       var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
       var novo = copia(alvo);
-      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "emenda", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
       if (o.continua === "") delete novo.continua;
       if (o.pecaIni === "") delete novo.pecaIni;
       if (o.pecaFim === "") delete novo.pecaFim;
@@ -1594,6 +1597,7 @@
         /* ⚠ A3 (revisão 13/11/2026): tubo em ROLO (cobre de refrigeração, eletroduto corrugado, duto flexível, PEAD, PEX) não tem emenda a cada 6 m —
            vem inteiro no comprimento da obra. Só tubo em BARRA leva a luva, mesmo se um dia o catálogo der barra_m a um material em rolo */
         if (tuboEmRolo(t.material)) return;
+        if (t.emenda !== "luva") return;   /* emenda = "bolsa" (padrão): a bolsa da própria barra, sem luva */
         if (!(Lb > 0) || !(num(t.comprimento, 0) > Lb + 1e-6)) return;
         var nL = Math.ceil(num(t.comprimento, 0) / Lb - 1e-6) - 1;
         for (var m = 1; m <= nL; m++) {

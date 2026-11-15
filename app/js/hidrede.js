@@ -186,7 +186,9 @@
     var meio = trs.some(function (u) { return u.id !== t.id && [u.p1, u.p2].some(function (q) { var s = ((q.x - A.x) * ux + (q.z - A.z) * uz); return s > 0.01 && s < La - 0.01 && Math.abs((q.x - A.x) * uz - (q.z - A.z) * ux) < 0.01 && Math.abs(num(q.y, 0) - (A.y + (W.y - A.y) * s / La)) < 0.02; }); });   // hid:ok 1 cm em planta (tolerância de nó); 2 cm na vertical (TOL do biminst): o que passa por cima, em outra cota (o deitado da ventilação), não encosta — fundia menos e sobrava a luva entre a espera e o ramal
     if (meio) return null;
     var i = BI().declMinDn("esgoto", dn) / 100, Lt = La + Lb;
-    if ((num(A.y, 0) - yFim) / Lt < i - EPS) return null;
+    /* 15/11/2026: a junção na linha agora fica na declividade do DN até a caixa (js/hidrota.js, rota:juncaoNaLinha) e as cotas arredondam em 0,1 mm: a reta
+       inteira da junção até a caixa pode sair 1 passo da grade (0,1 mm ao todo) abaixo da mínima — arredondamento, não falta de declividade */
+    if ((num(A.y, 0) - yFim + 1.0001e-4) / Lt < i - EPS) return null;   // hid:ok 1 passo da grade de 0,1 mm
     var orig = vivas(ops).filter(function (o) { return o.op === "trecho" && o.id === t.id; }).pop(); if (!orig || orig.redeParte === "espera") return null;
     var n = copia(orig); delete n.continua;
     n.p1 = { x: A.x, y: A.y, z: A.z }; n.p2 = { x: c.x, y: yFim, z: c.z };

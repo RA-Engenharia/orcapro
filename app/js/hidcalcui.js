@@ -68,8 +68,13 @@
     tpl: { id: "", antes: null, mudancas: [], decisoes: [], nome: "", avisos: [] }, clima: null, hidTemplate: null,
     destinosAP: {},   // área → calha escolhida pelo "Corrigir" do aviso de área sem destino
     resultado: null, opsNoCalculo: null, modeloNoCalculo: null, msg: null, memorialHtml: null, memorial: null,
-    lib: { fab: "", fam: "", busca: "" }, _raiz: null, _indice: null
+    lib: { fab: "", fam: "", busca: "" }, _raiz: null, _indice: null,
+    /* CÁLCULO VIVO (js/hidcalcvivo.js, 15/11/2026): a análise do último cálculo, o liga/desliga do "Calcular sozinho" e os <details> abertos pelo usuário */
+    vivo: null, vivoPontas: {}, auto: true, ui: { det: {} }, _autoChave: null, _autoQuieto: 0, _autoTimer: null, _autoOcupado: false, _autoUltimo: 0, _pintouPressao: false
   };
+  var CHAVE_AUTO = "orcapro:hid:auto";   /* "0" = desligado; ausente = ligado (padrão) */
+  function lerAuto() { try { E.auto = global.localStorage.getItem(CHAVE_AUTO) !== "0"; } catch (e) {} }
+  function salvarAuto() { try { global.localStorage.setItem(CHAVE_AUTO, E.auto ? "1" : "0"); } catch (e) {} }
 
   function salvarLS() { try { global.localStorage.setItem(CHAVE_LS, JSON.stringify({ uso: E.uso, valores: E.valores, populacao: E.populacao, alim: E.alim, rec: E.rec, aq: E.aq, ap: E.ap, inc: E.inc, tr: E.tr, ind: E.ind })); } catch (e) {} }
   function lerLS() {
@@ -137,7 +142,7 @@
     return out;
   }
   function garantirPadroes(m) {
-    if (!lido) { lido = true; lerLS(); }
+    if (!lido) { lido = true; lerLS(); lerAuto(); }
     var us = usos();
     if (!E.uso || us.indexOf(E.uso) < 0) E.uso = us.indexOf("residencial_unifamiliar") >= 0 ? "residencial_unifamiliar" : (us[0] || null);
     if (E.valores.pavimentos == null || E.valores.pavimentos === "") { var pv = pavimentos().length; E.valores.pavimentos = pv > 0 ? pv : INICIAL.pavimentos; }
@@ -246,19 +251,100 @@
     return true;
   }
 
-  function dimensionar() {
+  /* ---------------------------------------------------------------- CÁLCULO VIVO (js/hidcalcvivo.js, 15/11/2026)
+     Pedido do Rogério: "os cálculos rodam sozinhos, mostram montante/jusante, o resultado no 3D com a pressão (passou = verde, não passou =
+     vermelho), onde perde pressão e a solução". A análise sai do MESMO resultado do dimensionar(); aqui só a fiação. */
+  function simularOps(ops) {   /* o cálculo COM as ops, sem gravar no modelo (o ganho de uma solução de DN) */
+    var m = modelo(), HD = dep("HidDimensionar"), BE = dep("BimEdit"); if (!m || !HD || !BE) return null;
+    try {
+      var est = BE.aplicar(m.ops.concat([{ op: "lote", id: "previa-viva", ops: JSON.parse(JSON.stringify(ops)) }]));
+      return HD.calcular(entrada({ estado: est, ops: m.ops, avaliarFam: m.avaliarFam }));
+    } catch (e) { return null; }
+  }
+  function achadosPonta(A, m) {   /* a peça solta que tem Corrigir automático (HidCorrigir: levar a ponta até o ponto/tubo mais perto) */
+    var out = {}, HC = global.HidCorrigir;
+    if (!HC || !A || !arr(A.soltas).length || !m) return out;
+    try {
+      HC.achados({ estado: m.estado, avaliarFam: m.avaliarFam, ops: m.ops }).forEach(function (a) {
+        if (a.tipo === "ponta" && a.correcao) arr(a.ids).forEach(function (id) { if (!out[id]) out[id] = a; });
+      });
+    } catch (e) {}
+    return out;
+  }
+  function analisarVivo(R, m) {
+    var V = dep("HidCalcVivo"); if (!V || !R) return null;
+    var af = R.sistemas && R.sistemas.agua_fria, vz = 0, rs = reservatorios(m);
+    arr(af && af.trechos).forEach(function (t) { var q = num(t.vazao_ls, 0); if (q > vz) vz = q; });   /* a vazão de projeto na saída da caixa = a do trecho de maior vazão (o tronco) */
+    var A = null;
+    try { A = V.analisar(R, m.estado, m.avaliarFam, { simular: simularOps, sug: { caixa: { id: rs.length ? rs[0].id : null }, vazao_ls: vz > 0 ? vz : null } }); } catch (e) { A = null; }
+    E.vivoPontas = achadosPonta(A, m);
+    return A;
+  }
+  /* o resultado no 3D: a pressão (verde passou / amarelo raspando / vermelho não passou) por cima das cores de verificação; nunca sobre uma prévia aberta */
+  function pintarPressao(statusCores) {
+    var HK = dep("HidKitUI"), A = E.vivo; if (!HK || !HK.mostrarPressao || !A || !A.mapa) return false;
+    if (HK._plano || HK._pressaoPrevia) return false;
+    var cores = {}; Object.keys(statusCores || {}).forEach(function (k) { cores[k] = statusCores[k]; });
+    /* a pressão manda nos trechos de ÁGUA FRIA e nos pontos; o esgoto/ventilação/pluvial ligado ao mesmo aparelho (o ramal da bacia) mantém a cor da verificação */
+    var idsAF = {}; arr(A.trechosAF).forEach(function (t) { idsAF[String(t.id)] = 1; });
+    Object.keys(A.mapa.cores || {}).forEach(function (k) { if (cores[k] == null || idsAF[k] || !statusCores[k]) cores[k] = A.mapa.cores[k]; });
+    HK.mostrarPressao({ cores: cores, pontos: A.mapa.pontos, contagem: A.mapa.contagem, sugestoes: [] });
+    E._pintouPressao = true; return true;
+  }
+  function dimensionar(auto) {
+    auto = auto === true;   /* chamado pelo vigia do "Calcular sozinho": não mexe no projeto (memorial, mensagem) */
     var m = modelo(), HD = dep("HidDimensionar");
-    if (!HD) { E.msg = { k: "erro", t: "Dimensionamento: módulo não carregado (js/hiddimensionar.js)." }; redesenhar(); return null; }
-    if (!m) { E.msg = { k: "erro", t: "Abra o BIM para dimensionar." }; redesenhar(); return null; }
+    if (!HD) { if (!auto) { E.msg = { k: "erro", t: "Dimensionamento: módulo não carregado (js/hiddimensionar.js)." }; redesenhar(); } return null; }
+    if (!m) { if (!auto) { E.msg = { k: "erro", t: "Abra o BIM para dimensionar." }; redesenhar(); } return null; }
     var R = null;
-    try { var HBd = dep("HidBiblioteca"); if (HBd && HBd.marcarDimensionado) HBd.marcarDimensionado(); } catch (eM) {}   /* o projeto passa a "ter dimensionamento": o memorial liga por padrão */
+    if (!auto) { try { var HBd = dep("HidBiblioteca"); if (HBd && HBd.marcarDimensionado) HBd.marcarDimensionado(); } catch (eM) {} }   /* o projeto passa a "ter dimensionamento": o memorial liga por padrão */
     try { R = HD.calcular(entrada(m)); } catch (e) { E.msg = { k: "erro", t: "O cálculo falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
-    E.resultado = R; E.opsNoCalculo = assinatura(m); E.msg = null; E.memorialHtml = null;
-    aplicarCores(R);
+    E.resultado = R; E.opsNoCalculo = assinatura(m); if (!auto) E.msg = null; E.memorialHtml = null;
+    E.vivo = analisarVivo(R, m);
+    var st = aplicarCores(R);
+    pintarPressao(st);
     salvarLS();
     redesenhar();
     return R;
   }
+  /* CORRIGIR uma peça solta: o Corrigir automático do HidCorrigir ("levar a ponta até o ponto/tubo mais perto"), com a mesma recusa de correção que piora o modelo */
+  function corrigirSolta(trecho) {
+    var HC = global.HidCorrigir, m = modelo(), b = B(), ach = E.vivoPontas[String(trecho)];
+    if (!HC || !m || !b || !b.editarLote || !ach) { E.msg = { k: "aviso", t: "Esta ponta não tem correção automática: ligue-a no 3D." }; redesenhar(); return false; }
+    var r = HC.propor({ estado: m.estado, avaliarFam: m.avaliarFam, ops: m.ops }, ach);
+    if (!r || !r.ok || !arr(r.ops).length) { E.msg = { k: "aviso", t: "Ponta do trecho " + trecho + ": " + (r && r.motivo ? r.motivo : "sem correção automática") + "." }; redesenhar(); return false; }
+    var ok = b.editarLote({ op: "lote", id: "hid-solta-" + String(new Date().getTime()), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(r.ops)) });
+    E.msg = ok ? { k: "ok", t: "Ponta ligada: " + (r.texto || trecho) + ". Ctrl+Z desfaz." } : { k: "erro", t: "O editor recusou a correção da ponta." };
+    if (ok) { dimensionar(); return true; }
+    redesenhar(); return false;
+  }
+  /* CALCULAR SOZINHO: um vigia leve (a cada 0,75 s, só enquanto o painel está na tela) olha a "chave" barata do modelo (nº de operações + a última).
+     Mudou → espera sossegar (2 batidas = 1,5 s sem mexer) → dimensiona UMA vez e pinta a pressão no 3D. Nunca com uma prévia aberta (HidKitUI._plano),
+     nunca em cima de outro cálculo, nunca sem água fria no modelo e nunca com o modelo igual ao do último cálculo — o cálculo só pinta, não grava
+     nada no modelo, então não há como ele alimentar a si mesmo. */
+  var AUTO_PASSO_MS = 750, AUTO_QUIETO = 2;   // hid:ok debounce do cálculo sozinho: 2 × 0,75 s = 1,5 s (decisão do pedido, 15/11/2026)
+  function chaveModelo() {
+    var b = B(); try { var o = b && b.editarOps ? b.editarOps() : null; if (!o) return null; var u = o[o.length - 1]; return o.length + ":" + (u && (u.id != null ? u.id : "")) + ":" + (u && u.op); } catch (e) { return null; }
+  }
+  function temAguaFria(m) { return !!m && arr(m.estado && m.estado.instalacoes && m.estado.instalacoes.trechos).some(function (t) { return t && t.sistema === "agua_fria"; }); }
+  function autoTick() {
+    var raiz = E._raiz;
+    if (!raiz || !doc || !doc.body || !doc.body.contains(raiz)) { pararAuto(); return false; }
+    if (!E.auto || E._autoOcupado) return false;
+    var HK = dep("HidKitUI"); if (HK && (HK._plano || HK._pressaoPrevia)) return false;
+    var k = chaveModelo(); if (k == null) return false;
+    if (k !== E._autoChave) { E._autoChave = k; E._autoQuieto = 0; return false; }
+    if (E._autoQuieto < AUTO_QUIETO) { E._autoQuieto++; if (E._autoQuieto < AUTO_QUIETO) return false; }
+    if (k === E._autoFeito) return false;
+    var m = modelo();
+    if (!temAguaFria(m) || (E.resultado && !modeloMudou())) { E._autoFeito = k; return false; }
+    E._autoOcupado = true;
+    try { dimensionar(true); } catch (e) {} finally { E._autoOcupado = false; E._autoFeito = chaveModelo(); }
+    return true;
+  }
+  function iniciarAuto() { if (E._autoTimer || typeof global.setInterval !== "function") return; E._autoTimer = global.setInterval(autoTick, AUTO_PASSO_MS); }
+  function pararAuto() { if (E._autoTimer && typeof global.clearInterval === "function") global.clearInterval(E._autoTimer); E._autoTimer = null; }
+
   function aplicarOps(ops, rotuloMsg) {
     var b = B();
     if (!b || !b.editarLote) { E.msg = { k: "erro", t: "O editor do BIM não está disponível para aplicar." }; redesenhar(); return false; }
@@ -1373,8 +1459,9 @@
     var af = R.sistemas && R.sistemas.agua_fria, es = R.sistemas && R.sistemas.esgoto;
     if (af && arr(af.trechos).length) {
       h += "<b>Água fria</b> " + pilula(af.status === "vazio" ? "pendente" : af.status);
-      h += '<table class="tbl" data-hid="tab-af" style="font-size:12px;margin:4px 0 8px"><thead><tr><th>Trecho</th><th>DN modelo</th><th>DN calc.</th><th>Q (L/s)</th><th>V (m/s)</th><th>Perda (m)</th><th>P jusante (kPa)</th><th>Situação</th></tr></thead><tbody>';
-      af.trechos.forEach(function (t) { h += "<tr><td>" + esc(t.id) + "</td><td>" + (t.dnModelo == null ? "—" : t.dnModelo) + "</td><td><b>" + (t.dn == null ? "—" : t.dn) + "</b></td><td>" + fmt(t.vazao_ls, CASAS_Q) + "</td><td>" + fmt(t.velocidade_ms, 2) + "</td><td>" + fmt(t.perda_m, CASAS_Q) + "</td><td>" + fmt(t.pressaoJusante_kpa, 1) + "</td><td>" + pilula(t.status) + "</td></tr>"; });
+      h += '<table class="tbl" data-hid="tab-af" style="font-size:12px;margin:4px 0 8px"><thead><tr><th>Trecho</th><th>DN modelo</th><th>DN calc.</th><th>Q (L/s)</th><th>V (m/s)</th><th>Perda (m)</th><th>P montante (kPa)</th><th>P jusante (kPa)</th><th>Situação</th></tr></thead><tbody>';
+      var corTr = {}; arr(E.vivo && E.vivo.trechosAF).forEach(function (x) { if (x.cor) corTr[x.id] = x.cor; });
+      af.trechos.forEach(function (t) { h += "<tr><td>" + esc(t.id) + "</td><td>" + (t.dnModelo == null ? "—" : t.dnModelo) + "</td><td><b>" + (t.dn == null ? "—" : t.dn) + "</b></td><td>" + fmt(t.vazao_ls, CASAS_Q) + "</td><td>" + fmt(t.velocidade_ms, 2) + "</td><td>" + fmt(t.perda_m, CASAS_Q) + "</td><td>" + fmt(t.pressaoMontante_kpa, 1) + "</td><td>" + fmt(t.pressaoJusante_kpa, 1) + "</td><td>" + bolaPressao(corTr[String(t.id)]) + pilula(t.status) + "</td></tr>"; });
       h += "</tbody></table>";
       if (af.pontoCritico) h += '<p data-hid="critico" style="font-size:12px;margin:2px 0 8px">Ponto mais desfavorável: <b>' + esc(rotulo(af.pontoCritico.aparelho || af.pontoCritico.famInst || af.pontoCritico.no)) + "</b> (" + esc(af.pontoCritico.famInst || "") + "), folga de pressão " + fmt(af.pontoCritico.folga_kpa, 1) + " kPa.</p>";
     }
@@ -1399,6 +1486,59 @@
         R.pendencias.slice(0, LIMITE_LISTA).map(function (p) { return "<li><b>não verificado: falta " + esc(p.chave) + "</b> — " + esc(p.motivo) + (arr(p.usadoEm).length ? " <span class=\"muted\">(" + esc(arr(p.usadoEm).join("; ")) + ")</span>" : "") + "</li>"; }).join("") + "</ul></div>";
     }
     return h;
+  }
+  /* ------------------------------------------------------------------ cartão "Resultado do cálculo" (cálculo vivo) */
+  var COR_SIT = { verde: "#2e9e5b", amarelo: "#e0a100", vermelho: "#d33a2c", "sem-calculo": "#8a8f98" };   // hid:ok as cores da pressão (hidpressaocores.js HEX)
+  var TXT_SIT = { verde: "Passou", amarelo: "Atenção", vermelho: "Não passou", "sem-calculo": "Sem cálculo" };
+  function bolaPressao(cor) { return cor && COR_SIT[cor] ? '<span aria-hidden="true" title="pressão: ' + esc(cor) + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + COR_SIT[cor] + ';margin-right:5px;vertical-align:middle"></span>' : ""; }
+  function det(nome, titulo, corpo, abertoPadrao, extra) {
+    var ab = E.ui.det[nome] != null ? !!E.ui.det[nome] : !!abertoPadrao;
+    return '<details data-det="' + nome + '"' + (ab ? " open" : "") + ' style="margin:8px 0;' + (extra || "") + '"><summary style="cursor:pointer;font-weight:600;font-size:12.5px">' + esc(titulo) + "</summary>" + corpo + "</details>";
+  }
+  function mostrarBt(ids) { return ids && ids.length ? '<button type="button" class="btn ghost sm" data-pc-acao="mostrar" data-pc-pecas="' + esc(ids.join(",")) + '" title="Seleciona e enquadra no 3D">Mostrar</button>' : ""; }
+  function htmlVivo(m) {
+    var R = E.resultado, A = E.vivo, obsoleto = !!(R && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo);
+    var sit = A ? A.situacao : "sem-calculo", cor = COR_SIT[sit] || COR_SIT["sem-calculo"];
+    var h = '<div data-hid="vivo" data-sit="' + sit + '" style="border:1px solid ' + cor + ';border-left:6px solid ' + cor + ';border-radius:10px;padding:8px 10px;margin:8px 0">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13.5px">Resultado do cálculo</b>' +
+      '<label data-hid="vivo-auto" style="display:flex;align-items:center;gap:5px;font-size:11.5px" title="Ligado: a água fria é dimensionada sozinha quando o modelo muda (1,5 s depois de você parar de mexer) e as cores de pressão vão ao 3D. Fica gravado neste navegador."><input type="checkbox" data-hid-campo="vivo:auto"' + (E.auto ? " checked" : "") + "> Calcular sozinho</label></div>";
+    if (!R || !A) {
+      h += '<p class="muted" data-hid="vivo-vazio" style="font-size:12px;margin:6px 0">' + (E.auto ? "O cálculo roda sozinho assim que houver água fria no modelo. Para calcular agora, clique em <b>Dimensionar</b>." : "Clique em <b>Dimensionar</b> para calcular (o cálculo automático está desligado).") + "</p></div>";
+      return h;
+    }
+    var cnt = A.mapa && A.mapa.contagem || {};
+    h += '<p data-hid="vivo-situacao" style="font-size:13px;margin:6px 0"><span aria-hidden="true" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + cor + ';margin-right:6px;vertical-align:middle"></span><b>' + TXT_SIT[sit] + "</b>" +
+      (A.motivos.length ? " — " + esc(A.motivos.join(" · ")) : (sit === "verde" ? " — todos os pontos de água fria têm a pressão exigida" : "")) + "</p>";
+    if (obsoleto) h += '<p data-hid="vivo-obsoleto" style="font-size:12px;margin:4px 0;color:' + CORES.aviso + '"><b>O modelo mudou depois do cálculo.</b> ' + (E.auto ? "Recalculando sozinho…" : "Clique em Dimensionar.") + "</p>";
+    h += '<p style="font-size:12px;margin:4px 0">Pontos: ' + ["verde", "amarelo", "vermelho"].map(function (k) { return bolaPressao(k) + (cnt[k] || 0) + " " + k; }).join(" · ") + (cnt.pendente ? " · " + cnt.pendente + " pendente(s)" : "") + "</p>";
+    var pc = A.pontoCritico;
+    if (pc) h += '<p data-hid="vivo-critico" style="font-size:12px;margin:4px 0">Ponto crítico: <b>' + esc(rotulo(pc.aparelho || pc.famInst)) + "</b> (" + esc(pc.famInst || "") + ") — " + bolaPressao(pc.cor) + "pressão " + fmt(pc.pdin, 1) + " kPa, mínima " + fmt(pc.pmin, 1) + " kPa, folga " + fmt(pc.folga_kpa, 1) + " kPa " + mostrarBt([pc.famInst]) + "</p>";
+    var PCd = dep("ProblemaCard");
+    if (A.soltas.length && PCd) {
+      var probsS = A.soltas.slice(0, LIMITE_LISTA).map(function (sl) {
+        var ach = E.vivoPontas[String(sl.trecho)];
+        return { tipo: "vivo-solta", titulo: "Peça solta: " + (sl.motivo || "ponta solta") + " — trecho " + sl.trecho + (sl.sistema ? " (" + rotulo(sl.sistema) + ")" : ""), gravidade: "aviso", pecas: [String(sl.trecho)],
+                 solucoes: ach ? [{ id: "sl:" + sl.trecho, texto: ach.correcao && ach.correcao.texto || "levar a ponta até o ponto/tubo mais perto", temOps: true }] : [{ id: "sl-x:" + sl.trecho, texto: "ligue a ponta ao tubo ou à peça mais perto (ou marque a espera, se for permitida)", temOps: false }] };
+      });
+      h += '<div data-hid="vivo-soltas">' + PCd.lista(probsS, { titulo: "Peças e pontas soltas (" + A.soltas.length + ")", prefixoIndice: "vs", acoes: function (sol) { return sol.temOps ? sol.texto : false; }, gravidade: "aviso" }) + "</div>";
+    }
+    if (A.ondePerde.length) {
+      var itens = A.ondePerde.map(function (it) {
+        return "<li>" + bolaPressao(it.dominante === "localizada" ? "amarelo" : null) + esc(it.texto) + " " + mostrarBt([it.trecho]) + "</li>";
+      }).join("");
+      var conx = A.perdaPorConexao.length ? '<p class="muted" style="font-size:11.5px;margin:2px 0">No projeto todo, por conexão: ' + A.perdaPorConexao.slice(0, 5).map(function (c) { return c.n + "× " + esc(rotulo(c.tipo)) + " " + fmt(c.perda_kpa, 1) + " kPa"; }).join(" · ") + ".</p>" : "";   // hid:ok até 5 tipos na linha (tela)
+      h += det("vivo-perde", "Onde perde pressão (" + A.ondePerde.length + " trecho(s) que mais perdem)", '<ol data-hid="vivo-perde" style="font-size:12px;margin:4px 0;padding-left:20px">' + itens + "</ol>" + conx, sit !== "verde");
+    }
+    if (A.solucoes.length && PCd) {
+      var probsC = A.solucoes.map(function (so) {
+        var rot = { dn: "Aumentar o diâmetro", curva: "Trocar joelho por curva", vrp: "Pressão alta", subir: "Subir a caixa", pressurizador: "Pressurizador" }[so.tipo] || "Solução";
+        var ganho = so.ganho_kpa != null ? " — ganho de cerca de " + fmt(so.ganho_kpa, 1) + " kPa no ponto crítico (recalculado)" : (so.tipo === "dn" ? " — o ganho exato aparece ao aplicar" : "");
+        return { tipo: "vivo-sol-" + so.tipo, titulo: rot + ganho, texto: so.texto, gravidade: "aviso", pecas: so.trecho ? [String(so.trecho)] : arr(so.elementos).map(String), _so: so,
+                 solucoes: so.ops && so.ops.length ? [{ id: "vv", texto: so.tipo === "dn" ? (so.trecho ? "aumentar o DN do trecho " + so.trecho : "aplicar todos os diâmetros calculados") : "aplicar", temOps: true }] : [] };
+      });
+      h += '<div data-hid="vivo-solucoes">' + PCd.lista(probsC, { titulo: "Soluções (" + A.solucoes.length + ")", prefixoIndice: "vv", acoes: function (sol) { return sol.temOps ? sol.texto : false; }, gravidade: "aviso" }) + "</div>";
+    }
+    return h + "</div>";
   }
   function htmlBiblioteca() {
     var ix = indiceBiblioteca(), h = '<div data-hid="biblioteca"><b>Famílias hidrossanitárias</b>';
@@ -1426,19 +1566,24 @@
     if (!m) return h + '<p class="muted">Abra o BIM para dimensionar.</p></details>';
     if (dep("HidKitUI") && dep("HidKitUI").htmlTopo) h += dep("HidKitUI").htmlTopo();   /* TRAÇAR AUTOMATICAMENTE: o botão principal, no topo */
     h += htmlMemorial(m);
-    h += htmlTemplates() + htmlPrograma(m) + htmlAlimentacao(m) + htmlSistemas(m) + htmlSistemas2() + (dep("HidKitUI") ? dep("HidKitUI").html(m) : "") + (dep("HidPiscinaUI") ? dep("HidPiscinaUI").html(m) : "") + htmlRota(m);
+    h += htmlVivo(m);   /* o resultado do cálculo: situação, ponto crítico, peças soltas, onde perde, soluções */
     if (E.msg) h += '<div data-hid="msg" data-k="' + esc(E.msg.k) + '" style="border:1px solid ' + (E.msg.k === "erro" ? CORES.falha : (E.msg.k === "aviso" ? CORES.aviso : CORES.ok)) + ';border-radius:8px;padding:6px 10px;margin:8px 0;font-size:12px">' + esc(E.msg.t) + "</div>";
     var tem = !!E.resultado, nops = tem ? arr(E.resultado.ops).length : 0;
-    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn sm primary" data-hid="dimensionar">Dimensionar</button>' +
+    /* grupo principal: o que se usa o tempo todo. O resto (o que é de vez em quando) fica em "Mais ações". */
+    h += '<div data-hid="acoes-principais" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn sm primary" data-hid="dimensionar" title="Calcula agora (o cálculo também roda sozinho quando o modelo muda)">Dimensionar</button>' +
+      '<button class="btn sm primary" data-hid="autocorrigir" title="Corrigir tudo: dimensiona, põe no modelo os diâmetros que o cálculo pede, refaz o cálculo (até 3 voltas), aplica o Corrigir automático de inclinação e bitola e, se o maior DN não bastar, acrescenta uma 2ª linha. O que sobra fica como pendência com o motivo.">Corrigir tudo</button>' +
+      '<button class="btn sm primary" data-hid="documentos"' + (tem ? "" : " disabled") + ' title="Memorial de cálculo único, memorial descritivo, manual de execução e uso, planilhas e pranchas — PDF, Word e HTML, num clique">Gerar documentos</button></div>';
+    h += det("mais-acoes", "Mais ações", '<div data-hid="acoes-mais" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">' +
+      '<button class="btn sm" data-hid="aplicar"' + (nops ? "" : " disabled") + ' title="Troca os diâmetros do modelo pelos calculados e põe as peças de incêndio propostas; Ctrl+Z desfaz tudo de uma vez">Aplicar diâmetros no modelo' + (nops ? " (" + nops + ")" : "") + "</button>" +
       '<button class="btn sm" data-hid="pluvial-rua" title="Leva a água da chuva até a rua: descida embutida na parede (ou shaft de drywall por fora), caixas CP, ralos nas áreas externas e na piscina, saída na divisa. Parte dos condutores deixados pelo Rufos, calhas e descidas. Ctrl+Z desfaz tudo.">Pluvial até a rua</button>' +
       '<button class="btn sm" data-hid="ligar-caixas" title="Liga as caixas de inspeção em ordem de montante para jusante (CI-01 → CI-02 → …) pelo lado de fora, com a declividade mínima, e leva a última à saída para a rua.">Ligar caixas</button>' +
       '<button class="btn sm" data-hid="nomear-caixas" title="Dá nome às caixas de inspeção, gordura e pluvial (CI-01, CG-01, CP-01…) de montante para jusante; o nome que você escreveu fica.">Nomear caixas</button>' +
-      '<button class="btn sm primary" data-hid="autocorrigir" title="Dimensiona, põe no modelo os diâmetros que o cálculo pede, refaz o cálculo (até 3 voltas), aplica o Corrigir automático de inclinação e bitola e, se o maior DN não bastar, acrescenta uma 2ª linha. O que sobra fica como pendência com o motivo.">Corrigir sozinho</button>' +
-      '<button class="btn sm primary" data-hid="documentos"' + (tem ? "" : " disabled") + ' title="Memorial de cálculo único, memorial descritivo, manual de execução e uso, planilhas e pranchas — PDF, Word e HTML, num clique">Gerar documentos</button>' +
-      '<button class="btn sm" data-hid="aplicar"' + (nops ? "" : " disabled") + ' title="Troca os diâmetros do modelo pelos calculados e põe as peças de incêndio propostas; Ctrl+Z desfaz tudo de uma vez">Aplicar diâmetros no modelo' + (nops ? " (" + nops + ")" : "") + "</button>" +
       '<button class="btn sm" data-hid="memorial"' + (tem ? "" : " disabled") + '>Memorial</button><button class="btn sm" data-hid="manual"' + (tem ? "" : " disabled") + ' title="Manual de execução e uso, com fonte e página; o que não tem fonte sai PENDENTE">Manual</button><button class="btn sm" data-hid="planilhas"' + (tem ? "" : " disabled") + '>Planilhas (.xlsx)</button><button class="btn sm" data-hid="pranchas"' + (tem ? "" : " disabled") + ' title="Gerar pranchas: plantas, cortes, isométricos, perspectivas 3D, esquema, detalhes e quadro (PDF, DXF e abas de folha)">Gerar pranchas</button>' +
-      (tem ? '<button class="btn sm ghost" data-hid="limpar" title="Tira as cores do 3D e o resultado">Limpar</button>' : "") + "</div>";
-    h += htmlResultado(m) + htmlListaMaterial(m) + htmlBiblioteca();
+      (tem ? '<button class="btn sm ghost" data-hid="limpar" title="Tira as cores do 3D e o resultado">Limpar</button>' : "") + "</div>", false);
+    h += htmlResultado(m) + htmlListaMaterial(m);
+    /* as ENTRADAS do projeto (o que o usuário informa) ficam recolhidas: o resultado vem primeiro */
+    h += det("dados-projeto", "Dados do projeto", htmlTemplates() + htmlPrograma(m) + htmlAlimentacao(m) + htmlSistemas(m) + htmlSistemas2() + (dep("HidKitUI") ? dep("HidKitUI").html(m) : "") + (dep("HidPiscinaUI") ? dep("HidPiscinaUI").html(m) : "") + htmlRota(m) + htmlBiblioteca(), false,
+      "border-top:1px solid rgba(127,127,127,.25);padding-top:6px");
     return h + "</details>";
   }
 
@@ -1452,6 +1597,7 @@
       "#hid-calc table.tbl td{padding:5px 8px;vertical-align:top} #hid-calc .hid-rola{overflow-x:auto;margin:4px 0 8px}" +
       "#hid-calc table.hid-lista{font-size:12px} #hid-calc table.hid-lista td{vertical-align:middle;padding:4px 6px} #hid-calc table.hid-lista th.n,#hid-calc table.hid-lista td.n{text-align:right;white-space:nowrap}" +
       "#hid-calc td.hid-ico{width:58px;padding:3px;background:#fff;border:1px solid rgba(127,127,127,.18);border-radius:8px} #hid-calc td.hid-ico img{width:52px;height:52px;object-fit:contain;display:block}" +
+      "#hid-calc .pc-acoes button{white-space:normal;text-align:left;height:auto;line-height:1.3;max-width:100%} #hid-calc .pc-tit{margin:4px 0} " +
       "#hid-calc .hid-nome{font-weight:600;line-height:1.25} #hid-calc .hid-sub{font-size:11px;opacity:.75;line-height:1.3;margin-top:1px} #hid-calc .hid-pend{color:var(--amarelo,#b45309)}";
     doc.head.appendChild(st);
   }
@@ -1460,7 +1606,7 @@
     var m = modelo();
     css();
     garantirPadroes(m);
-    if (E.resultado && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo && !E.obsoletoAvisado) { E.obsoletoAvisado = true; aplicarCores(null); }
+    if (E.resultado && m && E.opsNoCalculo != null && assinatura(m) !== E.opsNoCalculo && !E.obsoletoAvisado) { E.obsoletoAvisado = true; aplicarCores(null); if (E._pintouPressao && dep("HidKitUI") && dep("HidKitUI").mostrarPressao && !dep("HidKitUI")._pressaoPrevia) { dep("HidKitUI").mostrarPressao(null); E._pintouPressao = false; } }
     if (E.resultado && m && assinatura(m) === E.opsNoCalculo) E.obsoletoAvisado = false;
     raiz.innerHTML = htmlTudo(m).replace(/(<table class="tbl")/g, '<div class="hid-rola">$1').replace(/<\/table>/g, "</table></div>");
     if (dep("ProblemaCard")) {
@@ -1471,6 +1617,9 @@
           var mr = /^r(\d+)_(\d+)$/.exec(String(solId)), md = /^d(\d+)$/.exec(String(solId));
           if (mr) { var op = E.rota.res && E.rota.res.opcoes[Number(mr[1])], pr = op && arr(op.problemas)[Number(mr[2])]; if (pr) corrigirRota(pr.acao, pr.elementos); return; }
           if (md) { var ds = E.rota.res && E.rota.res.descartadas[Number(md[1])]; if (ds) corrigirRota(ds.acao, ds.elementos); return; }
+          if (/^vv$/.test(String(solId))) { var so = E.vivo && E.vivo.solucoes[Number(String(k).replace(/^vv/, ""))]; if (so && arr(so.ops).length) aplicarOps(so.ops, "Solução aplicada"); return; }
+          var msl = /^sl:(.+)$/.exec(String(solId));
+          if (msl) { corrigirSolta(msl[1]); return; }
           var mpz = /^pz(\d+)_(\d+)$/.exec(String(solId));
           if (mpz && dep("HidPressaoUI")) { dep("HidPressaoUI").aplicar(Number(mpz[1]), Number(mpz[2])); return; }
           var md2 = /^dc(\d+)_(\d+)$/.exec(String(solId));
@@ -1522,6 +1671,7 @@
         if (f && f.tipos.length) colocar(fid, f.tipos[0].id); else { E.msg = { k: "erro", t: "Família para colocar não encontrada (js/hidfamilias.js)." }; redesenhar(); }
       }
     };
+    if (raiz.addEventListener) raiz.addEventListener("toggle", function (ev) { var d = ev.target; if (d && d.getAttribute && d.getAttribute("data-det")) E.ui.det[d.getAttribute("data-det")] = !!d.open; }, true);   /* lembra o que o usuário abriu/fechou */
     raiz.onmouseover = function (ev) { var c = ev.target && ev.target.closest ? ev.target.closest("[data-rota-op]") : null; if (c) previaRota(Number(c.getAttribute("data-rota-op"))); };
     raiz.onmouseout = function (ev) { var rel = ev.relatedTarget; if (!rel || !rel.closest || !rel.closest("[data-rota-op]")) previaRota(null); };
     raiz.onchange = function (ev) {
@@ -1529,6 +1679,7 @@
       var v = el.type === "checkbox" ? el.checked : el.value;
       if (n.indexOf("kit:") === 0 && dep("HidKitUI")) { dep("HidKitUI").campo(n, v); return; }   /* PROJETO INTELIGENTE (js/hidkitui.js) */
       if (n.indexOf("pisc:") === 0 && dep("HidPiscinaUI")) { dep("HidPiscinaUI").campo(n, v); redesenhar(); return; }   /* PISCINA (js/hidpiscinaui.js) */
+      if (n === "vivo:auto") { E.auto = !!v; salvarAuto(); E._autoFeito = null; redesenhar(); return; }
       if (n === "memorial") { var HBi = dep("HidBiblioteca"); if (HBi && HBi.definirMemorial) HBi.definirMemorial(null, !!v); redesenhar(); return; }
       if (n === "uso") E.uso = v;
       else if (n === "populacao") E.populacao = v;
@@ -1563,14 +1714,15 @@
       if (!corpo || !doc) return false;
       var raiz = doc.createElement("div"); raiz.id = "hid-calc"; corpo.appendChild(raiz);
       E._raiz = raiz; ligar(raiz); desenhar(raiz);
+      E._autoChave = null; E._autoQuieto = 0; E._autoFeito = null; iniciarAuto();
       return true;
     },
-    dimensionar: dimensionar, aplicar: aplicar, memorial: memorial, planilhas: planilhas, pranchas: pranchas, redesenhar: redesenhar,
+    dimensionar: dimensionar, vivo: function () { return E.vivo; }, autoTick: function () { return autoTick(); }, aplicar: aplicar, memorial: memorial, planilhas: planilhas, pranchas: pranchas, redesenhar: redesenhar,
     /* a tela "Gerar documentos" (js/hiddocumentosui.js) monta a entrada com o que esta tela já sabe */
     dadosEmpresa: dadosEmpresa, pavimentos: pavimentos, materiaisProjeto: materiaisDoModelo, modeloAtual: function () { return modelo(); },
     listaMaterial: function () { return listaMaterialDoModelo(modelo()); }, comIcones: comIcones,
     /* FRENTE H8: o programa de necessidades (uso e porte) para o volume da caixa d'água proposta pelo Traçar (js/hidbarrilete.js) */
-    programa: function () { if (!lido) { lido = true; lerLS(); } return E.uso ? programaEntrada() : null; },
+    programa: function () { if (!lido) { lido = true; lerLS(); lerAuto(); } return E.uso ? programaEntrada() : null; },
     entrada: function () { var m = modelo(); if (m) garantirPadroes(m); return m ? entrada(m) : null; },
     propor: propor, aplicarRota: aplicarRota, corrigirRota: corrigirRota, areasCobertura: areasCobertura, htmlConfirmacoes: htmlConfirmacoes, confAdicionar: confAdicionar, uniaoPoligonos: uniaoPoligonos, aplicarTratamento: aplicarTratamento, redeInd: redeInd, aplicarTemplate: aplicarTemplate, trocarTipo: trocarTipo, acaoTrocarTipo: acaoTrocarTipo, desfazerTemplate: desfazerTemplate, baixarTemplate: baixarTemplate, manual: manual, poligonosPorNivel: poligonosPorNivel, assinatura: assinatura, modeloMudou: modeloMudou, pecasExistentes: pecasExistentes, problemas: problemas, aplicarCores: aplicarCores, indiceBiblioteca: indiceBiblioteca
   };

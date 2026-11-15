@@ -2643,6 +2643,8 @@
          próprio tubo ou luva invertida (contra o fluxo, com o motivo registrado) */
       var jtP = this.juntaDoUid(id);
       if (jtP) sec.push(this.secaoJunta(jtP));
+      /* EMENDA DA BARRA (15/11/2026): no tubo de PVC (esgoto, série R, soldável) a bolsa da própria barra (padrão, de acordo com o catálogo) ou a luva de emenda */
+      if (t && /^(pvc_esgoto|pvc_serie_r|pvc_soldavel)$/.test(String(t.material))) sec.push({ nome: "Emenda da barra", params: [{ id: "ie:emenda", rotulo: "Emenda: bolsa do tubo | luva", tipo: "lista", valor: t.emenda === "luva" ? "luva" : "bolsa", opcoes: [{ id: "bolsa", rotulo: "Bolsa do tubo (catálogo)" }, { id: "luva", rotulo: "Luva de emenda" }] }] });
       sec.push({ nome: "Orçamento (SINAPI pelo mapa)", params: sp && sp.status === "ok"
         ? [ro("io:cod", "Composição", sp.codigo + " (" + sp.unidade + ")"), ro("io:desc", "Descrição", sp.descricao, sp.descricao), ro("io:alt", "Alternativas na base", String(sp.alternativas || 0), "O desempate é declarado em js/biminst.js (PN/classe, luva antes da bucha, menor código).")]
         : [ro("io:pend", "Situação", "pendente", sp ? sp.motivo : "")] });
@@ -2676,6 +2678,7 @@
           }
           else if (pid === "itp:material" && t) { self.mudarTipo(t, String(valor)); return self.props(uid); }
           else if (String(pid).indexOf("p12:") === 0) { self.mudarP12(uid, pid, valor); return self.props(uid); }   /* P12 */
+          else if (pid === "ie:emenda" && t) { var bE = B(); if (bE && bE.instOp) bE.instOp({ op: "instAlterar", id: t.id, emenda: String(valor) === "luva" ? "luva" : "bolsa" }); return self.props(uid); }
           else if (pid === "ij:junta" || pid === "ij:motivo") { if (jtP) self.mudarJunta(jtP, pid === "ij:junta" ? String(valor) : null, pid === "ij:motivo" ? String(valor) : null); return self.props(uid); }
           else return self.props(uid);
           if (b.instOp) b.instOp(o);

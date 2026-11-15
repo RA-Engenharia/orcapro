@@ -1431,7 +1431,16 @@
           R = capCI < lo - EPS && lo <= R + EPS ? teto4(lo) : capCI;
         } else if (capCI < R) {
           var Rnat = R, entR = arv.nos[arv.raiz].entram;
-          function iUlt(a) { return Math.max(iMax, a.decl.i); }
+          /* JUNÇÃO NA LINHA (15/11/2026, print do Rogério: a junção de 45° na linha "um pouquinho mais para cima" — a bolsa não ficava coaxial com
+             o tubo de um lado): o último trecho na declividade máxima faz quebra de inclinação no nó onde ele começa; se esse nó é um tê/junção
+             com a linha passando (um trecho que chega colinear em planta), a quebra caía DENTRO da peça — corpo reto, só encaixa num tubo. Ali
+             o último trecho fica na declividade do DN (sem ajuste) e a partida desce o que falta (declividade constante, a mesma saída do fluxo) */
+          function iUlt(a) { return naLinhaDeJuncao(a) ? a.decl.i : Math.max(iMax, a.decl.i); }
+          function naLinhaDeJuncao(a) {
+            var nd = arv.nos[a.de]; if (!nd || nd.entram.length < 2) return false;
+            var ux = arv.nos[a.para].x - nd.x, uz = arv.nos[a.para].z - nd.z, lu = Math.hypot(ux, uz) || 1;
+            return nd.entram.some(function (eid) { var b = arv.arestas[eid], vx = nd.x - arv.nos[b.de].x, vz = nd.z - arv.nos[b.de].z, lv = Math.hypot(vx, vz) || 1; return (ux * vx + uz * vz) / (lu * lv) > 0.94; });   // rota:juncaoNaLinha cos 20°
+          }
           function Lde(a) { return d2(arv.nos[a.de], arv.nos[a.para]); }
           /* até onde a raiz desce com o último trecho na máxima, sem mexer no resto */
           var Rfim = -INF; entR.forEach(function (aid) { var a = arv.arestas[aid], yDe = teto4(Rnat + a.decl.i / 100 * Lde(a)); Rfim = Math.max(Rfim, teto4(yDe - iUlt(a) / 100 * Lde(a))); });

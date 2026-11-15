@@ -540,9 +540,16 @@
       for (var s = c.barra; s < Ltot - 0.05; s += c.barra) {
         var J = add(P1, mul(d, s));
         if (s < r1 + 0.05 || s > Ltot - r2 - 0.05) continue;
-        if (c.junta === "soldavel") {   /* luva de correr NÃO: a emenda de barra é a luva soldável comum */
+        /* EMENDA DA BARRA (15/11/2026, pedido do Rogério: "deixe as bolsas nos tubos quando a gente for usar a própria bolsa, de acordo com o
+           catálogo"): o parâmetro do trecho t.emenda = "bolsa" (PADRÃO — a bolsa da própria barra, sem luva no orçamento) ou "luva" (luva de
+           emenda; a contagem em biminst.rede.luvasQto). Esgoto: bolsa com alojamento do anel (boca()); soldável: a bolsa soldável do tubo
+           (NBR 5648:2018, Tabela 3: profundidade c.pb, parede = a do tubo alargado, transição cônica curta) */
+        if (t.emenda === "luva" && (c.junta === "soldavel" || c.junta === "anel")) {
           var Lm = cx.L / 2;
           varrer(m, reta(add(J, mul(d, -Lm * MM)), d), escala(perfilDuasBocas(cx.L, cx, cx, raioCorpo(cx))), segs, false);
+        } else if (c.junta === "soldavel") {   /* a bolsa soldável do próprio tubo, boca para montante */
+          var tS = Math.max(1.5 * c.e, 0.12 * c.de), chS = Math.min(0.6, c.e * 0.3), roS = ro + c.e;
+          varrer(m, reta(add(J, mul(d, -c.pb * MM)), d), escala([[0, 0], [0, ro + 0.03], [0, roS - chS], [chS, roS], [c.pb, roS], [c.pb + tS, ro], [c.pb + tS, 0], [0, 0]]), segs, false);
         } else {   /* bolsa do próprio tubo, boca para montante (a ponta da barra de cima entra nela) */
           var bc = { de: c.de, e: c.e, pb: c.pb, od: cx.od, junta: c.junta }, pfb = [];
           boca(pfb, 0, +1, bc);
@@ -550,7 +557,7 @@
           var camB = reta(add(J, mul(d, -c.pb * MM)), d);
           varrer(m, camB, escala(pfb), segs, false); anelBorracha(mA, camB, 0, +1, bc, segs);
         }
-        juntas.push({ s: s, tipo: c.junta === "soldavel" ? "luva" : "bolsa" });
+        juntas.push({ s: s, tipo: t.emenda === "luva" ? "luva" : "bolsa" });
       }
     }
     var partesT = [cascaSaida(m)]; if (mA.idx.length) partesT.push(cascaSaida(mA, "anel"));

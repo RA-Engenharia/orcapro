@@ -279,7 +279,7 @@
     trechos.forEach(function (t) {
       var g = G[t.id]; if (!g.mudou) return;
       var o = I.opDoTrecho(t); o.p1 = { x: r4(g.p1.x), y: r4(g.p1.y), z: r4(g.p1.z) }; o.p2 = { x: r4(g.p2.x), y: r4(g.p2.y), z: r4(g.p2.z) };
-      ["juntaIni", "juntaFim", "juntaMotivo", "comentarios", "faseCriada", "faseDemolida", "saidaLivre", "predio", "piscLinha", "tomada", "aparente", "passantes"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });   /* o que a op `trecho` recria e o opDoTrecho esquece: sem a saidaLivre a espera da caixa vira ponta solta */
+      ["juntaIni", "juntaFim", "juntaMotivo", "emenda", "comentarios", "faseCriada", "faseDemolida", "saidaLivre", "predio", "piscLinha", "tomada", "aparente", "passantes"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });   /* o que a op `trecho` recria e o opDoTrecho esquece: sem a saidaLivre a espera da caixa vira ponta solta */
       out.ops.push(o);
     });
     return out;

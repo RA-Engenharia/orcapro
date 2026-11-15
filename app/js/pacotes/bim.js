@@ -94797,6 +94797,7 @@ if (t.continua && o.saidaLivre != null && o.saidaLivre !== "") t.saidaLivre = tx
 if (JUNTAS[o.juntaIni]) t.juntaIni = o.juntaIni;
 if (o.excentrica === "inferior" || o.excentrica === "superior") t.excentrica = o.excentrica;
 if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
+if (o.emenda === "luva" || o.emenda === "bolsa") t.emenda = o.emenda;
 if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
 ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });
 camposObra(o, t);
@@ -94916,7 +94917,7 @@ return true;
 if (o.op === "instAlterar" && o.id != null) {
 var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
 var novo = copia(alvo);
-["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "saidaGirada", "rebaixo", "continua", "juntaIni", "juntaFim", "juntaMotivo", "emenda", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
 if (o.continua === "") delete novo.continua;
 if (o.pecaIni === "") delete novo.pecaIni;
 if (o.pecaFim === "") delete novo.pecaFim;
@@ -95730,6 +95731,7 @@ var HGb = dep("HidGeo", "./biminstgeo.js");
 trechos.forEach(function (t) {
 var Lb = null; try { var ct = HGb && HGb.cotasTubo ? HGb.cotasTubo(t.material, t.dn) : null; Lb = ct ? num(ct.barra, 0) : 0; } catch (eB) { Lb = 0; }
 if (tuboEmRolo(t.material)) return;
+if (t.emenda !== "luva") return;
 if (!(Lb > 0) || !(num(t.comprimento, 0) > Lb + 1e-6)) return;
 var nL = Math.ceil(num(t.comprimento, 0) / Lb - 1e-6) - 1;
 for (var m = 1; m <= nL; m++) {
@@ -98301,9 +98303,12 @@ var cx = cotasConexao(t.material, "luva", t.dn);
 for (var s = c.barra; s < Ltot - 0.05; s += c.barra) {
 var J = add(P1, mul(d, s));
 if (s < r1 + 0.05 || s > Ltot - r2 - 0.05) continue;
-if (c.junta === "soldavel") {
+if (t.emenda === "luva" && (c.junta === "soldavel" || c.junta === "anel")) {
 var Lm = cx.L / 2;
 varrer(m, reta(add(J, mul(d, -Lm * MM)), d), escala(perfilDuasBocas(cx.L, cx, cx, raioCorpo(cx))), segs, false);
+} else if (c.junta === "soldavel") {
+var tS = Math.max(1.5 * c.e, 0.12 * c.de), chS = Math.min(0.6, c.e * 0.3), roS = ro + c.e;
+varrer(m, reta(add(J, mul(d, -c.pb * MM)), d), escala([[0, 0], [0, ro + 0.03], [0, roS - chS], [chS, roS], [c.pb, roS], [c.pb + tS, ro], [c.pb + tS, 0], [0, 0]]), segs, false);
 } else {
 var bc = { de: c.de, e: c.e, pb: c.pb, od: cx.od, junta: c.junta }, pfb = [];
 boca(pfb, 0, +1, bc);
@@ -98311,7 +98316,7 @@ pfb.push([c.pb + transicao(bc), ro * 0.999], [c.pb + transicao(bc) + 1, ro * 0.9
 var camB = reta(add(J, mul(d, -c.pb * MM)), d);
 varrer(m, camB, escala(pfb), segs, false); anelBorracha(mA, camB, 0, +1, bc, segs);
 }
-juntas.push({ s: s, tipo: c.junta === "soldavel" ? "luva" : "bolsa" });
+juntas.push({ s: s, tipo: t.emenda === "luva" ? "luva" : "bolsa" });
 }
 }
 var partesT = [cascaSaida(m)]; if (mA.idx.length) partesT.push(cascaSaida(mA, "anel"));
@@ -114659,6 +114664,7 @@ sec.push({ nome: "Curva de transposição", params: psT });
 }
 var jtP = this.juntaDoUid(id);
 if (jtP) sec.push(this.secaoJunta(jtP));
+if (t && /^(pvc_esgoto|pvc_serie_r|pvc_soldavel)$/.test(String(t.material))) sec.push({ nome: "Emenda da barra", params: [{ id: "ie:emenda", rotulo: "Emenda: bolsa do tubo | luva", tipo: "lista", valor: t.emenda === "luva" ? "luva" : "bolsa", opcoes: [{ id: "bolsa", rotulo: "Bolsa do tubo (catálogo)" }, { id: "luva", rotulo: "Luva de emenda" }] }] });
 sec.push({ nome: "Orçamento (SINAPI pelo mapa)", params: sp && sp.status === "ok"
 ? [ro("io:cod", "Composição", sp.codigo + " (" + sp.unidade + ")"), ro("io:desc", "Descrição", sp.descricao, sp.descricao), ro("io:alt", "Alternativas na base", String(sp.alternativas || 0), "O desempate é declarado em js/biminst.js (PN/classe, luva antes da bucha, menor código).")]
 : [ro("io:pend", "Situação", "pendente", sp ? sp.motivo : "")] });
@@ -114691,6 +114697,7 @@ o.nome = vN.slice(0, 40);
 }
 else if (pid === "itp:material" && t) { self.mudarTipo(t, String(valor)); return self.props(uid); }
 else if (String(pid).indexOf("p12:") === 0) { self.mudarP12(uid, pid, valor); return self.props(uid); }
+else if (pid === "ie:emenda" && t) { var bE = B(); if (bE && bE.instOp) bE.instOp({ op: "instAlterar", id: t.id, emenda: String(valor) === "luva" ? "luva" : "bolsa" }); return self.props(uid); }
 else if (pid === "ij:junta" || pid === "ij:motivo") { if (jtP) self.mudarJunta(jtP, pid === "ij:junta" ? String(valor) : null, pid === "ij:motivo" ? String(valor) : null); return self.props(uid); }
 else return self.props(uid);
 if (b.instOp) b.instOp(o);
@@ -117451,7 +117458,7 @@ var s = dot(sub(q, a), ab) / L2, L = Math.sqrt(L2);
 if (s * L <= tol || (1 - s) * L <= tol) return null;
 return dist(add(a, mul(ab, s)), q) <= tol ? s : null;
 }
-var EXTRAS = ["juntaIni", "juntaFim", "juntaMotivo", "comentarios", "faseCriada", "faseDemolida"];
+var EXTRAS = ["juntaIni", "juntaFim", "juntaMotivo", "emenda", "comentarios", "faseCriada", "faseDemolida"];
 function opTrecho(I, t, p1, p2) {
 var o = I.opDoTrecho(t); o.p1 = r4p(p1); o.p2 = r4p(p2);
 EXTRAS.forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
@@ -179868,7 +179875,7 @@ andar(t);
 trechos.forEach(function (t) {
 var g = G[t.id]; if (!g.mudou) return;
 var o = I.opDoTrecho(t); o.p1 = { x: r4(g.p1.x), y: r4(g.p1.y), z: r4(g.p1.z) }; o.p2 = { x: r4(g.p2.x), y: r4(g.p2.y), z: r4(g.p2.z) };
-["juntaIni", "juntaFim", "juntaMotivo", "comentarios", "faseCriada", "faseDemolida", "saidaLivre", "predio", "piscLinha", "tomada", "aparente", "passantes"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
+["juntaIni", "juntaFim", "juntaMotivo", "emenda", "comentarios", "faseCriada", "faseDemolida", "saidaLivre", "predio", "piscLinha", "tomada", "aparente", "passantes"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
 out.ops.push(o);
 });
 return out;
