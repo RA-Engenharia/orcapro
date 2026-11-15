@@ -133,13 +133,22 @@
     var S = (res && res.sistemas) || {};
     arr(S.agua_fria && S.agua_fria.trechos).forEach(function (t) {
       var o = ix.agua_fria[t.id];
-      if (!o) ix.agua_fria[t.id] = { dn: t.dn, dnModelo: t.dnModelo, vazao_ls: t.vazao_ls, status: t.status };
+      if (!o) ix.agua_fria[t.id] = { dn: t.dn, dnModelo: t.dnModelo, vazao_ls: t.vazao_ls, status: t.status, pressaoMontante_kpa: t.pressaoMontante_kpa, pressaoJusante_kpa: t.pressaoJusante_kpa };
       else { if (t.dn > o.dn) o.dn = t.dn; if (t.vazao_ls > o.vazao_ls) o.vazao_ls = t.vazao_ls; }
+    });
+    /* CÁLCULO NO ISOMÉTRICO: pressão disponível em cada ponto de utilização (Pju = a do ponto no resultado; Pm = a de montante do trecho que chega nele).
+       Só entra o que o resultado TEM (número nulo = sem rótulo). Chave = famInst do ponto. */
+    ix.pontoAF = {};
+    arr(S.agua_fria && S.agua_fria.pontos).forEach(function (pt) {
+      if (pt.famInst == null || pt.pressaoDinamica_kpa == null) return;
+      var pm = null;
+      arr(S.agua_fria.trechos).forEach(function (t) { if (pm == null && t.para === pt.no && t.pressaoMontante_kpa != null) pm = t.pressaoMontante_kpa; });
+      ix.pontoAF[pt.famInst] = { pj_kpa: pt.pressaoDinamica_kpa, pm_kpa: pm };
     });
     arr(S.esgoto && S.esgoto.trechos).forEach(function (t) {
       var o = ix.esgoto[t.id];
-      if (!o) ix.esgoto[t.id] = { dn: t.dn, dnModelo: t.dnModelo, classe: t.classe, declividade_pct: t.declividade_pct, declividadeMin_pct: t.declividadeMin_pct, status: t.status };
-      else { if (t.dn > o.dn) o.dn = t.dn; if (o.declividade_pct == null && t.declividade_pct != null) o.declividade_pct = t.declividade_pct; }
+      if (!o) ix.esgoto[t.id] = { dn: t.dn, dnModelo: t.dnModelo, classe: t.classe, declividade_pct: t.declividade_pct, declividadeMin_pct: t.declividadeMin_pct, status: t.status, uhc: t.uhc };
+      else { if (t.dn > o.dn) o.dn = t.dn; if (o.declividade_pct == null && t.declividade_pct != null) o.declividade_pct = t.declividade_pct; if (t.uhc != null && (o.uhc == null || t.uhc > o.uhc)) o.uhc = t.uhc; }
     });
     /* fase 2 e F3: água quente (como a fria), pluvial (como o esgoto: declividade) e incêndio (trechos da rede de hidrantes) */
     arr(S.agua_quente && S.agua_quente.trechos).forEach(function (t) {

@@ -49,6 +49,7 @@
 
   /* hid:fisica-inicio — GEOMETRIA DE DESENHO da prancha (mm de papel). Não é valor de norma. */
   var K2 = {
+    calc: { casas: 2, casasUhc: 1, afasta: 1 },   /* cálculo no isométrico: casas da pressão (mca), do UHC (inteiro quando exato) e o afastamento do rótulo de pressão em relação ao da cota */
     gapUn: 30, offCota: 6,
     escalas: [20, 25, 50, 75, 100, 125, 150, 200, 250, 300], formatosAuto: ["A3", "A2", "A1", "A0"], escalaAlvo: 50,
     titulo: 16, folgaFolha: 6,
@@ -99,6 +100,13 @@
     var dn = inf && inf.dn != null ? inf.dn : t.dn, PDr = PAD();
     if (dn == null) return "DN a confirmar";
     return PDr ? PDr.rotuloTrecho({ sistema: t.sistema, dn: dn, vertical: vertical !== false }) : "DN " + dn;
+  }
+  /* pressão disponível no ponto de utilização, em mca (2 casas, vírgula): "Pm 3,25 mca / Pju 3,24 mca". Só com número do RESULTADO do dimensionamento. */
+  function textoPressao(ix, famInst) {
+    var o = ix && ix.pontoAF && ix.pontoAF[famInst], H = dep("HidHidraulica", "./hidhidraulica.js");
+    if (!o || o.pj_kpa == null || !H || !H.kpaParaM) return null;
+    var pj = H.kpaParaM(o.pj_kpa), pm = o.pm_kpa == null ? null : H.kpaParaM(o.pm_kpa);
+    return (pm == null ? "" : "Pm " + br(pm, K2.calc.casas) + " mca / ") + "Pju " + br(pj, K2.calc.casas) + " mca";
   }
   function PAD() { var p = dep("BimInstPadrao", "./biminstpadrao.js"); return p && p.pronto && p.pronto() ? p : null; }
   function PDF() { return dep("SvgPdf", "./svgpdf.js"); }
@@ -1397,7 +1405,7 @@
        tubos e conexões) vem LIGADO: é a folha-modelo do Rogério; desligado, ele gerou e recebeu só o jogo básico sem tags */
     var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
     return { versao: 1, sistemas: [], formato: "AUTO", escala: "auto", prefixo: "HID", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO",
-             nivelPlanta: "medio", arquitetura: true, agrupar: true, qr: "", conjuntos: cj, perspectiva: { vista: "SE", ambientes: [] } };
+             nivelPlanta: "medio", arquitetura: true, agrupar: true, mostrarCalculo: true, qr: "", conjuntos: cj, perspectiva: { vista: "SE", ambientes: [] } };
   }
   function normalizarConfig(c0) {
     var c = c0 && typeof c0 === "object" ? c0 : {}, p = configPadrao();
@@ -1409,6 +1417,7 @@
     if (c.nivelPlanta === "baixo") p.nivelPlanta = "baixo";
     if (c.arquitetura === false) p.arquitetura = false;
     if (c.agrupar === false) p.agrupar = false;
+    if (c.mostrarCalculo === false) p.mostrarCalculo = false;   /* o cálculo (pressões, UHC) no isométrico: padrão LIGADO */
     if (txt(c.qr).trim()) p.qr = txt(c.qr).trim();
     p.notasExtra = arr(c.notasExtra).map(txt).filter(function (x) { return x.trim(); });   /* Casa 487 (F9): notas do PROJETO nas NOTAS GERAIS de toda folha (ex.: pilar que o tubo não atravessa) */
     p.sistemas = arr(c.sistemas).filter(function (s) { return SISTEMAS_FOLHA.indexOf(s) >= 0; });
@@ -1883,13 +1892,15 @@
       });
     })();
     /* 3) rótulos: sistema + DN por corrida (o mais longo); verticais longas também */
-    var rot = gruposRotulo(pz.trs, c.ix, KI), PDr = PAD();
+    var rot = gruposRotulo(pz.trs, c.ix, KI), PDr = PAD(), mostraCalc = !(c.cfg && c.cfg.mostrarCalculo === false);
+    var temAgua = arr(pz.trs).some(function (t0) { return /^agua/.test(t0.sistema); });
     pz.itens.forEach(function (it) {
       if (it.tipo !== "tubo" || !it.A) return;
       var t = it.t, vert = t.vertical, Lm = dist3d(t.p1, t.p2);
       if (vert ? Lm < K2.perspVertMin : !rot[t.id]) return;
       var inf = (c.ix[t.sistema] || {})[t.id], dn = inf && inf.dn != null ? inf.dn : t.dn, sg = CAMADA_SIS[t.sistema] || "";
       var txt0 = sg + " " + dnRotulo(t, inf, true);
+      if (mostraCalc && /^esgoto$/.test(t.sistema) && inf && inf.uhc != null) txt0 += "  UHC(" + br(inf.uhc, K2.calc.casasUhc).replace(/,0+$/, "") + ")";   /* UHC acumulado de contribuição do resultado */
       void PDr; void dn;
       pend.push({ s: txt0, h: h, tipo: "dn", camada: "HID-TEXTO", trecho: t.id, anchors: KI.ancoras.map(function (f) { return [it.A[0] + (it.Bp[0] - it.A[0]) * f, it.A[1] + (it.Bp[1] - it.A[1]) * f]; }), prio: 3, comprimento: it.Ls, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
     });
@@ -1900,6 +1911,8 @@
       var p = X(pz.P(l)), alt = l.y - pz.pv.cota, nm = c.nomeAp(l.famInst);
       S.push({ tipo: "ponto", x: p[0], y: p[1], r: KI.rPonto, camada: "HID-SIMBOLO", box: [p[0] - KI.rPonto, p[1] - KI.rPonto, p[0] + KI.rPonto, p[1] + KI.rPonto], id: l.alvo });
       pend.push({ s: (nm ? nm + "  " : "") + (alt >= 0 ? "+" : "") + br(alt, 2), h: h, tipo: "aparelho", camada: "HID-TEXTO", trecho: l.trecho, anchors: [p], prio: 0, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
+      var ligAgua = arr(pz.trs).some(function (t0) { return t0.id === l.trecho && /^agua/.test(t0.sistema); }), pc = mostraCalc && temAgua && ligAgua ? textoPressao(c.ix, l.famInst) : null;   /* a pressão só vai na folha que tem a rede de água */
+      if (pc) pend.push({ s: pc, h: h, tipo: "aparelho", camada: "HID-TEXTO", trecho: l.trecho + "-pr", anchors: [p], prio: 1, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 * K2.calc.afasta });
     });
     pz.acess.forEach(function (ac) {
       var p = X(pz.P(ac.centro)), alt = ac.centro.y - pz.pv.cota;

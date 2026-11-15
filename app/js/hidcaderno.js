@@ -46,7 +46,19 @@
        planta de detalhe na 1:25 (ou a primeira escala que couber), vista cotada, isométrico maior e tabelas só do grupo */
     detalhe: { cortaY: 2.4, denMin: 25, colunas: [0.36, 0.38, 0.26], fPlanta: 0.50, fVista: 0.38, perspKMax: 110 },
     linhaTab: 4.6, notaH: 2.1, entreLinhas: 1.35,
-    ptAltura: 0.6   /* altura de ponto padrão (m), só como texto de nota quando o ponto não traz y */
+    ptAltura: 0.6,   /* altura de ponto padrão (m), só como texto de nota quando o ponto não traz y */
+    /* COTAS DE LOCAÇÃO (14/11/2026, pedido do Rogério, referência "Det. Esgoto - Banheiro 1:20"): da face interna da parede ao EIXO de cada ponto
+       (aparelho, ralo, caixa sifonada) e de cada mudança de direção do esgoto, nas duas direções. Geometria de papel (mm) e de modelo (m); nenhum valor de norma. */
+    cotaLocacao: true,                       /* desliga o bloco (controle negativo dos testes) */
+    cotaLocOff0: 6, cotaLocPasso: 6,         /* afastamento da 1ª cadeia do contorno e passo entre cadeias empilhadas (mm de papel) */
+    cotaLocMargem: 12,                       /* faixa reservada por lado do papel para a 1ª cadeia (mm); cada cadeia a mais soma o passo */
+    cotaLocFolgaTexto: 3, cotaLocTentativas: 4,   /* faixa de texto da cota (mm) para desviar de rótulos, e quantos passos a cadeia pode se afastar para isso */
+    cotaLocChamada: 2.5,                     /* comprimento da linha de chamada junto da cadeia (mm) */
+    cotaLocMinCm: 10,                        /* distância mínima (cm) entre duas cotas da mesma cadeia (pré-filtro; o ajuste fino é pela escala, afinarLocacao) */
+    cotaLocFolgaTraco: 2.6,                  /* sobra (mm) que o trecho precisa ter além da largura do texto: os dois traços oblíquos da cota */
+    cotaLocAlcance: 0.3,                     /* o raio procura a parede no máximo até a caixa do cômodo + esta folga (m) */
+    cotaLocPeca: /^(ralo|caixa_sifonada)/,   /* peças de esgoto que levam cota de eixo */
+    cotaLocCx: /^(joelho|curva|juncao|te)/   /* conexões de esgoto que mudam a direção do tubo */
   };
   /* hid:fisica-fim */
   var PREFIXO_COD = { agua_fria: "F", agua_quente: "Q", esgoto: "S", ventilacao: "S", pluvial: "P", gas: "G", industrial: "I", incendio: "N" };
@@ -298,18 +310,134 @@
     return out.sort(function (a, b) { return a.nome < b.nome ? -1 : (a.nome > b.nome ? 1 : ORDEM_SIS.indexOf(a.sistema) - ORDEM_SIS.indexOf(b.sistema)); });
   }
 
+
+  /* ------------------------------------------------------------ COTAS DE LOCAÇÃO (geometria pura, em metros do modelo)
+   * Para cada ponto do ambiente (aparelho, ralo, caixa sifonada) e cada conexão de ESGOTO que muda a direção (joelho, curva, junção, tê), lança um raio
+   * nas 4 direções (-x, +x, -z, +z) contra as paredes do pavimento: o primeiro cruzamento é a FACE INTERNA da parede. Em cada eixo vale a parede MAIS PRÓXIMA.
+   * Os pontos que "olham" para a mesma face entram numa mesma cadeia (face → ponto mais perto → seguinte…), ordenados pela distância, sem repetir cota igual (1 cm).
+   * Ponto cravado na espessura de uma parede (tubo embutido) não leva cota: a face interna não é a que o raio acharia.
+   * Devolve [{ eixo: "x"|"z", lado: "a"(face no menor valor)|"b", face, cm: [distâncias da face em cm, crescentes], valores: ["0,17", …] }]. */
+  function cotasLocacao(c, am, pv, d) {
+    var II = I(), La = II.listasArq(c, pv), G = GEOa(), out = [];
+    if (!La || !K.cotaLocacao) return out;
+    var sala = am.sala || { x0: am.x0, x1: am.x1, z0: am.z0, z1: am.z1 }, al = K.cotaLocAlcance;
+    var lim = { x0: sala.x0 - al, x1: sala.x1 + al, z0: sala.z0 - al, z1: sala.z1 + al };
+    var pol = am.arq && am.arq.pts ? am.arq.pts : null, vistos = {}, P = [];
+    function noComodo(x, z) { return pol ? G.pontoEmPol([x, z], pol) : (x >= sala.x0 && x <= sala.x1 && z >= sala.z0 && z <= sala.z1); }
+    function add(x, z) { if (!isFinite(x) || !isFinite(z) || !noComodo(x, z)) return; var ch = Math.round(x * 100) + "|" + Math.round(z * 100); if (vistos[ch]) return; vistos[ch] = 1; P.push({ x: x, z: z }); }
+    arr(d.ligs).forEach(function (l) { if (l.tipo === "aparelho") add(l.x, l.z); });
+    arr(d.pecas).forEach(function (k) { if (K.cotaLocPeca.test(txt(k.peca)) && k.sistema === "esgoto") add(k.x, k.z); });
+    arr(d.cxs).forEach(function (k) { if (k.sistema === "esgoto" && K.cotaLocCx.test(txt(k.tipo))) add(k.x, k.z); });
+    /* primeiro cruzamento do raio (px,pz)+t·(dx,dz), t > 0, com as arestas das paredes; null se nada dentro do alcance */
+    function raio(px, pz, dx, dz) {
+      var best = null;
+      La.paredes.forEach(function (w) {
+        var q = w.pts;
+        for (var i = 0; i < q.length; i++) {
+          var a = q[i], b = q[(i + 1) % q.length], ex = b[0] - a[0], ez = b[1] - a[1], den = dx * ez - dz * ex;
+          if (Math.abs(den) < 1e-12) continue;   /* raio paralelo à aresta */
+          var t = ((a[0] - px) * ez - (a[1] - pz) * ex) / den, u = ((a[0] - px) * dz - (a[1] - pz) * dx) / den;
+          if (t > 1e-6 && u >= 0 && u <= 1 && (best == null || t < best)) best = t;
+        }
+      });
+      if (best == null) return null;
+      /* ponto sobre a face (ou dentro) da parede: o 1º cruzamento seria a face de SAÍDA da espessura, não a interna; o meio do raio cai dentro de parede → sem cota nesta direção */
+      if (La.paredes.some(function (w) { return G.pontoEmPol([px + dx * best / 2, pz + dz * best / 2], w.pts); })) return null;
+      var hx = px + dx * best, hz = pz + dz * best;
+      return hx < lim.x0 || hx > lim.x1 || hz < lim.z0 || hz > lim.z1 ? null : best;
+    }
+    var grupos = {};
+    P.forEach(function (p) {
+      if (La.paredes.some(function (w) { return G.pontoEmPol([p.x, p.z], w.pts); })) return;
+      [["x", [-1, 0], [1, 0], p.x], ["z", [0, -1], [0, 1], p.z]].forEach(function (e) {
+        var ta = raio(p.x, p.z, e[1][0], e[1][1]), tb = raio(p.x, p.z, e[2][0], e[2][1]);
+        if (ta == null && tb == null) return;
+        var lado = tb == null || (ta != null && ta <= tb) ? "a" : "b", t = lado === "a" ? ta : tb, face = e[3] + (lado === "a" ? -t : t);
+        var chave = e[0] + lado + Math.round(face * 100), g = grupos[chave] || (grupos[chave] = { eixo: e[0], lado: lado, face: face, cm: [] });
+        var cm = Math.round(t * 100);
+        /* legibilidade: a cota que cairia a menos de cotaLocMinCm de outra já na cadeia fica de fora (entram primeiro aparelhos, depois peças, depois conexões) */
+        if (cm >= K.cotaLocMinCm && !g.cm.some(function (v) { return Math.abs(v - cm) < K.cotaLocMinCm; })) g.cm.push(cm);   /* a face conta como cota 0: ponto encostado na parede (< mínimo) não cabe como texto */
+      });
+    });
+    Object.keys(grupos).forEach(function (k) {
+      var g = grupos[k]; g.cm.sort(function (a, b) { return a - b; });
+      g.valores = g.cm.map(function (v, i) { return br((v - (i ? g.cm[i - 1] : 0)) / 100, 2); });
+      out.push(g);
+    });
+    return out.sort(function (a, b) { return a.eixo < b.eixo ? -1 : a.eixo > b.eixo ? 1 : a.lado < b.lado ? -1 : a.lado > b.lado ? 1 : a.face - b.face; });   /* ordem estável */
+  }
+  /* legibilidade na ESCALA ESCOLHIDA: cota cujo trecho no papel não comporta o texto + os dois traços oblíquos (cotaLocFolgaTraco) fica de fora;
+     o trecho seguinte passa a medir a partir da última cota mantida (soma das distâncias, nunca valor inventado). s = mm de papel por metro; h = altura do texto de cota (mm). */
+  function afinarLocacao(ch, s, h) {
+    var II = I();
+    return ch.map(function (g) {
+      var cm = [], ult = 0;
+      g.cm.forEach(function (v) {
+        var val = br((v - ult) / 100, 2), larg = II.larg(val, h);
+        if ((v - ult) / 100 * s >= larg + K.cotaLocFolgaTraco) { cm.push(v); ult = v; }
+      });
+      var o = {}; for (var k in g) o[k] = g[k];
+      o.cm = cm; o.valores = cm.map(function (v, i) { return br((v - (i ? cm[i - 1] : 0)) / 100, 2); });
+      return o;
+    }).filter(function (g) { return g.cm.length; });
+  }
+  /* faixa (mm de papel) reservada em volta da planta para as cadeias, por lado do papel, conforme quantas cadeias empilham ali.
+     eixo x → cadeia horizontal (lado a = em cima, b = embaixo); eixo z → cadeia vertical (lado a = à esquerda, b = à direita) */
+  function margemLocacao(ch) {
+    var m = { x: { a: 0, b: 0 }, z: { a: 0, b: 0 } };
+    ch.forEach(function (g) { m[g.eixo][g.lado]++; });
+    function f(k) { return k ? K.cotaLocMargem + (k - 1) * K.cotaLocPasso : 0; }
+    return { cima: f(m.x.a), baixo: f(m.x.b), esq: f(m.z.a), dir: f(m.z.b) };
+  }
+  function desenharLocacao(D, ch, box, s, ox, oy, chk) {
+    var cont = { x: { a: 0, b: 0 }, z: { a: 0, b: 0 } }, ult = {};
+    ch.forEach(function (g) {
+      var k = cont[g.eixo][g.lado]++, off = K.cotaLocOff0 + k * K.cotaLocPasso, P, sinal = g.lado === "a" ? 1 : -1;
+      var pos = [g.face].concat(g.cm.map(function (v) { return g.face + sinal * v / 100; }));
+      if (g.eixo === "x") { var yE = (g.lado === "a" ? box.z0 : box.z1) * s + oy; P = pos.map(function (xx) { return [xx * s + ox, yE]; }); }
+      else { var xE = (g.lado === "a" ? box.x0 : box.x1) * s + ox; P = pos.map(function (zz) { return [xE, zz * s + oy]; }); }
+      /* o sentido p0→pn decide de que lado fica o "+off": horizontal p/ a direita (lado a) → em cima; p/ a esquerda (lado b) → embaixo;
+         vertical p/ baixo (lado a) → à direita, então a cadeia da esquerda usa −off; vertical p/ cima (lado b) → à esquerda, então a da direita usa −off */
+      /* rótulo da planta que passa da caixa do ambiente (ex.: "CS 100x100x50mm") não pode ficar sob a linha de cota nem sob a chamada curta:
+         a cadeia se afasta, de passo em passo, até a faixa ficar livre de texto (cotaLocTentativas passos no máximo). A linha de chamada é só um
+         cotoco junto da cadeia (cotaLocChamada): uma chamada comprida até a caixa atravessaria os rótulos que passam da caixa */
+      var lo = Infinity, hi = -Infinity, hx = g.eixo === "x";
+      P.forEach(function (q) { var v = q[hx ? 0 : 1]; if (v < lo) lo = v; if (v > hi) hi = v; });
+      lo -= K.cotaLocFolgaTexto; hi += K.cotaLocFolgaTexto;
+      function faixaLivre(o) {
+        var ini = o - K.cotaLocFolgaTexto, fim = o + K.cotaLocFolgaTexto, e0 = hx ? P[0][1] : P[0][0];
+        var dirv = hx ? (g.lado === "a" ? -1 : 1) : (g.lado === "a" ? -1 : 1), r0 = e0 + dirv * (ini - K.cotaLocChamada), r1 = e0 + dirv * fim, rmin = Math.min(r0, r1), rmax = Math.max(r0, r1);
+        return !arr(D.caixas).some(function (cx) {
+          var xs = arr(cx.p).map(function (q) { return q[0]; }), ys = arr(cx.p).map(function (q) { return q[1]; });
+          if (!xs.length) return false;
+          var a0 = hx ? Math.min.apply(null, xs) : Math.min.apply(null, ys), a1 = hx ? Math.max.apply(null, xs) : Math.max.apply(null, ys), b0 = hx ? Math.min.apply(null, ys) : Math.min.apply(null, xs), b1 = hx ? Math.max.apply(null, ys) : Math.max.apply(null, xs);
+          return a0 < hi && a1 > lo && b0 < rmax && b1 > rmin;
+        });
+      }
+      var piso = ult[g.eixo + g.lado] != null ? ult[g.eixo + g.lado] + K.cotaLocPasso : off;
+      off = Math.max(off, piso);
+      for (var tt = 0; tt < K.cotaLocTentativas && !faixaLivre(off); tt++) off += K.cotaLocPasso;
+      ult[g.eixo + g.lado] = off;
+      var of = g.eixo === "x" ? off : -off, n0 = D.sg ? D.sg.length : 0;
+      D.cadeia(P, of, g.valores, { desde: P.map(function () { return Math.max(0.5, off - K.cotaLocChamada); }), attrs: g.valores.map(function () { return ' data-cota="locacao"'; }) });
+      if (D.sg) for (var q = n0; q < D.sg.length; q++) chk.cotas.push(D.sg[q]);
+    });
+  }
+
   /* ------------------------------------------------------------ PLANTA do ambiente (arquitetura inteira recortada na caixa + tubos + alturas dos pontos) */
   function plantaAmbiente(c, D, R, am, pv, d, pts, chk) {
     var II = I(), a0 = c.avisos;
     var box = { x0: am.x0 - K.folgaPlanta, x1: am.x1 + K.folgaPlanta, z0: am.z0 - K.folgaPlanta, z1: am.z1 + K.folgaPlanta };
     var hT = D.E.T.titulo * 0.76 + D.E.T.escala * 1.3 + 2.6;
-    var disp = { w: R.w - 4, h: R.h - hT - 3 }, den = null;
+    /* cotas de locação: as cadeias ficam POR FORA do contorno do ambiente, então cada lado reserva uma faixa; sem rede/ponto nada é reservado */
+    var locCh = am.semRede || !d.trs.length ? [] : cotasLocacao(c, am, pv, d), mg = margemLocacao(locCh);
+    var disp = { w: R.w - 4 - mg.esq - mg.dir, h: R.h - hT - 3 - mg.cima - mg.baixo }, den = null;
     K.escalasPlanta.forEach(function (e) { if (e < (c.denMin || 0)) return; var s = 1000 / e; if (den == null && (box.x1 - box.x0) * s <= disp.w && (box.z1 - box.z0) * s <= disp.h) den = e; });
     if (den == null) den = K.escalasPlanta[K.escalasPlanta.length - 1];   /* nada coube: a menor escala */
     var s = 1000 / den, wP = (box.x1 - box.x0) * s, hP = (box.z1 - box.z0) * s;
     /* o nome da planta EMBAIXO do desenho, com a escala (14/11/2026, pedido do Rogério) */
-    var ox = R.x + 2 + (disp.w - wP) / 2 - box.x0 * s, oy = R.y + 1 + (disp.h - hP) / 2 - box.z0 * s;
-    c.AP.tituloVista(D, R.x + 1, oy + box.z1 * s + 2, "PLANTA DO AMBIENTE", "ESC 1:" + den + " - alturas em m do piso acabado");
+    var ox = R.x + 2 + mg.esq + (disp.w - wP) / 2 - box.x0 * s, oy = R.y + 1 + mg.cima + (disp.h - hP) / 2 - box.z0 * s;
+    c.AP.tituloVista(D, R.x + 1, oy + box.z1 * s + 2 + mg.baixo, "PLANTA DO AMBIENTE", "ESC 1:" + den + " - alturas em m do piso acabado");
     /* 1) arquitetura de fundo, recortada na caixa do ambiente */
     /* HIDRO-3D: tudo o que é arquitetura/louça fica RECORTADO no retângulo da caixa do ambiente (móvel e louça que passam do recorte invadiam o cabeçalho) */
     var clipId = "cpamb" + (c.__clipN = (c.__clipN || 0) + 1) + "_" + Math.round(R.x * 10) + "_" + Math.round(R.y * 10);
@@ -385,7 +513,9 @@
     D.add('<g clip-path="url(#' + clipId + ')">');   /* HIDRO-3D: o tubo que sai do recorte é cortado na caixa do ambiente */
     if (!fotoP) II.formasPlanta(D, cc, d.trs, s, ox, oy, fm);
     D.add("</g>");
-    var bordas = II.bordasTubo(fm, s, ox, oy); bordas.forEach(function (q) { chk.tubos.push(q); });
+    /* a conferência vê só o que o recorte deixa aparecer: o tubo que sai da caixa do ambiente é cortado no desenho, e as cotas de locação ficam logo fora dela */
+    var pBox = { x0: box.x0 * s + ox, x1: box.x1 * s + ox, z0: box.z0 * s + oy, z1: box.z1 * s + oy };
+    II.bordasTubo(fm, s, ox, oy).forEach(function (q) { var r = clipSeg(q[0], q[1], q[2], q[3], pBox); if (r) { r.id = q.id; chk.tubos.push(r); } });
     /* 3) rótulos: DN, setas, aparelho + ALTURA do ponto */
     var altPor = {};
     d.ligs.forEach(function (l) { if (l.tipo !== "aparelho") return; var t = d.trPorId[l.trecho]; (altPor[l.alvo] = altPor[l.alvo] || []).push({ s: t ? t.sistema : "", alt: l.y - pv.cota }); });
@@ -398,6 +528,7 @@
     arr(prim.avisos).forEach(function (m) { a0.push("Ambiente " + am.nome + ": " + m); });
     II.desenhar(D, prim, ox, oy, chk);
     c.prims.push(prim);
+    desenharLocacao(D, afinarLocacao(locCh, s, D.E.T.cota), box, s, ox, oy, chk);   /* por último: as cadeias ficam fora do recorte e desviam dos textos já postos */
     return { den: den, rotularCg: rotularCaixasGordura };   /* o nome da caixa de gordura é desenhado por último (fim do bloco), num lugar livre entre rótulos e tubos */
   }
 
@@ -971,7 +1102,7 @@
     return null;
   }
 
-  var HidCaderno = { VERSAO: 1, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente };
+  var HidCaderno = { VERSAO: 1, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, cotasLocacao: cotasLocacao, afinarLocacao: afinarLocacao, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente };
   global.HidCaderno = HidCaderno;
   if (typeof module !== "undefined" && module.exports) module.exports = HidCaderno;
   /* hid:geometria-fim */

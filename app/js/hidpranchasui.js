@@ -79,7 +79,7 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = HP().normalizarConfig(cfg);
     return { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao,
-             sistemas: c.sistemas, conjuntos: c.conjuntos, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, qr: c.qr, perspectiva: c.perspectiva,
+             sistemas: c.sistemas, conjuntos: c.conjuntos, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, qr: c.qr, perspectiva: c.perspectiva,
              empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
              obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
              ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
@@ -112,7 +112,8 @@
       '<label>Folha <select data-hpr="formato">' + P.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (a menor que cabe)" : f) + "</option>"; }).join("") + "</select></label><br>" +
       '<label>Escala da planta <select data-hpr="escala">' + ESCALAS.map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (a maior que cabe)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
       '<label>Planta <select data-hpr="nivel"><option value="medio"' + (cfg.nivelPlanta !== "baixo" ? " selected" : "") + '>Médio (tubo cheio, conexão branca)</option><option value="baixo"' + (cfg.nivelPlanta === "baixo" ? " selected" : "") + ">Baixo (linha única)</option></select></label><br>" +
-      '<label><input type="checkbox" data-hpr="arq"' + marcado(cfg.arquitetura) + "> Arquitetura em meio-tom</label></fieldset>";
+      '<label><input type="checkbox" data-hpr="arq"' + marcado(cfg.arquitetura) + "> Arquitetura em meio-tom</label><br>" +
+      '<label><input type="checkbox" data-hpr="calc"' + marcado(cfg.mostrarCalculo !== false) + "> Mostrar o cálculo no isométrico (pressões, UHC)</label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Numeração e revisão</b></legend>' +
       '<label>Prefixo <input data-hpr="prefixo" value="' + esc(cfg.prefixo) + '" size="6"></label> <span class="muted">→ ' + esc(cfg.prefixo) + "-01, " + esc(cfg.prefixo) + "-02…</span><br>" +
       '<label>Revisão <input data-hpr="revisao" value="' + esc(cfg.revisao) + '" size="4"></label><br>' +
@@ -139,6 +140,7 @@
     if (q('[data-hpr="escala"]')) c.escala = q('[data-hpr="escala"]').value;
     if (q('[data-hpr="nivel"]')) c.nivelPlanta = q('[data-hpr="nivel"]').value;
     if (q('[data-hpr="arq"]')) c.arquitetura = !!q('[data-hpr="arq"]').checked;
+    if (q('[data-hpr="calc"]')) c.mostrarCalculo = !!q('[data-hpr="calc"]').checked;
     if (q('[data-hpr="prefixo"]')) c.prefixo = q('[data-hpr="prefixo"]').value;
     if (q('[data-hpr="revisao"]')) c.revisao = q('[data-hpr="revisao"]').value;
     if (q('[data-hpr="descrev"]')) c.descricaoRevisao = q('[data-hpr="descrev"]').value;
