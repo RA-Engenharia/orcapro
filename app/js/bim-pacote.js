@@ -1728,11 +1728,28 @@ var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMate
 var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };
 bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
 window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };
+var tubosCx = [];
+todasMalhas(function (m) {
+if (!m.isMesh || m.userData.instPapel !== 'tubo') return; var kt = m.userData._sisK || m.userData.instSis || 'outros';
+if (kt === 'agua_fria' || kt === 'agua_quente' || kt === 'esgoto' || kt === 'ventilacao' || kt === 'pluvial') { try { tubosCx.push({ k: kt, b: new THREE.Box3().setFromObject(m) }); } catch (_) {} }
+});
+var orfaDe = function (m) {
+var b; try { b = new THREE.Box3().setFromObject(m); } catch (_) { return null; } if (b.isEmpty()) return null;
+var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = 0.03;
+for (var i = 0; i < tubosCx.length; i++) { var d = tubosCx[i].b.distanceToPoint ? tubosCx[i].b.distanceToPoint(c) : 1e9; if (d < dm) { dm = d; melhor = tubosCx[i].k; } }
+return melhor;
+};
+window.__focoDiag.orfas = 0;
 todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
+if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
 if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
 if (!agua && !esg) {
+if (o.pisoOp != null && instVista.on && instVistaFundo(m) && /^IFC(SLAB|COVERING)/.test(String(m.userData.tipo || '').toUpperCase())) {
+if (!MAT.piso) MAT.piso = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: +o.pisoOp, depthWrite: false, side: THREE.DoubleSide });
+bk.trocas.push([m, m.material]); m.material = MAT.piso; window.__focoDiag.nPiso = (window.__focoDiag.nPiso || 0) + 1; return;
+}
 if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
 return;
 }

@@ -2550,8 +2550,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */   /* 15/11/2026 (HID-R00 59): "já está muito transparente" — meio-tom e louça 0,6 (antes 0,3/0,28) */
         bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
         window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };   /* soma de todas as fotos da geração (a última foto pode ser de esgoto) */   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
+        /* CONEXÃO SEM SISTEMA (15/11/2026 — o Rogério: "na foto das pranchas as conexões de água fria saem cinza/esbranquiçadas"): a conexão cujo NOME não diz o
+           sistema e que não traz instSis caía em 'outros' e virava a LOUÇA translúcida (cinza claro). O sistema dela é o do TUBO em que ela encosta: guarda a caixa de cada
+           tubo com sistema e, para a conexão órfã, acha o tubo mais próximo (até 3 cm) */
+        var tubosCx = [];
         todasMalhas(function (m) {
-          if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;   /* a conexão sem sistema no nome: o sistema vem da rede (instSis) */   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
+          if (!m.isMesh || m.userData.instPapel !== 'tubo') return; var kt = m.userData._sisK || m.userData.instSis || 'outros';
+          if (kt === 'agua_fria' || kt === 'agua_quente' || kt === 'esgoto' || kt === 'ventilacao' || kt === 'pluvial') { try { tubosCx.push({ k: kt, b: new THREE.Box3().setFromObject(m) }); } catch (_) {} }
+        });
+        var orfaDe = function (m) {
+          var b; try { b = new THREE.Box3().setFromObject(m); } catch (_) { return null; } if (b.isEmpty()) return null;
+          var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = 0.03;
+          for (var i = 0; i < tubosCx.length; i++) { var d = tubosCx[i].b.distanceToPoint ? tubosCx[i].b.distanceToPoint(c) : 1e9; if (d < dm) { dm = d; melhor = tubosCx[i].k; } }
+          return melhor;
+        };
+        window.__focoDiag.orfas = 0;
+        todasMalhas(function (m) {
+          if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
+          if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }   /* a conexão sem sistema no nome: o sistema vem da rede (instSis) */   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
           /* ISOMÉTRICO NA LINHA DA REFERÊNCIA (14/11/2026 — o Rogério mandou a vista: tubos do modelo em cor forte, a parede só como CONTORNO
              cinza no piso, sem volume): o.semArquitetura esconde a arquitetura (o fundo da vista Instalações) só durante a foto */
@@ -2559,6 +2575,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (!agua && !esg) {
             /* LOUÇA TRANSLÚCIDA NA PLANTA (14/11/2026 — o Rogério: "o vaso, a pia, nada disso deve ficar escondendo nossas conexões e os tubos"):
                a peça que não é tubo de sistema (louça, móvel) vira meio-tom translúcido; a arquitetura já é o fundo da vista Instalações */
+            /* PISO CLARO (15/11/2026 — o Rogério: "o piso fica sobreposto às peças; deixa quase branco/transparente, nunca por cima de peça"): a laje/piso do fundo da vista Instalações sai quase branca, opacidade ~0,08, sem escrever profundidade */
+            if (o.pisoOp != null && instVista.on && instVistaFundo(m) && /^IFC(SLAB|COVERING)/.test(String(m.userData.tipo || '').toUpperCase())) {
+              if (!MAT.piso) MAT.piso = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: +o.pisoOp, depthWrite: false, side: THREE.DoubleSide });
+              bk.trocas.push([m, m.material]); m.material = MAT.piso; window.__focoDiag.nPiso = (window.__focoDiag.nPiso || 0) + 1; return;
+            }
             if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
             return;
           }

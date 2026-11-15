@@ -5,9 +5,9 @@
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
   "js/pacotes/bim.js?v=ecc0d225ff",
-  "js/bim-pacote.js?v=ace4939e7c",
+  "js/bim-pacote.js?v=1c21ee5efc",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
-  "js/pacotes/hidro.js?v=f7447a483f"
+  "js/pacotes/hidro.js?v=9a0051f662"
  ],
  "pulados": [
   "venda/perfis-clientes.js"

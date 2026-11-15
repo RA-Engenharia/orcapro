@@ -71,6 +71,7 @@
     qrParam: "amb", qrSep: ",", qrRotAmb: "abrir no 3D", qrRotJunta: " e ", avisoSemPortal: "Sem portal da obra: o QR das folhas de ambiente não foi gerado - publique a placa/portal da obra e informe o link no campo \"QR do portal da obra\".", qrRotSep: " - ", qrReticencia: "...",
     seta: { c: 1.3, l: 0.45 },
     isoRef: { minSeta: 6, seta: 1.3, corAF: "#0d3a9a", corAQ: "#a01818", alemAmb: 0.6, corParede: "#8a8f96", penaParede: 0.3, tolPrumo: 0.01, minVert: 0.15, abaixoPiso: 0.05, minIntervalo: 0.05, afasta: 4.5, tique: 0.9, corCota: "#3d434a", penaCota: 0.2, texto: 2.2 },
+    pisoOp: 0.08,   /* 15/11/2026: o piso da foto (planta e isométrico) quase branco e translúcido: nunca por cima da peça */
     fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
     simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35, arco: 1.5, alturaArco: 1.8, sigla: "CT" },
     /* ELEVAÇÃO HID (15/11/2026, referência do Rogério "ELEVAÇÃO HID - WC 1:20"): título com o número no círculo e a escala embaixo; cadeias de cota em cm dos dois lados */
@@ -320,7 +321,7 @@
       if (rotular[t.id]) pend.push({ s: partes.join("  "), h: KI.hPeq, tipo: "dn", camada: "HID-TEXTO", trecho: t.id, anchors: an, prio: 3, chamadaMin: o.medio ? K2.chamadaPlanta : null, d0: d0b, comprimento: Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])) });
       if (t.sistema === "esgoto" || t.sistema === "pluvial") {
         var dx = b[0] - a[0], dy = b[1] - a[1], Ld = Math.sqrt(dx * dx + dy * dy);
-        if (Ld >= 2 * KI.arrComp) {
+        if (Ld >= 2 * KI.arrComp && H.setaPermitida(t, S, a[0] + dx * KI.arrPos, a[1] + dy * KI.arrPos)) {   /* 15/11/2026: uma seta por trecho de >= 0,5 m e a >= 25 mm de outra */
           var ux = dx / Ld, uy = dy / Ld, cx = a[0] + dx * KI.arrPos, cy = a[1] + dy * KI.arrPos, h2 = KI.arrComp / 2, nx = -uy * KI.arrLarg, ny = ux * KI.arrLarg;
           S.push({ tipo: "seta", x: cx, y: cy, r: h2, camada: "HID-SIMBOLO", naLinha: true, id: t.id, box: [cx - h2, cy - h2, cx + h2, cy + h2],
                    pts: [[cx + ux * h2, cy + uy * h2], [cx - ux * h2 + nx, cy - uy * h2 + ny], [cx - ux * h2 - nx, cy - uy * h2 - ny]] });
@@ -1564,12 +1565,32 @@
     var yTeto = pv.cota + K2.perspAltura; paredesDoPav(est, pv).forEach(function (w) { if (recortaEixo(w, b)) yTeto = Math.max(yTeto, Math.min(w.y1, pv.cota + K2.perspAlturaMax)); });
     yT = Math.min(yT, yTeto);
     if (c.cortaY) yT = Math.min(yT, pv.cota + c.cortaY);   /* HIDRO-3D: detalhe por grupo - o prumo (ventilação) sai INTERROMPIDO acima desta altura do piso, como a folha da Tânia */
-    var par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
+    var paredesIso = [], par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
+    /* os dois lados do FUNDO do cômodo (os de menor profundidade para quem olha) e a parede que está NELES: devolve o nome do lado ('x0','x1','z0','z1'),
+       null (parede inclinada: segue a regra antiga) ou false (parede que não é uma das duas do fundo) */
+    var ladosFundo = [];
+    [{ k: "x0", ax: "x", v: b.x0, z: (b.z0 + b.z1) / 2 }, { k: "x1", ax: "x", v: b.x1, z: (b.z0 + b.z1) / 2 }, { k: "z0", ax: "z", v: b.z0, x: (b.x0 + b.x1) / 2 }, { k: "z1", ax: "z", v: b.z1, x: (b.x0 + b.x1) / 2 }].forEach(function (l) {
+      var pt = l.ax === "x" ? { x: l.v, y: 0, z: l.z } : { x: l.x, y: 0, z: l.v }; if (P(pt).d < cBox - 1e-9) ladosFundo.push(l);
+    });
+    function ladoDeFundo(r, w) {
+      var tolW = (w.esp || 0.15) + 0.1, alongX = Math.abs(r.a[1] - r.b[1]) < 1e-3, alongZ = Math.abs(r.a[0] - r.b[0]) < 1e-3;
+      if (!alongX && !alongZ) return null;
+      for (var i = 0; i < ladosFundo.length; i++) {
+        var l = ladosFundo[i];
+        if (l.ax === "x" && alongZ && Math.abs(r.a[0] - l.v) <= tolW) return l.k;
+        if (l.ax === "z" && alongX && Math.abs(r.a[1] - l.v) <= tolW) return l.k;
+      }
+      return false;
+    }
     /* arquitetura: piso e paredes recortadas pela caixa (até a altura do tubo mais alto + folga) */
     paredesDoPav(est, pv).forEach(function (w) {
       var r = recortaEixo(w, { x0: b.x0 - w.esp, x1: b.x1 + w.esp, z0: b.z0 - w.esp, z1: b.z1 + w.esp }); if (!r) return;
       /* só as paredes do FUNDO (as da frente cortadas, como na perspectiva de banheiro das pranchas de projeto) */
       if (P({ x: (r.a[0] + r.b[0]) / 2, y: 0, z: (r.a[1] + r.b[1]) / 2 }).d > cBox + K2.perspFrente) return;
+      /* 15/11/2026 (o Rogério): SÓ DUAS paredes — as duas faces do fundo do cômodo (a dos tubos e a lateral ao lado); pedaço de parede de outro cômodo que cruza o recorte não entra */
+      var ladoW = ladoDeFundo(r, w);
+      if (ladoW === false) return;
+      if (ladoW) { if (paredesIso.indexOf(ladoW) < 0) paredesIso.push(ladoW); }
       var he = w.esp / 2, pl = [[r.a[0] - w.n[0] * he, r.a[1] - w.n[1] * he], [r.b[0] - w.n[0] * he, r.b[1] - w.n[1] * he], [r.b[0] + w.n[0] * he, r.b[1] + w.n[1] * he], [r.a[0] + w.n[0] * he, r.a[1] + w.n[1] * he]];
       prisma(pl, Math.max(w.y0, pv.cota), Math.min(w.y1, yT + K2.perspTopo), P).forEach(function (f) { faces.push(f); });
       par3d.push({ pl: pl, y0: Math.max(w.y0, pv.cota), y1: Math.min(w.y1, yT + K2.perspTopo) });   /* HIDRO-3D: a mesma parede em 3D para o render */
@@ -1610,7 +1631,7 @@
     });
     var pontos = arr(c.rede.ligacoes).filter(function (l) { return l.tipo === "aparelho" && dentro(l) && l.y >= b0 && l.y < b1; });
     var acess = arr(c.rede.acessorios).filter(function (a) { return a.centro && dentro(a.centro) && a.centro.y >= b0 && a.centro.y < b1; });
-    return { faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
+    return { paredesIso: paredesIso, dCentro: cBox, faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
   }
   /* 14/11/2026 — O ISOMÉTRICO DE SISTEMA COM O DESENHO DO MODELO (o Rogério: "a prancha tem que sair do mesmo jeito que está no
      sistema; está saindo o tracejado estranho"). O isométrico de linha (js/hidisometrico.js: duas linhas finas e tique de
@@ -1657,7 +1678,7 @@
     var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
     var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
     var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
-    var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+    var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, pisoOp: K2.pisoOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
       largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
     if (!r || !r.ok || !r.url) return null;
     var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
@@ -1703,7 +1724,7 @@
     var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
     /* o sistema da FOLHA vai em cor (a da legenda: esgoto VERDE), o outro em meio-tom (o Rogério, HID-R00 (51), 14/11/2026) */
     var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
-    var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+    var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, pisoOp: K2.pisoOp, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
       /* a parede da FRENTE (do lado de quem olha) fica fora do recorte e a do FUNDO entra: o fundo aparece limpo (o Rogério: "a parede na frente você oculta") */
       min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
       max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
@@ -2105,6 +2126,7 @@
       var cx = { x0: b.x0 - KR.alemAmb, x1: b.x1 + KR.alemAmb, z0: b.z0 - KR.alemAmb, z1: b.z1 + KR.alemAmb };
       La.paredes.concat(La.pilares).forEach(function (w) {
         var q = clipPoly(w.pts, cx); if (q.length < 3) return;
+        if (pz.dCentro != null) { var mx0 = 0, mz0 = 0; q.forEach(function (pt) { mx0 += pt[0]; mz0 += pt[1]; }); if (P({ x: mx0 / q.length, y: 0, z: mz0 / q.length }).d > pz.dCentro + K2.perspFrente) return; }   /* 15/11/2026: o contorno das paredes da FRENTE também fica oculto */
         D.add('<polygon points="' + q.map(function (pt) { var s0 = X(P({ x: pt[0], y: yC, z: pt[1] })); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede) + '" stroke-linejoin="round" data-cam="HID-CONTEXTO"/>');
       });
     }
@@ -2115,6 +2137,7 @@
     /* 1b) o SENTIDO DA ÁGUA (2ª referência do Rogério: "o fluxo está aí na água, certinho — bom pro encanador entender"): a rede do ambiente é
        uma árvore; as pontas que são PONTOS DE UTILIZAÇÃO são as saídas, as outras pontas (a coluna, o corte do recorte) são a entrada. Uma busca
        a partir das entradas dá, em cada trecho, o sentido de montante para jusante; a seta cheia vai no meio do trecho, na cor do sistema. */
+    var setasIso = [];
     (function () {
       var ag = arr(pz.trs).filter(function (t) { return /^agua/.test(t.sistema); }); if (!ag.length) return;
       function ch(q) { return Math.round(q.x * 200) + "|" + Math.round(q.y * 200) + "|" + Math.round(q.z * 200); }   // hid:ok nó a 5 mm
@@ -2123,10 +2146,13 @@
       var fila = Object.keys(viz).filter(function (k1) { return viz[k1].length === 1 && !ehPonto[k1]; }), visto = {}, sentido = {};
       fila.forEach(function (k1) { visto[k1] = 1; });
       while (fila.length) { var k0 = fila.shift(); viz[k0].forEach(function (e) { var k2 = ch(e.para); if (sentido[e.t.id]) return; sentido[e.t.id] = e; if (!visto[k2]) { visto[k2] = 1; fila.push(k2); } }); }
-      ag.forEach(function (t) {
+      function cmp3(t) { return Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.y - t.p1.y, 2) + Math.pow(t.p2.z - t.p1.z, 2)); }
+      ag.slice().sort(function (p0, q0) { return cmp3(q0) - cmp3(p0); }).forEach(function (t) {   /* os trechos mais longos levam a seta primeiro */
         var e = sentido[t.id]; if (!e) return;
         var A = X(P(e.de)), B = X(P(e.para)), L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < KR.minSeta) return;
-        var ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, cor = /quente/.test(t.sistema) ? KR.corAQ : KR.corAF, a0 = KR.seta;
+        var ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+        if (!HI().setaPermitida(t, setasIso, mx, my)) return; setasIso.push({ tipo: "seta", x: mx, y: my });   /* 15/11/2026: no máximo uma por trecho, trecho >= 0,5 m, 25 mm entre setas */
+        var cor = /quente/.test(t.sistema) ? KR.corAQ : KR.corAF, a0 = KR.seta;
         D.cheio([[mx + ux * a0, my + uy * a0], [mx - ux * a0 * 0.6 - uy * a0 * 0.55, my - uy * a0 * 0.6 + ux * a0 * 0.55], [mx - ux * a0 * 0.6 + uy * a0 * 0.55, my - uy * a0 * 0.6 - ux * a0 * 0.55]], cor);
       });
     })();

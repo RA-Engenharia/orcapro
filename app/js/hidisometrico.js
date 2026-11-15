@@ -63,6 +63,7 @@
     margem: 8,
     cotaOff: 4.2, cotaExt: 1.2, cotaTique: 1.1, cotaMin: 0.15,   /* linha de cota: afastamento, prolongamento, traço oblíquo, trecho mínimo (m) */
     arrComp: 2.6, arrLarg: 0.9,                           /* seta de sentido */
+    arrMinM: 0.5, arrEspaco: 25,                          /* 15/11/2026 (Rogério: setas coladas, poluindo): UMA seta por trecho, só em trecho de ao menos 0,5 m, e no mínimo 25 mm de papel entre duas setas */
     rJoelho: 0.7, rTe: 1.0, rPonto: 1.1, rBalaoMin: 3.2,
     regC: 2.4, regL: 1.5,                                 /* registro: comprimento e meia-largura da "gravata" */
     caixaL: 3.2,                                          /* ralo/caixa: lado do quadrado */
@@ -102,6 +103,16 @@
   }
 
   /* ------------------------------------------------------------ projeção */
+  /* a seta só vale em trecho de ao menos arrMinM (m reais) e a K.arrEspaco (mm de papel) das já postas em S */
+  function setaLivre(S, x, y, esp) {
+    var e = esp == null ? K.arrEspaco : esp;
+    for (var i = 0; i < S.length; i++) if (S[i].tipo === "seta" && Math.sqrt((S[i].x - x) * (S[i].x - x) + (S[i].y - y) * (S[i].y - y)) < e) return false;
+    return true;
+  }
+  function setaPermitida(t, S, x, y) {
+    if (t && t.p1 && t.p2) { var dx = t.p2.x - t.p1.x, dy = t.p2.y - t.p1.y, dz = t.p2.z - t.p1.z; if (Math.sqrt(dx * dx + dy * dy + dz * dz) < K.arrMinM) return false; }
+    return setaLivre(S, x, y);
+  }
   function proj(p, k) { return [(p.x - p.z) * K.cos * k, ((p.x + p.z) * K.sen - p.y) * k]; }
   function dist3(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
 
@@ -459,7 +470,7 @@
     if (sis === "esgoto") g.trechos.forEach(function (t) {
       if (t.sistema !== "esgoto") return;
       var pr = P[t.id], dx = pr.b[0] - pr.a[0], dy = pr.b[1] - pr.a[1], Ld = Math.sqrt(dx * dx + dy * dy);
-      if (Ld < 2 * K.arrComp) return;
+      if (Ld < 2 * K.arrComp || !setaPermitida(t, S, pr.a[0] + dx * K.arrPos, pr.a[1] + dy * K.arrPos)) return;
       var ux = dx / Ld, uy = dy / Ld, cx = pr.a[0] + dx * K.arrPos, cy = pr.a[1] + dy * K.arrPos, tx = cx + ux * K.arrComp / 2, ty = cy + uy * K.arrComp / 2, bx = cx - ux * K.arrComp / 2, by = cy - uy * K.arrComp / 2;
       var nx = -uy * K.arrLarg, ny = ux * K.arrLarg;
       S.push({ tipo: "seta", x: cx, y: cy, r: K.arrComp / 2, ang: Math.atan2(dy, dx), camada: "HID-SIMBOLO", pts: [[tx, ty], [bx + nx, by + ny], [bx - nx, by - ny]], id: t.id, box: [cx - K.arrComp / 2, cy - K.arrComp / 2, cx + K.arrComp / 2, cy + K.arrComp / 2], naLinha: true });
@@ -574,7 +585,7 @@
   }
 
   /* hid:fisica-fim */
-  var HidIsometrico = { VERSAO: 1, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, largTexto: largTexto, indicesResultado: indicesResultado,
+  var HidIsometrico = { VERSAO: 1, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
                         SIGLA_SISTEMA: SIGLA_SISTEMA, NOME_SISTEMA: NOME_SISTEMA };
   global.HidIsometrico = HidIsometrico;
   if (typeof module !== "undefined" && module.exports) module.exports = HidIsometrico;

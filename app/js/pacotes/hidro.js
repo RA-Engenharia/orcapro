@@ -26038,6 +26038,7 @@ chamadaMin: 4,
 margem: 8,
 cotaOff: 4.2, cotaExt: 1.2, cotaTique: 1.1, cotaMin: 0.15,
 arrComp: 2.6, arrLarg: 0.9,
+arrMinM: 0.5, arrEspaco: 25,
 rJoelho: 0.7, rTe: 1.0, rPonto: 1.1, rBalaoMin: 3.2,
 regC: 2.4, regL: 1.5,
 caixaL: 3.2,
@@ -26069,6 +26070,15 @@ function largTexto(s, h) {
 if (_lt === null) { var A = dep("AcoPranchas", "./acopranchas.js"); _lt = (A && A.largTexto) ? A.largTexto : false; }
 s = String(s == null ? "" : s);
 return _lt ? _lt(s, h) : s.length * h * K.larg;
+}
+function setaLivre(S, x, y, esp) {
+var e = esp == null ? K.arrEspaco : esp;
+for (var i = 0; i < S.length; i++) if (S[i].tipo === "seta" && Math.sqrt((S[i].x - x) * (S[i].x - x) + (S[i].y - y) * (S[i].y - y)) < e) return false;
+return true;
+}
+function setaPermitida(t, S, x, y) {
+if (t && t.p1 && t.p2) { var dx = t.p2.x - t.p1.x, dy = t.p2.y - t.p1.y, dz = t.p2.z - t.p1.z; if (Math.sqrt(dx * dx + dy * dy + dz * dz) < K.arrMinM) return false; }
+return setaLivre(S, x, y);
 }
 function proj(p, k) { return [(p.x - p.z) * K.cos * k, ((p.x + p.z) * K.sen - p.y) * k]; }
 function dist3(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
@@ -26373,7 +26383,7 @@ pendentes.push({ s: nome + "  " + sinal(alt, 2) + " m", h: K.hPeq, tipo: "altura
 if (sis === "esgoto") g.trechos.forEach(function (t) {
 if (t.sistema !== "esgoto") return;
 var pr = P[t.id], dx = pr.b[0] - pr.a[0], dy = pr.b[1] - pr.a[1], Ld = Math.sqrt(dx * dx + dy * dy);
-if (Ld < 2 * K.arrComp) return;
+if (Ld < 2 * K.arrComp || !setaPermitida(t, S, pr.a[0] + dx * K.arrPos, pr.a[1] + dy * K.arrPos)) return;
 var ux = dx / Ld, uy = dy / Ld, cx = pr.a[0] + dx * K.arrPos, cy = pr.a[1] + dy * K.arrPos, tx = cx + ux * K.arrComp / 2, ty = cy + uy * K.arrComp / 2, bx = cx - ux * K.arrComp / 2, by = cy - uy * K.arrComp / 2;
 var nx = -uy * K.arrLarg, ny = ux * K.arrLarg;
 S.push({ tipo: "seta", x: cx, y: cy, r: K.arrComp / 2, ang: Math.atan2(dy, dx), camada: "HID-SIMBOLO", pts: [[tx, ty], [bx + nx, by + ny], [bx - nx, by - ny]], id: t.id, box: [cx - K.arrComp / 2, cy - K.arrComp / 2, cx + K.arrComp / 2, cy + K.arrComp / 2], naLinha: true });
@@ -26465,7 +26475,7 @@ T.forEach(function (t) { if (s.tipo === "balao" && s.id === t.s && s.trecho === 
 if (/NaN|undefined|Infinity/.test(JSON.stringify([d.linhas, d.textos, d.simbolos, d.w, d.h]))) inv.push("valor inválido (NaN/undefined/Infinity) nas primitivas");
 return { ok: !semDN.length && !sob.length && !inv.length, semDN: semDN, sobrepostos: sob, invalidos: inv };
 }
-var HidIsometrico = { VERSAO: 1, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, largTexto: largTexto, indicesResultado: indicesResultado,
+var HidIsometrico = { VERSAO: 1, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
 SIGLA_SISTEMA: SIGLA_SISTEMA, NOME_SISTEMA: NOME_SISTEMA };
 global.HidIsometrico = HidIsometrico;
 if (typeof module !== "undefined" && module.exports) module.exports = HidIsometrico;
@@ -26496,6 +26506,7 @@ qr: 30, qrTexto: 2.5, qrRot: "PORTAL DA OBRA",
 qrParam: "amb", qrSep: ",", qrRotAmb: "abrir no 3D", qrRotJunta: " e ", avisoSemPortal: "Sem portal da obra: o QR das folhas de ambiente não foi gerado - publique a placa/portal da obra e informe o link no campo \"QR do portal da obra\".", qrRotSep: " - ", qrReticencia: "...",
 seta: { c: 1.3, l: 0.45 },
 isoRef: { minSeta: 6, seta: 1.3, corAF: "#0d3a9a", corAQ: "#a01818", alemAmb: 0.6, corParede: "#8a8f96", penaParede: 0.3, tolPrumo: 0.01, minVert: 0.15, abaixoPiso: 0.05, minIntervalo: 0.05, afasta: 4.5, tique: 0.9, corCota: "#3d434a", penaCota: 0.2, texto: 2.2 },
+pisoOp: 0.08,
 fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
 simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35, arco: 1.5, alturaArco: 1.8, sigla: "CT" },
 elev: { titulo: "ELEVAÇÃO HID", cotaV: 9, margemV: 3, folgaH: 5, folgaTit: 1.5, minTrecho: 4, alturaTit: 9.5 },
@@ -26697,7 +26708,7 @@ var d0b = o.medio && typeof o.deTubo === "function" ? o.deTubo(t) / 1000 * s / 2
 if (rotular[t.id]) pend.push({ s: partes.join("  "), h: KI.hPeq, tipo: "dn", camada: "HID-TEXTO", trecho: t.id, anchors: an, prio: 3, chamadaMin: o.medio ? K2.chamadaPlanta : null, d0: d0b, comprimento: Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])) });
 if (t.sistema === "esgoto" || t.sistema === "pluvial") {
 var dx = b[0] - a[0], dy = b[1] - a[1], Ld = Math.sqrt(dx * dx + dy * dy);
-if (Ld >= 2 * KI.arrComp) {
+if (Ld >= 2 * KI.arrComp && H.setaPermitida(t, S, a[0] + dx * KI.arrPos, a[1] + dy * KI.arrPos)) {
 var ux = dx / Ld, uy = dy / Ld, cx = a[0] + dx * KI.arrPos, cy = a[1] + dy * KI.arrPos, h2 = KI.arrComp / 2, nx = -uy * KI.arrLarg, ny = ux * KI.arrLarg;
 S.push({ tipo: "seta", x: cx, y: cy, r: h2, camada: "HID-SIMBOLO", naLinha: true, id: t.id, box: [cx - h2, cy - h2, cx + h2, cy + h2],
 pts: [[cx + ux * h2, cy + uy * h2], [cx - ux * h2 + nx, cy - uy * h2 + ny], [cx - ux * h2 - nx, cy - uy * h2 - ny]] });
@@ -27788,10 +27799,27 @@ var yB = Math.min(pv.cota - K2.perspFundo, Math.min.apply(null, ys)), yT = Math.
 var yTeto = pv.cota + K2.perspAltura; paredesDoPav(est, pv).forEach(function (w) { if (recortaEixo(w, b)) yTeto = Math.max(yTeto, Math.min(w.y1, pv.cota + K2.perspAlturaMax)); });
 yT = Math.min(yT, yTeto);
 if (c.cortaY) yT = Math.min(yT, pv.cota + c.cortaY);
-var par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
+var paredesIso = [], par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
+var ladosFundo = [];
+[{ k: "x0", ax: "x", v: b.x0, z: (b.z0 + b.z1) / 2 }, { k: "x1", ax: "x", v: b.x1, z: (b.z0 + b.z1) / 2 }, { k: "z0", ax: "z", v: b.z0, x: (b.x0 + b.x1) / 2 }, { k: "z1", ax: "z", v: b.z1, x: (b.x0 + b.x1) / 2 }].forEach(function (l) {
+var pt = l.ax === "x" ? { x: l.v, y: 0, z: l.z } : { x: l.x, y: 0, z: l.v }; if (P(pt).d < cBox - 1e-9) ladosFundo.push(l);
+});
+function ladoDeFundo(r, w) {
+var tolW = (w.esp || 0.15) + 0.1, alongX = Math.abs(r.a[1] - r.b[1]) < 1e-3, alongZ = Math.abs(r.a[0] - r.b[0]) < 1e-3;
+if (!alongX && !alongZ) return null;
+for (var i = 0; i < ladosFundo.length; i++) {
+var l = ladosFundo[i];
+if (l.ax === "x" && alongZ && Math.abs(r.a[0] - l.v) <= tolW) return l.k;
+if (l.ax === "z" && alongX && Math.abs(r.a[1] - l.v) <= tolW) return l.k;
+}
+return false;
+}
 paredesDoPav(est, pv).forEach(function (w) {
 var r = recortaEixo(w, { x0: b.x0 - w.esp, x1: b.x1 + w.esp, z0: b.z0 - w.esp, z1: b.z1 + w.esp }); if (!r) return;
 if (P({ x: (r.a[0] + r.b[0]) / 2, y: 0, z: (r.a[1] + r.b[1]) / 2 }).d > cBox + K2.perspFrente) return;
+var ladoW = ladoDeFundo(r, w);
+if (ladoW === false) return;
+if (ladoW) { if (paredesIso.indexOf(ladoW) < 0) paredesIso.push(ladoW); }
 var he = w.esp / 2, pl = [[r.a[0] - w.n[0] * he, r.a[1] - w.n[1] * he], [r.b[0] - w.n[0] * he, r.b[1] - w.n[1] * he], [r.b[0] + w.n[0] * he, r.b[1] + w.n[1] * he], [r.a[0] + w.n[0] * he, r.a[1] + w.n[1] * he]];
 prisma(pl, Math.max(w.y0, pv.cota), Math.min(w.y1, yT + K2.perspTopo), P).forEach(function (f) { faces.push(f); });
 par3d.push({ pl: pl, y0: Math.max(w.y0, pv.cota), y1: Math.min(w.y1, yT + K2.perspTopo) });
@@ -27826,7 +27854,7 @@ itens.push({ tipo: "peca", pts: pl.map(function (q) { return P({ x: q[0], y: k.y
 });
 var pontos = arr(c.rede.ligacoes).filter(function (l) { return l.tipo === "aparelho" && dentro(l) && l.y >= b0 && l.y < b1; });
 var acess = arr(c.rede.acessorios).filter(function (a) { return a.centro && dentro(a.centro) && a.centro.y >= b0 && a.centro.y < b1; });
-return { faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
+return { paredesIso: paredesIso, dCentro: cBox, faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
 }
 function perspectivaDoIso(c, d) {
 var ids = {}; arr(d.trechos).forEach(function (id) { ids[id] = 1; });
@@ -27864,7 +27892,7 @@ var ys = []; trs.forEach(function (t) { ys.push(t.p1.y, t.p2.y); });
 var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
 var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
 var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
-var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, pisoOp: K2.pisoOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
 largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
 if (!r || !r.ok || !r.url) return null;
 var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
@@ -27907,7 +27935,7 @@ var R = [ex.u - O.u, ey.u - O.u, ez.u - O.u], U = [-(ex.v - O.v), -(ey.v - O.v),
 var lim = limitesPersp(pz), mg = (lim.u1 - lim.u0) * 0.04; lim.u0 -= mg; lim.u1 += mg; lim.v0 -= mg; lim.v1 += mg;
 var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
 var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
-var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, pisoOp: K2.pisoOp, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
 min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
 max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
 if (!r || !r.ok || !r.url) return null;
@@ -28266,11 +28294,13 @@ if (La) {
 var cx = { x0: b.x0 - KR.alemAmb, x1: b.x1 + KR.alemAmb, z0: b.z0 - KR.alemAmb, z1: b.z1 + KR.alemAmb };
 La.paredes.concat(La.pilares).forEach(function (w) {
 var q = clipPoly(w.pts, cx); if (q.length < 3) return;
+if (pz.dCentro != null) { var mx0 = 0, mz0 = 0; q.forEach(function (pt) { mx0 += pt[0]; mz0 += pt[1]; }); if (P({ x: mx0 / q.length, y: 0, z: mz0 / q.length }).d > pz.dCentro + K2.perspFrente) return; }
 D.add('<polygon points="' + q.map(function (pt) { var s0 = X(P({ x: pt[0], y: yC, z: pt[1] })); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede) + '" stroke-linejoin="round" data-cam="HID-CONTEXTO"/>');
 });
 }
 arr(pz.faces).forEach(function (f) { if (f.topo) return; D.add('<polygon points="' + f.pts.map(function (q) { var s0 = X(q); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede * 0.7) + '" stroke-linejoin="round" data-cam="HID-CONTEXTO"/>'); });
 if (arr(pz.piso).length) D.add('<polygon points="' + pz.piso.map(function (q) { var s0 = X(q); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede) + '" data-cam="HID-CONTEXTO"/>');
+var setasIso = [];
 (function () {
 var ag = arr(pz.trs).filter(function (t) { return /^agua/.test(t.sistema); }); if (!ag.length) return;
 function ch(q) { return Math.round(q.x * 200) + "|" + Math.round(q.y * 200) + "|" + Math.round(q.z * 200); }
@@ -28279,10 +28309,13 @@ var ehPonto = {}; arr(pz.pontos).forEach(function (l) { ehPonto[ch(l)] = 1; });
 var fila = Object.keys(viz).filter(function (k1) { return viz[k1].length === 1 && !ehPonto[k1]; }), visto = {}, sentido = {};
 fila.forEach(function (k1) { visto[k1] = 1; });
 while (fila.length) { var k0 = fila.shift(); viz[k0].forEach(function (e) { var k2 = ch(e.para); if (sentido[e.t.id]) return; sentido[e.t.id] = e; if (!visto[k2]) { visto[k2] = 1; fila.push(k2); } }); }
-ag.forEach(function (t) {
+function cmp3(t) { return Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.y - t.p1.y, 2) + Math.pow(t.p2.z - t.p1.z, 2)); }
+ag.slice().sort(function (p0, q0) { return cmp3(q0) - cmp3(p0); }).forEach(function (t) {
 var e = sentido[t.id]; if (!e) return;
 var A = X(P(e.de)), B = X(P(e.para)), L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < KR.minSeta) return;
-var ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, cor = /quente/.test(t.sistema) ? KR.corAQ : KR.corAF, a0 = KR.seta;
+var ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+if (!HI().setaPermitida(t, setasIso, mx, my)) return; setasIso.push({ tipo: "seta", x: mx, y: my });
+var cor = /quente/.test(t.sistema) ? KR.corAQ : KR.corAF, a0 = KR.seta;
 D.cheio([[mx + ux * a0, my + uy * a0], [mx - ux * a0 * 0.6 - uy * a0 * 0.55, my - uy * a0 * 0.6 + ux * a0 * 0.55], [mx - ux * a0 * 0.6 + uy * a0 * 0.55, my - uy * a0 * 0.6 - ux * a0 * 0.55]], cor);
 });
 })();
