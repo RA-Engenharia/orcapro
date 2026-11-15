@@ -1134,6 +1134,19 @@
       status("Caixa d'água posta. Ponha os aparelhos (ou trace os ambientes) e ela liga sozinha no Traçar automaticamente.");
       return "nada";
     },
+    /* 15/11/2026 (Estância Montalvão: "a caixa não liga nas colunas AF-1/2/3"): com caixa d'água no modelo e coluna/espera de água fria ABERTA
+       (traçada depois da caixa, ou desenhada à mão sem a marca "continua"), a prévia do barrilete abre sozinha — o mesmo cartão do Montar
+       barrilete (Enter aplica, Esc cancela, um Ctrl+Z desfaz). Sem caixa, sem espera aberta, automático desligado ou outra prévia aberta: nada. */
+    ligarCaixaPendente: function () {
+      if (U._plano || !U._sincAuto()) return null;
+      var c = U._ctx(), HBR = dep("HidBarrilete"); if (!c || !HBR || !HBR.caixas || !HBR.esperas) return null;
+      try { if (!HBR.caixas(c.estado, c.avaliarFam).length || !HBR.esperas(c.estado, c.avaliarFam, c.ops).length) return null; } catch (eE) { return null; }
+      var P = U.planejarBarrilete({});
+      if (!P || !P.ok || !arr(P.ops).some(function (o) { return o && o.op === "trecho"; })) return null;   /* só com tubo a lançar (a caixa baixa, sem tubo, já foi dita pelo Traçar) */
+      U._plano = P; U._planoUids = []; U._previa(P.ops); U._cardMostrar(P);
+      status("Há coluna de água fria sem ligação à caixa d'água: a prévia do barrilete (" + P.resumo.tubos + " tubo(s)). Enter aplica, Esc cancela.");
+      return P;
+    },
     montarBarrilete: function (opcoes) {
       var c = U._ctx(); if (!c) { status("Abra o BIM para montar o barrilete."); return null; }
       status("Montar barrilete: calculando…");
@@ -1194,6 +1207,8 @@
       if (P.escopo && P.escopo.tipo === "corrigir") { status(ok ? "Correção aplicada: " + arr(P.textos).join("; ") + ". Ctrl+Z desfaz tudo." : "O editor recusou a correção."); try { var BUc = global.BimInstUI; if (ok && BUc && BUc.verificarSistemas) BUc.verificarSistemas(); } catch (eV) {} U._redesenhar(); return U.ultimo; }
       status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
       U._redesenhar();
+      /* a caixa já estava no modelo e o traçado deixou coluna aberta (o barrilete não entrou): oferece o barrilete */
+      if (ok && !P.barrilete && !(P.escopo && P.escopo.tipo === "corrigir")) { try { U.ligarCaixaPendente(); } catch (eLc) {} }
       return U.ultimo;
     },
     /* Corrigir: tira o aparelho duplicado (e o kit dele, se tiver) num lote e refaz a prévia */

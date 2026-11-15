@@ -95,9 +95,9 @@
     /* CONJUNTO "ISOMÉTRICOS (PRANCHA ÚNICA)" (15/11/2026, referência do Rogério: prancha com vários isométricos numerados e título embaixo com linha):
        grade colunas x linhas de células (mm de papel); o ISO - GERAL ocupa geral x geral células (canto superior esquerdo); faixa = altura do título embaixo da vista;
        alcance = raio (m) em volta da caixa d'água onde os tubos entram na vista; caixaMeia = meia-largura (m) da caixa quando a família não traz o diâmetro */
-    isos: { formato: "A0", formatos: ["A0", "A1"], colunas: 4, linhas: 4, geral: 2, gap: 8, faixa: 14, circulo: 4.6, margem: 3, kMax: 140, alcance: 1.5, caixaMeia: 1.0, fracTitulo: 0.92, penaTitulo: 0.16 }, reserv: { escalas: [25, 50], folga: 0.3, margemParede: 0.2, quebraPos: 0.25, alcance: 2.5, epsRaio: 1e-9, tolPav: 0.05, tolTubo: 0.3, folgaFoto: 0.15, altFoto: 1.0, pad: 14, minPoli: 3, cotaOff: 8, fracTit: 0.76, fracEsc: 1.3, folgaTit: 2.6, padraoEsq: [1.0, 1.0],
+    isos: { formato: "A0", formatos: ["A0", "A1"], colunas: 4, linhas: 4, geral: 2, gap: 8, faixa: 14, circulo: 4.6, margem: 3, kMax: 140, alcance: 1.5, caixaMeia: 1.0, fracTitulo: 0.92, penaTitulo: 0.16 }, reserv: { escalas: [25, 50, 100], folga: 0.3, margemParede: 0.2, quebraPos: 0.25, alcance: 2.5, epsRaio: 1e-9, tolPav: 0.05, tolTubo: 0.3, folgaFoto: 0.15, altFoto: 1.0, pad: 14, minPoli: 3, cotaOff: 8, fracTit: 0.76, fracEsc: 1.3, folgaTit: 2.6, padraoEsq: [1.0, 1.0], escalaMax: 100, barMargem: 0.5, colPasso: 16, colPassoMin: 9, colDesce: 9, barDesce: 5, boiaRaio: 1.4, ladoBoia: 5, regRaio: 1.6, limiteRotulo: 18,
       apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0.75, beiral: 1, respiro: 2, stub: 6, colet: 4, entreTxt: 3, cotaTxt: 6, cotaFolga: 8, extIni: 1, extFim: 1.5, quebra: 1.2, alimFrac: 0.1, consFrac: 0.12, extrFrac: 0.2, limpFrac: 0.12, entre: 12,
-      rotAlim: "AF-ALIMENTAÇÃO", rotCons: "AF-CONSUMO", rotExtr: "EXTRAVASOR E LIMPEZA", rotApoiada: "BASE APOIADA NA LAJE", parte: { alim: "alimentacao", cons: "saida", extr: "extravasor", limp: "limpeza" },
+      rotAlim: "AF-ALIMENTAÇÃO", rotCons: "AF-CONSUMO", rotExtr: "EXTRAVASOR E LIMPEZA", rotApoiada: "BASE APOIADA NA LAJE", rotDesce: "DESCEM ATÉ A SAÍDA LIVRE", parte: { alim: "alimentacao", cons: "saida", extr: "extravasor", limp: "limpeza" },
       reAlim: /^entrada|alimenta/i, reCons: /^sa[ií]da|consumo/i, reExtr: /extrav/i, reLimp: /limp/i }
   };
   /* hid:fisica-fim */
@@ -1741,6 +1741,31 @@
    * Uma folha por caixa d'água/reservatório do modelo (caixasReais): PLANTA da região da caixa (a foto de cima do modelo, parede só em contorno)
    * com as cotas da caixa até as FACES INTERNAS das paredes nas duas direções (o mesmo estilo das cotas de locação do caderno) e CORTE (o perfil
    * da caixa na proporção da família colocada) com a cota da base até o piso/laje e os balões de DN de cada ligação. Título embaixo, com a escala. */
+  /* O BARRILETE DA CAIXA no modelo (ids "bar-<caixa>-<parte>-<n>" do js/hidbarrilete.js): tubos com o DN do DIMENSIONAMENTO (c.ix), os
+     registros (rg-saida/coluna/limpeza/alimentacao) e as COLUNAS que descem dele (nome AF-n do mesmo critério do esquema vertical) */
+  function barrileteDaCaixa(c, q) {
+    var pre = "bar-" + q.id + "-", ixAF = (c.ix && c.ix.agua_fria) || {}, out = { tubos: [], regs: [], colunas: [] }, rx = /^bar-.+-(saida|tomada|barrilete|coletor|coluna|ventilacao|extravasor|limpeza|alimentacao|respiro)-\d+b?$/;
+    arr(c.rede && c.rede.trechos).forEach(function (t) {
+      var id = txt(t.id); if (id.indexOf(pre) !== 0) return;
+      var m = rx.exec(id); if (!m || !t.p1 || !t.p2) return;
+      var inf = ixAF[id], dn = num(inf && inf.dn, null) || num(t.dn, null);
+      out.tubos.push({ id: id, parte: m[1], p1: t.p1, p2: t.p2, dn: dn });
+    });
+    arr(c.rede && c.rede.acessorios).forEach(function (a) {
+      var id = txt(a.id), m = /^bar-.+-rg-(saida|coluna|limpeza|alimentacao)-\d+/.exec(id);
+      if (id.indexOf(pre) === 0 && m && a.centro) out.regs.push({ id: id, parte: m[1], centro: a.centro, dn: num(a.dn, null) });
+    });
+    var cols = out.tubos.filter(function (t) { return t.parte === "coluna"; }).map(function (t) {
+      var cl = c.colunas && c.colunas[t.id];
+      return { id: t.id, x: t.p1.x, z: t.p1.z, topo: Math.max(t.p1.y, t.p2.y), base: Math.min(t.p1.y, t.p2.y), dn: t.dn, nome: cl && cl.nome ? cl.nome : null };
+    });
+    var chaves = {}; cols = cols.filter(function (k) { var kk = Math.round(k.x * 100) + "," + Math.round(k.z * 100); if (chaves[kk]) { if (k.dn != null && (chaves[kk].dn == null || k.dn > chaves[kk].dn)) chaves[kk].dn = k.dn; return false; } chaves[kk] = k; return true; });   /* o registro parte a coluna em dois tubos: uma coluna só */
+    cols.sort(function (a, b) { return a.x - b.x || a.z - b.z; });
+    var vistos = {}; cols.forEach(function (k) { if (k.nome) vistos[k.nome] = (vistos[k.nome] || 0) + 1; });
+    if (cols.some(function (k) { return !k.nome || vistos[k.nome] > 1; })) cols.forEach(function (k, i) { k.nome = "AF-" + (i + 1); });   /* nome repetido (duas colunas na mesma prumada): numera em ordem */
+    out.colunas = cols;
+    return out;
+  }
   function ligacoesCaixa(c, q) {
     var est = c.modelo && c.modelo.estado, aval = c.modelo && c.modelo.avaliarFam, out = { alim: {}, cons: {}, extr: {}, limp: {} }, fam = null, cons = [];
     arr(est && est.familias).forEach(function (f) { if (txt(f.id) === q.id) fam = f; });
@@ -1753,7 +1778,8 @@
       /* o id do trecho do barrilete é "bar-<caixa>-<parte>-<n>" (js/hidbarrilete.js novoId): o estado aplicado nem sempre guarda bar/barParte */
       Object.keys(K2.reserv.parte).forEach(function (k) {
         var pre = "bar-" + q.id + "-" + K2.reserv.parte[k] + "-";
-        if (((txt(t.bar) === q.id && txt(t.barParte) === K2.reserv.parte[k]) || txt(t.id).indexOf(pre) === 0) && num(t.dn, null) > 0) out[k].dn = num(t.dn, null);
+        var infT = ((c.ix && c.ix.agua_fria) || {})[txt(t.id)], dnT0 = num(infT && infT.dn, null) || num(t.dn, null);   /* o DN do DIMENSIONAMENTO vale mais que o lançado */
+        if (((txt(t.bar) === q.id && txt(t.barParte) === K2.reserv.parte[k]) || txt(t.id).indexOf(pre) === 0) && dnT0 > 0) out[k].dn = dnT0;
       });
     });
     return out;
@@ -1788,6 +1814,9 @@
     function ach(px, pz, dx, dz) { return dentro(px, pz) ? null : raio(px, pz, dx, dz); }
     var tA = ach(cx - m, cz, -1, 0), tB = ach(cx + m, cz, 1, 0), uA = ach(cx, cz - m, 0, -1), uB = ach(cx, cz + m, 0, 1);
     var mp = R.margemParede, bx0 = cx - m - (tA != null ? tA + mp : R.folga), bx1 = cx + m + (tB != null ? tB + mp : R.folga), bz0 = cz - m - (uA != null ? uA + mp : R.folga), bz1 = cz + m + (uB != null ? uB + mp : R.folga);   /* a margem deixa ver a espessura da parede */
+    /* o BARRILETE entra no quadro da planta: a vista cresce até cobrir os tubos que descem da caixa (e as colunas), com a margem */
+    var bar = barrileteDaCaixa(c, q);
+    bar.tubos.forEach(function (t) { [t.p1, t.p2].forEach(function (p) { bx0 = Math.min(bx0, p.x - R.barMargem); bx1 = Math.max(bx1, p.x + R.barMargem); bz0 = Math.min(bz0, p.z - R.barMargem); bz1 = Math.max(bz1, p.z + R.barMargem); }); });
     var bb = { x0: bx0 * s, x1: bx1 * s, y0: bz0 * s, y1: bz1 * s }, tit = "PLANTA - " + q.nome;
     var xsC = [tA != null ? cx - m - tA : null, cx - m, cx + m, tB != null ? cx + m + tB : null].filter(function (v) { return v != null; });
     var zsC = [uA != null ? cz - m - uA : null, cz - m, cz + m, uB != null ? cz + m + uB : null].filter(function (v) { return v != null; });
@@ -1805,6 +1834,35 @@
         paredes.forEach(function (w) { var cp = clipPoly(w.pts, { x0: bx0, x1: bx1, z0: bz0, z1: bz1 }); if (cp.length >= R.minPoli) D.poli(cp.map(function (p) { return [p[0] * s + ox, p[1] * s + oy]; }), "HID-CONTEXTO", true); });
         D.circ(cx * s + ox, cz * s + oy, m * s, "HID-SIMBOLO");
         if (!rp) trs.forEach(function (t) { var a0 = [t.p1.x * s + ox, t.p1.z * s + oy], b0 = [t.p2.x * s + ox, t.p2.z * s + oy]; D.linha(a0[0], a0[1], b0[0], b0[1], "HID-" + SIGLA_CAM(t.sistema) + "-TUBO"); chk.tubos.push([a0[0], a0[1], b0[0], b0[1]]); });
+        /* o BARRILETE por cima da foto/contorno: tubos em linha, as COLUNAS em círculo com o nome e o DN, os registros em X, o DN ao longo do tronco */
+        if (bar.tubos.length) {
+          var hT = D0().E.T.cota, KIb = HI().K, rReg = R.regRaio, rotulos = [];
+          var P2 = function (p) { return [p.x * s + ox, p.z * s + oy]; };
+          bar.tubos.forEach(function (t) {
+            var a0 = P2(t.p1), b0 = P2(t.p2), len = Math.sqrt((b0[0] - a0[0]) * (b0[0] - a0[0]) + (b0[1] - a0[1]) * (b0[1] - a0[1]));
+            if (len < 0.2) return;   /* a coluna (vertical) é só o círculo, desenhado abaixo */
+            D.linha(a0[0], a0[1], b0[0], b0[1], "HID-AF-TUBO"); chk.tubos.push([a0[0], a0[1], b0[0], b0[1]]);
+            if (t.dn == null || len < R.limiteRotulo || !/^(saida|barrilete|coletor|tomada)$/.test(t.parte)) return;
+            var maior = bar.tubos.filter(function (u) { return u.parte === t.parte; }).sort(function (a, b) { return Math.abs(b.p2.x - b.p1.x) + Math.abs(b.p2.z - b.p1.z) - Math.abs(a.p2.x - a.p1.x) - Math.abs(a.p2.z - a.p1.z); })[0];
+            if (maior !== t) return;   /* um DN por parte (o tronco): as colunas levam o DN no nome */
+            var mx = (a0[0] + b0[0]) / 2, my = (a0[1] + b0[1]) / 2, ux = (b0[0] - a0[0]) / len, uy = (b0[1] - a0[1]) / len, tx = "DN " + t.dn;
+            /* o DN fica ao lado do tubo (afastado pela altura do texto); um rótulo só onde não há outro perto */
+            var lx = mx - uy * (hT * 1.1) - (Math.abs(uy) > 0.5 ? c.AP.largTexto(tx, hT) : 0), ly = my + ux * (hT * 1.1) + hT * 0.35;
+            if (rotulos.some(function (r) { return Math.abs(r[0] - lx) < c.AP.largTexto(tx, hT) + 1 && Math.abs(r[1] - ly) < hT * 1.3; })) return;
+            rotulos.push([lx, ly, c.AP.largTexto(tx, hT)]); D.texto(lx, ly, tx, hT, {});
+          });
+          bar.colunas.forEach(function (k) {
+            var cc = P2({ x: k.x, z: k.z }), rc = KIb.regC;
+            D.circ(cc[0], cc[1], rc, "HID-SIMBOLO");
+            var nm = k.nome + (k.dn != null ? " DN " + k.dn : ""), lx2 = cc[0] + rc + 1, ly2 = cc[1] - rc;
+            var wN = c.AP.largTexto(nm, hT), k2;
+            for (k2 = 0; k2 < 6 && rotulos.some(function (r) { return r[0] < lx2 + wN && r[0] + r[2] > lx2 && Math.abs(r[1] - ly2) < hT * 1.2; }); k2++) ly2 -= hT * 1.3;   /* o nome sobe até não bater em outro */
+            rotulos.push([lx2, ly2, wN]); D.texto(lx2, ly2, nm, hT, {});
+          });
+          bar.regs.forEach(function (g) {
+            var cc = P2(g.centro); D.linha(cc[0] - rReg, cc[1] - rReg, cc[0] + rReg, cc[1] + rReg, "HID-SIMBOLO"); D.linha(cc[0] - rReg, cc[1] + rReg, cc[0] + rReg, cc[1] - rReg, "HID-SIMBOLO");
+          });
+        }
         /* cotas da caixa até as faces internas (m): cadeia horizontal embaixo da caixa e vertical à esquerda */
         var nS = D.sg.length, px = [], vx = [], py = [], vy = [];
         xsC.forEach(function (v, i) { px.push([v * s + ox, (cz + m) * s + oy]); if (i) vx.push(br(v - xsC[i - 1], 2)); });
@@ -1825,6 +1883,12 @@
     var tL = Math.max(AP.largTexto(R.rotAlim, h), AP.largTexto(R.rotCons, h)), tR = AP.largTexto(R.rotExtr, h);
     var xCota = R.cotaTxt, xBodyL = xCota + R.cotaFolga + tL + R.entreTxt + 2 * rB + R.stub, xBodyR = xBodyL + wB;
     var xBalL = xBodyL - R.stub - rB, xBalR = xBodyR + R.stub + rB, xColl = xBalR + rB + R.colet, xTxtR = xColl + R.entreTxt, W = xTxtR + tR;
+    /* O BARRILETE no corte (15/11/2026): a faixa de baixo com o barrilete e as colunas que descem dele (nome AF-n e DN), a boia na entrada, o registro
+       na saída e o extravasor/limpeza descendo até a saída livre — dos tubos que o modelo tem (js/hidbarrilete.js) */
+    var bar = barrileteDaCaixa(c, q), nCol = bar.colunas.length, temBar = bar.tubos.length > 0, tDesc = temBar ? AP.largTexto(R.rotDesce, h) : 0;
+    if (nCol) { var folgaB = xCota + nCol * R.colPassoMin + 2 * R.entreTxt - xColl; if (folgaB > 0) { xColl += folgaB; xTxtR += folgaB; } }
+    var dnBar = bar.tubos.filter(function (t) { return t.parte === "barrilete" && t.dn != null; }).reduce(function (m, t) { return Math.max(m, t.dn); }, 0), rotBar = "BARRILETE" + (dnBar ? " DN " + dnBar : "") + " (SEM ESCALA NA HORIZONTAL - VER PLANTA)";
+    W = Math.max(xTxtR + Math.max(tR, tDesc), nCol ? xCota + AP.largTexto(rotBar, h) : 0);
     var yTop = R.tampa + R.topoFolga, yBase = yTop + hB, yRef = yBase + gapD + R.laje, H = yRef + R.laje;
     /* as alturas das ligações: as do conector da família (m acima da base) quando existem, senão as frações do padrão; sempre dentro do corpo e afastadas */
     function yDe(k, frac, desce) {
@@ -1838,6 +1902,8 @@
     function afasta(y0, y1) { if (y1 - y0 >= sepB) return [y0, y1]; var m0 = (y0 + y1) / 2; return [m0 - sepB / 2, m0 + sepB / 2]; }
     var bL = afasta(yAl, yCo), bR = afasta(yEx, yLi);
     H = Math.max(H, bL[1] + rB + R.respiro, bR[1] + rB + R.respiro);
+    var Hcorpo = H, yTxtBar = Hcorpo + h * 2.2, yBarra = yTxtBar + R.barDesce, yFimCol = yBarra + R.colDesce;
+    if (nCol) H = yFimCol + h * 3.8;
     var tit = "CORTE - " + q.nome;
     return { w: Math.max(W, AP.largTexto(tit, TT.titulo)) + K2.folgaVista, h: H + altTituloVista() + K2.folgaVista, esquematico: esq, gap: gap, dnDesc: CHV.filter(function (k) { return lig[k].dn == null; }),
       desenhar: function (D, x, y, chk) {
@@ -1865,6 +1931,38 @@
         });
         D.linha(cxc, Y0 + bR[0], cxc, Y0 + bR[1], "HID-AF-TUBO");
         D.texto(X0 + xTxtR, Y0 + (bR[0] + bR[1]) / 2, R.rotExtr, h, { meio: true });
+        /* a BOIA na entrada: a haste da torneira até o flutuador na linha d'água */
+        if (bar.tubos.some(function (t) { return t.parte === "alimentacao"; })) {
+          var xbo = xl + R.parede + R.ladoBoia, ybo = yN;
+          D.linha(xl + R.parede, Y0 + yAl, xbo, ybo, "HID-AF-TUBO"); D.circ(xbo, ybo, R.boiaRaio, "HID-SIMBOLO");
+          D.texto(xbo + R.boiaRaio + 1, ybo - R.boiaRaio, "BOIA", h, {});
+        }
+        /* o REGISTRO da saída (consumo): o X sobre a ligação, no meio do trecho entre o balão e a caixa */
+        if (bar.regs.some(function (g) { return g.parte === "saida"; })) {
+          var xr0 = (X0 + xBalL + rB + xl) / 2, yr0 = (Y0 + bL[1] + Y0 + yCo) / 2;
+          D.linha(xr0 - R.regRaio, yr0 - R.regRaio, xr0 + R.regRaio, yr0 + R.regRaio, "HID-SIMBOLO"); D.linha(xr0 - R.regRaio, yr0 + R.regRaio, xr0 + R.regRaio, yr0 - R.regRaio, "HID-SIMBOLO");
+        }
+        /* o extravasor e a limpeza DESCEM do coletor até a saída livre (visível, fora da edificação) */
+        if (temBar) {
+          var yDesc = Y0 + (nCol ? yFimCol : Hcorpo - R.laje);
+          D.linha(cxc, Y0 + bR[1], cxc, yDesc, "HID-AF-TUBO");
+          D.linha(cxc - R.regRaio, yDesc - R.regRaio, cxc, yDesc, "HID-AF-TUBO"); D.linha(cxc + R.regRaio, yDesc - R.regRaio, cxc, yDesc, "HID-AF-TUBO");
+          D.texto(cxc + R.entreTxt, yDesc - R.regRaio * 2, R.rotDesce, h, {});
+        }
+        /* a FAIXA DO BARRILETE (esquema: sem escala na horizontal; as posições estão na planta): o tronco com o DN, o tê, o registro e a coluna de cada AF-n */
+        if (nCol) {
+          var xB0 = X0 + xCota + R.entreTxt;
+          var passo = Math.min(R.colPasso, (X0 + xColl - 2 * R.entreTxt - xB0) / nCol), yB = Y0 + yBarra, yF = Y0 + yFimCol;
+          D.texto(X0 + xCota, Y0 + yTxtBar, rotBar, h, {});
+          D.linha(xB0, yB, xB0 + passo * nCol, yB, "HID-AF-TUBO");
+          bar.colunas.forEach(function (k, i) {
+            var xk = xB0 + passo * (i + 0.5), yRg = yB + R.colDesce * 0.45;
+            D.ponto(xk, yB, HI().K.rTe, "#000"); D.linha(xk, yB, xk, yF, "HID-AF-TUBO");
+            D.linha(xk - R.regRaio, yRg - R.regRaio, xk + R.regRaio, yRg + R.regRaio, "HID-SIMBOLO"); D.linha(xk - R.regRaio, yRg + R.regRaio, xk + R.regRaio, yRg - R.regRaio, "HID-SIMBOLO");
+            D.texto(xk - AP.largTexto(k.nome, h) / 2, yF + h * 1.2, k.nome, h, {});
+            if (k.dn != null) D.texto(xk - AP.largTexto("DN " + k.dn, h) / 2, yF + h * 2.4, "DN " + k.dn, h, {});
+          });
+        }
         /* a cota: topo da caixa até a base e da base até o piso/laje (m), num lado só, longe das ligações */
         var xc = X0 + xCota, pts = [], vals = [], nS = D.sg.length;   /* só os traços da cota entram na conferência de rótulo × cota */
         if (!esq) { pts.push([xc, yt], [xc, yb]); vals.push(br(alt, 2)); }

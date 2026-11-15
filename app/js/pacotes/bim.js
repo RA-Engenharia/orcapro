@@ -95529,8 +95529,18 @@ var t = porId[c.trecho], m = esperaPermitida(t, c.ponta, R);
 if (m) esperas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: m });
 else soltas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: "ponta marcada \"continua\" que não é espera permitida (só terminal de ventilação, lançamento do esgoto e espera de alimentação)", continua: true });
 });
-return { soltas: soltas, esperas: esperas, rede: Rbase };
+var colunasSoltas = [], yAp = {};
+arr(R.ligacoes).forEach(function (l) { var t0 = porId[l.trecho]; if (!t0 || t0.sistema !== "agua_fria" || l.tipo !== "aparelho" || l.y == null) return; var r0 = acha(l.trecho); if (yAp[r0] == null || l.y > yAp[r0]) yAp[r0] = l.y; });
+arr(Rbase.pontasLivres).forEach(function (p) {
+var t = porId[p.trecho]; if (!t || t.sistema !== "agua_fria" || t.continua || t.saidaLivre || t.predio || t.piscLinha || /^bar-/.test(String(t.id))) return;
+var ponta = dist(t.p1, p) <= TOL ? "p1" : (dist(t.p2, p) <= TOL ? "p2" : ""); if (!ponta) return;
+var rr = acha(t.id);
+if (yAp[rr] == null || p.y < yAp[rr] + COLUNA_SOLTA_ACIMA || p.y < R._topoAgua(t) - EPS_ESPERA) return;
+colunasSoltas.push({ trecho: p.trecho, sistema: "agua_fria", ponta: ponta, x: p.x, y: p.y, z: p.z, motivo: "coluna de água fria solta (sem ligação ao barrilete)" });
+});
+return { soltas: soltas, esperas: esperas, colunasSoltas: colunasSoltas, rede: Rbase, redeDe: function (id) { return pai[id] != null ? acha(id) : null; } };
 }
+var COLUNA_SOLTA_ACIMA = 0.30;
 function verificar(estado, avaliarFam) {
 var R = rede(estado, avaliarFam), S = sistemas(estado, avaliarFam, R), itens = [];
 function add(tipo, grav, texto, p, ids) { itens.push({ tipo: tipo, rotuloTipo: TIPOS_VERIF[tipo], gravidade: grav, texto: texto, x: p ? r4(p.x) : null, y: p ? r4(p.y) : null, z: p ? r4(p.z) : null, ids: ids || [] }); }

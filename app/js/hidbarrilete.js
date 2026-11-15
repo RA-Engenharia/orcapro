@@ -194,16 +194,17 @@
     var porOp = {}; achatar(ops).forEach(function (o) { if (o && o.op === "trecho" && o.id != null) porOp[String(o.id)] = o; });
     var trs = {}; arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) { trs[String(t.id)] = t; });
     var C = B.conectividade(estado, avaliarFam), out = [];
-    arr(C.esperas).forEach(function (e) {
+    /* 15/11/2026: a COLUNA de água fria aberta no alto, sem a marca "continua" (à mão/importada) também é espera — biminst.conectividade().colunasSoltas */
+    arr(C.esperas).concat(arr(C.colunasSoltas)).forEach(function (e) {
       if (e.sistema !== "agua_fria") return;
       var o = porOp[String(e.trecho)] || {}, t = trs[String(e.trecho)];
       if (!t || o.bar != null || o.saidaLivre) return;
-      var predio = /prédio/.test(String(e.motivo)) && o.predioParte === "af_barrilete";
-      if (!predio && !/^espera de alimentação \(barrilete\/coluna\)/.test(String(e.motivo))) return;
+      var predio = /prédio/.test(String(e.motivo)) && o.predioParte === "af_barrilete", solta = /^coluna de água fria solta/.test(String(e.motivo));
+      if (!predio && !solta && !/^espera de alimentação \(barrilete\/coluna\)/.test(String(e.motivo))) return;
       out.push({ opOrig: o && o.op === "trecho" ? o : null, trecho: String(e.trecho), ponta: e.ponta, x: num(e.x, 0), y: num(e.y, 0), z: num(e.z, 0), dn: num(t.dn, 0), material: t.material, predio: predio ? String(o.predio || "") : null,
                  aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null,
                  valvula: o.valvula === true || (/-afb$/.test(String(e.trecho)) && trs[String(o.amb) + "-afc"] != null),
-                 antiga: /-afb$/.test(String(e.trecho)) && o.valvula !== true && trs[String(o.amb) + "-afc"] == null });
+                 antiga: /-afb$/.test(String(e.trecho)) && o.valvula !== true && trs[String(o.amb) + "-afc"] == null, solta: solta });
     });
     return out;
   }
