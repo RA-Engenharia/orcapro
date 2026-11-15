@@ -58,7 +58,9 @@
     cotaLocFolgaTraco: 2.6,                  /* sobra (mm) que o trecho precisa ter além da largura do texto: os dois traços oblíquos da cota */
     cotaLocAlcance: 0.3,                     /* o raio procura a parede no máximo até a caixa do cômodo + esta folga (m) */
     cotaLocPeca: /^(ralo|caixa_sifonada)/,   /* peças de esgoto que levam cota de eixo */
-    cotaLocCx: /^(joelho|curva|juncao|te)/   /* conexões de esgoto que mudam a direção do tubo */
+    cotaLocCx: /^(joelho|curva|juncao|te)/,   /* conexões de esgoto que mudam a direção do tubo */
+    /* QR DA FOLHA DE AMBIENTE (15/11/2026): lado do QR (mm), folga, altura do texto do rótulo e as linhas do rodapé (frações da altura) */
+    qr: 22, qrFolga: 3, qrTexto: 2.6, qrRotY: 0.28, qrPagY: 0.72
   };
   /* hid:fisica-fim */
   var PREFIXO_COD = { agua_fria: "F", agua_quente: "Q", esgoto: "S", ventilacao: "S", pluvial: "P", gas: "G", industrial: "I", incendio: "N" };
@@ -862,14 +864,23 @@
   }
 
   /* ------------------------------------------------------------ O CADERNO */
-  function rodapePag(D, W, H, ctx, tit, pag, tot) {
+  function rodapePag(D, W, H, ctx, tit, pag, tot, qr) {
     D.add('<rect x="0" y="' + n(H - K.rodape) + '" width="' + n(W) + '" height="' + n(K.rodape) + '" fill="' + K.cor.tinta + '" stroke="none"/>');
     D.texto(K.margem, H - K.rodape / 2, "RA ENGENHARIA ESPECIAL LTDA · " + ctx.obra + " · Hidrossanitário " + ctx.rev, 2.6, { meio: true, cor: "#ffffff" });
     D.texto(W / 2, H - K.rodape / 2, tit, 2.8, { meio: true, al: "C", cor: K.cor.areia, peso: 0.18 });
+    if (qr && qr.url) {
+      /* o QR do ambiente sai do rodapé para cima (cabe na folga entre o desenho e a barra); o rótulo e a página ficam à esquerda dele */
+      var II = I(), xq = W - K.margem - K.qr, yq = H - K.qr - K.qrFolga / 3, xt = xq - K.qrFolga;
+      if (II.desenharQr(D, qr.url, xq, yq, K.qr)) {
+        D.texto(xt, H - K.rodape * (1 - K.qrRotY), II.rotuloQrAmb(qr.nomes, K.qrTexto, xt - W / 2 - K.margem * 4), K.qrTexto, { meio: true, al: "D", cor: K.cor.areia });
+        D.texto(xt, H - K.rodape * (1 - K.qrPagY), "Página " + pag + " de " + tot, 2.8, { meio: true, al: "D", cor: "#ffffff", peso: 0.18 });
+        return;
+      }
+    }
     D.texto(W - K.margem, H - K.rodape / 2, "Página " + pag + " de " + tot, 2.8, { meio: true, al: "D", cor: "#ffffff", peso: 0.18 });
   }
-  function svgPagina(W, H, D, tit) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(H) + 'mm" viewBox="0 0 ' + n(W) + " " + n(H) + '" font-family="' + esc(I().FONTE) + '"><title>' + esc(tit) + '</title>' +
+  function svgPagina(W, H, D, tit, qr) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(H) + 'mm" viewBox="0 0 ' + n(W) + " " + n(H) + '" font-family="' + esc(I().FONTE) + '"' + (qr && qr.url ? ' data-qr="' + esc(qr.url) + '" data-qr-ambiente="' + esc(qr.ids.join(I().K2.qrSep)) + '"' : "") + '><title>' + esc(tit) + '</title>' +
       '<rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '" fill="' + K.cor.offwhite + '"/>' + '<g data-corpo="1">' + D.svg() + "</g></svg>";
   }
 
@@ -963,12 +974,17 @@
     cj.prims = c.prims;
     var r = blocoAmbiente(cj, D, A, am, pv, { numero: dois(seq), chk: chk, notas: notasDoAmbiente(c, am), semCotaV: nivel >= 1, semVista: nivel >= 2, grupo: grupo || null });
     var cx = D.caixas || [], pares = AP.sobreposicoes(cx), cf = II.conferirFolha(cx, chk);
-    return { D: D, tit: am.nome + (grupo ? " - " + (grupoPorId(grupo) || {}).nome : ""), W: W, H: H, sobreposicoes: pares.length, pares: pares.slice(0, 5), rotuloTubo: cf.rotuloTubo.length, exTubo: cf.rotuloTubo.slice(0, 4), rotuloCota: cf.rotuloCota.length, info: r, ambiente: am.nome };
+    return { D: D, tit: am.nome + (grupo ? " - " + (grupoPorId(grupo) || {}).nome : ""), W: W, H: H, sobreposicoes: pares.length, pares: pares.slice(0, 5), rotuloTubo: cf.rotuloTubo.length, exTubo: cf.rotuloTubo.slice(0, 4), rotuloCota: cf.rotuloCota.length, info: r, ambiente: am.nome, qr: qrDoAmbiente(c, am) };
   }
 
   /* ------------------------------------------------------------ PRÉVIA (HIDRO-3D): UMA folha A3 no padrão da Tânia — planta 1:25 + vista cotada à esquerda,
    * isométrico (render do modelo 3D, balões agrupados) à direita, tabelas de tubos e conexões embaixo e o carimbo RA. */
-  function carimboRA(D, x, y, w, h, ctx, titulo, escala, folha) {
+  /* o QR deste ambiente: portal + ?amb=<id> (sem portal informado não há QR — o aviso sai uma vez no gerar) */
+  function qrDoAmbiente(c, am) {
+    var II = I(), url = II ? II.linkAmbientes(II.portalDe(c && c.cfg), [am.id || am.nome]) : "";
+    return url ? { url: url, nomes: [am.nomeBase || am.nome], ids: [am.id || am.nome] } : null;
+  }
+  function carimboRA(D, x, y, w, h, ctx, titulo, escala, folha, qr) {
     var T = D.E.T, c1 = w * 0.30, c3 = w * 0.30, c2 = w - c1 - c3;
     D.add('<rect x="' + n(x) + '" y="' + n(y) + '" width="' + n(w) + '" height="' + n(h) + '" fill="#ffffff" stroke="' + K.cor.tinta + '" stroke-width="0.35"/>');
     D.add('<line x1="' + n(x + c1) + '" y1="' + n(y) + '" x2="' + n(x + c1) + '" y2="' + n(y + h) + '" stroke="' + K.cor.tinta + '" stroke-width="0.25"/>');
@@ -983,6 +999,11 @@
     D.texto(x + c1 + c2 + 4, y + 13, "Obra: " + ctx.obra, 2.6, { cor: K.cor.grafite });
     D.texto(x + c1 + c2 + 4, y + 19, ctx.local || "", 2.2, { cor: K.cor.cinza });
     D.texto(x + w - 6, y + h - 5, "Folha " + folha, 5.2, { al: "D", cor: K.cor.tinta, peso: 0.3 });
+    /* o QR do ambiente fica no fim do painel escuro (à esquerda do título), com o rótulo ao lado */
+    if (qr && qr.url) {
+      var II = I(), xq = x + c1 - K.qr - K.qrFolga, yq = y + (h - K.qr) / 2;
+      if (II.desenharQr(D, qr.url, xq, yq, K.qr)) D.texto(xq - K.qrFolga, y + h / 2, II.rotuloQrAmb(qr.nomes, K.qrTexto, c1 - K.qr - 3 * K.qrFolga - 5 * K.qrTexto), K.qrTexto, { meio: true, al: "D", cor: "#ffffff" });
+    }
   }
   function paginaPrevia(c, ctx, E, AP, am0, pv, II, grupoId, folhaTxt) {
     var W = K.A3[0], H = K.A3[1], D = II.marcarCamadas(new AP.Desenho(E, [])), chk = { tubos: [], cotas: [] }, gr = grupoPorId(grupoId), DT = K.detalhe;
@@ -1013,9 +1034,9 @@
     var yN = yy + hTub + 4;
     D.texto(m + 3, yN + 2.4, "NOTAS", 2.4, { peso: 0.2, cor: K.cor.tinta }); yN += 4.6;
     notasDoAmbiente(c, am0).slice(0, 5).forEach(function (t) { if (yN + 6 < yCar - 2) yN += nota(II, D, m + 3, yN, 148, t, K.notaH, K.cor.grafite) + 0.6; });
-    carimboRA(D, m, yCar, W - 2 * m, hCar, ctx, (gr.id === "esgoto" ? "ESGOTO" : gr.nome) + " - " + am.nomeBase, "1:" + (pl.den || 25), folhaTxt || "01 / 01");
+    carimboRA(D, m, yCar, W - 2 * m, hCar, ctx, (gr.id === "esgoto" ? "ESGOTO" : gr.nome) + " - " + am.nomeBase, "1:" + (pl.den || 25), folhaTxt || "01 / 01", qrDoAmbiente(c, am0));
     var cx = D.caixas || [], pares = AP.sobreposicoes(cx), cf = II.conferirFolha(cx, chk);
-    return { D: D, tit: am.nome, W: W, H: H, sobreposicoes: pares.length, pares: pares.slice(0, 5), rotuloTubo: cf.rotuloTubo.length, exTubo: cf.rotuloTubo.slice(0, 4), rotuloCota: cf.rotuloCota.length, ambiente: am.nome, den: pl.den, tb: tb, nBaloes: chk.nBaloes, nBaloesPecas: chk.nBaloesPecas };
+    return { D: D, qr: qrDoAmbiente(c, am0), tit: am.nome, W: W, H: H, sobreposicoes: pares.length, pares: pares.slice(0, 5), rotuloTubo: cf.rotuloTubo.length, exTubo: cf.rotuloTubo.slice(0, 4), rotuloCota: cf.rotuloCota.length, ambiente: am.nome, den: pl.den, tb: tb, nBaloes: chk.nBaloes, nBaloesPecas: chk.nBaloesPecas };
   }
   function previa(resultado, modelo, opcoes) {
     var II = I(); opcoes = opcoes || {};
@@ -1027,7 +1048,7 @@
     ambs.forEach(function (a) { if (!am && txt(a.nome).toUpperCase() === alvo) am = a; });
     if (!am) return { ok: false, paginas: [], avisos: ["Ambiente não achado: " + alvo + " (" + ambs.map(function (a) { return a.nome; }).join(", ") + ")."] };
     var p = paginaPrevia(c, ctx, E, AP, am, pv, II, opcoes.grupo || "esgoto");
-    var svg = svgPagina(p.W, p.H, p.D, "PRÉVIA - " + p.tit + " - " + ctx.rev);
+    var svg = svgPagina(p.W, p.H, p.D, "PRÉVIA - " + p.tit + " - " + ctx.rev, p.qr);
     if (/NaN|undefined/.test(svg.replace(/href="data:[^"]*"/g, ""))) avisos.push("Valor inválido (NaN/undefined) no desenho.");
     if (p.sobreposicoes) avisos.push(p.sobreposicoes + " par(es) de textos sobrepostos (ex.: " + p.pares.slice(0, 3).map(function (q) { return q[0] + " x " + q[1]; }).join("; ") + ").");
     if (p.rotuloTubo) avisos.push(p.rotuloTubo + " rótulo(s) sobre tubo.");
@@ -1064,6 +1085,7 @@
     var ambs = ambientesDoModelo(c, pv);
     ambs = juntarPendentes(c, pv, ambs, arr(opcoes.pontosPendentes));
     if (!ambs.length) avisos.push("Nenhum ambiente do modelo com instalação hidráulica: o caderno sai só com a capa e as notas.");
+    else if (!II.portalDe(c.cfg)) avisos.push(II.K2.avisoSemPortal);   /* uma vez só, não por folha */
     var pgs = [];
     pgs.push(paginaCapa(c, ctx, E, AP));
     /* HIDRO-3D: uma página por ambiente e GRUPO DE SISTEMA (água, esgoto e ventilação, pluvial, gás); ambiente sem rede traçada = uma página só */
@@ -1083,14 +1105,14 @@
     var tot = pgs.length, verif = { sobreposicoes: 0, rotuloTubo: 0, rotuloCota: 0, paginas: [] };
     var paginas = pgs.map(function (p, i) {
       var numero = "CAD-" + dois(i + 1);
-      if (!p.capa && !p.folhaModelo) rodapePag(p.D, p.W, p.H, ctx, p.tit.toUpperCase(), i + 1, tot);
-      var svg = svgPagina(p.W, p.H, p.D, numero + " - " + p.tit + " - " + ctx.rev);
+      if (!p.capa && !p.folhaModelo) rodapePag(p.D, p.W, p.H, ctx, p.tit.toUpperCase(), i + 1, tot, p.qr);
+      var svg = svgPagina(p.W, p.H, p.D, numero + " - " + p.tit + " - " + ctx.rev, p.qr);
       if (/NaN|undefined/.test(svg)) avisos.push("Página " + numero + ": valor inválido (NaN/undefined) no desenho.");
       verif.sobreposicoes += p.sobreposicoes || 0; verif.rotuloTubo += p.rotuloTubo || 0; verif.rotuloCota += p.rotuloCota || 0;
       verif.paginas.push({ numero: numero, titulo: p.tit, sobreposicoes: p.sobreposicoes || 0, pares: p.pares || [], rotuloTubo: p.rotuloTubo || 0, exTubo: p.exTubo || [], rotuloCota: p.rotuloCota || 0 });
       if (p.sobreposicoes) avisos.push("Página " + numero + " (" + p.tit + "): " + p.sobreposicoes + " par(es) de textos sobrepostos (ex.: " + (p.pares || []).slice(0, 3).map(function (q) { return q[0] + " x " + q[1]; }).join("; ") + ").");
       if (p.rotuloTubo) avisos.push("Página " + numero + " (" + p.tit + "): " + p.rotuloTubo + " rótulo(s) sobre tubo (ex.: " + (p.exTubo || []).slice(0, 3).map(function (q) { return q[0]; }).join("; ") + ").");
-      return { numero: numero, titulo: p.tit, tipo: p.capa ? "capa" : (p.ambiente ? "ambiente" : "geral"), svg: svg };
+      return { numero: numero, titulo: p.tit, tipo: p.capa ? "capa" : (p.ambiente ? "ambiente" : "geral"), svg: svg, qr: p.qr ? p.qr.url : "", qrAmbientes: p.qr ? p.qr.ids : [] };
     });
     var imgs = {}; arr(Object.keys(opcoes.rasters || {})).forEach(function (k) { var rr = opcoes.rasters[k]; if (rr && rr.jpeg) imgs[rr.key] = { jpeg: rr.jpeg, pxW: rr.pxW, pxH: rr.pxH }; });
     return { ok: true, paginas: paginas, ambientes: ambs.map(function (a) { return a.nome; }), avisos: avisos, verificacao: verif, rev: ctx.rev, imagensPorChave: imgs };
