@@ -112405,6 +112405,11 @@ var yT = r4(base + this.alturaTrabalho(this._sobe));
 var q0 = alvo ? { x: alvo.x, y: alvo.tipo === "vertical" && !(ev && ev._corte) ? yT : alvo.y, z: alvo.z } : { x: r4(p.x), y: yT, z: r4(p.z) };
 if (alvo && alvo.tipo === "peca" && alvo.hub && !alvo.boca && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
 if (!alvo && ev && ev._corte && isFinite(p.y)) q0.y = r6(p.y);
+if (alvo && alvo.tipo === "peca" && S.gravidade && /^esgoto$|^pluvial$/.test(String(c.sistema)) && global.HidBocas && !(ev && ev._corte)) {
+var pkS = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
+var bsS = pkS ? global.HidBocas.bocas(est, pkS).filter(function (b0) { return b0.papel === "saida"; })[0] : null;
+if (bsS && !bsS.ocupada) q0 = { x: r4(bsS.x), y: r4(bsS.y), z: r4(bsS.z) };
+}
 if (refP) q0.y = refP.y;
 if (alvo && alvo.tipo === "aparelho") {
 var jaT = ((est.instalacoes || {}).trechos || []).filter(function (t) { return t.sistema === c.sistema && [t.p1, t.p2].some(function (q) { return Math.abs(q.x - alvo.x) + Math.abs(q.z - alvo.z) <= I.TOL + 1e-6 && Math.abs(q.y - alvo.y) <= I.TOL + 1e-6; }); })[0];
@@ -112450,7 +112455,17 @@ var corteP = ev && ev._corte && !alvo ? this.pontoCorte(p1, p, livre) : null;
 if (corteP && corteP.tipo === "horizontal" && ev._mudaPlano) corteP = null;
 if (alvo && !livre && this._inicio && this.tentarLigacao(ctx, this._inicio, alvo, base)) return;
 this._inicio = null;
-var plano = corteP && corteP.tipo === "horizontal" ? [{ x: corteP.p.x, z: corteP.p.z }] : this.caminhoPlanta(p1, p, alvo, { livre: livre, gravidade: !!S.gravidade, estado: est, so90: c.angulo === "orto" });
+var bocaT = null, avisoBocaT = null, LBOCA_T = 0.15;
+if (alvo && alvo.tipo === "peca" && !livre && !corteP && S.gravidade && !this._sobe && /^esgoto$|^pluvial$/.test(String(c.sistema)) && global.HidBocas) {
+var pkT = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
+if (pkT && global.HidBocas.bocas(est, pkT).length) {
+var eT = global.HidBocas.entradasLivres(est, pkT, p1, c.dn);
+if (eT.ok && eT.bocas.length) bocaT = eT.bocas[0];
+else if (eT.erro) avisoBocaT = eT.erro;
+}
+}
+var plano = bocaT ? this.caminhoPlanta(p1, p, { tipo: "ponto", x: r4(bocaT.x + bocaT.dir.x * LBOCA_T), z: r4(bocaT.z + bocaT.dir.z * LBOCA_T) }, { livre: false, gravidade: true, estado: est, so90: c.angulo === "orto" })
+: corteP && corteP.tipo === "horizontal" ? [{ x: corteP.p.x, z: corteP.p.z }] : this.caminhoPlanta(p1, p, alvo, { livre: livre, gravidade: !!S.gravidade, estado: est, so90: c.angulo === "orto" });
 if (corteP && corteP.tipo !== "horizontal") plano = [];
 if (!alvo && !corteP && plano.length === 1) {
 var fuga = this._fugirSobreposicao(est, p1, plano[0], p, c.sistema);
@@ -112471,7 +112486,13 @@ if (L > 0.005) pts.push({ x: r4(q.x), y: r6(yH), z: r4(q.z) });
 ant = q;
 });
 var abaixo = alvo && S.gravidade && !this._sobe && (alvo.tipo === "meio" || alvo.tipo === "ponta") && yH < alvo.y - I.TOL;
-if (alvo && alvo.tipo === "aparelho") this.pernaAparelho(alvo, yH, false).forEach(function (q) { pts.push(q); });
+var subiuBoca = false;
+if (bocaT) {
+var iT = num(c.inclinacao, 0) / 100, yAnt = r4(bocaT.y + iT * LBOCA_T), fx = pts.length ? pts[pts.length - 1] : p1;
+if (Math.abs(fx.y - yAnt) > I.TOL) { pts.push({ x: fx.x, y: yAnt, z: fx.z }); subiuBoca = yAnt > fx.y; }
+pts.push({ x: r4(bocaT.x), y: r4(bocaT.y), z: r4(bocaT.z) });
+}
+else if (alvo && alvo.tipo === "aparelho") this.pernaAparelho(alvo, yH, false).forEach(function (q) { pts.push(q); });
 else if (alvo && alvo.tipo === "peca" && alvo.hub && yH >= alvo.hub.yBot && yH <= alvo.hub.yTop) { }
 else if (alvo && alvo.tipo !== "vertical" && Math.abs(alvo.y - yH) > I.TOL) pts.push({ x: r4(alvo.x), y: r4(alvo.y), z: r4(alvo.z) });
 if (!pts.length) { ctx.hint("Pontos muito próximos — clique um ponto distinto."); return; }
@@ -112536,6 +112557,8 @@ if (S.gravidade) msg += ", cota de saída " + fmt(fim.y - base, 3) + " m (desní
 if (corteP && corteP.tipo !== "horizontal" && S.gravidade && ((!this._sobe && corteP.p.y > p1.y + 1e-6) || (this._sobe && corteP.p.y < p1.y - 1e-6))) msg += " ⚠ o trecho SOBE contra o escoamento (o esgoto desce de p1 para p2): confira o sentido";
 if (ajV && ajV.ajustes.length) msg += " — virada afastada " + ajV.ajustes.map(function (a) { return a.mm + " mm (trecho " + a.trecho + ")"; }).join(", ") + ": o trecho entre as conexões era mais curto que o encaixe conexão-conexão";
 if (ajV && ajV.avisos.length) msg += " ⚠ " + ajV.avisos.join("; ");
+if (bocaT) msg += " — termina na " + bocaT.id + " da " + self._rotAlvo(alvo) + (subiuBoca ? " ⚠ o traço veio MAIS BAIXO que a entrada: o último pedaço sobe contra o escoamento — suba a altura de trabalho" : "");
+if (avisoBocaT) msg += " ⚠ " + avisoBocaT + ": o traço ficou como foi, ao centro da peça";
 if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
 if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
 else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
