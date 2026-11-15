@@ -267,23 +267,52 @@
     /* ================================================ A CENA DO VISUALIZADOR */
     /* tira da cena TUDO o que é da obra anterior — sem gravar nada: o pendente
        sai antes para a obra DONA dele, e o que se apaga da tela não é edição */
-    descarregarCena: function () {
+    /* FECHAR O PROJETO (15/11/2026) — o ÚNICO lugar que tira o projeto anterior da tela; todo caminho de abrir,
+       novo, área de teste e fechar passa por aqui (via `descarregarCena`, o nome antigo, que os chamadores usam).
+       Roteiro do defeito (relato do Rogério): trocando de projeto, o novo abria com as abas do anterior, a seleção,
+       as alças da laje com "Laje: arraste os vértices…", a ferramenta, a caixa de corte, a câmera orbitada, o
+       REFAZER (refazer() no B trazia a peça do A, e o salvar a gravava na obra B), Propriedades da peça que já não
+       existia e os caches da planta 2D — só os modelos e as ops saíam.
+       ⚠ ORDEM: (1) o pendente vai para a obra DONA dele (flush) ANTES de tudo; (2) o resto acontece com
+       `_bimCenaMuda` ligado — o que sai da tela não é edição e nada vai para o disco (ver `_bimAoEditar`);
+       (3) a sessão do 3D é descartada ANTES de a cena esvaziar (BIM.descartarSessao cancela as alças do contorno
+       sem concluir — concluir gravaria uma op na obra que está saindo). */
+    fecharProjeto: function () {
       var g = G(), b = B();
       if (!g) return;
       try { g._bimEdFlush(); } catch (e0) {}
       g._bimCenaMuda = true;
       try {
         if (b) {
+          try { if (b.descartarSessao) b.descartarSessao(); } catch (eS) {}
           try { if (b.editar) b.editar(false); } catch (e1) {}
+        }
+        try { if (g._bimVxFecharTodas) g._bimVxFecharTodas(); } catch (eV) {}   /* abas/vistas: plantas, cortes, folhas, {3D} extras */
+        if (b) {
           ((b.modelos || []).slice()).forEach(function (m) { if (m && m.mid !== "edit") { try { b.removerModelo(m.mid); } catch (e2) {} } });
           try { if (b.editarAplicar) b.editarAplicar([]); } catch (e3) {}
+          try { if (b.descartarSessao) b.descartarSessao(); } catch (eS2) {}   /* o editarAplicar([]) pode ter reaberto dica/seleção */
         }
+        try { if (global.Bim2D && global.Bim2D.descartar) global.Bim2D.descartar(); } catch (e2d) {}   /* caches 2D e o de antemão */
       } finally { g._bimCenaMuda = false; }
       try { clearTimeout(g._bimEdSaveT); } catch (e4) {}
       g._bimEdPend = null;
       g._bimCenaObra = null;
       g._bimElementos = []; g._bimSelecao = null;
+      /* a barra de status e Propriedades: o aviso da ferramenta do anterior (dura 8 s) e a peça dele saem já */
+      try {
+        var sh = global.BimShell;
+        if (sh && sh._raiz) { if (sh._avisoT) clearTimeout(sh._avisoT); sh._erroAte = 0; sh.status("Pronto"); sh.pintarProps(null); }
+      } catch (eSh) {}
       try { g._bimCascaContexto(); } catch (e5) {}
+    },
+    descarregarCena: function () { return this.fecharProjeto(); },
+    /* ABRIR NA PLANTA (15/11/2026, pedido do Rogério): o projeto abre com DUAS abas — "Planta baixa — <1º pavimento>"
+       ATIVA e o {3D} — também com volumetria. Sem nível não há planta: fica o {3D}. */
+    _abrirPlantaDoProjeto: function () {
+      var g = G();
+      try { if (g && g._tplIniAbrirPlanta) return g._tplIniAbrirPlanta(null); } catch (e) {}
+      return null;
     },
     /* quem começa a trabalhar sem projeto (um comando da fita, um modelo que
        chegou) entra na área de trabalho da obra do alto — a de sempre. ⚠ A
@@ -1038,12 +1067,9 @@
       return Promise.resolve(pr).then(function () {
         self._abrindo = false;
         g._bimCenaObra = info.obraId;
-        /* PROJETO SEM VOLUMETRIA (20/10/2026): sem peça, sem IFC e sem malha, abre na planta baixa do nível de
-           trabalho; com modelo, fica como sempre (o 3D). Só abre a aba da planta — a cena não é tocada. */
-        try {
-          var md = (r && r.modelo) || {}, semNada = !(md.edicao || []).length && !(r.ifcs || []).length && !(r.malhas || []).length && !(md.malhas || []).length;
-          if (semNada && g._tplIniCenaVazia && g._tplIniCenaVazia() && g._tplIniAbrirPlanta) g._tplIniAbrirPlanta(null);
-        } catch (eV) {}
+        /* ABRE NA PLANTA BAIXA do 1º pavimento, com o {3D} na outra aba — com ou sem volumetria (15/11/2026; até
+           então só o projeto vazio abria na planta, desde 20/10/2026). Só abre a aba da planta — a cena não é tocada. */
+        self._abrirPlantaDoProjeto();
         var t = agora();
         self._proj = { id: info.id, nome: info.nome, obraId: info.obraId, obraNome: obraNome(info.obraId) || info.obraNome, criadoEm: info.criadoEm || t,
                        salvoEm: info.salvoEm || t, base: null, salvo: null };

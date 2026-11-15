@@ -376,6 +376,13 @@
     },
     /* FLUIDEZ: a vista está na tela (a aba dela na frente)? */
     visivel: function (id) { var c = this._cache[id]; if (!c || !c.el) return false; try { return c.el.getClientRects().length > 0; } catch (e) { return true; } },
+    /* FECHAR O PROJETO (15/11/2026): o `configurar` só esvazia os caches quando a OBRA muda — dois projetos da MESMA
+       obra, ou A→B→A, herdavam o desenho, o de antemão e o traço de corte do projeto que saiu. Esvazia sempre (só
+       memória: o estado gravado da obra fica, e é relido do disco por quem abrir). */
+    descartar: function () {
+      this._cache = {}; this._est = null; this._cadMem = {}; this._pre = {}; this._pick = null; this._ger++;
+      if (this._fila) { try { this._fila.limpar(); } catch (e) {} }
+    },
     desmontar: function (id) { if (/^d2t-/.test(String(id)) && global.BimTabelaUI) global.BimTabelaUI.desmontar(id); /* P5 */ delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
 
     /* =================================================================

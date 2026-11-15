@@ -109663,6 +109663,10 @@ if (!c.dados && !sujo) { var pre = this._usarAntes(id); if (pre) { c.dados = pre
 return this._redesenhar(id, !c.dados, true);
 },
 visivel: function (id) { var c = this._cache[id]; if (!c || !c.el) return false; try { return c.el.getClientRects().length > 0; } catch (e) { return true; } },
+descartar: function () {
+this._cache = {}; this._est = null; this._cadMem = {}; this._pre = {}; this._pick = null; this._ger++;
+if (this._fila) { try { this._fila.limpar(); } catch (e) {} }
+},
 desmontar: function (id) { if (/^d2t-/.test(String(id)) && global.BimTabelaUI) global.BimTabelaUI.desmontar(id); delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
 _ger: 0,
 _pre: {},
@@ -220559,23 +220563,39 @@ this._srvP = (typeof fetch === "function" ? fetch("/__projetos/status", { cache:
 .then(function (s) { self._srvRes = s; return s; });
 return this._srvP;
 },
-descarregarCena: function () {
+fecharProjeto: function () {
 var g = G(), b = B();
 if (!g) return;
 try { g._bimEdFlush(); } catch (e0) {}
 g._bimCenaMuda = true;
 try {
 if (b) {
+try { if (b.descartarSessao) b.descartarSessao(); } catch (eS) {}
 try { if (b.editar) b.editar(false); } catch (e1) {}
+}
+try { if (g._bimVxFecharTodas) g._bimVxFecharTodas(); } catch (eV) {}
+if (b) {
 ((b.modelos || []).slice()).forEach(function (m) { if (m && m.mid !== "edit") { try { b.removerModelo(m.mid); } catch (e2) {} } });
 try { if (b.editarAplicar) b.editarAplicar([]); } catch (e3) {}
+try { if (b.descartarSessao) b.descartarSessao(); } catch (eS2) {}
 }
+try { if (global.Bim2D && global.Bim2D.descartar) global.Bim2D.descartar(); } catch (e2d) {}
 } finally { g._bimCenaMuda = false; }
 try { clearTimeout(g._bimEdSaveT); } catch (e4) {}
 g._bimEdPend = null;
 g._bimCenaObra = null;
 g._bimElementos = []; g._bimSelecao = null;
+try {
+var sh = global.BimShell;
+if (sh && sh._raiz) { if (sh._avisoT) clearTimeout(sh._avisoT); sh._erroAte = 0; sh.status("Pronto"); sh.pintarProps(null); }
+} catch (eSh) {}
 try { g._bimCascaContexto(); } catch (e5) {}
+},
+descarregarCena: function () { return this.fecharProjeto(); },
+_abrirPlantaDoProjeto: function () {
+var g = G();
+try { if (g && g._tplIniAbrirPlanta) return g._tplIniAbrirPlanta(null); } catch (e) {}
+return null;
 },
 entrarSemProjeto: function () {
 var g = G(), b = B();
@@ -221219,10 +221239,7 @@ try { pr = g._opbimAplicar(r); } catch (e1) { pr = null; }
 return Promise.resolve(pr).then(function () {
 self._abrindo = false;
 g._bimCenaObra = info.obraId;
-try {
-var md = (r && r.modelo) || {}, semNada = !(md.edicao || []).length && !(r.ifcs || []).length && !(r.malhas || []).length && !(md.malhas || []).length;
-if (semNada && g._tplIniCenaVazia && g._tplIniCenaVazia() && g._tplIniAbrirPlanta) g._tplIniAbrirPlanta(null);
-} catch (eV) {}
+self._abrirPlantaDoProjeto();
 var t = agora();
 self._proj = { id: info.id, nome: info.nome, obraId: info.obraId, obraNome: obraNome(info.obraId) || info.obraNome, criadoEm: info.criadoEm || t,
 salvoEm: info.salvoEm || t, base: null, salvo: null };

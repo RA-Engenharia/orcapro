@@ -15730,6 +15730,12 @@ st.lista = st.lista.filter(function (x) { return x.id !== id; });
 if (st.ativa === id) st.ativa = "3d";
 this._bimVxLayout(); this._nivArvore();
 },
+_bimVxFecharTodas: function () {
+var self = this, st = this._bimVxEst();
+st.lista.slice().forEach(function (v) { try { self._bimVxFechar(v.id); } catch (e) {} });
+st.lista = []; st.ativa = "3d"; st.lado = false;
+try { this._bimVxLayout(); } catch (e2) {}
+},
 _bimVxJanela: function (id) {
 if (id === "3d") { this.acao("bim-3d-janela", {}); return; }
 var self = this, st = this._bimVxEst(), v = this._bimVxAchar(id); if (!v) return;
@@ -85963,5 +85969,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=78a16bef9e"},{"src":"js/bim-pacote.js?v=b3c3c0703a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=0707a9298b"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=c69ddd3b34"},{"src":"js/bim-pacote.js?v=3fdac72604","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=0707a9298b"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

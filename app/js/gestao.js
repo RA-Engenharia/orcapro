@@ -15205,6 +15205,15 @@
       if (st.ativa === id) st.ativa = "3d";
       this._bimVxLayout(); this._nivArvore();
     },
+    /* FECHAR O PROJETO (15/11/2026): todas as abas além do {3D} — plantas, cortes, folhas, {3D} extras e as que estão
+       em outra janela — saem, e o {3D} fica ativo e sozinho. Cada uma pelo _bimVxFechar (desmonta a 2D/folha, solta
+       o renderer da vista extra, fecha a janela de fora). Sem isto o projeto novo abria com as abas do anterior. */
+    _bimVxFecharTodas: function () {
+      var self = this, st = this._bimVxEst();
+      st.lista.slice().forEach(function (v) { try { self._bimVxFechar(v.id); } catch (e) {} });
+      st.lista = []; st.ativa = "3d"; st.lado = false;
+      try { this._bimVxLayout(); } catch (e2) {}
+    },
     /* uma vista extra numa janela própria (outro monitor): o renderer dela é
        refeito lá (BIM.vistaMover) — e volta para a tela quando a janela fecha */
     _bimVxJanela: function (id) {

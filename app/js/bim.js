@@ -15481,6 +15481,37 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._setEdit = setEdit;
   S._setEditSub = setEditSub;
+  /* FECHAR O PROJETO (15/11/2026, relato do Rogério: "ao trocar de projeto sobra coisa do anterior"). O visualizador
+     vive a sessão inteira; trocar de projeto só tirava os modelos e zerava as ops — ficavam a seleção, as alças do
+     contorno com o aviso "Laje: arraste os vértices…", a ferramenta armada, o REFAZER (o refazer() no projeto B trazia
+     a peça do A para dentro do B — e o próximo salvar a gravava na obra B), a caixa de corte, o ortogonal, a câmera
+     orbitada, a trena, a pintura e o isolar. Quem chama é BimProjetosUI.fecharProjeto, ANTES de a cena sair.
+     ⚠ NADA AQUI GRAVA: a sessão do contorno é CANCELADA antes de a seleção mudar — com ela aberta, limpar a seleção
+       faz o aoSelecionar CONCLUIR a edição (uma op nova na obra que está saindo). A ordem importa. */
+  S._descartarSessao = function () {
+    try { if (S._ctr && S._ctr.cancelarSessao) S._ctr.cancelarSessao(); } catch (e0) {}
+    try { sairFerramentas(); } catch (e1) {}                       /* trena, área, ângulo, planta, corte livre, editor, cota, imersivo */
+    try { if (fly.on) setMode(false); } catch (e1b) {}
+    try { if (S._selAplicar) S._selAplicar([], 'trocar'); } catch (e2) {}   /* com a sessão cancelada, também fecha as alças da estrutura */
+    edit.redo = [];
+    try { if (S._limparMedidas) S._limparMedidas(); } catch (e3) {}
+    try { if (S._cxDesligar) S._cxDesligar(); } catch (e4) {}
+    try { if (ortoMain.on) S._ortoMain(false); } catch (e5) {}
+    try { if (S._restaurarVis) S._restaurarVis(); } catch (e6) {}
+    try { if (S._limparPintura) S._limparPintura(); } catch (e7) {}
+    try { if (S._linhasOcultas) S._linhasOcultas(null, false); } catch (e8) {}
+    try { if (S._apoiarLimpar) S._apoiarLimpar(); } catch (e9) {}
+    try { S._hint(''); } catch (e10) {}
+    /* a câmera volta à de quem abre o visualizador: projeto vazio não enquadra (não há o que enquadrar) e ficava a
+       câmera orbitada no anterior; o `bom` da saúde é a última câmera BOA — do projeto que saiu, não serve de volta */
+    try {
+      if (S._cancelTween) S._cancelTween();
+      camera.position.set(20, 18, 22); orbit.target.set(0, 0, 0); camera.zoom = 1; fly.yaw = 0; fly.pitch = -0.35;
+      camera.updateProjectionMatrix(); orbit.update();
+      SAUDE.bom = null;
+    } catch (e11) {}
+    return true;
+  };
   S._editOps = function () { return edit.ops.slice(); };
   S._editAplicar = function (ops) {
     if (!S || !S.alive) return; // viewer morto (ctx perdido): rebuild apagaria o aviso de recarregar
@@ -20282,6 +20313,14 @@ window.BIM = {
   espessuraAtual: function () { return (S && S._espEditor) ? S._espEditor() : null; },
   editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
   editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
+  /* FECHAR O PROJETO: tudo o que é da SESSÃO da cena (seleção, ferramenta, refazer, caixa de corte, câmera, overlays) volta
+     ao zero — sem gravar nada. Quem chama: BimProjetosUI.fecharProjeto (ver o roteiro em S._descartarSessao) */
+  descartarSessao: function () {
+    if (!S || !S._descartarSessao) return false;
+    S._descartarSessao();
+    try { limparClash(); } catch (eC) {}
+    return true;
+  },
   /* B3: o desenho de precisão (só com a prévia do modelador): snaps, seleção, estado — fita, e2e e suporte */
   precisao: function () { return (S && S._prec) ? S._prec.api : null; },
   /* B8 (modelagem por comando): a prévia é um grupo fantasma (nada gravado); o lote aplicado é UMA op na lista — desfaz de uma vez */

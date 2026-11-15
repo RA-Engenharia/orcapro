@@ -11864,6 +11864,28 @@ var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background =
 }
 S._setEdit = setEdit;
 S._setEditSub = setEditSub;
+S._descartarSessao = function () {
+try { if (S._ctr && S._ctr.cancelarSessao) S._ctr.cancelarSessao(); } catch (e0) {}
+try { sairFerramentas(); } catch (e1) {}
+try { if (fly.on) setMode(false); } catch (e1b) {}
+try { if (S._selAplicar) S._selAplicar([], 'trocar'); } catch (e2) {}
+edit.redo = [];
+try { if (S._limparMedidas) S._limparMedidas(); } catch (e3) {}
+try { if (S._cxDesligar) S._cxDesligar(); } catch (e4) {}
+try { if (ortoMain.on) S._ortoMain(false); } catch (e5) {}
+try { if (S._restaurarVis) S._restaurarVis(); } catch (e6) {}
+try { if (S._limparPintura) S._limparPintura(); } catch (e7) {}
+try { if (S._linhasOcultas) S._linhasOcultas(null, false); } catch (e8) {}
+try { if (S._apoiarLimpar) S._apoiarLimpar(); } catch (e9) {}
+try { S._hint(''); } catch (e10) {}
+try {
+if (S._cancelTween) S._cancelTween();
+camera.position.set(20, 18, 22); orbit.target.set(0, 0, 0); camera.zoom = 1; fly.yaw = 0; fly.pitch = -0.35;
+camera.updateProjectionMatrix(); orbit.update();
+SAUDE.bom = null;
+} catch (e11) {}
+return true;
+};
 S._editOps = function () { return edit.ops.slice(); };
 S._editAplicar = function (ops) {
 if (!S || !S.alive) return;
@@ -15487,6 +15509,12 @@ espessuraTipo: function (metros, rotulo) { return !!(S && S._setEspEditor && S._
 espessuraAtual: function () { return (S && S._espEditor) ? S._espEditor() : null; },
 editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
 editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
+descartarSessao: function () {
+if (!S || !S._descartarSessao) return false;
+S._descartarSessao();
+try { limparClash(); } catch (eC) {}
+return true;
+},
 precisao: function () { return (S && S._prec) ? S._prec.api : null; },
 editarPreviaInst: function (ops) { return (S && S._editPreviaInst) ? S._editPreviaInst(ops) : { ok: false, malhas: 0 }; },
 editarPrevia: function (ops) { return (S && S._editPrevia) ? S._editPrevia(ops) : { ok: false, malhas: 0 }; },
