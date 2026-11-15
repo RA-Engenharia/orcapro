@@ -930,6 +930,21 @@
       if (p6.nivelDetalhe !== "baixo" && pr && pr.tipo === "padrao") { var pid2 = String(s.preench) + (s.meioTom ? "-mt" : (s.corPreench ? "-c" + String(s.corPreench).replace("#", "") : "")); if (usados[pid2]) fill = "url(#d2p6-" + esc(pid2) + ")"; }
       corpo += '<path d="' + gF[key] + '" fill="' + fill + '" fill-opacity="' + (fill === "none" ? 0 : 0.35) + '" fill-rule="evenodd" class="d2-corte d2-p6-sobre" data-cat="' + esc(key) + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + ';pointer-events:none"/>';   /* o clique passa: quem seleciona é o tubo embaixo */
     });
+    /* ⚠ A LOUÇA TAMBÉM PASSA POR CIMA (14/11/2026, 1.2.308 — o Rogério: "o vaso está como se estivesse por baixo da conexão; tem que tracejar ele
+       também, igual as paredes; a pia também — a projeção por cima, transparente, e o tubo sai por baixo"). A louça e o equipamento (chave de
+       FUNDO, meio-tom) voltam por cima da instalação só como CONTORNO TRACEJADO fino, sem preenchimento e sem pegar o clique. */
+    var ehFundo = function (key) { var s0 = st(key); return key.indexOf("|fundo:") >= 0 && !(s0 && s0.visivel === false); };   /* a chave da louça em meio-tom (js/bimmodelovista.js: "|fundo:") */
+    var tracoL = "stroke-dasharray:" + n4(1.2 * e.escala / 1000 * 2) + " " + n4(0.8 * e.escala / 1000 * 2);
+    var temInst = Object.keys(gF).concat(Object.keys(gL)).some(ehInst);
+    if (temInst) Object.keys(gF).concat(Object.keys(gA)).filter(function (key, i, A) { return A.indexOf(key) === i && ehFundo(key); }).forEach(function (key) {
+      var w2 = p6Px(p6PenaEf(penas, st(key).corte, e), penas);
+      if (gF[key]) corpo += '<path d="' + gF[key] + '" fill="none" class="d2-p6-sobre-louca" data-cat="' + esc(key) + '" stroke-width="' + w2 + '" ' + NS + ' style="stroke:#6b7280;' + tracoL + ';pointer-events:none"/>';
+      if (gA[key]) corpo += '<path d="' + gA[key] + '" fill="none" class="d2-p6-sobre-louca" data-cat="' + esc(key) + '" stroke-width="' + w2 + '" ' + NS + ' style="stroke:#6b7280;' + tracoL + ';pointer-events:none"/>';
+    });
+    if (temInst) Object.keys(gL).filter(ehFundo).forEach(function (key) {
+      var s3 = st(key), w3 = p6Px(p6PenaEf(penas, s3.proj, e), penas);
+      corpo += '<path d="' + gL[key] + '" fill="none" class="d2-p6-sobre-louca" data-cat="' + esc(key) + '" stroke-width="' + w3 + '" ' + NS + ' style="stroke:#6b7280;' + tracoL + ';pointer-events:none"/>';
+    });
     return { defs: defs, corpo: '<g class="d2-p6">' + corpo + "</g>" };
   }
   /* marcas das vistas P6 na vista-mãe: ELEVAÇÃO (círculo + seta para onde se olha),
