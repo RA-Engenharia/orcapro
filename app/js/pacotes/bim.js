@@ -113178,7 +113178,8 @@ out.push({ id: k.famInst, malhas: [m], marcador: true });
 });
 try { this._malhasP12Master(R, famAval, THREE).forEach(function (x) { out.push(x); }); } catch (eP12) {}
 var PAP = { IFCVALVE: "acessorio" };
-out.forEach(function (el) { if (el.marcador) return; var pp = PAP[el.ifc] || (/SEGMENT$/.test(el.ifc || "") ? "tubo" : (/FITTING$/.test(el.ifc || "") ? "conexao" : "peca")); el.malhas.forEach(function (mm) { mm.userData.instPapel = pp; }); });
+var sisId = {}; ["trechos", "conexoes", "pecas", "acessorios"].forEach(function (g) { (R && R[g] || []).forEach(function (x) { if (x && x.id != null && x.sistema) sisId[String(x.id)] = x.sistema; }); });
+out.forEach(function (el) { if (el.marcador) return; var pp = PAP[el.ifc] || (/SEGMENT$/.test(el.ifc || "") ? "tubo" : (/FITTING$/.test(el.ifc || "") ? "conexao" : "peca")), ss = sisId[String(el.id)] || null; el.malhas.forEach(function (mm) { mm.userData.instPapel = pp; if (ss) mm.userData.instSis = ss; }); });
 this._ultimaRede = R;
 return out;
 },

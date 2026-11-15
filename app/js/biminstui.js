@@ -1987,7 +1987,9 @@
       /* ⚠ a marca de PAPEL (só userData, o desenho não muda): a reconstrução SÓ DAS INSTALAÇÕES do js/bim.js
          (editRebuildInst) tira da cena as malhas marcadas — sem ela os tubos do master se acumulavam a cada op */
       var PAP = { IFCVALVE: "acessorio" };
-      out.forEach(function (el) { if (el.marcador) return; var pp = PAP[el.ifc] || (/SEGMENT$/.test(el.ifc || "") ? "tubo" : (/FITTING$/.test(el.ifc || "") ? "conexao" : "peca")); el.malhas.forEach(function (mm) { mm.userData.instPapel = pp; }); });
+      /* o SISTEMA de cada malha (15/11/2026): a conexão não tem o sistema no nome e caía em "outros" na foto das pranchas (saía translúcida como louça, sem o marrom/branco) */
+      var sisId = {}; ["trechos", "conexoes", "pecas", "acessorios"].forEach(function (g) { (R && R[g] || []).forEach(function (x) { if (x && x.id != null && x.sistema) sisId[String(x.id)] = x.sistema; }); });
+      out.forEach(function (el) { if (el.marcador) return; var pp = PAP[el.ifc] || (/SEGMENT$/.test(el.ifc || "") ? "tubo" : (/FITTING$/.test(el.ifc || "") ? "conexao" : "peca")), ss = sisId[String(el.id)] || null; el.malhas.forEach(function (mm) { mm.userData.instPapel = pp; if (ss) mm.userData.instSis = ss; }); });
       this._ultimaRede = R;
       return out;
     },

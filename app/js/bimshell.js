@@ -442,7 +442,7 @@
       itens.forEach(function (i) { menu.appendChild(i); });
       wrap.appendChild(bt); wrap.appendChild(menu);
       function algum() { return itens.some(function (i) { return !i.hidden; }); }
-      /* ⚠ LAÇO INFINITO (15/11/2026, conta New Form: o BIM ficava parado em "Abrindo o BIM..."): o observador abaixo vigia o atributo
+      /* ⚠ LAÇO INFINITO (15/11/2026, numa conta de cliente o BIM ficava parado em "Abrindo o BIM..."): o observador abaixo vigia o atributo
          hidden do PRÓPRIO menu; sinc → fechar gravava menu.hidden = true (dispara o observador mesmo sem mudar) → sinc → fechar… Em microtarefa,
          a página nunca mais redesenhava. Acontecia quando nenhum item do "Mais" estava à mostra. Só gravar quando MUDA; o observador ignora o menu. */
       function sinc() { var h = !algum(); if (wrap.hidden !== h) wrap.hidden = h; if (h && !menu.hidden) fechar(); }
