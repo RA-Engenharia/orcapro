@@ -36,6 +36,20 @@
   var TETO_PX = 6e6;                       /* pixels por elemento, já com o supersample */
   var TETO_CACHE_BYTES = 192 * 1048576;    /* o que o cache de elementos pode reter */
 
+  /* ⚠ BUFFERS DE TRABALHO REAPROVEITADOS (14/11/2026). Cada peça alocava ~43 bytes por pixel (z, normal, cor, alfa,
+     borda, RGB) e jogava fora: a 6 milhões de pixels eram ~260 MB de lixo POR PEÇA, e o laço por pixel ainda criava
+     listas novas (a normal, os vizinhos) — milhões de objetos por peça. Nos diag/ do Rogério (12–14/11/2026) a página
+     subia de ~0,8 GB a 2–4,2 GB ao desenhar a planta com 75–145 peças, e o vigia recarregava ("o sistema saiu"); no Mac
+     do cliente, travava. Agora os buffers de TRABALHO (normal, nº do material, RGB, borda) nascem UMA vez por
+     `renderizar` e são soltos no fim (pool_soltar); por peça só nasce o que ela GUARDA (z-buffer e alfa, que as arestas
+     e o cache usam). A cor por pixel virou o NÚMERO do material (2 bytes em vez de 13: a cor é a mesma, lida na hora).
+     A saída é IDÊNTICA pixel a pixel: tools/test-hid-sombra-identico.js compara a impressão digital com a de antes. */
+  var POOL = { n: 0, NB: null, MI: null, RGB: null, borda: null };
+  function pool(n) {
+    if (POOL.n < n) { POOL.n = n; POOL.NB = new Float32Array(n * 3); POOL.MI = new Uint16Array(n); POOL.RGB = new Float32Array(n * 3); POOL.borda = new Uint8Array(n); }
+    return POOL;
+  }
+  function poolSoltar() { POOL.n = 0; POOL.NB = POOL.MI = POOL.RGB = POOL.borda = null; }
   function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
   function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
   function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
@@ -118,49 +132,62 @@
     var marg = 2 / ppmE; x0 -= marg; y0 -= marg; x1 += marg; y1 += marg;
     var W = Math.max(2, Math.ceil((x1 - x0) * ppmE)) * SS, H = Math.max(2, Math.ceil((y1 - y0) * ppmE)) * SS;
     if (W * H > TETO_PX) { var red = Math.sqrt(TETO_PX / (W * H)); W = Math.max(2, Math.floor(W * red)); H = Math.max(2, Math.floor(H * red)); ppm = Math.min(W / (x1 - x0), H / (y1 - y0)); }
-    var Z = new Float32Array(W * H).fill(Infinity), NB = new Float32Array(W * H * 3), CB = new Float32Array(W * H * 3), SU = new Uint8Array(W * H);
+    var Z = new Float32Array(W * H).fill(Infinity), PL = pool(W * H), NB = PL.NB, MI = PL.MI;
+    /* as cores-base por número de material (o MI de cada pixel aponta para cá) */
+    var BASES = el.malhas.map(function (m) { return m.base || NEUTRO.peca; });
+    var V0 = V[0], V1 = V[1], V2 = V[2];
     T.forEach(function (q) {
-      var base = el.malhas[q.m].base || NEUTRO.peca;
-      var px = q.S.map(function (s) { return [(s[0] - x0) * ppm, (s[1] - y0) * ppm, s[2]]; });
-      var a = px[0], b = px[1], c = px[2], area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      var mi = q.m;
+      var a0 = (q.S[0][0] - x0) * ppm, a1 = (q.S[0][1] - y0) * ppm, a2 = q.S[0][2];
+      var b0 = (q.S[1][0] - x0) * ppm, b1 = (q.S[1][1] - y0) * ppm, b2 = q.S[1][2];
+      var c0 = (q.S[2][0] - x0) * ppm, c1 = (q.S[2][1] - y0) * ppm, c2 = q.S[2][2];
+      var area = (b0 - a0) * (c1 - a1) - (b1 - a1) * (c0 - a0);
       if (Math.abs(area) < 1e-12) return;
-      var bx0 = Math.max(0, Math.floor(Math.min(a[0], b[0], c[0]))), bx1 = Math.min(W - 1, Math.ceil(Math.max(a[0], b[0], c[0])));
-      var by0 = Math.max(0, Math.floor(Math.min(a[1], b[1], c[1]))), by1 = Math.min(H - 1, Math.ceil(Math.max(a[1], b[1], c[1])));
+      var N0 = q.N[0], N1 = q.N[1], N2 = q.N[2];
+      var bx0 = Math.max(0, Math.floor(Math.min(a0, b0, c0))), bx1 = Math.min(W - 1, Math.ceil(Math.max(a0, b0, c0)));
+      var by0 = Math.max(0, Math.floor(Math.min(a1, b1, c1))), by1 = Math.min(H - 1, Math.ceil(Math.max(a1, b1, c1)));
       for (var y = by0; y <= by1; y++) {
         var cy = y + 0.5;
         for (var x = bx0; x <= bx1; x++) {
           var cx = x + 0.5;
-          var w0 = ((b[0] - cx) * (c[1] - cy) - (b[1] - cy) * (c[0] - cx)) / area, w1 = ((c[0] - cx) * (a[1] - cy) - (c[1] - cy) * (a[0] - cx)) / area, w2 = 1 - w0 - w1;
+          var w0 = ((b0 - cx) * (c1 - cy) - (b1 - cy) * (c0 - cx)) / area, w1 = ((c0 - cx) * (a1 - cy) - (c1 - cy) * (a0 - cx)) / area, w2 = 1 - w0 - w1;
           if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
-          var d = w0 * a[2] + w1 * b[2] + w2 * c[2], k = y * W + x;
+          var d = w0 * a2 + w1 * b2 + w2 * c2, k = y * W + x;
           if (d >= Z[k]) continue;
           Z[k] = d;
-          var n = [w0 * q.N[0][0] + w1 * q.N[1][0] + w2 * q.N[2][0], w0 * q.N[0][1] + w1 * q.N[1][1] + w2 * q.N[2][1], w0 * q.N[0][2] + w1 * q.N[1][2] + w2 * q.N[2][2]];
-          n = nrmz(n); if (dot(n, V) < 0) n = [-n[0], -n[1], -n[2]];
-          NB[3 * k] = n[0]; NB[3 * k + 1] = n[1]; NB[3 * k + 2] = n[2];
-          CB[3 * k] = base[0]; CB[3 * k + 1] = base[1]; CB[3 * k + 2] = base[2]; SU[k] = base.suave ? 1 : 0;
+          /* ⚠ as MESMAS contas, na MESMA ordem, de nrmz/dot (saída idêntica): sem lista nova por pixel */
+          var nx = w0 * N0[0] + w1 * N1[0] + w2 * N2[0], ny = w0 * N0[1] + w1 * N1[1] + w2 * N2[1], nz = w0 * N0[2] + w1 * N1[2] + w2 * N2[2];
+          var ln = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          nx = nx / ln; ny = ny / ln; nz = nz / ln;
+          if (nx * V0 + ny * V1 + nz * V2 < 0) { nx = -nx; ny = -ny; nz = -nz; }
+          NB[3 * k] = nx; NB[3 * k + 1] = ny; NB[3 * k + 2] = nz;
+          MI[k] = mi;
         }
       }
     });
     /* SOMBREAMENTO: luz de cima-esquerda da tela, quase do observador (o cilindro fica claro no meio e escurece nas bordas) */
     var L = nrmz([V[0] + 0.42 * B.up[0] - 0.30 * B.r[0], V[1] + 0.42 * B.up[1] - 0.30 * B.r[1], V[2] + 0.42 * B.up[2] - 0.30 * B.r[2]]);
     var Hh = nrmz([L[0] + V[0], L[1] + V[1], L[2] + V[2]]);
-    var RGB = new Float32Array(W * H * 3), A = new Uint8Array(W * H);
+    var RGB = PL.RGB, A = new Uint8Array(W * H);
     var dTol = Math.max(0.0015, 1.5 / ppm);
+    var L0 = L[0], L1 = L[1], L2 = L[2], H0 = Hh[0], H1 = Hh[1], H2 = Hh[2];
     for (var k = 0; k < W * H; k++) {
       if (Z[k] === Infinity) continue;
       A[k] = 1;
-      var n0 = [NB[3 * k], NB[3 * k + 1], NB[3 * k + 2]], df = Math.max(0, dot(n0, L)), sp = Math.pow(Math.max(0, dot(n0, Hh)), 28);
-      var fat = SU[k] ? 0.80 + 0.22 * df : 0.34 + 0.72 * df;
-      for (var ch = 0; ch < 3; ch++) RGB[3 * k + ch] = Math.min(1, CB[3 * k + ch] * fat + (SU[k] ? 0.03 : 0.10) * sp);
+      var p0 = NB[3 * k], p1 = NB[3 * k + 1], p2 = NB[3 * k + 2], bs = BASES[MI[k]], su = !!bs.suave;
+      var df = Math.max(0, p0 * L0 + p1 * L1 + p2 * L2), sp = Math.pow(Math.max(0, p0 * H0 + p1 * H1 + p2 * H2), 28);
+      var fat = su ? 0.80 + 0.22 * df : 0.34 + 0.72 * df;
+      for (var ch = 0; ch < 3; ch++) RGB[3 * k + ch] = Math.min(1, Math.fround(bs[ch]) * fat + (su ? 0.03 : 0.10) * sp);
     }
     /* CONTORNO no raster: silhueta (vizinho vazio), salto de profundidade (a bolsa sobre o tubo) e dobra da normal */
-    var cosD = Math.cos(ANG_DOBRA_PX * Math.PI / 180), borda = new Uint8Array(W * H);
+    var cosD = Math.cos(ANG_DOBRA_PX * Math.PI / 180), borda = PL.borda;
+    borda.fill(0, 0, W * H);
+    /* vizinhos na ordem de sempre: direita, esquerda, abaixo, acima */
+    var DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
     for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) {
       var kk = yy * W + xx; if (!A[kk]) continue;
-      var nb = [[xx + 1, yy], [xx - 1, yy], [xx, yy + 1], [xx, yy - 1]];
       for (var q2 = 0; q2 < 4; q2++) {
-        var X2 = nb[q2][0], Y2 = nb[q2][1];
+        var X2 = xx + DX[q2], Y2 = yy + DY[q2];
         if (X2 < 0 || Y2 < 0 || X2 >= W || Y2 >= H) { borda[kk] = 1; break; }
         var k2 = Y2 * W + X2;
         if (!A[k2]) { borda[kk] = 1; break; }
@@ -262,12 +289,14 @@
       "|" + (o.faixa ? Math.round(o.faixa.lo * 1e4) + "," + Math.round(o.faixa.hi * 1e4) : "");
     /* CACHE por elemento (a chave vem de quem chama: a geometria + o lugar + a cor): a vista refeita sem mudar o elemento
        não rasteriza de novo — só as arestas (que dependem dos vizinhos) são refeitas */
-    elementos.forEach(function (el) {
-      var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
-      if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; }
-      else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
-      if (r) R.push(r);
-    });
+    try {
+      elementos.forEach(function (el) {
+        var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
+        if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; }
+        else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
+        if (r) R.push(r);
+      });
+    } finally { poolSoltar(); }   /* ⚠ os buffers de trabalho não ficam presos entre uma planta e outra */
     R.sort(function (a, b) { return b._min - a._min; });
     var out = { imagens: [], arestas: [] };
     R.forEach(function (r, i) {

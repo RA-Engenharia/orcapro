@@ -853,6 +853,42 @@
     REVS_MAX: 8,
     _revNuvem: {},
     _seqSnap: {},
+    /* ⚠ A ESCUTA PROCESSA NO MÁXIMO 3 LISTAS POR VEZ (14/11/2026). Roteiro do defeito: ao conectar, as ~90 entidades da
+       empresa chegam de uma vez e cada snapshot montava as partes, lia a lista local, mesclava, fazia DOIS JSON.stringify
+       da lista inteira e ainda buscava as lápides — tudo em paralelo. Nos diag/ do Rogério (12–14/11/2026, 518 MB no
+       aparelho) a memória da página ia de ~0,4 a 1,6–2,4 GB nos primeiros 20–40 s de TODA abertura, junto com os ouvintes
+       passando de 0 a 90; num Mac ou notebook de 8 GB, é o travamento da abertura. Em fila, o pico é o da MAIOR lista, não
+       o da soma. O resultado é o mesmo (cada entidade se mescla sozinha; a regra do snapshot mais novo continua — e a fila
+       pula de vez o velho que ainda nem começou). Um item que não termina em FILA_SNAP_TETO_MS (rede presa) libera a vaga:
+       ele segue sozinho, a fila não para. Teste: tools/test-nuvem-escuta-fila.js. */
+    FILA_SNAP_VAGAS: 3,
+    FILA_SNAP_TETO_MS: 30000,
+    _filaSnap: null,
+    /* ⚠ GERAÇÃO DA ESCUTA (revisão adversarial de 14/11/2026). O item na fila usa o `uid` da hora em que RODA, mas o
+       `empresaId` da escuta em que NASCEU: trocar de conta com a fila cheia faria o item da conta A montar as partes e
+       as lápides da conta B, gravar no aparelho como A e até empurrar A para a nuvem de B. Antes da fila a janela era
+       de uma ida e volta de rede; com a fila, segundos. Toda escuta nova ou cancelada sobe a geração; o item confere a
+       geração e o uid antes de começar e de novo antes de gravar. */
+    _gerEscuta: 0,
+    _cancelarFilaSnap: function () {
+      this._gerEscuta++;
+      if (this._filaSnap) this._filaSnap.espera.length = 0;
+    },
+    _naFilaSnap: function (fn) {
+      var self = this, F = this._filaSnap || (this._filaSnap = { ativos: 0, espera: [], maxAtivos: 0 });
+      return new Promise(function (resolve) {
+        F.espera.push(function () {
+          F.ativos++; if (F.ativos > F.maxAtivos) F.maxAtivos = F.ativos;
+          var solto = false;
+          var soltar = function () { if (solto) return; solto = true; F.ativos--; resolve(); proximo(); };
+          var tm = setTimeout(soltar, self.FILA_SNAP_TETO_MS);
+          var p; try { p = fn(); } catch (e) { p = null; }
+          Promise.resolve(p).then(function () { clearTimeout(tm); soltar(); }, function () { clearTimeout(tm); soltar(); });
+        });
+        proximo();
+      });
+      function proximo() { while (F.ativos < self.FILA_SNAP_VAGAS && F.espera.length) F.espera.shift()(); }
+    },
     _filaEsc: {},
     /* ⚠ pelo NOME DO DOCUMENTO (DOC_V2): as revisões lembradas do documento antigo nunca são apagadas no novo nem vice-versa —
        apagar as partes do antigo deixaria o aparelho de versão antiga com o principal apontando para o nada */
@@ -2192,7 +2228,7 @@
              despejando a base da outra empresa neste aparelho a cada alteração
              lá. Meia porta é porta aberta — e era o próprio defeito que este
              portão veio fechar. */
-          try { self._un.forEach(function (u) { try { u(); } catch (_) {} }); self._un = []; self._escutando = null; } catch (eU) {}
+          try { self._un.forEach(function (u) { try { u(); } catch (_) {} }); self._un = []; self._escutando = null; self._cancelarFilaSnap(); } catch (eU) {}
           try {
             /* ⚠ NÃO expor dado de terceiro. Antes o aviso mostrava o e-mail do
                administrador da OUTRA empresa na tela deste cliente — e como o
@@ -2474,6 +2510,9 @@
         this._un = [];
       }
       this._escutando = empresaId;
+      this._cancelarFilaSnap();
+      var gerE = this._gerEscuta, uidE = this.uid;
+      var escutaViva = function () { return gerE === self._gerEscuta && uidE === self.uid && self._escutando === empresaId; };
       /* As lápides precisam estar em dia ANTES de mesclar qualquer entidade — senão o
        * aparelho ainda não sabe o que foi apagado, aceita o registro velho e o reempurra
        * pra nuvem (ressurreição em pingue-pongue). Por isso a escuta de cada entidade
@@ -2505,10 +2544,14 @@
           /* EM PARTES (1.2.158): o valor vem de _valorDoSnap (junta as partes da `rev` do principal). Enquanto junta,
              pode chegar um snapshot mais novo: o mais velho é descartado (nunca aplica por cima do mais novo). */
           var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
-          self._valorDoSnap(ent, snap).then(function (rs) {
+          self._naFilaSnap(function () {
+          /* chegou um snapshot mais novo desta entidade enquanto este esperava a vez: nem monta (o novo já está na fila) */
+          if (seqS !== self._seqSnap[ent] || !escutaViva()) return null;
+          return self._valorDoSnap(ent, snap).then(function (rs) {
           if (seqS !== self._seqSnap[ent] || !rs.existe) return;
           var cloud = daNuvem(ent, rs.v);
           var aplicar = function () {
+            if (!escutaViva()) return;   /* ⚠ trocou de conta/escuta enquanto as lápides chegavam: não grava em ninguém */
             var local = lerEnt(empresaId, ent);
             if (ilegivelLocal(empresaId, ent)) return;   // ⚠ ver `ilegivelLocal`
             if (naoCarregadaLocal(empresaId, ent)) return;   // ⚠ ver `naoCarregadaLocal`
@@ -2529,8 +2572,9 @@
             if (typeof onChange === "function") onChange(ent);
             repor();
           };
-          if (ent === "_lapides") aplicar(); else comLapides(aplicar);
+          if (ent === "_lapides") aplicar(); else return comLapides(aplicar);
           })["catch"](function (eS) { self._registrarFalha(ent, eS); });
+          });
         }, function (err) {
           /* handler de erro VAZIO era o que escondia a parada: o SDK encerra o
              listener de vez em permission-denied e em resource-exhausted, e o
@@ -2818,7 +2862,7 @@
 
     sair: function (permanente) {
       this._un.forEach(function (u) { try { u(); } catch (e) {} });
-      this._un = []; this._escutando = null; this.ligado = false; this.uid = null;
+      this._un = []; this._escutando = null; this.ligado = false; this.uid = null; this._cancelarFilaSnap();
       if (permanente) this.marcarDesligada(true);
       if (this.auth) this.auth.signOut().catch(function () {});
     }

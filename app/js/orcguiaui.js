@@ -592,7 +592,7 @@
     interessePendente: function (app) {
       if (!this.ativa() || !global.Perfis) return false;
       if (this._interesseForcado()) return Perfis.idAtual() === "completo" || Perfis.idAtual() === "teste";
-      if (app && app._demo) return false;
+      if (app && (app._demo || app._appBim)) return false;   /* programa OrçaPRO BIM: a escolha de interesse é do sistema */
       var st = null; try { st = global.Licenca && Licenca.status ? Licenca.status() : null; } catch (e) {}
       if (!st || !st.trial || !st.ativo || st.pendente || st.expirado) return false;
       if (Perfis.idAtual() !== "completo") return false;

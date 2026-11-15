@@ -11879,7 +11879,7 @@ onPranchas: function () { self.bimPranchas(); },
 onCena: (window.BimCenaUI && BimCenaUI.ativo()) ? function () { BimCenaUI.abrir(); } : null,
 onPranchaViva: function () { try { if (window.BimShell) BimShell.executar("prancha-viva"); } catch (ePv) {} },
 obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
-onSair: this._b4Janela3d ? null : function () {
+onSair: (this._b4Janela3d || (typeof App !== "undefined" && App._appBim)) ? null : function () {
 var volta = (typeof App !== "undefined" && App._viewAntesBim && App._viewAntesBim !== "bim") ? App._viewAntesBim : "dashboard";
 if (typeof App !== "undefined" && App._navegar) App._navegar(volta);
 },
@@ -66527,6 +66527,29 @@ TETO_LOTE: 9 * 1024 * 1024,
 REVS_MAX: 8,
 _revNuvem: {},
 _seqSnap: {},
+FILA_SNAP_VAGAS: 3,
+FILA_SNAP_TETO_MS: 30000,
+_filaSnap: null,
+_gerEscuta: 0,
+_cancelarFilaSnap: function () {
+this._gerEscuta++;
+if (this._filaSnap) this._filaSnap.espera.length = 0;
+},
+_naFilaSnap: function (fn) {
+var self = this, F = this._filaSnap || (this._filaSnap = { ativos: 0, espera: [], maxAtivos: 0 });
+return new Promise(function (resolve) {
+F.espera.push(function () {
+F.ativos++; if (F.ativos > F.maxAtivos) F.maxAtivos = F.ativos;
+var solto = false;
+var soltar = function () { if (solto) return; solto = true; F.ativos--; resolve(); proximo(); };
+var tm = setTimeout(soltar, self.FILA_SNAP_TETO_MS);
+var p; try { p = fn(); } catch (e) { p = null; }
+Promise.resolve(p).then(function () { clearTimeout(tm); soltar(); }, function () { clearTimeout(tm); soltar(); });
+});
+proximo();
+});
+function proximo() { while (F.ativos < self.FILA_SNAP_VAGAS && F.espera.length) F.espera.shift()(); }
+},
 _filaEsc: {},
 _chaveRev: function (ent) { return String(this.uid || "") + "|" + this._nomeDoc(ent); },
 CHAVE_REVS: "orcapro:nuvem:revs:partes",
@@ -67363,7 +67386,7 @@ if (!this.ligado) return Promise.resolve(false);
 return this._conferirDono(empresaId).then(function (v) {
 if (v && v.ok === false) {
 self.bloqueioDeDono = v;
-try { self._un.forEach(function (u) { try { u(); } catch (_) {} }); self._un = []; self._escutando = null; } catch (eU) {}
+try { self._un.forEach(function (u) { try { u(); } catch (_) {} }); self._un = []; self._escutando = null; self._cancelarFilaSnap(); } catch (eU) {}
 try {
 var quem = v.dono.empresa ? ("“" + v.dono.empresa + "”") : "outra empresa";
 if (typeof UI !== "undefined" && UI.toast) {
@@ -67524,6 +67547,9 @@ this._un.forEach(function (u) { try { u(); } catch (e) {} });
 this._un = [];
 }
 this._escutando = empresaId;
+this._cancelarFilaSnap();
+var gerE = this._gerEscuta, uidE = this.uid;
+var escutaViva = function () { return gerE === self._gerEscuta && uidE === self.uid && self._escutando === empresaId; };
 var deFora = function (ent2, valor) {
 if (ilegivelLocal(empresaId, ent2) || naoCarregadaLocal(empresaId, ent2)) return;
 self._aplicandoDaNuvem = true;
@@ -67542,10 +67568,13 @@ if (!snap.exists) return;
 if (snap.metadata && snap.metadata.hasPendingWrites) return;
 if (DOC_V2[ent] && !(snap.metadata && snap.metadata.fromCache)) self._v2Ok(ent, true);
 var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
-self._valorDoSnap(ent, snap).then(function (rs) {
+self._naFilaSnap(function () {
+if (seqS !== self._seqSnap[ent] || !escutaViva()) return null;
+return self._valorDoSnap(ent, snap).then(function (rs) {
 if (seqS !== self._seqSnap[ent] || !rs.existe) return;
 var cloud = daNuvem(ent, rs.v);
 var aplicar = function () {
+if (!escutaViva()) return;
 var local = lerEnt(empresaId, ent);
 if (ilegivelLocal(empresaId, ent)) return;
 if (naoCarregadaLocal(empresaId, ent)) return;
@@ -67561,8 +67590,9 @@ deFora(ent, merged);
 if (typeof onChange === "function") onChange(ent);
 repor();
 };
-if (ent === "_lapides") aplicar(); else comLapides(aplicar);
+if (ent === "_lapides") aplicar(); else return comLapides(aplicar);
 })["catch"](function (eS) { self._registrarFalha(ent, eS); });
+});
 }, function (err) {
 self._registrarFalha(ent, err);
 });
@@ -67698,7 +67728,7 @@ else localStorage.removeItem(this.CHAVE_DESLIGADA);
 },
 sair: function (permanente) {
 this._un.forEach(function (u) { try { u(); } catch (e) {} });
-this._un = []; this._escutando = null; this.ligado = false; this.uid = null;
+this._un = []; this._escutando = null; this.ligado = false; this.uid = null; this._cancelarFilaSnap();
 if (permanente) this.marcarDesligada(true);
 if (this.auth) this.auth.signOut().catch(function () {});
 }
@@ -68140,6 +68170,8 @@ this._ligarRelogioAcesso();
 var rotaJan = (typeof Janelas !== "undefined" && !/[?&]demo=1/.test(location.search || "")) ? Janelas.lerRota(location.hash || "") : null;
 if (!rotaJan && typeof Janelas !== "undefined" && Janelas.lerRotaBim && !/[?&]demo=1/.test(location.search || "")) rotaJan = Janelas.lerRotaBim(location.hash || "");
 if (rotaJan) { this._janela = rotaJan; try { document.body.classList.add(rotaJan.tipo === "bim3d" ? "modo-bim3d" : "modo-janela"); } catch (eMj) {} }
+this._appBim = !rotaJan && !/[?&]demo=1/.test(location.search || "") && /[?&]app=bim(&|$)/.test(location.search || "");
+if (this._appBim) { try { document.body.classList.add("programa-bim"); document.title = "OrçaPRO BIM"; } catch (eAb) {} }
 if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
 var _rvt = ((location.hash || "") + (location.search || "")).match(/[?&]t=([a-f0-9]{12,40})/);
 if (_rvt && /(^|[#&/])rv\b/i.test(location.hash || location.search || "")) { return this._abrirRVCloud(_rvt[1]); }
@@ -68162,17 +68194,17 @@ try { if (typeof Gestao !== "undefined" && Gestao._ligarRetornoDeFoto) Gestao._l
 var self = this;
 var varreduraAgendada = false;
 try {
-if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && Atualizacao.agendarVarredura && !self._janela) { Atualizacao.agendarVarredura(); varreduraAgendada = true; }
+if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && Atualizacao.agendarVarredura && !self._janela && !self._appBim) { Atualizacao.agendarVarredura(); varreduraAgendada = true; }
 } catch (eAg0) {}
 var cargaBase = this.carregarBaseSinapi();
 if (varreduraAgendada) cargaBase.then(null, function () { try { Atualizacao._varrFim(); } catch (eFm) {} });
 cargaBase.then(function (n) {
 console.log("[SINAPI] " + n + " itens (" + Sinapi.competencia + "/" + Sinapi.uf + ")");
 if (self.tela === "lista") self.render();
-if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && !self._janela) {
+if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && !self._janela && !self._appBim) {
 setTimeout(function () { try { Atualizacao.checarAuto(); } catch (eAu) {} }, 9000);
 }
-if (typeof Gestao !== "undefined" && Gestao._recuperarPortais && !self._janela) {
+if (typeof Gestao !== "undefined" && Gestao._recuperarPortais && !self._janela && !self._appBim) {
 setTimeout(function () {
 try {
 Gestao._recuperarPortais(function (res) {
@@ -68670,6 +68702,7 @@ var selfT = this;
 setTimeout(function () {
 try {
 if (selfT.tela === "login" || !Auth.usuario()) return;
+if (selfT._appBim) return;
 if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interessePendente(selfT)) return;
 if (typeof Tour !== "undefined") Tour.iniciar();
 } catch (eT) {}
@@ -68680,7 +68713,7 @@ var soModela = typeof Gestao !== "undefined" && !this._demo && !!Gestao.soModela
 var gestaoComprada = typeof Gestao !== "undefined" && (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : podeGestao);
 var viewProd = (typeof Produto !== "undefined" && !this._demo) ? Produto.moduloInicial() : "";
 if (viewProd && Auth.podeModulo && !Auth.podeModulo(viewProd)) viewProd = "";
-var view = this.view || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+var view = this.view || (this._appBim ? "bim" : "") || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
 try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
 if (!this.viewValida(view)) { view = this.viewPadrao(); this.view = view; }
 if (soModela) {
@@ -85916,5 +85949,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=1b3bcab0e1"},{"src":"js/bim-pacote.js?v=894c219611","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=b9bb16edae"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=83b784c84c"},{"src":"js/bim-pacote.js?v=4934740559","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=b9bb16edae"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

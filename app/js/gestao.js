@@ -10366,7 +10366,8 @@
         /* a obra na barra de título e a volta ao OrçaPRO: no modo programa
            (tela inteira) o cabeçalho e o menu da página não aparecem */
         obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
-        onSair: this._b4Janela3d ? null : function () {
+        /* no programa OrçaPRO BIM (?app=bim) não há "voltar": o sistema é a outra janela */
+        onSair: (this._b4Janela3d || (typeof App !== "undefined" && App._appBim)) ? null : function () {
           var volta = (typeof App !== "undefined" && App._viewAntesBim && App._viewAntesBim !== "bim") ? App._viewAntesBim : "dashboard";
           if (typeof App !== "undefined" && App._navegar) App._navegar(volta);
         },

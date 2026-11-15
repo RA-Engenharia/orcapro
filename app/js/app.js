@@ -150,6 +150,16 @@
          backup nem telemetria (todas as guardas `!this._janela` abaixo) */
       if (!rotaJan && typeof Janelas !== "undefined" && Janelas.lerRotaBim && !/[?&]demo=1/.test(location.search || "")) rotaJan = Janelas.lerRotaBim(location.hash || "");
       if (rotaJan) { this._janela = rotaJan; try { document.body.classList.add(rotaJan.tipo === "bim3d" ? "modo-bim3d" : "modo-janela"); } catch (eMj) {} }
+      /* O PROGRAMA ORÇAPRO BIM (?app=bim, 14/11/2026). O atalho "OrçaPRO BIM"
+         (OrcaPRO-BIM.vbs) abre o sistema numa janela própria do navegador, em
+         outro processo, direto no BIM em tela inteira. Motivo: com o sistema
+         inteiro e o 3D na mesma aba, um disputava a memória e o processador do
+         outro e o BIM travava. NÃO é janela destacada (`_janela`): o modelador
+         grava, então a sessão é completa. Só não procura atualização nem
+         republica portais: duas janelas aplicando o mesmo update ao mesmo
+         tempo é risco, e isso é trabalho da janela principal. */
+      this._appBim = !rotaJan && !/[?&]demo=1/.test(location.search || "") && /[?&]app=bim(&|$)/.test(location.search || "");
+      if (this._appBim) { try { document.body.classList.add("programa-bim"); document.title = "OrçaPRO BIM"; } catch (eAb) {} }
 
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
@@ -203,7 +213,7 @@
          varreduraPendente() continua valendo. */
       var varreduraAgendada = false;
       try {
-        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && Atualizacao.agendarVarredura && !self._janela) { Atualizacao.agendarVarredura(); varreduraAgendada = true; }
+        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && Atualizacao.agendarVarredura && !self._janela && !self._appBim) { Atualizacao.agendarVarredura(); varreduraAgendada = true; }
       } catch (eAg0) {}
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
       var cargaBase = this.carregarBaseSinapi();
@@ -214,7 +224,7 @@
         // v1.1.122 — checagem automática das BASES no servidor OrçaPRO (1×/dia,
         // silenciosa): saiu SINAPI nova → baixa e aplica sozinha, só informa depois.
         // (O check antigo via ERP local ficou obsoleto: o servidor cobre a frota toda.)
-        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && !self._janela) {
+        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto && !self._janela && !self._appBim) {
           setTimeout(function () { try { Atualizacao.checarAuto(); } catch (eAu) {} }, 9000);
         }
         /* v1.1.185 — AUTO-RECUPERAÇÃO DO PORTAL DO CLIENTE.
@@ -228,7 +238,7 @@
          * fotos: quem acabou de abrir o programa tem de conseguir trabalhar
          * primeiro. Falha aqui é silenciosa por definição — tenta de novo na
          * próxima abertura, e desiste depois de 3 (PortalSync). */
-        if (typeof Gestao !== "undefined" && Gestao._recuperarPortais && !self._janela) {
+        if (typeof Gestao !== "undefined" && Gestao._recuperarPortais && !self._janela && !self._appBim) {
           setTimeout(function () {
             try {
               Gestao._recuperarPortais(function (res) {
@@ -972,6 +982,8 @@
         setTimeout(function () {
           try {
             if (selfT.tela === "login" || !Auth.usuario()) return;
+            /* o programa OrçaPRO BIM (?app=bim) não tem o menu que o tour apresenta: o cartão ficava por cima do BIM */
+            if (selfT._appBim) return;
             /* com a tela "O que você quer conhecer?" por abrir, o tour espera: ele começa DEPOIS da escolha (js/orcguiaui.js, _depois) */
             if (typeof OrcGuiaUI !== "undefined" && OrcGuiaUI.interessePendente(selfT)) return;
             if (typeof Tour !== "undefined") Tour.iniciar();
@@ -993,7 +1005,7 @@
       /* PRODUTO CPLPRO abre direto no módulo do produto (a permissão ainda decide) */
       var viewProd = (typeof Produto !== "undefined" && !this._demo) ? Produto.moduloInicial() : "";
       if (viewProd && Auth.podeModulo && !Auth.podeModulo(viewProd)) viewProd = "";
-      var view = this.view || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+      var view = this.view || (this._appBim ? "bim" : "") || viewProd || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
       /* o selo e a faixa do teste de 1 hora acompanham a tela nova (depois do render, que é síncrono) */
       try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
       // Rede de segurança: quem seta App.view direto (deep-link ?view=xxx, console,

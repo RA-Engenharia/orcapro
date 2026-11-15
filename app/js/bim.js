@@ -999,8 +999,13 @@ function montar(host, opts) {
   var camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000); camera.position.set(20, 18, 22);
   var envPadrao3d = null;
   /* placa de vídeo DEDICADA: em notebook com duas placas o padrão do navegador pode escolher a integrada (15/10/2026) */
-  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  /* ⚠ A QUALIDADE SEGUE A MÁQUINA (14/11/2026, js/bimdesempenho.js): placa fraca, Mac com tela Retina ou
+     processador pequeno começam com resolução e sombra mais leves; o regulador do tick ajusta durante o uso */
+  var PERF3D = null; try { PERF3D = window.BimDesempenho ? window.BimDesempenho.perfilDaMaquina() : null; } catch (_) { PERF3D = null; }
+  var renderer = new THREE.WebGLRenderer({ antialias: PERF3D ? PERF3D.antialias : true, alpha: true, powerPreference: "high-performance" });
+  /* ⚠ o estado S deste 3D só nasce mais abaixo (S = { host: ... }): até lá a qualidade fica em variável local */
+  var perfPrIni = PERF3D ? PERF3D.pixelRatio : Math.min(window.devicePixelRatio, 2);
+  renderer.setPixelRatio(perfPrIni);
   // qualidade de cor "de render": sRGB + tone mapping cinematográfico por padrão
   /* ⚠ `outputEncoding` é o que vale no r150 (ver "COR EM sRGB" no topo); o
      `outputColorSpace` fica para o dia em que o three subir para r152+ */
@@ -1008,7 +1013,7 @@ function montar(host, opts) {
   try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
   // sombras suaves (qualidade de render + imersão RA/RV) e WebXR habilitado no renderer
-  try { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; } catch (_) {}
+  try { renderer.shadowMap.enabled = true; renderer.shadowMap.type = (PERF3D && PERF3D.sombra === 'simples') ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; } catch (_) {}
   try { renderer.xr.enabled = true; } catch (_) {}
   /* o renderer pode NASCER DE NOVO (contexto WebGL perdido — ver "O 3D NUNCA FICA
      PRESO VAZIO", no tick): o novo copia do antigo o que está valendo AGORA (o
@@ -1052,7 +1057,7 @@ function montar(host, opts) {
     _pmrem.dispose();
   } catch (eEnv) { /* sem env: cai no shading direto — nunca impede o viewer */ }
   // sombra da luz principal (ligada só quando o usuário entra no imersivo — custa GPU no modelo grande)
-  try { dir.shadow.mapSize.set(2048, 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
+  try { dir.shadow.mapSize.set(PERF3D ? PERF3D.mapaSombra : 2048, PERF3D ? PERF3D.mapaSombra : 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
   var fill = new THREE.DirectionalLight(luzNum(0xbfd8ee), 0.35); fill.position.set(-40, 25, -30); scene.add(fill); // luz de preenchimento (sombra menos chapada)
   /* GRADE QUIETA (13/11/2026): cinza neutro de baixa opacidade, igual nos dois temas — a azulada de antes pesava mais que o modelo */
   var grid = new THREE.GridHelper(200, 40, 0x6b7685, 0x8d97a3); grid.material.opacity = .28; grid.material.transparent = true; scene.add(grid);
@@ -1097,6 +1102,7 @@ function montar(host, opts) {
         modelos: [], meshPorUid: {}, ultra: false, _tickExtra: [], _tickPos: [],
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
+  S._perf3d = PERF3D; S._perfPr = perfPrIni;   /* DESEMPENHO: a qualidade decidida na criação do renderer */
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
   S.barToggle = barToggle; S._setBarra = setBarra; // recolher/expandir a barra (entra no re-home)
   S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; S._dockRolar = aoRolar; // FAB mobile: desconectados no desmonte (gate v1.1.114)
@@ -1230,17 +1236,97 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   var clock = new THREE.Clock();
   // corpo de 1 quadro: reusado pelo rAF normal E pelo setAnimationLoop do WebXR (sessão VR/AR)
-  function renderFrame(dt) {
+  /* ---------- DESENHAR SÓ QUANDO PRECISA + REGULADOR DE RESOLUÇÃO (14/11/2026) ----------
+     Atividade = mouse, teclado, roda, toque, tamanho da janela. Mudança = câmera (posição, giro, zoom, alvo) ou a
+     ASSINATURA da cena (posição, visibilidade, escala, cor e opacidade de cada objeto), conferida 4×/s quando
+     ocioso. Quem muda a cena por fora pode chamar S.sujar(). S._desenharSempre = true volta ao modo antigo. */
+  var EVS_ATIV = ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'keyup', 'touchstart', 'touchmove', 'resize'];
+  S._atividadeEm = performance.now();
+  S.sujar = function () { S._sujoEm = performance.now(); };
+  /* textura que termina de carregar (de qualquer carregador do three) desenha na hora — no ocioso ela esperaria a
+     próxima mexida, porque a cor e a posição não mudam */
+  /* ⚠ uma vez por página: o S é a variável do módulo (o 3D montado AGORA), então remontar não precisa reinstalar */
+  try { if (!THREE.DefaultLoadingManager._bimSujar) { THREE.DefaultLoadingManager._bimSujar = true; var _lmOnLoad = THREE.DefaultLoadingManager.onLoad; THREE.DefaultLoadingManager.onLoad = function () { try { if (S && S.sujar) S.sujar(); } catch (_) {} if (typeof _lmOnLoad === 'function') return _lmOnLoad.apply(this, arguments); }; } } catch (_) {}
+  S._marcarAtividade = function () { S._atividadeEm = performance.now(); };
+  EVS_ATIV.forEach(function (ev) { try { window.addEventListener(ev, S._marcarAtividade, { capture: true, passive: true }); } catch (_) {} });
+  /* ⚠ NO CLIQUE as posições da cena têm de estar em dia ANTES de qualquer ferramenta procurar o que está sob o cursor
+     (seleção, setas da caixa de corte, alças): o raio usa a matriz do mundo, que só se refaz quando a cena é DESENHADA —
+     e parado o último desenho pode ter até 0,2 s. Medido na e2e-bim-caixa-corte (a seta movida no ocioso não pegava o
+     arraste). Captura na janela: roda antes dos ouvintes do canvas. Só no apertar (no movimento seria custo à toa). */
+  S._emDiaNoClique = function () { try { scene.updateMatrixWorld(); camera.updateMatrixWorld(); } catch (_) {} };
+  try { window.addEventListener('pointerdown', S._emDiaNoClique, { capture: true, passive: true }); } catch (_) {}
+  S._desmarcarAtividade = function () { EVS_ATIV.forEach(function (ev) { try { window.removeEventListener(ev, S._marcarAtividade, { capture: true, passive: true }); } catch (_) {} }); try { window.removeEventListener('pointerdown', S._emDiaNoClique, { capture: true, passive: true }); } catch (_) {} };
+  var _camSig = new Float64Array(12), _sigT = 0;
+  function cameraMexeu() {
+    var p = camera.position, q = camera.quaternion, t = orbit.target, m = false;
+    var v = [p.x, p.y, p.z, q.x, q.y, q.z, q.w, t.x, t.y, t.z, camera.zoom || 1, camera.fov || 0];
+    for (var i = 0; i < 12; i++) if (_camSig[i] !== v[i]) { _camSig[i] = v[i]; m = true; }
+    return m;
+  }
+  function assinaturaCena() {
+    var h = 0, n = 0;
+    scene.traverse(function (o) {
+      n++;
+      var ps = o.position, sc = o.scale;
+      var rt = o.rotation;
+      h += ps.x * 1.3 + ps.y * 2.1 + ps.z * 3.7 + sc.x * 0.7 + sc.y * 0.9 + sc.z * 1.1 + (o.visible ? 5 : 0) + rt.x * 0.23 + rt.y * 0.3 + rt.z * 0.37;
+      /* material em lista conta também; a TEXTURA (map) e a versão do material entram: textura que termina de carregar
+         ou material trocado sem mudar a cor (revisão adversarial 14/11/2026) */
+      var mts = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (var mi = 0; mi < mts.length; mi++) {
+        var mt = mts[mi]; if (!mt) continue;
+        h += (mt.opacity || 0) * 1.7 + (mt.visible ? 2 : 0) + (mt.version || 0) * 0.07 + (mt.map ? (mt.map.version || 0) * 0.05 + 0.5 : 0);
+        if (mt.color) h += mt.color.r * 0.11 + mt.color.g * 0.13 + mt.color.b * 0.17;
+      }
+      if (o.isInstancedMesh && o.instanceMatrix) h += (o.instanceMatrix.version || 0) * 0.03 + o.count * 0.01;
+      h = h % 1e9;
+    });
+    return n + ':' + h.toFixed(4);
+  }
+  function desenharEste(dt) {
+    var BD = window.BimDesempenho, agora = performance.now();
+    if (!BD || S._desenharSempre || fly.on || S._xrWalk || S._xrActive) { S._ultDesenho = agora; S._nDesenhos = (S._nDesenhos || 0) + 1; return true; }
+    if (cameraMexeu()) S._camMexeuEm = agora;
+    /* ⚠ o que APAGA ou TROCA o quadro tem de desenhar na hora, não em até 0,2 s: mudar o tamanho do canvas limpa o
+       buffer, o renderer recriado (contexto perdido) nasce vazio, a vista escondida que volta, e um quadro que deu
+       erro (o vigia SAUDE conta erros SEGUIDOS — a 5 quadros/s ele demoraria 12× mais para avisar). Medido pela
+       e2e-bim-3d-volta (blocos b, c, e): sem isto o 3D ficava 0 px logo depois de redimensionar ou recriar. */
+    try {
+      var cvA = cvDesenho(), tsig = cvA.width + 'x' + cvA.height + '|' + (S._principalOculta ? 1 : 0) + '|' + (S._ctxPerdas || 0);
+      if (tsig !== S._tamSig || cvA !== S._cvSig || SAUDE.seguidos) { S._tamSig = tsig; S._cvSig = cvA; S._sujoEm = agora; S._atividadeEm = agora; }
+    } catch (_) {}
+    var ativo = (agora - (S._atividadeEm || 0) < BD.OCIOSO_APOS_MS) || (agora - (S._camMexeuEm || 0) < BD.OCIOSO_APOS_MS);
+    /* ocioso: a cena mudou sozinha (animação, carga terminando, 4D, explodir)? volta aos 60 quadros */
+    if (!ativo && agora - _sigT >= 250) {   /* 4×/s: o percurso da cena custa em modelo grande (revisão 14/11/2026) */
+      _sigT = agora;
+      try { var sg = assinaturaCena(); if (sg !== S._sigCena) { if (S._sigCena !== undefined) S._cenaMudouEm = agora; S._sigCena = sg; } } catch (_) {}
+    }
+    var ok = BD.deveDesenhar({ agora: agora, atividade: S._atividadeEm || 0,
+      mudou: Math.max(S._camMexeuEm || 0, S._cenaMudouEm || 0, S._sujoEm || 0), ultimoDesenho: S._ultDesenho || 0 });
+    if (ok) {
+      /* o regulador só mede quadros SEGUIDOS de uso (o intervalo do ocioso não é lentidão) */
+      if (ativo && S._ultAtivo && PERF3D && PERF3D.regular && !S.ultra) {
+        if (!S._regulador) S._regulador = new BD.Regulador({ prIni: S._perfPr, prMin: PERF3D.prMin, prMax: PERF3D.prMax });
+        var novo = S._regulador.anotar(dt);
+        if (novo != null && novo !== S._perfPr) { S._perfPr = novo; try { renderer.setPixelRatio(novo); resize(); } catch (_) {} }
+      }
+      S._ultDesenho = agora; S._ultAtivo = ativo; S._nDesenhos = (S._nDesenhos || 0) + 1;
+    }
+    return ok;
+  }
+  function renderFrame(dt, forcar) {
     if (S._xrWalk) S._xrWalk(dt);          // locomoção do imersivo (andar) — tem prioridade
     else if (fly.on) flyStep(dt); else orbit.update();
     for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](dt); } catch (_) {} }
+    /* ⚠ OCIOSO NÃO DESENHA 60×/s (14/11/2026, js/bimdesempenho.js): parado há 2 s e sem nada mudando, 5 quadros/s */
+    var desenhar = forcar ? (S._nDesenhos = (S._nDesenhos || 0) + 1, S._ultDesenho = performance.now(), true) : desenharEste(dt);
     /* ⚠ a vista principal ESCONDIDA (outra aba de vista na frente) não desenha:
        seria o dobro de GPU para um canvas que ninguém vê */
-    if (!S._principalOculta) {
+    if (!S._principalOculta && desenhar) {
       renderer.render(scene, camera);
       if (S._cxMain) S._cxMain.desenhar(renderer, camera);
     }
-    if (S._renderVistas) S._renderVistas(dt);
+    if (S._renderVistas && desenhar) S._renderVistas(dt);
     /* ⚠ GANCHO DEPOIS DO RENDER, e a ordem é o que faz ele existir.
      * Quem precisa COPIAR o quadro desenhado (a lupa do toque) tem de rodar
      * com o buffer ainda válido. O renderer é criado sem `preserveDrawingBuffer`
@@ -1249,7 +1335,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      * a Foto da vista já contorna. Um `_tickExtra` (que roda ANTES) copiaria o
      * quadro anterior, e a lupa mostraria a cena com um quadro de atraso: no
      * arraste do dedo, justamente o que se está mirando sai defasado. */
-    for (var tp = 0; tp < S._tickPos.length; tp++) { try { S._tickPos[tp](dt); } catch (_) {} }
+    /* ⚠ só depois de um quadro DESENHADO: num quadro ocioso o buffer não tem o desenho e a lupa copiaria branco */
+    if (desenhar) for (var tp = 0; tp < S._tickPos.length; tp++) { try { S._tickPos[tp](dt); } catch (_) {} }
   }
   /* =====================================================================
    * ⚠ O 3D NUNCA FICA PRESO VAZIO (23/10/2026). Relato do Rogério: "às vezes
@@ -1500,7 +1587,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     SAUDE.tCheca += dt;
     if (SAUDE.tCheca >= 1.5) { SAUDE.tCheca = 0; try { conferirTamanho(); conferirVazio(); } catch (_) {} }
   }
-  S._renderFrame = renderFrame;
+  /* ⚠ quem chama o desenho DIRETO (captura, teste que lê os pixels) quer um quadro desenhado: nunca passa pelo ocioso */
+  S._renderFrame = function (dt) { return renderFrame(dt, true); };
   /* religa o laço (depois do imersivo, ou se alguém o parou): cancela o pedido pendente para não nascerem DOIS laços */
   S._retomarTick = function () { if (S && S === Sm && S.alive && !S._xrActive) { if (S.raf) { try { cancelAnimationFrame(S.raf); } catch (_) {} } S.raf = 0; tick(); } };
 
@@ -2524,7 +2612,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.vistas = {}; var _vSeq = 0;
   function montarVista(v, cont) {
     var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-    rr.setPixelRatio(Math.min((cont.ownerDocument.defaultView || window).devicePixelRatio || 1, 2));
+    rr.setPixelRatio(Math.min((cont.ownerDocument.defaultView || window).devicePixelRatio || 1, (S._perf3d ? S._perf3d.prMax : 2)));
     rr.outputEncoding = renderer.outputEncoding;   /* a MESMA saída da principal (ver "COR EM sRGB") */
     try { rr.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
     rr.toneMapping = renderer.toneMapping; rr.toneMappingExposure = renderer.toneMappingExposure;
@@ -3183,7 +3271,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._onDragOver = onDragOver; S._onDrop = onDrop; // guardados p/ re-registrar no host novo (re-home)
   function setUltra(on) {
     S.ultra = !!on;
-    renderer.setPixelRatio(S.ultra ? Math.min(window.devicePixelRatio || 1, 2.5) : Math.min(window.devicePixelRatio || 1, 2));
+    /* sem o Ultra volta à resolução que o regulador da máquina escolheu (S._perfPr), não ao 2× fixo */
+    renderer.setPixelRatio(S.ultra ? Math.min(window.devicePixelRatio || 1, 2.5) : (S._perfPr || Math.min(window.devicePixelRatio || 1, 2)));
     renderer.toneMappingExposure = S.ultra ? 1.22 : 1.12;
     dir.intensity = S.ultra ? 1.25 : 1.1; fill.intensity = S.ultra ? 0.5 : 0.35;
     var bu = bar.querySelector('[data-b="ultra"]'); if (bu) { bu.style.background = S.ultra ? '#7c3aed' : ''; bu.style.color = S.ultra ? '#fff' : ''; }
@@ -19169,6 +19258,7 @@ function desmontarMorto() {
   try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
   try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
   try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}   /* SELECIONAR */
+  try { if (S._desmarcarAtividade) S._desmarcarAtividade(); } catch (_) {}   /* DESEMPENHO: os ouvintes de atividade do desenhar-só-quando-precisa */
   try { if (S._ctl) S._ctl.dispor(); } catch (_) {}
   try { if (S._explodirUI) S._explodirUI.dispor(); } catch (_) {}   /* EXPLODIDA: devolve as peças e solta o tick e as cotas */   /* CONTROLE: gamepadconnected/disconnected + a mira */
   try { if (S._mouse) S._mouse.dispor(); } catch (_) {}   /* MOUSE: teclas e botões laterais */
@@ -19781,6 +19871,15 @@ var Voz = {
 
 window.BIM = {
   montar: montar,
+  /* DESEMPENHO (14/11/2026, js/bimdesempenho.js): a classe da máquina, a resolução de agora e quantos quadros
+     foram desenhados — para o painel de desempenho, o vigia de memória e a e2e do ocioso */
+  desempenho: function () {
+    if (!S) return null;
+    var p = S._perf3d || {};
+    return { classe: p.classe || '', gpuClasse: p.gpuClasse || '', pref: p.pref || 'auto', pixelRatio: S._perfPr || 0,
+      quadros: S._nDesenhos || 0, sempre: !!S._desenharSempre, ultra: !!S.ultra };
+  },
+  desenharSempre: function (on) { if (S) S._desenharSempre = !!on; return !!(S && S._desenharSempre); },
   /* ---- B0: identidade duravel ----
      `setObra` e chamado pela casca (js/gestao.js) na montagem e em toda troca
      de obra. `chaveDe` e a porta unica para quem GRAVA vinculo: montar

@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.312",
+versao: "1.2.313",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -10381,7 +10381,7 @@ _interesseForcado: function () { try { return /[?&]interesse=1\b/.test(String(gl
 interessePendente: function (app) {
 if (!this.ativa() || !global.Perfis) return false;
 if (this._interesseForcado()) return Perfis.idAtual() === "completo" || Perfis.idAtual() === "teste";
-if (app && app._demo) return false;
+if (app && (app._demo || app._appBim)) return false;
 var st = null; try { st = global.Licenca && Licenca.status ? Licenca.status() : null; } catch (e) {}
 if (!st || !st.trial || !st.ativo || st.pendente || st.expirado) return false;
 if (Perfis.idAtual() !== "completo") return false;

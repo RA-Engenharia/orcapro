@@ -100219,6 +100219,12 @@ var ANG_DOBRA = 30;
 var ANG_DOBRA_PX = 38;
 var TETO_PX = 6e6;
 var TETO_CACHE_BYTES = 192 * 1048576;
+var POOL = { n: 0, NB: null, MI: null, RGB: null, borda: null };
+function pool(n) {
+if (POOL.n < n) { POOL.n = n; POOL.NB = new Float32Array(n * 3); POOL.MI = new Uint16Array(n); POOL.RGB = new Float32Array(n * 3); POOL.borda = new Uint8Array(n); }
+return POOL;
+}
+function poolSoltar() { POOL.n = 0; POOL.NB = POOL.MI = POOL.RGB = POOL.borda = null; }
 function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
@@ -100283,47 +100289,57 @@ T.forEach(function (q) { q.S.forEach(function (s) { if (s[0] < x0) x0 = s[0]; if
 var marg = 2 / ppmE; x0 -= marg; y0 -= marg; x1 += marg; y1 += marg;
 var W = Math.max(2, Math.ceil((x1 - x0) * ppmE)) * SS, H = Math.max(2, Math.ceil((y1 - y0) * ppmE)) * SS;
 if (W * H > TETO_PX) { var red = Math.sqrt(TETO_PX / (W * H)); W = Math.max(2, Math.floor(W * red)); H = Math.max(2, Math.floor(H * red)); ppm = Math.min(W / (x1 - x0), H / (y1 - y0)); }
-var Z = new Float32Array(W * H).fill(Infinity), NB = new Float32Array(W * H * 3), CB = new Float32Array(W * H * 3), SU = new Uint8Array(W * H);
+var Z = new Float32Array(W * H).fill(Infinity), PL = pool(W * H), NB = PL.NB, MI = PL.MI;
+var BASES = el.malhas.map(function (m) { return m.base || NEUTRO.peca; });
+var V0 = V[0], V1 = V[1], V2 = V[2];
 T.forEach(function (q) {
-var base = el.malhas[q.m].base || NEUTRO.peca;
-var px = q.S.map(function (s) { return [(s[0] - x0) * ppm, (s[1] - y0) * ppm, s[2]]; });
-var a = px[0], b = px[1], c = px[2], area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+var mi = q.m;
+var a0 = (q.S[0][0] - x0) * ppm, a1 = (q.S[0][1] - y0) * ppm, a2 = q.S[0][2];
+var b0 = (q.S[1][0] - x0) * ppm, b1 = (q.S[1][1] - y0) * ppm, b2 = q.S[1][2];
+var c0 = (q.S[2][0] - x0) * ppm, c1 = (q.S[2][1] - y0) * ppm, c2 = q.S[2][2];
+var area = (b0 - a0) * (c1 - a1) - (b1 - a1) * (c0 - a0);
 if (Math.abs(area) < 1e-12) return;
-var bx0 = Math.max(0, Math.floor(Math.min(a[0], b[0], c[0]))), bx1 = Math.min(W - 1, Math.ceil(Math.max(a[0], b[0], c[0])));
-var by0 = Math.max(0, Math.floor(Math.min(a[1], b[1], c[1]))), by1 = Math.min(H - 1, Math.ceil(Math.max(a[1], b[1], c[1])));
+var N0 = q.N[0], N1 = q.N[1], N2 = q.N[2];
+var bx0 = Math.max(0, Math.floor(Math.min(a0, b0, c0))), bx1 = Math.min(W - 1, Math.ceil(Math.max(a0, b0, c0)));
+var by0 = Math.max(0, Math.floor(Math.min(a1, b1, c1))), by1 = Math.min(H - 1, Math.ceil(Math.max(a1, b1, c1)));
 for (var y = by0; y <= by1; y++) {
 var cy = y + 0.5;
 for (var x = bx0; x <= bx1; x++) {
 var cx = x + 0.5;
-var w0 = ((b[0] - cx) * (c[1] - cy) - (b[1] - cy) * (c[0] - cx)) / area, w1 = ((c[0] - cx) * (a[1] - cy) - (c[1] - cy) * (a[0] - cx)) / area, w2 = 1 - w0 - w1;
+var w0 = ((b0 - cx) * (c1 - cy) - (b1 - cy) * (c0 - cx)) / area, w1 = ((c0 - cx) * (a1 - cy) - (c1 - cy) * (a0 - cx)) / area, w2 = 1 - w0 - w1;
 if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
-var d = w0 * a[2] + w1 * b[2] + w2 * c[2], k = y * W + x;
+var d = w0 * a2 + w1 * b2 + w2 * c2, k = y * W + x;
 if (d >= Z[k]) continue;
 Z[k] = d;
-var n = [w0 * q.N[0][0] + w1 * q.N[1][0] + w2 * q.N[2][0], w0 * q.N[0][1] + w1 * q.N[1][1] + w2 * q.N[2][1], w0 * q.N[0][2] + w1 * q.N[1][2] + w2 * q.N[2][2]];
-n = nrmz(n); if (dot(n, V) < 0) n = [-n[0], -n[1], -n[2]];
-NB[3 * k] = n[0]; NB[3 * k + 1] = n[1]; NB[3 * k + 2] = n[2];
-CB[3 * k] = base[0]; CB[3 * k + 1] = base[1]; CB[3 * k + 2] = base[2]; SU[k] = base.suave ? 1 : 0;
+var nx = w0 * N0[0] + w1 * N1[0] + w2 * N2[0], ny = w0 * N0[1] + w1 * N1[1] + w2 * N2[1], nz = w0 * N0[2] + w1 * N1[2] + w2 * N2[2];
+var ln = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+nx = nx / ln; ny = ny / ln; nz = nz / ln;
+if (nx * V0 + ny * V1 + nz * V2 < 0) { nx = -nx; ny = -ny; nz = -nz; }
+NB[3 * k] = nx; NB[3 * k + 1] = ny; NB[3 * k + 2] = nz;
+MI[k] = mi;
 }
 }
 });
 var L = nrmz([V[0] + 0.42 * B.up[0] - 0.30 * B.r[0], V[1] + 0.42 * B.up[1] - 0.30 * B.r[1], V[2] + 0.42 * B.up[2] - 0.30 * B.r[2]]);
 var Hh = nrmz([L[0] + V[0], L[1] + V[1], L[2] + V[2]]);
-var RGB = new Float32Array(W * H * 3), A = new Uint8Array(W * H);
+var RGB = PL.RGB, A = new Uint8Array(W * H);
 var dTol = Math.max(0.0015, 1.5 / ppm);
+var L0 = L[0], L1 = L[1], L2 = L[2], H0 = Hh[0], H1 = Hh[1], H2 = Hh[2];
 for (var k = 0; k < W * H; k++) {
 if (Z[k] === Infinity) continue;
 A[k] = 1;
-var n0 = [NB[3 * k], NB[3 * k + 1], NB[3 * k + 2]], df = Math.max(0, dot(n0, L)), sp = Math.pow(Math.max(0, dot(n0, Hh)), 28);
-var fat = SU[k] ? 0.80 + 0.22 * df : 0.34 + 0.72 * df;
-for (var ch = 0; ch < 3; ch++) RGB[3 * k + ch] = Math.min(1, CB[3 * k + ch] * fat + (SU[k] ? 0.03 : 0.10) * sp);
+var p0 = NB[3 * k], p1 = NB[3 * k + 1], p2 = NB[3 * k + 2], bs = BASES[MI[k]], su = !!bs.suave;
+var df = Math.max(0, p0 * L0 + p1 * L1 + p2 * L2), sp = Math.pow(Math.max(0, p0 * H0 + p1 * H1 + p2 * H2), 28);
+var fat = su ? 0.80 + 0.22 * df : 0.34 + 0.72 * df;
+for (var ch = 0; ch < 3; ch++) RGB[3 * k + ch] = Math.min(1, Math.fround(bs[ch]) * fat + (su ? 0.03 : 0.10) * sp);
 }
-var cosD = Math.cos(ANG_DOBRA_PX * Math.PI / 180), borda = new Uint8Array(W * H);
+var cosD = Math.cos(ANG_DOBRA_PX * Math.PI / 180), borda = PL.borda;
+borda.fill(0, 0, W * H);
+var DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
 for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) {
 var kk = yy * W + xx; if (!A[kk]) continue;
-var nb = [[xx + 1, yy], [xx - 1, yy], [xx, yy + 1], [xx, yy - 1]];
 for (var q2 = 0; q2 < 4; q2++) {
-var X2 = nb[q2][0], Y2 = nb[q2][1];
+var X2 = xx + DX[q2], Y2 = yy + DY[q2];
 if (X2 < 0 || Y2 < 0 || X2 >= W || Y2 >= H) { borda[kk] = 1; break; }
 var k2 = Y2 * W + X2;
 if (!A[k2]) { borda[kk] = 1; break; }
@@ -100411,12 +100427,14 @@ function renderizar(elementos, B, o) {
 o = o || {}; o.ppm = o.ppm || 1500;
 var R = [], base = [B.O, B.r, B.up, B.dir].map(function (v) { return v.map(function (x) { return Math.round(x * 1e6); }).join(","); }).join("|") + "|" + o.ppm +
 "|" + (o.faixa ? Math.round(o.faixa.lo * 1e4) + "," + Math.round(o.faixa.hi * 1e4) : "");
+try {
 elementos.forEach(function (el) {
 var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
 if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; }
 else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
 if (r) R.push(r);
 });
+} finally { poolSoltar(); }
 R.sort(function (a, b) { return b._min - a._min; });
 var out = { imagens: [], arestas: [] };
 R.forEach(function (r, i) {
@@ -108039,6 +108057,113 @@ var BimFluidez = { Hash: Hash, assinaturaCena: assinaturaCena, Memo: Memo, Fila:
 global.BimFluidez = BimFluidez;
 if (typeof module !== "undefined" && module.exports) module.exports = BimFluidez;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimdesempenho.js ==== */
+try {
+(function (global) {
+"use strict";
+var CHAVE_PREF = "orcapro:bim:desempenho";
+var PREFS = ["auto", "qualidade", "economia"];
+function classificarGpu(nome) {
+var n = String(nome || "").toLowerCase();
+if (!n) return "media";
+if (/swiftshader|llvmpipe|softpipe|software|microsoft basic render/.test(n)) return "software";
+if (/rtx|gtx\s*1[0-9]{3}|gtx\s*9[0-9]{2}|quadro|radeon\s*(rx|pro)|arc\s*a[0-9]|apple m[1-9]\s*(pro|max|ultra)|tesla|titan/.test(n)) return "forte";
+if (/apple m[1-9]|apple gpu|iris(\(r\))?\s*xe|radeon\s*(\(tm\)\s*)?(graphics|vega)|mx\s*[1-9][0-9]{2}|gtx/.test(n)) return "media";
+if (/intel.*(hd|uhd)|mali|adreno|powervr|apple a[0-9]|videocore|intel/.test(n)) return "fraca";
+return "media";
+}
+function perfil(d) {
+d = d || {};
+var g = classificarGpu(d.gpu), nuc = +d.nucleos || 4, mem = +d.memoriaGB || 0, dpr = +d.dpr || 1;
+var classe;
+if (g === "software") classe = "leve";
+else if (g === "forte" && nuc >= 6 && (!mem || mem >= 8)) classe = "forte";
+else if (g === "fraca" || d.movel || nuc <= 2 || (mem && mem <= 4)) classe = "leve";
+else classe = "media";
+var pref = PREFS.indexOf(d.pref) >= 0 ? d.pref : "auto";
+if (pref === "qualidade") classe = "forte";
+if (pref === "economia") classe = "leve";
+var cfg = {
+forte: { prMax: 2, prMin: 1, sombra: "suave", mapaSombra: 2048, antialias: true },
+media: { prMax: 1.5, prMin: 1, sombra: "suave", mapaSombra: 2048, antialias: true },
+leve: { prMax: 1, prMin: 0.75, sombra: "simples", mapaSombra: 1024, antialias: false }
+}[classe];
+return {
+classe: classe, gpuClasse: g, pref: pref,
+pixelRatio: Math.max(cfg.prMin, Math.min(dpr, cfg.prMax)),
+prMax: Math.min(Math.max(dpr, 1), cfg.prMax), prMin: cfg.prMin,
+sombra: cfg.sombra, mapaSombra: cfg.mapaSombra, antialias: cfg.antialias,
+regular: pref !== "qualidade"
+};
+}
+function Regulador(o) {
+o = o || {};
+this.pr = +o.prIni || 1; this.prMin = +o.prMin || 0.75; this.prMax = +o.prMax || 2;
+this.passo = +o.passo || 0.25; this.janela = +o.janela || 45;
+this.lento = +o.lento || (1 / 40); this.folga = +o.folga || (1 / 57);
+this.amostras = []; this.bons = 0;
+}
+Regulador.prototype.anotar = function (dt) {
+dt = +dt;
+if (!(dt > 0) || dt > 0.5) return null;
+this.amostras.push(dt);
+if (this.amostras.length < this.janela) return null;
+var a = this.amostras.slice().sort(function (x, y) { return x - y; }), med = a[a.length >> 1];
+this.amostras.length = 0;
+if (med > this.lento && this.pr > this.prMin) {
+this.bons = 0;
+this.pr = Math.max(this.prMin, Math.round((this.pr - this.passo) * 100) / 100);
+return this.pr;
+}
+if (med < this.folga && this.pr < this.prMax) {
+if (++this.bons >= 3) { this.bons = 0; this.pr = Math.min(this.prMax, Math.round((this.pr + this.passo) * 100) / 100); return this.pr; }
+} else this.bons = 0;
+return null;
+};
+var OCIOSO_APOS_MS = 2000, OCIOSO_INTERVALO_MS = 200;
+function deveDesenhar(e) {
+if (!e || e.sempre) return true;
+var agora = +e.agora || 0;
+if (agora - (+e.atividade || 0) < OCIOSO_APOS_MS) return true;
+if (agora - (+e.mudou || 0) < OCIOSO_APOS_MS) return true;
+return agora - (+e.ultimoDesenho || 0) >= OCIOSO_INTERVALO_MS;
+}
+function lerPref() {
+try { var v = global.localStorage && global.localStorage.getItem(CHAVE_PREF); return PREFS.indexOf(v) >= 0 ? v : "auto"; } catch (e) { return "auto"; }
+}
+function gravarPref(v) {
+if (PREFS.indexOf(v) < 0) return false;
+try { global.localStorage.setItem(CHAVE_PREF, v); return true; } catch (e) { return false; }
+}
+function lerGpu(doc) {
+try {
+var cv = (doc || global.document).createElement("canvas");
+var gl = cv.getContext("webgl2") || cv.getContext("webgl");
+if (!gl) return "";
+var ext = gl.getExtension("WEBGL_debug_renderer_info");
+var nome = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+try { var lc = gl.getExtension("WEBGL_lose_context"); if (lc) lc.loseContext(); } catch (e2) {}
+return String(nome || "");
+} catch (e) { return ""; }
+}
+function perfilDaMaquina() {
+var nav = global.navigator || {};
+return perfil({
+gpu: lerGpu(), nucleos: nav.hardwareConcurrency, memoriaGB: nav.deviceMemory,
+dpr: global.devicePixelRatio || 1,
+movel: /Android|iPhone|iPad|Mobile/i.test(nav.userAgent || ""),
+pref: lerPref()
+});
+}
+var BimDesempenho = {
+CHAVE_PREF: CHAVE_PREF, PREFS: PREFS, OCIOSO_APOS_MS: OCIOSO_APOS_MS, OCIOSO_INTERVALO_MS: OCIOSO_INTERVALO_MS,
+classificarGpu: classificarGpu, perfil: perfil, Regulador: Regulador, deveDesenhar: deveDesenhar,
+lerPref: lerPref, gravarPref: gravarPref, lerGpu: lerGpu, perfilDaMaquina: perfilDaMaquina
+};
+global.BimDesempenho = BimDesempenho;
+if (typeof module !== "undefined" && module.exports) module.exports = BimDesempenho;
+})(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bim2dui.js ==== */
 try {
