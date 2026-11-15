@@ -547,6 +547,18 @@
       var c = this._cache[id]; if (!c || !c.svg) return;
       c.vb = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
       c.svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
+      this._penasZoom(id);
+    },
+    /* PENAS NO ZOOM (js/bimpenaszoom.js): a espessura da linha, a hachura e os textos seguem o zoom como a pena de papel
+       (só estilo — nenhuma geometria refeita). Um quadro de animação por vista: a roda do mouse não refaz nada a cada passo. */
+    _penasZoom: function (id) {
+      var c = this._cache[id], PZ = global.BimPenasZoom; if (!c || !c.svg || !PZ || c._pzAg) return;
+      var self = this, f = global.requestAnimationFrame || function (fn) { return global.setTimeout(fn, 16); };
+      c._pzAg = true;
+      f(function () {
+        c._pzAg = false;
+        try { var e = self.estilo ? self.estilo(id) : null; if (c.svg) PZ.aplicar(c.svg, { escala: e && e.escala }); } catch (ePZ) {}
+      });
     },
     ajustar: function (id) { var c = this._cache[id]; if (c && c.vbTotal) this._aplicarVb(id, c.vbTotal); },
     /* P2-D: o modelo mudou — refaz o desenho do modelo SEM perder o zoom (o

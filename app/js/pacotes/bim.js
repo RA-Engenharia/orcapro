@@ -109257,6 +109257,118 @@ global.BimDesempenho = BimDesempenho;
 if (typeof module !== "undefined" && module.exports) module.exports = BimDesempenho;
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimpenaszoom.js ==== */
+try {
+(function (global) {
+"use strict";
+var PX_MM_REAL = 96 / 25.4;
+var PISO_PX = 0.5;
+var TETO_FATOR = 2.5;
+var TETO_PX = 7;
+function pxPorMmPapel(pxPorMetro, escala) {
+var s = +pxPorMetro, e = +escala;
+if (!(s > 0) || !(e > 0)) return PX_MM_REAL;
+return s * e / 1000;
+}
+function larguraPx(base, mm, pxMm) {
+var b = mm > 0 ? mm * PX_MM_REAL : +base;
+if (!(b > 0)) b = PISO_PX;
+b = Math.max(PISO_PX, b);
+var k = (pxMm > 0 ? pxMm : PX_MM_REAL) / PX_MM_REAL;
+var v = b * k;
+var teto = Math.max(PISO_PX, Math.min(TETO_PX, b * TETO_FATOR));
+return Math.round(Math.max(PISO_PX, Math.min(teto, v)) * 1000) / 1000;
+}
+var HACH_CHEIA = 5, HACH_TOM = 2.5;
+function hachura(passoPx) {
+var p = +passoPx;
+if (!(p > 0)) return { linha: 1, tom: 0 };
+if (p >= HACH_CHEIA) return { linha: 1, tom: 0 };
+if (p <= HACH_TOM) return { linha: 0, tom: 0.22 };
+var t = (p - HACH_TOM) / (HACH_CHEIA - HACH_TOM);
+return { linha: Math.round((0.15 + 0.85 * t) * 100) / 100, tom: Math.round(0.22 * (1 - t) * 100) / 100 };
+}
+var MIN_NOME = 5, MIN_COTA = 6.5, MIN_RESTO = 8, FADE = 1.5;
+function classeTexto(cls) {
+var c = " " + String(cls || "") + " ";
+if (/ d2-amb-nome /.test(c)) return "nome";
+if (/ d2-cota-tx /.test(c)) return "cota";
+if (/ d2-(tit-tx|tit-esc|leg-tit|leg-tx|amb-leg-tit|amb-leg-tx) /.test(c)) return "titulo";
+return "resto";
+}
+function texto(alturaPx, cls) {
+var h = +alturaPx, tp = classeTexto(cls);
+var min = tp === "nome" ? MIN_NOME : tp === "cota" ? MIN_COTA : tp === "titulo" ? MIN_NOME : MIN_RESTO;
+if (!(h > 0)) return { visivel: false, opacidade: 0, tipo: tp };
+if (h >= min + FADE) return { visivel: true, opacidade: 1, tipo: tp };
+if (h < min) return { visivel: false, opacidade: 0, tipo: tp };
+return { visivel: true, opacidade: Math.round((0.35 + 0.65 * (h - min) / FADE) * 100) / 100, tipo: tp };
+}
+var Motor = { PX_MM_REAL: PX_MM_REAL, PISO_PX: PISO_PX, TETO_PX: TETO_PX, pxPorMmPapel: pxPorMmPapel, larguraPx: larguraPx,
+hachura: hachura, texto: texto, classeTexto: classeTexto, HACH_CHEIA: HACH_CHEIA, HACH_TOM: HACH_TOM };
+var SVGNS = "http://www.w3.org/2000/svg";
+var PULAR = /(^|\s)d2-(pick|alca|sel-l|marca-sel|elastico|snap)[a-z0-9-]*(\s|$)/;
+function escalaDaVista(svg, escalaDada) {
+if (escalaDada > 0) return +escalaDada;
+var t = svg.querySelector(".d2-tit-esc");
+var m = t && /1\s*:\s*(\d+)/.exec(t.textContent || "");
+return m ? +m[1] : 0;
+}
+function aplicar(svg, opc) {
+if (!svg || !svg.getScreenCTM) return false;
+opc = opc || {};
+var ctm = svg.getScreenCTM(); if (!ctm || !(ctm.a > 0)) return false;
+var scr = ctm.a;
+var esc = escalaDaVista(svg, opc.escala); if (!(esc > 0)) return false;
+var pxMm = pxPorMmPapel(scr, esc);
+if (svg._pzUlt && Math.abs(svg._pzUlt - scr) / scr < 0.004 && !opc.forcar) return false;
+svg._pzUlt = scr;
+var els = svg.querySelectorAll('[vector-effect="non-scaling-stroke"]'), i, el, b, mm, base;
+for (i = 0; i < els.length; i++) {
+el = els[i];
+if (PULAR.test(el.getAttribute("class") || "")) continue;
+b = el.getAttribute("data-pz0");
+if (b === null) { b = el.getAttribute("stroke-width"); if (b === null) continue; el.setAttribute("data-pz0", b); }
+base = parseFloat(b); mm = parseFloat(el.getAttribute("data-mm"));
+el.style.strokeWidth = larguraPx(base, mm > 0 ? mm : 0, pxMm) + "px";
+}
+var pats = svg.querySelectorAll("pattern"), p, pw, ef, ls, j, rect;
+for (i = 0; i < pats.length; i++) {
+p = pats[i]; pw = parseFloat(p.getAttribute("width")); if (!(pw > 0)) continue;
+ef = hachura(pw * scr);
+rect = p.querySelector("rect[data-pz-tom]");
+if (!rect) {
+rect = svg.ownerDocument.createElementNS(SVGNS, "rect");
+rect.setAttribute("data-pz-tom", "1"); rect.setAttribute("width", p.getAttribute("width")); rect.setAttribute("height", p.getAttribute("height") || p.getAttribute("width"));
+rect.setAttribute("fill", "#1a1a1a"); rect.setAttribute("fill-opacity", "0"); rect.setAttribute("stroke", "none");
+p.insertBefore(rect, p.firstChild);
+}
+rect.setAttribute("fill-opacity", String(ef.tom));
+ls = p.querySelectorAll("line, path");
+for (j = 0; j < ls.length; j++) ls[j].style.strokeOpacity = ef.linha;
+}
+var tx = svg.querySelectorAll("text"), t, h0, r, tr, mt;
+for (i = 0; i < tx.length; i++) {
+t = tx[i];
+h0 = t.getAttribute("data-pz-h");
+if (h0 === null) {
+tr = t.getAttribute("transform") || ""; mt = /scale\(\s*([0-9.eE+-]+)/.exec(tr);
+h0 = mt ? 100 * parseFloat(mt[1]) : parseFloat(t.getAttribute("font-size")) || 0;
+t.setAttribute("data-pz-h", String(h0));
+}
+h0 = parseFloat(h0); if (!(h0 > 0)) continue;
+r = texto(h0 * scr, t.getAttribute("class"));
+t.style.display = r.visivel ? "" : "none";
+t.style.opacity = r.visivel && r.opacidade < 1 ? String(r.opacidade) : "";
+}
+return true;
+}
+var PenasZoom = { motor: Motor, aplicar: aplicar };
+PenasZoom.pxPorMmPapel = pxPorMmPapel; PenasZoom.larguraPx = larguraPx; PenasZoom.hachura = hachura; PenasZoom.texto = texto;
+global.BimPenasZoom = PenasZoom;
+if (typeof module !== "undefined" && module.exports) module.exports = PenasZoom;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bim2dui.js ==== */
 try {
 (function (global) {
@@ -109676,6 +109788,16 @@ _aplicarVb: function (id, vb) {
 var c = this._cache[id]; if (!c || !c.svg) return;
 c.vb = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
 c.svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
+this._penasZoom(id);
+},
+_penasZoom: function (id) {
+var c = this._cache[id], PZ = global.BimPenasZoom; if (!c || !c.svg || !PZ || c._pzAg) return;
+var self = this, f = global.requestAnimationFrame || function (fn) { return global.setTimeout(fn, 16); };
+c._pzAg = true;
+f(function () {
+c._pzAg = false;
+try { var e = self.estilo ? self.estilo(id) : null; if (c.svg) PZ.aplicar(c.svg, { escala: e && e.escala }); } catch (ePZ) {}
+});
 },
 ajustar: function (id) { var c = this._cache[id]; if (c && c.vbTotal) this._aplicarVb(id, c.vbTotal); },
 atualizar: function (id) {
