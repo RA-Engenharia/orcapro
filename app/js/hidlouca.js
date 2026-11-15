@@ -1989,6 +1989,18 @@
     return partes;
   }
 
+  /* PORCA SEXTAVADA MACIÇA (esgoto SN, curvar ajustável — 15/11/2026): sólido de seis lados com a espessura axial da porca, chanfro nas duas faces e FURO REDONDO em ampulheta
+     (cintura abraçando a bola da junta, bocas largas para o tubo inclinado passar). Eixo = X, origem = centro. P: pa = apótema (entre faces / 2), pw = meia espessura axial,
+     pr = raio do furo nas faces, pq = raio do furo na cintura. Vértice do sextavado em ±Y. Anéis de 24 pontos (4 por lado do sextavado): o sextavado e o círculo ligam sem sobra. */
+  function geoPorcaSext(P, q) {
+    var A = P.pa, W = P.pw, Rf = P.pr, Rw = P.pq, partes = [], pt = parte("porca", "Porca sextavada", ESCURO), N = q.N >= 32 ? 24 : (q.N >= 20 ? 12 : 6), cf = 0.93, cx = (1 - cf) * A / Math.cos(Math.PI / 6) * 0.58;
+    function hex(x, k) { var o = [], j; for (j = 0; j < N; j++) { var t = TAU * j / N, r = k * A / Math.cos(((t * 180 / Math.PI) % 60 - 30) * Math.PI / 180); o.push([x, r * Math.cos(t), r * Math.sin(t)]); } return o; }
+    function circ(x, r) { var o = [], j; for (j = 0; j < N; j++) { var t = TAU * j / N; o.push([x, r * Math.cos(t), r * Math.sin(t)]); } return o; }
+    loft(pt.m, [Q(circ(-W, Rf)), Q(hex(-W, cf), true), Q(hex(-W + cx, 1), true), Q(hex(W - cx, 1), true), Q(hex(W, cf), true), Q(circ(W, Rf), true), Q(circ(0, Rw)), Q(circ(-W, Rf))], { fechado: true });
+    partes.push(pt);
+    return partes;
+  }
+
   var GERADORES = {
     bacia_caixa: function (P, q) { return geoBacia(P, q, true); },
     bacia_valvula: function (P, q) { return geoBacia(P, q, false); },
@@ -1999,7 +2011,7 @@
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto,
     sumidouro_aneis: geoSumidouroAneis, camara_cil: geoCamaraCil, camara_ret: geoCamaraRet, reservatorio_ret: geoReservatorioRet, pressurizador: geoPressurizador, ducha_zagonel: geoDuchaZagonel, boia: geoBoia,
-    motobomba_bc: geoMotobombaBC, casa_reservatorios: geoCasaReservatorios, central_agua: geoCentralAgua
+    porca_sextavada: geoPorcaSext, motobomba_bc: geoMotobombaBC, casa_reservatorios: geoCasaReservatorios, central_agua: geoCentralAgua
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
@@ -2008,7 +2020,7 @@
     caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,
-    motobomba_bc: 7000, casa_reservatorios: 42000, central_agua: 80000
+    porca_sextavada: 600, motobomba_bc: 7000, casa_reservatorios: 42000, central_agua: 80000
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
   var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN",

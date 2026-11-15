@@ -11019,7 +11019,21 @@ function editOp(o) {
 try { if (window.Modela && Modela.iniciarTeste) Modela.iniciarTeste(); } catch (_m) {}
 try { var _am = window.EleAparelhos && EleAparelhos.aoMover ? EleAparelhos.aoMover(o, edit.ops, famAval) : null; if (_am) o = _am; } catch (_eAm) {}
 edit.ops.push(o); edit.redo = [];
+try {
+if (window.BimInstPartir && opTocaTubo(o)) {
+var _st = BimEdit.aplicar(edit.ops);
+if (BimInstPartir.opcaoLigada(_st)) {
+var _pr = BimInstPartir.ops(_st, famAval);
+if (_pr.ok && _pr.ops.length) edit.ops[edit.ops.length - 1] = { op: 'lote', id: 'partir-' + Date.now(), ops: (o.op === 'lote' && Array.isArray(o.ops) ? o.ops : [o]).concat(_pr.ops) };
+}
+}
+} catch (_ePt) {}
 if (!(opSoInst(o) && editRebuildInst())) editRebuild();
+}
+function opTocaTubo(o) {
+if (!o) return false;
+if (o.op === 'lote') return Array.isArray(o.ops) && o.ops.some(opTocaTubo);
+return o.op === 'trecho' || o.op === 'familia';
 }
 S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
 S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };

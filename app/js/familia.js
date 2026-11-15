@@ -417,7 +417,7 @@
    * (anel oco: assento, aro, grade). A malha sai INDEXADA, com os vértices repetidos em cada trecho do
    * perfil: a aresta do perfil fica viva e o giro fica liso (`suave`: o 3D não "achata" as faces).
    * Vira forma "malha" para o 3D, o IFC e o quantitativo (o mesmo caminho da família importada). */
-  var SEG_MIN = 8, SEG_MAX = 48, SEG_PAD = 24;
+  var SEG_MIN = 6, SEG_MAX = 48, SEG_PAD = 24;
   function malhaRevolucao(s, f, erros) {
     var rotulo = "sólido \"" + (s.nome || s.id) + "\"";
     var pts = arr(s.perfil).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; });
@@ -627,6 +627,8 @@
          bidirecional. Só repassa o que a família declarou; quem LÊ é o motor (js/biminst.js — frente 1b). Família sem estes campos: nada muda. */
       if (k.papel) o.papel = txt(k.papel);
       if (k.dir && typeof k.dir === "object") o.dir = { x: Number(k.dir.x) || 0, y: Number(k.dir.y) || 0, z: Number(k.dir.z) || 0 };
+      /* dirf: a direção em FÓRMULA (conexão ajustável: a boca do segmento girado aponta para onde o ângulo manda); `dir` fica como o valor padrão (ângulo de repouso) */
+      if (k.dirf && typeof k.dirf === "object") o.dir = { x: f(k.dirf.x, 0), y: f(k.dirf.y, 0), z: f(k.dirf.z, 0) };
       if (k.porta) o.porta = txt(k.porta);
       if (k.opcional === true) o.opcional = true;
       if (k.bidirecional === true || k.bidirecional === false) o.bidirecional = k.bidirecional;

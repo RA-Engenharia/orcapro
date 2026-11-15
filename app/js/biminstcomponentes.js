@@ -182,6 +182,7 @@
   /* ------------------------------------------------------------- 5) FAMÍLIAS */
   function grupoHid(f) {
     var id = txt(f.id), n = norm(f.nome);
+    if (/^hid-sn-/.test(id)) return "Conexões";   /* as 5 conexões da ficha de esgoto série normal (js/hidfamilias.js, 15/11/2026): conexão colocada, não equipamento */
     if (/registro|valvula/.test(id) && !/descarga/.test(id)) return "Registros e válvulas";
     if (/caixa-dagua|cisterna|reservatorio|base-caixa|tanque-ret|tanque-cil|sumidouro|vala/.test(id) && !/tanque-lavar/.test(id)) return "Reservatórios e tanques";
     if (/hidrante|extintor|sprinkler/.test(id)) return "Incêndio";

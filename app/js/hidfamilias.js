@@ -699,7 +699,9 @@
     var s = { id: id, nome: nome, forma: "revolucao", x: S(x), y: S(y), z: S(z), perfil: perfil.map(function (q) { return [S(q[0]), S(q[1])]; }), material: o.mat || "Material" };
     if (o.ex) s.ex = S(o.ex);
     if (o.ez) s.ez = S(o.ez);
+    if (o.rot) s.rot = S(o.rot);
     if (o.eixo) s.eixo = o.eixo;
+    if (o.segmentos) s.segmentos = o.segmentos;
     if (o.fechar) s.fechar = o.fechar;
     if (o.vis) s.visivel = o.vis;
     return s;
@@ -1546,6 +1548,210 @@
     env: ["(" + XMAXE + " + " + XMINE + ")/2", "0", "(" + ZMAXE + " + " + ZMINE + ")/2", XMAXE + " - " + XMINE, "Altura_barrilete_AQ + Saida_altura + 0.1", ZMAXE + " - " + ZMINE], x: [] };
   ESPECS.forEach(function (e) { if (e.id === "hid-central-agua-boiler") e.geo.forEach(function (g) { g.instancia = true; }); });   /* montada por INSTÂNCIA: N de saídas, volumes, DN e distâncias são do projeto */
 
+  /* ESGOTO SÉRIE NORMAL — 5 CONEXÕES DA FICHA (15/11/2026, pedido do Rogério: "crie as conexões que faltam como famílias paramétricas")
+     Fonte única das cotas: js/hidcatalogosn.js (ficha técnica de esgoto série normal, 2015, p.4 a p.8) — a base de edição segue a Predial 2025 que o sistema já usa;
+     a ficha só preenche o que a 2025 não tem (estas cinco peças). Cada tipo é um DN; a cota entra como "catalogo" e a fonte vai no campo de fonte
+     ("Tigre FT Esgoto SN 2015, p.N" — a marca só aparece ali). O que o desenho da ficha não explica (o SENTIDO de cada letra) é leitura nossa e vai para o
+     "Conferir" do tipo — nunca cota inventada em silêncio. Origem = o eixo do tubo; o tubo corre pelo X (como os registros). Sem composição SINAPI mapeada no repositório:
+     a ficha da peça fica "pendente" (tools/gerar-hid-pecas.js), nunca a parecida. Traçado: nenhuma regra mexida — a peça é só colocada (Colocar). */
+  var CSN = carregar("HidCatalogoSN", "hidcatalogosn.js");
+  if (CSN && CSN.DADOS && CSN.DADOS.curvar45) (function () {
+    var SND = CSN.DADOS, FSN = "Tigre FT Esgoto SN 2015";
+    var ANG = "min(45; max(0; Angulo))";   /* hid:ok o ângulo do produto é 0 a 45° (ficha p.5) */
+    var AV_SN = "Forma 3D desenhada pela RA a partir das cotas da ficha (a ficha não explica o sentido de cada letra: a leitura vai no Conferir do tipo); proporções de desenho não são cota do fabricante.";
+    function snTipo(fid, dn, pag, v, cotasTxt, conferir) {
+      v.DN_esgoto = dn; v.Origem_cotas = "catalogo"; v.Fonte_cotas = FSN + ", p." + pag;
+      v.Pagina_ficha = pag; v.Pagina_cotas = pag; v.Edicao_ficha = "Ficha técnica de esgoto série normal (2015)"; v.Cotas_ficha = cotasTxt + " (mm)";
+      v.Descricao_ficha = "Conexão de esgoto série normal DN " + dn + " — cotas da ficha";
+      return fichaQ("t-sn-dn" + dn, "DN " + dn + " — cotas da ficha", v, FSN + ", p." + pag, conferir);
+    }
+    function dnGeo() { return DN("DN_esgoto", null, "DN do esgoto"); }
+    function paramsFonte() { return [X("Origem_cotas", "texto", "", "Dimensões", "Origem das cotas do tipo (catalogo = lidas da ficha)"), X("Fonte_cotas", "texto", "", "Dimensões", "Documento e página da ficha de onde as cotas vêm")]; }
+    function conV(id, nome, papel, x, dirNome, bidir, conf) { return { id: id, nome: nome, sistema: "esgoto", dn: "DN_esgoto", x: x, y: "0", z: "0", papel: papel, dir: dv(dirNome), bidirecional: bidir, origemPos: "extremidade", aConferir: conf }; }
+    function cota(t, letra, dn) { return t.cotas[letra][String(dn)]; }
+
+    /* ---- ACABAMENTO (15/11/2026, 2ª rodada: "peça de verdade, vista de perto"). Todas as peças são CASCAS OCAS (perfil fechado: parede de
+       espessura real, sem face interna sobrando); a espessura é a do tubo SN da própria ficha (p.7, "e"), a ficha não cota a parede destas peças.
+       A bolsa leva o que a peça moldada leva: chanfro de entrada, colar na face e ALOJAMENTO do anel (o anel de borracha é uma peça à parte, dentro do
+       alojamento, só a boca dele aparece). Proporções de desenho (hid:ok) — nenhuma é cota do fabricante. */
+    function Z(s) { return "(" + s + ")"; }
+    function pol(R, ang) { return [Z(R + "*sen(" + ang + ")"), Z(R + "*cos(" + ang + ")")]; }   /* ponto da esfera de raio R no ângulo ang (graus) contado do eixo +X */
+    var ARC = [118, 105, 92, 80, 68];   /* hid:ok ângulos da calota da articulação (desenho) */
+    /* bolsa com a boca em xm, interior para o lado s (+1 = para +X, −1 = para −X); u = profundidade a partir da boca */
+    function bocaSN(xm, s, rb, rSb, Pb, Pa) {
+      function d(u) { return Z(xm + (s > 0 ? " + " : " - ") + Z(u)); }
+      var ch = Z(Pa + "*0.6"), chi = Z(Pa + "*0.8"), ga = Z(Pb + "*0.12"), gb = Z(ga + " + " + Pa + "*3.2"), rg = Z(rb + " + " + Pa + "*1.2"), c = Z(Pa + "*0.35");   /* hid:ok proporção de desenho */
+      var rin = Z(rb + " - 0.0004"), rout = Z(rg + " - 0.0001"), u1 = Z(ga + " + 0.0001"), u2 = Z(gb + " - 0.0001");   /* hid:ok folga do anel no alojamento: 0,1 mm; o anel avança 0,4 mm no furo */
+      return {
+        fora: [[rSb, d(Pb)], [rSb, d(ch)], [Z(rSb + " - " + ch), d("0")]],
+        dentro: [[Z(rb + " + " + chi), d("0")], [rb, d(chi)], [rb, d(ga)], [rg, d(ga)], [rg, d(gb)], [rb, d(gb)]],
+        anel: [[rin, d(Z(u1 + " + " + c))], [Z(rin + " + " + c), d(u1)], [Z(rout + " - " + c), d(u1)], [rout, d(Z(u1 + " + " + c))], [rout, d(Z(u2 + " - " + c))], [Z(rout + " - " + c), d(u2)], [Z(rin + " + " + c), d(u2)], [rin, d(Z(u2 + " - " + c))]]
+      };
+    }
+    /* seta de fluxo em relevo apontando para +X (haste = caixa, ponta = triângulo extrudado); sinal +1 = lado +Z, −1 = lado −Z */
+    function relevoSeta(id, x0, x1, yh, zFace, zIn, sinal) {
+      var xm = Z(x0 + " + (" + x1 + " - " + x0 + ")*0.62"), hh = Z(yh + "*0.34"), hc = Z(yh), alt = Z(zFace + " - " + zIn);   /* hid:ok proporção de desenho: haste 62 % do comprimento, 34 % da altura */
+      var zc = sinal > 0 ? Z(zIn + " + " + alt + "/2") : Z("-" + zIn + " - " + alt + "/2");
+      return [cxs(id + "-haste", "Seta de fluxo em relevo (haste)", Z("(" + x0 + " + " + xm + ")/2"), "-" + hh, zc, Z(xm + " - " + x0), Z("2*" + hh), alt, "Cinza escuro"),
+        { id: id + "-ponta", nome: "Seta de fluxo em relevo (ponta)", forma: "extrusao", plano: "frente", x: "0", y: "0", z: sinal > 0 ? zIn : "-" + zFace, altura: alt, contorno: [[xm, "-" + hc], [x1, "0"], [xm, hc]], material: "Cinza escuro" }];
+    }
+
+    /* 1) CURVAR 45° AJUSTÁVEL (p.5): segmento com ponta + segmento com bolsa + porca de travamento + anel; o ângulo é parâmetro (0 a 45°) */
+    var Tc = SND.curvar45, tiposC = Tc.dns.map(function (dn) {
+      var A = cota(Tc, "A", dn), B = cota(Tc, "B", dn), DE = cota(Tc, "DE", dn), d = cota(Tc, "d", dn), e = cota(Tc, "e", dn), pe = SND.tubo.e[String(dn)], pb = SND.tubo.B[String(dn)];
+      return snTipo("hid-sn-curvar-45", dn, Tc.pag, { Comprimento_bolsa: mm(A), Comprimento_ponta: mm(B), DE_ponta: mm(DE), D_bolsa: mm(d), Espessura_porca: mm(e), Parede: mm(pe), Prof_bolsa: mm(pb) },
+        "A=" + A + "; B=" + B + "; DE=" + DE + "; d=" + d + "; e=" + e + "; parede=" + pe + " e profundidade da bolsa=" + pb + " (tubo SN, p.7)",
+        ["Sentido das letras (leitura nossa do desenho): A = comprimento do segmento com bolsa, B = do segmento com ponta, DE = Ø externo da ponta, d = Ø interno da bolsa, e = espessura da porca medida entre as faces planas (porca sextavada: a distância entre faces é d + 2e)",
+         "Parede e profundidade da bolsa: as do tubo SN da ficha (p.7); a ficha não cota a parede desta peça", "Articulação esférica (só por fora: o interior é tubo oco contínuo), raio da esfera (DE/2 + e/2), porca maciça de espessura axial 0,56 d e furo em ampulheta, alojamento e anel de vedação: proporção de desenho, a ficha não cota", "Comprimento total a 0° = A + B (soma dos dois segmentos)"]);
+    });
+    ESPECS.push({ id: "hid-sn-curvar-45", nome: "Curva ajustável 45° de esgoto (0° a 45°)", categoria: "conexao_tubo", sistemas: ["esgoto"], tipos: [], generico: false, tiposFicha: tiposC,
+      descricao: "Curva ajustável de esgoto série normal: segmento com ponta lisa chanfrada e segmento com bolsa (alojamento do anel), articulados numa junta esférica e envolvidos pela porca sextavada; o ângulo é parâmetro (0° a 45°). Origem = o centro da articulação, no eixo do tubo; a ponta fica no −X.",
+      avisos: [AV_SN, "O ângulo fora de 0° a 45° é limitado a essa faixa (produto da ficha)."],
+      geo: [G("Comprimento_bolsa", mm(cota(Tc, "A", Tc.dns[0])), null, null, "A: comprimento do segmento com bolsa (ficha)"), G("Comprimento_ponta", mm(cota(Tc, "B", Tc.dns[0])), null, null, "B: comprimento do segmento com ponta (ficha)"),
+        G("DE_ponta", mm(cota(Tc, "DE", Tc.dns[0])), null, null, "DE: Ø externo da ponta (ficha)"), G("D_bolsa", mm(cota(Tc, "d", Tc.dns[0])), null, null, "d: Ø interno da bolsa (ficha)"),
+        G("Espessura_porca", mm(cota(Tc, "e", Tc.dns[0])), null, null, "e: espessura da porca de travamento (ficha)"),
+        G("Parede", mm(SND.tubo.e[String(Tc.dns[0])]), null, null, "Espessura da parede (a do tubo SN, ficha p.7)"), G("Prof_bolsa", mm(SND.tubo.B[String(Tc.dns[0])]), null, null, "Profundidade da bolsa (a do tubo SN, ficha p.7)"),
+        X("Angulo", "numero", 45, "Instalação", "Ângulo de abertura do segmento com bolsa em graus (0 a 45; o produto não passa de 45)"), dnGeo()].concat(paramsFonte()),   /* hid:ok ângulo padrão = o máximo do produto */
+      solidos: [], material: "PVC",
+      conectores: [conV("ponta", "Ponta (segmento com ponta)", "entrada", "-Comprimento_ponta", "esq", true, "posição = extremidade do segmento (cota B da ficha)"),
+        { id: "bolsa", nome: "Bolsa (segmento com bolsa, no ângulo)", sistema: "esgoto", dn: "DN_esgoto", x: "Comprimento_bolsa*cos(" + ANG + ")", y: "0", z: "-Comprimento_bolsa*sen(" + ANG + ")", papel: "saida",
+          dir: dv("dir"), dirf: { x: "cos(" + ANG + ")", y: "0", z: "-sen(" + ANG + ")" }, bidirecional: true, origemPos: "extremidade", aConferir: "posição = extremidade do segmento com bolsa (cota A da ficha), no ângulo escolhido" }] });
+    GEO_FAM["hid-sn-curvar-45"] = function () {
+      var r0 = "(DE_ponta/2)", ri0 = "(DE_ponta/2 - Parede)", Rj = "(DE_ponta/2 + Espessura_porca*0.5)", tb = "(Parede*1.5)", Rji = "(" + Rj + " - " + tb + ")", Rsi = "(" + Rj + " + 0.0003)";   /* hid:ok proporção de desenho; folga esfera × concha 0,3 mm */
+      var ch = "(Parede*0.6)", lc = "(Parede*2.2)", rb = "(D_bolsa/2)", rS = "(D_bolsa/2 + Parede*2)", rSb = "(D_bolsa/2 + Parede*3)";
+      /* PONTA: tubo oco de ponta lisa chanfrada, que termina numa calota esférica (a bola da articulação) */
+      var pP = [[ri0, "-Comprimento_ponta"], [Z(r0 + " - " + ch), "-Comprimento_ponta"], [r0, Z("-Comprimento_ponta + " + lc)], [r0, Z("-raiz(" + Rj + "*" + Rj + " - " + r0 + "*" + r0 + ")")]], k;
+      for (k = 0; k < ARC.length; k++) pP.push(pol(Rj, ARC[k]));
+      var rrim = Z(ri0 + " + Parede"), xrim = Z("raiz(" + Rj + "*" + Rj + " - " + rrim + "*" + rrim + ")");   /* a calota termina logo acima do furo do tubo: pela boca da bolsa só se vê o furo reto (anel de 1 parede), a esfera fica por fora, coberta pela concha e pela porca */
+      pP.push([rrim, xrim]);
+      pP.push([ri0, xrim]);   /* a bola é só por fora: o furo do tubo segue reto até a face da calota (interior oco contínuo, a esfera não aparece por dentro da bolsa) */
+      /* BOLSA: concha esférica concêntrica com a bola (folga de 0,3 mm), corpo, colar da bolsa e alojamento do anel */
+      var bo = bocaSN("Comprimento_bolsa", -1, rb, rSb, "Prof_bolsa", "Parede"), rm = Z("(" + rb + " + " + rS + ")/2");
+      var pS = [[rb, Z("raiz(" + Rsi + "*" + Rsi + " - " + rb + "*" + rb + ")")], [rm, Z("raiz(" + Rsi + "*" + Rsi + " - " + rm + "*" + rm + ")")], [rS, Z("raiz(" + Rsi + "*" + Rsi + " - " + rS + "*" + rS + ")")],
+        [rS, Z("Comprimento_bolsa - Prof_bolsa - Parede*1.5")]].concat(bo.fora).concat(bo.dentro);
+      /* PORCA: maciça, sextavada (6 lados), espessura axial ≈ 0,56 d, chanfro nas faces e furo redondo em ampulheta: a cintura abraça a bola da junta e as bocas deixam o tubo inclinado passar nos 45° */
+      var wn = "(D_bolsa*0.28)", Rfu = Z("max(" + Rj + "; " + rS + "/cos(22.5) + " + wn + "*tan(22.5)) + 0.0003"), Rwa = Z(Rj + " + 0.0003"), apoF = Z("max(DE_ponta/2 + Espessura_porca; " + Rfu + " + D_bolsa*0.1)");   /* hid:ok proporção de desenho; folga 0,3 mm */
+      var pNp = { pa: apoF, pw: wn, pr: Rfu, pq: Rwa };
+      return [rev("ponta", "Segmento com ponta", "0", "0", "0", pP, { eixo: "x", mat: "PVC", fechar: "perfil" }),
+        rev("bolsa", "Segmento com bolsa", "0", "0", "0", pS, { eixo: "x", mat: "PVC", fechar: "perfil", rot: ANG }),
+        rev("anel", "Anel de vedação da bolsa", "0", "0", "0", bo.anel, { eixo: "x", mat: "Preto", fechar: "perfil", rot: ANG }),
+        { id: "porca", nome: "Porca de travamento sextavada", forma: "gerada", gerador: "porca_sextavada", x: "0", y: "0", z: "0", rot: ANG + "/2", p: pNp, material: "Cinza escuro",   /* hid:ok a porca fica na bissetriz */
+          env: { x: "-" + wn, y: "-" + apoF, z: "-" + apoF, dx: Z("2*" + wn), dy: Z("2*" + apoF), dz: Z("2*" + apoF) } }];
+    };
+
+    /* 2) VÁLVULA DE RETENÇÃO (p.8): corpo com duas bolsas, parte central alargada, tampa de inspeção aparafusada e seta de fluxo */
+    var Tv = SND.valvulaRetencao, tiposV = Tv.dns.map(function (dn) {
+      var A = cota(Tv, "A", dn), B = cota(Tv, "B", dn), C = cota(Tv, "C", dn), D = cota(Tv, "D", dn), DE = cota(Tv, "DE", dn), DL = cota(Tv, "DL", dn), pe = SND.tubo.e[String(dn)];
+      return snTipo("hid-sn-valvula-retencao", dn, Tv.pag, { Comprimento_total: mm(A), Prof_bolsa: mm(B), Cota_C: mm(C), D_tubo: mm(D), DE_corpo: mm(DE), Largura_tampa: mm(DL), Altura_tampa: mm(DL / 4), Parede: mm(pe), Prof_bolsa_tubo: mm(SND.tubo.B[String(dn)]) },   /* hid:ok altura da tampa = proporção de desenho */
+        "A=" + A + "; B=" + B + "; C=" + C + "; D=" + D + "; DE=" + DE + "; DL=" + DL + "; parede=" + pe + " (tubo SN, p.7)",
+        ["Sentido das letras (leitura nossa do desenho): A = comprimento total, B = comprimento de cada bolsa, D = Ø do tubo que entra, DE = Ø externo do corpo, DL = Ø da tampa superior", "C: o sentido no desenho não foi lido — a cota fica no tipo, não é usada no desenho", "B (92,2 / 121,5) tampouco entra no desenho: a bolsa é desenhada com a profundidade do tubo SN da ficha (p.7: 55 / 73), o que deixa a parte alargada com ~60 % do comprimento",
+         "Parede: a do tubo SN da ficha (p.7); a ficha não cota a parede desta peça. Altura da tampa (DL/4), pescoço, aro, parafusos, transição do corpo e seta de fluxo: proporção de desenho", "Sentido do fluxo: a ficha não marca a seta — a face +X é a saída por convenção; conferir a seta do produto"]);
+    });
+    ESPECS.push({ id: "hid-sn-valvula-retencao", nome: "Válvula de retenção de esgoto", categoria: "conexao_tubo", sistemas: ["esgoto"], tipos: [], generico: false, tiposFicha: tiposV,
+      descricao: "Válvula de retenção de esgoto série normal: corpo com duas bolsas (alojamento do anel), parte central alargada e tampa de inspeção superior encaixada e aparafusada, com a seta de fluxo em relevo. Origem = centro do corpo, no eixo do tubo; o tubo corre pelo X (entrada em −X, saída em +X).",
+      avisos: [AV_SN],
+      geo: [G("Comprimento_total", mm(cota(Tv, "A", Tv.dns[0])), null, null, "A: comprimento total (ficha)"), G("Prof_bolsa", mm(cota(Tv, "B", Tv.dns[0])), null, null, "B: comprimento de cada bolsa (ficha)"),
+        G("Cota_C", mm(cota(Tv, "C", Tv.dns[0])), null, null, "C da ficha (sentido não lido; não usada no desenho)"), G("D_tubo", mm(cota(Tv, "D", Tv.dns[0])), null, null, "D: Ø do tubo que entra (ficha)"),
+        G("DE_corpo", mm(cota(Tv, "DE", Tv.dns[0])), null, null, "DE: Ø externo do corpo (ficha)"), G("Largura_tampa", mm(cota(Tv, "DL", Tv.dns[0])), null, null, "DL: Ø da tampa superior (ficha)"),
+        G("Altura_tampa", mm(cota(Tv, "DL", Tv.dns[0]) / 4), null, null, "Altura da tampa acima do corpo (proporção de desenho)"), G("Parede", mm(SND.tubo.e[String(Tv.dns[0])]), null, null, "Espessura da parede (a do tubo SN, ficha p.7)"), G("Prof_bolsa_tubo", mm(SND.tubo.B[String(Tv.dns[0])]), null, null, "Profundidade da bolsa desenhada (a do tubo SN, ficha p.7)"), dnGeo()].concat(paramsFonte()),   /* hid:ok proporção de desenho */
+      solidos: [], material: "PVC",
+      conectores: [conV("entrada", "Bolsa de entrada", "entrada", "-Comprimento_total/2", "esq", false, "posição = face da bolsa (cota A da ficha)"), conV("saida", "Bolsa de saída", "saida", "Comprimento_total/2", "dir", false, "posição = face da bolsa (cota A da ficha)")] });
+    GEO_FAM["hid-sn-valvula-retencao"] = function () {
+      var P = "Parede", rb = "(D_tubo/2)", rB = "(D_tubo/2 + Parede*2.5)", rbf = "(D_tubo/2 - Parede)", Rc = "(DE_corpo/2 - 0.0004)", Rci = Z(Rc + " - Parede*1.5"), Lc = "(Comprimento_total - 2*Prof_bolsa_tubo)", tc = Z(Lc + "*0.28");   /* hid:ok proporção de desenho; o corpo é 0,4 mm mais fino que o DE para a seta ficar em relevo dentro da cota */
+      var xo = "(Comprimento_total/2 - Prof_bolsa_tubo)", xi = Z(xo + " - " + tc);
+      var bL = bocaSN("-Comprimento_total/2", +1, rb, rB, "Prof_bolsa_tubo", P), bR = bocaSN("Comprimento_total/2", -1, rb, rB, "Prof_bolsa_tubo", P);
+      /* corpo: um só perfil fechado — boca esquerda, colar, cone, parte central alargada, cone, colar, boca direita; volta pelo furo com o degrau do fundo da bolsa */
+      var corpo = [bL.dentro[0]].concat(bL.fora.slice().reverse()).concat([[Rc, "-" + xi], [Rc, xi]]).concat(bR.fora).concat(bR.dentro)
+        .concat([[rb, xo], [rbf, xo], [Rci, xi], [Rci, "-" + xi], [rbf, "-" + xo], [rb, "-" + xo]]).concat([bL.dentro[5], bL.dentro[4], bL.dentro[3], bL.dentro[2], bL.dentro[1]]);
+      /* TAMPA DE INSPEÇÃO (proporcional ao corpo): pescoço oco que nasce no corpo, aro com assento, tampa ENCAIXADA no aro (0,3 mm de folga) e quatro parafusos */
+      var rf = "(DE_corpo/2*0.8)", rn = Z(rf + "*0.8"), rin = Z(rn + " - Parede*1.5"), rl = Z(rf + "*0.88"), rfi = Z(rl + " + 0.0003"), yb = Z(Rc + "*0.5"), yt = Z(Rc + " + Altura_tampa"), yf0 = Z(Rc + " + Altura_tampa*0.55"), hl = Z(P + "*3"), ylt = Z(yt + " - " + P + "*0.5"), ys = Z(ylt + " - " + hl), cc = Z(P + "*0.6");   /* hid:ok proporção de desenho: aro de Ø = 80 % do DE (a largura da parte alargada), centrado no corpo; a ficha dá DL = 150 (94 % de DE): conferir */
+      var pescoco = [[rin, yb], [rn, yb], [rn, yf0], [rf, yf0], [rf, Z(yt + " - " + cc)], [Z(rf + " - " + cc), yt], [Z(rfi + " + " + cc), yt], [rfi, Z(yt + " - " + cc)], [rfi, ys], [rin, ys]];
+      var tampa = [[Z(rl + " - " + P), Z(ys + " + 0.0001")], [rl, Z(ys + " + 0.0001 + " + P)], [rl, Z(ylt + " - " + cc)], [Z(rl + " - " + cc), ylt], [Z(rl + "*0.5"), ylt], [Z(rl + "*0.5"), Z(ylt + " + " + P + "*0.3")]];   /* hid:ok miolo da tampa em relevo */
+      var sol = [rev("corpo", "Corpo com duas bolsas e parte central alargada", "0", "0", "0", corpo, { eixo: "x", mat: "PVC", fechar: "perfil" }),
+        rev("pescoco", "Pescoço e aro da tampa", "0", "0", "0", pescoco, { eixo: "y", mat: "PVC", fechar: "perfil" }),
+        rev("tampa", "Tampa de inspeção encaixada", "0", "0", "0", tampa, { eixo: "y", mat: "Cinza claro" }),
+        rev("anel-esq", "Anel de vedação da bolsa de entrada", "0", "0", "0", bL.anel, { eixo: "x", mat: "Preto", fechar: "perfil" }),
+        rev("anel-dir", "Anel de vedação da bolsa de saída", "0", "0", "0", bR.anel, { eixo: "x", mat: "Preto", fechar: "perfil" })];
+      var zf = "(DE_corpo/2)", zi = Z("raiz(" + Rc + "*" + Rc + " - (" + Lc + "*0.1)*(" + Lc + "*0.1)) - 0.0003"), flat = Z(Lc + " - 2*" + tc), xa = Z("-" + flat + "*0.4"), xb = Z(flat + "*0.4");   /* hid:ok seta: 80 % do trecho reto, meia altura = 10 % do trecho central */
+      relevoSeta("seta-a", xa, xb, Z(Lc + "*0.1"), zf, zi, +1).concat(relevoSeta("seta-b", xa, xb, Z(Lc + "*0.1"), zf, zi, -1)).forEach(function (q) { sol.push(q); });
+      var k, rs = Z("(" + rf + " + " + rfi + ")/2");
+      for (k = 0; k < 4; k++) sol.push(cil("parafuso" + (k + 1), "Parafuso da tampa " + (k + 1), "y", Z(rs + "*cos(" + (45 + 90 * k) + ")"), Z(yt + " + 0.00005"), Z(rs + "*sen(" + (45 + 90 * k) + ")"), Z(P + "*1.7"), Z(P + "*1.6"), "Metal cromado"));   /* hid:ok quatro parafusos a 45° */
+      return sol;
+    };
+
+    /* 3) PROLONGAMENTO PARA VÁLVULA DE RETENÇÃO (p.8) */
+    var Tp = SND.prolongamentoValvula, tiposP = Tp.dns.map(function (dn) {
+      var A = cota(Tp, "A", dn), B = cota(Tp, "B", dn), DE = cota(Tp, "DE", dn), pe = SND.tubo.e[String(dn)];
+      return snTipo("hid-sn-prolongamento-valvula", dn, Tp.pag, { Comprimento_total: mm(A), Comprimento_ressalto: mm(B), DE_corpo: mm(DE), Parede: mm(pe) }, "A=" + A + "; B=" + B + "; DE=" + DE + "; parede=" + pe + " (tubo SN, p.7)",
+        ["Sentido das letras (leitura nossa do desenho): A = comprimento total, B = profundidade da bolsa da ponta que encosta na válvula, DE = Ø externo da ponta lisa (e Ø interno da bolsa)", "Parede: a do tubo SN da ficha (p.7); colar da bolsa, alojamento e anel: proporção de desenho"]);   /* hid:ok proporção de desenho */
+    });
+    ESPECS.push({ id: "hid-sn-prolongamento-valvula", nome: "Prolongamento para válvula de retenção", categoria: "conexao_tubo", sistemas: ["esgoto"], tipos: [], generico: false, tiposFicha: tiposP,
+      descricao: "Prolongamento (extensão) que acompanha a válvula de retenção de esgoto: tubo com ponta lisa chanfrada de um lado e bolsa com alojamento do anel do outro. Origem = centro da peça, no eixo do tubo; a bolsa fica na face +X (a que encosta na válvula).",
+      avisos: [AV_SN],
+      geo: [G("Comprimento_total", mm(cota(Tp, "A", Tp.dns[0])), null, null, "A: comprimento total (ficha)"), G("Comprimento_ressalto", mm(cota(Tp, "B", Tp.dns[0])), null, null, "B: profundidade da bolsa (ficha)"),
+        G("DE_corpo", mm(cota(Tp, "DE", Tp.dns[0])), null, null, "DE: Ø externo da ponta (ficha)"), G("Parede", mm(SND.tubo.e[String(Tp.dns[0])]), null, null, "Espessura da parede (a do tubo SN, ficha p.7)"), dnGeo()].concat(paramsFonte()),
+      solidos: [], material: "PVC",
+      conectores: [conV("a", "Ponta A", "entrada", "-Comprimento_total/2", "esq", true, "posição = extremidade (cota A da ficha)"), conV("b", "Ponta B (bolsa, lado da válvula)", "saida", "Comprimento_total/2", "dir", true, "posição = extremidade (cota A da ficha)")] });
+    GEO_FAM["hid-sn-prolongamento-valvula"] = function () {
+      var P = "Parede", r0 = "(DE_corpo/2)", ri = "(DE_corpo/2 - Parede)", rSb = "(DE_corpo/2 + Parede*3)", ch = "(Parede*0.6)", lc = "(Parede*2.2)", cn = "(Parede*1.5)";   /* hid:ok proporção de desenho */
+      var bo = bocaSN("Comprimento_total/2", -1, r0, rSb, "Comprimento_ressalto", P);
+      var perfil = [[ri, "-Comprimento_total/2"], [Z(r0 + " - " + ch), "-Comprimento_total/2"], [r0, Z("-Comprimento_total/2 + " + lc)], [r0, Z("Comprimento_total/2 - Comprimento_ressalto - " + cn)]].concat(bo.fora).concat(bo.dentro).concat([[ri, Z("Comprimento_total/2 - Comprimento_ressalto")]]);
+      return [rev("corpo", "Prolongamento (ponta e bolsa)", "0", "0", "0", perfil, { eixo: "x", mat: "PVC", fechar: "perfil" }),
+        rev("anel", "Anel de vedação da bolsa", "0", "0", "0", bo.anel, { eixo: "x", mat: "Preto", fechar: "perfil" })];
+    };
+
+    /* 4) ADAPTADOR PARA MÁQUINA DE LAVAR LOUÇA 25/22-40/50 (p.4): ponta da mangueira (22/25, com frisos) e degraus para o tubo de 40 ou de 50 */
+    var Ta = SND.adaptadores.maquinaLavarLouca, pagA = SND.adaptadores.pag, tiposA = [40, 50].map(function (dn) {
+      var pe = SND.tubo.e[String(dn)];
+      return snTipo("hid-sn-adaptador-lavar-louca", dn, pagA, { Comprimento_total: mm(Ta.A), Comprimento_mangueira: mm(Ta.L), D1: mm(Ta.D1), D2: mm(Ta.D2), D3: mm(Ta.D3), D4: mm(Ta.D4), DN_mangueira: Ta.D2, Parede: mm(pe) },
+        "k=" + Ta.k + "; D1=" + Ta.D1 + "; D2=" + Ta.D2 + "; D3=" + Ta.D3 + "; D4=" + Ta.D4 + "; L=" + Ta.L + "; A=" + Ta.A + "; parede=" + pe + " (tubo SN DN " + dn + ", p.7)",
+        ["Sentido das letras (leitura nossa do desenho): D1 e D2 = Ø da ponta da mangueira (22 raiz do friso e 25 crista), D3 e D4 = Ø externo dos degraus que entram no tubo de 40 e no de 50, L = comprimento da ponta da mangueira, A = comprimento total",
+         "Parede: a do tubo SN do DN da peça (p.7), a ficha não cota; três frisos de mangueira, transições cônicas e chanfros: proporção de desenho", "DN do ponto da mangueira = D2 (25): a ficha dá Ø, não DN"]);
+    });
+    ESPECS.push({ id: "hid-sn-adaptador-lavar-louca", nome: "Adaptador para máquina de lavar louça (25/22 × 40/50)", categoria: "conexao_tubo", sistemas: ["esgoto"], tipos: [], generico: false, tiposFicha: tiposA,
+      descricao: "Adaptador da saída da máquina de lavar louça para o tubo de esgoto de 40 ou de 50: ponta da mangueira com frisos e degraus cônicos D3/D4. Origem = centro da peça, no eixo; a ponta da mangueira fica no −X.",
+      avisos: [AV_SN],
+      geo: [G("Comprimento_total", mm(Ta.A), null, null, "A: comprimento total (ficha)"), G("Comprimento_mangueira", mm(Ta.L), null, null, "L: comprimento da ponta da mangueira (ficha)"), G("D1", mm(Ta.D1), null, null, "D1 (ficha)"),
+        G("D2", mm(Ta.D2), null, null, "D2 (ficha)"), G("D3", mm(Ta.D3), null, null, "D3 (ficha)"), G("D4", mm(Ta.D4), null, null, "D4 (ficha)"), G("Parede", mm(SND.tubo.e["40"]), null, null, "Espessura da parede (a do tubo SN do DN, ficha p.7)"), DN("DN_mangueira", null, "DN do ponto da mangueira (= D2 da ficha)"), dnGeo()].concat(paramsFonte()),
+      solidos: [], material: "PVC",
+      conectores: [{ id: "mangueira", nome: "Ponta da mangueira (máquina)", sistema: "esgoto", dn: "DN_mangueira", x: "-Comprimento_total/2", y: "0", z: "0", papel: "entrada", dir: dv("esq"), bidirecional: false, origemPos: "extremidade", aConferir: "posição = extremidade (cota A da ficha)" },
+        conV("tubo", "Tubo de esgoto (40 ou 50)", "saida", "Comprimento_total/2", "dir", false, "posição = extremidade (cota A da ficha)")] });
+    GEO_FAM["hid-sn-adaptador-lavar-louca"] = function () {
+      var x0 = "(-Comprimento_total/2)", xL = Z("-Comprimento_total/2 + Comprimento_mangueira"), w = "(Comprimento_mangueira/3)", R1 = "(D1/2)", R2 = "(D2/2)", R3 = "(D3/2)", R4 = "(D4/2)", P = "Parede", ch = "(Parede*0.6)";   /* hid:ok três frisos; chanfro de desenho */
+      var rbn = Z(R1 + " - " + P), rb3 = Z(R3 + " - " + P), rb4 = Z(R4 + " - " + P), c13 = Z("(" + R3 + " - " + R1 + ")*0.6"), c34 = Z("(" + R4 + " - " + R3 + ")*0.8"), xm = Z(xL + " + (Comprimento_total - Comprimento_mangueira)*0.5");   /* hid:ok cone das transições */
+      var p = [[rbn, x0], [Z(R1 + " - " + ch), x0], [R1, Z(x0 + " + " + ch)]], k;
+      for (k = 0; k < 3; k++) {
+        var xs = Z(x0 + " + " + k + "*" + w);
+        p.push([R1, Z(xs + " + " + w + "*0.08")], [R2, Z(xs + " + " + w + "*0.7")], [R2, Z(xs + " + " + w + "*0.78")], [R1, Z(xs + " + " + w + "*0.84")]);   /* hid:ok friso de mangueira: rampa e queda */
+      }
+      p.push([R1, xL], [R3, Z(xL + " + " + c13)], [R3, xm], [R4, Z(xm + " + " + c34)], [R4, Z("Comprimento_total/2 - " + ch)], [Z(R4 + " - " + ch), "Comprimento_total/2"], [rb4, "Comprimento_total/2"],
+        [rb4, Z(xm + " + " + c34)], [rb3, xm], [rb3, Z(xL + " + " + c13)], [rbn, xL]);
+      return [rev("corpo", "Adaptador (ponta da mangueira com frisos e degraus)", "0", "0", "0", p, { eixo: "x", mat: "PVC", fechar: "perfil" })];
+    };
+
+    /* 5) ADAPTADOR PARA SAÍDA DE VASO SANITÁRIO DN 100 (p.4): lado do tubo + encaixe no vaso, com a aba de assentamento e o anel de vedação */
+    var Ts = SND.adaptadores.saidaVaso100, tiposS = [snTipo("hid-sn-adaptador-saida-vaso", 100, pagA, { Comprimento_total: mm(Ts.A), Comprimento_encaixe: mm(Ts.B), D_encaixe: mm(Ts.C), DE_tubo: mm(Ts.DE), Parede: mm(SND.tubo.e["100"]) },
+      "A=" + Ts.A + "; B=" + Ts.B + "; C=" + Ts.C + "; DE=" + Ts.DE + "; parede=" + SND.tubo.e["100"] + " (tubo SN DN 100, p.7)",
+      ["Sentido das letras (leitura nossa do desenho): A = comprimento total, B = comprimento do encaixe no vaso, C = Ø do encaixe no vaso, DE = Ø externo do lado do tubo", "Parede: a do tubo SN DN 100 (p.7), a ficha não cota; aba de assentamento (Ø 1,24 DE, 2,4 parede de largura), alojamento e anel de vedação (a meia profundidade do encaixe, 14 % de B de largura): proporção de desenho"])];   /* hid:ok proporção de desenho */
+    ESPECS.push({ id: "hid-sn-adaptador-saida-vaso", nome: "Adaptador para saída de vaso sanitário DN 100", categoria: "conexao_tubo", sistemas: ["esgoto"], tipos: [], generico: false, tiposFicha: tiposS,
+      descricao: "Adaptador entre a saída do vaso sanitário e o tubo de esgoto DN 100: ponta lisa chanfrada do lado do tubo, aba de assentamento e encaixe com anel de vedação no alojamento. Origem = centro da peça, no eixo; o encaixe no vaso fica na face +X.",
+      avisos: [AV_SN],
+      geo: [G("Comprimento_total", mm(Ts.A), null, null, "A: comprimento total (ficha)"), G("Comprimento_encaixe", mm(Ts.B), null, null, "B: comprimento do encaixe no vaso (ficha)"), G("D_encaixe", mm(Ts.C), null, null, "C: Ø do encaixe no vaso (ficha)"),
+        G("DE_tubo", mm(Ts.DE), null, null, "DE: Ø externo do lado do tubo (ficha)"), G("Parede", mm(SND.tubo.e["100"]), null, null, "Espessura da parede (a do tubo SN DN 100, ficha p.7)"), dnGeo()].concat(paramsFonte()),
+      solidos: [], material: "PVC",
+      conectores: [conV("vaso", "Saída do vaso (encaixe)", "entrada", "Comprimento_total/2", "dir", false, "posição = face do encaixe (cota A da ficha)"), conV("tubo", "Tubo de esgoto", "saida", "-Comprimento_total/2", "esq", false, "posição = extremidade (cota A da ficha)")] });
+    GEO_FAM["hid-sn-adaptador-saida-vaso"] = function () {
+      var P = "Parede", re = "(DE_tubo/2)", rc = "(D_encaixe/2)", rbr = Z(rc + " - " + P + "*2"), ch = Z(P + "*0.6"), lc = Z(P + "*2.2"), ch2 = Z(P + "*1.2"), xe = "(Comprimento_total/2 - Comprimento_encaixe)";   /* hid:ok proporção de desenho */
+      var xg0 = Z(xe + " + Comprimento_encaixe*0.43"), xg1 = Z(xg0 + " + Comprimento_encaixe*0.14"), rgr = Z(rc + " - " + P + "*1.4"), rA = Z(re + " + DE_tubo*0.12"), ta = Z(P + "*2.4"), ca = Z(P + "*0.5");   /* hid:ok alojamento e aba */
+      var perfil = [[rbr, "-Comprimento_total/2"], [Z(re + " - " + ch), "-Comprimento_total/2"], [re, Z("-Comprimento_total/2 + " + lc)], [re, xe], [rc, xe], [rc, xg0], [rgr, xg0], [rgr, xg1], [rc, xg1], [rc, Z("Comprimento_total/2 - " + ch2)], [Z(rc + " - " + ch2), "Comprimento_total/2"], [rbr, "Comprimento_total/2"]];
+      var aba = [[Z(re + " + 0.0001"), Z(xe + " - " + ta)], [Z(rA + " - " + ca), Z(xe + " - " + ta)], [rA, Z(xe + " - " + ta + " + " + ca)], [rA, Z(xe + " - " + ca)], [Z(rA + " - " + ca), xe], [Z(re + " + 0.0001"), xe]];
+      var anel = [[Z(rgr + " + 0.0001"), Z(xg0 + " + 0.0001")], [Z(rc + " + 0.0006 - " + ca + "*0.6"), Z(xg0 + " + 0.0001")], [Z(rc + " + 0.0006"), Z(xg0 + " + 0.0001 + " + ca + "*0.6")], [Z(rc + " + 0.0006"), Z(xg1 + " - 0.0001 - " + ca + "*0.6")], [Z(rc + " + 0.0006 - " + ca + "*0.6"), Z(xg1 + " - 0.0001")], [Z(rgr + " + 0.0001"), Z(xg1 + " - 0.0001")]];   /* hid:ok o anel avança 0,6 mm sobre o encaixe */
+      return [rev("corpo", "Adaptador (ponta lisa, encaixe com alojamento)", "0", "0", "0", perfil, { eixo: "x", mat: "PVC", fechar: "perfil" }),
+        rev("aba", "Aba de assentamento", "0", "0", "0", aba, { eixo: "x", mat: "PVC", fechar: "perfil" }),
+        rev("anel", "Anel de vedação do encaixe", "0", "0", "0", anel, { eixo: "x", mat: "Preto", fechar: "perfil" })];
+    };
+  })();
+
   /* o conjunto é montado por INSTÂNCIA (cada casa de reservatórios tem o seu N, volume, vão e DN): todos os parâmetros dele são da instância; na motobomba, o ponto de operação (vazão e altura) é do projeto */
   ESPECS.forEach(function (e) {
     if (e.id === "hid-conjunto-reservatorios-motobomba") e.geo.forEach(function (g) { g.instancia = true; });
@@ -1912,7 +2118,7 @@
   }
   function resumo() { return todas().map(function (f) { return { id: f.id, nome: f.nome, tipos: f.tipos.length, aConferir: f.tipos.filter(function (t) { return t.conferir.length; }).length }; }); }
 
-  var HidFamilias = { todas: todas, porId: porId, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
+  var HidFamilias = { todas: todas, porId: porId, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, TETO_CONEXAO_SN: 4800, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
   global.HidFamilias = HidFamilias;
   if (typeof module !== "undefined" && module.exports) module.exports = HidFamilias;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

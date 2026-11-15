@@ -57652,7 +57652,7 @@ pilha.pop(); marca[k] = 2; ordem.push(k);
 Object.keys(ps).forEach(visita);
 return { ordem: ordem, ciclo: ciclo };
 }
-var SEG_MIN = 8, SEG_MAX = 48, SEG_PAD = 24;
+var SEG_MIN = 6, SEG_MAX = 48, SEG_PAD = 24;
 function malhaRevolucao(s, f, erros) {
 var rotulo = "sólido \"" + (s.nome || s.id) + "\"";
 var pts = arr(s.perfil).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; });
@@ -57835,6 +57835,7 @@ var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema
 var o = { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
 if (k.papel) o.papel = txt(k.papel);
 if (k.dir && typeof k.dir === "object") o.dir = { x: Number(k.dir.x) || 0, y: Number(k.dir.y) || 0, z: Number(k.dir.z) || 0 };
+if (k.dirf && typeof k.dirf === "object") o.dir = { x: f(k.dirf.x, 0), y: f(k.dirf.y, 0), z: f(k.dirf.z, 0) };
 if (k.porta) o.porta = txt(k.porta);
 if (k.opcional === true) o.opcional = true;
 if (k.bidirecional === true || k.bidirecional === false) o.bidirecional = k.bidirecional;
@@ -94882,6 +94883,7 @@ if (est.ordemLig.indexOf(o.id) < 0) est.ordemLig.push(o.id);
 return true;
 }
 if (o.op === "apagar" && o.id != null && est.ligacoes && est.ligacoes[o.id]) { delete est.ligacoes[o.id]; est.ordemLig.splice(est.ordemLig.indexOf(o.id), 1); return true; }
+if (o.op === "instOpcao" && o.id === "partirNasConexoes") { if (!est.opcoes) est.opcoes = {}; if (o.valor === false) est.opcoes.partirNasConexoes = false; else delete est.opcoes.partirNasConexoes; return true; }
 if (o.op === "instSistema" && o.id != null) {
 if (!est.trechos[o.id]) return false;
 var nm = txt(o.nome).trim().slice(0, 60);
@@ -94955,6 +94957,7 @@ pecas: est.ordemP.map(function (id) { return normPeca(est.pecas[id]); }).filter(
 var acs = arr(est.ordemAc).map(function (id) { return normAcessorio(est.acessorios[id]); }).filter(Boolean);
 if (acs.length) out.acessorios = acs;
 if (est.nomesSis && Object.keys(est.nomesSis).length) out.nomesSistema = copia(est.nomesSis);
+if (est.opcoes && Object.keys(est.opcoes).length) out.opcoes = copia(est.opcoes);
 if (est.ordemLig && est.ordemLig.length) out.ligacoes = est.ordemLig.map(function (id) { var r = copia(est.ligacoes[id]); delete r.op; return r; });
 return out;
 }
@@ -94968,6 +94971,7 @@ if (o.op === "instAlterar") return o.id != null;
 if (o.op === "acessorio") return o.id != null && typeof o.famId === "string" && !!ACESSORIO_DA_FAM[o.famId] && fin(o.x) && fin(o.y) && fin(o.z) &&
 (o.trecho == null ? true : o.novoId != null) && (o.comprimento == null || fin(o.comprimento)) && (o.giro == null || fin(o.giro));
 if (o.op === "instSistema") return o.id != null && typeof o.nome === "string";
+if (o.op === "instOpcao") return o.id === "partirNasConexoes" && typeof o.valor === "boolean";
 if (o.op === "ligEletrica") return o.id != null && typeof o.amb === "string" && Array.isArray(o.comandos);
 return false;
 }
@@ -96666,7 +96670,7 @@ PASSANTE_LAJE: PASSANTE_LAJE, passanteDe: passanteDe,
 PECAS_LINHA: PECAS_LINHA, pecaLinhaExiste: pecaLinhaExiste, embutidoNaParede: embutidoNaParede, varianteAuto: varianteAuto, refMercado: refMercado, itemPeca: itemPeca, itemConexao: itemConexao,
 pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
 sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
-ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema" || op === "ligEletrica"; }
+ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema" || op === "instOpcao" || op === "ligEletrica"; }
 };
 global.BimInst = BimInst;
 if (typeof module !== "undefined" && module.exports) module.exports = BimInst;
@@ -114070,6 +114074,12 @@ secoes.push({ nome: "Trecho vertical (prumada, descida)", params: [
 { id: "i:vert", rotulo: "A partir do ponto atual", tipo: "botao", rotuloBotao: "Criar trecho vertical", fn: function () { self.vertical(self.cfg.dh); } }] });
 if (c.ferramenta === "eletroduto") secoes.push({ nome: "Caixas", params: [{ id: "i:ir-caixa", rotulo: "Caixa 4×2, 4×4, octogonal", tipo: "botao", rotuloBotao: "Colocar caixa", fn: function () { self.armar("peca", { sistema: "eletrica", peca: "caixa_4x2" }); } }] });
 }
+if (global.BimInstPartir && c.ferramenta !== "peca") {
+var ctxP = this._ctx(), estP = ctxP && ctxP.edit && ctxP.edit.estado;
+secoes.push({ nome: "Conexões", params: [
+{ id: "i:partir", rotulo: "Partir o tubo nas conexões", tipo: "lista", valor: BimInstPartir.opcaoLigada(estP) ? "sim" : "nao", opcoes: [{ id: "sim", rotulo: "Sim (padrão)" }, { id: "nao", rotulo: "Não" }] },
+{ id: "i:partirAgora", rotulo: "Modelo já desenhado (tubo inteiro atravessando a peça)", tipo: "botao", rotuloBotao: "Partir tubos nas conexões", fn: function () { self.partirTubos(); } }] });
+}
 secoes.push({ nome: "Cores por sistema (convenção RA)", params: Object.keys(I.SISTEMAS).map(function (s) { return ro("i:cor-" + s, I.SISTEMAS[s].nome, I.SISTEMAS[s].cor); }).concat([ro("i:cor-cx", "Caixa elétrica", I.COR_CAIXA_ELETRICA)]) });
 return {
 icone: "link", semEditarTipo: true,
@@ -114079,9 +114089,25 @@ onMudar: function (id, valor) { self.mudarCfg(id, valor); return self.esquemaFer
 };
 },
 pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) { this._esqProps = this.esquemaFerramenta(); BimShell.pintarProps(this._esqProps); } } catch (e) {} },
+opcaoPartir: function (ligada) {
+var ctx = this._ctx(), P = global.BimInstPartir; if (!ctx || !P) return false;
+ctx.op(P.opOpcao(ligada));
+ctx.hint(ligada ? "Partir o tubo nas conexões: LIGADO — o tubo se parte onde entra uma conexão ou um ramal." : "Partir o tubo nas conexões: DESLIGADO — o tubo segue inteiro; use o botão para partir à mão.");
+return true;
+},
+partirTubos: function () {
+var ctx = this._ctx(), P = global.BimInstPartir; if (!ctx || !P || !ctx.edit || !ctx.edit.estado) return false;
+var r = P.ops(ctx.edit.estado, ctx.famAval, { forcar: true });
+if (!r.ok || !r.ops.length) { ctx.hint(r.erro || "Nenhum tubo passa por dentro de uma conexão ou ramal: nada a partir."); return false; }
+ctx.op({ op: "lote", id: "partir-" + Date.now(), ops: r.ops });
+ctx.hint(r.n + (r.n === 1 ? " tubo partido" : " tubos partidos") + " em " + r.pedacos + " trechos, nas conexões. Ctrl+Z desfaz tudo de uma vez.");
+ctx.marcar(); this.pintarProps();
+return true;
+},
 mudarCfg: function (id, valor) {
 var c = this.cfg, I = BI(); if (!c) return;
 var k = String(id).replace(/^i:/, "");
+if (k === "partir") { this.opcaoPartir(valor !== "nao"); return; }
 if (k === "sistema") {
 var S = I.SISTEMAS[valor]; if (!S) return;
 c.sistema = valor;
@@ -115845,6 +115871,7 @@ return out;
 }
 function grupoHid(f) {
 var id = txt(f.id), n = norm(f.nome);
+if (/^hid-sn-/.test(id)) return "Conexões";
 if (/registro|valvula/.test(id) && !/descarga/.test(id)) return "Registros e válvulas";
 if (/caixa-dagua|cisterna|reservatorio|base-caixa|tanque-ret|tanque-cil|sumidouro|vala/.test(id) && !/tanque-lavar/.test(id)) return "Reservatórios e tanques";
 if (/hidrante|extintor|sprinkler/.test(id)) return "Incêndio";
@@ -172959,6 +172986,142 @@ return { toco: { x: P.x + nx * L, z: P.z + nz * L }, desl: { x: nx * L, z: nz * 
 var BimInstConectar = { VERSAO: 1, saida45Agua: saida45Agua, GEO_CON: GEO_CON, conectarRef: conectarRef, snapProlongamento: snapProlongamento };
 global.BimInstConectar = BimInstConectar;
 if (typeof module !== "undefined" && module.exports) module.exports = BimInstConectar;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/biminstpartir.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+var MIN_PEDACO = 0.005;
+var HERDA = ["emenda", "excentrica", "isolamento", "aparente", "comentarios", "nome", "faseCriada", "faseDemolida", "passantes", "aplicacao"];
+var GRUPOS_FORA = { eletrica: 1, ar: 1 };
+function opcaoLigada(estado) {
+var o = estado && estado.instalacoes && estado.instalacoes.opcoes;
+return !(o && o.partirNasConexoes === false);
+}
+function opOpcao(ligada) { return { op: "instOpcao", id: "partirNasConexoes", valor: !!ligada }; }
+function idsUsados(estado) {
+var u = {}, ins = (estado && estado.instalacoes) || {};
+arr(ins.trechos).concat(arr(ins.pecas), arr(ins.acessorios)).forEach(function (x) { if (x && x.id != null) u[String(x.id)] = 1; if (x && x.novoId != null) u[String(x.novoId)] = 1; });
+arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) u[String(f.id)] = 1; });
+arr(estado && estado.caixas).forEach(function (f) { if (f && f.id != null) u[String(f.id)] = 1; });
+return u;
+}
+function idNovo(base, usados) {
+for (var i = 0; i < 1000; i++) { var id = base + (i === 0 ? "b" : "b" + (i + 1)); if (!usados[id]) { usados[id] = 1; return id; } }
+return base + "x" + Date.now();
+}
+function eixo(t) {
+var dx = t.p2.x - t.p1.x, dy = t.p2.y - t.p1.y, dz = t.p2.z - t.p1.z, L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+return L > 0 ? { o: t.p1, u: { x: dx / L, y: dy / L, z: dz / L }, L: L } : null;
+}
+function projetar(E, q) {
+var wx = q.x - E.o.x, wy = q.y - E.o.y, wz = q.z - E.o.z, s = wx * E.u.x + wy * E.u.y + wz * E.u.z;
+var px = E.o.x + E.u.x * s, py = E.o.y + E.u.y * s, pz = E.o.z + E.u.z * s;
+return { s: s, d: Math.sqrt((q.x - px) * (q.x - px) + (q.y - py) * (q.y - py) + (q.z - pz) * (q.z - pz)) };
+}
+function ponto(E, s) { return { x: r4(E.o.x + E.u.x * s), y: r4(E.o.y + E.u.y * s), z: r4(E.o.z + E.u.z * s) }; }
+function partivel(I, t) {
+var M = I.MATERIAIS[t.material], S = I.SISTEMAS[t.sistema];
+return !!(M && S && !M.secao && !M.flexivel && !GRUPOS_FORA[S.grupo]);
+}
+function achar(estado, avaliarFam) {
+var I = BI(), ins = (estado && estado.instalacoes) || {}, trechos = arr(ins.trechos), cortes = {}, tol = I ? I.TOL : 0.02;
+if (!I || !trechos.length) return { cortes: {}, n: 0 };
+var E = {};
+trechos.forEach(function (t) { if (t && t.p1 && t.p2 && partivel(I, t)) { var e = eixo(t); if (e) E[t.id] = { t: t, e: e }; } });
+function marca(id, c) { (cortes[id] = cortes[id] || []).push(c); }
+trechos.forEach(function (u) {
+if (!u || !u.p1 || !u.p2) return;
+Object.keys(E).forEach(function (id) {
+var d = E[id]; if (d.t.id === u.id || d.t.sistema !== u.sistema) return;
+["p1", "p2"].forEach(function (k) {
+var pr = projetar(d.e, u[k]);
+if (pr.d <= tol && pr.s > tol && pr.s < d.e.L - tol) marca(id, { sa: pr.s, sb: pr.s, de: "ramal", ref: u.id });
+});
+});
+});
+var porFam = {};
+if (typeof avaliarFam === "function") {
+I.conectoresDoEstado(estado, avaliarFam).forEach(function (k) { if (k && k.famInst != null) (porFam[k.famInst] = porFam[k.famInst] || []).push(k); });
+}
+Object.keys(porFam).forEach(function (fi) {
+Object.keys(E).forEach(function (id) {
+var d = E[id], dentro = [];
+porFam[fi].forEach(function (k) {
+if (k.sistema !== d.t.sistema) return;
+var pr = projetar(d.e, k);
+if (pr.d <= I.TOL_CONECTOR && pr.s > tol && pr.s < d.e.L - tol) dentro.push(pr.s);
+});
+if (!dentro.length) return;
+dentro.sort(function (a, b) { return a - b; });
+marca(id, { sa: dentro[0], sb: dentro[dentro.length - 1], de: "peca", ref: fi });
+});
+});
+var n = 0;
+Object.keys(cortes).forEach(function (id) {
+var L = E[id].e.L, l = cortes[id].sort(function (a, b) { return a.sa - b.sa; }), out = [];
+l.forEach(function (c) {
+var u = out[out.length - 1];
+if (u && c.sa <= u.sb + tol) { if (c.sb > u.sb) u.sb = c.sb; if (c.de === "peca") u.de = "peca"; }
+else out.push({ sa: c.sa, sb: c.sb, de: c.de, ref: c.ref });
+});
+out = out.filter(function (c) { return c.sa >= MIN_PEDACO && L - c.sb >= MIN_PEDACO; });
+if (out.length) { cortes[id] = out; n += out.length; } else delete cortes[id];
+});
+return { cortes: cortes, E: E, n: n };
+}
+function opsDoCorte(I, t, e, lista, usados) {
+var s0 = [0], s1 = [];
+lista.forEach(function (c) { s1.push(c.sa); s0.push(c.sb); });
+s1.push(e.L);
+var ops = [];
+for (var i = 0; i < s0.length; i++) {
+if (s1[i] - s0[i] < MIN_PEDACO) continue;
+var o = I.opDoTrecho(t);
+HERDA.forEach(function (k) { if (t[k] !== undefined && t[k] !== null && t[k] !== "") o[k] = JSON.parse(JSON.stringify(t[k])); });
+if (t.aplicacaoAuto) delete o.aplicacao;
+delete o.continua; delete o.pecaIni; delete o.pecaFim;
+var primeiro = i === 0, ultimo = i === s0.length - 1;
+o.id = ops.length ? idNovo(t.id, usados) : t.id;
+o.p1 = i === 0 ? { x: t.p1.x, y: t.p1.y, z: t.p1.z } : ponto(e, s0[i]);
+o.p2 = ultimo ? { x: t.p2.x, y: t.p2.y, z: t.p2.z } : ponto(e, s1[i]);
+if (primeiro && (t.continua === "p1" || t.continua === "ambos")) o.continua = "p1";
+if (ultimo && (t.continua === "p2" || t.continua === "ambos")) o.continua = o.continua ? "ambos" : "p2";
+if (primeiro && t.pecaIni) o.pecaIni = t.pecaIni;
+if (ultimo && t.pecaFim) o.pecaFim = t.pecaFim;
+if (!primeiro) delete o.juntaIni;
+if (!ultimo) delete o.juntaFim;
+ops.push(o);
+}
+return ops;
+}
+function ops(estado, avaliarFam, cfg) {
+cfg = cfg || {};
+var I = BI();
+if (!I) return { ok: false, erro: "O motor das instalações não está carregado.", ops: [], n: 0, pedacos: 0 };
+if (!cfg.forcar && !opcaoLigada(estado)) return { ok: true, ops: [], n: 0, pedacos: 0, desligado: true };
+var A = achar(estado, avaliarFam), usados = idsUsados(estado), out = [], n = 0, mudados = [];
+Object.keys(A.cortes).forEach(function (id) {
+var d = A.E[id], novos = opsDoCorte(I, d.t, d.e, A.cortes[id], usados);
+if (novos.length < 2) return;
+novos.forEach(function (o) { out.push(o); });
+n++; mudados.push(id);
+});
+return { ok: true, ops: out, n: n, pedacos: out.length, trechos: mudados };
+}
+function lote(estado, avaliarFam, cfg) {
+var r = ops(estado, avaliarFam, cfg);
+if (!r.ok || !r.ops.length) return null;
+return { op: "lote", id: "partir-" + Date.now(), ops: r.ops };
+}
+global.BimInstPartir = { ops: ops, lote: lote, achar: achar, opcaoLigada: opcaoLigada, opOpcao: opOpcao, MIN_PEDACO: MIN_PEDACO };
+if (typeof module !== "undefined" && module.exports) module.exports = global.BimInstPartir;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimselecao.js ==== */

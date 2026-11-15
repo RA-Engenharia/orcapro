@@ -14507,7 +14507,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try { if (window.Modela && Modela.iniciarTeste) Modela.iniciarTeste(); } catch (_m) {}
     try { var _am = window.EleAparelhos && EleAparelhos.aoMover ? EleAparelhos.aoMover(o, edit.ops, famAval) : null; if (_am) o = _am; } catch (_eAm) {}   // eletrica-v2 (revisão A3): aparelho movido leva o ponto, no mesmo lote
     edit.ops.push(o); edit.redo = [];
+    /* PARTIR O TUBO NAS CONEXÕES (15/11/2026, js/biminstpartir.js): trecho ou família posta/ligada no MEIO de um tubo parte o tubo ali; a op e a
+       divisão ficam em UM lote (Ctrl+Z desfaz junto). Parâmetro do modelo "Partir o tubo nas conexões" (padrão ligado); falha nunca impede a op. */
+    try {
+      if (window.BimInstPartir && opTocaTubo(o)) {
+        var _st = BimEdit.aplicar(edit.ops);
+        if (BimInstPartir.opcaoLigada(_st)) {
+          var _pr = BimInstPartir.ops(_st, famAval);
+          if (_pr.ok && _pr.ops.length) edit.ops[edit.ops.length - 1] = { op: 'lote', id: 'partir-' + Date.now(), ops: (o.op === 'lote' && Array.isArray(o.ops) ? o.ops : [o]).concat(_pr.ops) };
+        }
+      }
+    } catch (_ePt) {}
     if (!(opSoInst(o) && editRebuildInst())) editRebuild();   /* FLUIDEZ: op só de instalação refaz só as instalações */
+  }
+  function opTocaTubo(o) {
+    if (!o) return false;
+    if (o.op === 'lote') return Array.isArray(o.ops) && o.ops.some(opTocaTubo);
+    return o.op === 'trecho' || o.op === 'familia';
   }
   /* desfazer/refazer da edição (Ctrl+Z / Ctrl+Y e a barra de título) */
   S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };

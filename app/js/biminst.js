@@ -521,6 +521,8 @@
       return true;
     }
     if (o.op === "apagar" && o.id != null && est.ligacoes && est.ligacoes[o.id]) { delete est.ligacoes[o.id]; est.ordemLig.splice(est.ordemLig.indexOf(o.id), 1); return true; }
+    /* PARTIR O TUBO NAS CONEXÕES (15/11/2026, js/biminstpartir.js): opções do modelo (hoje só "partirNasConexoes"; padrão ligado) */
+    if (o.op === "instOpcao" && o.id === "partirNasConexoes") { if (!est.opcoes) est.opcoes = {}; if (o.valor === false) est.opcoes.partirNasConexoes = false; else delete est.opcoes.partirNasConexoes; return true; }
     if (o.op === "instSistema" && o.id != null) {
       if (!est.trechos[o.id]) return false;
       var nm = txt(o.nome).trim().slice(0, 60);
@@ -601,6 +603,7 @@
     var acs = arr(est.ordemAc).map(function (id) { return normAcessorio(est.acessorios[id]); }).filter(Boolean);
     if (acs.length) out.acessorios = acs;
     if (est.nomesSis && Object.keys(est.nomesSis).length) out.nomesSistema = copia(est.nomesSis);
+    if (est.opcoes && Object.keys(est.opcoes).length) out.opcoes = copia(est.opcoes);   /* só quando há: o estado das obras sem opção fica byte a byte o de antes */
     /* ligação elétrica: só quando há (o estado das obras sem ela fica byte a byte o de antes) */
     if (est.ordemLig && est.ordemLig.length) out.ligacoes = est.ordemLig.map(function (id) { var r = copia(est.ligacoes[id]); delete r.op; return r; });
     return out;
@@ -617,6 +620,7 @@
     if (o.op === "acessorio") return o.id != null && typeof o.famId === "string" && !!ACESSORIO_DA_FAM[o.famId] && fin(o.x) && fin(o.y) && fin(o.z) &&
       (o.trecho == null ? true : o.novoId != null) && (o.comprimento == null || fin(o.comprimento)) && (o.giro == null || fin(o.giro));
     if (o.op === "instSistema") return o.id != null && typeof o.nome === "string";
+    if (o.op === "instOpcao") return o.id === "partirNasConexoes" && typeof o.valor === "boolean";
     if (o.op === "ligEletrica") return o.id != null && typeof o.amb === "string" && Array.isArray(o.comandos);
     return false;
   }
@@ -2789,7 +2793,7 @@
     pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
     sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
     /* ops que este motor recebe do BimEdit */
-    ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema" || op === "ligEletrica"; }
+    ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema" || op === "instOpcao" || op === "ligEletrica"; }
   };
   global.BimInst = BimInst;
   if (typeof module !== "undefined" && module.exports) module.exports = BimInst;

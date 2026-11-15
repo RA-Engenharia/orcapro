@@ -1879,6 +1879,13 @@
           { id: "i:vert", rotulo: "A partir do ponto atual", tipo: "botao", rotuloBotao: "Criar trecho vertical", fn: function () { self.vertical(self.cfg.dh); } }] });
         if (c.ferramenta === "eletroduto") secoes.push({ nome: "Caixas", params: [{ id: "i:ir-caixa", rotulo: "Caixa 4×2, 4×4, octogonal", tipo: "botao", rotuloBotao: "Colocar caixa", fn: function () { self.armar("peca", { sistema: "eletrica", peca: "caixa_4x2" }); } }] });
       }
+      /* PARTIR O TUBO NAS CONEXÕES (15/11/2026, js/biminstpartir.js): o parâmetro do modelo e o comando para os modelos antigos */
+      if (global.BimInstPartir && c.ferramenta !== "peca") {
+        var ctxP = this._ctx(), estP = ctxP && ctxP.edit && ctxP.edit.estado;
+        secoes.push({ nome: "Conexões", params: [
+          { id: "i:partir", rotulo: "Partir o tubo nas conexões", tipo: "lista", valor: BimInstPartir.opcaoLigada(estP) ? "sim" : "nao", opcoes: [{ id: "sim", rotulo: "Sim (padrão)" }, { id: "nao", rotulo: "Não" }] },
+          { id: "i:partirAgora", rotulo: "Modelo já desenhado (tubo inteiro atravessando a peça)", tipo: "botao", rotuloBotao: "Partir tubos nas conexões", fn: function () { self.partirTubos(); } }] });
+      }
       secoes.push({ nome: "Cores por sistema (convenção RA)", params: Object.keys(I.SISTEMAS).map(function (s) { return ro("i:cor-" + s, I.SISTEMAS[s].nome, I.SISTEMAS[s].cor); }).concat([ro("i:cor-cx", "Caixa elétrica", I.COR_CAIXA_ELETRICA)]) });
       return {
         icone: "link", semEditarTipo: true,
@@ -1888,9 +1895,27 @@
       };
     },
     pintarProps: function () { try { if (global.BimShell && BimShell.pintarProps && this.cfg) { this._esqProps = this.esquemaFerramenta(); BimShell.pintarProps(this._esqProps); } } catch (e) {} },
+    /* PARTIR O TUBO NAS CONEXÕES: grava o parâmetro no modelo (op instOpcao) */
+    opcaoPartir: function (ligada) {
+      var ctx = this._ctx(), P = global.BimInstPartir; if (!ctx || !P) return false;
+      ctx.op(P.opOpcao(ligada));
+      ctx.hint(ligada ? "Partir o tubo nas conexões: LIGADO — o tubo se parte onde entra uma conexão ou um ramal." : "Partir o tubo nas conexões: DESLIGADO — o tubo segue inteiro; use o botão para partir à mão.");
+      return true;
+    },
+    /* PARTIR TUBOS NAS CONEXÕES (comando, modelos já desenhados): varre o modelo e parte o tubo que passa por dentro de uma peça — UM lote (Ctrl+Z desfaz tudo) */
+    partirTubos: function () {
+      var ctx = this._ctx(), P = global.BimInstPartir; if (!ctx || !P || !ctx.edit || !ctx.edit.estado) return false;
+      var r = P.ops(ctx.edit.estado, ctx.famAval, { forcar: true });
+      if (!r.ok || !r.ops.length) { ctx.hint(r.erro || "Nenhum tubo passa por dentro de uma conexão ou ramal: nada a partir."); return false; }
+      ctx.op({ op: "lote", id: "partir-" + Date.now(), ops: r.ops });
+      ctx.hint(r.n + (r.n === 1 ? " tubo partido" : " tubos partidos") + " em " + r.pedacos + " trechos, nas conexões. Ctrl+Z desfaz tudo de uma vez.");
+      ctx.marcar(); this.pintarProps();
+      return true;
+    },
     mudarCfg: function (id, valor) {
       var c = this.cfg, I = BI(); if (!c) return;
       var k = String(id).replace(/^i:/, "");
+      if (k === "partir") { this.opcaoPartir(valor !== "nao"); return; }
       if (k === "sistema") {
         var S = I.SISTEMAS[valor]; if (!S) return;
         c.sistema = valor;
