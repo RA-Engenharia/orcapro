@@ -921,6 +921,15 @@
     });
     if (!imgFeita) { imgFeita = true; corpo += svgInstImagens(d.instImagens, d.instClip); }
     Object.keys(gL).sort(function (a, b) { var sa = sufI(a), sb = sufI(b); return sa < sb ? -1 : sa > sb ? 1 : 0; }).forEach(function (key) { if (ehInst(key)) linhaP6(key); });
+    /* ⚠ A PAREDE PASSA POR CIMA DO TUBO (14/11/2026 — o Rogério: "o tubo ficou parecendo que está por cima da parede; a parede tem que ter
+       visibilidade para enxergar o tubo, mostrar a risquinha da parede passando"). O tubo continua desenhado depois do corte (não some debaixo
+       da hachura), e POR CIMA dele volta a parede cortada: o contorno inteiro e a hachura em transparência — o tubo aparece passando por baixo. */
+    if (Object.keys(gF).some(ehInst)) Object.keys(gF).sort().forEach(function (key) {
+      if (ehInst(key)) return; var s = st(key); if (s.visivel === false || s.oculto) return;
+      var mm = p6PenaEf(penas, s.corte, e), w = p6Px(mm, penas), cor = p6Cor(s), pr = (p6.preenchimentos || {})[s.preench], fill = "none";
+      if (p6.nivelDetalhe !== "baixo" && pr && pr.tipo === "padrao") { var pid2 = String(s.preench) + (s.meioTom ? "-mt" : (s.corPreench ? "-c" + String(s.corPreench).replace("#", "") : "")); if (usados[pid2]) fill = "url(#d2p6-" + esc(pid2) + ")"; }
+      corpo += '<path d="' + gF[key] + '" fill="' + fill + '" fill-opacity="' + (fill === "none" ? 0 : 0.35) + '" fill-rule="evenodd" class="d2-corte d2-p6-sobre" data-cat="' + esc(key) + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + ';pointer-events:none"/>';   /* o clique passa: quem seleciona é o tubo embaixo */
+    });
     return { defs: defs, corpo: '<g class="d2-p6">' + corpo + "</g>" };
   }
   /* marcas das vistas P6 na vista-mãe: ELEVAÇÃO (círculo + seta para onde se olha),

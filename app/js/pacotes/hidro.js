@@ -25880,6 +25880,7 @@ arq: { preench: "#e4e4e4", contorno: "#8c8c8c", louca: "#9a9a9a", mm: 0.13 }, co
 escalasCorte: [20, 25, 50, 75], cortePiso: 0.6, corteTopo: 0.3, faixaParede: 0.2, folgaCorte: 14, corteMinPontos: 1,
 qr: 30, qrTexto: 2.5, qrRot: "PORTAL DA OBRA",
 seta: { c: 1.3, l: 0.45 },
+isoRef: { minSeta: 6, seta: 1.3, corAF: "#0d3a9a", corAQ: "#a01818", alemAmb: 0.6, corParede: "#8a8f96", penaParede: 0.3, tolPrumo: 0.01, minVert: 0.15, abaixoPiso: 0.05, minIntervalo: 0.05, afasta: 4.5, tique: 0.9, corCota: "#3d434a", penaCota: 0.2, texto: 2.2 },
 fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
 simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35 },
 esquema: { margem: 8, folgaChamada: 30, pena: 0.35, minRotulo: 9, no: 0.55, chamada: 16, d0: 2.2, penaChamada: 0.32, hachPasso: 1.1, alturaMin: 0.6, folgaTopo: 0.6 },
@@ -27220,7 +27221,7 @@ var R = [ex.u - O.u, ey.u - O.u, ez.u - O.u], U = [-(ex.v - O.v), -(ey.v - O.v),
 var lim = limitesPersp(pz), mg = (lim.u1 - lim.u0) * 0.04; lim.u0 -= mg; lim.u1 += mg; lim.v0 -= mg; lim.v1 += mg;
 var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
 var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
-var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
 min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
 max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
 if (!r || !r.ok || !r.url) return null;
@@ -27340,6 +27341,54 @@ desenhar(D, { linhas: Lx, simbolos: Sx, textos: Tx }, 0, 0, c.chk);
 c.prims.push({ linhas: [], simbolos: [], textos: [], trechos: [] });
 return { escala: "SEM ESCALA" };
 }
+function isoReferencia(c, D, pz, X) {
+var KR = K2.isoRef, P = pz.P, pv = pz.pv, b = pz.b, yC = pv.cota;
+var La = null; try { La = listasArq(c, pv); } catch (e) { La = null; }
+if (La) {
+var cx = { x0: b.x0 - KR.alemAmb, x1: b.x1 + KR.alemAmb, z0: b.z0 - KR.alemAmb, z1: b.z1 + KR.alemAmb };
+La.paredes.concat(La.pilares).forEach(function (w) {
+var q = clipPoly(w.pts, cx); if (q.length < 3) return;
+D.add('<polygon points="' + q.map(function (pt) { var s0 = X(P({ x: pt[0], y: yC, z: pt[1] })); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede) + '" stroke-linejoin="round" data-cam="HID-CONTEXTO"/>');
+});
+}
+arr(pz.faces).forEach(function (f) { if (f.topo) return; D.add('<polygon points="' + f.pts.map(function (q) { var s0 = X(q); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede * 0.7) + '" stroke-linejoin="round" data-cam="HID-CONTEXTO"/>'); });
+if (arr(pz.piso).length) D.add('<polygon points="' + pz.piso.map(function (q) { var s0 = X(q); return n(s0[0]) + "," + n(s0[1]); }).join(" ") + '" fill="none" stroke="' + KR.corParede + '" stroke-width="' + n(KR.penaParede) + '" data-cam="HID-CONTEXTO"/>');
+(function () {
+var ag = arr(pz.trs).filter(function (t) { return /^agua/.test(t.sistema); }); if (!ag.length) return;
+function ch(q) { return Math.round(q.x * 200) + "|" + Math.round(q.y * 200) + "|" + Math.round(q.z * 200); }
+var viz = {}; ag.forEach(function (t) { [[t.p1, t.p2], [t.p2, t.p1]].forEach(function (e) { var k1 = ch(e[0]); (viz[k1] = viz[k1] || []).push({ t: t, de: e[0], para: e[1] }); }); });
+var ehPonto = {}; arr(pz.pontos).forEach(function (l) { ehPonto[ch(l)] = 1; });
+var fila = Object.keys(viz).filter(function (k1) { return viz[k1].length === 1 && !ehPonto[k1]; }), visto = {}, sentido = {};
+fila.forEach(function (k1) { visto[k1] = 1; });
+while (fila.length) { var k0 = fila.shift(); viz[k0].forEach(function (e) { var k2 = ch(e.para); if (sentido[e.t.id]) return; sentido[e.t.id] = e; if (!visto[k2]) { visto[k2] = 1; fila.push(k2); } }); }
+ag.forEach(function (t) {
+var e = sentido[t.id]; if (!e) return;
+var A = X(P(e.de)), B = X(P(e.para)), L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < KR.minSeta) return;
+var ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, cor = /quente/.test(t.sistema) ? KR.corAQ : KR.corAF, a0 = KR.seta;
+D.cheio([[mx + ux * a0, my + uy * a0], [mx - ux * a0 * 0.6 - uy * a0 * 0.55, my - uy * a0 * 0.6 + ux * a0 * 0.55], [mx - ux * a0 * 0.6 + uy * a0 * 0.55, my - uy * a0 * 0.6 - ux * a0 * 0.55]], cor);
+});
+})();
+var grupos = {};
+arr(pz.trs).forEach(function (t) {
+var dh = Math.hypot(t.p2.x - t.p1.x, t.p2.z - t.p1.z), dy = Math.abs(t.p2.y - t.p1.y); if (dh > KR.tolPrumo || dy < KR.minVert) return;
+var kx = Math.round(t.p1.x / KR.tolPrumo) + "|" + Math.round(t.p1.z / KR.tolPrumo), g = grupos[kx] = grupos[kx] || { x: t.p1.x, z: t.p1.z, ys: [yC] };
+[t.p1.y, t.p2.y].forEach(function (y) { if (y > yC - KR.abaixoPiso) g.ys.push(Math.min(y, pz.yT)); });
+});
+Object.keys(grupos).forEach(function (kx) {
+var g = grupos[kx], ys = g.ys.sort(function (p0, q0) { return p0 - q0; }).filter(function (y, i, A) { return i === 0 || y - A[i - 1] > KR.minIntervalo; });
+if (ys.length < 2) return;
+var pts = ys.map(function (y) { return X(P({ x: g.x, y: y, z: g.z })); }), dx = KR.afasta;
+var A0 = [pts[0][0] + dx, pts[0][1]], A1 = [pts[pts.length - 1][0] + dx, pts[pts.length - 1][1]];
+D.add('<line x1="' + n(A0[0]) + '" y1="' + n(A0[1]) + '" x2="' + n(A1[0]) + '" y2="' + n(A1[1]) + '" stroke="' + KR.corCota + '" stroke-width="' + n(KR.penaCota) + '" data-cam="HID-COTA"/>');
+pts.forEach(function (p0, i) {
+var tx = p0[0] + dx, ty = p0[1];
+D.add('<line x1="' + n(tx - KR.tique) + '" y1="' + n(ty + KR.tique * 0.6) + '" x2="' + n(tx + KR.tique) + '" y2="' + n(ty - KR.tique * 0.6) + '" stroke="' + KR.corCota + '" stroke-width="' + n(KR.penaCota * 1.6) + '" data-cam="HID-COTA"/>');
+if (i === 0) return;
+var cm = Math.round((ys[i] - ys[i - 1]) * 100), my = (ty + pts[i - 1][1]) / 2;
+D.texto(tx + KR.texto * 0.9, my, String(cm), KR.texto, { al: "C", rot: -90, cor: KR.corCota, semCaixa: true });
+});
+});
+}
 function folhaPerspectiva(c) {
 var D = c.D, a = c.areaPersp || c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
 if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
@@ -27362,6 +27411,7 @@ var pI = X({ u: u0, v: v0 }), pF = X({ u: u1, v: v1 });
 D.add('<rect x="' + n(pI[0]) + '" y="' + n(pI[1]) + '" width="' + n(pF[0] - pI[0]) + '" height="' + n(pF[1] - pI[1]) + '" fill="#ffffff" stroke="none"/>');
 D.add('<image data-im="' + RA.key + '" x="' + n(pI[0]) + '" y="' + n(pI[1]) + '" width="' + n(pF[0] - pI[0]) + '" height="' + n(pF[1] - pI[1]) + '" preserveAspectRatio="none" href="' + RA.href + '"/>');
 if (c.chk) c.chk.raster = (c.chk.raster || 0) + 1;
+isoReferencia(c, D, pz, X);
 } else {
 D.add('<polygon points="' + pz.piso.map(function (p) { var q = X(p); return n(q[0]) + "," + n(q[1]); }).join(" ") + '" fill="' + K2.arq.preench + '" fill-opacity="0.45" stroke="' + K2.arq.contorno + '" stroke-width="' + n(K2.arq.mm) + '" data-cam="HID-CONTEXTO"/>');
 pz.faces.sort(function (p, q) { return p.d - q.d; }).forEach(function (f) {

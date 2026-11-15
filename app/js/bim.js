@@ -2460,8 +2460,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var MAT = { af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */
         bk.trocas = []; bk.matsFoco = MAT;
         todasMalhas(function (m) {
-          if (!m.isMesh) return; var k = m.userData._sisK; if (!k || k === 'outros') return;
+          if (!m.isMesh) return; var k = m.userData._sisK || 'outros';   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+          /* ISOMÉTRICO NA LINHA DA REFERÊNCIA (14/11/2026 — o Rogério mandou a vista: tubos do modelo em cor forte, a parede só como CONTORNO
+             cinza no piso, sem volume): o.semArquitetura esconde a arquitetura (o fundo da vista Instalações) só durante a foto */
+          if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
           if (!agua && !esg) {
             /* LOUÇA TRANSLÚCIDA NA PLANTA (14/11/2026 — o Rogério: "o vaso, a pia, nada disso deve ficar escondendo nossas conexões e os tubos"):
                a peça que não é tubo de sistema (louça, móvel) vira meio-tom translúcido; a arquitetura já é o fundo da vista Instalações */
@@ -2481,6 +2484,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
     finally {
       renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
+      if (bk.esc) bk.esc.forEach(function (t) { t[0].visible = t[1]; });
       if (bk.trocas) { bk.trocas.forEach(function (t) { t[0].material = t[1]; }); try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
       if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
       renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);

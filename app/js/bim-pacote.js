@@ -1665,8 +1665,9 @@ var mF = function (c, op) { return new THREE.MeshStandardMaterial({ color: c, em
 var MAT = { af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xc4c9cf, 0.3), louca: mF(0xe6e8eb, 0.28) };
 bk.trocas = []; bk.matsFoco = MAT;
 todasMalhas(function (m) {
-if (!m.isMesh) return; var k = m.userData._sisK; if (!k || k === 'outros') return;
+if (!m.isMesh) return; var k = m.userData._sisK || 'outros';
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
 if (!agua && !esg) {
 if (o.loucasTransl && !(instVista.on && instVistaFundo(m))) { bk.trocas.push([m, m.material]); m.material = MAT.louca; }
 return;
@@ -1684,6 +1685,7 @@ out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H, nFoco: bk.t
 } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
 finally {
 renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
+if (bk.esc) bk.esc.forEach(function (t) { t[0].visible = t[1]; });
 if (bk.trocas) { bk.trocas.forEach(function (t) { t[0].material = t[1]; }); try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
 if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
 renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
