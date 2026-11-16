@@ -22,6 +22,17 @@
  * caiu; nas outras ele recarregou — 2 a 7 vezes por dia, cada uma "o sistema saiu". Agora: acima de FRACAO_RECARREGAR ele
  * AVISA e ALIVIA (solta os caches de desenho, evento "orcapro:memoria-alta") e só recarrega se a amostra SEGUINTE continuar
  * alta; acima de FRACAO_TETO protege na hora, como antes (o pico síncrono de 19/10 foi de 0,5 a 2,97 GB em < 100 s).
+ *
+ * ⚠ RECARGA SÓ POR PISO, NÃO POR PICO (15/11/2026, etapa A1 do plano de desempenho do BIM). A regra "duas amostras
+ * seguidas acima de 45 %" ainda recarregava: no diag de 14/11 foram 8 e no de 15/11 até as 23:52 mais 15 alertas
+ * "recarregando", com 85–210 peças na cena e o heap oscilando 1,9–2,9 GB de 4,1 GB (ex.: 01:58–02:12 de 15/11, doze
+ * amostras entre 1.981 e 2.713 MB) — o heap da amostra inclui o lixo ainda não coletado, e duas amostras de 20 s caem
+ * facilmente em dois picos. Agora a recarga olha o PISO: o MENOR heap das últimas AMOSTRAS_PISO amostras (≥ 3, ~60 s).
+ * Se até o piso passou de FRACAO_PISO (~60 % do teto), não é lixo passageiro — o coletor já teve três chances. Abaixo
+ * disso só ALIVIA (solta caches) e avisa. Antes de recarregar, alivia e avisa também. FRACAO_TETO (80 %) segue
+ * protegendo na hora: ali a próxima amostra pode já ser o "Out of Memory" de 19/10, pior que recarregar.
+ * FRACAO_RECARREGAR (45 %) continua sendo a porta de entrada de tudo: abaixo dela o vigia não faz nada — as e2e que
+ * desligam o vigia pondo FRACAO_RECARREGAR = 9 dependem disso.
  * Sem performance.memory (Firefox, Safari) não faz nada.
  * ===================================================================== */
 (function (global) {
@@ -34,11 +45,13 @@
     INTERVALO_MS: 20000,
     FRACAO_RECARREGAR: 0.45,
     FRACAO_TETO: 0.8,
+    FRACAO_PISO: 0.6,        /* recarrega só se o MENOR heap das últimas AMOSTRAS_PISO amostras passar disto (ver o roteiro acima) */
+    AMOSTRAS_PISO: 3,
     ALIVIO_INTERVALO_MS: 5 * 60 * 1000,   /* no máximo 1 limpeza de cache a cada 5 min: soltar o cache e refazê-lo em seguida viraria pico em ciclo */
     ESPERA_RECARREGAR_MS: 2500,
     SALTO_PERFIL_MB: 400,
     JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-    _t: null, _seq: 0, _recarregando: false, _altoSeguidas: 0, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
+    _t: null, _seq: 0, _recarregando: false, _hist: null, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 
     medir: function () {
       var pm = global.performance && global.performance.memory;
@@ -164,25 +177,34 @@
       var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
       this._ultimoUsado = m.usadoMB;
       if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
+      /* as últimas AMOSTRAS_PISO medidas — o piso é a menor delas (o que sobra depois que o coletor passou) */
+      var h = this._hist || (this._hist = []);
+      h.push(m.usadoMB); while (h.length > this.AMOSTRAS_PISO) h.shift();
+      var piso = h.length >= this.AMOSTRAS_PISO ? Math.min.apply(Math, h) : 0;
+      a.pisoMB = piso;
       if (fr >= this.FRACAO_RECARREGAR) {
-        this._altoSeguidas++;
-        /* a 1ª amostra alta (abaixo do teto) só alivia e avisa: o pico costuma ser lixo que o coletor recolhe em segundos */
-        a.alerta = this._altoSeguidas < 2 && fr < this.FRACAO_TETO && !this._recarregando ? this.aliviar(m) : (this.proteger(m) || "alto");
-      } else this._altoSeguidas = 0;
+        var pisoAlto = !!(m.limiteMB && piso / m.limiteMB >= this.FRACAO_PISO);
+        if (this._recarregando) a.alerta = "recarregando";
+        else if (fr >= this.FRACAO_TETO || pisoAlto) {
+          /* antes de recarregar, solta os caches e avisa (aliviar ignora o intervalo de 5 min aqui: é a última chance) */
+          this.aliviar(m, true);
+          a.alerta = this.proteger(m) || "alto";
+        } else a.alerta = this.aliviar(m);   /* pico (o piso ainda é baixo): só alivia e avisa — o coletor recolhe em segundos */
+      }
       this.enviar(a);
       return a;
     },
     /* a memória passou do limite pela 1ª vez: solta o que é refeito sob demanda (o cache do desenho das instalações na
        planta/corte) e avisa quem mais guarda cache (evento); avisa a pessoa UMA vez. Devolve "aliviando". */
-    aliviar: function (m) {
+    aliviar: function (m, forcar) {
       var t = this.agora();
-      if (!this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
+      if (forcar || !this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
         this._alivioEm = t;
         try { var HS = global.HidSombra; if (HS && HS.cache && HS.cache.clear) { HS.cache.clear(); HS.cache.bytes = 0; } } catch (e) {}
         /* quem ouve: js/biminstui.js (o cache de geometria das instalações solta as gerações que não estão na cena) */
         try { if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") global.dispatchEvent(new global.CustomEvent("orcapro:memoria-alta", { detail: { usadoMB: m.usadoMB } })); } catch (e) {}
       }
-      if (!this._avisouAlto) {
+      if (!this._avisouAlto && !forcar) {   /* forcar = vai recarregar: quem avisa é o proteger (um aviso só) */
         this._avisouAlto = true;
         /* ⚠ não prometer recarga que não vem: dentro da janela anti-laço (recarregou há menos de 10 min) ele só avisa */
         var ult = this._lerRecarga(), laco = ult && t - ult < this.JANELA_ANTI_LACO_MS;

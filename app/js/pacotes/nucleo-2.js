@@ -84290,11 +84290,13 @@ var V = {
 INTERVALO_MS: 20000,
 FRACAO_RECARREGAR: 0.45,
 FRACAO_TETO: 0.8,
+FRACAO_PISO: 0.6,
+AMOSTRAS_PISO: 3,
 ALIVIO_INTERVALO_MS: 5 * 60 * 1000,
 ESPERA_RECARREGAR_MS: 2500,
 SALTO_PERFIL_MB: 400,
 JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-_t: null, _seq: 0, _recarregando: false, _altoSeguidas: 0, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
+_t: null, _seq: 0, _recarregando: false, _hist: null, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 medir: function () {
 var pm = global.performance && global.performance.memory;
 if (!pm || !pm.jsHeapSizeLimit) return null;
@@ -84397,21 +84399,29 @@ try { a.versao = global.CONFIG && global.CONFIG.versao; } catch (e) {}
 var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
 this._ultimoUsado = m.usadoMB;
 if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
+var h = this._hist || (this._hist = []);
+h.push(m.usadoMB); while (h.length > this.AMOSTRAS_PISO) h.shift();
+var piso = h.length >= this.AMOSTRAS_PISO ? Math.min.apply(Math, h) : 0;
+a.pisoMB = piso;
 if (fr >= this.FRACAO_RECARREGAR) {
-this._altoSeguidas++;
-a.alerta = this._altoSeguidas < 2 && fr < this.FRACAO_TETO && !this._recarregando ? this.aliviar(m) : (this.proteger(m) || "alto");
-} else this._altoSeguidas = 0;
+var pisoAlto = !!(m.limiteMB && piso / m.limiteMB >= this.FRACAO_PISO);
+if (this._recarregando) a.alerta = "recarregando";
+else if (fr >= this.FRACAO_TETO || pisoAlto) {
+this.aliviar(m, true);
+a.alerta = this.proteger(m) || "alto";
+} else a.alerta = this.aliviar(m);
+}
 this.enviar(a);
 return a;
 },
-aliviar: function (m) {
+aliviar: function (m, forcar) {
 var t = this.agora();
-if (!this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
+if (forcar || !this._alivioEm || t - this._alivioEm >= this.ALIVIO_INTERVALO_MS) {
 this._alivioEm = t;
 try { var HS = global.HidSombra; if (HS && HS.cache && HS.cache.clear) { HS.cache.clear(); HS.cache.bytes = 0; } } catch (e) {}
 try { if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") global.dispatchEvent(new global.CustomEvent("orcapro:memoria-alta", { detail: { usadoMB: m.usadoMB } })); } catch (e) {}
 }
-if (!this._avisouAlto) {
+if (!this._avisouAlto && !forcar) {
 this._avisouAlto = true;
 var ult = this._lerRecarga(), laco = ult && t - ult < this.JANELA_ANTI_LACO_MS;
 try { if (global.UI && global.UI.toast) global.UI.toast("A memória desta página está alta (" + m.usadoMB + " MB). O OrçaPRO liberou o que dava; " + (laco ? "se continuar alta, salve o que estiver fazendo e recarregue (F5)." : "se continuar alta, ele salva e recarrega sozinho."), "aviso", 9000); } catch (e) {}
