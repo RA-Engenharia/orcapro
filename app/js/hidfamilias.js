@@ -1134,6 +1134,8 @@
   var PRECO_INST = [X("Preco_unitario", "numero", 0, "Instalação", "Preço da peça (R$) quando não há composição SINAPI do produto: a referência da ficha"),
     X("Fonte_preco", "texto", "", "Instalação", "Fonte do preço (base, código, data)"), X("Peca_catalogo", "texto", "", "Instalação", "Identificação da referência de preço"),
     X("Preco_provisorio", "simnao", false, "Instalação", "Preço provisório (cotar com o fornecedor)"), X("Motivo_preco", "texto", "", "Instalação", "Por que o preço é provisório"), X("Data_preco", "texto", "", "Instalação", "Data-base do preço")];
+  /* CASO B (15/11/2026): o USO da pia/cuba (instância) — vazio = automático pelo cômodo (lavanderia / área de serviço = tanque, sem caixa de gordura); escrito manda: "pia de cozinha", "tanque / lavanderia" ou "lavatório" (js/hidkit.js aparelhoDoElemento) */
+  ESPECS.forEach(function (e) { if (e.id === "hid-pia-cozinha" && !e.geo.some(function (x) { return x.nome === "Uso"; })) e.geo.push(X("Uso", "texto", "", "Instalação", "Uso para o esgoto (NBR 8160): \"pia de cozinha\" (caixa de gordura), \"tanque / lavanderia\" ou \"lavatório\". Vazio = automático pelo cômodo (lavanderia / área de serviço = tanque)")); });
   ESPECS.forEach(function (e) { if (e.id === "hid-chuveiro") PRECO_INST.forEach(function (g) { if (!e.geo.some(function (x) { return x.nome === g.nome; })) e.geo.push(JSON.parse(JSON.stringify(g))); }); });
   /* AQUECEDOR ELÉTRICO DE PASSAGEM (central, vários pontos): Cardal Aquecedor Central (manual IM-588/R.01). Origem e conectores como o
      de passagem a gás (centro da face de baixo, rente à parede; entradas embaixo — a ficha cota o corpo, não a posição das roscas) */

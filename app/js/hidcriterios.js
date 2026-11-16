@@ -149,6 +149,9 @@
   regra("economia.desvioTransposicao", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio de 4 joelhos onde cabe a curva de transposição",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O ramal de água fria sai da linha, passa ao lado de uma subida/descida de água e volta (4 joelhos). A curva de transposição de PVC soldável passa por trás do tubo com UMA peça: menos conexões, menos perda de carga e menos material.",
     fonte: "critério de projeto (menor número de conexões) + curva de transposição Amanco Wavin FT FTC000001 pág. 17 (js/biminsttransp.js)", corrigir: "Trocar o desvio de 4 joelhos por uma curva de transposição no eixo do tubo" });
+  regra("economia.desvioCruzamento", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio de cruzamento com conexões a mais",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "O ramal de água fria sai da linha para passar uma subida/descida de água de diâmetro que a curva de transposição não libera (o arco da peça é de DE até 20 mm) e volta: quatro conexões a mais, perda de carga e leitura ruim. O certo é o ramal já nascer no plano livre, à frente ou atrás do prumo, dentro da espessura da parede.",
+    fonte: "critério de projeto (menor número de conexões; nunca tê como desvio) + curva de transposição Amanco Wavin FT FTC000001 pág. 17 (js/biminsttransp.js)", corrigir: "Refazer o traçado deste ambiente (o Traçar leva o ramal ao plano livre, sem desvio local)" });
   regra("economia.luva", { gravidade: "sugestao", custo: 0.5, titulo: "Emenda desnecessária",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Dois trechos alinhados, do mesmo diâmetro, emendados no meio sem derivação: uma luva a mais à toa.",
     fonte: "critério de projeto", corrigir: "Juntar os dois trechos" });
@@ -869,7 +872,12 @@
                 var X = { x: Vt.p1.x, y: N1.p.y, z: Vt.p1.z }, Ap = outra(N1, At).p, Ep = outra(N4, Et).p;
                 var av = HT.avaliar({ sistema: "agua_fria", material: HT.MATERIAL, dn: Bt.dn, cruzadoSistema: Vt.sistema, cruzadoDn: Math.round(Vt.de * 1000), cos: 0, dy: 0,
                                       retaAntes: d2(X, Ap), retaDepois: d2(X, Ep), margem: margemT });
-                if (!av.ok) return;
+                if (!av.ok) {
+                  /* a peça NÃO serve a este cruzamento (ex.: o tubo cruzado de DN 50, acima do arco da peça): o desvio de 4 joelhos é "desvio de cruzamento" — avisa quantas
+                     conexões a mais ele custa e oferece refazer o traçado do ambiente (o Traçar nasce no plano livre, sem peça de desvio; nunca tê). Sem troca local. */
+                  add("economia.desvioCruzamento", [At.id, Bt.id, Ct.id, Dt.id, Et.id], N2.p, "Desvio de cruzamento com 4 conexões extras: o tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha para passar a subida/descida " + Vt.id + " e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + "); a curva de transposição não serve aqui (" + av.motivo + ").", { corrigir: { tipo: "refazer", ids: [At.id, Bt.id, Ct.id, Dt.id, Et.id].map(String), texto: R["economia.desvioCruzamento"].corrigir } });
+                  return;
+                }
                 var ub = { x: vb.x / vb.L, z: vb.z / vb.L };
                 add("economia.desvioTransposicao", [At.id, Bt.id, Ct.id, Dt.id, Et.id], N2.p, "O tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha para passar a subida/descida " + Vt.id + " e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + ", 4 joelhos): uma curva de transposição DN " + Bt.dn + " resolve com 1 peça.",
                     { corrigir: { tipo: "transposicao", ids: [At.id, Bt.id, Ct.id, Dt.id, Et.id], vertical: Vt.id, x: r4(X.x), y: r4(X.y), z: r4(X.z), lado: { x: r4(ub.x), z: r4(ub.z) }, nA: { x: N1.p.x, y: N1.p.y, z: N1.p.z }, nE: { x: N4.p.x, y: N4.p.y, z: N4.p.z }, texto: R["economia.desvioTransposicao"].corrigir } });

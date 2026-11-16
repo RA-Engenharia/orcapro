@@ -785,7 +785,7 @@
     }
     kitOps.forEach(function (o) { if (o.kitParte === "chuveiro" && /-ch-espera$/.test(txt(o.id))) esperaCh[o.kit] = o.continua === "p2" ? o.p2 : o.p1; });   /* a ponta aberta (p1 desde a FRENTE B, 19/10/2026: sentido da água) */
     M.fams.forEach(function (f) {
-      var tipo = K.tipoDaFamilia(f.famId, f.tipoId); if (K.aparelhoNorma) tipo = K.aparelhoNorma(tipo); tipos[f.id] = tipo;   /* bancada de pedra = pia de cozinha / lavatório da norma (js/hidkit.js aparelhoNorma) */
+      var tipo = K.tipoDaFamilia(f.famId, f.tipoId); if (K.aparelhoDoElemento) { var uso = K.aparelhoDoElemento(f, tipo, M.bim && M.bim.nome); tipo = uso.aparelho; if (uso.origem !== "kit" && uso.origem !== "manual") aviso("Uso do aparelho " + f.id + ": TANQUE (" + uso.origem + ") — não vai à caixa de gordura (NBR 8160: só pia de cozinha); o campo Uso do aparelho troca", [String(f.id)]); } else if (K.aparelhoNorma) tipo = K.aparelhoNorma(tipo); tipos[f.id] = tipo;   /* bancada de pedra = pia de cozinha / lavatório da norma (js/hidkit.js aparelhoNorma) */
       var cs = K._int.conectores(avaliarFam, f).filter(function (c) { return c.sistema === "esgoto" || c.sistema === "agua_fria"; });
       var con = [], apar = HEm && HEm.aparente ? HEm.aparente(f) : false;
       if (apar) decide("amb.aparente", "O " + f.id + " está com Instalação aparente (área técnica/reforma): os tubos dele não se embutem e não entram no achado \"tubo aparente sem motivo\".");

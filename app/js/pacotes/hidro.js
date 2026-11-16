@@ -2981,6 +2981,8 @@ p.terreo = !!src.terreo;
 p.atravessarViga = !!src.atravessarViga;
 p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);
 p.tracadoParcial = src.tracadoParcial !== false;
+p.rasaAgua = src.rasaAgua !== false;
+p.chegadaPrumo = src.chegadaPrumo !== false;
 p.transposicao = src.transposicao !== false;
 p.limiteDnCintaMm = num(src.limite_dn_embutir_cinta_mm != null ? src.limite_dn_embutir_cinta_mm : src.limiteDnEmbutirCintaMm, LIMITE_DN_CINTA_MM);
 p.embutirExtraAF = Math.max(0, num(src.embutirExtraAF, 0));
@@ -3350,7 +3352,12 @@ var gap = yHi < o.b0 ? o.b0 - yHi : (yLo > o.b1 ? yLo - o.b1 : 0);
 if (gap - r - T.r < c - FOLGA_LIMITE) return false;
 }
 if (corredor && o.sistema === "agua_fria" && !o.corredorSolto) {
-for (var s0 = 0; s0 < segsArv.length; s0++) if (ptSeg2(p, segsArv[s0].a, segsArv[s0].b).d < r + o.rArv - FOLGA_LIMITE) return false;
+for (var s0 = 0; s0 < segsArv.length; s0++) {
+if (ptSeg2(p, segsArv[s0].a, segsArv[s0].b).d >= r + o.rArv - FOLGA_LIMITE) continue;
+var Sg = segsArv[s0], uSg = un2(Sg.a, Sg.b);
+if (P.chegadaPrumo && corredor.some(function (q) { return ptSeg2(q, Sg.a, Sg.b).d < EPS && Math.abs((p.x - q.x) * uSg.x + (p.z - q.z) * uSg.z) < EPS; })) continue;
+return false;
+}
 if (o.raiz && o.arvore && o.arvore.raiz != null && d2(p, o.raiz) < r + o.rArv - FOLGA_LIMITE) return false;
 return true;
 }
@@ -4053,6 +4060,17 @@ var rMax = Math.max.apply(null, folhas.map(function (f) { return raio(f.dn); }))
 var HTr = P.transposicao ? dep("HidTransp", "./biminsttransp.js") : null, dnMaxF = Math.max.apply(null, folhas.map(function (f) { return f.dn; }));
 var transp = HTr && mat === HTr.MATERIAL && HTr.regra(dnMaxF) ? { dn: dnMaxF, material: mat, regra: HTr.regra(dnMaxF) } : null;
 var cota = r4(C.cota + (C.desce ? -rMax : rMax));
+if (C.desce && P.rasaAgua) {
+var bxa = folhas.concat([raizD]), ax0 = Math.min.apply(null, bxa.map(function (q) { return q.x; })) - P.margem, ax1 = Math.max.apply(null, bxa.map(function (q) { return q.x; })) + P.margem;
+var az0 = Math.min.apply(null, bxa.map(function (q) { return q.z; })) - P.margem, az1 = Math.max.apply(null, bxa.map(function (q) { return q.z; })) + P.margem, fundoRasa = 0;
+W.O.lista.forEach(function (ob) {
+if (ob.tipo !== "familia" || !(ob.y0 < 0) || ob.y0 < -FAMILIA_RASA - EPS || !faixaCruza(cota - rMax - P.folga, cota + rMax + P.folga, ob.y0, ob.y1)) return;
+var cxs = [ob.cx - ob.ux * ob.hl + ob.uz * ob.hw, ob.cx + ob.ux * ob.hl + ob.uz * ob.hw, ob.cx - ob.ux * ob.hl - ob.uz * ob.hw, ob.cx + ob.ux * ob.hl - ob.uz * ob.hw], czs = [ob.cz - ob.uz * ob.hl - ob.ux * ob.hw, ob.cz + ob.uz * ob.hl - ob.ux * ob.hw, ob.cz - ob.uz * ob.hl + ob.ux * ob.hw, ob.cz + ob.uz * ob.hl + ob.ux * ob.hw];
+if (Math.max.apply(null, cxs) < ax0 || Math.min.apply(null, cxs) > ax1 || Math.max.apply(null, czs) < az0 || Math.min.apply(null, czs) > az1) return;
+fundoRasa = Math.min(fundoRasa, ob.y0);
+});
+if (fundoRasa < 0) { var cota2 = r4(fundoRasa - rMax - P.folga - FOLGA_LIMITE); if (cota2 < cota) { cota = cota2; saida.avisos.push(prob("água fria (" + g.id + "): o ramal desce para a cota " + f2(cota) + " m para passar POR BAIXO do trilho/soleira de família embutida no contrapiso (" + f2(-fundoRasa) + " m) — confira a espessura do enchimento", [pt3(raizD.x, cota, raizD.z)], null)); } }
+}
 if (C.modo === "parede") {
 var perto = function (ob) { return folhas.some(function (f) { var q = { x: f.x - ob.cx, z: f.z - ob.cz }, u = q.x * ob.ux + q.z * ob.uz, v = -q.x * ob.uz + q.z * ob.ux; return Math.abs(u) <= ob.hl + JANELA_PERTO && Math.abs(v) <= ob.hw + JANELA_PERTO; }); };
 var jan = W.O.lista.filter(function (ob) { return ob.tipo === "janela" && faixaCruza(cota - rMax - P.folga, cota + rMax + P.folga, ob.y0, ob.y1) && perto(ob); });
@@ -5634,6 +5652,9 @@ fonte: "critério de projeto (menor comprimento e menor número de conexões)", 
 regra("economia.desvioTransposicao", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio de 4 joelhos onde cabe a curva de transposição",
 porque: "O ramal de água fria sai da linha, passa ao lado de uma subida/descida de água e volta (4 joelhos). A curva de transposição de PVC soldável passa por trás do tubo com UMA peça: menos conexões, menos perda de carga e menos material.",
 fonte: "critério de projeto (menor número de conexões) + curva de transposição Amanco Wavin FT FTC000001 pág. 17 (js/biminsttransp.js)", corrigir: "Trocar o desvio de 4 joelhos por uma curva de transposição no eixo do tubo" });
+regra("economia.desvioCruzamento", { gravidade: "sugestao", custo: 1.0, titulo: "Desvio de cruzamento com conexões a mais",
+porque: "O ramal de água fria sai da linha para passar uma subida/descida de água de diâmetro que a curva de transposição não libera (o arco da peça é de DE até 20 mm) e volta: quatro conexões a mais, perda de carga e leitura ruim. O certo é o ramal já nascer no plano livre, à frente ou atrás do prumo, dentro da espessura da parede.",
+fonte: "critério de projeto (menor número de conexões; nunca tê como desvio) + curva de transposição Amanco Wavin FT FTC000001 pág. 17 (js/biminsttransp.js)", corrigir: "Refazer o traçado deste ambiente (o Traçar leva o ramal ao plano livre, sem desvio local)" });
 regra("economia.luva", { gravidade: "sugestao", custo: 0.5, titulo: "Emenda desnecessária",
 porque: "Dois trechos alinhados, do mesmo diâmetro, emendados no meio sem derivação: uma luva a mais à toa.",
 fonte: "critério de projeto", corrigir: "Juntar os dois trechos" });
@@ -6236,7 +6257,10 @@ if (!Vt) return;
 var X = { x: Vt.p1.x, y: N1.p.y, z: Vt.p1.z }, Ap = outra(N1, At).p, Ep = outra(N4, Et).p;
 var av = HT.avaliar({ sistema: "agua_fria", material: HT.MATERIAL, dn: Bt.dn, cruzadoSistema: Vt.sistema, cruzadoDn: Math.round(Vt.de * 1000), cos: 0, dy: 0,
 retaAntes: d2(X, Ap), retaDepois: d2(X, Ep), margem: margemT });
-if (!av.ok) return;
+if (!av.ok) {
+add("economia.desvioCruzamento", [At.id, Bt.id, Ct.id, Dt.id, Et.id], N2.p, "Desvio de cruzamento com 4 conexões extras: o tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha para passar a subida/descida " + Vt.id + " e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + "); a curva de transposição não serve aqui (" + av.motivo + ").", { corrigir: { tipo: "refazer", ids: [At.id, Bt.id, Ct.id, Dt.id, Et.id].map(String), texto: R["economia.desvioCruzamento"].corrigir } });
+return;
+}
 var ub = { x: vb.x / vb.L, z: vb.z / vb.L };
 add("economia.desvioTransposicao", [At.id, Bt.id, Ct.id, Dt.id, Et.id], N2.p, "O tubo de " + quem(Bt) + " sai " + fcm(vb.L) + " cm da linha para passar a subida/descida " + Vt.id + " e volta (" + [Bt.id, Ct.id, Dt.id].join(", ") + ", 4 joelhos): uma curva de transposição DN " + Bt.dn + " resolve com 1 peça.",
 { corrigir: { tipo: "transposicao", ids: [At.id, Bt.id, Ct.id, Dt.id, Et.id], vertical: Vt.id, x: r4(X.x), y: r4(X.y), z: r4(X.z), lado: { x: r4(ub.x), z: r4(ub.z) }, nA: { x: N1.p.x, y: N1.p.y, z: N1.p.z }, nE: { x: N4.p.x, y: N4.p.y, z: N4.p.z }, texto: R["economia.desvioTransposicao"].corrigir } });
@@ -7288,6 +7312,28 @@ if (!(h > 0) || !f) return { ok: false, motivo: "regra de altura sem número ou 
 return { ok: true, valor: h / CM, piso: false, origem: txt(F.origem), fonte: f, texto: f.doc.split(":")[0] + (f.tipo === "referencia_de_mercado" ? " (referência de mercado)" : "") };
 }
 function aparelhoNorma(tipo) { var k = tipo ? kits()[tipo] : null; return k && k.aparelhoNorma ? k.aparelhoNorma : tipo; }
+var USO_ROTULO = { pia_cozinha: "pia de cozinha", tanque: "tanque / lavanderia", lavatorio: "lavatório" };
+function semAc(s) { s = txt(s).toLowerCase(); return (s.normalize ? s.normalize("NFD").replace(/[̀-ͯ]/g, "") : s).replace(/[^a-z0-9]+/g, " ").trim(); }
+function usoDeTexto(v) {
+var t = " " + semAc(v) + " ";
+if (/ (tanque|lavanderia|lavander) /.test(t)) return "tanque";
+if (/ lavatorio /.test(t)) return "lavatorio";
+if (/ (pia|cozinha) /.test(t)) return "pia_cozinha";
+return null;
+}
+var RE_AMB_LAVANDERIA = / (lavanderia|lavander|area de servico|area servico|area serv|a servico|a serv|as|a s) /;
+function aparelhoDoElemento(f, tipoKit, nomeAmb) {
+var base = aparelhoNorma(tipoKit);
+if (!base || !USO_ROTULO[base]) return { aparelho: base, uso: base, origem: "kit" };
+var man = f && f.inst && f.inst.Uso != null && txt(f.inst.Uso) !== "" ? usoDeTexto(f.inst.Uso) : null;
+if (man) return { aparelho: man, uso: man, origem: "manual" };
+if (base === "pia_cozinha") {
+var nomeF = " " + semAc((f && f.famId) + " " + (f && f.tipoId)) + " ";
+if (RE_AMB_LAVANDERIA.test(" " + semAc(nomeAmb) + " ")) return { aparelho: "tanque", uso: "tanque", origem: "ambiente lavanderia/área de serviço" };
+if (/ (tanque|lavanderia|lavander) /.test(nomeF)) return { aparelho: "tanque", uso: "tanque", origem: "família de tanque/cuba de lavanderia" };
+}
+return { aparelho: base, uso: base, origem: "kit" };
+}
 function aparelhoEsDe(tipo, inst) {
 if (tipo !== "mictorio") return null;
 var HEk = dep("HidES", "./hides.js"), md = HEk && HEk.mictorioDe ? HEk.mictorioDe(inst || {}) : null;
@@ -7813,6 +7859,18 @@ if (x.op !== "familia" || x.kit == null) return;
 if (x.kitParte === "valvula") o[x.id] = "bacia_valvula";
 else if (x.kitParte === "torneira" && K[x.kitTipo]) o[x.id] = x.kitTipo;
 });
+try {
+var BEk = dep("BimEdit", "./bimedit.js");
+if (BEk && BEk.aplicar) {
+var est = BEk.aplicar(ops);
+arr(est.familias).forEach(function (f) {
+if (o[f.id] != null) return;
+var tk = tipoDaFamilia(f.famId, f.tipoId); if (!tk) return;
+var amb = ambienteDe(est, f), u = aparelhoDoElemento(f, tk, amb && amb.nome);
+if (u.origem !== "kit" && u.aparelho !== aparelhoNorma(tk)) o[f.id] = u.aparelho;
+});
+}
+} catch (eU) {}
 return o;
 }
 function travados(ops) { var o = []; achatar(ops).forEach(function (x) { if (x.kit != null && x.op === "trecho" && (x.kitParte === "valvula" || x.kitParte === "descida")) { o.push(x.id); o.push(x.id + "b"); } }); return o; }
@@ -7840,7 +7898,7 @@ return out;
 }
 var HidKit = {
 VERSAO: 1, GEO_KIT: GEO_KIT,
-kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
+kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, aparelhoDoElemento: aparelhoDoElemento, USO_ROTULO: USO_ROTULO, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
 aparelhosForcados: aparelhosForcados, paraCalculo: paraCalculo, travados: travados, decisoesDoModelo: decisoesDoModelo, assinatura: assinatura,
 _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, vizinhosDe: vizinhosDe, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
 };
@@ -8428,7 +8486,7 @@ return o;
 }
 kitOps.forEach(function (o) { if (o.kitParte === "chuveiro" && /-ch-espera$/.test(txt(o.id))) esperaCh[o.kit] = o.continua === "p2" ? o.p2 : o.p1; });
 M.fams.forEach(function (f) {
-var tipo = K.tipoDaFamilia(f.famId, f.tipoId); if (K.aparelhoNorma) tipo = K.aparelhoNorma(tipo); tipos[f.id] = tipo;
+var tipo = K.tipoDaFamilia(f.famId, f.tipoId); if (K.aparelhoDoElemento) { var uso = K.aparelhoDoElemento(f, tipo, M.bim && M.bim.nome); tipo = uso.aparelho; if (uso.origem !== "kit" && uso.origem !== "manual") aviso("Uso do aparelho " + f.id + ": TANQUE (" + uso.origem + ") — não vai à caixa de gordura (NBR 8160: só pia de cozinha); o campo Uso do aparelho troca", [String(f.id)]); } else if (K.aparelhoNorma) tipo = K.aparelhoNorma(tipo); tipos[f.id] = tipo;
 var cs = K._int.conectores(avaliarFam, f).filter(function (c) { return c.sistema === "esgoto" || c.sistema === "agua_fria"; });
 var con = [], apar = HEm && HEm.aparente ? HEm.aparente(f) : false;
 if (apar) decide("amb.aparente", "O " + f.id + " está com Instalação aparente (área técnica/reforma): os tubos dele não se embutem e não entram no achado \"tubo aparente sem motivo\".");
@@ -18737,6 +18795,7 @@ ESPECS.forEach(function (e) { if (e.id === "hid-aquecedor-gas") PARAM_GAS.forEac
 var PRECO_INST = [X("Preco_unitario", "numero", 0, "Instalação", "Preço da peça (R$) quando não há composição SINAPI do produto: a referência da ficha"),
 X("Fonte_preco", "texto", "", "Instalação", "Fonte do preço (base, código, data)"), X("Peca_catalogo", "texto", "", "Instalação", "Identificação da referência de preço"),
 X("Preco_provisorio", "simnao", false, "Instalação", "Preço provisório (cotar com o fornecedor)"), X("Motivo_preco", "texto", "", "Instalação", "Por que o preço é provisório"), X("Data_preco", "texto", "", "Instalação", "Data-base do preço")];
+ESPECS.forEach(function (e) { if (e.id === "hid-pia-cozinha" && !e.geo.some(function (x) { return x.nome === "Uso"; })) e.geo.push(X("Uso", "texto", "", "Instalação", "Uso para o esgoto (NBR 8160): \"pia de cozinha\" (caixa de gordura), \"tanque / lavanderia\" ou \"lavatório\". Vazio = automático pelo cômodo (lavanderia / área de serviço = tanque)")); });
 ESPECS.forEach(function (e) { if (e.id === "hid-chuveiro") PRECO_INST.forEach(function (g) { if (!e.geo.some(function (x) { return x.nome === g.nome; })) e.geo.push(JSON.parse(JSON.stringify(g))); }); });
 ESPECS.push({
 id: "hid-aquecedor-eletrico-passagem", nome: "Aquecedor elétrico de passagem", categoria: "equipamento", sistemas: ["agua_fria", "agua_quente"], tipos: ["aquecedor_eletrico_passagem"],
@@ -38992,11 +39051,12 @@ var nomeA = A.nome || A.id, tem = {};
 A.fams.forEach(function (x) { if (x.classe) tem[x.classe] = 1; });
 var falta = arr(OBRIG[tipo]).filter(function (c) { return !tem[c]; });
 if (tem.lavadora && !tem.maquina && falta.indexOf("maquina") < 0) falta.push("maquina");
+var gourmetSemCuba = tipo === "gourmet" && !!tem.churrasqueira && falta.indexOf("pia") >= 0;
 if (falta.length) {
 var g = gerar({ estado: estado, avaliarFam: avaliarFam, ops: o.ops, ambientes: [A.id], padrao: o.padrao, bacia: o.bacia, validar: o.validar === true });
 out.problemas.push({ tipo: "hid-equipar-falta", gravidade: "erro", titulo: nomeA + ": falta " + falta.map(function (c) { return NOME_CLASSE[c]; }).join(", "),
 texto: "O " + (NOMES[tipo] || tipo).toLowerCase() + " pede " + arr(OBRIG[tipo]).map(function (c) { return NOME_CLASSE[c]; }).join(", ") + " (docs/arquitetura/interiores/PADROES-AMBIENTES.md §3) e o modelo não tem " + falta.map(function (c) { return NOME_CLASSE[c]; }).join(", ") + ".",
-solucoes: g.ops && g.ops.length ? [{ id: "equipar", texto: "Equipar o ambiente (põe o que falta, com o kit)", ops: g.ops, origem: ORIGEM }] : [{ id: "", texto: "não coube automático: " + g.pendencias.map(function (p) { return p.texto; }).join("; ") }],
+solucoes: g.ops && g.ops.length ? [{ id: "equipar", texto: gourmetSemCuba ? "Colocar bancada com cuba (pia de cozinha) ao lado da churrasqueira — com o kit de água e esgoto (caixa de gordura)" : "Equipar o ambiente (põe o que falta, com o kit)", ops: g.ops, origem: ORIGEM }] : [{ id: "", texto: "não coube automático: " + g.pendencias.map(function (p) { return p.texto; }).join("; ") }],
 pecas: A.fams.map(function (x) { return String(x.f.id); }), ambiente: A.id });
 }
 A.fams.forEach(function (x) {

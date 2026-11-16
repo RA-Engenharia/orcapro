@@ -89948,6 +89948,7 @@ var ps = [
 { nome: "Agua_altura_parede", tipoDado: "comprimento", escopo: "tipo", valor: alturaParede != null ? alturaParede : R.metalParedeAcimaTampo, grupo: "Instalação",
 descricao: alturaParede != null ? "Torneira de parede: altura do ponto acima do PISO — " + FONTE_TIGRE + (e.amb === "servico" ? " (TQ 115 cm)" : " (PIA 110 cm)") : "Torneira de parede: ponto acima da face do TAMPO — " + FONTE_DECA + " (170 a 220 mm; adotado 220)" }
 ];
+if (e.kit === "bancada_cozinha" || e.kit === "tanque_familia") ps.push({ nome: "Uso", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Instalação", opcoes: ["", "pia de cozinha", "tanque / lavanderia", "lavatório"], descricao: "Uso da cuba para o esgoto (NBR 8160): pia de cozinha vai à caixa de gordura; tanque / lavanderia vai ao ramal pelo sifão próprio ou à caixa sifonada. Vazio = automático pelo cômodo (lavanderia / área de serviço = tanque)" });
 var ea = typeof e.esgoto === "string" ? (e.esgoto === "apoio" ? R.esgotoApoio : R.esgotoEmbutir) : null;
 if (ea != null) ps.push({ nome: "Esgoto_abaixo_tampo", tipoDado: "comprimento", escopo: "tipo", valor: ea, grupo: "Instalação", descricao: "Ponto de esgoto abaixo da face do tampo — " + FONTE_DECA + ", tabela 3 (o maior da classe: o sifão alcança o ponto mais alto encurtando o tubo)" });
 else ps.push({ nome: "Esgoto_abaixo_fundo", tipoDado: "comprimento", escopo: "tipo", valor: R.esgotoAbaixoFundo, grupo: "Instalação", descricao: "Cuba de inox: o sifão desce até 6 cm abaixo do fundo e vai à parede (o desenho do js/hidlouca.js e do js/marmoraria.js)" });
@@ -94799,7 +94800,7 @@ return melhor;
 var NOMES_CONEXAO = { joelho90: "Joelho 90°", joelho45: "Joelho 45°", te: "Tê", te_reducao: "Tê de redução", juncao: "Junção simples", luva: "Luva", reducao: "Redução", cruzeta: "Cruzeta",
 uniao: "União", te_inspecao: "Tê de inspeção",
 curva90: "Curva 90° longa", curva90_curta: "Curva 90° curta", curva45: "Curva 45° longa", curva45_curta: "Curva 45° curta",
-curva_pe_coluna: "Curva de pé de coluna", curva_transposicao: "Curva de transposição",
+curva_pe_coluna: "Curva de pé de coluna", curva_transposicao: "Curva de transposição (luva de transposição)",
 joelho90_reducao: "Joelho 90° de redução", joelho90_bolsa_curta: "Joelho 90° com bolsa curta", joelho90_anel_labial: "Joelho 90° com anel labial",
 joelho90_az_anel: "Joelho 90° com anel de vedação", joelho90_visita: "Joelho 90° com visita", joelho45_misto: "Joelho 45° misto",
 te_bucha: "Tê com bucha de latão", te_rosca: "Tê com rosca", te_transicao: "Tê de transição",

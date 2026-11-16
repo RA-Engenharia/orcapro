@@ -646,12 +646,14 @@
       /* (1) peça obrigatória */
       var falta = arr(OBRIG[tipo]).filter(function (c) { return !tem[c]; });
       if (tem.lavadora && !tem.maquina && falta.indexOf("maquina") < 0) falta.push("maquina");   /* a lava e seca sem a torneira de máquina e o ralo */
+      /* CASO C (15/11/2026): a churrasqueira não usa água; a gourmet só com ela (sem cuba) sai sem água nem esgoto — a oferta é a bancada com cuba */
+      var gourmetSemCuba = tipo === "gourmet" && !!tem.churrasqueira && falta.indexOf("pia") >= 0;
       if (falta.length) {
         /* o Corrigir sai do mesmo motor; sem a conferência pelo traçado (o auditor responde na hora; o Traçar vem depois) */
         var g = gerar({ estado: estado, avaliarFam: avaliarFam, ops: o.ops, ambientes: [A.id], padrao: o.padrao, bacia: o.bacia, validar: o.validar === true });
         out.problemas.push({ tipo: "hid-equipar-falta", gravidade: "erro", titulo: nomeA + ": falta " + falta.map(function (c) { return NOME_CLASSE[c]; }).join(", "),
           texto: "O " + (NOMES[tipo] || tipo).toLowerCase() + " pede " + arr(OBRIG[tipo]).map(function (c) { return NOME_CLASSE[c]; }).join(", ") + " (docs/arquitetura/interiores/PADROES-AMBIENTES.md §3) e o modelo não tem " + falta.map(function (c) { return NOME_CLASSE[c]; }).join(", ") + ".",
-          solucoes: g.ops && g.ops.length ? [{ id: "equipar", texto: "Equipar o ambiente (põe o que falta, com o kit)", ops: g.ops, origem: ORIGEM }] : [{ id: "", texto: "não coube automático: " + g.pendencias.map(function (p) { return p.texto; }).join("; ") }],
+          solucoes: g.ops && g.ops.length ? [{ id: "equipar", texto: gourmetSemCuba ? "Colocar bancada com cuba (pia de cozinha) ao lado da churrasqueira — com o kit de água e esgoto (caixa de gordura)" : "Equipar o ambiente (põe o que falta, com o kit)", ops: g.ops, origem: ORIGEM }] : [{ id: "", texto: "não coube automático: " + g.pendencias.map(function (p) { return p.texto; }).join("; ") }],
           pecas: A.fams.map(function (x) { return String(x.f.id); }), ambiente: A.id });
       }
       /* (2) e (3) cada peça de água do ambiente */

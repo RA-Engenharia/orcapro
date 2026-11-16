@@ -270,7 +270,7 @@
                         /* 27/10/2026 (frente 1b): os tipos do catálogo dos fabricantes que o motor passa a deduzir ou a reconhecer (js/biminstportas.js
                            tem as portas de cada um) */
                         curva90: "Curva 90° longa", curva90_curta: "Curva 90° curta", curva45: "Curva 45° longa", curva45_curta: "Curva 45° curta",
-                        curva_pe_coluna: "Curva de pé de coluna", curva_transposicao: "Curva de transposição",
+                        curva_pe_coluna: "Curva de pé de coluna", curva_transposicao: "Curva de transposição (luva de transposição)",
                         joelho90_reducao: "Joelho 90° de redução", joelho90_bolsa_curta: "Joelho 90° com bolsa curta", joelho90_anel_labial: "Joelho 90° com anel labial",
                         joelho90_az_anel: "Joelho 90° com anel de vedação", joelho90_visita: "Joelho 90° com visita", joelho45_misto: "Joelho 45° misto",
                         te_bucha: "Tê com bucha de latão", te_rosca: "Tê com rosca", te_transicao: "Tê de transição",

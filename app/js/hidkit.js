@@ -132,6 +132,32 @@
      cozinha é pia de cozinha e a de banheiro é lavatório (o kit declara `aparelhoNorma`). Sem isto o Traçar automaticamente
      via "bancada_cozinha": sem caixa de gordura, DN padrão sem tabela e, com 2 cubas, os 4 pontos ficavam sem tubo. */
   function aparelhoNorma(tipo) { var k = tipo ? kits()[tipo] : null; return k && k.aparelhoNorma ? k.aparelhoNorma : tipo; }
+  /* USO DO APARELHO (CASO B, 15/11/2026): a cuba/pia que a família chama de "pia de cozinha" mas está na LAVANDERIA / área de serviço
+     (ou é a cuba/tanque de lavanderia) é TANQUE: NBR 8160 — só pia de COZINHA (e máquina de lavar louça) vai à caixa de gordura; tanque e
+     máquina de lavar roupa vão ao ramal pelo sifão próprio ou à caixa sifonada. O Uso é editável (inst.Uso: "pia de cozinha" |
+     "tanque / lavanderia" | "lavatório") e, se escrito, MANDA sobre a regra. Cuba em cozinha/gourmet continua pia de cozinha. */
+  var USO_ROTULO = { pia_cozinha: "pia de cozinha", tanque: "tanque / lavanderia", lavatorio: "lavatório" };
+  function semAc(s) { s = txt(s).toLowerCase(); return (s.normalize ? s.normalize("NFD").replace(/[̀-ͯ]/g, "") : s).replace(/[^a-z0-9]+/g, " ").trim(); }
+  function usoDeTexto(v) {
+    var t = " " + semAc(v) + " ";
+    if (/ (tanque|lavanderia|lavander) /.test(t)) return "tanque";
+    if (/ lavatorio /.test(t)) return "lavatorio";
+    if (/ (pia|cozinha) /.test(t)) return "pia_cozinha";
+    return null;
+  }
+  var RE_AMB_LAVANDERIA = / (lavanderia|lavander|area de servico|area servico|area serv|a servico|a serv|as|a s) /;
+  function aparelhoDoElemento(f, tipoKit, nomeAmb) {
+    var base = aparelhoNorma(tipoKit);
+    if (!base || !USO_ROTULO[base]) return { aparelho: base, uso: base, origem: "kit" };
+    var man = f && f.inst && f.inst.Uso != null && txt(f.inst.Uso) !== "" ? usoDeTexto(f.inst.Uso) : null;
+    if (man) return { aparelho: man, uso: man, origem: "manual" };
+    if (base === "pia_cozinha") {
+      var nomeF = " " + semAc((f && f.famId) + " " + (f && f.tipoId)) + " ";
+      if (RE_AMB_LAVANDERIA.test(" " + semAc(nomeAmb) + " ")) return { aparelho: "tanque", uso: "tanque", origem: "ambiente lavanderia/área de serviço" };
+      if (/ (tanque|lavanderia|lavander) /.test(nomeF)) return { aparelho: "tanque", uso: "tanque", origem: "família de tanque/cuba de lavanderia" };
+    }
+    return { aparelho: base, uso: base, origem: "kit" };
+  }
   function aparelhoEsDe(tipo, inst) {
     if (tipo !== "mictorio") return null;
     var HEk = dep("HidES", "./hides.js"), md = HEk && HEk.mictorioDe ? HEk.mictorioDe(inst || {}) : null;
@@ -792,6 +818,20 @@
       if (x.kitParte === "valvula") o[x.id] = "bacia_valvula";
       else if (x.kitParte === "torneira" && K[x.kitTipo]) o[x.id] = x.kitTipo;
     });
+    /* CASO B (15/11/2026): o USO do aparelho (cuba de lavanderia = tanque; Uso escrito manda) vale também no cálculo — esgoto (UHC, DN mínimo,
+       destino) e água (vazão/peso da tabela af.aparelhos; pia e tanque têm hoje a mesma linha, mas o rótulo e a consistência são os do Uso) */
+    try {
+      var BEk = dep("BimEdit", "./bimedit.js");
+      if (BEk && BEk.aplicar) {
+        var est = BEk.aplicar(ops);
+        arr(est.familias).forEach(function (f) {
+          if (o[f.id] != null) return;
+          var tk = tipoDaFamilia(f.famId, f.tipoId); if (!tk) return;
+          var amb = ambienteDe(est, f), u = aparelhoDoElemento(f, tk, amb && amb.nome);
+          if (u.origem !== "kit" && u.aparelho !== aparelhoNorma(tk)) o[f.id] = u.aparelho;
+        });
+      }
+    } catch (eU) {}
     return o;
   }
   /* o ramal exclusivo e a descida da válvula ficam na BITOLA DA VÁLVULA (catálogo): o cálculo verifica e não reduz
@@ -827,7 +867,7 @@
 
   var HidKit = {
     VERSAO: 1, GEO_KIT: GEO_KIT,
-    kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
+    kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, aparelhoDoElemento: aparelhoDoElemento, USO_ROTULO: USO_ROTULO, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
     aparelhosForcados: aparelhosForcados, paraCalculo: paraCalculo, travados: travados, decisoesDoModelo: decisoesDoModelo, assinatura: assinatura,
     _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, vizinhosDe: vizinhosDe, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
   };

@@ -280,6 +280,8 @@
     p.atravessarViga = !!src.atravessarViga;
     p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);   /* rota:margemAmpla — 0 desliga a 2ª busca */
     p.tracadoParcial = src.tracadoParcial !== false;   /* rota:parcial — false = o comportamento antigo (falha de um sistema derruba a estratégia) */
+    p.rasaAgua = src.rasaAgua !== false;   /* o trilho/soleira de porta de correr (família embutida até 6 cm no contrapiso) não barra a água fria no enchimento: o tubo passa por baixo dele (false = o de antes) */
+    p.chegadaPrumo = src.chegadaPrumo !== false;   /* a chegada perpendicular no prumo do alvo vale mesmo com o último nó a poucos mm do ramal (false = o de antes) */
     p.transposicao = src.transposicao !== false;   /* a curva de transposição (js/biminsttransp.js) no traçado da água; false = só o desvio de sempre */
     p.limiteDnCintaMm = num(src.limite_dn_embutir_cinta_mm != null ? src.limite_dn_embutir_cinta_mm : src.limiteDnEmbutirCintaMm, LIMITE_DN_CINTA_MM);   /* cinta: até este DN (mm) o tubo embute */
     p.embutirExtraAF = Math.max(0, num(src.embutirExtraAF, 0));   /* v3-água: com aquecedor no modelo a água fria corre uma camada MAIS FUNDO que a quente (embutir + este extra) */
@@ -749,7 +751,15 @@
          lavatório correu pelo nó da espera de alimentação e a água chegava aos pontos sem passar pelo registro (ciclo).
          Tubo dentro de tubo da mesma árvore nunca: só se chega nela pelo alvo (a junção), que não passa por aqui. */
       if (corredor && o.sistema === "agua_fria" && !o.corredorSolto) {
-        for (var s0 = 0; s0 < segsArv.length; s0++) if (ptSeg2(p, segsArv[s0].a, segsArv[s0].b).d < r + o.rArv - FOLGA_LIMITE) return false;
+        for (var s0 = 0; s0 < segsArv.length; s0++) {
+          if (ptSeg2(p, segsArv[s0].a, segsArv[s0].b).d >= r + o.rArv - FOLGA_LIMITE) continue;
+          /* 15/11/2026 (ramal ø20 × coluna DN50 embutido na parede): o nó da grade a poucos mm do ramal (a linha extra que o prumo de outro tubo abre, ex.: 1,7 cm
+             do tronco) NO PRUMO do alvo é o último passo da própria chegada perpendicular — não é tubo dentro de tubo. Sem isso o ponto não derivava ali e dava a
+             volta pela parede (joelho + joelho + toco: +6 joelhos). P.chegadaPrumo = false é o comportamento de antes (controle do teste). */
+          var Sg = segsArv[s0], uSg = un2(Sg.a, Sg.b);
+          if (P.chegadaPrumo && corredor.some(function (q) { return ptSeg2(q, Sg.a, Sg.b).d < EPS && Math.abs((p.x - q.x) * uSg.x + (p.z - q.z) * uSg.z) < EPS; })) continue;
+          return false;
+        }
         if (o.raiz && o.arvore && o.arvore.raiz != null && d2(p, o.raiz) < r + o.rArv - FOLGA_LIMITE) return false;
         return true;
       }
@@ -1656,6 +1666,21 @@
     var HTr = P.transposicao ? dep("HidTransp", "./biminsttransp.js") : null, dnMaxF = Math.max.apply(null, folhas.map(function (f) { return f.dn; }));
     var transp = HTr && mat === HTr.MATERIAL && HTr.regra(dnMaxF) ? { dn: dnMaxF, material: mat, regra: HTr.regra(dnMaxF) } : null;
     var cota = r4(C.cota + (C.desce ? -rMax : rMax));
+    /* ⚠ TRILHO/SOLEIRA NO CONTRAPISO (15/11/2026, projeto do Rogério: o banheiro do fundo saía com "ÁGUA FRIA NÃO TRAÇADA" — a espera presa entre a bacia e o
+       trilho da porta de vidro de correr da área gourmet): a família que só entra no contrapiso (até FAMILIA_RASA = 6 cm, trilho/soleira/pé) não é parede nem
+       obstáculo para a água no ENCHIMENTO — o tubo desce para ABAIXO do fundo dela (a folga de sempre) e passa por baixo. O enchimento tem altura para isso;
+       sem altura, o descarte de sempre diz por quê. P.rasaAgua = false é o comportamento de antes. */
+    if (C.desce && P.rasaAgua) {
+      var bxa = folhas.concat([raizD]), ax0 = Math.min.apply(null, bxa.map(function (q) { return q.x; })) - P.margem, ax1 = Math.max.apply(null, bxa.map(function (q) { return q.x; })) + P.margem;
+      var az0 = Math.min.apply(null, bxa.map(function (q) { return q.z; })) - P.margem, az1 = Math.max.apply(null, bxa.map(function (q) { return q.z; })) + P.margem, fundoRasa = 0;
+      W.O.lista.forEach(function (ob) {
+        if (ob.tipo !== "familia" || !(ob.y0 < 0) || ob.y0 < -FAMILIA_RASA - EPS || !faixaCruza(cota - rMax - P.folga, cota + rMax + P.folga, ob.y0, ob.y1)) return;
+        var cxs = [ob.cx - ob.ux * ob.hl + ob.uz * ob.hw, ob.cx + ob.ux * ob.hl + ob.uz * ob.hw, ob.cx - ob.ux * ob.hl - ob.uz * ob.hw, ob.cx + ob.ux * ob.hl - ob.uz * ob.hw], czs = [ob.cz - ob.uz * ob.hl - ob.ux * ob.hw, ob.cz + ob.uz * ob.hl - ob.ux * ob.hw, ob.cz - ob.uz * ob.hl + ob.ux * ob.hw, ob.cz + ob.uz * ob.hl + ob.ux * ob.hw];
+        if (Math.max.apply(null, cxs) < ax0 || Math.min.apply(null, cxs) > ax1 || Math.max.apply(null, czs) < az0 || Math.min.apply(null, czs) > az1) return;
+        fundoRasa = Math.min(fundoRasa, ob.y0);
+      });
+      if (fundoRasa < 0) { var cota2 = r4(fundoRasa - rMax - P.folga - FOLGA_LIMITE); if (cota2 < cota) { cota = cota2; saida.avisos.push(prob("água fria (" + g.id + "): o ramal desce para a cota " + f2(cota) + " m para passar POR BAIXO do trilho/soleira de família embutida no contrapiso (" + f2(-fundoRasa) + " m) — confira a espessura do enchimento", [pt3(raizD.x, cota, raizD.z)], null)); } }
+    }
     /* ⚠ JANELA NA PAREDE HIDRÁULICA: o ramal embutido não corre na faixa da janela (vão + contraverga + verga) — desce para
        ABAIXO da contraverga, nunca abaixo de registroMin do piso (aí a estratégia não serve e o descarte diz por quê) */
     if (C.modo === "parede") {
