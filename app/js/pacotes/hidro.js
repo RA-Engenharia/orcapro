@@ -39158,6 +39158,7 @@ d.head.appendChild(st);
 }
 el.innerHTML = U._cardHtml(P);
 el.style.display = "block";
+try { if (global.JanelasFlut && JanelasFlut.adotar) JanelasFlut.adotar(el, { tipo: "hid-tracar", titulo: P.titulo || "Traçar automaticamente", aoFechar: function () { U.cancelarTracado(); }, localizar: '[data-hid-tr="crit-ver"],[data-hid-tr="solta-ver"],[data-hid-tr="av-ver"]' }); } catch (eJ) {}
 U._teclasTracado(true);
 if (!U._tPrevPlanta && global.setInterval) U._tPrevPlanta = global.setInterval(function () {
 var dd = global.document, P2 = global.Bim2D; if (!U._plano || !U._plano.ok || !dd || !P2) return;

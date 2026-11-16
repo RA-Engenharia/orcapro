@@ -1,8 +1,1 @@
-{
-  "versao": "1.2.362",
-  "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.362.zip",
-  "notas": "OrcaPRO 1.2.362 - Correcao na busca da SINAPI\n- Composicao sem preco no seu estado agora aparece, com aviso, para voce informar o custo",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.362/OrcaPRO-IA-Instalador-v1.2.362.exe",
-  "sha256": "c56be82355ce03e4f9d96512cef1352deb83140b0ff7f7affaceef6c4b5203d8"
-}
+{"versao":"1.2.363","tipo":"silenciosa","zip":"https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.363.zip","notas":"1.2.363 - Toda janela sai da frente do 3D\n- Toda janela minimiza: some o fundo escuro, vira pilula embaixo, 3D livre; nada se perde.\n- Tracar automaticamente: arrasta, minimiza, maximiza e lembra a posicao.\n- Mostrar no 3D de dentro de qualquer janela minimiza a janela.\n- Memoria do Motor abre em janela separada.\n- Esc nao fecha janela minimizada.","instalador":"https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.363/OrcaPRO-IA-Instalador-v1.2.363.exe","sha256":"40ff8ead6ae9be511533ce6dcc84c2628efeb7a18700ed0d373253a853cc19df"}

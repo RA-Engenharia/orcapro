@@ -75,7 +75,7 @@
     st.textContent =
       ".jn-janela{position:fixed;display:flex;flex-direction:column;box-sizing:border-box;min-width:220px;min-height:120px;max-height:calc(100vh - 8px);background:var(--surface,var(--card,#fff));color:var(--text,var(--texto,#16202a));border:1px solid var(--rv-linha-forte,var(--linha,rgba(0,0,0,.25)));border-radius:8px;box-shadow:0 10px 32px rgba(0,0,0,.32);font:13px/1.45 system-ui,sans-serif;overflow:hidden;resize:both}" +
       ".jn-janela.jn-max{left:4px!important;top:4px!important;width:calc(100vw - 8px)!important;height:calc(100vh - 8px)!important;resize:none}" +
-      ".jn-janela.jn-min,.jn-janela.jn-fora,.modal-bg.jn-min{display:none!important}" +
+      ".jn-janela.jn-min,.jn-janela.jn-fora,.modal-bg.jn-min,.modal-bg-min.jn-min,.modal-bg-min.jn-fora{display:none!important}" +
       ".jn-barra{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:4px 4px 4px 12px;background:var(--rv-painel-cab,rgba(127,127,127,.12));border-bottom:1px solid rgba(127,127,127,.25);cursor:move;user-select:none;touch-action:none}" +
       ".jn-titulo{flex:1;min-width:0;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
       ".jn-botoes{display:flex;gap:2px;flex:0 0 auto}" +
@@ -85,7 +85,8 @@
       ".jn-corpo{flex:1 1 auto;overflow:auto;padding:12px 16px}" +
       "#jn-doca{position:fixed;left:8px;right:8px;bottom:6px;z-index:" + (Z0 + 5000) + ";display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}" +
       ".jn-pilula{pointer-events:auto;max-width:260px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.4);background:var(--surface,var(--card,#fff));color:var(--text,var(--texto,#16202a));box-shadow:0 4px 14px rgba(0,0,0,.25);font:12.5px/1.2 system-ui,sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      ".modal .jn-mbar{cursor:move;touch-action:none}";
+      ".modal .jn-mbar{cursor:move;touch-action:none}" +
+      ".jn-janela.jn-adotada{display:block;overflow:auto} .jn-adotada>.jn-barra{position:sticky;top:0;z-index:1;margin:-8px -8px 6px;border-radius:8px 8px 0 0}";
     doc.head.appendChild(st);
   }
   function doca() {
@@ -141,11 +142,19 @@
   }
   function fechar(j) {
     j = j && j.el ? j : reg(j); if (!j) return false;
+    /* janela ADOTADA (o elemento é do módulo e é reaproveitado): fechar = o "cancelar" do dono; o elemento fica */
+    if (j.adotada) {
+      salvar(j); if (j.pilula && j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula); j.pilula = null;
+      j.el.classList.remove("jn-min"); j.el.classList.remove("jn-max"); j.estado = "normal";
+      if (typeof j.aoFechar === "function") { try { j.aoFechar(); } catch (eA) {} }
+      return true;
+    }
     salvar(j);
     if (j.pilula && j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula);
     fecharExt(j);
     lista = lista.filter(function (x) { return x !== j; });
-    if (j.modal) { try { if (global.UI && UI.fecharModal) UI.fecharModal(); } catch (e) {} }
+    if (j.modal && j.el.id === "modal-bg") { try { if (global.UI && UI.fecharModal) UI.fecharModal(); } catch (e) {} }
+    else if (j.modal) { if (j.el.parentNode) j.el.parentNode.removeChild(j.el); }
     else if (j.el.parentNode) j.el.parentNode.removeChild(j.el);
     if (typeof j.aoFechar === "function") { try { j.aoFechar(); } catch (e2) {} }
     if (ultima === j) ultima = null;
@@ -217,16 +226,53 @@
 
   /* UI.modal (modal de verdade, com véu e foco): ganha a barra padrão — arrastar e maximizar/restaurar.
      Minimiza só por aoLocalizar ("Mostrar no 3D" de dentro dele): o véu some junto e a pílula o devolve. */
-  function decorarModal(bg, titulo) {
+  /* MINIMIZAR o modal de verdade (1.2.361): o véu e a caixa somem, o 3D por trás fica livre, mas o DOM, os campos e a
+     promessa do chamador continuam vivos. Para as ~80 checagens "tem modal aberto?" (getElementById("modal-bg"),
+     .modal-bg) o minimizado conta como SEM modal: o id e a classe trocam para modal-bg-min — atalhos, teclado do 3D e
+     Esc deixam de ser barrados por ele, e o Esc não o fecha. Restaurar devolve id, classe e o foco. */
+  function modalEsconder(j) {
+    var bg = j.el; j.focoAntes = doc.activeElement && bg.contains(doc.activeElement) ? doc.activeElement : null;
+    try { if (j.focoAntes && j.focoAntes.blur) j.focoAntes.blur(); } catch (eB) {}
+    bg.id = "modal-bg-min"; bg.classList.remove("modal-bg"); bg.classList.add("modal-bg-min"); bg.classList.add("jn-min");
+  }
+  function modalMostrar(j) {
+    var bg = j.el; if (doc.getElementById("modal-bg") && doc.getElementById("modal-bg") !== bg) return false;
+    bg.id = "modal-bg"; bg.classList.remove("modal-bg-min"); bg.classList.remove("jn-min"); bg.classList.add("modal-bg");
+    var f = j.focoAntes && bg.contains(j.focoAntes) ? j.focoAntes : bg.querySelector(".body input,.body select,.body textarea,footer button,[data-fechar]");
+    try { if (f && f.focus) f.focus(); } catch (eF) {}
+    return true;
+  }
+  function modalMinimizar(j) {
+    if (!vivo(j) || j.estado === "min" || j.estado === "fora") return false;
+    modalEsconder(j); j.estado = "min";
+    var p = doc.createElement("button"); p.type = "button"; p.className = "jn-pilula"; p.setAttribute("data-jn-pilula", "modal"); p.textContent = "▢ " + j.titulo; p.title = "Reabrir: " + j.titulo;
+    p.addEventListener("click", function () { modalRestaurar(j); });
+    doca().appendChild(p); j.pilula = p; return true;
+  }
+  function modalRestaurar(j) {
+    if (!vivo(j)) { limpar(); return false; }
+    if (!modalMostrar(j)) return false;
+    j.estado = "normal"; if (j.pilula && j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula); j.pilula = null; return true;
+  }
+  function decorarModal(bg, titulo, opts) {
+    opts = opts || {};
     if (!doc || !bg || !bg.querySelector) return null;
     instalar(); css(); limpar();
     var m = bg.querySelector(".modal"), cab = m && m.querySelector("header"); if (!cab) return null;
-    var j = { el: bg, caixa: m, tipo: "modal", titulo: String(titulo || "").replace(/<[^>]*>/g, "").trim() || "Janela", estado: "normal", modal: true };
+    var j = { el: bg, caixa: m, corpo: m, tipo: "modal", destacavel: opts.destacavel === true, titulo: String(titulo || "").replace(/<[^>]*>/g, "").trim() || "Janela", estado: "normal", modal: true };
     var hT = cab.querySelector("h2"); if (hT && hT.textContent) j.titulo = hT.textContent.trim() || j.titulo;
     cab.classList.add("jn-mbar");
     var fx = cab.querySelector("[data-fechar]");
     var bx = doc.createElement("button"); bx.type = "button"; bx.className = "btn ghost sm jn-bt"; bx.setAttribute("data-jn-acao", "maximizar"); bx.title = "Maximizar"; bx.setAttribute("aria-label", "Maximizar"); bx.textContent = "□";
     if (fx) cab.insertBefore(bx, fx); else cab.appendChild(bx);
+    var bn = doc.createElement("button"); bn.type = "button"; bn.className = "btn ghost sm jn-bt"; bn.setAttribute("data-jn-acao", "minimizar"); bn.title = "Minimizar"; bn.setAttribute("aria-label", "Minimizar"); bn.textContent = "–";
+    cab.insertBefore(bn, bx);
+    bn.addEventListener("click", function () { modalMinimizar(j); });
+    /* destacar só quando o chamador garante que o conteúdo não tem estado preso em closure (leitura) */
+    if (opts.destacavel === true) {
+      var bd = doc.createElement("button"); bd.type = "button"; bd.className = "btn ghost sm jn-bt"; bd.setAttribute("data-jn-acao", "destacar"); bd.title = "Abrir em janela separada"; bd.setAttribute("aria-label", "Abrir em janela separada"); bd.textContent = "⧉";
+      cab.insertBefore(bd, bn); bd.addEventListener("click", function () { destacar(j); });
+    }
     if (fx) { fx.title = fx.title || "Fechar (Esc)"; if (!fx.getAttribute("aria-label")) fx.setAttribute("aria-label", "Fechar"); }
     bx.addEventListener("click", function () {
       var mx = m.classList.toggle("jn-max"); j.estado = mx ? "max" : "normal";
@@ -257,10 +303,11 @@
   function devolver(j) {
     if (!j || !j.ext) return;
     fecharExt(j);
+    if (vivo(j) && j.modal) { j.el.classList.remove("jn-fora"); j.estado = "normal"; modalMostrar(j); return; }
     if (vivo(j)) { j.estado = "normal"; j.el.classList.remove("jn-fora"); aplicarRet(j, retAtual(j)); frente(j); }
   }
   function destacar(j) {
-    j = j && j.el ? j : reg(j); if (!vivo(j) || j.modal) return null;
+    j = j && j.el ? j : reg(j); if (!vivo(j) || (j.modal && !j.destacavel)) return null;
     if (j.ext && !j.ext.closed) { try { j.ext.focus(); } catch (e) {} return j.ext; }
     var r = retAtual(j), sx = (global.screenX || 0) + Math.round(r.x) + 40, sy = (global.screenY || 0) + Math.round(r.y) + 40;
     /* sem "noopener": a destacada precisa do opener (mesma origem) para o espelho funcionar. No Electron o window.open
@@ -303,10 +350,12 @@
       var t = null; j.obs = new global.MutationObserver(function () { if (trava) return; clearTimeout(t); t = setTimeout(pinta, 30); });
       j.obs.observe(j.corpo, { childList: true, subtree: true, characterData: true, attributes: true });
     }
+    try { var stE = d.createElement("style"); stE.textContent = "[data-jn-espelho] .jn-bt{display:none!important}"; d.head.appendChild(stE); } catch (eSE) {}
+    if (j.modal) { if (j.pilula && j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula); j.pilula = null; if (j.estado !== "min") modalEsconder(j); }
     j.ext = w; j.estado = "fora"; j.el.classList.add("jn-fora");
     if (j.pilula && j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula); j.pilula = null;
     try { w.addEventListener("beforeunload", function () { setTimeout(function () { devolver(j); }, 0); }); } catch (eU) {}
-    j.vigia = setInterval(function () { if (!j.ext || j.ext.closed) { clearInterval(j.vigia); if (j.ext) devolver(j); } }, 500);
+    j.vigia = setInterval(function () { if (!vivo(j)) { clearInterval(j.vigia); fecharExt(j); return; } if (!j.ext || j.ext.closed) { clearInterval(j.vigia); if (j.ext) devolver(j); } }, 500);
     return w;
   }
 
@@ -316,18 +365,16 @@
     limpar();
     var j = null;
     if (origem && origem.closest) { var raiz = origem.closest(".jn-janela,.modal-bg"); if (raiz) j = reg(raiz); }
+    if (!j) { var bgA = doc.getElementById("modal-bg"); if (bgA) j = reg(bgA); }   // modal aberto por cima de tudo: é dele o clique
     if (!j) j = ultima && vivo(ultima) ? ultima : null;
     if (!j || j.estado === "fora" || j.estado === "min") return false;
-    if (j.modal) { j.el.classList.add("jn-min"); j.estado = "min"; j.antesMin = "normal";
-      var p = doc.createElement("button"); p.type = "button"; p.className = "jn-pilula"; p.setAttribute("data-jn-pilula", "modal"); p.textContent = "▢ " + j.titulo; p.title = "Reabrir: " + j.titulo;
-      p.addEventListener("click", function () { j.el.classList.remove("jn-min"); j.estado = "normal"; if (p.parentNode) p.parentNode.removeChild(p); j.pilula = null; });
-      doca().appendChild(p); j.pilula = p; return true; }
+    if (j.modal) return modalMinimizar(j);
     return minimizar(j);
   }
 
   function topo() {
     limpar(); var m = null;
-    lista.forEach(function (j) { if (j.modal || j.estado === "min" || j.estado === "fora") return; if (!m || (+j.el.style.zIndex || 0) > (+m.el.style.zIndex || 0)) m = j; });
+    lista.forEach(function (j) { if (j.modal || j.semEsc || j.estado === "min" || j.estado === "fora" || (j.el.style && j.el.style.display === "none")) return; if (!m || (+j.el.style.zIndex || 0) > (+m.el.style.zIndex || 0)) m = j; });
     return m;
   }
   function instalar() {
@@ -338,16 +385,60 @@
       var bg = doc.getElementById("modal-bg"); if (bg && !bg.classList.contains("jn-min")) return;
       var j = topo(); if (j) fechar(j);
     }, true);
+    /* "Mostrar no 3D"/"Localizar"/"Ver no 3D" de QUALQUER UI.modal (não só os do ProblemaCard): depois do clique, se o
+       modal ainda está à vista, ele se minimiza e o 3D fica livre */
+    doc.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest("button,a,[role=button]") : null; if (!b) return;
+      var bg = b.closest("#modal-bg"); if (!bg || b.closest("header")) return;
+      var t = (b.getAttribute("data-pc-acao") === "mostrar") ? "mostrar" : String(b.textContent || "") + " " + String(b.title || "");
+      if (t !== "mostrar" && !/mostrar no 3d|ver no 3d|localizar|selecionar no 3d|enquadrar/i.test(t)) return;
+      setTimeout(function () { var j = reg(bg); if (j && j.estado === "normal" && bg.id === "modal-bg") modalMinimizar(j); }, 0);
+    }, false);
     global.addEventListener && global.addEventListener("resize", function () { limpar(); lista.forEach(function (j) { if (!j.modal && j.estado === "normal") aplicarRet(j, retAtual(j)); }); });
     global.addEventListener && global.addEventListener("beforeunload", function () { lista.forEach(function (j) { if (!j.modal) salvar(j); fecharExt(j); }); });
+  }
+  /* ADOTAR um elemento flutuante que o módulo já cria e reaproveita (ex.: o cartão #hid-tracar do Traçar automaticamente,
+     que reescreve o próprio innerHTML a cada prévia): o id, o HTML e os ouvintes do dono ficam; ganha a barra padrão
+     (re-inserida se o dono reescrever o conteúdo), arrastar, pílula, maximizar, fechar (= opts.aoFechar), posição por
+     tipo e "Mostrar no 3D" (opts.localizar = seletor dos botões que localizam) minimizando. Idempotente: chame a cada
+     vez que o dono redesenhar. Sem destacar: o estado e o teclado do dono vivem nesta janela. */
+  function adotar(el, o) {
+    if (!doc || !el) return null;
+    o = o || {}; instalar(); css(); limpar();
+    var j = reg(el);
+    if (!j) {
+      j = { el: el, corpo: el, tipo: String(o.tipo || el.id || "adotada"), titulo: String(o.titulo || ""), estado: "normal", aoFechar: o.aoFechar, adotada: true, semEsc: o.semEsc !== false, modal: false };
+      el.classList.add("jn-janela"); el.classList.add("jn-adotada"); el.setAttribute("data-jn-tipo", j.tipo);
+      el.style.right = "auto"; el.style.resize = "both";   /* a altura máxima é a do dono (o cartão tem a sua) */
+      var salvo = lerEstado(j.tipo), r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      aplicarRet(j, salvo ? { x: salvo.x, y: salvo.y, w: salvo.w, h: salvo.h } : { x: r ? r.left : vw() - 380, y: r ? r.top : 120, w: r && r.width ? r.width : 360, h: null });
+      el.addEventListener("pointerdown", function () { frente(j); }, true);
+      if (o.localizar) el.addEventListener("click", function (e) { var b = e.target && e.target.closest ? e.target.closest(o.localizar) : null; if (b) setTimeout(function () { if (j.estado === "normal" || j.estado === "max") minimizar(j); }, 0); });
+      /* o dono escondeu o cartão (aplicou/cancelou): a pílula sai junto */
+      if (global.MutationObserver) { try { new global.MutationObserver(function () { if (el.style.display === "none" && j.pilula) { if (j.pilula.parentNode) j.pilula.parentNode.removeChild(j.pilula); j.pilula = null; el.classList.remove("jn-min"); j.estado = "normal"; } }).observe(el, { attributes: true, attributeFilter: ["style"] }); } catch (eM) {} }
+      lista.push(j);
+    }
+    if (o.titulo) j.titulo = String(o.titulo);
+    var bar = el.firstElementChild && el.firstElementChild.classList && el.firstElementChild.classList.contains("jn-barra") ? el.firstElementChild : null;
+    if (!bar) {
+      var tmp = doc.createElement("div");
+      tmp.innerHTML = '<div class="jn-barra" data-jn-barra><span class="jn-titulo">' + esc(j.titulo) + "</span>" + botoes(false) + "</div>";
+      bar = tmp.firstChild; el.insertBefore(bar, el.firstChild);
+      ligarArrasto(j, bar, el); ligarBotoes(j, bar); botaoMax(j);
+    }
+    if (j.estado !== "min") frente(j);
+    return el;
   }
   function abertas() { limpar(); return lista.map(function (j) { return { tipo: j.tipo, titulo: j.titulo, estado: j.estado, modal: !!j.modal, id: j.el.id || "" }; }); }
   function achar(x) { limpar(); for (var i = 0; i < lista.length; i++) { var j = lista[i]; if (j.el === x || j.tipo === x || (x && j.el.id === x)) return j; } return null; }
   function api(fn) { return function (x) { var j = x && x.el ? x : achar(x); return j ? fn(j) : false; }; }
 
   var JanelasFlut = {
-    abrir: abrir, decorarModal: decorarModal, aoLocalizar: aoLocalizar, abertas: abertas,
-    minimizar: api(minimizar), restaurar: api(restaurar), maximizar: api(maximizar), fechar: api(fechar), destacar: api(destacar),
+    abrir: abrir, adotar: adotar, decorarModal: decorarModal, aoLocalizar: aoLocalizar, abertas: abertas,
+    minimizar: api(function (j) { return j.modal ? modalMinimizar(j) : minimizar(j); }), restaurar: api(function (j) { return j.modal ? modalRestaurar(j) : restaurar(j); }),
+    modal: function () { limpar(); for (var i = lista.length - 1; i >= 0; i--) if (lista[i].modal) return lista[i]; return null; },
+    /* "há modal VISÍVEL?" — minimizado conta como não */
+    modalVisivel: function () { return !!(doc && doc.getElementById("modal-bg")); }, maximizar: api(maximizar), fechar: api(fechar), destacar: api(destacar),
     /* motor puro (teste de unidade) */
     _limitar: limitar, _posInicial: posInicial, _chave: chave, _lerEstado: lerEstado, _gravarEstado: gravarEstado, _estadoAoAbrir: estadoAoAbrir
   };

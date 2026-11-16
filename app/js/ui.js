@@ -240,7 +240,7 @@
     },
 
     // ---------- Modal ----------
-    modal: function (titulo, corpoHTML, rodapeBotoes) {
+    modal: function (titulo, corpoHTML, rodapeBotoes, opcoes) {
       this.fecharModal();
       var bg = document.createElement("div");
       bg.className = "modal-bg"; bg.id = "modal-bg";
@@ -309,7 +309,7 @@
       });
       /* JANELAS (16/11/2026): o modal de verdade continua modal (véu + foco), mas ganha a barra padrão —
          arrastar pelo título e maximizar/restaurar (js/janelas.js) */
-      try { if (typeof JanelasFlut !== "undefined" && JanelasFlut.decorarModal) JanelasFlut.decorarModal(bg, titulo); } catch (eJn) {}
+      try { if (typeof JanelasFlut !== "undefined" && JanelasFlut.decorarModal) JanelasFlut.decorarModal(bg, titulo, opcoes); } catch (eJn) {}
       return bg;
     },
     /* "sujo" = usuário digitou algo no modal aberto. Um modal pode refinar
@@ -343,6 +343,8 @@
       return fnDiz || !!m._tocado;
     },
     fecharModal: function () { this._modalDirty = null; this._modalConsulta = false; var m = this.el("modal-bg"); if (m) m.remove(); },
+    /* ⚠ o MINIMIZADO (js/janflut.js troca o id para modal-bg-min) NÃO sai aqui: abrir outro modal por cima (ex.: o "?" dos
+       atalhos) não pode jogar fora o formulário nem deixar a promessa do chamador pendurada. Ele fica na pílula. */
 
     // LOTE 5: overlay de carregamento p/ operações longas (analítico 17MB, IA).
     // Sem isso o app parece travado e a primeira impressão morre ali.

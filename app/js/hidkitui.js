@@ -1583,6 +1583,8 @@
       }
       el.innerHTML = U._cardHtml(P);
       el.style.display = "block";
+      /* JANELAS (js/janflut.js): arrastar, pílula, maximizar, posição lembrada; os "ver" (crit/solta/av) minimizam o cartão */
+      try { if (global.JanelasFlut && JanelasFlut.adotar) JanelasFlut.adotar(el, { tipo: "hid-tracar", titulo: P.titulo || "Traçar automaticamente", aoFechar: function () { U.cancelarTracado(); }, localizar: '[data-hid-tr="crit-ver"],[data-hid-tr="solta-ver"],[data-hid-tr="av-ver"]' }); } catch (eJ) {}
       U._teclasTracado(true);
       /* a planta se redesenha sozinha (trocar de vista, zoom, a op de outra frente): enquanto o cartão está aberto, a prévia
          volta para a planta que ficou sem ela */

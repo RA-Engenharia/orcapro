@@ -488,7 +488,7 @@
     },
     abrirMemoria: function () {
       var m = MorUI.memoria(); if (!m) { UI.toast("Sem armazenamento neste aparelho.", "erro"); return; }
-      UI.modal("Memória do Motor", '<div id="mor-mem-corpo">' + MorUI.htmlMemoria(m.mem) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal("Memória do Motor", '<div id="mor-mem-corpo">' + MorUI.htmlMemoria(m.mem) + "</div>", [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }], { destacavel: true });
     },
 
     /* as etapas da barra de progresso de cada tipo de documento. ⚠ «interpretar»/«abrir» não têm medida contínua (rodam de uma vez):
