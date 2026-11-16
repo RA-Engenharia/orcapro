@@ -210,7 +210,7 @@
      de gordura e da caixa de inspeção é o Tigre "-ficha" (decisão do Rogério: "gosto dessas, acho muito prático"). Só a TELA muda: a ordem dos
      tipos na família (o 1º = o padrão do motor/traçado automático) e os projetos salvos ficam como estão. */
   var PADRAO_TELA = { "hid-caixa-gordura": /^t-tigre-100019323.*-ficha$/, "hid-caixa-inspecao": /^t-tigre-27801056.*-ficha$/ };
-  function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado; }); }
+  function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado && !t.oculta; }); }
   function tipoPadraoTela(f) {
     var vis = tiposVisiveis(f), re = PADRAO_TELA[f.id], i;
     if (re) for (i = 0; i < vis.length; i++) if (re.test(vis[i].id)) return vis[i].id;
@@ -252,6 +252,27 @@
       origem: origem, descricao: txt(f.descricao), sinonimos: [],
       acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });
   }
+  /* CAIXAS E RALOS TIGRE NA LISTA (15/11/2026, o Rogério: "testei e não consegui ver as caixas da Tigre... clicou, colocou, tem de ir o MESMO modelo"):
+     cada tipo Tigre da caixa sifonada, da caixa de gordura, da caixa de inspeção e do ralo seco que está na biblioteca (não legado, não oculto) ganha o
+     PRÓPRIO cartão: nome com a bitola e o código, a miniatura DO TIPO (img/hid-pecas/fam-<família>--<tipo>-256.png: tools/gerar-hid-icones.js --caixas-tigre) e
+     o Inserir leva exatamente famId + tipoId deste tipo (sem seletor: o que se vê é o que entra). O cartão da família segue com o seletor de tipos. */
+  var CAIXAS_TIGRE = { "hid-caixa-sifonada": "Caixa sifonada", "hid-ralo": "Ralo seco", "hid-caixa-gordura": "Caixa de gordura", "hid-caixa-inspecao": "Caixa de inspeção" };
+  function itensTipoTigre(f, grupo, origem) {
+    var out = [];
+    if (!CAIXAS_TIGRE[f.id]) return out;
+    tiposVisiveis(f).forEach(function (t) {
+      var v = t.valores || {}; if (!/Tigre/i.test(txt(v.Fabricante))) return;
+      var it = itemFamilia(f, grupo, origem, t.id), m = /^nominal ([\d x]+?) \(/.exec(txt(v.Cotas_ficha));
+      it.id = "familia:" + f.id + ":" + t.id; it.tipos = []; it.tipoPadrao = ""; it.tipoId = t.id;
+      it.nome = (m ? CAIXAS_TIGRE[f.id] + " Tigre " + m[1] : txt(v.Descricao_ficha) + " Tigre") + (/Inox/i.test(txt(v.Descricao_ficha)) ? ", grelha inox" : "") + " (cód. " + txt(v.Codigo) + ")";
+      it.portas = it.portas.filter(function (p) { var e = /^entrada(\d+)$/.exec(p.id); return !e || +e[1] <= (+v.Entradas || 1); });   /* a lista de portas é a da família (7 bocas): o tipo mostra só as que tem */
+      it.icone = PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "") + "--" + txt(t.id).replace(/^t-/, "") + "-256.png";
+      it.sinonimos = unicos(arr(it.sinonimos).concat(["tigre", txt(v.Codigo), CAIXAS_TIGRE[f.id]]));
+      it.acao = { tipo: "colocarFamilia", famId: f.id, tipoId: t.id };
+      out.push(it);
+    });
+    return out;
+  }
   function itensFamilias() {
     var vistos = {}, out = [];
     function juntar(lista, grupoFn, origem) {
@@ -259,6 +280,7 @@
         if (!f || !f.id || vistos[f.id] || f.oculta) return;   /* família SUBSTITUÍDA (js/famhidmigra.js): alias do projeto antigo, fora do menu */
         var g = grupoFn(f); if (!g) return;
         vistos[f.id] = 1; _fam["familia:" + f.id] = [f, g, origem]; out.push(itemFamilia(f, g, origem));
+        if (origem === "HidFamilias") itensTipoTigre(f, g, origem).forEach(function (x) { out.push(x); });
       });
     }
     var HF = dep("HidFamilias", "./hidfamilias.js"), CF = dep("ClimFamilias", "./climfamilias.js"), HT = dep("HidTanques", "./hidtanques.js"), PF = dep("HidPiscinaFam", "./hidpiscinafam.js"), FR = dep("FamiliasRA", "./familiasra.js");

@@ -2065,6 +2065,80 @@
       v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf;
     });
   }
+  /* CAIXAS TIGRE (15/11/2026, pedido do Rogério: "não consegui ver as caixas da Tigre... o que não estiver modelado completamente, tira da biblioteca e deixa só o correto").
+     O catálogo predial Tigre (p.28) dá código e BITOLA (C x A x DN do nome do produto), nenhuma cota de desenho. Regra desta função:
+       - a caixa sifonada Tigre cuja bitola é uma das da tabela da ficha (js/biminstgeodados.js caixa_sifonada = ficha Amanco "caixas sifonadas e ralos" p.8:
+         100x100x50, 100x150x50, 150x150x50, 150x185x75, 250x172x50, 250x230x75 — a MESMA bitola nominal da NBR 8160) vira um tipo "<id>-ficha" com o corpo,
+         a grelha e as bocas desenhados pelo mesmo motor da peça do traçado, DN de entrada e de saída preenchidos (sem DN o traçado não liga);
+         o tipo antigo fica LEGADO (igual ao de antes: projeto salvo abre e desenha igual). Cotas internas = da tabela da bitola: A CONFERIR com a peça Tigre;
+       - uma só variante por bitola (a de grelha quadrada branca; redonda, inox e "só o corpo" são o mesmo corpo com outra grelha — o desenho tem UMA grelha): as outras
+         ficam OCULTAS com o motivo (o dado fica; o traçado não escolhe);
+       - o que não tem forma modelada (Girafácil, série reforçada, caixa seca, ralo linear, ralo sem altura no nome, caixa de areia com o tipo Tigre sem cotas) fica OCULTO. */
+  /* oculta = também `legado` (as listas do painel, do seletor e das Propriedades já tiram o legado, menos o tipo ATUAL da peça: projeto salvo abre igual); `oculta` + motivo é o registro do porquê */
+  function ocultar(t, motivo) { t.oculta = true; t.legado = true; t.motivoOculta = motivo; }
+  function fichaSifonadaTigre(fam) {
+    if (fam.id !== "hid-caixa-sifonada") return;
+    var tab = (dadosPecas() || {}).caixa_sifonada; if (!tab) return;
+    var reps = {}, novos = [];
+    fam.tipos.forEach(function (t0) {
+      var v0 = t0.valores; if (v0.Fabricante !== "Tigre" || /-ficha$/.test(t0.id)) return;
+      var d = String(v0.Descricao_ficha || ""), m = /bitola_catalogo=(\d+) x (\d+) x (\d+)/.exec(String(v0.Cotas_ficha || ""));
+      var chave = m ? m[1] + "x" + m[2] + "x" + m[3] : "";
+      if (!/^Caixa Sifonada (DN|com Tampa)/.test(d) || !tab[chave]) return;   /* Girafácil (100x140, 150x170), série reforçada e caixa seca: sem a forma da bitola */
+      if (/s[óo] o corpo|Redonda|Inox/i.test(d)) { ocultar(t0, "variante de grelha/acabamento da bitola " + chave + " (redonda, inox ou só o corpo): o desenho 3D tem uma grelha só; use o tipo da grelha quadrada"); return; }
+      if (reps[chave]) { ocultar(t0, "segundo código da bitola " + chave + " (mesmo corpo e mesma grelha do tipo mostrado)"); return; }
+      reps[chave] = t0;
+      var ct = tab[chave], t = JSON.parse(JSON.stringify(t0)), v = t.valores;
+      t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas da ficha"; t0.legado = true;
+      v.Largura = mm(parseInt(m[1], 10)); v.Profundidade = v.Largura; v.Altura = mm(parseInt(m[2], 10)); v.DN_saida = parseInt(m[3], 10);
+      v.Peca_ficha = true; v.Diametro_corpo = ct.diam / 1000; v.Saida_altura = Math.round(ct.hSaida * 10) / 10000;
+      v.Entrada_prof = Math.round(ct.dnEntrada / 2 + 5) / 1000; v.DN_entrada = ct.dnEntrada; v.Entradas = ct.entradas; v.Fecho_hidrico_mm = ct.fecho;
+      v.Cotas_ficha = "nominal " + chave.replace(/x/g, " x ") + " (catálogo Tigre p.28: C x A x DN do nome do produto); corpo, saída e bocas: Ø " + ct.diam + "; saída a " + ct.hSaida + " do fundo (DN " + ct.dnSaida + "); " + ct.entradas + " entradas DN " + ct.dnEntrada + " — tabela da MESMA bitola nominal (ficha Amanco p." + ct.pag + ", js/biminstgeodados.js)";
+      var conf = ["Largura, Profundidade e Altura: C x A do nome do produto (interpretado: a ficha Tigre não define o sentido); Entrada_prof, Diametro_corpo, Saida_altura, nº e DN das entradas: a ficha Tigre não cota (interpretado da ficha Amanco p." + ct.pag + ", mesma bitola nominal); conferir com a peça Tigre",
+        "significado de C x A x DN do nome Tigre: a ficha Tigre não define (adotado o da NBR 8160, o mesmo do nome Amanco)"];
+      v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf; t.fonte = "Tigre: " + v.Edicao_ficha + ", p." + v.Pagina_ficha + " (bitola) + tabela nominal da ficha p." + ct.pag;
+      t.avisos = t.avisos.concat(["Corpo, grelha e bocas desenhados pelo motor da peça do traçado a partir da tabela da MESMA bitola nominal; a ficha Tigre não cota o desenho — a conferir com a peça Tigre."]);
+      novos.push([t0, t]);
+    });
+    novos.forEach(function (par) { fam.tipos.splice(fam.tipos.indexOf(par[0]), 0, par[1]); });
+    fam.tipos.forEach(function (t) {
+      var v = t.valores, d = String(v.Descricao_ficha || "");
+      if (t.oculta || t.legado || /-ficha$/.test(t.id)) return;
+      if (v.Fabricante === "Tigre" && /Girafácil/.test(d)) ocultar(t, "Girafácil (caixa regulável): a bitola do nome (100x140x50, 150x170x75) não tem forma modelada nem cota de desenho");
+      else if (v.Fabricante === "Tigre" && /Reforçada/.test(d)) ocultar(t, "série reforçada: corpo sem forma modelada nem cota de desenho");
+      else if (/CX SECA|Caixa Seca/i.test(d)) ocultar(t, "caixa seca (sem sifão): o desenho da família é o da sifonada; sem forma modelada da ficha");
+    });
+  }
+  /* RALO TIGRE: "Ralo Quadrado 100 x 53 x 40" = grelha x altura x DN da saída (o mesmo sentido do nome Amanco "100X52XDN40"). Os outros ralos Tigre da lista
+     (cilíndrico/cônico/saída articulada "100 x 40" e o linear) não trazem a altura do corpo ou têm outra forma: ocultos. */
+  function fichaRaloTigre(fam) {
+    if (fam.id !== "hid-ralo") return;
+    var novos = [];
+    fam.tipos.slice().forEach(function (t0) {
+      var t = t0, v = t.valores; if (v.Fabricante !== "Tigre" || /-ficha$/.test(t.id)) return;
+      var d = String(v.Descricao_ficha || ""), m = /^Ralo Quadrado (\d+) x (\d+) x (\d+)/.exec(d);
+      if (m && /Inox/i.test(d)) { ocultar(t, "mesma bitola 100 x 53 x 40 com grelha inox: o desenho do ralo tem uma grelha só (igual à do tipo branco mostrado)"); return; }
+      if (m && !/s[óo] corpo/i.test(d)) {
+        /* o tipo antigo fica IGUAL (legado: projeto salvo abre igual); as cotas nominais vão num tipo "-ficha", o padrão de quem coloca */
+        t = JSON.parse(JSON.stringify(t0)); v = t.valores; t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas do nome do produto"; t0.legado = true; novos.push([t0, t]);
+        v.Largura = mm(parseInt(m[1], 10)); v.Profundidade = v.Largura; v.Altura = mm(parseInt(m[2], 10)); v.DN_saida = parseInt(m[3], 10);
+        v.Cotas_ficha = "nominal " + m[1] + " x " + m[2] + " x " + m[3] + " (catálogo Tigre p.28: grelha x altura x DN da saída do nome do produto)";
+        var conf = ["Largura, Profundidade, Altura e DN da saída: bitola do nome do produto (interpretado: a ficha Tigre não cota o desenho); conferir com a peça Tigre"];
+        v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf; return;
+      }
+      if (/Linear/i.test(d)) ocultar(t, "ralo linear: a família desenha ralo de grelha quadrada/redonda; sem forma modelada do ralo linear");
+      else if (/s[óo] corpo/i.test(d)) ocultar(t, "só o corpo (sem grelha): o desenho do ralo é o completo com grelha");
+      else ocultar(t, "o nome do produto traz só a grelha e o DN (100 x 40), sem a altura do corpo: cota sem fonte");
+    });
+    novos.forEach(function (par) { fam.tipos.splice(fam.tipos.indexOf(par[0]), 0, par[1]); });
+  }
+  /* CAIXA DE AREIA: o tipo Tigre da caixa de inspeção do catálogo vem sem cotas (reserva) e sem DN; a Tigre com cotas da ficha é o "-ficha" da gordura e da inspeção */
+  function ocultarCaixasSemCota(fam) {
+    if (fam.id !== "hid-caixa-areia") return;
+    fam.tipos.forEach(function (t) {
+      if (t.valores.Fabricante === "Tigre" && !t.oculta) ocultar(t, "tipo Tigre da caixa de inspeção sem cotas de desenho e sem DN (reserva); a caixa de areia usa a Amanco DN300 da ficha");
+    });
+  }
   function fichaTigre(fam) {
     var F = FICHA_TIGRE[fam.id]; if (!F) return;
     /* revisão 14/11 (C1): o tipo Tigre do catálogo fica IGUAL ao master (legado: projeto salvo com tubo nas bocas antigas não solta cano nem
@@ -2110,6 +2184,11 @@
     enxugar(fam);
     fichaTigre(fam);
     fichaSifonada(fam);
+    fichaSifonadaTigre(fam);
+    fichaRaloTigre(fam);
+    ocultarCaixasSemCota(fam);
+    /* a miniatura do cartão da família é o tipo que o Colocar insere por padrão (o 1º não legado): o que se vê é o que entra */
+    if (/^hid-(caixa-sifonada|ralo|caixa-areia)$/.test(fam.id)) { var t0 = fam.tipos.filter(function (t) { return !t.legado; })[0]; if (t0) fam.tipoIcone = t0.id; }
     hidraulica(fam);
     return fam;
   }
@@ -2149,7 +2228,8 @@
   }
   function resumo() { return todas().map(function (f) { return { id: f.id, nome: f.nome, tipos: f.tipos.length, aConferir: f.tipos.filter(function (t) { return t.conferir.length; }).length }; }); }
 
-  var HidFamilias = { todas: todas, porId: porId, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, TETO_CONEXAO_SN: 4800, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
+  function tiposAtivos(id) { var f = porId(id); return f ? f.tipos.filter(function (t) { return !t.oculta; }) : []; }
+  var HidFamilias = { todas: todas, porId: porId, tiposAtivos: tiposAtivos, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, TETO_CONEXAO_SN: 4800, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
   global.HidFamilias = HidFamilias;
   if (typeof module !== "undefined" && module.exports) module.exports = HidFamilias;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

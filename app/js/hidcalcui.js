@@ -704,6 +704,7 @@
       F.todas().forEach(function (f) {
         out.familias.push({ id: f.id, nome: f.nome });
         arr(f.tipos).forEach(function (t) {
+          if (t.oculta || t.legado) return;   /* caixas/ralos sem forma modelada ou sem cota (js/hidfamilias.js ocultar) e tipos legados saem da lista: fica só o correto */
           var fab = String((t.valores && t.valores.Fabricante) || "");
           out.itens.push({ fam: f.id, famNome: f.nome, tipo: t.id, nome: t.nome, fab: fab, conferir: !!(t.valores && t.valores.A_conferir) });
           if (fab && !fv[fab]) { fv[fab] = 1; out.fabricantes.push(fab); }
@@ -717,6 +718,7 @@
   function colocar(famId, tipoId) {
     var UI_ = global.FamiliaUI, f = UI_ && UI_.obter ? UI_.obter(famId) : null;
     if (!f) { E.msg = { k: "erro", t: "A biblioteca de famílias não tem " + famId + " (js/familiaui.js)." }; redesenhar(); return false; }
+    if (tipoId && arr(f.tipos).length && !arr(f.tipos).some(function (t) { return t.id === tipoId; })) { E.msg = { k: "erro", t: "O tipo escolhido não existe mais na família " + f.nome + ": nada foi colocado (o motor não troca o modelo por outro em silêncio)." }; redesenhar(); return false; }   /* 15/11/2026: sem troca silenciosa pelo 1º tipo */
     UI_.colocar(f, tipoId);
     E.msg = { k: "info", t: "Clique no modelo para colocar: " + f.nome + "." };
     redesenhar();
@@ -1551,7 +1553,7 @@
       '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:150px;flex:1"><span>Fabricante</span><select class="inp" data-hid-campo="lib:fab"><option value="">todos</option>' +
       ix.fabricantes.map(function (f) { return '<option value="' + esc(f) + '"' + (f === E.lib.fab ? " selected" : "") + ">" + esc(f) + "</option>"; }).join("") + "</select></label>" +
       campo("Buscar", "lib:busca", E.lib.busca) + "</div>";
-    var MAX = 30;   // hid:ok quantas linhas a lista mostra de uma vez (tela)
+    var MAX = (E.lib.fam || E.lib.fab || E.lib.busca) ? 80 : 30;   // hid:ok quantas linhas a lista mostra de uma vez (tela); com filtro (família, fabricante ou busca) cabem as caixas e ralos de todas as marcas
     h += '<p class="muted" style="font-size:11.5px;margin:2px 0">' + L.length + " tipo(s)" + (L.length > MAX ? " (mostrando os " + MAX + " primeiros: refine pelo filtro)" : "") + '. Cotas marcadas "a conferir" vêm do catálogo do fabricante; confira antes de emitir.</p>';
     /* QUALIDADE VISUAL 3 (17/10/2026): a forma 3D é desenho RA sobre as cotas do catálogo (nenhum objeto de fabricante
        é embutido: docs/hidro/PESQUISA-OBJETOS-BIM.md). O caminho para o objeto OFICIAL é o do próprio usuário. */

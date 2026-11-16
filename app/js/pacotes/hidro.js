@@ -6879,7 +6879,7 @@ function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof requ
 function BI() { return dep("BimInst", "./biminst.js"); }
 function HF() { return dep("HidFamilias", "./hidfamilias.js"); }
 function arr(a) { return Array.isArray(a) ? a : []; }
-var FAMS = { "hid-caixa-sifonada": 1, "hid-caixa-gordura": 1, "hid-caixa-inspecao": 1 }, FAM = "hid-caixa-sifonada", TOL = 0.02, SUF = "-ficha";
+var FAMS = { "hid-caixa-sifonada": 1, "hid-caixa-gordura": 1, "hid-caixa-inspecao": 1, "hid-ralo": 1 }, FAM = "hid-caixa-sifonada", TOL = 0.02, SUF = "-ficha";
 function ehLegada(fi) {
 if (!fi || !FAMS[fi.famId] || /-ficha$/.test(String(fi.tipoId || ""))) return null;
 var f = HF() && HF().porId(fi.famId), novo = String(fi.tipoId || "") + SUF;
@@ -19663,6 +19663,66 @@ var conf = ["Diametro_corpo e Saida_altura: leitura do desenho cotado da ficha (
 v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf;
 });
 }
+function ocultar(t, motivo) { t.oculta = true; t.legado = true; t.motivoOculta = motivo; }
+function fichaSifonadaTigre(fam) {
+if (fam.id !== "hid-caixa-sifonada") return;
+var tab = (dadosPecas() || {}).caixa_sifonada; if (!tab) return;
+var reps = {}, novos = [];
+fam.tipos.forEach(function (t0) {
+var v0 = t0.valores; if (v0.Fabricante !== "Tigre" || /-ficha$/.test(t0.id)) return;
+var d = String(v0.Descricao_ficha || ""), m = /bitola_catalogo=(\d+) x (\d+) x (\d+)/.exec(String(v0.Cotas_ficha || ""));
+var chave = m ? m[1] + "x" + m[2] + "x" + m[3] : "";
+if (!/^Caixa Sifonada (DN|com Tampa)/.test(d) || !tab[chave]) return;
+if (/s[óo] o corpo|Redonda|Inox/i.test(d)) { ocultar(t0, "variante de grelha/acabamento da bitola " + chave + " (redonda, inox ou só o corpo): o desenho 3D tem uma grelha só; use o tipo da grelha quadrada"); return; }
+if (reps[chave]) { ocultar(t0, "segundo código da bitola " + chave + " (mesmo corpo e mesma grelha do tipo mostrado)"); return; }
+reps[chave] = t0;
+var ct = tab[chave], t = JSON.parse(JSON.stringify(t0)), v = t.valores;
+t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas da ficha"; t0.legado = true;
+v.Largura = mm(parseInt(m[1], 10)); v.Profundidade = v.Largura; v.Altura = mm(parseInt(m[2], 10)); v.DN_saida = parseInt(m[3], 10);
+v.Peca_ficha = true; v.Diametro_corpo = ct.diam / 1000; v.Saida_altura = Math.round(ct.hSaida * 10) / 10000;
+v.Entrada_prof = Math.round(ct.dnEntrada / 2 + 5) / 1000; v.DN_entrada = ct.dnEntrada; v.Entradas = ct.entradas; v.Fecho_hidrico_mm = ct.fecho;
+v.Cotas_ficha = "nominal " + chave.replace(/x/g, " x ") + " (catálogo Tigre p.28: C x A x DN do nome do produto); corpo, saída e bocas: Ø " + ct.diam + "; saída a " + ct.hSaida + " do fundo (DN " + ct.dnSaida + "); " + ct.entradas + " entradas DN " + ct.dnEntrada + " — tabela da MESMA bitola nominal (ficha Amanco p." + ct.pag + ", js/biminstgeodados.js)";
+var conf = ["Largura, Profundidade e Altura: C x A do nome do produto (interpretado: a ficha Tigre não define o sentido); Entrada_prof, Diametro_corpo, Saida_altura, nº e DN das entradas: a ficha Tigre não cota (interpretado da ficha Amanco p." + ct.pag + ", mesma bitola nominal); conferir com a peça Tigre",
+"significado de C x A x DN do nome Tigre: a ficha Tigre não define (adotado o da NBR 8160, o mesmo do nome Amanco)"];
+v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf; t.fonte = "Tigre: " + v.Edicao_ficha + ", p." + v.Pagina_ficha + " (bitola) + tabela nominal da ficha p." + ct.pag;
+t.avisos = t.avisos.concat(["Corpo, grelha e bocas desenhados pelo motor da peça do traçado a partir da tabela da MESMA bitola nominal; a ficha Tigre não cota o desenho — a conferir com a peça Tigre."]);
+novos.push([t0, t]);
+});
+novos.forEach(function (par) { fam.tipos.splice(fam.tipos.indexOf(par[0]), 0, par[1]); });
+fam.tipos.forEach(function (t) {
+var v = t.valores, d = String(v.Descricao_ficha || "");
+if (t.oculta || t.legado || /-ficha$/.test(t.id)) return;
+if (v.Fabricante === "Tigre" && /Girafácil/.test(d)) ocultar(t, "Girafácil (caixa regulável): a bitola do nome (100x140x50, 150x170x75) não tem forma modelada nem cota de desenho");
+else if (v.Fabricante === "Tigre" && /Reforçada/.test(d)) ocultar(t, "série reforçada: corpo sem forma modelada nem cota de desenho");
+else if (/CX SECA|Caixa Seca/i.test(d)) ocultar(t, "caixa seca (sem sifão): o desenho da família é o da sifonada; sem forma modelada da ficha");
+});
+}
+function fichaRaloTigre(fam) {
+if (fam.id !== "hid-ralo") return;
+var novos = [];
+fam.tipos.slice().forEach(function (t0) {
+var t = t0, v = t.valores; if (v.Fabricante !== "Tigre" || /-ficha$/.test(t.id)) return;
+var d = String(v.Descricao_ficha || ""), m = /^Ralo Quadrado (\d+) x (\d+) x (\d+)/.exec(d);
+if (m && /Inox/i.test(d)) { ocultar(t, "mesma bitola 100 x 53 x 40 com grelha inox: o desenho do ralo tem uma grelha só (igual à do tipo branco mostrado)"); return; }
+if (m && !/s[óo] corpo/i.test(d)) {
+t = JSON.parse(JSON.stringify(t0)); v = t.valores; t.id = t0.id + "-ficha"; t.nome = t0.nome + " — medidas do nome do produto"; t0.legado = true; novos.push([t0, t]);
+v.Largura = mm(parseInt(m[1], 10)); v.Profundidade = v.Largura; v.Altura = mm(parseInt(m[2], 10)); v.DN_saida = parseInt(m[3], 10);
+v.Cotas_ficha = "nominal " + m[1] + " x " + m[2] + " x " + m[3] + " (catálogo Tigre p.28: grelha x altura x DN da saída do nome do produto)";
+var conf = ["Largura, Profundidade, Altura e DN da saída: bitola do nome do produto (interpretado: a ficha Tigre não cota o desenho); conferir com a peça Tigre"];
+v.Conferir = conf.join("; "); v.A_conferir = true; t.conferir = conf; return;
+}
+if (/Linear/i.test(d)) ocultar(t, "ralo linear: a família desenha ralo de grelha quadrada/redonda; sem forma modelada do ralo linear");
+else if (/s[óo] corpo/i.test(d)) ocultar(t, "só o corpo (sem grelha): o desenho do ralo é o completo com grelha");
+else ocultar(t, "o nome do produto traz só a grelha e o DN (100 x 40), sem a altura do corpo: cota sem fonte");
+});
+novos.forEach(function (par) { fam.tipos.splice(fam.tipos.indexOf(par[0]), 0, par[1]); });
+}
+function ocultarCaixasSemCota(fam) {
+if (fam.id !== "hid-caixa-areia") return;
+fam.tipos.forEach(function (t) {
+if (t.valores.Fabricante === "Tigre" && !t.oculta) ocultar(t, "tipo Tigre da caixa de inspeção sem cotas de desenho e sem DN (reserva); a caixa de areia usa a Amanco DN300 da ficha");
+});
+}
 function fichaTigre(fam) {
 var F = FICHA_TIGRE[fam.id]; if (!F) return;
 var pares = [];
@@ -19704,6 +19764,10 @@ its.forEach(function (x) { fam.tipos.push(montarTipo(e, x)); });
 enxugar(fam);
 fichaTigre(fam);
 fichaSifonada(fam);
+fichaSifonadaTigre(fam);
+fichaRaloTigre(fam);
+ocultarCaixasSemCota(fam);
+if (/^hid-(caixa-sifonada|ralo|caixa-areia)$/.test(fam.id)) { var t0 = fam.tipos.filter(function (t) { return !t.legado; })[0]; if (t0) fam.tipoIcone = t0.id; }
 hidraulica(fam);
 return fam;
 }
@@ -19737,7 +19801,8 @@ if (!OpF) throw new Error("hidfamilias: js/opformato.js não carregou");
 return OpF.familiaParaArquivo(f, meta || { autor: "RA Engenharia", descricao: f.nome + " — gerada do catálogo hidrossanitário" });
 }
 function resumo() { return todas().map(function (f) { return { id: f.id, nome: f.nome, tipos: f.tipos.length, aConferir: f.tipos.filter(function (t) { return t.conferir.length; }).length }; }); }
-var HidFamilias = { todas: todas, porId: porId, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, TETO_CONEXAO_SN: 4800, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
+function tiposAtivos(id) { var f = porId(id); return f ? f.tipos.filter(function (t) { return !t.oculta; }) : []; }
+var HidFamilias = { todas: todas, porId: porId, tiposAtivos: tiposAtivos, ids: ids, paraOpfam: paraOpfam, avisosDoTipo: avisosDoTipo, problemas: problemas, resumo: resumo, TETO_TRIANGULOS: TETO_TRIANGULOS, TETO_CONEXAO_SN: 4800, PSET: PSET, validar: function (id) { return Fam.validar(porId(id)); } };
 global.HidFamilias = HidFamilias;
 if (typeof module !== "undefined" && module.exports) module.exports = HidFamilias;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -38781,8 +38846,9 @@ return sp.filter(function (s) { return s[1] - s[0] > 0.1; });
 function tipoFam(famId, re) {
 var HF = dep("HidFamilias", "./hidfamilias.js"), RA = dep("FamiliasRA", "./familiasra.js");
 var f = (HF && HF.porId ? HF.porId(famId) : null) || (RA && RA.obter ? RA.obter(famId, true) : null); if (!f) return null;
-var t = re ? arr(f.tipos).filter(function (x) { return re.test(txt(x.nome)) || re.test(txt(x.id)); })[0] : null;
-return { fam: f, tipo: t || arr(f.tipos)[0] || null };
+var ativos = arr(f.tipos).filter(function (x) { return !x.oculta; });
+var t = re ? ativos.filter(function (x) { return re.test(txt(x.nome)) || re.test(txt(x.id)); })[0] : null;
+return { fam: f, tipo: t || ativos[0] || null };
 }
 function porPadrao(lista, padrao) {
 var cp = lista.filter(function (x) { return x.preco && num(x.preco.valor, 0) > 0; }).sort(function (a, b) { return a.preco.valor - b.preco.valor; });
@@ -43450,6 +43516,7 @@ try {
 F.todas().forEach(function (f) {
 out.familias.push({ id: f.id, nome: f.nome });
 arr(f.tipos).forEach(function (t) {
+if (t.oculta || t.legado) return;
 var fab = String((t.valores && t.valores.Fabricante) || "");
 out.itens.push({ fam: f.id, famNome: f.nome, tipo: t.id, nome: t.nome, fab: fab, conferir: !!(t.valores && t.valores.A_conferir) });
 if (fab && !fv[fab]) { fv[fab] = 1; out.fabricantes.push(fab); }
@@ -43463,6 +43530,7 @@ return out;
 function colocar(famId, tipoId) {
 var UI_ = global.FamiliaUI, f = UI_ && UI_.obter ? UI_.obter(famId) : null;
 if (!f) { E.msg = { k: "erro", t: "A biblioteca de famílias não tem " + famId + " (js/familiaui.js)." }; redesenhar(); return false; }
+if (tipoId && arr(f.tipos).length && !arr(f.tipos).some(function (t) { return t.id === tipoId; })) { E.msg = { k: "erro", t: "O tipo escolhido não existe mais na família " + f.nome + ": nada foi colocado (o motor não troca o modelo por outro em silêncio)." }; redesenhar(); return false; }
 UI_.colocar(f, tipoId);
 E.msg = { k: "info", t: "Clique no modelo para colocar: " + f.nome + "." };
 redesenhar();
@@ -44236,7 +44304,7 @@ ix.familias.map(function (f) { return '<option value="' + esc(f.id) + '"' + (f.i
 '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:150px;flex:1"><span>Fabricante</span><select class="inp" data-hid-campo="lib:fab"><option value="">todos</option>' +
 ix.fabricantes.map(function (f) { return '<option value="' + esc(f) + '"' + (f === E.lib.fab ? " selected" : "") + ">" + esc(f) + "</option>"; }).join("") + "</select></label>" +
 campo("Buscar", "lib:busca", E.lib.busca) + "</div>";
-var MAX = 30;
+var MAX = (E.lib.fam || E.lib.fab || E.lib.busca) ? 80 : 30;
 h += '<p class="muted" style="font-size:11.5px;margin:2px 0">' + L.length + " tipo(s)" + (L.length > MAX ? " (mostrando os " + MAX + " primeiros: refine pelo filtro)" : "") + '. Cotas marcadas "a conferir" vêm do catálogo do fabricante; confira antes de emitir.</p>';
 h += '<p class="muted" data-hid-oficial style="font-size:11.5px;margin:2px 0">Forma 3D desenhada pelo OrçaPRO com as medidas do catálogo. Para usar o objeto oficial do fabricante: baixe-o no site dele e importe em <b>Biblioteca de famílias › Importar família</b> (arquivo .opfam convertido pelo plugin do OrçaPRO a partir do .rfa; o .rfa direto entra com os tipos e uma caixa até ser convertido) ou arraste o arquivo no 3D. A peça importada liga os tubos pelos conectores, mas ainda não conta como aparelho no cálculo (pesos e UHC): para dimensionar, use a família do OrçaPRO.</p>';
 h += '<table class="tbl" data-hid="lib-tab" style="font-size:12px"><tbody>' + L.slice(0, MAX).map(function (i) {

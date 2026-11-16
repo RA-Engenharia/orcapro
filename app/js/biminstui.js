@@ -1945,6 +1945,8 @@
       "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
     colocarFamilia: function (famId, tipoId) {
       var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
+      /* 15/11/2026 (caixas Tigre): tipo que não existe na família NÃO cai em silêncio no 1º tipo (o motor avalia o desconhecido como o padrão): o que se escolheu é o que entra, ou nada */
+      try { var fmT = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null; if (fmT && tipoId && fmT.tipos && fmT.tipos.length && !fmT.tipos.some(function (t) { return t.id === tipoId; })) { status("Este tipo (" + tipoId + ") não existe mais na família " + (this.NOMES_FAM[famId] || famId) + ": nada foi colocado. Escolha outro na lista."); return false; } } catch (eT) {}
       try { if (G && G._famSync) G._famSync(); } catch (e) {}
       b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
       this._famInst = true;   /* a ferramenta "familia" veio da aba Instalações: Modificar, ✕ e Esc a soltam */

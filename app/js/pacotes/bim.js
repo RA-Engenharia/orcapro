@@ -59642,7 +59642,7 @@ var c = classificar(f, tipoId), id = EQUIV[c.motor]; if (!id) return null;
 var HF = dependencia("HidFamilias", "./hidfamilias.js"), nat = null;
 try { nat = HF && HF.porId ? HF.porId(id) : null; } catch (e) { nat = null; }
 if (!nat || !arr(nat.tipos).length) return null;
-var tipos = arr(nat.tipos), sel = tipos[0];
+var tipos = arr(nat.tipos).filter(function (t) { return !t.oculta; }), sel = tipos[0];
 if (c.motor === "ralo_sifonado") sel = tipos.filter(function (t) { return /sif/i.test(txt(t.nome)); })[0] || sel;
 else if (c.motor === "ralo_seco") sel = tipos.filter(function (t) { return !/sif/i.test(txt(t.nome)); })[0] || sel;
 else if (c.motor === "caixa_sifonada") sel = tipos.filter(function (t) { return !/seca/i.test(txt(t.nome)); })[0] || sel;
@@ -114410,6 +114410,7 @@ NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro
 "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
 colocarFamilia: function (famId, tipoId) {
 var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
+try { var fmT = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null; if (fmT && tipoId && fmT.tipos && fmT.tipos.length && !fmT.tipos.some(function (t) { return t.id === tipoId; })) { status("Este tipo (" + tipoId + ") não existe mais na família " + (this.NOMES_FAM[famId] || famId) + ": nada foi colocado. Escolha outro na lista."); return false; } } catch (eT) {}
 try { if (G && G._famSync) G._famSync(); } catch (e) {}
 b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
 this._famInst = true;
@@ -116169,7 +116170,7 @@ dn: dn == null ? "" : dn, junta: junta0(c), opcional: !!c.opcional, aConferir: !
 }
 var DN_REGRA = /DN: o dimensionamento define|DN vindo de regra/i, COM_FONTE = /\((letra [A-Z0-9]+|interpretad[oa] da ficha[^)]*)\)\s*$/i, INTERPRETADO = /\(interpretad[oa] da ficha[^)]*\)\s*$/i;
 var PADRAO_TELA = { "hid-caixa-gordura": /^t-tigre-100019323.*-ficha$/, "hid-caixa-inspecao": /^t-tigre-27801056.*-ficha$/ };
-function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado; }); }
+function tiposVisiveis(f) { return arr(f.tipos).filter(function (t) { return t && t.id && !t.legado && !t.oculta; }); }
 function tipoPadraoTela(f) {
 var vis = tiposVisiveis(f), re = PADRAO_TELA[f.id], i;
 if (re) for (i = 0; i < vis.length; i++) if (re.test(vis[i].id)) return vis[i].id;
@@ -116208,6 +116209,23 @@ portas: portas, selos: selos, comCota: comCota, icone: PASTA_ICONES + "fam-" + t
 origem: origem, descricao: txt(f.descricao), sinonimos: [],
 acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });
 }
+var CAIXAS_TIGRE = { "hid-caixa-sifonada": "Caixa sifonada", "hid-ralo": "Ralo seco", "hid-caixa-gordura": "Caixa de gordura", "hid-caixa-inspecao": "Caixa de inspeção" };
+function itensTipoTigre(f, grupo, origem) {
+var out = [];
+if (!CAIXAS_TIGRE[f.id]) return out;
+tiposVisiveis(f).forEach(function (t) {
+var v = t.valores || {}; if (!/Tigre/i.test(txt(v.Fabricante))) return;
+var it = itemFamilia(f, grupo, origem, t.id), m = /^nominal ([\d x]+?) \(/.exec(txt(v.Cotas_ficha));
+it.id = "familia:" + f.id + ":" + t.id; it.tipos = []; it.tipoPadrao = ""; it.tipoId = t.id;
+it.nome = (m ? CAIXAS_TIGRE[f.id] + " Tigre " + m[1] : txt(v.Descricao_ficha) + " Tigre") + (/Inox/i.test(txt(v.Descricao_ficha)) ? ", grelha inox" : "") + " (cód. " + txt(v.Codigo) + ")";
+it.portas = it.portas.filter(function (p) { var e = /^entrada(\d+)$/.exec(p.id); return !e || +e[1] <= (+v.Entradas || 1); });
+it.icone = PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "") + "--" + txt(t.id).replace(/^t-/, "") + "-256.png";
+it.sinonimos = unicos(arr(it.sinonimos).concat(["tigre", txt(v.Codigo), CAIXAS_TIGRE[f.id]]));
+it.acao = { tipo: "colocarFamilia", famId: f.id, tipoId: t.id };
+out.push(it);
+});
+return out;
+}
 function itensFamilias() {
 var vistos = {}, out = [];
 function juntar(lista, grupoFn, origem) {
@@ -116215,6 +116233,7 @@ arr(lista).forEach(function (f) {
 if (!f || !f.id || vistos[f.id] || f.oculta) return;
 var g = grupoFn(f); if (!g) return;
 vistos[f.id] = 1; _fam["familia:" + f.id] = [f, g, origem]; out.push(itemFamilia(f, g, origem));
+if (origem === "HidFamilias") itensTipoTigre(f, g, origem).forEach(function (x) { out.push(x); });
 });
 }
 var HF = dep("HidFamilias", "./hidfamilias.js"), CF = dep("ClimFamilias", "./climfamilias.js"), HT = dep("HidTanques", "./hidtanques.js"), PF = dep("HidPiscinaFam", "./hidpiscinafam.js"), FR = dep("FamiliasRA", "./familiasra.js");

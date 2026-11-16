@@ -19,7 +19,7 @@
   function HF() { return dep("HidFamilias", "./hidfamilias.js"); }
   function arr(a) { return Array.isArray(a) ? a : []; }
   /* revisão 14/11 (C1): também as caixas de gordura e de inspeção Tigre (o tipo antigo legado + o "-ficha") */
-  var FAMS = { "hid-caixa-sifonada": 1, "hid-caixa-gordura": 1, "hid-caixa-inspecao": 1 }, FAM = "hid-caixa-sifonada", TOL = 0.02, SUF = "-ficha";
+  var FAMS = { "hid-caixa-sifonada": 1, "hid-caixa-gordura": 1, "hid-caixa-inspecao": 1, "hid-ralo": 1 }, FAM = "hid-caixa-sifonada", TOL = 0.02, SUF = "-ficha";
 
   function ehLegada(fi) {
     if (!fi || !FAMS[fi.famId] || /-ficha$/.test(String(fi.tipoId || ""))) return null;

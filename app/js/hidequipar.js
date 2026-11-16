@@ -216,8 +216,9 @@
   function tipoFam(famId, re) {
     var HF = dep("HidFamilias", "./hidfamilias.js"), RA = dep("FamiliasRA", "./familiasra.js");
     var f = (HF && HF.porId ? HF.porId(famId) : null) || (RA && RA.obter ? RA.obter(famId, true) : null); if (!f) return null;
-    var t = re ? arr(f.tipos).filter(function (x) { return re.test(txt(x.nome)) || re.test(txt(x.id)); })[0] : null;
-    return { fam: f, tipo: t || arr(f.tipos)[0] || null };
+    var ativos = arr(f.tipos).filter(function (x) { return !x.oculta; });   /* tipo oculto (sem forma modelada/cota: js/hidfamilias.js ocultar) o traçado não escolhe */
+    var t = re ? ativos.filter(function (x) { return re.test(txt(x.nome)) || re.test(txt(x.id)); })[0] : null;
+    return { fam: f, tipo: t || ativos[0] || null };
   }
   /* catálogo da marmoraria pelo PADRÃO: médio = o de preço mediano, alto = o de maior preço (fabricante › linha › acabamento) */
   function porPadrao(lista, padrao) {

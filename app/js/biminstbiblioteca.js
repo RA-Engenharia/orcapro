@@ -452,7 +452,7 @@
     var HF = dependencia("HidFamilias", "./hidfamilias.js"), nat = null;
     try { nat = HF && HF.porId ? HF.porId(id) : null; } catch (e) { nat = null; }
     if (!nat || !arr(nat.tipos).length) return null;
-    var tipos = arr(nat.tipos), sel = tipos[0];
+    var tipos = arr(nat.tipos).filter(function (t) { return !t.oculta; }), sel = tipos[0];   /* tipo oculto (sem forma modelada/cota) nunca é o escolhido */
     if (c.motor === "ralo_sifonado") sel = tipos.filter(function (t) { return /sif/i.test(txt(t.nome)); })[0] || sel;
     else if (c.motor === "ralo_seco") sel = tipos.filter(function (t) { return !/sif/i.test(txt(t.nome)); })[0] || sel;
     else if (c.motor === "caixa_sifonada") sel = tipos.filter(function (t) { return !/seca/i.test(txt(t.nome)); })[0] || sel;
