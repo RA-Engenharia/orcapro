@@ -322,7 +322,7 @@
             var V0 = I.ACESSORIOS[a.acessorio].variantes[a.variante] || {}, rg = global.HidGeo.registro({ centro: a.centro, dir: a.dir, comprimento: a.comprimento, dn: a.dn, material: a.material, variante: a.variante, acessorio: a.acessorio, varMaterial: V0.material }, { lod: self._lod, frente: global.BimInstColocar ? global.BimInstColocar.frenteAcessorio(a) : null });   /* COLOCAÇÃO: o giro do volante (Espaço) */
             ms = rg.partes.map(function (pt) {
               if (pt.papel === "marca") { var mmA = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mmA) return null; var mgA = self._malhaG(THREE, pt.malha, mmA); mgA.userData.semIfc = true; return mgA; }   /* FAMÍLIAS R2: a gravação da marca no registro */
-              return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null));
+              return self._malhaG(THREE, pt.malha, self._matRegistro(THREE, a.material, a.sistema, pt.papel));
             }).filter(Boolean);
           } catch (eRg) { ms = []; }
         }
@@ -331,7 +331,7 @@
           mc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), u); mc.position.set(a.centro.x, a.centro.y, a.centro.z); ms.push(mc);
         }
         var sp = I.sinapiDe(I.itemAcessorio(a));
-        ms.forEach(function (mm) { mm.userData.instPapel = "acessorio"; mm.userData.instNivel = self._nivelFeito; });
+        ms.forEach(function (mm) { mm.userData.instPapel = "acessorio"; mm.userData.instNivel = self._nivelFeito; mm.userData.corProduto = true; });   /* o registro mantém a cor do PRODUTO em qualquer modo (bim.js matBase não o pinta com a cor do sistema) */
         out.push({ id: a.id, ifc: "IFCVALVE", malhas: ms, disciplina: "hidraulica", codigo: sp.codigo || null, nome: a.nome + " · DN " + a.dn + " (" + a.id + ")", qto: { contagem: 1 } });
       });
       if (U._desc) {
@@ -2187,6 +2187,9 @@
       var sobre = corpo ? (corVerif || (this.modoCor === "sistema" && !manterMaterial && I.SISTEMAS[sistema] ? I.SISTEMAS[sistema].cor : null)) : null;
       return this._matAp(THREE, ap, sobre);
     },
+    /* REGISTRO / ACESSÓRIO DE TUBO (16/11/2026, print do Rogério: no modo "cor por sistema" o corpo do registro de esfera saía AZUL e a borboleta bege/chapada): peça com papel
+       próprio mantém a cor do PRODUTO em qualquer modo — corpo marrom do PVC, borboleta laranja, latão do registro de metal; o sistema aparece no tubo e na etiqueta, não no registro */
+    _matRegistro: function (THREE, material, sistema, papel) { return this._matPeca(THREE, material, sistema, papel, null, true); },
     alternarModoCor: function (modo) {
       this.modoCor = modo === "sistema" ? "sistema" : "material";
       try { var b = B(); if (b && b.editarReconstruir) b.editarReconstruir(); } catch (e) {}

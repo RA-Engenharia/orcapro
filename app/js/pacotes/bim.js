@@ -113270,7 +113270,7 @@ try {
 var V0 = I.ACESSORIOS[a.acessorio].variantes[a.variante] || {}, rg = global.HidGeo.registro({ centro: a.centro, dir: a.dir, comprimento: a.comprimento, dn: a.dn, material: a.material, variante: a.variante, acessorio: a.acessorio, varMaterial: V0.material }, { lod: self._lod, frente: global.BimInstColocar ? global.BimInstColocar.frenteAcessorio(a) : null });
 ms = rg.partes.map(function (pt) {
 if (pt.papel === "marca") { var mmA = self.modoCor === "sistema" ? null : self._matMarca(THREE, pt); if (!mmA) return null; var mgA = self._malhaG(THREE, pt.malha, mmA); mgA.userData.semIfc = true; return mgA; }
-return self._malhaG(THREE, pt.malha, self._matPeca(THREE, a.material, a.sistema, pt.papel, null));
+return self._malhaG(THREE, pt.malha, self._matRegistro(THREE, a.material, a.sistema, pt.papel));
 }).filter(Boolean);
 } catch (eRg) { ms = []; }
 }
@@ -113279,7 +113279,7 @@ var mc = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(a.dn / 1000, 0.015),
 mc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), u); mc.position.set(a.centro.x, a.centro.y, a.centro.z); ms.push(mc);
 }
 var sp = I.sinapiDe(I.itemAcessorio(a));
-ms.forEach(function (mm) { mm.userData.instPapel = "acessorio"; mm.userData.instNivel = self._nivelFeito; });
+ms.forEach(function (mm) { mm.userData.instPapel = "acessorio"; mm.userData.instNivel = self._nivelFeito; mm.userData.corProduto = true; });
 out.push({ id: a.id, ifc: "IFCVALVE", malhas: ms, disciplina: "hidraulica", codigo: sp.codigo || null, nome: a.nome + " · DN " + a.dn + " (" + a.id + ")", qto: { contagem: 1 } });
 });
 if (U._desc) {
@@ -114836,6 +114836,7 @@ var ap = G.aparencia(material, sistema, papel), corpo = !papel || papel === "cor
 var sobre = corpo ? (corVerif || (this.modoCor === "sistema" && !manterMaterial && I.SISTEMAS[sistema] ? I.SISTEMAS[sistema].cor : null)) : null;
 return this._matAp(THREE, ap, sobre);
 },
+_matRegistro: function (THREE, material, sistema, papel) { return this._matPeca(THREE, material, sistema, papel, null, true); },
 alternarModoCor: function (modo) {
 this.modoCor = modo === "sistema" ? "sistema" : "material";
 try { var b = B(); if (b && b.editarReconstruir) b.editarReconstruir(); } catch (e) {}

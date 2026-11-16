@@ -14339,7 +14339,7 @@ if (instVista.on && instVistaFundo(m)) { var _moV = modeloDe(m.userData.mid); re
 if (instVista.on && m.userData.agua && S._aguaMat) return S._aguaMat(true);
 if (instVista.on && m.userData.piscFundo) { var _moP2 = modeloDe(m.userData.mid); return instVistaMat(_moP2 ? _moP2.alpha : 1); }
 if (catCor.on) { var _kc = catDeMalha(m); if (_kc) { var _moC = modeloDe(m.userData.mid); return catMat(_kc, _moC ? _moC.alpha : 1); } }
-if (sisColor.on) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
+if (sisColor.on && !m.userData.corProduto) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
 var mo = modeloDe(m.userData.mid);
 var orig = m.userData.matOrig || m.material;
 if (!mo || mo.alpha >= 0.99) return orig;

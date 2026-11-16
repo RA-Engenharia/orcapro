@@ -183,6 +183,62 @@
         });
       });
     });
+    /* JUNÇÃO NA RETA DA LINHA (16/11/2026, auditor JUNCAO_LINHA_NAO_COLINEAR: a junção do tanque numa quebra de 4,35°): a linha de uma junção/tê é um corpo reto, e o traçado deixava os dois
+       trechos dela se dobrando no nó (o trecho de jusante apontava ao destino, o de montante corria reto). O nó anda para a RETA que liga as pontas da linha (A–B), no ponto em que o ramal,
+       mantida a direção dele em planta, a encontra; o ramal só alonga/encurta e mantém a declividade dele. Só no que é do plano (nada preso no modelo) e só até 30 cm. */
+    try {
+      var lv0 = ultimos(ops), emJ = {};
+      lv0.forEach(function (t) { [t.p1, t.p2].forEach(function (q) { var k = Math.round(q.x * 1e3) + "," + Math.round(q.y * 1e3) + "," + Math.round(q.z * 1e3); (emJ[k] = emJ[k] || []).push(t); }); });
+      Object.keys(emJ).forEach(function (kJ) {
+        var ts = emJ[kJ]; if (ts.length !== 3 || !GRAVIDADE[ts[0].sistema] || ts.some(function (t) { return t.sistema !== ts[0].sistema || fixosT.indexOf(t) >= 0; })) return;
+        var J = ts[0].p1 && (igual(ts[0].p1, ts[1].p1) || igual(ts[0].p1, ts[1].p2) || igual(ts[0].p1, ts[2].p1) || igual(ts[0].p1, ts[2].p2)) ? ts[0].p1 : ts[0].p2;
+        var info = ts.map(function (t) { var ini = igual(t.p1, J), F = ini ? t.p2 : t.p1, dx = F.x - J.x, dz = F.z - J.z, dy = F.y - J.y, Lh = Math.hypot(dx, dz); return { t: t, ini: ini, F: F, dx: dx / (Lh || 1), dz: dz / (Lh || 1), Lh: Lh, dy: dy }; });
+        if (info.some(function (q) { return !(q.Lh > 0.05) || Math.abs(q.dy) > 0.3 * q.Lh; })) return;   // hid:ok só trechos deitados
+        var best = -2, par = null; for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) { var cs = info[i].dx * info[j].dx + info[i].dz * info[j].dz; if (-cs > best) { best = -cs; par = [i, j]; } }
+        var ang = Math.acos(Math.max(-1, Math.min(1, best))) * 180 / Math.PI; if (!(ang > 0.3 && ang < 15)) return;   // hid:ok quebra a corrigir: de 0,3° a 15°
+        var iR = [0, 1, 2].filter(function (k) { return par.indexOf(k) < 0; })[0], A = info[par[0]].F, B = info[par[1]].F, Rr = info[iR], E = Rr.F;
+        if (fixosP.some(function (q) { return Math.abs(q.x - J.x) <= 0.01 && Math.abs(q.z - J.z) <= 0.01 && Math.abs(q.y - J.y) <= 0.05; }) || fixosT.some(function (x) { return igual(x.p1, J) || igual(x.p2, J); })) return;   // hid:ok o nó preso no modelo não anda
+        /* J' = a interseção da reta A–B com a reta do ramal (E + t · direção em planta) */
+        var ux = B.x - A.x, uz = B.z - A.z, vx = -Rr.dx, vz = -Rr.dz, den = ux * vz - uz * vx; if (Math.abs(den) < 1e-9) return;
+        var tAB = ((E.x - A.x) * vz - (E.z - A.z) * vx) / den, tR = ((E.x - A.x) * uz - (E.z - A.z) * ux) / den;   /* A + tAB·(B−A) = E + tR·(−dirR) */
+        if (!(tAB > 0.02 && tAB < 0.98) || !(tR > 0.05)) return;
+        var Jn = { x: r4(A.x + ux * tAB), z: r4(A.z + uz * tAB) };
+        if (Math.hypot(Jn.x - J.x, Jn.z - J.z) > 0.30) return;   // hid:ok até 30 cm
+        /* a cota: o ramal mantém a declividade dele; a linha A–J'–B fica com a do total */
+        var sR = Math.abs(Rr.dy) / Rr.Lh, LnR = Math.hypot(Jn.x - E.x, Jn.z - E.z), emTt = Rr.t, sentidoE = igual(emTt.p1, E);   /* E é o p1 do ramal: o fluxo vai de E ao nó */
+        var yJ = sentidoE ? E.y - sR * LnR : E.y + sR * LnR;
+        var hA = Math.hypot(Jn.x - A.x, Jn.z - A.z), hB = Math.hypot(B.x - Jn.x, B.z - Jn.z);
+        var sA = Math.abs(yJ - A.y) / hA, sB = Math.abs(yJ - B.y) / hB, sOrig = Math.min(info[par[0]].Lh > 0 ? Math.abs(info[par[0]].dy) / info[par[0]].Lh : 1, info[par[1]].Lh > 0 ? Math.abs(info[par[1]].dy) / info[par[1]].Lh : 1);
+        if (sA < sOrig - 0.0005 || sB < sOrig - 0.0005) return;   // hid:ok a linha não pode ficar mais rasa que a de antes (0,05 %)
+        var Jv = { x: Jn.x, y: r4(yJ), z: Jn.z };
+        info.forEach(function (q) { q.t[q.ini ? "p1" : "p2"] = { x: Jv.x, y: Jv.y, z: Jv.z }; });
+        ajustes.push({ trecho: String(Rr.t.id), juncao: Math.round(ang * 100) / 100, desloc: r4(Math.hypot(Jn.x - J.x, Jn.z - J.z)) });
+      });
+    } catch (eJun) {}
+    /* FECHAR A BOCA (16/11/2026, auditor TUBO_NAO_TERMINA_EM_PORTA): o tubo que chega RADIAL na caixa/ralo mas termina FORA do fundo da bolsa da boca (o ponto do tubo cai entre a borda do
+       corpo e o raio de captura: 12 a 15 mm de vão no ralo seco 100 × 40) é alongado, na própria reta (a declividade não muda), até o fundo da bolsa — o desenho nunca estica o tubo, só recua */
+    try {
+      var HGb = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+      if (HGb && HGb.peca) pcs.forEach(function (K) {
+        var Kp = {}; Object.keys(K).forEach(function (q) { Kp[q] = K[q]; }); Kp.x = num(K.x, 0); Kp.y = num(K.y, 0); Kp.z = num(K.z, 0);
+        ultimos(ops).forEach(function (T) {
+          if (fixosT.indexOf(T) >= 0 || !GRAVIDADE[T.sistema]) return;
+          ["p1", "p2"].forEach(function (lado) {
+            var E = T[lado], F = T[lado === "p1" ? "p2" : "p1"], dh = Math.hypot(F.x - E.x, F.z - E.z);
+            if (!(dh > 0.05) || Math.abs(F.y - E.y) > dh) return;   // hid:ok trecho deitado (o que entra pela boca lateral)
+            var rE = d2(E, Kp); if (!(rE > 0.01) || rE > raioCaptura(K) + 1e-6) return;
+            var lat = Math.abs((Kp.x - E.x) * (F.z - E.z) - (Kp.z - E.z) * (F.x - E.x)) / dh; if (lat > 0.002) return;   // hid:ok 2 mm: coaxial com a boca radial
+            if ((F.x - E.x) * (E.x - Kp.x) + (F.z - E.z) * (E.z - Kp.z) <= 0) return;   /* o tubo tem de sair PARA FORA do centro */
+            var g = null; try { g = HGb.peca(Kp, [{ trecho: String(T.id), lado: lado === "p1" ? 0 : 1, dn: T.dn, ponto: E, dir: [F.x - E.x, F.y - E.y, F.z - E.z], saida: false }], {}); } catch (eG) { g = null; }
+            var pt = g && (g.portas || []).filter(function (q) { return String(q.trecho) === String(T.id) && q.raio != null; })[0]; if (!pt) return;
+            var gap = rE - pt.raio; if (!(gap > 0.002 && gap < 0.05)) return;   // hid:ok mais de 2 mm de vão e menos de 5 cm (além disso é outro caso: o tubo não entra por aí)
+            var k = gap / dh;
+            T[lado] = { x: r4(E.x - (F.x - E.x) * k), y: r4(E.y - (F.y - E.y) * k), z: r4(E.z - (F.z - E.z) * k) };
+            ajustes.push({ trecho: String(T.id), peca: String(K.id), boca: r4(gap) });
+          });
+        });
+      });
+    } catch (eBoca) {}
     return { ops: ops, ajustes: ajustes, apagar: apagar };
   }
 

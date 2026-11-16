@@ -5139,6 +5139,55 @@ if (stub) tiraToco();
 });
 });
 });
+try {
+var lv0 = ultimos(ops), emJ = {};
+lv0.forEach(function (t) { [t.p1, t.p2].forEach(function (q) { var k = Math.round(q.x * 1e3) + "," + Math.round(q.y * 1e3) + "," + Math.round(q.z * 1e3); (emJ[k] = emJ[k] || []).push(t); }); });
+Object.keys(emJ).forEach(function (kJ) {
+var ts = emJ[kJ]; if (ts.length !== 3 || !GRAVIDADE[ts[0].sistema] || ts.some(function (t) { return t.sistema !== ts[0].sistema || fixosT.indexOf(t) >= 0; })) return;
+var J = ts[0].p1 && (igual(ts[0].p1, ts[1].p1) || igual(ts[0].p1, ts[1].p2) || igual(ts[0].p1, ts[2].p1) || igual(ts[0].p1, ts[2].p2)) ? ts[0].p1 : ts[0].p2;
+var info = ts.map(function (t) { var ini = igual(t.p1, J), F = ini ? t.p2 : t.p1, dx = F.x - J.x, dz = F.z - J.z, dy = F.y - J.y, Lh = Math.hypot(dx, dz); return { t: t, ini: ini, F: F, dx: dx / (Lh || 1), dz: dz / (Lh || 1), Lh: Lh, dy: dy }; });
+if (info.some(function (q) { return !(q.Lh > 0.05) || Math.abs(q.dy) > 0.3 * q.Lh; })) return;
+var best = -2, par = null; for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) { var cs = info[i].dx * info[j].dx + info[i].dz * info[j].dz; if (-cs > best) { best = -cs; par = [i, j]; } }
+var ang = Math.acos(Math.max(-1, Math.min(1, best))) * 180 / Math.PI; if (!(ang > 0.3 && ang < 15)) return;
+var iR = [0, 1, 2].filter(function (k) { return par.indexOf(k) < 0; })[0], A = info[par[0]].F, B = info[par[1]].F, Rr = info[iR], E = Rr.F;
+if (fixosP.some(function (q) { return Math.abs(q.x - J.x) <= 0.01 && Math.abs(q.z - J.z) <= 0.01 && Math.abs(q.y - J.y) <= 0.05; }) || fixosT.some(function (x) { return igual(x.p1, J) || igual(x.p2, J); })) return;
+var ux = B.x - A.x, uz = B.z - A.z, vx = -Rr.dx, vz = -Rr.dz, den = ux * vz - uz * vx; if (Math.abs(den) < 1e-9) return;
+var tAB = ((E.x - A.x) * vz - (E.z - A.z) * vx) / den, tR = ((E.x - A.x) * uz - (E.z - A.z) * ux) / den;
+if (!(tAB > 0.02 && tAB < 0.98) || !(tR > 0.05)) return;
+var Jn = { x: r4(A.x + ux * tAB), z: r4(A.z + uz * tAB) };
+if (Math.hypot(Jn.x - J.x, Jn.z - J.z) > 0.30) return;
+var sR = Math.abs(Rr.dy) / Rr.Lh, LnR = Math.hypot(Jn.x - E.x, Jn.z - E.z), emTt = Rr.t, sentidoE = igual(emTt.p1, E);
+var yJ = sentidoE ? E.y - sR * LnR : E.y + sR * LnR;
+var hA = Math.hypot(Jn.x - A.x, Jn.z - A.z), hB = Math.hypot(B.x - Jn.x, B.z - Jn.z);
+var sA = Math.abs(yJ - A.y) / hA, sB = Math.abs(yJ - B.y) / hB, sOrig = Math.min(info[par[0]].Lh > 0 ? Math.abs(info[par[0]].dy) / info[par[0]].Lh : 1, info[par[1]].Lh > 0 ? Math.abs(info[par[1]].dy) / info[par[1]].Lh : 1);
+if (sA < sOrig - 0.0005 || sB < sOrig - 0.0005) return;
+var Jv = { x: Jn.x, y: r4(yJ), z: Jn.z };
+info.forEach(function (q) { q.t[q.ini ? "p1" : "p2"] = { x: Jv.x, y: Jv.y, z: Jv.z }; });
+ajustes.push({ trecho: String(Rr.t.id), juncao: Math.round(ang * 100) / 100, desloc: r4(Math.hypot(Jn.x - J.x, Jn.z - J.z)) });
+});
+} catch (eJun) {}
+try {
+var HGb = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+if (HGb && HGb.peca) pcs.forEach(function (K) {
+var Kp = {}; Object.keys(K).forEach(function (q) { Kp[q] = K[q]; }); Kp.x = num(K.x, 0); Kp.y = num(K.y, 0); Kp.z = num(K.z, 0);
+ultimos(ops).forEach(function (T) {
+if (fixosT.indexOf(T) >= 0 || !GRAVIDADE[T.sistema]) return;
+["p1", "p2"].forEach(function (lado) {
+var E = T[lado], F = T[lado === "p1" ? "p2" : "p1"], dh = Math.hypot(F.x - E.x, F.z - E.z);
+if (!(dh > 0.05) || Math.abs(F.y - E.y) > dh) return;
+var rE = d2(E, Kp); if (!(rE > 0.01) || rE > raioCaptura(K) + 1e-6) return;
+var lat = Math.abs((Kp.x - E.x) * (F.z - E.z) - (Kp.z - E.z) * (F.x - E.x)) / dh; if (lat > 0.002) return;
+if ((F.x - E.x) * (E.x - Kp.x) + (F.z - E.z) * (E.z - Kp.z) <= 0) return;
+var g = null; try { g = HGb.peca(Kp, [{ trecho: String(T.id), lado: lado === "p1" ? 0 : 1, dn: T.dn, ponto: E, dir: [F.x - E.x, F.y - E.y, F.z - E.z], saida: false }], {}); } catch (eG) { g = null; }
+var pt = g && (g.portas || []).filter(function (q) { return String(q.trecho) === String(T.id) && q.raio != null; })[0]; if (!pt) return;
+var gap = rE - pt.raio; if (!(gap > 0.002 && gap < 0.05)) return;
+var k = gap / dh;
+T[lado] = { x: r4(E.x - (F.x - E.x) * k), y: r4(E.y - (F.y - E.y) * k), z: r4(E.z - (F.z - E.z) * k) };
+ajustes.push({ trecho: String(T.id), peca: String(K.id), boca: r4(gap) });
+});
+});
+});
+} catch (eBoca) {}
 return { ops: ops, ajustes: ajustes, apagar: apagar };
 }
 function fundirAlinhados(ops, luvas) {
@@ -36166,7 +36215,7 @@ function mc(ee, cc, ll, oa, oo) { oo = oo || {}; if (!oo.secundaria && SAT.lengt
 var lV = lista.filter(function (s) { return s.valvula && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
 var sec = null, ang2 = null, R = null, reserva = null;
 lista.forEach(function (s) { if (s.antiga) out.avisos.push({ texto: "Este banheiro foi traçado numa versão anterior: use Traçar automaticamente de novo para a válvula ter coluna exclusiva (a espera " + s.trecho + " é do banheiro inteiro e foi ligada como consumo).", elementos: [s.trecho], acao: null }); });
-function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
+function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }) || arr(Rx.decisoes).some(function (d) { return /^bar\.desvio_coluna_/.test(String(d.id)); }); }
 if (lV.length && lC.length && cx.S && !SAT.length) {
 for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
 var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });
@@ -36344,6 +36393,21 @@ var pesoToco = pesoCx * 1.5;
 var contorno = Math.ceil((Math.max(cx.R, num(cx.av && cx.av.valores && cx.av.valores.Diametro, 0) / 2) + rS + folga) / passo + 1) * passo;
 lista.forEach(function (s) { s.L = { x: s.x, z: s.z }; });
 lista.sort(function (s1, s2) { return d2(s1.L, A) - d2(s2.L, A); });
+function desvioColuna(l, yT, rL, ignE) {
+var yMinJ = l.y + 2 * mNo + TOL, dirs4 = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }], dd = [0.15, 0.25, 0.35, 0.5];
+for (var i = 0; i < dd.length; i++) for (var k = 0; k < dirs4.length; k++) {
+var Q = { x: r4(l.x + dirs4[k].x * dd[i]), z: r4(l.z + dirs4[k].z * dd[i]) };
+for (var yJ = r4(yT - 0.10); yJ >= yMinJ - EPS; yJ = r4(yJ - 0.05)) {
+var a1 = P3(l.x, yT, l.z), a2 = P3(Q.x, yT, Q.z), a3 = P3(Q.x, yJ, Q.z), a4 = P3(l.x, yJ, l.z), a5 = P3(l.x, l.y, l.z);
+if (conflito(a1, a2, rL, ignE) || conflito(a2, a3, rL, ignE) || conflito(a3, a4, rL, ignE) || conflito(a4, a5, rL, ignE)) continue;
+var tocaTubo = false;
+[[a2, a3], [a3, a4], [a4, a5]].forEach(function (sg) { existentes.forEach(function (Tq) { if (!tocaTubo && !ignE(Tq) && segSeg(sg[0], sg[1], Tq.a, Tq.b) - rL - Tq.r < ((Tq.sistema === "esgoto" || Tq.sistema === "ventilacao") ? Math.max(folga, num(G.afastamento, 0.10)) : folga) - FOLGA_LIMITE) tocaTubo = true; }); });
+if (tocaTubo) continue;
+return { a1: a1, a2: a2, a3: a3, a4: a4, yJ: yJ, Q: Q };
+}
+}
+return null;
+}
 function planejarArvore(ativas) {
 novos = base0.slice();
 var arvore = [{ a: { x: A.x, z: A.z }, b: { x: A.x, z: A.z } }], folhas = [], semCaminho = [];
@@ -36448,7 +36512,16 @@ Pl.cadeias = cadeias;
 novos = base0.slice().concat(cadeias.map(function (cd) { return { a: cd.p1, b: cd.p2, r: raio(cd.dn), sistema: "agua_fria", id: "barrilete" }; }));
 for (var il = 0; il < folhas.length; il++) {
 var l = folhas[il], yT = Pl.yDe(l.n), p1 = P3(l.x, yT, l.z), p2 = P3(l.x, l.y, l.z), rL = raio(l.dnCol);
-var cC = conflito(p1, p2, rL, function (Tq) { return Tq.id === l.trecho; });
+l.desvio = null;
+var ignE = function (Tq) { return Tq.id === l.trecho; }, cC = conflito(p1, p2, rL, ignE);
+if (cC && !l.fonte && usarDesvio) {
+var dvj = desvioColuna(l, yT, rL, ignE);
+if (dvj) {
+l.desvio = dvj; l.p1 = P3(l.x, dvj.yJ, l.z); l.p2 = p2;
+novos.push({ a: dvj.a1, b: dvj.a2, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-1" }, { a: dvj.a2, b: dvj.a3, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-2" }, { a: dvj.a3, b: dvj.a4, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-3" }, { a: l.p1, b: p2, r: rL, sistema: "agua_fria", id: "coluna-" + l.trecho });
+continue;
+}
+}
 if (cC) { Pl.colunaFalha = { l: l, com: cC.com }; return Pl; }
 if (l.fonte) {
 if (yT > l.y - TOL) { Pl.colunaFalha = { l: l, com: "a saída da caixa " + l.sat.id + " (" + f2(l.y) + " m) está abaixo do coletor (" + f2(yT) + " m): as caixas não estão no mesmo nível" }; return Pl; }
@@ -36468,6 +36541,7 @@ novos.push({ a: p1, b: p2, r: rL, sistema: "agua_fria", id: "coluna-" + l.trecho
 }
 return Pl;
 }
+var usarDesvio = false;
 var modoAfasta = false;
 var regColuna = false, modoAsc = false, raizTomada = false;
 function planejarCom(yP, base, reg, asc) {
@@ -36494,6 +36568,7 @@ if (!melhorV || rv.nota < melhorV.nota - EPS) melhorV = { nota: rv.nota, P: rv.P
 }
 if (variantes.length > 1 && nV[nV.length - 1] >= 1000) melhorV = { tv: variantes.length - 1 };
 P = melhorV.tv === ultimaV ? (melhorV.P || rodarVariante(variantes[melhorV.tv]).P) : rodarVariante(variantes[melhorV.tv]).P;
+P._args = [yP, base, reg, asc];
 return P;
 }
 var baseTopo = base0.slice(), Pl, tomada = null;
@@ -36551,7 +36626,7 @@ res.decisoes.push({ id: "bar.plano_laje", texto: nome + ": a cobertura impede o 
 }
 }
 }
-if (!tomada && !opc.satelite) {
+if ((!tomada || (Pl.semCaminho.length || Pl.colunasFora.length)) && !opc.satelite) {
 var nNFd = lista.filter(function (q) { return !q.fonte; }).length, nCon0 = soCol(Pl.folhas);
 if (nNFd && nCon0 < nNFd) {
 var yTopE = Math.max.apply(null, lista.filter(function (q) { return !q.fonte; }).map(function (q) { return q.y; })) + mNo + folga;
@@ -36560,7 +36635,7 @@ for (var yP = r4(cx.S.y - 0.1); yP >= yTopE - EPS && (!melhorP || melhorP.n < nN
 var Abd = P3(A.x, yP, A.z);
 if (conflito(Atd, Abd, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; })) break;
 var Pd = planejarCom(yP, baseTopo.concat([{ a: Atd, b: Abd, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
-if (Pd.baixa || Pd.colunaFalha || Pd.faltaMax > 1 / CASAS) continue;
+if (Pd.baixa || Pd.colunaFalha) continue;
 var nd = soCol(Pd.folhas);
 if (nd > nCon0 && (!melhorP || nd > melhorP.n)) melhorP = { y: yP, n: nd, Ab: Abd };
 }
@@ -36573,6 +36648,12 @@ res.decisoes.push({ id: "bar.desvio_plano", texto: nome + ": o plano da saída (
 }
 res.semTomada = !!(PlR && !tomada);
 if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);
+if (!opc.satelite && Pl._args && arr(Pl.colunasFora).some(function (cf) { return !cf.l.fonte; })) {
+usarDesvio = true;
+var Pdv = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);
+usarDesvio = false;
+if (!Pdv.baixa && !Pdv.colunaFalha && soCol(Pdv.folhas) > soCol(Pl.folhas)) Pl = Pdv; else Pl = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);
+}
 Pl.colunasFora.forEach(function (cf) {
 if (cf.l.fonte) { pend("bar.interligacao", nome + ": o coletor até a saída da caixa " + cf.l.sat.id + " não fecha — " + cf.com + "; essa caixa ficou fora do barrilete comum", [cf.l.sat.id, cx.id]); return; }
 pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]);
@@ -36623,6 +36704,12 @@ ops.push(tcs); res.satLigadas.push(l.sat.id); res.coletorM = r4((res.coletorM ||
 return;
 }
 var tc;
+if (l.desvio) {
+var dvo = l.desvio;
+ops.push(T("barrilete", "agua_fria", l.dnCol, dvo.a1, dvo.a2, { aplicacao: "reservacao" }), T("coluna", "agua_fria", l.dnCol, dvo.a2, dvo.a3, { aplicacao: "prumada", barEspera: l.trecho, barDesvio: true }), T("barrilete", "agua_fria", l.dnCol, dvo.a3, dvo.a4, { aplicacao: "reservacao" }));
+yT = dvo.yJ;
+res.decisoes.push({ id: "bar.desvio_coluna_" + l.trecho, texto: nome + ": a coluna reta até a espera " + l.trecho + " esbarrava num obstáculo — o barrilete segue " + f2(d2(dvo.a1, dvo.a2)) + " m ao lado, DESCE até " + f2(dvo.yJ) + " m (abaixo do obstáculo), volta na horizontal ao prumo da espera e desce a coluna até ela (só descendo, sem bolsa de ar)" });
+}
 if (l.sobe) {
 var oE = l.opOrig ? JSON.parse(JSON.stringify(l.opOrig)) : null, pt = l.ponta === "p2" ? "p2" : "p1";
 if (oE) {

@@ -353,7 +353,7 @@
          boiler) E a principal ainda DESCE (a tomada vertical); sem lado limpo, o 1º em que as duas fecham com a descida (com as
          pendências de esbarrar, que dizem o que lançar à mão). O lado em que a principal não desce NUNCA vale: o barrilete ficaria na
          cota da saída e a pressão faltaria (defeito de 26/10/2026, cenário de 2 banheiros) */
-      function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
+      function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }) || arr(Rx.decisoes).some(function (d) { return /^bar\.desvio_coluna_/.test(String(d.id)); }); }   /* o desvio por baixo do obstáculo (17/11/2026) é a rede de segurança: lado sem desvio vale mais */
       if (lV.length && lC.length && cx.S && !SAT.length) {
         for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
           var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });   // hid:ok ids da 2ª saída a partir de 500
@@ -575,6 +575,24 @@
     /* ---------- 2..4) o PLANO: a árvore em planta (Prim ortogonal; tê no máximo; desvios em "Z"; perna curta demais fora), as
        cotas (descendo a partir da saída sobre o apoio) e a conferência das colunas na cota real. A coluna que esbarra tira a espera
        dela do plano (pendência) e o plano é refeito sem ela — nunca tubo meio traçado */
+    /* o desvio da coluna (ver planejarArvore): devolve { a1..a4, yJ, Q } ou null. Candidatos: o ponto ao lado a 15, 25, 35 e 50 cm nos 4 lados, a cota de
+       passagem de cima para baixo em passos de 5 cm até um nó + o registro acima da espera; vale o 1º que o conflito() libera nos 4 trechos */
+    function desvioColuna(l, yT, rL, ignE) {
+      var yMinJ = l.y + 2 * mNo + TOL, dirs4 = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }], dd = [0.15, 0.25, 0.35, 0.5];   // hid:ok afastamentos do prumo da espera (critério RA)
+      for (var i = 0; i < dd.length; i++) for (var k = 0; k < dirs4.length; k++) {
+        var Q = { x: r4(l.x + dirs4[k].x * dd[i]), z: r4(l.z + dirs4[k].z * dd[i]) };
+        for (var yJ = r4(yT - 0.10); yJ >= yMinJ - EPS; yJ = r4(yJ - 0.05)) {   // hid:ok passos de 5 cm da cota do jumper
+          var a1 = P3(l.x, yT, l.z), a2 = P3(Q.x, yT, Q.z), a3 = P3(Q.x, yJ, Q.z), a4 = P3(l.x, yJ, l.z), a5 = P3(l.x, l.y, l.z);
+          if (conflito(a1, a2, rL, ignE) || conflito(a2, a3, rL, ignE) || conflito(a3, a4, rL, ignE) || conflito(a4, a5, rL, ignE)) continue;
+          /* o conflito() trata ponta de um trecho a menos de TOL de outro tubo como ligação (tê); o jumper não liga em nada: a folga é medida de verdade */
+          var tocaTubo = false;
+          [[a2, a3], [a3, a4], [a4, a5]].forEach(function (sg) { existentes.forEach(function (Tq) { if (!tocaTubo && !ignE(Tq) && segSeg(sg[0], sg[1], Tq.a, Tq.b) - rL - Tq.r < ((Tq.sistema === "esgoto" || Tq.sistema === "ventilacao") ? Math.max(folga, num(G.afastamento, 0.10)) : folga) - FOLGA_LIMITE) tocaTubo = true; }); });
+          if (tocaTubo) continue;
+          return { a1: a1, a2: a2, a3: a3, a4: a4, yJ: yJ, Q: Q };
+        }
+      }
+      return null;
+    }
     function planejarArvore(ativas) {
       novos = base0.slice();
       var arvore = [{ a: { x: A.x, z: A.z }, b: { x: A.x, z: A.z } }], folhas = [], semCaminho = [];
@@ -691,7 +709,19 @@
       novos = base0.slice().concat(cadeias.map(function (cd) { return { a: cd.p1, b: cd.p2, r: raio(cd.dn), sistema: "agua_fria", id: "barrilete" }; }));
       for (var il = 0; il < folhas.length; il++) {
         var l = folhas[il], yT = Pl.yDe(l.n), p1 = P3(l.x, yT, l.z), p2 = P3(l.x, l.y, l.z), rL = raio(l.dnCol);
-        var cC = conflito(p1, p2, rL, function (Tq) { return Tq.id === l.trecho; });
+        l.desvio = null;   /* a folha é a mesma entre as tentativas de plano: o desvio de uma tentativa anterior não vale nesta */
+        var ignE = function (Tq) { return Tq.id === l.trecho; }, cC = conflito(p1, p2, rL, ignE);
+        if (cC && !l.fonte && usarDesvio) {
+          /* 17/11/2026 (o barrilete que ainda não ligava no banheiro): a coluna reta esbarra num tubo/viga/equipamento sobre a espera. Em vez de largar a espera,
+             DESVIO EM 2 ETAPAS: do nó do barrilete segue na horizontal do plano até um ponto ao lado (Q), DESCE na vertical até uma cota yJ abaixo do obstáculo,
+             volta na horizontal (sem subir) até o prumo da espera e DESCE a coluna de sempre até ela — só DESCENDO (sem bolsa de ar, NBR 5626:2020 6.6.2). */
+          var dvj = desvioColuna(l, yT, rL, ignE);
+          if (dvj) {
+            l.desvio = dvj; l.p1 = P3(l.x, dvj.yJ, l.z); l.p2 = p2;
+            novos.push({ a: dvj.a1, b: dvj.a2, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-1" }, { a: dvj.a2, b: dvj.a3, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-2" }, { a: dvj.a3, b: dvj.a4, r: rL, sistema: "agua_fria", id: "desvio-" + l.trecho + "-3" }, { a: l.p1, b: p2, r: rL, sistema: "agua_fria", id: "coluna-" + l.trecho });
+            continue;
+          }
+        }
         if (cC) { Pl.colunaFalha = { l: l, com: cC.com }; return Pl; }
         if (l.fonte) {
           /* a saída da outra caixa: o coletor SOBE do barrilete até o fim do toco dela; tem de ficar abaixo dessa saída (a água de lá desce até o coletor) */
@@ -714,6 +744,7 @@
       }
       return Pl;
     }
+    var usarDesvio = false;   /* o desvio por baixo do obstáculo (desvioColuna) só entra como ÚLTIMO recurso, no plano final (ver depois do res.semTomada) */
     var modoAfasta = false;   /* conflito() exige o afastamento água × esgoto/ventilação (10 cm livres) — usado só como PREFERÊNCIA no caminho do barrilete */
     var regColuna = false, modoAsc = false, raizTomada = false;   /* raizTomada: a descida vertical da saída chega ao pé da árvore — lá só ela se liga (o tê do barrilete pode nascer no próprio pé, sem toco e joelho) */
     function planejarCom(yP, base, reg, asc) {
@@ -747,6 +778,7 @@
       if (variantes.length > 1 && nV[nV.length - 1] >= 1000) melhorV = { tv: variantes.length - 1 };
       /* o plano guardado (as folhas guardam p1/p2) tem de ser o último calculado: refaz a escolhida se não foi a última */
       P = melhorV.tv === ultimaV ? (melhorV.P || rodarVariante(variantes[melhorV.tv]).P) : rodarVariante(variantes[melhorV.tv]).P;
+      P._args = [yP, base, reg, asc];
       return P;
     }
     var baseTopo = base0.slice(), Pl, tomada = null;
@@ -832,7 +864,7 @@
        saída pela tomada vertical (junto da caixa, a coluna de distribuição com o registro geral) e corre num plano MAIS BAIXO — 10 em 10 cm, do mais
        alto ao mais baixo que ainda fica acima das esperas (descendo, nunca subindo: sem bolsa de ar, R-C10) — o 1º plano que liga MAIS esperas que o
        da saída; vale o que liga todas, senão o que liga mais. A coluna desce embutida do plano até a espera, como sempre. */
-    if (!tomada && !opc.satelite) {
+    if ((!tomada || (Pl.semCaminho.length || Pl.colunasFora.length)) && !opc.satelite) {   /* 17/11/2026: também quando a tomada do passo N23 foi aceita mas as MESMAS esperas seguem sem caminho (antes: !tomada) */
       var nNFd = lista.filter(function (q) { return !q.fonte; }).length, nCon0 = soCol(Pl.folhas);
       if (nNFd && nCon0 < nNFd) {
         var yTopE = Math.max.apply(null, lista.filter(function (q) { return !q.fonte; }).map(function (q) { return q.y; })) + mNo + folga;
@@ -841,7 +873,7 @@
           var Abd = P3(A.x, yP, A.z);
           if (conflito(Atd, Abd, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; })) break;   /* a descida esbarra: nada mais abaixo serve */
           var Pd = planejarCom(yP, baseTopo.concat([{ a: Atd, b: Abd, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
-          if (Pd.baixa || Pd.colunaFalha || Pd.faltaMax > 1 / CASAS) continue;
+          if (Pd.baixa || Pd.colunaFalha) continue;   /* sem altura para a declividade cheia (faltaMax > 0) não recusa: sai com a menor declividade e o aviso de sempre */
           var nd = soCol(Pd.folhas);
           if (nd > nCon0 && (!melhorP || nd > melhorP.n)) melhorP = { y: yP, n: nd, Ab: Abd };
         }
@@ -856,6 +888,14 @@
        (montar) usa isto para tentar outro, em vez de aceitar um lado em que a coluna do consumo cruza a da válvula (N23, 26/10/2026) */
     res.semTomada = !!(PlR && !tomada);
     if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);   /* sem a descida: o plano da cota da saída, como antes (o estado das folhas volta) */
+    /* 17/11/2026: coluna que esbarra num obstáculo sobre a espera (tubo, viga, equipamento): refaz o MESMO plano com o desvio em 2 etapas (desvioColuna) —
+       só se liga mais esperas e nada falha; é o último recurso (as tentativas de lado/plano de antes seguem como eram) */
+    if (!opc.satelite && Pl._args && arr(Pl.colunasFora).some(function (cf) { return !cf.l.fonte; })) {
+      usarDesvio = true;
+      var Pdv = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);
+      usarDesvio = false;
+      if (!Pdv.baixa && !Pdv.colunaFalha && soCol(Pdv.folhas) > soCol(Pl.folhas)) Pl = Pdv; else Pl = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);   /* sem ganho: volta o estado das folhas */
+    }
     Pl.colunasFora.forEach(function (cf) {
       if (cf.l.fonte) { pend("bar.interligacao", nome + ": o coletor até a saída da caixa " + cf.l.sat.id + " não fecha — " + cf.com + "; essa caixa ficou fora do barrilete comum", [cf.l.sat.id, cx.id]); return; }
       pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]);
@@ -919,6 +959,12 @@
         return;
       }
       var tc;
+      if (l.desvio) {   /* o desvio em 2 etapas (planejarArvore/desvioColuna): 3 trechos de jumper e a coluna desce do jumper até a espera */
+        var dvo = l.desvio;
+        ops.push(T("barrilete", "agua_fria", l.dnCol, dvo.a1, dvo.a2, { aplicacao: "reservacao" }), T("coluna", "agua_fria", l.dnCol, dvo.a2, dvo.a3, { aplicacao: "prumada", barEspera: l.trecho, barDesvio: true }), T("barrilete", "agua_fria", l.dnCol, dvo.a3, dvo.a4, { aplicacao: "reservacao" }));
+        yT = dvo.yJ;
+        res.decisoes.push({ id: "bar.desvio_coluna_" + l.trecho, texto: nome + ": a coluna reta até a espera " + l.trecho + " esbarrava num obstáculo — o barrilete segue " + f2(d2(dvo.a1, dvo.a2)) + " m ao lado, DESCE até " + f2(dvo.yJ) + " m (abaixo do obstáculo), volta na horizontal ao prumo da espera e desce a coluna até ela (só descendo, sem bolsa de ar)" });
+      }
       if (l.sobe) {
         /* F5: espera ACIMA do plano de distribuição. A espera é a prumada do ambiente (do aparelho até o forro): o barrilete NÃO sobe por fora dela
            (ficaria um tubo em cima do outro) — a prumada é APARADA na cota do plano e o barrilete liga ali (tê). A parte dela acima do plano sai. */

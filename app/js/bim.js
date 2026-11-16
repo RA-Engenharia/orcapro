@@ -18753,7 +18753,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (catCor.on) { var _kc = catDeMalha(m); if (_kc) { var _moC = modeloDe(m.userData.mid); return catMat(_kc, _moC ? _moC.alpha : 1); } }
     // v1.1.96 — modo "colorir por sistema" ligado: a aparência-base vira a COR DO SISTEMA
     // hidrossanitário (isto faz a cor valer no 3D, na Planta e no imersivo de uma vez).
-    if (sisColor.on) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
+    if (sisColor.on && !m.userData.corProduto) { var _moS = modeloDe(m.userData.mid);   /* corProduto: o registro/acessório mantém a cor do produto (marrom + borboleta laranja) */ return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
     var mo = modeloDe(m.userData.mid);
     var orig = m.userData.matOrig || m.material;
     if (!mo || mo.alpha >= 0.99) return orig;
