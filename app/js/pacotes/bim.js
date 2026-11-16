@@ -101366,7 +101366,7 @@ var SS = 2;
 var ANG_DOBRA = 30;
 var ANG_DOBRA_PX = 38;
 var TETO_PX = 6e6;
-var TETO_CACHE_BYTES = 192 * 1048576;
+var TETO_CACHE_BYTES = 128 * 1048576;
 var POOL = { n: 0, NB: null, MI: null, RGB: null, borda: null };
 function pool(n) {
 if (POOL.n < n) { POOL.n = n; POOL.NB = new Float32Array(n * 3); POOL.MI = new Uint16Array(n); POOL.RGB = new Float32Array(n * 3); POOL.borda = new Uint8Array(n); }
@@ -101440,13 +101440,13 @@ if (W * H > TETO_PX) { var red = Math.sqrt(TETO_PX / (W * H)); W = Math.max(2, M
 var Z = new Float32Array(W * H).fill(Infinity), PL = pool(W * H), NB = PL.NB, MI = PL.MI;
 var BASES = el.malhas.map(function (m) { return m.base || NEUTRO.peca; });
 var V0 = V[0], V1 = V[1], V2 = V[2];
-T.forEach(function (q) {
-var mi = q.m;
+for (var iqr = 0; iqr < T.length; iqr++) {
+var q = T[iqr], mi = q.m;
 var a0 = (q.S[0][0] - x0) * ppm, a1 = (q.S[0][1] - y0) * ppm, a2 = q.S[0][2];
 var b0 = (q.S[1][0] - x0) * ppm, b1 = (q.S[1][1] - y0) * ppm, b2 = q.S[1][2];
 var c0 = (q.S[2][0] - x0) * ppm, c1 = (q.S[2][1] - y0) * ppm, c2 = q.S[2][2];
 var area = (b0 - a0) * (c1 - a1) - (b1 - a1) * (c0 - a0);
-if (Math.abs(area) < 1e-12) return;
+if (Math.abs(area) < 1e-12) continue;
 var N0 = q.N[0], N1 = q.N[1], N2 = q.N[2];
 var bx0 = Math.max(0, Math.floor(Math.min(a0, b0, c0))), bx1 = Math.min(W - 1, Math.ceil(Math.max(a0, b0, c0)));
 var by0 = Math.max(0, Math.floor(Math.min(a1, b1, c1))), by1 = Math.min(H - 1, Math.ceil(Math.max(a1, b1, c1)));
@@ -101467,7 +101467,7 @@ NB[3 * k] = nx; NB[3 * k + 1] = ny; NB[3 * k + 2] = nz;
 MI[k] = mi;
 }
 }
-});
+}
 var L = nrmz([V[0] + 0.42 * B.up[0] - 0.30 * B.r[0], V[1] + 0.42 * B.up[1] - 0.30 * B.r[1], V[2] + 0.42 * B.up[2] - 0.30 * B.r[2]]);
 var Hh = nrmz([L[0] + V[0], L[1] + V[1], L[2] + V[2]]);
 var RGB = PL.RGB, A = new Uint8Array(W * H);
@@ -101503,93 +101503,224 @@ for (var dy = 0; dy < SS; dy++) for (var dx = 0; dx < SS; dx++) { var ks = (yo *
 var ko = (yo * w + xo) * 4;
 if (sa2) { rgba[ko] = sr / sa2 * 255; rgba[ko + 1] = sg / sa2 * 255; rgba[ko + 2] = sb / sa2 * 255; rgba[ko + 3] = sa2 / (SS * SS) * 255; }
 }
-return { id: el.id, papel: el.papel, x: x0, y: y0, w: w * SS / ppm, h: h * SS / ppm, ang: Math.atan2(sa, ca) * 180 / Math.PI, W: w, H: h, rgba: rgba,
-_Z: Z, _A: A, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _tela: tela, _T: T, _min: Math.min.apply(null, T.map(function (q) { return Math.min(q.S[0][2], q.S[1][2], q.S[2][2]); })) };
+var TP = new Float64Array(T.length * 9), zMin = Math.min.apply(null, T.map(function (q) { return Math.min(q.S[0][2], q.S[1][2], q.S[2][2]); }));
+for (var it = 0; it < T.length; it++) for (var iv = 0; iv < 3; iv++) { var Pv = T[it].P[iv]; TP[it * 9 + iv * 3] = Pv[0]; TP[it * 9 + iv * 3 + 1] = Pv[1]; TP[it * 9 + iv * 3 + 2] = Pv[2]; }
+SERIAL++;
+return { _n: SERIAL, id: el.id, papel: el.papel, x: x0, y: y0, w: w * SS / ppm, h: h * SS / ppm, ang: Math.atan2(sa, ca) * 180 / Math.PI, W: w, H: h, rgba: rgba,
+_B: B, _Z: Z, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _TP: TP, _min: zMin };
 }
-function arestasDe(R, B, outros, o) {
-var V = [-B.dir[0], -B.dir[1], -B.dir[2]], mapa = {}, Q = 1e5, cosD = Math.cos(ANG_DOBRA * Math.PI / 180);
-function kq(p) { return Math.round(p[0] * Q) + "," + Math.round(p[1] * Q) + "," + Math.round(p[2] * Q); }
-R._T.forEach(function (q) {
-var gn = nrmz(cross(sub(q.P[1], q.P[0]), sub(q.P[2], q.P[0]))), fr = dot(gn, V);
+var TS = [0, 0, 0];
+function telaEm(Rx, px, py, pz) {
+var Bx = Rx._B, O = Bx.O, r = Bx.r, up = Bx.up, d = Bx.dir;
+var w0 = px - O[0], w1 = py - O[1], w2 = pz - O[2];
+var X = w0 * r[0] + w1 * r[1] + w2 * r[2], Y = -(w0 * up[0] + w1 * up[1] + w2 * up[2]);
+TS[0] = X * Rx._ca + Y * Rx._sa; TS[1] = -X * Rx._sa + Y * Rx._ca; TS[2] = w0 * d[0] + w1 * d[1] + w2 * d[2];
+}
+var FOLGA_G = 1e-3;
+function caixaG(Rx) {
+if (Rx._gx0 != null) return;
+var u0 = Rx._x0, v0 = Rx._y0, u1 = Rx._x0 + Rx._W / Rx._ppm, v1 = Rx._y0 + Rx._H / Rx._ppm, ca = Rx._ca, sa = Rx._sa;
+var gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity;
+for (var c = 0; c < 4; c++) {
+var u = (c & 1) ? u1 : u0, v = (c & 2) ? v1 : v0, gx = u * ca - v * sa, gy = u * sa + v * ca;
+if (gx < gx0) gx0 = gx; if (gx > gx1) gx1 = gx; if (gy < gy0) gy0 = gy; if (gy > gy1) gy1 = gy;
+}
+Rx._gx0 = gx0 - FOLGA_G; Rx._gx1 = gx1 + FOLGA_G; Rx._gy0 = gy0 - FOLGA_G; Rx._gy1 = gy1 + FOLGA_G;
+}
+function feicoesDe(R, B) {
+var V0 = -B.dir[0], V1 = -B.dir[1], V2 = -B.dir[2];
+if (R._FE && R._feV[0] === V0 && R._feV[1] === V1 && R._feV[2] === V2) return R;
+var TP = R._TP, nT = TP.length / 9, Q = 1e5, cosD = Math.cos(ANG_DOBRA * Math.PI / 180);
+var GN = new Float64Array(nT * 3), FR = new Float64Array(nT), lista = [];
+var VX = new Map(), nV = 0, ARE = new Map(), VID = new Int32Array(nT * 3);
+for (var iv0 = 0; iv0 < nT * 3; iv0++) {
+var rx = Math.round(TP[iv0 * 3] * Q), ry = Math.round(TP[iv0 * 3 + 1] * Q), rz = Math.round(TP[iv0 * 3 + 2] * Q);
+var my = VX.get(rx); if (!my) { my = new Map(); VX.set(rx, my); }
+var mz = my.get(ry); if (!mz) { mz = new Map(); my.set(ry, mz); }
+var id = mz.get(rz); if (id === undefined) { id = nV++; mz.set(rz, id); }
+VID[iv0] = id;
+}
+for (var iq = 0; iq < nT; iq++) {
+var o9 = iq * 9;
+var ux = TP[o9 + 3] - TP[o9], uy = TP[o9 + 4] - TP[o9 + 1], uz = TP[o9 + 5] - TP[o9 + 2];
+var vx = TP[o9 + 6] - TP[o9], vy = TP[o9 + 7] - TP[o9 + 1], vz = TP[o9 + 8] - TP[o9 + 2];
+var c0 = uy * vz - uz * vy, c1 = uz * vx - ux * vz, c2 = ux * vy - uy * vx, l = Math.sqrt(c0 * c0 + c1 * c1 + c2 * c2) || 1;
+var g0 = c0 / l, g1 = c1 / l, g2 = c2 / l;
+GN[iq * 3] = g0; GN[iq * 3 + 1] = g1; GN[iq * 3 + 2] = g2; FR[iq] = g0 * V0 + g1 * V1 + g2 * V2;
 for (var i = 0; i < 3; i++) {
-var a = q.P[i], b = q.P[(i + 1) % 3], ka = kq(a), kb = kq(b); if (ka === kb) continue;
-var key = ka < kb ? ka + "|" + kb : kb + "|" + ka;
-(mapa[key] = mapa[key] || { a: a, b: b, f: [] }).f.push({ n: gn, fr: fr });
+var ia = iq * 3 + i, ib = iq * 3 + (i + 1) % 3, va = VID[ia], vb = VID[ib]; if (va === vb) continue;
+var key = va < vb ? va * nT * 3 + vb : vb * nT * 3 + va, e = ARE.get(key);
+if (!e) { e = { oa: ia * 3, ob: ib * 3, n: 0, f0: 0, f1: 0 }; ARE.set(key, e); lista.push(e); }
+if (e.n === 0) e.f0 = iq; else if (e.n === 1) e.f1 = iq;
+e.n++;
 }
-});
-var segs = [], tolZ = Math.max(0.0025, 3 / R._ppm);
+}
+var FE = [], FS = [], EPS = 1e-4;
+for (var k = 0; k < lista.length; k++) {
+var ed = lista[k], feicao = false, sil = false;
+if (ed.n === 1) { feicao = true; sil = true; }
+else if (ed.n >= 2) {
+var r0 = FR[ed.f0], r1 = FR[ed.f1], fa = r0 > EPS ? 1 : (r0 < -EPS ? -1 : 0), fb = r1 > EPS ? 1 : (r1 < -EPS ? -1 : 0);
+var n0 = ed.f0 * 3, n1 = ed.f1 * 3;
+if (fa !== fb && (fa === 1 || fb === 1)) { feicao = true; sil = true; }
+else if (GN[n0] * GN[n1] + GN[n0 + 1] * GN[n1 + 1] + GN[n0 + 2] * GN[n1 + 2] < cosD && (fa === 1 || fb === 1)) feicao = true;
+}
+if (feicao) { FE.push(TP[ed.oa], TP[ed.oa + 1], TP[ed.oa + 2], TP[ed.ob], TP[ed.ob + 1], TP[ed.ob + 2]); FS.push(sil ? 1 : 0); }
+}
+R._FE = new Float64Array(FE); R._FS = new Uint8Array(FS); R._feV = [V0, V1, V2];
+somarBytes(R, R._FE.byteLength + R._FS.byteLength);
+return R;
+}
+var CE = [];
+function arestasDe(R, B, outros, o) {
+var FR0 = feicoesDe(R, B), FE = FR0._FE, FS = FR0._FS, segs = [], tolZ = Math.max(0.0025, 3 / R._ppm), tolS = Math.max(tolZ, 0.008);
+var BO = B.O, Br = B.r, Bu = B.up;
 function zEm(Rx, lx, ly) {
 var X = Math.floor((lx - Rx._x0) * Rx._ppm), Y = Math.floor((ly - Rx._y0) * Rx._ppm);
 if (X < 0 || Y < 0 || X >= Rx._W || Y >= Rx._H) return Infinity;
-var k = Y * Rx._W + X; return Rx._A[k] ? Rx._Z[k] : Infinity;
+return Rx._Z[Y * Rx._W + X];
 }
-function visivel(p, sil) {
-var s = R._tela(p), zs = zEm(R, s[0], s[1]);
-if (zs < s[2] - (sil ? Math.max(tolZ, 0.008) : tolZ)) return false;
-for (var j = 0; j < outros.length; j++) {
-var Ro = outros[j], so = Ro._tela(p);
-if (so[0] < Ro._x0 || so[1] < Ro._y0 || so[0] > Ro._x0 + Ro._W / Ro._ppm || so[1] > Ro._y0 + Ro._H / Ro._ppm) continue;
-if (zEm(Ro, so[0], so[1]) < so[2] - tolZ) return false;
+var a0, a1, a2, b0, b1, b2, sil, nc;
+function visivel(t) {
+var px = a0 + (b0 - a0) * t, py = a1 + (b1 - a1) * t, pz = a2 + (b2 - a2) * t;
+telaEm(R, px, py, pz);
+if (zEm(R, TS[0], TS[1]) < TS[2] - (sil ? tolS : tolZ)) return false;
+for (var j = 0; j < nc; j++) {
+var Ro = CE[j]; telaEm(Ro, px, py, pz);
+var s0 = TS[0], s1 = TS[1];
+if (s0 < Ro._x0 || s1 < Ro._y0 || s0 > Ro._x0 + Ro._W / Ro._ppm || s1 > Ro._y0 + Ro._H / Ro._ppm) continue;
+if (zEm(Ro, s0, s1) < TS[2] - tolZ) return false;
 }
 return true;
 }
-function telaG(p) { var w = sub(p, B.O); return [dot(w, B.r), -dot(w, B.up)]; }
-Object.keys(mapa).forEach(function (key) {
-var e = mapa[key], f = e.f, feicao = false, sil = false, EPS = 1e-4;
-if (f.length === 1) { feicao = true; sil = true; }
-else if (f.length >= 2) {
-var fa = f[0].fr > EPS ? 1 : (f[0].fr < -EPS ? -1 : 0), fb = f[1].fr > EPS ? 1 : (f[1].fr < -EPS ? -1 : 0);
-if (fa !== fb && (fa === 1 || fb === 1)) { feicao = true; sil = true; }
-else if (dot(f[0].n, f[1].n) < cosD && (fa === 1 || fb === 1)) feicao = true;
+function ptG(t) {
+var px = a0 + (b0 - a0) * t, py = a1 + (b1 - a1) * t, pz = a2 + (b2 - a2) * t;
+var w0 = px - BO[0], w1 = py - BO[1], w2 = pz - BO[2];
+return [w0 * Br[0] + w1 * Br[1] + w2 * Br[2], -(w0 * Bu[0] + w1 * Bu[1] + w2 * Bu[2])];
 }
-if (!feicao) return;
-var A2 = telaG(e.a), B2 = telaG(e.b), L = Math.hypot(B2[0] - A2[0], B2[1] - A2[1]); if (L < 1e-5) return;
+function borda(t0, t1, v0) { for (var it = 0; it < 10; it++) { var tm = (t0 + t1) / 2; if (visivel(tm) === v0) t0 = tm; else t1 = tm; } return v0 ? t0 : t1; }
+for (var ie = 0; ie < FS.length; ie++) {
+var o6 = ie * 6;
+a0 = FE[o6]; a1 = FE[o6 + 1]; a2 = FE[o6 + 2]; b0 = FE[o6 + 3]; b1 = FE[o6 + 4]; b2 = FE[o6 + 5]; sil = FS[ie] === 1;
+var wa0 = a0 - BO[0], wa1 = a1 - BO[1], wa2 = a2 - BO[2], wb0 = b0 - BO[0], wb1 = b1 - BO[1], wb2 = b2 - BO[2];
+var gax = wa0 * Br[0] + wa1 * Br[1] + wa2 * Br[2], gay = -(wa0 * Bu[0] + wa1 * Bu[1] + wa2 * Bu[2]);
+var gbx = wb0 * Br[0] + wb1 * Br[1] + wb2 * Br[2], gby = -(wb0 * Bu[0] + wb1 * Bu[1] + wb2 * Bu[2]);
+var L = Math.hypot(gbx - gax, gby - gay); if (L < 1e-5) continue;
+var A2 = ptG(0), B2 = ptG(1);
+var ex0 = Math.min(gax, gbx), ex1 = Math.max(gax, gbx), ey0 = Math.min(gay, gby), ey1 = Math.max(gay, gby);
+nc = 0;
+for (var jo = 0; jo < outros.length; jo++) { var Rc = outros[jo]; if (Rc._gx0 <= ex1 && Rc._gx1 >= ex0 && Rc._gy0 <= ey1 && Rc._gy1 >= ey0) CE[nc++] = Rc; }
 var n = Math.max(2, Math.min(400, Math.ceil(L / 0.003))), ini = null, ult = null, tAnt = 0, vAnt = null;
-function pT(t) { return [e.a[0] + (e.b[0] - e.a[0]) * t, e.a[1] + (e.b[1] - e.a[1]) * t, e.a[2] + (e.b[2] - e.a[2]) * t]; }
-function borda(t0, t1, v0) { for (var it = 0; it < 10; it++) { var tm = (t0 + t1) / 2; if (visivel(pT(tm), sil) === v0) t0 = tm; else t1 = tm; } return v0 ? t0 : t1; }
 for (var i = 0; i <= n; i++) {
-var t = i / n, vis = visivel(pT(t), sil);
+var t = i / n, vis = visivel(t);
 if (vAnt !== null && vis !== vAnt) {
 var tb = borda(tAnt, t, vAnt);
-if (vis) ini = telaG(pT(tb)); else { ult = telaG(pT(tb)); if (ini && (Math.abs(ult[0] - ini[0]) + Math.abs(ult[1] - ini[1]) > 1e-6)) segs.push({ s: [ini[0], ini[1], ult[0], ult[1]], sil: sil }); ini = null; }
-} else if (vAnt === null && vis) ini = telaG(pT(0));
-if (i === n && vis && ini) { var fim = telaG(pT(1)); if (Math.abs(fim[0] - ini[0]) + Math.abs(fim[1] - ini[1]) > 1e-6) segs.push({ s: [ini[0], ini[1], fim[0], fim[1]], sil: sil }); }
+if (vis) ini = ptG(tb); else { ult = ptG(tb); if (ini && (Math.abs(ult[0] - ini[0]) + Math.abs(ult[1] - ini[1]) > 1e-6)) segs.push({ s: [ini[0], ini[1], ult[0], ult[1]], sil: sil }); ini = null; }
+} else if (vAnt === null && vis) ini = A2;
+if (i === n && vis && ini) { var fim = B2; if (Math.abs(fim[0] - ini[0]) + Math.abs(fim[1] - ini[1]) > 1e-6) segs.push({ s: [ini[0], ini[1], fim[0], fim[1]], sil: sil }); }
 vAnt = vis; tAnt = t;
 }
-});
+}
+CE.length = 0;
 return segs;
 }
-var CACHE = new Map(); CACHE.MAX = 600; CACHE.acertos = 0; CACHE.bytes = 0; CACHE.TETO = TETO_CACHE_BYTES;
+function tetoCena() {
+var lim = 0; try { lim = (typeof performance !== 'undefined' && performance.memory && performance.memory.jsHeapSizeLimit) || 0; } catch (e) { lim = 0; }
+var MB = 1048576; if (!lim) return 256 * MB;
+return Math.max(128 * MB, Math.min(256 * MB, Math.floor(lim * 0.06)));
+}
+var TETO_CENA_BYTES = tetoCena();
+var SERIAL = 0;
+var CACHE = new Map(); CACHE.MAX = 600; CACHE.acertos = 0; CACHE.bytes = 0; CACHE.TETO = TETO_CACHE_BYTES; CACHE.TETO_CENA = TETO_CENA_BYTES; CACHE.gen = 0; CACHE.arestasReuso = 0;
 function bytesDe(r) {
 var b = 0;
-try { if (r.rgba) b += r.rgba.byteLength; if (r._Z) b += r._Z.byteLength; if (r._A) b += r._A.byteLength; if (r._T) b += r._T.length * 9 * 8 * 3; } catch (e) {}
+try { if (r.rgba) b += r.rgba.byteLength; if (r._Z) b += r._Z.byteLength; if (r._TP) b += r._TP.byteLength; if (r._FE) b += r._FE.byteLength + r._FS.byteLength; } catch (e) {}
 return b;
 }
 function guardar(k, r) {
 r._bytes = bytesDe(r);
 if (r._bytes > CACHE.TETO) return;
-CACHE.set(k, r); CACHE.bytes += r._bytes;
-while ((CACHE.size > CACHE.MAX || CACHE.bytes > CACHE.TETO) && CACHE.size) { var k0 = CACHE.keys().next().value, r0 = CACHE.get(k0); CACHE["delete"](k0); CACHE.bytes -= (r0 && r0._bytes) || 0; }
+CACHE.set(k, r); CACHE.bytes += r._bytes; r._emCache = true; r._k = k; r._gen = CACHE.gen;
+if (CACHE.bytes > CACHE.TETO_CENA) aparar(true);
+}
+function pesoPesado(r) { return (r._Z ? r._Z.byteLength : 0) + (r._TP ? r._TP.byteLength : 0); }
+function esvaziar(r) { var nb = pesoPesado(r); if (!nb) return 0; r._Z = null; r._TP = null; r._leve = true; r._bytes -= nb; CACHE.bytes -= nb; return nb; }
+function aparar(duro) {
+var k0, r0;
+if (!duro) {
+var it = CACHE.keys();
+while ((CACHE.size > CACHE.MAX || CACHE.bytes > CACHE.TETO) && CACHE.size) {
+k0 = it.next().value; if (k0 === undefined) break;
+r0 = CACHE.get(k0); if (r0 && r0._gen === CACHE.gen) break;
+CACHE["delete"](k0); CACHE.bytes -= (r0 && r0._bytes) || 0; if (r0) r0._emCache = false;
+}
+}
+if (CACHE.bytes > CACHE.TETO_CENA) {
+var pes = []; CACHE.forEach(function (r) { if (!r._leve) pes.push(r); });
+pes.sort(function (a, b) { return (a._uso || 0) - (b._uso || 0); });
+for (var i = 0; i < pes.length && CACHE.bytes > CACHE.TETO_CENA * 0.9; i++) esvaziar(pes[i]);
+}
+while (CACHE.bytes > CACHE.TETO_CENA && CACHE.size) { k0 = CACHE.keys().next().value; r0 = CACHE.get(k0); CACHE["delete"](k0); CACHE.bytes -= (r0 && r0._bytes) || 0; if (r0) r0._emCache = false; }
+}
+function somarBytes(r, nb) { if (r._emCache && CACHE.get(r._k) === r) { r._bytes += nb; CACHE.bytes += nb; } }
+var USO = 0;
+function encher(r, o) {
+r._uso = ++USO;
+if (!r._leve) return true;
+var el = r._el, rr = null; if (!el) return false;
+try { rr = renderElemento(el, r._B, o); } catch (e) { rr = null; }
+if (!rr || rr._W !== r._W || rr._H !== r._H) return false;
+r._Z = rr._Z; r._TP = rr._TP; r._leve = false; CACHE.reenchidos = (CACHE.reenchidos || 0) + 1;
+somarBytes(r, rr._Z.byteLength + rr._TP.byteLength);
+return true;
 }
 function renderizar(elementos, B, o) {
 o = o || {}; o.ppm = o.ppm || 1500;
 var R = [], base = [B.O, B.r, B.up, B.dir].map(function (v) { return v.map(function (x) { return Math.round(x * 1e6); }).join(","); }).join("|") + "|" + o.ppm +
 "|" + (o.faixa ? Math.round(o.faixa.lo * 1e4) + "," + Math.round(o.faixa.hi * 1e4) : "");
+CACHE.gen++;
+var out = { imagens: [], arestas: [] };
 try {
 elementos.forEach(function (el) {
 var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
-if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; }
+if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; r._gen = CACHE.gen; }
 else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
-if (r) R.push(r);
+if (r) { r._el = el; R.push(r); }
 });
-} finally { poolSoltar(); }
 R.sort(function (a, b) { return b._min - a._min; });
-var out = { imagens: [], arestas: [] };
-R.forEach(function (r, i) {
-var depois = R.slice(i + 1);
-if (o.arestas !== false) arestasDe(r, B, depois, o).forEach(function (s) { out.arestas.push({ id: r.id, papel: r.papel, seg: s.s, sil: s.sil }); });
-});
+if (o.arestas !== false) {
+for (var i = 0; i < R.length; i++) caixaG(R[i]);
+var vB = [B.O, B.r, B.up, B.dir].join("|");
+for (i = 0; i < R.length; i++) {
+var r = R[i], cand = [], ant = r._segCand, igual = !!(r._segs && ant && r._segB === vB), nc2 = 0;
+for (var j = i + 1; j < R.length; j++) {
+var Rj = R[j];
+if (Rj._gx0 <= r._gx1 && Rj._gx1 >= r._gx0 && Rj._gy0 <= r._gy1 && Rj._gy1 >= r._gy0) {
+cand.push(Rj);
+if (igual && (nc2 >= ant.length || ant[nc2] !== Rj._n)) igual = false;
+nc2++;
+}
+}
+if (igual && nc2 !== ant.length) igual = false;
+if (igual) CACHE.arestasReuso++;
+else {
+var cheio = encher(r, o);
+for (var c = 0; c < cand.length; c++) if (!encher(cand[c], o)) cheio = false;
+if (!cheio) throw new Error("HidSombra: resultado esvaziado sem como refazer");
+var sg = arestasDe(r, B, cand, o), so = [];
+for (var m = 0; m < sg.length; m++) so.push({ id: r.id, papel: r.papel, seg: sg[m].s, sil: sg[m].sil });
+if (r._segs) somarBytes(r, -r._segs.length * 96);
+r._segs = so; r._segB = vB; r._segCand = cand.map(function (q) { return q._n; }); somarBytes(r, so.length * 96);
+}
+var sv = r._segs; for (var m2 = 0; m2 < sv.length; m2++) out.arestas.push(sv[m2]);
+}
+}
+} finally {
+poolSoltar();
+for (var z = 0; z < R.length; z++) R[z]._el = null;
+}
 R.forEach(function (r) { out.imagens.push({ id: r.id, papel: r.papel, x: r.x, y: r.y, w: r.w, h: r.h, ang: r.ang, W: r.W, H: r.H, rgba: r.rgba }); });
+aparar(false);
 return out;
 }
 function pngDe(im) {
@@ -101600,7 +101731,7 @@ var cx = cv.getContext("2d"), id = cx.createImageData(im.W, im.H); id.data.set(i
 return cv.toDataURL("image/png");
 } catch (e) { return null; }
 }
-var API = { ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
+var API = { ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, TETO_CENA_BYTES: TETO_CENA_BYTES, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
 if (typeof module !== "undefined" && module.exports) module.exports = API;
 global.HidSombra = API;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -167520,7 +167651,9 @@ if (recalcular) P.atualizar(k); else P.redesenhar(k, false);
 _agendarPlantas: function () {
 var self = this, raf = global.requestAnimationFrame;
 if (this._tPlanta) { if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta); }
-var fn = function () { self._tPlanta = 0; self._redesenharPlantas(true); };
+var fn = function () { self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true); };
+var DEB = this.PLANTA_DEB_MS || 250, agora = Date.now();
+if (this._plantaEm && agora - this._plantaEm < DEB) { this._tPlantaRaf = false; this._plantaEm = agora; this._tPlanta = setTimeout(fn, DEB); return; }
 if (typeof raf === "function" && global.document && !global.document.hidden) { this._tPlantaRaf = true; this._tPlanta = raf(fn); }
 else { this._tPlantaRaf = false; this._tPlanta = setTimeout(fn, 0); }
 },

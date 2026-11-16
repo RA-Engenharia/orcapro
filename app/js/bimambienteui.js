@@ -457,7 +457,13 @@
     _agendarPlantas: function () {
       var self = this, raf = global.requestAnimationFrame;
       if (this._tPlanta) { if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta); }
-      var fn = function () { self._tPlanta = 0; self._redesenharPlantas(true); };
+      var fn = function () { self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true); };
+      /* ⚠ DEBOUNCE NA RAJADA (15/11/2026): numa edição em curso (arrasto, troca seguida de parâmetro) cada rebuild refazia
+         a planta Alto inteira — no projeto hidro de ~1.000 peças eram ~30 GB de lixo por minuto e a página travava. A
+         1ª edição continua no próximo quadro (sem atraso visível); outra chegando menos de PLANTA_DEB_MS depois da última
+         planta espera a rajada parar e a planta sai UMA vez, igual à do cálculo completo (a última edição vale). */
+      var DEB = this.PLANTA_DEB_MS || 250, agora = Date.now();
+      if (this._plantaEm && agora - this._plantaEm < DEB) { this._tPlantaRaf = false; this._plantaEm = agora; this._tPlanta = setTimeout(fn, DEB); return; }
       if (typeof raf === "function" && global.document && !global.document.hidden) { this._tPlantaRaf = true; this._tPlanta = raf(fn); }
       else { this._tPlantaRaf = false; this._tPlanta = setTimeout(fn, 0); }
     },
