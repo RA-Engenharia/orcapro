@@ -1026,7 +1026,7 @@
       x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima (barrilete)")] },
     "hid-registro-pressao": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "1", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "Altura/2", "Comprimento", "Profundidade", "Altura"],
       x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
-    "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
+    "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede", dn: "DN_agua" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
       x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
     "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura_base", P: "Profundidade", emb: "Embutir", acab: "Formato_acabamento", cod: "@Codigo" },   /* @: o texto do parâmetro (o modelo do acabamento, catálogo Hydra) */ env: ["0", "0", "-Embutir+0.016", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
     "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
@@ -2139,6 +2139,33 @@
       if (t.valores.Fabricante === "Tigre" && !t.oculta) ocultar(t, "tipo Tigre da caixa de inspeção sem cotas de desenho e sem DN (reserva); a caixa de areia usa a Amanco DN300 da ficha");
     });
   }
+  /* REGISTROS TIGRE (16/11/2026): o catálogo predial não cota o registro (tudo "padrão de reserva": 70 × 80 × 50 mm em qualquer DN, enquanto o
+     de esfera de DN 60 tem 173,5 mm entre as pontas). As medidas são os NÚMEROS da tabela de cotas do fabricante (dados-fonte/hidro/tigre-cotas-rfa.json,
+     caixa do tipo de mesmo código: comprimento entre as pontas, largura do corpo, altura com a manopla), em mm [C, P, A]. Só números — nenhuma geometria
+     do fabricante vai no produto. O comprimento passa a ser a distância entre os conectores (o Colocar e o traçado leem dela). A forma é desenho RA
+     (cilindro, castelo, haste, alavanca): a caixa bate com a do fabricante, os detalhes são proporção de desenho. */
+  var TIGRE_REGISTRO = {
+    "27958001": [87.4, 56, 83], "27958281": [87.4, 56, 83], "27958028": [83, 60.6, 90.2], "27958303": [83, 60.6, 90.2], "27958044": [96.5, 68.5, 100.8], "27958320": [96.5, 68.5, 100.8],
+    "27958060": [120.5, 83.6, 112.8], "27958346": [120.5, 83.6, 112.8], "27958087": [142.7, 96.7, 138.9], "27958362": [142.7, 96.7, 138.9], "27958109": [173.5, 115.8, 160.9], "27958389": [173.5, 115.8, 160.9],
+    "27950302": [83.7, 32.7, 54.9], "27950310": [89.7, 40.6, 62.7], "27950329": [117, 52.4, 77], "27950337": [124.1, 56.5, 86.6], "27950345": [159.9, 75.3, 106.5], "27950353": [160, 86, 118.8],
+    "27940102": [66, 65.7, 136.9], "27940510": [67.6, 65.7, 129.7]
+  };
+  function cotasTigreRegistro(fam) {
+    if (!/^hid-registro-(gaveta|pressao|esfera)$/.test(fam.id)) return;
+    fam.tipos.forEach(function (t) {
+      var v = t.valores, c = TIGRE_REGISTRO[String(v.Codigo)]; if (v.Fabricante !== "Tigre" || !c) return;
+      /* esfera: Altura = a caixa inteira (da base do corpo ao topo da alavanca). Gaveta e pressão (castelo para fora da parede, origem no eixo do tubo): a Altura
+         do parâmetro é medida a partir do EIXO; o corpo desce 1,15 × o raio (rb = 0,32 × a largura, no máximo 22 mm) abaixo dele e a caixa do fabricante o inclui */
+      var abaixo = /^hid-registro-esfera$/.test(fam.id) ? 0 : Math.min(0.32 * c[1], 22) * 1.15;
+      v.Comprimento = mm(c[0]); v.Profundidade = mm(c[1]); v.Altura = mm(c[2] - abaixo);
+      v.Cotas_ficha = (v.Cotas_ficha ? v.Cotas_ficha + "; " : "") + "caixa do fabricante (cód. " + v.Codigo + "): comprimento " + c[0] + ", largura " + c[1] + ", altura total " + c[2] + " mm";
+      var resto = String(v.Conferir || "").split("; ").filter(function (x) { return x && !/\(padrão de reserva\)$/.test(x); });
+      v.Conferir = resto.join("; "); t.conferir = (t.conferir || []).filter(function (x) { return !/\(padrão de reserva\)$/.test(x); });
+      if (!resto.length) v.A_conferir = false;
+      t.avisos = (t.avisos || []).filter(function (x) { return x !== AV_ESQ; });
+      t.avisos.push("Comprimento, largura e altura: a caixa do registro do fabricante (cód. " + v.Codigo + ", tabela de cotas); a forma é desenho RA (a conferir os detalhes).");
+    });
+  }
   function fichaTigre(fam) {
     var F = FICHA_TIGRE[fam.id]; if (!F) return;
     /* revisão 14/11 (C1): o tipo Tigre do catálogo fica IGUAL ao master (legado: projeto salvo com tubo nas bocas antigas não solta cano nem
@@ -2186,6 +2213,7 @@
     fichaSifonada(fam);
     fichaSifonadaTigre(fam);
     fichaRaloTigre(fam);
+    cotasTigreRegistro(fam);
     ocultarCaixasSemCota(fam);
     /* a miniatura do cartão da família é o tipo que o Colocar insere por padrão (o 1º não legado): o que se vê é o que entra */
     if (/^hid-(caixa-sifonada|ralo|caixa-areia)$/.test(fam.id)) { var t0 = fam.tipos.filter(function (t) { return !t.legado; })[0]; if (t0) fam.tipoIcone = t0.id; }

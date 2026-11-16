@@ -98240,6 +98240,7 @@ if (d && d.pb) { o.pb = d.pb; o.origem.pb = d.fpb && d.fpb !== d.f ? "catalogo" 
 else { o.pb = PROP.pb(o.de); o.origem.pb = "proporcao"; o.aConferir = true; }
 return o;
 }
+var TIGRE_RED_R = { "100x75": "26752205" };
 function cotasConexao(material, tipo, dn, dn2, dnRamal) {
 var tb = cotasTubo(material, dn), junta = tb.junta, C = ((dados().conexoes || {})[material]) || {};
 var k = dn2 ? dn + "x" + dn2 : String(dn), reg = C[tipo] && C[tipo][k];
@@ -98267,8 +98268,10 @@ o.R = pcv.rCentral; o.rCentral = pcv.rCentral; o.z = Math.round((tc + pcv.b1 + p
 o.pb = pcv.b1; o.od = 2 * pcv.raioBolsa; o.deCorpo = o.de + (pcv.deCorpo - pcv.de1); o.ponta = Math.round(Math.min(o.zp - pcv.rCentral * Math.tan(thc / 2) - 2, pcv.b1 + 6) * 100) / 100;
 ["R", "z", "zp", "pb", "od", "ponta"].forEach(function (c) { o.origem[c] = "produto"; }); o.produto = true;
 }
-if (PR && tipo === "reducao" && PR.reducao && dn2 && PR.reducao[String(dn) + "x" + String(dn2)]) {
-var prd = PR.reducao[String(dn) + "x" + String(dn2)];
+var PRred = PR || (material === "pvc_serie_r" && dn2 && TIGRE_RED_R[String(dn) + "x" + String(dn2)] ? produto() : null);
+if (PRred && tipo === "reducao" && PRred.reducao && dn2 && PRred.reducao[String(dn) + "x" + String(dn2)]) {
+var prd = PRred.reducao[String(dn) + "x" + String(dn2)];
+if (PRred !== PR) { o.tigre = TIGRE_RED_R[String(dn) + "x" + String(dn2)]; o.fontes.push("Tigre cód. " + o.tigre + " (redução excêntrica série reforçada; cotas A/C/anéis/desnível da tabela do produto)"); }
 o.L = prd.a; o.zg = prd.c; o.zq = Math.round((prd.a - prd.c) * 100) / 100; o.excentrica = true; o.ponta = Math.round(prd.c * 0.45 * 100) / 100;
 o.odPeq = 2 * prd.raioAnel2; o.origem.L = o.origem.zg = o.origem.zq = "produto"; o.produto = true;
 }
@@ -99100,14 +99103,14 @@ var gX = e1.dn >= e2.dn ? e1 : e2, pX = gX === e1 ? e2 : e1;
 cot = cotasConexao(mat, "reducao", c.dn, c.dn2);
 var cgX = cotasConexao(mat, "luva", gX.dn), cpX = cotasConexao(mat, "luva", pX.dn), Lx = cot.L, zgX = cot.zg, zqX = cot.zq;
 var cpqX = { de: cpX.de, od: cot.odPeq || cpX.od, pb: Math.min(cpX.pb, zqX - 3), e: cpX.e, junta: J };
-var rGb = cgX.de / 2 + Math.max(1.2, cgX.e * 1.6), rPb = raioCorpo(cpqX), Lp = cot.ponta;
+var rGb = cot.tigre ? cgX.de / 2 + 0.4 : cgX.de / 2 + Math.max(1.2, cgX.e * 1.6), frG = cot.tigre ? 0 : Math.max(0.8, 0.013 * cgX.de), rPb = raioCorpo(cpqX), Lp = cot.ponta;
 var trX = o.trechos && o.trechos[gX.trecho], sentidoX = trX && trX.excentrica === "inferior" ? -1 : 1;
 var dirP = gX.dir, baixo = sub([0, sentidoX, 0], mul(dirP, dot([0, sentidoX, 0], dirP))), exc = len(baixo) > 0.5;
 baixo = exc ? nrmz(baixo) : [0, 0, 0];
 var dz = (cgX.de - cpX.de) / 2, s1 = cpqX.pb + transicao(cpqX), s2 = Lx - Lp - 6;
 var pfr = []; boca(pfr, 0, +1, cpqX); pfr.push([s1, rPb], [s2, rGb]);
 var qp = [], rT = cgX.de / 2, chP = Math.min(1.5, cgX.e * 0.7), riP = Math.max(rT * 0.6, rT - Math.max(cgX.e, 1.2));
-pfr.push([Lx - Lp - 1.5, rGb + Math.max(0.8, 0.013 * cgX.de)], [Lx - Lp, rGb + Math.max(0.8, 0.013 * cgX.de)], [Lx - Lp + 0.6, rT], [Lx - chP * 3.7, rT], [Lx, rT - chP], [Lx, riP], [Lx - Math.min(Lp * 0.8, 0.5 * cgX.de), 0]);
+pfr.push([Lx - Lp - 1.5, rGb + frG], [Lx - Lp, rGb + frG], [Lx - Lp + 0.6, rT], [Lx - chP * 3.7, rT], [Lx, rT - chP], [Lx, riP], [Lx - Math.min(Lp * 0.8, 0.5 * cgX.de), 0]);
 var camX = reta(add(P, mul(pX.dir, zqX * MM)), dirP);
 camX.desloc = function (sm) { var sx = sm / MM, f = sx <= s1 ? 1 : (sx >= s2 ? 0 : (s2 - sx) / (s2 - s1)); return mul(baixo, dz * f * MM); };
 varrer(m, camX, escala(pfr), segsDe(lod, cgX.de), false);
@@ -99254,7 +99257,7 @@ return { partes: partes, recuo: (s0 + L - cDn.pb) * MM, faceMontante: s0 * MM, f
 function temPonta(material, tipo, dn) {
 tipo = tipoBaseGeo(tipo);
 if (JUNTA[material] !== "anel") return false;
-if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
+if (tipo === "reducao") { var PRr = material === "pvc_esgoto" || (material === "pvc_serie_r" && String(dn) === "100") ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
 try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
 }
 function cotasPeca(k) {

@@ -13684,7 +13684,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     'vermelho': { cor: 0xb3201f, rug: 0.45, met: 0.1, cc: 0.3, ccr: 0.25 }, 'polietileno verde': { cor: 0x2f7d34, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 },
     'polietileno amarelo': { cor: 0xe0b114, rug: 0.45, met: 0, cc: 0.2, ccr: 0.3 }, 'metal preto': { cor: 0x1f2124, rug: 0.4, met: 0.3, cc: 0.3, ccr: 0.3 },
     'alumínio fundido': { cor: 0xc3c7cc, rug: 0.38, met: 0.9 }, 'preto': { cor: 0x222428, rug: 0.5, met: 0 }, 'inox': { cor: 0xc6cacf, rug: 0.38, met: 1 }, 'aço inox': { cor: 0xc6cacf, rug: 0.38, met: 1 },
-    'latão': { cor: 0xc9a24a, rug: 0.28, met: 1 }, 'plástico': { cor: 0xd6d8da, rug: 0.45, met: 0 }, 'pvc': { cor: 0xece9e1, rug: 0.5, met: 0 },
+    'latão': { cor: 0xc9a24a, rug: 0.28, met: 1 }, 'plástico': { cor: 0xd6d8da, rug: 0.45, met: 0 }, 'pvc': { cor: 0xece9e1, rug: 0.5, met: 0 }, 'pvc marrom': { cor: 0x6a5442, rug: 0.5, met: 0 }, 'laranja': { cor: 0xe8891c, rug: 0.5, met: 0 },
     'polietileno azul': { cor: 0x1d5fae, rug: 0.42, met: 0, cc: 0.25, ccr: 0.3 }, 'ferro fundido': { cor: 0x3a3d42, rug: 0.55, met: 0.5 },
     'água': { cor: 0xc9dbe2, rug: 0.04, met: 0, cc: 1, ccr: 0.02 },
     /* PISCINA DE FIBRA (js/familiaspiscina.js, 19/10/2026): casco azul de fibra, bordinha branca, água translúcida sobre o casco */

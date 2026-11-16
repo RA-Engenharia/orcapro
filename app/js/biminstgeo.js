@@ -207,6 +207,7 @@
     return o;
   }
 
+  var TIGRE_RED_R = { "100x75": "26752205" };   /* série R: redução excêntrica com código Tigre e cotas conferidas na tabela do produto */
   /* a conexão: devolve as cotas que a geometria usa (mm) e de onde vieram */
   function cotasConexao(material, tipo, dn, dn2, dnRamal) {
     var tb = cotasTubo(material, dn), junta = tb.junta, C = ((dados().conexoes || {})[material]) || {};
@@ -244,9 +245,14 @@
       o.pb = pcv.b1; o.od = 2 * pcv.raioBolsa; o.deCorpo = o.de + (pcv.deCorpo - pcv.de1); o.ponta = Math.round(Math.min(o.zp - pcv.rCentral * Math.tan(thc / 2) - 2, pcv.b1 + 6) * 100) / 100;
       ["R", "z", "zp", "pb", "od", "ponta"].forEach(function (c) { o.origem[c] = "produto"; }); o.produto = true;
     }
-    if (PR && tipo === "reducao" && PR.reducao && dn2 && PR.reducao[String(dn) + "x" + String(dn2)]) {
+    /* SÉRIE R (16/11/2026): a redução EXCÊNTRICA Tigre 26752205 (100 × 75; ficha p.24 do catálogo série reforçada) tem as mesmas cotas da tabela do
+       produto (A 122, C 77,4, anéis Ø100 e Ø88,4, desnível 12,5): lado maior PONTA, lado menor BOLSA — antes saía bolsa × bolsa de 129,3 mm e Ø117,7.
+       Só as combinações com código Tigre conferido entram (TIGRE_RED_R); as demais seguem a ficha. */
+    var PRred = PR || (material === "pvc_serie_r" && dn2 && TIGRE_RED_R[String(dn) + "x" + String(dn2)] ? produto() : null);
+    if (PRred && tipo === "reducao" && PRred.reducao && dn2 && PRred.reducao[String(dn) + "x" + String(dn2)]) {
       /* REDUÇÃO EXCÊNTRICA: o lado maior é PONTA, o menor BOLSA; geratriz de baixo reta (o esgoto não acumula) */
-      var prd = PR.reducao[String(dn) + "x" + String(dn2)];
+      var prd = PRred.reducao[String(dn) + "x" + String(dn2)];
+      if (PRred !== PR) { o.tigre = TIGRE_RED_R[String(dn) + "x" + String(dn2)]; o.fontes.push("Tigre cód. " + o.tigre + " (redução excêntrica série reforçada; cotas A/C/anéis/desnível da tabela do produto)"); }
       o.L = prd.a; o.zg = prd.c; o.zq = Math.round((prd.a - prd.c) * 100) / 100; o.excentrica = true; o.ponta = Math.round(prd.c * 0.45 * 100) / 100;
       o.odPeq = 2 * prd.raioAnel2; o.origem.L = o.origem.zg = o.origem.zq = "produto"; o.produto = true;
     }
@@ -1323,7 +1329,7 @@
         cot = cotasConexao(mat, "reducao", c.dn, c.dn2);
         var cgX = cotasConexao(mat, "luva", gX.dn), cpX = cotasConexao(mat, "luva", pX.dn), Lx = cot.L, zgX = cot.zg, zqX = cot.zq;
         var cpqX = { de: cpX.de, od: cot.odPeq || cpX.od, pb: Math.min(cpX.pb, zqX - 3), e: cpX.e, junta: J };
-        var rGb = cgX.de / 2 + Math.max(1.2, cgX.e * 1.6), rPb = raioCorpo(cpqX), Lp = cot.ponta;
+        var rGb = cot.tigre ? cgX.de / 2 + 0.4 : cgX.de / 2 + Math.max(1.2, cgX.e * 1.6), frG = cot.tigre ? 0 : Math.max(0.8, 0.013 * cgX.de), rPb = raioCorpo(cpqX), Lp = cot.ponta;
         /* GERATRIZ SUPERIOR reta (o produto e a prática do esgoto por gravidade: as geratrizes de CIMA alinhadas na mudança de
            diâmetro, para não represar a montante) — o lado menor SOBE; "inferior" no trecho de jusante (excentrica) inverte */
         var trX = o.trechos && o.trechos[gX.trecho], sentidoX = trX && trX.excentrica === "inferior" ? -1 : 1;
@@ -1332,7 +1338,7 @@
         var dz = (cgX.de - cpX.de) / 2, s1 = cpqX.pb + transicao(cpqX), s2 = Lx - Lp - 6;
         var pfr = []; boca(pfr, 0, +1, cpqX); pfr.push([s1, rPb], [s2, rGb]);
         var qp = [], rT = cgX.de / 2, chP = Math.min(1.5, cgX.e * 0.7), riP = Math.max(rT * 0.6, rT - Math.max(cgX.e, 1.2));
-        pfr.push([Lx - Lp - 1.5, rGb + Math.max(0.8, 0.013 * cgX.de)], [Lx - Lp, rGb + Math.max(0.8, 0.013 * cgX.de)], [Lx - Lp + 0.6, rT], [Lx - chP * 3.7, rT], [Lx, rT - chP], [Lx, riP], [Lx - Math.min(Lp * 0.8, 0.5 * cgX.de), 0]);
+        pfr.push([Lx - Lp - 1.5, rGb + frG], [Lx - Lp, rGb + frG], [Lx - Lp + 0.6, rT], [Lx - chP * 3.7, rT], [Lx, rT - chP], [Lx, riP], [Lx - Math.min(Lp * 0.8, 0.5 * cgX.de), 0]);
         var camX = reta(add(P, mul(pX.dir, zqX * MM)), dirP);
         camX.desloc = function (sm) { var sx = sm / MM, f = sx <= s1 ? 1 : (sx >= s2 ? 0 : (s2 - sx) / (s2 - s1)); return mul(baixo, dz * f * MM); };   /* s do perfil já em metros */
         varrer(m, camX, escala(pfr), segsDe(lod, cgX.de), false);
@@ -1511,7 +1517,7 @@
   function temPonta(material, tipo, dn) {
     tipo = tipoBaseGeo(tipo);   /* a junção de redução tem a ponta da junção do DN da linha */
     if (JUNTA[material] !== "anel") return false;
-    if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
+    if (tipo === "reducao") { var PRr = material === "pvc_esgoto" || (material === "pvc_serie_r" && String(dn) === "100") ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
     /* DECISÃO DO ROGÉRIO (07/11/2026): na obra o pluvial de PVC série R leva LUVA nas emendas com joelho, curva e tê (a peça Tigre série R é ponta-bolsa) — a série R lê a ponta do perfil medido como as demais */
     try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
   }

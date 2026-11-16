@@ -17133,9 +17133,38 @@ return [mt];
 }
 function geoRegistro(P, q) {
 var C = P.C, H = P.H, Pp = P.P, tipo = Math.round(P.tipo || 0), parede = P.parede > 0.5, partes = [];
-var ax = parede ? [0, 0, 1] : [0, 1, 0], corpo = parte("corpo", "Corpo do registro", LATAO), rb = Math.min(Pp * 0.32, 0.022);
+var ax = parede ? [0, 0, 1] : [0, 1, 0], corpo = parte("corpo", "Corpo do registro", LATAO), rb = Math.min(Pp * 0.32, 0.022), lc = H - Pp / 2 - 0.035;
+if (tipo === 2 && P.dn > 0) {
+var rs = null; try { rs = geoRegistroTubo({ C: C, DN: P.dn, ac: 1, vi: 0 }, q); } catch (e0) { rs = null; }
+if (rs && rs.length) {
+var mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9], i, k;
+rs.forEach(function (pt) { for (i = 0; i + 2 < pt.m.v.length; i += 3) for (k = 0; k < 3; k++) { if (k !== 1 && pt.nome === "laranja") continue; var c = pt.m.v[i + k]; if (c < mn[k]) mn[k] = c; if (c > mx[k]) mx[k] = c; } });
+var sx = C / Math.max(1e-6, mx[0] - mn[0]), sy = H / Math.max(1e-6, mx[1] - mn[1]), sz = Pp / Math.max(1e-6, mx[2] - mn[2]), cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2;
+var lx0 = 1e9, lx1 = -1e9;
+rs.forEach(function (pt) { if (pt.nome !== "laranja") return; for (i = 0; i + 2 < pt.m.v.length; i += 3) { var xx = (pt.m.v[i] - cx) * sx; if (xx < lx0) lx0 = xx; if (xx > lx1) lx1 = xx; } });
+var kl = lx1 > lx0 ? Math.min(1, C / 2 / Math.max(Math.abs(lx0), Math.abs(lx1))) : 1;
+rs.forEach(function (pt) {
+for (i = 0; i + 2 < pt.m.v.length; i += 3) { pt.m.v[i] = (pt.m.v[i] - cx) * sx * (pt.nome === "laranja" ? kl : 1); pt.m.v[i + 1] = (pt.m.v[i + 1] - mn[1]) * sy - Pp / 2; pt.m.v[i + 2] = (pt.m.v[i + 2] - cz) * sz; }
+pt.material = pt.nome === "laranja" ? "Laranja" : (pt.nome === "anel" ? "Preto" : "PVC marrom"); pt.acessorio = pt.nome === "laranja";
+});
+return rs;
+}
+}
+if (tipo === 2) {
+var kP = 1 / Math.cos(Math.PI / Math.max(6, q.n || 12)), Re = Pp / 2 * kP, rE = Re * 0.62, rK = Re * 0.97, rN = Re * 0.99;
+torno(corpo.m, [[rE * 0.88, 0], [rE, 0.004], [rE, C * 0.13], [rN, C * 0.13], [rN, C * 0.29], [rK, C * 0.29], [rK, C * 0.71], [rN, C * 0.71], [rN, C * 0.87], [rE, C * 0.87], [rE, C - 0.004], [rE * 0.88, C]], q.n, { c: [-C / 2, 0, 0], eixo: [1, 0, 0] });
+lc = H - Pp / 2 - 0.009;
+var rp = Math.min(Pp / 2 * 0.5, 0.03), rh = Math.max(0.005, Math.min(Pp / 2 * 0.2, 0.012));
+torno(corpo.m, [[rp * 0.8, 0], [rp * 0.8, lc * 0.55], [rp * 0.6, lc * 0.6], [rp * 0.45, lc]], q.n, { c: [0, 0, 0], eixo: ax });
+partes.push(corpo);
+var al = parte("acabamento", "Alavanca", "Vermelho", true);
+torno(al.m, [[rh, 0], [rh, lc]], q.n, { c: [0, 0, 0], eixo: ax });
+if (parede) caixaRz(al.m, { x0: -C * 0.45, x1: C * 0.45, y0: -0.007, y1: 0.007, z0: lc, z1: lc + 0.009, r: 0.002, rad: 0.005 }, q);
+else caixaR(al.m, { x0: -C * 0.45, x1: C * 0.45, y0: lc, y1: lc + 0.009, z0: -0.007, z1: 0.007, r: 0.002, rad: 0.005 }, q);
+partes.push(al);
+return partes;
+}
 torno(corpo.m, [[rb * 0.85, 0], [rb, 0.004], [rb, C * 0.22], [rb * 0.92, C * 0.26], [rb * 1.15, C * 0.4], [rb * 1.15, C * 0.6], [rb * 0.92, C * 0.74], [rb, C * 0.78], [rb, C - 0.004], [rb * 0.85, C]], q.n, { c: [-C / 2, 0, 0], eixo: [1, 0, 0] });
-var lc = H - Pp / 2 - 0.035;
 torno(corpo.m, [[rb * 0.8, 0], [rb * 0.8, lc * 0.55], [rb * 0.6, lc * 0.6], [rb * 0.45, lc]], q.n, { c: [0, 0, 0], eixo: ax });
 partes.push(corpo);
 var ac = parte("acabamento", tipo === 2 ? "Alavanca" : "Canopla e volante", tipo === 2 ? "Vermelho" : CROMO, true);
@@ -18134,7 +18163,7 @@ porca_sextavada: geoPorcaSext, motobomba_bc: geoMotobombaBC, casa_reservatorios:
 };
 var ORCAMENTO = {
 bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 5600, caixa_descarga_embutida: 1400,
+chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 7500, valvula_descarga: 5600, caixa_descarga_embutida: 1400,
 caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000, registro_tubo: 4000, reservatorio: 12500, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
 hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
 sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,
@@ -19025,7 +19054,7 @@ x: [X("Modelo_torneira", "inteiro", 0, "Forma 3D", "0 = de parede, 1 = de mesa �
 x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima (barrilete)")] },
 "hid-registro-pressao": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "1", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "Altura/2", "Comprimento", "Profundidade", "Altura"],
 x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
-"hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
+"hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede", dn: "DN_agua" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
 x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
 "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura_base", P: "Profundidade", emb: "Embutir", acab: "Formato_acabamento", cod: "@Codigo" }, env: ["0", "0", "-Embutir+0.016", "Largura", "Altura", "Profundidade"], x: [] },
 "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
@@ -19951,6 +19980,26 @@ fam.tipos.forEach(function (t) {
 if (t.valores.Fabricante === "Tigre" && !t.oculta) ocultar(t, "tipo Tigre da caixa de inspeção sem cotas de desenho e sem DN (reserva); a caixa de areia usa a Amanco DN300 da ficha");
 });
 }
+var TIGRE_REGISTRO = {
+"27958001": [87.4, 56, 83], "27958281": [87.4, 56, 83], "27958028": [83, 60.6, 90.2], "27958303": [83, 60.6, 90.2], "27958044": [96.5, 68.5, 100.8], "27958320": [96.5, 68.5, 100.8],
+"27958060": [120.5, 83.6, 112.8], "27958346": [120.5, 83.6, 112.8], "27958087": [142.7, 96.7, 138.9], "27958362": [142.7, 96.7, 138.9], "27958109": [173.5, 115.8, 160.9], "27958389": [173.5, 115.8, 160.9],
+"27950302": [83.7, 32.7, 54.9], "27950310": [89.7, 40.6, 62.7], "27950329": [117, 52.4, 77], "27950337": [124.1, 56.5, 86.6], "27950345": [159.9, 75.3, 106.5], "27950353": [160, 86, 118.8],
+"27940102": [66, 65.7, 136.9], "27940510": [67.6, 65.7, 129.7]
+};
+function cotasTigreRegistro(fam) {
+if (!/^hid-registro-(gaveta|pressao|esfera)$/.test(fam.id)) return;
+fam.tipos.forEach(function (t) {
+var v = t.valores, c = TIGRE_REGISTRO[String(v.Codigo)]; if (v.Fabricante !== "Tigre" || !c) return;
+var abaixo = /^hid-registro-esfera$/.test(fam.id) ? 0 : Math.min(0.32 * c[1], 22) * 1.15;
+v.Comprimento = mm(c[0]); v.Profundidade = mm(c[1]); v.Altura = mm(c[2] - abaixo);
+v.Cotas_ficha = (v.Cotas_ficha ? v.Cotas_ficha + "; " : "") + "caixa do fabricante (cód. " + v.Codigo + "): comprimento " + c[0] + ", largura " + c[1] + ", altura total " + c[2] + " mm";
+var resto = String(v.Conferir || "").split("; ").filter(function (x) { return x && !/\(padrão de reserva\)$/.test(x); });
+v.Conferir = resto.join("; "); t.conferir = (t.conferir || []).filter(function (x) { return !/\(padrão de reserva\)$/.test(x); });
+if (!resto.length) v.A_conferir = false;
+t.avisos = (t.avisos || []).filter(function (x) { return x !== AV_ESQ; });
+t.avisos.push("Comprimento, largura e altura: a caixa do registro do fabricante (cód. " + v.Codigo + ", tabela de cotas); a forma é desenho RA (a conferir os detalhes).");
+});
+}
 function fichaTigre(fam) {
 var F = FICHA_TIGRE[fam.id]; if (!F) return;
 var pares = [];
@@ -19994,6 +20043,7 @@ fichaTigre(fam);
 fichaSifonada(fam);
 fichaSifonadaTigre(fam);
 fichaRaloTigre(fam);
+cotasTigreRegistro(fam);
 ocultarCaixasSemCota(fam);
 if (/^hid-(caixa-sifonada|ralo|caixa-areia)$/.test(fam.id)) { var t0 = fam.tipos.filter(function (t) { return !t.legado; })[0]; if (t0) fam.tipoIcone = t0.id; }
 hidraulica(fam);

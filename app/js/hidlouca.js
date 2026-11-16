@@ -805,9 +805,45 @@
   /* ---------- registro (corpo em linha ao longo de X; castelo para fora da parede ou para cima) ---------- */
   function geoRegistro(P, q) {
     var C = P.C, H = P.H, Pp = P.P, tipo = Math.round(P.tipo || 0), parede = P.parede > 0.5, partes = [];
-    var ax = parede ? [0, 0, 1] : [0, 1, 0], corpo = parte("corpo", "Corpo do registro", LATAO), rb = Math.min(Pp * 0.32, 0.022);
+    var ax = parede ? [0, 0, 1] : [0, 1, 0], corpo = parte("corpo", "Corpo do registro", LATAO), rb = Math.min(Pp * 0.32, 0.022), lc = H - Pp / 2 - 0.035;
+    if (tipo === 2 && P.dn > 0) {
+      /* REGISTRO DE ESFERA = A MESMA FORMA DO ACESSÓRIO NO TUBO (pedido da coordenação, 16/11/2026): corpo de PVC marrom, porcas de união ranhuradas, bolsas,
+         haste e borboleta laranja vêm do HidGeo.registro (js/biminstgeo.js, a ponte geoRegistroTubo) e a peça é ESCALADA, eixo a eixo, para a caixa das cotas da família
+         (Comprimento no eixo do tubo, Profundidade = largura, Altura = da base do corpo ao topo da borboleta; origem no eixo, corpo de -P/2 a Altura - P/2). Sem o HidGeo, cai no desenho simples abaixo. */
+      var rs = null; try { rs = geoRegistroTubo({ C: C, DN: P.dn, ac: 1, vi: 0 }, q); } catch (e0) { rs = null; }
+      if (rs && rs.length) {
+        var mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9], i, k;   /* comprimento e largura = os do CORPO (a borboleta pode abrir mais que ele); a altura é a do conjunto */
+        rs.forEach(function (pt) { for (i = 0; i + 2 < pt.m.v.length; i += 3) for (k = 0; k < 3; k++) { if (k !== 1 && pt.nome === "laranja") continue; var c = pt.m.v[i + k]; if (c < mn[k]) mn[k] = c; if (c > mx[k]) mx[k] = c; } });
+        var sx = C / Math.max(1e-6, mx[0] - mn[0]), sy = H / Math.max(1e-6, mx[1] - mn[1]), sz = Pp / Math.max(1e-6, mx[2] - mn[2]), cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2;
+        var lx0 = 1e9, lx1 = -1e9;   /* as asas da borboleta não passam do comprimento da peça (a caixa do fabricante é o comprimento entre as pontas) */
+        rs.forEach(function (pt) { if (pt.nome !== "laranja") return; for (i = 0; i + 2 < pt.m.v.length; i += 3) { var xx = (pt.m.v[i] - cx) * sx; if (xx < lx0) lx0 = xx; if (xx > lx1) lx1 = xx; } });
+        var kl = lx1 > lx0 ? Math.min(1, C / 2 / Math.max(Math.abs(lx0), Math.abs(lx1))) : 1;
+        rs.forEach(function (pt) {
+          for (i = 0; i + 2 < pt.m.v.length; i += 3) { pt.m.v[i] = (pt.m.v[i] - cx) * sx * (pt.nome === "laranja" ? kl : 1); pt.m.v[i + 1] = (pt.m.v[i + 1] - mn[1]) * sy - Pp / 2; pt.m.v[i + 2] = (pt.m.v[i + 2] - cz) * sz; }
+          pt.material = pt.nome === "laranja" ? "Laranja" : (pt.nome === "anel" ? "Preto" : "PVC marrom"); pt.acessorio = pt.nome === "laranja";
+        });
+        return rs;
+      }
+    }
+    if (tipo === 2) {
+      /* REGISTRO DE ESFERA (16/11/2026): a forma ESCALA com as três cotas da família — Comprimento entre as pontas, Profundidade = Ø das porcas de união
+         (a largura do registro) e Altura = da base do corpo ao topo da alavanca (a caixa do fabricante, tabela de cotas; o DN 60 tem 173,5 × 115,8 × 160,9).
+         Antes o corpo era limitado a Ø 44 e o castelo a Altura − 35 mm: o registro de DN 60 saía com 70 × 47 × 36 mm. Bolsas nas pontas, porca de união
+         em cada lado e o corpo da esfera no meio; a alavanca (a "borboleta") fecha a Altura. A forma é desenho RA; a caixa é a do fabricante. */
+      var kP = 1 / Math.cos(Math.PI / Math.max(6, q.n || 12)), Re = Pp / 2 * kP, rE = Re * 0.62, rK = Re * 0.97, rN = Re * 0.99;   /* kP: o polígono de n lados fecha na largura Profundidade (não 3 % abaixo) */
+      torno(corpo.m, [[rE * 0.88, 0], [rE, 0.004], [rE, C * 0.13], [rN, C * 0.13], [rN, C * 0.29], [rK, C * 0.29], [rK, C * 0.71], [rN, C * 0.71], [rN, C * 0.87], [rE, C * 0.87], [rE, C - 0.004], [rE * 0.88, C]], q.n, { c: [-C / 2, 0, 0], eixo: [1, 0, 0] });
+      lc = H - Pp / 2 - 0.009;   /* o topo da alavanca (9 mm de espessura) fecha em Altura − Profundidade/2 acima do eixo */
+      var rp = Math.min(Pp / 2 * 0.5, 0.03), rh = Math.max(0.005, Math.min(Pp / 2 * 0.2, 0.012));
+      torno(corpo.m, [[rp * 0.8, 0], [rp * 0.8, lc * 0.55], [rp * 0.6, lc * 0.6], [rp * 0.45, lc]], q.n, { c: [0, 0, 0], eixo: ax });
+      partes.push(corpo);
+      var al = parte("acabamento", "Alavanca", "Vermelho", true);
+      torno(al.m, [[rh, 0], [rh, lc]], q.n, { c: [0, 0, 0], eixo: ax });
+      if (parede) caixaRz(al.m, { x0: -C * 0.45, x1: C * 0.45, y0: -0.007, y1: 0.007, z0: lc, z1: lc + 0.009, r: 0.002, rad: 0.005 }, q);
+      else caixaR(al.m, { x0: -C * 0.45, x1: C * 0.45, y0: lc, y1: lc + 0.009, z0: -0.007, z1: 0.007, r: 0.002, rad: 0.005 }, q);
+      partes.push(al);
+      return partes;
+    }
     torno(corpo.m, [[rb * 0.85, 0], [rb, 0.004], [rb, C * 0.22], [rb * 0.92, C * 0.26], [rb * 1.15, C * 0.4], [rb * 1.15, C * 0.6], [rb * 0.92, C * 0.74], [rb, C * 0.78], [rb, C - 0.004], [rb * 0.85, C]], q.n, { c: [-C / 2, 0, 0], eixo: [1, 0, 0] });
-    var lc = H - Pp / 2 - 0.035;
     torno(corpo.m, [[rb * 0.8, 0], [rb * 0.8, lc * 0.55], [rb * 0.6, lc * 0.6], [rb * 0.45, lc]], q.n, { c: [0, 0, 0], eixo: ax });
     partes.push(corpo);
     var ac = parte("acabamento", tipo === 2 ? "Alavanca" : "Canopla e volante", tipo === 2 ? "Vermelho" : CROMO, true);
@@ -2064,7 +2100,7 @@
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2400, pia: 7000, tanque: 3300, mictorio: 1800,
-    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 5600, caixa_descarga_embutida: 1400,   /* 15/11/2026: a base da ficha (orelhas com furo, mola espiral, porca recartilhada, sextavado, castelo) — antes 1250 com o cilindro e a placa */
+    chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 7500,   /* 16/11/2026: a esfera usa a forma do acessório no tubo (porcas ranhuradas, borboleta: ~7000 triângulos no DN 60) */ valvula_descarga: 5600, caixa_descarga_embutida: 1400,   /* 15/11/2026: a base da ficha (orelhas com furo, mola espiral, porca recartilhada, sextavado, castelo) — antes 1250 com o cilindro e a placa */
     caixa_sifonada: 4200, ralo: 2200, caixa_cil: 2300, caixa_gordura: 14000, caixa_inspecao: 14000,   /* 14/11/2026: a forma Tigre das fotos (aletas, ranhuras, bolsas com anel, sifão, cesto e calha internos) — o Rogério pediu realismo; nível longe reduz */ registro_tubo: 4000, reservatorio: 12500,   /* 14/11/2026: a caixa d'água com as ligações modeladas — 2 registros de gaveta bruto (roscas e sextavados, ~4500 triângulos cada no nível perto), boia esférica, adaptadores e tubo descendente; medido 12100 na caixa de 1000 L (a de gordura Tigre tem 14000); nível longe reduz */ bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100,
     sumidouro_aneis: 3000, camara_cil: 900, camara_ret: 1500, reservatorio_ret: 400, pressurizador: 600, ducha_zagonel: 6000, boia: 2600,
