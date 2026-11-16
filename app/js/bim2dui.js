@@ -170,9 +170,9 @@
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
       if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
       /* p6Tag: cada contorno/aresta leva o uid da peça — é por ele que o clique na vista SELECIONA (js/bimselecao.js) */
-      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });   /* ACIMA DO CORTE */
+      if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, instAssinc: !!this._assinc, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });   /* ACIMA DO CORTE */
       var c = d.corte;
-      return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true });
+      return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true, instAssinc: !!this._assinc });
     },
     /* o que o desenho leva além do modelo: marcas de corte (planta) e níveis (corte) */
     _anotar: function (d, dados) {
@@ -490,7 +490,9 @@
       var c = this._cache[id]; if (!c || !c.sujo || !c.el || this.visivel(id)) return false;
       c.sujo = false;
       this._fundo = true;
-      try { this.atualizar(id); } finally { this._fundo = false; }
+      /* C3: a vista escondida vai ao Worker com prioridade BAIXA, como o _antesFundo (a da tela passa na frente) */
+      var HSf = global.HidSombra; if (HSf) HSf.prioAgora = 0;
+      try { this.atualizar(id); } finally { this._fundo = false; if (HSf) HSf.prioAgora = 1; }
       c.camadaPend = true;   /* a seleção e as alças medem a escala na tela: repintam quando a vista aparecer */
       return true;
     },
@@ -500,7 +502,8 @@
       var k = this._chaveAntes(id); if (!k) return false;
       if (this._pre[id] && this._pre[id].chave === k) return false;   /* já pronto e valendo */
       var self = this, BMU = global.BimMateriaisUI, r = null;
-      var run = function () { return self._extrair(d); };
+      /* C3: o desenho de antemão vai ao Worker com prioridade BAIXA (a vista na tela passa na frente) */
+      var HSp = global.HidSombra, run = function () { if (HSp) HSp.prioAgora = 0; try { return self._extrairTela(d); } finally { if (HSp) HSp.prioAgora = 1; } };
       r = BMU && BMU.emLote ? BMU.emLote(run) : run();
       if (!r || !r.ok) return false;
       /* a chave de DEPOIS: se a extração mexeu na cena (o nível de detalhe da louça vai ao máximo), vale a de depois */
@@ -517,6 +520,78 @@
       try { if (global.BimMarcaCorte && global.BimMarcaCorte.aposDesenhar) global.BimMarcaCorte.aposDesenhar(id); } catch (eMC) {}   /* MARCA DE CORTE selecionada: as alças voltam (js/bimmarcacorte.js) */
     },
 
+    /* ⚠ C3 (16/11/2026): a extração para a TELA — a planta/corte Alto das instalações (js/biminstsombra.js) vai ao Web
+       Worker: a vista aparece já (sem a sombra, ou com a da edição anterior) com o selo "desenhando", e quando o Worker
+       termina o HidSombra.aoPronto refaz SÓ as vistas que esperavam. Roteiro do defeito: a 1ª planta de ~1.000 peças
+       congelava a página ~39 s. A folha/PDF/DXF chamam o _extrair (síncrono, completo). */
+    _extrairTela: function (d) {
+      this._ligarSombra();
+      this._assinc = true;
+      try { return this._extrair(d); } finally { this._assinc = false; }
+    },
+    _desenhandoDe: function (dados) { try { var s = dados && dados.info && dados.info.nivelInst && dados.info.nivelInst.sombra; return !!(s && s.desenhando); } catch (e) { return false; } },
+    _ligarSombra: function () {
+      var HS = global.HidSombra, self = this; if (!HS || HS._b2Ligado) return;
+      HS._b2Ligado = true;
+      HS.aoPronto = function () {
+        Object.keys(self._pre).forEach(function (k) { if (self._desenhandoDe(self._pre[k].dados)) delete self._pre[k]; });   /* o de antemão incompleto não vale */
+        Object.keys(self._cache).forEach(function (k) {
+          var c = self._cache[k]; if (!c || !c.el) return;
+          /* a edição adiada (ver _redesenharCorpo): o desenho novo entra agora, já com a sombra, num redesenho só */
+          if (c._pend) { clearTimeout(c._pendT); c.dados = c._pend; c.info = c._pend.info; c._pend = null; }
+          if (!self._desenhandoDe(c.dados)) return;
+          if (self.visivel && !self.visivel(k)) { c.sujo = true; return; }
+          var ap = false; try { ap = self._aplicarSombra(k); } catch (eA) { ap = false; try { if (global.console) console.warn("[bim2d] a sombra pronta não entrou direto; extraindo de novo", eA && eA.message); } catch (x) {} }
+          if (ap) return;
+          self._fundo = true;   /* não é "o modelo mudou": a mesma vista, agora com a sombra pronta */
+          try { self.atualizar(k); } catch (e) {} finally { self._fundo = false; }
+        });
+      };
+    },
+    /* ⚠ C3 (16/11/2026): a sombra que o Worker acabou de desenhar entra no desenho JÁ EXTRAÍDO da vista, no lugar das
+       arestas provisórias (as da edição anterior), sem extrair a vista inteira de novo (~0,7–1 s na thread da página com
+       ~1.450 peças, medido na e2e). As mesmas linhas, na mesma posição, com o mesmo estilo que o js/bim.js daria — e o
+       pós-extração da P6 (estilos, recorte) refeito sobre o bruto. Qualquer dúvida (forro espelhado, resultado que não
+       está mais guardado, vista mudada) → false, e quem chama extrai de novo como antes. A e2e compara o resultado com o
+       da extração síncrona completa (tools/e2e-hid-sombra-worker.js [3]). */
+    _aplicarSombra: function (id) {
+      var c = this._cache[id], HS = global.HidSombra; if (!c || !c.dados || !HS || !HS.pronto) return false;
+      var bruto = c.dados._bruto || c.dados, ni = bruto.info && bruto.info.nivelInst, sb = ni && ni.sombra, pt = sb && sb._patch;
+      if (!pt || pt.forro || !bruto.linhas) return false;
+      var res = HS.pronto(pt.assin); if (!res) return false;
+      var d = this.def(id); if (!d) return false;
+      var L = [], LI = [], LU = [];
+      res.arestas.forEach(function (ar) {
+        var ifc = pt.ifc[ar.id] || "IFCPIPESEGMENT";
+        L.push(ar.seg.slice()); LI.push(ifc);
+        if (pt.tag) LU.push({ t: ifc, u: "edit:" + ar.id, inst: ar.sil ? { k: "p5silhueta", pena: 2, cor: "#1c1c1c", padrao: "continua" } : { k: "p5aresta", pena: 1, cor: "#1c1c1c", padrao: "continua" } });
+      });
+      /* ⚠ sem splice.apply: com ~195 mil arestas o apply estoura o limite de argumentos (a sombra não entrava e a vista
+         ficava "desenhando" para sempre — e2e 16/11/2026) */
+      var troca = function (v, novo) { return v.slice(0, pt.ini).concat(novo, v.slice(pt.ini + pt.n)); };
+      bruto.linhas = troca(bruto.linhas, L);
+      if (bruto.linhasIfc) bruto.linhasIfc = troca(bruto.linhasIfc, LI);
+      if (pt.tag && bruto.linhasUd) bruto.linhasUd = troca(bruto.linhasUd, LU);
+      var ims = res.imagens.map(function (im) { var hr = im.href || im._href || (im._href = HS.pngDe(im)); return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: hr, u: "edit:" + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+      bruto.instImagens = ims.length ? ims : undefined;
+      ni.imagens = ims; sb.desenhando = false; sb._patch = null; sb.imagens = ims.length; sb.arestas = res.arestas.length; ni.linhas = (ni.linhas || 0) - pt.n + L.length;
+      var M = this._p6(), dados = bruto;
+      if (c.dados._bruto && M) { try { dados = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null); } catch (eP) { return false; } }
+      else if (M && c.dados === bruto) { try { dados = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null); } catch (eP2) { return false; } }
+      c.dados = dados; c.info = dados.info;
+      var vb = c.vb ? clone(c.vb) : null;
+      this.redesenhar(id, false);
+      if (vb) this._aplicarVb(id, vb);
+      return true;
+    },
+    _marcaDesenhando: function (id) {
+      var c = this._cache[id], doc = global.document; if (!c || !c.el || !doc) return;
+      var sel = c.el.querySelector(".d2-desenhando");
+      if (!this._desenhandoDe(c.dados)) { if (sel) sel.parentNode.removeChild(sel); return; }
+      if (!sel) { sel = doc.createElement("div"); sel.className = "d2-desenhando"; sel.setAttribute("role", "status"); c.el.appendChild(sel); }
+      sel.textContent = "Desenhando as instalações…";
+      sel.title = "A planta das instalações está sendo desenhada em segundo plano: a tela continua livre e o desenho aparece aqui quando ficar pronto.";
+    },
     /* refaz o SVG (e, com `recalcular`, extrai de novo do modelo) */
     redesenhar: function (id, recalcular) { return this._redesenhar(id, recalcular, false); },
     /* interno = o montar (a vista abrindo ou voltando à grade): não é "o modelo mudou" */
@@ -530,10 +605,22 @@
     },
     _redesenharCorpo: function (id, recalcular) {
       var d = this.def(id), c = this._cache[id]; if (!d || !c || !c.el) return false;
+      /* C3: só o SVG (seleção, estilo) com uma edição esperando a sombra: o desenho completo vem logo, não refaz duas vezes */
+      if (!recalcular && c._pend) return true;
       c.camadaPend = false;
       if (recalcular || !c.dados) {
-        var r = this._extrair(d);
-        if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; return false; }
+        var r = this._extrairTela(d);
+        if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; c._pend = null; return false; }
+        /* ⚠ C3 (16/11/2026) UM REDESENHO POR EDIÇÃO: a vista já tem desenho completo e a nova só espera a sombra do Worker
+           (na edição ~0,7 s): a tela fica com o desenho de antes e o novo entra UMA vez quando a sombra chegar (aoPronto).
+           Medido na e2e: eram três redesenhos completos por edição (seleção, selo, sombra), ~1,5–2 s cada. Se o Worker
+           passar de ADIAR_MS, o desenho sai com o selo, como na 1ª planta. */
+        if (c.dados && !this._desenhandoDe(c.dados) && this._desenhandoDe(r) && r.info.nivelInst.sombra.provisoria) {   /* só na EDIÇÃO (a 1ª planta sai já, com o selo — e2e 16/11: adiada, ela esperava 6 s sem selo) */
+          var self = this; clearTimeout(c._pendT); c._pend = r;
+          c._pendT = setTimeout(function () { if (c._pend !== r) return; c._pend = null; c.dados = r; c.info = r.info; self.redesenhar(id, false); }, this.ADIAR_MS || 6000);
+          return true;
+        }
+        c._pend = null; clearTimeout(c._pendT);
         c.dados = r; c.info = r.info;
       }
       var ex = { titulo: d.nome }, M6 = this._p6(); if (M6) M6.extraSvg(id, c.dados, ex);   /* P6: estilos de objeto RA */
@@ -547,6 +634,7 @@
       c.vbTotal = res.vb;
       if (vbAnt && !recalcular) this._aplicarVb(id, vbAnt); else this._aplicarVb(id, res.vb);
       if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
+      this._marcaDesenhando(id);
       this._camadas(id);
       return true;
     },
@@ -1033,7 +1121,11 @@
         def = { tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null };
       }
       Object.keys(ext).forEach(function (k) { def[k] = ext[k]; });
-      return M.posExtracao(d.id, b.vista2d(def), d.p6 === "chamada" ? d.ret : null);
+      if (this._assinc) def.instAssinc = true;   /* C3: a planta Alto das instalações no Worker (ver _extrairTela) */
+      var bruto = b.vista2d(def), pos = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null);
+      /* C3: desenhando no Worker — o bruto fica junto até a sombra chegar (_aplicarSombra refaz só o pós-extração) */
+      if (pos && pos !== bruto && this._desenhandoDe(bruto)) pos._bruto = bruto;
+      return pos;
     },
     /* o que o desenho leva da P6: a chave de estilo de cada aresta e as marcas */
     _p6Anotar: function (d, dados, out) {

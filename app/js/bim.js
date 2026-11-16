@@ -11645,7 +11645,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         });
         if (instVet.sombra) {
           try {
-            var SB = window.HidSombra, elsS = {}, ordS = [], trPorId = {}, nm3 = new THREE.Matrix3(), vtmp = new THREE.Vector3();
+            var SB = window.HidSombra, elsS = {}, ordS = [], trPorId = {}, nm3 = new THREE.Matrix3();
             (Rr.trechos || []).forEach(function (tq) { trPorId[tq.id] = tq; });
             /* a cor do SISTEMA é a do preenchimento do tubo no padrão de apresentação (a mesma da forma do Alto) */
             var corPre = {}; (Fm.polys || []).forEach(function (pg) { if (pg.papel === 'tubo' && pg.sistema && pg.preenchCor && !corPre[pg.sistema]) corPre[pg.sistema] = pg.preenchCor; });
@@ -11657,15 +11657,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
               if (m.userData && (m.userData.decal || m.userData.semIfc)) return; if (m.material && (m.material.name === 'inst:marca' || m.material.name === 'inst:marcacao')) return;   /* a faixa da MARCAÇÃO do fabricante (textura 0,3 mm acima da peça) não entra na vista 2D: as bordas dela virariam aresta */
               var sisM = sisDe['edit:' + ud.expressID];
               if (p6Oc && (p6Oc(ud) || ocultoSis(sisM))) return;
-              var geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal; if (!pa) return;
-              var e16 = m.matrixWorld.elements, A = pa.array, nV = pa.count, pos = new Float64Array(nV * 3), nrm = na ? new Float64Array(nV * 3) : null;
-              nm3.getNormalMatrix(m.matrixWorld);
-              for (var iv = 0; iv < nV; iv++) {
-                var x = A[iv * 3], y = A[iv * 3 + 1], z = A[iv * 3 + 2];
-                pos[iv * 3] = e16[0] * x + e16[4] * y + e16[8] * z + e16[12]; pos[iv * 3 + 1] = e16[1] * x + e16[5] * y + e16[9] * z + e16[13]; pos[iv * 3 + 2] = e16[2] * x + e16[6] * y + e16[10] * z + e16[14];
-                if (nrm) { vtmp.set(na.array[iv * 3], na.array[iv * 3 + 1], na.array[iv * 3 + 2]).applyMatrix3(nm3).normalize(); nrm[iv * 3] = vtmp.x; nrm[iv * 3 + 1] = vtmp.y; nrm[iv * 3 + 2] = vtmp.z; }
-              }
-              var idx = geo.index ? geo.index.array : (function () { var q = []; for (var k3 = 0; k3 < nV; k3++) q.push(k3); return q; })();
+              var geo = m.geometry, pa = geo.attributes.position; if (!pa) return;
+              var e16 = m.matrixWorld.elements;
               var mc = m.material && m.material.color ? [m.material.color.r, m.material.color.g, m.material.color.b] : null;
               var kE = String(ud.expressID != null ? ud.expressID : m.uuid);
               if (!elsS[kE]) {
@@ -11673,17 +11666,55 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                 elsS[kE] = { id: kE, papel: ud.instPapel, eixo2d: ex2, malhas: [], ifc: ud.tipo || '' }; ordS.push(kE);
               }
               var baseS = SB.corBase(ud.instPapel, mc, instVet.sombra.cor, corSisS(sisM));
-              elsS[kE].malhas.push({ pos: pos, nrm: nrm, idx: idx, base: baseS });
+              /* ⚠ C3 (16/11/2026): as malhas no mundo só são montadas QUANDO PRECISAM (malhaMundo) — com o Worker, a vista
+                 já pronta não precisa delas (só da chave), e a montagem de ~1.000 peças pesava na thread da página */
+              elsS[kE].malhas.push({ _m: m, base: baseS });
               /* a chave do cache da HidSombra: a geometria (uuid — o cache de geometria do 3D a mantém), o lugar e a cor */
               elsS[kE].chave = (elsS[kE].chave ? elsS[kE].chave + ";" : "") + geo.uuid + "@" + Array.prototype.map.call(e16, function (v) { return Math.round(v * 1e5); }).join(",") + "#" + baseS.map(function (v) { return Math.round(v * 255); }).join(",");
             });
-            var rS = SB.renderizar(ordS.map(function (k4) { return elsS[k4]; }), { O: [O.x, O.y, O.z], r: [r.x, r.y, r.z], up: [upv.x, upv.y, upv.z], dir: [dir.x, dir.y, dir.z] },
-              { ppm: +def.instPpm || 1200, faixa: { f: fI, lo: loI, hi: hiI } });
-            instVet.imagens = rS.imagens.map(function (im) { return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: SB.pngDe(im), u: 'edit:' + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+            /* a malha no MUNDO (a conta de sempre: posição pela matriz, normal pela matriz normal) */
+            /* a malha LOCAL (a geometria do 3D + as matrizes da peça) e, dela, a malha no MUNDO pela HidSombra.malhaMundo — a
+               MESMA conta que este trecho fazia com o THREE (Vector3.applyMatrix3 + normalize), agora numa fonte só que o Worker
+               também usa (C3: a geometria vai ao Worker uma vez por uuid; a conta das ~1.000 malhas sai da thread da página) */
+            var malhaLocal = function (ml) {
+              var m = ml._m, geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal;
+              nm3.getNormalMatrix(m.matrixWorld);
+              return { g: geo.uuid, A: pa.array, N: na ? na.array : null, I: geo.index ? geo.index.array : null, nV: pa.count, e16: m.matrixWorld.elements, nm: nm3.elements.slice(), base: ml.base };
+            };
+            var malhaMundo = function (ml) { var q = malhaLocal(ml); return SB.malhaMundo(q.A, q.N, q.I, q.nV, q.e16, q.nm, q.base); };
+            var materializarS = function (local) { return ordS.map(function (k4) { var e = elsS[k4]; return { id: e.id, papel: e.papel, eixo2d: e.eixo2d, chave: e.chave, malhas: e.malhas.map(local ? malhaLocal : malhaMundo) }; }); };
+            var BS = { O: [O.x, O.y, O.z], r: [r.x, r.y, r.z], up: [upv.x, upv.y, upv.z], dir: [dir.x, dir.y, dir.z] };
+            /* a faixa leva também o PLANO (n·p + c): é como ela atravessa para o Worker (a função não atravessa) */
+            var oS = { ppm: +def.instPpm || 1200, faixa: { f: fI, plano: [plano.normal.x, plano.normal.y, plano.normal.z, plano.constant], lo: loI, hi: hiI } };
+            var rS = null;
+            /* ⚠ C3 (16/11/2026): a 1ª planta Alto de ~1.000 peças levava ~39 s NA THREAD DA PÁGINA (a tela congelada). Na tela
+               (def.instAssinc: js/bim2dui.js) ela vai ao Web Worker do js/biminstsombra.js: a vista sai já, sem a sombra (ou
+               com a da edição anterior), marcada `desenhando`, e quando o Worker termina o HidSombra.aoPronto refaz a vista —
+               aí o resultado pronto entra aqui. Prancha, PDF, DXF e quem não pede (sem instAssinc) seguem síncronos. */
+            if (def.instAssinc && SB.assincrona && SB.assincrona()) {
+              var assinS = SB.assinatura(ordS.map(function (k4) { return elsS[k4].chave || ''; }), BS, oS);
+              rS = SB.pronto(assinS);
+              if (!rS) {
+                if (SB.pedir(assinS, BS, oS, materializarS)) {
+                  var ultS = SB.ultimoDaVista(BS, oS); rS = ultS || { imagens: [], arestas: [] };
+                  instVet.sombra.provisoria = !!ultS;   /* há o desenho da edição anterior desta vista: o Bim2D pode esperar a sombra nova sem selo */
+                  instVet.sombra.desenhando = true;
+                } else rS = null;   /* o Worker recusou: cai no síncrono abaixo */
+              }
+              if (rS) instVet.sombra.worker = true;
+            }
+            if (!rS) rS = SB.renderizar(materializarS(), BS, oS);
+            /* o PNG: o Worker já manda pronto (href); o síncrono e o Worker sem OffscreenCanvas mandam o rgba */
+            instVet.imagens = rS.imagens.map(function (im) { var hr = im.href || im._href || (im._href = SB.pngDe(im)); return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: hr, u: 'edit:' + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+            var iniLS = linhas.length;
             rS.arestas.forEach(function (ar) {
               linhas.push(ar.seg.slice()); linhasIfc.push((elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT'); instVet.linhas++;
               if (p6Tag) linhasUd.push({ t: (elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT', u: 'edit:' + ar.id, inst: ar.sil ? { k: 'p5silhueta', pena: 2, cor: '#1c1c1c', padrao: 'continua' } : { k: 'p5aresta', pena: 1, cor: '#1c1c1c', padrao: 'continua' } });   /* a silhueta na pena 2 (a referência tem 0,22 mm de papel), a dobra na 1 */
             });
+            /* C3: a vista saiu SEM a sombra pronta — o que o Bim2D precisa para pôr a sombra no lugar quando o Worker
+               responder, sem extrair a vista de novo (Bim2D._aplicarSombra): onde as arestas da sombra começam nas linhas e
+               quantas são (as da edição anterior, trocadas), o tipo IFC de cada peça e se é forro (o forro espelha o X depois) */
+            if (instVet.sombra.desenhando) { var ifcDeS = {}; ordS.forEach(function (k4) { ifcDeS[k4] = elsS[k4].ifc || ''; }); instVet.sombra._patch = { assin: assinS, ini: iniLS, n: linhas.length - iniLS, tag: !!p6Tag, ifc: ifcDeS, forro: !!p6Forro }; }
             instVet.sombra.elementos = ordS.length; instVet.sombra.imagens = instVet.imagens.length; instVet.sombra.arestas = rS.arestas.length;
           } catch (eS) { instVet.sombra.erro = String(eS && eS.message || eS); }
         }

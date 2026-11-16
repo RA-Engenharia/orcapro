@@ -8700,7 +8700,7 @@ cortes.push(c2); instVet.solidos++;
 });
 if (instVet.sombra) {
 try {
-var SB = window.HidSombra, elsS = {}, ordS = [], trPorId = {}, nm3 = new THREE.Matrix3(), vtmp = new THREE.Vector3();
+var SB = window.HidSombra, elsS = {}, ordS = [], trPorId = {}, nm3 = new THREE.Matrix3();
 (Rr.trechos || []).forEach(function (tq) { trPorId[tq.id] = tq; });
 var corPre = {}; (Fm.polys || []).forEach(function (pg) { if (pg.papel === 'tubo' && pg.sistema && pg.preenchCor && !corPre[pg.sistema]) corPre[pg.sistema] = pg.preenchCor; });
 var corSisS = function (sis) { try { var c = new THREE.Color(corPre[sis] || (BimInst.SISTEMAS[sis] || {}).cor || '#888888'); return [c.r, c.g, c.b]; } catch (e) { return null; } };
@@ -8711,15 +8711,8 @@ if (['tubo', 'conexao', 'peca', 'acessorio'].indexOf(ud.instPapel) < 0) return;
 if (m.userData && (m.userData.decal || m.userData.semIfc)) return; if (m.material && (m.material.name === 'inst:marca' || m.material.name === 'inst:marcacao')) return;
 var sisM = sisDe['edit:' + ud.expressID];
 if (p6Oc && (p6Oc(ud) || ocultoSis(sisM))) return;
-var geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal; if (!pa) return;
-var e16 = m.matrixWorld.elements, A = pa.array, nV = pa.count, pos = new Float64Array(nV * 3), nrm = na ? new Float64Array(nV * 3) : null;
-nm3.getNormalMatrix(m.matrixWorld);
-for (var iv = 0; iv < nV; iv++) {
-var x = A[iv * 3], y = A[iv * 3 + 1], z = A[iv * 3 + 2];
-pos[iv * 3] = e16[0] * x + e16[4] * y + e16[8] * z + e16[12]; pos[iv * 3 + 1] = e16[1] * x + e16[5] * y + e16[9] * z + e16[13]; pos[iv * 3 + 2] = e16[2] * x + e16[6] * y + e16[10] * z + e16[14];
-if (nrm) { vtmp.set(na.array[iv * 3], na.array[iv * 3 + 1], na.array[iv * 3 + 2]).applyMatrix3(nm3).normalize(); nrm[iv * 3] = vtmp.x; nrm[iv * 3 + 1] = vtmp.y; nrm[iv * 3 + 2] = vtmp.z; }
-}
-var idx = geo.index ? geo.index.array : (function () { var q = []; for (var k3 = 0; k3 < nV; k3++) q.push(k3); return q; })();
+var geo = m.geometry, pa = geo.attributes.position; if (!pa) return;
+var e16 = m.matrixWorld.elements;
 var mc = m.material && m.material.color ? [m.material.color.r, m.material.color.g, m.material.color.b] : null;
 var kE = String(ud.expressID != null ? ud.expressID : m.uuid);
 if (!elsS[kE]) {
@@ -8727,16 +8720,39 @@ var tq = trPorId[ud.expressID], ex2 = tq ? [(tq.p2.x - tq.p1.x) * r.x + (tq.p2.y
 elsS[kE] = { id: kE, papel: ud.instPapel, eixo2d: ex2, malhas: [], ifc: ud.tipo || '' }; ordS.push(kE);
 }
 var baseS = SB.corBase(ud.instPapel, mc, instVet.sombra.cor, corSisS(sisM));
-elsS[kE].malhas.push({ pos: pos, nrm: nrm, idx: idx, base: baseS });
+elsS[kE].malhas.push({ _m: m, base: baseS });
 elsS[kE].chave = (elsS[kE].chave ? elsS[kE].chave + ";" : "") + geo.uuid + "@" + Array.prototype.map.call(e16, function (v) { return Math.round(v * 1e5); }).join(",") + "#" + baseS.map(function (v) { return Math.round(v * 255); }).join(",");
 });
-var rS = SB.renderizar(ordS.map(function (k4) { return elsS[k4]; }), { O: [O.x, O.y, O.z], r: [r.x, r.y, r.z], up: [upv.x, upv.y, upv.z], dir: [dir.x, dir.y, dir.z] },
-{ ppm: +def.instPpm || 1200, faixa: { f: fI, lo: loI, hi: hiI } });
-instVet.imagens = rS.imagens.map(function (im) { return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: SB.pngDe(im), u: 'edit:' + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+var malhaLocal = function (ml) {
+var m = ml._m, geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal;
+nm3.getNormalMatrix(m.matrixWorld);
+return { g: geo.uuid, A: pa.array, N: na ? na.array : null, I: geo.index ? geo.index.array : null, nV: pa.count, e16: m.matrixWorld.elements, nm: nm3.elements.slice(), base: ml.base };
+};
+var malhaMundo = function (ml) { var q = malhaLocal(ml); return SB.malhaMundo(q.A, q.N, q.I, q.nV, q.e16, q.nm, q.base); };
+var materializarS = function (local) { return ordS.map(function (k4) { var e = elsS[k4]; return { id: e.id, papel: e.papel, eixo2d: e.eixo2d, chave: e.chave, malhas: e.malhas.map(local ? malhaLocal : malhaMundo) }; }); };
+var BS = { O: [O.x, O.y, O.z], r: [r.x, r.y, r.z], up: [upv.x, upv.y, upv.z], dir: [dir.x, dir.y, dir.z] };
+var oS = { ppm: +def.instPpm || 1200, faixa: { f: fI, plano: [plano.normal.x, plano.normal.y, plano.normal.z, plano.constant], lo: loI, hi: hiI } };
+var rS = null;
+if (def.instAssinc && SB.assincrona && SB.assincrona()) {
+var assinS = SB.assinatura(ordS.map(function (k4) { return elsS[k4].chave || ''; }), BS, oS);
+rS = SB.pronto(assinS);
+if (!rS) {
+if (SB.pedir(assinS, BS, oS, materializarS)) {
+var ultS = SB.ultimoDaVista(BS, oS); rS = ultS || { imagens: [], arestas: [] };
+instVet.sombra.provisoria = !!ultS;
+instVet.sombra.desenhando = true;
+} else rS = null;
+}
+if (rS) instVet.sombra.worker = true;
+}
+if (!rS) rS = SB.renderizar(materializarS(), BS, oS);
+instVet.imagens = rS.imagens.map(function (im) { var hr = im.href || im._href || (im._href = SB.pngDe(im)); return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: hr, u: 'edit:' + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+var iniLS = linhas.length;
 rS.arestas.forEach(function (ar) {
 linhas.push(ar.seg.slice()); linhasIfc.push((elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT'); instVet.linhas++;
 if (p6Tag) linhasUd.push({ t: (elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT', u: 'edit:' + ar.id, inst: ar.sil ? { k: 'p5silhueta', pena: 2, cor: '#1c1c1c', padrao: 'continua' } : { k: 'p5aresta', pena: 1, cor: '#1c1c1c', padrao: 'continua' } });
 });
+if (instVet.sombra.desenhando) { var ifcDeS = {}; ordS.forEach(function (k4) { ifcDeS[k4] = elsS[k4].ifc || ''; }); instVet.sombra._patch = { assin: assinS, ini: iniLS, n: linhas.length - iniLS, tag: !!p6Tag, ifc: ifcDeS, forro: !!p6Forro }; }
 instVet.sombra.elementos = ordS.length; instVet.sombra.imagens = instVet.imagens.length; instVet.sombra.arestas = rS.arestas.length;
 } catch (eS) { instVet.sombra.erro = String(eS && eS.message || eS); }
 }

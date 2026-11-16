@@ -101953,11 +101953,17 @@ var out = { imagens: [], arestas: [] };
 try {
 elementos.forEach(function (el) {
 var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
-if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; r._gen = CACHE.gen; }
+if (r) {
+CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; r._gen = CACHE.gen;
+if (r.id !== el.id || r.papel !== el.papel) {
+r.id = el.id; r.papel = el.papel;
+if (r._segs) r._segs = r._segs.map(function (q) { return { id: el.id, papel: el.papel, seg: q.seg, sil: q.sil }; });
+}
+}
 else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
-if (r) { r._el = el; R.push(r); }
+if (r) { r._el = el; r._ordK = String(el.chave || el.id); R.push(r); }
 });
-R.sort(function (a, b) { return b._min - a._min; });
+R.sort(function (a, b) { return (b._min - a._min) || (a._ordK < b._ordK ? -1 : (a._ordK > b._ordK ? 1 : 0)); });
 if (o.arestas !== false) {
 for (var i = 0; i < R.length; i++) caixaG(R[i]);
 var vB = [B.O, B.r, B.up, B.dir].join("|");
@@ -101990,7 +101996,9 @@ poolSoltar();
 for (var z = 0; z < R.length; z++) R[z]._el = null;
 }
 R.forEach(function (r) { out.imagens.push({ id: r.id, papel: r.papel, x: r.x, y: r.y, w: r.w, h: r.h, ang: r.ang, W: r.W, H: r.H, rgba: r.rgba }); });
+var apS0 = CACHE.size, apB0 = CACHE.bytes;
 aparar(false);
+CACHE.ultimoAparar = { antes: apS0, depois: CACHE.size, mbAntes: Math.round(apB0 / 1048576), mbDepois: Math.round(CACHE.bytes / 1048576), elementos: elementos.length };
 return out;
 }
 function pngDe(im) {
@@ -102001,7 +102009,267 @@ var cx = cv.getContext("2d"), id = cx.createImageData(im.W, im.H); id.data.set(i
 return cv.toDataURL("image/png");
 } catch (e) { return null; }
 }
-var API = { ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, TETO_CENA_BYTES: TETO_CENA_BYTES, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
+function agoraEp() { try { if (typeof performance !== "undefined" && performance.timeOrigin) return performance.timeOrigin + performance.now(); } catch (e) {} return Date.now(); }
+var NO_WORKER = typeof importScripts === "function" && typeof document === "undefined" && typeof self !== "undefined" && typeof module === "undefined";
+function faixaDoPlano(fx) {
+if (!fx || typeof fx.f === "function" || !fx.plano) return fx;
+var pl = fx.plano, nx = pl[0], ny = pl[1], nz = pl[2], c = pl[3];
+return { f: function (p) { return nx * p[0] + ny * p[1] + nz * p[2] + c; }, lo: fx.lo, hi: fx.hi };
+}
+function malhaMundo(A, N, I, nV, e16, nm, base) {
+var pos = new Float64Array(nV * 3), nrm = N ? new Float64Array(nV * 3) : null;
+for (var iv = 0; iv < nV; iv++) {
+var x = A[iv * 3], y = A[iv * 3 + 1], z = A[iv * 3 + 2];
+pos[iv * 3] = e16[0] * x + e16[4] * y + e16[8] * z + e16[12]; pos[iv * 3 + 1] = e16[1] * x + e16[5] * y + e16[9] * z + e16[13]; pos[iv * 3 + 2] = e16[2] * x + e16[6] * y + e16[10] * z + e16[14];
+if (nrm) {
+var a = N[iv * 3], b = N[iv * 3 + 1], c = N[iv * 3 + 2];
+var nx = nm[0] * a + nm[3] * b + nm[6] * c, ny = nm[1] * a + nm[4] * b + nm[7] * c, nz = nm[2] * a + nm[5] * b + nm[8] * c;
+var s = 1 / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1);
+nrm[iv * 3] = nx * s; nrm[iv * 3 + 1] = ny * s; nrm[iv * 3 + 2] = nz * s;
+}
+}
+var idx = I || (function () { var q = []; for (var k3 = 0; k3 < nV; k3++) q.push(k3); return q; })();
+return { pos: pos, nrm: nrm, idx: idx, base: base };
+}
+function empacotarPedido(elementos, enviadas) {
+var tr = [], geos = [], visto = {};
+var els = elementos.map(function (el) {
+return { id: el.id, papel: el.papel, eixo2d: el.eixo2d || null, chave: el.chave || null, malhas: el.malhas.map(function (ml) {
+if (ml.g != null && enviadas) {
+var b0 = ml.base || null;
+if (!enviadas.has(ml.g) && !visto[ml.g]) {
+visto[ml.g] = 1;
+var Ac = new ml.A.constructor(ml.A.subarray(0, ml.nV * 3)), Nc = ml.N ? new ml.N.constructor(ml.N.subarray(0, ml.nV * 3)) : null, Ic = ml.I ? new ml.I.constructor(ml.I) : null;
+geos.push({ g: ml.g, A: Ac, N: Nc, I: Ic, nV: ml.nV }); tr.push(Ac.buffer); if (Nc) tr.push(Nc.buffer); if (Ic) tr.push(Ic.buffer);
+enviadas.set(ml.g, Ac.byteLength + (Nc ? Nc.byteLength : 0) + (Ic ? Ic.byteLength : 0));
+}
+return { g: ml.g, e16: Array.prototype.slice.call(ml.e16), nm: Array.prototype.slice.call(ml.nm), base: b0 ? [b0[0], b0[1], b0[2]] : null, suave: !!(b0 && b0.suave) };
+}
+var pos = ml.pos instanceof Float64Array ? ml.pos : new Float64Array(ml.pos), nrm = ml.nrm ? (ml.nrm instanceof Float64Array ? ml.nrm : new Float64Array(ml.nrm)) : null;
+var idx = ml.idx, ic = (idx && idx.BYTES_PER_ELEMENT === 2) ? new Uint16Array(idx) : new Uint32Array(idx);
+if (tr.indexOf(pos.buffer) < 0) tr.push(pos.buffer);
+if (nrm && tr.indexOf(nrm.buffer) < 0) tr.push(nrm.buffer);
+tr.push(ic.buffer);
+var b = ml.base || null;
+return { pos: pos, nrm: nrm, idx: ic, base: b ? [b[0], b[1], b[2]] : null, suave: !!(b && b.suave) };
+}) };
+});
+return { els: els, geos: geos, transfer: tr };
+}
+var GEO = new Map();
+function desempacotarEls(els) {
+els.forEach(function (el) {
+var cru = el.malhas, feito = null, local = false;
+for (var ic = 0; ic < cru.length; ic++) if (cru[ic].g != null) { local = true; if (!GEO.has(cru[ic].g)) throw new Error("geometria " + cru[ic].g + " não chegou ao processo paralelo"); }
+var fazer = function () {
+if (feito) return feito;
+feito = cru.map(function (ml) {
+if (ml.g != null) { var gq = GEO.get(ml.g), mm = malhaMundo(gq.A, gq.N, gq.I, gq.nV, ml.e16, ml.nm, ml.base); mm.suave = ml.suave; ml = mm; }
+return ml;
+});
+feito.forEach(function (ml) { if (ml.base && ml.suave) ml.base.suave = true; delete ml.suave; if (!ml.base) delete ml.base; });
+return feito;
+};
+if (local) Object.defineProperty(el, "malhas", { get: fazer, enumerable: true, configurable: true }); else el.malhas = fazer();
+if (!el.chave) delete el.chave; if (!el.eixo2d) delete el.eixo2d;
+});
+return els;
+}
+function empacotarSaida(out, comRgba) {
+var ids = [], ix = {}, papel = {}, n = out.arestas.length, segs = new Float64Array(n * 4), ia = new Int32Array(n), sil = new Uint8Array(n);
+var tr = [segs.buffer, ia.buffer, sil.buffer];
+for (var i = 0; i < n; i++) {
+var a = out.arestas[i], j = ix[a.id];
+if (j === undefined) { j = ix[a.id] = ids.length; ids.push(a.id); papel[a.id] = a.papel; }
+segs[i * 4] = a.seg[0]; segs[i * 4 + 1] = a.seg[1]; segs[i * 4 + 2] = a.seg[2]; segs[i * 4 + 3] = a.seg[3]; ia[i] = j; sil[i] = a.sil ? 1 : 0;
+}
+var imagens = out.imagens.map(function (im) {
+var q = { id: im.id, papel: im.papel, x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, W: im.W, H: im.H };
+if (comRgba) { q.rgba = new Uint8ClampedArray(im.rgba); tr.push(q.rgba.buffer); }
+return q;
+});
+return { imagens: imagens, ids: ids, papeis: ids.map(function (k) { return papel[k]; }), segs: segs, ia: ia, sil: sil, transfer: tr };
+}
+function desempacotarSaida(m) {
+var arestas = [], n = m.sil ? m.sil.length : 0;
+for (var i = 0; i < n; i++) arestas.push({ id: m.ids[m.ia[i]], papel: m.papeis[m.ia[i]], seg: [m.segs[i * 4], m.segs[i * 4 + 1], m.segs[i * 4 + 2], m.segs[i * 4 + 3]], sil: m.sil[i] === 1 });
+return { imagens: m.imagens || [], arestas: arestas };
+}
+if (NO_WORKER) {
+var FILA = new Map(), AGENDADO = false, HIST = [], TESTANDO = false;
+var proximo = function () { var best = null; FILA.forEach(function (q) { if (!best || (q.prio || 0) > (best.prio || 0) || ((q.prio || 0) === (best.prio || 0) && q.gen > best.gen)) best = q; }); if (best) FILA["delete"](best.vista); return best; };
+var seguir = function () { if (FILA.size && !AGENDADO) { AGENDADO = true; setTimeout(processar, 0); } };
+var temPngW = function () { return typeof OffscreenCanvas !== "undefined" && typeof FileReaderSync !== "undefined"; };
+var HREF = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+var PIDS = typeof WeakMap !== "undefined" ? new WeakMap() : null, NPID = 0, ENTREGUE = new Map(), PNG_VISTAS = 8, MED = { blobs: 0, blobMs: 0, guardados: 0, refs: 0 };
+var pidDe = function (rgba) { var p = PIDS && PIDS.get(rgba); if (!p) { p = ++NPID; if (PIDS) PIDS.set(rgba, p); } return p; };
+var pngWorker = function (im) {
+var ja = HREF && HREF.get(im.rgba); if (ja) { MED.guardados++; return Promise.resolve(ja); }
+var tB = agoraEp(); MED.blobs++;
+try {
+var cv = new OffscreenCanvas(im.W, im.H), cx = cv.getContext("2d"), id = cx.createImageData(im.W, im.H); id.data.set(im.rgba); cx.putImageData(id, 0, 0);
+return cv.convertToBlob({ type: "image/png" }).then(function (b) { var u = new FileReaderSync().readAsDataURL(b); MED.blobMs += agoraEp() - tB; if (HREF && u) HREF.set(im.rgba, u); return u; }, function () { return null; });
+} catch (e) { return Promise.resolve(null); }
+};
+var processar = function () {
+AGENDADO = false;
+if (TESTANDO) { AGENDADO = true; setTimeout(processar, 5); return; }
+var naFila = []; FILA.forEach(function (q) { naFila.push({ vista: String(q.vista).slice(0, 40), prio: q.prio, gen: q.gen }); });
+var m = proximo(); if (!m) return;
+var tIni = agoraEp(), tRend = 0;
+var t0 = Date.now(), out, ac0 = CACHE.acertos, ar0 = CACHE.arestasReuso, nEl = m.els ? m.els.length : 0;
+try {
+if (m.teto) CACHE.TETO_CENA = m.teto;
+var o = m.o || {}; o.faixa = faixaDoPlano(o.faixa);
+if (!o.faixa) delete o.faixa;
+out = renderizar(desempacotarEls(m.els), m.B, o); tRend = agoraEp();
+} catch (e) { self.postMessage({ tipo: "erro", gen: m.gen, mensagem: String(e && e.message || e) }); return; }
+m.els = null;
+var semPng = !m.png || !temPngW();
+var pk = empacotarSaida(out, semPng || m.rgba);
+MED = { blobs: 0, blobMs: 0, guardados: 0, refs: 0 };
+var jaTem = (!semPng && !m.rgba && ENTREGUE.get(m.vista)) || null, pids = out.imagens.map(function (im) { return pidDe(im.rgba); }), aCodificar = [];
+out.imagens.forEach(function (im, i) { pk.imagens[i].pid = pids[i]; if (jaTem && jaTem.has(pids[i])) { pk.imagens[i].pngRef = pids[i]; MED.refs++; } else aCodificar.push(i); });
+if (!semPng && !m.rgba) { ENTREGUE["delete"](m.vista); ENTREGUE.set(m.vista, new Set(pids)); while (ENTREGUE.size > PNG_VISTAS) ENTREGUE["delete"](ENTREGUE.keys().next().value); }
+var fim = function (hrefs) {
+if (hrefs) for (var i = 0; i < hrefs.length; i++) if (hrefs[i]) pk.imagens[aCodificar[i]].href = hrefs[i];
+self.postMessage({ tipo: "pronto", gen: m.gen, imagens: pk.imagens, ids: pk.ids, papeis: pk.papeis, segs: pk.segs, ia: pk.ia, sil: pk.sil, ms: Date.now() - t0, vista: m.vista, etapas: { png: { codificados: MED.blobs, msCodificar: Math.round(MED.blobMs), msEtapa: Math.round(agoraEp() - tRend), jaGuardados: MED.guardados, porReferencia: MED.refs }, recebido: m._tRec, inicio: tIni, desenhado: tRend, fim: agoraEp(), filaAoComecar: naFila, prio: m.prio, aparar: CACHE.ultimoAparar, cacheSize: CACHE.size, antes: HIST.slice() }, cacheBytes: CACHE.bytes, acertos: CACHE.acertos - ac0, arestasReuso: CACHE.arestasReuso - ar0, n: nEl }, pk.transfer);
+};
+HIST.push({ vista: String(m.vista).slice(0, 40), gen: m.gen, prio: m.prio, inicio: tIni, fim: agoraEp(), n: nEl, acertos: CACHE.acertos - ac0 }); if (HIST.length > 6) HIST.shift();
+var fim0 = fim; fim = function (h) { fim0(h); seguir(); };
+if (semPng) fim(null);
+else Promise.all(aCodificar.map(function (i) { return pngWorker(out.imagens[i]); })).then(fim, function () { fim(null); });
+};
+self.onmessage = function (ev) {
+var m = ev.data || {};
+m._tRec = agoraEp();
+if (m.tipo === "limpar") { CACHE.clear(); CACHE.bytes = 0; return; }
+if (m.tipo === "limparGeo") { GEO.clear(); return; }
+if (m.tipo === "pngReset") { ENTREGUE.clear(); return; }
+if (m.tipo === "testePng") {
+if (!temPngW()) { self.postMessage({ tipo: "testePng", ms: -1 }); return; }
+TESTANDO = true;
+var W0 = 256, ti = agoraEp(), px = new Uint8ClampedArray(W0 * W0 * 4);
+for (var ip = 0; ip < px.length; ip += 4) { px[ip] = ip & 255; px[ip + 1] = (ip >> 8) & 255; px[ip + 2] = 128; px[ip + 3] = 255; }
+try {
+var cvT = new OffscreenCanvas(W0, W0), cxT = cvT.getContext("2d"), idT = cxT.createImageData(W0, W0); idT.data.set(px); cxT.putImageData(idT, 0, 0);
+cvT.convertToBlob({ type: "image/png" }).then(function (b) { new FileReaderSync().readAsDataURL(b); TESTANDO = false; self.postMessage({ tipo: "testePng", ms: agoraEp() - ti }); }, function () { TESTANDO = false; self.postMessage({ tipo: "testePng", ms: 1e9 }); });
+} catch (eT) { TESTANDO = false; self.postMessage({ tipo: "testePng", ms: 1e9 }); }
+return;
+}
+if (m.geos) { for (var ig = 0; ig < m.geos.length; ig++) GEO.set(m.geos[ig].g, m.geos[ig]); m.geos = null; }
+if (m.tipo !== "renderizar") return;
+var velho = FILA.get(m.vista);
+if (velho) self.postMessage({ tipo: "descartado", gen: velho.gen });
+FILA.set(m.vista, m);
+seguir();
+};
+}
+var AS = { png: new Map(), geo: new Map(), TETO_GEO: 192 * 1048576, w: null, falhou: false, gen: 0, voo: {}, ultimaGen: {}, prontos: new Map(), porVista: new Map(), MAX: 2, motivo: "" };
+function urlWorker() {
+var v = ""; try { v = (global.CONFIG && global.CONFIG.versao) || ""; } catch (e) { v = ""; }
+return "js/biminstsombra.js" + (v ? "?v=" + encodeURIComponent(v) : "");
+}
+function avisar(assin) { var f = API.aoPronto; if (typeof f === "function") { try { f(assin); } catch (e) {} } }
+function falhar(motivo) {
+AS.falhou = true; AS.motivo = motivo || "erro";
+try { if (AS.w) AS.w.terminate(); } catch (e) {}
+AS.w = null; AS.geo.clear(); AS.png.clear();
+var tinha = Object.keys(AS.voo).length; AS.voo = {};
+if (tinha) avisar(null);
+}
+function resolverPng(m) {
+var ant = AS.png.get(m.vista) || null, novo = new Map(), ok = true;
+(m.imagens || []).forEach(function (im) {
+if (im.pngRef != null) { var h = ant && ant.get(im.pngRef); if (h) im.href = h; else ok = false; delete im.pngRef; }
+if (im.pid != null && im.href) novo.set(im.pid, im.href);
+});
+if (!ok) { AS.png.clear(); return false; }
+if (novo.size) { AS.png["delete"](m.vista); AS.png.set(m.vista, novo); while (AS.png.size > 8) AS.png["delete"](AS.png.keys().next().value); }
+return true;
+}
+function guardarPronto(assin, vista, r) {
+AS.prontos["delete"](assin); AS.prontos.set(assin, r);
+while (AS.prontos.size > AS.MAX) AS.prontos["delete"](AS.prontos.keys().next().value);
+AS.porVista["delete"](vista); AS.porVista.set(vista, r);
+while (AS.porVista.size > AS.MAX) AS.porVista["delete"](AS.porVista.keys().next().value);
+API.geracaoPronta++;
+}
+function obterWorker() {
+if (AS.falhou) return null;
+if (AS.w) return AS.w;
+var w = null;
+try {
+if (typeof API.criarWorker === "function") w = API.criarWorker();
+else if (typeof Worker !== "undefined" && typeof document !== "undefined" && typeof location !== "undefined" && /^https?:$/.test(location.protocol)) w = new Worker(urlWorker());
+} catch (e) { w = null; }
+if (!w) { AS.falhou = true; AS.motivo = "sem processo paralelo (Worker) neste navegador/endereço"; return null; }
+w.onmessage = function (ev) {
+var tRecP = agoraEp(), m = ev.data || {}, p = AS.voo[m.gen];
+API.respostas = (API.respostas || []).slice(-9); API.respostas.push({ tipo: m.tipo, gen: m.gen, recebidoPagina: tRecP, etapas: m.etapas || null, ms: m.ms, acertos: m.acertos, n: m.n, valia: !!p });
+if (m.tipo === "testePng") { API.testePngMs = m.ms; if (m.ms > API.LIMITE_TESTE_PNG_MS) desligar("o teste do PNG no processo paralelo levou " + Math.round(m.ms) + " ms (limite " + API.LIMITE_TESTE_PNG_MS + " ms: navegador sem aceleração de vídeo)"); return; }
+if (m.tipo === "pronto" && m.vista != null && !resolverPng(m)) { falhar("o PNG guardado de uma peça não estava na página"); return; }
+if (!p) return;
+delete AS.voo[m.gen];
+if (m.tipo === "descartado") return;
+if (m.tipo === "erro") { falhar("o processo paralelo falhou: " + m.mensagem); return; }
+if (m.tipo !== "pronto") return;
+var r = desempacotarSaida(m); r.ms = m.ms; r.gen = m.gen; r.assin = p.assin; r.cacheBytes = m.cacheBytes; API.ultimoWorker = { ms: m.ms, n: m.n, acertos: m.acertos, arestasReuso: m.arestasReuso, cacheMB: Math.round((m.cacheBytes || 0) / 1048576) };
+guardarPronto(p.assin, p.vista, r);
+if (m.gen === AS.ultimaGen[p.vista]) avisar(p.assin);
+var pg = m.etapas && m.etapas.png;
+if (pg && pg.codificados > 0 && (pg.msEtapa / pg.codificados > API.LIMITE_PNG_MS_IMAGEM || (pg.codificados <= 50 && pg.msEtapa > API.LIMITE_PNG_MS_ETAPA)))
+desligar("o PNG no processo paralelo ficou lento: " + Math.round(pg.msEtapa / pg.codificados) + " ms por imagem (limite " + API.LIMITE_PNG_MS_IMAGEM + "), etapa de " + pg.msEtapa + " ms (limite " + API.LIMITE_PNG_MS_ETAPA + ")");
+};
+w.onerror = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); falhar("o processo paralelo falhou (" + ((ev && ev.message) || "erro") + ")"); };
+AS.w = w;
+try { w.postMessage({ tipo: "testePng" }); } catch (eTP) {}
+return w;
+}
+function desligar(motivo) {
+if (AS.falhou) return;
+try { if (global.console && console.warn) console.warn("[HidSombra] planta das instalações de volta ao caminho síncrono: " + motivo); } catch (e) {}
+API.desligadoPor = motivo;
+falhar(motivo);
+}
+function assinaturaVista(B, o) {
+var fx = o.faixa || null;
+return [B.O, B.r, B.up, B.dir].join("|") + "|" + (o.ppm || 1500) + "|" + (fx ? (fx.plano ? fx.plano.join(",") : "f") + ":" + fx.lo + "," + fx.hi : "");
+}
+function assinatura(chaves, B, o) { return assinaturaVista(B, o) + "#" + chaves.join(";"); }
+function assincrona() { return !AS.falhou && !!obterWorker(); }
+function pronto(assin) { return AS.prontos.get(assin) || null; }
+function ultimoDaVista(B, o) { return AS.porVista.get(assinaturaVista(B, o)) || null; }
+function emVoo(assin) { for (var k in AS.voo) if (AS.voo[k].assin === assin) return true; return false; }
+function pedir(assin, B, o, materializar, opc) {
+opc = opc || {};
+if (emVoo(assin)) return true;
+var w = obterWorker(); if (!w) return false;
+var vista = assinaturaVista(B, o), gen = ++AS.gen, pk;
+var gb = 0; AS.geo.forEach(function (v) { gb += v; });
+if (gb > AS.TETO_GEO) { try { w.postMessage({ tipo: "limparGeo" }); } catch (eL) {} AS.geo.clear(); }
+var tMat = agoraEp();
+try { pk = empacotarPedido(materializar(true), AS.geo); } catch (e) { return false; }
+var bytesTr = 0; pk.transfer.forEach(function (b) { bytesTr += b.byteLength; });
+API.ultimoPedido = { gen: gen, materializar: tMat, postado: agoraEp(), elementos: pk.els.length, geometriasEnviadas: pk.geos.length, bytesTransferidos: bytesTr, geometriasNoWorker: AS.geo.size, prio: API.prioAgora === 0 ? 0 : 1 };
+var fx = o.faixa ? { plano: o.faixa.plano, lo: o.faixa.lo, hi: o.faixa.hi } : null;
+AS.voo[gen] = { assin: assin, vista: vista }; AS.ultimaGen[vista] = gen;
+try {
+w.postMessage({ tipo: "renderizar", gen: gen, vista: vista, prio: API.prioAgora === 0 ? 0 : 1, geos: pk.geos, els: pk.els, B: B, o: { ppm: o.ppm, ppmTubo: o.ppmTubo, arestas: o.arestas, faixa: fx }, teto: TETO_CENA_BYTES,
+png: opc.png !== false, rgba: !!opc.rgba }, pk.transfer);
+} catch (e2) { delete AS.voo[gen]; falhar("não consegui mandar a vista ao processo paralelo: " + (e2 && e2.message || e2)); return false; }
+return true;
+}
+function desenhando() { return Object.keys(AS.voo).length; }
+function reiniciarAssinc() {
+try { if (AS.w) AS.w.terminate(); } catch (e) {}
+AS.w = null; AS.falhou = false; AS.motivo = ""; AS.voo = {}; AS.geo.clear(); AS.png.clear(); AS.ultimaGen = {}; AS.prontos.clear(); AS.porVista.clear();
+}
+var API = { LIMITE_TESTE_PNG_MS: 100, LIMITE_PNG_MS_IMAGEM: 150, LIMITE_PNG_MS_ETAPA: 1500, desligadoPor: null, testePngMs: null, ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, TETO_CENA_BYTES: TETO_CENA_BYTES, renderizar: renderizar, renderElemento: renderElemento, malhaMundo: malhaMundo, agoraEp: agoraEp, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS,
+assincrona: assincrona, pedir: pedir, pronto: pronto, ultimoDaVista: ultimoDaVista, assinatura: assinatura, desenhando: desenhando,
+reiniciarAssinc: reiniciarAssinc, geracaoPronta: 0, aoPronto: null, criarWorker: null, _as: AS,
+_proto: { empacotarPedido: empacotarPedido, desempacotarEls: desempacotarEls, empacotarSaida: empacotarSaida, desempacotarSaida: desempacotarSaida, faixaDoPlano: faixaDoPlano } };
+API.motivoSinc = function () { return AS.motivo; };
 if (typeof module !== "undefined" && module.exports) module.exports = API;
 global.HidSombra = API;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -109969,9 +110237,9 @@ return { ok: true, tipo: ehCorte ? "corte" : "planta", vazio: true, area: area, 
 _extrairModelo: function (d) {
 var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
 if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }
-if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });
+if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, instAssinc: !!this._assinc, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });
 var c = d.corte;
-return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true });
+return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true, instAssinc: !!this._assinc });
 },
 _anotar: function (d, dados) {
 if (d.tipo === "desenho") return { tipo: "desenho", cortes: dados.cortes || [], linhas: dados.linhas || [], linhasK: dados.linhasK };
@@ -110209,7 +110477,8 @@ _refazerFundo: function (id) {
 var c = this._cache[id]; if (!c || !c.sujo || !c.el || this.visivel(id)) return false;
 c.sujo = false;
 this._fundo = true;
-try { this.atualizar(id); } finally { this._fundo = false; }
+var HSf = global.HidSombra; if (HSf) HSf.prioAgora = 0;
+try { this.atualizar(id); } finally { this._fundo = false; if (HSf) HSf.prioAgora = 1; }
 c.camadaPend = true;
 return true;
 },
@@ -110219,7 +110488,7 @@ var d = this.def(id); if (!d) return false;
 var k = this._chaveAntes(id); if (!k) return false;
 if (this._pre[id] && this._pre[id].chave === k) return false;
 var self = this, BMU = global.BimMateriaisUI, r = null;
-var run = function () { return self._extrair(d); };
+var HSp = global.HidSombra, run = function () { if (HSp) HSp.prioAgora = 0; try { return self._extrairTela(d); } finally { if (HSp) HSp.prioAgora = 1; } };
 r = BMU && BMU.emLote ? BMU.emLote(run) : run();
 if (!r || !r.ok) return false;
 var k2 = this._chaveAntes(id); if (!k2) return false;
@@ -110232,6 +110501,65 @@ try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) globa
 try { if (global.BimSelecao && global.BimSelecao.aposDesenhar) global.BimSelecao.aposDesenhar(id); } catch (eSL) {}
 try { if (global.BimMarcaCorte && global.BimMarcaCorte.aposDesenhar) global.BimMarcaCorte.aposDesenhar(id); } catch (eMC) {}
 },
+_extrairTela: function (d) {
+this._ligarSombra();
+this._assinc = true;
+try { return this._extrair(d); } finally { this._assinc = false; }
+},
+_desenhandoDe: function (dados) { try { var s = dados && dados.info && dados.info.nivelInst && dados.info.nivelInst.sombra; return !!(s && s.desenhando); } catch (e) { return false; } },
+_ligarSombra: function () {
+var HS = global.HidSombra, self = this; if (!HS || HS._b2Ligado) return;
+HS._b2Ligado = true;
+HS.aoPronto = function () {
+Object.keys(self._pre).forEach(function (k) { if (self._desenhandoDe(self._pre[k].dados)) delete self._pre[k]; });
+Object.keys(self._cache).forEach(function (k) {
+var c = self._cache[k]; if (!c || !c.el) return;
+if (c._pend) { clearTimeout(c._pendT); c.dados = c._pend; c.info = c._pend.info; c._pend = null; }
+if (!self._desenhandoDe(c.dados)) return;
+if (self.visivel && !self.visivel(k)) { c.sujo = true; return; }
+var ap = false; try { ap = self._aplicarSombra(k); } catch (eA) { ap = false; try { if (global.console) console.warn("[bim2d] a sombra pronta não entrou direto; extraindo de novo", eA && eA.message); } catch (x) {} }
+if (ap) return;
+self._fundo = true;
+try { self.atualizar(k); } catch (e) {} finally { self._fundo = false; }
+});
+};
+},
+_aplicarSombra: function (id) {
+var c = this._cache[id], HS = global.HidSombra; if (!c || !c.dados || !HS || !HS.pronto) return false;
+var bruto = c.dados._bruto || c.dados, ni = bruto.info && bruto.info.nivelInst, sb = ni && ni.sombra, pt = sb && sb._patch;
+if (!pt || pt.forro || !bruto.linhas) return false;
+var res = HS.pronto(pt.assin); if (!res) return false;
+var d = this.def(id); if (!d) return false;
+var L = [], LI = [], LU = [];
+res.arestas.forEach(function (ar) {
+var ifc = pt.ifc[ar.id] || "IFCPIPESEGMENT";
+L.push(ar.seg.slice()); LI.push(ifc);
+if (pt.tag) LU.push({ t: ifc, u: "edit:" + ar.id, inst: ar.sil ? { k: "p5silhueta", pena: 2, cor: "#1c1c1c", padrao: "continua" } : { k: "p5aresta", pena: 1, cor: "#1c1c1c", padrao: "continua" } });
+});
+var troca = function (v, novo) { return v.slice(0, pt.ini).concat(novo, v.slice(pt.ini + pt.n)); };
+bruto.linhas = troca(bruto.linhas, L);
+if (bruto.linhasIfc) bruto.linhasIfc = troca(bruto.linhasIfc, LI);
+if (pt.tag && bruto.linhasUd) bruto.linhasUd = troca(bruto.linhasUd, LU);
+var ims = res.imagens.map(function (im) { var hr = im.href || im._href || (im._href = HS.pngDe(im)); return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: hr, u: "edit:" + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+bruto.instImagens = ims.length ? ims : undefined;
+ni.imagens = ims; sb.desenhando = false; sb._patch = null; sb.imagens = ims.length; sb.arestas = res.arestas.length; ni.linhas = (ni.linhas || 0) - pt.n + L.length;
+var M = this._p6(), dados = bruto;
+if (c.dados._bruto && M) { try { dados = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null); } catch (eP) { return false; } }
+else if (M && c.dados === bruto) { try { dados = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null); } catch (eP2) { return false; } }
+c.dados = dados; c.info = dados.info;
+var vb = c.vb ? clone(c.vb) : null;
+this.redesenhar(id, false);
+if (vb) this._aplicarVb(id, vb);
+return true;
+},
+_marcaDesenhando: function (id) {
+var c = this._cache[id], doc = global.document; if (!c || !c.el || !doc) return;
+var sel = c.el.querySelector(".d2-desenhando");
+if (!this._desenhandoDe(c.dados)) { if (sel) sel.parentNode.removeChild(sel); return; }
+if (!sel) { sel = doc.createElement("div"); sel.className = "d2-desenhando"; sel.setAttribute("role", "status"); c.el.appendChild(sel); }
+sel.textContent = "Desenhando as instalações…";
+sel.title = "A planta das instalações está sendo desenhada em segundo plano: a tela continua livre e o desenho aparece aqui quando ficar pronto.";
+},
 redesenhar: function (id, recalcular) { return this._redesenhar(id, recalcular, false); },
 _redesenhar: function (id, recalcular, interno) {
 if (recalcular && !interno && !this._fundo) this._ger++;
@@ -110241,10 +110569,17 @@ return this._redesenharCorpo(id, recalcular);
 },
 _redesenharCorpo: function (id, recalcular) {
 var d = this.def(id), c = this._cache[id]; if (!d || !c || !c.el) return false;
+if (!recalcular && c._pend) return true;
 c.camadaPend = false;
 if (recalcular || !c.dados) {
-var r = this._extrair(d);
-if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; return false; }
+var r = this._extrairTela(d);
+if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; c._pend = null; return false; }
+if (c.dados && !this._desenhandoDe(c.dados) && this._desenhandoDe(r) && r.info.nivelInst.sombra.provisoria) {
+var self = this; clearTimeout(c._pendT); c._pend = r;
+c._pendT = setTimeout(function () { if (c._pend !== r) return; c._pend = null; c.dados = r; c.info = r.info; self.redesenhar(id, false); }, this.ADIAR_MS || 6000);
+return true;
+}
+c._pend = null; clearTimeout(c._pendT);
 c.dados = r; c.info = r.info;
 }
 var ex = { titulo: d.nome }, M6 = this._p6(); if (M6) M6.extraSvg(id, c.dados, ex);
@@ -110257,6 +110592,7 @@ c.svg = c.el.querySelector("svg");
 c.vbTotal = res.vb;
 if (vbAnt && !recalcular) this._aplicarVb(id, vbAnt); else this._aplicarVb(id, res.vb);
 if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
+this._marcaDesenhando(id);
 this._camadas(id);
 return true;
 },
@@ -110687,7 +111023,10 @@ var c = d.corte;
 def = { tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null };
 }
 Object.keys(ext).forEach(function (k) { def[k] = ext[k]; });
-return M.posExtracao(d.id, b.vista2d(def), d.p6 === "chamada" ? d.ret : null);
+if (this._assinc) def.instAssinc = true;
+var bruto = b.vista2d(def), pos = M.posExtracao(d.id, bruto, d.p6 === "chamada" ? d.ret : null);
+if (pos && pos !== bruto && this._desenhandoDe(bruto)) pos._bruto = bruto;
+return pos;
 },
 _p6Anotar: function (d, dados, out) {
 var M = this._p6(); if (!M) return out;
@@ -167949,6 +168288,7 @@ this._extras.forEach(function (x) { if (x && typeof x[metodo] === "function") { 
 },
 _redesenharPlantas: function (recalcular) {
 var P = global.Bim2D; if (!P || !P.plantasAbertas) return;
+if (!recalcular && this._tPlanta) return;
 var ids = P.plantasAbertas();
 if (recalcular && P._cache) Object.keys(P._cache).forEach(function (k) { if (/^d2[cv]-/.test(k) && ids.indexOf(k) < 0) ids.push(k); });
 if (recalcular && P.mudou) { try { P.mudou(); } catch (eM) {} }
@@ -167962,10 +168302,23 @@ if (recalcular) P.atualizar(k); else P.redesenhar(k, false);
 },
 _agendarPlantas: function () {
 var self = this, raf = global.requestAnimationFrame;
-if (this._tPlanta) { if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta); }
-var fn = function () { self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true); };
+if (this._tPlanta) {
+if (this._tPlantaCorrida) { if (global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlantaCorrida.raf); clearTimeout(this._tPlantaCorrida.to); this._tPlantaCorrida = null; }
+else if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta);
+}
+var fn = function () {
+var cor = self._tPlantaCorrida; self._tPlantaCorrida = null;
+if (cor) { if (global.cancelAnimationFrame) global.cancelAnimationFrame(cor.raf); clearTimeout(cor.to); }
+self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true);
+};
 var DEB = this.PLANTA_DEB_MS || 250, agora = Date.now();
 if (this._plantaEm && agora - this._plantaEm < DEB) { this._tPlantaRaf = false; this._plantaEm = agora; this._tPlanta = setTimeout(fn, DEB); return; }
+var HSw = global.HidSombra, comWorker = !!(HSw && HSw._as && HSw._as.w && !HSw._as.falhou);
+if (comWorker && typeof raf === "function" && global.document && !global.document.hidden) {
+var corrida = { raf: 0, to: 0 }; this._tPlantaRaf = false; this._tPlantaCorrida = corrida;
+corrida.raf = raf(fn); corrida.to = setTimeout(fn, 16); this._tPlanta = corrida.to;
+return;
+}
 if (typeof raf === "function" && global.document && !global.document.hidden) { this._tPlantaRaf = true; this._tPlanta = raf(fn); }
 else { this._tPlantaRaf = false; this._tPlanta = setTimeout(fn, 0); }
 },
@@ -184233,7 +184586,7 @@ if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
 var b2 = B2(), D = D2(); if (!b2 || !D) return null;
 try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
 var d = b2.def(vistaId); if (!d) return null;
-var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer) ? c.dados : b2._extrair(d);
+var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer && !(b2._desenhandoDe && b2._desenhandoDe(c.dados))) ? c.dados : b2._extrair(d);
 if (!bruto || !bruto.ok) return null;
 var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
 var est = clone(b2.estilo(vistaId)); est.titulo = false;

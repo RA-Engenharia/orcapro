@@ -191,7 +191,7 @@
       var b2 = B2(), D = D2(); if (!b2 || !D) return null;
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
       var d = b2.def(vistaId); if (!d) return null;
-      var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer) ? c.dados : b2._extrair(d);
+      var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer && !(b2._desenhandoDe && b2._desenhandoDe(c.dados))) ? c.dados : b2._extrair(d);   /* C3: a vista da tela ainda desenhando no Worker não vai à folha (extrai completa, síncrona) */
       if (!bruto || !bruto.ok) return null;
       var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
       var est = clone(b2.estilo(vistaId)); est.titulo = false;

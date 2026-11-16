@@ -1288,3 +1288,4 @@ body.bim-app .modal .body input[type="number"]:not(.cell):focus-visible { border
   .bim-revit .rv-alca-esq, .bim-revit .rv-alca-dir, .bim-revit .rv-split-h { flex-basis: 10px; }
   .rv-fita-pin { width: 34px; height: 34px; }
 }
+.d2-desenhando { position: absolute; top: 8px; right: 8px; z-index: 3; padding: 4px 10px; border-radius: 12px; background: var(--d2-fundo, #fff); color: var(--d2-fraco, #555); border: 1px solid currentColor; font-size: var(--t-peq, 12px); pointer-events: none; opacity: .92; }   /* C3: a planta das instalações desenhando no Worker (js/bim2dui.js _marcaDesenhando) */

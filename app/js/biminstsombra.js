@@ -452,11 +452,26 @@
     try {
       elementos.forEach(function (el) {
         var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
-        if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; r._gen = CACHE.gen; }
+        if (r) {
+          CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; r._gen = CACHE.gen;
+          /* ⚠ A CHAVE NÃO LEVA O ID (16/11/2026, achado pela e2e do Worker): a chave é geometria + lugar + cor, e a rede
+             RENUMERA as conexões numa edição (a "cx299-1" passa a ser a "cx300-1" no mesmo lugar). O resultado do cache
+             voltava com o id VELHO — na imagem e nas arestas guardadas — e o clique na planta selecionava a peça errada
+             (2.080 arestas de 195 mil com o id trocado depois de mudar o DN de UM trecho). O id e o papel são os desta
+             vista; as arestas guardadas trocam de id junto (objetos novos: a saída anterior fica como estava). */
+          if (r.id !== el.id || r.papel !== el.papel) {
+            r.id = el.id; r.papel = el.papel;
+            if (r._segs) r._segs = r._segs.map(function (q) { return { id: el.id, papel: el.papel, seg: q.seg, sil: q.sil }; });
+          }
+        }
         else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
-        if (r) { r._el = el; R.push(r); }   /* _el só durante a chamada (para encher o esvaziado) */
+        if (r) { r._el = el; r._ordK = String(el.chave || el.id); R.push(r); }   /* _el só durante a chamada (para encher o esvaziado) */
       });
-      R.sort(function (a, b) { return b._min - a._min; });
+      /* ⚠ ORDEM ESTÁVEL (16/11/2026): o empate de profundidade (peças na mesma altura) saía na ordem de CHEGADA — a do traverse
+         da cena, que muda quando a cena é reconstruída sem nada mudar — e a mesma cena dava a lista de arestas em outra ordem
+         (e2e com tela: 1.897 de 195.031 arestas trocadas de lugar). O desempate é pelo CONTEÚDO (a chave: geometria + lugar +
+         cor; sem chave, o id): a ordem só muda se a cena mudar. tools/test-hid-sombra-ids.js [2]. */
+      R.sort(function (a, b) { return (b._min - a._min) || (a._ordK < b._ordK ? -1 : (a._ordK > b._ordK ? 1 : 0)); });
       /* ⚠ LIXO (15/11/2026): era R.slice(i + 1) por elemento (N²/2 cópias de lista) e TODOS os de depois testados em cada
          ponto amostrado. Agora só os de depois cujo retângulo na tela cruza o deste (os outros não cobrem nenhum ponto dele:
          o teste de dentro do quadro em visivel já os pulava) — o resultado é o mesmo */
@@ -497,7 +512,10 @@
       for (var z = 0; z < R.length; z++) R[z]._el = null;   /* não prende as malhas de quem chamou */
     }
     R.forEach(function (r) { out.imagens.push({ id: r.id, papel: r.papel, x: r.x, y: r.y, w: r.w, h: r.h, ang: r.ang, W: r.W, H: r.H, rgba: r.rgba }); });
-    aparar(false);   /* a vista acabou: o que não é desta vista sai até o teto; o pesado, até o TETO_CENA */
+    var apS0 = CACHE.size, apB0 = CACHE.bytes;
+    aparar(false);   /* MEDIÇÃO 16/11: o tamanho antes/depois fica em CACHE.ultimoAparar */
+    CACHE.ultimoAparar = { antes: apS0, depois: CACHE.size, mbAntes: Math.round(apB0 / 1048576), mbDepois: Math.round(CACHE.bytes / 1048576), elementos: elementos.length };
+    /* a vista acabou: o que não é desta vista sai até o teto; o pesado, até o TETO_CENA */
     return out;
   }
 
@@ -511,7 +529,344 @@
     } catch (e) { return null; }
   }
 
-  var API = { ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, TETO_CENA_BYTES: TETO_CENA_BYTES, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
+
+  /* ===================================================================== C3 (16/11/2026): A PLANTA FORA DA THREAD PRINCIPAL
+     Roteiro do defeito: a 1ª planta Alto de ~1.000 peças levava ~39 s e ~11 GB alocados NA THREAD PRINCIPAL (medido com
+     tools/bench-sombra-alocacao.js na 1.2.346) — a tela inteira congelava esse tempo. Agora o MESMO arquivo roda também
+     como Web Worker (new Worker("js/biminstsombra.js")): a página manda as malhas (Float64Array TRANSFERIDOS: a página não
+     fica com cópia) e recebe as imagens (PNG pronto quando o Worker tem OffscreenCanvas; senão o rgba transferido) e as
+     arestas em lista compacta. A conta é a do `renderizar` de cima — uma fonte só: o Worker carrega este mesmo arquivo.
+     ⚠ SAÍDA IDÊNTICA: tools/test-hid-sombra-worker.js compara, por impressão digital, o resultado do protocolo com o do
+     caminho síncrono (com controle negativo). Sem Worker (file://, Node, erro ao criar, Worker que falhou), `assincrona()`
+     é false e quem chama segue no caminho síncrono de sempre.
+     Protocolo:  página → { tipo: "renderizar", gen, els, B, o, teto, png, rgba }
+                 Worker → { tipo: "pronto", gen, imagens, ids, papeis, segs (Float64Array, 4 por aresta), ia (Int32Array:
+                            índice do elemento em ids), sil (Uint8Array), ms } | { tipo: "descartado", gen } | { tipo: "erro", gen, mensagem }
+     Vista pedida de novo antes de terminar: o Worker só desenha o ÚLTIMO pedido da fila (os do meio voltam "descartado");
+     o que já está desenhando não se interrompe, mas só a geração mais nova de cada vista avisa a página. */
+  /* MEDIÇÃO (16/11/2026): relógio comum à página e ao Worker (época em ms, com fração) — as etapas do pedido voltam na resposta */
+  function agoraEp() { try { if (typeof performance !== "undefined" && performance.timeOrigin) return performance.timeOrigin + performance.now(); } catch (e) {} return Date.now(); }
+  var NO_WORKER = typeof importScripts === "function" && typeof document === "undefined" && typeof self !== "undefined" && typeof module === "undefined";
+
+  /* a faixa da vista viaja como PLANO (n·p + c): a função não atravessa o postMessage. ⚠ a mesma conta, na mesma ordem,
+     do sFn de js/bim.js (nx·x + ny·y + nz·z + c) — senão o recorte anda no último bit */
+  function faixaDoPlano(fx) {
+    if (!fx || typeof fx.f === "function" || !fx.plano) return fx;
+    var pl = fx.plano, nx = pl[0], ny = pl[1], nz = pl[2], c = pl[3];
+    return { f: function (p) { return nx * p[0] + ny * p[1] + nz * p[2] + c; }, lo: fx.lo, hi: fx.hi };
+  }
+  /* o pedido em forma que atravessa o postMessage: { els, transfer }. COPIA o índice (o da geometria do 3D não pode ser
+     transferido: o 3D ficaria sem ele) e TRANSFERE as posições/normais (feitas na hora, só para o pedido) */
+  /* a malha no MUNDO a partir da geometria LOCAL do 3D (posição Float32 + normal + índice) e das matrizes da peça.
+     ⚠ A MESMA conta, na MESMA ordem, que o js/bim.js fazia com o THREE: posição = e16 (Matrix4.elements, por coluna) ×
+     (x, y, z, 1); normal = Vector3.applyMatrix3(matriz normal).normalize() — x' = e0·x + e3·y + e6·z…, depois × 1/|n|
+     (o divideScalar do THREE multiplica pelo inverso). Uma fonte só: a página (caminho síncrono) e o Worker chamam esta. */
+  function malhaMundo(A, N, I, nV, e16, nm, base) {
+    var pos = new Float64Array(nV * 3), nrm = N ? new Float64Array(nV * 3) : null;
+    for (var iv = 0; iv < nV; iv++) {
+      var x = A[iv * 3], y = A[iv * 3 + 1], z = A[iv * 3 + 2];
+      pos[iv * 3] = e16[0] * x + e16[4] * y + e16[8] * z + e16[12]; pos[iv * 3 + 1] = e16[1] * x + e16[5] * y + e16[9] * z + e16[13]; pos[iv * 3 + 2] = e16[2] * x + e16[6] * y + e16[10] * z + e16[14];
+      if (nrm) {
+        var a = N[iv * 3], b = N[iv * 3 + 1], c = N[iv * 3 + 2];
+        var nx = nm[0] * a + nm[3] * b + nm[6] * c, ny = nm[1] * a + nm[4] * b + nm[7] * c, nz = nm[2] * a + nm[5] * b + nm[8] * c;
+        var s = 1 / (Math.sqrt(nx * nx + ny * ny + nz * nz) || 1);
+        nrm[iv * 3] = nx * s; nrm[iv * 3 + 1] = ny * s; nrm[iv * 3 + 2] = nz * s;
+      }
+    }
+    var idx = I || (function () { var q = []; for (var k3 = 0; k3 < nV; k3++) q.push(k3); return q; })();
+    return { pos: pos, nrm: nrm, idx: idx, base: base };
+  }
+  /* ⚠ GEOMETRIA UMA VEZ SÓ (C3): a malha do pedido pode vir LOCAL ({ g: uuid da geometria, A, N, I, nV, e16, nm, base }).
+     A geometria (cópia) vai ao Worker só na 1ª vez que aquele uuid aparece; depois, só as matrizes — a conta das ~1.000
+     malhas no mundo sai da thread da página. `enviadas` = o que o Worker já tem (AS.geo na página). */
+  function empacotarPedido(elementos, enviadas) {
+    var tr = [], geos = [], visto = {};
+    var els = elementos.map(function (el) {
+      return { id: el.id, papel: el.papel, eixo2d: el.eixo2d || null, chave: el.chave || null, malhas: el.malhas.map(function (ml) {
+        if (ml.g != null && enviadas) {
+          var b0 = ml.base || null;
+          if (!enviadas.has(ml.g) && !visto[ml.g]) {
+            visto[ml.g] = 1;
+            var Ac = new ml.A.constructor(ml.A.subarray(0, ml.nV * 3)), Nc = ml.N ? new ml.N.constructor(ml.N.subarray(0, ml.nV * 3)) : null, Ic = ml.I ? new ml.I.constructor(ml.I) : null;
+            geos.push({ g: ml.g, A: Ac, N: Nc, I: Ic, nV: ml.nV }); tr.push(Ac.buffer); if (Nc) tr.push(Nc.buffer); if (Ic) tr.push(Ic.buffer);
+            enviadas.set(ml.g, Ac.byteLength + (Nc ? Nc.byteLength : 0) + (Ic ? Ic.byteLength : 0));
+          }
+          return { g: ml.g, e16: Array.prototype.slice.call(ml.e16), nm: Array.prototype.slice.call(ml.nm), base: b0 ? [b0[0], b0[1], b0[2]] : null, suave: !!(b0 && b0.suave) };
+        }
+        var pos = ml.pos instanceof Float64Array ? ml.pos : new Float64Array(ml.pos), nrm = ml.nrm ? (ml.nrm instanceof Float64Array ? ml.nrm : new Float64Array(ml.nrm)) : null;
+        var idx = ml.idx, ic = (idx && idx.BYTES_PER_ELEMENT === 2) ? new Uint16Array(idx) : new Uint32Array(idx);
+        if (tr.indexOf(pos.buffer) < 0) tr.push(pos.buffer);
+        if (nrm && tr.indexOf(nrm.buffer) < 0) tr.push(nrm.buffer);
+        tr.push(ic.buffer);
+        var b = ml.base || null;
+        return { pos: pos, nrm: nrm, idx: ic, base: b ? [b[0], b[1], b[2]] : null, suave: !!(b && b.suave) };
+      }) };
+    });
+    return { els: els, geos: geos, transfer: tr };
+  }
+  /* GEO: a geometria local que o Worker guarda (uuid → cópia); a página só a manda de novo depois de "limparGeo" */
+  var GEO = new Map();
+  function desempacotarEls(els) {
+    els.forEach(function (el) {
+      /* ⚠ PREGUIÇOSA (16/11/2026, medido na e2e): montar no mundo as 1.452 malhas a cada pedido custava ~11 s por EDIÇÃO
+         no Worker com 1.447 acertos no cache — a peça do cache não lê as malhas. Agora a malha no mundo só nasce quando o
+         renderizar a lê (peça nova ou esvaziada). A geometria que falta é conferida JÁ: dentro do renderizar o erro
+         viraria "peça sem desenho" calado. */
+      var cru = el.malhas, feito = null, local = false;
+      for (var ic = 0; ic < cru.length; ic++) if (cru[ic].g != null) { local = true; if (!GEO.has(cru[ic].g)) throw new Error("geometria " + cru[ic].g + " não chegou ao processo paralelo"); }
+      var fazer = function () {
+        if (feito) return feito;
+        feito = cru.map(function (ml) {
+          if (ml.g != null) { var gq = GEO.get(ml.g), mm = malhaMundo(gq.A, gq.N, gq.I, gq.nV, ml.e16, ml.nm, ml.base); mm.suave = ml.suave; ml = mm; }
+          return ml;
+        });
+        feito.forEach(function (ml) { if (ml.base && ml.suave) ml.base.suave = true; delete ml.suave; if (!ml.base) delete ml.base; });
+        return feito;
+      };
+      if (local) Object.defineProperty(el, "malhas", { get: fazer, enumerable: true, configurable: true }); else el.malhas = fazer();
+      if (!el.chave) delete el.chave; if (!el.eixo2d) delete el.eixo2d;
+    });
+    return els;
+  }
+  /* a resposta em forma COMPACTA (milhares de arestas como objetos custariam a desserialização na thread da página) */
+  function empacotarSaida(out, comRgba) {
+    var ids = [], ix = {}, papel = {}, n = out.arestas.length, segs = new Float64Array(n * 4), ia = new Int32Array(n), sil = new Uint8Array(n);
+    var tr = [segs.buffer, ia.buffer, sil.buffer];
+    for (var i = 0; i < n; i++) {
+      var a = out.arestas[i], j = ix[a.id];
+      if (j === undefined) { j = ix[a.id] = ids.length; ids.push(a.id); papel[a.id] = a.papel; }
+      segs[i * 4] = a.seg[0]; segs[i * 4 + 1] = a.seg[1]; segs[i * 4 + 2] = a.seg[2]; segs[i * 4 + 3] = a.seg[3]; ia[i] = j; sil[i] = a.sil ? 1 : 0;
+    }
+    var imagens = out.imagens.map(function (im) {
+      var q = { id: im.id, papel: im.papel, x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, W: im.W, H: im.H };
+      /* ⚠ CÓPIA do rgba: o original mora no cache do Worker (transferir o original o deixaria vazio para a próxima vista) */
+      if (comRgba) { q.rgba = new Uint8ClampedArray(im.rgba); tr.push(q.rgba.buffer); }
+      return q;
+    });
+    return { imagens: imagens, ids: ids, papeis: ids.map(function (k) { return papel[k]; }), segs: segs, ia: ia, sil: sil, transfer: tr };
+  }
+  function desempacotarSaida(m) {
+    var arestas = [], n = m.sil ? m.sil.length : 0;
+    for (var i = 0; i < n; i++) arestas.push({ id: m.ids[m.ia[i]], papel: m.papeis[m.ia[i]], seg: [m.segs[i * 4], m.segs[i * 4 + 1], m.segs[i * 4 + 2], m.segs[i * 4 + 3]], sil: m.sil[i] === 1 });
+    return { imagens: m.imagens || [], arestas: arestas };
+  }
+
+  /* ------------------------------------------------------------- lado do WORKER */
+  if (NO_WORKER) {
+    /* ⚠ FILA POR VISTA (16/11/2026): era UM lugar só — o desenho de antemão de outra vista (Bim2D, em segundo plano)
+       tomava o lugar do pedido da vista na tela e a tela esperava. Agora: um pedido por vista (o mais novo dela vale; o
+       anterior volta "descartado") e a vista NA TELA (prio 1) passa na frente do desenho de antemão (prio 0). */
+    var FILA = new Map(), AGENDADO = false, HIST = [], TESTANDO = false;   /* HIST: os últimos pedidos desenhados (MEDIÇÃO) */
+    var proximo = function () { var best = null; FILA.forEach(function (q) { if (!best || (q.prio || 0) > (best.prio || 0) || ((q.prio || 0) === (best.prio || 0) && q.gen > best.gen)) best = q; }); if (best) FILA["delete"](best.vista); return best; };
+    var seguir = function () { if (FILA.size && !AGENDADO) { AGENDADO = true; setTimeout(processar, 0); } };
+    var temPngW = function () { return typeof OffscreenCanvas !== "undefined" && typeof FileReaderSync !== "undefined"; };
+    /* o PNG aqui (OffscreenCanvas + FileReaderSync): a codificação das ~1.000 imagens também sai da thread da página */
+    /* ⚠ o PNG de cada imagem é guardado junto do rgba do cache (WeakMap: sai quando o cache solta a peça) — na edição
+       com 1.447 peças do cache, codificar de novo as 1.450 imagens era o grosso do tempo */
+    var HREF = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+    /* ⚠ PNG POR REFERÊNCIA (16/11/2026, medido na e2e: 6,5 s entre o fim do desenho e a resposta numa edição com 1.447
+       peças do cache). Cada imagem ganha um número (PID, pelo rgba do cache de peça); a página guarda o PNG por número e
+       por vista (AS.png). O que a página JÁ TEM desta vista volta só como `pngRef` (sem PNG nem texto); só as imagens
+       novas são codificadas e mandadas. Os dois lados guardam exatamente o conjunto da ÚLTIMA resposta de cada vista
+       (até PNG_VISTAS vistas, na mesma ordem), então a referência nunca aponta para o que a página soltou. */
+    var PIDS = typeof WeakMap !== "undefined" ? new WeakMap() : null, NPID = 0, ENTREGUE = new Map(), PNG_VISTAS = 8, MED = { blobs: 0, blobMs: 0, guardados: 0, refs: 0 };
+    var pidDe = function (rgba) { var p = PIDS && PIDS.get(rgba); if (!p) { p = ++NPID; if (PIDS) PIDS.set(rgba, p); } return p; };
+    var pngWorker = function (im) {
+      var ja = HREF && HREF.get(im.rgba); if (ja) { MED.guardados++; return Promise.resolve(ja); }
+      var tB = agoraEp(); MED.blobs++;
+      try {
+        var cv = new OffscreenCanvas(im.W, im.H), cx = cv.getContext("2d"), id = cx.createImageData(im.W, im.H); id.data.set(im.rgba); cx.putImageData(id, 0, 0);
+        return cv.convertToBlob({ type: "image/png" }).then(function (b) { var u = new FileReaderSync().readAsDataURL(b); MED.blobMs += agoraEp() - tB; if (HREF && u) HREF.set(im.rgba, u); return u; }, function () { return null; });
+      } catch (e) { return Promise.resolve(null); }
+    };
+    var processar = function () {
+      AGENDADO = false;
+      /* ⚠ o teste do PNG primeiro (e2e 16/11: com o desenho da 1ª planta na frente, o teste media 70–78 s — o tempo do
+         desenho, não o do PNG — e desligava o Worker até com GPU real): a fila espera o teste acabar */
+      if (TESTANDO) { AGENDADO = true; setTimeout(processar, 5); return; }
+      var naFila = []; FILA.forEach(function (q) { naFila.push({ vista: String(q.vista).slice(0, 40), prio: q.prio, gen: q.gen }); });
+      var m = proximo(); if (!m) return;
+      var tIni = agoraEp(), tRend = 0;
+      var t0 = Date.now(), out, ac0 = CACHE.acertos, ar0 = CACHE.arestasReuso, nEl = m.els ? m.els.length : 0;
+      try {
+        if (m.teto) CACHE.TETO_CENA = m.teto;   /* o mesmo teto do retido que a página usaria */
+        var o = m.o || {}; o.faixa = faixaDoPlano(o.faixa);
+        if (!o.faixa) delete o.faixa;
+        out = renderizar(desempacotarEls(m.els), m.B, o); tRend = agoraEp();
+      } catch (e) { self.postMessage({ tipo: "erro", gen: m.gen, mensagem: String(e && e.message || e) }); return; }
+      m.els = null;
+      var semPng = !m.png || !temPngW();
+      var pk = empacotarSaida(out, semPng || m.rgba);
+      MED = { blobs: 0, blobMs: 0, guardados: 0, refs: 0 };
+      /* o que a página já tem desta vista (a última resposta dela): vai por referência */
+      var jaTem = (!semPng && !m.rgba && ENTREGUE.get(m.vista)) || null, pids = out.imagens.map(function (im) { return pidDe(im.rgba); }), aCodificar = [];
+      out.imagens.forEach(function (im, i) { pk.imagens[i].pid = pids[i]; if (jaTem && jaTem.has(pids[i])) { pk.imagens[i].pngRef = pids[i]; MED.refs++; } else aCodificar.push(i); });
+      if (!semPng && !m.rgba) { ENTREGUE["delete"](m.vista); ENTREGUE.set(m.vista, new Set(pids)); while (ENTREGUE.size > PNG_VISTAS) ENTREGUE["delete"](ENTREGUE.keys().next().value); }
+      var fim = function (hrefs) {
+        if (hrefs) for (var i = 0; i < hrefs.length; i++) if (hrefs[i]) pk.imagens[aCodificar[i]].href = hrefs[i];
+        self.postMessage({ tipo: "pronto", gen: m.gen, imagens: pk.imagens, ids: pk.ids, papeis: pk.papeis, segs: pk.segs, ia: pk.ia, sil: pk.sil, ms: Date.now() - t0, vista: m.vista, etapas: { png: { codificados: MED.blobs, msCodificar: Math.round(MED.blobMs), msEtapa: Math.round(agoraEp() - tRend), jaGuardados: MED.guardados, porReferencia: MED.refs }, recebido: m._tRec, inicio: tIni, desenhado: tRend, fim: agoraEp(), filaAoComecar: naFila, prio: m.prio, aparar: CACHE.ultimoAparar, cacheSize: CACHE.size, antes: HIST.slice() }, cacheBytes: CACHE.bytes, acertos: CACHE.acertos - ac0, arestasReuso: CACHE.arestasReuso - ar0, n: nEl }, pk.transfer);
+      };
+      HIST.push({ vista: String(m.vista).slice(0, 40), gen: m.gen, prio: m.prio, inicio: tIni, fim: agoraEp(), n: nEl, acertos: CACHE.acertos - ac0 }); if (HIST.length > 6) HIST.shift();
+      var fim0 = fim; fim = function (h) { fim0(h); seguir(); };
+      if (semPng) fim(null);
+      else Promise.all(aCodificar.map(function (i) { return pngWorker(out.imagens[i]); })).then(fim, function () { fim(null); });
+    };
+    self.onmessage = function (ev) {
+      var m = ev.data || {};
+      m._tRec = agoraEp();
+      if (m.tipo === "limpar") { CACHE.clear(); CACHE.bytes = 0; return; }
+      if (m.tipo === "limparGeo") { GEO.clear(); return; }
+      if (m.tipo === "pngReset") { ENTREGUE.clear(); return; }
+      /* o teste rápido do PNG (1 imagem 256×256): a página decide se vale o Worker (ver QUEDA PARA O SÍNCRONO) */
+      if (m.tipo === "testePng") {
+        if (!temPngW()) { self.postMessage({ tipo: "testePng", ms: -1 }); return; }
+        TESTANDO = true;
+        var W0 = 256, ti = agoraEp(), px = new Uint8ClampedArray(W0 * W0 * 4);
+        for (var ip = 0; ip < px.length; ip += 4) { px[ip] = ip & 255; px[ip + 1] = (ip >> 8) & 255; px[ip + 2] = 128; px[ip + 3] = 255; }
+        try {
+          var cvT = new OffscreenCanvas(W0, W0), cxT = cvT.getContext("2d"), idT = cxT.createImageData(W0, W0); idT.data.set(px); cxT.putImageData(idT, 0, 0);
+          cvT.convertToBlob({ type: "image/png" }).then(function (b) { new FileReaderSync().readAsDataURL(b); TESTANDO = false; self.postMessage({ tipo: "testePng", ms: agoraEp() - ti }); }, function () { TESTANDO = false; self.postMessage({ tipo: "testePng", ms: 1e9 }); });
+        } catch (eT) { TESTANDO = false; self.postMessage({ tipo: "testePng", ms: 1e9 }); }
+        return;
+      }
+      /* ⚠ a geometria entra JÁ (antes da fila): um pedido descartado não pode levar junto a geometria que só ele trouxe */
+      if (m.geos) { for (var ig = 0; ig < m.geos.length; ig++) GEO.set(m.geos[ig].g, m.geos[ig]); m.geos = null; }
+      if (m.tipo !== "renderizar") return;
+      var velho = FILA.get(m.vista);
+      if (velho) self.postMessage({ tipo: "descartado", gen: velho.gen });   /* um pedido mais novo DESTA vista chegou antes de começar */
+      FILA.set(m.vista, m);
+      /* ⚠ não desenha dentro do onmessage: os pedidos que já estão na fila de mensagens entram antes (fica só o último) */
+      seguir();
+    };
+  }
+
+  /* ------------------------------------------------------------- lado da PÁGINA */
+  var AS = { png: new Map(), geo: new Map(), TETO_GEO: 192 * 1048576, w: null, falhou: false, gen: 0, voo: {}, ultimaGen: {}, prontos: new Map(), porVista: new Map(), MAX: 2, motivo: "" };
+  function urlWorker() {
+    var v = ""; try { v = (global.CONFIG && global.CONFIG.versao) || ""; } catch (e) { v = ""; }
+    return "js/biminstsombra.js" + (v ? "?v=" + encodeURIComponent(v) : "");
+  }
+  function avisar(assin) { var f = API.aoPronto; if (typeof f === "function") { try { f(assin); } catch (e) {} } }
+  function falhar(motivo) {
+    AS.falhou = true; AS.motivo = motivo || "erro";
+    try { if (AS.w) AS.w.terminate(); } catch (e) {}
+    AS.w = null; AS.geo.clear(); AS.png.clear();
+    var tinha = Object.keys(AS.voo).length; AS.voo = {};
+    /* quem esperava refaz a vista — agora no caminho síncrono (assincrona() = false) */
+    if (tinha) avisar(null);
+  }
+  /* o PNG por número da última resposta de cada vista (ver PNG POR REFERÊNCIA no lado do Worker) */
+  function resolverPng(m) {
+    var ant = AS.png.get(m.vista) || null, novo = new Map(), ok = true;
+    (m.imagens || []).forEach(function (im) {
+      if (im.pngRef != null) { var h = ant && ant.get(im.pngRef); if (h) im.href = h; else ok = false; delete im.pngRef; }
+      if (im.pid != null && im.href) novo.set(im.pid, im.href);
+    });
+    if (!ok) { AS.png.clear(); return false; }
+    if (novo.size) { AS.png["delete"](m.vista); AS.png.set(m.vista, novo); while (AS.png.size > 8) AS.png["delete"](AS.png.keys().next().value); }
+    return true;
+  }
+  function guardarPronto(assin, vista, r) {
+    AS.prontos["delete"](assin); AS.prontos.set(assin, r);
+    while (AS.prontos.size > AS.MAX) AS.prontos["delete"](AS.prontos.keys().next().value);
+    AS.porVista["delete"](vista); AS.porVista.set(vista, r);
+    while (AS.porVista.size > AS.MAX) AS.porVista["delete"](AS.porVista.keys().next().value);
+    API.geracaoPronta++;
+  }
+  function obterWorker() {
+    if (AS.falhou) return null;
+    if (AS.w) return AS.w;
+    var w = null;
+    try {
+      if (typeof API.criarWorker === "function") w = API.criarWorker();
+      else if (typeof Worker !== "undefined" && typeof document !== "undefined" && typeof location !== "undefined" && /^https?:$/.test(location.protocol)) w = new Worker(urlWorker());
+    } catch (e) { w = null; }
+    if (!w) { AS.falhou = true; AS.motivo = "sem processo paralelo (Worker) neste navegador/endereço"; return null; }
+    w.onmessage = function (ev) {
+      var tRecP = agoraEp(), m = ev.data || {}, p = AS.voo[m.gen];
+      API.respostas = (API.respostas || []).slice(-9); API.respostas.push({ tipo: m.tipo, gen: m.gen, recebidoPagina: tRecP, etapas: m.etapas || null, ms: m.ms, acertos: m.acertos, n: m.n, valia: !!p });
+      if (m.tipo === "testePng") { API.testePngMs = m.ms; if (m.ms > API.LIMITE_TESTE_PNG_MS) desligar("o teste do PNG no processo paralelo levou " + Math.round(m.ms) + " ms (limite " + API.LIMITE_TESTE_PNG_MS + " ms: navegador sem aceleração de vídeo)"); return; }
+      if (m.tipo === "pronto" && m.vista != null && !resolverPng(m)) { falhar("o PNG guardado de uma peça não estava na página"); return; }
+      if (!p) return;
+      delete AS.voo[m.gen];
+      if (m.tipo === "descartado") return;
+      if (m.tipo === "erro") { falhar("o processo paralelo falhou: " + m.mensagem); return; }
+      if (m.tipo !== "pronto") return;
+      var r = desempacotarSaida(m); r.ms = m.ms; r.gen = m.gen; r.assin = p.assin; r.cacheBytes = m.cacheBytes; API.ultimoWorker = { ms: m.ms, n: m.n, acertos: m.acertos, arestasReuso: m.arestasReuso, cacheMB: Math.round((m.cacheBytes || 0) / 1048576) };
+      guardarPronto(p.assin, p.vista, r);
+      /* geração velha (a vista já foi pedida de novo): fica guardada, mas só a mais nova avisa */
+      if (m.gen === AS.ultimaGen[p.vista]) avisar(p.assin);
+      /* a resposta vale (o desenho é o mesmo); se o PNG dela foi lento, as próximas vão pelo síncrono */
+      var pg = m.etapas && m.etapas.png;
+      /* ⚠ a etapa inteira (1,5 s) só conta em resposta de EDIÇÃO (até 50 PNGs): a 1ª planta codifica ~1.450 de uma vez e passa
+         de 1,5 s até com GPU real (e2e com tela 16/11 desligou o Worker logo depois da 1ª planta); a média por imagem vale sempre */
+      /* ⚠ a média por imagem é a etapa de RELÓGIO ÷ codificados: os convertToBlob correm juntos, e a soma das latências
+         (msCodificar) dava 1.488 ms "por imagem" numa 1ª planta de 1.450 PNGs em 3 s com GPU real (e2e 16/11) */
+      if (pg && pg.codificados > 0 && (pg.msEtapa / pg.codificados > API.LIMITE_PNG_MS_IMAGEM || (pg.codificados <= 50 && pg.msEtapa > API.LIMITE_PNG_MS_ETAPA)))
+        desligar("o PNG no processo paralelo ficou lento: " + Math.round(pg.msEtapa / pg.codificados) + " ms por imagem (limite " + API.LIMITE_PNG_MS_IMAGEM + "), etapa de " + pg.msEtapa + " ms (limite " + API.LIMITE_PNG_MS_ETAPA + ")");
+    };
+    w.onerror = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); falhar("o processo paralelo falhou (" + ((ev && ev.message) || "erro") + ")"); };
+    AS.w = w;
+    try { w.postMessage({ tipo: "testePng" }); } catch (eTP) {}
+    return w;
+  }
+  /* ⚠ QUEDA PARA O SÍNCRONO (16/11/2026, decisão da coordenação). Medido: no navegador SEM aceleração de vídeo (Chrome sem
+     tela, swiftshader) cada convertToBlob do OffscreenCanvas levou de 8 a 14 s com o PC carregado — a edição no Worker
+     ficava pior que a síncrona; com GPU real, 56 ms para 5 imagens. Então: um teste de 1 imagem 256×256 ao abrir o
+     Worker (> LIMITE_TESTE_PNG_MS → nem começa), e cada resposta conferida (média por imagem > LIMITE_PNG_MS_IMAGEM ou a
+     etapa > LIMITE_PNG_MS_ETAPA). Passou: o Worker é DESLIGADO para a sessão — assincrona() = false, motivoSinc() diz
+     por quê, e as vistas e edições seguintes vão pelo caminho síncrono (o de sempre, a mesma saída). */
+  function desligar(motivo) {
+    if (AS.falhou) return;
+    try { if (global.console && console.warn) console.warn("[HidSombra] planta das instalações de volta ao caminho síncrono: " + motivo); } catch (e) {}
+    API.desligadoPor = motivo;
+    falhar(motivo);
+  }
+  /* a assinatura de um pedido (sem as malhas): a vista EXATA + a resolução + a faixa + as chaves dos elementos */
+  function assinaturaVista(B, o) {
+    var fx = o.faixa || null;
+    return [B.O, B.r, B.up, B.dir].join("|") + "|" + (o.ppm || 1500) + "|" + (fx ? (fx.plano ? fx.plano.join(",") : "f") + ":" + fx.lo + "," + fx.hi : "");
+  }
+  function assinatura(chaves, B, o) { return assinaturaVista(B, o) + "#" + chaves.join(";"); }
+  /* a página pode usar o Worker agora? */
+  function assincrona() { return !AS.falhou && !!obterWorker(); }
+  function pronto(assin) { return AS.prontos.get(assin) || null; }
+  /* o último resultado pronto desta vista (de uma edição anterior): fica na tela enquanto a nova desenha */
+  function ultimoDaVista(B, o) { return AS.porVista.get(assinaturaVista(B, o)) || null; }
+  function emVoo(assin) { for (var k in AS.voo) if (AS.voo[k].assin === assin) return true; return false; }
+  /* pede ao Worker. `materializar()` devolve os elementos com as malhas — só é chamada quando o pedido de fato sai */
+  function pedir(assin, B, o, materializar, opc) {
+    opc = opc || {};
+    if (emVoo(assin)) return true;
+    var w = obterWorker(); if (!w) return false;
+    var vista = assinaturaVista(B, o), gen = ++AS.gen, pk;   /* gen sobe antes: a medição (ultimoPedido) o leva */
+    /* a geometria guardada no Worker passou do teto: ele esquece tudo e as deste pedido vão de novo */
+    var gb = 0; AS.geo.forEach(function (v) { gb += v; });
+    if (gb > AS.TETO_GEO) { try { w.postMessage({ tipo: "limparGeo" }); } catch (eL) {} AS.geo.clear(); }
+    var tMat = agoraEp();
+    try { pk = empacotarPedido(materializar(true), AS.geo); } catch (e) { return false; }
+    var bytesTr = 0; pk.transfer.forEach(function (b) { bytesTr += b.byteLength; });
+    API.ultimoPedido = { gen: gen, materializar: tMat, postado: agoraEp(), elementos: pk.els.length, geometriasEnviadas: pk.geos.length, bytesTransferidos: bytesTr, geometriasNoWorker: AS.geo.size, prio: API.prioAgora === 0 ? 0 : 1 };
+    var fx = o.faixa ? { plano: o.faixa.plano, lo: o.faixa.lo, hi: o.faixa.hi } : null;
+    AS.voo[gen] = { assin: assin, vista: vista }; AS.ultimaGen[vista] = gen;
+    try {
+      w.postMessage({ tipo: "renderizar", gen: gen, vista: vista, prio: API.prioAgora === 0 ? 0 : 1, geos: pk.geos, els: pk.els, B: B, o: { ppm: o.ppm, ppmTubo: o.ppmTubo, arestas: o.arestas, faixa: fx }, teto: TETO_CENA_BYTES,
+                      png: opc.png !== false, rgba: !!opc.rgba }, pk.transfer);
+    } catch (e2) { delete AS.voo[gen]; falhar("não consegui mandar a vista ao processo paralelo: " + (e2 && e2.message || e2)); return false; }
+    return true;
+  }
+  function desenhando() { return Object.keys(AS.voo).length; }
+  function reiniciarAssinc() {
+    try { if (AS.w) AS.w.terminate(); } catch (e) {}
+    AS.w = null; AS.falhou = false; AS.motivo = ""; AS.voo = {}; AS.geo.clear(); AS.png.clear(); AS.ultimaGen = {}; AS.prontos.clear(); AS.porVista.clear();
+  }
+
+  var API = { LIMITE_TESTE_PNG_MS: 100, LIMITE_PNG_MS_IMAGEM: 150, LIMITE_PNG_MS_ETAPA: 1500, desligadoPor: null, testePngMs: null, ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, TETO_CENA_BYTES: TETO_CENA_BYTES, renderizar: renderizar, renderElemento: renderElemento, malhaMundo: malhaMundo, agoraEp: agoraEp, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS,
+    /* C3: o Worker (ver "A PLANTA FORA DA THREAD PRINCIPAL") */
+    assincrona: assincrona, pedir: pedir, pronto: pronto, ultimoDaVista: ultimoDaVista, assinatura: assinatura, desenhando: desenhando,
+    reiniciarAssinc: reiniciarAssinc, geracaoPronta: 0, aoPronto: null, criarWorker: null, _as: AS,
+    _proto: { empacotarPedido: empacotarPedido, desempacotarEls: desempacotarEls, empacotarSaida: empacotarSaida, desempacotarSaida: desempacotarSaida, faixaDoPlano: faixaDoPlano } };
+  API.motivoSinc = function () { return AS.motivo; };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   global.HidSombra = API;
 })(typeof window !== "undefined" ? window : globalThis);

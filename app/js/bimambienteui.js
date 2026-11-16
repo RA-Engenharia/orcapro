@@ -434,6 +434,9 @@
     },
     _redesenharPlantas: function (recalcular) {
       var P = global.Bim2D; if (!P || !P.plantasAbertas) return;
+      /* C3 (16/11/2026): só o SVG (a seleção mudou) com o redesenho COMPLETO já agendado (_agendarPlantas): ele desenha a
+         seleção junto — eram dois redesenhos completos da planta por edição (~1,5 s cada com ~1.450 peças) */
+      if (!recalcular && this._tPlanta) return;
       /* FLUIDEZ (17/10/2026): o CORTE e as outras vistas 2D (elevação, chamada) também acompanham o modelo — a troca de
          DN no corte não aparecia no corte até reabrir a vista */
       var ids = P.plantasAbertas();
@@ -456,14 +459,31 @@
        troca de parâmetro com atraso visível */
     _agendarPlantas: function () {
       var self = this, raf = global.requestAnimationFrame;
-      if (this._tPlanta) { if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta); }
-      var fn = function () { self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true); };
+      if (this._tPlanta) {
+        if (this._tPlantaCorrida) { if (global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlantaCorrida.raf); clearTimeout(this._tPlantaCorrida.to); this._tPlantaCorrida = null; }
+        else if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta);
+      }
+      var fn = function () {
+        var cor = self._tPlantaCorrida; self._tPlantaCorrida = null;
+        if (cor) { if (global.cancelAnimationFrame) global.cancelAnimationFrame(cor.raf); clearTimeout(cor.to); }   /* a corrida: quem chegou primeiro cancela o outro */
+        self._tPlanta = 0; self._plantaEm = Date.now(); self._redesenharPlantas(true);
+      };
       /* ⚠ DEBOUNCE NA RAJADA (15/11/2026): numa edição em curso (arrasto, troca seguida de parâmetro) cada rebuild refazia
          a planta Alto inteira — no projeto hidro de ~1.000 peças eram ~30 GB de lixo por minuto e a página travava. A
          1ª edição continua no próximo quadro (sem atraso visível); outra chegando menos de PLANTA_DEB_MS depois da última
          planta espera a rajada parar e a planta sai UMA vez, igual à do cálculo completo (a última edição vale). */
       var DEB = this.PLANTA_DEB_MS || 250, agora = Date.now();
       if (this._plantaEm && agora - this._plantaEm < DEB) { this._tPlantaRaf = false; this._plantaEm = agora; this._tPlanta = setTimeout(fn, DEB); return; }
+      /* ⚠ C3 (16/11/2026, medido na e2e): com a planta no Worker, o próximo QUADRO chegou a demorar 6,2 s depois da edição
+         (a página ociosa, o navegador ainda rasterizando as ~1.450 imagens do desenho anterior) e a planta esperava por ele.
+         No modo Worker é uma CORRIDA entre o quadro e um setTimeout de 16 ms: o que chegar primeiro roda e cancela o outro.
+         Sem o Worker (síncrono) fica como antes: o quadro. */
+      var HSw = global.HidSombra, comWorker = !!(HSw && HSw._as && HSw._as.w && !HSw._as.falhou);
+      if (comWorker && typeof raf === "function" && global.document && !global.document.hidden) {
+        var corrida = { raf: 0, to: 0 }; this._tPlantaRaf = false; this._tPlantaCorrida = corrida;
+        corrida.raf = raf(fn); corrida.to = setTimeout(fn, 16); this._tPlanta = corrida.to;
+        return;
+      }
       if (typeof raf === "function" && global.document && !global.document.hidden) { this._tPlantaRaf = true; this._tPlanta = raf(fn); }
       else { this._tPlantaRaf = false; this._tPlanta = setTimeout(fn, 0); }
     },
