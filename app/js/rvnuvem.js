@@ -466,6 +466,57 @@
     return hx(h1) + hx(h2);
   }
 
+
+  /* ---------------- QR DO AMBIENTE (15/11/2026) ----------------
+   * As pranchas do hidro levam um QR por ambiente: <portal>?amb=<id>[,<id>] (js/hidpranchas.js linkAmbientes). O servidor repassa o
+   * parâmetro para o # do visor (/rv/p/<placa>?amb=x -> /rvapp/#placa=<placa>&amb=x) e o visor ENQUADRA o(s) ambiente(s) pela CAIXA
+   * dele(s): dados.ambientes = [{ id, nome, min:[x,y,z], max:[x,y,z] }] em metros, o mesmo mundo do modelo (o hid3d das vistas
+   * "3D — <ambiente>" do computador). Sem a caixa do ambiente nos dados o visor diz isso e fica na visão geral: nunca inventa a caixa. */
+  var AMB_ID = /^[A-Za-z0-9_.:-]{1,64}$/, MAX_AMB = 200, MAX_AMB_LINK = 20, ISO_AMB = [0.62, 0.48, 0.62];
+  /* os ids pedidos no endereço (#...&amb=a,b ou ?amb=a,b): só id de forma segura, sem repetir */
+  function ambienteDoLink(hash, search) {
+    var fonte = String(hash || "") + "&" + String(search || ""), m = /[#&?]amb=([^&#]*)/.exec(fonte), ids = [], vistos = {};
+    if (!m) return ids;
+    var bruto = m[1]; try { bruto = decodeURIComponent(bruto); } catch (e) { /* fica como veio */ }
+    bruto.split(",").forEach(function (x) { x = x.trim(); if (x && AMB_ID.test(x) && !vistos[x] && ids.length < MAX_AMB_LINK) { vistos[x] = 1; ids.push(x); } });
+    return ids;
+  }
+  /* a lista que viaja: { id, nome, min, max } (ou { id, nome, x0, x1, z0, z1, y0, y1 } do gerador de pranchas); caixa inválida ou vazia fica de fora */
+  function caixaValida(min, max) { return vec(min, 3) && vec(max, 3) && max[0] > min[0] && max[1] > min[1] && max[2] > min[2]; }
+  function ambientesParaLink(lista) {
+    var out = [], vistos = {};
+    (lista || []).forEach(function (a) {
+      if (!a || out.length >= MAX_AMB) return;
+      var id = txt(a.id, 64), min = a.min, max = a.max;
+      if (!min && num(a.x0) && num(a.x1) && num(a.z0) && num(a.z1) && num(a.y0) && num(a.y1)) { min = [a.x0, a.y0, a.z0]; max = [a.x1, a.y1, a.z1]; }
+      if (!AMB_ID.test(id) || vistos[id] || !caixaValida(min, max)) return;
+      vistos[id] = 1; out.push({ id: id, nome: txt(a.nome, 80) || id, min: min.slice(0, 3), max: max.slice(0, 3) });
+    });
+    return out;
+  }
+  /* os ambientes das vistas "3D — <ambiente>" salvas no computador (v.hid3d = { ambiente, nome, min, max }) */
+  function ambientesDasVistas(vistas) {
+    return ambientesParaLink((vistas || []).filter(function (v) { return v && v.hid3d && v.hid3d.ambiente != null; }).map(function (v) { return { id: v.hid3d.ambiente, nome: v.hid3d.nome || v.nome, min: v.hid3d.min, max: v.hid3d.max }; }));
+  }
+  /* os ids pedidos × os ambientes dos dados: a caixa que junta os achados e os que faltam */
+  function resolverAmbientes(ids, dados) {
+    var lista = (dados && dados.ambientes) || [], porId = {}, achados = [], faltam = [], min = null, max = null;
+    lista.forEach(function (a) { if (a && a.id != null && caixaValida(a.min, a.max)) porId[String(a.id)] = a; });
+    (ids || []).forEach(function (id) {
+      var a = porId[id]; if (!a) { faltam.push(id); return; }
+      achados.push(a);
+      min = min ? [Math.min(min[0], a.min[0]), Math.min(min[1], a.min[1]), Math.min(min[2], a.min[2])] : a.min.slice();
+      max = max ? [Math.max(max[0], a.max[0]), Math.max(max[1], a.max[1]), Math.max(max[2], a.max[2])] : a.max.slice();
+    });
+    return { achados: achados, faltam: faltam, min: min, max: max, nomes: achados.map(function (a) { return txt(a.nome, 80) || String(a.id); }) };
+  }
+  /* a câmera isométrica sobre a caixa (a que o visor usa se a caixa de corte do 3D não existir): { pos, alvo, up, fov } */
+  function cameraAmbiente(min, max, iso, fov) {
+    if (!caixaValida(min, max)) return null;
+    var k = vec(iso, 3) || ISO_AMB, c = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2], d = Math.sqrt(Math.pow(max[0] - min[0], 2) + Math.pow(max[1] - min[1], 2) + Math.pow(max[2] - min[2], 2));
+    return { pos: [c[0] + d * k[0], c[1] + d * k[1], c[2] + d * k[2]], alvo: c, up: [0, 1, 0], fov: num(fov) ? fov : 50 };
+  }
+
   var RvNuvem = {
     VALIDADES: VALIDADES, DIAS_PADRAO: DIAS_PADRAO, TIPOS_NOTA: TIPOS_NOTA, MAX_FOTO: MAX_FOTO,
     marca: marca, vistasParaLink: vistasParaLink, cronoParaLink: cronoParaLink, cronoNoCelular: cronoNoCelular,
@@ -475,7 +526,8 @@
     PLACA_DIAS: PLACA_DIAS, PLACA_DIAS_PADRAO: PLACA_DIAS_PADRAO, PLACA_DIAS_MAX: PLACA_DIAS_MAX, SENHA_MIN: SENHA_MIN, SENHA_MAX: SENHA_MAX,
     TIPOS_VISITANTE: TIPOS_VISITANTE, DEPARTAMENTOS: DEPARTAMENTOS,
     cnpjOk: cnpjOk, foneE164: foneE164, validarVisitante: validarVisitante, validarSenhaPlaca: validarSenhaPlaca, resumoPlaca: resumoPlaca,
-    limparDinheiroIfc: limparDinheiroIfc
+    limparDinheiroIfc: limparDinheiroIfc,
+    ambienteDoLink: ambienteDoLink, ambientesParaLink: ambientesParaLink, ambientesDasVistas: ambientesDasVistas, resolverAmbientes: resolverAmbientes, cameraAmbiente: cameraAmbiente, ISO_AMB: ISO_AMB
   };
   global.RvNuvem = RvNuvem;
   if (typeof module !== "undefined" && module.exports) module.exports = RvNuvem;

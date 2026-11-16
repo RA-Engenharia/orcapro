@@ -2547,7 +2547,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMaterial({ color: c, emissive: ((op < 1 && !solida) || semBrilho) ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: (op >= 1 || !!solida), side: THREE.DoubleSide }); };
         /* CONEXÕES COM 10% DE TRANSPARÊNCIA (pedido do Rogério 15/11/2026, HID-R00 (58): "água fria MARROM, esgoto BRANCA, transparência de uns 10% somente nelas"):
            opacidade 0,9 com depthWrite LIGADO (solida=true); a BRANCA sem brilho próprio (semBrilho): com emissive ela estourava para 255 e sumia no fundo branco da folha — a conexão enxerga o que está atrás sem sumir/piscar atrás do tubo; tubo segue opaco */
-        var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */   /* 15/11/2026 (HID-R00 59): "já está muito transparente" — meio-tom e louça 0,6 (antes 0,3/0,28) */
+        var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), ve: mF(0x7c3aed, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */   /* 15/11/2026 (HID-R00 59): "já está muito transparente" — meio-tom e louça 0,6 (antes 0,3/0,28) */
         bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
         window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };   /* soma de todas as fotos da geração (a última foto pode ser de esgoto) */   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
         /* CONEXÃO SEM SISTEMA (15/11/2026 — o Rogério: "na foto das pranchas as conexões de água fria saem cinza/esbranquiçadas"): a conexão cujo NOME não diz o
@@ -2599,7 +2599,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
           /* ESGOTO/VENTILAÇÃO: a conexão (joelho, junção, luva, TE...) sai BRANCA (PVC esgoto série normal), o tubo segue verde */
           if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
-          var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
+          var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;   /* 15/11/2026: a ventilação em ROXO (a cor do sistema no 3D), não o verde do esgoto — pedido do Rogério */
           bk.trocas.push([m, m.material]); m.material = nv;
         });
         try { sincronizarAgregado(); } catch (_) {}   /* ⚠ o AGREGADO (as peças mescladas) desenha a cor: sem espelhar, a foto saía com a cor antiga */

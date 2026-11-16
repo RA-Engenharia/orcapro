@@ -1725,7 +1725,7 @@ if (o.foco && o.foco.length) {
 try { construirSisIdx(); } catch (_) {}
 var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
 var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMaterial({ color: c, emissive: ((op < 1 && !solida) || semBrilho) ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: (op >= 1 || !!solida), side: THREE.DoubleSide }); };
-var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };
+var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), ve: mF(0x7c3aed, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };
 bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
 window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };
 var tubosCx = [];
@@ -1762,7 +1762,7 @@ if (esg) { window.__focoDiag.papeisEsg = window.__focoDiag.papeisEsg || {}; wind
 var pp = m.userData.instPapel;
 if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
 if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
-var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? MAT.es : MAT.meio;
+var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
 });
 try { sincronizarAgregado(); } catch (_) {}

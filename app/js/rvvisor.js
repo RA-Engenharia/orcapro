@@ -855,6 +855,7 @@
       if (a === "tudo") {
         (B().disciplinas() || []).forEach(function (d) { B().disciplinaVisivel(d.chave, true); });
         B().restaurarVisibilidade(); B().tetoVisitante(null); st.corte = 100; if (st.em4d) sair4D();
+        try { if (B().caixaCorteAtiva && B().caixaCorteAtiva() && B().caixaCorte) B().caixaCorte(false); } catch (eCx) { /* sem caixa de corte */ }   /* o 3D recortado no ambiente do QR volta inteiro */
         return abrirFolha("camadas");
       }
       if (a === "4d-play") {
@@ -969,6 +970,22 @@
   }
 
   /* ---------------- depois que os modelos abriram ---------------- */
+  /* QR DO AMBIENTE (15/11/2026): o link das pranchas traz &amb=<id> (o servidor repassa o ?amb= para o #). A câmera enquadra o ambiente e a
+     CAIXA DE CORTE do 3D recorta só ele (o mesmo "3D do ambiente" do computador); sem a caixa nos dados, diz isso — não chuta. A regra
+     (ids, caixa, câmera) mora em js/rvnuvem.js. Devolve true se avisou a pessoa (para não cobrir o aviso com a dica padrão). */
+  function aplicarAmbienteDoLink() {
+    var ids = []; try { ids = RV().ambienteDoLink(location.hash, location.search); } catch (e0) { ids = []; }
+    if (!ids.length) return false;
+    var r = RV().resolverAmbientes(ids, st.dados);
+    if (!r.min) { recado("Não achei " + (ids.length > 1 ? "os ambientes " : "o ambiente ") + ids.join(", ") + " neste modelo: o link do projeto não traz a caixa dele. Mostrando o projeto inteiro.", true); return true; }
+    var ok = false;
+    try { if (B().tetoVisitante) B().tetoVisitante(null); ok = !!(B().caixaCorteEm && B().caixaCorteEm(r.min, r.max, RV().ISO_AMB)); } catch (e1) { ok = false; }
+    if (!ok) { try { var cam = RV().cameraAmbiente(r.min, r.max); ok = !!(cam && B().aplicarVista({ nome: r.nomes.join(", "), camera: cam, completa: false })); } catch (e2) { ok = false; } }
+    var nomes = r.nomes.join(", "), falta = r.faltam.length ? " Não achei: " + r.faltam.join(", ") + "." : "";
+    if (!ok) { recado("Não consegui enquadrar " + nomes + " neste aparelho. Mostrando o projeto inteiro." + falta, true); return true; }
+    recado(nomes + " em foco (3D recortado no ambiente). Em Camadas, “Mostrar tudo” volta ao projeto inteiro." + falta, !!falta);
+    return true;
+  }
   function aposCarga() {
     var l = $("rv-load"); if (l) l.remove();
     var rb = $("rv-reun"); if (rb) rb.style.display = "inline-flex";
@@ -991,7 +1008,7 @@
     mostrarBotaoExplodir();
     /* a Prancha Viva já aberta (o link com pv=1 abre nela) recebe o 3D: o toque guardado abre agora */
     try { if (global.PranchaVivaUI && global.PranchaVivaUI.aberto()) global.PranchaVivaUI.pronto3d(); } catch (ePv) {}
-    recado("Toque numa peça para ver o que ela é. RA/RV mostra o projeto no seu ambiente.", false);
+    if (!aplicarAmbienteDoLink()) recado("Toque numa peça para ver o que ela é. RA/RV mostra o projeto no seu ambiente.", false);
     carregarNotas(true).then(function () { if ((st.fila || []).some(function (x) { return !x.erro; })) enviarFila(); });
   }
 

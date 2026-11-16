@@ -26321,6 +26321,8 @@
       var mods = (typeof BIM !== "undefined" && BIM.modelos) ? BIM.modelos : [];
       dados.modelos = mods.filter(function (m) { return m.arquivoId && m.modeloId; }).map(function (m) { return { arquivoId: m.arquivoId, modeloId: m.modeloId }; });
       if (op.vistas) { dados.vistas = RvNuvem.vistasParaLink(self._bimVistaDaObra()); resumo.vistas = dados.vistas.length; }
+      /* QR DO AMBIENTE: a caixa de cada ambiente que já tem o "3D — <ambiente>" salvo (hid3d) viaja nos dados; o visor enquadra por ela (js/rvnuvem.js) */
+      try { var ambL = RvNuvem.ambientesDasVistas(self._bimVistaDaObra()); if (ambL.length) dados.ambientes = ambL; } catch (eAmb) { /* sem ambientes: o QR do ambiente cai na visão geral */ }
       if (op.crono && self._rvExtrasDisponiveis().crono) {
         var uidChave = {};
         ((typeof BIM !== "undefined" && BIM.elementos) || []).forEach(function (e) { if (e.uid && e.chave) uidChave[e.uid] = e.chave; });
