@@ -144,9 +144,27 @@
   function atributos(s) { var o = {}, re = /([\w:-]+)="([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = m[2]; return o; }
   function desesc(s) { return txt(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&"); }
   function largTexto(s, fs) { var a = AP(); return a && a.largTexto ? a.largTexto(s, fs) : 0.6 * fs * s.length; }
+  /* path com M/L/Q/Z, absolutos (maiúsculas) e RELATIVOS (minúsculas: m l q z, a partir do ponto atual) → "x,y x,y …" (a curva quadrática vira 8 segmentos).
+     Outro comando (A, C, S, T, H, V) → null: o traço fica de fora e lerSvg conta (o ArqCad.paraCad avisa), nunca desenha errado. */
+  function pathPontos(d) {
+    var t = txt(d).match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g); if (!t) return null;
+    var pts = [], i = 0, cmd = "", cur = null, k, ini = null;
+    function num() { return parseFloat(t[i++]); }
+    while (i < t.length) {
+      if (/^[A-Za-z]$/.test(t[i])) { cmd = t[i++]; if (!/^[MLQZmlqz]$/.test(cmd)) return null; if (cmd === "Z" || cmd === "z") { cur = ini; continue; } }
+      else if (!cmd) return null;
+      var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel && cur ? cur[0] : 0, oy = rel && cur ? cur[1] : 0;
+      if (C === "M" || C === "L") { cur = [ox + num(), oy + num()]; pts.push(cur); if (C === "M" && !ini) ini = cur; cmd = rel ? "l" : "L"; }
+      else if (C === "Q" && cur) { var c = [ox + num(), oy + num()], f = [ox + num(), oy + num()]; for (k = 1; k <= 8; k++) { var u = k / 8; pts.push([(1 - u) * (1 - u) * cur[0] + 2 * (1 - u) * u * c[0] + u * u * f[0], (1 - u) * (1 - u) * cur[1] + 2 * (1 - u) * u * c[1] + u * u * f[1]]); } cur = f; }
+      else return null;
+    }
+    if (pts.length < 2) return null;
+    for (k = 0; k < pts.length; k++) if (!isFinite(pts[k][0] + pts[k][1])) return null;
+    return pts.map(function (q) { return Math.round(q[0] * 1000) / 1000 + "," + Math.round(q[1] * 1000) / 1000; }).join(" ");
+  }
   function lerSvg(svg) {
     var vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg) || [], W = +vb[1] || 0, H = +vb[2] || 0;
-    var re = /<(\/?)(g|line|polygon|polyline|rect|circle|text)\b([^>]*?)(\/?)>([^<]*)/g, m, pilha = [{ tx: 0, ty: 0, area: null, carimbo: false, bloco: null }], prims = [], blocos = [];
+    var re = /<(\/?)(g|line|polygon|polyline|rect|circle|text|path)\b([^>]*?)(\/?)>([^<]*)/g, m, pilha = [{ tx: 0, ty: 0, area: null, carimbo: false, bloco: null }], prims = [], blocos = [], descartados = 0;
     while ((m = re.exec(svg))) {
       var fecha = m[1] === "/", tag = m[2], at = fecha ? {} : atributos(m[3]), auto = m[4] === "/", top = pilha[pilha.length - 1];
       if (tag === "g") {
@@ -167,11 +185,12 @@
       if (fecha) continue;
       var p = { tag: tag, a: at, s: tag === "text" ? m[5] : "", tx: top.tx, ty: top.ty, area: top.area, carimbo: top.carimbo, bloco: top.bloco };
       var fill = at.fill, st = at.stroke;
+      if (tag === "path") { var pp = pathPontos(at.d); if (!pp) { descartados++; continue; } tag = "polyline"; at.points = pp; p.tag = tag; p.a = at; }   /* arco/curva (M…Q…, L, Z) → polilinha */
       if (tag !== "text" && (!st || st === "none") && (!fill || fill === "none" || ehBranco(fill))) continue;   /* fundo branco, apagador e o que não deixa tinta */
       if (tag === "text" && !desesc(p.s).trim()) continue;
       prims.push(p); if (p.bloco) p.bloco.prims.push(p);
     }
-    return { W: W, H: H, prims: prims, blocos: blocos };
+    return { W: W, H: H, prims: prims, blocos: blocos, pathsDescartados: descartados };
   }
   function nums(s) { return txt(s).trim().split(/[\s,]+/).filter(Boolean).map(Number); }
   function bboxPrim(p) {   /* em coordenadas do SVG (y para baixo), com a translação do grupo */
@@ -190,6 +209,69 @@
   }
   function uniao(bb, b) { if (!b) return bb; if (!bb) return b.slice(); return [Math.min(bb[0], b[0]), Math.min(bb[1], b[1]), Math.max(bb[2], b[2]), Math.max(bb[3], b[3])]; }
 
+  /* ---------------------------------------------------------------- PERFIL DE DISCIPLINA (paleta de penas FIXA)
+   * O CTB da arquitetura nasce do desenho (uma pena por par cor×espessura que apareceu). Para as outras disciplinas o CTB precisa ser o MESMO para qualquer desenho
+   * (o usuário instala RA_Hidrossanitario.ctb uma vez e todo DWG de hidro plota certo): a paleta é fixa e cada par cor×espessura do desenho "encaixa" na pena mais próxima.
+   * perfil = { id, ctbNome, dxfNome, titulo, descricao, paleta: [{ nome, rgb, lws:[centésimos de mm] }], cheios: [{ nome, rgb }] }
+   * Pretos (ACI 1–6, 8, 9 pela espessura, 7 = texto e cheio preto) vêm sempre; cada cor da paleta ganha UMA ACI por espessura (a mais parecida com a cor ainda livre,
+   * para a tela do CAD mostrar uma cor próxima), e cada cheio ganha uma ACI clara. Ordem fixa → ACI fixa. */
+  function distCor(a, b) { return 2 * Math.pow(a[0] - b[0], 2) + 4 * Math.pow(a[1] - b[1], 2) + 3 * Math.pow(a[2] - b[2], 2); }
+  function ehPreto(rgb) { return rgb[0] <= 40 && rgb[1] <= 40 && rgb[2] <= 40; }
+  function perfilDe(perfil) {
+    if (perfil._pf) return perfil._pf;
+    var pens = [], usadaP = {}, i;
+    function livre(rgb, fundo) {
+      var best = 0, bd = Infinity;
+      for (var k = 10; k <= 255; k++) {
+        if (usadaP[k] || RESERVADAS[k] || ACI_GEMEA[k]) continue;
+        if (k >= 250 && !(fundo && k >= 252)) continue;
+        var d = distCor(aciRgb(k), rgb); if (d < bd) { bd = d; best = k; }
+      }
+      return best;
+    }
+    function add(rgb, lw, aci, nome) { var o = { aci: aci, rgb: rgb, lw: lw, nome: nome || "", key: nome + "|" + lw }; usadaP[aci] = 1; pens.push(o); return o; }
+    var pretaAci = perfil.pretaAci || PRETA_ACI;   /* perfil.pretaAci: realoca o preto fino (0,05 e 0,09) quando as ACI 8 e 9 (cinzas na tela) vão para os preenchimentos */
+    Object.keys(PRETA_ACI).map(Number).sort(function (a, b) { return a - b; }).forEach(function (lw) { add([0, 0, 0], lw, pretaAci[lw] || PRETA_ACI[lw], "preto"); });
+    add([0, 0, 0], 0, 7, "preto");
+    /* CINZAS: não existe ACI cinza no miolo da tabela (10–249 só tem matizes): para o contexto não aparecer colorido na tela, os cinzas usam as ACI cinza do CAD (250–254) e,
+       nos preenchimentos, a 8 e a 9. perfil.cinzas = [{ aci, rgb (saída), lw }] (linhas) · perfil.neutros = [{ aci, rgb (saída) }] (preenchimento e texto cinza, lw 0) */
+    (perfil.cinzas || []).forEach(function (c) { add(c.rgb, c.lw, c.aci, "cinza"); });
+    (perfil.neutros || []).forEach(function (c) { add(c.rgb, 0, c.aci, "neutro"); });
+    (perfil.paleta || []).forEach(function (c) { (c.lws || []).forEach(function (lw) { add(c.rgb, lw, livre(c.rgb, false), c.nome); }); });
+    (perfil.cheios || []).forEach(function (c) { add(c.rgb, 0, livre(c.rgb, true), c.nome); });
+    var PF = {
+      id: perfil.id, ctbNome: perfil.ctbNome, dxfNome: perfil.dxfNome || "CAD.dxf", titulo: perfil.titulo || "PRANCHAS", descricao: perfil.descricao || "RA Engenharia - plot style por disciplina", pens: pens,
+      snap: function (rgb, lw, fundo) {   /* → a pena da paleta que o par (cor, espessura em centésimos) encaixa */
+        var cand, melhor = null, bd = Infinity, k, neutra = Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]) < 25;
+        if (!lw) {   /* texto e preenchimento: ACI sem espessura */
+          if (ehPreto(rgb)) return pens.filter(function (q) { return q.aci === 7; })[0];
+          if (neutra && perfil.neutros && perfil.neutros.length) {   /* cinza: o neutro de luminosidade mais próxima; escuro demais = o preto */
+            if (rgb[0] < 100) return pens.filter(function (q) { return q.aci === 7; })[0];
+            pens.forEach(function (q) { if (q.nome === "neutro") { var d = Math.abs(q.rgb[0] - rgb[0]); if (d < bd) { bd = d; melhor = q; } } });
+            return melhor;
+          }
+          cand = pens.filter(function (q) { return q.lw === 0 && q.aci !== 7 && q.nome !== "neutro"; });
+          cand.forEach(function (q) { var d = distCor(q.rgb, rgb); if (d < bd) { bd = d; melhor = q; } });
+          return melhor || pens[0];
+        }
+        if (ehPreto(rgb)) cand = pens.filter(function (q) { return q.nome === "preto" && q.lw > 0; });
+        else if (neutra && perfil.cinzas && perfil.cinzas.length) cand = pens.filter(function (q) { return q.nome === "cinza"; });
+        else {
+          var porCor = pens.filter(function (q) { return q.lw > 0 && q.nome !== "preto" && q.nome !== "cinza"; }), nome = null;
+          porCor.forEach(function (q) { var d = distCor(q.rgb, rgb); if (d < bd) { bd = d; nome = q.nome; } });
+          cand = porCor.filter(function (q) { return q.nome === nome; });
+        }
+        bd = Infinity;
+        for (k = 0; k < cand.length; k++) { var dl = Math.abs(cand[k].lw - lw); if (dl < bd || (dl === bd && cand[k].lw > melhor.lw)) { bd = dl; melhor = cand[k]; } }
+        return melhor || pens[0];
+      }
+    };
+    perfil._pf = PF;
+    return PF;
+  }
+  /* o CTB (bytes) de um perfil, sem desenho nenhum: é o que o botão "Instalar penas RA no AutoCAD" copia */
+  function ctbDoPerfil(perfil) { var P = perfilDe(perfil); return ctbBytes(ctbTexto(P.pens, P.descricao)); }
+
   /* ---------------------------------------------------------------- A CONVERSÃO */
   var PRETA_ACI = { 5: 8, 9: 9, 13: 1, 18: 2, 25: 3, 35: 4, 50: 5, 70: 6 };   /* espessura (centésimos) → ACI da linha preta (1–6 = o padrão RA) */
   /* ACIs que o DWG (R2007+, via LibreDWG) devolve como a ACI 1–7 de mesma cor RGB (10→1, 50→2, 90→3, 130→4, 170→5, 210→6, 255→7): nunca viram pena, senão o CTB erra a pena depois do DWG */
@@ -201,7 +283,8 @@
   function paraCad(r, opcoes) {
     var op = opcoes || {}, B = X(), E = ES();
     if (!B || !r || !r.ok || !r.folhas || !r.folhas.length) return null;
-    var doc = B.novoDoc({ unidade: "m" }), avisos = [], ctbNome = txt(op.ctbNome) || "RA_Arquitetura.ctb", dxfNome = txt(op.dxfNome) || "ARQ_CAD.dxf";
+    var PF = op.perfil ? perfilDe(op.perfil) : null;   /* DISCIPLINA com paleta de penas FIXA (RA_Hidrossanitario.ctb…): o CTB é o mesmo para qualquer desenho da disciplina */
+    var doc = B.novoDoc({ unidade: "m" }), avisos = [], ctbNome = txt(op.ctbNome) || (PF ? PF.ctbNome : "RA_Arquitetura.ctb"), dxfNome = txt(op.dxfNome) || (PF ? PF.dxfNome : "ARQ_CAD.dxf");
     doc.escala = 1;
     var HT = E && E.ALTURA_MAIUSCULA ? E.ALTURA_MAIUSCULA : 0.727;
     var pens = [], penPor = {}, usada = {};
@@ -216,6 +299,7 @@
       return best;
     }
     function pen(rgb, lw, fundo) {   /* lw em centésimos de mm; 0 = sem espessura (texto, preenchimento) */
+      if (PF) { var pf = PF.snap(rgb, lw, fundo); if (!penPor[pf.key]) { penPor[pf.key] = pf; usada[pf.aci] = 1; } return pf; }   /* paleta fixa: nunca cria pena nova */
       var preto = rgb[0] <= 40 && rgb[1] <= 40 && rgb[2] <= 40, key = (preto ? "K" : rgbHex(rgb)) + "|" + lw;
       if (penPor[key]) return penPor[key];
       var aci, saida = preto ? [0, 0, 0] : rgb;
@@ -248,6 +332,7 @@
 
     var folhas = r.folhas.map(function (f) {
       var s = lerSvg(f.svg), corpo = s.prims.filter(function (p) { return p.area === "corpo"; });
+      if (s.pathsDescartados) avisos.push(f.numero + ": " + s.pathsDescartados + " traço(s) <path> com comando que o CAD não converte (A, C, S, T, H, V) ficaram de fora.");
       var blocos = s.blocos.slice();
       if (!blocos.length && corpo.length) {   /* série antiga / interiores: uma folha = um desenho, na escala da folha quando é uma só */
         var em = /^1:(\d+)$/.exec(txt(f.escala).trim());
@@ -334,20 +419,66 @@
       resumo.layouts.push(info);
     });
 
+    if (PF && op.juntarLinhas !== false) { var n0 = doc.entidades.length, nL0 = 0; doc.layouts.forEach(function (L) { nL0 += L.ents.length; }); doc.entidades = juntarLinhas(doc.entidades); doc.layouts.forEach(function (L) { L.ents = juntarLinhas(L.ents); }); resumo.entidades = { antes: n0 + nL0, depois: doc.entidades.length + doc.layouts.reduce(function (s, L) { return s + L.ents.length; }, 0) }; }
+    return finalizar(doc, PF ? PF.pens.slice() : pens, resumo, avisos, op, { ctbNome: ctbNome, dxfNome: dxfNome, perfil: PF, titulo: PF ? PF.titulo : "PRANCHAS DE ARQUITETURA", desc: PF ? PF.descricao : "RA Engenharia - pranchas de arquitetura: cor ACI = pena (espessura e cor de saida). Preto = ACI 1-6, 8 e 9 pela espessura; 7 = texto e cheio preto." });
+  }
+  /* JUNTA LINHAS: o SVG do hidro desenha cada traço como um <line>: a arquitetura de fundo e as louças viram centenas de milhares de LINE (HID-01 da Casa 487: ~45 mil). O dxf2dwg
+     do LibreDWG não termina um DXF de 12 MB (passou de 15 min); o AutoCAD também fica pesado. Segmentos ligados ponta a ponta (nó com exatamente 2 segmentos, mesma camada e tipo de
+     linha) viram UMA LWPOLYLINE: a mesma tinta, bem menos entidades, e o desenho fica editável. */
+  function juntarLinhas(ents) {
+    var grupos = {}, ordem = [], i;
+    for (i = 0; i < ents.length; i++) { var e = ents[i]; if (e.t === "LINE") { var k = e.camada + "|" + (e.lt || "") + "|" + (e.lts || 0); if (!grupos[k]) { grupos[k] = []; ordem.push(k); } grupos[k].push(i); } }
+    var sai = {}, poli = {};
+    function chave(x, y) { return Math.round(x * 1e4) + "," + Math.round(y * 1e4); }
+    ordem.forEach(function (k) {
+      var idx = grupos[k]; if (idx.length < 2) return;
+      var seg = idx.map(function (q) { return ents[q]; }), nodo = {}, usado = [], j;
+      seg.forEach(function (s, jj) { var a = chave(s.p[0], s.p[1]), b = chave(s.p[2], s.p[3]); (nodo[a] = nodo[a] || []).push(jj); (nodo[b] = nodo[b] || []).push(jj); });
+      function outro(s, ch) { return chave(s.p[0], s.p[1]) === ch ? [s.p[2], s.p[3]] : [s.p[0], s.p[1]]; }
+      function estende(pts, fim) {   /* anda pelos nós de grau 2 */
+        for (;;) {
+          var p = fim ? pts[pts.length - 1] : pts[0], ch = chave(p[0], p[1]), v = nodo[ch];
+          if (!v || v.length !== 2) return;
+          var nx = usado[v[0]] ? v[1] : v[0]; if (usado[nx]) return;
+          usado[nx] = true; var q = outro(seg[nx], ch);
+          if (fim) pts.push(q); else pts.unshift(q);
+        }
+      }
+      for (j = 0; j < seg.length; j++) {
+        if (usado[j]) continue;
+        usado[j] = true; var s0 = seg[j], pts = [[s0.p[0], s0.p[1]], [s0.p[2], s0.p[3]]];
+        estende(pts, true); estende(pts, false);
+        if (pts.length === 2) { sai[idx[j]] = 3; continue; }   /* segmento sozinho: fica LINE */
+        var fechado = pts.length > 3 && chave(pts[0][0], pts[0][1]) === chave(pts[pts.length - 1][0], pts[pts.length - 1][1]); if (fechado) pts.pop();
+        var pl = { t: "LWPOLYLINE", camada: s0.camada, pts: pts, fechado: fechado }; if (s0.lt) pl.lt = s0.lt; if (s0.lts) pl.lts = s0.lts;
+        poli[idx[j]] = pl;
+        /* os segmentos consumidos (todos os marcados e ainda sem polilinha própria) saem; o de partida fica como a polilinha */
+        sai[idx[j]] = 2;
+      }
+      /* quais segmentos foram absorvidos: os marcados "usado" que não são partida de cadeia */
+      seg.forEach(function (s, jj) { if (usado[jj] && !sai[idx[jj]]) sai[idx[jj]] = 1; });
+    });
+    var out = [];
+    for (i = 0; i < ents.length; i++) { if (sai[i] === 1) continue; out.push(sai[i] === 2 ? poli[i] : ents[i]); }
+    return out;
+  }
+  /* o fim comum: DXF, DXF do caminho do DWG (texto à esquerda, $FILLMODE), CTB e LEIA-ME. Serve também ao CAD das folhas do BIM (js/bimcad.js). */
+  function finalizar(doc, pens, resumo, avisos, op, ex) {
+    var B = X();
     pens.sort(function (a, b) { return a.aci - b.aci; });
     var texto = B.escrever(doc);
     /* o caminho do DWG: texto alinhado à esquerda e $FILLMODE 1; a hachura segue HATCH nativa (opcoes.hachuraGeometria liga a conversão para SOLID/LINE) */
     var textoDwg = B.paraDwg ? B.escrever(B.paraDwg(doc, { hachuraGeometria: !!op.hachuraGeometria })) : texto;
-    var desc = "RA Engenharia - pranchas de arquitetura: cor ACI = pena (espessura e cor de saida). Preto = ACI 1-6, 8 e 9 pela espessura; 7 = texto e cheio preto.";
-    var ctb = ctbBytes(ctbTexto(pens, desc));
-    var out = { dxf: texto, dxfDwg: textoDwg, ctb: ctb, ctbNome: ctbNome, dxfNome: dxfNome, dwgNome: txt(op.dwgNome), pens: pens, resumo: resumo, avisos: avisos, doc: doc };
+    var ctb = ctbBytes(ctbTexto(pens, ex.desc));
+    var out = { dxf: texto, dxfDwg: textoDwg, ctb: ctb, ctbNome: ex.ctbNome, dxfNome: ex.dxfNome, dwgNome: txt(op.dwgNome), pens: pens, resumo: resumo, avisos: avisos, doc: doc, titulo: ex.titulo, perfil: ex.perfil ? ex.perfil.id : "" };
     out.leiame = leiame(out);
     return out;
   }
 
   function leiame(o) {
     var L = [], dwg = !!o.dwgNome;
-    L.push(dwg ? "PRANCHAS DE ARQUITETURA - ARQUIVO CAD UNICO (DWG)" : "PRANCHAS DE ARQUITETURA - ARQUIVO CAD UNICO");
+    var tit = o.titulo || "PRANCHAS DE ARQUITETURA";
+    L.push(dwg ? tit + " - ARQUIVO CAD UNICO (DWG)" : tit + " - ARQUIVO CAD UNICO");
     L.push("");
     if (dwg) {
       L.push("Este pacote traz o DWG pronto. O OrcaPRO monta o DXF e converte com o dxf2dwg do LibreDWG " + LIBREDWG_VERSAO + " (programa separado, software livre GNU GPLv3).");
@@ -398,7 +529,7 @@
     return Z.zipEscrever(arq);
   }
 
-  var ArqCad = { VERSAO: 2, paraCad: paraCad, zip: zip, zipDwg: zipDwg, LIBREDWG_VERSAO: LIBREDWG_VERSAO, LIBREDWG_FONTE: LIBREDWG_FONTE, ctbTexto: ctbTexto, ctbBytes: ctbBytes, ctbParse: ctbParse, lwSnap: lwSnap, LW_CTB: LW_CTB, LW_DXF: LW_DXF, aciRgb: aciRgb, papelNome: papelNome, PRETA_ACI: PRETA_ACI, ACI_GEMEA: ACI_GEMEA, CTB_CABECALHO: CTB_CABECALHO, _lerSvg: lerSvg, _adler32: adler32 };
+  var ArqCad = { VERSAO: 3, paraCad: paraCad, finalizar: finalizar, perfilDe: perfilDe, ctbDoPerfil: ctbDoPerfil, ehPreto: ehPreto, distCor: distCor, hexRgb: hexRgb, rgbHex: rgbHex, zip: zip, zipDwg: zipDwg, LIBREDWG_VERSAO: LIBREDWG_VERSAO, LIBREDWG_FONTE: LIBREDWG_FONTE, ctbTexto: ctbTexto, ctbBytes: ctbBytes, ctbParse: ctbParse, leiame: leiame, juntarLinhas: juntarLinhas, lwSnap: lwSnap, LW_CTB: LW_CTB, LW_DXF: LW_DXF, aciRgb: aciRgb, papelNome: papelNome, PRETA_ACI: PRETA_ACI, ACI_GEMEA: ACI_GEMEA, CTB_CABECALHO: CTB_CABECALHO, _lerSvg: lerSvg, _adler32: adler32 };
   global.ArqCad = ArqCad;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqCad;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

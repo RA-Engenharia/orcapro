@@ -705,6 +705,7 @@
       graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
       outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Imprimir / PDF", fn: function () { self.pdf([id]); } });
       outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
+      outros.push({ id: "cad", rotulo: "CAD único do conjunto", tipo: "botao", rotuloBotao: "Arquivo CAD único", fn: function () { self.exportarCad(id); } });
       outros.push({ id: "atualizar", rotulo: "Modelo mudou?", tipo: "botao", rotuloBotao: "Atualizar vistas", fn: function () { self._desenhos = {}; self.pintar(id); } });
       return {
         daVista: true, semEditarTipo: true, titulo: "Folha: " + this.nomeFolha(a.pr, a.folha), icone: "prancha",
@@ -904,6 +905,8 @@
       try {
         if (this.ehFolha(id)) {
           var a = this.achar(id); if (!a) return null;
+          /* folha das pranchas do hidro (imagem inteira = o SVG gerado): o DXF antigo desta aba saía só com a moldura e o carimbo; vai pelo CAD único */
+          if (/^hidsvg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
           var vps = {}, self = this;
           a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
@@ -925,7 +928,66 @@
       toast("Abra uma folha, uma planta ou um corte para exportar em DXF.", "aviso");
       return null;
     },
-    exportarDwg: function () {
+    /* ARQUIVO CAD ÚNICO (16/11/2026): o conjunto (registro) da folha aberta → um DXF/DWG com o MODEL em escala real e um LAYOUT por folha (viewports travadas na escala de
+       cada vista), CTB da disciplina. Folhas do hidro (imagem inteira = SVG gerado) vão por BimCad.paraCad (CTB RA_Hidrossanitario); as demais por paraCadFolhas (CTB RA_Geral).
+       Roteiro do defeito: o DXF desta tela (daFolha) não tinha layout, CTB nem penas, e a aba do hidro exportava só moldura e carimbo. */
+    _svgDaFolhaHidro: function (f) {
+      var u = (this._imagensExternas || {})[f.imagemInteira]; if (!u) return "";
+      try { return decodeURIComponent(String(u).replace(/^data:image\/svg\+xml;charset=utf-8,/, "")); } catch (e) { return ""; }
+    },
+    /* → { saidas: [{ o, base, partes, rotulo }], o, base, partes (= a 1ª saída) } | null. O registro pode MISTURAR folhas do hidro (imagem inteira = SVG gerado) e folhas comuns
+       (viewports do BIM): cada grupo vira a sua saída (CTB RA_Hidrossanitario × RA_Geral); nenhuma folha some em silêncio. */
+    cadDoRegistro: function (id, opc) {
+      opc = opc || {}; var BC = global.BimCad; if (!BC) { toast("O módulo de CAD único não carregou.", "erro"); return null; }
+      var a = this.achar(id || (this.G() && this.G()._bimVxEst && this.G()._bimVxEst().ativa)); if (!a) { toast("Abra uma folha para exportar o arquivo CAD.", "aviso"); return null; }
+      var pr = a.pr, self = this, base = String(pr.nome || "Folhas").replace(/[\\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim() || "Folhas";
+      var ehHidro = function (f) { return /^hidsvg:/.test(f.imagemInteira || ""); };
+      var hidro = arr(pr.folhas).filter(ehHidro), comuns = arr(pr.folhas).filter(function (f) { return !ehHidro(f); }), saidas = [];
+      var nomesDe = function (suf) { return { dxf: base + suf + ".dxf", dwg: base + suf + ".dwg", base: base + suf }; };
+      var misto = hidro.length > 0 && comuns.length > 0;
+      try {
+        if (hidro.length) {
+          var fols = hidro.map(function (f) {
+            var m = /^(\S+) - ([\s\S]*)$/.exec(f.conteudo || ""), svg = self._svgDaFolhaHidro(f);
+            return svg ? { numero: m ? m[1] : (f.numero || "F" + f.n), titulo: m ? m[2] : (f.conteudo || ""), escala: f.escala || "", formato: pr.formato || "A1", svg: svg } : null;
+          }).filter(function (x) { return !!x; });
+          if (!fols.length) toast("As folhas do hidro desta sessão não estão em memória: use Gerar pranchas de novo e exporte em seguida.", "aviso");
+          else { var nh = nomesDe(misto ? " - hidro" : ""); saidas.push({ o: BC.paraCad({ ok: true, folhas: fols }, { disciplina: "hidrossanitario", dxfNome: nh.dxf, dwgNome: nh.dwg }), base: nh.base, rotulo: "hidrossanitário",
+            partes: global.BimCadUI ? global.BimCadUI.partesHidro({ folhas: fols }) : null }); }
+        }
+        if (comuns.length) {
+          var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
+          var folhas = comuns.map(function (f) {
+            var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+            return { folha: f, vps: vps, nome: PR().numeroFolha(pr, f) };
+          });
+          var nc = nomesDe(misto ? " - folhas" : ""), mk = function (lista, dxfNome, dwgNome) { return BC.paraCadFolhas({ pr: pr, geo: a.geo, projeto: self.projeto(), empresa: self.empresaDados(), logo: !!logoConta, folhas: lista }, { disciplina: opc.disciplina || "geral", dxfNome: dxfNome, dwgNome: dwgNome }); };
+          saidas.push({ o: mk(folhas, nc.dxf, nc.dwg), base: nc.base, rotulo: "folhas do BIM", partes: function (i0, i1, nome) { return mk(folhas.slice(i0, i1), nome + ".dxf", nome + ".dwg"); } });
+        }
+      } catch (e) { toast("Não consegui montar o arquivo CAD: " + (e && e.message || e), "erro"); return null; }
+      if (!saidas.length) return null;
+      return { saidas: saidas, o: saidas[0].o, base: saidas[0].base, partes: saidas[0].partes };
+    },
+    exportarCad: function (id) {
+      var c = this.cadDoRegistro(id); if (!c || !c.saidas) return null;
+      var UI = global.BimCadUI; if (!UI) { toast("O módulo de saída CAD não carregou.", "erro"); return null; }
+      var nomes = [], layouts = 0;
+      c.saidas.forEach(function (sd) { var r = UI.baixarCad(sd.o, { base: sd.base }); if (r) { nomes.push(r.nome); layouts += sd.o.resumo.layouts.length; } });
+      return nomes.length ? { nome: nomes[0], nomes: nomes, layouts: layouts } : null;
+    },
+    exportarDwg: function (id) {
+      var UI = global.BimCadUI, self = this;
+      if (!UI) { toast("O módulo de saída CAD não carregou.", "erro"); return false; }
+      var c = this.cadDoRegistro(id); if (!c || !c.saidas) return false;
+      var A = global.ArqPranchasUI, sondar = A && A.sondarDwg ? A.sondarDwg() : Promise.resolve({ disponivel: false, motivo: UI.DWG_SO_NO_APP });
+      sondar.then(function (s) {
+        if (s.disponivel) { c.saidas.forEach(function (sd) { UI.baixarDwg(sd.o, { base: sd.base, partes: sd.partes }); }); return; }
+        global.UI.modal("DWG", '<p style="font-size:13px;line-height:1.5">' + esc(s.motivo || UI.DWG_SO_NO_APP) + '</p><p class="muted" style="font-size:12px">No AutoCAD: abra o DXF e use Salvar como → DWG. Os layouts, as penas (CTB) e as escalas das viewports vão junto no arquivo CAD único.</p>',
+          [{ texto: "Arquivo CAD único (DXF)", classe: "primary", onClick: function () { global.UI.fecharModal(); c.saidas.forEach(function (sd) { UI.baixarCad(sd.o, { base: sd.base }); }); } }, { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
+      });
+      return true;
+    },
+    exportarDwgAntigo: function () {
       var X = global.BimDxf, m = X && X.DWG ? X.DWG.motivo : "Use o DXF.";
       global.UI.modal("DWG", '<p style="font-size:13px;line-height:1.5">' + esc(m) + '</p><p class="muted" style="font-size:12px">No AutoCAD: abra o DXF e use Salvar como → DWG. As camadas, as espessuras e as cotas vão junto.</p>',
         [{ texto: "Exportar DXF", classe: "primary", onClick: function () { global.UI.fecharModal(); BimFolhaUI.exportarDxf(); } }, { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
@@ -1185,6 +1247,16 @@
       if (!ok && H.estado && H.estado.msg) toast(H.estado.msg.t, H.estado.msg.k === "erro" ? "erro" : "aviso");
       return ok;
     },
+    /* depois do Gerar: o CAD único (e/ou o DWG) do conjunto recém-gerado, da mesma geração */
+    cadDoGerar: function (regId, q, disc) {
+      var reg = this.registros().filter(function (r) { return String(r.id) === String(regId); })[0]; if (!reg || !reg.folhas || !reg.folhas.length) return null;
+      var f0 = PR().normalizar(reg).folhas[0], c = this.cadDoRegistro(this.idFolha(reg.id, f0.id), { disciplina: disc === "todas" ? "geral" : disc }); if (!c || !c.o || !global.BimCadUI) return null;
+      c.saidas.forEach(function (sd) {
+        if (q.cad) global.BimCadUI.baixarCad(sd.o, { base: sd.base });
+        if (q.dwg) global.BimCadUI.baixarDwg(sd.o, { base: sd.base, partes: sd.partes });
+      });
+      return c;
+    },
     /* a pergunta mínima: o formato e quais vistas (todas marcadas) */
     abrirGerar: function () {
       if (!this.ativo()) return false;
@@ -1200,18 +1272,22 @@
         ' <label style="font-size:12.5px;margin-left:12px">Disciplina <select id="pv-ger-disc">' + Object.keys(temDisc).map(function (k) { return '<option value="' + esc(k) + '"' + (k === disc0 ? " selected" : "") + ">" + esc(DISC[k] || k) + "</option>"; }).join("") + '<option value="todas">Todas</option></select></label>' +
         '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
           return '<label data-pv-disc="' + esc(v.disciplina) + '" style="display:' + (v.disciplina === disc0 ? "block" : "none") + ';font-size:12.5px;padding:2px 0"><input type="checkbox"' + (v.disciplina === disc0 ? " checked" : "") + ' data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
-        }).join("") + "</div>";
+        }).join("") + "</div>" +
+        (global.BimCadUI ? '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px;margin-top:8px"><legend><b>Saída CAD</b></legend>' + global.BimCadUI.opcoesHtml("pvg") + "</fieldset>" : "");
       if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
       global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
         { texto: "Gerar", classe: this.temHidro() ? "" : "primary", onClick: function () {
+          var qCad = { cad: !!document.querySelector('[data-pvg-out="cad"]:checked'), dwg: !!document.querySelector('[data-pvg-out="dwg"]:checked:not(:disabled)') };
           var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
           var dsel = (document.getElementById("pv-ger-disc") || {}).value || disc0;
           var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { var lb = c.parentNode; return c.checked && (dsel === "todas" || (lb && lb.getAttribute("data-pv-disc") === dsel)); }).map(function (c) { return c.getAttribute("data-pv-ger"); });
           global.UI.fecharModal();
           if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
-          self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
+          var rg = self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
+          if (rg && rg.ok && (qCad.cad || qCad.dwg)) self.cadDoGerar(rg.id, qCad, dsel);
         } },
         { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));
+      try { if (global.BimCadUI) global.BimCadUI.ligar(document, "pvg"); } catch (eC) { /* sem a sonda do DWG */ }
       /* trocar a disciplina mostra só as vistas dela e marca todas elas (as das outras ficam desmarcadas) */
       setTimeout(function () {
         var sel = document.getElementById("pv-ger-disc"); if (!sel) return;
@@ -1277,7 +1353,8 @@
       ]);
       R.acrescentar("vista", "Vista", "Exportar", [
         { id: "exportar-dxf", rotulo: "DXF", icone: "exportar", grande: true, dica: "DXF da folha aberta (em mm de papel, carimbo completo) ou da planta/corte aberto (1:1 em metros). Camada por categoria (ARQ-PAREDE-CORTE, EST-PILAR-CORTE…), espessura pela pena, cota que o AutoCAD mede de novo." },
-        { id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG pelo servidor depende de licença comercial do conversor — por enquanto, use o DXF (o AutoCAD salva em DWG)." },
+        { id: "exportar-cad", rotulo: "CAD\núnico", icone: "exportar", grande: true, dica: "Arquivo CAD único do conjunto de folhas aberto: DXF com o MODEL em escala real e um layout por folha (viewport travada na escala de cada vista), mais o CTB das penas da disciplina (RA_Hidrossanitario.ctb nas pranchas do hidro, RA_Geral.ctb nas demais)." },
+        { id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG do conjunto de folhas aberto (app instalado: o conversor roda neste computador). Sem o app, explica e entrega o arquivo CAD único em DXF (o AutoCAD salva em DWG)." },
         { id: "pdf-lote", rotulo: "PDF em\nlote", icone: "imprimir", grande: true, dica: "Várias folhas num PDF só, cada uma no tamanho do papel, com o nome automático (número - nome - revisão)." }
       ]);
       reg["gerar-pranchas"] = function () { return self.abrirGerar(); };
@@ -1287,6 +1364,7 @@
       reg["lista-folhas"] = function () { self.mostrarLista("folhas"); return true; };
       reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
       reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };
+      reg["exportar-cad"] = function () { return !!self.exportarCad(); };
       reg["exportar-dwg"] = function () { self.exportarDwg(); return true; };
       reg["pdf-lote"] = function () { return !!self.pdfLote(); };
       return true;

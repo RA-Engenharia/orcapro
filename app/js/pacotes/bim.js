@@ -182293,6 +182293,73 @@ doc.linha(cTit, b.x + 2 * r, Y(ty), b.x + Math.max(2 * r + 40, Math.min(b.w, 2 *
 doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) - 3.6, 2.5 * 0.7, "ESC 1:" + esc, 0, false);
 }
 });
+fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold);
+return doc;
+}
+function daFolhaCad(doc, pr, folha, geo, vps, opts) {
+opts = opts || {};
+var P = geo.papel, pn = penas().media, M = geo.moldura, cur = opts.modelo || (opts.modelo = { x: 0, topo: 0, altLinha: 0 });
+function Y(y) { return P.h - y; }
+var nome = String(opts.nome || folha.numero || ("F" + folha.n));
+var L = doc.layout(nome, P.w, P.h, { papel: opts.papelNome ? opts.papelNome(P.w, P.h) : "", ctb: opts.ctbNome, camadaVp: "DEFPOINTS" });
+var info = { nome: nome, w: P.w, h: P.h, papel: L.opts.papel, viewports: [], formato: folha.formato || "", titulo: folha.conteudo || "" };
+var cMold = doc.camada("FOLHA-MOLDURA", 0.70), cCar = doc.camada("FOLHA-CARIMBO", 0.25), cTx = doc.camada("FOLHA-CARIMBO-TEXTO", 0.18);
+var cTit = doc.camada("FOLHA-TITULO-VISTA", pn.marca), cTitT = doc.camada("FOLHA-TITULO-VISTA-TEXTO", pn.cota);
+var vistas = [];
+(folha.blocos || []).forEach(function (b) {
+if (b.tipo !== "viewport") return;
+var v = vps && ((b.escalaPropria && vps[b.vistaId + "@" + b.escala]) || vps[b.vistaId]);
+if (!v || !v.dados) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem desenho"); return; }
+var esc = +b.escala || 50, f = 1000 / esc, vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : v.vb;
+var rx0 = Math.max(b.x, M.x), rx1 = Math.min(b.x + b.w, M.x + M.w), ry0 = Math.max(b.y, M.y), ry1 = Math.min(b.y + b.h, M.y + M.h);
+if (rx1 - rx0 < 1 || ry1 - ry0 < 1) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " fora da folha"); return; }
+vistas.push({ b: b, v: v, esc: esc, f: f, vb: vb, caixa: [rx0, ry0, rx1, ry1] });
+});
+var x0 = cur.x = 0, topo = cur.topo, altMax = 0, GAP = 5;
+vistas.forEach(function (q) {
+q.mx0 = x0; q.my0 = topo - q.vb.h; x0 += q.vb.w + GAP; if (q.vb.h > altMax) altMax = q.vb.h;
+var est = {}; Object.keys(q.v.estilo || {}).forEach(function (kk) { est[kk] = q.v.estilo[kk]; }); est.escala = q.esc; est.titulo = false;
+var e = global.Desenho2D.normEstilo(est);
+var xf = { pt: function (x, y) { return [q.mx0 + (x - q.vb.x), q.my0 + (q.vb.y + q.vb.h - y)]; }, s: 1 };
+var rec = { x0: q.mx0, x1: q.mx0 + q.vb.w, y0: q.my0, y1: q.my0 + q.vb.h };
+var hMod = doc.entidades.length;
+daVista(q.v.dados, e, { doc: doc, xf: xf, recorte: rec, svg: q.v.svgSemTitulo });
+doc.texto(doc.camada("DEFPOINTS"), q.mx0, q.my0 + q.vb.h + 0.6, Math.max(0.3, 4 * q.esc / 1000), nome + " | " + (q.b.tituloVista || q.b.vistaId) + " | 1:" + q.esc, 0, false);
+doc.poli("DEFPOINTS", [[rec.x0 - 0.3, rec.y0 - 0.3], [rec.x1 + 0.3, rec.y0 - 0.3], [rec.x1 + 0.3, rec.y1 + 0.3], [rec.x0 - 0.3, rec.y1 + 0.3]], true);
+q.nEnts = doc.entidades.length - hMod;
+});
+cur.topo = topo - (altMax || 0) - (vistas.length ? 14 : 0);
+doc.paper(L, function () {
+doc.poli(cMold, [[M.x, Y(M.y)], [M.x + M.w, Y(M.y)], [M.x + M.w, Y(M.y + M.h)], [M.x, Y(M.y + M.h)]], true);
+vistas.forEach(function (q) {
+var b = q.b;
+if (b.mostrarTitulo !== false && b.y + b.h + 10 <= M.y + M.h) {
+var ty = b.y + b.h + 6, r = 4;
+doc.circulo(cTit, b.x + r, Y(ty), r);
+doc.texto(cTitT, b.x + r, Y(ty) - 1.2, 2.2, b.numeroDetalhe || "", 0, true);
+var nm = String(b.tituloVista || "").toUpperCase();
+doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) + 0.6, 3.5 * 0.7, nm, 0, false);
+doc.linha(cTit, b.x + 2 * r, Y(ty), b.x + Math.max(2 * r + 40, Math.min(b.w, 2 * r + 4 + nm.length * 2.1)), Y(ty));
+doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) - 3.6, 2.5 * 0.7, "ESC 1:" + q.esc, 0, false);
+}
+});
+fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold);
+});
+vistas.forEach(function (q) {
+var b = q.b, F = q.f, ox = b.x + (b.w - q.vb.w * F) / 2, oy = b.y + (b.h - q.vb.h * F) / 2;
+var vx0 = Math.max(q.caixa[0], ox), vx1 = Math.min(q.caixa[2], ox + q.vb.w * F), vy0 = Math.max(q.caixa[1], oy), vy1 = Math.min(q.caixa[3], oy + q.vb.h * F);
+if (vx1 - vx0 < 1 || vy1 - vy0 < 1) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem área visível na folha"); return; }
+if (b.w < q.vb.w * F - 0.5 || b.h < q.vb.h * F - 0.5) doc.avisos.push(nome + ": a vista \"" + (b.tituloVista || b.vistaId) + "\" não cabe no quadro em 1:" + q.esc + " (a viewport recorta o excedente)");
+var cxP = (vx0 + vx1) / 2, cyP = (vy0 + vy1) / 2, hv = vy1 - vy0;
+var mx = q.mx0 + (cxP - ox) / F, my = q.my0 + q.vb.h - (cyP - oy) / F;
+var vp = doc.viewport(L, cxP, Y(cyP), vx1 - vx0, hv, mx, my, hv * q.esc / 1000, { travada: true });
+vp.id = info.viewports.length + 2;
+info.viewports.push({ vista: b.tituloVista || b.vistaId, escala: q.esc, w: vx1 - vx0, h: hv, altura: hv * q.esc / 1000, mx: mx, my: my, entidades: q.nEnts });
+});
+return info;
+}
+function fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold) {
+var PR = global.Prancha;
 (folha.blocos || []).forEach(function (b) {
 if (b.tipo === "viewport") return;
 if (b.tipo === "texto") { (b.linhas || []).forEach(function (l, i) { doc.texto(cTx, b.x, Y(b.y + 3 + i * 3.6), 2.0, l, 0, false); }); return; }
@@ -182311,7 +182378,6 @@ yy += 2;
 });
 if (PR && PR.modeloCarimbo && PR.modeloCarimbo(pr) === "RA" && PR.carimboRA) carimboRADxf(doc, pr, folha, geo, opts, Y);
 else carimboDxf(doc, cMold, cCar, cTx, pr, folha, geo, opts.projeto, Y);
-return doc;
 }
 function tabelaDxf(doc, cL, cT, b, Y) {
 var cab = b.cabecalho || [], lin = b.linhas || [], nc = Math.max(1, cab.length || (lin[0] || []).length), lh = 5, cw = b.w / nc;
@@ -182380,7 +182446,7 @@ var DWG = { disponivel: false, motivo: "O DWG pelo servidor depende da licença 
 var BimDxf = {
 PENAS_PADRAO: PENAS_PADRAO, CATEGORIAS: CATEGORIAS, COR_LW: COR_LW, DWG: DWG,
 categoria: categoria, lwDe: lwDe, txtDxf: txtDxf, novoDoc: novoDoc, escrever: escrever, hachurasEmGeometria: hachurasEmGeometria, paraDwg: paraDwg,
-daVista: daVista, daFolha: daFolha, recortarSeg: recortarSeg, svgParaDxf: svgParaDxf, extensao: extensao
+daVista: daVista, daFolha: daFolha, daFolhaCad: daFolhaCad, recortarSeg: recortarSeg, svgParaDxf: svgParaDxf, extensao: extensao
 };
 global.BimDxf = BimDxf;
 if (typeof module !== "undefined" && module.exports) module.exports = BimDxf;
@@ -183987,6 +184053,7 @@ else ident.push(q);
 graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
 outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Imprimir / PDF", fn: function () { self.pdf([id]); } });
 outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
+outros.push({ id: "cad", rotulo: "CAD único do conjunto", tipo: "botao", rotuloBotao: "Arquivo CAD único", fn: function () { self.exportarCad(id); } });
 outros.push({ id: "atualizar", rotulo: "Modelo mudou?", tipo: "botao", rotuloBotao: "Atualizar vistas", fn: function () { self._desenhos = {}; self.pintar(id); } });
 return {
 daVista: true, semEditarTipo: true, titulo: "Folha: " + this.nomeFolha(a.pr, a.folha), icone: "prancha",
@@ -184174,6 +184241,7 @@ var g = this.G(), st = g && g._bimVxEst(); id = id || (st && st.ativa);
 try {
 if (this.ehFolha(id)) {
 var a = this.achar(id); if (!a) return null;
+if (/^hidsvg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
 var vps = {}, self = this;
 a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
 var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
@@ -184195,7 +184263,61 @@ return { nome: nome2, camadas: doc2.ordem.slice() };
 toast("Abra uma folha, uma planta ou um corte para exportar em DXF.", "aviso");
 return null;
 },
-exportarDwg: function () {
+_svgDaFolhaHidro: function (f) {
+var u = (this._imagensExternas || {})[f.imagemInteira]; if (!u) return "";
+try { return decodeURIComponent(String(u).replace(/^data:image\/svg\+xml;charset=utf-8,/, "")); } catch (e) { return ""; }
+},
+cadDoRegistro: function (id, opc) {
+opc = opc || {}; var BC = global.BimCad; if (!BC) { toast("O módulo de CAD único não carregou.", "erro"); return null; }
+var a = this.achar(id || (this.G() && this.G()._bimVxEst && this.G()._bimVxEst().ativa)); if (!a) { toast("Abra uma folha para exportar o arquivo CAD.", "aviso"); return null; }
+var pr = a.pr, self = this, base = String(pr.nome || "Folhas").replace(/[\\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim() || "Folhas";
+var ehHidro = function (f) { return /^hidsvg:/.test(f.imagemInteira || ""); };
+var hidro = arr(pr.folhas).filter(ehHidro), comuns = arr(pr.folhas).filter(function (f) { return !ehHidro(f); }), saidas = [];
+var nomesDe = function (suf) { return { dxf: base + suf + ".dxf", dwg: base + suf + ".dwg", base: base + suf }; };
+var misto = hidro.length > 0 && comuns.length > 0;
+try {
+if (hidro.length) {
+var fols = hidro.map(function (f) {
+var m = /^(\S+) - ([\s\S]*)$/.exec(f.conteudo || ""), svg = self._svgDaFolhaHidro(f);
+return svg ? { numero: m ? m[1] : (f.numero || "F" + f.n), titulo: m ? m[2] : (f.conteudo || ""), escala: f.escala || "", formato: pr.formato || "A1", svg: svg } : null;
+}).filter(function (x) { return !!x; });
+if (!fols.length) toast("As folhas do hidro desta sessão não estão em memória: use Gerar pranchas de novo e exporte em seguida.", "aviso");
+else { var nh = nomesDe(misto ? " - hidro" : ""); saidas.push({ o: BC.paraCad({ ok: true, folhas: fols }, { disciplina: "hidrossanitario", dxfNome: nh.dxf, dwgNome: nh.dwg }), base: nh.base, rotulo: "hidrossanitário",
+partes: global.BimCadUI ? global.BimCadUI.partesHidro({ folhas: fols }) : null }); }
+}
+if (comuns.length) {
+var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
+var folhas = comuns.map(function (f) {
+var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+return { folha: f, vps: vps, nome: PR().numeroFolha(pr, f) };
+});
+var nc = nomesDe(misto ? " - folhas" : ""), mk = function (lista, dxfNome, dwgNome) { return BC.paraCadFolhas({ pr: pr, geo: a.geo, projeto: self.projeto(), empresa: self.empresaDados(), logo: !!logoConta, folhas: lista }, { disciplina: opc.disciplina || "geral", dxfNome: dxfNome, dwgNome: dwgNome }); };
+saidas.push({ o: mk(folhas, nc.dxf, nc.dwg), base: nc.base, rotulo: "folhas do BIM", partes: function (i0, i1, nome) { return mk(folhas.slice(i0, i1), nome + ".dxf", nome + ".dwg"); } });
+}
+} catch (e) { toast("Não consegui montar o arquivo CAD: " + (e && e.message || e), "erro"); return null; }
+if (!saidas.length) return null;
+return { saidas: saidas, o: saidas[0].o, base: saidas[0].base, partes: saidas[0].partes };
+},
+exportarCad: function (id) {
+var c = this.cadDoRegistro(id); if (!c || !c.saidas) return null;
+var UI = global.BimCadUI; if (!UI) { toast("O módulo de saída CAD não carregou.", "erro"); return null; }
+var nomes = [], layouts = 0;
+c.saidas.forEach(function (sd) { var r = UI.baixarCad(sd.o, { base: sd.base }); if (r) { nomes.push(r.nome); layouts += sd.o.resumo.layouts.length; } });
+return nomes.length ? { nome: nomes[0], nomes: nomes, layouts: layouts } : null;
+},
+exportarDwg: function (id) {
+var UI = global.BimCadUI, self = this;
+if (!UI) { toast("O módulo de saída CAD não carregou.", "erro"); return false; }
+var c = this.cadDoRegistro(id); if (!c || !c.saidas) return false;
+var A = global.ArqPranchasUI, sondar = A && A.sondarDwg ? A.sondarDwg() : Promise.resolve({ disponivel: false, motivo: UI.DWG_SO_NO_APP });
+sondar.then(function (s) {
+if (s.disponivel) { c.saidas.forEach(function (sd) { UI.baixarDwg(sd.o, { base: sd.base, partes: sd.partes }); }); return; }
+global.UI.modal("DWG", '<p style="font-size:13px;line-height:1.5">' + esc(s.motivo || UI.DWG_SO_NO_APP) + '</p><p class="muted" style="font-size:12px">No AutoCAD: abra o DXF e use Salvar como → DWG. Os layouts, as penas (CTB) e as escalas das viewports vão junto no arquivo CAD único.</p>',
+[{ texto: "Arquivo CAD único (DXF)", classe: "primary", onClick: function () { global.UI.fecharModal(); c.saidas.forEach(function (sd) { UI.baixarCad(sd.o, { base: sd.base }); }); } }, { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
+});
+return true;
+},
+exportarDwgAntigo: function () {
 var X = global.BimDxf, m = X && X.DWG ? X.DWG.motivo : "Use o DXF.";
 global.UI.modal("DWG", '<p style="font-size:13px;line-height:1.5">' + esc(m) + '</p><p class="muted" style="font-size:12px">No AutoCAD: abra o DXF e use Salvar como → DWG. As camadas, as espessuras e as cotas vão junto.</p>',
 [{ texto: "Exportar DXF", classe: "primary", onClick: function () { global.UI.fecharModal(); BimFolhaUI.exportarDxf(); } }, { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
@@ -184409,6 +184531,15 @@ var ok = H.pranchas();
 if (!ok && H.estado && H.estado.msg) toast(H.estado.msg.t, H.estado.msg.k === "erro" ? "erro" : "aviso");
 return ok;
 },
+cadDoGerar: function (regId, q, disc) {
+var reg = this.registros().filter(function (r) { return String(r.id) === String(regId); })[0]; if (!reg || !reg.folhas || !reg.folhas.length) return null;
+var f0 = PR().normalizar(reg).folhas[0], c = this.cadDoRegistro(this.idFolha(reg.id, f0.id), { disciplina: disc === "todas" ? "geral" : disc }); if (!c || !c.o || !global.BimCadUI) return null;
+c.saidas.forEach(function (sd) {
+if (q.cad) global.BimCadUI.baixarCad(sd.o, { base: sd.base });
+if (q.dwg) global.BimCadUI.baixarDwg(sd.o, { base: sd.base, partes: sd.partes });
+});
+return c;
+},
 abrirGerar: function () {
 if (!this.ativo()) return false;
 var self = this, vs = this.vistasParaGerar(), reg = this.registros().filter(function (r) { return r.origem === "folhas"; })[0], f0 = (reg && reg.formato) || "A1";
@@ -184422,18 +184553,22 @@ var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Escolha a <b>dis
 ' <label style="font-size:12.5px;margin-left:12px">Disciplina <select id="pv-ger-disc">' + Object.keys(temDisc).map(function (k) { return '<option value="' + esc(k) + '"' + (k === disc0 ? " selected" : "") + ">" + esc(DISC[k] || k) + "</option>"; }).join("") + '<option value="todas">Todas</option></select></label>' +
 '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
 return '<label data-pv-disc="' + esc(v.disciplina) + '" style="display:' + (v.disciplina === disc0 ? "block" : "none") + ';font-size:12.5px;padding:2px 0"><input type="checkbox"' + (v.disciplina === disc0 ? " checked" : "") + ' data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
-}).join("") + "</div>";
+}).join("") + "</div>" +
+(global.BimCadUI ? '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px;margin-top:8px"><legend><b>Saída CAD</b></legend>' + global.BimCadUI.opcoesHtml("pvg") + "</fieldset>" : "");
 if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
 global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
 { texto: "Gerar", classe: this.temHidro() ? "" : "primary", onClick: function () {
+var qCad = { cad: !!document.querySelector('[data-pvg-out="cad"]:checked'), dwg: !!document.querySelector('[data-pvg-out="dwg"]:checked:not(:disabled)') };
 var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
 var dsel = (document.getElementById("pv-ger-disc") || {}).value || disc0;
 var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { var lb = c.parentNode; return c.checked && (dsel === "todas" || (lb && lb.getAttribute("data-pv-disc") === dsel)); }).map(function (c) { return c.getAttribute("data-pv-ger"); });
 global.UI.fecharModal();
 if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
-self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
+var rg = self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
+if (rg && rg.ok && (qCad.cad || qCad.dwg)) self.cadDoGerar(rg.id, qCad, dsel);
 } },
 { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));
+try { if (global.BimCadUI) global.BimCadUI.ligar(document, "pvg"); } catch (eC) { }
 setTimeout(function () {
 var sel = document.getElementById("pv-ger-disc"); if (!sel) return;
 function aplicar() { [].slice.call(document.querySelectorAll("[data-pv-disc]")).forEach(function (lb) { var vale = sel.value === "todas" || lb.getAttribute("data-pv-disc") === sel.value; lb.style.display = vale ? "block" : "none"; var c = lb.querySelector("input"); if (c) c.checked = vale; }); }
@@ -184492,7 +184627,8 @@ R.acrescentar("vista", "Vista", "Composição da folha", [
 ]);
 R.acrescentar("vista", "Vista", "Exportar", [
 { id: "exportar-dxf", rotulo: "DXF", icone: "exportar", grande: true, dica: "DXF da folha aberta (em mm de papel, carimbo completo) ou da planta/corte aberto (1:1 em metros). Camada por categoria (ARQ-PAREDE-CORTE, EST-PILAR-CORTE…), espessura pela pena, cota que o AutoCAD mede de novo." },
-{ id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG pelo servidor depende de licença comercial do conversor — por enquanto, use o DXF (o AutoCAD salva em DWG)." },
+{ id: "exportar-cad", rotulo: "CAD\núnico", icone: "exportar", grande: true, dica: "Arquivo CAD único do conjunto de folhas aberto: DXF com o MODEL em escala real e um layout por folha (viewport travada na escala de cada vista), mais o CTB das penas da disciplina (RA_Hidrossanitario.ctb nas pranchas do hidro, RA_Geral.ctb nas demais)." },
+{ id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG do conjunto de folhas aberto (app instalado: o conversor roda neste computador). Sem o app, explica e entrega o arquivo CAD único em DXF (o AutoCAD salva em DWG)." },
 { id: "pdf-lote", rotulo: "PDF em\nlote", icone: "imprimir", grande: true, dica: "Várias folhas num PDF só, cada uma no tamanho do papel, com o nome automático (número - nome - revisão)." }
 ]);
 reg["gerar-pranchas"] = function () { return self.abrirGerar(); };
@@ -184502,6 +184638,7 @@ reg["revisoes-folha"] = function () { self.editarRevisoes(); return true; };
 reg["lista-folhas"] = function () { self.mostrarLista("folhas"); return true; };
 reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
 reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };
+reg["exportar-cad"] = function () { return !!self.exportarCad(); };
 reg["exportar-dwg"] = function () { self.exportarDwg(); return true; };
 reg["pdf-lote"] = function () { return !!self.pdfLote(); };
 return true;
@@ -210697,9 +210834,25 @@ return "RA_" + Math.round(w) + "_x_" + Math.round(h) + "_MM";
 function atributos(s) { var o = {}, re = /([\w:-]+)="([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = m[2]; return o; }
 function desesc(s) { return txt(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&"); }
 function largTexto(s, fs) { var a = AP(); return a && a.largTexto ? a.largTexto(s, fs) : 0.6 * fs * s.length; }
+function pathPontos(d) {
+var t = txt(d).match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g); if (!t) return null;
+var pts = [], i = 0, cmd = "", cur = null, k, ini = null;
+function num() { return parseFloat(t[i++]); }
+while (i < t.length) {
+if (/^[A-Za-z]$/.test(t[i])) { cmd = t[i++]; if (!/^[MLQZmlqz]$/.test(cmd)) return null; if (cmd === "Z" || cmd === "z") { cur = ini; continue; } }
+else if (!cmd) return null;
+var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel && cur ? cur[0] : 0, oy = rel && cur ? cur[1] : 0;
+if (C === "M" || C === "L") { cur = [ox + num(), oy + num()]; pts.push(cur); if (C === "M" && !ini) ini = cur; cmd = rel ? "l" : "L"; }
+else if (C === "Q" && cur) { var c = [ox + num(), oy + num()], f = [ox + num(), oy + num()]; for (k = 1; k <= 8; k++) { var u = k / 8; pts.push([(1 - u) * (1 - u) * cur[0] + 2 * (1 - u) * u * c[0] + u * u * f[0], (1 - u) * (1 - u) * cur[1] + 2 * (1 - u) * u * c[1] + u * u * f[1]]); } cur = f; }
+else return null;
+}
+if (pts.length < 2) return null;
+for (k = 0; k < pts.length; k++) if (!isFinite(pts[k][0] + pts[k][1])) return null;
+return pts.map(function (q) { return Math.round(q[0] * 1000) / 1000 + "," + Math.round(q[1] * 1000) / 1000; }).join(" ");
+}
 function lerSvg(svg) {
 var vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg) || [], W = +vb[1] || 0, H = +vb[2] || 0;
-var re = /<(\/?)(g|line|polygon|polyline|rect|circle|text)\b([^>]*?)(\/?)>([^<]*)/g, m, pilha = [{ tx: 0, ty: 0, area: null, carimbo: false, bloco: null }], prims = [], blocos = [];
+var re = /<(\/?)(g|line|polygon|polyline|rect|circle|text|path)\b([^>]*?)(\/?)>([^<]*)/g, m, pilha = [{ tx: 0, ty: 0, area: null, carimbo: false, bloco: null }], prims = [], blocos = [], descartados = 0;
 while ((m = re.exec(svg))) {
 var fecha = m[1] === "/", tag = m[2], at = fecha ? {} : atributos(m[3]), auto = m[4] === "/", top = pilha[pilha.length - 1];
 if (tag === "g") {
@@ -210720,11 +210873,12 @@ continue;
 if (fecha) continue;
 var p = { tag: tag, a: at, s: tag === "text" ? m[5] : "", tx: top.tx, ty: top.ty, area: top.area, carimbo: top.carimbo, bloco: top.bloco };
 var fill = at.fill, st = at.stroke;
+if (tag === "path") { var pp = pathPontos(at.d); if (!pp) { descartados++; continue; } tag = "polyline"; at.points = pp; p.tag = tag; p.a = at; }
 if (tag !== "text" && (!st || st === "none") && (!fill || fill === "none" || ehBranco(fill))) continue;
 if (tag === "text" && !desesc(p.s).trim()) continue;
 prims.push(p); if (p.bloco) p.bloco.prims.push(p);
 }
-return { W: W, H: H, prims: prims, blocos: blocos };
+return { W: W, H: H, prims: prims, blocos: blocos, pathsDescartados: descartados };
 }
 function nums(s) { return txt(s).trim().split(/[\s,]+/).filter(Boolean).map(Number); }
 function bboxPrim(p) {
@@ -210742,6 +210896,59 @@ if (!isFinite(x0 + x1 + y0 + y1)) return null;
 return [x0 + p.tx, y0 + p.ty, x1 + p.tx, y1 + p.ty];
 }
 function uniao(bb, b) { if (!b) return bb; if (!bb) return b.slice(); return [Math.min(bb[0], b[0]), Math.min(bb[1], b[1]), Math.max(bb[2], b[2]), Math.max(bb[3], b[3])]; }
+function distCor(a, b) { return 2 * Math.pow(a[0] - b[0], 2) + 4 * Math.pow(a[1] - b[1], 2) + 3 * Math.pow(a[2] - b[2], 2); }
+function ehPreto(rgb) { return rgb[0] <= 40 && rgb[1] <= 40 && rgb[2] <= 40; }
+function perfilDe(perfil) {
+if (perfil._pf) return perfil._pf;
+var pens = [], usadaP = {}, i;
+function livre(rgb, fundo) {
+var best = 0, bd = Infinity;
+for (var k = 10; k <= 255; k++) {
+if (usadaP[k] || RESERVADAS[k] || ACI_GEMEA[k]) continue;
+if (k >= 250 && !(fundo && k >= 252)) continue;
+var d = distCor(aciRgb(k), rgb); if (d < bd) { bd = d; best = k; }
+}
+return best;
+}
+function add(rgb, lw, aci, nome) { var o = { aci: aci, rgb: rgb, lw: lw, nome: nome || "", key: nome + "|" + lw }; usadaP[aci] = 1; pens.push(o); return o; }
+var pretaAci = perfil.pretaAci || PRETA_ACI;
+Object.keys(PRETA_ACI).map(Number).sort(function (a, b) { return a - b; }).forEach(function (lw) { add([0, 0, 0], lw, pretaAci[lw] || PRETA_ACI[lw], "preto"); });
+add([0, 0, 0], 0, 7, "preto");
+(perfil.cinzas || []).forEach(function (c) { add(c.rgb, c.lw, c.aci, "cinza"); });
+(perfil.neutros || []).forEach(function (c) { add(c.rgb, 0, c.aci, "neutro"); });
+(perfil.paleta || []).forEach(function (c) { (c.lws || []).forEach(function (lw) { add(c.rgb, lw, livre(c.rgb, false), c.nome); }); });
+(perfil.cheios || []).forEach(function (c) { add(c.rgb, 0, livre(c.rgb, true), c.nome); });
+var PF = {
+id: perfil.id, ctbNome: perfil.ctbNome, dxfNome: perfil.dxfNome || "CAD.dxf", titulo: perfil.titulo || "PRANCHAS", descricao: perfil.descricao || "RA Engenharia - plot style por disciplina", pens: pens,
+snap: function (rgb, lw, fundo) {
+var cand, melhor = null, bd = Infinity, k, neutra = Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]) < 25;
+if (!lw) {
+if (ehPreto(rgb)) return pens.filter(function (q) { return q.aci === 7; })[0];
+if (neutra && perfil.neutros && perfil.neutros.length) {
+if (rgb[0] < 100) return pens.filter(function (q) { return q.aci === 7; })[0];
+pens.forEach(function (q) { if (q.nome === "neutro") { var d = Math.abs(q.rgb[0] - rgb[0]); if (d < bd) { bd = d; melhor = q; } } });
+return melhor;
+}
+cand = pens.filter(function (q) { return q.lw === 0 && q.aci !== 7 && q.nome !== "neutro"; });
+cand.forEach(function (q) { var d = distCor(q.rgb, rgb); if (d < bd) { bd = d; melhor = q; } });
+return melhor || pens[0];
+}
+if (ehPreto(rgb)) cand = pens.filter(function (q) { return q.nome === "preto" && q.lw > 0; });
+else if (neutra && perfil.cinzas && perfil.cinzas.length) cand = pens.filter(function (q) { return q.nome === "cinza"; });
+else {
+var porCor = pens.filter(function (q) { return q.lw > 0 && q.nome !== "preto" && q.nome !== "cinza"; }), nome = null;
+porCor.forEach(function (q) { var d = distCor(q.rgb, rgb); if (d < bd) { bd = d; nome = q.nome; } });
+cand = porCor.filter(function (q) { return q.nome === nome; });
+}
+bd = Infinity;
+for (k = 0; k < cand.length; k++) { var dl = Math.abs(cand[k].lw - lw); if (dl < bd || (dl === bd && cand[k].lw > melhor.lw)) { bd = dl; melhor = cand[k]; } }
+return melhor || pens[0];
+}
+};
+perfil._pf = PF;
+return PF;
+}
+function ctbDoPerfil(perfil) { var P = perfilDe(perfil); return ctbBytes(ctbTexto(P.pens, P.descricao)); }
 var PRETA_ACI = { 5: 8, 9: 9, 13: 1, 18: 2, 25: 3, 35: 4, 50: 5, 70: 6 };
 var ACI_GEMEA = { 10: 1, 50: 1, 90: 1, 130: 1, 170: 1, 210: 1, 255: 1 };
 var POOL_PRETA = [30, 40, 60, 70, 80, 100, 110, 120, 140, 150, 160, 180, 190, 200, 220, 230, 240, 20, 25, 35, 45, 55];
@@ -210750,7 +210957,8 @@ var GAP = 5, GAP_LINHA = 14;
 function paraCad(r, opcoes) {
 var op = opcoes || {}, B = X(), E = ES();
 if (!B || !r || !r.ok || !r.folhas || !r.folhas.length) return null;
-var doc = B.novoDoc({ unidade: "m" }), avisos = [], ctbNome = txt(op.ctbNome) || "RA_Arquitetura.ctb", dxfNome = txt(op.dxfNome) || "ARQ_CAD.dxf";
+var PF = op.perfil ? perfilDe(op.perfil) : null;
+var doc = B.novoDoc({ unidade: "m" }), avisos = [], ctbNome = txt(op.ctbNome) || (PF ? PF.ctbNome : "RA_Arquitetura.ctb"), dxfNome = txt(op.dxfNome) || (PF ? PF.dxfNome : "ARQ_CAD.dxf");
 doc.escala = 1;
 var HT = E && E.ALTURA_MAIUSCULA ? E.ALTURA_MAIUSCULA : 0.727;
 var pens = [], penPor = {}, usada = {};
@@ -210765,6 +210973,7 @@ if (d < bd) { bd = d; best = i; }
 return best;
 }
 function pen(rgb, lw, fundo) {
+if (PF) { var pf = PF.snap(rgb, lw, fundo); if (!penPor[pf.key]) { penPor[pf.key] = pf; usada[pf.aci] = 1; } return pf; }
 var preto = rgb[0] <= 40 && rgb[1] <= 40 && rgb[2] <= 40, key = (preto ? "K" : rgbHex(rgb)) + "|" + lw;
 if (penPor[key]) return penPor[key];
 var aci, saida = preto ? [0, 0, 0] : rgb;
@@ -210796,6 +211005,7 @@ return nome;
 }
 var folhas = r.folhas.map(function (f) {
 var s = lerSvg(f.svg), corpo = s.prims.filter(function (p) { return p.area === "corpo"; });
+if (s.pathsDescartados) avisos.push(f.numero + ": " + s.pathsDescartados + " traço(s) <path> com comando que o CAD não converte (A, C, S, T, H, V) ficaram de fora.");
 var blocos = s.blocos.slice();
 if (!blocos.length && corpo.length) {
 var em = /^1:(\d+)$/.exec(txt(f.escala).trim());
@@ -210875,18 +211085,58 @@ info.viewports.push({ bloco: b.id, escala: b.esc, w: x1 - x0, h: hv, altura: hv 
 });
 resumo.layouts.push(info);
 });
+if (PF && op.juntarLinhas !== false) { var n0 = doc.entidades.length, nL0 = 0; doc.layouts.forEach(function (L) { nL0 += L.ents.length; }); doc.entidades = juntarLinhas(doc.entidades); doc.layouts.forEach(function (L) { L.ents = juntarLinhas(L.ents); }); resumo.entidades = { antes: n0 + nL0, depois: doc.entidades.length + doc.layouts.reduce(function (s, L) { return s + L.ents.length; }, 0) }; }
+return finalizar(doc, PF ? PF.pens.slice() : pens, resumo, avisos, op, { ctbNome: ctbNome, dxfNome: dxfNome, perfil: PF, titulo: PF ? PF.titulo : "PRANCHAS DE ARQUITETURA", desc: PF ? PF.descricao : "RA Engenharia - pranchas de arquitetura: cor ACI = pena (espessura e cor de saida). Preto = ACI 1-6, 8 e 9 pela espessura; 7 = texto e cheio preto." });
+}
+function juntarLinhas(ents) {
+var grupos = {}, ordem = [], i;
+for (i = 0; i < ents.length; i++) { var e = ents[i]; if (e.t === "LINE") { var k = e.camada + "|" + (e.lt || "") + "|" + (e.lts || 0); if (!grupos[k]) { grupos[k] = []; ordem.push(k); } grupos[k].push(i); } }
+var sai = {}, poli = {};
+function chave(x, y) { return Math.round(x * 1e4) + "," + Math.round(y * 1e4); }
+ordem.forEach(function (k) {
+var idx = grupos[k]; if (idx.length < 2) return;
+var seg = idx.map(function (q) { return ents[q]; }), nodo = {}, usado = [], j;
+seg.forEach(function (s, jj) { var a = chave(s.p[0], s.p[1]), b = chave(s.p[2], s.p[3]); (nodo[a] = nodo[a] || []).push(jj); (nodo[b] = nodo[b] || []).push(jj); });
+function outro(s, ch) { return chave(s.p[0], s.p[1]) === ch ? [s.p[2], s.p[3]] : [s.p[0], s.p[1]]; }
+function estende(pts, fim) {
+for (;;) {
+var p = fim ? pts[pts.length - 1] : pts[0], ch = chave(p[0], p[1]), v = nodo[ch];
+if (!v || v.length !== 2) return;
+var nx = usado[v[0]] ? v[1] : v[0]; if (usado[nx]) return;
+usado[nx] = true; var q = outro(seg[nx], ch);
+if (fim) pts.push(q); else pts.unshift(q);
+}
+}
+for (j = 0; j < seg.length; j++) {
+if (usado[j]) continue;
+usado[j] = true; var s0 = seg[j], pts = [[s0.p[0], s0.p[1]], [s0.p[2], s0.p[3]]];
+estende(pts, true); estende(pts, false);
+if (pts.length === 2) { sai[idx[j]] = 3; continue; }
+var fechado = pts.length > 3 && chave(pts[0][0], pts[0][1]) === chave(pts[pts.length - 1][0], pts[pts.length - 1][1]); if (fechado) pts.pop();
+var pl = { t: "LWPOLYLINE", camada: s0.camada, pts: pts, fechado: fechado }; if (s0.lt) pl.lt = s0.lt; if (s0.lts) pl.lts = s0.lts;
+poli[idx[j]] = pl;
+sai[idx[j]] = 2;
+}
+seg.forEach(function (s, jj) { if (usado[jj] && !sai[idx[jj]]) sai[idx[jj]] = 1; });
+});
+var out = [];
+for (i = 0; i < ents.length; i++) { if (sai[i] === 1) continue; out.push(sai[i] === 2 ? poli[i] : ents[i]); }
+return out;
+}
+function finalizar(doc, pens, resumo, avisos, op, ex) {
+var B = X();
 pens.sort(function (a, b) { return a.aci - b.aci; });
 var texto = B.escrever(doc);
 var textoDwg = B.paraDwg ? B.escrever(B.paraDwg(doc, { hachuraGeometria: !!op.hachuraGeometria })) : texto;
-var desc = "RA Engenharia - pranchas de arquitetura: cor ACI = pena (espessura e cor de saida). Preto = ACI 1-6, 8 e 9 pela espessura; 7 = texto e cheio preto.";
-var ctb = ctbBytes(ctbTexto(pens, desc));
-var out = { dxf: texto, dxfDwg: textoDwg, ctb: ctb, ctbNome: ctbNome, dxfNome: dxfNome, dwgNome: txt(op.dwgNome), pens: pens, resumo: resumo, avisos: avisos, doc: doc };
+var ctb = ctbBytes(ctbTexto(pens, ex.desc));
+var out = { dxf: texto, dxfDwg: textoDwg, ctb: ctb, ctbNome: ex.ctbNome, dxfNome: ex.dxfNome, dwgNome: txt(op.dwgNome), pens: pens, resumo: resumo, avisos: avisos, doc: doc, titulo: ex.titulo, perfil: ex.perfil ? ex.perfil.id : "" };
 out.leiame = leiame(out);
 return out;
 }
 function leiame(o) {
 var L = [], dwg = !!o.dwgNome;
-L.push(dwg ? "PRANCHAS DE ARQUITETURA - ARQUIVO CAD UNICO (DWG)" : "PRANCHAS DE ARQUITETURA - ARQUIVO CAD UNICO");
+var tit = o.titulo || "PRANCHAS DE ARQUITETURA";
+L.push(dwg ? tit + " - ARQUIVO CAD UNICO (DWG)" : tit + " - ARQUIVO CAD UNICO");
 L.push("");
 if (dwg) {
 L.push("Este pacote traz o DWG pronto. O OrcaPRO monta o DXF e converte com o dxf2dwg do LibreDWG " + LIBREDWG_VERSAO + " (programa separado, software livre GNU GPLv3).");
@@ -210934,7 +211184,7 @@ var o = paraCad(r, opcoes), Z = dep("BimBcf", "./bimbcf.js"); if (!o || !Z || !Z
 var arq = {}; arq[o.dxfNome] = o.dxf; arq[o.ctbNome] = o.ctb; arq["LEIA-ME.txt"] = o.leiame;
 return Z.zipEscrever(arq);
 }
-var ArqCad = { VERSAO: 2, paraCad: paraCad, zip: zip, zipDwg: zipDwg, LIBREDWG_VERSAO: LIBREDWG_VERSAO, LIBREDWG_FONTE: LIBREDWG_FONTE, ctbTexto: ctbTexto, ctbBytes: ctbBytes, ctbParse: ctbParse, lwSnap: lwSnap, LW_CTB: LW_CTB, LW_DXF: LW_DXF, aciRgb: aciRgb, papelNome: papelNome, PRETA_ACI: PRETA_ACI, ACI_GEMEA: ACI_GEMEA, CTB_CABECALHO: CTB_CABECALHO, _lerSvg: lerSvg, _adler32: adler32 };
+var ArqCad = { VERSAO: 3, paraCad: paraCad, finalizar: finalizar, perfilDe: perfilDe, ctbDoPerfil: ctbDoPerfil, ehPreto: ehPreto, distCor: distCor, hexRgb: hexRgb, rgbHex: rgbHex, zip: zip, zipDwg: zipDwg, LIBREDWG_VERSAO: LIBREDWG_VERSAO, LIBREDWG_FONTE: LIBREDWG_FONTE, ctbTexto: ctbTexto, ctbBytes: ctbBytes, ctbParse: ctbParse, leiame: leiame, juntarLinhas: juntarLinhas, lwSnap: lwSnap, LW_CTB: LW_CTB, LW_DXF: LW_DXF, aciRgb: aciRgb, papelNome: papelNome, PRETA_ACI: PRETA_ACI, ACI_GEMEA: ACI_GEMEA, CTB_CABECALHO: CTB_CABECALHO, _lerSvg: lerSvg, _adler32: adler32 };
 global.ArqCad = ArqCad;
 if (typeof module !== "undefined" && module.exports) module.exports = ArqCad;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -213962,6 +214212,308 @@ var ArqPranchasUI = { abrir: abrir, gerar: gerar, gerarDwg: gerarDwg, sondarDwg:
 _int: { html: html, sincronizarExecutiva: sincronizarExecutiva, ligarDwgNaTela: ligarDwgNaTela, conjuntoDoDiagrama: conjuntoDoDiagrama, areaDeFormato: areaDeFormato, aplicarConfigDoEditor: aplicarConfigDoEditor, salvarDoEditor: salvarDoEditor, resumoInteriores: resumoInteriores, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
 global.ArqPranchasUI = ArqPranchasUI;
 if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcad.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function CD() { return dep("ArqCad", "./arqcad.js"); }
+function BD() { return dep("BimDxf", "./bimdxf.js"); }
+function txt(v) { return v == null ? "" : String(v); }
+function hx(h) { return CD().hexRgb(h); }
+var L_COR = [18, 25, 35, 50, 70];
+function cor(nome, h, lws) { return { nome: nome, rgb: hx(h), lws: lws || L_COR }; }
+function cheio(nome, h) { return { nome: nome, rgb: hx(h) }; }
+var PALETA_SISTEMAS = [
+cor("agua-fria", "#1E6FD9"), cor("agua-fria-iso", "#0D3A9A", [18, 25, 35]), cor("agua-fria-claro", "#5B9BD5", [18, 25]),
+cor("agua-quente", "#D93025"), cor("agua-quente-iso", "#A01818", [18, 25, 35]),
+cor("esgoto", "#2E9E44"), cor("esgoto-marrom", "#B5694A", [18, 25]),
+cor("pluvial", "#00ACC1"), cor("incendio", "#C62828", [25, 35, 50]), cor("industrial", "#6D4C41", [25, 35, 50]), cor("gas", "#C9A400", [25, 35, 50])
+];
+var PALETA_BASE = [
+cor("pendencia", "#C00000", [18, 25, 35]), cor("destaque-ra", "#00406A", [13, 18, 25])
+];
+var CINZAS = [{ aci: 250, rgb: [85, 85, 85], lw: 25 }, { aci: 251, rgb: [135, 135, 135], lw: 13 }, { aci: 252, rgb: [165, 165, 165], lw: 9 }];
+var NEUTROS = [{ aci: 253, rgb: [160, 160, 160] }, { aci: 254, rgb: [232, 232, 232] }];
+var CHEIOS_BASE = [
+cheio("cheio-pendencia", "#C00000"), cheio("cheio-destaque-ra", "#00406A"), cheio("cheio-azul-aco", "#2E4050"), cheio("cheio-azul-claro", "#D7EBF8"), cheio("cheio-bege", "#E7E2D6"), cheio("cheio-verde-palido", "#E6EFE2"), cheio("cheio-cinza-azul", "#D3D8DE")
+];
+var CHEIOS_SISTEMAS = [
+cheio("cheio-agua-fria", "#1E6FD9"), cheio("cheio-agua-quente", "#D93025"), cheio("cheio-esgoto", "#2E9E44"), cheio("cheio-pluvial", "#00ACC1"),
+cheio("cheio-azul-agua", "#2A93FF"), cheio("cheio-azul-agua-2", "#34B2FF"), cheio("cheio-verde-3", "#3FD05B"), cheio("cheio-verde-4", "#4DFA6F")
+];
+var PERFIS = {
+hidrossanitario: {
+id: "hidrossanitario", ctbNome: "RA_Hidrossanitario.ctb", dxfNome: "HIDRO_CAD.dxf", titulo: "PRANCHAS DO HIDROSSANITARIO",
+descricao: "RA Engenharia - hidrossanitario: cor ACI = pena. Preto ACI 1-6/8/9 pela espessura (padrao RA/TQS), 7 = texto; tubulacao por sistema (AF azul, AQ vermelho, ES verde, AP ciano, IN, IND, GAS) em 0,25-0,70 mm.",
+paleta: PALETA_SISTEMAS.concat(PALETA_BASE), cheios: CHEIOS_BASE.concat(CHEIOS_SISTEMAS), cinzas: CINZAS, neutros: NEUTROS
+},
+geral: {
+id: "geral", ctbNome: "RA_Geral.ctb", dxfNome: "FOLHAS_CAD.dxf", titulo: "FOLHAS DO PROJETO (BIM)",
+descricao: "RA Engenharia - folhas do BIM (estrutural, eletrica e demais disciplinas): cor ACI = pena. Preto ACI 1-6/8/9 pela espessura (padrao RA/TQS), 7 = texto; cinzas e destaque do carimbo RA.",
+paleta: PALETA_BASE, cheios: CHEIOS_BASE, cinzas: CINZAS, neutros: NEUTROS
+}
+};
+var DISCIPLINA_PERFIL = { hidrossanitario: "hidrossanitario", hidraulica: "hidrossanitario", hidro: "hidrossanitario", agua: "hidrossanitario" };
+function perfil(disciplina) { return PERFIS[DISCIPLINA_PERFIL[txt(disciplina).toLowerCase()] || "geral"]; }
+function ctbs() { var C = CD(); return Object.keys(PERFIS).map(function (k) { return { id: k, nome: PERFIS[k].ctbNome, bytes: C.ctbDoPerfil(PERFIS[k]) }; }); }
+function paraCad(r, op) {
+op = op || {}; var C = CD(), P = perfil(op.disciplina || "hidrossanitario");
+if (!C || !r || !r.ok || !r.folhas || !r.folhas.length) return null;
+var o = C.paraCad(r, { perfil: P, dxfNome: op.dxfNome, dwgNome: op.dwgNome, ctbNome: op.ctbNome, hachuraGeometria: op.hachuraGeometria });
+if (!o) return null;
+var imgs = 0; r.folhas.forEach(function (f) { imgs += (txt(f.svg).match(/<image\b/g) || []).length; });
+if (imgs) o.avisos.push(imgs + " imagem(ns) (foto do modelo 3D, ícones) ficam só no PDF: o CAD leva os traços vetoriais por cima.");
+o.leiame = C.leiame(o);
+return o;
+}
+function paraCadFolhas(ent, op) {
+op = op || {}; var C = CD(), B = BD(), P = perfil(op.disciplina || "geral");
+if (!C || !B || !B.daFolhaCad || !ent || !ent.folhas || !ent.folhas.length) return null;
+var PF = C.perfilDe(P), doc = B.novoDoc({ unidade: "m" }), resumo = { layouts: [], quadros: [] }, avisos = [], modelo = { x: 0, topo: 0, altLinha: 0 };
+doc.escala = 1;
+ent.folhas.forEach(function (q) {
+var geo = q.geo || ent.geo;
+var info = B.daFolhaCad(doc, ent.pr, q.folha, geo, q.vps || {}, { projeto: ent.projeto, empresa: ent.empresa, logo: !!ent.logo, modelo: modelo, nome: q.nome, papelNome: C.papelNome, ctbNome: P.ctbNome });
+resumo.layouts.push(info);
+});
+avisos = doc.avisos.slice();
+var COR_LW = B.COR_LW, lwPorCor = {}; Object.keys(COR_LW).forEach(function (k) { lwPorCor[COR_LW[k]] = +k; });
+Object.keys(doc.camadas).forEach(function (n) {
+var c = doc.camadas[n]; if (n === "DEFPOINTS" || n === "0") return;
+var pretaPorLw = COR_LW[c.lw] === c.cor, rgb = pretaPorLw ? [0, 0, 0] : C.aciRgb(c.cor);
+var pn = PF.snap(rgb, c.lw, false); c.cor = pn.aci; c.lw = pn.lw || 13;
+});
+var dp = doc.camadas.DEFPOINTS; if (dp) { dp.cor = 7; dp.lw = 13; }
+var o = C.finalizar(doc, PF.pens.slice(), resumo, avisos, { dwgNome: op.dwgNome, hachuraGeometria: op.hachuraGeometria }, { ctbNome: txt(op.ctbNome) || P.ctbNome, dxfNome: txt(op.dxfNome) || P.dxfNome, perfil: PF, titulo: PF.titulo, desc: PF.descricao });
+return o;
+}
+function zip(o) {
+var Z = dep("BimBcf", "./bimbcf.js"); if (!o || !Z || !Z.zipEscrever) return null;
+var arq = {}; arq[o.dxfNome] = o.dxf; arq[o.ctbNome] = o.ctb; arq["LEIA-ME.txt"] = o.leiame; return Z.zipEscrever(arq);
+}
+function zipDwg(o, dwg) { var C = CD(); return C ? C.zipDwg(o, dwg) : null; }
+var BimCad = { VERSAO: 1, PERFIS: PERFIS, perfil: perfil, ctbs: ctbs, paraCad: paraCad, paraCadFolhas: paraCadFolhas, zip: zip, zipDwg: zipDwg };
+global.BimCad = BimCad;
+if (typeof module !== "undefined" && module.exports) module.exports = BimCad;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcadui.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function BC() { return dep("BimCad", "./bimcad.js"); }
+function CD() { return dep("ArqCad", "./arqcad.js"); }
+function AU() { return dep("ArqPranchasUI", "./arqpranchasui.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+var DWG_SO_NO_APP = "DWG só no app instalado; o DXF abre no AutoCAD (Salvar como → DWG).";
+var CTB_SO_NO_APP = "Instalar as penas no AutoCAD só funciona no app instalado; copie o .ctb do ZIP para a pasta Plot Styles (comando STYLESMANAGER no AutoCAD).";
+function buscar() { return typeof global.fetch === "function" ? global.fetch.bind(global) : null; }
+function comPrazo(f, url, init, ms) {
+return new Promise(function (res, rej) {
+var t = setTimeout(function () { rej(new Error("prazo")); }, ms);
+f(url, init).then(function (r) { clearTimeout(t); res(r); }, function (e) { clearTimeout(t); rej(e); });
+});
+}
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) { } }
+function baixar(nome, dados, mime) {
+var d = global.document; if (!d) return false;
+if (global.TesteModulo && global.TesteModulo.marcarArquivo) { var w = global.TesteModulo.marcarArquivo(nome, dados, mime, ""); if (!w) return false; nome = w.nome; dados = w.dados; }
+try { var u = URL.createObjectURL(new Blob([dados], { type: mime })), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
+}
+function opcoesHtml(pref) {
+pref = pref || "bcad";
+return '<label style="display:block"><input type="checkbox" data-' + pref + '-out="cad"> Arquivo CAD único (ZIP: DXF com um layout por folha + CTB das penas)</label>' +
+'<label style="display:block"><input type="checkbox" data-' + pref + '-out="dwg" disabled> <span data-' + pref + '="dwg-rotulo">DWG (ZIP: DWG R2000 com um layout por folha + CTB + LEIA-ME)</span></label>' +
+'<div class="muted" data-' + pref + '="dwg-aviso" style="font-size:12px;margin:0 0 4px 22px">Verificando se este computador gera DWG…</div>' +
+'<div style="margin:2px 0 6px 0"><button type="button" class="btn ghost" data-' + pref + '="instalar-ctb">Instalar penas RA no AutoCAD</button> <span class="muted" data-' + pref + '="ctb-msg" style="font-size:12px">O AutoCAD só acha o .ctb na pasta Plot Styles dele (sem isso: "RA_Hidrossanitario.ctb (missing)"). Instala todos os CTB RA.</span></div>';
+}
+function sondar() { var A = AU(); return A && A.sondarDwg ? A.sondarDwg() : Promise.resolve({ disponivel: false, motivo: DWG_SO_NO_APP }); }
+function ligar(raiz, pref) {
+pref = pref || "bcad";
+if (!raiz || !raiz.querySelector) return Promise.resolve(null);
+var cb = raiz.querySelector('[data-' + pref + '-out="dwg"]'), av = raiz.querySelector('[data-' + pref + '="dwg-aviso"]'), bt = raiz.querySelector('[data-' + pref + '="instalar-ctb"]'), ms = raiz.querySelector('[data-' + pref + '="ctb-msg"]');
+if (bt && !bt.onclick) bt.onclick = function () { bt.disabled = true; instalarCtbs().then(function (r) { bt.disabled = false; if (ms) ms.textContent = r.mensagem; toast(r.mensagem, r.ok ? "ok" : "aviso"); }); };
+return sondar().then(function (s) {
+if (cb) { cb.disabled = !s.disponivel; cb.checked = false; }
+if (av) av.textContent = s.disponivel && s.preparar ? "Na primeira vez o OrcaPRO baixa o conversor DWG (~12 MB, uma só vez) e depois gera. Sem internet, use o DXF." : s.disponivel ? "Gera o DWG neste computador (" + s.conversor + "). Leva alguns segundos." : (s.motivo || DWG_SO_NO_APP);
+return s;
+});
+}
+function nomeBase(o, base) { return txt(base) || String(o.dxfNome || "CAD").replace(/\.dxf$/i, ""); }
+function baixarCad(o, opc) {
+opc = opc || {}; var B = BC(); var z = o ? B.zip(o) : null;
+if (!z) { toast("O arquivo CAD não montou.", "erro"); return null; }
+var nome = nomeBase(o, opc.base) + "-CAD.zip";
+if (baixar(nome, z, "application/zip")) toast("Arquivo CAD único: " + nome + " (" + o.resumo.layouts.length + " layout(s) + " + o.ctbNome + ")" + (o.avisos.length ? " · " + o.avisos.length + " aviso(s)" : ""), o.avisos.length ? "aviso" : "ok");
+return { nome: nome, zip: z };
+}
+function gerarDwg(o, opc) {
+opc = opc || {};
+if (!o || !o.dxf) return Promise.resolve({ ok: false, erro: "Sem pranchas geradas para converter em DWG." });
+if (!o.dwgNome) return Promise.resolve({ ok: false, erro: "O arquivo CAD foi montado sem o nome do DWG (dwgNome)." });
+var postar = opc.postar || function (dxf) {
+var f = buscar(); if (!f) return Promise.resolve({ ok: false, erro: DWG_SO_NO_APP });
+var A = AU(), prep = A && A.prepararDwg ? A.prepararDwg({ buscar: f }) : Promise.resolve({ ok: true });
+return prep.then(function (pr) {
+if (!pr.ok) return pr;
+var prazoMs = Math.min(740000, Math.round(260000 + 95000 * Math.max(0, String(dxf).length / 1048576 - 2)));
+return comPrazo(f, "/__dwg/gerar", { method: "POST", headers: { "Content-Type": "application/dxf" }, body: dxf }, prazoMs).then(function (resp) {
+if (!resp.ok) return resp.json().then(function (j) { return { ok: false, erro: (j && j.erro) || ("o conversor respondeu " + resp.status) }; }, function () { return { ok: false, erro: DWG_SO_NO_APP }; });
+return resp.arrayBuffer().then(function (ab) { return { ok: true, bytes: new Uint8Array(ab), avisos: parseInt(resp.headers.get("X-Avisos"), 10) || 0 }; });
+}, function () { return { ok: false, erro: DWG_SO_NO_APP }; });
+});
+};
+return postar(o.dxfDwg || o.dxf).then(function (p) {
+if (!p || !p.ok || !p.bytes) return { ok: false, erro: (p && p.erro) || "O conversor não devolveu o DWG." };
+var b = p.bytes;
+if (b.length < 256 || String.fromCharCode(b[0], b[1], b[2], b[3], b[4], b[5]) !== "AC1015") return { ok: false, erro: "O conversor devolveu um arquivo que não é DWG." };
+var z = BC().zipDwg(o, b);
+return z ? { ok: true, zip: z, nome: nomeBase(o, opc.base) + "-DWG.zip", avisos: p.avisos || 0, dwg: b } : { ok: false, erro: "O ZIP do DWG não montou." };
+}, function (e) { return { ok: false, erro: "Falha ao converter em DWG: " + (e && e.message ? e.message : e) }; });
+}
+var DXF_MAX_DWG = 4 * 1048576;
+function gerarDwgPartes(o, opc) {
+var N = o.resumo.layouts.length, base = nomeBase(o, opc.base), arq = {}, infos = [], avisos = 0, falha = null, cont = 0;
+var Z = dep("BimBcf", "./bimbcf.js");
+function faixa(i0, i1, po) {
+if (falha) return Promise.resolve();
+po = po || opc.partes(i0, i1, base + "-tmp");
+if (!po) { falha = "Não montei as folhas " + (i0 + 1) + " a " + i1 + " do arquivo CAD."; return Promise.resolve(); }
+if (po.dxfDwg.length > DXF_MAX_DWG && i1 - i0 > 1) { var m = (i0 + i1) >> 1; return faixa(i0, m).then(function () { return faixa(m, i1); }); }
+var k = ++cont, nome = base + "-parte" + k; po.dwgNome = nome + ".dwg";
+return gerarDwg(po, { postar: opc.postar, base: nome }).then(function (d) {
+if (!d.ok) { falha = "Folhas " + (i0 + 1) + " a " + i1 + " (" + nome + "): " + d.erro; return; }
+arq[nome + ".dwg"] = d.dwg; avisos += d.avisos || 0;
+infos.push({ arq: nome + ".dwg", folhas: po.resumo.layouts.map(function (l) { return l.nome; }) });
+});
+}
+return faixa(0, N, o).then(function () {
+if (falha) return { ok: false, erro: falha };
+if (!Z || !Z.zipEscrever) return { ok: false, erro: "O ZIP do DWG não montou." };
+var C = CD(), lo = {}; Object.keys(o).forEach(function (kk) { lo[kk] = o[kk]; });
+lo.dwgNome = infos.map(function (x) { return x.arq; }).join(", ");
+arq[o.ctbNome] = o.ctb;
+arq["LEIA-ME.txt"] = C.leiame(lo) + "\r\nCONJUNTO GRANDE: o DWG saiu em " + infos.length + " partes, porque o conversor leva muito tempo num arquivo só:\r\n" +
+infos.map(function (x) { return "  " + x.arq + " = folhas " + x.folhas.join(", "); }).join("\r\n") + "\r\nO arquivo CAD unico (DXF) traz todas as folhas juntas.\r\n";
+return { ok: true, zip: Z.zipEscrever(arq), nome: base + "-DWG.zip", avisos: avisos, partes: infos.length, infos: infos };
+});
+}
+function baixarDwg(o, opc) {
+opc = opc || {};
+var gerar = (opc.partes && o && o.dxfDwg && o.dxfDwg.length > DXF_MAX_DWG && o.resumo && o.resumo.layouts.length > 1) ? gerarDwgPartes(o, opc) : gerarDwg(o, opc);
+return gerar.then(function (d) {
+if (d.ok && baixar(d.nome, d.zip, "application/zip")) toast("DWG gerado: " + d.nome + (d.partes ? " (em " + d.partes + " partes: conjunto grande)" : "") + (d.avisos ? " · " + d.avisos + " aviso(s) do conversor" : ""), d.avisos ? "aviso" : "ok");
+else toast("DWG não saiu: " + (d.erro || "falha ao baixar") + (/DWG só no app/.test(d.erro || "") ? "" : " O DXF continua disponível e abre no AutoCAD."), "aviso");
+return d;
+});
+}
+function instalarCtbs(opc) {
+opc = opc || {}; var B = BC(); if (!B) return Promise.resolve({ ok: false, mensagem: "js/bimcad.js não carregou." });
+var lista = B.ctbs().concat(arr(opc.extras));
+var postar = opc.postar || function (bytes, nome) {
+var f = buscar(); if (!f) return Promise.resolve({ ok: false, status: 0, json: null });
+return comPrazo(f, "/__dwg/instalar-ctb", { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Ctb-Nome": encodeURIComponent(nome) }, body: bytes }, 20000)
+.then(function (resp) { return resp.json().then(function (j) { return { ok: resp.ok, status: resp.status, json: j }; }, function () { return { ok: false, status: resp.status, json: null }; }); }, function () { return { ok: false, status: 0, json: null }; });
+};
+var rot = { novo: "instalado", igual: "já estava", atualizado: "atualizado (o seu estava diferente: ficou cópia .bak)", erro: "falhou" }, partes = [], falhou = null;
+return lista.reduce(function (p, c) {
+return p.then(function () {
+if (falhou) return null;
+return postar(c.bytes, c.nome).then(function (r) {
+var j = r && r.json;
+if (!j) { falhou = CTB_SO_NO_APP; return null; }
+if (!j.ok) { falhou = String(j.erro || CTB_SO_NO_APP); return null; }
+partes.push(c.nome + ": " + arr(j.instalados).map(function (i) { return i.versao + " — " + (rot[i.acao] || i.acao); }).join("; "));
+return null;
+});
+});
+}, Promise.resolve()).then(function () {
+if (falhou) return { ok: false, mensagem: falhou, instalados: partes };
+return { ok: true, instalados: partes, mensagem: "Penas RA instaladas — " + partes.join(" | ") + ". Feche e abra o DWG de novo." };
+});
+}
+function cadDoHidro(r, base) {
+var B = BC(); if (!B || !r || !r.ok) return null;
+return B.paraCad(r, { disciplina: "hidrossanitario", dxfNome: base + ".dxf", dwgNome: base + ".dwg" });
+}
+function partesHidro(r) {
+return function (i0, i1, nome) { return BC().paraCad({ ok: true, folhas: r.folhas.slice(i0, i1) }, { disciplina: "hidrossanitario", dxfNome: nome + ".dxf", dwgNome: nome + ".dwg" }); };
+}
+function lerQ(raiz) {
+var cad = raiz.querySelector('[data-bcad-out="cad"]'), dwg = raiz.querySelector('[data-bcad-out="dwg"]');
+return { cad: !!(cad && cad.checked), dwg: !!(dwg && dwg.checked && !dwg.disabled) };
+}
+function aposGerarHidro(q, r0, HU, acoes) {
+acoes = acoes || {};
+if (!q || (!q.cad && !q.dwg)) return false;
+var r = HU && HU.ultimo ? HU.ultimo().r : null;
+if (!r || r === r0 || !r.ok) { (acoes.aviso || function (t) { toast(t, "aviso"); })("O CAD não saiu: a geração das pranchas não foi concluída (o arquivo anterior não é reaproveitado)."); return false; }
+var base = (r.prefixo || "HID") + "-" + (r.revisao || "R00") + " projeto hidrossanitario", o = cadDoHidro(r, base);
+if (!o) return false;
+if (q.cad) (acoes.cad || baixarCad)(o, { base: base });
+if (q.dwg) (acoes.dwg || baixarDwg)(o, { base: base, partes: partesHidro(r) });
+return true;
+}
+function avisaLigacao(motivo, acoes) {
+var t = "O CAD único não foi ligado à tela de pranchas do hidro: " + motivo + ". Use o botão CAD/DWG da faixa Exportar do BIM.";
+try { if (global.console && global.console.warn) global.console.warn("[BimCadUI] " + t); } catch (e) { }
+(acoes && acoes.aviso ? acoes.aviso : function (x) { toast(x, "aviso"); })(t);
+return false;
+}
+function acoplarTela(d, HU, acoes) {
+var el = d.querySelector('[data-hpr="tela"]'); if (!el) return avisaLigacao("a tela não tem data-hpr=\"tela\"", acoes);
+var raiz = el.parentNode, modal = (el.closest ? el.closest("#modal-bg") : null) || raiz;
+if (raiz.querySelector('[data-bcad-out="cad"]')) return true;
+var ancora = raiz.querySelector('[data-hpr-out="dxf"]'), lab = ancora && ancora.parentNode;
+if (lab && lab.insertAdjacentHTML) lab.insertAdjacentHTML("afterend", opcoesHtml("bcad"));
+else if (raiz.insertAdjacentHTML) { raiz.insertAdjacentHTML("beforeend", opcoesHtml("bcad")); }
+else return avisaLigacao("sem lugar para as opções", acoes);
+if (ancora) ancora.checked = false;
+var bt = null, bts = modal.querySelectorAll ? modal.querySelectorAll("#modal-footer button") : [];
+Array.prototype.forEach.call(bts, function (b) { if (!bt && /^\s*Gerar pranchas\s*$/.test(b.textContent || "")) bt = b; });
+if (!bt || typeof bt.onclick !== "function") {
+["cad", "dwg"].forEach(function (k) { var c = raiz.querySelector('[data-bcad-out="' + k + '"]'); if (c) { c.disabled = true; c.checked = false; } });
+return avisaLigacao("o botão \"Gerar pranchas\" do modal não foi achado", acoes);
+}
+var prev = bt.onclick;
+bt.onclick = function () {
+var q = lerQ(raiz), r0 = HU.ultimo ? HU.ultimo().r : null, ret = prev.apply(this, arguments);
+try { aposGerarHidro(q, r0, HU, acoes); } catch (ex) { toast("O CAD não saiu: " + (ex && ex.message || ex), "aviso"); }
+return ret;
+};
+ligar(raiz, "bcad");
+return true;
+}
+function ligarNaTelaHidro(opc) {
+opc = opc || {}; var HU = opc.HU || global.HidPranchasUI, d = opc.doc || global.document;
+if (!HU || typeof HU.abrir !== "function") return avisaLigacao("HidPranchasUI.abrir não existe mais", opc.acoes);
+if (HU.abrir._bcad) return true;
+var orig = HU.abrir;
+HU.abrir = function () {
+var ok = orig.apply(this, arguments);
+if (ok && d) { try { acoplarTela(d, HU, opc.acoes); } catch (ex) { avisaLigacao(ex && ex.message || String(ex), opc.acoes); } }
+return ok;
+};
+HU.abrir._bcad = true;
+return true;
+}
+var BimCadUI = { opcoesHtml: opcoesHtml, ligar: ligar, baixarCad: baixarCad, gerarDwg: gerarDwg, gerarDwgPartes: gerarDwgPartes, partesHidro: partesHidro, DXF_MAX_DWG: DXF_MAX_DWG, baixarDwg: baixarDwg, instalarCtbs: instalarCtbs, ligarNaTelaHidro: ligarNaTelaHidro, aposGerarHidro: aposGerarHidro, cadDoHidro: cadDoHidro, DWG_SO_NO_APP: DWG_SO_NO_APP, CTB_SO_NO_APP: CTB_SO_NO_APP };
+global.BimCadUI = BimCadUI;
+try { if (global.document) ligarNaTelaHidro(); } catch (eL) { }
+if (typeof module !== "undefined" && module.exports) module.exports = BimCadUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimp10ui.js ==== */

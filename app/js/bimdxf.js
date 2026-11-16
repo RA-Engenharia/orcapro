@@ -877,6 +877,83 @@
         doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) - 3.6, 2.5 * 0.7, "ESC 1:" + esc, 0, false);
       }
     });
+    fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold);
+    return doc;
+  }
+  /* ---------------------------------------------- folha → CAD ÚNICO (layout + MODEL em escala real)
+   * O mesmo `daFolha`, mas no formato que o AutoCAD espera (o do js/arqcad.js): cada vista vai ao MODEL em METROS (escala real), lado a lado, e a folha vira um LAYOUT
+   * (paperspace, mm de papel) com moldura, carimbo, coluna de notas, títulos de vista e UMA VIEWPORT TRAVADA por vista, na escala dela (a do bloco da folha).
+   * doc = o documento ÚNICO (vários layouts); opts.modelo = o cursor do MODEL ({ x, topo, alturaLinha } — o chamador guarda entre as folhas);
+   * opts.papelNome(w, h) / opts.ctbNome = a página de cada layout. Devolve { nome, w, h, papel, viewports: [{ vista, escala, w, h, altura, mx, my }] }.
+   * ⚠ A vista que não cabe no quadro (o PDF a encolhe para caber) sai na escala EXATA do bloco; a viewport recorta o excedente (aviso em doc.avisos). */
+  function daFolhaCad(doc, pr, folha, geo, vps, opts) {
+    opts = opts || {};
+    var P = geo.papel, pn = penas().media, M = geo.moldura, cur = opts.modelo || (opts.modelo = { x: 0, topo: 0, altLinha: 0 });
+    function Y(y) { return P.h - y; }
+    var nome = String(opts.nome || folha.numero || ("F" + folha.n));
+    var L = doc.layout(nome, P.w, P.h, { papel: opts.papelNome ? opts.papelNome(P.w, P.h) : "", ctb: opts.ctbNome, camadaVp: "DEFPOINTS" });
+    var info = { nome: nome, w: P.w, h: P.h, papel: L.opts.papel, viewports: [], formato: folha.formato || "", titulo: folha.conteudo || "" };
+    var cMold = doc.camada("FOLHA-MOLDURA", 0.70), cCar = doc.camada("FOLHA-CARIMBO", 0.25), cTx = doc.camada("FOLHA-CARIMBO-TEXTO", 0.18);
+    var cTit = doc.camada("FOLHA-TITULO-VISTA", pn.marca), cTitT = doc.camada("FOLHA-TITULO-VISTA-TEXTO", pn.cota);
+    var vistas = [];   /* o que cada viewport mostra, para o chão do MODEL e para o layout */
+    (folha.blocos || []).forEach(function (b) {
+      if (b.tipo !== "viewport") return;
+      var v = vps && ((b.escalaPropria && vps[b.vistaId + "@" + b.escala]) || vps[b.vistaId]);
+      if (!v || !v.dados) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem desenho"); return; }
+      var esc = +b.escala || 50, f = 1000 / esc, vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : v.vb;
+      var rx0 = Math.max(b.x, M.x), rx1 = Math.min(b.x + b.w, M.x + M.w), ry0 = Math.max(b.y, M.y), ry1 = Math.min(b.y + b.h, M.y + M.h);
+      if (rx1 - rx0 < 1 || ry1 - ry0 < 1) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " fora da folha"); return; }
+      vistas.push({ b: b, v: v, esc: esc, f: f, vb: vb, caixa: [rx0, ry0, rx1, ry1] });
+    });
+    /* o MODEL: as vistas desta folha numa linha, a linha abaixo da anterior (nunca uma por cima da outra: cada vista tem o seu retângulo) */
+    var x0 = cur.x = 0, topo = cur.topo, altMax = 0, GAP = 5;
+    vistas.forEach(function (q) {
+      q.mx0 = x0; q.my0 = topo - q.vb.h; x0 += q.vb.w + GAP; if (q.vb.h > altMax) altMax = q.vb.h;
+      var est = {}; Object.keys(q.v.estilo || {}).forEach(function (kk) { est[kk] = q.v.estilo[kk]; }); est.escala = q.esc; est.titulo = false;
+      var e = global.Desenho2D.normEstilo(est);
+      var xf = { pt: function (x, y) { return [q.mx0 + (x - q.vb.x), q.my0 + (q.vb.y + q.vb.h - y)]; }, s: 1 };
+      var rec = { x0: q.mx0, x1: q.mx0 + q.vb.w, y0: q.my0, y1: q.my0 + q.vb.h };
+      var hMod = doc.entidades.length;
+      daVista(q.v.dados, e, { doc: doc, xf: xf, recorte: rec, svg: q.v.svgSemTitulo });
+      /* o rótulo do retângulo no MODEL (camada que o CAD nunca plota) */
+      doc.texto(doc.camada("DEFPOINTS"), q.mx0, q.my0 + q.vb.h + 0.6, Math.max(0.3, 4 * q.esc / 1000), nome + " | " + (q.b.tituloVista || q.b.vistaId) + " | 1:" + q.esc, 0, false);
+      doc.poli("DEFPOINTS", [[rec.x0 - 0.3, rec.y0 - 0.3], [rec.x1 + 0.3, rec.y0 - 0.3], [rec.x1 + 0.3, rec.y1 + 0.3], [rec.x0 - 0.3, rec.y1 + 0.3]], true);
+      q.nEnts = doc.entidades.length - hMod;
+    });
+    cur.topo = topo - (altMax || 0) - (vistas.length ? 14 : 0);
+    /* o layout: moldura, títulos, o resto da folha e as viewports (travadas, na escala de cada bloco) */
+    doc.paper(L, function () {
+      doc.poli(cMold, [[M.x, Y(M.y)], [M.x + M.w, Y(M.y)], [M.x + M.w, Y(M.y + M.h)], [M.x, Y(M.y + M.h)]], true);
+      vistas.forEach(function (q) {
+        var b = q.b;
+        if (b.mostrarTitulo !== false && b.y + b.h + 10 <= M.y + M.h) {
+          var ty = b.y + b.h + 6, r = 4;
+          doc.circulo(cTit, b.x + r, Y(ty), r);
+          doc.texto(cTitT, b.x + r, Y(ty) - 1.2, 2.2, b.numeroDetalhe || "", 0, true);
+          var nm = String(b.tituloVista || "").toUpperCase();
+          doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) + 0.6, 3.5 * 0.7, nm, 0, false);
+          doc.linha(cTit, b.x + 2 * r, Y(ty), b.x + Math.max(2 * r + 40, Math.min(b.w, 2 * r + 4 + nm.length * 2.1)), Y(ty));
+          doc.texto(cTitT, b.x + 2 * r + 2, Y(ty) - 3.6, 2.5 * 0.7, "ESC 1:" + q.esc, 0, false);
+        }
+      });
+      fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold);
+    });
+    vistas.forEach(function (q) {
+      var b = q.b, F = q.f, ox = b.x + (b.w - q.vb.w * F) / 2, oy = b.y + (b.h - q.vb.h * F) / 2;   /* o desenho de 1:esc, centrado no quadro (como na tela) */
+      var vx0 = Math.max(q.caixa[0], ox), vx1 = Math.min(q.caixa[2], ox + q.vb.w * F), vy0 = Math.max(q.caixa[1], oy), vy1 = Math.min(q.caixa[3], oy + q.vb.h * F);
+      if (vx1 - vx0 < 1 || vy1 - vy0 < 1) { doc.avisos.push("vista " + (b.tituloVista || b.vistaId) + " sem área visível na folha"); return; }
+      if (b.w < q.vb.w * F - 0.5 || b.h < q.vb.h * F - 0.5) doc.avisos.push(nome + ": a vista \"" + (b.tituloVista || b.vistaId) + "\" não cabe no quadro em 1:" + q.esc + " (a viewport recorta o excedente)");
+      var cxP = (vx0 + vx1) / 2, cyP = (vy0 + vy1) / 2, hv = vy1 - vy0;
+      var mx = q.mx0 + (cxP - ox) / F, my = q.my0 + q.vb.h - (cyP - oy) / F;
+      var vp = doc.viewport(L, cxP, Y(cyP), vx1 - vx0, hv, mx, my, hv * q.esc / 1000, { travada: true });
+      vp.id = info.viewports.length + 2;
+      info.viewports.push({ vista: b.tituloVista || b.vistaId, escala: q.esc, w: vx1 - vx0, h: hv, altura: hv * q.esc / 1000, mx: mx, my: my, entidades: q.nEnts });
+    });
+    return info;
+  }
+  /* o que a folha leva além das viewports (blocos de texto/tabela/imagem, coluna de notas e carimbo) — comum ao DXF da folha e ao CAD único (daFolhaCad) */
+  function fimDaFolha(doc, pr, folha, geo, opts, Y, cCar, cTx, cMold) {
+    var PR = global.Prancha;
     /* outros blocos: o contorno e o título (imagem/foto não vai para o DXF) */
     (folha.blocos || []).forEach(function (b) {
       if (b.tipo === "viewport") return;
@@ -897,7 +974,6 @@
     });
     if (PR && PR.modeloCarimbo && PR.modeloCarimbo(pr) === "RA" && PR.carimboRA) carimboRADxf(doc, pr, folha, geo, opts, Y);
     else carimboDxf(doc, cMold, cCar, cTx, pr, folha, geo, opts.projeto, Y);
-    return doc;
   }
   function tabelaDxf(doc, cL, cT, b, Y) {
     var cab = b.cabecalho || [], lin = b.linhas || [], nc = Math.max(1, cab.length || (lin[0] || []).length), lh = 5, cw = b.w / nc;
@@ -982,7 +1058,7 @@
   var BimDxf = {
     PENAS_PADRAO: PENAS_PADRAO, CATEGORIAS: CATEGORIAS, COR_LW: COR_LW, DWG: DWG,
     categoria: categoria, lwDe: lwDe, txtDxf: txtDxf, novoDoc: novoDoc, escrever: escrever, hachurasEmGeometria: hachurasEmGeometria, paraDwg: paraDwg,
-    daVista: daVista, daFolha: daFolha, recortarSeg: recortarSeg, svgParaDxf: svgParaDxf, extensao: extensao
+    daVista: daVista, daFolha: daFolha, daFolhaCad: daFolhaCad, recortarSeg: recortarSeg, svgParaDxf: svgParaDxf, extensao: extensao
   };
   global.BimDxf = BimDxf;
   if (typeof module !== "undefined" && module.exports) module.exports = BimDxf;
