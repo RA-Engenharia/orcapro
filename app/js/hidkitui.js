@@ -163,7 +163,8 @@
       var novos = ids.filter(function (id) { return U._vistos.indexOf(id) < 0; });
       U._vistos = ids;
       U._sincAuto();   /* N23: a escolha "Lançar a instalação automaticamente" do projeto aberto */
-      if (!U.ligado) { if (novos.length) U._avisoManual(c, novos); return null; }
+      var ligNovos = novos.filter(function (id) { return U._ehLigavel(c, id); }); if (ligNovos.length) U._ultimoAp = ligNovos[ligNovos.length - 1];
+      if (!U.ligado) { if (novos.length) U._avisoManual(c, novos); U._conferirDesatualizado(); return null; }
       var acoes = K.reconciliar({ estado: c.estado, avaliarFam: c.avaliarFam, ops: c.ops, novos: novos, vizinhos: U._vizinhos(c.estado) }).filter(function (a) {
         if (a.acao === "gerar") return true;
         var fi = fams.filter(function (f) { return String(f.id) === a.famInst; })[0], ass = fi ? K.assinatura(fi) : "apagado";
@@ -1028,6 +1029,7 @@
          avisa, com Mostrar no 3D e Corrigir (= substituir: apaga o tubo à mão e refaz a prévia); manter = aplicar como está */
       try { U._conflitosManuais(c, ops, resumo).forEach(function (a) { avisos.push(a); }); } catch (eMn) {}
       resumo.caixasNovas = ambs.filter(function (R) { return R.caixaSifonada && !R.caixaSifonada.existente; }).map(function (R) { return R.caixaSifonada.id; });
+      var faltam = ambs.filter(function (R) { return R.caixaSifonada && !R.caixaSifonada.existente; }).map(function (R) { var am = arr(est.ambientes).filter(function (a) { return String(a.id) === String(R.ambiente && R.ambiente.id); })[0]; return { ambienteId: R.ambiente && R.ambiente.id, ambiente: (am && am.nome) || String(R.ambiente && R.ambiente.id), caixa: R.caixaSifonada.id }; });
       resumo.pontasNovas.forEach(function (t) { avisos.push({ texto: "Ponta solta: " + t, elementos: [] }); });
       /* CRITÉRIO DE PROJETISTA (js/hidcriterios.js): o auditor sobre a prévia — só o que é do lote novo (escopo) */
       var HCr = global.HidCriterios, crit = null;
@@ -1062,7 +1064,7 @@
         var HBn = dep("HidBanheira");
         if (HBn) { var rbn = HBn.conferir({ estado: est, avaliarFam: c.avaliarFam }); arr(rbn.avisos).forEach(function (a) { avisos.push({ texto: a.texto, elementos: arr(a.elementos), acao: null }); }); arr(rbn.pendencias).forEach(function (p) { if (!pendencias.some(function (q) { return q.chave === p.chave && String(q.texto) === String(p.texto); })) pendencias.push({ chave: p.chave, texto: p.texto, elementos: arr(p.elementos) }); }); }
       } catch (eHB) { pendencias.push({ chave: "ta.hidromassagem", texto: "Hidromassagem: não consegui conferir a banheira (" + (eHB && eHB.message ? eHB.message : eHB) + ") — confira à mão", elementos: [] }); }
-      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
+      return { ok: true, ops: ops, resumo: resumo, faltam: faltam, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);
        com seleção, só a selecionada (a op, a casa de máquinas dela ou o volume) */
@@ -1221,10 +1223,80 @@
       var P = U.planejar({ uids: uids, opcaoRota: opcoes.opcaoRota });
       U._plano = P; U._planoUids = uids;
       if (!P.ok) { U.ultimo = { ok: false, erro: P.erro }; U._previa(null); U._cardMostrar(P); U._redesenhar(); status(P.erro); return P; }
+      /* PONTOS-CHAVE: o projetista põe antes a caixa sifonada/ralo/CI/CG/TQ; o que está no modelo é destino FIXO (o motor reaproveita).
+         Só cria caixa sifonada quando o ambiente não tem nenhuma — e ANTES avisa quais ambientes faltam */
+      var falt = arr(P.faltam);
+      if (falt.length && !opcoes.criarFaltantes) {
+        var txF = "Faltam pontos: " + falt.map(function (f) { return f.ambiente + " sem caixa sifonada"; }).join("; ") + ".";
+        /* na tela: o CARTÃO do Traçar com os dois botões; sem janela (Node) ou com o gancho do teste: a resposta vem síncrona */
+        if (!(global.document && global.document.body) || typeof U.perguntarFaltam === "function") {
+          if (!U._perguntarFaltam(txF)) return U._faltamPosicionar(P);
+        } else {
+          P.aguardando = "faltam"; U._plano = P; U._cardMostrar(P);
+          status(txF + " Escolha no cartão: Posicionar eu mesmo ou Deixar o sistema criar.");
+          return P;
+        }
+      }
+      return U._mostrarPrevia(P);
+    },
+    _mostrarPrevia: function (P) {
       U._previa(P.ops);
       U._cardMostrar(P);
       status("Prévia do traçado: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões)" + (P.opcoes > 1 ? " — Tab alterna a opção (" + (P.indice + 1) + " de " + P.opcoes + ")" : "") + ". Enter aplica, Esc cancela.");
       return P;
+    },
+    /* "Posicionar eu mesmo": nada é gravado; o ambiente que falta é selecionado e enquadrado */
+    _faltamPosicionar: function (P) {
+      var falt = arr(P.faltam), txF = "Faltam pontos: " + falt.map(function (f) { return f.ambiente + " sem caixa sifonada"; }).join("; ") + ".";
+      U._plano = null; U._previa(null); U._cardFechar();
+      var uF = falt.map(function (f) { return "edit:" + f.ambienteId; });
+      try { var bF = global.BIM; if (bF && bF.selecionar) bF.selecionar(uF); if (bF && bF.enquadrarUids) bF.enquadrarUids(uF); } catch (eF) {}
+      U.ultimo = { ok: false, erro: txF }; status("Faltam pontos: posicione a caixa sifonada em " + falt.map(function (f) { return f.ambiente; }).join(", ") + " e trace de novo.");
+      U._redesenhar(); P.cancelado = "posicionar"; P.aguardando = null; return P;
+    },
+    /* os dois botões do cartão "Faltam pontos": "posicionar" ou "criar" */
+    resolverFaltam: function (escolha) {
+      var P = U._plano; if (!P || P.aguardando !== "faltam") return null;
+      if (escolha === "criar") { P.aguardando = null; P.criar = true; return U._mostrarPrevia(P); }
+      return U._faltamPosicionar(P);
+    },
+    /* ---------------- TRAÇADO SÓ QUANDO A PESSOA PEDE (15/11/2026, pedido do Rogério)
+       Colocar peça só insere a peça (o "partir tubo nas conexões" é geometria e continua). O traçado roda UMA vez, no botão
+       "Traçar instalações": deste ambiente ou do projeto todo. Depois de traçado, mexer/adicionar peça NÃO retraça: aparece o aviso
+       "Traçado desatualizado — Traçar de novo". O automático (U.ligado) segue existindo, desligado de fábrica. */
+    _sigTracado: null, _avisouDesat: false, _ultimoAp: null,
+    /* assinatura do que o traçado lê do modelo (aparelhos e ambientes; a do painel, js/hidcalcui.js, inclui as instalações e
+       acusaria "mudou" a cada tubo desenhado) */
+    _sigModelo: function (c) {
+      c = c || U._ctx(); if (!c) return "";
+      var o = { f: arr(c.estado.familias).map(function (f) { return [f.id, f.famId, f.tipoId, f.x, f.y, f.z, f.rotY, f.inst]; }),
+                a: arr(c.estado.ambientes).map(function (a) { return [a.id, a.calc && a.calc.area, a.calc && a.calc.contorno]; }) };
+      var t; try { t = JSON.stringify(o); } catch (e) { return String(nOpsDe(c)); }
+      var h = 5381, i; for (i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;   // hid:ok hash djb2 (identificação, não norma)
+      return String(h) + ":" + t.length;
+    },
+    desatualizado: function () { if (U._sigTracado == null || U._plano) return false; var c = U._ctx(); return !!c && U._sigModelo(c) !== U._sigTracado; },
+    _conferirDesatualizado: function () {
+      var d = U.desatualizado();
+      if (d && !U._avisouDesat) { U._avisouDesat = true; status("Traçado desatualizado: o modelo mudou depois do traçado. Use Traçar de novo (painel Instalações ou TA)."); U._redesenhar(); }
+      if (!d) U._avisouDesat = false;
+      return d;
+    },
+    _perguntarFaltam: function (txt) {
+      if (typeof U.perguntarFaltam === "function") return !!U.perguntarFaltam(txt);
+      if (typeof U.perguntar === "function") return !!U.perguntar(txt);
+      try { if (global.confirm) return !!global.confirm(txt); } catch (e) {}
+      return true;   /* sem janela (Node): segue; quem testa a pergunta injeta perguntarFaltam */
+    },
+    tracarProjeto: function (opcoes) { opcoes = opcoes || {}; opcoes.uids = []; opcoes.todos = true; return U.tracarAuto(opcoes); },
+    tracarAmbiente: function (opcoes) {
+      opcoes = opcoes || {};
+      var c = U._ctx(); if (!c) { status("Abra o BIM para traçar."); return null; }
+      var uids = opcoes.uids != null ? opcoes.uids : (c.b.selecao ? arr(c.b.selecao().uids) : []);
+      if (!arr(uids).length && U._ultimoAp != null) uids = ["edit:" + U._ultimoAp];   /* nada selecionado: o ambiente do último aparelho posto */
+      if (!arr(uids).length) { status("Traçar deste ambiente: clique no ambiente (ou num aparelho dele) e use de novo; ou escolha o projeto todo."); return null; }
+      opcoes.uids = uids; opcoes.todos = true;
+      return U.tracarAuto(opcoes);
     },
     alternarOpcao: function () {
       var P = U._plano; if (!P || !P.ok || P.opcoes < 2) return false;   // hid:ok só alterna com 2+ opções
@@ -1236,7 +1308,7 @@
       return true;
     },
     aplicarTracado: function () {
-      var P = U._plano, c = U._ctx(); if (!P || !P.ok || !c) return null;
+      var P = U._plano, c = U._ctx(); if (!P || !P.ok || !c || P.aguardando) return null;
       if (P.pressaoCores) { U._pressaoPrevia = false; U._pressaoOps = null; }   /* aplicado: as cores ficam (são deste traçado); a próxima op as limpa */
       /* CRITÉRIO DE PROJETISTA: com PROIBIDO na prévia (o aparelho colado na janela, a ventilação sem saída…) o sistema não aplica
          calado — explica e pergunta; aplicar assim é decisão do RT */
@@ -1256,7 +1328,8 @@
       /* traçado sobre um IFC de arquitetura: o IFC fica translúcido para ver a rede (js/biminstui.js aposTracarIfc, 06/11/2026) */
       try { var BUi2 = global.BimInstUI; if (ok && BUi2 && BUi2.aposTracarIfc) BUi2.aposTracarIfc(); } catch (eVi) {}
       if (P.escopo && P.escopo.tipo === "corrigir") { status(ok ? "Correção aplicada: " + arr(P.textos).join("; ") + ". Ctrl+Z desfaz tudo." : "O editor recusou a correção."); try { var BUc = global.BimInstUI; if (ok && BUc && BUc.verificarSistemas) BUc.verificarSistemas(); } catch (eV) {} U._redesenhar(); return U.ultimo; }
-      status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
+      status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + (arr(P.resumo.caixasNovas).length ? ". Criei a caixa sifonada " + P.resumo.caixasNovas.join(", ") : "") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
+      if (ok) { U._sigTracado = U._sigModelo(); U._avisouDesat = false; }   /* traçado feito: daqui em diante, mexer nas peças só avisa "desatualizado" */
       U._redesenhar();
       /* a caixa já estava no modelo e o traçado deixou coluna aberta (o barrilete não entrou): oferece o barrilete */
       if (ok && !P.barrilete && !(P.escopo && P.escopo.tipo === "corrigir")) { try { U.ligarCaixaPendente(); } catch (eLc) {} }
@@ -1423,6 +1496,12 @@
     _cardHtml: function (P) {
       var NOMES = { esgoto: "Esgoto", agua_fria: "Água fria", agua_quente: "Água quente", ventilacao: "Ventilação", pluvial: "Pluvial" };
       var h = '<div class="hidtr-cab"><b>' + esc(P.titulo || "Traçar automaticamente") + '</b><button type="button" data-hid-tr="cancelar" title="Cancelar (Esc)" aria-label="Fechar">×</button></div>';
+      if (P.aguardando === "faltam") {
+        h = '<div class="hidtr-cab"><b>Faltam pontos</b><button type="button" data-hid-tr="cancelar" title="Cancelar" aria-label="Fechar">×</button></div>';
+        h += '<p data-hid-tr-faltam>Estes ambientes não têm caixa sifonada no modelo:</p><ul data-hid-tr-faltam-lista>' + arr(P.faltam).map(function (f) { return "<li>" + esc(f.ambiente) + " — sem caixa sifonada</li>"; }).join("") + "</ul>";
+        h += '<p class="muted">Posicione a caixa à mão (ela vira o destino fixo do ambiente) ou deixe o sistema criar uma — e o cartão final diz "Criei".</p>';
+        return h + '<div class="hidtr-bt"><button type="button" class="btn sm" data-hid-tr="faltam-posicionar">Posicionar eu mesmo</button><button type="button" class="btn sm primary" data-hid-tr="faltam-criar">Deixar o sistema criar</button></div>';
+      }
       if (!P.ok) return h + '<p class="hidtr-erro" data-hid-tr-erro>' + esc(P.erro) + '</p><div class="hidtr-bt"><button type="button" class="btn sm" data-hid-tr="cancelar">Fechar</button></div>';
       var R = P.resumo;
       h += '<p data-hid-tr-resumo><b>' + R.tubos + "</b> tubo(s) · " + String(R.metros).replace(".", ",") + " m · <b>" + R.conexoes + "</b> conexão(ões)" + (R.kits ? " · " + R.kits + " kit(s)" : "") + " · " + R.ambientes + " ambiente(s)</p>";
@@ -1468,7 +1547,7 @@
         el.addEventListener("click", function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest("[data-hid-tr]") : null; if (!b) return;
           var a = b.getAttribute("data-hid-tr");
-          if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
+          if (a === "faltam-criar") U.resolverFaltam("criar"); else if (a === "faltam-posicionar") U.resolverFaltam("posicionar"); else if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
           else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n")));
           else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n")));
           else if (a === "conectar") U.conectarSoltos();
@@ -1504,25 +1583,30 @@
         var k = e.key;
         if (k !== "Tab" && k !== "Enter" && k !== "Escape") return;
         e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        if (U._plano && U._plano.aguardando === "faltam") { if (k === "Escape") U.resolverFaltam("posicionar"); return; }
         if (k === "Tab") U.alternarOpcao(); else if (k === "Enter") { if (U._plano && U._plano.ok) U.aplicarTracado(); else U.cancelarTracado(); } else U.cancelarTracado();
       };
       if (on && !U._kTrOn) { global.addEventListener("keydown", U._kTr, true); U._kTrOn = true; }
       if (!on && U._kTrOn) { global.removeEventListener("keydown", U._kTr, true); U._kTrOn = false; }
     },
     /* ---------------- a fita: Instalações › Projeto inteligente; aba Modificar | Aparelhos; atalho TA (js/biminstui.js registrarP12 chama) */
-    ID_CMD: "tracar-auto", ID_CTX: "ctx-tracar-auto", ATALHO: "TA",
+    ID_AMB: "tracar-ambiente", ID_PROJ: "tracar-projeto", ID_CMD: "tracar-auto", ID_CTX: "ctx-tracar-auto", ATALHO: "TA",
     registrar: function (reg, R) {
       R = R || global.BimRibbon; if (!R || !reg) return false;
       var cmd = { id: U.ID_CMD, rotulo: "Traçar\nautomaticamente", icone: "link", grande: true, dica: "Gera os tubos sozinho: o kit de cada aparelho que ainda não tem, a caixa sifonada (aproveita a que você pôs), a ventilação, o ramal DN 100 e a água pela parede; com a linha da rede, liga nela. Selecione o ambiente ou os aparelhos (nada selecionado = todos). Mostra a prévia antes de aplicar; Tab alterna a opção; um Ctrl+Z desfaz (atalho TA)." };
       var cmdBar = { id: U.ID_BAR, rotulo: "Montar\nbarrilete", icone: "link", dica: "Com a caixa d'água no modelo: a saída com registro e a ventilação, o barrilete no ático descendo até cada espera de água fria, a coluna com registro, o extravasor, a limpeza e a boia; confere a pressão (NBR 5626). Selecione a caixa (nada = todas). O Traçar automaticamente já faz isto junto." };
-      try { R.acrescentar("instalacoes", "Instalações", "Projeto inteligente", [cmd, cmdBar]); } catch (e) {}
+      var cmdAmb = { id: U.ID_AMB, rotulo: "Traçar\nneste ambiente", icone: "link", dica: "Traça as instalações só do ambiente selecionado (ou do último aparelho posto). Colocar peça não traça sozinho: o traçado roda quando você pede." };
+      var cmdProj = { id: U.ID_PROJ, rotulo: "Traçar\no projeto todo", icone: "link", dica: "Traça de uma vez todos os aparelhos do projeto (kits, caixa sifonada, ventilação, rede, barrilete). Os pontos-chave que você já posicionou são o destino fixo." };
+      try { R.acrescentar("instalacoes", "Instalações", "Projeto inteligente", [cmd, cmdAmb, cmdProj, cmdBar]); } catch (e) {}
+      reg[U.ID_AMB] = function () { U.tracarAmbiente(); return true; };
+      reg[U.ID_PROJ] = function () { U.tracarProjeto(); return true; };
       reg[U.ID_CMD] = function () { U.tracarAuto(); return true; };
       reg[U.ID_BAR] = function () { U.montarBarrilete(); return true; };
       /* N23: CAIXA D'ÁGUA EM UM CLIQUE — pôs a caixa, o barrilete aparece na prévia (Enter aplica) */
       if (!U._ouveCaixa && global.addEventListener) { U._ouveCaixa = true; global.addEventListener("bim:familia-colocada", function (ev) { U.aoColocarFamilia(ev && ev.detail); }); }
       /* a fita por DISCIPLINA (js/bimdisciplinas.js): o comando é da hidráulica — sem declarar, a aba Instalações aparecia na
          disciplina civil (e2e-bim-disciplinas [b], achado na bateria das pendências finais, 18/10/2026) */
-      try { var BD = global.BimDisciplinas; if (BD && BD.declarar) BD.declarar([U.ID_CMD, U.ID_CTX, U.ID_BAR, U.ID_CTX_BAR], "hidraulica"); } catch (eD) {}
+      try { var BD = global.BimDisciplinas; if (BD && BD.declarar) BD.declarar([U.ID_CMD, U.ID_AMB, U.ID_PROJ, U.ID_CTX, U.ID_BAR, U.ID_CTX_BAR], "hidraulica"); } catch (eD) {}
       /* o atalho de duas letras: fora (BimFita) e dentro do modo de edição (BimPrecisao.ATALHOS_CMD) */
       try { var F = global.BimFita; if (F && F.ATALHOS_FX && !F.ATALHOS_FX[U.ATALHO]) F.ATALHOS_FX[U.ATALHO] = U.ID_CMD; } catch (eF) {}
       try { if (global.BimAlinharInst && global.BimAlinharInst.atalhoAL) global.BimAlinharInst.atalhoAL(); } catch (eAL) {}   /* AL fora do modo de edição */
@@ -1555,6 +1639,7 @@
        45°), o projeto inteligente REFAZ: o kit do aparelho mexido e o traçado dos ambientes que a peça toca — num lote só.
        `mov(estado)` devolve as ops do movimento; null = a peça não é de ambiente traçado (o arraste de sempre resolve). */
     religarDepois: function (id, mov) {
+      if (!U._sincAuto()) return null;   /* automático desligado: mover/alinhar NÃO retraça (só o aviso de traçado desatualizado) */
       var K = dep("HidKit"), A = dep("HidAmbiente"), BE = dep("BimEdit"), c = U._ctx(); if (!K || !A || !BE || !c || id == null) return null;
       id = String(id);
       var lista = K.achatar(c.ops), ambs = {}, est0 = c.estado;
@@ -1663,9 +1748,13 @@
     },
     /* o botão grande no topo do painel Instalações (js/hidcalcui.js) */
     htmlTopo: function () {
+      var des = false; try { des = U.desatualizado(); } catch (eD) {}
       return '<div data-hid="kit-tracar-topo" style="margin:8px 0;padding:8px 10px;border:1px solid rgba(56,189,248,.55);border-radius:10px;background:rgba(56,189,248,.08)">' +
-        '<button class="btn primary" data-hid="kit-tracar" style="width:100%;min-height:36px;font-weight:600" title="Atalho TA">Traçar automaticamente</button>' +
-        '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Colocou a caixa sifonada, o vaso, o lavatório e o chuveiro? Clique no ambiente (ou nos aparelhos) e aqui: os kits, a caixa sifonada (a sua é aproveitada), a ventilação, o ramal DN 100 e a água pela parede. Você vê a prévia antes; Tab alterna a opção; um Ctrl+Z desfaz.</p></div>';
+        '<b style="font-size:12.5px">Traçar instalações</b>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn" data-hid="kit-tracar-amb" style="flex:1;min-height:34px" title="Traça só o ambiente selecionado (ou o do último aparelho posto)">Deste ambiente</button>' +
+        '<button class="btn primary" data-hid="kit-tracar-proj" style="flex:1;min-height:34px;font-weight:600" title="Atalho TA — traça todos os aparelhos de uma vez">Do projeto todo</button></div>' +
+        (des ? '<p data-hid="kit-desatualizado" style="font-size:11.5px;margin:6px 0 0;color:#d97706">Traçado desatualizado — o modelo mudou depois do traçado. <button class="btn sm" data-hid="kit-tracar-proj">Traçar de novo</button></p>' : '') +
+        '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Posicione primeiro os aparelhos e os pontos-chave do esgoto (caixa sifonada, ralo, caixa de inspeção, de gordura, tubo de queda): o que já está no modelo é o destino fixo. O traçado só roda quando você clica aqui; você vê a prévia antes; Tab alterna a opção; um Ctrl+Z desfaz.</p></div>';
     },
 
     /* ---------------- o bloco no painel Instalações (js/hidcalcui.js) */
@@ -1730,6 +1819,8 @@
       if (a === "kit-bald-por_baixo" || a === "kit-bald-atravessar") { U.definirBaldrame(a.slice(9)); return true; }   // hid:ok tamanho do prefixo "kit-bald-"
       var mCx = /^kit-cx-(tipo|tampa)-(\w+)$/.exec(a); if (mCx) { U.definirCaixa(mCx[1], mCx[2]); return true; }
       if (a === "kit-tracar") { U.tracarAuto(); return true; }
+      if (a === "kit-tracar-proj") { U.tracarProjeto(); return true; }
+      if (a === "kit-tracar-amb") { U.tracarAmbiente(); return true; }
       if (a === "kit-ligar") { U.ligarAgora(null); return true; }
       if (a === "kit-gerar") { U.gerarKits(); return true; }
       if (a === "kit-auto") { U.alternar(!!(el && el.checked)); return true; }

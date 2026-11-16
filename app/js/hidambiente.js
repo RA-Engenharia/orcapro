@@ -1813,30 +1813,99 @@
       /* colisão física com tubo de outro sistema (água, gás, piscina): a distância entre os eixos menor que a soma dos raios */
       function atravessaOutro(segs, r) { return outros.some(function (t2) { if (t2.sistema === "ventilacao" || t2.sistema === "esgoto" || !t2.p1 || !t2.p2) return false; return segs.some(function (sg) { return H._int.segSeg3(sg.a, sg.b, t2.p1, t2.p2) < r + raio(num(t2.dn, 0)) - EPS; }); }); }
       function bateDuro(segs, r, exceto, tomada) { var a0 = par.afastamento; par.afastamento = geo(par, "folga"); try { return bateEm(segs, r, exceto, tomada); } finally { if (a0 === undefined) delete par.afastamento; else par.afastamento = a0; } }
-      function bateEm(segs, r, exceto, tomada) {
-        return outros.concat(esExist).concat(novas.filter(function (o) { return o.op === "trecho" && o.sistema === "ventilacao"; })).some(function (t) {
+      /* perf 15/11/2026: a folga mínima entre os eixos dos dois segmentos nunca é menor que a distância entre as caixas envolventes — se ela já passa do limite, a conta exata (segSeg3) dá "não bate" */
+      function longeCaixa(a, b, p, q, lim) {
+        return (Math.min(a.x, b.x) - Math.max(p.x, q.x) > lim) || (Math.min(p.x, q.x) - Math.max(a.x, b.x) > lim) ||
+          (Math.min(a.z, b.z) - Math.max(p.z, q.z) > lim) || (Math.min(p.z, q.z) - Math.max(a.z, b.z) > lim) ||
+          (Math.min(a.y, b.y) - Math.max(p.y, q.y) > lim) || (Math.min(p.y, q.y) - Math.max(a.y, b.y) > lim);
+      }
+      /* perf 15/11/2026: o resultado de UM segmento contra todos os tubos só depende do segmento e do contexto (raio, afastamento/folga, exceções, tomada, tubos existentes):
+         os candidatos da subida repetem os mesmos segmentos (o trecho do tê, o deitado, a ligação até a coluna) dezenas de milhares de vezes. Memória por chamada de ventilar(). */
+      var _bateMemo = {}, _bateN = 0, _ctxUlt = null;
+      function bateSegUm(sg, i, r, exceto, tomada, memo, afastB, folgaB) {
+        var k = (tomada || i > 0 ? 1 : 0) + "#" + sg.a.x + "," + sg.a.y + "," + sg.a.z + "," + sg.b.x + "," + sg.b.y + "," + sg.b.z;
+        var h = memo[k]; if (h !== undefined) return h;
+        var sx0 = Math.min(sg.a.x, sg.b.x), sx1 = Math.max(sg.a.x, sg.b.x), sy0 = Math.min(sg.a.y, sg.b.y), sy1 = Math.max(sg.a.y, sg.b.y), sz0 = Math.min(sg.a.z, sg.b.z), sz1 = Math.max(sg.a.z, sg.b.z);
+        function fora(t, lim) { var p = t.p1, q = t.p2; return (sx0 - Math.max(p.x, q.x) > lim) || (Math.min(p.x, q.x) - sx1 > lim) || (sz0 - Math.max(p.z, q.z) > lim) || (Math.min(p.z, q.z) - sz1 > lim) || (sy0 - Math.max(p.y, q.y) > lim) || (Math.min(p.y, q.y) - sy1 > lim); }
+        var res = false, j, lista1 = _lista1(), limMax = Math.max(afastB, folgaB) + r + 0.3, g1 = limMax <= GRADE_LIM ? _grade(1, lista1) : null, g2 = limMax <= GRADE_LIM ? _grade(2, trs) : null;
+        var ix1 = g1 ? _acha(g1, sx0 - limMax, sx1 + limMax, sz0 - limMax, sz1 + limMax) : null, ix2 = g2 ? _acha(g2, sx0 - limMax, sx1 + limMax, sz0 - limMax, sz1 + limMax) : null;
+        for (var jj = 0, n1 = ix1 ? ix1.length : lista1.length; jj < n1 && !res; jj++) {
+          j = ix1 ? ix1[jj] : jj;
+          var t = lista1[j], rtB = raio(num(t.dn, 0)), thrB = (t.sistema === "agua_fria" ? afastB : folgaB) - EPS, limB = thrB + r + rtB + 1e-9;
+          if (fora(t, limB)) continue;
           /* FRENTE H3 (20/10/2026): a COLUNA de destino só é isenta no trecho que CHEGA nela (a junção); antes era isenta em todos e o
              deitado sob o piso passava rente à coluna de ventilação (folga −2,1 cm), e o último trecho parava a 3 cm do eixo dela */
           var exc = exceto && exceto.some(function (x) { return x === t || (x && x.id != null && x.id === t.id); });
-          return segs.some(function (sg) {
-            /* o trecho que entra na coluna: a junção. ⚠ FRENTE H4 (21/10/2026): só o que CHEGA de fora dela — o vertical do desvio que
-               subia NO EIXO da coluna (a ventilação da 2ª pia/tanque) também "terminava nela" em planta e corria 1,6 m dentro dela */
-            if (exc && d2(sg.b, t.p1) <= B.TOL && d2(sg.a, t.p1) > raio(num(t.dn, 0)) + r - EPS) return false;
-            return H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - r - raio(num(t.dn, 0)) < (t.sistema === "agua_fria" ? geo(par, "afastamento") : geo(par, "folga")) - EPS;
-          });
-        }) || trs.some(function (t) {
-          if (tomada && (t.id === tomada.trecho || (tomada.col && tomada.col[t.id]))) return false;
-          return (tomada ? segs : segs.slice(1)).some(function (sg) {
-            /* a ZONA DO TÊ: o começo do trecho que sai de cima da tomada fica sobre as conexões do ramal — conta a partir dali */
-            var a = sg.a;
-            if (tomada && d2(sg.a, tomada.P) <= EPS) { var Ls = d3(sg.a, sg.b); if (Ls <= tomada.zona + EPS) return false; var f = tomada.zona / Ls; a = { x: sg.a.x + (sg.b.x - sg.a.x) * f, y: sg.a.y + (sg.b.y - sg.a.y) * f, z: sg.a.z + (sg.b.z - sg.a.z) * f }; }
-            return H._int.segSeg3(a, sg.b, t.p1, t.p2) - r - raio(num(t.dn, 0)) < geo(par, "folga") - EPS;
-          });
-        });
+          /* o trecho que entra na coluna: a junção. ⚠ FRENTE H4 (21/10/2026): só o que CHEGA de fora dela — o vertical do desvio que
+             subia NO EIXO da coluna (a ventilação da 2ª pia/tanque) também "terminava nela" em planta e corria 1,6 m dentro dela */
+          if (exc && d2(sg.b, t.p1) <= B.TOL && d2(sg.a, t.p1) > rtB + r - EPS) continue;
+          if (H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - r - rtB < thrB) res = true;
+        }
+        for (var jj2 = 0, n2 = ix2 ? ix2.length : trs.length; jj2 < n2 && !res; jj2++) {
+          j = ix2 ? ix2[jj2] : jj2;
+          var t2 = trs[j];
+          if (tomada && (t2.id === tomada.trecho || (tomada.col && tomada.col[t2.id]))) continue;
+          if (!tomada && i === 0) continue;   /* sem tomada o 1º segmento (o do tê) fica de fora */
+          var rtC = raio(num(t2.dn, 0)), thrC = folgaB - EPS, limC = thrC + r + rtC + 1e-9;
+          if (fora(t2, limC)) continue;
+          /* a ZONA DO TÊ: o começo do trecho que sai de cima da tomada fica sobre as conexões do ramal — conta a partir dali */
+          var a = sg.a;
+          if (tomada && d2(sg.a, tomada.P) <= EPS) { var Ls = d3(sg.a, sg.b); if (Ls <= tomada.zona + EPS) continue; var f = tomada.zona / Ls; a = { x: sg.a.x + (sg.b.x - sg.a.x) * f, y: sg.a.y + (sg.b.y - sg.a.y) * f, z: sg.a.z + (sg.b.z - sg.a.z) * f }; }
+          if (H._int.segSeg3(a, sg.b, t2.p1, t2.p2) - r - rtC < thrC) res = true;
+        }
+        if (++_bateN > 400000) { _bateMemo = {}; _bateN = 0; }
+        memo[k] = res; return res;
+      }
+      /* grade em planta (células de 0,5 m): só os tubos perto da caixa do segmento são conferidos (a lista inteira era varrida a cada segmento) */
+      var GRADE_LIM = 0.45, GRADE_C = 0.5, _grades = {};
+      function _grade(qual, lista) {
+        var g = _grades[qual], n = lista.length;
+        if (g && g.n === n && g.lista === lista) return g;
+        g = { n: n, lista: lista, cel: {}, sel: {}, carimbo: 0, marca: new Array(n) };
+        for (var i = 0; i < n; i++) {
+          var t = lista[i], p = t.p1, q = t.p2; if (!p || !q) { (g.cel.solto = g.cel.solto || []).push(i); continue; }
+          var ax = Math.floor((Math.min(p.x, q.x) - GRADE_LIM) / GRADE_C), bx = Math.floor((Math.max(p.x, q.x) + GRADE_LIM) / GRADE_C), az = Math.floor((Math.min(p.z, q.z) - GRADE_LIM) / GRADE_C), bz = Math.floor((Math.max(p.z, q.z) + GRADE_LIM) / GRADE_C);
+          for (var x = ax; x <= bx; x++) for (var z = az; z <= bz; z++) { var k = x + "," + z; (g.cel[k] = g.cel[k] || []).push(i); }
+        }
+        _grades[qual] = g; return g;
+      }
+      function _acha(g, x0, x1, z0, z1) {
+        var out = [], c = ++g.carimbo, ax = Math.floor(x0 / GRADE_C), bx = Math.floor(x1 / GRADE_C), az = Math.floor(z0 / GRADE_C), bz = Math.floor(z1 / GRADE_C), i, l;
+        if (g.cel.solto) for (i = 0; i < g.cel.solto.length; i++) { out.push(g.cel.solto[i]); g.marca[g.cel.solto[i]] = c; }
+        for (var x = ax; x <= bx; x++) for (var z = az; z <= bz; z++) { l = g.cel[x + "," + z]; if (l) for (i = 0; i < l.length; i++) if (g.marca[l[i]] !== c) { g.marca[l[i]] = c; out.push(l[i]); } }
+        return out;
+      }
+      var _l1 = null, _l1n = -1;
+      function _lista1() { var n = novas.length; if (!_l1 || _l1n !== n) { _l1 = outros.concat(esExist).concat(novas.filter(function (o) { return o.op === "trecho" && o.sistema === "ventilacao"; })); _l1n = n; } return _l1; }
+      function bateEm(segs, r, exceto, tomada) {
+        var afastB = geo(par, "afastamento"), folgaB = geo(par, "folga"), i, ca = _ctxUlt;
+        if (ca && ca.r === r && ca.exceto === exceto && ca.tomada === tomada && ca.a === afastB && ca.f === folgaB && ca.nv === novas.length && ca.tr === trs.length && ca.ou === outros.length && ca.es === esExist.length && ca.exLen === (exceto ? exceto.length : 0) && ca.m === _bateMemo[ca.k]) {
+          for (i = 0; i < segs.length; i++) if (bateSegUm(segs[i], i, r, exceto, tomada, ca.m, afastB, folgaB)) return true;
+          return false;
+        }
+        /* a chave do contexto: tudo o que, fora o segmento, muda a resposta */
+        var exK = "";
+        if (exceto) { for (i = 0; i < exceto.length; i++) { var x = exceto[i]; if (!x || x.id == null) { exK = null; break; } exK += x.id + ","; } }
+        var toK = "";
+        if (tomada) toK = tomada.trecho + "|" + tomada.P.x + "," + tomada.P.y + "," + tomada.P.z + "|" + tomada.zona + "|" + (tomada.col ? Object.keys(tomada.col).join(",") : "");
+        if (exK === null) {   /* exceção sem id: sem memória (a conta direta) */
+          var salva = _bateMemo; _bateMemo = {}; _bateN = 0;
+          try { var mSem = {}; for (i = 0; i < segs.length; i++) if (bateSegUm(segs[i], i, r, exceto, tomada, mSem, afastB, folgaB)) return true; return false; } finally { _bateMemo = salva; }
+        }
+        var ctxK = r + "|" + afastB + "|" + folgaB + "|" + exK + "|" + toK + "|" + novas.length + "|" + trs.length + "|" + outros.length + "|" + esExist.length;
+        var memo = _bateMemo[ctxK] || (_bateMemo[ctxK] = {});
+        _ctxUlt = { r: r, exceto: exceto, tomada: tomada, a: afastB, f: folgaB, nv: novas.length, tr: trs.length, ou: outros.length, es: esExist.length, exLen: exceto ? exceto.length : 0, k: ctxK, m: memo };
+        for (i = 0; i < segs.length; i++) if (bateSegUm(segs[i], i, r, exceto, tomada, memo, afastB, folgaB)) return true;
+        return false;
       }
       /* a subida: do ponto no ramal (sob o piso) sobe o tê ACIMA DO EIXO, corre com aclive até o EIXO da parede mais perto e
          sobe embutida. ⚠ Antes ia à face da parede (embutir 5 cm) e, sem parede perto, o DN 100 ficava solto no cômodo */
+      var _pmCache = {};   /* perf 15/11/2026: conta pura (mesmo r e rCol = mesma perna); era refeita (geometria 3D do nó) no laço mais interno da subida */
       function pernaMinima(r, rCol) {
+        var kPm = r + "|" + (rCol || 0); if (_pmCache.hasOwnProperty(kPm)) return _pmCache[kPm];
+        return (_pmCache[kPm] = pernaMinima0(r, rCol));
+      }
+      function pernaMinima0(r, rCol) {
         var HGp = dep("HidGeo", "./biminstgeo.js"); if (!HGp || !HGp.facesNo) return null;
         var dn = Math.round(r * 2000), dnF = rCol ? Math.max(dn, Math.round(rCol * 2000)) : dn;   // hid:ok DN em mm
         var a = HGp.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dn }, [{ d: [0, -1, 0], chega: true, dn: dn }, { d: [1, 0, 0], chega: false, dn: dn }])[1], b = HGp.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnF }, [{ d: [-1, 0, 0], chega: true, dn: dnF }, { d: [0, 1, 0], chega: false, dn: dnF }])[0];
@@ -1984,6 +2053,9 @@
               segs.push({ a: { x: q.x, y: canto && d2(canto, q) <= EPS ? yC : yW, z: q.z }, b: top });
             }
             var extra = alvo ? alvo(top) : null; if (alvo && !extra) continue;
+            /* perf 15/11/2026: a nota final só SOBE a partir daqui (colisões, desvio, encaixe, solto no ar somam; nada subtrai): se o piso dela (os termos já conhecidos) já não vence a melhor,
+               a posição não muda a escolha e as conferências caras (abertura, colisão com cada tubo, desvio na parede) são puladas — o resultado é o mesmo */
+            if (best && c.viol * 1000 + Lh + (canto ? geo(par, "pesoCurva") : 0) + (extra ? extra.L : 0) + c.s * 0.01 + (semIni ? 100 : 0) - 1e-9 >= best.nota - EPS) continue;
             /* CRITÉRIO DE PROJETISTA (js/hidcriterios.js, 18/10/2026): a subida não passa no vão, na verga nem na contraverga de
                porta ou janela (o e2e do critério achou a ventilação subindo no meio da janela da parede hidráulica) */
             if (cortaAbertura(segs.concat(extra ? extra.segs : []), r)) continue;
@@ -2320,6 +2392,9 @@
               var segs = off ? [{ a: T, b: Eb }, { a: Eb, b: { x: Eb.x, y: yD, z: Eb.z } }, { a: { x: Eb.x, y: yD, z: Eb.z }, b: { x: Q.x, y: yD2, z: Q.z } }, { a: { x: Q.x, y: yD2, z: Q.z }, b: top }] : [{ a: T, b: Eb }, { a: Eb, b: top }];
               /* individual: dentro da parede o tubo segue no DN do ramal; a redução para o DN do terminal fica acima do teto, fora da parede (rente à face ela não cabe: M2 da revisão 09/11/2026) */
               if (!col && dnFimV > dnR + EPS && tetoA.y > segs[segs.length - 1].a.y + geo(par, "margemNo") && tetoA.y < top.y - geo(par, "margemNo")) { var ult = segs.pop(), yCorte = r4(tetoA.y); segs.push({ a: ult.a, b: { x: ult.a.x, y: yCorte, z: ult.a.z } }); segs.push({ a: { x: ult.a.x, y: yCorte, z: ult.a.z }, b: ult.b }); }
+              /* perf 15/11/2026: a nota só sobe com a colisão (+PESO_BATE_AFAST ou descarte): sem ela já não vence a melhor, pula as conferências caras */
+              if (melhorV) { var atende0 = 0; desc.forEach(function (q2) { var cq = q2.cam.filter(function (x) { return x.e === c.e; })[0]; if (!cq) return; var L20 = cq.s0 + (t.p1.y - ys); if (q2.limite == null || L20 <= q2.limite + EPS) atende0++; });
+                if (-atende0 * 100 + extra.L + Math.abs(off) + (off ? geo(par, "pesoCurva") * 2 : 0) + (top.y - Eb.y) * 0.01 + sq * 0.01 - 1e-9 >= melhorV.nota - EPS) return; }
               var todas = segs.concat(extra.segs), tom = { trecho: t.id, col: mesmaDescida, P: T, zona: raio(num(t.dn, 0)) + 2 * raio(dnR) + geo(par, "folga") };
               if (bateProprio(todas, raio(dnR)) || bateDuro(todas, raio(dnR), extra.exceto, tom)) return;
               var perto = bateEm(todas, raio(dnR), extra.exceto, tom) || (!col && dnFimV > 0 && bateEm(segs.slice(-1), raio(dnFimV), null, tom));

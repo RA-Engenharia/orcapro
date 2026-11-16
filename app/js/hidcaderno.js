@@ -224,6 +224,23 @@
     return { trs: trs, cxs: cxs, pecas: pecas, acess: acess, ligs: ligs, trPorId: trPorId, B: B, II: II };
   }
   function nomeMaterial(B, m) { var x = B && B.MATERIAIS ? B.MATERIAIS[m] : null; return x && x.nome ? x.nome : txt(m).replace(/_/g, " "); }
+  /* 15/11/2026 (auditoria do PDF real: a tabela do ambiente dizia DN40 2,71 m e o quadro 2,51 m): o comprimento do trecho é o do QUADRO DE MATERIAIS
+     (BimInst.qto: metros por grupo, já com o desconto do encaixe nas conexões) repartido entre os trechos do grupo pelo comprimento do eixo; sem qto, o eixo. */
+  function fatoresQto(c) {
+    var mo = c && c.modelo, B = BIm(); if (!mo || !mo.estado || !B || !B.qto) return {};
+    if (mo._hidQtoFator && mo._hidQtoFator.estado === mo.estado) return mo._hidQtoFator.f;
+    var f = {}, q = null; try { q = B.qto(mo.estado, mo.avaliarFam); } catch (e) { q = null; }
+    var porId = {}; arr(q && q.rede && q.rede.trechos).forEach(function (t) { porId[t.id] = t; });
+    arr(q && q.tubos).forEach(function (g) {
+      if (typeof g.metros !== "number") return;
+      var ts = arr(g.trechos).map(function (id) { return porId[id]; }).filter(Boolean), s3 = 0;
+      ts.forEach(function (t) { s3 += comprimento3d(t); });
+      if (s3 > 1e-9) ts.forEach(function (t) { f[t.id] = g.metros / s3; });
+    });
+    try { mo._hidQtoFator = { estado: mo.estado, f: f }; } catch (e2) { /* objeto congelado: sem cache */ }
+    return f;
+  }
+  function comprimentoEfetivo(c, t) { var k = fatoresQto(c)[t.id]; return comprimento3d(t) * (typeof k === "number" ? k : 1); }
   function comprimento3d(t) { return Math.sqrt(Math.pow(t.p1.x - t.p2.x, 2) + Math.pow(t.p1.y - t.p2.y, 2) + Math.pow(t.p1.z - t.p2.z, 2)); }
 
   /* a TABELA de conexões com o CÓDIGO (S-n, F-n…) e a de tubos; o código é o do balão do isométrico */
@@ -258,7 +275,7 @@
     d.trs.forEach(function (t) {
       var ch = [t.sistema, t.material, t.dn].join("|");
       if (!tg[ch]) { tg[ch] = { sistema: t.sistema, material: t.material, dn: t.dn, L: 0, ord: ORDEM_SIS.indexOf(t.sistema) }; tOrd.push(ch); }
-      tg[ch].L += comprimento3d(t);
+      tg[ch].L += comprimentoEfetivo(c, t);   /* UMA fonte: o mesmo metro do quadro de materiais (qto), repartido pelo comprimento do eixo */
     });
     tOrd.sort(function (a, b) { return tg[a].ord - tg[b].ord || tg[a].dn - tg[b].dn; });
     var linhasTb = tOrd.map(function (ch) { var g = tg[ch]; return [(ROT_SIS[g.sistema] || g.sistema) + " - " + nomeMaterial(B, g.material).replace(/ série normal/i, "").replace(/^PVC /, "PVC "), SIGLA[g.sistema] || "", txt(g.dn), br(g.L, 2)]; });
@@ -293,12 +310,14 @@
   }
 
   /* os pontos do ambiente com a ALTURA (m do piso acabado) de cada ligação */
+  /* DWG POR VIEWPORTS: grupo data-bloco/data-escala da vista (o contrato está em HidPranchas._int.blocoVista); sem D.s (outro tipo de desenho) só executa */
+  function blocoV(D, tipo, esc0, r, fn) { var II = I(); return D && D.s && II && II.blocoVista ? II.blocoVista(D, tipo, esc0, r, fn) : fn(); }
   function nomePonto(c, id) {
     var II = I(), base = txt(id).split(":")[0], f = null, nm = c.nomeAp(id);
     arr(c.modelo && c.modelo.estado && c.modelo.estado.familias).forEach(function (q) { if (q.id === base) f = q; });
     if (nm && txt(nm) !== txt(id) && txt(nm) !== base) return txt(nm);
     var nf = f ? II.nomeFamilia(f.famId) : ""; if (nf) return nf.toUpperCase();
-    return base.toUpperCase();
+    return "PONTO";   /* nunca o id interno do modelo na folha */
   }
   function pontosDoAmbiente(c, d, pv) {
     var out = [], vistos = {};
@@ -577,11 +596,13 @@
       }
       if (den == null) { den = esc[esc.length - 1]; d = II.desenhoCorte(c, ph, 1000 / den); bb = bboxPrim(d); a0.push("Ambiente " + am.nome + ": a vista cotada não coube nem na 1:" + den + "."); }
       var ox = R.x + padL + (R.w - padL - padR - (bb.x1 - bb.x0)) / 2 - bb.x0, oy = yy + 2 - bb.y0;
-      II.desenhar(D, d, ox, oy, chk);
-      var s0 = 1000 / den;
-      II.cadeiasElevacao(D, d, ph, s0, ox, oy, chk, { folgaH: EL.folgaH, semCotaV: !!o.semCotaV });
-      /* o título da elevação EMBAIXO, com o número da parede no círculo e a escala (referência do Rogério: "ELEVAÇÃO HID - WC 1:20") */
-      c.AP.tituloVista(D, Math.max(R.x + 1, ox + bb.x0), d.yFundo + oy + EL.folgaH + EL.folgaTit * 2, EL.titulo + " - " + txt(am.nome).toUpperCase(), "ESC 1:" + den, idx + 1);
+      blocoV(D, "elevacao", "1:" + den, { x: R.x, y: yy, w: R.w, h: hEach }, function () {   /* DWG por viewports: uma viewport por elevação, na escala dela */
+        II.desenhar(D, d, ox, oy, chk);
+        var s0 = 1000 / den;
+        II.cadeiasElevacao(D, d, ph, s0, ox, oy, chk, { folgaH: EL.folgaH, semCotaV: !!o.semCotaV });
+        /* o título da elevação EMBAIXO, com o número da parede no círculo e a escala (referência do Rogério: "ELEVAÇÃO HID - WC 1:20") */
+        c.AP.tituloVista(D, Math.max(R.x + 1, ox + bb.x0), d.yFundo + oy + EL.folgaH + EL.folgaTit * 2, EL.titulo + " - " + txt(am.nome).toUpperCase(), "ESC 1:" + den, idx + 1);
+      });
       arr(d.avisos).forEach(function (m) { a0.push("Ambiente " + am.nome + " (vista): " + m); });
       c.prims.push(d);
       yy += hEach;
@@ -772,7 +793,7 @@
     if (am.semRede) {
       /* R02: ambiente com ponto de utilização lançado mas SEM rede traçada: planta + lista dos pontos a ligar + a pendência por escrito (nada inventado) */
       var Rp = { x: R1.x, y: R1.y, w: R1.w + cw[1] * 0.35, h: R1.h * 0.9 };
-      plantaAmbiente(c, D, Rp, am, pv, d, [], chk);
+      blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, Rp, function () { return plantaAmbiente(c, D, Rp, am, pv, d, [], chk); });
       var xT = R1.x + R1.w + cw[1] * 0.35 + gap, wT = body.x + body.w - xT, yT = R1.y;
       D.texto(xT, yT + 3, "PONTOS DE UTILIZAÇÃO A LIGAR", 3.2, { peso: 0.25, cor: "#c00000" }); yT += 8;
       arr(am.pendentes).forEach(function (q) {
@@ -787,7 +808,7 @@
     var phsV = o.semVista ? [] : paredesDoAmbiente(c, am, pv);
     var fPl = phsV.length ? (DT ? DT.fPlanta : 0.36) : 0.62, fVi = phsV.length ? (DT ? DT.fVista : 0.42) : 0;
     var R1p = { x: R1.x, y: R1.y, w: R1.w, h: R1.h * fPl };
-    var pl = plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk);
+    var pl = blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, R1p, function () { return plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk); });
     var yP = R1.y + R1p.h + 3;
     if (phsV.length) {
       /* 13/11/2026: a cadeia de cotas da vista sai ABAIXO do desenho (yFundo + 5) e passava do retângulo reservado: o título
@@ -807,7 +828,7 @@
     });
     if (pontos.length > maxP) c.avisos.push("Ambiente " + am.nome + ": " + (pontos.length - maxP) + " ponto(s) a mais que a lista cabe (ver planta).");
     /* coluna 2: o isométrico 30° com o balão de código */
-    isoAmbiente(c, D, R2, am, pv, tb, chk, DT);
+    blocoV(D, "iso", "sem", R2, function () { isoAmbiente(c, D, R2, am, pv, tb, chk, DT); });
     /* coluna 3: tabelas e notas */
     var yy = R3.y;
     yy += tabelaCaderno(c, D, R3.x, yy, R3.w, "TUBOS - " + (am.nomeBase || am.nome), ["Descrição", "Abrev.", "DN (mm)", "Compr. (m)"], d.trs.length ? tb.linhasTb : [], [0.52, 0.12, 0.16, 0.20], { al: ["E", "C", "C", "C"], fs: 1.9 }) + 3;
@@ -1109,7 +1130,7 @@
     return null;
   }
 
-  var HidCaderno = { VERSAO: 1, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, cotasLocacao: cotasLocacao, afinarLocacao: afinarLocacao, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente };
+  var HidCaderno = { VERSAO: 1, comprimentoEfetivo: comprimentoEfetivo, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, cotasLocacao: cotasLocacao, afinarLocacao: afinarLocacao, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente };
   global.HidCaderno = HidCaderno;
   if (typeof module !== "undefined" && module.exports) module.exports = HidCaderno;
   /* hid:geometria-fim */

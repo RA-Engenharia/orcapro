@@ -835,7 +835,17 @@
       pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]);
     });
     Pl.semCaminho.forEach(function (s) { if (s.fonte) { pend("bar.interligacao", nome + ": o coletor não acha caminho livre até a saída da caixa " + s.sat.id + " — tubo, caixa ou equipamento no caminho; essa caixa ficou fora do barrilete comum", [s.sat.id, cx.id]); return; } pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático" + (TEL.length ? " (com telhado no modelo a horizontal tem de correr ABAIXO da cobertura, sobre a laje ou no entreforro: confira a altura da espera, do forro e da laje sob o telhado)" : "") + "; ligue à mão", [s.trecho, cx.id]); });
-    if (!opc.satelite && (!Pl.folhas.length || Pl.colunaFalha)) return res;
+    /* 15/11/2026 (auditoria do PDF real: banheiro + caixa de 1000 L a +2,80, "SEM LIGAÇÃO" nas 4 ligações): caixa baixa, sem caminho ou coluna que esbarra
+       NÃO pode deixar a caixa sem tubo nenhum nos conectores. Nesses casos sai a LIGAÇÃO MÍNIMA REAL: saída (toco com o registro e a ventilação),
+       extravasor, limpeza e entrada com a boia — presas aos conectores da família, com DN e destino; as colunas ficam de fora, com a pendência (e o
+       "subir a caixa X m") de antes. O toco da saída fica marcado "continua" (ponta aberta à espera do barrilete). Só na saída principal. */
+    var minima = false;
+    function planoMinimo() { return { baixa: false, folhas: [], colunasFora: [], semCaminho: [], cadeias: [], decl: decl0, y0: cx.S.y, faltaMax: -1, iR: 0, yDe: function () { return cx.S.y; }, filhos: function () { return []; } }; }
+    if (!opc.satelite && (!Pl.folhas.length || Pl.colunaFalha)) {
+      if (opc.secundaria) return res;
+      minima = true; Pl = planoMinimo(); tomada = null; novos = baseTopo.slice();
+      if (!res.pendencias.length) pend("bar.sem_coluna", nome + ": nenhuma coluna de água fria ficou ligada ao barrilete — saída, extravasor, limpeza e boia foram ligados à caixa; ligue as esperas à mão (ou corrija o que impede) e monte de novo", [cx.id]);
+    }
     var y0 = Pl.y0, faltaMax = Pl.faltaMax;
     if (Pl.baixa) {
       /* ⚠ a caixa está BAIXA DEMAIS para o barrilete: a saída abaixo do forro/laje ou das esperas — nada de tubo subindo (bolsa de
@@ -850,7 +860,8 @@
       var bsBok = bsB.filter(function (b) { return b.acao; });
       if (bsBok.length) { var pB = res.pendencias[res.pendencias.length - 1]; pB.acao = bsBok[0].acao; }
       bsB.forEach(function (b) { res.pendencias.push(b); });
-      return res;
+      if (opc.secundaria) return res;
+      minima = true; Pl = planoMinimo(); tomada = null; novos = baseTopo.slice();
     }
     var decl = Pl.decl, folhas = Pl.folhas, iR = Pl.iR, yDe = Pl.yDe, filhos = Pl.filhos;
     if (!opc.satelite && decl < decl0 - EPS) { var subD = Math.ceil((faltaMax + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
@@ -861,7 +872,7 @@
     var ops = res.ops;
     /* N23: com a tomada vertical, o toco e a ventilação ficam na cota da saída e a descida liga no início do barrilete (yDe(iR)) */
     var yA = tomada ? cx.S.y : yDe(iR);
-    var tS = T("saida", "agua_fria", dnSaida, S0, P3(A.x, yA, A.z), { aplicacao: "reservacao" });
+    var tS = T("saida", "agua_fria", dnSaida, S0, P3(A.x, yA, A.z), minima ? { aplicacao: "reservacao", continua: "p2" } : { aplicacao: "reservacao" });
     ops.push(tS);
     var gUp = BIC() && BIC().giroPara ? BIC().giroPara({ x: u.x, y: 0, z: u.z }, { x: 0, y: 1, z: 0 }) : 0;
     var rgS = { op: "acessorio", id: novoId("rg-saida"), famId: RG_FAM, tipoId: tipoRg, trecho: tS.id, novoId: tS.id + "b", x: r4(S0.x + u.x * GEO_BAR.tocoSaida / 2), y: r4((S0.y + yA) / 2), z: r4(S0.z + u.z * GEO_BAR.tocoSaida / 2), comprimento: Lr, bar: cx.id, barParte: "registro_saida" };
@@ -932,8 +943,8 @@
       }
       pend("bar.registro_coluna", nome + ": sem espaço para o registro no início da coluna da espera " + l.trecho + " (NBR 5626:2020 6.5.12.4 b) — ponha o registro à mão", [tc.id]);
     });
-    if (!res.ligadas && !opc.satelite) return res;
-    res.ok = true;
+    if (!res.ligadas && !opc.satelite && !minima) return res;
+    res.ok = !minima; res.minima = minima;
     res.decl = decl; res.dnSaida = dnSaida;
     /* a 2ª SAÍDA (coluna exclusiva da válvula de descarga) só tem o toco, o registro, a ventilação e a coluna dela: extravasor, limpeza,
        boia, respiro e o orçamento da caixa são da saída principal (que recebe o DN e o ângulo desta para o adaptador e o furo) */

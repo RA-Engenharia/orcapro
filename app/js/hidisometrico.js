@@ -67,6 +67,7 @@
     rJoelho: 0.7, rTe: 1.0, rPonto: 1.1, rBalaoMin: 3.2,
     regC: 2.4, regL: 1.5,                                 /* registro: comprimento e meia-largura da "gravata" */
     caixaL: 3.2,                                          /* ralo/caixa: lado do quadrado */
+    colunaRealMin_m: 1.5,                                 /* coluna de verdade (parte do barrilete/caixa): desce ≥ isto; o resto é sub-ramal (SR-n) */
     colunaMin_m: 1.0,                                     /* vertical de AF acima disto é coluna */
     quebraMin_m: 1.2, quebraDesenho_m: 0.6, quebraTam: 1.6, /* ventilação vertical com ponta livre acima disto sai INTERROMPIDA (cota com o comprimento real) */
     tolNo_m: 0.05,                                        /* ponta de ventilação que toca o esgoto */
@@ -204,8 +205,17 @@
     vert.forEach(function (t, i) { var r = U.f(i); if (!cad[r]) { cad[r] = { ids: [], x: t.p1.x, z: t.p1.z, ymin: Infinity, ymax: -Infinity, L: 0 }; ordem.push(r); } var c = cad[r]; c.ids.push(t.id); c.L += Math.abs(t.p2.y - t.p1.y); c.ymin = Math.min(c.ymin, t.p1.y, t.p2.y); c.ymax = Math.max(c.ymax, t.p1.y, t.p2.y); });
     var lista = ordem.map(function (r) { return cad[r]; }).filter(function (c) { return c.L >= minimo - K.eps; });
     lista.sort(function (a, b) { return a.x - b.x || a.z - b.z; });
-    var out = {};
-    lista.forEach(function (c, i) { c.nome = "AF-" + (i + 1); c.ids.forEach(function (id) { out[id] = c; }); });
+    var out = {}, nC = 0, nS = 0, yTopo = -Infinity;
+    trechosAF.forEach(function (t) { yTopo = Math.max(yTopo, t.p1.y, t.p2.y); });
+    /* 15/11/2026 (auditoria do PDF real): "AF-n" = COLUNA só se a cadeia vertical PARTE do barrilete/caixa (ou do nível mais alto da rede de AF) e desce ≥ 1,5 m;
+       o resto (descida de um ramal horizontal até o ponto) é SUB-RAMAL "SR-n" */
+    function ehColuna(c) {
+      if (c.L < K.colunaRealMin_m - K.eps) return false;
+      if (c.ids.some(function (id) { return /^bar-/.test(String(id)); })) return true;
+      var doBar = trechosAF.some(function (t) { return /^bar-/.test(String(t.id)) && !t.vertical && [t.p1, t.p2].some(function (p) { return Math.abs(p.x - c.x) < K.tolNo_m && Math.abs(p.z - c.z) < K.tolNo_m && Math.abs(p.y - c.ymax) < 0.05; }); });
+      return doBar || c.ymax >= yTopo - 0.05;
+    }
+    lista.forEach(function (c) { c.coluna = ehColuna(c); c.nome = c.coluna ? "AF-" + (++nC) : "SR-" + (++nS); c.ids.forEach(function (id) { out[id] = c; }); });
     return out;
   }
 
@@ -456,13 +466,14 @@
       /* nunca o id interno na folha ("ambbac-ve-terminal"): sem nome do padrão, o rótulo pelo que a peça é */
       else if (/terminal/i.test(String(l.alvo || ""))) nome = "TV (terminal de ventilação)";
       else if (l.tipo === "peca" && /[-_]/.test(String(nome))) nome = "Peça";
+      else if (l.tipo !== "peca" && /[-_]/.test(String(nome))) nome = "";   /* aparelho sem sigla: só a altura (nunca o id interno do modelo) */
       if (l.tipo === "peca") {
         var q = K.caixaL / 2;
         S.push({ tipo: "caixa", x: p[0], y: p[1], r: q, camada: "HID-SIMBOLO", box: [p[0] - q, p[1] - q, p[0] + q, p[1] + q], id: l.alvo });
         pendentes.push({ s: nome + "  " + sinal(alt, 2) + " m", h: K.hPeq, tipo: "altura", camada: "HID-TEXTO", trecho: l.trecho, anchors: [p], prio: 0 });
       } else {
         S.push({ tipo: "ponto", x: p[0], y: p[1], r: K.rPonto, camada: "HID-SIMBOLO", box: [p[0] - K.rPonto, p[1] - K.rPonto, p[0] + K.rPonto, p[1] + K.rPonto], id: l.alvo });
-        pendentes.push({ s: nome + "  " + sinal(alt, 2) + " m", h: K.hPeq, tipo: "altura", camada: "HID-TEXTO", trecho: l.trecho, anchors: [p], prio: 0 });
+        pendentes.push({ s: (nome ? nome + "  " : "") + sinal(alt, 2) + " m", h: K.hPeq, tipo: "altura", camada: "HID-TEXTO", trecho: l.trecho, anchors: [p], prio: 0 });
       }
     });
 
@@ -585,7 +596,7 @@
   }
 
   /* hid:fisica-fim */
-  var HidIsometrico = { VERSAO: 1, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
+  var HidIsometrico = { VERSAO: 1, colunasAF: colunasAF, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
                         SIGLA_SISTEMA: SIGLA_SISTEMA, NOME_SISTEMA: NOME_SISTEMA };
   global.HidIsometrico = HidIsometrico;
   if (typeof module !== "undefined" && module.exports) module.exports = HidIsometrico;

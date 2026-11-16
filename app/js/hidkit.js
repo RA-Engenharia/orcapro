@@ -166,7 +166,21 @@
 
   /* --------------------------------------------------- GEOMETRIA DO APARELHO */
   function famDe(estado, id) { return arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(id); })[0] || null; }
-  function avaliar(avaliarFam, fi) { try { return typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null; } catch (e) { return null; } }
+  /* perf 15/11/2026: a avaliação da família (gera as malhas) é a mesma para o mesmo (família, tipo, instância): o traçado a pedia dezenas de vezes por aparelho
+     (membros/pisoDe de cada ambiente). Memória curta ligada à FUNÇÃO avaliarFam (cada Traçar cria a sua) e que se esvazia após 60 s parada — editar a família
+     entre dois cliques nunca enxerga a conta velha. */
+  var AVC = { fn: null, m: null, t: 0 };
+  function avaliar(avaliarFam, fi) {
+    try {
+      if (typeof avaliarFam !== "function") return null;
+      var agora = Date.now();
+      if (AVC.fn !== avaliarFam || !AVC.m || agora - AVC.t > 60000) { AVC.fn = avaliarFam; AVC.m = {}; }
+      AVC.t = agora;
+      var k = String(fi.famId) + "|" + String(fi.tipoId) + "|" + JSON.stringify(fi.inst === undefined ? null : fi.inst);
+      if (Object.prototype.hasOwnProperty.call(AVC.m, k)) return AVC.m[k];
+      return (AVC.m[k] = avaliarFam(fi.famId, fi.tipoId, fi.inst));
+    } catch (e) { return null; }
+  }
   function conectores(avaliarFam, fi, pose) {
     var av = avaliar(avaliarFam, fi); if (!av) return [];
     var p = pose || fi;

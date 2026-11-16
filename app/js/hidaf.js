@@ -823,6 +823,30 @@
       aviso(out.avisos, SIS, "erro", "pressão insuficiente em " + quem + ": faltam " + f2(ss.deficit) + " kPa " + (ss.estatica ? "já na carga estática — nenhum DN resolve" : (ss.travado ? "e os trechos travados não deixam aumentar o DN o bastante" : "mesmo com os maiores DN possíveis")),
             pn ? [pn.famInst] : elemDoNo(ss.no), { texto: (ss.travado ? "destravar os trechos do caminho (o DN travado limita), ou " : "") + "elevar o nível d'água mínimo em " + f2(H.kpaParaM(ss.deficit, fluido.rho)) + " m, ou pressurizar o ramal" });
     });
+    /* 15/11/2026 (auditoria do PDF real: banheiro com a caixa de 1000 L a +2,80 m e o chuveiro a +2,20 m — ~0,6 m.c.a. estáticos, abaixo do mínimo do
+       ponto): a pressão que a CARGA ESTÁTICA do nível d'água mínimo não alcança reprova com a SOLUÇÃO escrita (subir a caixa quanto, ou pressurizador) e
+       vira ITEM A CONFIRMAR (a pendência vai ao memorial e à prancha). Vale também para o ponto DESLIGADO da alimentação (a ligação da caixa não fechou):
+       sem rede não há perda de carga a somar, mas o nível d'água mínimo menos a cota do ponto é o TETO da pressão — se nem ele atinge o mínimo, nenhuma
+       ligação resolve. Só reservatório (rede pública depende da concessionária). */
+    var faltaEst = [];
+    semSaida.forEach(function (ss) { var pn = pontoDe[ss.no]; if (ss.estatica && pn && !rede) faltaEst.push({ quem: pn.famInst + " (" + pn.aparelho + ")", deficit: ss.deficit }); });
+    if (!rede) Object.keys(G.nos).forEach(function (nid) {
+      var n = G.nos[nid]; if (visto[nid] || !n.aparelho) return;
+      var a = n.aparelho, papel = CONECTOR_ALIMENTACAO[a.famId] && CONECTOR_ALIMENTACAO[a.famId][a.cid]; if (papel) return;
+      var ap = aparelhosForcados[a.famInst] || aparelhoDaFamilia(a.famId); if (!ap) return;
+      var pg0 = ctx.consulta("af.pressao.dinamica_minima_ponto", null, "valor", "ponto " + a.famInst), pp0 = perfil.aparelho ? null : opcional(ctx, "af.aparelhos", { aparelho: ap }, "pressao_min_kpa");
+      var cs0 = [pg0, pp0].filter(function (c) { return c && c.ok; }).sort(function (x, y) { return num(y.valor, 0) - num(x.valor, 0); });
+      if (!cs0.length) return;
+      var pmin0 = num(cs0[0].valor, null), disp0 = cargaMinKpa(nid); if (pmin0 == null || disp0 >= pmin0) return;
+      verif(a.famInst, "pressão estática do ponto (ligação à caixa não fechou)", disp0, pmin0, "kPa", pmin0 > 0 ? disp0 / pmin0 : null, false, ["nível d'água mínimo (" + f2(Hsrc) + " m) menos a cota do ponto (" + f2(n.y) + " m) = " + f2(disp0) + " kPa, sem perda de carga: é o teto da pressão do ponto " + a.famInst + " (" + ap + ")"], cs0[0].fonte);
+      aviso(out.avisos, SIS, "erro", "pressão insuficiente em " + a.famInst + " (" + ap + "): a carga estática (" + f2(disp0) + " kPa) não atinge o mínimo de " + f2(pmin0) + " kPa, mesmo sem perda de carga", [a.famInst], { texto: "elevar o nível d'água mínimo em " + f2(H.kpaParaM(pmin0 - disp0, fluido.rho)) + " m, ou pressurizar o ramal" });
+      faltaEst.push({ quem: a.famInst + " (" + ap + ")", deficit: pmin0 - disp0 });
+    });
+    if (faltaEst.length) {
+      var piorF = faltaEst.reduce(function (m, q) { return Math.max(m, q.deficit); }, 0), subF = Math.ceil(H.kpaParaM(piorF, fluido.rho) * 100 - 1e-9) / 100;
+      ctx.pendencia("af.pressao.carga_estatica[" + (nS.aparelho ? nS.aparelho.famInst : "reservatorio") + "]",
+        "Pressão insuficiente por carga estática em " + faltaEst.map(function (q) { return q.quem; }).slice(0, 4).join(", ") + ": faltam " + f2(piorF) + " kPa (" + f2(subF) + " m.c.a.) com o nível d'água mínimo a +" + f2(Hsrc) + " m. Solução: subir a caixa d'água no mínimo " + f2(subF) + " m (nível d'água mínimo a +" + f2(Hsrc + subF) + " m, antes das perdas de carga, que somam ao valor) ou instalar pressurizador na saída da caixa; o responsável técnico escolhe e confirma", NOME);
+    }
     G.ordemN.forEach(function (nid) { if (visto[nid] && filhos[nid] && filhos[nid].length > 2) aviso(out.avisos, SIS, "aviso", "nó com " + (filhos[nid].length + 1) + " trechos (cruzeta): perda localizada assumida como saída lateral de tê", elemDoNo(nid), { texto: "desdobrar em dois tês" }); });
 
     /* ================= NBR 5626:2020 — regras novas (decisões do RT, 17/10/2026; CONTRATO §1.2) */

@@ -2599,7 +2599,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
           /* ESGOTO/VENTILAÇÃO: a conexão (joelho, junção, luva, TE...) sai BRANCA (PVC esgoto série normal), o tubo segue verde */
           if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
-          var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;   /* 15/11/2026: a ventilação em ROXO (a cor do sistema no 3D), não o verde do esgoto — pedido do Rogério */
+          /* PLANTA DE ÁGUA FRIA (15/11/2026, auditoria do PDF real: "o esgoto fantasma cinza pesado confunde"): no modo AF (foco só água) o esgoto/ventilação sai em cinza
+           MUITO claro, opacidade 0,25 e SEM escrever profundidade — o tubo de AF e as conexões aparecem por cima, nada é escondido */
+        if (esg && focA && !focE) { if (!MAT.esgFraco) MAT.esgFraco = new THREE.MeshBasicMaterial({ color: 0xd9dde2, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide }); bk.trocas.push([m, m.material]); m.material = MAT.esgFraco; return; }
+        var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;   /* 15/11/2026: a ventilação em ROXO (a cor do sistema no 3D), não o verde do esgoto — pedido do Rogério */
           bk.trocas.push([m, m.material]); m.material = nv;
         });
         try { sincronizarAgregado(); } catch (_) {}   /* ⚠ o AGREGADO (as peças mescladas) desenha a cor: sem espelhar, a foto saía com a cor antiga */

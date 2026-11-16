@@ -95111,10 +95111,19 @@ out.push(o);
 });
 return out;
 }
+var AVM = { fn: null, m: null, t: 0 };
+function avalMemo(avaliarFam, fi) {
+var agora = Date.now();
+if (AVM.fn !== avaliarFam || !AVM.m || agora - AVM.t > 60000) { AVM.fn = avaliarFam; AVM.m = {}; }
+AVM.t = agora;
+var k = String(fi.famId) + "|" + String(fi.tipoId) + "|" + JSON.stringify(fi.inst === undefined ? null : fi.inst);
+if (Object.prototype.hasOwnProperty.call(AVM.m, k)) return AVM.m[k];
+return (AVM.m[k] = avaliarFam(fi.famId, fi.tipoId, fi.inst));
+}
 function volumesFamilias(estado, avaliarFam) {
 var out = [];
 arr(estado && estado.familias).forEach(function (fi) {
-var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && (av.caixaObstaculo || av.caixa);
+var av = typeof avaliarFam === "function" ? avalMemo(avaliarFam, fi) : null, b = av && (av.caixaObstaculo || av.caixa);
 if (!b || ![b.x0, b.x1, b.y0, b.y1, b.z0, b.z1].every(isFinite) || b.y1 <= TOL) return;
 var rot = num(fi.rotY, 0), c = Math.cos(rot), s = Math.sin(rot), mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2;
 out.push({ id: fi.id, famId: fi.famId, cx: r4(num(fi.x, 0) + mx * c + mz * s), cz: r4(num(fi.z, 0) - mx * s + mz * c), ux: c, uz: -s,
@@ -95250,7 +95259,7 @@ return { ok: true, ops: ops, avisos: avisos, trechos: ids };
 function conectoresDoEstado(estado, avaliarFam) {
 var out = [];
 arr(estado && estado.familias).forEach(function (fi) {
-var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null;
+var av = typeof avaliarFam === "function" ? avalMemo(avaliarFam, fi) : null;
 if (!av || !arr(av.conectores).length) return;
 conectoresDe(av, fi).forEach(function (k) { out.push(k); });
 });
@@ -214619,52 +214628,8 @@ if (q.cad) (acoes.cad || baixarCad)(o, { base: base });
 if (q.dwg) (acoes.dwg || baixarDwg)(o, { base: base, partes: partesHidro(r) });
 return true;
 }
-function avisaLigacao(motivo, acoes) {
-var t = "O CAD único não foi ligado à tela de pranchas do hidro: " + motivo + ". Use o botão CAD/DWG da faixa Exportar do BIM.";
-try { if (global.console && global.console.warn) global.console.warn("[BimCadUI] " + t); } catch (e) { }
-(acoes && acoes.aviso ? acoes.aviso : function (x) { toast(x, "aviso"); })(t);
-return false;
-}
-function acoplarTela(d, HU, acoes) {
-var el = d.querySelector('[data-hpr="tela"]'); if (!el) return avisaLigacao("a tela não tem data-hpr=\"tela\"", acoes);
-var raiz = el.parentNode, modal = (el.closest ? el.closest("#modal-bg") : null) || raiz;
-if (raiz.querySelector('[data-bcad-out="cad"]')) return true;
-var ancora = raiz.querySelector('[data-hpr-out="dxf"]'), lab = ancora && ancora.parentNode;
-if (lab && lab.insertAdjacentHTML) lab.insertAdjacentHTML("afterend", opcoesHtml("bcad"));
-else if (raiz.insertAdjacentHTML) { raiz.insertAdjacentHTML("beforeend", opcoesHtml("bcad")); }
-else return avisaLigacao("sem lugar para as opções", acoes);
-if (ancora) ancora.checked = false;
-var bt = null, bts = modal.querySelectorAll ? modal.querySelectorAll("#modal-footer button") : [];
-Array.prototype.forEach.call(bts, function (b) { if (!bt && /^\s*Gerar pranchas\s*$/.test(b.textContent || "")) bt = b; });
-if (!bt || typeof bt.onclick !== "function") {
-["cad", "dwg"].forEach(function (k) { var c = raiz.querySelector('[data-bcad-out="' + k + '"]'); if (c) { c.disabled = true; c.checked = false; } });
-return avisaLigacao("o botão \"Gerar pranchas\" do modal não foi achado", acoes);
-}
-var prev = bt.onclick;
-bt.onclick = function () {
-var q = lerQ(raiz), r0 = HU.ultimo ? HU.ultimo().r : null, ret = prev.apply(this, arguments);
-try { aposGerarHidro(q, r0, HU, acoes); } catch (ex) { toast("O CAD não saiu: " + (ex && ex.message || ex), "aviso"); }
-return ret;
-};
-ligar(raiz, "bcad");
-return true;
-}
-function ligarNaTelaHidro(opc) {
-opc = opc || {}; var HU = opc.HU || global.HidPranchasUI, d = opc.doc || global.document;
-if (!HU || typeof HU.abrir !== "function") return avisaLigacao("HidPranchasUI.abrir não existe mais", opc.acoes);
-if (HU.abrir._bcad) return true;
-var orig = HU.abrir;
-HU.abrir = function () {
-var ok = orig.apply(this, arguments);
-if (ok && d) { try { acoplarTela(d, HU, opc.acoes); } catch (ex) { avisaLigacao(ex && ex.message || String(ex), opc.acoes); } }
-return ok;
-};
-HU.abrir._bcad = true;
-return true;
-}
-var BimCadUI = { opcoesHtml: opcoesHtml, ligar: ligar, baixarCad: baixarCad, gerarDwg: gerarDwg, gerarDwgPartes: gerarDwgPartes, partesHidro: partesHidro, DXF_MAX_DWG: DXF_MAX_DWG, baixarDwg: baixarDwg, instalarCtbs: instalarCtbs, ligarNaTelaHidro: ligarNaTelaHidro, aposGerarHidro: aposGerarHidro, cadDoHidro: cadDoHidro, DWG_SO_NO_APP: DWG_SO_NO_APP, CTB_SO_NO_APP: CTB_SO_NO_APP };
+var BimCadUI = { opcoesHtml: opcoesHtml, ligar: ligar, baixarCad: baixarCad, gerarDwg: gerarDwg, gerarDwgPartes: gerarDwgPartes, partesHidro: partesHidro, DXF_MAX_DWG: DXF_MAX_DWG, baixarDwg: baixarDwg, instalarCtbs: instalarCtbs, lerQ: lerQ, aposGerarHidro: aposGerarHidro, cadDoHidro: cadDoHidro, DWG_SO_NO_APP: DWG_SO_NO_APP, CTB_SO_NO_APP: CTB_SO_NO_APP };
 global.BimCadUI = BimCadUI;
-try { if (global.document) ligarNaTelaHidro(); } catch (eL) { }
 if (typeof module !== "undefined" && module.exports) module.exports = BimCadUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }

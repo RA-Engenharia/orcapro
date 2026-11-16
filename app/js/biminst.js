@@ -685,10 +685,22 @@
      do js/hidrota.js: centro (cx, cz), eixo u = X local no mundo, meias medidas hl (X) e hw (Z), cotas
      y0..y1. Família que fica ABAIXO do piso (ralo, caixa sifonada, caixa de gordura enterrada) não entra:
      o tubo chega nela por dentro, é a função dela. */
+  /* perf 15/11/2026: a avaliação da família (gera as malhas) é a mesma para a mesma (família, tipo, instância); o Traçar chamava a rede/conectores/volumes dezenas de vezes sobre o
+     modelo inteiro. Memória ligada à FUNÇÃO avaliarFam (cada clique do Traçar cria a sua) e que se esvazia após 60 s parada: editar a família depois não enxerga a conta velha.
+     Só estas leituras (volumesFamilias, conectoresDoEstado) usam; ninguém altera o objeto devolvido. */
+  var AVM = { fn: null, m: null, t: 0 };
+  function avalMemo(avaliarFam, fi) {
+    var agora = Date.now();
+    if (AVM.fn !== avaliarFam || !AVM.m || agora - AVM.t > 60000) { AVM.fn = avaliarFam; AVM.m = {}; }
+    AVM.t = agora;
+    var k = String(fi.famId) + "|" + String(fi.tipoId) + "|" + JSON.stringify(fi.inst === undefined ? null : fi.inst);
+    if (Object.prototype.hasOwnProperty.call(AVM.m, k)) return AVM.m[k];
+    return (AVM.m[k] = avaliarFam(fi.famId, fi.tipoId, fi.inst));
+  }
   function volumesFamilias(estado, avaliarFam) {
     var out = [];
     arr(estado && estado.familias).forEach(function (fi) {
-      var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && (av.caixaObstaculo || av.caixa);   /* revisão H5: sem as peças rentes à parede */
+      var av = typeof avaliarFam === "function" ? avalMemo(avaliarFam, fi) : null, b = av && (av.caixaObstaculo || av.caixa);   /* revisão H5: sem as peças rentes à parede */
       if (!b || ![b.x0, b.x1, b.y0, b.y1, b.z0, b.z1].every(isFinite) || b.y1 <= TOL) return;   /* tudo abaixo da origem (só a tampa/grelha no piso) = enterrada */
       var rot = num(fi.rotY, 0), c = Math.cos(rot), s = Math.sin(rot), mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2;
       out.push({ id: fi.id, famId: fi.famId, cx: r4(num(fi.x, 0) + mx * c + mz * s), cz: r4(num(fi.z, 0) - mx * s + mz * c), ux: c, uz: -s,
@@ -849,7 +861,7 @@
   function conectoresDoEstado(estado, avaliarFam) {
     var out = [];
     arr(estado && estado.familias).forEach(function (fi) {
-      var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null;
+      var av = typeof avaliarFam === "function" ? avalMemo(avaliarFam, fi) : null;
       if (!av || !arr(av.conectores).length) return;
       conectoresDe(av, fi).forEach(function (k) { out.push(k); });
     });

@@ -1762,6 +1762,7 @@ if (esg) { window.__focoDiag.papeisEsg = window.__focoDiag.papeisEsg || {}; wind
 var pp = m.userData.instPapel;
 if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
 if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
+if (esg && focA && !focE) { if (!MAT.esgFraco) MAT.esgFraco = new THREE.MeshBasicMaterial({ color: 0xd9dde2, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide }); bk.trocas.push([m, m.material]); m.material = MAT.esgFraco; return; }
 var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
 });

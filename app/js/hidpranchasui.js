@@ -129,7 +129,9 @@
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "—") + "</div>" +
       '<label>QR do portal da obra (link) <input data-hpr="qr" value="' + esc(cfg.qr) + '" style="width:100%" placeholder="vazio = sem QR"></label>' +
       '<label style="display:block"><input type="checkbox" data-hpr-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-hpr-out="dxf" checked> DXF com carimbo (abre no CAD e salva em DWG)</label>' +
-      '<label style="display:block"><input type="checkbox" data-hpr-out="abas" checked> Abrir nas abas de folha do BIM</label></fieldset>';
+      '<label style="display:block"><input type="checkbox" data-hpr-out="abas" checked> Abrir nas abas de folha do BIM</label>' +
+      /* 16/11/2026: o CAD único (DXF) e o DWG com uma viewport por vista na escala (data-bloco/data-escala das folhas) — js/bimcadui.js só fornece o HTML, a sonda e a geração */
+      (global.BimCadUI && global.BimCadUI.opcoesHtml ? global.BimCadUI.opcoesHtml("bcad") : "") + '</fieldset>';
     return h + '</div><div data-hpr="msg" class="muted" style="margin-top:8px;font-size:12.5px"></div>';
   }
   /* lê a tela → configuração (puro sobre um "leitor" de elementos; no navegador é o document) */
@@ -299,7 +301,9 @@
       { texto: "Gerar pranchas", classe: "primary", onClick: function () {
         var raiz = global.document.querySelector('[data-hpr="tela"]').parentNode, c = configDaTela(raiz, cfg), msg = raiz.querySelector('[data-hpr="msg"]');
         var sa = {}; Array.prototype.forEach.call(raiz.querySelectorAll("[data-hpr-out]"), function (e) { sa[e.getAttribute("data-hpr-out")] = !!e.checked; });
+        var BCU = global.BimCadUI, qCad = BCU && BCU.lerQ ? BCU.lerQ(raiz) : null, r0 = ULTIMO ? ULTIMO.r : null;   /* opções do CAD/DWG lidas ANTES + a geração anterior (nunca reaproveitada) */
         var r = null; try { r = gerar(ctx, c, sa); } catch (e) { r = { ok: false, avisos: [e && e.message ? e.message : String(e)] }; }
+        if (qCad && (qCad.cad || qCad.dwg)) { try { BCU.aposGerarHidro(qCad, r0, HidPranchasUI); } catch (eCad) { toast("O CAD não saiu: " + (eCad && eCad.message || eCad), "aviso"); } }
         if (!r || !r.ok) { if (msg) msg.textContent = "Não gerou: " + arr(r && r.avisos).join(" "); return; }
         U.fecharModal();
         var v = r.verificacao || {};
@@ -307,6 +311,7 @@
       } }
     ]);
     var el = global.document.querySelector('[data-hpr="tela"]');
+    try { if (el && global.BimCadUI && global.BimCadUI.ligar) { var xd = el.parentNode.querySelector('[data-hpr-out="dxf"]'); if (xd) xd.checked = false; global.BimCadUI.ligar(el.parentNode, "bcad"); } } catch (eLg) { /* sem a sonda do DWG: as opções ficam como vieram */ }
     if (el) el.onclick = function (e) {
       var b = e.target.closest ? e.target.closest("[data-hpr-3d]") : null; if (!b) return;
       var id = b.getAttribute("data-hpr-3d"), a = ambientesDoCtx(ctx).filter(function (x) { return x.id === id; })[0];

@@ -6,7 +6,7 @@
  *   BimCadUI.baixarCad(o, opc)                ZIP do DXF + CTB + LEIA-ME (o = BimCad.paraCad | paraCadFolhas)
  *   BimCadUI.gerarDwg(o, opc)                 Promise({ ok, zip, nome, avisos } | { ok:false, erro }): manda o DXF ao servidor local, volta o DWG e monta o ZIP
  *   BimCadUI.instalarCtbs(opc)                copia TODOS os CTB RA (RA_Hidrossanitario, RA_Geral e, se houver, o da arquitetura) para as pastas Plot Styles
- *   BimCadUI.ligarNaTelaHidro()               acopla as opções à tela "Gerar pranchas — hidrossanitário" SEM mexer no js/hidpranchasui.js (envolve HidPranchasUI.abrir)
+ *   (a tela do hidro põe as 2 opções direto em js/hidpranchasui.js: opcoesHtml("bcad") + lerQ + aposGerarHidro; sem wrapper de HidPranchasUI.abrir)
  *
  * DWG só no app instalado (o LibreDWG roda no servidor local); no navegador puro/PWA a opção fica desabilitada com o motivo e o DXF continua.
  * Reaproveita a sonda/preparo do conversor de js/arqpranchasui.js (ArqPranchasUI.sondarDwg / prepararDwg), quando carregado.
@@ -164,7 +164,7 @@
     });
   }
 
-  /* ------------------------------------------------------------ tela do hidro (sem editar js/hidpranchasui.js) */
+  /* ------------------------------------------------------------ tela do hidro (js/hidpranchasui.js chama lerQ antes de gerar e aposGerarHidro depois) */
   /* A tela "Gerar pranchas — hidrossanitário" grava a última geração em HidPranchasUI.ultimo().r (mesmo quando ela FALHA: r.ok = false). Aqui as 2 opções entram na área "Carimbo e saída"
      e o botão "Gerar pranchas" DO MODAL DO HIDRO (nunca outro botão do documento) ganha um gancho: lê as opções, guarda a geração anterior (r0), deixa a tela gerar e só então, se
      a geração for NOVA (≠ r0) e ok, gera o CAD/DWG DELA. Roteiro do defeito (revisão 16/11): a geração nova falhava e o CAD saía da geração ANTERIOR, ainda na memória.
@@ -192,53 +192,7 @@
     if (q.dwg) (acoes.dwg || baixarDwg)(o, { base: base, partes: partesHidro(r) });
     return true;
   }
-  function avisaLigacao(motivo, acoes) {
-    var t = "O CAD único não foi ligado à tela de pranchas do hidro: " + motivo + ". Use o botão CAD/DWG da faixa Exportar do BIM.";
-    try { if (global.console && global.console.warn) global.console.warn("[BimCadUI] " + t); } catch (e) { /* sem console */ }
-    (acoes && acoes.aviso ? acoes.aviso : function (x) { toast(x, "aviso"); })(t);
-    return false;
-  }
-  function acoplarTela(d, HU, acoes) {
-    var el = d.querySelector('[data-hpr="tela"]'); if (!el) return avisaLigacao("a tela não tem data-hpr=\"tela\"", acoes);
-    var raiz = el.parentNode, modal = (el.closest ? el.closest("#modal-bg") : null) || raiz;
-    if (raiz.querySelector('[data-bcad-out="cad"]')) return true;
-    var ancora = raiz.querySelector('[data-hpr-out="dxf"]'), lab = ancora && ancora.parentNode;
-    if (lab && lab.insertAdjacentHTML) lab.insertAdjacentHTML("afterend", opcoesHtml("bcad"));
-    else if (raiz.insertAdjacentHTML) { raiz.insertAdjacentHTML("beforeend", opcoesHtml("bcad")); }
-    else return avisaLigacao("sem lugar para as opções", acoes);
-    if (ancora) ancora.checked = false;   /* o DXF antigo (R2000 plano) segue na tela, desmarcado */
-    var bt = null, bts = modal.querySelectorAll ? modal.querySelectorAll("#modal-footer button") : [];
-    Array.prototype.forEach.call(bts, function (b) { if (!bt && /^\s*Gerar pranchas\s*$/.test(b.textContent || "")) bt = b; });
-    if (!bt || typeof bt.onclick !== "function") {
-      ["cad", "dwg"].forEach(function (k) { var c = raiz.querySelector('[data-bcad-out="' + k + '"]'); if (c) { c.disabled = true; c.checked = false; } });
-      return avisaLigacao("o botão \"Gerar pranchas\" do modal não foi achado", acoes);
-    }
-    var prev = bt.onclick;
-    bt.onclick = function () {
-      var q = lerQ(raiz), r0 = HU.ultimo ? HU.ultimo().r : null, ret = prev.apply(this, arguments);
-      try { aposGerarHidro(q, r0, HU, acoes); } catch (ex) { toast("O CAD não saiu: " + (ex && ex.message || ex), "aviso"); }
-      return ret;
-    };
-    ligar(raiz, "bcad");
-    return true;
-  }
-  /* envolve HidPranchasUI.abrir. opc (testes): { HU, doc, acoes }. → true se ligou */
-  function ligarNaTelaHidro(opc) {
-    opc = opc || {}; var HU = opc.HU || global.HidPranchasUI, d = opc.doc || global.document;
-    if (!HU || typeof HU.abrir !== "function") return avisaLigacao("HidPranchasUI.abrir não existe mais", opc.acoes);
-    if (HU.abrir._bcad) return true;
-    var orig = HU.abrir;
-    HU.abrir = function () {
-      var ok = orig.apply(this, arguments);
-      if (ok && d) { try { acoplarTela(d, HU, opc.acoes); } catch (ex) { avisaLigacao(ex && ex.message || String(ex), opc.acoes); } }
-      return ok;
-    };
-    HU.abrir._bcad = true;
-    return true;
-  }
-
-  var BimCadUI = { opcoesHtml: opcoesHtml, ligar: ligar, baixarCad: baixarCad, gerarDwg: gerarDwg, gerarDwgPartes: gerarDwgPartes, partesHidro: partesHidro, DXF_MAX_DWG: DXF_MAX_DWG, baixarDwg: baixarDwg, instalarCtbs: instalarCtbs, ligarNaTelaHidro: ligarNaTelaHidro, aposGerarHidro: aposGerarHidro, cadDoHidro: cadDoHidro, DWG_SO_NO_APP: DWG_SO_NO_APP, CTB_SO_NO_APP: CTB_SO_NO_APP };
+  var BimCadUI = { opcoesHtml: opcoesHtml, ligar: ligar, baixarCad: baixarCad, gerarDwg: gerarDwg, gerarDwgPartes: gerarDwgPartes, partesHidro: partesHidro, DXF_MAX_DWG: DXF_MAX_DWG, baixarDwg: baixarDwg, instalarCtbs: instalarCtbs, lerQ: lerQ, aposGerarHidro: aposGerarHidro, cadDoHidro: cadDoHidro, DWG_SO_NO_APP: DWG_SO_NO_APP, CTB_SO_NO_APP: CTB_SO_NO_APP };
   global.BimCadUI = BimCadUI;
-  try { if (global.document) ligarNaTelaHidro(); } catch (eL) { /* sem a tela do hidro */ }
   if (typeof module !== "undefined" && module.exports) module.exports = BimCadUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

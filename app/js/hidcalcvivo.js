@@ -39,6 +39,7 @@
   var JOELHOS = { joelho90: 1, joelho45: 1, joelho_bucha: 1 };
 
   function mKpa(h, rho) { var H = HH(); return H && H.mParaKpa ? H.mParaKpa(h, rho) : h * 1000 * G / 1000; }   // hid:ok água 1000 kg/m³ na reserva
+  function mKpaInv(kpa) { var H = HH(); return H && H.kpaParaM ? H.kpaParaM(kpa) : kpa / G; }
   function pior(a, b) { return PESO[b] > PESO[a] ? b : a; }
 
   /* K da conexão do material na tabela de norma (a mesma do HidPerda); null se a linha não existe */
@@ -161,6 +162,19 @@
       if (mp.contagem.vermelho > 0 || mp.contagem.amarelo > 0) {
         try { arr(PC.sugestoes(mp, opc.sug || {})).forEach(function (sg) { out.solucoes.push({ tipo: sg.tipo, ops: null, ganho_kpa: null, texto: sg.texto, nota: sg.texto, elementos: sg.elementos || null }); }); } catch (eS) {}
       }
+      /* 15/11/2026: o ponto DESLIGADO da caixa (a ligação não fechou) ou sem carga estática para o mínimo — hidaf.js reprova "pressão estática do ponto" e o
+         mapa de cores não o vê (o ponto não entra na rede calculada): as sugestões (subir a caixa quanto, pressurizador) saem da mesma HidPressaoCores */
+      try {
+        var vEst = arr(af.verificacoes).filter(function (v) { return /^pressão estática do ponto/.test(String(v.nome)) && v.ok === false && num(v.valor, null) != null && num(v.limite, null) != null; });
+        if (vEst.length) {
+          var sg0 = opc.sug || {}, cxA = {}; Object.keys(sg0.caixa || {}).forEach(function (k) { cxA[k] = sg0.caixa[k]; });
+          if (cxA.id != null && cxA.yb == null) { var fcx = arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(cxA.id); })[0]; if (fcx) cxA.yb = num(fcx.inst && fcx.inst.y != null ? fcx.inst.y : fcx.y, null); }
+          var faltaM = vEst.reduce(function (m, v) { return Math.max(m, mKpaInv(num(v.limite, 0) - num(v.valor, 0))); }, 0), subM = Math.ceil(faltaM * 100 - 1e-9) / 100;
+          var mpX = { pontos: vEst.map(function (v) { return { famInst: String(v.alvo), aparelho: null, pdin: num(v.valor, 0), pmin: num(v.limite, 0), faixa: "baixa", yPiso: null }; }) };
+          var tem = {}; out.solucoes.forEach(function (x) { tem[x.tipo] = 1; });
+          arr(PC.sugestoes(mpX, { caixa: cxA, subir: subM, vazao_ls: sg0.vazao_ls })).forEach(function (sg) { if (tem[sg.tipo]) return; out.solucoes.push({ tipo: sg.tipo, ops: null, ganho_kpa: null, texto: sg.texto, nota: sg.texto, elementos: sg.elementos || null }); });
+        }
+      } catch (eEst) {}
     }
     return out;
   }
