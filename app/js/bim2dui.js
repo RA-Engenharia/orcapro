@@ -535,17 +535,23 @@
       HS._b2Ligado = true;
       HS.aoPronto = function () {
         Object.keys(self._pre).forEach(function (k) { if (self._desenhandoDe(self._pre[k].dados)) delete self._pre[k]; });   /* o de antemão incompleto não vale */
+        var escondidas = 0;
         Object.keys(self._cache).forEach(function (k) {
           var c = self._cache[k]; if (!c || !c.el) return;
           /* a edição adiada (ver _redesenharCorpo): o desenho novo entra agora, já com a sombra, num redesenho só */
           if (c._pend) { clearTimeout(c._pendT); c.dados = c._pend; c.info = c._pend.info; c._pend = null; }
           if (!self._desenhandoDe(c.dados)) return;
-          if (self.visivel && !self.visivel(k)) { c.sujo = true; return; }
+          if (self.visivel && !self.visivel(k)) { c.sujo = true; escondidas++; return; }
           var ap = false; try { ap = self._aplicarSombra(k); } catch (eA) { ap = false; try { if (global.console) console.warn("[bim2d] a sombra pronta não entrou direto; extraindo de novo", eA && eA.message); } catch (x) {} }
           if (ap) return;
           self._fundo = true;   /* não é "o modelo mudou": a mesma vista, agora com a sombra pronta */
           try { self.atualizar(k); } catch (e) {} finally { self._fundo = false; }
         });
+        /* ⚠ TROCA DE VISTA (16/11/2026, tools/e2e-bim-troca-vista.js, GPU real, ~1.000 peças Alto): a sombra que chegou com
+           a vista ESCONDIDA só a marcava suja — ninguém chamava a fila de segundo plano, e a vista era refeita inteira na
+           hora em que aparecia (a 1ª volta planta↔3D: 0,12 s → 1,9 s). Agora a fila a refaz com a pessoa parada
+           (_refazerFundo: o mesmo atualizar, a mesma saída); se a pessoa voltar antes, é como era. */
+        if (escondidas) { try { self._agendarFundo(); } catch (eF) {} }
       };
     },
     /* ⚠ C3 (16/11/2026): a sombra que o Worker acabou de desenhar entra no desenho JÁ EXTRAÍDO da vista, no lugar das
@@ -554,7 +560,15 @@
        pós-extração da P6 (estilos, recorte) refeito sobre o bruto. Qualquer dúvida (forro espelhado, resultado que não
        está mais guardado, vista mudada) → false, e quem chama extrai de novo como antes. A e2e compara o resultado com o
        da extração síncrona completa (tools/e2e-hid-sombra-worker.js [3]). */
+    /* ⚠ TROCA DE VISTA (16/11/2026, tools/e2e-bim-troca-vista.js, ~1.000 peças, GPU real): o pós-extração da P6 aqui
+       FORA do lote dos materiais refazia o mapa peça → material a cada pergunta (~0,6 s de classificar/materialDasPecas
+       por sombra que chega) e o redesenhar logo depois fazia o mapa de novo. Num lote só: o mesmo mapa, a mesma saída. */
     _aplicarSombra: function (id) {
+      var self = this, BMU = global.BimMateriaisUI;
+      if (BMU && typeof BMU.emLote === "function") return BMU.emLote(function () { return self._aplicarSombraCorpo(id); });
+      return this._aplicarSombraCorpo(id);
+    },
+    _aplicarSombraCorpo: function (id) {
       var c = this._cache[id], HS = global.HidSombra; if (!c || !c.dados || !HS || !HS.pronto) return false;
       var bruto = c.dados._bruto || c.dados, ni = bruto.info && bruto.info.nivelInst, sb = ni && ni.sombra, pt = sb && sb._patch;
       if (!pt || pt.forro || !bruto.linhas) return false;

@@ -214,7 +214,7 @@
     for (var it = 0; it < T.length; it++) for (var iv = 0; iv < 3; iv++) { var Pv = T[it].P[iv]; TP[it * 9 + iv * 3] = Pv[0]; TP[it * 9 + iv * 3 + 1] = Pv[1]; TP[it * 9 + iv * 3 + 2] = Pv[2]; }
     SERIAL++;
     return { _n: SERIAL, id: el.id, papel: el.papel, x: x0, y: y0, w: w * SS / ppm, h: h * SS / ppm, ang: Math.atan2(sa, ca) * 180 / Math.PI, W: w, H: h, rgba: rgba,
-             _B: B, _Z: Z, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _TP: TP, _min: zMin };
+             _B: B, _o: o, _Z: Z, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _TP: TP, _min: zMin };
   }
 
   /* ------------------------------------------------------------- arestas de feição (silhueta + dobra), linha escondida */
@@ -431,9 +431,13 @@
   function encher(r, o) {
     r._uso = ++USO;
     if (!r._leve) return true;
-    var el = r._el, rr = null; if (!el) return false;
-    try { rr = renderElemento(el, r._B, o); } catch (e) { rr = null; }
-    if (!rr || rr._W !== r._W || rr._H !== r._H) return false;
+    var el = r._el, rr = null; if (!el) { CACHE.falhaEncher = "sem elemento"; return false; }
+    /* ⚠ COM A VISTA E AS OPÇÕES EM QUE ELE NASCEU (16/11/2026, e2e-bim-troca-vista com GPU real): a chave do cache arredonda
+       a faixa a 1e-4 e a câmera a 1e-6; refeito com a faixa DESTA chamada, a peça na beira saía sem triângulo (ou com outra
+       moldura) e o Worker morria com "resultado esvaziado sem como refazer" — a sessão inteira caía no síncrono (a planta
+       Alto de ~1.000 peças: 3 a 34 s na thread da página). Com as opções de nascença a conta é a mesma de quando nasceu. */
+    try { rr = renderElemento(el, r._B, r._o || o); } catch (e) { rr = null; CACHE.falhaEncher = "erro: " + (e && e.message); }
+    if (!rr || rr._W !== r._W || rr._H !== r._H) { if (rr) CACHE.falhaEncher = "moldura " + rr._W + "x" + rr._H + " != " + r._W + "x" + r._H + " (" + el.papel + ")"; else if (!CACHE.falhaEncher) CACHE.falhaEncher = "sem triângulos (" + el.papel + ")"; return false; }
     r._Z = rr._Z; r._TP = rr._TP; r._leve = false; CACHE.reenchidos = (CACHE.reenchidos || 0) + 1;
     somarBytes(r, rr._Z.byteLength + rr._TP.byteLength);
     return true;
@@ -497,7 +501,7 @@
             /* precisa do z-buffer dela e de quem pode cobri-la (o esvaziado é refeito: a mesma conta) */
             var cheio = encher(r, o);
             for (var c = 0; c < cand.length; c++) if (!encher(cand[c], o)) cheio = false;
-            if (!cheio) throw new Error("HidSombra: resultado esvaziado sem como refazer");
+            if (!cheio) throw new Error("HidSombra: resultado esvaziado sem como refazer (" + (CACHE.falhaEncher || "?") + ")");
             var sg = arestasDe(r, B, cand, o), so = [];
             for (var m = 0; m < sg.length; m++) so.push({ id: r.id, papel: r.papel, seg: sg[m].s, sil: sg[m].sil });
             if (r._segs) somarBytes(r, -r._segs.length * 96);

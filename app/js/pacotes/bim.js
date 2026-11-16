@@ -101777,7 +101777,7 @@ var TP = new Float64Array(T.length * 9), zMin = Math.min.apply(null, T.map(funct
 for (var it = 0; it < T.length; it++) for (var iv = 0; iv < 3; iv++) { var Pv = T[it].P[iv]; TP[it * 9 + iv * 3] = Pv[0]; TP[it * 9 + iv * 3 + 1] = Pv[1]; TP[it * 9 + iv * 3 + 2] = Pv[2]; }
 SERIAL++;
 return { _n: SERIAL, id: el.id, papel: el.papel, x: x0, y: y0, w: w * SS / ppm, h: h * SS / ppm, ang: Math.atan2(sa, ca) * 180 / Math.PI, W: w, H: h, rgba: rgba,
-_B: B, _Z: Z, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _TP: TP, _min: zMin };
+_B: B, _o: o, _Z: Z, _W: W, _H: H, _ppm: ppm, _x0: x0, _y0: y0, _ca: ca, _sa: sa, _TP: TP, _min: zMin };
 }
 var TS = [0, 0, 0];
 function telaEm(Rx, px, py, pz) {
@@ -101937,9 +101937,9 @@ var USO = 0;
 function encher(r, o) {
 r._uso = ++USO;
 if (!r._leve) return true;
-var el = r._el, rr = null; if (!el) return false;
-try { rr = renderElemento(el, r._B, o); } catch (e) { rr = null; }
-if (!rr || rr._W !== r._W || rr._H !== r._H) return false;
+var el = r._el, rr = null; if (!el) { CACHE.falhaEncher = "sem elemento"; return false; }
+try { rr = renderElemento(el, r._B, r._o || o); } catch (e) { rr = null; CACHE.falhaEncher = "erro: " + (e && e.message); }
+if (!rr || rr._W !== r._W || rr._H !== r._H) { if (rr) CACHE.falhaEncher = "moldura " + rr._W + "x" + rr._H + " != " + r._W + "x" + r._H + " (" + el.papel + ")"; else if (!CACHE.falhaEncher) CACHE.falhaEncher = "sem triângulos (" + el.papel + ")"; return false; }
 r._Z = rr._Z; r._TP = rr._TP; r._leve = false; CACHE.reenchidos = (CACHE.reenchidos || 0) + 1;
 somarBytes(r, rr._Z.byteLength + rr._TP.byteLength);
 return true;
@@ -101982,7 +101982,7 @@ if (igual) CACHE.arestasReuso++;
 else {
 var cheio = encher(r, o);
 for (var c = 0; c < cand.length; c++) if (!encher(cand[c], o)) cheio = false;
-if (!cheio) throw new Error("HidSombra: resultado esvaziado sem como refazer");
+if (!cheio) throw new Error("HidSombra: resultado esvaziado sem como refazer (" + (CACHE.falhaEncher || "?") + ")");
 var sg = arestasDe(r, B, cand, o), so = [];
 for (var m = 0; m < sg.length; m++) so.push({ id: r.id, papel: r.papel, seg: sg[m].s, sil: sg[m].sil });
 if (r._segs) somarBytes(r, -r._segs.length * 96);
@@ -110512,19 +110512,26 @@ var HS = global.HidSombra, self = this; if (!HS || HS._b2Ligado) return;
 HS._b2Ligado = true;
 HS.aoPronto = function () {
 Object.keys(self._pre).forEach(function (k) { if (self._desenhandoDe(self._pre[k].dados)) delete self._pre[k]; });
+var escondidas = 0;
 Object.keys(self._cache).forEach(function (k) {
 var c = self._cache[k]; if (!c || !c.el) return;
 if (c._pend) { clearTimeout(c._pendT); c.dados = c._pend; c.info = c._pend.info; c._pend = null; }
 if (!self._desenhandoDe(c.dados)) return;
-if (self.visivel && !self.visivel(k)) { c.sujo = true; return; }
+if (self.visivel && !self.visivel(k)) { c.sujo = true; escondidas++; return; }
 var ap = false; try { ap = self._aplicarSombra(k); } catch (eA) { ap = false; try { if (global.console) console.warn("[bim2d] a sombra pronta não entrou direto; extraindo de novo", eA && eA.message); } catch (x) {} }
 if (ap) return;
 self._fundo = true;
 try { self.atualizar(k); } catch (e) {} finally { self._fundo = false; }
 });
+if (escondidas) { try { self._agendarFundo(); } catch (eF) {} }
 };
 },
 _aplicarSombra: function (id) {
+var self = this, BMU = global.BimMateriaisUI;
+if (BMU && typeof BMU.emLote === "function") return BMU.emLote(function () { return self._aplicarSombraCorpo(id); });
+return this._aplicarSombraCorpo(id);
+},
+_aplicarSombraCorpo: function (id) {
 var c = this._cache[id], HS = global.HidSombra; if (!c || !c.dados || !HS || !HS.pronto) return false;
 var bruto = c.dados._bruto || c.dados, ni = bruto.info && bruto.info.nivelInst, sb = ni && ni.sombra, pt = sb && sb._patch;
 if (!pt || pt.forro || !bruto.linhas) return false;
