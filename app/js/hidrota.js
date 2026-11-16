@@ -2693,8 +2693,17 @@
         /* ⚠ laje girada: a projeção é a caixa ENVOLVENTE dos 4 cantos (antes cx ± comprimento/2 sem o giro) */
         var hw = num(c.espessura, 0) / 2, xs = [], zs = [];
         [[-h, -hw], [h, -hw], [h, hw], [-h, hw]].forEach(function (q) { xs.push(c.cx + q[0] * cs + q[1] * sn); zs.push(c.cz - q[0] * sn + q[1] * cs); });
-        out.lajes.push({ id: c.id, x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs), topo: c.cy + alt / 2, espessura: alt });
+        out.lajes.push({ id: c.id, x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs), topo: c.cy + alt / 2, espessura: alt, tipoPiso: c.tipoPiso || null });
       }
+    });
+    /* PISO NO CHÃO (16/11/2026, pedido do Rogério): o térreo é CONTRAPISO sobre o solo, não laje — a caixa sifonada, o ralo, a CI e a CG
+       podem descer abaixo do piso e o tubo corre no solo. Parâmetro da laje (tipoPiso: "contrapiso" | "radier" | "laje"); sem ele, a laje
+       mais baixa do modelo, com o topo até 1 m (o térreo ≈ cota 0), é contrapiso; as de cima são laje estrutural. Contrapiso sai da lista
+       de obstáculos (não há laje a furar nem a respeitar); radier e laje continuam obstáculo e o auditor acusa o corpo da caixa dentro deles. */
+    var finas = out.lajes.filter(function (l) { return num(l.espessura, 0) > LAJE_MIN; }), baixa = finas.length ? Math.min.apply(null, finas.map(function (l) { return l.topo; })) : INF;
+    out.lajes = out.lajes.filter(function (l) {
+      var tp = l.tipoPiso === "contrapiso" || l.tipoPiso === "radier" || l.tipoPiso === "laje" ? l.tipoPiso : (l.topo <= baixa + 1 + EPS && l.topo <= 1 + EPS ? "contrapiso" : "laje");
+      l.tipoPiso = tp; return tp !== "contrapiso";
     });
     if (typeof avaliarFam === "function" && BI().volumesFamilias) out.familias = BI().volumesFamilias(estado, avaliarFam);
     /* CRITÉRIO DE PROJETISTA: os cômodos (nome → uso: molhado, permanência prolongada) e a divisa do lote */

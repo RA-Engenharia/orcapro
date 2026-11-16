@@ -97,7 +97,7 @@
     fonte: "ABNT NBR 13103:2020 — valores com o item (exemplar não licenciado à RA; texto conferido; a vigente é a 2024 = 2020 + Emenda 1, não lida — conferir)", corrigir: "Conforme o achado: trocar o tipo, ajustar a altura, lançar a tomada — ou mudar o aparelho de lugar" });
   regra("caixa.laje", { gravidade: "dura", custo: 0, motor: false, titulo: "Corpo da caixa/ralo dentro da laje",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O corpo da caixa sifonada (ou do ralo) desce até a cota da tubulação e o prolongador enche até o piso; com o rebaixo raso o fundo do corpo entra na laje estrutural — na obra não cabe sem quebrar a laje.",
-    fonte: "critério de projeto (prioridade de 21/10/2026: corpo na cota da tubulação, prolongador até o piso)", corrigir: "Aumentar o rebaixo da laje (estrutural) ou subir o ramal; com caixa de saída mais baixa no corpo, trocar a caixa" });
+    fonte: "critério de projeto (prioridade de 21/10/2026: corpo na cota da tubulação, prolongador até o piso; 16/11/2026: só vale para radier e laje estrutural — térreo em contrapiso sobre solo deixa a caixa descer)", corrigir: "Aumentar o rebaixo da laje (estrutural), subir o ramal ou, se o piso é contrapiso sobre solo, marcar a laje como \"Contrapiso sobre solo\"; com caixa de saída mais baixa no corpo, trocar a caixa" });
   regra("abertura.vao", { gravidade: "dura", custo: 0, titulo: "Tubo no vão de porta ou janela",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O vão é da esquadria: tubo ali impede o batente/contramarco, fica à vista ou é cortado na instalação da esquadria. O tubo embutido passa ACIMA da verga, ABAIXO do peitoril/contraverga ou contorna o vão pela parede ao lado, com folga.",
     fonte: "critério de projeto (o vão é da esquadria; folga lateral declarada em docs/hidro/CRITERIOS-DE-PROJETISTA.md)", corrigir: "Refazer o trecho contornando o vão" });
@@ -1023,6 +1023,7 @@
       var base = num(k.base, NaN); if (!isFinite(base)) return;
       var sob = arr(O.lajes).filter(function (l) {
         var tp = num(l.topo, NaN), e = num(l.espessura, 0); if (!isFinite(tp) || !(e > G.cobrimentoParede * 4)) return false;   // hid:ok placa de até 6 cm = revestimento, não laje (a mesma régua do furo na laje)
+        if (l.tipoPiso === "contrapiso") return false;   /* PISO NO CHÃO: contrapiso sobre solo não é laje — o corpo da caixa/ralo/CI/CG pode descer (só radier e laje estrutural proíbem) */
         return k.x >= Math.min(l.x0, l.x1) - EPS && k.x <= Math.max(l.x0, l.x1) + EPS && k.z >= Math.min(l.z0, l.z1) - EPS && k.z <= Math.max(l.z0, l.z1) + EPS && tp <= num(k.y, 0) + EPS && tp - e < num(k.y, 0);
       }).sort(function (a, b) { return num(b.topo, 0) - num(a.topo, 0); })[0];
       if (!sob || !(num(sob.topo, 0) - base > TOL_FOLGA)) return;

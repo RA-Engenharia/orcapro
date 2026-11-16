@@ -300,6 +300,7 @@
     lajeTopo: function (x) { return r4(topoLaje(x)); },
     lajeFundo: function (x) { return r4(topoLaje(x) - num(el(x).altura, 0)); },
     lajeDeslocNivel: function (x) { return desloc(x, topoLaje(x)); },
+    lajeTipoPiso: function (x) { var t = el(x).tipoPiso; return t === "contrapiso" ? "Contrapiso sobre solo" : t === "radier" ? "Radier" : t === "laje" ? "Laje estrutural" : "Automático"; },   /* PISO NO CHÃO */
     lajeEstrutura: function (x) { return "Laje maciça " + mm(num(el(x).altura, 0)) + " mm"; },
     lajeAreaFuros: function (x) { var c = el(x), X = !x.regua && c._exato; return c.areaFuros != null ? (X && fin(X.areaFuros) ? X.areaFuros : q4(x, num(c.areaFuros, 0))) : 0; },
     lajeAreaForma: function (x) { return m(x).areaForma != null ? m(x).areaForma : null; },   /* P1-D: fôrma de laje = área do fundo */
@@ -809,6 +810,7 @@
         P(I, "Cotas", "Elevação no núcleo superior", "STRUCTURAL_ELEVATION_AT_TOP_CORE", "comprimento", { calc: "lajeTopo" }),
         P(I, "Cotas", "Elevação no núcleo inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM_CORE", "comprimento", { calc: "lajeFundo" }),
         P(I, "Cotas", "Elevação na parte inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM", "comprimento", { calc: "lajeFundo" }),
+        P(I, "Construção", "Tipo de piso", "RA_LAJE_TIPO_PISO", "lista", { calc: "lajeTipoPiso", escrita: "ajustar.tipoPiso", leitura: false, opcoes: ["Automático", "Contrapiso sobre solo", "Radier", "Laje estrutural"] }),   /* PISO NO CHÃO: térreo = contrapiso sobre solo (a caixa/ralo/CI/CG descem abaixo do piso); radier e laje: o corpo não entra */
         P(I, "Restrições", "Seguir as paredes", "RA_LAJE_SEGUIR", "lista", { calc: "pcSeguir", escrita: "laje.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
         P(I, "Restrições", "Arestas que seguem paredes", "RA_LAJE_SEGUIR_ARESTAS", "texto", { calc: "pcSeguirN" }),
         P(I, "Cotas", "Espessura", "FLOOR_ATTR_THICKNESS_PARAM", "comprimento", { calc: "lajeEspessura", ifc: Q("Qto_SlabBaseQuantities", "Width") }),

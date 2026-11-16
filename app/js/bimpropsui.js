@@ -462,6 +462,9 @@
       } else if ((m = /^ajustarAmbiente\.(\w+)$/.exec(e))) {
         /* P2-C: os parâmetros do AMBIENTE (nome, número, acabamentos, limites) — op ajustarAmbiente; vazio volta ao automático */
         ids.forEach(function (id) { var cp = {}; cp[m[1]] = valor === "" || valor == null ? null : valor; ops.push({ op: "ajustarAmbiente", id: id, campos: cp }); });
+      } else if (e === "ajustar.tipoPiso") {
+        /* PISO NO CHÃO: o tipo de piso da laje (contrapiso sobre solo | radier | laje estrutural | automático) */
+        ids.forEach(function (id) { ops.push({ op: "ajustar", id: id, campos: { tipoPiso: valor } }); });
       } else if (e === "ajustar.linhaLoc") {
         /* P4: a Linha de localização da parede (muda a referência; a parede não anda) */
         ids.forEach(function (id) { ops.push({ op: "ajustar", id: id, campos: { linhaLoc: valor } }); });

@@ -1006,6 +1006,7 @@
         if (edit.sub === "laje" || edit.sub === "cobertura") ls = [[b, { x: p.x, z: b.z }], [{ x: p.x, z: b.z }, p], [p, { x: b.x, z: p.z }], [{ x: b.x, z: p.z }, b]];
         else ls = [[b, p]];
         var l = segs(ls, matLinha, edit.base + 0.02); if (l) grp.add(l);
+        if (edit.sub === "inst" && api.tuboPrevia) api.tuboPrevia(edit.p1, p);   /* TUBO: a prévia real (largura do DE, cor do sistema, joelho/tê) — js/bimtuboprevia.js */
       }
 
       /* --------------------------------------------- cotas permanentes 3D */

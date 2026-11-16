@@ -4919,8 +4919,13 @@ else if (c.tipo === "pilar") out.pilares.push({ id: c.id, x: c.cx, z: c.cz, larg
 else if (c.tipo === "laje") {
 var hw = num(c.espessura, 0) / 2, xs = [], zs = [];
 [[-h, -hw], [h, -hw], [h, hw], [-h, hw]].forEach(function (q) { xs.push(c.cx + q[0] * cs + q[1] * sn); zs.push(c.cz - q[0] * sn + q[1] * cs); });
-out.lajes.push({ id: c.id, x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs), topo: c.cy + alt / 2, espessura: alt });
+out.lajes.push({ id: c.id, x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs), topo: c.cy + alt / 2, espessura: alt, tipoPiso: c.tipoPiso || null });
 }
+});
+var finas = out.lajes.filter(function (l) { return num(l.espessura, 0) > LAJE_MIN; }), baixa = finas.length ? Math.min.apply(null, finas.map(function (l) { return l.topo; })) : INF;
+out.lajes = out.lajes.filter(function (l) {
+var tp = l.tipoPiso === "contrapiso" || l.tipoPiso === "radier" || l.tipoPiso === "laje" ? l.tipoPiso : (l.topo <= baixa + 1 + EPS && l.topo <= 1 + EPS ? "contrapiso" : "laje");
+l.tipoPiso = tp; return tp !== "contrapiso";
 });
 if (typeof avaliarFam === "function" && BI().volumesFamilias) out.familias = BI().volumesFamilias(estado, avaliarFam);
 arr(estado && estado.ambientes).forEach(function (a) {
@@ -5709,7 +5714,7 @@ porque: "Local proibido, volume e ventilação permanente do ambiente, exaustão
 fonte: "ABNT NBR 13103:2020 — valores com o item (exemplar não licenciado à RA; texto conferido; a vigente é a 2024 = 2020 + Emenda 1, não lida — conferir)", corrigir: "Conforme o achado: trocar o tipo, ajustar a altura, lançar a tomada — ou mudar o aparelho de lugar" });
 regra("caixa.laje", { gravidade: "dura", custo: 0, motor: false, titulo: "Corpo da caixa/ralo dentro da laje",
 porque: "O corpo da caixa sifonada (ou do ralo) desce até a cota da tubulação e o prolongador enche até o piso; com o rebaixo raso o fundo do corpo entra na laje estrutural — na obra não cabe sem quebrar a laje.",
-fonte: "critério de projeto (prioridade de 21/10/2026: corpo na cota da tubulação, prolongador até o piso)", corrigir: "Aumentar o rebaixo da laje (estrutural) ou subir o ramal; com caixa de saída mais baixa no corpo, trocar a caixa" });
+fonte: "critério de projeto (prioridade de 21/10/2026: corpo na cota da tubulação, prolongador até o piso; 16/11/2026: só vale para radier e laje estrutural — térreo em contrapiso sobre solo deixa a caixa descer)", corrigir: "Aumentar o rebaixo da laje (estrutural), subir o ramal ou, se o piso é contrapiso sobre solo, marcar a laje como \"Contrapiso sobre solo\"; com caixa de saída mais baixa no corpo, trocar a caixa" });
 regra("abertura.vao", { gravidade: "dura", custo: 0, titulo: "Tubo no vão de porta ou janela",
 porque: "O vão é da esquadria: tubo ali impede o batente/contramarco, fica à vista ou é cortado na instalação da esquadria. O tubo embutido passa ACIMA da verga, ABAIXO do peitoril/contraverga ou contorna o vão pela parede ao lado, com folga.",
 fonte: "critério de projeto (o vão é da esquadria; folga lateral declarada em docs/hidro/CRITERIOS-DE-PROJETISTA.md)", corrigir: "Refazer o trecho contornando o vão" });
@@ -6488,6 +6493,7 @@ arr(E.corpos).forEach(function (k) {
 var base = num(k.base, NaN); if (!isFinite(base)) return;
 var sob = arr(O.lajes).filter(function (l) {
 var tp = num(l.topo, NaN), e = num(l.espessura, 0); if (!isFinite(tp) || !(e > G.cobrimentoParede * 4)) return false;
+if (l.tipoPiso === "contrapiso") return false;
 return k.x >= Math.min(l.x0, l.x1) - EPS && k.x <= Math.max(l.x0, l.x1) + EPS && k.z >= Math.min(l.z0, l.z1) - EPS && k.z <= Math.max(l.z0, l.z1) + EPS && tp <= num(k.y, 0) + EPS && tp - e < num(k.y, 0);
 }).sort(function (a, b) { return num(b.topo, 0) - num(a.topo, 0); })[0];
 if (!sob || !(num(sob.topo, 0) - base > TOL_FOLGA)) return;
@@ -17232,7 +17238,9 @@ var PAPEL_PECA = { corpo: "Branco", grelha: "Metal cromado acetinado", fenda: ES
 function pecaFicha(peca, chave, q) {
 var G = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
 if (!G || !G.peca) throw new Error("HidGeo.peca indisponível (js/biminstgeo.js)");
-var r = G.peca({ peca: peca, dn: chave, x: 0, y: 0, z: 0 }, [], { lod: q && q.N <= 20 ? "longe" : "perto" }); if (!r) throw new Error("sem cotas da ficha para " + peca + " " + chave);
+var HB = global.HidBocas || (typeof require === "function" ? (function () { try { return require("./hidbocas.js"); } catch (e) { return null; } })() : null), ef = null;
+if (HB && HB.bocas && peca === "caixa_sifonada") { try { ef = HB.bocas({ instalacoes: {} }, { peca: peca, dn: chave, x: 0, y: 0, z: 0, rotY: 0 }).filter(function (b) { return b.papel === "entrada"; }).map(function (b) { return { dir: [b.dir.x, 0, b.dir.z], y: b.y }; }); } catch (eB) { ef = null; } }
+var r = G.peca({ peca: peca, dn: chave, x: 0, y: 0, z: 0 }, [], { lod: q && q.N <= 20 ? "longe" : "perto", entradasFicha: ef }); if (!r) throw new Error("sem cotas da ficha para " + peca + " " + chave);
 return r.partes.filter(function (pt) { return pt.malha.idx.length; }).map(function (pt, i) {
 var p = parte(pt.papel + "-" + i, pt.papel, PAPEL_PECA[pt.papel] || PVC, false); p.m.v = pt.malha.pos.slice(); p.m.f = pt.malha.idx.slice(); return p;
 });
@@ -27083,6 +27091,7 @@ qr: 30, qrTexto: 2.5, qrRot: "PORTAL DA OBRA",
 qrParam: "amb", qrSep: ",", qrRotAmb: "abrir no 3D", qrRotJunta: " e ", avisoSemPortal: "Sem portal da obra: o QR das folhas de ambiente não foi gerado - publique a placa/portal da obra e informe o link no campo \"QR do portal da obra\".", qrRotSep: " - ", qrReticencia: "...",
 seta: { c: 1.3, l: 0.45 },
 isoRef: { minSeta: 6, seta: 1.3, corAF: "#0d3a9a", corAQ: "#a01818", alemAmb: 0.6, corParede: "#8a8f96", penaParede: 0.3, tolPrumo: 0.01, minVert: 0.15, abaixoPiso: 0.05, minIntervalo: 0.05, afasta: 4.5, tique: 0.9, corCota: "#3d434a", penaCota: 0.2, texto: 2.2 },
+pecaOp: 0.8,
 pisoOp: 0.08,
 fotoPlanta: { abaixo: 0.8, acima: 0.15, teto: 2.6, pxMm: 12 },
 simbCx: { dist: 1.7, meio: 0.9, luva: 0.6, pena: 0.25, tolNo: 0.35, arco: 1.5, alturaArco: 1.8, sigla: "CT" },
@@ -28578,7 +28587,7 @@ var ys = []; trs.forEach(function (t) { ys.push(t.p1.y, t.p2.y); });
 var yMin = Math.min(pv.cota, Math.min.apply(null, ys)) - K2.fotoPlanta.abaixo, yMax = Math.min(Math.max.apply(null, ys) + K2.fotoPlanta.acima, pv.cota + K2.fotoPlanta.teto);
 var x0 = bb.x0 / s2, x1 = bb.x1 / s2, z0 = bb.y0 / s2, z1 = bb.y1 / s2, tc = { x: (x0 + x1) / 2, y: (yMin + yMax) / 2, z: (z0 + z1) / 2 };
 var foco = /^agua/.test(String(sis)) ? ["agua"] : sis === "esgoto" || sis === "ventilacao" ? ["esgoto"] : ["agua", "esgoto"];
-var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, reservTransl: !!(opc && opc.reservTransl), pisoOp: K2.pisoOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
+var r = null; try { r = FOTO3D({ foco: foco, loucasTransl: true, reservTransl: !!(opc && opc.reservTransl), pisoOp: K2.pisoOp, pecaOp: K2.pecaOp, R: [s2, 0, 0], U: [0, 0, -s2], V: [0, 1, 0], T: [tc.x, tc.y, tc.z], uT: tc.x * s2, vT: tc.z * s2, u0: bb.x0, u1: bb.x1, v0: bb.y0, v1: bb.y1,
 largura: Math.min(4096, Math.round((bb.x1 - bb.x0) * K2.fotoPlanta.pxMm)), min: [x0 - 0.05, yMin, z0 - 0.05], max: [x1 + 0.05, yMax, z1 + 0.05] }); } catch (e) { r = null; }
 if (!r || !r.ok || !r.url) return null;
 var b64 = String(r.url).replace(/^data:image\/jpeg;base64,/, ""), bin = typeof atob === "function" ? atob(b64) : (typeof Buffer !== "undefined" ? Buffer.from(b64, "base64").toString("binary") : null);
@@ -28621,7 +28630,7 @@ var R = [ex.u - O.u, ey.u - O.u, ez.u - O.u], U = [-(ex.v - O.v), -(ey.v - O.v),
 var lim = limitesPersp(pz), mg = (lim.u1 - lim.u0) * 0.04; lim.u0 -= mg; lim.u1 += mg; lim.v0 -= mg; lim.v1 += mg;
 var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
 var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
-var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, reservTransl: true, pisoOp: K2.pisoOp, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, reservTransl: true, pisoOp: K2.pisoOp, pecaOp: K2.pecaOp, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
 min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
 max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
 if (!r || !r.ok || !r.url) return null;
@@ -36152,6 +36161,7 @@ CX.forEach(function (cx) {
 if (primariaDe[cx.id]) return;
 var lista = porCx[cx.id] || []; if (!lista.length) return;
 var SAT = arr(satsDe[cx.id]);
+if (!SAT.length) { var vx = volumeExagerado(e, cx); if (vx) out.avisos.push({ texto: vx.texto, elementos: [cx.id], acao: vx.acao, volume: vx }); }
 function mc(ee, cc, ll, oa, oo) { oo = oo || {}; if (!oo.secundaria && SAT.length) oo.satelites = SAT; return montarCaixa(ee, cc, ll, oa, oo); }
 var lV = lista.filter(function (s) { return s.valvula && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
 var sec = null, ang2 = null, R = null, reserva = null;
@@ -36541,6 +36551,26 @@ res.decisoes.push({ id: "bar.plano_laje", texto: nome + ": a cobertura impede o 
 }
 }
 }
+if (!tomada && !opc.satelite) {
+var nNFd = lista.filter(function (q) { return !q.fonte; }).length, nCon0 = soCol(Pl.folhas);
+if (nNFd && nCon0 < nNFd) {
+var yTopE = Math.max.apply(null, lista.filter(function (q) { return !q.fonte; }).map(function (q) { return q.y; })) + mNo + folga;
+var melhorP = null, Atd = P3(A.x, cx.S.y, A.z);
+for (var yP = r4(cx.S.y - 0.1); yP >= yTopE - EPS && (!melhorP || melhorP.n < nNFd); yP = r4(yP - 0.1)) {
+var Abd = P3(A.x, yP, A.z);
+if (conflito(Atd, Abd, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; })) break;
+var Pd = planejarCom(yP, baseTopo.concat([{ a: Atd, b: Abd, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
+if (Pd.baixa || Pd.colunaFalha || Pd.faltaMax > 1 / CASAS) continue;
+var nd = soCol(Pd.folhas);
+if (nd > nCon0 && (!melhorP || nd > melhorP.n)) melhorP = { y: yP, n: nd, Ab: Abd };
+}
+if (melhorP) {
+Pl = planejarCom(melhorP.y, baseTopo.concat([{ a: Atd, b: melhorP.Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
+tomada = { a: Atd, b: melhorP.Ab };
+res.decisoes.push({ id: "bar.desvio_plano", texto: nome + ": o plano da saída (" + f2(cx.S.y) + " m) tinha tubo, equipamento ou viga no caminho de " + (nNFd - nCon0) + " espera(s) — a saída DESCE pela coluna de distribuição (DN " + dnSaida + ", com o registro geral logo na saída) até " + f2(melhorP.y) + " m e o barrilete corre ali, abaixo do obstáculo; ligadas " + melhorP.n + " de " + nNFd + " esperas" });
+}
+}
+}
 res.semTomada = !!(PlR && !tomada);
 if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);
 Pl.colunasFora.forEach(function (cf) {
@@ -36757,7 +36787,8 @@ else pend("bar.extravasor_dn", nome + ": extravasor" + (Lp ? " e limpeza" : "") 
 var pouso = X && X.telhado ? X : (Lp && Lp.telhado ? Lp : null), semTel = TEL.length && ((X && X.semTelhado) || (Lp && Lp.semTelhado));
 if (pouso && !semTel) res.decisoes.push({ id: "bar.descarga_telhado", texto: nome + ": extravasor e limpeza (os ÚNICOS tubos aparentes) saem pelo lado " + (pouso.daRua ? "da rua (nenhuma outra face tem telhado abaixo)" : "que não é a fachada da rua") + " e a ponta cai SOBRE a cobertura " + pouso.telhado.id + " (topo a " + f2(pouso.telhado.topo) + " m, a ponta a " + f2(pouso.fim.y) + " m) — nunca em queda livre no chão nem escorrendo em parede. Fachada da rua: " + (par.ladoSaida ? "lado " + par.ladoSaida + " (parâmetro)" : "o lado de y menor do projeto (premissa: informe o lado da rua nos parâmetros)") + "." });
 if (semTel) pend("bar.descarga_sem_telhado", nome + ": extravasor sem telhado abaixo — conferir. Nenhuma face tem cobertura ou laje abaixo da ponta para receber a água: ela cairia no chão ou escorreria na parede. Ponha a descarga sobre um telhado (ou acrescente a calha/laje) — a ponta saiu em " + f2((X || Lp).fim.x) + "; " + f2((X || Lp).fim.y) + "; " + f2((X || Lp).fim.z), [cx.id]);
-if ((X || Lp) && !(pouso && !semTel)) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
+if ((X || Lp) && !(pouso && !semTel) && Ap.paredes.length) res.decisoes.push({ id: "bar.descarga_parede", texto: nome + ": extravasor e limpeza saem pela parede externa mais próxima e terminam em ponta LIVRE e VISÍVEL " + f2(GEO_BAR.saidaLivre) + " m fora da face" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — a água cai à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)" });
+else if ((X || Lp) && !(pouso && !semTel)) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
 [X && !X.junto ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
 var opsAl = [];
 if (cx.E) {
@@ -36942,10 +36973,8 @@ motivo: "", elementos: [cx.id], base: P, acao: { tipo: "ops", ops: ops, texto: "
 out.forEach(function (a) { a.motivo = a.texto; });
 return out;
 }
-function ofertar(e, ESP) {
-var estado = e.estado || {}, avaliarFam = e.avaliarFam, K = HK(), F = HFm(), PG = HPG(), N = NN(), PC = HPC(), BE = BEd();
-var fam = F && F.porId ? F.porId("hid-caixa-dagua") : null;
-if (!fam || !PG || !N || !BE) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo: as " + ESP.length + " espera(s) de água fria ficam abertas — ponha a caixa (biblioteca hid-caixa-dagua) e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
+function reservacaoDe(e) {
+var estado = e.estado || {}, K = HK(), PG = HPG(), N = NN();
 var prog = e.programa && e.programa.uso ? JSON.parse(JSON.stringify(e.programa)) : null, premissas = [];
 if (prog) premissas.push("pelo programa de necessidades (Instalações › cálculo: uso " + String(prog.uso).replace(/_/g, " ") + (prog.populacao != null ? ", " + prog.populacao + " pessoa(s)" : (prog.dormitorios != null ? ", " + prog.dormitorios + " dormitório(s)" : "")) + " — confira o porte)");
 if (!prog) {
@@ -36957,6 +36986,26 @@ prog = { uso: "residencial_unifamiliar", dormitorios: dorms };
 premissas.push("uso residencial unifamiliar (premissa: informe o uso no programa)");
 }
 var ctx = N.contexto(), Pr = PG.calcular(prog, ctx), V = Pr && Pr.reservacao ? Pr.reservacao.total_min_L : null;
+return { V: V, Pr: Pr, prog: prog, premissas: premissas };
+}
+function volumeExagerado(e, cx) {
+var F = HFm(), fam = F && F.porId ? F.porId("hid-caixa-dagua") : null, PG = HPG(), N = NN();
+if (!fam || !PG || !N || cx.famId !== "hid-caixa-dagua" || !(num(cx.volume, 0) > 0)) return null;
+var RV = reservacaoDe(e), V = RV.V; if (V == null || !(V > 0)) return null;
+var tipos = arr(fam.tipos).filter(function (t) { return !t.legado; }).map(function (t) { var av = typeof e.avaliarFam === "function" ? e.avaliarFam("hid-caixa-dagua", t.id, {}) : null; return { t: t, v: av && av.valores ? num(av.valores.Volume_L, null) : null }; }).filter(function (x) { return x.v != null; }).sort(function (a, b) { return a.v - b.v; });
+var iE = -1; tipos.forEach(function (x, i) { if (iE < 0 && x.v >= V - EPS) iE = i; });
+if (iE < 0) return null;
+var esc = tipos[iE], prox = tipos[iE + 1] || null;
+if (!(cx.volume > esc.v + EPS && (cx.volume > 1.5 * V + EPS || (prox && cx.volume > prox.v + EPS)))) return null;
+var vl = function (n) { return f2(n).replace(",00", ""); };
+return { texto: "Caixa d'água " + cx.id + ": a de " + vl(cx.volume) + " L é maior que o necessário — a reservação calculada é de " + vl(V) + " L (" + arr(RV.Pr && RV.Pr.consumoDiario && RV.Pr.consumoDiario.passos).join("; ") + " × 1 dia, NBR 5626:2020 6.5.6.2" + (RV.premissas.length ? "; " + RV.premissas.join("; ") : "") + ") e o menor tamanho comercial que atende no catálogo é o de " + vl(esc.v) + " L. Caixa grande demais pesa na laje e deixa a água parada (cloro some, risco sanitário).",
+acao: { tipo: "ops", ops: [{ op: "instancia", id: cx.id, tipoId: esc.t.id }], texto: "trocar pela de " + vl(esc.v) + " L" }, volumeNecessario: V, volumeSugerido: esc.v, tipoId: esc.t.id };
+}
+function ofertar(e, ESP) {
+var estado = e.estado || {}, avaliarFam = e.avaliarFam, K = HK(), F = HFm(), PG = HPG(), N = NN(), PC = HPC(), BE = BEd();
+var fam = F && F.porId ? F.porId("hid-caixa-dagua") : null;
+if (!fam || !PG || !N || !BE) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo: as " + ESP.length + " espera(s) de água fria ficam abertas — ponha a caixa (biblioteca hid-caixa-dagua) e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
+var RV = reservacaoDe(e), prog = RV.prog, premissas = RV.premissas, Pr = RV.Pr, V = RV.V;
 if (V == null) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo e sem a reservação do programa (" + arr(Pr && Pr.reservacao && Pr.reservacao.passos).join("; ") + ") — ponha a caixa e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
 var tipos = arr(fam.tipos).map(function (t) { var av = avaliarFam ? avaliarFam("hid-caixa-dagua", t.id, {}) : null; return { t: t, v: av && av.valores ? num(av.valores.Volume_L, null) : null, av: av }; }).filter(function (x) { return x.v != null; }).sort(function (a, b) { return a.v - b.v; });
 var esc = tipos.filter(function (x) { return x.v >= V - EPS; })[0];
@@ -37003,7 +37052,7 @@ if (!m) return null;
 return m[1] === "coluna" ? GEO_BAR.dnMinColuna : GEO_BAR.dnMinBarrilete;
 }
 var HidBarrilete = { VERSAO: 1, comBase: false, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
-montar: montar, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
+montar: montar, volumeExagerado: volumeExagerado, reservacaoDe: reservacaoDe, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
 _int: { CHAVE_COTA_MAX: CHAVE_COTA_MAX, suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
 global.HidBarrilete = HidBarrilete;
 if (typeof module !== "undefined" && module.exports) module.exports = HidBarrilete;

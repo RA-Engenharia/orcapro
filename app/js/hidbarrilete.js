@@ -334,6 +334,7 @@
       if (primariaDe[cx.id]) return;   /* satélite: é montada junto da principal, mais abaixo */
       var lista = porCx[cx.id] || []; if (!lista.length) return;
       var SAT = arr(satsDe[cx.id]);
+      if (!SAT.length) { var vx = volumeExagerado(e, cx); if (vx) out.avisos.push({ texto: vx.texto, elementos: [cx.id], acao: vx.acao, volume: vx }); }   /* caixa posta exagerada: aviso com o Corrigir da troca de tipo */
       function mc(ee, cc, ll, oa, oo) { oo = oo || {}; if (!oo.secundaria && SAT.length) oo.satelites = SAT; return montarCaixa(ee, cc, ll, oa, oo); }
       /* N23 (26/10/2026, "o nosso barrilete está saindo com 50 ou 60 mm"): a espera da VÁLVULA DE DESCARGA é DN 40/50 (1 1/4"–1 1/2") e
          o barrilete pegava o maior DN a jusante — um banheiro com válvula engordava a saída e o tronco inteiros. Como se executa: a
@@ -826,6 +827,31 @@
         }
       }
     }
+    /* ⚠ 16/11/2026 (pedido do Rogério: "o Traçar tem de entregar a caixa ligada de ponta a ponta"; antes: "o barrilete não acha caminho livre até a
+       espera… ligue à mão"). Tubo, equipamento ou viga no plano da saída barram o caminho de uma espera: em vez de desistir, o barrilete DESCE da
+       saída pela tomada vertical (junto da caixa, a coluna de distribuição com o registro geral) e corre num plano MAIS BAIXO — 10 em 10 cm, do mais
+       alto ao mais baixo que ainda fica acima das esperas (descendo, nunca subindo: sem bolsa de ar, R-C10) — o 1º plano que liga MAIS esperas que o
+       da saída; vale o que liga todas, senão o que liga mais. A coluna desce embutida do plano até a espera, como sempre. */
+    if (!tomada && !opc.satelite) {
+      var nNFd = lista.filter(function (q) { return !q.fonte; }).length, nCon0 = soCol(Pl.folhas);
+      if (nNFd && nCon0 < nNFd) {
+        var yTopE = Math.max.apply(null, lista.filter(function (q) { return !q.fonte; }).map(function (q) { return q.y; })) + mNo + folga;
+        var melhorP = null, Atd = P3(A.x, cx.S.y, A.z);
+        for (var yP = r4(cx.S.y - 0.1); yP >= yTopE - EPS && (!melhorP || melhorP.n < nNFd); yP = r4(yP - 0.1)) {   // hid:ok passo de 10 cm entre os planos tentados (critério RA)
+          var Abd = P3(A.x, yP, A.z);
+          if (conflito(Atd, Abd, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; })) break;   /* a descida esbarra: nada mais abaixo serve */
+          var Pd = planejarCom(yP, baseTopo.concat([{ a: Atd, b: Abd, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
+          if (Pd.baixa || Pd.colunaFalha || Pd.faltaMax > 1 / CASAS) continue;
+          var nd = soCol(Pd.folhas);
+          if (nd > nCon0 && (!melhorP || nd > melhorP.n)) melhorP = { y: yP, n: nd, Ab: Abd };
+        }
+        if (melhorP) {
+          Pl = planejarCom(melhorP.y, baseTopo.concat([{ a: Atd, b: melhorP.Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
+          tomada = { a: Atd, b: melhorP.Ab };
+          res.decisoes.push({ id: "bar.desvio_plano", texto: nome + ": o plano da saída (" + f2(cx.S.y) + " m) tinha tubo, equipamento ou viga no caminho de " + (nNFd - nCon0) + " espera(s) — a saída DESCE pela coluna de distribuição (DN " + dnSaida + ", com o registro geral logo na saída) até " + f2(melhorP.y) + " m e o barrilete corre ali, abaixo do obstáculo; ligadas " + melhorP.n + " de " + nNFd + " esperas" });
+        }
+      }
+    }
     /* a descida era possível (o plano baixo existe) e não coube: o barrilete ficou na cota da saída — quem escolhe o lado da 2ª saída
        (montar) usa isto para tentar outro, em vez de aceitar um lado em que a coluna do consumo cruza a da válvula (N23, 26/10/2026) */
     res.semTomada = !!(PlR && !tomada);
@@ -1090,7 +1116,10 @@
     var pouso = X && X.telhado ? X : (Lp && Lp.telhado ? Lp : null), semTel = TEL.length && ((X && X.semTelhado) || (Lp && Lp.semTelhado));
     if (pouso && !semTel) res.decisoes.push({ id: "bar.descarga_telhado", texto: nome + ": extravasor e limpeza (os ÚNICOS tubos aparentes) saem pelo lado " + (pouso.daRua ? "da rua (nenhuma outra face tem telhado abaixo)" : "que não é a fachada da rua") + " e a ponta cai SOBRE a cobertura " + pouso.telhado.id + " (topo a " + f2(pouso.telhado.topo) + " m, a ponta a " + f2(pouso.fim.y) + " m) — nunca em queda livre no chão nem escorrendo em parede. Fachada da rua: " + (par.ladoSaida ? "lado " + par.ladoSaida + " (parâmetro)" : "o lado de y menor do projeto (premissa: informe o lado da rua nos parâmetros)") + "." });
     if (semTel) pend("bar.descarga_sem_telhado", nome + ": extravasor sem telhado abaixo — conferir. Nenhuma face tem cobertura ou laje abaixo da ponta para receber a água: ela cairia no chão ou escorreria na parede. Ponha a descarga sobre um telhado (ou acrescente a calha/laje) — a ponta saiu em " + f2((X || Lp).fim.x) + "; " + f2((X || Lp).fim.y) + "; " + f2((X || Lp).fim.z), [cx.id]);
-    if ((X || Lp) && !(pouso && !semTel)) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
+    /* 16/11/2026 (pedido do Rogério): extravasor e limpeza vão à SAÍDA VISÍVEL mais próxima FORA da edificação — a parede externa mais perto (a face do
+       contorno das paredes, a ponta livre 30 cm além) — e o aviso "destino a definir" só fica quando NÃO há parede externa no modelo para dizer onde é fora */
+    if ((X || Lp) && !(pouso && !semTel) && Ap.paredes.length) res.decisoes.push({ id: "bar.descarga_parede", texto: nome + ": extravasor e limpeza saem pela parede externa mais próxima e terminam em ponta LIVRE e VISÍVEL " + f2(GEO_BAR.saidaLivre) + " m fora da face" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — a água cai à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)" });
+    else if ((X || Lp) && !(pouso && !semTel)) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
       [X && !X.junto ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
     /* ALIMENTAÇÃO: o toco da entrada (registro) e a espera do alimentador predial */
     var opsAl = [];
@@ -1322,11 +1351,10 @@
   }
 
   /* ================================================ SEM CAIXA: a OFERTA (o Corrigir põe a caixa proposta) */
-  function ofertar(e, ESP) {
-    var estado = e.estado || {}, avaliarFam = e.avaliarFam, K = HK(), F = HFm(), PG = HPG(), N = NN(), PC = HPC(), BE = BEd();
-    var fam = F && F.porId ? F.porId("hid-caixa-dagua") : null;
-    if (!fam || !PG || !N || !BE) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo: as " + ESP.length + " espera(s) de água fria ficam abertas — ponha a caixa (biblioteca hid-caixa-dagua) e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
-    /* VOLUME: a reservação do programa (1 dia de consumo, NBR 5626:2020 6.5.6.2) */
+  /* A RESERVAÇÃO do programa (1 dia de consumo, NBR 5626:2020 6.5.6.2) — a mesma conta para propor a caixa (ofertar) e para conferir a que o usuário
+     pôs (volumeDaCaixa). Devolve { V (L ou null), Pr, prog, premissas } */
+  function reservacaoDe(e) {
+    var estado = e.estado || {}, K = HK(), PG = HPG(), N = NN();
     var prog = e.programa && e.programa.uso ? JSON.parse(JSON.stringify(e.programa)) : null, premissas = [];
     if (prog) premissas.push("pelo programa de necessidades (Instalações › cálculo: uso " + String(prog.uso).replace(/_/g, " ") + (prog.populacao != null ? ", " + prog.populacao + " pessoa(s)" : (prog.dormitorios != null ? ", " + prog.dormitorios + " dormitório(s)" : "")) + " — confira o porte)");
     if (!prog) {
@@ -1338,6 +1366,33 @@
       premissas.push("uso residencial unifamiliar (premissa: informe o uso no programa)");
     }
     var ctx = N.contexto(), Pr = PG.calcular(prog, ctx), V = Pr && Pr.reservacao ? Pr.reservacao.total_min_L : null;
+    return { V: V, Pr: Pr, prog: prog, premissas: premissas };
+  }
+
+  /* VOLUME DA CAIXA POSTA PELO USUÁRIO (16/11/2026, pedido do Rogério: "o menor tamanho comercial que atende, nunca muito maior"): compara o volume
+     da caixa com a reservação do programa (reservacaoDe) e com o catálogo (hid-caixa-dagua, só os tamanhos que existem — nada inventado). Exagerada =
+     maior que o menor tamanho que atende E (mais de 1,5 × a reservação OU acima do tamanho comercial seguinte). Devolve o aviso com o Corrigir
+     "trocar pela de X L" (op instancia tipoId: a troca de tipo refaz o barrilete, 1.2.335) ou null. */
+  function volumeExagerado(e, cx) {
+    var F = HFm(), fam = F && F.porId ? F.porId("hid-caixa-dagua") : null, PG = HPG(), N = NN();
+    if (!fam || !PG || !N || cx.famId !== "hid-caixa-dagua" || !(num(cx.volume, 0) > 0)) return null;
+    var RV = reservacaoDe(e), V = RV.V; if (V == null || !(V > 0)) return null;
+    var tipos = arr(fam.tipos).filter(function (t) { return !t.legado; }).map(function (t) { var av = typeof e.avaliarFam === "function" ? e.avaliarFam("hid-caixa-dagua", t.id, {}) : null; return { t: t, v: av && av.valores ? num(av.valores.Volume_L, null) : null }; }).filter(function (x) { return x.v != null; }).sort(function (a, b) { return a.v - b.v; });
+    var iE = -1; tipos.forEach(function (x, i) { if (iE < 0 && x.v >= V - EPS) iE = i; });
+    if (iE < 0) return null;   /* a reservação passa da maior caixa: nada a trocar (a oferta já diz usar mais de uma) */
+    var esc = tipos[iE], prox = tipos[iE + 1] || null;
+    if (!(cx.volume > esc.v + EPS && (cx.volume > 1.5 * V + EPS || (prox && cx.volume > prox.v + EPS)))) return null;
+    var vl = function (n) { return f2(n).replace(",00", ""); };
+    return { texto: "Caixa d'água " + cx.id + ": a de " + vl(cx.volume) + " L é maior que o necessário — a reservação calculada é de " + vl(V) + " L (" + arr(RV.Pr && RV.Pr.consumoDiario && RV.Pr.consumoDiario.passos).join("; ") + " × 1 dia, NBR 5626:2020 6.5.6.2" + (RV.premissas.length ? "; " + RV.premissas.join("; ") : "") + ") e o menor tamanho comercial que atende no catálogo é o de " + vl(esc.v) + " L. Caixa grande demais pesa na laje e deixa a água parada (cloro some, risco sanitário).",
+             acao: { tipo: "ops", ops: [{ op: "instancia", id: cx.id, tipoId: esc.t.id }], texto: "trocar pela de " + vl(esc.v) + " L" }, volumeNecessario: V, volumeSugerido: esc.v, tipoId: esc.t.id };
+  }
+
+  function ofertar(e, ESP) {
+    var estado = e.estado || {}, avaliarFam = e.avaliarFam, K = HK(), F = HFm(), PG = HPG(), N = NN(), PC = HPC(), BE = BEd();
+    var fam = F && F.porId ? F.porId("hid-caixa-dagua") : null;
+    if (!fam || !PG || !N || !BE) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo: as " + ESP.length + " espera(s) de água fria ficam abertas — ponha a caixa (biblioteca hid-caixa-dagua) e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
+    /* VOLUME: a reservação do programa (1 dia de consumo, NBR 5626:2020 6.5.6.2) */
+    var RV = reservacaoDe(e), prog = RV.prog, premissas = RV.premissas, Pr = RV.Pr, V = RV.V;
     if (V == null) return { pendencia: { chave: "bar.sem_caixa", texto: "Sem caixa d'água no modelo e sem a reservação do programa (" + arr(Pr && Pr.reservacao && Pr.reservacao.passos).join("; ") + ") — ponha a caixa e trace de novo", elementos: ESP.map(function (s) { return s.trecho; }), acao: null } };
     /* o menor tipo comercial do catálogo que atende */
     var tipos = arr(fam.tipos).map(function (t) { var av = avaliarFam ? avaliarFam("hid-caixa-dagua", t.id, {}) : null; return { t: t, v: av && av.valores ? num(av.valores.Volume_L, null) : null, av: av }; }).filter(function (x) { return x.v != null; }).sort(function (a, b) { return a.v - b.v; });
@@ -1392,7 +1447,7 @@
   }
 
   var HidBarrilete = { VERSAO: 1, comBase: false, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
-    montar: montar, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
+    montar: montar, volumeExagerado: volumeExagerado, reservacaoDe: reservacaoDe, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
     _int: { CHAVE_COTA_MAX: CHAVE_COTA_MAX, suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
   global.HidBarrilete = HidBarrilete;
   if (typeof module !== "undefined" && module.exports) module.exports = HidBarrilete;

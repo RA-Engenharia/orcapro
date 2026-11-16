@@ -1725,8 +1725,9 @@ if (o.foco && o.foco.length) {
 try { construirSisIdx(); } catch (_) {}
 var focA = o.foco.indexOf('agua') >= 0, focE = o.foco.indexOf('esgoto') >= 0;
 var mF = function (c, op, solida, semBrilho) { return new THREE.MeshStandardMaterial({ color: c, emissive: ((op < 1 && !solida) || semBrilho) ? 0x000000 : c, emissiveIntensity: 0.45, roughness: 0.85, metalness: 0, envMapIntensity: 0.15, transparent: op < 1, opacity: op, depthWrite: (op >= 1 || !!solida), side: THREE.DoubleSide }); };
-var MAT = { cx: mF(0x7a5a3e, 0.9, true), cxE: mF(0xf2f2f0, 0.9, true, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), ve: mF(0x7c3aed, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };
-bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
+var PECA_OP = (o.pecaOp != null && +o.pecaOp >= 0.5 && +o.pecaOp <= 1) ? +o.pecaOp : 0.8;
+var MAT = { cx: mF(0x7a5a3e, PECA_OP, true), cxE: mF(0xf2f2f0, PECA_OP, true, true), cxV: mF(0x7c3aed, PECA_OP, true), cxQ: mF(0x8a1414, PECA_OP, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), ve: mF(0x7c3aed, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };
+bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opPeca: PECA_OP, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
 window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };
 var tubosCx = [];
 todasMalhas(function (m) {
@@ -1740,15 +1741,32 @@ for (var i = 0; i < tubosCx.length; i++) { var d = tubosCx[i].b.distanceToPoint 
 return melhor;
 };
 window.__focoDiag.orfas = 0;
+var PAPEL_INST = { conexao: 1, pontoAgua: 1, acessorio: 1, peca: 1 }, opacos = {};
+var pecaMat = function (mat) {
+if (Array.isArray(mat)) return mat.map(pecaMat);
+if (!mat) return mat;
+if (!opacos[mat.uuid]) { var c2 = mat.clone(); c2.transparent = PECA_OP < 1; c2.opacity = PECA_OP; c2.depthWrite = true; opacos[mat.uuid] = c2; MAT['_op' + mat.uuid] = c2; }
+return opacos[mat.uuid];
+};
+var contorno = function (m) {
+try {
+if (!m.geometry || m.userData._ctrFoto) return;
+if (!MAT.ctr) MAT.ctr = new THREE.LineBasicMaterial({ color: 0x1b1b1b, transparent: false, opacity: 1 });
+var e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), MAT.ctr); e.userData._ctrFoto = true; e.renderOrder = 2; m.add(e);
+(bk.ctr = bk.ctr || []).push([m, e]); window.__focoDiag.nContorno = (window.__focoDiag.nContorno || 0) + 1;
+} catch (_) { }
+};
 todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
 if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }
+if (k === 'outros' && (m.userData.instPapel === 'acessorio' || m.userData.instPapel === 'peca')) { var ko2 = orfaDe(m); if (ko2) { k = ko2; window.__focoDiag.orfas++; } }
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
 if (o.reservTransl && m.userData.instFam && String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE') {
 if (!MAT.reserv) MAT.reserv = new THREE.MeshBasicMaterial({ color: 0xbcd6f2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
 bk.trocas.push([m, m.material]); m.material = MAT.reserv; return;
 }
 if (o.semArquitetura && instVista.on && instVistaFundo(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
+if (!agua && !esg && PAPEL_INST[m.userData.instPapel]) { bk.trocas.push([m, m.material]); m.material = pecaMat(m.material); contorno(m); window.__focoDiag.nInstOpaca = (window.__focoDiag.nInstOpaca || 0) + 1; return; }
 if (!agua && !esg) {
 if (o.pisoOp != null && instVista.on && instVistaFundo(m) && /^IFC(SLAB|COVERING)/.test(String(m.userData.tipo || '').toUpperCase())) {
 if (!MAT.piso) MAT.piso = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: +o.pisoOp, depthWrite: false, side: THREE.DoubleSide });
@@ -1760,8 +1778,11 @@ return;
 window.__focoDiag.papeis[m.userData.instPapel || '-'] = (window.__focoDiag.papeis[m.userData.instPapel || '-'] || 0) + (agua ? 1 : 0);
 if (esg) { window.__focoDiag.papeisEsg = window.__focoDiag.papeisEsg || {}; window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] = (window.__focoDiag.papeisEsg[m.userData.instPapel || '-'] || 0) + 1; }
 var pp = m.userData.instPapel;
-if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
-if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
+if (pp === 'acessorio' && ((agua && focA) || (esg && focE))) { bk.trocas.push([m, m.material]); m.material = pecaMat(m.material); contorno(m); window.__focoDiag.nInstOpaca = (window.__focoDiag.nInstOpaca || 0) + 1; return; }
+if (agua && focA && k === 'agua_quente' && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxQ; contorno(m); window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
+if (agua && focA && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cx; contorno(m); window.__focoDiag.nCx++; window.__focoAcum.nCx++; return; }
+if (esg && focE && k === 'ventilacao' && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxV; contorno(m); window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
+if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; contorno(m); window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
 if (esg && focA && !focE) { if (!MAT.esgFraco) MAT.esgFraco = new THREE.MeshBasicMaterial({ color: 0xd9dde2, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide }); bk.trocas.push([m, m.material]); m.material = MAT.esgFraco; return; }
 var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;
 bk.trocas.push([m, m.material]); m.material = nv;
@@ -1777,6 +1798,7 @@ out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H, nFoco: bk.t
 finally {
 renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
 if (bk.esc) bk.esc.forEach(function (t) { t[0].visible = t[1]; });
+if (bk.ctr) bk.ctr.forEach(function (t) { try { t[0].remove(t[1]); t[1].geometry.dispose(); } catch (_) {} });
 if (bk.trocas) { bk.trocas.forEach(function (t) { t[0].material = t[1]; }); try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
 if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
 renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
@@ -5473,7 +5495,7 @@ if (S._prec && S._prec.mover(e)) {
 if (window.BimPlantaModelar && BimPlantaModelar.moverForma3d) BimPlantaModelar.moverForma3d();
 return;
 }
-if (S.edit && S.edit.on && (((S.edit.sub === 'parede' || S.edit.sub === 'viga' || S.edit.sub === 'cobertura') && S.edit.p1) || S.edit.sub === 'familia' || (S._volPreviewa && S._volPreviewa())) && S._editPreviewMove) {
+if (S.edit && S.edit.on && (((S.edit.sub === 'parede' || S.edit.sub === 'viga' || S.edit.sub === 'cobertura' || S.edit.sub === 'inst') && S.edit.p1) || S.edit.sub === 'familia' || (S._volPreviewa && S._volPreviewa())) && S._editPreviewMove) {
 S._editPreviewMove(e);
 }
 if (!ferramentaClique() || !snap.on) return;
@@ -10603,11 +10625,54 @@ S.editDist = editDist;
 function editPreviewLimpar() {
 if (edit.linhaProv) { scene.remove(edit.linhaProv); if (edit.linhaProv.geometry) edit.linhaProv.geometry.dispose(); edit.linhaProv = null; }
 edit.pPrev = null;
+if (edit._tuboG && edit._tuboG.parent) edit._tuboG.parent.remove(edit._tuboG);
 editDist.style.display = 'none';
+}
+var _tuboC = { geoCil: null, geoEsf: null, mats: {}, cx: {} };
+function editTuboPrev(p1, p) {
+var TP = window.BimTuboPrevia, U = window.BimInstUI, I = window.BimInst, cfg = U && U.cfg;
+if (!TP || !I || !cfg || ['tubo', 'eletroduto', 'eletrocalha', 'duto'].indexOf(cfg.ferramenta) < 0) { if (edit._tuboG && edit._tuboG.parent) edit._tuboG.parent.remove(edit._tuboG); return; }
+var est = edit.estado, trs = (est && est.instalacoes && est.instalacoes.trechos) || [];
+var y1 = p1.y, A = { x: p1.x, y: y1, z: p1.z }, Bp = { x: p.x, y: y1, z: p.z };
+var pr = TP.preparar(cfg, trs, A, Bp, window.HidGeo, I.MATERIAIS, I.SISTEMAS);
+if (!(pr.eixo.L > 1e-6)) { if (edit._tuboG && edit._tuboG.parent) edit._tuboG.parent.remove(edit._tuboG); return; }
+var g = edit._tuboG;
+if (!g) {
+if (!_tuboC.geoCil) { _tuboC.geoCil = new THREE.CylinderGeometry(1, 1, 1, 16, 1, false); _tuboC.geoEsf = new THREE.SphereGeometry(1, 14, 10); }
+g = edit._tuboG = new THREE.Group(); g.name = 'tubo-previa'; g.userData.previaTubo = true;
+var corpo = new THREE.Mesh(_tuboC.geoCil, new THREE.MeshStandardMaterial({ color: 0x2d6a9c, transparent: true, opacity: 0.78, depthWrite: false }));
+corpo.name = 'tubo-previa-corpo'; corpo.renderOrder = 998; g.add(corpo);
+edit._tuboCriados = (edit._tuboCriados || 0) + 1;
+}
+if (g.parent !== scene) scene.add(g);
+var corpoM = g.children[0], e = pr.eixo, dir = new THREE.Vector3(e.dir.x, e.dir.y, e.dir.z), r = pr.de / 2;
+corpoM.material.color.set(pr.cor);
+corpoM.position.set(e.c.x, e.c.y, e.c.z); corpoM.scale.set(r, e.L, r);
+corpoM.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+corpoM.userData.de = pr.de; corpoM.userData.comp = e.L;
+for (var i = 0; i < 2; i++) {
+var cn = pr.conexoes[i], mc = g.children[1 + i];
+if (!cn) { if (mc) mc.visible = false; continue; }
+if (!mc) { mc = new THREE.Mesh(_tuboC.geoEsf, new THREE.MeshStandardMaterial({ color: 0x2d6a9c, transparent: true, opacity: 0.9, depthWrite: false })); mc.renderOrder = 999; g.add(mc); }
+var sy = cn.simbolo; mc.visible = true; mc.material.color.set(pr.cor);
+mc.position.set(cn.x, y1, cn.z); mc.scale.set(sy.r3d, sy.r3d, sy.r3d); mc.userData.conexao = cn.tipo; mc.userData.simbolo = sy.chave;
+}
+}
+var _tuboRaf = 0, _tuboUlt = null;
+function editTuboPrevRaf(p1, p) {
+_tuboUlt = { p1: p1, p: p };
+if (_tuboRaf) return;
+var rodar = function () {
+_tuboRaf = 0; var u = _tuboUlt; _tuboUlt = null; if (!u || !edit.on || edit.sub !== 'inst' || !edit.p1) return;
+edit._tuboN = (edit._tuboN || 0) + 1;
+try { editTuboPrev(edit.p1, { x: u.p.x, z: u.p.z }); } catch (eT) { edit._tuboErr = String(eT && eT.message || eT); }
+};
+_tuboRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(rodar) : (rodar(), 0);
 }
 function editPreview(p, clientX, clientY) {
 if (!edit.p1 || !p) { editPreviewLimpar(); return; }
 edit.pPrev = p.clone();
+if (edit.sub === 'inst') { edit._tuboN = (edit._tuboN || 0) + 1; try { editTuboPrev(edit.p1, p); } catch (eTP) { edit._tuboErr = String(eTP && eTP.message || eTP); } }
 if (!edit.linhaProv) {
 if (!edit._linhaMat) edit._linhaMat = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false });
 var g3 = new THREE.BufferGeometry().setFromPoints([edit.p1, p]);
@@ -11958,6 +12023,7 @@ S._prec = (window.BimPrecisaoUI && window.BimPrecisao) ? BimPrecisaoUI.montar({
 THREE: THREE, S: S, edit: edit, canvas: canvasEl, scene: scene,
 host: function () { return (S && S.host) || host; }, camera: function () { return camera; },
 planoPonto: editPontoPlano, raio: raioToque, raycast: raycastEm, hits: function () { return _ultimosHits; },
+tuboPrevia: editTuboPrevRaf,
 snapMalha: function (e, h) { return h ? aplicarSnap(h, raioToque(e)) : null; },
 marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca,
 op: editOp, clique: editClique, concluirParede: editConcluirParede, ajustar: editAjustarPonto, ghost: editGhostMover,
@@ -15550,6 +15616,7 @@ if (!S || !S._editOpExterna || !mud) return false;
 var o = { op: 'volProps', id: id }; if (mud.categoria) o.categoria = mud.categoria; if (mud.material != null) o.material = mud.material; if (mud.nome != null) o.nome = mud.nome;
 S._editOpExterna(o); return true;
 },
+_tuboPrev3d: function () { var e = S && S.edit, g = e && e._tuboG; if (!g) return e ? { semMalha: true, chamadas: e._tuboN || 0, erro: e._tuboErr || null, sub: e.sub, p1: !!e.p1, vez: !!(window.BimInstUI && BimInstUI.cfg) } : null; var c = g.children[0]; return { naCena: g.parent === S.scene, de: c.userData.de, comp: c.userData.comp, cor: '#' + c.material.color.getHexString(), esc: [c.scale.x, c.scale.y, c.scale.z], conexoes: g.children.slice(1).filter(function (m) { return m.visible; }).map(function (m) { return m.userData.conexao; }), malhas: g.children.length, criados: e._tuboCriados || 0 }; },
 _volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", traco: !!e.p1, marca: !!(S.snapMarca && S.snapMarca.style.display !== 'none'), ghost: !!e.ghost, cursor: (S.renderer && S.renderer.domElement && S.renderer.domElement.style.cursor) || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },
 csgCarregar: function () { return (S && S._csgCarregar) ? S._csgCarregar().then(function () { return true; }, function () { return false; }) : Promise.resolve(false); },
 ifcSaida: function (o) { return (S && S._ifcSaida) ? S._ifcSaida(o) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },

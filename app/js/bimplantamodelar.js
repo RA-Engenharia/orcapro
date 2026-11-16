@@ -560,6 +560,7 @@
       if (h) status(h);
     },
     mover2d: function (id, ev, p) {
+      var self = this;
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c || !c.el) return;
       var sub = this.ativo() ? this.ferramenta() : null;
       /* FLUIDEZ: TUBO NO CORTE — a prévia elástica do traço (js/biminstui.js moverCorte) */
@@ -570,6 +571,17 @@
       c.el.setAttribute("data-pm-ferr", sub);
       if (!p) return;
       st.ultEv = { x: ev.clientX, y: ev.clientY, shift: !!ev.shiftKey };
+      /* TUBO (inst): a prévia segue o mouse a cada QUADRO (requestAnimationFrame), não por relógio — o último movimento ganha, sem fila */
+      if (sub === "inst" && typeof requestAnimationFrame === "function") {
+        st.pend = { id: id, ev: ev, p: p, sub: sub };
+        if (!st.raf) st.raf = requestAnimationFrame(function () {
+          st.raf = 0; var pd = st.pend; st.pend = null; if (!pd || !self.ferramenta()) return;
+          var t0 = performance.now();
+          st.id = pd.id; st.cur = self._ponto(pd.id, pd.ev, pd.p, pd.sub); self._desenhar(pd.id);
+          st.medidas = st.medidas || []; st.medidas.push(performance.now() - t0); if (st.medidas.length > 400) st.medidas.shift();
+        });
+        return;
+      }
       var agora = Date.now(); if (agora - st.tMov < 25) return; st.tMov = agora;
       st.id = id; st.cur = this._ponto(id, ev, p, sub);
       this._desenhar(id);
@@ -577,9 +589,60 @@
     /* ⚠ depois do quadro: o Bim2D.atualizar devolve o zoom (viewBox) DEPOIS de redesenhar, e a escala
        medida antes punha as setas da porta longe da parede — elas pulavam no primeiro movimento */
     aposDesenhar: function (id) { var self = this; if (st.id === id && this.ferramenta()) setTimeout(function () { if (st.id === id && self.ferramenta()) self._desenhar(id); }, 0); },
+    /* ------------------------------------------------ PRÉVIA REAL DO TUBO NA PLANTA (16/11/2026, js/bimtuboprevia.js)
+       Um polígono (a faixa do tubo, com a largura do DE em metros — na escala da planta) e dois encaixes de conexão são criados UMA vez
+       por vista (g.pm-tubo-prev) e só têm os atributos trocados a cada quadro. A cor é a do sistema; a pena, o contorno fino da planta. */
+    /* gancho de teste: a última prévia do tubo (largura, cor, conexões) e quantas vezes o nó SVG foi criado */
+    tuboPrev: function () { return st.tuboPrev || null; },
+    tempos: function () { return (st.medidas || []).slice(); },
+    _tuboLimpar: function (c) { var tg = c && c.svg ? c.svg.querySelector("g.pm-tubo-prev") : null; if (tg && tg.parentNode) tg.parentNode.removeChild(tg); },
+    _tuboCfg: function () {
+      var U = global.BimInstUI, cfg = U && U.cfg; if (!cfg || ["tubo", "eletroduto", "eletrocalha", "duto"].indexOf(cfg.ferramenta) < 0) return null;
+      return global.BimTuboPrevia && global.BimInst ? cfg : null;
+    },
+    _tuboPlanta: function (id, c, g, p1, p2) {
+      var cfg = this._tuboCfg(), TP = global.BimTuboPrevia; if (!cfg || !TP || !p1 || !p2) { this._tuboLimpar(c); return; }
+      var b = B(), est = null; try { est = b.editarEstado().estado; } catch (e) { est = null; }
+      var I = global.BimInst, trs = ((est && est.instalacoes && est.instalacoes.trechos) || []);
+      var pr = TP.preparar(cfg, trs, { x: p1.x, z: p1.z }, { x: p2.x, z: p2.z }, global.HidGeo, I.MATERIAIS, I.SISTEMAS);
+      if (!(pr.faixa.L > 1e-6)) { this._tuboLimpar(c); return; }
+      var tg = c.svg.querySelector("g.pm-tubo-prev"), u = 1 / this._escala(id), fresco = false;
+      if (!tg) {
+        fresco = true; tg = document.createElementNS(NS, "g"); tg.setAttribute("class", "pm-tubo-prev"); tg.setAttribute("pointer-events", "none"); tg.setAttribute("data-pm-tubo-prev", "1");
+        var pg = document.createElementNS(NS, "polygon"); pg.setAttribute("class", "pm-tubo-faixa"); pg.setAttribute("vector-effect", "non-scaling-stroke"); tg.appendChild(pg);
+        for (var k = 0; k < 2; k++) {
+          var cx = document.createElementNS(NS, "g"); cx.setAttribute("class", "pm-tubo-cx"); cx.style.display = "none";
+          var bar = document.createElementNS(NS, "line"), dsc = document.createElementNS(NS, "circle");
+          [bar, dsc].forEach(function (e2) { e2.setAttribute("vector-effect", "non-scaling-stroke"); cx.appendChild(e2); });
+          bar.setAttribute("class", "pm-tubo-barra"); dsc.setAttribute("class", "pm-tubo-disco"); tg.appendChild(cx);
+        }
+        st.tuboCriados = (st.tuboCriados || 0) + 1;
+      }
+      if (tg.parentNode !== c.svg) c.svg.insertBefore(tg, g && g.parentNode === c.svg ? g : null);
+      var poly = tg.firstChild, pts = pr.faixa.pts, cor = pr.cor;
+      poly.setAttribute("points", r6(pts[0].x) + "," + r6(pts[0].z) + " " + r6(pts[1].x) + "," + r6(pts[1].z) + " " + r6(pts[2].x) + "," + r6(pts[2].z) + " " + r6(pts[3].x) + "," + r6(pts[3].z));
+      poly.style.fill = cor; poly.style.fillOpacity = "0.55"; poly.style.stroke = cor; poly.style.strokeWidth = "0.9";
+      poly.setAttribute("data-de", String(pr.de)); poly.setAttribute("data-comp", String(r6(pr.faixa.L)));
+      var slots = tg.querySelectorAll("g.pm-tubo-cx"), i;
+      for (i = 0; i < slots.length; i++) {
+        var cn = pr.conexoes[i], sl = slots[i];
+        if (!cn) { sl.style.display = "none"; continue; }
+        var sy = cn.simbolo, bar2 = sl.firstChild, dsc2 = sl.lastChild;
+        sl.style.display = ""; sl.setAttribute("data-conexao", cn.tipo); sl.setAttribute("data-simbolo", sy.chave); sl.setAttribute("data-graus", String(cn.graus));
+        dsc2.setAttribute("cx", r6(cn.x)); dsc2.setAttribute("cy", r6(cn.z)); dsc2.setAttribute("r", r6(sy.raio));
+        dsc2.style.fill = cn.tipo === "te" ? "var(--d2-papel, #fff)" : cor; dsc2.style.fillOpacity = cn.tipo === "te" ? "0.9" : "0.9"; dsc2.style.stroke = cor; dsc2.style.strokeWidth = "1.2";
+        if (cn.tipo === "te" && cn.hx != null) {
+          var hl = Math.sqrt(cn.hx * cn.hx + cn.hz * cn.hz) || 1, ux = cn.hx / hl * sy.barra / 2, uz = cn.hz / hl * sy.barra / 2;
+          bar2.setAttribute("x1", r6(cn.x - ux)); bar2.setAttribute("y1", r6(cn.z - uz)); bar2.setAttribute("x2", r6(cn.x + ux)); bar2.setAttribute("y2", r6(cn.z + uz));
+          bar2.style.stroke = cor; bar2.style.strokeWidth = "3"; bar2.style.display = "";
+        } else bar2.style.display = "none";
+      }
+      st.tuboPrev = { de: pr.de, comp: pr.faixa.L, cor: cor, conexoes: pr.conexoes.map(function (x) { return { tipo: x.tipo, graus: x.graus }; }), criados: st.tuboCriados || 0, fresco: fresco };
+    },
     _limparCamada: function (id) {
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c) return;
       var g = c.svg ? c.svg.querySelector("g.pm-cam") : null; if (g) g.parentNode.removeChild(g);
+      this._tuboLimpar(c);
       var rt = c.tela ? c.tela.querySelector(".pm-rot") : null; if (rt) rt.style.display = "none";
       var rs = c.tela ? c.tela.querySelector(".pm-snaprot") : null; if (rs) rs.style.display = "none";
     },
@@ -615,6 +678,7 @@
           caminho([P(t.p1.x + nx + ox, t.p1.z + nz + oz), P(r.p.x + nx + ox, r.p.z + nz + oz), P(r.p.x - nx + ox, r.p.z - nz + oz), P(t.p1.x - nx + ox, t.p1.z - nz + oz)], "pm-faixa", true);
         }
         caminho([t.p1, r.p], "pm-elastico");
+        if (sub === "inst") this._tuboPlanta(id, c, g, t.p1, r.p);   /* PRÉVIA REAL DO TUBO (js/bimtuboprevia.js): largura do DE, cor do sistema, joelho/tê previstos */
       }
       if (t && t.pts && t.pts.length && (CONTORNO[sub] || sub === "guarda")) {
         caminho(t.pts.concat(r ? [r.p] : []), "pm-elastico");
@@ -641,6 +705,7 @@
         this._marcador(el, r.sn.tipo, r.p, 6 * u, g);
       }
       if (r) { el("line", { x1: r6(r.p.x - 9 * u), y1: r6(r.p.z), x2: r6(r.p.x + 9 * u), y2: r6(r.p.z), "class": "pm-mira" }); el("line", { x1: r6(r.p.x), y1: r6(r.p.z - 9 * u), x2: r6(r.p.x), y2: r6(r.p.z + 9 * u), "class": "pm-mira" }); }
+      if (!(sub === "inst" && t && t.p1 && r && this._tuboCfg())) this._tuboLimpar(c);   /* sem traço em curso: a prévia do tubo sai */
       this._rotulo(id, r);
       this._rotuloSnap(id, r);
     },

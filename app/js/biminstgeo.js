@@ -191,6 +191,7 @@
   /* o tubo: { de, e, pb, barra (m), origem {de, e, pb}, aConferir, fontes } (mm) */
   function cotasTubo(material, dn, classe) {
     var T = (dados().tubos || {})[material], d = T && T.dns ? T.dns[String(dn)] : null, junta = JUNTA[material] || "soldavel";
+    if (material === "pvc_esgoto") { var SNj = dep("HidCatalogoSN", "./hidcatalogosn.js"); if (SNj && num(dn, 0) > 0 && SNj.DADOS.luva.A[String(num(dn, 0))] != null) junta = SNj.junta(dn); }   /* DN 40 SN: soldável (sem anel), pela ficha */
     var o = { material: material, dn: num(dn, 0), junta: junta, barra: T ? T.barra_m : null, origem: {}, fontes: [], aConferir: false };
     if (d && d.de) { o.de = d.de; o.origem.de = "norma"; o.fontes.push(fonte(d.f)); }
     else { o.de = num(dn, 20); o.origem.de = "proporcao"; o.aConferir = true; }   /* PPR, CPVC, PEAD, eletroduto e cobre frigorígeno: a série é designada pelo DE */
@@ -321,6 +322,9 @@
       if (ls.length === 1) { poe("L", ls[0].face, "comprimento"); poe("pb", Math.abs(ls[0].conector), "bolsa"); if (o.pb2 == null && pp.lote) { o.pb2 = Math.round((ls[0].face - Math.abs(ls[0].conector)) * 100) / 100; o.origem.pb2 = "produto (perfil medido)"; } }
       else if (ls.length >= 2) { poe("L", ls[0].face + ls[1].face, "comprimento"); poe("pb", ls[0].face - ls[0].conector, "bolsa"); poe("od", odBoca(ls[0]), "externo"); if (pp.lote && Math.abs((ls[1].face - ls[1].conector) - o.pb) >= 0.5) { o.pb2 = Math.round((ls[1].face - ls[1].conector) * 100) / 100; o.origem.pb2 = "produto (perfil medido)"; } }
     }
+    /* DN 40 SN (16/11/2026, prints do Rogério): o perfil medido não tem perna de LUVA (bolsa nas duas pernas, ficha: soldável) mas a cota mantinha a `ponta` do catálogo —
+       temPonta dizia que tinha e juntasDaPonta somava uma luva DN 40 em cima da bolsa (bolsa duplicada, anéis sobrepostos). Sem perna de luva: sem ponta. */
+    if (pp.tipo === "cotovelo" && !pernas.some(function (x) { return x.luva; }) && o.ponta != null) { delete o.ponta; if (o.origem) delete o.origem.ponta; div.push("sem ponta: o perfil medido tem bolsa em todas as pernas (a ponta do catálogo não existe nesta peça)"); }
     o.produto = true; o.perfilMedido = pp.familia; o.aConferir = false;
     if (div.length) o.divergencia = (o.divergencia ? o.divergencia + "; " : "") + div.join("; ");
   }
@@ -373,6 +377,7 @@
     bronze: { cor: "#8A5634", rug: 0.8, met: 0.45, verniz: 0, nome: "bronze fundido (corpo da base Deca, superfície áspera)" },
     porca: { cor: "#3B3632", rug: 0.6, met: 0.3, verniz: 0, nome: "porca do castelo (escura)" },
     cromado: { cor: "#F2F4F6", rug: 0.3, met: 0.85, verniz: 0, nome: "cromado" },   /* LOTE 3-5: rug 0,1 / met 1 espelhava o chão escuro do ambiente e o cromado saía PRETO no print; rug 0,3 / met 0,85 = cromado polido com o reflexo difuso */
+    laranja: { cor: "#E8891C", rug: 0.5, met: 0, verniz: 0.1, env: 0.5, nome: "alavanca borboleta laranja do registro de esfera (PVC)" },
     volante: { cor: "#8E2B2B", rug: 0.5, met: 0.2, verniz: 0, env: 0.6, nome: "volante pintado" },
     azulDescarga: { cor: "#2F7FC8", rug: 0.45, met: 0, verniz: 0, env: 0.5, nome: "joelho azul do tubo de descida da válvula (com anéis)" },
     azul: { cor: "#2F69B3", rug: 0.52, met: 0, verniz: 0, env: 0.5, nome: "conexão com bucha de latão (azul)" },
@@ -779,9 +784,21 @@
     var r0 = null; SEM_GRAVIDADE++; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; } finally { SEM_GRAVIDADE--; }
     return ids.map(function (id, i) { if (!r0) return null; var f = ramos[i].passante ? null : (r0.faces || {})[id + ":" + (ramos[i].chega ? 1 : 0)]; return f == null ? null : f; });
   }
+  /* JOELHO DN 40 SN pela ficha (Tigre FT Esgoto Série Normal p.7: A = 39, B = 18, C = 21): o perfil medido tinha a bolsa de 15 mm (conector em 23,8) e a face em 38,8. A bolsa passa a ter
+     a profundidade B da ficha e a face = A; a boca é o raio da bolsa do próprio perfil. Cópia: o dado medido não é alterado. */
+  var J40 = null;
+  function joelho40Ficha(pf) {
+    if (J40 && J40.orig === pf) return J40.novo;
+    var SN = dep("HidCatalogoSN", "./hidcatalogosn.js"), D = SN && SN.DADOS && SN.DADOS.joelho90; if (!D || D.A["40"] == null) return pf;
+    var n = JSON.parse(JSON.stringify(pf));
+    n.pernas.forEach(function (pe) { var rb = pe.ext[pe.ext.length - 1][1]; pe.face = D.A["40"]; pe.conector = Math.round((D.A["40"] - D.B["40"]) * 100) / 100; pe.ext = [[pe.sIni, rb], [pe.face, rb]]; });
+    n.fichaSN = "Tigre FT Esgoto Série Normal, p.7 (A 39, B 18, C 21)";
+    J40 = { orig: pf, novo: n }; return n;
+  }
   function perfilProduto(material, tipo, dn) {
     var PR = produto(), base = (CHAVE_PERFIL[material] || {})[tipo]; if (!base || !PR || !PR.perfis) return null;
     var pf = PR.perfis[base + "-" + dn] || null;
+    if (pf && PERFIS_NOVOS.ligado && material === "pvc_esgoto" && base === "esg-joelho" && Number(dn) === 40) pf = joelho40Ficha(pf);   /* com o lote desligado: a peça de antes (base 1.2.253) */
     return pf && pf.lote && !PERFIS_NOVOS.ligado ? null : pf;
   }
   /* o perfil de UMA perna no eixo dela (mm): pontos [s, r] do fim da zona de encontro à face; antes do 1º ponto, o 1º raio */
@@ -1379,7 +1396,7 @@
     if (!lista || !lista.length) return null;
     var c0 = lista[0], P = [c0.x, c0.y, c0.z], ramos = [];
     lista.forEach(function (c) { (c.ramos || []).forEach(function (r) { if (ramos.indexOf(r) < 0) ramos.push(r); }); });
-    var eixos = eixosDoNo(P, ramos, trechosPorId, o.tol), out = { pecas: [], recuos: {}, bolsas: {} };
+    var eixos = eixosDoNo(P, ramos, trechosPorId, o.tol), out = { pecas: [], recuos: {}, bolsas: {}, recuosPorta: {} };   /* recuosPorta: o recuo da PRÓPRIA bolsa da conexão (o fundo dela), antes de qualquer luva/bucha — a conferência TUBO_NAO_TERMINA_EM_PORTA do auditor */
     /* a LUVA da ponta (biminst.juntasDaPonta: c.juntaDe) não é a peça principal do nó: ela abraça a ponta da principal */
     var princ = lista.filter(function (c) { return c.tipo !== "reducao" && !c.juntaDe; })[0], reds = lista.filter(function (c) { return c.tipo === "reducao"; });
     var luvas = lista.filter(function (c) { return c.juntaDe != null; }), gPrinc = null;
@@ -1406,7 +1423,7 @@
           var bu = bucha(princ.material, princ.dn, e.dn, P, p.dir, p.z / MM, o.lod);
           out.pecas.push({ id: red.id, partes: bu.partes, aConferir: true, cotas: bu.cotas });
           recuo({ trecho: p.trecho, lado: p.lado, recuo: bu.recuo, z: Math.max(num(p.z, 0), bu.recuo) });
-        } else recuo(p);
+        } else { out.recuosPorta[p.trecho + ":" + p.lado] = p.recuo; recuo(p); }
       });
       /* LUVA SEM PERNA DE PONTA NO PERFIL (19/10/2026, "pecinhas quadradas" do Rogério): o biminst deduz a luva pela ficha
          (HidGeo.temPonta) e o perfil medido do DN 40 (joelho/curva/tê/junção) não tem a perna da luva — a conexão saía sem a
@@ -1415,6 +1432,7 @@
       luvas.forEach(function (lv) {
         if (out.pecas.some(function (q) { return q.id === lv.id; })) return;
         var pj = g.portas.filter(function (x) { return String(x.trecho) === String(lv.juntaDe); })[0]; if (!pj) return;
+        if (pj.ponta == null) out.recuosPorta[pj.trecho + ":" + pj.lado] = pj.recuo;
         var ej = eixos.filter(function (x) { return x.trecho === pj.trecho && x.lado === pj.lado; })[0], dnL = ej ? ej.dn : princ.dn;
         var lg3 = luvaNaPonta(princ.material, dnL, P, pj.dir, pj.z / MM, !!lv.invertida, o.lod);
         out.pecas.push({ id: lv.id, partes: lg3.partes, aConferir: true, cotas: lg3.cotas });
@@ -1617,7 +1635,10 @@
     var angs = [], angS = 0, lS = lig.filter(function (l) { return Math.abs(pv(l.dir)[1]) < 0.9; })[0];
     if (lS) angS = Math.atan2(pv(lS.dir)[2], pv(lS.dir)[0]);
     for (var a = 0; a < nLivres; a++) angs.push(angS + 2 * Math.PI * (a + 1) / (nLivres + 1));
-    angs.forEach(function (an) { bocaRadial([Math.cos(an), 0, Math.sin(an)], H - hf - ce.od / 2 - 6, ce, true); });
+    /* FAMÍLIA DA FICHA (16/11/2026, print do Rogério: o tubo terminava no ar ao lado da boca): as entradas livres ficam onde o motor de bocas (js/hidbocas.js — a MESMA
+       posição dos conectores da família) as põe — ângulo e altura —, não em passos iguais; o.entradasFicha = [{ dir:[x,0,z], y (m, relativo ao ponto da peça) }] */
+    if (o.entradasFicha && o.entradasFicha.length) o.entradasFicha.forEach(function (e) { bocaRadial(pv(e.dir), (num(k.y, 0) + e.y - base[1]) / MM, ce, true); });
+    else     angs.forEach(function (an) { bocaRadial([Math.cos(an), 0, Math.sin(an)], H - hf - ce.od / 2 - 6, ce, true); });
     if (!temSaida && k.peca === "caixa_sifonada") bocaRadial([1, 0, 0], hS || H * 0.5, cs, true);
     if (hS == null) aConf = true;
     var partesP = [cascaSaida(m), cascaSaida(mb), cascaSaida(mg, "grelha")]; if (mA.idx.length) partesP.push(cascaSaida(mA, "anel"));
@@ -1803,7 +1824,7 @@
     });
     var latao = /bruto|acabamento/.test(a.variante), partes = [cascaSaida(mc, latao ? "latao" : "corpo")];
     if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
-    if (mp.idx.length) partes.push(cascaSaida(mp, latao ? "latao" : "corpo"));
+    if (mp.idx.length) partes.push(cascaSaida(mp, latao ? "latao" : (a.acessorio === "registro_esfera" ? "laranja" : "corpo")));   /* a borboleta do registro de esfera é laranja (Tigre), nunca a cor do tubo */
     if (mb.idx.length) partes.push(cascaSaida(mb, "azul"));
     var Lc = rg.conectores.length >= 2 ? Math.abs(rg.conectores[1].x - rg.conectores[0].x) : 0;
     /* as cotas da peça MEDIDA (corpo = o maior diâmetro no meio; altura = do fundo do corpo ao topo) e, onde a ficha da base
@@ -1833,6 +1854,9 @@
        como se compra: corpo de latão com as duas pontas SEXTAVADAS roscadas (fêmea, com a rosca à vista na boca), o bojo da gaveta, o
        castelo com a PORCA sextavada grande, o pescoço roscado com os filetes, a porca do engaxetamento e a HASTE com a ponta quadrada
        (onde entra o acabamento). Cotas da ficha da base (corpo e altura) quando há; o resto em proporção declarada (aConferir). */
+    /* REGISTRO DE ESFERA (16/11/2026, print do Rogério: "saiu como disco com pino no meio do tubo"): qualquer esfera (soldável, roscável, borboleta; qualquer DN) tem a forma do
+       produto — corpo, porcas de união, bolsas e a BORBOLETA laranja. Com a família medida (DN 20, 25, 32, 60) vale a medida; nos outros DN a forma paramétrica, a conferir. */
+    if (a.acessorio === "registro_esfera" && !/^(aco|inox|cobre)/.test(a.material || "")) { var rE = o.semProduto ? null : registroProduto(a, o, C, d, fr); return rE || registroEsfera(a, o, C, d, fr, de); }
     if ((a.acessorio === "registro_gaveta" || a.acessorio === "registro_pressao") && a.variante === "bruto" && !o.semProduto && !/^(aco|inox|cobre)/.test(a.material || "")) return registroBaseDeca(a, o, C, d, fr, de);
     var rP = o.semProduto ? null : registroProduto(a, o, C, d, fr); if (rP) return rP;
     var latao = /latao|bronze/.test(a.varMaterial || "") || a.variante === "bruto" || a.variante === "acabamento" || a.acessorio === "registro_gaveta" || a.acessorio === "valvula_retencao";
@@ -1985,6 +2009,40 @@
      cromadas por cima (a base embutida). */
   /* Amanco Wavin FTC000021 (rev. fev/2025), pág. 4 — válvula de retenção soldável: A comprimento, B Ø máximo (mm) */
   var RETENCAO_AMANCO = { "25": { A: 86.5, B: 65.5, cod: "98934" }, "32": { A: 96, B: 73.7, cod: "98935" } };
+  /* REGISTRO DE ESFERA paramétrico (DN sem família medida): corpo cilíndrico central, porca de união sextavada de cada lado (maior que o corpo), bolsas soldáveis nas pontas,
+     haste curta e a alavanca BORBOLETA (cubo + duas asas inclinadas) perpendicular ao tubo, para a frente (face acabada). Proporções do desenho do produto: a conferir com o catálogo do DN. */
+  function registroEsfera(a, o, C, d, fr, de) {
+    var seg = o.lod === "longe" ? 8 : 20, mc = new Malha(), ml = new Malha(), mw = new Malha(), zz = cross(d, fr);
+    var cs = cotasConexao("pvc_soldavel", "luva", a.dn), od = cs.od, rB = od / 2 * 1.55;   /* o corpo do produto é ~1,5× o Ø externo do tubo (foto Tigre) */
+    var Lff = num(a.comprimento, 0) > 0 ? num(a.comprimento, 0) / MM : rB * 3.7, h = Lff / 2;   /* comprimento total ≈ 1,85× o Ø do corpo (foto Tigre) */
+    var Lend = Math.min(cs.pb + 4, Lff * 0.3), rNut = rB * 1.12, Ln = Math.min(Math.max(rB * 0.6, 8), Lff * 0.17);
+    var X0 = add(C, mul(d, -h * MM));
+    [1, -1].forEach(function (sg) {   /* pontas: a bolsa soldável para fora e a porca de união sextavada */
+      var Fp = add(C, mul(d, sg * h * MM)), dirIn = mul(d, -sg), pf = [];
+      boca(pf, 0, +1, cs); pf.push([cs.pb + transicao(cs), od / 2 * 0.98], [Lend, od / 2 * 0.98], [Lend, 0]);
+      varrer(mc, reta(Fp, dirIn), escala(pf), seg, false);
+      varrer(mc, reta(add(Fp, mul(dirIn, (Lend - 0.5) * MM)), dirIn), escala([[0, 0], [0, rNut * 0.96], [rNut * 0.06, rNut], [Ln - rNut * 0.06, rNut], [Ln, rNut * 0.96], [Ln, 0]]), o.lod === "longe" ? 8 : 16, false);   /* porca de união ranhurada (16 gomos) */
+      varrer(mc, reta(add(Fp, mul(dirIn, (Lend + Ln - 0.5) * MM)), dirIn), escala([[0, 0], [0, rNut * 0.9], [rB * 0.18, rNut * 0.9], [rB * 0.18, 0]]), seg, false);   /* o anel da junta de união */
+    });
+    var x1 = Lend + Ln + rB * 0.18, Lb = Lff - 2 * x1;   /* o corpo central entre as porcas */
+    varrer(mc, reta(add(X0, mul(d, x1 * MM)), d), escala([[0, 0], [0, rB * 0.86], [Lb * 0.08, rB], [Lb * 0.92, rB], [Lb, rB * 0.86], [Lb, 0]]), seg + 6, false);
+    /* a haste curta e o cubo da borboleta, na normal da face acabada */
+    var hH = rB * 0.4, rH = rB * 0.34, rC = rB * 0.46, hC = rB * 0.42, Q0 = rB * 0.95;
+    varrer(mc, reta(C, fr), escala([[0, 0], [0, rH * 1.15], [Q0, rH * 1.15], [Q0 + hH, rH], [Q0 + hH, 0]]), seg, false);
+    varrer(ml, reta(add(C, mul(fr, (Q0 + hH * 0.6) * MM)), fr), escala([[0, 0], [0, rC], [hC, rC], [hC, 0]]), seg + 4, false);
+    /* as duas asas inclinadas, abertas ao longo do tubo como no produto (perfil no plano d × fr, espessura na direção zz) */
+    var yb = Q0 + hH * 0.6, W = rB * 0.95, rise = rB * 0.55, tk = rB * 0.42, e = rB * 0.5;
+    [1, -1].forEach(function (sg) {
+      var P2 = [[0, 0], [rC * 0.9, 0], [rC + W, rise], [rC + W, rise + tk], [rC * 0.9, hC]].map(function (q) { return [q[0] * sg, q[1]]; });
+      var area = 0, i, j; for (i = 0; i < P2.length; i++) { j = (i + 1) % P2.length; area += P2[i][0] * P2[j][1] - P2[j][0] * P2[i][1]; }
+      var base = P2.map(function (q) { return add(add(C, mul(fr, (yb + q[1]) * MM)), add(mul(d, q[0] * MM), mul(zz, -e / 2 * MM))); });
+      if (area < 0) { base.reverse(); P2.reverse(); }
+      if (dot(cross(d, fr), zz) < 0) { base.reverse(); P2.reverse(); }
+      prismaPoligono(mw, base, mul(zz, e * MM), P2);
+    });
+    return { partes: [cascaSaida(mc, "corpo"), cascaSaida(ml, "laranja"), cascaSaida(mw, "laranja")], frente: fr, aConferir: true, comprimento: Lff * MM,
+             cotas: { corpo: rB * 2, altura: Q0 + hH + hC + rise + tk, bolsa: cs.pb, origem: "proporcao", fonte: null, aConferir: "registro de esfera sem família medida neste DN: corpo, porcas e borboleta em proporção do desenho do produto; confira no catálogo" } };
+  }
   function registroPvc(a, o, C, d, de, matTubo) {
     var fr = o.frente ? nrmz(pv(o.frente)) : null;
     if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));

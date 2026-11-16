@@ -991,7 +991,9 @@
   function pecaFicha(peca, chave, q) {
     var G = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
     if (!G || !G.peca) throw new Error("HidGeo.peca indisponível (js/biminstgeo.js)");
-    var r = G.peca({ peca: peca, dn: chave, x: 0, y: 0, z: 0 }, [], { lod: q && q.N <= 20 ? "longe" : "perto" }); if (!r) throw new Error("sem cotas da ficha para " + peca + " " + chave);
+    var HB = global.HidBocas || (typeof require === "function" ? (function () { try { return require("./hidbocas.js"); } catch (e) { return null; } })() : null), ef = null;
+    if (HB && HB.bocas && peca === "caixa_sifonada") { try { ef = HB.bocas({ instalacoes: {} }, { peca: peca, dn: chave, x: 0, y: 0, z: 0, rotY: 0 }).filter(function (b) { return b.papel === "entrada"; }).map(function (b) { return { dir: [b.dir.x, 0, b.dir.z], y: b.y }; }); } catch (eB) { ef = null; } }
+    var r = G.peca({ peca: peca, dn: chave, x: 0, y: 0, z: 0 }, [], { lod: q && q.N <= 20 ? "longe" : "perto", entradasFicha: ef }); if (!r) throw new Error("sem cotas da ficha para " + peca + " " + chave);
     return r.partes.filter(function (pt) { return pt.malha.idx.length; }).map(function (pt, i) {
       var p = parte(pt.papel + "-" + i, pt.papel, PAPEL_PECA[pt.papel] || PVC, false); p.m.v = pt.malha.pos.slice(); p.m.f = pt.malha.idx.slice(); return p;
     });

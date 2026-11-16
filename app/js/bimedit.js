@@ -1191,7 +1191,7 @@
         if (o.op === "furo") return o.id != null && Array.isArray(o.furo) && o.furo.length >= 3 && o.furo.every(function (p) { return !!p && fin(p.x) && fin(p.z); });
         if (o.op === "ajustar") return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) && Object.keys(o.campos).length > 0 &&
           Object.keys(o.campos).every(function (k) { return ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes",
-            "linhaLoc", "virar", "uniao", "estrut", "rampa", "contorno"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
+            "linhaLoc", "virar", "uniao", "estrut", "rampa", "contorno", "tipoPiso"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
           /* P1-B: restrições por nível — um objeto (nível = texto/null, medida = número/null) */
           (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes))) &&
           (o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z) && (q.pr == null || (typeof q.pr === "string" && q.pr.length > 0 && q.pr.length <= 120) || fin(q.pr)) && (q.pf == null || q.pf === "externa" || q.pf === "eixo" || q.pf === "interna") && (q.po == null || (fin(q.po) && Math.abs(q.po) <= 10)); })));   /* CONTORNO LIVRE: laje */

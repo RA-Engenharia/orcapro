@@ -1291,7 +1291,7 @@
       return o;
     },
     /* a op `ajustar` — só campos conhecidos, cada um com a sua regra */
-    CAMPOS_AJUSTE: ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
+    CAMPOS_AJUSTE: ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa", "tipoPiso"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
     ajustar: function (c, campos) {
       if (!c || !campos || typeof campos !== "object") return false;
       var mudou = false;
@@ -1300,6 +1300,13 @@
       if (campos.restricoes && RESTR_TIPO[c.tipo]) {
         var rn = normRestr(campos.restricoes, c.tipo);
         if (Object.keys(rn).length) { gravarRestr(c, rn); mudou = true; }
+      }
+      /* PISO NO CHÃO (16/11/2026): o tipo de piso da laje — "contrapiso" (sobre solo) | "radier" | "laje" (estrutural); vazio/"auto" = automático
+         (o térreo é contrapiso, os pavimentos de cima são laje: js/hidrota.js obstaculosDoBim). Aceita também o rótulo da lista de propriedades. */
+      if (campos.tipoPiso !== undefined && c.tipo === "laje") {
+        var tpp = String(campos.tipoPiso == null ? "" : campos.tipoPiso).toLowerCase(), tpv = /^contrapiso/.test(tpp) ? "contrapiso" : /^radier/.test(tpp) ? "radier" : /^laje/.test(tpp) ? "laje" : null;
+        if (tpv) c.tipoPiso = tpv; else delete c.tipoPiso;
+        mudou = true;
       }
       ["anexarTopo", "unir", "inverterFaces"].forEach(function (k) { if (campos[k] != null && c.tipo === "parede") { c[k] = !!campos[k]; mudou = true; } });
       /* T5: "Anexar ao telhado" — "sim" | "nao" | null (= automático) */

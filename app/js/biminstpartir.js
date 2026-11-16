@@ -29,6 +29,13 @@
   function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
   function r4(v) { return Math.round(v * 10000) / 10000; }   // hid:ok 4 casas do biminst
   var MIN_PEDACO = 0.005;   // hid:ok o biminst recusa trecho menor que 5 mm (normTrecho)
+  /* o menor pedaço que cabe entre o corte e a ponta do tubo: as duas bolsas (2·pb da ficha − 2 mm de folga de junta elástica); pedaço menor que isso é um toco com bolsa
+     dentro de bolsa (16/11/2026: "um trecho curto entre duas conexões com marcas") — o corte não é feito e o auditor (ENCAIXE_SOBREPOSTO) mostra o caso */
+  function minPedaco(t) {
+    var G = dep("HidGeo", "./biminstgeo.js"), pb = 0;
+    try { var c = G && G.cotasConexao ? G.cotasConexao(t.material, "luva", t.dn) : null; pb = c ? Math.max(c.pb || 0, c.pb2 || 0) / 1000 : 0; } catch (e) { pb = 0; }
+    return Math.max(MIN_PEDACO, 2 * pb - 0.002);   // hid:ok folga de 2 mm
+  }
   var HERDA = ["emenda", "excentrica", "isolamento", "aparente", "comentarios", "nome", "faseCriada", "faseDemolida", "passantes", "aplicacao"];
   var GRUPOS_FORA = { eletrica: 1, ar: 1 };   /* eletroduto e duto de ar: sem peça em linha no sentido do tubo */
 
@@ -70,7 +77,8 @@
   }
 
   /* ACHAR: { cortes: { idTrecho: [{ sa, sb, de: "ramal"|"peca", ref }] }, n } — cortes ordenados e fundidos */
-  function achar(estado, avaliarFam) {
+  function achar(estado, avaliarFam, cfg) {
+    var descartar = !!(cfg && cfg.forcar);   /* o DESCARTE do pedaço que atravessa o joelho só no comando manual (botão): o gancho automático nunca apaga tubo de projeto existente */
     var I = BI(), ins = (estado && estado.instalacoes) || {}, trechos = arr(ins.trechos), cortes = {}, tol = I ? I.TOL : 0.02;
     if (!I || !trechos.length) return { cortes: {}, n: 0 };
     var E = {};
@@ -94,14 +102,24 @@
     }
     Object.keys(porFam).forEach(function (fi) {
       Object.keys(E).forEach(function (id) {
-        var d = E[id], dentro = [];
+        var d = E[id], dentro = [], fora = false, dirT = null;
         porFam[fi].forEach(function (k) {
           if (k.sistema !== d.t.sistema) return;
           var pr = projetar(d.e, k);
-          if (pr.d <= I.TOL_CONECTOR && pr.s > tol && pr.s < d.e.L - tol) dentro.push(pr.s);
+          if (pr.d <= I.TOL_CONECTOR && pr.s > tol && pr.s < d.e.L - tol) { dentro.push(pr.s); if (k.dirTubo) dirT = k.dirTubo; }
+          else if (pr.d > I.TOL_CONECTOR) fora = true;
         });
         if (!dentro.length) return;
         dentro.sort(function (a, b) { return a - b; });
+        /* JOELHO/CURVA DE FAMÍLIA (um conector no eixo, o outro fora dele): o tubo só existe do lado para onde o conector aponta; o pedaço do outro lado
+           atravessaria a peça — é descartado (corte "descarta": [0, s] ou [s, L]) */
+        if (descartar && dentro.length === 1 && fora && dirT) {
+          var para = dirT.x * d.e.u.x + dirT.y * d.e.u.y + dirT.z * d.e.u.z, pecaL = 0, kk;
+          porFam[fi].forEach(function (a) { porFam[fi].forEach(function (b) { kk = Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); if (kk > pecaL) pecaL = kk; }); });
+          var lDesc = para > 0 ? dentro[0] : d.e.L - dentro[0], lFica = d.e.L - lDesc;
+          /* só o lado MENOR e só se for menor que 2× o comprimento da peça (guarda contra direção/giro invertido: nunca apaga o lado maior); senão, corte normal */
+          if (Math.abs(para) > 0.5 && lDesc <= lFica && pecaL > 0 && lDesc < 2 * pecaL) { marca(id, para > 0 ? { sa: 0, sb: dentro[0], de: "peca", ref: fi, descarta: true } : { sa: dentro[0], sb: d.e.L, de: "peca", ref: fi, descarta: true }); return; }
+        }
         marca(id, { sa: dentro[0], sb: dentro[dentro.length - 1], de: "peca", ref: fi });
       });
     });
@@ -111,11 +129,12 @@
       var L = E[id].e.L, l = cortes[id].sort(function (a, b) { return a.sa - b.sa; }), out = [];
       l.forEach(function (c) {
         var u = out[out.length - 1];
-        if (u && c.sa <= u.sb + tol) { if (c.sb > u.sb) u.sb = c.sb; if (c.de === "peca") u.de = "peca"; }
-        else out.push({ sa: c.sa, sb: c.sb, de: c.de, ref: c.ref });
+        if (u && c.sa <= u.sb + tol) { if (c.sb > u.sb) u.sb = c.sb; if (c.de === "peca") u.de = "peca"; if (c.descarta) u.descarta = true; }
+        else out.push({ sa: c.sa, sb: c.sb, de: c.de, ref: c.ref, descarta: !!c.descarta });
       });
       /* corte que sobra pedaço menor que o mínimo do motor nas pontas: não corta */
-      out = out.filter(function (c) { return c.sa >= MIN_PEDACO && L - c.sb >= MIN_PEDACO; });
+      var minP = minPedaco(E[id].t);
+      out = out.filter(function (c) { return c.descarta ? (c.sb - c.sa > tol) : (c.sa >= minP && L - c.sb >= minP); });
       if (out.length) { cortes[id] = out; n += out.length; } else delete cortes[id];
     });
     return { cortes: cortes, E: E, n: n };
@@ -154,10 +173,11 @@
     var I = BI();
     if (!I) return { ok: false, erro: "O motor das instalações não está carregado.", ops: [], n: 0, pedacos: 0 };
     if (!cfg.forcar && !opcaoLigada(estado)) return { ok: true, ops: [], n: 0, pedacos: 0, desligado: true };
-    var A = achar(estado, avaliarFam), usados = idsUsados(estado), out = [], n = 0, mudados = [];
+    var A = achar(estado, avaliarFam, cfg), usados = idsUsados(estado), out = [], n = 0, mudados = [];
     Object.keys(A.cortes).forEach(function (id) {
       var d = A.E[id], novos = opsDoCorte(I, d.t, d.e, A.cortes[id], usados);
-      if (novos.length < 2) return;
+      if (!novos.length) return;
+      if (novos.length < 2 && !A.cortes[id].some(function (c) { return c.descarta; })) return;
       novos.forEach(function (o) { out.push(o); });
       n++; mudados.push(id);
     });
