@@ -186,6 +186,7 @@
     var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2.parametros = par2;
     return e2;
   }
+  function pendVent(r) { return arr(r && r.pendencias).filter(function (p) { return /^amb\.ventilacao/.test(String(p.chave || "")) && p.chave !== "amb.ventilacao_encaixe"; }).length; }
   function pendEncaixe(r) { return arr(r && r.pendencias).filter(function (p) { return p.chave === "amb.ventilacao_encaixe"; })[0] || null; }
   function batidasVent(r) { return arr(r && r.avisos).filter(function (a) { return /ventila[çc][ãa]o.*passa perto de outro tubo/.test(String(a && a.texto || "")); }).length; }
   /* o refazer do ENCAIXE (a pendência com o que falta no 1º trecho): devolve { r2 } quando o refeito encaixa, ou { reserva, r2 } */
@@ -196,8 +197,13 @@
     /* o topo do ramal na tomada desce o que falta: a faixa do esgoto termina ali (o resto do ramal sobe a montante pela declividade) */
     var reserva = r4(Math.max(num(a.reserva, 0), num(a.piso, 0) - num(a.cobrimento, 0) - (num(a.yTomada, 0) - falta + raio(num(a.dnEs, 0)))));
     if (!(reserva > num(a.reserva, 0) + EPS)) return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: null, ok: false };
-    var r2 = null; try { r2 = ligar0(clonePar(e, par, reserva)); } catch (eR) { r2 = null; }
-    var ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2));
+    /* MESMA TOMADA (16/11/2026, perf do modo rápido): descer o esgoto só dá altura à subida que já foi escolhida — a posição do tê não muda. O refeito procura a ventilação SÓ nessa tomada
+       (a busca inteira da 2ª passada custava 1,6 s); se com ela o refeito não fecha, refaz com a busca inteira, como antes */
+    var tomPrev = r && r.ventilacao && r.ventilacao.tomada ? { x: r.ventilacao.tomada.x, z: r.ventilacao.tomada.z, trecho: r.ventilacao.tomada.trecho, ramais: {} } : null;
+    if (tomPrev) arr(r.ventilacao.ramais).forEach(function (q) { if (q.tomada) tomPrev.ramais[q.desconector] = q.tomada; });
+    var r2 = null, ok = false;
+    function refaz(prev) { var e2 = clonePar(e, par, reserva); if (prev) e2.parametros._tomadaPrev = prev; try { r2 = ligar0(e2); } catch (eR) { r2 = null; } ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2) && pendVent(r2) <= pendVent(r)); }   /* a mesma tomada que deixa um desconector sem ventilação (pendência nova) não vale: busca inteira */
+    refaz(tomPrev); if (!ok && tomPrev) refaz(null);
     return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: r2, ok: ok };
   }
   /* ENCAIXE DAS PEÇAS (07/11/2026, prints do Rogério na 1.2.262 — js/hidencaixe.js): DEPOIS da opção escolhida (a escolha não muda), o tubo que
@@ -1818,7 +1824,8 @@
       /* 1º só onde o tê cabe; sem lugar no ramal, a tomada vai ao coletor DN 100 (a junção de redução, dentro da distância máxima ao desconector); só sem nenhum dos dois volta a régua antiga (o auditor avisa) */
       var cands = candidatos(desc[0], true, { te: true });
       if (!cands.length && desc[0].caixa && dBa) cands = candidatos(desc[0], true, { te: true, comum: true });
-      if (!cands.length) { cands = candidatos(desc[0], true); if (cands.length) out.semTomadaQueCabe = true; }   /* sem lugar para o tê: o ligarSemEncaixe refaz o ambiente reservando o espaço na rota */
+      if (!cands.length) { cands = candidatos(desc[0], true); if (cands.length) out.semTomadaQueCabe = true; }
+      if (par._tomadaPrev && cands.length) { var cPrev = cands.filter(function (c) { return String(c.trecho) === String(par._tomadaPrev.trecho) && Math.abs(c.P.x - par._tomadaPrev.x) <= 0.02 && Math.abs(c.P.z - par._tomadaPrev.z) <= 0.02; }); if (cPrev.length) cands = cPrev; }   /* o refazer do encaixe: a mesma tomada (aprofundarEncaixe) */   /* sem lugar para o tê: o ligarSemEncaixe refaz o ambiente reservando o espaço na rota */
       if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].el || desc[0].ref]); return; }
       /* DN do RAMAL DE VENTILAÇÃO: Tabela 8 pelo grupo ventilado (com bacia = o banheiro tem bacia) e a soma das UHC */
       var temBacia = !!dBa, uT = 0;
@@ -2500,6 +2507,7 @@
       melhor.c.dists.filter(function (d) { return !d.ok; }).forEach(function (d) {
         if (cobertos[d.ref]) { d.ramal = cobertos[d.ref]; return; }
         var q = desc.filter(function (x) { return x.ref === d.ref; })[0], cs = q ? candidatos(q, true) : [];
+        if (par._tomadaPrev && par._tomadaPrev.ramais && par._tomadaPrev.ramais[d.ref]) { var tpR = par._tomadaPrev.ramais[d.ref], csP = cs.filter(function (c) { return String(c.trecho) === String(tpR.trecho) && Math.abs(c.P.x - tpR.x) <= 0.02 && Math.abs(c.P.z - tpR.z) <= 0.02; }); if (csP.length) cs = csP; }   /* o refazer do encaixe: o mesmo ponto do ramal de ventilação deste desconector */
         if (q && q.direto) {
           var dnRv = NR.dnVentRamal(0, 0, "ventilação: ramal de " + d.ref); dnRv = dnRv == null ? null : HRcomercial("ventilacao", dnRv);
           /* A1 (decisão do Rogério, 13/11/2026): no térreo, com a coluna DN 50 e a descida DN 50 (a união das cubas), a ventilação dela também é DN 50 inteira —
@@ -2530,7 +2538,7 @@
           if (bV) {
             var subV2 = emitir(bV, dnRv, "ventilacao_ramal"), ultV2 = subV2.p2; bV.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnRv, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ultV2 = sg.b; });
             var dV = bV.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
-            out.ventilacao.ramais.push({ desconector: d.ref, dn: dnRv, L: dV.L, limite: dV.limite, naDescida: true, juncao: { x: r4(ultV2.x), y: r4(ultV2.y), z: r4(ultV2.z) } });
+            out.ventilacao.ramais.push({ desconector: d.ref, dn: dnRv, L: dV.L, limite: dV.limite, naDescida: true, juncao: { x: r4(ultV2.x), y: r4(ultV2.y), z: r4(ultV2.z) }, tomada: { x: bV.c.P.x, z: bV.c.P.z, trecho: bV.c.trecho } });
             d.ramal = { dn: dnRv, L: dV.L };
             bV.c.dists.forEach(function (x) { if (x.ok && x.ref !== d.ref) cobertos[x.ref] = { dn: dnRv, L: x.L }; });
             if (bV.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] });
@@ -2600,7 +2608,7 @@
         var sub = emitir(bR, dnR, "ventilacao_ramal"), ult = sub.p2; encaixePend(bR);
         bR.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnR, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ult = sg.b; });
         var dR = bR.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
-        out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) } });
+        out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) }, tomada: { x: bR.c.P.x, z: bR.c.P.z, trecho: bR.c.trecho } });
         d.ramal = { dn: dnR, L: dR.L };
         if (bR.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] });
       });

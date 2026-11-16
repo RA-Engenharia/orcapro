@@ -3596,7 +3596,7 @@ var rI = ini && rIni > 0 ? retoDeSaida(r, rIni, P) : 0, rF = fim && rFim > 0 ? r
 var sobI = ini ? d2(a, c) - d : Infinity, sobF = fim ? d2(c, b) - d : Infinity;
 if ((sobI > EPS && sobI < rI - EPS) || (sobF > EPS && sobF < rF - EPS)) {
 var dT = r4(Math.min(ini && sobI < rI - EPS ? d2(a, c) : Infinity, fim && sobF < rF - EPS ? d2(c, b) : Infinity, ini ? d2(a, c) : L1, fim ? d2(c, b) : L2));
-if (dT >= P.margemNo / 2 - EPS) d = dT;
+if (dT >= P.margemNo / 2 - EPS && dT <= 2 * P.chanfro + EPS) d = dT;
 }
 }
 for (var tent = 0; tent < TENTATIVAS && !feito && d >= P.margemNo / 2; tent++) {
@@ -8294,6 +8294,7 @@ var par2 = {}; Object.keys(par).forEach(function (k) { par2[k] = par[k]; }); par
 var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2.parametros = par2;
 return e2;
 }
+function pendVent(r) { return arr(r && r.pendencias).filter(function (p) { return /^amb\.ventilacao/.test(String(p.chave || "")) && p.chave !== "amb.ventilacao_encaixe"; }).length; }
 function pendEncaixe(r) { return arr(r && r.pendencias).filter(function (p) { return p.chave === "amb.ventilacao_encaixe"; })[0] || null; }
 function batidasVent(r) { return arr(r && r.avisos).filter(function (a) { return /ventila[çc][ãa]o.*passa perto de outro tubo/.test(String(a && a.texto || "")); }).length; }
 function aprofundarEncaixe(e, r, par) {
@@ -8302,8 +8303,11 @@ if (!pe) return null;
 var a = pe.acao, falta = num(a.falta0Mm, 0) / 1000 + MARGEM_ENCAIXE;
 var reserva = r4(Math.max(num(a.reserva, 0), num(a.piso, 0) - num(a.cobrimento, 0) - (num(a.yTomada, 0) - falta + raio(num(a.dnEs, 0)))));
 if (!(reserva > num(a.reserva, 0) + EPS)) return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: null, ok: false };
-var r2 = null; try { r2 = ligar0(clonePar(e, par, reserva)); } catch (eR) { r2 = null; }
-var ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2));
+var tomPrev = r && r.ventilacao && r.ventilacao.tomada ? { x: r.ventilacao.tomada.x, z: r.ventilacao.tomada.z, trecho: r.ventilacao.tomada.trecho, ramais: {} } : null;
+if (tomPrev) arr(r.ventilacao.ramais).forEach(function (q) { if (q.tomada) tomPrev.ramais[q.desconector] = q.tomada; });
+var r2 = null, ok = false;
+function refaz(prev) { var e2 = clonePar(e, par, reserva); if (prev) e2.parametros._tomadaPrev = prev; try { r2 = ligar0(e2); } catch (eR) { r2 = null; } ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2) && pendVent(r2) <= pendVent(r)); }
+refaz(tomPrev); if (!ok && tomPrev) refaz(null);
 return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: r2, ok: ok };
 }
 function ligarBase(e) {
@@ -9546,6 +9550,7 @@ return cs;
 var cands = candidatos(desc[0], true, { te: true });
 if (!cands.length && desc[0].caixa && dBa) cands = candidatos(desc[0], true, { te: true, comum: true });
 if (!cands.length) { cands = candidatos(desc[0], true); if (cands.length) out.semTomadaQueCabe = true; }
+if (par._tomadaPrev && cands.length) { var cPrev = cands.filter(function (c) { return String(c.trecho) === String(par._tomadaPrev.trecho) && Math.abs(c.P.x - par._tomadaPrev.x) <= 0.02 && Math.abs(c.P.z - par._tomadaPrev.z) <= 0.02; }); if (cPrev.length) cands = cPrev; }
 if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].el || desc[0].ref]); return; }
 var temBacia = !!dBa, uT = 0;
 aparelhos.forEach(function (a) { var u = NR.uhc(a.aparelho, "ventilação"); uT += u == null ? 0 : u; });
@@ -10056,6 +10061,7 @@ return melhorV;
 melhor.c.dists.filter(function (d) { return !d.ok; }).forEach(function (d) {
 if (cobertos[d.ref]) { d.ramal = cobertos[d.ref]; return; }
 var q = desc.filter(function (x) { return x.ref === d.ref; })[0], cs = q ? candidatos(q, true) : [];
+if (par._tomadaPrev && par._tomadaPrev.ramais && par._tomadaPrev.ramais[d.ref]) { var tpR = par._tomadaPrev.ramais[d.ref], csP = cs.filter(function (c) { return String(c.trecho) === String(tpR.trecho) && Math.abs(c.P.x - tpR.x) <= 0.02 && Math.abs(c.P.z - tpR.z) <= 0.02; }); if (csP.length) cs = csP; }
 if (q && q.direto) {
 var dnRv = NR.dnVentRamal(0, 0, "ventilação: ramal de " + d.ref); dnRv = dnRv == null ? null : HRcomercial("ventilacao", dnRv);
 if (dnRv != null && !CV && num(dnV, 0) >= 50 && dnCol > dnRv + EPS && coluna && arr(q.cam).some(function (cq) { return num(cq.e.t.dn, 0) >= dnCol - EPS; })) {
@@ -10082,7 +10088,7 @@ return;
 if (bV) {
 var subV2 = emitir(bV, dnRv, "ventilacao_ramal"), ultV2 = subV2.p2; bV.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnRv, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ultV2 = sg.b; });
 var dV = bV.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
-out.ventilacao.ramais.push({ desconector: d.ref, dn: dnRv, L: dV.L, limite: dV.limite, naDescida: true, juncao: { x: r4(ultV2.x), y: r4(ultV2.y), z: r4(ultV2.z) } });
+out.ventilacao.ramais.push({ desconector: d.ref, dn: dnRv, L: dV.L, limite: dV.limite, naDescida: true, juncao: { x: r4(ultV2.x), y: r4(ultV2.y), z: r4(ultV2.z) }, tomada: { x: bV.c.P.x, z: bV.c.P.z, trecho: bV.c.trecho } });
 d.ramal = { dn: dnRv, L: dV.L };
 bV.c.dists.forEach(function (x) { if (x.ok && x.ref !== d.ref) cobertos[x.ref] = { dn: dnRv, L: x.L }; });
 if (bV.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] });
@@ -10138,7 +10144,7 @@ if (!bR) { pend("amb.ventilacao." + d.ref, "ramal de ventilação de " + d.ref +
 var sub = emitir(bR, dnR, "ventilacao_ramal"), ult = sub.p2; encaixePend(bR);
 bR.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnR, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ult = sg.b; });
 var dR = bR.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
-out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) } });
+out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) }, tomada: { x: bR.c.P.x, z: bR.c.P.z, trecho: bR.c.trecho } });
 d.ramal = { dn: dnR, L: dR.L };
 if (bR.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] });
 });

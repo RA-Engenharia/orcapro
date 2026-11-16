@@ -1028,7 +1028,8 @@
         var sobI = ini ? d2(a, c) - d : Infinity, sobF = fim ? d2(c, b) - d : Infinity;
         if ((sobI > EPS && sobI < rI - EPS) || (sobF > EPS && sobF < rF - EPS)) {
           var dT = r4(Math.min(ini && sobI < rI - EPS ? d2(a, c) : Infinity, fim && sobF < rF - EPS ? d2(c, b) : Infinity, ini ? d2(a, c) : L1, fim ? d2(c, b) : L2));
-          if (dT >= P.margemNo / 2 - EPS) d = dT;
+          /* o desvio do toco não passa de 2 × o chanfro: mais largo que isso a diagonal invade a zona livre da peça vizinha e a busca dela fica sem caminho (o ralo da banheira da Casa 487: 9 s para 110 s, 28 cantos com 31 cm) */
+          if (dT >= P.margemNo / 2 - EPS && dT <= 2 * P.chanfro + EPS) d = dT;
         }
       }
       for (var tent = 0; tent < TENTATIVAS && !feito && d >= P.margemNo / 2; tent++) {
