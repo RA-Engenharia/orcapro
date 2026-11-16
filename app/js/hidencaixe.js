@@ -308,6 +308,94 @@
     return out;
   }
 
+  /* ==================================================================== TOMADA DA VENTILAÇÃO PERTO DA JUNÇÃO (15/11/2026, print do Rogério)
+   * A ventilação que sai do MEIO do ramal (marcada "continua" + "tomada" = o ramal, js/hidligar.js e js/biminst.js) vira um TÊ no meio do tubo
+   * do ramal, que passa por ele inteiro. Quando o tê cai perto demais da ponta do ramal que entra na junção da linha (ex.: junção 100 × 50),
+   * o tê "sai do corpo da junção": as duas bolsas não cabem. O certo na obra: junção na linha, o tubo DN do ramal na derivação e, na PONTA dele, o
+   * tê — com o toco entre as peças comportando as duas bolsas. A régua é a do auditor (ENCAIXE_SOBREPOSTO): o tubo entre as peças tem pelo menos 2 bolsas.
+   *   HidEncaixe.passantes(trechos, ctx) → [{ trecho, conexao, no, lado (0 = a ponta p1 do tubo, 1 = p2), L, preciso, folga (m; < 0 = sobrepõem) }]
+   *   HidEncaixe.afastarTomadas(trechos, ctx, editavel?) → [{ trecho, tomada, de, para (m) }]   — anda o tê (e a ventilação inteira, em bloco) sobre o ramal */
+  var DESLOC_ESPERA = 0.15;   // hid:ok decisão 15/11/2026: até 15 cm a ventilação anda com a espera; acima disso fica (a espera é a interface com a coluna)
+  function passantesDeRede(R, BI, HG, recPronto) {
+    var porId = {}, rec = {}, nos = {}, ordem = [], out = [];
+    R.trechos.forEach(function (t) { porId[t.id] = t; });
+    R.conexoes.forEach(function (c) { var k = c.x + "," + c.y + "," + c.z + "|" + c.sistema; if (!nos[k]) { nos[k] = []; ordem.push(k); } nos[k].push(c); });
+    if (recPronto) rec = recPronto;   /* o auditor já mediu todos os nós: não mede de novo */
+    else ordem.forEach(function (k) { var r = null; try { r = HG.no(nos[k], porId, { tol: BI.TOL }); } catch (eN) { r = null; } if (!r) return; Object.keys(r.recuos).forEach(function (q) { rec[q] = Math.max(rec[q] || 0, r.recuos[q]); }); });
+    R.conexoes.forEach(function (c) {
+      if (!/^(te|juncao|cruzeta)/.test(String(c.tipo)) || !c.ramos || c.ramos.length < 2 || c.juntaDe != null) return;
+      var N = { x: c.x, y: c.y, z: c.z }, Tp = null;
+      c.ramos.forEach(function (id) { var t = porId[id]; if (!t) return; var d1 = Math.hypot(t.p1.x - N.x, t.p1.y - N.y, t.p1.z - N.z), d2 = Math.hypot(t.p2.x - N.x, t.p2.y - N.y, t.p2.z - N.z); if (d1 > 0.02 && d2 > 0.02) Tp = t; });   // hid:ok 2 cm (a tolerância do motor)
+      if (!Tp) return;
+      /* só o ramal DEITADO (a tomada da ventilação no esgoto horizontal): a vertical — o tubo de queda com os tês da coluna — tem a régua própria da coluna */
+      if (Math.abs(Tp.p2.y - Tp.p1.y) >= Math.hypot(Tp.p2.x - Tp.p1.x, Tp.p2.z - Tp.p1.z)) return;
+      var a = {}, b = {}, pid = {}, c2 = {};
+      Object.keys(Tp).forEach(function (q) { a[q] = Tp[q]; b[q] = Tp[q]; });
+      a.id = Tp.id + "#a"; a.p2 = N; b.id = Tp.id + "#b"; b.p1 = N;
+      Object.keys(porId).forEach(function (q) { pid[q] = porId[q]; }); pid[a.id] = a; pid[b.id] = b;
+      Object.keys(c).forEach(function (q) { c2[q] = c[q]; });
+      c2.ramos = []; c.ramos.forEach(function (id) { if (id === Tp.id) { c2.ramos.push(a.id); c2.ramos.push(b.id); } else c2.ramos.push(id); });
+      var r = null; try { r = HG.no([c2], pid, { tol: BI.TOL }); } catch (eS) { r = null; } if (!r) return;
+      var cl = null; try { cl = HG.cotasConexao(Tp.material, "luva", Tp.dn); } catch (eC) { cl = null; } if (!cl) return;
+      var pb = num(cl.pb2 || cl.pb, 0) / 1000;
+      [[0, a], [1, b]].forEach(function (q) {
+        var lado = q[0], pc = q[1], E = lado ? Tp.p2 : Tp.p1, recFar = rec[Tp.id + ":" + lado], recOwn = r.recuos[pc.id + ":" + (lado ? 0 : 1)];
+        if (!(recFar > 0) || !(recOwn >= 0)) return;
+        /* só quando a conexão da PONTA é uma JUNÇÃO (a derivação da junção da linha, o defeito do print); o tê perto de joelho/curva do ambiente é outra régua */
+        var cFim = R.conexoes.filter(function (z) { return z !== c && /^juncao/.test(String(z.tipo)) && z.juntaDe == null && z.ramos && z.ramos.indexOf(Tp.id) >= 0 && Math.hypot(z.x - E.x, z.y - E.y, z.z - E.z) <= 0.02; })[0];
+        if (!cFim) return;
+        var L = Math.hypot(E.x - N.x, E.y - N.y, E.z - N.z), preciso = recFar + recOwn + 2 * pb - FOLGA_BOLSA;
+        out.push({ trecho: String(Tp.id), conexao: String(c.id), no: N, lado: lado, L: L, preciso: preciso, folga: L - preciso });
+      });
+    });
+    return out;
+  }
+  function redeDe(trs, ctx) {
+    var BI = ctx.BimInst, e = BI.novoEstado();
+    trs.forEach(function (t) { try { BI.aplicarOp(e, t); } catch (eA) {} });
+    (ctx.pecas || []).forEach(function (k) { try { var o = {}; Object.keys(k).forEach(function (q) { o[q] = k[q]; }); o.op = "peca"; BI.aplicarOp(e, o); } catch (eP) {} });
+    try { return BI.rede({ caixas: [], familias: ctx.familias || [], instalacoes: BI.fechar(e) }, ctx.avaliarFam); } catch (eR) { return null; }
+  }
+  function passantes(trs, ctx) { var R = redeDe(trs, ctx); return R ? passantesDeRede(R, ctx.BimInst || global.BimInst, ctx.HidGeo || global.HidGeo) : null; }
+  function afastarTomadas(trs, ctx, editavel) {
+    var feitos = [], ed = editavel || function () { return true; };
+    function cop(p) { return { x: p.x, y: p.y, z: p.z }; }
+    function g4(v) { return Math.round(v * 10000) / 10000; }   // hid:ok grade de 0,1 mm
+    function mesmo(a, b) { return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= 0.005; }   // hid:ok 5 mm: a mesma ponta
+    for (var rod = 0; rod < 4; rod++) {   // hid:ok rodadas (mover um tê pode pedir a vizinha)
+      var P = passantes(trs, ctx); if (!P) break;
+      var ruim = P.filter(function (p) { return p.folga < -1e-6; })[0]; if (!ruim) break;   // hid:ok tolerância numérica
+      var T = trs.filter(function (t) { return String(t.id) === ruim.trecho; })[0], N = ruim.no; if (!T) break;
+      var V = trs.filter(function (t) { return t.tomada != null && String(t.tomada) === ruim.trecho && mesmo(t.p1, N) && ed(t); })[0]; if (!V) break;
+      /* a ventilação em BLOCO: o pé e tudo o que vem ligado a ele (a subida, o joelho, o horizontal) andam juntos; sem poder (ponta presa no modelo / numa espera) fica como está */
+      var bloco = [V], pend = [V], preso = false;
+      while (pend.length && !preso) {
+        var X = pend.pop();
+        [X.p1, X.p2].forEach(function (E) {
+          if (X === V && E === X.p1) return;
+          trs.forEach(function (U) { if (U === X || U === T || bloco.indexOf(U) >= 0) return; if (!(mesmo(U.p1, E) || mesmo(U.p2, E))) return; if (U.sistema !== "ventilacao" || !ed(U)) { preso = true; return; } bloco.push(U); pend.push(U); });
+        });
+      }
+      var espera = bloco.some(function (U) { return U !== V && U.continua; });   /* a ventilação termina em ESPERA (continua): anda com ela, até DESLOC_ESPERA */
+      if (V.continua !== "p1" && V.continua !== "ambos") preso = true;   /* o pé tem de ser a tomada */
+      if (preso) break;
+      var fim = ruim.lado ? T.p2 : T.p1, outro = ruim.lado ? T.p1 : T.p2, Lt = Math.hypot(outro.x - fim.x, outro.y - fim.y, outro.z - fim.z);
+      var s = (ruim.preciso + 0.003) / Lt;   // hid:ok 3 mm de sobra: o tê fica a `preciso` do fim, desde que caiba antes do outro lado
+      if (!(s < 1)) break;
+      if (espera && Math.hypot(fim.x + (outro.x - fim.x) * s - N.x, fim.z + (outro.z - fim.z) * s - N.z) > DESLOC_ESPERA) break;   /* mais que isso a espera sai do prumo da coluna: fica, e o auditor avisa */
+      var Q = { x: g4(fim.x + (outro.x - fim.x) * s), y: g4(fim.y + (outro.y - fim.y) * s), z: g4(fim.z + (outro.z - fim.z) * s) }, dx = Q.x - N.x, dz = Q.z - N.z;
+      var velhos = bloco.map(function (U) { return { U: U, p1: cop(U.p1), p2: cop(U.p2) }; });
+      bloco.forEach(function (U) {
+        if (U === V) { U.p1 = cop(Q); U.p2 = { x: g4(U.p2.x + dx), y: U.p2.y, z: g4(U.p2.z + dz) }; }
+        else { U.p1 = { x: g4(U.p1.x + dx), y: U.p1.y, z: g4(U.p1.z + dz) }; U.p2 = { x: g4(U.p2.x + dx), y: U.p2.y, z: g4(U.p2.z + dz) }; }
+      });
+      var P2 = passantes(trs, ctx), bom = !!P2 && P2.every(function (p) { return p.folga >= -1e-6 || p.trecho !== ruim.trecho; });   // hid:ok tolerância numérica
+      if (!bom) { velhos.forEach(function (o) { o.U.p1 = o.p1; o.U.p2 = o.p2; }); break; }
+      feitos.push({ trecho: ruim.trecho, tomada: String(V.id), de: Math.round(ruim.L * 1000) / 1000, para: Math.round(ruim.preciso * 1000) / 1000 });
+    }
+    return feitos;
+  }
+
   function folgar(plano, o) {
     o = o || {};
     var BI = o.BimInst || global.BimInst, HG = o.HidGeo || global.HidGeo;
@@ -650,6 +738,8 @@
         res.ajustes.push({ trecho: String(Uc.id), desvio: nv.id, como: "canto de 90° no horizontal → 2 × 45°", apagados: [] });
       });
     });
+    /* (e) a TOMADA da ventilação colada na junção/tê da ponta do ramal: o tê anda para longe, com a ventilação (HidEncaixe.afastarTomadas) */
+    afastarTomadas(todos(), ctx, function (t) { return plan.indexOf(t) >= 0; }).forEach(function (a) { res.ajustes.push({ trecho: a.trecho, desvio: a.tomada, como: "tê da ventilação afastado da junção da ponta do ramal (" + Math.round(a.de * 1000) + " → " + Math.round(a.para * 1000) + " mm)", apagados: [] }); });
     var rodada = 0, feitos = {};
     while (rodada++ < 4) {   // hid:ok rodadas de folga (cada uma mede tudo de novo)
       var d0 = deficits(todos(), ctx); if (!d0) break;
@@ -700,7 +790,7 @@
     return res;
   }
 
-  var HidEncaixe = { VERSAO: 1, radial: radial, fundirAlinhados: fundirAlinhados, folgar: folgar, deficits: deficits, TOL: TOL, MARGEM: MARGEM };
+  var HidEncaixe = { VERSAO: 1, radial: radial, fundirAlinhados: fundirAlinhados, folgar: folgar, deficits: deficits, passantes: passantes, passantesDeRede: passantesDeRede, afastarTomadas: afastarTomadas, TOL: TOL, MARGEM: MARGEM };
   global.HidEncaixe = HidEncaixe;
   if (typeof module !== "undefined" && module.exports) module.exports = HidEncaixe;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

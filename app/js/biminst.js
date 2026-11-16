@@ -890,6 +890,8 @@
     return ["conexoes", "conexoesBrutas"].some(function (q) { var m = GD[q] && GD[q][material]; return !!(m && m[tipo] && m[tipo][k]); }) ||
            arr(GD.semCota).some(function (r) { return !!r && r.material === material && r.tipo === tipo && txt(r.dn) === k; });
   }
+  /* o material tem tabela de conexões no catálogo (esgoto PVC): só nele a existência da combinação de DN é conferida — a água tem o próprio catálogo por DN */
+  function semTabelaDe(material) { var GD = dep("HidGeoDados", "./biminstgeodados.js"); return !(GD && GD.conexoes && GD.conexoes[material] && GD.conexoes[material].te); }
   function vet(d) { return d && d.length === 3 ? { x: +d[0], y: +d[1], z: +d[2] } : d; }
   /* ⚠ CONFERÊNCIA DE PORTAS (frente 1b, 27/10/2026): a peça escolhida tem as bocas que o nó tem? (a) o nº de ramos ligados = o nº de bocas
      que ligam tubo (js/biminstportas.js: a tampa nunca; a rosca de aparelho só com o conector do aparelho); (b) nas peças de 2 bocas não
@@ -1111,7 +1113,16 @@
           var chJ = txt(dnRun) + "x" + txt(dnB);
           if (conexaoNoCatalogo(maior.material, "juncao_reducao", chJ)) cx("juncao_reducao", dnRun, dnB);
           else { cx("juncao", dnRun, dnB); avisos.push("junção de redução DN " + dnRun + "x" + dnB + " não existe no catálogo: ficou a junção simples DN " + dnRun + " (a redução do ramal NÃO é contada à parte — orce-a)"); }
-        } else cx("te_reducao", dnRun, dnB);
+        } else {
+          /* ⚠ SÓ PEÇA QUE EXISTE (15/11/2026, Rogério: "tê de redução 100 × 50 sem correspondência no catálogo", a peça de 50 entrando na de 100): o tê de redução do esgoto sai
+             só na combinação da ficha do fabricante (HidGeoDados: te_reducao 75x50, 100x50, 100x75, 150x100). Fora dela: (1) junção de redução da combinação que existe (esgoto horizontal),
+             (2) o tê do DN da linha + a redução da ficha (DN linha × DN ramal), com tubo entre as peças; (3) sem nenhuma das duas: NENHUMA peça é inventada — o nó fica marcado com o aviso. */
+          var chT = txt(dnRun) + "x" + txt(dnB);
+          if (!gravidade || semTabelaDe(maior.material) || conexaoNoCatalogo(maior.material, "te_reducao", chT)) cx("te_reducao", dnRun, dnB);
+          else if (!ra.vertical && !rb.vertical && conexaoNoCatalogo(maior.material, "juncao_reducao", chT)) { cx("juncao_reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: ligação feita com junção de redução " + dnRun + " × " + dnB + " (a peça que existe)"); }
+          else if (conexaoNoCatalogo(maior.material, "te", txt(dnRun)) && conexaoNoCatalogo(maior.material, "reducao", chT)) { cx("te", dnRun); cx("reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: tê DN " + dnRun + " + redução " + dnRun + " × " + dnB + " (peças que existem), com tubo entre elas"); }
+          else avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante e não há junção nem tê + redução que o substituam: nenhuma conexão foi deduzida — refaça a ligação com outro DN");
+        }
       }
       else cx(ehJuncao ? "juncao" : "te", dnRun);
       return out;
@@ -2794,7 +2805,7 @@
     VERSAO: 1,
     SISTEMAS: SISTEMAS, MATERIAIS: MATERIAIS, APLICACOES: APLICACOES, PECAS: PECAS, ALTURAS_CAIXA: ALTURAS_CAIXA,
     COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, TOL_CONECTOR: TOL_CONECTOR, PERTO_ESPERA: PERTO_ESPERA,
-    joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
+    conexaoNoCatalogo: conexaoNoCatalogo, joelhoOrcado: joelhoOrcado, inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
     normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
     conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
     ajustarViradas: ajustarViradas, limiteRebaixo: limiteRebaixo, prolongadorDe: prolongadorDe, partesConexao: partesConexao, chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,

@@ -1289,6 +1289,22 @@
     var np = naoPiora(ctx, r.ops, "embutir", null); if (!np.ok) return { ok: false, motivo: "embutir " + t.id + ": " + np.motivo };
     return { ok: true, ops: r.ops, texto: r.texto, mudados: r.ops.map(function (o) { return String(o.id); }), apagados: [] };
   }
+  /* o contexto do HidEncaixe a partir do estado: os trechos como ops (com a marca "tomada", que a op do BimInst não leva) */
+  function ctxEncaixe(ctx) {
+    var B = BI(), HE = dep("HidEncaixe", "./hidencaixe.js"), HG = dep("HidGeo", "./biminstgeo.js"); if (!B || !HE || !HG || !HE.passantes) return null;
+    var trs = arr(ctx.estado && ctx.estado.instalacoes && ctx.estado.instalacoes.trechos).map(function (t) { var o = B.opDoTrecho(t); if (t.tomada != null) o.tomada = t.tomada; return o; });
+    return { HE: HE, trs: trs, c: { BimInst: B, HidGeo: HG, avaliarFam: ctx.avaliarFam, familias: arr(ctx.estado && ctx.estado.familias), pecas: arr(ctx.estado && ctx.estado.instalacoes && ctx.estado.instalacoes.pecas) } };
+  }
+  function passantesDoEstado(ctx) { var X = ctxEncaixe(ctx); return X ? X.HE.passantes(X.trs, X.c) : []; }
+  function corrigirTomada(ctx, a) {
+    var X = ctxEncaixe(ctx); if (!X) return { ok: false, motivo: "o motor de encaixe não está carregado" };
+    var antes = {}; X.trs.forEach(function (o) { antes[String(o.id)] = JSON.stringify([o.p1, o.p2]); });
+    var feitos = X.HE.afastarTomadas(X.trs, X.c); if (!feitos.length) return { ok: false, motivo: "o tê não anda: a ventilação está presa (espera a mais de 15 cm, ponta no modelo ou outro tubo ligado) ou o ramal é curto — afaste o ponto de saída da ventilação à mão" };
+    var T = porIdTr(ctx.estado), ops = [];
+    X.trs.forEach(function (o) { if (antes[String(o.id)] === JSON.stringify([o.p1, o.p2]) || !T[String(o.id)]) return; ops.push(opTrecho(T[String(o.id)], o.p1, o.p2, ctx)); });
+    var np = naoPiora(ctx, ops, "tomada", null); if (!np.ok) return { ok: false, motivo: "afastar o tê: " + np.motivo };
+    return { ok: true, ops: ops, texto: "o tê da ventilação anda " + Math.round(feitos[0].de * 1000) + " → " + Math.round(feitos[0].para * 1000) + " mm da junção (a ventilação inteira junto)", mudados: ops.map(function (o) { return String(o.id); }), apagados: [] };
+  }
   function correcaoDe(a) {
     if (a.origem === "verificar") {
       if (a.tipo === "inclinacao") return { tipo: "inclinacao", texto: /SOBE/.test(a.texto) ? "Corrigir o sentido/a inclinação do trecho (os pontos ficam)" : "Dar a inclinação mínima (a jusante desce, os pontos em planta ficam)" };
@@ -1320,6 +1336,12 @@
       var a = { chave: "c" + k + ":" + q.regra + ":" + arr(q.ids).join(","), origem: "criterio", tipo: q.regra, regra: q.regra, gravidade: q.gravidade === "dura" ? "erro" : "aviso", titulo: q.titulo, texto: q.texto, porque: q.porque, fonte: q.fonte, ids: arr(q.ids).map(String), ponto: q.ponto || null, corrigir: q.corrigir || null, obstaculo: q.obstaculo || null };
       a.correcao = correcaoDe(a); out.push(a);
     });
+    /* TÊ DA VENTILAÇÃO COLADO NA JUNÇÃO da ponta do ramal (15/11/2026): o tubo que passa pelo tê não comporta as duas bolsas — o Corrigir anda o tê (e a ventilação, com a espera até 15 cm)
+       pela reta do ramal (HidEncaixe.afastarTomadas), tudo num lote */
+    try { arr(passantesDoEstado(ctx)).filter(function (p) { return p.folga < -1e-6; }).forEach(function (p, k) {   // hid:ok tolerância numérica
+      var a = { chave: "t" + k + ":encaixe.tomada:" + p.trecho, origem: "criterio", tipo: "encaixe.tomada", regra: "encaixe.tomada", gravidade: "erro", titulo: "Tê da ventilação colado na junção", texto: "No ramal " + p.trecho + " o tê " + p.conexao + " está a " + Math.round(p.L * 1000) + " mm da junção da ponta e precisa de " + Math.round(p.preciso * 1000) + " mm para as duas bolsas: junção na linha, o tê na ponta da derivação, com o toco entre as peças.", porque: "o tubo entre duas conexões comporta as duas bolsas", fonte: "catálogo do fabricante (cotas das bolsas)", ids: [String(p.trecho)], ponto: { x: p.no.x, y: p.no.y, z: p.no.z }, corrigir: null };
+      a.correcao = { tipo: "tomada", texto: "Afastar o tê da junção (a ventilação anda junto, até 15 cm com a espera)" }; out.push(a);
+    }); } catch (e3) {}
     return out;
   }
   function proporCorr(ctx, a) {
@@ -1333,6 +1355,7 @@
       else if (c.tipo === "passante") r = corrigirPassante(ctx, a);
       else if (c.tipo === "transposicao") r = corrigirTransposicao(ctx, a);
       else if (c.tipo === "embutir") r = corrigirEmbutir(ctx, a);
+      else if (c.tipo === "tomada") r = corrigirTomada(ctx, a);
       else if (c.tipo === "ops") r = { ok: true, ops: JSON.parse(JSON.stringify(c.ops)), texto: c.texto, mudados: c.ops.map(function (o) { return String(o.id); }), apagados: c.ops.filter(function (o) { return o.op === "apagar"; }).map(function (o) { return String(o.id); }) };
       else return { ok: false, tela: c.tipo, motivo: c.texto, famInst: c.famInst || null, aparelhos: c.aparelhos || null };   /* ligarPeca / tracar / rt: a tela faz (prévia do Traçar) */
     } catch (e) { r = { ok: false, motivo: "a correção falhou: " + (e && e.message ? e.message : e) }; }
@@ -1351,7 +1374,7 @@
     var amb = ambDe(ctx.estado, ambId); if (!amb) return { ok: false, motivo: "ambiente " + ambId + " não encontrado", ops: [] };
     var ops = [], textos = [], feitos = 0, recusados = {}, c2 = { estado: ctx.estado, avaliarFam: ctx.avaliarFam, ops: arr(ctx.ops) };
     for (var k = 0; k < CORR.iteracoes; k++) {
-      var lista = achadosCorr(c2).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante|embutir)$/.test(a.correcao.tipo) && !recusados[a.chave.replace(/^[vc]\d+:/, "")] && noAmbiente(c2, a, amb); });
+      var lista = achadosCorr(c2).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante|embutir|tomada)$/.test(a.correcao.tipo) && !recusados[a.chave.replace(/^[vc]\d+:/, "")] && noAmbiente(c2, a, amb); });
       if (!lista.length) break;
       var a = lista[0], r = proporCorr(c2, a);
       if (!r.ok) { recusados[a.chave.replace(/^[vc]\d+:/, "")] = r.motivo; continue; }
