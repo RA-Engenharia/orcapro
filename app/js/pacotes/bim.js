@@ -111893,10 +111893,16 @@ return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
 },
 _completarGuardada: function (g, cat) {
 if (!g || !cat || !g.tipos || !cat.tipos) return g;
-var tem = {}, chaves = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
-var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chaves[k]; }); });
-if (!falta.length) return g;
-var c = JSON.parse(JSON.stringify(g)); c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
+var tem = {}, chaves = {}, chCat = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
+(cat.parametros || []).forEach(function (p) { if (p && p.nome) chCat[p.nome] = 1; });
+var soAntiga = Object.keys(chaves).every(function (k) { return chCat[k]; });
+var pNovos = soAntiga ? (cat.parametros || []).filter(function (p) { return p && p.nome && !chaves[p.nome]; }) : [];
+var chOk = {}; Object.keys(chaves).forEach(function (k) { chOk[k] = 1; }); pNovos.forEach(function (p) { chOk[p.nome] = 1; });
+var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chOk[k]; }); });
+if (!falta.length && !pNovos.length) return g;
+var c = JSON.parse(JSON.stringify(g));
+if (pNovos.length) c.parametros = (c.parametros || []).concat(JSON.parse(JSON.stringify(pNovos)));
+if (falta.length) c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
 return c;
 },
 _esquecerIndice: function () { this._ixTarefa = null; },

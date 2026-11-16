@@ -93,10 +93,20 @@
        parâmetros da guardada (família do usuário com o mesmo id e parâmetros renomeados fica como está). A guardada nunca perde nem muda tipo. */
     _completarGuardada: function (g, cat) {
       if (!g || !cat || !g.tipos || !cat.tipos) return g;
-      var tem = {}, chaves = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
-      var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chaves[k]; }); });
-      if (!falta.length) return g;
-      var c = JSON.parse(JSON.stringify(g)); c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
+      var tem = {}, chaves = {}, chCat = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
+      (cat.parametros || []).forEach(function (p) { if (p && p.nome) chCat[p.nome] = 1; });
+      /* 16/11/2026: GENÉRICO para toda família do catálogo. Se a cópia guardada não renomeou parâmetro nenhum (todos os dela existem no
+         catálogo), ela é só uma versão ANTIGA do catálogo: acrescenta os parâmetros novos do catálogo (com o padrão do catálogo) e os
+         tipos que faltam. Se o usuário renomeou/criou parâmetro, só entram tipos cujas chaves já existem (protege a família editada).
+         Tudo na LEITURA (cópia): nada é gravado no projeto. */
+      var soAntiga = Object.keys(chaves).every(function (k) { return chCat[k]; });
+      var pNovos = soAntiga ? (cat.parametros || []).filter(function (p) { return p && p.nome && !chaves[p.nome]; }) : [];
+      var chOk = {}; Object.keys(chaves).forEach(function (k) { chOk[k] = 1; }); pNovos.forEach(function (p) { chOk[p.nome] = 1; });
+      var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chOk[k]; }); });
+      if (!falta.length && !pNovos.length) return g;
+      var c = JSON.parse(JSON.stringify(g));
+      if (pNovos.length) c.parametros = (c.parametros || []).concat(JSON.parse(JSON.stringify(pNovos)));
+      if (falta.length) c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
       return c;
     },
     _esquecerIndice: function () { this._ixTarefa = null; },
