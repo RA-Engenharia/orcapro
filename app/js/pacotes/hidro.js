@@ -2999,7 +2999,7 @@ if (!p.estrategias.length) p.estrategias = ORDEM.slice();
 p.terreo = !!src.terreo;
 p.atravessarViga = !!src.atravessarViga;
 p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);
-p.tracadoParcial = src.tracadoParcial !== false;
+p.tracadoParcial = src.tracadoParcial === true;
 p.rasaAgua = src.rasaAgua !== false;
 p.chegadaPrumo = src.chegadaPrumo !== false;
 p.transposicao = src.transposicao !== false;
@@ -4840,7 +4840,7 @@ opcoes.push({ estrategia: chave, nome: ESTRATEGIAS[chave].nome, ops: r.ops, comp
 travessias: { parede: r.cruz.parede, laje: r.furosLaje, viga: r.cruz.viga }, elementosTravessia: copia(r.idsCruz || {}),
 custo: r4(custo), justificativa: just, avisos: avisos.map(function (a) { return a.texto; }), problemas: avisos, pendencias: r.pendencias,
 criterios: r.criterios ? { nota: r.criterios.nota, conceito: r.criterios.conceito, contagem: r.criterios.contagem, custo: r.criterios.custoMotor, apontamentos: r.criterios.apontamentos } : null });
-if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; op0.avisos.unshift("TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"); }
+if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; var tP = "TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"; op0.avisos.unshift(tP); op0.problemas.unshift(prob(tP, [], null)); }
 }
 if (EN.aparelhos.length) P.estrategias.forEach(tentar);
 if (!opcoes.length && EN.aparelhos.length && P.tracadoParcial) { P.parcial = true; P.estrategias.forEach(tentar); P.parcial = false; }
@@ -9116,6 +9116,10 @@ aviso("furo em viga: verificar com o projeto estrutural — o ramal DN " + q.tre
 decide("amb.baldrame", "O ramal ATRAVESSA a viga baldrame " + uniqB(cruz) + " com tubo-camisa; furo marcado para o projeto estrutural.");
 }
 }
+}
+if (R && !R.opcoes.length && terreo) {
+parR.tracadoParcial = true; var Rp = rotearCom(caixa, destinos); delete parR.tracadoParcial;
+if (Rp && Rp.opcoes.length) { R = Rp; aviso("traçado PARCIAL do ambiente: " + arr(Rp.pendencias).filter(function (p) { return /^rota\.parcial\./.test(p.chave); }).map(function (p) { return p.motivo; }).join(" · "), ids, null); }
 }
 if (R) {
 out.normas = R.normas || [];

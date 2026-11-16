@@ -1416,6 +1416,15 @@
         }
       }
     }
+    /* ⚠ TRAÇADO PARCIAL (15/11/2026, Casa 487: o banheiro do fundo e a lavanderia SEM NENHUM tubo): depois de TODAS as tentativas acima
+       (reserva da ventilação, ralo sifonado, espera alternativa…), sem opção inteira o traçado refaz pedindo o parcial — a falha do esgoto
+       (ou da água) vira pendência e o resto do ambiente sai (js/hidrota.js rota:parcial). Só no fim: no meio, a opção parcial tomava o lugar
+       das tentativas que fecham o ambiente inteiro (o prédio do test-hid-predio-interferencia perdia a ventilação). */
+    /* só no TÉRREO: no andar do prédio a falta de opção é tratada acima (esgoto na laje, reserva da ventilação) e o parcial passava o esgoto pela laje */
+    if (R && !R.opcoes.length && terreo) {   // amb:parcial
+      parR.tracadoParcial = true; var Rp = rotearCom(caixa, destinos); delete parR.tracadoParcial;
+      if (Rp && Rp.opcoes.length) { R = Rp; aviso("traçado PARCIAL do ambiente: " + arr(Rp.pendencias).filter(function (p) { return /^rota\.parcial\./.test(p.chave); }).map(function (p) { return p.motivo; }).join(" · "), ids, null); }
+    }
     if (R) {
       out.normas = R.normas || [];
       out.descartadas = R.descartadas || [];

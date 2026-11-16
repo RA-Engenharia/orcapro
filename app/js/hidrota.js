@@ -279,7 +279,7 @@
     p.terreo = !!src.terreo;
     p.atravessarViga = !!src.atravessarViga;
     p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);   /* rota:margemAmpla — 0 desliga a 2ª busca */
-    p.tracadoParcial = src.tracadoParcial !== false;   /* rota:parcial — false = o comportamento antigo (falha de um sistema derruba a estratégia) */
+    p.tracadoParcial = src.tracadoParcial === true;   /* rota:parcial — só quem pede (o Traçar automaticamente do ambiente, js/hidambiente.js); ⚠ ligado por padrão quebrava test-hid-predio-interferencia e test-hid-aq-h6 (o parcial no meio das tentativas trocava a opção inteira de outro andar pela parcial) */
     p.rasaAgua = src.rasaAgua !== false;   /* o trilho/soleira de porta de correr (família embutida até 6 cm no contrapiso) não barra a água fria no enchimento: o tubo passa por baixo dele (false = o de antes) */
     p.chegadaPrumo = src.chegadaPrumo !== false;   /* a chegada perpendicular no prumo do alvo vale mesmo com o último nó a poucos mm do ramal (false = o de antes) */
     p.transposicao = src.transposicao !== false;   /* a curva de transposição (js/biminsttransp.js) no traçado da água; false = só o desvio de sempre */
@@ -2604,7 +2604,7 @@
                     travessias: { parede: r.cruz.parede, laje: r.furosLaje, viga: r.cruz.viga }, elementosTravessia: copia(r.idsCruz || {}),
                     custo: r4(custo), justificativa: just, avisos: avisos.map(function (a) { return a.texto; }), problemas: avisos, pendencias: r.pendencias,
                     criterios: r.criterios ? { nota: r.criterios.nota, conceito: r.criterios.conceito, contagem: r.criterios.contagem, custo: r.criterios.custoMotor, apontamentos: r.criterios.apontamentos } : null });
-      if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; op0.avisos.unshift("TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"); }
+      if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; var tP = "TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"; op0.avisos.unshift(tP); op0.problemas.unshift(prob(tP, [], null)); }
     }
     if (EN.aparelhos.length) P.estrategias.forEach(tentar);
     /* rota:parcial — nenhuma estratégia fechou inteira: o 2º passe traça o que tem caminho (a falha de um sistema não apaga o outro) */
