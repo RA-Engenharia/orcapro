@@ -445,6 +445,8 @@
       return {
         instaladas: inst,
         servidor: srv,
+        /* índice de meses do servidor (/bases/bases-historico.json); sem ele a tabela diz "histórico indisponível agora" */
+        historico: (typeof App !== "undefined" && App._basesHistorico) || null,
         estados: estados,
         sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
         sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
@@ -694,6 +696,11 @@
         /* O QUE O SERVIDOR TEM. Só informa (chip "há 07/2026 no servidor") e
            preenche as UFs do SICRO. Falhar aqui é normal — o app roda offline
            no computador da obra — e não pode alterar classe nem estragar nada. */
+        /* HISTÓRICO de meses por base: uma pergunta só; falhar (offline) deixa o texto "indisponível agora" */
+        if (typeof App !== "undefined" && !App._basesHistorico && !s3._histPedido && App._carregarHistoricoBases) {
+          s3._histPedido = true;
+          App._carregarHistoricoBases().then(function (j) { if (j && UI.el("ow-p3")) wz._redesenhar3(); }).catch(function () {});
+        }
         if (!s3._srv && typeof Atualizacao !== "undefined" && Atualizacao.statusServidor) {
           Atualizacao.statusServidor().then(function (st) {
             if (!UI.el("ow-p3") || !st) return;
@@ -1192,6 +1199,8 @@
         ".p3-versao{font-weight:700;font-variant-numeric:tabular-nums}",
         ".p3-c-versao small,.p3-c-sit small{display:block;font-size:10px;opacity:.66;line-height:1.35;margin-top:2px;max-width:30ch}",
         ".p3-nova{color:#b45309;font-weight:700;opacity:1!important}",
+        ".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:#166534}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:#b45309;font-weight:600;opacity:1!important}",
+        ".p3-lacunas{margin:8px 0;font-size:12px}.p3-lacunas ul{margin:4px 0 0 18px;padding:0}",
         ".p3-selo{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap}",
         ".p3-g1{background:rgba(127,127,127,.18)}",                       /* sem fonte */
         ".p3-g2{background:rgba(46,111,158,.16);color:var(--aco,#2e6f9e)}", /* vem no app */

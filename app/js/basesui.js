@@ -37,7 +37,66 @@
     try { return n.toLocaleString("pt-BR"); } catch (e) { return String(n); }
   }
 
+  /* ------------------------------------------------------------------
+   * HISTÓRICO e LACUNAS (16/11/2026) — lidos do índice do servidor
+   * (/bases/bases-historico.json, que o app guarda em App._basesHistorico e
+   * o assistente passa em ctx.historico). Sem índice (sem rede, servidor
+   * antigo, JSON torto) a tela NÃO quebra: diz "histórico indisponível
+   * agora" e segue. Nunca inventa mês: só conta o que o índice lista.
+   * ------------------------------------------------------------------ */
+  var TIPO_LACUNA = {
+    login: "exige login gov.br", paga: "tabela paga", "sem-tabela": "não publica tabela",
+    "so-pdf": "só PDF", "versao-sem-mes": "versão sem mês", parcial: "um mês só em PDF de outro leiaute"
+  };
+  /* id do catálogo → nome da base no registro de lacunas */
+  var LACUNA_DE = { SETOP: "SETOP", SEINFRA: "SEINFRA-CE", FDE: "FDE", EMOP: "EMOP", CAEMA: "CAEMA", AGESUL: "AGESUL" };
+  function indiceValido(h) { return !!(h && typeof h === "object" && h.bases && typeof h.bases === "object" && !Array.isArray(h.bases)); }
+  function mmaaaa(c) { var m = /^(\d{4})-(\d{2})$/.exec(String(c || "")); return m ? m[2] + "/" + m[1] : String(c || ""); }
+  /* competências distintas da base (da UF pedida, se o índice a tem; senão todas) → ['AAAA-MM'…] crescente */
+  function competenciasDe(h, catId, uf) {
+    var porUf = indiceValido(h) ? h.bases[catId] : null, out = {};
+    if (!porUf || typeof porUf !== "object") return [];
+    var ufs = Object.keys(porUf);
+    /* ⚠ UF escolhida que o índice não tem: NÃO cai para a união das outras UFs (número enganoso: 18 meses de MG não são meses de AC). */
+    if (uf) { if (!porUf[uf]) return null; ufs = [uf]; }
+    ufs.forEach(function (u) { (Array.isArray(porUf[u]) ? porUf[u] : []).forEach(function (c) { if (c && /^\d{4}-\d{2}$/.test(c.competencia)) out[c.competencia] = 1; }); });
+    return Object.keys(out).sort();
+  }
+  function lacunaDe(h, nome) {
+    var l = indiceValido(h) && Array.isArray(h.lacunas) ? h.lacunas : [];
+    for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].base).toUpperCase() === String(nome).toUpperCase()) return l[i];
+    return null;
+  }
+  function motivoCurto(l) { return TIPO_LACUNA[l && l.tipo] || "sem tabela oficial acessível"; }
+
   var BasesUI = {
+    /* Texto de histórico de UMA base: { html, estado:'ok'|'sem'|'indisponivel' } */
+    historico: function (catId, ctx, uf) {
+      var h = ctx && ctx.historico;
+      if (!indiceValido(h)) return { estado: "indisponivel", html: '<small class="p3-hist p3-hist-nd">histórico indisponível agora</small>' };
+      var cs = competenciasDe(h, catId, uf);
+      if (cs === null) return { estado: "sem-uf", html: '<small class="p3-hist p3-hist-0">sem histórico para ' + esc(uf) + ' no servidor</small>' };
+      if (!cs.length) return { estado: "sem", html: '<small class="p3-hist p3-hist-0">sem histórico no servidor</small>' };
+      var n = cs.length;
+      return { estado: "ok", n: n, de: cs[0], ate: cs[n - 1], html: '<small class="p3-hist p3-hist-ok" title="competências que o servidor da RA tem para baixar">' + n + (n === 1 ? " mês: " : " meses: ") + mmaaaa(cs[0]) + (n > 1 ? " → " + mmaaaa(cs[n - 1]) : "") + "</small>" };
+    },
+    /* Selo de lacuna de UMA linha do catálogo (ou "") */
+    lacunaLinha: function (catId, ctx) {
+      var nome = LACUNA_DE[catId], l = nome ? lacunaDe(ctx && ctx.historico, nome) : null;
+      if (!l) return "";
+      return '<small class="p3-hist p3-lac" title="' + esc(l.motivo) + '">lacuna: ' + esc(motivoCurto(l)) + "</small>";
+    },
+    /* Bloco no fim da tabela: toda lacuna conhecida, em linguagem simples. Sem índice → uma linha de aviso. */
+    blocoLacunas: function (ctx) {
+      var h = ctx && ctx.historico;
+      if (!indiceValido(h)) return '<p class="p3-rodape p3-hist-nd">Histórico de meses indisponível agora (sem resposta do servidor). As bases continuam funcionando com a versão instalada.</p>';
+      var l = Array.isArray(h.lacunas) ? h.lacunas : [];
+      if (!l.length) return "";
+      var t = '<div class="p3-lacunas"><b>Bases sem histórico oficial acessível</b><ul>';
+      l.forEach(function (x) { if (x && x.base) t += "<li><b>" + esc(x.base) + (x.uf && x.uf !== "BR" ? " (" + esc(x.uf) + ")" : "") + "</b> — " + esc(motivoCurto(x)) + "</li>"; });
+      return t + "</ul></div>";
+    },
+
     /* ----------------------------------------------------------------
      * ESTADO INICIAL — quais linhas nascem marcadas.
      *
@@ -173,6 +232,8 @@
       } else {
         c3 += '<span class="p3-fixo">—</span>';
       }
+      if (pronta || av.instalada) c3 += self.historico(e.id, ctx, (lin.sel || {}).uf).html;
+      c3 += self.lacunaLinha(e.id, ctx);
       c3 += "</td>";
 
       /* coluna 4 — Situação. As DUAS verdades, separadas: como a RA produz
@@ -188,12 +249,12 @@
 
     /* Linha de banco AUSENTE (os 15 do mercado sem fonte nossa). Sem
        checkbox, sem data-base, sem select — e dizendo o caminho honesto. */
-    _linhaAusente: function (a) {
+    _linhaAusente: function (a, ctx) {
       return '<tr class="p3-lin p3-ausente" data-lin="' + esc(a.id) + '">' +
         '<td class="p3-c-base"><span class="p3-marca p3-off"><b>' + esc(a.nome) + "</b></span>" +
         '<small title="' + esc(a.orgao) + '">' + esc(a.orgao) + "</small></td>" +
         '<td class="p3-c-local"><span class="p3-fixo">' + esc(a.uf) + "</span></td>" +
-        '<td class="p3-c-versao"><span class="p3-fixo">—</span></td>' +
+        '<td class="p3-c-versao"><span class="p3-fixo">—</span>' + this.lacunaLinha(a.id, ctx) + '</td>' +
         '<td class="p3-c-sit"><span class="p3-selo p3-g1">Ainda não distribuímos</span>' +
         "<small>Dá para usar hoje: importe a planilha oficial do órgão em Tabelas, depois de criar o orçamento.</small></td></tr>";
     },
@@ -227,7 +288,7 @@
         h += '<tbody class="p3-grupo"><tr class="p3-cab"><td colspan="4">' + esc(reg.titulo) +
           ' <small>' + n + (n === 1 ? " banco" : " bancos") + "</small></td></tr>";
         doGrupo.forEach(function (e) { h += self._linha(e, st, ctx); });
-        ausGrupo.forEach(function (a) { h += self._linhaAusente(a); });
+        ausGrupo.forEach(function (a) { h += self._linhaAusente(a, ctx); });
         h += "</tbody>";
       });
 
@@ -243,6 +304,7 @@
       }
 
       h += "</table>";
+      h += self.blocoLacunas(ctx);
       var nAus = BasesCat.AUSENTES.length;
       h += '<button type="button" class="p3-toggle" data-p3-toggle="1">' +
         (st.mostrarAusentes ? "Ocultar" : "Ver") + " os " + nAus + " bancos que ainda não distribuímos</button>";

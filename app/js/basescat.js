@@ -448,7 +448,16 @@
     SETOP: { arquivos: { desonerado: "setop-<UF>-<COMP>.json", onerado: "setop-<UF>-<COMP>-onerada.json" },
              atuais: { desonerado: "setop-<UF>-current.json", onerado: "setop-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MG" },
     SUDECAP: { arquivos: { desonerado: "sudecap-<UF>-<COMP>.json", onerado: "sudecap-<UF>-<COMP>-onerada.json" }, padrao: "desonerado", regime: "", uf: "BH" },
-    ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" }
+    ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" },
+    /* (16/11/2026) histórico de 18 meses das demais bases com coletor (tools/coletar-historico-*.js, índice em
+       /bases/bases-historico.json). IOPES = DER-ES Edificações (só não desonerada, 1 arquivo por mês);
+       AGESUL = PDF semestral convertido (desonerada sem sufixo, onerada "-onerada").
+       ⚠ SINAPI onerada NÃO entra aqui de propósito: tem fluxo próprio (App.trocarBaseSinapi + ctx.compsOnerada, os
+       arquivos sinapi-<UF>-<COMP>.json[.gz]) e entrar em HISTORICO trocaria o caminho dela. O índice do servidor
+       a lista (id "SINAPI") para quem quiser ler as competências existentes. SINAPI_DES e SICRO já estão acima. */
+    IOPES: { arquivo: "iopes-<UF>-<COMP>.json", atual: "iopes-<UF>-current.json", regime: "", uf: "ES" },
+    AGESUL: { arquivos: { desonerado: "agesul-<UF>-<COMP>.json", onerado: "agesul-<UF>-<COMP>-onerada.json" },
+              atuais: { desonerado: "agesul-<UF>-current.json", onerado: "agesul-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MS" }
   };
   /* nome do arquivo de UM mês, pelo regime pedido (bases com `arquivos`) */
   function nomeHistorico(h, regime) {

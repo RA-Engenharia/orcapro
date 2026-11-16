@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.347",
+versao: "1.2.348",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -8894,7 +8894,10 @@ SICRO: { arquivo: "sicro-<UF>-<COMP>.json", atual: "sicro-<UF>-current.json", re
 SETOP: { arquivos: { desonerado: "setop-<UF>-<COMP>.json", onerado: "setop-<UF>-<COMP>-onerada.json" },
 atuais: { desonerado: "setop-<UF>-current.json", onerado: "setop-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MG" },
 SUDECAP: { arquivos: { desonerado: "sudecap-<UF>-<COMP>.json", onerado: "sudecap-<UF>-<COMP>-onerada.json" }, padrao: "desonerado", regime: "", uf: "BH" },
-ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" }
+ORSE: { arquivo: "orse-<UF>-<COMP>.json", atual: "orse-<UF>-current.json", regime: "", uf: "SE" },
+IOPES: { arquivo: "iopes-<UF>-<COMP>.json", atual: "iopes-<UF>-current.json", regime: "", uf: "ES" },
+AGESUL: { arquivos: { desonerado: "agesul-<UF>-<COMP>.json", onerado: "agesul-<UF>-<COMP>-onerada.json" },
+atuais: { desonerado: "agesul-<UF>-current.json", onerado: "agesul-<UF>-onerada-current.json" }, padrao: "desonerado", regime: "", uf: "MS" }
 };
 function nomeHistorico(h, regime) {
 if (!h.arquivos) return { arquivo: h.arquivo, atual: h.atual || "" };
@@ -9174,7 +9177,51 @@ function nfmt(n) {
 n = Number(n) || 0;
 try { return n.toLocaleString("pt-BR"); } catch (e) { return String(n); }
 }
+var TIPO_LACUNA = {
+login: "exige login gov.br", paga: "tabela paga", "sem-tabela": "não publica tabela",
+"so-pdf": "só PDF", "versao-sem-mes": "versão sem mês", parcial: "um mês só em PDF de outro leiaute"
+};
+var LACUNA_DE = { SETOP: "SETOP", SEINFRA: "SEINFRA-CE", FDE: "FDE", EMOP: "EMOP", CAEMA: "CAEMA", AGESUL: "AGESUL" };
+function indiceValido(h) { return !!(h && typeof h === "object" && h.bases && typeof h.bases === "object" && !Array.isArray(h.bases)); }
+function mmaaaa(c) { var m = /^(\d{4})-(\d{2})$/.exec(String(c || "")); return m ? m[2] + "/" + m[1] : String(c || ""); }
+function competenciasDe(h, catId, uf) {
+var porUf = indiceValido(h) ? h.bases[catId] : null, out = {};
+if (!porUf || typeof porUf !== "object") return [];
+var ufs = Object.keys(porUf);
+if (uf) { if (!porUf[uf]) return null; ufs = [uf]; }
+ufs.forEach(function (u) { (Array.isArray(porUf[u]) ? porUf[u] : []).forEach(function (c) { if (c && /^\d{4}-\d{2}$/.test(c.competencia)) out[c.competencia] = 1; }); });
+return Object.keys(out).sort();
+}
+function lacunaDe(h, nome) {
+var l = indiceValido(h) && Array.isArray(h.lacunas) ? h.lacunas : [];
+for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].base).toUpperCase() === String(nome).toUpperCase()) return l[i];
+return null;
+}
+function motivoCurto(l) { return TIPO_LACUNA[l && l.tipo] || "sem tabela oficial acessível"; }
 var BasesUI = {
+historico: function (catId, ctx, uf) {
+var h = ctx && ctx.historico;
+if (!indiceValido(h)) return { estado: "indisponivel", html: '<small class="p3-hist p3-hist-nd">histórico indisponível agora</small>' };
+var cs = competenciasDe(h, catId, uf);
+if (cs === null) return { estado: "sem-uf", html: '<small class="p3-hist p3-hist-0">sem histórico para ' + esc(uf) + ' no servidor</small>' };
+if (!cs.length) return { estado: "sem", html: '<small class="p3-hist p3-hist-0">sem histórico no servidor</small>' };
+var n = cs.length;
+return { estado: "ok", n: n, de: cs[0], ate: cs[n - 1], html: '<small class="p3-hist p3-hist-ok" title="competências que o servidor da RA tem para baixar">' + n + (n === 1 ? " mês: " : " meses: ") + mmaaaa(cs[0]) + (n > 1 ? " → " + mmaaaa(cs[n - 1]) : "") + "</small>" };
+},
+lacunaLinha: function (catId, ctx) {
+var nome = LACUNA_DE[catId], l = nome ? lacunaDe(ctx && ctx.historico, nome) : null;
+if (!l) return "";
+return '<small class="p3-hist p3-lac" title="' + esc(l.motivo) + '">lacuna: ' + esc(motivoCurto(l)) + "</small>";
+},
+blocoLacunas: function (ctx) {
+var h = ctx && ctx.historico;
+if (!indiceValido(h)) return '<p class="p3-rodape p3-hist-nd">Histórico de meses indisponível agora (sem resposta do servidor). As bases continuam funcionando com a versão instalada.</p>';
+var l = Array.isArray(h.lacunas) ? h.lacunas : [];
+if (!l.length) return "";
+var t = '<div class="p3-lacunas"><b>Bases sem histórico oficial acessível</b><ul>';
+l.forEach(function (x) { if (x && x.base) t += "<li><b>" + esc(x.base) + (x.uf && x.uf !== "BR" ? " (" + esc(x.uf) + ")" : "") + "</b> — " + esc(motivoCurto(x)) + "</li>"; });
+return t + "</ul></div>";
+},
 estadoInicial: function (ctx, excluidas) {
 ctx = ctx || {};
 var inst = ctx.instaladas || {};
@@ -9257,6 +9304,8 @@ if (av.temNova) c3 += '<small class="p3-nova">há ' + esc(BasesCat.fmtVersao(av.
 } else {
 c3 += '<span class="p3-fixo">—</span>';
 }
+if (pronta || av.instalada) c3 += self.historico(e.id, ctx, (lin.sel || {}).uf).html;
+c3 += self.lacunaLinha(e.id, ctx);
 c3 += "</td>";
 var c4 = '<td class="p3-c-sit"><span class="p3-selo p3-g' + av.grau + '">' + esc(av.rotulo) + "</span>";
 if (av.coletaServidor) c4 += "<small>" + esc(av.coletaServidor) + "</small>";
@@ -9265,12 +9314,12 @@ if (av.nota) c4 += '<small class="p3-nota" title="' + esc(av.nota) + '">' + esc(
 c4 += "</td>";
 return '<tr class="p3-lin' + (marcada ? " p3-on" : "") + (pronta ? "" : " p3-ausente") + '" data-lin="' + esc(e.id) + '">' + c1 + c2 + c3 + c4 + "</tr>";
 },
-_linhaAusente: function (a) {
+_linhaAusente: function (a, ctx) {
 return '<tr class="p3-lin p3-ausente" data-lin="' + esc(a.id) + '">' +
 '<td class="p3-c-base"><span class="p3-marca p3-off"><b>' + esc(a.nome) + "</b></span>" +
 '<small title="' + esc(a.orgao) + '">' + esc(a.orgao) + "</small></td>" +
 '<td class="p3-c-local"><span class="p3-fixo">' + esc(a.uf) + "</span></td>" +
-'<td class="p3-c-versao"><span class="p3-fixo">—</span></td>' +
+'<td class="p3-c-versao"><span class="p3-fixo">—</span>' + this.lacunaLinha(a.id, ctx) + '</td>' +
 '<td class="p3-c-sit"><span class="p3-selo p3-g1">Ainda não distribuímos</span>' +
 "<small>Dá para usar hoje: importe a planilha oficial do órgão em Tabelas, depois de criar o orçamento.</small></td></tr>";
 },
@@ -9297,7 +9346,7 @@ var n = doGrupo.length + ausGrupo.length;
 h += '<tbody class="p3-grupo"><tr class="p3-cab"><td colspan="4">' + esc(reg.titulo) +
 ' <small>' + n + (n === 1 ? " banco" : " bancos") + "</small></td></tr>";
 doGrupo.forEach(function (e) { h += self._linha(e, st, ctx); });
-ausGrupo.forEach(function (a) { h += self._linhaAusente(a); });
+ausGrupo.forEach(function (a) { h += self._linhaAusente(a, ctx); });
 h += "</tbody>";
 });
 var fora = (listaInstalada || []).filter(function (b) {
@@ -9310,6 +9359,7 @@ fora.forEach(function (b) { h += self._linhaFora(b, st); });
 h += "</tbody>";
 }
 h += "</table>";
+h += self.blocoLacunas(ctx);
 var nAus = BasesCat.AUSENTES.length;
 h += '<button type="button" class="p3-toggle" data-p3-toggle="1">' +
 (st.mostrarAusentes ? "Ocultar" : "Ver") + " os " + nAus + " bancos que ainda não distribuímos</button>";
@@ -16283,6 +16333,7 @@ var srv = s._srv || {};
 return {
 instaladas: inst,
 servidor: srv,
+historico: (typeof App !== "undefined" && App._basesHistorico) || null,
 estados: estados,
 sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
 sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
@@ -16458,6 +16509,10 @@ ests = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", 
 s3._estados = ests;
 wz._redesenhar3();
 }).catch(function () {});
+}
+if (typeof App !== "undefined" && !App._basesHistorico && !s3._histPedido && App._carregarHistoricoBases) {
+s3._histPedido = true;
+App._carregarHistoricoBases().then(function (j) { if (j && UI.el("ow-p3")) wz._redesenhar3(); }).catch(function () {});
 }
 if (!s3._srv && typeof Atualizacao !== "undefined" && Atualizacao.statusServidor) {
 Atualizacao.statusServidor().then(function (st) {
@@ -16822,6 +16877,8 @@ st.textContent = [
 ".p3-versao{font-weight:700;font-variant-numeric:tabular-nums}",
 ".p3-c-versao small,.p3-c-sit small{display:block;font-size:10px;opacity:.66;line-height:1.35;margin-top:2px;max-width:30ch}",
 ".p3-nova{color:#b45309;font-weight:700;opacity:1!important}",
+".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:#166534}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:#b45309;font-weight:600;opacity:1!important}",
+".p3-lacunas{margin:8px 0;font-size:12px}.p3-lacunas ul{margin:4px 0 0 18px;padding:0}",
 ".p3-selo{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap}",
 ".p3-g1{background:rgba(127,127,127,.18)}",
 ".p3-g2{background:rgba(46,111,158,.16);color:var(--aco,#2e6f9e)}",
@@ -70188,7 +70245,7 @@ m = /^(\d{2})\/(\d{4})$/.exec(t);
 return m ? (m[2] + "-" + m[1]) : "";
 },
 FONTES_PROPRIAS: { CCU: 1, CPU: 1, COT: 1 },
-FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" }, CPOS: { uf: "SP" }, SCO: { uf: "RJ" } },
+FONTES_FIXAS: { ORSE: { uf: "SE" }, SUDECAP: { uf: "MG", praca: "BH" }, SIURB: { uf: "SP" }, SIURB_INFRA: { uf: "SP" }, AGESUL: { uf: "MS" }, DERPR: { uf: "PR" }, SEDOP: { uf: "PA" }, CPOS: { uf: "SP" }, SCO: { uf: "RJ" }, IOPES: { uf: "ES" } },
 lerBasesExigidas: function (lista, contagem) {
 var self = this, out = [], vistos = {};
 (Array.isArray(lista) ? lista : []).forEach(function (b) {
