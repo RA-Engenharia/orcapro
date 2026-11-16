@@ -246,8 +246,14 @@
     if (interp) selos.push("a conferir: posição interpretada");
     if (dnRegra) selos.push("DN: o dimensionamento define");
     if (!portas.length && !/^(Escritório)$/.test(grupo)) selos.push("sem ponto de ligação declarado");
+    /* as MEDIDAS sem cota na ficha (proporção do modelo), para o tooltip do "a conferir" (16/11/2026): o texto de cada item do "Conferir" que gera o aviso */
+    var cotasConf = [];
+    if (tSel && tSel.valores && tSel.valores.A_conferir) txt(tSel.valores.Conferir).split(/;\s*/).forEach(function (x) {
+      if (!x || DN_REGRA.test(x)) return;
+      var nome = x.replace(/_/g, " ").trim(); if (nome && cotasConf.indexOf(nome) < 0) cotasConf.push(nome);
+    });
     var tipo0 = tSel ? tSel.id : "";
-    return mk({ tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
+    return mk({ conferirCotas: cotasConf, tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
       portas: portas, selos: selos, comCota: comCota, icone: PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "").replace(/^ra-/, "") + "-256.png",
       origem: origem, descricao: txt(f.descricao), sinonimos: [],
       acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });

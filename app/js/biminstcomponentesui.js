@@ -267,13 +267,20 @@
       h += '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn sm primary" data-comp="inserir" data-cid="' + esc(it.id) + '"' + (bloqueado ? ' disabled title="' + esc(it.selos[0] || "") + '"' : "") + ">" + rot + "</button></div></div>";
       return h;
     },
+    /* tooltip do "a conferir": medida sem cota na ficha = proporção do modelo (16/11/2026) */
+    _tituloConferir: function (it, avisos) {
+      var c = it.conferirCotas || [];
+      if (c.length && avisos.some(function (t) { return /^a conferir/.test(t); }))
+        return "Medida(s) que não constam na ficha do fabricante (proporção do modelo; confira no catálogo): " + c.join("; ") + ". " + avisos.join(" · ");
+      return avisos.join(" · ");
+    },
     _htmlLinha: function (it, sel) {
       /* só o selo de AVISO aparece na linha (o neutro, como "DN: o dimensionamento define", fica na ficha) */
       var avisos = it.selos.filter(function (t) { return /^(sem|a conferir|indispon)/.test(t); });
       return '<div class="comp-item" data-comp="item" data-cid="' + esc(it.id) + '" role="button" tabindex="0" style="display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:7px;cursor:pointer;border:1px solid ' + (sel ? "var(--aco,#0d6ebd)" : "transparent") + ";background:" + (sel ? "var(--tinta-aco,rgba(13,110,189,.10))" : "transparent") + '">' +
         (it.icone ? '<img src="' + esc(it.icone) + '" alt="" width="26" height="26" loading="lazy" style="object-fit:contain;flex:none" onerror="this.style.visibility=\'hidden\'">' : '<span style="width:26px;flex:none"></span>') +
         '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + "</span>" + (this.estado.menu ? this._htmlTipo(it, "linha") : "") +
-        (avisos.length ? '<span title="' + esc(avisos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
+        (avisos.length ? '<span title="' + esc(this._tituloConferir(it, avisos)) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
         (this.ehFavorito(it.id) ? '<span style="flex:none;color:var(--aco,#0d6ebd)" aria-label="favorito">★</span>' : "") + "</div>";
     },
     render: function () {

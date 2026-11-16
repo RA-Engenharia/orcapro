@@ -67,7 +67,7 @@
       /* PISCINA (js/hidpiscinafam.js): equipamentos e dispositivos de piscina com a medida do catálogo, só com o modelador ligado */
       try { if (comHidro && global.HidPiscinaFam) HidPiscinaFam.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eP) {}
       var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
-      minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
+      minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = (mapa[f.id] && mapa[f.id]._origem === "ra" && !f._escopo) ? selfF._completarGuardada(f, mapa[f.id]) : f; });
       Object.keys(mapa).forEach(function (k) { if (!mapa[k].oculta || (opts && opts.registro)) out.push(mapa[k]); });
       out.sort(function (a, b) { return String(a.categoria).localeCompare(String(b.categoria)) || String(a.nome).localeCompare(String(b.nome)); });
       return out;
@@ -86,6 +86,18 @@
         try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this._ixTarefa = null; }
       }
       return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
+    },
+    /* FAMÍLIA GUARDADA ANTIGA (16/11/2026, o Rogério: "escolho o modelo da caixa sifonada e a peça não entra"): a cópia guardada da família (ctx.listar) GANHA do catálogo
+       com o mesmo id. Projeto salvo antes dos tipos novos (Tigre, -ficha, Amanco 10116…) guarda a família SEM eles. COMPLETA NA LEITURA: devolve uma CÓPIA da guardada com os
+       tipos do catálogo que faltam acrescentados — NADA é gravado (sem conflito com a nuvem, o projeto não cresce). Só entra tipo cujas chaves de valor existem entre os
+       parâmetros da guardada (família do usuário com o mesmo id e parâmetros renomeados fica como está). A guardada nunca perde nem muda tipo. */
+    _completarGuardada: function (g, cat) {
+      if (!g || !cat || !g.tipos || !cat.tipos) return g;
+      var tem = {}, chaves = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
+      var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chaves[k]; }); });
+      if (!falta.length) return g;
+      var c = JSON.parse(JSON.stringify(g)); c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
+      return c;
     },
     _esquecerIndice: function () { this._ixTarefa = null; },
     _sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca({ registro: true })); } catch (e) {} },

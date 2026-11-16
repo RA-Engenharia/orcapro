@@ -1945,9 +1945,16 @@
       "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
     colocarFamilia: function (famId, tipoId) {
       var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
-      /* 15/11/2026 (caixas Tigre): tipo que não existe na família NÃO cai em silêncio no 1º tipo (o motor avalia o desconhecido como o padrão): o que se escolheu é o que entra, ou nada */
-      try { var fmT = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null; if (fmT && tipoId && fmT.tipos && fmT.tipos.length && !fmT.tipos.some(function (t) { return t.id === tipoId; })) { status("Este tipo (" + tipoId + ") não existe mais na família " + (this.NOMES_FAM[famId] || famId) + ": nada foi colocado. Escolha outro na lista."); return false; } } catch (eT) {}
+      /* 15/11/2026 (caixas Tigre): tipo que não existe na família NÃO cai em silêncio no 1º tipo (o motor avalia o desconhecido como o padrão): o que se escolheu é o que entra, ou nada.
+         16/11/2026: sincroniza a biblioteca ANTES de checar (a cópia guardada antiga é completada na LEITURA, FamiliaUI._completarGuardada, sem gravar nada); a recusa
+         que sobrar — ou qualquer erro na checagem — para aqui com aviso visível: nunca arma com tipo inexistente. */
       try { if (G && G._famSync) G._famSync(); } catch (e) {}
+      var nomeF = this.NOMES_FAM[famId] || famId, recusa = "";
+      try {
+        var fm = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null;
+        if (fm && tipoId && fm.tipos && fm.tipos.length && !fm.tipos.some(function (t) { return t.id === tipoId; })) recusa = "Este modelo (" + tipoId + ") não existe na família " + nomeF + " deste projeto: nada foi colocado. Escolha outro na lista.";
+      } catch (eT) { recusa = "Não consegui conferir o modelo escolhido (" + tipoId + "): nada foi colocado. Tente de novo."; }
+      if (recusa) { status(recusa); try { if (global.UI && UI.toast) UI.toast(recusa, "aviso"); } catch (eU) {} return false; }
       b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
       this._famInst = true;   /* a ferramenta "familia" veio da aba Instalações: Modificar, ✕ e Esc a soltam */
       status("Clique onde colocar " + (this.NOMES_FAM[famId] || "a peça") + " (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");

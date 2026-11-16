@@ -111876,7 +111876,7 @@ try { if (comHidro && global.ClimFamilias) ClimFamilias.todas().forEach(function
 try { if (comHidro && global.HidTanques) HidTanques.familias().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eT) {}
 try { if (comHidro && global.HidPiscinaFam) HidPiscinaFam.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eP) {}
 var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
-minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
+minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = (mapa[f.id] && mapa[f.id]._origem === "ra" && !f._escopo) ? selfF._completarGuardada(f, mapa[f.id]) : f; });
 Object.keys(mapa).forEach(function (k) { if (!mapa[k].oculta || (opts && opts.registro)) out.push(mapa[k]); });
 out.sort(function (a, b) { return String(a.categoria).localeCompare(String(b.categoria)) || String(a.nome).localeCompare(String(b.nome)); });
 return out;
@@ -111890,6 +111890,14 @@ this._ixTarefa = ix; var self = this;
 try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this._ixTarefa = null; }
 }
 return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
+},
+_completarGuardada: function (g, cat) {
+if (!g || !cat || !g.tipos || !cat.tipos) return g;
+var tem = {}, chaves = {}; g.tipos.forEach(function (t) { if (t && t.id) tem[t.id] = 1; }); (g.parametros || []).forEach(function (p) { if (p && p.nome) chaves[p.nome] = 1; });
+var falta = cat.tipos.filter(function (t) { return t && t.id && !tem[t.id] && Object.keys(t.valores || {}).every(function (k) { return chaves[k]; }); });
+if (!falta.length) return g;
+var c = JSON.parse(JSON.stringify(g)); c.tipos = c.tipos.concat(JSON.parse(JSON.stringify(falta)));
+return c;
 },
 _esquecerIndice: function () { this._ixTarefa = null; },
 _sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca({ registro: true })); } catch (e) {} },
@@ -114567,8 +114575,13 @@ NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro
 "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
 colocarFamilia: function (famId, tipoId) {
 var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
-try { var fmT = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null; if (fmT && tipoId && fmT.tipos && fmT.tipos.length && !fmT.tipos.some(function (t) { return t.id === tipoId; })) { status("Este tipo (" + tipoId + ") não existe mais na família " + (this.NOMES_FAM[famId] || famId) + ": nada foi colocado. Escolha outro na lista."); return false; } } catch (eT) {}
 try { if (G && G._famSync) G._famSync(); } catch (e) {}
+var nomeF = this.NOMES_FAM[famId] || famId, recusa = "";
+try {
+var fm = global.FamiliaUI && FamiliaUI.obter ? FamiliaUI.obter(famId) : null;
+if (fm && tipoId && fm.tipos && fm.tipos.length && !fm.tipos.some(function (t) { return t.id === tipoId; })) recusa = "Este modelo (" + tipoId + ") não existe na família " + nomeF + " deste projeto: nada foi colocado. Escolha outro na lista.";
+} catch (eT) { recusa = "Não consegui conferir o modelo escolhido (" + tipoId + "): nada foi colocado. Tente de novo."; }
+if (recusa) { status(recusa); try { if (global.UI && UI.toast) UI.toast(recusa, "aviso"); } catch (eU) {} return false; }
 b.editarArmar("familia", { famId: famId, tipoId: tipoId, inst: {} });
 this._famInst = true;
 status("Clique onde colocar " + (this.NOMES_FAM[famId] || "a peça") + " (barra de espaço gira 90°). O ponto de ligação aparece como uma bolinha na cor do sistema.");
@@ -116360,8 +116373,13 @@ if (pendente || (!comCota && portas.some(function (p) { return p.aConferir; })))
 if (interp) selos.push("a conferir: posição interpretada");
 if (dnRegra) selos.push("DN: o dimensionamento define");
 if (!portas.length && !/^(Escritório)$/.test(grupo)) selos.push("sem ponto de ligação declarado");
+var cotasConf = [];
+if (tSel && tSel.valores && tSel.valores.A_conferir) txt(tSel.valores.Conferir).split(/;\s*/).forEach(function (x) {
+if (!x || DN_REGRA.test(x)) return;
+var nome = x.replace(/_/g, " ").trim(); if (nome && cotasConf.indexOf(nome) < 0) cotasConf.push(nome);
+});
 var tipo0 = tSel ? tSel.id : "";
-return mk({ tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
+return mk({ conferirCotas: cotasConf, tipos: vis.map(resumoTipo), tipoId: tipo0, tipoPadrao: padrao, famId: f.id, id: "familia:" + f.id, nome: txt(f.nome), grupo: grupo, sistemas: arr(f.sistemas), material: "", dns: ordenaDns(unicos(dns)), fabricante: fab, fonte: fonte,
 portas: portas, selos: selos, comCota: comCota, icone: PASTA_ICONES + "fam-" + txt(f.id).replace(/^hid-/, "").replace(/^ra-/, "") + "-256.png",
 origem: origem, descricao: txt(f.descricao), sinonimos: [],
 acao: { tipo: "colocarFamilia", famId: f.id, tipoId: tipo0 } });
@@ -116774,12 +116792,18 @@ var bloqueado = it.acao && it.acao.disponivel === false;
 h += '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn sm primary" data-comp="inserir" data-cid="' + esc(it.id) + '"' + (bloqueado ? ' disabled title="' + esc(it.selos[0] || "") + '"' : "") + ">" + rot + "</button></div></div>";
 return h;
 },
+_tituloConferir: function (it, avisos) {
+var c = it.conferirCotas || [];
+if (c.length && avisos.some(function (t) { return /^a conferir/.test(t); }))
+return "Medida(s) que não constam na ficha do fabricante (proporção do modelo; confira no catálogo): " + c.join("; ") + ". " + avisos.join(" · ");
+return avisos.join(" · ");
+},
 _htmlLinha: function (it, sel) {
 var avisos = it.selos.filter(function (t) { return /^(sem|a conferir|indispon)/.test(t); });
 return '<div class="comp-item" data-comp="item" data-cid="' + esc(it.id) + '" role="button" tabindex="0" style="display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:7px;cursor:pointer;border:1px solid ' + (sel ? "var(--aco,#0d6ebd)" : "transparent") + ";background:" + (sel ? "var(--tinta-aco,rgba(13,110,189,.10))" : "transparent") + '">' +
 (it.icone ? '<img src="' + esc(it.icone) + '" alt="" width="26" height="26" loading="lazy" style="object-fit:contain;flex:none" onerror="this.style.visibility=\'hidden\'">' : '<span style="width:26px;flex:none"></span>') +
 '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.25">' + esc(it.nome) + "</span>" + (this.estado.menu ? this._htmlTipo(it, "linha") : "") +
-(avisos.length ? '<span title="' + esc(avisos.join(" · ")) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
+(avisos.length ? '<span title="' + esc(this._tituloConferir(it, avisos)) + '" style="flex:none;color:var(--amarelo,#b45309);font-size:11px">' + (avisos[0].indexOf("indispon") === 0 ? "indisp." : (/sem cota/.test(avisos.join()) ? "sem cota" : "a conferir")) + "</span>" : "") +
 (this.ehFavorito(it.id) ? '<span style="flex:none;color:var(--aco,#0d6ebd)" aria-label="favorito">★</span>' : "") + "</div>";
 },
 render: function () {
