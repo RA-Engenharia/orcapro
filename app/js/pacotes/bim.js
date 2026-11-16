@@ -138761,13 +138761,15 @@ var t = ev.target, b = t && t.closest ? t.closest("[data-pc-acao]") : null;
 if (!b || !raiz.contains(b)) return;
 var a = b.getAttribute("data-pc-acao"), k0 = b.getAttribute("data-pc-p"), k = /^-?\d+$/.test(String(k0)) ? +k0 : k0;
 if (a === "corrigir" && typeof handlers.corrigir === "function") { ev.preventDefault(); handlers.corrigir(b.getAttribute("data-pc-sol"), k, b); }
-else if (a === "mostrar") { ev.preventDefault(); var ids = String(b.getAttribute("data-pc-pecas") || "").split(",").filter(Boolean); if (typeof handlers.mostrar === "function") handlers.mostrar(ids, k, b); else mostrarNo3D(ids); }
+else if (a === "mostrar") { ev.preventDefault(); var ids = String(b.getAttribute("data-pc-pecas") || "").split(",").filter(Boolean); origemClique = b; try { if (typeof handlers.mostrar === "function") handlers.mostrar(ids, k, b); else mostrarNo3D(ids, b); } finally { origemClique = null; } }
 }
 raiz.addEventListener("click", clique);
 raiz._pcDesligar = function () { raiz.removeEventListener("click", clique); raiz._pcDesligar = null; };
 return raiz._pcDesligar;
 }
-function mostrarNo3D(pecas) {
+var origemClique = null;
+function mostrarNo3D(pecas, origem) {
+origem = origem || origemClique;
 var ids = arr(pecas).map(String).filter(Boolean), B = global.BIM, o = { ids: ids, selecionou: false, enquadrou: false };
 if (!ids.length || !B) return o;
 var uids = ids.map(function (id) { return /^edit:/.test(id) ? id : "edit:" + id; });
@@ -138775,6 +138777,7 @@ try { if (B.selecionar) { B.selecionar(uids, "trocar"); o.selecionou = true; } }
 try { var P = B.precisao ? B.precisao() : null; if (P && P.selecionar) { P.selecionar(ids.map(function (id) { return String(id).replace(/^edit:/, ""); })); o.selecionou = true; } } catch (e2) {}
 try { if (B.enquadrarUids) o.enquadrou = !!B.enquadrarUids(uids); } catch (e3) {}
 ProblemaCard.ultimoMostrar = o;
+try { if (global.JanelasFlut && JanelasFlut.aoLocalizar) JanelasFlut.aoLocalizar(origem); } catch (eJ) {}
 return o;
 }
 function irPara(seletor, raiz) {
@@ -148391,6 +148394,7 @@ return !!B.editarLote(lote);
 }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "cob", id: "cob-modal", titulo: titulo, html: html, attrCorpo: "", attrFechar: "data-cob-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("cob-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "cob-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -189810,6 +189814,7 @@ return ids.filter(function (id) { return ambs.indexOf(id) >= 0; });
 }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "esq", id: "esq-modal", titulo: titulo, html: html, attrCorpo: "data-esq-caixa", attrFechar: "data-esq-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("esq-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "esq-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -190860,6 +190865,7 @@ return ids.filter(function (id) { return ambs.indexOf(id) >= 0; });
 }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "ele", id: "ele-modal", titulo: titulo, html: html, attrCorpo: "data-ele-caixa", attrFechar: "data-ele-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("ele-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "ele-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -194138,6 +194144,7 @@ function lerDados() { try { var t = global.localStorage && global.localStorage.g
 function gravarDados(o) { try { if (global.localStorage) global.localStorage.setItem(PREF + obraId(), JSON.stringify(o || {})); } catch (e) {} }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "inc", id: "inc-modal", titulo: titulo, html: html, attrCorpo: "data-inc-caixa", attrFechar: "data-inc-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("inc-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "inc-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -195583,6 +195590,7 @@ function catFam() { var B = global.BIM; return B && B.familiaCategoria ? functio
 function aplicar(lote) { var B = global.BIM; if (!liberada()) { status(TRANCADA); return false; } if (!B || !B.editarLote) { status("O editor 3D não está aberto."); return false; } return !!B.editarLote(lote); }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "conc", id: "conc-modal", titulo: titulo, html: html, attrCorpo: "data-conc-caixa", attrFechar: "data-conc-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("conc-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "conc-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -206503,6 +206511,7 @@ function lerCriterios() { try { var t = global.localStorage && global.localStora
 function gravarCriterios(o) { try { if (global.localStorage) global.localStorage.setItem(CHAVE, JSON.stringify(o || {})); } catch (e) {} }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "elc", id: "elc-modal", titulo: titulo, html: html, attrCorpo: "data-elc-caixa", attrFechar: "data-elc-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("elc-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "elc-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -207074,6 +207083,7 @@ function criterios() { var a = lerChave("raerp:bim:eletrica-criterios"), b = ler
 function avaliar() { var B = global.BIM; return B && B.familiaAvaliar ? function (f, t, i) { return B.familiaAvaliar(f, t, i); } : null; }
 function janela(titulo, html) {
 if (!doc) return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "ele-proj", id: "ele-proj-modal", titulo: titulo, html: html, attrCorpo: "", attrFechar: "data-ele-proj-fechar", largura: 600 }); if (jn) jn.addEventListener("click", function (e) { var t = e.target; if (!t || !t.hasAttribute) return; if (t.hasAttribute("data-ele-proj-docs")) { JF.fechar(jn); if (global.EleDocumentosUI && global.EleDocumentosUI.abrir) global.EleDocumentosUI.abrir(); return; } if (t.hasAttribute("data-ele-proj-fiacao")) { mostrarFiacao(true); t.textContent = "Fiação ligada"; } }); if (jn) return jn; }
 var velho = doc.getElementById("ele-proj-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = doc.createElement("div"); ov.id = "ele-proj-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
@@ -208917,6 +208927,7 @@ return ids.filter(function (id) { return ambs.indexOf(id) >= 0; });
 }
 function janela(titulo, html) {
 if (typeof document === "undefined") return null;
+var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "mob", id: "mob-modal", titulo: titulo, html: html, attrCorpo: "data-mob-caixa", attrFechar: "data-mob-fechar", largura: 600 }); if (jn) return jn; }
 var velho = document.getElementById("mob-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
 var ov = document.createElement("div"); ov.id = "mob-modal";
 ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");

@@ -77664,6 +77664,7 @@ return (typeof Bases !== "undefined") ? Bases.buscar(qq, f)
 };
 var res = buscarFn(q);
 var sugHtml = self._sugestoesHtml(q, (typeof Escopo !== "undefined" && Escopo.sugerirBusca) ? Escopo.sugerirBusca(q, buscarFn, 3) : null, res.length);
+res = res.concat(self._buscaSemPrecoSinapi(q, f));
 if (!res.length) {
 var dica = "", temDesonerada = false;
 if (f.tipo === "insumo") {
@@ -77706,7 +77707,8 @@ function pintarResultados(ate) {
 ate = Math.min(res.length, ate);
 var ehInsR = f.tipo === "insumo";
 var html2 = res.slice(0, ate).map(function (r) {
-var it = r.item, tg = r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "";
+var it = r.item, tg = (r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "") +
+(r.semPrecoUF ? ' <span class="pill" style="background:var(--perigo,#b42318);color:#fff" title="A CAIXA não publica preço deste item neste estado. Informe o custo ao lançar.">sem preço nesta UF</span>' : "");
 return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
 '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(Util.unidadeExibir(it.unidade)) + "</div>" +
 Util.esc(it.descricao) + "</div>" +
@@ -77791,9 +77793,20 @@ if (b) b.innerHTML = '<div class="vazio">' + (typeof Icones !== 'undefined' ? Ic
 });
 }
 },
+_buscaSemPrecoSinapi: function (q, f) {
+if (typeof Sinapi === "undefined" || !Sinapi.carregado || !Sinapi.buscarSemPreco) return [];
+f = f || {};
+if (f.fonte && String(f.fonte).toUpperCase() !== "SINAPI") return [];
+if (Util.arr(f.excluirFontes).some(function (x) { return String(x).toUpperCase() === "SINAPI"; })) return [];
+if (typeof Bases !== "undefined" && Bases.sinapiAtiva === false) return [];
+return Sinapi.buscarSemPreco(q, { max: 20, tipo: f.tipo || null, desonerado: f.desonerado }).map(function (it) {
+return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: it.tipo === "insumo" ? "insumo" : "composicao", semPrecoUF: true };
+});
+},
 escolherItemSinapi: function (pick) {
 var parts = String(pick).split("|"), codigo = parts[0], fonte = parts[1] || "SINAPI";
 var item = (typeof Bases !== "undefined") ? Bases.obter(fonte, codigo) : Sinapi.obter(codigo);
+if (!item && fonte === "SINAPI" && typeof Sinapi !== "undefined" && Sinapi.obterSemPreco) item = Sinapi.obterSemPreco(codigo);
 if (!item) { UI.toast("Item não encontrado.", "erro"); return; }
 var totalItens = Orcamento.totais(this.orcAtual).qtdItens;
 var lim = Auth.limite("limiteItensPorOrcamento");
@@ -77812,6 +77825,7 @@ UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere
 return;
 }
 var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
+if (cu > 0) delete itemAjustado.semPrecoUF;
 if (self._qiMemoria) itemAjustado.memoriaCalculo = self._qiMemoria;
 var modoEl = document.querySelector('input[name="qi-modo"]:checked');
 var modo = modoEl ? modoEl.value : "total";
@@ -77855,6 +77869,9 @@ op("total", p.total) + op("mo", p.mo) + op("matEq", p.matEq) +
 '<input id="qi-desc" style="flex:1" placeholder="Ex.: alvenaria de 100 m por 2,20 de altura" autocomplete="off">' +
 '<button type="button" class="btn sm primary" data-acao="qi-calcular">Calcular</button></div>' +
 '<div id="qi-memo" class="muted" style="font-size:11.5px;margin-top:4px"></div></div>' +
+(item.semPrecoUF ? '<div class="alerta erro" style="margin:6px 0;padding:8px 10px;border-radius:6px;background:rgba(180,35,24,.10);border:1px solid rgba(180,35,24,.45);font-size:12.5px">' +
+(typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' <b>Item sem preço nesta UF.</b> A CAIXA não publica custo deste item para ' + Util.esc(Sinapi.uf || "o estado da base") +
+'. Informe o custo unitário abaixo' + (Orcamento.garantirConfig(self.orcAtual).permitirZerado ? ' — se lançar com R$ 0,00, ele entra como item zerado e o orçamento avisa antes de apresentar.' : ' ou libere em Parâmetros → “Permitir insumos com preço zerado”.') + '</div>' : '') +
 '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(Util.unidadeExibir(item.unidade)) + ')</label>' +
 '<input id="qi-qtd" value="1" autofocus></div>' +
 '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',
@@ -86008,5 +86025,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=d79440250e"},{"src":"js/bim-pacote.js?v=a55b88e04f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=756d36bee4"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=98332aff3e"},{"src":"js/bim-pacote.js?v=a55b88e04f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=9df24e8303"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -26,6 +26,9 @@
 
   function janela(titulo, html) {
     if (!doc) return null;
+    /* JANELAS (16/11/2026): janela FLUTUANTE do gerenciador único (js/janflut.js) — sem véu, encostada à direita,
+       arrastável, minimiza/maximiza/destaca; "Mostrar no 3D" a minimiza. O código abaixo fica só de reserva. */
+    var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "ele-proj", id: "ele-proj-modal", titulo: titulo, html: html, attrCorpo: "", attrFechar: "data-ele-proj-fechar", largura: 600 }); if (jn) jn.addEventListener("click", function (e) { var t = e.target; if (!t || !t.hasAttribute) return; if (t.hasAttribute("data-ele-proj-docs")) { JF.fechar(jn); if (global.EleDocumentosUI && global.EleDocumentosUI.abrir) global.EleDocumentosUI.abrir(); return; } if (t.hasAttribute("data-ele-proj-fiacao")) { mostrarFiacao(true); t.textContent = "Fiação ligada"; } }); if (jn) return jn; }
     var velho = doc.getElementById("ele-proj-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
     var ov = doc.createElement("div"); ov.id = "ele-proj-modal";
     ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");

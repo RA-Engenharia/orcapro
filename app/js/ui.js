@@ -307,6 +307,9 @@
             !window.confirm("Há informações não salvas neste formulário. Fechar e perder o que foi preenchido?")) return;
         UI.fecharModal();
       });
+      /* JANELAS (16/11/2026): o modal de verdade continua modal (véu + foco), mas ganha a barra padrão —
+         arrastar pelo título e maximizar/restaurar (js/janelas.js) */
+      try { if (typeof JanelasFlut !== "undefined" && JanelasFlut.decorarModal) JanelasFlut.decorarModal(bg, titulo); } catch (eJn) {}
       return bg;
     },
     /* "sujo" = usuário digitou algo no modal aberto. Um modal pode refinar

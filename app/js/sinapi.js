@@ -53,8 +53,16 @@
     /* Carrega de um objeto já parseado (ou {dados:[...]}) */
     carregarDe: function (pacote) {
       var dados = pacote && pacote.dados ? pacote.dados : (Array.isArray(pacote) ? pacote : []);
-      this._itens = Util.arr(dados).filter(function (d) { return d && Util.naoVazio(d.codigo); });
+      var todos = Util.arr(dados).filter(function (d) { return d && Util.naoVazio(d.codigo); });
+      /* ⚠ ITEM SEM PREÇO NA UF FICA À PARTE (v1.2.350). A base passou a trazer
+         as composições que a CAIXA publica sem preço no estado (semPrecoUF).
+         Elas NÃO entram em _itens/_porCodigo: Escopo, orçamento guiado, BIM e
+         quem mais lê a base continuam sem vê-las e não lançam item a R$ 0.
+         Só a busca manual (buscarSemPreco/obterSemPreco) as mostra. */
+      this._itens = todos.filter(function (d) { return !d.semPrecoUF; });
+      this._semPreco = todos.filter(function (d) { return !!d.semPrecoUF; });
       this.regimeCorrigidos = this._corrigirRegime(pacote, this._itens);
+      this._corrigirRegime(pacote, this._semPreco);
       this.competencia = (pacote && pacote.mes) || CONFIG.sinapi.competenciaPadrao;
       this.uf = (pacote && pacote.uf) || CONFIG.sinapi.ufPadrao;
       this._indexar();
@@ -91,9 +99,36 @@
         this._porCodigo[String(it.codigo)] = it;
         this._tokens[i] = Util.normalizar(it.codigo + " " + it.descricao);
       }
+      var sp = this._semPreco || [];
+      this._semPrecoPorCodigo = {};
+      this._semPrecoTokens = new Array(sp.length);
+      for (var j = 0; j < sp.length; j++) {
+        this._semPrecoPorCodigo[String(sp[j].codigo)] = sp[j];
+        this._semPrecoTokens[j] = Util.normalizar(sp[j].codigo + " " + sp[j].descricao);
+      }
     },
 
     obter: function (codigo) { return this._porCodigo[String(codigo)] || null; },
+
+    /* Itens que a CAIXA publica SEM preço nesta UF. Só para a busca manual:
+       o usuário vê, e o lançamento obedece "Permitir preço zerado". */
+    obterSemPreco: function (codigo) { return (this._semPrecoPorCodigo || {})[String(codigo)] || null; },
+    buscarSemPreco: function (texto, filtro) {
+      filtro = filtro || {};
+      var max = filtro.max || 20, out = [];
+      var termos = Util.normalizar(texto).split(" ").filter(Boolean);
+      var lista = this._semPreco || [], tok = this._semPrecoTokens || [];
+      if (!termos.length) return out;
+      for (var i = 0; i < lista.length && out.length < max; i++) {
+        var it = lista[i];
+        if (filtro.tipo && String(it.tipoItem || it.tipo || it.categoria).indexOf(filtro.tipo) === -1) continue;
+        if (filtro.desonerado != null && !!it.desonerado !== !!filtro.desonerado) continue;
+        var ok = true;
+        for (var t = 0; t < termos.length; t++) { if (tok[i].indexOf(termos[t]) === -1) { ok = false; break; } }
+        if (ok) out.push(it);
+      }
+      return out;
+    },
 
     /* Busca por código ou palavras-chave (todas precisam aparecer).
      * filtro: { tipo: "composicao"|"insumo"|null, desonerado: bool|null, max: N }

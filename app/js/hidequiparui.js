@@ -33,6 +33,9 @@
   }
   function janela(titulo, html) {
     if (typeof document === "undefined") return null;
+    /* JANELAS (16/11/2026): janela FLUTUANTE do gerenciador único (js/janflut.js) — sem véu, encostada à direita,
+       arrastável, minimiza/maximiza/destaca; "Mostrar no 3D" a minimiza. O código abaixo fica só de reserva. */
+    var JF = global.JanelasFlut; if (JF && JF.abrir) { var jn = JF.abrir({ tipo: "hid-equipar", id: "hid-equipar-modal", titulo: titulo, html: html, attrCorpo: "", attrFechar: "data-hq-fechar", largura: 600 }); if (jn) return jn; }
     var velho = document.getElementById("hid-equipar-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
     var ov = document.createElement("div"); ov.id = "hid-equipar-modal";
     ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");

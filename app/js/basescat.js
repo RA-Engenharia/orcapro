@@ -112,7 +112,7 @@
       regiao: "nacional", uf: "BR", localRotulo: "Todos os estados",
       entrega: { local: "data/sinapi-<UF>-<COMP>.json", manifesto: "data/estados.json" },
       chaveStatus: "sinapi", coleta: "manual",
-      versaoPacote: "2026-06", itens: 324702, pesoMb: 3.13,
+      versaoPacote: "2026-06", itens: 413910, pesoMb: 3.13,
       /* o eixo de LOCAL da SINAPI não é declarado aqui: sai de estados.json
          em runtime, porque o pacote do cliente varia (empacotar-cliente.ps1
          aceita -Estados SEDE, TODOS ou uma lista) — cravar 27 no código faria
@@ -151,7 +151,7 @@
          sempre existiu. */
       entrega: { vps: "sinapi-<UF>-<COMP>-desonerada.json" },
       chaveStatus: "sinapiDes", coleta: "diario",
-      versaoPacote: "2026-06", itens: 324702, pesoMb: 3.12,
+      versaoPacote: "2026-06", itens: 413910, pesoMb: 3.12,
       /* as UFs saem do servidor, como no SICRO. Sem resposta, nao ha opcao —
          e a linha, sem `local`, nem se oferece para instalar.
          ⚠ COMPETÊNCIA (13/10/2026): o edital fixa o mês. "" = a mais recente

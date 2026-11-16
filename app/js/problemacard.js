@@ -117,7 +117,7 @@
       if (!b || !raiz.contains(b)) return;
       var a = b.getAttribute("data-pc-acao"), k0 = b.getAttribute("data-pc-p"), k = /^-?\d+$/.test(String(k0)) ? +k0 : k0;
       if (a === "corrigir" && typeof handlers.corrigir === "function") { ev.preventDefault(); handlers.corrigir(b.getAttribute("data-pc-sol"), k, b); }
-      else if (a === "mostrar") { ev.preventDefault(); var ids = String(b.getAttribute("data-pc-pecas") || "").split(",").filter(Boolean); if (typeof handlers.mostrar === "function") handlers.mostrar(ids, k, b); else mostrarNo3D(ids); }
+      else if (a === "mostrar") { ev.preventDefault(); var ids = String(b.getAttribute("data-pc-pecas") || "").split(",").filter(Boolean); origemClique = b; try { if (typeof handlers.mostrar === "function") handlers.mostrar(ids, k, b); else mostrarNo3D(ids, b); } finally { origemClique = null; } }
     }
     raiz.addEventListener("click", clique);
     raiz._pcDesligar = function () { raiz.removeEventListener("click", clique); raiz._pcDesligar = null; };
@@ -125,7 +125,10 @@
   }
 
   /* seleciona (no 3D e na seleção de precisão, que a Ligação inteligente lê) e enquadra */
-  function mostrarNo3D(pecas) {
+  /* o botão "Mostrar no 3D" do clique em curso: o handler do auditor chama mostrarNo3D(ids) sem ele, e a janela de origem é minimizada por ele */
+  var origemClique = null;
+  function mostrarNo3D(pecas, origem) {
+    origem = origem || origemClique;
     var ids = arr(pecas).map(String).filter(Boolean), B = global.BIM, o = { ids: ids, selecionou: false, enquadrou: false };
     if (!ids.length || !B) return o;
     var uids = ids.map(function (id) { return /^edit:/.test(id) ? id : "edit:" + id; });
@@ -133,6 +136,8 @@
     try { var P = B.precisao ? B.precisao() : null; if (P && P.selecionar) { P.selecionar(ids.map(function (id) { return String(id).replace(/^edit:/, ""); })); o.selecionou = true; } } catch (e2) {}
     try { if (B.enquadrarUids) o.enquadrou = !!B.enquadrarUids(uids); } catch (e3) {}
     ProblemaCard.ultimoMostrar = o;
+    /* JANELAS (16/11/2026): a janela de onde veio o "Mostrar no 3D" se minimiza e deixa o 3D livre (a pílula a traz de volta) */
+    try { if (global.JanelasFlut && JanelasFlut.aoLocalizar) JanelasFlut.aoLocalizar(origem); } catch (eJ) {}
     return o;
   }
   /* "Ir para <campo>": rola até o campo e foca (tenta de novo depois do render da tela) */
