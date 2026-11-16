@@ -36498,7 +36498,7 @@ var tcx = H.telhadoAbaixoDe(TEL, cx.c.x, cx.c.z);
 if (tcx && cx.yt > tcx.y - EPS) aviso(nome + ": o topo da caixa (" + f2(cx.yt) + " m) passa da face de baixo do telhado " + tcx.id + " (" + f2(tcx.y) + " m) — a caixa atravessa a cobertura: suba o telhado nesse trecho ou baixe a caixa (os tubos horizontais dela correm abaixo do telhado)", [cx.id, tcx.id]);
 }
 var existentes = arr(estado.instalacoes && estado.instalacoes.trechos).map(function (t) { return { a: t.p1, b: t.p2, r: raio(t.dn), sistema: t.sistema, id: String(t.id) }; }).concat(arr(opc.obst));
-var novos = [];
+var novos = [], todosFixo = null;
 var nOp = num(opc.nOp0, 0);
 function novoId(parte) { nOp++; return "bar-" + cx.id + "-" + parte + "-" + nOp; }
 var marca = { bar: cx.id };
@@ -36509,7 +36509,7 @@ return o;
 }
 function conflito(a, b, r, ign, livreTelhado) {
 if (!livreTelhado && TEL.length) { var sT = H.tuboSobreTelhado ? H.tuboSobreTelhado(TEL, a, b, r, GEO_BAR.folgaTelhado) : null; if (sT) return { com: "o telhado " + sT.id + " (a face de baixo a " + f2(sT.y) + " m, o tubo a " + f2(sT.onde.y) + " m)", telhado: sT.id }; }
-var todos = existentes.concat(novos);
+var todos = todosFixo || existentes.concat(novos);
 for (var i = 0; i < todos.length; i++) {
 var Tq = todos[i]; if (ign && ign(Tq)) continue;
 var qC = d3(a, Tq.a) <= TOL ? [a, b, Tq.b] : d3(a, Tq.b) <= TOL ? [a, b, Tq.a] : d3(b, Tq.a) <= TOL ? [b, a, Tq.b] : d3(b, Tq.b) <= TOL ? [b, a, Tq.a] : null;
@@ -36828,6 +36828,100 @@ var Pdv = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);
 usarDesvio = false;
 if (!Pdv.baixa && !Pdv.colunaFalha && soCol(Pdv.folhas) > soCol(Pl.folhas)) Pl = Pdv; else Pl = planejarCom(Pl._args[0], Pl._args[1], Pl._args[2], Pl._args[3]);
 }
+var ASTAR_PESO_H = 2, ASTAR_FATOR = 2;
+var ASTAR_MAX_NOS = 5000, ASTAR_MAX_MS = 300;
+function buscaAstar3d(s, cadeias) {
+var rL = raio(s.dnCol), t0 = Date.now(), goal = P3(s.x, s.y, s.z), yTopMin = r4(s.y + mNo + Lr + 3 * TOL);
+var ignE = function (Tq) { return Tq.id === s.trecho; };
+var fontes = [], PA = passo * ASTAR_FATOR;
+function coleta(margem) {
+cadeias.forEach(function (cd) {
+var Lc = d3(cd.p1, cd.p2); if (Lc < 2 * margem - EPS) return;
+var ux = (cd.p2.x - cd.p1.x) / Lc, uy = (cd.p2.y - cd.p1.y) / Lc, uz = (cd.p2.z - cd.p1.z) / Lc;
+for (var k = margem; k <= Lc - margem + EPS; k += PA) {
+var p = P3(cd.p1.x + ux * k, cd.p1.y + uy * k, cd.p1.z + uz * k);
+if (Math.abs(ux) > 0.99) p.x = r4(goal.x + Math.round((p.x - goal.x) / PA) * PA); else if (Math.abs(uz) > 0.99) p.z = r4(goal.z + Math.round((p.z - goal.z) / PA) * PA);
+if (p.y >= yTopMin - EPS) fontes.push({ p: p, u: { x: ux, y: uy, z: uz }, dmin: Math.ceil((rL + raio(cd.dn) + folga + 2 * FOLGA_LIMITE) / passo - EPS) * passo });
+}
+});
+}
+coleta(GEO_BAR.tocoMin); if (!fontes.length) coleta(mNo);
+if (!fontes.length) return null;
+var bx0 = goal.x, bx1 = goal.x, bz0 = goal.z, bz1 = goal.z, MG = 1.5;
+fontes.forEach(function (f) { bx0 = Math.min(bx0, f.p.x); bx1 = Math.max(bx1, f.p.x); bz0 = Math.min(bz0, f.p.z); bz1 = Math.max(bz1, f.p.z); });
+bx0 -= MG; bx1 += MG; bz0 -= MG; bz1 += MG;
+var DV = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }], BAIXO = 4, INI = 5;
+var heap = [], melhorG = {}, memo = {}, nExp = 0, achou = null, MGT = 0.5;
+todosFixo = existentes.concat(novos).filter(function (Tq) { return !(Math.max(Tq.a.x, Tq.b.x) + Tq.r + MGT < bx0 || Math.min(Tq.a.x, Tq.b.x) - Tq.r - MGT > bx1 || Math.max(Tq.a.z, Tq.b.z) + Tq.r + MGT < bz0 || Math.min(Tq.a.z, Tq.b.z) - Tq.r - MGT > bz1); });
+function hOf(n) { return Math.abs(n.x - goal.x) + Math.abs(n.z - goal.z) + Math.max(0, n.y - goal.y); }
+function menor(p, q) { return p.f < q.f - EPS || (Math.abs(p.f - q.f) <= EPS && p.h < q.h); }
+function hpush(n) { heap.push(n); var i = heap.length - 1; while (i > 0) { var pI = (i - 1) >> 1; if (menor(heap[pI], heap[i])) break; var t = heap[pI]; heap[pI] = heap[i]; heap[i] = t; i = pI; } }
+function hpop() { var top = heap[0], ult = heap.pop(); if (heap.length) { heap[0] = ult; var i = 0; for (;;) { var l2 = 2 * i + 1, r2 = l2 + 1, m = i; if (l2 < heap.length && menor(heap[l2], heap[m])) m = l2; if (r2 < heap.length && menor(heap[r2], heap[m])) m = r2; if (m === i) break; var t = heap[m]; heap[m] = heap[i]; heap[i] = t; i = m; } } return top; }
+function livre(a, b, fim) {
+var k = a.x + "," + a.y + "," + a.z + ">" + b.x + "," + b.y + "," + b.z + (fim ? "f" : "");
+if (memo[k] === undefined) { modoAfasta = true; memo[k] = !conflito(a, b, rL, fim ? ignE : null); modoAfasta = false; }
+return memo[k];
+}
+function chave(n) { return n.x + "," + Math.round(n.y / 0.02) + "," + n.z + "," + n.d; }
+function empurra(n) { var k = n.fim ? "FIM" : chave(n); if (melhorG[k] !== undefined && melhorG[k] <= n.g + EPS) return; melhorG[k] = n.g; n.h = n.fim ? 0 : hOf(n); n.f = n.g + ASTAR_PESO_H * n.h; hpush(n); }
+fontes.forEach(function (f) { empurra({ x: f.p.x, y: f.p.y, z: f.p.z, d: INI, len: 0, g: 0, par: null, u: f.u, dmin: f.dmin }); });
+while (heap.length && !achou) {
+if (nExp >= ASTAR_MAX_NOS || (nExp % 64 === 0 && Date.now() - t0 > ASTAR_MAX_MS)) break;
+var n = hpop(), kN = n.fim ? "FIM" : chave(n);
+if (melhorG[kN] !== undefined && melhorG[kN] < n.g - EPS) continue;
+if (n.fim) { achou = n; break; }
+nExp++;
+if (Math.abs(n.x - goal.x) <= EPS * 10 && Math.abs(n.z - goal.z) <= EPS * 10 && n.y >= yTopMin - EPS && (n.d === BAIXO || n.d === INI || n.len >= mNo - EPS) && livre(n, goal, true))
+empurra({ fim: true, x: goal.x, y: goal.y, z: goal.z, d: BAIXO, len: 0, g: n.g + (n.y - goal.y) + (n.d === BAIXO || n.d === INI ? 0 : pesoCx + (n.len < GEO_BAR.tocoMin - EPS ? pesoToco : 0)), par: n });
+var movs = [];
+for (var di = 0; di < 4; di++) {
+var dv = DV[di], dist = [PA], alvo = dv.x ? (goal.x - n.x) * dv.x : (goal.z - n.z) * dv.z;
+if (alvo > EPS && Math.abs(alvo - PA) > EPS) dist.push(r4(alvo));
+if (n.d === INI) dist = [n.dmin];
+dist.forEach(function (dd) { movs.push({ d: di, x: r4(n.x + dv.x * dd), y: n.y, z: r4(n.z + dv.z * dd), L: dd }); });
+}
+if (n.y - yTopMin > EPS) {
+var lim = n.d === INI ? n.y - n.dmin : n.y - EPS * 10, kN2 = Math.floor((lim - yTopMin) / PA + EPS * 10), ny = r4(yTopMin + Math.max(0, kN2) * PA);
+if (ny < n.y - EPS) movs.push({ d: BAIXO, x: n.x, y: ny, z: n.z, L: n.y - ny });
+}
+movs.forEach(function (mv) {
+if (mv.x < bx0 || mv.x > bx1 || mv.z < bz0 || mv.z > bz1) return;
+if (n.d === INI && n.u && mv.d !== BAIXO) { var dd0 = DV[mv.d]; if (Math.abs(n.u.x * dd0.x + n.u.z * dd0.z) > 0.99) return; }
+var vira = n.d !== INI && n.d !== mv.d;
+if (vira && n.len < mNo - EPS) return;
+if (!livre(P3(n.x, n.y, n.z), P3(mv.x, mv.y, mv.z), false)) return;
+var g2 = n.g + mv.L + (vira ? pesoCx + (n.len < GEO_BAR.tocoMin - EPS ? pesoToco : 0) : 0);
+empurra({ x: mv.x, y: mv.y, z: mv.z, d: mv.d, len: vira || n.d === INI ? mv.L : n.len + mv.L, g: g2, par: n, u: null, dmin: n.dmin });
+});
+}
+todosFixo = null;
+if (!achou) return null;
+var pts = [], q = achou;
+while (q) { pts.push({ x: q.x, y: q.y, z: q.z, d: q.d }); q = q.par; }
+pts.reverse();
+var v = [pts[0]];
+for (var ip = 1; ip < pts.length; ip++) {
+if (ip === pts.length - 1 || pts[ip + 1].d !== pts[ip].d) v.push(pts[ip]);
+}
+return { pts: v.map(function (p) { return P3(p.x, p.y, p.z); }), nos: nExp };
+}
+if (!opc.satelite && !Pl.baixa && !Pl.colunaFalha && arr(Pl.cadeias).length && arr(Pl.folhas).length && arr(Pl.semCaminho).some(function (sq) { return !sq.fonte; })) {
+var restam = []; Pl.astar = [];
+Pl.semCaminho.forEach(function (sq) {
+var ra = sq.fonte ? null : buscaAstar3d(sq, Pl.cadeias);
+if (!ra) { restam.push(sq); return; }
+var J = ra.pts[0], achouC = -1;
+Pl.cadeias.forEach(function (cd, ic) { if (achouC < 0 && d3(cd.p1, J) > TOL && d3(cd.p2, J) > TOL && segSeg(J, J, cd.p1, cd.p2) <= TOL) achouC = ic; });
+if (achouC >= 0) {
+var cd0 = Pl.cadeias[achouC];
+Pl.cadeias.splice(achouC, 1, { ini: cd0.ini, fim: -(Pl.astar.length + 1), prim: cd0.prim, p1: cd0.p1, p2: J, dn: cd0.dn }, { ini: cd0.ini, fim: cd0.fim, prim: cd0.prim, p1: J, p2: cd0.p2, dn: cd0.dn });
+}
+var rLa = raio(sq.dnCol);
+for (var ia = 1; ia < ra.pts.length; ia++) novos.push({ a: ra.pts[ia - 1], b: ra.pts[ia], r: rLa, sistema: "agua_fria", id: "astar-" + sq.trecho + "-" + ia });
+Pl.astar.push({ l: sq, pts: ra.pts, nos: ra.nos });
+});
+Pl.semCaminho = restam;
+}
 Pl.colunasFora.forEach(function (cf) {
 if (cf.l.fonte) { pend("bar.interligacao", nome + ": o coletor até a saída da caixa " + cf.l.sat.id + " não fecha — " + cf.com + "; essa caixa ficou fora do barrilete comum", [cf.l.sat.id, cx.id]); return; }
 pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]);
@@ -36928,6 +37022,24 @@ porNoBar[n] = null;
 ops.push(rgb); return;
 }
 pend("bar.registro_coluna", nome + ": sem espaço para o registro no início da coluna da espera " + l.trecho + " (NBR 5626:2020 6.5.12.4 b) — ponha o registro à mão", [tc.id]);
+});
+arr(Pl.astar).forEach(function (ast) {
+var l = ast.l, rLq = raio(l.dnCol), tcA = null, ult = ast.pts.length - 1;
+for (var iq = 1; iq <= ult; iq++) {
+var pa = ast.pts[iq - 1], pb = ast.pts[iq], vert = Math.abs(pb.y - pa.y) > EPS;
+if (!vert) { ops.push(T("barrilete", "agua_fria", l.dnCol, pa, pb, { aplicacao: "reservacao" })); continue; }
+var ex = iq === ult ? { aplicacao: "prumada", barEspera: l.trecho } : { aplicacao: "prumada", barEspera: l.trecho, barDesvio: true };
+var tq = T("coluna", "agua_fria", l.dnCol, pa, pb, ex); ops.push(tq); if (iq === ult) tcA = tq;
+}
+res.ligadas++; res.esperasLigadas.push(l.trecho);
+res.decisoes.push({ id: "bar.astar_" + l.trecho, texto: nome + ": a espera " + l.trecho + " não tinha caminho reto nem desvio simples — o barrilete achou um caminho em 3D (" + (ast.pts.length - 1) + " trechos, " + ast.nos + " nós testados): sai de um tê da linha, corre na horizontal, DESCE onde precisa e chega ao prumo da espera, sempre sem subir (sem bolsa de ar, NBR 5626:2020 6.6.2), com 10 cm de esgoto/ventilação e abaixo da cobertura" });
+if (l.predio || !tcA) return;
+var yTa = tcA.p1.y, ycA = r4(yTa - mNo - Lr / 2), uAa = unit2(A.x - l.x, A.z - l.z) || { x: 1, z: 0 }, gVa = BIC() && BIC().giroPara ? BIC().giroPara({ x: 0, y: -1, z: 0 }, { x: uAa.x, y: 0, z: uAa.z }) : 0;
+if (ycA - Lr / 2 - TOL >= l.y + TOL) {
+var rgA = { op: "acessorio", id: novoId("rg-coluna"), famId: RG_FAM, tipoId: tipoRg, trecho: tcA.id, novoId: tcA.id + "b", x: l.x, y: ycA, z: l.z, comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
+if (gVa) rgA.giro = gVa;
+ops.push(rgA);
+} else pend("bar.registro_coluna", nome + ": sem espaço para o registro no início da coluna da espera " + l.trecho + " (NBR 5626:2020 6.5.12.4 b) — ponha o registro à mão", [tcA.id]);
 });
 if (!res.ligadas && !opc.satelite && !minima) return res;
 res.ok = !minima; res.minima = minima;
