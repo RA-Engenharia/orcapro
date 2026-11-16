@@ -168,8 +168,9 @@
       caixas.forEach(function (c) {
         if (!c || !c.conc || c.conc.papel !== "viga") return;
         var v = base.porPeca[String(c.id)];
-        /* ⚠ viga incompleta (revisão de cálculo 14/11/2026): sem a largura do apoio a ancoragem não foi conferida — "atende" sem isso era verde sem a verificação. Fica "sem-calculo" (listada, sem cor) com o motivo. */
-        var p = { id: String(c.id), marca: c.marca || "", tipo: "viga", estado: v ? (v.atende ? (v.incompleto ? "sem-calculo" : "ok") : "falha") : "sem-calculo", aproveitamento: v ? v.aproveitamento : null, secao: cm(num(c.espessura, 0)) + " × " + cm(num(c.altura, 0)), motivo: v ? (v.atende && v.incompleto ? (arr(v.pendencias).filter(function (t) { return /largura do apoio/.test(t); })[0] || "largura do apoio não informada: a ancoragem não foi conferida") : "") : "a viga não entrou no modelo do pórtico" };
+        /* ⚠ viga incompleta (revisão de cálculo 14/11/2026): sem a largura do apoio a ancoragem não foi conferida — "atende" sem isso era verde sem a verificação. DECISÃO DO ROGÉRIO (16/11/2026): fica VERMELHA ("falha", com o motivo), pelo MESMO predicado do memorial (ConcMemorial.reprovada) — a Vista de Estrutura e a simulação C7 ficam iguais ao memorial (NÃO LIBERADO). Não entra nas sugestões de altura: o que fecha é informar/alargar o apoio. */
+        var RP = dep("ConcMemorial", "./concmemorial.js"), reprov = v ? (RP && RP.reprovada ? RP.reprovada(v, "viga") : (!v.atende || v.incompleto === true)) : false;
+        var p = { id: String(c.id), marca: c.marca || "", tipo: "viga", estado: v ? (reprov ? "falha" : "ok") : "sem-calculo", incompleta: !!(v && v.atende && v.incompleto), aproveitamento: v ? v.aproveitamento : null, secao: cm(num(c.espessura, 0)) + " × " + cm(num(c.altura, 0)), motivo: v ? (v.atende && v.incompleto ? (arr(v.pendencias).filter(function (t) { return /largura do apoio/.test(t); })[0] || "largura do apoio não informada: a ancoragem não foi conferida") : "") : "a viga não entrou no modelo do pórtico" };
         if (v && !v.atende) { p.motivo = arr(v.avisos)[0] || "reprovada em flexão, cortante, flecha ou fissuração"; falhas.push(p); }
         pecas.push(p);
       });

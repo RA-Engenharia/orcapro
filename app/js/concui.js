@@ -191,6 +191,28 @@
     return { oculta: quer, ocultas: r ? r.ocultas : null };
   }
   var ULTIMO_CALC = null;
+  /* O AÇO REAL DE UMA PEÇA (props físicas, 16/11/2026): da tabela de aço do ÚLTIMO Calcular (ConcDetalhe, o mesmo número do memorial), só quando o modelo de agora é
+   * o que foi calculado (a assinatura do modelo confere). Devolve { kg, posicoes } | { motivo } | null (nunca calculou). Quem recebe o `motivo` mostra a ESTIMATIVA com ele.
+   * O detalhamento roda uma vez por cálculo (memória por resultado) e a assinatura uma vez por estado do editor. */
+  var ACO_MEMO = null, ASS_MEMO = null;
+  function acoDaPeca(id, st) {
+    var r = ULTIMO_CALC, K = global.ConcCalcular, P = global.ConcProps, M = global.ConcMemorial;
+    if (!r || !K || !P || !M) return null;
+    var atual = null;
+    if (st) {
+      if (!ASS_MEMO || ASS_MEMO.st !== st) { try { ASS_MEMO = { st: st, ass: K.assinaturaDe(st) }; } catch (eA) { ASS_MEMO = { st: st, ass: null }; } }
+      atual = ASS_MEMO.ass;
+    }
+    if (r.assinaturaModelo && atual && r.assinaturaModelo !== atual) return { motivo: "o modelo mudou depois do último Calcular — recalcule para ter o aço real" };
+    if (!ACO_MEMO || ACO_MEMO.r !== r) {
+      var pac = null, mapa = null; try { pac = M.pacoteDe(r); mapa = pac ? P.acoPorPeca(pac) : null; } catch (eP) { mapa = null; }
+      ACO_MEMO = { r: r, mapa: mapa };
+    }
+    var o = ACO_MEMO.mapa && ACO_MEMO.mapa.porId ? ACO_MEMO.mapa.porId[String(id)] : null;
+    if (o) return { kg: o.kg, posicoes: o.posicoes, rotulo: r.rotulo || "" };
+    var pc = arr(r.pecas).filter(function (p) { return String(p.id) === String(id); })[0];
+    return { motivo: pc ? "esta peça ficou sem detalhamento no Calcular (" + (pc.estado === "falha" ? "reprovada" : "sem cálculo: " + (pc.motivo || "fora do motor")) + ")" : "esta peça não entrou no último Calcular" };
+  }
   function estadoRotulo(p) { var K = global.ConcCalcular; return K && K.ROTULO_ESTADO[p.estado] || p.estado; }
   function problemasDoCalculo(r) {
     var K = global.ConcCalcular, nome = { pilar: "Pilar", viga: "Viga", laje: "Laje" };
@@ -198,7 +220,7 @@
       var apr = p.aproveitamento != null && isFinite(p.aproveitamento) ? " (aproveitamento " + f2(p.aproveitamento) + ")" : "";
       if (p.estado === "fora-norma") return { tipo: "calc-12", titulo: nome[p.tipo] + " " + p.marca + " " + p.secao + " — LARANJA", gravidade: "aviso", pecas: [p.id], solucoes: [{ id: "nota", texto: "A peça atende na conta (γn estendido, área ≥ 360 cm²), mas a NBR 6118:2023 (13.2.3) NÃO cobre pilar abaixo de 14 cm. O uso é decisão do responsável técnico e entra no memorial; para voltar à norma, aumente a seção." }],
         texto: "Pilar de 12 a 14 cm: habilitado pela opção do projeto. " + (p.motivo || "") };
-      var sol = []; if (p.sugestao) sol.push({ id: "secao", texto: p.sugestao.texto, ops: p.sugestao.ops, pecas: p.sugestao.pecas || [p.id] }); else sol.push({ id: "nota", texto: "O motor não achou uma seção que feche: o engenheiro concebe outra solução (vão, apoio ou altura)." });
+      var sol = []; if (p.sugestao) sol.push({ id: "secao", texto: p.sugestao.texto, ops: p.sugestao.ops, pecas: p.sugestao.pecas || [p.id] }); else if (p.incompleta) sol.push({ id: "nota", texto: "A ancoragem no apoio não foi conferida (largura do apoio não informada): informe a largura do apoio ou alargue o pilar; o memorial só sai LIBERADO com a viga conferida." }); else sol.push({ id: "nota", texto: "O motor não achou uma seção que feche: o engenheiro concebe outra solução (vão, apoio ou altura)." });
       return { tipo: "calc-" + p.tipo, titulo: nome[p.tipo] + " " + p.marca + " " + p.secao + " — REPROVADO" + apr, gravidade: "erro", pecas: [p.id], solucoes: sol,
         texto: "Não atende nas verificações do cálculo de apoio (C1–C4). " + (p.motivo || "") };
     });
@@ -474,6 +496,8 @@
       reg["conc-memorial"] = function () { memorial(); return true; };
       reg["conc-vista"] = function () { var r = vistaEstrutura({ forcar: true, abrir: true }); if (!r || !r.ok) { janela("Vista de Estrutura", faixa() + "<p>" + esc((r && r.motivo) || "Não saiu.") + "</p>"); } return true; };
       ligarVigia();
+      /* SIMULAÇÃO DO CÁLCULO (C7, js/concvisual.js): deformada, diagramas, utilização e flecha das lajes no 3D — painel "Simulação do cálculo" da fita Estrutura */
+      if (global.ConcVisual && global.ConcVisual.registrar) global.ConcVisual.registrar(reg);
       reg["conc-pre-auto"] = function () { prelancar("auto"); return true; };
       reg["conc-pre-macica"] = function () { prelancar("macica"); return true; };
       reg["conc-pre-trelicada"] = function () { prelancar("trelicada"); return true; };
@@ -484,7 +508,7 @@
       reg["conc-criterios"] = function () { criterios(); return true; };
       return true;
     },
-    ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, memorial: memorial, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; },
+    ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, memorial: memorial, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; }, acoDaPeca: acoDaPeca,
     sugerir: sugerir, opcoes: opcoes, vistaEstrutura: vistaEstrutura, vigiarVista: vigiarVista, registroDaVista: registroDaVista, permitirPilar12: permitirPilar12, definirPilar12: definirPilar12, problemasDosBloqueios: problemasDosBloqueios, aoCorrigirBloqueio: aoCorrigirBloqueio,
     prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada
   };

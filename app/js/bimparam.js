@@ -148,6 +148,15 @@
   function elev(x) { return x.nivel && fin(Number(x.nivel.elevacao)) ? Number(x.nivel.elevacao) : 0; }
   function nivelNome(x) { return x.nivel ? txt(x.nivel.nome) : null; }
   function aco(x) { return el(x).material === "aco"; }
+  /* PROPRIEDADES FÍSICAS DO CONCRETO (js/concprops.js, 16/11/2026): peso, peso exato, áreas, aço. null quando a peça não é de concreto
+     (ou o módulo não carregou — o registro continua como era). Vale uma vez por contexto: a conta não muda entre as definições. */
+  function conc(x) {
+    if (!x || x.regua) { var C0 = dep("ConcProps", "./concprops.js"); return C0 && x ? C0.fisica(x) : null; }   /* a régua do orçamento não guarda cache */
+    if (x._cf !== undefined) return x._cf;
+    var C = dep("ConcProps", "./concprops.js");
+    x._cf = C ? C.fisica(x) : null;
+    return x._cf;
+  }
   function catv(x, k) { return x.catPerfil && fin(x.catPerfil[k]) ? x.catPerfil[k] : null; }
   function perf(x, k) { var p = el(x).perfil; return p && fin(Number(p[k])) ? Number(p[k]) : null; }
   function baseParede(x) { var c = el(x); return num(c.cy, 0) - num(c.altura, 0) / 2; }
@@ -451,13 +460,26 @@
        exato" = a geometria modelada (com o raio) × massa específica — as duas
        leituras usuais. Só aço. */
     acoPeso: function (x) {
-      if (!aco(x)) return null;
+      if (!aco(x)) { var fc = conc(x); return fc && fc.pesoNominalKg != null ? q4(x, fc.pesoNominalKg) : null; }   /* CONCRETO: seção do tipo × comprimento × γ (NBR 6120) */
       var A = catv(x, "A") != null ? catv(x, "A") * 1e-6 : num(el(x).secaoArea, 0), rho = x.materiais && x.materiais.aco ? num(x.materiais.aco.rho, 7850) : 7850;
       var L = el(x).tipo === "pilar" ? num(el(x).comprimentoPilar, 0) : num(el(x).comprimentoViga, 0);
       return q4(x, A * L * rho);
     },
-    acoPesoExato: function (x) { return aco(x) && m(x).massa != null ? m(x).massa : null; },
-    acoAreaPintura: function (x) { return aco(x) && m(x).areaForma != null ? m(x).areaForma : null; },
+    acoPesoExato: function (x) { if (aco(x)) return m(x).massa != null ? m(x).massa : null; var fc = conc(x); return fc && fc.pesoKg != null ? fc.pesoKg : null; },   /* CONCRETO: volume real × γ */
+    acoAreaPintura: function (x) { if (aco(x)) return m(x).areaForma != null ? m(x).areaForma : null; var fc = conc(x); return fc && fc.areaPintura != null ? fc.areaPintura : null; },   /* CONCRETO: a superfície exposta (concprops.js) */
+    /* ---- PROPRIEDADES FÍSICAS DO CONCRETO (viga, pilar, laje, fundação): js/concprops.js */
+    cfPeso: function (x) { var f = conc(x); return f && f.pesoKg != null ? q4(x, f.pesoKg) : null; },
+    cfPesoKN: function (x) { var f = conc(x); return f && f.pesoKN != null ? f.pesoKN : null; },
+    cfPesoT: function (x) { var f = conc(x); return f && f.pesoT != null ? f.pesoT : null; },
+    cfGama: function (x) { var f = conc(x); return f ? f.gama.kNm3 : null; },
+    cfGamaFonte: function (x) { var f = conc(x); return f ? f.gama.origem + " — " + f.gama.ref : null; },
+    cfGamaTipo: function (x) { var f = conc(x), t = x.tipo && x.tipo.valores; return f && t && fin(Number(t.pesoEsp)) && Number(t.pesoEsp) > 0 ? Number(t.pesoEsp) : null; },
+    cfAreaPintura: function (x) { var f = conc(x); return f && f.areaPintura != null ? f.areaPintura : null; },
+    cfBasePintura: function (x) { var f = conc(x); return f ? f.basePintura : null; },
+    cfAcoKg: function (x) { var f = conc(x); return f && f.aco ? f.aco.kg : null; },
+    cfAcoOrigem: function (x) { var f = conc(x); return f && f.aco ? f.aco.texto : null; },
+    cfTaxa: function (x) { var f = conc(x); return f && f.aco ? f.aco.taxa : null; },
+    cfPesoTotal: function (x) { var f = conc(x); return f && f.totalKg != null ? f.totalKg : null; },
     concretoAreaForma: function (x) { return !aco(x) && el(x).material !== "madeira" && m(x).areaForma != null ? m(x).areaForma : null; },
     /* P1-D: a peça de MADEIRA não tem fôrma nem pintura de aço, mas o
        orçamento sempre ofereceu a superfície dela (perímetro da seção ×
@@ -681,7 +703,7 @@
       campo: o.campo || null, calc: o.calc || null,
       faixa: o.faixa || null, padrao: o.padrao != null ? o.padrao : null,
       opcoes: o.opcoes || null, casas: o.casas != null ? o.casas : null,
-      ifc: o.ifc || null, orc: o.orc || null,
+      ifc: o.ifc || null, orc: o.orc || null, orcSoAco: !!o.orcSoAco,
       tabela: o.tabela !== false, filtro: o.filtro !== false, identificador: !!o.identificador, so: o.so || null,
       escrita: o.escrita || null,
       revit: o.revit !== undefined ? o.revit : (/^RA_/.test(id) ? null : { bip: id })
@@ -689,6 +711,30 @@
     return d;
   }
   var I = "i", T = "t";
+  /* PROPRIEDADES FÍSICAS DO CONCRETO (16/11/2026, js/concprops.js): as definições que só a peça de concreto tem (`so: "concreto"` — o aço, a
+     madeira e os outros nunca as veem). Pilar e viga já têm "Peso", "Peso exato" e "Área de pintura" (os STEEL_ELEM_* do aço, agora
+     preenchidos também para o concreto); laje e fundação ganham os seus (`propria`). NENHUMA tem `orc`: o orçamento não passa a ler o
+     peso, e a taxa do serviço de armação não é tocada. `semTipo`: a fundação não tem tipo nomeado. */
+  function defsConc(propria, semTipo) {
+    var L = [];
+    if (propria) {
+      L.push(P(I, "Estrutural", "Peso", "RA_CONC_PESO", "massa", { calc: "cfPeso", so: "concreto" }));
+      if (!semTipo) L.push(P(I, "Materiais e acabamentos", "Área de pintura", "RA_CONC_AREA_PINTURA", "area", { calc: "cfAreaPintura", so: "concreto" }));
+    }
+    L.push(
+      P(I, "Estrutural", "Peso específico", "RA_CONC_PESO_ESP", "numero", { calc: "cfGama", escrita: "marcar.params.pesoEsp", leitura: false, un: "kN/m³", casas: 2, faixa: { min: 1, max: 100 }, so: "concreto" }),
+      P(I, "Estrutural", "Fonte do peso específico", "RA_CONC_PESO_ESP_FONTE", "texto", { calc: "cfGamaFonte", filtro: false, so: "concreto" }),
+      P(I, "Estrutural", "Peso (kN)", "RA_CONC_PESO_KN", "numero", { calc: "cfPesoKN", un: "kN", casas: 3, so: "concreto" }),
+      P(I, "Estrutural", "Peso (t)", "RA_CONC_PESO_T", "numero", { calc: "cfPesoT", un: "t", casas: 4, so: "concreto" }),
+      P(I, "Estrutural", "Aço da peça", "RA_CONC_ACO", "massa", { calc: "cfAcoKg", so: "concreto" }),
+      P(I, "Estrutural", "Origem do aço", "RA_CONC_ACO_ORIGEM", "texto", { calc: "cfAcoOrigem", filtro: false, so: "concreto" }),
+      P(I, "Estrutural", "Taxa de aço da peça", "RA_CONC_TAXA", "numero", { calc: "cfTaxa", un: "kg/m³", casas: 1, so: "concreto" }),
+      P(I, "Estrutural", "Peso total (concreto + aço)", "RA_CONC_PESO_TOTAL", "massa", { calc: "cfPesoTotal", so: "concreto" })
+    );
+    if (!semTipo) L.push(P(I, "Materiais e acabamentos", "Base da área de pintura", "RA_CONC_BASE_PINTURA", "texto", { calc: "cfBasePintura", filtro: false, so: "concreto" }));
+    if (!semTipo) L.push(P(T, "Estrutural", "Peso específico do tipo", "RA_CONC_PESO_ESP_TIPO", "numero", { calc: "cfGamaTipo", campo: "pesoEsp", escrita: "ajustarTipo.valores.pesoEsp", leitura: false, un: "kN/m³", casas: 2, faixa: { min: 1, max: 100 }, so: "concreto" }));
+    return L;
+  }
   /* P3: parâmetro PT-BR que o inventário ainda não tem (telhado não coletado) */
   var PEND_TE = { bip: null, pendente: "P3 — telhado não coletado no inventário: nome PT-BR a conferir na próxima coleta do inventário" };
   function Q(pset, prop) { return { pset: pset, prop: prop }; }
@@ -827,7 +873,7 @@
         P(T, "Construção", "Espessura-padrão", "FLOOR_ATTR_DEFAULT_THICKNESS_PARAM", "comprimento", { calc: "lajeEspessura", campo: "espessura", escrita: "ajustarTipo.valores.espessura", leitura: false, faixa: FAIXA.lajeEspessura }),
         P(T, "Construção", "Função", "FUNCTION_PARAM", "lista", { campo: "funcao", padrao: "Interior", opcoes: ["Interior", "Exterior"], escrita: "ajustarTipo.valores.funcao" }),
         P(T, "Materiais e acabamentos", "Material estrutural", "STRUCTURAL_MATERIAL_PARAM", "material", { calc: "concretoArmado" })
-      ]
+      ].concat(defsConc(true))
     },
     pilar: {
       nome: "Pilares estruturais", ifc: "IFCCOLUMN", inventario: "pilar_estrutural", familia: "Pilar por perfil", prefixo: "P", comum: true,
@@ -848,14 +894,14 @@
            específica) — o mesmo número que o orçamento usa na medida "massa"; o
            Peso pela área do catálogo vai em OrcaPRO_Perfil.Peso */
         P(I, "Estrutural", "Peso", "STEEL_ELEM_WEIGHT", "massa", { calc: "acoPeso", ifc: Q("OrcaPRO_Perfil", "Peso") }),
-        P(I, "Estrutural", "Peso exato", "STEEL_ELEM_EXACT_WEIGHT", "massa", { calc: "acoPesoExato", ifc: Q("Qto_ColumnBaseQuantities", "NetWeight"), orc: O("massa") }),
-        P(I, "Estrutural", "Área de pintura", "STEEL_ELEM_PAINT_AREA", "area", { calc: "acoAreaPintura", ifc: Q("Qto_ColumnBaseQuantities", "OuterSurfaceArea"), orc: O("areaForma") }),
+        P(I, "Estrutural", "Peso exato", "STEEL_ELEM_EXACT_WEIGHT", "massa", { calc: "acoPesoExato", ifc: Q("Qto_ColumnBaseQuantities", "NetWeight"), orc: O("massa"), orcSoAco: true }),
+        P(I, "Estrutural", "Área de pintura", "STEEL_ELEM_PAINT_AREA", "area", { calc: "acoAreaPintura", ifc: Q("Qto_ColumnBaseQuantities", "OuterSurfaceArea"), orc: O("areaForma"), orcSoAco: true }),
         P(I, "Cotas", "Comprimento do sistema", "INSTANCE_LENGTH_PARAM", "comprimento", { calc: "pilarComprimento", ifc: Q("Qto_ColumnBaseQuantities", "Length"), orc: O("comprimento") }),
         P(I, "Cotas", "Volume", "HOST_VOLUME_COMPUTED", "volume", { calc: "pecaVolume", ifc: Q("Qto_ColumnBaseQuantities", "NetVolume"), orc: O("volume") }),
         P(I, "Cotas", "Área de fôrma", "RA_PECA_AREA_FORMA", "area", { calc: "concretoAreaForma", ifc: Q("OrcaPRO_Perfil", "AreaForma"), orc: O("areaForma") }),
         P(I, "Cotas", "Área de superfície", "RA_PECA_AREA_SUPERFICIE", "area", { calc: "madeiraAreaSuperficie", ifc: Q("OrcaPRO_Perfil", "AreaForma"), orc: O("areaForma") }),
         P(I, "Outros", "Unida a (geometria)", "RA_UNIAO_GEOMETRIA", "texto", { calc: "uniaoGeo", filtro: false })   /* P4 */
-      ].concat(defsSecao("Qto_ColumnBaseQuantities"))
+      ].concat(defsConc(false)).concat(defsSecao("Qto_ColumnBaseQuantities"))
     },
     viga: {
       nome: "Quadro estrutural", ifc: "IFCBEAM", inventario: "viga", familia: "Viga por perfil", prefixo: "V", comum: true,
@@ -870,8 +916,8 @@
         P(I, "Posição geométrica", "Justificação z", "Z_JUSTIFICATION", "texto", { calc: "vigaJustZ" }),
         P(I, "Materiais e acabamentos", "Material estrutural", "STRUCTURAL_MATERIAL_PARAM", "material", { calc: "materialRotulo", escrita: "ajustarTipo.valores.material", leitura: false }),
         P(I, "Estrutural", "Peso", "STEEL_ELEM_WEIGHT", "massa", { calc: "acoPeso", ifc: Q("OrcaPRO_Perfil", "Peso") }),
-        P(I, "Estrutural", "Peso exato", "STEEL_ELEM_EXACT_WEIGHT", "massa", { calc: "acoPesoExato", ifc: Q("Qto_BeamBaseQuantities", "NetWeight"), orc: O("massa") }),
-        P(I, "Estrutural", "Área de pintura", "STEEL_ELEM_PAINT_AREA", "area", { calc: "acoAreaPintura", ifc: Q("Qto_BeamBaseQuantities", "OuterSurfaceArea"), orc: O("areaForma") }),
+        P(I, "Estrutural", "Peso exato", "STEEL_ELEM_EXACT_WEIGHT", "massa", { calc: "acoPesoExato", ifc: Q("Qto_BeamBaseQuantities", "NetWeight"), orc: O("massa"), orcSoAco: true }),
+        P(I, "Estrutural", "Área de pintura", "STEEL_ELEM_PAINT_AREA", "area", { calc: "acoAreaPintura", ifc: Q("Qto_BeamBaseQuantities", "OuterSurfaceArea"), orc: O("areaForma"), orcSoAco: true }),
         P(I, "Cotas", "Comprimento do corte", "STRUCTURAL_FRAME_CUT_LENGTH", "comprimento", { calc: "vigaCorte", ifc: Q("Qto_BeamBaseQuantities", "Length"), orc: O("comprimento") }),
         P(I, "Cotas", "Comprimento do sistema", "INSTANCE_LENGTH_PARAM", "comprimento", { calc: "vigaSistema" }),
         P(I, "Cotas", "Elevação no topo", "STRUCTURAL_ELEVATION_AT_TOP", "comprimento", { calc: "vigaTopo" }),
@@ -880,7 +926,7 @@
         P(I, "Cotas", "Área de fôrma", "RA_PECA_AREA_FORMA", "area", { calc: "concretoAreaForma", ifc: Q("OrcaPRO_Perfil", "AreaForma"), orc: O("areaForma") }),
         P(I, "Cotas", "Área de superfície", "RA_PECA_AREA_SUPERFICIE", "area", { calc: "madeiraAreaSuperficie", ifc: Q("OrcaPRO_Perfil", "AreaForma"), orc: O("areaForma") }),
         P(I, "Outros", "Unida a (geometria)", "RA_UNIAO_GEOMETRIA", "texto", { calc: "uniaoGeo", filtro: false })   /* P4 */
-      ].concat(defsSecao("Qto_BeamBaseQuantities"))
+      ].concat(defsConc(false)).concat(defsSecao("Qto_BeamBaseQuantities"))
     },
     escada: {
       nome: "Escadas", ifc: "IFCSTAIR", inventario: "escada", familia: "Escada moldada", prefixo: "E", comum: true,
@@ -1130,7 +1176,7 @@
         P(I, "Estrutural", "Taxa de aço das estacas", "RA_FUND_TAXA_ACO_ESTACA", "numero", { calc: "fuTaxaEstaca", escrita: "fundacao.taxaAcoEstaca", leitura: false, un: "kg/m³", casas: 1 }),
         P(I, "Estrutural", "Aço das estacas (pela taxa)", "RA_FUND_ACO_ESTACAS", "massa", { calc: "fuAcoEstacas", ifc: Q("OrcaPRO_Fundacao", "AcoEstacas"), orc: O("acoEstacas") }),
         P(I, "Materiais e acabamentos", "Material estrutural", "STRUCTURAL_MATERIAL_PARAM", "material", { calc: "fuMaterial" })
-      ]
+      ].concat(defsConc(true, true))
     },
     porta: {
       nome: "Portas", ifc: "IFCDOOR", inventario: "porta", familia: null, prefixo: "P", comum: true, grupoFamilia: true,
@@ -2000,7 +2046,7 @@
        para o total de orçamento existente não mudar. */
     quantidade: function (peca, medida) {
       var l = arr(peca && peca.params);
-      for (var i = 0; i < l.length; i++) { var it = l[i]; if (it.def.orc && it.def.orc.medida === medida && fin(it.valor)) return { def: it.def, valor: it.valor, valorOrc: fin(it.valorOrc) ? it.valorOrc : it.valor }; }
+      for (var i = 0; i < l.length; i++) { var it = l[i]; if (it.def.orc && it.def.orc.medida === medida && fin(it.valor) && !(it.def.orcSoAco && !fin(it.valorOrc))) return { def: it.def, valor: it.valor, valorOrc: fin(it.valorOrc) ? it.valorOrc : it.valor }; }
       return null;
     },
     formatar: formatar,
@@ -2083,6 +2129,13 @@
           ifcGuid: typeof deps.ifcGuid === "function" ? deps.ifcGuid(p) : null,
           globais: globEnv
         };
+        /* PROPRIEDADES FÍSICAS DO CONCRETO (js/concprops.js): o aço REAL do último Calcular, o γ informado para o material e o nome do material do projeto —
+           quem sabe é a tela (deps); o registro só repassa. Só nas categorias de concreto: o modelo inteiro não paga por isso. */
+        if (p.origem !== "familia" && p.origem !== "ambiente" && p.origem !== "mep" && (p.categoria === "pilar" || p.categoria === "viga" || p.categoria === "laje" || p.categoria === "fundacao")) {
+          if (typeof deps.concAco === "function" && p.categoria !== "fundacao") { try { x.concAco = deps.concAco(p.id); } catch (eCa) { x.concAco = null; } }
+          if (typeof deps.pesoUsuario === "function") x.pesoUsuarioDe = deps.pesoUsuario;
+          if (typeof deps.nomeMaterialProj === "function" && c && c.materialProj) { try { x.materialNome = deps.nomeMaterialProj(c.materialProj); } catch (eNm) { x.materialNome = null; } }
+        }
         if (p.categoria === "patamar" && p.sub && A) x.subArea = Math.abs(A.areaSinal(arr(p.sub.pts).map(function (q) { return [q.x, q.z]; })));
         var extra = (defsProj[p.categoria] || []).slice();
         if (p.origem === "familia" && typeof deps.familia === "function") extra = extra.concat(defsDaFamilia(deps.familia(c.famId)));
@@ -2096,9 +2149,9 @@
           xOrc.regua = true;
           return xOrc;
         }
-        var itens = defsDe(p.categoria, extra).filter(function (d) { return !d.so || (d.so === "conjunto" && !!(c && c.conjunto)); }).map(function (d) {
+        var itens = defsDe(p.categoria, extra).filter(function (d) { return !d.so || (d.so === "conjunto" && !!(c && c.conjunto)) || (d.so === "concreto" && !!conc(x)); }).map(function (d) {
           var v = valorDe(d, x), it = { def: d, valor: v, texto: formatar(v, d), usuario: deUsuario(d, x) };
-          if (d.orc && fin(v)) it.valorOrc = valorDe(d, contextoOrc());
+          if (d.orc && fin(v) && !(d.orcSoAco && !aco(x))) it.valorOrc = valorDe(d, contextoOrc());   /* orcSoAco: o peso e a área de pintura do CONCRETO não viram quantidade do orçamento */
           return it;
         });
         /* FAMIMPORT: a família importada declara "Largura bruta", "Espessura"… com o MESMO nome de uma definição do

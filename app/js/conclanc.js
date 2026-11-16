@@ -625,6 +625,13 @@
     var existentes = arr(estado.caixas).filter(function (c) { return ehConcreto(c) && ativa(c) && !gerId[String(c.id)]; });
     var EM = estruturaModelada(estado, opc);
     existentes = existentes.concat(EM.pecas);
+    /* ⚠ MARCA ÚNICA (16/11/2026, props físicas): peça pré-lançada que o usuário mexeu FICA no modelo com a marca dela, e o pré-lançamento seguinte numerava as peças novas de 1
+     * em diante — duas vigas "V7" (aviso "Marca V7 repetida em Quadro estrutural"). Roteiro: Sugerir estrutura → ajustar a seção da V7 → Sugerir de novo. Agora o número novo PULA as marcas
+     * que já existem no modelo; marca digitada pelo usuário nunca é renomeada. Modelo novo (sem peça mantida) numera igual a antes. */
+    var marcaUsada = {};
+    arr(estado.caixas).forEach(function (c) { if (c && c.marca && !gerId[String(c.id)] && (ehConcreto(c) || ehPreLanc(c))) marcaUsada[String(c.marca)] = 1; });
+    existentes.forEach(function (c) { if (c && c.marca) marcaUsada[String(c.marca)] = 1; });
+    function marcaLivre(f, ini) { var k = ini || 0, m; do { k++; m = f(k); } while (marcaUsada[m]); marcaUsada[m] = 1; return { m: m, k: k }; }
     if (EM.pecas.length) avisos.push("Estrutura já modelada (aço, madeira ou família): " + EM.pecas.length + " peça(s) — o pré-lançamento não lança outra no lugar delas (sem cobrar em dobro); confira a ligação.");
     if (EM.semGeometria.length) avisos.push("Família estrutural sem geometria lida (" + EM.semGeometria.join(", ") + "): só a posição foi considerada — confira se não há viga/laje em dobro.");
 
@@ -833,8 +840,9 @@
       pr.itens.push(pp); pp.prumada = pr;
     }); });
     prumadas.sort(function (a, b) { return (a.p.z - b.p.z) || (a.p.x - b.p.x); });
+    var kP = 0;
     prumadas.forEach(function (pr, i) {
-      pr.marca = "P" + (i + 1);
+      var mP = marcaLivre(function (k) { return "P" + k; }, kP); kP = mP.k; pr.marca = mP.m;
       var L = Math.max.apply(null, pr.itens.map(function (x) { return x.Lfinal; })), b = Math.min.apply(null, pr.itens.map(function (x) { return x.sec.b; }));
       pr.itens.forEach(function (x) { x.Lfinal = L; x.bFinal = b; });
     });
@@ -939,7 +947,8 @@
     pavs.forEach(function (pav) {
       var L = vigCx.filter(function (c) { return c.conc.pav === pav.idx; });
       L.sort(function (a, b) { var ha = Math.abs(Math.cos(a.rotY)) >= 0.7 ? 0 : 1, hb = Math.abs(Math.cos(b.rotY)) >= 0.7 ? 0 : 1; return ha - hb || (ha === 0 ? (a.cz - b.cz) || (a.cx - b.cx) : (a.cx - b.cx) || (a.cz - b.cz)); });
-      L.forEach(function (c, i) { c.marca = "V" + (pavs.length > 1 ? (pav.idx + 1) * 100 + i + 1 : i + 1); });
+      var kV = 0;
+      L.forEach(function (c) { var mV = marcaLivre(function (k) { return "V" + (pavs.length > 1 ? (pav.idx + 1) * 100 + k : k); }, kV); kV = mV.k; c.marca = mV.m; });
     });
     /* --- caixas das lajes */
     pavs.forEach(function (pav) {
@@ -953,7 +962,7 @@
         if (arr(lj.furos).length && arr(c.furos).length < lj.furos.length) avisos.push("Laje do ambiente " + (lj.amb.nome || lj.amb.id) + ": o vão da escada " + lj.escadas.join(", ") + " NÃO coube como furo — abra o vão à mão antes de orçar (veja o auditor).");
         c.id = "cp-l" + pav.idx + "-" + String(lj.amb.id).replace(/[^A-Za-z0-9_-]/g, "_");
         if (pav.nivelTopo) c.nivelId = pav.nivelTopo;
-        nl++; c.marca = "L" + (pavs.length > 1 ? (pav.idx + 1) * 100 + nl : nl);
+        var mL = marcaLivre(function (k) { return "L" + (pavs.length > 1 ? (pav.idx + 1) * 100 + k : k); }, nl); nl = mL.k; c.marca = mL.m;
         var g = guardar(c, "laje", pav, { tipoLaje: lj.tipo, h: lj.hCm, lx: lj.lx, ly: lj.ly, bordasEngastadas: lj.nEng, umaDirecao: lj.umaDirecao, ambiente: String(lj.amb.id), regras: lj.regras, avisos: lj.avisos, balanco: !!lj.balanco, escadas: arr(lj.escadas) });
         if (!g) return;
         lajes.push({ id: c.id, marca: c.marca, amb: lj.amb.nome || lj.amb.id, pav: pav.nome, tipo: lj.tipo, h: lj.hCm, lx: lj.lx, ly: lj.ly, nEng: lj.nEng,
@@ -978,7 +987,7 @@
           var c = BA.vigaPerfil({ x: r4(pa.x), z: r4(pa.z) }, { x: r4(pb.x), z: r4(pb.z) }, { perfil: { forma: "ret", b: b, h: r4(hBald) }, material: "concreto", topo: r4(l.yb) });
           if (!c) return;
           c.id = "cp-vb0-" + coord(pa.x) + "_" + coord(pa.z) + "-" + coord(pb.x) + "_" + coord(pb.z);
-          contB++; c.marca = "VB" + contB;
+          var mB = marcaLivre(function (k) { return "VB" + k; }, contB); contB = mB.k; c.marca = mB.m;
           var g = guardar(c, "viga", pav0, { secao: bCm + " × " + cm(hBald), vao: r3(t.L), tramo: t.ext ? "extremo" : "intermediario", baldrame: true, regras: ["baldrameAlturaPorVao", "baldrameAlturaMinCm", "baldrameLarguraMinCm"], sobressai: cm(l.esp) < bCm });
           if (!g) return;
           vigas.push({ id: c.id, marca: c.marca, pav: pav0.nome, baldrame: true, secao: bCm + " × " + cm(hBald), vao: r3(t.L), regra: "baldrame: bw = espessura da parede (mín. 14 cm), h = máx(30 cm; ℓ/12) — pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto — A CALCULAR com a fundação" });
@@ -1009,7 +1018,7 @@
           if (!c) return;
           c.id = "cp-vbal" + pav.idx + "-" + coord(ini.x) + "_" + coord(ini.z) + "-" + coord(longe.x) + "_" + coord(longe.z);
           if (pav.nivelTopo) c.nivelId = pav.nivelTopo;
-          contBal++; c.marca = "VBAL" + (pavs.length > 1 ? (pav.idx + 1) * 100 + contBal : contBal);
+          var mBal = marcaLivre(function (k) { return "VBAL" + (pavs.length > 1 ? (pav.idx + 1) * 100 + k : k); }, contBal); contBal = mBal.k; c.marca = mBal.m;
           var gB = guardar(c, "viga", pav, { secao: bCm + " × " + cm(hB), vao: r3(Lb), tramo: "balanço", balanco: true, pontaLivre: "fim", regras: ["lajeMinBalancoCm", "vigaBalancoAlturaPorVao"], sobressai: false });
           if (!gB) return;
           vigas.push({ id: c.id, marca: c.marca, pav: pav.nome, balanco: true, secao: bCm + " × " + cm(hB), vao: r3(Lb), regra: "viga em balanço (" + virg(Lb) + " m) engastada na viga de apoio; h = máx(ℓ/5; h da viga de apoio), pré-dimensionamento usual (Pinheiro/Bastos), decisão do produto — ESCALAR o engenheiro" });

@@ -237,7 +237,9 @@
           var brutos = pecas.map(function (p) { return BimPropsUI.bruto(ctx, def, p, p.porId[def.id]); });
           var varios = brutos.some(function (b) { return !igual(b, brutos[0]); });
           var it = pecas[0].porId[def.id];
-          linhas.push({ id: def.id, nome: def.nome, grupo: def.grupo, def: def, dado: def.dado, un: def.un || "", orc: def.orc || null,
+          /* o "$" (entra no orçamento) some quando a peça é de concreto e a definição só alimenta o orçamento no aço (Peso exato, Área de pintura) */
+          var semOrcLinha = !!def.orcSoAco && pecas.some(function (p) { var ii = p.porId[def.id]; return !(ii && ii.valorOrc != null); });
+          linhas.push({ id: def.id, nome: def.nome, grupo: def.grupo, def: def, dado: def.dado, un: def.un || "", orc: semOrcLinha ? null : (def.orc || null),
                         valor: varios ? null : it.valor, bruto: varios ? null : brutos[0], texto: varios ? VARIOS : it.texto, varios: varios, editor: ed });
         });
         if (linhas.length) out.secoes.push({ grupo: sec.grupo, linhas: linhas });
@@ -759,6 +761,15 @@
         niveis: RU && RU.niveis ? RU.niveis().map(function (n) { return { id: n.id, nome: n.nome, elevacao: +n.elevacao || 0 }; }) : [],
         /* P1-acab: os parâmetros do projeto da tela (BIM.parametrosProjeto) — os mesmos que o IFC leva */
         projeto: B.parametrosProjeto ? B.parametrosProjeto() : null,
+        /* PROPRIEDADES FÍSICAS DO CONCRETO (js/concprops.js): o aço real do último Calcular, o γ informado para o material (painel Peso das peças) e o nome do material do projeto */
+        concAco: function (id) { try { return global.ConcUI && global.ConcUI.acoDaPeca ? global.ConcUI.acoDaPeca(id, est.estado) : null; } catch (eCa) { return null; } },
+        pesoUsuario: function (nome) {
+          try {
+            var dn = G && G._pesoOpts ? G._pesoOpts().densidades : null, k = global.BimPeso ? global.BimPeso.chaveMaterial(nome) : null;
+            return dn && k && dn[k] ? dn[k] : null;
+          } catch (ePu) { return null; }
+        },
+        nomeMaterialProj: function (id) { try { var mp = global.BimMateriaisUI && global.BimMateriaisUI.ativo() ? global.BimMateriaisUI.porId(id) : null; return mp ? mp.nome : null; } catch (eNm) { return null; } },
         mep: true   /* P12: tubos, conexões, acessórios, eletrodutos e eletrocalhas entram na paleta */
       };
       var cat = {};

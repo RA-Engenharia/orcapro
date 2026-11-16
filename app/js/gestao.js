@@ -18034,11 +18034,40 @@
       } catch (eM) {}
       return mapa;
     },
+    /* PROPRIEDADES FÍSICAS DO CONCRETO (js/concprops.js, 16/11/2026): a peça `edit:<id>` do modelador nasce sem `materiais` (esse campo é do IFC) — o app SABE que a
+       viga/pilar/laje/fundação é de concreto. Devolve { c: a caixa do editor, estado } da peça, ou null (IFC importado, instalação, peça de outro material). */
+    _concCaixaDe: function (el) {
+      if (!el || !/^edit:/.test(String(el.uid || ""))) return null;
+      var est = null; try { est = window.BIM && BIM.editarEstado ? BIM.editarEstado() : null; } catch (e0) { est = null; }
+      if (!est || !est.estado) return null;
+      if (!this._concIdx || this._concIdx.st !== est.estado) {
+        var mp = {}; (est.estado.caixas || []).forEach(function (c) { if (c && c.id != null) mp[String(c.id)] = c; });
+        this._concIdx = { st: est.estado, mp: mp };
+      }
+      var c = this._concIdx.mp[String(el.uid).slice(5)];
+      return c ? { c: c, estado: est.estado } : null;
+    },
+    _concRec: function (h) {
+      if (!h || !window.ConcProps) return null;
+      var nm = null; try { if (h.c.materialProj && window.BimMateriaisUI && BimMateriaisUI.ativo()) { var mp = BimMateriaisUI.porId(h.c.materialProj); nm = mp ? mp.nome : null; } } catch (e1) { nm = null; }
+      return ConcProps.reconhecer(h.c, { nomeMaterial: nm });
+    },
     _pesoOpts: function () {
       if (!this._pesoDensCache) this._pesoDensCache = this._pesoDens();
+      var self = this;
       return {
         densidades: this._pesoDensCache.densidades, pesosPeca: this._pesoDensCache.pesosPeca,
-        volumeMalha: function (el) { try { return (window.BIM && BIM.volumeMalha) ? BIM.volumeMalha(el.uid) : null; } catch (e) { return null; } }
+        volumeMalha: function (el) { try { return (window.BIM && BIM.volumeMalha) ? BIM.volumeMalha(el.uid) : null; } catch (e) { return null; } },
+        /* o material que o app sabe da peça criada aqui (NOME — o γ vem do usuário ou da NBR 6120, como sempre) */
+        materiaisDe: function (el) { var h = self._concCaixaDe(el), rec = self._concRec(h); return rec ? [{ n: rec.rotulo }] : null; },
+        /* o γ informado para a PEÇA (Peso específico nas Propriedades) ou para o TIPO dela (Editar tipo) */
+        gamaPeca: function (el) {
+          var h = self._concCaixaDe(el), rec = self._concRec(h); if (!rec) return null;
+          var tv = null, tl = (h.estado.projeto && h.estado.projeto.tipos && h.estado.projeto.tipos[h.c.tipo]) || [];
+          for (var i = 0; i < tl.length; i++) if (tl[i] && String(tl[i].id) === String(h.c.tipoNomeado)) { tv = tl[i].valores; break; }
+          var g = ConcProps.gamaDe(h.c, rec, { tipoValores: tv, usuario: null });
+          return g.origem === "peça" || g.origem === "tipo" ? { kNm3: g.kNm3, ref: g.ref } : null;
+        }
       };
     },
     /* o resumo do modelo inteiro, guardado enquanto nada mudar: a porcentagem
@@ -18065,20 +18094,22 @@
     _pesoFmtKg: function (v) { return Util.fmtNum(v, v >= 100 ? 0 : 1) + " kg"; },
     _pesoFmtKN: function (v) { return Util.fmtNum(v, v >= 100 ? 1 : (v >= 1 ? 2 : 3)) + " kN"; },
     _pesoFmtPct: function (v) { return v == null ? "—" : Util.fmtNum(v, v >= 1 ? 1 : 2) + " %"; },
-    _pesoOrigem: function (p) {
+    _pesoOrigem: function (p, el) {
       if (!p || !p.ok) return "";
       if (p.fonte === "ifc") return "massa publicada no IFC";
       if (p.fonte === "peca") return "peso por peça informado";
       var g = p.gama || {}, gtxt = Util.fmtNum(g.kNm3, 2) + " kN/m³";
-      var de = g.origem === "usuario" ? "informado" : g.origem === "ifc" ? "do IFC" : g.origem === "composto" ? "média das camadas" : "NBR 6120";
-      return (p.fonte === "malha" ? "volume da malha (estimado)" : "volume do IFC") + " × " + gtxt + " (" + de + ")";
+      var de = g.origem === "usuario" ? (g.porPeca ? "informado para a peça ou o tipo" : "informado") : g.origem === "ifc" ? "do IFC" : g.origem === "composto" ? "média das camadas" : "NBR 6120";
+      var vol = p.fonte === "malha" ? "volume da malha (estimado)" : (el && /^edit:/.test(String(el.uid || "")) ? "volume real da geometria do modelo" : "volume do IFC");
+      return vol + " × " + gtxt + " (" + de + ")";
     },
     /* a seção "Peso" das Propriedades da peça */
     _pesoSecaoProps: function (el, ro) {
       if (!window.BimPeso || !el) return [];
       var self = this, m = this._pesoResumo(), it = m && m.porUid[el.uid];
-      var p = it ? it.p : BimPeso.pesoDe(el, this._pesoOpts());
-      var mats = (el.materiais || []).map(function (x) { return x.n; }).join(" + ");
+      /* peça do modelador (edit:): conta de novo — o material e o γ dela mudam sem o número de peças mudar (a memória do resumo não vê) */
+      var p = (it && !/^edit:/.test(String(el.uid || ""))) ? it.p : BimPeso.pesoDe(el, this._pesoOpts());
+      var mats = BimPeso.materiaisDe(el, this._pesoOpts()).map(function (x) { return x.n; }).join(" + ");
       var naSel = this._pesoEst().sel.indexOf(el.uid) >= 0;
       var juntar = { id: "peca-peso-sel", rotulo: "Seleção de peso", tipo: "botao", rotuloBotao: naSel ? "Tirar da seleção" : "Juntar à seleção",
         fn: function () { self._pesoAlternar(el.uid); } };
@@ -18090,10 +18121,12 @@
       var base = m ? m.r.total.kN : 0;
       var pct = p.solo ? "solo/aterro — fora do peso próprio" : this._pesoFmtPct(BimPeso.participacao(p.kN, base)) + " do peso próprio";
       return [{ nome: "Peso", params: [
-        ro("peca-peso-kg", "Peso (kg)", this._pesoFmtKg(p.kg) + (p.estimado ? " (estimado)" : "")),
+        ro("peca-peso-kg", "Peso (kg)", (/^edit:/.test(String(el.uid || "")) ? Util.fmtNum(p.kg, 2) + " kg" : this._pesoFmtKg(p.kg)) + (p.estimado ? " (estimado)" : "")),   /* peça do modelador: 2 casas, o mesmo número do Peso exato da paleta */
         ro("peca-peso-kn", "Peso (kN)", this._pesoFmtKN(p.kN)),
         ro("peca-peso-pct", "Participação", pct),
-        ro("peca-peso-origem", "Origem", this._pesoOrigem(p)),
+        ro("peca-peso-t", "Peso (t)", Util.fmtNum(p.kg / 1000, 4) + " t"),
+        ro("peca-peso-origem", "Origem", this._pesoOrigem(p, el)),
+        ro("peca-peso-gama", "Peso específico", p.gama ? Util.fmtNum(p.gama.kNm3, 2) + " kN/m³ — " + (p.gama.ref || "") : "—"),
         ro("peca-mat", "Material", mats || "—"),
         juntar ] }];
     },

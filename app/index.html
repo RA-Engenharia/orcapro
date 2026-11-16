@@ -535,6 +535,8 @@
   <script src="js/biminstbiblioteca.js"></script>
   <!-- P1-A: registro único de parâmetros (motor puro; aplica as ops ajustarTipo/marcar no replay do js/bimedit.js) -->
   <script src="js/bimparam.js"></script>
+  <!-- PROPRIEDADES FÍSICAS DO CONCRETO (16/11/2026): γ da NBR 6120, volume real, peso, áreas e aço (real do Calcular ou estimativa marcada) para viga, pilar, laje e fundação -->
+  <script src="js/concprops.js"></script>
   <!-- P2-A: ambiente (o ambiente/sala; motor puro — contorno pelas paredes no replay do js/bimedit.js) -->
   <script src="js/bimambiente.js"></script>
   <!-- P2-B: forro (motor puro; aplica a op forro no replay do js/bimedit.js — forro por contorno e automático pelas paredes) -->
@@ -1182,6 +1184,8 @@
   <script src="js/concdetalhe.js"></script>
   <!-- MOTOR DE CÁLCULO DE CONCRETO, fase C6 (16/11/2026): MEMORIAL DE CÁLCULO (C1–C5) no documento técnico padrão RA e tabela de aço em .xlsx; botão "Memorial de cálculo" na fita Estrutura (concui.js) -->
   <script src="js/concmemorial.js"></script>
+  <!-- SIMULAÇÃO VISUAL DO CÁLCULO, fase C7 (16/11/2026): deformada ampliada, diagramas N/V/M, mapa de utilização e flecha das lajes no 3D do BIM; botões na fita Estrutura (concui.js chama o registrar) -->
+  <script src="js/concvisual.js"></script>
   <!-- CIRCUITOS, QUADRO, CONDUTORES E ELETRODUTOS (frente E2, 21/10/2026): tabelas da NBR 5410 conferidas na imagem (cópia não licenciada), traçado, dimensionamento, auditor, pranchas e a tela -->
   <script src="js/eletabelas.js"></script>
   <script src="js/elecatalogodados.js"></script>   <!-- eletrica-v2 L1: catálogo real dos produtos elétricos (cotas + fonte), gerado por tools/gerar-elecatalogo.js -->

@@ -241,6 +241,21 @@
     return null;
   }
 
+  /* ⚠ OS MATERIAIS DA PEÇA — o do IFC e, na falta dele, o que o app SABE da peça criada aqui
+   * (16/11/2026, props físicas do concreto). A viga/pilar/laje do modelador não vem de IFC: o elemento
+   * `edit:<id>` nasce sem `materiais`, e o peso saía "sem peso — sem material no IFC" para uma peça que
+   * o próprio app diz ser "Concreto armado". `opts.materiaisDe(el)` (o gestao.js liga ao ConcProps)
+   * devolve [{ n: "Concreto armado" }] — o NOME, nunca um peso: o γ continua vindo do usuário, do IFC
+   * ou da tabela da NBR 6120 acima, na mesma ordem de sempre. */
+  function matsDe(el, opts) {
+    var ms = (el && Array.isArray(el.materiais)) ? el.materiais.filter(function (m) { return m && txt(m.n); }) : [];
+    if (!ms.length && opts && typeof opts.materiaisDe === "function") {
+      var x = null; try { x = opts.materiaisDe(el); } catch (e) { x = null; }
+      if (Array.isArray(x)) ms = x.filter(function (m) { return m && txt(m.n); });
+    }
+    return ms;
+  }
+
   /* peso específico de UM material (kN/m³): usuário → IFC → tabela */
   function gamaDoMaterial(m, opts) {
     var dens = (opts && opts.densidades) || {};
@@ -262,7 +277,12 @@
    * ------------------------------------------------------------- */
   function pesoEspecifico(el, opts) {
     var dens = (opts && opts.densidades) || {};
-    var mats = (el && Array.isArray(el.materiais)) ? el.materiais.filter(function (m) { return m && txt(m.n); }) : [];
+    var mats = matsDe(el, opts);
+    /* o γ informado PARA ESTA PEÇA (ou para o tipo dela) vale antes de qualquer material */
+    if (opts && typeof opts.gamaPeca === "function") {
+      var gp = null; try { gp = opts.gamaPeca(el); } catch (eG) { gp = null; }
+      if (gp && num(gp.kNm3) > 0) return { ok: true, kNm3: num(gp.kNm3), origem: "usuario", ref: txt(gp.ref) || "informado para esta peça", materiais: mats.map(function (m) { return { nome: m.n, kNm3: num(gp.kNm3), origem: "usuario" }; }), porPeca: true };
+    }
     if (!mats.length) {
       var u = dens[chaveClasse(classe(el))];
       if (u != null && num(u.kNm3) > 0) return { ok: true, kNm3: num(u.kNm3), origem: "usuario", ref: txt(u.ref) || "informado pelo usuário para " + rotuloTipo(el), materiais: [] };
@@ -352,7 +372,8 @@
       var rt = rotuloTipo(el), kt = "tipo:" + norm(rt);
       (tipos[kt] = tipos[kt] || novoAcc(kt, rt));
       somar(tipos[kt], el, p); tipos[kt].uids.push(el.uid);
-      var mn = (el.materiais && el.materiais.length) ? el.materiais.map(function (m) { return txt(m.n); }).join(" + ") : "(sem material no IFC)";
+      var msR = matsDe(el, opts);
+      var mn = msR.length ? msR.map(function (m) { return txt(m.n); }).join(" + ") : "(sem material no IFC)";
       var km = "mat:" + norm(mn);
       (mats[km] = mats[km] || novoAcc(km, mn));
       somar(mats[km], el, p); mats[km].uids.push(el.uid);
@@ -394,7 +415,7 @@
       var el = it.el, p = it.p;
       linhas.push({
         uid: el.uid, nome: txt(el.nomeIfc) || txt(el.descricao) || txt(el.nome) || classe(el), tipo: rotuloTipo(el), classe: classe(el),
-        familia: txt(el.familia), material: (el.materiais || []).map(function (m) { return txt(m.n); }).join(" + "),
+        familia: txt(el.familia), material: matsDe(el, opts).map(function (m) { return txt(m.n); }).join(" + "),
         volume: p.volume || null, volFonte: p.volFonte || "", kNm3: p.gama ? p.gama.kNm3 : null, refGama: p.gama ? p.gama.ref : (p.refPeca || ""),
         kg: p.ok ? p.kg : null, kN: p.ok ? p.kN : null, pct: p.ok && !p.solo ? participacao(p.kN, base) : null,
         fonte: p.ok ? p.fonte : "", estimado: !!p.estimado, solo: !!p.solo, motivo: p.ok ? "" : p.motivo
@@ -483,7 +504,7 @@
         pecas[kp].n++;
         return;
       }
-      var ms = Array.isArray(el.materiais) ? el.materiais.filter(function (m) { return m && txt(m.n); }) : [];
+      var ms = matsDe(el, opts);
       if (!ms.length) {
         var kc = chaveClasse(classe(el));
         if (!classes[kc]) { classes[kc] = { chave: kc, nome: rotuloTipo(el) + " (sem material no IFC)", n: 0, semMaterial: true, classe: classe(el) }; ordem.push(classes[kc]); }
@@ -520,7 +541,7 @@
     G: G, TABELA: TABELA, NAO_FISICO: NAO_FISICO,
     SO_MASSA: SO_MASSA, chavePeca: chavePeca,
     norm: norm, palavras: palavras, rotuloTipo: rotuloTipo, chaveMaterial: chaveMaterial, chaveClasse: chaveClasse,
-    casarMaterial: casarMaterial, gamaMaterial: gamaDoMaterial, pesoEspecifico: pesoEspecifico, pesoDe: pesoDe, pesosDoModelo: pesosDoModelo,
+    casarMaterial: casarMaterial, gamaMaterial: gamaDoMaterial, materiaisDe: matsDe, pesoEspecifico: pesoEspecifico, pesoDe: pesoDe, pesosDoModelo: pesosDoModelo,
     resumo: resumo, participacao: participacao, relatorio: relatorio, csv: csv,
     grupos: grupos, uidsDe: uidsDe, alternar: alternar
   };
