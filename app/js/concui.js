@@ -469,6 +469,110 @@
     return D;
   }
 
+  /* ----------------------------------------------------------- PRANCHAS DE ESTRUTURA (C8, 16/11/2026) — bloco próprio (js/concpranchas.js desenha; aqui só a fiação)
+     "Pranchas de estrutura" gera o jogo completo do ÚLTIMO CÁLCULO (fôrma, vigas, lajes, pilares, tabela de aço) e entrega PDF, CAD (DXF e DWG) e a tabela de aço em .xlsx.
+     PAINEL DA PEÇA: com um cálculo feito, clicar numa viga, pilar ou laje do 3D (BIM.selecao) abre um cartão com o desenho da armação daquela peça (o MESMO desenho da prancha) + a tabela de aço dela. */
+  var PAC_C8 = { calc: null, pac: null }, ULTIMAS_PR = null;
+  function pacoteC8() {
+    var M = global.ConcMemorial;
+    if (!M || !ULTIMO_CALC) return null;
+    if (PAC_C8.calc !== ULTIMO_CALC) { PAC_C8.calc = ULTIMO_CALC; PAC_C8.pac = M.pacoteDe(ULTIMO_CALC); }
+    return PAC_C8.pac;
+  }
+  function modeloMudouC8(pac) { var KC = global.ConcCalcular, atual = KC && KC.assinaturaDe ? KC.assinaturaDe(estado()) : null; return !!(pac && pac.assinaturaModelo && atual && pac.assinaturaModelo !== atual); }
+  function opcoesC8() {
+    var cx = ctxCarimbo(), em = cx.empresa || {}, ob = cx.obra || {}, o = { empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo), obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: cx.logo || null, revisao: "R00" };
+    try { var C = CL(), st = estado(), d = C && st ? C.dadosDoModelo(st, { avaliarFam: avaliar(), categoriaFam: catFam(), niveis: niveis() }) : null; if (d && d.ok) { o.eixos = d.eixos; o.niveis = d.niveis; } } catch (e) { /* sem a grade: o motor deriva dos pilares */ }
+    return o;
+  }
+  function baixarC8(nome, dados, tipo) { try { var b = new Blob([dados], { type: tipo }), u = URL.createObjectURL(b), a = document.createElement("a"); a.href = u; a.download = nome; a.click(); setTimeout(function () { URL.revokeObjectURL(u); }, 4000); } catch (e) { status("Não consegui baixar o arquivo."); } }
+  function dwgC8(o) {
+    var AU2 = global.ArqPranchasUI, f = typeof fetch === "function" ? fetch.bind(global) : null;
+    if (!AU2 || !AU2.prepararDwg || !f) { status("O DWG só sai no app instalado; o DXF abre no AutoCAD (Salvar como DWG)."); return; }
+    status("Gerando o DWG (conversor local)…");
+    AU2.prepararDwg({}).then(function (pr) {
+      if (!pr || !pr.ok) { status((pr && pr.erro) || "O conversor DWG não ficou pronto. O DXF abre no AutoCAD."); return null; }
+      return f("/__dwg/gerar", { method: "POST", headers: { "Content-Type": "application/dxf" }, body: o.dxfDwg || o.dxf }).then(function (resp) { return resp.ok ? resp.arrayBuffer() : null; });
+    }).then(function (ab) {
+      if (!ab) return;
+      var CD = global.ArqCad, z = CD && CD.zipDwg ? CD.zipDwg(o, new Uint8Array(ab)) : null;
+      if (z) { baixarC8("estrutura-concreto-DWG" + (o.bloqueado ? "-NAO-LIBERADO" : "") + ".zip", z, "application/zip"); status("DWG pronto (ZIP com o DWG, o RA_Estrutural.ctb e o LEIA-ME)."); } else status("O ZIP do DWG não montou.");
+    }, function () { status("Falha ao converter em DWG; o DXF abre no AutoCAD."); });
+  }
+  function pranchas() {
+    var T = "Pranchas de estrutura (C8)";
+    if (trancou(T)) return null;
+    var P = global.ConcPranchas, pac = pacoteC8();
+    if (!P) { status("O gerador das pranchas não carregou."); return null; }
+    if (!pac) { status("Rode o Calcular antes: as pranchas saem do último cálculo."); janela(T, "<p>As pranchas da estrutura saem do resultado do <b>Calcular</b>. Rode o Calcular estrutura e gere as pranchas em seguida.</p>"); return null; }
+    if (modeloMudouC8(pac)) { status("O modelo mudou depois do Calcular: recalcule antes das pranchas."); janela(T, "<p><b>O modelo mudou depois do último Calcular.</b> As pranchas seriam de um cálculo antigo e por isso não foram geradas. Rode o <b>Calcular</b> de novo.</p>"); return null; }
+    status("Gerando as pranchas da estrutura…");
+    var r = P.gerar(pac, opcoesC8());
+    if (!r || !r.ok) { janela(T, faixa() + "<p>" + esc(arr(r && r.avisos).join(" ") || "Não saiu.") + "</p>"); return r; }
+    ULTIMAS_PR = r;
+    var bloq = r.bloqueado, miniaturas = r.folhas.map(function (f) { return '<figure style="margin:0;width:230px"><img alt="' + esc(f.titulo) + '" style="width:230px;border:1px solid #999;background:#fff" src="' + dataUrlSvg(f.svg) + '"><figcaption style="font-size:11px">' + esc(f.numero + " — " + f.titulo) + "</figcaption></figure>"; }).join("");
+    var html = (bloq ? '<p style="margin:0 0 8px;padding:7px 10px;border-radius:6px;background:rgba(163,53,43,.12);border-left:4px solid #a3352b;font-size:13px"><b>NÃO LIBERADO — ' + r.reprovadas.length + " peça(s) reprovada(s)/incompleta(s) no cálculo.</b> Todas as pranchas saem com a faixa, o nome da peça em vermelho e o carimbo sem o responsável técnico.</p>" : "") +
+      "<p><b>" + r.folhas.length + "</b> pranchas (" + r.formato + "): fôrma por nível, armação de vigas, de lajes (positiva e negativa) e de pilares, cada uma com a tabela de aço. Aço total (sem perda): <b>" + Math.round(r.resumo.totalKg) + " kg</b>; com " + Math.round(r.resumo.perda * 100) + " % de perda: " + Math.round(r.resumo.totalKgComPerda) + " kg. Padrão RA v2.0 (TQS), carimbo RA.</p>" +
+      '<p><button type="button" class="btn primary sm" data-conc-pr-pdf>PDF das pranchas</button> <button type="button" class="btn sm" data-conc-pr-dxf>CAD (DXF + CTB)</button> <button type="button" class="btn sm" data-conc-pr-dwg>CAD (DWG)</button> <button type="button" class="btn ghost sm" data-conc-pr-xlsx>Tabela de aço (.xlsx)</button></p>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px">' + miniaturas + "</div>" + lista("Avisos", r.avisos);
+    var ov = janela(T, html);
+    if (ov) ov.addEventListener("click", function (e) {
+      var t = e.target; if (!t || !t.hasAttribute) return;
+      if (t.hasAttribute("data-conc-pr-pdf")) { var b = P.pdf(r); if (b) { baixarC8(r.nomeBase + ".pdf", b, "application/pdf"); status("PDF das pranchas da estrutura (" + r.folhas.length + " páginas)."); } }
+      if (t.hasAttribute("data-conc-pr-dxf")) { var o = P.paraCad(r, { dxfNome: r.nomeBase + ".dxf", dwgNome: r.nomeBase + ".dwg" }), z = o ? P.zip(o) : null; if (z) { baixarC8(r.nomeBase + "-CAD.zip", z, "application/zip"); status("CAD pronto: DXF com um layout por prancha, viewports 1:50/1:25 e o RA_Estrutural.ctb."); } else status("O arquivo CAD não montou."); }
+      if (t.hasAttribute("data-conc-pr-dwg")) { var o2 = P.paraCad(r, { dxfNome: r.nomeBase + ".dxf", dwgNome: r.nomeBase + ".dwg" }); if (o2) dwgC8(o2); else status("O arquivo CAD não montou."); }
+      if (t.hasAttribute("data-conc-pr-xlsx")) {
+        var EX = global.ExcelOrc || global.Excel; if (!EX || !EX.ensureExcelJS) { status("Excel indisponível."); return; }
+        EX.ensureExcelJS(function () { try { var wb = P.xlsx(global.ExcelJS, r); wb.xlsx.writeBuffer().then(function (buf) { baixarC8(wb.nomeArquivo, buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); status("Tabela de aço por prancha (.xlsx) gerada."); }); } catch (e2) { status("Planilha: " + (e2 && e2.message ? e2.message : e2)); } });
+      }
+    });
+    status((bloq ? "NÃO LIBERADO — " : "") + "Pranchas da estrutura: " + r.folhas.length + " folhas · aço " + Math.round(r.resumo.totalKg) + " kg (sem perda).");
+    return r;
+  }
+  /* o cartão da peça (não modal): desenho da armação + tabela de aço */
+  var PAINEL_C8 = { chave: null, timer: null };
+  function fecharPainelC8() { var el = typeof document !== "undefined" ? document.getElementById("conc-peca-painel") : null; if (el && el.parentNode) el.parentNode.removeChild(el); }
+  function painelPeca(id) {
+    if (typeof document === "undefined") return null;
+    var P = global.ConcPranchas, pac = pacoteC8(); if (!P || !pac) return null;
+    var cartao = document.getElementById("conc-peca-painel");
+    if (!cartao) {
+      cartao = document.createElement("div"); cartao.id = "conc-peca-painel";
+      cartao.setAttribute("style", "position:fixed;right:14px;bottom:14px;z-index:99990;width:min(640px,92vw);max-height:80vh;overflow:auto;background:var(--surface,#fff);color:var(--text,#16202a);border:1px solid rgba(0,0,0,.25);border-radius:10px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.3);font-size:13px");
+      cartao.addEventListener("click", function (e) { var t = e.target; if (!t || !t.hasAttribute) return; if (t.hasAttribute("data-conc-peca-fechar")) fecharPainelC8(); if (t.hasAttribute("data-conc-peca-pranchas")) pranchas(); });
+      document.body.appendChild(cartao);
+    }
+    if (modeloMudouC8(pac)) { cartao.innerHTML = '<div style="display:flex;justify-content:space-between"><strong>Armação da peça</strong><button type="button" class="btn sm" data-conc-peca-fechar>Fechar</button></div><p>O modelo mudou depois do último Calcular: recalcule para ver a armação desta peça.</p>'; return cartao; }
+    var r = P.pecaSvg(pac, id, opcoesC8());
+    if (!r.ok) { fecharPainelC8(); return null; }
+    var svg = r.svg.replace(/ width="[\d.]+mm" height="[\d.]+mm"/, ' style="width:100%;height:auto;display:block;background:#fff"');
+    cartao.setAttribute("data-conc-peca", r.titulo);
+    cartao.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><strong>' + esc(r.titulo) + (r.naoLiberado ? ' <span style="color:#a3352b">— NÃO LIBERADA</span>' : "") + '</strong><span><button type="button" class="btn ghost sm" data-conc-peca-pranchas>Pranchas de estrutura</button> <button type="button" class="btn sm" data-conc-peca-fechar>Fechar</button></span></div>' + svg +
+      '<p style="margin:6px 0 0;font-size:12px">Aço da peça (sem perda): <b>' + Math.round(r.pesoKg * 10) / 10 + " kg</b> · " + r.posicoes.length + " posição(ões). Cálculo de apoio — o engenheiro responsável confere e assina (ART).</p>";
+    return cartao;
+  }
+  function vigiarSelecaoC8() {
+    var B = global.BIM, s = B && B.selecao ? B.selecao() : null, uids = s && s.uids ? s.uids : [], u = uids.length === 1 ? String(uids[0]) : "";
+    if (u === PAINEL_C8.chave) return false;
+    PAINEL_C8.chave = u; if (!u || !ULTIMO_CALC) return false;
+    var id = u.replace(/^edit:/, ""), P = global.ConcPranchas, pac = pacoteC8(); if (!P || !pac) return false;
+    var ok = arr(P.pecasDisponiveis(pac)).some(function (q) { return q.id === id; }); if (!ok) return false;
+    return !!painelPeca(id);
+  }
+  function ligarPainelPecaC8() {
+    if (PAINEL_C8.timer || typeof setInterval !== "function" || typeof document === "undefined") return false;
+    PAINEL_C8.timer = setInterval(function () { try { vigiarSelecaoC8(); } catch (e) { /* o vigia nunca derruba a tela */ } }, 600);
+    return true;
+  }
+  function registrarPranchasC8(reg) {
+    var R = global.BimRibbon; if (!R || !reg) return false;
+    R.acrescentar("estrutura", "Estrutura", "Projeto executivo", [
+      { id: "conc-pranchas", rotulo: "Pranchas de\nestrutura", icone: "estrutura", grande: true, dica: "Depois do Calcular: o jogo completo do projeto executivo da superestrutura saído do cálculo — fôrma por nível, armação de vigas (elevação 1:50, cortes 1:25, estribos por trecho), de lajes (positiva e negativa) e de pilares (lances, seção, grampos), cada prancha com a tabela de aço e o resumo, no Padrão RA v2.0 (TQS) e carimbo RA. Entrega PDF, CAD (DXF e DWG, RA_Estrutural.ctb) e a tabela de aço em .xlsx. Peça reprovada: tudo sai NÃO LIBERADO, sem assinatura. Clicar numa viga, pilar ou laje no 3D (depois do Calcular) mostra a armação dela." }]);
+    reg["conc-pranchas"] = function () { pranchas(); return true; };
+    ligarPainelPecaC8();
+    return true;
+  }
+
   var ConcUI = {
     registrar: function (reg) {
       var R = global.BimRibbon;
@@ -499,6 +603,7 @@
       reg["conc-memorial"] = function () { memorial(); return true; };
       reg["conc-vista"] = function () { var r = vistaEstrutura({ forcar: true, abrir: true }); if (!r || !r.ok) { janela("Vista de Estrutura", faixa() + "<p>" + esc((r && r.motivo) || "Não saiu.") + "</p>"); } return true; };
       ligarVigia();
+      registrarPranchasC8(reg);
       /* SIMULAÇÃO DO CÁLCULO (C7, js/concvisual.js): deformada, diagramas, utilização e flecha das lajes no 3D — painel "Simulação do cálculo" da fita Estrutura */
       if (global.ConcVisual && global.ConcVisual.registrar) global.ConcVisual.registrar(reg);
       reg["conc-pre-auto"] = function () { prelancar("auto"); return true; };
@@ -513,7 +618,8 @@
     },
     ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, memorial: memorial, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; }, acoDaPeca: acoDaPeca,
     sugerir: sugerir, opcoes: opcoes, vistaEstrutura: vistaEstrutura, vigiarVista: vigiarVista, registroDaVista: registroDaVista, permitirPilar12: permitirPilar12, definirPilar12: definirPilar12, problemasDosBloqueios: problemasDosBloqueios, aoCorrigirBloqueio: aoCorrigirBloqueio,
-    prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada
+    prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada,
+    pranchas: pranchas, painelPeca: painelPeca, vigiarSelecaoC8: vigiarSelecaoC8, fecharPainelPeca: fecharPainelC8
   };
   global.ConcUI = ConcUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ConcUI;

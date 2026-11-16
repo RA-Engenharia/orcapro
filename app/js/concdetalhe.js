@@ -198,6 +198,11 @@
     var p = { id: "N" + (lista.length + 1), elemento: o.elemento, tipo: o.tipo, nome: o.nome, phi: o.phi, aco: acoDe(o.phi, o.aco), qtd: o.qtd, comprimentoCm: o.comprimentoCm, ganchos: o.ganchos || [], trecho: o.trecho || null, criterios: o.criterios || [], obs: o.obs || null };
     if (o.dobras != null) p.dobras = o.dobras;
     if (o.lado) p.lado = o.lado;
+    /* C8 (pranchas): o que o desenho precisa e o texto não dá — espaçamento (cm), direção/borda da laje e zonas de estribo; só acrescenta campos, nada muda nos números */
+    if (o.s != null) p.s = o.s;
+    if (o.dir) p.dir = o.dir;
+    if (o.borda) p.borda = o.borda;
+    if (o.zonas) p.zonas = o.zonas;
     p.totalM = p.qtd * p.comprimentoCm / 100; p.kg = p.totalM * massaLinear(p.phi);
     lista.push(p); return p;
   }
@@ -359,16 +364,18 @@
       if (diagOk && arr(d.V).length === d.x.length) {
         zonas = [{ nome: "extremo esq.", len: zE, e: esq }, { nome: "meio", len: Lf - zE - zD, e: mei }, { nome: "extremo dir.", len: zD, e: dir }];
       } else zonas = [{ nome: "vão inteiro", len: Lf, e: pior(pior(esq, mei), dir) }];
-      var agrup = {};
+      var agrup = {}, xZ = x0;
       zonas.forEach(function (z) {
+        var xIni = xZ; xZ += Math.max(z.len, 0);
         if (!(z.len > 1e-9)) return;
         var e = z.e, n = conta(z.len, e.s, opc), chave = e.phi + "|" + e.s;
-        agrup[chave] = agrup[chave] || { phi: e.phi, s: e.s, n: 0, partes: [] };
+        agrup[chave] = agrup[chave] || { phi: e.phi, s: e.s, n: 0, partes: [], zonas: [] };
         agrup[chave].n += n; agrup[chave].partes.push(z.nome + " " + fmt(r2(z.len), 0) + " cm");
+        agrup[chave].zonas.push({ nome: z.nome, x0: xIni, len: z.len, n: n });
       });
       Object.keys(agrup).forEach(function (k) {
         var g = agrup[k], Cg = comprimentoEstribo(bw, h, cob, g.phi, 135);
-        criarPos(pos, { elemento: el, tipo: "estribo", nome: "Estribo φ " + fmt(g.phi, 1) + " c/" + fmt(g.s, 1), phi: g.phi, aco: acoDe(g.phi, aco), qtd: g.n, comprimentoCm: Cg, ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(g.phi, 135), pinoMm: pinoEstribo(g.phi, acoDe(g.phi, aco)) }, { angulo: 135, pontaCm: ganchoEstribo(g.phi, 135) }],
+        criarPos(pos, { elemento: el, tipo: "estribo", nome: "Estribo φ " + fmt(g.phi, 1) + " c/" + fmt(g.s, 1), phi: g.phi, aco: acoDe(g.phi, aco), qtd: g.n, comprimentoCm: Cg, s: g.s, zonas: g.zonas, ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(g.phi, 135), pinoMm: pinoEstribo(g.phi, acoDe(g.phi, aco)) }, { angulo: 135, pontaCm: ganchoEstribo(g.phi, 135) }],
           criterios: ["estriboGanchoPhi", "estriboGanchoMinCm", "pinoEstriboPhiCA50Ate10"], obs: "C = 2·((bw−2c)+(h−2c)) + 2·ponta de 135°; zonas: " + g.partes.join(", ") + "; contagem " + (opc.contagem === "arredondar" ? "arredondada (livro)" : "⌈trecho/s⌉") });
         nEst += g.n;
       });
@@ -441,7 +448,7 @@
       if (a.anticolapso) {
         var b1 = bordaDe("x1"), la = ancLaje(phi, false), cAc = en.lx * 100 + b1.bw / 2 + la.lb - cPos;
         var nAc = conta(ly - bwP, s, opc);
-        criarPos(pos, { elemento: el, tipo: "anticolapso", nome: "Armadura inferior anticolapso do balanço (Em1 20.6)", phi: phi, qtd: nAc, comprimentoCm: acima(cAc, p), criterios: ["lajeBalancoAnticolapso", "lajeBalancoAnticolapsoGammaG"],
+        criarPos(pos, { elemento: el, tipo: "anticolapso", nome: "Armadura inferior anticolapso do balanço (Em1 20.6)", phi: phi, qtd: nAc, comprimentoCm: acima(cAc, p), s: s, dir: "x", criterios: ["lajeBalancoAnticolapso", "lajeBalancoAnticolapsoGammaG"],
           obs: "ponta do balanço − c + ℓb,nec reto dentro da estrutura principal (ℓb = " + fmt(r2(la.lb), 1) + " cm); dimensionada com γg = 1,4 (decisão do produto)" });
         return;
       }
@@ -450,34 +457,53 @@
         var bE = bordaDe(dir + "1"), bD = bordaDe(dir + "2"), Ldir = dir === "x" ? lx : ly, Lout = dir === "x" ? ly : lx, bO1 = bordaDe(dir === "x" ? "y1" : "x1"), bO2 = bordaDe(dir === "x" ? "y2" : "x2");
         var comp = Ldir + alemEixo(bE) + alemEixo(bD), cota = Lout - bO1.bw / 2 - bO2.bw / 2;
         var n = conta(cota, s, opc), sec = id.indexOf("y") >= 0 && !!(l.classificacao && l.classificacao.tipo === "uma-direcao");
-        criarPos(pos, { elemento: el, tipo: sec ? "distribuicao" : "positiva", nome: (sec ? "Distribuição (secundária) dir. " : "Positiva dir. ") + dir, phi: phi, qtd: n, comprimentoCm: acima(comp, p), trecho: [-alemEixo(bE), Ldir + alemEixo(bD)],
+        criarPos(pos, { elemento: el, tipo: sec ? "distribuicao" : "positiva", nome: (sec ? "Distribuição (secundária) dir. " : "Positiva dir. ") + dir, phi: phi, qtd: n, comprimentoCm: acima(comp, p), s: s, dir: dir, trecho: [-alemEixo(bE), Ldir + alemEixo(bD)],
           criterios: ["lajeArmPositivaAlemEixoApoioCm", "lajePositivaAlemEixoInternaCm"], obs: "vão " + fmt(r2(Ldir), 0) + " cm + além do eixo (≥ 4 cm, 20.1; adotado 5 cm interna / face − c na periferia); " + n + " barras = ⌈" + fmt(r2(cota), 0) + "/" + fmt(s, 1) + "⌉ (cota face a face; 1ª barra a s/2 = " + fmt(s / 2, 1) + " cm da face)" });
         return;
       }
       if (l.balanco && id === "A-x") {
         var lbB = ancLaje(phi, false), bB = bordaDe("x1"), lb100 = en.lx * 100, vizLxCm = bB.vizLx != null ? bB.vizLx * 100 : null, dentro = Math.max(cv("lajeBalancoNegativaDentroVizinhaFracao", 1.0) * lb100, vizLxCm != null ? cv("lajeNegativaFracaoVao", 0.25) * vizLxCm : 0) + lbB.lb, Cb = (lb100 - cNeg) + bB.bw + dentro + gancho;
         if (vizLxCm == null) pend.push("Balanço: sem o ℓx da laje vizinha — a penetração usou só ℓbal + ℓb (falta o 0,25·ℓx,viz).");
-        criarPos(pos, { elemento: el, tipo: "negativa-balanco", nome: "Negativa do balanço", phi: phi, qtd: conta(ly - bwP, s, opc), comprimentoCm: acima(Cb, p), ganchos: [{ angulo: 90, pontaCm: gancho }], criterios: ["lajeBalancoNegativaDentroVizinhaFracao", "lajeGanchoSubtraiCobrimentos"],
+        criarPos(pos, { elemento: el, tipo: "negativa-balanco", nome: "Negativa do balanço", phi: phi, qtd: conta(ly - bwP, s, opc), comprimentoCm: acima(Cb, p), s: s, borda: "x1", ganchos: [{ angulo: 90, pontaCm: gancho }], criterios: ["lajeBalancoNegativaDentroVizinhaFracao", "lajeGanchoSubtraiCobrimentos"],
           obs: "da ponta do balanço (− c) até " + fmt(r2(dentro), 0) + " cm dentro da laje vizinha = max(ℓbal; 0,25·ℓx,viz) + ℓb,nec (decisão do produto, sem fonte de norma) + gancho h − 2c na ponta" });
         return;
       }
       if (l.balanco && id === "A-y") {
-        criarPos(pos, { elemento: el, tipo: "distribuicao", nome: "Distribuição do balanço", phi: phi, qtd: conta(en.lx * 100, s, opc), comprimentoCm: acima(ly + 2 * cv("lajeDistribuicaoAlemEixoCm", 5), p), criterios: ["lajeDistribuicaoAlemEixoCm"], obs: "perpendicular à negativa principal, ao longo do apoio" });
+        criarPos(pos, { elemento: el, tipo: "distribuicao", nome: "Distribuição do balanço", phi: phi, qtd: conta(en.lx * 100, s, opc), comprimentoCm: acima(ly + 2 * cv("lajeDistribuicaoAlemEixoCm", 5), p), s: s, dir: "y", criterios: ["lajeDistribuicaoAlemEixoCm"], obs: "perpendicular à negativa principal, ao longo do apoio" });
         return;
       }
       if (seg === "A" && id.charAt(1) === "-") {
-        var ref = id.slice(2), b = bordaDe(ref), ehX = ref.charAt(0) === "x", Lc = ehX ? ly : lx, cotaN = b.cota != null ? b.cota : Lc - bwP;
+        var ref = id.slice(2);
+        if (/^[xy]$/.test(ref)) { var ri2 = ["x1", "x2", "y1", "y2"].filter(function (r) { return r.charAt(0) === ref && bd[r] && bd[r].tipo === "interna"; }); if (ri2.length === 1) ref = ri2[0]; }   /* uma direção: a negativa fica na borda engastada */
+        var b = bordaDe(ref), ehX = ref.charAt(0) === "x", Lc = ehX ? ly : lx, cotaN = b.cota != null ? b.cota : Lc - bwP;
         if (bd[ref] && bd[ref].cedida) { avisos.push("Negativa da borda " + ref + ": a barra da borda comum é detalhada na laje vizinha " + (bd[ref].vizId || "") + " (a de maior armadura), sem contar duas vezes."); return; }
         if (a.construtiva) {
           var ext1 = (a.extensao != null ? a.extensao : 0.15 * en.lx) * 100, cc = ext1 + b.bw - cNeg + gancho;
-          criarPos(pos, { elemento: el, tipo: "negativa-borda", nome: "Negativa de borda sem continuidade (" + ref + ")", phi: phi, qtd: conta(cotaN, s, opc), comprimentoCm: acima(cc, p), criterios: ["lajeBordaNegativaExtensaoFracaoVaoMenor"],
+          criarPos(pos, { elemento: el, tipo: "negativa-borda", nome: "Negativa de borda sem continuidade (" + ref + ")", phi: phi, qtd: conta(cotaN, s, opc), comprimentoCm: acima(cc, p), s: s, borda: ref, criterios: ["lajeBordaNegativaExtensaoFracaoVaoMenor"],
             obs: "0,15·ℓx a partir da face + a largura da viga − c + gancho h − 2c (19.3.3.2); quantidade ⌈cota/s⌉, 1ª barra a s/2 da face" });
+          return;
+        }
+        var trsB = arr(bd[ref] && bd[ref].trechos).filter(function (q) { return !!q.vizId; });
+        if (trsB.length && trsB.length === arr(bd[ref].trechos).length && !a.construtiva) {
+          var proprios = trsB.filter(function (q) { return !q.cedida; });
+          if (!proprios.length) { avisos.push("Negativa da borda " + ref + ": todos os trechos são detalhados nas lajes vizinhas (a de maior armadura), sem contar duas vezes."); return; }
+          var grupos = {}, ordemG = [];
+          proprios.forEach(function (q) { var kk = q.vizLxM + "|" + q.vizHCm; if (!grupos[kk]) { grupos[kk] = { vizLx: q.vizLxM, vizH: q.vizHCm, cota: 0, trechos: [] }; ordemG.push(kk); } grupos[kk].cota += q.cotaCm; grupos[kk].trechos.push({ vizId: q.vizId, cotaCm: q.cotaCm }); });
+          var sufixoB = ordemG.length > 1;
+          ordemG.forEach(function (kk, gi) {
+            var G = grupos[kk], an2 = ancLaje(phi, true), xv2 = Math.max(en.lx * 100, G.vizLx != null ? G.vizLx * 100 : en.lx * 100);
+            var c12 = cv("lajeNegativaFracaoVao", 0.25) * xv2 + an2.lbGancho, c12r = opc.arredondaNegativa === "livro" ? proximo(c12, cv("lajeNegativaArredondaLivroCm", 10)) : acima(c12, p), gV2 = G.vizH != null ? Math.max(G.vizH - cv("lajeGanchoSubtraiCobrimentos", 2) * cPos, 0) : gancho;
+            var Cn2 = 1.5 * c12r + gancho + gV2, ini2 = 0; for (var qi = 0; qi < gi; qi++) ini2 += grupos[ordemG[qi]].cota;
+            criarPos(pos, { elemento: el, tipo: "negativa", nome: "Negativa na borda " + ref + " (arranjo 3)" + (sufixoB ? ", trecho " + (gi + 1) + " de " + ordemG.length : ""), phi: phi, qtd: conta(G.cota, s, opc), comprimentoCm: Cn2, s: s, borda: ref, ganchos: [{ angulo: 90, pontaCm: gancho }, { angulo: 90, pontaCm: gV2 }], criterios: ["lajeNegativaFracaoVao", "lajeGanchoSubtraiCobrimentos", "lbAlphaGancho"],
+              obs: "C = 1,5·(0,25·ℓx + ℓb,gancho) + ganchos (h − 2c), ℓx = " + fmt(r2(xv2), 0) + " cm, ℓb,gancho = " + fmt(r2(an2.lbGancho), 1) + " cm (critério da NB-1/78 pelo Bastos — decisão do produto); borda com mais de um vizinho: trecho de " + fmt(r2(G.cota), 0) + " cm (" + G.trechos.map(function (q) { return q.vizId; }).join(", ") + "), contado UMA vez; quantidade ⌈trecho/s⌉" });
+            pos[pos.length - 1].trechosBorda = G.trechos; pos[pos.length - 1].iniBordaCm = ini2; pos[pos.length - 1].grupo = gi; pos[pos.length - 1].ngrupos = ordemG.length;
+          });
           return;
         }
         var an = ancLaje(phi, true), xv = Math.max(en.lx * 100, b.vizLx != null ? b.vizLx * 100 : en.lx * 100);
         var c1 = cv("lajeNegativaFracaoVao", 0.25) * xv + an.lbGancho, c1r = opc.arredondaNegativa === "livro" ? proximo(c1, cv("lajeNegativaArredondaLivroCm", 10)) : acima(c1, p), gV = b.vizH != null ? Math.max(b.vizH - cv("lajeGanchoSubtraiCobrimentos", 2) * cPos, 0) : gancho;
         var Cn = 1.5 * c1r + gancho + gV;
-        criarPos(pos, { elemento: el, tipo: "negativa", nome: "Negativa na borda " + ref + " (arranjo 3)", phi: phi, qtd: conta(cotaN, s, opc), comprimentoCm: Cn, ganchos: [{ angulo: 90, pontaCm: gancho }, { angulo: 90, pontaCm: gV }], criterios: ["lajeNegativaFracaoVao", "lajeGanchoSubtraiCobrimentos", "lbAlphaGancho"],
+        criarPos(pos, { elemento: el, tipo: "negativa", nome: "Negativa na borda " + ref + " (arranjo 3)", phi: phi, qtd: conta(cotaN, s, opc), comprimentoCm: Cn, s: s, borda: ref, ganchos: [{ angulo: 90, pontaCm: gancho }, { angulo: 90, pontaCm: gV }], criterios: ["lajeNegativaFracaoVao", "lajeGanchoSubtraiCobrimentos", "lbAlphaGancho"],
           obs: "C = 1,5·(0,25·ℓx + ℓb,gancho) + ganchos (h − 2c), ℓx = " + fmt(r2(xv), 0) + " cm, ℓb,gancho = " + fmt(r2(an.lbGancho), 1) + " cm (critério da NB-1/78 pelo Bastos — decisão do produto); quantidade ⌈cota/s⌉, 1ª barra a s/2 da face" });
       }
     });
@@ -523,7 +549,7 @@
        * leva: extras para ΣAst nos terços (9.5.2.4.1) e UM estribo 4φ além de cada ponta da emenda comprimida (9.5.2.4.2) */
       var te = transversalEmenda(phi, 100, l0c, phiT, s, 2, true), lapAqui = !g.primeiroLance, nAlem = lapAqui ? 2 : 0, nExtra = lapAqui ? 2 * te.extras + nAlem : 0;
       te.passos.forEach(function (q) { R.push(q); });
-      criarPos(pos, { elemento: el, tipo: "estribo", nome: "Estribo φ " + fmt(phiT, 1) + " c/" + fmt(s, 1), phi: phiT, aco: acoT, qtd: nBase + nExtra, comprimentoCm: Ce, ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(phiT, 135), pinoMm: pinoEstribo(phiT, acoT) }, { angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }],
+      criarPos(pos, { elemento: el, tipo: "estribo", nome: "Estribo φ " + fmt(phiT, 1) + " c/" + fmt(s, 1), phi: phiT, aco: acoT, qtd: nBase + nExtra, comprimentoCm: Ce, s: s, ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(phiT, 135), pinoMm: pinoEstribo(phiT, acoT) }, { angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }],
         criterios: ["pilarEstriboPhiMinMm", "pilarEstriboSmaxMm", "estriboGanchoPhi"], obs: "18.4.3: φt ≥ max(5 mm; φ/4), s ≤ min(20 cm; menor lado; 12φ); " + nBase + " ao longo do lance (⌈L/s⌉, Bastos Fig. 81)" + (nExtra ? " + " + nExtra + " na emenda (9.5.2.4: " + (2 * te.extras) + " nos terços, " + nAlem + " a 4φ além das pontas)" : "") });
       var semP = arr(e.semProtecao), xs = {}, ys = {};
       semP.forEach(function (q) { var nx = Math.abs(q.x) / (hx / 2), ny = Math.abs(q.y) / (hy / 2); if (ny >= nx) xs[Math.round(q.x * 100)] = 1; else ys[Math.round(q.y * 100)] = 1; });
@@ -532,7 +558,7 @@
       [[porX, hy, "atravessa a dimensão de " + fmt(hy, 0) + " cm (barras das faces paralelas a x)"], [porY, hx, "atravessa a dimensão de " + fmt(hx, 0) + " cm (barras das faces paralelas a y)"]].forEach(function (q) {
         if (q[0] <= 0) return;
         var Cg = comprimentoGrampo(q[1], cob, phiT, cv("grampoGanchoAnguloMin", 135));
-        criarPos(pos, { elemento: el, tipo: "grampo", nome: "Grampo (estribo suplementar) φ " + fmt(phiT, 1), phi: phiT, aco: acoT, qtd: q[0] * (nBase + nExtra), comprimentoCm: Cg, ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }, { angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }],
+        criarPos(pos, { elemento: el, tipo: "grampo", nome: "Grampo (estribo suplementar) φ " + fmt(phiT, 1), phi: phiT, aco: acoT, qtd: q[0] * (nBase + nExtra), comprimentoCm: Cg, s: s, dir: q[1] === hy ? "x" : "y", ganchos: [{ angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }, { angulo: 135, pontaCm: ganchoEstribo(phiT, 135) }],
           criterios: ["grampoGanchoAnguloMin", "pilarFlambagemDistPhiT"], obs: "18.2.4 + Fig. 18.2 (Em1): barra reta com ganchos de 135° a 180° envolvendo a longitudinal, mesmo φ e espaçamento do estribo; " + q[2] });
       });
     } else pend.push("Estribos do pilar ausentes no resultado (C4): detalhamento transversal pendente.");
@@ -566,6 +592,22 @@
         arr(o.ed).forEach(function (oe) { if (viz) return; arr(oe.apoios).forEach(function (oa) { if (!viz && ap && oa.viga === ap.viga && oa.lado !== ap.lado && Math.min(oa.sb, ap.sb) - Math.max(oa.sa, ap.sa) > 0.05) viz = o; }); });
       });
       bordas[ref] = { tipo: e.tipo === "engastada" ? "interna" : "periferia", bwCm: bw, cotaCm: e.L * 100, vizLxM: viz ? Math.min.apply(null, viz.ed.map(function (q) { return q.L; })) : null, vizHCm: viz ? viz.h * 100 : null, vizId: viz ? viz.id : null };
+      /* C8: a borda pode ter MAIS DE UM vizinho (uma laje grande ao lado de duas menores): um trecho por apoio e por vizinho, com o comprimento da sobreposição (a barra negativa é contada uma vez por trecho) */
+      if (e.tipo === "engastada") {
+        var trs = [];
+        arr(e.apoios).forEach(function (ap2) {
+          var achou = false;
+          arr(m.lajes).forEach(function (o) {
+            if (o === lm || Math.abs(o.topo - lm.topo) > 0.05) return;
+            arr(o.ed).forEach(function (oe) { arr(oe.apoios).forEach(function (oa) {
+              var ov = Math.min(oa.sb, ap2.sb) - Math.max(oa.sa, ap2.sa);
+              if (oa.viga === ap2.viga && oa.lado !== ap2.lado && ov > 0.05) { achou = true; trs.push({ vizId: o.id, cotaCm: ov * 100, vizLxM: Math.min.apply(null, o.ed.map(function (q) { return q.L; })), vizHCm: o.h * 100, ini: Math.max(oa.sa, ap2.sa) - ap2.sa }); }
+            }); });
+          });
+          if (!achou) trs.push({ vizId: null, cotaCm: (ap2.sb - ap2.sa) * 100, vizLxM: null, vizHCm: null, ini: 0 });
+        });
+        if (trs.length) bordas[ref].trechos = trs;
+      }
     });
     var bwM = bws.length ? bws.reduce(function (a, b) { return a + b; }, 0) / bws.length : 15;
     return { lxCm: Math.min(L[0], L[1]) * 100, lyCm: Math.max(L[0], L[1]) * 100, bwCm: bwM, bordas: bordas };
@@ -596,7 +638,12 @@
     });
     /* borda comum a duas lajes: a barra negativa é detalhada UMA vez, na laje de maior armadura na borda (empate: a de menor id) */
     var asDe = {};
-    arr(lajes).forEach(function (L) { arr(L.res && L.res.armaduras).forEach(function (a) { if (a.borda && a.barras) asDe[(L.res.id) + "." + a.borda] = a.barras.AsEf; }); });
+    function refsInternas(g, dir) { return ["x1", "x2", "y1", "y2"].filter(function (r) { return r.charAt(0) === dir && g && g.bordas && g.bordas[r] && g.bordas[r].tipo === "interna"; }); }
+    arr(lajes).forEach(function (L) { arr(L.res && L.res.armaduras).forEach(function (a) {
+      if (!a.barras) return;
+      if (a.borda) asDe[(L.res.id) + "." + a.borda] = a.barras.AsEf;
+      else if (/^A-[xy]$/.test(a.id)) { var ri = refsInternas(L.g, a.id.charAt(2)); if (ri.length === 1) asDe[L.res.id + "." + ri[0]] = a.barras.AsEf; }   /* laje em UMA direção: a negativa "A-x" é a da borda interna (a engastada) */
+    }); });
     arr(lajes).forEach(function (L) {
       Object.keys(L.g && L.g.bordas || {}).forEach(function (ref) {
         var b = L.g.bordas[ref]; if (!b.vizId) return;
@@ -604,6 +651,19 @@
         arr(lajes).forEach(function (Q) { if (Q.res.id === b.vizId) Object.keys(Q.g && Q.g.bordas || {}).forEach(function (r2k) { if (Q.g.bordas[r2k].vizId === L.res.id && asDe[Q.res.id + "." + r2k] != null) outro = asDe[Q.res.id + "." + r2k]; }); });
         if (meu == null || outro == null) return;
         b.cedida = meu < outro - 1e-9 || (Math.abs(meu - outro) <= 1e-9 && String(L.res.id) > String(b.vizId));
+      });
+    });
+    /* por TRECHO de cada vizinho: a barra de um trecho é detalhada numa laje só (a de maior armadura na borda; empate: a de menor id) */
+    arr(lajes).forEach(function (L) {
+      Object.keys(L.g && L.g.bordas || {}).forEach(function (ref) {
+        var b = L.g.bordas[ref], meu = asDe[L.res.id + "." + ref];
+        arr(b.trechos).forEach(function (tr) {
+          if (!tr.vizId || meu == null) return;
+          var outro = null;
+          arr(lajes).forEach(function (Q) { if (Q.res.id === tr.vizId) Object.keys(Q.g && Q.g.bordas || {}).forEach(function (r2k) { arr(Q.g.bordas[r2k].trechos).forEach(function (t2) { if (t2.vizId === L.res.id && asDe[Q.res.id + "." + r2k] != null) outro = asDe[Q.res.id + "." + r2k]; }); }); });
+          if (outro == null) return;
+          tr.cedida = meu < outro - 1e-9 || (Math.abs(meu - outro) <= 1e-9 && String(L.res.id) > String(tr.vizId));
+        });
       });
     });
     arr(lajes).forEach(function (L) {

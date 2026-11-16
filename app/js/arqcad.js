@@ -233,6 +233,7 @@
     var pretaAci = perfil.pretaAci || PRETA_ACI;   /* perfil.pretaAci: realoca o preto fino (0,05 e 0,09) quando as ACI 8 e 9 (cinzas na tela) vão para os preenchimentos */
     Object.keys(PRETA_ACI).map(Number).sort(function (a, b) { return a - b; }).forEach(function (lw) { add([0, 0, 0], lw, pretaAci[lw] || PRETA_ACI[lw], "preto"); });
     add([0, 0, 0], 0, 7, "preto");
+    (perfil.pretasExtra || []).forEach(function (c) { add([0, 0, 0], c.lw, c.aci, "preto"); });   /* espessuras do padrão fora da tabela RA 1–6/8/9 (ex.: ACI 30 = 0,60 mm da barra desdobrada, Padrão RA v2.0) */
     /* CINZAS: não existe ACI cinza no miolo da tabela (10–249 só tem matizes): para o contexto não aparecer colorido na tela, os cinzas usam as ACI cinza do CAD (250–254) e,
        nos preenchimentos, a 8 e a 9. perfil.cinzas = [{ aci, rgb (saída), lw }] (linhas) · perfil.neutros = [{ aci, rgb (saída) }] (preenchimento e texto cinza, lw 0) */
     (perfil.cinzas || []).forEach(function (c) { add(c.rgb, c.lw, c.aci, "cinza"); });
@@ -376,7 +377,7 @@
       if (p.tag === "text") {
         var s = desesc(p.s).trim(), fs = +a["font-size"] || 2.5, c = hexRgb(a.fill) || [0, 0, 0];
         var pt = P(+a.x, +a.y), rt = /rotate\(([-\d.eE]+)/.exec(a.transform || ""), an = a["text-anchor"];
-        var base = p.carimbo ? (/^#4/i.test(a.fill || "") ? "RA-CARIMBO-ROTULO" : "RA-CARIMBO-TEXTO") : (p.area === "moldura" ? "FOLHA-TEXTO" : "ARQ-TEXTO");
+        var base = p.carimbo ? (/^#4/i.test(a.fill || "") ? "RA-CARIMBO-ROTULO" : "RA-CARIMBO-TEXTO") : (a["data-cam"] || (p.area === "moldura" ? "FOLHA-TEXTO" : "ARQ-TEXTO"));   /* data-cam: a camada que o desenho nomeia (pranchas do concreto: EST-*) */
         if (!p.carimbo && c[0] > 150 && c[1] < 60 && c[2] < 60) base += "-PEND";
         var lay = camada(base, pen(c, 0));
         var e = doc.texto(lay, pt[0], pt[1], fs * HT * sp.s, s, rt ? -(+rt[1]) : 0, an === "middle");

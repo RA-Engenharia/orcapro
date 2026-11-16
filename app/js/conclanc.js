@@ -839,7 +839,8 @@
       if (!pr) { pr = { p: pp.p, itens: [] }; prumadas.push(pr); }
       pr.itens.push(pp); pp.prumada = pr;
     }); });
-    prumadas.sort(function (a, b) { return (a.p.z - b.p.z) || (a.p.x - b.p.x); });
+    /* ordem de leitura: de cima para baixo (z) e, na mesma linha, da esquerda para a direita (x). A linha vale até 25 cm de diferença em z (o pilar fica deslocado dentro da parede: P1 em A/1, P2 em A/2…) */
+    prumadas.sort(function (a, b) { return Math.abs(a.p.z - b.p.z) < 0.25 ? (a.p.x - b.p.x) : (a.p.z - b.p.z); });
     var kP = 0;
     prumadas.forEach(function (pr, i) {
       var mP = marcaLivre(function (k) { return "P" + k; }, kP); kP = mP.k; pr.marca = mP.m;
