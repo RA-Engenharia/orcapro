@@ -3006,6 +3006,7 @@ p.estrategias = arr(src.estrategias).filter(function (s) { return ESTRATEGIAS[s]
 if (!p.estrategias.length) p.estrategias = ORDEM.slice();
 p.terreo = !!src.terreo;
 p.rapido = !!src.rapido;
+p.reservaTe = src.reservaTe === true;
 p.atravessarViga = !!src.atravessarViga;
 p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);
 p.tracadoParcial = src.tracadoParcial === true;
@@ -3502,6 +3503,46 @@ try { fA = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45); fB = tipoB 
 if (!(fA > 0) || !(fB > 0)) return m;
 return Math.max(m, r4(fA + fB + FOLGA_ENCAIXE));
 }
+var _retoSaida = {};
+function retoDeSaida(r, rP, P) {
+var HG = dep("HidGeo", "./biminstgeo.js"), dn = Math.round(r * 2000), v = P.chanfro;
+if (!(rP > 0)) return v;
+var kRs = dn + "|" + rP + "|" + P.chanfro + "|" + P.margemNo; if (_retoSaida[kRs] !== undefined) return _retoSaida[kRs];
+try {
+var f = HG && HG.faceProduto ? HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45) : null, cl = HG && HG.cotasConexao ? HG.cotasConexao("pvc_esgoto", "luva", dn) : null;
+if (f > 0 && cl) v = Math.max(v, r4(rP + f));
+else v = Math.max(v, r4(rP + 0.05 + P.margemNo));
+} catch (e) { v = Math.max(v, r4(rP + 0.05 + P.margemNo)); }
+return (_retoSaida[kRs] = v);
+}
+var _retaTeRota = {};
+function minRetaTe(r) {
+var dn = Math.round(r * 2000), k = String(dn); if (_retaTeRota[k] !== undefined) return _retaTeRota[k];
+var v = 0, HG = dep("HidGeo", "./biminstgeo.js");
+try {
+if (HG && HG.faceProduto && dn > 0 && dn <= 50) {
+var fT = HG.faceProduto("pvc_esgoto", "te", dn, "bolsa"), cl = HG.cotasConexao("pvc_esgoto", "luva", dn), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000;
+var fS = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45), fC = HG.faceProduto("pvc_esgoto", "joelho45", dn, "bolsa", 45);
+if (fT > 0 && fS > 0 && fC > 0 && pb > 0) v = r4(2 * fT + fS + fC + 4 * pb - 0.004);
+}
+} catch (e) { v = 0; }
+return (_retaTeRota[k] = v);
+}
+var RESTO_LINHA = 0.15;
+var _minTeRota = {};
+function minDiagonalTe(r) {
+var dn = Math.round(r * 2000), k = String(dn); if (_minTeRota[k] !== undefined) return _minTeRota[k];
+var v = 0, HG = dep("HidGeo", "./biminstgeo.js");
+try {
+if (HG && HG.faceProduto && dn > 0 && dn <= 50) {
+var fT = HG.faceProduto("pvc_esgoto", "te", dn, "bolsa"), cl = HG.cotasConexao("pvc_esgoto", "luva", dn), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000, fV = 0;
+[Math.min(100, dn * 2), dn].forEach(function (dd) { var f = HG.faceProduto("pvc_esgoto", "juncao", dd, "derivacao"); if (f > fV) fV = f; });
+var f45 = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45); if (f45 > fV) fV = f45;
+if (fT > 0 && fV > 0 && pb > 0) v = r4(2 * (fT + fV + 2 * pb - 0.002));
+}
+} catch (e) { v = 0; }
+return (_minTeRota[k] = v);
+}
 var FAMILIA_RASA = 0.06;
 var MARGEM_AMPLA = 3.0;
 var FOLGA_ENCAIXE = 0.005;
@@ -3539,7 +3580,7 @@ if (!feito) i++;
 }
 return pts;
 }
-function chanfrar(pts, P, segLivre, avisos, falhos, uFim, r) {
+function chanfrar(pts, P, segLivre, avisos, falhos, uFim, r, rIni, rFim) {
 if (pts.length < PONTOS_CANTO) return pts;
 pts = degrausCurtos(pts.slice(), P, segLivre);
 var out = [pts[0]];
@@ -3550,6 +3591,14 @@ var ini = i === 1, fim = i + 1 === pts.length - 1;
 if (fim && uFim && ((c.x + u2.x * d2(c, b)) - (c.x - u1.x * Math.min(P.chanfro, d2(c, b)))) * uFim.x + ((c.z + u2.z * d2(c, b)) - (c.z - u1.z * Math.min(P.chanfro, d2(c, b)))) * uFim.z < -EPS) fim = false;
 var L1 = ini ? d2(a, c) : d2(a, c) - P.margemNo, L2 = fim ? d2(c, b) : d2(c, b) / 2 - P.margemNo / 2;
 var d = r4(Math.min(P.chanfro, L1, L2)), feito = false;
+if (ini && rIni > 0 || fim && rFim > 0) {
+var rI = ini && rIni > 0 ? retoDeSaida(r, rIni, P) : 0, rF = fim && rFim > 0 ? retoDeSaida(r, rFim, P) : 0;
+var sobI = ini ? d2(a, c) - d : Infinity, sobF = fim ? d2(c, b) - d : Infinity;
+if ((sobI > EPS && sobI < rI - EPS) || (sobF > EPS && sobF < rF - EPS)) {
+var dT = r4(Math.min(ini && sobI < rI - EPS ? d2(a, c) : Infinity, fim && sobF < rF - EPS ? d2(c, b) : Infinity, ini ? d2(a, c) : L1, fim ? d2(c, b) : L2));
+if (dT >= P.margemNo / 2 - EPS) d = dT;
+}
+}
 for (var tent = 0; tent < TENTATIVAS && !feito && d >= P.margemNo / 2; tent++) {
 var p = { x: r4(c.x - u1.x * d), z: r4(c.z - u1.z * d) }, q = { x: r4(c.x + u2.x * d), z: r4(c.z + u2.z * d) };
 if (segLivre(p, q)) { if (d2(p, a) > EPS) out.push(p); if (d2(q, b) > EPS) out.push(q); feito = true; } else d = r4(d / 2);
@@ -3637,6 +3686,28 @@ var u = un2(A, B), prev = pts[pts.length - 2], v = un2(prev, J), Lseg = d2(prev,
 var lim = pts.length >= PONTOS_CANTO ? Lseg / 2 - P.margemNo / 2 : Lseg - P.margemNo;
 var dJ = encaixeEs(o.r, "juncao", P) / Math.SQRT2;
 var d = r4(Math.min(Math.max(P.chanfro, dJ), lim, d2(J, B) - P.margemNo)), ok = false;
+var dTe = o.reservaTe ? minDiagonalTe(o.r) : 0;
+if (dTe > 0 && pts.length === PONTOS_CANTO && !ok) {
+var rTe = minRetaTe(o.r), aI = pts[0], wI = un2(aI, prev), lI = d2(aI, prev), rPo = num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0);
+if (rTe > 0 && Lseg - 2 * P.chanfro >= rTe - EPS && wI.x * u.x + wI.z * u.z >= 1 - EPS) {
+var dlt = r4(Math.max(0, retoDeSaida(o.r, rPo, P) + P.chanfro - lI));
+if (dlt > EPS && d2(J, B) - dlt - P.chanfro >= RESTO_LINHA - EPS) {
+var prev2 = { x: r4(prev.x + wI.x * dlt), z: r4(prev.z + wI.z * dlt) }, J2 = { x: r4(J.x + u.x * dlt), z: r4(J.z + u.z * dlt) };
+if (ctxR.segLivre(aI, prev2, a.id) && ctxR.segLivre(prev2, J2, a.id)) { prev = prev2; J = J2; pts[pts.length - 2] = prev2; pts[pts.length - 1] = J2; juncao.x = J2.x; juncao.z = J2.z; Lseg = d2(prev, J); }
+}
+}
+}
+if (dTe > 0 && d * Math.SQRT2 < dTe - EPS && Lseg * Math.SQRT2 >= dTe - EPS && pts.length >= PONTOS_CANTO) {
+var aIn = pts[pts.length - 3], wIn = un2(aIn, prev), lenIn = d2(aIn, prev);
+if (wIn.x * u.x + wIn.z * u.z >= 1 - EPS) {
+var iniR = pts.length === PONTOS_CANTO ? retoDeSaida(o.r, num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0), P) : P.chanfro;
+var eR = Math.max(0, Math.min(Lseg, lenIn - Math.max(P.chanfro, iniR))), shR = r4(Lseg - eR);
+if (d2(J, B) - shR >= RESTO_LINHA - EPS) {
+var Sf = { x: r4(prev.x - wIn.x * eR), z: r4(prev.z - wIn.z * eR) }, Jf = { x: r4(J.x + u.x * shR), z: r4(J.z + u.z * shR) };
+if (ctxR.segLivre(Sf, Jf, a.id) && (eR < EPS || ctxR.segLivre(aIn, Sf, a.id))) { pts[pts.length - 2] = Sf; pts[pts.length - 1] = Jf; juncao.x = Jf.x; juncao.z = Jf.z; ok = true; }
+}
+}
+}
 for (var tent = 0; tent < TENTATIVAS && !ok && d >= (o.dMinJ ? dJ : P.margemNo / 2); tent++) {
 var Pp = { x: r4(J.x - v.x * d), z: r4(J.z - v.z * d) }, Jl = { x: r4(J.x + u.x * d), z: r4(J.z + u.z * d) };
 if (ctxR.segLivre(Pp, Jl, a.id)) { pts[pts.length - 1] = Pp; pts.push(Jl); juncao.x = Jl.x; juncao.z = Jl.z; ok = true; } else d = r4(d / 2);
@@ -3653,7 +3724,7 @@ av.push(prob("junção a 90° no esgoto em " + fxz(J.x, J.z) + ": sem espaço pa
 }
 var falhos = [];
 var uFim = juncao && av.length && alvo.tipo === "aresta" ? un2(arv.nos[arv.arestas[juncao.aresta].de], arv.nos[arv.arestas[juncao.aresta].para]) : null;
-if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r);
+if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r, num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0), alvo.tipo === "peca" ? num(o.alvoPeca && o.alvoPeca.r, 0) : 0);
 melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra, vertical: sj.sl.vertical, lado: sj.sl.lado }; }) };
 if (!falhos.length) break;
 var novo = false;
@@ -3852,14 +3923,14 @@ for (var i = 0; i < fila.length; i++) {
 var f = fila[i], ign = {};
 ign[f.ref] = 1; if (f.peca) ign[f.peca.id] = 1;
 var o = { de: f, b0: F.b0, b1: F.b1, r: (f.dn || 0) / 1000 / 2, rArv: rMax, modo: "livre", ignorar: ign, curva: P.pesos.conexao * 2,
-folgaJuncao: f.direto || (diretos.length && RECEPTOR[f.aparelho]) ? P.chanfro + P.margemNo : P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };
+folgaJuncao: f.direto || (diretos.length && RECEPTOR[f.aparelho]) ? P.chanfro + P.margemNo : P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false, reservaTe: P.reservaTe };
 var vaiCaixa = paraCx(f) && receptores.length;
 if (diretos.length && f.peca && RECEPTOR[f.aparelho]) { o.retoDaPeca = num(f.peca.hub && f.peca.hub.r, 0) + P.chanfro + P.margemNo; o.dMinJ = true; }
 if (vaiCaixa) {
 var rc = receptores.slice().sort(function (a, b) { return (a.aparelho === "caixa_sifonada" ? 0 : 1) - (b.aparelho === "caixa_sifonada" ? 0 : 1) || d2(f, a) - d2(f, b) || (a.ref < b.ref ? -1 : 1); })[0];
 var noR = arv.porRef[rc.ref];
 if (noR == null) return falha("caixa sifonada " + rc.ref + " sem rota até o destino", [rc.ref], { tipo: "ajustar", ids: [rc.ref] });
-o.alvoPeca = { x: rc.x, z: rc.z, no: noR }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
+o.alvoPeca = { x: rc.x, z: rc.z, no: noR, r: num(rc.peca && rc.peca.hub && rc.peca.hub.r, 0) }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
 if (paraCaixa.filter(function (q) { return q.aparelho === f.aparelho; }).length > 1) o.igual = f.aparelho + "@" + rc.ref;
 } else {
 o.raiz = usadaRaiz ? null : raizD; ign[raizD.id || "destino-es"] = 1;
@@ -8296,9 +8367,26 @@ r2.decisoes.push({ id: "amb.lavabo_ralo", texto: "Lavabo com ralo: caixa sifonad
 }
 return r2;
 }
+function inclinacaoRuim(r) {
+var B = BI(), ruim = false; if (!B || !B.abaixoDaMinima) return false;
+(function ach(L) { arr(L).forEach(function (o) {
+if (!o) return;
+if (o.op === "lote") { ach(o.ops); return; }
+if (o.op !== "trecho" || o.sistema !== "esgoto" || !o.p1 || !o.p2) return;
+var dh = Math.sqrt(Math.pow(o.p2.x - o.p1.x, 2) + Math.pow(o.p2.z - o.p1.z, 2)); if (!(dh > 0.05) || Math.abs(o.p2.y - o.p1.y) > dh) return;
+if (B.abaixoDaMinima("esgoto", num(o.dn, 0), 100 * (o.p1.y - o.p2.y) / dh)) { ruim = true; }
+}); })(r && r.ops);
+return ruim;
+}
 function ligarSemEncaixe(e) {
 var r = ligar0(e), par = (e && e.parametros) || {};
 if (par._reservaEncaixe) return r;
+if (r && r.ok && r.semTomadaQueCabe && par.reservaTe !== true) {
+var parT = {}; Object.keys(par).forEach(function (k) { parT[k] = par[k]; }); parT.reservaTe = true;
+var eT = {}; Object.keys(e).forEach(function (k) { eT[k] = e[k]; }); eT.parametros = parT;
+var rT = null; try { rT = ligar0(eT); } catch (eRt) { rT = null; }
+if (rT && rT.ok && !rT.semTomadaQueCabe && arr(rT.pendencias).length <= arr(r.pendencias).length && !inclinacaoRuim(rT)) { r = rT; e = eT; par = parT; }
+}
 var A = aprofundarEncaixe(e, r, par);
 if (A && A.ok && !batidasVent(A.r2)) return A.r2;
 var r1 = A && A.ok ? A.r2 : r;
@@ -8912,6 +9000,7 @@ reservaAQ.push({ x: r4(c.x + nx / L * e), y: c.y, z: r4(c.z + nz / L * e), dn: c
 })();
 Object.keys(par).forEach(function (k) { if (HR().GEO[k] != null && par[k] != null) parR[k] = par[k]; });
 if (par.rapido) parR.rapido = true;
+if (par.reservaTe === true) parR.reservaTe = true;
 function rotearCom(cxP, dest) {
 var opsModelo = soInst(opsLimpo).concat(novas.filter(function (o) { return o.op === "peca" && o.ambParte !== "caixa_sifonada"; })).concat(cxP && cxP._op ? [cxP._op] : []);
 var pecasRota = pecas.map(function (k) { return { id: k.id, peca: k.peca, sistema: "esgoto", dn: k.dn, x: k.x, y: k.y, z: k.z, grupo: "1" }; });
@@ -9381,9 +9470,34 @@ if (q.limite == null) pend("es.ventilacao.distancia_maxima", "distância máxima
 var fatorDn = NR.regraVent("desconector_dist_min_fator_dn", "ventilação: distância mínima da ligação ao desconector (4.3.16 b 4)");
 if (fatorDn == null) pend("es8160.ventilacao_regras", "distância mínima da ligação da ventilação ao desconector (2 × DN, 4.3.16 b 4) sem tabela: não verificada", ids);
 var w0 = geo(par, "margemVent"), passo = geo(par, "passo"), hubsV = pecas.concat(caixa ? [caixa] : []);
-function candidatos(q0, comCamadas) {
-var cs = [], comum = {};
-if (q0.caixa && dBa) dBa.cam.forEach(function (cq) { comum[cq.e.a + ">" + cq.e.b] = 1; });
+var HGte = dep("HidGeo", "./biminstgeo.js"), _minTe = {};
+function minTe(dn, ponta) {
+var k = Math.round(dn) + ponta; if (_minTe[k] !== undefined) return _minTe[k];
+var v = null;
+try {
+var d = Math.round(dn), fT = HGte.faceProduto("pvc_esgoto", "te", d, "bolsa"), cl = HGte.cotasConexao("pvc_esgoto", "luva", d), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000, fV = null;
+if (ponta === "no") [Math.min(100, d * 2), d].forEach(function (dd) { var f = HGte.faceProduto("pvc_esgoto", "juncao", dd, "derivacao"); if (f > 0 && (fV == null || f > fV)) fV = f; });
+else if (ponta === "fim") fV = 0.0001;
+else fV = HGte.faceProduto("pvc_esgoto", "joelho45", d, ponta === "saida" ? "luva" : "bolsa", 45);
+if (fT > 0 && fV > 0 && pb > 0) v = r4(fT + fV + 2 * pb - 0.002);
+} catch (eM) { v = null; }
+return (_minTe[k] = v);
+}
+var _mgTe = {};
+function margensTe(t, ultimo) {
+if (!HGte || !HGte.faceProduto) return null;
+var kM = t.id + "|" + t.p1.x + "," + t.p1.y + "," + t.p1.z + "|" + t.p2.x + "," + t.p2.y + "," + t.p2.z + "|" + trs.length + "|" + (ultimo ? 1 : 0); if (_mgTe[kM] !== undefined) return _mgTe[kM];
+return (_mgTe[kM] = margensTe0(t, ultimo));
+}
+function margensTe0(t, ultimo) {
+function nVizinhos(E) { var n = 0; trs.forEach(function (u) { if (u !== t && u.sistema === "esgoto" && u.p1 && u.p2 && (d3(u.p1, E) <= B.TOL || d3(u.p2, E) <= B.TOL)) n++; }); return n; }
+var dn = num(t.dn, 0), m1 = minTe(dn, nVizinhos(t.p1) >= 2 ? "no" : "saida"), m2 = minTe(dn, ultimo ? "fim" : (nVizinhos(t.p2) >= 2 ? "no" : "chega"));
+return m1 == null || m2 == null ? null : [m1, m2];
+}
+function teCabe(t, P, ultimo) { var m = margensTe(t, ultimo); return !m || (d3(P, t.p1) >= m[0] - EPS && d3(P, t.p2) >= m[1] - EPS); }
+function candidatos(q0, comCamadas, modo) {
+var cs = [], comum = {}; modo = modo || {};
+if (q0.caixa && dBa && !modo.comum) dBa.cam.forEach(function (cq) { comum[cq.e.a + ">" + cq.e.b] = 1; });
 var sMin = fatorDn != null && q0.dn ? fatorDn * q0.dn / 1000 : 0;
 q0.cam.forEach(function (c, ic) {
 var t = c.e.t, Lh = d2(t.p1, t.p2); if (!(Lh > passo * 2) || Math.abs(t.p1.y - t.p2.y) > Lh) return;
@@ -9402,11 +9516,13 @@ if (tw < 0 || tw > Lw || sw < passo - EPS || sw > c.e.L - passo + EPS) return;
 if (ss.every(function (x) { return Math.abs(x - sw) > 0.005; })) ss.push(sw);
 });
 });
+if (modo.te) { var mT = margensTe(t, ic === q0.cam.length - 1); if (mT && c.e.L - mT[0] - mT[1] >= -EPS) { var sCt = r4(mT[0] + (c.e.L - mT[0] - mT[1]) / 2); if (!ss.some(function (x) { return x >= mT[0] - EPS && c.e.L - x >= mT[1] - EPS; })) ss.push(sCt); } }
 ss.sort(function (a, b) { return a - b; });
 ss.forEach(function (s) {
 if (c.s0 + s < sMin - EPS) return;
 var f = s / c.e.L, P = { x: r4(t.p1.x + (t.p2.x - t.p1.x) * f), y: r4(t.p1.y + (t.p2.y - t.p1.y) * f), z: r4(t.p1.z + (t.p2.z - t.p1.z) * f) }, viol = 0, dists = [];
 if (hubsV.some(function (k) { return d2(P, k) <= num((B.PECAS[k.peca] || {}).captura, 0) + raio(num(t.dn, 0)) + geo(par, "folga"); })) return;
+if (modo.te && !teCabe(t, P, ic === q0.cam.length - 1)) return;
 var sP = c.s0 + s;
 if (trs.some(function (u) {
 if (u === t) return false;
@@ -9427,7 +9543,9 @@ if (dq && dq.ok) cs.push({ P: P, viol: viol, dists: dists, s: sP, dnEs: num(t.dn
 });
 return cs;
 }
-var cands = candidatos(desc[0], true);
+var cands = candidatos(desc[0], true, { te: true });
+if (!cands.length && desc[0].caixa && dBa) cands = candidatos(desc[0], true, { te: true, comum: true });
+if (!cands.length) { cands = candidatos(desc[0], true); if (cands.length) out.semTomadaQueCabe = true; }
 if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].el || desc[0].ref]); return; }
 var temBacia = !!dBa, uT = 0;
 aparelhos.forEach(function (a) { var u = NR.uhc(a.aparelho, "ventilação"); uT += u == null ? 0 : u; });

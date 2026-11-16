@@ -278,6 +278,7 @@
     if (!p.estrategias.length) p.estrategias = ORDEM.slice();
     p.terreo = !!src.terreo;
     p.rapido = !!src.rapido;   /* perf 16/11/2026: o usuário posicionou os destinos — só a 1ª estratégia que fecha (as outras o Tab calcula sob demanda) */
+    p.reservaTe = src.reservaTe === true;   /* rota:reservaTe — só quando o ambiente não achou onde o tê da ventilação cabe (js/hidambiente.js refaz com isto ligado): a escadinha de 45° do ramal ganha o trecho que comporta o tê */
     p.atravessarViga = !!src.atravessarViga;
     p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);   /* rota:margemAmpla — 0 desliga a 2ª busca */
     p.tracadoParcial = src.tracadoParcial === true;   /* rota:parcial — só quem pede (o Traçar automaticamente do ambiente, js/hidambiente.js); ⚠ ligado por padrão quebrava test-hid-predio-interferencia e test-hid-aq-h6 (o parcial no meio das tentativas trocava a opção inteira de outro andar pela parcial) */
@@ -905,6 +906,53 @@
     if (!(fA > 0) || !(fB > 0)) return m;
     return Math.max(m, r4(fA + fB + FOLGA_ENCAIXE));
   }
+  /* RESERVA DO TÊ DA VENTILAÇÃO (16/11/2026, BAN-TERREO-CI / CASA-COMPLETA): o ramal DN 50 que chega na junção da linha por UMA diagonal de 45° de 21 cm entre o joelho e a junção
+     não comporta o tê da tomada da ventilação (as bolsas do tê e das duas conexões pedem ~24 cm de cada lado do tê) — o auditor reprovava ENCAIXE_SOBREPOSTO. Quando a diagonal normal
+     não comporta o tê e o último trecho reto comporta, a diagonal toma o trecho reto inteiro (a escadinha de joelhos de 45° sobe para montante e vira UMA diagonal longa, com menos
+     conexões). Régua = a mesma da tomada em js/hidambiente.js (tê: face da bolsa + face da maior conexão vizinha + 2 bolsas − 2 mm) × 2 lados. r = raio do tubo (m); 0 sem a geometria */
+  /* TOCO RETO DA SAÍDA DA PEÇA (16/11/2026): do centro da peça de origem (caixa sifonada/ralo) ao 1º desvio — a boca (raio da captura, que já abriga a bolsa da caixa) + o joelho de 45° com a luva.
+     O desvio dentro dessa zona deixa a curva colada na boca (auditor: BOCA_DESALINHADA) e o tubo sem o fundo da bolsa. rP = raio da captura da peça (m); 0 = a origem não é peça */
+  var _retoSaida = {};
+  function retoDeSaida(r, rP, P) {
+    var HG = dep("HidGeo", "./biminstgeo.js"), dn = Math.round(r * 2000), v = P.chanfro;   // hid:ok DN em mm (raio m × 2000)
+    if (!(rP > 0)) return v;
+    var kRs = dn + "|" + rP + "|" + P.chanfro + "|" + P.margemNo; if (_retoSaida[kRs] !== undefined) return _retoSaida[kRs];
+    try {
+      var f = HG && HG.faceProduto ? HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45) : null, cl = HG && HG.cotasConexao ? HG.cotasConexao("pvc_esgoto", "luva", dn) : null;   // hid:ok ângulo do joelho de 45° (graus)
+      if (f > 0 && cl) v = Math.max(v, r4(rP + f));
+      else v = Math.max(v, r4(rP + 0.05 + P.margemNo));   // hid:ok 5 cm: a mesma zona da boca do auditor (aud:geo)
+    } catch (e) { v = Math.max(v, r4(rP + 0.05 + P.margemNo)); }   // hid:ok
+    return (_retoSaida[kRs] = v);
+  }
+  /* o trecho RETO entre dois joelhos de 45° (o que sai de um com a luva e chega no outro pela bolsa) que comporta o tê da ventilação no meio: as faces das duas pontas + 2 tês − 2 mm cada */
+  var _retaTeRota = {};
+  function minRetaTe(r) {
+    var dn = Math.round(r * 2000), k = String(dn); if (_retaTeRota[k] !== undefined) return _retaTeRota[k];   // hid:ok DN em mm (raio m × 2000)
+    var v = 0, HG = dep("HidGeo", "./biminstgeo.js");
+    try {
+      if (HG && HG.faceProduto && dn > 0 && dn <= 50) {   // hid:ok só o ramal de DN até 50
+        var fT = HG.faceProduto("pvc_esgoto", "te", dn, "bolsa"), cl = HG.cotasConexao("pvc_esgoto", "luva", dn), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000;
+        var fS = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45), fC = HG.faceProduto("pvc_esgoto", "joelho45", dn, "bolsa", 45);   // hid:ok ângulo do joelho de 45° (graus)
+        if (fT > 0 && fS > 0 && fC > 0 && pb > 0) v = r4(2 * fT + fS + fC + 4 * pb - 0.004);   // hid:ok 2 mm de bolsa por lado: a mesma régua do auditor
+      }
+    } catch (e) { v = 0; }
+    return (_retaTeRota[k] = v);
+  }
+  var RESTO_LINHA = 0.15;   // hid:ok 15 cm: o que sobra da linha DN 100 depois da junção deslizada (m)
+  var _minTeRota = {};
+  function minDiagonalTe(r) {
+    var dn = Math.round(r * 2000), k = String(dn); if (_minTeRota[k] !== undefined) return _minTeRota[k];   // hid:ok DN em mm (raio m × 2000)
+    var v = 0, HG = dep("HidGeo", "./biminstgeo.js");
+    try {
+      if (HG && HG.faceProduto && dn > 0 && dn <= 50) {   // hid:ok só o ramal de DN até 50: o que recebe a ventilação (o coletor DN 100 já comporta)
+        var fT = HG.faceProduto("pvc_esgoto", "te", dn, "bolsa"), cl = HG.cotasConexao("pvc_esgoto", "luva", dn), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000, fV = 0;   // hid:ok
+        [Math.min(100, dn * 2), dn].forEach(function (dd) { var f = HG.faceProduto("pvc_esgoto", "juncao", dd, "derivacao"); if (f > fV) fV = f; });   // hid:ok DN do coletor
+        var f45 = HG.faceProduto("pvc_esgoto", "joelho45", dn, "luva", 45); if (f45 > fV) fV = f45;   // hid:ok ângulo do joelho de 45° (graus)
+        if (fT > 0 && fV > 0 && pb > 0) v = r4(2 * (fT + fV + 2 * pb - 0.002));   // hid:ok 2 mm de bolsa: a mesma régua do auditor
+      }
+    } catch (e) { v = 0; }
+    return (_minTeRota[k] = v);
+  }
   /* ⚠ FAMÍLIA RASA (15/11/2026, Casa 487): o trilho do vidro retrátil da área gourmet entra 3,5 cm no piso (y0 = −0,035) e, no térreo (faixa
      do esgoto sem fundo), virava parede sob o piso inteiro do gourmet — o banheiro do fundo ficava sem esgoto. A família que só encosta no
      piso (até 6 cm abaixo) não barra o esgoto ENTERRADO do térreo; a conferência 3D (rota:conferenciaFamilia) ainda descarta o tubo que de
@@ -957,7 +1005,7 @@
     }
     return pts;
   }
-  function chanfrar(pts, P, segLivre, avisos, falhos, uFim, r) {
+  function chanfrar(pts, P, segLivre, avisos, falhos, uFim, r, rIni, rFim) {
     if (pts.length < PONTOS_CANTO) return pts;
     pts = degrausCurtos(pts.slice(), P, segLivre);
     var out = [pts[0]];
@@ -972,6 +1020,17 @@
       if (fim && uFim && ((c.x + u2.x * d2(c, b)) - (c.x - u1.x * Math.min(P.chanfro, d2(c, b)))) * uFim.x + ((c.z + u2.z * d2(c, b)) - (c.z - u1.z * Math.min(P.chanfro, d2(c, b)))) * uFim.z < -EPS) fim = false;
       var L1 = ini ? d2(a, c) : d2(a, c) - P.margemNo, L2 = fim ? d2(c, b) : d2(c, b) / 2 - P.margemNo / 2;
       var d = r4(Math.min(P.chanfro, L1, L2)), feito = false;   // rota:chanfro
+      /* TOCO RETO NA PORTA (16/11/2026, BOCA_DESALINHADA da caixa sifonada do modo rápido): o desvio de 15 cm deixava um toco de 10 cm entre o centro da caixa e o 1º joelho — a curva na zona da
+         boca e a diagonal fora do eixo (o tubo termina 39 mm antes do fundo da bolsa). Quem sai (ou chega) de uma peça começa (termina) com o toco RETO no eixo da porta: a boca + o joelho de 45° (retoDeSaida). Sobra do trecho maior que o desvio mas menor que o toco: o desvio come o trecho inteiro e nasce NO CENTRO da peça (a boca da caixa/ralo é radial: o tubo
+         coaxial sai em qualquer direção, sem curva dentro dela); sobra de toco inteiro: fica o toco e o desvio de sempre */
+      if (ini && rIni > 0 || fim && rFim > 0) {
+        var rI = ini && rIni > 0 ? retoDeSaida(r, rIni, P) : 0, rF = fim && rFim > 0 ? retoDeSaida(r, rFim, P) : 0;
+        var sobI = ini ? d2(a, c) - d : Infinity, sobF = fim ? d2(c, b) - d : Infinity;
+        if ((sobI > EPS && sobI < rI - EPS) || (sobF > EPS && sobF < rF - EPS)) {
+          var dT = r4(Math.min(ini && sobI < rI - EPS ? d2(a, c) : Infinity, fim && sobF < rF - EPS ? d2(c, b) : Infinity, ini ? d2(a, c) : L1, fim ? d2(c, b) : L2));
+          if (dT >= P.margemNo / 2 - EPS) d = dT;
+        }
+      }
       for (var tent = 0; tent < TENTATIVAS && !feito && d >= P.margemNo / 2; tent++) {
         var p = { x: r4(c.x - u1.x * d), z: r4(c.z - u1.z * d) }, q = { x: r4(c.x + u2.x * d), z: r4(c.z + u2.z * d) };
         if (segLivre(p, q)) { if (d2(p, a) > EPS) out.push(p); if (d2(q, b) > EPS) out.push(q); feito = true; } else d = r4(d / 2);
@@ -1090,6 +1149,32 @@
              mais que o chanfro); sem espaço fica a menor que cabe, como antes (a junta direta e o auditor de encaixe 3D cuidam do resto) */
           var dJ = encaixeEs(o.r, "juncao", P) / Math.SQRT2;
           var d = r4(Math.min(Math.max(P.chanfro, dJ), lim, d2(J, B) - P.margemNo)), ok = false;   // rota:juncao45
+          /* a diagonal que comporta o tê da ventilação (reserva): toma o último trecho reto inteiro; sem espaço/folga cai na de sempre */
+          var dTe = o.reservaTe ? minDiagonalTe(o.r) : 0;
+          /* 1º o desvio de sempre com o trecho reto do meio comportando o tê: o canto da peça anda para a frente (o toco reto da boca + o desvio de 45°) levando junto o trecho seguinte, e a
+             junção desliza a jusante o mesmo tanto (o 2º trecho, reto, não encolhe) */
+          if (dTe > 0 && pts.length === PONTOS_CANTO && !ok) {
+            var rTe = minRetaTe(o.r), aI = pts[0], wI = un2(aI, prev), lI = d2(aI, prev), rPo = num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0);
+            if (rTe > 0 && Lseg - 2 * P.chanfro >= rTe - EPS && wI.x * u.x + wI.z * u.z >= 1 - EPS) {
+              var dlt = r4(Math.max(0, retoDeSaida(o.r, rPo, P) + P.chanfro - lI));
+              if (dlt > EPS && d2(J, B) - dlt - P.chanfro >= RESTO_LINHA - EPS) {
+                var prev2 = { x: r4(prev.x + wI.x * dlt), z: r4(prev.z + wI.z * dlt) }, J2 = { x: r4(J.x + u.x * dlt), z: r4(J.z + u.z * dlt) };
+                if (ctxR.segLivre(aI, prev2, a.id) && ctxR.segLivre(prev2, J2, a.id)) { prev = prev2; J = J2; pts[pts.length - 2] = prev2; pts[pts.length - 1] = J2; juncao.x = J2.x; juncao.z = J2.z; Lseg = d2(prev, J); }   // rota:reservaTe
+              }
+            }
+          }
+          if (dTe > 0 && d * Math.SQRT2 < dTe - EPS && Lseg * Math.SQRT2 >= dTe - EPS && pts.length >= PONTOS_CANTO) {
+            /* a diagonal parte do trecho de ANTES do canto (que corre no sentido do fluxo): o canto some e a junção desliza a jusante só o que falta dos 45° (Lseg − e) */
+            var aIn = pts[pts.length - 3], wIn = un2(aIn, prev), lenIn = d2(aIn, prev);
+            if (wIn.x * u.x + wIn.z * u.z >= 1 - EPS) {
+              var iniR = pts.length === PONTOS_CANTO ? retoDeSaida(o.r, num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0), P) : P.chanfro;   /* o 1º desvio fora da zona da boca da peça de origem */
+              var eR = Math.max(0, Math.min(Lseg, lenIn - Math.max(P.chanfro, iniR))), shR = r4(Lseg - eR);
+              if (d2(J, B) - shR >= RESTO_LINHA - EPS) {   /* a linha a jusante da junção nova não vira um toco (a declividade de 1 % num trecho de 10 cm cai no arredondamento) */
+                var Sf = { x: r4(prev.x - wIn.x * eR), z: r4(prev.z - wIn.z * eR) }, Jf = { x: r4(J.x + u.x * shR), z: r4(J.z + u.z * shR) };
+                if (ctxR.segLivre(Sf, Jf, a.id) && (eR < EPS || ctxR.segLivre(aIn, Sf, a.id))) { pts[pts.length - 2] = Sf; pts[pts.length - 1] = Jf; juncao.x = Jf.x; juncao.z = Jf.z; ok = true; }   // rota:reservaTe
+              }
+            }
+          }
           /* o ramal da caixa que entra no do aparelho direto (trecho curto): a diagonal comporta as peças, ou a curva de chegada vai mais cedo */
           for (var tent = 0; tent < TENTATIVAS && !ok && d >= (o.dMinJ ? dJ : P.margemNo / 2); tent++) {
             var Pp = { x: r4(J.x - v.x * d), z: r4(J.z - v.z * d) }, Jl = { x: r4(J.x + u.x * d), z: r4(J.z + u.z * d) };
@@ -1113,7 +1198,7 @@
       /* B4: com o tê a 90° que sobrou, o chanfro do último canto não pode comer a perna até a junção CONTRA o fluxo (o crítico
          INSERCAO_CONTRA_FLUXO da área de serviço): uFim = o sentido do escoamento da aresta de chegada */
       var uFim = juncao && av.length && alvo.tipo === "aresta" ? un2(arv.nos[arv.arestas[juncao.aresta].de], arv.nos[arv.arestas[juncao.aresta].para]) : null;
-      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r);
+      if (o.chanfrar) pts = chanfrar(pts, P, function (p, q) { return ctxR.segLivre(p, q, juncao ? juncao.aresta : null); }, av, falhos, uFim, o.r, num(o.de && o.de.peca && o.de.peca.hub && o.de.peca.hub.r, 0), alvo.tipo === "peca" ? num(o.alvoPeca && o.alvoPeca.r, 0) : 0);
       melhor = { res: res, pts: pts, alvo: alvo, juncao: juncao, avisos: av, transp: saltos.map(function (sj) { return { x: sj.sl.x, z: sj.sl.z, ux: sj.sl.ux, uz: sj.sl.uz, ref: sj.sl.ref, dnCruzado: sj.sl.dnCruzado, regra: sj.sl.regra, vertical: sj.sl.vertical, lado: sj.sl.lado }; }) };
       if (!falhos.length) break;
       var novo = false;
@@ -1372,7 +1457,7 @@
         var f = fila[i], ign = {};
         ign[f.ref] = 1; if (f.peca) ign[f.peca.id] = 1;
         var o = { de: f, b0: F.b0, b1: F.b1, r: (f.dn || 0) / 1000 / 2, rArv: rMax, modo: "livre", ignorar: ign, curva: P.pesos.conexao * 2,
-                  folgaJuncao: f.direto || (diretos.length && RECEPTOR[f.aparelho]) ? P.chanfro + P.margemNo : P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };   /* com aparelho direto os ramais são curtos (o da bacia até a espera): só a perna do chanfro + a margem de um lado */
+                  folgaJuncao: f.direto || (diretos.length && RECEPTOR[f.aparelho]) ? P.chanfro + P.margemNo : P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false, reservaTe: P.reservaTe };   /* com aparelho direto os ramais são curtos (o da bacia até a espera): só a perna do chanfro + a margem de um lado */
         var vaiCaixa = paraCx(f) && receptores.length;
         if (diretos.length && f.peca && RECEPTOR[f.aparelho]) { o.retoDaPeca = num(f.peca.hub && f.peca.hub.r, 0) + P.chanfro + P.margemNo; o.dMinJ = true; }
         if (vaiCaixa) {
@@ -1380,7 +1465,7 @@
           var rc = receptores.slice().sort(function (a, b) { return (a.aparelho === "caixa_sifonada" ? 0 : 1) - (b.aparelho === "caixa_sifonada" ? 0 : 1) || d2(f, a) - d2(f, b) || (a.ref < b.ref ? -1 : 1); })[0];
           var noR = arv.porRef[rc.ref];
           if (noR == null) return falha("caixa sifonada " + rc.ref + " sem rota até o destino", [rc.ref], { tipo: "ajustar", ids: [rc.ref] });
-          o.alvoPeca = { x: rc.x, z: rc.z, no: noR }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
+          o.alvoPeca = { x: rc.x, z: rc.z, no: noR, r: num(rc.peca && rc.peca.hub && rc.peca.hub.r, 0) }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
           /* ⚠ FRENTE H4 (21/10/2026): 2 aparelhos IGUAIS para a mesma caixa (os 2 lavatórios da bancada dupla): o 2º pode entrar no
              ramal do 1º por junção de 45° antes da caixa (um ramal só chegando nela) — a busca escolhe o mais curto */
           if (paraCaixa.filter(function (q) { return q.aparelho === f.aparelho; }).length > 1) o.igual = f.aparelho + "@" + rc.ref;

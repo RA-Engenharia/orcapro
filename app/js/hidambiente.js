@@ -282,9 +282,30 @@
     }
     return r2;
   }
+  /* algum trecho de esgoto horizontal do lote abaixo da inclinação mínima (a mesma conta do Verificar): o refeito com a junção deslizada deixava um toco de DN 100 de 10 cm que arredonda para 0,94 % */
+  function inclinacaoRuim(r) {
+    var B = BI(), ruim = false; if (!B || !B.abaixoDaMinima) return false;
+    (function ach(L) { arr(L).forEach(function (o) {
+      if (!o) return;
+      if (o.op === "lote") { ach(o.ops); return; }
+      if (o.op !== "trecho" || o.sistema !== "esgoto" || !o.p1 || !o.p2) return;
+      var dh = Math.sqrt(Math.pow(o.p2.x - o.p1.x, 2) + Math.pow(o.p2.z - o.p1.z, 2)); if (!(dh > 0.05) || Math.abs(o.p2.y - o.p1.y) > dh) return;   // hid:ok 5 cm: trecho deitado
+      if (B.abaixoDaMinima("esgoto", num(o.dn, 0), 100 * (o.p1.y - o.p2.y) / dh)) { ruim = true; }
+    }); })(r && r.ops);
+    return ruim;
+  }
   function ligarSemEncaixe(e) {
     var r = ligar0(e), par = (e && e.parametros) || {};
     if (par._reservaEncaixe) return r;
+    /* O TÊ DA VENTILAÇÃO SEM LUGAR (16/11/2026, BAN-TERREO-CI / CASA-COMPLETA): nenhum ponto do ramal comporta o tê entre as conexões das pontas (as bolsas do tê, do joelho de 45° e da
+       junção) — a tomada caía entre duas conexões (ENCAIXE_SOBREPOSTO). Refaz o ambiente com a rota reservando o espaço (a diagonal que chega na junção toma o trecho reto; o 1º canto
+       anda para o toco da caixa caber); só vale o refeito que achou lugar para o tê sem pendência nova */
+    if (r && r.ok && r.semTomadaQueCabe && par.reservaTe !== true) {
+      var parT = {}; Object.keys(par).forEach(function (k) { parT[k] = par[k]; }); parT.reservaTe = true;
+      var eT = {}; Object.keys(e).forEach(function (k) { eT[k] = e[k]; }); eT.parametros = parT;
+      var rT = null; try { rT = ligar0(eT); } catch (eRt) { rT = null; }
+      if (rT && rT.ok && !rT.semTomadaQueCabe && arr(rT.pendencias).length <= arr(r.pendencias).length && !inclinacaoRuim(rT)) { r = rT; e = eT; par = parT; }   /* o aprofundar do encaixe (abaixo) refaz com a mesma rota */
+    }
     var A = aprofundarEncaixe(e, r, par);
     if (A && A.ok && !batidasVent(A.r2)) return A.r2;
     /* ⚠ N23 (23/10/2026, auditor COZ-2PIAS): a ventilação que só achou caminho BATENDO em outro tubo (o aviso "passa perto de outro
@@ -1089,6 +1110,7 @@
     })();
     Object.keys(par).forEach(function (k) { if (HR().GEO[k] != null && par[k] != null) parR[k] = par[k]; });
     if (par.rapido) parR.rapido = true;
+    if (par.reservaTe === true) parR.reservaTe = true;   /* o refazer da tomada da ventilação (ligarSemEncaixe): a rota reserva o espaço do tê */
     /* o traçado do ambiente com uma caixa sifonada (a escolhida ou uma alternativa) e destinos dados */
     function rotearCom(cxP, dest) {
       var opsModelo = soInst(opsLimpo).concat(novas.filter(function (o) { return o.op === "peca" && o.ambParte !== "caixa_sifonada"; })).concat(cxP && cxP._op ? [cxP._op] : []);
@@ -1705,9 +1727,41 @@
       var w0 = geo(par, "margemVent"), passo = geo(par, "passo"), hubsV = pecas.concat(caixa ? [caixa] : []);
       /* pontos candidatos no HORIZONTAL do caminho de q0 (o vertical da bacia não serve), com as distâncias de todos. Com a
          caixa sifonada E a bacia: só no ramal da caixa ANTES da junção (o trecho comum já é o DN 100 da bacia) */
-      function candidatos(q0, comCamadas) {
-        var cs = [], comum = {};
-        if (q0.caixa && dBa) dBa.cam.forEach(function (cq) { comum[cq.e.a + ">" + cq.e.b] = 1; });
+      /* TOMADA SEM CONEXÃO SOBRE CONEXÃO (16/11/2026, BAN-TERREO-CI): o tê da tomada precisa de tubo reto dos dois lados — as bolsas do tê e da conexão da ponta do tubo
+         (joelho 45°, junção, luva) mais o toco: sobre uma diagonal de 21 cm entre o joelho e a junção o tê saía do corpo de uma delas (ENCAIXE_SOBREPOSTO). A régua é a do
+         auditor de encaixe (tê: face da bolsa + face da conexão vizinha + 2 bolsas − 2 mm), com a face da vizinha pela MAIOR (a junção da linha, a derivação do DN maior),
+         lado seguro. Devolve a distância mínima (m) do tê a cada ponta do tubo; null sem a geometria do produto (motor isolado) */
+      var HGte = dep("HidGeo", "./biminstgeo.js"), _minTe = {};
+      /* face (m) da conexão da ponta do tubo + a do tê + as 2 bolsas − 2 mm, por DN e tipo de ponta: "saida" = o tubo sai de um joelho de 45° (a luva na ponta), "chega" = chega num joelho de 45° (pela bolsa),
+         "no" = chega/sai de uma junção/tê (a maior derivação do DN dela e a do DN dobrado: lado seguro). null sem a geometria do produto (motor isolado) */
+      function minTe(dn, ponta) {
+        var k = Math.round(dn) + ponta; if (_minTe[k] !== undefined) return _minTe[k];
+        var v = null;
+        try {
+          var d = Math.round(dn), fT = HGte.faceProduto("pvc_esgoto", "te", d, "bolsa"), cl = HGte.cotasConexao("pvc_esgoto", "luva", d), pb = num(cl && (cl.pb2 || cl.pb), 0) / 1000, fV = null;
+          if (ponta === "no") [Math.min(100, d * 2), d].forEach(function (dd) { var f = HGte.faceProduto("pvc_esgoto", "juncao", dd, "derivacao"); if (f > 0 && (fV == null || f > fV)) fV = f; });
+          else if (ponta === "fim") fV = 0.0001;   // hid:ok o fim do trecho do ambiente: nenhuma conexão ali (a rede segue reta) — só o tê e as bolsas
+          else fV = HGte.faceProduto("pvc_esgoto", "joelho45", d, ponta === "saida" ? "luva" : "bolsa", 45);
+          if (fT > 0 && fV > 0 && pb > 0) v = r4(fT + fV + 2 * pb - 0.002);   // hid:ok 2 mm de bolsa: a mesma régua do auditor (hidencaixe FOLGA_BOLSA)
+        } catch (eM) { v = null; }
+        return (_minTe[k] = v);
+      }
+      /* o tê cabe entre as conexões das duas pontas do tubo t (p1 → p2 é o sentido do escoamento). ultimo: o último trecho do caminho até a rede — a ponta de jusante é onde a rede externa continua em linha reta (ainda sem conexão) */
+      var _mgTe = {};
+      function margensTe(t, ultimo) {
+        if (!HGte || !HGte.faceProduto) return null;
+        var kM = t.id + "|" + t.p1.x + "," + t.p1.y + "," + t.p1.z + "|" + t.p2.x + "," + t.p2.y + "," + t.p2.z + "|" + trs.length + "|" + (ultimo ? 1 : 0); if (_mgTe[kM] !== undefined) return _mgTe[kM];
+        return (_mgTe[kM] = margensTe0(t, ultimo));
+      }
+      function margensTe0(t, ultimo) {
+        function nVizinhos(E) { var n = 0; trs.forEach(function (u) { if (u !== t && u.sistema === "esgoto" && u.p1 && u.p2 && (d3(u.p1, E) <= B.TOL || d3(u.p2, E) <= B.TOL)) n++; }); return n; }
+        var dn = num(t.dn, 0), m1 = minTe(dn, nVizinhos(t.p1) >= 2 ? "no" : "saida"), m2 = minTe(dn, ultimo ? "fim" : (nVizinhos(t.p2) >= 2 ? "no" : "chega"));
+        return m1 == null || m2 == null ? null : [m1, m2];
+      }
+      function teCabe(t, P, ultimo) { var m = margensTe(t, ultimo); return !m || (d3(P, t.p1) >= m[0] - EPS && d3(P, t.p2) >= m[1] - EPS); }
+      function candidatos(q0, comCamadas, modo) {
+        var cs = [], comum = {}; modo = modo || {};
+        if (q0.caixa && dBa && !modo.comum) dBa.cam.forEach(function (cq) { comum[cq.e.a + ">" + cq.e.b] = 1; });
         var sMin = fatorDn != null && q0.dn ? fatorDn * q0.dn / 1000 : 0;
         q0.cam.forEach(function (c, ic) {
           var t = c.e.t, Lh = d2(t.p1, t.p2); if (!(Lh > passo * 2) || Math.abs(t.p1.y - t.p2.y) > Lh) return;
@@ -1727,6 +1781,8 @@
               if (ss.every(function (x) { return Math.abs(x - sw) > 0.005; })) ss.push(sw);   // hid:ok 5 mm: o mesmo ponto
             });
           });
+          /* a faixa estreita em que o tê cabe (entre as faces das duas pontas) quase nunca cai na grade: o centro dela também é candidato */
+          if (modo.te) { var mT = margensTe(t, ic === q0.cam.length - 1); if (mT && c.e.L - mT[0] - mT[1] >= -EPS) { var sCt = r4(mT[0] + (c.e.L - mT[0] - mT[1]) / 2); if (!ss.some(function (x) { return x >= mT[0] - EPS && c.e.L - x >= mT[1] - EPS; })) ss.push(sCt); } }   /* só quando a grade não tem nenhum ponto onde o tê cabe */
           ss.sort(function (a, b) { return a - b; });
           ss.forEach(function (s) {
             if (c.s0 + s < sMin - EPS) return;   /* 4.3.16 b 4: no mínimo 2 × DN do desconector */
@@ -1734,6 +1790,7 @@
             /* ⚠ o ponto da ventilação nunca DENTRO do cilindro de captura de uma peça (o ralo sifonado posto à mão perto do ramal):
                a ponta do ventilador "terminava no ralo" e o Verificar acusava sistemas misturados (caso do Rogério, 18/10/2026) */
             if (hubsV.some(function (k) { return d2(P, k) <= num((B.PECAS[k.peca] || {}).captura, 0) + raio(num(t.dn, 0)) + geo(par, "folga"); })) return;
+            if (modo.te && !teCabe(t, P, ic === q0.cam.length - 1)) return;   /* o tê não cabe entre as conexões das duas pontas do tubo */
             var sP = c.s0 + s;
             /* a tomada longe das conexões do ramal (a junção com o DN 100 da bacia, as curvas): o tê precisa do tubo reto */
             if (trs.some(function (u) {
@@ -1758,7 +1815,10 @@
         return cs;
       }
       /* as camadas da parede também na tomada principal: sem elas a coluna fazia um L sob o piso, os dois joelhos não cabiam e o esgoto do ambiente descia até 17 cm (revisão 09/11/2026: caixa de inspeção maior, +25 % no orçamento) */
-      var cands = candidatos(desc[0], true);
+      /* 1º só onde o tê cabe; sem lugar no ramal, a tomada vai ao coletor DN 100 (a junção de redução, dentro da distância máxima ao desconector); só sem nenhum dos dois volta a régua antiga (o auditor avisa) */
+      var cands = candidatos(desc[0], true, { te: true });
+      if (!cands.length && desc[0].caixa && dBa) cands = candidatos(desc[0], true, { te: true, comum: true });
+      if (!cands.length) { cands = candidatos(desc[0], true); if (cands.length) out.semTomadaQueCabe = true; }   /* sem lugar para o tê: o ligarSemEncaixe refaz o ambiente reservando o espaço na rota */
       if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].el || desc[0].ref]); return; }
       /* DN do RAMAL DE VENTILAÇÃO: Tabela 8 pelo grupo ventilado (com bacia = o banheiro tem bacia) e a soma das UHC */
       var temBacia = !!dBa, uT = 0;
