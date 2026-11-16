@@ -129,6 +129,7 @@
     "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
     /* Folhas e exportação técnica */
     "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
+    "travar-vista", "salvar-vista-3d", "duplicar-folha", "excluir-folha",
     /* jogo de pranchas no carimbo do escritório (js/bimfolhaui.js; o botão "Pranchas" da barra de título fica fora da fita) */
     "gerar-pranchas",
     /* PRANCHA VIVA (js/pranchavivaui.js): a folha que abre o 3D — vale em toda disciplina (módulo à parte, a trava é dele) */

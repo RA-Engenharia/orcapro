@@ -62,6 +62,8 @@
     var s = txt(v).trim().toLowerCase(); if (!s || s === "none" || s === "transparent") return null;
     var al = alfa == null || !isFinite(alfa) ? 1 : Math.max(0, Math.min(1, alfa)), r;
     if (al <= 0) return null;
+    var mv = /^var\(\s*--[\w-]+\s*(?:,\s*([^)]+))?\)$/.exec(s);   /* var(--d2-tinta,#111): no papel vale o reserva (a folha não carrega as variáveis do app) */
+    if (mv) { if (!mv[1]) return null; s = mv[1].trim(); }
     if (NOMES[s]) s = NOMES[s];
     if (/^url\(/.test(s)) return misturar([0.82, 0.82, 0.82], al);
     if (s === "currentcolor") return misturar([0, 0, 0], al);
@@ -80,41 +82,47 @@
   function attrs(s) {
     var o = {}, re = /([\w:-]+)\s*=\s*"([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = desEsc(m[2]);
     /* style="fill:#fff;stroke:#000" vale como atributo (e manda nele); antes era ignorado e a forma saía preta */
-    if (o.style) o.style.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim(); if (/^(fill|stroke|stroke-width|stroke-dasharray|fill-opacity|stroke-opacity|opacity|font-size|font-weight|text-anchor|display)$/.test(k)) o[k] = v; });
+    if (o.style) o.style.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim(); if (/^(fill|stroke|stroke-width|stroke-dasharray|fill-opacity|stroke-opacity|opacity|font-size|font-weight|font-style|text-anchor|display|fill-rule)$/.test(k)) o[k] = v; });
     return o;
   }
   function pontos(s) { var v = txt(s).trim().split(/[\s,]+/).map(Number), o = []; for (var i = 0; i + 1 < v.length; i += 2) o.push([v[i], v[i + 1]]); return o; }
   function translate(t) { var m = /translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*\)/.exec(txt(t)); return m ? [+m[1], +m[2]] : [0, 0]; }
+  function escalaT(t) { var m = /scale\(\s*(-?[\d.e-]+)(?:[\s,]+(-?[\d.e-]+))?\s*\)/.exec(txt(t)); return m && +m[1] > 0 ? +m[1] : 1; }
   function rotate(t) { var m = /rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)/.exec(txt(t)); return m ? { a: +m[1], cx: m[2] != null ? +m[2] : null, cy: m[3] != null ? +m[3] : null } : null; }
 
   /* UMA folha SVG → { w, h, ops } (ops do conteúdo da página) */
   function pagina(svg) {
     var s = txt(svg), raiz = /<svg\b([^>]*)>/.exec(s); if (!raiz) return null;
     var ra = attrs(raiz[1]), vb = txt(ra.viewBox).split(/[\s,]+/).map(Number), W = vb.length === 4 ? vb[2] : num(ra.width, 210), H = vb.length === 4 ? vb[3] : num(ra.height, 297);
-    var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
+    var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, k: 1, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
     var nTexto = 0, nTraco = 0, nPulado = 0, ims = {}, clips = {}, emClip = null;
-    function X(x, g) { return (x + g.tx) * PT; }
-    function Y(y, g) { return (H - (y + g.ty)) * PT; }
+    var padroes = {}, emPad = null, xf = null;
+    function X(x, g) { return (x * g.k + g.tx) * PT; }
+    function Y(y, g) { return (H - (y * g.k + g.ty)) * PT; }
     function herda(a) {
-      var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
-      var t = translate(a.transform); n.tx += t[0]; n.ty += t[1];
+      var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, k: g.k, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
+      var t = translate(a.transform); n.tx += t[0] * g.k; n.ty += t[1] * g.k; n.k = g.k * escalaT(a.transform);
       if (a.fill != null) n.fill = a.fill; if (a.stroke != null) n.stroke = a.stroke; if (a["stroke-width"] != null) n.sw = a["stroke-width"];
       if (a["font-size"] != null) n.fs = a["font-size"]; if (a["text-anchor"] != null) n.anchor = a["text-anchor"]; if (a["font-weight"] != null) n.peso = a["font-weight"];
       return n;
     }
     function pintar(a, g, fechado, ehForma) {
       var op = num(a.opacity, 1), fl = cor(a.fill != null ? a.fill : (g.fill != null ? g.fill : (ehForma ? "#000" : "none")), num(a["fill-opacity"], 1) * op), st = cor(a.stroke != null ? a.stroke : g.stroke, num(a["stroke-opacity"], 1) * op);
-      var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25), eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
-      if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
+      var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25) * g.k, eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
+      if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * g.k * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
       if (fl) ops.push(f(fl[0]) + " " + f(fl[1]) + " " + f(fl[2]) + " rg");
       ops.push(fl && st ? (fechado ? "b" + eo : "B" + eo) : (fl ? "f" + eo : (st ? (fechado ? "s" : "S") : "n")));
       nTraco++;
     }
     /* <path d="…">: M L H V C Q A Z (maiúsculas e minúsculas); o arco vira reta até o ponto final. Várias partes (M) = um só caminho (fill-rule evenodd respeitado) */
-    function caminhoD(d, g) {
+    function caminhoD(d, g, bb) {
       var tk = txt(d).match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [], i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, tem = false, fechou = false;
       function nx() { return parseFloat(tk[i++]); }
-      function P(a, b) { return f(X(a, g)) + " " + f(Y(b, g)); }
+      function P(a, b) {
+        if (bb) { if (a < bb.x0) bb.x0 = a; if (a > bb.x1) bb.x1 = a; if (b < bb.y0) bb.y0 = b; if (b > bb.y1) bb.y1 = b; }
+        if (xf) { var q = xf(a, b); a = q[0]; b = q[1]; }
+        return f(X(a, g)) + " " + f(Y(b, g));
+      }
       while (i < tk.length) {
         if (/^[a-zA-Z]$/.test(tk[i])) cmd = tk[i++]; else if (cmd === "M") cmd = "L"; else if (cmd === "m") cmd = "l";
         var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel ? x : 0, oy = rel ? y : 0, a, b, c1, c2, e, h;
@@ -133,9 +141,50 @@
     }
     function caminho(P, g, fechado) {
       if (!P.length) return false;
+      if (xf) P = P.map(function (q) { return xf(q[0], q[1]); });
       ops.push(f(X(P[0][0], g)) + " " + f(Y(P[0][1], g)) + " m");
       for (var i = 1; i < P.length; i++) ops.push(f(X(P[i][0], g)) + " " + f(Y(P[i][1], g)) + " l");
       if (fechado) ops.push("h");
+      return true;
+    }
+    /* PADRÃO (<pattern>) usado como fill="url(#id)": o PDF não leva padrão de ladrilho (isso mudaria a numeração dos objetos): o preenchimento vira o RECORTE da forma + as linhas do
+       padrão repetidas no quadro girado (patternTransform rotate) — a hachura do corte da folha sai VETORIAL, igual à tela. Linhas que atravessam o ladrilho inteiro (a hachura a 45°)
+       viram UMA linha comprida por coluna; as demais formas são repetidas por ladrilho (até 5000; acima disso cai no cinza claro). */
+    function hachurar(pad, g, bb) {
+      var w = pad.w, h = pad.h; if (!(w > 0 && h > 0) || bb.x1 < bb.x0) return false;
+      var th = pad.rot * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), us = [], vs = [];
+      [[bb.x0, bb.y0], [bb.x1, bb.y0], [bb.x0, bb.y1], [bb.x1, bb.y1]].forEach(function (q) { us.push(c * q[0] + sn * q[1]); vs.push(-sn * q[0] + c * q[1]); });
+      var i0 = Math.floor(Math.min.apply(null, us) / w), i1 = Math.ceil(Math.max.apply(null, us) / w), j0 = Math.floor(Math.min.apply(null, vs) / h), j1 = Math.ceil(Math.max.apply(null, vs) / h);
+      var rot = function (x, y) { return [c * x - sn * y, sn * x + c * y]; }, N = (i1 - i0 + 1) * (j1 - j0 + 1), eps = 1e-6, tiles = [];
+      if (N > 400000) return false;
+      pad.filhos.forEach(function (fl) {
+        var a = fl.a, sc = fl.s;
+        if (fl.nome === "rect" && a.fill != null && a.stroke == null && cor(a.fill)) {
+          var cf = cor(a.fill, num(a["fill-opacity"], 1)); if (!cf) return;
+          ops.push(f(cf[0]) + " " + f(cf[1]) + " " + f(cf[2]) + " rg " + f(X(bb.x0, g)) + " " + f(Y(bb.y1, g)) + " " + f((bb.x1 - bb.x0) * g.k * PT) + " " + f((bb.y1 - bb.y0) * g.k * PT) + " re f");
+          return;
+        }
+        var sw = num(a["stroke-width"], 1) * sc;
+        if (fl.nome === "line") {
+          var x1 = num(a.x1, 0) * sc, y1 = num(a.y1, 0) * sc, x2 = num(a.x2, 0) * sc, y2 = num(a.y2, 0) * sc, la = { stroke: a.stroke, "stroke-width": String(sw), "stroke-opacity": a["stroke-opacity"], opacity: a.opacity };
+          var vert = Math.abs(x1 - x2) < eps && Math.min(y1, y2) <= eps && Math.max(y1, y2) >= h - eps, hor = Math.abs(y1 - y2) < eps && Math.min(x1, x2) <= eps && Math.max(x1, x2) >= w - eps;
+          if (vert) { for (var i = i0; i <= i1; i++) { var A = rot(i * w + x1, j0 * h), B = rot(i * w + x1, (j1 + 1) * h); if (caminho([A, B], g, false)) pintar(la, g, false, false); } return; }
+          if (hor) { for (var j = j0; j <= j1; j++) { var A2 = rot(i0 * w, j * h + y1), B2 = rot((i1 + 1) * w, j * h + y1); if (caminho([A2, B2], g, false)) pintar(la, g, false, false); } return; }
+        }
+        tiles.push(fl);
+      });
+      if (tiles.length) {
+        if (N * tiles.length > 5000) return false;
+        var xfAntes = xf;
+        for (var ii = i0; ii <= i1; ii++) for (var jj = j0; jj <= j1; jj++) tiles.forEach(function (fl) {
+          var a = fl.a, sc = fl.s, a2 = {}; Object.keys(a).forEach(function (k2) { a2[k2] = a[k2]; }); if (a.stroke != null || a["stroke-width"] != null) a2["stroke-width"] = String(num(a["stroke-width"], 1) * sc);
+          xf = function (x, y) { return rot(x * sc + ii * w, y * sc + jj * h); };
+          if (fl.nome === "path" && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a2, g, rp.fechado, true); }
+          else if (fl.nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a2, g, false, false); }
+          else if (fl.nome === "rect") { var rw = num(a.width, 0), rh = num(a.height, 0), rx = num(a.x, 0), ry = num(a.y, 0); if (rw > 0 && rh > 0 && caminho([[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]], g, true)) pintar(a2, g, true, true); }
+        });
+        xf = xfAntes;
+      }
       return true;
     }
     while ((m = re.exec(s))) {
@@ -147,11 +196,21 @@
          preto: a planta do ambiente saía com o fundo PRETO no PDF — defeito achado na prévia de 29/10/2026) */
       if (nome === "clippath") { emClip = fecha || auto ? null : (a.id || ""); continue; }
       if (emClip != null) { if (nome === "rect" && !fecha) clips[emClip] = { x: num(a.x, 0), y: num(a.y, 0), w: num(a.width, 0), h: num(a.height, 0) }; continue; }
+      if (nome === "pattern") {
+        if (fecha) { if (emPad && emPad.id) padroes[emPad.id] = emPad; emPad = null; }
+        else { var rtp = rotate(a.patternTransform); emPad = { id: a.id || "", w: num(a.width, 0), h: num(a.height, 0), rot: rtp ? rtp.a : 0, filhos: [], sc: [1] }; if (auto) { if (emPad.id) padroes[emPad.id] = emPad; emPad = null; } }
+        continue;
+      }
+      if (emPad) {
+        if (nome === "g") { if (fecha) { if (emPad.sc.length > 1) emPad.sc.pop(); } else if (!auto) emPad.sc.push(emPad.sc[emPad.sc.length - 1] * escalaT(a.transform)); }
+        else if (!fecha && /^(line|path|rect)$/.test(nome)) emPad.filhos.push({ nome: nome, a: a, s: emPad.sc[emPad.sc.length - 1] });
+        continue;
+      }
       if (nome === "g") {
         if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); } }
         else if (!auto) {
           var ng = herda(a), mc = /url\(\s*#([^)\s]+)\s*\)/.exec(txt(a["clip-path"])), cl = mc ? clips[mc[1]] : null;
-          if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * PT) + " " + f(cl.h * PT) + " re W n"); ng.clip = true; }
+          if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * ng.k * PT) + " " + f(cl.h * ng.k * PT) + " re W n"); ng.clip = true; }
           pilha.push(ng);
         }
         continue;
@@ -162,23 +221,38 @@
         if (!emTexto) continue;
         var tg = emTexto.g, ta = emTexto.a, conteudo = /white-space:\s*pre/.test(txt(ta.style)) ? desEsc(emTexto.t).replace(/[\r\n\t]/g, " ") : desEsc(emTexto.t).replace(/\s+/g, " ").trim(); emTexto = null;   /* style="white-space:pre" (título espaçado do quadro de legendas, "Q U A D R O   D E …"): as palavras ficam separadas */
         if (!conteudo) continue;
-        var corpo = num(tg.fs, 3), neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
-        var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0), y = num(ta.y, 0), rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
-        var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
+        var corpo = num(tg.fs, 3) * tg.k, neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
+        var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0) * tg.k, y = num(ta.y, 0) * tg.k, rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
+        var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, gt = { tx: tg.tx, ty: tg.ty, k: 1 }, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
         ops.push(f(fc[0]) + " " + f(fc[1]) + " " + f(fc[2]) + " rg");
         var it = /italic|oblique/.test(txt(ta["font-style"])) ? 0.2 : 0;   /* itálico = inclinação de 0,2 na matriz do texto (sem fonte extra: a numeração dos objetos do PDF não muda) */
-        ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
+        ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, gt)) + " " + f(Y(py, gt)) + " Tm (" + win1252(conteudo) + ") Tj ET");
         nTexto++;
         continue;
       }
       if (fecha) continue;
       if (nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a, g, false, false); }
-      else if (nome === "path") { if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a, g, rp.fechado, true); } }
+      else if (nome === "path") {
+        if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) {
+          var mpf = /^url\(\s*#([^)\s]+)\s*\)/.exec(txt(a.fill != null ? a.fill : g.fill)), pad = mpf ? padroes[mpf[1]] : null, bb = { x0: 1e18, y0: 1e18, x1: -1e18, y1: -1e18 };
+          if (pad && pad.filhos.length) {
+            var eoP = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "", n0 = ops.length;
+            ops.push("q"); caminhoD(a.d, g, bb); ops.push("W" + eoP + " n");
+            if (hachurar(pad, g, bb)) {
+              ops.push("Q"); var a2 = {}; Object.keys(a).forEach(function (k2) { a2[k2] = a[k2]; }); a2.fill = "none";
+              var rp2 = caminhoD(a.d, g); if (rp2) pintar(a2, g, rp2.fechado, true);
+              continue;
+            }
+            ops.length = n0;   /* o padrão não coube: volta ao cinza claro de sempre */
+          }
+          var rp = caminhoD(a.d, g); if (rp) pintar(a, g, rp.fechado, true);
+        }
+      }
       else if (nome === "polyline") { if (caminho(pontos(a.points), g, false)) pintar(a, g, false, true); }
       else if (nome === "polygon") { if (caminho(pontos(a.points), g, true)) pintar(a, g, true, true); }
       else if (nome === "rect") {
         var rx = num(a.x, 0), ry = num(a.y, 0), rw = num(a.width, 0), rh = num(a.height, 0);
-        if (rw > 0 && rh > 0) { ops.push(f(X(rx, g)) + " " + f(Y(ry + rh, g)) + " " + f(rw * PT) + " " + f(rh * PT) + " re"); pintar(a, g, true, true); }
+        if (rw > 0 && rh > 0) { ops.push(f(X(rx, g)) + " " + f(Y(ry + rh, g)) + " " + f(rw * g.k * PT) + " " + f(rh * g.k * PT) + " re"); pintar(a, g, true, true); }
       } else if (nome === "circle") {
         var cx = num(a.cx, 0), cy = num(a.cy, 0), r = num(a.r, 0), k = 0.5523 * r;
         if (r > 0) {
@@ -190,7 +264,7 @@
       } else if (nome === "image") {
         /* HIDRO-3D: <image data-im="chave" x y width height> = o raster (JPEG de info.imagensPorChave[chave]) desenhado NESTA ordem (atrás do que vem depois); sem data-im a imagem segue pulada */
         var ik = txt(a["data-im"]).replace(/[^A-Za-z0-9]/g, "");
-        if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * PT) + " 0 0 " + f(num(a.height, 0) * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
+        if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * g.k * PT) + " 0 0 " + f(num(a.height, 0) * g.k * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
       }
     }
     return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, ims: Object.keys(ims) };
@@ -209,7 +283,7 @@
        PDF lê o arquivo como está, sem decodificar nada aqui). Sem `imagens` o PDF sai byte a byte como antes. */
     var imgs = (Array.isArray(info.imagens) ? info.imagens : []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; });
     var baseImg = 6 + 2 * pgs.length, porChave = info.imagensPorChave || {}, chavesUsadas = [];
-    pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && typeof porChave[k].jpeg === "string" && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
+    pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && (typeof porChave[k].jpeg === "string" || typeof porChave[k].flate === "string") && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
     var baseCh = baseImg + imgs.length;
     pgs.forEach(function (p, i) {
       var cont = p.ops.join("\n"), xo = [];
@@ -225,7 +299,8 @@
     imgs.forEach(function (im) {
       objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
     });
-    chavesUsadas.forEach(function (k) { var im = porChave[k]; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream"); });
+    /* por chave: JPEG (DCTDecode) ou RGB 8 bits deflate (FlateDecode, SEM perda — a vista 3D e o logo da folha) */
+    chavesUsadas.forEach(function (k) { var im = porChave[k], ehF = typeof im.flate === "string", dado = ehF ? im.flate : im.jpeg; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + (ehF ? "FlateDecode" : "DCTDecode") + " /Length " + dado.length + " >>\nstream\n" + dado + "\nendstream"); });
     var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
     objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
     var xref = s.length;

@@ -151,6 +151,81 @@
       return id;
     },
 
+
+    /* =====================================================================
+     * EXCLUIR E DUPLICAR FOLHA (16/11/2026, pedido do Rogério)
+     *   • EXCLUIR: confirmação; a folha sai do conjunto, a aba fecha e as VISTAS continuam no projeto (só o quadro da folha some). Fica um instantâneo (até 20) para
+     *     "Desfazer exclusão" — Navegador › Folhas, menu da folha e Ctrl+Z numa aba de folha quando a última coisa feita foi excluir.
+     *   • DUPLICAR: cópia com as mesmas vistas (cada quadro com escala e recorte), o mesmo carimbo e parâmetros; vai para o FIM do conjunto, com o número seguinte (EST-01 → EST-02,
+     *     ou o código-nn automático) e o nome "… (cópia)". A cópia é folha de mão: perde a chave `auto` do "Gerar pranchas" (senão o gerador a tomaria por a folha gerada e a sobrescreveria).
+     * ⚠ FOLHA GERADA (estrutura/hidro/arquitetura) que foi EXCLUÍDA: rodar "Gerar pranchas" de novo a recria (a folha gerada é idempotente por chave `auto`: o que não existe, nasce);
+     *   a cópia de uma gerada NÃO é tocada pelo gerador. Quem quer a folha fora do jogo exclui depois de gerar, ou não marca aquela vista no diálogo.
+     * ===================================================================== */
+    _apagadas: [],
+    _proximoNumero: function (pr, f) {
+      var usados = {}; arr(pr.folhas).forEach(function (x) { usados[PR().numeroFolha(pr, x)] = 1; });
+      var m = /^(.*?)(\d+)$/.exec(String(f.numero || "")); if (!m) return "";
+      var larg = m[2].length, n = parseInt(m[2], 10);
+      for (var i = 1; i < 500; i++) { var cand = m[1] + ("000000" + (n + i)).slice(-Math.max(larg, String(n + i).length)); if (!usados[cand]) return cand; }
+      return "";
+    },
+    duplicarFolha: function (id) {
+      var a = this.achar(id); if (!a) { toast("Folha não encontrada.", "aviso"); return null; }
+      var reg = clone(a.reg), pr = PR().normalizar(reg), f = clone(a.folha), n = 1;
+      pr.folhas.forEach(function (x) { n = Math.max(n, x.n + 1); });
+      var ids = {}; pr.folhas.forEach(function (x) { ids[x.id] = 1; });
+      var novoId = "f" + Date.now().toString(36) + n; while (ids[novoId]) novoId += "x";
+      f.id = novoId; f.n = n; f.auto = ""; f.numero = this._proximoNumero(pr, a.folha);
+      f.conteudo = (f.conteudo || "Folha") + " (cópia)";
+      pr.folhas.push(f);
+      pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+      var salvo = this.salvarRegistro(pr, true); if (!salvo) return null;
+      var nid = this.idFolha(salvo.id, novoId);
+      try { var g = this.G(); if (g && g._nivArvore) g._nivArvore(); } catch (e) {}
+      this.abrir(nid);
+      status("Folha duplicada: " + this.nomeFolha(PR().normalizar(salvo), f) + ".");
+      return nid;
+    },
+    /* confirma e exclui; `sim` = true pula a pergunta (testes e chamadas de código) */
+    excluirFolha: function (id, sim) {
+      var a = this.achar(id); if (!a) { toast("Folha não encontrada.", "aviso"); return false; }
+      var self = this, nome = this.nomeFolha(a.pr, a.folha);
+      if (sim !== true) {
+        global.UI.modal("Excluir a folha?", '<p style="font-size:13px;line-height:1.5">A folha <b>' + esc(nome) + '</b> sai do conjunto' + (a.folha.auto ? " (é uma folha GERADA: \"Gerar pranchas\" de novo a recria)" : "") +
+          '. As vistas (plantas, cortes, elevações, 3D) <b>continuam no projeto</b>; só o quadro delas nesta folha some. Dá para desfazer em Navegador › Folhas.</p>',
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } }, { texto: "Excluir folha", classe: "danger", onClick: function () { global.UI.fecharModal(); self.excluirFolha(id, true); } }]);
+        return true;
+      }
+      var reg = clone(a.reg), pr = PR().normalizar(reg);
+      this._apagadas.push({ obra: this.obraKey(), regId: String(reg.id), folha: clone(a.folha), ix: a.ix, nome: nome, em: Date.now() });
+      if (this._apagadas.length > 20) this._apagadas.shift();
+      pr.folhas.splice(a.ix, 1);
+      pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+      var salvo = this.salvarRegistro(pr, true); if (!salvo) { this._apagadas.pop(); return false; }
+      try { var g = this.G(); if (g && g._bimVxFechar && g._bimVxAchar && g._bimVxAchar(id)) g._bimVxFechar(id); } catch (e) {}
+      this.desmontar(id); this._sel = null;
+      try { var g2 = this.G(); if (g2 && g2._nivArvore) g2._nivArvore(); } catch (e2) {}
+      status("Folha excluída: " + nome + " (Navegador › Folhas › Desfazer exclusão).");
+      toast("Folha excluída: " + nome + ". Desfazer em Navegador › Folhas.", "info");
+      return true;
+    },
+    ultimaApagada: function () { var k = this.obraKey(), l = this._apagadas.filter(function (x) { return x.obra === k; }); return l[l.length - 1] || null; },
+    desfazerExclusao: function () {
+      var k = this.obraKey(), u = this.ultimaApagada(); if (!u) { toast("Nenhuma exclusão de folha para desfazer.", "aviso"); return null; }
+      var reg = this.registros().filter(function (r) { return String(r.id) === u.regId; })[0];
+      if (!reg) { this._apagadas = this._apagadas.filter(function (x) { return x !== u; }); toast("O conjunto dessa folha não existe mais.", "aviso"); return null; }
+      var pr = PR().normalizar(clone(reg)), ids = {}; pr.folhas.forEach(function (x) { ids[x.id] = 1; });
+      var f = clone(u.folha); if (ids[f.id]) f.id += "r";
+      pr.folhas.splice(Math.min(u.ix, pr.folhas.length), 0, f);
+      pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+      var salvo = this.salvarRegistro(pr, true); if (!salvo) return null;
+      this._apagadas = this._apagadas.filter(function (x) { return x !== u; });
+      try { var g = this.G(); if (g && g._nivArvore) g._nivArvore(); } catch (e) {}
+      var nid = this.idFolha(salvo.id, f.id); this.abrir(nid);
+      status("Exclusão desfeita: " + u.nome + ".");
+      return nid;
+    },
+
     /* ----------------------------------------------- aba da folha */
     abrir: function (id) {
       var g = this.G(), a = this.achar(id); if (!g || !a) return null;
@@ -179,6 +254,7 @@
 
     /* o desenho de uma vista 2D, pronto para o viewport (cache da sessão; "Atualizar" refaz) */
     desenho: function (vistaId, refazer, escala, semInst) {
+      if (/^d3:/.test(String(vistaId))) return this._desenho3d(vistaId);
       /* ⚠ O DESENHO É DA OBRA (revisão da Prancha Viva, 23/10/2026): o id da vista ("d2p-pav0", "d2c-…") se repete em toda
          obra, e o cache era só por id — abrir a obra A, trocar para a B e a folha da B mostrava a planta da A; o pacote do
          link da Prancha Viva levava essa imagem ao celular do cliente da obra B (tools/test-pranchaviva-rev.js [a]) */
@@ -220,6 +296,133 @@
        naquela escala — o desenho é refeito nela, não esticado */
     chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
     desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst); },
+    /* =====================================================================
+     * VISTA 3D E ELEVAÇÃO NA FOLHA (16/11/2026, pedido do Rogério: "puxar para dentro da folha a vista 3D e as elevações, igual planta e corte")
+     *   • ELEVAÇÃO (d2e-norte|sul|leste|oeste): o mesmo motor do corte, olhando de fora (js/bim2dui.js _defBase) — vetor em escala, como planta e corte.
+     *   • VISTA 3D (d3:atual | d3:<id do ponto de vista salvo>): é IMAGEM por natureza (a cena 3D). Entra no quadro da folha com moldura e título, SEM escala de desenho
+     *     (o título diz "SEM ESCALA"); a imagem é fotografada do modelo NO TAMANHO DO QUADRO a 300 dpi (PNG sem perda, no máximo 8192 px de lado) e guardada no IndexedDB
+     *     (a folha recarrega igual); a vista SALVA se refaz do modelo a qualquer hora ("Atualizar vista 3D"). O PDF leva essa imagem sem reamostrar.
+     * ===================================================================== */
+    DPI_3D: 300, LADO_MAX_3D: 8192, ESCALA_NOMINAL_3D: 100,
+    _chave3d: function (id) { return this.obraKey() + "|" + id; },
+    _idb3d: function (id) { return "folha3d:" + this.obraKey() + ":" + String(id).replace(/^d3:/, ""); },
+    _desenho3d: function (id) {
+      var e = (this._d3 || {})[this._chave3d(id)];
+      if (!e) { this._carregar3d(id); return null; }
+      var N = this.ESCALA_NOMINAL_3D, W = e.wMm * N / 1000, H = e.hMm * N / 1000;
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" class="d2-svg" data-d2-tipo="3d" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet"><image href="' + e.uri + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none"/></svg>';
+      return { vistaId: id, nome: e.nome, tipo: "3d", svg: svg, vb: { x: 0, y: 0, w: W, h: H }, escala: N, pena: "", penasPx: {}, dados: null, estilo: {}, def: null, pxW: e.pxW, pxH: e.pxH, wMm: e.wMm, hMm: e.hMm };
+    },
+    /* a imagem guardada no navegador (IndexedDB) volta para a memória e a folha se pinta de novo */
+    _carregar3d: function (id) {
+      var self = this, k = this._chave3d(id); this._d3 = this._d3 || {}; this._d3Lendo = this._d3Lendo || {};
+      if (this._d3Lendo[k] || !global.Idb) return;
+      this._d3Lendo[k] = 1;
+      Promise.resolve(global.Idb.get(this._idb3d(id))).then(function (v) {
+        if (v && v.uri) { self._d3[k] = v; Object.keys(self._telas).forEach(function (t) { try { self.pintar(t); } catch (e) {} }); }
+      })["catch"](function () {}).then(function () { delete self._d3Lendo[k]; });
+    },
+    _guardar3d: function (id, e) {
+      this._d3 = this._d3 || {}; this._d3[this._chave3d(id)] = e;
+      try { if (global.Idb) Promise.resolve(global.Idb.set(this._idb3d(id), e))["catch"](function () {}); } catch (x) {}
+    },
+    /* fotografa a vista 3D (a atual ou a salva) no tamanho wMm × hMm a 300 dpi → Promise<{uri,pxW,pxH,wMm,hMm,nome,dpi}> */
+    capturar3d: function (id, wMm, hMm) {
+      var self = this, BIM = global.BIM, raw = String(id).replace(/^d3:/, "");
+      if (!BIM || !BIM.desenharQuadroEm) return Promise.reject(new Error("O visualizador 3D ainda não abriu: abra o modelo da obra."));
+      var px = Math.max(64, Math.round(wMm / 25.4 * this.DPI_3D)), py = Math.round(px * hMm / wMm), lado = this.LADO_MAX_3D;
+      if (Math.max(px, py) > lado) { var r = lado / Math.max(px, py); px = Math.round(px * r); py = Math.round(py * r); }
+      var g = this.G(), v = null, antes = null, nome = "Vista 3D";
+      try { antes = BIM.estadoVista ? BIM.estadoVista() : null; } catch (e0) {}
+      if (raw !== "atual") { v = g && g._bimVistaDe ? g._bimVistaDe(raw) : null; if (!v) return Promise.reject(new Error("A vista 3D salva não existe mais.")); nome = v.nome; }
+      var espera = function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); };
+      var p = Promise.resolve();
+      if (v) p = p.then(function () { try { BIM.aplicarVista(v); } catch (e1) { throw new Error("Não consegui aplicar a vista 3D."); } return espera(450); });
+      /* ENQUADRAR: o modelo ocupa o quadro (zoom to fit, na direção da câmera da vista); SEM a grade do chão, fundo branco */
+      return p.then(function () {
+        var cv = BIM.desenharQuadroEm("#ffffff", px, py, { semGrade: true, ajustar: true });
+        if (!cv || !cv.width) throw new Error("O 3D não devolveu a imagem (modelo aberto?).");
+        var uri = cv.toDataURL("image/png");
+        return { uri: uri, pxW: cv.width, pxH: cv.height, wMm: wMm, hMm: hMm, nome: nome, dpi: Math.round(cv.width / (wMm / 25.4)) };
+      }).then(function (r) { self._restaurar3d(antes); return r; }, function (e) { self._restaurar3d(antes); throw e; });
+    },
+    _restaurar3d: function (antes) {
+      if (!antes || !global.BimVista || !global.BIM) return;
+      try { BIM.aplicarVista(BimVista.vista({ nome: "_antes", completa: true, camera: antes.camera, cortes: antes.cortes, visibilidade: antes.visibilidade, aparencias: antes.aparencias, modelos: antes.modelos, estilo: antes.estilo, medidas: antes.medidas, cotaRede: antes.cotaRede })); } catch (e) {}
+    },
+    /* as vistas que a folha aceita além das plantas e cortes: as 4 elevações do modelo e as vistas 3D (a atual e as salvas) */
+    vistasExtras: function () {
+      var L = [], b2 = B2(), g = this.G();
+      if (b2 && b2.DIRS_ELEV) b2.DIRS_ELEV.forEach(function (d) { var id = b2.idElevacao(d), df = b2.def(id); if (df) L.push({ id: id, nome: df.nome, tipo: "Elevação", escala: b2.estilo(id).escala }); });
+      L.push({ id: "d3:atual", nome: "Vista 3D atual", tipo: "Vista 3D", escala: 0 });
+      var sv = []; try { sv = g && g._bimVistaDaObra ? g._bimVistaDaObra() : []; } catch (e) {}
+      arr(sv).forEach(function (v) { if (v && v.camera && !v.hid3d && !v.hidIso) L.push({ id: "d3:" + v.id, nome: v.nome, tipo: "Vista 3D", escala: 0 }); });
+      return L;
+    },
+    /* o primeiro lugar LIVRE da área de desenho para um quadro w × h (mais o título de 12 mm embaixo), sem pisar em outro bloco; null = não há */
+    lugarLivre: function (a, w, h) {
+      var ar = a.geo.area, T = 12, M = 3, ocup = arr(a.folha.blocos).map(function (b) { return { x: b.x, y: b.y, w: b.w, h: b.h + (b.tipo === "viewport" ? T : 0) }; });
+      for (var y = ar.y + 2; y + h + T <= ar.y + ar.h + 0.01; y += 5) for (var x = ar.x + 2; x + w <= ar.x + ar.w + 0.01; x += 5) {
+        var bate = ocup.some(function (o) { return x < o.x + o.w + M && x + w + M > o.x && y < o.y + o.h + M && y + h + T + M > o.y; });
+        if (!bate) return { x: x, y: y };
+      }
+      return null;
+    },
+    /* garante o quadro INTEIRO dentro da área de desenho (título incluído) */
+    _caber: function (id, ix) {
+      var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b) return;
+      var ar = a.geo.area, f = clone(a.folha), q = f.blocos[ix];
+      q.x = Math.round(Math.max(ar.x, Math.min(q.x, ar.x + ar.w - q.w)) * 10) / 10; q.y = Math.round(Math.max(ar.y, Math.min(q.y, ar.y + ar.h - q.h - 12)) * 10) / 10;
+      if (q.x !== b.x || q.y !== b.y) this.gravarFolha(a, f);
+    },
+    /* põe a vista 3D na folha: fotografa no tamanho do quadro (≈ 60% da área, proporção 3:2), grava e posiciona. → Promise<{ok}> */
+    posicionar3d: function (id, vistaId, cx, cy) {
+      var self = this, a = this.achar(id); if (!a) return Promise.resolve({ ok: false, erro: "Folha não encontrada." });
+      var ar = a.geo.area, wMm = Math.round(Math.min(ar.w * 0.6, (ar.h - 14) * 1.5, 260)), hMm = Math.round(wMm / 1.5);
+      if (cx == null || cy == null) {   /* sem ponto de soltura: o primeiro lugar livre; sem espaço, encolhe o quadro até caber */
+        var sp = null; while (!(sp = this.lugarLivre(a, wMm, hMm)) && wMm > 80) { wMm = Math.round(wMm * 0.85); hMm = Math.round(wMm / 1.5); }
+        if (sp) { cx = sp.x + wMm / 2; cy = sp.y + hMm / 2; }
+      }
+      status("Fotografando a vista 3D em " + this.DPI_3D + " dpi…");
+      return this.capturar3d(vistaId, wMm, hMm).then(function (e) {
+        self._guardar3d(vistaId, e);
+        var a2 = self.achar(id), dz = self._desenho3d(vistaId);
+        var todas = self.registros().map(function (r) { return PR().normalizar(r); });
+        var r = PR().colocarViewport(a2.pr, a2.folha, { vistaId: vistaId, nome: e.nome, escala: self.ESCALA_NOMINAL_3D, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
+        if (!r.ok) { toast(r.erro, "aviso"); return r; }
+        self.gravarFolha(a2, r.folha); self._caber(id, r.folha.blocos.length - 1); self._sel = { id: id, ix: r.folha.blocos.length - 1 };
+        self.pintar(id); self._pintarProps();
+        status(e.nome + " na folha: " + wMm + " × " + hMm + " mm, imagem " + e.pxW + " × " + e.pxH + " px (" + e.dpi + " dpi).");
+        return r;
+      }, function (er) { toast("Vista 3D: " + (er && er.message || er), "erro"); return { ok: false, erro: String(er && er.message || er) }; });
+    },
+    /* refaz a imagem de TODOS os quadros 3D das folhas dadas no tamanho atual deles (>= 300 dpi); sem modelo aberto, fica a imagem guardada. → Promise */
+    garantir3d: function (itens) {
+      var self = this, fila = [], vistos = {};
+      arr(itens).forEach(function (a) { arr(a.folha.blocos).forEach(function (b) {
+        if (b.tipo !== "viewport" || !/^d3:/.test(b.vistaId)) return;
+        var k = b.vistaId, ex = vistos[k]; if (ex) { ex.w = Math.max(ex.w, b.w); ex.h = Math.max(ex.h, b.h); return; }
+        vistos[k] = { id: k, w: b.w, h: b.h }; fila.push(vistos[k]);
+      }); });
+      var seq = Promise.resolve();
+      fila.forEach(function (q) {
+        seq = seq.then(function () {
+          var e = (self._d3 || {})[self._chave3d(q.id)], dpi = e ? e.pxW / (q.w / 25.4) : 0;
+          if (e && dpi >= self.DPI_3D - 1) return null;
+          return self.capturar3d(q.id, q.w, q.h).then(function (n) { self._guardar3d(q.id, n); }, function () { return null; });   /* sem modelo: segue com a imagem guardada */
+        });
+      });
+      return seq;
+    },
+    atualizar3d: function (id) {
+      var self = this, a = this.achar(id); if (!a) return Promise.resolve(false);
+      var vistos = {}; arr(a.folha.blocos).forEach(function (b) { if (b.tipo === "viewport" && /^d3:/.test(b.vistaId)) vistos[b.vistaId] = b; });
+      var ids = Object.keys(vistos); if (!ids.length) { toast("Esta folha não tem vista 3D.", "aviso"); return Promise.resolve(false); }
+      var seq = Promise.resolve();
+      ids.forEach(function (v) { seq = seq.then(function () { return self.capturar3d(v, vistos[v].w, vistos[v].h).then(function (n) { self._guardar3d(v, n); }); }); });
+      return seq.then(function () { self.pintar(id); toast("Vista 3D atualizada (" + self.DPI_3D + " dpi).", "ok"); return true; }, function (e) { toast("Vista 3D: " + (e && e.message || e), "erro"); return false; });
+    },
+
     /* o quadro acompanha a escala e o tamanho da vista (o viewport É a vista); a cópia com escala própria
        segue a escala DELA */
     _sincronizar: function (a) {
@@ -415,15 +618,30 @@
 
     /* --------------------------------------------- viewport: pôr, mover, tirar */
     posicionar: function (id, vistaId, cx, cy) {
+      if (/^d3:/.test(String(vistaId))) return this.posicionar3d(id, vistaId, cx, cy);
       var a = this.achar(id); if (!a) return { ok: false, erro: "Folha não encontrada." };
-      var b2 = B2(); if (!b2 || !b2.ehVista2d(vistaId)) { toast("Arraste uma planta ou um corte do Navegador (Vistas › Plantas de piso / Cortes).", "aviso"); return { ok: false, erro: "não é vista 2D" }; }
+      var b2 = B2(); if (!b2 || !b2.ehVista2d(vistaId)) { toast("Arraste uma planta, um corte, uma elevação ou uma vista 3D do Navegador.", "aviso"); return { ok: false, erro: "não é vista 2D" }; }
       var dz = this.desenho(vistaId, true);
       if (!dz) { toast("Não consegui desenhar a vista: abra o modelo da obra primeiro.", "erro"); return { ok: false, erro: "sem desenho" }; }
       var todas = this.registros().map(function (r) { return PR().normalizar(r); });
       /* a folha montada à mão aceita a MESMA vista mais de uma vez (cada cópia com escala e recorte próprios) */
-      var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
+      /* ELEVAÇÃO: a escala padrão (1:50) não cabe na folha para a casa inteira — entra na MAIOR escala padrão que cabe na área de desenho (a cópia fica com escala própria) */
+      var escE = dz.escala;
+      if (/^d2e-/.test(String(vistaId))) {
+        var ar0 = a.geo.area, cand = [10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000], achou = false;
+        for (var ci = 0; ci < cand.length && !achou; ci++) {
+          var wE = dz.vb.w * 1000 / cand[ci], hE = dz.vb.h * 1000 / cand[ci];
+          if (wE > ar0.w - 4 || hE + 12 > ar0.h - 4) continue;
+          var sp = (cx == null || cy == null) ? this.lugarLivre(a, wE, hE) : { x: cx - wE / 2, y: cy - hE / 2 };
+          if (sp) { escE = cand[ci]; if (cx == null || cy == null) { cx = sp.x + wE / 2; cy = sp.y + hE / 2; } achou = true; }
+        }
+      }
+      var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: escE, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
       if (!r.ok) { toast(r.erro, "aviso"); return r; }
       this.gravarFolha(a, r.folha);
+      var ixE = r.folha.blocos.length - 1;
+      if (escE !== dz.escala) this.trocarEscala(id, ixE, escE);
+      this._caber(id, ixE); var a3 = this.achar(id); if (a3) { r.folha = a3.folha; r.bloco = a3.folha.blocos[ixE]; }
       this._sel = { id: id, ix: r.folha.blocos.length - 1 };
       this.pintar(id); this._pintarProps();
       status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
@@ -703,9 +921,12 @@
         else ident.push(q);
       });
       graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
-      outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Imprimir / PDF", fn: function () { self.pdf([id]); } });
+      outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Gerar PDF", fn: function () { self.pdfVetorial([id]); } });
+      outros.push({ id: "duplicar", rotulo: "Duplicar esta folha", tipo: "botao", rotuloBotao: "Duplicar folha", fn: function () { self.duplicarFolha(id); } });
+      outros.push({ id: "excluir", rotulo: "Excluir esta folha", tipo: "botao", rotuloBotao: "Excluir folha…", fn: function () { self.excluirFolha(id); } });
       outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
       outros.push({ id: "cad", rotulo: "CAD único do conjunto", tipo: "botao", rotuloBotao: "Arquivo CAD único", fn: function () { self.exportarCad(id); } });
+      if (arr(a.folha.blocos).some(function (b) { return b.tipo === "viewport" && /^d3:/.test(b.vistaId); })) outros.push({ id: "atualizar3d", rotulo: "Vista 3D", tipo: "botao", rotuloBotao: "Atualizar vista 3D", fn: function () { self.atualizar3d(id); } });
       outros.push({ id: "atualizar", rotulo: "Modelo mudou?", tipo: "botao", rotuloBotao: "Atualizar vistas", fn: function () { self._desenhos = {}; self.pintar(id); } });
       return {
         daVista: true, semEditarTipo: true, titulo: "Folha: " + this.nomeFolha(a.pr, a.folha), icone: "prancha",
@@ -908,7 +1129,7 @@
           /* folha das pranchas do hidro (imagem inteira = o SVG gerado): o DXF antigo desta aba saía só com a moldura e o carimbo; vai pelo CAD único */
           if (/^hidsvg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
           var vps = {}, self = this;
-          a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+          a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz && dz.tipo !== "3d") vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
           var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto(), empresa: this.empresaDados(), logo: !!logoConta });
           var nome = PR().nomeArquivo(a.pr, a.folha, this.projeto(), "dxf");
@@ -958,7 +1179,7 @@
         if (comuns.length) {
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
           var folhas = comuns.map(function (f) {
-            var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+            var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz && dz.tipo !== "3d") vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
             return { folha: f, vps: vps, nome: PR().numeroFolha(pr, f) };
           });
           var nc = nomesDe(misto ? " - folhas" : ""), mk = function (lista, dxfNome, dwgNome) { return BC.paraCadFolhas({ pr: pr, geo: a.geo, projeto: self.projeto(), empresa: self.empresaDados(), logo: !!logoConta, folhas: lista }, { disciplina: opc.disciplina || "geral", dxfNome: dxfNome, dwgNome: dwgNome }); };
@@ -1022,6 +1243,35 @@
       setTimeout(function () { try { jan.focus(); jan.print(); } catch (e) {} }, 700);
       return { titulo: titulo, folhas: itens.length };
     },
+    /* PDF VETORIAL (16/11/2026): o arquivo é escrito pelo sistema (js/folhapdf.js + js/svgpdf.js), sem o driver de impressão — linhas e hachura em vetor com a pena de papel da tela,
+       texto selecionável, carimbo e moldura; só a vista 3D e os logos são imagem (PNG sem perda, >= 300 dpi). O `pdf()` acima (janela de impressão) fica para quem quer o diálogo.
+       Roteiro do defeito: pelo driver ("Microsoft Print to PDF") o texto e as linhas saíam borrados e rasterizados, diferente da tela. → Promise<{ nome, tamanho, paginas }> */
+    pdfVetorial: function (ids) {
+      var self = this, itens = [], projeto = this.projeto(), FPd = global.FolhaPdf;
+      if (!FPd) { toast("O módulo de PDF não carregou.", "erro"); return Promise.resolve(null); }
+      arr(ids).forEach(function (id) { var a = self.achar(id); if (a) itens.push(a); });
+      if (!itens.length) { toast("Nenhuma folha para gerar o PDF.", "aviso"); return Promise.resolve(null); }
+      var nome = itens.length === 1 ? PR().nomeArquivo(itens[0].pr, itens[0].folha, projeto, "pdf") : PR().nomeArquivoLote(itens[0].pr, itens.map(function (a) { return a.folha; }), "pdf");
+      var lista = itens.map(function (a) { var rec = self.recursos(a, false); rec.projeto = projeto; return { pr: a.pr, folha: a.folha, rec: rec, geo: a.geo }; });
+      status("Gerando o PDF vetorial…");
+      return Promise.resolve(self._garantir3d(itens)).then(function () {
+        lista.forEach(function (it, i) { var rec = self.recursos(itens[i], false); rec.projeto = projeto; it.rec = rec; });
+        return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, "") });
+      }).then(function (r) {
+        var d = r.bytes;
+        if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, d, "application/pdf", ""); if (!wT) return null; nome = wT.nome; d = wT.dados; }
+        self._ultimoArquivo = { nome: nome, bytes: d, tamanho: d.length, vetorial: true, paginas: r.paginas, imagens: r.imagens };
+        try {
+          var url = URL.createObjectURL(new Blob([d], { type: "application/pdf" })), el = document.createElement("a");
+          el.href = url; el.download = nome; document.body.appendChild(el); el.click(); el.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        } catch (e) {}
+        var mb = d.length / 1048576;
+        toast("PDF vetorial: " + nome + " (" + r.paginas + " folha" + (r.paginas > 1 ? "s" : "") + ", " + (mb >= 1 ? mb.toFixed(1) + " MB" : Math.round(d.length / 1024) + " KB") + ")." + (mb > 30 ? " Arquivo grande: reduza as vistas 3D da folha." : ""), mb > 30 ? "aviso" : "ok");
+        return { nome: nome, tamanho: d.length, paginas: r.paginas };
+      })["catch"](function (e) { toast("Não consegui gerar o PDF: " + (e && e.message || e), "erro"); return null; });
+    },
+    _garantir3d: function (itens) { return this.garantir3d(itens); },
     pdfLote: function () {
       var self = this, regs = this.registros().filter(function (r) { return r.origem === "folhas" || arr(r.folhas).some(function (f) { return arr(f.blocos).some(function (b) { return b.tipo === "viewport"; }); }); });
       var itens = [];
@@ -1029,9 +1279,9 @@
       if (!itens.length) { toast("Nenhuma folha ainda: Vista › Folha.", "aviso"); return null; }
       global.UI.modal("PDF em lote", '<p class="muted" style="font-size:12px;margin:0 0 6px">As folhas marcadas saem num documento só, cada uma no tamanho do papel dela. Nome automático: número - nome - revisão.</p>' +
         itens.map(function (it) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-lote="' + esc(it.id) + '"> ' + esc(it.rot) + ' <span class="muted">(' + esc(it.arq) + ")</span></label>"; }).join(""),
-        [{ texto: "Imprimir / PDF", classe: "primary", onClick: function () {
+        [{ texto: "Gerar PDF", classe: "primary", onClick: function () {
           var ids = [].slice.call(document.querySelectorAll("[data-pv-lote]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-lote"); });
-          global.UI.fecharModal(); self.pdf(ids);
+          global.UI.fecharModal(); self.pdfVetorial(ids);
         } }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
       return itens;
     },
@@ -1039,8 +1289,8 @@
     escolherVista: function () {
       var self = this, g = this.G(), st = g && g._bimVxEst(), id = st && st.ativa;
       if (!this.ehFolha(id)) { toast("Abra uma folha primeiro (Navegador › Folhas ou Vista › Folha).", "aviso"); return; }
-      var vs = this.vistas2d(); if (!vs.length) { toast("Nenhuma planta ou corte ainda.", "aviso"); return; }
-      global.UI.modal("Posicionar vista", vs.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="radio" name="pv-vs" value="' + esc(v.id) + '"> ' + esc(v.nome) + " · 1:" + esc(v.escala) + "</label>"; }).join(""),
+      var vs = this.vistas2d().concat(this.vistasExtras()); if (!vs.length) { toast("Nenhuma planta ou corte ainda.", "aviso"); return; }
+      global.UI.modal("Posicionar vista", vs.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="radio" name="pv-vs" value="' + esc(v.id) + '"> ' + esc(v.nome) + (v.escala ? " · 1:" + esc(v.escala) : " · " + esc(v.tipo)) + "</label>"; }).join(""),
         [{ texto: "Posicionar", classe: "primary", onClick: function () { var r = document.querySelector('input[name="pv-vs"]:checked'); global.UI.fecharModal(); if (r) self.posicionar(id, r.value); } },
          { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
     },
@@ -1327,7 +1577,9 @@
         pr.folhas.forEach(function (f) {
           n++;
           var id = self.idFolha(r.id, f.id);
-          filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ? " (" + pr.nome + ")" : ""), icone: "prancha", fn: function () { self.abrir(id); } });
+          filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ? " (" + pr.nome + ")" : ""), icone: "prancha", fn: function () { self.abrir(id); },
+            menu: [{ id: "fl-abrir", rotulo: "Abrir", fn: function () { self.abrir(id); } }, { id: "fl-duplicar", rotulo: "Duplicar folha", fn: function () { self.duplicarFolha(id); } },
+                   { id: "fl-pdf", rotulo: "Gerar PDF desta folha", fn: function () { self.pdfVetorial([id]); } }, { id: "fl-excluir", rotulo: "Excluir folha…", fn: function () { self.excluirFolha(id); } }] });
         });
       });
       /* as ações ficam À VISTA no nó (o dono não achava onde ficam as pranchas) */
@@ -1337,6 +1589,7 @@
       if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
       if (global.ArqPranchasUI && global.ArqPranchasUI.abrirArranjo) filhos.splice(2, 0, { id: "fl:arranjo-arq", rotulo: "Arranjo das folhas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrirArranjo(); } });
       filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
+      var ua = this.ultimaApagada(); if (ua) filhos.push({ id: "fl:desfazer-excl", rotulo: "↩ Desfazer exclusão: " + ua.nome, icone: "prancha", fn: function () { self.desfazerExclusao(); } });
       return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
     },
     registrar: function (reg, G) {
@@ -1357,6 +1610,16 @@
         { id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG do conjunto de folhas aberto (app instalado: o conversor roda neste computador). Sem o app, explica e entrega o arquivo CAD único em DXF (o AutoCAD salva em DWG)." },
         { id: "pdf-lote", rotulo: "PDF em\nlote", icone: "imprimir", grande: true, dica: "Várias folhas num PDF só, cada uma no tamanho do papel, com o nome automático (número - nome - revisão)." }
       ]);
+      R.acrescentar("vista", "Vista", "Vista 3D e folha", [
+        { id: "travar-vista", rotulo: "Travar\nvista", icone: "cadeado", grande: true, dica: "Trava a câmera do 3D (cadeado): ela não gira nem dá zoom por engano. Clique de novo para destravar." },
+        { id: "salvar-vista-3d", rotulo: "Salvar como\nvista 3D", icone: "camera", grande: true, dica: "Guarda a câmera, o ângulo, os cortes e o estilo do 3D como uma vista com nome (3D - Isométrica 1…) em Navegador › Vistas 3D. Arraste-a para uma folha." },
+        { id: "duplicar-folha", rotulo: "Duplicar\nfolha", icone: "prancha", grande: true, dica: "Cópia da folha aberta com as mesmas vistas e o mesmo carimbo, número seguinte e nome \"… (cópia)\"." },
+        { id: "excluir-folha", rotulo: "Excluir\nfolha", icone: "lixeira", grande: true, dica: "Exclui a folha aberta (com confirmação; as vistas continuam no projeto). Dá para desfazer em Navegador › Folhas." }
+      ]);
+      reg["travar-vista"] = function () { var g = self.G(); return !!(g && g._bimVistaTravar && g._bimVistaTravar() !== null); };
+      reg["salvar-vista-3d"] = function () { var g = self.G(); return !!(g && g._bimVistaSalvar3d && g._bimVistaSalvar3d()); };
+      reg["duplicar-folha"] = function () { var g = self.G(), st = g && g._bimVxEst && g._bimVxEst(); if (!st || !self.ehFolha(st.ativa)) { toast("Abra uma folha para duplicar.", "aviso"); return false; } return !!self.duplicarFolha(st.ativa); };
+      reg["excluir-folha"] = function () { var g = self.G(), st = g && g._bimVxEst && g._bimVxEst(); if (!st || !self.ehFolha(st.ativa)) { toast("Abra uma folha para excluir.", "aviso"); return false; } return !!self.excluirFolha(st.ativa); };
       reg["gerar-pranchas"] = function () { return self.abrirGerar(); };
       reg["nova-folha"] = function () { return !!self.novaFolha(); };
       reg["posicionar-vista"] = function () { self.escolherVista(); return true; };

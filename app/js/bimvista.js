@@ -340,7 +340,10 @@
       referencia: referencia(d.referencia),
       /* de onde a vista veio quando foi importada em pacote: reimportar o
          mesmo pacote atualiza em vez de duplicar */
-      origemId: txt(d.origemId)
+      origemId: txt(d.origemId),
+      /* VISTA 3D SALVA pelo "Travar vista" + "Salvar como vista" (16/11/2026): a isométrica/3D com nome, no Navegador em Vistas 3D, que se puxa para a folha */
+      vista3d: d.vista3d === true,
+      travada: d.travada === true
     };
   }
   function pasta(p) {
@@ -387,6 +390,7 @@
       /* ⚠ organização também é identidade: regravar a vista do "Painel 03"
          não pode tirá-la da pasta nem perder o desenho original dela */
       pasta: antiga.pasta, descricao: antiga.descricao, referencia: antiga.referencia, origemId: antiga.origemId, origem: antiga.origem,
+      vista3d: antiga.vista3d, travada: antiga.travada,
       completa: true,
       camera: e.camera, cortes: e.cortes, visibilidade: e.visibilidade,
       aparencias: e.aparencias, modelos: e.modelos, estilo: e.estilo,

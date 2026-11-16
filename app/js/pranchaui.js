@@ -132,13 +132,13 @@
       .replace(/d2-hach/g, idp);
   }
   /* o título de vista: número de detalhe no círculo, nome sublinhado e a escala */
-  function tituloVista(b) {
+  function tituloVista(b, vp) {
     if (b.mostrarTitulo === false) return '';
     return '<div data-pv-titulo="1" style="position:absolute;left:0;top:' + mm(b.h + 1.5) + ';display:flex;align-items:center;gap:2mm;white-space:nowrap">' +
       '<svg width="8mm" height="8mm" viewBox="0 0 8 8" style="flex:0 0 8mm"><circle cx="4" cy="4" r="3.8" fill="none" stroke="#111" stroke-width="0.25"/>' +
       '<text x="4" y="5.1" font-size="3.1" text-anchor="middle" font-weight="bold" font-family="Arial" fill="#111" data-pv-num="1">' + esc(b.numeroDetalhe) + '</text></svg>' +
       '<div><div data-pv-nome="1" style="font-weight:bold;font-size:10pt;border-bottom:0.5mm solid #111;padding-right:8mm">' + esc(String(b.tituloVista || '').toUpperCase()) + '</div>' +
-      '<div data-pv-escala="1" style="font-size:7pt;margin-top:0.4mm">ESC 1:' + esc(b.escala) + '</div></div></div>';
+      '<div data-pv-escala="1" style="font-size:7pt;margin-top:0.4mm">' + (vp && vp.tipo === '3d' ? 'SEM ESCALA (VISTA 3D)' : 'ESC 1:' + esc(b.escala)) + '</div></div></div>';
   }
 
   function coluna(pr, g) {
@@ -159,7 +159,7 @@
       var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + '@' + b.escala]) || rec.viewports[b.vistaId]);
       t = vp ? viewportSvg(vp, b)
              : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt;text-align:center">vista "' + esc(b.tituloVista) + '" sem desenho (abra o modelo da obra)</div>';
-      return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b) + '</div>';
+      return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b, vp) + '</div>';
     }
     if (b.tipo === 'vista') {
       var src = rec.vistas && rec.vistas[b.vistaId || b.origemVista];

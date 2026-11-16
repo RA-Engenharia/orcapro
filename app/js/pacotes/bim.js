@@ -5108,7 +5108,9 @@ miniatura: txt(d.miniatura),
 pasta: pasta(d.pasta),
 descricao: txt(d.descricao),
 referencia: referencia(d.referencia),
-origemId: txt(d.origemId)
+origemId: txt(d.origemId),
+vista3d: d.vista3d === true,
+travada: d.travada === true
 };
 }
 function pasta(p) {
@@ -5142,6 +5144,7 @@ id: antiga.id, obraId: antiga.obraId, nome: antiga.nome, autor: antiga.autor,
 criadoEm: antiga.criadoEm, atualizadoEm: txt(quando),
 comentarios: antiga.comentarios, marcacoes: antiga.marcacoes, miniatura: antiga.miniatura,
 pasta: antiga.pasta, descricao: antiga.descricao, referencia: antiga.referencia, origemId: antiga.origemId, origem: antiga.origem,
+vista3d: antiga.vista3d, travada: antiga.travada,
 completa: true,
 camera: e.camera, cortes: e.cortes, visibilidade: e.visibilidade,
 aparencias: e.aparencias, modelos: e.modelos, estilo: e.estilo,
@@ -12612,13 +12615,13 @@ return (pre || '') + 'stroke-width="' + (Math.round(mmP * esc0 / 1000 * 1e6) / 1
 .replace(/stroke-dasharray="[^"]*" data-traco="([^"]*)"/g, 'stroke-dasharray="$1"')
 .replace(/d2-hach/g, idp);
 }
-function tituloVista(b) {
+function tituloVista(b, vp) {
 if (b.mostrarTitulo === false) return '';
 return '<div data-pv-titulo="1" style="position:absolute;left:0;top:' + mm(b.h + 1.5) + ';display:flex;align-items:center;gap:2mm;white-space:nowrap">' +
 '<svg width="8mm" height="8mm" viewBox="0 0 8 8" style="flex:0 0 8mm"><circle cx="4" cy="4" r="3.8" fill="none" stroke="#111" stroke-width="0.25"/>' +
 '<text x="4" y="5.1" font-size="3.1" text-anchor="middle" font-weight="bold" font-family="Arial" fill="#111" data-pv-num="1">' + esc(b.numeroDetalhe) + '</text></svg>' +
 '<div><div data-pv-nome="1" style="font-weight:bold;font-size:10pt;border-bottom:0.5mm solid #111;padding-right:8mm">' + esc(String(b.tituloVista || '').toUpperCase()) + '</div>' +
-'<div data-pv-escala="1" style="font-size:7pt;margin-top:0.4mm">ESC 1:' + esc(b.escala) + '</div></div></div>';
+'<div data-pv-escala="1" style="font-size:7pt;margin-top:0.4mm">' + (vp && vp.tipo === '3d' ? 'SEM ESCALA (VISTA 3D)' : 'ESC 1:' + esc(b.escala)) + '</div></div></div>';
 }
 function coluna(pr, g) {
 var k = g.coluna, altura = k.h - g.carimbo.h - 2;
@@ -12636,7 +12639,7 @@ if (b.tipo === 'viewport') {
 var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + '@' + b.escala]) || rec.viewports[b.vistaId]);
 t = vp ? viewportSvg(vp, b)
 : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:0.3mm dashed #b3261e;color:#b3261e;font-size:9pt;text-align:center">vista "' + esc(b.tituloVista) + '" sem desenho (abra o modelo da obra)</div>';
-return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b) + '</div>';
+return '<div data-pv-bloco="' + i + '" data-pv-vp="' + esc(b.vistaId) + '" style="' + abs(b.x, b.y, b.w, b.h) + '">' + t + tituloVista(b, vp) + '</div>';
 }
 if (b.tipo === 'vista') {
 var src = rec.vistas && rec.vistas[b.vistaId || b.origemVista];
@@ -36527,6 +36530,8 @@ function cor(v, alfa) {
 var s = txt(v).trim().toLowerCase(); if (!s || s === "none" || s === "transparent") return null;
 var al = alfa == null || !isFinite(alfa) ? 1 : Math.max(0, Math.min(1, alfa)), r;
 if (al <= 0) return null;
+var mv = /^var\(\s*--[\w-]+\s*(?:,\s*([^)]+))?\)$/.exec(s);
+if (mv) { if (!mv[1]) return null; s = mv[1].trim(); }
 if (NOMES[s]) s = NOMES[s];
 if (/^url\(/.test(s)) return misturar([0.82, 0.82, 0.82], al);
 if (s === "currentcolor") return misturar([0, 0, 0], al);
@@ -36544,38 +36549,44 @@ return misturar(r, (m[4] ? parseInt(m[4], 16) / 255 : 1) * al);
 }
 function attrs(s) {
 var o = {}, re = /([\w:-]+)\s*=\s*"([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = desEsc(m[2]);
-if (o.style) o.style.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim(); if (/^(fill|stroke|stroke-width|stroke-dasharray|fill-opacity|stroke-opacity|opacity|font-size|font-weight|text-anchor|display)$/.test(k)) o[k] = v; });
+if (o.style) o.style.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim(); if (/^(fill|stroke|stroke-width|stroke-dasharray|fill-opacity|stroke-opacity|opacity|font-size|font-weight|font-style|text-anchor|display|fill-rule)$/.test(k)) o[k] = v; });
 return o;
 }
 function pontos(s) { var v = txt(s).trim().split(/[\s,]+/).map(Number), o = []; for (var i = 0; i + 1 < v.length; i += 2) o.push([v[i], v[i + 1]]); return o; }
 function translate(t) { var m = /translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*\)/.exec(txt(t)); return m ? [+m[1], +m[2]] : [0, 0]; }
+function escalaT(t) { var m = /scale\(\s*(-?[\d.e-]+)(?:[\s,]+(-?[\d.e-]+))?\s*\)/.exec(txt(t)); return m && +m[1] > 0 ? +m[1] : 1; }
 function rotate(t) { var m = /rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+))?\s*\)/.exec(txt(t)); return m ? { a: +m[1], cx: m[2] != null ? +m[2] : null, cy: m[3] != null ? +m[3] : null } : null; }
 function pagina(svg) {
 var s = txt(svg), raiz = /<svg\b([^>]*)>/.exec(s); if (!raiz) return null;
 var ra = attrs(raiz[1]), vb = txt(ra.viewBox).split(/[\s,]+/).map(Number), W = vb.length === 4 ? vb[2] : num(ra.width, 210), H = vb.length === 4 ? vb[3] : num(ra.height, 297);
-var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
+var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, k: 1, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
 var nTexto = 0, nTraco = 0, nPulado = 0, ims = {}, clips = {}, emClip = null;
-function X(x, g) { return (x + g.tx) * PT; }
-function Y(y, g) { return (H - (y + g.ty)) * PT; }
+var padroes = {}, emPad = null, xf = null;
+function X(x, g) { return (x * g.k + g.tx) * PT; }
+function Y(y, g) { return (H - (y * g.k + g.ty)) * PT; }
 function herda(a) {
-var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
-var t = translate(a.transform); n.tx += t[0]; n.ty += t[1];
+var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, k: g.k, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
+var t = translate(a.transform); n.tx += t[0] * g.k; n.ty += t[1] * g.k; n.k = g.k * escalaT(a.transform);
 if (a.fill != null) n.fill = a.fill; if (a.stroke != null) n.stroke = a.stroke; if (a["stroke-width"] != null) n.sw = a["stroke-width"];
 if (a["font-size"] != null) n.fs = a["font-size"]; if (a["text-anchor"] != null) n.anchor = a["text-anchor"]; if (a["font-weight"] != null) n.peso = a["font-weight"];
 return n;
 }
 function pintar(a, g, fechado, ehForma) {
 var op = num(a.opacity, 1), fl = cor(a.fill != null ? a.fill : (g.fill != null ? g.fill : (ehForma ? "#000" : "none")), num(a["fill-opacity"], 1) * op), st = cor(a.stroke != null ? a.stroke : g.stroke, num(a["stroke-opacity"], 1) * op);
-var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25), eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
-if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
+var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25) * g.k, eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
+if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * g.k * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
 if (fl) ops.push(f(fl[0]) + " " + f(fl[1]) + " " + f(fl[2]) + " rg");
 ops.push(fl && st ? (fechado ? "b" + eo : "B" + eo) : (fl ? "f" + eo : (st ? (fechado ? "s" : "S") : "n")));
 nTraco++;
 }
-function caminhoD(d, g) {
+function caminhoD(d, g, bb) {
 var tk = txt(d).match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [], i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, tem = false, fechou = false;
 function nx() { return parseFloat(tk[i++]); }
-function P(a, b) { return f(X(a, g)) + " " + f(Y(b, g)); }
+function P(a, b) {
+if (bb) { if (a < bb.x0) bb.x0 = a; if (a > bb.x1) bb.x1 = a; if (b < bb.y0) bb.y0 = b; if (b > bb.y1) bb.y1 = b; }
+if (xf) { var q = xf(a, b); a = q[0]; b = q[1]; }
+return f(X(a, g)) + " " + f(Y(b, g));
+}
 while (i < tk.length) {
 if (/^[a-zA-Z]$/.test(tk[i])) cmd = tk[i++]; else if (cmd === "M") cmd = "L"; else if (cmd === "m") cmd = "l";
 var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel ? x : 0, oy = rel ? y : 0, a, b, c1, c2, e, h;
@@ -36594,9 +36605,47 @@ return tem ? { fechado: fechou } : null;
 }
 function caminho(P, g, fechado) {
 if (!P.length) return false;
+if (xf) P = P.map(function (q) { return xf(q[0], q[1]); });
 ops.push(f(X(P[0][0], g)) + " " + f(Y(P[0][1], g)) + " m");
 for (var i = 1; i < P.length; i++) ops.push(f(X(P[i][0], g)) + " " + f(Y(P[i][1], g)) + " l");
 if (fechado) ops.push("h");
+return true;
+}
+function hachurar(pad, g, bb) {
+var w = pad.w, h = pad.h; if (!(w > 0 && h > 0) || bb.x1 < bb.x0) return false;
+var th = pad.rot * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), us = [], vs = [];
+[[bb.x0, bb.y0], [bb.x1, bb.y0], [bb.x0, bb.y1], [bb.x1, bb.y1]].forEach(function (q) { us.push(c * q[0] + sn * q[1]); vs.push(-sn * q[0] + c * q[1]); });
+var i0 = Math.floor(Math.min.apply(null, us) / w), i1 = Math.ceil(Math.max.apply(null, us) / w), j0 = Math.floor(Math.min.apply(null, vs) / h), j1 = Math.ceil(Math.max.apply(null, vs) / h);
+var rot = function (x, y) { return [c * x - sn * y, sn * x + c * y]; }, N = (i1 - i0 + 1) * (j1 - j0 + 1), eps = 1e-6, tiles = [];
+if (N > 400000) return false;
+pad.filhos.forEach(function (fl) {
+var a = fl.a, sc = fl.s;
+if (fl.nome === "rect" && a.fill != null && a.stroke == null && cor(a.fill)) {
+var cf = cor(a.fill, num(a["fill-opacity"], 1)); if (!cf) return;
+ops.push(f(cf[0]) + " " + f(cf[1]) + " " + f(cf[2]) + " rg " + f(X(bb.x0, g)) + " " + f(Y(bb.y1, g)) + " " + f((bb.x1 - bb.x0) * g.k * PT) + " " + f((bb.y1 - bb.y0) * g.k * PT) + " re f");
+return;
+}
+var sw = num(a["stroke-width"], 1) * sc;
+if (fl.nome === "line") {
+var x1 = num(a.x1, 0) * sc, y1 = num(a.y1, 0) * sc, x2 = num(a.x2, 0) * sc, y2 = num(a.y2, 0) * sc, la = { stroke: a.stroke, "stroke-width": String(sw), "stroke-opacity": a["stroke-opacity"], opacity: a.opacity };
+var vert = Math.abs(x1 - x2) < eps && Math.min(y1, y2) <= eps && Math.max(y1, y2) >= h - eps, hor = Math.abs(y1 - y2) < eps && Math.min(x1, x2) <= eps && Math.max(x1, x2) >= w - eps;
+if (vert) { for (var i = i0; i <= i1; i++) { var A = rot(i * w + x1, j0 * h), B = rot(i * w + x1, (j1 + 1) * h); if (caminho([A, B], g, false)) pintar(la, g, false, false); } return; }
+if (hor) { for (var j = j0; j <= j1; j++) { var A2 = rot(i0 * w, j * h + y1), B2 = rot((i1 + 1) * w, j * h + y1); if (caminho([A2, B2], g, false)) pintar(la, g, false, false); } return; }
+}
+tiles.push(fl);
+});
+if (tiles.length) {
+if (N * tiles.length > 5000) return false;
+var xfAntes = xf;
+for (var ii = i0; ii <= i1; ii++) for (var jj = j0; jj <= j1; jj++) tiles.forEach(function (fl) {
+var a = fl.a, sc = fl.s, a2 = {}; Object.keys(a).forEach(function (k2) { a2[k2] = a[k2]; }); if (a.stroke != null || a["stroke-width"] != null) a2["stroke-width"] = String(num(a["stroke-width"], 1) * sc);
+xf = function (x, y) { return rot(x * sc + ii * w, y * sc + jj * h); };
+if (fl.nome === "path" && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a2, g, rp.fechado, true); }
+else if (fl.nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a2, g, false, false); }
+else if (fl.nome === "rect") { var rw = num(a.width, 0), rh = num(a.height, 0), rx = num(a.x, 0), ry = num(a.y, 0); if (rw > 0 && rh > 0 && caminho([[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]], g, true)) pintar(a2, g, true, true); }
+});
+xf = xfAntes;
+}
 return true;
 }
 while ((m = re.exec(s))) {
@@ -36606,11 +36655,21 @@ if (nome === "svg") continue;
 if (nome === "title" || nome === "desc") { emTitulo = !fecha && !auto; continue; }
 if (nome === "clippath") { emClip = fecha || auto ? null : (a.id || ""); continue; }
 if (emClip != null) { if (nome === "rect" && !fecha) clips[emClip] = { x: num(a.x, 0), y: num(a.y, 0), w: num(a.width, 0), h: num(a.height, 0) }; continue; }
+if (nome === "pattern") {
+if (fecha) { if (emPad && emPad.id) padroes[emPad.id] = emPad; emPad = null; }
+else { var rtp = rotate(a.patternTransform); emPad = { id: a.id || "", w: num(a.width, 0), h: num(a.height, 0), rot: rtp ? rtp.a : 0, filhos: [], sc: [1] }; if (auto) { if (emPad.id) padroes[emPad.id] = emPad; emPad = null; } }
+continue;
+}
+if (emPad) {
+if (nome === "g") { if (fecha) { if (emPad.sc.length > 1) emPad.sc.pop(); } else if (!auto) emPad.sc.push(emPad.sc[emPad.sc.length - 1] * escalaT(a.transform)); }
+else if (!fecha && /^(line|path|rect)$/.test(nome)) emPad.filhos.push({ nome: nome, a: a, s: emPad.sc[emPad.sc.length - 1] });
+continue;
+}
 if (nome === "g") {
 if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); } }
 else if (!auto) {
 var ng = herda(a), mc = /url\(\s*#([^)\s]+)\s*\)/.exec(txt(a["clip-path"])), cl = mc ? clips[mc[1]] : null;
-if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * PT) + " " + f(cl.h * PT) + " re W n"); ng.clip = true; }
+if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * ng.k * PT) + " " + f(cl.h * ng.k * PT) + " re W n"); ng.clip = true; }
 pilha.push(ng);
 }
 continue;
@@ -36621,23 +36680,38 @@ if (!fecha) { emTexto = { a: a, g: herda(a), t: "" }; if (auto) emTexto = null; 
 if (!emTexto) continue;
 var tg = emTexto.g, ta = emTexto.a, conteudo = /white-space:\s*pre/.test(txt(ta.style)) ? desEsc(emTexto.t).replace(/[\r\n\t]/g, " ") : desEsc(emTexto.t).replace(/\s+/g, " ").trim(); emTexto = null;
 if (!conteudo) continue;
-var corpo = num(tg.fs, 3), neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
-var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0), y = num(ta.y, 0), rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
-var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
+var corpo = num(tg.fs, 3) * tg.k, neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
+var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0) * tg.k, y = num(ta.y, 0) * tg.k, rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
+var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, gt = { tx: tg.tx, ty: tg.ty, k: 1 }, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
 ops.push(f(fc[0]) + " " + f(fc[1]) + " " + f(fc[2]) + " rg");
 var it = /italic|oblique/.test(txt(ta["font-style"])) ? 0.2 : 0;
-ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
+ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, gt)) + " " + f(Y(py, gt)) + " Tm (" + win1252(conteudo) + ") Tj ET");
 nTexto++;
 continue;
 }
 if (fecha) continue;
 if (nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a, g, false, false); }
-else if (nome === "path") { if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a, g, rp.fechado, true); } }
+else if (nome === "path") {
+if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) {
+var mpf = /^url\(\s*#([^)\s]+)\s*\)/.exec(txt(a.fill != null ? a.fill : g.fill)), pad = mpf ? padroes[mpf[1]] : null, bb = { x0: 1e18, y0: 1e18, x1: -1e18, y1: -1e18 };
+if (pad && pad.filhos.length) {
+var eoP = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "", n0 = ops.length;
+ops.push("q"); caminhoD(a.d, g, bb); ops.push("W" + eoP + " n");
+if (hachurar(pad, g, bb)) {
+ops.push("Q"); var a2 = {}; Object.keys(a).forEach(function (k2) { a2[k2] = a[k2]; }); a2.fill = "none";
+var rp2 = caminhoD(a.d, g); if (rp2) pintar(a2, g, rp2.fechado, true);
+continue;
+}
+ops.length = n0;
+}
+var rp = caminhoD(a.d, g); if (rp) pintar(a, g, rp.fechado, true);
+}
+}
 else if (nome === "polyline") { if (caminho(pontos(a.points), g, false)) pintar(a, g, false, true); }
 else if (nome === "polygon") { if (caminho(pontos(a.points), g, true)) pintar(a, g, true, true); }
 else if (nome === "rect") {
 var rx = num(a.x, 0), ry = num(a.y, 0), rw = num(a.width, 0), rh = num(a.height, 0);
-if (rw > 0 && rh > 0) { ops.push(f(X(rx, g)) + " " + f(Y(ry + rh, g)) + " " + f(rw * PT) + " " + f(rh * PT) + " re"); pintar(a, g, true, true); }
+if (rw > 0 && rh > 0) { ops.push(f(X(rx, g)) + " " + f(Y(ry + rh, g)) + " " + f(rw * g.k * PT) + " " + f(rh * g.k * PT) + " re"); pintar(a, g, true, true); }
 } else if (nome === "circle") {
 var cx = num(a.cx, 0), cy = num(a.cy, 0), r = num(a.r, 0), k = 0.5523 * r;
 if (r > 0) {
@@ -36648,7 +36722,7 @@ pintar(a, g, true, true);
 }
 } else if (nome === "image") {
 var ik = txt(a["data-im"]).replace(/[^A-Za-z0-9]/g, "");
-if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * PT) + " 0 0 " + f(num(a.height, 0) * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
+if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * g.k * PT) + " 0 0 " + f(num(a.height, 0) * g.k * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
 }
 }
 return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, ims: Object.keys(ims) };
@@ -36664,7 +36738,7 @@ objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /W
 objs.push("<< /Title (" + win1252(txt(info.titulo || "Desenho")) + ") /Producer (OrcaPRO) /Creator (OrcaPRO Modela) >>");
 var imgs = (Array.isArray(info.imagens) ? info.imagens : []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; });
 var baseImg = 6 + 2 * pgs.length, porChave = info.imagensPorChave || {}, chavesUsadas = [];
-pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && typeof porChave[k].jpeg === "string" && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
+pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && (typeof porChave[k].jpeg === "string" || typeof porChave[k].flate === "string") && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
 var baseCh = baseImg + imgs.length;
 pgs.forEach(function (p, i) {
 var cont = p.ops.join("\n"), xo = [];
@@ -36680,7 +36754,7 @@ objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
 imgs.forEach(function (im) {
 objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
 });
-chavesUsadas.forEach(function (k) { var im = porChave[k]; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream"); });
+chavesUsadas.forEach(function (k) { var im = porChave[k], ehF = typeof im.flate === "string", dado = ehF ? im.flate : im.jpeg; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + (ehF ? "FlateDecode" : "DCTDecode") + " /Length " + dado.length + " >>\nstream\n" + dado + "\nendstream"); });
 var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
 objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
 var xref = s.length;
@@ -36702,6 +36776,213 @@ return { ok: /^%PDF-1\.\d/.test(s) && xrOk, paginas: pags, tamanhos: tam, textos
 var SvgPdf = { pagina: pagina, paginas: paginas, pdf: pdf, ler: ler, largura: largura, PT: PT };
 global.SvgPdf = SvgPdf;
 if (typeof module !== "undefined" && module.exports) module.exports = SvgPdf;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/folhapdf.js ==== */
+try {
+(function (global) {
+"use strict";
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : d; }
+function esc(s) { return txt(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
+function n3(v) { return Math.round(v * 1000) / 1000; }
+function SP() { return global.SvgPdf || (typeof require === "function" ? require("./svgpdf.js") : null); }
+function regras(css) {
+var out = [], c = txt(css).replace(/\/\*[\s\S]*?\*\//g, "");
+c.replace(/([^{}]+)\{([^{}]*)\}/g, function (_, sels, decl) {
+sels.split(",").forEach(function (s) {
+s = s.trim().replace(/^\.pv-vp\s+/, "");
+if (!s || /:/.test(s) || /\[/.test(s)) return;
+out.push({ partes: s.split(/\s+/), decl: decl.trim().replace(/;$/, "") });
+});
+return _;
+});
+return out;
+}
+function casa(parte, el) { return parte.charAt(0) === "." ? el.cls.indexOf(parte.slice(1)) >= 0 : parte === el.tag; }
+function declsDe(rs, el, pilha) {
+var d = [];
+rs.forEach(function (r) {
+var ps = r.partes, i = ps.length - 1;
+if (!casa(ps[i], el)) return;
+var j = pilha.length - 1; i--;
+while (i >= 0 && j >= 0) { if (casa(ps[i], pilha[j])) i--; j--; }
+if (i < 0) d.push(r.decl);
+});
+return d.join(";");
+}
+function resolverCss(svg, css) {
+var rs = regras(css), pilha = [], re = /<(\/?)([a-zA-Z][\w:-]*)\b([^>]*?)(\/?)>/g;
+return txt(svg).replace(re, function (all, fecha, tag, at, auto) {
+var t = tag.toLowerCase();
+if (fecha) { pilha.pop(); return all; }
+var mc = /\bclass="([^"]*)"/.exec(at), el = { tag: t, cls: mc ? mc[1].split(/\s+/) : [] }, d = declsDe(rs, el, pilha);
+if (!auto) pilha.push(el);
+if (!d) return all;
+var ms = /\bstyle="([^"]*)"/.exec(at), st = d + (ms ? ";" + ms[1] : "");
+at = ms ? at.replace(/\bstyle="[^"]*"/, "style=\"" + st + "\"") : at + " style=\"" + st + "\"";
+return "<" + tag + at + (auto ? "/" : "") + ">";
+});
+}
+function interiorSvg(svg) { return txt(svg).replace(/^[\s\S]*?<svg\b[^>]*>/, "").replace(/<\/svg>\s*$/, "").replace(/<style>[\s\S]*?<\/style>/g, ""); }
+function viewport(P, b, i, rec, ctx) {
+var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + "@" + b.escala]) || rec.viewports[b.vistaId]);
+if (!vp) return "<rect x=\"" + n3(b.x) + "\" y=\"" + n3(b.y) + "\" width=\"" + n3(b.w) + "\" height=\"" + n3(b.h) + "\" fill=\"none\" stroke=\"#b3261e\" stroke-width=\"0.3\" stroke-dasharray=\"2 1\"/>" +
+"<text x=\"" + n3(b.x + b.w / 2) + "\" y=\"" + n3(b.y + b.h / 2) + "\" font-size=\"3\" text-anchor=\"middle\" fill=\"#b3261e\">vista sem desenho</text>";
+var vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : vp.vb;
+var s = P.viewportSvg(vp, b), k = Math.min(b.w / vb.w, b.h / vb.h), ox = b.x + (b.w - vb.w * k) / 2 - vb.x * k, oy = b.y + (b.h - vb.h * k) / 2 - vb.y * k;
+s = resolverCss(s, P.ESTILO_PAPEL);
+s = s.replace(/<image\b([^>]*?)\bhref="(data:[^"]+)"([^>]*?)\/?>/g, function (_, a1, uri, a2) {
+var ch = "v" + (ctx.n++); ctx.imagens[ch] = uri;
+var x = num((/\bx="([^"]*)"/.exec(a1 + a2) || [])[1], 0), y = num((/\by="([^"]*)"/.exec(a1 + a2) || [])[1], 0), w = num((/\bwidth="([^"]*)"/.exec(a1 + a2) || [])[1], 0), h = num((/\bheight="([^"]*)"/.exec(a1 + a2) || [])[1], 0);
+return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
+});
+return "<clipPath id=\"cvp" + i + "\"><rect x=\"" + n3(b.x) + "\" y=\"" + n3(b.y) + "\" width=\"" + n3(b.w) + "\" height=\"" + n3(b.h) + "\"/></clipPath>" +
+"<g clip-path=\"url(#cvp" + i + ")\"><g transform=\"translate(" + n3(ox) + " " + n3(oy) + ") scale(" + (Math.round(k * 1e9) / 1e9) + ")\">" + interiorSvg(s) + "</g></g>" + titulo(b, vp);
+}
+function titulo(b, vp) {
+if (b.mostrarTitulo === false) return "";
+var x0 = b.x, y0 = b.y + b.h + 1.5, nome = txt(b.tituloVista).toUpperCase(), SPM = SP(), w = SPM ? SPM.largura(nome, 3.528, true) : nome.length * 2;
+var esc3d = vp && vp.tipo === "3d" ? "SEM ESCALA (VISTA 3D)" : "ESC 1:" + b.escala;
+return "<circle cx=\"" + n3(x0 + 4) + "\" cy=\"" + n3(y0 + 4) + "\" r=\"3.8\" fill=\"none\" stroke=\"#111\" stroke-width=\"0.25\"/>" +
+"<text x=\"" + n3(x0 + 4) + "\" y=\"" + n3(y0 + 5.1) + "\" font-size=\"3.1\" text-anchor=\"middle\" font-weight=\"bold\" fill=\"#111\">" + esc(b.numeroDetalhe) + "</text>" +
+"<text x=\"" + n3(x0 + 10) + "\" y=\"" + n3(y0 + 3.4) + "\" font-size=\"3.528\" font-weight=\"bold\" fill=\"#111\">" + esc(nome) + "</text>" +
+"<line x1=\"" + n3(x0 + 10) + "\" y1=\"" + n3(y0 + 4.5) + "\" x2=\"" + n3(x0 + 10 + w + 8) + "\" y2=\"" + n3(y0 + 4.5) + "\" stroke=\"#111\" stroke-width=\"0.5\"/>" +
+"<text x=\"" + n3(x0 + 10) + "\" y=\"" + n3(y0 + 7.2) + "\" font-size=\"2.469\" fill=\"#111\">" + esc(esc3d) + "</text>";
+}
+function quebrar(t, corpo, larg, neg) {
+var SPM = SP(), pal = txt(t).split(/\s+/), lin = [], at = "";
+pal.forEach(function (p) { var c = at ? at + " " + p : p; if (at && SPM.largura(c, corpo, neg) > larg) { lin.push(at); at = p; } else at = c; });
+if (at) lin.push(at); return lin;
+}
+function blocoTexto(b) {
+var fs = b.alt > 0 ? b.alt / 0.716 : 2.822, s = "";
+(b.linhas || []).forEach(function (l, i) { if (l) s += "<text x=\"" + n3(b.x) + "\" y=\"" + n3(b.y + i * fs * 1.3 + fs * 1.0) + "\" font-size=\"" + n3(fs) + "\" fill=\"#111\"" + (b.negrito ? " font-weight=\"bold\"" : "") + ">" + esc(l) + "</text>"; });
+return s;
+}
+function blocoTabela(b) {
+var cab = b.cabecalho || [], nc = Math.max(cab.length, ((b.linhas || [])[0] || []).length, 1), cw = b.w / nc, rh = 3.4, s = "", y = b.y;
+function linha(cel, fundo, neg, bord) {
+cel.forEach(function (c, j) {
+s += "<rect x=\"" + n3(b.x + j * cw) + "\" y=\"" + n3(y) + "\" width=\"" + n3(cw) + "\" height=\"" + rh + "\" fill=\"" + (fundo || "none") + "\" stroke=\"" + bord + "\" stroke-width=\"0.2\"/>" +
+"<text x=\"" + n3(b.x + j * cw + cw / 2) + "\" y=\"" + n3(y + 2.4) + "\" font-size=\"2.4\" text-anchor=\"middle\" fill=\"#111\"" + (neg ? " font-weight=\"bold\"" : "") + ">" + esc(c) + "</text>";
+}); y += rh;
+}
+if (cab.length) linha(cab, "#eef2f5", true, "#333");
+(b.linhas || []).forEach(function (l) { linha(l, null, false, "#999"); });
+return s;
+}
+function coluna(P, pr, g) {
+var k = g.coluna; if (!k || g.semColuna) return "";
+var altura = k.h - g.carimbo.h - 2; if (altura < 6) return "";
+var fs = Math.max(5.6, Math.min(7.6, k.w / 28)) * 25.4 / 72, y = k.y + 1.6, s = "<line x1=\"" + n3(k.x) + "\" y1=\"" + n3(k.y) + "\" x2=\"" + n3(k.x) + "\" y2=\"" + n3(k.y + altura) + "\" stroke=\"#111\" stroke-width=\"0.35\"/>";
+(pr.coluna || []).forEach(function (sec) {
+y += fs; s += "<text x=\"" + n3(k.x + 2.5) + "\" y=\"" + n3(y) + "\" font-size=\"" + n3(fs) + "\" font-weight=\"bold\" fill=\"#111\">" + esc(sec.titulo) + "</text>" +
+"<line x1=\"" + n3(k.x + 2.5) + "\" y1=\"" + n3(y + 0.4) + "\" x2=\"" + n3(k.x + 2.5 + (SP() ? SP().largura(sec.titulo, fs, true) : 10)) + "\" y2=\"" + n3(y + 0.4) + "\" stroke=\"#111\" stroke-width=\"0.15\"/>"; y += fs * 0.5;
+(sec.itens || []).forEach(function (it) {
+quebrar(it, fs, k.w - 8, false).forEach(function (l, i) { y += fs * 1.28; if (y < k.y + altura) s += (i === 0 ? "<text x=\"" + n3(k.x + 3) + "\" y=\"" + n3(y) + "\" font-size=\"" + n3(fs) + "\" fill=\"#111\">&#8226;</text>" : "") + "<text x=\"" + n3(k.x + 5.5) + "\" y=\"" + n3(y) + "\" font-size=\"" + n3(fs) + "\" fill=\"#111\">" + esc(l) + "</text>"; });
+y += fs * 0.3;
+}); y += fs * 0.8;
+});
+return s;
+}
+function carimbo(P, pr, fl, g, rec, ctx) {
+var k = g.carimbo, PR = global.Prancha, ra = PR && PR.modeloCarimbo && PR.modeloCarimbo(pr) === "RA" && PR.carimboRA;
+if (ra) {
+var h = P.carimboRA(pr, fl, g, { imagens: rec.imagens, logo: rec.logo, projeto: rec.projeto, empresa: rec.empresa, editor: false }), m = /<svg\b[^>]*>([\s\S]*)<\/svg>/.exec(h); if (!m) return "";
+var dentro = m[1].replace(/<title>[\s\S]*?<\/title>/g, "").replace(/<image\b[^>]*?\bhref="(data:[^"]+)"([^>]*?)\/?>/g, function (_, uri, resto) {
+var ch = "c" + (ctx.n++); ctx.imagens[ch] = uri;
+var gx = function (a) { return num((new RegExp("\\b" + a + "=\"([^\"]*)\"").exec(resto) || [])[1], 0); };
+return "<image data-im=\"" + ch + "\" data-fit=\"1\" x=\"" + gx("x") + "\" y=\"" + gx("y") + "\" width=\"" + gx("width") + "\" height=\"" + gx("height") + "\"/>";
+});
+return "<g transform=\"translate(" + n3(k.x) + " " + n3(k.y) + ")\">" + dentro + "</g>";
+}
+var c = pr.carimbo || {}, E = rec.empresa || {}, s = "<rect x=\"" + n3(k.x) + "\" y=\"" + n3(k.y) + "\" width=\"" + n3(k.w) + "\" height=\"" + n3(k.h) + "\" fill=\"#fff\"/><line x1=\"" + n3(k.x) + "\" y1=\"" + n3(k.y) + "\" x2=\"" + n3(k.x + k.w) + "\" y2=\"" + n3(k.y) + "\" stroke=\"#111\" stroke-width=\"0.35\"/>";
+var fs = Math.max(5.2, Math.min(7.4, k.w / 30)) * 25.4 / 72, y = k.y;
+function lin(t, neg, cor) { y += fs * 1.4; s += "<text x=\"" + n3(k.x + k.w / 2) + "\" y=\"" + n3(y) + "\" font-size=\"" + n3(fs) + "\" text-anchor=\"middle\"" + (neg ? " font-weight=\"bold\"" : "") + " fill=\"" + (cor || "#111") + "\">" + esc(t) + "</text><line x1=\"" + n3(k.x) + "\" y1=\"" + n3(y + fs * 0.4) + "\" x2=\"" + n3(k.x + k.w) + "\" y2=\"" + n3(y + fs * 0.4) + "\" stroke=\"#111\" stroke-width=\"0.2\"/>"; }
+lin(c.empresa || E.nome || "", true); lin(c.obra || pr.nome || "", true, "#00406A"); lin("CONTEÚDO: " + (fl.conteudo || pr.nome || ""), true);
+lin("RT: " + (c.responsavel || E.responsavel || "")); if (c.local) lin("LOCAL: " + c.local);
+lin("DATA " + txt(c.data) + "   ESC " + txt(fl.escala) + "   COD " + txt(fl.numero || (c.codigo ? c.codigo + "-" + ("0" + fl.n).slice(-2) : "")) + "   FOLHA " + ("0" + fl.n).slice(-2) + "/" + ("0" + (pr.folhas || []).length).slice(-2));
+return s;
+}
+function svgDaFolha(P, pr, fl, rec, geo, dims) {
+rec = rec || {}; dims = dims || {};
+var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {} }, s = "";
+s += "<rect x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\" fill=\"#fff\"/>";
+if (fl.imagemInteira && rec.imagens && rec.imagens[fl.imagemInteira]) {
+ctx.imagens.i0 = rec.imagens[fl.imagemInteira]; s += "<image data-im=\"i0\" x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\"/>";
+} else {
+s += "<rect x=\"" + n3(M.x + 0.25) + "\" y=\"" + n3(M.y + 0.25) + "\" width=\"" + n3(M.w - 0.5) + "\" height=\"" + n3(M.h - 0.5) + "\" fill=\"none\" stroke=\"#111\" stroke-width=\"0.5\"/>";
+(fl.blocos || []).forEach(function (b, i) {
+if (b.tipo === "viewport") s += viewport(P, b, i, rec, ctx);
+else if (b.tipo === "texto") s += blocoTexto(b);
+else if (b.tipo === "tabela") s += blocoTabela(b);
+else if (b.tipo === "vista" || b.tipo === "imagem") {
+var uri = b.tipo === "vista" ? rec.vistas && rec.vistas[b.vistaId || b.origemVista] : rec.imagens && rec.imagens[b.chave];
+if (uri) { var ch = "b" + i; ctx.imagens[ch] = uri; s += "<image data-im=\"" + ch + "\" data-fit=\"1\" x=\"" + n3(b.x) + "\" y=\"" + n3(b.y) + "\" width=\"" + n3(b.w) + "\" height=\"" + n3(b.h) + "\"/>"; }
+if (b.titulo) s += "<text x=\"" + n3(b.x) + "\" y=\"" + n3(b.y + b.h + 4) + "\" font-size=\"3.528\" fill=\"#111\">" + esc(b.titulo) + "</text>";
+}
+});
+s += coluna(P, pr, g) + carimbo(P, pr, fl, g, rec, ctx);
+}
+s = s.replace(/<image data-im="([^"]+)" data-fit="1" x="([^"]*)" y="([^"]*)" width="([^"]*)" height="([^"]*)"\/>/g, function (_, ch, x, y, w, h) {
+var d = dims[ch]; x = +x; y = +y; w = +w; h = +h;
+if (d && d.w > 0 && d.h > 0) { var k = Math.min(w / d.w, h / d.h), nw = d.w * k, nh = d.h * k; x += (w - nw) / 2; y += (h - nh) / 2; w = nw; h = nh; }
+return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
+});
+return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens };
+}
+function gerar(itens, opc) {
+opc = opc || {}; var P = opc.P || global.PranchaUI, SPM = SP();
+var codificar = opc.codificar || codificarNavegador, dimensoes = opc.dimensoes || null;
+var todas = [], pend = [];
+itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
+var uris = {}, dims = {};
+todas.forEach(function (t) { Object.keys(t.imagens).forEach(function (ch) { uris[t.pref + ch] = t.imagens[ch]; }); });
+var chaves = Object.keys(uris), cod = {};
+var seq = Promise.resolve();
+chaves.forEach(function (k) { seq = seq.then(function () { return codificar(uris[k]); }).then(function (r) { if (r && (typeof r.flate === "string" || typeof r.jpeg === "string")) { cod[k] = r; dims[k] = { w: r.pxW, h: r.pxH }; } }); });
+return seq.then(function () {
+var svgs = todas.map(function (t) {
+var d = {}; Object.keys(t.imagens).forEach(function (ch) { if (dims[t.pref + ch]) d[ch] = dims[t.pref + ch]; });
+var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d);
+return r1.svg.replace(/data-im="([^"]+)"/g, function (_, ch) { return "data-im=\"" + t.pref.replace(/[^A-Za-z0-9]/g, "") + ch + "\""; });
+});
+var porChave = {}; Object.keys(cod).forEach(function (k) { porChave[k.replace(/[^A-Za-z0-9]/g, "")] = cod[k]; });
+var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave });
+return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs };
+});
+}
+function binario(u8) { var s = "", n = 0x8000; for (var i = 0; i < u8.length; i += n) s += String.fromCharCode.apply(null, u8.subarray(i, i + n)); return s; }
+function codificarNavegador(uri, opc) {
+opc = opc || {};
+return new Promise(function (res) {
+var im = new global.Image();
+im.onload = function () {
+try {
+var w = im.naturalWidth || im.width || 1, h = im.naturalHeight || im.height || 1, lado = opc.maxPx || 8192;
+if (/^data:image\/svg/.test(uri) || !(im.naturalWidth > 0)) { var q = Math.max(1, 2400 / Math.max(w, h)); w = Math.round(w * q); h = Math.round(h * q); }
+if (Math.max(w, h) > lado) { var r = lado / Math.max(w, h); w = Math.round(w * r); h = Math.round(h * r); }
+var cv = global.document.createElement("canvas"); cv.width = w; cv.height = h;
+var cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h); cx.drawImage(im, 0, 0, w, h);
+if (typeof global.CompressionStream === "function") {
+var px = cx.getImageData(0, 0, w, h).data, rgb = new Uint8Array(w * h * 3);
+for (var i = 0, j = 0; i < px.length; i += 4) { rgb[j++] = px[i]; rgb[j++] = px[i + 1]; rgb[j++] = px[i + 2]; }
+var cs = new global.CompressionStream("deflate"), blob = new global.Blob([rgb]).stream().pipeThrough(cs);
+new global.Response(blob).arrayBuffer().then(function (ab) { res({ flate: binario(new Uint8Array(ab)), pxW: w, pxH: h }); }, function () { res(null); });
+return;
+}
+var j2 = cv.toDataURL("image/jpeg", 0.97).split(",")[1], bin = global.atob(j2);
+res({ jpeg: bin, pxW: w, pxH: h });
+} catch (e) { res(null); }
+};
+im.onerror = function () { res(null); };
+im.src = uri;
+});
+}
+var FolhaPdf = { svgDaFolha: svgDaFolha, gerar: gerar, resolverCss: resolverCss, codificarNavegador: codificarNavegador };
+global.FolhaPdf = FolhaPdf;
+if (typeof module !== "undefined" && module.exports) module.exports = FolhaPdf;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalfabdes.js ==== */
@@ -105123,6 +105404,7 @@ def(COMUM, [
 "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
 "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
 "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
+"travar-vista", "salvar-vista-3d", "duplicar-folha", "excluir-folha",
 "gerar-pranchas",
 "prancha-viva",
 "explodir", "explodir-geral", "explodir-paineis", "explodir-niveis", "explodir-coberturas", "explodir-montar", "cotas-vivas",
@@ -110169,7 +110451,9 @@ return D.Acima.topo(this.acimaCfg(d.id), d.nivel.y, yCorte, this.niveis());
 },
 idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
 idCorte: function (cid) { return "d2c-" + cid; },
-ehVista2d: function (id) { return /^d2[pcv]-/.test(String(id || "")); },
+ehVista2d: function (id) { return /^d2[pcve]-/.test(String(id || "")); },
+DIRS_ELEV: ["norte", "sul", "leste", "oeste"],
+idElevacao: function (dir) { return "d2e-" + dir; },
 def: function (id) {
 var M6 = this._p6(), d = this._defBase(id) || (M6 ? this._p6Def(id) : null);
 return d && M6 ? M6.nomear(id, d) : d;
@@ -110181,6 +110465,12 @@ var nv = null; this.niveis().forEach(function (n) { if (self.idPlanta(n.id) === 
 if (!nv) return null;
 var pp = this.estado().plantas[nv.id] || {};
 return { id: id, tipo: "planta", nome: "Planta baixa — " + nv.nome, nivel: nv, altura: num(pp.altura, 1.2), abaixo: num(pp.abaixo, 0.05) };
+}
+if (/^d2e-/.test(id)) {
+var dirE = String(id).slice(4); if (this.DIRS_ELEV.indexOf(dirE) < 0) return null;
+var pE = B() && B().pavimentos2d ? B().pavimentos2d() : null; if (!pE || !(pE.caixaEdif || pE.caixa)) return null;
+var lnE = this.linhaElevacao(dirE, pE.caixaEdif || pE.caixa), NOM = { norte: "Elevação Norte", sul: "Elevação Sul", leste: "Elevação Leste", oeste: "Elevação Oeste" };
+return { id: id, tipo: "corte", elev: dirE, nome: NOM[dirE], corte: { id: id, letra: "", ax: lnE.ax, az: lnE.az, bx: lnE.bx, bz: lnE.bz, inv: false, prof: lnE.prof } };
 }
 if (/^d2c-/.test(id)) {
 var c = null; this.estado().cortes.forEach(function (x) { if (self.idCorte(x.id) === id) c = x; });
@@ -110236,7 +110526,7 @@ return { ok: true, tipo: ehCorte ? "corte" : "planta", vazio: true, area: area, 
 },
 _extrairModelo: function (d) {
 var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
-if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }
+if (this._p6() && !/^d2e-/.test(String(d.id))) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }
 if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, instAssinc: !!this._assinc, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });
 var c = d.corte;
 return b.vista2d({ tipo: "corte", ax: c.ax, az: c.az, bx: c.bx, bz: c.bz, inv: !!c.inv, prof: c.prof > 0 ? c.prof : null, p6Tag: true, instAssinc: !!this._assinc });
@@ -184564,6 +184854,69 @@ var id = this.idFolha(salvo.id, pr.folhas[pr.folhas.length - 1].id);
 this.abrir(id);
 return id;
 },
+_apagadas: [],
+_proximoNumero: function (pr, f) {
+var usados = {}; arr(pr.folhas).forEach(function (x) { usados[PR().numeroFolha(pr, x)] = 1; });
+var m = /^(.*?)(\d+)$/.exec(String(f.numero || "")); if (!m) return "";
+var larg = m[2].length, n = parseInt(m[2], 10);
+for (var i = 1; i < 500; i++) { var cand = m[1] + ("000000" + (n + i)).slice(-Math.max(larg, String(n + i).length)); if (!usados[cand]) return cand; }
+return "";
+},
+duplicarFolha: function (id) {
+var a = this.achar(id); if (!a) { toast("Folha não encontrada.", "aviso"); return null; }
+var reg = clone(a.reg), pr = PR().normalizar(reg), f = clone(a.folha), n = 1;
+pr.folhas.forEach(function (x) { n = Math.max(n, x.n + 1); });
+var ids = {}; pr.folhas.forEach(function (x) { ids[x.id] = 1; });
+var novoId = "f" + Date.now().toString(36) + n; while (ids[novoId]) novoId += "x";
+f.id = novoId; f.n = n; f.auto = ""; f.numero = this._proximoNumero(pr, a.folha);
+f.conteudo = (f.conteudo || "Folha") + " (cópia)";
+pr.folhas.push(f);
+pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+var salvo = this.salvarRegistro(pr, true); if (!salvo) return null;
+var nid = this.idFolha(salvo.id, novoId);
+try { var g = this.G(); if (g && g._nivArvore) g._nivArvore(); } catch (e) {}
+this.abrir(nid);
+status("Folha duplicada: " + this.nomeFolha(PR().normalizar(salvo), f) + ".");
+return nid;
+},
+excluirFolha: function (id, sim) {
+var a = this.achar(id); if (!a) { toast("Folha não encontrada.", "aviso"); return false; }
+var self = this, nome = this.nomeFolha(a.pr, a.folha);
+if (sim !== true) {
+global.UI.modal("Excluir a folha?", '<p style="font-size:13px;line-height:1.5">A folha <b>' + esc(nome) + '</b> sai do conjunto' + (a.folha.auto ? " (é uma folha GERADA: \"Gerar pranchas\" de novo a recria)" : "") +
+'. As vistas (plantas, cortes, elevações, 3D) <b>continuam no projeto</b>; só o quadro delas nesta folha some. Dá para desfazer em Navegador › Folhas.</p>',
+[{ texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } }, { texto: "Excluir folha", classe: "danger", onClick: function () { global.UI.fecharModal(); self.excluirFolha(id, true); } }]);
+return true;
+}
+var reg = clone(a.reg), pr = PR().normalizar(reg);
+this._apagadas.push({ obra: this.obraKey(), regId: String(reg.id), folha: clone(a.folha), ix: a.ix, nome: nome, em: Date.now() });
+if (this._apagadas.length > 20) this._apagadas.shift();
+pr.folhas.splice(a.ix, 1);
+pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+var salvo = this.salvarRegistro(pr, true); if (!salvo) { this._apagadas.pop(); return false; }
+try { var g = this.G(); if (g && g._bimVxFechar && g._bimVxAchar && g._bimVxAchar(id)) g._bimVxFechar(id); } catch (e) {}
+this.desmontar(id); this._sel = null;
+try { var g2 = this.G(); if (g2 && g2._nivArvore) g2._nivArvore(); } catch (e2) {}
+status("Folha excluída: " + nome + " (Navegador › Folhas › Desfazer exclusão).");
+toast("Folha excluída: " + nome + ". Desfazer em Navegador › Folhas.", "info");
+return true;
+},
+ultimaApagada: function () { var k = this.obraKey(), l = this._apagadas.filter(function (x) { return x.obra === k; }); return l[l.length - 1] || null; },
+desfazerExclusao: function () {
+var k = this.obraKey(), u = this.ultimaApagada(); if (!u) { toast("Nenhuma exclusão de folha para desfazer.", "aviso"); return null; }
+var reg = this.registros().filter(function (r) { return String(r.id) === u.regId; })[0];
+if (!reg) { this._apagadas = this._apagadas.filter(function (x) { return x !== u; }); toast("O conjunto dessa folha não existe mais.", "aviso"); return null; }
+var pr = PR().normalizar(clone(reg)), ids = {}; pr.folhas.forEach(function (x) { ids[x.id] = 1; });
+var f = clone(u.folha); if (ids[f.id]) f.id += "r";
+pr.folhas.splice(Math.min(u.ix, pr.folhas.length), 0, f);
+pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
+var salvo = this.salvarRegistro(pr, true); if (!salvo) return null;
+this._apagadas = this._apagadas.filter(function (x) { return x !== u; });
+try { var g = this.G(); if (g && g._nivArvore) g._nivArvore(); } catch (e) {}
+var nid = this.idFolha(salvo.id, f.id); this.abrir(nid);
+status("Exclusão desfeita: " + u.nome + ".");
+return nid;
+},
 abrir: function (id) {
 var g = this.G(), a = this.achar(id); if (!g || !a) return null;
 var st = g._bimVxEst(), v = g._bimVxAchar(id), nome = "Folha: " + this.nomeFolha(a.pr, a.folha);
@@ -184589,6 +184942,7 @@ return this.pintar(id);
 },
 desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
 desenho: function (vistaId, refazer, escala, semInst) {
+if (/^d3:/.test(String(vistaId))) return this._desenho3d(vistaId);
 var obraK = this.obraKey();
 if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
 var tagSI = semInst === "arquitetura" || semInst === "estrutural" ? semInst : "";
@@ -184616,6 +184970,117 @@ return o;
 },
 chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
 desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst); },
+DPI_3D: 300, LADO_MAX_3D: 8192, ESCALA_NOMINAL_3D: 100,
+_chave3d: function (id) { return this.obraKey() + "|" + id; },
+_idb3d: function (id) { return "folha3d:" + this.obraKey() + ":" + String(id).replace(/^d3:/, ""); },
+_desenho3d: function (id) {
+var e = (this._d3 || {})[this._chave3d(id)];
+if (!e) { this._carregar3d(id); return null; }
+var N = this.ESCALA_NOMINAL_3D, W = e.wMm * N / 1000, H = e.hMm * N / 1000;
+var svg = '<svg xmlns="http://www.w3.org/2000/svg" class="d2-svg" data-d2-tipo="3d" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet"><image href="' + e.uri + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none"/></svg>';
+return { vistaId: id, nome: e.nome, tipo: "3d", svg: svg, vb: { x: 0, y: 0, w: W, h: H }, escala: N, pena: "", penasPx: {}, dados: null, estilo: {}, def: null, pxW: e.pxW, pxH: e.pxH, wMm: e.wMm, hMm: e.hMm };
+},
+_carregar3d: function (id) {
+var self = this, k = this._chave3d(id); this._d3 = this._d3 || {}; this._d3Lendo = this._d3Lendo || {};
+if (this._d3Lendo[k] || !global.Idb) return;
+this._d3Lendo[k] = 1;
+Promise.resolve(global.Idb.get(this._idb3d(id))).then(function (v) {
+if (v && v.uri) { self._d3[k] = v; Object.keys(self._telas).forEach(function (t) { try { self.pintar(t); } catch (e) {} }); }
+})["catch"](function () {}).then(function () { delete self._d3Lendo[k]; });
+},
+_guardar3d: function (id, e) {
+this._d3 = this._d3 || {}; this._d3[this._chave3d(id)] = e;
+try { if (global.Idb) Promise.resolve(global.Idb.set(this._idb3d(id), e))["catch"](function () {}); } catch (x) {}
+},
+capturar3d: function (id, wMm, hMm) {
+var self = this, BIM = global.BIM, raw = String(id).replace(/^d3:/, "");
+if (!BIM || !BIM.desenharQuadroEm) return Promise.reject(new Error("O visualizador 3D ainda não abriu: abra o modelo da obra."));
+var px = Math.max(64, Math.round(wMm / 25.4 * this.DPI_3D)), py = Math.round(px * hMm / wMm), lado = this.LADO_MAX_3D;
+if (Math.max(px, py) > lado) { var r = lado / Math.max(px, py); px = Math.round(px * r); py = Math.round(py * r); }
+var g = this.G(), v = null, antes = null, nome = "Vista 3D";
+try { antes = BIM.estadoVista ? BIM.estadoVista() : null; } catch (e0) {}
+if (raw !== "atual") { v = g && g._bimVistaDe ? g._bimVistaDe(raw) : null; if (!v) return Promise.reject(new Error("A vista 3D salva não existe mais.")); nome = v.nome; }
+var espera = function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); };
+var p = Promise.resolve();
+if (v) p = p.then(function () { try { BIM.aplicarVista(v); } catch (e1) { throw new Error("Não consegui aplicar a vista 3D."); } return espera(450); });
+return p.then(function () {
+var cv = BIM.desenharQuadroEm("#ffffff", px, py, { semGrade: true, ajustar: true });
+if (!cv || !cv.width) throw new Error("O 3D não devolveu a imagem (modelo aberto?).");
+var uri = cv.toDataURL("image/png");
+return { uri: uri, pxW: cv.width, pxH: cv.height, wMm: wMm, hMm: hMm, nome: nome, dpi: Math.round(cv.width / (wMm / 25.4)) };
+}).then(function (r) { self._restaurar3d(antes); return r; }, function (e) { self._restaurar3d(antes); throw e; });
+},
+_restaurar3d: function (antes) {
+if (!antes || !global.BimVista || !global.BIM) return;
+try { BIM.aplicarVista(BimVista.vista({ nome: "_antes", completa: true, camera: antes.camera, cortes: antes.cortes, visibilidade: antes.visibilidade, aparencias: antes.aparencias, modelos: antes.modelos, estilo: antes.estilo, medidas: antes.medidas, cotaRede: antes.cotaRede })); } catch (e) {}
+},
+vistasExtras: function () {
+var L = [], b2 = B2(), g = this.G();
+if (b2 && b2.DIRS_ELEV) b2.DIRS_ELEV.forEach(function (d) { var id = b2.idElevacao(d), df = b2.def(id); if (df) L.push({ id: id, nome: df.nome, tipo: "Elevação", escala: b2.estilo(id).escala }); });
+L.push({ id: "d3:atual", nome: "Vista 3D atual", tipo: "Vista 3D", escala: 0 });
+var sv = []; try { sv = g && g._bimVistaDaObra ? g._bimVistaDaObra() : []; } catch (e) {}
+arr(sv).forEach(function (v) { if (v && v.camera && !v.hid3d && !v.hidIso) L.push({ id: "d3:" + v.id, nome: v.nome, tipo: "Vista 3D", escala: 0 }); });
+return L;
+},
+lugarLivre: function (a, w, h) {
+var ar = a.geo.area, T = 12, M = 3, ocup = arr(a.folha.blocos).map(function (b) { return { x: b.x, y: b.y, w: b.w, h: b.h + (b.tipo === "viewport" ? T : 0) }; });
+for (var y = ar.y + 2; y + h + T <= ar.y + ar.h + 0.01; y += 5) for (var x = ar.x + 2; x + w <= ar.x + ar.w + 0.01; x += 5) {
+var bate = ocup.some(function (o) { return x < o.x + o.w + M && x + w + M > o.x && y < o.y + o.h + M && y + h + T + M > o.y; });
+if (!bate) return { x: x, y: y };
+}
+return null;
+},
+_caber: function (id, ix) {
+var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b) return;
+var ar = a.geo.area, f = clone(a.folha), q = f.blocos[ix];
+q.x = Math.round(Math.max(ar.x, Math.min(q.x, ar.x + ar.w - q.w)) * 10) / 10; q.y = Math.round(Math.max(ar.y, Math.min(q.y, ar.y + ar.h - q.h - 12)) * 10) / 10;
+if (q.x !== b.x || q.y !== b.y) this.gravarFolha(a, f);
+},
+posicionar3d: function (id, vistaId, cx, cy) {
+var self = this, a = this.achar(id); if (!a) return Promise.resolve({ ok: false, erro: "Folha não encontrada." });
+var ar = a.geo.area, wMm = Math.round(Math.min(ar.w * 0.6, (ar.h - 14) * 1.5, 260)), hMm = Math.round(wMm / 1.5);
+if (cx == null || cy == null) {
+var sp = null; while (!(sp = this.lugarLivre(a, wMm, hMm)) && wMm > 80) { wMm = Math.round(wMm * 0.85); hMm = Math.round(wMm / 1.5); }
+if (sp) { cx = sp.x + wMm / 2; cy = sp.y + hMm / 2; }
+}
+status("Fotografando a vista 3D em " + this.DPI_3D + " dpi…");
+return this.capturar3d(vistaId, wMm, hMm).then(function (e) {
+self._guardar3d(vistaId, e);
+var a2 = self.achar(id), dz = self._desenho3d(vistaId);
+var todas = self.registros().map(function (r) { return PR().normalizar(r); });
+var r = PR().colocarViewport(a2.pr, a2.folha, { vistaId: vistaId, nome: e.nome, escala: self.ESCALA_NOMINAL_3D, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
+if (!r.ok) { toast(r.erro, "aviso"); return r; }
+self.gravarFolha(a2, r.folha); self._caber(id, r.folha.blocos.length - 1); self._sel = { id: id, ix: r.folha.blocos.length - 1 };
+self.pintar(id); self._pintarProps();
+status(e.nome + " na folha: " + wMm + " × " + hMm + " mm, imagem " + e.pxW + " × " + e.pxH + " px (" + e.dpi + " dpi).");
+return r;
+}, function (er) { toast("Vista 3D: " + (er && er.message || er), "erro"); return { ok: false, erro: String(er && er.message || er) }; });
+},
+garantir3d: function (itens) {
+var self = this, fila = [], vistos = {};
+arr(itens).forEach(function (a) { arr(a.folha.blocos).forEach(function (b) {
+if (b.tipo !== "viewport" || !/^d3:/.test(b.vistaId)) return;
+var k = b.vistaId, ex = vistos[k]; if (ex) { ex.w = Math.max(ex.w, b.w); ex.h = Math.max(ex.h, b.h); return; }
+vistos[k] = { id: k, w: b.w, h: b.h }; fila.push(vistos[k]);
+}); });
+var seq = Promise.resolve();
+fila.forEach(function (q) {
+seq = seq.then(function () {
+var e = (self._d3 || {})[self._chave3d(q.id)], dpi = e ? e.pxW / (q.w / 25.4) : 0;
+if (e && dpi >= self.DPI_3D - 1) return null;
+return self.capturar3d(q.id, q.w, q.h).then(function (n) { self._guardar3d(q.id, n); }, function () { return null; });
+});
+});
+return seq;
+},
+atualizar3d: function (id) {
+var self = this, a = this.achar(id); if (!a) return Promise.resolve(false);
+var vistos = {}; arr(a.folha.blocos).forEach(function (b) { if (b.tipo === "viewport" && /^d3:/.test(b.vistaId)) vistos[b.vistaId] = b; });
+var ids = Object.keys(vistos); if (!ids.length) { toast("Esta folha não tem vista 3D.", "aviso"); return Promise.resolve(false); }
+var seq = Promise.resolve();
+ids.forEach(function (v) { seq = seq.then(function () { return self.capturar3d(v, vistos[v].w, vistos[v].h).then(function (n) { self._guardar3d(v, n); }); }); });
+return seq.then(function () { self.pintar(id); toast("Vista 3D atualizada (" + self.DPI_3D + " dpi).", "ok"); return true; }, function (e) { toast("Vista 3D: " + (e && e.message || e), "erro"); return false; });
+},
 _sincronizar: function (a) {
 var self = this, mudou = false, f = clone(a.folha);
 f.blocos.forEach(function (b) {
@@ -184792,14 +185257,28 @@ c.tabIndex = 0;
 },
 _pintarBarra: function (id) { var t = this._telas[id], b = t && t.el && t.el.querySelector(".pv-barra"); if (!b) return; var d = document.createElement("div"); d.innerHTML = this._barra(id); b.parentNode.replaceChild(d.firstChild, b); this._ajustar(id); },
 posicionar: function (id, vistaId, cx, cy) {
+if (/^d3:/.test(String(vistaId))) return this.posicionar3d(id, vistaId, cx, cy);
 var a = this.achar(id); if (!a) return { ok: false, erro: "Folha não encontrada." };
-var b2 = B2(); if (!b2 || !b2.ehVista2d(vistaId)) { toast("Arraste uma planta ou um corte do Navegador (Vistas › Plantas de piso / Cortes).", "aviso"); return { ok: false, erro: "não é vista 2D" }; }
+var b2 = B2(); if (!b2 || !b2.ehVista2d(vistaId)) { toast("Arraste uma planta, um corte, uma elevação ou uma vista 3D do Navegador.", "aviso"); return { ok: false, erro: "não é vista 2D" }; }
 var dz = this.desenho(vistaId, true);
 if (!dz) { toast("Não consegui desenhar a vista: abra o modelo da obra primeiro.", "erro"); return { ok: false, erro: "sem desenho" }; }
 var todas = this.registros().map(function (r) { return PR().normalizar(r); });
-var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: dz.escala, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
+var escE = dz.escala;
+if (/^d2e-/.test(String(vistaId))) {
+var ar0 = a.geo.area, cand = [10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000], achou = false;
+for (var ci = 0; ci < cand.length && !achou; ci++) {
+var wE = dz.vb.w * 1000 / cand[ci], hE = dz.vb.h * 1000 / cand[ci];
+if (wE > ar0.w - 4 || hE + 12 > ar0.h - 4) continue;
+var sp = (cx == null || cy == null) ? this.lugarLivre(a, wE, hE) : { x: cx - wE / 2, y: cy - hE / 2 };
+if (sp) { escE = cand[ci]; if (cx == null || cy == null) { cx = sp.x + wE / 2; cy = sp.y + hE / 2; } achou = true; }
+}
+}
+var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, escala: escE, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: cx, cy: cy, repetir: true }, todas);
 if (!r.ok) { toast(r.erro, "aviso"); return r; }
 this.gravarFolha(a, r.folha);
+var ixE = r.folha.blocos.length - 1;
+if (escE !== dz.escala) this.trocarEscala(id, ixE, escE);
+this._caber(id, ixE); var a3 = this.achar(id); if (a3) { r.folha = a3.folha; r.bloco = a3.folha.blocos[ixE]; }
 this._sel = { id: id, ix: r.folha.blocos.length - 1 };
 this.pintar(id); this._pintarProps();
 status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
@@ -185058,9 +185537,12 @@ else if (p.bip === "SHEET_GUIDE_GRID") outros.push(q);
 else ident.push(q);
 });
 graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
-outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Imprimir / PDF", fn: function () { self.pdf([id]); } });
+outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Gerar PDF", fn: function () { self.pdfVetorial([id]); } });
+outros.push({ id: "duplicar", rotulo: "Duplicar esta folha", tipo: "botao", rotuloBotao: "Duplicar folha", fn: function () { self.duplicarFolha(id); } });
+outros.push({ id: "excluir", rotulo: "Excluir esta folha", tipo: "botao", rotuloBotao: "Excluir folha…", fn: function () { self.excluirFolha(id); } });
 outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
 outros.push({ id: "cad", rotulo: "CAD único do conjunto", tipo: "botao", rotuloBotao: "Arquivo CAD único", fn: function () { self.exportarCad(id); } });
+if (arr(a.folha.blocos).some(function (b) { return b.tipo === "viewport" && /^d3:/.test(b.vistaId); })) outros.push({ id: "atualizar3d", rotulo: "Vista 3D", tipo: "botao", rotuloBotao: "Atualizar vista 3D", fn: function () { self.atualizar3d(id); } });
 outros.push({ id: "atualizar", rotulo: "Modelo mudou?", tipo: "botao", rotuloBotao: "Atualizar vistas", fn: function () { self._desenhos = {}; self.pintar(id); } });
 return {
 daVista: true, semEditarTipo: true, titulo: "Folha: " + this.nomeFolha(a.pr, a.folha), icone: "prancha",
@@ -185250,7 +185732,7 @@ if (this.ehFolha(id)) {
 var a = this.achar(id); if (!a) return null;
 if (/^hidsvg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
 var vps = {}, self = this;
-a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz && dz.tipo !== "3d") vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
 var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
 var doc = X.daFolha(a.pr, a.folha, a.geo, vps, { projeto: this.projeto(), empresa: this.empresaDados(), logo: !!logoConta });
 var nome = PR().nomeArquivo(a.pr, a.folha, this.projeto(), "dxf");
@@ -185295,7 +185777,7 @@ partes: global.BimCadUI ? global.BimCadUI.partesHidro({ folhas: fols }) : null }
 if (comuns.length) {
 var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
 var folhas = comuns.map(function (f) {
-var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz) vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
+var vps = {}; arr(f.blocos).forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz && dz.tipo !== "3d") vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
 return { folha: f, vps: vps, nome: PR().numeroFolha(pr, f) };
 });
 var nc = nomesDe(misto ? " - folhas" : ""), mk = function (lista, dxfNome, dwgNome) { return BC.paraCadFolhas({ pr: pr, geo: a.geo, projeto: self.projeto(), empresa: self.empresaDados(), logo: !!logoConta, folhas: lista }, { disciplina: opc.disciplina || "geral", dxfNome: dxfNome, dwgNome: dwgNome }); };
@@ -185354,6 +185836,32 @@ jan.document.open(); jan.document.write(html); jan.document.close();
 setTimeout(function () { try { jan.focus(); jan.print(); } catch (e) {} }, 700);
 return { titulo: titulo, folhas: itens.length };
 },
+pdfVetorial: function (ids) {
+var self = this, itens = [], projeto = this.projeto(), FPd = global.FolhaPdf;
+if (!FPd) { toast("O módulo de PDF não carregou.", "erro"); return Promise.resolve(null); }
+arr(ids).forEach(function (id) { var a = self.achar(id); if (a) itens.push(a); });
+if (!itens.length) { toast("Nenhuma folha para gerar o PDF.", "aviso"); return Promise.resolve(null); }
+var nome = itens.length === 1 ? PR().nomeArquivo(itens[0].pr, itens[0].folha, projeto, "pdf") : PR().nomeArquivoLote(itens[0].pr, itens.map(function (a) { return a.folha; }), "pdf");
+var lista = itens.map(function (a) { var rec = self.recursos(a, false); rec.projeto = projeto; return { pr: a.pr, folha: a.folha, rec: rec, geo: a.geo }; });
+status("Gerando o PDF vetorial…");
+return Promise.resolve(self._garantir3d(itens)).then(function () {
+lista.forEach(function (it, i) { var rec = self.recursos(itens[i], false); rec.projeto = projeto; it.rec = rec; });
+return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, "") });
+}).then(function (r) {
+var d = r.bytes;
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, d, "application/pdf", ""); if (!wT) return null; nome = wT.nome; d = wT.dados; }
+self._ultimoArquivo = { nome: nome, bytes: d, tamanho: d.length, vetorial: true, paginas: r.paginas, imagens: r.imagens };
+try {
+var url = URL.createObjectURL(new Blob([d], { type: "application/pdf" })), el = document.createElement("a");
+el.href = url; el.download = nome; document.body.appendChild(el); el.click(); el.remove();
+setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+} catch (e) {}
+var mb = d.length / 1048576;
+toast("PDF vetorial: " + nome + " (" + r.paginas + " folha" + (r.paginas > 1 ? "s" : "") + ", " + (mb >= 1 ? mb.toFixed(1) + " MB" : Math.round(d.length / 1024) + " KB") + ")." + (mb > 30 ? " Arquivo grande: reduza as vistas 3D da folha." : ""), mb > 30 ? "aviso" : "ok");
+return { nome: nome, tamanho: d.length, paginas: r.paginas };
+})["catch"](function (e) { toast("Não consegui gerar o PDF: " + (e && e.message || e), "erro"); return null; });
+},
+_garantir3d: function (itens) { return this.garantir3d(itens); },
 pdfLote: function () {
 var self = this, regs = this.registros().filter(function (r) { return r.origem === "folhas" || arr(r.folhas).some(function (f) { return arr(f.blocos).some(function (b) { return b.tipo === "viewport"; }); }); });
 var itens = [];
@@ -185361,17 +185869,17 @@ regs.forEach(function (r) { var pr = PR().normalizar(r); pr.folhas.forEach(funct
 if (!itens.length) { toast("Nenhuma folha ainda: Vista › Folha.", "aviso"); return null; }
 global.UI.modal("PDF em lote", '<p class="muted" style="font-size:12px;margin:0 0 6px">As folhas marcadas saem num documento só, cada uma no tamanho do papel dela. Nome automático: número - nome - revisão.</p>' +
 itens.map(function (it) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-lote="' + esc(it.id) + '"> ' + esc(it.rot) + ' <span class="muted">(' + esc(it.arq) + ")</span></label>"; }).join(""),
-[{ texto: "Imprimir / PDF", classe: "primary", onClick: function () {
+[{ texto: "Gerar PDF", classe: "primary", onClick: function () {
 var ids = [].slice.call(document.querySelectorAll("[data-pv-lote]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-lote"); });
-global.UI.fecharModal(); self.pdf(ids);
+global.UI.fecharModal(); self.pdfVetorial(ids);
 } }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
 return itens;
 },
 escolherVista: function () {
 var self = this, g = this.G(), st = g && g._bimVxEst(), id = st && st.ativa;
 if (!this.ehFolha(id)) { toast("Abra uma folha primeiro (Navegador › Folhas ou Vista › Folha).", "aviso"); return; }
-var vs = this.vistas2d(); if (!vs.length) { toast("Nenhuma planta ou corte ainda.", "aviso"); return; }
-global.UI.modal("Posicionar vista", vs.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="radio" name="pv-vs" value="' + esc(v.id) + '"> ' + esc(v.nome) + " · 1:" + esc(v.escala) + "</label>"; }).join(""),
+var vs = this.vistas2d().concat(this.vistasExtras()); if (!vs.length) { toast("Nenhuma planta ou corte ainda.", "aviso"); return; }
+global.UI.modal("Posicionar vista", vs.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="radio" name="pv-vs" value="' + esc(v.id) + '"> ' + esc(v.nome) + (v.escala ? " · 1:" + esc(v.escala) : " · " + esc(v.tipo)) + "</label>"; }).join(""),
 [{ texto: "Posicionar", classe: "primary", onClick: function () { var r = document.querySelector('input[name="pv-vs"]:checked'); global.UI.fecharModal(); if (r) self.posicionar(id, r.value); } },
 { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
 },
@@ -185610,7 +186118,9 @@ var pr = PR().normalizar(r);
 pr.folhas.forEach(function (f) {
 n++;
 var id = self.idFolha(r.id, f.id);
-filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ? " (" + pr.nome + ")" : ""), icone: "prancha", fn: function () { self.abrir(id); } });
+filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ? " (" + pr.nome + ")" : ""), icone: "prancha", fn: function () { self.abrir(id); },
+menu: [{ id: "fl-abrir", rotulo: "Abrir", fn: function () { self.abrir(id); } }, { id: "fl-duplicar", rotulo: "Duplicar folha", fn: function () { self.duplicarFolha(id); } },
+{ id: "fl-pdf", rotulo: "Gerar PDF desta folha", fn: function () { self.pdfVetorial([id]); } }, { id: "fl-excluir", rotulo: "Excluir folha…", fn: function () { self.excluirFolha(id); } }] });
 });
 });
 filhos.unshift({ id: "fl:gerar", rotulo: "Gerar pranchas…", icone: "prancha", fn: function () { self.abrirGerar(); } });
@@ -185618,6 +186128,7 @@ if (global.PranchaVivaUI) filhos.unshift({ id: "fl:viva", rotulo: "Prancha Viva 
 if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
 if (global.ArqPranchasUI && global.ArqPranchasUI.abrirArranjo) filhos.splice(2, 0, { id: "fl:arranjo-arq", rotulo: "Arranjo das folhas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrirArranjo(); } });
 filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
+var ua = this.ultimaApagada(); if (ua) filhos.push({ id: "fl:desfazer-excl", rotulo: "↩ Desfazer exclusão: " + ua.nome, icone: "prancha", fn: function () { self.desfazerExclusao(); } });
 return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
 },
 registrar: function (reg, G) {
@@ -185638,6 +186149,16 @@ R.acrescentar("vista", "Vista", "Exportar", [
 { id: "exportar-dwg", rotulo: "DWG", icone: "exportar", dica: "DWG do conjunto de folhas aberto (app instalado: o conversor roda neste computador). Sem o app, explica e entrega o arquivo CAD único em DXF (o AutoCAD salva em DWG)." },
 { id: "pdf-lote", rotulo: "PDF em\nlote", icone: "imprimir", grande: true, dica: "Várias folhas num PDF só, cada uma no tamanho do papel, com o nome automático (número - nome - revisão)." }
 ]);
+R.acrescentar("vista", "Vista", "Vista 3D e folha", [
+{ id: "travar-vista", rotulo: "Travar\nvista", icone: "cadeado", grande: true, dica: "Trava a câmera do 3D (cadeado): ela não gira nem dá zoom por engano. Clique de novo para destravar." },
+{ id: "salvar-vista-3d", rotulo: "Salvar como\nvista 3D", icone: "camera", grande: true, dica: "Guarda a câmera, o ângulo, os cortes e o estilo do 3D como uma vista com nome (3D - Isométrica 1…) em Navegador › Vistas 3D. Arraste-a para uma folha." },
+{ id: "duplicar-folha", rotulo: "Duplicar\nfolha", icone: "prancha", grande: true, dica: "Cópia da folha aberta com as mesmas vistas e o mesmo carimbo, número seguinte e nome \"… (cópia)\"." },
+{ id: "excluir-folha", rotulo: "Excluir\nfolha", icone: "lixeira", grande: true, dica: "Exclui a folha aberta (com confirmação; as vistas continuam no projeto). Dá para desfazer em Navegador › Folhas." }
+]);
+reg["travar-vista"] = function () { var g = self.G(); return !!(g && g._bimVistaTravar && g._bimVistaTravar() !== null); };
+reg["salvar-vista-3d"] = function () { var g = self.G(); return !!(g && g._bimVistaSalvar3d && g._bimVistaSalvar3d()); };
+reg["duplicar-folha"] = function () { var g = self.G(), st = g && g._bimVxEst && g._bimVxEst(); if (!st || !self.ehFolha(st.ativa)) { toast("Abra uma folha para duplicar.", "aviso"); return false; } return !!self.duplicarFolha(st.ativa); };
+reg["excluir-folha"] = function () { var g = self.G(), st = g && g._bimVxEst && g._bimVxEst(); if (!st || !self.ehFolha(st.ativa)) { toast("Abra uma folha para excluir.", "aviso"); return false; } return !!self.excluirFolha(st.ativa); };
 reg["gerar-pranchas"] = function () { return self.abrirGerar(); };
 reg["nova-folha"] = function () { return !!self.novaFolha(); };
 reg["posicionar-vista"] = function () { self.escolherVista(); return true; };

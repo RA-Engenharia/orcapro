@@ -12443,6 +12443,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!S || !S.alive || !renderer || larg < 8 || alt < 8) return null;
     var prevBg = scene.background, vLn = _selLn ? _selLn.visible : null;
     var vSolo = solo.grupo ? solo.grupo.visible : null;
+    var grades = [];   /* opts.semGrade (a vista 3D da folha): a GRADE do chão (GridHelper) fica fora da foto e volta depois */
+    if (opts.semGrade) scene.traverse(function (o) { if ((o.isGridHelper || o.type === 'GridHelper') && o.visible) { grades.push(o); o.visible = false; } });
+    var pos0 = camera.position.clone(), q0 = camera.quaternion.clone();   /* opts.ajustar: a câmera é restaurada no fim */
     var pr = renderer.getPixelRatio(), asp = camera.aspect, fov = camera.fov, out = null;
     try {
       if (fundo) scene.background = new THREE.Color(fundo);
@@ -12452,6 +12455,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var na = larg / alt;
       if (na < asp) camera.fov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) * asp / na) * 180 / Math.PI;
       camera.aspect = na; camera.updateProjectionMatrix();
+      /* opts.ajustar (a vista 3D da folha): o modelo VISÍVEL ocupa ~92% do quadro — recentra e aproxima/afasta a câmera na mesma direção (a foto da folha não deixa o modelo minúsculo no meio do chão) */
+      if (opts.ajustar) {
+        var bx = new THREE.Box3().setFromObject(modelRoot); modelRoot.updateMatrixWorld(true);
+        if (!bx.isEmpty() && isFinite(bx.min.x) && isFinite(bx.max.x)) {
+          var cen = bx.getCenter(new THREE.Vector3()), cs = [], k;
+          for (k = 0; k < 8; k++) cs.push(new THREE.Vector3(k & 1 ? bx.max.x : bx.min.x, k & 2 ? bx.max.y : bx.min.y, k & 4 ? bx.max.z : bx.min.z));
+          var dir = camera.position.clone().sub(cen).normalize(), dist = Math.max(0.5, camera.position.distanceTo(cen));
+          var mx = 0, ndc = function (d) {
+            camera.position.copy(cen).add(dir.clone().multiplyScalar(d)); camera.lookAt(cen); camera.updateMatrixWorld(true); camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+            var m = 0; cs.forEach(function (c) { if (c.clone().applyMatrix4(camera.matrixWorldInverse).z > -0.05) { m = Math.max(m, 99); return; } var v = c.clone().project(camera); m = Math.max(m, Math.abs(v.x), Math.abs(v.y)); });
+            return m;
+          };
+          var lo = 0.5, hi = Math.max(2000, dist * 8);   /* a menor distância em que o modelo inteiro cabe com 8% de folga (bisseção: a perspectiva não é linear) */
+          for (var it = 0; it < 40; it++) { var mid = (lo + hi) / 2; if (ndc(mid) > 0.92) lo = mid; else hi = mid; }
+          dist = hi; mx = ndc(dist);
+          camera.near = Math.min(camera.near, Math.max(0.01, dist * 0.02)); camera.far = Math.max(camera.far, dist * 6); camera.updateProjectionMatrix();
+        }
+      }
       renderer.render(scene, camera);
       out = document.createElement('canvas'); out.width = larg; out.height = alt;
       out.getContext('2d').drawImage(cvDesenho(), 0, 0);
@@ -12459,6 +12480,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     finally {
       scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn;
       if (solo.grupo && vSolo !== null) solo.grupo.visible = vSolo;
+      grades.forEach(function (o) { o.visible = true; });
+      camera.position.copy(pos0); camera.quaternion.copy(q0); camera.updateMatrixWorld(true);
       camera.fov = fov; camera.aspect = asp; camera.updateProjectionMatrix();
       renderer.setPixelRatio(pr);
       if (S._resize) S._resize();

@@ -87,7 +87,9 @@
     },
     idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
     idCorte: function (cid) { return "d2c-" + cid; },
-    ehVista2d: function (id) { return /^d2[pcv]-/.test(String(id || "")); },   /* P6: d2v- = vistas novas (js/bimmodelovista.js) */
+    ehVista2d: function (id) { return /^d2[pcve]-/.test(String(id || "")); },   /* d2e- = ELEVAÇÃO gerada do modelo (norte/sul/leste/oeste), sem marca na planta e sem a prévia do modelador */
+    DIRS_ELEV: ["norte", "sul", "leste", "oeste"],
+    idElevacao: function (dir) { return "d2e-" + dir; },   /* P6: d2v- = vistas novas (js/bimmodelovista.js) */
     /* P6 — GANCHO: as vistas novas (d2v-) e o nome dado pelo usuário (renomear) */
     def: function (id) {
       var M6 = this._p6(), d = this._defBase(id) || (M6 ? this._p6Def(id) : null);
@@ -100,6 +102,13 @@
         if (!nv) return null;
         var pp = this.estado().plantas[nv.id] || {};
         return { id: id, tipo: "planta", nome: "Planta baixa — " + nv.nome, nivel: nv, altura: num(pp.altura, 1.2), abaixo: num(pp.abaixo, 0.05) };
+      }
+      /* ELEVAÇÃO sem a prévia (folha puxa "Elevação Norte…"): o MESMO motor do corte olhando de fora — a linha fica fora da edificação (linhaElevacao) e a profundidade é o modelo inteiro */
+      if (/^d2e-/.test(id)) {
+        var dirE = String(id).slice(4); if (this.DIRS_ELEV.indexOf(dirE) < 0) return null;
+        var pE = B() && B().pavimentos2d ? B().pavimentos2d() : null; if (!pE || !(pE.caixaEdif || pE.caixa)) return null;
+        var lnE = this.linhaElevacao(dirE, pE.caixaEdif || pE.caixa), NOM = { norte: "Elevação Norte", sul: "Elevação Sul", leste: "Elevação Leste", oeste: "Elevação Oeste" };
+        return { id: id, tipo: "corte", elev: dirE, nome: NOM[dirE], corte: { id: id, letra: "", ax: lnE.ax, az: lnE.az, bx: lnE.bx, bz: lnE.bz, inv: false, prof: lnE.prof } };
       }
       if (/^d2c-/.test(id)) {
         var c = null; this.estado().cortes.forEach(function (x) { if (self.idCorte(x.id) === id) c = x; });
@@ -168,7 +177,7 @@
     },
     _extrairModelo: function (d) {
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
-      if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
+      if (this._p6() && !/^d2e-/.test(String(d.id))) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
       /* p6Tag: cada contorno/aresta leva o uid da peça — é por ele que o clique na vista SELECIONA (js/bimselecao.js) */
       if (d.tipo === "planta") return b.vista2d({ tipo: "planta", yCorte: d.nivel.y + d.altura, yFundo: d.nivel.y - d.abaixo, p6Tag: true, instAssinc: !!this._assinc, acimaTopo: this.acimaTopo(d, d.nivel.y + d.altura) });   /* ACIMA DO CORTE */
       var c = d.corte;

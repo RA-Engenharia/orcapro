@@ -11598,7 +11598,7 @@
           ]) };
       }
       var st = this._bimVxEst();
-      var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); }, menu: (window.BimApresentacaoUI && BimApresentacaoUI.menuNo) ? BimApresentacaoUI.menuNo() : undefined }];   /* clique direito: Antes · Obra · Depois e a Apresentação da reforma (js/bimapresentacaoui.js) */
+      var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", arrastar: "d3:atual", fn: function () { self._bimVxAtivar("3d"); }, menu: (window.BimApresentacaoUI && BimApresentacaoUI.menuNo) ? BimApresentacaoUI.menuNo() : undefined }];   /* clique direito: Antes · Obra · Depois e a Apresentação da reforma (js/bimapresentacaoui.js) */
       st.lista.forEach(function (v) {
         if (v.tipo === "2d" || v.tipo === "folha") return;   /* planta/corte 2D (e a folha, P8) aparecem no ramo deles */
         v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
@@ -11609,8 +11609,25 @@
       pv.forEach(function (v) { var p = v.pasta || "Sem pasta"; (pastas[p] = pastas[p] || []).push(v); });
       var ramoPv = Object.keys(pastas).sort().map(function (p) {
         return { id: "pvp:" + p, rotulo: p, icone: "pasta", n: pastas[p].length, aberto: false,
-                 filhos: pastas[p].map(function (v) { return { id: "pv:" + v.id, rotulo: v.nome, icone: "camera", fn: function () { self._bimVistaIr(v.id); } }; }) };
+                 filhos: pastas[p].map(function (v) { return { id: "pv:" + v.id, rotulo: v.nome, icone: "camera", arrastar: (v.camera && !v.hid3d && !v.hidIso) ? "d3:" + v.id : undefined, fn: function () { self._bimVistaIr(v.id); } }; }) };   /* arrastar = a vista 3D salva vai para a folha */
       });
+      /* VISTAS 3D SALVAS (travar + "Salvar como vista"): ficam em Vistas 3D, com o nome dado, e vão para a folha arrastando */
+      pv.filter(function (v) { return v.vista3d; }).forEach(function (v) {
+        v3d.push({ id: "v3s:" + v.id, rotulo: v.nome + (v.travada ? " (travada)" : ""), icone: "camera", arrastar: "d3:" + v.id, fn: function () { self._bimVistaIr(v.id); },
+                   menu: [{ id: "v3-ir", rotulo: "Abrir", fn: function () { self._bimVistaIr(v.id); } }, { id: "v3-atualizar", rotulo: "Atualizar com a câmera atual", fn: function () { self._bimVistaRegravar(v.id); } },
+                          { id: "v3-excluir", rotulo: "Excluir vista", fn: function () { self._bimVistaExcluir(v.id, v.nome); } }] });
+      });
+      /* ELEVAÇÕES do modelo (norte/sul/leste/oeste): vão para a folha arrastando, como planta e corte */
+      var ramoElev = null;
+      try {
+        if (window.Bim2D && Bim2D.DIRS_ELEV && this._d2Config()) {
+          var ELS = Bim2D.DIRS_ELEV.filter(function (d) { return !!Bim2D.def(Bim2D.idElevacao(d)); });
+          if (ELS.length) ramoElev = { id: "elevs", rotulo: "Elevações", icone: "corte", n: ELS.length, aberto: false, filhos: ELS.map(function (d) {
+            var eid2 = Bim2D.idElevacao(d), nm = Bim2D.def(eid2).nome;
+            return { id: "d2:" + eid2, rotulo: nm, icone: "corte", arrastar: eid2, fn: function () { self._d2Abrir(eid2, nm); } };
+          }) };
+        }
+      } catch (eEl) { ramoElev = null; }
       var pr = [], sd = [], es = [], mods = [];
       try { pr = this._prRegs() || []; } catch (e1) {}
       try { sd = this._sdRegs() || []; } catch (e2) {}
@@ -11619,7 +11636,7 @@
       var arv = [
         { id: "vistas", rotulo: "Vistas (todas)", icone: "planta", filhos: [
           { id: "v3d", rotulo: "Vistas 3D", icone: "quadrado", filhos: v3d },
-          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", aberto: !!ramoCortes, filhos: plantas }].concat(ramoCortes ? [ramoCortes] : []).concat([
+          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", aberto: !!ramoCortes, filhos: plantas }].concat(ramoCortes ? [ramoCortes] : []).concat(ramoElev ? [ramoElev] : []).concat([
           { id: "pvs", rotulo: "Pontos de vista", icone: "camera", n: pv.length, aberto: false,
             filhos: ramoPv.length ? ramoPv : [{ id: "pv:vazio", rotulo: "Nenhum — salve uma vista ou abra o arquivo da obra", icone: "camera", acao: "vistas" }] }
         ]) },
@@ -15671,6 +15688,38 @@
       this._bimVistaGuardarMiniatura(v.id);
       UI.toast('Ponto de vista \u201C' + v.nome + '\u201D salvo: ' + BimVista.resumo(v).join(" · ") + "." + this._bimVistaAvisoSemChave(est), est.semChave ? "aviso" : "ok");
       this._bimVistaRender();
+    },
+
+    /* SALVAR COMO VISTA 3D (16/11/2026, pedido do Rogério): o usuário gira a câmera como quer, clica em "Travar vista" (cadeado: a câmera não gira por engano) e em "Salvar como vista".
+       Nasce "3D - Isométrica N" em Navegador › Vistas 3D, com câmera, ângulo, cortes/recortes e estilo gravados (o mesmo estado dos pontos de vista: vai no projeto e na nuvem com o resto).
+       Para ajustar: destravar, mexer a câmera e "Atualizar com a câmera atual" (menu da vista no Navegador). É esta vista que se puxa para a folha. → a vista | null */
+    _bimVistaSalvar3d: function (nomeOpc) {
+      if (!window.BimVista || !window.BIM) return null;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar a vista.", "aviso"); return null; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — a vista pertence a ela.", "aviso"); return null; }
+      var est = BIM.estadoVista ? BIM.estadoVista({ vista: this._bimVxEst().ativa }) : null;
+      if (!est || !est.camera) { UI.toast("Abra um modelo na aba 3D antes de salvar a vista.", "erro"); return null; }
+      var ja = this._bimVistaDaObra().filter(function (v) { return v.vista3d; }), nomes = {}, n = ja.length + 1, nome = nomeOpc ? String(nomeOpc) : "";
+      ja.forEach(function (v) { nomes[v.nome] = 1; });
+      if (!nome) { while (nomes["3D - Isométrica " + n]) n++; nome = "3D - Isométrica " + n; }
+      var quem = ""; try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
+      var v = BimVista.vista({
+        obraId: this._bimSel, nome: nome, autor: quem, criadoEm: new Date().toISOString(), completa: true, pasta: "Vistas 3D", vista3d: true, travada: !!(BIM.travado && BIM.travado()),
+        camera: est.camera, cortes: est.cortes, visibilidade: est.visibilidade, aparencias: est.aparencias, modelos: est.modelos, estilo: est.estilo, medidas: est.medidas, cotaRede: est.cotaRede
+      });
+      if (!v) { UI.toast("Não consegui montar a vista.", "erro"); return null; }
+      if (!Store.salvar(eid(), "bim_vistas", v)) { UI.toast("Não consegui salvar (armazenamento cheio?).", "erro"); return null; }
+      try { this._bimVistaGuardarMiniatura(v.id); } catch (e2) {}
+      UI.toast("Vista 3D \u201C" + v.nome + "\u201D salva em Vistas 3D: " + BimVista.resumo(v).join(" · ") + ". Arraste-a para uma folha.", "ok");
+      try { this._bimVistaRender(); } catch (e3) {}
+      try { this._nivArvore(); } catch (e4) {}
+      return v;
+    },
+    /* o cadeado da câmera (js/bim.js setTrava): alterna e avisa */
+    _bimVistaTravar: function () {
+      if (!window.BIM || !BIM.travar) return false;
+      var on = BIM.travar(); UI.toast(on ? "Vista travada: a câmera não gira por engano. Salve como vista ou destrave para ajustar." : "Vista destravada.", "info");
+      return !!on;
     },
 
     /* O RABISCO DO MODO MESA (01/10/2026): o mesmo "salvar ponto de vista",
