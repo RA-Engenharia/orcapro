@@ -271,12 +271,16 @@
 
   /* armadura a ancorar no apoio (18.3.2.4) — As,apoio = maior de (a/d)·Vd/fyd e fração de As,vão (1/3 ou 1/4 conforme |Mapoio| ≤/> 0,5·Mvão). Cm, kN. */
   function apoio(Vsd, a, d, AsVao, Mapoio, Mvao, mat, opc) {
+    opc = opc || {};
     var R = [], b = (a / d) * Vsd / mat.fyd, alto = Mapoio < 0 && Math.abs(Mapoio) > cv("apoioLimiarMomento", 0.5) * Math.abs(Mvao);
+    /* ⚠ APOIO INTERMEDIÁRIO (16/11/2026): a armadura da diagonal comprimida (18.3.2.4-b, Fsd) é regra de apoio EXTREMO. No intermediário valem (a) a armadura do dimensionamento do momento positivo que
+     * houver no apoio (opc.AsPositivoApoio) e (c) o prolongamento de 1/3 ou 1/4 de As,vão. Antes o (b) era cobrado nos dois e reprovava a viga contínua sem motivo (V109 do sobrado). */
+    var interm = opc.intermediario === true, bEf = interm ? num(opc.AsPositivoApoio, 0) : b;
     var fr = alto ? cv("apoioAsFracaoMomentoAlto", 0.25) : cv("apoioAsFracaoMomentoBaixo", 1 / 3), c = fr * AsVao;
-    passo(R, "ap.b", "Armadura para a diagonal comprimida (18.3.2.4-b)", b, "cm²", "As,anc = (a/d)·Vd/fyd", "NBR 6118 18.3.2.4-b");
+    passo(R, "ap.b", interm ? "Armadura do momento positivo no apoio intermediário (18.3.2.4-a; o 18.3.2.4-b é só de apoio extremo)" : "Armadura para a diagonal comprimida (18.3.2.4-b)", bEf, "cm²", interm ? "As do dimensionamento do momento positivo no apoio (0 se não há)" : "As,anc = (a/d)·Vd/fyd", interm ? "NBR 6118:2023/Em1:2026 18.3.2.4-a (b) é só de apoio extremo — Em1 p. 11-12" : "NBR 6118:2023/Em1:2026 18.3.2.4-b");
     passo(R, "ap.c", "Prolongamento de parte da armadura do vão (18.3.2.4-c)", c, "cm²", (alto ? "|Mapoio| > 0,5·Mvão: 1/4" : "|Mapoio| ≤ 0,5·Mvão: 1/3") + " · As,vão", "NBR 6118 18.3.2.4-c");
-    var v = Math.max(b, c); passo(R, "ap.As", "Armadura no apoio", v, "cm²", "As,apoio = maior dos dois", "NBR 6118 18.3.2.4");
-    return { As: v, AsB: b, AsC: c, fracao: fr, passos: R };
+    var v = Math.max(bEf, c); passo(R, "ap.As", "Armadura no apoio", v, "cm²", "As,apoio = maior dos dois", "NBR 6118 18.3.2.4");
+    return { As: v, AsB: bEf, AsC: c, fracao: fr, intermediario: interm, passos: R };
   }
 
   /* posição da barra quanto à aderência (9.3.1). yInf = distância do eixo da barra à face INFERIOR do elemento (cm); inclinada > 45° = boa. */
@@ -539,12 +543,19 @@
       var dec = decalagem(V, cis[lado].Vc, dCis, 90), pos = tr.positivo;
       if (!pos.barras) { out.apoios[lado] = { semArmaduraDoVao: true, decalagem: dec }; return; }
       var Mapo = -(num(a[1] === "negEsq" ? e.MnegEsq : e.MnegDir, 0) * 100), Mvao = pos.Md;
-      var apo = apoio(V, dec.a, dCis, pos.AsReq, Mapo, Mvao, mat), phi = pos.barras.phi;
+      var intermA = (ap.tipo || "extremo") === "intermediario", MposA = num(a[1] === "negEsq" ? e.MposEsq : e.MposDir, 0) * 100, AsPosA = 0, posFalhou = false;
+      /* ⚠ momento positivo no apoio intermediário (Em1 18.3.2.4-a): se a flexão dele NÃO fechar, a viga NÃO ATENDE (verificação 99) — nunca "As = 0" */
+      if (intermA && MposA > 1e-9) {
+        var flA = flexao({ bw: bw, h: h, d: dCis, dl: cob + phiT / 10 + 1.0, bf: 0, hf: 0 }, MposA, mat);
+        if (flA && flA.ok) AsPosA = flA.As;
+        else { posFalhou = true; out.avisos.push("Apoio " + lado + " intermediário: a flexão do momento positivo no apoio (" + fmt(r2(MposA / 100), 1) + " kN·m) não fechou (" + ((flA && flA.motivo) || "sem solução") + ") — NÃO ATENDE (Em1 18.3.2.4-a): aumente a seção."); }
+      }
+      var apo = apoio(V, dec.a, dCis, pos.AsReq, Mapo, Mvao, mat, { intermediario: intermA, AsPositivoApoio: AsPosA }), phi = pos.barras.phi;
       var nBar = Math.max(2, Math.ceil(apo.As / areaBarra(phi) - 1e-9)); nBar = Math.min(nBar, pos.barras.n);
       var AsEf = nBar * areaBarra(phi);
       if (AsEf + 1e-9 < apo.As) out.avisos.push("Apoio " + lado + ": As,apoio = " + fmt(r2(apo.As), 2) + " cm² maior que a armadura positiva efetiva (" + fmt(r2(AsEf), 2) + " cm²): prolongue mais barras — NÃO ATENDE.");
       var h0 = aderencia(h, pos.barras.acg - 0, false), anc = ancoragemNecessaria(phi, mat, apo.As, AsEf, { aderencia: h0 });
-      var info = { decalagem: dec, As: apo, nBarras: nBar, phi: phi, AsEf: AsEf, ancoragem: anc, aderencia: h0, tipo: ap.tipo || "extremo" };
+      var info = { decalagem: dec, As: apo, nBarras: nBar, phi: phi, AsEf: AsEf, ancoragem: anc, aderencia: h0, tipo: ap.tipo || "extremo", larg: ap.larg != null ? ap.larg * 100 : null, posFalhou: posFalhou };
       if (info.tipo === "extremo") {
         var lbx = lbApoioExtremo(anc.lbNec, phi); info.trechoMin = lbx;
         if (ap.larg != null) {
@@ -609,6 +620,7 @@
      * como verificações (razão > 1 → NÃO ATENDE). A largura do apoio AUSENTE segue pendência — mas a viga fica "incompleta" (o Calcular a lista como sem cálculo, nunca verde). */
     ["esq", "dir"].forEach(function (k) {
       var info = out.apoios[k];
+      if (info && info.posFalhou) V.push({ nome: "Armadura do momento positivo no apoio " + k + " (flexão não fechou, 18.3.2.4-a)", valor: 99 });
       if (info && info.As && info.AsEf > 0) V.push({ nome: "Armadura no apoio " + k + " (As,apoio/As,ef)", valor: info.As.As / info.AsEf });
       if (info && info.comGancho && info.comGancho.cabe === false) V.push({ nome: "Ancoragem no apoio " + k + " (trecho com gancho/disponível)", valor: info.comGancho.trechoMin.valor / info.disponivel });
     });
@@ -656,7 +668,9 @@
       QP.forEach(function (c) { var s = est(c, b.id); if (!s.length) return; var k = s.length - 1, L = s[k].x - s[0].x, u0 = s[0].u[1], u1 = s[k].u[1];
         s.forEach(function (p) { Mqp = Math.max(Mqp, p.Mz); var corda = u0 + (u1 - u0) * (p.x - s[0].x) / (L || 1); aqp = Math.max(aqp, Math.abs(p.u[1] - corda)); }); });
       FR.forEach(function (c) { est(c, b.id).forEach(function (p) { Mfr = Math.max(Mfr, p.Mz); }); });
-      var t = { id: b.id, L: b.L || pv.L, bw: num(pv.b, 0), h: num(pv.h, 0), fck: an.modelo.fck || opc.fck, fyk: opc.fyk, caa: num(opc.caa, 2), dmaxMm: opc.dmaxMm, controleRigoroso: opc.controleRigoroso,
+      var MpE = 0, MpD = 0;
+      ELU.forEach(function (c) { var s = est(c, b.id); if (!s.length) return; MpE = Math.max(MpE, s[0].Mz); MpD = Math.max(MpD, s[s.length - 1].Mz); });
+      var t = { id: b.id, L: b.L || pv.L, MposEsq: MpE, MposDir: MpD, bw: num(pv.b, 0), h: num(pv.h, 0), fck: an.modelo.fck || opc.fck, fyk: opc.fyk, caa: num(opc.caa, 2), dmaxMm: opc.dmaxMm, controleRigoroso: opc.controleRigoroso,
         Mpos: Mpos, MnegEsq: Math.max(nE, 0), MnegDir: Math.max(nD, 0), Vesq: Ve, Vdir: Vd, Vmeio: Vm, MqpVao: Mqp, MfreqVao: Mfr, aQP: aqp, estriboAco: opc.estriboAco, limiteFlecha: opc.limiteFlecha, apoios: o.apoios, bf: o.bf, hf: o.hf };
       if (!QP.length || !FR.length) pend.push("Viga " + (pv.marca || b.id) + ": falta combinação ELS (flecha/fissuração não verificadas).");
       vigas.push(dimensionarViga({ id: b.id, marca: pv.marca || "", tramos: [t] }, opc));

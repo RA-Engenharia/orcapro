@@ -87,12 +87,12 @@
       var P = nosId[b.ni], Q = nosId[b.nj], dd = P && Q ? dirDe(P, Q) : null; if (!dd) return;
       var o = {};
       [["esq", b.ni, P, dd, b.partida && !b.ptoI], ["dir", b.nj, Q, [-dd[0], -dd[1]], b.partida && !b.ptoJ]].forEach(function (e) {
-        if (e[4]) { o[e[0]] = { tipo: "intermediario" }; return; }
+        if (e[4]) { var Lp = larguraEm(e[2], e[3], b.peca); o[e[0]] = Lp != null ? { tipo: "intermediario", larg: Lp } : { tipo: "intermediario" }; return; }
         var continua = barras.some(function (x) {
           if (x === b || x.tipo !== "viga" || x.rigida || (x.ni !== e[1] && x.nj !== e[1])) return false;
           var a = nosId[x.ni], c = nosId[x.nj], dx = dirDe(x.ni === e[1] ? a : c, x.ni === e[1] ? c : a); return !!dx && dx[0] * e[3][0] + dx[1] * e[3][1] < -0.99;
         });
-        if (continua) { o[e[0]] = { tipo: "intermediario" }; return; }
+        if (continua) { var Lc = larguraEm(e[2], e[3], b.peca); o[e[0]] = Lc != null ? { tipo: "intermediario", larg: Lc } : { tipo: "intermediario" }; return; }
         var L = larguraEm(e[2], e[3], b.peca);
         o[e[0]] = L != null ? { tipo: "extremo", larg: L, pilar: ultPil, d: e[3] } : { tipo: "extremo" };
       });
@@ -123,7 +123,7 @@
     var caixas = arr(estado && estado.caixas), temEstr = caixas.some(function (c) { return c && c.conc && (c.conc.papel === "pilar" || c.conc.papel === "viga" || c.conc.papel === "laje"); });
     if (!temEstr) return pronta({ ok: false, motivo: "Não há estrutura lançada: rode o Sugerir estrutura antes de calcular." });
     var fck = num(opc.fck, CL && CL.crit ? CL.crit("fckPadraoMPa", 25) : 25), caa = num(opc.caa, 2), p12 = opc.permitirPilar12 === true, avisos = [], pendencias = [], pecas = [];
-    var fila = [], T = { feito: false, resultado: null, feitos: 0, rotulo: "" }, base = null, an = null, dp = null, job = null, porId = {}, falhas = [], pend = {}, parar = false;
+    var fila = [], T = { feito: false, resultado: null, feitos: 0, rotulo: "" }, base = null, an = null, dp = null, job = null, porId = {}, falhas = [], pend = {}, parar = false; var lajesMotor = [];
     function falhar(o) { fila.length = 0; T.resultado = o; }
     function depois(rot, fn) { fila.push({ rot: rot, fn: fn }); }
     function seguinte(lista) { fila = lista.concat(fila); }   /* passos novos entram NA FRENTE do que já estava na fila (a ordem do cálculo original) */
@@ -280,7 +280,7 @@
       var cx = porId[String(l.id)], ent = entradaLaje(l, an, fck, caa), p = { id: String(l.id), marca: l.marca || (cx && cx.marca) || "", tipo: "laje", aproveitamento: null, secao: "h " + Math.round(num(l.h, 0) * 100) };
       if (!ent.ok) { p.estado = "sem-calculo"; p.motivo = ent.motivo; pecas.push(p); return; }
       if (ent.aviso && avisos.indexOf(ent.aviso) < 0) avisos.push(ent.aviso);
-      var r = null; try { r = LJ.dimensionarLaje(ent.e, { agregado: "granito" }); } catch (e) { r = { ok: false, motivo: String((e && e.message) || e) }; }
+      var r = null; try { r = LJ.dimensionarLaje(ent.e, { agregado: "granito" }); } catch (e) { r = { ok: false, motivo: String((e && e.message) || e) }; } if (r && r.ok) lajesMotor.push({ res: r, lm: l });
       if (!r || !r.ok) { p.estado = "sem-calculo"; p.motivo = (r && r.motivo) || "o motor da laje não fechou"; pecas.push(p); return; }
       p.aproveitamento = r.aproveitamento; p.estado = r.atende ? "ok" : "falha";
       if (!r.atende) p.motivo = arr(r.avisos)[0] || "reprovada (flexão, cortante, flecha ou fissuração)";
@@ -295,7 +295,9 @@
       arr(dp.pendencias).concat(arr(base.dv && base.dv.pendencias)).forEach(function (x) { if (pendencias.indexOf(x) < 0) pendencias.push(x); });
       var rot = (VG && base.dv && base.dv.rotulo) || (dp && dp.rotulo) || "Cálculo de apoio";
       T.resultado = { ok: true, rotulo: rot, fck: fck, caa: caa, permitirPilar12: p12, pecas: pecas, pintura: pintura, resumo: resumo, avisos: avisos, pendencias: pendencias, memorialPilar12: dp.memorialPilar12 || null,
-        gammaZ: arr(an.gammaZ), tempoMs: an.tempoMs };
+        gammaZ: arr(an.gammaZ), tempoMs: an.tempoMs,
+        assinaturaModelo: assinaturaDe(estado) };
+      ocultarMotor(T.resultado, { an: an, dv: base.dv, dp: dp, lajes: lajesMotor });   /* resultados BRUTOS dos motores C1–C4 para o memorial (C6): nada é reescrito; não enumerável */
     }
 
     T.restantes = function () { return fila.length; };
@@ -316,7 +318,17 @@
     return t.resultado;
   }
 
-  var ConcCalcular = { VERSAO: 1, COR: COR, ROTULO_ESTADO: ROTULO_ESTADO, rodar: rodar, iniciar: iniciar, entradaLaje: entradaLaje, apoiosDeModelo: apoiosDeModelo };
+  /* assinatura (hash FNV-1a de 32 bits + tamanho) do MODELO que entrou no cálculo: peças (caixas) com tudo o que elas carregam. O memorial compara com a do modelo de agora e RECUSA o memorial de
+   * um cálculo antigo. Funções e campos transitórios não entram. */
+  function assinaturaDe(estado) {
+    var txt = ""; try { txt = JSON.stringify(arr(estado && estado.caixas), function (k, v) { return typeof v === "function" ? undefined : v; }); } catch (e) { txt = String(arr(estado && estado.caixas).length); }
+    var h = 0x811c9dc5, i; for (i = 0; i < txt.length; i++) { h ^= txt.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; }
+    return "m" + arr(estado && estado.caixas).length + "-" + txt.length + "-" + h.toString(16);
+  }
+  /* os resultados BRUTOS dos motores ficam em `resultado.motor`, NÃO enumerável: JSON.stringify(resultado) e a cópia do objeto não o levam (é enorme e não é serializável como dado do projeto) */
+  function ocultarMotor(resultado, motor) { Object.defineProperty(resultado, "motor", { value: motor, enumerable: false, writable: true, configurable: true }); return resultado; }
+
+  var ConcCalcular = { assinaturaDe: assinaturaDe, ocultarMotor: ocultarMotor, VERSAO: 1, COR: COR, ROTULO_ESTADO: ROTULO_ESTADO, rodar: rodar, iniciar: iniciar, entradaLaje: entradaLaje, apoiosDeModelo: apoiosDeModelo };
   global.ConcCalcular = ConcCalcular;
   if (typeof module !== "undefined" && module.exports) module.exports = ConcCalcular;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

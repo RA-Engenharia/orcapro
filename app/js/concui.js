@@ -278,6 +278,44 @@
     status("Calcular: " + R.ok + " atendem · " + R.falha + " reprovadas · " + R.foraNorma + " fora da norma (cálculo de apoio — o engenheiro confere e assina).");
     return r;
   }
+  /* MEMORIAL DE CÁLCULO (C6, 16/11/2026): depois do Calcular. Usa o ÚLTIMO cálculo (resultados brutos dos motores C1–C5 em `motor`), pergunta só o que o modelo não sabe — uso e nº de pavimentos habitáveis
+   * (classe de consequência CC1/CC2/CC3, Em1 5.3) — e entrega o HTML para imprimir/salvar em PDF (o mesmo caminho do memorial da madeira) e a tabela de aço em .xlsx (nunca CSV). */
+  function memorial() {
+    var T = "Memorial de cálculo estrutural";
+    if (trancou(T)) return null;
+    var M = global.ConcMemorial, pac = M && ULTIMO_CALC && M.pacoteDe ? M.pacoteDe(ULTIMO_CALC) : null;
+    if (!M) { status("O gerador do memorial não carregou."); return null; }
+    if (!pac) { status("Rode o Calcular antes: o memorial usa o último cálculo."); janela(T, '<p>O memorial de cálculo usa o resultado do <b>Calcular</b>. Rode o Calcular estrutura e abra o memorial em seguida.</p>'); return null; }
+    var KC = global.ConcCalcular, atual = KC && KC.assinaturaDe ? KC.assinaturaDe(estado()) : null;
+    if (pac.assinaturaModelo && atual && pac.assinaturaModelo !== atual) { status("O modelo mudou depois do Calcular: recalcule antes do memorial."); janela(T, '<p><b>O modelo mudou depois do último Calcular.</b> O memorial seria de um cálculo antigo e por isso não foi gerado. Rode o <b>Calcular estrutura</b> de novo e abra o memorial em seguida.</p>'); return null; }
+    var n0 = arr(pac.an.modelo && pac.an.modelo.niveis).length || 1;
+    var ov = janela(T, faixa() + '<p>O memorial junta as ações, a análise, as vigas, lajes e pilares calculados, o detalhamento e a tabela de aço, as pendências com a fonte e a ressalva do exemplar da norma. A taxa de aço sai marcada PARCIAL.</p>' +
+      '<p><label>Uso da edificação <select data-conc-mem-uso><option value="unifamiliar">residencial unifamiliar</option><option value="multifamiliar">residencial multifamiliar</option><option value="comercial">comercial</option><option value="outro">outro</option></select></label> ' +
+      '<label>Pavimentos habitáveis <input type="number" min="1" max="60" value="' + n0 + '" data-conc-mem-npav style="width:64px"></label></p>' +
+      '<p style="font-size:12px">A classe de consequência (Em1:2026, 5.3 e Tabela 5.1) sai deste uso e deste número de pavimentos; na dúvida vale CC3.</p>' +
+      '<p><button type="button" class="btn primary sm" data-conc-mem-html>Abrir o memorial (imprimir / salvar em PDF)</button> <button type="button" class="btn ghost sm" data-conc-mem-xlsx>Baixar a tabela de aço (.xlsx)</button></p>');
+    function lerPac() { var q = ov && ov.querySelector; pac.projeto.uso = q ? ov.querySelector("[data-conc-mem-uso]").value : "outro"; pac.projeto.nPavimentos = q ? +ov.querySelector("[data-conc-mem-npav]").value : n0; return pac; }
+    function baixar(nome, dados, tipo) { try { var b = new Blob([dados], { type: tipo }), u = URL.createObjectURL(b), a = document.createElement("a"); a.href = u; a.download = nome; a.click(); setTimeout(function () { URL.revokeObjectURL(u); }, 4000); } catch (e) { status("Não consegui baixar o arquivo: " + (e && e.message)); } }
+    if (ov) ov.addEventListener("click", function (e) {
+      var t = e.target; if (!t || !t.hasAttribute) return;
+      if (t.hasAttribute("data-conc-mem-html")) {
+        var g = M.gerar(lerPac(), { assinaturaAtual: atual, obra: { nome: "" }, documento: { revisao: "R00", data: new Date().toISOString().slice(0, 10) } });
+        if (!g.ok) { status("Memorial: " + (g.motivo || "não saiu")); return; }
+        var w = null; try { w = global.open("", "_blank"); } catch (e1) { w = null; }
+        if (w && w.document) { w.document.open(); w.document.write(g.html + "<script>setTimeout(function(){try{window.print()}catch(e){}},700)<\/script>"); w.document.close(); }
+        else baixar(g.nomeArquivo, g.html, "text/html");
+        status((g.bloqueado ? "NÃO LIBERADO — " : "") + "Memorial de cálculo: " + g.secoes.length + " seções, " + g.tabelas + " tabelas, " + g.classeConsequencia.cc + " — taxa de aço PARCIAL.");
+      }
+      if (t.hasAttribute("data-conc-mem-xlsx")) {
+        var EX = global.ExcelOrc || global.Excel; if (!EX || !EX.ensureExcelJS) { status("Excel indisponível."); return; }
+        EX.ensureExcelJS(function () {
+          try { var wb = M.xlsx(global.ExcelJS, lerPac(), {}); if (!wb) { status("Sem detalhamento para a planilha."); return; }
+            wb.xlsx.writeBuffer().then(function (buf) { baixar(wb.nomeArquivo || "tabela-aco-concreto.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); status("Tabela de aço (.xlsx) gerada — taxa PARCIAL."); }); } catch (e2) { status("Planilha: " + (e2 && e2.message)); }
+        });
+      }
+    });
+    return ov;
+  }
   function limparCores() { var B = global.BIM; if (B && B.pintarUids) B.pintarUids({}, "conc-calcular"); status("Cores do cálculo retiradas."); return true; }
 
   function lancar(modo, extra, T) {
@@ -419,6 +457,7 @@
           dica: "Lê a arquitetura e sugere a estrutura inteira com precisão: grade de eixos (A, B… e 1, 2…), pilares dentro das paredes e fora dos vãos, vigas com a viga baldrame e as vigas em balanço, lajes por ambiente. Com o auditor de precisão bloqueando o que estiver fora do lugar (cada ponto com o que é e como corrigir). PRÉ-DIMENSIONAMENTO — A CALCULAR. Um Ctrl+Z desfaz." },
         { id: "conc-ocultar", rotulo: "Ocultar\narquitetura", icone: "estrutura", grande: true, dica: "Esconde a arquitetura (paredes, coberturas, forros, portas, janelas, escadas, mobiliário) para ver só a estrutura; clique de novo para mostrar. É só a vista: não muda o modelo, o orçamento nem a quantidade." },
         { id: "conc-calcular", rotulo: "Calcular\nestrutura", icone: "calculadora", grande: true, dica: "Roda o cálculo de apoio C1–C4 (pórtico, vigas, lajes e pilares) sobre o que está lançado e pinta cada peça: verde (atende), vermelho (reprovada, com a seção sugerida em 1 clique) e laranja (pilar de 12 a 14 cm, fora da NBR 6118:2023). Pode levar alguns segundos." },
+        { id: "conc-memorial", rotulo: "Memorial de\ncálculo", icone: "calculadora", grande: true, dica: "Depois do Calcular: o memorial de cálculo estrutural (ações, análise, vigas, lajes, pilares, detalhamento, tabela de aço com a taxa marcada PARCIAL, pendências com a fonte, classe de consequência e ATP da Em1:2026) para imprimir/salvar em PDF, e a tabela de aço em .xlsx. Cálculo de apoio — o engenheiro responsável confere e assina (ART)." },
         { id: "conc-vista", rotulo: "Vista de\nestrutura", icone: "estrutura", grande: true,
           dica: "Abre a Vista de Estrutura (criada e atualizada sozinha quando se lança ou se altera a estrutura): uma planta de fôrma por nível com a estrutura em cor sobre a arquitetura em meio-tom, grade de eixos com bolhas e cotas parciais e acumuladas, nome e seção de cada peça, cortes automáticos pelos eixos principais e as tabelas de locação dos pilares, níveis e vigas." },
         { id: "conc-opc", rotulo: "Opções da\nestrutura", icone: "regua", grande: true, dica: "Opções do projeto: permitir o pilar de 12 a 14 cm (fora da NBR 6118:2023; decisão do responsável técnico, entra no memorial). Desligada por padrão." },
@@ -432,6 +471,7 @@
       reg["conc-opc"] = function () { opcoes(); return true; };
       reg["conc-ocultar"] = function () { ocultarArquitetura(); return true; };
       reg["conc-calcular"] = function () { calcular(); return true; };
+      reg["conc-memorial"] = function () { memorial(); return true; };
       reg["conc-vista"] = function () { var r = vistaEstrutura({ forcar: true, abrir: true }); if (!r || !r.ok) { janela("Vista de Estrutura", faixa() + "<p>" + esc((r && r.motivo) || "Não saiu.") + "</p>"); } return true; };
       ligarVigia();
       reg["conc-pre-auto"] = function () { prelancar("auto"); return true; };
@@ -444,7 +484,7 @@
       reg["conc-criterios"] = function () { criterios(); return true; };
       return true;
     },
-    ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; },
+    ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, memorial: memorial, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; },
     sugerir: sugerir, opcoes: opcoes, vistaEstrutura: vistaEstrutura, vigiarVista: vigiarVista, registroDaVista: registroDaVista, permitirPilar12: permitirPilar12, definirPilar12: definirPilar12, problemasDosBloqueios: problemasDosBloqueios, aoCorrigirBloqueio: aoCorrigirBloqueio,
     prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada
   };
