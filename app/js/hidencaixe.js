@@ -269,7 +269,7 @@
     R.trechos.forEach(function (t) { porId[t.id] = t; });
     R.conexoes.forEach(function (c) { var k = c.x + "," + c.y + "," + c.z + "|" + c.sistema; if (!nos[k]) { nos[k] = []; ordem.push(k); } nos[k].push(c); });
     ordem.forEach(function (k) {
-      var r = null; try { r = HG.no(nos[k], porId, { tol: BI.TOL }); } catch (eN) { r = null; }
+      var r = null; try { r = (HG.noMemo || HG.no)(nos[k], porId, { tol: BI.TOL }); } catch (eN) { r = null; }
       if (!r) return;
       Object.keys(r.recuos).forEach(function (q) { rec[q] = Math.max(rec[q] || 0, r.recuos[q]); });
       Object.keys(r.faces || {}).forEach(function (q) { fac[q] = Math.max(fac[q] || 0, r.faces[q]); });
@@ -321,7 +321,7 @@
     R.trechos.forEach(function (t) { porId[t.id] = t; });
     R.conexoes.forEach(function (c) { var k = c.x + "," + c.y + "," + c.z + "|" + c.sistema; if (!nos[k]) { nos[k] = []; ordem.push(k); } nos[k].push(c); });
     if (recPronto) rec = recPronto;   /* o auditor já mediu todos os nós: não mede de novo */
-    else ordem.forEach(function (k) { var r = null; try { r = HG.no(nos[k], porId, { tol: BI.TOL }); } catch (eN) { r = null; } if (!r) return; Object.keys(r.recuos).forEach(function (q) { rec[q] = Math.max(rec[q] || 0, r.recuos[q]); }); });
+    else ordem.forEach(function (k) { var r = null; try { r = (HG.noMemo || HG.no)(nos[k], porId, { tol: BI.TOL }); } catch (eN) { r = null; } if (!r) return; Object.keys(r.recuos).forEach(function (q) { rec[q] = Math.max(rec[q] || 0, r.recuos[q]); }); });
     R.conexoes.forEach(function (c) {
       if (!/^(te|juncao|cruzeta)/.test(String(c.tipo)) || !c.ramos || c.ramos.length < 2 || c.juntaDe != null) return;
       var N = { x: c.x, y: c.y, z: c.z }, Tp = null;
@@ -335,7 +335,7 @@
       Object.keys(porId).forEach(function (q) { pid[q] = porId[q]; }); pid[a.id] = a; pid[b.id] = b;
       Object.keys(c).forEach(function (q) { c2[q] = c[q]; });
       c2.ramos = []; c.ramos.forEach(function (id) { if (id === Tp.id) { c2.ramos.push(a.id); c2.ramos.push(b.id); } else c2.ramos.push(id); });
-      var r = null; try { r = HG.no([c2], pid, { tol: BI.TOL }); } catch (eS) { r = null; } if (!r) return;
+      var r = null; try { r = (HG.noMemo || HG.no)([c2], pid, { tol: BI.TOL }); } catch (eS) { r = null; } if (!r) return;
       var cl = null; try { cl = HG.cotasConexao(Tp.material, "luva", Tp.dn); } catch (eC) { cl = null; } if (!cl) return;
       var pb = num(cl.pb2 || cl.pb, 0) / 1000;
       [[0, a], [1, b]].forEach(function (q) {

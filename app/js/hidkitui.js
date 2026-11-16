@@ -794,6 +794,10 @@
       if (esc0.erro) esc0 = { tipo: "piscina", aparelhos: [], ambientes: [], erro: null };
       var est = c.estado, porId = {}; arr(est.familias).forEach(function (f) { porId[String(f.id)] = f; });
       var par = U.parametros(); if (opcoes.opcaoRota != null) par.opcaoRota = opcoes.opcaoRota;
+      /* MODO RÁPIDO (16/11/2026, pedido do Rogério: Traçar em até 5 s — "o usuário posiciona, o sistema só interliga"): com caixa sifonada/ralo/caixa de inspeção/de gordura POSTOS PELO USUÁRIO
+         no modelo, o traçado só interliga: a 1ª estratégia que fecha (as outras o Tab calcula sob demanda), grade da busca de 10 cm, ventilação com poucos candidatos. opcoes.rapido força (true/false) */
+      var rapido = opcoes.rapido != null ? !!opcoes.rapido : U._temDestinosUsuario(c);
+      if (rapido) { par.rapido = true; par.maxEstados = 60000; }
       var avisos = [], pendencias = [], ops = [];
       /* FRENTE H8 (21/10/2026): o BARRILETE anterior (js/hidbarrilete.js) sai no começo do lote — os ambientes e o aquecedor são
          traçados sem ele (a coluna dele não vira "coluna de água fria" do ambiente) e no fim (e3) ele é refeito: Traçar de novo = o mesmo */
@@ -1064,7 +1068,7 @@
         var HBn = dep("HidBanheira");
         if (HBn) { var rbn = HBn.conferir({ estado: est, avaliarFam: c.avaliarFam }); arr(rbn.avisos).forEach(function (a) { avisos.push({ texto: a.texto, elementos: arr(a.elementos), acao: null }); }); arr(rbn.pendencias).forEach(function (p) { if (!pendencias.some(function (q) { return q.chave === p.chave && String(q.texto) === String(p.texto); })) pendencias.push({ chave: p.chave, texto: p.texto, elementos: arr(p.elementos) }); }); }
       } catch (eHB) { pendencias.push({ chave: "ta.hidromassagem", texto: "Hidromassagem: não consegui conferir a banheira (" + (eHB && eHB.message ? eHB.message : eHB) + ") — confira à mão", elementos: [] }); }
-      return { ok: true, ops: ops, resumo: resumo, faltam: faltam, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
+      return { ok: true, ops: ops, resumo: resumo, faltam: faltam, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, rapido: !!par.rapido, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);
        com seleção, só a selecionada (a op, a casa de máquinas dela ou o volume) */
@@ -1242,7 +1246,7 @@
     _mostrarPrevia: function (P) {
       U._previa(P.ops);
       U._cardMostrar(P);
-      status("Prévia do traçado: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões)" + (P.opcoes > 1 ? " — Tab alterna a opção (" + (P.indice + 1) + " de " + P.opcoes + ")" : "") + ". Enter aplica, Esc cancela.");
+      status("Prévia do traçado: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões)" + (P.opcoes > 1 ? " — Tab alterna a opção (" + (P.indice + 1) + " de " + P.opcoes + ")" : (P.rapido ? " — Tab calcula as alternativas" : "")) + ". Enter aplica, Esc cancela.");
       return P;
     },
     /* "Posicionar eu mesmo": nada é gravado; o ambiente que falta é selecionado e enquadrado */
@@ -1298,8 +1302,23 @@
       opcoes.uids = uids; opcoes.todos = true;
       return U.tracarAuto(opcoes);
     },
+    /* há destino (caixa sifonada, ralo, caixa de inspeção ou de gordura) que o USUÁRIO pôs — peça ou família sem marca de kit/ambiente gerado */
+    _temDestinosUsuario: function (c) {
+      var TIPOS = /^(caixa_sifonada|ralo_seco|ralo_sifonado|caixa_inspecao|caixa_gordura)$/, FAMS = /^hid-caixa-(gordura|inspecao)/;
+      /* só o que o USUÁRIO pôs: fora os lotes de motor (origem hidkit/hidrede…) e as peças com marca de kit/ambiente */
+      function achou(L) { return arr(L).some(function (o) { if (!o) return false; if (o.op === "lote") return !o.origem && achou(o.ops); return !o.kit && !o.amb && !o.ambParte && !o.origem && ((o.op === "peca" && TIPOS.test(String(o.peca))) || (o.op === "familia" && FAMS.test(String(o.famId)))); }); }
+      return achou(c.ops);
+    },
     alternarOpcao: function () {
-      var P = U._plano; if (!P || !P.ok || P.opcoes < 2) return false;   // hid:ok só alterna com 2+ opções
+      var P = U._plano; if (!P || !P.ok) return false;
+      /* modo rápido: só a 1ª opção foi calculada — a primeira vez que o Tab é apertado calcula todas as estratégias (sob demanda) */
+      if (P.rapido && P.opcoes < 2) {
+        status("Traçar automaticamente: calculando as alternativas…");
+        var Nf = U.planejar({ uids: U._planoUids, opcaoRota: 1, rapido: false, perguntarManual: false });
+        if (!Nf.ok || Nf.opcoes < 2) { status("Não há outra opção de traçado para este ambiente."); return false; }
+        Nf.indice = 1; U._plano = Nf; U._previa(Nf.ops); U._cardMostrar(Nf); return true;
+      }
+      if (P.opcoes < 2) return false;   // hid:ok só alterna com 2+ opções
       var prox = (P.indice + 1) % P.opcoes;
       status("Traçar automaticamente: opção " + (prox + 1) + " de " + P.opcoes + "…");
       var N = U.planejar({ uids: U._planoUids, opcaoRota: prox, perguntarManual: false });

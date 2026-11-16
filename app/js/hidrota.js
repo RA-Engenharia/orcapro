@@ -277,6 +277,7 @@
     p.estrategias = arr(src.estrategias).filter(function (s) { return ESTRATEGIAS[s]; });
     if (!p.estrategias.length) p.estrategias = ORDEM.slice();
     p.terreo = !!src.terreo;
+    p.rapido = !!src.rapido;   /* perf 16/11/2026: o usuário posicionou os destinos — só a 1ª estratégia que fecha (as outras o Tab calcula sob demanda) */
     p.atravessarViga = !!src.atravessarViga;
     p.margemAmpla = num(src.margemAmpla, MARGEM_AMPLA);   /* rota:margemAmpla — 0 desliga a 2ª busca */
     p.tracadoParcial = src.tracadoParcial === true;   /* rota:parcial — só quem pede (o Traçar automaticamente do ambiente, js/hidambiente.js); ⚠ ligado por padrão quebrava test-hid-predio-interferencia e test-hid-aq-h6 (o parcial no meio das tentativas trocava a opção inteira de outro andar pela parcial) */
@@ -2606,7 +2607,7 @@
                     criterios: r.criterios ? { nota: r.criterios.nota, conceito: r.criterios.conceito, contagem: r.criterios.contagem, custo: r.criterios.custoMotor, apontamentos: r.criterios.apontamentos } : null });
       if (P.parcial) { var op0 = opcoes[opcoes.length - 1]; op0.parcial = true; var tP = "TRAÇADO PARCIAL: nenhuma estratégia fechou o ambiente inteiro — saiu o que tem caminho; o que falhou está nas pendências"; op0.avisos.unshift(tP); op0.problemas.unshift(prob(tP, [], null)); }
     }
-    if (EN.aparelhos.length) P.estrategias.forEach(tentar);
+    if (EN.aparelhos.length) { if (P.rapido) P.estrategias.some(function (ch) { tentar(ch); return opcoes.length > 0; }); else P.estrategias.forEach(tentar); }
     /* rota:parcial — nenhuma estratégia fechou inteira: o 2º passe traça o que tem caminho (a falha de um sistema não apaga o outro) */
     if (!opcoes.length && EN.aparelhos.length && P.tracadoParcial) { P.parcial = true; P.estrategias.forEach(tentar); P.parcial = false; }
     /* ⚠ ordem = custo (empate: a ordem das estratégias) — a 1ª nunca é pior */

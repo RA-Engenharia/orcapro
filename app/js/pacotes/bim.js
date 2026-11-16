@@ -98632,7 +98632,14 @@ var f = Number(pe.face) || 0, rc = Number(pp.rCentral) || 0;
 if (pp.tipo === "cotovelo" && rc > 0 && desvioGraus != null) f = f - rc * Math.tan((Number(pp.angulo) || 90) * Math.PI / 360) + rc * Math.tan(Number(desvioGraus) * Math.PI / 360);
 return f * MM;
 }
+var FN = { m: {}, n: 0, t: 0 };
 function facesNo(c, ramos) {
+var ag = Date.now(), k; if (ag - FN.t > 60000 || FN.n > 3000) { FN.m = {}; FN.n = 0; } FN.t = ag;
+try { k = JSON.stringify([c, ramos]); } catch (eK) { return facesNo0(c, ramos); }
+var h = FN.m[k]; if (h === undefined) { h = facesNo0(c, ramos); FN.m[k] = h; FN.n++; }
+return h && h.slice ? h.slice() : h;
+}
+function facesNo0(c, ramos) {
 var T = {}, ids = [];
 ramos.forEach(function (r, i) {
 var id = "s" + i, d = nrmz(pv(r.d)), L = 1, a, b;
@@ -99117,6 +99124,16 @@ varrer(m, reta(pv(P), dir), escala(pf), segsDe(lod, tp.de), false);
 return { partes: [cascaSaida(m)], recuo: (zFace + sai - pbP) * MM, cotas: cp, aConferir: true };
 }
 var GARANTIA = { ligada: true };
+var NM = { m: {}, n: 0, t: 0 };
+function noMemo(lista, trechosPorId, o) {
+var ag = Date.now(), k = null; if (ag - NM.t > 60000 || NM.n > 5000) { NM.m = {}; NM.n = 0; } NM.t = ag;
+try {
+var refs = {}; (lista || []).forEach(function (c) { (c.ramos || []).forEach(function (r) { var id = r !== null && typeof r === "object" ? r.trecho : r; if (id != null && trechosPorId && trechosPorId[id] && !refs[id]) refs[id] = trechosPorId[id]; }); });
+k = JSON.stringify([lista, refs, o || null, CACHE.ligado]);
+} catch (eK) { return no(lista, trechosPorId, o); }
+var h = NM.m[k]; if (h !== undefined) return h.r;
+var r = no(lista, trechosPorId, o); NM.m[k] = { r: r }; NM.n++; return r;
+}
 function no(lista, trechosPorId, o) {
 o = o || {};
 if (!lista || !lista.length) return null;
@@ -99718,7 +99735,7 @@ VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
 Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,
 cotasTubo: cotasTubo, cotasConexao: cotasConexao, aparencia: aparencia,
 conexaoBruta: conexaoBruta, tipoBaseGeo: tipoBaseGeo, dados: dados,
-tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
+tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, noMemo: noMemo, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
 TETO_CONEXAO: 2000, TETO_CONEXAO_GRANDE: 2800, tetoConexao: tetoConexao, TETO_PRODUTO: 3200, TETO_PRODUTO_GRANDE: 4800, TETO_ANEL: 200, TETO_TUBO: 400, TETO_PECA: 4200, TETO_REGISTRO: 2600
 };
 global.HidGeo = HidGeo;

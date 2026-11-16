@@ -941,6 +941,19 @@
     if (tqs.length) {
       destinos.esgoto = { tipo: "tubo_queda", id: tqs[0].id, x: tqs[0].x, z: tqs[0].z, yBase: tqs[0].yBase, yTopo: tqs[0].yTopo, existente: true,
         ventilado: verticais(estado, "ventilacao", gerados).some(function (v) { return d2(v, tqs[0]) <= B.TOL && v.yBase <= tqs[0].yTopo + B.TOL; }) };
+      /* 15/11/2026 (auditoria do PDF real: "TQ sem ventilação primária no topo"): o tubo de queda que o usuário pôs e ninguém ventilou ganha o PROLONGAMENTO acima do topo — um trecho
+         de ventilação NOVO (o TQ dele não muda) do topo do TQ até acima da cobertura (4.3.6, pelo HidNormas) com o terminal; DN = o do TQ (ventilação primária é o prolongamento dele).
+         Sem cobertura no modelo o topo vem da parede/laje mais alta (ou do teto) e a PENDÊNCIA avisa. parametros.ventilacaoPrimariaTQ = false desliga. */
+      if (!destinos.esgoto.ventilado && par.ventilacaoPrimariaTQ !== false) (function () {
+        var tq0 = arr(estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) === String(tqs[0].id); })[0], dnTq = tq0 ? num(tq0.dn, 100) : 100;   // hid:ok DN do TQ do modelo; 100 só se o trecho sumiu
+        var tpQ = topoVentilacao(estado, piso, tetoA, NR), idVp = ambId + "-tq-vp";
+        if (!(tpQ && isFinite(tpQ.y) && tpQ.y > tqs[0].yTopo + B.TOL)) { pend("amb.tq_vp", "o tubo de queda " + tqs[0].id + " não tem ventilação primária no topo e o terminal acima da cobertura não coube (topo a " + f2(tqs[0].yTopo) + " m): prolongue até acima da cobertura (NBR 8160 4.3.6)", [tqs[0].id]); return; }
+        novas.push({ op: "trecho", id: idVp, sistema: "ventilacao", material: "pvc_esgoto", dn: dnTq, p1: { x: r4(tqs[0].x), y: r4(tqs[0].yTopo), z: r4(tqs[0].z) }, p2: { x: r4(tqs[0].x), y: r4(tpQ.y), z: r4(tqs[0].z) }, vertical: true, amb: ambId, ambParte: "ventilacao" });
+        if (B.PECAS.terminal_ventilacao && arr(B.PECAS.terminal_ventilacao.dns).indexOf(String(dnTq)) >= 0) novas.push({ op: "peca", id: idVp + "-terminal", peca: "terminal_ventilacao", sistema: "ventilacao", dn: String(dnTq), x: r4(tqs[0].x), y: r4(tpQ.y), z: r4(tqs[0].z), amb: ambId, ambParte: "ventilacao" });
+        else { novas[novas.length - 1].continua = "p2"; pend("amb.ventilacao.terminal", "terminal de ventilação DN " + dnTq + " sem peça no catálogo: a ponta do prolongamento do TQ " + tqs[0].id + " ficou aberta", [idVp]); }
+        aviso("tubo de queda " + tqs[0].id + " sem ventilação primária no topo: acrescentado o prolongamento DN " + dnTq + " até " + f2(tpQ.y) + " m (" + tpQ.origem + ") com o terminal — o tubo de queda do projeto não foi alterado", [tqs[0].id, idVp], null);
+        if (tpQ.pend) pend(tpQ.pend.chave, tpQ.pend.motivo, [idVp]);
+      })();
     } else if (terreo && !redesDoUsuario(estado).length && (ciUser = caixaInspecaoDoUsuario(estado, ancora))) {
       /* a CAIXA DE INSPEÇÃO que o usuário pôs lá fora (sem linha da rede desenhada): o ramal do ambiente vai até ELA. A família
          vira a peça do traçado (o cilindro de captura recebe tubo em qualquer cota) e a profundidade sai do traçado */
@@ -1075,6 +1088,7 @@
       }); });
     })();
     Object.keys(par).forEach(function (k) { if (HR().GEO[k] != null && par[k] != null) parR[k] = par[k]; });
+    if (par.rapido) parR.rapido = true;
     /* o traçado do ambiente com uma caixa sifonada (a escolhida ou uma alternativa) e destinos dados */
     function rotearCom(cxP, dest) {
       var opsModelo = soInst(opsLimpo).concat(novas.filter(function (o) { return o.op === "peca" && o.ambParte !== "caixa_sifonada"; })).concat(cxP && cxP._op ? [cxP._op] : []);
@@ -1628,6 +1642,7 @@
     }
     ctx.pendencias().forEach(function (p) { pend(p.chave, p.motivo, ids); });
     ctx.normas().forEach(function (f) { if (!out.normas.some(function (g) { return g.chave === f.chave; })) out.normas.push(f); });
+    if (novas.length) { try { var gA = garantirArvore(ops0.concat(limpar), novas, avaliarFam); gA.avisos.forEach(function (t) { aviso(t, ids, null); }); } catch (eA) { aviso("garantia de árvore do esgoto falhou: " + (eA && eA.message ? eA.message : eA), ids, null); } }
     out.ops = limpar.concat(novas);
     /* ⚠ os avisos são os do MODELO REAL depois do lote (o que o modelador acusa e antes não acusava) — a validação
        interna do HidRota usa famílias sintéticas e acusava "ponto sem tubo" em ponto que no modelo está ligado */
@@ -2117,12 +2132,13 @@
         /* N23 (23/10/2026, auditor COZ-2PIAS): nenhuma posição sem colisão no deslize normal (a 1ª pia entre a prumada da água e a
            descida da pia: a 60 cm a subida passava a 9,75 cm da água — o afastamento é 10 cm) → procura de novo até o DOBRO do deslize
            (o que fecha sem bater vence; o que ainda bate fica como antes, com o aviso) */
-        if ((!best || best.bate) && nP < nPmax) { nP = nPmax; varrer(); }
+        /* modo rápido (16/11/2026): sem a 2ª passada de deslize dobrado nem a do desvio de 1 cm — o resultado das posições boas é o mesmo; o difícil fica com o aviso/pendência de sempre */
+        if ((!best || best.bate) && nP < nPmax && !par.rapido) { nP = nPmax; varrer(); }
         /* A1 (decisão do Rogério, 13/11/2026: "a parede sempre comporta o DN 50 — o conflito é de POSIÇÃO"): a ventilação DN 50 depois da caixa que ainda
            bate (a 10 cm da água, 3 cm de outro esgoto) ou não encaixa as conexões DN 50 procura de novo com o DESVIO dentro da parede de 1 em 1 cm (o tanque da casa:
            a 25 cm a subida DN 50 ficava a 9,6 cm da prumada de água; a 26 cm, 10,4 cm — o passo de 5 cm pulava a posição livre). A régua é a do próprio varrer (bateEm: afastamento da água e folga de montagem; encaixeFalta: as faces medidas das peças DN 50) — uma só para todo caminho */
-        if (best && !CV && r >= raio(50) - EPS && (best.bate || best.faltaEncaixe - MARGEM_ENCAIXE > EPS_ENCAIXE)) {   // hid:ok DN do terminal de ventilação
-          passoDes = 0.01; nP = nPmax; varrer();   // hid:ok 1 cm (passo do deslize fino da subida dentro da parede, pelo desvio)
+        if (best && !CV && !par.rapido && r >= raio(50) - EPS && (best.bate || best.faltaEncaixe - MARGEM_ENCAIXE > EPS_ENCAIXE)) {   // hid:ok DN do terminal de ventilação
+          passoDes = par.rapido ? 0.05 : 0.01; nP = nPmax; varrer();   // hid:ok 1 cm (passo do deslize fino da subida dentro da parede, pelo desvio)
         }
         return best;
       }
@@ -2149,7 +2165,7 @@
       }
       var melhor = null, CV = destinos.ventilacao || null, coluna = null;
       var cobertos = {}, RAIO_VERT = 0.01, CAMADA_VENT = CAMADA_PAREDE, PERNA_DESVIO_VENT = 0.13;   // hid:ok 1 cm em planta: o trecho é vertical; 13 cm: os dois joelhos e as bolsas do DN 40 (o trecho vertical do desvio)
-      var DESLIZES_VENT = [0]; for (var iDz = 1; iDz <= 15; iDz++) { DESLIZES_VENT.push(iDz / 10); DESLIZES_VENT.push(-iDz / 10); }   // hid:ok de 10 em 10 cm, até 1,50 m
+      var DESLIZES_VENT = [0]; for (var iDz = 1; iDz <= (par.rapido ? 5 : 15); iDz++) { DESLIZES_VENT.push(iDz / 10); DESLIZES_VENT.push(-iDz / 10); }   // hid:ok de 10 em 10 cm, até 1,50 m
       var HGv = dep("HidGeo", "./biminstgeo.js");
       /* C1 (revisão 09/11/2026, cozinha da Casa 487, parede de 11,5 cm): sem nenhuma subida a partir do ramal, a tomada vai à DESCIDA de um aparelho de sifão próprio, por junção de 45° (NBR 8160 4.3.16 a), em vez de deixar o ambiente sem ventilação (4.3.11).
          Vale para a coluna do prédio (col) ou até a altura de saída. Os desconectores que essa tomada não atende seguem pelo caminho normal dos ramais */
@@ -2348,7 +2364,8 @@
         /* 4.3.11 / 4.3.12: a edificação precisa de UM ventilador primário DN 100 — não é a ventilação deste banheiro */
         var dn100 = NR.regraVent("ventilador_predio_terreo_dn", "ventilação: ventilador primário da edificação (4.3.11/4.3.12)");
         var temV100 = dn100 != null && novas.concat(arr(estado.instalacoes && estado.instalacoes.trechos)).some(function (t) { return (t.op == null || t.op === "trecho") && t.sistema === "ventilacao" && num(t.dn, 0) >= dn100; });
-        if (dn100 != null && !temV100) pend("es8160.ventilador_primario", "NBR 8160 4.3.11/4.3.12: a edificação precisa de pelo menos um tubo ventilador primário DN " + dn100 + " (ligado à caixa de inspeção, ao coletor, ao subcoletor ou ao ramal de uma bacia e prolongado acima da cobertura) — a ventilação deste ambiente é o ramal DN " + dnV + " da Tabela 8 e não o substitui: definir com o RT", ids);
+        /* 15/11/2026 (decisão do coordenador): a ventilação É traçada (coluna + terminal acima da cobertura, DN pela Tabela 8/2 — regra do RT de 18/10) e deixa de ser pendência; o DN 100 do 4.3.11 vira AVISO informativo (nunca força o DN da tabela) */
+        if (dn100 != null && !temV100) aviso("NBR 8160 4.3.11/4.3.12: a edificação precisa de um tubo ventilador primário DN " + dn100 + " (ligado ao ramal de uma bacia, à caixa de inspeção ou ao coletor, e prolongado acima da cobertura). A coluna de ventilação deste ambiente (DN " + dnCol + ", Tabela 8/2) já sobe até o terminal acima da cobertura; confirme com o RT se ela atende como primário ou se entra um DN " + dn100 + " à parte", ids);
         out.ventilacao = { dn: dnV, dnRamal: dnV, dnColuna: dnCol, tabela2: tab2, comprimento: r4(Ltot), minTransbordamento: minTransb, contato: melhor.c.P, tomada: { x: melhor.c.P.x, y: melhor.c.P.y, z: melhor.c.P.z, trecho: melhor.c.trecho, s: r4(melhor.c.s), ligacao: melhor.angMenor ? "juncao45" : "te90", acliveInicialPct: r4(melhor.aclive * 100), sMin: fatorDn != null && desc[0].dn ? r4(fatorDn * desc[0].dn / 1000) : null, limite: desc[0].limite, desconector: desc[0].ref },
                            coluna: coluna.id, parede: melhor.w ? melhor.w.id : null, topo: r4(coluna.p2.y), alturaSaida: hSaida, topoOrigem: "altura de saída da ventilação (" + f2(hSaida) + " m do piso, parâmetro)", terminal: idTerm, desconectores: melhor.c.dists, ramais: [], rasgos: rasg };
       }
@@ -2364,7 +2381,8 @@
       /* col = a coluna (o ramal entra nela); sem col, a ventilação individual: sobe até a altura de saída, com o terminal próprio */
       function ventNaDescida(q, dnR, yTopo, col, dnFimV) {
         var melhorV = null;
-        q.cam.forEach(function (c) {
+        /* perf 16/11/2026 (modo rápido, destinos do usuário): só as 3 descidas mais perto do desconector */
+        (par.rapido ? q.cam.slice().sort(function (x, y) { return x.s0 - y.s0; }).slice(0, 3) : q.cam).forEach(function (c) {
           var t = c.e.t, dh = d2(t.p1, t.p2); if (dh > RAIO_VERT || !(t.p1.y > t.p2.y)) return;
           var w = paredes.filter(function (pw) { return distSeg(t.p1, pw.p1, pw.p2) + raio(dnR) <= num(pw.espessura, 0) / 2 + EPS && num(pw.espessura, 0) >= 2 * raio(dnR); })[0]; if (!w) return;
           var Lw = d2(w.p1, w.p2), u0 = { x: (w.p2.x - w.p1.x) / Lw, z: (w.p2.z - w.p1.z) / Lw }, fundo = t.p2.y + geo(par, "chanfro");
@@ -2373,7 +2391,7 @@
           var mesmaDescida = {}; trs.forEach(function (u) { if (d2(u.p1, u.p2) <= RAIO_VERT && d2(u.p1, t.p1) <= RAIO_VERT) mesmaDescida[u.id] = 1; });
           var nW = { x: -u0.z, z: u0.x }, s0n = (t.p1.x - w.p1.x) * nW.x + (t.p1.z - w.p1.z) * nW.z, cam0 = num(w.espessura, 0) / 2 - raio(dnR) - COBRE_CAMADA, cams = [0];
           [CAMADA_VENT, -CAMADA_VENT, CAMADA_FUNDA, -CAMADA_FUNDA].forEach(function (cv) { if (Math.abs(cv) <= cam0 + EPS) cams.push(cv); });
-          for (var ys = chao4(t.p1.y - passo); ys >= fundo - EPS; ys = chao4(ys - passo)) [1, -1].forEach(function (sd) { cams.forEach(function (cam) { [0, 0.03, 0.06, 0.09].forEach(function (aH) {   // hid:ok a derivação mais longa, até afastar a subida do toco do ponto (cm)
+          for (var ys = chao4(t.p1.y - passo); ys >= fundo - EPS; ys = chao4(ys - passo)) [1, -1].forEach(function (sd) { cams.forEach(function (cam) { (par.rapido ? [0, 0.06] : [0, 0.03, 0.06, 0.09]).forEach(function (aH) {   // hid:ok a derivação mais longa, até afastar a subida do toco do ponto (cm)
             var sq = c.s0 + (t.p1.y - ys), lim = q.limite == null ? null : q.limite - w0, sMin = fatorDn != null && q.dn ? fatorDn * q.dn / 1000 : 0;
             if (lim != null && sq > lim + EPS) return;
             if (sq < sMin - EPS) return;
@@ -2550,6 +2568,57 @@
     return { x: r4(a.x + ux * t + nx * s * off), z: r4(a.z + uz * t + nz * s * off) };
   }
   /* até onde sobe o ventilador: cobertura do modelo + terminal da 8160; sem cobertura, para no teto e pende */
+  /* ⚠ ESGOTO É ÁRVORE (15/11/2026, auditoria do PDF real: "o esgoto se divide no nó (2 saídas)" e "o esgoto tem um ciclo"). A MESMA regra de sentido do HidES (trecho vertical: do alto para
+     baixo; horizontal: p1 → p2): cada nó tem UMA saída a jusante e a rede não fecha anel. arvoreEsgoto() só mede; garantirArvore() corrige SÓ o que o TRAÇADO criou (`novas`), nunca o trecho
+     do usuário: (a) 2ª saída num nó com um trecho novo que SOBE (p2 acima de p1 = desenhado ao contrário) → o trecho novo é invertido e entra como afluente; (b) anel → sai o trecho novo
+     que fecha o anel (o último criado); cada correção vira aviso. Sem correção possível o aviso do HidES continua dizendo. */
+  function arvoreEsgoto(estado, avaliarFam) {
+    var B = BI(), Gr = dep("HidGrafo", "./hidgrafo.js"); if (!B || !Gr) return null;
+    var G = Gr.montar(B.rede(estado, avaliarFam), estado, ["esgoto"]), sai = {}, ent = {}, de = {}, para = {};
+    G.ordemN.forEach(function (id) { sai[id] = []; ent[id] = []; });
+    G.ordemA.forEach(function (eid) {
+      var e = G.arestas[eid], a = e.a, b = e.b;
+      if (e.vertical) { if (G.nos[e.a].y < G.nos[e.b].y) { a = e.b; b = e.a; } }
+      de[eid] = a; para[eid] = b; sai[a].push(eid); ent[b].push(eid);
+    });
+    var grau = {}, fila = [], topo = 0;
+    G.ordemN.forEach(function (id) { grau[id] = ent[id].length; if (!grau[id]) fila.push(id); });
+    while (fila.length) { var n0 = fila.shift(); topo++; sai[n0].forEach(function (eid) { if (--grau[para[eid]] === 0) fila.push(para[eid]); }); }
+    var restam = {}; G.ordemN.forEach(function (id) { if (grau[id] > 0) restam[id] = 1; });
+    return { G: G, sai: sai, de: de, para: para, divide: G.ordemN.filter(function (id) { return sai[id].length > 1; }), restam: restam, nRestam: G.ordemN.length - topo, ok: G.ordemN.length === topo && !G.ordemN.some(function (id) { return sai[id].length > 1; }) };
+  }
+  function garantirArvore(opsBase, novas, avaliarFam) {
+    var out = { avisos: [], invertidos: [], removidos: [] }, B = BI(), E = BE(); if (!B || !E) return out;
+    var ehNovo = function (o) { return o && o.op === "trecho" && o.sistema === "esgoto" && o.ambParte === "rota"; };
+    for (var volta = 0; volta < 6; volta++) {   // hid:ok guarda: no máximo 6 correções por traçado
+      var A; try { A = arvoreEsgoto(E.aplicar(opsBase.concat(novas)), avaliarFam); } catch (e) { A = null; }
+      if (!A || A.ok) break;
+      var ids = {}; novas.forEach(function (o) { if (ehNovo(o)) ids[String(o.id)] = o; });
+      var feito = false;
+      A.divide.forEach(function (n) {
+        if (feito) return;
+        A.sai[n].forEach(function (eid) {
+          if (feito) return;
+          var ar = A.G.arestas[eid], op = ids[String(ar.trecho).replace(/b$/, "")];
+          if (!op || ar.vertical || !(op.p2.y > op.p1.y + 1e-4)) return;   // hid:ok só o trecho NOVO, horizontal, desenhado subindo (ao contrário)
+          var t = op.p1; op.p1 = op.p2; op.p2 = t; if (op.continua === "p1") op.continua = "p2"; else if (op.continua === "p2") op.continua = "p1";
+          out.invertidos.push(String(op.id)); out.avisos.push("esgoto: o nó " + n + " tinha duas saídas; o trecho " + op.id + " (do traçado) estava desenhado ao contrário e foi invertido — agora entra como afluente"); feito = true;
+        });
+      });
+      if (feito) continue;
+      if (A.nRestam > 0) {
+        var cand = null;
+        for (var i = novas.length - 1; i >= 0 && !cand; i--) {
+          var o = novas[i]; if (!ehNovo(o)) continue;
+          var ed = A.G.ordemA.filter(function (eid) { return String(A.G.arestas[eid].trecho).replace(/b$/, "") === String(o.id); });
+          if (ed.length && ed.some(function (eid) { return A.restam[A.de[eid]] && A.restam[A.para[eid]]; })) cand = i;
+        }
+        if (cand != null) { var rm = novas.splice(cand, 1)[0]; out.removidos.push(String(rm.id)); out.avisos.push("esgoto: o trecho " + rm.id + " (do traçado) fechava um ANEL na rede (o esgoto tem de ser árvore) e foi retirado — confira a ligação desse ponto"); continue; }
+      }
+      break;
+    }
+    return out;
+  }
   function topoVentilacao(estado, piso, teto, NR) {
     var cobs = arr(estado.coberturas), tels = arr(estado.telhados), y = null, origem = "";
     cobs.forEach(function (cb) { arr(cb.planos).forEach(function (p) { var yt = num(p.cy, NaN) + num(p.espessura, 0) / 2; if (isFinite(yt) && (y == null || yt > y)) { y = yt; origem = "cobertura " + cb.id; } }); });
@@ -2570,7 +2639,7 @@
     return { y: teto.y, origem: teto.origem, continua: true, pend: { chave: "amb.cobertura", motivo: "o modelo não tem cobertura/telhado sobre o ambiente: o ventilador parou no teto (" + f2(teto.y) + " m) — prolongue até acima da cobertura (NBR 8160, 4.3.6)" } };
   }
 
-  var HidAmbiente = { VERSAO: 1, GEO_AMB: GEO_AMB, ligar: ligar, membros: membros, duplicados: duplicados, tipoDisp: tipoDisp, dispositivosFamilia: dispositivosFamilia, _int: { pendenciaBarraDireto: pendenciaBarraDireto, vivas: vivas, localCaixa: localCaixa, pecaCaixa: pecaCaixa, esperaFora: esperaFora, esperaDepoisDosAparelhos: esperaDepoisDosAparelhos, grafoEs: grafoEs, projParede: projParede, limpeza: limpeza, noPavimento: noPavimento, topoVentilacao: topoVentilacao, verticais: verticais } };
+  var HidAmbiente = { VERSAO: 1, GEO_AMB: GEO_AMB, ligar: ligar, membros: membros, duplicados: duplicados, tipoDisp: tipoDisp, dispositivosFamilia: dispositivosFamilia, _int: { arvoreEsgoto: arvoreEsgoto, garantirArvore: garantirArvore, pendenciaBarraDireto: pendenciaBarraDireto, vivas: vivas, localCaixa: localCaixa, pecaCaixa: pecaCaixa, esperaFora: esperaFora, esperaDepoisDosAparelhos: esperaDepoisDosAparelhos, grafoEs: grafoEs, projParede: projParede, limpeza: limpeza, noPavimento: noPavimento, topoVentilacao: topoVentilacao, verticais: verticais } };
   global.HidAmbiente = HidAmbiente;
   if (typeof module !== "undefined" && module.exports) module.exports = HidAmbiente;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -37,6 +37,9 @@
   function NR() { return dep("HidNormas", "./hidnormas.js"); }
   var MM = 1000;   /* mm por m */
   var EPS = 1e-9;   // hid:ok tolerância de ponto flutuante nas comparações (não é valor de norma)
+  /* 15/11/2026 (projeto real, DN 100 a "1%" acusado): a inclinação sai de cotas em 4 casas (0,1 mm) e um trecho curto dá 0,995% — o BimInst já arredonda a 1 casa (meio passo = 0,05); o cálculo
+     reprovava o que o desenho aceita. Tolerância de arredondamento de 0,05 ponto percentual, nunca folga de projeto. */
+  var TOL_DECL_PCT = 0.05;   // hid:ok arredondamento da inclinação (pontos percentuais), não é valor de norma
   function f2(v) { return v == null ? "—" : String(Math.round(v * 100) / 100).replace(".", ","); }
 
   /* família → aparelho (o mesmo nome das tabelas do CONTRATO §1.1) */
@@ -337,7 +340,7 @@
           tCol = tCol || ctx.linhas("es.coletor", null, "subcoletor");
           if (!tCol) { r.pendencias.push("es.coletor"); return; }
           var dec = e.inclinacao == null ? null : e.inclinacao;
-          var decls = tCol.map(function (x) { return num(x.declividade_pct, null); }).filter(function (v) { return v != null && dec != null && v <= dec + EPS; });
+          var decls = tCol.map(function (x) { return num(x.declividade_pct, null); }).filter(function (v) { return v != null && dec != null && v <= dec + TOL_DECL_PCT + EPS; });
           if (!decls.length) { r.pendencias.push("declividade " + f2(dec) + "% abaixo da menor da tabela de coletor"); r.passos.push("declividade do trecho abaixo da menor da tabela"); return; }
           var dUsar = Math.max.apply(null, decls);
           var uCol = uhcColetor(r);
@@ -410,7 +413,7 @@
           var lin = cm.filter(function (x) { return x.dn_max === "*" || num(x.dn_max, 0) >= dnRef; }).sort(function (a, b) { return (a.dn_max === "*" ? Infinity : a.dn_max) - (b.dn_max === "*" ? Infinity : b.dn_max); })[0];
           if (!lin) { ctx.pendencia("es.declividade_minima[dn=" + dnRef + "]", "sem linha de declividade para DN " + dnRef, "trecho " + e.trecho); r.pendencias.push("declividade mínima DN " + dnRef); }
           else {
-            var dmin = num(lin.declividade_pct, 0), d0 = e.inclinacao == null ? 0 : e.inclinacao, okD = d0 >= dmin - EPS;
+            var dmin = num(lin.declividade_pct, 0), d0 = e.inclinacao == null ? 0 : e.inclinacao, okD = d0 >= dmin - TOL_DECL_PCT - EPS;
             r.declMin = dmin;
             verif(e.trecho, "declividade mínima", d0, dmin, "%", d0 > 0 ? dmin / d0 : null, okD, ["i = " + f2(d0) + "% ≥ " + f2(dmin) + "% (DN " + dnRef + ")"], Nn.fonte("es.declividade_minima"));
             if (!okD) {

@@ -79,7 +79,7 @@
      ficava "sem aparelho de norma" (UHC e peso pendentes em toda a rede a jusante) e a descida vertical do ramal dela era lida
      como TUBO DE QUEDA ("sem ventilação primária no topo"). Agora o cálculo lê o MESMO dado do Traçar. Só os nomes que são linha
      das tabelas (af.aparelhos / es.aparelhos) — o mictório depende da instância (tipo de descarga) e fica com a família hid-*. */
-  var NORMA_DO_KIT = { bacia_caixa_acoplada: 1, bacia_valvula: 1, lavatorio: 1, chuveiro: 1, pia_cozinha: 1, tanque: 1 };
+  var NORMA_DO_KIT = { bacia_caixa_acoplada: 1, bacia_valvula: 1, lavatorio: 1, chuveiro: 1, pia_cozinha: 1, tanque: 1, banheira: 1 };   /* banheira: 15/11/2026 — a hidromassagem (ra-banho-hidromassagem, aparelhoNorma "banheira") ficava sem aparelho de norma (UHC/peso pendentes) */
   var KIT_DA_FAM = null;
   function aparelhoDoKit(famId) {
     if (!KIT_DA_FAM) {
@@ -91,7 +91,16 @@
         arr(K[k] && K[k].familias).forEach(function (fid) { if (KIT_DA_FAM[fid] == null) KIT_DA_FAM[fid] = ap; });
       });
     }
-    return KIT_DA_FAM[famId] || null;
+    if (KIT_DA_FAM[famId]) return KIT_DA_FAM[famId];
+    /* 15/11/2026 (projeto real): a ILHA de cozinha com cuba e a bancada/móvel de banho que o kit não lista pelo id — pelo NOME da família (id), nunca por palpite fora disto:
+       só as famílias RA de móvel (ra-…) e só estes três casos; o UHC/peso continuam vindo da tabela do sistema pelo aparelho. */
+    var id = String(famId == null ? "" : famId);
+    if (/^ra-/.test(id)) {
+      if (/(^|-)(ilha)(-|$)/.test(id) && /(^|-)(coz|cozinha)(-|$)/.test(id)) return "pia_cozinha";
+      if (/(hidromassagem|banheira)/.test(id)) return "banheira";
+      if (/(bancada|gabinete|cuba)/.test(id) && /(banho|banheiro|wc)/.test(id)) return "lavatorio";
+    }
+    return null;
   }
   /* grupo do quadro de aparelhos mínimos (HidPrograma): "bacia", "lavatorio"… ou null se a família não é aparelho */
   function grupoDaFamilia(famId) {

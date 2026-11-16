@@ -619,6 +619,11 @@
       else if (pc) {
         var nC = pc.parede ? { x: pc.parede.x, z: pc.parede.z } : n, eC = embAF(pc), Ac = eixo(pc, nC, eC), yRP = r4(piso + aRP.valor);
         var Lacc = BI().ACESSORIO_PADRAO, yBase = r4(yRP - Lacc / 2 - geo(par, "margemNo"));
+        /* 15/11/2026 (auditoria do PDF real, decisão do coordenador): o ramal embutido na parede corre na altura do RG (alturaRamalAF, acima do registro de pressão da tabela).
+           A espera na altura da tabela (abaixo do RP) obrigava o ramal a DESCER até ela e a água a voltar a subir pelo registro: dois joelhos inúteis. Agora a espera fica NA ALTURA
+           DO RAMAL e o registro de pressão vai para o trecho que sobe reto ao chuveiro, logo acima dela (nunca abaixo da espera). Ramal mais baixo que a tabela: nada muda. */
+        var yRamal = geo(par, "alturaRamalAF"), yRPk = yRP;
+        if (par.chuveiroNaAlturaDoRamal !== false && isFinite(yRamal) && piso + yRamal > yBase + EPS && piso + yRamal + Lacc / 2 + geo(par, "margemNo") < Ac.y - geo(par, "margemNo")) { yBase = r4(piso + yRamal); yRPk = r4(yBase + Lacc / 2 + geo(par, "margemNo")); }
         var tg = tangente(nC), outros = e.vizinhos ? arr(e.vizinhos) : vizinhosDe(estado, fi);
         if (outros.length) { var cx = 0, cz = 0; outros.forEach(function (v) { cx += v.x; cz += v.z; }); cx /= outros.length; cz /= outros.length; if ((cx - Ac.x) * tg.x + (cz - Ac.z) * tg.z < 0) tg = { x: -tg.x, z: -tg.z }; }
         var dnC = dnAgua(ctx, "chuveiro", pc, out.pendencias);
@@ -626,13 +631,13 @@
         var desce = K.trecho("ch-sobe", "agua_fria", "pvc_soldavel", dnC, { x: Ac.x, y: yBase, z: Ac.z }, Ac, "chuveiro");
         /* o volante do RP sai para DENTRO do box pelo passo do fim do gerar (FRENTE B, 19/10/2026, D-01): antes o 3D usava a frente
            padrão (+Z do mundo) e o volante saía ao longo da parede — o Rogério girava à mão (giro 90) */
-        K.acessorio("ch-rp", "ra-registro-pressao", "acabamento", desce, { x: Ac.x, y: yRP, z: Ac.z }, "chuveiro");
+        K.acessorio("ch-rp", "ra-registro-pressao", "acabamento", desce, { x: Ac.x, y: yRPk, z: Ac.z }, "chuveiro");
         var Lt = geo(par, "lateralChuveiro"), E = { x: r4(Ac.x + tg.x * Lt), y: yBase, z: r4(Ac.z + tg.z * Lt) };
         /* FRENTE B (19/10/2026, D-04): desenhado no sentido da água — p1 = a espera (por onde o ramal chega), p2 = o pé da subida */
         K.trecho("ch-espera", "agua_fria", "pvc_soldavel", dnC, E, { x: Ac.x, y: yBase, z: Ac.z }, "chuveiro", { continua: "p1" });
         out.esperaChuveiro = E;
         decide("kit.chuveiro.altura", "Ponto a " + f2(aCH.valor) + " m (" + aCH.fonte.doc.split(",")[0] + ", p." + aCH.fonte.pagina + ").");
-        decide("kit.chuveiro.registro", "Registro de pressão a " + f2(aRP.valor) + " m; espera lateral a " + f2(Lt) + " m.");
+        decide("kit.chuveiro.registro", "Registro de pressão a " + f2(yRPk - piso) + " m" + (yRPk !== yRP ? " (acima da espera, que fica na altura do ramal)" : "") + "; espera lateral a " + f2(Lt) + " m.");
         out.materiais.push({ item: "Registro de pressão com acabamento (chuveiro)", fonte: "kit" });
       }
     } else if (A0.tipo === "ancora") {

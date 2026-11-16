@@ -756,7 +756,15 @@
      chega: true = o tubo TERMINA no nó (montante), false = COMEÇA nele (jusante), passante: true = atravessa (o ramal do tê), dn }];
      devolve a face (m) de cada ramo, na ordem (null onde a peça não deu porta). É o que o traçado usa para medir o encaixe — a peça
      medida, a luva, a bucha e o ramal fora do catálogo saem exatamente como no desenho */
+  /* perf 16/11/2026: as faces de um nó sintético são uma conta pura de (peça, ramos) — o Traçar a repete milhares de vezes; memória curta (esvazia sozinha em 60 s parada e ao passar de 3000) */
+  var FN = { m: {}, n: 0, t: 0 };
   function facesNo(c, ramos) {
+    var ag = Date.now(), k; if (ag - FN.t > 60000 || FN.n > 3000) { FN.m = {}; FN.n = 0; } FN.t = ag;
+    try { k = JSON.stringify([c, ramos]); } catch (eK) { return facesNo0(c, ramos); }
+    var h = FN.m[k]; if (h === undefined) { h = facesNo0(c, ramos); FN.m[k] = h; FN.n++; }
+    return h && h.slice ? h.slice() : h;
+  }
+  function facesNo0(c, ramos) {
     var T = {}, ids = [];
     ramos.forEach(function (r, i) {
       var id = "s" + i, d = nrmz(pv(r.d)), L = 1, a, b;
@@ -1353,6 +1361,19 @@
      principal + buchas. lista = conexões do biminst.rede() com o mesmo x,y,z; trechosPorId = {id: trecho}.
      Devolve { pecas: [{id, partes, aConferir}], recuos: {"<trecho>:<lado>": m} } */
   var GARANTIA = { ligada: true };
+  /* perf 16/11/2026: o MESMO nó (as mesmas conexões, os mesmos trechos que ele toca, as mesmas opções) é medido milhares de vezes pelo Traçar (encaixe/folga a cada passada): 84% das chamadas repetiam um nó já medido.
+     noMemo = no() com memória por CONTEÚDO (a chave leva as conexões, os trechos que elas citam e as opções — qualquer op que mude o nó muda a chave, então nunca devolve conta velha). Só para quem LÊ recuos/faces/bolsas
+     (o objeto é compartilhado: quem desenha o 3D e pode mexer nas partes continua chamando no()). */
+  var NM = { m: {}, n: 0, t: 0 };
+  function noMemo(lista, trechosPorId, o) {
+    var ag = Date.now(), k = null; if (ag - NM.t > 60000 || NM.n > 5000) { NM.m = {}; NM.n = 0; } NM.t = ag;
+    try {
+      var refs = {}; (lista || []).forEach(function (c) { (c.ramos || []).forEach(function (r) { var id = r !== null && typeof r === "object" ? r.trecho : r; if (id != null && trechosPorId && trechosPorId[id] && !refs[id]) refs[id] = trechosPorId[id]; }); });
+      k = JSON.stringify([lista, refs, o || null, CACHE.ligado]);
+    } catch (eK) { return no(lista, trechosPorId, o); }
+    var h = NM.m[k]; if (h !== undefined) return h.r;
+    var r = no(lista, trechosPorId, o); NM.m[k] = { r: r }; NM.n++; return r;
+  }
   function no(lista, trechosPorId, o) {
     o = o || {};
     if (!lista || !lista.length) return null;
@@ -2122,7 +2143,7 @@
     Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,   /* caixaM: a caixa de inspeção de alvenaria (js/hidcigeo.js) */
     cotasTubo: cotasTubo, cotasConexao: cotasConexao, aparencia: aparencia,
     conexaoBruta: conexaoBruta, tipoBaseGeo: tipoBaseGeo, dados: dados,   /* js/biminstgeoreal-agua.js */
-    tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
+    tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, noMemo: noMemo, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
     TETO_CONEXAO: 2000, TETO_CONEXAO_GRANDE: 2800, tetoConexao: tetoConexao, TETO_PRODUTO: 3200, TETO_PRODUTO_GRANDE: 4800, TETO_ANEL: 200, TETO_TUBO: 400, TETO_PECA: 4200, TETO_REGISTRO: 2600
   };
   global.HidGeo = HidGeo;
