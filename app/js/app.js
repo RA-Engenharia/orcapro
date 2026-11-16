@@ -13993,7 +13993,7 @@
              CAIXA publica sem preço no estado aparece AQUI, no fim, com selo —
              nunca nas sugestões acima nem em preenchimento automático. Quem
              decide se entra é "Permitir preço zerado" (checado no lançar). */
-          res = res.concat(self._buscaSemPrecoSinapi(q, f));
+          res = res.concat(self._buscaSemPrecoSinapi(q, f, doSearch));
           if (!res.length) {
             /* ⚠ A DICA DE REGIME TAMBÉM ESTAVA INVERTIDA, pelo mesmo motivo do
                flag: ela avisava "verifique se a base ONERADA está carregada"
@@ -14162,12 +14162,29 @@
     /* Composições/insumos SINAPI sem preço na UF que casam com a busca —
        respeitando os mesmos filtros (banco escolhido, bancos excluídos do
        orçamento, tipo, regime). Só a busca manual chama. */
-    _buscaSemPrecoSinapi: function (q, f) {
+    _buscaSemPrecoSinapi: function (q, f, repetir) {
       if (typeof Sinapi === "undefined" || !Sinapi.carregado || !Sinapi.buscarSemPreco) return [];
       f = f || {};
       if (f.fonte && String(f.fonte).toUpperCase() !== "SINAPI") return [];
       if (Util.arr(f.excluirFontes).some(function (x) { return String(x).toUpperCase() === "SINAPI"; })) return [];
       if (typeof Bases !== "undefined" && Bases.sinapiAtiva === false) return [];
+      /* base instalada ANTES da v1.2.350 (sem itens semPrecoUF): completa pelo
+         analítico da UF. Já carregado → na hora; senão carrega em silêncio,
+         uma vez, e repete a busca quando chegar. */
+      if (!(Sinapi._semPreco || []).length && Sinapi.completarSemPrecoDoAnalitico && typeof Analitico !== "undefined") {
+        var ufA = String(Sinapi.uf || "").toUpperCase();
+        if (Analitico.carregado && (!Analitico.uf || String(Analitico.uf).toUpperCase() === ufA)) {
+          Sinapi.completarSemPrecoDoAnalitico(Analitico);
+        } else if (this._spAnaPedido !== ufA && this._prepararAnalitico) {
+          this._spAnaPedido = ufA; // uma vez por UF
+          try {
+            var urls = this._prepararAnalitico(null, null, null);
+            if (urls && urls.alts) Analitico.carregarArquivo(urls.alts).then(function () {
+              if (Sinapi.completarSemPrecoDoAnalitico(Analitico) && typeof repetir === "function") repetir();
+            }, function () {});
+          } catch (eA) {}
+        }
+      }
       return Sinapi.buscarSemPreco(q, { max: 20, tipo: f.tipo || null, desonerado: f.desonerado }).map(function (it) {
         return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: it.tipo === "insumo" ? "insumo" : "composicao", semPrecoUF: true };
       });

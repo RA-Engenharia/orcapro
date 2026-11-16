@@ -1,1 +1,8 @@
-{"versao":"1.2.361","tipo":"silenciosa","zip":"https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.361.zip","notas":"OrcaPRO 1.2.361 - Concreto: pranchas de forma e armacao\n- Plantas de forma e armacao de vigas, lajes e pilares\n- Tabela de aco e resumo; PDF, DWG e xlsx\n- Desenho da armacao ao clicar na peca\n- Negativa de laje sem contagem em dobro","instalador":"https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.361/OrcaPRO-IA-Instalador-v1.2.361.exe","sha256":"88f4e9e2c24b1b901be750a40bfa078e8e6705ecb54de430ec0f656826d9ead0"}
+{
+  "versao": "1.2.362",
+  "tipo": "silenciosa",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.362.zip",
+  "notas": "OrcaPRO 1.2.362 - Correcao na busca da SINAPI\n- Composicao sem preco no seu estado agora aparece, com aviso, para voce informar o custo",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.362/OrcaPRO-IA-Instalador-v1.2.362.exe",
+  "sha256": "c56be82355ce03e4f9d96512cef1352deb83140b0ff7f7affaceef6c4b5203d8"
+}

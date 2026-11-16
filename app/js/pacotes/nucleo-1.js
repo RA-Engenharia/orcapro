@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.361",
+versao: "1.2.362",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -8088,6 +8088,23 @@ this._semPrecoTokens[j] = Util.normalizar(sp[j].codigo + " " + sp[j].descricao);
 },
 obter: function (codigo) { return this._porCodigo[String(codigo)] || null; },
 obterSemPreco: function (codigo) { return (this._semPrecoPorCodigo || {})[String(codigo)] || null; },
+completarSemPrecoDoAnalitico: function (A) {
+if (!A || !A.carregado || !A.todos) return 0;
+if ((this._semPreco || []).length) return 0;
+if (A.uf && this.uf && String(A.uf).toUpperCase() !== String(this.uf).toUpperCase()) return 0;
+var nc = function (c) { c = String(c || "").trim(); var m = c.match(/^(\d{2})[\/\-](\d{4})$/); return m ? m[2] + "-" + m[1] : c; };
+if (A.competencia && this.competencia && nc(A.competencia) !== nc(this.competencia)) return 0;
+var self = this, novos = [];
+A.todos().forEach(function (c) {
+var cod = String(c && c.codigo || "");
+if (!cod || self._porCodigo[cod]) return;
+novos.push({ codigo: cod, descricao: String(c.descricao || ""), unidade: String(c.unidade || ""),
+custoUnitario: 0, tipo: "composicao", fonte: "CSD", desonerado: !!A.desonerado, semPrecoUF: true, origem: "analitico" });
+});
+this._semPreco = novos;
+this._indexar();
+return novos.length;
+},
 buscarSemPreco: function (texto, filtro) {
 filtro = filtro || {};
 var max = filtro.max || 20, out = [];
