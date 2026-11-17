@@ -800,6 +800,8 @@
 }
 .d2-amb-cor { stroke: none; }
 .d2-amb-tx, .d2-amb-leg-tit, .d2-amb-leg-tx { fill: var(--d2-tinta); font-family: var(--fonte); }
+/* a etiqueta do ambiente (nome, numero e area) leva mascara so ao redor das letras onde cruzar linha do desenho */
+.d2-amb-tx, .d2-nivel-tx { paint-order: stroke; stroke: var(--d2-papel, #fff); stroke-opacity: .95; stroke-width: 2.6px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .d2-amb-nome, .d2-amb-leg-tit { font-weight: var(--p-forte); }
 .d2-amb-av { fill: var(--d2-amb-av); }
 .d2-amb-alvo { fill: transparent; stroke: none; cursor: pointer; }

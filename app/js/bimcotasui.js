@@ -264,12 +264,37 @@
       });
       return out;
     },
+    /* o DESENHO da vista em retângulos finos (parede, esquadria, móvel, tubo, porta): a cota automática e o rótulo do ambiente não pisam
+       neles. Cada aresta vira pedaços de até 30 cm (a diagonal não vira um retângulo gigante); no máximo 8000 pedaços. */
+    _geometria: function (id) {
+      var P = P2(), c = P && P._cache ? P._cache[id] : null, d = c && c.dados, out = [];
+      if (!d) return out;
+      function seg(x0, y0, x1, y1) {
+        if (![x0, y0, x1, y1].every(function (q) { return isFinite(+q); }) || out.length > 8000) return;
+        var L = Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)), n = Math.max(1, Math.ceil(L / 0.3));
+        for (var i = 0; i < n; i++) {
+          var ax = x0 + (x1 - x0) * i / n, ay = y0 + (y1 - y0) * i / n, bx = x0 + (x1 - x0) * (i + 1) / n, by = y0 + (y1 - y0) * (i + 1) / n;
+          out.push({ minx: Math.min(ax, bx) - 0.01, maxx: Math.max(ax, bx) + 0.01, minz: Math.min(ay, by) - 0.02, maxz: Math.max(ay, by) + 0.02 });
+        }
+      }
+      (d.cortes || []).forEach(function (q) {
+        var p = q && q.pts ? q.pts : []; if (p.length < 2) return;
+        for (var i = 0; i + 1 < p.length; i++) seg(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]);
+        if (q.fechado !== false && p.length > 2) seg(p[p.length - 1][0], p[p.length - 1][1], p[0][0], p[0][1]);
+      });
+      (d.linhas || []).forEach(function (l) { if (l) seg(l[0], l[1], l[2], l[3]); });
+      ((d.inst && d.inst.linhas) || []).forEach(function (l) { var q = l && l.seg; if (q && !l.chamada) seg(q[0], q[1], q[2], q[3]); });
+      return out;
+    },
     _opcArq: function (v) {
       var E = global.BimEdit, temNiv = !!(E && E.niveisAtuais && (E.niveisAtuais() || []).length), P = P2(), o = { tipoVista: v.tipoVista };
       try { var es = P.estilo(v.id); if (es && isFinite(+es.escala) && +es.escala > 0) o.escala = +es.escala; } catch (eE) {}
       if (!temNiv) o.niveis = (P.niveis() || []).map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.y }; });
       if (v.tipoVista === "planta") { o.nivelY = v.nivelY; if (v.altura != null && isFinite(+v.altura)) o.yCorte = v.nivelY + (+v.altura); }
       try { if (global.BimAmbienteUI && global.BimAmbienteUI.niveisObra) o.niveisObra = global.BimAmbienteUI.niveisObra(); } catch (eN) {}
+      /* o PADRÃO DE COTAS do projeto (op cotasRegras, painel Anotar › Padrão de cotas) por cima de REGRAS_COTA_ARQ */
+      var rp = this.regrasProjeto(); if (rp && Object.keys(rp).length) o.regras = rp;
+      try { var g = this._geometria(v.id); if (g.length) o.geometria = g; } catch (eG) {}
       return o;
     },
     /* calcula tudo (puro, sem gravar) → { ops, itens:[{v, r}], tot } */
@@ -315,6 +340,74 @@
         return true;
       }
       return aplicarTudo();
+    },
+    /* ------------------------------------------------ PADRÃO DE COTAS DO PROJETO (16/11/2026)
+     * O painel grava a op cotasRegras (no projeto, com Ctrl+Z); cotarVistaArq lê por opc.regras. regrasProjeto() = o que o
+     * projeto guardou (parcial); regrasEfetivas() = tudo, já com o padrão do app por baixo. */
+    regrasProjeto: function () { var e = estado(); return e && e.cotasRegras && typeof e.cotasRegras === "object" ? e.cotasRegras : {}; },
+    regrasEfetivas: function () { var C = BC(); return C && C.regrasArq ? C.regrasArq({ regras: this.regrasProjeto() }) : null; },
+    gravarRegras: function (regras) {
+      var b = B(), C = BC(); if (!b || !b.b2Op || !C) return false;
+      return !!b.b2Op({ op: "cotasRegras", regras: C.limparRegras ? C.limparRegras(regras || {}) : (regras || {}) });
+    },
+    /* o que o painel lê → as regras parciais (só as chaves que o painel controla) */
+    regrasDoPainel: function (v) {
+      var n = function (x, d) { var q = num(x, NaN); return fin(q) && q >= 0 && q <= 20 ? q : d; };
+      var af = n(v.afast, 0.8), at = n(v.afastTotal, 1.4);
+      return {
+        unidade: v.unidade === "cm" || v.unidade === "mm" ? v.unidade : "m", casas: Math.max(0, Math.min(4, Math.round(num(v.casas, 2)))),
+        cadeia: { parciais: !!v.parciais, totais: !!v.totais }, nasceCotado: !!v.nasceCotado,
+        planta: { externas: { ligado: !!(v.parciais || v.totais), afast: af, afastTotal: at },
+                  internas: { ligado: !!v.internas, larg: !!v.larg, prof: !!v.prof, areasExternas: !!v.areasExternas, margem: n(v.margem, 0.25) } },
+        corte: { niveis: { ligado: !!v.niveis, afast: n(v.afastNiveis, 2.6) },
+                 cadeiaVertical: { ligado: !!v.alturas, afast: af + 0.2, afastTotal: at + 0.3 },
+                 esquadrias: { ligado: !!v.vaos }, cadeiaHorizontal: { ligado: !!(v.parciais || v.totais), eixos: !!v.eixos }, peDireito: { ligado: !!v.peDireito } },
+        fachada: { niveis: { ligado: !!v.niveis, afast: n(v.afastNiveis, 2.6) }, cadeiaVertical: { ligado: !!v.alturas, afast: af + 0.2, afastTotal: at + 0.3 }, vaos: !!v.vaos, largura: { ligado: !!(v.parciais || v.totais) } }
+      };
+    },
+    dialogoRegras: function () {
+      var self = this, R0 = this.regrasEfetivas();
+      if (!R0 || !global.UI || !global.UI.modal) return false;
+      var ck = function (id, rot, on, dica) { return '<label class="bct-op"><input type="checkbox" id="pc-' + id + '"' + (on ? " checked" : "") + "> <b>" + esc(rot) + "</b>" + (dica ? '<br><span class="fraco">' + esc(dica) + "</span>" : "") + "</label>"; };
+      var nm = function (id, rot, val) { return '<label class="bct-op">' + esc(rot) + ' <input type="number" id="pc-' + id + '" value="' + esc(String(val)) + '" min="0" max="20" step="0.05" style="width:5rem"> m</label>'; };
+      var h = '<div class="bct-dlg" style="max-height:62vh;overflow:auto">' +
+        "<p><b>Cotas externas</b></p>" + ck("parciais", "Parciais (cadeia por lado)", R0.cadeia.parciais !== false) + ck("totais", "Totais (de ponta a ponta)", R0.cadeia.totais !== false) +
+        "<p><b>Dentro de cada ambiente (face a face)</b></p>" + ck("internas", "Cotas internas por ambiente", R0.planta.internas.ligado) + ck("larg", "Largura", R0.planta.internas.larg !== false) + ck("prof", "Comprimento", R0.planta.internas.prof !== false) + ck("areasExternas", "Incluir áreas externas", R0.planta.internas.areasExternas !== false) +
+        "<p><b>No corte e na fachada</b></p>" + ck("vaos", "Vãos de porta e janela (peitoril, altura, verga)", R0.corte.esquadrias.ligado) + ck("eixos", "Eixos (cadeia entre eixos no corte)", R0.corte.cadeiaHorizontal.eixos !== false) +
+        ck("niveis", "Níveis (símbolos)", R0.corte.niveis.ligado) + ck("alturas", "Alturas: piso, laje, forro, platibanda, cumeeira", R0.corte.cadeiaVertical.ligado) + ck("peDireito", "Pé-direito de cada ambiente", R0.corte.peDireito.ligado) +
+        ck("nasceCotado", "Corte e fachada novos já nascem cotados", R0.nasceCotado !== false) +
+        "<p><b>Afastamentos</b></p>" + nm("afast", "Cota parcial a", R0.planta.externas.afast) + nm("afastTotal", "Cota total a", R0.planta.externas.afastTotal) + nm("margem", "Cota interna: folga da parede", R0.planta.internas.margem) + nm("afastNiveis", "Símbolo de nível a", R0.corte.niveis.afast) +
+        "<p><b>Unidade e arredondamento</b></p>" +
+        '<label class="bct-op">Unidade <select id="pc-unidade"><option value="m"' + (R0.unidade === "m" ? " selected" : "") + '>metro</option><option value="cm"' + (R0.unidade === "cm" ? " selected" : "") + '>centímetro</option><option value="mm"' + (R0.unidade === "mm" ? " selected" : "") + ">milímetro</option></select></label>" +
+        '<label class="bct-op">Casas (em metro) <input type="number" id="pc-casas" value="' + esc(String(R0.casas)) + '" min="0" max="4" step="1" style="width:4rem"></label>' +
+        '<p class="fraco">Vale para este projeto (fica gravado nele). Depois de gravar, "Cotas automáticas" refaz as cotas no padrão novo; Ctrl+Z desfaz.</p></div>';
+      function ler() {
+        var v = {}, el = function (id) { return document.getElementById("pc-" + id); };
+        ["parciais", "totais", "internas", "larg", "prof", "areasExternas", "vaos", "eixos", "niveis", "alturas", "peDireito", "nasceCotado"].forEach(function (k) { var e = el(k); v[k] = !!(e && e.checked); });
+        ["afast", "afastTotal", "margem", "afastNiveis", "casas"].forEach(function (k) { var e = el(k); v[k] = e ? e.value : ""; });
+        var u = el("unidade"); v.unidade = u ? u.value : "m";
+        return self.regrasDoPainel(v);
+      }
+      global.UI.modal("Padrão de cotas do projeto", h, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
+        { texto: "Voltar ao padrão do app", classe: "ghost", onClick: function () { global.UI.fecharModal(); if (self.gravarRegras({})) status("Padrão de cotas: voltou ao padrão do app (Ctrl+Z desfaz)."); } },
+        { texto: "Gravar", classe: "primary", onClick: function () { var r = ler(); global.UI.fecharModal(); if (self.gravarRegras(r)) status("Padrão de cotas gravado no projeto. Cotas automáticas refaz as cotas no padrão novo (Ctrl+Z desfaz)."); } },
+        { texto: "Gravar e refazer as cotas", classe: "primary", onClick: function () { var r = ler(); global.UI.fecharModal(); if (self.gravarRegras(r)) self.cotasAutomaticas(); } }
+      ]);
+      return true;
+    },
+    /* CORTE/FACHADA que o usuário acabou de criar já nasce cotado (as obrigatórias do padrão); o que veio do gerador de pranchas ou
+       do template (silencioso/pvAuto) fica de fora: ele reposiciona a vista depois e põe as cotas no passo dele */
+    cotarNovaVista: function (id) {
+      var C = BC(), e = estado(); if (!C || !e) return false;
+      var rg = this.regrasEfetivas(); if (rg && rg.nasceCotado === false) return false;
+      var v = this._vistasArq().filter(function (x) { return x.id === id && (x.tipoVista === "corte" || x.tipoVista === "fachada"); })[0]; if (!v) return false;
+      if (global.BimAnotP7 && global.BimAnotP7.itensDaVista && global.BimAnotP7.itensDaVista(e, id).length) return false;
+      var r; try { r = C.cotarVistaArq(e, id, v.proj, this._opcArq(v)); } catch (x) { r = null; }
+      if (!r || !r.ok || !r.ops.length) return false;
+      var ok = aplicar(r.ops, "Cotas do " + (v.tipoVista === "fachada" ? "fachada" : "corte") + " novo");
+      if (ok) { status((v.tipoVista === "fachada" ? "Fachada" : "Corte") + " já nasceu cotado (níveis, alturas, esquadrias, pé-direito): acrescente o que quiser. Ctrl+Z desfaz."); try { this._redesenhar2d(); } catch (eR) {} }
+      return ok;
     },
     /* projeto NOVO: a planta que o usuário abre já nasce com as cotas automáticas (só na sessão em que o projeto nasceu;
        projeto que já existia só muda com o clique) */
@@ -393,6 +486,7 @@
         { id: "cotar-vista", rotulo: "Cotar a\nvista", icone: "planta", grande: true, dica: "Cota a vista inteira de uma vez: na planta, os eixos e os vãos (ou os pilares); no corte, os níveis, as alturas entre eles e os eixos que o corte cruza; no 3D, os eixos e os níveis. Cotar de novo refaz sem empilhar." },
         { id: "cotas-automaticas", rotulo: "Cotas\nautomáticas", icone: "regua", grande: true, dica: "Um clique refaz as cotas de TODAS as plantas, cortes e fachadas do projeto no padrão técnico: cadeia por lado da edificação mais o total, cota interna face a face, níveis, pé-direito e esquadrias, com marca em ponto. Substitui as cotas lineares automáticas e as feitas à mão (nível, ângulo e raio ficam). Um Ctrl+Z desfaz tudo." },
         { id: "cota-furacao", rotulo: "Furação\nde chapa", icone: "alvo", dica: "Selecione uma chapa com furos: a cadeia dos furos a partir da BORDA, nas duas direções da chapa, em mm (como a fábrica fura)." },
+        { id: "padrao-cotas-projeto", rotulo: "Padrão\nde cotas", icone: "ajustes", grande: true, dica: "O padrão de cotas DESTE projeto: liga e desliga cada tipo (externas parciais e totais, internas por ambiente, vãos de porta e janela, eixos, níveis e alturas no corte, pé-direito), os afastamentos, a unidade e o arredondamento. Fica gravado no projeto e comanda as Cotas automáticas e o corte novo já cotado." },
         { id: "cotas-padrao", rotulo: "Arredondamento", icone: "ajustes", dica: "O padrão do valor das cotas: automático (mm na metálica, cm no resto), sempre mm ou sempre cm. Cada cota pode mudar em Propriedades." }
       ]);
       /* a ordem do grupo: o que mais se usa primeiro */
@@ -400,7 +494,7 @@
         var ab = Rb.aba("anotar"), pn = ab ? ab.paineis.filter(function (p) { return p.nome === "Cotas"; })[0] : null;
         if (pn) {
           var ORD = ["p7-cota-alinhada", "cota-continua", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
-                     "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "cotas-padrao", "p7-tipos"];
+                     "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "padrao-cotas-projeto", "cotas-padrao", "p7-tipos"];
           pn.comandos.sort(function (a, b) { var ia = ORD.indexOf(a.id), ib = ORD.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
         }
       } catch (eO) {}
@@ -416,6 +510,7 @@
       reg["cotas-automaticas"] = function () { return self.cotasAutomaticas(); };
       reg["cota-furacao"] = function () { self.furacao(); return true; };
       reg["cotas-padrao"] = function () { self.dialogoPadrao(); return true; };
+      reg["padrao-cotas-projeto"] = function () { return self.dialogoRegras(); };
       reg["met-cotas"] = function () { self.irParaCotas(); return true; };
       /* Cota, Cota de nível, Inclinação e Coordenada: na vista 2D é a ferramenta da P7 (com o encaixe
          e o valor daqui); com o 3D na frente, a ferramenta do 3D — o mesmo botão */
@@ -452,6 +547,12 @@
           P._cotAbrirGancho = true;
           var ab = P.abrir;
           P.abrir = function (id) { var r = ab.apply(this, arguments); if (/^d2[pv]-/.test(String(id))) setTimeout(function () { try { self.cotarNovaPlanta(id); } catch (eN) {} }, 700); return r; };
+        }
+        if (P && !P._cotNovoGancho) {
+          P._cotNovoGancho = true;
+          var cc = P.criarCorte, ce = P.criarElevacao, deMao = function (o) { return !(o && (o.silencioso || o.pvAuto)); };
+          if (cc) P.criarCorte = function (ax, az, bx, bz, opts) { var c = cc.apply(this, arguments); if (c && c.id && deMao(opts)) { var idc = P.idCorte(c.id); setTimeout(function () { try { self.cotarNovaVista(idc); } catch (eC) {} }, 900); } return c; };
+          if (ce) P.criarElevacao = function (dir, opts) { var v = ce.apply(this, arguments); if (v && v.id && deMao(opts)) { var idv = v.id; setTimeout(function () { try { self.cotarNovaVista(idv); } catch (eE) {} }, 900); } return v; };
         }
       } catch (eAb) {}
       U.clique2d = function (id, ev, p) {

@@ -267,8 +267,12 @@ var BimPlanta = (function () {
       if (!orto || !(x1 > x0 && z1 > z0)) { pulados++; return; }
       cx /= pts.length; cz /= pts.length;
       var nome = a.nome != null ? String(a.nome) : ('Ambiente ' + (idx + 1));
-      // o rótulo (nome + área) fica no centro: entra como obstáculo
-      var obA = obst.concat([{ minx: cx - 0.8, maxx: cx + 0.8, minz: cz - 0.3, maxz: cz + 0.3 }]);
+      // o rótulo (nome + área) fica no PONTO do ambiente (onde o identificador é desenhado); sem ponto, no centro do contorno.
+      // Largura pelo tamanho do nome (3 mm no papel em 1:50 ≈ 0,09 m por letra) e pela linha "n · 00,00 m²"
+      var hw = 0.05, lx = cx, lz = cz;
+      if (a.ponto && finito(a.ponto.x) && finito(a.ponto.z)) { lx = a.ponto.x; lz = a.ponto.z; hw = 0.12; }
+      hw += Math.max(0.5, 0.5 * Math.max(nome.length * 0.09, 13 * 0.0725));
+      var obA = obst.concat([{ minx: lx - hw, maxx: lx + hw, minz: lz - 0.25, maxz: lz + 0.35 }]);
       function melhor(eixo) {
         var lo = eixo === 'z' ? z0 : x0, hi = eixo === 'z' ? z1 : x1, best = null;
         var mg = margem0;

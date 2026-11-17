@@ -176,7 +176,7 @@
   function cortaPlano(y0, y1, yc) { return y0 <= yc + 1e-4 && y1 > yc + 1e-4; }
 
   /* pegadas e segmentos de um plano (nível + cota de cálculo) */
-  function montar(estado, nivelKey, yc) {
+  function montar(estado, nivelKey, yc, legado) {
     var A = dep("BimArq", "./bimarq.js"), segs = [], pegadas = [];
     var BC = dep("BimCurva", "./bimcurva.js"), curvas = [];   /* CURVA */
     arr(estado && estado.caixas).forEach(function (c) {
@@ -231,7 +231,9 @@
     });
     var nPecas = segs.length, ajust = {};
     arr(estado && estado.separadores).forEach(function (sp) {
-      if (!sp || (sp.nivelId == null ? "" : String(sp.nivelId)) !== nivelKey) return;
+      if (!sp) return;
+      var spk = sp.nivelId == null ? "" : String(sp.nivelId);
+      if (spk !== nivelKey && !(legado && spk === "")) return;   /* legado: separador sem nível vale em qualquer plano (ambiente automático) */
       var q = pontasSeparador(sp, segs, nPecas, pegadas);
       if (q.mudou) ajust[sp.id] = q;
       segs.push({ a: [q.x0, q.z0], b: [q.x1, q.z1], tag: { tipo: "separador", id: sp.id, s: 0, face: "separador", off: ZERO, prio: 1 } });
@@ -728,6 +730,38 @@
     });
   }
 
+  /* ================================================== REGIÕES FECHADAS (ambiente automático)
+   * Todas as regiões LIVRES fechadas do plano (nível + cota de cálculo): as faces do mesmo arranjo
+   * que o calcular usa, sem as células de parede/pilar (o "miolo sólido": o ponto logo dentro da
+   * aresta cai numa pegada). Cada região traz o contorno NA FACE, os furos (ilha de pilar), a área
+   * líquida e as arestas com a peça de cada lado — a base do js/bimambauto.js (Gerar ambientes).
+   * → { regioes:[{ pts:[[x,z]], furos:[[[x,z]]], area, tags:[tag por aresta] }], pegadas }
+   * nivelKey = id do nível ("" = sem nível); yc = cota do plano de cálculo. */
+  function regioesDoPlano(estado, nivelKey, yc, legado) {
+    var G = montar(estado, nivelKey == null ? "" : String(nivelKey), yc, !!legado), AR = arranjo(G.segs), pos = [], neg = [];
+    AR.ciclos.forEach(function (cy) { if (cy.area > 1e-9) pos.push(cy); else if (cy.area < -1e-9) neg.push(cy); });
+    function maisLonga(cy) {
+      var best = 0, bl = -1;
+      for (var i = 0; i < cy.pts.length; i++) { var a = cy.pts[i], b = cy.pts[(i + 1) % cy.pts.length], l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])); if (l > bl) { bl = l; best = i; } }
+      return best;
+    }
+    function solida(cy) {
+      var i = maisLonga(cy), a = cy.pts[i], b = cy.pts[(i + 1) % cy.pts.length], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.sqrt(dx * dx + dz * dz);
+      if (!(l > 1e-9)) return true;
+      var q = [(a[0] + b[0]) / 2 - dz / l * 2e-3, (a[1] + b[1]) / 2 + dx / l * 2e-3];   /* logo à ESQUERDA da aresta = dentro do ciclo (anti-horário) */
+      return G.pegadas.some(function (g) { return !naBorda(q, g.pts, 1e-9) && dentroEstrito(q, g.pts); });
+    }
+    var out = [];
+    pos.forEach(function (R) {
+      if (solida(R)) return;
+      var cands = neg.filter(function (h) { return dentroEstrito(h.pts[0], R.pts) && !naBorda(h.pts[0], R.pts, 1e-7); });
+      var furos = cands.filter(function (h) { return !cands.some(function (o) { return o !== h && Math.abs(o.area) > Math.abs(h.area) && dentroEstrito(h.pts[0], o.pts); }); });
+      var liq = R.area; furos.forEach(function (h) { liq -= Math.abs(h.area); });
+      out.push({ pts: R.pts, furos: furos.map(function (h) { return h.pts; }), area: liq, areaBruta: R.area, tags: R.tags });
+    });
+    return { regioes: out, pegadas: G.pegadas, separadores: G.separadores };
+  }
+
   var OPS = { ambiente: 1, ajustarAmbiente: 1, separador: 1, delimitar: 1, ambienteRegra: 1 };
 
   var BimAmbiente = {
@@ -844,7 +878,7 @@
       return { ok: true, op: o };
     },
     /* utilidades expostas para o teste */
-    arranjo: arranjo, offsetsParede: offsetsParede, deslocar: deslocar,
+    arranjo: arranjo, offsetsParede: offsetsParede, deslocar: deslocar, regioes: regioesDoPlano,
     /* a interseção de duas regiões ([contorno, furos…] em [x,z]) → { area, sx, sz } (FORRO × VOLUME) */
     intersecao: function (A, B) { return intersecao(regiaoDe(A), regiaoDe(B)); }
   };

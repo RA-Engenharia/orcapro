@@ -288,6 +288,7 @@
       if (!this.ativo() || !global.BimRibbon) return false;
       var self = this, R = global.BimRibbon;
       R.acrescentar("arquitetura", "Arquitetura", "Ambiente e área", [
+        { id: "gerar-ambientes", rotulo: "Gerar\nambientes", icone: "ambiente", grande: true, dica: "Gerar ambientes: acha toda região fechada por paredes, pilares e separadores (cômodo, corredor, área externa) e coloca um ambiente em cada, com nome sugerido pelas peças que estão dentro (louças → Banheiro, bancada → Cozinha, cama → Quarto/Suíte, estreita e longa → Circulação). Onde já tem ambiente não coloca outro; rodar de novo não empilha. Ctrl+Z desfaz tudo; é só renomear o que a sugestão errou." },
         { id: "ambiente", rotulo: "Ambiente", icone: "ambiente", grande: true, tipo: "alterna", dica: "Ambiente (RM): passe o mouse e a região fechada pelas paredes, pilares e separadores fica realçada; clique dentro para colocar. Área, perímetro e volume saem das paredes e acompanham quando elas mudam. Funciona no 3D e na planta baixa." },
         { id: "separador-ambiente", rotulo: "Separador\nde ambiente", icone: "regua", grande: true, tipo: "alterna", dica: "Linha de separação de ambiente: dois cliques. Divide uma região sem parede (sala e cozinha integradas) em dois ambientes." },
         { id: "identificador-ambiente", rotulo: "Identificador\nde ambiente", icone: "alvo", grande: true, dica: "Liga e desliga o identificador dos ambientes nas plantas (nome; número · área)." },
@@ -310,6 +311,7 @@
       }
       reg.ambiente = ferr("ambiente");
       reg["separador-ambiente"] = ferr("separador");
+      reg["gerar-ambientes"] = function () { return self.gerarAmbientes(); };
       reg["identificador-ambiente"] = function () {
         var lig = !self.identLigado();
         self.definirPlantas({ identAmbiente: lig });
@@ -326,6 +328,48 @@
       };
       /* o atalho (duas letras, js/bimprecisaoui.js) */
       try { if (global.BimPrecisao && global.BimPrecisao.ATALHOS && !global.BimPrecisao.ATALHOS.RM) global.BimPrecisao.ATALHOS.RM = "ambiente"; } catch (eA) {}
+      return true;
+    },
+    /* ----------------------------------------------- GERAR AMBIENTES (16/11/2026)
+     * O motor é o js/bimambauto.js (puro); aqui só escolhe o escopo (nível ativo × projeto todo), aplica as ops num
+     * LOTE (um Ctrl+Z desfaz tudo) e conta o que fez. escopo: "nivel" | "projeto". Devolve o resultado do motor
+     * (ou null quando não deu para rodar). */
+    calcularGerar: function (escopo, extra) {
+      var AA = global.BimAmbAuto, st = this.estado(); if (!AA || !st) return null;
+      var opts = { niveis: this.niveisObra() };
+      if (extra) Object.keys(extra).forEach(function (k) { opts[k] = extra[k]; });
+      if (escopo === "nivel") {
+        var nv = null; try { nv = global.BimArqUI && global.BimArqUI.nivelAtivo ? global.BimArqUI.nivelAtivo() : null; } catch (e) { nv = null; }
+        if (nv && nv.id != null) opts.nivelId = String(nv.id);
+        else if (!opts.niveis.length) { var ed = this._api && this._api.edit; opts.base = ed && fin(+ed.base) ? +ed.base : 0; }
+      }
+      return AA.gerar(st, opts);
+    },
+    aplicarGerar: function (escopo) {
+      var r = this.calcularGerar(escopo), b = B();
+      if (!r) { toast("Abra o editor do modelo primeiro.", "aviso"); return false; }
+      if (!r.ok) { toast(r.motivo || "Não consegui gerar os ambientes.", "aviso"); return false; }
+      var s = r.resumo;
+      if (!r.ops.length) {
+        var t0 = s.detectadas ? "Todas as " + s.detectadas + " regiões fechadas já têm ambiente: nada a gerar." : "Não achei região fechada por paredes, pilares ou separadores" + (escopo === "nivel" ? " neste nível" : "") + ".";
+        status(t0); toast(t0, "info"); return false;
+      }
+      var ok = !!(b && b.editarLote && b.editarLote({ op: "lote", id: "lamb" + Date.now().toString(36), origem: "ambientes", pedido: "Gerar ambientes", ops: r.ops }));
+      if (!ok) { toast("Não consegui aplicar os ambientes gerados.", "erro"); return false; }
+      this._ultimoGerar = s;
+      var nomes = Object.keys(s.porNome).map(function (k) { return s.porNome[k] > 1 ? k + " ×" + s.porNome[k] : k; }).join(", ");
+      status("Gerados " + s.novas + " ambientes" + (s.jaTinham ? " (" + s.jaTinham + " região(ões) já tinham)" : "") + (s.externas ? ", " + s.externas + " externo(s)" : "") + (s.circulacao ? ", " + s.circulacao + " circulação" : "") +
+             ": " + nomes + ". Renomeie o que a sugestão errou; Ctrl+Z desfaz tudo.");
+      return true;
+    },
+    gerarAmbientes: function () {
+      var self = this, ns = this.niveisObra();
+      if (ns.length < 2 || !global.UI || !global.UI.modal) return this.aplicarGerar(ns.length > 1 ? "projeto" : "nivel");
+      global.UI.modal("Gerar ambientes",
+        "<p>Coloca um ambiente em cada região fechada por paredes, pilares e separadores (cômodos, corredores e áreas externas), com nome sugerido pelo que há dentro. Onde já existe ambiente, não coloca outro. Ctrl+Z desfaz.</p>",
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
+         { texto: "Só este nível", classe: "ghost", onClick: function () { global.UI.fecharModal(); self.aplicarGerar("nivel"); } },
+         { texto: "Projeto todo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.aplicarGerar("projeto"); } }]);
       return true;
     },
     /* Propriedades da ferramenta (a barra de opções da ferramenta) */

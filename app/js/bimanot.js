@@ -1615,7 +1615,7 @@
        na tela, na folha/PDF e no DXF. Cota selecionada ou violada mantém o azul/vermelho de aviso. */
     var cc = corOk(it.cor) || corOk(t.cor) || corOk(corVista);
     if (cc && !sel && !it.violada && !it.orfa) s = tingir(s, cc);
-    var cls = "a7-item a7-cota a7-cota-" + m.tipo + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "") + (it.orfa ? " a7-orfa" : "");
+    var cls = "a7-item a7-cota a7-cota-" + m.tipo + (/^arq/.test(String(it.auto || "")) ? " a7-arq" : "") + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "") + (it.orfa ? " a7-orfa" : "");
     return '<g class="' + cls + '" data-a7="' + esc(it.id) + '"' + cor + ">" + s + "</g>";
   }
   /* ---- texto com chamada (líder) */

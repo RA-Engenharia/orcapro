@@ -536,7 +536,7 @@
   }
 
   /* ============================================================== OPS 3D */
-  var OPS = { cota3d: 1, cota3dAjustar: 1 };
+  var OPS = { cota3d: 1, cota3dAjustar: 1, cotasRegras: 1 };
   var AJUSTAVEIS = { off: 1, unidade: 1, casas: 1, txt: 1, pre: 1, suf: 1, tmov: 1, dir: 1, lado: 1, refs: 1, padrao: 1, graus: 1, tam: 1, y: 1 };
   function refOk(r) { return !!r && typeof r === "object" && !Array.isArray(r) && (r.el != null || r.r === "nivel" || !!V3(r)) && (r.r == null || !!REFS[r.r]); }
   function v3ObjOk(v) { return v == null || (!!v && typeof v === "object" && !Array.isArray(v) && fin(+v.x) && fin(+v.y) && fin(+v.z)); }
@@ -560,6 +560,7 @@
   function valida(o) {
     if (!o || !OPS[o.op]) return undefined;
     if (o.op === "cota3d") return itemValido(o);
+    if (o.op === "cotasRegras") return !!o.regras && typeof o.regras === "object" && !Array.isArray(o.regras);
     return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) && Object.keys(o.campos).length > 0 &&
       Object.keys(o.campos).every(function (k) { return AJUSTAVEIS[k]; });
   }
@@ -567,6 +568,10 @@
   function aplicarOp(o, ctx) {
     if (!o || !o.op) return false;
     var A = ctx.ext.cot3;
+    if (o.op === "cotasRegras") {   /* o padrão de cotas do projeto: um só, o último vale; {} volta ao padrão do app */
+      if (valida(o) !== true) return false;
+      ctx.ext.cotRegras = limparRegras(o.regras); return true;
+    }
     if (o.op === "cota3d") {
       if (!itemValido(o)) return false;
       A = ctxC(ctx); A.itens[o.id] = limpar(o); if (A.ordem.indexOf(o.id) < 0) A.ordem.push(o.id);
@@ -583,6 +588,7 @@
     return false;
   }
   function fim(ctx, out) {
+    if (ctx.ext.cotRegras) out.cotasRegras = ctx.ext.cotRegras;
     var A = ctx.ext.cot3; if (!A) return;
     var itens = A.ordem.map(function (id) { return A.itens[id]; }), orfas = [];
     itens.forEach(function (it) {
@@ -1127,20 +1133,27 @@
    * Teste: node tools/test-bimcotas-arq.js */
   var REGRAS_COTA_ARQ = {
     marca: "linear-ponto",
+    /* 16/11/2026 — PADRÃO DE COTAS DO PROJETO (painel em Anotar › Padrão de cotas; grava a op cotasRegras no projeto e entra aqui por
+       opc.regras): unidade/casas de TODA cota automática; cadeia parcial e total ligam à parte; o corte/fachada nasce cotado */
+    unidade: "m", casas: 2,
+    cadeia: { parciais: true, totais: true },
+    nasceCotado: true,
     /* o teste de lugar livre (o mesmo da planta: BimPlanta.sobreposicao): cota fora de texto, rótulo e esquadria */
     livre: { ligado: true },
     planta: { ligado: true, alturaCorte: 1.2, distEdificacao: 0.3,
       externas: { ligado: true, afast: 0.8, afastTotal: 1.4 },
-      internas: { ligado: true, minVao: 0.6, margem: 0.25 } },
+      internas: { ligado: true, larg: true, prof: true, areasExternas: true, minVao: 0.6, margem: 0.25 } },
     corte: { ligado: true,
-      niveis: { ligado: true, afast: 2.6 },
+      /* o símbolo de nível é UM só por nível: o do desenho (js/desenho2d.js, rótulo junto do ▼, padrão da 1.2.368). Ligue aqui para
+         ter o nível como cota associativa (vista sem o símbolo nativo) */
+      niveis: { ligado: false, afast: 2.6 },
       cadeiaVertical: { ligado: true, afast: 1.0, afastTotal: 1.7 },
       esquadrias: { ligado: true, afast: 0.45 },
       /* a cadeia horizontal fica logo ABAIXO do piso acabado mais baixo: afastamento em mm no papel (o motor converte pela escala) */
-      cadeiaHorizontal: { ligado: true, afastMm: 12, afastTotalMm: 24 },
+      cadeiaHorizontal: { ligado: true, afastMm: 12, afastTotalMm: 24, eixos: true },
       peDireito: { ligado: true, minAltura: 1.5, folga: 0.35 } },
     fachada: { ligado: true, faixaFrente: 0.6, vaosPrincipais: 2, vaos: true,
-      niveis: { ligado: true, afast: 2.6 },
+      niveis: { ligado: false, afast: 2.6 },
       cadeiaVertical: { ligado: true, afast: 1.0, afastTotal: 1.7 },
       largura: { ligado: true, afastMm: 12, afastTotalMm: 24 } }
   };
@@ -1154,7 +1167,25 @@
     return o;
   }
   function regrasArq(opc) { return mesclar(REGRAS_COTA_ARQ, opc && opc.regras); }
+  /* o que a op cotasRegras guarda: SÓ as chaves que REGRAS_COTA_ARQ conhece, do mesmo tipo (liga/desliga, número em limite sensato,
+     unidade m/cm/mm). Chave estranha ou valor ruim cai fora — o projeto aberto de outra versão não quebra as cotas. */
+  function limparRegras(r, esq, prof) {
+    var o = {}; esq = esq || REGRAS_COTA_ARQ; prof = prof || 0;
+    if (!r || typeof r !== "object" || Array.isArray(r) || prof > 4) return o;
+    Object.keys(esq).forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(r, k) || k === "marca") return;
+      var e = esq[k], v = r[k];
+      if (e && typeof e === "object") { var sub = limparRegras(v, e, prof + 1); if (Object.keys(sub).length) o[k] = sub; }
+      else if (typeof e === "boolean") { if (typeof v === "boolean") o[k] = v; }
+      else if (k === "unidade") { if (v === "m" || v === "cm" || v === "mm") o[k] = v; }
+      else if (k === "casas") { if (fin(+v) && +v >= 0 && +v <= 4) o[k] = Math.round(+v); }
+      else if (typeof e === "number") { if (v !== "" && v != null && fin(+v) && +v >= 0 && +v <= 100) o[k] = r4(+v); }
+    });
+    return o;
+  }
   var LINEARES = { linear: 1, alinhada: 1, coordenada: 1 };
+  /* cadeia de um trecho só (lado com 2 pontos) é, ao mesmo tempo, parcial e total: com só as parciais ligadas ela sai como parcial */
+  function autoUnica(R) { return R.cadeia.totais !== false ? "arq-ext-total" : "arq-ext"; }
 
   /* as cotas que o botão substitui nesta vista: as automáticas antigas (vista…/arq…, de qualquer tipo) e as lineares
      feitas à mão. Nível, angular, radial, arco, inclinação manuais ficam; a furação de chapa também. */
@@ -1199,7 +1230,7 @@
       arr(estado.ambientes).forEach(function (a) {
         var c = r && r.porId ? r.porId[a.id] : null;
         if (!c || c.estado !== "delimitado" || !c.contorno || c.contorno.length < 3) return;
-        out.push({ nome: a.nome || ("Ambiente " + (out.length + 1)), pts: c.contorno, base: c.base, topo: c.topo });
+        out.push({ nome: a.nome || ("Ambiente " + (out.length + 1)), pts: c.contorno, base: c.base, topo: c.topo, externo: a.departamento === "Áreas externas", ponto: a.ponto || null });
       });
     } catch (e) { return []; }
     return out;
@@ -1208,6 +1239,8 @@
   function opLinear(estado, proj, vista, nid, refs, orient, q, auto, R, opc) {
     var A = P7(), r = A.opCota({ id: nid(), vista: vista, cota: "linear", orient: orient, refs: refs, off: 0.6, tipoCota: R.marca, auto: auto });
     if (!r.ok) return null;
+    if (R.unidade === "cm" || R.unidade === "mm") { r.op.unidade = R.unidade; r.op.casas = 0; }
+    else if (R.unidade === "m" && fin(+R.casas) && +R.casas !== 2) r.op.casas = Math.max(0, Math.min(4, Math.round(+R.casas)));
     r.op.off = A.offsetPara(estado, r.op, q, { corte: proj && proj.tipo === "corte", proj: proj, niveis: opc && opc.niveis });
     return r.op;
   }
@@ -1246,8 +1279,10 @@
     var yC = fin(+opc.yCorte) ? +opc.yCorte : num(opc.nivelY, 0) + RP.alturaCorte;
     var PD = paredesDoEstado(estado), cortadas = PD.lista.filter(function (p) { return p.orto && p.base < yC && p.topo > yC; });
     var amb = ambientesDe(estado, opc).filter(function (a) { return !(fin(a.base) && fin(a.topo)) || (a.base - 0.01 <= yC && yC <= a.topo + 0.01); });
+    /* a cota externa é da CASA: área externa (quintal, muro) não puxa parede para a cadeia; a cota interna dela é opção (internas.areasExternas) */
+    var ambEdif = amb.filter(function (a) { return !a.externo; });
     var fora = 0, paredes = cortadas;
-    if (amb.length) { var ed = BP.paredesDaEdificacao(cortadas, amb, RP.distEdificacao); paredes = ed.paredes; fora = ed.fora; }
+    if (ambEdif.length) { var ed = BP.paredesDaEdificacao(cortadas, ambEdif, RP.distEdificacao); paredes = ed.paredes; fora = ed.fora; }
     var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7a"), J = projetor(proj);
     var cr = { ext: 0, int: 0 }, soltas = 0, decl = [];
     if (!paredes.length) decl.push("sem parede cortada a " + fmtNum(yC, 2) + " m");
@@ -1268,15 +1303,17 @@
           var q = horiz ? [med, face + sg * dist] : [face + sg * dist, med];
           var op = opLinear(estado, proj, vista, nid, rs, horiz ? "h" : "v", q, auto, R, opc); if (op) { ops.push(op); cr.ext++; }
         }
-        if (refs.length >= 3) { linha(refs, RP.externas.afast, "arq-ext"); linha([refs[0], refs[refs.length - 1]], RP.externas.afastTotal, "arq-ext-total"); }
-        else linha(refs, RP.externas.afast, "arq-ext-total");
+        if (refs.length >= 3) { if (R.cadeia.parciais !== false) linha(refs, RP.externas.afast, "arq-ext"); if (R.cadeia.totais !== false) linha([refs[0], refs[refs.length - 1]], RP.externas.afastTotal, "arq-ext-total"); }
+        else if (R.cadeia.parciais !== false || R.cadeia.totais !== false) linha(refs, RP.externas.afast, autoUnica(R));
       });
     }
     var internas = { pulados: 0, semLugar: 0 };
-    if (RP.internas.ligado && amb.length) {
-      var ci = BP.cotasInternas(amb, { obstaculos: opc.obstaculos || [], margem: RP.internas.margem, minVao: RP.internas.minVao });
+    var ambInt = RP.internas.areasExternas === false ? ambEdif : amb;
+    if (RP.internas.ligado && ambInt.length) {
+      var ci = BP.cotasInternas(ambInt, { obstaculos: arr(opc.obstaculos).concat(arr(opc.geometria)), margem: RP.internas.margem, minVao: RP.internas.minVao });
       internas.pulados = ci.pulados; internas.semLugar = ci.semLugar;
       ci.cotas.forEach(function (k) {
+        if ((k.tipo === "larg" && RP.internas.larg === false) || (k.tipo === "prof" && RP.internas.prof === false)) return;
         var horiz = k.tipo === "larg", e1 = horiz ? "x" : "z";
         var rs = [refTick(e1, k.a, k.fixo, true), refTick(e1, k.b, k.fixo, true)];
         var q = horiz ? [(k.a + k.b) / 2, k.fixo] : [k.fixo, (k.a + k.b) / 2];
@@ -1409,6 +1446,24 @@
     });
     return out;
   }
+  /* a linha da cadeia horizontal (a z = y no desenho, de a até b): sobe o afastamento, de 1,5 mm em 1,5 mm de papel, até a faixa do
+     texto ficar livre do desenho e dos rótulos (o primeiro livre; se nenhum, o de menor sobreposição) */
+  function yLivre(BP, y0, a, b, obst, livre, opc) {
+    if (!livre || !arr(obst).length) return y0;
+    var best = { y: y0, so: Infinity }, passo = Math.max(0.03, mmM(1.5, opc));
+    for (var k = 0; k <= 30; k++) {
+      var y = y0 + k * passo, so = BP.sobreposicao(a, b, "z", y, obst);
+      if (so < best.so - 1e-6) best = { y: y, so: so };
+      if (so <= 0.02) break;
+    }
+    return best.y;
+  }
+  /* a linha da cadeia vertical, do lado sg (−1 esquerda, +1 direita) da face xr: o afastamento que deixa a faixa do texto livre */
+  function xLivre(BP, xr, sg, afast, yb, yt, obst, livre) {
+    if (!livre || !arr(obst).length) return xr + sg * afast;
+    var cands = []; for (var k = 0; k <= 14; k++) cands.push(xr + sg * (afast + k * 0.12));
+    return escolherX(BP, cands, yb, yt, obst, true);
+  }
   /* mm no papel → metros do desenho, pela escala da vista (opc.escala, padrão 1:50) */
   function mmM(mm, opc) { return num(mm, 0) * num(opc && opc.escala, 50) / 1000; }
   /* PODAR a cadeia (como o podar do js/arqdesenho.js): trecho de comprimento zero (< 1 cm) some, e o ponto que deixaria um trecho
@@ -1434,7 +1489,7 @@
     var R = regrasArq(opc), RC = R.corte, livre = R.livre.ligado !== false;
     if (!RC.ligado) return { ok: false, motivo: "As cotas automáticas de corte estão desligadas nas regras." };
     var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7k"), res = resumoVazio("corte", ap), decl = res.declarado;
-    var ns = niveisDe(opc), amb = ambientesDe(estado, opc), S = secaoDe(estado, proj, false, R, ns, amb), J = projetor(proj);
+    var ns = niveisDe(opc), amb = ambientesDe(estado, opc).filter(function (a) { return !a.externo; }), S = secaoDe(estado, proj, false, R, ns, amb), J = projetor(proj);
     if (!S.paredes.length) {
       if (!ops.length) return { ok: false, motivo: "O corte não atravessa parede.", ops: [] };
       decl.push("o corte não atravessa parede: só as cotas antigas saíram"); return { ok: true, ops: ops, resumo: res };
@@ -1446,6 +1501,7 @@
     function obstaculo(x0, x1, y0, y1) { obst.push({ minx: x0, maxx: x1, minz: -y1, maxz: -y0 }); }
     S.vaos.forEach(function (v) { obstaculo(v.s0, v.s1, v.y0, v.y1); });
     obstaculosDaVista(estado, vista, opc).forEach(function (o) { obst.push(o); });
+    arr(opc.geometria).forEach(function (o) { obst.push(o); });   /* o desenho da vista (parede, esquadria, móvel, tubo): a cota não pisa nele */
     /* os pisos acabados que o corte atravessa: nível com parede cortada em cima dele */
     var pisos = ns.filter(function (n) { return S.paredes.some(function (w) { return w.base <= n.y + 0.05 && w.topo > n.y + 0.2; }); });
     function cobre(x0, x1, lado) { return lado === "esq" ? x0 <= xE + 0.6 : x1 >= xD - 0.6; }
@@ -1474,10 +1530,11 @@
         var Y = podarVals(yl[lado], opc), sg = lado === "esq" ? -1 : 1, xr = lado === "esq" ? xE : xD;
         if (Y.length < 2) { decl.push("lado " + (lado === "esq" ? "esquerdo" : "direito") + ": sem altura suficiente para a cadeia vertical"); return; }
         var refs = Y.map(function (y) { return refY(ns, xr, y); }), ym = (Y[0] + Y[Y.length - 1]) / 2;
+        var xv = xLivre(BP, xr, sg, RC.cadeiaVertical.afast, Y[0], Y[Y.length - 1], obst, livre), dTot = RC.cadeiaVertical.afastTotal - RC.cadeiaVertical.afast;
         if (Y.length >= 3) {
-          var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xr + sg * RC.cadeiaVertical.afast, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; }
-          var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xr + sg * RC.cadeiaVertical.afastTotal, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; }
-        } else { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xr + sg * RC.cadeiaVertical.afast, -ym], "arq-ext-total", R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
+          if (R.cadeia.parciais !== false) { var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xv, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; } }
+          if (R.cadeia.totais !== false) { var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xv + sg * dTot, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; } }
+        } else if (R.cadeia.parciais !== false || R.cadeia.totais !== false) { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xv, -ym], autoUnica(R), R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
       });
       if (!S.lajes.length && !S.cobs.length) decl.push("o corte não corta laje nem cobertura: a cadeia vertical tem só piso e topo de parede");
     }
@@ -1485,7 +1542,7 @@
     if (RC.cadeiaHorizontal.ligado) {
       var yTopo = -S.pisoMin + mmM(RC.cadeiaHorizontal.afastMm, opc), yTot = -S.pisoMin + mmM(RC.cadeiaHorizontal.afastTotalMm, opc), refsH = null, tks = null;
       var cruz = arr(estado && estado.eixos).map(function (e) { var xe = J.eixo(e); return xe == null ? null : { e: e, x: xe }; }).filter(Boolean).sort(function (a, b) { return a.x - b.x; });
-      if (cruz.length >= 2) { tks = cruz.map(function (c) { return c.x; }); refsH = cruz.map(function (c) { return { el: c.e.id, r: "p3", k: "eixo", x: r6(c.x), y: r6(-S.pisoMin) }; }); }
+      if (cruz.length >= 2 && RC.cadeiaHorizontal.eixos !== false) { tks = cruz.map(function (c) { return c.x; }); refsH = cruz.map(function (c) { return { el: c.e.id, r: "p3", k: "eixo", x: r6(c.x), y: r6(-S.pisoMin) }; }); }
       else {
         tks = BP._weld(S.paredes.reduce(function (a, w) { a.push(w.s0, w.s1); return a; }, []), 0.012);
         refsH = tks.map(function (t) {
@@ -1496,11 +1553,12 @@
       }
       var pH = podarPares(tks, refsH, opc); tks = pH.vals; refsH = pH.refs;
       if (tks.length >= 2) {
-        var xm = (tks[0] + tks[tks.length - 1]) / 2;
+        var xm = (tks[0] + tks[tks.length - 1]) / 2, yD = yTot - yTopo;
+        yTopo = yLivre(BP, yTopo, tks[0], tks[tks.length - 1], obst, livre, opc); yTot = yTopo + yD;
         if (tks.length >= 3) {
-          var h1 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], "arq-ext", R, opc); if (h1) { ops.push(h1); res.criadas.ext++; }
-          var h2 = opLinear(estado, proj, vista, nid, [refsH[0], refsH[refsH.length - 1]], "h", [xm, yTot], "arq-ext-total", R, opc); if (h2) { ops.push(h2); res.criadas.ext++; }
-        } else { var h3 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], "arq-ext-total", R, opc); if (h3) { ops.push(h3); res.criadas.ext++; } }
+          if (R.cadeia.parciais !== false) { var h1 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], "arq-ext", R, opc); if (h1) { ops.push(h1); res.criadas.ext++; } }
+          if (R.cadeia.totais !== false) { var h2 = opLinear(estado, proj, vista, nid, [refsH[0], refsH[refsH.length - 1]], "h", [xm, yTot], "arq-ext-total", R, opc); if (h2) { ops.push(h2); res.criadas.ext++; } }
+        } else if (R.cadeia.parciais !== false || R.cadeia.totais !== false) { var h3 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], autoUnica(R), R, opc); if (h3) { ops.push(h3); res.criadas.ext++; } }
       }
     }
     /* ESQUADRIAS CORTADAS: piso · peitoril · verga · forro, junto da parede cortada, do lado de dentro */
@@ -1560,12 +1618,13 @@
     var R = regrasArq(opc), RF = R.fachada;
     if (!RF.ligado) return { ok: false, motivo: "As cotas automáticas de fachada estão desligadas nas regras." };
     var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7f"), res = resumoVazio("fachada", ap), decl = res.declarado;
-    var ns = niveisDe(opc), amb = ambientesDe(estado, opc), S = secaoDe(estado, proj, true, R, ns, amb);
+    var ns = niveisDe(opc), amb = ambientesDe(estado, opc).filter(function (a) { return !a.externo; }), S = secaoDe(estado, proj, true, R, ns, amb);
     if (!S.paredes.length) {
       if (!ops.length) return { ok: false, motivo: "Não há parede à frente desta fachada.", ops: [] };
       decl.push("sem parede à frente da fachada: só as cotas antigas saíram"); return { ok: true, ops: ops, resumo: res };
     }
     var xE = Math.min.apply(null, S.paredes.map(function (w) { return w.s0; })), xD = Math.max.apply(null, S.paredes.map(function (w) { return w.s1; }));
+    var obstF = obstaculosDaVista(estado, vista, opc).concat(arr(opc.geometria)), livreF = R.livre.ligado !== false;
     var yMin = S.pisoMin, yTopoP = Math.max.apply(null, S.paredes.map(function (w) { return w.topo; }));
     var cumeeira = null; S.cobs.forEach(function (c) { if (c.topo > yTopoP + 0.05 && (cumeeira == null || c.topo > cumeeira)) cumeeira = c.topo; });
     var vaosF = S.vaos;
@@ -1589,10 +1648,11 @@
       if (Y.length < 2) decl.push("fachada sem altura para a cadeia vertical");
       else {
         var refs = Y.map(function (y) { return refY(ns, xE, y); }), ym = (Y[0] + Y[Y.length - 1]) / 2;
+        var xv = xLivre(BP, xE, -1, RF.cadeiaVertical.afast, Y[0], Y[Y.length - 1], obstF, livreF), dTot = RF.cadeiaVertical.afastTotal - RF.cadeiaVertical.afast;
         if (Y.length >= 3) {
-          var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xE - RF.cadeiaVertical.afast, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; }
-          var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xE - RF.cadeiaVertical.afastTotal, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; }
-        } else { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xE - RF.cadeiaVertical.afast, -ym], "arq-ext-total", R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
+          if (R.cadeia.parciais !== false) { var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xv, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; } }
+          if (R.cadeia.totais !== false) { var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xv - dTot, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; } }
+        } else if (R.cadeia.parciais !== false || R.cadeia.totais !== false) { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xv, -ym], autoUnica(R), R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
       }
     }
     if (RF.largura.ligado) {
@@ -1603,6 +1663,7 @@
         return r || { x: r6(t), y: r6(-ym) };
       }
       var rE = refParede(xE), rD = refParede(xD), xm = (xE + xD) / 2, tem = false;
+      var yAf = yLivre(BP, yBase + mmM(RF.largura.afastMm, opc), xE, xD, obstF, livreF, opc), yAfT = yAf + mmM(RF.largura.afastTotalMm - RF.largura.afastMm, opc);
       if (RF.vaos && vaosF.length) {
         var us = vaosF.slice().sort(function (a, b) { return a.s0 - b.s0; }), cur = xE, refsV = [rE], ok = 0;
         us.forEach(function (v) {
@@ -1615,11 +1676,12 @@
           /* a ordem é a do DESENHO (a vista de frente corre ao contrário do modelo): ordena pelo x projetado de cada referência */
           refsV = refsV.filter(function (r) { return r && fin(+r.x); }).sort(function (a, b) { return a.x - b.x; });
           var pV = podarPares(refsV.map(function (r) { return +r.x; }), refsV, opc); refsV = pV.refs;
-          var oV = opLinear(estado, proj, vista, nid, refsV, "h", [xm, yBase + mmM(RF.largura.afastMm, opc)], "arq-ext", R, opc); if (oV) { ops.push(oV); res.criadas.ext++; }
-          var oT = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yBase + mmM(RF.largura.afastTotalMm, opc)], "arq-ext-total", R, opc); if (oT) { ops.push(oT); res.criadas.ext++; tem = true; }
+          if (R.cadeia.parciais !== false) { var oV = opLinear(estado, proj, vista, nid, refsV, "h", [xm, yAf], "arq-ext", R, opc); if (oV) { ops.push(oV); res.criadas.ext++; } }
+          if (R.cadeia.totais !== false) { var oT = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yAfT], "arq-ext-total", R, opc); if (oT) { ops.push(oT); res.criadas.ext++; tem = true; } }
+          else tem = true;
         } else decl.push("fachada: vãos sem abertura no modelo, só a largura total");
       }
-      if (!tem) { var oW = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yBase + mmM(RF.largura.afastMm, opc)], "arq-ext-total", R, opc); if (oW) { ops.push(oW); res.criadas.ext++; } }
+      if (!tem && (R.cadeia.parciais !== false || R.cadeia.totais !== false)) { var oW = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yAf], autoUnica(R), R, opc); if (oW) { ops.push(oW); res.criadas.ext++; } }
     }
     res.diagonais = S.diag;
     return { ok: true, ops: ops, resumo: res };
@@ -1653,7 +1715,7 @@
     candidatosDesenho: candidatosDesenho, encaixeDesenho: encaixeDesenho, linhaDesenho: linhaDesenho, refDoDesenho: refDoDesenho, refLinhaDesenho: refLinhaDesenho, desprojetar: desprojetar, noSeg: noSeg,
     furacao: furacao, furacaoVista: furacaoVista, cotarVista: cotarVista, cotarVista3d: cotarVista3d,
     /* 27/10/2026: o botão Cotas automáticas (padrão arquitetônico) */
-    REGRAS_COTA_ARQ: REGRAS_COTA_ARQ, regrasArq: regrasArq, cotarPlantaArq: cotarPlantaArq, cotarCorteArq: cotarCorteArq, cotarFachadaArq: cotarFachadaArq, cotarVistaArq: cotarVistaArq, vistaTemCotasArq: vistaTemCotasArq, podarCadeia: idxPodar,
+    REGRAS_COTA_ARQ: REGRAS_COTA_ARQ, regrasArq: regrasArq, limparRegras: function (r) { return limparRegras(r); }, cotarPlantaArq: cotarPlantaArq, cotarCorteArq: cotarCorteArq, cotarFachadaArq: cotarFachadaArq, cotarVistaArq: cotarVistaArq, vistaTemCotasArq: vistaTemCotasArq, podarCadeia: idxPodar,
     itens: function (estado) { return arr(estado && estado.cotas3d); },
     item: function (estado, id) { return arr(estado && estado.cotas3d).filter(function (x) { return String(x.id) === String(id); })[0] || null; }
   };

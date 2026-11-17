@@ -9,6 +9,8 @@
 .a7-tx { fill: var(--d2-tinta, #111); font-family: Arial, "IBM Plex Sans", "Segoe UI", sans-serif; }
 /* halo fino e translúcido: separa o número do traço sem apagar a louça nem o tubo atrás */
 .a7-tx { paint-order: stroke; stroke: var(--d2-papel, #fff); stroke-opacity: .6; stroke-width: .6px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* COTA AUTOMATICA DE ARQUITETURA (16/11/2026): o numero que cruza uma linha leva uma MASCARA branca so ao redor das letras (contorno do glifo, nao retangulo: nao apaga a louca nem o tubo atras, so abre o traco sob o numero) */
+.a7-arq .a7-tx { stroke-opacity: .95; stroke-width: 2.6px; }
 .a7-fraco { opacity: .6; }
 .a7-cheio, .a7-hach-p, .a7-solido { fill: var(--d2-tinta, #111); }
 .a7-solido { stroke: none; }
