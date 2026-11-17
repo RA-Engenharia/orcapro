@@ -647,8 +647,75 @@
       var PDq = Math.max(eq(E.PD, "Nt"), eq(E.PD, "Nc")), cosT = 1 / Math.sqrt(1 + tg * tg);
       var fp = i.f90Perp;      /* M5 (r14): F⊥ = resultante das forças das almas (PD, DG) perpendicular ao banzo, por combinação (maddimensionar2); sem ela, o montante sozinho (a favor da segurança) */
       f90(L.ligacoes.noBanzoSuperior, "nó do banzo superior" + (fp ? " (resultante das almas)" : ""), fp ? fp.BS : PDq * cosT, S.BS); f90(L.ligacoes.noBanzoInferior, "nó do banzo inferior" + (fp ? " (resultante das almas)" : ""), fp ? fp.BI : PDq, S.BI);
-      L.ligacoes.noPendural = no("nó do pendural", Math.max(E.PD.Nt, E.PD.Nc), Math.max(eq(E.PD, "Nt"), eq(E.PD, "Nc")), 0, 0, S.PD, { descricao: "Pendural/montante: chapa interna 8 mm + pinos nas duas pontas." });
-      L.ligacoes.noDiagonal = no("nó da diagonal", Math.max(E.DG.Nt, E.DG.Nc), Math.max(eq(E.DG, "Nt"), eq(E.DG, "Nc")), 0, 0, S.DG, { descricao: "Diagonal: chapa interna 8 mm + pinos nas duas pontas." });
+      var FK_ = i.fink || null, opF = function () { return null; };      /* FINK: o encaixe do grupo na peça APARADA é verificado POR BARRA (abaixo), com a força de cada alma */
+      L.ligacoes.noPendural = no(FK_ ? "nó do tirante (Fink)" : "nó do pendural", Math.max(E.PD.Nt, E.PD.Nc), Math.max(eq(E.PD, "Nt"), eq(E.PD, "Nc")), 0, 0, S.PD, { descricao: FK_ ? "Tirante da Fink (tracionado sob gravidade): chapa interna 8 mm + pinos nas duas pontas; no banzo, um grupo de pinos por ponta (componente axial + transversal)." : "Pendural/montante: chapa interna 8 mm + pinos nas duas pontas." }, opF("PD"));
+      L.ligacoes.noDiagonal = no(FK_ ? "nó da escora (Fink)" : "nó da diagonal", Math.max(E.DG.Nt, E.DG.Nc), Math.max(eq(E.DG, "Nt"), eq(E.DG, "Nc")), 0, 0, S.DG, { descricao: FK_ ? "Escora da Fink (comprimida sob gravidade): chapa interna 8 mm + pinos nas duas pontas; no banzo, um grupo de pinos por ponta (compressão inclinada às fibras)." : "Diagonal: chapa interna 8 mm + pinos nas duas pontas." }, opF("DG"));
+      /* FINK (docs/madeira/FINK-REFERENCIA.md §4): cada alma (escora e tirante) chega aos DOIS banzos inclinada às fibras (β). Em cada nó do BI chegam 3+ barras (BI, escora e tirante): cada alma descarrega no banzo F·cosβ (axial) e F·senβ (transversal) por um grupo de pinos PRÓPRIO
+         (um grupo no BS e um no BI por alma), todos dimensionados (Tab. 14, Johansen pelo ângulo, 7.1 e 7.2) com a MAIOR força da alma (sinal indiferente: a mesma alma comprime sob gravidade e traciona sob sucção); a chapa do nó recebe a RESULTANTE das almas (verificação do nó de 3+ barras abaixo). */
+      if (FK_) {
+        [["noPendural", "PD", "tirante"], ["noDiagonal", "DG", "escora"]].forEach(function (w) {
+          var nw = L.ligacoes[w[0]], Fw = Math.max(eq(E[w[1]], "Nt"), eq(E[w[1]], "Nc")), Fwr = Math.max(E[w[1]].Nt, E[w[1]].Nc), bcs = {};
+          [["BS", FK_[w[1]].BS], ["BI", FK_[w[1]].BI]].forEach(function (x) {
+            var bt = x[1], Sx = S[x[0]], pnB = pinosAxiais(c, w[2] + " Fink sobre o " + (x[0] === "BS" ? "banzo superior" : "banzo inferior") + " (β = " + br(bt * 180 / Math.PI, 1) + "° da fibra do banzo)", Fw * Math.cos(bt), Fw * Math.sin(bt), Sx.b, Sx.h, tCh);
+            bcs[x[0]] = { beta_graus: bt * 180 / Math.PI, F_d: Fwr, F_eq: Fw, componente_axial_eq: Fw * Math.cos(bt), componente_transversal_eq: Fw * Math.sin(bt), pinos: pnB, eta: pnB.eta, ok: pnB.ok };
+            nw.passos = nw.passos.concat(pnB.passos); nw.eta = Math.max(nw.eta, pnB.eta); nw.ok = nw.ok && pnB.ok;
+          });
+          /* encaixe por barra: cada ponta da alma ocupa no máximo metade da peça APARADA (folga de 10 mm) e é dimensionada com a força DESSA alma */
+          var cabeB = [], pcs = FK_.pecaBarra || {}, ebs = FK_.esfBar || {};
+          Object.keys(pcs).forEach(function (id) {
+            if (pcs[id].g !== w[1] || !ebs[id]) return; var Fb = Math.max(ebs[id].NtEq, ebs[id].NcEq, 0.05), Lm = Math.max(0.01, pcs[id].Lpeca / 2), pb = pinosAxiais(c, "alma " + id, Fb, 0.001, S[w[1]].b, S[w[1]].h, tCh, { Lmax: Lm }), okb = !!pb && pb.ok !== false && pb.cabe !== false, etab = pb && isFinite(pb.eta) ? pb.eta : Infinity;
+            cabeB.push({ id: id, F_eq: Fb, Lpeca_mm: pcs[id].Lpeca * 1000, Lmax_mm: Lm * 1000, n: pb && pb.n, comprimento_mm: pb && pb.comprimento ? pb.comprimento * 1000 : null, ok: okb, eta: etab });
+            nw.eta = Math.max(nw.eta, etab); nw.ok = nw.ok && okb;
+            if (!okb) nw.passos = nw.passos.concat([(pb && pb.passos ? pb.passos[pb.passos.length - 1] : "") + " (alma " + id + ": peça aparada de " + br(pcs[id].Lpeca * 1000, 0) + " mm)"]);
+          });
+          nw.cabeNaPeca = cabeB; if (cabeB.length) nw.passos = nw.passos.concat(["Encaixe na peça aparada (por barra, com a força de cada alma): " + cabeB.map(function (x) { return x.id + " " + (x.n || "-") + " pinos, " + br(x.comprimento_mm || 0, 0) + " mm ≤ " + br(x.Lmax_mm, 0) + " mm"; }).join("; ") + "."]);
+          nw.banzo = bcs; nw.passos = nw.passos.concat(["Folga construtiva: ponta biselada a ≥ 10 mm das faces do banzo e das outras almas do nó; a carga NÃO passa por contato, só por chapa + pinos (grupo na alma: " + nw.pinos.n + " pinos; no banzo superior: " + bcs.BS.pinos.n + "; no banzo inferior: " + bcs.BI.pinos.n + ")."]);
+        });
+        L.ligacoes.noBanzoInferior.descricao = "Banzo inferior: emenda e ligação ao apoio por chapa interna 8 mm + pinos inox; tração. Nós do BI da Fink com 3+ barras: ver noBanzoInferior3.";
+        if (FK_.almasRes) {      /* nó de 3+ barras: chapa interna que recebe a resultante das almas (escora + tirante) em cada banzo */
+          var no3 = {}, pas3 = [], etaMax = 0, okAll = true;
+          [["BS", "banzo superior"], ["BI", "banzo inferior"]].forEach(function (x) {
+            var Fr = FK_.almasRes.real ? FK_.almasRes.real[x[0]] : FK_.almasRes[x[0]], ch = chapaTracaoRd(c, tCh, Math.max(0.03, S[x[0]].h - 0.05), Fr);
+            no3[x[0]] = { F_res_d: Fr, F_res_eq: FK_.almasRes[x[0]], chapa: ch, eta: ch.eta, ok: ch.ok }; etaMax = Math.max(etaMax, ch.eta); okAll = okAll && ch.ok;
+            pas3.push("Nó de 3+ barras no " + x[1] + " (banzo + escora + tirante): resultante das forças das almas no nó F = " + br(Fr) + " kN (soma vetorial, pior combinação)."); pas3 = pas3.concat(ch.passos);
+          });
+          /* UMA chapa por nó do BI (escora + tirante + BI): os dois grupos de pinos do BANZO ficam em sequência ao longo da fibra (escora à esquerda do nó, tirante à direita), sem sobreposição, com o espaçamento a1 mínimo (7190-1, Tab. 14) entre o último pino de um e o primeiro do outro.
+             Excentricidade: a força transversal F·senβ de cada alma é aplicada no CENTRO do seu grupo, a xc do nó: M = Σ F·senβ·|xc|, que vira um binário nos grupos (ΔF = M / braço) somado à transversal e REDIMENSIONA os grupos. Chapa: seção líquida (furos), esmagamento nos furos e flexão no plano da chapa. */
+          (function () {
+            var bE = L.ligacoes.noDiagonal.banzo.BI, bT = L.ligacoes.noPendural.banzo.BI, SB = S.BI, tp = FK_.tipoBI || { xE: -0.05, xT: 0.05 }, bE0 = bE.pinos, bT0 = bT.pinos, it, pE = bE0, pT = bT0, dF = 0, spc, xE, xT, xcE, xcT, Mex, ok1;
+            function pos(pe, pt, sp) { var a1 = [], a2 = [], k; for (k = 0; k < pe.nr; k++) a1.push(-sp / 2 - k * pe.a1); for (k = 0; k < pt.nr; k++) a2.push(sp / 2 + k * pt.a1); return [a1, a2]; }
+            function media(v) { return v.reduce(function (u, w) { return u + w; }, 0) / v.length; }
+            for (it = 0; it < 3; it++) {
+              spc = bordas(Math.max(pE.d, pT.d), 0, c.pinoTipo).a1; var P = pos(pE, pT, spc); xE = P[0]; xT = P[1]; xcE = media(xE); xcT = media(xT);
+              Mex = bE.F_eq * Math.sin(bE.beta_graus * Math.PI / 180) * Math.abs(xcE) + bT.F_eq * Math.sin(bT.beta_graus * Math.PI / 180) * Math.abs(xcT);
+              var dF2 = Mex / Math.max(0.05, xcT - xcE);
+              if (it > 0 && Math.abs(dF2 - dF) < 1e-6) break; dF = dF2;
+              var qE = pinosAxiais(c, "escora Fink no BI (com excentricidade)", bE.F_eq * Math.cos(bE.beta_graus * Math.PI / 180), bE.F_eq * Math.sin(bE.beta_graus * Math.PI / 180) + dF / 2, SB.b, SB.h, tCh), qT = pinosAxiais(c, "tirante Fink no BI (com excentricidade)", bT.F_eq * Math.cos(bT.beta_graus * Math.PI / 180), bT.F_eq * Math.sin(bT.beta_graus * Math.PI / 180) + dF / 2, SB.b, SB.h, tCh);
+              if (qE.ok && qT.ok) { pE = qE; pT = qT; } else { pE = qE.ok ? qE : pE; pT = qT.ok ? qT : pT; break; }
+            }
+            spc = bordas(Math.max(pE.d, pT.d), 0, c.pinoTipo).a1; var PP = pos(pE, pT, spc); xE = PP[0]; xT = PP[1]; xcE = media(xE); xcT = media(xT);
+            Mex = bE.F_eq * Math.sin(bE.beta_graus * Math.PI / 180) * Math.abs(xcE) + bT.F_eq * Math.sin(bT.beta_graus * Math.PI / 180) * Math.abs(xcT);
+            bE.pinos = pE; bE.eta = pE.eta; bE.ok = pE.ok; bT.pinos = pT; bT.eta = pT.eta; bT.ok = pT.ok;
+            L.ligacoes.noDiagonal.banzo.BI = bE; L.ligacoes.noPendural.banzo.BI = bT;
+            [["noDiagonal", bE], ["noPendural", bT]].forEach(function (w) { var nl = L.ligacoes[w[0]]; nl.eta = Math.max(nl.eta, w[1].eta); nl.ok = nl.ok && w[1].ok; });
+            var dmin = Math.min.apply(null, xT) - Math.max.apply(null, xE);      /* distância entre o pino mais próximo de um grupo e o do outro (o espaçamento interno de cada grupo já é o do dimensionamento do grupo) */
+            var a1min = bordas(Math.max(pE.d, pT.d), 0, c.pinoTipo).a1, pontaE = Math.min.apply(null, xT.map(function (x) { return Math.abs(x - tp.xE); })), pontaT = Math.min.apply(null, xE.map(function (x) { return Math.abs(x - tp.xT); }));
+            var Lc = (xT[xT.length - 1] - xE[xE.length - 1]) + pE.a3 + pT.a3, hCh = Math.max(0.03, SB.h - 0.05), ncMx = Math.max(pE.nc, pT.nc), dfu = Math.max(pE.d, pT.d) + 0.001, t8 = tCh, nPin = pE.n + pT.n, Fr = no3.BI.F_res_d, rr = Fr / Math.max(no3.BI.F_res_eq, 1e-9), Mr = Mex * rr;
+            var Rg = t8 * hCh * c.fy * 1e3 / c.gamaA1, An = t8 * Math.max(0.001, hCh - ncMx * dfu), Rn = An * c.fu * 1e3 / 1.35, Rb = 2.4 * c.fu * 1e3 * Math.max(pE.d, pT.d) * t8 / 1.35, Wp = t8 * hCh * hCh / 6, Mrd = Wp * c.fy * 1e3 / c.gamaA1;
+            var etaG = Fr / Rg + Mr / Mrd, etaN = Fr / Rn + Mr / (Wp * c.fu * 1e3 / 1.35), etaB = (Fr / nPin) / Rb, etaCh = Math.max(etaG, etaN, etaB), sobrep = dmin >= a1min - 1e-9, pontaOk = pontaE >= a1min - 1e-9 && pontaT >= a1min - 1e-9;
+            no3.BI.chapaUnica = true; no3.BI.nChapasPorNo = 1; no3.BI.grupos = [{ alma: "escora", x_mm: xE.map(function (x) { return Math.round(x * 1000); }), n: pE.n, d: pE.d, centro_mm: Math.round(xcE * 1000) }, { alma: "tirante", x_mm: xT.map(function (x) { return Math.round(x * 1000); }), n: pT.n, d: pT.d, centro_mm: Math.round(xcT * 1000) }];
+            no3.BI.espacamento = { entre_grupos_mm: Math.round((xT[0] - xE[0]) * 1000), minimo_a1_mm: a1min * 1000, menor_entre_pinos_mm: dmin * 1000, ate_ponta_outra_alma_mm: Math.min(pontaE, pontaT) * 1000, ok: sobrep && pontaOk };
+            no3.BI.excentricidade = { M_eq_kNm: Mex, M_d_kNm: Mr, binario_kN: dF };
+            no3.BI.chapa = { comprimento_mm: Lc * 1000, largura_mm: hCh * 1000, t_mm: t8 * 1000, Rd_bruta: Rg, Rd_liquida: Rn, Rd_esmagamento_por_pino: Rb, Mrd: Mrd, eta_bruta: etaG, eta_liquida: etaN, eta_esmagamento: etaB, eta: etaCh, ok: etaCh <= 1 + 1e-9 };
+            no3.BI.eta = Math.max(etaCh, sobrep && pontaOk ? 0 : 1.01); no3.BI.ok = no3.BI.chapa.ok && sobrep && pontaOk;
+            etaMax = Math.max(etaMax, no3.BI.eta); okAll = okAll && no3.BI.ok;
+            pas3.push("UMA chapa interna por nó do BI (" + br(Lc * 1000, 0) + " × " + br(hCh * 1000, 0) + " × " + br(t8 * 1000, 0) + " mm) cobre os grupos da escora (" + pE.n + " pinos Ø" + Math.round(pE.d * 1000) + ") e do tirante (" + pT.n + " pinos Ø" + Math.round(pT.d * 1000) + ") em sequência ao longo da fibra: menor distância entre pinos " + br(dmin * 1000, 0) + " mm ≥ a1 mín. " + br(a1min * 1000, 0) + " mm (7190-1:2022, Tab. 14); até a ponta da outra alma " + br(Math.min(pontaE, pontaT) * 1000, 0) + " mm.");
+            pas3.push("Excentricidade dos grupos (centros a " + br(xcE * 1000, 0) + " e " + br(xcT * 1000, 0) + " mm do nó): M = Σ F·senβ·|xc| = " + br(Mex, 3) + " kN·m → binário " + br(dF, 2) + " kN somado à transversal de cada grupo (grupos redimensionados).");
+            pas3.push("Chapa do nó: bruta η = " + br(etaG, 3) + " (N/Rd + M/Mrd, fy), líquida η = " + br(etaN, 3) + " (furos Ø" + Math.round(dfu * 1000) + " mm × " + ncMx + " coluna(s), fu/1,35), esmagamento nos furos η = " + br(etaB, 3) + " (2,4·fu·d·t/1,35 por pino, " + nPin + " pinos).");
+          })();
+          L.ligacoes.noBanzoInferior3 = { descricao: "Nó do banzo com 3+ barras (BI + escora + tirante; e BS + 2 almas): a chapa interna recebe a RESULTANTE vetorial das almas (verificada à tração do aço) e cada alma tem o seu grupo de pinos no banzo (noPendural.banzo e noDiagonal.banzo); o F90 do banzo é verificado pela resultante perpendicular (noBanzoSuperior/noBanzoInferior).", nos: no3, eta: etaMax, ok: okAll, passos: pas3 };
+        }
+      }
       /* HOWE (docs/madeira/HOWE-REFERENCIA.md §4): a diagonal é COMPRIMIDA e chega ao banzo inclinada às fibras (ângulo β entre o eixo da diagonal e o do banzo, no plano da tesoura). Além dos pinos da ponta da diagonal (acima, na fibra dela),
          a chapa descarrega no BANZO componente axial F·cosβ e transversal F·senβ: o grupo de pinos do banzo é dimensionado com as duas (Tab. 14 e Johansen pelo ângulo de cada pino, 7.1 e 7.2) — a compressão inclinada às fibras passa pela chapa e pelos pinos, sem entalhe/sambladura (decisão: o T2 inteiro liga por chapa interna). */
       if (i.howe && i.howe.betaBS != null && E.DG) {

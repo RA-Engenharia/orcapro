@@ -30,7 +30,7 @@
     if (/^(P\d|DS-P|DI-P|ESC-L)/.test(p.id) && Math.abs(d[2]) / L > 0.8) return "pilar";
     if (/^FX/.test(p.id)) return "generico";
     if (Math.abs(d[2]) / L > 0.8) return "pilar";
-    return /^(ES|PD)/.test(p.id) ? "generico" : "viga";
+    return /^ES/.test(p.id) ? "generico" : "viga";      /* o tirante PD da Fink é barra inclinada de MLC (IFCBEAM); o PD vertical da T1/Pratt já caiu em "pilar" acima */
   }
   /** receita de extrusão da peça (null se não tem corpo: telha, lambri, parafusos…) */
   function corpoPeca(p) {

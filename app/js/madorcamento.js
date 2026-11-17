@@ -248,20 +248,29 @@
     var kgBase = nPil * (lp * lp * tpb * 7850 + 2 * ((base.chapa && base.chapa.largura_mm) || 0) / 1000 * ((base.comprimento || 0) + 0.10) * 0.016 * 7850), nChumb = nPil * ((pb.chumbadores && pb.chumbadores.total) || 0);
     /* multiplicidade de cada ligação (conexões por extremidade de barra) e peso da chapa interna */
     var nTes = qm("BI"), mult = { noBanzoSuperior: nTes * 2, noBanzoInferior: nTes * 4, noPendural: qm("PD") * 4, noDiagonal: qm("DG") * 4, contravDiagonal: (qm("DX") + qm("DV")) * 4, contravParede: qm("DP") * 4, contravLB: qm("LB") * Math.max(0, nTes - 2) * 2, tesouraPilar: nTes * 4, cumeeiraPilar: qm("PC") * 2, frechalPilar: (qm("P") + qm("PO")) * 2 };   /* cada extremidade de barra = grupo de pinos na barra + grupo na peça em que ela se prende; banzos contínuos não têm emenda */
+    var nBI3 = L2.noBanzoInferior3 && L2.noBanzoInferior3.nos && L2.noBanzoInferior3.nos.BI, fkUnica = !!(nBI3 && nBI3.chapaUnica);
     var nPinos = 0, kgChapa = 0, nWT = 0, nAssento = 0, kgAssento = 0, cintaParaf = 0;
     Object.keys(L2).forEach(function (k) {
       var l = L2[k], m = mult[k] || 0;
-      if (k === "noDiagonal" && l.banzo && l.banzo.BS && l.banzo.BI && l.pinos && l.pinos.ok) {
+      if ((k === "noDiagonal" || k === "noPendural") && l.banzo && l.banzo.BS && l.banzo.BI && l.pinos && l.pinos.ok) {
         /* HOWE: por diagonal, 2 pontas × grupo da diagonal + 1 grupo no banzo superior + 1 no banzo inferior (a ponta de cima prende no BS e a de baixo no BI; antes só contava o lado da diagonal). A chapa sai do MAIOR grupo (comprimento) e da maior largura (a coluna dupla do banzo alarga a chapa: 2a + 4d). */
-        var nDGh = qm("DG"), grp = [l.pinos, l.banzo.BS.pinos, l.banzo.BI.pinos], compH = Math.max.apply(null, grp.map(function (g) { return g.comprimento || 0.2; })), largH = Math.max(0.03, l.chapa ? l.chapa.largura_mm / 1000 : 0.1);
+        var nDGh = qm(k === "noDiagonal" ? "DG" : "PD"), grp = [l.pinos, l.banzo.BS.pinos, l.banzo.BI.pinos], compH = Math.max.apply(null, grp.map(function (g) { return g.comprimento || 0.2; })), largH = Math.max(0.03, l.chapa ? l.chapa.largura_mm / 1000 : 0.1);
         grp.forEach(function (g) { if (g.nc > 1 && g.centroGrupo) largH = Math.max(largH, 2 * g.centroGrupo.a + 4 * g.d); });
-        nPinos += nDGh * 2 * l.pinos.n + nDGh * (l.banzo.BS.pinos.n + l.banzo.BI.pinos.n); kgChapa += m * 0.008 * largH * (compH + 0.05) * 7850;
+        nPinos += nDGh * 2 * l.pinos.n + nDGh * (l.banzo.BS.pinos.n + l.banzo.BI.pinos.n);
+        if (fkUnica) {      /* FINK: a ponta de cima de cada alma tem a sua chapa (alma + grupo no BS); a de baixo é a chapa ÚNICA do nó do BI (somada depois do laço) */
+          var gBS = [l.pinos, l.banzo.BS.pinos], cBS = Math.max.apply(null, gBS.map(function (g) { return g.comprimento || 0.2; })), lBS = Math.max(0.03, l.chapa ? l.chapa.largura_mm / 1000 : 0.1);
+          if (l.banzo.BS.pinos.nc > 1 && l.banzo.BS.pinos.centroGrupo) lBS = Math.max(lBS, 2 * l.banzo.BS.pinos.centroGrupo.a + 4 * l.banzo.BS.pinos.d);
+          kgChapa += nDGh * 0.008 * lBS * (cBS + 0.05) * 7850;
+        } else kgChapa += m * 0.008 * largH * (compH + 0.05) * 7850;
       } else if (l.pinos && l.pinos.ok) { nPinos += m * l.pinos.n; kgChapa += m * 0.008 * Math.max(0.03, (l.chapa ? l.chapa.largura_mm / 1000 : 0.1)) * ((l.pinos.comprimento || 0.2) + 0.05) * 7850; }
       if (l.f90 && l.f90.reforco && m) nWT += m * l.f90.reforco.parafusos;      /* M5 (r14): parafusos de rosca total de reforço ⊥ às fibras contra o fendilhamento (F90) entram no orçamento — antes só terça e caibro */
       if (k === "tercaTesoura") nWT += qm("T") * 4 * l.porApoio + qm("CM") * 4 * l.porApoio;
       if (k === "caibroCumeeira") nWT += qm("CB") * l.porApoio;
       if (k === "caibroFrechal") { nAssento = qm("CB"); kgAssento = nAssento * 0.008 * 0.20 * 0.30 * 7850; cintaParaf = nAssento * l.cinta.parafusos; }
     });
+    if (fkUnica && L2.noDiagonal && L2.noPendural) {      /* FINK: UMA chapa por nó do BI (nº de nós = nº de escoras), cobrindo os grupos do banzo das duas almas e as pontas das duas almas */
+      var nNosBI = qm("DG"); kgChapa += nNosBI * 0.008 * Math.max(0.03, nBI3.chapa.largura_mm / 1000) * (nBI3.chapa.comprimento_mm / 1000 + (L2.noDiagonal.pinos.comprimento || 0.2) + (L2.noPendural.pinos.comprimento || 0.2) + 0.05) * 7850;
+    }
     var mFitaA = 0, mFitaP = 0, nDiag = 0; pc.forEach(function (p) { if (p.id === "FX" || p.id === "FV") { mFitaA += p.qtd || 0; } if (p.id === "FP") { mFitaP += p.qtd || 0; } });
     nDiag = Math.ceil((mFitaA + mFitaP) / (Math.sqrt(Math.pow(Math.max(a / Math.max(1, Math.ceil(a / 4)), 1), 2) + 9) || 4));
     var fitaPar = (L2.fita && L2.fita.parafusosPorPonta) || 8;

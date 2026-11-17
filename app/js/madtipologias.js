@@ -482,13 +482,19 @@
     if (!(q.incl > 0.05)) throw new Error("madtipologias T2: inclinação mínima de 5 % (telha)");
     if (q.a < q.b - 1e-9) throw new Error("madtipologias T2: a cumeeira corre pela maior dimensão (a ≥ b, NBR 6123 Tabela 5): gire a planta 90°");
     if (q.cumeeira.assento !== "deslizante" && q.cumeeira.assento !== "fixo") throw new Error("madtipologias T2: assento do caibro \"deslizante\" ou \"fixo\"");
-    if (q.tesoura.tipo !== "pratt" && q.tesoura.tipo !== "howe") throw new Error("madtipologias T2: tesoura.tipo deve ser \"pratt\" ou \"howe\"");
+    if (q.tesoura.tipo !== "pratt" && q.tesoura.tipo !== "howe" && q.tesoura.tipo !== "fink") throw new Error("madtipologias T2: tesoura.tipo deve ser \"pratt\", \"howe\" ou \"fink\"");
     q._t2 = true; return q;
+  }
+  /** FINK (docs/madeira/FINK-REFERENCIA.md §2): painéis de ALMA por água (nF: 2 = Fink simples, 3 = dupla, ...), com o painel do banzo superior entre nós de alma ≤ FINK_PAINEL_MAX (adoção do RT), e terças a cada ≤ sTercaMax (k terças por painel de alma; as terças dos meios de painel apoiam o BS entre nós) */
+  var FINK_PAINEL_MAX = 2.5;
+  function finkPaineis(b, incl, sTercaMax) {
+    var rafter = (b / 2) * Math.sqrt(1 + incl * incl), nF = Math.max(2, Math.ceil(rafter / FINK_PAINEL_MAX - 1e-9)), k = Math.max(1, Math.ceil(rafter / nF / sTercaMax - 1e-9));
+    return { nF: nF, k: k, nH: nF * k, painelBS: rafter / nF };
   }
   function t2Geometria(pp) {
     var p = pp && pp._t2 ? pp : t2Parametros(pp), a = p.a, b = p.b, Hp = p.peDireito + p.baseZ, i = p.incl, sc = Math.sqrt(1 + i * i), B = p.beiral, cob = p.cobertura, M = [], k, j;
     var nCol = Math.max(1, Math.ceil(a / Math.min(p.vMaxPilar, p.sistema === "tesoura" ? p.tesoura.sTes : p.vMaxPilar) - 1e-9)), xs = linspace(0, a, nCol + 1);
-    var nH = Math.max(1, Math.ceil((b / 2) * sc / cob.sTercaMax - 1e-9)), dz = (b / 2) / nH, lp = dz * sc, zH = function (jj) { return jj * dz; };
+    var fink = p.sistema === "tesoura" && p.tesoura.tipo === "fink", nF = fink ? finkPaineis(b, i, cob.sTercaMax).nF : 0, kF = fink ? finkPaineis(b, i, cob.sTercaMax).k : 1, nH = fink ? nF * kF : Math.max(1, Math.ceil((b / 2) * sc / cob.sTercaMax - 1e-9)), dz = (b / 2) / nH, lp = dz * sc, zH = function (jj) { return jj * dz; };
     var yT = function (z) { return z < 0 ? Hp + i * z : (z > b ? Hp + i * (b - z) : Hp + i * Math.min(z, b - z)); };
     var m = nH; while (m > 1 && (nH % m !== 0 || m * dz > p.vMaxPilar + 1e-9)) m--;
     var zsOit = []; for (j = 0; j <= 2 * nH; j += m) zsOit.push(j * dz);
@@ -505,14 +511,24 @@
       });
     });
     var xfr;
+    /* FINK (docs/madeira/FINK-REFERENCIA.md): nós do banzo inferior no PONTO MÉDIO de cada painel do banzo superior (z = (j + 1/2)·dz, j = 1…nH−1, e o espelho): 2·nH−1 painéis no BI, os dois das pontas de 1,5·dz e os demais de dz */
+    var dzF = fink ? (b / 2) / nF : dz, zFf = function (jj) { return jj * dzF; }, zBf = function (jj) { return (jj + 0.5) * dzF; };
+    var zsBIint = fink ? (function () { var a1 = [], c1; for (c1 = 1; c1 < nF; c1++) a1.push(zBf(c1)); var e1 = a1.map(function (z) { return b - z; }).reverse(); return a1.concat(e1); })() : linspace(0, b, 2 * nH + 1).slice(1, 2 * nH);
     if (!cumeeira) {
       xs.forEach(function (x, kx) {
-        add({ id: "BI" + kx, g: "BI", tes: kx, p0: P3(x, 0, Hp), p1: P3(x, b, Hp), nos: linspace(0, b, 2 * nH + 1).slice(1, 2 * nH).map(function (z) { return P3(x, z, Hp); }), pinI: true, pinJ: true });
+        add({ id: "BI" + kx, g: "BI", tes: kx, p0: P3(x, 0, Hp), p1: P3(x, b, Hp), nos: zsBIint.map(function (z) { return P3(x, z, Hp); }), pinI: true, pinJ: true });
         [["F", -1, B.frente, tipF], ["B", 1, B.fundo, tipB]].forEach(function (S) {
           var ag = S[0], sg = S[1], z0 = sg < 0 ? 0 : b, tip = S[2], nos = tip > 0 ? [P3(x, z0, Hp)] : [], zt = sg < 0 ? -tip : b + tip;
           for (j = 1; j < nH; j++) nos.push(P3(x, sg < 0 ? zH(j) : b - zH(j), yT(zH(j))));
+          if (fink) for (j = 1; j < nF; j++) nos.push(P3(x, sg < 0 ? zBf(j) : b - zBf(j), yT(zBf(j))));      /* FINK: ponto do BS no plano vertical de cada nó do BI (topo das diagonais do contraventamento vertical DV) */
           add({ id: "BS" + ag + kx, g: "BS", agua: ag, tes: kx, p0: P3(x, zt, yT(zt)), p1: P3(x, b / 2, yT(b / 2)), nos: nos, heelPin: true });
-          for (j = 1; j <= nH; j++) {
+          if (fink) for (j = 1; j < nF; j++) {
+            /* FINK (W): escora DG do nó j do banzo superior ao nó j do BI (desce para o centro: comprimida sob gravidade) e tirante PD do nó j do BI ao nó j+1 do banzo superior (sobe para o centro: tracionado) — o último tirante chega à cumeeira */
+            var zT = sg < 0 ? zFf(j) : b - zFf(j), zT1 = sg < 0 ? zFf(j + 1) : b - zFf(j + 1), zB = sg < 0 ? zBf(j) : b - zBf(j);
+            add({ id: "DG" + ag + j + "_" + kx, g: "DG", tes: kx, agua: ag, p0: P3(x, zT, yT(zT)), p1: P3(x, zB, Hp), pinI: true, pinJ: true });
+            add({ id: "PD" + ag + j + "_" + kx, g: "PD", tes: kx, agua: ag, p0: P3(x, zB, Hp), p1: P3(x, zT1, yT(zT1)), pinI: true, pinJ: true });
+          }
+          for (j = 1; !fink && j <= nH; j++) {
             var zj = sg < 0 ? zH(j) : b - zH(j);
             if (j < nH || ag === "F") add({ id: "PD" + ag + j + "_" + kx, g: "PD", tes: kx, p0: P3(x, zj, Hp), p1: P3(x, zj, yT(zj)), pinI: true, pinJ: true });
             if (j >= 2) {
@@ -537,7 +553,7 @@
       });
       /* E4 T2fix C2 (NBR 7190-1:2022, 6.6.4, Figura 5): linhas LONGITUDINAIS ligando continuamente, de uma extremidade a outra, os nós do BANZO INFERIOR das tesouras (os do superior são as terças). Peças de madeira articuladas
          nos nós (esforço axial: recebem a F1d = Nd/150 e a levam ao contraventamento vertical). O comprimento de flambagem do BI fora do plano passa a ser o espaçamento REAL entre estas linhas (dz), se a rigidez K_br,1 (6.6.2) for atendida. */
-      for (j = 1; j < 2 * nH; j++) add({ id: "LB" + j, g: "LB", uni: true, p0: P3(0, zH(j), Hp), p1: P3(a, zH(j), Hp), nos: xs.slice(1, xs.length - 1).map(function (x) { return P3(x, zH(j), Hp); }), linha: zH(j) });
+      zsBIint.forEach(function (zl, jj) { j = jj + 1; add({ id: "LB" + j, g: "LB", uni: true, p0: P3(0, zl, Hp), p1: P3(a, zl, Hp), nos: xs.slice(1, xs.length - 1).map(function (x) { return P3(x, zl, Hp); }), linha: zl }); });
       xfr = xs;
     } else {
       var c = p.cumeeira, nInt = c.pilaresIntermediarios == null ? Math.max(0, Math.ceil(a / p.vMaxPilar - 1e-9) - 1) : c.pilaresIntermediarios, sC = c.sCaibro, xr = [-eE];
@@ -578,7 +594,7 @@
     });
     /* E4 T2fix C2 (6.6.4, Figura 5): treliças VERTICAIS entre tesouras: duas diagonais em X (fita só de tração) no plano de cada linha do banzo inferior, nos vãos extremos (pelo menos um de cada três vãos) */
     var fv = 0;
-    if (!cumeeira) selB.forEach(function (bb) { for (k = 1; k < 2 * nH; k++) { var zk = zH(k); [[bb[0], bb[1]], [bb[1], bb[0]]].forEach(function (d) { add(mad ? { id: "DV" + (++fv), g: "DV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true, mad: true } : { id: "FV" + (++fv), g: "FV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true }); }); } });
+    if (!cumeeira) selB.forEach(function (bb) { for (k = 1; k < 2 * nH; k++) { var zk = fink ? (k <= zsBIint.length ? zsBIint[k - 1] : null) : zH(k); if (zk == null) continue; [[bb[0], bb[1]], [bb[1], bb[0]]].forEach(function (d) { add(mad ? { id: "DV" + (++fv), g: "DV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true, mad: true } : { id: "FV" + (++fv), g: "FV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true }); }); } });
     if (!p.vedacaoRigida) {
       /* paredes: MÍNIMO de 2 painéis contraventados por fachada (primeiro e último vão; fachada de um vão só = o vão único, e o auditor avisa). Padrão: DIAGONAIS DE MADEIRA em X (DP, só tração, E4 r10);
          tipo "fita": fita metálica FP (modelo antigo). Com vedacaoRigida (alvenaria/OSB estrutural informada pelo usuário) nada entra: a vedação tem de ser projetada para a força informada. */
@@ -587,7 +603,7 @@
       [0, b].forEach(function (z) { bb2.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "x", z)); }); }); });
       [0, a].forEach(function (x) { zO.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "z", x)); }); }); });
     }
-    return { p: p, membros: M, info: { tesouraTipo: howe ? "howe" : "pratt", xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+    return { p: p, membros: M, info: { tesouraTipo: howe ? "howe" : (fink ? "fink" : "pratt"), nBI: fink ? 2 * nF - 1 : 2 * nH, dzBI: fink ? 1.5 * dzF : dz, nF: nF, kF: kF, dzF: dzF, lpBS: dzF * sc, zsBIint: zsBIint, xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
   }
 
   /* ---- HOWE: FOLGA CONSTRUTIVA (HOWE-REFERENCIA §4, decisão do RT 17/11/2026) ----
@@ -635,13 +651,55 @@
     return { p0: topo === m.p0 ? aTop : aBot, p1: topo === m.p0 ? aBot : aTop, polig: P, aparo: { topo: t0, base: t1 }, folga: { BS: f.BS, BI: f.BI, PD: minMont(P) } };
   }
 
+  /** FINK: pontas de TODAS as almas (escoras DG e tirantes PD) da tesoura `tes` aparadas em bisel com folga >= FOLGA_HOWE (10 mm) das faces dos banzos E das outras almas que chegam ao mesmo nó
+   *  (nó do BI com 3+ barras: BI, escora e tirante). O modelo de cálculo segue pelo eixo; fonte, pranchas e IFC usam a peça aparada. Devolve { id: { p0, p1, polig, aparo, folga: { BS, BI, ALMA }, Leixo, Lpeca } } */
+  function finkAparar(G, sec, tes) {
+    var p = G.p, I = G.info, hb = p.b / 2, i = p.incl, sc = I.sc, gap = FOLGA_HOWE, ms = G.membros.filter(function (q) { return q.tes === tes; });
+    var webs = ms.filter(function (q) { return q.g === "PD" || q.g === "DG"; }), bz = ms.filter(function (q) { return q.g === "BS" || q.g === "BI"; });
+    var bancos = bz.map(function (q) { return { g: q.g, P: faixa([q.p0[1], q.p0[2]], [q.p1[1], q.p1[2]], sec[q.g].h) }; }), W = [], out = {};
+    function ptDist(P, Q) { var m = Infinity, k; if (dentroPol(Q, P[0], P[1])) return 0; for (k = 0; k < Q.length; k++) m = Math.min(m, segDist(P, P, Q[k], Q[(k + 1) % Q.length])); return m; }
+    webs.forEach(function (m) {
+      var topo = m.p0[2] > m.p1[2] ? m.p0 : m.p1, base = topo === m.p0 ? m.p1 : m.p0, T = [topo[1], topo[2]], B = [base[1], base[2]], w = sec[m.g].h;
+      var L = Math.hypot(B[0] - T[0], B[1] - T[1]), u = [(B[0] - T[0]) / L, (B[1] - T[1]) / L], n = [-u[1], u[0]], sg = B[0] < hb ? 1 : -1, cBS = [sg / sc, i / sc], nA = [-cBS[1], cBS[0]], nB = [0, 1];      /* o lado vem do nó do BI (a ponta de cima de um tirante pode estar na cumeeira) */
+      var o = { m: m, topo: topo, base: base, T: T, B: B, w: w, L: L, u: u, n: n, sinT: Math.abs(u[0] * cBS[1] - u[1] * cBS[0]), sinB: Math.abs(u[1]) };
+      o.pol = function (tt, tb) {
+        var A = [T[0] + u[0] * tt, T[1] + u[1] * tt], Bq = [B[0] - u[0] * tb, B[1] - u[1] * tb];
+        function cantos(P, cn) { var nn = n[0] * cn[0] + n[1] * cn[1], un = u[0] * cn[0] + u[1] * cn[1], r = []; [1, -1].forEach(function (s0) { var tau = -s0 * (w / 2) * nn / un; r.push([P[0] + n[0] * s0 * w / 2 + u[0] * tau, P[1] + n[1] * s0 * w / 2 + u[1] * tau]); }); return r; }
+        var a = cantos(A, nA), b = cantos(Bq, nB); return [a[0], b[0], b[1], a[1]];
+      };
+      o.t0 = (sec.BS.h / 2 + gap) / o.sinT; o.t1 = (sec.BI.h / 2 + gap) / o.sinB; o.P = o.pol(o.t0, o.t1); W.push(o);
+    });
+    W.forEach(function (o, ix) {
+      var k, pior;
+      for (k = 0; k < 1500; k++) {
+        pior = null; W.forEach(function (q, jx) { if (jx === ix) return; var d = distPol(o.P, q.P); if (d < gap - 1e-9 && (!pior || d < pior.d)) pior = { d: d, q: q }; });
+        bancos.forEach(function (q) { var d = distPol(o.P, q.P); if (d < gap - 1e-9 && (!pior || d < pior.d)) pior = { d: d, q: q }; });      /* inclui o banzo do outro lado da cumeeira */
+        if (!pior) break;
+        var cA = [o.T[0] + o.u[0] * o.t0, o.T[1] + o.u[1] * o.t0], cB = [o.B[0] - o.u[0] * o.t1, o.B[1] - o.u[1] * o.t1];
+        if (ptDist(cA, pior.q.P) <= ptDist(cB, pior.q.P)) o.t0 += 0.001; else o.t1 += 0.001;
+        o.P = o.pol(o.t0, o.t1);
+      }
+    });
+    function r4(v) { return Math.round(v * 1e4) / 1e4; }
+    W.forEach(function (o, ix) {
+      var A3 = [o.T[0] + o.u[0] * o.t0, o.T[1] + o.u[1] * o.t0], B3 = [o.B[0] - o.u[0] * o.t1, o.B[1] - o.u[1] * o.t1], aTop = [o.topo[0], r4(A3[0]), r4(A3[1])], aBot = [o.base[0], r4(B3[0]), r4(B3[1])], f = { BS: Infinity, BI: Infinity, ALMA: Infinity };
+      bancos.forEach(function (q) { f[q.g] = Math.min(f[q.g], distPol(o.P, q.P)); }); W.forEach(function (q, jx) { if (jx !== ix) f.ALMA = Math.min(f.ALMA, distPol(o.P, q.P)); });
+      out[o.m.id] = { p0: o.topo === o.m.p0 ? aTop : aBot, p1: o.topo === o.m.p0 ? aBot : aTop, polig: o.P, aparo: { topo: o.t0, base: o.t1 }, folga: f, Leixo: o.L, Lpeca: o.L - o.t0 - o.t1 };
+    });
+    return out;
+  }
+
   /** FONTE de T2: agrupa os membros iguais em marcas com quantidade. sec = { P, PO, PC, FR, BS, BI, PD, DG, T, CM, CB, TI:{d} }; ext = { classe } */
   function t2Fonte(p, sec, ext) {
     ext = ext || {}; var G = t2Geometria(p), lista = Lista(), add = comClasse(lista, ext.classe), M = G.membros, I = G.info, marcas = {}, ordem = [], cont = {};
+    if (I.tesouraTipo === "fink" && sec.DG && sec.BS && sec.BI && sec.PD) {      /* FINK: peças aparadas (folga >= 10 mm das faces dos banzos e das outras almas do nó); o modelo de cálculo segue pelo eixo */
+      var apF = {}; M = M.map(function (m) { if (m.g !== "DG" && m.g !== "PD") return m; var A = apF[m.tes] || (apF[m.tes] = finkAparar(G, sec, m.tes)), a = A[m.id], c = {}; Object.keys(m).forEach(function (k) { c[k] = m[k]; }); c.eixo0 = m.p0; c.eixo1 = m.p1; c.p0 = a.p0; c.p1 = a.p1; c.folga = a.folga; c.aparo = a.aparo; return c; });
+    }
     if (I.tesouraTipo === "howe" && sec.DG && sec.BS && sec.BI && sec.PD) M = M.map(function (m) { if (m.g !== "DG") return m; var a = howeAparar(m, G, sec), c = {}; Object.keys(m).forEach(function (k) { c[k] = m[k]; }); c.eixo0 = m.p0; c.eixo1 = m.p1; c.p0 = a.p0; c.p1 = a.p1; c.folga = a.folga; c.aparo = a.aparo; return c; });      /* HOWE: peça APARADA (folga >= 10 mm; o modelo de cálculo segue pelo eixo) */
     var NOMES = { P: ["Casa — pilares", "Pilar do perímetro"], PO: ["Casa — pilares de oitão", "Pilar de oitão"], PC: ["Casa — pilares de oitão", "Pilar de cumeeira (oitão/central)"], FR: ["Casa — frechal", "Frechal (viga de respaldo)"],
       LB: ["Contraventamento — linhas do banzo inferior", "Linha longitudinal do banzo inferior (6.6.4)"], DX: ["Contraventamento — águas (madeira)", "Diagonal de madeira em X no plano das águas (6.6.2 e 6.6.4)"], DP: ["Contraventamento — paredes (madeira)", "Diagonal de madeira em X nos painéis das paredes (pilar → frechal)"], DV: ["Contraventamento — vertical (madeira)", "Diagonal de madeira em X nos planos verticais entre tesouras (6.6.4, Figura 5)"], BS: ["Tesouras", "Banzo superior da tesoura"], BI: ["Tesouras", "Banzo inferior (tirante) da tesoura"], PD: ["Tesouras", "Montante da tesoura (comprimido sob gravidade)"], DG: ["Tesouras", "Diagonal da tesoura"],
       T: ["Cobertura — terças", "Terça"], CM: ["Cobertura — cumeeira", "Viga de cumeeira"], CB: ["Cobertura — caibros principais", "Caibro principal (cumeeira ao frechal)"] };
+    if (I.tesouraTipo === "fink") { NOMES.PD = ["Tesouras", "Tirante da tesoura Fink (W; tracionado sob gravidade)"]; NOMES.DG = ["Tesouras", "Escora da tesoura Fink (W; comprimida sob gravidade)"]; }
     if (I.tesouraTipo === "howe") { NOMES.PD = ["Tesouras", "Montante da tesoura Howe (tracionado sob gravidade)"]; NOMES.DG = ["Tesouras", "Diagonal da tesoura Howe (comprimida sob gravidade)"]; }
     M.forEach(function (m) {
       if (!NOMES[m.g]) return;
@@ -664,7 +722,7 @@
     var cb = M.filter(function (m) { return m.g === "CB"; });
     if (cb.length && G.p.cumeeira.assento === "deslizante") add({ id: "AD", grupo: "Ligações — assento deslizante", descricao: "Assento deslizante do caibro no frechal (chapa de apoio com folga horizontal + cinta de tração para vento)", material: GALV, especificacao: "chapa de apoio + cinta, 1 por apoio", secao: null, qtd: cb.length });
     var nTes = M.filter(function (m) { return m.g === "BI"; }).length;
-    if (nTes) add({ id: "LIG-TES", grupo: "Ligações — tesouras", descricao: "Nós da tesoura: chapa interna de aço + pinos Ø16 (grupos dimensionados pela NBR 7190-1)", material: INOX, especificacao: "chapa t = 8 mm + pinos Ø16 inox, por nó", secao: null, qtd: nTes * (2 * I.nH * 2 + 2) });
+    if (nTes) add({ id: "LIG-TES", grupo: "Ligações — tesouras", descricao: "Nós da tesoura: chapa interna de aço + pinos Ø16 (grupos dimensionados pela NBR 7190-1)", material: INOX, especificacao: "chapa t = 8 mm + pinos Ø16 inox, por nó", secao: null, qtd: nTes * (I.tesouraTipo === "fink" ? 4 * I.nF - 1 : 2 * I.nH * 2 + 2) });
     var nDX = M.filter(function (m) { return m.g === "DX" || m.g === "DV" || m.g === "DP"; }).length;
     if (nDX) add({ id: "LIG-DX", grupo: "Ligações — contraventamento", descricao: "Pontas das diagonais de madeira do contraventamento: chapa interna de aço + pinos inox (NBR 7190-1:2022, cap. 7)", material: INOX, especificacao: "chapa t = 8 mm + pinos inox, por ponta de diagonal", secao: null, qtd: nDX * 2 });
     var pcs = M.filter(function (m) { return m.g === "PC"; }).length;
@@ -681,7 +739,7 @@
   var MadTipologias = {
     MATERIAIS: MATERIAIS,
     T1: { padrao: T1_PADRAO, parametros: t1Parametros, geometria: t1Geometria, fonte: t1Fonte },
-    T2: { padrao: T2_PADRAO, parametros: t2Parametros, geometria: t2Geometria, fonte: t2Fonte, howeAparar: howeAparar, FOLGA_HOWE: FOLGA_HOWE, distPol: distPol, faixa: faixa, baiasContraventadas: baiasContraventadas },
+    T2: { padrao: T2_PADRAO, parametros: t2Parametros, geometria: t2Geometria, fonte: t2Fonte, howeAparar: howeAparar, finkAparar: finkAparar, finkPaineis: finkPaineis, FINK_PAINEL_MAX: FINK_PAINEL_MAX, FOLGA_HOWE: FOLGA_HOWE, distPol: distPol, faixa: faixa, baiasContraventadas: baiasContraventadas },
     T7: { fonte: t7Fonte },
     volumePorMaterial: volumePorMaterial, arange: arange, linspace: linspace, rd: rd
   };

@@ -187,6 +187,16 @@
   /* ================================================================ E04 — ELEVAÇÃO DA TESOURA / PÓRTICO COTADA */
   function nosDoPortico(c) {
     var res = c.res, inf = res.t2.info, yT = yTfn(inf), b = inf.b, dz = inf.dz, Hp = inf.Hp, L = res.ligacoesT2.ligacoes, howe = inf.tesouraTipo === "howe";
+    if (res.sistema === "tesoura" && inf.tesouraTipo === "fink") {      /* FINK: nó do BI (3+ barras) no ponto médio do painel do BS; tirante = B1 -> nó 2 do BS (ou cumeeira); escora = nó 1 do BS -> B1 */
+      var dF = inf.dzF, zB1 = 1.5 * dF, zT1 = dF, zT2 = Math.min(2 * dF, b / 2);
+      return [
+        { n: 1, y: 0, z: Hp, cod: "TS-5", t: "Apoio da tesoura no pilar (chapa em T / garfo)", eta: L.tesouraPilar && L.tesouraPilar.eta },
+        { n: 2, y: b / 2, z: yT(b / 2), cod: "TS-1", t: "Nó do banzo superior na cumeeira (chapa interna 8 mm)", eta: L.noBanzoSuperior && L.noBanzoSuperior.eta },
+        { n: 3, y: zB1, z: Hp, cod: "TS-2", t: "Nó do banzo inferior com 3+ barras (BI, escora e tirante; chapa interna + resultante das almas)", eta: Math.max(L.noBanzoInferior ? L.noBanzoInferior.eta : 0, L.noBanzoInferior3 ? L.noBanzoInferior3.eta : 0) },
+        { n: 4, y: (zB1 + zT2) / 2, z: (Hp + yT(zT2)) / 2, cod: "TS-3", t: "Tirante tracionado (chapa interna + pinos nas duas pontas; grupo em cada banzo)", eta: L.noPendural && L.noPendural.eta },
+        { n: 5, y: (zT1 + zB1) / 2, z: (Hp + yT(zT1)) / 2, cod: "TS-4", t: "Escora comprimida (chapa interna + pinos; banzo com compressão inclinada)", eta: L.noDiagonal && L.noDiagonal.eta },
+        { n: 6, y: zT1, z: yT(zT1), cod: "TS-6", t: "Terça sobre o banzo superior (rosca total a 45 gr)", eta: L.tercaTesoura && L.tercaTesoura.eta }];
+    }
     if (res.sistema === "tesoura") return [
       { n: 1, y: 0, z: Hp, cod: "TS-5", t: "Apoio da tesoura no pilar (chapa em T / garfo)", eta: L.tesouraPilar && L.tesouraPilar.eta },
       { n: 2, y: b / 2, z: yT(b / 2), cod: "TS-1", t: "Nó do banzo superior na cumeeira (chapa interna 8 mm)", eta: L.noBanzoSuperior && L.noBanzoSuperior.eta },
@@ -217,7 +227,8 @@
     D.cota(xl - 14, f3([0, 0, baseZ])[1], xl - 14, f3([0, 0, yT(b / 2)])[1], -6, I.cm(yT(b / 2) - baseZ), { semExt: true, attrs: ' data-cota="altura-cumeeira"' });
     if (sis === "tesoura") {
       var ys = []; for (var j = 0; j <= 2 * inf.nH; j++) ys.push(j * inf.dz);
-      var ytop = f3([0, 0, yT(b / 2)])[1] - 26, Pq = ys.map(function (z) { return [f3([0, z, 0])[0], ytop]; }), vq = []; for (var j2 = 0; j2 < ys.length - 1; j2++) vq.push(I.cm(inf.dz));
+      if (inf.tesouraTipo === "fink") ys = [0].concat(inf.zsBIint).concat([b]);      /* FINK: as cotas do painel são as do BANZO INFERIOR (nós de alma), de 1,5·dzF nas pontas */
+      var ytop = f3([0, 0, yT(b / 2)])[1] - 26, Pq = ys.map(function (z) { return [f3([0, z, 0])[0], ytop]; }), vq = []; for (var j2 = 0; j2 < ys.length - 1; j2++) vq.push(I.cm(ys[j2 + 1] - ys[j2]));
       D.cadeia(Pq, 6, vq, { semExt: true, attrs: vq.map(function () { return ' data-cota="painel"'; }) });
     }
     Q.rotular(c, v.itens.filter(function (it) { return em(it.pc) || it.pc.g === "CM" || it.pc.g === "T" || it.pc.g === "FR"; }), T.marca, { umaPorMarca: true, raio: 30, raio2: 60 });   /* E4 r4: os rótulos DEPOIS das cotas (a busca de lugar livre enxerga traços e traços de cota) e ANTES dos balões */
@@ -235,7 +246,8 @@
     var P = res.secoes;
     var sec = Object.keys(P).filter(function (g) { return PREF[g] && P[g] && P[g].b && d.pcs.some(function (p) { return p.g === g; }); }).map(function (g) { return PREF[g] === "PL" ? g : g; });
     var linhas = ["Seções adotadas (cm): " + sec.map(function (g) { return g + " " + I.cm(P[g].b) + "x" + I.cm(P[g].h); }).join("; ") + ".", "η máximo por grupo: " + Object.keys(res.pior || {}).map(function (g) { return g + " " + br(res.pior[g], 2); }).join("; ") + "."];
-    if (sis === "tesoura") linhas.push((inf.tesouraTipo === "howe" ? "Tesoura tipo HOWE (diagonais COMPRIMIDAS descendo para o centro e montantes TRACIONADOS sob gravidade)" : "Tesoura tipo Pratt (diagonais tracionadas sob gravidade)") + ": " + (2 * inf.nH) + " painéis de " + br(inf.dz, 3) + " m na planta; 1 banzo inferior contínuo, 2 banzos superiores, " + (inf.tesouraTipo === "howe" ? "montantes" : "pendurais") + " e diagonais com chapa interna de 8 mm. Tesouras de oitão (eixos 1 e " + (inf.nCol + 1) + ") têm os pilares de oitão PL sob o banzo inferior.");
+    if (sis === "tesoura" && inf.tesouraTipo === "fink") linhas.push("Tesoura tipo FINK (W): ESCORAS comprimidas (do banzo superior ao inferior, descendo para o centro) e TIRANTES tracionados (do banzo inferior ao superior, subindo para o centro) sob gravidade; sob sucção do vento os sinais se invertem e as duas almas são dimensionadas à tração e à compressão. " + inf.nF + " painéis de alma por água (Fink " + (inf.nF === 2 ? "simples" : "com " + (inf.nF - 1) + " W") + "), banzo inferior em " + inf.nBI + " painéis, " + inf.kF + " terça(s) por painel de alma (terças dos meios de painel apoiam o BS entre nós); nós do banzo inferior com 3+ barras (BI, escora e tirante). Tesouras de oitão (eixos 1 e " + (inf.nCol + 1) + ") têm os pilares de oitão PL sob o banzo inferior.");
+    else if (sis === "tesoura") linhas.push((inf.tesouraTipo === "howe" ? "Tesoura tipo HOWE (diagonais COMPRIMIDAS descendo para o centro e montantes TRACIONADOS sob gravidade)" : "Tesoura tipo Pratt (diagonais tracionadas sob gravidade)") + ": " + (2 * inf.nH) + " painéis de " + br(inf.dz, 3) + " m na planta; 1 banzo inferior contínuo, 2 banzos superiores, " + (inf.tesouraTipo === "howe" ? "montantes" : "pendurais") + " e diagonais com chapa interna de 8 mm. Tesouras de oitão (eixos 1 e " + (inf.nCol + 1) + ") têm os pilares de oitão PL sob o banzo inferior.");
     else linhas.push("Cumeeira portante: o caibro apoia no frechal por assento deslizante (livre transversalmente: sem empuxo na parede) e na viga de cumeeira com rosca total a 45 gr; viga de cumeeira multiapoiada nos pilares de cumeeira.");
     D.textos(xn, y2, linhas, T.nota * 0.95, { wmax: a.x + a.w - xn - 3 });
     return { escala: "1:" + v.esc0 };
@@ -345,17 +357,17 @@
       "Espaçamentos real | mínimo (mm): " + Q.esp2(g) + ". Mínimo: " + Q.FONTE_MIN + "; conferir o ETA do fabricante.",
       Q.etaLinha(pn, o.cod + "-pinos", "Pinos (Johansen):"), Q.etaLinha(ch, o.cod + "-chapa", "Chapa em tração (NBR 8800):"),
       esforcoNo(c, o, LG) + ". Geometria do contorno da chapa (" + pGeo + "). Lamela de " + Q.LAM + " mm ilustrativa (" + pLam + ")."].concat(o.extra || []);
-    var bzH = o.howe && LG.banzo && LG.banzo.BS && LG.banzo.BI ? LG.banzo : null;
+    var bzH = (o.howe || o.fink) && LG.banzo && LG.banzo.BS && LG.banzo.BI ? LG.banzo : null, WD = o.fink ? (o.g === "DG" ? "escora" : "tirante") : "diagonal", WM = o.fink ? (o.g === "DG" ? "COMPRIMIDA" : "TRACIONADO") : "COMPRIMIDA", WT = o.fink ? "FINK" : "HOWE";
     if (bzH) {      /* HOWE (TS-4): a elevação da diagonal e os DOIS grupos do banzo (4 pinos cada, compressão inclinada); a chapa alarga no banzo (2a + 4d) */
       var lar = function (g) { return Math.max(chW, Math.round(g.nc > 1 ? 2 * g.centroGrupo.a * 1000 + 4 * g.d * 1000 : 0)); };
-      var gBS = gPinos("TS-4 diagonal no BS", bzH.BS.pinos, res.secoes.BS, "BS"), gBI = gPinos("TS-4 diagonal no BI", bzH.BI.pinos, res.secoes.BI, "BI");
-      var nH = [{ t: o.cod + " - " + o.titulo + " (HOWE, diagonal COMPRIMIDA): " + LG.descricao },
-        "1 - chapa interna de aço t = " + tch + " mm em fenda, comprimento do maior grupo e largura alargada no banzo (" + lar(bzH.BS.pinos) + " mm: 2a + 4d); 2 - " + pn.n + " pinos inox A4 Ø" + d + " na diagonal (" + nc + " coluna x " + nr + " linhas), furo da chapa Ø" + (d + 1) + " (" + pFuro + "); 3 - " + bzH.BS.pinos.n + " pinos no banzo superior BS (" + bzH.BS.pinos.nc + " colunas x " + bzH.BS.pinos.nr + " linhas) e " + bzH.BI.pinos.n + " no banzo inferior BI (" + bzH.BI.pinos.nc + " x " + bzH.BI.pinos.nr + "); 4 - ponta da diagonal em BISEL (plano paralelo à face do banzo) com FOLGA CONSTRUTIVA mínima de 10 mm até o banzo e o montante: NADA encosta, a compressão passa SÓ por chapa + pinos.",
-        "β da diagonal com o banzo: " + I.br(bzH.BS.beta_graus, 1) + " gr (BS) e " + I.br(bzH.BI.beta_graus, 1) + " gr (BI); componentes da compressão no BS: axial " + I.br(bzH.BS.componente_axial_eq, 1) + " kN e transversal " + I.br(bzH.BS.componente_transversal_eq, 1) + " kN.",
-        "Espaçamentos real | mínimo (mm) - diagonal: " + Q.esp2(g) + "; BS: " + Q.esp2(gBS) + "; BI: " + Q.esp2(gBI) + ". Mínimo: " + Q.FONTE_MIN + "; conferir o ETA do fabricante.",
-        Q.etaLinha(pn, o.cod + "-pinos", "Pinos da diagonal (Johansen):"), Q.etaLinha(bzH.BS.pinos, o.cod + "-pinos-bs", "Pinos no banzo superior (compressão inclinada):"), Q.etaLinha(bzH.BI.pinos, o.cod + "-pinos-bi", "Pinos no banzo inferior (compressão inclinada):"), Q.etaLinha(ch, o.cod + "-chapa", "Chapa em tração (NBR 8800):"),
-        esforcoNo(c, o, LG) + ". Geometria do contorno da chapa (" + pGeo + "). Lamela de " + Q.LAM + " mm ilustrativa (" + pLam + ")."];
-      return { cod: o.cod, titulo: o.titulo, layout: "T", fracW: 0.40, frac: [0.43, 0.22], vistas: [{ t: "DIAGONAL DG (" + pn.n + " pinos, corte na fenda)", fn: v1 }, { t: "BANZO SUPERIOR BS (" + bzH.BS.pinos.n + " pinos)", fn: elevG(bzH.BS.pinos, res.secoes.BS, lar(bzH.BS.pinos), "BS") }, { t: "BANZO INFERIOR BI (" + bzH.BI.pinos.n + " pinos)", fn: elevG(bzH.BI.pinos, res.secoes.BI, lar(bzH.BI.pinos), "BI") }], notas: nH };
+      var gBS = gPinos(o.cod + " " + WD + " no BS", bzH.BS.pinos, res.secoes.BS, "BS"), gBI = gPinos(o.cod + " " + WD + " no BI", bzH.BI.pinos, res.secoes.BI, "BI");
+      var nH = [{ t: o.cod + " - " + o.titulo + " (" + WT + ", " + WD + " " + WM + "): " + LG.descricao },
+        "1 - chapa interna de aço t = " + tch + " mm em fenda, comprimento do maior grupo e largura alargada no banzo (" + lar(bzH.BS.pinos) + " mm: 2a + 4d); 2 - " + pn.n + " pinos inox A4 Ø" + d + " na " + WD + " (" + nc + " coluna x " + nr + " linhas), furo da chapa Ø" + (d + 1) + " (" + pFuro + "); 3 - " + bzH.BS.pinos.n + " pinos no banzo superior BS (" + bzH.BS.pinos.nc + " colunas x " + bzH.BS.pinos.nr + " linhas) e " + bzH.BI.pinos.n + " no banzo inferior BI (" + bzH.BI.pinos.nc + " x " + bzH.BI.pinos.nr + "); 4 - ponta da " + WD + " em BISEL (plano paralelo à face do banzo) com FOLGA CONSTRUTIVA mínima de 10 mm até o banzo e " + (o.fink ? "as outras almas do nó" : "o montante") + ": NADA encosta, a " + (o.fink ? "força" : "compressão") + " passa SÓ por chapa + pinos.",
+        "β da " + WD + " com o banzo: " + I.br(bzH.BS.beta_graus, 1) + " gr (BS) e " + I.br(bzH.BI.beta_graus, 1) + " gr (BI); componentes da força no BS: axial " + I.br(bzH.BS.componente_axial_eq, 1) + " kN e transversal " + I.br(bzH.BS.componente_transversal_eq, 1) + " kN.",
+        "Espaçamentos real | mínimo (mm) - " + WD + ": " + Q.esp2(g) + "; BS: " + Q.esp2(gBS) + "; BI: " + Q.esp2(gBI) + ". Mínimo: " + Q.FONTE_MIN + "; conferir o ETA do fabricante.",
+        Q.etaLinha(pn, o.cod + "-pinos", "Pinos da " + WD + " (Johansen):"), Q.etaLinha(bzH.BS.pinos, o.cod + "-pinos-bs", "Pinos no banzo superior (força inclinada às fibras):"), Q.etaLinha(bzH.BI.pinos, o.cod + "-pinos-bi", "Pinos no banzo inferior (força inclinada às fibras):"), Q.etaLinha(ch, o.cod + "-chapa", "Chapa em tração (NBR 8800):"),
+        esforcoNo(c, o, LG) + ". Geometria do contorno da chapa (" + pGeo + "). Lamela de " + Q.LAM + " mm ilustrativa (" + pLam + ")."].concat(o.extra || []);
+      return { cod: o.cod, titulo: o.titulo, layout: "T", fracW: 0.40, frac: [0.43, 0.22], vistas: [{ t: (o.fink ? (o.g === "DG" ? "ESCORA DG" : "TIRANTE PD") : "DIAGONAL DG") + " (" + pn.n + " pinos, corte na fenda)", fn: v1 }, { t: "BANZO SUPERIOR BS (" + bzH.BS.pinos.n + " pinos)", fn: elevG(bzH.BS.pinos, res.secoes.BS, lar(bzH.BS.pinos), "BS") }, { t: "BANZO INFERIOR BI (" + bzH.BI.pinos.n + " pinos)", fn: elevG(bzH.BI.pinos, res.secoes.BI, lar(bzH.BI.pinos), "BI") }], notas: nH };
     }
     return { cod: o.cod, titulo: o.titulo, layout: "T", fracW: 0.40, frac: [0.43, 0.22], vistas: [{ t: "ELEVAÇÃO DA BARRA (corte na fenda)", fn: v1 }, { t: "CORTE TRANSVERSAL", fn: v2 }, { t: "CHAPA CM (peça isolada)", fn: v3 }], notas: notas };
   }
@@ -484,14 +496,19 @@
     return { cod: o.cod, titulo: o.titulo, layout: "G", fracW: 0.5, vistas: [{ t: "CORTE (plano do caibro)", fn: v1 }, { t: "PLANTA DO ASSENTO", fn: v2 }], notas: notas };
   }
 
+  /** FINK: nota do nó do BI com 3+ barras (BI + escora + tirante): resultante das almas e F90 pela resultante perpendicular */
+  function nota3Barras(c) {
+    var L = c.res.ligacoesT2.ligacoes, n3 = L.noBanzoInferior3; if (!n3) return [];
+    var b3 = n3.nos.BI, ex = b3.espacamento || {}; return ["UMA chapa interna por nó do BI (" + Math.round((b3.chapa.comprimento_mm || 0)) + " x " + Math.round(b3.chapa.largura_mm || 0) + " x " + (b3.chapa.t_mm || 8) + " mm) cobre os grupos do banzo da escora e do tirante, em sequência ao longo da fibra, sem sobreposição (menor distância entre pinos " + br(ex.menor_entre_pinos_mm || 0, 0) + " mm, mínimo a1 " + br(ex.minimo_a1_mm || 0, 0) + " mm); excentricidade dos grupos M = " + br((b3.excentricidade || {}).M_eq_kNm || 0, 3) + " kN.m já nos grupos; chapa: bruta " + br(b3.chapa.eta_bruta || 0, 3) + ", líquida " + br(b3.chapa.eta_liquida || 0, 3) + ", esmagamento " + br(b3.chapa.eta_esmagamento || 0, 3) + ".", "Nó do BI com 3+ barras (BI, escora e tirante), ver TS-3 e TS-4 para os grupos de pinos de cada alma no banzo: resultante vetorial das forças das almas no nó = " + br(n3.nos.BI.F_res_d, 2) + " kN (pior combinação); chapa do nó η = " + br(n3.nos.BI.eta, 3) + "; no banzo superior " + br(n3.nos.BS.F_res_d, 2) + " kN (η " + br(n3.nos.BS.eta, 3) + "). F90 pela resultante perpendicular ao banzo: η " + br(L.noBanzoInferior.f90 ? L.noBanzoInferior.f90.eta : 0, 3) + (L.noBanzoInferior.f90 && L.noBanzoInferior.f90.reforco ? " (reforço de " + L.noBanzoInferior.f90.reforco.parafusos + " parafusos de rosca total)" : "") + "."];
+  }
   function listaDetalhes(c) {
     var res = c.res;
     var lg01 = { cod: "LG01", fn: Q.lg01 };
     if (res.sistema === "tesoura") return [lg01,
       { cod: "TS-1", fn: function (cc) { return detPinos(cc, { cod: "TS-1", titulo: "NÓ DO BANZO SUPERIOR", chave: "noBanzoSuperior", g: "BS", quem: "BS (banzo superior)" }); } },
-      { cod: "TS-2", fn: function (cc) { return detPinos(cc, { cod: "TS-2", titulo: "NÓ DO BANZO INFERIOR", chave: "noBanzoInferior", g: "BI", quem: "BI (banzo inferior)" }); } },
-      { cod: "TS-3", fn: function (cc) { return detPinos(cc, { cod: "TS-3", titulo: "NÓ DO MONTANTE", chave: "noPendural", g: "PD", quem: "PD (montante)" }); } },
-      { cod: "TS-4", fn: function (cc) { return detPinos(cc, { cod: "TS-4", titulo: "NÓ DA DIAGONAL", chave: "noDiagonal", g: "DG", quem: "DG (diagonal)", howe: res.t2.info.tesouraTipo === "howe" }); } },
+      { cod: "TS-2", fn: function (cc) { return detPinos(cc, { cod: "TS-2", titulo: "NÓ DO BANZO INFERIOR", chave: "noBanzoInferior", g: "BI", quem: "BI (banzo inferior)", extra: nota3Barras(cc) }); } },
+      { cod: "TS-3", fn: function (cc) { var fk = res.t2.info.tesouraTipo === "fink"; return detPinos(cc, { cod: "TS-3", titulo: fk ? "NÓ DO TIRANTE" : "NÓ DO MONTANTE", chave: "noPendural", g: "PD", quem: fk ? "PD (tirante)" : "PD (montante)", fink: fk }); } },
+      { cod: "TS-4", fn: function (cc) { var fk = res.t2.info.tesouraTipo === "fink"; return detPinos(cc, { cod: "TS-4", titulo: fk ? "NÓ DA ESCORA" : "NÓ DA DIAGONAL", chave: "noDiagonal", g: "DG", quem: fk ? "DG (escora)" : "DG (diagonal)", howe: res.t2.info.tesouraTipo === "howe", fink: fk }); } },
       { cod: "TS-5", fn: function (cc) { return detPinos(cc, { cod: "TS-5", titulo: "TESOURA SOBRE O PILAR (GARFO)", chave: "tesouraPilar", g: "P", quem: "PL (pilar, garfo no topo)" }); } },
       { cod: "TS-5a", fn: function (cc) { return detApoio90(cc, { cod: "TS-5a", titulo: "APOIO DA TESOURA NO FRECHAL (COMPRESSÃO PERPENDICULAR)", chave: "apoioTesouraFrechal", cima: "BI", baixo: "FR", nomeCima: "banzo inferior BI", nomeBaixo: "frechal FR" }); } },
       { cod: "TS-5b", fn: function (cc) { return detApoio90(cc, { cod: "TS-5b", titulo: "APOIO DO FRECHAL NO PILAR (COMPRESSÃO PERPENDICULAR)", chave: "apoioFrechalPilar", cima: "FR", baixo: "P", nomeCima: "frechal FR", nomeBaixo: "pilar PL" }); } },
@@ -513,8 +530,9 @@
     [["noBanzoSuperior", "TS-1 nó BS", "BS"], ["noBanzoInferior", "TS-2 nó BI", "BI"], ["noPendural", "TS-3 nó PD", "PD"], ["noDiagonal", "TS-4 nó DG", "DG"], ["tesouraPilar", "TS-5 tesoura-pilar", "P"], ["cumeeiraPilar", "CP-1 cumeeira-pilar", "PC"], ["frechalPilar", "CP-4 frechal-pilar", "P"], ["contravDiagonal", "CV-1 diagonal DX", "DX"], ["contravParede", "CV-2 diagonal DP", "DP"], ["contravLB", "CV-3 linha LB", "LB"]].forEach(function (k) {
       if (T2[k[0]] && T2[k[0]].pinos) out.push(gPinos(k[1], T2[k[0]].pinos, res.secoes[k[2]], k[2]));
     });
-    var bz = T2.noDiagonal && T2.noDiagonal.banzo;      /* HOWE: grupos de pinos NO BANZO da compressão inclinada da diagonal (TS-4) */
-    if (bz && bz.BS && bz.BI) { out.push(gPinos("TS-4 diagonal no BS", bz.BS.pinos, res.secoes.BS, "BS")); out.push(gPinos("TS-4 diagonal no BI", bz.BI.pinos, res.secoes.BI, "BI")); }
+    [["noDiagonal", "TS-4", res.t2.info.tesouraTipo === "fink" ? "escora" : "diagonal"], ["noPendural", "TS-3", "tirante"]].forEach(function (w) {      /* HOWE/FINK: grupos de pinos NO BANZO da força inclinada da alma (TS-4; e TS-3 na Fink) */
+      var bz = T2[w[0]] && T2[w[0]].banzo; if (bz && bz.BS && bz.BI) { out.push(gPinos(w[1] + " " + w[2] + " no BS", bz.BS.pinos, res.secoes.BS, "BS")); out.push(gPinos(w[1] + " " + w[2] + " no BI", bz.BI.pinos, res.secoes.BI, "BI")); }
+    });
     return out;
   }
   function quadroEspacos(c, x, y, w) {
@@ -621,13 +639,19 @@
     var COD = { noBanzoSuperior: "TS-1", noBanzoInferior: "TS-2", noPendural: "TS-3", noDiagonal: "TS-4", tesouraPilar: "TS-5", contravDiagonal: "CV-1", contravParede: "CV-2", contravLB: "CV-3", cumeeiraPilar: "CP-1", frechalPilar: "CP-4" };
     Object.keys(mult).forEach(function (k) {
       var g = T2[k]; if (!g || !g.pinos) return;
-      if (k === "noDiagonal" && g.banzo && g.banzo.BS && g.banzo.BI) {      /* HOWE: diagonal (2 pontas) + 1 grupo no BS + 1 no BI por diagonal; chapa pelo maior grupo e maior largura (2a + 4d no banzo) */
-        var nDG = qm("DG"), grp = [g.pinos, g.banzo.BS.pinos, g.banzo.BI.pinos], compM = Math.max.apply(null, grp.map(function (q) { return q.comprimento; })), largM = g.chapa.largura_mm / 1000;
+      if ((k === "noDiagonal" || k === "noPendural") && g.banzo && g.banzo.BS && g.banzo.BI) {      /* HOWE/FINK: alma (2 pontas) + 1 grupo no BS + 1 no BI por alma; chapa pelo maior grupo e maior largura (2a + 4d no banzo) */
+        var fkU = !!(T2.noBanzoInferior3 && T2.noBanzoInferior3.nos && T2.noBanzoInferior3.nos.BI && T2.noBanzoInferior3.nos.BI.chapaUnica), n3 = fkU ? T2.noBanzoInferior3.nos.BI : null;
+        var nDG = qm(k === "noDiagonal" ? "DG" : "PD"), grp = fkU ? [g.pinos, g.banzo.BS.pinos] : [g.pinos, g.banzo.BS.pinos, g.banzo.BI.pinos], compM = Math.max.apply(null, grp.map(function (q) { return q.comprimento; })), largM = g.chapa.largura_mm / 1000;
         grp.forEach(function (q) { if (q.nc > 1 && q.centroGrupo) largM = Math.max(largM, 2 * q.centroGrupo.a + 4 * q.d); });
+        if (fkU) {      /* FINK: chapa da ponta de cima (alma + BS) por alma; a de baixo é a chapa ÚNICA do nó do BI, uma por nó (nº de nós = nº de escoras) */
+          itens.push({ ferr: "Chapa interna t = " + g.chapa.t_mm + " mm, " + Math.round(largM * 1000) + " x " + Math.round((compM + 0.05) * 1000) + " mm (" + COD[k] + ", ponta no banzo superior)", cod: "-", fab: "-", mat: "ASTM A36 galv. fogo", qtd: nDG, kg: (g.chapa.t_mm / 1000) * largM * (compM + 0.05) * 7850 * nDG, est: true, lig: COD[k] });
+          if (k === "noDiagonal") { var nNo = qm("DG"), larU = Math.max(0.03, n3.chapa.largura_mm / 1000), comU = n3.chapa.comprimento_mm / 1000 + (T2.noDiagonal.pinos.comprimento || 0.2) + (T2.noPendural.pinos.comprimento || 0.2) + 0.05;
+            itens.push({ ferr: "Chapa interna ÚNICA do nó do banzo inferior t = " + g.chapa.t_mm + " mm, " + Math.round(larU * 1000) + " x " + Math.round(comU * 1000) + " mm (TS-2/TS-3/TS-4: grupos do banzo da escora e do tirante + pontas das duas almas)", cod: "-", fab: "-", mat: "ASTM A36 galv. fogo", qtd: nNo, kg: (g.chapa.t_mm / 1000) * larU * comU * 7850 * nNo, est: true, lig: "TS-2" }); }
+        } else
         itens.push({ ferr: "Chapa interna t = " + g.chapa.t_mm + " mm, " + Math.round(largM * 1000) + " x " + Math.round(compM * 1000) + " mm (" + COD[k] + ", pelo maior grupo)", cod: "-", fab: "-", mat: "ASTM A36 galv. fogo", qtd: mult[k], kg: (g.chapa.t_mm / 1000) * largM * compM * 7850 * mult[k], est: true, lig: COD[k] });
-        itens.push({ ferr: "Pino inox Ø" + Math.round(g.pinos.d * 1000) + " (" + COD[k] + ", " + g.pinos.n + " por ponta, na diagonal)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.pinos.n * nDG * 2, kg: null, est: false, lig: COD[k] });
-        itens.push({ ferr: "Pino inox Ø" + Math.round(g.banzo.BS.pinos.d * 1000) + " (" + COD[k] + ", " + g.banzo.BS.pinos.n + " no banzo superior por diagonal)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.banzo.BS.pinos.n * nDG, kg: null, est: false, lig: COD[k] });
-        itens.push({ ferr: "Pino inox Ø" + Math.round(g.banzo.BI.pinos.d * 1000) + " (" + COD[k] + ", " + g.banzo.BI.pinos.n + " no banzo inferior por diagonal)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.banzo.BI.pinos.n * nDG, kg: null, est: false, lig: COD[k] });
+        itens.push({ ferr: "Pino inox Ø" + Math.round(g.pinos.d * 1000) + " (" + COD[k] + ", " + g.pinos.n + " por ponta, na alma)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.pinos.n * nDG * 2, kg: null, est: false, lig: COD[k] });
+        itens.push({ ferr: "Pino inox Ø" + Math.round(g.banzo.BS.pinos.d * 1000) + " (" + COD[k] + ", " + g.banzo.BS.pinos.n + " no banzo superior por alma)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.banzo.BS.pinos.n * nDG, kg: null, est: false, lig: COD[k] });
+        itens.push({ ferr: "Pino inox Ø" + Math.round(g.banzo.BI.pinos.d * 1000) + " (" + COD[k] + ", " + g.banzo.BI.pinos.n + " no banzo inferior por alma)", cod: "-", fab: "-", mat: "inox A4-70", qtd: g.banzo.BI.pinos.n * nDG, kg: null, est: false, lig: COD[k] });
         return;
       }
       var kgCh = (g.chapa.t_mm / 1000) * (g.chapa.largura_mm / 1000) * g.pinos.comprimento * 7850;

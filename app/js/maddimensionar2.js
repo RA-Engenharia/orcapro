@@ -994,6 +994,12 @@
     M.nos.forEach(function (n) { mapa[Math.round(n.x * 1e4) + "," + Math.round(n.y * 1e4) + "," + Math.round(n.z * 1e4)] = n.id; });
     function id(X, Ya, Zv) { return mapa[Math.round((X - X0) * 1e4) + "," + Math.round(Zv * 1e4) + "," + Math.round((Ya - Y0) * 1e4)]; }
     out.linhas = [];
+    if (I.tesouraTipo === "fink") {      /* FINK: os nós do BS são os das terças (z = k·dz); os do BI estão no ponto médio de cada painel do BS (info.zsBIint): linhas próprias */
+      var kk0;
+      for (kk0 = 1; kk0 < 2 * I.nH; kk0++) { var zS = kk0 * I.dz, LS = { g: "BS", k: kk0, nos: [] }; I.xs.forEach(function (x) { var a = id(x, zS, I.yT(zS)); if (a) { out.BS.push(a); LS.nos.push(a); } }); out.linhas.push(LS); }
+      I.zsBIint.forEach(function (zI, kk1) { var LI = { g: "BI", k: kk1 + 1, nos: [] }; I.xs.forEach(function (x) { var b = id(x, zI, I.Hp); if (b) { out.BI.push(b); LI.nos.push(b); } }); out.linhas.push(LI); });
+      return out;
+    }
     for (var k = 1; k < 2 * I.nH; k++) { var z = k * I.dz, L1 = { g: "BS", k: k, nos: [] }, L2 = { g: "BI", k: k, nos: [] }; I.xs.forEach(function (x) { var a = id(x, z, I.yT(z)), b = id(x, z, I.Hp); if (a) { out.BS.push(a); L1.nos.push(a); } if (b) { out.BI.push(b); L2.nos.push(b); } }); out.linhas.push(L1, L2); }
     return out;
   }
@@ -1015,6 +1021,7 @@
     sec = JSON.parse(JSON.stringify(sec)); if (!sec.RP) sec.RP = { b: 0.05, h: 0.05 }; if (!sec.LB) sec.LB = { b: 0.10, h: 0.10 }; if (!sec.FT) { var fp0 = q.params.contraventamento.fita; sec.FT = { b: fp0.b, e: fp0.e }; } if (q.params.contraventamento.tipo !== "fita" && !sec.DX) sec.DX = { b: 0.08, h: 0.12 }; if (q.params.contraventamento.tipo !== "fita" && !q.params.vedacaoRigida && !sec.DP) sec.DP = { b: 0.12, h: 0.12 };      /* DP = diagonais de madeira dos painéis das paredes (E4 r10): padrão; vedacaoRigida as dispensa */      /* madeira: sec.DX = diagonais das águas/verticais; sec.FT passa a valer só para a fita das PAREDES (FP), que fazem parte do caminho de rigidez até o solo */
     var G = MT.T2.geometria(q.params), p = G.p, I = G.info, M = t2Montar(q, G, sec), perfil = perfilFn(q), CL = q.classe, mod0 = modulos(MM.classe2022(q.classe)), avisos = [];
     if (q._avisoTirante) avisos.push(q._avisoTirante);
+    if (I.tesouraTipo === "fink" && I.nF >= 3) avisos.push("Fink dupla: validar com o RT. A Fink com " + I.nF + " painéis de alma por água (vão acima de ~9,6 m com 30 %) fechou no teste de 12 m SÓ como PRELIMINAR (o contraventamento K_br,1 e o frechal chegam ao limite de seção); a estabilidade, os sinais e as ligações dos nós em W foram verificados, mas a entrega depende da conferência do RT (docs/madeira/FINK-REFERENCIA.md §9).");
     if (MM.classe2022(q.classe).conferir) avisos.push("M6: os valores da classe " + q.classe + " (EN 14080 Tab. 5) ainda NÃO foram conferidos no PDF — só o GL24h foi.");      /* A3 (a mesma recusa da T1) */
     var QCOB = CA.sobrecargaCobertura(p.incl * 100, { empocamentoVerificado: !!q.empocamentoVerificado }), g2s = p.telha.peso + q.cargas.outros;
     if (!QCOB.ok) throw new Error("sobrecarga de cobertura: " + QCOB.motivo);
@@ -1047,7 +1054,7 @@
     var CTV = null, Mf = null;
     if (p.sistema === "tesoura") {
       Mf = t2Montar(q, G, sec, true); var fam = t2Familias(Mf, G), Kb = t2Kmedido(Mf, fam), EefRef = MD.perfilEResist(CL, perfil("curta")).f.Eef;
-      CTV = { E0ef: EefRef, BS: { m: I.nH, L1: I.lp, Kbr: Kb.BS }, BI: { m: 2 * I.nH, L1: I.dz, Kbr: Kb.BI }, nos: { BS: fam.BS.length, BI: fam.BI.length } };
+      CTV = { E0ef: EefRef, BS: { m: I.nH, L1: I.lp, Kbr: Kb.BS }, BI: { m: I.nBI || 2 * I.nH, L1: I.dzBI || I.dz, Kbr: Kb.BI }, nos: { BS: fam.BS.length, BI: fam.BI.length } };
       ["BS", "BI"].forEach(function (g) { var c = CTV[g], sg = sec[g]; c.I2 = sg.h * Math.pow(sg.b, 3) / 12; c.Kmin = t2KbrMin(EefRef, c.I2, c.L1, c.m); c.ok = c.Kbr >= c.Kmin; c.L0z = c.L1; c.razao = c.Kmin / c.Kbr; });
       CTV.razao = Math.max(CTV.BS.razao, CTV.BI.razao); CTV.ok = CTV.BS.ok && CTV.BI.ok; CTV.slip = slipInfo; CTV.semSlip = !slipInfo;
       if (!CTV.ok) avisos.push("C3: a rigidez K_br,1 do contraventamento (NBR 7190-1:2022, 6.6.2) NÃO atende: banzo superior " + Math.round(CTV.BS.Kbr) + " × " + Math.round(CTV.BS.Kmin) + " kN/m, banzo inferior " + Math.round(CTV.BI.Kbr) + " × " + Math.round(CTV.BI.Kmin) + " kN/m — o comprimento de flambagem fora do plano (distância entre nós travados) NÃO está provado" + (slipInfo ? " (rigidez com o DESLIZAMENTO dos pinos em série, Ku = 2/3·Kser, 7.1.12: DX " + (slipInfo.DX ? slipInfo.DX.n + " pinos Ø" + Math.round(slipInfo.DX.d * 1000) : "—") + ", DP " + (slipInfo.DP ? slipInfo.DP.n + " pinos Ø" + Math.round(slipInfo.DP.d * 1000) : "—") + " por ponta)" : "") + "; aumentar a fita/chapa, os pinos ou o contraventamento.");
@@ -1077,7 +1084,8 @@
     /* M5 (r14): F⊥ do fendilhamento (F90, 7.1.1) = RESULTANTE, perpendicular ao banzo, das forças das almas (PD e DG) que a chapa entrega ao nó do banzo, por combinação (antes: só a força do montante, sozinha). Soma vetorial no nó com o esforço axial de cada alma (N em tração puxa o nó para o outro extremo da barra); o que sobra ⊥ ao banzo é a reação da terça no BS e ≈ 0 no BI sem carga externa. */
     var nd0 = {}, nBanzo = {}, f90Perp = { BS: 0, BI: 0 }; M.nos.forEach(function (n) { nd0[n.id] = n; });
     M.barras.forEach(function (b) { if (b.grupo !== "BS" && b.grupo !== "BI") return; var A = nd0[b.i], B = nd0[b.j], Lx = Math.sqrt(Math.pow(B.x - A.x, 2) + Math.pow(B.y - A.y, 2) + Math.pow(B.z - A.z, 2)) || 1; [b.i, b.j].forEach(function (n) { if (!nBanzo[n]) nBanzo[n] = { g: b.grupo, t: [(B.x - A.x) / Lx, (B.y - A.y) / Lx, (B.z - A.z) / Lx] }; }); });
-    var nEluDiag = {};      /* A2 (r13): máximo da tração ELU de cada diagonal de madeira, somado depois à F1d = Nd/150 (6.6.4: "os seus efeitos devem ser acrescidos") */
+    var almasRes = { BS: 0, BI: 0, real: { BS: 0, BI: 0 } };      /* FINK: resultante (kN, equivalente de madeira) das forças das almas que chegam a cada nó do banzo (nó do BI com 3+ barras: BI, escora e tirante) */
+    var esfBar = {}, nEluDiag = {};      /* A2 (r13): máximo da tração ELU de cada diagonal de madeira, somado depois à F1d = Nd/150 (6.6.4: "os seus efeitos devem ser acrescidos") */
     var ESF_G = { BS: 1, BI: 1, PD: 1, DG: 1, T: 1, CM: 1, CB: 1, DX: 1, DP: 1, LB: 1 };
     var spanX = p.a / I.nCol, travB = p.cobertura.travBaixo;
     elu.forEach(function (cb) {
@@ -1087,6 +1095,7 @@
         var g = b.grupo;
         if (g === "AD") return;
         if (ESF_G[g]) { var ac = res.esf[g] || (res.esf[g] = { Nt: 0, Nc: 0, V: 0, NtEq: 0, NcEq: 0, VEq: 0 }); es.forEach(function (e) { var nt = Math.max(0, e.N), nc = Math.max(0, -e.N), vv = hyp(e.Vy, e.Vz); ac.Nt = Math.max(ac.Nt, nt); ac.Nc = Math.max(ac.Nc, nc); ac.V = Math.max(ac.V, vv); ac.NtEq = Math.max(ac.NtEq, nt * FK); ac.NcEq = Math.max(ac.NcEq, nc * FK); ac.VEq = Math.max(ac.VEq, vv * FK); }); }
+        if (I.tesouraTipo === "fink" && (g === "PD" || g === "DG")) { var eb0 = esfBar[b.m] || (esfBar[b.m] = { g: g, Nt: 0, Nc: 0, NtEq: 0, NcEq: 0 }); es.forEach(function (e) { eb0.Nt = Math.max(eb0.Nt, e.N); eb0.Nc = Math.max(eb0.Nc, -e.N); eb0.NtEq = Math.max(eb0.NtEq, e.N * FK); eb0.NcEq = Math.max(eb0.NcEq, -e.N * FK); }); }      /* FINK: esforço máximo de CADA alma (a verificação de que o grupo cabe na peça aparada é por barra) */
         if (g === "PD" || g === "DG") [[b.i, es[0].N, b.j], [b.j, es[es.length - 1].N, b.i]].forEach(function (q9) { if (!nBanzo[q9[0]]) return; var a9 = nd0[q9[0]], o9 = nd0[q9[2]], L9 = Math.sqrt(Math.pow(o9.x - a9.x, 2) + Math.pow(o9.y - a9.y, 2) + Math.pow(o9.z - a9.z, 2)) || 1, f9 = fnd[q9[0]] || (fnd[q9[0]] = [0, 0, 0]); f9[0] += q9[1] * (o9.x - a9.x) / L9; f9[1] += q9[1] * (o9.y - a9.y) / L9; f9[2] += q9[1] * (o9.z - a9.z) / L9; });
         if (g === "DX" || g === "DP") es.forEach(function (e0) { nEluDiag[b.id] = Math.max(nEluDiag[b.id] || 0, Math.max(0, e0.N)); });
         if (g === "LB") { es.forEach(function (e) { var sL = sec.LB, vL = MD.barra2022(MD.deAnalise(e, { b: sL.b, h: sL.h, L0y: b.L, L0z: b.L, L1: 0.01, classe: CL, perfil: pf })); regG("LB", vL.eta, b.id + "@" + e.x.toFixed(2), cb.id + " " + car, vL.governa); regEsb("LB", vL); }); return; }      /* M3 (r14): a linha LB do banzo inferior é verificada TAMBÉM no ELU (Nt/Nc que leva o vento do oitão ao contraventamento), além do caso F1d; o esforço entra na ligação LB–BI (CV-3) */
@@ -1100,14 +1109,15 @@
             var bal = b.L; v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: vao, L0z: vao, L1: MD.L1PorBorda(e.Mz, { cima: 0.5, baixo: travB || Math.min(vao, 2) }), classe: CL, perfil: pf }));
           }
           else if (g === "CB") { var Lr = (p.b / 2) * I.sc; v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: Lr, L0z: 0.5, L1: MD.L1PorBorda(e.Mz, { cima: 0.5, baixo: travB || Lr / 2 }), classe: CL, perfil: pf })); }
-          else if (g === "BS") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.lp, L0z: CTV ? CTV.BS.L0z : I.lp, L1: CTV ? CTV.BS.L0z : I.lp, classe: CL, perfil: pf })); }
-          else if (g === "BI") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.dz, L0z: CTV ? CTV.BI.L0z : p.b, L1: CTV ? CTV.BI.L0z : p.b, classe: CL, perfil: pf })); }
+          else if (g === "BS") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.lpBS || I.lp, L0z: CTV ? CTV.BS.L0z : I.lp, L1: CTV ? CTV.BS.L0z : I.lp, classe: CL, perfil: pf })); }
+          else if (g === "BI") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.dzBI || I.dz, L0z: CTV ? CTV.BI.L0z : p.b, L1: CTV ? CTV.BI.L0z : p.b, classe: CL, perfil: pf })); }
           else if (g === "PD" || g === "DG" || g === "DX" || g === "DP") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: b.L, L0z: b.L, L1: 0.01, classe: CL, perfil: pf })); }      /* DX (contraventamento de madeira): sem crédito do cruzamento — L0 = comprimento da diagonal nos dois eixos */
           if (v) { regG(g, v.eta, b.id + "@" + e.x.toFixed(2), cb.id + " " + car, v.governa); regEsb(g, v);      /* HOWE: a diagonal é comprimida; expõe L0 e λ POR EIXO da barra de maior esbeltez (o teste da Howe lê daqui, não recalcula) */
+            if (I.tesouraTipo === "fink" && g === "PD" && v.lambda) { var cpP = res.compressaoPD || null, lmP = Math.max(v.lambda[0] || 0, v.lambda[1] || 0); if (!cpP || lmP > cpP.lambdaMax) res.compressaoPD = { barra: b.id, L0y: b.L, L0z: b.L, lambda: v.lambda.slice(), lambdaMax: lmP, limite: 40 * Math.sqrt(12), eta: v.eta }; }      /* FINK: o tirante comprime sob a sucção; expõe L0 e λ da barra mais esbelta */
             if (g === "DG" && v.lambda) { var cpr = res.compressaoDG || null, lm = Math.max(v.lambda[0] || 0, v.lambda[1] || 0); if (!cpr || lm > cpr.lambdaMax) res.compressaoDG = { barra: b.id, L0y: b.L, L0z: b.L, lambda: v.lambda.slice(), lambdaRel: v.lambdaRel ? v.lambdaRel.slice() : null, lambdaMax: lm, limite: 40 * Math.sqrt(12), eta: v.eta }; } }
         });
       });
-      Object.keys(fnd).forEach(function (n9) { var nb = nBanzo[n9], f9 = fnd[n9], d9 = f9[0] * nb.t[0] + f9[1] * nb.t[1] + f9[2] * nb.t[2], pr = Math.sqrt(Math.pow(f9[0] - d9 * nb.t[0], 2) + Math.pow(f9[1] - d9 * nb.t[1], 2) + Math.pow(f9[2] - d9 * nb.t[2], 2)) * FK; if (pr > f90Perp[nb.g]) f90Perp[nb.g] = pr; });
+      Object.keys(fnd).forEach(function (n9) { var nb = nBanzo[n9], f9 = fnd[n9], d9 = f9[0] * nb.t[0] + f9[1] * nb.t[1] + f9[2] * nb.t[2], pr = Math.sqrt(Math.pow(f9[0] - d9 * nb.t[0], 2) + Math.pow(f9[1] - d9 * nb.t[1], 2) + Math.pow(f9[2] - d9 * nb.t[2], 2)) * FK; if (pr > f90Perp[nb.g]) f90Perp[nb.g] = pr; if (I.tesouraTipo === "fink") { var rt0 = Math.sqrt(f9[0] * f9[0] + f9[1] * f9[1] + f9[2] * f9[2]), rt = rt0 * FK; if (rt > almasRes[nb.g]) almasRes[nb.g] = rt; if (rt0 > almasRes.real[nb.g]) almasRes.real[nb.g] = rt0; } });
       M.apoios.forEach(function (ap) {
         var R = rc.reacoes[ap.no]; if (!R) return;
         if (ap.grupo === "FRT") { res.frt = Math.max(res.frt || 0, Math.abs(R[3])); return; }      /* A4: momento de torção do frechal que o apoio fictício FRT absorve */
@@ -1133,6 +1143,17 @@
     })();
     /* C3 (6.6.2 e 6.6.4, Figura 6): em cada nó do banzo comprimido age uma força transversal F1d = Nd/150 (Nd = compressão de cálculo do banzo). Caso próprio, linear, todos os nós no mesmo sentido (o pior): verifica as linhas LB,
        a terça (axial somado à compressão que já tem) e dá o esforço nas fitas (águas e vertical), que entra na ligação da fita. Fd,mín = (2/3)·n·F1d é o que o contraventamento de extremidade tem de carregar por linha de nós. */
+    /* FINK: as pontas de cada alma (escora DG e tirante PD) têm de CABER na peça aparada (folga de 10 mm): o grupo de pinos de cada ponta ocupa no máximo metade do comprimento da peça aparada; se não cabe, o laço engrossa a alma (mais colunas de pinos) */
+    if (I.tesouraTipo === "fink") {
+      var pcF = perfil("curta"), clF = MM.classe2022(q.classe), cLF = ML.cfg({ kmod: pcF.kmod, kmod1: pcF.kmod1, kmod2: pcF.kmod2, rhok: clF.rhok, k90Tipo: clF.grupo === "dicotiledonea" ? "folhosa" : "conifera" }), apF = MT.T2.finkAparar(G, sec, 0), LpF = { DG: Infinity, PD: Infinity };
+      res.finkCabe = {}; res.esfBar = esfBar; res.almasRes = almasRes;
+      G.membros.forEach(function (m) {
+        if (m.tes !== 0 || (m.g !== "DG" && m.g !== "PD") || !apF[m.id] || !esfBar[m.id]) return;
+        var g = m.g, Fq = Math.max(esfBar[m.id].NtEq, esfBar[m.id].NcEq, 0.05), pn = ML.pinosAxiais(cLF, "alma " + m.id, Fq, 0.001, sec[g].b, sec[g].h, 0.008, { Lmax: Math.max(0.01, apF[m.id].Lpeca / 2) }), cabe = !!pn && pn.ok !== false && pn.cabe !== false;
+        LpF[g] = Math.min(LpF[g], apF[m.id].Lpeca); if (!res.finkCabe[g]) res.finkCabe[g] = { cabe: true, barras: [] };
+        res.finkCabe[g].barras.push({ id: m.id, cabe: cabe, F: Fq, Lpeca: apF[m.id].Lpeca, n: pn && pn.n, comprimento: pn && pn.comprimento }); if (!cabe) res.finkCabe[g].cabe = false;
+      });
+    }
     if (CTV) {
       var pfF = perfil("curta"), F1 = { BS: (res.esf.BS ? res.esf.BS.Nc : 0) / 150, BI: (res.esf.BI ? res.esf.BI.Nc : 0) / 150 }, cgF = [], nT = I.xs.length;
       fam.BS.forEach(function (n) { cgF.push({ tipo: "no", no: n, F: [F1.BS, 0, 0, 0, 0, 0] }); }); fam.BI.forEach(function (n) { cgF.push({ tipo: "no", no: n, F: [F1.BI, 0, 0, 0, 0, 0] }); });
@@ -1205,6 +1226,7 @@
     var z = {}; Object.keys(r.grupos).forEach(function (g) { z[g] = Math.max(r.grupos[g].eta, (r.flechas && r.flechas[g]) || 0); });
     Object.keys(r.flechas || {}).forEach(function (g) { if (z[g] == null) z[g] = r.flechas[g]; });
     Object.keys(r.apoioEta || {}).forEach(function (g) { z[g] = Math.max(z[g] || 0, r.apoioEta[g]); });      /* A1: apoio ⊥ às fibras */
+    if (r.finkCabe) { ["DG", "PD"].forEach(function (g) { if (sec[g] && r.finkCabe[g] && r.finkCabe[g].cabe === false) z[g] = Math.max(z[g] || 0, 1.01); }); }      /* FINK: grupo de pinos que não cabe na peça aparada → cresce a seção */
     if (r.contrav && r.contrav.slip) { ["DX", "DP"].forEach(function (g) { if (sec[g] && r.contrav.slip[g] && r.contrav.slip[g].cabe === false) z[g] = Math.max(z[g] || 0, 1.01); }); }      /* N1 (E4b): o grupo de pinos não cabe na peça → cresce a seção */
     if (r.contrav) { if (sec.DP) z.DP = Math.max(z.DP || 0, r.contrav.razao); if (sec.DX) z.DX = Math.max(z.DX || 0, r.contrav.razao); if (!sec.DP && !sec.DX && sec.FT) z.FT = r.contrav.razao; }      /* madeira: K_br,1 reprovado → o laço engrossa as diagonais de madeira dos painéis (o caminho de rigidez até o solo); sem solução → bloqueia */      /* C3: Kmin/Kbr > 1 → o laço engrossa a fita */
     return z;
@@ -1268,6 +1290,21 @@
     });
     return { betaBS: bs, betaBI: bi };
   }
+  /** FINK: maior ângulo (rad) de cada tipo de alma (DG = escora, PD = tirante) com o eixo do banzo superior (no nó de cima) e com o do banzo inferior (horizontal, no nó de baixo), e menor comprimento de peça aparada por tipo */
+  function t2FinkInfo(params, sec) {
+    var G = MT.T2.geometria(params), hb = params.b / 2, out = { DG: { BS: 0, BI: 0 }, PD: { BS: 0, BI: 0 }, Lpeca: { DG: Infinity, PD: Infinity } }, A = sec ? MT.T2.finkAparar(G, sec, 0) : null;
+    G.membros.forEach(function (m) {
+      if (m.g !== "DG" && m.g !== "PD") return;
+      var top = m.p0[2] > m.p1[2] ? m.p0 : m.p1, bot = top === m.p0 ? m.p1 : m.p0, dz = bot[1] - top[1], dy = bot[2] - top[2], Ld = Math.sqrt(dz * dz + dy * dy) || 1, sg = bot[1] < hb ? 1 : -1, ux = sg, uy = params.incl, Lu = Math.sqrt(ux * ux + uy * uy);
+      out[m.g].BS = Math.max(out[m.g].BS, Math.acos(Math.min(1, Math.abs(dz * ux + dy * uy) / (Ld * Lu))));
+      out[m.g].BI = Math.max(out[m.g].BI, Math.acos(Math.min(1, Math.abs(dz) / Ld)));
+      if (A && m.tes === 0 && A[m.id]) out.Lpeca[m.g] = Math.min(out.Lpeca[m.g], A[m.id].Lpeca);
+      if (A && m.tes === 0 && A[m.id]) { var tipBase = A[m.id][m.p0[2] > m.p1[2] ? "p1" : "p0"], nodeZ = bot[1], dzT = tipBase[1] - nodeZ; out.tipoBI = out.tipoBI || { xE: 0, xT: 0 }; if (m.g === "DG" && dzT < out.tipoBI.xE) out.tipoBI.xE = dzT; if (m.g === "PD" && dzT > out.tipoBI.xT) out.tipoBI.xT = dzT; }      /* posição (ao longo do BI, relativa ao nó) da ponta aparada de cada alma; a escora chega pela esquerda e o tirante sai pela direita (água da frente) */
+    });
+    return out;
+  }
+  /** FINK: comprimento da peça aparada de cada alma da tesoura 0: { id: { g, Lpeca, Leixo } } */
+  function t2FinkPecas(params, sec) { var G = MT.T2.geometria(params), A = MT.T2.finkAparar(G, sec, 0), o = {}; G.membros.forEach(function (m) { if (m.tes === 0 && A[m.id]) o[m.id] = { g: m.g, Lpeca: A[m.id].Lpeca, Leixo: A[m.id].Leixo }; }); return o; }
   /** ligações da T2 (madligacoes.pacoteT2) a partir dos esforços do resultado: reações por grupo de pilar, assento deslizante, esforços nos banzos/terças/caibros */
   function t2Ligacoes(q, sec, r) {
     var cl = MM.classe2022(q.classe), agg = {}, asn = { Nmax: -1e9, Nmin: 1e9, Hmax: 0 };
@@ -1278,7 +1315,9 @@
     var Lp0 = Math.abs(q.params.peDireito), pesoPil = {}; ["P", "PO", "PC"].forEach(function (g) { if (sec[g]) pesoPil[g === "PO" ? "P" : g] = Math.max(pesoPil[g === "PO" ? "P" : g] || 0, sec[g].b * sec[g].h * (g === "PC" ? Lp0 + (q.params.b / 2) * q.params.incl : Lp0) * q.pesoMLC); });      /* B1 (r14): a reação de BASE subestima o arrancamento no TOPO do pilar pelo peso do próprio pilar (U_topo = U_base + P_pilar) */
     var howe = null;
     if (q.params.sistema === "tesoura" && q.params.tesoura && q.params.tesoura.tipo === "howe") howe = t2HoweAngulos(q.params);      /* HOWE: ângulos da diagonal comprimida com os banzos (pinos do banzo, madligacoes.pacoteT2) */
-    return ML.pacoteT2({ howe: howe, sistema: q.params.sistema, pesoPilar: pesoPil, secoes: sec, cfg: c, esf: r.esf, reacoes: agg, assento: asn, incl: q.params.incl, fita: { N: Math.max(sec.FT ? r.tracoes.fita : 0, r.tracoes.parede, sec.FT ? (r.tracoes.vert || 0) : 0), b: sec.FT ? sec.FT.b : 0.06, e: sec.FT ? sec.FT.e : 0.002 }, contrav: r.contrav || null, f90Perp: r.f90Perp || null, mat: { fc90k: cl.fc90k, fc0k: cl.fc0k, kmod90: perfilFn(q)("longa").kmod } });
+    var fink = null;
+    if (q.params.sistema === "tesoura" && q.params.tesoura && q.params.tesoura.tipo === "fink") { fink = t2FinkInfo(q.params, sec); fink.tipoBI = fink.tipoBI ? { xE: fink.tipoBI.xE || -0.05, xT: fink.tipoBI.xT || 0.05 } : null; fink.almasRes = r.almasRes || null; fink.esfBar = r.esfBar || null; fink.pecaBarra = t2FinkPecas(q.params, sec); }      /* FINK: ângulos das almas com os banzos, comprimento das peças aparadas e resultante das almas no nó */
+    return ML.pacoteT2({ howe: howe, fink: fink, sistema: q.params.sistema, pesoPilar: pesoPil, secoes: sec, cfg: c, esf: r.esf, reacoes: agg, assento: asn, incl: q.params.incl, fita: { N: Math.max(sec.FT ? r.tracoes.fita : 0, r.tracoes.parede, sec.FT ? (r.tracoes.vert || 0) : 0), b: sec.FT ? sec.FT.b : 0.06, e: sec.FT ? sec.FT.e : 0.002 }, contrav: r.contrav || null, f90Perp: r.f90Perp || null, mat: { fc90k: cl.fc90k, fc0k: cl.fc0k, kmod90: perfilFn(q)("longa").kmod } });
   }
   function t2Projetar(proj, partida, opcoes) {
     opcoes = opcoes || {};

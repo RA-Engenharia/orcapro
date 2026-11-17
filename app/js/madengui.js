@@ -340,7 +340,7 @@
         campo("Vão (largura entre eixos dos pilares)", "t2.vao", { un: "m" }) + campo("Comprimento (direção da cumeeira)", "t2.comp", { un: "m", dica: "A cumeeira corre pela maior dimensão: comprimento ≥ vão (gire a planta)" }) + campo("Pé-direito", "t2.peDireito", { un: "m" }) +
         campo("Inclinação das águas", "t2.incl", { un: "%", dica: "Mínimo 5 % para telha" }) + campo("Cota do piso (base dos pilares)", "t2.cotaPiso", { un: "m" }) +
         campo("Beiral esquerdo", "t2.beiral.esq", { un: "m" }) + campo("Beiral direito", "t2.beiral.dir", { un: "m" }) + campo("Beiral frente", "t2.beiral.frente", { un: "m" }) + campo("Beiral fundos", "t2.beiral.fundo", { un: "m" }) +
-        campo("Sistema da cobertura", "t2.sistema", { tipo: "sel", opcoes: [["tesoura", "Tesouras Pratt com terças"], ["tesoura-howe", "Tesouras Howe com terças"], ["cumeeira", "Cumeeira portante com caibros"]] }) +
+        campo("Sistema da cobertura", "t2.sistema", { tipo: "sel", opcoes: [["tesoura", "Tesouras Pratt com terças"], ["tesoura-howe", "Tesouras Howe com terças"], ["tesoura-fink", "Tesouras Fink (W) com terças"], ["cumeeira", "Cumeeira portante com caibros"]] }) +
         campo("Espaçamento das tesouras", "t2.sTes", { un: "m", dica: "Sistema tesoura: também define os pilares do perímetro (vão máximo = este valor)" }) + campo("Espaçamento dos caibros", "t2.sCaibro", { un: "m", dica: "Sistema cumeeira portante" }) +
         campo("Vão máximo da viga de cumeeira", "t2.vMaxCumeeira", { un: "m", dica: "Entre pilares de cumeeira (e entre pilares do perímetro)" }) + campo("Espaçamento máximo das terças", "t2.sTercaMax", { un: "m" }) +
         campo("Peso da telha com ripas", "t2.telhaPeso", { un: "kN/m²", dica: "Cerâmica ≈ 0,55; a telha da obra manda" }) + campo("Assento do caibro no frechal", "t2.assento", { tipo: "sel", opcoes: [["deslizante", "Deslizante (sem empuxo)"], ["fixo", "Fixo (liga tirante de aço)"]] }) +
@@ -365,7 +365,15 @@
     svg += '<text x="' + x0 + '" y="' + (yb - 8) + '" font-size="9" fill="currentColor">CORTE TRANSVERSAL — i = ' + num(u.incl, 30) + ' %</text><polyline fill="none" stroke="currentColor" stroke-width="1.6" points="' + xc(-bF) + "," + zc(zE1) + " " + xc(b / 2) + "," + zc(zR) + " " + xc(b + bB) + "," + zc(zE2) + '"/>';
     svg += '<line x1="' + xc(0) + '" y1="' + zc(0) + '" x2="' + xc(0) + '" y2="' + zc(H) + '" stroke="currentColor" stroke-width="3"/><line x1="' + xc(b) + '" y1="' + zc(0) + '" x2="' + xc(b) + '" y2="' + zc(H) + '" stroke="currentColor" stroke-width="3"/><line x1="' + (x0 - 6) + '" y1="' + zc(0) + '" x2="' + (W - 14) + '" y2="' + zc(0) + '" stroke="currentColor" stroke-width="0.6"/>';
     if (sis) svg += '<line x1="' + xc(b / 2) + '" y1="' + zc(0) + '" x2="' + xc(b / 2) + '" y2="' + zc(zR) + '" stroke="currentColor" stroke-width="3"/>'; else svg += '<line x1="' + xc(0) + '" y1="' + zc(H) + '" x2="' + xc(b) + '" y2="' + zc(H) + '" stroke="currentColor" stroke-width="1.2"/>';
-    return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): cumeeira a ' + (Math.round(zR * 100) / 100) + ' m do piso.</p></div>';
+    var nFk = 0;
+    if (!sis && u.sistema === "tesoura-fink") {      /* FINK (W): escoras (do banzo superior ao inferior, descendo para o centro) e tirantes (do inferior ao superior, subindo para o centro); mesmo critério de painéis do motor (madtipologias.finkPaineis: painel de alma <= 2,5 m) */
+      var rf = (b / 2) * Math.sqrt(1 + i * i); nFk = Math.max(2, Math.ceil(rf / 2.5 - 1e-9)); var dF = (b / 2) / nFk, jf, sd, yt = function (y) { return H + i * Math.min(y, b - y); };
+      for (jf = 1; jf < nFk; jf++) for (sd = 0; sd < 2; sd++) {
+        var yT0 = sd ? b - jf * dF : jf * dF, yB0 = sd ? b - (jf + 0.5) * dF : (jf + 0.5) * dF, yT1 = sd ? b - (jf + 1) * dF : (jf + 1) * dF;
+        svg += '<line x1="' + xc(yT0) + '" y1="' + zc(yt(yT0)) + '" x2="' + xc(yB0) + '" y2="' + zc(H) + '" stroke="currentColor" stroke-width="1" stroke-dasharray="5 2"/><line x1="' + xc(yB0) + '" y1="' + zc(H) + '" x2="' + xc(yT1) + '" y2="' + zc(yt(yT1)) + '" stroke="currentColor" stroke-width="1"/>';
+      }
+    }
+    return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): cumeeira a ' + (Math.round(zR * 100) / 100) + ' m do piso.' + (nFk ? " Fink (W): " + nFk + " painéis de alma por água (tracejado = escoras comprimidas; cheio = tirantes tracionados)." : "") + '</p></div>';
   }
   /** E4 r8: desenho ao vivo do DECK no passo 2 — planta (contorno, vigas e pilaretes previstos, escada) e corte lateral com as alturas; as peças previstas vêm do mesmo gerador do cálculo (madtipologias, carregado sob demanda) */
   function mtCarregar() {

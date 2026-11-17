@@ -188,13 +188,14 @@
     var t = est.t2, be = t.beiral || {}, sis = sistemaT2(est, o);
     return { nome: est.obra.nome || "Casa de duas águas", a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5),
       beiral: { frente: num(be.frente, 0.8), fundo: num(be.fundo, 0.8), esq: num(be.esq, 0.8), dir: num(be.dir, 0.8) }, sistema: sis, vMaxPilar: num(t.vMaxCumeeira, 4),
-      telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: sis === "tesoura" && t.sistema === "tesoura-howe" ? "howe" : "pratt" },
+      telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: sis === "tesoura" && t.sistema === "tesoura-howe" ? "howe" : (sis === "tesoura" && t.sistema === "tesoura-fink" ? "fink" : "pratt") },
       cumeeira: { sCaibro: num(t.sCaibro, 1), pilaresIntermediarios: null, assento: t.assento === "fixo" ? "fixo" : "deslizante", tirante: false }, vergas: null };
   }
   function secoesPartidaT2(est, o, sis) {
     var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.2)), P = { forma: "quadrado", b: b, h: b };
     function c(x) { return JSON.parse(JSON.stringify(x)); }
-    if (sis === "tesoura") return { P: c(P), PO: c(P), PC: c(P), FR: { b: 0.12, h: 0.24 }, BS: { b: 0.10, h: 0.20 }, BI: { b: 0.10, h: 0.20 }, PD: { b: 0.08, h: 0.12 }, DG: { b: 0.08, h: 0.12 }, T: { b: 0.08, h: 0.20 }, CM: { b: 0.10, h: 0.24 } };
+    /* FINK: BS de 8 cm de largura (a rigidez exigida do contraventamento K_br,1 cresce com b^3 e as terças a ~1,0 m dão L1 curto: com 10 cm o contraventamento não fecha); BI segue 10 cm (apoio no frechal) */
+    if (sis === "tesoura") return { P: c(P), PO: c(P), PC: c(P), FR: { b: 0.12, h: 0.24 }, BS: { b: est.t2.sistema === "tesoura-fink" ? 0.08 : 0.10, h: 0.20 }, BI: { b: 0.10, h: 0.20 }, PD: { b: 0.08, h: 0.12 }, DG: { b: 0.08, h: 0.12 }, T: { b: 0.08, h: 0.20 }, CM: { b: 0.10, h: 0.24 } };
     return { P: c(P), PO: c(P), PC: c(P), FR: { b: 0.12, h: 0.24 }, CM: { b: 0.12, h: 0.30 }, CB: { b: 0.06, h: 0.20 }, TI: { d: 0.016 } };
   }
   function toProjT2(est, id) {
