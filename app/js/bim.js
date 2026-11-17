@@ -6321,7 +6321,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       });
     }
     /* leve (aparelho fraco) nunca pede o relevo: só a cor, como sempre foi */
-    if (!pbr || fraco) return ent.p;
+    /* ⚠ O REALISTA ESCOLHIDO (a pessoa no botão, ou o link/a Prancha Viva que o pedem) leva o relevo e a rugosidade também no celular
+       (16/11/2026): sem eles o material saía mais claro e liso que o do BIM do dono (ΔE 17, tools/e2e-pv-estilo.js). O peso segue
+       baixo: no aparelho fraco as três imagens descem a 512 px antes de subir para a placa (`um`, acima). O automático continua só cor. */
+    if (!pbr || (fraco && !TEXR.relevoLeve)) return ent.p;
     if (!ent.pPbr) {
       var arq = B.arquivos(slug, false);
       ent.pPbr = !arq ? ent.p : Promise.all([ent.p, um(arq.normal), um(arq.rugosidade)]).then(function (r) {
@@ -7127,7 +7130,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!p.luzNeutra) estLuz(false);
     if (!p.sombras) estRealista(false);
     /* 2) a textura: o mesmo motor dos Materiais realistas, no nível do modo */
-    TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env;
+    TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env; TEXR.relevoLeve = !!(p.pbr && !o.auto);
     if (p.sombras && EST.luzAj && EST.luzAj.env != null) TEXR.env = +EST.luzAj.env;   /* ajuste de luz do Realista (estLuzAplicar) */
     var querTex = p.texturas && texFrota();
     var pr = texAplicar(querTex, o.motivo || ('estilo ' + p.nome));

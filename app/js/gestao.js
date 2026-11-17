@@ -26519,6 +26519,9 @@
         dados.crono = RvNuvem.cronoParaLink(self._b4Sim, function (uid) { return uidChave[uid] || ""; });
         if (dados.crono) { resumo.crono = true; resumo.semChave = dados.crono.semChave; }
       }
+      /* O ESTILO E AS TROCAS DE MATERIAL DA OBRA (16/11/2026): o 3D do celular sai igual ao do BIM (js/rvvisor.js aplicarEstiloDoLink).
+         Só o que muda a aparência: o estilo e {material normalizado: slug da biblioteca} — nada de nome de cliente nem de valor. */
+      try { var es = self._rvEstilo(); if (es) dados.estilo = es; } catch (eEst) { /* sem estilo: o visor usa o automático */ }
       var obra = null; try { obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null; } catch (e) { obra = null; }
       /* PRANCHA VIVA: as folhas leves (assíncrono: cada folha vira uma imagem). ⚠ A trava é na função: sem o módulo, nada vai */
       var cb0 = cb;
@@ -26541,10 +26544,19 @@
        A assinatura é nome + tamanho + disciplina de cada modelo, o servidor
        e as ESCOLHAS: trocou o arquivo (reexportou do Revit) ou pediu outra
        validade/outro conteúdo, e o link velho deixa de ser oferecido. */
+    _rvEstilo: function () {
+      var b = (typeof BIM !== "undefined") ? BIM : null, e = b && b.estiloVisualEstado ? b.estiloVisualEstado() : null, tr = {};
+      try { tr = (window.BimEstilo && BimEstilo.trocasAtuais) ? (BimEstilo.trocasAtuais() || {}) : {}; } catch (e0) { tr = {}; }
+      var out = { versao: 1, modo: e && e.modo ? e.modo : "realista" };
+      if (Object.keys(tr).length) out.trocas = tr;
+      return out;
+    },
     _rvAssinatura: function (modelos, base, op) {
       op = op || {};
       return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || "") + (m.hash ? ":" + m.hash : ""); }).join("|") +
         "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",") +
+        /* o estilo e as trocas de material entram: trocou o material da parede, o link guardado é velho */
+        (function () { try { return "|est:" + JSON.stringify(Gestao._rvEstilo()); } catch (e) { return ""; } })() +
         /* ⚠ PRANCHA VIVA (23/10/2026): a assinatura das FOLHAS e do modelo entra junto — sem ela, a prancha mudada (vista nova,
            folha apagada, modelo editado) reaproveitava o link guardado e o cliente recebia o pacote velho */
         (op.pranchas ? ",pranchas:" + (function () { try { return window.PranchaVivaUI && PranchaVivaUI.assinatura ? PranchaVivaUI.assinatura() : ""; } catch (e) { return ""; } })() : "");

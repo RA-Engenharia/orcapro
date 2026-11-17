@@ -949,6 +949,20 @@
   /* ⚠ CARREGAMENTO PROGRESSIVO (23/10/2026): os dados do link chegam ANTES dos modelos — a prancha abre já ali (é uma
      imagem), e o toque espera o 3D (PranchaVivaUI.progresso3d/pronto3d). Antes, o botão só aparecia depois de baixar e
      montar todos os IFC: no 4G a pessoa olhava a tela de "Baixando" por um minuto com a prancha já no aparelho. */
+  /* O ESTILO E AS TROCAS DE MATERIAL DA OBRA (16/11/2026): o link leva o estilo visual do BIM do dono e as trocas de material da obra
+     (dados.estilo = { modo, trocas: {chave: slug} }). Sem isto o 3D do celular saía com a cor crua do IFC (pastel, sem textura) e o do
+     BIM do dono com as texturas da obra. As texturas NÃO viajam: vêm da biblioteca do visor (img/texturas, e as 2k sob demanda do servidor).
+     Antes de abrir o 1º modelo (a textura é decidida na criação do material). Tudo validado pelo motor (limparTrocas / estiloValido). */
+  function aplicarEstiloDoLink(d) {
+    var e = d && d.estilo; if (!e || typeof e !== "object") return;
+    try { if (e.trocas && typeof e.trocas === "object" && global.BimEstilo && BimEstilo.fixarTrocas) BimEstilo.fixarTrocas(e.trocas); } catch (e1) {}
+    /* ⚠ o ESTILO entra DEPOIS dos modelos (aposCarga): o Realista enquadra a luz e a sombra no modelo na hora em que liga — ligado sem
+       modelo, a luz ficava no lugar padrão e a cor saía diferente da do BIM (ΔE 17 medido em tools/e2e-pv-estilo.js) */
+    st.estiloModo = /^(linha|sombreado|textura|realista)$/.test(String(e.modo || "")) ? String(e.modo) : "";
+  }
+  function aplicarEstiloModo() {
+    try { if (st && st.estiloModo && global.BIM && BIM.estiloVisual) BIM.estiloVisual(st.estiloModo, { naoGravar: true }); } catch (e) {}
+  }
   function pranchasDoLink() { var d = (st.dados && st.dados.pranchas) || (st.dadosBrutos && st.dadosBrutos.pranchas); return d && d.folhas && d.folhas.length ? d : null; }
   /* a chave estável da peça (a do computador) → o uid NESTE aparelho: traduz pelo mapa dos modelos e acha a peça */
   function uidDaChave(ch) {
@@ -988,6 +1002,7 @@
   }
   function aposCarga() {
     var l = $("rv-load"); if (l) l.remove();
+    aplicarEstiloModo();
     var rb = $("rv-reun"); if (rb) rb.style.display = "inline-flex";
     var mods = (B().modelos || []).map(function (m) { return { arquivoId: m.arquivoId, modeloId: m.modeloId }; });
     if (st.dadosBrutos) {
@@ -1192,6 +1207,7 @@
           var pDados = man.temDados ? buscarJson(u("/rv/d/" + token), "/rv/d/" + token).catch(function () { return null; }) : Promise.resolve(null);
           return pDados.then(function (d) {
             st.dadosBrutos = d;
+            aplicarEstiloDoLink(d);
             aplicarMarca((d && d.marca) || { obra: man.nome });
             /* PRANCHA VIVA: o botão aparece já, e o link com pv=1 (o QR que leva as pranchas) abre direto nela */
             if (mostrarBotaoPranchas() && /[#&?]pv=1\b/.test(location.hash || "")) { try { abrirPranchas(); } catch (ePv) {} }

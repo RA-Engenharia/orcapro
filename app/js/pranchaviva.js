@@ -428,6 +428,9 @@
      * ================================================================== */
     MAX_FOLHAS_LINK: 12,
     MAX_BYTES_LINK: 2200000,
+    /* o VETOR da folha no link (16/11/2026): o SVG da folha (1 unidade = 1 mm) comprimido em gzip + base64. O celular desenha o trecho
+       que está na tela em vetor, na resolução do zoom (nítido em qualquer aproximação). Teto por folha: passou, a folha vai só raster. */
+    MAX_SVGZ_FOLHA: 900000,
     folhaParaLink: function (f) {
       if (!f || typeof f !== "object") return null;
       var img = txt(f.img);
@@ -448,7 +451,11 @@
         return null;
       }).filter(Boolean);
       if (!ligs.length) return null;
-      return { id: txt(f.id).slice(0, 80), titulo: txt(f.titulo).slice(0, 120), wMm: W, hMm: H, img: img, ligs: ligs, px: Math.max(0, Math.round(num(f.px, 0))) };
+      var out = { id: txt(f.id).slice(0, 80), titulo: txt(f.titulo).slice(0, 120), wMm: W, hMm: H, img: img, ligs: ligs, px: Math.max(0, Math.round(num(f.px, 0))) };
+      /* o vetor: só base64 de gzip (o celular o abre como imagem SVG, que não roda script), com teto */
+      var sz = txt(f.svgz);
+      if (sz && sz.length <= this.MAX_SVGZ_FOLHA && /^[A-Za-z0-9+\/]+={0,2}$/.test(sz)) out.svgz = sz;
+      return out;
     },
     pranchasParaLink: function (folhas) {
       var out = [], total = 0, cortadas = 0, self = this;

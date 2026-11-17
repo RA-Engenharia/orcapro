@@ -48,6 +48,8 @@
     /* lida a cada abertura de peça (o viewer chama por peça ao montar o
        modelo): o objeto fica em cache enquanto a obra for a mesma */
     trocasAtuais: function () {
+      /* as trocas FIXADAS (o visor do link, 16/11/2026): valem no lugar das do aparelho — o celular não tem a obra do dono */
+      if (this._fixas) return this._fixas;
       var k = this.chave();
       if (this._cache.chave !== k) {
         var o = {};
@@ -55,6 +57,15 @@
         this._cache = { chave: k, trocas: T() ? T().limparTrocas(o) : {} };
       }
       return this._cache.trocas;
+    },
+    /* LINK/PACOTE (16/11/2026): o link da Prancha Viva leva as trocas de material da obra do dono ({chave: slug}); o visor as fixa AQUI,
+       só na memória desta página (nunca no localStorage: o aparelho do cliente abre links de várias obras e as trocas de uma não podem
+       vazar para outra). `limparTrocas` recusa chave/slug que não existe na biblioteca. Sem argumento, solta. Devolve quantas ficaram. */
+    fixarTrocas: function (obj) {
+      if (obj == null) { this._fixas = null; return 0; }
+      this._fixas = T() ? T().limparTrocas(obj) : {};
+      var n = 0; try { n = (bim() && bim().estiloRedecidir) ? bim().estiloRedecidir() : 0; } catch (e) { n = 0; }
+      return Object.keys(this._fixas).length;
     },
     /* grava a troca (slug vazio = volta ao automático) e refaz as peças */
     trocar: function (nomeMaterial, slug) {

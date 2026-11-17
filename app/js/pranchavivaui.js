@@ -90,7 +90,8 @@
     ".pviva-palco{pointer-events:auto;position:relative;flex:1;overflow:hidden;background:var(--pv-fundo);touch-action:none;cursor:grab;transition:opacity .25s;-webkit-user-select:none;user-select:none}",
     ".pviva-papel{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff;box-shadow:0 2px 14px var(--pv-sombra)}",
     /* o escuro inverte a FOLHA (o traço fica claro no fundo escuro); os marcadores ficam fora do filtro */
-    ".pviva-escuro .pviva-papel{filter:invert(.92) hue-rotate(180deg)}",
+    ".pviva-escuro .pviva-papel,.pviva-escuro .pviva-vet{filter:invert(.92) hue-rotate(180deg)}",
+    ".pviva-vet{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;pointer-events:none;user-select:none;-webkit-user-drag:none;background:#fff}",
     ".pviva-ligarea{position:absolute;border:0.6mm dashed rgba(45,106,156,.55);border-radius:1mm;background:rgba(45,106,156,.04);pointer-events:none}",
     ".pviva-ligarea b{position:absolute;left:1mm;top:-6mm;font:bold 4mm Arial,sans-serif;color:" + ACO + ";background:#fff;padding:0 1.5mm;border-radius:1mm;white-space:nowrap}",
     ".pviva-amb{position:absolute;transform:translate(-50%,-50%);border:1px solid #b7cfe6;background:rgba(255,255,255,.92);color:#16324a;border-radius:99px;padding:2px 8px;font-size:11px;white-space:nowrap;pointer-events:auto}",
@@ -421,7 +422,7 @@
     aberto: function () { return !!(this._st && this._st.el); },
     fechar: function () {
       var st = this._st; if (!st) return false;
-      try { if (st._vigia) clearInterval(st._vigia); clearTimeout(st._tMsg); } catch (eV) {}
+      try { if (st._vigia) clearInterval(st._vigia); clearTimeout(st._tMsg); clearTimeout(st.vetT); if (st.vetUrl) URL.revokeObjectURL(st.vetUrl); } catch (eV) {}
       try { if (st.cenario) this._cenarioLimpar(); } catch (eCl) {}
       try { this._restaurarCena(); } catch (e) {}
       this._ligarCanvas(false);
@@ -526,7 +527,7 @@
         '<button type="button" class="pviva-bt" data-pviva-acao="fechar" title="Fechar a Prancha Viva (Esc)">' + ico("fechar", 16) + '<span class="pviva-rot">Fechar</span></button></div>' +
         '<div class="pviva-corpo"><aside class="pviva-lista" data-pviva="lista" aria-label="Folhas"></aside>' +
         '<main class="pviva-palco" data-pviva="palco" tabindex="0" aria-label="A folha: toque num ponto para abrir o 3D ali">' +
-        '<div class="pviva-papel" data-pviva="papel"></div><div data-pviva="marcas" style="position:absolute;inset:0;pointer-events:none"></div>' +
+        '<div class="pviva-papel" data-pviva="papel"></div><img class="pviva-vet" data-pviva="vet" alt="" hidden><div data-pviva="marcas" style="position:absolute;inset:0;pointer-events:none"></div>' +
         '<div class="pviva-dica" data-pviva="dica">Toque num ponto da planta, do corte ou da fachada — ou numa porta, num cômodo: o 3D abre exatamente ali.</div>' +
         '<div class="pviva-barra2d"><button type="button" class="pviva-bt ligado" data-pviva-acao="marcas" aria-pressed="true" title="Mostrar/esconder os marcadores (portas, janelas, cômodos, escadas)">' + ico("alvo", 15) + '<span class="pviva-rot">Marcadores</span></button>' +
         '<button type="button" class="pviva-bt" data-pviva-acao="menos" title="Afastar" aria-label="Afastar">−</button><button type="button" class="pviva-bt" data-pviva-acao="mais" title="Aproximar" aria-label="Aproximar">+</button>' +
@@ -545,6 +546,7 @@
         '<button type="button" class="pviva-bt prim" data-pviva-acao="voltar" title="Volta para a folha no mesmo ponto (Esc)">' + ico("voltar", 16) + '<span class="pviva-rot">Voltar à prancha</span></button>' +
         '<button type="button" class="pviva-bt ligado" data-pviva-acao="corte" aria-pressed="true" title="O corte na cota da prancha">' + ico("corte", 16) + '<span class="pviva-rot">Corte</span></button>' +
         '<button type="button" class="pviva-bt" data-pviva-acao="disc" aria-pressed="false" title="Ligar e desligar disciplinas">' + ico("camadas", 16) + '<span class="pviva-rot">Disciplinas</span></button>' +
+        '<button type="button" class="pviva-bt ligado" data-pviva-acao="estilo" aria-pressed="true" data-pviva="estilo-bt" title="Materiais e texturas do projeto (Realista) ou só a cor de cada material (Sombreado). Fica guardado neste aparelho.">' + ico("camadas", 16) + '<span class="pviva-rot">Realista</span></button>' +
         '<button type="button" class="pviva-bt" data-pviva-acao="medir" aria-pressed="false" title="A trena: toque em dois pontos do modelo">' + ico("medir", 16) + '<span class="pviva-rot">Medir</span></button>' +
         '<button type="button" class="pviva-bt" data-pviva-acao="inicio" title="O modelo inteiro">' + ico("casa", 16) + '<span class="pviva-rot">Início</span></button></div>' +
         '<div class="pviva-cortebox" data-pviva="cortebox"><div data-pviva="cortetxt" style="font-weight:600;margin-bottom:4px"></div>' +
@@ -664,6 +666,7 @@
       this._tit(f.titulo, f.nLig ? "toque num ponto para abrir o 3D" : "esta folha não tem vista ligada ao modelo");
       this._carga("Montando a folha…");
       var pap = this.q("papel"); pap.style.width = f.wMm + "mm"; pap.style.height = f.hMm + "mm"; pap.innerHTML = "";
+      this._vetLimpar();
       return new Promise(function (ok) { setTimeout(ok, 30); }).then(function () {
         if (self._st !== st || st.atual !== i) return false;
         if (opts && opts.refazer) self._carga("Desenhando a folha com o modelo de agora…");
@@ -744,7 +747,7 @@
       arr(ligs).forEach(function (l) { if (l.tipo === "plano") { var mk = P.marcadores(l, itens); l.marcas = arr(l.ambientes).length ? mk.filter(function (m) { return m.tipo !== "comodo"; }) : mk; } });
     },
     /* a folha como a impressão desenha (js/pranchaui.js), com as fotos dos pontos de vista e as imagens guardadas */
-    _htmlFolha: function (f, guardar) {
+    _htmlFolha: function (f, guardar, saida) {
       var st = this._st, self = this;
       if (f.link) return Promise.resolve('<img alt="" src="' + esc(f.link.img) + '" style="position:absolute;left:0;top:0;width:' + f.wMm + "mm;height:" + f.hMm + 'mm">');
       var FU = global.BimFolhaUI, UIx = global.PranchaUI;
@@ -775,6 +778,7 @@
         /* ⚠ só a folha ABERTA guarda os recursos (a textura da folha pronta sai deles): o pacote do link passa por aqui
            com as outras folhas e, sem o `guardar`, trocava a imagem da folha que está na tela */
         if (guardar) st.rec = rec;
+        if (saida) saida.rec = rec;
         return UIx.folha(f.pr, f.folha, rec, f.geo);
       });
     },
@@ -826,7 +830,7 @@
       var st = this._st, f = st.folhas[st.atual], p = this.q("palco"); if (!f || !p) return;
       var W = p.clientWidth || 800, H = p.clientHeight || 600, m = W < 600 ? 10 : 28;
       var s = Math.min((W - 2 * m) / f.wMm, (H - 2 * m - 30) / f.hMm);
-      st.sMin = s * 0.5; st.sMax = 40;
+      st.sMin = s * 0.5; st.sMax = 40; st.sFit = s;
       st.v = { s: s, tx: (W - f.wMm * s) / 2, ty: (H - f.hMm * s) / 2 + 12 };
       this._pintar2d();
     },
@@ -839,6 +843,153 @@
       var v = st.v, k = v.s / MM_PX;
       pap.style.transform = "translate(" + v.tx + "px," + v.ty + "px) scale(" + k + ")";
       this._posMarcas();
+      try { this._vetAtualizar(); } catch (eVet) {}
+    },
+
+    /* ------------------------------------------------------------ O VETOR NO ZOOM (16/11/2026)
+     * ⚠ O defeito: a folha do link (celular) e a do pacote são IMAGEM de largura fixa (até 4096 px dentro do teto de bytes do link):
+     *   passando de ~1 px da imagem por px da tela, a pinça só esticava os pixels — o texto da cota virava borrão. E a folha do modelo
+     *   (HTML + SVG escalado por transform num papel de 3000 px) é re-rasterizada pelo Chrome devagar e em escala limitada, nos desenhos pesados.
+     * A saída: o SVG da folha (js/folhapdf.js svgDaFolha, o mesmo do PDF vetorial) desenhado só no TRECHO que está na tela, na resolução do
+     *   zoom × devicePixelRatio, como imagem SVG (não roda script, não busca nada de fora). Memória limitada (<= 12 MP por imagem), refeito
+     *   quando o gesto para (150 ms); durante o gesto a imagem só estica. A folha de imagem pronta (importada) não tem vetor: fica como era. */
+    VET_MAX_PX: 12000000,
+    _vetLimpar: function () {
+      var st = this._st; if (!st) return;
+      clearTimeout(st.vetT); st.vetCur = null; st.vetSeq = (st.vetSeq || 0) + 1;
+      var el = this.q("vet"); if (el) { el.hidden = true; el.removeAttribute("src"); }
+      if (st.vetUrl) { try { URL.revokeObjectURL(st.vetUrl); } catch (e) {} st.vetUrl = null; }
+    },
+    /* o SVG da folha, como texto (cacheado na folha); null = sem vetor */
+    _vetFonte: function (f) {
+      var self = this;
+      if (f.link) return f.link.svgz ? this._gunzip(f.link.svgz) : Promise.resolve(null);
+      return this._svgFolha(f);
+    },
+    _vetAtualizar: function () {
+      var st = this._st, el = this.q("vet"), self = this; if (!st || !el || st.modo !== "2d") return;
+      var f = st.folhas[st.atual]; if (!f) return;
+      var v = st.v, dpr = Math.min(global.devicePixelRatio || 1, 4);
+      /* só a folha do LINK/pacote (imagem de largura fixa) e só quando a imagem já não basta (passou de 80% da resolução dela).
+         A folha do modelo é HTML+SVG e o Chrome a redesenha nítida em qualquer zoom (medido: tools/e2e-pv-zoom.js [A]); o vetor do PDF
+         tem hachura e símbolos que o HTML da tela não tem — trocar um pelo outro no meio do zoom faria o desenho "pular" */
+      var preciso = !!(f.link && f.link.svgz) && v.s * dpr > 0.8 * ((+f.link.px || 2400) / f.wMm);
+      if (!preciso) { if (!el.hidden) this._vetLimpar(); return; }
+      if (f._vetS === undefined) {
+        f._vetS = 0;
+        this._vetFonte(f).then(function (t) { f._vetS = t || ""; if (self._st === st) self._vetAtualizar(); }, function () { f._vetS = ""; });
+        return;
+      }
+      if (!f._vetS) return;
+      if (st.vetCur) this._vetPosicionar();
+      var cur = st.vetCur, W = this.q("palco").clientWidth, H = this.q("palco").clientHeight;
+      var x0 = -v.tx / v.s, y0 = -v.ty / v.s, w = W / v.s, h = H / v.s;
+      var cobre = cur && x0 >= cur.R.x - 1e-6 && y0 >= cur.R.y - 1e-6 && x0 + w <= cur.R.x + cur.R.w + 1e-6 && y0 + h <= cur.R.y + cur.R.h + 1e-6 && Math.abs(cur.s / v.s - 1) < 0.02;
+      if (cur && cobre) return;
+      clearTimeout(st.vetT);
+      st.vetT = setTimeout(function () { if (self._st === st) self._vetRender(f); }, 150);
+    },
+    _vetPosicionar: function () {
+      var st = this._st, el = this.q("vet"), c = st && st.vetCur; if (!c || !el) return;
+      var v = st.v;
+      el.style.width = (c.R.w * v.s) + "px"; el.style.height = (c.R.h * v.s) + "px";
+      el.style.transform = "translate(" + (v.tx + c.R.x * v.s) + "px," + (v.ty + c.R.y * v.s) + "px)";
+      el.hidden = false;
+    },
+    _vetRender: function (f) {
+      var st = this._st, self = this, el = this.q("vet"), p = this.q("palco"); if (!st || !el || !p || !f._vetS) return;
+      var v = { s: st.v.s, tx: st.v.tx, ty: st.v.ty }, dpr = Math.min(global.devicePixelRatio || 1, 4);
+      var W = p.clientWidth, H = p.clientHeight, x0 = -v.tx / v.s, y0 = -v.ty / v.s, w = W / v.s, h = H / v.s, mx = w * 0.3, my = h * 0.3;
+      var X0 = Math.max(0, x0 - mx), Y0 = Math.max(0, y0 - my), X1 = Math.min(f.wMm, x0 + w + mx), Y1 = Math.min(f.hMm, y0 + h + my);
+      if (!(X1 - X0 > 0.01 && Y1 - Y0 > 0.01)) return;
+      var R = { x: X0, y: Y0, w: X1 - X0, h: Y1 - Y0 }, pw = R.w * v.s * dpr, ph = R.h * v.s * dpr;
+      if (pw * ph > this.VET_MAX_PX) { var r = Math.sqrt(this.VET_MAX_PX / (pw * ph)); pw *= r; ph *= r; }
+      var n = ++st.vetSeq;
+      var lig = arr(st.ligs).map(function (l) { var q = l.rect; return q ? '<rect x="' + q.x + '" y="' + q.y + '" width="' + q.w + '" height="' + q.h + '" rx="1" fill="#2d6a9c" fill-opacity=".04" stroke="#2d6a9c" stroke-opacity=".55" stroke-width=".6" stroke-dasharray="2 1"/>' : ""; }).join("");
+      var svg = f._vetS.replace(/^<svg\b[^>]*>/, function (tag) {
+        return tag.replace(/\swidth="[^"]*"/, ' width="' + Math.round(pw) + '"').replace(/\sheight="[^"]*"/, ' height="' + Math.round(ph) + '"')
+          .replace(/viewBox="[^"]*"/, 'viewBox="' + R.x.toFixed(3) + " " + R.y.toFixed(3) + " " + R.w.toFixed(3) + " " + R.h.toFixed(3) + '"');
+      }).replace(/<\/svg>\s*$/, lig + "</svg>");
+      var url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })), im = new global.Image();
+      im.onload = function () {
+        if (self._st !== st || n !== st.vetSeq) { try { URL.revokeObjectURL(url); } catch (e) {} return; }
+        var pronto = function () {
+          if (self._st !== st || n !== st.vetSeq) { try { URL.revokeObjectURL(url); } catch (e) {} return; }
+          var velha = st.vetUrl; el.src = url; st.vetUrl = url; st.vetCur = { R: R, s: v.s, pw: Math.round(pw), ph: Math.round(ph) };
+          self._vetPosicionar();
+          if (velha) setTimeout(function () { try { URL.revokeObjectURL(velha); } catch (e) {} }, 400);
+        };
+        if (im.decode) im.decode().then(pronto, pronto); else pronto();
+      };
+      im.onerror = function () { try { URL.revokeObjectURL(url); } catch (e) {} if (self._st === st && n === st.vetSeq) { f._vetS = ""; self._vetLimpar(); } };
+      im.src = url;
+    },
+    /* gzip em base64 ↔ texto (CompressionStream: Chrome 80+, Safari 16.4+; sem ele a folha vai só como imagem) */
+    _gzip: function (txt0) {
+      if (!global.CompressionStream || !global.Response || !global.Blob) return Promise.resolve("");
+      return new global.Response(new global.Blob([txt0]).stream().pipeThrough(new global.CompressionStream("gzip"))).arrayBuffer().then(function (ab) {
+        var u8 = new Uint8Array(ab), s = "", P = 0x8000; for (var i = 0; i < u8.length; i += P) s += String.fromCharCode.apply(null, u8.subarray(i, i + P));
+        return global.btoa(s);
+      })["catch"](function () { return ""; });
+    },
+    _gunzip: function (b64) {
+      if (!global.DecompressionStream || !global.Response || !global.Blob) return Promise.resolve(null);
+      try {
+        var bin = global.atob(b64), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        return new global.Response(new global.Blob([u8]).stream().pipeThrough(new global.DecompressionStream("gzip"))).text().then(function (t) { return /^<svg\b/.test(t) ? t : null; })["catch"](function () { return null; });
+      } catch (e) { return Promise.resolve(null); }
+    },
+    _imgParaData: function (uri) {
+      if (/^data:/.test(uri)) return Promise.resolve(uri);
+      return global.fetch(uri).then(function (r) { return r.blob(); }).then(function (bl) {
+        return new Promise(function (ok) { var fr = new global.FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = function () { ok(""); }; fr.readAsDataURL(bl); });
+      })["catch"](function () { return ""; });
+    },
+    /* a folha INTEIRA em SVG vetorial (1 unidade = 1 mm), do mesmo gerador do PDF vetorial; null quando não dá (imagem pronta, sem o gerador) */
+    _svgFolha: function (f) {
+      var self = this, FP = global.FolhaPdf, UIx = global.PranchaUI;
+      if (f._svgTxt !== undefined) return Promise.resolve(f._svgTxt);
+      if (!FP || !FP.svgDaFolha || !UIx || f.link || !f.folha || f.folha.imagemInteira) return Promise.resolve(null);
+      var st0 = this._st, temp = !st0; if (temp) this._st = { fonte: "obra", folhas: [f], atual: 0, urls: [] };
+      var saida = {}, cenaTemp = this._st;
+      function fim(r) { if (temp) { (cenaTemp.urls || []).forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); if (self._st === cenaTemp) self._st = null; } return r; }
+      return this._htmlFolha(f, false, saida).then(function () {
+        var rec = saida.rec; if (!rec) return null;
+        var r0 = FP.svgDaFolha(UIx, f.pr, f.folha, rec, f.geo, null, null, null), chaves = Object.keys(r0.imagens || {}), dados = {}, dims = {};
+        return Promise.all(chaves.map(function (ch) {
+          return self._imgParaData(r0.imagens[ch]).then(function (du) {
+            dados[ch] = du; if (!du) return;
+            return new Promise(function (ok) { var im = new global.Image(); im.onload = function () { dims[ch] = { w: im.naturalWidth, h: im.naturalHeight }; ok(); }; im.onerror = function () { ok(); }; im.src = du; });
+          });
+        })).then(function () {
+          var r1 = FP.svgDaFolha(UIx, f.pr, f.folha, rec, f.geo, dims, null, null), s = r1.svg;
+          s = s.replace(/<image data-im="([^"]+)"/g, function (m, ch) { return dados[ch] ? '<image xlink:href="' + dados[ch] + '"' : '<image'; });
+          s = s.replace(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" font-family="Arial,Helvetica,sans-serif"');
+          return s;
+        });
+      }).then(function (s) { f._svgTxt = s; return fim(s); }, function () { f._svgTxt = null; return fim(null); });
+    },
+    /* a imagem de PRÉVIA da folha a partir do MESMO SVG do vetor (a prévia e o vetor ficam iguais; sem foreignObject, que o Safari do celular
+       desenha mal): JPEG de `largura` px */
+    _rasterDeSvg: function (svg, largura, wMm, hMm) {
+      var d = global.document, W = Math.round(largura), H = Math.round(largura * hMm / wMm);
+      var txt1 = svg.replace(/^<svg[^>]*>/, function (tag) { return tag.replace(/\swidth="[^"]*"/, ' width="' + W + '"').replace(/\sheight="[^"]*"/, ' height="' + H + '"'); });
+      return new Promise(function (ok) {
+        var url = URL.createObjectURL(new global.Blob([txt1], { type: "image/svg+xml" })), im = new global.Image();
+        im.onload = function () {
+          var cv = d.createElement("canvas"); cv.width = W; cv.height = H; var g = cv.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+          var r = null; try { g.drawImage(im, 0, 0, W, H); r = cv.toDataURL("image/jpeg", 0.82); } catch (e) { r = null; }
+          try { URL.revokeObjectURL(url); } catch (e2) {} ok(r);
+        };
+        im.onerror = function () { try { URL.revokeObjectURL(url); } catch (e) {} ok(null); };
+        im.src = url;
+      });
+    },
+    /* o vetor para o LINK: gzip + base64 dentro do teto (senão "" e a folha vai só como imagem) */
+    _svgz: function (f) {
+      var self = this, teto = PV().MAX_SVGZ_FOLHA;
+      return this._svgFolha(f).then(function (s) { return s ? self._gzip(s) : ""; }).then(function (z) { return z && z.length <= teto ? z : ""; }, function () { return ""; });
     },
     /* ponto da tela (cliente) → mm da folha, e a volta */
     mmDe: function (cx, cy) { var st = this._st, r = this.q("palco").getBoundingClientRect(); return { x: (cx - r.left - st.v.tx) / st.v.s, y: (cy - r.top - st.v.ty) / st.v.s }; },
@@ -934,6 +1085,40 @@
       try { if (b.caixaCorteAtiva && b.caixaCorteAtiva() && b.caixaCorte) b.caixaCorte(false); } catch (e3) {}
       this._ligarTick(true);
       this._ligarCanvas(true);
+      try { this._estiloEntrar(); } catch (eEs) {}
+    },
+    /* O 3D DA PRANCHA VIVA ABRE EM REALISTA (16/11/2026): os materiais e as texturas do projeto, como o BIM do dono. A Prancha Viva usa a
+       MESMA cena do BIM (nada é exportado): o que mudava era o estilo do momento — Sombreado deixava a cor crua do IFC (pastel, sem textura).
+       A pessoa troca no botão Realista/Sombreado (fica guardado). O estilo de antes volta ao fechar/voltar à folha (só no BIM do dono; no
+       link não há "antes"). Sem gravar no localStorage do BIM: a escolha do editor é a do editor. */
+    _estiloPref: function () { try { return global.localStorage.getItem("orcapro:pranchaviva:estilo3d") === "sombreado" ? "sombreado" : "realista"; } catch (e) { return "realista"; } },
+    _estiloEntrar: function () {
+      var st = this._st, b = B(); if (!st || !b || !b.estiloVisual || !b.estiloVisualEstado) return;
+      var e0 = null; try { e0 = b.estiloVisualEstado(); } catch (e) { e0 = null; }
+      if (!e0) return;
+      if (st.estiloAntes == null) st.estiloAntes = e0.modo;
+      var q = this._estiloPref(); st.estilo3d = q;
+      if (e0.modo !== q) b.estiloVisual(q, { naoGravar: true });
+      this._pintarEstilo();
+    },
+    _estiloSair: function () {
+      var st = this._st, b = B(); if (!st || !b || st.estiloAntes == null) return;
+      var antes = st.estiloAntes; st.estiloAntes = null;
+      if (st.fonte === "link") return;
+      try { var e0 = b.estiloVisualEstado(); if (e0 && e0.modo !== antes && b.estiloVisual) b.estiloVisual(antes, { naoGravar: true }); } catch (e) {}
+    },
+    _estiloTrocar: function () {
+      var st = this._st, b = B(); if (!st || !b || !b.estiloVisual) return false;
+      var q = st.estilo3d === "realista" ? "sombreado" : "realista"; st.estilo3d = q;
+      try { global.localStorage.setItem("orcapro:pranchaviva:estilo3d", q); } catch (e) {}
+      this._pintarEstilo();
+      this._msg(q === "realista" ? "Realista: materiais e texturas do projeto." : "Sombreado: só a cor de cada material.", "ok");
+      return b.estiloVisual(q, { naoGravar: true });
+    },
+    _pintarEstilo: function () {
+      var st = this._st, bt = this.q("estilo-bt"); if (!bt || !st) return;
+      var r = st.estilo3d !== "sombreado"; bt.setAttribute("aria-pressed", String(r)); bt.classList.toggle("ligado", r);
+      var l = bt.querySelector(".pviva-rot"); if (l) l.textContent = r ? "Realista" : "Sombreado";
     },
     _restaurarCena: function () {
       var st = this._st, b = B(), api = this._api(); if (!st || !st.salvo) return;
@@ -941,6 +1126,7 @@
       this._tirarDesenho();
       this._ligarTick(false);
       var sv = st.salvo; st.salvo = null;
+      try { this._estiloSair(); } catch (eEs) {}
       if (api) {
         api.renderer.clippingPlanes = sv.clip; api.renderer.localClippingEnabled = sv.local;
         api.camera.fov = sv.fov; api.camera.updateProjectionMatrix();
@@ -1644,6 +1830,7 @@
       if (a === "mais" || a === "menos") { var p = this.q("palco"); return this._zoom(p.clientWidth / 2, p.clientHeight / 2, a === "mais" ? 1.5 : 1 / 1.5); }
       if (a === "voltar") return this.voltar();
       if (a === "corte") { st.corteOn = !st.corteOn; this.moverCorte(st.off); this._pintarBotoes(); return; }
+      if (a === "estilo") return this._estiloTrocar();
       if (a === "disc") return this._abrirDisc();
       if (a === "medir") return this._medir();
       if (a === "inicio") return this._inicio();
@@ -1719,18 +1906,26 @@
         /* ⚠ o desenho da folha é o de ANTES da última mudança do modelo (a Prancha Viva não redesenha sozinha): vai, mas o
            link diz quantas (js/gestao.js _modalNuvemRV) — o dono atualiza e gera de novo (a assinatura muda: _vistasDaFolha) */
         if (f._desatualizada) desat++;
-        var resta = Math.max(150000, (P0.MAX_BYTES_LINK - usado) / Math.max(1, lista.length - i + 1)), larg = P0.larguraRaster(f.wMm, f.hMm, resta), tent = 0;
         var ligsLink = ligs.map(function (l) { return { tipo: l.tipo, vista: l.vista, rect: l.rect, M: l.M, n: l.n, mmPorM: l.mmPorM, cota: l.cota, nome: l.nome, cam: l.cam, marcas: P0.marcasParaLink(l.marcas) }; });
-        function tenta() {
-          self._rasterFolha(f, larg).then(function (img) {
-            var x = img ? { id: f.id, titulo: f.titulo, wMm: f.wMm, hMm: f.hMm, img: img, ligs: ligsLink, px: larg } : null;
-            var t = x ? JSON.stringify(x).length : 0;
-            if (x && usado + t > P0.MAX_BYTES_LINK && tent < 2 && larg > 1600) { tent++; larg = Math.max(1600, Math.round(larg * 0.7)); return tenta(); }
-            if (x && usado + t <= P0.MAX_BYTES_LINK) { out.push(x); usado += t; }
-            setTimeout(proxima, 0);
-          }, function () { setTimeout(proxima, 0); });
-        }
-        tenta();
+        /* o VETOR da folha vai junto (16/11/2026): o celular desenha o trecho da tela em vetor no zoom. Com ele a imagem fica como PRÉVIA
+           (até 2400 px) e o teto de bytes fica para o vetor */
+        self._svgz(f).then(function (sz) {
+          var resta = Math.max(150000, (P0.MAX_BYTES_LINK - usado - sz.length) / Math.max(1, lista.length - i + 1)), larg = P0.larguraRaster(f.wMm, f.hMm, resta), tent = 0;
+          if (sz) larg = Math.min(larg, 2400);
+          function tenta() {
+            (sz && f._svgTxt ? self._rasterDeSvg(f._svgTxt, larg, f.wMm, f.hMm).then(function (im) { return im || self._rasterFolha(f, larg); }) : self._rasterFolha(f, larg)).then(function (img) {
+              var x = img ? { id: f.id, titulo: f.titulo, wMm: f.wMm, hMm: f.hMm, img: img, ligs: ligsLink, px: larg } : null;
+              if (x && sz) x.svgz = sz;
+              var t = x ? JSON.stringify(x).length : 0;
+              if (x && usado + t > P0.MAX_BYTES_LINK && tent < 2 && larg > 1600) { tent++; larg = Math.max(1600, Math.round(larg * 0.7)); return tenta(); }
+              /* ainda estourou: o vetor sai (a folha vai só como imagem, como antes) */
+              if (x && sz && usado + t > P0.MAX_BYTES_LINK) { delete x.svgz; sz = ""; t = JSON.stringify(x).length; }
+              if (x && usado + t <= P0.MAX_BYTES_LINK) { out.push(x); usado += t; }
+              setTimeout(proxima, 0);
+            }, function () { setTimeout(proxima, 0); });
+          }
+          tenta();
+        });
       }
       proxima();
     },
@@ -1950,7 +2145,8 @@
       return { modo: st.modo, fonte: st.fonte, folhas: st.folhas.length, atual: st.atual, ligs: st.ligs.map(function (l) { return { tipo: l.tipo, vista: l.vista, nome: l.nome, rect: l.rect, origem: l.origem }; }),
         v: st.v, off: st.off, corteOn: st.corteOn, alvo: st.alvo ? { P: st.alvo.P, mm: st.alvo.mm } : null, volta: st.volta || null, sel: st.sel,
         cam: c ? { pos: [c.position.x, c.position.y, c.position.z], alvo: t ? [t.x, t.y, t.z] : null, fov: c.fov } : null,
-        planos: api ? (api.renderer.clippingPlanes || []).map(function (p) { return [p.normal.x, p.normal.y, p.normal.z, p.constant]; }) : [], quad: !!(st.quad && st.quad.tinta), ocupado: st.ocupado };
+        planos: api ? (api.renderer.clippingPlanes || []).map(function (p) { return [p.normal.x, p.normal.y, p.normal.z, p.constant]; }) : [], quad: !!(st.quad && st.quad.tinta), ocupado: st.ocupado,
+        vet: st.vetCur ? { pw: st.vetCur.pw, ph: st.vetCur.ph, R: st.vetCur.R, s: st.vetCur.s, visivel: !!(this.q("vet") && !this.q("vet").hidden) } : null };
     }
   };
 

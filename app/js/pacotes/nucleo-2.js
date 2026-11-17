@@ -24933,6 +24933,7 @@ var uidChave = {};
 dados.crono = RvNuvem.cronoParaLink(self._b4Sim, function (uid) { return uidChave[uid] || ""; });
 if (dados.crono) { resumo.crono = true; resumo.semChave = dados.crono.semChave; }
 }
+try { var es = self._rvEstilo(); if (es) dados.estilo = es; } catch (eEst) { }
 var obra = null; try { obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null; } catch (e) { obra = null; }
 var cb0 = cb;
 if (op.pranchas && window.PranchaVivaUI && window.PranchaVivaModulo && PranchaVivaModulo.liberado()) {
@@ -24950,10 +24951,18 @@ dados.marca = RvNuvem.marca(emp.nome || "", obra ? obra.nome : "", logo);
 cb(dados, resumo, obra);
 });
 },
+_rvEstilo: function () {
+var b = (typeof BIM !== "undefined") ? BIM : null, e = b && b.estiloVisualEstado ? b.estiloVisualEstado() : null, tr = {};
+try { tr = (window.BimEstilo && BimEstilo.trocasAtuais) ? (BimEstilo.trocasAtuais() || {}) : {}; } catch (e0) { tr = {}; }
+var out = { versao: 1, modo: e && e.modo ? e.modo : "realista" };
+if (Object.keys(tr).length) out.trocas = tr;
+return out;
+},
 _rvAssinatura: function (modelos, base, op) {
 op = op || {};
 return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || "") + (m.hash ? ":" + m.hash : ""); }).join("|") +
 "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",") +
+(function () { try { return "|est:" + JSON.stringify(Gestao._rvEstilo()); } catch (e) { return ""; } })() +
 (op.pranchas ? ",pranchas:" + (function () { try { return window.PranchaVivaUI && PranchaVivaUI.assinatura ? PranchaVivaUI.assinatura() : ""; } catch (e) { return ""; } })() : "");
 },
 _rvLinkSalvo: function (modelos, base, op) {
@@ -86175,5 +86184,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=00a41e4d45"},{"src":"js/bim-pacote.js?v=3a7a7c295a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=933c4c3d4f"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=847d92a3fc"},{"src":"js/bim-pacote.js?v=ed9cffd576","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=933c4c3d4f"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

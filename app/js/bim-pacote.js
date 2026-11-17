@@ -4656,7 +4656,7 @@ if (!t) ent.erro = 'não consegui carregar ' + arq0.cor;
 return ent;
 });
 }
-if (!pbr || fraco) return ent.p;
+if (!pbr || (fraco && !TEXR.relevoLeve)) return ent.p;
 if (!ent.pPbr) {
 var arq = B.arquivos(slug, false);
 ent.pPbr = !arq ? ent.p : Promise.all([ent.p, um(arq.normal), um(arq.rugosidade)]).then(function (r) {
@@ -5276,7 +5276,7 @@ if (!p.arestas && !EST.cont) estArestasLigar(false);
 if (!p.facesClaras) estLinhaFaces(false);
 if (!p.luzNeutra) estLuz(false);
 if (!p.sombras) estRealista(false);
-TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env;
+TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env; TEXR.relevoLeve = !!(p.pbr && !o.auto);
 if (p.sombras && EST.luzAj && EST.luzAj.env != null) TEXR.env = +EST.luzAj.env;
 var querTex = p.texturas && texFrota();
 var pr = texAplicar(querTex, o.motivo || ('estilo ' + p.nome));
