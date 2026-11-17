@@ -200,6 +200,14 @@
     return { paredes: par, lajes: laj };
   }
   function noRet(w, x, z, tol) { var rx = x - w.cx, rz = z - w.cz, lx = rx * w.ux + rz * w.uz, lz = -rx * w.uz + rz * w.ux; return Math.abs(lx) <= w.hx + tol && Math.abs(lz) <= w.hz + tol; }
+  /* O pilar do motor só some quando ASSENTA em parede de verdade (revisor 17/11/2026): a tolerância vale só na ESPESSURA (+2 cm), o comprimento é sem folga e o trecho com ABERTURA
+     DE PORTA/PORTÃO (vão que parte do piso, peitoril ≤ 5 cm) não é apoio — o pilar do motor fica como peça. vaos = { <id da parede>: [{ x0, x1, y0 }] } (x ao longo da parede, do centro). */
+  function apoioParede(w, x, z, vaos) {
+    var rx = x - w.cx, rz = z - w.cz, lx = rx * w.ux + rz * w.uz, lz = -rx * w.uz + rz * w.ux;
+    if (!(Math.abs(lx) <= w.hx + 0.005 && Math.abs(lz) <= w.hz + 0.02)) return false;   /* 5 mm = só o arredondamento do desenho (r4); o canto de 2 paredes tem o eixo no topo do comprimento */
+    var vs = vaos && vaos[w.id]; if (vs) for (var i = 0; i < vs.length; i++) { var v = vs[i]; if (num(v.y0, 0) <= 0.05 && lx >= v.x0 - 1e-6 && lx <= v.x1 + 1e-6) return false; }
+    return true;
+  }
   function noPoli(p, P) { var c = false, i, j; for (i = 0, j = P.length - 1; i < P.length; j = i++) if (((P[i][1] > p[1]) !== (P[j][1] > p[1])) && (p[0] < (P[j][0] - P[i][0]) * (p[1] - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0])) c = !c; return c; }
 
   /** o quadro motor → obra: origem O, eixos u (a, ao longo da cumeeira/lado maior) e v (b, para dentro). x=0 é a empena "esq" (lado kA+1); y=0 é o beiral "frente" (lado kA). */
@@ -247,7 +255,7 @@
     cmp("pé-direito", p.peDireito, Math.max(lido.peDireito, 1.2), 0.011);
     if (dif.length) return { ok: false, motivo: "o telhado mudou depois do cálculo (" + dif.join("; ") + "): recalcule a madeira", desatualizado: true };
     var fr = quadro(lido), cx = caixasDe(opc.caixas), paredes = cx.paredes.filter(function (w) { return w.topo >= lido.cotaApoio - 0.6 && w.base < lido.cotaApoio; });
-    var chaveM = chaveMotor(motor), chaveW = chaveM ? chaveM + "|" + JSON.stringify([fr.O, fr.u, fr.v, r3(lido.cotaApoio), paredes.map(function (w) { return [w.cx, w.cz, w.ux, w.uz, w.hx, w.hz, w.base, w.topo]; })]) : null;
+    var chaveM = chaveMotor(motor), chaveW = chaveM ? chaveM + "|" + JSON.stringify([fr.O, fr.u, fr.v, r3(lido.cotaApoio), paredes.map(function (w) { return [w.cx, w.cz, w.ux, w.uz, w.hx, w.hz, w.base, w.topo]; }), opc.vaos || null]) : null;
     if (chaveW) for (var ic = 0; ic < CACHE_M.length; ic++) if (CACHE_M[ic].k === chaveW) return CACHE_M[ic].r;
     var Rm; try { Rm = resolverMotor(motor); } catch (e) { return { ok: false, motivo: "o motor de encaixes falhou: " + (e && e.message ? e.message : e) }; }
     /* 3a) o frechal assenta no topo da parede: sobe a estrutura inteira o que for preciso */
@@ -264,8 +272,8 @@
       var ext = Me.extensaoAxial(P); if (!ext) return;
       var pm = [(P.p0[0] + P.p1[0]) / 2, (P.p0[1] + P.p1[1]) / 2, 0], pw = W([pm[0], pm[1], 0]);
       var naParede = paredes.some(function (w) { return noRet(w, pw[0], pw[2], 0.25); });
-      if (motor.tip === "T4" && motor.apoio === "pilares" && papel === "pilar") { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "usa o pilar do modelo nesse vértice (T4 aberto sobre pilares)" }); return; }
-      if (naParede && (papel === "pilar")) { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "pilar sobre parede do modelo: o frechal assenta na parede" }); return; }
+      if (motor.tip === "T4" && motor.apoio === "pilares" && papel === "pilar") { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "usa o pilar do modelo nesse vértice (T4 aberto sobre pilares)" + (motor.sec && motor.sec.P ? "; pilar calculado " + virg(num(motor.sec.P.b != null ? motor.sec.P.b : motor.sec.P.d, 0) * 100, 0) + "×" + virg(num(motor.sec.P.h != null ? motor.sec.P.h : motor.sec.P.d, 0) * 100, 0) + " cm: o do modelo tem de ser igual ou maior" : "") }); return; }
+      if (papel === "pilar" && paredes.some(function (w) { return apoioParede(w, pw[0], pw[2], opc.vaos); })) { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "pilar sobre parede do modelo: o frechal assenta na parede" }); return; }
       if (naParede && P.g === "DP") { dpParede++; descartadas.push({ id: P.id, g: P.g, motivo: "contraventamento de madeira DENTRO da parede de alvenaria do modelo (a parede contraventa)" }); return; }
       var mesh = Me.malhaPeca(P), V = mesh.v, F = mesh.f, wv = [], i;
       for (i = 0; i < V.length; i += 3) wv.push(W([V[i], -V[i + 2], V[i + 1]]));        /* cena [x, z, −y] → motor [x, y, z] → obra */
@@ -391,8 +399,30 @@
     var auto = tip2 && Mc.tipologiaDe(lido, ap, ext2(c.cfg || {}, { tesoura: "auto" }));
     if (auto && auto.variante && auto.variante !== variante) novo.sugestao = "A regra automática de hoje escolheria a tesoura " + auto.variante.toUpperCase() + " para este vão (" + auto.criterio + "). A tesoura " + variante + " do cálculo antigo foi MANTIDA; para trocar: Ajustar › Tesoura: automática pelo vão e Recalcular.";
     novo.tipologia = { tipo: lido.tipo, variante: variante, auto: false, criterio: "migrado: tesoura " + variante + " mantida do cálculo anterior (escolha mantida, não automática)", fonte: "cálculo anterior" };
+    /* REVISOR 17/11/2026: as REMOÇÕES e EDIÇÕES de peça da versão 1 (t.sobrepor, por id de peça do SINAPI) que a geometria do motor deixa sem a peça NÃO somem calado: ficam gravadas e o aviso LISTA cada uma pelo nome */
+    var perdidas = edicoesV1Perdidas(t, estado, novo);
     var opM = { op: "telhado", id: String(id), calcMadeira: novo }; if (!t.calcMadeiraV1) opM.calcMadeiraV1 = clone(c);   /* C2: a cópia COMPLETA fica fora do calcMadeira e nunca é sobrescrita */
-    return { op: opM, aviso: "Telhado " + id + ": a madeira passou para a geometria do motor (cópia do cálculo anterior guardada; seções de partida em " + falta.join(", ") + " — Recalcular fecha).", falta: falta };
+    return { op: opM, aviso: "Telhado " + id + ": a madeira passou para a geometria do motor (cópia do cálculo anterior guardada; seções de partida em " + falta.join(", ") + " — Recalcular fecha)." +
+      (perdidas.length ? " Edições/remoções de peça da versão anterior que DEIXARAM DE VALER (continuam gravadas, nenhuma foi apagada): " + perdidas.join("; ") + "." : ""), falta: falta, perdidas: perdidas };
+  }
+  /* quais entradas de t.sobrepor (a v1) não acham mais a peça no pacote refeito com o cálculo migrado — pelo nome da peça e pelo que o usuário tinha feito */
+  function edicoesV1Perdidas(t, estado, novo) {
+    var sob = t && t.sobrepor && typeof t.sobrepor === "object" ? t.sobrepor : null; if (!sob) return [];
+    var chaves = Object.keys(sob); if (!chaves.length) return [];
+    var ES = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"), orf = null, confere = true;
+    try {
+      var tn = {}; Object.keys(t).forEach(function (k) { if (k !== "pacote") tn[k] = t[k]; }); tn.calcMadeira = novo;
+      var pk = ES && ES.modelar ? ES.modelar(tn, estado, {}) : null;
+      if (pk && pk.ok) { var ach = {}; arr(pk.sobreporOrfas).forEach(function (k) { ach[k] = 1; }); orf = chaves.filter(function (k) { return ach[k]; }); }
+    } catch (e) { orf = null; }
+    if (orf == null) { orf = chaves; confere = false; }
+    var velhas = {}; arr(t.pacote && t.pacote.pecas).forEach(function (o) { if (o && o.id != null) velhas[String(o.id)] = o; });
+    return orf.map(function (k) {
+      var e = sob[k] || {}, o = velhas[k], nome = (o && ES && ES.rotuloPeca ? ES.rotuloPeca(o) + " " : "") + k, q = [];
+      if (e.removida) q.push("REMOÇÃO — a peça volta ao desenho do motor");
+      else { if (e.secao) q.push("seção " + e.secao); if (e.perfil) q.push("perfil " + e.perfil); if (e.desloc) q.push("deslocamento"); if (e.ext) q.push("alongamento"); }
+      return nome + " (" + (q.join(", ") || "edição") + (confere ? "" : "; não consegui conferir se ainda vale") + ")";
+    });
   }
   function ext2(a, b) { var o = {}; Object.keys(a || {}).forEach(function (k) { o[k] = a[k]; }); Object.keys(b || {}).forEach(function (k) { o[k] = b[k]; }); return o; }
   function migrarTudo(estado, opc) {

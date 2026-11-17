@@ -1269,7 +1269,8 @@
     /* a op da edição (um Ctrl+Z por edição) */
     editar: function (tid, pid, campos) {
       var b = B(), E = ES(); if (!b || !b.b2Op || !E) return false;
-      var ok = b.b2Op(E.opPeca(tid, pid, campos));
+      var tP = comPacote(tid), oP = tP ? peca(tP, pid) : null;   /* a peça do motor leva a assinatura do membro na edição */
+      var ok = b.b2Op(E.opPeca(tid, pid, campos, oP ? { t: tP, o: oP } : null));
       if (!ok) status("O editor recusou a edição da peça.");
       return ok;
     },
