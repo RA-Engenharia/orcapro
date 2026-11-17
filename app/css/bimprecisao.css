@@ -64,3 +64,6 @@
   touch-action: none;
 }
 .bp-alca:hover, .bp-alca:focus-visible { background: var(--aco); outline: 2px solid var(--aco); outline-offset: 2px; }
+
+/* OCULTAR COTAS NO 3D (16/11/2026, js/bim.js + js/bimfocoui.js): os botões de valor das cotas temporárias somem; as alças ficam */
+.bim-cotas-oc .bp-cota-tmp { display: none !important; }

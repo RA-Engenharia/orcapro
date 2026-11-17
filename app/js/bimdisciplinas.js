@@ -122,7 +122,7 @@
     "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
     /* Vista: navegar, exibir, janelas, criar vistas, gráficos, render */
     "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
-    "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias",
+    "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias", "cotas-ocultar",
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
     "render-ia", "acabamento-ia", "galeria-ia", "render-fisico", "cena", "apresentar-reforma",
     "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",

@@ -350,3 +350,10 @@ html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bp-bt b { fo
 }
 /* celular: o contador some (os números já estão na barra de status) para não bater no selo da disciplina */
 @media (max-width: 640px) { html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bim-hud { display: none !important; } }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-gnome { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-gtit { display: flex; align-items: center; gap: 8px; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-goff .bf-gtit { color: var(--rv-tx-off); text-decoration: line-through; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-cotas { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 6px; border-bottom: 1px solid var(--rv-linha); }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-cotas label { display: flex; align-items: center; gap: 6px; color: var(--rv-painel-tx); cursor: pointer; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-nota { color: var(--rv-tx-fraco); font-size: 11px; line-height: 1.3; }
+html .bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .bf-aviso { margin: 0; padding: 4px 10px 2px; }

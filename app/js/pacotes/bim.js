@@ -105682,7 +105682,7 @@ def(COMUM, [
 "planta-2d", "corte-2d", "corte-tecnico", "clash", "planta", "corte", "quatro-d", "tarefas4d", "curva-s", "seis-d",
 "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
 "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
-"visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias",
+"visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade", "contorno-linhas", "foco-categorias", "cotas-ocultar",
 "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
 "render-ia", "acabamento-ia", "galeria-ia", "render-fisico", "cena", "apresentar-reforma",
 "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
@@ -177713,7 +177713,7 @@ var ABA_MODIFICAR = [
 var ABA_VISTA = [
 { nome: "Explodida", ids: ["explodir", "explodir-montar", "cotas-vivas"] },
 { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
-{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "ambientes-3d"] },
+{ nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "cotas-ocultar", "ambientes-3d"] },
 { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "contorno-linhas", "caixa-corte"] },
 { nome: "Gráficos da vista", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
 "estilos-objeto"] },
@@ -225651,6 +225651,8 @@ var DISCIPLINAS = [
 { id: "coordenacao", rotulo: "Coordenação" }
 ];
 var ID_DISC = {}; DISCIPLINAS.forEach(function (d) { ID_DISC[d.id] = d; });
+var DISC_VIS = DISCIPLINAS.filter(function (d) { return d.id !== "coordenacao"; }).concat([{ id: "climatizacao", rotulo: "Climatização" }]);
+var ID_DISC_VIS = {}; DISC_VIS.forEach(function (d) { ID_DISC_VIS[d.id] = d; });
 var CATEGORIAS = [
 { id: "paredes", rotulo: "Paredes", disc: "arquitetura", re: /^IFC(WALL|CURTAINWALL)/ },
 { id: "lajes", rotulo: "Lajes e pisos", disc: "arquitetura", re: /^IFCSLAB/ },
@@ -225667,18 +225669,26 @@ var CATEGORIAS = [
 { id: "perfis", rotulo: "Perfis e chapas", disc: "estrutura", re: /^IFC(MEMBER|PLATE|FASTENER|MECHANICALFASTENER)/ },
 { id: "armacao", rotulo: "Armação", disc: "estrutura", re: /^IFCREINFORCING/ },
 { id: "tubos", rotulo: "Tubos", disc: "hidrossanitario", re: /^IFCPIPESEGMENT/ },
-{ id: "conexoes", rotulo: "Conexões", disc: "hidrossanitario", re: /^IFCPIPEFITTING/ },
-{ id: "registros", rotulo: "Registros e válvulas", disc: "hidrossanitario", re: /^IFC(VALVE|FLOWCONTROLLER)/ },
-{ id: "aparelhos", rotulo: "Aparelhos e louças", disc: "hidrossanitario", re: /^IFC(SANITARYTERMINAL|WASTETERMINAL|FLOWTERMINAL)/ },
-{ id: "reservatorios", rotulo: "Reservatórios e caixas", disc: "hidrossanitario", re: /^IFC(FLOWSTORAGEDEVICE|DISTRIBUTIONCHAMBERELEMENT|TANK|FLOWTREATMENTDEVICE)/ },
-{ id: "eletrodutos", rotulo: "Eletrodutos e cabos", disc: "eletrica", re: /^IFC(CABLECARRIER|CABLESEGMENT|CABLEFITTING|CONDUIT)/ },
-{ id: "pontos", rotulo: "Pontos elétricos", disc: "eletrica", re: /^IFC(OUTLET|LIGHTFIXTURE|SWITCHINGDEVICE|ELECTRICAPPLIANCE|LAMP|SENSOR)/ },
-{ id: "quadros", rotulo: "Quadros e caixas", disc: "eletrica", re: /^IFC(ELECTRICDISTRIBUTIONBOARD|JUNCTIONBOX|ELECTRICFLOWSTORAGEDEVICE|ELECTRICDISTRIBUTION)/ }
+{ id: "conexoes", rotulo: "Conexões (joelhos, tês, luvas)", disc: "hidrossanitario", re: /^IFCPIPEFITTING/ },
+{ id: "registros", rotulo: "Acessórios e válvulas", disc: "hidrossanitario", re: /^IFC(VALVE|FLOWCONTROLLER)/ },
+{ id: "aparelhos", rotulo: "Louças e metais", disc: "hidrossanitario", re: /^IFC(SANITARYTERMINAL|FLOWTERMINAL)/ },
+{ id: "caixas", rotulo: "Caixas e ralos", disc: "hidrossanitario", re: /^IFC(DISTRIBUTIONCHAMBERELEMENT|WASTETERMINAL)/ },
+{ id: "reservatorios", rotulo: "Equipamentos e reservatórios", disc: "hidrossanitario", re: /^IFC(FLOWSTORAGEDEVICE|TANK|FLOWTREATMENTDEVICE|PUMP|FIRESUPPRESSIONTERMINAL)/ },
+{ id: "eletrodutos", rotulo: "Eletrodutos e eletrocalhas", disc: "eletrica", re: /^IFC(CABLECARRIER|CONDUIT)/ },
+{ id: "fiacao", rotulo: "Fiação", disc: "eletrica", re: /^IFC(CABLESEGMENT|CABLEFITTING)/ },
+{ id: "caixaseletricas", rotulo: "Caixas de passagem e de ligação", disc: "eletrica", re: /^IFCJUNCTIONBOX/ },
+{ id: "luminarias", rotulo: "Luminárias", disc: "eletrica", re: /^IFC(LIGHTFIXTURE|LAMP)/ },
+{ id: "pontos", rotulo: "Tomadas, interruptores e sensores", disc: "eletrica", re: /^IFC(OUTLET|SWITCHINGDEVICE|ELECTRICAPPLIANCE|SENSOR)/ },
+{ id: "quadros", rotulo: "Quadros", disc: "eletrica", re: /^IFC(ELECTRICDISTRIBUTIONBOARD|ELECTRICFLOWSTORAGEDEVICE|ELECTRICDISTRIBUTION|PROTECTIVEDEVICE)/ },
+{ id: "dutos", rotulo: "Dutos", disc: "climatizacao", re: /^IFCDUCT(SEGMENT)?$/ },
+{ id: "conexoesduto", rotulo: "Conexões de duto", disc: "climatizacao", re: /^IFCDUCTFITTING/ },
+{ id: "difusores", rotulo: "Difusores e grelhas", disc: "climatizacao", re: /^IFCAIRTERMINAL/ },
+{ id: "equipclima", rotulo: "Equipamentos de climatização", disc: "climatizacao", re: /^IFC(UNITARYEQUIPMENT|AIRTOAIRHEATRECOVERY|FAN|COIL|CHILLER|BOILER|COMPRESSOR|HEATEXCHANGER|EVAPORATIVECOOLER|DAMPER)/ }
 ];
 var OUTROS = { id: "outros", rotulo: "Outros elementos", disc: null, re: null };
 var POR_ID = {}; CATEGORIAS.concat([OUTROS]).forEach(function (c) { POR_ID[c.id] = c; });
 var ALIAS = { PAREDE: "IFCWALL", LAJE: "IFCSLAB", PILAR: "IFCCOLUMN", VIGA: "IFCBEAM", COBERTURA: "IFCROOF", PORTA: "IFCDOOR", JANELA: "IFCWINDOW",
-TUBO: "IFCPIPESEGMENT", CONEXAO: "IFCPIPEFITTING", REGISTRO: "IFCVALVE", ELETRODUTO: "IFCCABLECARRIERSEGMENT" };
+TUBO: "IFCPIPESEGMENT", CONEXAO: "IFCPIPEFITTING", REGISTRO: "IFCVALVE", ELETRODUTO: "IFCCABLECARRIERSEGMENT", DUTO: "IFCDUCTSEGMENT" };
 var DA_FITA = { completo: "coordenacao", civil: "arquitetura", estrutura: "estrutura", hidraulica: "hidrossanitario", eletrica: "eletrica",
 metalica: "estrutura", marcenaria: "arquitetura", marmoraria: "arquitetura" };
 function txt(v) { return v == null ? "" : String(v); }
@@ -225687,27 +225697,37 @@ var t = txt(tipo).toUpperCase().replace(/^\s+|\s+$/g, "");
 if (!t) return "";
 return ALIAS[t] || t;
 }
-function categoriaDe(tipo) {
+function genericoPor(t, discPeca) {
+var seg = /^IFCFLOWSEGMENT/.test(t), fit = /^IFCFLOWFITTING/.test(t); if (!seg && !fit) return null;
+var d = txt(discPeca).toLowerCase();
+if (d === "eletrica") return POR_ID.eletrodutos;
+if (d === "climatizacao" || d === "mecanica") return POR_ID[seg ? "dutos" : "conexoesduto"];
+return POR_ID[seg ? "tubos" : "conexoes"];
+}
+function categoriaDe(tipo, discPeca) {
 var t = classe(tipo);
 if (!t) return OUTROS;
+var g = genericoPor(t, discPeca); if (g) return g;
 for (var i = 0; i < CATEGORIAS.length; i++) if (CATEGORIAS[i].re.test(t)) return CATEGORIAS[i];
 return OUTROS;
 }
 function disciplinaDe(tipo, discPeca) {
-var c = categoriaDe(tipo);
+var c = categoriaDe(tipo, discPeca);
 if (c.disc) return c.disc;
 var d = txt(discPeca).toLowerCase();
+if (d === "climatizacao" || d === "mecanica") return "climatizacao";
 if (d === "hidraulica" || d === "hidrossanitario" || d === "hidrossanitaria") return "hidrossanitario";
 if (d === "eletrica") return "eletrica";
 if (d === "estrutura" || d === "metalica") return "estrutura";
 return "arquitetura";
 }
-var DESTACA = { tubos: "hidrossanitario", conexoes: "hidrossanitario", registros: "hidrossanitario", eletrodutos: "eletrica", quadros: "eletrica" };
+var DESTACA = { tubos: "hidrossanitario", conexoes: "hidrossanitario", registros: "hidrossanitario", eletrodutos: "eletrica", quadros: "eletrica", caixaseletricas: "eletrica" };
 var FUNDO_OP = 0.12;
-var ESTADO = { disc: "coordenacao", esmaecer: true, fundoOp: FUNDO_OP, cats: {}, versao: 0 };
+var ESTADO = { disc: "coordenacao", esmaecer: true, fundoOp: FUNDO_OP, cats: {}, discOc: {}, cotasOc: false, versao: 0 };
 var OPACIDADES = [1, 0.75, 0.5, 0.25];
 function copiaCats(c) { var o = {}; Object.keys(c).forEach(function (k) { o[k] = { vis: c[k].vis !== false, op: c[k].op }; }); return o; }
-function get() { return { disc: ESTADO.disc, esmaecer: ESTADO.esmaecer, fundoOp: ESTADO.fundoOp, cats: copiaCats(ESTADO.cats), versao: ESTADO.versao }; }
+function copiaDisc(d) { var o = {}; Object.keys(d || {}).forEach(function (k) { if (d[k]) o[k] = 1; }); return o; }
+function get() { return { disc: ESTADO.disc, esmaecer: ESTADO.esmaecer, fundoOp: ESTADO.fundoOp, cats: copiaCats(ESTADO.cats), discOc: copiaDisc(ESTADO.discOc), cotasOc: ESTADO.cotasOc, versao: ESTADO.versao }; }
 function limpaOp(v) { v = Number(v); if (!(v > 0)) return 1; if (v >= 1) return 1; return Math.max(0.05, Math.round(v * 100) / 100); }
 function set(o) {
 var mudou = false;
@@ -225722,16 +225742,26 @@ if (vis !== (at.vis !== false) || op !== limpaOp(at.op)) mudou = true;
 if (vis && op >= 1) delete ESTADO.cats[id]; else ESTADO.cats[id] = { vis: vis, op: op };
 });
 }
+if (o.discOc && typeof o.discOc === "object") {
+Object.keys(o.discOc).forEach(function (id) {
+if (!ID_DISC_VIS[id]) return;
+var quer = !!o.discOc[id], tem = !!ESTADO.discOc[id];
+if (quer === tem) return;
+if (quer) ESTADO.discOc[id] = 1; else delete ESTADO.discOc[id];
+mudou = true;
+});
+}
+if (o.cotasOc != null && !!o.cotasOc !== ESTADO.cotasOc) { ESTADO.cotasOc = !!o.cotasOc; mudou = true; }
 if (mudou) ESTADO.versao++;
 return mudou;
 }
-function restaurarCategorias() { var tinha = Object.keys(ESTADO.cats).length > 0; ESTADO.cats = {}; if (tinha) ESTADO.versao++; return tinha; }
-function reiniciar() { ESTADO.disc = "coordenacao"; ESTADO.esmaecer = true; ESTADO.cats = {}; ESTADO.versao++; }
-function ativo(est) { est = est || ESTADO; return (est.disc !== "coordenacao" && est.esmaecer) || Object.keys(est.cats).length > 0; }
+function restaurarCategorias() { var tinha = Object.keys(ESTADO.cats).length > 0 || Object.keys(ESTADO.discOc).length > 0; ESTADO.cats = {}; ESTADO.discOc = {}; if (tinha) ESTADO.versao++; return tinha; }
+function reiniciar() { ESTADO.disc = "coordenacao"; ESTADO.esmaecer = true; ESTADO.cats = {}; ESTADO.discOc = {}; ESTADO.cotasOc = false; ESTADO.versao++; }
+function ativo(est) { est = est || ESTADO; return (est.disc !== "coordenacao" && est.esmaecer) || Object.keys(est.cats).length > 0 || Object.keys(est.discOc || {}).length > 0; }
 function avaliar(tipo, discPeca, est) {
 est = est || ESTADO;
-var cat = categoriaDe(tipo), disc = disciplinaDe(tipo, discPeca);
-var c = est.cats[cat.id], oculto = !!(c && c.vis === false), op = c ? limpaOp(c.op) : 1;
+var cat = categoriaDe(tipo, discPeca), disc = disciplinaDe(tipo, discPeca);
+var c = est.cats[cat.id], oculto = !!(c && c.vis === false) || !!(est.discOc && est.discOc[disc]), op = c ? limpaOp(c.op) : 1;
 var fundo = est.disc !== "coordenacao" && est.esmaecer && disc !== est.disc;
 if (fundo) op = Math.min(op, est.fundoOp);
 var destaque = null;
@@ -225740,21 +225770,97 @@ return { cat: cat.id, disc: disc, oculto: oculto, fundo: fundo, destaque: destaq
 }
 function resumo(pecas) {
 var cont = {};
-(pecas || []).forEach(function (p) { var c = categoriaDe(p && p.tipo).id; cont[c] = (cont[c] || 0) + 1; });
+(pecas || []).forEach(function (p) { var c = categoriaDe(p && p.tipo, p && p.disc).id; cont[c] = (cont[c] || 0) + 1; });
 var grupos = [];
-DISCIPLINAS.forEach(function (d) {
-if (d.id === "coordenacao") return;
+DISC_VIS.forEach(function (d) {
 var itens = CATEGORIAS.filter(function (c) { return c.disc === d.id && cont[c.id]; }).map(function (c) { return { id: c.id, rotulo: c.rotulo, n: cont[c.id] }; });
-if (itens.length) grupos.push({ disc: d.id, rotulo: d.rotulo, itens: itens });
+if (itens.length) grupos.push({ disc: d.id, rotulo: d.rotulo, itens: itens, n: itens.reduce(function (a, i) { return a + i.n; }, 0) });
 });
 if (cont.outros) grupos.push({ disc: "outros", rotulo: "Outros", itens: [{ id: "outros", rotulo: OUTROS.rotulo, n: cont.outros }] });
 return grupos;
 }
 function daFita(id) { return DA_FITA[id] || "coordenacao"; }
+function sobra(a, b) {
+var dx = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
+var dy = Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2);
+return dx > 0 && dy > 0 ? dx * dy : 0;
+}
+function separarRotulos(itens) {
+var lista = (itens || []).filter(function (r) { return r && isFinite(r.x) && isFinite(r.y) && r.w > 0 && r.h > 0; })
+.map(function (r, i) { return { id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, txt: txt(r.txt), prio: r.prio || 0, i: i }; });
+lista.sort(function (a, b) { return (b.prio - a.prio) || (a.i - b.i); });
+var postos = [], oculto = {}, desl = {};
+lista.forEach(function (r) {
+var dup = false;
+for (var j = 0; j < postos.length && !dup; j++) {
+var q = postos[j];
+if (q.txt === r.txt && r.txt !== "" && sobra(q, r) > 0.25 * Math.min(q.w * q.h, r.w * r.h)) dup = true;
+}
+if (dup) { oculto[r.id] = 1; return; }
+var tent = [[0, 0]], k;
+for (k = 1; k <= 3; k++) tent.push([0, -k * r.h * 1.05], [0, k * r.h * 1.05]);
+tent.push([r.w * 1.05, 0], [-r.w * 1.05, 0], [r.w * 1.05, -r.h * 1.05], [-r.w * 1.05, -r.h * 1.05], [r.w * 1.05, r.h * 1.05], [-r.w * 1.05, r.h * 1.05]);
+var melhor = null, menor = Infinity;
+for (k = 0; k < tent.length; k++) {
+var c = { x: r.x + tent[k][0], y: r.y + tent[k][1], w: r.w, h: r.h }, tot = 0;
+for (var m = 0; m < postos.length; m++) tot += sobra(postos[m], c);
+if (tot < menor - 1e-9) { menor = tot; melhor = tent[k]; }
+if (tot === 0) break;
+}
+if (melhor && (melhor[0] || melhor[1])) desl[r.id] = [melhor[0], melhor[1]];
+postos.push({ x: r.x + (melhor ? melhor[0] : 0), y: r.y + (melhor ? melhor[1] : 0), w: r.w, h: r.h, txt: r.txt });
+});
+return { oculto: oculto, desl: desl };
+}
+var CHAVE_VIS = "orcapro:bim:visib:v1", memoria = null, arm = null;
+function lerTudo() {
+try {
+if (arm) return JSON.parse(arm.ler() || "{}") || {};
+if (typeof localStorage !== "undefined") return JSON.parse(localStorage.getItem(CHAVE_VIS) || "{}") || {};
+} catch (e) {}
+return memoria || {};
+}
+function gravarTudo(o) {
+memoria = o;
+try {
+var j = JSON.stringify(o);
+if (arm) arm.gravar(j); else if (typeof localStorage !== "undefined") localStorage.setItem(CHAVE_VIS, j);
+} catch (e) {}
+}
+function configurar(a) { arm = a && typeof a.ler === "function" && typeof a.gravar === "function" ? a : null; memoria = null; }
+function instantaneo() {
+var o = { cats: {}, discOc: copiaDisc(ESTADO.discOc), cotasOc: !!ESTADO.cotasOc };
+Object.keys(ESTADO.cats).forEach(function (k) { o.cats[k] = { vis: ESTADO.cats[k].vis !== false, op: limpaOp(ESTADO.cats[k].op) }; });
+return o;
+}
+function salvarVista(vista) {
+var v = txt(vista); if (!v) return false;
+var t = lerTudo(), o = instantaneo();
+if (!Object.keys(o.cats).length && !Object.keys(o.discOc).length && !o.cotasOc) delete t[v]; else t[v] = o;
+gravarTudo(t); return true;
+}
+function carregarVista(vista) {
+var t = lerTudo(), o = t[txt(vista)], antes = JSON.stringify(instantaneo());
+ESTADO.cats = {}; ESTADO.discOc = {}; ESTADO.cotasOc = false;
+if (o && typeof o === "object") {
+Object.keys(o.cats || {}).forEach(function (k) {
+if (!POR_ID[k]) return;
+var c = o.cats[k] || {}, vis = c.vis !== false, op = limpaOp(c.op);
+if (!(vis && op >= 1)) ESTADO.cats[k] = { vis: vis, op: op };
+});
+Object.keys(o.discOc || {}).forEach(function (k) { if (ID_DISC_VIS[k] && o.discOc[k]) ESTADO.discOc[k] = 1; });
+ESTADO.cotasOc = !!o.cotasOc;
+}
+if (JSON.stringify(instantaneo()) !== antes) ESTADO.versao++;
+return !!o;
+}
+function esquecerVista(vista) { var t = lerTudo(); delete t[txt(vista)]; gravarTudo(t); }
 var BimFoco = {
-DISCIPLINAS: DISCIPLINAS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
+DISCIPLINAS: DISCIPLINAS, DISC_VIS: DISC_VIS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
 categoriaDe: categoriaDe, disciplinaDe: disciplinaDe, avaliar: avaliar, resumo: resumo, daFita: daFita,
+separarRotulos: separarRotulos, salvarVista: salvarVista, carregarVista: carregarVista, esquecerVista: esquecerVista, configurar: configurar,
 get: get, set: set, reiniciar: reiniciar, restaurarCategorias: restaurarCategorias, ativo: ativo,
+cotasOc: function () { return !!ESTADO.cotasOc; },
 versao: function () { return ESTADO.versao; }
 };
 global.BimFoco = BimFoco;
@@ -225797,14 +225903,19 @@ r.acrescentar("vista", "Vista", "Exibir", [
 { id: "foco-categorias", rotulo: "Visibilidade\npor categoria", icone: "olho", grande: true, tipo: "alterna", requer: "modelo",
 dica: "Liga e desliga cada categoria (paredes, tubos, conexões, pilares…) e muda a transparência dela — e escolhe a disciplina em foco: as outras ficam esmaecidas e sem clique. Só gráfico: não muda o modelo." }
 ]);
+r.acrescentar("vista", "Vista", "Exibir", [
+{ id: "cotas-ocultar", rotulo: "Ocultar\ncotas 3D", icone: "regua", grande: true, tipo: "alterna", requer: "modelo",
+dica: "Esconde (ou mostra) as cotas e os rótulos de medida que ficam sobre o 3D — as de seleção, as de precisão e as cotas gravadas. Só gráfico: nada é apagado, e as cotas da planta, do corte e da folha continuam. Fica lembrado por vista." }
+]);
 reg["foco-categorias"] = function () { self.alternar(); return true; };
+reg["cotas-ocultar"] = function () { self.cotas(); return true; };
 this._ligarEventos();
 return true;
 },
 _ligarEventos: function () {
 var self = this; if (this._eventos) return; this._eventos = true;
 try {
-global.addEventListener("bim:modelos", function () { self.repintar(); });
+global.addEventListener("bim:modelos", function () { self.restaurar(); self.repintar(); });
 global.addEventListener("bim:foco", function () { self.repintar(); });
 } catch (e) {}
 },
@@ -225834,7 +225945,7 @@ p.addEventListener("click", function (ev) {
 var b = ev.target && ev.target.closest ? ev.target.closest("[data-bf]") : null; if (!b) return;
 var k = b.getAttribute("data-bf");
 if (k === "fechar") self.fechar();
-else if (k === "tudo") { f.restaurarCategorias(); self._aplicar(); status("Todas as categorias visíveis e opacas."); }
+else if (k === "tudo") { f.restaurarCategorias(); self._aplicar(); status("Todas as disciplinas e categorias visíveis e opacas."); }
 });
 p.addEventListener("keydown", function (ev) {
 ev.stopPropagation();
@@ -225845,7 +225956,46 @@ try { if (R()) { R().setAtivo("foco-categorias", true); if (sh.pintarFita) sh.pi
 try { var c0 = p.querySelector("select,input"); if (c0) c0.focus(); } catch (e2) {}
 return true;
 },
-_aplicar: function () { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e) {} this.repintar(); },
+VISTA: "3d",
+_aplicar: function () {
+var f = F();
+try { var b = B(); if (b && b.foco) b.foco({}); } catch (e) {}
+try { if (f) f.salvarVista(this.VISTA); } catch (e1) {}
+this._sincronizarBotao();
+this._redesenhar2D();
+this.repintar();
+},
+_redesenhar2D: function () {
+var self = this; if (this._rd) return;
+this._rd = setTimeout(function () {
+self._rd = null;
+try { var B2 = global.Bim2D; if (B2 && B2._cache) Object.keys(B2._cache).forEach(function (k) { try { B2.redesenhar(k, true); } catch (e) {} }); } catch (e2) {}
+}, 120);
+},
+_sincronizarBotao: function () {
+try { var f = F(), r = R(); if (f && r) { r.setAtivo("cotas-ocultar", !!f.cotasOc()); var sh = SH(); if (sh && sh.pintarFita) sh.pintarFita(); } } catch (e) {}
+},
+cotas: function (on) {
+var f = F(); if (!f) return false;
+var quer = on == null ? !f.cotasOc() : !!on;
+f.set({ cotasOc: quer });
+this._aplicar();
+status(quer ? "Cotas escondidas no 3D (nada foi apagado; a planta, o corte e a folha mantêm as cotas). Clique de novo para mostrar." : "Cotas do 3D visíveis de novo.");
+return quer;
+},
+restaurar: function () {
+var f = F(); if (!f || this._restaurado) return false;
+var b = B(); try { if (!(b && b.elementos && b.elementos.length)) return false; } catch (e) { return false; }
+this._restaurado = true;
+var tinha = false; try { tinha = f.carregarVista(this.VISTA); } catch (e1) {}
+if (!tinha) return false;
+try { if (b.foco) b.foco({}); } catch (e2) {}
+this._sincronizarBotao();
+var e3 = f.get(), nc = Object.keys(e3.cats).length, nd = Object.keys(e3.discOc).length;
+if (nc || nd) status("Visibilidade lembrada desta vista: " + (nd ? nd + (nd === 1 ? " disciplina escondida" : " disciplinas escondidas") : "") + (nd && nc ? " e " : "") + (nc ? nc + (nc === 1 ? " categoria alterada" : " categorias alteradas") : "") + ". Painel Visibilidade por categoria › Mostrar tudo desfaz.");
+this.repintar();
+return true;
+},
 _mudou: function (t) {
 var f = F(); if (!f || !t) return;
 if (t.hasAttribute("data-bf-disc")) {
@@ -225855,6 +226005,13 @@ else { f.set({ disc: t.value }); this._aplicar(); }
 this.repintar();
 return;
 }
+var dv = t.getAttribute("data-bf-dvis");
+if (dv) {
+var od = {}; od[dv] = !t.checked; f.set({ discOc: od });
+if (t.checked) { var oc0 = {}; f.CATEGORIAS.forEach(function (c) { if (c.disc === dv) oc0[c.id] = { vis: true }; }); f.set({ cats: oc0 }); }
+this._aplicar(); status(t.checked ? "Disciplina visível." : "Disciplina escondida (" + dv + "): só visible=false, nada foi apagado."); return;
+}
+if (t.hasAttribute("data-bf-cotas")) { this.cotas(!!t.checked); return; }
 if (t.hasAttribute("data-bf-esm")) { f.set({ esmaecer: !!t.checked }); this._aplicar(); status(this.frase()); return; }
 var cv = t.getAttribute("data-bf-vis"), co = t.getAttribute("data-bf-op");
 if (cv) { var o = {}; o[cv] = { vis: !!t.checked }; f.set({ cats: o }); this._aplicar(); return; }
@@ -225870,26 +226027,34 @@ var h = '<div class="bf-cab"><b>Visibilidade por categoria</b><button type="butt
 h += '<div class="bf-disc"><label>Disciplina em foco <select data-bf-disc="1" aria-label="Disciplina em foco">' +
 f.DISCIPLINAS.map(function (d) { return '<option value="' + d.id + '"' + (d.id === est.disc ? " selected" : "") + ">" + esc(d.rotulo) + "</option>"; }).join("") + "</select></label>" +
 '<label class="bf-esm"><input type="checkbox" data-bf-esm="1"' + (est.esmaecer ? " checked" : "") + '> Esmaecer as outras e travar o clique nelas</label></div>';
+h += '<div class="bf-cotas bf-topo"><label><input type="checkbox" data-bf-cotas="1"' + (est.cotasOc ? " checked" : "") + '> Ocultar cotas no 3D</label>' +
+'<span class="bf-nota">Só esconde: as cotas continuam gravadas e saem na planta, no corte e na folha.</span></div>';
 if (!grupos.length) h += '<p class="bf-vazio">Abra um modelo para ver as categorias.</p>';
 grupos.forEach(function (g) {
-h += '<div class="bf-grupo"><div class="bf-gtit">' + esc(g.rotulo) + "</div>";
+var discOc = !!(est.discOc && est.discOc[g.disc]), escond = 0;
+g.itens.forEach(function (it) { var cc = est.cats[it.id]; if (discOc || (cc && cc.vis === false)) escond++; });
+var estadoD = discOc || escond === g.itens.length ? "off" : escond ? "meio" : "on";
+h += '<div class="bf-grupo' + (estadoD === "off" ? " bf-goff" : "") + '"><div class="bf-gtit">' + (g.disc === "outros" ? esc(g.rotulo) :
+'<label class="bf-gnome"><input type="checkbox" data-bf-dvis="' + g.disc + '" data-bf-meio="' + (estadoD === "meio" ? "1" : "0") + '"' + (estadoD === "on" || estadoD === "meio" ? " checked" : "") + ' aria-label="Mostrar a disciplina ' + esc(g.rotulo) + ' inteira" title="Esconde ou mostra a disciplina inteira num clique"> ' + esc(g.rotulo) + '</label><span class="bf-n">' + (g.n || "") + "</span>") + "</div>";
 g.itens.forEach(function (it) {
-var c = est.cats[it.id] || { vis: true, op: 1 }, vis = c.vis !== false, op = c.op == null ? 1 : c.op;
+var c = est.cats[it.id] || { vis: true, op: 1 }, vis = c.vis !== false && !discOc, op = c.op == null ? 1 : c.op;
 h += '<div class="bf-lin' + (vis ? "" : " bf-off") + '"><label class="bf-nome"><input type="checkbox" data-bf-vis="' + it.id + '"' + (vis ? " checked" : "") + ' aria-label="Mostrar ' + esc(it.rotulo) + '"> ' + esc(it.rotulo) + '</label><span class="bf-n">' + it.n + "</span>" +
 '<select data-bf-op="' + it.id + '" aria-label="Transparência de ' + esc(it.rotulo) + '"' + (vis ? "" : " disabled") + ">" +
 f.OPACIDADES.map(function (o) { return '<option value="' + o + '"' + (Math.abs(o - op) < 0.01 ? " selected" : "") + ">" + Math.round(o * 100) + " %</option>"; }).join("") + "</select></div>";
 });
 h += "</div>";
 });
+h += '<p class="bf-nota bf-aviso">Plantas, cortes e folhas abertos seguem o que está escondido aqui. A escolha fica lembrada nesta vista.</p>';
 h += '<div class="bf-pe"><button type="button" class="bf-bt" data-bf="tudo">Mostrar tudo</button>' +
 '<span class="bf-leg">' + (info && info.on ? (info.fundo ? info.fundo + " peças esmaecidas" : "") + (info.fundo && info.ocultas ? " · " : "") + (info.ocultas ? info.ocultas + " ocultas" : "") : "Nada esmaecido nem oculto") + "</span></div>";
 if (ativo && p.contains(ativo) && ativo.tagName === "SELECT" && p.getAttribute("data-bf-mexendo") === "1") return;
 var rolou = p.scrollTop;
 p.innerHTML = h;
 p.scrollTop = rolou;
+try { Array.prototype.forEach.call(p.querySelectorAll('[data-bf-meio="1"]'), function (c) { c.indeterminate = true; }); } catch (e4) {}
 try {
 if (ativo && ativo.getAttribute) {
-var q = ativo.getAttribute("data-bf-disc") ? "[data-bf-disc]" : ativo.getAttribute("data-bf-esm") ? "[data-bf-esm]" : ativo.getAttribute("data-bf-vis") ? '[data-bf-vis="' + ativo.getAttribute("data-bf-vis") + '"]' : ativo.getAttribute("data-bf-op") ? '[data-bf-op="' + ativo.getAttribute("data-bf-op") + '"]' : "";
+var q = ativo.getAttribute("data-bf-dvis") ? '[data-bf-dvis="' + ativo.getAttribute("data-bf-dvis") + '"]' : ativo.getAttribute("data-bf-cotas") ? "[data-bf-cotas]" : ativo.getAttribute("data-bf-disc") ? "[data-bf-disc]" : ativo.getAttribute("data-bf-esm") ? "[data-bf-esm]" : ativo.getAttribute("data-bf-vis") ? '[data-bf-vis="' + ativo.getAttribute("data-bf-vis") + '"]' : ativo.getAttribute("data-bf-op") ? '[data-bf-op="' + ativo.getAttribute("data-bf-op") + '"]' : "";
 if (q) { var n = p.querySelector(q); if (n) n.focus(); }
 }
 } catch (e3) {}

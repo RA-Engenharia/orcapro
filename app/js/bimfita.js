@@ -212,7 +212,7 @@
   var ABA_VISTA = [
     { nome: "Explodida", ids: ["explodir", "explodir-montar", "cotas-vivas"] },
     { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
-    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "ambientes-3d"] },
+    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "foco-categorias", "cotas-ocultar", "ambientes-3d"] },
     { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "contorno-linhas", "caixa-corte"] },
     { nome: "Gráficos da vista", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
       "estilos-objeto"] },

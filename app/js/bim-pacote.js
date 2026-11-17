@@ -880,6 +880,7 @@ if (comPecas.length && comPecas.every(function (m) { return m.visivel === false 
 return { cod: 'modelos', texto: 'Todos os modelos estão desligados no painel Modelos.', rotulo: 'Ligar os modelos', acao: function () { comPecas.forEach(function (m) { setVisivel(m.mid, true); }); } };
 if (S._fut4d) return { cod: '4d', texto: 'A simulação 4D está numa data em que nada foi construído ainda.', rotulo: 'Sair do 4D', acao: function () { mostrarTudo(); } };
 if (typeof pav !== 'undefined' && pav && (pav.isolado || pav.manual)) return { cod: 'pavimento', texto: pav.isolado ? 'O pavimento "' + pav.isolado + '" está isolado e não tem peça visível.' : 'O isolamento da Visibilidade não deixou nenhuma peça visível.', rotulo: 'Mostrar todos os pavimentos', acao: function () { restaurarVisibilidade(); } };
+if (typeof FOCO !== 'undefined' && FOCO && FOCO.on && FOCO.esc && FOCO.esc.some(function (m) { return m.userData && m.userData._focoOc === 1; })) return { cod: 'categorias', texto: 'As categorias ou disciplinas escondidas no painel Visibilidade não deixaram nenhuma peça à vista.', rotulo: 'Mostrar tudo', acao: function () { var Fz = focoMotor(); if (Fz && Fz.restaurarCategorias()) focoAplicar(); } };
 var ocl = 0; try { ocl = (window.BimSelInst && BimSelInst.ocultos) ? BimSelInst.ocultos().length : 0; } catch (_) {}
 if (ocl) return { cod: 'ocultos', texto: ocl + (ocl === 1 ? ' peça está oculta' : ' peças estão ocultas') + ' temporariamente (Ocultar/Isolar) e nada sobrou à vista.', rotulo: 'Mostrar todos', acao: function () { if (window.BimSelInst && BimSelInst.mostrarTodos) BimSelInst.mostrarTodos(); else restaurarVisibilidade(); } };
 var fl = null; try { fl = (window.BimP10UI && BimP10UI.vista) ? BimP10UI.vista().filtro : null; } catch (_) {}
@@ -1028,6 +1029,7 @@ if (pav.isolado || pav.manual || ocl) feito.push('isolar/ocultar temporário');
 if (window.BimSelInst && BimSelInst.mostrarTodos && ocl) BimSelInst.mostrarTodos(); else restaurarVisibilidade();
 } catch (_) {}
 try { if (S._fut4d) { mostrarTudo(); feito.push('simulação 4D'); } } catch (_) {}
+try { var Fz = focoMotor(); if (Fz && Fz.ativo(Fz.get()) && !oQueSeVe().vis && Fz.restaurarCategorias()) { focoAplicar(); feito.push('categorias escondidas'); } } catch (_) {}
 try {
 var comPecas = S.modelos.filter(function (m) { return m && m.grupo && (m.grupo.children || []).length; });
 if (comPecas.length && comPecas.every(function (m) { return m.visivel === false || m.grupo.visible === false; })) { comPecas.forEach(function (m) { setVisivel(m.mid, true); }); feito.push('modelos religados'); }
@@ -9503,6 +9505,7 @@ if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes) ret
 var pa = o.geometry.attributes.position, na = o.geometry.attributes.normal;
 if (!pa || pa.isInterleavedBufferAttribute || pa.count < 3) return;
 var mat = Array.isArray(o.material) ? o.material[0] : o.material;
+if (FOCO && FOCO.on && o.userData && o.userData.expressID != null && o.material !== selMat) { try { var mBase = matBaseSemFoco(o); if (mBase) mat = mBase; } catch (_) {} }
 if (!mat || mat.visible === false || mat.colorWrite === false) return;
 var cor = (o.userData && o.userData.matOrig && o.userData.matOrig.color && o.material === selMat) ? o.userData.matOrig : mat;
 var op = mat.transparent ? (mat.opacity == null ? 1 : mat.opacity) : 1;
@@ -14200,7 +14203,7 @@ try { window.dispatchEvent(new CustomEvent('bim:modelos', { detail: { cores: cat
 };
 var FOCO = { on: false, ver: 0, est: null, dIdx: {}, esc: [], sig: '', mats: {}, gh: null, refeito: false };
 function focoMotor() { return window.BimFoco || null; }
-function focoSig() { var r = ''; for (var i = 0; i < S.modelos.length; i++) r += S.modelos[i].mid + ':' + S.modelos[i].grupo.children.length + ','; return r; }
+function focoSig() { var r = ''; for (var i = 0; i < S.modelos.length; i++) r += S.modelos[i].mid + ':' + S.modelos[i].grupo.id + ':' + S.modelos[i].grupo.children.length + ','; return r; }
 function focoDe(m) {
 var u = m.userData, F = focoMotor(); if (!F || !FOCO.est) return null;
 if (u._fVer === FOCO.ver && u._fR) return u._fR;
@@ -14334,7 +14337,8 @@ mo.grupo.children.forEach(function (m) {
 if (!m.isMesh || m.userData.expressID == null) return;
 var uid = mo.mid + ':' + m.userData.expressID; if (vistos[uid]) return; vistos[uid] = 1;
 if (ehRemovidoEd(m)) return;
-pecas.push({ tipo: m.userData.tipo });
+var elR = catElemento(mo, m.userData.expressID);
+pecas.push({ tipo: m.userData.tipo, disc: elR ? elR.disciplina : (mo.disciplina || '') });
 var r = FOCO.on ? focoDe(m) : null; if (r) { if (r.oculto) oc++; else if (r.fundo) fundo++; }
 });
 });
@@ -14351,6 +14355,81 @@ gg.visible = FOCO.on && modelRoot.visible !== false;
 var L = FOCO.esc; if (!L.length || !FOCO.on) return;
 for (var i = 0; i < L.length; i++) if (L[i].visible !== false) L[i].visible = false;
 });
+var COTAS3D = { grupos: ['cotas3d', 'precisao-cotas', 'cotas-vivas'], sig: '', ult: { oc: null }, sprites: [], aplicados: 0, ocultos: 0, empurrados: 0 };
+function cotasGruposCena() {
+var out = [];
+for (var i = 0; i < scene.children.length; i++) { var c = scene.children[i]; if (c && COTAS3D.grupos.indexOf(c.name) >= 0) out.push(c); }
+return out;
+}
+function cotasLinhaTmp() {
+for (var i = 0; i < scene.children.length; i++) { var c = scene.children[i]; if (c && c.name === 'precisao-aux') { for (var j = 0; j < c.children.length; j++) if (c.children[j].name === 'tmp') return c.children[j]; } }
+return null;
+}
+function cotasSpritesVisiveis(gs) {
+var out = [];
+gs.forEach(function (g) { if (g.name === 'cotas-vivas') return; g.children.forEach(function (o) { if (o.isSprite) out.push(o); }); });
+return out;
+}
+function cotasSepLimpar() {
+for (var i = 0; i < COTAS3D.sprites.length; i++) {
+var sp = COTAS3D.sprites[i];
+if (sp.userData._rotOc) { delete sp.userData._rotOc; sp.visible = true; }
+if (sp.userData._rotDesl) { delete sp.userData._rotDesl; sp.center.set(0.5, 0.5); }
+}
+COTAS3D.sprites = []; COTAS3D.sig = ''; COTAS3D.ocultos = 0; COTAS3D.empurrados = 0;
+}
+function cotasSeparar(gs) {
+var F = focoMotor(); if (!F || !F.separarRotulos) return;
+var sps = cotasSpritesVisiveis(gs), cv = cvDesenho(), W = cv.clientWidth || cv.width, H = cv.clientHeight || cv.height;
+if (!W || !H) return;
+camera.updateMatrixWorld();
+var sig = [W, H, camera.position.x.toFixed(3), camera.position.y.toFixed(3), camera.position.z.toFixed(3), camera.zoom, camera.quaternion.x.toFixed(4), camera.quaternion.y.toFixed(4), camera.quaternion.z.toFixed(4), sps.length];
+for (var q = 0; q < sps.length; q++) sig.push(sps[q].id, sps[q].position.x.toFixed(2), sps[q].position.y.toFixed(2), sps[q].position.z.toFixed(2), sps[q].scale.x.toFixed(3));
+sig = sig.join('|');
+if (sig === COTAS3D.sig) return;
+COTAS3D.sig = sig;
+sps.forEach(function (sp) { if (sp.userData._rotOc) { delete sp.userData._rotOc; sp.visible = true; } if (sp.userData._rotDesl) { delete sp.userData._rotDesl; sp.center.set(0.5, 0.5); } });
+var persp = !camera.isOrthographicCamera, itens = [], v = new THREE.Vector3();
+sps.forEach(function (sp, i) {
+if (sp.visible === false || !(sp.scale.x > 0)) return;
+v.copy(sp.position).project(camera); if (v.z > 1 || v.z < -1) return;
+var dist = camera.position.distanceTo(sp.position), pxPorM = persp ? H / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(dist, 1e-4)) : H / ((camera.top - camera.bottom) / (camera.zoom || 1));
+var w = sp.scale.x * pxPorM, h = sp.scale.y * pxPorM; if (!(w > 1) || !(h > 1)) return;
+itens.push({ id: i, x: (v.x * 0.5 + 0.5) * W, y: (0.5 - v.y * 0.5) * H, w: w, h: h, txt: String(sp.userData.texto || ''), prio: sp.userData.cotaId != null ? 1 : 0 });
+});
+var r = F.separarRotulos(itens), oc = 0, em = 0;
+itens.forEach(function (it) {
+var sp = sps[it.id];
+if (r.oculto[it.id]) { sp.userData._rotOc = 1; sp.visible = false; oc++; return; }
+var d = r.desl[it.id]; if (!d) return;
+sp.center.set(0.5 - d[0] / it.w, 0.5 + d[1] / it.h); sp.userData._rotDesl = 1; em++;
+});
+COTAS3D.sprites = sps; COTAS3D.ocultos = oc; COTAS3D.empurrados = em;
+}
+S._tickExtra.push(function () {
+var F = focoMotor(); if (!F || !F.cotasOc) return;
+var oc = F.cotasOc(), gs = cotasGruposCena(), tmp = cotasLinhaTmp();
+if (oc !== COTAS3D.ult.oc) {
+COTAS3D.ult.oc = oc;
+try { ((S && S.host) || host).classList.toggle('bim-cotas-oc', oc); } catch (_) {}
+if (!oc) gs.forEach(function (g) { if (g.userData._cotasOc) { delete g.userData._cotasOc; g.visible = true; } });
+if (!oc && tmp && tmp.userData._cotasOc) { delete tmp.userData._cotasOc; tmp.visible = true; }
+cotasSepLimpar();
+try { window.dispatchEvent(new CustomEvent('bim:cotas-oc', { detail: { oc: oc } })); } catch (_) {}
+}
+if (oc) {
+gs.forEach(function (g) { g.userData._cotasOc = 1; if (g.visible !== false) g.visible = false; });
+if (tmp) { tmp.userData._cotasOc = 1; if (tmp.visible !== false) tmp.visible = false; }
+return;
+}
+if (gs.length) cotasSeparar(gs); else if (COTAS3D.sprites.length) cotasSepLimpar();
+});
+S._cotas3dEstado = function () {
+var gs = cotasGruposCena(), n = 0, vis = 0;
+gs.forEach(function (g) { g.children.forEach(function (o) { if (o.isSprite) { n++; if (o.visible !== false && g.visible !== false) vis++; } }); });
+return { oc: !!(focoMotor() && focoMotor().cotasOc()), grupos: gs.map(function (g) { return g.name + ':' + (g.visible !== false); }), sprites: n, visiveis: vis, duplicadosEscondidos: COTAS3D.ocultos, empurrados: COTAS3D.empurrados,
+domOculto: !!(((S && S.host) || host).classList.contains('bim-cotas-oc')) };
+};
 function matBase(m) {
 var b = matBaseSemFoco(m);
 if (!FOCO || !FOCO.on) return b;
@@ -15584,8 +15663,9 @@ foco: function (o) {
 if (!S || !S._focoAplicar || !window.BimFoco) return null;
 if (o && typeof o === 'object') { window.BimFoco.set(o); S._focoAplicar(); }
 var e = window.BimFoco.get(), r = S._focoResumo();
-return { disc: e.disc, esmaecer: e.esmaecer, cats: e.cats, on: r.on, grupos: r.grupos, fundo: r.fundo, ocultas: r.ocultas, total: r.total, msMontar: S._focoMs ? S._focoMs() : null };
+return { disc: e.disc, esmaecer: e.esmaecer, cats: e.cats, discOc: e.discOc, cotasOc: e.cotasOc, on: r.on, grupos: r.grupos, fundo: r.fundo, ocultas: r.ocultas, total: r.total, msMontar: S._focoMs ? S._focoMs() : null };
 },
+cotas3dEstado: function () { return (S && S._cotas3dEstado) ? S._cotas3dEstado() : null; },
 linhasContornoEstado: function () { return (S && S._linhasContornoEstado) ? S._linhasContornoEstado() : { on: false, modelos: 0, segmentos: 0, aquecido: false }; },
 sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
 sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },

@@ -35,6 +35,9 @@
     { id: "coordenacao", rotulo: "Coordenação" }
   ];
   var ID_DISC = {}; DISCIPLINAS.forEach(function (d) { ID_DISC[d.id] = d; });
+  /* as disciplinas do PAINEL de visibilidade (esconder num clique): as do foco + Climatização, que não é disciplina da fita */
+  var DISC_VIS = DISCIPLINAS.filter(function (d) { return d.id !== "coordenacao"; }).concat([{ id: "climatizacao", rotulo: "Climatização" }]);
+  var ID_DISC_VIS = {}; DISC_VIS.forEach(function (d) { ID_DISC_VIS[d.id] = d; });
 
   /* categorias, na ordem da tela; `re` casa com a CLASSE IFC em caixa-alta (sem o prefixo, os nomes do editor entram por ALIAS) */
   var CATEGORIAS = [
@@ -52,21 +55,32 @@
     { id: "fundacoes", rotulo: "Fundações", disc: "estrutura", re: /^IFC(FOOTING|PILE)/ },
     { id: "perfis", rotulo: "Perfis e chapas", disc: "estrutura", re: /^IFC(MEMBER|PLATE|FASTENER|MECHANICALFASTENER)/ },
     { id: "armacao", rotulo: "Armação", disc: "estrutura", re: /^IFCREINFORCING/ },
+    /* HIDROSSANITÁRIO (16/11/2026, pedido do Rogério: "esconder só tubos e conexões e ver as louças"): seis categorias */
     { id: "tubos", rotulo: "Tubos", disc: "hidrossanitario", re: /^IFCPIPESEGMENT/ },
-    { id: "conexoes", rotulo: "Conexões", disc: "hidrossanitario", re: /^IFCPIPEFITTING/ },
-    { id: "registros", rotulo: "Registros e válvulas", disc: "hidrossanitario", re: /^IFC(VALVE|FLOWCONTROLLER)/ },
-    { id: "aparelhos", rotulo: "Aparelhos e louças", disc: "hidrossanitario", re: /^IFC(SANITARYTERMINAL|WASTETERMINAL|FLOWTERMINAL)/ },
-    { id: "reservatorios", rotulo: "Reservatórios e caixas", disc: "hidrossanitario", re: /^IFC(FLOWSTORAGEDEVICE|DISTRIBUTIONCHAMBERELEMENT|TANK|FLOWTREATMENTDEVICE)/ },
-    { id: "eletrodutos", rotulo: "Eletrodutos e cabos", disc: "eletrica", re: /^IFC(CABLECARRIER|CABLESEGMENT|CABLEFITTING|CONDUIT)/ },
-    { id: "pontos", rotulo: "Pontos elétricos", disc: "eletrica", re: /^IFC(OUTLET|LIGHTFIXTURE|SWITCHINGDEVICE|ELECTRICAPPLIANCE|LAMP|SENSOR)/ },
-    { id: "quadros", rotulo: "Quadros e caixas", disc: "eletrica", re: /^IFC(ELECTRICDISTRIBUTIONBOARD|JUNCTIONBOX|ELECTRICFLOWSTORAGEDEVICE|ELECTRICDISTRIBUTION)/ }
+    { id: "conexoes", rotulo: "Conexões (joelhos, tês, luvas)", disc: "hidrossanitario", re: /^IFCPIPEFITTING/ },
+    { id: "registros", rotulo: "Acessórios e válvulas", disc: "hidrossanitario", re: /^IFC(VALVE|FLOWCONTROLLER)/ },
+    { id: "aparelhos", rotulo: "Louças e metais", disc: "hidrossanitario", re: /^IFC(SANITARYTERMINAL|FLOWTERMINAL)/ },
+    { id: "caixas", rotulo: "Caixas e ralos", disc: "hidrossanitario", re: /^IFC(DISTRIBUTIONCHAMBERELEMENT|WASTETERMINAL)/ },
+    { id: "reservatorios", rotulo: "Equipamentos e reservatórios", disc: "hidrossanitario", re: /^IFC(FLOWSTORAGEDEVICE|TANK|FLOWTREATMENTDEVICE|PUMP|FIRESUPPRESSIONTERMINAL)/ },
+    /* ELÉTRICA: eletrodutos, fiação, caixas, luminárias, tomadas/interruptores, quadros */
+    { id: "eletrodutos", rotulo: "Eletrodutos e eletrocalhas", disc: "eletrica", re: /^IFC(CABLECARRIER|CONDUIT)/ },
+    { id: "fiacao", rotulo: "Fiação", disc: "eletrica", re: /^IFC(CABLESEGMENT|CABLEFITTING)/ },
+    { id: "caixaseletricas", rotulo: "Caixas de passagem e de ligação", disc: "eletrica", re: /^IFCJUNCTIONBOX/ },
+    { id: "luminarias", rotulo: "Luminárias", disc: "eletrica", re: /^IFC(LIGHTFIXTURE|LAMP)/ },
+    { id: "pontos", rotulo: "Tomadas, interruptores e sensores", disc: "eletrica", re: /^IFC(OUTLET|SWITCHINGDEVICE|ELECTRICAPPLIANCE|SENSOR)/ },
+    { id: "quadros", rotulo: "Quadros", disc: "eletrica", re: /^IFC(ELECTRICDISTRIBUTIONBOARD|ELECTRICFLOWSTORAGEDEVICE|ELECTRICDISTRIBUTION|PROTECTIVEDEVICE)/ },
+    /* CLIMATIZAÇÃO */
+    { id: "dutos", rotulo: "Dutos", disc: "climatizacao", re: /^IFCDUCT(SEGMENT)?$/ },
+    { id: "conexoesduto", rotulo: "Conexões de duto", disc: "climatizacao", re: /^IFCDUCTFITTING/ },
+    { id: "difusores", rotulo: "Difusores e grelhas", disc: "climatizacao", re: /^IFCAIRTERMINAL/ },
+    { id: "equipclima", rotulo: "Equipamentos de climatização", disc: "climatizacao", re: /^IFC(UNITARYEQUIPMENT|AIRTOAIRHEATRECOVERY|FAN|COIL|CHILLER|BOILER|COMPRESSOR|HEATEXCHANGER|EVAPORATIVECOOLER|DAMPER)/ }
   ];
   var OUTROS = { id: "outros", rotulo: "Outros elementos", disc: null, re: null };
   var POR_ID = {}; CATEGORIAS.concat([OUTROS]).forEach(function (c) { POR_ID[c.id] = c; });
 
   /* nomes do editor (peças criadas pelos comandos) → a classe IFC equivalente */
   var ALIAS = { PAREDE: "IFCWALL", LAJE: "IFCSLAB", PILAR: "IFCCOLUMN", VIGA: "IFCBEAM", COBERTURA: "IFCROOF", PORTA: "IFCDOOR", JANELA: "IFCWINDOW",
-                TUBO: "IFCPIPESEGMENT", CONEXAO: "IFCPIPEFITTING", REGISTRO: "IFCVALVE", ELETRODUTO: "IFCCABLECARRIERSEGMENT" };
+                TUBO: "IFCPIPESEGMENT", CONEXAO: "IFCPIPEFITTING", REGISTRO: "IFCVALVE", ELETRODUTO: "IFCCABLECARRIERSEGMENT", DUTO: "IFCDUCTSEGMENT" };
 
   /* a disciplina da FITA (js/bimdisciplinas.js) → o foco do 3D */
   var DA_FITA = { completo: "coordenacao", civil: "arquitetura", estrutura: "estrutura", hidraulica: "hidrossanitario", eletrica: "eletrica",
@@ -78,17 +92,28 @@
     if (!t) return "";
     return ALIAS[t] || t;
   }
-  function categoriaDe(tipo) {
+  /* IFCFLOWSEGMENT / IFCFLOWFITTING são genéricos (o exportador não disse se é tubo, duto ou eletroduto): a disciplina GRAVADA na peça
+     decide; sem ela, hidrossanitário (o caso comum). Só estes dois — o resto é decidido pela classe. */
+  function genericoPor(t, discPeca) {
+    var seg = /^IFCFLOWSEGMENT/.test(t), fit = /^IFCFLOWFITTING/.test(t); if (!seg && !fit) return null;
+    var d = txt(discPeca).toLowerCase();
+    if (d === "eletrica") return POR_ID.eletrodutos;
+    if (d === "climatizacao" || d === "mecanica") return POR_ID[seg ? "dutos" : "conexoesduto"];
+    return POR_ID[seg ? "tubos" : "conexoes"];
+  }
+  function categoriaDe(tipo, discPeca) {
     var t = classe(tipo);
     if (!t) return OUTROS;
+    var g = genericoPor(t, discPeca); if (g) return g;
     for (var i = 0; i < CATEGORIAS.length; i++) if (CATEGORIAS[i].re.test(t)) return CATEGORIAS[i];
     return OUTROS;
   }
   /* classe primeiro; a disciplina gravada só desempata o que a classe não decide */
   function disciplinaDe(tipo, discPeca) {
-    var c = categoriaDe(tipo);
+    var c = categoriaDe(tipo, discPeca);
     if (c.disc) return c.disc;
     var d = txt(discPeca).toLowerCase();
+    if (d === "climatizacao" || d === "mecanica") return "climatizacao";
     if (d === "hidraulica" || d === "hidrossanitario" || d === "hidrossanitaria") return "hidrossanitario";
     if (d === "eletrica") return "eletrica";
     if (d === "estrutura" || d === "metalica") return "estrutura";
@@ -97,13 +122,17 @@
 
   /* ------------------------------------------------------------------ estado (um só) */
   /* categorias que levam a cor de destaque na disciplina em foco (a peça que o projetista modela e liga) */
-  var DESTACA = { tubos: "hidrossanitario", conexoes: "hidrossanitario", registros: "hidrossanitario", eletrodutos: "eletrica", quadros: "eletrica" };
+  var DESTACA = { tubos: "hidrossanitario", conexoes: "hidrossanitario", registros: "hidrossanitario", eletrodutos: "eletrica", quadros: "eletrica", caixaseletricas: "eletrica" };
   var FUNDO_OP = 0.12;   /* abaixo de 0,15: as arestas de contorno do js/bim.js também somem na peça de fundo */
-  var ESTADO = { disc: "coordenacao", esmaecer: true, fundoOp: FUNDO_OP, cats: {}, versao: 0 };
+  /* discOc = DISCIPLINAS inteiras escondidas num clique (16/11/2026); cotasOc = esconde as cotas e rótulos do 3D.
+     ⚠ As plantas, cortes e folhas LEEM a visibilidade da cena (cadeiaVisivel, js/bim.js): o que se esconde aqui some do desenho 2D
+     também — por isso não há chave separada; o painel avisa e redesenha as vistas abertas. */
+  var ESTADO = { disc: "coordenacao", esmaecer: true, fundoOp: FUNDO_OP, cats: {}, discOc: {}, cotasOc: false, versao: 0 };
   var OPACIDADES = [1, 0.75, 0.5, 0.25];
 
   function copiaCats(c) { var o = {}; Object.keys(c).forEach(function (k) { o[k] = { vis: c[k].vis !== false, op: c[k].op }; }); return o; }
-  function get() { return { disc: ESTADO.disc, esmaecer: ESTADO.esmaecer, fundoOp: ESTADO.fundoOp, cats: copiaCats(ESTADO.cats), versao: ESTADO.versao }; }
+  function copiaDisc(d) { var o = {}; Object.keys(d || {}).forEach(function (k) { if (d[k]) o[k] = 1; }); return o; }
+  function get() { return { disc: ESTADO.disc, esmaecer: ESTADO.esmaecer, fundoOp: ESTADO.fundoOp, cats: copiaCats(ESTADO.cats), discOc: copiaDisc(ESTADO.discOc), cotasOc: ESTADO.cotasOc, versao: ESTADO.versao }; }
   function limpaOp(v) { v = Number(v); if (!(v > 0)) return 1; if (v >= 1) return 1; return Math.max(0.05, Math.round(v * 100) / 100); }
   /* muda parte do estado (disc, esmaecer, cats: { id: { vis, op } }); devolve se algo mudou */
   function set(o) {
@@ -119,19 +148,31 @@
         if (vis && op >= 1) delete ESTADO.cats[id]; else ESTADO.cats[id] = { vis: vis, op: op };
       });
     }
+    /* disciplina inteira escondida: { arquitetura: true, hidrossanitario: false, … } */
+    if (o.discOc && typeof o.discOc === "object") {
+      Object.keys(o.discOc).forEach(function (id) {
+        if (!ID_DISC_VIS[id]) return;
+        var quer = !!o.discOc[id], tem = !!ESTADO.discOc[id];
+        if (quer === tem) return;
+        if (quer) ESTADO.discOc[id] = 1; else delete ESTADO.discOc[id];
+        mudou = true;
+      });
+    }
+    if (o.cotasOc != null && !!o.cotasOc !== ESTADO.cotasOc) { ESTADO.cotasOc = !!o.cotasOc; mudou = true; }
     if (mudou) ESTADO.versao++;
     return mudou;
   }
-  function restaurarCategorias() { var tinha = Object.keys(ESTADO.cats).length > 0; ESTADO.cats = {}; if (tinha) ESTADO.versao++; return tinha; }
-  function reiniciar() { ESTADO.disc = "coordenacao"; ESTADO.esmaecer = true; ESTADO.cats = {}; ESTADO.versao++; }
+  /* "Mostrar tudo": categorias, disciplinas escondidas e transparências voltam (as cotas e o "valer nas folhas" são escolhas à parte) */
+  function restaurarCategorias() { var tinha = Object.keys(ESTADO.cats).length > 0 || Object.keys(ESTADO.discOc).length > 0; ESTADO.cats = {}; ESTADO.discOc = {}; if (tinha) ESTADO.versao++; return tinha; }
+  function reiniciar() { ESTADO.disc = "coordenacao"; ESTADO.esmaecer = true; ESTADO.cats = {}; ESTADO.discOc = {}; ESTADO.cotasOc = false; ESTADO.versao++; }
   /* o foco está fazendo alguma coisa? (liga/desliga o custo todo no js/bim.js) */
-  function ativo(est) { est = est || ESTADO; return (est.disc !== "coordenacao" && est.esmaecer) || Object.keys(est.cats).length > 0; }
+  function ativo(est) { est = est || ESTADO; return (est.disc !== "coordenacao" && est.esmaecer) || Object.keys(est.cats).length > 0 || Object.keys(est.discOc || {}).length > 0; }
 
   /* o que acontece com UMA peça (classe, disciplina gravada) no estado `est` (padrão: o global) */
   function avaliar(tipo, discPeca, est) {
     est = est || ESTADO;
-    var cat = categoriaDe(tipo), disc = disciplinaDe(tipo, discPeca);
-    var c = est.cats[cat.id], oculto = !!(c && c.vis === false), op = c ? limpaOp(c.op) : 1;
+    var cat = categoriaDe(tipo, discPeca), disc = disciplinaDe(tipo, discPeca);
+    var c = est.cats[cat.id], oculto = !!(c && c.vis === false) || !!(est.discOc && est.discOc[disc]), op = c ? limpaOp(c.op) : 1;
     var fundo = est.disc !== "coordenacao" && est.esmaecer && disc !== est.disc;
     if (fundo) op = Math.min(op, est.fundoOp);
     /* DESTAQUE (13/11/2026): na disciplina em foco o que é dela SALTA da vista — tubos, conexões e registros na cor do SISTEMA
@@ -146,12 +187,11 @@
      `pecas` = lista de { tipo, disc } (o js/bim.js entrega); categoria sem peça não entra. */
   function resumo(pecas) {
     var cont = {};
-    (pecas || []).forEach(function (p) { var c = categoriaDe(p && p.tipo).id; cont[c] = (cont[c] || 0) + 1; });
+    (pecas || []).forEach(function (p) { var c = categoriaDe(p && p.tipo, p && p.disc).id; cont[c] = (cont[c] || 0) + 1; });
     var grupos = [];
-    DISCIPLINAS.forEach(function (d) {
-      if (d.id === "coordenacao") return;
+    DISC_VIS.forEach(function (d) {
       var itens = CATEGORIAS.filter(function (c) { return c.disc === d.id && cont[c.id]; }).map(function (c) { return { id: c.id, rotulo: c.rotulo, n: cont[c.id] }; });
-      if (itens.length) grupos.push({ disc: d.id, rotulo: d.rotulo, itens: itens });
+      if (itens.length) grupos.push({ disc: d.id, rotulo: d.rotulo, itens: itens, n: itens.reduce(function (a, i) { return a + i.n; }, 0) });
     });
     if (cont.outros) grupos.push({ disc: "outros", rotulo: "Outros", itens: [{ id: "outros", rotulo: OUTROS.rotulo, n: cont.outros }] });
     return grupos;
@@ -159,10 +199,103 @@
 
   function daFita(id) { return DA_FITA[id] || "coordenacao"; }
 
+  /* ------------------------------------------------------------------ ROTULOS SEM SOBREPOSIÇÃO (16/11/2026)
+   * Pedido do Rogério: "não deixar rótulos sobrepostos (2,92 duplicado em cima de outro)". Recebe as caixas dos rótulos NA TELA, em px
+   * ({ id, x, y, w, h, txt, prio }, x/y = centro) e devolve { oculto: {id:1}, desl: {id:[dx,dy]} }:
+   *   · o rótulo de MESMO texto que cai em cima de outro já posto é DUPLICADO (a mesma medida desenhada duas vezes) → some;
+   *   · rótulo de OUTRO texto que cai em cima é empurrado (para cima/baixo, depois para os lados) até achar lugar livre; sem lugar,
+   *     fica onde o conflito é menor — um valor diferente nunca é escondido (a pessoa perderia a medida).
+   * Quem ganha o lugar é o de maior `prio`, depois a ordem da lista. Puro: o js/bim.js entrega as caixas e aplica o resultado.
+   * ------------------------------------------------------------------ */
+  function sobra(a, b) {   /* área de interseção de duas caixas centradas */
+    var dx = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
+    var dy = Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2);
+    return dx > 0 && dy > 0 ? dx * dy : 0;
+  }
+  function separarRotulos(itens) {
+    var lista = (itens || []).filter(function (r) { return r && isFinite(r.x) && isFinite(r.y) && r.w > 0 && r.h > 0; })
+      .map(function (r, i) { return { id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, txt: txt(r.txt), prio: r.prio || 0, i: i }; });
+    lista.sort(function (a, b) { return (b.prio - a.prio) || (a.i - b.i); });
+    var postos = [], oculto = {}, desl = {};
+    lista.forEach(function (r) {
+      var dup = false;
+      for (var j = 0; j < postos.length && !dup; j++) {
+        var q = postos[j];
+        if (q.txt === r.txt && r.txt !== "" && sobra(q, r) > 0.25 * Math.min(q.w * q.h, r.w * r.h)) dup = true;
+      }
+      if (dup) { oculto[r.id] = 1; return; }
+      var tent = [[0, 0]], k;
+      for (k = 1; k <= 3; k++) tent.push([0, -k * r.h * 1.05], [0, k * r.h * 1.05]);
+      tent.push([r.w * 1.05, 0], [-r.w * 1.05, 0], [r.w * 1.05, -r.h * 1.05], [-r.w * 1.05, -r.h * 1.05], [r.w * 1.05, r.h * 1.05], [-r.w * 1.05, r.h * 1.05]);
+      var melhor = null, menor = Infinity;
+      for (k = 0; k < tent.length; k++) {
+        var c = { x: r.x + tent[k][0], y: r.y + tent[k][1], w: r.w, h: r.h }, tot = 0;
+        for (var m = 0; m < postos.length; m++) tot += sobra(postos[m], c);
+        if (tot < menor - 1e-9) { menor = tot; melhor = tent[k]; }
+        if (tot === 0) break;
+      }
+      if (melhor && (melhor[0] || melhor[1])) desl[r.id] = [melhor[0], melhor[1]];
+      postos.push({ x: r.x + (melhor ? melhor[0] : 0), y: r.y + (melhor ? melhor[1] : 0), w: r.w, h: r.h, txt: r.txt });
+    });
+    return { oculto: oculto, desl: desl };
+  }
+
+  /* ------------------------------------------------------------------ PERSISTÊNCIA POR VISTA (16/11/2026)
+   * O que a pessoa escondeu numa vista volta quando ela reabre a vista: { "3d": { cats, discOc, cotasOc } }, no aparelho
+   * (localStorage, tudo em try/catch — modo privado ou bloqueado não derruba nada). A disciplina em foco NÃO é gravada aqui: ela
+   * segue o seletor da fita. `configurar({ ler, gravar })` troca o armazenamento (o teste usa memória). */
+  var CHAVE_VIS = "orcapro:bim:visib:v1", memoria = null, arm = null;
+  function lerTudo() {
+    try {
+      if (arm) return JSON.parse(arm.ler() || "{}") || {};
+      if (typeof localStorage !== "undefined") return JSON.parse(localStorage.getItem(CHAVE_VIS) || "{}") || {};
+    } catch (e) {}
+    return memoria || {};
+  }
+  function gravarTudo(o) {
+    memoria = o;
+    try {
+      var j = JSON.stringify(o);
+      if (arm) arm.gravar(j); else if (typeof localStorage !== "undefined") localStorage.setItem(CHAVE_VIS, j);
+    } catch (e) {}
+  }
+  function configurar(a) { arm = a && typeof a.ler === "function" && typeof a.gravar === "function" ? a : null; memoria = null; }
+  function instantaneo() {
+    var o = { cats: {}, discOc: copiaDisc(ESTADO.discOc), cotasOc: !!ESTADO.cotasOc };
+    Object.keys(ESTADO.cats).forEach(function (k) { o.cats[k] = { vis: ESTADO.cats[k].vis !== false, op: limpaOp(ESTADO.cats[k].op) }; });
+    return o;
+  }
+  function salvarVista(vista) {
+    var v = txt(vista); if (!v) return false;
+    var t = lerTudo(), o = instantaneo();
+    if (!Object.keys(o.cats).length && !Object.keys(o.discOc).length && !o.cotasOc) delete t[v]; else t[v] = o;
+    gravarTudo(t); return true;
+  }
+  /* devolve ao estado o que foi gravado para a vista (sem gravar de novo); true se achou */
+  function carregarVista(vista) {
+    var t = lerTudo(), o = t[txt(vista)], antes = JSON.stringify(instantaneo());
+    ESTADO.cats = {}; ESTADO.discOc = {}; ESTADO.cotasOc = false;
+    if (o && typeof o === "object") {
+      Object.keys(o.cats || {}).forEach(function (k) {
+        if (!POR_ID[k]) return;
+        var c = o.cats[k] || {}, vis = c.vis !== false, op = limpaOp(c.op);
+        if (!(vis && op >= 1)) ESTADO.cats[k] = { vis: vis, op: op };
+      });
+      Object.keys(o.discOc || {}).forEach(function (k) { if (ID_DISC_VIS[k] && o.discOc[k]) ESTADO.discOc[k] = 1; });
+      ESTADO.cotasOc = !!o.cotasOc;
+    }
+    /* ⚠ a versão só sobe se o estado MUDOU: cada subida manda o js/bim.js refazer o material de todos os modelos (focoAplicar), e isso reinicia o detalhe progressivo das peças — abrir uma vista sem nada gravado não pode custar isso */
+    if (JSON.stringify(instantaneo()) !== antes) ESTADO.versao++;
+    return !!o;
+  }
+  function esquecerVista(vista) { var t = lerTudo(); delete t[txt(vista)]; gravarTudo(t); }
+
   var BimFoco = {
-    DISCIPLINAS: DISCIPLINAS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
+    DISCIPLINAS: DISCIPLINAS, DISC_VIS: DISC_VIS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
     categoriaDe: categoriaDe, disciplinaDe: disciplinaDe, avaliar: avaliar, resumo: resumo, daFita: daFita,
+    separarRotulos: separarRotulos, salvarVista: salvarVista, carregarVista: carregarVista, esquecerVista: esquecerVista, configurar: configurar,
     get: get, set: set, reiniciar: reiniciar, restaurarCategorias: restaurarCategorias, ativo: ativo,
+    cotasOc: function () { return !!ESTADO.cotasOc; },
     versao: function () { return ESTADO.versao; }
   };
   global.BimFoco = BimFoco;
