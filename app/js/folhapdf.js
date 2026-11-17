@@ -63,6 +63,128 @@
     });
   }
 
+
+  /* ------------------------------------------------ PDF INTERATIVO (CAMADAS / OCG, 16/11/2026)
+     O SVG da vista já tem as classes de cada parte (d2-cota, a7-cota, d2-nivel, d2-eixo-g, d2-paginacao, d2-fase-*, d2-corte…). Aqui cada parte ganha `data-ocg` e o svgpdf a grava como
+     camada liga/desliga do leitor (Acrobat, Edge, Chrome). Variantes em rádio (só uma ligada, as duas DESENHADAS): cotas coloridas × pretas (quando alguma cota tem cor) e parede
+     hachura × cinza × branco (… o preenchimento da vista é o que começa ligado). A variante só aparece com o mestre ligado (OCMD /AllOn "mestre+variante"). O carimbo, a moldura
+     e o desenho que não é de nenhuma camada ficam sempre. Config (por conjunto de folhas, pr.pdfCamadas): { ativo, incluir:{id:false}, desligadas:[ids], variantes:{cotas:"cor"|"preta", parede:"parede-…"} }. */
+  var CAMADAS = [{ id: "cotas", nome: "Cotas" }, { id: "parede", nome: "Parede (preenchimento)" }, { id: "mobiliario", nome: "Mobiliário" }, { id: "paginacao", nome: "Paginação de piso" },
+    { id: "construir", nome: "Construir" }, { id: "demolir", nome: "Demolir" }, { id: "existente", nome: "Existente" }, { id: "niveis", nome: "Níveis" }, { id: "textos", nome: "Textos e ambientes" }, { id: "eixos", nome: "Eixos" }];
+  var NOMES_VAR = { "cotas-cor": "Cotas coloridas", "cotas-preta": "Cotas pretas", "parede-hachura": "Parede: hachura 45°", "parede-cinza": "Parede: cinza", "parede-branco": "Parede: branco", "parede-preto": "Parede: preto", "parede-outro": "Parede: preenchimento da vista" };
+  var FILL_PAREDE = { cinza: "#cfd3d8", branco: "#ffffff" };
+  function camCfg(c) {
+    if (!c || c.ativo === false) return null;
+    var o = { ativo: true, incluir: c.incluir || {}, desligadas: Array.isArray(c.desligadas) ? c.desligadas : [], variantes: c.variantes || {} };
+    return o;
+  }
+  function classesDe(at) { var m = /\bclass="([^"]*)"/.exec(at); return m ? m[1].split(/\s+/) : []; }
+  function fimDoG(s, ini) {   /* índice logo depois do </g> que fecha o <g> aberto antes de `ini` */
+    var re = /<(\/?)g\b[^>]*?(\/?)>/g, d = 1, m; re.lastIndex = ini;
+    while ((m = re.exec(s))) { if (m[1]) d--; else if (!m[2]) d++; if (d === 0) return re.lastIndex; }
+    return -1;
+  }
+  function comOcg(tag, at, auto, id) { return "<" + tag + " data-ocg=\"" + id + "\"" + at + (auto ? "/" : "") + ">"; }
+  /* tira a cor própria (o `style` posto por cima da regra do papel: "stroke:#111;stroke:#d00000" → "stroke:#111") */
+  function semCor(seg) {
+    return seg.replace(/\bstyle="([^"]*)"/g, function (_, st) {
+      var vistos = {}, out = [];
+      st.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim(); if ((k === "stroke" || k === "fill") && vistos[k]) return; vistos[k] = 1; out.push(d.trim()); });
+      return "style=\"" + out.join(";") + "\"";
+    });
+  }
+  function temCorPropria(seg) {
+    var re = /;\s*(?:stroke|fill)\s*:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\s*(?=["';])/g, m;
+    while ((m = re.exec(seg))) { var h = m[1].toLowerCase(); if (!/^(111|111111|000|000000|fff|ffffff)$/.test(h)) return true; }
+    return false;
+  }
+  function chaveFill(f, idp) {
+    var v = txt(f).trim().toLowerCase();
+    if (!v || v === "none") return "branco";
+    if (v === FILL_PAREDE.cinza) return "cinza";
+    if (v === "#111111" || v === "#3a3a3a" || v === "#000" || v === "#000000") return "preto";
+    if (v === "url(#" + idp.toLowerCase() + ")") return "hachura";
+    if (v === "#fff" || v === "#ffffff") return "branco";
+    return "outro";
+  }
+  function classificar(s, cfg, ctx, b) {
+    var cam = ctx.cam, idp = "d2-hach-" + txt(b.vistaId).replace(/[^\w-]/g, "_"), re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>/g, out = "", ult = 0, pilha = [], m;
+    function inc(id) { return cfg.incluir[id] !== false; }
+    function marca(id) { cam.usados[id] = 1; return id; }
+    while ((m = re.exec(s))) {
+      var fecha = m[1] === "/", tag = m[2].toLowerCase(), at = m[3], auto = m[4] === "/", dentro = pilha.some(function (q) { return q; });
+      if (tag === "g") {
+        if (fecha) { pilha.pop(); continue; }
+        var cl = classesDe(at), id = null;
+        if (!dentro) {
+          if (cl.indexOf("d2-cota") >= 0 || cl.indexOf("a7-cota") >= 0) id = "cotas";
+          else if (cl.indexOf("d2-nivel") >= 0) id = "niveis";
+          else if (cl.indexOf("d2-eixo-g") >= 0) id = "eixos";
+          else if (cl.indexOf("d2-paginacao") >= 0) id = "paginacao";
+          else if (cl.indexOf("d2-ambientes") >= 0 || cl.indexOf("d2-amb-legenda") >= 0 || cl.indexOf("d2-identificadores") >= 0 || cl.indexOf("d2-amb-cores") >= 0) id = "textos";
+        }
+        if (id && inc(id) && !auto) {
+          out += s.slice(ult, m.index);
+          if (id === "cotas") {
+            var fim = fimDoG(s, re.lastIndex);
+            if (fim > 0) {
+              var seg = s.slice(m.index, fim), colorida = temCorPropria(seg);
+              if (colorida) {
+                marca("cotas"); marca("cotas-cor"); marca("cotas-preta");
+                out += semCor(seg).replace(/^<g\b/, "<g data-ocg=\"cotas+cotas-preta\"") + seg.replace(/^<g\b/, "<g data-ocg=\"cotas+cotas-cor\"");   /* a da tela por último (por cima): leitor sem camadas mostra como a tela */
+              } else out += seg.replace(/^<g\b/, "<g data-ocg=\"" + marca("cotas") + "\"");
+              ult = fim; re.lastIndex = fim; continue;
+            }
+          }
+          out += comOcg("g", at, false, marca(id)); ult = re.lastIndex; pilha.push(true); continue;
+        }
+        if (!auto) pilha.push(dentro);
+        continue;
+      }
+      if (fecha || dentro || !/^(path|line|polyline|polygon|rect|circle)$/.test(tag)) continue;
+      var cl2 = classesDe(at), cat = (/\bdata-cat="([^"]*)"/.exec(at) || [])[1] || "", id2 = null;
+      if (cl2.indexOf("d2-corte-novo") >= 0 || cl2.indexOf("d2-fase-novo") >= 0) id2 = "construir";
+      else if (cl2.indexOf("d2-fase-demolido") >= 0 || cl2.indexOf("d2-fase-temporario") >= 0) id2 = "demolir";
+      else if (cl2.indexOf("d2-fase-existente") >= 0) id2 = "existente";
+      else if (/furniture|mobili|casework|moveis|m[oó]vel/i.test(cat)) id2 = "mobiliario";
+      if (id2) { if (inc(id2)) { out += s.slice(ult, m.index) + comOcg(tag, at, auto, marca(id2)); ult = re.lastIndex; } continue; }
+      /* PAREDE: o corte da vista (non-P6: toda forma d2-corte; P6: a categoria parede). Contorno numa camada, o preenchimento em variantes (rádio). */
+      if (cl2.indexOf("d2-corte") >= 0 && cl2.indexOf("d2-p6-sobre") < 0 && (!cat || /wall|parede/i.test(cat)) && inc("parede")) {
+        var mf = /\bfill="([^"]*)"/.exec(at), fl = mf ? mf[1] : "none", todo = s.slice(m.index, re.lastIndex), res = "";
+        if (!mf || fl === "none") { res = comOcg(tag, at, auto, marca("parede")); }
+        else {
+          var atual = chaveFill(fl, idp), lista = [[atual, fl]];
+          ["hachura", "cinza", "branco"].forEach(function (k) { if (k !== atual) lista.push([k, k === "hachura" ? "url(#" + idp + ")" : FILL_PAREDE[k]]); });
+          if (!cam.atual.parede) cam.atual.parede = "parede-" + atual;
+          lista.reverse().forEach(function (q) {   /* a variante da tela por último (por cima): leitor sem camadas mostra como a tela */
+            var idv = "parede-" + q[0], a2 = at.replace(/\bfill="[^"]*"/, "fill=\"" + q[1] + "\"");
+            a2 = /\bstyle="/.test(a2) ? a2.replace(/\bstyle="([^"]*)"/, function (_, st) { return "style=\"" + st + ";stroke:none\""; }) : a2 + " style=\"stroke:none\"";
+            marca("parede"); marca(idv); res += "<" + tag + " data-ocg=\"parede+" + idv + "\"" + a2 + (auto ? "/" : "") + ">";
+          });
+          res += comOcg(tag, at.replace(/\bfill="[^"]*"/, "fill=\"none\""), auto, marca("parede"));
+        }
+        void todo;
+        out += s.slice(ult, m.index) + res; ult = re.lastIndex;
+      }
+    }
+    return out + s.slice(ult);
+  }
+  /* o que o svgpdf precisa (nomes, quem começa desligada, rádios, ordem) a partir do que as vistas usaram */
+  function infoCamadas(cfg, cam) {
+    var U = cam.usados, nomes = {}, off = {}, radios = [], ordem = [];
+    CAMADAS.forEach(function (d) { nomes[d.id] = d.nome; }); Object.keys(NOMES_VAR).forEach(function (k) { nomes[k] = NOMES_VAR[k]; });
+    cfg.desligadas.forEach(function (id) { if (U[id]) off[id] = true; });
+    var sub = { cotas: ["cotas-cor", "cotas-preta"], parede: ["parede-hachura", "parede-cinza", "parede-branco", "parede-preto", "parede-outro"] };
+    var sel = { cotas: cfg.variantes.cotas === "preta" ? "cotas-preta" : "cotas-cor", parede: U[cfg.variantes.parede] ? cfg.variantes.parede : cam.atual.parede };
+    CAMADAS.forEach(function (d) {
+      if (!U[d.id]) return;
+      ordem.push(d.id);
+      var vs = (sub[d.id] || []).filter(function (v) { return U[v]; });
+      if (vs.length > 1) { ordem.push(vs); radios.push(vs); vs.forEach(function (v) { if (v !== sel[d.id]) off[v] = true; }); }
+    });
+    return { nomes: nomes, off: off, radios: radios, ordem: ordem };
+  }
+
   /* ------------------------------------------------ peças da folha em SVG (mm)
      O desenho 2D vem de PranchaUI.viewportSvg (as penas de papel já em metros do desenho), com o quadro e a vista em escala: translate + scale (mm por metro = 1000/escala). */
   function interiorSvg(svg) { return txt(svg).replace(/^[\s\S]*?<svg\b[^>]*>/, "").replace(/<\/svg>\s*$/, "").replace(/<style>[\s\S]*?<\/style>/g, ""); }
@@ -74,6 +196,7 @@
     var vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : vp.vb;
     var s = P.viewportSvg(vp, b), k = Math.min(b.w / vb.w, b.h / vb.h), ox = b.x + (b.w - vb.w * k) / 2 - vb.x * k, oy = b.y + (b.h - vb.h * k) / 2 - vb.y * k;
     s = resolverCss(s, P.ESTILO_PAPEL);
+    if (ctx.cfg) s = classificar(s, ctx.cfg, ctx, b);
     /* a vista 3D guarda a imagem no próprio SVG (<image href=data:…>): vira a imagem da folha, inteira, sem reamostrar */
     s = s.replace(/<image\b([^>]*?)\bhref="(data:[^"]+)"([^>]*?)\/?>/g, function (_, a1, uri, a2) {
       var ch = "v" + (ctx.n++); ctx.imagens[ch] = uri;
@@ -151,9 +274,9 @@
   }
 
   /* a folha inteira: 1 unidade = 1 mm. `dims` ({chave:{w,h}}) deixa a imagem "caber" no quadro sem esticar (object-fit: contain) */
-  function svgDaFolha(P, pr, fl, rec, geo, dims) {
+  function svgDaFolha(P, pr, fl, rec, geo, dims, camadas) {
     rec = rec || {}; dims = dims || {};
-    var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {} }, s = "";
+    var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {}, cfg: camCfg(camadas), cam: { usados: {}, atual: {} } }, s = "";
     s += "<rect x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\" fill=\"#fff\"/>";
     if (fl.imagemInteira && rec.imagens && rec.imagens[fl.imagemInteira]) {
       ctx.imagens.i0 = rec.imagens[fl.imagemInteira]; s += "<image data-im=\"i0\" x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\"/>";
@@ -177,7 +300,7 @@
       if (d && d.w > 0 && d.h > 0) { var k = Math.min(w / d.w, h / d.h), nw = d.w * k, nh = d.h * k; x += (w - nw) / 2; y += (h - nh) / 2; w = nw; h = nh; }
       return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
     });
-    return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens };
+    return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens, cam: ctx.cam };
   }
 
   /* itens: [{ pr, folha, rec, geo }]. opc.codificar(uri) → Promise<{ flate|jpeg (texto binário), pxW, pxH }>; opc.dimensoes(uri) → Promise<{w,h}> (opcional). */
@@ -185,21 +308,24 @@
     opc = opc || {}; var P = opc.P || global.PranchaUI, SPM = SP();
     var codificar = opc.codificar || codificarNavegador, dimensoes = opc.dimensoes || null;
     var todas = [], pend = [];
-    itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
+    itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
     var uris = {}, dims = {};
     todas.forEach(function (t) { Object.keys(t.imagens).forEach(function (ch) { uris[t.pref + ch] = t.imagens[ch]; }); });
     var chaves = Object.keys(uris), cod = {};
     var seq = Promise.resolve();
     chaves.forEach(function (k) { seq = seq.then(function () { return codificar(uris[k]); }).then(function (r) { if (r && (typeof r.flate === "string" || typeof r.jpeg === "string")) { cod[k] = r; dims[k] = { w: r.pxW, h: r.pxH }; } }); });
+    var camTot = { usados: {}, atual: {} }, cfgCam = camCfg(opc.camadas);
     return seq.then(function () {
       var svgs = todas.map(function (t) {
         var d = {}; Object.keys(t.imagens).forEach(function (ch) { if (dims[t.pref + ch]) d[ch] = dims[t.pref + ch]; });
-        var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d);
+        var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d, opc.camadas);
+        Object.keys(r1.cam.usados).forEach(function (k) { camTot.usados[k] = 1; }); if (r1.cam.atual.parede && !camTot.atual.parede) camTot.atual.parede = r1.cam.atual.parede;
         return r1.svg.replace(/data-im="([^"]+)"/g, function (_, ch) { return "data-im=\"" + t.pref.replace(/[^A-Za-z0-9]/g, "") + ch + "\""; });
       });
       var porChave = {}; Object.keys(cod).forEach(function (k) { porChave[k.replace(/[^A-Za-z0-9]/g, "")] = cod[k]; });
-      var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave });
-      return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs };
+      var camInfo = cfgCam && Object.keys(camTot.usados).length ? infoCamadas(cfgCam, camTot) : null;
+      var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave, camadas: camInfo });
+      return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs, camadas: camInfo ? Object.keys(camTot.usados) : [] };
     });
   }
 
@@ -232,7 +358,7 @@
     });
   }
 
-  var FolhaPdf = { svgDaFolha: svgDaFolha, gerar: gerar, resolverCss: resolverCss, codificarNavegador: codificarNavegador };
+  var FolhaPdf = { CAMADAS: CAMADAS, classificar: classificar, svgDaFolha: svgDaFolha, gerar: gerar, resolverCss: resolverCss, codificarNavegador: codificarNavegador };
   global.FolhaPdf = FolhaPdf;
   if (typeof module !== "undefined" && module.exports) module.exports = FolhaPdf;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

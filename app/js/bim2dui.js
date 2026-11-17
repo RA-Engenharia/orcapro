@@ -730,6 +730,8 @@
         if (AU && AU.clique2d && ev.button === 0 && AU.clique2d(id, ev, self._ptSvg(id, ev))) return;
         var AN5 = global.BimAnot;   /* P5: Identificar por categoria (clique na peça) e clique na etiqueta seleciona */
         if (AN5 && AN5.clique2d && ev.button === 0 && AN5.clique2d(id, ev, self._ptSvg(id, ev))) return;
+        var nvEl = ev.target && ev.target.closest ? ev.target.closest("[data-d2-nivel]") : null;
+        if (nvEl && ev.button === 0) { self._menuNivel(id, nvEl.getAttribute("data-d2-nivel"), ev); return; }
         var marca = ev.target && ev.target.closest ? ev.target.closest("[data-d2-corte]") : null;
         if (marca && ev.button === 0) { self.abrir(self.idCorte(marca.getAttribute("data-d2-corte"))); return; }
         /* SELECIONAR (js/bimselecao.js, 09/10/2026): sem ferramenta, o botão ESQUERDO seleciona (clique),
@@ -967,9 +969,22 @@
           { id: "marcaCota", rotulo: "Marca da cota", tipo: "lista", valor: e.marcaCota, opcoes: op(D.MARCAS_COTA) },
           { id: "textoCota", rotulo: "Altura do texto", unidade: "mm", tipo: "numero", passo: 0.5, valor: e.textoCota },
           { id: "unidade", rotulo: "Unidade", tipo: "lista", valor: e.unidade, opcoes: op(D.UNIDADES) },
-          { id: "casas", rotulo: "Casas decimais", tipo: "lista", valor: String(e.casas), opcoes: [{ id: "0", rotulo: "0" }, { id: "1", rotulo: "1" }, { id: "2", rotulo: "2" }, { id: "3", rotulo: "3" }] }
+          { id: "casas", rotulo: "Casas decimais", tipo: "lista", valor: String(e.casas), opcoes: [{ id: "0", rotulo: "0" }, { id: "1", rotulo: "1" }, { id: "2", rotulo: "2" }, { id: "3", rotulo: "3" }] },
+          /* COR DAS COTAS (16/11/2026): padrão das cotas desta vista (linha, chamadas, marcas e texto); vale na tela, na folha/PDF e no DXF. A cota selecionada pode ter cor própria. */
+          { id: "corCotas", rotulo: "Cor das cotas desta vista", tipo: "lista", valor: e.corCotas || "", opcoes: D.opcoesCor(e.corCotas) },
+          { id: "corCotas-outra", rotulo: "Outra cor", tipo: "botao", rotuloBotao: "Escolher outra cor…", fn: function () { D.escolherCor(e.corCotas, function (cor) { self._mudar(id, "corCotas", cor); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} }); } }
         ] }
       ];
+      /* NÍVEIS (16/11/2026): no corte/elevação, cada nível mostra/oculta nesta vista (tela, folha, PDF e DXF) */
+      if (d.tipo !== "planta" && c.dados) {
+        var NL = D.niveisDaVista(c.dados, e);
+        if (NL.length) secoes.push({ nome: "Níveis (mostrar nesta vista)", params: NL.map(function (n) {
+          return { id: "nv:" + n.chave, rotulo: n.nome + " " + D.fmtCota(n.cota), tipo: "sim-nao", valor: !n.oculto };
+        }).concat([
+          { id: "nv-todos", rotulo: "Níveis", tipo: "botao", rotuloBotao: "Mostrar todos", fn: function () { self._niveisTodos(id, true); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} } },
+          { id: "nv-nenhum", rotulo: "Níveis", tipo: "botao", rotuloBotao: "Ocultar todos", fn: function () { self._niveisTodos(id, false); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} } }
+        ]) });
+      }
       if (d.tipo === "planta") {
         secoes.push({ nome: "Extensões (faixa de vista)", params: [
           { id: "altura", rotulo: "Altura do corte", unidade: "m", tipo: "numero", passo: 0.05, valor: d.altura },
@@ -1062,11 +1077,41 @@
         var self = this; Object.keys(this._cache).forEach(function (k) { if (/^d2p-/.test(k)) self.redesenhar(k, false); });
         return;
       }
+      var mnv = /^nv:(.+)$/.exec(String(pid));
+      if (mnv) { this._nivelVisivel(id, mnv[1], valor === true || valor === "true" || valor === 1 || valor === "1"); return; }
       var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
       est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
+      if (pid === "preenchimento") est.corteForcado = true;   /* escolhido na vista: vale também nas vistas com estilos de objeto (P6) */
       e.estilos[id] = D2().normEstilo(est);
       this._gravar(); this.redesenhar(id, false);
     },
+    /* NÍVEIS ocultos por vista (estilo.niveisOcultos, chave "nome|cota"): gravado no projeto com o estilo da vista */
+    _nivelVisivel: function (id, chave, visivel) {
+      var e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id)), L = (est.niveisOcultos || []).filter(function (q) { return q !== chave; });
+      if (!visivel) L.push(chave);
+      est.niveisOcultos = L; e.estilos[id] = D2().normEstilo(est);
+      this._gravar(); this.redesenhar(id, false);
+    },
+    _niveisTodos: function (id, visivel) {
+      var c = this._cache[id], e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
+      est.niveisOcultos = visivel || !c || !c.dados ? [] : D2().niveisDaVista(c.dados, { niveisOcultos: [] }).map(function (n) { return n.chave; });
+      e.estilos[id] = D2().normEstilo(est); this._gravar(); this.redesenhar(id, false);
+      status(visivel ? "Todos os níveis aparecem nesta vista." : "Níveis ocultos nesta vista (Propriedades › Níveis para voltar).");
+    },
+    /* clique num nível do desenho → "Ocultar nesta vista" */
+    _menuNivel: function (id, chave, ev) {
+      var self = this, nome = String(chave).split("|")[0] || "nível"; this._fecharMenuNivel();
+      var m = document.createElement("div"); m.setAttribute("data-d2-menu-nivel", "1");
+      m.style.cssText = "position:fixed;z-index:9999;left:" + Math.round(ev.clientX + 4) + "px;top:" + Math.round(ev.clientY + 4) + "px;background:#fff;color:#111;border:1px solid #888;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.25);padding:4px;font:13px Arial,sans-serif";
+      var b1 = document.createElement("button"), b2 = document.createElement("button");
+      [b1, b2].forEach(function (b) { b.type = "button"; b.style.cssText = "display:block;width:100%;text-align:left;padding:6px 10px;border:0;background:none;cursor:pointer;font:inherit;color:inherit"; });
+      b1.textContent = "Ocultar “" + nome + "” nesta vista"; b2.textContent = "Mostrar todos os níveis";
+      b1.addEventListener("click", function () { self._fecharMenuNivel(); self._nivelVisivel(id, chave, false); status("Nível “" + nome + "” oculto nesta vista (Propriedades › Níveis para voltar)."); });
+      b2.addEventListener("click", function () { self._fecharMenuNivel(); self._niveisTodos(id, true); });
+      m.appendChild(b1); m.appendChild(b2); document.body.appendChild(m); this._menuNv = m;
+      setTimeout(function () { var f = function (e2) { if (self._menuNv && !self._menuNv.contains(e2.target)) { self._fecharMenuNivel(); document.removeEventListener("pointerdown", f, true); } }; document.addEventListener("pointerdown", f, true); }, 0);
+    },
+    _fecharMenuNivel: function () { if (this._menuNv && this._menuNv.parentNode) this._menuNv.parentNode.removeChild(this._menuNv); this._menuNv = null; },
     /* aplica o padrão de detalhamento da empresa a ESTA vista (o resto do estilo — pena, preenchimento — fica) */
     aplicarPadraoDet: function (id) {
       var P = global.PadraoDet; if (!P || !this.def(id)) return false;

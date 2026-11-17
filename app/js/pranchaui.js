@@ -109,7 +109,17 @@
        forma sem fill do js/desenho2d.js precisa de regra aqui (tools/test-folha-sem-tarja.js confere), e o que escapar das classes d2-pag-* vira SEM preenchimento, nunca preto (a regra geral por tag foi tirada: apagava o preenchimento das setas e marcas de corte). */
     '.pv-vp .d2-pag-rec{fill:#f4dcb4;stroke:none}.pv-vp .d2-pag-bol{fill:#f0b3b3;stroke:none}.pv-vp .d2-pag-pc{stroke:#6b7682;stroke-linejoin:miter;fill:none}.pv-vp .d2-pag-rev{stroke:#1a6cb5;fill:none}' +
     '.pv-vp .d2-pag-velha .d2-pag-pc,.pv-vp .d2-pag-velha .d2-pag-rev{stroke:#b42318}.pv-vp .d2-pag-aviso{fill:#b42318;font-family:Arial,Helvetica,sans-serif;font-weight:600}' +
-    ':where(.pv-vp [class*="d2-pag-"]:not([fill])){fill:none}';
+    ':where(.pv-vp [class*="d2-pag-"]:not([fill])){fill:none}' +
+    /* COTAS SEM LINHA DE CHAMADA NO PDF (16/11/2026). Roteiro do defeito: as cotas por referência (P7, js/bimanot.js: classes a7-l, a7-marca, a7-cheio, a7-tx…), os identificadores (d2-ident-*) e
+       as chamadas de elevação/corte (d2-p6-*) têm a tinta no css/ do app (bimanot.css, bimtabela.css, bim-revit.css) — e a folha só carregava as regras acima. Sem regra o <line> fica sem
+       `stroke` (invisível no PDF): sobrava o texto e o tick de <path fill>, sem linha de cota nem de chamada. Regra nova aqui para cada classe de traço; tools/test-folhapdf.js confere
+       que nenhum traço do SVG da folha fica sem estilo (nSemEstilo = 0). As cores vêm de `style` da peça (cor da cota) e vencem estas. */
+    '.pv-vp .a7-l,.pv-vp .a7-marca,.pv-vp .a7-hach{stroke:#111;fill:none}.pv-vp .a7-l{stroke-linecap:butt}' +
+    '.pv-vp .a7-tx{fill:#111;font-family:Arial,Helvetica,sans-serif}.pv-vp .a7-cheio,.pv-vp .a7-hach-p,.pv-vp .a7-solido{fill:#111}.pv-vp .a7-solido{stroke:none}' +
+    '.pv-vp .a7-cinza{fill:#cfd3d8;stroke:none}.pv-vp .a7-fundo{fill:#fff}.pv-vp .a7-borda,.pv-vp .a7-trava{stroke:#111}.pv-vp .a7-trava{fill:none}' +
+    '.pv-vp .a7-nuvem-l{stroke:#111;fill:none;stroke-linejoin:round}.pv-vp .a7-nuvem-tag{stroke:#111}.pv-vp .a7-mascara{fill:#fff;stroke:none}.pv-vp .a7-semtraco,.pv-vp .a7-invisivel{stroke:none}' +
+    '.pv-vp .d2-ident-tx{fill:#111;font-family:Arial,Helvetica,sans-serif;font-weight:bold}.pv-vp .d2-ident-moldura{fill:#fff;stroke:#111}.pv-vp .d2-ident-alvo{fill:none;stroke:none}' +
+    '.pv-vp .d2-p6-chamada-l,.pv-vp .d2-p6-recorte{stroke:#111;fill:none}.pv-vp .d2-p6-l{fill:none;stroke-linecap:round}';
   function penaMm(px, vp) {
     var r = vp.penasPx || {}, P = global.Prancha, t = vp.penasMm || (P && P.PENAS_PAPEL && P.PENAS_PAPEL[vp.pena]) || {};
     for (var k in r) if (r.hasOwnProperty(k) && Math.abs(+r[k] - px) < 1e-6 && t[k] != null) return t[k];

@@ -113,7 +113,7 @@
       /* ARC: centro, raio e ângulos em GRAUS, no sentido anti-horário (Y para cima) de a0 até a1 */
       arco: function (c, x, y, r, a0, a1) { if (!(r > 0)) return null; return this.add({ t: "ARC", camada: c, x: x, y: y, r: r, a0: a0, a1: a1 }); },
       texto: function (c, x, y, h, s, ang, centro) { if (!String(s || "").trim()) return null; return this.add({ t: "TEXT", camada: c, x: x, y: y, h: h, s: s, ang: ang || 0, centro: !!centro }); },
-      hachura: function (c, laços, espaco, solido) { if (!laços || !laços.length) return null; var h = { t: "HATCH", camada: c, lacos: laços, espaco: espaco }; if (solido) h.solido = true; return this.add(h); },   /* METÁLICA › S5: solido = preenchimento cheio (seção cortada, ponta de seta) */
+      hachura: function (c, laços, espaco, solido, extra) { if (!laços || !laços.length) return null; var h = { t: "HATCH", camada: c, lacos: laços, espaco: espaco }; if (solido) h.solido = true; if (extra) { if (extra.padrao) h.padrao = extra.padrao; if (extra.cor) h.cor = extra.cor; if (extra.aci != null) h.aci = extra.aci; } return this.add(h); },   /* METÁLICA › S5: solido = preenchimento cheio (seção cortada, ponta de seta) */
       estiloCota: function (nome, o) { this.estilosCota[nome] = o; return nome; },
       /* ARQUIVO CAD ÚNICO (etapa 5 das pranchas de arquitetura, 15/11/2026): layouts (paperspace) e tipos de linha por padrão.
          O MODEL é doc.entidades (metros, escala real); cada layout leva as suas entidades em mm de papel e as VIEWPORTs travadas na escala.
@@ -134,6 +134,13 @@
     doc.camada("0", 0.25, "CONTINUOUS", 7);
     return doc;
   }
+
+  /* PADRÕES DO PREENCHIMENTO DO CORTE além do ANSI31: famílias em múltiplos de E (3,175 mm na escala 1). dxl = deslocamento ao longo da linha, dyl = entre linhas. */
+  var PADROES_HATCH = {
+    cruzada: { nome: "RA-CRUZADA", fam: [{ a: 45, dxl: 0, dyl: 0.75 }, { a: 135, dxl: 0, dyl: 0.75 }] },
+    tijolo: { nome: "RA-TIJOLO", fam: [{ a: 0, dxl: 0, dyl: 0.4 }, { a: 90, dxl: 0.4, dyl: 0.67, dash: [0.4, -0.4] }] },
+    concreto: { nome: "RA-CONCRETO", fam: [{ a: 0, dxl: 0.45, dyl: 0.45, dash: [0, -0.9] }, { a: 63, dxl: 0.9, dyl: 1.7, dash: [0, -1.8] }] }
+  };
 
   /* ---------------------------------------------------------- escrever */
   function escrever(doc) {
@@ -355,15 +362,29 @@
     var ixSeed = L.indexOf("$HANDSEED"); if (ixSeed >= 0) L[ixSeed + 2] = H();
     return L.join("\r\n") + "\r\n";
 
-    var ltEnt = null, ltsEnt = null;
+    var ltEnt = null, ltsEnt = null, corEnt = null;
+    /* COR DA ENTIDADE (16/11/2026, cota colorida): e.cor = "#rrggbb" vira truecolor (420) com o ACI mais próximo (62) de reserva; e.aci = índice ACI direto. Sem nenhum dos dois, vale a cor da camada. */
+    function aciMaisProximo(r, g2, b) {
+      if (r === g2 && g2 === b) return r < 40 ? 7 : (r > 215 ? 7 : 8);
+      var m = Math.max(r, g2, b), q = [[255, 0, 0, 1], [255, 255, 0, 2], [0, 255, 0, 3], [0, 255, 255, 4], [0, 0, 255, 5], [255, 0, 255, 6]], bst = 7, bd = 1e9;
+      q.forEach(function (c0) { var d = Math.pow(r / m * 255 - c0[0], 2) + Math.pow(g2 / m * 255 - c0[1], 2) + Math.pow(b / m * 255 - c0[2], 2); if (d < bd) { bd = d; bst = c0[3]; } });
+      return bst;
+    }
     function comum(tipo, hh, owner, camada, sub) {
       g(0, tipo); g(5, hh); g(330, owner); g(100, "AcDbEntity"); if (ps) g(67, 1); g(8, txtDxf(camada));
+      if (corEnt) {
+        if (corEnt.aci != null) g(62, corEnt.aci);
+        else { g(62, aciMaisProximo(corEnt.r, corEnt.g, corEnt.b)); g(420, (corEnt.r << 16) + (corEnt.g << 8) + corEnt.b); }
+      }
       if (ltEnt) g(6, ltEnt);
       if (ltsEnt) g(48, num(ltsEnt));   /* escala do tracejado da entidade (CAD único: a do desenho no MODEL) */
       g(100, sub);
     }
     function entidade(e, hh, owner) {
       ltEnt = e.lt || null; ltsEnt = e.lts || null;
+      corEnt = null;
+      if (e.aci != null) corEnt = { aci: e.aci };
+      else { var mcr = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(String(e.cor || "")); if (mcr) corEnt = { r: parseInt(mcr[1], 16), g: parseInt(mcr[2], 16), b: parseInt(mcr[3], 16) }; }
       if (e.t === "LINE") {
         comum("LINE", hh, owner, e.camada, "AcDbLine");
         g(10, num(e.p[0])); g(20, num(e.p[1])); g(30, 0); g(11, num(e.p[2])); g(21, num(e.p[3])); g(31, 0);
@@ -405,13 +426,26 @@
       } else if (e.t === "HATCH") {
         comum("HATCH", hh, owner, e.camada, "AcDbHatch");
         g(10, 0); g(20, 0); g(30, 0); g(210, 0); g(220, 0); g(230, 1);
-        g(2, e.solido ? "SOLID" : "ANSI31"); g(70, e.solido ? 1 : 0); g(71, 0); g(91, e.lacos.length);
+        var famI = !e.solido && e.padrao && PADROES_HATCH[e.padrao] ? PADROES_HATCH[e.padrao] : null;
+        g(2, e.solido ? "SOLID" : (famI ? famI.nome : "ANSI31")); g(70, e.solido ? 1 : 0); g(71, 0); g(91, e.lacos.length);
         e.lacos.forEach(function (pts) {
           g(92, 2); g(72, 0); g(73, 1); g(93, pts.length);
           pts.forEach(function (p) { g(10, num(p[0])); g(20, num(p[1])); });
           g(97, 0);
         });
         if (e.solido) { g(75, 0); g(76, 1); g(98, 0); return; }
+        /* PREENCHIMENTOS DO CORTE (16/11/2026): cruzada, tijolo e concreto — várias famílias (ângulo, deslocamento, tracejado), na unidade E = 3,175 × escala */
+        if (famI) {
+          var Sx = (+e.espaco || 3.175) / 3.175, E = 3.175 * Sx;
+          g(75, 0); g(76, 1); g(52, 0); g(41, 1); g(77, 0); g(78, famI.fam.length);
+          famI.fam.forEach(function (fa) {
+            var an = fa.a * Math.PI / 180, ca = Math.cos(an), sa = Math.sin(an), dxl = fa.dxl * E, dyl = fa.dyl * E;
+            g(53, fa.a); g(43, 0); g(44, 0); g(45, num(ca * dxl - sa * dyl)); g(46, num(sa * dxl + ca * dyl));
+            g(79, (fa.dash || []).length); (fa.dash || []).forEach(function (v) { g(49, num(v * E)); });
+          });
+          g(98, 0);
+          return;
+        }
         /* ANSI31: família única a 45°, espaçamento 3,175 na escala 1 */
         var S = (+e.espaco || 3.175) / 3.175, d = 2.2450640303 * S;
         g(75, 0); g(76, 1); g(52, 0); g(41, num(S)); g(77, 0); g(78, 1);
@@ -479,6 +513,8 @@
     while ((m = re.exec(s))) o[m[1]] = m[2];
     return o;
   }
+  /* a cor do `style` de um traço do SVG ("stroke:#rrggbb" ou "fill:#rrggbb") → "#rrggbb" (cota colorida no DXF); sem cor = a da camada */
+  function corDoStyle(st) { var m = /(?:^|;)\s*(?:stroke|fill)\s*:\s*(#[0-9a-fA-F]{6})\s*(?:;|$)/.exec(String(st || "")); return m ? m[1].toLowerCase() : ""; }
   function desesc(s) { return String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); }
   function pathPts(d) {
     var out = [], atual = null, re = /([MLZ])\s*([-\d.eE]+)?[\s,]*([-\d.eE]+)?/gi, m;
@@ -584,7 +620,8 @@
         var p = xf.pt(x, y);
         if (!dentro(p[0], p[1], opts.recorte)) continue;
         /* a letra do SVG é o corpo (font-size); a altura do DXF é a da maiúscula (~0,7 do corpo) */
-        doc.texto(camadaAtual(t.a["class"]), p[0], p[1], fs * sc * xf.s * 0.7, desesc(t.s), -(mr ? +mr[1] : 0), t.a["text-anchor"] === "middle");
+        var etx = doc.texto(camadaAtual(t.a["class"]), p[0], p[1], fs * sc * xf.s * 0.7, desesc(t.s), -(mr ? +mr[1] : 0), t.a["text-anchor"] === "middle");
+        var ctx2 = corDoStyle(t.a.style); if (etx && ctx2) etx.cor = ctx2;   /* cor da cota/anotação (style="fill:#rrggbb") */
         continue;
       }
       if (fecha) continue;
@@ -599,6 +636,7 @@
       if (lt) for (var ie = n0; ie < doc.entidades.length; ie++) doc.entidades[ie].lt = lt;
       else if (tag === "circle") { var pc = xf.pt(+a.cx, +a.cy); if (dentro(pc[0], pc[1], opts.recorte)) doc.circulo(cam, pc[0], pc[1], +a.r * xf.s); }
       else if (tag === "rect") { var x0 = +a.x, y0 = +a.y, w = +a.width, hh = +a.height; poli(cam, [[x0, y0], [x0 + w, y0], [x0 + w, y0 + hh], [x0, y0 + hh]], true); }
+      var cDx = corDoStyle(a.style); if (cDx) for (var ic = n0; ic < doc.entidades.length; ic++) doc.entidades[ic].cor = cDx;
     }
     function seg(cam, x1, y1, x2, y2) {
       var p1 = xf.pt(x1, y1), p2 = xf.pt(x2, y2), r = recortarSeg(p1[0], p1[1], p2[0], p2[1], opts.recorte);
@@ -667,7 +705,12 @@
         }
       }
     });
-    Object.keys(hach).forEach(function (ct) { doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], 1.6 * k * xf.s); });
+    /* PREENCHIMENTO DO CORTE (16/11/2026): o escolhido na vista — sólido (cinza, preto, escuro) ou o padrão (45°, cruzada, tijolo, concreto) */
+    var prE = e.preenchimento, solD = { cinza: { cor: "#cfd3d8" }, solido: { cor: "#3a3a3a" }, preto: { aci: 7 } }[prE];
+    Object.keys(hach).forEach(function (ct) {
+      if (solD) doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], null, true, solD);
+      else doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], 1.6 * k * xf.s, false, PADROES_HATCH[prE] ? { padrao: prE } : null);
+    });
     /* FASES: as arestas VISTAS da peça demolida/temporária (quando o desenho as traz) */
     Object.keys(dados.linhasFase || {}).forEach(function (st) {
       var fz = FASE_DXF[st]; if (!fz) return;
@@ -725,7 +768,8 @@
       ang = Math.abs(dx) >= Math.abs(dy) ? 0 : 90;
       if (rec && !(dentro(p1[0], p1[1], rec) && dentro(p2[0], p2[1], rec))) return;
       lin2 = grafCota(p1, p2, pl, ang, c.valor, e, k * xf.s, cCota);
-      doc.cota(cCota, estCota, p1, p2, pl, ang, c.valor * xf.s, D2.fmtMedida(c.valor, e), lin2);   /* 42 = o medido no espaço do arquivo (na folha, mm de papel) */
+      if (e.corCotas) lin2.forEach(function (q) { q.cor = e.corCotas; });   /* COR DAS COTAS da vista: o desenho da cota e a DIMENSION */
+      var dmE = doc.cota(cCota, estCota, p1, p2, pl, ang, c.valor * xf.s, D2.fmtMedida(c.valor, e), lin2); if (dmE && e.corCotas) dmE.cor = e.corCotas;   /* 42 = o medido no espaço do arquivo (na folha, mm de papel) */
     });
     if (dados.tipo === "planta" && e.cotas) (dados.cotasModelo || []).forEach(function (c) {
       var p1 = xf.pt(c.a[0], c.a[1]), p2 = xf.pt(c.b[0], c.b[1]);
@@ -734,7 +778,8 @@
       var ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180 / Math.PI;
       if (rec && !(dentro(p1[0], p1[1], rec) && dentro(p2[0], p2[1], rec))) return;
       var v = c.valor != null ? c.valor : L;
-      doc.cota(cCota, estCota, p1, p2, pl, ang, v * xf.s, D2.fmtMedida(v, e), grafCota(p1, p2, pl, ang, v, e, k * xf.s, cCota));
+      var gcM = grafCota(p1, p2, pl, ang, v, e, k * xf.s, cCota); if (e.corCotas) gcM.forEach(function (q) { q.cor = e.corCotas; });
+      var dmM = doc.cota(cCota, estCota, p1, p2, pl, ang, v * xf.s, D2.fmtMedida(v, e), gcM); if (dmM && e.corCotas) dmM.cor = e.corCotas;
     });
     /* 4) o resto da anotação: do SVG da tela */
     var svg = opts.svg || D2.svg(dados, e, { titulo: opts.titulo || "" }).svg;
@@ -801,6 +846,37 @@
     }
     return out;
   }
+  /* FAMÍLIA de um padrão (PADROES_HATCH) em LINEs recortadas pelo contorno (par-ímpar, furos respeitados): ângulo, deslocamento entre linhas (dyl × E) e tracejado com a fase
+     de cada linha (dxl × E por linha) — o mesmo desenho do HATCH nativo (tijolo e concreto: juntas alternadas e pontos). Ponto (traço 0) = LINE curtíssima. */
+  function linhasFamilia(lacos, camada, fa, E) {
+    var an = fa.a * Math.PI / 180, ux = Math.cos(an), uy = Math.sin(an), nx = -uy, ny = ux, arestas = [], cmin = Infinity, cmax = -Infinity, out = [];
+    lacos.forEach(function (pts) { for (var i = 0; i < pts.length; i++) { var a = pts[i], b = pts[(i + 1) % pts.length]; arestas.push([a[0], a[1], b[0], b[1]]); var cc = nx * a[0] + ny * a[1]; if (cc < cmin) cmin = cc; if (cc > cmax) cmax = cc; } });
+    var dy = fa.dyl * E, dx = fa.dxl * E; if (!isFinite(cmin) || !(Math.abs(dy) > 1e-12)) return [];
+    var i0 = Math.ceil(cmin / dy), i1 = Math.floor(cmax / dy); if (dy < 0) { var tt0 = i0; i0 = Math.ceil(cmax / dy); i1 = Math.floor(cmin / dy); void tt0; }
+    if (i1 - i0 > 4000) return [];   /* trava de segurança */
+    var dash = (fa.dash || []).map(function (v) { return v * E; }), P = 0; dash.forEach(function (v) { P += Math.abs(v); });
+    for (var i = i0; i <= i1; i++) {
+      var c0 = dy * i, t0 = dx * i, ts = [];
+      arestas.forEach(function (a) { var f1 = nx * a[0] + ny * a[1] - c0, f2 = nx * a[2] + ny * a[3] - c0; if ((f1 < 0 && f2 >= 0) || (f1 >= 0 && f2 < 0)) { var q = f1 / (f1 - f2); ts.push(ux * (a[0] + q * (a[2] - a[0])) + uy * (a[1] + q * (a[3] - a[1]))); } });
+      ts.sort(function (p, q) { return p - q; });
+      for (var j = 0; j + 1 < ts.length; j += 2) {
+        var s0 = ts[j], e0 = ts[j + 1];
+        function seg(ta, tb) { if (tb - ta < 1e-9 && !(fa.dash && tb === ta)) return; out.push({ t: "LINE", camada: camada, p: [nx * c0 + ux * ta, ny * c0 + uy * ta, nx * c0 + ux * tb, ny * c0 + uy * tb] }); }
+        if (!(P > 1e-9)) { seg(s0, e0); continue; }
+        var k0 = Math.floor((s0 - t0) / P) - 1, n = 0;
+        for (var k = k0; n < 100000; k++, n++) {
+          var base = t0 + k * P; if (base > e0) break;
+          var pos = base;
+          for (var d = 0; d < dash.length; d++) {
+            var len = Math.abs(dash[d]);
+            if (dash[d] >= 0) { var ta = Math.max(pos, s0), tb = Math.min(pos + len, e0); if (len === 0) { if (pos >= s0 && pos <= e0) seg(pos, pos + 0.05 * E); } else if (tb > ta) seg(ta, tb); }
+            pos += len;
+          }
+        }
+      }
+    }
+    return out;
+  }
   /* TEXT centrado/à direita: no DWG o AutoCAD usa o ponto de inserção GRAVADO como o começo do texto (o alinhamento só vale depois de editar) e o dxf2dwg ainda perde
      o ponto de alinhamento: o texto sairia alinhado à esquerda no centro. Então, no caminho do DWG, vira texto à esquerda com o começo calculado (largura Helvetica = Arial;
      RA-VERDANA ×1,14; a altura do TEXT é a das maiúsculas: corpo = h ÷ 0,716). A diferença para o centro de verdade é de poucos por cento da largura. */
@@ -823,7 +899,11 @@
       (lista || []).forEach(function (e) {
         if (e.t === "TEXT") { out.push(textoAEsquerda(e)); return; }
         if (e.t !== "HATCH" || !geo) { out.push(e); return; }
-        var g = e.solido ? solidosDe(e.lacos, e.camada) : linhasDe(e.lacos, e.camada, e.espaco);
+        var g;
+        if (!e.solido && e.padrao && PADROES_HATCH[e.padrao]) {   /* cruzada, tijolo e concreto: cada família do padrão vira LINEs (como o 45°) */
+          g = []; PADROES_HATCH[e.padrao].fam.forEach(function (fa) { linhasFamilia(e.lacos, e.camada, fa, +e.espaco || 3.175).forEach(function (q) { g.push(q); }); });
+        } else g = e.solido ? solidosDe(e.lacos, e.camada) : linhasDe(e.lacos, e.camada, e.espaco);
+        g.forEach(function (q) { if (e.cor) q.cor = e.cor; if (e.aci != null) q.aci = e.aci; });
         for (var i = 0; i < g.length; i++) out.push(g[i]);
       });
       return out;

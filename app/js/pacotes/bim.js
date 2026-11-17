@@ -11986,6 +11986,18 @@ o.ambientes = arr(p.ambientes).slice(0, 400).filter(function (a) { return a && a
 .map(function (a) { return { nome: txt(a.nome).slice(0, 80), area: num(a.area, 0), xy: [+a.xy[0], +a.xy[1]] }; });
 return o;
 }
+function pdfCamadasNorm(c) {
+if (!c || typeof c !== 'object') return null;
+var o = { ativo: c.ativo !== false, incluir: {}, desligadas: [], variantes: {} }, ok = /^[a-z][a-z-]{0,30}$/;
+Object.keys(c.incluir || {}).forEach(function (k) { if (ok.test(k) && c.incluir[k] === false) o.incluir[k] = false; });
+arr(c.desligadas).forEach(function (k) { if (ok.test(String(k)) && o.desligadas.indexOf(String(k)) < 0) o.desligadas.push(String(k)); });
+var v = c.variantes || {};
+if (v.cotas === 'cor' || v.cotas === 'preta') o.variantes.cotas = v.cotas;
+if (ok.test(String(v.parede || '')) && /^parede-/.test(v.parede)) o.variantes.parede = v.parede;
+if (o.ativo && !Object.keys(o.incluir).length && !o.desligadas.length && !Object.keys(o.variantes).length) return null;
+return o;
+}
+function pdfCamadasDe(pr) { return pdfCamadasNorm(pr && pr.pdfCamadas) || { ativo: true, incluir: {}, desligadas: [], variantes: {} }; }
 function normalizar(pr) {
 pr = pr || {};
 var formato = FORMATOS[pr.formato] ? pr.formato : 'A1';
@@ -12000,7 +12012,7 @@ paramsFolha(f, o);
 var pv = pvDaFolha(f.pv); if (pv) o.pv = pv;
 return o;
 });
-return {
+var pdfCam = pdfCamadasNorm(pr.pdfCamadas), res0 = {
 id: txt(pr.id), obraId: txt(pr.obraId), nome: txt(pr.nome) || 'Prancha', formato: formato, orientacao: orient,
 origem: txt(pr.origem), origemId: txt(pr.origemId), criadoEm: txt(pr.criadoEm),
 carimbo: { empresa: txt(c.empresa), responsavel: txt(c.responsavel), registro: txt(c.registro), contratante: txt(c.contratante),
@@ -12011,6 +12023,8 @@ modelo: c.modelo === 'RA' ? 'RA' : 'simples', titulo: txt(c.titulo), cnpj: txt(c
 coluna: arr(pr.coluna).map(function (s) { return { titulo: txt(s && s.titulo), itens: arr(s && s.itens).map(txt) }; }),
 folhas: folhas, pdf: pr.pdf && pr.pdf.chave ? { chave: txt(pr.pdf.chave), nome: txt(pr.pdf.nome) } : null
 };
+if (pdfCam) res0.pdfCamadas = pdfCam;
+return res0;
 }
 function conferir(pr) {
 var p = normalizar(pr), g = geometriaDe(p), fora = [];
@@ -12513,6 +12527,7 @@ revisaoAtual: revisaoAtual, numeroFolha: numeroFolha, escalaFolha: escalaFolha, 
 parametrosFolha: parametrosFolha, mapaParametros: mapaParametros, proximoNumeroDetalhe: proximoNumeroDetalhe, vistaEmFolha: vistaEmFolha,
 ajustarEixo: ajustarEixo, eixoGuiaLinhas: eixoGuiaLinhas, tamanhoViewport: tamanhoViewport, colocarViewport: colocarViewport,
 ESCALAS_VISTA: ESCALAS_VISTA, escalaViewport: escalaViewport, deslocarRecorte: deslocarRecorte, redimensionarViewport: redimensionarViewport, blocoTexto: blocoTexto,
+pdfCamadasNorm: pdfCamadasNorm, pdfCamadasDe: pdfCamadasDe,
 CAMPOS_CARIMBO_FOLHA: CAMPOS_CARIMBO_FOLHA, CAMPOS_CARIMBO_CONJ: CAMPOS_CARIMBO_CONJ,
 listaFolhas: listaFolhas, listaVistas: listaVistas, tabelaRevisoes: tabelaRevisoes, blocoDeLista: blocoDeLista,
 CARIMBO_RA: CARIMBO_RA, MODELOS_CARIMBO: MODELOS_CARIMBO, CAMADAS_CARIMBO_RA: CAMADAS_CARIMBO_RA, ALT_MAIUSCULA: ALT_MAIUSCULA, ESCALAS_FOLHA: ESCALAS_FOLHA,
@@ -12597,7 +12612,13 @@ var ESTILO_PAPEL = '.pv-vp .d2-papel{fill:#fff}.pv-vp .d2-corte{stroke:#111;stro
 '.pv-vp .d2-acima-l{stroke:#4a4f57;fill:none}.pv-vp .d2-acima-tx{fill:#4a4f57;font-family:Arial,Helvetica,sans-serif}' +
 '.pv-vp .d2-pag-rec{fill:#f4dcb4;stroke:none}.pv-vp .d2-pag-bol{fill:#f0b3b3;stroke:none}.pv-vp .d2-pag-pc{stroke:#6b7682;stroke-linejoin:miter;fill:none}.pv-vp .d2-pag-rev{stroke:#1a6cb5;fill:none}' +
 '.pv-vp .d2-pag-velha .d2-pag-pc,.pv-vp .d2-pag-velha .d2-pag-rev{stroke:#b42318}.pv-vp .d2-pag-aviso{fill:#b42318;font-family:Arial,Helvetica,sans-serif;font-weight:600}' +
-':where(.pv-vp [class*="d2-pag-"]:not([fill])){fill:none}';
+':where(.pv-vp [class*="d2-pag-"]:not([fill])){fill:none}' +
+'.pv-vp .a7-l,.pv-vp .a7-marca,.pv-vp .a7-hach{stroke:#111;fill:none}.pv-vp .a7-l{stroke-linecap:butt}' +
+'.pv-vp .a7-tx{fill:#111;font-family:Arial,Helvetica,sans-serif}.pv-vp .a7-cheio,.pv-vp .a7-hach-p,.pv-vp .a7-solido{fill:#111}.pv-vp .a7-solido{stroke:none}' +
+'.pv-vp .a7-cinza{fill:#cfd3d8;stroke:none}.pv-vp .a7-fundo{fill:#fff}.pv-vp .a7-borda,.pv-vp .a7-trava{stroke:#111}.pv-vp .a7-trava{fill:none}' +
+'.pv-vp .a7-nuvem-l{stroke:#111;fill:none;stroke-linejoin:round}.pv-vp .a7-nuvem-tag{stroke:#111}.pv-vp .a7-mascara{fill:#fff;stroke:none}.pv-vp .a7-semtraco,.pv-vp .a7-invisivel{stroke:none}' +
+'.pv-vp .d2-ident-tx{fill:#111;font-family:Arial,Helvetica,sans-serif;font-weight:bold}.pv-vp .d2-ident-moldura{fill:#fff;stroke:#111}.pv-vp .d2-ident-alvo{fill:none;stroke:none}' +
+'.pv-vp .d2-p6-chamada-l,.pv-vp .d2-p6-recorte{stroke:#111;fill:none}.pv-vp .d2-p6-l{fill:none;stroke-linecap:round}';
 function penaMm(px, vp) {
 var r = vp.penasPx || {}, P = global.Prancha, t = vp.penasMm || (P && P.PENAS_PAPEL && P.PENAS_PAPEL[vp.pena]) || {};
 for (var k in r) if (r.hasOwnProperty(k) && Math.abs(+r[k] - px) < 1e-6 && t[k] != null) return t[k];
@@ -36559,13 +36580,21 @@ function rotate(t) { var m = /rotate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+)[\s,]+(-?[
 function pagina(svg) {
 var s = txt(svg), raiz = /<svg\b([^>]*)>/.exec(s); if (!raiz) return null;
 var ra = attrs(raiz[1]), vb = txt(ra.viewBox).split(/[\s,]+/).map(Number), W = vb.length === 4 ? vb[2] : num(ra.width, 210), H = vb.length === 4 ? vb[3] : num(ra.height, 297);
-var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, k: 1, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
-var nTexto = 0, nTraco = 0, nPulado = 0, ims = {}, clips = {}, emClip = null;
+var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, k: 1, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null, oculto: false }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
+var nTexto = 0, nTraco = 0, nPulado = 0, nSemEstilo = 0, ims = {}, clips = {}, emClip = null;
 var padroes = {}, emPad = null, xf = null;
+var ocs = {}, ocMap = {}, ocN = 0, ocPend = 0;
+function bdc(spec) {
+return txt(spec).split("+").map(function (q) { return q.trim(); }).filter(Boolean).map(function (id) {
+var nm = ocMap[id]; if (!nm) { nm = "OC" + (++ocN); ocMap[id] = nm; ocs[nm] = [id]; }
+return "/OC /" + nm + " BDC";
+});
+}
+function emc(n) { for (var q = 0; q < n; q++) ops.push("EMC"); }
 function X(x, g) { return (x * g.k + g.tx) * PT; }
 function Y(y, g) { return (H - (y * g.k + g.ty)) * PT; }
 function herda(a) {
-var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, k: g.k, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
+var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, k: g.k, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false, oculto: !!g.oculto || /^none$/.test(txt(a.display)) };
 var t = translate(a.transform); n.tx += t[0] * g.k; n.ty += t[1] * g.k; n.k = g.k * escalaT(a.transform);
 if (a.fill != null) n.fill = a.fill; if (a.stroke != null) n.stroke = a.stroke; if (a["stroke-width"] != null) n.sw = a["stroke-width"];
 if (a["font-size"] != null) n.fs = a["font-size"]; if (a["text-anchor"] != null) n.anchor = a["text-anchor"]; if (a["font-weight"] != null) n.peso = a["font-weight"];
@@ -36573,6 +36602,7 @@ return n;
 }
 function pintar(a, g, fechado, ehForma) {
 var op = num(a.opacity, 1), fl = cor(a.fill != null ? a.fill : (g.fill != null ? g.fill : (ehForma ? "#000" : "none")), num(a["fill-opacity"], 1) * op), st = cor(a.stroke != null ? a.stroke : g.stroke, num(a["stroke-opacity"], 1) * op);
+if (!st && !ehForma && a.stroke == null && g.stroke == null) { st = [0.07, 0.07, 0.07]; nSemEstilo++; }
 var sw = num(a["stroke-width"] != null ? a["stroke-width"] : g.sw, 0.25) * g.k, eo = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "";
 if (st) { ops.push(f(st[0]) + " " + f(st[1]) + " " + f(st[2]) + " RG", f(Math.max(0.05, sw) * PT) + " w"); var da = txt(a["stroke-dasharray"]).trim(); ops.push(da && da !== "none" ? "[" + da.split(/[\s,]+/).map(function (v) { return f(num(v, 1) * g.k * PT); }).join(" ") + "] 0 d" : "[] 0 d"); }
 if (fl) ops.push(f(fl[0]) + " " + f(fl[1]) + " " + f(fl[2]) + " rg");
@@ -36583,6 +36613,7 @@ function caminhoD(d, g, bb) {
 var tk = txt(d).match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [], i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, tem = false, fechou = false;
 function nx() { return parseFloat(tk[i++]); }
 function P(a, b) {
+if (bb && bb.cur) { if (a < bb.cur.x0) bb.cur.x0 = a; if (a > bb.cur.x1) bb.cur.x1 = a; if (b < bb.cur.y0) bb.cur.y0 = b; if (b > bb.cur.y1) bb.cur.y1 = b; }
 if (bb) { if (a < bb.x0) bb.x0 = a; if (a > bb.x1) bb.x1 = a; if (b < bb.y0) bb.y0 = b; if (b > bb.y1) bb.y1 = b; }
 if (xf) { var q = xf(a, b); a = q[0]; b = q[1]; }
 return f(X(a, g)) + " " + f(Y(b, g));
@@ -36591,7 +36622,7 @@ while (i < tk.length) {
 if (/^[a-zA-Z]$/.test(tk[i])) cmd = tk[i++]; else if (cmd === "M") cmd = "L"; else if (cmd === "m") cmd = "l";
 var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase(), ox = rel ? x : 0, oy = rel ? y : 0, a, b, c1, c2, e, h;
 if (C === "Z") { ops.push("h"); x = sx; y = sy; fechou = true; continue; }
-if (C === "M") { a = nx() + ox; b = nx() + oy; ops.push(P(a, b) + " m"); x = sx = a; y = sy = b; tem = true; }
+if (C === "M") { a = nx() + ox; b = nx() + oy; if (bb && bb.subs) { bb.cur = { x0: 1e18, y0: 1e18, x1: -1e18, y1: -1e18 }; bb.subs.push(bb.cur); } ops.push(P(a, b) + " m"); x = sx = a; y = sy = b; tem = true; }
 else if (C === "L") { a = nx() + ox; b = nx() + oy; ops.push(P(a, b) + " l"); x = a; y = b; }
 else if (C === "H") { a = nx() + ox; ops.push(P(a, y) + " l"); x = a; }
 else if (C === "V") { b = nx() + oy; ops.push(P(x, b) + " l"); y = b; }
@@ -36635,20 +36666,28 @@ if (hor) { for (var j = j0; j <= j1; j++) { var A2 = rot(i0 * w, j * h + y1), B2
 tiles.push(fl);
 });
 if (tiles.length) {
-if (N * tiles.length > 5000) return false;
+var vivos = [], subs = bb.subs && bb.subs.length ? bb.subs : [bb];
+for (var ii = i0; ii <= i1; ii++) for (var jj = j0; jj <= j1; jj++) {
+var cs = [rot(ii * w, jj * h), rot((ii + 1) * w, jj * h), rot(ii * w, (jj + 1) * h), rot((ii + 1) * w, (jj + 1) * h)], tx0 = Math.min(cs[0][0], cs[1][0], cs[2][0], cs[3][0]), tx1 = Math.max(cs[0][0], cs[1][0], cs[2][0], cs[3][0]), ty0 = Math.min(cs[0][1], cs[1][1], cs[2][1], cs[3][1]), ty1 = Math.max(cs[0][1], cs[1][1], cs[2][1], cs[3][1]);
+if (subs.some(function (sb) { return !(sb.x1 < tx0 || sb.x0 > tx1 || sb.y1 < ty0 || sb.y0 > ty1); })) vivos.push([ii, jj]);
+}
+if (vivos.length * tiles.length > 40000) return false;
 var xfAntes = xf;
-for (var ii = i0; ii <= i1; ii++) for (var jj = j0; jj <= j1; jj++) tiles.forEach(function (fl) {
+vivos.forEach(function (vv) { var ii = vv[0], jj = vv[1]; tiles.forEach(function (fl) {
 var a = fl.a, sc = fl.s, a2 = {}; Object.keys(a).forEach(function (k2) { a2[k2] = a[k2]; }); if (a.stroke != null || a["stroke-width"] != null) a2["stroke-width"] = String(num(a["stroke-width"], 1) * sc);
 xf = function (x, y) { return rot(x * sc + ii * w, y * sc + jj * h); };
 if (fl.nome === "path" && txt(a.d).trim()) { var rp = caminhoD(a.d, g); if (rp) pintar(a2, g, rp.fechado, true); }
 else if (fl.nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a2, g, false, false); }
+else if (fl.nome === "circle") { var ccx = num(a.cx, 0), ccy = num(a.cy, 0), crr = num(a.r, 0), cpt = []; for (var ci = 0; ci < 12; ci++) cpt.push([ccx + crr * Math.cos(ci * Math.PI / 6), ccy + crr * Math.sin(ci * Math.PI / 6)]); if (crr > 0 && caminho(cpt, g, true)) pintar(a2, g, true, true); }
+else if (fl.nome === "polygon" || fl.nome === "polyline") { if (caminho(pontos(a.points), g, fl.nome === "polygon")) pintar(a2, g, fl.nome === "polygon", true); }
 else if (fl.nome === "rect") { var rw = num(a.width, 0), rh = num(a.height, 0), rx = num(a.x, 0), ry = num(a.y, 0); if (rw > 0 && rh > 0 && caminho([[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]], g, true)) pintar(a2, g, true, true); }
-});
+}); });
 xf = xfAntes;
 }
 return true;
 }
 while ((m = re.exec(s))) {
+if (ocPend) { emc(ocPend); ocPend = 0; }
 if (m[5] != null) { if (emTexto && !emTitulo) emTexto.t += m[5]; continue; }
 var fecha = m[1] === "/", nome = m[2].toLowerCase(), a = attrs(m[3]), auto = m[4] === "/";
 if (nome === "svg") continue;
@@ -36662,22 +36701,25 @@ continue;
 }
 if (emPad) {
 if (nome === "g") { if (fecha) { if (emPad.sc.length > 1) emPad.sc.pop(); } else if (!auto) emPad.sc.push(emPad.sc[emPad.sc.length - 1] * escalaT(a.transform)); }
-else if (!fecha && /^(line|path|rect)$/.test(nome)) emPad.filhos.push({ nome: nome, a: a, s: emPad.sc[emPad.sc.length - 1] });
+else if (!fecha && /^(line|path|rect|circle|polygon|polyline)$/.test(nome)) emPad.filhos.push({ nome: nome, a: a, s: emPad.sc[emPad.sc.length - 1] });
 continue;
 }
 if (nome === "g") {
-if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); } }
+if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); if (sai.oc) emc(sai.oc); } }
 else if (!auto) {
 var ng = herda(a), mc = /url\(\s*#([^)\s]+)\s*\)/.exec(txt(a["clip-path"])), cl = mc ? clips[mc[1]] : null;
+if (a["data-ocg"]) { var bq = bdc(a["data-ocg"]); bq.forEach(function (o) { ops.push(o); }); ng.oc = bq.length; }
 if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * ng.k * PT) + " " + f(cl.h * ng.k * PT) + " re W n"); ng.clip = true; }
 pilha.push(ng);
 }
 continue;
 }
 var g = pilha[pilha.length - 1];
+if ((g.oculto || /^none$/.test(txt(a.display))) && nome !== "text") continue;
 if (nome === "text") {
 if (!fecha) { emTexto = { a: a, g: herda(a), t: "" }; if (auto) emTexto = null; continue; }
 if (!emTexto) continue;
+if (emTexto.g.oculto || /^none$/.test(txt(emTexto.a.display))) { emTexto = null; continue; }
 var tg = emTexto.g, ta = emTexto.a, conteudo = /white-space:\s*pre/.test(txt(ta.style)) ? desEsc(emTexto.t).replace(/[\r\n\t]/g, " ") : desEsc(emTexto.t).replace(/\s+/g, " ").trim(); emTexto = null;
 if (!conteudo) continue;
 var corpo = num(tg.fs, 3) * tg.k, neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
@@ -36690,10 +36732,11 @@ nTexto++;
 continue;
 }
 if (fecha) continue;
+if (a["data-ocg"] && nome !== "text") { var be = bdc(a["data-ocg"]); be.forEach(function (o) { ops.push(o); }); ocPend = be.length; }
 if (nome === "line") { if (caminho([[num(a.x1, 0), num(a.y1, 0)], [num(a.x2, 0), num(a.y2, 0)]], g, false)) pintar(a, g, false, false); }
 else if (nome === "path") {
 if (!/^none$/.test(txt(a.display)) && txt(a.d).trim()) {
-var mpf = /^url\(\s*#([^)\s]+)\s*\)/.exec(txt(a.fill != null ? a.fill : g.fill)), pad = mpf ? padroes[mpf[1]] : null, bb = { x0: 1e18, y0: 1e18, x1: -1e18, y1: -1e18 };
+var mpf = /^url\(\s*#([^)\s]+)\s*\)/.exec(txt(a.fill != null ? a.fill : g.fill)), pad = mpf ? padroes[mpf[1]] : null, bb = { x0: 1e18, y0: 1e18, x1: -1e18, y1: -1e18, subs: [], cur: null };
 if (pad && pad.filhos.length) {
 var eoP = /evenodd/.test(txt(a["fill-rule"])) ? "*" : "", n0 = ops.length;
 ops.push("q"); caminhoD(a.d, g, bb); ops.push("W" + eoP + " n");
@@ -36725,13 +36768,31 @@ var ik = txt(a["data-im"]).replace(/[^A-Za-z0-9]/g, "");
 if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * g.k * PT) + " 0 0 " + f(num(a.height, 0) * g.k * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
 }
 }
-return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, ims: Object.keys(ims) };
+if (ocPend) emc(ocPend);
+return { w: W, h: H, ocs: ocs, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, nSemEstilo: nSemEstilo, ims: Object.keys(ims) };
 }
 function paginas(svgs) { return (Array.isArray(svgs) ? svgs : [svgs]).map(pagina).filter(Boolean); }
 function pdf(svgs, info) {
 info = info || {};
 var pgs = paginas(svgs), objs = [];
-objs.push("<< /Type /Catalog /Pages 2 0 R >>");
+var cam = info.camadas || null, ocIds = [];
+pgs.forEach(function (p) { Object.keys(p.ocs || {}).forEach(function (nm) { p.ocs[nm].forEach(function (id) { if (ocIds.indexOf(id) < 0) ocIds.push(id); }); }); });
+var nPre = 5 + 2 * pgs.length + (Array.isArray(info.imagens) ? (info.imagens || []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; }).length : 0);
+var porChave0 = info.imagensPorChave || {}, nCh = 0, chv = [];
+pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave0[k] && (typeof porChave0[k].jpeg === "string" || typeof porChave0[k].flate === "string") && chv.indexOf(k) < 0) { chv.push(k); nCh++; } }); });
+var ocBase = nPre + nCh + 1, ocNum = {}, ocObjs = [];
+if (ocIds.length) {
+ocIds.forEach(function (id, i) { ocNum[id] = ocBase + i; ocObjs.push("<< /Type /OCG /Name (" + win1252(txt(cam && cam.nomes && cam.nomes[id] || id)) + ") /Intent /View >>"); });
+}
+var ref = function (id) { return ocNum[id] + " 0 R"; };
+var ordemT = function (L) { return (L || []).map(function (q) { return Array.isArray(q) ? "[" + ordemT(q) + "]" : (ocNum[q] && ocIds.indexOf(q) >= 0 ? ref(q) : ""); }).filter(function (q) { return q && q !== "[]"; }).join(" "); };
+var cat = "<< /Type /Catalog /Pages 2 0 R";
+if (ocIds.length) {
+var off = ocIds.filter(function (id) { return cam && cam.off && cam.off[id]; }).map(ref).join(" "), rbs = ((cam && cam.radios) || []).map(function (g2) { return g2.filter(function (id) { return ocIds.indexOf(id) >= 0; }); }).filter(function (g2) { return g2.length > 1; });
+cat += " /PageMode /UseOC /OCProperties << /OCGs [" + ocIds.map(ref).join(" ") + "] /D << /Name (Camadas) /BaseState /ON" + (off ? " /OFF [" + off + "]" : "") +
+" /Order [" + ordemT((cam && cam.ordem) || ocIds) + "]" + (rbs.length ? " /RBGroups [" + rbs.map(function (g2) { return "[" + g2.map(ref).join(" ") + "]"; }).join(" ") + "]" : "") + " /ListMode /AllPages >> >>";
+}
+objs.push(cat + " >>");
 objs.push("<< /Type /Pages /Kids [" + pgs.map(function (p, i) { return (6 + 2 * i) + " 0 R"; }).join(" ") + "] /Count " + pgs.length + " >>");
 objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
 objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
@@ -36748,14 +36809,16 @@ xo.push("/Im" + k + " " + (baseImg + k) + " 0 R");
 cont += "\nq " + f(num(im.w, 10) * PT) + " 0 0 " + f(num(im.h, 10) * PT) + " " + f(num(im.x, 0) * PT) + " " + f((p.h - num(im.y, 0) - num(im.h, 10)) * PT) + " cm /Im" + k + " Do Q";
 });
 (p.ims || []).forEach(function (kc) { var ix = chavesUsadas.indexOf(kc); if (ix >= 0) xo.push("/Im_" + kc + " " + (baseCh + ix) + " 0 R"); });
-objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
+var prop = Object.keys(p.ocs || {}).map(function (nm) { return "/" + nm + " " + ocNum[p.ocs[nm].join("+")] + " 0 R"; });
+objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + (prop.length ? " /Properties << " + prop.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
 objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
 });
 imgs.forEach(function (im) {
 objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
 });
 chavesUsadas.forEach(function (k) { var im = porChave[k], ehF = typeof im.flate === "string", dado = ehF ? im.flate : im.jpeg; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + (ehF ? "FlateDecode" : "DCTDecode") + " /Length " + dado.length + " >>\nstream\n" + dado + "\nendstream"); });
-var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
+ocObjs.forEach(function (o) { objs.push(o); });
+var s = (ocIds.length ? "%PDF-1.5" : "%PDF-1.4") + "\n%\xe2\xe3\xcf\xd3\n", offs = [];
 objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
 var xref = s.length;
 s += "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n";
@@ -36771,7 +36834,7 @@ s.replace(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g, function (_, w, h) { tam.push
 s.replace(/\/F[12] ([\d.]+) Tf[^(]*\(((?:\\.|[^\\)])*)\) Tj/g, function (_, c, t) { corpos.push(+c / PT); textos.push(t.replace(/\\(.)/g, "$1")); return _; });
 var xr = /startxref\n(\d+)\n%%EOF\s*$/.exec(s), xrOk = !!xr && s.substr(+xr[1], 4) === "xref";
 var imagens = (s.match(/\/Subtype \/Image\b/g) || []).length;
-return { ok: /^%PDF-1\.\d/.test(s) && xrOk, paginas: pags, tamanhos: tam, textos: textos, corpos: corpos, imagens: imagens };
+return { ok: /^%PDF-1\.\d/.test(s) && xrOk, paginas: pags, tamanhos: tam, textos: textos, corpos: corpos, imagens: imagens, camadas: (s.match(/\/Type \/OCG\b/g) || []).length };
 }
 var SvgPdf = { pagina: pagina, paginas: paginas, pdf: pdf, ler: ler, largura: largura, PT: PT };
 global.SvgPdf = SvgPdf;
@@ -36824,6 +36887,118 @@ at = ms ? at.replace(/\bstyle="[^"]*"/, "style=\"" + st + "\"") : at + " style=\
 return "<" + tag + at + (auto ? "/" : "") + ">";
 });
 }
+var CAMADAS = [{ id: "cotas", nome: "Cotas" }, { id: "parede", nome: "Parede (preenchimento)" }, { id: "mobiliario", nome: "Mobiliário" }, { id: "paginacao", nome: "Paginação de piso" },
+{ id: "construir", nome: "Construir" }, { id: "demolir", nome: "Demolir" }, { id: "existente", nome: "Existente" }, { id: "niveis", nome: "Níveis" }, { id: "textos", nome: "Textos e ambientes" }, { id: "eixos", nome: "Eixos" }];
+var NOMES_VAR = { "cotas-cor": "Cotas coloridas", "cotas-preta": "Cotas pretas", "parede-hachura": "Parede: hachura 45°", "parede-cinza": "Parede: cinza", "parede-branco": "Parede: branco", "parede-preto": "Parede: preto", "parede-outro": "Parede: preenchimento da vista" };
+var FILL_PAREDE = { cinza: "#cfd3d8", branco: "#ffffff" };
+function camCfg(c) {
+if (!c || c.ativo === false) return null;
+var o = { ativo: true, incluir: c.incluir || {}, desligadas: Array.isArray(c.desligadas) ? c.desligadas : [], variantes: c.variantes || {} };
+return o;
+}
+function classesDe(at) { var m = /\bclass="([^"]*)"/.exec(at); return m ? m[1].split(/\s+/) : []; }
+function fimDoG(s, ini) {
+var re = /<(\/?)g\b[^>]*?(\/?)>/g, d = 1, m; re.lastIndex = ini;
+while ((m = re.exec(s))) { if (m[1]) d--; else if (!m[2]) d++; if (d === 0) return re.lastIndex; }
+return -1;
+}
+function comOcg(tag, at, auto, id) { return "<" + tag + " data-ocg=\"" + id + "\"" + at + (auto ? "/" : "") + ">"; }
+function semCor(seg) {
+return seg.replace(/\bstyle="([^"]*)"/g, function (_, st) {
+var vistos = {}, out = [];
+st.split(";").forEach(function (d) { var i = d.indexOf(":"); if (i < 1) return; var k = d.slice(0, i).trim(); if ((k === "stroke" || k === "fill") && vistos[k]) return; vistos[k] = 1; out.push(d.trim()); });
+return "style=\"" + out.join(";") + "\"";
+});
+}
+function temCorPropria(seg) {
+var re = /;\s*(?:stroke|fill)\s*:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\s*(?=["';])/g, m;
+while ((m = re.exec(seg))) { var h = m[1].toLowerCase(); if (!/^(111|111111|000|000000|fff|ffffff)$/.test(h)) return true; }
+return false;
+}
+function chaveFill(f, idp) {
+var v = txt(f).trim().toLowerCase();
+if (!v || v === "none") return "branco";
+if (v === FILL_PAREDE.cinza) return "cinza";
+if (v === "#111111" || v === "#3a3a3a" || v === "#000" || v === "#000000") return "preto";
+if (v === "url(#" + idp.toLowerCase() + ")") return "hachura";
+if (v === "#fff" || v === "#ffffff") return "branco";
+return "outro";
+}
+function classificar(s, cfg, ctx, b) {
+var cam = ctx.cam, idp = "d2-hach-" + txt(b.vistaId).replace(/[^\w-]/g, "_"), re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>/g, out = "", ult = 0, pilha = [], m;
+function inc(id) { return cfg.incluir[id] !== false; }
+function marca(id) { cam.usados[id] = 1; return id; }
+while ((m = re.exec(s))) {
+var fecha = m[1] === "/", tag = m[2].toLowerCase(), at = m[3], auto = m[4] === "/", dentro = pilha.some(function (q) { return q; });
+if (tag === "g") {
+if (fecha) { pilha.pop(); continue; }
+var cl = classesDe(at), id = null;
+if (!dentro) {
+if (cl.indexOf("d2-cota") >= 0 || cl.indexOf("a7-cota") >= 0) id = "cotas";
+else if (cl.indexOf("d2-nivel") >= 0) id = "niveis";
+else if (cl.indexOf("d2-eixo-g") >= 0) id = "eixos";
+else if (cl.indexOf("d2-paginacao") >= 0) id = "paginacao";
+else if (cl.indexOf("d2-ambientes") >= 0 || cl.indexOf("d2-amb-legenda") >= 0 || cl.indexOf("d2-identificadores") >= 0 || cl.indexOf("d2-amb-cores") >= 0) id = "textos";
+}
+if (id && inc(id) && !auto) {
+out += s.slice(ult, m.index);
+if (id === "cotas") {
+var fim = fimDoG(s, re.lastIndex);
+if (fim > 0) {
+var seg = s.slice(m.index, fim), colorida = temCorPropria(seg);
+if (colorida) {
+marca("cotas"); marca("cotas-cor"); marca("cotas-preta");
+out += semCor(seg).replace(/^<g\b/, "<g data-ocg=\"cotas+cotas-preta\"") + seg.replace(/^<g\b/, "<g data-ocg=\"cotas+cotas-cor\"");
+} else out += seg.replace(/^<g\b/, "<g data-ocg=\"" + marca("cotas") + "\"");
+ult = fim; re.lastIndex = fim; continue;
+}
+}
+out += comOcg("g", at, false, marca(id)); ult = re.lastIndex; pilha.push(true); continue;
+}
+if (!auto) pilha.push(dentro);
+continue;
+}
+if (fecha || dentro || !/^(path|line|polyline|polygon|rect|circle)$/.test(tag)) continue;
+var cl2 = classesDe(at), cat = (/\bdata-cat="([^"]*)"/.exec(at) || [])[1] || "", id2 = null;
+if (cl2.indexOf("d2-corte-novo") >= 0 || cl2.indexOf("d2-fase-novo") >= 0) id2 = "construir";
+else if (cl2.indexOf("d2-fase-demolido") >= 0 || cl2.indexOf("d2-fase-temporario") >= 0) id2 = "demolir";
+else if (cl2.indexOf("d2-fase-existente") >= 0) id2 = "existente";
+else if (/furniture|mobili|casework|moveis|m[oó]vel/i.test(cat)) id2 = "mobiliario";
+if (id2) { if (inc(id2)) { out += s.slice(ult, m.index) + comOcg(tag, at, auto, marca(id2)); ult = re.lastIndex; } continue; }
+if (cl2.indexOf("d2-corte") >= 0 && cl2.indexOf("d2-p6-sobre") < 0 && (!cat || /wall|parede/i.test(cat)) && inc("parede")) {
+var mf = /\bfill="([^"]*)"/.exec(at), fl = mf ? mf[1] : "none", todo = s.slice(m.index, re.lastIndex), res = "";
+if (!mf || fl === "none") { res = comOcg(tag, at, auto, marca("parede")); }
+else {
+var atual = chaveFill(fl, idp), lista = [[atual, fl]];
+["hachura", "cinza", "branco"].forEach(function (k) { if (k !== atual) lista.push([k, k === "hachura" ? "url(#" + idp + ")" : FILL_PAREDE[k]]); });
+if (!cam.atual.parede) cam.atual.parede = "parede-" + atual;
+lista.reverse().forEach(function (q) {
+var idv = "parede-" + q[0], a2 = at.replace(/\bfill="[^"]*"/, "fill=\"" + q[1] + "\"");
+a2 = /\bstyle="/.test(a2) ? a2.replace(/\bstyle="([^"]*)"/, function (_, st) { return "style=\"" + st + ";stroke:none\""; }) : a2 + " style=\"stroke:none\"";
+marca("parede"); marca(idv); res += "<" + tag + " data-ocg=\"parede+" + idv + "\"" + a2 + (auto ? "/" : "") + ">";
+});
+res += comOcg(tag, at.replace(/\bfill="[^"]*"/, "fill=\"none\""), auto, marca("parede"));
+}
+void todo;
+out += s.slice(ult, m.index) + res; ult = re.lastIndex;
+}
+}
+return out + s.slice(ult);
+}
+function infoCamadas(cfg, cam) {
+var U = cam.usados, nomes = {}, off = {}, radios = [], ordem = [];
+CAMADAS.forEach(function (d) { nomes[d.id] = d.nome; }); Object.keys(NOMES_VAR).forEach(function (k) { nomes[k] = NOMES_VAR[k]; });
+cfg.desligadas.forEach(function (id) { if (U[id]) off[id] = true; });
+var sub = { cotas: ["cotas-cor", "cotas-preta"], parede: ["parede-hachura", "parede-cinza", "parede-branco", "parede-preto", "parede-outro"] };
+var sel = { cotas: cfg.variantes.cotas === "preta" ? "cotas-preta" : "cotas-cor", parede: U[cfg.variantes.parede] ? cfg.variantes.parede : cam.atual.parede };
+CAMADAS.forEach(function (d) {
+if (!U[d.id]) return;
+ordem.push(d.id);
+var vs = (sub[d.id] || []).filter(function (v) { return U[v]; });
+if (vs.length > 1) { ordem.push(vs); radios.push(vs); vs.forEach(function (v) { if (v !== sel[d.id]) off[v] = true; }); }
+});
+return { nomes: nomes, off: off, radios: radios, ordem: ordem };
+}
 function interiorSvg(svg) { return txt(svg).replace(/^[\s\S]*?<svg\b[^>]*>/, "").replace(/<\/svg>\s*$/, "").replace(/<style>[\s\S]*?<\/style>/g, ""); }
 function viewport(P, b, i, rec, ctx) {
 var vp = rec.viewports && ((b.escalaPropria && rec.viewports[b.vistaId + "@" + b.escala]) || rec.viewports[b.vistaId]);
@@ -36832,6 +37007,7 @@ if (!vp) return "<rect x=\"" + n3(b.x) + "\" y=\"" + n3(b.y) + "\" width=\"" + n
 var vb = b.recorte ? { x: b.recorte.x0, y: b.recorte.y0, w: b.recorte.x1 - b.recorte.x0, h: b.recorte.y1 - b.recorte.y0 } : vp.vb;
 var s = P.viewportSvg(vp, b), k = Math.min(b.w / vb.w, b.h / vb.h), ox = b.x + (b.w - vb.w * k) / 2 - vb.x * k, oy = b.y + (b.h - vb.h * k) / 2 - vb.y * k;
 s = resolverCss(s, P.ESTILO_PAPEL);
+if (ctx.cfg) s = classificar(s, ctx.cfg, ctx, b);
 s = s.replace(/<image\b([^>]*?)\bhref="(data:[^"]+)"([^>]*?)\/?>/g, function (_, a1, uri, a2) {
 var ch = "v" + (ctx.n++); ctx.imagens[ch] = uri;
 var x = num((/\bx="([^"]*)"/.exec(a1 + a2) || [])[1], 0), y = num((/\by="([^"]*)"/.exec(a1 + a2) || [])[1], 0), w = num((/\bwidth="([^"]*)"/.exec(a1 + a2) || [])[1], 0), h = num((/\bheight="([^"]*)"/.exec(a1 + a2) || [])[1], 0);
@@ -36905,9 +37081,9 @@ lin("RT: " + (c.responsavel || E.responsavel || "")); if (c.local) lin("LOCAL: "
 lin("DATA " + txt(c.data) + "   ESC " + txt(fl.escala) + "   COD " + txt(fl.numero || (c.codigo ? c.codigo + "-" + ("0" + fl.n).slice(-2) : "")) + "   FOLHA " + ("0" + fl.n).slice(-2) + "/" + ("0" + (pr.folhas || []).length).slice(-2));
 return s;
 }
-function svgDaFolha(P, pr, fl, rec, geo, dims) {
+function svgDaFolha(P, pr, fl, rec, geo, dims, camadas) {
 rec = rec || {}; dims = dims || {};
-var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {} }, s = "";
+var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {}, cfg: camCfg(camadas), cam: { usados: {}, atual: {} } }, s = "";
 s += "<rect x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\" fill=\"#fff\"/>";
 if (fl.imagemInteira && rec.imagens && rec.imagens[fl.imagemInteira]) {
 ctx.imagens.i0 = rec.imagens[fl.imagemInteira]; s += "<image data-im=\"i0\" x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\"/>";
@@ -36930,27 +37106,30 @@ var d = dims[ch]; x = +x; y = +y; w = +w; h = +h;
 if (d && d.w > 0 && d.h > 0) { var k = Math.min(w / d.w, h / d.h), nw = d.w * k, nh = d.h * k; x += (w - nw) / 2; y += (h - nh) / 2; w = nw; h = nh; }
 return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
 });
-return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens };
+return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens, cam: ctx.cam };
 }
 function gerar(itens, opc) {
 opc = opc || {}; var P = opc.P || global.PranchaUI, SPM = SP();
 var codificar = opc.codificar || codificarNavegador, dimensoes = opc.dimensoes || null;
 var todas = [], pend = [];
-itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
+itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
 var uris = {}, dims = {};
 todas.forEach(function (t) { Object.keys(t.imagens).forEach(function (ch) { uris[t.pref + ch] = t.imagens[ch]; }); });
 var chaves = Object.keys(uris), cod = {};
 var seq = Promise.resolve();
 chaves.forEach(function (k) { seq = seq.then(function () { return codificar(uris[k]); }).then(function (r) { if (r && (typeof r.flate === "string" || typeof r.jpeg === "string")) { cod[k] = r; dims[k] = { w: r.pxW, h: r.pxH }; } }); });
+var camTot = { usados: {}, atual: {} }, cfgCam = camCfg(opc.camadas);
 return seq.then(function () {
 var svgs = todas.map(function (t) {
 var d = {}; Object.keys(t.imagens).forEach(function (ch) { if (dims[t.pref + ch]) d[ch] = dims[t.pref + ch]; });
-var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d);
+var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d, opc.camadas);
+Object.keys(r1.cam.usados).forEach(function (k) { camTot.usados[k] = 1; }); if (r1.cam.atual.parede && !camTot.atual.parede) camTot.atual.parede = r1.cam.atual.parede;
 return r1.svg.replace(/data-im="([^"]+)"/g, function (_, ch) { return "data-im=\"" + t.pref.replace(/[^A-Za-z0-9]/g, "") + ch + "\""; });
 });
 var porChave = {}; Object.keys(cod).forEach(function (k) { porChave[k.replace(/[^A-Za-z0-9]/g, "")] = cod[k]; });
-var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave });
-return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs };
+var camInfo = cfgCam && Object.keys(camTot.usados).length ? infoCamadas(cfgCam, camTot) : null;
+var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave, camadas: camInfo });
+return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs, camadas: camInfo ? Object.keys(camTot.usados) : [] };
 });
 }
 function binario(u8) { var s = "", n = 0x8000; for (var i = 0; i < u8.length; i += n) s += String.fromCharCode.apply(null, u8.subarray(i, i + n)); return s; }
@@ -36980,7 +37159,7 @@ im.onerror = function () { res(null); };
 im.src = uri;
 });
 }
-var FolhaPdf = { svgDaFolha: svgDaFolha, gerar: gerar, resolverCss: resolverCss, codificarNavegador: codificarNavegador };
+var FolhaPdf = { CAMADAS: CAMADAS, classificar: classificar, svgDaFolha: svgDaFolha, gerar: gerar, resolverCss: resolverCss, codificarNavegador: codificarNavegador };
 global.FolhaPdf = FolhaPdf;
 if (typeof module !== "undefined" && module.exports) module.exports = FolhaPdf;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -73995,7 +74174,7 @@ var OPS = { anot2d: 1, anot2dAjustar: 1, anot2dTipo: 1, revisao: 1 };
 var AJUSTAVEIS = { tipoCota: 1, tipoTexto: 1, off: 1, orient: 1, prefixo: 1, sufixo: 1, eq: 1, travada: 1, valorTravado: 1, chamada: 1,
 texto: 1, x: 1, y: 1, lx: 1, ly: 1, comLider: 1, alinhH: 1, alinhV: 1, rot: 1, legivel: 1, simbolo: 1, escalaSimb: 1,
 chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1,
-txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1 };
+txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1 };
 function tiposProjeto(estado) { var a = estado && estado.anot2d; return (a && a.tipos) || { cota: [], texto: [] }; }
 function tiposCota(estado) { return TIPOS_COTA.concat(arr(tiposProjeto(estado).cota)); }
 function tiposTexto(estado) { return TIPOS_TEXTO.concat(arr(tiposProjeto(estado).texto)); }
@@ -74253,7 +74432,8 @@ if (!o || !OPS[o.op]) return undefined;
 if (o.op === "anot2d") return itemValido(o);
 if (o.op === "anot2dAjustar") return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) &&
 Object.keys(o.campos).length > 0 && Object.keys(o.campos).every(function (k) { return AJUSTAVEIS[k]; }) &&
-(o.campos.refs == null || refsOk(o.campos.refs)) && (o.campos.pts == null || ptsOk(o.campos.pts, 2));
+(o.campos.refs == null || refsOk(o.campos.refs)) && (o.campos.pts == null || ptsOk(o.campos.pts, 2)) &&
+(o.campos.cor == null || o.campos.cor === "" || /^#[0-9a-fA-F]{6}$/.test(String(o.campos.cor)));
 if (o.op === "anot2dTipo") return o.id != null && (o.cat === "cota" || o.cat === "texto") && String(o.nome || "").trim().length > 0 &&
 (o.valores == null || (typeof o.valores === "object" && !Array.isArray(o.valores)));
 if (o.op === "revisao") return o.id != null && String(o.numero || "").trim().length > 0;
@@ -74621,7 +74801,14 @@ return '<path d="M' + n4(q[0]) + " " + n4(q[1]) + "L" + n4(b[0] + nn[0] * W) + "
 var o = unit(add(dir, perp(dir))) || dir;
 return lnS(sub(q, mul(o, tk / 2)), add(q, mul(o, tk / 2)), w, "a7-marca");
 }
-function svgCota(it, m, t, k, jogo, sel) {
+function tingir(s, cor) {
+return String(s).replace(/<(line|path|circle|rect|text|polygon|polyline)\b([^>]*?)(\/?)>/g, function (all, tag, at, auto) {
+var mc = /\bclass="([^"]*)"/.exec(at), cl = mc ? " " + mc[1] + " " : ""; if (!cl || /\sstyle=/.test(at)) return all;
+var st = /\sa7-(l|marca|hach|trava)\s/.test(cl) ? "stroke:" + cor : /\sa7-(cheio|tx|hach-p)\s/.test(cl) ? "fill:" + cor : "";
+return st ? "<" + tag + at + ' style="' + st + '"' + auto + ">" : all;
+});
+}
+function svgCota(it, m, t, k, jogo, sel, corVista) {
 var wL = penaPx(t.pena, jogo), wM = penaPx(t.penaMarca, jogo), h = num(t.texto, 2.5) * k, s = "", cor = stroke(t.cor);
 var gap = num(t.intervalo, 1) * k, extC = num(t.extChamada, 1.5) * k, extL = num(t.extLinha, 1.5) * k, dT = num(t.deslocTexto, 0.8) * k;
 var opaco = false;
@@ -74726,6 +74913,8 @@ var ri = angLegivel(ds), acI = mul(perp([Math.cos(ri * Math.PI / 180), Math.sin(
 if (opaco) s += fundoTexto(pI, largTexto(txI, h, t), h, ri, "middle");
 s += txS(pI, h, esc(txI), "a7-tx", "middle", ri, t);
 }
+var cc = corOk(it.cor) || corOk(t.cor) || corOk(corVista);
+if (cc && !sel && !it.violada && !it.orfa) s = tingir(s, cc);
 var cls = "a7-item a7-cota a7-cota-" + m.tipo + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "") + (it.orfa ? " a7-orfa" : "");
 return '<g class="' + cls + '" data-a7="' + esc(it.id) + '"' + cor + ">" + s + "</g>";
 }
@@ -74923,7 +75112,7 @@ a.itens.forEach(function (o) {
 var it = o.it, sel = a.sel != null && String(a.sel) === String(it.id);
 if (it.tipo === "regiao") { if (!it.mascara) usar(it.padrao); if (it.mascara) mascaras += svgRegiao(it, k, jogo, sel, escala); else regioes += svgRegiao(it, k, jogo, sel, escala); }
 else if (it.tipo === "componente") { usar((COMPONENTES[it.comp] || {}).padrao); resto += svgComponente(it, k, jogo, sel, escala); }
-else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel); }
+else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel, e && e.corCotas); }
 else if (it.tipo === "texto") resto += svgTexto(it, o.t, k, jogo, sel);
 else if (it.tipo === "simbolo") resto += svgSimbolo(it, k, jogo, sel, e);
 else if (it.tipo === "notaChave") resto += svgNotaChave(it, k, jogo, sel);
@@ -74968,7 +75157,7 @@ tiposCota: tiposCota, tiposTexto: tiposTexto, tipoCotaDe: tipoCotaDe, tipoTextoD
 indice: indice, resolverRef: resolverRef, medirCota: function (estado, it, opc) { return medirCota(indice(estado), it, opc || {}); },
 acharRef: acharRef, offsetPara: offsetPara,
 validaOp: validaOp, aplicarOp: aplicarOp, fimOp: fimOp, registrar: registrar,
-itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
+tingir: tingir, itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
 opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
 opComponente: opComponente, opLegenda: opLegenda, opRevisao: opRevisao, opTravar: opTravar, opsIgualar: opsIgualar, opsManterTrava: opsManterTrava,
 anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda,
@@ -109145,8 +109334,39 @@ grossa: { rotulo: "Grossa", corte: 3.4, vista: 1.3, cota: 1.1, marca: 1.6 }
 var FATOR_PENA = { fina: 0.7, media: 1, grossa: 1.4 };
 function fatorPena(p) { return FATOR_PENA[p] || 1; }
 var PREENCHIMENTOS = {
-hachura: "Hachura 45°", solido: "Sólido escuro", cinza: "Cinza claro", vazio: "Sem preenchimento"
+hachura: "Hachura diagonal 45°", cruzada: "Hachura cruzada", concreto: "Concreto (pontos e triângulos)", tijolo: "Tijolo",
+cinza: "Cinza sólido", preto: "Preto sólido", vazio: "Branco (vazio, só contorno)", solido: "Sólido escuro"
 };
+var PREENCH_SOLIDOS = { solido: "#3a3a3a", preto: "#111111", cinza: "#cfd3d8" };
+var PREENCH_PADROES = { hachura: "d2-hach", cruzada: "d2-hach-x", concreto: "d2-hach-c", tijolo: "d2-hach-t" };
+function defPreenchimento(chave, k) {
+var t = "#1a1a1a", q = function (v) { return n4(v * k); };
+if (chave === "cruzada") return '<pattern id="d2-hach-x" patternUnits="userSpaceOnUse" width="' + q(2.4) + '" height="' + q(2.4) + '" patternTransform="rotate(45)">' +
+'<line x1="0" y1="0" x2="0" y2="' + q(2.4) + '" stroke="' + t + '" stroke-width="' + q(0.16) + '"/><line x1="0" y1="0" x2="' + q(2.4) + '" y2="0" stroke="' + t + '" stroke-width="' + q(0.16) + '"/></pattern>';
+if (chave === "concreto") return '<pattern id="d2-hach-c" patternUnits="userSpaceOnUse" width="' + q(4) + '" height="' + q(4) + '">' +
+'<circle cx="' + q(0.9) + '" cy="' + q(1.1) + '" r="' + q(0.22) + '" fill="' + t + '"/><circle cx="' + q(3.1) + '" cy="' + q(3) + '" r="' + q(0.18) + '" fill="' + t + '"/>' +
+'<polygon points="' + q(2.5) + "," + q(0.5) + " " + q(3.4) + "," + q(1.5) + " " + q(1.9) + "," + q(1.6) + '" fill="none" stroke="' + t + '" stroke-width="' + q(0.14) + '"/>' +
+'<polygon points="' + q(0.6) + "," + q(2.6) + " " + q(1.5) + "," + q(2.4) + " " + q(1.1) + "," + q(3.5) + '" fill="none" stroke="' + t + '" stroke-width="' + q(0.14) + '"/></pattern>';
+if (chave === "tijolo") return '<pattern id="d2-hach-t" patternUnits="userSpaceOnUse" width="' + q(4) + '" height="' + q(2.4) + '">' +
+'<line x1="0" y1="0" x2="' + q(4) + '" y2="0" stroke="' + t + '" stroke-width="' + q(0.14) + '"/><line x1="0" y1="' + q(1.2) + '" x2="' + q(4) + '" y2="' + q(1.2) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/>' +
+'<line x1="0" y1="0" x2="0" y2="' + q(1.2) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/><line x1="' + q(2) + '" y1="' + q(1.2) + '" x2="' + q(2) + '" y2="' + q(2.4) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/></pattern>';
+return "";
+}
+function fillCorte(chave) { return PREENCH_SOLIDOS[chave] || (PREENCH_PADROES[chave] ? "url(#" + PREENCH_PADROES[chave] + ")" : "none"); }
+var PALETA_COTA = [["", "Padrão (preto)"], ["#111111", "Preto"], ["#d00000", "Vermelho"], ["#0b5fff", "Azul"], ["#1f8a3b", "Verde"]];
+function opcoesCor(atual) {
+var o = PALETA_COTA.map(function (q) { return { id: q[0], rotulo: q[1] }; }), a = String(atual || "").toLowerCase();
+if (a && !o.some(function (q) { return q.id === a; })) o.push({ id: a, rotulo: "Personalizada (" + a + ")" });
+return o;
+}
+function escolherCor(inicial, fn) {
+if (typeof document === "undefined") return false;
+var i = document.createElement("input"); i.type = "color"; i.value = /^#[0-9a-fA-F]{6}$/.test(String(inicial || "")) ? inicial : "#d00000";
+i.style.cssText = "position:fixed;left:-100px;top:-100px;opacity:0";
+i.addEventListener("change", function () { try { fn(String(i.value).toLowerCase()); } finally { if (i.parentNode) i.parentNode.removeChild(i); } });
+i.addEventListener("blur", function () { setTimeout(function () { if (i.parentNode) i.parentNode.removeChild(i); }, 400); });
+document.body.appendChild(i); i.click(); return true;
+}
 var MARCAS_COTA = { obliquo: "Traço oblíquo", seta: "Seta", ponto: "Ponto" };
 var UNIDADES = { m: "metros (3,45)", cm: "centímetros (345)", mm: "milímetros (3450)" };
 var ESCALAS = [20, 25, 50, 75, 100, 125, 200];
@@ -109161,7 +109381,10 @@ function estiloPadrao() {
 return { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo",
 textoCota: 2.5, unidade: "m", casas: 2, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true,
 identAmbiente: true, esquemaCores: "nenhum",
-convencao: "padrao" };
+convencao: "padrao",
+corteForcado: false,
+corCotas: "",
+niveisOcultos: [] };
 }
 function normEstilo(e) {
 var p = estiloPadrao(), o = {};
@@ -109179,6 +109402,9 @@ o.identAmbiente = o.identAmbiente !== false && o.identAmbiente !== "false";
 if (!ESQUEMAS[o.esquemaCores]) o.esquemaCores = "nenhum";
 if (!CONVENCOES[o.convencao]) o.convencao = "padrao";
 if (o.convencao === "padrao") delete o.convencao;
+o.corteForcado = o.corteForcado === true || o.corteForcado === "true"; if (!o.corteForcado) delete o.corteForcado;
+o.corCotas = /^#[0-9a-fA-F]{6}$/.test(String(o.corCotas || "")) ? String(o.corCotas).toLowerCase() : ""; if (!o.corCotas) delete o.corCotas;
+o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
 return o;
 }
 function fmtNum(v, casas) {
@@ -109352,13 +109578,14 @@ return (mm || []).map(function (v) { var px = Math.abs(+v || 0) * TRACO_PX_POR_M
 }
 function tracoAttr(mm, papel) { return ' stroke-dasharray="' + tracoPx(mm) + '" data-traco="' + papel + '"'; }
 function tracoK(mm, k) { return tracoAttr(mm, mm.map(function (v) { return n4(v * k); }).join(" ")); }
-function txt(x, y, h, conteudo, cls, ancora, rot) {
+function txt(x, y, h, conteudo, cls, ancora, rot, extra) {
 var s = h / 100;
 return '<text x="0" y="0" font-size="100"' + (ancora ? ' text-anchor="' + ancora + '"' : "") +
-' transform="translate(' + n4(x) + " " + n4(y) + ")" + (rot ? " rotate(" + rot + ")" : "") + " scale(" + (Math.round(s * 1e7) / 1e7) + ')" class="' + cls + '">' + conteudo + "</text>";
+' transform="translate(' + n4(x) + " " + n4(y) + ")" + (rot ? " rotate(" + rot + ")" : "") + " scale(" + (Math.round(s * 1e7) / 1e7) + ')" class="' + cls + '"' + (extra || "") + ">" + conteudo + "</text>";
 }
 function svgCota(c, e, pena, ocup) {
 var k = e.escala / 1000, h = e.textoCota * k, ext = 2 * k, gap = 1.5 * k, tk = 1.6 * k;
+var sS = e.corCotas ? ' style="stroke:' + e.corCotas + '"' : "", sF = e.corCotas ? ' style="fill:' + e.corCotas + '"' : "";
 var s = "", t = esc(fmtMedida(c.valor, e)), mid = (c.a + c.b) / 2, sent = c.linha >= c.base ? 1 : -1;
 var wT = String(fmtMedida(c.valor, e)).length * h * 0.56, fora = wT + h * 0.5 > Math.abs(c.b - c.a), hi = Math.max(c.a, c.b), lo = Math.min(c.a, c.b);
 if (fora) mid = hi + ext + h * 0.4 + wT / 2;
@@ -109373,13 +109600,13 @@ else { var tent = mid; for (var gi = 0; gi < 40 && bate(tent); gi++) tent += wT 
 }
 tomados.push([mid - wT / 2, mid + wT / 2]);
 }
-function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
+function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + sS + "/>"; }
 function marca(x, y, ang) {
-if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"/>';
+if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"' + sF + "/>";
 if (e.marcaCota === "seta") {
 var L = 2.6 * k, W = 0.9 * k, ca = Math.cos(ang), sa = Math.sin(ang);
 var p1 = [x - ca * L - sa * W, y - sa * L + ca * W], p2 = [x - ca * L + sa * W, y - sa * L - ca * W];
-return '<path d="M' + n4(x) + " " + n4(y) + "L" + n4(p1[0]) + " " + n4(p1[1]) + "L" + n4(p2[0]) + " " + n4(p2[1]) + 'Z" class="d2-cota-pt"/>';
+return '<path d="M' + n4(x) + " " + n4(y) + "L" + n4(p1[0]) + " " + n4(p1[1]) + "L" + n4(p2[0]) + " " + n4(p2[1]) + 'Z" class="d2-cota-pt"' + sF + "/>";
 }
 return ln(x - tk * 0.7071, y + tk * 0.7071, x + tk * 0.7071, y - tk * 0.7071, pena.marca);
 }
@@ -109389,14 +109616,14 @@ s += ln(c.a, c.base + sent * gap, c.a, y + sent * ext, pena.cota) + ln(c.b, c.ba
 s += ln(c.a - (e.marcaCota === "obliquo" ? ext : 0), y, c.b + (e.marcaCota === "obliquo" ? ext : 0), y, pena.cota);
 if (fora) s += mid > hi ? ln(hi, y, mid + wT / 2, y, pena.cota) : ln(mid - wT / 2, y, lo, y, pena.cota);
 s += marca(c.a, y, Math.PI) + marca(c.b, y, 0);
-s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle");
+s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle", 0, sF);
 } else {
 var x = c.linha;
 s += ln(c.base + sent * gap, c.a, x + sent * ext, c.a, pena.cota) + ln(c.base + sent * gap, c.b, x + sent * ext, c.b, pena.cota);
 s += ln(x, c.a - (e.marcaCota === "obliquo" ? ext : 0), x, c.b + (e.marcaCota === "obliquo" ? ext : 0), pena.cota);
 if (fora) s += mid > hi ? ln(x, hi, x, mid + wT / 2, pena.cota) : ln(x, mid - wT / 2, x, lo, pena.cota);
 s += marca(x, c.a, -Math.PI / 2) + marca(x, c.b, Math.PI / 2);
-s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90);
+s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90, sF);
 }
 return '<g class="d2-cota' + (c.parcial ? " d2-parcial" : "") + '">' + s + "</g>";
 }
@@ -109404,14 +109631,15 @@ function svgCotaAlinhada(c, e, pena) {
 var dx = c.b[0] - c.a[0], dy = c.b[1] - c.a[1], L = Math.sqrt(dx * dx + dy * dy); if (!(L > 1e-6)) return "";
 var k = e.escala / 1000, h = e.textoCota * k, ux = dx / L, uy = dy / L, nx = dy / L, ny = -dx / L, off = +c.off || 0, sg = off >= 0 ? 1 : -1, tk = 1.6 * k, gap = 1.5 * k, ext = 2 * k;
 var l1 = [c.a[0] + nx * off, c.a[1] + ny * off], l2 = [c.b[0] + nx * off, c.b[1] + ny * off];
-function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
+var sS = e.corCotas ? ' style="stroke:' + e.corCotas + '"' : "", sF = e.corCotas ? ' style="fill:' + e.corCotas + '"' : "";
+function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + sS + "/>"; }
 var s = ln(c.a[0] + nx * gap * sg, c.a[1] + ny * gap * sg, l1[0] + nx * ext * sg, l1[1] + ny * ext * sg, pena.cota) +
 ln(c.b[0] + nx * gap * sg, c.b[1] + ny * gap * sg, l2[0] + nx * ext * sg, l2[1] + ny * ext * sg, pena.cota) +
 ln(l1[0] - ux * ext, l1[1] - uy * ext, l2[0] + ux * ext, l2[1] + uy * ext, pena.cota);
 [l1, l2].forEach(function (q) { s += ln(q[0] - (ux + nx) * tk * 0.5, q[1] - (uy + ny) * tk * 0.5, q[0] + (ux + nx) * tk * 0.5, q[1] + (uy + ny) * tk * 0.5, pena.marca); });
 var ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90 || ang <= -90) ang += 180;
 var mx = (l1[0] + l2[0]) / 2 + nx * 0.8 * k * sg, my = (l1[1] + l2[1]) / 2 + ny * 0.8 * k * sg;
-s += txt(mx, my, h, esc(fmtMedida(c.valor != null ? c.valor : L, e)), "d2-cota-tx", "middle", n4(ang));
+s += txt(mx, my, h, esc(fmtMedida(c.valor != null ? c.valor : L, e)), "d2-cota-tx", "middle", n4(ang), sF);
 return '<g class="d2-cota d2-cota-modelo">' + s + "</g>";
 }
 function svgMarcaCorte(m, e, pena) {
@@ -109440,13 +109668,39 @@ s += txt(c[0], c[1] + 1.1 * k, 3.2 * k, esc(ex.nome), "d2-marca-tx", "middle");
 });
 return '<g class="d2-eixo-g" data-d2-eixo="' + esc(ex.id || ex.nome) + '">' + s + "</g>";
 }
-function svgNivel(nv, cx, e, pena) {
-var k = e.escala / 1000, x = cx.x1 + 22 * k, s = "";
+function chaveNivel(nv) { return String(nv.nome == null ? "" : nv.nome) + "|" + n4(nv.cota != null ? +nv.cota : -nv.y); }
+function niveisDaVista(d, e) {
+var vistos = {}, out = [], oc = {};
+((e && e.niveisOcultos) || []).forEach(function (q) { oc[q] = 1; });
+(d.niveis || []).forEach(function (nv) {
+if (!nv || !isFinite(+nv.y)) return;
+var ch = chaveNivel(nv); if (vistos[ch]) return; vistos[ch] = 1;
+out.push({ chave: ch, nome: nv.nome, y: +nv.y, cota: nv.cota != null ? +nv.cota : -nv.y, oculto: !!oc[ch] });
+});
+return out.sort(function (a, b) { return a.y - b.y; });
+}
+function layoutNiveis(L, k) {
+var h = 2.5 * k, gap = h * 1.3, d0 = L.map(function (n) { return n.y - 1.6 * k; }), by = [], desl = [];
+for (var i = 0; i < L.length; i++) by[i] = i ? Math.max(d0[i], by[i - 1] + gap) : d0[i];
+for (var j = 0; j < L.length; j++) desl[j] = Math.abs(by[j] - d0[j]) > 1e-9 || (j > 0 && d0[j] - d0[j - 1] < gap) || (j < L.length - 1 && d0[j + 1] - d0[j] < gap);
+return L.map(function (n, q) { return { by: by[q], desloc: desl[q] }; });
+}
+function svgNivel(nv, cx, e, pena, lay) {
+var k = e.escala / 1000, x = cx.x1 + 22 * k, s = "", h = 2.5 * k, ly = lay || { by: nv.y - 1.6 * k, desloc: false };
 s += '<line x1="' + n4(cx.x0 - 3 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 12 * k) + '" y2="' + n4(nv.y) + '" stroke-width="' + pena.cota + '" ' + NS + tracoK([4, 1.5], k) + ' class="d2-nivel-l"/>';
-var t = 1.8 * k;
-s += '<path d="M' + n4(x) + " " + n4(nv.y) + "L" + n4(x - t) + " " + n4(nv.y - t * 1.4) + "L" + n4(x + t) + " " + n4(nv.y - t * 1.4) + 'Z" class="d2-nivel-tri"/>';
-s += txt(x + 2.6 * k, nv.y - 1.6 * k, 2.5 * k, esc(nv.nome) + " " + esc(fmtCota(nv.cota != null ? nv.cota : -nv.y)), "d2-nivel-tx");
-return '<g class="d2-nivel">' + s + "</g>";
+var t = 1.8 * k, rot = esc(nv.nome) + " " + esc(fmtCota(nv.cota != null ? nv.cota : -nv.y));
+function tri(px, py) { return '<path d="M' + n4(px) + " " + n4(py) + "L" + n4(px - t) + " " + n4(py - t * 1.4) + "L" + n4(px + t) + " " + n4(py - t * 1.4) + 'Z" class="d2-nivel-tri"/>'; }
+if (ly.desloc) {
+var tx0 = x + 14 * k + t;
+s += '<line x1="' + n4(x + 12 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 14 * k) + '" y2="' + n4(ly.by - t * 0.7) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-nivel-l"/>';
+s += tri(tx0, ly.by) + txt(tx0 + t + 0.8 * k, ly.by, h, rot, "d2-nivel-tx");
+} else s += tri(x, nv.y) + txt(x + 2.6 * k, ly.by, h, rot, "d2-nivel-tx");
+return '<g class="d2-nivel" data-d2-nivel="' + esc(nv.chave || chaveNivel(nv)) + '">' + s + "</g>";
+}
+function svgNiveis(d, cx, e, pena) {
+var k = e.escala / 1000, L = niveisDaVista(d, e).filter(function (n) { return !n.oculto; }), lay = layoutNiveis(L, k), s = "";
+L.forEach(function (n, i) { s += svgNivel(n, cx, e, pena, lay[i]); });
+return s;
 }
 function svg(d, est, extra) {
 var e = normEstilo(est), pena = PENAS[e.pena], k = e.escala / 1000;
@@ -109454,7 +109708,7 @@ var cx = caixa(d) || (d.area && d.area.x1 > d.area.x0 && d.area.y1 > d.area.y0 ?
 var cotas = cotasDe(d, e);
 var m = 32 * k;
 var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
-var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
+var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
 var cad = d.cad || [], cadPath = "", cadTx = "";
 if (cad.length) {
 var q = { x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h };
@@ -109498,6 +109752,7 @@ p.push("<defs>" +
 '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
 '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
 (conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+(e.preenchimento === "cruzada" || e.preenchimento === "concreto" || e.preenchimento === "tijolo" ? defPreenchimento(e.preenchimento, k) : "") +
 (p6 ? p6.defs : "") + "</defs>");
 p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
 if (cadPath) p.push('<g class="d2-cad"><path d="' + cadPath + '" class="d2-cad-l" stroke-width="' + n4(pena.vista * 0.8) + '" ' + NS + "/>" + cadTx + "</g>");
@@ -109514,7 +109769,7 @@ ordLc.forEach(function (kc) { p.push('<path d="' + gLc[kc] + '" class="d2-vista"
 (d.linhas || []).forEach(function (l) { lin += "M" + n4(l[0]) + " " + n4(l[1]) + "L" + n4(l[2]) + " " + n4(l[3]); });
 if (lin) p.push('<path d="' + lin + '" class="d2-vista" stroke-width="' + pena.vista + '" ' + NS + "/>");
 }
-var fill = e.preenchimento === "hachura" ? "url(#d2-hach)" : e.preenchimento === "solido" ? "#3a3a3a" : e.preenchimento === "cinza" ? "#cfd3d8" : "none";
+var fill = fillCorte(e.preenchimento);
 var fechados = "", abertos = "", fase = {}, porCatC = {};
 (d.cortes || []).forEach(function (c) {
 if (c.fase) { var q = fase[c.fase] || (fase[c.fase] = { f: "", a: "" }); if (c.fechado) q.f += caminho(c.pts, true); else q.a += caminho(c.pts, false); return; }
@@ -109545,7 +109800,7 @@ if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && ex
 if (!p6 && d.instImagens) p.push(svgInstImagens(d.instImagens, d.instClip));
 if (d.inst) p.push(svgInst(d.inst, k, pena));
 if (A7) p.push(A7.svg(d.anotP7, e, pena, "fundo"));
-if (d.tipo === "corte" && e.niveis) (d.niveis || []).forEach(function (nv) { p.push(svgNivel(nv, cx, e, pena)); });
+if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
 if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
 if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));
 eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
@@ -109845,6 +110100,10 @@ if (!usados[pid]) { usados[pid] = 1; defs += p6Padrao(s.preench, pr, k, !!s.meio
 fill = "url(#d2p6-" + esc(pid) + ")";
 }
 }
+if (e.corteForcado && /wall|parede/i.test(key)) {
+fill = fillCorte(e.preenchimento);
+if (PREENCH_PADROES[e.preenchimento] && e.preenchimento !== "hachura" && !usados["_corte"]) { usados["_corte"] = 1; defs += defPreenchimento(e.preenchimento, k); }
+}
 if (gF[key]) corpo += '<path d="' + gF[key] + '" fill="' + fill + '" fill-rule="evenodd" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
 if (gA[key]) corpo += '<path d="' + gA[key] + '" fill="none" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
 });
@@ -110032,7 +110291,7 @@ FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tra
 PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
 estiloPadrao: estiloPadrao, normEstilo: normEstilo,
 fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
-caixa: caixa, cotas: cotasDe, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
+caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
 P6: { colunaEscala: p6ColunaEscala, penaMm: p6PenaMm, penaEf: p6PenaEf, px: p6Px, traco: p6Traco, corpo: p6Corpo, marcas: p6Marcas, caixa: p6Caixa, padrao: p6Padrao }
 };
 global.Desenho2D = Desenho2D;
@@ -110951,6 +111210,8 @@ var AU = global.BimAmbienteUI;
 if (AU && AU.clique2d && ev.button === 0 && AU.clique2d(id, ev, self._ptSvg(id, ev))) return;
 var AN5 = global.BimAnot;
 if (AN5 && AN5.clique2d && ev.button === 0 && AN5.clique2d(id, ev, self._ptSvg(id, ev))) return;
+var nvEl = ev.target && ev.target.closest ? ev.target.closest("[data-d2-nivel]") : null;
+if (nvEl && ev.button === 0) { self._menuNivel(id, nvEl.getAttribute("data-d2-nivel"), ev); return; }
 var marca = ev.target && ev.target.closest ? ev.target.closest("[data-d2-corte]") : null;
 if (marca && ev.button === 0) { self.abrir(self.idCorte(marca.getAttribute("data-d2-corte"))); return; }
 var SL = global.BimSelecao;
@@ -111158,9 +111419,20 @@ var secoes = [
 { id: "marcaCota", rotulo: "Marca da cota", tipo: "lista", valor: e.marcaCota, opcoes: op(D.MARCAS_COTA) },
 { id: "textoCota", rotulo: "Altura do texto", unidade: "mm", tipo: "numero", passo: 0.5, valor: e.textoCota },
 { id: "unidade", rotulo: "Unidade", tipo: "lista", valor: e.unidade, opcoes: op(D.UNIDADES) },
-{ id: "casas", rotulo: "Casas decimais", tipo: "lista", valor: String(e.casas), opcoes: [{ id: "0", rotulo: "0" }, { id: "1", rotulo: "1" }, { id: "2", rotulo: "2" }, { id: "3", rotulo: "3" }] }
+{ id: "casas", rotulo: "Casas decimais", tipo: "lista", valor: String(e.casas), opcoes: [{ id: "0", rotulo: "0" }, { id: "1", rotulo: "1" }, { id: "2", rotulo: "2" }, { id: "3", rotulo: "3" }] },
+{ id: "corCotas", rotulo: "Cor das cotas desta vista", tipo: "lista", valor: e.corCotas || "", opcoes: D.opcoesCor(e.corCotas) },
+{ id: "corCotas-outra", rotulo: "Outra cor", tipo: "botao", rotuloBotao: "Escolher outra cor…", fn: function () { D.escolherCor(e.corCotas, function (cor) { self._mudar(id, "corCotas", cor); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} }); } }
 ] }
 ];
+if (d.tipo !== "planta" && c.dados) {
+var NL = D.niveisDaVista(c.dados, e);
+if (NL.length) secoes.push({ nome: "Níveis (mostrar nesta vista)", params: NL.map(function (n) {
+return { id: "nv:" + n.chave, rotulo: n.nome + " " + D.fmtCota(n.cota), tipo: "sim-nao", valor: !n.oculto };
+}).concat([
+{ id: "nv-todos", rotulo: "Níveis", tipo: "botao", rotuloBotao: "Mostrar todos", fn: function () { self._niveisTodos(id, true); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} } },
+{ id: "nv-nenhum", rotulo: "Níveis", tipo: "botao", rotuloBotao: "Ocultar todos", fn: function () { self._niveisTodos(id, false); try { global.BimShell.pintarProps(self.props(id)); } catch (eP) {} } }
+]) });
+}
 if (d.tipo === "planta") {
 secoes.push({ nome: "Extensões (faixa de vista)", params: [
 { id: "altura", rotulo: "Altura do corte", unidade: "m", tipo: "numero", passo: 0.05, valor: d.altura },
@@ -111250,11 +111522,39 @@ this._gravar(); this.redesenhar(id, true);
 var self = this; Object.keys(this._cache).forEach(function (k) { if (/^d2p-/.test(k)) self.redesenhar(k, false); });
 return;
 }
+var mnv = /^nv:(.+)$/.exec(String(pid));
+if (mnv) { this._nivelVisivel(id, mnv[1], valor === true || valor === "true" || valor === 1 || valor === "1"); return; }
 var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
 est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
+if (pid === "preenchimento") est.corteForcado = true;
 e.estilos[id] = D2().normEstilo(est);
 this._gravar(); this.redesenhar(id, false);
 },
+_nivelVisivel: function (id, chave, visivel) {
+var e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id)), L = (est.niveisOcultos || []).filter(function (q) { return q !== chave; });
+if (!visivel) L.push(chave);
+est.niveisOcultos = L; e.estilos[id] = D2().normEstilo(est);
+this._gravar(); this.redesenhar(id, false);
+},
+_niveisTodos: function (id, visivel) {
+var c = this._cache[id], e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
+est.niveisOcultos = visivel || !c || !c.dados ? [] : D2().niveisDaVista(c.dados, { niveisOcultos: [] }).map(function (n) { return n.chave; });
+e.estilos[id] = D2().normEstilo(est); this._gravar(); this.redesenhar(id, false);
+status(visivel ? "Todos os níveis aparecem nesta vista." : "Níveis ocultos nesta vista (Propriedades › Níveis para voltar).");
+},
+_menuNivel: function (id, chave, ev) {
+var self = this, nome = String(chave).split("|")[0] || "nível"; this._fecharMenuNivel();
+var m = document.createElement("div"); m.setAttribute("data-d2-menu-nivel", "1");
+m.style.cssText = "position:fixed;z-index:9999;left:" + Math.round(ev.clientX + 4) + "px;top:" + Math.round(ev.clientY + 4) + "px;background:#fff;color:#111;border:1px solid #888;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.25);padding:4px;font:13px Arial,sans-serif";
+var b1 = document.createElement("button"), b2 = document.createElement("button");
+[b1, b2].forEach(function (b) { b.type = "button"; b.style.cssText = "display:block;width:100%;text-align:left;padding:6px 10px;border:0;background:none;cursor:pointer;font:inherit;color:inherit"; });
+b1.textContent = "Ocultar “" + nome + "” nesta vista"; b2.textContent = "Mostrar todos os níveis";
+b1.addEventListener("click", function () { self._fecharMenuNivel(); self._nivelVisivel(id, chave, false); status("Nível “" + nome + "” oculto nesta vista (Propriedades › Níveis para voltar)."); });
+b2.addEventListener("click", function () { self._fecharMenuNivel(); self._niveisTodos(id, true); });
+m.appendChild(b1); m.appendChild(b2); document.body.appendChild(m); this._menuNv = m;
+setTimeout(function () { var f = function (e2) { if (self._menuNv && !self._menuNv.contains(e2.target)) { self._fecharMenuNivel(); document.removeEventListener("pointerdown", f, true); } }; document.addEventListener("pointerdown", f, true); }, 0);
+},
+_fecharMenuNivel: function () { if (this._menuNv && this._menuNv.parentNode) this._menuNv.parentNode.removeChild(this._menuNv); this._menuNv = null; },
 aplicarPadraoDet: function (id) {
 var P = global.PadraoDet; if (!P || !this.def(id)) return false;
 var empresa = (global.Auth && global.Auth.empresaId) ? global.Auth.empresaId() : null;
@@ -170236,9 +170536,18 @@ g.push({ id: "a7-igualar", rotulo: "Espaçar igual", tipo: "botao", rotuloBotao:
 g.push({ id: "off", rotulo: "Deslocamento da linha", unidade: "m", tipo: "numero", passo: 0.05, valor: it.off });
 if (it.cota === "linear") g.push({ id: "orient", rotulo: "Direção", tipo: "lista", valor: it.orient || "h", opcoes: [{ id: "h", rotulo: "Horizontal" }, { id: "v", rotulo: "Vertical" }] });
 }
+var D2c = global.Desenho2D;
+if (D2c && D2c.opcoesCor) {
+g.push({ id: "cor", rotulo: "Cor", tipo: "lista", valor: it.cor || "", opcoes: [{ id: "", rotulo: "Do tipo / da vista" }].concat(D2c.opcoesCor(it.cor).filter(function (q) { return q.id !== ""; })) });
+g.push({ id: "a7-cor-outra", rotulo: "Outra cor", tipo: "botao", rotuloBotao: "Escolher outra cor…", fn: function () { D2c.escolherCor(it.cor, function (cor) { aj({ cor: cor }); }); } });
+g.push({ id: "a7-cor-todas", rotulo: "Cotas da vista", tipo: "botao", rotuloBotao: "Aplicar esta cor a todas as cotas da vista", fn: function () {
+M.itensDaVista(self.estado(), it.vista).forEach(function (x) { if (x.tipo === "cota") self._op({ op: "anot2dAjustar", id: x.id, campos: { cor: it.cor || null } }); });
+status("Cor aplicada a todas as cotas desta vista (Ctrl+Z desfaz uma a uma).");
+} });
+}
 g.push(excluir);
 secoes.push({ nome: "Cota", params: g });
-mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto", txt: "texto", unidade: "opcional", casas: "opcionalNum" };
+mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto", txt: "texto", unidade: "opcional", casas: "opcionalNum", cor: "opcional" };
 } else if (it.tipo === "texto") {
 var tt = M.tipoTextoDe(st, it);
 secoes.push({ nome: "Tipo", params: [
@@ -182925,7 +183234,7 @@ poli: function (c, pts, fechado) { if (!pts || pts.length < 2) return null; retu
 circulo: function (c, x, y, r) { return this.add({ t: "CIRCLE", camada: c, x: x, y: y, r: r }); },
 arco: function (c, x, y, r, a0, a1) { if (!(r > 0)) return null; return this.add({ t: "ARC", camada: c, x: x, y: y, r: r, a0: a0, a1: a1 }); },
 texto: function (c, x, y, h, s, ang, centro) { if (!String(s || "").trim()) return null; return this.add({ t: "TEXT", camada: c, x: x, y: y, h: h, s: s, ang: ang || 0, centro: !!centro }); },
-hachura: function (c, laços, espaco, solido) { if (!laços || !laços.length) return null; var h = { t: "HATCH", camada: c, lacos: laços, espaco: espaco }; if (solido) h.solido = true; return this.add(h); },
+hachura: function (c, laços, espaco, solido, extra) { if (!laços || !laços.length) return null; var h = { t: "HATCH", camada: c, lacos: laços, espaco: espaco }; if (solido) h.solido = true; if (extra) { if (extra.padrao) h.padrao = extra.padrao; if (extra.cor) h.cor = extra.cor; if (extra.aci != null) h.aci = extra.aci; } return this.add(h); },
 estiloCota: function (nome, o) { this.estilosCota[nome] = o; return nome; },
 layouts: [], ltypes: {},
 ltype: function (nome, padrao) { if (!this.ltypes[nome]) this.ltypes[nome] = padrao; return nome; },
@@ -182941,6 +183250,11 @@ return this.add({ t: "DIMENSION", camada: c, estilo: estilo, bloco: nome, p1: p1
 doc.camada("0", 0.25, "CONTINUOUS", 7);
 return doc;
 }
+var PADROES_HATCH = {
+cruzada: { nome: "RA-CRUZADA", fam: [{ a: 45, dxl: 0, dyl: 0.75 }, { a: 135, dxl: 0, dyl: 0.75 }] },
+tijolo: { nome: "RA-TIJOLO", fam: [{ a: 0, dxl: 0, dyl: 0.4 }, { a: 90, dxl: 0.4, dyl: 0.67, dash: [0.4, -0.4] }] },
+concreto: { nome: "RA-CONCRETO", fam: [{ a: 0, dxl: 0.45, dyl: 0.45, dash: [0, -0.9] }, { a: 63, dxl: 0.9, dyl: 1.7, dash: [0, -1.8] }] }
+};
 function escrever(doc) {
 var LAY = !!(doc.layouts && doc.layouts.length);
 var ps = false;
@@ -183138,15 +183452,28 @@ g(0, "ENDSEC");
 g(0, "EOF");
 var ixSeed = L.indexOf("$HANDSEED"); if (ixSeed >= 0) L[ixSeed + 2] = H();
 return L.join("\r\n") + "\r\n";
-var ltEnt = null, ltsEnt = null;
+var ltEnt = null, ltsEnt = null, corEnt = null;
+function aciMaisProximo(r, g2, b) {
+if (r === g2 && g2 === b) return r < 40 ? 7 : (r > 215 ? 7 : 8);
+var m = Math.max(r, g2, b), q = [[255, 0, 0, 1], [255, 255, 0, 2], [0, 255, 0, 3], [0, 255, 255, 4], [0, 0, 255, 5], [255, 0, 255, 6]], bst = 7, bd = 1e9;
+q.forEach(function (c0) { var d = Math.pow(r / m * 255 - c0[0], 2) + Math.pow(g2 / m * 255 - c0[1], 2) + Math.pow(b / m * 255 - c0[2], 2); if (d < bd) { bd = d; bst = c0[3]; } });
+return bst;
+}
 function comum(tipo, hh, owner, camada, sub) {
 g(0, tipo); g(5, hh); g(330, owner); g(100, "AcDbEntity"); if (ps) g(67, 1); g(8, txtDxf(camada));
+if (corEnt) {
+if (corEnt.aci != null) g(62, corEnt.aci);
+else { g(62, aciMaisProximo(corEnt.r, corEnt.g, corEnt.b)); g(420, (corEnt.r << 16) + (corEnt.g << 8) + corEnt.b); }
+}
 if (ltEnt) g(6, ltEnt);
 if (ltsEnt) g(48, num(ltsEnt));
 g(100, sub);
 }
 function entidade(e, hh, owner) {
 ltEnt = e.lt || null; ltsEnt = e.lts || null;
+corEnt = null;
+if (e.aci != null) corEnt = { aci: e.aci };
+else { var mcr = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(String(e.cor || "")); if (mcr) corEnt = { r: parseInt(mcr[1], 16), g: parseInt(mcr[2], 16), b: parseInt(mcr[3], 16) }; }
 if (e.t === "LINE") {
 comum("LINE", hh, owner, e.camada, "AcDbLine");
 g(10, num(e.p[0])); g(20, num(e.p[1])); g(30, 0); g(11, num(e.p[2])); g(21, num(e.p[3])); g(31, 0);
@@ -183186,13 +183513,25 @@ g(110, 0); g(120, 0); g(130, 0); g(111, 1); g(121, 0); g(131, 0); g(112, 0); g(1
 } else if (e.t === "HATCH") {
 comum("HATCH", hh, owner, e.camada, "AcDbHatch");
 g(10, 0); g(20, 0); g(30, 0); g(210, 0); g(220, 0); g(230, 1);
-g(2, e.solido ? "SOLID" : "ANSI31"); g(70, e.solido ? 1 : 0); g(71, 0); g(91, e.lacos.length);
+var famI = !e.solido && e.padrao && PADROES_HATCH[e.padrao] ? PADROES_HATCH[e.padrao] : null;
+g(2, e.solido ? "SOLID" : (famI ? famI.nome : "ANSI31")); g(70, e.solido ? 1 : 0); g(71, 0); g(91, e.lacos.length);
 e.lacos.forEach(function (pts) {
 g(92, 2); g(72, 0); g(73, 1); g(93, pts.length);
 pts.forEach(function (p) { g(10, num(p[0])); g(20, num(p[1])); });
 g(97, 0);
 });
 if (e.solido) { g(75, 0); g(76, 1); g(98, 0); return; }
+if (famI) {
+var Sx = (+e.espaco || 3.175) / 3.175, E = 3.175 * Sx;
+g(75, 0); g(76, 1); g(52, 0); g(41, 1); g(77, 0); g(78, famI.fam.length);
+famI.fam.forEach(function (fa) {
+var an = fa.a * Math.PI / 180, ca = Math.cos(an), sa = Math.sin(an), dxl = fa.dxl * E, dyl = fa.dyl * E;
+g(53, fa.a); g(43, 0); g(44, 0); g(45, num(ca * dxl - sa * dyl)); g(46, num(sa * dxl + ca * dyl));
+g(79, (fa.dash || []).length); (fa.dash || []).forEach(function (v) { g(49, num(v * E)); });
+});
+g(98, 0);
+return;
+}
 var S = (+e.espaco || 3.175) / 3.175, d = 2.2450640303 * S;
 g(75, 0); g(76, 1); g(52, 0); g(41, num(S)); g(77, 0); g(78, 1);
 g(53, 45); g(43, 0); g(44, 0); g(45, num(-d)); g(46, num(d)); g(79, 0);
@@ -183247,6 +183586,7 @@ var o = {}, re = /([\w:-]+)="([^"]*)"/g, m;
 while ((m = re.exec(s))) o[m[1]] = m[2];
 return o;
 }
+function corDoStyle(st) { var m = /(?:^|;)\s*(?:stroke|fill)\s*:\s*(#[0-9a-fA-F]{6})\s*(?:;|$)/.exec(String(st || "")); return m ? m[1].toLowerCase() : ""; }
 function desesc(s) { return String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); }
 function pathPts(d) {
 var out = [], atual = null, re = /([MLZ])\s*([-\d.eE]+)?[\s,]*([-\d.eE]+)?/gi, m;
@@ -183345,7 +183685,8 @@ var tr = t.a.transform || "", mt = /translate\(([-\d.eE]+)[ ,]+([-\d.eE]+)\)/.ex
 var fs = +(t.a["font-size"] || 100), sc = ms ? +ms[1] : 1, x = mt ? +mt[1] : +(t.a.x || 0), y = mt ? +mt[2] : +(t.a.y || 0);
 var p = xf.pt(x, y);
 if (!dentro(p[0], p[1], opts.recorte)) continue;
-doc.texto(camadaAtual(t.a["class"]), p[0], p[1], fs * sc * xf.s * 0.7, desesc(t.s), -(mr ? +mr[1] : 0), t.a["text-anchor"] === "middle");
+var etx = doc.texto(camadaAtual(t.a["class"]), p[0], p[1], fs * sc * xf.s * 0.7, desesc(t.s), -(mr ? +mr[1] : 0), t.a["text-anchor"] === "middle");
+var ctx2 = corDoStyle(t.a.style); if (etx && ctx2) etx.cor = ctx2;
 continue;
 }
 if (fecha) continue;
@@ -183359,6 +183700,7 @@ else if (tag === "path") pathPts(a.d || "").forEach(function (c) { poli(cam, c.p
 if (lt) for (var ie = n0; ie < doc.entidades.length; ie++) doc.entidades[ie].lt = lt;
 else if (tag === "circle") { var pc = xf.pt(+a.cx, +a.cy); if (dentro(pc[0], pc[1], opts.recorte)) doc.circulo(cam, pc[0], pc[1], +a.r * xf.s); }
 else if (tag === "rect") { var x0 = +a.x, y0 = +a.y, w = +a.width, hh = +a.height; poli(cam, [[x0, y0], [x0 + w, y0], [x0 + w, y0 + hh], [x0, y0 + hh]], true); }
+var cDx = corDoStyle(a.style); if (cDx) for (var ic = n0; ic < doc.entidades.length; ic++) doc.entidades[ic].cor = cDx;
 }
 function seg(cam, x1, y1, x2, y2) {
 var p1 = xf.pt(x1, y1), p2 = xf.pt(x2, y2), r = recortarSeg(p1[0], p1[1], p2[0], p2[1], opts.recorte);
@@ -183413,7 +183755,11 @@ if (r) doc.linha(n, r[0], r[1], r[2], r[3]);
 }
 }
 });
-Object.keys(hach).forEach(function (ct) { doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], 1.6 * k * xf.s); });
+var prE = e.preenchimento, solD = { cinza: { cor: "#cfd3d8" }, solido: { cor: "#3a3a3a" }, preto: { aci: 7 } }[prE];
+Object.keys(hach).forEach(function (ct) {
+if (solD) doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], null, true, solD);
+else doc.hachura(cam("HACHURA-" + ct, pn.cota), hach[ct], 1.6 * k * xf.s, false, PADROES_HATCH[prE] ? { padrao: prE } : null);
+});
 Object.keys(dados.linhasFase || {}).forEach(function (st) {
 var fz = FASE_DXF[st]; if (!fz) return;
 var nl = cam("FASE-" + fz[0] + "-VISTA", pn.vista, fz[1]);
@@ -183462,7 +183808,8 @@ var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
 ang = Math.abs(dx) >= Math.abs(dy) ? 0 : 90;
 if (rec && !(dentro(p1[0], p1[1], rec) && dentro(p2[0], p2[1], rec))) return;
 lin2 = grafCota(p1, p2, pl, ang, c.valor, e, k * xf.s, cCota);
-doc.cota(cCota, estCota, p1, p2, pl, ang, c.valor * xf.s, D2.fmtMedida(c.valor, e), lin2);
+if (e.corCotas) lin2.forEach(function (q) { q.cor = e.corCotas; });
+var dmE = doc.cota(cCota, estCota, p1, p2, pl, ang, c.valor * xf.s, D2.fmtMedida(c.valor, e), lin2); if (dmE && e.corCotas) dmE.cor = e.corCotas;
 });
 if (dados.tipo === "planta" && e.cotas) (dados.cotasModelo || []).forEach(function (c) {
 var p1 = xf.pt(c.a[0], c.a[1]), p2 = xf.pt(c.b[0], c.b[1]);
@@ -183471,7 +183818,8 @@ var off = +c.off || 0, nx = dy / L, ny = -dx / L, pl = xf.pt(c.a[0] + nx * off, 
 var ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180 / Math.PI;
 if (rec && !(dentro(p1[0], p1[1], rec) && dentro(p2[0], p2[1], rec))) return;
 var v = c.valor != null ? c.valor : L;
-doc.cota(cCota, estCota, p1, p2, pl, ang, v * xf.s, D2.fmtMedida(v, e), grafCota(p1, p2, pl, ang, v, e, k * xf.s, cCota));
+var gcM = grafCota(p1, p2, pl, ang, v, e, k * xf.s, cCota); if (e.corCotas) gcM.forEach(function (q) { q.cor = e.corCotas; });
+var dmM = doc.cota(cCota, estCota, p1, p2, pl, ang, v * xf.s, D2.fmtMedida(v, e), gcM); if (dmM && e.corCotas) dmM.cor = e.corCotas;
 });
 var svg = opts.svg || D2.svg(dados, e, { titulo: opts.titulo || "" }).svg;
 var mapa = {}; CAMADA_CLASSE.forEach(function (cc) { mapa[cc[1]] = doc.especificar(pre + cc[1], cc[1] === "ANOT-TITULO" || cc[1] === "ANOT-EIXO" || cc[1] === "ANOT-MARCA-CORTE" ? pn.marca : cc[1] === "CAD-VINCULO" ? pn.vista : pn.cota); });
@@ -183528,6 +183876,35 @@ for (var j = 0; j + 1 < xs.length; j += 2) if (xs[j + 1] - xs[j] > 1e-9) out.pus
 }
 return out;
 }
+function linhasFamilia(lacos, camada, fa, E) {
+var an = fa.a * Math.PI / 180, ux = Math.cos(an), uy = Math.sin(an), nx = -uy, ny = ux, arestas = [], cmin = Infinity, cmax = -Infinity, out = [];
+lacos.forEach(function (pts) { for (var i = 0; i < pts.length; i++) { var a = pts[i], b = pts[(i + 1) % pts.length]; arestas.push([a[0], a[1], b[0], b[1]]); var cc = nx * a[0] + ny * a[1]; if (cc < cmin) cmin = cc; if (cc > cmax) cmax = cc; } });
+var dy = fa.dyl * E, dx = fa.dxl * E; if (!isFinite(cmin) || !(Math.abs(dy) > 1e-12)) return [];
+var i0 = Math.ceil(cmin / dy), i1 = Math.floor(cmax / dy); if (dy < 0) { var tt0 = i0; i0 = Math.ceil(cmax / dy); i1 = Math.floor(cmin / dy); void tt0; }
+if (i1 - i0 > 4000) return [];
+var dash = (fa.dash || []).map(function (v) { return v * E; }), P = 0; dash.forEach(function (v) { P += Math.abs(v); });
+for (var i = i0; i <= i1; i++) {
+var c0 = dy * i, t0 = dx * i, ts = [];
+arestas.forEach(function (a) { var f1 = nx * a[0] + ny * a[1] - c0, f2 = nx * a[2] + ny * a[3] - c0; if ((f1 < 0 && f2 >= 0) || (f1 >= 0 && f2 < 0)) { var q = f1 / (f1 - f2); ts.push(ux * (a[0] + q * (a[2] - a[0])) + uy * (a[1] + q * (a[3] - a[1]))); } });
+ts.sort(function (p, q) { return p - q; });
+for (var j = 0; j + 1 < ts.length; j += 2) {
+var s0 = ts[j], e0 = ts[j + 1];
+function seg(ta, tb) { if (tb - ta < 1e-9 && !(fa.dash && tb === ta)) return; out.push({ t: "LINE", camada: camada, p: [nx * c0 + ux * ta, ny * c0 + uy * ta, nx * c0 + ux * tb, ny * c0 + uy * tb] }); }
+if (!(P > 1e-9)) { seg(s0, e0); continue; }
+var k0 = Math.floor((s0 - t0) / P) - 1, n = 0;
+for (var k = k0; n < 100000; k++, n++) {
+var base = t0 + k * P; if (base > e0) break;
+var pos = base;
+for (var d = 0; d < dash.length; d++) {
+var len = Math.abs(dash[d]);
+if (dash[d] >= 0) { var ta = Math.max(pos, s0), tb = Math.min(pos + len, e0); if (len === 0) { if (pos >= s0 && pos <= e0) seg(pos, pos + 0.05 * E); } else if (tb > ta) seg(ta, tb); }
+pos += len;
+}
+}
+}
+}
+return out;
+}
 function textoAEsquerda(e) {
 if (e.t !== "TEXT" || (!e.centro && !e.direita)) return e;
 var SP = global.SvgPdf; if (!SP && typeof require === "function") { try { SP = require("./svgpdf.js"); } catch (e0) { SP = null; } }
@@ -183545,7 +183922,11 @@ var out = [];
 (lista || []).forEach(function (e) {
 if (e.t === "TEXT") { out.push(textoAEsquerda(e)); return; }
 if (e.t !== "HATCH" || !geo) { out.push(e); return; }
-var g = e.solido ? solidosDe(e.lacos, e.camada) : linhasDe(e.lacos, e.camada, e.espaco);
+var g;
+if (!e.solido && e.padrao && PADROES_HATCH[e.padrao]) {
+g = []; PADROES_HATCH[e.padrao].fam.forEach(function (fa) { linhasFamilia(e.lacos, e.camada, fa, +e.espaco || 3.175).forEach(function (q) { g.push(q); }); });
+} else g = e.solido ? solidosDe(e.lacos, e.camada) : linhasDe(e.lacos, e.camada, e.espaco);
+g.forEach(function (q) { if (e.cor) q.cor = e.cor; if (e.aci != null) q.aci = e.aci; });
 for (var i = 0; i < g.length; i++) out.push(g[i]);
 });
 return out;
@@ -185277,8 +185658,9 @@ var r = PR().colocarViewport(a.pr, a.folha, { vistaId: vistaId, nome: dz.nome, e
 if (!r.ok) { toast(r.erro, "aviso"); return r; }
 this.gravarFolha(a, r.folha);
 var ixE = r.folha.blocos.length - 1;
-if (escE !== dz.escala) this.trocarEscala(id, ixE, escE);
+if (escE !== dz.escala) this.trocarEscala(id, ixE, escE, true);
 this._caber(id, ixE); var a3 = this.achar(id); if (a3) { r.folha = a3.folha; r.bloco = a3.folha.blocos[ixE]; }
+if (a3 && this._foraDaArea(a3, a3.folha, ixE)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
 this._sel = { id: id, ix: r.folha.blocos.length - 1 };
 this.pintar(id); this._pintarProps();
 status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
@@ -185298,7 +185680,7 @@ _foraDaArea: function (a, f, ix) {
 var pr = clone(a.pr); pr.folhas = [f];
 return PR().conferir(pr).fora.some(function (q) { return q.bloco === ix; });
 },
-trocarEscala: function (id, ix, escala) {
+trocarEscala: function (id, ix, escala, silencioso) {
 var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
 var f = clone(a.folha), nb;
 if (escala === "vista") {
@@ -185312,7 +185694,7 @@ nb = PR().escalaViewport(b, dz.vb, e); if (!nb) return false;
 f.blocos[ix] = PR().bloco(nb);
 this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
 status("Escala da cópia " + (b.numeroDetalhe || "") + ": 1:" + f.blocos[ix].escala + (escala === "vista" ? " (a da vista)" : "") + ".");
-if (this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
+if (!silencioso && this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
 return true;
 },
 menuEscala: function (id, ix, cx, cy) {
@@ -185538,6 +185920,8 @@ else ident.push(q);
 });
 graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
 outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Gerar PDF", fn: function () { self.pdfVetorial([id]); } });
+outros.push({ id: "pdf-camadas", rotulo: "PDF interativo (camadas)", tipo: "sim-nao", valor: this.pdfCamadasCfg(id).ativo !== false });
+outros.push({ id: "pdf-camadas-escolher", rotulo: "Camadas do PDF", tipo: "botao", rotuloBotao: "Escolher camadas…", fn: function () { self.dialogoPdfCamadas(id); } });
 outros.push({ id: "duplicar", rotulo: "Duplicar esta folha", tipo: "botao", rotuloBotao: "Duplicar folha", fn: function () { self.duplicarFolha(id); } });
 outros.push({ id: "excluir", rotulo: "Excluir esta folha", tipo: "botao", rotuloBotao: "Excluir folha…", fn: function () { self.excluirFolha(id); } });
 outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
@@ -185584,6 +185968,7 @@ try { g._nivArvore(); } catch (e2) {}
 _mudarFolha: function (id, pid, valor) {
 if (/^c:/.test(String(pid))) { this.mudarCarimbo(id, String(pid).slice(2), valor); return; }
 var a = this.achar(id); if (!a) return;
+if (pid === "pdf-camadas") { var cc = clone(this.pdfCamadasCfg(id)); cc.ativo = valor === true || valor === "true"; this.mudarPdfCamadas(id, cc); return; }
 var f = clone(a.folha), mapa = { "p:SHEET_NAME": "conteudo", "p:SHEET_NUMBER": "numero", "p:SHEET_ISSUE_DATE": "dataEmissao", "p:SHEET_DESIGNED_BY": "projetadoPor",
 "p:SHEET_DRAWN_BY": "desenhadoPor", "p:SHEET_CHECKED_BY": "verificadoPor", "p:SHEET_APPROVED_BY": "aprovadoPor", "p:SHEET_SCHEDULED": "apareceNaLista" };
 if (mapa[pid]) f[mapa[pid]] = pid === "p:SHEET_SCHEDULED" ? !!valor : String(valor == null ? "" : valor);
@@ -185846,7 +186231,8 @@ var lista = itens.map(function (a) { var rec = self.recursos(a, false); rec.proj
 status("Gerando o PDF vetorial…");
 return Promise.resolve(self._garantir3d(itens)).then(function () {
 lista.forEach(function (it, i) { var rec = self.recursos(itens[i], false); rec.projeto = projeto; it.rec = rec; });
-return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, "") });
+var cfgCam = PR().pdfCamadasDe(itens[0].pr);
+return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, ""), camadas: cfgCam.ativo === false ? null : cfgCam });
 }).then(function (r) {
 var d = r.bytes;
 if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, d, "application/pdf", ""); if (!wT) return null; nome = wT.nome; d = wT.dados; }
@@ -185862,17 +186248,55 @@ return { nome: nome, tamanho: d.length, paginas: r.paginas };
 })["catch"](function (e) { toast("Não consegui gerar o PDF: " + (e && e.message || e), "erro"); return null; });
 },
 _garantir3d: function (itens) { return this.garantir3d(itens); },
+pdfCamadasCfg: function (id) { var a = this.achar(id); return PR().pdfCamadasDe(a ? a.pr : null); },
+mudarPdfCamadas: function (id, cfg) {
+var a = this.achar(id); if (!a) return false;
+var pr = PR().normalizar(a.reg); delete pr.pdfCamadas;
+var nova = PR().pdfCamadasNorm(cfg); if (nova) pr.pdfCamadas = nova;
+pr.id = a.reg.id; pr.obraId = a.reg.obraId; pr.criadoEm = a.reg.criadoEm;
+if (!this.salvarRegistro(pr)) return false;
+this._pintarProps();
+status(nova && nova.ativo === false ? "PDF comum (sem camadas)." : "PDF interativo: camadas " + (nova ? "configuradas" : "no padrão (todas, ligadas)") + ".");
+return true;
+},
+dialogoPdfCamadas: function (id) {
+var self = this, cfg = this.pdfCamadasCfg(id), CAM = (global.FolhaPdf && global.FolhaPdf.CAMADAS) || [];
+var linhas = CAM.map(function (d) {
+return '<tr><td>' + esc(d.nome) + '</td><td style="text-align:center"><input type="checkbox" data-pc-inc="' + d.id + '"' + (cfg.incluir[d.id] === false ? "" : " checked") + '></td>' +
+'<td style="text-align:center"><input type="checkbox" data-pc-on="' + d.id + '"' + (cfg.desligadas.indexOf(d.id) >= 0 ? "" : " checked") + "></td></tr>";
+}).join("");
+var vp = cfg.variantes || {};
+global.UI.modal("PDF interativo (camadas)",
+'<label style="display:block;margin:0 0 8px"><input type="checkbox" id="pc-ativo"' + (cfg.ativo === false ? "" : " checked") + '> <b>PDF interativo</b> (cada parte do desenho vira uma camada liga/desliga no leitor de PDF)</label>' +
+'<table class="tbl" style="width:100%"><thead><tr><th>Camada</th><th>Incluir</th><th>Começa ligada</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
+'<p class="muted" style="font-size:12px;margin:8px 0 4px">Ao abrir (as duas variantes vão desenhadas; no leitor liga-se uma ou outra):</p>' +
+'<label style="display:block;font-size:12.5px">Cotas: <select id="pc-cotas"><option value="">coloridas (como na tela)</option><option value="preta"' + (vp.cotas === "preta" ? " selected" : "") + '>pretas</option></select></label>' +
+'<label style="display:block;font-size:12.5px;margin-top:4px">Parede: <select id="pc-parede"><option value="">o preenchimento da vista</option>' +
+[["parede-hachura", "hachura 45°"], ["parede-cinza", "cinza"], ["parede-branco", "branco"]].map(function (q) { return '<option value="' + q[0] + '"' + (vp.parede === q[0] ? " selected" : "") + ">" + q[1] + "</option>"; }).join("") + "</select></label>",
+[{ texto: "Salvar", classe: "primary", onClick: function () {
+var q = function (sel) { return [].slice.call(document.querySelectorAll(sel)); }, nova = { ativo: !!(document.getElementById("pc-ativo") || {}).checked, incluir: {}, desligadas: [], variantes: {} };
+q("[data-pc-inc]").forEach(function (e) { if (!e.checked) nova.incluir[e.getAttribute("data-pc-inc")] = false; });
+q("[data-pc-on]").forEach(function (e) { if (!e.checked) nova.desligadas.push(e.getAttribute("data-pc-on")); });
+var vc = (document.getElementById("pc-cotas") || {}).value, vpd = (document.getElementById("pc-parede") || {}).value; if (vc) nova.variantes.cotas = vc; if (vpd) nova.variantes.parede = vpd;
+global.UI.fecharModal(); self.mudarPdfCamadas(id, nova);
+} }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+},
 pdfLote: function () {
 var self = this, regs = this.registros().filter(function (r) { return r.origem === "folhas" || arr(r.folhas).some(function (f) { return arr(f.blocos).some(function (b) { return b.tipo === "viewport"; }); }); });
 var itens = [];
 regs.forEach(function (r) { var pr = PR().normalizar(r); pr.folhas.forEach(function (f) { itens.push({ id: self.idFolha(r.id, f.id), rot: self.nomeFolha(pr, f), arq: PR().nomeArquivo(pr, f, self.projeto(), "pdf") }); }); });
 if (!itens.length) { toast("Nenhuma folha ainda: Vista › Folha.", "aviso"); return null; }
+var cfgL = this.pdfCamadasCfg(itens[0].id);
 global.UI.modal("PDF em lote", '<p class="muted" style="font-size:12px;margin:0 0 6px">As folhas marcadas saem num documento só, cada uma no tamanho do papel dela. Nome automático: número - nome - revisão.</p>' +
+'<label style="display:block;font-size:12.5px;padding:2px 0 6px"><input type="checkbox" data-pv-camadas="1"' + (cfgL.ativo === false ? "" : " checked") + '> <b>PDF interativo (camadas)</b> — cotas, parede, níveis… liga/desliga no leitor <button type="button" data-pv-camadas-esc="1" style="margin-left:6px">Escolher camadas…</button></label>' +
 itens.map(function (it) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-lote="' + esc(it.id) + '"> ' + esc(it.rot) + ' <span class="muted">(' + esc(it.arq) + ")</span></label>"; }).join(""),
 [{ texto: "Gerar PDF", classe: "primary", onClick: function () {
 var ids = [].slice.call(document.querySelectorAll("[data-pv-lote]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-lote"); });
+var ck = document.querySelector("[data-pv-camadas]"), cfgN = clone(self.pdfCamadasCfg(itens[0].id));
+if (ck && (ck.checked !== (cfgN.ativo !== false))) { cfgN.ativo = !!ck.checked; self.mudarPdfCamadas(itens[0].id, cfgN); }
 global.UI.fecharModal(); self.pdfVetorial(ids);
 } }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+setTimeout(function () { var be = document.querySelector("[data-pv-camadas-esc]"); if (be) be.addEventListener("click", function () { global.UI.fecharModal(); self.dialogoPdfCamadas(itens[0].id); }); }, 0);
 return itens;
 },
 escolherVista: function () {

@@ -822,9 +822,19 @@
           g.push({ id: "off", rotulo: "Deslocamento da linha", unidade: "m", tipo: "numero", passo: 0.05, valor: it.off });
           if (it.cota === "linear") g.push({ id: "orient", rotulo: "Direção", tipo: "lista", valor: it.orient || "h", opcoes: [{ id: "h", rotulo: "Horizontal" }, { id: "v", rotulo: "Vertical" }] });
         }
+        /* COR DA COTA (16/11/2026): própria desta cota (vence a do tipo e a da vista); vale na tela, na folha/PDF e no DXF */
+        var D2c = global.Desenho2D;
+        if (D2c && D2c.opcoesCor) {
+          g.push({ id: "cor", rotulo: "Cor", tipo: "lista", valor: it.cor || "", opcoes: [{ id: "", rotulo: "Do tipo / da vista" }].concat(D2c.opcoesCor(it.cor).filter(function (q) { return q.id !== ""; })) });
+          g.push({ id: "a7-cor-outra", rotulo: "Outra cor", tipo: "botao", rotuloBotao: "Escolher outra cor…", fn: function () { D2c.escolherCor(it.cor, function (cor) { aj({ cor: cor }); }); } });
+          g.push({ id: "a7-cor-todas", rotulo: "Cotas da vista", tipo: "botao", rotuloBotao: "Aplicar esta cor a todas as cotas da vista", fn: function () {
+            M.itensDaVista(self.estado(), it.vista).forEach(function (x) { if (x.tipo === "cota") self._op({ op: "anot2dAjustar", id: x.id, campos: { cor: it.cor || null } }); });
+            status("Cor aplicada a todas as cotas desta vista (Ctrl+Z desfaz uma a uma).");
+          } });
+        }
         g.push(excluir);
         secoes.push({ nome: "Cota", params: g });
-        mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto", txt: "texto", unidade: "opcional", casas: "opcionalNum" };
+        mapa = { prefixo: "texto", sufixo: "texto", travada: "trava", eq: "bool", off: "num", orient: "texto", tipoCota: "texto", txt: "texto", unidade: "opcional", casas: "opcionalNum", cor: "opcional" };
       } else if (it.tipo === "texto") {
         var tt = M.tipoTextoDe(st, it);
         secoes.push({ nome: "Tipo", params: [

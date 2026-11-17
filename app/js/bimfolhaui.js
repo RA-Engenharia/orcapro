@@ -640,8 +640,10 @@
       if (!r.ok) { toast(r.erro, "aviso"); return r; }
       this.gravarFolha(a, r.folha);
       var ixE = r.folha.blocos.length - 1;
-      if (escE !== dz.escala) this.trocarEscala(id, ixE, escE);
+      if (escE !== dz.escala) this.trocarEscala(id, ixE, escE, true);
       this._caber(id, ixE); var a3 = this.achar(id); if (a3) { r.folha = a3.folha; r.bloco = a3.folha.blocos[ixE]; }
+      /* aviso único, só se DEPOIS do ajuste ainda sai da área */
+      if (a3 && this._foraDaArea(a3, a3.folha, ixE)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
       this._sel = { id: id, ix: r.folha.blocos.length - 1 };
       this.pintar(id); this._pintarProps();
       status("Vista posicionada: " + dz.nome + " · 1:" + dz.escala + " · detalhe " + r.bloco.numeroDetalhe + ". Clique no 1:" + dz.escala + " do título para trocar a escala desta cópia.");
@@ -665,7 +667,7 @@
       return PR().conferir(pr).fora.some(function (q) { return q.bloco === ix; });
     },
     /* troca a escala de UMA cópia (o 1:50 do título): o desenho é refeito nessa escala e o quadro muda em volta do centro */
-    trocarEscala: function (id, ix, escala) {
+    trocarEscala: function (id, ix, escala, silencioso) {
       var a = this.achar(id), b = a && a.folha.blocos[ix]; if (!b || b.tipo !== "viewport") return false;
       var f = clone(a.folha), nb;
       if (escala === "vista") {
@@ -679,7 +681,8 @@
       f.blocos[ix] = PR().bloco(nb);
       this.gravarFolha(a, f); this.pintar(id); this._pintarProps();
       status("Escala da cópia " + (b.numeroDetalhe || "") + ": 1:" + f.blocos[ix].escala + (escala === "vista" ? " (a da vista)" : "") + ".");
-      if (this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
+      /* o aviso só vale DEPOIS do ajuste final (16/11/2026: ao puxar uma elevação para a folha o aviso saía antes de _caber, mesmo a vista terminando dentro da área) */
+      if (!silencioso && this._foraDaArea(a, f, ix)) toast("Nesta escala parte da vista sai da área de desenho: arraste ou recorte (alça do canto).", "aviso");
       return true;
     },
     menuEscala: function (id, ix, cx, cy) {
@@ -922,6 +925,9 @@
       });
       graf.forEach(function (q) { if (q.id === "p:SHEET_WIDTH" || q.id === "p:SHEET_HEIGHT") q.unidade = "mm"; });
       outros.push({ id: "pdf", rotulo: "PDF desta folha", tipo: "botao", rotuloBotao: "Gerar PDF", fn: function () { self.pdfVetorial([id]); } });
+      /* PDF INTERATIVO (camadas): ligado por padrão; gravado no projeto (conjunto de folhas) */
+      outros.push({ id: "pdf-camadas", rotulo: "PDF interativo (camadas)", tipo: "sim-nao", valor: this.pdfCamadasCfg(id).ativo !== false });
+      outros.push({ id: "pdf-camadas-escolher", rotulo: "Camadas do PDF", tipo: "botao", rotuloBotao: "Escolher camadas…", fn: function () { self.dialogoPdfCamadas(id); } });
       outros.push({ id: "duplicar", rotulo: "Duplicar esta folha", tipo: "botao", rotuloBotao: "Duplicar folha", fn: function () { self.duplicarFolha(id); } });
       outros.push({ id: "excluir", rotulo: "Excluir esta folha", tipo: "botao", rotuloBotao: "Excluir folha…", fn: function () { self.excluirFolha(id); } });
       outros.push({ id: "dxf", rotulo: "DXF desta folha", tipo: "botao", rotuloBotao: "Exportar DXF", fn: function () { self.exportarDxf(id); } });
@@ -971,6 +977,7 @@
     _mudarFolha: function (id, pid, valor) {
       if (/^c:/.test(String(pid))) { this.mudarCarimbo(id, String(pid).slice(2), valor); return; }
       var a = this.achar(id); if (!a) return;
+      if (pid === "pdf-camadas") { var cc = clone(this.pdfCamadasCfg(id)); cc.ativo = valor === true || valor === "true"; this.mudarPdfCamadas(id, cc); return; }   /* PDF interativo ligado/desligado */
       var f = clone(a.folha), mapa = { "p:SHEET_NAME": "conteudo", "p:SHEET_NUMBER": "numero", "p:SHEET_ISSUE_DATE": "dataEmissao", "p:SHEET_DESIGNED_BY": "projetadoPor",
         "p:SHEET_DRAWN_BY": "desenhadoPor", "p:SHEET_CHECKED_BY": "verificadoPor", "p:SHEET_APPROVED_BY": "aprovadoPor", "p:SHEET_SCHEDULED": "apareceNaLista" };
       if (mapa[pid]) f[mapa[pid]] = pid === "p:SHEET_SCHEDULED" ? !!valor : String(valor == null ? "" : valor);
@@ -1256,7 +1263,8 @@
       status("Gerando o PDF vetorial…");
       return Promise.resolve(self._garantir3d(itens)).then(function () {
         lista.forEach(function (it, i) { var rec = self.recursos(itens[i], false); rec.projeto = projeto; it.rec = rec; });
-        return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, "") });
+        var cfgCam = PR().pdfCamadasDe(itens[0].pr);   /* PDF interativo: ligado por padrão (Propriedades da folha › Escolher camadas) */
+        return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, ""), camadas: cfgCam.ativo === false ? null : cfgCam });
       }).then(function (r) {
         var d = r.bytes;
         if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, d, "application/pdf", ""); if (!wT) return null; nome = wT.nome; d = wT.dados; }
@@ -1272,17 +1280,56 @@
       })["catch"](function (e) { toast("Não consegui gerar o PDF: " + (e && e.message || e), "erro"); return null; });
     },
     _garantir3d: function (itens) { return this.garantir3d(itens); },
+    /* PDF INTERATIVO (camadas / OCG): { ativo, incluir:{id:false}, desligadas:[ids], variantes:{cotas, parede} } do conjunto da folha (padrão: ligado, tudo incluído, tudo ligado) */
+    pdfCamadasCfg: function (id) { var a = this.achar(id); return PR().pdfCamadasDe(a ? a.pr : null); },
+    mudarPdfCamadas: function (id, cfg) {
+      var a = this.achar(id); if (!a) return false;
+      var pr = PR().normalizar(a.reg); delete pr.pdfCamadas;
+      var nova = PR().pdfCamadasNorm(cfg); if (nova) pr.pdfCamadas = nova;
+      pr.id = a.reg.id; pr.obraId = a.reg.obraId; pr.criadoEm = a.reg.criadoEm;
+      if (!this.salvarRegistro(pr)) return false;
+      this._pintarProps();
+      status(nova && nova.ativo === false ? "PDF comum (sem camadas)." : "PDF interativo: camadas " + (nova ? "configuradas" : "no padrão (todas, ligadas)") + ".");
+      return true;
+    },
+    dialogoPdfCamadas: function (id) {
+      var self = this, cfg = this.pdfCamadasCfg(id), CAM = (global.FolhaPdf && global.FolhaPdf.CAMADAS) || [];
+      var linhas = CAM.map(function (d) {
+        return '<tr><td>' + esc(d.nome) + '</td><td style="text-align:center"><input type="checkbox" data-pc-inc="' + d.id + '"' + (cfg.incluir[d.id] === false ? "" : " checked") + '></td>' +
+          '<td style="text-align:center"><input type="checkbox" data-pc-on="' + d.id + '"' + (cfg.desligadas.indexOf(d.id) >= 0 ? "" : " checked") + "></td></tr>";
+      }).join("");
+      var vp = cfg.variantes || {};
+      global.UI.modal("PDF interativo (camadas)",
+        '<label style="display:block;margin:0 0 8px"><input type="checkbox" id="pc-ativo"' + (cfg.ativo === false ? "" : " checked") + '> <b>PDF interativo</b> (cada parte do desenho vira uma camada liga/desliga no leitor de PDF)</label>' +
+        '<table class="tbl" style="width:100%"><thead><tr><th>Camada</th><th>Incluir</th><th>Começa ligada</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
+        '<p class="muted" style="font-size:12px;margin:8px 0 4px">Ao abrir (as duas variantes vão desenhadas; no leitor liga-se uma ou outra):</p>' +
+        '<label style="display:block;font-size:12.5px">Cotas: <select id="pc-cotas"><option value="">coloridas (como na tela)</option><option value="preta"' + (vp.cotas === "preta" ? " selected" : "") + '>pretas</option></select></label>' +
+        '<label style="display:block;font-size:12.5px;margin-top:4px">Parede: <select id="pc-parede"><option value="">o preenchimento da vista</option>' +
+          [["parede-hachura", "hachura 45°"], ["parede-cinza", "cinza"], ["parede-branco", "branco"]].map(function (q) { return '<option value="' + q[0] + '"' + (vp.parede === q[0] ? " selected" : "") + ">" + q[1] + "</option>"; }).join("") + "</select></label>",
+        [{ texto: "Salvar", classe: "primary", onClick: function () {
+          var q = function (sel) { return [].slice.call(document.querySelectorAll(sel)); }, nova = { ativo: !!(document.getElementById("pc-ativo") || {}).checked, incluir: {}, desligadas: [], variantes: {} };
+          q("[data-pc-inc]").forEach(function (e) { if (!e.checked) nova.incluir[e.getAttribute("data-pc-inc")] = false; });
+          q("[data-pc-on]").forEach(function (e) { if (!e.checked) nova.desligadas.push(e.getAttribute("data-pc-on")); });
+          var vc = (document.getElementById("pc-cotas") || {}).value, vpd = (document.getElementById("pc-parede") || {}).value; if (vc) nova.variantes.cotas = vc; if (vpd) nova.variantes.parede = vpd;
+          global.UI.fecharModal(); self.mudarPdfCamadas(id, nova);
+        } }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+    },
     pdfLote: function () {
       var self = this, regs = this.registros().filter(function (r) { return r.origem === "folhas" || arr(r.folhas).some(function (f) { return arr(f.blocos).some(function (b) { return b.tipo === "viewport"; }); }); });
       var itens = [];
       regs.forEach(function (r) { var pr = PR().normalizar(r); pr.folhas.forEach(function (f) { itens.push({ id: self.idFolha(r.id, f.id), rot: self.nomeFolha(pr, f), arq: PR().nomeArquivo(pr, f, self.projeto(), "pdf") }); }); });
       if (!itens.length) { toast("Nenhuma folha ainda: Vista › Folha.", "aviso"); return null; }
+      var cfgL = this.pdfCamadasCfg(itens[0].id);
       global.UI.modal("PDF em lote", '<p class="muted" style="font-size:12px;margin:0 0 6px">As folhas marcadas saem num documento só, cada uma no tamanho do papel dela. Nome automático: número - nome - revisão.</p>' +
+        '<label style="display:block;font-size:12.5px;padding:2px 0 6px"><input type="checkbox" data-pv-camadas="1"' + (cfgL.ativo === false ? "" : " checked") + '> <b>PDF interativo (camadas)</b> — cotas, parede, níveis… liga/desliga no leitor <button type="button" data-pv-camadas-esc="1" style="margin-left:6px">Escolher camadas…</button></label>' +
         itens.map(function (it) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-lote="' + esc(it.id) + '"> ' + esc(it.rot) + ' <span class="muted">(' + esc(it.arq) + ")</span></label>"; }).join(""),
         [{ texto: "Gerar PDF", classe: "primary", onClick: function () {
           var ids = [].slice.call(document.querySelectorAll("[data-pv-lote]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-lote"); });
+          var ck = document.querySelector("[data-pv-camadas]"), cfgN = clone(self.pdfCamadasCfg(itens[0].id));
+          if (ck && (ck.checked !== (cfgN.ativo !== false))) { cfgN.ativo = !!ck.checked; self.mudarPdfCamadas(itens[0].id, cfgN); }
           global.UI.fecharModal(); self.pdfVetorial(ids);
         } }, { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+      setTimeout(function () { var be = document.querySelector("[data-pv-camadas-esc]"); if (be) be.addEventListener("click", function () { global.UI.fecharModal(); self.dialogoPdfCamadas(itens[0].id); }); }, 0);
       return itens;
     },
     /* posicionar sem arrastar (toque, teclado): escolhe a vista numa lista */

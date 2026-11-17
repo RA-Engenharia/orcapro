@@ -771,7 +771,7 @@
   var AJUSTAVEIS = { tipoCota: 1, tipoTexto: 1, off: 1, orient: 1, prefixo: 1, sufixo: 1, eq: 1, travada: 1, valorTravado: 1, chamada: 1,
                      texto: 1, x: 1, y: 1, lx: 1, ly: 1, comLider: 1, alinhH: 1, alinhV: 1, rot: 1, legivel: 1, simbolo: 1, escalaSimb: 1,
                      chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1,
-                     txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1 };
+                     txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1 };
 
   /* ===================================================== tipos efetivos (RA + projeto) */
   function tiposProjeto(estado) { var a = estado && estado.anot2d; return (a && a.tipos) || { cota: [], texto: [] }; }
@@ -1069,7 +1069,8 @@
     if (o.op === "anot2d") return itemValido(o);
     if (o.op === "anot2dAjustar") return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) &&
       Object.keys(o.campos).length > 0 && Object.keys(o.campos).every(function (k) { return AJUSTAVEIS[k]; }) &&
-      (o.campos.refs == null || refsOk(o.campos.refs)) && (o.campos.pts == null || ptsOk(o.campos.pts, 2));
+      (o.campos.refs == null || refsOk(o.campos.refs)) && (o.campos.pts == null || ptsOk(o.campos.pts, 2)) &&
+      (o.campos.cor == null || o.campos.cor === "" || /^#[0-9a-fA-F]{6}$/.test(String(o.campos.cor)));
     if (o.op === "anot2dTipo") return o.id != null && (o.cat === "cota" || o.cat === "texto") && String(o.nome || "").trim().length > 0 &&
       (o.valores == null || (typeof o.valores === "object" && !Array.isArray(o.valores)));
     if (o.op === "revisao") return o.id != null && String(o.numero || "").trim().length > 0;
@@ -1476,8 +1477,16 @@
     var o = unit(add(dir, perp(dir))) || dir;   /* traço a 45° da linha de cota */
     return lnS(sub(q, mul(o, tk / 2)), add(q, mul(o, tk / 2)), w, "a7-marca");
   }
+  /* põe a cor no `style` de cada peça da cota (linha/marca/hachura = stroke; cheio/texto = fill) */
+  function tingir(s, cor) {
+    return String(s).replace(/<(line|path|circle|rect|text|polygon|polyline)\b([^>]*?)(\/?)>/g, function (all, tag, at, auto) {
+      var mc = /\bclass="([^"]*)"/.exec(at), cl = mc ? " " + mc[1] + " " : ""; if (!cl || /\sstyle=/.test(at)) return all;
+      var st = /\sa7-(l|marca|hach|trava)\s/.test(cl) ? "stroke:" + cor : /\sa7-(cheio|tx|hach-p)\s/.test(cl) ? "fill:" + cor : "";
+      return st ? "<" + tag + at + ' style="' + st + '"' + auto + ">" : all;
+    });
+  }
   /* uma COTA → SVG */
-  function svgCota(it, m, t, k, jogo, sel) {
+  function svgCota(it, m, t, k, jogo, sel, corVista) {
     var wL = penaPx(t.pena, jogo), wM = penaPx(t.penaMarca, jogo), h = num(t.texto, 2.5) * k, s = "", cor = stroke(t.cor);
     var gap = num(t.intervalo, 1) * k, extC = num(t.extChamada, 1.5) * k, extL = num(t.extLinha, 1.5) * k, dT = num(t.deslocTexto, 0.8) * k;
     /* COTA NUNCA ESCONDE O DESENHO (15/11/2026, banheiro social da Casa 487: o fundo opaco do número tapava o vaso e o tubo).
@@ -1593,6 +1602,10 @@
       if (opaco) s += fundoTexto(pI, largTexto(txI, h, t), h, ri, "middle");
       s += txS(pI, h, esc(txI), "a7-tx", "middle", ri, t);
     }
+    /* COR DA COTA (16/11/2026): a da própria cota (it.cor) vence a do tipo e a da vista (estilo.corCotas); o `style` de cada traço vence a regra de classe — linha, chamadas, marcas e texto,
+       na tela, na folha/PDF e no DXF. Cota selecionada ou violada mantém o azul/vermelho de aviso. */
+    var cc = corOk(it.cor) || corOk(t.cor) || corOk(corVista);
+    if (cc && !sel && !it.violada && !it.orfa) s = tingir(s, cc);
     var cls = "a7-item a7-cota a7-cota-" + m.tipo + (sel ? " a7-sel" : "") + (it.violada ? " a7-violada" : "") + (it.orfa ? " a7-orfa" : "");
     return '<g class="' + cls + '" data-a7="' + esc(it.id) + '"' + cor + ">" + s + "</g>";
   }
@@ -1806,7 +1819,7 @@
       var it = o.it, sel = a.sel != null && String(a.sel) === String(it.id);
       if (it.tipo === "regiao") { if (!it.mascara) usar(it.padrao); if (it.mascara) mascaras += svgRegiao(it, k, jogo, sel, escala); else regioes += svgRegiao(it, k, jogo, sel, escala); }
       else if (it.tipo === "componente") { usar((COMPONENTES[it.comp] || {}).padrao); resto += svgComponente(it, k, jogo, sel, escala); }
-      else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel); }
+      else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel, e && e.corCotas); }
       else if (it.tipo === "texto") resto += svgTexto(it, o.t, k, jogo, sel);
       else if (it.tipo === "simbolo") resto += svgSimbolo(it, k, jogo, sel, e);
       else if (it.tipo === "notaChave") resto += svgNotaChave(it, k, jogo, sel);
@@ -1854,7 +1867,7 @@
     indice: indice, resolverRef: resolverRef, medirCota: function (estado, it, opc) { return medirCota(indice(estado), it, opc || {}); },
     acharRef: acharRef, offsetPara: offsetPara,
     validaOp: validaOp, aplicarOp: aplicarOp, fimOp: fimOp, registrar: registrar,
-    itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
+    tingir: tingir, itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
     opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
     opComponente: opComponente, opLegenda: opLegenda, opRevisao: opRevisao, opTravar: opTravar, opsIgualar: opsIgualar, opsManterTrava: opsManterTrava,
     anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda,

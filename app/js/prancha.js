@@ -120,6 +120,20 @@
     return o;
   }
 
+  /* PDF INTERATIVO (camadas, 16/11/2026): config do conjunto de folhas — { ativo, incluir:{id:false}, desligadas:[ids], variantes:{cotas:"cor"|"preta", parede:"parede-…"} }.
+     O padrão (ligado, todas as camadas, ligadas) NÃO é gravado: devolve null e o normalizar nem cria o campo (registros antigos ficam iguais). */
+  function pdfCamadasNorm(c) {
+    if (!c || typeof c !== 'object') return null;
+    var o = { ativo: c.ativo !== false, incluir: {}, desligadas: [], variantes: {} }, ok = /^[a-z][a-z-]{0,30}$/;
+    Object.keys(c.incluir || {}).forEach(function (k) { if (ok.test(k) && c.incluir[k] === false) o.incluir[k] = false; });
+    arr(c.desligadas).forEach(function (k) { if (ok.test(String(k)) && o.desligadas.indexOf(String(k)) < 0) o.desligadas.push(String(k)); });
+    var v = c.variantes || {};
+    if (v.cotas === 'cor' || v.cotas === 'preta') o.variantes.cotas = v.cotas;
+    if (ok.test(String(v.parede || '')) && /^parede-/.test(v.parede)) o.variantes.parede = v.parede;
+    if (o.ativo && !Object.keys(o.incluir).length && !o.desligadas.length && !Object.keys(o.variantes).length) return null;
+    return o;
+  }
+  function pdfCamadasDe(pr) { return pdfCamadasNorm(pr && pr.pdfCamadas) || { ativo: true, incluir: {}, desligadas: [], variantes: {} }; }
   function normalizar(pr) {
     pr = pr || {};
     var formato = FORMATOS[pr.formato] ? pr.formato : 'A1';
@@ -136,7 +150,7 @@
       var pv = pvDaFolha(f.pv); if (pv) o.pv = pv;
       return o;
     });
-    return {
+    var pdfCam = pdfCamadasNorm(pr.pdfCamadas), res0 = {
       id: txt(pr.id), obraId: txt(pr.obraId), nome: txt(pr.nome) || 'Prancha', formato: formato, orientacao: orient,
       origem: txt(pr.origem), origemId: txt(pr.origemId), criadoEm: txt(pr.criadoEm),
       carimbo: { empresa: txt(c.empresa), responsavel: txt(c.responsavel), registro: txt(c.registro), contratante: txt(c.contratante),
@@ -151,6 +165,8 @@
       coluna: arr(pr.coluna).map(function (s) { return { titulo: txt(s && s.titulo), itens: arr(s && s.itens).map(txt) }; }),
       folhas: folhas, pdf: pr.pdf && pr.pdf.chave ? { chave: txt(pr.pdf.chave), nome: txt(pr.pdf.nome) } : null
     };
+    if (pdfCam) res0.pdfCamadas = pdfCam;
+    return res0;
   }
 
   /* o que está fora da área de desenho (bloco que invade o carimbo sai
@@ -790,6 +806,7 @@
     parametrosFolha: parametrosFolha, mapaParametros: mapaParametros, proximoNumeroDetalhe: proximoNumeroDetalhe, vistaEmFolha: vistaEmFolha,
     ajustarEixo: ajustarEixo, eixoGuiaLinhas: eixoGuiaLinhas, tamanhoViewport: tamanhoViewport, colocarViewport: colocarViewport,
     ESCALAS_VISTA: ESCALAS_VISTA, escalaViewport: escalaViewport, deslocarRecorte: deslocarRecorte, redimensionarViewport: redimensionarViewport, blocoTexto: blocoTexto,
+    pdfCamadasNorm: pdfCamadasNorm, pdfCamadasDe: pdfCamadasDe,
     CAMPOS_CARIMBO_FOLHA: CAMPOS_CARIMBO_FOLHA, CAMPOS_CARIMBO_CONJ: CAMPOS_CARIMBO_CONJ,
     listaFolhas: listaFolhas, listaVistas: listaVistas, tabelaRevisoes: tabelaRevisoes, blocoDeLista: blocoDeLista,
     /* modelo de carimbo RA e o Gerar pranchas (09/10/2026) */

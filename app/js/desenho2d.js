@@ -38,9 +38,45 @@
      gravado não muda. Antes, com P6 ativo, o controle só mexia em cota, marca e título. */
   var FATOR_PENA = { fina: 0.7, media: 1, grossa: 1.4 };
   function fatorPena(p) { return FATOR_PENA[p] || 1; }
+  /* PREENCHIMENTO DO CORTE (16/11/2026): por vista (estilo.preenchimento), vale na tela, na folha/PDF e no DXF. O padrão continua "hachura" (o de sempre); as chaves antigas
+     (solido, cinza, vazio) seguem valendo — só o rótulo ficou mais claro. */
   var PREENCHIMENTOS = {
-    hachura: "Hachura 45°", solido: "Sólido escuro", cinza: "Cinza claro", vazio: "Sem preenchimento"
+    hachura: "Hachura diagonal 45°", cruzada: "Hachura cruzada", concreto: "Concreto (pontos e triângulos)", tijolo: "Tijolo",
+    cinza: "Cinza sólido", preto: "Preto sólido", vazio: "Branco (vazio, só contorno)", solido: "Sólido escuro"
   };
+  var PREENCH_SOLIDOS = { solido: "#3a3a3a", preto: "#111111", cinza: "#cfd3d8" };
+  var PREENCH_PADROES = { hachura: "d2-hach", cruzada: "d2-hach-x", concreto: "d2-hach-c", tijolo: "d2-hach-t" };
+  /* o <pattern> de cada padrão (k = metros por mm de papel). Tudo em formas simples (line, circle, polygon): a folha em PDF repete o padrão como vetor. */
+  function defPreenchimento(chave, k) {
+    var t = "#1a1a1a", q = function (v) { return n4(v * k); };
+    if (chave === "cruzada") return '<pattern id="d2-hach-x" patternUnits="userSpaceOnUse" width="' + q(2.4) + '" height="' + q(2.4) + '" patternTransform="rotate(45)">' +
+      '<line x1="0" y1="0" x2="0" y2="' + q(2.4) + '" stroke="' + t + '" stroke-width="' + q(0.16) + '"/><line x1="0" y1="0" x2="' + q(2.4) + '" y2="0" stroke="' + t + '" stroke-width="' + q(0.16) + '"/></pattern>';
+    if (chave === "concreto") return '<pattern id="d2-hach-c" patternUnits="userSpaceOnUse" width="' + q(4) + '" height="' + q(4) + '">' +
+      '<circle cx="' + q(0.9) + '" cy="' + q(1.1) + '" r="' + q(0.22) + '" fill="' + t + '"/><circle cx="' + q(3.1) + '" cy="' + q(3) + '" r="' + q(0.18) + '" fill="' + t + '"/>' +
+      '<polygon points="' + q(2.5) + "," + q(0.5) + " " + q(3.4) + "," + q(1.5) + " " + q(1.9) + "," + q(1.6) + '" fill="none" stroke="' + t + '" stroke-width="' + q(0.14) + '"/>' +
+      '<polygon points="' + q(0.6) + "," + q(2.6) + " " + q(1.5) + "," + q(2.4) + " " + q(1.1) + "," + q(3.5) + '" fill="none" stroke="' + t + '" stroke-width="' + q(0.14) + '"/></pattern>';
+    if (chave === "tijolo") return '<pattern id="d2-hach-t" patternUnits="userSpaceOnUse" width="' + q(4) + '" height="' + q(2.4) + '">' +
+      '<line x1="0" y1="0" x2="' + q(4) + '" y2="0" stroke="' + t + '" stroke-width="' + q(0.14) + '"/><line x1="0" y1="' + q(1.2) + '" x2="' + q(4) + '" y2="' + q(1.2) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/>' +
+      '<line x1="0" y1="0" x2="0" y2="' + q(1.2) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/><line x1="' + q(2) + '" y1="' + q(1.2) + '" x2="' + q(2) + '" y2="' + q(2.4) + '" stroke="' + t + '" stroke-width="' + q(0.14) + '"/></pattern>';
+    return "";
+  }
+  /* o fill do corte de UMA vista: "url(#padrão)", cor sólida ou "none" */
+  function fillCorte(chave) { return PREENCH_SOLIDOS[chave] || (PREENCH_PADROES[chave] ? "url(#" + PREENCH_PADROES[chave] + ")" : "none"); }
+  /* COR DAS COTAS (16/11/2026): paleta rápida; qualquer outra cor entra por "Escolher outra cor…" (escolherCor) */
+  var PALETA_COTA = [["", "Padrão (preto)"], ["#111111", "Preto"], ["#d00000", "Vermelho"], ["#0b5fff", "Azul"], ["#1f8a3b", "Verde"]];
+  function opcoesCor(atual) {
+    var o = PALETA_COTA.map(function (q) { return { id: q[0], rotulo: q[1] }; }), a = String(atual || "").toLowerCase();
+    if (a && !o.some(function (q) { return q.id === a; })) o.push({ id: a, rotulo: "Personalizada (" + a + ")" });
+    return o;
+  }
+  function escolherCor(inicial, fn) {   /* seletor livre do navegador: <input type=color> sem tela própria */
+    if (typeof document === "undefined") return false;
+    var i = document.createElement("input"); i.type = "color"; i.value = /^#[0-9a-fA-F]{6}$/.test(String(inicial || "")) ? inicial : "#d00000";
+    i.style.cssText = "position:fixed;left:-100px;top:-100px;opacity:0";
+    i.addEventListener("change", function () { try { fn(String(i.value).toLowerCase()); } finally { if (i.parentNode) i.parentNode.removeChild(i); } });
+    i.addEventListener("blur", function () { setTimeout(function () { if (i.parentNode) i.parentNode.removeChild(i); }, 400); });
+    document.body.appendChild(i); i.click(); return true;
+  }
   var MARCAS_COTA = { obliquo: "Traço oblíquo", seta: "Seta", ponto: "Ponto" };
   var UNIDADES = { m: "metros (3,45)", cm: "centímetros (345)", mm: "milímetros (3450)" };
   var ESCALAS = [20, 25, 50, 75, 100, 125, 200];
@@ -65,7 +101,13 @@
              /* P2-D: ambientes na planta — identificador (nome; número · área) e esquema de cores */
              identAmbiente: true, esquemaCores: "nenhum",
              /* CONVENÇÃO DE REFORMA (19/10/2026): "reforma" = a construir em vermelho com hachura, a demolir em amarelo tracejado, existente em preto/cinza + legenda */
-             convencao: "padrao" };
+             convencao: "padrao",
+             /* PREENCHIMENTO DO CORTE (16/11/2026): corteForcado = a pessoa escolheu o preenchimento NESTA vista; nas vistas com estilos de objeto (P6) ele vale para a parede cortada */
+             corteForcado: false,
+             /* COR DAS COTAS (16/11/2026): "" = a tinta da vista; "#rrggbb" = todas as cotas da vista (tela, folha/PDF e DXF) */
+             corCotas: "",
+             /* NÍVEIS (16/11/2026): ids/nomes dos níveis ocultos nesta vista de corte/elevação (lista de chaves "nome|cota") */
+             niveisOcultos: [] };
   }
   function normEstilo(e) {
     var p = estiloPadrao(), o = {};
@@ -86,6 +128,10 @@
        normalizar igual a antes — com o campo sempre presente, os templates RA deixaram de bater consigo mesmos
        (test-bim-b6 [8], 20/10/2026). Quem lê usa `e.convencao === "reforma"` / `e.convencao || "padrao"`. */
     if (o.convencao === "padrao") delete o.convencao;
+    /* mesma regra (16/11/2026): preenchimento forçado, cor das cotas e níveis ocultos só ficam gravados quando saem do padrão */
+    o.corteForcado = o.corteForcado === true || o.corteForcado === "true"; if (!o.corteForcado) delete o.corteForcado;
+    o.corCotas = /^#[0-9a-fA-F]{6}$/.test(String(o.corCotas || "")) ? String(o.corCotas).toLowerCase() : ""; if (!o.corCotas) delete o.corCotas;
+    o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
     return o;
   }
 
@@ -315,14 +361,16 @@
      font-size < 1 o navegador arredonda o espaço entre letras e a cota sai
      "1 5 , 2 5". Por isso a letra é desenhada em corpo 100 e ENCOLHIDA por
      transform (scale) — mesmo tamanho final, espaçamento certo. */
-  function txt(x, y, h, conteudo, cls, ancora, rot) {
+  function txt(x, y, h, conteudo, cls, ancora, rot, extra) {
     var s = h / 100;
     return '<text x="0" y="0" font-size="100"' + (ancora ? ' text-anchor="' + ancora + '"' : "") +
-      ' transform="translate(' + n4(x) + " " + n4(y) + ")" + (rot ? " rotate(" + rot + ")" : "") + " scale(" + (Math.round(s * 1e7) / 1e7) + ')" class="' + cls + '">' + conteudo + "</text>";
+      ' transform="translate(' + n4(x) + " " + n4(y) + ")" + (rot ? " rotate(" + rot + ")" : "") + " scale(" + (Math.round(s * 1e7) / 1e7) + ')" class="' + cls + '"' + (extra || "") + ">" + conteudo + "</text>";
   }
 
   function svgCota(c, e, pena, ocup) {
     var k = e.escala / 1000, h = e.textoCota * k, ext = 2 * k, gap = 1.5 * k, tk = 1.6 * k;
+    /* COR DAS COTAS (16/11/2026): o `style` do próprio traço vence a regra de classe (tela e papel) — linha de cota, chamadas, marcas e texto saem na mesma cor */
+    var sS = e.corCotas ? ' style="stroke:' + e.corCotas + '"' : "", sF = e.corCotas ? ' style="fill:' + e.corCotas + '"' : "";
     var s = "", t = esc(fmtMedida(c.valor, e)), mid = (c.a + c.b) / 2, sent = c.linha >= c.base ? 1 : -1;
     /* COTAS (14/10/2026): o texto que não cabe entre as marcas (a laje de 0,12, o piso de 0,10) ficava em cima
        das marcas e do vizinho — sai para FORA, depois da maior ponta, e a linha de cota vai até ele */
@@ -342,13 +390,13 @@
       }
       tomados.push([mid - wT / 2, mid + wT / 2]);
     }
-    function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
+    function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + sS + "/>"; }
     function marca(x, y, ang) {
-      if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"/>';
+      if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"' + sF + "/>";
       if (e.marcaCota === "seta") {
         var L = 2.6 * k, W = 0.9 * k, ca = Math.cos(ang), sa = Math.sin(ang);
         var p1 = [x - ca * L - sa * W, y - sa * L + ca * W], p2 = [x - ca * L + sa * W, y - sa * L - ca * W];
-        return '<path d="M' + n4(x) + " " + n4(y) + "L" + n4(p1[0]) + " " + n4(p1[1]) + "L" + n4(p2[0]) + " " + n4(p2[1]) + 'Z" class="d2-cota-pt"/>';
+        return '<path d="M' + n4(x) + " " + n4(y) + "L" + n4(p1[0]) + " " + n4(p1[1]) + "L" + n4(p2[0]) + " " + n4(p2[1]) + 'Z" class="d2-cota-pt"' + sF + "/>";
       }
       return ln(x - tk * 0.7071, y + tk * 0.7071, x + tk * 0.7071, y - tk * 0.7071, pena.marca);
     }
@@ -358,14 +406,14 @@
       s += ln(c.a - (e.marcaCota === "obliquo" ? ext : 0), y, c.b + (e.marcaCota === "obliquo" ? ext : 0), y, pena.cota);
       if (fora) s += mid > hi ? ln(hi, y, mid + wT / 2, y, pena.cota) : ln(mid - wT / 2, y, lo, y, pena.cota);
       s += marca(c.a, y, Math.PI) + marca(c.b, y, 0);
-      s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle");
+      s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle", 0, sF);
     } else {
       var x = c.linha;
       s += ln(c.base + sent * gap, c.a, x + sent * ext, c.a, pena.cota) + ln(c.base + sent * gap, c.b, x + sent * ext, c.b, pena.cota);
       s += ln(x, c.a - (e.marcaCota === "obliquo" ? ext : 0), x, c.b + (e.marcaCota === "obliquo" ? ext : 0), pena.cota);
       if (fora) s += mid > hi ? ln(x, hi, x, mid + wT / 2, pena.cota) : ln(x, mid - wT / 2, x, lo, pena.cota);
       s += marca(x, c.a, -Math.PI / 2) + marca(x, c.b, Math.PI / 2);
-      s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90);
+      s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90, sF);
     }
     return '<g class="d2-cota' + (c.parcial ? " d2-parcial" : "") + '">' + s + "</g>";
   }
@@ -377,14 +425,15 @@
     var dx = c.b[0] - c.a[0], dy = c.b[1] - c.a[1], L = Math.sqrt(dx * dx + dy * dy); if (!(L > 1e-6)) return "";
     var k = e.escala / 1000, h = e.textoCota * k, ux = dx / L, uy = dy / L, nx = dy / L, ny = -dx / L, off = +c.off || 0, sg = off >= 0 ? 1 : -1, tk = 1.6 * k, gap = 1.5 * k, ext = 2 * k;
     var l1 = [c.a[0] + nx * off, c.a[1] + ny * off], l2 = [c.b[0] + nx * off, c.b[1] + ny * off];
-    function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
+    var sS = e.corCotas ? ' style="stroke:' + e.corCotas + '"' : "", sF = e.corCotas ? ' style="fill:' + e.corCotas + '"' : "";
+    function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + sS + "/>"; }
     var s = ln(c.a[0] + nx * gap * sg, c.a[1] + ny * gap * sg, l1[0] + nx * ext * sg, l1[1] + ny * ext * sg, pena.cota) +
             ln(c.b[0] + nx * gap * sg, c.b[1] + ny * gap * sg, l2[0] + nx * ext * sg, l2[1] + ny * ext * sg, pena.cota) +
             ln(l1[0] - ux * ext, l1[1] - uy * ext, l2[0] + ux * ext, l2[1] + uy * ext, pena.cota);
     [l1, l2].forEach(function (q) { s += ln(q[0] - (ux + nx) * tk * 0.5, q[1] - (uy + ny) * tk * 0.5, q[0] + (ux + nx) * tk * 0.5, q[1] + (uy + ny) * tk * 0.5, pena.marca); });
     var ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90 || ang <= -90) ang += 180;   /* texto nunca de cabeça para baixo */
     var mx = (l1[0] + l2[0]) / 2 + nx * 0.8 * k * sg, my = (l1[1] + l2[1]) / 2 + ny * 0.8 * k * sg;
-    s += txt(mx, my, h, esc(fmtMedida(c.valor != null ? c.valor : L, e)), "d2-cota-tx", "middle", n4(ang));
+    s += txt(mx, my, h, esc(fmtMedida(c.valor != null ? c.valor : L, e)), "d2-cota-tx", "middle", n4(ang), sF);
     return '<g class="d2-cota d2-cota-modelo">' + s + "</g>";
   }
 
@@ -421,13 +470,45 @@
     return '<g class="d2-eixo-g" data-d2-eixo="' + esc(ex.id || ex.nome) + '">' + s + "</g>";
   }
 
-  function svgNivel(nv, cx, e, pena) {
-    var k = e.escala / 1000, x = cx.x1 + 22 * k, s = "";
+  /* NÍVEIS DO CORTE/ELEVAÇÃO (16/11/2026). Roteiro do defeito (print do Rogério): cada nível saía com o rótulo repetido e, com níveis próximos (Platibanda +3,20 sobre Nível +3,65,
+     LAJE EXISTENTE +2,80 sobre Nível), os textos ficavam um em cima do outro. Agora: (1) um nível só aparece UMA vez (mesmo nome e cota); (2) cada vista pode ocultar níveis
+     (estilo.niveisOcultos, chave "nome|cota"); (3) os rótulos nunca se sobrepõem — os que ficariam a menos de 1,3 × a altura do texto de um vizinho vão para uma coluna à
+     direita, empilhados, ligados ao seu nível por uma chamada. */
+  function chaveNivel(nv) { return String(nv.nome == null ? "" : nv.nome) + "|" + n4(nv.cota != null ? +nv.cota : -nv.y); }
+  function niveisDaVista(d, e) {
+    var vistos = {}, out = [], oc = {};
+    ((e && e.niveisOcultos) || []).forEach(function (q) { oc[q] = 1; });
+    (d.niveis || []).forEach(function (nv) {
+      if (!nv || !isFinite(+nv.y)) return;
+      var ch = chaveNivel(nv); if (vistos[ch]) return; vistos[ch] = 1;
+      out.push({ chave: ch, nome: nv.nome, y: +nv.y, cota: nv.cota != null ? +nv.cota : -nv.y, oculto: !!oc[ch] });
+    });
+    return out.sort(function (a, b) { return a.y - b.y; });
+  }
+  /* posição dos rótulos: [{ by: linha de base, desloc: foi para a coluna da direita }] na ordem de cima para baixo (y crescente) */
+  function layoutNiveis(L, k) {
+    var h = 2.5 * k, gap = h * 1.3, d0 = L.map(function (n) { return n.y - 1.6 * k; }), by = [], desl = [];
+    for (var i = 0; i < L.length; i++) by[i] = i ? Math.max(d0[i], by[i - 1] + gap) : d0[i];
+    for (var j = 0; j < L.length; j++) desl[j] = Math.abs(by[j] - d0[j]) > 1e-9 || (j > 0 && d0[j] - d0[j - 1] < gap) || (j < L.length - 1 && d0[j + 1] - d0[j] < gap);
+    return L.map(function (n, q) { return { by: by[q], desloc: desl[q] }; });
+  }
+  function svgNivel(nv, cx, e, pena, lay) {
+    var k = e.escala / 1000, x = cx.x1 + 22 * k, s = "", h = 2.5 * k, ly = lay || { by: nv.y - 1.6 * k, desloc: false };
     s += '<line x1="' + n4(cx.x0 - 3 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 12 * k) + '" y2="' + n4(nv.y) + '" stroke-width="' + pena.cota + '" ' + NS + tracoK([4, 1.5], k) + ' class="d2-nivel-l"/>';
-    var t = 1.8 * k;
-    s += '<path d="M' + n4(x) + " " + n4(nv.y) + "L" + n4(x - t) + " " + n4(nv.y - t * 1.4) + "L" + n4(x + t) + " " + n4(nv.y - t * 1.4) + 'Z" class="d2-nivel-tri"/>';
-    s += txt(x + 2.6 * k, nv.y - 1.6 * k, 2.5 * k, esc(nv.nome) + " " + esc(fmtCota(nv.cota != null ? nv.cota : -nv.y)), "d2-nivel-tx");
-    return '<g class="d2-nivel">' + s + "</g>";
+    var t = 1.8 * k, rot = esc(nv.nome) + " " + esc(fmtCota(nv.cota != null ? nv.cota : -nv.y));
+    function tri(px, py) { return '<path d="M' + n4(px) + " " + n4(py) + "L" + n4(px - t) + " " + n4(py - t * 1.4) + "L" + n4(px + t) + " " + n4(py - t * 1.4) + 'Z" class="d2-nivel-tri"/>'; }
+    if (ly.desloc) {
+      /* rótulo deslocado: o triângulo vai JUNTO com ele (ponta da chamada), a linha do nível termina na chamada — nenhum símbolo em cima de outro */
+      var tx0 = x + 14 * k + t;
+      s += '<line x1="' + n4(x + 12 * k) + '" y1="' + n4(nv.y) + '" x2="' + n4(x + 14 * k) + '" y2="' + n4(ly.by - t * 0.7) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-nivel-l"/>';
+      s += tri(tx0, ly.by) + txt(tx0 + t + 0.8 * k, ly.by, h, rot, "d2-nivel-tx");
+    } else s += tri(x, nv.y) + txt(x + 2.6 * k, ly.by, h, rot, "d2-nivel-tx");
+    return '<g class="d2-nivel" data-d2-nivel="' + esc(nv.chave || chaveNivel(nv)) + '">' + s + "</g>";
+  }
+  function svgNiveis(d, cx, e, pena) {
+    var k = e.escala / 1000, L = niveisDaVista(d, e).filter(function (n) { return !n.oculto; }), lay = layoutNiveis(L, k), s = "";
+    L.forEach(function (n, i) { s += svgNivel(n, cx, e, pena, lay[i]); });
+    return s;
   }
 
   /* desenho → SVG. `extra.titulo` = nome da vista. Devolve { svg, caixa, cotas } */
@@ -438,7 +519,7 @@
     var cotas = cotasDe(d, e);
     var m = 32 * k;   /* margem de papel para cotas, níveis e marcas */
     var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
-    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
+    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
     /* vínculo CAD (DWG/DXF): fica FORA da caixa das cotas (cota mede o modelo),
        mas o papel cresce para ele caber inteiro */
     var cad = d.cad || [], cadPath = "", cadTx = "";
@@ -490,6 +571,7 @@
       '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
       '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
       (conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+      (e.preenchimento === "cruzada" || e.preenchimento === "concreto" || e.preenchimento === "tijolo" ? defPreenchimento(e.preenchimento, k) : "") +
       (p6 ? p6.defs : "") + "</defs>");
     p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
     /* 0) vínculo CAD — por baixo de tudo, em meio-tom */
@@ -516,7 +598,7 @@
       if (lin) p.push('<path d="' + lin + '" class="d2-vista" stroke-width="' + pena.vista + '" ' + NS + "/>");
     }
     /* 2) o que é CORTADO — preenchimento + contorno na pena grossa */
-    var fill = e.preenchimento === "hachura" ? "url(#d2-hach)" : e.preenchimento === "solido" ? "#3a3a3a" : e.preenchimento === "cinza" ? "#cfd3d8" : "none";
+    var fill = fillCorte(e.preenchimento);
     var fechados = "", abertos = "", fase = {}, porCatC = {};
     (d.cortes || []).forEach(function (c) {
       if (c.fase) { var q = fase[c.fase] || (fase[c.fase] = { f: "", a: "" }); if (c.fechado) q.f += caminho(c.pts, true); else q.a += caminho(c.pts, false); return; }   /* P10 */
@@ -556,7 +638,7 @@
     if (d.inst) p.push(svgInst(d.inst, k, pena));
     if (A7) p.push(A7.svg(d.anotP7, e, pena, "fundo"));   /* P7: região preenchida e mascaramento, por cima do modelo */
     /* 3) anotação */
-    if (d.tipo === "corte" && e.niveis) (d.niveis || []).forEach(function (nv) { p.push(svgNivel(nv, cx, e, pena)); });
+    if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
     if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
     if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));   /* P6: elevação, chamada de detalhe, recorte */
     eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
@@ -932,6 +1014,11 @@
           fill = "url(#d2p6-" + esc(pid) + ")";
         }
       }
+      /* PREENCHIMENTO DO CORTE escolhido na vista: vale para a parede cortada (as outras categorias seguem o estilo de objeto) */
+      if (e.corteForcado && /wall|parede/i.test(key)) {
+        fill = fillCorte(e.preenchimento);
+        if (PREENCH_PADROES[e.preenchimento] && e.preenchimento !== "hachura" && !usados["_corte"]) { usados["_corte"] = 1; defs += defPreenchimento(e.preenchimento, k); }
+      }
       if (gF[key]) corpo += '<path d="' + gF[key] + '" fill="' + fill + '" fill-rule="evenodd" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
       if (gA[key]) corpo += '<path d="' + gA[key] + '" fill="none" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
     });
@@ -1173,7 +1260,7 @@
     PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
-    caixa: caixa, cotas: cotasDe, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
+    caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
     /* P6 */
     P6: { colunaEscala: p6ColunaEscala, penaMm: p6PenaMm, penaEf: p6PenaEf, px: p6Px, traco: p6Traco, corpo: p6Corpo, marcas: p6Marcas, caixa: p6Caixa, padrao: p6Padrao }
   };
