@@ -628,6 +628,86 @@
     var fo = Object.keys(g.porFolha); if (fo.length > 1) fo.forEach(function (pg) { var it = itens[+pg - nIdx]; rows.push(["  " + numeroDe(it), "un", String(g.porFolha[pg])]); });
     return rows;
   }
+  /* O SÍMBOLO DA PORTA/JANELA NA AMPLIADA (17/11/2026): antes só os batentes (contornos cortados) saíam, em vermelho — a página de detalhe não dizia para que lado a porta abre.
+     Agora é o MESMO desenho da planta: `dados.portas` (js/simboloporta.js, gerado pelo BIM.vista2d) com a folha e o ARCO DO GIRO (ou a seta do correr); a mão e o sentido já vêm
+     certos nesses dados (a folha aberta e o arco partem da dobradiça). A porta se acha pelo uid (`u`) e, sem ele, pelo que cai perto do contorno dela.
+     ⚠ o svgpdf desenha o comando A como RETA até o ponto final; por isso o arco vai aqui como POLIGONAL de passos de 6° (no PDF sai curva).
+     A janela não tem símbolo de abertura no desenho (a planta mostra só o contorno cortado): leva o vidro (duas linhas finas no eixo do vão) e, quando o modelo informa o número
+     de folhas, os montantes; o peitoril sai na ficha (só do dado do modelo). Cota de VÃO (largura) nas duas. */
+  function arcoPoli(a) {
+    if (!a || !(a.r > 0) || !a.c || !a.de || !a.ate) return null;
+    var a0 = Math.atan2(a.de[1] - a.c[1], a.de[0] - a.c[0]), a1 = Math.atan2(a.ate[1] - a.c[1], a.ate[0] - a.c[0]), d = a1 - a0;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;   /* o arco curto, como o `A` do SVG com a bandeira de arco pequeno */
+    var n = Math.max(6, Math.ceil(Math.abs(d) / (Math.PI / 30))), pts = [];
+    for (var i = 0; i <= n; i++) { var t = a0 + d * i / n; pts.push([a.c[0] + a.r * Math.cos(t), a.c[1] + a.r * Math.sin(t)]); }
+    return pts;
+  }
+  function portaDoVao(dados, g) {
+    var q = g.q, bb = q.bb, ps = arr(dados.portas), achada = null;
+    ps.forEach(function (sp) { if (!achada && sp && q.uid && txt(sp.u) === q.uid) achada = sp; });
+    if (achada) return achada;
+    var D = dep("Desenho2D", "./desenho2d.js"), cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, melhor = null, dm = Infinity, lim = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) + 0.4;
+    ps.forEach(function (sp) {
+      var pts = D && D.pontosPorta ? D.pontosPorta(sp) : [], ref = pts.length ? bboxPts(pts) : null; if (!ref) return;
+      var dx = (ref.x0 + ref.x1) / 2 - cx, dy = (ref.y0 + ref.y1) / 2 - cy, dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < dm && dist <= lim) { dm = dist; melhor = sp; }
+    });
+    return melhor;
+  }
+  function simboloVao(g, dados, P) {
+    var q = g.q; if (!q || !q.bb) return null;
+    var bb = q.bb, w = bb.x1 - bb.x0, h = bb.y1 - bb.y0, horiz = w >= h, vao = Math.max(w, h), svg = "", ext = { x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1 }, achouSimbolo = false;
+    function cresce(pt) { ext.x0 = Math.min(ext.x0, pt[0]); ext.y0 = Math.min(ext.y0, pt[1]); ext.x1 = Math.max(ext.x1, pt[0]); ext.y1 = Math.max(ext.y1, pt[1]); }
+    if (g.tipo === "porta") {
+      var sp = portaDoVao(dados, g);
+      if (sp) {
+        var f = "", a = "";
+        arr(sp.folhas).forEach(function (fo) { arr(fo).forEach(cresce); f += P(fo, true); });
+        arr(sp.arcos).forEach(function (ar) { var pl = arcoPoli(ar); if (pl) { pl.forEach(cresce); a += P(pl, false); } });
+        arr(sp.linhas).forEach(function (l) { cresce([l[0], l[1]]); cresce([l[2], l[3]]); a += P([[l[0], l[1]], [l[2], l[3]]], false); });
+        if (f) svg += "<path d=\"" + f + "\" fill=\"#fff\" stroke=\"#111\" stroke-width=\"0.4\"/>";
+        if (a) svg += "<path d=\"" + a + "\" fill=\"none\" stroke=\"#111\" stroke-width=\"0.2\"/>";
+        achouSimbolo = !!(f || a);
+      }
+    } else {
+      var cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, e = (horiz ? h : w), nF = Math.round(num(g.d && (g.d.folhas || g.d.nFolhas), 0)), seg = [];
+      var A0 = horiz ? bb.x0 : bb.y0, A1 = horiz ? bb.x1 : bb.y1, off = [-e * 0.12, e * 0.12];
+      off.forEach(function (o) { seg.push(horiz ? [[A0, cy + o], [A1, cy + o]] : [[cx + o, A0], [cx + o, A1]]); });   /* o vidro: duas linhas finas no eixo do vão */
+      if (nF > 1 && nF <= 6) for (var i = 1; i < nF; i++) { var t = A0 + (A1 - A0) * i / nF; seg.push(horiz ? [[t, cy - e * 0.2], [t, cy + e * 0.2]] : [[cx - e * 0.2, t], [cx + e * 0.2, t]]); }   /* montantes: só se o modelo diz quantas folhas */
+      seg.forEach(function (l) { svg += "<path d=\"" + P(l, false) + "\" fill=\"none\" stroke=\"#111\" stroke-width=\"0.25\"/>"; });
+      achouSimbolo = true;
+    }
+    /* a cota de VÃO: do lado do vão onde há menos desenho (o oposto ao arco), fora da parede */
+    var lado = horiz ? ((ext.y1 - bb.y1) > (bb.y0 - ext.y0) ? -1 : 1) : ((ext.x1 - bb.x1) > (bb.x0 - ext.x0) ? -1 : 1), gap = 0.3;
+    /* COTA PRINCIPAL = a LARGURA NOMINAL da peça (a da ficha: 0,90 × 2,10), centrada no vão; o vão de alvenaria (o contorno cortado na parede) vem como SEGUNDA cota,
+       "vão na parede", só quando difere da nominal (>1 cm). Sem a medida nominal no modelo, fica só o vão, rotulado "Vão" (não se inventa a nominal). */
+    var mn = /(\d+[,.]\d+)/.exec(txt(dimensoesDe(q, g.d || {}))), nominal = mn ? parseFloat(mn[1].replace(",", ".")) : 0;
+    var dims = [];
+    if (nominal > 0.05 && nominal < vao * 1.5) {
+      dims.push({ v: nominal, rot: (g.tipo === "janela" ? "Janela " : "Porta ") + fmt(nominal, 2) + " m" });
+      if (Math.abs(vao - nominal) > 0.01) dims.push({ v: vao, rot: "Vão na parede " + fmt(vao, 2) + " m" });
+    } else dims.push({ v: vao, rot: "Vão " + fmt(vao, 2) + " m" });
+    var rotulo = dims.map(function (x) { return x.rot; }).join(" | ");
+    function cota(ox, oy, kk) {
+      var c = "";
+      dims.forEach(function (dm, n) {
+        var gp = 0.3 + 0.32 * n, pos = horiz ? (lado > 0 ? ext.y1 : ext.y0) + lado * gp : (lado > 0 ? ext.x1 : ext.x0) + lado * gp;
+        var mid0 = horiz ? (bb.x0 + bb.x1) / 2 : (bb.y0 + bb.y1) / 2, A0 = mid0 - dm.v / 2, A1 = mid0 + dm.v / 2;
+        var xa = horiz ? ox + A0 * kk : ox + pos * kk, ya = horiz ? oy + pos * kk : oy + A0 * kk, xb = horiz ? ox + A1 * kk : xa, yb = horiz ? ya : oy + A1 * kk;
+        var cor = n ? "#5a6b7b" : "#0b57a4";
+        c += "<path d=\"M" + n3(xa) + " " + n3(ya) + "L" + n3(xb) + " " + n3(yb) + "\" fill=\"none\" stroke=\"" + cor + "\" stroke-width=\"0.25\"/>";
+        [[xa, ya], [xb, yb]].forEach(function (pt) { c += "<path d=\"M" + n3(pt[0] - 1) + " " + n3(pt[1] + 1) + "L" + n3(pt[0] + 1) + " " + n3(pt[1] - 1) + "\" fill=\"none\" stroke=\"" + cor + "\" stroke-width=\"0.3\"/>"; });
+        /* linhas de chamada (da peça até a cota) */
+        var ba = horiz ? [ox + A0 * kk, oy + (lado > 0 ? bb.y1 : bb.y0) * kk] : [ox + (lado > 0 ? bb.x1 : bb.x0) * kk, oy + A0 * kk], bbp = horiz ? [ox + A1 * kk, ba[1]] : [ba[0], oy + A1 * kk];
+        [[ba, [xa, ya]], [bbp, [xb, yb]]].forEach(function (l) { c += "<path d=\"M" + n3(l[0][0]) + " " + n3(l[0][1]) + "L" + n3(l[1][0]) + " " + n3(l[1][1]) + "\" fill=\"none\" stroke=\"" + cor + "\" stroke-width=\"0.15\"/>"; });
+        var tx = horiz ? (xa + xb) / 2 : xa + (lado > 0 ? 2 : -2), ty = horiz ? ya + (lado > 0 ? 4 : -2) : (ya + yb) / 2 + 0.8;
+        c += T(tx, ty, dm.rot, 2.6, { anc: horiz ? "middle" : (lado > 0 ? "start" : "end"), cor: cor, neg: n ? 0 : 1 });
+      });
+      return c;
+    }
+    return { svg: svg, cota: cota, vao: vao, rotulo: rotulo, simbolo: achouSimbolo };
+  }
   /* a vista ampliada a partir dos contornos: o conjunto em destaque (vermelho), o entorno em cinza, cotas de largura e profundidade */
   function ampliada(g, bx, by, bw, bh, idc) {
     var dados = g.v && g.v.vp && g.v.vp.dados; if (!dados) return { svg: "", esc: 0 };
@@ -639,22 +719,30 @@
     function P(pts, fechado) { var d = ""; arr(pts).forEach(function (q, i2) { d += (i2 ? "L" : "M") + n3(ox + q[0] * k) + " " + n3(oy + q[1] * k); }); return d + (fechado ? "Z" : ""); }
     var s = "<clipPath id=\"" + idc + "\"><rect x=\"" + bx + "\" y=\"" + by + "\" width=\"" + bw + "\" height=\"" + bh + "\"/></clipPath><rect x=\"" + bx + "\" y=\"" + by + "\" width=\"" + bw + "\" height=\"" + bh + "\" fill=\"#fff\" stroke=\"#111\" stroke-width=\"0.35\"/><g clip-path=\"url(#" + idc + ")\">";
     var meus = {}; arr(g.q && g.q.polis).forEach(function () {}); if (g.q && g.q.uid) meus[g.q.uid] = 1;
-    var nCtx = 0;
+    var nCtx = 0, vaoPeca = g.tipo === "porta" || g.tipo === "janela";
+    /* PAREDE CORTADA COM HACHURA (como na planta): só na ampliada de porta/janela, onde a parede em volta do vão é o que dá leitura ao símbolo.
+       (pattern ANTES do uso e com id próprio da página: o svgpdf resolve o fill="url(#id)" pelo id) */
+    var idH = idc + "h";
+    if (vaoPeca) s += "<pattern id=\"" + idH + "\" patternUnits=\"userSpaceOnUse\" width=\"1.6\" height=\"1.6\" patternTransform=\"rotate(45)\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1.6\" stroke=\"#1a1a1a\" stroke-width=\"0.12\"/></pattern>";
     arr(dados.cortes).forEach(function (c) {
       if (!c || arr(c.pts).length < 2 || nCtx > 600) return;
       var b2 = bboxPts(c.pts); if (!b2 || b2.x1 < J.x0 || b2.x0 > J.x1 || b2.y1 < J.y0 || b2.y0 > J.y1) return;
       if (g.q && g.q.uid && txt(c.u) === g.q.uid) return;
-      nCtx++; s += "<path d=\"" + P(c.pts, !!c.fechado) + "\" fill=\"" + (c.fechado ? "#e4e7ea" : "none") + "\" stroke=\"#8a949e\" stroke-width=\"0.2\"/>";
+      var cl = classeDe(c.ifc, false), parede = vaoPeca && c.fechado && cl && cl.tipo === "parede";
+      nCtx++; s += "<path d=\"" + P(c.pts, !!c.fechado) + "\" fill=\"" + (parede ? "url(#" + idH + ")" : (c.fechado ? "#e4e7ea" : "none")) + "\" stroke=\"" + (parede ? "#333" : "#8a949e") + "\" stroke-width=\"" + (parede ? 0.3 : 0.2) + "\"/>";
     });
     arr(dados.linhas).slice(0, 1500).forEach(function (l) {
       if (Math.max(l[0], l[2]) < J.x0 || Math.min(l[0], l[2]) > J.x1 || Math.max(l[1], l[3]) < J.y0 || Math.min(l[1], l[3]) > J.y1) return;
       s += "<path d=\"" + P([[l[0], l[1]], [l[2], l[3]]], false) + "\" fill=\"none\" stroke=\"#aab2ba\" stroke-width=\"0.15\"/>";
     });
     if (g.tipo === "ambiente") s += "<path d=\"" + P(g.amb.pts, true) + "\" fill=\"#cfe8cf\" fill-opacity=\"0.6\" stroke=\"#d00000\" stroke-width=\"0.5\"/>";
-    else arr(g.q && g.q.polis).forEach(function (pl) { s += "<path d=\"" + P(pl.pts, pl.fechado) + "\" fill=\"" + (pl.fechado ? "#fdecea" : "none") + "\" stroke=\"#d00000\" stroke-width=\"0.5\"/>"; });
+    else arr(g.q && g.q.polis).forEach(function (pl) { s += "<path d=\"" + P(pl.pts, pl.fechado) + "\" fill=\"" + (pl.fechado ? "#fdecea" : "none") + "\" stroke=\"#d00000\" stroke-width=\"" + (vaoPeca ? 0.35 : 0.5) + "\"/>"; });
+    var vao = vaoPeca ? simboloVao(g, dados, P) : null;
+    if (vao) s += vao.svg;
     s += "</g>";
+    if (vao && vao.cota) s += vao.cota(ox, oy, k);
     /* sem cotas: a caixa do contorno na vista não é a medida do elemento (a medida está na ficha) */
-    s += T(bx + 2, by + bh - 2, "ESC 1:" + esc + " (contornos do desenho; elemento em vermelho; medidas na ficha)", 2.2, { cor: CINZA });
+    s += T(bx + 2, by + bh - 2, "ESC 1:" + esc + " (contornos do desenho; elemento em vermelho; " + (vao && vao.cota ? "vão cotado; demais medidas na ficha" : "medidas na ficha") + ")", 2.2, { cor: CINZA });
     return { svg: s, esc: esc };
   }
   function esc2(x) { return esc(x); }

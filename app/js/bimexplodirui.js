@@ -580,6 +580,7 @@
         sp.material.map = tex; sp.material.rotation = r.ang * Math.PI / 180; sp.material.needsUpdate = true;
         var hMundo = 13 * 1.35 * pxEscala(T, cam, H);
         sp.position.copy(T); sp.scale.set(hMundo * tex.userData.razao, hMundo, 1); sp.visible = true;
+        sp.center.set(0.5, 0.5); sp.userData.texto = r.txt; delete sp.userData._rotOc; delete sp.userData._rotDesl;   /* a separação de rótulos (js/bim.js) refaz o seu desvio sobre a posição NOVA */
       }
       /* as marcas dos furos (só no foco) */
       var marcas = foco ? marcasDosFuros(cam, W, H) : [];
@@ -587,6 +588,7 @@
       for (var q = 0; q < marcas.length && n + 12 <= P.length; q++) { var mk = marcas[q]; n = seg(P, n, mk.a, mk.b); n = seg(P, n, mk.c, mk.d); }
       for (var z = nSp; z < cotas.sprites.length; z++) cotas.sprites[z].visible = false;
       cotas.lin.geometry.attributes.position.needsUpdate = true; cotas.lin.geometry.setDrawRange(0, n / 3);
+      S._vivasRev = (S._vivasRev || 0) + 1;
       cotas.itens = res; cotas.ms = Math.round(((typeof performance !== "undefined") ? performance.now() : Date.now()) - t0);
     }
     function seg(P, n, a, b) { P[n++] = a.x; P[n++] = a.y; P[n++] = a.z; P[n++] = b.x; P[n++] = b.y; P[n++] = b.z; return n; }

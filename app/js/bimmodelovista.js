@@ -775,11 +775,52 @@
       /* nivelInst: o NÍVEL DE DETALHE da vista vale para as instalações (js/biminstnivel.js: Baixo/Médio = unifilar) */
       return { p6Tag: true, p6Ocultar: this.ocultador(ef, D.estilos, this._filtroDe(ef)), p6Aramado: ef.estiloVisual === "aramado", nivelInst: ef.nivelDetalhe, escalaInst: ef.escala };
     },
+    /* DISCIPLINA DA VISTA NA FOLHA (17/11/2026): a disciplina que a pessoa ESCOLHEU para a vista (campo das Propriedades, fita ou modelo de vista) e que não é Coordenação;
+       "" = a vista é de Coordenação (ou segue a fita, que a folha não lê: um PDF não pode mudar porque a fita mudou). É o que decide se a folha sai com o meio-tom das
+       outras disciplinas MESMO sem a prévia P6 (js/bimfolhaui.js desenho). Coordenação = o desenho de sempre, byte a byte. */
+    disciplinaDaFolha: function (id) {
+      var F = global.BimFoco; if (!F || !F.daVista) return "";
+      var v = null; try { v = this.estado().vistas[id] || null; } catch (e0) { v = null; }
+      if (!v) return "";
+      var ef = this.efetivo(v, this.estado()), exp = ef.discExp === true || !!(ef.travados && ef.travados.disciplina);
+      if (!exp || !ef.disciplina || F.daVista(ef.disciplina) === "coordenacao") return "";
+      return ef.disciplina;
+    },
+    /* INSTALAÇÕES NO MEIO-TOM (17/11/2026): o traço de tubo/eletroduto (dados.inst.linhas, camada de instalação do Bim2D) é da disciplina do SISTEMA que o gerou
+       (elétrica → eletrica; ar, frigorígeno e dreno → climatizacao; o resto, água/esgoto/pluvial/incêndio → hidrossanitario). Devolve fn(sistema) → true quando
+       esse traço é de OUTRA disciplina que a da vista; null = a vista não filtra (Coordenação): nada é marcado e o desenho é o de sempre.
+       `soExplicita`: a folha só vale a disciplina ESCOLHIDA (a tela segue a fita, como o resto do desenho). */
+    fundoDeSistema: function (id, soExplicita) {
+      var F = global.BimFoco; if (!F || !F.fundoNaVista) return null;
+      var v = null; try { v = this.estado().vistas[id] || null; } catch (e0) { v = null; }
+      var ef = v ? this.efetivo(v, this.estado()) : this.vistaPadrao("planta");
+      if (soExplicita && !(ef.discExp === true || (ef.travados && ef.travados.disciplina))) return null;
+      var vd = ef.disciplina; if (!vd || F.daVista(vd) === "coordenacao") return null;
+      return function (sis) {
+        var s = txt(sis), disc = s === "eletrica" ? "eletrica" : (s === "ar" || s === "frigorigeno" || s === "dreno" ? "climatizacao" : "hidrossanitario");
+        return F.fundoNaVista(vd, "", disc);
+      };
+    },
     /* depois de extrair: classifica por categoria e aplica a região de recorte */
     posExtracao: function (id, r, recorteExtra) {
       if (!r || !r.ok) return r;
       var v = this.estado().vistas[id], ef = v ? this.efetivo(v, this.estado()) : this.vistaPadrao("planta"), D = this.dados();
       r.p6Estilos = this.classificar(r, ef, D.estilos, this._filtroDe(ef));
+      /* NÍVEL DE DETALHE ALTO (17/11/2026): a imagem da cena das instalações (instImagens) é raster, não passa pelo meio-tom das chaves: a de uma peça de OUTRA disciplina
+         que a da vista leva `fundo` e sai esmaecida (js/desenho2d.js svgInstImagens). Vista de Coordenação: nada muda. */
+      try {
+        var dFund = this._fundoDeDisciplina(ef);
+        if (dFund && arr(r.instImagens).length) {
+          var tipoDe = {};
+          arr(r.linhasUd).forEach(function (ud, i) { if (ud && ud.u != null && !tipoDe[ud.u]) tipoDe[ud.u] = txt(ud.t || (r.linhasIfc && r.linhasIfc[i])); });
+          arr(r.cortes).forEach(function (c) { if (c && c.u != null && !tipoDe[c.u]) tipoDe[c.u] = txt(c.t || c.ifc); });
+          r.instImagens = r.instImagens.map(function (im) {
+            if (!im || im.u == null) return im;
+            var fd = dFund(tipoDe[im.u] || "IFCPIPESEGMENT", im.u); if (!fd) return im;
+            var o = {}; Object.keys(im).forEach(function (k) { o[k] = im[k]; }); o.fundo = true; return o;
+          });
+        }
+      } catch (eIm) { /* sem marca: a imagem sai como sempre */ }
       var cx = recorteExtra || (ef.recorte && ef.recorte.ativo && Math.abs(ef.recorte.x1 - ef.recorte.x0) > 0.01 && Math.abs(ef.recorte.y1 - ef.recorte.y0) > 0.01 ? ef.recorte : null);
       if (cx) { var rr = this.recortar(r, cx); rr.p6Estilos = r.p6Estilos; rr.p6Recorte = { x0: cx.x0, y0: cx.y0, x1: cx.x1, y1: cx.y1 }; return rr; }
       return r;

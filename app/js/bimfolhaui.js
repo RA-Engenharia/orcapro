@@ -270,6 +270,11 @@
       var c = b2._cache[vistaId], bruto = (c && c.dados && !refazer && !(b2._desenhandoDe && b2._desenhandoDe(c.dados))) ? c.dados : b2._extrair(d);   /* C3: a vista da tela ainda desenhando no Worker não vai à folha (extrai completa, síncrona) */
       if (!bruto || !bruto.ok) return null;
       var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
+      /* a folha só vale a disciplina ESCOLHIDA da vista: o traço de instalação em meio-tom que a tela marcou por seguir a fita sai (Coordenação/fita = folha de sempre) */
+      try {
+        var M6s = b2._p6 ? b2._p6() : null, fdF = M6s && M6s.fundoDeSistema ? M6s.fundoDeSistema(vistaId, true) : null;
+        if (!fdF && an.inst) { var limpa = function (l) { if (!l || !l.fundo) return l; var o = {}; Object.keys(l).forEach(function (k) { if (k !== "fundo") o[k] = l[k]; }); return o; }; an.inst = Object.assign({}, an.inst, { linhas: (an.inst.linhas || []).map(limpa), simbolos: (an.inst.simbolos || []).map(limpa) }); }
+      } catch (eSF) { /* fica como está */ }
       var est = clone(b2.estilo(vistaId)); est.titulo = false;
       if (escala) est.escala = Math.max(1, Math.round(+escala));   /* a cópia com escala própria: anotação do tamanho certo nela */   /* o título é o do viewport */
       var exF = { titulo: "" };
@@ -278,7 +283,10 @@
       /* JUNÇÃO 18/10/2026: só com a prévia ?previa=hidro — a P6 na folha muda a pena de TODA a planta (parede, porta, viga
          acima do corte); sem a prévia a folha sai como no master (e2e-bim-acima-corte, test-traco-tela) */
       var comHidroF = false; try { comHidroF = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()); } catch (eH) {}
-      try { var M6 = b2._p6 ? b2._p6() : null; if (comHidroF && M6 && M6.extraSvg && bruto.p6Estilos) exF = M6.extraSvg(vistaId, bruto, exF) || exF; } catch (eP6) {}
+      /* MEIO-TOM POR DISCIPLINA NA FOLHA (17/11/2026): a vista com disciplina escolhida (≠ Coordenação) sai SEMPRE com o meio-tom das outras disciplinas, com ou sem a prévia
+         (hidro plena sobre arquitetura cinza, como a prancha de projeto). A vista de Coordenação segue exatamente como estava: só a prévia liga a P6 nela. */
+      var comDiscF = false; try { var M6d = b2._p6 ? b2._p6() : null; comDiscF = !!(M6d && M6d.disciplinaDaFolha && M6d.disciplinaDaFolha(vistaId)); } catch (eDc) {}
+      try { var M6 = b2._p6 ? b2._p6() : null; if ((comHidroF || comDiscF) && M6 && M6.extraSvg && bruto.p6Estilos) exF = M6.extraSvg(vistaId, bruto, exF) || exF; } catch (eP6) {}
       /* CORES POR CATEGORIA: a folha sai SEM as cores, a menos que a vista peça "imprimir com as cores" (js/bimcorescatui.js) */
       try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
       /* ARQUITETURA/ESTRUTURAL: o tubo sai dos DADOS (linhas, cortes, instalação desenhada) ANTES de desenhar — vale nos dois caminhos (com e sem a prévia P6) e a cota/enquadramento

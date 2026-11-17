@@ -187,6 +187,14 @@
     _anotar: function (d, dados) {
       if (d.tipo === "desenho") return { tipo: "desenho", cortes: dados.cortes || [], linhas: dados.linhas || [], linhasK: dados.linhasK };   /* P6: vista de desenho */
       var out6 = this._anotarBase(d, dados);
+      /* DISCIPLINA DA VISTA (17/11/2026): o traço de instalação de OUTRA disciplina leva `fundo` (meio-tom em js/desenho2d.js svgInst); Coordenação: nada muda */
+      try {
+        var M6f = this._p6(), fdS = M6f && M6f.fundoDeSistema ? M6f.fundoDeSistema(d.id, false) : null;
+        if (fdS && out6 && out6.inst) {
+          var marca = function (l) { if (!l || !fdS(l.sistema)) return l; var o = {}; Object.keys(l).forEach(function (k) { o[k] = l[k]; }); o.fundo = true; return o; };
+          out6.inst = Object.assign({}, out6.inst, { linhas: (out6.inst.linhas || []).map(marca), simbolos: (out6.inst.simbolos || []).map(marca) });
+        }
+      } catch (eFd) { /* sem marca: o desenho de sempre */ }
       if (this._p6()) this._p6Anotar(d, dados, out6);   /* P6: chave de estilo das arestas e as marcas das vistas novas */
       return out6;
     },

@@ -18795,7 +18795,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function cotasSpritesVisiveis(gs) {
     var out = [];
-    gs.forEach(function (g) { if (g.name === 'cotas-vivas') return; g.children.forEach(function (o) { if (o.isSprite) out.push(o); }); });   /* as vivas já têm o próprio desvio de colisão */
+    gs.forEach(function (g) { g.children.forEach(function (o) { if (o.isSprite) out.push(o); }); });   /* 17/11/2026: as cotas VIVAS entram também — o desvio próprio delas não via as gravadas/de precisão nem a mesma medida repetida ("2,92 m" 3× empilhada) */
     return out;
   }
   /* devolve ao normal tudo o que a separação tocou (também quando a pessoa esconde as cotas, ou o grupo some) */
@@ -18812,7 +18812,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var sps = cotasSpritesVisiveis(gs), cv = cvDesenho(), W = cv.clientWidth || cv.width, H = cv.clientHeight || cv.height;
     if (!W || !H) return;
     camera.updateMatrixWorld();
-    var sig = [W, H, camera.position.x.toFixed(3), camera.position.y.toFixed(3), camera.position.z.toFixed(3), camera.zoom, camera.quaternion.x.toFixed(4), camera.quaternion.y.toFixed(4), camera.quaternion.z.toFixed(4), sps.length];
+    var sig = [W, H, S._vivasRev || 0, camera.position.x.toFixed(3), camera.position.y.toFixed(3), camera.position.z.toFixed(3), camera.zoom, camera.quaternion.x.toFixed(4), camera.quaternion.y.toFixed(4), camera.quaternion.z.toFixed(4), sps.length];
     for (var q = 0; q < sps.length; q++) sig.push(sps[q].id, sps[q].position.x.toFixed(2), sps[q].position.y.toFixed(2), sps[q].position.z.toFixed(2), sps[q].scale.x.toFixed(3));
     sig = sig.join('|');
     if (sig === COTAS3D.sig) return;
@@ -18825,14 +18825,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       v.copy(sp.position).project(camera); if (v.z > 1 || v.z < -1) return;
       var dist = camera.position.distanceTo(sp.position), pxPorM = persp ? H / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(dist, 1e-4)) : H / ((camera.top - camera.bottom) / (camera.zoom || 1));
       var w = sp.scale.x * pxPorM, h = sp.scale.y * pxPorM; if (!(w > 1) || !(h > 1)) return;
-      itens.push({ id: i, x: (v.x * 0.5 + 0.5) * W, y: (0.5 - v.y * 0.5) * H, w: w, h: h, txt: String(sp.userData.texto || ''), prio: sp.userData.cotaId != null ? 1 : 0 });
+      var rot = (sp.material && sp.material.rotation) || 0, ca = Math.abs(Math.cos(rot)), sa = Math.abs(Math.sin(rot));   /* cota viva é girada: a caixa na tela é a do retângulo girado */
+      var txtSp = String(sp.userData.texto || ''); if (!txtSp && sp.material && sp.material.map && sp.material.map.userData) txtSp = String(sp.material.map.userData.txt || '');
+      itens.push({ id: i, x: (v.x * 0.5 + 0.5) * W, y: (0.5 - v.y * 0.5) * H, w: w * ca + h * sa, h: w * sa + h * ca, w0: w, h0: h, rot: rot, txt: txtSp, prio: sp.userData.cotaId != null ? 1 : 0 });
     });
     var r = F.separarRotulos(itens), oc = 0, em = 0;
     itens.forEach(function (it) {
       var sp = sps[it.id];
       if (r.oculto[it.id]) { sp.userData._rotOc = 1; sp.visible = false; oc++; return; }
       var d = r.desl[it.id]; if (!d) return;
-      sp.center.set(0.5 - d[0] / it.w, 0.5 + d[1] / it.h); sp.userData._rotDesl = 1; em++;
+      /* o deslocamento é em px de TELA; o `center` do sprite gira junto com o rótulo: leva-se o desvio para o referencial local dele */
+      var sx = d[0], sy = -d[1], cr = Math.cos(it.rot || 0), sr = Math.sin(it.rot || 0), lx = sx * cr + sy * sr, ly = -sx * sr + sy * cr;
+      sp.center.set(0.5 - lx / it.w0, 0.5 - ly / it.h0); sp.userData._rotDesl = 1; em++;
     });
     COTAS3D.sprites = sps; COTAS3D.ocultos = oc; COTAS3D.empurrados = em;
   }

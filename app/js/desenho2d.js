@@ -871,7 +871,8 @@
     var s = "";
     (lista || []).forEach(function (im) {
       if (!im || !im.href) return;
-      s += '<image href="' + esc(im.href) + '" x="' + n4(im.x) + '" y="' + n4(im.y) + '" width="' + n4(im.w) + '" height="' + n4(im.h) + '" preserveAspectRatio="none"' +
+      /* DISCIPLINA DA VISTA (17/11/2026): a imagem de uma peça de OUTRA disciplina (im.fundo, marcado em js/bimmodelovista.js posExtracao) sai esmaecida e em cinza — o meio-tom do raster */
+      s += '<image href="' + esc(im.href) + '" x="' + n4(im.x) + '" y="' + n4(im.y) + '" width="' + n4(im.w) + '" height="' + n4(im.h) + '" preserveAspectRatio="none"' + (im.fundo ? ' opacity="0.35" style="filter:grayscale(1)" data-d2-fundo="1"' : "") +
         (Math.abs(+im.ang || 0) > 1e-6 ? ' transform="rotate(' + n4(+im.ang) + ')"' : "") + (im.u ? ' data-d2-inst-img="' + esc(im.u) + '"' : "") + "/>";
     });
     if (!s) return "";
@@ -887,11 +888,11 @@
     var s = '<g class="d2-inst">';
     (ins.linhas || []).forEach(function (l) {
       var q = l.seg || [];
-      s += '<line x1="' + n4(q[0]) + '" y1="' + n4(q[1]) + '" x2="' + n4(q[2]) + '" y2="' + n4(q[3]) + '" stroke="' + corOk(l.cor) + '" stroke-width="' + n4(l.chamada ? pena.vista * 0.7 : pena.corte * 0.8) + '" ' + NS +   /* linha de chamada de rótulo: fina */
+      s += '<line x1="' + n4(q[0]) + '" y1="' + n4(q[1]) + '" x2="' + n4(q[2]) + '" y2="' + n4(q[3]) + '" stroke="' + corOk(l.cor) + '"' + (l.fundo ? ' style="stroke:var(--d2-meiotom,#9aa0a6)" data-d2-fundo="1"' : "") + ' stroke-width="' + n4(l.chamada ? pena.vista * 0.7 : pena.corte * 0.8) + '" ' + NS +   /* linha de chamada de rótulo: fina */
         (l.tracejado ? tracoK([3, 1.5], k) : "") + (l.chamada ? ' data-d2-chamada="1"' : "") + ' data-d2-inst="' + esc(l.id) + '"/>';   /* JUNÇÃO 18/10/2026: a chamada se distingue do traço de instalação */
     });
     (ins.simbolos || []).forEach(function (m) {
-      var cor = corOk(m.cor), r = Math.max(+m.r || 0, 0.6 * k);
+      var cor = m.fundo ? "#9aa0a6" : corOk(m.cor), r = Math.max(+m.r || 0, 0.6 * k);   /* fundo: meio-tom da disciplina da vista */
       if (m.tipo === "caixa") s += '<rect x="' + n4(m.x - r) + '" y="' + n4(m.y - r) + '" width="' + n4(2 * r) + '" height="' + n4(2 * r) + '" fill="none" stroke="' + cor + '" stroke-width="' + pena.vista + '" ' + NS + ' data-d2-inst="' + esc(m.id) + '"/>';
       else s += '<circle cx="' + n4(m.x) + '" cy="' + n4(m.y) + '" r="' + n4(r) + '" fill="' + (m.tipo === "conexao" ? cor : "none") + '" stroke="' + cor + '" stroke-width="' + pena.vista + '" ' + NS + ' data-d2-inst="' + esc(m.id) + '"/>';
     });
