@@ -150,6 +150,18 @@
     var tCh = 0.008, pn = ML.pinosAxiais(c, nome, Feq, Seq, sec.b, sec.h, tCh, opcPin), ch = chapaRd(c, tCh, Math.max(0.03, sec.h - 0.05), Math.sqrt(F * F + S * S));
     var o = { pinos: pn, chapa: ch, F_d: F, F_eq: Feq, S_d: S, ok: pn.ok && ch.ok, eta: Math.max(pn.eta, ch.eta), passos: pn.passos.concat(ch.passos) }; if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); return o;
   }
+  /** DETALHE PADRÃO "sela + cinta numa CHAPA ÚNICA" (revisão do T4, 17/11/2026): a mesma chapa interna (t = 8 mm) entra em fenda no espigão e nos dois frechais, com os pinos da cinta no EIXO do frechal; a madeira do frechal fica SEM torção
+   *  e a chapa é verificada no plano por M = H·e_v (e_v = δ = h_FR/2, distância do eixo da sela ao eixo do frechal) + N da cinta: η = N/N,Rd + M/M,Rd, M,Rd = W·fy/γa1 (W elástico t·hp²/6, a favor; NBR 8800). */
+  function chapaUnica(c, H, N, eV, hp, t) {
+    var W = t * hp * hp / 6, Mrd = W * c.fy * 1e3 / c.gamaA1, Nrd = t * hp * c.fy * 1e3 / c.gamaA1, M = H * eV, eta = N / Nrd + M / Mrd;
+    return { H_kN: H, N_kN: N, e_v_m: eV, M_kNm: M, M_Rd_kNm: Mrd, N_Rd_kN: Nrd, t_mm: Math.round(t * 1000), largura_mm: Math.round(hp * 1000), eta: eta, ok: eta <= 1 + 1e-9,
+      passos: ["Chapa única sela + cinta (t = " + br(t * 1000, 0) + " × " + br(hp * 1000, 0) + " mm): M = H·e_v = " + br(H) + " × " + br(eV, 3) + " = " + br(M, 3) + " kN·m; M,Rd = W·fy/γa1 = " + br(Mrd, 3) + " kN·m; N,Rd = " + br(Nrd) + " kN; η = N/N,Rd + M/M,Rd = " + br(N) + "/" + br(Nrd) + " + " + br(M, 3) + "/" + br(Mrd, 3) + " = " + br(eta, 3) + " (NBR 8800, flexão no plano; a madeira do frechal fica sem torção)."] };
+  }
+  /** os grupos de pinos da sela (espelhado no frechal) e da cinta CABEM na ponta do frechal: comprimento dos dois grupos ≤ trecho livre (segmento entre o canto e o 1º pilar, menos o aparo); os espaçamentos mínimos (a1, a2, a3, a4) já vêm de ML.dimGrupo (7190-1) */
+  function pontaFrechalCabe(Lseg, aparo, pnCinta, pnSela) {
+    var Lc = (pnCinta && pnCinta.comprimento) || 0, Ls = (pnSela && pnSela.comprimento) || 0, livre = Math.max(0.001, Lseg - aparo), eta = (Lc + Ls) / livre;
+    return { L_cinta_m: Lc, L_sela_m: Ls, livre_m: livre, eta: eta, ok: eta <= 1 + 1e-9, passos: ["Ponta do frechal: grupo da cinta " + br(Lc * 1000, 0) + " mm + grupo da sela " + br(Ls * 1000, 0) + " mm = " + br((Lc + Ls) * 1000, 0) + " mm ≤ trecho livre " + br(livre * 1000, 0) + " mm (segmento " + br(Lseg, 2) + " m menos aparo " + br(aparo * 1000, 0) + " mm) → η = " + br(eta, 3) + "; espaçamentos a1, a2, a3, a4 pelos mínimos da NBR 7190-1:2022 (ML.dimGrupo)."] };
+  }
   /** VENTO LOCAL nas arestas (faixa ao longo do espigão): wf = mín(b; 2h)/10, cpe = −1,2 (EN 1991-1-4, Tab. 7.5 — fonte SECUNDÁRIA, a confirmar pelo RT; a NBR 6123 não traz o coeficiente local de 4 águas).
    *  Pressão líquida de sucção = q·(1,2 + cpi), cpi = o MAIOR dos casos (o mais adverso para o arrancamento); γw = 1,4; permanente a favor = telha + ripas (g2·√(1+i²) por m² de planta; o peso da madeira é desprezado a favor).
    *  Terça: a faixa cruza a terça num comprimento ℓ = wf·√2 (espigão a 45° em planta), com largura de influência dz; toda a faixa da ponta é descarregada no estribo (a favor).  Sela: metade da faixa dos dois lados do espigão. */
@@ -190,6 +202,15 @@
     var tor = r.torcaoFR || C3.torcaoFR(sec, E, r.cinta, D().MD.perfilEResist(q.classe, perf("curta")).f.fvd);
     L.ligacoes.torcaoFrechal = { descricao: "Torção nas pontas do frechal no canto: o empuxo horizontal do espigão atua na sela (no topo do frechal), a δ = " + br(tor.delta * 100, 0) + " cm do eixo; a componente perpendicular ao eixo de cada frechal gira a ponta.", T_kNm: tor.T, tau_T_MPa: tor.tau_T, tau_V_MPa: tor.tau_V, fvd_MPa: tor.fvd, alfa: tor.alfa, eta: tor.eta, ok: tor.ok,
       passos: ["Torção na ponta do frechal: T = (H/√2)·δ = (" + br(tor.H) + "/√2) × " + br(tor.delta, 3) + " = " + br(tor.T, 3) + " kN·m; τT = T/(α·a·c²) = " + br(tor.T, 3) + "/(" + br(tor.alfa, 3) + " × " + br(tor.a, 3) + " × " + br(tor.c, 3) + "²) = " + br(tor.tau_T, 3) + " MPa (α = 1/(3 + 1,8·c/a)); τV = 1,5·V/(b·h) = " + br(tor.tau_V, 3) + " MPa; (τV + τT)/fv,d = (" + br(tor.tau_V, 3) + " + " + br(tor.tau_T, 3) + ")/" + br(tor.fvd, 3) + " → η = " + br(tor.eta, 3) + " (NBR 7190-1:2022, cisalhamento por torção; soma linear, a favor; a seção do frechal cresce no laço se reprovar)."] };
+    L.detalheSela = r.detalheSela || "chapa";
+    if (L.detalheSela === "chapa") {
+      var ref = L.ligacoes.torcaoFrechal;
+      L.ligacoes.torcaoFrechal = { descricao: "Torção nas pontas do frechal: NÃO se aplica ao detalhe padrão (sela + cinta numa chapa única, madeira sem torção); o valor abaixo é a referência do detalhe alternativo (sela só sobre o frechal).", referencia: { T_kNm: ref.T_kNm, tau_T_MPa: ref.tau_T_MPa, eta: ref.eta }, eta: 0, ok: true, passos: ["Detalhe padrão: sela + cinta em chapa única — torção do frechal não considerada (referência do detalhe alternativo: η = " + br(ref.eta, 3) + ")."] };
+      var Hh2 = Math.max(E.heel.HEq || 0, E.heel.H || 0), cu = chapaUnica(cc, Hh2, Math.max(0.05, r.cinta.fim.N), dlt, Math.max(0.03, sec.FR.h - 0.05), 0.008);
+      L.ligacoes.chapaUnicaCanto = ext({ descricao: "Chapa única sela + cinta: entra em fenda no espigão e nos dois frechais; pinos da cinta no eixo do frechal; verificada por M = H·e_v no plano (NBR 8800)." }, cu);
+      var fr1 = G.membros.filter(function (m) { return m.id === "FR1"; })[0], pXs = G.info.pX, apFR = ap && ap.membros ? ap.membros.filter(function (m) { return m.id === "FR1"; })[0] : null;
+      L.ligacoes.pontaFrechalCabe = ext({ descricao: "Os grupos de pinos da sela e da cinta cabem na ponta do frechal." }, pontaFrechalCabe(pXs[1] - pXs[0], apFR && apFR.bisel ? apFR.bisel.aparo[0] : 0, L.ligacoes.cintaCanto.pinos, L.ligacoes.espigaoCanto.pinos));
+    }
     /* meia-tesoura × tesoura de extremidade */
     var mt = r.meia, Sm = Math.max(0.05, mt.V || 0), Smeq = Math.max(0.05, mt.VEq || 0);
     L.ligacoes.meiaTesoura = noChapa(ML, cc, "meia-tesoura × tesoura de extremidade (cume)", Math.max(0.05, mt.N), Math.max(0.05, mt.NEq), Sm, Smeq, sec.MS, { descricao: "Banzo superior da meia-tesoura na tesoura de extremidade: chapa interna 8 mm + pinos; a ponta da MS fica a ≥ 10 mm das faces dos banzos da tesoura (bisel) e a carga passa só por chapa e pinos." });
@@ -267,7 +288,7 @@
     return out;
   }
 
-  var MadT3Lig = { caixa: caixa, distCaixas: distCaixas, distPtCaixa: distPtCaixa, aparar: aparar, ligacoes: t3Ligacoes, auditar: auditar, projetar: projetar, howeAngulos: howeAngulos };
+  var MadT3Lig = { chapaUnica: chapaUnica, pontaFrechalCabe: pontaFrechalCabe, noChapa: noChapa, noChapaM: noChapaM, pinosMom: pinosMom, chapaNBR8800: chapaNBR8800, chapaRd: chapaRd, caixa: caixa, distCaixas: distCaixas, distPtCaixa: distPtCaixa, aparar: aparar, ligacoes: t3Ligacoes, auditar: auditar, projetar: projetar, howeAngulos: howeAngulos };
   if (typeof module !== "undefined" && module.exports) module.exports = MadT3Lig;
   else global.MadT3Lig = MadT3Lig;
 })(typeof window !== "undefined" ? window : this);

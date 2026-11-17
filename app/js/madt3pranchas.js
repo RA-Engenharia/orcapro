@@ -223,7 +223,7 @@
     return { ok: true, folhas: folhas, avisos: avisos, celulas: ctx0.cels, tabela: ctx0.d.marcas.tab, marcas: ctx0.d.marcas.porId, desenhaveis: ctx0.d.pcs };
   }
 
-  var MadEngT3 = { gerar: gerar, contexto: contexto };
+  var MadEngT3 = { gerar: gerar, contexto: contexto, _i: { elevNo: elevNo, corteNo: corteNo, chapaNo: chapaNo, vistaPecas: vistaPecas, celulaNo: celulaNo, gPinos: gPinos, posGrupo: posGrupo, camadaDe: camadaDe, eixos: eixos } };
   global.MadEngT3 = MadEngT3;
   if (typeof module !== "undefined" && module.exports) module.exports = MadEngT3;
 })(typeof window !== "undefined" ? window : this);

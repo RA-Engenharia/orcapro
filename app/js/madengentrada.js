@@ -77,6 +77,7 @@
       t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
         telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
       t3: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
+      t4: { fechamento: "", n: "6", R: 4, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, vMaxPilar: 4.0, sTercaMax: 1.4, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", pilarCentral: "nao", caibroMeio: "auto" },
       t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
       deck: { guardaCorpo: { regiao: "", h: "1.10" }, cargas: { sobrecarga: "2.5" }, lateral: { vento: "", topoTravado: false }, estab: "" },
       opcoes: op,
@@ -218,6 +219,24 @@
     function c(x) { return JSON.parse(JSON.stringify(x)); }
     return { P: c(P), PO: c(P), FR: { b: 0.12, h: 0.24 }, BS: { b: 0.10, h: 0.20 }, BI: { b: 0.10, h: 0.20 }, PD: { b: 0.08, h: 0.12 }, DG: { b: 0.08, h: 0.12 }, MS: { b: 0.10, h: 0.20 }, MI: { b: 0.10, h: 0.20 }, MP: { b: 0.08, h: 0.12 }, MG: { b: 0.08, h: 0.12 }, T: { b: 0.08, h: 0.20 }, CM: { b: 0.10, h: 0.24 }, E: { b: 0.12, h: 0.30 }, LB: { b: 0.10, h: 0.10 }, DX: { b: 0.12, h: 0.12 }, DP: { b: 0.12, h: 0.12 } };
   }
+  /* ------------------------------------------------------------ T4 (telhado sextavado/oitavado): o estado da tela → entrada de MadT4Lig.projetar */
+  function t4Params(est) {
+    var t = est.t4 || {};
+    return { nome: est.obra.nome || "Telhado poligonal", fechamento: t.fechamento === "aberto" || t.fechamento === "fechado" ? t.fechamento : "", n: num(t.n, 6) === 8 ? 8 : 6, R: num(t.R, 4), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
+      telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, pilarCentral: t.pilarCentral === "sim", caibroMeio: t.caibroMeio === "sim" ? true : (t.caibroMeio === "nao" ? false : "auto") };
+  }
+  function secoesPartidaT4(o) {
+    var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.28)), P = { forma: "quadrado", b: b, h: b };
+    function c(x) { return JSON.parse(JSON.stringify(x)); }
+    return { P: c(P), FR: { b: 0.12, h: 0.24 }, T: { b: 0.08, h: 0.20 }, CB: { b: 0.10, h: 0.24 }, PC: c(P), E: { b: 0.12, h: 0.30 }, DX: { b: 0.12, h: 0.12 }, DP: { b: 0.12, h: 0.12 } };
+  }
+  function toProjT4(est, id) {
+    var o = opcaoDe(est, id), ob = est.obra, params = t4Params(est);
+    var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), faces: copia(ob.faces) },
+      classe: o.classe, umidade: num(ob.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined, opcao: o.id, pesoMLC: 5.0 };
+    var o4 = copia(o); o4.nome = "Pilar " + Math.round(num(o.t2 && o.t2.pilarB, 0.28) * 100) + " cm, " + (params.n === 8 ? "octógono" : "hexágono") + (params.pilarCentral ? " com pilar central" : "") + ", " + String(o.classe || "").replace("mlc:", "");
+    return { proj: proj, partida: secoesPartidaT4(o), t7: null, opcao: o4, extras: copia(est.extras), nome: ob.nome, t4: true, sistema: "poligonal" };
+  }
   function toProjT3(est, id) {
     var o = opcaoDe(est, id), ob = est.obra, params = t3Params(est);
     var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), faces: copia(ob.faces) },
@@ -230,6 +249,7 @@
   function toProj(est, id) {
     if (est.tip === "T2") return toProjT2(est, id);
     if (est.tip === "T3") return toProjT3(est, id);
+    if (est.tip === "T4") return toProjT4(est, id);
     var o = opcaoDe(est, id), params = t1Params(est);
     var proj = { params: params, vento: ventoEntrada(est, params), classe: o.classe, umidade: num(est.obra.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined,
       limites: copia(o.limites), passo: copia(est.passo), cargas: { telha: num(est.t1.telhaPeso, 0.12), lambriPeso: num(est.t1.lambriPeso, 6), outros: 0.03 }, opcao: o.id, pesoMLC: 5.0 };
@@ -240,6 +260,17 @@
   function validar(est) {
     var f = [], t = est.t1, ob = est.obra;
     var so7 = est.tip === "T7";
+    if (est.tip === "T4") {
+      var w4 = est.t4;
+      if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
+      if (w4.fechamento !== "aberto" && w4.fechamento !== "fechado") f.push({ passo: 2, texto: "Informe o fechamento das faces (aberto = cobertura isolada, NBR 6123 item 8.2; fechado = edificação fechada): o vento depende disso e não há padrão." });
+      if (!(num(w4.R, 0) >= 1.8) || num(w4.R, 0) > 12) f.push({ passo: 2, texto: "Informe o raio da planta (entre 1,8 e 12 m)." });
+      if (!(num(w4.incl, 0) >= 5)) f.push({ passo: 2, texto: "Inclinação mínima de 5 % para telha." });
+      if (!(num(w4.peDireito, 0) > 1)) f.push({ passo: 2, texto: "Informe o pé-direito." });
+      if (!(num(w4.telhaPeso, 0) > 0)) f.push({ passo: 2, texto: "Informe o peso da telha (kN/m²)." });
+      if (!est.opcoes.some(function (o) { return o.id === est.ativa; })) f.push({ passo: 3, texto: "Escolha a opção." });
+      return { ok: f.length === 0, falta: f };
+    }
     if (est.tip === "T3") {
       var w = est.t3;
       if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });

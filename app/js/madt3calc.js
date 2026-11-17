@@ -66,8 +66,8 @@
 
   /** torção nas pontas do frechal no canto: o empuxo horizontal do espigão atua na sela (topo do frechal), δ = h_FR/2 acima do eixo; a componente ⊥ ao eixo de cada frechal (H/√2, espigão a 45° em planta) gira a ponta: T = (H/√2)·δ;
    *  τT = T/(α·a·c²), α = 1/(3 + 1,8·c/a) (maddim7190, 7190-1), somada ao cortante de ponta (a favor) e comparada com fv,d. Entra no laço de crescimento do FR (t3Pior). */
-  function torcaoFR(sec, E, cinta, fvd) {
-    var f = sec.FR, dlt = f.h / 2, a = Math.max(f.b, f.h), c = Math.min(f.b, f.h), al = 1 / (3 + 1.8 * c / a), Hh = Math.max(E.heel.HEq || 0, E.heel.H || 0), T = (Hh / Math.SQRT2) * dlt, tT = T / (al * a * c * c) / 1e3, Sq = (cinta.fim && cinta.fim.SEq) || 0, tV = 1.5 * Sq / (f.b * f.h) / 1e3, eta = (tV + tT) / fvd;
+  function torcaoFR(sec, E, cinta, fvd, beta) {
+    var f = sec.FR, dlt = f.h / 2, a = Math.max(f.b, f.h), c = Math.min(f.b, f.h), al = 1 / (3 + 1.8 * c / a), Hh = Math.max(E.heel.HEq || 0, E.heel.H || 0), T = Hh * dlt / (2 * Math.cos(beta == null ? Math.PI / 4 : beta)), tT = T / (al * a * c * c) / 1e3, Sq = (cinta.fim && cinta.fim.SEq) || 0, tV = 1.5 * Sq / (f.b * f.h) / 1e3, eta = (tV + tT) / fvd;
     return { delta: dlt, H: Hh, T: T, alfa: al, a: a, c: c, tau_T: tT, tau_V: tV, fvd: fvd, eta: eta, ok: eta <= 1 + 1e-9 };
   }
 
@@ -317,7 +317,8 @@
     });
     });
     tag = "env";      /* o que vem depois (F1d, apoio) não é de um modelo só */
-    res.torcaoFR = torcaoFR(sec, res.espigao, res.cinta, MD.perfilEResist(CL, perfil("curta")).f.fvd);
+    res.torcaoFR = torcaoFR(sec, res.espigao, res.cinta, MD.perfilEResist(CL, perfil("curta")).f.fvd); res.detalheSela = (q.params && q.params.detalheSela) === "torcao" ? "torcao" : "chapa";
+    if (res.detalheSela === "torcao" && !res.torcaoFR.ok) res.esbeltez.FR = { esbelto: true, eixo: "b", lambdaMax: 0, torcao: true };      /* alternativa: a torção cresce o b primeiro (τT ∝ 1/b², o h se cancela) */
     /* compressão ⊥ às fibras no apoio do frechal sob o banzo inferior / pilar (6.3.3) */
     (function () {
       var cl = MM.classe2022(CL), kmL = perfil("longa").kmod, Rp = 0; function fc90(aCm) { var an = ML.alfaN(aCm); return Math.min(cl.fc90k * kmL / 1.4 * an, 0.25 * cl.fc0k * kmL / 1.4 * an); }
@@ -390,7 +391,7 @@
     var z = {}; Object.keys(r.grupos).forEach(function (g) { z[g] = Math.max(r.grupos[g].eta, (r.flechas && r.flechas[g]) || 0); });
     Object.keys(r.flechas || {}).forEach(function (g) { if (z[g] == null) z[g] = r.flechas[g]; });
     Object.keys(r.apoioEta || {}).forEach(function (g) { z[g] = Math.max(z[g] || 0, r.apoioEta[g]); });
-    if (r.torcaoFR && sec.FR) z.FR = Math.max(z.FR || 0, r.torcaoFR.eta);      /* torção da ponta do frechal no canto (cresce o FR) */
+    if (r.torcaoFR && sec.FR && r.detalheSela === "torcao") z.FR = Math.max(z.FR || 0, r.torcaoFR.eta);      /* torção da ponta do frechal no canto (cresce o FR) */
     if (r.contrav && r.contrav.slip) ["DX", "DP"].forEach(function (g) { if (sec[g] && r.contrav.slip[g] && r.contrav.slip[g].cabe === false) z[g] = Math.max(z[g] || 0, 1.01); });
     if (r.contrav) { if (sec.DP) z.DP = Math.max(z.DP || 0, r.contrav.razao); if (sec.DX) z.DX = Math.max(z.DX || 0, r.contrav.razao); }
     return z;
@@ -436,7 +437,7 @@
     return { LG: LG, Ktheta: out.porGrupo[gov].Ktheta, pilar: env[gov], grupoGov: gov, porGrupo: out.porGrupo };
   }
 
-  var MadT3Calc = { vigaEspigao: vigaEspigao, torcaoFR: torcaoFR, T3_LIM: T3_LIM, padrao: t3Padrao, montar: t3Montar, casos: t3Casos, rodar: t3Rodar, dimensionar: t3Dimensionar, pior: t3Pior, crescer: t3Crescer, base: t3Base, vento: t3Vento, familias: familias, kMedido: kMedido, maxGap: maxGap, perfilFn: perfilFn, modulos: modulos, ret: ret, durClasse: durClasse, modeloSemFalha: modeloSemFalha, diagNo: diagNo };
+  var MadT3Calc = { slipTerca: slipTerca, slipDiag: slipDiag, slipFator: slipFator, pressaoParede: pressaoParede, vigaEspigao: vigaEspigao, torcaoFR: torcaoFR, T3_LIM: T3_LIM, padrao: t3Padrao, montar: t3Montar, casos: t3Casos, rodar: t3Rodar, dimensionar: t3Dimensionar, pior: t3Pior, crescer: t3Crescer, base: t3Base, vento: t3Vento, familias: familias, kMedido: kMedido, maxGap: maxGap, perfilFn: perfilFn, modulos: modulos, ret: ret, durClasse: durClasse, modeloSemFalha: modeloSemFalha, diagNo: diagNo };
   if (typeof module !== "undefined" && module.exports) module.exports = MadT3Calc;
   else global.MadT3Calc = MadT3Calc;
 })(typeof window !== "undefined" ? window : this);

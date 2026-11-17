@@ -322,7 +322,7 @@
   function passo2() {
     var e = est(), t = e.t1, h = "";
     h += sec({ titulo: "Tipologia", corpoHtml: '<div class="meg-linha" role="radiogroup" aria-label="Tipologia">' +
-      bt("tip", "T1 — Cobertura de uma água (casa, pavilhão)", { sm: 1, v: "T1", pri: e.tip === "T1" }) + bt("tip", "T2 — Casa de duas águas (tesoura ou cumeeira portante)", { sm: 1, v: "T2", pri: e.tip === "T2" }) + bt("tip", "T3 — Telhado de 4 águas (tesouras, meias-tesouras e espigões)", { sm: 1, v: "T3", pri: e.tip === "T3" }) + bt("tip", "T7 — Somente deck elevado", { sm: 1, v: "T7", pri: e.tip === "T7" }) + "</div>" +
+      bt("tip", "T1 — Cobertura de uma água (casa, pavilhão)", { sm: 1, v: "T1", pri: e.tip === "T1" }) + bt("tip", "T2 — Casa de duas águas (tesoura ou cumeeira portante)", { sm: 1, v: "T2", pri: e.tip === "T2" }) + bt("tip", "T3 — Telhado de 4 águas (tesouras, meias-tesouras e espigões)", { sm: 1, v: "T3", pri: e.tip === "T3" }) + bt("tip", "T4 — Telhado sextavado ou oitavado (quiosque poligonal, espigões e cubo central)", { sm: 1, v: "T4", pri: e.tip === "T4" }) + bt("tip", "T7 — Somente deck elevado", { sm: 1, v: "T7", pri: e.tip === "T7" }) + "</div>" +
       '<p class="meg-nota">T1 calcula pilares, vigas V, terças, vergas e ligações. O deck (T7) pode acompanhar a T1 ou ficar sozinho; as outras tipologias entram na próxima entrega.</p>' });
     if (e.tip === "T1") {
       var inputs = '<div class="meg-grade">' +
@@ -357,8 +357,29 @@
         '<p class="meg-nota">A tesoura principal fica nos eixos da cumeeira; as meias-tesouras fazem o papel da cumeeira nas águas de cabeceira; os 4 espigões levam o empuxo ao canto, onde o anel do frechal (cinta de aço) o resolve. O vento em 4 águas usa a Tabela 5 da NBR 6123 (duas águas) como premissa declarada. Torção por excentricidade do vento, caibros secundários e o rincão (planta em L) não são modelados.</p>';
       h += '<div class="meg-2col">' + sec({ titulo: "Telhado de 4 águas (T3)", corpoHtml: in3 }) + desenhoT3Html() + "</div>";
     }
-    h += (e.tip === "T2" || e.tip === "T3") ? "" : deckHtml();
+    if (e.tip === "T4") {
+      var in4 = '<div class="meg-grade">' +
+        campo("Fechamento das faces (obrigatório)", "t4.fechamento", { tipo: "sel", opcoes: [["", "Escolha…"], ["fechado", "Fechado (faces com vedação)"], ["aberto", "Aberto (cobertura isolada, NBR 6123 item 8.2)"]] }) + campo("Planta regular", "t4.n", { tipo: "sel", opcoes: [["6", "Hexágono (6 lados)"], ["8", "Octógono (8 lados)"]] }) + campo("Raio (centro ao canto, eixos dos pilares)", "t4.R", { un: "m", dica: "Entre 1,8 e 12 m. Hexágono: raio = lado." }) + campo("Pé-direito (piso ao respaldo dos pilares)", "t4.peDireito", { un: "m" }) +
+        campo("Inclinação das águas", "t4.incl", { un: "%", dica: "Mínimo 5 % para telha; a mesma nas n águas" }) + campo("Cota do piso (base dos pilares)", "t4.cotaPiso", { un: "m" }) + campo("Beiral (igual nos n lados)", "t4.beiral", { un: "m" }) +
+        campo("Pilar central", "t4.pilarCentral", { tipo: "sel", opcoes: [["nao", "Não (espigões em arco, anel de frechal como tirante)"], ["sim", "Sim (poste sob o cubo do ápice)"]] }) + campo("Caibro de meio de água", "t4.caibroMeio", { tipo: "sel", opcoes: [["auto", "Automático (lado maior que 4,5 m)"], ["sim", "Sim, em todas as águas"], ["nao", "Não"]] }) +
+        campo("Espaçamento máximo das terças", "t4.sTercaMax", { un: "m" }) + campo("Vão máximo entre pilares", "t4.vMaxPilar", { un: "m" }) + campo("Peso da telha com ripas", "t4.telhaPeso", { un: "kN/m²", dica: "Cerâmica ≈ 0,55; a telha da obra manda" }) + "</div>" +
+        '<p class="meg-nota">Os espigões radiais concorrem no CUBO do ápice (tubo de aço com chapas radiais, folga de 10 mm entre as peças); as terças formam anéis de espigão a espigão; o anel de frechal com cinta de aço resolve o empuxo no canto. O vento em telhado poligonal é premissa conservadora (Tabela 5 da NBR 6123 do retângulo circunscrito), a confirmar pelo RT. Torção por excentricidade do vento, caibros secundários e ripas não são modelados.</p>';
+      h += '<div class="meg-2col">' + sec({ titulo: "Telhado sextavado / oitavado (T4)", corpoHtml: in4 }) + desenhoT4Html() + "</div>";
+    }
+    h += (e.tip === "T2" || e.tip === "T3" || e.tip === "T4") ? "" : deckHtml();
     return h;
+  }
+  /** desenho ao vivo da T4: planta poligonal — beiral, n espigões radiais, terças em anel e o cubo central */
+  function desenhoT4Html() {
+    var u = est().t4, n = num(u.n, 6) === 8 ? 8 : 6, R = Math.max(num(u.R, 4), 1.8), be = Math.max(num(u.beiral, 0), 0), bt = Math.PI / n, Rt = R + be / Math.cos(bt), W = 360, Hh = 260, s = Math.min((W - 40) / (2 * Rt), (Hh - 40) / (2 * Rt)), cx = W / 2, cy = Hh / 2 + 6, k, d;
+    function pt(r, a) { return [cx + r * s * Math.cos(a), cy + r * s * Math.sin(a)]; }
+    function poli(r, estilo) { var p = [], q; for (q = 0; q < n; q++) { var c = pt(r, -Math.PI / 2 - bt + 2 * bt * q); p.push(c[0].toFixed(1) + "," + c[1].toFixed(1)); } return '<polygon points="' + p.join(" ") + '" fill="none" ' + estilo + "/>"; }
+    var svg = '<svg viewBox="0 0 ' + W + " " + Hh + '" class="meg-svg" role="img" aria-label="Planta do telhado poligonal: beiral, espigões, terças em anel e cubo central"><text x="20" y="12" font-size="9" fill="currentColor">PLANTA DE COBERTURA — ' + n + ' espigões e cubo central</text>';
+    svg += poli(Rt, 'stroke="currentColor" stroke-dasharray="3 2" stroke-width="0.8"') + poli(R, 'stroke="currentColor" stroke-width="1.6"');
+    for (d = 1; d <= 3; d++) svg += poli(R * (1 - d / 4), 'stroke="currentColor" stroke-width="0.9"');
+    for (k = 0; k < n; k++) { var a = -Math.PI / 2 - bt + 2 * bt * k, p0 = pt(Rt, a); svg += '<line x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + cx + '" y2="' + cy + '" stroke="currentColor" stroke-width="2.4"/>'; }
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="currentColor"/>';
+    return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): linha grossa = espigões e frechal; linhas finas = terças em anel; tracejado = beiral; ponto = cubo do ápice.</p></div>';
   }
   /** desenho ao vivo da T3: planta do telhado de 4 águas — beiral, cumeeira, 4 espigões a 45°, eixos das tesouras e das meias-tesouras */
   function desenhoT3Html() {
@@ -544,7 +565,7 @@
     if (r.soDeck) h += sec({ titulo: "Deck elevado", corpoHtml: "<p>Deck calculado pela NBR 7190-1:2022, NBR 6120:2019 e NBR 14718:2019: tábuas, barrotes, vigas, pilaretes, estabilidade lateral, guarda-corpo (com a fixação do montante) e escada. " + (r.deck ? "η máximo " + fmt(r.deck.etaMax, 2) + "; classe de umidade " + r.deck.umidade + ". O memorial do T7 traz cada conta." : "Sem resultado do cálculo do deck neste cálculo.") + "</p>" });
     else {
       h += sec({ titulo: "Aproveitamento por grupo de peças", sub: "η = esforço de cálculo ÷ resistência. Até 1,00 passa; acima de 0,90 já pede atenção.", corpoHtml: '<div class="meg-rola"><table class="tbl meg-t" data-meg="grupos"><thead><tr><th>Grupo</th><th class="num">Aproveitamento</th><th>Onde governa</th><th>Combinação</th></tr></thead><tbody>' +
-        Object.keys(r.pior || {}).map(function (k) { var g = (r.grupos || {})[k] || {}; return "<tr data-meg-grupo=\"" + k + "\"><td>" + esc(GRUPO_NOME[k] || k) + '</td><td class="num">' + etaCelula(r.pior[k]) + "</td><td>" + esc((g.governa || "") + (g.onde ? " em " + g.onde : "")) + "</td><td>" + esc(g.comb || "") + "</td></tr>"; }).join("") + "</tbody></table></div>" +
+        Object.keys(r.pior || {}).map(function (k) { var g = (r.grupos || {})[k] || {}; return "<tr data-meg-grupo=\"" + k + "\"><td>" + esc((r.tipologia === "T4" && global.MadT4Saidas && global.MadT4Saidas.NOME_G[k]) || GRUPO_NOME[k] || k) + '</td><td class="num">' + etaCelula(r.pior[k]) + "</td><td>" + esc((g.governa || "") + (g.onde ? " em " + g.onde : "")) + "</td><td>" + esc(g.comb || "") + "</td></tr>"; }).join("") + "</tbody></table></div>" +
         '<p class="meg-nota">O aproveitamento do grupo é o maior entre a resistência e a flecha. Seções finais: ' + secoesTxt(r.secoes) + ". " + r.iteracoes + " rodada(s) de dimensionamento.</p>" });
       h += sec({ titulo: "Flechas e deslocamentos", sub: "Valor ÷ limite: até 1,00 passa.", corpoHtml: '<div class="meg-rola"><table class="tbl meg-t"><thead><tr><th>Verificação</th><th class="num">Razão ao limite</th></tr></thead><tbody>' +
         Object.keys(r.flechas || {}).map(function (k) { return "<tr><td>" + esc(FLECHA_NOME[k] || k) + '</td><td class="num">' + etaCelula(r.flechas[k]) + "</td></tr>"; }).join("") + "</tbody></table></div>" });
@@ -767,7 +788,7 @@
   function saidaIfc() {
     if (!lic("exportar o IFC") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O IFC")) return false;
-    var r = resAtiva(), x = (r.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
+    var r = resAtiva(), x = (r.tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (r.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
     if (!x.ok) { toast("IFC: " + x.erro, "erro", 8000); return false; }
     baixar(base() + marcaArq(pre) + ".ifc", x.texto, "application/x-step"); UIE.saidas.ifc = true; UIE.ifcN = x.n; toast("IFC4 com " + x.n + " peças baixado.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
@@ -840,7 +861,7 @@
   function saidaPranchas() {
     if (!lic("baixar as pranchas") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "As pranchas")) return false;
-    var rA = resAtiva(), MPE = (rA.tipologia === "T3" && global.MadEngT3) ? global.MadEngT3 : (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
+    var rA = resAtiva(), MPE = (rA.tipologia === "T4" && global.MadEngT4) ? global.MadEngT4 : (rA.tipologia === "T3" && global.MadEngT3) ? global.MadEngT3 : (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
     var x = MPE.gerar(rA, opcoesDoc()); if (!x.ok) { toast("Pranchas: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
     /* E4 r7: o deck calculado junto com a T1 leva também o caderno do deck (D01-D06) depois das folhas da casa */
     if (!rA.soDeck && rA.deck && global.MadEngDeck) { var xd = global.MadEngDeck.gerar(rA, opcoesDoc()); if (xd.ok) { x.folhas = x.folhas.concat(xd.folhas); x.avisos = x.avisos.concat(xd.avisos); } else x.avisos.push("Caderno do deck: " + (xd.avisos[0] || "não gerado")); }
@@ -854,7 +875,7 @@
   }
   function saidaMemorial() {
     if (!lic("gerar o memorial") || semResultado()) return false;
-    var MEM = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.memorial } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
+    var MEM = (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.memorial } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.memorial } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
     var o = opcoesDoc(), x = MEM.gerar(resAtiva(), { obra: { nome: o.obra, cidade: o.local }, documento: { numero: o.codigo + "-MEM", revisao: "R00", data: new Date().toISOString().slice(0, 10) }, responsavel: {}, nomeOpcao: o.nomeOpcao });
     if (!x.ok) { toast("Memorial: " + (x.motivo || "falhou"), "erro", 9000); return false; }
     var onde = abrirHtmlImprimir(x.html, base() + "-memorial-madeira-engenharada.html"); UIE.saidas.memorial = x.secoes.length;
@@ -863,7 +884,7 @@
   function saidaManual() {
     if (!lic("gerar o manual de montagem") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O manual de montagem")) return false;
-    var MAN = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.manual } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
+    var MAN = (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.manual } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.manual } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
     var o = opcoesDoc(), x = MAN.gerar(resAtiva(), { obra: { nome: o.obra }, documento: { revisao: "R00" }, preliminar: pre.preliminar });
     if (!x.ok) { toast("Manual: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
     var onde = abrirHtmlImprimir(x.html, base() + marcaArq(pre) + "-manual-montagem-madeira.html"); UIE.saidas.manual = x.paginas;
@@ -873,13 +894,14 @@
     if (!lic("exportar para o SketchUp") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O modelo SketchUp")) return false;
     var X = global.MadEngExport; if (!X) { toast("O exportador não carregou.", "erro"); return false; }
-    var x = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
+    var x = (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
     baixar(base() + marcaArq(pre) + "-sketchup.dae", x.texto, "model/vnd.collada+xml"); UIE.saidas.skp = x.grupos; toast("Modelo COLLADA com " + x.grupos + " grupos baixado: no SketchUp, Arquivo → Importar.", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function saidaCype() {
     if (!lic("exportar para o CYPE 3D") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O pacote do CYPE 3D")) return false;
     var X = global.MadEngExport; if (!X || !global.BimBcf || !BimBcf.zipEscrever) { toast("O exportador ou o gerador de .zip não carregou.", "erro"); return false; }
+    if (resAtiva().tipologia === "T4") { toast("O pacote do CYPE 3D ainda não existe para o telhado sextavado/oitavado (pendência declarada); use o IFC.", "aviso", 8000); return false; }
     if (resAtiva().tipologia === "T3") { toast("O pacote do CYPE 3D ainda não existe para o telhado de 4 águas (pendência declarada); use o IFC.", "aviso", 8000); return false; }
     var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.cype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }) : X.pacoteCype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }); if (!x.ok) { toast("CYPE: " + x.erro, "erro", 8000); return false; }
     var arq = {}; Object.keys(x.arquivos).forEach(function (k) { var a = x.arquivos[k]; if (a.latin1) { var b = new Uint8Array(a.texto.length); for (var i = 0; i < a.texto.length; i++) b[i] = a.texto.charCodeAt(i) & 255; arq[k] = b; } else arq[k] = a.texto; });
