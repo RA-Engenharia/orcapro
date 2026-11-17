@@ -602,9 +602,29 @@
    * das DIREÇÕES dos ramos. Então a chave é isso (relativo à âncora: p1 do tubo, o ponto da conexão) e a "matriz por
    * instância" é a translação até a âncora: a mesma peça em outro lugar (os banheiros copiados) e a peça que não mudou
    * entre duas reconstruções saem do cache, só transladadas (cópia das listas — quem recebe pode mexer nelas).
-   * As portas da conexão levam o trecho/lado do nó ATUAL (o índice do eixo fica guardado). No máximo 6000 formas
-   * (as mais antigas saem). HidGeo.cache: { ligado, acertos, faltas, limpar() }. */
-  var CACHE = { m: new Map(), ligado: true, acertos: 0, faltas: 0, MAX: 6000 };
+   * As portas da conexão levam o trecho/lado do nó ATUAL (o índice do eixo fica guardado).
+   * TETO EM BYTES (16/11/2026, no molde do tetoCena do js/biminstsombra.js): peça grande custa muito mais memória que
+   * pequena, então o limite é a SOMA estimada dos bytes (listas de números = 8 bytes por valor + ~200 por parte), não a
+   * contagem; 4% do jsHeapSizeLimit entre 64 e 192 MB (128 MB sem a medida). Passou do teto saem as menos usadas (a
+   * usada vai para o fim). Segurança: no máximo 6000 formas. O despejo NÃO dá dispose (aqui são só listas, a geometria
+   * de quem recebeu é cópia). HidGeo.cache: { ligado, acertos, faltas, bytes, teto, limpar() }. */
+  function tetoCache() {
+    var lim = 0; try { lim = (typeof performance !== "undefined" && performance.memory && performance.memory.jsHeapSizeLimit) || 0; } catch (e) { lim = 0; }
+    var MB = 1048576; if (!lim) return 128 * MB;
+    return Math.max(64 * MB, Math.min(192 * MB, Math.floor(lim * 0.04)));
+  }
+  var CACHE = { m: new Map(), b: new Map(), bytes: 0, teto: tetoCache(), ligado: true, acertos: 0, faltas: 0, despejos: 0, MAX: 6000 };
+  function bytesDeLista(a) { return Array.isArray(a) ? 8 * a.length + 32 : 0; }
+  function bytesDeValor(v) {
+    var n = 256;
+    (v.partes || []).forEach(function (pt) {
+      n += 200; var ml = pt && pt.malha; if (!ml) return;
+      Object.keys(ml).forEach(function (k) { var x = ml[k]; if (k === "cascas") (x || []).forEach(function (c) { n += bytesDeLista(c); }); else n += bytesDeLista(x); });
+    });
+    n += 160 * ((v.portas || []).length + (v.juntas || []).length);
+    return n;
+  }
+  function zerarCache() { CACHE.m.clear(); CACHE.b.clear(); CACHE.bytes = 0; }
   function rq(v) { return typeof v === "number" ? Math.round(v * 1e6) / 1e6 : v; }
   function chaveDe(obj) { return JSON.stringify(obj, function (k, v) { return typeof v === "number" ? rq(v) : (typeof v === "function" ? "fn" : v); }); }
   function semCampos(o, fora) { var r = {}; Object.keys(o || {}).forEach(function (k) { if (fora.indexOf(k) < 0) r[k] = o[k]; }); return r; }
@@ -618,8 +638,11 @@
   }
   function partesTransl(partes, T) { return (partes || []).map(function (pt) { var o = {}; Object.keys(pt).forEach(function (k) { o[k] = pt[k]; }); if (pt.malha) o.malha = malhaTransl(pt.malha, T); return o; }); }
   function guardar(k, v) {
-    if (CACHE.m.size >= CACHE.MAX) { var it = CACHE.m.keys(); for (var i = 0; i < 1000; i++) CACHE.m.delete(it.next().value); }
-    CACHE.m.set(k, v);
+    var nb = bytesDeValor(v), ant = CACHE.b.get(k); if (ant != null) CACHE.bytes -= ant;
+    CACHE.m.set(k, v); CACHE.b.set(k, nb); CACHE.bytes += nb;
+    while ((CACHE.bytes > CACHE.teto || CACHE.m.size > CACHE.MAX) && CACHE.m.size) {
+      var k0 = CACHE.m.keys().next().value; CACHE.bytes -= CACHE.b.get(k0) || 0; CACHE.m.delete(k0); CACHE.b.delete(k0); CACHE.despejos++;
+    }
   }
   function achar(k) { var v = CACHE.m.get(k); if (v) { CACHE.m.delete(k); CACHE.m.set(k, v); } return v; }   /* a usada vai para o fim (sai por último) */
   function tubo(t, o) {
@@ -2200,9 +2223,9 @@
 
   var HidGeo = {
     cache: { get ligado() { return CACHE.ligado; }, set ligado(v) { CACHE.ligado = !!v; }, get acertos() { return CACHE.acertos; }, get faltas() { return CACHE.faltas; },
-             get tamanho() { return CACHE.m.size; }, limpar: function () { CACHE.m.clear(); CACHE.acertos = 0; CACHE.faltas = 0; } },
-    get garantiaPeca() { return GARANTIA.ligada; }, set garantiaPeca(v) { GARANTIA.ligada = !!v; CACHE.m.clear(); },
-    get perfisNovos() { return PERFIS_NOVOS.ligado; }, set perfisNovos(v) { PERFIS_NOVOS.ligado = !!v; CACHE.m.clear(); },
+             get tamanho() { return CACHE.m.size; }, get bytes() { return CACHE.bytes; }, get teto() { return CACHE.teto; }, set teto(v) { CACHE.teto = v > 0 ? +v : tetoCache(); }, get despejos() { return CACHE.despejos; }, limpar: function () { zerarCache(); CACHE.acertos = 0; CACHE.faltas = 0; CACHE.despejos = 0; } },
+    get garantiaPeca() { return GARANTIA.ligada; }, set garantiaPeca(v) { GARANTIA.ligada = !!v; zerarCache(); },
+    get perfisNovos() { return PERFIS_NOVOS.ligado; }, set perfisNovos(v) { PERFIS_NOVOS.ligado = !!v; zerarCache(); },
     VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
     Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,   /* caixaM: a caixa de inspeção de alvenaria (js/hidcigeo.js) */
     cotasTubo: cotasTubo, cotasConexao: cotasConexao, aparencia: aparencia,
