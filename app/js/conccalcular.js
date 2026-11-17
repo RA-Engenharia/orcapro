@@ -147,11 +147,11 @@
       arr(dp.pilares).forEach(function (q) {
         var cx = porId[String(q.id)], secao = cx ? cm(num(cx.espessura, 0)) + " × " + cm(num(cx.comprimento, 0)) : (q.secao ? Math.round(q.secao.hy) + " × " + Math.round(q.secao.hx) : "");   /* a seção ATUAL da peça (pode ter sido mexida depois do lançamento), não a do rótulo do lançamento */
         var estadoP = q.semCalculo ? "sem-calculo" : (!q.ok || !q.atende ? "falha" : (q.foraNorma ? "fora-norma" : "ok")), p = { id: String(q.id), marca: q.marca || (cx && cx.marca) || "", tipo: "pilar", estado: estadoP, aproveitamento: q.aproveitamento, secao: secao, motivo: q.ok ? "" : q.motivo };
-        if (estadoP === "falha" && q.ok && q.sugestao && q.sugestao.ok) {
+        if (estadoP === "falha" && q.sugestao && q.sugestao.ok) {   /* 17/11/2026: vale também com q.ok === false (reprovação por esbeltez λ > 140 ganha sugestão de seção) */
           p.sugestao = { texto: "passar para " + cm(q.sugestao.hx) + " × " + cm(q.sugestao.hy) + " cm — " + q.sugestao.texto, secao: cm(q.sugestao.hx) + " × " + cm(q.sugestao.hy), ops: [opSecao(q.id, q.sugestao.hx, q.sugestao.hy)] };
         }
         /* o C4 nem calcula pilar abaixo do mínimo da norma (ok:false): a sugestão é a do próprio mínimo — lado ≥ 14 cm e área ≥ 360 cm² (6118:2023 13.2.3), a mesma regra do auditor, com a orientação mantida */
-        if (estadoP === "falha" && !q.ok && cx && CL && CL.crit) {
+        if (estadoP === "falha" && !q.ok && !p.sugestao && cx && CL && CL.crit) {
           var comp = cm(num(cx.comprimento, 0)), esp = cm(num(cx.espessura, 0)), menor = Math.min(comp, esp), maior = Math.max(comp, esp), bN = Math.max(menor, CL.crit("pilarLadoEspecialCm", 14)), LN = Math.max(maior, Math.ceil(CL.crit("pilarAreaMinimaCm2", 360) / bN));
           if (menor < CL.crit("pilarLadoEspecialCm", 14) || menor * maior < CL.crit("pilarAreaMinimaCm2", 360)) {
             p.sugestao = { texto: "passar para " + bN + " × " + LN + " cm (o mínimo da NBR 6118:2023, 13.2.3: lado 14 cm e área 360 cm²)", secao: bN + " × " + LN, ops: [opSecao(q.id, comp >= esp ? LN / 100 : bN / 100, comp >= esp ? bN / 100 : LN / 100)] };

@@ -10,7 +10,7 @@
  *  1. γn da Tabela 13.1, comprimento equivalente ℓe (15.6), λ = ℓe/i, αb e λ1 (15.8.2), limite λ ≤ 200 (15.8.1)   → gammaN(), comprimentoEquivalente(), esbeltez(), alphaB(), lambda1()
  *  2. momento mínimo de 1ª ordem M1d,mín = Nd·(0,015 + 0,03·h) (11.3.3.4.3) e M1d,A/M1d,B vindos da análise da C1                → momentoMinimo()
  *  3. efeitos locais de 2ª ordem: pilar-padrão com curvatura aproximada (15.8.3.3.2) e com rigidez κ aproximada (15.8.3.3.3), só λ ≤ 90   → momentosDirecao()
- *     (90 < λ ≤ 140: pilar-padrão acoplado a M-N-1/r e λ > 140: processo geral NÃO implementados — o motor recusa e avisa)
+ *     90 < λ ≤ 140: pilar-padrão ACOPLADO a M-N-1/r (15.8.3.3.4) + fluência obrigatória (15.8.4) — bloco 3b, desde 17/11/2026; λ > 140: processo geral (15.8.3.2) NÃO implementado — o motor recusa e avisa
  *  4. flexão composta normal e oblíqua: seção resistente por INTEGRAÇÃO (diagrama parábola-retângulo, aço CA-50 bilinear, domínios 2 a 5 e
  *     reta b da Figura 17.1), superfície de interação a N = Nd, As por bisseção; método α do 17.2.5 calculado ao lado          → momentoResistente(), contorno(), resolverAs(), verificarAlpha()
  *  5. armadura: As,mín/As,máx (17.3.5.3), φ ≥ 10 mm e ≤ b/8, espaçamentos e arranjo no perímetro (18.4.2), estribos (18.4.3),
@@ -20,7 +20,7 @@
  *
  * LIMITES DECLARADOS (viram aviso/pendência, nunca silêncio): só Grupo I (fck ≤ 50 MPa) e CA-50; seção RETANGULAR (sem pilar-parede, sem seção
  * circular/L); nós fixos até γz 1,1; entre 1,1 e 1,3 os esforços horizontais saem × 0,95·γz (15.7.2); acima de 1,3 o pilar fica 'sem cálculo'; barras todas iguais,
- * arranjo simétrico no perímetro; sem pilar tracionado (qualquer combinação com N ≥ 0 deixa o pilar 'sem cálculo'); sem fluência (só obrigatória acima de λ = 90, que o motor não dimensiona);
+ * arranjo simétrico no perímetro; sem pilar tracionado (qualquer combinação com N ≥ 0 deixa o pilar 'sem cálculo'); fluência só pela excentricidade ecc do 15.8.4 (λ > 90); acima de λ = 140 o motor não dimensiona;
  * sem cargas transversais ao longo do lance; sem pilar em balanço; o concreto ocupado pelas barras não é descontado na integração (como os ábacos);
  * a armadura da seção intermediária C vale para o lance todo (armadura constante, como a 15.8.1 exige).
  * ===================================================================== */
@@ -97,6 +97,115 @@
     return (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
   }
 
+  /* ---------------------------------------------------------------- 3b. λ entre 90 e 140: fluência (15.8.4) + pilar-padrão acoplado a diagramas M-N-1/r (15.8.3.3.4)
+   * FONTE (NBR 6118:2023, exemplar conferido em 17/11/2026; página = PDF do arquivo, impressa entre parênteses):
+   *   · 15.8.3.3.4 (PDF 128, p.110): "pode ser feita pelo método do pilar-padrão ... utilizando-se, para a curvatura da seção crítica, os valores obtidos de
+   *     diagramas M, N, 1/r específicos para o caso. Se λ > 90 é obrigatória a consideração dos efeitos da fluência de acordo com 15.8.4"; vale para λ ≤ 140.
+   *   · 15.8.3.3.2 (PDF 127, p.109): Md,tot = αb·M1d,A + Nd·(ℓe²/10)·(1/r) — a MESMA forma do pilar-padrão; aqui o 1/r NÃO vem da fórmula aproximada
+   *     0,005/[h(ν+0,5)] e sim do diagrama M-N-1/r da seção ARMADA (por isso a armadura tem de ser conhecida: o cálculo é feito arranjo a arranjo).
+   *   · 15.3 (PDF 118, p.100) e 15.3.1 + Figura 15.1 (PDF 119, p.101): a deformabilidade usa o diagrama σ-ε da Seção 8 com tensão de PICO do concreto = 1,10·fcd
+   *     (já incluído o efeito de carga mantida, Rüsch) e aço fyd; a relação momento-curvatura (curva cheia AB) é obtida com NRd/γf3 (γf3 = 1,1) e os esforços de
+   *     2ª ordem saem de cargas divididas por γf3 e depois multiplicadas por γf3: Sd,tot = γf3·S(F), F com γf/γf3. A curva tracejada (0,85·ηc·fcd, ELU) só serve
+   *     para o esforço resistente MRd — é a verificação que o motor já faz depois (superfície de interação a N = Nd).
+   *   · 15.8.4 (PDF 129, p.111): ecc = (Msg/Nsg + ea)·(2,718^[φ·Nsg/(Ne − Nsg)] − 1), Ne = 10·Eci·Ic/ℓe², Msg e Nsg da combinação QUASE PERMANENTE, ea = imperfeição local
+   *     (Figura 11.2-b, PDF 78, p.60), φ = coeficiente de fluência (8.2.11, Tabela 8.1, PDF 46, p.28), "como se fosse um efeito imediato que se soma à excentricidade e1".
+   * ALGORITMO (direção d, N fixo): N* = Nd/γf3 · M1* = M1ef/γf3, com M1ef = máx(αb·M1d,A; M1d,mín) + Nd·ecc.
+   *   Equilíbrio: M_int(1/r; N*) = M1* + N*·(ℓe²/10)·(1/r) — M_int por camadas (fibras) da seção retangular, ε(y) = ε0 + (1/r)·y, ε0 resolvido para ΣN = N*
+   *   (concreto parábola-retângulo 8.2.10.1 com pico 1,10·fcd; aço bilinear com fyd; ε_c ≤ εcu e ε_s ≤ 10 ‰ — pivôs do ELU). Varre 1/r a partir de 0 e toma a PRIMEIRA raiz
+   *   (ramo estável, dM_int/d(1/r) > k); sem raiz até o limite de deformação = pilar instável (perda de estabilidade) → reprova.
+   *   Md,tot = M1ef + Nd·(ℓe²/10)·(1/r*) ≥ M1d,A. Em seguida a superfície de interação (ELU, 0,85·ηc·fcd) a N = Nd verifica Md,tot ≤ MRd.
+   * LIMITES: seção retangular, armadura simétrica e constante (15.8.1), cada direção separada (15.8.3.3.5: os momentos totais das duas direções só se somam na verificação
+   *   oblíqua, que o motor já faz); λ > 140 NÃO (15.8.3.2, método geral). O concreto ocupado pelas barras não é descontado (como no resto do motor). */
+  function phiFluencia(fck, U, hficCm, t0, aviso) {
+    var T = cv("fluenciaPhiTabela81", null); if (!T) return null;
+    var tab = fck <= 45 ? T.C20_C45 : T.C50_C90, us = T.umidadePct, hs = T.espFicticiaCm, ts = T.t0Dias;
+    function lim(x, v, nome, un) { var lo = v[0], hi = v[v.length - 1], c = Math.min(hi, Math.max(lo, x)); if (aviso && Math.abs(c - x) > 1e-9) aviso(nome + " = " + fmt(x, 1) + " " + un + " fora da faixa da Tabela 8.1 (" + lo + " a " + hi + "): usado " + c + " (a tabela não extrapola)"); return c; }
+    function lin(xs, ys, x) { var i = 0; while (i < xs.length - 2 && x > xs[i + 1]) i++; var f = (x - xs[i]) / (xs[i + 1] - xs[i]); return ys[i] + f * (ys[i + 1] - ys[i]); }
+    var u = lim(U, us, "umidade média", "%"), t = lim(t0, ts, "t0", "dias"), h = hficCm;
+    /* 2Ac/u: acima de 60 cm usa a coluna de 60 (φ cai com a espessura: a favor da segurança); ABAIXO de 20 cm EXTRAPOLA linearmente a partir das colunas de 20 e 60 (φ cresce: a favor da segurança) — revisão adversarial 17/11/2026 */
+    if (h > hs[hs.length - 1]) { if (aviso) aviso("espessura fictícia 2Ac/u = " + fmt(h, 1) + " cm acima da faixa da Tabela 8.1 (20 a 60): usada a coluna de 60 cm"); h = hs[hs.length - 1]; }
+    else if (h < hs[0] - 1e-9 && aviso) aviso("espessura fictícia 2Ac/u = " + fmt(h, 1) + " cm abaixo da faixa da Tabela 8.1 (20 a 60): φ EXTRAPOLADO linearmente a partir das colunas de 20 e 60 cm (a favor da segurança; a tabela não prevê)");
+    var porT = tab.map(function (linha) {   /* para cada t0 da tabela: interpola em h (2 pontos) e depois em U */
+      var porU = us.map(function (_, iu) { return lin(hs, [linha[2 * iu], linha[2 * iu + 1]], h); });
+      return lin(us, porU, u);
+    });
+    return lin(ts, porT, t);
+  }
+  /* ea (Figura 11.2-b, PDF 78 p.60): falta de retilineidade do lance, ea = θ1·ℓ/2, θ1 = 1/(100·√H) com 1/300 ≤ θ1 ≤ 1/200 (Figura 11.1 da Em1:2026), H = comprimento do lance em m */
+  function eaLocal(Lcm) {
+    var H = Math.max(Lcm / 100, 1e-6), t1 = 1 / (cv("theta1CoefDenominador", 100) * Math.sqrt(H));
+    t1 = Math.max(1 / cv("theta1MinInv", 300), Math.min(1 / cv("theta1MaxInv", 200), t1));
+    return t1 * Lcm / 2;
+  }
+  /* ecc (15.8.4): h, b em cm (Ic = b·h³/12 na direção considerada), le em cm, Nsg em kN, Msg em kN·cm (módulo), ea em cm, phi, Eci em kN/cm² */
+  function excentricidadeFluencia(q) {
+    var Ic = q.b * q.h * q.h * q.h / 12, Ne = cv("pilarFluenciaNeCoef", 10) * q.Eci * Ic / (q.le * q.le), Nsg = q.Nsg;
+    if (!(Nsg > 0)) return { ok: false, motivo: "Nsg ≤ 0 na combinação quase permanente" };
+    if (Nsg >= Ne - 1e-9) return { ok: false, motivo: "Nsg = " + fmt(Nsg, 1) + " kN ≥ Ne = " + fmt(Ne, 1) + " kN (carga de Euler com 10·Eci·Ic/ℓe²): a fluência instabiliza o pilar", Ne: Ne };
+    var f = Math.pow(cv("pilarFluenciaEuler", 2.718), q.phi * Nsg / (Ne - Nsg)) - 1;
+    return { ok: true, ecc: (Math.abs(q.Msg) / Nsg + q.ea) * f, fator: f, Ne: Ne, Ic: Ic, ea: q.ea, eSg: Math.abs(q.Msg) / Nsg };
+  }
+  /* seção para o diagrama M-N-1/r: camadas de largura b e altura h/nL; barras = [{y, As}] com y = coordenada ao longo de h a partir do CG (+ = face comprimida) */
+  function secaoMN(h, b, barras, mat, pico) {
+    var nL = Math.max(8, Math.round(cv("pilarMN1rCriterio", { camadas: 48 }).camadas)), ys = [], dy = h / nL, i, ym = 0;
+    for (i = 0; i < nL; i++) ys.push(-h / 2 + (i + 0.5) * dy);
+    barras.forEach(function (bb) { ym = Math.max(ym, Math.abs(bb.y)); });
+    return { h: h, b: b, ys: ys, dy: dy, bars: barras, ymax: ym, mat: mat, pico: pico };
+  }
+  function tensaoCpico(eps, mat, pico) {   /* parábola-retângulo da 8.2.10.1 com patamar = pico·fcd (pico = 1,10 no diagrama de deformabilidade, 15.3) */
+    if (eps <= 0) return 0;
+    var f = pico * mat.fcd; if (eps >= mat.ec2) return f;
+    return f * (1 - Math.pow(1 - eps / mat.ec2, mat.nPar));
+  }
+  function integraMN(S, e0, kap) {
+    var N = 0, M = 0, i, y, f, mat = S.mat, dA = S.b * S.dy;
+    for (i = 0; i < S.ys.length; i++) { y = S.ys[i]; f = tensaoCpico(e0 + kap * y, mat, S.pico) * dA; N += f; M += f * y; }
+    for (i = 0; i < S.bars.length; i++) { y = S.bars[i].y; f = tensaoS(e0 + kap * y, mat) * S.bars[i].As; N += f; M += f * y; }
+    return { N: N, M: M };
+  }
+  /* Limite superior de ε0: pivô B (εcu no topo) OU pivô C (domínio 5: εc2 a 3/7·h do topo — mesma regra do esforcosPlano), o que vier primeiro.
+   * M_int(1/r) para N = Nstar: { M, e0 } ou { fim:true, motivo } se, nos limites do ELU (εc ≤ εcu no topo, εs ≥ −10 ‰ na barra mais tracionada), nenhum ε0 equilibra N* */
+  function momentoInterno(S, kap, Nstar) {
+    var mat = S.mat, iter = Math.round(cv("pilarMN1rCriterio", { iteracoes: 60 }).iteracoes);
+    var eHi = Math.min(mat.ecu - kap * S.h / 2, mat.ec2 - kap * S.h * (0.5 - mat.pivC)), eLo = -mat.esMax + kap * S.ymax;
+    if (eLo > eHi + 1e-15) return { fim: true, motivo: "limite de deformação do ELU atingido" };
+    var rHi = integraMN(S, eHi, kap); if (rHi.N < Nstar) return { fim: true, motivo: "esmagamento: nem com o topo em εcu a seção equilibra N*" };
+    var rLo = integraMN(S, eLo, kap); if (rLo.N > Nstar) return { fim: true, motivo: "N* abaixo do que a seção ainda equilibra no limite do aço" };
+    var lo = eLo, hi = eHi, r = rHi, k;
+    for (k = 0; k < iter; k++) { var m = (lo + hi) / 2; r = integraMN(S, m, kap); if (Math.abs(r.N - Nstar) <= 1e-9 * (1 + Math.abs(Nstar))) { lo = hi = m; break; } if (r.N < Nstar) lo = m; else hi = m; }
+    return { M: r.M, e0: (lo + hi) / 2 };
+  }
+  /* equilíbrio M_int(1/r) = M1* + N*·ℓe²/10·1/r (primeira raiz). { ok, invr (1/cm), Mint (kN·cm, a N*) } ou { ok:false, motivo } */
+  function equilibrioMN1r(S, M1star, Nstar, le) {
+    var mat = S.mat, cr = cv("pilarMN1rCriterio", { passosCurvatura: 160, iteracoes: 60 }), NP = Math.round(cr.passosCurvatura), kmax = (mat.ecu + mat.esMax) / (S.h / 2 + S.ymax), kN = Nstar * le * le / cv("pilarMN1rCurvaturaDivisor", 10);
+    function dif(k) { var r = momentoInterno(S, k, Nstar); return r.fim ? { fim: true, motivo: r.motivo } : { d: r.M - (M1star + kN * k), M: r.M }; }
+    var d0 = dif(0); if (d0.fim) return { ok: false, motivo: "seção sem equilíbrio com 1/r = 0: " + d0.motivo };
+    if (d0.d >= 0) return { ok: true, invr: 0, Mint: d0.M };
+    var kPrev = 0, j, kj, dj, k, a, b;
+    for (j = 1; j <= NP; j++) {
+      kj = kmax * j / NP; dj = dif(kj);
+      if (dj.fim) return { ok: false, motivo: "sem ponto de equilíbrio antes do limite de deformação do ELU (" + dj.motivo + "): pilar instável (perda de estabilidade)" };
+      if (dj.d >= 0) {
+        a = kPrev; b = kj;
+        for (k = 0; k < cr.iteracoes; k++) { var mm = (a + b) / 2, dm = dif(mm); if (dm.fim || dm.d >= 0) b = mm; else a = mm; if (b - a < 1e-14 * kmax) break; }
+        var rr = dif(b); return { ok: true, invr: b, Mint: rr.M };
+      }
+      kPrev = kj;
+    }
+    return { ok: false, motivo: "sem ponto de equilíbrio até o limite de deformação do ELU (1/r = " + kmax.toExponential(2) + " cm⁻¹): pilar instável (perda de estabilidade)" };
+  }
+  /* aplica o acoplado a UMA direção. q = out.acoplado de momentosDirecao; bars = [{x, y, As}] (cm, origem no CG); dir = "x" | "y" (x: h = hx e a profundidade é a coordenada x). */
+  function acoplarDirecao(q, bars, dir, mat) {
+    /* modo "norma" (padrão, 15.3 e 15.3.1): pico 1,10·fcd e N/γf3. Modo "calculo" (opc.mn1rModo, a favor da segurança): diagrama de CÁLCULO (curva tracejada da Fig. 15.1: 0,85·ηc·fcd, fyd), N = Nd, γf3 = 1 —
+     * curva menos rígida, curvatura de equilíbrio maior; serve de contraprova e de opção do engenheiro. */
+    var calc = q.modo === "calculo", g3 = calc ? 1 : cv("pilarGammaF3", 1.1), pico = calc ? mat.ac : cv("pilarPicoConcretoMN1r", 1.1);
+    var S = secaoMN(q.h, q.b, bars.map(function (bb) { return { y: dir === "x" ? bb.x : bb.y, As: bb.As }; }), mat, pico);
+    var eq = equilibrioMN1r(S, q.M1ef / g3, q.Nd / g3, q.le);
+    if (!eq.ok) return { ok: false, motivo: eq.motivo };
+    var M2 = q.Nd * q.le * q.le / cv("pilarMN1rCurvaturaDivisor", 10) * eq.invr;
+    return { ok: true, invr: eq.invr, M2d: M2, Mtot: Math.max(q.M1ef + M2, q.M1dA, q.piso || 0), MtotMN1r: Math.max(q.M1ef + M2, q.M1dA), Mint: eq.Mint, e2: M2 / q.Nd };
+  }
+
   /* ---------------------------------------------------------------- 2/3. momentos de uma direção
    * p = { h (cm), le (cm), Nd (kN, já com γn), MA (kN·cm, |M1d,A| = o maior ao longo do lance), rB (MB/MA, com sinal; 0 se omitido),
    *       Ac (cm²), mat, metodo: "curvatura" (padrão) | "rigidez" }
@@ -134,8 +243,34 @@
       return out;
     }
     if (lam > cv("pilarLambdaAprox", 90) + 1e-9) {
-      out.ok = false; out.limite = "lambda90-140";
-      out.motivo = "λ = " + fmt(lam, 1) + " entre 90 e 140: o pilar-padrão com curvatura e com rigidez κ aproximadas só vale até λ = 90 (15.8.3.3.2 e .3); falta o pilar-padrão acoplado a diagramas M-N-1/r (15.8.3.3.4) e a fluência (15.8.4) — NÃO implementados";
+      /* 90 < λ ≤ 140: pilar-padrão ACOPLADO a diagrama M-N-1/r (15.8.3.3.4) com FLUÊNCIA obrigatória (15.8.4) — ver o bloco 3b acima.
+       * Sem p.bars (armadura ainda desconhecida) devolve o LIMITE INFERIOR do momento (1ª ordem + ecc, provisorio:true); com p.bars + p.dir calcula o 1/r do diagrama. */
+      var b = num(p.b, Ac / h), flu = p.flu || {}, Nsg = num(flu.Nsg, NaN), Msg = num(flu.Msg, NaN), qpFalta = false, gN = num(p.gN, 1);
+      if (!(Nsg > 0) || !isFinite(Msg)) { var gF = cv("pilarQPFallbackDivisor", 1.4); if (!(Nsg > 0)) Nsg = Nd / (gN * gF); if (!isFinite(Msg)) Msg = MA / (gN * gF); qpFalta = true; out.avisos.push("Combinação quase permanente (Nsg ou Msg) não informada: tomados como Nd e M1d,A divididos por γn·" + fmt(gF, 2) + " (a favor da segurança)"); }
+      var U = num(flu.umidadePct, cv("fluenciaUmidadePadraoPct", 55)), t0 = num(flu.t0Dias, cv("fluenciaT0PadraoDias", 30)), hfic = h * b / (h + b);
+      var phi = num(flu.phi, NaN);
+      if (!(phi > 0)) phi = phiFluencia(mat.fck, U, hfic, t0, function (m) { out.avisos.push("Fluência (8.2.11): " + m); });
+      if (!(phi > 0)) { out.ok = false; out.limite = "fluencia-sem-phi"; out.motivo = "coeficiente de fluência φ indisponível (Tabela 8.1 ausente nos dados)"; return out; }
+      var ea = eaLocal(num(flu.L, le)), fl = excentricidadeFluencia({ h: h, b: b, le: le, Nsg: Nsg, Msg: Msg, ea: ea, phi: phi, Eci: mat.Eci });
+      passo(R, pre + "phi", "Coeficiente de fluência φ(t∞,t0)", phi, "-", "Tabela 8.1, interpolação linear: U = " + fmt(U, 0) + " %, 2Ac/u = " + fmt(hfic, 1) + " cm, t0 = " + fmt(t0, 0) + " dias, fck = " + fmt(mat.fck, 0) + " MPa", "NBR 6118 8.2.11, Tabela 8.1");
+      if (!fl.ok) { out.ok = false; out.limite = "fluencia-instavel"; out.motivo = "direção: " + fl.motivo; return out; }
+      passo(R, pre + "ecc", "Excentricidade adicional por fluência ecc", fl.ecc, "cm", "ecc = (Msg/Nsg + ea)·(2,718^[φ·Nsg/(Ne − Nsg)] − 1) = (" + fmt(fl.eSg, 2) + " + " + fmt(ea, 2) + ")·" + fmt(fl.fator, 3) + "; Ne = 10·Eci·Ic/ℓe² = " + fmt(fl.Ne, 0) + " kN, Nsg = " + fmt(Nsg, 1) + " kN" + (qpFalta ? " (QP estimada)" : ""), "NBR 6118 15.8.4");
+      var M1ef = passo(R, pre + "M1ef", "Momento de 1ª ordem com fluência", Math.max(aB * MA, Mmin) + Nd * fl.ecc, "kN·cm", "M1ef = máx(αb·M1d,A; M1d,mín) + Nd·ecc", "NBR 6118 15.8.4 ('como se fosse um efeito imediato que se soma à excentricidade e1')");
+      /* PISO (revisão adversarial 17/11/2026, opc.mn1rPiso, PADRÃO true): enquanto o M-N-1/r não for validado contra exemplo resolvido PUBLICADO, Md,tot nunca fica abaixo do pilar-padrão aproximado do mesmo método
+       * usado para λ ≤ 90 (curvatura 15.8.3.3.2 por padrão; rigidez κ 15.8.3.3.3 se metodo = "rigidez") — evita o degrau em λ = 90 (o acoplado dá M2 bem menor que o aproximado longe do ELU). Sem a ecc de fluência no piso. */
+      var nuP = Nd / (Ac * mat.fcd), M2P = Nd * le * le / cv("pilarSegundaOrdemDivisor", 10) * curvatura(nuP, h), M1eP = Math.max(MA, Mmin);
+      var piso = p.mn1rPiso === false ? 0 : (p.metodo === "rigidez" ? Math.max(rigidezKappa(h, Nd, le, aB * M1eP), M1eP) : Math.max(Math.max(aB * MA, Mmin) + M2P, MA));
+      out.acoplado = { piso: piso, pisoMetodo: p.metodo === "rigidez" ? "rigidez" : "curvatura", modo: p.mn1rModo === "calculo" ? "calculo" : "norma", h: h, b: b, le: le, Nd: Nd, M1ef: M1ef, M1dA: MA, Mmin: Mmin, ecc: fl.ecc, phi: phi, ea: ea, Nsg: Nsg, Msg: Msg, Ne: fl.Ne, U: U, t0: t0, hfic: hfic, qpEstimada: qpFalta };
+      out.ok = true; out.metodo = "acoplado M-N-1/r + fluência"; out.M2d = 0; out.curvatura = null; out.rigidez = null; out.Mfim = fim;
+      out.MC = Math.max(M1ef, MA, piso); out.Mtot = Math.max(out.MC, fim); out.provisorio = true;
+      if (p.bars && p.dir) {
+        var ra = acoplarDirecao(out.acoplado, p.bars, p.dir, mat);
+        if (!ra.ok) { out.ok = false; out.limite = "instavel"; out.motivo = ra.motivo; return out; }
+        out.provisorio = false; out.acopl = ra; out.M2d = ra.M2d; out.MC = ra.Mtot; out.Mtot = Math.max(ra.Mtot, fim);
+        passo(R, pre + "invr", "Curvatura na seção crítica (diagrama M-N-1/r)", ra.invr, "1/cm", "1/r do equilíbrio M_int(1/r; N* = Nd/γf3, pico 1,10·fcd) = M1*+N*·ℓe²/10·1/r", "NBR 6118 15.8.3.3.4, 15.3.1, Fig. 15.1");
+        passo(R, pre + "M2d", "Momento de 2ª ordem (acoplado a M-N-1/r)", ra.M2d, "kN·cm", "M2d = Nd·ℓe²/10·1/r", "NBR 6118 15.8.3.3.4");
+        passo(R, pre + "Mtot.acopl", "Momento total (acoplado a M-N-1/r + fluência)", ra.Mtot, "kN·cm", "Md,tot = M1ef + M2d ≥ M1d,A", "NBR 6118 15.8.3.3.4 e 15.8.4");
+      }
       return out;
     }
     /* pilar-padrão com curvatura aproximada (15.8.3.3.2) */
@@ -404,7 +539,9 @@
          * M1d,A e αb = 1,0 (rB = 1: a favor da segurança, pois o diagrama já não é o linear entre as extremidades que o αb pressupõe). */
         var Ml = 100 * g * num(ent.Mlance, 0), MAef = Math.abs(Mmax);
         if (Ml > MAef + 1e-9) { MAef = Ml; rB = 1; lanceMaior[d] = true; }
-        var q = momentosDirecao({ h: h, le: le, Nd: Nd, MA: MAef, rB: rB, Ac: Ac, mat: mat, metodo: opc.metodo || e.metodo }, "c" + c.id + "." + d);
+        var qp = e.qp || null, qpM = qp && qp[d] && qp[d].M != null && isFinite(Number(qp[d].M)) ? Math.abs(Number(qp[d].M)) : NaN;   /* Msg ausente numa direção = NaN → cai no fallback ÷1,4 (nunca zero) */
+        var flu = { Nsg: qp ? num(qp.N, 0) : 0, Msg: 100 * qpM, L: e.L != null ? e.L * 100 : undefined, umidadePct: opc.umidadePct != null ? opc.umidadePct : e.umidadePct, t0Dias: opc.t0Dias != null ? opc.t0Dias : e.t0Dias, phi: opc.phiFluencia != null ? opc.phiFluencia : e.phiFluencia };
+        var q = momentosDirecao({ h: h, b: d === "x" ? hy : hx, le: le, Nd: Nd, MA: MAef, rB: rB, Ac: Ac, mat: mat, metodo: opc.metodo || e.metodo, gN: g, flu: flu, mn1rModo: opc.mn1rModo || e.mn1rModo, mn1rPiso: opc.mn1rPiso != null ? opc.mn1rPiso : e.mn1rPiso }, "c" + c.id + "." + d);
         q.MA = MAef; q.MBabs = Math.abs(Mout); o.dir[d] = q;
         if (!q.ok) { ok = false; if (!motivoLimite) motivoLimite = "direção " + d + ": " + q.motivo; }
       });
@@ -422,11 +559,20 @@
     ["x", "y"].forEach(function (d) { if (lanceMaior[d]) avisos.push("Direção " + d + ": em alguma combinação o maior |M| ao longo do lance (estações de todas as barras) passa o das extremidades — adotado como M1d,A, com αb = 1,0."); });
     var utilizaveis = porCaso.filter(function (o) { return o.ok; });
     if (!utilizaveis.length) {
-      if (motivoLimite) return fail(motivoLimite);
+      if (motivoLimite) {
+        var fl0 = fail(motivoLimite);
+        /* 17/11/2026: pilar que falha por ESBELTEZ (λ > 140, λ > 200 ou fluência instável) também ganha sugestão de seção — antes o motor devolvia só a recusa e a tela dizia "Sem correção automática" */
+        var porL = porCaso.map(function (o) { return ["x", "y"].map(function (d) { return o.dir[d] && !o.dir[d].ok ? o.dir[d].limite : null; }); }).reduce(function (a, b) { return a.concat(b); }, []).filter(Boolean);
+        if (!opc.semSugestao && porL.some(function (l) { return /^lambda|^fluencia|^instavel/.test(l); })) {
+          fl0.sugestao = sugerirSecao(e, opc);
+          if (fl0.sugestao && fl0.sugestao.ok) avisos.push("Sugestão de seção: " + fl0.sugestao.texto + ".");
+        }
+        return fl0;
+      }
       return fail(porCaso.map(function (o) { return "caso " + o.id + ": " + o.motivo; }).join("; "));
     }
     porCaso.filter(function (o) { return !o.ok && o.motivo; }).forEach(function (o) { avisos.push("Caso " + o.id + " ignorado: " + o.motivo + "."); });
-    if (porCaso.some(function (o) { return !o.ok && !o.motivo; })) avisos.push("Há combinações fora do campo do motor (λ > 90): " + (motivoLimite || "") + ".");
+    if (porCaso.some(function (o) { return !o.ok && !o.motivo; })) avisos.push("Há combinações fora do campo do motor (λ > 140 ou fluência instável): " + (motivoLimite || "") + ".");
     /* passos do caso mais crítico (maior Nd) para o memorial */
     var crit = utilizaveis.slice().sort(function (a, b) { return b.Nd - a.Nd; })[0];
     ["x", "y"].forEach(function (d) { crit.dir[d].passos.forEach(function (p) { R.push(p); }); });
@@ -444,6 +590,39 @@
     }
     var checks = []; utilizaveis.forEach(function (o) { checks = checks.concat(verificacoes(o)); });
     res.verificacoes = checks.length;
+    /* 2b) λ entre 90 e 140 (15.8.3.3.4 + 15.8.4): o 1/r vem do diagrama M-N-1/r da seção ARMADA — os momentos totais dessas direções dependem do arranjo e são recalculados a cada candidato.
+     * Até lá valem o LIMITE INFERIOR (1ª ordem + ecc), que serve ao As,mín de partida e nunca superestima. */
+    var temAcopl = utilizaveis.some(function (o) { return o.dir.x.acoplado || o.dir.y.acoplado; }), motivoInst = null, nInst = 0, nTentAcopl = 0;
+    function recalcAcoplado(barsA) {
+      var msg = null;
+      utilizaveis.forEach(function (o) {
+        ["x", "y"].forEach(function (d) {
+          var q = o.dir[d]; if (!q.acoplado) return;
+          var ra = acoplarDirecao(q.acoplado, barsA, d, mat); q.acopl = ra;
+          if (!ra.ok) { if (!msg) msg = "caso " + o.id + " direção " + d + ": " + ra.motivo; return; }
+          q.provisorio = false; q.M2d = ra.M2d; q.MC = ra.Mtot; q.Mtot = Math.max(ra.Mtot, q.Mfim); o.secoes[d].C = q.Mtot;
+          q.passosAcopl = [];
+          passo(q.passosAcopl, "c" + o.id + "." + d + ".invr", "Curvatura na seção crítica (diagrama M-N-1/r)", ra.invr, "1/cm", "1/r do equilíbrio M_int(1/r; N* = Nd/γf3, pico 1,10·fcd) = M1*+N*·ℓe²/10·1/r", "NBR 6118 15.8.3.3.4, 15.3.1, Fig. 15.1");
+          passo(q.passosAcopl, "c" + o.id + "." + d + ".M2d", "Momento de 2ª ordem (acoplado a M-N-1/r)", ra.M2d, "kN·cm", "M2d = Nd·ℓe²/10·1/r", "NBR 6118 15.8.3.3.4");
+          if (ra.Mtot > ra.MtotMN1r + 1e-9) passo(q.passosAcopl, "c" + o.id + "." + d + ".piso", "Momento adotado: piso do pilar-padrão aproximado (" + q.acoplado.pisoMetodo + ")", ra.Mtot, "kN·cm", "Momento adotado: piso do pilar-padrão aproximado (" + q.acoplado.pisoMetodo + ") = " + fmt(ra.Mtot, 0) + " kN·cm, maior que o acoplado (" + fmt(ra.MtotMN1r, 0) + " kN·cm) — NBR 6118 15.8.3.3.4 aplicado com piso até validação", "NBR 6118 15.8.3.3.4 (piso, opc.mn1rPiso)");
+          passo(q.passosAcopl, "c" + o.id + "." + d + ".Mtot.acopl", "Momento total (acoplado a M-N-1/r + fluência)", ra.Mtot, "kN·cm", "Md,tot = M1ef + M2d ≥ M1d,A", "NBR 6118 15.8.3.3.4 e 15.8.4");
+        });
+      });
+      return msg ? { ok: false, motivo: msg } : { ok: true };
+    }
+    function remontarChecks() { checks = []; utilizaveis.forEach(function (o) { checks = checks.concat(verificacoes(o)); }); res.verificacoes = checks.length; }
+    /* registra no resultado (res.acoplado), nos avisos, nos passos do memorial e nas pendências o que o 15.8.3.3.4 + 15.8.4 fez — vale também para o pilar que REPROVA */
+    function fecharAcoplado() {
+      if (!temAcopl) return;
+      var ac0 = ["x", "y"].map(function (d) { var q = crit.dir[d]; return q && q.acoplado ? { d: d, q: q } : null; }).filter(Boolean);
+      res.acoplado = ac0.map(function (z) { var a = z.q.acoplado; return { dir: z.d, lambda: z.q.lambda, phi: a.phi, ecc: a.ecc, ea: a.ea, Nsg: a.Nsg, Msg: a.Msg, Ne: a.Ne, umidadePct: a.U, t0Dias: a.t0, espFicticiaCm: a.hfic, qpEstimada: a.qpEstimada, invr: z.q.acopl && z.q.acopl.ok ? z.q.acopl.invr : null, M2d: z.q.M2d, Mtot: z.q.Mtot }; });
+      ac0.forEach(function (z) {
+        var a = z.q.acoplado;
+        avisos.push("Direção " + z.d + ": λ = " + fmt(z.q.lambda, 1) + " (90 < λ ≤ 140) — 2ª ordem pelo pilar-padrão ACOPLADO a diagramas M-N-1/r (15.8.3.3.4) com FLUÊNCIA (15.8.4): φ = " + fmt(a.phi, 2) + " (Tabela 8.1, U = " + fmt(a.U, 0) + " %, t0 = " + fmt(a.t0, 0) + " d, 2Ac/u = " + fmt(a.hfic, 1) + " cm), ecc = " + fmt(a.ecc, 2) + " cm" + (a.qpEstimada ? "; combinação quase permanente ESTIMADA (não veio da análise)" : "") + ". O RT deve CONFIRMAR t0 (padrão do produto 14 dias) e a umidade U (padrão 55 %): são premissas, não dados do projeto.");
+        (z.q.passosAcopl || []).forEach(function (pp) { R.push(pp); });
+      });
+      pend.push("Pilar com 90 < λ ≤ 140: φ da Tabela 8.1 com umidade e t0 de premissa do produto (decisao-produto) quando o projeto não os informa; o M-N-1/r foi conferido por propriedades (monotonia, coerência com o pilar-padrão), não contra exemplo resolvido publicado.");
+    }
 
     /* 3) limites de armadura e limite inferior de As (FCN com a armadura nas faces, d' de referência φ 16) */
     var NdMax = Math.max.apply(null, utilizaveis.map(function (o) { return o.Nd; }));
@@ -474,6 +653,11 @@
         if (escolhido && cd.n >= escolhido.n) continue;
         var layout = layoutPerimetro(hx, hy, cd.dl, cd.dl, cd.nx, cd.ny), bars = layout(cd.AsEf), eta = 0, pior = null;
         tentativas++;
+        if (temAcopl) {
+          nTentAcopl++; var rc = recalcAcoplado(bars);
+          if (!rc.ok) { nInst++; motivoInst = motivoInst || rc.motivo; continue; }   /* instável (sem equilíbrio no diagrama M-N-1/r): este arranjo não serve — um maior (mais rígido) pode servir */
+          remontarChecks();
+        }
         MEMO = {};   /* a armadura é a mesma para todas as verificações deste arranjo: os pontos do contorno (θ = 0, 90° e a grade) se repetem entre elas */
         try {
           for (var k = 0; k < checks.length; k++) {
@@ -488,7 +672,8 @@
     res.tentativas = tentativas;
     if (!escolhido) {
       res.ok = true; res.atende = false; res.aproveitamento = Infinity;
-      res.motivo = falhaLB ? "a seção não resiste: " + falhaLB : "nenhum arranjo de barras (φ de 10 a 25 mm, taxa ≤ 4 % na seção corrente, espaçamentos do 18.4.2.2) atende aos esforços";
+      fecharAcoplado();
+      res.motivo = falhaLB ? "a seção não resiste: " + falhaLB : (temAcopl && nInst === nTentAcopl && nInst > 0 ? "pilar esbelto instável (15.8.3.3.4): " + motivoInst : "nenhum arranjo de barras (φ de 10 a 25 mm, taxa ≤ 4 % na seção corrente, espaçamentos do 18.4.2.2) atende aos esforços" + (temAcopl ? " (2ª ordem pelo pilar-padrão acoplado a M-N-1/r com fluência, λ > 90)" : ""));
       avisos.push("PILAR REPROVADO: " + res.motivo + ".");
       if (!opc.semSugestao) res.sugestao = sugerirSecao(e, opc);
       if (res.sugestao && res.sugestao.ok) avisos.push("Sugestão de seção: " + res.sugestao.texto + ".");
@@ -496,6 +681,7 @@
       return res;
     }
     var dl = escolhido.dl, P = posicoesPerimetro(hx, hy, dl, dl, escolhido.nx, escolhido.ny), layoutF = layoutPerimetro(hx, hy, dl, dl, escolhido.nx, escolhido.ny);
+    if (temAcopl) { recalcAcoplado(layoutF(escolhido.AsEf)); remontarChecks(); }   /* o laço pode ter avaliado outros arranjos DEPOIS do escolhido: os momentos e as verificações voltam a ser os dele */
     /* As calculada com o MESMO arranjo (perímetro) — vale como As,calc do pilar; As,ef é o das barras escolhidas */
     var AsCalcArr = 0, resolvido = true;
     checks.forEach(function (ch) { var s = resolverAs(secG, layoutF, ch.Nd, ch.Mdx, ch.Mdy, mat, lim.AsMax, opc); if (!s.ok) resolvido = false; else AsCalcArr = Math.max(AsCalcArr, s.As); });
@@ -512,6 +698,7 @@
     if (est.ok && Math.abs(est.phiT - phiTmm) > 1e-9 && est.phiT > phiTmm) {
       /* d' real é maior: reverifica o arranjo com o φt do estribo escolhido */
       var dl2 = cobCm + est.phiT / 10 + escolhido.phi / 20, b2 = layoutPerimetro(hx, hy, dl2, dl2, escolhido.nx, escolhido.ny)(escolhido.AsEf), e2 = 0;
+      if (temAcopl) { var rc2 = recalcAcoplado(b2); if (rc2.ok) remontarChecks(); else e2 = Infinity; }
       checks.forEach(function (ch) { e2 = Math.max(e2, etaDe(secG, b2, ch.Nd, ch.Mdx, ch.Mdy, mat, opc)); });
       if (e2 > 1 + 1e-9) { avisos.push("Com φt = " + fmt(est.phiT, 1) + " mm (d' maior) o arranjo deixa de atender (η = " + fmt(e2, 3) + "): aumente a armadura ou a seção."); etaEscolhido = e2; }
       else etaEscolhido = Math.max(etaEscolhido, e2);
@@ -529,25 +716,56 @@
                      texto: escolhido.n + " φ " + fmt(escolhido.phi, 1) + " (" + fmt(r2(escolhido.AsEf), 2) + " cm², " + fmt(100 * escolhido.AsEf / Ac, 2) + " %)", barras: barsF, posicoes: P, espLivreMin: escolhido.el, pitchX: escolhido.px, pitchY: escolhido.py };
     res.estribos = est.ok ? { phiT: est.phiT, s: est.s, texto: est.texto, grampos: flamb.grampos, semProtecao: flamb.semProtecao } : null;
     res.governa = escolhido.pior ? { caso: escolhido.pior.caso, tipo: escolhido.pior.tipo } : null;
-    avisos.push("Armadura constante ao longo do lance (15.8.1), dimensionada para TODAS as combinações ELU; 2ª ordem global só pelo 0,95·γz do 15.7.2 quando 1,1 < γz ≤ 1,3 (acima disso o pilar fica sem cálculo); fluência NÃO entra.");
+    avisos.push("Armadura constante ao longo do lance (15.8.1), dimensionada para TODAS as combinações ELU; 2ª ordem global só pelo 0,95·γz do 15.7.2 quando 1,1 < γz ≤ 1,3 (acima disso o pilar fica sem cálculo); fluência só nas direções com λ > 90 (15.8.4).");
+    fecharAcoplado();
     pend.push("SEM FONTE: fyk CA-50 (categoria) e bitolas (NBR 7480 fora da biblioteca)");
     pend.push("Normas lidas na 6118:2014 (biblioteca): conferir no exemplar 6118:2026 (a Em1:2026 altera o 15.8.1) — P1.");
     return res;
   }
 
-  /* sugestão de seção: aumenta o MENOR lado de 5 em 5 cm (até +20) e depois os dois lados (+5, +10, +15) */
+  /* SUGESTÃO DE SEÇÃO (reescrita em 17/11/2026). Antes: só aumentava o MENOR lado (+5 a +20) ou os dois juntos, e só era chamada quando faltava ARMADURA; quando o problema era a esbeltez
+   * (λ > 140, que reprovava antes de escolher armadura) nem era chamada — a tela dizia "Sem correção automática". Agora varre pares (hx', hy') a partir da seção atual, em ordem de ÁREA crescente,
+   * e devolve o primeiro que atende (η ≤ 1, taxa ≤ 4 %). Opções por lado: o atual (se ≥ 14 cm: segue com o γn da Tabela 13.1), 19 cm (primeiro valor sem γn, 13.2.3), e 20, 25, 30... até +30 cm.
+   * Respeita 13.2.3: lado ≥ 14 cm e área ≥ 360 cm²; lado < 19 cm só se for o ATUAL (≥ 14); pilar-parede (maior > 5 × menor) fora. Ordem de teste barata: o λ de cada direção (com o ℓe da análise,
+   * que não muda) tem de ser ≤ 140 antes de gastar um dimensionamento completo; no máximo 12 dimensionamentos completos por pilar; prefere a primeira com taxa de aço ≤ 3 % (pilarSugestaoTaxaPref, decisão do produto: 14 × 35 com 3,5 % de aço não é melhor que 19 × 26 folgado) e só então aceita até 4 % (a tela fatia o cálculo por pilar: não pode travar).
+   * LIMITE: os esforços de 1ª ordem são os da análise com a seção ATUAL — seção maior muda a rigidez e a distribuição no pórtico; a sugestão é refeita pelo Calcular depois de aplicada. */
   function sugerirSecao(e, opc) {
-    var tent = [[0, 5], [0, 10], [0, 15], [0, 20], [5, 5], [10, 10], [15, 15]], menorX = e.hx <= e.hy, i;
-    for (i = 0; i < tent.length; i++) {
-      var dMaior = tent[i][0], dMenor = tent[i][1], e2 = {}, o2 = {};
-      Object.keys(e).forEach(function (k) { e2[k] = e[k]; });
-      e2.hx = e.hx + (menorX ? dMenor : dMaior) / 100; e2.hy = e.hy + (menorX ? dMaior : dMenor) / 100;
-      Object.keys(opc || {}).forEach(function (k) { o2[k] = opc[k]; }); o2.semSugestao = true; o2.permitirPilar12 = false;   /* a sugestão automática NUNCA propõe lado < 14 cm (mesmo com a opção de 12 cm ligada) */
-      if (Math.min(e2.hx, e2.hy) * 100 < cv("pilarDimMinCm", 14) - 1e-9) continue;
-      var r = dimensionarPilar(e2, o2);
-      if (r.ok && r.atende && r.armadura && r.armadura.taxa <= 0.04) return { ok: true, hx: e2.hx, hy: e2.hy, texto: fmt(e2.hx * 100, 0) + " × " + fmt(e2.hy * 100, 0) + " cm (" + r.armadura.texto + ")", armadura: r.armadura.texto };
+    var cur = [e.hx * 100, e.hy * 100], minLado = cv("pilarDimMinCm", 14), semG = cv("pilarDimSemGammaNCm", 19), areaMin = cv("pilarAreaMinCm2", 360), passoCm = cv("pilarSugestaoPassoCm", 5), maxMais = 30;
+    function opcoes(c) {
+      var o = [], v;
+      if (c >= minLado - 1e-9) o.push(c);
+      if (c < semG - 1e-9) o.push(semG);
+      for (v = Math.max(20, Math.ceil((c + 1e-9) / passoCm) * passoCm); v <= c + maxMais + 1e-9; v += passoCm) if (o.indexOf(v) < 0 && v > c + 1e-9) o.push(v);
+      return o;
     }
-    return { ok: false, texto: "nenhuma seção até +20 cm resolve — revise o lançamento (carga, vão, número de pavimentos)" };
+    var pares = [];
+    opcoes(cur[0]).forEach(function (a) { opcoes(cur[1]).forEach(function (b) {
+      if (Math.abs(a - cur[0]) < 1e-9 && Math.abs(b - cur[1]) < 1e-9) return;
+      if (a < cur[0] - 1e-9 || b < cur[1] - 1e-9 || a * b < areaMin - 1e-9 || Math.max(a, b) > cv("pilarParedeRazao", 5) * Math.min(a, b) + 1e-9) return;
+      pares.push([a, b]);
+    }); });
+    var lex = e.lex * 100, ley = e.ley * 100;
+    /* 1º as seções que levam o λ de AMBAS as direções a ≤ 90 (fora do regime de fluência/M-N-1/r: é a correção "aumentar o lado esbelto", 14 → 19 → 20 cm), depois as demais; dentro de cada grupo, por área */
+    function grupo(par) { return (Math.sqrt(12) * lex / par[0] <= cv("pilarLambdaAprox", 90) + 1e-9 && Math.sqrt(12) * ley / par[1] <= cv("pilarLambdaAprox", 90) + 1e-9) ? 0 : 1; }
+    pares.sort(function (u, v) { return (grupo(u) - grupo(v)) || (u[0] * u[1] - v[0] * v[1]) || (Math.max(u[0], u[1]) - Math.max(v[0], v[1])); });
+    var feitos = 0, lamMax = cv("pilarLambdaGeral", 140), i, reserva = null, taxaPref = cv("pilarSugestaoTaxaPref", 0.03);
+    for (i = 0; i < pares.length && feitos < 12; i++) {
+      var a = pares[i][0], b = pares[i][1];
+      if (Math.sqrt(12) * lex / a > lamMax + 1e-9 || Math.sqrt(12) * ley / b > lamMax + 1e-9) continue;   /* λ > 140: o motor recusa; nem tenta */
+      var e2 = {}, o2 = {};
+      Object.keys(e).forEach(function (k) { e2[k] = e[k]; });
+      e2.hx = a / 100; e2.hy = b / 100;
+      Object.keys(opc || {}).forEach(function (k) { o2[k] = opc[k]; }); o2.semSugestao = true; o2.permitirPilar12 = false;   /* a sugestão automática NUNCA propõe lado < 14 cm (mesmo com a opção de 12 cm ligada) */
+      feitos++;
+      var r = dimensionarPilar(e2, o2);
+      if (r.ok && r.atende && r.armadura && r.armadura.taxa <= 0.04) {
+        var s = { ok: true, hx: e2.hx, hy: e2.hy, texto: fmt(a, 0) + " × " + fmt(b, 0) + " cm (" + r.armadura.texto + ")", armadura: r.armadura.texto, tentativas: feitos };
+        if (r.armadura.taxa <= taxaPref + 1e-9) return s;   /* a primeira (menor área) com taxa econômica */
+        if (!reserva) reserva = s;                           /* senão guarda a primeira que atende (taxa até 4 %) e segue procurando uma mais folgada */
+      }
+    }
+    if (reserva) return reserva;
+    return { ok: false, texto: "nenhuma seção até +" + maxMais + " cm resolve — revise o lançamento (carga, vão, número de pavimentos)", tentativas: feitos };
   }
 
   /* seção própria do memorial (C6) para os pilares de 12 a 14 cm: texto FIXO da decisão de 14/11/2026 (sem frase de que o software assume responsabilidade) + a lista de cada pilar
@@ -566,7 +784,7 @@
     function dimensionarDeAnalise(an, opc) {
     opc = opc || {};
     if (!an || !an.ok) return { ok: false, motivo: "análise ausente ou inválida" };
-    var m = an.modelo, ELU = an.combinacoes.filter(function (c) { return c.tipo === "ELU"; }), avisos = [], pend = [], pilares = [], nosId = {};
+    var m = an.modelo, ELU = an.combinacoes.filter(function (c) { return c.tipo === "ELU"; }), QPs = an.combinacoes.filter(function (c) { return c.tipo === "ELS-QP"; }), avisos = [], pend = [], pilares = [], nosId = {};
     if (!ELU.length) return { ok: false, motivo: "sem combinação ELU" };
     arr(m.nos).forEach(function (n) { nosId[n.id] = n; });
     /* ⚠ γz (revisão de cálculo 14/11/2026, 6118 15.7.2): 1,1 < γz ≤ 1,3 → os esforços horizontais (vento/desaprumo) das combinações ELU entram × 0,95·γz (a C1 refaz a análise e guarda em
@@ -627,11 +845,19 @@
         bs.forEach(function (bb) { est(c, bb.id).forEach(function (s) { Mzl = Math.max(Mzl, Math.abs(s.Mz)); Myl = Math.max(Myl, Math.abs(s.My)); }); });
         cs.push({ id: c.id, Nd: -Math.min(s0.N, s1.N), x: { MA: s0.Mz, MB: s1.Mz, Mlance: Mzl }, y: { MA: s0.My, MB: s1.My, Mlance: Myl } });
       });
+      /* combinação QUASE PERMANENTE (ELS-QP da C1) para a fluência do 15.8.4 (λ > 90): a de maior N no lance; Msg = maior |M| de todas as estações do lance em cada direção */
+      var qp = null;
+      QPs.forEach(function (c) {
+        var sb = est(c, b0.id), st = est(c, bN.id); if (!sb.length || !st.length) return;
+        var Nq = -Math.min(sb[0].N, st[st.length - 1].N), Mzq = 0, Myq = 0;
+        bs.forEach(function (bb) { est(c, bb.id).forEach(function (s) { Mzq = Math.max(Mzq, Math.abs(s.Mz)); Myq = Math.max(Myq, Math.abs(s.My)); }); });
+        if (Nq > 0 && (!qp || Nq > qp.N)) qp = { id: c.id, N: Nq, x: { M: Mzq }, y: { M: Myq } };
+      });
       /* ⚠ TODAS as combinações ELU entram no dimensionamento (revisão 14/11/2026): a seleção antiga de 4 (maior N, maior Mx, maior My, maior Mx/hx + My/hy) podia perder a que governa
        * a armadura (a razão M/N de uma combinação intermediária pode ser pior que as 4 escolhidas). As com N ≥ 0 vão junto: o dimensionarPilar as recusa (flexo-tração → sem-cálculo). */
       var uniq = cs.slice();
       var ent = { id: pid, marca: p.marca, hx: p.comp, hy: p.esp, fck: an.modelo.fck || o.fck || opc.fck, fyk: opc.fyk, caa: num(opc.caa, 2), dmaxMm: opc.dmaxMm, controleRigoroso: opc.controleRigoroso, estriboAco: opc.estriboAco,
-                  metodo: opc.metodo, posicao: posicao, lex: lef.x, ley: lef.y, casos: uniq };
+                  metodo: opc.metodo, posicao: posicao, lex: lef.x, ley: lef.y, casos: uniq, qp: qp, L: L };
       if (o.permitirPilar12 != null) ent.permitirPilar12 = o.permitirPilar12;
       if (o.fck) ent.fck = o.fck;
       var dp = dimensionarPilar(ent, opc);
@@ -662,7 +888,8 @@
     curvatura: curvatura, rigidezKappa: rigidezKappa, momentosDirecao: momentosDirecao, esforcosPlano: esforcosPlano, momentoResistente: momentoResistente, contorno: contorno,
     resistenciaNaDirecao: resistenciaNaDirecao, verificarAlpha: verificarAlpha, layoutFaces: layoutFaces, posicoesPerimetro: posicoesPerimetro, layoutPerimetro: layoutPerimetro,
     resolverAs: resolverAs, limitesArmadura: limitesArmadura, estribos: estribos, protecaoFlambagem: protecaoFlambagem, candidatosArranjo: candidatosArranjo,
-    dimensionarPilar: dimensionarPilar, dimensionarDeAnalise: dimensionarDeAnalise, sugerirSecao: sugerirSecao, textoMemorialPilar12: textoMemorialPilar12
+    dimensionarPilar: dimensionarPilar, dimensionarDeAnalise: dimensionarDeAnalise, sugerirSecao: sugerirSecao, textoMemorialPilar12: textoMemorialPilar12,
+    phiFluencia: phiFluencia, eaLocal: eaLocal, excentricidadeFluencia: excentricidadeFluencia, secaoMN: secaoMN, momentoInterno: momentoInterno, equilibrioMN1r: equilibrioMN1r, acoplarDirecao: acoplarDirecao
   };
   global.ConcPilar = ConcPilar;
   if (typeof module !== "undefined" && module.exports) module.exports = ConcPilar;
