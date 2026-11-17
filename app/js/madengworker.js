@@ -18,10 +18,10 @@
 
   var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
   var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
-    "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js"];
+    "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js"];
   var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
     "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
-    "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento" };
+    "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas" };
   var ETAPAS = ["preparar", "deck", "dimensionar", "ligacoes", "fonte", "auditoria", "orcamento"];
   var NOME_ETAPA = { preparar: "Montando o modelo, as cargas e o vento (NBR 6123, com vento oblíquo e abertura dominante)", dimensionar: "Dimensionando as seções no catálogo e verificando (NBR 7190, 2ª ordem)",
     deck: "Deck: tábuas, barrotes, vigas, pilaretes, estabilidade lateral, guarda-corpo e escada (NBR 7190-1, 6120, 14718)", ligacoes: "Ligações: pinos, chapas, placa de base e chumbadores", fonte: "Lista de peças com geometria", auditoria: "Pente-fino do projeto (peças sem apoio, esbeltez, verga, reforço)", orcamento: "Itens do orçamento, com preço e fonte" };
@@ -34,7 +34,7 @@
     var EN = G("MadEngEntrada") || (typeof require === "function" ? require("./madengentrada.js") : null), tp = EN.toProj(est, opcao);
     var t7 = tp.t7 ? copia(tp.t7) : null;   /* copia por JSON: o terreno (função) sai, os dados ficam */
     return { proj: tp.proj, partida: tp.partida, t7: t7, terreno: { const: EN.num(est.t7 && est.t7.terrenoConst, 0), pts: (est.t7 && est.t7.terrenoPts) || "" }, extras: tp.extras,
-      precos: copia(est.precos || {}), bdi: est.bdi, soDeck: est.tip === "T7", deck: est.deck ? copia(est.deck) : null, t2: !!tp.t2, sistema: tp.sistema || null, nome: est.obra.nome || "", opcao: tp.opcao.id, nomeOpcao: tp.opcao.nome };
+      precos: copia(est.precos || {}), bdi: est.bdi, soDeck: est.tip === "T7", deck: est.deck ? copia(est.deck) : null, t2: !!tp.t2, t3: !!tp.t3, sistema: tp.sistema || null, nome: est.obra.nome || "", opcao: tp.opcao.id, nomeOpcao: tp.opcao.nome };
   }
 
   function rodar(sol, prog) {
@@ -46,6 +46,7 @@
     if (t7) t7.decks.forEach(function (d) { if (d.modo !== "retangulo") d.terreno = terr; });
     if (sol.soDeck) return rodarDeck(sol, t7, terr, avisa, t0, MO);
     if (sol.t2) return rodarT2(sol, proj, avisa, t0, D2, MO);
+    if (sol.t3) return (G("MadT3Saidas") || require("./madt3saidas.js")).rodar(sol, proj, avisa, t0, MO);      /* T3 (telhado de 4 águas): js/madt3*.js */
     var itAtual = 0, dk = null;
     if (t7) { avisa("deck"); dk = projetarDeck(sol, t7, terr); t7 = dk.resultado.params; }          /* o deck CALCULADO (seções crescidas) é o que vai à fonte, ao orçamento e às pranchas */
     avisa("dimensionar", { it: 0 });

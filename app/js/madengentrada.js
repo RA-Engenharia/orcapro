@@ -76,6 +76,7 @@
         vAltVar: true, hPonta: 0.30, hPontaMax: null, lambri: 0.025, sTerca: 0.95, hParedeTopo: null, telhaPeso: 0.12, lambriPeso: 6.0 },
       t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
         telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
+      t3: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
       t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
       deck: { guardaCorpo: { regiao: "", h: "1.10" }, cargas: { sobrecarga: "2.5" }, lateral: { vento: "", topoTravado: false }, estab: "" },
       opcoes: op,
@@ -206,9 +207,29 @@
     return { proj: proj, partida: secoesPartidaT2(est, o, sis), t7: null, opcao: oT2, extras: copia(est.extras), nome: ob.nome, t2: true, sistema: sis };
   }
 
+  /* ------------------------------------------------------------ T3 (telhado de 4 águas): o estado da tela → entrada de MadT3Lig.projetar */
+  function t3Params(est) {
+    var t = est.t3 || {};
+    return { nome: est.obra.nome || "Telhado de 4 águas", a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
+      telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: t.tesoura === "howe" ? "howe" : "pratt" } };
+  }
+  function secoesPartidaT3(o) {
+    var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.28)), P = { forma: "quadrado", b: b, h: b };
+    function c(x) { return JSON.parse(JSON.stringify(x)); }
+    return { P: c(P), PO: c(P), FR: { b: 0.12, h: 0.24 }, BS: { b: 0.10, h: 0.20 }, BI: { b: 0.10, h: 0.20 }, PD: { b: 0.08, h: 0.12 }, DG: { b: 0.08, h: 0.12 }, MS: { b: 0.10, h: 0.20 }, MI: { b: 0.10, h: 0.20 }, MP: { b: 0.08, h: 0.12 }, MG: { b: 0.08, h: 0.12 }, T: { b: 0.08, h: 0.20 }, CM: { b: 0.10, h: 0.24 }, E: { b: 0.12, h: 0.30 }, LB: { b: 0.10, h: 0.10 }, DX: { b: 0.12, h: 0.12 }, DP: { b: 0.12, h: 0.12 } };
+  }
+  function toProjT3(est, id) {
+    var o = opcaoDe(est, id), ob = est.obra, params = t3Params(est);
+    var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), faces: copia(ob.faces) },
+      classe: o.classe, umidade: num(ob.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined, opcao: o.id, pesoMLC: 5.0 };
+    var o3 = copia(o); o3.nome = "Pilar " + Math.round(num(o.t2 && o.t2.pilarB, 0.28) * 100) + " cm, tesouras " + (params.tesoura.tipo === "howe" ? "Howe" : "Pratt") + ", " + String(o.classe || "").replace("mlc:", "");
+    return { proj: proj, partida: secoesPartidaT3(o), t7: null, opcao: o3, extras: copia(est.extras), nome: ob.nome, t3: true, sistema: "tesoura" };
+  }
+
   /** a opção `id` do estado → tudo que o worker e as saídas precisam (serializável: o terreno vai como função só dentro do t7, que o worker refaz) */
   function toProj(est, id) {
     if (est.tip === "T2") return toProjT2(est, id);
+    if (est.tip === "T3") return toProjT3(est, id);
     var o = opcaoDe(est, id), params = t1Params(est);
     var proj = { params: params, vento: ventoEntrada(est, params), classe: o.classe, umidade: num(est.obra.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined,
       limites: copia(o.limites), passo: copia(est.passo), cargas: { telha: num(est.t1.telhaPeso, 0.12), lambriPeso: num(est.t1.lambriPeso, 6), outros: 0.03 }, opcao: o.id, pesoMLC: 5.0 };
@@ -219,6 +240,18 @@
   function validar(est) {
     var f = [], t = est.t1, ob = est.obra;
     var so7 = est.tip === "T7";
+    if (est.tip === "T3") {
+      var w = est.t3;
+      if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
+      if (!(num(w.vao, 0) >= 3) || !(num(w.comp, 0) > 1)) f.push({ passo: 2, texto: "Informe o vão (mínimo 3 m) e o comprimento da casa." });
+      else if (num(w.comp, 0) < num(w.vao, 0)) f.push({ passo: 2, texto: "O comprimento deve ser maior ou igual ao vão (gire a planta). Para planta quadrada use comprimento = vão." });
+      else if (num(w.comp, 0) - num(w.vao, 0) > 1e-6 && num(w.comp, 0) - num(w.vao, 0) < 0.5) f.push({ passo: 2, texto: "A diferença entre comprimento e vão está entre 0 e 0,5 m: use planta quadrada (comprimento = vão) ou afaste os lados em pelo menos 0,5 m." });
+      if (!(num(w.incl, 0) >= 5)) f.push({ passo: 2, texto: "Inclinação mínima de 5 % para telha." });
+      if (!(num(w.peDireito, 0) > 1)) f.push({ passo: 2, texto: "Informe o pé-direito." });
+      if (!(num(w.telhaPeso, 0) > 0)) f.push({ passo: 2, texto: "Informe o peso da telha (kN/m²)." });
+      if (!est.opcoes.some(function (o) { return o.id === est.ativa; })) f.push({ passo: 3, texto: "Escolha a opção." });
+      return { ok: f.length === 0, falta: f };
+    }
     if (est.tip === "T2") {
       var u = est.t2;
       if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });

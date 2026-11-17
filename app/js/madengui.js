@@ -322,7 +322,7 @@
   function passo2() {
     var e = est(), t = e.t1, h = "";
     h += sec({ titulo: "Tipologia", corpoHtml: '<div class="meg-linha" role="radiogroup" aria-label="Tipologia">' +
-      bt("tip", "T1 — Cobertura de uma água (casa, pavilhão)", { sm: 1, v: "T1", pri: e.tip === "T1" }) + bt("tip", "T2 — Casa de duas águas (tesoura ou cumeeira portante)", { sm: 1, v: "T2", pri: e.tip === "T2" }) + bt("tip", "T7 — Somente deck elevado", { sm: 1, v: "T7", pri: e.tip === "T7" }) + "</div>" +
+      bt("tip", "T1 — Cobertura de uma água (casa, pavilhão)", { sm: 1, v: "T1", pri: e.tip === "T1" }) + bt("tip", "T2 — Casa de duas águas (tesoura ou cumeeira portante)", { sm: 1, v: "T2", pri: e.tip === "T2" }) + bt("tip", "T3 — Telhado de 4 águas (tesouras, meias-tesouras e espigões)", { sm: 1, v: "T3", pri: e.tip === "T3" }) + bt("tip", "T7 — Somente deck elevado", { sm: 1, v: "T7", pri: e.tip === "T7" }) + "</div>" +
       '<p class="meg-nota">T1 calcula pilares, vigas V, terças, vergas e ligações. O deck (T7) pode acompanhar a T1 ou ficar sozinho; as outras tipologias entram na próxima entrega.</p>' });
     if (e.tip === "T1") {
       var inputs = '<div class="meg-grade">' +
@@ -348,8 +348,28 @@
         '<p class="meg-nota">Opções A, B e C (passo 3): A = pilar de partida de 28 cm no sistema escolhido; B = pilar de 32 cm; C = o outro sistema. Vergas de vidro, caibros secundários e a torção por excentricidade do vento não são modelados (o resultado avisa).</p>';
       h += '<div class="meg-2col">' + sec({ titulo: "Casa de duas águas (T2)", corpoHtml: in2 }) + desenhoT2Html() + "</div>";
     }
-    h += e.tip === "T2" ? "" : deckHtml();
+    if (e.tip === "T3") {
+      var in3 = '<div class="meg-grade">' +
+        campo("Vão (largura entre eixos dos pilares)", "t3.vao", { un: "m", dica: "Mínimo 3 m" }) + campo("Comprimento (direção da cumeeira)", "t3.comp", { un: "m", dica: "Comprimento ≥ vão. Comprimento = vão: planta quadrada (pirâmide, sem cumeeira). Entre 0 e 0,5 m a mais que o vão não é aceito." }) + campo("Pé-direito (piso ao respaldo dos pilares)", "t3.peDireito", { un: "m" }) +
+        campo("Inclinação das 4 águas", "t3.incl", { un: "%", dica: "Mínimo 5 % para telha" }) + campo("Cota do piso (base dos pilares)", "t3.cotaPiso", { un: "m" }) + campo("Beiral (igual nos 4 lados)", "t3.beiral", { un: "m", dica: "O espigão a 45° exige o mesmo beiral nos 4 lados" }) +
+        campo("Tipo da tesoura", "t3.tesoura", { tipo: "sel", opcoes: [["pratt", "Pratt (diagonais tracionadas)"], ["howe", "Howe (diagonais comprimidas, ponta com folga de 10 mm)"]] }) + campo("Espaçamento das tesouras principais", "t3.sTes", { un: "m", dica: "Entre as tesouras da cumeeira (a primeira e a última ficam nas pontas da cumeeira)" }) +
+        campo("Espaçamento máximo das terças", "t3.sTercaMax", { un: "m" }) + campo("Vão máximo entre pilares", "t3.vMaxPilar", { un: "m" }) + campo("Peso da telha com ripas", "t3.telhaPeso", { un: "kN/m²", dica: "Cerâmica ≈ 0,55; a telha da obra manda" }) + "</div>" +
+        '<p class="meg-nota">A tesoura principal fica nos eixos da cumeeira; as meias-tesouras fazem o papel da cumeeira nas águas de cabeceira; os 4 espigões levam o empuxo ao canto, onde o anel do frechal (cinta de aço) o resolve. O vento em 4 águas usa a Tabela 5 da NBR 6123 (duas águas) como premissa declarada. Torção por excentricidade do vento, caibros secundários e o rincão (planta em L) não são modelados.</p>';
+      h += '<div class="meg-2col">' + sec({ titulo: "Telhado de 4 águas (T3)", corpoHtml: in3 }) + desenhoT3Html() + "</div>";
+    }
+    h += (e.tip === "T2" || e.tip === "T3") ? "" : deckHtml();
     return h;
+  }
+  /** desenho ao vivo da T3: planta do telhado de 4 águas — beiral, cumeeira, 4 espigões a 45°, eixos das tesouras e das meias-tesouras */
+  function desenhoT3Html() {
+    var u = est().t3, a = Math.max(num(u.comp, 12), 1), b = Math.max(num(u.vao, 8), 1), be = Math.max(num(u.beiral, 0), 0), W = 360, s = Math.min((W - 40) / (a + 2 * be), 200 / (b + 2 * be)), x0 = 20, y0 = 20, f = function (x, y) { return [x0 + (x + be) * s, y0 + (b + be - y) * s]; };
+    var A = f(-be, b + be), B = f(a + be, -be), P0 = f(0, 0), P1 = f(a, b), r1 = f(Math.min(b / 2, a / 2), b / 2), r2 = f(Math.max(a - b / 2, a / 2), b / 2), k, svg = '<svg viewBox="0 0 ' + W + " " + (Math.round((b + 2 * be) * s) + 44) + '" class="meg-svg" role="img" aria-label="Planta do telhado de 4 águas: beiral, cumeeira, espigões e tesouras">';
+    svg += '<text x="' + x0 + '" y="12" font-size="9" fill="currentColor">PLANTA DE COBERTURA — espigões a 45°</text><rect x="' + A[0] + '" y="' + A[1] + '" width="' + (B[0] - A[0]) + '" height="' + (B[1] - A[1]) + '" fill="none" stroke="currentColor" stroke-dasharray="3 2" stroke-width="0.8"/><rect x="' + P0[0] + '" y="' + P1[1] + '" width="' + (P1[0] - P0[0]) + '" height="' + (P0[1] - P1[1]) + '" fill="none" stroke="currentColor" stroke-width="1.6"/>';
+    [[P0, r1], [f(0, b), r1], [f(a, 0), r2], [P1, r2]].forEach(function (q) { svg += '<line x1="' + q[0][0] + '" y1="' + q[0][1] + '" x2="' + q[1][0] + '" y2="' + q[1][1] + '" stroke="currentColor" stroke-width="2.2"/>'; });
+    svg += '<line x1="' + r1[0] + '" y1="' + r1[1] + '" x2="' + r2[0] + '" y2="' + r2[1] + '" stroke="currentColor" stroke-width="2.6"/><line x1="' + P0[0] + '" y1="' + r1[1] + '" x2="' + r1[0] + '" y2="' + r1[1] + '" stroke="currentColor" stroke-width="1.2"/><line x1="' + r2[0] + '" y1="' + r2[1] + '" x2="' + P1[0] + '" y2="' + r2[1] + '" stroke="currentColor" stroke-width="1.2"/>';
+    var pass = Math.max(0.5, num(u.sTes, 4)), nT = a - b < 0.05 ? 0 : Math.max(1, Math.ceil((a - b) / pass - 1e-9));
+    for (k = 0; k <= nT; k++) { var xx = f(a - b < 0.05 ? a / 2 : b / 2 + (a - b) * k / nT, 0)[0]; svg += '<line x1="' + xx + '" y1="' + P1[1] + '" x2="' + xx + '" y2="' + P0[1] + '" stroke="currentColor" stroke-width="1.2"/>'; if (a - b < 0.05) break; }
+    return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): linha grossa = espigões e cumeeira; linhas finas = tesouras principais (transversais) e meias-tesouras (cabeceiras); tracejado = beiral.</p></div>';
   }
   /** desenho ao vivo da T2: planta (beirais, eixos das tesouras ou caibros e cumeeira) e corte transversal com as duas águas */
   function desenhoT2Html() {
@@ -536,7 +556,7 @@
   function secoesTxt(s) {
     if (!s) return "—";
     if (!(s.T && s.V && s.VG && s.P)) {          /* E4 r4: T2 (sem V nem verga): lista cada grupo com a sua seção; antes só havia o texto da T1 e a tela do passo 4 da T2 quebrava ("reading 'b'") */
-      var ordemT2 = ["P", "PO", "PC", "FR", "BS", "BI", "PD", "DG", "T", "CM", "CB", "TI"];
+      var ordemT2 = ["P", "PO", "PC", "FR", "BS", "BI", "PD", "DG", "MS", "MI", "MP", "MG", "E", "T", "CM", "CB", "TI"];
       return ordemT2.filter(function (g) { return s[g]; }).map(function (g) { var q = s[g]; return g + " " + (q.d != null && q.b == null ? "Ø" + fmt(q.d * 1000, 0) + " mm" : fmt(q.b * 100, 0) + "×" + fmt(q.h * 100, 0) + " cm"); }).join(" · ");
     }
     return "terça " + fmt(s.T.b * 100, 0) + "×" + fmt(s.T.h * 100, 0) + " cm · viga V largura " + fmt(s.V.b * 100, 0) + " cm · verga " + fmt(s.VG.b * 100, 0) + "×" + fmt(s.VG.h * 100, 0) + " cm · pilar " +
@@ -649,7 +669,7 @@
   /* ================================================================ CÁLCULO */
   /* cp = caminho do campo editado: t1.* só invalida a T1 (e o deck que a acompanha), t2.* só a T2; o resto (obra, vento, preços) invalida todas as tipologias com resultado */
   function marcarDesatualizado(cp) {
-    var alvo = cp && /^t([12])\./.test(cp) ? "T" + RegExp.$1 : null;
+    var alvo = cp && /^t([123])\./.test(cp) ? "T" + RegExp.$1 : null;
     guardarTip();
     Object.keys(UIE.porTip).forEach(function (k) { if (alvo && k !== alvo && !(alvo === "T1" && k === "T7")) return; var b = UIE.porTip[k]; Object.keys(b.res || {}).concat(Object.keys(b.resumos || {})).forEach(function (o) { b.desatualizado[o] = true; }); });
   }
@@ -747,7 +767,7 @@
   function saidaIfc() {
     if (!lic("exportar o IFC") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O IFC")) return false;
-    var r = resAtiva(), x = (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
+    var r = resAtiva(), x = (r.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
     if (!x.ok) { toast("IFC: " + x.erro, "erro", 8000); return false; }
     baixar(base() + marcaArq(pre) + ".ifc", x.texto, "application/x-step"); UIE.saidas.ifc = true; UIE.ifcN = x.n; toast("IFC4 com " + x.n + " peças baixado.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
@@ -820,7 +840,7 @@
   function saidaPranchas() {
     if (!lic("baixar as pranchas") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "As pranchas")) return false;
-    var rA = resAtiva(), MPE = (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
+    var rA = resAtiva(), MPE = (rA.tipologia === "T3" && global.MadEngT3) ? global.MadEngT3 : (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
     var x = MPE.gerar(rA, opcoesDoc()); if (!x.ok) { toast("Pranchas: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
     /* E4 r7: o deck calculado junto com a T1 leva também o caderno do deck (D01-D06) depois das folhas da casa */
     if (!rA.soDeck && rA.deck && global.MadEngDeck) { var xd = global.MadEngDeck.gerar(rA, opcoesDoc()); if (xd.ok) { x.folhas = x.folhas.concat(xd.folhas); x.avisos = x.avisos.concat(xd.avisos); } else x.avisos.push("Caderno do deck: " + (xd.avisos[0] || "não gerado")); }
@@ -834,7 +854,7 @@
   }
   function saidaMemorial() {
     if (!lic("gerar o memorial") || semResultado()) return false;
-    var MEM = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
+    var MEM = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.memorial } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
     var o = opcoesDoc(), x = MEM.gerar(resAtiva(), { obra: { nome: o.obra, cidade: o.local }, documento: { numero: o.codigo + "-MEM", revisao: "R00", data: new Date().toISOString().slice(0, 10) }, responsavel: {}, nomeOpcao: o.nomeOpcao });
     if (!x.ok) { toast("Memorial: " + (x.motivo || "falhou"), "erro", 9000); return false; }
     var onde = abrirHtmlImprimir(x.html, base() + "-memorial-madeira-engenharada.html"); UIE.saidas.memorial = x.secoes.length;
@@ -843,7 +863,7 @@
   function saidaManual() {
     if (!lic("gerar o manual de montagem") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O manual de montagem")) return false;
-    var MAN = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
+    var MAN = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.manual } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
     var o = opcoesDoc(), x = MAN.gerar(resAtiva(), { obra: { nome: o.obra }, documento: { revisao: "R00" }, preliminar: pre.preliminar });
     if (!x.ok) { toast("Manual: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
     var onde = abrirHtmlImprimir(x.html, base() + marcaArq(pre) + "-manual-montagem-madeira.html"); UIE.saidas.manual = x.paginas;
@@ -853,13 +873,14 @@
     if (!lic("exportar para o SketchUp") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O modelo SketchUp")) return false;
     var X = global.MadEngExport; if (!X) { toast("O exportador não carregou.", "erro"); return false; }
-    var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
+    var x = (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
     baixar(base() + marcaArq(pre) + "-sketchup.dae", x.texto, "model/vnd.collada+xml"); UIE.saidas.skp = x.grupos; toast("Modelo COLLADA com " + x.grupos + " grupos baixado: no SketchUp, Arquivo → Importar.", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function saidaCype() {
     if (!lic("exportar para o CYPE 3D") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O pacote do CYPE 3D")) return false;
     var X = global.MadEngExport; if (!X || !global.BimBcf || !BimBcf.zipEscrever) { toast("O exportador ou o gerador de .zip não carregou.", "erro"); return false; }
+    if (resAtiva().tipologia === "T3") { toast("O pacote do CYPE 3D ainda não existe para o telhado de 4 águas (pendência declarada); use o IFC.", "aviso", 8000); return false; }
     var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.cype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }) : X.pacoteCype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }); if (!x.ok) { toast("CYPE: " + x.erro, "erro", 8000); return false; }
     var arq = {}; Object.keys(x.arquivos).forEach(function (k) { var a = x.arquivos[k]; if (a.latin1) { var b = new Uint8Array(a.texto.length); for (var i = 0; i < a.texto.length; i++) b[i] = a.texto.charCodeAt(i) & 255; arq[k] = b; } else arq[k] = a.texto; });
     baixar(base() + marcaArq(pre) + "-cype3d-madeira.zip", BimBcf.zipEscrever(arq), "application/zip"); UIE.saidas.cype = Object.keys(arq).length; toast("Pacote para o CYPE 3D baixado (" + Object.keys(arq).length + " arquivos).", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
