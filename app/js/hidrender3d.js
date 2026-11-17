@@ -162,6 +162,8 @@
     o = o || {};
     /* a VISIBILIDADE GRÁFICA da vista salva (js/hidvistaiso.js VIS_PADRAO): arquitetura transparente + aresta, louça em contorno, instalação opaca */
     var vis = o.vis || {}, vArq = vis.arquitetura || {}, vLou = vis.louca || {};
+    /* 17/11/2026 (o Rogério): arquitetura, piso e louça SÓ EM LINHAS, cinza bem claro, sem preenchimento e desenhadas antes da instalação (nada cinza empilhado, o piso não esconde tubo). o.soLinhas === false volta ao meio-tom. */
+    var soL = o.soLinhas !== false, COR_LIN = 0xc8ccd1;
     function hexN(h, d) { var m = /^#?([0-9a-f]{6})$/i.exec(String(h || "")); return m ? parseInt(m[1], 16) : d; }
     if (o.opacArq == null && vArq.opacidade != null) o.opacArq = +vArq.opacidade;
     var pj = cn.proj, W = o.largura || 2800, H = Math.round(W * (pj.v1 - pj.v0) / (pj.u1 - pj.u0));
@@ -197,20 +199,20 @@
     cn.arq.forEach(function (m) {
       if (planta) {   /* planta: parede/pilar CORTADOS = cinza do sistema com contorno, opacos, por BAIXO da instalação */
         var gp = new THREE.BufferGeometry(); gp.setAttribute("position", new THREE.BufferAttribute(new Float32Array(m.pos), 3)); gp.setIndex(m.idx);
-        var mp = new THREE.Mesh(gp, new THREE.MeshBasicMaterial({ color: hexN(cn.arqCor, 0xe4e4e4), side: THREE.DoubleSide, depthWrite: false, depthTest: false, clippingPlanes: planos })); mp.renderOrder = -2; mp.frustumCulled = false; sc.add(mp);
-        var ep = new THREE.LineSegments(new THREE.EdgesGeometry(gp, 25), new THREE.LineBasicMaterial({ color: hexN(cn.arqContorno, 0x8c8c8c), depthWrite: false, depthTest: false, clippingPlanes: planos })); ep.renderOrder = -1; ep.frustumCulled = false; sc.add(ep);
+        if (!soL) { var mp = new THREE.Mesh(gp, new THREE.MeshBasicMaterial({ color: hexN(cn.arqCor, 0xe4e4e4), side: THREE.DoubleSide, depthWrite: false, depthTest: false, clippingPlanes: planos })); mp.renderOrder = -2; mp.frustumCulled = false; sc.add(mp); }
+        var ep = new THREE.LineSegments(new THREE.EdgesGeometry(gp, 25), new THREE.LineBasicMaterial({ color: soL ? COR_LIN : hexN(cn.arqContorno, 0x8c8c8c), depthWrite: false, depthTest: false, clippingPlanes: planos })); ep.renderOrder = -1; ep.frustumCulled = false; sc.add(ep);
         return;
       }
       var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(m.pos), 3)); g.setIndex(m.idx); g.computeVertexNormals();
       var mat = new THREE.MeshLambertMaterial({ color: m.piso ? 0xc9c9c9 : 0xb4b4b4, transparent: true, opacity: m.piso ? (vArq.piso != null ? +vArq.piso : 0.30) : (o.opacArq != null ? o.opacArq : 0.2), depthWrite: false, side: THREE.DoubleSide, clippingPlanes: planos });
-      var me = new THREE.Mesh(g, mat); me.renderOrder = 5; me.frustumCulled = false; sc.add(me);
-      var ed = new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: hexN(vArq.aresta, 0x8c8c8c), transparent: true, opacity: 0.85, clippingPlanes: planos })); ed.renderOrder = 6; ed.frustumCulled = false; sc.add(ed);
+      if (!soL) { var me = new THREE.Mesh(g, mat); me.renderOrder = 5; me.frustumCulled = false; sc.add(me); }
+      var ed = new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: soL ? COR_LIN : hexN(vArq.aresta, 0x8c8c8c), transparent: !soL, opacity: soL ? 1 : 0.85, depthTest: !soL, depthWrite: false, clippingPlanes: planos })); ed.renderOrder = soL ? -1 : 6; ed.frustumCulled = false; sc.add(ed);
     });
     /* 2) louças e móveis: as linhas da malha real em meio-tom */
     if (cn.louca.length) {
       var lp = new Float32Array(cn.louca.length * 6); cn.louca.forEach(function (s, i) { for (var k = 0; k < 6; k++) lp[i * 6 + k] = s[k]; });
       var lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.BufferAttribute(lp, 3));
-      var ls = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: hexN(planta ? cn.corLouca : vLou.cor, 0x9a9a9a), transparent: true, opacity: planta ? 1 : 0.7, depthTest: !planta, clippingPlanes: planos })); ls.renderOrder = 6; ls.frustumCulled = false; sc.add(ls);
+      var ls = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: soL ? COR_LIN : hexN(planta ? cn.corLouca : vLou.cor, 0x9a9a9a), transparent: !soL, opacity: soL ? 1 : (planta ? 1 : 0.7), depthTest: soL ? false : !planta, clippingPlanes: planos })); ls.renderOrder = soL ? -1 : 6; ls.frustumCulled = false; sc.add(ls);
     }
     /* 3) instalação: sólido opaco com a cor do sistema + contorno preto fino (casca invertida) */
     cn.malhas.forEach(function (m) {

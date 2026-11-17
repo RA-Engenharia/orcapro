@@ -228,7 +228,7 @@
     rf.acessorios = arr(r.acessorios).filter(function (q) { return ok[q.sistema]; });
     rf.ligacoes = arr(r.ligacoes).filter(function (l) { var t = trTodos[l.trecho]; return t ? !!ok[t.sistema] : (grupoId === "esgoto" && l.tipo === "peca"); });
     var cf = {}; for (var k2 in c) if (Object.prototype.hasOwnProperty.call(c, k2)) cf[k2] = c[k2];
-    cf.rede = rf; cf.grupo = g; cf.denMin = K.detalhe.denMin; cf.cortaY = K.detalhe.cortaY;
+    cf.rede = rf; cf.redeTotal = c.redeTotal || r; cf.grupo = g;   /* a câmera automática olha TODOS os sistemas do ambiente: água e esgoto saem na mesma câmera */ cf.denMin = K.detalhe.denMin; cf.cortaY = K.detalhe.cortaY;
     return cf;
   }
   /* quais grupos o ambiente tem (pelos trechos modelados dentro dele); ambiente sem rede traçada não se divide */

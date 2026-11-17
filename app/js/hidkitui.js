@@ -842,8 +842,25 @@
       /* (b0) A REDE EXTERNA pelo padrão (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md — correção do Rogério, 18/10/2026: "caixas de
          passagem, de inspeção, tudo é feito do lado de fora"): sem linha da rede e sem caixa de inspeção do usuário, o eixo do
          coletor sai pelo recuo, paralelo às paredes externas, até a frente — e a rede liga caixa a caixa (js/hidrede.js) */
-      var HIm = dep("HidImplantacao"), rAuto = HIm && HIm.redeProposta && esc0.aparelhos.length ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame, avaliarFam: c.avaliarFam }) : null;
+      /* REFAZER = SUBSTITUIR vale também para a LINHA que o próprio Traçar propôs (id "rede-auto…"; a que o projetista desenha leva "redeN"): ficava no modelo e o
+         2º Traçar herdava o lado da rua errado do 1º (prova no projeto real copiado, 17/11/2026: coletor pelo fundo da casa). Sai e é proposta de novo; a do usuário nunca sai. */
+      /* só a linha AINDA IGUAL à última proposta (autoSig = assinatura dos pontos): editada → virou do usuário e fica. Linha de arquivo anterior a esta versão (sem autoSig) vale como automática: era sempre
+         a que o Traçar gravava com o id "rede-auto" */
+      var HIs = dep("HidImplantacao"), rTkeep = null;
+      var apagarLinhaAuto = {}, linhasAuto = arr(est2.hidRedes).filter(function (r) { return /^rede-auto/.test(String(r.id)) && (r.autoSig == null || (HIs && HIs.assinaturaLinha && r.autoSig === HIs.assinaturaLinha(r.pontos))); });
+      var todasAuto = linhasAuto.length === arr(est2.hidRedes).length;
+      if (linhasAuto.length && todasAuto && esc0.aparelhos.length && !(opcoes && opcoes.manterLinhaAuto)) {
+        var nOpsAntes = ops.length;
+        linhasAuto.forEach(function (r) { var oAp = { op: "apagar", id: r.id }; ops.push(oAp); apagarLinhaAuto[String(r.id)] = oAp; });
+        todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
+        var HIt = dep("HidImplantacao"), rT = HIt && HIt.redeProposta ? HIt.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame, avaliarFam: c.avaliarFam }) : null;
+        if (rT && rT.op) rTkeep = rT;   /* a mesma proposta serve ao (b0) logo abaixo (o estado é o mesmo): não recalcula */
+        if (!(rT && rT.op)) { ops.length = nOpsAntes; todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos); }   /* não propõe outra: a linha velha fica (nunca deixa o projeto sem rede) */
+      }
+      var HIm = dep("HidImplantacao"), rAuto = rTkeep ? rTkeep : HIm && HIm.redeProposta && esc0.aparelhos.length ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame, avaliarFam: c.avaliarFam }) : null;
       if (rAuto && rAuto.op) {
+        /* a linha nova de mesmo id REDEFINE a velha (js/biminstrede.js): o "apagar" que pus antes sai — o Traçar tira o "apagar" repetido do mesmo id, e o que ficaria era o PRIMEIRO, antes da linha nova */
+        if (apagarLinhaAuto[String(rAuto.op.id)]) { var iAp = ops.indexOf(apagarLinhaAuto[String(rAuto.op.id)]); if (iAp >= 0) ops.splice(iAp, 1); }
         ops.push(rAuto.op); todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
         avisos.push({ texto: (rAuto.op.lateral ? "Rede proposta pela passagem lateral: " + rAuto.motivo + ". Cada ambiente liga numa caixa de inspeção sobre a linha e a rede segue caixa a caixa até a saída na rua."
           : "Rede externa proposta: " + rAuto.motivo + ". As caixas de inspeção ficam na área externa e a rede liga caixa a caixa até a saída."), elementos: [rAuto.op.id] });
@@ -1068,6 +1085,8 @@
         var HBn = dep("HidBanheira");
         if (HBn) { var rbn = HBn.conferir({ estado: est, avaliarFam: c.avaliarFam }); arr(rbn.avisos).forEach(function (a) { avisos.push({ texto: a.texto, elementos: arr(a.elementos), acao: null }); }); arr(rbn.pendencias).forEach(function (p) { if (!pendencias.some(function (q) { return q.chave === p.chave && String(q.texto) === String(p.texto); })) pendencias.push({ chave: p.chave, texto: p.texto, elementos: arr(p.elementos) }); }); }
       } catch (eHB) { pendencias.push({ chave: "ta.hidromassagem", texto: "Hidromassagem: não consegui conferir a banheira (" + (eHB && eHB.message ? eHB.message : eHB) + ") — confira à mão", elementos: [] }); }
+      /* o aclive mínimo da ventilação horizontal garantido sobre as ops FINAIS (js/hidambiente.js garantirAcliveVent) */
+      try { var HAv = dep("HidAmbiente"); if (HAv && HAv.garantirAcliveVent) { var pAv = []; HAv.garantirAcliveVent(K.achatar(ops), null, { estado: c.estado, pendencias: pAv }); pAv.forEach(function (p) { pendencias.push(p); }); } } catch (eAv) { /* sem a garantia o traçado segue como estava */ }
       return { ok: true, ops: ops, resumo: resumo, faltam: faltam, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, rapido: !!par.rapido, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: nOpsDe(c) };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);

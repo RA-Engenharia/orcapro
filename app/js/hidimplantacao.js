@@ -45,7 +45,9 @@
     faixaMax: 3.0,           // hid:ok até onde (da divisa lateral para dentro) a busca procura o eixo da passagem
     passoFaixa: 0.05,        // hid:ok passo da busca do eixo (5 cm)
     amostraFaixa: 0.10,      // hid:ok amostragem ao longo da faixa (10 cm)
-    passagemMin: 1.50        // hid:ok a faixa livre mais curta que isto não é passagem (é recanto/jardim)
+    passagemMin: 1.50,       // hid:ok a faixa livre mais curta que isto não é passagem (é recanto/jardim)
+    portaNaDivisa: 0.6,      // hid:ok critério de projeto (17/11/2026): porta a até 0,60 m da linha do lote = porta na divisa (voltada para a via)
+    loteProfundo: 1.3        // hid:ok critério de projeto (17/11/2026): lado maior do lote ≥ 1,3 × o menor = lote profundo (a rua fica numa das testadas)
   };
   function geo(par, k) { return par && par[k] != null && isFinite(Number(par[k])) ? Number(par[k]) : GEO_IMP[k]; }
 
@@ -254,6 +256,26 @@
     var Ld = lote(estado);
     var portoes = Ld ? abs.filter(function (a) { var m = { x: (a.p1.x + a.p2.x) / 2, z: (a.p1.z + a.p2.z) / 2 }; return distBordaPoli(m, Ld.contorno) <= num(a.espessura, 0.15) / 2 + geo(par, "tolDivisa"); }) : [];   // hid:ok espessura padrão se a abertura não disser
     if (portoes.length) return { lado: ladoDe({ x: (portoes[0].p1.x + portoes[0].p2.x) / 2, z: (portoes[0].p1.z + portoes[0].p2.z) / 2 }), origem: "portão no muro da divisa (" + portoes[0].id + ")" };
+    /* TESTADA (17/11/2026, prova no projeto real copiado): a "porta na parede externa" é indício FRACO — a de um corredor/recuo interno do lote (a 1ª da lista)
+       mandava a rua para a divisa LATERAL e o coletor corria 22 m pelo fundo da casa, com banheiros a 23 m da caixa de inspeção (NBR 8160 4.2.6.2: 10 m da
+       bacia/caixa sifonada; 25 m entre dispositivos). Lote profundo (lado maior ≥ loteProfundo × o menor) tem a rua numa das duas TESTADAS (lados menores):
+       a porta só vale se estiver numa testada; senão a convenção RA — rua embaixo na planta, z1, a mesma que js/hidbarrilete.js usa sem o parâmetro. Segue
+       "pendente": o cartão do Traçar pede o "lado da rua" (parâmetro ladoSaida). */
+    if (Ld) {
+      var lxT = Ld.contorno.map(function (q) { return q.x; }), lzT = Ld.contorno.map(function (q) { return q.z; });
+      var largT = Math.max.apply(null, lxT) - Math.min.apply(null, lxT), profT = Math.max.apply(null, lzT) - Math.min.apply(null, lzT);
+      var curto = Math.min(largT, profT), longo = Math.max(largT, profT), ladosT = profT >= largT ? ["z0", "z1"] : ["x0", "x1"];
+      if (curto > EPS && longo >= geo(par, "loteProfundo") * curto) {
+        /* REVISÃO (17/11/2026): porta NA DIVISA (a até portaNaDivisa da linha do lote) numa lateral é a rua de um lote de esquina — o lado antigo fica e só marca pendência; a regra
+           da testada só entra quando nenhuma porta está na divisa (a porta do corredor interno do lote, a 1 m ou mais dela, é indício fraco). */
+        var naDivisa = portas.filter(function (q) { return ladosT.indexOf(ladoDe(q)) < 0 && distBordaPoli(q, Ld.contorno) <= geo(par, "portaNaDivisa") + EPS; });   /* porta NA DIVISA de uma LATERAL */
+        if (!naDivisa.length) {
+          var lP0 = portas.length ? ladoDe(portas[0]) : null;   /* a 1ª porta, como sempre (as outras são indício fraco: partições vistas como "externas") */
+          if (lP0 && ladosT.indexOf(lP0) >= 0) return { lado: lP0, origem: "porta de entrada na testada do lote", pendente: true };
+          if (ladosT.indexOf("z1") >= 0) return { lado: "z1", origem: "lote profundo: a rua na testada, embaixo na planta (convenção RA)", pendente: true };
+        } else return { lado: ladoDe(naDivisa[0]), origem: "porta de entrada na divisa lateral (lote de esquina?): confirme o lado da rua", pendente: true };
+      }
+    }
     if (portas.length) return { lado: ladoDe(portas[0]), origem: "porta de entrada na parede externa" };
     var cont = {}; pontos.forEach(function (p) { var l = ladoDe(p); cont[l] = (cont[l] || 0) + 1; });
     var l0 = LADOS.slice().sort(function (a, b) { return (cont[b] || 0) - (cont[a] || 0); })[0];
@@ -384,6 +406,9 @@
     return { pontos: pts, saida: pts[pts.length - 1], lado: F.lado, origemSaida: F.origem, afast: d, pendencias: pend };
   }
 
+  /* assinatura (djb2) dos pontos da linha proposta: identifica "ainda é a que o Traçar propôs" */
+  function assinaturaLinha(pontos) { var t = JSON.stringify(arr(pontos).map(function (q) { return [Math.round(num(q.x, 0) * 10000), Math.round(num(q.z, 0) * 10000)]; })), h = 5381, i; for (i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return String(h); }   // hid:ok hash djb2 (identificação, não norma)
+
   /* A REDE EXTERNA PROPOSTA (o "Traçar automaticamente" sem linha da rede): o eixo do coletor pelo recuo, passando atrás de
      cada aparelho (onde fica a caixa dele do lado de fora) e saindo na frente. Não propõe se o modelo já tem linha da rede
      ou caixa de inspeção do usuário (aí a caixa dele manda). → { op (hidRede), linha, motivo } | { op: null, motivo } */
@@ -403,13 +428,14 @@
     if (!L) return { op: null, motivo: "sem paredes para achar o recuo" };
     if (L.semRecuo) return { op: null, motivo: L.pendencias[0].motivo, linha: L };
     var opR = { op: "hidRede", id: o.id || "rede-auto", pontos: L.pontos, baldrame: o.baldrame || "por_baixo", auto: true };
+    opR.autoSig = assinaturaLinha(opR.pontos);   /* a assinatura da proposta: o Traçar só refaz a linha que continua IGUAL a ela (editada = do usuário) */
     if (L.lateral) opR.lateral = true;
     return { op: opR, linha: L,
              motivo: L.lateral ? "eixo do coletor pela passagem lateral (lado " + L.passagem.lado + ", a " + f2(L.afast) + " m da divisa), reto até a frente, saída no lado " + L.lado + " (" + L.origemSaida + ")"
                : "eixo do coletor pela área externa, a " + L.afast.toFixed(2).replace(".", ",") + " m das paredes externas, saída no lado " + L.lado + " (" + L.origemSaida + ")" };
   }
 
-  var HidImplantacao = { VERSAO: 1, redeProposta: redeProposta, GEO_IMP: GEO_IMP, dentro: dentro, posicaoExterna: posicaoExterna, caminhoExterno: caminhoExterno, linhaRede: linhaRede, contorno: contorno, lote: lote,
+  var HidImplantacao = { VERSAO: 1, redeProposta: redeProposta, assinaturaLinha: assinaturaLinha, GEO_IMP: GEO_IMP, dentro: dentro, posicaoExterna: posicaoExterna, caminhoExterno: caminhoExterno, linhaRede: linhaRede, contorno: contorno, lote: lote,
     _int: { passagemLateral: passagemLateral, comodosNoCaminho: comodosNoCaminho, projAnelExterno: projAnelExterno, dentroPoli: dentroPoli, paredes: paredes, anel: anel, trechoAnel: trechoAnel, projAnel: projAnel, cruzaDentro: cruzaDentro, ladoFrente: ladoFrente } };
   global.HidImplantacao = HidImplantacao;
   if (typeof module !== "undefined" && module.exports) module.exports = HidImplantacao;

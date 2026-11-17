@@ -2521,6 +2521,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      o.U = −gradiente de v, o.V = para quem olha; o.u0..v1 = o recorte no plano da prancha; o.T = ponto de referência com
      o.uT/o.vT). Recorte do cômodo por 6 planos SÓ durante a foto (a caixa de corte da pessoa não muda); a régua da caixa
      fica de fora (cena própria). Tudo volta no finally. */
+  var EDGES_FOTO = typeof WeakMap !== 'undefined' ? new WeakMap() : null;   /* arestas por geometria (a foto da prancha em SÓ LINHAS reaproveita entre as fotos) */
   S._fotoIso = function (o) {
     var W = Math.max(400, Math.min(4096, Math.round(+o.largura || 2200))), du = o.u1 - o.u0, dv = o.v1 - o.v0;
     if (!(du > 0 && dv > 0)) return { ok: false, erro: 'recorte vazio' };
@@ -2535,6 +2536,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try {
       if (o.instalacoes !== false && !bk.inst) setVistaInst(true);
       grid.visible = false; scene.background = new THREE.Color(0xffffff);
+      /* 17/11/2026 (o Rogério: "o piso esconde tubos e conexões"; a parede e o piso saíam CINZA OPACOS na foto): os ACABAMENTOS são grupos FORA do modelo — pintura das paredes (p4-pinturas),
+         piso (acab-pisos), fases e ambientes 2D — e o semArquitetura só olhava as malhas do modelo. Na foto da prancha eles ficam ocultos (a arquitetura é o contorno desenhado pela folha). */
+      if (o.semArquitetura || o.soLinhas) { bk.grp = []; scene.children.forEach(function (g0) { if (g0.name && /^(p4-pinturas|acab-pisos|p10-fases|p2d-ambientes|p11-divisa-linha|pag-paginacao)$/.test(g0.name) && g0.visible !== false) { bk.grp.push([g0, g0.visible]); g0.visible = false; } }); }
       var mn = o.min, mx = o.max;
       renderer.clippingPlanes = [new THREE.Plane(_V3(1, 0, 0), -mn[0]), new THREE.Plane(_V3(-1, 0, 0), mx[0]), new THREE.Plane(_V3(0, 1, 0), -mn[1]),
         new THREE.Plane(_V3(0, -1, 0), mx[1]), new THREE.Plane(_V3(0, 0, 1), -mn[2]), new THREE.Plane(_V3(0, 0, -1), mx[2])];
@@ -2555,6 +2559,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
            opacidade 0,9 com depthWrite LIGADO (solida=true); a BRANCA sem brilho próprio (semBrilho): com emissive ela estourava para 255 e sumia no fundo branco da folha — a conexão enxerga o que está atrás sem sumir/piscar atrás do tubo; tubo segue opaco */
         var PECA_OP = (o.pecaOp != null && +o.pecaOp >= 0.5 && +o.pecaOp <= 1) ? +o.pecaOp : 0.8;   /* UMA constante: a opacidade do CORPO da peça de instalação (a prancha manda K2.pecaOp) */
         var MAT = { cx: mF(0x7a5a3e, PECA_OP, true), cxE: mF(0xf2f2f0, PECA_OP, true, true), cxV: mF(0x7c3aed, PECA_OP, true), cxQ: mF(0x8a1414, PECA_OP, true), af: mF(0x0d3a9a, 1), aq: mF(0xa01818, 1), es: mF(0x0a7a2c, 1), ve: mF(0x7c3aed, 1), meio: mF(0xb8bec6, 0.6), louca: mF(0xdfe2e6, 0.6) };   /* tons FORTES: a luz de cima clareava ("muito apagado", 14/11) */   /* 15/11/2026 (HID-R00 59): "já está muito transparente" — meio-tom e louça 0,6 (antes 0,3/0,28) */
+        /* 17/11/2026 (o Rogério, print do ES - Banho Social e da Caixa d'água: "nada de preenchimento cinza translúcido; o piso esconde tubo e conexão"): com o.soLinhas a arquitetura e o
+           contexto (parede, piso, laje, louça, outro sistema) NÃO têm preenchimento nem escrevem profundidade — só as ARESTAS, em cinza bem claro, desenhadas ANTES e sem teste de
+           profundidade: tubo, conexão e registro (do sistema da folha) ficam sempre por cima. Móvel que não é aparelho hidráulico fica fora. */
+        MAT.vazio = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, colorWrite: false, depthWrite: false, side: THREE.DoubleSide });   /* opacity 0: o AGREGADO (peças mescladas) lê a cor+alfa do material por vértice — sem o alfa 0 a parede saía cinza opaca */
+        MAT.linha = new THREE.LineBasicMaterial({ color: 0xc8ccd1, depthTest: false, depthWrite: false });
+        var soLinha = function (m) {
+          bk.trocas.push([m, m.material]); m.material = MAT.vazio;
+          try {
+            if (!m.geometry || m.userData._lnFoto) return;
+            var g = EDGES_FOTO ? EDGES_FOTO.get(m.geometry) : null; if (!g) { g = new THREE.EdgesGeometry(m.geometry, 30); if (EDGES_FOTO) EDGES_FOTO.set(m.geometry, g); }
+            var ln = new THREE.LineSegments(g, MAT.linha); ln.userData._lnFoto = true; ln.renderOrder = -10; m.add(ln); (bk.ln = bk.ln || []).push([m, ln]);
+          } catch (_) { /* malha sem aresta: fica sem linha */ }
+        };
+        var eMovel = function (m) { var ud = m.userData || {}; return /^IFCFURNISHING/.test(String(ud.tipo || '').toUpperCase()) && !ud.instFam; };
         bk.trocas = []; bk.matsFoco = MAT; window.__focoDiag = { nCx: 0, nCxEsg: 0, papeis: {}, opPeca: PECA_OP, opCx: MAT.cx.opacity, opCxEsg: MAT.cxE.opacity, trCx: MAT.cx.transparent };
         window.__focoAcum = window.__focoAcum || { nCx: 0, nCxEsg: 0 };   /* soma de todas as fotos da geração (a última foto pode ser de esgoto) */   /* diagnóstico da foto (lido pelo e2e): quantas conexões de água ficaram marrons */
         /* CONEXÃO SEM SISTEMA (15/11/2026 — o Rogério: "na foto das pranchas as conexões de água fria saem cinza/esbranquiçadas"): a conexão cujo NOME não diz o
@@ -2594,10 +2612,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }   /* a conexão sem sistema no nome: o sistema vem da rede (instSis) */   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           if (k === 'outros' && (m.userData.instPapel === 'acessorio' || m.userData.instPapel === 'peca')) { var ko2 = orfaDe(m); if (ko2) { k = ko2; window.__focoDiag.orfas++; } }   /* registro/válvula/caixa sem sistema: o do tubo em que encosta */
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+          /* só em linhas: o volume que o nome fez cair num sistema (laje/tampa/base com 'água' no nome: IFCBUILDINGELEMENTPROXY sem papel de instalação nem família hidráulica) é contexto, não tubo */
+          if (o.soLinhas && (agua || esg) && !m.userData.instPapel && !m.userData.instFam && /^IFCBUILDINGELEMENTPROXY/.test(String(m.userData.tipo || '').toUpperCase())) { soLinha(m); return; }
+          /* 17/11/2026: telhado/laje/piso/parede (o 'IFCROOF' com "águas" no nome caía em água e saía um retângulo azul CHEIO na planta da caixa) e o corpo de louça/ralo sem papel de instalação
+             (a mancha verde cheia da junção do esgoto) são CONTEXTO: só contorno */
+          if (o.soLinhas && !m.userData.instPapel && m.userData.tipo && INST_FUNDO.test(String(m.userData.tipo).toUpperCase()) && !m.userData.instFam && o.semArquitetura) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }   /* isométrico: o contorno da arquitetura é o da folha */
+          if (o.soLinhas && !m.userData.instPapel && ((m.userData.tipo && INST_FUNDO.test(String(m.userData.tipo).toUpperCase()) && !m.userData.instFam) || ((agua || esg) && m.userData.instFam))) { soLinha(m); return; }
           /* RESERVATÓRIO TRANSLÚCIDO NA PLANTA DA CAIXA (15/11/2026 — o Rogério: "a caixa d'água é um disco azul opaco cobrindo tudo; quero contorno com
              preenchimento leve e os tubos e registros visíveis por cima"): a família de reservatório (IFCFLOWSTORAGEDEVICE) caía em 'agua' pelo nome e saía
              sólida na cor do sistema; com o.reservTransl vira um véu azul claro que não escreve profundidade (o tubo e o registro aparecem por cima, o contorno é da folha) */
           if (o.reservTransl && m.userData.instFam && String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE') {
+            if (o.soLinhas) { soLinha(m); return; }
             if (!MAT.reserv) MAT.reserv = new THREE.MeshBasicMaterial({ color: 0xbcd6f2, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
             bk.trocas.push([m, m.material]); m.material = MAT.reserv; return;
           }
@@ -2607,6 +2632,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           /* peça de instalação que não achou sistema (registro/válvula/conexão órfã) NUNCA vira louça translúcida: fica com o material próprio, opaco */
           if (!agua && !esg && PAPEL_INST[m.userData.instPapel]) { bk.trocas.push([m, m.material]); m.material = pecaMat(m.material); contorno(m); window.__focoDiag.nInstOpaca = (window.__focoDiag.nInstOpaca || 0) + 1; return; }
           if (!agua && !esg) {
+            if (o.soLinhas) { if (eMovel(m)) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; } else soLinha(m); return; }
             /* LOUÇA TRANSLÚCIDA NA PLANTA (14/11/2026 — o Rogério: "o vaso, a pia, nada disso deve ficar escondendo nossas conexões e os tubos"):
                a peça que não é tubo de sistema (louça, móvel) vira meio-tom translúcido; a arquitetura já é o fundo da vista Instalações */
             /* PISO CLARO (15/11/2026 — o Rogério: "o piso fica sobreposto às peças; deixa quase branco/transparente, nunca por cima de peça"): a laje/piso do fundo da vista Instalações sai quase branca, opacidade ~0,08, sem escrever profundidade */
@@ -2632,7 +2658,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (esg && focE && (pp === 'conexao' || pp === 'pontoAgua')) { bk.trocas.push([m, m.material]); m.material = MAT.cxE; contorno(m); window.__focoDiag.nCxEsg++; window.__focoAcum.nCxEsg++; return; }
           /* PLANTA DE ÁGUA FRIA (15/11/2026, auditoria do PDF real: "o esgoto fantasma cinza pesado confunde"): no modo AF (foco só água) o esgoto/ventilação sai em cinza
            MUITO claro, opacidade 0,25 e SEM escrever profundidade — o tubo de AF e as conexões aparecem por cima, nada é escondido */
+        if (esg && focA && !focE && o.soLinhas) { soLinha(m); return; }
         if (esg && focA && !focE) { if (!MAT.esgFraco) MAT.esgFraco = new THREE.MeshBasicMaterial({ color: 0xd9dde2, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide }); bk.trocas.push([m, m.material]); m.material = MAT.esgFraco; return; }
+        if (o.soLinhas && !((agua && focA) || (esg && focE))) { soLinha(m); return; }
         var nv = (agua && focA) ? (k === 'agua_quente' ? MAT.aq : MAT.af) : (esg && focE) ? (k === 'ventilacao' ? MAT.ve : MAT.es) : MAT.meio;   /* 15/11/2026: a ventilação em ROXO (a cor do sistema no 3D), não o verde do esgoto — pedido do Rogério */
           bk.trocas.push([m, m.material]); m.material = nv;
         });
@@ -2643,13 +2671,36 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
       var x2 = c2.getContext('2d'); x2.fillStyle = '#ffffff'; x2.fillRect(0, 0, W, H); x2.drawImage(cv, 0, 0, W, H, 0, 0, W, H);
       out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H, nFoco: bk.trocas ? bk.trocas.length : 0 };
+      /* DIAGNÓSTICO (só leitura, para a prova das pranchas): o que a foto mostra dentro do recorte — o tipo, o sistema, o papel, a cor e a caixa de cada malha visível */
+      if (o.diagMalhas) {
+        out.topo = scene.children.map(function (g) { var nm = 0; g.traverse(function (q) { if (q.isMesh) nm++; }); return { t: g.type, n: g.name || null, vis: g.visible, filhos: g.children.length, malhas: nm }; });
+        out.cena = [];
+        try { scene.traverse(function (ob) {
+          if (!ob.isMesh && !ob.isLineSegments) return; var oc = false, an = ob; while (an) { if (an.visible === false) { oc = true; break; } an = an.parent; } if (oc) return;
+          var bx2 = new THREE.Box3().setFromObject(ob); if (bx2.isEmpty() || bx2.max.x < mn[0] || bx2.min.x > mx[0] || bx2.max.y < mn[1] || bx2.min.y > mx[1] || bx2.max.z < mn[2] || bx2.min.z > mx[2]) return;
+          var mt2 = Array.isArray(ob.material) ? ob.material[0] : ob.material, ud2 = ob.userData || {}, prof = 0, pp = ob; while (pp.parent) { prof++; pp = pp.parent; }
+          if (out.cena.length < 60) out.cena.push({ nome: ob.name || null, pai: ob.parent ? (ob.parent.name || ob.parent.type) : null, prof: prof, tipo: ud2.tipo || null, linha: !!ob.isLineSegments, cor: mt2 && mt2.color ? mt2.color.getHexString() : null, op: mt2 ? mt2.opacity : null, tr: !!(mt2 && mt2.transparent), dx: Math.round((bx2.max.x - bx2.min.x) * 100) / 100, dy: Math.round((bx2.max.y - bx2.min.y) * 100) / 100, layers: ob.layers.mask });
+        }); } catch (_) {}
+        out.malhas = [];
+        todasMalhas(function (m) {
+          try {
+            if (!m.isMesh || !m.visible) return; var bx = new THREE.Box3().setFromObject(m); if (bx.isEmpty()) return;
+            if (bx.max.x < mn[0] || bx.min.x > mx[0] || bx.max.y < mn[1] || bx.min.y > mx[1] || bx.max.z < mn[2] || bx.min.z > mx[2]) return;
+            var mt = Array.isArray(m.material) ? m.material[0] : m.material, ud = m.userData || {};
+            if (out.malhas.length < 80) out.malhas.push({ tipo: ud.tipo || null, sis: ud._sisK || ud.instSis || null, papel: ud.instPapel || null, fam: ud.instFam || null, mid: ud.mid == null ? null : ud.mid, cor: mt && mt.color ? mt.color.getHexString() : null, op: mt ? mt.opacity : null, y: [Math.round(bx.min.y * 100) / 100, Math.round(bx.max.y * 100) / 100], dx: Math.round((bx.max.x - bx.min.x) * 100) / 100, dz: Math.round((bx.max.z - bx.min.z) * 100) / 100 });
+          } catch (_) {}
+        });
+      }
     } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
     finally {
       uiV();
       renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
-      if (bk.esc) bk.esc.forEach(function (t) { t[0].visible = t[1]; });
+      if (bk.esc) for (var ie0 = bk.esc.length - 1; ie0 >= 0; ie0--) bk.esc[ie0][0].visible = bk.esc[ie0][1];   /* ordem inversa: a malha tocada duas vezes volta ao 1º valor salvo */
       if (bk.ctr) bk.ctr.forEach(function (t) { try { t[0].remove(t[1]); t[1].geometry.dispose(); } catch (_) {} });
-      if (bk.trocas) { bk.trocas.forEach(function (t) { t[0].material = t[1]; }); try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
+      if (bk.grp) bk.grp.forEach(function (t) { t[0].visible = t[1]; });   /* volta ao valor que tinha (salvo antes de esconder) */
+      if (bk.ln) bk.ln.forEach(function (t) { try { t[0].remove(t[1]); } catch (_) {} });   /* as arestas ficam no cache (não descarta a geometria) */
+      if (bk.trocas) { for (var it0 = bk.trocas.length - 1; it0 >= 0; it0--) bk.trocas[it0][0].material = bk.trocas[it0][1];   /* ordem inversa: a malha trocada duas vezes volta ao material original */
+         try { sincronizarAgregado(); } catch (_) {} Object.keys(bk.matsFoco).forEach(function (k) { try { bk.matsFoco[k].dispose(); } catch (_) {} }); }
       if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) {}
       renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
       try { renderer.render(scene, camera); } catch (_) {}

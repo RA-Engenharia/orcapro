@@ -2329,6 +2329,11 @@
       if (t.pecaFim) oT.pecaFim = t.pecaFim;
       if (t.transpLado) oT.transpLado = t.transpLado;   /* curva de transposição atrás de uma subida: o lado do arco */
       if (t.aplicacao) oT.aplicacao = t.aplicacao;
+      /* DESCIDA DE RAMAL NÃO É TUBO DE QUEDA (17/11/2026, prova no projeto real copiado: o auditor (js/hides.js) trata todo trecho de esgoto vertical sem
+         aplicacao "ramal" como TUBO DE QUEDA e cobrava "ventilação primária no topo" da descida de 0,26–0,68 m do chuveiro/pia). O roteador nunca monta tubo
+         de queda — ele é do projetista/HidPredio —: o trecho vertical de esgoto que sai daqui é descida do ramal (a definição de tubo de queda na seção de definições da NBR 8160:
+         tubulação vertical que recebe subcoletor, ramal de esgoto e ramal de descarga de vários níveis); fica marcado "ramal", como já fazia a descida do par de cubas. */
+      else if (t.sistema === "esgoto" && Math.abs(t.p1.x - t.p2.x) < 1e-4 && Math.abs(t.p1.z - t.p2.z) < 1e-4 && Math.abs(t.p1.y - t.p2.y) > 1e-4) oT.aplicacao = "ramal";   // hid:ok tolerância de verticalidade (0,1 mm)
       saida.ops.push(oT);
     });
     saida.familias.forEach(function (op) { saida.ops.push(op); });

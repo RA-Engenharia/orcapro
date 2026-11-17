@@ -108,6 +108,16 @@
         if (io.aplicarOps(ops, "Autocorreção: DN")) { mudou = true; out.aplicadas.push({ volta: v, tipo: "dn", qtd: ops.length, ids: ops.map(function (o) { return o.id; }) }); out.relatorio.push("Volta " + v + ": " + ops.length + " DN corrigido(s) pelo cálculo."); }
         else out.pendencias.push({ chave: "autocorrecao.dn", motivo: "o editor recusou as alterações de DN da volta " + v });
       }
+      /* 1b) INSPEÇÃO DO PLUVIAL (NBR 10844 5.7.3/5.7.5, js/hidap.js): o aviso "falta inspeção ou caixa de areia" traz as ops da peça de inspeção no nó (corrigir.ops) */
+      var opsAp = []; arr(R.avisos).forEach(function (a) { if (a && a.gravidade === "erro" && /^ap-x/.test(txt(a.id)) && a.corrigir) arr(a.corrigir.ops).forEach(function (o) { if (o) opsAp.push(o); }); });
+      if (opsAp.length) {
+        var asAp = "ap:" + assinatura(opsAp);
+        if (!vistas[asAp]) {
+          vistas[asAp] = 1;
+          if (io.aplicarOps(opsAp, "Autocorreção: inspeção do pluvial")) { mudou = true; out.aplicadas.push({ volta: v, tipo: "pluvial_inspecao", qtd: opsAp.length, ids: opsAp.map(function (o) { return o.id; }) }); out.relatorio.push("Volta " + v + ": " + opsAp.length + " inspeção(ões) de pluvial lançada(s) nos nós que a NBR 10844 exige."); }
+          else out.pendencias.push({ chave: "autocorrecao.pluvial", motivo: "o editor recusou as inspeções do pluvial da volta " + v });
+        }
+      }
       /* 2) o que reprova e tem Corrigir automático (inclinação, bitola, ponta…) */
       if (typeof io.achados === "function" && typeof io.propor === "function") {
         var ach = corrigiveis(), nOk = 0;

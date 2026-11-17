@@ -598,7 +598,7 @@
       var hOk = H.every(function (x) { return dir[x] && (dir[x].para === n ? (vSaiDescendo && curto(x)) : (dir[x].de === n && vChegaDoBocal && soDesceDepois(x))); });
       return hOk && (vSaiDescendo || vChegaDoBocal);
     }
-    var premissaBoca = false, premissaPe = false;
+    var premissaBoca = false, premissaPe = false, yTerreno = Math.min.apply(null, G.ordemN.map(function (n) { return G.nos[n].y; }));   /* o piso/terreno: o ponto mais baixo da rede pluvial */
     G.ordemN.forEach(function (n) {
       var es = G.nos[n].arestas, H = es.filter(horiz), V = es.filter(function (x) { return !horiz(x); });
       if (!H.length) return;
@@ -631,7 +631,11 @@
       if (N0.peca && PECA_INSPECAO[N0.peca.peca]) { verif(alvo, "inspeção ou caixa de areia", 1, 1, "un", true, [porque + ": " + N0.peca.peca + " " + (N0.peca.id || "") + " no nó"], dm.ok ? dm.fonte : null); return; }
       verif(alvo, "inspeção ou caixa de areia", 0, 1, "un", false, [porque + ": nenhuma inspeção/caixa de areia modelada no nó (" + f2(N0.x) + "; " + f2(N0.y) + "; " + f2(N0.z) + ")"], dm.ok ? dm.fonte : null);
       aviso(out.avisos, "erro", "falta inspeção ou caixa de areia em " + porque + " — trechos " + ids.join(", "), ids,
-            { texto: "inserir inspeção (aparente) ou caixa de areia (enterrada) no nó" + (N0.peca ? " — " + N0.peca.peca + " não é dispositivo de inspeção" : ""), acao: { tipo: "inserirFamilia", sistema: "pluvial", famId: FAMILIA_INSPECAO, ponto: { x: N0.x, y: N0.y, z: N0.z }, trechos: ids } });
+            { texto: "inserir inspeção (aparente) ou caixa de areia (enterrada) no nó" + (N0.peca ? " — " + N0.peca.peca + " não é dispositivo de inspeção" : ""),
+              /* a AÇÃO TEM OPS (17/11/2026): a peça de inspeção do catálogo (caixa_inspecao, sistema pluvial; PECA_INSPECAO) lançada no nó, 0,10 m acima do eixo para o tubo cair no corpo dela (a captura da peça junta as pontas) — antes só o texto, sem ops */
+              /* REVISÃO: sem ops se o nó JÁ TEM peça (a troca é decisão de quem projeta) nem se o nó está no ar — a caixa é enterrada/ao nível do piso ou do terreno (a inspeção aparente não tem peça no catálogo): só o texto */
+              ops: (N0.peca || N0.y > yTerreno + 0.6) ? undefined : [{ op: "peca", id: "apci-" + ids.join("-"), peca: "caixa_inspecao", sistema: "pluvial", x: N0.x, y: N0.y + 0.1, z: N0.z, prof: 0.6, tipoCaixa: "alvenaria", tampa: "concreto" }],   // hid:ok a até 0,60 m da cota mais baixa do pluvial (o piso/terreno onde ele sai): nó enterrado; 0,10 m acima do eixo; 0,60 m de caixa padrão (a mesma da rede de esgoto)
+              acao: { tipo: "inserirFamilia", sistema: "pluvial", famId: FAMILIA_INSPECAO, ponto: { x: N0.x, y: N0.y, z: N0.z }, trechos: ids } });
     });
     if (!dm.ok) return;
     /* trechos retos entre pontos de inspeção: a soma do comprimento horizontal não passa de 20 m */

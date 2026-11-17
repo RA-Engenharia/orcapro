@@ -155,6 +155,10 @@
     var ARESTAS = {}, ordemA = [], partes = {};
     trechos.forEach(function (t) {
       var a = noId(noDe[idxT[t.id][0]]), b = noId(noDe[idxT[t.id][1]]);
+      /* TRECHO INTEIRO DENTRO DA PEÇA (17/11/2026, prova no projeto real copiado: "o esgoto se divide no nó" + "o esgoto tem um ciclo"): o último trecho do ramal — a junção de 45° de
+         14 cm que entra na caixa de inspeção — tem as DUAS pontas dentro da captura da caixa; as duas viravam o mesmo nó e o trecho, uma aresta de um nó para ele mesmo (ciclo, 2 saídas).
+         Um trecho todo dentro do corpo da CAIXA DE INSPEÇÃO é parte dela: fica fora do grafo de cálculo (o do quantitativo/3D é o do BimInst, que não passa por aqui). */
+      if (a === b && NOS[a] && NOS[a].peca && NOS[a].peca.peca === "caixa_inspecao") { partes[t.id] = []; return; }   /* só a CAIXA DE INSPEÇÃO (0,60 m: a junção cabe no corpo dela); o toco dentro de caixa sifonada/ralo continua sendo defeito que o verificador acusa (test-hid-ambiente [CN]) */
       var meio = [];
       ordemN.forEach(function (id) {
         if (id === a || id === b) return;

@@ -98,6 +98,7 @@
     ventAcima: 0.15,        // hid:ok a ventilação do barrilete termina acima do TOPO da caixa (acima do nível máximo — Tigre p.72-73)
     saidaLivre: 0.30,       // hid:ok extravasor/limpeza: a ponta livre além da face externa da edificação
     quedaLivre: 0.15,       // hid:ok a curva para baixo na ponta livre (a água cai à vista)
+    tocoEntradaObliquo: 0.30, // hid:ok 17/11/2026: o toco da entrada a 45° (o lado livre) sai mais longo para limpar o corpo da caixa
     tocoEntrada: 0.20,      // hid:ok a entrada (boia) sai da caixa até a descida do alimentador; o registro no meio
     descidaEntrada: 0.40,   // hid:ok a espera do alimentador desce isto abaixo da entrada (ou até a laje/forro)
     folgaCorpo: 0.15,       // hid:ok o registro da limpeza fica a isto do corpo da caixa (a mão alcança)
@@ -1290,10 +1291,33 @@
     /* ALIMENTAÇÃO: o toco da entrada (registro) e a espera do alimentador predial */
     var opsAl = [];
     if (cx.E) {
-      var E0 = P3(cx.E.x, cx.E.y, cx.E.z), ve = ue || { x: -u.x, z: -u.z }, E1 = P3(E0.x + ve.x * GEO_BAR.tocoEntrada, E0.y, E0.z + ve.z * GEO_BAR.tocoEntrada);
-      var supE = suporte(Ap, E1, E1, rE, E0.y), yE2 = r4(Math.max(E0.y - GEO_BAR.descidaEntrada, supE > -Infinity ? supE + rE + APOIO : -Infinity));
-      var E2 = P3(E1.x, yE2, E1.z);
-      if (!conflito(E1, E0, rE, ignCaixa, true) && (E1.y - E2.y < TOL || !conflito(E2, E1, rE, null, true))) {
+      var E0 = P3(cx.E.x, cx.E.y, cx.E.z), ve = ue || { x: -u.x, z: -u.z }, E1, supE, yE2, E2, entradaPorCima = false, cE1 = null, cE2 = null, giroEntrada = 0;
+      /* 17/11/2026 (caso real 17/11, CX-1 sem boia: o toco radial da entrada batia na ventilação da outra caixa, 1,7 m ao lado). A alimentação NUNCA fica "à mão" se houver
+         caminho: tenta, em ordem, (1) o toco radial com a descida (como sempre), (2) o mesmo toco com a SUBIDA (a boia entra por cima), (3) o toco a 45° para cada lado (o
+         lado livre) com descida e subida. O toco oblíquo sai do corpo da caixa (folga conferida contra o cilindro). Fica com a 1ª que fecha; sem nenhuma, a pendência nomeia o tubo. */
+      /* ordem: (1) toco radial com a descida (como sempre); (2) o toco a 45° de cada lado, também com a DESCIDA; só depois (3) a SUBIDA por cima da boia (radial, depois a 45°) —
+         subir deixa um ponto alto na rede (ar preso), por isso é o último recurso e fica dito na decisão */
+      var tentaE = [[0, false], [Math.PI / 4, false], [-Math.PI / 4, false], [0, true], [Math.PI / 4, true], [-Math.PI / 4, true]], primeiroConf = null;
+      for (var ie = 0; ie < tentaE.length; ie++) {
+        var gA = tentaE[ie][0], subir = tentaE[ie][1], vd = gA === 0 ? ve : { x: ve.x * Math.cos(gA) - ve.z * Math.sin(gA), z: ve.x * Math.sin(gA) + ve.z * Math.cos(gA) }, lenT = gA === 0 ? GEO_BAR.tocoEntrada : GEO_BAR.tocoEntradaObliquo;
+        var E1c = P3(E0.x + vd.x * lenT, E0.y, E0.z + vd.z * lenT);
+        if (gA !== 0) {   /* o toco oblíquo não pode raspar o corpo da caixa: a distância ao eixo, menos o raio da caixa e do tubo, com folga */
+          var rasp = false; for (var tt = 0.05; tt <= lenT + 1e-9; tt += 0.05) { var dxE = E0.x + vd.x * tt - cx.c.x, dzE = E0.z + vd.z * tt - cx.c.z; if (Math.sqrt(dxE * dxE + dzE * dzE) - Rface - rE < FOLGA_LIMITE * 3) rasp = true; }
+          if (rasp) continue;
+        }
+        /* o toco oblíquo e a subida conferem também o TELHADO/LAJE (o tubo horizontal fica abaixo da face de baixo, o vertical não atravessa); o radial/descida seguem como sempre */
+        var c1 = conflito(E1c, E0, rE, ignCaixa, gA === 0 && !subir), E2c, c2 = null;
+        if (!subir) {
+          var supEc = suporte(Ap, E1c, E1c, rE, E0.y), yE2c = r4(Math.max(E0.y - GEO_BAR.descidaEntrada, supEc > -Infinity ? supEc + rE + APOIO : -Infinity));
+          E2c = P3(E1c.x, yE2c, E1c.z); if (!c1 && E1c.y - E2c.y >= TOL) c2 = conflito(E2c, E1c, rE, null, gA === 0);
+        } else {
+          E2c = P3(E1c.x, r4(E0.y + GEO_BAR.descidaEntrada), E1c.z); if (!c1) c2 = conflito(E2c, E1c, rE, null, false);
+        }
+        if (!primeiroConf) primeiroConf = { c1: c1, c2: c2 };
+        if (!c1 && !c2) { E1 = E1c; supE = supEc; yE2 = E2c.y; E2 = E2c; entradaPorCima = subir; ve = vd; giroEntrada = gA; cE1 = null; cE2 = null; break; }
+      }
+      if (!E1) { cE1 = primeiroConf && primeiroConf.c1; cE2 = primeiroConf && primeiroConf.c2; }
+      if (!cE1 && !cE2) {
         /* CAIXAS INTERLIGADAS: o alimentador predial chega numa ESPERA ÚNICA (a da principal) e se divide para as boias — a entrada do satélite
            (com o registro dela) desce e vai até a espera da principal, na cota dela, em ortogonal; sem caminho, a espera do satélite fica livre */
         var uniao = null, Ep = opc.satelite && opc.satelite.alim ? opc.satelite.alim : null;
@@ -1304,9 +1328,9 @@
           for (var iq = 1; iq < pts.length && livre; iq++) { if (conflito(pts[iq - 1], pts[iq], rE, null, true)) livre = false; else legs.push([pts[iq - 1], pts[iq]]); }
           if (livre && legs.length) uniao = legs;
         }
-        if (E1.y - E2.y >= TOL) { opsAl.push(T("alimentacao", "agua_fria", dnE, E2, E1, uniao ? { aplicacao: "reservacao" } : { aplicacao: "reservacao", continua: "p1", saidaLivre: "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)" })); }
+        if (Math.abs(E1.y - E2.y) >= TOL) { opsAl.push(T("alimentacao", "agua_fria", dnE, E2, E1, uniao ? { aplicacao: "reservacao" } : { aplicacao: "reservacao", continua: "p1", saidaLivre: "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)" })); }
         var tE = T("alimentacao", "agua_fria", dnE, E1, E0, { aplicacao: "reservacao" });
-        if (E1.y - E2.y < TOL && !uniao) { tE.continua = "p1"; tE.saidaLivre = "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)"; }
+        if (Math.abs(E1.y - E2.y) < TOL && !uniao) { tE.continua = "p1"; tE.saidaLivre = "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)"; }
         if (uniao) {
           /* B2b (06/11/2026, Casa 487): o caminho do satélite é desenhado NO SENTIDO DA ÁGUA — da espera única (Ep) para a boia dele — e a espera
              única ganha o TOCO do alimentador predial (a 3ª boca do tê, "continua"). Antes as pernas saíam da boia para a espera (p1 a jusante:
@@ -1319,7 +1343,9 @@
           else aviso(nome + ": sem lugar para o toco do alimentador predial na espera única (" + f2(Ep.x) + "; " + f2(Ep.y) + "; " + f2(Ep.z) + ") — ligue o alimentador à mão no tê", [cx.id]);
           res.decisoes.push({ id: "bar.alimentacao_unica", texto: nome + ": a entrada da boia (com o registro dela) vai até a espera única do alimentador predial da caixa " + opc.satelite.primaria.id + " (" + f2(Ep.x) + "; " + f2(Ep.y) + "; " + f2(Ep.z) + "): o alimentador chega num ponto só e se divide para as boias." });
         } else if (Ep) aviso(nome + ": a entrada da boia não achou caminho até a espera única do alimentador (caixa " + opc.satelite.primaria.id + ") — a espera dela ficou livre: ligue o alimentador à mão a um tê com a espera da outra caixa", [cx.id]);
-        if (!opc.satelite) res.alimE2 = E1.y - E2.y >= TOL ? E2 : E1;
+        if (!opc.satelite) res.alimE2 = Math.abs(E1.y - E2.y) >= TOL ? E2 : E1;
+        if (giroEntrada) res.decisoes.push({ id: "bar.alimentacao_obliqua", texto: nome + ": o toco radial da entrada (boia) esbarrava num tubo ao lado — o toco sai a 45° para o lado livre (" + f2(GEO_BAR.tocoEntradaObliquo) + " m) e segue para o alimentador." });
+        if (entradaPorCima) res.decisoes.push({ id: "bar.alimentacao_por_cima", texto: nome + ": a descida do alimentador esbarrava num tubo ao lado — a alimentação chega à torneira de boia POR CIMA (sobe " + f2(GEO_BAR.descidaEntrada) + " m do toco da entrada, a " + f2(E2.y) + " m); ligue o alimentador predial à espera. PONTO ALTO: ventosa (ou alimentador vindo por cima) — a subida deixa ar preso no trecho." });
         opsAl.push(tE);
         var gE = BIC() && BIC().giroPara ? BIC().giroPara({ x: -ve.x, y: 0, z: -ve.z }, { x: 0, y: 1, z: 0 }) : 0;
         var rgE = { op: "acessorio", id: novoId("rg-alimentacao"), famId: RG_FAM, tipoId: tipoRg, trecho: tE.id, novoId: tE.id + "b", x: r4((E0.x + E1.x) / 2), y: E0.y, z: r4((E0.z + E1.z) / 2), comprimento: Lr, bar: cx.id, barParte: "registro_alimentacao" };
@@ -1328,7 +1354,7 @@
         opsAl.forEach(function (o) { ops.push(o); });
         var hidros = arr(estado.familias).filter(function (f) { return /hidrometro|cavalete/i.test(String(f.famId)); });
         if (!uniao) pend("bar.alimentacao", nome + ": o alimentador predial " + (hidros.length ? "do " + hidros.map(function (f) { return f.id; }).join(", ") + " " : "") + "até a espera da boia (" + f2(E2.x) + "; " + f2(E2.y) + "; " + f2(E2.z) + ") não é traçado sozinho nesta versão — ligue o ramal predial/hidrômetro à espera; DN " + dnE + " a conferir pela reposição do consumo diário (NBR 5626:2020 6.7.2)", [opsAl[0].id, cx.id].concat(hidros.map(function (f) { return f.id; })));
-      } else pend("bar.alimentacao", nome + ": a entrada (boia) esbarra em outro tubo ao sair — ligue o alimentador à mão", [cx.id]);
+      } else pend("bar.alimentacao", nome + ": a entrada (boia) esbarra em " + (cE1 || cE2).com + " ao sair — ligue o alimentador à mão", [cx.id, (cE1 || cE2).com]);
     } else pend("bar.alimentacao", nome + ": a família não tem o ponto de entrada (boia) — use a família hid-caixa-dagua do catálogo", [cx.id]);
 
     /* ---------- 7) BOILER alimentado pela caixa: o RESPIRO (manual do fabricante) */

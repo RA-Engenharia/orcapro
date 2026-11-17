@@ -15032,6 +15032,7 @@ if (o.op === "hidRede") {
 if (!valida(o)) return false;
 M.porId[o.id] = { id: o.id, pontos: o.pontos.map(function (p) { return { x: num(p.x, 0), z: num(p.z, 0) }; }), baldrame: o.baldrame || "por_baixo",
 cotaTerreno: o.cotaTerreno == null ? null : num(o.cotaTerreno, 0), nome: o.nome ? String(o.nome).slice(0, 60) : "" };
+if (typeof o.autoSig === "string") M.porId[o.id].autoSig = o.autoSig.slice(0, 24);
 if (o.lateral === true) M.porId[o.id].lateral = true;
 if (M.ordem.indexOf(o.id) < 0) M.ordem.push(o.id);
 return true;
@@ -100495,6 +100496,7 @@ else { o.pb = PROP.pb(o.de); o.origem.pb = "proporcao"; o.aConferir = true; }
 return o;
 }
 var TIGRE_RED_R = { "100x75": "26752205" };
+var TIGRE_JUNCAO = { "75x75": { cod: "26277299", A: 172.5, B: 44, C: 150.6, F: 39, G: 51.1 }, "100x50": { cod: "26277469", A: 179, B: 50, C: 175.5, F: 39, G: 54.6 }, "100x75": { cod: "26277477", A: 218, B: 50, C: 175.5, F: 44, G: 55.4 }, "150x100": { cod: "26277540", A: 296, B: 60, C: 284.8, F: 50, G: 63.5 } };
 function cotasConexao(material, tipo, dn, dn2, dnRamal) {
 var tb = cotasTubo(material, dn), junta = tb.junta, C = ((dados().conexoes || {})[material]) || {};
 var k = dn2 ? dn + "x" + dn2 : String(dn), reg = C[tipo] && C[tipo][k];
@@ -100561,11 +100563,22 @@ else if (tipo === "curva90" || tipo === "curva45") prop("R", junta === "eletro" 
 else if (tipo === "reducao" || tipo === "luva_reducao") { var cp = cotasTubo(material, dn2); o.de2 = cp.de; o.pb2 = cotasConexao(material, "luva", dn2).pb; o.od2 = cotasConexao(material, "luva", dn2).od; prop("L", o.pb + o.pb2 + 0.3 * (o.de - cp.de) + 8); }
 else if (tipo === "bucha") { var cq = cotasTubo(material, dn2); o.de2 = cq.de; o.pb2 = cotasConexao(material, "luva", dn2).pb; prop("L", o.pb2 + 2); }
 if (junta === "eletro" && (tipo === "joelho90" || tipo === "joelho45")) { o.R = PROP.raioCurvaEletro(o.de); o.origem.R = "proporcao"; o.aConferir = true; }
+if (material === "pvc_esgoto" && tipo === "juncao" && junta === "anel") {
+var kJt = String(dn) + "x" + String(dn2 || dnRamal || dn), tj = TIGRE_JUNCAO[kJt];
+if (tj) {
+var dnRj = Number(kJt.split("x")[1]), cRj = cotasConexao(material, "luva", dnRj), rb = (cRj.od || cRj.de) / 2, S45 = Math.SQRT1_2;
+o.L = tj.A; o.zp = tj.G; o.zr = Math.round((tj.A - tj.G) * 100) / 100; o.pb = tj.B; o.ponta = Math.round(Math.min(o.ponta != null ? o.ponta : tj.G, tj.G - 2) * 100) / 100;
+o.zb = Math.round(((tj.C - o.de / 2 - rb * S45) / S45) * 100) / 100;
+["L", "zp", "zr", "pb", "ponta", "zb"].forEach(function (c) { o.origem[c] = "catalogo Tigre (cód. " + tj.cod + ")"; });
+o.produto = true; o.tigre = tj.cod; delete o.divergencia; o.aConferir = false; o.fontes.push("Tigre, junção simples 45° esgoto série normal " + kJt + " (cód. " + tj.cod + "): A " + tj.A + ", B " + tj.B + ", C " + tj.C + ", G " + tj.G + ", F " + tj.F + " mm");
+}
+}
 cotasDoPerfil(o, material, tipo, dn, dnRamal);
 return o;
 }
 function cotasDoPerfil(o, material, tipo, dn, dnRamal) {
 var pp = perfilProduto(material, tipo, dn); if (!pp) return;
+if (material === "pvc_esgoto" && tipo === "juncao" && TIGRE_JUNCAO[String(dn) + "x" + String(dnRamal || dn)]) return;
 var div = [];
 function poe(c, v, rotulo) { v = Math.round(v * 100) / 100; if (o[c] != null && Math.abs(o[c] - v) >= 0.5) div.push(rotulo + " " + v + " mm (peça medida) × " + o[c] + " mm (antes)"); o[c] = v; o.origem[c] = "produto (perfil medido)"; }
 function odBoca(pe) { var ex = pe.ext || []; return ex.length ? 2 * ex[ex.length - 1][1] : 0; }
@@ -101221,6 +101234,7 @@ var ppP = null, cP = c;
 if (c && tipoOrig !== c.tipo && perfilProduto(c.material, tipoOrig, c.dn)) { cP = {}; Object.keys(c).forEach(function (k) { cP[k] = c[k]; }); cP.tipo = tipoOrig; }
 var luva40SN = !!(c && c.material === "pvc_esgoto" && c.tipo === "luva" && num(c.dn, 0) === 40);
 if (c && tipoOrig !== "plug" && !luva40SN) ppP = perfilProduto(cP.material, cP.tipo, cP.dn);
+if (ppP && c && c.material === "pvc_esgoto" && c.tipo === "juncao" && eixos && eixos.length === 3 && TIGRE_JUNCAO[String(num(c.dn, 0)) + "x" + Math.min.apply(null, eixos.map(function (x) { return x.dn; }))]) ppP = null;
 if (ppP && eixos && eixos.length) { var rP = conexaoProduto(cP, eixos, o, ppP); if (rP) return rP; }
 var P = pv(c), tipo = c.tipo, mat = c.material, J = JUNTA[mat];
 if (!J || !eixos || !eixos.length) return null;

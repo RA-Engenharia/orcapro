@@ -209,6 +209,8 @@
 
   var TIGRE_RED_R = { "100x75": "26752205" };   /* série R: redução excêntrica com código Tigre e cotas conferidas na tabela do produto */
   /* a conexão: devolve as cotas que a geometria usa (mm) e de onde vieram */
+  /* junção simples 45° (esgoto série normal), tabela de dimensões do produto Tigre — A altura, B bolsa do topo, C largura, F bolsa do ramal, G ponta (mm) */
+  var TIGRE_JUNCAO = { "75x75": { cod: "26277299", A: 172.5, B: 44, C: 150.6, F: 39, G: 51.1 }, "100x50": { cod: "26277469", A: 179, B: 50, C: 175.5, F: 39, G: 54.6 }, "100x75": { cod: "26277477", A: 218, B: 50, C: 175.5, F: 44, G: 55.4 }, "150x100": { cod: "26277540", A: 296, B: 60, C: 284.8, F: 50, G: 63.5 } };
   function cotasConexao(material, tipo, dn, dn2, dnRamal) {
     var tb = cotasTubo(material, dn), junta = tb.junta, C = ((dados().conexoes || {})[material]) || {};
     var k = dn2 ? dn + "x" + dn2 : String(dn), reg = C[tipo] && C[tipo][k];
@@ -291,6 +293,23 @@
     else if (tipo === "reducao" || tipo === "luva_reducao") { var cp = cotasTubo(material, dn2); o.de2 = cp.de; o.pb2 = cotasConexao(material, "luva", dn2).pb; o.od2 = cotasConexao(material, "luva", dn2).od; prop("L", o.pb + o.pb2 + 0.3 * (o.de - cp.de) + 8); }
     else if (tipo === "bucha") { var cq = cotasTubo(material, dn2); o.de2 = cq.de; o.pb2 = cotasConexao(material, "luva", dn2).pb; prop("L", o.pb2 + 2); }
     if (junta === "eletro" && (tipo === "joelho90" || tipo === "joelho45")) { o.R = PROP.raioCurvaEletro(o.de); o.origem.R = "proporcao"; o.aConferir = true; }
+    /* JUNÇÃO SIMPLES 45° DE ESGOTO SÉRIE NORMAL — CATÁLOGO TIGRE (17/11/2026, defeito do Rogério: a junção saía com a ponta curta e o ramal
+       "esticado" por cotas de outra ficha — 150 × 100 era um toco —, lendo como curva/luva torta). A tabela de dimensões do produto traz, por
+       bitola (DN da linha × DN do ramal): A = altura total (ponta até a boca da bolsa), B = bolsa do topo, C = largura total (da parede
+       oposta até a boca do ramal), G = ponta (do fundo ao eixo do ramal), F = bolsa do ramal. Daí: ponta zp = G; linha até a boca zr = A − G;
+       o ramal a 45° sai do eixo e a boca (disco de Ø externo da bolsa do ramal) afasta-se da parede oposta de R + zb·sen45° + rb·cos45° = C
+       ⇒ zb = (C − R − rb·sen45°) / sen45°. Só as quatro bitolas da tabela entram; a de perfil medido (100 × 50, cotasDoPerfil abaixo) segue
+       valendo por cima (confere com C e G dentro de 1 mm). 75 × 75: a tabela da loja traz E = DN 50, mas o nome da bitola e o produto são 75 — usa-se 75. */
+    if (material === "pvc_esgoto" && tipo === "juncao" && junta === "anel") {
+      var kJt = String(dn) + "x" + String(dn2 || dnRamal || dn), tj = TIGRE_JUNCAO[kJt];
+      if (tj) {
+        var dnRj = Number(kJt.split("x")[1]), cRj = cotasConexao(material, "luva", dnRj), rb = (cRj.od || cRj.de) / 2, S45 = Math.SQRT1_2;
+        o.L = tj.A; o.zp = tj.G; o.zr = Math.round((tj.A - tj.G) * 100) / 100; o.pb = tj.B; o.ponta = Math.round(Math.min(o.ponta != null ? o.ponta : tj.G, tj.G - 2) * 100) / 100;
+        o.zb = Math.round(((tj.C - o.de / 2 - rb * S45) / S45) * 100) / 100;
+        ["L", "zp", "zr", "pb", "ponta", "zb"].forEach(function (c) { o.origem[c] = "catalogo Tigre (cód. " + tj.cod + ")"; });
+        o.produto = true; o.tigre = tj.cod; delete o.divergencia; o.aConferir = false; o.fontes.push("Tigre, junção simples 45° esgoto série normal " + kJt + " (cód. " + tj.cod + "): A " + tj.A + ", B " + tj.B + ", C " + tj.C + ", G " + tj.G + ", F " + tj.F + " mm");
+      }
+    }
     cotasDoPerfil(o, material, tipo, dn, dnRamal);
     return o;
   }
@@ -299,6 +318,7 @@
      planta e as cotas). O que a ficha dizia e diverge 0,5 mm ou mais fica em cotas.divergencia. */
   function cotasDoPerfil(o, material, tipo, dn, dnRamal) {
     var pp = perfilProduto(material, tipo, dn); if (!pp) return;
+    if (material === "pvc_esgoto" && tipo === "juncao" && TIGRE_JUNCAO[String(dn) + "x" + String(dnRamal || dn)]) return;   /* a tabela Tigre vale (acima), não o perfil medido */
     var div = [];
     function poe(c, v, rotulo) { v = Math.round(v * 100) / 100; if (o[c] != null && Math.abs(o[c] - v) >= 0.5) div.push(rotulo + " " + v + " mm (peça medida) × " + o[c] + " mm (antes)"); o[c] = v; o.origem[c] = "produto (perfil medido)"; }
     /* o externo da BOCA (na face): o anel/friso mais para dentro não é o externo da boca */
@@ -1167,6 +1187,8 @@
        medido tinha frisos de anel. Fica a construção genérica da luva com as cotas da ficha (A 39 · B 18), boca soldável */
     var luva40SN = !!(c && c.material === "pvc_esgoto" && c.tipo === "luva" && num(c.dn, 0) === 40);
     if (c && tipoOrig !== "plug" && !luva40SN) ppP = perfilProduto(cP.material, cP.tipo, cP.dn);
+    /* JUNÇÃO SIMPLES SN NA TABELA TIGRE (17/11/2026, decisão: vale a tabela do catálogo, não o perfil medido): 100 x 50 sai pela construção paramétrica com A/B/C/G */
+    if (ppP && c && c.material === "pvc_esgoto" && c.tipo === "juncao" && eixos && eixos.length === 3 && TIGRE_JUNCAO[String(num(c.dn, 0)) + "x" + Math.min.apply(null, eixos.map(function (x) { return x.dn; }))]) ppP = null;
     if (ppP && eixos && eixos.length) { var rP = conexaoProduto(cP, eixos, o, ppP); if (rP) return rP; }
     var P = pv(c), tipo = c.tipo, mat = c.material, J = JUNTA[mat];
     if (!J || !eixos || !eixos.length) return null;

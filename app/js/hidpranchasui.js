@@ -79,7 +79,7 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = HP().normalizarConfig(cfg);
     return { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao,
-             sistemas: c.sistemas, conjuntos: c.conjuntos, isoFormato: c.isoFormato, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, chamadaProduto: c.chamadaProduto, qr: c.qr, portal: c.portal, perspectiva: c.perspectiva,
+             sistemas: c.sistemas, conjuntos: c.conjuntos, isoFormato: c.isoFormato, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, chamadaProduto: c.chamadaProduto, qr: c.qr, portal: c.portal, perspectiva: c.perspectiva, contexto: c.contexto, mosaico: c.mosaico,
              empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
              obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
              ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
@@ -121,11 +121,12 @@
       '<label>Descrição <input data-hpr="descrev" value="' + esc(cfg.descricaoRevisao) + '" style="width:100%"></label></fieldset>';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>O que gerar</b></legend>' +
       P.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-hpr-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(P.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") +
-      '<label style="display:block;margin-top:6px">Folha dos isométricos (prancha única) <select data-hpr="isoformato">' + P.K2.isos.formatos.map(function (f) { return '<option value="' + f + '"' + (cfg.isoFormato === f ? " selected" : "") + ">" + f + "</option>"; }).join("") + "</select></label></fieldset>";
+      '<label style="display:block;margin-top:6px">Folha dos isométricos (prancha única) <select data-hpr="isoformato">' + P.K2.isos.formatos.map(function (f) { return '<option value="' + f + '"' + (cfg.isoFormato === f ? " selected" : "") + ">" + f + "</option>"; }).join("") + "</select></label>" +
+      '<label>Parede, piso e louça <select data-hpr="contexto" title="Só linhas: a arquitetura e o contexto saem em arestas cinza bem claro, sem preenchimento — o tubo e a conexão ficam sempre por cima. Meio-tom: o preenchimento cinza translúcido de antes.">' + [["linhas", "Só linhas (padrão)"], ["translucido", "Meio-tom translúcido"]].map(function (v) { return '<option value="' + v[0] + '"' + (cfg.contexto === v[0] ? " selected" : "") + ">" + v[1] + "</option>"; }).join("") + "</select></label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Perspectiva 3D por ambiente</b></legend>' +
       (ambs.length ? ambs.map(function (a) { return '<div style="display:flex;gap:6px;align-items:center"><label style="flex:1"><input type="checkbox" data-hpr-amb="' + esc(a.nome) + '"' + marcado(!cfg.perspectiva.ambientes.length || cfg.perspectiva.ambientes.indexOf(a.nome) >= 0) + "> " + esc(a.nome) + '</label><button class="btn sm ghost" data-hpr-3d="' + esc(a.id) + '" title="Prévia: abre o 3D só deste ambiente (caixa de corte e arquitetura translúcida)">3D do ambiente</button></div>'; }).join("")
         : '<p class="muted">Nenhum ambiente com aparelho no modelo.</p>') +
-      '<label>Vista <select data-hpr="vista">' + ["SE", "SO", "NO", "NE"].map(function (v) { return '<option value="' + v + '"' + (cfg.perspectiva.vista === v ? " selected" : "") + ">" + v + "</option>"; }).join("") + "</select></label></fieldset>";
+      '<label>Vista <select data-hpr="vista" title="Automática: o sistema escolhe, entre SE, SO, NE e NO, a câmera com menos tubo oculto em cada ambiente">' + ["AUTO", "SE", "SO", "NO", "NE"].map(function (v) { return '<option value="' + v + '"' + ((v === "AUTO" ? cfg.perspectiva.auto : (!cfg.perspectiva.auto && cfg.perspectiva.vista === v)) ? " selected" : "") + ">" + (v === "AUTO" ? "Automática (menor oclusão)" : v) + "</option>"; }).join("") + "</select></label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Carimbo e saída</b></legend>' +
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "—") + "</div>" +
       '<label>QR do portal da obra (link) <input data-hpr="qr" value="' + esc(cfg.qr) + '" style="width:100%" placeholder="vazio = sem QR"></label>' +
@@ -153,7 +154,9 @@
     if (q('[data-hpr="qr"]')) c.qr = q('[data-hpr="qr"]').value;
     c.conjuntos = c.conjuntos || {}; qa("[data-hpr-cj]").forEach(function (e) { c.conjuntos[e.getAttribute("data-hpr-cj")] = !!e.checked; });
     var am = qa("[data-hpr-amb]"), amM = am.filter(function (e) { return e.checked; }).map(function (e) { return e.getAttribute("data-hpr-amb"); });
-    c.perspectiva = { vista: q('[data-hpr="vista"]') ? q('[data-hpr="vista"]').value : "SE", ambientes: amM.length === am.length ? [] : amM };
+    var vSel = q('[data-hpr="vista"]') ? q('[data-hpr="vista"]').value : "AUTO";
+    c.contexto = q('[data-hpr="contexto"]') ? q('[data-hpr="contexto"]').value : "linhas";
+    c.perspectiva = { vista: vSel, auto: vSel === "AUTO", ambientes: amM.length === am.length ? [] : amM };
     return HP().normalizarConfig(c);
   }
   function baixar(nome, dados, mime) {
@@ -175,6 +178,13 @@
     gravarMemoria(ctx.obraKey, c);
     var nome = (r.prefixo || "HID") + "-" + (r.revisao || "R00") + " projeto hidrossanitario";
     r.arquivos = [];
+    /* 17/11/2026: o auditor da folha é gate. Não liberado (folha reprovada ou erro de cálculo pendente) = pergunta antes de entregar o PDF/DXF "para obra" */
+    var audR = r.auditoria || {}, nRep = audR.reprovadas || 0;
+    if (r.liberado === false && (saida.pdf || saida.dxf)) {
+      var txNL = "As pranchas saem NÃO LIBERADAS" + (nRep ? " (" + nRep + " folha(s) reprovada(s) pelo auditor)" : "") + (arr(r.avisos).some(function (a) { return /erro pendente/i.test(a); }) ? " e com erro de cálculo pendente" : "") + ".\n\nExportar o PDF/DXF mesmo assim? (não é para obra: só para conferência)";
+      var okExp = true; try { okExp = typeof global.confirm === "function" ? !!global.confirm(txNL) : true; } catch (eC) { okExp = true; }
+      if (!okExp) { saida = { pdf: false, dxf: false, abas: saida.abas, registro: saida.registro }; r.exportacaoRecusada = true; }
+    }
     if (saida.pdf) { var pdf = P.exportar(r, "pdf"); if (pdf && baixar(nome + ".pdf", pdf, "application/pdf")) r.arquivos.push(nome + ".pdf"); }
     if (saida.dxf) { var dxf = P.exportar(r, "dxf"); if (dxf && baixar(nome + ".dxf", dxf, "application/dxf")) r.arquivos.push(nome + ".dxf"); }
     if (saida.abas) r.abas = abrirNasAbas(r, ctx, saida.registro);
@@ -309,7 +319,7 @@
         if (!r || !r.ok) { if (msg) msg.textContent = "Não gerou: " + arr(r && r.avisos).join(" "); return; }
         U.fecharModal();
         var v = r.verificacao || {};
-        toast(r.folhas.length + " folha(s) geradas · sobreposição: texto×texto " + v.sobreposicoes + ", rótulo×tubo " + v.rotuloTubo + ", rótulo×cota " + v.rotuloCota + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), (v.sobreposicoes || v.rotuloTubo || v.rotuloCota) ? "aviso" : "ok");
+        toast(r.folhas.length + " folha(s) geradas · sobreposição: texto×texto " + v.sobreposicoes + ", rótulo×tubo " + v.rotuloTubo + ", rótulo×cota " + v.rotuloCota + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : "") + ((r.auditoria && r.auditoria.reprovadas) ? " · " + r.auditoria.reprovadas + " folha(s) reprovada(s) pelo auditor" : "") + (r.liberado === false ? " · NÃO LIBERADO" : ""), (v.sobreposicoes || v.rotuloTubo || v.rotuloCota || r.liberado === false) ? "aviso" : "ok");
       } }
     ]);
     var el = global.document.querySelector('[data-hpr="tela"]');

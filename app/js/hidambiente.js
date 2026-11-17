@@ -495,7 +495,7 @@
       .map(function (t) { return { id: t.id, x: t.p1.x, z: t.p1.z, yBase: Math.min(t.p1.y, t.p2.y), yTopo: Math.max(t.p1.y, t.p2.y) }; });
   }
   /* o limite da obra (caixa envolvente das paredes) e o lado mais perto do ponto: a espera do esgoto sai por ali */
-  function esperaFora(paredes, p, par, redes, estado) {
+  function esperaFora(paredes, p, par, redes, estado, pCaixa) {
     if (!paredes.length) return null;
     /* ⚠ PADRÃO (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md): com a LINHA DA REDE, a espera sai pela face externa que leva à linha
        pelo caminho mais curto sem passar por baixo de outro cômodo (inclusive a face do corredor entre blocos) — o lado da
@@ -510,13 +510,21 @@
       var BIl = BI(), rCl = num(BIl && BIl.PECAS && BIl.PECAS.caixa_inspecao ? BIl.PECAS.caixa_inspecao.r : 0, 0), fpl = HIe && HIe.GEO_IMP ? HIe.GEO_IMP.folgaParede : 0;
       var livreP = function (q) { return !paredes.some(function (w) { return distSeg(q, w.p1, w.p2) < num(w.espessura, 0) / 2 + rCl + fpl - EPS; }); };
       var bq = null;
-      lat.forEach(function (r) { var Lh = LRe._int.linha(r.pontos), q = LRe._int.projetar(Lh, p); if (q && (!bq || q.d < bq.q.d - EPS)) bq = { q: q, Lh: Lh }; });
+      /* O PÉ É O DA CAIXA SIFONADA (17/11/2026, prova no projeto real copiado): é na linha dela que o ramal do ambiente corre até a rede; o pé do 1º aparelho (a pia, atrás
+         da caixa) caía na ponta da linha e o ramal entrava na caixa de inspeção virando 135° sobre o próprio coletor. Sem caixa sifonada, o 1º aparelho, como antes. */
+      var pPe = pCaixa && isFinite(pCaixa.x) && isFinite(pCaixa.z) ? pCaixa : p;
+      lat.forEach(function (r) { var Lh = LRe._int.linha(r.pontos), q = LRe._int.projetar(Lh, pPe); if (q && (!bq || q.d < bq.q.d - EPS)) bq = { q: q, Lh: Lh }; });
       if (bq) {
         var q0 = bq.q, achou = livreP(q0) ? q0 : null;
         for (var k = 1; !achou && k <= 30; k++) {   // hid:ok até 1,50 m de cada lado, passo de 5 cm
-          [1, -1].some(function (sg) { var sv = q0.s + sg * 0.05 * k; if (sv < 0 || sv > bq.Lh.L) return false; var qq = LRe._int.noPonto(bq.Lh, sv); if (livreP(qq)) { achou = qq; return true; } return false; });   // hid:ok passo de 5 cm
+          [1, -1].some(function (sg) { var sv = q0.s + sg * 0.05 * k; if (sv < 0 || sv > bq.Lh.L) return false; var qq = LRe._int.noPonto(bq.Lh, sv); if (livreP(qq)) { qq.s = sv; achou = qq; return true; } return false; });   // hid:ok passo de 5 cm
         }
         var qf = achou || q0;
+        /* NÃO NA PONTA DA LINHA (17/11/2026, prova no projeto real copiado): o pé de um aparelho ATRÁS do início da linha (o banheiro do fundo, a torneira da lavanderia) caía
+           no ponto s = 0; a caixa de inspeção ficava ali, o ramal chegava a ela AO LONGO do eixo e o coletor saía dela pelo mesmo eixo — dois tubos colineares sobrepostos
+           (o auditor lia "o esgoto se divide no nó" e "o esgoto tem um ciclo"). A espera fica a meio diâmetro da caixa + a folga da parede da ponta: o ramal entra de lado. */
+        var sMin = rCl + fpl;
+        if (qf.s != null && qf.s < sMin - EPS) { var qm = LRe._int.noPonto(bq.Lh, Math.min(sMin, bq.Lh.L)); qf = { x: qm.x, z: qm.z, s: Math.min(sMin, bq.Lh.L) }; }
         return { x: r4(qf.x), z: r4(qf.z), lateral: true };
       }
     }
@@ -993,7 +1001,7 @@
       decide("amb.caixa_inspecao", "O ramal do ambiente vai até a caixa de inspeção " + ciUser.id + " que já está no modelo.");
       out.caixaInspecaoUsuario = ciUser.id;
     } else if (terreo) {
-      var pE = esperaFora(paredes, ancora, par, estado.hidRedes, estado);
+      var pE = esperaFora(paredes, ancora, par, estado.hidRedes, estado, caixa && !baciaEs ? { x: caixa.x, z: caixa.z } : null);
       if (pE && !pE.lateral && !baciaEs) {
         var tnqs = []; aparelhos.forEach(function (a) { if (a.aparelho !== "tanque") return; a.conectores.forEach(function (c) { if (c.sistema === "esgoto") tnqs.push(c); }); });
         var pE2 = tnqs.length ? esperaDepoisDosAparelhos(pE, ancora, tnqs, estado.hidRedes, paredes, par, estado) : null;
@@ -2636,6 +2644,44 @@
     return { x: r4(a.x + ux * t + nx * s * off), z: r4(a.z + uz * t + nz * s * off) };
   }
   /* até onde sobe o ventilador: cobertura do modelo + terminal da 8160; sem cobertura, para no teto e pende */
+  /* ACLIVE DA VENTILAÇÃO GARANTIDO NO FIM DO TRAÇADO (17/11/2026, prova no projeto real copiado: "ventilação horizontal com 0,97% (mínimo 1%)"): a cota do fim do deitado é
+     calculada sobre o comprimento previsto e, depois do ambiente, uma etapa do traçado desloca a ponta do tubo em 4 cm no plano (a tomada acompanha o ramal de esgoto) — o trecho saía mais
+     comprido que o da conta e com 0,9686 % < o mínimo da NBR 8160 (4.3.9). Sobre as ops FINAIS do lote, o trecho horizontal de ventilação que sobe para p2 e ficou abaixo do mínimo sobe p2
+     (arredondando PARA CIMA, 4 casas) e leva junto o que nasce nessa ponta (o trecho seguinte e o terminal). O mínimo vem do HidNormas (es8160.ventilacao_regras.aclive_min_pct); sem a
+     tabela, nada é mexido. Devolve quantos trechos subiu. */
+  function garantirAcliveVent(ops, aclPct, opc) {
+    opc = opc || {};
+    if (aclPct == null) { var N0 = NN(); try { var c0 = N0 && N0.contexto ? N0.contexto().consulta("es8160.ventilacao_regras", { parametro: "aclive_min_pct" }, "valor", "ventilação: aclive mínimo (garantia no fim do traçado)") : null; aclPct = c0 && c0.ok ? num(c0.valor, null) : null; } catch (e0) { aclPct = null; } }
+    if (aclPct == null || !isFinite(Number(aclPct))) return 0;
+    var ac = Number(aclPct) / 100, n = 0, TOLP = 1e-4, todos = arr(ops), noModelo = arr(opc.estado && opc.estado.instalacoes && opc.estado.instalacoes.trechos), pend = arr(opc.pendencias) === opc.pendencias ? opc.pendencias : [], recusados = {};   // hid:ok tolerância de ponta coincidente (0,1 mm)
+    function igual(a, b) { return Math.abs(a.x - b.x) < TOLP && Math.abs(a.z - b.z) < TOLP && Math.abs(a.y - b.y) < TOLP; }
+    /* quem toca a ponta: trechos/peças das ops e trechos que já estavam no modelo. Só mexe se TUDO que toca for ventilação do traçado (ops); do usuário (modelo) ou de outro sistema → pendência */
+    function tocam(o, ponto) {
+      var r = { vent: [], estranho: [] };
+      todos.forEach(function (q) {
+        if (!q || q === o) return;
+        if (q.op === "trecho" && q.p1 && q.p2) { var t1 = igual(q.p1, ponto), t2 = igual(q.p2, ponto); if (t1 || t2) (q.sistema === "ventilacao" ? r.vent : r.estranho).push({ q: q, p1: t1, p2: t2 }); }
+        if (q.op === "peca" && igual(q, ponto)) (q.sistema === "ventilacao" ? r.vent : r.estranho).push({ q: q, peca: true });
+      });
+      noModelo.forEach(function (t) { if (t && t.p1 && t.p2 && (igual(t.p1, ponto) || igual(t.p2, ponto)) && t.sistema) r.estranho.push({ q: t, modelo: true }); });
+      return r;
+    }
+    for (var volta = 0, mudou = true; mudou && volta < 10; volta++) {   // hid:ok guarda: no máximo 10 passadas (a subida de uma ponta pode reduzir o aclive do trecho seguinte)
+      mudou = false;
+      todos.forEach(function (o) {
+        if (!(o && o.op === "trecho" && o.sistema === "ventilacao" && o.p1 && o.p2) || recusados[o.id]) return;
+        var dx = o.p2.x - o.p1.x, dz = o.p2.z - o.p1.z, L = Math.sqrt(dx * dx + dz * dz);
+        if (L < 0.05 || o.p2.y - o.p1.y <= TOLP) return;   // hid:ok vertical (L ~ 0), plano ou descendo: não é o deitado em aclive deste traçado
+        var preciso = teto4(o.p1.y + L * ac + 1e-9);   // hid:ok margem numérica
+        if (o.p2.y >= preciso - 1e-9) return;
+        var antigo = { x: o.p2.x, y: o.p2.y, z: o.p2.z }, tc = tocam(o, antigo);
+        if (tc.estranho.length) { recusados[o.id] = 1; pend.push({ chave: "ta.aclive_ventilacao", texto: "a ventilação " + o.id + " ficou com aclive abaixo do mínimo da NBR 8160 (4.3.9), mas a ponta toca " + tc.estranho.map(function (x) { return String(x.q.id) + (x.modelo ? " (do modelo)" : ""); }).join(", ") + ": não mexi — suba a ponta à mão", elementos: [o.id] }); return; }
+        o.p2.y = preciso; n++; mudou = true;
+        tc.vent.forEach(function (x) { if (x.peca) x.q.y = preciso; else { if (x.p1) x.q.p1.y = preciso; if (x.p2) x.q.p2.y = preciso; } });
+      });
+    }
+    return n;
+  }
   /* ⚠ ESGOTO É ÁRVORE (15/11/2026, auditoria do PDF real: "o esgoto se divide no nó (2 saídas)" e "o esgoto tem um ciclo"). A MESMA regra de sentido do HidES (trecho vertical: do alto para
      baixo; horizontal: p1 → p2): cada nó tem UMA saída a jusante e a rede não fecha anel. arvoreEsgoto() só mede; garantirArvore() corrige SÓ o que o TRAÇADO criou (`novas`), nunca o trecho
      do usuário: (a) 2ª saída num nó com um trecho novo que SOBE (p2 acima de p1 = desenhado ao contrário) → o trecho novo é invertido e entra como afluente; (b) anel → sai o trecho novo
@@ -2707,7 +2753,7 @@
     return { y: teto.y, origem: teto.origem, continua: true, pend: { chave: "amb.cobertura", motivo: "o modelo não tem cobertura/telhado sobre o ambiente: o ventilador parou no teto (" + f2(teto.y) + " m) — prolongue até acima da cobertura (NBR 8160, 4.3.6)" } };
   }
 
-  var HidAmbiente = { VERSAO: 1, GEO_AMB: GEO_AMB, ligar: ligar, membros: membros, duplicados: duplicados, tipoDisp: tipoDisp, dispositivosFamilia: dispositivosFamilia, _int: { arvoreEsgoto: arvoreEsgoto, garantirArvore: garantirArvore, pendenciaBarraDireto: pendenciaBarraDireto, vivas: vivas, localCaixa: localCaixa, pecaCaixa: pecaCaixa, esperaFora: esperaFora, esperaDepoisDosAparelhos: esperaDepoisDosAparelhos, grafoEs: grafoEs, projParede: projParede, limpeza: limpeza, noPavimento: noPavimento, topoVentilacao: topoVentilacao, verticais: verticais } };
+  var HidAmbiente = { VERSAO: 1, GEO_AMB: GEO_AMB, garantirAcliveVent: garantirAcliveVent, ligar: ligar, membros: membros, duplicados: duplicados, tipoDisp: tipoDisp, dispositivosFamilia: dispositivosFamilia, _int: { arvoreEsgoto: arvoreEsgoto, garantirArvore: garantirArvore, pendenciaBarraDireto: pendenciaBarraDireto, vivas: vivas, localCaixa: localCaixa, pecaCaixa: pecaCaixa, esperaFora: esperaFora, esperaDepoisDosAparelhos: esperaDepoisDosAparelhos, grafoEs: grafoEs, projParede: projParede, limpeza: limpeza, noPavimento: noPavimento, topoVentilacao: topoVentilacao, verticais: verticais } };
   global.HidAmbiente = HidAmbiente;
   if (typeof module !== "undefined" && module.exports) module.exports = HidAmbiente;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
