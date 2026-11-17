@@ -135623,6 +135623,7 @@ else if (i === nseg - 1 && nseg > 1) { var de = w / 2 + 1.6; mx = b[0] + ux * de
 else if (folgaVizinho(i + 1, w)) { mx = b[0] + ux * (w / 2 + 1.6); my = b[1] + uy * (w / 2 + 1.6); alt = 0; }
 else if (folgaVizinho(i - 1, w)) { mx = a[0] - ux * (w / 2 + 1.6); my = a[1] - uy * (w / 2 + 1.6); alt = 0; }
 else if (nseg > 1) { alt++; sobe = 0.8 + h * (alt % 2 ? 1.25 : 2.5); }
+else if (o.foraSeUnico) { var du = w / 2 + 1.6; mx = b[0] + ux * du; my = b[1] + uy * du; ext1 = Math.max(ext1, w + 2.4); }
 } else alt = 0;
 if (o.evitar && o.evitar.length) {
 var meia = w / 2 + 0.9, ts = o.evitar.map(function (p) { return (p[0] - mx) * ux + (p[1] - my) * uy; });

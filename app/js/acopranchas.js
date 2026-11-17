@@ -327,6 +327,7 @@
           else if (folgaVizinho(i + 1, w)) { mx = b[0] + ux * (w / 2 + 1.6); my = b[1] + uy * (w / 2 + 1.6); alt = 0; }
           else if (folgaVizinho(i - 1, w)) { mx = a[0] - ux * (w / 2 + 1.6); my = a[1] - uy * (w / 2 + 1.6); alt = 0; }
           else if (nseg > 1) { alt++; sobe = 0.8 + h * (alt % 2 ? 1.25 : 2.5); }
+          else if (o.foraSeUnico) { var du = w / 2 + 1.6; mx = b[0] + ux * du; my = b[1] + uy * du; ext1 = Math.max(ext1, w + 2.4); }   /* cota de UM trecho curto: o texto sai para depois do traço (a linha de cota se estende por baixo dele), nunca em cima dos tiques */
         } else alt = 0;
         /* o.evitar: pontos por onde passa uma linha transversal (eixo) — o texto anda ao longo da cota até sair dela */
         if (o.evitar && o.evitar.length) {

@@ -27337,6 +27337,20 @@ apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0
 rotSemLig: "SEM LIGAÇÃO", rotInter: "INTERLIGAÇÃO COM ", rotInterJunta: " E ", interDesce: 1.6, rotAlim: "AF-ALIMENTAÇÃO", rotCons: "AF-CONSUMO", rotExtr: "EXTRAVASOR E LIMPEZA", rotApoiada: "BASE APOIADA NA LAJE", rotDesce: "DESCEM ATÉ A SAÍDA LIVRE", parte: { alim: "alimentacao", cons: "saida", extr: "extravasor", limp: "limpeza" },
 reAlim: /^entrada|alimenta/i, reCons: /^sa[ií]da|consumo/i, reExtr: /extrav/i, reLimp: /limp/i }
 };
+var PSC = {
+sis: ["pisc_succao", "pisc_retorno", "pisc_hidro", "pisc_aquec", "pisc_dreno", "pisc_reposicao"],
+cor: { pisc_succao: "#C2185B", pisc_retorno: "#E65100", pisc_hidro: "#455A64", pisc_aquec: "#F06292", pisc_dreno: "#827717", pisc_reposicao: "#00695C" },
+sigla: { pisc_succao: "SUC", pisc_retorno: "RET", pisc_hidro: "HM", pisc_aquec: "AQP", pisc_dreno: "DRN", pisc_reposicao: "REP" },
+nome: { pisc_succao: "Sucção (ralo de fundo, coadeira, aspiração)", pisc_retorno: "Recalque e retorno (bomba, filtro, retornos)", pisc_hidro: "Hidromassagem", pisc_aquec: "Aquecimento", pisc_dreno: "Descarte e drenagem", pisc_reposicao: "Reposição de água" },
+camada: { pisc_succao: "HID-PSC-SUC-TUBO", pisc_retorno: "HID-PSC-RET-TUBO", pisc_hidro: "HID-PSC-HM-TUBO", pisc_aquec: "HID-PSC-AQP-TUBO", pisc_dreno: "HID-PSC-DRN-TUBO", pisc_reposicao: "HID-PSC-REP-TUBO" },
+fam: { "hid-pisc-filtro": ["FT", "Filtro"], "hid-pisc-bomba": ["MB", "Motobomba"], "hid-pisc-bomba-hidro": ["MH", "Motobomba da hidromassagem"], "hid-pisc-bomba-aquec": ["MQ", "Motobomba do aquecimento"],
+"hid-pisc-casa-maquinas": ["CM", "Casa de máquinas"], "hid-pisc-skimmer": ["CO", "Coadeira (skimmer)"], "hid-pisc-ralo": ["RF", "Ralo de fundo"], "hid-pisc-registro": ["RE", "Registro de esfera"],
+"hid-pisc-derivacao": ["DV", "Derivação do aquecimento"], "hid-pisc-caixa-descarte": ["CD", "Caixa do descarte"], "hid-pisc-caixa-descarte-esgoto": ["CD", "Caixa do descarte"], "hid-pisc-poco-drenagem": ["PD", "Poço de drenagem"],
+"hid-pisc-reposicao": ["BR", "Bica de reposição"], "hid-pisc-retorno": ["RT", "Retorno"], "hid-pisc-aspiracao": ["AS", "Aspiração"], "hid-pisc-succao-hidro": ["SH", "Sucção da hidro"], "hid-pisc-hidro": ["HI", "Bocal de hidromassagem"],
+"hid-pisc-refletor": ["IL", "Refletor"], "hid-pisc-quadro": ["QC", "Quadro de comando"], "hid-pisc-bomba-calor": ["BC", "Bomba de calor"], "hid-pisc-coletor": ["CS", "Coletor solar"], "hid-pisc-emergencia": ["BE", "Botão de emergência"], "hid-pisc-acionador": ["AC", "Acionador pneumático"] },
+ang: 30, minRot: 0.4, margem: 24, margemX: 34, kMax: 120, linhaLeg: 5, folgaLeg: 8, vistaDir: [0.5774, 0.5774, 0.5774], tolNo: 0.02, tolParalelo: 0.02, rConexao: 0.5, caixaConexao: 0.7, alfaAgua: 0.3, corAgua: "#039BE5", corFundo: "#5f6b73",
+extraMin: 1, extraDist: 3, margemCasa: 0.3, densoFam: 5, densoTubo: 10, painelW: 0.30, painelH: 0.50, painelMg: 10, kMaxDet: 160, agrupaMm: 14
+};
 function dep(nome, arq) {
 if (global[nome]) return global[nome];
 if (typeof require === "function") { try { return require(arq); } catch (e) { } }
@@ -27393,6 +27407,8 @@ cam("HID-SIMBOLO", P.simbolo); cam("HID-COTA", P.cota); cam("HID-TEXTO", P.fina)
 cam("HID-CONTEXTO", P.contexto, "#7f7f7f"); cam("HID-TABELA", P.tabela); cam("HID-TITULO", P.titulo); cam("HID-MOLDURA", P.moldura);
 cam("HID-PEND", P.simbolo, K2.vermelho, "3 1.5");
 cam("HID-CHAMADA", P.cota); cam("HID-CONEXAO", P.cota); cam("HID-LOUCA", P.cota, K2.arq.louca);
+PSC.sis.forEach(function (s) { cam(PSC.camada[s], P.AF, PSC.cor[s]); });
+cam("HID-PSC-NA", P.cota, PSC.corAgua, "3 1.5"); cam("HID-PSC-FUNDO", P.contexto, PSC.corFundo, "1.5 1.5"); cam("HID-PSC-DET", P.cota, "#000", "4 1.5");
 E.camadas["MET-TABELA"] = E.camadas["HID-TABELA"]; E.camadas["MET-TITULO"] = E.camadas["HID-TITULO"]; E.camadas["MET-FINA"] = E.camadas["HID-COTA"];
 return E;
 }
@@ -27672,7 +27688,7 @@ var cxs = d.cotaXs.filter(function (xx, i, A) { return i === 0 || xx - A[i - 1] 
 if (cxs.length > 2) {
 var P = cxs.map(function (xx) { return [xx + ox, d.yFundo + oy + (o.folgaH != null ? o.folgaH : E0.folgaH)]; }), vals = [];
 for (var i = 0; i + 1 < cxs.length; i++) vals.push(cm(cxs[i + 1], cxs[i]));
-D.cadeia(P, 0, vals, {});
+D.cadeia(P, 0, vals, { foraSeUnico: true });
 }
 if (!o.semCotaV) [[d.cotaYsE, -ph.cotaV], [d.cotaYsD, d.w + ph.cotaV]].forEach(function (lado) {
 var ys = arr(lado[0]).slice().sort(function (p0, q0) { return q0 - p0; });
@@ -27680,7 +27696,7 @@ var ysF = [d.yPiso].concat(ys.filter(function (v, i2, A) { return Math.abs(v - (
 if (ysF.length < 2) return;
 var PV = ysF.map(function (v) { return [lado[1] + ox, v + oy]; }), vv = [];
 for (var r = 0; r + 1 < ysF.length; r++) vv.push(cm(ysF[r], ysF[r + 1]));
-D.cadeia(PV, 0, vv, { desde: PV.map(function () { return false; }) });
+D.cadeia(PV, 0, vv, { foraSeUnico: true, desde: PV.map(function () { return false; }) });
 });
 for (var q = nSg; q < D.sg.length; q++) chk.cotas.push(D.sg[q]);
 }
@@ -29446,6 +29462,191 @@ iconePeca(D, ic, "", xs, yP, K2.quadro.icone, h * 1.6); D.texto(xs + K2.quadro.i
 c.prims.push({ linhas: L, simbolos: S, textos: Tt, trechos: pz.trs.map(function (t) { return t.id; }) });
 return { escala: "SEM ESCALA" };
 }
+function temPiscina(rede) { return arr(rede && rede.trechos).some(function (t) { return /^pisc_/.test(t.sistema); }); }
+function projPsc(p) { var an = PSC.ang * Math.PI / 180; return { u: (p.x - p.z) * Math.cos(an), v: (p.x + p.z) * Math.sin(an) - p.y, d: p.x + p.y + p.z }; }
+function corridasPsc(trs) {
+var pai = {}, TL = PSC.tolNo;
+trs.forEach(function (t) { pai[t.id] = t.id; });
+function raiz(x) { while (pai[x] !== x) { pai[x] = pai[pai[x]]; x = pai[x]; } return x; }
+function perto(p, q) { return Math.abs(p.x - q.x) <= TL && Math.abs(p.y - q.y) <= TL && Math.abs(p.z - q.z) <= TL; }
+for (var i = 0; i < trs.length; i++) for (var j = i + 1; j < trs.length; j++) {
+var a = trs[i], b = trs[j];
+if (a.sistema !== b.sistema || String(a.dn) !== String(b.dn)) continue;
+if (perto(a.p1, b.p1) || perto(a.p1, b.p2) || perto(a.p2, b.p1) || perto(a.p2, b.p2)) pai[raiz(a.id)] = raiz(b.id);
+}
+var grupos = {}, out = {};
+trs.forEach(function (t) { (grupos[raiz(t.id)] = grupos[raiz(t.id)] || []).push(t); });
+function meio(t) { return { x: (t.p1.x + t.p2.x) / 2, y: (t.p1.y + t.p2.y) / 2, z: (t.p1.z + t.p2.z) / 2 }; }
+Object.keys(grupos).forEach(function (r) {
+var g = grupos[r].slice().sort(function (p, q) { return dist3d(q.p1, q.p2) - dist3d(p.p1, p.p2); }), postos = [];
+g.forEach(function (t, k) {
+var L = dist3d(t.p1, t.p2); if (L < PSC.minRot) return;
+var m = meio(t);
+if (k === 0 || (L >= PSC.extraMin && postos.every(function (q) { return dist3d(q, m) > PSC.extraDist; }))) { out[t.id] = true; postos.push(m); }
+});
+});
+return out;
+}
+function produtoPsc(f) { var p = txt(f && f.inst && f.inst.Produto).trim(); return p ? p.toUpperCase() : ""; }
+function recortePsc(t, R) {
+var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, t0 = 0, t1 = 1, P = [-dx, dx, -dz, dz], Q = [t.p1.x - R.x0, R.x1 - t.p1.x, t.p1.z - R.z0, R.z1 - t.p1.z];
+for (var i = 0; i < 4; i++) {
+if (Math.abs(P[i]) < 1e-12) { if (Q[i] < 0) return null; } else { var tt = Q[i] / P[i]; if (P[i] < 0) { if (tt > t1) return null; if (tt > t0) t0 = tt; } else { if (tt < t0) return null; if (tt < t1) t1 = tt; } }
+}
+if (t1 - t0 < 1e-9) return null;
+function pt(u) { return { x: t.p1.x + (t.p2.x - t.p1.x) * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + (t.p2.z - t.p1.z) * u }; }
+var c = {}; for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) c[k] = t[k]; c.p1 = pt(t0); c.p2 = pt(t1); return c;
+}
+function folhaPiscina(c) {
+var D = c.D, a = c.geo.area, KI = HI().K, h = KI.hPeq, T = D.E.T, est = c.modelo.estado, aval = c.modelo.avaliarFam, AP0 = c.AP;
+var trs = arr(c.rede.trechos).filter(function (t) { return /^pisc_/.test(t.sistema) && t.p1 && t.p2; });
+var cxs = arr(c.rede.conexoes).filter(function (k) { return /^pisc_/.test(k.sistema); });
+var fams = arr(est && est.familias).filter(function (f) { return /^hid-pisc-/.test(txt(f.famId)); });
+var HPs = dep("HidPiscina", "./hidpiscina.js"), g = null;
+try { var rc = HPs && HPs.reconhecer ? HPs.reconhecer(est, {}) : null; arr(rc && rc.piscinas).forEach(function (q) { if (!g && q && q.ok !== false && arr(q.contorno).length >= 3) g = q; }); } catch (eG) { g = null; }
+var yRef = g && isFinite(g.yBorda) ? g.yBorda : 0, pres = PSC.sis.filter(function (s) { return trs.some(function (t) { return t.sistema === s; }); });
+function cotaTxt(y) { var v = Math.round((y - yRef) * 100) / 100; return (v > 0 ? "+" : (v < 0 ? "" : "±")) + br(v, 2); }
+var dirV = PSC.vistaDir, tanque = null;
+if (g) {
+var u0g = g.eixo && g.eixo.u ? g.eixo.u : { x: 1, z: 0 }, s0g = g.eixo && isFinite(g.eixo.s0) ? g.eixo.s0 : 0, s1g = g.eixo && isFinite(g.eixo.s1) ? g.eixo.s1 : 1, yA = isFinite(g.yAgua) ? g.yAgua : yRef;
+var pr0 = isFinite(g.profRasa) ? g.profRasa : g.profMedia, pr1 = isFinite(g.profFunda) ? g.profFunda : g.profMedia;
+var fundo = isFinite(pr0) && isFinite(pr1) ? g.contorno.map(function (q) { var tt = Math.abs(s1g - s0g) > 1e-9 ? (q.x * u0g.x + q.z * u0g.z - s0g) / (s1g - s0g) : 0; tt = Math.max(0, Math.min(1, tt)); return { x: q.x, y: yA - (pr0 + (pr1 - pr0) * tt), z: q.z }; }) : null;
+tanque = { borda: g.contorno.map(function (q) { return { x: q.x, y: g.yBorda, z: q.z }; }), agua: g.contorno.map(function (q) { return { x: q.x, y: yA, z: q.z }; }), fundo: fundo, yAgua: yA };
+}
+var seg3 = [], ancoras = [], regCasa = null;
+fams.forEach(function (f) {
+var ls = []; try { ls = linhasLoucas(est, aval, dirV, function (fi) { return fi.id === f.id; }); } catch (eL) { ls = []; }
+var bx = null; ls.forEach(function (sg) { sg.forEach(function (q) { if (!bx) bx = { x0: q[0], x1: q[0], y0: q[1], y1: q[1], z0: q[2], z1: q[2] }; bx.x0 = Math.min(bx.x0, q[0]); bx.x1 = Math.max(bx.x1, q[0]); bx.y0 = Math.min(bx.y0, q[1]); bx.y1 = Math.max(bx.y1, q[1]); bx.z0 = Math.min(bx.z0, q[2]); bx.z1 = Math.max(bx.z1, q[2]); }); });
+var pa = bx ? { x: (bx.x0 + bx.x1) / 2, y: bx.y1, z: (bx.z0 + bx.z1) / 2 } : { x: f.x, y: f.y, z: f.z };
+seg3.push({ f: f, ls: ls, p: pa }); ancoras.push({ f: f, p: pa, yTag: f.y });
+if (f.famId === "hid-pisc-casa-maquinas" && bx) regCasa = { x0: bx.x0 - PSC.margemCasa, x1: bx.x1 + PSC.margemCasa, z0: bx.z0 - PSC.margemCasa, z1: bx.z1 + PSC.margemCasa, y0: bx.y0, y1: bx.y1 };
+});
+function dentroR(p, R) { return !!R && p.x >= R.x0 && p.x <= R.x1 && p.z >= R.z0 && p.z <= R.z1; }
+var nFamC = regCasa ? ancoras.filter(function (o) { return o.f.famId !== "hid-pisc-casa-maquinas" && dentroR(o.p, regCasa); }).length : 0;
+var nTubC = regCasa ? trs.filter(function (t) { return dentroR({ x: (t.p1.x + t.p2.x) / 2, z: (t.p1.z + t.p2.z) / 2 }, regCasa); }).length : 0;
+var denso = !!regCasa && (nFamC >= PSC.densoFam || nTubC >= PSC.densoTubo);
+var siglasPres = {}, listaSig = [];
+fams.forEach(function (f) { var q = PSC.fam[f.famId]; if (q && !siglasPres[q[0]]) { siglasPres[q[0]] = q[1]; listaSig.push(q); } });
+var xL = a.x + 4, wmax = a.w - 8, lh = h * 2.2;
+var nota = "Cotas em m, referidas à borda da piscina (" + (tanque ? "±0,00; N.A. " + cotaTxt(tanque.yAgua) : "cota do modelo") + "). DN em mm. Só as peças e tubos do modelo estão desenhados." + (denso ? " Detalhe A: casa de máquinas ampliada (sem escala)." : "");
+function legenda(desenha, y0) {
+var y = y0, x = xL;
+function tit(s) { if (desenha) D.texto(xL, y + h, s, h, { peso: 0.2 }); y += lh; x = xL; }
+function fluxo(ws, fn) { x = xL; ws.forEach(function (it) { var w = it.w; if (x + w > xL + wmax && x > xL) { x = xL; y += lh; } if (desenha) fn(it, x, y); x += w + 4; }); y += lh; }
+tit("SISTEMAS DA PISCINA");
+fluxo(pres.map(function (s) { var tx = PSC.sigla[s] + " - " + PSC.nome[s]; return { s: s, tx: tx, w: K2.quadro.icone + 1.5 + larg(tx, h) }; }), function (it, xx, yy) {
+poliCheio(D, [[xx, yy + h * 0.1], [xx + K2.quadro.icone, yy + h * 0.1], [xx + K2.quadro.icone, yy + h * 0.8], [xx, yy + h * 0.8]], PSC.cor[it.s], "#000", K2.contornoTubo, PSC.camada[it.s]);
+D.texto(xx + K2.quadro.icone + 1.5, yy + h, it.tx, h, {});
+});
+if (listaSig.length) {
+tit("PEÇAS (sigla e cota ao lado de cada peça no desenho)");
+fluxo(listaSig.map(function (q) { var tx = q[0] + " - " + q[1]; return { tx: tx, w: larg(tx, h) }; }), function (it, xx, yy) { D.texto(xx, yy + h, it.tx, h, {}); });
+}
+AP0.quebrar(nota, h, wmax).forEach(function (s) { if (desenha) D.texto(xL, y + h, s, h, {}); y += h * K2.notaLinha; });
+return y - y0;
+}
+var hLeg = legenda(false, 0) + PSC.folgaLeg, hTit = K2.titulo;
+AP0.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico " + PSC.ang + "°; cotas em m referidas à borda da piscina");
+var painel = null, areaP = { x: a.x, y: a.y, w: a.w, h: a.h };
+if (denso) {
+var pw = a.w * PSC.painelW, ph = (a.h - hTit - hLeg) * PSC.painelH;
+painel = { x: a.x + a.w - pw - 4, y: a.y + hTit + 2, w: pw, h: ph };
+areaP = { x: a.x, y: a.y, w: a.w - pw - 8, h: a.h };
+}
+function vista(area, modo, R, o) {
+o = o || {};
+var seg = [], L = [], S = [], Tt = [], pend = [];
+function obst(b) { S.push({ tipo: "obst", x: 0, y: 0, r: 0, camada: "HID-SIMBOLO", box: b, id: "obst" + S.length, desenhado: true }); }
+var tubosD = [], tubosR = [], cxsD, ancD, segD, tq = !!o.tanque;
+if (modo === "dentro") {
+trs.forEach(function (t) { var r = recortePsc(t, R); if (r) { tubosD.push(r); tubosR.push(r); } });
+cxsD = cxs.filter(function (k) { return dentroR(k, R); });
+ancD = ancoras.filter(function (o2) { return dentroR(o2.p, R); }); segD = seg3.filter(function (o2) { return dentroR(o2.p, R); });
+} else {
+tubosD = trs.slice(); tubosR = modo === "fora" ? trs.filter(function (t) { return !dentroR({ x: (t.p1.x + t.p2.x) / 2, z: (t.p1.z + t.p2.z) / 2 }, R); }) : trs.slice();
+cxsD = cxs; ancD = modo === "fora" ? ancoras.filter(function (o2) { return !dentroR(o2.p, R); }) : ancoras; segD = seg3;
+}
+var us = [], vs = [];
+function junta(p) { var q = projPsc(p); us.push(q.u); vs.push(q.v); }
+if (tq && tanque) { tanque.borda.forEach(junta); tanque.agua.forEach(junta); arr(tanque.fundo).forEach(junta); }
+tubosD.forEach(function (t) { junta(t.p1); junta(t.p2); }); cxsD.forEach(junta);
+segD.forEach(function (o2) { o2.ls.forEach(function (sg) { junta({ x: sg[0][0], y: sg[0][1], z: sg[0][2] }); junta({ x: sg[1][0], y: sg[1][1], z: sg[1][2] }); }); });
+ancD.forEach(function (o2) { junta(o2.p); });
+if (modo === "fora" && R) [R.y0, R.y1].forEach(function (yy) { [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]].forEach(function (q) { junta({ x: q[0], y: yy, z: q[1] }); }); });
+if (!us.length) return;
+var u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), v0 = Math.min.apply(null, vs), v1 = Math.max.apply(null, vs);
+var mgX = o.mgX != null ? o.mgX : PSC.margemX, mgY = o.mgY != null ? o.mgY : PSC.margem, hT0 = o.semTitulo ? 0 : hTit, hL0 = o.semLegenda ? 0 : hLeg;
+var k = Math.min((area.w - 2 * mgX) / Math.max(u1 - u0, 1e-6), (area.h - hT0 - hL0 - 2 * mgY) / Math.max(v1 - v0, 1e-6), o.kMax || PSC.kMax);
+var ox = area.x + (area.w - (u1 - u0) * k) / 2 - u0 * k, oy = area.y + hT0 + mgY + (area.h - hT0 - hL0 - 2 * mgY - (v1 - v0) * k) / 2 - v0 * k;
+function X(p) { var q = projPsc(p); return [q.u * k + ox, q.v * k + oy]; }
+function poli3(pts, fill, op, cam, cor) { D.add('<polygon points="' + pts.map(function (p) { var q = X(p); return n(q[0]) + "," + n(q[1]); }).join(" ") + '" fill="' + fill + '"' + (op != null ? ' fill-opacity="' + op + '"' : "") + ' stroke="' + (cor || K2.arq.contorno) + '" stroke-width="' + n(K2.arq.mm) + '" data-cam="' + cam + '"/>'); }
+if (tq && tanque) {
+if (tanque.fundo) { poli3(tanque.fundo, "none", null, "HID-PSC-FUNDO", PSC.corFundo); tanque.borda.forEach(function (p, i) { var q = X(p), r = X(tanque.fundo[i]); D.linha(q[0], q[1], r[0], r[1], "HID-PSC-FUNDO"); }); }
+poli3(tanque.agua, PSC.corAgua, PSC.alfaAgua, "HID-PSC-NA", PSC.corAgua);
+poli3(tanque.borda, "none", null, "HID-CONTEXTO", K2.arq.contorno);
+}
+segD.forEach(function (o2) { o2.ls.forEach(function (sg) { var A0 = X({ x: sg[0][0], y: sg[0][1], z: sg[0][2] }), B0 = X({ x: sg[1][0], y: sg[1][1], z: sg[1][2] }); D.linha(A0[0], A0[1], B0[0], B0[1], "HID-LOUCA"); }); });
+var itens = [];
+tubosD.forEach(function (t) { itens.push({ tipo: "tubo", t: t, d: (t.p1.x + t.p2.x + t.p1.y + t.p2.y + t.p1.z + t.p2.z) / 2 }); });
+cxsD.forEach(function (kx) { itens.push({ tipo: "cx", k: kx, d: kx.x + kx.y + kx.z + PSC.rConexao * 0.1 }); });
+itens.sort(function (p, q) { return p.d - q.d; });
+var porId = {};
+itens.forEach(function (it) {
+if (it.tipo === "cx") {
+var pc = X(it.k), r = Math.max((it.k.dn || 0) / 1000 * PSC.rConexao * k, K2.perspMin);
+D.add('<circle cx="' + n(pc[0]) + '" cy="' + n(pc[1]) + '" r="' + n(r) + '" fill="#ffffff" stroke="#000" stroke-width="' + n(K2.contornoTubo * 2) + '" data-cam="HID-CONEXAO"/>');
+obst([pc[0] - r * PSC.caixaConexao, pc[1] - r * PSC.caixaConexao, pc[0] + r * PSC.caixaConexao, pc[1] + r * PSC.caixaConexao]); return;
+}
+var t = it.t, A = X(t.p1), Bp = X(t.p2), dx = Bp[0] - A[0], dy = Bp[1] - A[1], Ls = Math.sqrt(dx * dx + dy * dy); if (Ls < 1e-6) return;
+var de = isFinite(+t.diametro) && +t.diametro > 0 ? +t.diametro : (+t.dn || 0) / 1000, w = Math.max(de * k, K2.perspMin) / 2, nx = -dy / Ls * w, ny = dx / Ls * w;
+var pts = [[A[0] + nx, A[1] + ny], [Bp[0] + nx, Bp[1] + ny], [Bp[0] - nx, Bp[1] - ny], [A[0] - nx, A[1] - ny]];
+poliCheio(D, pts, PSC.cor[t.sistema] || "#000", "#000", K2.contornoTubo, PSC.camada[t.sistema] || "HID-SIMBOLO");
+for (var e = 0; e < 4; e++) { var s0 = pts[e], s1 = pts[(e + 1) % 4]; seg.push([s0[0], s0[1], s1[0], s1[1]]); c.chk.tubos.push([s0[0], s0[1], s1[0], s1[1]]); }
+porId[t.id] = { A: A, Bp: Bp, Ls: Ls };
+});
+var rot = corridasPsc(tubosR);
+tubosR.forEach(function (t) {
+var pi = porId[t.id]; if (!pi || !rot[t.id]) return;
+pend.push({ s: PSC.sigla[t.sistema] + " " + (t.dn != null ? "ø" + t.dn : "DN a confirmar"), h: h, tipo: "dn", camada: "HID-TEXTO", trecho: t.id + (modo === "dentro" ? "-det" : ""), anchors: KI.ancoras.map(function (f) { return [pi.A[0] + (pi.Bp[0] - pi.A[0]) * f, pi.A[1] + (pi.Bp[1] - pi.A[1]) * f]; }), prio: 3, comprimento: pi.Ls, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
+});
+var chamadaOn = !(c.cfg && c.cfg.chamadaProduto === false), cl = [];
+ancD.forEach(function (o2) {
+var f = o2.f, q = PSC.fam[f.famId]; if (!q) return;
+var p = X(o2.p), tag = q[0] + "  " + cotaTxt(o2.yTag), pr = produtoPsc(f), nome = chamadaOn && (pr || !/^hid-pisc-registro$/.test(f.famId)) ? q[1] + (pr ? " - " + pr : "") : "", hit = null;
+cl.forEach(function (z) { if (!hit && z.tag === tag && z.nome === nome && Math.hypot(z.p[0] - p[0], z.p[1] - p[1]) <= PSC.agrupaMm) hit = z; });
+if (hit) { hit.n++; hit.pts.push(p); hit.ids.push(f.id); } else cl.push({ tag: tag, nome: nome, p: p, pts: [p], n: 1, ids: [f.id] });
+});
+cl.forEach(function (z) {
+var cen = z.pts.reduce(function (s2, q) { return [s2[0] + q[0] / z.pts.length, s2[1] + q[1] / z.pts.length]; }, [0, 0]), pre = z.n > 1 ? z.n + "× " : "";
+S.push({ tipo: "ponto", x: cen[0], y: cen[1], r: KI.rPonto, camada: "HID-SIMBOLO", box: [cen[0] - KI.rPonto, cen[1] - KI.rPonto, cen[0] + KI.rPonto, cen[1] + KI.rPonto], id: z.ids[0] + (modo === "dentro" ? "-det" : "") });
+pend.push({ s: pre + z.tag, h: h, tipo: "aparelho", camada: "HID-TEXTO", trecho: z.ids[0] + (modo === "dentro" ? "-det" : ""), anchors: z.pts, prio: 0, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
+if (z.nome) pend.push({ s: pre + z.nome, h: h, tipo: "registro", camada: "HID-TEXTO", trecho: z.ids[0] + "-produto" + (modo === "dentro" ? "-det" : ""), anchors: z.pts, prio: 2, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 * 1.6 });
+});
+if (tq && tanque) {
+var cantos = tanque.borda.map(X).sort(function (p0, q0) { return q0[1] - p0[1]; })[0], cw = tanque.agua.map(X).sort(function (p0, q0) { return p0[1] - q0[1]; })[0];
+pend.push({ s: "BORDA ±0,00", h: h, tipo: "nivel", camada: "HID-TEXTO", trecho: "borda", anchors: [cantos], prio: 0, d0: K2.perspD0 });
+pend.push({ s: "N.A. " + cotaTxt(tanque.yAgua), h: h, tipo: "nivel", camada: "HID-TEXTO", trecho: "na", anchors: [cw], prio: 0, d0: K2.perspD0 });
+}
+if (modo === "fora" && R) {
+var yT = R.y1, cantosR = [[R.x0, R.z0], [R.x1, R.z0], [R.x1, R.z1], [R.x0, R.z1]].map(function (q) { return { x: q[0], y: yT, z: q[1] }; });
+poli3(cantosR, "none", null, "HID-PSC-DET", "#000");
+var pa0 = cantosR.map(X).sort(function (p0, q0) { return p0[1] - q0[1]; })[0];
+pend.push({ s: "DETALHE A", h: h, tipo: "nivel", camada: "HID-TEXTO", trecho: "marca-detalhe", anchors: [pa0], prio: 0, d0: K2.perspD0 * 2 });
+}
+if (painel && modo !== "dentro") obst([painel.x - 1, painel.y - 1, painel.x + painel.w + 1, painel.y + painel.h + 1]);
+HI().afastar(pend, S, L, Tt, seg, c.avisos);
+desenhar(D, { linhas: L, simbolos: S, textos: Tt }, 0, 0, c.chk);
+c.prims.push({ linhas: L, simbolos: S, textos: Tt, trechos: tubosD.map(function (t) { return t.id; }) });
+}
+vista(areaP, denso ? "fora" : "tudo", regCasa, { tanque: true });
+if (painel) {
+D.ret(painel.x, painel.y, painel.w, painel.h, "HID-TABELA");
+D.texto(painel.x + 3, painel.y + h * 1.6, "DETALHE A - CASA DE MÁQUINAS (ampliado, sem escala)", h, { peso: 0.2 });
+vista({ x: painel.x, y: painel.y + h * 2.4, w: painel.w, h: painel.h - h * 2.4 }, "dentro", regCasa, { tanque: false, semTitulo: true, semLegenda: true, mgX: PSC.painelMg, mgY: PSC.painelMg, kMax: PSC.kMaxDet });
+}
+legenda(true, a.y + a.h - hLeg + T.nota);
+return { escala: "SEM ESCALA" };
+}
 var ORD_SIS_P = ["agua_fria", "agua_quente", "esgoto", "ventilacao", "pluvial", "industrial", "gas"];
 function dist3d(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
 function nomeFamilia(fid) { var H = dep("HidFamilias", "./hidfamilias.js"), f = null; try { f = H ? H.porId(fid) : null; } catch (e) { f = null; } return f && f.nome ? txt(f.nome).toLowerCase() : txt(fid).replace(/^hid-/, "").replace(/-/g, " "); }
@@ -30188,7 +30389,7 @@ var _int = { produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (
 bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
 CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
 paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
-var HidPranchas = { _int: _int, VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
+var HidPranchas = { folhaPiscina: folhaPiscina, temPiscina: temPiscina, PSC: PSC, _int: _int, VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
 configPadrao: configPadrao, normalizarConfig: normalizarConfig, ambientesAuto: ambientesAuto, paraDxf: paraDxf, conferirFolha: conferirFolha,
 CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, SISTEMAS_FOLHA: SISTEMAS_FOLHA, FORMATOS: FORMATOS_OK, _segQuad: segQuad, _aciDe: aciDe };
 global.HidPranchas = HidPranchas;
@@ -31121,7 +31322,12 @@ return nm + "  " + partes.join(" · ");
 }
 var prim = II.plantaPrim(c.rede, c.ix, "", d.trs, c.pavs, s, { medio: true, nome: c.nomeAp, colunas: c.colunas, obstaculos: II.obstaculosFormas(fm, s), segExtra: II.bordasTubo(fm, s, 0, 0), deTubo: II.deTubo, textoPonto: textoPonto });
 arr(prim.avisos).forEach(function (m) { a0.push("Ambiente " + am.nome + ": " + m); });
-II.desenhar(D, prim, ox, oy, chk);
+if (fotoP) {
+var chk2 = { tubos: [], cotas: chk.cotas, pecas: chk.pecas }, aBox = { x0: (am.x0 - 0.12) * s + ox, x1: (am.x1 + 0.12) * s + ox, z0: (am.z0 - 0.12) * s + oy, z1: (am.z1 + 0.12) * s + oy };
+II.desenhar(D, prim, ox, oy, chk2);
+chk2.tubos.forEach(function (q) { var r = clipSeg(q[0], q[1], q[2], q[3], aBox); if (r) chk.tubos.push(r); });
+if (chk2.pecas && !chk.pecas) chk.pecas = chk2.pecas;
+} else II.desenhar(D, prim, ox, oy, chk);
 c.prims.push(prim);
 desenharLocacao(D, afinarLocacao(locCh, s, D.E.T.cota), box, s, ox, oy, chk);
 return { den: den, rotularCg: rotularCaixasGordura };
@@ -31282,7 +31488,11 @@ var seg = [], obst = [];
 arr(d.trs).forEach(function (t) {
 var cq = t.vertical ? [t.p1.x, t.p1.z, t.p2.x, t.p2.z] : clipSeg(t.p1.x, t.p1.z, t.p2.x, t.p2.z, box); if (!cq) return;
 var hw = Math.max(II.deTubo(t) / 1000 * s / 2, 0.4), a = [cq[0] * s + ox, cq[1] * s + oy], b = [cq[2] * s + ox, cq[3] * s + oy];
-if (t.vertical) obst.push([a[0] - hw, a[1] - hw, a[0] + hw, a[1] + hw]); else { seg.push([a[0], a[1], b[0], b[1], hw]); chk.tubos.push([a[0], a[1], b[0], b[1]]); }
+if (t.vertical) obst.push([a[0] - hw, a[1] - hw, a[0] + hw, a[1] + hw]); else {
+seg.push([a[0], a[1], b[0], b[1], hw]);
+var cc2 = clipSeg(t.p1.x, t.p1.z, t.p2.x, t.p2.z, { x0: am.x0 - 0.12, x1: am.x1 + 0.12, z0: am.z0 - 0.12, z1: am.z1 + 0.12 });
+if (cc2) chk.tubos.push([cc2[0] * s + ox, cc2[1] * s + oy, cc2[2] * s + ox, cc2[3] * s + oy]);
+}
 });
 arr(d.cxs).forEach(function (cx) { var r = Math.max((cx.dn || 50) / 1000 * s * 0.8, 1); obst.push([cx.x * s + ox - r, cx.z * s + oy - r, cx.x * s + ox + r, cx.z * s + oy + r]); });
 arr(d.pecas).forEach(function (pc) { var r = Math.max(0.1 * s, 1.6); obst.push([pc.x * s + ox - r, pc.z * s + oy - r, pc.x * s + ox + r, pc.z * s + oy + r]); });
@@ -43074,7 +43284,7 @@ cores: { pisc_succao: "#00838F", pisc_retorno: "#29B6F6", pisc_hidro: "#7E57C2",
 var SIGLA_DISP = { coadeira: "CO", aspiracao: "AS", retorno: "RE", ralo: "RF", hidro: "HI", succao_hidro: "SH", refletor: "IL" };
 function estiloP() {
 var H = HPR(), A = AP(), E = H && H.estilo ? H.estilo() : (A ? A.estilo() : null); if (!E) return null;
-Object.keys(K.cores).forEach(function (s) { E.camadas["PISC-" + s] = { mm: K.pena, dash: null, cor: K.cores[s] }; });
+Object.keys(K.cores).forEach(function (s) { var PS = H.PSC && H.PSC.cor; E.camadas["PISC-" + s] = { mm: K.pena, dash: null, cor: (PS && PS[s]) || K.cores[s] }; });
 E.camadas["PISC-AGUA"] = { mm: K.penaFina, dash: "4 2", cor: "#1E6FD9" };
 return E;
 }
@@ -43083,10 +43293,11 @@ function escalaQueCabe(wM, hM, wMm, hMm) { for (var i = 0; i < K.escalas.length;
 function Janela(b, jan, esc) { this.b = b; this.j = jan; this.e = esc; this.k = 1000 / esc; var wM = (b.x1 - b.x0) * this.k, hM = (b.y1 - b.y0) * this.k; this.ox = jan.x + (jan.w - wM) / 2; this.oy = jan.y + (jan.h - hM) / 2; }
 Janela.prototype.p = function (u, v) { return [this.ox + (u - this.b.x0) * this.k, this.oy + (v - this.b.y0) * this.k]; };
 function tituloVista(D, x, y, t, esc) { D.texto(x, y, t, K.hTitulo, { cor: "#000" }); if (esc) D.texto(x, y + K.hTitulo + 1.5, "ESCALA 1:" + esc, K.hTexto); }
+function cortarTxt(s, w, h) { s = txt(s); var A0 = AP(); while (s.length > 4 && A0 && A0.largTexto && A0.largTexto(s, h) > w) s = s.slice(0, -1); return s; }
 function tabelaP(D, x, y, cab, linhas, larg) {
 var lh = K.tabLin, W = larg.reduce(function (a, b) { return a + b; }, 0), yy = y;
 D.ret(x, yy, W, lh, "HID-TABELA"); var xx = x; cab.forEach(function (c, i) { D.texto(xx + 1, yy + lh - 1.2, c, K.hTab); xx += larg[i]; }); yy += lh;
-linhas.forEach(function (l) { D.ret(x, yy, W, lh, "HID-TABELA"); var x2 = x; l.forEach(function (c, i) { D.texto(x2 + 1, yy + lh - 1.2, txt(c).slice(0, Math.max(4, Math.floor(larg[i] / (K.hTab * 0.55)))), K.hTab); x2 += larg[i]; }); yy += lh; });
+linhas.forEach(function (l) { D.ret(x, yy, W, lh, "HID-TABELA"); var x2 = x; l.forEach(function (c, i) { D.texto(x2 + 1, yy + lh - 1.2, cortarTxt(c, larg[i] - 1.5, K.hTab), K.hTab); x2 += larg[i]; }); yy += lh; });
 return yy;
 }
 function pranchas(estado, rede, opcoes) {
@@ -43099,7 +43310,22 @@ var trs = arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter
 var fams = arr(estado && estado.familias).filter(function (f) { return String(f.id).indexOf(pid + "-") === 0; });
 var formato = opcoes.formato || K.formato, geo = P.geometria(formato, "paisagem", "RA"), ar = geo.area;
 var defs = [], prefixo = (opcoes.prefixo || "PIS").toUpperCase(), rev = opcoes.revisao || "R00", data = opcoes.data || hoje();
-function novaFolha(id, titulo) { var D = new A.Desenho(E, []); defs.push({ id: id, titulo: titulo, D: D, escala: "INDICADA" }); return defs[defs.length - 1]; }
+function evitarSobreposicao(D) {
+var base = D.texto, DY = [0, 1.3, -1.3, 2.6, -2.6, 3.9, -3.9];
+D.texto = function (x, y, s0, h, o) {
+o = o || {}; if (o.rot || !txt(s0) || !this.caixas) return base.call(this, x, y, s0, h, o);
+var self = this, w = null;
+for (var k = 0; k < DY.length; k++) {
+var n0 = this.caixas.length; w = base.call(this, x, y + DY[k] * h, s0, h, o);
+var nova = this.caixas[this.caixas.length - 1], bate = this.caixas.length > n0 && this.caixas.slice(0, -1).some(function (c0) { return AP().sobreposicoes([c0, nova]).length; });
+if (!bate || k === DY.length - 1) return w;
+this.s.pop(); this.tb.pop(); this.caixas.pop();
+}
+return w;
+};
+return D;
+}
+function novaFolha(id, titulo) { var D = evitarSobreposicao(new A.Desenho(E, [])); defs.push({ id: id, titulo: titulo, D: D, escala: "INDICADA" }); return defs[defs.length - 1]; }
 function cantoCasa(lx, lz) { var c = Math.cos(cm.rotY), s = Math.sin(cm.rotY); return { x: cm.x + lx * c + lz * s, z: cm.z - lx * s + lz * c }; }
 function contornoCasa(m) { var hc = casa.C / 2 + m, hl = casa.L / 2 + m; return [cantoCasa(-hc, -hl), cantoCasa(hc, -hl), cantoCasa(hc, hl), cantoCasa(-hc, hl)]; }
 (function () {
@@ -43132,7 +43358,7 @@ var ts = trs.filter(function (t) { return t.id && t.sistema === l.sistema; }).fi
 var meu = null; ts.forEach(function (t) { var L = Math.sqrt(Math.pow(t.p1.x - t.p2.x, 2) + Math.pow(t.p1.z - t.p2.z, 2)); if (Math.abs(t.p1.y - t.p2.y) < 1e-6 && (!meu || L > meu.L) && !rotulados[t.id] && t.piscLinha === l.id) meu = { t: t, L: L }; });
 if (!meu) return; rotulados[meu.t.id] = 1;
 var m = J.p((meu.t.p1.x + meu.t.p2.x) / 2, (meu.t.p1.z + meu.t.p2.z) / 2), hor = Math.abs(meu.t.p1.x - meu.t.p2.x) > Math.abs(meu.t.p1.z - meu.t.p2.z);
-D.texto(m[0] + (hor ? 0 : 1.2), m[1] - (hor ? 1.2 : 0), (NOME_SIS[l.sistema] || "").toUpperCase().slice(0, 4) + " Ø" + l.dn, K.hRot, { cor: K.cores[l.sistema], rot: hor ? 0 : -90 });
+D.texto(m[0] + (hor ? 0 : 1.2), m[1] - (hor ? 1.2 : 0), (NOME_SIS[l.sistema] || "").toUpperCase().slice(0, 4) + " Ø" + l.dn, K.hRot, { cor: (HPR() && HPR().PSC && HPR().PSC.cor[l.sistema]) || K.cores[l.sistema], rot: hor ? 0 : -90 });
 });
 var cont = {};
 arr(rede.dispositivos).forEach(function (dv) {
@@ -43231,26 +43457,12 @@ else if (/hid-pisc-bomba/.test(f.famId)) { var Cc = num(I.Comprimento, 0.56), Ha
 if (d.npsh) D.texto(jan2.x + jan2.w + 8, jan2.y + 6, "Eixo da bomba " + (d.npsh.desnivel >= 0 ? f2(d.npsh.desnivel) + " m ABAIXO" : f2(-d.npsh.desnivel) + " m ACIMA") + " do N.A. — NPSH disponível " + f2(d.npsh.disp) + " m", K.hTexto);
 })();
 (function () {
-var F = novaFolha("iso", "PISCINA — ISOMÉTRICO DAS TUBULAÇÕES"), D = F.D, a = K.isoAng * Math.PI / 180;
-function iso(p) { return [(p.x - p.z) * Math.cos(a), -(p.y) - (p.x + p.z) * Math.sin(a) * 0]; }
-function isoP(p) { return [(p.x - p.z) * Math.cos(a), -p.y + (p.x + p.z) * Math.sin(a)]; }
-var pts = []; trs.forEach(function (t) { pts.push(isoP(t.p1)); pts.push(isoP(t.p2)); }); g.contorno.forEach(function (p) { pts.push(isoP({ x: p.x, y: g.yBorda, z: p.z })); });
-if (!pts.length) return; void iso;
-var b = caixaDe(pts); b.x0 -= 0.8; b.y0 -= 0.8; b.x1 += 0.8; b.y1 += 0.8;
-var jan = { x: ar.x + K.margem, y: ar.y + K.margem + 14, w: ar.w - 2 * K.margem, h: ar.h - 2 * K.margem - 30 }, esc = escalaQueCabe(b.x1 - b.x0, b.y1 - b.y0, jan.w, jan.h), J = new Janela(b, jan, esc);
-F.escala = "SEM ESCALA";
-tituloVista(D, ar.x + K.margem, ar.y + K.margem + 4, "ISOMÉTRICO DAS TUBULAÇÕES DA PISCINA (sem escala)", null);
-D.poli(g.contorno.map(function (p) { var q = isoP({ x: p.x, y: g.yBorda, z: p.z }); return J.p(q[0], q[1]); }), "HID-CONTEXTO", true);
-trs.forEach(function (t) { var p1 = isoP(t.p1), p2 = isoP(t.p2), A1 = J.p(p1[0], p1[1]), A2 = J.p(p2[0], p2[1]); D.linha(A1[0], A1[1], A2[0], A2[1], "PISC-" + t.sistema); });
-var rot = {};
-arr(rede.linhas).forEach(function (l) {
-var ts = trs.filter(function (t) { return t.piscLinha === l.id; }); if (!ts.length) return;
-var t = ts[Math.floor(ts.length / 2)], m = isoP({ x: (t.p1.x + t.p2.x) / 2, y: (t.p1.y + t.p2.y) / 2, z: (t.p1.z + t.p2.z) / 2 }), q = J.p(m[0], m[1]);
-var k = Math.round(q[0]) + "|" + Math.round(q[1]); if (rot[k]) return; rot[k] = 1;
-D.texto(q[0] + 1, q[1] - 1, l.id.replace(/^[^-]*-/, "").toUpperCase() + " Ø" + l.dn, K.hRot, { cor: K.cores[l.sistema] });
-});
-var ly = ar.y + ar.h - 26, lx = ar.x + K.margem;
-Object.keys(K.cores).forEach(function (s, i) { D.linha(lx + i * 48, ly, lx + i * 48 + 10, ly, "PISC-" + s); D.texto(lx + i * 48 + 12, ly + 1, NOME_SIS[s], K.hTexto); });
+var HPx = HPR(); if (!HPx || !HPx.folhaPiscina) { avisos.push("PIS-04: o gerador de pranchas hidro (js/hidpranchas.js) não carregou; folha do isométrico não gerada."); return; }
+var F = novaFolha("iso", "PERSPECTIVA ISOMÉTRICA — PISCINA"), rdI = null;
+try { var BIx = BI(); rdI = BIx && BIx.rede && typeof opcoes.avaliarFam === "function" ? BIx.rede(estado, opcoes.avaliarFam) : null; } catch (eR) { rdI = null; }
+if (!rdI || !arr(rdI.trechos).some(function (t) { return /^pisc_/.test(t.sistema); })) rdI = { trechos: trs, conexoes: rdI ? arr(rdI.conexoes) : [] };
+F.escala = "SEM ESCALA"; F.chk = { tubos: [], cotas: [] };
+HPx.folhaPiscina({ D: F.D, geo: geo, AP: A, rede: rdI, modelo: { estado: estado, avaliarFam: opcoes.avaliarFam }, titulo: F.titulo, chk: F.chk, avisos: avisos, prims: [], cfg: opcoes.cfg || {} });
 })();
 (function () {
 var F = novaFolha("detalhes", "PISCINA — DETALHES TÍPICOS, VERIFICAÇÕES E PENDÊNCIAS"), D = F.D, x0 = ar.x + K.margem, y0 = ar.y + K.margem + 4;
@@ -43285,7 +43497,9 @@ var nn = function (v) { return (Math.round(v * 100) / 100).toString(); };
 var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + nn(W) + 'mm" height="' + nn(Hp) + 'mm" viewBox="0 0 ' + nn(W) + " " + nn(Hp) + '" font-family="' + (A.FONTE || "Arial") + '" data-folha="pisc-' + esc(f.id) + '" data-numero="' + esc(numero) + '">' +
 "<title>" + esc(numero + " - " + f.titulo + " - " + rev) + "</title><rect x=\"0\" y=\"0\" width=\"" + nn(W) + "\" height=\"" + nn(Hp) + "\" fill=\"#fff\"/><g data-corpo=\"1\">" + f.D.svg() + "</g><g data-folha-moldura=\"1\">" + Fd.svg() + "</g></svg>";
 if (/NaN|undefined/.test(svg)) avisos.push("Folha " + numero + ": há valor inválido no desenho.");
-return { id: "pisc-" + f.id, rotulo: rot, numero: numero, titulo: f.titulo, tipo: "piscina", grupo: "piscina", formato: formato, escala: f.escala, svg: svg, caixasTexto: f.D.caixas || [] };
+var cxT = f.D.caixas || [], pares = A.sobreposicoes ? A.sobreposicoes(cxT) : [], HPc = HPR(), cf = f.chk && HPc && HPc.conferirFolha ? HPc.conferirFolha(cxT, f.chk) : { rotuloTubo: [], rotuloCota: [] };
+if (pares.length || cf.rotuloTubo.length || cf.rotuloCota.length) avisos.push("Folha " + numero + ": " + pares.length + " texto(s) sobreposto(s), " + cf.rotuloTubo.length + " rótulo(s) sobre tubo, " + cf.rotuloCota.length + " sobre cota.");
+return { id: "pisc-" + f.id, rotulo: rot, numero: numero, titulo: f.titulo, tipo: "piscina", grupo: "piscina", formato: formato, escala: f.escala, svg: svg, caixasTexto: cxT, verificacao: { textos: cxT.length, sobreposicoes: pares.length, rotuloTubo: cf.rotuloTubo.length, rotuloCota: cf.rotuloCota.length } };
 });
 return { ok: true, folhas: folhas, avisos: avisos, prefixo: prefixo, revisao: rev };
 }
@@ -43297,7 +43511,7 @@ return { ok: m.ok && u.ok, memorial: m.ok ? "<section data-piscina=\"memorial\" 
 function pacote(estado, avaliarFam, rede, info, opcoes) {
 var m = memorial(rede, info); if (!m.ok) return { ok: false, motivo: m.motivo };
 var I = info || {}, o = opcoes || {}, q = quantitativo(estado, avaliarFam, rede), pr = null;
-try { pr = pranchas(estado, rede, { obra: o.obra || (I.obra || {}).nome, responsavel: o.responsavel || (I.responsavel || {}).nome, registro: o.registro || (I.responsavel || {}).crea, empresa: o.empresa || (I.empresa || {}).nome }); } catch (e) { pr = { ok: false, avisos: [String(e && e.message || e)] }; }
+try { pr = pranchas(estado, rede, { obra: o.obra || (I.obra || {}).nome, responsavel: o.responsavel || (I.responsavel || {}).nome, registro: o.registro || (I.responsavel || {}).crea, empresa: o.empresa || (I.empresa || {}).nome, avaliarFam: avaliarFam }); } catch (e) { pr = { ok: false, avisos: [String(e && e.message || e)] }; }
 var lista = "<h2>Lista de material</h2>" + tabela(["Grupo", "Descrição", "Un.", "Qtd.", "SINAPI", "Situação"], q.linhas.map(function (l) { return [l.grupo, l.descricao, l.unidade, l.quantidade, l.codigo, l.status]; }), [3]);
 var folhas = pr && pr.ok ? pr.folhas.map(function (f) { return "<div style=\"margin:8px 0\">" + f.svg + "</div>"; }).join("") : "<p class=\"pend\">Pranchas não geradas: " + esc(arr(pr && pr.avisos).join("; ")) + "</p>";
 var html = m.html.replace(/<\/body>/i, "<div style=\"page-break-before:always\">" + lista + "</div><div style=\"page-break-before:always\"><h2>Pranchas</h2>" + folhas + "</div></body>");
@@ -43478,7 +43692,7 @@ return q;
 },
 pranchas: function () {
 var D = dep("HidPiscinaDoc"), R = U._rede(), c = U._ctx(); if (!D || !R || !c) return null;
-var info = U._info(), r = D.pranchas(c.estado, R, { obra: info.obra.nome, responsavel: info.responsavel.nome, registro: info.responsavel.crea, empresa: info.empresa.nome });
+var info = U._info(), r = D.pranchas(c.estado, R, { obra: info.obra.nome, responsavel: info.responsavel.nome, registro: info.responsavel.crea, empresa: info.empresa.nome, avaliarFam: c.avaliarFam });
 U.ultimasPranchas = r;
 if (r.ok) U._abrir("<!doctype html><html><head><meta charset=\"utf-8\"><title>Pranchas da piscina</title><style>body{margin:0;background:#888}svg{display:block;margin:10px auto;background:#fff;width:96vw;height:auto}</style></head><body>" + r.folhas.map(function (f) { return f.svg; }).join("") + "</body></html>");
 return r;
@@ -43579,7 +43793,7 @@ var out = p0.apply(this, arguments);
 try {
 var R = U._rede(), D = dep("HidPiscinaDoc");
 if (out && out.ok && R && D && modelo && modelo.estado) {
-var o = opcoes || {}, r = D.pranchas(modelo.estado, R, { obra: o.obra, responsavel: o.responsavel, registro: o.registro, empresa: o.empresa, logo: o.logo, revisao: out.revisao, formato: out.folhas[0] && out.folhas[0].formato });
+var o = opcoes || {}, r = D.pranchas(modelo.estado, R, { obra: o.obra, responsavel: o.responsavel, registro: o.registro, empresa: o.empresa, logo: o.logo, avaliarFam: modelo.avaliarFam, revisao: out.revisao, formato: out.folhas[0] && out.folhas[0].formato });
 if (r.ok) { out.folhas = out.folhas.concat(r.folhas); out.avisos = arr(out.avisos).concat(r.avisos); }
 }
 } catch (e) { if (out && out.avisos) out.avisos.push("piscina: " + (e && e.message ? e.message : e)); }

@@ -207,7 +207,7 @@
     },
     pranchas: function () {
       var D = dep("HidPiscinaDoc"), R = U._rede(), c = U._ctx(); if (!D || !R || !c) return null;
-      var info = U._info(), r = D.pranchas(c.estado, R, { obra: info.obra.nome, responsavel: info.responsavel.nome, registro: info.responsavel.crea, empresa: info.empresa.nome });
+      var info = U._info(), r = D.pranchas(c.estado, R, { obra: info.obra.nome, responsavel: info.responsavel.nome, registro: info.responsavel.crea, empresa: info.empresa.nome, avaliarFam: c.avaliarFam });
       U.ultimasPranchas = r;
       if (r.ok) U._abrir("<!doctype html><html><head><meta charset=\"utf-8\"><title>Pranchas da piscina</title><style>body{margin:0;background:#888}svg{display:block;margin:10px auto;background:#fff;width:96vw;height:auto}</style></head><body>" + r.folhas.map(function (f) { return f.svg; }).join("") + "</body></html>");
       return r;
@@ -312,7 +312,7 @@
         try {
           var R = U._rede(), D = dep("HidPiscinaDoc");
           if (out && out.ok && R && D && modelo && modelo.estado) {
-            var o = opcoes || {}, r = D.pranchas(modelo.estado, R, { obra: o.obra, responsavel: o.responsavel, registro: o.registro, empresa: o.empresa, logo: o.logo, revisao: out.revisao, formato: out.folhas[0] && out.folhas[0].formato });
+            var o = opcoes || {}, r = D.pranchas(modelo.estado, R, { obra: o.obra, responsavel: o.responsavel, registro: o.registro, empresa: o.empresa, logo: o.logo, avaliarFam: modelo.avaliarFam, revisao: out.revisao, formato: out.folhas[0] && out.folhas[0].formato });
             if (r.ok) { out.folhas = out.folhas.concat(r.folhas); out.avisos = arr(out.avisos).concat(r.avisos); }
           }
         } catch (e) { if (out && out.avisos) out.avisos.push("piscina: " + (e && e.message ? e.message : e)); }

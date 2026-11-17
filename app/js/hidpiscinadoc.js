@@ -238,7 +238,7 @@
   var SIGLA_DISP = { coadeira: "CO", aspiracao: "AS", retorno: "RE", ralo: "RF", hidro: "HI", succao_hidro: "SH", refletor: "IL" };
   function estiloP() {
     var H = HPR(), A = AP(), E = H && H.estilo ? H.estilo() : (A ? A.estilo() : null); if (!E) return null;
-    Object.keys(K.cores).forEach(function (s) { E.camadas["PISC-" + s] = { mm: K.pena, dash: null, cor: K.cores[s] }; });
+    Object.keys(K.cores).forEach(function (s) { var PS = H.PSC && H.PSC.cor; E.camadas["PISC-" + s] = { mm: K.pena, dash: null, cor: (PS && PS[s]) || K.cores[s] }; });   /* as MESMAS cores próprias da PIS-04 em todas as folhas PIS */
     E.camadas["PISC-AGUA"] = { mm: K.penaFina, dash: "4 2", cor: "#1E6FD9" };
     return E;
   }
@@ -248,10 +248,12 @@
   function Janela(b, jan, esc) { this.b = b; this.j = jan; this.e = esc; this.k = 1000 / esc; var wM = (b.x1 - b.x0) * this.k, hM = (b.y1 - b.y0) * this.k; this.ox = jan.x + (jan.w - wM) / 2; this.oy = jan.y + (jan.h - hM) / 2; }
   Janela.prototype.p = function (u, v) { return [this.ox + (u - this.b.x0) * this.k, this.oy + (v - this.b.y0) * this.k]; };
   function tituloVista(D, x, y, t, esc) { D.texto(x, y, t, K.hTitulo, { cor: "#000" }); if (esc) D.texto(x, y + K.hTitulo + 1.5, "ESCALA 1:" + esc, K.hTexto); }
+  /* corta o texto da célula pela LARGURA MEDIDA (não por contagem de letras): o texto de uma coluna nunca entra na vizinha (17/11/2026: sobreposição = 0) */
+  function cortarTxt(s, w, h) { s = txt(s); var A0 = AP(); while (s.length > 4 && A0 && A0.largTexto && A0.largTexto(s, h) > w) s = s.slice(0, -1); return s; }   // hid:ok 4 = mínimo de letras
   function tabelaP(D, x, y, cab, linhas, larg) {
     var lh = K.tabLin, W = larg.reduce(function (a, b) { return a + b; }, 0), yy = y;
     D.ret(x, yy, W, lh, "HID-TABELA"); var xx = x; cab.forEach(function (c, i) { D.texto(xx + 1, yy + lh - 1.2, c, K.hTab); xx += larg[i]; }); yy += lh;
-    linhas.forEach(function (l) { D.ret(x, yy, W, lh, "HID-TABELA"); var x2 = x; l.forEach(function (c, i) { D.texto(x2 + 1, yy + lh - 1.2, txt(c).slice(0, Math.max(4, Math.floor(larg[i] / (K.hTab * 0.55)))), K.hTab); x2 += larg[i]; }); yy += lh; });
+    linhas.forEach(function (l) { D.ret(x, yy, W, lh, "HID-TABELA"); var x2 = x; l.forEach(function (c, i) { D.texto(x2 + 1, yy + lh - 1.2, cortarTxt(c, larg[i] - 1.5, K.hTab), K.hTab); x2 += larg[i]; }); yy += lh; });
     return yy;
   }
   /* hid:geometria-fim */
@@ -266,7 +268,23 @@
     var fams = arr(estado && estado.familias).filter(function (f) { return String(f.id).indexOf(pid + "-") === 0; });
     var formato = opcoes.formato || K.formato, geo = P.geometria(formato, "paisagem", "RA"), ar = geo.area;
     var defs = [], prefixo = (opcoes.prefixo || "PIS").toUpperCase(), rev = opcoes.revisao || "R00", data = opcoes.data || hoje();
-    function novaFolha(id, titulo) { var D = new A.Desenho(E, []); defs.push({ id: id, titulo: titulo, D: D, escala: "INDICADA" }); return defs[defs.length - 1]; }
+    /* o texto que cairia em cima de outro é empurrado (para baixo, para cima, para os lados) até a 1ª posição livre: sobreposição = 0 em todas as folhas PIS */
+    function evitarSobreposicao(D) {
+      var base = D.texto, DY = [0, 1.3, -1.3, 2.6, -2.6, 3.9, -3.9];   // hid:ok passos do empurrão em alturas de letra
+      D.texto = function (x, y, s0, h, o) {
+        o = o || {}; if (o.rot || !txt(s0) || !this.caixas) return base.call(this, x, y, s0, h, o);
+        var self = this, w = null;
+        for (var k = 0; k < DY.length; k++) {
+          var n0 = this.caixas.length; w = base.call(this, x, y + DY[k] * h, s0, h, o);
+          var nova = this.caixas[this.caixas.length - 1], bate = this.caixas.length > n0 && this.caixas.slice(0, -1).some(function (c0) { return AP().sobreposicoes([c0, nova]).length; });
+          if (!bate || k === DY.length - 1) return w;
+          this.s.pop(); this.tb.pop(); this.caixas.pop();
+        }
+        return w;
+      };
+      return D;
+    }
+    function novaFolha(id, titulo) { var D = evitarSobreposicao(new A.Desenho(E, [])); defs.push({ id: id, titulo: titulo, D: D, escala: "INDICADA" }); return defs[defs.length - 1]; }
     function cantoCasa(lx, lz) { var c = Math.cos(cm.rotY), s = Math.sin(cm.rotY); return { x: cm.x + lx * c + lz * s, z: cm.z - lx * s + lz * c }; }
     function contornoCasa(m) { var hc = casa.C / 2 + m, hl = casa.L / 2 + m; return [cantoCasa(-hc, -hl), cantoCasa(hc, -hl), cantoCasa(hc, hl), cantoCasa(-hc, hl)]; }
 
@@ -307,7 +325,7 @@
         var meu = null; ts.forEach(function (t) { var L = Math.sqrt(Math.pow(t.p1.x - t.p2.x, 2) + Math.pow(t.p1.z - t.p2.z, 2)); if (Math.abs(t.p1.y - t.p2.y) < 1e-6 && (!meu || L > meu.L) && !rotulados[t.id] && t.piscLinha === l.id) meu = { t: t, L: L }; });
         if (!meu) return; rotulados[meu.t.id] = 1;
         var m = J.p((meu.t.p1.x + meu.t.p2.x) / 2, (meu.t.p1.z + meu.t.p2.z) / 2), hor = Math.abs(meu.t.p1.x - meu.t.p2.x) > Math.abs(meu.t.p1.z - meu.t.p2.z);
-        D.texto(m[0] + (hor ? 0 : 1.2), m[1] - (hor ? 1.2 : 0), (NOME_SIS[l.sistema] || "").toUpperCase().slice(0, 4) + " Ø" + l.dn, K.hRot, { cor: K.cores[l.sistema], rot: hor ? 0 : -90 });
+        D.texto(m[0] + (hor ? 0 : 1.2), m[1] - (hor ? 1.2 : 0), (NOME_SIS[l.sistema] || "").toUpperCase().slice(0, 4) + " Ø" + l.dn, K.hRot, { cor: (HPR() && HPR().PSC && HPR().PSC.cor[l.sistema]) || K.cores[l.sistema], rot: hor ? 0 : -90 });
       });
       /* dispositivos */
       var cont = {};
@@ -422,29 +440,16 @@
     })();
 
     /* ---------------- 04 ISOMÉTRICO */
+    /* 17/11/2026 (decisão da coordenação): a PIS-04 é a PERSPECTIVA ISOMÉTRICA — PISCINA do gerador de pranchas hidro (HidPranchas.folhaPiscina): tubos nas cores
+       próprias de cada sistema, tanque/N.A., casa de máquinas e peças do modelo, DN por corrida, cotas pela borda e chamada com o nome do produto. Substitui o
+       isométrico de linha única de antes (só tubo, contorno e rótulo da linha: o DN por linha e a legenda dos sistemas estão na nova). */
     (function () {
-      /* hid:geometria-inicio */
-      var F = novaFolha("iso", "PISCINA — ISOMÉTRICO DAS TUBULAÇÕES"), D = F.D, a = K.isoAng * Math.PI / 180;
-      function iso(p) { return [(p.x - p.z) * Math.cos(a), -(p.y) - (p.x + p.z) * Math.sin(a) * 0]; }
-      function isoP(p) { return [(p.x - p.z) * Math.cos(a), -p.y + (p.x + p.z) * Math.sin(a)]; }
-      var pts = []; trs.forEach(function (t) { pts.push(isoP(t.p1)); pts.push(isoP(t.p2)); }); g.contorno.forEach(function (p) { pts.push(isoP({ x: p.x, y: g.yBorda, z: p.z })); });
-      if (!pts.length) return; void iso;
-      var b = caixaDe(pts); b.x0 -= 0.8; b.y0 -= 0.8; b.x1 += 0.8; b.y1 += 0.8;
-      var jan = { x: ar.x + K.margem, y: ar.y + K.margem + 14, w: ar.w - 2 * K.margem, h: ar.h - 2 * K.margem - 30 }, esc = escalaQueCabe(b.x1 - b.x0, b.y1 - b.y0, jan.w, jan.h), J = new Janela(b, jan, esc);
-      F.escala = "SEM ESCALA";
-      tituloVista(D, ar.x + K.margem, ar.y + K.margem + 4, "ISOMÉTRICO DAS TUBULAÇÕES DA PISCINA (sem escala)", null);
-      D.poli(g.contorno.map(function (p) { var q = isoP({ x: p.x, y: g.yBorda, z: p.z }); return J.p(q[0], q[1]); }), "HID-CONTEXTO", true);
-      trs.forEach(function (t) { var p1 = isoP(t.p1), p2 = isoP(t.p2), A1 = J.p(p1[0], p1[1]), A2 = J.p(p2[0], p2[1]); D.linha(A1[0], A1[1], A2[0], A2[1], "PISC-" + t.sistema); });
-      var rot = {};
-      arr(rede.linhas).forEach(function (l) {
-        var ts = trs.filter(function (t) { return t.piscLinha === l.id; }); if (!ts.length) return;
-        var t = ts[Math.floor(ts.length / 2)], m = isoP({ x: (t.p1.x + t.p2.x) / 2, y: (t.p1.y + t.p2.y) / 2, z: (t.p1.z + t.p2.z) / 2 }), q = J.p(m[0], m[1]);
-        var k = Math.round(q[0]) + "|" + Math.round(q[1]); if (rot[k]) return; rot[k] = 1;
-        D.texto(q[0] + 1, q[1] - 1, l.id.replace(/^[^-]*-/, "").toUpperCase() + " Ø" + l.dn, K.hRot, { cor: K.cores[l.sistema] });
-      });
-      var ly = ar.y + ar.h - 26, lx = ar.x + K.margem;
-      Object.keys(K.cores).forEach(function (s, i) { D.linha(lx + i * 48, ly, lx + i * 48 + 10, ly, "PISC-" + s); D.texto(lx + i * 48 + 12, ly + 1, NOME_SIS[s], K.hTexto); });
-      /* hid:geometria-fim */
+      var HPx = HPR(); if (!HPx || !HPx.folhaPiscina) { avisos.push("PIS-04: o gerador de pranchas hidro (js/hidpranchas.js) não carregou; folha do isométrico não gerada."); return; }
+      var F = novaFolha("iso", "PERSPECTIVA ISOMÉTRICA — PISCINA"), rdI = null;
+      try { var BIx = BI(); rdI = BIx && BIx.rede && typeof opcoes.avaliarFam === "function" ? BIx.rede(estado, opcoes.avaliarFam) : null; } catch (eR) { rdI = null; }
+      if (!rdI || !arr(rdI.trechos).some(function (t) { return /^pisc_/.test(t.sistema); })) rdI = { trechos: trs, conexoes: rdI ? arr(rdI.conexoes) : [] };
+      F.escala = "SEM ESCALA"; F.chk = { tubos: [], cotas: [] };
+      HPx.folhaPiscina({ D: F.D, geo: geo, AP: A, rede: rdI, modelo: { estado: estado, avaliarFam: opcoes.avaliarFam }, titulo: F.titulo, chk: F.chk, avisos: avisos, prims: [], cfg: opcoes.cfg || {} });
     })();
 
     /* ---------------- 05 DETALHES, VERIFICAÇÕES E PENDÊNCIAS */
@@ -486,7 +491,10 @@
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + nn(W) + 'mm" height="' + nn(Hp) + 'mm" viewBox="0 0 ' + nn(W) + " " + nn(Hp) + '" font-family="' + (A.FONTE || "Arial") + '" data-folha="pisc-' + esc(f.id) + '" data-numero="' + esc(numero) + '">' +
         "<title>" + esc(numero + " - " + f.titulo + " - " + rev) + "</title><rect x=\"0\" y=\"0\" width=\"" + nn(W) + "\" height=\"" + nn(Hp) + "\" fill=\"#fff\"/><g data-corpo=\"1\">" + f.D.svg() + "</g><g data-folha-moldura=\"1\">" + Fd.svg() + "</g></svg>";
       if (/NaN|undefined/.test(svg)) avisos.push("Folha " + numero + ": há valor inválido no desenho.");
-      return { id: "pisc-" + f.id, rotulo: rot, numero: numero, titulo: f.titulo, tipo: "piscina", grupo: "piscina", formato: formato, escala: f.escala, svg: svg, caixasTexto: f.D.caixas || [] };
+      /* a conferência de sobreposição do gerador de pranchas hidro, também nas folhas da piscina (texto×texto, rótulo×tubo, rótulo×cota) */
+      var cxT = f.D.caixas || [], pares = A.sobreposicoes ? A.sobreposicoes(cxT) : [], HPc = HPR(), cf = f.chk && HPc && HPc.conferirFolha ? HPc.conferirFolha(cxT, f.chk) : { rotuloTubo: [], rotuloCota: [] };
+      if (pares.length || cf.rotuloTubo.length || cf.rotuloCota.length) avisos.push("Folha " + numero + ": " + pares.length + " texto(s) sobreposto(s), " + cf.rotuloTubo.length + " rótulo(s) sobre tubo, " + cf.rotuloCota.length + " sobre cota.");
+      return { id: "pisc-" + f.id, rotulo: rot, numero: numero, titulo: f.titulo, tipo: "piscina", grupo: "piscina", formato: formato, escala: f.escala, svg: svg, caixasTexto: cxT, verificacao: { textos: cxT.length, sobreposicoes: pares.length, rotuloTubo: cf.rotuloTubo.length, rotuloCota: cf.rotuloCota.length } };
     });
     return { ok: true, folhas: folhas, avisos: avisos, prefixo: prefixo, revisao: rev };
   }
@@ -503,7 +511,7 @@
   function pacote(estado, avaliarFam, rede, info, opcoes) {
     var m = memorial(rede, info); if (!m.ok) return { ok: false, motivo: m.motivo };
     var I = info || {}, o = opcoes || {}, q = quantitativo(estado, avaliarFam, rede), pr = null;
-    try { pr = pranchas(estado, rede, { obra: o.obra || (I.obra || {}).nome, responsavel: o.responsavel || (I.responsavel || {}).nome, registro: o.registro || (I.responsavel || {}).crea, empresa: o.empresa || (I.empresa || {}).nome }); } catch (e) { pr = { ok: false, avisos: [String(e && e.message || e)] }; }
+    try { pr = pranchas(estado, rede, { obra: o.obra || (I.obra || {}).nome, responsavel: o.responsavel || (I.responsavel || {}).nome, registro: o.registro || (I.responsavel || {}).crea, empresa: o.empresa || (I.empresa || {}).nome, avaliarFam: avaliarFam }); } catch (e) { pr = { ok: false, avisos: [String(e && e.message || e)] }; }
     var lista = "<h2>Lista de material</h2>" + tabela(["Grupo", "Descrição", "Un.", "Qtd.", "SINAPI", "Situação"], q.linhas.map(function (l) { return [l.grupo, l.descricao, l.unidade, l.quantidade, l.codigo, l.status]; }), [3]);   // hid:ok índice da coluna numérica
     var folhas = pr && pr.ok ? pr.folhas.map(function (f) { return "<div style=\"margin:8px 0\">" + f.svg + "</div>"; }).join("") : "<p class=\"pend\">Pranchas não geradas: " + esc(arr(pr && pr.avisos).join("; ")) + "</p>";
     var html = m.html.replace(/<\/body>/i, "<div style=\"page-break-before:always\">" + lista + "</div><div style=\"page-break-before:always\"><h2>Pranchas</h2>" + folhas + "</div></body>");

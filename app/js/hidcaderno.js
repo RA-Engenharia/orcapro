@@ -547,7 +547,13 @@
     }
     var prim = II.plantaPrim(c.rede, c.ix, "", d.trs, c.pavs, s, { medio: true, nome: c.nomeAp, colunas: c.colunas, obstaculos: II.obstaculosFormas(fm, s), segExtra: II.bordasTubo(fm, s, 0, 0), deTubo: II.deTubo, textoPonto: textoPonto });
     arr(prim.avisos).forEach(function (m) { a0.push("Ambiente " + am.nome + ": " + m); });
-    II.desenhar(D, prim, ox, oy, chk);
+    if (fotoP) {
+      /* com a FOTO do modelo o tubo do papel é o da foto, só no ambiente (folga de 0,12 m, a do dadosAmbiente): o eixo do tubo que segue além da parede até a borda do recorte não está desenhado e não conta na conferência (cai na faixa das cotas de locação) — 17/11/2026 */
+      var chk2 = { tubos: [], cotas: chk.cotas, pecas: chk.pecas }, aBox = { x0: (am.x0 - 0.12) * s + ox, x1: (am.x1 + 0.12) * s + ox, z0: (am.z0 - 0.12) * s + oy, z1: (am.z1 + 0.12) * s + oy };   // hid:ok mesma folga do dadosAmbiente
+      II.desenhar(D, prim, ox, oy, chk2);
+      chk2.tubos.forEach(function (q) { var r = clipSeg(q[0], q[1], q[2], q[3], aBox); if (r) chk.tubos.push(r); });
+      if (chk2.pecas && !chk.pecas) chk.pecas = chk2.pecas;
+    } else II.desenhar(D, prim, ox, oy, chk);
     c.prims.push(prim);
     desenharLocacao(D, afinarLocacao(locCh, s, D.E.T.cota), box, s, ox, oy, chk);   /* por último: as cadeias ficam fora do recorte e desviam dos textos já postos */
     return { den: den, rotularCg: rotularCaixasGordura };   /* o nome da caixa de gordura é desenhado por último (fim do bloco), num lugar livre entre rótulos e tubos */
@@ -729,7 +735,12 @@
     arr(d.trs).forEach(function (t) {
       var cq = t.vertical ? [t.p1.x, t.p1.z, t.p2.x, t.p2.z] : clipSeg(t.p1.x, t.p1.z, t.p2.x, t.p2.z, box); if (!cq) return;   /* R05: o tubo conta só DENTRO do recorte da planta (fora dele não aparece no desenho) */
       var hw = Math.max(II.deTubo(t) / 1000 * s / 2, 0.4), a = [cq[0] * s + ox, cq[1] * s + oy], b = [cq[2] * s + ox, cq[3] * s + oy];
-      if (t.vertical) obst.push([a[0] - hw, a[1] - hw, a[0] + hw, a[1] + hw]); else { seg.push([a[0], a[1], b[0], b[1], hw]); chk.tubos.push([a[0], a[1], b[0], b[1]]); }
+      if (t.vertical) obst.push([a[0] - hw, a[1] - hw, a[0] + hw, a[1] + hw]); else {
+        seg.push([a[0], a[1], b[0], b[1], hw]);
+        /* a conferência vê o tubo que a FOTO mostra: o do ambiente (folga de 0,12 m, a do dadosAmbiente); o trecho que segue além da parede até a borda do recorte não está no papel e cai na faixa das cotas de locação (17/11/2026) */
+        var cc2 = clipSeg(t.p1.x, t.p1.z, t.p2.x, t.p2.z, { x0: am.x0 - 0.12, x1: am.x1 + 0.12, z0: am.z0 - 0.12, z1: am.z1 + 0.12 });   // hid:ok mesma folga do dadosAmbiente
+        if (cc2) chk.tubos.push([cc2[0] * s + ox, cc2[1] * s + oy, cc2[2] * s + ox, cc2[3] * s + oy]);
+      }
     });
     arr(d.cxs).forEach(function (cx) { var r = Math.max((cx.dn || 50) / 1000 * s * 0.8, 1); obst.push([cx.x * s + ox - r, cx.z * s + oy - r, cx.x * s + ox + r, cx.z * s + oy + r]); });
     arr(d.pecas).forEach(function (pc) { var r = Math.max(0.1 * s, 1.6); obst.push([pc.x * s + ox - r, pc.z * s + oy - r, pc.x * s + ox + r, pc.z * s + oy + r]); });
