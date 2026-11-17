@@ -77,6 +77,7 @@
       t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
         telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
       t3: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
+      t5: { vao: 3.6, comp: 6.0, peDireito: 2.8, balCaibro: 0.5, balViga: 0.5, sPilarMax: 3.0, sCaibro: 0.6, mfD: 0.7, plantas: 0, ripado: { ativo: false, s: 0.12, b: 0.03, h: 0.05 }, cobertura: { tipo: "nenhuma", peso: "", incl: 10 }, encostado: { ativo: false, lado: "alto" }, obstrucao: "", presaEm: "caibros", diafragma: "nao" },
       t4: { fechamento: "", n: "6", R: 4, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, vMaxPilar: 4.0, sTercaMax: 1.4, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", pilarCentral: "nao", caibroMeio: "auto" },
       t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
       deck: { guardaCorpo: { regiao: "", h: "1.10" }, cargas: { sobrecarga: "2.5" }, lateral: { vento: "", topoTravado: false }, estab: "" },
@@ -245,10 +246,32 @@
     return { proj: proj, partida: secoesPartidaT3(o), t7: null, opcao: o3, extras: copia(est.extras), nome: ob.nome, t3: true, sistema: "tesoura" };
   }
 
+  /* ------------------------------------------------------------ T5 (pergolado): o estado da tela → entrada de MadT5Lig.projetar (incl em % na tela → fração no motor) */
+  function t5Params(est) {
+    var t = est.t5 || {}, rp = t.ripado || {}, cb = t.cobertura || {}, en = t.encostado || {};
+    return { nome: est.obra.nome || "Pergolado", vao: num(t.vao, 3.6), comp: num(t.comp, 6), peDireito: num(t.peDireito, 2.8), baseZ: 0, balCaibro: num(t.balCaibro, 0.5), balViga: num(t.balViga, 0.5), sPilarMax: num(t.sPilarMax, 3), sCaibro: num(t.sCaibro, 0.6), mfD: num(t.mfD, 0.7), estab: "mf", plantas: num(t.plantas, 0),
+      ripado: { ativo: rp.ativo === true || rp.ativo === "true", s: num(rp.s, 0.12), b: num(rp.b, 0.03), h: num(rp.h, 0.05) },
+      cobertura: { tipo: cb.tipo || "nenhuma", peso: num(cb.peso, null), incl: r(num(cb.incl, 10) / 100, 5) },
+      encostado: { ativo: en.ativo === true || en.ativo === "true", lado: en.lado === "baixo" ? "baixo" : "alto" },
+      obstrucao: t.obstrucao === "sim" || t.obstrucao === "nao" ? t.obstrucao : null, coberturaPresaEm: t.presaEm === "ripas" ? "ripas" : "caibros", diafragma: t.diafragma === "sim" || t.diafragma === true };
+  }
+  function secoesPartidaT5(o) {
+    function c(x) { return JSON.parse(JSON.stringify(x)); }
+    return { P: c({ b: 0.14, h: 0.14 }), VP: { b: 0.08, h: 0.20 }, VS: { b: 0.06, h: 0.14 }, MF: { b: 0.08, h: 0.10 }, RP: { b: 0.03, h: 0.05 } };
+  }
+  function toProjT5(est, id) {
+    var o = opcaoDe(est, id), ob = est.obra, params = t5Params(est);
+    var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2) },
+      classe: o.classe, umidade: num(ob.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined, opcao: o.id, pesoMLC: 5.0 };
+    var o5 = copia(o); o5.nome = "Pergolado " + (params.encostado.ativo ? "encostado" : "livre") + ", " + String(o.classe || "").replace("mlc:", "");
+    return { proj: proj, partida: secoesPartidaT5(o), t7: null, opcao: o5, extras: copia(est.extras), nome: ob.nome, t5: true, sistema: "pergolado" };
+  }
+
   /** a opção `id` do estado → tudo que o worker e as saídas precisam (serializável: o terreno vai como função só dentro do t7, que o worker refaz) */
   function toProj(est, id) {
     if (est.tip === "T2") return toProjT2(est, id);
     if (est.tip === "T3") return toProjT3(est, id);
+    if (est.tip === "T5") return toProjT5(est, id);
     if (est.tip === "T4") return toProjT4(est, id);
     var o = opcaoDe(est, id), params = t1Params(est);
     var proj = { params: params, vento: ventoEntrada(est, params), classe: o.classe, umidade: num(est.obra.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined,
@@ -281,6 +304,17 @@
       if (!(num(w.peDireito, 0) > 1)) f.push({ passo: 2, texto: "Informe o pé-direito." });
       if (!(num(w.telhaPeso, 0) > 0)) f.push({ passo: 2, texto: "Informe o peso da telha (kN/m²)." });
       if (!est.opcoes.some(function (o) { return o.id === est.ativa; })) f.push({ passo: 3, texto: "Escolha a opção." });
+      return { ok: f.length === 0, falta: f };
+    }
+    if (est.tip === "T5") {
+      var q = est.t5 || {}, cbq = q.cobertura || {};
+      if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
+      if (!(num(q.vao, 0) >= 1.5 && num(q.vao, 0) <= 6.5)) f.push({ passo: 2, texto: "Informe o vão entre alinhamentos de pilares (1,5 a 6,5 m)." });
+      if (!(num(q.comp, 0) >= 1.5)) f.push({ passo: 2, texto: "Informe o comprimento do pergolado (mínimo 1,5 m)." });
+      if (!(num(q.peDireito, 0) >= 2.2)) f.push({ passo: 2, texto: "Informe o pé-direito (lado alto), mínimo 2,2 m." });
+      if ((cbq.tipo || "nenhuma") !== "nenhuma" && !(num(cbq.incl, 0) >= 5)) f.push({ passo: 2, texto: "A cobertura (policarbonato, vidro ou telha leve) exige inclinação mínima de 5 %." });
+      if (!est.opcoes.some(function (o) { return o.id === est.ativa; })) f.push({ passo: 3, texto: "Escolha a opção." });
+      if (!f.length) { try { var M5 = global.MadT5 || (typeof require === "function" ? require("./madt5.js") : null); if (M5) M5.parametros(toProjT5(est, est.ativa).proj.params); } catch (e5) { f.push({ passo: 2, texto: "Parâmetros do pergolado: " + String(e5.message || e5).replace(/^madt5:\s*/, "") }); } }
       return { ok: f.length === 0, falta: f };
     }
     if (est.tip === "T2") {

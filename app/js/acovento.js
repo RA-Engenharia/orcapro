@@ -1039,7 +1039,7 @@
                          referencia: ref("6.6.2", "linhas 1934–1950") };
     aviso("efeitos dinâmicos (cap. 9) não verificados: para período fundamental T1 ≤ 1 s a resposta flutuante já está no S2 (9.1) — caso dos galpões usuais");
 
-    if (G.aberta) { coberturaIsolada(R, G, porDir, dirs, qLocal, qVed, aviso, erro, mem, tabela); return finalizar(R); }
+    if (G.aberta) { R._coefAtrito = (opcoes && opcoes.coefAtrito > 0) ? opcoes.coefAtrito : 0.05; coberturaIsolada(R, G, porDir, dirs, qLocal, qVed, aviso, erro, mem, tabela); return finalizar(R); }
 
     /* ---------- edificação fechada: paredes */
     var T4 = cpeParedesTab4(G);
@@ -1210,10 +1210,10 @@
       tabela(G.cob === "uma-agua" ? "Tabela 17" : "Tabela 18", "PDF p. 34 (imagem); 8.2, linhas 2501–2572");
       dirs.forEach(function (d) {
         if (d === 0 || d === 180) {
-          var Fat = 0.05 * q(d) * a * b;
+          var CAT = R._coefAtrito || 0.05, Fat = CAT * q(d) * a * b;
           casos.push({ id: "V" + d + "_atrito", nome: "Vento " + d + "° — atrito na cobertura (8.2.5)", direcao: d, cpi: null, q: arred(q(d), 6), coef: { paredes: {}, cobertura: {} },
                        pressao: { paredes: {}, cobertura: [] },
-                       atrito: { coef: 0.05, porArea: arred(0.05 * q(d), 6), total: arred(Fat, 4), eixo: "z", sentido: d === 0 ? "+z" : "−z", formula: "Fat = 0,05·q·a·b", referencia: ref("8.2.5", "linhas 2537–2543") } });
+                       atrito: { coef: CAT, porArea: arred(CAT * q(d), 6), total: arred(Fat, 4), eixo: "z", sentido: d === 0 ? "+z" : "−z", formula: "Fat = " + br(CAT, CAT < 0.1 ? 2 : 1) + "·q·a·b", referencia: ref("8.2.5", "linhas 2537–2543") } });
           return;
         }
         var xw = d === 90 ? 0 : b;   /* bordo de barlavento */
