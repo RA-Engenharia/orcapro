@@ -39,6 +39,8 @@
     /* R05 (Casa 487): a planta do ambiente NÃO leva balão de conexão (como a folha da Tânia: os S-n/F-n ficam no isométrico e nas tabelas); só DN, cotas e setas */
     baloesNaPlanta: false,
     foraDaPlanta: /janela|porta|cortina|lustre|luminaria|coifa|tapete|espelho|(^|-)tv|painel|ripado|carro|piscina|^hid-pisc|^hid-tubo|^hid-conex/i,
+    /* LIMPEZA das pranchas (17/11/2026, casa de 84 folhas): folha com tubo/peça mínima não sai; ambiente duplicado (mesmo nome, caixas sobrepostas) é um só */
+    limpeza: { tuboMinM: 0.5, sobrepoe: 0.5 },
     pontosVistaMin: 2,   /* a vista cotada só entra com 2 pontos ou mais do sistema na parede; senão a planta ocupa a coluna */ folgaPlanta: 0.15, folgaAmbMax: 1.1,
     colunas: [0.30, 0.43, 0.27], gapBloco: 4, hTitBloco: 11,
     perspKMax: 70, perspMargem: 4,
@@ -114,6 +116,36 @@
     return [x0 + t0 * dx, z0 + t0 * dz, x0 + t1 * dx, z0 + t1 * dz];
   }
   function listaCaixa(pts) { var xs = pts.map(function (p) { return p[0]; }), zs = pts.map(function (p) { return p[1]; }); return { x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), z0: Math.min.apply(null, zs), z1: Math.max.apply(null, zs) }; }
+  /* 17/11/2026 (casa real: "2x Banho Social, 2x Banho Suíte"): o MESMO cômodo desenhado duas vezes (duas regiões do BIM, ou aparelhos que deram caixas quase
+     iguais) não vira dois ambientes. Mesmo nome e caixas que se sobrepõem em pelo menos K.limpeza.sobrepoe da MENOR (ou o mesmo cômodo do BIM) → um só: a caixa une
+     as duas, os aparelhos somam sem repetir. Cômodos de mesmo nome em lugares diferentes seguem separados (e numerados depois). */
+  function areaCaixa(b) { return Math.max(0, b.x1 - b.x0) * Math.max(0, b.z1 - b.z0); }
+  function sobreposicaoCaixas(a, b) {
+    var w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+    if (!(w > 0 && h > 0)) return 0;
+    var menor = Math.min(areaCaixa(a), areaCaixa(b));
+    return menor > 0 ? (w * h) / menor : 1;
+  }
+  function unificarAmbientes(lista) {
+    var out = [];
+    arr(lista).forEach(function (a) {
+      var dono = null;
+      out.forEach(function (o) {
+        if (dono) return;
+        if (o.pavCota !== a.pavCota) return;   /* só do MESMO pavimento: o banho empilhado no sobrado são dois ambientes */
+        var mesmoBim = a.ambienteBim != null && o.ambienteBim != null && a.ambienteBim === o.ambienteBim;
+        if (mesmoBim || (txt(o.nome).toUpperCase() === txt(a.nome).toUpperCase() && sobreposicaoCaixas(o, a) >= K.limpeza.sobrepoe)) dono = o;
+      });
+      if (!dono) { out.push(a); return; }
+      dono.x0 = Math.min(dono.x0, a.x0); dono.x1 = Math.max(dono.x1, a.x1); dono.z0 = Math.min(dono.z0, a.z0); dono.z1 = Math.max(dono.z1, a.z1);
+      var ids = {}; arr(dono.aparelhos).concat(arr(a.aparelhos)).forEach(function (i) { ids[txt(i)] = i; });
+      dono.aparelhos = Object.keys(ids).map(function (k) { return ids[k]; });
+      if (dono.pontos != null || a.pontos != null) dono.pontos = dono.aparelhos.length;
+      if (dono.sala && a.sala) dono.sala = { x0: Math.min(dono.sala.x0, a.sala.x0), x1: Math.max(dono.sala.x1, a.sala.x1), z0: Math.min(dono.sala.z0, a.sala.z0), z1: Math.max(dono.sala.z1, a.sala.z1) };
+      dono.unificados = (dono.unificados || 1) + 1;
+    });
+    return out;
+  }
   function ambientesDoModelo(c, pv) {
     var II = I(), La = II.listasArq(c, pv), G = GEOa(), out = [];
     if (!La) return out;
@@ -134,6 +166,7 @@
       var m = K.folgaAmbMax, box = { x0: Math.max(bb.x0 - 0.15, Math.min.apply(null, px) - m), x1: Math.min(bb.x1 + 0.15, Math.max.apply(null, px) + m), z0: Math.max(bb.z0 - 0.15, Math.min.apply(null, pz) - m), z1: Math.min(bb.z1 + 0.15, Math.max.apply(null, pz) + m) };
       out.push({ id: "amb-" + a.id, nome: txt(a.nome).toUpperCase(), x0: box.x0, x1: box.x1, z0: box.z0, z1: box.z1, sala: bb, area: a.area, pontos: dentro.length, aparelhos: dentro.map(function (p) { return p.id; }), arq: a });
     });
+    out = unificarAmbientes(out);
     /* sem repetir o mesmo nome (dois cômodos "BANHEIRO"): numera */
     var cont = {}; out.forEach(function (a) { cont[a.nome] = (cont[a.nome] || 0) + 1; });
     var seq = {}; out.forEach(function (a) { if (cont[a.nome] > 1) { seq[a.nome] = (seq[a.nome] || 0) + 1; a.nome = a.nome + " " + seq[a.nome]; } });
@@ -199,10 +232,17 @@
     return cf;
   }
   /* quais grupos o ambiente tem (pelos trechos modelados dentro dele); ambiente sem rede traçada não se divide */
+  /* o que o grupo de sistema TEM no ambiente: metros de tubo, peças (ralo, caixa) e acessórios (registro) — a folha só sai com conteúdo (17/11/2026: "um único toco de tubo") */
+  function conteudoGrupo(c, am, pv, g) {
+    var d = dadosAmbiente(c, am, pv), ok = {}; g.sis.forEach(function (x) { ok[x] = 1; });
+    var m = 0; d.trs.forEach(function (t) { if (ok[t.sistema]) m += comprimento3d(t); });
+    return { tuboM: m, pecas: d.pecas.filter(function (k) { return ok[k.sistema]; }).length, acess: d.acess.filter(function (a) { return !a.sistema || ok[a.sistema]; }).length };
+  }
+  function grupoComConteudo(q) { return q.tuboM >= K.limpeza.tuboMinM || q.pecas > 0 || q.acess > 0; }
   function gruposDoAmbiente(c, am, pv) {
     if (am.semRede) return [];
     var d = dadosAmbiente(c, am, pv), out = [];
-    GRUPOS.forEach(function (g) { if (d.trs.some(function (t) { return g.sis.indexOf(t.sistema) >= 0; })) out.push(g); });
+    GRUPOS.forEach(function (g) { if (d.trs.some(function (t) { return g.sis.indexOf(t.sistema) >= 0; }) && grupoComConteudo(conteudoGrupo(c, am, pv, g))) out.push(g); });
     return out;
   }
 
@@ -1141,7 +1181,7 @@
     return null;
   }
 
-  var HidCaderno = { VERSAO: 1, comprimentoEfetivo: comprimentoEfetivo, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, cotasLocacao: cotasLocacao, afinarLocacao: afinarLocacao, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente };
+  var HidCaderno = { VERSAO: 1, comprimentoEfetivo: comprimentoEfetivo, K: K, gerar: gerar, exportar: exportar, ambientesDoModelo: ambientesDoModelo, blocoAmbiente: blocoAmbiente, previa: previa, vistaIsoTela: vistaIsoTela, vistaPlantaTela: vistaPlantaTela, insumosPlanta: insumosPlanta, pzDaPlanta: pzDaPlanta, pzDaVista: pzDaVista, amDaVista: amDaVista, folhaAmbientes: folhaAmbientes, notasDoAmbiente: notasDoAmbiente, tabelasDe: tabelasDe, dadosAmbiente: dadosAmbiente, cotasLocacao: cotasLocacao, afinarLocacao: afinarLocacao, GRUPOS: GRUPOS, contextoGrupo: contextoGrupo, gruposDoAmbiente: gruposDoAmbiente, unificarAmbientes: unificarAmbientes, conteudoGrupo: conteudoGrupo };
   global.HidCaderno = HidCaderno;
   if (typeof module !== "undefined" && module.exports) module.exports = HidCaderno;
   /* hid:geometria-fim */

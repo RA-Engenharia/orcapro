@@ -3526,7 +3526,19 @@ return [G.fundo, G.traco].map(function (g, i) {
 return { cor: [g.cor[0], g.cor[1], g.cor[2], 1], pos: new Float32Array(g.pos), nor: new Float32Array(g.nor), idx: new Uint32Array(g.idx), umaFace: true, papel: i ? "traco" : "fundo" };
 });
 }
-var CotaViva = { escolher: escolher, memoria: memoria, fmtM: fmtM, numeroPecas: numeroPecas, projetar: projetar, normalizaAng: normalizaAng,
+function ehInterface(o) { return !!o && (o.isSprite === true || o.name === "cotas-vivas" || (o.userData && o.userData.ui === true)); }
+function ocultarUI(cena, extras) {
+var guardados = [];
+(extras || []).forEach(function (o) { if (o && o.visible !== false) { guardados.push([o, o.visible]); o.visible = false; } });
+(function visita(o) {
+if (!o) return;
+if (ehInterface(o)) { if (o.visible !== false) { guardados.push([o, o.visible]); o.visible = false; } return; }
+var f = o.children || [];
+for (var i = 0; i < f.length; i++) visita(f[i]);
+})(cena);
+return function () { for (var i = guardados.length - 1; i >= 0; i--) guardados[i][0].visible = guardados[i][1]; guardados = []; };
+}
+var CotaViva = { ocultarUI: ocultarUI, ehInterface: ehInterface, escolher: escolher, memoria: memoria, fmtM: fmtM, numeroPecas: numeroPecas, projetar: projetar, normalizaAng: normalizaAng,
 MIN_M: MIN_M, MIN_PX: MIN_PX, FOLGA_PX: FOLGA_PX, HISTERESE: HISTERESE };
 global.BimCotaViva = CotaViva;
 if (typeof module !== "undefined" && module.exports) module.exports = CotaViva;
@@ -97559,6 +97571,7 @@ var mats = {}; ramos.forEach(function (r) { mats[r.material] = 1; });
 if (Object.keys(mats).length > 1) avisos.push("transição de material no nó (" + Object.keys(mats).map(function (k) { return MATERIAIS[k] ? MATERIAIS[k].nome : k; }).join(" × ") + "): a peça de transição não é deduzida — orce à parte");
 var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0];
 function cx(tipo, dn, dn2, extra) {
+if (tipo === "te_reducao" && dn2 && (sistema === "esgoto" || sistema === "pluvial" || sistema === "ventilacao") && !semTabelaDe(maior.material) && conexaoNoCatalogo(maior.material, "juncao_reducao", txt(dn) + "x" + txt(dn2))) tipo = "juncao_reducao";
 var o = { tipo: tipo, sistema: sistema, material: maior.material, aplicacao: maior.aplicacao, dn: dn, dn2: dn2 || 0 };
 if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
 if (tipo === "reducao" && dn2 && !flexOuSemTabela(maior.material)) {
@@ -97657,7 +97670,8 @@ if (conexaoNoCatalogo(maior.material, "juncao_reducao", chJ)) cx("juncao_reducao
 else { cx("juncao", dnRun, dnB); avisos.push("junção de redução DN " + dnRun + "x" + dnB + " não existe no catálogo: ficou a junção simples DN " + dnRun + " (a redução do ramal NÃO é contada à parte — orce-a)"); }
 } else {
 var chT = txt(dnRun) + "x" + txt(dnB);
-if (!gravidade || semTabelaDe(maior.material) || conexaoNoCatalogo(maior.material, "te_reducao", chT)) cx("te_reducao", dnRun, dnB);
+if (!gravidade || semTabelaDe(maior.material)) cx("te_reducao", dnRun, dnB);
+else if (conexaoNoCatalogo(maior.material, "juncao_reducao", chT)) { cx("juncao_reducao", dnRun, dnB); if (ra.vertical || rb.vertical || !ehJuncao) avisos.push("derivação de redução DN " + dnRun + " × " + dnB + " no " + SISTEMAS[sistema].nome.toLowerCase() + ": tê de redução não se usa — ligada com junção de redução 45° " + dnRun + " × " + dnB + " do catálogo (refaça a derivação a 45° a favor do fluxo)"); }
 else if (!ra.vertical && !rb.vertical && conexaoNoCatalogo(maior.material, "juncao_reducao", chT)) { cx("juncao_reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: ligação feita com junção de redução " + dnRun + " × " + dnB + " (a peça que existe)"); }
 else if (conexaoNoCatalogo(maior.material, "te", txt(dnRun)) && conexaoNoCatalogo(maior.material, "reducao", chT)) { cx("te", dnRun); cx("reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: tê DN " + dnRun + " + redução " + dnRun + " × " + dnB + " (peças que existem), com tubo entre elas"); }
 else avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante e não há junção nem tê + redução que o substituam: nenhuma conexão foi deduzida — refaça a ligação com outro DN");
@@ -98174,6 +98188,10 @@ if (M.alturas && M.alturas.indexOf(Math.round(t.alt * 1000)) < 0) it.semTabela =
 return it;
 }
 function partesConexao(c) {
+if (c && c.tipo === "te_reducao" && c.dn2 && (c.sistema === "esgoto" || c.sistema === "pluvial" || c.sistema === "ventilacao") && !semTabelaDe(c.material) && conexaoNoCatalogo(c.material, "juncao_reducao", txt(c.dn) + "x" + txt(c.dn2))) {
+var jr = {}; Object.keys(c).forEach(function (q) { jr[q] = c[q]; }); jr.tipo = "juncao_reducao"; jr.nome = nomeConexao("juncao_reducao", c.material);
+return [jr];
+}
 if (c && c.tipo === "juncao" && c.material === "pvc_esgoto" && Number(c.dn2) === 40 && (Number(c.dn) === 75 || Number(c.dn) === 100)) {
 var j = {}, b = {}; Object.keys(c).forEach(function (q) { j[q] = c[q]; b[q] = c[q]; });
 j.dn2 = "50"; j.partede = c.dn + "x40";

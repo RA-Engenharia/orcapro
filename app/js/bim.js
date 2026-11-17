@@ -2531,7 +2531,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     cam.position.copy(T).addScaledVector(Vn, Dd); cam.up.copy(Un); cam.lookAt(T); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
     var cv = cvDesenho(), tam = new THREE.Vector2(); renderer.getSize(tam);
     var bk = { pr: renderer.getPixelRatio(), clip: renderer.clippingPlanes, loc: renderer.localClippingEnabled, g: grid.visible, inst: !!instVista.on, bg: scene.background, sc: renderer.getScissorTest() };
-    var out = null;
+    var out = null, uiV = ocultarUIDaCena();   /* a foto da prancha não leva a cota viva nem rótulo de tela */
     try {
       if (o.instalacoes !== false && !bk.inst) setVistaInst(true);
       grid.visible = false; scene.background = new THREE.Color(0xffffff);
@@ -2645,6 +2645,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       out = { ok: true, url: c2.toDataURL('image/jpeg', 0.92), w: W, h: H, nFoco: bk.trocas ? bk.trocas.length : 0 };
     } catch (e) { out = { ok: false, erro: String((e && e.message) || e) }; }
     finally {
+      uiV();
       renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
       if (bk.esc) bk.esc.forEach(function (t) { t[0].visible = t[1]; });
       if (bk.ctr) bk.ctr.forEach(function (t) { try { t[0].remove(t[1]); t[1].geometry.dispose(); } catch (_) {} });
@@ -5578,7 +5579,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   /* a foto do plano: planta, elevação (perpendicular ao raio) ou perspectiva, em
      fundo branco, sem mexer na câmera de quem está olhando */
-  function icCaptura(vista) {
+  /* 17/11/2026: a captura/foto para a PRANCHA e para o PDF não leva balão de tela (cota viva, rótulos do editor) — js/bimcotaviva.js ocultarUI */
+  function ocultarUIDaCena() {
+    var CV = (typeof window !== 'undefined') ? window.BimCotaViva : null, ex = [];
+    try { ex = (medir.objs || []).concat(cota.objs || []); } catch (_) { ex = []; }   /* a trena (marcas verdes, linhas, "2,92 m") e as cotas da rede: listas próprias */
+    return (CV && CV.ocultarUI) ? CV.ocultarUI(scene, ex) : function () {};
+  }
+  function icCaptura(vista) { var uiV = ocultarUIDaCena(); try { return icCaptura0(vista); } finally { uiV(); } }
+  function icCaptura0(vista) {
     if (!S || !icar.grupo.children.length) return null;
     icSincronizar();
     var box = icCaixaFoco(); if (box.isEmpty()) return null;
@@ -5631,7 +5639,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     (S.modelos || []).forEach(function (mo) { if (mo._agreg && mo._agreg.grupo) r.push(mo._agreg.grupo); });
     return r.concat([icar.grupo, icPlantaG, icLocalG, icLocalMundo]);
   }
-  function icFotoHD(o) {
+  function icFotoHD(o) { var uiV = ocultarUIDaCena(); try { return icFotoHD0(o); } finally { uiV(); } }
+  function icFotoHD0(o) {
     o = o || {};
     if (!S) return { ok: false, erro: 'visualizador não montado' };
     var W = Math.max(320, Math.min(3840, Math.round(+o.largura || 1920))), H = Math.max(240, Math.min(2160, Math.round(+o.altura || 1080)));
@@ -10544,7 +10553,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.ctecModal = ctecModal;
   // série de escalas padrão de arquitetura (denominadores que existem em escalímetro)
   var SERIE_ESC = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500];
-  function gerarCorteTec(o) { return focoSem(function () { return gerarCorteTec0(o); }); }
+  function gerarCorteTec(o) { return focoSem(function () { var uiV = ocultarUIDaCena(); try { return gerarCorteTec0(o); } finally { uiV(); } }); }
   function gerarCorteTec0(o) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
@@ -10963,7 +10972,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return out;
   }
 
-  function gerarPlantaTec(o) { return focoSem(function () { return gerarPlantaTec0(o); }); }
+  function gerarPlantaTec(o) { return focoSem(function () { var uiV = ocultarUIDaCena(); try { return gerarPlantaTec0(o); } finally { uiV(); } }); }
   function gerarPlantaTec0(o) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
@@ -11224,7 +11233,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(semBlocos);
     return semBlocos();
   }
-  function vista2dCorpo(def) { return focoSem(function () { return vista2dCorpo0(def); }); }
+  function vista2dCorpo(def) { return focoSem(function () { var uiV = ocultarUIDaCena(); try { return vista2dCorpo0(def); } finally { uiV(); } }); }
   function vista2dCorpo0(def) {
     S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */

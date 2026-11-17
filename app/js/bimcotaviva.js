@@ -309,7 +309,25 @@
     });
   }
 
-  var CotaViva = { escolher: escolher, memoria: memoria, fmtM: fmtM, numeroPecas: numeroPecas, projetar: projetar, normalizaAng: normalizaAng,
+  /* 17/11/2026 — BALÃO DE TELA NUNCA SAI IMPRESSO. A cota viva ("2,92 m") e os rótulos do editor são sprites/grupos da CENA do 3D (a tela os mostra com depthTest
+     desligado, por cima de tudo). A foto que alimenta a prancha, o corte/planta técnicos e a captura do PDF renderizam essa mesma cena — e levavam os balões, gigantes,
+     para a folha (HID-01, 15, 18… da casa de 84 folhas). Esta função esconde, SÓ durante a captura, todo objeto de interface da cena: o grupo "cotas-vivas", qualquer
+     Sprite (rótulo) e o que se marca com userData.ui = true; devolve a função que RESTAURA a visibilidade de antes (idempotente). Motor puro: recebe a cena, não toca em THREE. */
+  function ehInterface(o) { return !!o && (o.isSprite === true || o.name === "cotas-vivas" || (o.userData && o.userData.ui === true)); }
+  function ocultarUI(cena, extras) {
+    var guardados = [];
+    /* extras: objetos de interface que o 3D guarda em listas próprias (a trena: marcas verdes e linhas; as cotas da rede) — também somem durante a captura */
+    (extras || []).forEach(function (o) { if (o && o.visible !== false) { guardados.push([o, o.visible]); o.visible = false; } });
+    (function visita(o) {
+      if (!o) return;
+      if (ehInterface(o)) { if (o.visible !== false) { guardados.push([o, o.visible]); o.visible = false; } return; }
+      var f = o.children || [];
+      for (var i = 0; i < f.length; i++) visita(f[i]);
+    })(cena);
+    return function () { for (var i = guardados.length - 1; i >= 0; i--) guardados[i][0].visible = guardados[i][1]; guardados = []; };
+  }
+
+  var CotaViva = { ocultarUI: ocultarUI, ehInterface: ehInterface, escolher: escolher, memoria: memoria, fmtM: fmtM, numeroPecas: numeroPecas, projetar: projetar, normalizaAng: normalizaAng,
     MIN_M: MIN_M, MIN_PX: MIN_PX, FOLGA_PX: FOLGA_PX, HISTERESE: HISTERESE };
   global.BimCotaViva = CotaViva;
   if (typeof module !== "undefined" && module.exports) module.exports = CotaViva;

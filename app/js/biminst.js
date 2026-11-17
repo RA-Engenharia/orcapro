@@ -1003,6 +1003,7 @@
     /* a aplicação da conexão = a do ramo de MAIOR DN (empate: o primeiro) */
     var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0];
     function cx(tipo, dn, dn2, extra) {
+      if (tipo === "te_reducao" && dn2 && (sistema === "esgoto" || sistema === "pluvial" || sistema === "ventilacao") && !semTabelaDe(maior.material) && conexaoNoCatalogo(maior.material, "juncao_reducao", txt(dn) + "x" + txt(dn2))) tipo = "juncao_reducao";   /* 17/11/2026: tê de redução proibido no esgoto */
       var o = { tipo: tipo, sistema: sistema, material: maior.material, aplicacao: maior.aplicacao, dn: dn, dn2: dn2 || 0 };
       if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
       /* 27/10/2026 (barrilete/colunas em DN 50, decisão do Rogério): a coluna DN 50 reduz na derivação para o DN do ramal (50 → 20) e a SINAPI NÃO tem a
@@ -1130,7 +1131,10 @@
              só na combinação da ficha do fabricante (HidGeoDados: te_reducao 75x50, 100x50, 100x75, 150x100). Fora dela: (1) junção de redução da combinação que existe (esgoto horizontal),
              (2) o tê do DN da linha + a redução da ficha (DN linha × DN ramal), com tubo entre as peças; (3) sem nenhuma das duas: NENHUMA peça é inventada — o nó fica marcado com o aviso. */
           var chT = txt(dnRun) + "x" + txt(dnB);
-          if (!gravidade || semTabelaDe(maior.material) || conexaoNoCatalogo(maior.material, "te_reducao", chT)) cx("te_reducao", dnRun, dnB);
+          /* ⚠ TÊ DE REDUÇÃO PROIBIDO NO ESGOTO (17/11/2026, Rogério — quadro da casa real: "Tê de redução PVC esgoto DN 100×50", peça que não se usa na obra): no esgoto, pluvial e
+             ventilação com catálogo de conexões, a derivação de DN menor é a JUNÇÃO DE REDUÇÃO 45° do catálogo (100×50, 100×75, 150×100, 75×50…) — o tê de redução só existe na água. */
+          if (!gravidade || semTabelaDe(maior.material)) cx("te_reducao", dnRun, dnB);
+          else if (conexaoNoCatalogo(maior.material, "juncao_reducao", chT)) { cx("juncao_reducao", dnRun, dnB); if (ra.vertical || rb.vertical || !ehJuncao) avisos.push("derivação de redução DN " + dnRun + " × " + dnB + " no " + SISTEMAS[sistema].nome.toLowerCase() + ": tê de redução não se usa — ligada com junção de redução 45° " + dnRun + " × " + dnB + " do catálogo (refaça a derivação a 45° a favor do fluxo)"); }
           else if (!ra.vertical && !rb.vertical && conexaoNoCatalogo(maior.material, "juncao_reducao", chT)) { cx("juncao_reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: ligação feita com junção de redução " + dnRun + " × " + dnB + " (a peça que existe)"); }
           else if (conexaoNoCatalogo(maior.material, "te", txt(dnRun)) && conexaoNoCatalogo(maior.material, "reducao", chT)) { cx("te", dnRun); cx("reducao", dnRun, dnB); avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante: tê DN " + dnRun + " + redução " + dnRun + " × " + dnB + " (peças que existem), com tubo entre elas"); }
           else avisos.push("tê de redução DN " + dnRun + " × " + dnB + " não existe na ficha do fabricante e não há junção nem tê + redução que o substituam: nenhuma conexão foi deduzida — refaça a ligação com outro DN");
@@ -1812,6 +1816,11 @@
      a obra também não a monta assim — a peça de prateleira é a junção de redução invertida DN × 50 com a bucha de redução longa 50 × 40 na bolsa
      da derivação. O orçamento leva as DUAS peças, cada uma com a sua composição real (104343/104350 ou 104345/104353 + 104341), nunca uma inventada. */
   function partesConexao(c) {
+    /* 17/11/2026: tê de redução de esgoto que chegou por outro caminho (conexão forçada, rede antiga) sai como a junção de redução 45° do catálogo no quadro e no orçamento */
+    if (c && c.tipo === "te_reducao" && c.dn2 && (c.sistema === "esgoto" || c.sistema === "pluvial" || c.sistema === "ventilacao") && !semTabelaDe(c.material) && conexaoNoCatalogo(c.material, "juncao_reducao", txt(c.dn) + "x" + txt(c.dn2))) {
+      var jr = {}; Object.keys(c).forEach(function (q) { jr[q] = c[q]; }); jr.tipo = "juncao_reducao"; jr.nome = nomeConexao("juncao_reducao", c.material);
+      return [jr];
+    }
     if (c && c.tipo === "juncao" && c.material === "pvc_esgoto" && Number(c.dn2) === 40 && (Number(c.dn) === 75 || Number(c.dn) === 100)) {
       var j = {}, b = {}; Object.keys(c).forEach(function (q) { j[q] = c[q]; b[q] = c[q]; });
       j.dn2 = "50"; j.partede = c.dn + "x40";

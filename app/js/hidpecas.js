@@ -265,6 +265,8 @@
         var tp = ({ bucha_longa: "bucha", luva_reducao: "bucha", reducao: temDn2 ? "bucha" : "reducao", juncao_reducao: "juncao" })[g.tipo] || g.tipo, ic = "cx-" + tp.replace(/_/g, "-") + "-" + txt(g.material).replace(/_/g, "-");
         if (icones().indexOf(ic) >= 0) l.icone = ic;
       }
+      /* 17/11/2026: a junção de redução do esgoto (no lugar do tê de redução proibido) leva no quadro o código SINAPI do item orçado, para quadro e orçamento baterem */
+      if (g.tipo === "juncao_reducao" && g.sinapi && g.sinapi.codigo && l.descricao.indexOf("SINAPI") < 0) l.descricao += " (SINAPI " + g.sinapi.codigo + " - junção de redução invertida)";
       if (g.premissa) l.premissas = [g.premissa];
       if (g.incluso) { l.incluso = g.incluso; l.total = null; l.preco = { pendente: false, valor: null, incluso: true, criterio: g.incluso }; }
       out.push(l);
