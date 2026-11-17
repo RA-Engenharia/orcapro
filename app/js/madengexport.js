@@ -15,6 +15,9 @@
   var CORES = ["0.00 0.25 0.42", "0.44 0.37 0.28", "0.25 0.47 0.09", "0.66 0.60 0.41", "0.60 0.60 0.65", "0.75 0.35 0.20", "0.30 0.50 0.70", "0.55 0.40 0.60"];
 
   function malha(c, tri, pts) {
+    if (c.malha) {          /* sólido cortado (madencaixe.js): a malha da cena do BIM [x, altura, −z] volta para o eixo do COLLADA (Y para cima) sem mudar */
+      var b0 = pts.length / 3, i; for (i = 0; i < c.malha.v.length; i++) pts.push(c.malha.v[i]); for (i = 0; i < c.malha.f.length; i++) tri.push(c.malha.f[i] + b0); return;
+    }
     var r = c.receita, pl = r.plano, o = pl.o, u = pl.u, v = pl.v, nv = cruz(u, v), H = r.altura, K = r.contorno.length, base = pts.length / 3, i;
     function P(q, h) { return [o[0] + u[0] * q[0] + v[0] * q[1] + nv[0] * h, o[1] + u[1] * q[0] + v[1] * q[1] + nv[1] * h, o[2] + u[2] * q[0] + v[2] * q[1] + nv[2] * h]; }
     var cx = 0, cy = 0; r.contorno.forEach(function (q) { cx += q[0]; cy += q[1]; }); cx /= K; cy /= K;

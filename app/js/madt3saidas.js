@@ -10,12 +10,15 @@
   function arr(v) { return Array.isArray(v) ? v : []; }
   function r(x, n) { var p = Math.pow(10, n); return Math.round(x * p + (x >= 0 ? 1e-9 : -1e-9)) / p; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
-  var EXIGENCIA = "Exigência de projeto: terças contínuas sobre a tesoura/meia-tesoura, ou emenda rígida; emenda articulada sobre a tesoura não é permitida sem novo cálculo. A telha apoia nas terças; caibros sobre o espigão não estão no modelo.";
+  var EXIGENCIA = "Exigência de projeto: terça BIAPOIADA entre as tesouras/meias-tesouras; a emenda passante em cada tesoura transmite só a força AXIAL (tirante do arco do espigão); não é emenda rígida (não transmite momento). A telha apoia nas terças; caibros sobre o espigão não estão no modelo.";
   var FAIXA = "Documento gerado pelo sistema — emissão somente após conferência e ART do responsável técnico";
 
   /* ---------------------------------------------------------------- peças POR MEMBRO (posição real; aparadas) */
   function pecasMembros(res) {
-    pronto(); var out = [], fonte = arr(res && res.fonte && res.fonte.pecas), mat = (fonte.filter(function (x) { return /MLC/.test(x.material || ""); })[0] || {}).material || "MLC GL24h (EN 14080)", nome = (T3 && T3._nomes) || {};
+    pronto();
+    /* sólidos cortados (js/madencaixe.js + madencaixetip.js): cada peça com os planos de corte reais de cada ponta; sem o módulo, cai nas caixas aparadas de antes */
+    var ET = dep("MadEncaixeTip", "./madencaixetip.js"); if (ET && res && res.t3) { try { var enc = ET.pecasT3(res); if (enc.length) return enc; } catch (e) { /* segue para as caixas */ } }
+    var out = [], fonte = arr(res && res.fonte && res.fonte.pecas), mat = (fonte.filter(function (x) { return /MLC/.test(x.material || ""); })[0] || {}).material || "MLC GL24h (EN 14080)", nome = (T3 && T3._nomes) || {};
     if (!res || !res.t3) return out;
     var nomes = { P: "Pilar do perímetro", PO: "Pilar de cabeceira", FR: "Frechal", BS: "Banzo superior da tesoura", BI: "Banzo inferior da tesoura", PD: "Montante da tesoura", DG: "Diagonal da tesoura", MS: "Banzo superior da meia-tesoura", MI: "Banzo inferior da meia-tesoura", MP: "Montante da meia-tesoura", MG: "Diagonal da meia-tesoura", E: "Espigão", T: "Terça", CM: "Cumeeira", LB: "Linha do banzo inferior", DX: "Diagonal de contraventamento (águas)", DV: "Diagonal de contraventamento (vertical)", DP: "Diagonal de contraventamento (parede)" };
     arr(res.t3.membros).forEach(function (m) {
@@ -50,7 +53,7 @@
     return { noPendural: pontas(["PD"], ["BS", "BI"]) / 2, noDiagonal: pontas(["DG"], ["BS", "BI"]) / 2, noBanzoSuperior: pontas(howe ? ["PD"] : ["PD", "DG"], ["BS"]), noBanzoInferior: pontas(howe ? ["PD"] : ["PD", "DG"], ["BI"]),
       noMP: pontas(["MP"], ["MS", "MI"]) / 2, noMG: pontas(["MG"], ["MS", "MI"]) / 2, noMS: pontas(["MP", "MG"], ["MS"]), noMI: pontas(["MP", "MG"], ["MI"]),
       espigaoCumeeira: 2 * pontas(["E"], ["CM", "BS", "MS"]), espigaoCanto: 2 * canto, cintaCanto: 2 * corners, meiaTesoura: 2 * pontas(["MS"], ["BS"]), pontaMI: pontas(["MI"], ["BI"]), tercaEspigaoAxial: 2 * pontas(["T"], ["E"]),
-      contravDiagonal: 2 * pontas(["DX", "DV"], any), contravParede: 2 * pontas(["DP"], any), contravLB: 2 * lb, tesouraPilar: 2 * pontas(["BI", "MI"], ["P", "PO"]) };
+      contravDiagonal: 2 * pontas(["DX", "DV"], any), contravParede: 2 * pontas(["DP"], any), contravLB: 2 * lb, tesouraPilar: 2 * pontas(["BI", "MI"], ["P", "PO"]), emendaTerca: 2 * M3.reduce(function (n, m) { return n + (m.g === "T" ? (m.nos || []).length : 0); }, 0) };
   }
   function orcarT3(e) {
     pronto(); e = e || {};
@@ -161,7 +164,7 @@
     H2("6. Ligações");
     var Lg = (res.ligacoesT3 && res.ligacoesT3.ligacoes) || {};
     h.push("<table><tr><th>Ligação</th><th>Pinos (n × Ø)</th><th>η</th></tr>" + Object.keys(Lg).map(function (k) { var l = Lg[k]; return "<tr><td>" + esc(k) + "</td><td>" + (l.pinos && l.pinos.n ? l.pinos.n + " × Ø" + Math.round((l.pinos.d || 0) * 1000) : (l.porApoio ? l.porApoio + " parafusos WT" : "—")) + "</td><td class='" + (l.eta <= 1 ? "ok" : "nok") + "'>" + br(l.eta, 3) + "</td></tr>"; }).join("") + "</table>");
-    h.push("<p class='nota'>Sela do espigão no canto: momento N·δ (δ = h_FR/2) no grupo de pinos (momento polar); cinta pela força de extremidade do frechal, chapa verificada pela seção bruta, líquida (fu/γa2, γa2 = 1,35) e esmagamento dos furos (NBR 8800); torção nas pontas do frechal (7190-1) no laço de crescimento do FR; ponta da MI no nó central do BI com a força real de extremidade e o montante do mesmo nó. Vento local de aresta (cpe −1,2 em faixa de " + br(res.ligacoesT3 && res.ligacoesT3.ventoLocal ? res.ligacoesT3.ventoLocal.wf_m : 0, 2) + " m ao longo do espigão; EN 1991-1-4, Tab. 7.5 — fonte SECUNDÁRIA, a confirmar pelo RT) nas ligações terça × espigão, sela e arrancamento das terças. Vento: adicionado à envolvente o caso de cpe +0,2 na água de cabeceira a barlavento (vento paralelo à cumeeira).</p><h3>Folga construtiva (encontros)</h3><p>As pontas da peça comprimida (diagonal Howe, espigão na cumeeira, frechal e terça junto ao espigão) são aparadas com folga ≥ 10 mm das faces vizinhas; a carga passa SÓ pelas chapas internas e pinos (sem contato madeira–madeira). Folga mínima medida: <b>" + br(res.aparo && res.aparo.resumo ? res.aparo.resumo.minimo_mm : 0, 1) + " mm</b> em " + (res.aparo && res.aparo.resumo ? res.aparo.resumo.n : 0) + " pontas.</p>");
+    h.push("<p class='nota'>Folga construtiva de 10 mm onde a carga passa só por chapa e pinos (espigão na cumeeira, diagonais comprimidas Howe/Fink). Canto: o espigão assenta no cruzamento dos frechais (bico de pássaro raso, sem sela-calço); sela e cinta numa CHAPA ÚNICA em fenda, verificada por M = H·e_v (e_v = dFR + evE) na seção bruta, líquida (fu/1,35, furo d + 3,5 mm) e ao cortante; a flambagem local é dispensada (chapa travada na fenda). Terças: BIAPOIADAS entre tesouras, apoiadas em estribo na face do banzo; a EMENDA PASSANTE (chapa 8 mm em fenda + pinos) transmite só a força axial e não é emenda rígida; V do estribo = máx(V da envolvente, V_terca do vento local); torção residual do banzo = ΔR·b/2 e fenda da chapa na seção líquida do banzo verificadas. O 3D do BIM omite os rebaixos de espigão e diagonais (bico raso 2–3 %); o IFC os tem.</p>");
     H2("7. Verificações de serviço e contraventamento");
     var fl = res.flechas || {};
     h.push("<table><tr><th>Grupo</th><th>η flecha (L/" + (res.memoria && res.memoria.limVao || 300) + ")</th></tr>" + Object.keys(fl).map(function (g) { return "<tr><td>" + esc(NOME_G[g] || g) + "</td><td>" + br(fl[g], 3) + "</td></tr>"; }).join("") + "</table><p>" + (res.contrav ? "Rigidez K_br,1 (6.6.2): banzo superior " + Math.round(res.contrav.BS.Kbr) + " × " + Math.round(res.contrav.BS.Kmin) + " kN/m; banzo inferior " + Math.round(res.contrav.BI.Kbr) + " × " + Math.round(res.contrav.BI.Kmin) + " kN/m — " + (res.contrav.ok ? "atende" : "NÃO atende") + "." : "") + "</p>");
@@ -180,7 +183,7 @@
       ["Tesouras principais", "Pré-montar no chão as " + cont("BI") + " tesoura(s) " + (I.tesouraTipo === "howe" ? "Howe" : "Pratt") + " com chapa interna e pinos inox; içar e apoiar em garfo nos pilares; travar com as linhas do banzo inferior e as diagonais de contraventamento dos vãos de extremidade."],
       ["Meias-tesouras das cabeceiras", "Montar as " + cont("MI") + " meias-tesouras (banzo inferior = tirante, do pilar da parede à tesoura de extremidade); a ponta do banzo superior entra na tesoura de extremidade com folga de 10 mm das faces, ligada só por chapa e pinos."],
       ["Cumeeira e espigões", (I.pir ? "Pirâmide: sem cumeeira." : "Instalar a cumeeira (" + (I.La != null ? I.La.toFixed(2).replace(".", ",") : "—") + " m) sobre as tesouras. ") + "Instalar os 4 espigões do canto à ponta da cumeeira: sela de aço sobre o frechal no canto e chapa interna + pinos na ponta (folga ≥ 10 mm)."],
-      ["Terças", "Instalar as terças das 4 águas nas mesmas linhas; as pontas junto ao espigão têm bisel de 45° em planta e assentam em estribo de aço (chapa interna + pinos), com folga ≥ 10 mm da madeira do espigão; fixar sobre as tesouras com parafusos de rosca total a 45°."],
+      ["Terças", "A terça é BIAPOIADA entre tesouras: cada trecho é cortado em bisel composto contra a face vertical do espigão (folha de corte) e fica encostado na face lateral do banzo, apoiado em estribo/cantoneira de aço (4 pinos Ø12). Em cada tesoura passar a EMENDA PASSANTE — chapa interna de aço em fenda que atravessa o banzo, com pinos inox nos dois trechos —, que transmite só a força axial (tirante do arco do espigão); não é emenda rígida e não dispensa o estribo. A terça fica no plano do banzo (eixo no eixo), sem parafuso por cima."],
       ["Contraventamento e conferência", "Instalar as diagonais de madeira em X (águas dos vãos de extremidade, planos verticais entre tesouras e painéis das paredes). Conferir: nenhuma peça sem folga na ponta aparada; torque dos pinos; cinta dos 4 cantos."]];
     h.push("<!doctype html><html><head><meta charset='utf-8'><title>Manual de montagem — telhado de 4 águas</title><style>" + CSS + "@page{size:A3 landscape;margin:12mm}.pg{page-break-after:always;min-height:240mm}</style></head><body>");
     h.push("<div class='pg'><h1>Manual de montagem — telhado de 4 águas</h1><div class='faixa'>" + esc(EXIGENCIA) + "</div>" + (pre.preliminar ? "<div class='faixa'>" + esc(pre.rotulo) + "</div>" : "") + "<p>" + esc((op.obra && op.obra.nome) || "") + " — " + f.length + " marcas de peça; " + mem.length + " peças individuais.</p><div class='faixa'>" + esc(FAIXA) + "</div><table><tr><th>Etapa</th><th>O que se monta</th></tr>" + etapas.map(function (e, i) { return "<tr><td>" + (i + 1) + ". " + esc(e[0]) + "</td><td>" + esc(e[1]) + "</td></tr>"; }).join("") + "</table></div>"); n++;
@@ -188,10 +191,12 @@
     h.push("</body></html>");
     return { ok: true, html: h.join(""), paginas: n, etapas: etapas.length, avisos: [] };
   }
-  function ifc(res, opts) { var SA = dep("MadEngSaidas", "./madengsaidas.js"); return SA.gerarIfc(pecasMembros(res), { projeto: (opts && opts.projeto) || "Telhado de 4 águas", opcao: res.opcao, semente: (opts && opts.semente) || "t3:" + res.opcao, agora: opts && opts.agora }); }
-  function dae(res, opts) { var EX = dep("MadEngExport", "./madengexport.js"); return EX.gerarDae(pecasMembros(res), { projeto: (opts && opts.projeto) || "Telhado de 4 águas" }); }
+  /** o modelo completo (membros com o sólido cortado + selas + chapas, pinos e parafusos) para IFC, SketchUp e BIM */
+  function pecasModelo(res) { pronto(); var ET = dep("MadEncaixeTip", "./madencaixetip.js"); if (ET && res && res.t3) { try { var m = ET.pecasModeloT3(res); if (m.length) return m; } catch (e) { /* segue para as caixas */ } } return pecasMembros(res); }
+  function ifc(res, opts) { var SA = dep("MadEngSaidas", "./madengsaidas.js"); return SA.gerarIfc(pecasModelo(res), { projeto: (opts && opts.projeto) || "Telhado de 4 águas", opcao: res.opcao, semente: (opts && opts.semente) || "t3:" + res.opcao, agora: opts && opts.agora }); }
+  function dae(res, opts) { var EX = dep("MadEngExport", "./madengexport.js"); return EX.gerarDae(pecasModelo(res), { projeto: (opts && opts.projeto) || "Telhado de 4 águas" }); }
 
-  var MadT3Saidas = { EXIGENCIA: EXIGENCIA, pecasMembros: pecasMembros, orcar: orcarT3, rodar: rodar, memorial: memorial, manual: manual, ifc: ifc, dae: dae, FAIXA: FAIXA, gruposDe: gruposDe };
+  var MadT3Saidas = { EXIGENCIA: EXIGENCIA, pecasMembros: pecasMembros, pecasModelo: pecasModelo, orcar: orcarT3, rodar: rodar, memorial: memorial, manual: manual, ifc: ifc, dae: dae, FAIXA: FAIXA, gruposDe: gruposDe };
   if (typeof module !== "undefined" && module.exports) module.exports = MadT3Saidas;
   else global.MadT3Saidas = MadT3Saidas;
 })(typeof window !== "undefined" ? window : this);

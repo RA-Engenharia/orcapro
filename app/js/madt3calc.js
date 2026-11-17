@@ -66,8 +66,13 @@
 
   /** torção nas pontas do frechal no canto: o empuxo horizontal do espigão atua na sela (topo do frechal), δ = h_FR/2 acima do eixo; a componente ⊥ ao eixo de cada frechal (H/√2, espigão a 45° em planta) gira a ponta: T = (H/√2)·δ;
    *  τT = T/(α·a·c²), α = 1/(3 + 1,8·c/a) (maddim7190, 7190-1), somada ao cortante de ponta (a favor) e comparada com fv,d. Entra no laço de crescimento do FR (t3Pior). */
-  function torcaoFR(sec, E, cinta, fvd, beta) {
-    var f = sec.FR, dlt = f.h / 2, a = Math.max(f.b, f.h), c = Math.min(f.b, f.h), al = 1 / (3 + 1.8 * c / a), Hh = Math.max(E.heel.HEq || 0, E.heel.H || 0), T = Hh * dlt / (2 * Math.cos(beta == null ? Math.PI / 4 : beta)), tT = T / (al * a * c * c) / 1e3, Sq = (cinta.fim && cinta.fim.SEq) || 0, tV = 1.5 * Sq / (f.b * f.h) / 1e3, eta = (tV + tT) / fvd;
+  /** EXCENTRICIDADES DO ARRANJO DE CARPINTEIRO (js/madencaixetip.js; docs/madeira/ENCAIXES-REFERENCIA.md §3). evT = 0 (terça embutida no plano do banzo, eixo no eixo); espigão com a face de baixo no nível de apoio da tesoura
+   *  (evE = (h_E − h_BS)/2); frechal sob a tesoura (dFR = (h_FR + h_BI)/2). e_v da chapa única do canto = distância do eixo do espigão ao do frechal = dFR + evE. Mesmas fórmulas do módulo de encaixes (cópia: o worker não o carrega). */
+  function excent(sec) {
+    return { evT: 0, evE: ((sec.E ? sec.E.h : 0.30) - sec.BS.h) / 2, dFR: (sec.FR.h + sec.BI.h) / 2 };
+  }
+  function torcaoFR(sec, E, cinta, fvd, beta, EXC) {
+    var f = sec.FR, dlt = EXC ? EXC.dFR + EXC.evE : f.h / 2, a = Math.max(f.b, f.h), c = Math.min(f.b, f.h), al = 1 / (3 + 1.8 * c / a), Hh = Math.max(E.heel.HEq || 0, E.heel.H || 0), T = Hh * dlt / (2 * Math.cos(beta == null ? Math.PI / 4 : beta)), tT = T / (al * a * c * c) / 1e3, Sq = (cinta.fim && cinta.fim.SEq) || 0, tV = 1.5 * Sq / (f.b * f.h) / 1e3, eta = (tV + tT) / fvd;
     return { delta: dlt, H: Hh, T: T, alfa: al, a: a, c: c, tau_T: tT, tau_V: tV, fvd: fvd, eta: eta, ok: eta <= 1 + 1e-9 };
   }
 
@@ -110,7 +115,8 @@
           /* MODELO (b) da revisão (T3-REFERENCIA §4c): o estribo da terça no espigão DESLIZA (pinos, Ku = 2/3·Kser, 7.1.12) — a barra da ponta fica em série com a mola do estribo, mesma lógica de slipFator das diagonais DX/DP */
           if (variante === "b" && q._slipT && m.g === "T" && (primeiro || ultimo)) { var kT = q._slipT.k / ((primeiro && ultimo) ? 2 : 1), fT = 1 / (1 + mod.E * s.b * s.h / (Lb * kT)); bar.secao.A *= fT; bar.slipT = fT; bar.pesoEsp = q.pesoMLC / fT; } if (q.diagnostico && q.diagnostico.tercaSemAxial && m.g === "T") bar.secao.A *= 1e-4; if (q.diagnostico && q.diagnostico.semCinta && (m.g === "FR" || m.g === "T")) bar.secao.A *= 1e-4;      /* DIAGNÓSTICO (só teste): terças sem rigidez axial = espigão como viga bi-apoiada, para a conta à mão */ if ((m.pinI || m.ends) && primeiro) lib.i = { ry: true, rz: true }; if ((m.pinJ || m.ends) && ultimo) lib.j = { ry: true, rz: true }; }
         if (m.uni) lib = { i: { ry: true, rz: true }, j: { ry: true, rz: true } };
-        if (m.artic) { var iv = curto ? n : n >> 1; if (!curto) { if (!(n & 1) && iv >= 1) lib.i = ext(lib.i || {}, { ry: true }); if ((n & 1) && iv <= nIv - 2) lib.j = ext(lib.j || {}, { ry: true }); } }
+        if (m.artic) { var iv = curto ? n : n >> 1; if (!curto) { var rel = (m.g === "T" && !q.tercaContinua && G.info && G.info.tesouraTipo) ? { ry: true, rz: true } : { ry: true };      /* TERÇA BIAPOIADA entre tesouras (arranjo de carpinteiro, 17/11/2026): rotação liberada nos dois eixos em cada tesoura/meia-tesoura; só a força AXIAL (tirante do arco do espigão) passa pela emenda passante. q.tercaContinua = controle negativo (modelo contínuo, o antigo) */
+          if (!(n & 1) && iv >= 1) lib.i = ext(lib.i || {}, rel); if ((n & 1) && iv <= nIv - 2) lib.j = ext(lib.j || {}, rel); } }
         if (lib.i || lib.j) bar.libera = lib;
         barras.push(bar);
       });
@@ -317,7 +323,8 @@
     });
     });
     tag = "env";      /* o que vem depois (F1d, apoio) não é de um modelo só */
-    res.torcaoFR = torcaoFR(sec, res.espigao, res.cinta, MD.perfilEResist(CL, perfil("curta")).f.fvd); res.detalheSela = (q.params && q.params.detalheSela) === "torcao" ? "torcao" : "chapa";
+    res.excent = excent(sec);
+    res.torcaoFR = torcaoFR(sec, res.espigao, res.cinta, MD.perfilEResist(CL, perfil("curta")).f.fvd, Math.PI / 4, res.excent);      /* referência do detalhe alternativo: dlt = e_v do arranjo novo (dFR + evE), β = 45° passado */ res.detalheSela = (q.params && q.params.detalheSela) === "torcao" ? "torcao" : "chapa";
     if (res.detalheSela === "torcao" && !res.torcaoFR.ok) res.esbeltez.FR = { esbelto: true, eixo: "b", lambdaMax: 0, torcao: true };      /* alternativa: a torção cresce o b primeiro (τT ∝ 1/b², o h se cancela) */
     /* compressão ⊥ às fibras no apoio do frechal sob o banzo inferior / pilar (6.3.3) */
     (function () {
@@ -382,7 +389,7 @@
     res.cargasTotais = cargasTot; res.tipologia = "T3"; res.ventoGeometria = VT.geometria; res.avisosAnalise = r.avisos;
     res.avisos.push("T3: não modelados (declarado): torção por excentricidade do vento (6.6), vento oblíquo, caibros/ripas secundários, rincão (planta em L); travamento inferior das terças adotado " + (travB ? travB + " m" : "= vão (a favor)") + "; espigão com L0 fora do plano = comprimento total do canto à cumeeira (sem crédito das terças).");
     res.avisos.push("T3: espigão, ligação espigão × cumeeira e tesoura de extremidade dimensionados pela ENVOLVENTE de 2 modelos — (a) terça com rigidez axial cheia (espigão como arco com tirante) e (b) estribo da terça no espigão com deslizamento dos pinos (" + slipTinfo.n + " pinos Ø" + Math.round(slipTinfo.d * 1000) + " por ponta, Ku = " + Math.round(slipTinfo.Ku) + " kN/m por pino, NBR 7190-1:2022, 7.1.12): η do espigão (a) " + (res.porModelo.a.E ? res.porModelo.a.E.eta.toFixed(3) : "-") + " × (b) " + (res.porModelo.b.E ? res.porModelo.b.E.eta.toFixed(3) : "-") + ".");
-    res.avisos.push("T3: momento de projeto do espigão = MAIOR entre a envolvente dos modelos (a)/(b) e a viga bi-apoiada canto–ápice com as forças VERTICAIS reais das terças (Mz da viga " + (res.espigaoViga ? res.espigaoViga.M.toFixed(2) : "-") + " kN·m na combinação " + (res.espigaoViga ? res.espigaoViga.comb : "-") + "; do modelo " + (res.espigaoViga ? res.espigaoViga.Mmodelo.toFixed(2) : "-") + " kN·m). EXIGÊNCIA DE PROJETO: terças contínuas sobre a tesoura/meia-tesoura, ou emenda rígida; emenda articulada sobre a tesoura não é permitida sem novo cálculo. A telha apoia nas terças; caibros sobre o espigão não estão no modelo.");
+    res.avisos.push("T3: momento de projeto do espigão = MAIOR entre a envolvente dos modelos (a)/(b) e a viga bi-apoiada canto–ápice com as forças VERTICAIS reais das terças (Mz da viga " + (res.espigaoViga ? res.espigaoViga.M.toFixed(2) : "-") + " kN·m na combinação " + (res.espigaoViga ? res.espigaoViga.comb : "-") + "; do modelo " + (res.espigaoViga ? res.espigaoViga.Mmodelo.toFixed(2) : "-") + " kN·m). EXIGÊNCIA DE PROJETO: terça BIAPOIADA entre as tesouras/meias-tesouras (rotação liberada em cada tesoura no modelo); a emenda passante transmite só a força AXIAL (tirante do arco do espigão); não é emenda rígida. A telha apoia nas terças; caibros sobre o espigão não estão no modelo.");
     res.avisos.push("T3: vento — ADICIONADOS à envolvente (sem substituir) os casos de vento paralelo à cumeeira com cpe = +0,2 na água de cabeceira a barlavento (" + CS.filter(function (c) { return c.extra; }).map(function (c) { return c.id; }).join(", ") + "); premissa a confirmar pelo RT.");
     return res;
   }
@@ -437,7 +444,7 @@
     return { LG: LG, Ktheta: out.porGrupo[gov].Ktheta, pilar: env[gov], grupoGov: gov, porGrupo: out.porGrupo };
   }
 
-  var MadT3Calc = { slipTerca: slipTerca, slipDiag: slipDiag, slipFator: slipFator, pressaoParede: pressaoParede, vigaEspigao: vigaEspigao, torcaoFR: torcaoFR, T3_LIM: T3_LIM, padrao: t3Padrao, montar: t3Montar, casos: t3Casos, rodar: t3Rodar, dimensionar: t3Dimensionar, pior: t3Pior, crescer: t3Crescer, base: t3Base, vento: t3Vento, familias: familias, kMedido: kMedido, maxGap: maxGap, perfilFn: perfilFn, modulos: modulos, ret: ret, durClasse: durClasse, modeloSemFalha: modeloSemFalha, diagNo: diagNo };
+  var MadT3Calc = { excent: excent, slipTerca: slipTerca, slipDiag: slipDiag, slipFator: slipFator, pressaoParede: pressaoParede, vigaEspigao: vigaEspigao, torcaoFR: torcaoFR, T3_LIM: T3_LIM, padrao: t3Padrao, montar: t3Montar, casos: t3Casos, rodar: t3Rodar, dimensionar: t3Dimensionar, pior: t3Pior, crescer: t3Crescer, base: t3Base, vento: t3Vento, familias: familias, kMedido: kMedido, maxGap: maxGap, perfilFn: perfilFn, modulos: modulos, ret: ret, durClasse: durClasse, modeloSemFalha: modeloSemFalha, diagNo: diagNo };
   if (typeof module !== "undefined" && module.exports) module.exports = MadT3Calc;
   else global.MadT3Calc = MadT3Calc;
 })(typeof window !== "undefined" ? window : this);

@@ -193,6 +193,7 @@
     var classe = Q.txt(opcoes.classe) || Q.classeDe((arr(res.fonte.pecas).filter(function (x) { return /MLC/.test(x.material || ""); })[0] || {}).material || "MLC GL24h");
     var ctx0 = { res: res, E: E, geo: geo, op: opcoes, rev: rev, avisos: avisos, classe: classe, pc: [], cels: [] }; ctx0.d = contexto(res); ctx0.pend = ctx0.d.pend;
     var ORDEM = [["E01", "cobertura", folhaE01, null, "PLANTA DE COBERTURA - ESPIGÕES, CUMEEIRA, TERÇAS, TESOURAS E MEIAS-TESOURAS"], ["E02", "elevacoes", folhaE02, null, "ELEVAÇÕES FRONTAL E LATERAL"], ["E03", "tesouras", folhaE03, null, "TESOURA PRINCIPAL E MEIA-TESOURA - ELEVAÇÕES"], ["E04", "nos", folhaE04, null, "DETALHES DOS NÓS - ESPIGÃO NO CANTO E NA CUMEEIRA, TERÇA EM BISEL, CINTA"], ["E10", "pecas", folhaE05, null, "LISTA DE PEÇAS POR POSIÇÃO"]];
+    var EPr = dep("MadEncaixePranchas", "./madencaixepranchas.js"); if (EPr && opcoes.fichasCorte !== false) { try { ORDEM = ORDEM.concat(EPr.defs(res, ORDEM.length + 1)); } catch (e) { avisos.push("Fichas de corte: " + e.message); } }      /* fichas de corte, lista de corte e nós montados (js/madencaixepranchas.js) */
     var feitas = [];
     ORDEM.forEach(function (def, i) {
       var D = new I.Desenho(E, opcoes.depurar ? [] : null), c = {}, resF = {}; Object.keys(ctx0).forEach(function (k) { c[k] = ctx0[k]; }); c.D = D; c.rotulo = "0" + (i + 1);
@@ -211,7 +212,7 @@
       var D = f.D, fl = pr.folhas[i], W = geo.papel.w, H = geo.papel.h, M = geo.moldura, Fd = new I.Desenho(E, null);
       Fd.ret(M.x, M.y, M.w, M.h, "MAD-MOLDURA");
       try { I.colunaNotas(Fd, geo, blocos); } catch (e) { avisos.push("Notas: " + e.message); }
-      var rotuloFolha = f.rotulo + "/05"; I.carimbo(Fd, pr, fl, geo, empObj, opcoes.logo || null, rotuloFolha);
+      var rotuloFolha = f.rotulo + "/" + (feitas.length < 10 ? "0" : "") + feitas.length; I.carimbo(Fd, pr, fl, geo, empObj, opcoes.logo || null, rotuloFolha);
       var numero = codigo + "-E" + f.rotulo;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + I.n(W) + 'mm" height="' + I.n(H) + 'mm" viewBox="0 0 ' + I.n(W) + " " + I.n(H) + '" font-family="' + I.FONTE + '" data-folha="' + f.def[1] + '" data-numero="' + I.esc(numero) + '">' +
         "<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc(((opcoes.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + SX().FAIXA)) + "</text></svg>";

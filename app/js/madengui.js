@@ -831,10 +831,11 @@
     if (!lic("levar o modelo ao BIM") || semResultado()) return false;
     var pre = preliminarAtiva(); if (!quieto && !confirmarPreliminar(pre, "O modelo no BIM")) return false;
     var B = global.BIM; if (!B || !B.editarLote) { toast("Abra o BIM primeiro: o modelo vai para o modelador.", "aviso", 6000); return false; }
-    var ops = SA().opsBim(resAtiva().fonte.pecas);
+    var rb = resAtiva(), pcsB = (rb.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.pecasModelo(rb) : rb.fonte.pecas;     /* T3: uma peça por MEMBRO com o sólido cortado (a fonte agrupa por marca e mostrava só uma de cada) */
+    var ops = SA().opsBim(pcsB);
     var ok = B.editarLote({ op: "lote", id: "madeng-" + est().ativa + marcaArq(pre), ops: ops });
     if (!ok) { toast("O BIM não aceitou o lote de peças.", "erro", 7000); return false; }
-    UIE.saidas.bim = true; if (!quieto) { toast(ops.length + " peças enviadas ao BIM.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } } return true;
+    UIE.saidas.bim = true; if (!quieto) { toast(ops.length + " peças enviadas ao BIM." + (rb.tipologia === "T3" ? " O 3D omite os rebaixos do espigão e das diagonais (bico raso de 2 a 3 %); o IFC os tem." : ""), "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } } return true;
   }
   function mostrar3d(i) { var r = resAtiva(); if (!r) return; var a = arr(r.auditoria.achados)[i]; if (!a) return; var pcs = (r.fonte && r.fonte.pecas) || [], id = a.peca; if (!id || !pcs.some(function (p) { return p.id === id; })) id = pecaDoItem({ texto: a.mensagem || a.texto || "", peca: null }, r) || id; mostrar3dPeca(id); }      /* etapa 1: achado GLOBAL (peça "modelo", que não existe na cena) mostra a peça mais próxima em vez de tentar 40× e falhar */
   function mostrar3dPeca(id) {

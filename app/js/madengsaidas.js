@@ -35,6 +35,7 @@
   /** receita de extrusão da peça (null se não tem corpo: telha, lambri, parafusos…) */
   function corpoPeca(p) {
     var s = p.secao, p0 = p.p0, p1 = p.p1; if (!s || !p0 || !p1) return null;
+    if (p.malha && p.receita) return { categoria: categoriaDe(p, sub(p1, p0)), receita: p.receita, malha: p.malha };      /* madencaixe.js: sólido cortado (IFC leva a malha; o BIM refaz pela receita booleana) */
     if (s.tipo === "perfil" && s.perfil && s.perfil.length >= 3) {
       var x = p0[0], b = s.b;
       return { categoria: "viga", receita: { forma: "extrusao", contorno: s.perfil.map(function (q) { return [r(q[0], 4), r(q[1], 4)]; }), altura: b,
@@ -57,8 +58,8 @@
       var c = corpoPeca(p); if (!c) return;
       var psets = { MadEng_Peca: [["Id", "IFCIDENTIFIER", p.id], ["Grupo", "IFCLABEL", p.grupo], ["Material", "IFCLABEL", matCurto(p.material)], ["Especificacao", "IFCTEXT", String(p.especificacao || "").slice(0, 400)],
         ["Comprimento", "IFCLENGTHMEASURE", p.comprimento_m], ["Volume", "IFCVOLUMEMEASURE", p.volume_m3], ["Quantidade", "IFCINTEGER", p.qtd == null ? 1 : p.qtd], ["Opcao", "IFCLABEL", opcao || ""]] };
-      out.push({ id: "mad-" + p.id, tipo: "volume", categoria: c.categoria, ifc: { pilar: "IFCCOLUMN", viga: "IFCBEAM", generico: "IFCBUILDINGELEMENTPROXY" }[c.categoria], material: matCurto(p.material),
-        nome: p.id + " — " + String(p.descricao || "").slice(0, 60), receita: c.receita, psets: psets });
+      out.push({ id: "mad-" + p.id, tipo: "volume", categoria: c.categoria, ifc: { pilar: "IFCCOLUMN", viga: "IFCBEAM", generico: "IFCBUILDINGELEMENTPROXY" }[c.categoria], material: p.materialBim || matCurto(p.material),
+        nome: p.id + " — " + String(p.descricao || "").slice(0, 60), receita: c.receita, malha: c.malha || undefined, psets: psets });
     });
     return out;
   }
