@@ -1305,6 +1305,8 @@
     if (o.anexarParedes !== undefined) { if (o.anexarParedes !== null && typeof o.anexarParedes !== "boolean") return false; algum = true; }
     /* CONJUNTO do Telhado paramétrico: forro, perfil da terça, linhas de apoio da obra, o cálculo e as fontes (null apaga) */
     if (o.conjunto !== undefined) { if (o.conjunto !== null && !conjuntoValido(o.conjunto)) return false; algum = true; }
+    /* MADEIRA CALCULADA (cobertura × módulo Madeira): o resultado do cálculo que volta para as peças — js/madcobertura.js (null apaga) */
+    if (o.calcMadeira !== undefined) { if (o.calcMadeira !== null && !calcMadeiraValido(o.calcMadeira)) return false; algum = true; }
     /* T5 (20/10/2026): a EDIÇÃO DE PEÇA da estrutura derivada — um remendo { <id da peça>: campos | null } (js/bimtelhadoestrut.js) */
     if (o.sobrepor !== undefined) {
       var ESv = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
@@ -1319,6 +1321,20 @@
     if (Array.isArray(v)) { if (dentro) return false; return v.every(function (x) { return semListaEmLista(x, true, prof + 1); }); }
     if (v && typeof v === "object") return Object.keys(v).every(function (k) { return semListaEmLista(v[k], false, prof + 1); });
     return true;
+  }
+  /* o resultado do cálculo da madeira gravado na op: objeto plano (seções por papel, espaçamentos, situação), SEM lista dentro de lista, até 24 KB */
+  function calcMadeiraValido(c) {
+    if (!obj(c)) return false;
+    if (c.secoes !== undefined) {
+      if (!obj(c.secoes) || Object.keys(c.secoes).length > 16) return false;
+      for (var k in c.secoes) { var q = c.secoes[k]; if (!/^[a-z0-9-]{1,24}$/.test(k) || !obj(q) || !(fin(q.b) && q.b >= 0.02 && q.b <= 0.6 && fin(q.h) && q.h >= 0.02 && q.h <= 0.8)) return false; }
+    }
+    if (c.espApoio !== undefined && c.espApoio !== null && !(fin(c.espApoio) && c.espApoio >= 0.3 && c.espApoio <= 8)) return false;
+    if (c.espTerca !== undefined && c.espTerca !== null && !(fin(c.espTerca) && c.espTerca >= 0.3 && c.espTerca <= 4)) return false;
+    if (c.pecasMotor !== undefined) { if (!Array.isArray(c.pecasMotor) || c.pecasMotor.length > 90 || !c.pecasMotor.every(function (q) { return obj(q) && /^[a-z]{3,12}$/.test(String(q.r)) && fin(q.b) && fin(q.h) && q.b > 0 && q.h > 0 && ["x0", "y0", "z0", "x1", "y1", "z1"].every(function (k) { return fin(q[k]) && Math.abs(q[k]) <= 1e6; }); })) return false; }
+    if (c.pontosApoio !== undefined) { if (!Array.isArray(c.pontosApoio) || c.pontosApoio.length > 64 || !c.pontosApoio.every(function (q) { return obj(q) && fin(q.x) && fin(q.z) && Math.abs(q.x) <= 1e6 && Math.abs(q.z) <= 1e6; })) return false; }
+    var tam = 0; try { tam = JSON.stringify(c).length; } catch (e) { return false; }
+    return tam <= 24000 && semListaEmLista(c, false, 0);
   }
   function conjuntoValido(c) {
     if (!obj(c)) return false;
@@ -1365,7 +1381,7 @@
     return algum;
   }
 
-  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto"];
+  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto", "calcMadeira"];
   var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct", "saidas", "semDescida", "alturaAuto", "recuo"];
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 

@@ -294,7 +294,7 @@
       var st = S.de(t); if (!VIVOS[st]) return null;
       return { id: String(t.id), pts: t.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), beiral: num(t.beiral, 0), inclinacao: num(t.inclinacao, 0), area: num(t.area, 0), areaProjecao: num(t.areaProjecao, 0), cumeeira: num(t.cumeeira, 0),
         pBeiral: (function () { var P = arr(t.arestasCalc).map(function (a) { return a && a.beiral && a.beiral.a ? [num(a.beiral.a.x, 0), num(a.beiral.a.z, 0)] : null; }); return P.length >= 3 && P.every(function (q) { return !!q; }) ? P : null; })(),
-        espigao: num(t.espigao, 0), rincao: num(t.rincao, 0), nAguas: num(t.nAguas, 0), cotaCumeeira: num(t.cotaCumeeira, 0), cotaApoio: num(t.cotaApoio, 0), tipo: txt(t.tipoTelhado && t.tipoTelhado.rotulo), material: materialTelhado(t), aguas: arr(t.aguasCalc), arestas: arr(t.arestasCalc), status: st };
+        espigao: num(t.espigao, 0), rincao: num(t.rincao, 0), nAguas: num(t.nAguas, 0), cotaCumeeira: num(t.cotaCumeeira, 0), cotaApoio: num(t.cotaApoio, 0), madeira: (t.calcMadeira ? { preliminar: !!t.calcMadeira.preliminar, semSolucao: !!t.calcMadeira.semSolucao, sistema: txt(t.calcMadeira.sistema), motivo: txt(arr(t.calcMadeira.motivos)[0]) } : null), tipo: txt(t.tipoTelhado && t.tipoTelhado.rotulo), material: materialTelhado(t), aguas: arr(t.aguasCalc), arestas: arr(t.arestasCalc), status: st };
     }).filter(function (t) { return !!t; });
     out.bordas = arr(est.bordas);
     /* COBERTURA COMPLETA (js/bimcobertura.js, js/bimtelhado.js): platibanda, bordas do beiral (calha, rufo, testeira), calha embutida e rufo de encontro, com a fase e o comprimento do MODELO.

@@ -37703,7 +37703,7 @@ var base = uniq(marcos);
 var nos = [];
 for (i = 0; i + 1 < base.length; i++) {
 var a = base[i], b = base[i + 1];
-var k = Math.max(1, Math.ceil((b - a) / PASSO));
+var k = Math.max(1, Math.ceil((b - a) / (MadViga.passo || PASSO)));
 for (var j = 0; j < k; j++) nos.push(a + (b - a) * j / k);
 }
 nos.push(L);

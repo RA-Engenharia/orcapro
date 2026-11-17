@@ -40,7 +40,7 @@
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
   var cfg = {
-    telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null, modelo: "auto", beiralMexido: false,
+    telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null, modelo: "auto", madCalc: "nao", beiralMexido: false,
                ref: "beiral", comp: null, larg: null, seguir: null,   /* T4: linha de referência (beiral/cumeeira), cotas digitadas e a peça seguida */
                conjunto: false, forroTipoId: "drywall-12_5-madeira", v0: null },   /* TELHADO PARAMÉTRICO (conjunto, js/bimtelhadoparamui.js): o contorno desenhado vira o conjunto, não um telhado solto */
     fundacao: { tipoFundacao: "sapata", largura: 1.2, comprimento: 1.2, altura: 0.4, alturaBase: null, larguraTopo: null, comprimentoTopo: null,
@@ -267,6 +267,7 @@
         };
       });
       if (global.BimTelhadoParamUI) global.BimTelhadoParamUI.registrar(reg, arqui, opts, armar);   /* TELHADO PARAMÉTRICO: o conjunto (js/bimtelhadoparamui.js) */
+      if (global.MadCoberturaUI) global.MadCoberturaUI.registrar(reg, arqui, opts);   /* MADEIRA CALCULADA: o menu Arquitetura › Madeira calculada (js/madcoberturaui.js) */
       if (global.BimCoberturaUI) global.BimCoberturaUI.registrar(reg, arqui, opts);   /* COBERTURA COMPLETA: estrutura, platibanda, calha, sanca… (js/bimcoberturaui.js) */
       return true;
     },
@@ -289,6 +290,7 @@
           ro("b2f:te:seguirEf", "Seguir inclinação de (1 água)", c.seguir && c.aguas === 1 ? c.seguir.rotulo + " — " + n2(c.seguir.inclinacao, 1) + " %" : "—"),
           { id: "b2f:te:modelo", rotulo: "Modelo (estrutura e telhas)", tipo: "lista", valor: c.modelo || "nenhum", opcoes: self.opcoesModelo() },
           ro("b2f:te:modeloEf", "Modelo que sai", self.rotuloModelo(self.modeloEf(c))),
+          { id: "b2f:te:madCalc", rotulo: "Madeira (módulo de cálculo)", tipo: "lista", valor: c.madCalc === "auto" ? "auto" : "nao", opcoes: [{ id: "nao", rotulo: "Só desenhar (madeira de partida)" }, { id: "auto", rotulo: "Calcular ao lançar — apoio e sistema automáticos" }] },
           { id: "b2f:te:inclinacao", rotulo: "Inclinação", unidade: "%", tipo: "numero", passo: "1", valor: c.inclinacao },
           ro("b2f:te:incMin", "Inclinação mínima do fabricante", (function () { var tl = T.telha(c.tipoId); return tl && fin(tl.inclinacaoMinPct) ? n2(tl.inclinacaoMinPct, 1) + " %" + (c.inclinacao < tl.inclinacaoMinPct - 1e-9 ? " — ABAIXO DO MÍNIMO" : "") : (tl ? "não verificada (valor de partida)" : "— (tipo sem catálogo)"); })()),
           { id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: self.beiralEf(c) },
@@ -338,6 +340,7 @@
           if (m[1] === "te" && T.inclinacaoPadrao) { var im = T.inclinacaoPadrao(valor); if (fin(im)) alvo.inclinacao = im; }
         }
       }
+      else if (c === "madCalc") alvo.madCalc = valor === "auto" ? "auto" : "nao";
       else if (c === "modelo") { var ME = ESM(); alvo.modelo = valor === "auto" || valor === "nenhum" || (ME && ME.MODELOS && ME.MODELOS[valor]) ? String(valor) : alvo.modelo; }
       else if (c === "modo") alvo.modo = valor === "contorno" || valor === "paredes" || valor === "edificacao" || valor === "extrusao" || valor === "linha" || valor === "corte" ? valor : "retangulo";
       else if (c === "ref") alvo.ref = valor === "cumeeira" ? "cumeeira" : "beiral";
@@ -394,7 +397,9 @@
     opTelhado: function (estado, dados, nivel, base, leve) {
       var T = TM(); if (!T) return { ok: false, motivo: "O motor do telhado (js/bimtelhado.js) não carregou." };
       var c = cfg.telhado, d = { inclinacao: c.inclinacao, beiral: this.beiralEf(c), tipoId: c.tipoId }, mEf = this.modeloEf(c);
-      if (mEf && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = mEf;   /* T1: o telhado nasce com o modelo (estrutura + telhas derivadas) */
+      if (mEf && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = mEf;
+      /* MADEIRA CALCULADA: nasce com um modelo de madeira pela telha; o cálculo (js/madcobertura.js) escolhe o sistema pelo apoio e o regrava logo depois de lançar */
+      if (c.madCalc === "auto" && global.MadCobertura && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = global.MadCobertura.modeloMadeira("terca", { telha: T.telha(c.tipoId) });   /* T1: o telhado nasce com o modelo (estrutura + telhas derivadas) */
       d.deslocBase = c.deslocBase != null ? c.deslocBase : (nivel && +nivel.peDireito > 0 ? +nivel.peDireito : 2.8);
       if (nivel && nivel.id != null) { d.nivelId = String(nivel.id); d.base = +nivel.elevacao || 0; } else d.base = +base || 0;
       /* T4: o desenho (linha, corte, seguir peça) pode trazer a inclinação e a COTA de apoio (absoluta) — a do perfil
@@ -665,6 +670,7 @@
           return true;
         }
         cancelar(); api.op(r.op); if (api.fechou) api.fechou();
+        if (cfg.telhado.madCalc === "auto" && r.op && r.op.op === "telhado" && global.MadCoberturaUI) global.MadCoberturaUI.aposLancar(r.op.id);   /* MADEIRA CALCULADA: calcula logo depois de lançar */
         api.hint(r.resumo + " Clique para outro, ou Esc."); status(r.resumo);
         return true;
       }
@@ -1335,6 +1341,7 @@
       if (!ps.length) ps.push({ id: "tpe:dica", rotulo: "Editar uma peça", leitura: true, valor: "clique de novo no telhado (ou Tab) para pegar a terça, viga, caibro, ripa ou tesoura sob o cursor" });
       var secs = [{ nome: "Peças da estrutura", params: ps }];
       if (t.conjunto) secs.unshift(secaoConjunto(t, tid));
+      if (global.MadCoberturaUI && global.MadCoberturaUI.secao && !t.conjunto) secs.push(global.MadCoberturaUI.secao(t, tid));   /* MADEIRA CALCULADA (js/madcoberturaui.js) */
       return secs;
     }
   };

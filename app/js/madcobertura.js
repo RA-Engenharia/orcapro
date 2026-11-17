@@ -1,0 +1,662 @@
+/* =====================================================================
+ * madcobertura.js — A PONTE ENTRE A COBERTURA DO BIM E O MÓDULO DE MADEIRA. Motor PURO (ES5, sem DOM, Node-testável).
+ *
+ * Pedido do Rogério (17/11/2026): "puxo a delimitação, falo se quero beiral, e ele lança em cima do nível; a madeira tinha que estar lá dentro: lá a
+ * gente fazia tudo e aqui (módulo de madeira) ele só calculava. O telhado já sai na volumetria de acordo com a telha, com as ripas para aquele tipo".
+ * Complemento: a família é PARAMÉTRICA e AUTOSSUFICIENTE — o usuário não digita espaçamento; ela decide pela telha e pelo APOIO detectado no modelo
+ * (laje, paredes ou pilares) e só aceita SOBRESCRITA opcional. Cálculo EM LAÇO: propõe → calcula → ajusta espaçamento/seção → fecha ou sai PRELIMINAR com o motivo.
+ *
+ * O QUE JÁ EXISTIA (e continua mandando): o telhado do BIM (js/bimtelhado.js), a telha de catálogo (galga, vão, caibro), o MODELO de madeira derivado do telhado
+ * (js/bimtelhadoestrut.js — tesoura/terça/caibro/ripa, as telhas na volumetria, quantitativo, IFC) e o motor de madeira engenharada (T2/T3 do js/madengworker.js).
+ * O QUE ESTE ARQUIVO FAZ (sem duplicar nada):
+ *   1) LÊ o telhado calculado (delimitação, nível, beiral por lado, inclinação, nº de águas, telha) e RECUSA o que o motor não calcula, com a frase clara;
+ *   2) DETECTA O APOIO no modelo — LAJE sob a cobertura, PAREDES no contorno ou PILARES — e escolhe sozinho o sistema:
+ *        paredes + retângulo de 2 ou 4 águas → TESOURAS (motor T2/T3, Pratt/Howe/Fink), frechal nas paredes;
+ *        laje → terças sobre PONTALETES distribuídos na laje (o laço escolhe o vão que gasta menos madeira);
+ *        pilares / pontos marcados → terças sobre as LINHAS dos pilares (telhado aparente) — o laço acha a seção, ou sai PRELIMINAR com o porquê;
+ *   3) monta a ENTRADA do motor (peso da telha do catálogo + ripas e caibros do modelo entram na carga) ou roda o LAÇO DE TERÇAS/CAIBROS
+ *      (MadDim.vigaFletida: flexão, cisalhamento, flecha e 1 kN concentrado — NBR 7190-1:2022 / NBR 6120:2019 6.4);
+ *   4) devolve o resultado como a op `{op:"telhado", calcMadeira}` — seções POR PAPEL (perna, linha, terça, caibro…), espaçamentos e situação — que o
+ *      js/bimtelhadoestrut.js lê ao remodelar: as peças, as ripas, as telhas, o quantitativo, o IFC e as pranchas saem do MODELO (tudo vem do modelo);
+ *   5) `situacao()` diz se o cálculo está DESATUALIZADO (mudou delimitação, beiral, inclinação, telha, apoio ou nível): a tela recalcula.
+ *
+ * PONTO DE LIGAÇÃO COM O madencaixe (outra frente — js/madencaixe.js): `encaixe(pacote, calc)` chama `global.MadEncaixe.aplicarCobertura(pacote, calc)` SE
+ * existir (devolve { avisos?, acabamento? }); sem o arquivo, segue sem encaixe e diz isso. Nada de geometria de corte é duplicada aqui.
+ *
+ * LIMITES (escritos): vento (NBR 6123) e ligações NÃO são verificados no laço de terças (só no motor de tesouras); componente da carga paralela ao plano
+ * da água não é verificada; planta em L / poligonal (rincão) e T4 não existem; 1 água usa o laço (o T1 do módulo é o quiosque de pilares).
+ * Teste: node tools/test-cobertura-madeira.js
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+
+  function dep(nome, arq) {
+    if (global[nome]) return global[nome];
+    if (typeof require === "function") { try { return require(arq); } catch (e) { /* ausente */ } }
+    return null;
+  }
+  function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+  function fin(v) { return typeof v === "number" && isFinite(v); }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function r3(v) { return Math.round(v * 1000) / 1000; }
+  function r4(v) { return Math.round(v * 10000) / 10000; }
+  function virg(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+  function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+  function ext(a) { for (var i = 1; i < arguments.length; i++) for (var k in arguments[i]) if (Object.prototype.hasOwnProperty.call(arguments[i], k)) a[k] = arguments[i][k]; return a; }
+  function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
+  function ES() { return dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); }
+  function EN() { return dep("MadEngEntrada", "./madengentrada.js"); }
+  function MD() { return dep("MadDim", "./maddim7190.js"); }
+  function MM() { return dep("MadMateriais", "./madmateriais.js"); }
+  function CA() { return dep("AcoCargas", "./acocargas.js"); }
+
+  var VERSAO = 1;
+  var G_MAD = 5.0;                 /* kN/m³ — o mesmo peso do motor (pesoMLC) */
+  var CLASSE_PADRAO = "mlc:GL24h"; /* a classe do motor de madeira engenharada */
+  var PESO_PARTIDA = { ceramica: 0.55, concreto: 0.55, generico: 0.55, outra: 0.12 };   /* kN/m² do motor (cerâmica "com ripas" / termoacústica) — só quando o catálogo não traz o peso */
+  var ESP_APOIO_MAX = 3.2;         /* eixo máximo das tesouras/linhas de apoio do SINAPI (js/bimtelhadoestrut.js ESPAC.apoio) */
+
+  /* ------------------------------------------------------------ grades de seção (as do motor: partida 6×12, passo 2×4 cm) */
+  function gradeSecoes(b0, b1, bp, h0, h1, hp) {
+    var out = [], b, h;
+    for (b = b0; b <= b1 + 1e-9; b += bp) for (h = h0; h <= h1 + 1e-9; h += hp) if (h >= b - 1e-9) out.push({ b: r3(b), h: r3(h) });
+    out.sort(function (x, y) { return x.b * x.h - y.b * y.h || x.h - y.h; });
+    return out;
+  }
+  var GRADE_TERCA = gradeSecoes(0.06, 0.16, 0.02, 0.12, 0.36, 0.04);     /* limites do motor: h ≤ 0,36 e b ≤ 0,24 (aqui até 0,16) */
+  var GRADE_CAIBRO = gradeSecoes(0.05, 0.08, 0.01, 0.06, 0.14, 0.02);
+  var GRADE_VIGA = gradeSecoes(0.08, 0.20, 0.02, 0.16, 0.48, 0.04);
+
+  /* ------------------------------------------------------------ geometria plana */
+  function dentro(p, P) { var T = BT(); if (T && T.dentro) return T.dentro(p, P); var c = false, i, j; for (i = 0, j = P.length - 1; i < P.length; j = i++) if (((P[i][1] > p[1]) !== (P[j][1] > p[1])) && (p[0] < (P[j][0] - P[i][0]) * (p[1] - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0])) c = !c; return c; }
+  function dentroTol(p, P, tol) {
+    if (dentro(p, P)) return true;
+    var i, n = P.length; for (i = 0; i < n; i++) {
+      var a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz, k = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)) : 0;
+      if (Math.sqrt(Math.pow(p[0] - (a[0] + k * dx), 2) + Math.pow(p[1] - (a[1] + k * dz), 2)) <= tol) return true;
+    }
+    return false;
+  }
+  function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+
+  /* ======================================================================
+   * 1) LER O TELHADO — o que o motor aceita e o que recusa (a frase clara)
+   * ====================================================================== */
+  function achar(estado, id) { var l = arr(estado && estado.telhados); for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === String(id)) return l[i]; return null; }
+
+  function lerTelhado(estado, id) {
+    var t = achar(estado, id);
+    if (!t) return { ok: false, motivo: "O telhado " + id + " não existe no modelo." };
+    if (!t.ok) return { ok: false, motivo: "O telhado " + id + " não fechou a geometria (veja os avisos do telhado)." };
+    if (t.modo === "extrusao") return { ok: false, motivo: "O telhado por extrusão fica só com a telha: a madeira calculada é do telhado por perímetro." };
+    var ar = arr(t.arestasCalc), n = ar.length;
+    if (n !== 4) return { ok: false, motivo: "A delimitação tem " + n + " lados: o módulo Madeira calcula cobertura RETANGULAR de 1, 2 ou 4 águas. Planta em L ou poligonal precisa de rincão e tesouras de canto, que ainda não são calculados — desenhe a cobertura em retângulos separados (Unir telhado) ou use o modelo de madeira sem cálculo." };
+    var L = [], k;
+    for (k = 0; k < 4; k++) L.push(distP(ar[k].parede.a, ar[k].parede.b));
+    var ortog = true;
+    for (k = 0; k < 4; k++) {
+      var a = ar[k].parede, b = ar[(k + 1) % 4].parede, ux = (a.b.x - a.a.x) / (L[k] || 1), uz = (a.b.z - a.a.z) / (L[k] || 1), vx = (b.b.x - b.a.x) / (L[(k + 1) % 4] || 1), vz = (b.b.z - b.a.z) / (L[(k + 1) % 4] || 1);
+      if (Math.abs(ux * vx + uz * vz) > 0.02) ortog = false;
+    }
+    if (!ortog || Math.abs(L[0] - L[2]) > 0.03 || Math.abs(L[1] - L[3]) > 0.03) return { ok: false, motivo: "A delimitação não é um retângulo (lados " + L.map(function (x) { return virg(x); }).join(" × ") + " m): o módulo Madeira calcula só retângulo. Ajuste o contorno." };
+    var def = [], inc = [];
+    ar.forEach(function (e, i) { if (e.define) { def.push(i); inc.push(num(e.inclinacao, 0)); } });
+    var incl = inc.length ? inc[0] : 0;
+    if (inc.some(function (x) { return Math.abs(x - incl) > 0.01; })) return { ok: false, motivo: "As águas têm inclinações diferentes (" + inc.map(function (x) { return virg(x, 1) + " %"; }).join(", ") + "): o módulo Madeira calcula inclinação única. Use a mesma inclinação nas arestas." };
+    if (!(incl >= 5)) return { ok: false, motivo: "Inclinação de " + virg(incl, 1) + " %: o módulo exige no mínimo 5 % (telha)." };
+    var tipo, a0, b0, eave = [], gable = [], kA = 0;
+    if (def.length === 4) { tipo = "T3"; a0 = Math.max(L[0], L[1]); b0 = Math.min(L[0], L[1]); eave = [0, 1, 2, 3]; kA = L[0] >= L[1] ? 0 : 1; }
+    else if (def.length === 2 && def[1] - def[0] === 2) {
+      tipo = "T2"; eave = def.slice(); gable = [(def[0] + 1) % 4, (def[0] + 3) % 4]; kA = def[0];
+      a0 = L[def[0]]; b0 = L[(def[0] + 1) % 4];
+      if (a0 < b0 - 1e-6) return { ok: false, motivo: "Duas águas com a cumeeira no lado MENOR (cumeeira " + virg(a0) + " m, vão " + virg(b0) + " m): o módulo exige a cumeeira no lado maior. Gire o caimento (arestas que definem a inclinação nos lados maiores)." };
+    } else if (def.length === 1) { tipo = "T1"; eave = def.slice(); a0 = L[def[0]]; b0 = L[(def[0] + 1) % 4]; kA = def[0]; }
+    else return { ok: false, motivo: "As águas definidas (" + def.length + " arestas" + (def.length === 2 ? " adjacentes" : "") + ") não formam 1 água, 2 águas (lados opostos) nem 4 águas: o módulo Madeira não calcula esta forma (meia-água de canto, 3 águas)." };
+    var be = ar.map(function (e) { return num(e.beiralM, num(t.beiral, 0)); });
+    var beiral;
+    if (tipo === "T3") {
+      if (be.some(function (x) { return Math.abs(x - be[0]) > 0.005; })) return { ok: false, motivo: "O beiral é diferente entre os lados (" + be.map(function (x) { return virg(x); }).join("; ") + " m): o espigão a 45° das 4 águas exige o MESMO beiral nos 4 lados." };
+      beiral = be[0];
+    } else beiral = { eave: eave.map(function (i) { return be[i]; }), gable: gable.map(function (i) { return be[i]; }), todos: be };
+    if (tipo === "T3" && a0 - b0 > 1e-6 && a0 - b0 < 0.5) return { ok: false, motivo: "A diferença entre os lados é " + virg(a0 - b0) + " m (entre 0 e 0,5 m): use planta quadrada (pirâmide) ou afaste os lados em pelo menos 0,5 m." };
+    if (b0 < 3 && tipo !== "T1") return { ok: false, motivo: "Vão de " + virg(b0) + " m: o módulo calcula vão mínimo de 3 m." };
+    var eA = ar[kA].parede, eixoA = Math.abs(eA.b.x - eA.a.x) >= Math.abs(eA.b.z - eA.a.z) ? "x" : "z";
+    var kE = eave.length ? eave[0] : 0, bLat = [be[(kE + 1) % 4], be[(kE + 3) % 4]];
+    var BTm = BT(), tel = BTm && BTm.telha ? BTm.telha(t.tipoId) : null;
+    var baseZ = num(t.elevNivel, 0), pe = num(t.deslocBaseEf, num(t.cotaApoio, 0) - baseZ);
+    return { ok: true, id: String(id), t: t, tipo: tipo, a: r3(a0), b: r3(b0), incl: incl, beiral: beiral, baseZ: baseZ, peDireito: pe, cotaApoio: num(t.cotaApoio, 0), cotaCumeeira: num(t.cotaCumeeira, num(t.cotaApoio, 0)),
+      telha: tel, tipoId: t.tipoId || null, nAguas: num(t.nAguas, 0), eave: eave, gable: gable, eixoA: eixoA, beiralLat: bLat, lados: L, contorno: ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), areaProjecao: num(t.areaProjecao, a0 * b0) };
+  }
+
+  /* ======================================================================
+   * 2) O APOIO NO MODELO — laje, paredes ou pilares (o usuário só sobrescreve)
+   * ====================================================================== */
+  function topoDe(c) { return num(c.cy, 0) + num(c.altura, 0) / 2; }
+  function baseDe(c) { return num(c.cy, 0) - num(c.altura, 0) / 2; }
+  function paredeRet(c) { var th = num(c.rotY, 0); return { cx: num(c.cx, 0), cz: num(c.cz, 0), ux: Math.cos(th), uz: -Math.sin(th), hx: num(c.comprimento, 0) / 2, hz: num(c.espessura, 0.15) / 2 }; }
+  function naRet(r, x, z, tol) { var rx = x - r.cx, rz = z - r.cz, lx = rx * r.ux + rz * r.uz, lz = -rx * r.uz + rz * r.ux; return Math.abs(lx) <= r.hx + tol && Math.abs(lz) <= r.hz + tol; }
+  function amostrasPlano(P, passo) {
+    var xs = P.map(function (q) { return q[0]; }), zs = P.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs), out = [], x, z;
+    for (x = x0 + passo / 2; x < x1; x += passo) for (z = z0 + passo / 2; z < z1; z += passo) if (dentro([x, z], P)) out.push([x, z]);
+    return out;
+  }
+  function polyDe(c) {
+    if (arr(c.contorno).length >= 3) return c.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; });
+    var cx = num(c.cx, 0), cz = num(c.cz, 0), hx = num(c.comprimento, 0) / 2, hz = num(c.largura != null ? c.largura : c.profundidade, num(c.espessura, 0)) / 2, th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th);
+    return [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(function (q) { return [cx + q[0] * ux - q[1] * uz, cz + q[0] * uz + q[1] * ux]; });
+  }
+
+  function detectarApoio(estado, lido, cfg) {
+    cfg = cfg || {};
+    var P = lido.contorno, H0 = lido.cotaApoio, caixas = arr(estado && estado.caixas), r = { lajes: [], paredes: [], pilares: [], coberturaLaje: 0, coberturaParede: 0 };
+    /* laje: topo perto da cota de apoio e cobrindo boa parte da planta */
+    var am = amostrasPlano(P, 0.5), lajes = caixas.filter(function (c) { return c && c.tipo === "laje" && Math.abs(topoDe(c) - H0) <= 0.35; });
+    if (lajes.length && am.length) {
+      var polis = lajes.map(polyDe), cob = 0;
+      am.forEach(function (p) { if (polis.some(function (q) { return dentro(p, q); })) cob++; });
+      r.coberturaLaje = cob / am.length; if (r.coberturaLaje > 0) lajes.forEach(function (c) { r.lajes.push(String(c.id)); });
+    }
+    /* paredes: ao longo do contorno (perímetro coberto por parede que sobe até a cota de apoio) */
+    var pars = caixas.filter(function (c) { return c && c.tipo === "parede" && topoDe(c) >= H0 - 0.6 && baseDe(c) < H0; }), tot = 0, cobP = 0, k;
+    for (k = 0; k < P.length; k++) {
+      var A = P[k], B = P[(k + 1) % P.length], L = Math.sqrt(Math.pow(B[0] - A[0], 2) + Math.pow(B[1] - A[1], 2)), ns = Math.max(2, Math.ceil(L / 0.25)), j;
+      for (j = 0; j < ns; j++) { var u = (j + 0.5) / ns, x = A[0] + (B[0] - A[0]) * u, z = A[1] + (B[1] - A[1]) * u; tot++; if (pars.some(function (c) { return naRet(paredeRet(c), x, z, 0.12); })) cobP++; }
+    }
+    r.coberturaParede = tot ? cobP / tot : 0;
+    pars.forEach(function (c) { r.paredes.push(String(c.id)); });
+    r.rets = pars.map(paredeRet);   /* os retângulos das paredes (só para o motor: onde há parede, o frechal assenta nela e não se cria pilar) */
+    /* pilares do modelo dentro do contorno (aparente) */
+    caixas.forEach(function (c) {
+      if (!c || c.tipo !== "pilar" || !(topoDe(c) >= H0 - 3.0 && topoDe(c) <= H0 + 0.05)) return;
+      var q = [num(c.cx, 0), num(c.cz, 0)], tol = Math.max(0.3, num(c.comprimento, 0.2) / 2 + 0.1);   /* pilar na BORDA (sobre a linha do contorno) também é apoio: tolerância de distância ao polígono */
+      if (!dentroTol(q, P, tol)) return;
+      var mt = String(c.material || c.mat || (c.cob && c.cob.material) || c.materialNome || "").toLowerCase();
+      r.pilares.push({ id: String(c.id), x: r4(q[0]), z: r4(q[1]), madeira: /madeira|mlc|wood|pinus|eucalipto|nibra/.test(mt), circ: c.forma === "circular" || c.secaoForma === "circular" || fin(Number(c.diametro)), d: fin(Number(c.diametro)) ? Number(c.diametro) : num(c.comprimento, 0.2), b: num(c.comprimento, 0.2), topo: r3(topoDe(c)) });
+    });
+    var pontos = arr(cfg.pontos).filter(function (q) { return q && fin(Number(q.x)) && fin(Number(q.z)); }).map(function (q) { return { x: r4(Number(q.x)), z: r4(Number(q.z)) }; });
+    var tipo = cfg.apoio === "laje" || cfg.apoio === "paredes" || cfg.apoio === "pilares" ? cfg.apoio : null, auto = !tipo;
+    if (!tipo) {
+      if (pontos.length >= 2) tipo = "pilares";
+      else if (r.coberturaLaje >= 0.6) tipo = "laje";
+      else if (r.coberturaParede >= 0.85) tipo = "paredes";
+      else if (r.pilares.length >= 2) tipo = "pilares";
+    }
+    r.tipo = tipo; r.automatico = auto; r.pontosMarcados = pontos;
+    r.pontos = tipo === "pilares" ? (pontos.length ? pontos : r.pilares.map(function (q) { return { x: q.x, z: q.z }; })) : [];
+    if (!tipo) r.motivo = "Não achei apoio sob a cobertura: lance paredes no contorno, uma laje na cota de apoio ou pilares (ou marque os pontos de apoio).";
+    else if (tipo === "laje" && r.coberturaLaje < 0.6) r.aviso = "Apoio \"laje\" escolhido à mão, mas a laje cobre só " + Math.round(r.coberturaLaje * 100) + " % da planta.";
+    else if (tipo === "paredes" && r.coberturaParede < 0.85) r.aviso = "Apoio \"paredes\" escolhido à mão, mas as paredes cobrem só " + Math.round(r.coberturaParede * 100) + " % do contorno.";
+    else if (tipo === "pilares" && r.pontos.length < 2) r.aviso = "Apoio \"pilares\" pede ao menos 2 pilares ou pontos marcados.";
+    return r;
+  }
+
+  /* ======================================================================
+   * 3) O MODELO DE MADEIRA E OS PESOS — pela telha, sem digitar nada
+   * ====================================================================== */
+  function modeloMadeira(sistema, lido) {
+    var fam = lido.telha ? lido.telha.familia : "generico", tesoura = sistema === "tesoura", direta = fam === "fibrocimento" || fam === "sanduiche" || fam === "metalica";
+    if (sistema === "vigas") return direta ? "mad-viga" : "mad-viga-cr";
+    if (tesoura) { if (fam === "fibrocimento" || fam === "sanduiche" || fam === "metalica") return "mad-tesoura-terca"; if (fam === "ecologica") return "mad-onduline"; if (fam === "shingle") return "mad-shingle"; return "mad-tesoura"; }
+    return fam === "fibrocimento" || fam === "sanduiche" || fam === "metalica" ? "mad-terca-direta" : "mad-terca";
+  }
+  /* o que a telha pede (galga → ripa; caibro; terça pelo vão) — a MESMA regra do modelar() do js/bimtelhadoestrut.js */
+  function trama(lido, modelo) {
+    var E = ES(), M = E && E.MODELOS ? E.MODELOS[modelo] : null, tel = lido.telha, vaoTel = tel && fin(tel.vaoMaxEntreApoios) ? tel.vaoMaxEntreApoios : null, espT;
+    if (!M) return null;
+    if (!M.caibro) espT = vaoTel != null ? vaoTel : 1.5;
+    else if (tel && fin(tel.tercaMaxM)) espT = tel.tercaMaxM; else espT = E.ESPAC.terca.m;
+    var espCb = tel && fin(tel.caibroM) ? tel.caibroM : E.ESPAC.caibro.m, galga = tel && tel.galga && fin(tel.galga.m) ? tel.galga.m : null;
+    return { M: M, caibro: !!M.caibro, ripa: !!M.ripa, espTerca: espT, espCaibro: espCb, galga: galga, secRipa: tel && tel.ripaSecao ? tel.ripaSecao : E.SEC.ripa, secCaibro: E.SEC.caibro };
+  }
+  function pesos(lido, tr) {
+    var tel = lido.telha, fam = tel ? tel.familia : "generico", partes = [], gt, fontes = [];
+    if (tel && fin(tel.pesoKgM2)) { gt = tel.pesoKgM2 * 0.00980665; fontes.push("telha " + virg(tel.pesoKgM2, 2) + " kg/m² do catálogo (" + (tel.pesoFonte || "fabricante") + ")"); }
+    else { gt = PESO_PARTIDA[fam] != null ? PESO_PARTIDA[fam] : PESO_PARTIDA.outra; fontes.push("peso da telha NÃO verificado no catálogo: valor de partida do motor " + virg(gt, 2) + " kN/m² (conferir com o fabricante)"); }
+    var gtr = 0;
+    /* peso de partida do motor para cerâmica já embute as ripas ("telha cerâmica com ripas"): não soma a trama de novo */
+    var embute = !(tel && fin(tel.pesoKgM2)) && (fam === "ceramica" || fam === "concreto" || fam === "generico");
+    if (tr && !embute) {
+      if (tr.ripa && tr.galga) { gtr += tr.secRipa.b * tr.secRipa.h / tr.galga * G_MAD; partes.push("ripas"); }
+      if (tr.caibro) { gtr += tr.secCaibro.b * tr.secCaibro.h / tr.espCaibro * G_MAD; partes.push("caibros"); }
+      if (partes.length) fontes.push((partes.join(" e ")) + " do modelo (" + virg(G_MAD, 1) + " kN/m³)");
+    } else if (embute) fontes.push("ripas e caibros já incluídos no valor de partida da telha cerâmica");
+    return { telha: r4(gt), trama: r4(gtr), total: r4(gt + gtr), fontes: fontes };
+  }
+
+  /* ======================================================================
+   * 4) O LAÇO DE TERÇAS E CAIBROS (laje, pilares, 1 água) — propõe → calcula → ajusta
+   * ====================================================================== */
+  function perfilVigas(obra) {
+    var m = MM(); if (!m) throw new Error("madmateriais.js não carregou");
+    var o = obra || {};
+    return m.perfil2022({ carregamento: "longa", umidade: num(o.umidade, 3), produto: "serrada", betaC: 0.1, limVao: 300, limBalanco: 150 });
+  }
+  function perfilCurta(obra) { var o = obra || {}; return MM().perfil2022({ carregamento: "curta", umidade: num(o.umidade, 3), produto: "serrada", betaC: 0.1, limVao: 300, limBalanco: 150 }); }
+  var GRADE_PONTALETE = [0.08, 0.10, 0.12, 0.14, 0.16, 0.20], GRADE_PONTALETE_CIRC = [0.08, 0.10, 0.12, 0.14, 0.16, 0.20, 0.25, 0.30];
+
+  /* O VENTO NA COBERTURA (NBR 6123 pelo AcoVento, o mesmo das tipologias): a pior sucção e a pior pressão líquidas (kN/m²) entre todos os casos e zonas.
+     Premissa herdada do T3: campo de pressões da Tabela 5 (duas águas) — para 4 águas e 1 água a norma NÃO traz coeficientes: vira motivo de PRELIMINAR. */
+  function ventoDe(lido, obra) {
+    var VE = dep("AcoVento", "./acovento.js"), EnM = EN(), ob = ext({}, EnM ? EnM.estadoPadrao().obra : {}, clone(obra || {}));
+    if (!VE) return { ok: false, motivo: "o motor de vento (js/acovento.js) não carregou" };
+    if (ob.lat == null || ob.lon == null) return { ok: false, motivo: "falta a localização da obra (cidade ou coordenadas) para achar o V0 da NBR 6123" };
+    var th = Math.atan(lido.incl / 100) * 180 / Math.PI, geo = { a: lido.a, b: lido.b, h: Math.max(lido.peDireito, 1.2), hCumeeira: Math.max(lido.cotaCumeeira - lido.baseZ, lido.peDireito + 0.1), inclinacaoGraus: th, cobertura: lido.tipo === "T1" ? "uma-agua" : "duas-aguas", nervuras: "retangulares" };
+    if (lido.tipo === "T1") geo.ladoAlto = "esquerda";
+    var ent = { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), geometria: geo, faces: clone(ob.faces) };
+    var r; try { r = VE.calcular(ent, { todasDirecoes: true, obliquos: false }); } catch (e) { return { ok: false, motivo: "vento: " + (e && e.message ? e.message : e) }; }
+    if (!r || !r.ok) return { ok: false, motivo: "vento: " + JSON.stringify(r && r.erros || "sem resultado").slice(0, 160) };
+    var pmin = 0, pmax = 0; arr(r.casos).forEach(function (c) { arr(c.pressao && c.pressao.cobertura).forEach(function (z) { if (fin(z.p)) { if (z.p < pmin) pmin = z.p; if (z.p > pmax) pmax = z.p; } }); });
+    return { ok: true, pmin: r4(pmin), pmax: r4(pmax), q: r4(num(r.q, 0)), v0: r.v0, premissa: lido.tipo === "T2" ? null : "vento: a NBR 6123 não traz coeficientes de cobertura para " + (lido.tipo === "T3" ? "4 águas" : "1 água") + " — campo de pressões de 2 águas (Tabela 5) adotado como premissa; confirmar com o RT",
+      texto: "NBR 6123 (AcoVento), campo de pressões da cobertura de duas águas (Tabela 5) — sucção máxima " + virg(-pmin, 3) + " kN/m², pressão máxima " + virg(pmax, 3) + " kN/m², V0 " + virg(r.v0, 0) + " m/s" };
+  }
+
+  function maxReacao(r, gam) { var m = 0, k; for (k in r.reacoes) { var v = gam * (r.reacoes[k][0] + r.reacoes[k][1]); if (v > m) m = v; } return m; }
+  function minReacao(r, gam) { var m = Infinity, k; for (k in r.reacoes) { var v = gam * (r.reacoes[k][0] + r.reacoes[k][1]); if (v < m) m = v; } return m; }
+
+  /* peça CONTÍNUA sobre `apoios` (m, a partir da ponta; o que passa do último apoio é BALANÇO verificado com limBalanco) sob gravidade + sobrecarga (+ 1 kN concentrado no meio do maior vão e na ponta do balanço)
+     + FLEXÃO OBLÍQUA (componente paralela ao plano da água, σx/f + km·σy/f nos dois eixos, sem contar o caibro como travamento) + VENTO de pressão e SUCÇÃO (peso favorável × 1,0).
+     o = { b, h, L (comprimento total), apoios[], trib, gArea, extraLinear, q, cosT, sinT, classe, perfilL, perfilC, vento, conc, oblq } → { eta, ok, Rcomp, Rup, parte } */
+  function verFlex(o) {
+    var D = MD(), L = o.L, ap = o.apoios, c = o.cosT, sn = o.sinT;
+    if (!ap || ap.length < 2) return { eta: Infinity, ok: false, Rcomp: 0, Rup: 0, parte: {}, motivo: "apenas " + (ap ? ap.length : 0) + " linha(s) de apoio: com menos de 2 apoios a peça não fica estável nem se verifica" };
+    var gv = o.gArea * o.trib + G_MAD * o.b * o.h + (o.extraLinear || 0), qv = o.q * o.trib * c, gN = gv * c, qN = qv * c, gP = gv * sn, qP = qv * sn;
+    function vf(gd, qd, qp, perfil, b, h) { return D.vigaFletida({ L: L, apoios: ap, G: { d: [[0, L, gd]] }, Q: { d: qd ? [[0, L, qd]] : [], p: qp || [] }, b: b, h: h, classe: o.classe, perfil: perfil }); }
+    var r1 = vf(gN, qN, null, o.perfilL, o.b, o.h), eta = r1.eta, parte = { gravidade: r1.eta, flexao: r1.eta_flexao, cisalhamento: r1.eta_cisalh, flecha: r1.eta_flecha }, Rcomp = maxReacao(r1, o.perfilL.gamaQ || 1.4), Rup = 0;
+    if (eta > 1 + 1e-9) return { eta: eta, ok: false, Rcomp: Rcomp, Rup: 0, parte: parte };   /* já reprovou na gravidade: não gasta as outras combinações */
+    if (o.conc) {
+      var pos = ap.slice().sort(function (x, y) { return x - y; }), gm = 0, xm = L / 2, i;
+      for (i = 0; i + 1 < pos.length; i++) if (pos[i + 1] - pos[i] > gm) { gm = pos[i + 1] - pos[i]; xm = (pos[i + 1] + pos[i]) / 2; }
+      var rc = vf(gN, 0, [[xm, 1.0 * c]], o.perfilL, o.b, o.h), eta2 = rc.eta, bal = L - pos[pos.length - 1];
+      if (bal > 0.05) { var rb = vf(gN, 0, [[L, 1.0 * c]], o.perfilL, o.b, o.h); eta2 = Math.max(eta2, rb.eta); parte.balanco = r3(bal); }
+      parte.concentrada = eta2; eta = Math.max(eta, eta2);
+    }
+    if (o.oblq) {
+      var ry = vf(gP, qP, null, o.perfilL, o.h, o.b), ex = r1.eta_flexao, ey = ry.eta_flexao, km = o.perfilL.kM != null ? o.perfilL.kM : 0.7, ob = Math.max(ex + km * ey, km * ex + ey);
+      parte.oblíqua = ob; eta = Math.max(eta, ob);
+    }
+    if (o.vento) {
+      if (o.vento.pmax > 0) { var rp = vf(gN, o.vento.pmax * o.trib, null, o.perfilC, o.b, o.h); parte.ventoPressao = rp.eta; eta = Math.max(eta, rp.eta); }
+      if (o.vento.pmin < 0) {
+        var rs = vf(gN / 1.4, o.vento.pmin * o.trib, null, o.perfilC, o.b, o.h); parte.ventoSuccao = rs.eta; eta = Math.max(eta, rs.eta);
+        var mn = minReacao(rs, 1.4); if (mn < 0) Rup = -mn;
+      }
+    }
+    return { eta: eta, ok: eta <= 1 + 1e-9, Rcomp: Rcomp, Rup: Rup, parte: parte };
+  }
+  /* o pontalete: compressão + flambagem (NBR 7190-1:2022, 6.5.3–6.5.5), L0 = H (rotulado nas duas pontas, travado por mão-francesa nas duas direções — peças no modelo); circular pelo circular2022 */
+  function verPontalete(N, H, classe, perfil, circ, secaoDada) {
+    var D = MD(), grade = secaoDada ? [secaoDada] : (circ ? GRADE_PONTALETE_CIRC : GRADE_PONTALETE), i;
+    for (i = 0; i < grade.length; i++) {
+      var s = grade[i], d = secaoDada ? secaoDada : s, r;
+      if (circ) r = D.circular2022({ N: -N, d: d, L0: Math.max(H, 0.1), classe: classe, perfil: perfil });
+      else r = D.compressao2022({ N: N, Mx: 0, My: 0, b: d, h: d, L0x: Math.max(H, 0.1), L0y: Math.max(H, 0.1), classe: classe, perfil: perfil });
+      if (r.ok) return { ok: true, b: d, h: d, eta: r3(r.eta), N: r3(N), H: r3(H), circ: !!circ, lambda: r3(Array.isArray(r.lambda) ? Math.max(r.lambda[0], r.lambda[1]) : r.lambda) };
+    }
+    return { ok: false, N: r3(N), H: r3(H), circ: !!circ, motivo: secaoDada ? "o pilar/pontalete de " + virg(secaoDada * 100, 0) + " cm NÃO fecha à compressão e flambagem com N = " + virg(N, 1) + " kN e H = " + virg(H, 2) + " m" : "nenhum pontalete até " + virg(grade[grade.length - 1] * 100, 0) + " cm fecha à compressão e flambagem (N = " + virg(N, 1) + " kN, H = " + virg(H, 2) + " m)" };
+  }
+  /* ligação de arrancamento no apoio: pinos axiais da madeira (js/madligacoes.js, o mesmo das tipologias) para a força R de cálculo */
+  function ligarArrancamento(R, b, h, classe, obra, nome) {
+    if (!(R > 0)) return { ok: true, F: 0, n: 0, texto: nome + ": sem arrancamento líquido (o peso próprio vence a sucção)" };
+    var ML = dep("MadLig", "./madligacoes.js"), MMa = MM(); if (!ML || !ML.pinosAxiais) return { ok: false, F: r3(R), texto: nome + ": o motor de ligações não carregou" };
+    var pc = perfilCurta(obra), cl = MMa.classe2022(classe), c = ML.cfg({ kmod: pc.kmod, kmod1: pc.kmod1, kmod2: pc.kmod2, rhok: cl.rhok, k90Tipo: cl.grupo === "dicotiledonea" ? "folhosa" : "conifera" });
+    var pn; try { pn = ML.pinosAxiais(c, nome, R, 0.001, b, h, 0.008, {}); } catch (e) { pn = null; }
+    var ok = !!(pn && pn.ok);
+    return { ok: ok, F: r3(R), n: pn && pn.n ? pn.n : 0, d: pn && pn.d ? pn.d : 0, texto: nome + ": Fd = " + virg(R, 2) + " kN → " + (ok ? pn.n + " pinos Ø" + Math.round((pn.d || 0) * 1000) + " mm com chapa de 8 mm (madligacoes)" : "NÃO fecha com os pinos da biblioteca (aumente a seção ou a chapa)") };
+  }
+  function menorSecao(grade, fn) { for (var i = 0; i < grade.length; i++) { var r = fn(grade[i]); if (r.ok) return { sec: grade[i], r: r }; } return null; }
+
+  /* ctx = { incl%, esp (terça), tr, p, obra, classe, apoio, ex (eixoTd), bl, br, vaos | lines | paredes, pontaleteH, viga?, vento?, cb? (apoios do caibro), pilares? } */
+  function lacoVigas(ctx) {
+    var MV = dep("MadViga", "./madviga.js"), passo0 = MV ? MV.passo : undefined;
+    if (MV) MV.passo = 0.1;   /* malha de 10 cm: a viga contínua de 11 m com dezenas de seções em milissegundos (a de 3 cm leva minutos) */
+    try { return lacoVigas0(ctx); } finally { if (MV) MV.passo = passo0; }
+  }
+  function lacoVigas0(ctx) {
+    var C = CA(), theta = Math.atan(ctx.incl / 100), cosT = Math.cos(theta), sinT = Math.sin(theta), sc = C.sobrecargaCobertura(ctx.incl, {});
+    if (!sc.ok) return { ok: false, motivo: sc.motivo };
+    var perfL = perfilVigas(ctx.obra), perfC = perfilCurta(ctx.obra), classe = ctx.classe || CLASSE_PADRAO, hist = [], melhor = null, vento = ctx.vento && ctx.vento.ok ? ctx.vento : null, ex = ctx.ex;
+    var g = ctx.p.total, gCaibro = ctx.p.telha + (ctx.p.trama - (ctx.tr.caibro ? ctx.tr.secCaibro.b * ctx.tr.secCaibro.h / ctx.tr.espCaibro * G_MAD : 0));
+    var start = ex.lo - ctx.bl, Ltot = (ex.hi + ctx.br) - start, cand;
+    function apoiosDe(vao) {
+      if (ctx.apoio === "laje") { var n = Math.max(1, Math.ceil((ex.hi - ex.lo) / vao - 1e-9)), a = [], k; for (k = 0; k <= n; k++) a.push(ex.lo + k * (ex.hi - ex.lo) / n); return a.map(function (t) { return r4(t - start); }); }
+      if (ctx.apoio === "pilares") return arr(ctx.lines).map(function (t) { return r4(t - start); });
+      return [r4(ex.lo - start), r4(ex.hi - start)];   /* paredes (1 água): os frechais das duas pontas; o beiral é balanço */
+    }
+    cand = ctx.apoio === "laje" ? ctx.vaos : [0];
+    function terca(sec, ap) { return verFlex({ b: sec.b, h: sec.h, L: Ltot, apoios: ap, trib: ctx.esp, gArea: g, q: sc.q, cosT: cosT, sinT: sinT, classe: classe, perfilL: perfL, perfilC: perfC, vento: vento, conc: true, oblq: true }); }
+    cand.forEach(function (vao) {
+      var ap = apoiosDe(vao), s = menorSecao(GRADE_TERCA, function (sec) { return terca(sec, ap); }), custo = null;
+      if (s) { custo = s.sec.b * s.sec.h / ctx.esp; if (ctx.apoio === "laje") custo += 0.08 * 0.08 * Math.max(0.2, ctx.pontaleteH || 0.5) / (vao * ctx.esp); }
+      hist.push({ vao: ctx.apoio === "laje" ? vao : null, apoios: ap.length, secao: s ? s.sec : null, eta: s ? r3(s.r.eta) : null, custoM3porM2: custo != null ? r4(custo) : null });
+      if (s && (!melhor || custo < melhor.custo - 1e-9)) melhor = { vao: vao, ap: ap, sec: s.sec, r: s.r, custo: custo };
+    });
+    var gt = GRADE_TERCA[GRADE_TERCA.length - 1], ap1 = apoiosDe(cand[0]);
+    if (!melhor) return { ok: false, semSolucao: true, historico: hist, motivo: ap1.length < 2 ? "Só " + ap1.length + " linha de apoio real (pilar, ponto, parede ou laje) sob a cobertura: com menos de 2 apoios a terça não fica estável. Acrescente pilares ou pontos de apoio." : "Nenhuma terça até " + virg(gt.b * 100, 0) + "×" + virg(gt.h * 100, 0) + " cm fecha (gravidade, flexão oblíqua" + (vento ? ", vento" : "") + ") com " + ap1.length + " apoios e balanço de " + virg(ctx.bl, 2) + "/" + virg(ctx.br, 2) + " m. Aumente os apoios ou use tesouras." };
+    var balT = Math.max(melhor.ap[0], Ltot - melhor.ap[melhor.ap.length - 1]), P = melhor.r.parte;
+    var out = { ok: true, historico: hist, terca: { b: melhor.sec.b, h: melhor.sec.h, vao: melhor.vao, apoios: melhor.ap.length, balanco: r3(Math.max(melhor.ap[0], Ltot - melhor.ap[melhor.ap.length - 1])), eta: r3(melhor.r.eta), etaFlexao: r3(P.flexao), etaCisalh: r3(P.cisalhamento), etaFlecha: r3(P.flecha), etaConcentrada: r3(P.concentrada),
+      etaObliqua: P.oblíqua != null ? r3(P.oblíqua) : null, etaVentoSuccao: P.ventoSuccao != null ? r3(P.ventoSuccao) : null, etaVentoPressao: P.ventoPressao != null ? r3(P.ventoPressao) : null },
+      sobrecarga: { q: sc.q, texto: sc.texto }, classe: classe, perfil: perfL.nome, avisos: arr(sc.avisos).slice(), ligacoes: [], vento: vento ? { pmin: vento.pmin, pmax: vento.pmax, v0: vento.v0, texto: vento.texto, premissa: vento.premissa } : null, balancoTerca: r3(balT) };
+    out.ligacoes.push(ligarArrancamento(melhor.r.Rup, melhor.sec.b, melhor.sec.h, classe, ctx.obra, "terça × apoio (arrancamento)"));
+    var Nped = melhor.r.Rcomp;   /* o que o pontalete sob a terça recebe (kN, de cálculo) */
+    if (ctx.viga) {   /* telhado aparente: a viga sobre os pilares, no sentido do caimento, recebe as terças (faixa de influência = a das linhas) */
+      var vg = menorSecao(GRADE_VIGA, function (sec) { return verFlex({ b: sec.b, h: sec.h, L: ctx.viga.L, apoios: ctx.viga.apoios, trib: ctx.viga.trib, gArea: g, extraLinear: G_MAD * melhor.sec.b * melhor.sec.h * ctx.viga.trib / ctx.esp, q: sc.q, cosT: cosT, sinT: sinT, classe: classe, perfilL: perfL, perfilC: perfC, vento: vento, conc: false, oblq: false }); });
+      if (vg) { out.viga = { b: vg.sec.b, h: vg.sec.h, vao: r3(ctx.viga.L), apoios: ctx.viga.apoios.length, trib: r3(ctx.viga.trib), eta: r3(vg.r.eta) }; out.ligacoes.push(ligarArrancamento(vg.r.Rup, vg.sec.b, vg.sec.h, classe, ctx.obra, "viga × pilar (arrancamento)")); Nped = 2 * vg.r.Rcomp; }
+      else { var v0 = verFlex({ b: GRADE_VIGA[0].b, h: GRADE_VIGA[0].h, L: ctx.viga.L, apoios: ctx.viga.apoios, trib: ctx.viga.trib, gArea: g, q: sc.q, cosT: cosT, sinT: sinT, classe: classe, perfilL: perfL, perfilC: perfC, vento: vento, conc: false }); out.ok = false; out.semSolucao = true; out.motivo = v0.motivo ? "Viga: " + v0.motivo : "Nenhuma viga até " + virg(GRADE_VIGA[GRADE_VIGA.length - 1].b * 100, 0) + "×" + virg(GRADE_VIGA[GRADE_VIGA.length - 1].h * 100, 0) + " cm fecha com vão de " + virg(ctx.viga.L) + " m entre pilares e terças a " + virg(ctx.viga.trib) + " m. Acrescente pilares (ou marque pontos de apoio)."; }
+    }
+    if (out.ok && (ctx.apoio === "laje" || ctx.viga)) {   /* PONTALETE: compressão e flambagem com L = a altura; sobre pilar de MADEIRA é a seção do pilar (verificada), senão seção própria */
+      var Hp = Math.max(0.3, ctx.pontaleteH || 0.5), pil = ctx.pilares || null, pw = pil && pil.madeira, pdim = pw ? (pil.circ ? pil.d : Math.max(pil.b || 0.2, 0.08)) : null;
+      var pv = verPontalete(Nped, Hp, classe, perfL, !!(pw && pil.circ), pw ? pdim : null);
+      out.pontalete = pv; if (!pv.ok) { out.ok = false; out.semSolucao = true; out.motivo = pv.motivo; }
+    }
+    if (ctx.tr.caibro && out.ok) {
+      var Lc = ctx.cb.L, apc = ctx.cb.apoios, cb = menorSecao(GRADE_CAIBRO, function (sec) { return verFlex({ b: sec.b, h: sec.h, L: Lc, apoios: apc, trib: ctx.tr.espCaibro, gArea: gCaibro, q: sc.q, cosT: cosT, sinT: sinT, classe: classe, perfilL: perfL, perfilC: perfC, vento: vento, conc: true, oblq: false }); });
+      if (cb) { out.caibro = { b: cb.sec.b, h: cb.sec.h, vao: r3(ctx.esp), balanco: r3(Math.max(apc[0], Lc - apc[apc.length - 1])), eta: r3(cb.r.eta) }; out.ligacoes.push(ligarArrancamento(cb.r.Rup, cb.sec.b, cb.sec.h, classe, ctx.obra, "caibro × terça (arrancamento)")); }
+      else { out.ok = false; out.semSolucao = true; out.motivo = "Nenhum caibro até " + virg(GRADE_CAIBRO[GRADE_CAIBRO.length - 1].b * 100, 0) + "×" + virg(GRADE_CAIBRO[GRADE_CAIBRO.length - 1].h * 100, 0) + " cm fecha com terças a " + virg(ctx.esp) + " m e balanço de beiral (caibros a " + virg(ctx.tr.espCaibro) + " m)."; }
+    }
+    out.Rcomp = r3(Nped); return out;
+  }
+
+  /* o EIXO das terças da água dominante: d = sentido do caimento, td = ao longo do beiral; [lo, hi] = extensão da planta em td, [dlo, dhi] em d, s = inclinação do plano */
+  function eixoTd(lido) {
+    var t = lido.t, ags = arr(t.aguasCalc).slice().sort(function (x, y) { return num(y.area, 0) - num(x.area, 0); }), ag = ags[0], p = ag && ag.plano ? ag.plano : null; if (!p) return null;
+    var s = Math.sqrt(p.bx * p.bx + p.bz * p.bz); if (!(s > 1e-9)) return null;
+    var d = [p.bx / s, p.bz / s], td = [-d[1], d[0]], P = lido.contorno, lo = Infinity, hi = -Infinity, dlo = Infinity, dhi = -Infinity;
+    P.forEach(function (q) { var v = td[0] * q[0] + td[1] * q[1], w = d[0] * q[0] + d[1] * q[1]; if (v < lo) lo = v; if (v > hi) hi = v; if (w < dlo) dlo = w; if (w > dhi) dhi = w; });
+    return { d: d, td: td, lo: lo, hi: hi, dlo: dlo, dhi: dhi, s: s, f: Math.sqrt(1 + s * s) };
+  }
+  function agrupar(vals, tol) { var v = vals.slice().sort(function (a, b) { return a - b; }), cl = []; v.forEach(function (x) { if (!cl.length || x - cl[cl.length - 1] > tol) cl.push(x); else cl[cl.length - 1] = (cl[cl.length - 1] + x) / 2; }); return cl; }
+  /* as LINHAS de apoio dos pilares/pontos REAIS (nada de linha inventada na borda), a faixa de influência (tributária) e a viga no sentido do caimento */
+  function vaosDosPontos(lido, pontos, bl, br) {
+    var ex = eixoTd(lido); if (!ex) return null;
+    var inT = arr(pontos).map(function (q) { return ex.td[0] * q.x + ex.td[1] * q.z; }).filter(function (v) { return v >= ex.lo - 0.1 && v <= ex.hi + 0.1; }), lines = agrupar(inT, 0.3);
+    var gaps = [], i; for (i = 1; i < lines.length; i++) gaps.push(lines[i] - lines[i - 1]);
+    var trib = 0; lines.forEach(function (t, k) { var l = k === 0 ? (t - (ex.lo - (bl || 0))) : (t - lines[k - 1]) / 2, r = k === lines.length - 1 ? ((ex.hi + (br || 0)) - t) : (lines[k + 1] - t) / 2; if (l + r > trib) trib = l + r; });
+    var ds = agrupar(arr(pontos).map(function (q) { return ex.d[0] * q.x + ex.d[1] * q.z; }), 0.3), dmid = (ex.dlo + ex.dhi) / 2;
+    var rows = ds.filter(function (w) { return w >= ex.dlo - 0.1 && w <= dmid + 0.1; }), apV = rows.map(function (w) { return r4((w - ex.dlo) * ex.f); });
+    return { linhas: lines, vaoMax: r3(gaps.length ? Math.max.apply(null, gaps) : 0), nLinhas: lines.length, trib: r3(trib), eixo: ex, viga: { apoios: apV, L: r3((dmid - ex.dlo) * ex.f), trib: r3(trib) } };
+  }
+
+  /* ======================================================================
+   * 5) PLANEJAR / CALCULAR — o sistema decide; o laço fecha ou sai PRELIMINAR
+   * ====================================================================== */
+  function chaveDe(lido, cfg, apoio) {
+    var s = [VERSAO, lido.tipo, lido.a, lido.b, r3(lido.incl), typeof lido.beiral === "number" ? r3(lido.beiral) : lido.beiral.todos.map(r3).join("/"), lido.tipoId || "-", r3(lido.cotaApoio), r3(lido.baseZ),
+      apoio ? apoio.tipo : "-", (cfg && cfg.tesoura) || "-", cfg && cfg.aparente ? "A" : "-", arr(apoio && apoio.pontos).map(function (q) { return r3(q.x) + "," + r3(q.z); }).join(";"), cfg && cfg.classe || "-"].join("|");
+    var h = 5381, i; for (i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16) + ":" + s.length;
+  }
+
+  /* devolve { ok } ou { ok:false, motivo, pendente? } e, quando falta rodar o motor de tesouras, { via:"motor", sol, ... } */
+  function preparar(estado, id, cfg, opc) {
+    cfg = cfg || {}; opc = opc || {};
+    var lido = lerTelhado(estado, id); if (!lido.ok) return lido;
+    var ap = detectarApoio(estado, lido, cfg); if (!ap.tipo) return { ok: false, motivo: ap.motivo, apoio: ap };
+    var sistema, via;
+    if (ap.tipo === "paredes" && (lido.tipo === "T2" || lido.tipo === "T3")) { sistema = "tesoura"; via = "motor"; }
+    else if (ap.tipo === "pilares") { sistema = "vigas"; via = "laco"; }
+    else { sistema = "terca"; via = "laco"; }
+    var modelo = modeloMadeira(sistema, lido), tr = trama(lido, modelo); if (!tr) return { ok: false, motivo: "Modelo de madeira desconhecido: " + modelo };
+    var pe = pesos(lido, tr), classe = cfg.classe || CLASSE_PADRAO;
+    var prep = { ok: true, id: String(id), lido: lido, apoio: ap, cfg: clone(cfg), via: via, sistema: sistema, modelo: modelo, trama: tr, pesos: pe, classe: classe, chave: chaveDe(lido, cfg, ap), avisos: [] };
+    if (ap.aviso) prep.avisos.push(ap.aviso);
+    if (via === "motor") {
+      var EnM = EN(); if (!EnM) return { ok: false, motivo: "O motor da madeira engenharada (js/madengentrada.js) não carregou." };
+      var tes = cfg.tesoura === "howe" || cfg.tesoura === "fink" ? cfg.tesoura : "pratt";
+      if (lido.tipo === "T3" && tes === "fink") { tes = "pratt"; prep.avisos.push("Tesoura Fink só existe para 2 águas; nas 4 águas usei Pratt."); }
+      var sTes = ESP_APOIO_MAX, tentativas = cfg.tentativas || [3.2, 2.4];
+      prep.tesoura = tes; prep.tentativas = tentativas.slice(); prep.tentativa = 0; prep.sTes = tentativas[0];
+      var e = EnM.estadoPadrao(), ob = opc.obra || {};
+      e.tip = lido.tipo; e.obra = ext({}, e.obra, clone(ob));
+      void sTes;
+      prep.estadoMad = montarEstadoMadeira(e, prep);
+      var val = EnM.validar(prep.estadoMad);
+      if (!val.ok) {
+        var faltaLocal = val.falta.some(function (f) { return /cidade|coordenad|V0/i.test(f.texto); });
+        return { ok: false, pendente: faltaLocal ? "local" : "entrada", motivo: val.falta.map(function (f) { return f.texto; }).join(" "), prep: prep };
+      }
+      var W = dep("MadEngWorker", "./madengworker.js"); if (!W) return { ok: false, motivo: "O orquestrador do motor (js/madengworker.js) não carregou." };
+      prep.sol = W.solicitacao(prep.estadoMad, "A");
+    } else {
+      var bl = num(lido.beiralLat && lido.beiralLat[0], 0), br = num(lido.beiralLat && lido.beiralLat[1], 0), ex = eixoTd(lido);
+      if (!ex) return { ok: false, motivo: "Não consegui achar o sentido do caimento da cobertura." };
+      var ctx = { incl: lido.incl, esp: tr.espTerca, tr: tr, p: pe, obra: opc.obra || {}, classe: classe, apoio: ap.tipo, ex: ex, bl: bl, br: br, pontaleteH: Math.max(0.3, lido.cotaCumeeira - lido.cotaApoio + 0.1) };
+      /* o caibro: contínuo sobre as terças, com o balanço do beiral (rampa da água e nº de terças do modelo) */
+      var pkA = lido.t.pacote && arr(lido.t.pacote.aguas)[0], rampa = pkA && fin(pkA.rampa) ? pkA.rampa : ((ex.dhi - ex.dlo) / 2 + Math.max(bl, br, 0.3)) * ex.f, nT = pkA && pkA.nTercas ? pkA.nTercas : Math.max(2, Math.ceil((rampa - 0.35) / tr.espTerca) + 1), cbA = [], kc;
+      for (kc = 0; kc < nT; kc++) cbA.push(r4(0.25 + kc * (rampa - 0.35) / Math.max(1, nT - 1)));
+      ctx.cb = { L: r3(rampa), apoios: cbA };
+      if (ap.tipo === "laje") ctx.vaos = [1.5, 1.8, 2.0, 2.4, 2.8, 3.2, 3.6, 4.0];
+      else if (ap.tipo === "pilares") {
+        var vp = vaosDosPontos(lido, ap.pontos, bl, br);
+        if (!vp || vp.nLinhas < 1) return { ok: false, motivo: "Os pilares/pontos não formam linhas de apoio dentro da cobertura." };
+        ctx.lines = vp.linhas; prep.linhasPilares = vp; ctx.viga = vp.viga;
+        var pw = ap.pilares.length ? ap.pilares : [], todosMad = pw.length > 0 && pw.every(function (q) { return q.madeira; });
+        ctx.pilares = { madeira: todosMad, circ: pw.some(function (q) { return q.circ; }), d: Math.max.apply(null, pw.map(function (q) { return q.d; }).concat([0.2])), b: Math.max.apply(null, pw.map(function (q) { return q.b; }).concat([0.2])), topoMin: pw.length ? Math.min.apply(null, pw.map(function (q) { return q.topo; })) : lido.cotaApoio };
+        ctx.pontaleteH = Math.max(0.3, lido.cotaCumeeira - ctx.pilares.topoMin + 0.1);
+      } else prep.avisos.push("Terças contínuas entre as paredes (frechais) com o beiral em balanço (sem pontaletes intermediários).");
+      ctx.vento = ventoDe(lido, opc.obra || {});
+      prep.ctx = ctx; prep.estado = estado;
+    }
+    return prep;
+  }
+
+  function montarEstadoMadeira(e, prep) {
+    var l = prep.lido, o = e.obra, pe = prep.pesos;
+    var desc = (l.telha ? (l.telha.produto || l.telha.familia) : "telha do modelo") + " + trama do modelo";
+    if (l.tipo === "T3") {
+      e.t3 = { vao: l.b, comp: l.a, peDireito: Math.max(l.peDireito, 1.2), incl: l.incl, cotaPiso: l.baseZ, beiral: l.beiral, sTes: prep.sTes, sTercaMax: prep.trama.espTerca, vMaxPilar: 4.0, telhaPeso: pe.total, telhaDescricao: desc, tesoura: prep.tesoura === "howe" ? "howe" : "pratt" };
+    } else {
+      var bl = l.beiral;   /* lados: eave 0/1 = frente/fundo (no vão), gable = esq/dir (na cumeeira) */
+      e.t2 = { vao: l.b, comp: l.a, peDireito: Math.max(l.peDireito, 1.2), incl: l.incl, cotaPiso: l.baseZ, beiral: { frente: bl.eave[0], fundo: bl.eave[1], esq: bl.gable[0], dir: bl.gable[1] }, sistema: prep.tesoura === "howe" ? "tesoura-howe" : (prep.tesoura === "fink" ? "tesoura-fink" : "tesoura"),
+        sTes: prep.sTes, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: prep.trama.espTerca, telhaPeso: pe.total, telhaDescricao: desc, assento: "deslizante", vergasVidro: false };
+    }
+    void o;
+    return e;
+  }
+
+  /* papéis do BIM ← grupos do motor (o MAIOR dos grupos que viram o mesmo papel: a favor da segurança) */
+  var MAPA_GRUPOS = { perna: ["BS", "MS"], linha: ["BI", "MI"], pendural: ["PD", "MP"], escora: ["DG", "MG"], terca: ["T"], espigao: ["E"] };
+  var SEM_PECA = { LB: "contraventamento", DX: "contraventamento", DP: "contraventamento", DV: "contraventamento" };
+  var ROLE_MOTOR = { FR: "frechal", P: "pilar", PO: "pilar", PC: "pilar", CM: "cumeeira", LB: "contravento", DX: "contravento", DP: "contravento", DV: "contravento" };
+  function secoesDoMotor(res, prep) {
+    var out = {}, S = res && res.secoes || {}, sem = [];
+    Object.keys(MAPA_GRUPOS).forEach(function (papel) {
+      var best = null; MAPA_GRUPOS[papel].forEach(function (g) { var s = S[g]; if (s && fin(s.b) && fin(s.h) && (!best || s.b * s.h > best.b * best.h)) best = { b: r3(s.b), h: r3(s.h) }; });
+      if (best) out[papel] = best;
+    });
+    /* a ESCORA do BIM é diagonal COMPRIMIDA (Howe): na Pratt e na Fink a diagonal do motor é TRACIONADA — não se dá a seção dela à escora (fica a de partida, marcada) */
+    if (!(prep && prep.tesoura === "howe")) { if (out.escora) sem.push("escora do BIM sem grupo calculado equivalente (a diagonal da " + (prep && prep.tesoura === "fink" ? "Fink" : "Pratt") + " é tracionada, a escora é comprimida)"); delete out.escora; }
+    return { secoes: out, semPeca: sem };
+  }
+  /* o que mantém o resultado do motor PRELIMINAR (além do que o próprio motor reprova): peça do BIM sem grupo calculado, vento de 4 águas e a ligação frechal × parede */
+  function motivosMotor(prep, res, sm) {
+    var m = [];
+    if (prep.lido.tipo === "T3") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas — campo de 2 águas (Tabela 5) adotado como premissa; confirmar com o RT");
+    m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): montante (sarrafos), caibros e ripas" + (sm.semPeca.length ? "; " + sm.semPeca.join("; ") : "") + " — seguem o SINAPI/catálogo; a geometria da tesoura do BIM é a do SINAPI, as seções são as do motor");
+    var Fup = 0; try { Object.keys(res.reacoes || {}).forEach(function (k) { var v = res.reacoes[k]; (Array.isArray(v) ? v : [v]).forEach(function (x) { if (fin(x) && x < Fup) Fup = x; }); }); } catch (e) { Fup = 0; }
+    m.push("ligação frechal × parede (chumbador/cinta) NÃO verificada" + (Fup < 0 ? " — arrancamento de " + virg(-Fup, 1) + " kN no apoio" : "") + ": projeto do RT");
+    return m;
+  }
+  /* o frechal, os pilares, a cumeeira e o contraventamento que o motor calculou viram PEÇAS do modelo: pontos do motor ([X, Z, altura], origem no canto da planta,
+     a ao longo do lado maior) levados ao sistema da obra. Só retângulo alinhado aos eixos; senão fica listado como "sem peça". */
+  function pecasDoMotor(prep, res) {
+    var lido = prep.lido, ms = arr(res && res.t3 && res.t3.membros).concat(arr(res && res.t2 && res.t2.membros)), S = res && res.secoes || {}, P = lido.contorno, out = [], sem = [], aviso = null;
+    var xs = P.map(function (q) { return q[0]; }), zs = P.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+    var alinhado = P.every(function (q) { return (Math.abs(q[0] - x0) < 1e-3 || Math.abs(q[0] - x1) < 1e-3) && (Math.abs(q[1] - z0) < 1e-3 || Math.abs(q[1] - z1) < 1e-3); });
+    var visto = {}, pSobre = 0;
+    ms.forEach(function (m) {
+      var r = ROLE_MOTOR[m.g]; if (!r) return;
+      var sec = S[m.g === "DV" ? "DX" : m.g]; if (!sec) return;
+      var b = fin(sec.b) ? sec.b : sec.d, h = fin(sec.h) ? sec.h : sec.d; if (!(b > 0) || !(h > 0)) return;
+      if (!alinhado) { visto[m.g] = 1; return; }
+      function mp(q) { var X = q[0], Z = q[1], alt = q[2]; return lido.eixoA === "x" ? [x0 + X, alt, z0 + Z] : [x0 + Z, alt, z0 + X]; }
+      var a = mp(m.p0), c = mp(m.p1);
+      /* quando o apoio é PAREDE o frechal assenta nela e NÃO se cria pilar: o pilar do motor só entra onde não há parede embaixo */
+      if (r === "pilar" && arr(prep.apoio && prep.apoio.rets).some(function (w) { return naRet(w, a[0], a[2], 0.25); })) { pSobre++; return; }
+      out.push({ r: r, b: r3(b), h: r3(h), x0: r3(a[0]), y0: r3(a[1]), z0: r3(a[2]), x1: r3(c[0]), y1: r3(c[1]), z1: r3(c[2]) });
+    });
+    if (!alinhado) { aviso = "retângulo fora dos eixos: frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira"; Object.keys(visto).forEach(function (g) { sem.push(g + " (" + ROLE_MOTOR[g] + ")"); }); }
+    if (pSobre) aviso = (aviso ? aviso + "; " : "") + pSobre + " pilar(es) do motor ficam SOBRE parede do modelo: o frechal assenta na parede e não se cria pilar";
+    return { lista: out.slice(0, 90), semPeca: sem, aviso: aviso, truncado: out.length > 90, pilaresSobreParede: pSobre };
+  }
+
+  /* o resultado do motor de tesouras → calc (ou pede nova tentativa com espaçamento menor) */
+  function concluirMotor(prep, res) {
+    var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA && SA.preliminar ? SA.preliminar(res) : { preliminar: !res.ok, motivos: [] };
+    var sm = secoesDoMotor(res, prep), pm = pecasDoMotor(prep, res), motivos = arr(pre.motivos).slice();
+    if (res.semSolucao && !motivos.length) motivos.push("o motor não achou seção no catálogo que feche");
+    var etaMax = 0; Object.keys(res.pior || {}).forEach(function (k) { var v = Number(res.pior[k]); if (isFinite(v) && v > etaMax) etaMax = v; });
+    var tent = { sTes: prep.sTes, ok: !!res.ok && !res.semSolucao };
+    var fecha = !pre.preliminar && !res.semSolucao;
+    var extra = motivosMotor(prep, res, sm);
+    if (!fecha && prep.tentativa + 1 < prep.tentativas.length) return { ok: true, repetir: true, tentativa: tent, motivo: motivos[0] || "não fechou" };
+    var calc = montarCalc(prep, { sistema: "tesouras " + (prep.tesoura === "howe" ? "Howe" : prep.tesoura === "fink" ? "Fink" : "Pratt") + " (" + prep.lido.tipo + ", motor de madeira engenharada)", secoes: sm.secoes, semPeca: sm.semPeca.concat(pm.semPeca), preliminar: !fecha || extra.length > 0, motivos: motivos.concat(extra),
+      espApoio: prep.sTes, espTerca: prep.trama.espTerca, eta: { max: r3(etaMax) }, v0: res.v0, avisos: arr(res.avisos).slice(0, 3).concat(pm.aviso ? [pm.aviso] : []), pecasMotor: pm.lista,
+      naoVerificado: ["ligação frechal × parede (chumbador/cinta)"], tentativas: tent });
+    /* os grupos do motor viraram peças: a seção de cada um também vai no resultado (para a janela) */
+    calc.secoesMotor = {}; ["FR", "P", "PO", "CM"].forEach(function (g) { var q = res.secoes && res.secoes[g]; if (q && (fin(q.b) || fin(q.d))) calc.secoesMotor[g] = { b: r3(fin(q.b) ? q.b : q.d), h: r3(fin(q.h) ? q.h : q.d) }; });
+    return { ok: true, calc: calc, resumo: resumo(calc), resultadoMotor: { ok: res.ok, semSolucao: res.semSolucao, secoes: res.secoes } };
+  }
+
+  var TXT_PILARES = "pilares, pórtico e contraventamento não verificados — projeto do RT";
+  var TXT_LAJE = "confirmar a laje com o RT: os pontaletes descarregam cargas concentradas na laje (ver cargasNaLaje)";
+  var PREMISSAS_LACO = ["terça CONTÍNUA sobre os apoios, com emendas SOBRE os apoios (peça comercial de até 6 m — a mais comprida é cortada na linha de apoio no modelo); o que passa do último apoio é balanço verificado (limBalanco), inclusive o beiral",
+    "terça SEM correntes: flexão oblíqua verificada (σx/f + km·σy/f nos dois eixos) com a componente paralela ao plano; o caibro NÃO é contado como travamento",
+    "pontalete rotulado nas duas pontas, L0 = H, travado por mão-francesa nas duas direções (peças no modelo); compressão e flambagem pela NBR 7190-1:2022 (circular pelo circular2022)"];
+  function concluirLaco(prep, laco) {
+    var motivos = [], secoes = {}, nv = ["componente paralela ao plano nas vigas e nos caibros (axial, resolvida pelo contraventamento e pela fixação — conferir)", "detalhe do aparelho de apoio e das emendas (o desenho marca o corte; o detalhe é do projeto)"], ap = prep.apoio, tipo = ap.tipo;
+    var sis = "laço de terças (" + tipo + ")";
+    if (!laco.ok) {
+      /* sem solução: NADA de seção falsa — mantém a de partida (o modelo de antes) e diz que não fechou */
+      motivos.push(laco.motivo || "não fechou");
+      var c0 = montarCalc(prep, { sistema: sis, secoes: {}, preliminar: true, motivos: motivos.concat(tipo === "pilares" ? [TXT_PILARES] : []), espTerca: prep.trama.espTerca, naoVerificado: nv, avisos: [] });
+      c0.semSolucao = true; c0.premissas = PREMISSAS_LACO.slice(0, 1);
+      return { ok: true, calc: c0, resumo: "SEM SOLUÇÃO — " + motivos[0] };
+    }
+    secoes.terca = { b: laco.terca.b, h: laco.terca.h };
+    if (laco.caibro) secoes.caibro = { b: laco.caibro.b, h: laco.caibro.h };
+    if (laco.viga) secoes.viga = { b: laco.viga.b, h: laco.viga.h };
+    var pil = prep.ctx && prep.ctx.pilares;
+    if (laco.pontalete && laco.pontalete.ok && !(tipo === "pilares" && pil && pil.madeira)) secoes.pontalete = { b: laco.pontalete.b, h: laco.pontalete.h };
+    var vento = laco.vento, ligs = arr(laco.ligacoes);
+    if (!vento) { var vm = prep.ctx && prep.ctx.vento && prep.ctx.vento.motivo ? prep.ctx.vento.motivo : "sem V0"; motivos.push("vento NÃO verificado: " + vm + " — informe a cidade/coordenadas e recalcule"); }
+    else if (vento.premissa) motivos.push(vento.premissa);
+    ligs.forEach(function (l) { if (!l.ok) motivos.push("ligação: " + l.texto); });
+    if (tipo === "pilares") motivos.push(TXT_PILARES);
+    if (tipo === "laje") motivos.push(TXT_LAJE);
+    if (tipo === "paredes") motivos.push("ligação frechal × parede (chumbador/cinta) NÃO verificada" + (ligs.length && ligs[0].F ? " — arrancamento de " + virg(ligs[0].F, 2) + " kN por apoio" : "") + ": projeto do RT");
+    var calc = montarCalc(prep, { sistema: sis, secoes: secoes, preliminar: motivos.length > 0, motivos: motivos, espApoio: tipo === "pilares" ? Math.max(laco.terca.vao || 0, prep.linhasPilares ? prep.linhasPilares.vaoMax : 0.5, 0.5) : laco.terca.vao, espTerca: prep.trama.espTerca,
+      eta: { terca: laco.terca.eta, caibro: laco.caibro ? laco.caibro.eta : null, viga: laco.viga ? laco.viga.eta : null, flexao: laco.terca.etaFlexao, cisalhamento: laco.terca.etaCisalh, flecha: laco.terca.etaFlecha, concentrada: laco.terca.etaConcentrada, obliqua: laco.terca.etaObliqua, ventoSuccao: laco.terca.etaVentoSuccao, ventoPressao: laco.terca.etaVentoPressao, pontalete: laco.pontalete ? laco.pontalete.eta : null },
+      avisos: arr(laco.avisos), naoVerificado: nv, v0: vento ? vento.v0 : null });
+    calc.laco = { vao: laco.terca.vao, apoios: laco.terca.apoios, balanco: laco.terca.balanco, classe: laco.classe, sobrecarga: laco.sobrecarga.q, historico: arr(laco.historico).slice(0, 10) };
+    calc.continua = true; calc.contravento = !!(laco.pontalete); calc.premissas = PREMISSAS_LACO.slice();
+    if (vento) calc.vento = { pmin: vento.pmin, pmax: vento.pmax, v0: vento.v0, texto: vento.texto };
+    if (laco.pontalete) calc.pontalete = { ok: laco.pontalete.ok === true, b: laco.pontalete.b, h: laco.pontalete.h, H: laco.pontalete.H, N: laco.pontalete.N, eta: laco.pontalete.eta, circ: laco.pontalete.circ, pilarMadeira: !!(pil && pil.madeira) };
+    calc.ligacoes = ligs.map(function (l) { return { ok: l.ok, F: l.F, n: l.n || 0, texto: l.texto }; }).slice(0, 6);
+    if (tipo === "laje") calc.cargasNaLaje = cargasNaLaje(prep, calc, laco);
+    return { ok: true, calc: calc, resumo: resumo(calc) };
+  }
+  /* as CARGAS que os pontaletes descarregam na laje (kN característico = de cálculo / 1,4) nos pontos reais: pelo próprio modelo de madeira (peças pontalete com apoio "laje") */
+  function cargasNaLaje(prep, calc, laco) {
+    var E = ES(), out = { aviso: "confirmar a laje com o RT (punção, flexão local e carga total)", porPonto_kN: r3((laco.Rcomp || 0) / 1.4), n: 0, total_kN: 0, pontos: [] };
+    if (!E || !E.modelar || !prep.estado) return out;
+    try {
+      var t2 = clone(prep.lido.t); t2.modelo = calc.modelo; t2.calcMadeira = calc;
+      var pk = E.modelar(t2, prep.estado, {}), pts = [];
+      arr(pk && pk.pecas).forEach(function (o) { if (o.p === "pontalete" && o.apoio === "laje") pts.push({ x: r3(o.a[0]), z: r3(o.a[2]), kN: out.porPonto_kN }); });
+      out.n = pts.length; out.total_kN = r3(pts.length * out.porPonto_kN); out.pontos = pts.slice(0, 60);
+    } catch (e) { out.erro = String(e && e.message || e).slice(0, 80); }
+    return out;
+  }
+
+  function montarCalc(prep, partes) {
+    var lido = prep.lido, ap = prep.apoio, c = {
+      versao: VERSAO, tipo: lido.tipo, sistema: partes.sistema, apoio: ap.tipo, apoioAuto: !!ap.automatico, aparente: !!prep.cfg.aparente, ligacaoOculta: !!prep.cfg.ligacaoOculta,
+      preliminar: !!partes.preliminar, motivos: arr(partes.motivos).slice(0, 8), secoes: partes.secoes, chave: prep.chave, classe: prep.classe,
+      pesoTelha: prep.pesos.telha, pesoTrama: prep.pesos.total - prep.pesos.telha, pesoTotal: prep.pesos.total, modelo: prep.modelo,
+      cfg: { apoio: prep.cfg.apoio || null, tesoura: prep.cfg.tesoura || null, aparente: !!prep.cfg.aparente, ligacaoOculta: !!prep.cfg.ligacaoOculta, forro: !!prep.cfg.forro }
+    };
+    if (partes.espApoio != null) c.espApoio = r3(partes.espApoio);
+    if (partes.espTerca != null) c.espTerca = r3(partes.espTerca);
+    if (ap.tipo === "pilares" && ap.pontos.length) c.pontosApoio = ap.pontos.slice(0, 48);
+    if (partes.eta) c.eta = partes.eta;
+    if (partes.semPeca && partes.semPeca.length) c.semPeca = partes.semPeca.slice(0, 12);
+    if (partes.pecasMotor && partes.pecasMotor.length) c.pecasMotor = partes.pecasMotor;
+    if (partes.v0 != null) c.v0 = partes.v0;
+    c.avisos = arr(partes.avisos).concat(prep.avisos).slice(0, 12);
+    c.naoVerificado = arr(partes.naoVerificado).slice(0, 8);
+    if (partes.tentativas) c.tentativas = partes.tentativas;
+    return c;
+  }
+
+  function rodarLaco(prep) { return concluirLaco(prep, lacoVigas(prep.ctx)); }
+
+  /* Node/testes: tudo de uma vez (o motor de tesouras leva minutos: a tela usa o Worker e chama concluirMotor) */
+  function calcularSync(estado, id, cfg, opc) {
+    opc = opc || {};
+    var prep = preparar(estado, id, cfg, opc); if (!prep.ok) return prep;
+    if (prep.via === "laco") return ext({ prep: prep }, rodarLaco(prep));
+    var W = dep("MadEngWorker", "./madengworker.js"), out, tent = [];
+    for (;;) {
+      var res = W.rodar(prep.sol, opc.progresso || null);
+      out = concluirMotor(prep, res);
+      if (!out.repetir) break;
+      tent.push(out.tentativa);
+      prep = proximaTentativa(prep);
+    }
+    if (out.calc && tent.length) out.calc.tentativas = { anteriores: tent, final: out.calc.tentativas };
+    out.prep = prep; return out;
+  }
+  function proximaTentativa(prep) {
+    var p = ext({}, prep); p.tentativa = prep.tentativa + 1; p.sTes = prep.tentativas[p.tentativa];
+    p.estadoMad = montarEstadoMadeira(clone(prep.estadoMad), p);
+    var W = dep("MadEngWorker", "./madengworker.js"); p.sol = W.solicitacao(p.estadoMad, "A"); p.avisos = prep.avisos.concat(["Espaçamento das tesouras reduzido para " + virg(p.sTes) + " m (a tentativa anterior não fechou)."]);
+    return p;
+  }
+
+  /* ------------------------------------------------------------ as OPS que levam o resultado de volta ao modelo */
+  function opAplicar(id, calc) {
+    var op = { op: "telhado", id: String(id), calcMadeira: calc };
+    if (calc && calc.modelo) op.modelo = calc.modelo;
+    return op;
+  }
+  function opLimpar(id) { return { op: "telhado", id: String(id), calcMadeira: null }; }
+
+  /* o estado do cálculo de um telhado: não calculado / em dia / DESATUALIZADO (a delimitação, o beiral, a telha, o apoio ou o nível mudaram) */
+  function situacao(estado, id) {
+    var t = achar(estado, id); if (!t) return { calculado: false, motivo: "telhado inexistente" };
+    var c = t.calcMadeira; if (!c) return { calculado: false };
+    var lido = lerTelhado(estado, id);
+    if (!lido.ok) return { calculado: true, desatualizado: true, preliminar: !!c.preliminar, motivo: lido.motivo, calc: c };
+    var ap = detectarApoio(estado, lido, c.cfg || {}), nova = chaveDe(lido, c.cfg || {}, ap);
+    return { calculado: true, desatualizado: nova !== c.chave, preliminar: !!c.preliminar, calc: c, chaveNova: nova };
+  }
+
+  /* as peças do pacote que saíram do cálculo (para a tela e o teste): papel → { n, b, h } */
+  function pecasCalculadas(t) {
+    var out = {}; arr(t && t.pacote && t.pacote.pecas).forEach(function (o) { if (!o.calc) return; var k = o.p; out[k] = out[k] || { n: 0, b: o.w, h: o.h, m: 0 }; out[k].n++; out[k].m += o.L || 0; });
+    return out;
+  }
+
+  /* PONTO DE LIGAÇÃO COM O madencaixe (outra frente) — opcional */
+  function encaixe(pacote, calc) {
+    var E = global.MadEncaixe || (typeof require === "function" ? (function () { try { return require("./madencaixe.js"); } catch (e) { return null; } })() : null);
+    if (E && E.aplicarCobertura) { try { return { ok: true, usado: true, r: E.aplicarCobertura(pacote, calc) }; } catch (e2) { return { ok: false, usado: true, motivo: String(e2 && e2.message || e2) }; } }
+    return { ok: true, usado: false, motivo: "js/madencaixe.js ainda não está no sistema: as peças saem retas, sem corte de encaixe." };
+  }
+
+  function resumo(c) {
+    if (!c) return "";
+    var s = c.secoes || {}, ks = Object.keys(s).map(function (k) { return k + " " + virg(s[k].b * 100, 0) + "×" + virg(s[k].h * 100, 0) + " cm"; });
+    return (c.preliminar ? "PRELIMINAR — " : "") + c.sistema + (c.aparente ? ", aparente" : "") + ": " + (ks.length ? ks.join("; ") : "sem seções") + (c.espApoio ? "; apoios a ≤ " + virg(c.espApoio) + " m" : "") + ".";
+  }
+
+  var MadCobertura = {
+    VERSAO: VERSAO, GRADE_TERCA: GRADE_TERCA, GRADE_CAIBRO: GRADE_CAIBRO, MAPA_GRUPOS: MAPA_GRUPOS, CLASSE_PADRAO: CLASSE_PADRAO,
+    lerTelhado: lerTelhado, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
+    preparar: preparar, concluirMotor: concluirMotor, concluirLaco: concluirLaco, rodarLaco: rodarLaco, proximaTentativa: proximaTentativa, calcularSync: calcularSync,
+    secoesDoMotor: secoesDoMotor, pecasDoMotor: pecasDoMotor, opAplicar: opAplicar, opLimpar: opLimpar, situacao: situacao, pecasCalculadas: pecasCalculadas, encaixe: encaixe, resumo: resumo, chaveDe: chaveDe,
+    montarEstadoMadeira: montarEstadoMadeira, vaosDosPontos: vaosDosPontos
+  };
+  global.MadCobertura = MadCobertura;
+  if (typeof module !== "undefined" && module.exports) module.exports = MadCobertura;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

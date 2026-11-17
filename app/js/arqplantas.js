@@ -261,6 +261,9 @@
         D.texto(M.P(x1, z0)[0] + 6, yy + i * 4.4, s, 2.5);
       });
     }
+    /* MADEIRA DA COBERTURA NÃO VERIFICADA POR COMPLETO (cálculo PRELIMINAR no modelo): a prancha leva a FAIXA — nada de prancha limpa com estrutura em estudo */
+    var preMad = Tl.filter(function (t) { return t.madeira && t.madeira.preliminar; });
+    if (preMad.length) { D.texto(A.x + 4, A.y + 11, "PRELIMINAR — ESTRUTURA DE MADEIRA DA COBERTURA SEM VERIFICAÇÃO COMPLETA (PROJETO DO RT)", 2.6, { cor: "#c00000" }); c.avisos.push("ARQ-05: estrutura de madeira da cobertura PRELIMINAR (" + preMad.map(function (t) { return t.id; }).join(", ") + ")."); }
     var yb = M.oy + M.alt + d.K.margemCotas + 4;
     d.escalaGrafica(D, A.x + 6, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
     d.norte(D, A.x + 82, yb + 2, c.dados.terreno.norte, 7);

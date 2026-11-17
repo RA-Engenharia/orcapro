@@ -81,7 +81,7 @@
     var nos = [];
     for (i = 0; i + 1 < base.length; i++) {
       var a = base[i], b = base[i + 1];
-      var k = Math.max(1, Math.ceil((b - a) / PASSO));
+      var k = Math.max(1, Math.ceil((b - a) / (MadViga.passo || PASSO)));   /* `passo` (m) é opcional: quem verifica muitas seções numa viga longa (js/madcobertura.js) usa malha mais grossa; sem ele vale o de sempre (0,03) */
       for (var j = 0; j < k; j++) nos.push(a + (b - a) * j / k);
     }
     nos.push(L);
