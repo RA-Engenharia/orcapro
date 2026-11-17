@@ -98,7 +98,7 @@
        grade colunas x linhas de células (mm de papel); o ISO - GERAL ocupa geral x geral células (canto superior esquerdo); faixa = altura do título embaixo da vista;
        alcance = raio (m) em volta da caixa d'água onde os tubos entram na vista; caixaMeia = meia-largura (m) da caixa quando a família não traz o diâmetro */
     isos: { formato: "A0", formatos: ["A0", "A1"], colunas: 4, linhas: 4, geral: 2, gap: 8, faixa: 14, circulo: 4.6, margem: 3, kMax: 140, alcance: 1.5, caixaMeia: 1.0, fracTitulo: 0.92, penaTitulo: 0.16 }, reserv: { escalas: [25, 50, 100], folga: 0.3, margemParede: 0.2, quebraPos: 0.25, alcance: 2.5, epsRaio: 1e-9, tolPav: 0.05, tolTubo: 0.3, folgaFoto: 0.15, altFoto: 1.0, pad: 14, minPoli: 3, cotaOff: 8, fracTit: 0.76, fracEsc: 1.3, folgaTit: 2.6, padraoEsq: [1.0, 1.0], escalaMax: 100, barMargem: 0.5, tolConector: 0.15, colPasso: 16, colPassoMin: 9, colDesce: 9, barDesce: 5, boiaRaio: 1.4, ladoBoia: 5, regRaio: 1.6, limiteRotulo: 18,
-      apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0.75, beiral: 1, respiro: 2, stub: 6, colet: 4, entreTxt: 3, cotaTxt: 6, cotaFolga: 8, extIni: 1, extFim: 1.5, quebra: 1.2, alimFrac: 0.1, consFrac: 0.12, extrFrac: 0.2, limpFrac: 0.12, entre: 12,
+      apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0.75, beiral: 1, respiro: 2, stub: 6, colet: 4, entreTxt: 3, cotaTxt: 6, cotaFolga: 8, extIni: 1, extFim: 1.5, extFolgaTxt: 1.2, quebra: 1.2, alimFrac: 0.1, consFrac: 0.12, extrFrac: 0.2, limpFrac: 0.12, entre: 12,
       rotSemLig: "SEM LIGAÇÃO", rotInter: "INTERLIGAÇÃO COM ", rotInterJunta: " E ", interDesce: 1.6, rotAlim: "AF-ALIMENTAÇÃO", rotCons: "AF-CONSUMO", rotExtr: "EXTRAVASOR E LIMPEZA", rotApoiada: "BASE APOIADA NA LAJE", rotDesce: "DESCEM ATÉ A SAÍDA LIVRE", parte: { alim: "alimentacao", cons: "saida", extr: "extravasor", limp: "limpeza" },
       reAlim: /^entrada|alimenta/i, reCons: /^sa[ií]da|consumo/i, reExtr: /extrav/i, reLimp: /limp/i }
   };
@@ -1596,6 +1596,7 @@
     if (c.arquitetura === false) p.arquitetura = false;
     if (c.agrupar === false) p.agrupar = false;
     if (c.mostrarCalculo === false) p.mostrarCalculo = false;   /* o cálculo (pressões, UHC) no isométrico: padrão LIGADO */
+    if (c.chamadaProduto === false) p.chamadaProduto = false;   /* a chamada com o NOME DO PRODUTO nos registros de todo isométrico: padrão LIGADO (decisão da coordenação, 17/11/2026: é o que a folha de referência mostra) */
     if (txt(c.qr).trim()) p.qr = txt(c.qr).trim();
     if (txt(c.portal).trim()) p.portal = txt(c.portal).trim();   /* link do portal da obra (QR por folha de ambiente); sem ele vale o campo qr */
     p.notasExtra = arr(c.notasExtra).map(txt).filter(function (x) { return x.trim(); });   /* Casa 487 (F9): notas do PROJETO nas NOTAS GERAIS de toda folha (ex.: pilar que o tubo não atravessa) */
@@ -2148,7 +2149,16 @@
         if (gap > R.tolPav) { if (!pts.length) pts.push([xc, yb]); pts.push([xc, yr - R.laje]); vals.push(br(gap, 2)); }
         if (pts.length > 1) {
           D.cadeia(pts, 0, vals, { attrs: vals.map(function () { return ' data-cota="reservatorio"'; }) });
-          pts.forEach(function (p) { D.linha(xc + R.extIni, p[1], p[1] <= yb ? xl - R.extFim : xl - R.alaje - R.extFim, p[1], "HID-COTA"); });
+          /* ⚠ A linha de chamada da cota (do eixo da cota até a caixa) NÃO atravessa o rótulo nem o balão de DN da ligação que cai na mesma altura:
+             com a ligação de consumo rente à base (caixa baixa), a linha da cota passava por "AF-CONSUMO" e por "DN 32" (rótulo × cota, achado
+             do e2e do Gerar pranchas, 17/11/2026). Ela é partida em dois: até antes do texto e de novo depois do balão — continua chegando à caixa. */
+          var furos = [[bL[0], R.rotAlim], [bL[1], R.rotCons]].map(function (f) { var ycf = Y0 + f[0], xt = X0 + xBalL - rB - R.entreTxt / 2 - AP.largTexto(f[1], h); return { y: ycf, x0: xt - R.extFolgaTxt, x1: X0 + xBalL + rB + R.extFolgaTxt, r: rB + R.extFolgaTxt }; });
+          pts.forEach(function (p) {
+            var xa = xc + R.extIni, xb = p[1] <= yb ? xl - R.extFim : xl - R.alaje - R.extFim, cortes = furos.filter(function (f) { return Math.abs(p[1] - f.y) <= f.r && f.x1 > xa && f.x0 < xb; }).sort(function (u, v) { return u.x0 - v.x0; });
+            var ini = xa;
+            cortes.forEach(function (f) { if (f.x0 > ini) D.linha(ini, p[1], f.x0, p[1], "HID-COTA"); ini = Math.max(ini, f.x1); });
+            if (xb > ini) D.linha(ini, p[1], xb, p[1], "HID-COTA");
+          });
           if (corta) { var ym = yb + (yr - R.laje - yb) * R.quebraPos; D.linha(xc - R.quebra, ym + R.quebra, xc + R.quebra, ym - R.quebra, "HID-COTA"); D.linha(xc - R.quebra, ym + R.quebra * 2, xc + R.quebra, ym + R.quebra, "HID-COTA"); }
         }
         if (gap <= R.tolPav) D.texto(xl - R.alaje, yr + R.laje + h * R.fracTit, R.rotApoiada, h, {});
@@ -2338,6 +2348,17 @@
       });
     });
   }
+  /* ⚠ O NOME DO PRODUTO do acessório (registro) vem da FICHA da peça (comercial.fabricante[0]: descrição do catálogo do fabricante + o fabricante,
+     "Registro Esfera VS Soldável 25 mm - TIGRE"). Sem a ficha ou sem fabricante a chamada NÃO sai: nome de produto nunca é inventado. O "mm" só
+     entra quando a descrição do catálogo termina no número do DN (a unidade do DN do catálogo é o milímetro). */
+  function produtoDoAcessorio(ac) {
+    var PC = PEC(), fc = null, f0 = null;
+    try { fc = PC && PC.acessorio ? PC.acessorio(txt(ac.acessorio), ac.variante || null, ac.dn) : null; } catch (e) { fc = null; }
+    f0 = fc && fc.comercial && arr(fc.comercial.fabricante)[0];
+    if (!f0 || !txt(f0.descricao).trim() || !txt(f0.fabricante).trim()) return "";
+    var d = txt(f0.descricao).trim(); if (/\d$/.test(d)) d += " mm";
+    return d + " - " + txt(f0.fabricante).trim().toUpperCase();
+  }
   function folhaPerspectiva(c) {
     var D = c.D, a = c.areaPersp || c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
     /* R01: o isométrico por ambiente (hidcaderno.js) usa esta mesma perspectiva dentro de um RETÂNGULO da folha (c.areaPersp), sem título nem legenda própria (c.semLegenda) */
@@ -2447,6 +2468,8 @@
     pz.acess.forEach(function (ac) {
       var p = X(pz.P(ac.centro)), alt = ac.centro.y - pz.pv.cota;
       pend.push({ s: txt(({ registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" })[ac.acessorio] || "RG") + "  " + (alt >= 0 ? "+" : "") + br(alt, 2), h: h, tipo: "registro", camada: "HID-TEXTO", trecho: ac.id, anchors: [p], prio: 1, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
+      /* a CHAMADA COM O NOME DO PRODUTO (referência do Rogério, 14/11: "Registro Esfera VS Soldável 25 mm - TIGRE") no isométrico da caixa d'água */
+      var nomeP = !(c.cfg && c.cfg.chamadaProduto === false) ? produtoDoAcessorio(ac) : ""; if (nomeP) pend.push({ s: nomeP, h: h, tipo: "registro", camada: "HID-TEXTO", trecho: ac.id + "-produto", anchors: [p], prio: 2, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 * 1.6 });
     });
     var cantos = pz.piso.map(X).sort(function (p, q) { return q[1] - p[1]; }), cp = cantos[0];
     D.cheio([[cp[0], cp[1]], [cp[0] - K2.perspNivel, cp[1] - K2.perspNivel * 1.6], [cp[0] + K2.perspNivel, cp[1] - K2.perspNivel * 1.6]], "#000");
@@ -3045,7 +3068,7 @@
       pvC.base = -Infinity; pvC.sup = Infinity; pvC.cota = Math.min(pv.cota, yMin);
       var pzC = null;
       try { pzC = perspectivaDe(c, { x0: Math.min.apply(null, cx0) - K.alcance, x1: Math.max.apply(null, cx0) + K.alcance, z0: Math.min.apply(null, cz0) - K.alcance, z1: Math.max.apply(null, cz0) + K.alcance }, pvC); } catch (e3) { pzC = null; c.avisos.push("CAIXA D'ÁGUA: " + (e3 && e3.message || e3)); }
-      if (pzC) out.push({ titulo: "CAIXA D'ÁGUA" + sufixo, pz: pzC });
+      if (pzC) { pzC.produtos = true; out.push({ titulo: "CAIXA D'ÁGUA" + sufixo, pz: pzC }); }
     }
     return out;
   }
@@ -3310,7 +3333,7 @@
     var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
     return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
   }
-  var _int = { setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+  var _int = { produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
     paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

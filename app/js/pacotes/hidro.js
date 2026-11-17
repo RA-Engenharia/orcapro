@@ -27333,7 +27333,7 @@ folgaAmb: 0.12, recuoFrente: 0.01, ambFolga: 1.0, ambTol: 0.06, aciCinza: 8, let
 perspFundo: 0.3, perspTopo: 0.25, perspOd: 1.3, perspFrente: 0.001, perspPeca: 0.06, perspLegenda: 30, perspMargem: 6, perspKMax: 90,
 perspGrade: 5, fov3d: 50, minContorno: 3, iso3d: [0.55, 0.5, 0.55], perspAlfa: 0.35, perspAlfaLouca: 0.7, perspAltura: 2.8, perspAlturaMax: 3.2, perspMin: 0.3, perspVertMin: 0.4, perspD0: 1.2, perspNivel: 1.4,
 isos: { formato: "A0", formatos: ["A0", "A1"], colunas: 4, linhas: 4, geral: 2, gap: 8, faixa: 14, circulo: 4.6, margem: 3, kMax: 140, alcance: 1.5, caixaMeia: 1.0, fracTitulo: 0.92, penaTitulo: 0.16 }, reserv: { escalas: [25, 50, 100], folga: 0.3, margemParede: 0.2, quebraPos: 0.25, alcance: 2.5, epsRaio: 1e-9, tolPav: 0.05, tolTubo: 0.3, folgaFoto: 0.15, altFoto: 1.0, pad: 14, minPoli: 3, cotaOff: 8, fracTit: 0.76, fracEsc: 1.3, folgaTit: 2.6, padraoEsq: [1.0, 1.0], escalaMax: 100, barMargem: 0.5, tolConector: 0.15, colPasso: 16, colPassoMin: 9, colDesce: 9, barDesce: 5, boiaRaio: 1.4, ladoBoia: 5, regRaio: 1.6, limiteRotulo: 18,
-apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0.75, beiral: 1, respiro: 2, stub: 6, colet: 4, entreTxt: 3, cotaTxt: 6, cotaFolga: 8, extIni: 1, extFim: 1.5, quebra: 1.2, alimFrac: 0.1, consFrac: 0.12, extrFrac: 0.2, limpFrac: 0.12, entre: 12,
+apoioMax: 30, laje: 3, alaje: 6, parede: 1.6, tampa: 1.6, topoFolga: 3, nivel: 0.75, beiral: 1, respiro: 2, stub: 6, colet: 4, entreTxt: 3, cotaTxt: 6, cotaFolga: 8, extIni: 1, extFim: 1.5, extFolgaTxt: 1.2, quebra: 1.2, alimFrac: 0.1, consFrac: 0.12, extrFrac: 0.2, limpFrac: 0.12, entre: 12,
 rotSemLig: "SEM LIGAÇÃO", rotInter: "INTERLIGAÇÃO COM ", rotInterJunta: " E ", interDesce: 1.6, rotAlim: "AF-ALIMENTAÇÃO", rotCons: "AF-CONSUMO", rotExtr: "EXTRAVASOR E LIMPEZA", rotApoiada: "BASE APOIADA NA LAJE", rotDesce: "DESCEM ATÉ A SAÍDA LIVRE", parte: { alim: "alimentacao", cons: "saida", extr: "extravasor", limp: "limpeza" },
 reAlim: /^entrada|alimenta/i, reCons: /^sa[ií]da|consumo/i, reExtr: /extrav/i, reLimp: /limp/i }
 };
@@ -28637,6 +28637,7 @@ if (c.nivelPlanta === "baixo") p.nivelPlanta = "baixo";
 if (c.arquitetura === false) p.arquitetura = false;
 if (c.agrupar === false) p.agrupar = false;
 if (c.mostrarCalculo === false) p.mostrarCalculo = false;
+if (c.chamadaProduto === false) p.chamadaProduto = false;
 if (txt(c.qr).trim()) p.qr = txt(c.qr).trim();
 if (txt(c.portal).trim()) p.portal = txt(c.portal).trim();
 p.notasExtra = arr(c.notasExtra).map(txt).filter(function (x) { return x.trim(); });
@@ -29113,7 +29114,13 @@ if (!esq) { pts.push([xc, yt], [xc, yb]); vals.push(br(alt, 2)); }
 if (gap > R.tolPav) { if (!pts.length) pts.push([xc, yb]); pts.push([xc, yr - R.laje]); vals.push(br(gap, 2)); }
 if (pts.length > 1) {
 D.cadeia(pts, 0, vals, { attrs: vals.map(function () { return ' data-cota="reservatorio"'; }) });
-pts.forEach(function (p) { D.linha(xc + R.extIni, p[1], p[1] <= yb ? xl - R.extFim : xl - R.alaje - R.extFim, p[1], "HID-COTA"); });
+var furos = [[bL[0], R.rotAlim], [bL[1], R.rotCons]].map(function (f) { var ycf = Y0 + f[0], xt = X0 + xBalL - rB - R.entreTxt / 2 - AP.largTexto(f[1], h); return { y: ycf, x0: xt - R.extFolgaTxt, x1: X0 + xBalL + rB + R.extFolgaTxt, r: rB + R.extFolgaTxt }; });
+pts.forEach(function (p) {
+var xa = xc + R.extIni, xb = p[1] <= yb ? xl - R.extFim : xl - R.alaje - R.extFim, cortes = furos.filter(function (f) { return Math.abs(p[1] - f.y) <= f.r && f.x1 > xa && f.x0 < xb; }).sort(function (u, v) { return u.x0 - v.x0; });
+var ini = xa;
+cortes.forEach(function (f) { if (f.x0 > ini) D.linha(ini, p[1], f.x0, p[1], "HID-COTA"); ini = Math.max(ini, f.x1); });
+if (xb > ini) D.linha(ini, p[1], xb, p[1], "HID-COTA");
+});
 if (corta) { var ym = yb + (yr - R.laje - yb) * R.quebraPos; D.linha(xc - R.quebra, ym + R.quebra, xc + R.quebra, ym - R.quebra, "HID-COTA"); D.linha(xc - R.quebra, ym + R.quebra * 2, xc + R.quebra, ym + R.quebra, "HID-COTA"); }
 }
 if (gap <= R.tolPav) D.texto(xl - R.alaje, yr + R.laje + h * R.fracTit, R.rotApoiada, h, {});
@@ -29288,6 +29295,14 @@ D.texto(tx + KR.texto * 0.9, my, String(cm), KR.texto, { al: "C", rot: -90, cor:
 });
 });
 }
+function produtoDoAcessorio(ac) {
+var PC = PEC(), fc = null, f0 = null;
+try { fc = PC && PC.acessorio ? PC.acessorio(txt(ac.acessorio), ac.variante || null, ac.dn) : null; } catch (e) { fc = null; }
+f0 = fc && fc.comercial && arr(fc.comercial.fabricante)[0];
+if (!f0 || !txt(f0.descricao).trim() || !txt(f0.fabricante).trim()) return "";
+var d = txt(f0.descricao).trim(); if (/\d$/.test(d)) d += " mm";
+return d + " - " + txt(f0.fabricante).trim().toUpperCase();
+}
 function folhaPerspectiva(c) {
 var D = c.D, a = c.areaPersp || c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
 if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
@@ -29385,6 +29400,7 @@ if (pc) pend.push({ s: pc, h: h, tipo: "aparelho", camada: "HID-TEXTO", trecho: 
 pz.acess.forEach(function (ac) {
 var p = X(pz.P(ac.centro)), alt = ac.centro.y - pz.pv.cota;
 pend.push({ s: txt(({ registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" })[ac.acessorio] || "RG") + "  " + (alt >= 0 ? "+" : "") + br(alt, 2), h: h, tipo: "registro", camada: "HID-TEXTO", trecho: ac.id, anchors: [p], prio: 1, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 });
+var nomeP = !(c.cfg && c.cfg.chamadaProduto === false) ? produtoDoAcessorio(ac) : ""; if (nomeP) pend.push({ s: nomeP, h: h, tipo: "registro", camada: "HID-TEXTO", trecho: ac.id + "-produto", anchors: [p], prio: 2, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 * 1.6 });
 });
 var cantos = pz.piso.map(X).sort(function (p, q) { return q[1] - p[1]; }), cp = cantos[0];
 D.cheio([[cp[0], cp[1]], [cp[0] - K2.perspNivel, cp[1] - K2.perspNivel * 1.6], [cp[0] + K2.perspNivel, cp[1] - K2.perspNivel * 1.6]], "#000");
@@ -29930,7 +29946,7 @@ var pvC = {}; for (var kp in pv) if (Object.prototype.hasOwnProperty.call(pv, kp
 pvC.base = -Infinity; pvC.sup = Infinity; pvC.cota = Math.min(pv.cota, yMin);
 var pzC = null;
 try { pzC = perspectivaDe(c, { x0: Math.min.apply(null, cx0) - K.alcance, x1: Math.max.apply(null, cx0) + K.alcance, z0: Math.min.apply(null, cz0) - K.alcance, z1: Math.max.apply(null, cz0) + K.alcance }, pvC); } catch (e3) { pzC = null; c.avisos.push("CAIXA D'ÁGUA: " + (e3 && e3.message || e3)); }
-if (pzC) out.push({ titulo: "CAIXA D'ÁGUA" + sufixo, pz: pzC });
+if (pzC) { pzC.produtos = true; out.push({ titulo: "CAIXA D'ÁGUA" + sufixo, pz: pzC }); }
 }
 return out;
 }
@@ -30168,7 +30184,7 @@ var colunas = colunasPublicas(H, arr(rede.trechos).filter(function (t) { return 
 var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
 return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
 }
-var _int = { setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+var _int = { produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
 bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
 CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
 paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
@@ -30235,7 +30251,7 @@ return icCarregando;
 function opcoesDe(ctx, cfg) {
 var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = HP().normalizarConfig(cfg);
 return { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao,
-sistemas: c.sistemas, conjuntos: c.conjuntos, isoFormato: c.isoFormato, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, qr: c.qr, portal: c.portal, perspectiva: c.perspectiva,
+sistemas: c.sistemas, conjuntos: c.conjuntos, isoFormato: c.isoFormato, nivelPlanta: c.nivelPlanta, arquitetura: c.arquitetura, mostrarCalculo: c.mostrarCalculo, chamadaProduto: c.chamadaProduto, qr: c.qr, portal: c.portal, perspectiva: c.perspectiva,
 empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
 obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
 ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
@@ -30263,7 +30279,8 @@ h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm
 '<label>Escala da planta <select data-hpr="escala">' + ESCALAS.map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (a maior que cabe)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
 '<label>Planta <select data-hpr="nivel"><option value="medio"' + (cfg.nivelPlanta !== "baixo" ? " selected" : "") + '>Médio (tubo cheio, conexão branca)</option><option value="baixo"' + (cfg.nivelPlanta === "baixo" ? " selected" : "") + ">Baixo (linha única)</option></select></label><br>" +
 '<label><input type="checkbox" data-hpr="arq"' + marcado(cfg.arquitetura) + "> Arquitetura em meio-tom</label><br>" +
-'<label><input type="checkbox" data-hpr="calc"' + marcado(cfg.mostrarCalculo !== false) + "> Mostrar o cálculo no isométrico (pressões, UHC)</label></fieldset>";
+'<label><input type="checkbox" data-hpr="calc"' + marcado(cfg.mostrarCalculo !== false) + "> Mostrar o cálculo no isométrico (pressões, UHC)</label><br>" +
+'<label><input type="checkbox" data-hpr="produto"' + marcado(cfg.chamadaProduto !== false) + "> Chamada com o nome do produto nos registros (fabricante e descrição do catálogo)</label></fieldset>";
 h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Numeração e revisão</b></legend>' +
 '<label>Prefixo <input data-hpr="prefixo" value="' + esc(cfg.prefixo) + '" size="6"></label> <span class="muted">→ ' + esc(cfg.prefixo) + "-01, " + esc(cfg.prefixo) + "-02…</span><br>" +
 '<label>Revisão <input data-hpr="revisao" value="' + esc(cfg.revisao) + '" size="4"></label><br>' +
@@ -30293,6 +30310,7 @@ if (q('[data-hpr="isoformato"]')) c.isoFormato = q('[data-hpr="isoformato"]').va
 if (q('[data-hpr="nivel"]')) c.nivelPlanta = q('[data-hpr="nivel"]').value;
 if (q('[data-hpr="arq"]')) c.arquitetura = !!q('[data-hpr="arq"]').checked;
 if (q('[data-hpr="calc"]')) c.mostrarCalculo = !!q('[data-hpr="calc"]').checked;
+if (q('[data-hpr="produto"]')) c.chamadaProduto = !!q('[data-hpr="produto"]').checked;
 if (q('[data-hpr="prefixo"]')) c.prefixo = q('[data-hpr="prefixo"]').value;
 if (q('[data-hpr="revisao"]')) c.revisao = q('[data-hpr="revisao"]').value;
 if (q('[data-hpr="descrev"]')) c.descricaoRevisao = q('[data-hpr="descrev"]').value;
