@@ -97,7 +97,7 @@
     wb.creator = "OrçaPRO"; wb.created = new Date();
     function aba(nome, cols, linhas, larg) {
       var ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: 3 }] });
-      ws.getCell("A1").value = "Cotação de madeira — " + (d.obra || "obra") + (d.opcao ? " — opção " + d.opcao + (d.nome ? ": " + d.nome : "") : ""); ws.getCell("A1").font = { bold: true, size: 13 };
+      ws.getCell("A1").value = (d.preliminar ? ROTULO_PRELIMINAR + " — " : "") + "Cotação de madeira — " + (d.obra || "obra") + (d.opcao ? " — opção " + d.opcao + (d.nome ? ": " + d.nome : "") : ""); ws.getCell("A1").font = d.preliminar ? { bold: true, size: 13, color: { argb: "FFB00020" } } : { bold: true, size: 13 };
       ws.getCell("A2").value = "Gerada pelo OrçaPRO em " + new Date().toLocaleDateString("pt-BR") + " · quantidades do modelo calculado · conferir medidas brutas com o fornecedor";
       ws.getRow(3).values = cols; ws.getRow(3).font = neg; ws.getRow(3).eachCell(function (c) { c.fill = cab; c.border = { bottom: { style: "thin" } }; });
       linhas.forEach(function (l) { ws.addRow(l); });
@@ -157,11 +157,20 @@
     { cod: "T2-v", re: /^T2: vento com a cobertura/, porque: "vento de duas águas pela Tabela 5: premissa declarada" },
     { cod: "T7-escada", re: /^T7: escada de OUTRO material/, porque: "escopo declarado: a escada de concreto é de outro projeto; só os degraus de madeira entram como item" },
     { cod: "T7-concentrada", re: /^T7: a NBR 6120:2019 \(Tab\. 10, p\. 18\) não fixa carga concentrada/, porque: "a Tab. 10 não dá carga concentrada para varandas; Qk de 1 kN adotada por analogia com a cobertura (6.4) — o RT confirma" },
+    { cod: "T7-troca", re: /^T7 troca automática de sistema/, porque: "troca automática de sistema do deck com a ligação da base verificada e a rigidez real da base no pórtico (E4b): decisão declarada ao RT; a situação do deck vem dos grupos reais (reprovação que sobrar bloqueia por conta própria), não do aviso" },
     { cod: "T7-vento", re: /^T7: vento sobre o deck/, porque: "vento no deck e no guarda-corpo vazado fica como premissa declarada (informar a pressão para incluir)" },
     { cod: "T7-adotado", re: /^T7: adotado \(a confirmar pelo RT\)/, porque: "classe do roliço D40, do cumaru D60 e fu = 500 MPa são adoções a favor da segurança, declaradas no memorial: o RT confirma com o fornecedor/laudo" },
     { cod: "T7-vento-nbr", re: /^T7: vento no deck calculado pela NBR 6123/, porque: "vento do deck calculado pela NBR 6123 na cota do topo (V0, S1, S2, S3 da obra); Ca = 1,0 (conservador) e ψ0 = 0,6 são adoções declaradas — o RT confirma" },
     { cod: "T7-vento-informado", re: /^T7: vento no deck com a pressão informada/, porque: "pressão do vento informada pelo usuário, Ca = 1,0 e ψ0 adotados a favor da segurança — o RT confirma" },
     { cod: "T7-R35", re: /^T7: R35 /, porque: "regra R35 (decisão do coordenador): vigas a menos de 15 cm do terreno apoiam em MURETA da fundação (outra empresa); declarada, nunca silenciosa — confirmar com a fundação; pode ser desligada na entrada do deck" },
+    { cod: "T7-R57", re: /^T7: R57 /, porque: "regra R57 (decisão do coordenador): onde o pilar de madeira não comporta a ligação da base + a do topo + folga (0,15 m adotada), a viga apoia DIRETO em pedestal/bloco da fundação (outra empresa), com reação e altura informadas e chapa inox + neoprene como item nosso; declarada, nunca silenciosa — confirmar com a fundação" },
+    { cod: "T7-R67", re: /^T7: R67 /, porque: "regra R67 (N2 da 2ª revisão): deck baixo em pedestal de concreto da fundação pela altura mínima do pilarete com mão-francesa; R67 APROVADA pelo Rogério em 27/10/2026 (a alternativa pilarete curto sem mão-francesa com contraventamento em X fica como alternativa não usada)" },
+    { cod: "T7-R68", re: /^T7: R68 /, porque: "regra R68 (decisão do coordenador): pilarete roliço com mão-francesa dupla — faces aplainadas na região da ligação com a seção reduzida verificada, ou pilarete serrado quadrado quando o grupo não cabe na face aplainada; o RT confirma" },
+    { cod: "T7-R73-torção", re: /^T7: R73 — o pilarete é verificado à flexocompressão/, porque: "TORÇÃO do pilarete NÃO verificada (R73): as duas diagonais do X ficam em faces opostas do mesmo nó e geram binário (N·senθ × a distância entre as faces); o motor verifica só Mx = Vb·0,35 m e My = ΣNd·senθ·e na flexocompressão, e a NBR 7190-1:2022 não traz verificação direta de torção em peça serrada/MLC: premissa declarada, a conferir pelo RT" },
+    { cod: "T7-R73", re: /^T7: R73 /, porque: "R73 (decidido pelo Rogério em 27/10/2026): direção X contraventada por X de madeira entre pilaretes (premissas: linha em X por y com tolerância de 0,16 m, altura útil da diagonal h − 0,25 m, vão <= 2,5 m, ângulo de 25 a 75 graus); pilarete sem vão possível vira pedestal (R57 estendida, R73b APROVADA pelo Rogério em 27/10/2026)" },
+    { cod: "T7-R66b", re: /^T7: R66b /, porque: "regra R66b (4ª rodada): pilarete sem vão para a travessa biapoiada da 2ª mão-francesa apoia a viga em pedestal da fundação (o contraventamento em X entre pilaretes não existe no modo máscara) — o RT confirma" },
+    { cod: "T7-R59", re: /^T7: R59 /, porque: "regra R59 (decisão do coordenador): mão-francesa DUPLA (duas peças abraçando o pilarete e a viga) com parafusos passantes em corte duplo; o grupo de parafusos é verificado NA SOBREPOSIÇÃO com o pilarete e com a viga (Tab. 14 da NBR 7190-1:2022 no referencial da fibra de cada peça; regra de par adotada) — o RT confirma" },
+    { cod: "T7-R60", re: /^T7: R60 /, porque: "regra R60 (decisão do coordenador): apoio da viga no pedestal em U de inox 316 com 2 parafusos passantes na viga; fy do aço do PADRÃO do sistema (confirmar para o inox do fornecedor); o concreto (borda, arrancamento, dimensão) é da FUNDAÇÃO — exigências mínimas emitidas no memorial e na prancha" },
     { cod: "T2-topo", re: /^E4 r11: /, porque: "crédito de topo travado do pilar da T2: só quando o K_br,1 da cobertura e das paredes atende; o motor diz se aplicou ou não — premissa declarada, a validar pelo RT" },
     { cod: "T7-regiao", re: /^T7: (região do país|guarda-corpo calculado com a carga da região V)/, porque: "região da NBR 10821-2 não informada: adotada a V (a mais severa), a favor da segurança — informar a região da obra" }
   ];
@@ -199,7 +208,10 @@
     return { atende: it.length === 0, itens: it, premissas: pr };
   }
 
-  var MadEngSaidas = { situacao: situacao, classeAviso: classeAviso, PREMISSAS: PREMISSAS, corpoPeca: corpoPeca, volumesDaFonte: volumesDaFonte, gerarIfc: gerarIfc, opsBim: opsBim, linhasPecas: linhasPecas, resumoMadeira: resumoMadeira, xlsxCotacao: xlsxCotacao,
+  /** ETAPA 1 (revisor): estrutura que NÃO fecha (sem solução, achado, ligação ou grupo reprovado, bloqueio R73w/R73x) gera orçamento e cotação MARCADOS "PRELIMINAR — NÃO ATENDE"; nada sai como se estivesse aprovado */
+  var ROTULO_PRELIMINAR = "PRELIMINAR — NÃO ATENDE";
+  function preliminar(res) { var s = situacao(res), nao = !res || res.ok === false || res.semSolucao === true || !s.atende; return { preliminar: nao, rotulo: ROTULO_PRELIMINAR, motivos: nao ? (s.itens.length ? s.itens.slice(0, 5).map(function (x) { return x.texto; }) : ["O cálculo não fechou (resultado marcado como não aprovado)."]) : [] }; }
+  var MadEngSaidas = { situacao: situacao, preliminar: preliminar, ROTULO_PRELIMINAR: ROTULO_PRELIMINAR, classeAviso: classeAviso, PREMISSAS: PREMISSAS, corpoPeca: corpoPeca, volumesDaFonte: volumesDaFonte, gerarIfc: gerarIfc, opsBim: opsBim, linhasPecas: linhasPecas, resumoMadeira: resumoMadeira, xlsxCotacao: xlsxCotacao,
     reacoesFundacao: reacoesFundacao, comparativo: comparativo, secaoTxt: secaoTxt, matCurto: matCurto, br: br };
   if (typeof module !== "undefined" && module.exports) module.exports = MadEngSaidas;
   else global.MadEngSaidas = MadEngSaidas;

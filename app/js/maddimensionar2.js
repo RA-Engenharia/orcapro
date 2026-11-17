@@ -758,7 +758,7 @@
     opcoes = opcoes || {};
     var pc = projetoCompleto(proj, partida, opcoes), d = pc.d, r = d.resultado, q = proj._pad, LG = pc.LG;
     var F = MT.T1.fonte(q.params, d.secoes, { LG: LG, classe: q.classe, kFlambagem: r.kFlambagem }), pecas = F.pecas, t7 = null;
-    if (opcoes.t7) { t7 = MT.T7.fonte(ext({ classe: q.classe }, opcoes.t7)); pecas = pecas.concat(t7.pecas); }
+    if (opcoes.t7) { t7 = MT.T7.fonte(ext({ classe: q.classe }, opcoes.t7)); if (opcoes.deckPecas) t7.pecas = opcoes.deckPecas; pecas = pecas.concat(t7.pecas); }      /* etapa 1: deckPecas = as peças do deck CALCULADO (maddeck.projetar: X de madeira DS-CX com a sobra além do nó, mãos-francesas, pedestais); sem elas o orçamento da tela ficava sem as diagonais do X */
     var out = { secoes: d.secoes, resultado: r, historico: d.historico, semSolucao: d.semSolucao, ligacoes: LG, rigidezBase: pc.rigidezBase, alternativaBase: pc.alternativaBase, fonte: { pecas: pecas, volume_por_material_m3: MT.volumePorMaterial(pecas) }, t7: t7 };
     if (AUD && opcoes.auditor !== false) out.auditoria = AUD.auditar({ pecas: pecas, ligacoes: LG, params: q.params, secoes: d.secoes, terreno: opcoes.terreno, modelo: r.modelo, analise: r, analisar: AN.analisar, dim: { semSolucao: d.semSolucao, pior: d.pior } }, { verificarMecanismo: opcoes.verificarMecanismo !== false });
     return out;
@@ -815,11 +815,15 @@
     var sl = q._slip && q._slip[m.g === "DV" ? "DX" : m.g]; if (!sl || !(sl.k > 0)) return 1;
     return 1 / (1 + E * s.b * s.h / (L * sl.k));
   }
-  function t2SlipDiag(q, sec, ELUrig, perfil) {
+  function t2SlipDiag(q, sec, ELUrig, perfil, barras) {
     var cl = MM.classe2022(q.classe), pc = perfil("curta"), cL = ML.cfg({ kmod: pc.kmod, kmod1: pc.kmod1, kmod2: pc.kmod2, rhok: cl.rhok, k90Tipo: cl.grupo === "dicotiledonea" ? "folhosa" : "conifera" }), out = {};
+    /* N1 (E4b): comprimento da diagonal (menor do grupo; DX inclui DV) → cada ponta pode ocupar até 40 % dele (ADOÇÃO declarada: deixa 20 % livre no meio, onde as diagonais se cruzam) e no máximo ML.PINOS_LMAX_PONTA = 0,60 m (E1, E4b final: ligação montável; adoção declarada). */
+    function menorL(gr) { var m = Infinity; (barras || []).forEach(function (bb) { var me = bb.mem; if (me && gr.indexOf(bb.grupo) >= 0 && me.p0 && me.p1) { var dx = me.p1[0] - me.p0[0], dy = me.p1[1] - me.p0[1], dz = me.p1[2] - me.p0[2]; m = Math.min(m, Math.sqrt(dx * dx + dy * dy + dz * dz)); } }); return isFinite(m) ? m : 0; }
     ["DX", "DP"].forEach(function (g) {
-      if (!sec[g]) return; var F = Math.max(ELUrig[g] || 0, 0.05), pn = ML.pinosAxiais(cL, "diagonal " + g, F, 0.001, sec[g].b, sec[g].h, 0.008), nF = pn && pn.n ? pn.n : 2, d = pn && pn.d ? pn.d : 0.012, n = Math.max(nF, sec[g].nMin || 0), Ku = ML.kuPino(d, cl.rhok, true);
-      out[g] = { n: n, nForca: nF, d: d, Ku: Ku, k: n * Ku / 2, F: F };
+      if (!sec[g]) return; var F = Math.max(ELUrig[g] || 0, 0.05), Ld = menorL(g === "DX" ? ["DX", "DV"] : ["DP"]), Lmax = Ld > 0 ? Math.min(0.4 * Ld, ML.PINOS_LMAX_PONTA) : 0,
+        pn = ML.pinosAxiais(cL, "diagonal " + g, F, 0.001, sec[g].b, sec[g].h, 0.008, { nMin: sec[g].nMin || 0, Lmax: Lmax }), nF = pn && pn.n ? pn.n : 2, d = pn && pn.d ? pn.d : 0.012, n = Math.max(nF, sec[g].nMin || 0),
+        Ku = ML.kuPino(d, cl.rhok, true, 2);      /* N4 (E4b): chapa interna = 2 planos de corte por pino */
+      out[g] = { n: n, nForca: nF, d: d, Ku: Ku, k: n * Ku / 2, F: F, nKu: n * Ku, Lmax: Lmax, Ldiag: Ld, cabe: !(pn && pn.cabe === false), arranjo: pn && pn.ok ? { nc: pn.nc, nr: pn.nr, a1: pn.a1, a3: pn.a3, comprimento: pn.comprimento } : null };
     });
     return out;
   }
@@ -1034,7 +1038,7 @@
     if (q.params.contraventamento.tipo !== "fita" && (sec.DX || sec.DP) && !q._semSlip) {
       var fRig = { DX: 0, DP: 0 }, KREF0 = perfil("curta").kmod;
       elu.forEach(function (cb0) { var rc0 = r.combinacoes[cb0.id]; if (!rc0) return; var FK0 = KREF0 / perfil(durClasse(cb0)).kmod; M.barras.forEach(function (b0) { if (b0.grupo !== "DX" && b0.grupo !== "DP") return; var es0 = rc0.barras[b0.id] && rc0.barras[b0.id].estacoes; if (es0) es0.forEach(function (e0) { fRig[b0.grupo] = Math.max(fRig[b0.grupo], Math.max(0, e0.N) * FK0); }); }); });
-      slipInfo = t2SlipDiag(q, sec, fRig, perfil); q._slip = slipInfo;
+      slipInfo = t2SlipDiag(q, sec, fRig, perfil, M.barras); q._slip = slipInfo;
       M = t2Montar(q, G, sec); modelo = { nos: M.nos, barras: M.barras, apoios: M.apoios, casos: modelo.casos };
       r = AN.analisar(modelo, { combinacoes: elu, estacoes: 3, comPCG: true });
     }
@@ -1200,6 +1204,7 @@
     var z = {}; Object.keys(r.grupos).forEach(function (g) { z[g] = Math.max(r.grupos[g].eta, (r.flechas && r.flechas[g]) || 0); });
     Object.keys(r.flechas || {}).forEach(function (g) { if (z[g] == null) z[g] = r.flechas[g]; });
     Object.keys(r.apoioEta || {}).forEach(function (g) { z[g] = Math.max(z[g] || 0, r.apoioEta[g]); });      /* A1: apoio ⊥ às fibras */
+    if (r.contrav && r.contrav.slip) { ["DX", "DP"].forEach(function (g) { if (sec[g] && r.contrav.slip[g] && r.contrav.slip[g].cabe === false) z[g] = Math.max(z[g] || 0, 1.01); }); }      /* N1 (E4b): o grupo de pinos não cabe na peça → cresce a seção */
     if (r.contrav) { if (sec.DP) z.DP = Math.max(z.DP || 0, r.contrav.razao); if (sec.DX) z.DX = Math.max(z.DX || 0, r.contrav.razao); if (!sec.DP && !sec.DX && sec.FT) z.FT = r.contrav.razao; }      /* madeira: K_br,1 reprovado → o laço engrossa as diagonais de madeira dos painéis (o caminho de rigidez até o solo); sem solução → bloqueia */      /* C3: Kmin/Kbr > 1 → o laço engrossa a fita */
     return z;
   }
@@ -1208,7 +1213,7 @@
     if (g === "FT") { var kf = -1; T2_FT.forEach(function (c, i) { if (Math.abs(c[0] - s.b) < 1e-9 && Math.abs(c[1] - s.e) < 1e-9) kf = i; }); if (kf < 0) { for (kf = 0; kf < T2_FT.length - 1 && T2_FT[kf][0] * T2_FT[kf][1] <= s.b * s.e + 1e-12; kf++); kf--; } if (kf + 1 < T2_FT.length && !(L.bMax && T2_FT[kf + 1][0] > L.bMax + 1e-9)) { s.b = T2_FT[kf + 1][0]; s.e = T2_FT[kf + 1][1]; return true; } return false; }
     if (g === "TI") { var k = T2_TI.indexOf(s.d); if (k >= 0 && k + 1 < T2_TI.length) { s.d = T2_TI[k + 1]; return true; } return false; }
     if (g === "P" || g === "PO" || g === "PC") { if (s.b + pl <= L.bMax + 1e-9) { s.b = r2(s.b + pl); s.h = s.b; return true; } return false; }
-    if ((g === "DX" || g === "DP") && r && r.contrav && r.contrav.slip && r.contrav.slip[g] && r.contrav.razao > 1 + 1e-9 && (s.nMin || 0) < 16) { s.nMin = Math.max(s.nMin || 0, r.contrav.slip[g].n) + 2; return true; }      /* A1 (r13): a rigidez do contraventamento reprova com o deslizamento dos pinos → mais pinos por ponta (a diagonal maior sozinha não resolve: os pinos limitam) */
+    if ((g === "DX" || g === "DP") && r && r.contrav && r.contrav.slip && r.contrav.slip[g] && r.contrav.razao > 1 + 1e-9 && r.contrav.slip[g].cabe !== false && (s.nMin || 0) < 16) { s.nMin = Math.max(s.nMin || 0, r.contrav.slip[g].n) + 2; return true; }      /* A1 (r13): a rigidez do contraventamento reprova com o deslizamento dos pinos → mais pinos por ponta (a diagonal maior sozinha não resolve: os pinos limitam) */
     var eb = r && r.esbeltez && r.esbeltez[g];       // E4: λ acima do limite no eixo fraco → engrossa (b) primeiro
     if (!(eb && eb.eixo === "b") && s.h + pa <= L.hMax + 1e-9) { s.h = r2(s.h + pa); return true; }
     if (s.b + pl <= L.bMax + 1e-9) { s.b = r2(s.b + pl); return true; }

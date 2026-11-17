@@ -353,9 +353,16 @@
         } else i++;
       }
     });
+    var pedestais = [];
     pil.forEach(function (pt) {
       var zt = d.terreno(pt[0], pt[1]) + (d.blocoSobre == null ? 0.20 : d.blocoSobre), h = zfundo - zt;
-      if (h < (d.hMinPilarete == null ? 0.15 : d.hMinPilarete)) { apoiosDiretos.push([rd(pt[0], 2), rd(pt[1], 2), rd(h, 2)]); pt.push("direto"); return; }
+      var forcPed = !!(d.pedForcado && d.pedForcado.some(function (q2) { return Math.abs(q2[0] - pt[0]) < 0.02 && Math.abs(q2[1] - pt[1]) < 0.02; }));      /* R66b: pilarete SEM VÃO para a travessa biapoiada da 2ª mão-francesa → pedestal da fundação */
+      if (h < (d.hMinPilarete == null ? 0.15 : d.hMinPilarete) || forcPed) {
+        apoiosDiretos.push([rd(pt[0], 2), rd(pt[1], 2), rd(h, 2)]); pt.push("direto");
+        /* R57 (E4b final): o pilar de madeira NÃO cabe (ligação de base + ligação de topo + folga > altura livre): a viga apoia DIRETO em PEDESTAL/BLOCO da fundação (OUTRA EMPRESA; interface: reação e altura informadas); nosso: chapa de apoio inox + neoprene (item APOIO). Altura do pedestal = do terreno do modelo à face inferior da viga. */
+        if ((d.pedestalR57 || forcPed) && h >= 0.15 - 1e-9) { pt.ped = true; pt.hPed = zfundo - d.terreno(pt[0], pt[1]); pedestais.push([rd(pt[0], 2), rd(pt[1], 2), rd(pt.hPed, 2)]); }
+        return;
+      }
       npil++; var pr = d.pilarete, circ = pr.forma === "circ", sec = circ ? { tipo: "circ", d: pr.d } : { tipo: "ret", b: pr.b, h: pr.b };
       if (h > (d.hMaoFrancesa == null ? 0.40 : d.hMaoFrancesa)) add({ id: pre + "-MF" + z(npil, 2), grupo: Dres.nome + " — contraventamento", descricao: "Mãos-francesas do pilarete (2, nas duas direções)", material: MLC_TRAT,
         especificacao: "MLC GL24h tratada 6×12 cm, 0,9 m, 2 parafusos Ø12 inox por ponta", secao: null, qtd: 2 });
@@ -365,11 +372,11 @@
       pp.apoio_externo = true; pp.pilarete = true; pp.h_livre = h; pp.engastado = !!d.pilarEngastado; pp.L0 = (pp.engastado ? 0.7 : 1.0) * h;
     });
     /* viga sem pilarete nos pontos "diretos" apoia no bloco (apoio externo declarado) */
-    vigasPecas.forEach(function (vp) { vp.apoios_externos = vp.apoios_pontos.filter(function (pt) { return pt[2] === "direto"; }).map(function (pt) { return [pt[0], pt[1]]; }); delete vp.apoios_pontos; });
+    vigasPecas.forEach(function (vp) { vp.apoios_externos = vp.apoios_pontos.filter(function (pt) { return pt[2] === "direto"; }).map(function (pt) { return [pt[0], pt[1]]; }); vp.pedestais = vp.apoios_pontos.filter(function (pt) { return pt.ped && pt[2] === "direto"; }).map(function (pt) { return [pt[0], pt[1], pt.hPed]; }); delete vp.apoios_pontos; });
     var area = rects.reduce(function (s, r) { return s + (r[1] - r[0]) * (r[3] - r[2]); }, 0) - (d.areaRecortes || 0);
     if (apoiosDiretos.length) {
       var enterrados = apoiosDiretos.filter(function (a) { return a[2] < -0.05; }).length;
-      add({ id: pre + "-APOIO", grupo: Dres.nome + " — apoios", descricao: "Apoio direto da viga em bloco/mureta da fundação (outra empresa) — " + enterrados + " pontos com o terreno do modelo ACIMA da viga: confirmar terreno/aterro",
+      add({ id: pre + "-APOIO", grupo: Dres.nome + " — apoios", descricao: "Apoio direto da viga em bloco/mureta da fundação (outra empresa) — " + enterrados + " pontos com o terreno do modelo ACIMA da viga: confirmar terreno/aterro" + (pedestais.length ? "; R57: " + pedestais.length + " apoio(s) em PEDESTAL (altura do terreno à viga " + rd(Math.min.apply(null, pedestais.map(function (a) { return a[2]; })), 2) + " a " + rd(Math.max.apply(null, pedestais.map(function (a) { return a[2]; })), 2) + " m): o pilar de madeira não cabe, a fundação (outra empresa) executa o pedestal" : ""),
         material: INOX, especificacao: "chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene", secao: null, qtd: apoiosDiretos.length, unidade: "un" });
     }
     add({ id: pre + "-TAB", grupo: Dres.nome + " — tábuas", descricao: "Tábuas do deck", material: CUMARU, especificacao: "deck 21×145 mm, juntas 5 mm, fixação oculta inox", secao: null, qtd: rd(area * 1.10, 2), unidade: "m²" });
@@ -378,16 +385,23 @@
 
   function t7DeckRetangulo(d, add, Dres) {
     var zv = d.cota - d.tabua - d.barrote.h - d.vigas.h / 2, zb = d.cota - d.tabua - d.barrote.h / 2, pre = d.id, n = 0, zfundo = d.cota - d.tabua - d.barrote.h - d.vigas.h;
+    var vigasQ = [];
     d.vigas.ys.forEach(function (y, i) {
       var q = add({ id: pre + "-V" + (i + 1), grupo: Dres.nome + " — vigas", descricao: "Viga principal do deck (sobre os pilares)", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(d.vigas.b * 100, 0) + "×" + rd(d.vigas.h * 100, 0) + " cm",
         secao: { tipo: "ret", b: d.vigas.b, h: d.vigas.h }, p0: [d.x0, y, zv], p1: [d.x1, y, zv], up: [0, 0, 1] });
-      q.apoios_externos = [];
+      q.apoios_externos = []; vigasQ.push({ q: q, y: y });
     });
     arange(d.x0 + d.barrote.inicio, d.x1, d.barrote.passo).forEach(function (x) {
       n++; add({ id: pre + "-B" + z(n, 2), grupo: Dres.nome + " — barrotes", descricao: "Barrote do deck", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(d.barrote.b * 100, 0) + "×" + rd(d.barrote.h * 100, 0) + " cm",
         secao: { tipo: "ret", b: d.barrote.b, h: d.barrote.h }, p0: [x, d.y0, zb], p1: [x, d.y1, zb], up: [0, 0, 1] });
     });
+    var hPilR = zfundo - d.pilar.zBase, pedR = !!(d.pilar.pedestalR57 && hPilR < (d.pilar.hMinPilar || 0)), pedsR = [];
     d.pilares.forEach(function (pt, i) {
+      if (pedR) {      /* R57 (E4b final): pilar de madeira não cabe → a viga apoia DIRETO em pedestal/bloco da fundação (outra empresa); chapa inox + neoprene é item nosso (APOIO) */
+        pedsR.push([rd(pt[0], 2), rd(pt[1], 2), rd(hPilR, 2)]);
+        vigasQ.forEach(function (vq) { if (Math.abs(vq.y - pt[1]) <= 0.12 && pt[0] >= d.x0 - 0.12 && pt[0] <= d.x1 + 0.12) { vq.q.apoios_externos.push([pt[0], pt[1]]); (vq.q.pedestais = vq.q.pedestais || []).push([pt[0], pt[1], hPilR]); } });
+        return;
+      }
       var q = add({ id: pre + "-P" + (i + 1), grupo: Dres.nome + " — pilares", descricao: d.pilar.descricao || "Pilar do deck (fundação de outra empresa)", material: d.pilar.material || ROLICO_MAR,
         especificacao: d.pilar.especificacao || ("Ø" + rd(d.pilar.d * 100, 0) + " cm"), secao: { tipo: "circ", d: d.pilar.d }, p0: [pt[0], pt[1], d.pilar.zBase], p1: [pt[0], pt[1], zfundo], up: [1, 0, 0] });
       q.apoio_externo = true; q.pilarete = true; q.h_livre = zfundo - d.pilar.zBase; q.engastado = !!d.pilar.engastado; q.L0 = (q.engastado ? 0.7 : 1.0) * q.h_livre;
@@ -398,6 +412,7 @@
     /* E4 r11 (R34): pilar ALTO (> 3 m) = CONTRAVENTAMENTO EM X entre pilares nas duas direções (um X por quadro pilar–pilar, da base à viga): diagonais de MLC (padrão) ou tirantes inox com esticador (só tração).
        d.pilar.contraventamento = { tipo: "madeira" | "tirante", zNo0, zNo1 (afastamento do nó da base e do topo, m) }; d.pilar.cv = { b, h } (madeira) | { d } (tirante). Ids DI-CV<n> (DI-CVT<n> no tirante). */
     var cvC = d.pilar.contraventamento, cvPecas = [];
+    if (pedR) cvC = null;      /* sem pilar de madeira não há X */
     if (cvC && d.pilares.length > 1) {
       var zN0 = d.pilar.zBase + (cvC.zNo0 != null ? cvC.zNo0 : 0.40), zN1 = zfundo - (cvC.zNo1 != null ? cvC.zNo1 : 0.40), tirante = cvC.tipo === "tirante", cvS = d.pilar.cv || (tirante ? { d: 0.016 } : { b: 0.12, h: 0.20 }), quadros = [], nCV = 0;
       function agrupa(chave, ordem) { var g = {}; d.pilares.forEach(function (pt) { var k = rd(pt[chave], 2); (g[k] = g[k] || []).push(pt); }); Object.keys(g).sort(function (a, b) { return a - b; }).forEach(function (k) { var L = g[k].sort(function (a, b) { return a[ordem] - b[ordem]; }); for (var q = 0; q + 1 < L.length; q++) quadros.push({ dir: chave === 1 ? "X" : "Y", A: L[q], B: L[q + 1] }); }); }
@@ -412,6 +427,8 @@
         });
       });
     }
+    if (pedsR.length) add({ id: pre + "-APOIO", grupo: Dres.nome + " — apoios", descricao: "Apoio direto da viga em PEDESTAL/bloco da fundação (outra empresa) — R57: o pilar de madeira não cabe; " + pedsR.length + " pedestais de " + rd(hPilR, 2) + " m acima da base informada",
+      material: INOX, especificacao: "chapa de apoio inox 316 em U 6 mm + 2 chumbadores M12 + calço de neoprene", secao: null, qtd: pedsR.length, unidade: "un" });
     var area = (d.x1 - d.x0) * (d.y1 - d.y0);
     add({ id: pre + "-TAB", grupo: Dres.nome + " — tábuas", descricao: "Tábuas do deck", material: CUMARU, especificacao: "deck 21×145 mm, fixação oculta inox", secao: null, qtd: rd(area * 1.10, 2), unidade: "m²" });
     return { area: area, apoiosDiretos: [] };

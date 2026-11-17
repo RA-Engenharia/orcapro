@@ -132,7 +132,8 @@
   /** K_ser (N/mm = kN/m) de UMA seção de corte: ρ_med^1,5·d/23, ρ_med = 1,2·ρk (kg/m³; 7.1.12 e 6.2.5); madeira–aço: o dobro. d em m */
   function kserPino(d, rhok, madeiraAco) { var rm = 1.2 * rhok; return Math.pow(rm, 1.5) * (d * 1000) / 23 * (madeiraAco ? 2 : 1); }
   /** K_u = (2/3)·K_ser (7.1.12) */
-  function kuPino(d, rhok, madeiraAco) { return 2 / 3 * kserPino(d, rhok, madeiraAco); }
+  function kuPino(d, rhok, madeiraAco, planos) { return 2 / 3 * kserPino(d, rhok, madeiraAco) * (planos || 1); }
+  /* N4 (E4b): o Kser da 7.1.12 vale POR SEÇÃO DE CORTE. Chapa interna de aço (fenda na peça) = pino com 2 planos de corte em paralelo → rigidez ×2 (planos = 2); chapa externa ou madeira–madeira simples = 1 plano. */
   /** M2 (revisão R05): rigidez à rotação dos CHUMBADORES da placa de base: n chumbadores tracionados por lado, cada um com k = E·As/L_ef (kN/m), girando em torno da linha de compressão a z = lp − 100 mm (o mesmo braço da placa):
    *  Kθ,chumb = n·k·z² (kN·m/rad). L_ef adotado = 220 mm (placa + graute + trecho livre da barra roscada M20; embutimento "pela fundação" — ADOÇÃO declarada, informar `chumbLef`). */
   function kthetaChumbadores(o) {
@@ -583,15 +584,32 @@
    * Cada ligação madeira–aço é uma CHAPA INTERNA de aço (t = 8 mm) numa fenda de 8 mm da peça + pinos inox; dimGrupo faz a Tabela 14 (a1 por pino pelo ângulo), n_ef e o d ≤ t/2 (7.2).
    * i = { sistema, secoes, cfg, esf: { BS|BI|PD|DG|T|CM|CB: { Nt, Nc, V, NtEq, NcEq, VEq } }, reacoes: { P|PC: { Nmax, Nmin, Hmax, NminEq, HmaxEq } }, assento: { Nmax, Nmin, Hmax }, incl, fita: { N, Neq } }
    * Esforço "Eq" = F·kmodRef/kmod (só para a madeira e os pinos, como no T1); o aço (chapa) recebe o esforço real. */
+  /** E1 (E4b final): teto ABSOLUTO do comprimento do grupo de pinos de uma ponta de diagonal em X (m): ADOÇÃO declarada. Sem ele a rigidez exigida levava a grupos de ~1 m (16 pinos em 2 colunas × 8 linhas, furação alinhada de chapa e madeira em 1 m, distribuição elástica não uniforme nas 8 linhas: a rigidez n·Ku/2 supõe pinos igualmente solicitados). Com o teto, o laço engorda a seção ou recusa — não projeta o que não se monta. */
+  var PINOS_LMAX_PONTA = 0.60;
   function pinosAxiais(c, nome, F, H, b, h, tChapa, opc) {
-    opc = opc || {}; var K9 = c.k90Tipo, ds = opc.ds || [0.016, 0.012, 0.010], melhor = null, r, nc, d, a, t1, k;
+    opc = opc || {}; var K9 = c.k90Tipo, ds = opc.ds || [0.016, 0.012, 0.010], melhor = null, fora = null, r, nc, d, a, t1, k, nReq, nrMin, nrMax;
     for (k = 0; k < ds.length; k++) for (nc = 2; nc >= 1; nc--) {
       d = ds[k]; t1 = (b - tChapa) / 2; a = nc === 1 ? 0 : h / 2 - 4 * d;
       if (nc === 2 && a <= 0) continue;
       if (nc === 2 && 2 * a < bordas(d, Math.PI / 2, c.pinoTipo).a2 - 1e-9) continue;
-      r = dimGrupo({ nome: nome + " (pinos Ø" + Math.round(d * 1000) + ", " + nc + " coluna" + (nc > 1 ? "s" : "") + ")", cap: (function (dd, tt) { return function (al) { return chapaInterna(dd, tt, al, c.rhok, c.fu, K9); }; })(d, t1), nc: nc, a: a, d: d, M: 0, N: F, H: H || 0, nrMax: opc.nrMax || 16, kmod: c.kmod, gLig: c.gLig, pinoTipo: c.pinoTipo, tMadeira: t1 });
-      if (r.ok) { r.chapa = tChapa; return r; }
+      /* N1 (E4b): n mínimo vindo da RIGIDEZ (opc.nMin; opc.nKuMin = n·Ku exigido, chapa interna = 2 planos) — o grupo é REDESENHADO (colunas × linhas, a1, a3, comprimento) com esse n, e não só o n sobrescrito */
+      nReq = Math.max(opc.nMin || 0, opc.nKuMin > 0 ? Math.ceil(opc.nKuMin / kuPino(d, c.rhok, true, 2) - 1e-9) : 0);
+      nrMin = nReq > 0 ? Math.max(2, Math.ceil(nReq / nc)) : 2; nrMax = Math.max(opc.nrMax || 16, nrMin);
+      r = dimGrupo({ nome: nome + " (pinos Ø" + Math.round(d * 1000) + ", " + nc + " coluna" + (nc > 1 ? "s" : "") + ")", cap: (function (dd, tt) { return function (al) { return chapaInterna(dd, tt, al, c.rhok, c.fu, K9); }; })(d, t1), nc: nc, a: a, d: d, M: 0, N: F, H: H || 0, nrMax: nrMax, nrMin: nrMin, kmod: c.kmod, gLig: c.gLig, pinoTipo: c.pinoTipo, tMadeira: t1 });
+      if (r.ok) {
+        r.chapa = tChapa; r.nRigidez = nReq > 0 ? nReq : null;
+        if (opc.Lmax > 0) {
+          r.Lmax = opc.Lmax; r.cabe = r.comprimento <= opc.Lmax + 1e-9;
+          if (!r.cabe) { if (!fora || r.comprimento < fora.comprimento) fora = r; continue; }
+        }
+        return r;
+      }
       if (!melhor || (r.d || 0) > (melhor.d || 0)) melhor = r;
+    }
+    if (fora) {      /* N1: nenhum arranjo cabe na peça — recusa, com o menor comprimento encontrado (o laço cresce a seção; sem solução → bloqueia) */
+      fora.ok = false; fora.eta = fora.comprimento / fora.Lmax;
+      fora.passos = (fora.passos || []).concat([nome + ": o grupo de " + fora.n + " pinos Ø" + Math.round(fora.d * 1000) + " exige " + br(fora.comprimento, 2) + " m de comprimento na ponta, mais que os " + br(fora.Lmax, 2) + " m disponíveis (40 % do comprimento da peça e no máximo " + br(PINOS_LMAX_PONTA, 2) + " m por ponta; adoção) → NÃO CABE: aumentar a seção da peça (2 colunas de pinos), usar pino de Ø maior ou chapa dupla, ou revisar o contraventamento."]);
+      return fora;
     }
     return melhor || { nome: nome, ok: false, eta: Infinity, passos: [nome + ": peça estreita demais para a chapa de " + Math.round(tChapa * 1000) + " mm com pinos (b = " + br(b * 100, 0) + " cm)."] };
   }
@@ -601,8 +619,10 @@
     var c = cfg(i.cfg), S = i.secoes, E = i.esf || {}, L = { tipologia: "T2", sistema: i.sistema, ligacoes: {}, apoios90: {}, avisos: [], cfg: { kmod: c.kmod, rhok: c.rhok, gLig: c.gLig } }, tCh = 0.008, tg = i.incl || 0.3;
     var WT = PARAFUSOS["WT-T-8,2"], RAX = roscaRaxd({ Rk_ref: WT.RaxK_cruzado150, lefRef: WT.lefRef, lefA: WT.lefRef * 0.8, lefB: WT.lefRef * 0.8, kmod: c.kmod }).Rd;
     function eq(x, k) { return x && x[k + "Eq"] != null ? x[k + "Eq"] : (x && x[k]) || 0; }
-    function no(nome, F, Feq, H, Heq, sec, extra) {          /* ligação por chapa interna + pinos; F real (aço), Feq (madeira) */
-      var pn = pinosAxiais(c, nome, Feq, Heq, sec.b, sec.h, tCh), chapa = chapaTracaoRd(c, tCh, Math.max(0.03, sec.h - 0.05), Math.sqrt(F * F + H * H));
+    /* N1 (E4b): a rigidez do contraventamento (K_br,1 com o deslizamento, laço da T2) pede n·Ku mínimo por ponta e informa o comprimento da diagonal; o grupo é redesenhado com isso e tem de CABER na peça */
+    function opcRig(g) { var sl = i.contrav && i.contrav.slip && i.contrav.slip[g], sc = S[g]; if (!sc) return null; var o = { nMin: sc.nMin || 0 }; if (sl) { if (sl.nKu > 0) o.nKuMin = sl.nKu; if (sl.Lmax > 0) o.Lmax = sl.Lmax; } return (o.nMin || o.nKuMin || o.Lmax) ? o : null; }
+    function no(nome, F, Feq, H, Heq, sec, extra, opcPin) {          /* ligação por chapa interna + pinos; F real (aço), Feq (madeira); opcPin = { nMin, nKuMin, Lmax } da rigidez do contraventamento (N1) */
+      var pn = pinosAxiais(c, nome, Feq, Heq, sec.b, sec.h, tCh, opcPin), chapa = chapaTracaoRd(c, tCh, Math.max(0.03, sec.h - 0.05), Math.sqrt(F * F + H * H));
       var o = { pinos: pn, chapa: chapa, F_d: F, F_eq: Feq, ok: pn.ok && chapa.ok, eta: Math.max(pn.eta, chapa.eta), passos: pn.passos.concat(chapa.passos) }; if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); return o;
     }
     /* E4 T2fix A1: (a) força ⊥ à fibra do banzo CONTÍNUO transmitida pela alma (F90, 7.1.1: F90,Rk = 14·b·√(he/(1 − he/h)); he = h/2 — pinos centrados na altura) e, se reprovar, reforço por parafusos de rosca total ⊥ (mesmo padrão
@@ -650,12 +670,12 @@
       L.ligacoes.frechalPilar = no("frechal × pilar (garfo no topo)", Math.max(0.001, -i.reacoes.P.Nmin + ((i.pesoPilar && i.pesoPilar.P) || 0)), Math.max(0.001, -eq(i.reacoes.P, "Nmin") + ((i.pesoPilar && i.pesoPilar.P) || 0)), i.reacoes.P.Hmax, eq(i.reacoes.P, "Hmax"), { b: S.P.b, h: S.P.h }, { apoioCompressao_kN: i.reacoes.P.Nmax, descricao: "Frechal apoiado no topo do pilar com garfo (impede o rolamento) e pinos inox; sucção e reação horizontal." });
     }
     /* contraventamento em MADEIRA (decisão do coordenador): pontas das diagonais em X por chapa interna + pinos inox, pela força axial máxima (ELU e F1d = Nd/150), como as diagonais da tesoura */
-    if (S.DX && E.DX && Math.max(E.DX.Nt, E.DX.Nc) > 0) L.ligacoes.contravDiagonal = no("ponta da diagonal de madeira do contraventamento", Math.max(E.DX.Nt, E.DX.Nc), Math.max(eq(E.DX, "Nt"), eq(E.DX, "Nc")), 0, 0, S.DX, { descricao: "Diagonal de madeira em X (águas e planos verticais): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao banzo/terça por chapa e pinos (NBR 7190-1:2022, cap. 7); a diagonal trabalha à tração e à compressão (L0 = comprimento total, sem crédito do cruzamento)." });
-    if (S.DP && E.DP && Math.max(E.DP.Nt, E.DP.Nc) > 0) L.ligacoes.contravParede = no("ponta da diagonal de madeira do painel da parede", Math.max(E.DP.Nt, E.DP.Nc), Math.max(eq(E.DP, "Nt"), eq(E.DP, "Nc")), 0, 0, S.DP, { descricao: "Diagonal de madeira em X no painel da parede (pilar → frechal): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao pilar e ao frechal (NBR 7190-1:2022, cap. 7); trabalha só à tração no modelo (sem crédito de compressão nem do cruzamento)." });
+    if (S.DX && E.DX && Math.max(E.DX.Nt, E.DX.Nc) > 0) L.ligacoes.contravDiagonal = no("ponta da diagonal de madeira do contraventamento", Math.max(E.DX.Nt, E.DX.Nc), Math.max(eq(E.DX, "Nt"), eq(E.DX, "Nc")), 0, 0, S.DX, { descricao: "Diagonal de madeira em X (águas e planos verticais): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao banzo/terça por chapa e pinos (NBR 7190-1:2022, cap. 7); a diagonal trabalha à tração e à compressão (L0 = comprimento total, sem crédito do cruzamento)." }, opcRig("DX"));
+    if (S.DP && E.DP && Math.max(E.DP.Nt, E.DP.Nc) > 0) L.ligacoes.contravParede = no("ponta da diagonal de madeira do painel da parede", Math.max(E.DP.Nt, E.DP.Nc), Math.max(eq(E.DP, "Nt"), eq(E.DP, "Nc")), 0, 0, S.DP, { descricao: "Diagonal de madeira em X no painel da parede (pilar → frechal): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao pilar e ao frechal (NBR 7190-1:2022, cap. 7); trabalha só à tração no modelo (sem crédito de compressão nem do cruzamento)." }, opcRig("DP"));
     /* M3 (r14): ligação da linha de travamento LB ao banzo inferior (CV-3): a LB leva ao contraventamento o vento do oitão (ELU) somado à F1d = Nd/150 do banzo (6.6.4); chapa interna + pinos inox, como as pontas das diagonais */
     if (S.LB && E.LB && Math.max(E.LB.Nt, E.LB.Nc) > 0) L.ligacoes.contravLB = no("ligação da linha de travamento LB ao banzo inferior", Math.max(E.LB.Nt, E.LB.Nc), Math.max(eq(E.LB, "Nt"), eq(E.LB, "Nc")), 0, 0, S.LB, { descricao: "Linha de travamento LB (peça de madeira entre os banzos inferiores das tesouras): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao banzo inferior da tesoura (NBR 7190-1:2022, 6.6.4 e cap. 7); a força é o ELU do vento do oitão somado à F1d = Nd/150 do banzo." });
-    /* A1 (r13): o n de pinos da ponta da diagonal pode ser ELEVADO pela RIGIDEZ (K_br,1 com o deslizamento dos pinos, 7.1.12), não só pela força: S.DX.nMin / S.DP.nMin vêm do laço da T2 */
-    [["contravDiagonal", S.DX], ["contravParede", S.DP]].forEach(function (x) { var lg = L.ligacoes[x[0]]; if (lg && x[1] && x[1].nMin && lg.pinos && (lg.pinos.n || 0) < x[1].nMin) { lg.pinos.n = x[1].nMin; lg.pinos.nPorRigidez = true; lg.passos = (lg.passos || []).concat(["n de pinos por ponta elevado a " + x[1].nMin + " pela RIGIDEZ do contraventamento (K_br,1 com o deslizamento Ku dos pinos, NBR 7190-1:2022 6.6.2 e 7.1.12), não só pela força."]); } });
+    /* A1 (r13) + N1 (E4b): o n de pinos da ponta da diagonal pode ser ELEVADO pela RIGIDEZ (K_br,1 com o deslizamento dos pinos, 7.1.12, 2 planos de corte da chapa interna). O grupo já foi REDESENHADO em pinosAxiais com esse n (colunas × linhas, a1, a3, comprimento) e conferido contra o comprimento da peça; aqui só se registra o motivo. */
+    [["contravDiagonal", S.DX], ["contravParede", S.DP]].forEach(function (x) { var lg = L.ligacoes[x[0]]; if (!lg || !lg.pinos || !lg.pinos.nRigidez) return; var pn0 = pinosAxiais(c, "x", lg.F_eq, 0, x[1].b, x[1].h, tCh); if (pn0.ok && lg.pinos.n > pn0.n) { lg.pinos.nPorRigidez = true; lg.passos = (lg.passos || []).concat(["n de pinos por ponta elevado de " + pn0.n + " (força) a " + lg.pinos.n + " pela RIGIDEZ do contraventamento (K_br,1 com o deslizamento Ku dos pinos, 2 planos de corte da chapa interna, NBR 7190-1:2022 6.6.2 e 7.1.12); o arranjo acima (colunas × linhas, a1, a3) é o redesenhado com esse n e cabe na peça."]); } });
     if (i.sistema !== "tesoura" && L.ligacoes.caibroFrechal && L.ligacoes.caibroFrechal.apoio && MAT) { var apF = apoio90("CP-3 caibro sobre o frechal (assento)", (i.assento || {}).Nmax, 0.20 * S.FR.b, 20, "Compressão ⊥ às fibras do frechal sob a chapa de apoio do caibro (200 mm)"); if (apF) { L.apoios90.apoioCaibroFrechal = apF; L.ligacoes.caibroFrechal.apoio.eta = apF.eta; } }
     if (i.fita && i.fita.N != null && i.fita.N > 0) { var Af = (i.fita.b != null ? i.fita.b : 0.06) * 1000 * (i.fita.e != null ? i.fita.e : 0.002) * 1000 * 0.75, pf = 1.75 * c.kmod / c.gLig, etaF = i.fita.N / (Af * 235 / 1.1 / 1000); L.ligacoes.fita = { N_d: i.fita.N, eta: etaF, ok: etaF <= 1, parafusosPorPonta: Math.max(8, Math.ceil((i.fita.Neq != null ? i.fita.Neq : i.fita.N) / pf)), descricao: "Fita metálica perfurada 60 × 2,0 mm em X (águas e paredes) com tensor.", passos: ["Fita 60×2,0 (área líquida 75 %): N = " + br(i.fita.N) + " kN ≤ " + br(Af * 235 / 1.1 / 1000) + " kN → η = " + br(etaF, 3) + "."] }; }
     L.verificacoes = Object.keys(L.ligacoes).map(function (k) { return { nome: k, eta: L.ligacoes[k].eta, ok: L.ligacoes[k].ok !== false && L.ligacoes[k].eta <= 1 + 1e-9 }; }).concat(Object.keys(L.apoios90).map(function (k) { return { nome: k, eta: L.apoios90[k].eta, ok: L.apoios90[k].ok !== false && L.apoios90[k].eta <= 1 + 1e-9 }; }));      /* apoios ⊥ às fibras (6.3.3): verificação, sem detalhe próprio */
@@ -675,7 +695,7 @@
     cfg: cfg, PARAFUSOS: PARAFUSOS, PADRAO: PADRAO, fh0: fh0, fhAlfa: fhAlfa, MyRk: MyRk,
     chapaInterna: chapaInterna, chapasExternas: chapasExternas, madeiraMadeira: madeiraMadeira, bordas: bordas,
     grupoPinos: grupoPinos, nefFator: nefFator, dimGrupo: dimGrupo, chapaMpl: chapaMpl, chumbadorFtRd: chumbadorFtRd, chumbadorFvRd: chumbadorFvRd, placaBase: placaBase,
-    roscaRaxd: roscaRaxd, roscaInclinada: roscaInclinada, reforcoTracaoNormal: reforcoTracaoNormal, pacoteT1: pacoteT1, pacoteT2: pacoteT2, pinosAxiais: pinosAxiais,
+    roscaRaxd: roscaRaxd, roscaInclinada: roscaInclinada, reforcoTracaoNormal: reforcoTracaoNormal, pacoteT1: pacoteT1, pacoteT2: pacoteT2, pinosAxiais: pinosAxiais, PINOS_LMAX_PONTA: PINOS_LMAX_PONTA,
     chapaFinaCorteSimples: chapaFinaCorteSimples, chapaCorteSimples: chapaCorteSimples, madeiraMadeiraSimples: madeiraMadeiraSimples, classeChapa: classeChapa, k90De: k90De,
     kserPino: kserPino, kuPino: kuPino, somaR2: somaR2, kthetaChumbadores: kthetaChumbadores, emSerie: emSerie, alfaN: alfaN, rigidezBase: rigidezBase, fendilhamentoF90Rk: fendilhamentoF90Rk, vergaNaV: vergaNaV, NORMA: NORMA, NOTA_ACO_Z: NOTA_ACO_Z
   };

@@ -687,8 +687,9 @@
     if (det.vistas.length < 3 && det.layout !== "T") R[3] = { x: x + 1, y: by + hA + g, w: w - 2, h: bh - hA - g };
     var reg = { cod: det.cod, titulo: det.titulo, cel: { x: x, y: y, w: w, h: h }, vistas: [], notas: R[3] }, escs = [];
     det.vistas.forEach(function (vv, i) {
-      var rp = R[i], r = { x: rp.x, y: rp.y + 6, w: rp.w, h: rp.h - 6 }, V = vv.fn(c, r);
-      D.texto(rp.x + 0.5, rp.y + 3.4, vv.t + " - ESC 1:" + V.esc, T.nota, { peso: 0.12, attr: ' data-vista="1"' });
+      var hv0 = det.tit42 ? 12 : 6, rp = R[i], r = { x: rp.x, y: rp.y + hv0, w: rp.w, h: rp.h - hv0 }, V = vv.fn(c, r);
+      if (det.tit42) { D.texto(rp.x + 0.5, rp.y + 4.8, vv.t, 4.2, { peso: 0.12, attr: ' data-vista="1"' }); D.texto(rp.x + 0.5, rp.y + 9, "ESC 1:" + String(V.esc).replace(".", ","), 3, { attr: ' data-vista="1"' }); }      /* padrão RA: título da vista em 4,2 mm e a escala em 3 mm logo abaixo */
+      else D.texto(rp.x + 0.5, rp.y + 3.4, vv.t + " - ESC 1:" + V.esc, T.nota, { peso: 0.12, attr: ' data-vista="1"' });
       reg.vistas.push({ t: vv.t, esc: V.esc, bbox: V.bbox(), pane: rp }); if (escs.indexOf(V.esc) < 0) escs.push(V.esc);
     });
     var rn = R[3], hN = T.nota, wn = Math.min(rn.w - 1, det.vistas.length < 3 && det.layout !== "T" ? 190 : 1e9);
@@ -1217,11 +1218,12 @@
 
   /* ---------------------------------------------------------------- LG12 — APOIO DA VIGA DO DECK (acrescentado ao Padrão na v2.11) */
   function lg12(c) {
-    var vd = pecaPor(c, /^DS-V/), bV = vd ? Math.round(vd.b * 1000) : 120, hV = vd ? Math.round(vd.h * 1000) : 240, tU = 6, folga = 6, hF = 120, tn = 5, lP = 160, dCh = 12, yc = bV / 2 + folga + tU + 33, wP = 2 * yc + 2 * 33, zV = tU + tn, hMur = 110;
+    var vd = pecaPor(c, /^DS-V/), bV = vd ? Math.round(vd.b * 1000) : 120, hV = vd ? Math.round(vd.h * 1000) : 240, tUd = (function () { var u = null, dk = c.res && c.res.deck && c.res.deck.decks; if (dk) Object.keys(dk).forEach(function (k) { if (dk[k].pedestalU && (!u || dk[k].pedestalU.t > u.t)) u = dk[k].pedestalU; }); return u; })(), tU = tUd ? Math.round(tUd.t * 1000) : 6, folga = 6, hF = 120, tn = 5, lP = tUd ? Math.round(tUd.L * 1000) : 160, dCh = 12, yc = bV / 2 + folga + tU + 33, wP = 2 * yc + 2 * 33, zV = tU + tn, hMur = 110;
+    if (tUd) { wP = Math.round(tUd.bAcross_m * 1000); yc = (wP - 2 * 33) / 2; }      /* N3/N5 (E4b): a chapa de base do cálculo (360 mm, chumbadores FORA das abas) é a MESMA da prancha */
     /* E4 r12: a quantidade de apoios vem das peças DS-APOIO do resultado (a folha dizia "33 apoios" fixo, contra 4 un na tabela de ferragens) */
-    var nAp = 0; ((c.d && c.d.fonteTodos) || []).forEach(function (p) { if (p.id === "DS-APOIO") nAp += p.qtd == null ? 1 : p.qtd; });
+    var nAp = 0; ((c.d && c.d.fonteTodos) || []).forEach(function (p) { if (/^D[SI]-APOIO$/.test(p.id)) nAp += p.qtd == null ? 1 : p.qtd; });      /* item 4 (E4b final): conta DS + DI (antes só o DS: 39 contra 43 na tabela de ferragens) e a espessura/comprimento do U vêm do CÁLCULO (R60), uma fonte só */
     var txAp = nAp > 0 ? nAp + (nAp === 1 ? " apoio" : " apoios") : "quantidade na tabela de ferragens (E11)";
-    var pSv = ponto(c, "lig-sem-verif", "", "", ""), pU = ponto(c, "apoio-deck", "LG12", "Geometria do apoio do deck: o orçamento traz só 'chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene' (" + txAp + ")", "folga de " + folga + " mm por lado, abas de " + hF + " mm, base " + wP + "x" + lP + "x" + tU + ", calço de neoprene de " + tn + " mm, furos Ø14", "RT");
+    var pSv = tUd ? "" : ponto(c, "lig-sem-verif", "", "", ""), pU = ponto(c, "apoio-deck", "LG12", "Geometria do apoio do deck: " + (tUd ? "U de inox 316 t = " + tU + " mm do cálculo R60" : "o orçamento traz só 'chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene'") + " (" + txAp + ")", "folga de " + folga + " mm por lado, abas de " + hF + " mm, base " + wP + "x" + lP + "x" + tU + ", calço de neoprene de " + tn + " mm, furos Ø14", "RT");
     var pEmb = ponto(c, "embutimento", "", "", "");
     function v1(cc, r) {
       var V = vista(cc, r, { x0: -wP / 2 - 30, x1: wP / 2 + 30, z0: -hMur, z1: zV + hV + 6 }, [14, 18, 8, 8], [5, 10]);
@@ -1229,6 +1231,7 @@
       V.fundo(-bV / 2, zV, bV, hV); V.mad(-bV / 2, zV, bV, hV, { horiz: true });
       V.aco(-wP / 2, 0, wP, tU); V.fundo(-bV / 2, tU, bV, tn); V.aco(-bV / 2, tU, bV, tn);
       [-1, 1].forEach(function (sg) { V.aco(sg * (bV / 2 + folga + tU / 2) - tU / 2, tU, tU, hF); V.oc(sg * yc - dCh / 2, -hMur + 8, dCh, hMur - 8); V.lin(sg * yc - dCh / 2, tU, sg * yc - dCh / 2, tU + 16, "MAD-LIG"); V.lin(sg * yc + dCh / 2, tU, sg * yc + dCh / 2, tU + 16, "MAD-LIG"); V.lin(sg * yc - dCh / 2, tU + 16, sg * yc + dCh / 2, tU + 16, "MAD-LIG"); });
+      if (tUd) { var zPb = zV + hV / 2; V.lin(-(bV / 2 + folga + tU), zPb, bV / 2 + folga + tU, zPb, "MAD-LIG"); V.lin(-(bV / 2 + folga + tU), zPb + 6, bV / 2 + folga + tU, zPb + 6, "MAD-LIG"); V.lin(-(bV / 2 + folga + tU), zPb - 6, bV / 2 + folga + tU, zPb - 6, "MAD-LIG"); V.bal(0, zPb, 20, 14, 5); }      /* parafuso passante Ø12 (atravessa viga e abas) */
       V.ch(-wP / 2, wP / 2, -hMur, -6, String(wP), { semExt: true }); V.ch(-yc, yc, -hMur, -12, String(2 * yc), { semExt: true });
       V.cadV([zV + hV, zV, tU, 0], wP / 2 + 30, 6, [String(hV), String(tn), String(tU)], { semExt: true });
       V.bal(-wP / 2, tU / 2, -16, 8, 1); V.bal(-bV / 2 - folga - tU, tU + hF / 2, -20, -6, 2); V.bal(bV / 2 + tn, tU + tn / 2, 28, 14, 3); V.bal(yc, tU + 12, 14, -26, 4);
@@ -1239,6 +1242,7 @@
       V.conc(-300, -hMur, 600, hMur);
       V.fundo(-220, zV, 440, hV); V.mad(-220, zV, 440, hV, { horiz: true });
       V.aco(-lP / 2, 0, lP, tU); V.fundo(-lP / 2, tU, lP, tn); V.aco(-lP / 2, tU, lP, tn); V.oc(-lP / 2, tU + 0, lP, hF);
+      if (tUd) { [-1, 1].forEach(function (sg) { V.pino(sg * 42, zV + hV / 2, 12, true); }); V.bal(42, zV + hV / 2, 30, 22, 5); }      /* os 2 Ø12 passantes, a1 = 84 mm (Tab. 14) */
       V.ch(-lP / 2, lP / 2, -hMur, -6, String(lP), { semExt: true }); V.cv(zV + hV, zV, -290, -6, String(hV), { semExt: true });
       V.bal(lP / 2, tU / 2, 40, -9, 1); V.bal(lP / 2, tU + tn / 2, 40, -24, 3);
       return V;
@@ -1252,10 +1256,10 @@
     }
     var n = [
       { t: "LG12 (Padrão v2.11): apoio direto da viga do deck DV-01 (" + I.cm(bV / 1000) + "x" + I.cm(hV / 1000) + " cm, tratada em autoclave) no bloco/mureta da fundação (outra empresa); " + txAp + "." },
-      "1 - CM-06 chapa inox AISI 316 em U de " + tU + " mm (base " + wP + "x" + lP + ", duas abas de " + hF + " mm), folga de " + folga + " mm por lado; 2 - abas do U; 3 - calço de neoprene de " + tn + " mm entre a viga e a chapa; 4 - 2 chumbadores M12 A4-70 com arruela e porca, furo Ø14.",
+      "1 - CM-06 chapa inox AISI 316 em U de " + tU + " mm (base " + wP + "x" + lP + ", duas abas de " + hF + " mm), folga de " + folga + " mm por lado; 2 - abas do U; 3 - calço de neoprene de " + tn + " mm entre a viga e a chapa; 4 - 2 chumbadores M12 A4-70 com arruela e porca, furo Ø14, FORA das abas" + (tUd ? "; 5 - 2 parafusos passantes inox Ø12 (~320 mm, a1 = 84 mm) que atravessam a viga e as duas abas e levam a horizontal ao longo da viga" : "") + ".",
       "Geometria adotada: " + pU + ". Embutimento e sistema do chumbador, e o nível da mureta: pela fundação (" + pEmb + ").",
       "A madeira não toca a chapa nem o concreto (calço de neoprene); topo da viga protegido; água escoa pela folga das abas.",
-      "Sem verificação de resistência no cálculo: " + pSv + "."
+      tUd ? "Verificação (R60): aba do U à flexão Msd " + (Math.round(tUd.Msd * 1000) / 1000).toString().replace(".", ",") + " ≤ Mpl,Rd " + (Math.round(tUd.Mrd * 1000) / 1000).toString().replace(".", ",") + " kN·m (t = " + tU + " mm, fy " + tUd.fyInox_MPa + " MPa do inox 316 — conferir com o fornecedor/certificado); 2 parafusos Ø12 Rd " + (Math.round(tUd.RdParafuso * 100) / 100).toString().replace(".", ",") + " kN cada; chumbadores M12 ao cisalhamento e à tração do aço. Concreto, borda e arrancamento: FUNDAÇÃO (dimensão mínima do pedestal " + Math.round(tUd.dimMin_m * 1000) + " mm)." : "Sem verificação de resistência no cálculo: " + pSv + "."
     ];
     return { cod: "LG12", titulo: "APOIO DA VIGA DO DECK", layout: "G", vistas: [{ t: "CORTE (perpendicular à viga)", fn: v1 }, { t: "ELEVAÇÃO (ao longo da viga)", fn: v2 }, { t: "CHAPA CM-06 (planta, peça isolada)", fn: v3 }], notas: n };
   }
@@ -1442,7 +1446,7 @@
     itens.push({ ferr: "Ligação da verga: chapa em T inox 8 mm, " + L.verga.pinos.n + " pinos Ø12 + " + L.verga.parafusosNaV + " parafusos Ø16", cod: "-", fab: "-", eta: "-", mat: "inox AISI 316 (A4)", qtd: fq("LIG-VG"), kg: null, est: false, lig: "LG03", pend: true, un: "cj" });
     var fx = pecas.filter(function (p) { return /^FX\d/.test(p.id); }), mFita = 0; fx.forEach(function (p) { mFita += (p.comprimento_m || 0) * (p.qtd || 1); });
     itens.push({ ferr: "Fita metálica perfurada 60 x 2,0 mm em X (" + fx.length + " trechos) + " + L.fita.parafusosPorPonta + " parafusos 5x50/ponta + tensor", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo (ou inox)", qtd: r1(mFita * 100) / 100, kg: mFita * 0.06 * 0.002 * 7850, est: true, lig: "LG10", pend: true, un: "m" });
-    itens.push({ ferr: "Apoio do deck: chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene", cod: "-", fab: "-", eta: "-", mat: "inox AISI 316 (A4)", qtd: fq("DS-APOIO"), kg: null, est: false, lig: "LG12", pend: true, un: "un" });
+    itens.push({ ferr: "Apoio do deck: chapa inox 316 em U (espessura e comprimento do cálculo R60) + 2 parafusos passantes Ø12 + 2 chumbadores M12 + calço de neoprene", cod: "-", fab: "-", eta: "-", mat: "inox AISI 316 (A4)", qtd: fq("DS-APOIO") + fq("DI-APOIO"), kg: null, est: false, lig: "LG12", pend: true, un: "un" });
     return itens;
   }
   function folhaE10(c) {
@@ -1520,6 +1524,7 @@
     if (!r.deck && arr(r.fonte && r.fonte.pecas).some(function (p) { return /^D[SI]-/.test(p.id); })) imp.push({ t: "Deck e guarda-corpo sem verificação de resistência neste cálculo: ver o quadro 'Pontos a confirmar' (folha E06C).", cor: VERMELHO });
     arr(r.auditoria && r.auditoria.achados).slice(0, 3).forEach(function (a0) { imp.push({ t: "Auditoria: " + a0.mensagem.slice(0, 110), cor: VERMELHO }); });
     var bl = [];
+    if (c.op && c.op.preliminar) bl.push({ titulo: "PRELIMINAR — NÃO ATENDE", cor: VERMELHO, itens: [{ t: "Estrutura que NÃO atende: documento PRELIMINAR, não serve para compra, fabricação nem execução.", cor: VERMELHO }] });
     if (imp.length) bl.push({ titulo: "NÃO EMITIR PARA EXECUÇÃO", cor: VERMELHO, itens: imp });
     bl.push({ titulo: "LISTA DE DESENHOS", itens: lista }, { titulo: "NOTAS GERAIS", numerar: true, itens: notas },
       { titulo: "NORMAS", itens: ["NBR 7190-1:2022; NBR 7190:1997 Anexo A (desenho)", "EN 14080; EN 1995-1-1", "NBR 6123:2023, 6120:2019, 8681:2003", "NBR 16143 (preservação)"] });
@@ -1554,7 +1559,7 @@
     if (f06c) { var cq = {}; Object.keys(ctx0).forEach(function (k) { cq[k] = ctx0[k]; }); cq.D = f06c.D; cq.rotulo = "06C"; try { quadroPontos(cq); } catch (e) { avisos.push("Quadro de pontos a confirmar: " + (e && e.message ? e.message : String(e))); } }
     var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00";
     var pr = P.normalizar({ id: "madengpranchas", nome: "Estrutura de madeira engenharada - projeto executivo", formato: formato, orientacao: "paisagem", origem: "madeira",
-      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: txt(opcoes.obra), proprietario: txt(opcoes.proprietario),
+      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: txt((opcoes.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + (opcoes.obra || "")), proprietario: txt(opcoes.proprietario),
         contratante: txt(opcoes.contratante), local: txt(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def[1], n: i + 1, conteudo: f.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
     var blocos = blocosNotas(ctx0);
@@ -1567,7 +1572,7 @@
       I.carimbo(Fd, pr, fl, geo, empObj, opcoes.logo || null, rotuloFolha);
       var numero = codigo + "-E" + f.rotulo;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + I.n(W) + 'mm" height="' + I.n(H) + 'mm" viewBox="0 0 ' + I.n(W) + " " + I.n(H) + '" font-family="' + I.FONTE + '" data-folha="' + f.def[1] + '" data-numero="' + I.esc(numero) + '">' +
-        "<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc(FAIXA) + "</text></svg>";
+        "<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc((opcoes.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + FAIXA) + "</text></svg>";
       var o = { id: f.def[1], rotulo: f.rotulo, numero: numero, titulo: f.titulo, formato: formato, escala: f.escala, svg: svg, rotuloCarimbo: rotuloFolha };
       o.dxf = { familia: "madeira", pr: pr, folha: fl, geo: geo, empresa: empObj, rotulo: rotuloFolha, logo: !!opcoes.logo, padrao: opcoes.padrao || null, camadas: camadas, tituloH: E.T.titulo, codigo: codigo };
       if (opcoes.depurar) o.caixasTexto = D.caixas;

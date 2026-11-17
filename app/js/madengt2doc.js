@@ -97,6 +97,7 @@
   /* ================================================================ MANUAL DE MONTAGEM */
   function camera(az, el) { var a = az * Math.PI / 180, e = el * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), ce = Math.cos(e), se = Math.sin(e); return function (P) { var x = P[0] * ca - P[1] * sa, y = P[0] * sa + P[1] * ca; return [x, -(P[2] * ce + y * se), y * ce - P[2] * se]; }; }
   function manual(res, op) {
+    var FX = ((op && op.preliminar) ? "PRELIMINAR — NÃO ATENDE — " : "") + FAIXA;
     op = op || {};
     var Z = T2(); if (!Z || !MPE || !I) return { ok: false, html: "", avisos: ["js/madengt2pranchas.js não carregou."] };
     if (!res || !res.t2 || !arr(res.fonte && res.fonte.pecas).length) return { ok: false, html: "", etapas: [], paginas: 0, avisos: ["Resultado sem fonte de peças: sem manual."] };
@@ -131,13 +132,13 @@
       ordem.forEach(function (o) { corpo += poli(o.p, o.t === "etapa" ? (o.p.g === "FX" || o.p.g === "FP" ? "#3F7818" : "#00406A") : "#b8c0c8", o.t); });
       e.pecas.forEach(function (p) { feitos.push(p); });
       etapasOut.push({ id: e.id, titulo: e.titulo, pecas: e.pecas.length, n: i + 1 });
-      paginas.push('<section class="pg"><div class="faixa">' + esc(FAIXA) + '</div><h2><span class="n">' + (i + 1) + "</span>" + esc(e.titulo) + '</h2><div class="cols"><svg viewBox="0 0 ' + W + ' 560" class="ill" data-etapa="' + e.id + '">' + corpo + '</svg><div class="tx"><p class="qtd"><b>Peças:</b> ' + esc(e.qtd || "") + "</p>" +
+      paginas.push('<section class="pg"><div class="faixa">' + esc(FX) + '</div><h2><span class="n">' + (i + 1) + "</span>" + esc(e.titulo) + '</h2><div class="cols"><svg viewBox="0 0 ' + W + ' 560" class="ill" data-etapa="' + e.id + '">' + corpo + '</svg><div class="tx"><p class="qtd"><b>Peças:</b> ' + esc(e.qtd || "") + "</p>" +
         e.frases.map(function (t0) { return "<p" + (/^Atenção/.test(t0) ? ' class="atencao"' : "") + ">" + esc(t0) + "</p>"; }).join("") + "</div></div></section>");
     });
     var nome = (op.obra && op.obra.nome) || "obra", rev = (op.documento && op.documento.revisao) || "R00";
-    var capa = '<section class="pg capa"><div class="faixa">' + esc(FAIXA) + '</div><div class="sobre">MANUAL DE MONTAGEM</div><h1>Casa de duas águas em madeira engenharada — ' + esc(nome) + "</h1><p>Opção " + esc(res.opcao || "") + " · revisão " + esc(rev) + " · RA Engenharia</p></section>";
-    var leia = '<section class="pg"><div class="faixa">' + esc(FAIXA) + '</div><h2>Como ler</h2><ul><li>Uma etapa por página, na ordem de montagem: bases, pilares, frechais/cumeeira, ' + (sis === "tesoura" ? "tesouras, terças" : "caibros") + ", contraventamento, lambri e telha.</li><li>Azul = peças da etapa; cinza = o que já está montado; verde = fita.</li><li>Cada ligação tem o detalhe na folha E06 das pranchas.</li></ul></section>";
-    var tab = '<section class="pg"><div class="faixa">' + esc(FAIXA) + '</div><h2>Resumo das etapas</h2><table><tr><th>#</th><th>Etapa</th><th>Peças / quantidade</th></tr>' + ET.map(function (e, i) { return "<tr><td>" + (i + 1) + "</td><td>" + esc(e.titulo) + "</td><td>" + esc(e.qtd || "") + "</td></tr>"; }).join("") + "</table></section>";
+    var capa = '<section class="pg capa"><div class="faixa">' + esc(FX) + '</div><div class="sobre">MANUAL DE MONTAGEM</div><h1>Casa de duas águas em madeira engenharada — ' + esc(nome) + "</h1><p>Opção " + esc(res.opcao || "") + " · revisão " + esc(rev) + " · RA Engenharia</p></section>";
+    var leia = '<section class="pg"><div class="faixa">' + esc(FX) + '</div><h2>Como ler</h2><ul><li>Uma etapa por página, na ordem de montagem: bases, pilares, frechais/cumeeira, ' + (sis === "tesoura" ? "tesouras, terças" : "caibros") + ", contraventamento, lambri e telha.</li><li>Azul = peças da etapa; cinza = o que já está montado; verde = fita.</li><li>Cada ligação tem o detalhe na folha E06 das pranchas.</li></ul></section>";
+    var tab = '<section class="pg"><div class="faixa">' + esc(FX) + '</div><h2>Resumo das etapas</h2><table><tr><th>#</th><th>Etapa</th><th>Peças / quantidade</th></tr>' + ET.map(function (e, i) { return "<tr><td>" + (i + 1) + "</td><td>" + esc(e.titulo) + "</td><td>" + esc(e.qtd || "") + "</td></tr>"; }).join("") + "</table></section>";
     var css = "@page{size:A3 landscape;margin:12mm}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font:12pt/1.4 'Segoe UI',Arial,sans-serif;color:#1d2733}.pg{page-break-after:always;break-after:page;height:270mm;position:relative}.faixa{border:.8pt solid #a3352b;color:#a3352b;text-align:center;font-weight:600;font-size:8pt;padding:1mm;margin-bottom:4mm}h1{color:#00406A;font-size:30pt;margin:8mm 0 2mm}h2{color:#00406A;font-size:20pt;margin:0 0 4mm}h2 .n{display:inline-block;background:#00406A;color:#fff;border-radius:50%;width:11mm;height:11mm;text-align:center;line-height:11mm;margin-right:4mm}.cols{display:flex;gap:8mm}.ill{width:68%;height:auto}.tx{width:32%;font-size:13pt}.tx .atencao{color:#a3352b;font-weight:600}.qtd{background:#f3f6f9;padding:2mm;border-left:2mm solid #00406A}table{border-collapse:collapse;font-size:12pt}td,th{border:1px solid #ccd3da;padding:2mm 4mm;text-align:left}";
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Manual de montagem — ' + esc(nome) + "</title><style>" + css + "</style></head><body>" + capa + leia + paginas.join("") + tab + "</body></html>";
     return { ok: true, html: html, paginas: 3 + paginas.length, etapas: etapasOut, avisos: [], marcas: mk.tab.length };
@@ -146,7 +147,7 @@
   /* ================================================================ EXPORTAÇÕES */
   function ifc(res, opts) { opts = opts || {}; return SA().gerarIfc(T2().pecasMembros(res), { projeto: opts.projeto || (res.nomeOpcao || "Casa de duas águas"), opcao: res.opcao, semente: opts.semente, agora: opts.agora }); }
   function dae(res, opts) { return EX().gerarDae(T2().pecasMembros(res), opts || {}); }
-  function cotacao(EJ, res, d) { d = d || {}; return SA().xlsxCotacao(EJ, { obra: d.obra, opcao: res.opcao, nome: res.nomeOpcao, pecas: res.fonte.pecas }); }
+  function cotacao(EJ, res, d) { d = d || {}; return SA().xlsxCotacao(EJ, { preliminar: SA().preliminar(res).preliminar, obra: d.obra, opcao: res.opcao, nome: res.nomeOpcao, pecas: res.fonte.pecas }); }
   var ETIQ = { P: "PILARES", PO: "PILARES_OITAO", PC: "PILARES_CUMEEIRA", FR: "FRECHAIS", BS: "BANZOS_SUPERIORES", BI: "BANZOS_INFERIORES", PD: "PENDURAIS", DG: "DIAGONAIS", T: "TERCAS", CM: "CUMEEIRA", CB: "CAIBROS" };
   /** CYPE 3D: um arquivo NUDOS/BARRAS por etiqueta (mesmo formato da T1) + séries/materiais + roteiro */
   function cype(res, opts) {

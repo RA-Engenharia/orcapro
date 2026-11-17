@@ -16,6 +16,7 @@
       var faltando = [], itens = [];
       /* `itens` (orçamento guiado): a MESMA pendência de `faltando`, com o lugar que a resolve (alvo) — o quadro "Falta:" leva a pessoa até ela. `faltando` não mudou. */
       var pend = function (texto, alvo) { faltando.push(texto); itens.push({ texto: texto, alvo: alvo }); };
+      if (orc.preliminar === true) pend("Orçamento PRELIMINAR — NÃO ATENDE (a estrutura de madeira não fecha): recalcule até atender e lance um orçamento novo; o marcador vale mesmo que o orçamento seja renomeado", "itens");      /* etapa 1 (revisor): proposta comercial NUNCA sai de orçamento preliminar */
       if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) pend("Cliente vinculado", "cliente");
       var totais = Orcamento.totais(orc);
       if (totais.qtdItens < 1) pend("Ao menos 1 item no escopo", "itens");

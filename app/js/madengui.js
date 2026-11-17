@@ -1,5 +1,5 @@
 /* =====================================================================
- * madengui.js — a TELA "ESTRUTURAS DE MADEIRA" (E2 do módulo de madeira engenharada; prévia `?previa=madeng` + modelador).
+ * madengui.js — a TELA "ESTRUTURAS DE MADEIRA" (E2 do módulo de madeira engenharada; liberada a todos (T1, T2, T7) + modelador).
  * Aba Carpintaria & Marcenaria › grupo "Estruturas de madeira" do BIM. Padrão único de tela (ROTEIRO-MODULO.md, js/modulo.js): cabeçalho → aviso →
  * indicadores → abas (os 5 passos) → conteúdo. Fina: quem calcula é o js/madengworker.js (Web Worker), quem traduz o estado é o
  * js/madengentrada.js, quem escreve as saídas é o js/madengsaidas.js e quem monta o orçamento é o js/madorcamento.js.
@@ -102,7 +102,7 @@
   function compactar(r) {
     var vol = 0; Object.keys((r.fonte && r.fonte.volume_por_material_m3) || {}).forEach(function (k) { vol += r.fonte.volume_por_material_m3[k]; });
     var O = r.orcamento || {}, f = ferragens(O);
-    return { opcao: r.opcao, nomeOpcao: r.nomeOpcao, ok: r.ok, semSolucao: r.semSolucao, soDeck: !!r.soDeck, secoes: r.secoes, pior: r.pior, grupos: r.grupos, flechas: r.flechas, reacoes: r.reacoes, iteracoes: r.iteracoes,
+    return { opcao: r.opcao, nomeOpcao: r.nomeOpcao, ok: r.ok, semSolucao: r.semSolucao, soDeck: !!r.soDeck, deck: r.deck ? { etaMax: r.deck.etaMax, umidade: r.deck.umidade, classe: r.deck.classe } : null, secoes: r.secoes, pior: r.pior, grupos: r.grupos, flechas: r.flechas, reacoes: r.reacoes, iteracoes: r.iteracoes,
       achados: arr(r.auditoria && r.auditoria.achados), situacao: SA().situacao ? SA().situacao(r) : null, ligOk: r.ligacoes ? r.ligacoes.ok !== false : null, avisosAnalise: arr(r.avisosAnalise).slice(0, 8), ms: r.ms, em: Date.now(),
       cmp: { volume: Math.round(vol * 100) / 100, pecas: arr(r.fonte && r.fonte.pecas).length, acoKg: f.acoKg, pinos: f.pinos, parafusos: f.parafusos, etaMax: etaMax(r), custo: O.custo_direto, preco: O.preco, adotados: O.adotados },
       orc: { custo_direto: O.custo_direto, preco: O.preco, bdi: O.bdi, etapas: O.etapas, volumes: O.volumes, adotados: O.adotados } };
@@ -240,6 +240,7 @@
     if (x.peca) return x.peca;
     var t = String(x.texto || ""), k = Object.keys(PECA_DE_LIG).filter(function (n) { return new RegExp("\\b" + n + "\\b", "i").test(t); })[0];
     var pc = r && r.fonte && r.fonte.pecas || [], alvo = k ? PECA_DE_LIG[k] : null;
+    if (/R73|DS\/cx|contraventamentoX|contraventamento em X/.test(t)) { var dg = pc.filter(function (p) { return /-CX\d+$/.test(p.id); })[0]; if (dg) return dg.id; }      /* etapa 1: item do X do deck (R73z, DS/cx, DS/contraventamentoX) leva a 1ª diagonal do X */
     if (alvo && (!pc.length || pc.some(function (p) { return p.id === alvo; }))) return alvo;
     var g = /Grupo (\w+) reprovado/.exec(t); if (g) { var m = { T: "T01", V: "V1", P: "P1", ES: "ES1-03a", BL: "BL01-1", VG: "VG1", TR: "TR1a", PD: "PD1" }[g[1]]; if (m) return m; }
     return pc.length ? pc[0].id : null;
@@ -714,11 +715,20 @@
     if (global.ExcelOrc && ExcelOrc.ensureExcelJS) ExcelOrc.ensureExcelJS(function () { fn(global.ExcelJS); }); else toast("O gerador de Excel não carregou.", "erro");
   }
   function semResultado() { if (resAtiva()) return false; toast("Calcule primeiro: as saídas saem do resultado do cálculo desta sessão.", "aviso", 6000); return true; }
+  /* ETAPA 1 (revisor): estrutura que não fecha só vira cotação/orçamento depois de o usuário confirmar, e sai marcada "PRELIMINAR — NÃO ATENDE" */
+  function preliminarAtiva() { var r = resAtiva(); return r && SA().preliminar ? SA().preliminar(r) : { preliminar: false, motivos: [] }; }
+  function confirmarPreliminar(o, acao) {
+    if (!o.preliminar) return true;
+    return !!global.confirm("Esta estrutura NÃO ATENDE (" + (o.motivos[0] || "há reprovações no cálculo") + (o.motivos.length > 1 ? " e mais " + (o.motivos.length - 1) : "") + ").\n\n" + acao + " sairá marcado \"PRELIMINAR — NÃO ATENDE\" e não serve para compra nem fabricação.\n\nContinuar mesmo assim?");
+  }
+  function marcaNome(pre) { return pre.preliminar ? "PRELIMINAR — NÃO ATENDE — " : ""; }
+  function marcaArq(pre) { return pre.preliminar ? "-PRELIMINAR" : ""; }
   function saidaXlsx(soLista) {
     if (!lic("baixar a planilha de cotação") || semResultado()) return Promise.resolve(false);
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "A planilha de cotação")) return Promise.resolve(false);
     var r = resAtiva(); return new Promise(function (ok) {
       comExcel(function (EJ) {
-        var wb = SA().xlsxCotacao(EJ, { obra: est().obra.nome, opcao: r.opcao, nome: r.nomeOpcao, pecas: soLista ? r.fonte.pecas.filter(function (p) { return p.secao && p.p0 && !/^Ligações|contraventamento/.test(p.grupo); }) : r.fonte.pecas });
+        var wb = SA().xlsxCotacao(EJ, { preliminar: pre.preliminar, obra: est().obra.nome, opcao: r.opcao, nome: r.nomeOpcao, pecas: soLista ? r.fonte.pecas.filter(function (p) { return p.secao && p.p0 && !/^Ligações|contraventamento/.test(p.grupo); }) : r.fonte.pecas });
         wb.xlsx.writeBuffer().then(function (buf) {
           baixar(base() + (soLista ? "-lista-de-pecas.xlsx" : "-cotacao-madeira.xlsx"), buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
           UIE.saidas[soLista ? "lista" : "xlsx"] = true; toast(soLista ? "Lista de peças baixada." : "Cotação baixada (.xlsx).", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } ok(true);
@@ -728,19 +738,21 @@
   }
   function saidaIfc() {
     if (!lic("exportar o IFC") || semResultado()) return false;
-    var r = resAtiva(), x = (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: est().obra.nome || "Casa de duas águas" }) : SA().gerarIfc(r.fonte.pecas, { projeto: est().obra.nome || "Estrutura de madeira", opcao: r.opcao });
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O IFC")) return false;
+    var r = resAtiva(), x = (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
     if (!x.ok) { toast("IFC: " + x.erro, "erro", 8000); return false; }
-    baixar(base() + ".ifc", x.texto, "application/x-step"); UIE.saidas.ifc = true; UIE.ifcN = x.n; toast("IFC4 com " + x.n + " peças baixado.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
+    baixar(base() + marcaArq(pre) + ".ifc", x.texto, "application/x-step"); UIE.saidas.ifc = true; UIE.ifcN = x.n; toast("IFC4 com " + x.n + " peças baixado.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function enviarBim(quieto) {
     if (!lic("levar o modelo ao BIM") || semResultado()) return false;
+    var pre = preliminarAtiva(); if (!quieto && !confirmarPreliminar(pre, "O modelo no BIM")) return false;
     var B = global.BIM; if (!B || !B.editarLote) { toast("Abra o BIM primeiro: o modelo vai para o modelador.", "aviso", 6000); return false; }
     var ops = SA().opsBim(resAtiva().fonte.pecas);
-    var ok = B.editarLote({ op: "lote", id: "madeng-" + est().ativa, ops: ops });
+    var ok = B.editarLote({ op: "lote", id: "madeng-" + est().ativa + marcaArq(pre), ops: ops });
     if (!ok) { toast("O BIM não aceitou o lote de peças.", "erro", 7000); return false; }
     UIE.saidas.bim = true; if (!quieto) { toast(ops.length + " peças enviadas ao BIM.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } } return true;
   }
-  function mostrar3d(i) { var r = resAtiva(); if (!r) return; var a = arr(r.auditoria.achados)[i]; if (!a) return; mostrar3dPeca(a.peca); }
+  function mostrar3d(i) { var r = resAtiva(); if (!r) return; var a = arr(r.auditoria.achados)[i]; if (!a) return; var pcs = (r.fonte && r.fonte.pecas) || [], id = a.peca; if (!id || !pcs.some(function (p) { return p.id === id; })) id = pecaDoItem({ texto: a.mensagem || a.texto || "", peca: null }, r) || id; mostrar3dPeca(id); }      /* etapa 1: achado GLOBAL (peça "modelo", que não existe na cena) mostra a peça mais próxima em vez de tentar 40× e falhar */
   function mostrar3dPeca(id) {
     var r = resAtiva(); if (!r || !id) return;
     if (!enviarBim(true)) return;
@@ -773,7 +785,8 @@
     if (!lic("lançar no módulo Orçamentos") || semResultado()) return false;
     var Orc = global.Orcamento, St = global.Store, Au = global.Auth;
     if (!Orc || !St || !Au) { toast("O módulo Orçamentos não está disponível nesta tela.", "aviso", 6000); return false; }
-    var O = resAtiva().orcamento, seed = MO().paraOrcamento(O);
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O orçamento")) return false;
+    var O = resAtiva().orcamento, seed = MO().paraOrcamento(O, { preliminar: pre.preliminar });
     try {
       var orc = Orc.novo({ nome: seed.nome, obra: est().obra.nome });
       if (global.Bdi && Orc.aplicarBdi) Orc.aplicarBdi(orc, "custom", Bdi.paramsParaPercentual(Math.round(seed.bdi * 10000) / 100, Bdi.paramsDoModelo("padrao")));
@@ -781,6 +794,7 @@
         Orc.addEtapa(orc, et.nome); var eid = orc.etapas[orc.etapas.length - 1].id;
         et.itens.forEach(function (it) { Orc.addItem(orc, eid, { codigo: "", descricao: it.descricao + " — preço: " + it.fonte, unidade: it.unidade, custoUnitario: it.custoUnitario }, it.quantidade); });
       });
+      if (pre.preliminar) { orc.preliminar = true; orc.preliminarObs = "Orçamento PRELIMINAR — NÃO ATENDE: a estrutura não fecha (" + (pre.motivos[0] || "reprovações no cálculo") + "). Não serve para proposta, compra nem fabricação; recalcule até atender e lance um orçamento novo."; }
       St.salvarOrcamento(Au.empresaId(), orc);
       UIE.saidas.orc = orc.id; UIE.ultimoOrc = orc.id;
       toast("Orçamento criado: " + seed.etapas.length + " etapas, " + seed.etapas.reduce(function (s, e) { return s + e.itens.length; }, 0) + " itens, " + O.adotados + " com preço adotado (marcados).", "ok", 9000);
@@ -793,15 +807,16 @@
   /* ================================================================ E3: PRANCHAS, MEMORIAL, MANUAL, SKETCHUP, CYPE */
   function opcoesDoc() {
     var e = est(), o = e.obra || {}, cod = nomeSeguro(o.nome || "obra").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "OBRA";
-    return { obra: o.nome || "", local: o.cidade || o.local || "", proprietario: o.cliente || o.proprietario || "", codigo: cod + "-EST", revisao: "R00", empresa: "RA Engenharia", nomeOpcao: resAtiva() ? resAtiva().nomeOpcao : "" };
+    return { obra: o.nome || "", local: o.cidade || o.local || "", proprietario: o.cliente || o.proprietario || "", codigo: cod + "-EST", revisao: "R00", empresa: "RA Engenharia", nomeOpcao: resAtiva() ? resAtiva().nomeOpcao : "", preliminar: preliminarAtiva().preliminar };
   }
   function saidaPranchas() {
     if (!lic("baixar as pranchas") || semResultado()) return false;
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "As pranchas")) return false;
     var rA = resAtiva(), MPE = (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
     var x = MPE.gerar(rA, opcoesDoc()); if (!x.ok) { toast("Pranchas: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
     /* E4 r7: o deck calculado junto com a T1 leva também o caderno do deck (D01-D06) depois das folhas da casa */
     if (!rA.soDeck && rA.deck && global.MadEngDeck) { var xd = global.MadEngDeck.gerar(rA, opcoesDoc()); if (xd.ok) { x.folhas = x.folhas.concat(xd.folhas); x.avisos = x.avisos.concat(xd.avisos); } else x.avisos.push("Caderno do deck: " + (xd.avisos[0] || "não gerado")); }
-    baixar(base() + "-pranchas-madeira-engenharada.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: "Pranchas — estrutura de madeira engenharada" }), "application/pdf");
+    baixar(base() + marcaArq(pre) + "-pranchas-madeira-engenharada.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: marcaNome(pre) + "Pranchas — estrutura de madeira engenharada" }), "application/pdf");
     UIE.saidas.pranchas = x.folhas.length; toast(x.folhas.length + " pranchas em PDF vetorial (A1)." + (x.avisos.length ? " " + x.avisos.length + " aviso(s)." : ""), "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function abrirHtmlImprimir(html, nome) {
@@ -819,24 +834,27 @@
   }
   function saidaManual() {
     if (!lic("gerar o manual de montagem") || semResultado()) return false;
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O manual de montagem")) return false;
     var MAN = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
-    var o = opcoesDoc(), x = MAN.gerar(resAtiva(), { obra: { nome: o.obra }, documento: { revisao: "R00" } });
+    var o = opcoesDoc(), x = MAN.gerar(resAtiva(), { obra: { nome: o.obra }, documento: { revisao: "R00" }, preliminar: pre.preliminar });
     if (!x.ok) { toast("Manual: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
-    var onde = abrirHtmlImprimir(x.html, base() + "-manual-montagem-madeira.html"); UIE.saidas.manual = x.paginas;
+    var onde = abrirHtmlImprimir(x.html, base() + marcaArq(pre) + "-manual-montagem-madeira.html"); UIE.saidas.manual = x.paginas;
     toast(onde === "aba" ? "Manual aberto (A3 paisagem): salve em PDF na janela de impressão." : "Manual baixado (.html).", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function saidaSkp() {
     if (!lic("exportar para o SketchUp") || semResultado()) return false;
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O modelo SketchUp")) return false;
     var X = global.MadEngExport; if (!X) { toast("O exportador não carregou.", "erro"); return false; }
-    var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: est().obra.nome || "Casa de duas águas" }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: est().obra.nome || "Estrutura de madeira" }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
-    baixar(base() + "-sketchup.dae", x.texto, "model/vnd.collada+xml"); UIE.saidas.skp = x.grupos; toast("Modelo COLLADA com " + x.grupos + " grupos baixado: no SketchUp, Arquivo → Importar.", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
+    var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
+    baixar(base() + marcaArq(pre) + "-sketchup.dae", x.texto, "model/vnd.collada+xml"); UIE.saidas.skp = x.grupos; toast("Modelo COLLADA com " + x.grupos + " grupos baixado: no SketchUp, Arquivo → Importar.", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function saidaCype() {
     if (!lic("exportar para o CYPE 3D") || semResultado()) return false;
+    var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O pacote do CYPE 3D")) return false;
     var X = global.MadEngExport; if (!X || !global.BimBcf || !BimBcf.zipEscrever) { toast("O exportador ou o gerador de .zip não carregou.", "erro"); return false; }
-    var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.cype(resAtiva(), { obra: { nome: est().obra.nome } }) : X.pacoteCype(resAtiva(), { obra: { nome: est().obra.nome } }); if (!x.ok) { toast("CYPE: " + x.erro, "erro", 8000); return false; }
+    var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.cype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }) : X.pacoteCype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }); if (!x.ok) { toast("CYPE: " + x.erro, "erro", 8000); return false; }
     var arq = {}; Object.keys(x.arquivos).forEach(function (k) { var a = x.arquivos[k]; if (a.latin1) { var b = new Uint8Array(a.texto.length); for (var i = 0; i < a.texto.length; i++) b[i] = a.texto.charCodeAt(i) & 255; arq[k] = b; } else arq[k] = a.texto; });
-    baixar(base() + "-cype3d-madeira.zip", BimBcf.zipEscrever(arq), "application/zip"); UIE.saidas.cype = Object.keys(arq).length; toast("Pacote para o CYPE 3D baixado (" + Object.keys(arq).length + " arquivos).", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
+    baixar(base() + marcaArq(pre) + "-cype3d-madeira.zip", BimBcf.zipEscrever(arq), "application/zip"); UIE.saidas.cype = Object.keys(arq).length; toast("Pacote para o CYPE 3D baixado (" + Object.keys(arq).length + " arquivos).", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
   }
   function sitCorrigir(i) {
     var rs = resumoAtivo(); if (!rs) return; var x = sitDe(rs).itens[i]; if (!x) return;
@@ -945,7 +963,7 @@
   }
 
   /* ================================================================ FITA (aba Carpintaria & Marcenaria) */
-  function previaLigada() { try { return !!global.localStorage.getItem("orcapro:tela:madeng:v1"); } catch (e) { return false; } }
+  function previaLigada() { return true; }      /* ETAPA 1: T1, T2 e T7 saíram da prévia (?previa=madeng não é mais necessário); o aviso de destaque e "nada sai sem RT" seguem. Tipologias novas entram atrás de uma prévia própria. */
   function previa() { var P = global.BimPrevia; if (!previaLigada() || !P || !P.modelador || !P.modelador()) return false; if (P.disciplina) { try { return P.disciplina("marcenaria") !== false; } catch (e) { return true; } } return true; }
   var COMANDOS = [
     { id: "mad-eng-abrir", rotulo: "Estruturas de\nmadeira", icone: "estrutura", grande: true, dica: "Projeto de estruturas de madeira engenharada em 5 passos: obra e local, tipologia (cobertura de uma água, deck), materiais e ligações, cálculo e saídas (cotação, IFC, BIM, orçamento)." },

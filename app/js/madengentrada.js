@@ -156,7 +156,7 @@
         decks.push({ id: d.id, nome: d.nome, modo: "mascara", rects: rects, recortes: rec, linhasExtras: lerLista(d.linhasExtras, 1).reduce(function (a, l) { return a.concat(l); }, []),
           areaRecortes: rec.reduce(function (s, q) { return s + (q[1] - q[0]) * (q[3] - q[2]); }, 0), cota: num(d.cota, 0), tabua: num(d.tabua, 0.021), terreno: terr, muretaSeAbaixoDoTerreno: !!terr && !d.semMureta,      /* E4 r10 (R35): com terreno informado, viga com a face inferior a menos de 15 cm do terreno vai para mureta da fundação */
           barrote: { b: num(d.barrote.b, 0.06), h: num(d.barrote.h, 0.16), passo: num(d.barrote.passo, 0.5) }, viga: { b: num(o.deckVigaB, 0) > 0 ? num(o.deckVigaB, 0) : num(d.viga.b, 0.12), h: num(d.viga.h, 0.24), espacamento: num(d.viga.espacamento, 2) },
-          pilarete: o.deckPilarete.forma === "circ" ? { forma: "circ", d: num(o.deckPilarete.d, 0.16) } : { forma: "ret", b: num(o.deckPilarete.b, 0.14) }, baseTipo: o.base === "garfo" ? "garfo" : "oculta" });
+          pilarete: o.deckPilarete.forma === "circ" ? { forma: "circ", d: num(o.deckPilarete.d, 0.16) } : { forma: "ret", b: num(o.deckPilarete.b, 0.14) }, baseTipo: o.base === "garfo" ? "garfo" : "oculta", deckBaixo: o.deckBaixo === "pilareteX" ? "pilareteX" : "pedestal" });
       }
     });
     var p = { decks: decks, guardaCorpo: [], erros: erros };
@@ -255,7 +255,8 @@
     di.pilares = "117.245 92.286\n123.316 92.286\n117.245 95.286\n123.316 95.286";   /* R31 (R05.2): o 5º pilar (ao lado da escada de concreto) saiu */
     /* r13 (R05.6): cotaBaseDI = cota da BASE dos pilares do deck inferior. 0 = como o modelo da arquitetura (pilares de 5,86 m, X, Ø26, 6 × M12). O terreno do modelo ali vale 5,35–5,50 m: se o RT confirmar que o solo/rocha está a ~5,40 m, a alternativa é
        cotaBaseDI = 5.40 (pilares curtos de ~0,5 m sobre a rocha, sem X e sem vento a 7,7 m) — ver CASAMAR-R05.md, R05.6. ESTE valor segue 0 até o RT confirmar o terreno. */
-    var cotaBaseDI = 0; di.zBase = cotaBaseDI;
+    /* R05.8 (E4b, decisão do coordenador por delegação do RT): o PADRÃO passa a ser 5,40 — pilares CURTOS apoiados no terreno do modelo da arquitetura (única informação de terreno disponível; a cota 0 do modelo não é o solo). CONDICIONADO à confirmação da cota pela fundação/topografia antes da fabricação; a alternativa de pilares altos com X = cotaBaseDI 0 segue pronta. */
+    var cotaBaseDI = 5.40; di.zBase = cotaBaseDI;
     di.vigaH = 0.52; di.pilarD = 0.26; ds.viga.b = 0.16;   /* R29 (R05.2): viga inferior 20×52; R34 (r11): pilar de 6 m com contraventamento em X (parte de Ø26, o laço cresce até fechar); viga superior 16×24 (opções A/B) */
     e.t7 = { ativo: true, terrenoConst: 5.5, terrenoPts: CASAMAR_TERRENO, decks: [ds, di],
       escadaMat: "outro", escada: { xs: "", y0: 94.30, y1: 97.35, z0: 6.502, z1: 8.381, b: 0.06, h: 0.28, degraus: 9 },   /* R05.1: escada de concreto — sem longarinas de madeira */

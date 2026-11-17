@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.376",
+versao: "1.2.377",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -16950,6 +16950,7 @@ var Proposta = {
 validar: function (orc) {
 var faltando = [], itens = [];
 var pend = function (texto, alvo) { faltando.push(texto); itens.push({ texto: texto, alvo: alvo }); };
+if (orc.preliminar === true) pend("Orçamento PRELIMINAR — NÃO ATENDE (a estrutura de madeira não fecha): recalcule até atender e lance um orçamento novo; o marcador vale mesmo que o orçamento seja renomeado", "itens");
 if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) pend("Cliente vinculado", "cliente");
 var totais = Orcamento.totais(orc);
 if (totais.qtdItens < 1) pend("Ao menos 1 item no escopo", "itens");

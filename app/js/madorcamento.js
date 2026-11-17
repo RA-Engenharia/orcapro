@@ -39,6 +39,7 @@
     tensor: [25.00, "un", "Tensor da fita — ADOT"],
     lig_escora: [250.00, "cj", "Ligação da escora: 2 chapas inox 4 mm + 2 parafusos Ø16 inox — ADOT"],
     lig_verga: [650.00, "cj", "Ligação da verga na V: chapa em T inox 8 mm + pinos Ø12 + parafusos Ø16 — ADOT"],
+    neoprene_dm3: [168.39, "dm³", "Aparelho de apoio de neoprene fretado — SICRO-ES 0307731 (04/2026), o MAIOR preço público das bases do sistema; PROVISÓRIO — base de outro estado"],
     apoio_deck: [180.00, "un", "Apoio da viga do deck em bloco: chapa inox U 6 mm + 2 chumbadores M12 + neoprene — ADOT"],
     mao_francesa: [304.00, "un", "Mão-francesa MLC tratada 6×12×0,9 m + 4 parafusos Ø12 inox — derivado (MLC trat + paraf12)"],
     telha_cer: [306.50, "m²", "Telha cerâmica sobre ripas, fornecida e instalada — ADOT: adotado o preço da telha PIR do banco (o mais alto); sem referência cerâmica publicada nesta base — substituir pelo da obra"],
@@ -103,7 +104,7 @@
       var mat = String(p.material || ""), casa = comecaAlgum(p.grupo, CASA_GRUPOS);
       if (casa && mat.indexOf("torneada") < 0) vMlc += vol(p);
       if (mat.indexOf("torneada") >= 0) vTorn += vol(p);
-      if (comecaAlgum(p.grupo, ["Deck", "Escada"]) && mat.indexOf("MLC") >= 0) vTrat += vol(p);
+      if ((comecaAlgum(p.grupo, ["Deck", "Escada"]) || /contraventamento em X \(R73\)/.test(String(p.grupo || ""))) && mat.indexOf("MLC") >= 0) vTrat += vol(p);      /* R73: as diagonais do X ("DS — contraventamento em X (R73)") são MLC tratada do deck: entram no fornecimento 04.01, no frete 01.03 e (via vTrat) na montagem 04.03 */
       if (/^Eucalipto roli/.test(mat) && p.secao) { vRol += vol(p); var mm = (p.comprimento_m || 0) * (p.qtd == null ? 1 : p.qtd), dd = p.secao.tipo === "circ" && p.secao.d > 0 ? p.secao.d : 0.30; mRol += mm; mRolEq += mm * Math.pow(dd / 0.30, 2); dRol[Math.round(dd * 100)] = (dRol[Math.round(dd * 100)] || 0) + mm; }
       if (casa) aVerniz += areaFaces(p);
     });
@@ -162,15 +163,24 @@
     L("03.08", "Testeira do beiral", qtd("TE"), "testeira");
     etapa = "04 DECKS E ESCADA";
     L("04.01", "Fornecimento de MLC GL24h tratada em autoclave — vigas, barrotes, pilaretes, longarinas", vTrat, "mlc_trat");
-    L("04.02", "Pilares roliços do deck: eucalipto autoclavado, categoria 5" + (mRol > 0 && Math.abs(mRolEq / mRol - 1) > 1e-9 ? " (" + Object.keys(dRol).map(function (k) { return "Ø" + k + " " + String(r(dRol[k], 2)).replace(".", ",") + " m"; }).join(" + ") + ")" : ""), mRol, "rolico", "", mRol > 0 ? mRolEq / mRol : 1);
-    L("04.03", "Montagem da estrutura dos decks e escada", vTrat + vRol, "montagem");
-    var nMf = 0, nAp = 0, tabs = []; pc.forEach(function (p) {
-      if (/-MF\d+$/.test(p.id)) nMf += p.qtd == null ? 1 : p.qtd;
-      if (/-APOIO$/.test(p.id)) nAp += p.qtd == null ? 1 : p.qtd;
+    if (mRol > 0) L("04.02", "Pilares roliços do deck: eucalipto autoclavado, categoria 5" + (mRol > 0 && Math.abs(mRolEq / mRol - 1) > 1e-9 ? " (" + Object.keys(dRol).map(function (k) { return "Ø" + k + " " + String(r(dRol[k], 2)).replace(".", ",") + " m"; }).join(" + ") + ")" : ""), mRol, "rolico", "", mRol > 0 ? mRolEq / mRol : 1);
+    var dkM = e.deck || null, vMontExtra = ((dkM && dkM.mf) || []).reduce(function (a, m) { return a + m.pecas * m.LpecaM * m.b * m.h; }, 0) + ((dkM && dkM.bloqueio) ? dkM.bloqueio.n * dkM.bloqueio.vUnM3 : 0);      /* N8: as mãos-francesas e os bloqueios também se montam (as diagonais do X já estão em vTrat) */
+    L("04.03", "Montagem da estrutura dos decks e escada (inclui mãos-francesas e bloqueios)", vTrat + vRol + vMontExtra, "montagem");
+    var nMf = 0, nAp = 0, apDesc = "", apList = [], tabs = []; pc.forEach(function (p) {
+      var mdk = /^(.+)-MF\d+$/.exec(p.id); if (mdk && !((e.deck && e.deck.mf) || []).some(function (m) { return m.deck === mdk[1]; })) nMf += p.qtd == null ? 1 : p.qtd;      /* decks com mão-francesa DUPLA calculada saem nas linhas próprias (MLC por volume + parafusos reais) */
+      if (/-APOIO$/.test(p.id)) { nAp += p.qtd == null ? 1 : p.qtd; apDesc = p.descricao || apDesc; apList.push({ deck: p.id.replace(/-APOIO$/, ""), q: p.qtd == null ? 1 : p.qtd }); }
       if (/-TAB$/.test(p.id)) tabs.push(p);
     });
-    L("04.04", "Mãos-francesas dos pilaretes", nMf, "mao_francesa");
-    L("04.05", "Apoios das vigas em bloco/mureta", nAp, "apoio_deck");
+    if (nMf > 0) L("04.04", "Mãos-francesas dos pilaretes", nMf, "mao_francesa");
+    var AU = (e.deck && e.deck.apoioU) || null, PEDS = (e.deck && e.deck.pedestais) || [], pedN = PEDS.reduce(function (a, x) { return a + x.n; }, 0);
+    /* R60 + item 9: o pedestal de concreto é da FUNDAÇÃO (outra empresa) e NÃO está neste orçamento; aqui só o apoio em U de inox 316, pelo PESO × preço/kg do inox que o sistema já usa (inox_kg), os 2 parafusos passantes Ø12 e os 2 chumbadores M12 por apoio; o calço de neoprene não tem preço de base no sistema (pendência, fora do total) */
+    var obsPed = pedN ? pedN + " apoio(s) em PEDESTAL de concreto, alturas " + PEDS.reduce(function (m, x) { return Math.min(m, x.hMin); }, 1e9).toFixed(2).replace(".", ",") + " a " + PEDS.reduce(function (m, x) { return Math.max(m, x.hMax); }, 0).toFixed(2).replace(".", ",") + " m: os pedestais são da FUNDAÇÃO / outra empresa e NÃO estão neste orçamento; aqui só o apoio em U (com o neoprene)" : "";
+    if (AU && nAp > 0) {
+      L("04.05", "Apoios das vigas em U de inox 316 t = " + String(r(AU.t * 1000, 0)).replace(".", ",") + " mm (" + String(r(AU.kgU, 2)).replace(".", ",") + " kg por apoio) sobre pedestal/mureta da fundação" + (obsPed ? " — " + obsPed : ""), nAp * AU.kgU, "inox_kg", "peso (base real de 360 mm com os chumbadores fora das abas) × R$/kg do inox do sistema: ADOÇÃO SEM FONTE PÚBLICA — COTAR com o serralheiro");
+      L("04.05a", "Parafusos passantes inox ~320 mm dos apoios em U (2 por apoio, atravessam a viga e as abas) — PROVISÓRIO: preço do maior parafuso inox do sistema (Ø16)", nAp * 2, "paraf16");
+      L("04.05d", "Calço de neoprene dos apoios em U (largura da viga × 0,30 m × 5 mm por apoio) — PROVISÓRIO, base de outro estado (SICRO-ES 0307731)", apList.reduce(function (a, x) { var pd = PEDS.filter(function (y) { return y.deck === x.deck; })[0]; return a + x.q * ((pd && pd.bViga) || AU.bViga || 0.2) * 0.30 * 0.005 * 1000; }, 0), "neoprene_dm3");      /* 4ª rodada: largura REAL da viga de cada deck (DI = 0,20 m) */
+      L("04.05b", "Chumbadores M12 inox dos apoios em U (2 por apoio; preço do M20 com ancoragem química, a favor)", nAp * 2, "chumb20");
+    } else if (nAp > 0) L("04.05", "Apoios das vigas em bloco/mureta" + (obsPed ? " — " + obsPed : ""), nAp, "apoio_deck");
     tabs.forEach(function (p, i) { L("04." + (6 + i < 10 ? "0" : "") + (6 + i), "Deck de cumaru 21×145 com fixação oculta inox — " + String(p.grupo || "").replace(/ — tábuas$/, "").toLowerCase(), p.qtd, "deck_m2"); });
     var cod = 6 + tabs.length;
     L("04." + (cod < 10 ? "0" : "") + cod, "Degraus de cumaru da escada", qtd("ESC-D"), "degrau");
@@ -184,6 +194,25 @@
     if (DK && DK.chapaApoio) { L(cx(), "Chapa de apoio inox 316 " + Math.round(DK.chapaApoio.ladoM * 1000) + "×" + Math.round(DK.chapaApoio.ladoM * 1000) + "×8 mm do lado oposto da viga de borda, uma por montante (" + DK.chapaApoio.n + " un, calculada no T7)", DK.chapaApoio.n * DK.chapaApoio.kgUn, "inox_kg"); L(cx(), "Parafusos passantes inox A4 Ø12 da fixação dos montantes (2 por montante)", DK.chapaApoio.n * 2, "paraf12"); }
     if (DK && DK.bloqueio) { L(cx(), "Bloqueios de MLC tratada entre barrotes na linha dos montantes (" + DK.bloqueio.n + " un)", DK.bloqueio.n * DK.bloqueio.vUnM3, "mlc_trat"); L(cx(), "Parafusos de rosca total WT-T 8,2×190 dos bloqueios (" + DK.bloqueio.parafusosPorUn + " por bloqueio)", DK.bloqueio.n * DK.bloqueio.parafusosPorUn, "wt190"); }
     (DK && DK.bases || []).forEach(function (b) { L(cx(), "Chumbadores M" + Math.round(b.d * 1000) + " inox A4-70 das bases dos pilares do deck " + b.deck + " (" + b.nPorPilar + " por pilar, " + b.nPilares + " pilares; " + (b.d <= 0.0125 ? "preço do parafuso inox Ø12 com porca e arruelas" : "preço do M20, a favor") + ")", b.n, b.d <= 0.0125 ? "paraf12" : "chumb20"); });
+    (DK && DK.cx || []).forEach(function (c) {      /* R73 (decidido pelo Rogério em 27/10/2026): contraventamento em X — a MLC das diagonais (peças do grupo "contraventamento em X (R73)", com a sobra além do nó) entra em vTrat, logo no fornecimento 04.01, no frete 01.03 e na montagem 04.03; aqui só as ferragens */
+      L(cx(), "Parafusos passantes inox das pontas das diagonais do contraventamento em X do deck " + c.deck + " (" + c.b12 + " Ø12 + " + c.b16 + " Ø16; " + c.nDiag + " diagonais MLC " + Math.round(c.sec.b * 100) + "×" + Math.round(c.sec.h * 100) + " cm, " + String(r(c.comp, 1)).replace(".", ",") + " m) — PROVISÓRIO: preço do maior parafuso inox do sistema (Ø16)", c.b12 + c.b16, "paraf16");
+      if (c.cruzes) L(cx(), "Parafusos de amarração no cruzamento das diagonais do deck " + c.deck + " (" + c.cruzes + " cruzes; passam pelo bloco espaçador de MLC, que está no volume do fornecimento 04.01) — PROVISÓRIO: preço do Ø16", c.cruzes, "paraf16");
+      if (c.chapas) { L(cx(), "Chapas de inox 316 t = 8 mm (150×300 mm) de ancoragem das diagonais no topo dos pedestais do deck " + c.deck + " (" + c.chapas + " un, " + String(r(c.kgChapa, 2)).replace(".", ",") + " kg cada) — preço do inox: ADOÇÃO SEM FONTE PÚBLICA, COTAR", c.chapas * c.kgChapa, "inox_kg"); L(cx(), "Chumbadores inox da ancoragem das diagonais nos pedestais do deck " + c.deck + " (2 por chapa; preço do M20 com ancoragem química, a favor)", c.chumb, "chumb20"); }
+    });
+    (DK && DK.travessas || []).forEach(function (tv) {      /* R66 (4ª rodada): estribos de inox das travessas biapoiadas da 2ª mão-francesa (a MLC da travessa já está no volume tratado 04.01 e na montagem 04.03) */
+      L(cx(), "Estribos de inox 316 das travessas da 2ª mão-francesa do deck " + tv.deck + " (" + tv.estribos + " un: " + tv.n + " travessas de MLC " + Math.round(tv.b * 100) + "×" + Math.round(tv.h * 100) + " cm biapoiadas entre vigas; placa 6 mm em L, " + String(r(tv.kgEstribo, 2)).replace(".", ",") + " kg cada) — preço do inox: ADOÇÃO SEM FONTE PÚBLICA, COTAR", tv.estribos * tv.kgEstribo, "inox_kg");
+      L(cx(), "Parafusos passantes inox ~200 mm dos estribos das travessas do deck " + tv.deck + " (" + tv.parafPorEstribo + " por estribo) — PROVISÓRIO: preço do maior parafuso inox do sistema (Ø16)", tv.estribos * tv.parafPorEstribo, "paraf16");
+    });
+    (DK && DK.mf || []).forEach(function (m) {      /* R59 (E4b final): mão-francesa DUPLA — MLC tratada por VOLUME (peças × comprimento real × 6×12) e parafusos passantes reais (ids × 2 direções × 2 pontas × n); quantidades somadas, não o número de ids */
+      L(cx(), "Mãos-francesas DUPLAS do deck " + m.deck + ": " + m.pecas + " peças MLC tratada 6×12 cm de " + String(r(m.LpecaM, 2)).replace(".", ",") + " m (0,9 m entre nós + sobras para a3,t)", m.pecas * m.LpecaM * m.b * m.h, "mlc_trat");
+      L(cx(), "Parafusos passantes inox ~320 mm (Ø" + Math.round(m.dParafuso * 1000) + ") das mãos-francesas duplas do deck " + m.deck + " (" + m.porPonta + " por ponta, " + m.ids + " pilaretes × 2 direções × 2 pontas)", m.parafusos, "paraf16");
+    });
+    (DK && DK.mfExtra || []).forEach(function (m) { L(cx(), "Parafusos inox Ø12 a mais nas mãos-francesas do deck " + m.deck + " (" + m.porPonta + " por ponta no cálculo; o preço unitário da mão-francesa já traz 2 por ponta)", m.extra, "paraf12"); });
+    (DK && DK.basesEng || []).forEach(function (b) {
+      L(cx(), "Pinos inox Ø" + Math.round(b.dPino * 1000) + " mm da ligação madeira–chapa das bases engastadas do deck " + b.deck + " (" + b.pinos + " un em " + b.nPilares + " pilaretes; preço do parafuso Ø12)", b.pinos, "paraf12");
+      L(cx(), "Chapas em cruz t = 16 mm (aço ASTM A36 galvanizado a fogo) das bases engastadas do deck " + b.deck + " (" + b.nPilares + " pilaretes; como a base em cruz da T1)", b.kgChapa, "aco_galv");
+      if (b.wt) L(cx(), "Parafusos de rosca total WT-T 8,2 de reforço ao fendilhamento das bases engastadas do deck " + b.deck + " (" + b.wt + " por pilarete)", b.wt * b.nPilares, "wt190");
+    });
     (DK && DK.cv || []).forEach(function (c) {      /* E4 r11 (R34): contraventamento em X do deck (a MLC das diagonais já entra no volume tratado 04.01; aqui, o aço e os pinos) */
       if (c.tipo === "tirante") { L(cx(), "Tirantes inox A4-70 Ø" + Math.round(c.d * 1000) + " mm do contraventamento em X do deck " + c.deck + " (" + c.nDiag + " tirantes, " + String(r(c.compM, 1)).replace(".", ",") + " m; massa = π·d²/4·7.900 kg/m³)", c.compM * Math.PI * c.d * c.d / 4 * 7900, "inox_kg"); L(cx(), "Esticadores (terminais de aperto) e olhais dos tirantes do deck " + c.deck + " (preço do M20, a favor)", c.esticadores * 3, "chumb20"); }
       else { L(cx(), "Chapas internas de aço inox 316 t = 8 mm das " + c.nPontas + " pontas das diagonais do deck " + c.deck, c.nPontas * c.kgChapaDiagUn, "inox_kg"); L(cx(), "Pinos inox Ø" + Math.round(c.dPinoDiag * 1000) + " mm das pontas das diagonais do deck " + c.deck + " (" + c.pinosDiag + " un; preço do M20, a favor)", c.pinosDiag, "chumb20"); }
@@ -275,13 +304,13 @@
   }
 
   /** semente para o módulo Orçamentos: etapas e itens com preço e fonte (a tela faz Orcamento.novo/addEtapa/addItem) */
-  function paraOrcamento(O) {
+  function paraOrcamento(O, opc) {
     var porEtapa = {}, ordem = [];
     O.itens.forEach(function (x) {
       if (!porEtapa[x.etapa]) { porEtapa[x.etapa] = []; ordem.push(x.etapa); }
       if (x.qtd > 0) porEtapa[x.etapa].push({ codigo: "", descricao: x.descricao + (x.adotado ? " [adoção RA — confirmar]" : ""), unidade: x.un, quantidade: x.qtd, custoUnitario: x.pu, fonte: x.fonte, adotado: x.adotado });
     });
-    return { nome: "Estrutura de madeira" + (O.nome ? " — " + O.nome : "") + " (opção " + O.opcao + ")", bdi: O.bdi, etapas: ordem.map(function (n) { return { nome: n, itens: porEtapa[n] }; }).filter(function (et) { return et.itens.length; }) };
+    return { nome: (opc && opc.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + "Estrutura de madeira" + (O.nome ? " — " + O.nome : "") + " (opção " + O.opcao + ")", bdi: O.bdi, etapas: ordem.map(function (n) { return { nome: n, itens: porEtapa[n] }; }).filter(function (et) { return et.itens.length; }) };
   }
 
   var MadOrcamento = { PRECOS: PRECOS, BDI_PADRAO: BDI_PADRAO, orcar: orcar, orcarT2: orcarT2, paraOrcamento: paraOrcamento, preco: preco, areaFaces: areaFaces };

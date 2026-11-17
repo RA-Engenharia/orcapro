@@ -309,7 +309,7 @@
       xr.forEach(function (x) { zc.forEach(function (z) { V.pino(x, z, d, true); }); });
       V.cadH([0].concat(xr).concat([chL]), -hh / 2, -6, [String(a3)].concat(xr.slice(1).map(function () { return String(a1); })).concat([String(a3)]), { semExt: true });
       if (nc > 1) V.cv(a2 / 2, -a2 / 2, xr[xr.length - 1] + 0, 6, String(a2), { semExt: true });
-      V.cv(hh / 2, -hh / 2, -40, -6, String(hh), { semExt: true }); V.ch(0, chL, chW / 2, 5, String(chL), { semExt: true });
+      if (hh / V.esc >= 8) V.cv(hh / 2, -hh / 2, -40, -6, String(hh), { semExt: true });      /* E4b N1: com o grupo longo a elevação vai a 1:20 e a cota da altura (6 mm no papel) encosta no texto; ela já está no corte transversal */ V.ch(0, chL, chW / 2, 5, String(chL), { semExt: true });
       V.bal(xr[0], zc[0] + (nc > 1 ? 0 : d), -14, -14, 1); V.bal(chL, -chW / 2, 8, 12, 2);
       return V;
     }
@@ -660,7 +660,7 @@
       "Não modelados no cálculo (declarado): vergas de vidro, caibros secundários, vento oblíquo de duas águas (a Tabela 5 da NBR 6123 não traz coeficientes; a torção por excentricidade, 6.6, está modelada); travamento inferior de terças e caibros = vão (a favor da segurança) até o RT definir os bloqueadores.",
       "Projeto executivo - revisão " + rev + "."];
     var bl = [];
-    if (imp.length) bl.push({ titulo: "NÃO EMITIR PARA EXECUÇÃO", cor: VERMELHO, itens: imp });
+    if (c.op && c.op.preliminar) bl.push({ titulo: "PRELIMINAR — NÃO ATENDE", cor: VERMELHO, itens: [{ t: "Estrutura que NÃO atende: documento PRELIMINAR, não serve para compra, fabricação nem execução.", cor: VERMELHO }] }); if (imp.length) bl.push({ titulo: "NÃO EMITIR PARA EXECUÇÃO", cor: VERMELHO, itens: imp });
     bl.push({ titulo: "LISTA DE DESENHOS", itens: lista }, { titulo: "NOTAS GERAIS", numerar: true, itens: notas }, { titulo: "NORMAS", itens: ["NBR 7190-1:2022; NBR 7190:1997 Anexo A (desenho)", "EN 14080; EN 1995-1-1", "NBR 6123:2023, 6120:2019, 8681:2003", "NBR 16143 (preservação)"] });
     return bl;
   }
@@ -696,7 +696,7 @@
     if (ult) { var cq = {}; Object.keys(ctx0).forEach(function (k) { cq[k] = ctx0[k]; }); cq.D = ult.D; cq.rotulo = ult.rotulo; try { Q.quadroPontos(cq); } catch (e) { avisos.push("Quadro de pontos a confirmar: " + (e && e.message ? e.message : String(e))); } }
     var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00";
     var pr = P.normalizar({ id: "madengt2pranchas", nome: "Estrutura de madeira engenharada (T2, duas águas) - projeto executivo", formato: formato, orientacao: "paisagem", origem: "madeira",
-      carimbo: { modelo: "RA", empresa: empObj ? "" : Q.txt(emp), responsavel: Q.txt(opcoes.responsavel), registro: Q.txt(opcoes.registro), titulo: Q.txt(opcoes.tituloProfissional), obra: Q.txt(opcoes.obra), proprietario: Q.txt(opcoes.proprietario),
+      carimbo: { modelo: "RA", empresa: empObj ? "" : Q.txt(emp), responsavel: Q.txt(opcoes.responsavel), registro: Q.txt(opcoes.registro), titulo: Q.txt(opcoes.tituloProfissional), obra: Q.txt((opcoes.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + (opcoes.obra || "")), proprietario: Q.txt(opcoes.proprietario),
         contratante: Q.txt(opcoes.contratante), local: Q.txt(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, Q.txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def[1], n: i + 1, conteudo: f.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
     var blocos = blocosNotas(ctx0, rev, classe), camadas = {};
@@ -709,7 +709,7 @@
       I.carimbo(Fd, pr, fl, geo, empObj, opcoes.logo || null, rotuloFolha);
       var numero = codigo + "-E" + f.rotulo;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + I.n(W) + 'mm" height="' + I.n(H) + 'mm" viewBox="0 0 ' + I.n(W) + " " + I.n(H) + '" font-family="' + I.FONTE + '" data-folha="' + f.def[1] + '" data-numero="' + I.esc(numero) + '">' +
-        "<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc(Q.FAIXA) + "</text></svg>";
+        "<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc((opcoes.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + Q.FAIXA) + "</text></svg>";
       var o = { id: f.def[1], rotulo: f.rotulo, numero: numero, titulo: f.titulo, formato: formato, escala: f.escala, svg: svg, rotuloCarimbo: rotuloFolha };
       o.dxf = { familia: "madeira", pr: pr, folha: fl, geo: geo, empresa: empObj, rotulo: rotuloFolha, logo: !!opcoes.logo, padrao: opcoes.padrao || null, camadas: camadas, tituloH: E.T.titulo, codigo: codigo };
       if (opcoes.depurar) o.caixasTexto = D.caixas;
