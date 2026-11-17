@@ -39,16 +39,150 @@
     sincronizar: function () {
       var f = F(), dd = global.BimDisciplinas;
       if (!f || !dd) return false;
+      /* na montagem a disciplina GRAVADA na vista ativa manda sobre a fita guardada do outro dia (o campo da vista e a fita são um só) */
+      if (!this._montou) {
+        this._montou = true;
+        if (this._ler3()[this._ativa] || (this._ehDois(this._ativa) && this._explicita(this._ativa))) { this._sinc = true; try { return this.aplicarVista(this._ativa, this._ativaTipo); } finally { this._sinc = false; } }
+      }
       var id = "completo"; try { id = dd.atual(); } catch (e) {}
       var mudou = f.set({ disc: f.daFita(id) });
       if (mudou) { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e2) {} this.repintar(); }
       return mudou;
     },
+
+    /* ------------------------------------------------------------ DISCIPLINA DA VISTA (16/11/2026)
+     * Pedido do Rogério: o campo "Disciplina" das Propriedades da vista (planta, corte, elevação, 3D) e o seletor da fita ("Arquitetura ▾")
+     * são UM SÓ. Escolher uma disciplina: o que é dela fica pleno e selecionável; o das outras fica em meio-tom e sem clique; Coordenação =
+     * tudo pleno e selecionável. 3D: o mesmo foco de sempre (bimfoco.js → bim.js). 2D: o desenho sai com as outras em meio-tom
+     * (BimModeloVista.classificar) e o clique ignora as outras (BimSelecao.candidatosEm). Folha/PDF: cada viewport desenha com a disciplina da
+     * vista dele (hidro sobre arquitetura em cinza).
+     *   · 2D: a disciplina é da própria vista (BimModeloVista, gravada com as vistas; o modelo de vista pode travá-la).
+     *   · 3D: gravada por vista no aparelho (localStorage; sem nada gravado, a vista nova herda a disciplina de agora).
+     *   · A VISTA ATIVA manda no foco do 3D e na fita: trocar de aba troca os dois; mexer na fita grava na vista ativa. */
+    _ativa: "3d", _ativaTipo: "3d", _v3: null, _sinc: false,
+    _ler3: function () {
+      if (this._v3) return this._v3;
+      var o = {}; try { o = JSON.parse(global.localStorage.getItem("orcapro:bim:vistadisc:v1") || "{}") || {}; } catch (e) { o = {}; }
+      return (this._v3 = o);
+    },
+    _gravar3: function () { try { global.localStorage.setItem("orcapro:bim:vistadisc:v1", JSON.stringify(this._v3 || {})); } catch (e) {} },
+    _ehDois: function (id) { var P = global.Bim2D; return !!(P && P.ehVista2d && P.ehVista2d(id)); },
+    /* a disciplina (vocabulário do campo da vista) de uma vista; null = vista sem disciplina (folha, tabela) */
+    discDaVista: function (id, tipo) {
+      id = id || this._ativa; tipo = tipo || (id === this._ativa ? this._ativaTipo : null);
+      var f = F(); if (!f) return null;
+      if (this._ehDois(id)) {
+        var M = global.BimModeloVista, P = global.Bim2D;
+        if (!M || !P) return "arquitetura";
+        try {
+          var v = M.vistaObj(id, P.def(id));
+          if (!v) return "arquitetura";   /* a nativa ainda sem objeto: o padrão da vista (Arquitetura) */
+          return M.efetivo(v, M.estado()).disciplina || "arquitetura";
+        } catch (e) { return "arquitetura"; }
+      }
+      if (tipo === "folha" || tipo === "2d") return null;
+      var o = this._ler3();
+      if (o[id]) return o[id];
+      return f.paraVista(f.get().disc);   /* vista 3D sem nada gravado: a disciplina de agora (a fita) */
+    },
+    /* escreve a disciplina numa vista; devolve false se o modelo de vista a trava */
+    _gravarVista: function (id, disc) {
+      if (this._ehDois(id)) {
+        var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P || !M.DISCIPLINAS[disc]) return false;
+        var v = M.vistaObj(id, P.def(id)); if (!v) return false;
+        var ef = M.efetivo(v, M.estado());
+        if (ef.travados && ef.travados.disciplina) return false;
+        if (v.disciplina === disc && v.discExp === true) return true;
+        v.disciplina = disc; v.discExp = true; M.gravar();
+        try { M._redesenhar(id, true); } catch (e) {}
+        try { if (M._arvore) M._arvore(); } catch (e1) {}
+        try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DD = global.BimFolhaUI._desenhos; Object.keys(DD).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0 || k.indexOf(id + "#") === 0) delete DD[k]; }); } } catch (e2) {}
+        return true;
+      }
+      var o = this._ler3(); if (o[id] === disc) return true;
+      o[id] = disc; this._gravar3(); return true;
+    },
+    /* põe o foco do 3D e a fita na disciplina da vista (sem trocar a aba da fita nem gravar de volta) */
+    aplicarVista: function (id, tipo) {
+      var f = F(), d = this.discDaVista(id, tipo); if (!f || d == null) return false;
+      if (this._ehDois(id) && !this._explicita(id)) return false;   /* vista 2D sem escolha: segue a fita, nada a empurrar */
+      var foco = f.daVista(d), mudou = f.set({ disc: foco, vista: true });
+      var dd = global.BimDisciplinas, sh = SH();
+      if (dd && sh) {
+        var fita = PARA_FITA[foco] || null;
+        try {
+          if (fita && fita !== dd.atual()) {
+            var r = dd.escolher(fita);
+            if (r && r.ok) { if (sh._aplicarDisc) sh._aplicarDisc(); if (sh.pintarFita) sh.pintarFita(); this._refazerImplicitas(id); }   /* _aplicarDisc → sincronizar: o mesmo valor */
+          }
+        } catch (eF) {}
+      }
+      if (mudou) { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e2) {} }
+      this.repintar();
+      return mudou;
+    },
+    _explicita: function (id) {
+      var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P) return false;
+      try { var v = M.vistaObj(id, P.def(id)); return !!(v && v.discExp === true); } catch (e) { return false; }
+    },
+    /* a fita mudou: as vistas 2D abertas SEM disciplina escolhida (seguem a fita) refazem o desenho; `menos` = a que já foi refeita */
+    _refazerImplicitas: function (menos) {
+      var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P || !P._cache) return;
+      var self = this;
+      Object.keys(P._cache).forEach(function (k) {
+        if (k === menos || !self._ehDois(k) || self._explicita(k)) return;
+        try { M._redesenhar(k, true); } catch (e) {}
+      });
+    },
+    /* a casca avisa: a vista ativa mudou */
+    vistaAtiva: function (id, tipo) {
+      this._ativa = id || "3d"; this._ativaTipo = tipo || (this._ativa === "3d" ? "3d" : "2d");
+      if (this._ativaTipo === "folha") return false;
+      /* vista 3D sem nada gravado herda a disciplina de agora e grava (a vista nova nasce igual à anterior) */
+      if (!this._ehDois(this._ativa)) { var o = this._ler3(), f = F(); if (f && !o[this._ativa]) { o[this._ativa] = f.paraVista(f.get().disc); this._gravar3(); } }
+      this._sinc = true; try { return this.aplicarVista(this._ativa, this._ativaTipo); } finally { this._sinc = false; }
+    },
+    /* o campo da vista mudou (ou outra vista foi tocada pelas Propriedades) */
+    vistaMudou: function (id) { if (id && id === this._ativa) this.aplicarVista(id, this._ativaTipo); else if (id && this._ehDois(id) && !this._ativa) this._ativa = id; },
+    /* o campo "Disciplina" das Propriedades de uma vista 3D */
+    definirVista: function (id, disc) {
+      var f = F(); if (!f || !f.DA_VISTA[disc]) return false;
+      this._gravarVista(id, disc);
+      if (id === this._ativa) this.aplicarVista(id, this._ativaTipo);
+      status(this.frase());
+      return true;
+    },
+    /* o seletor da FITA foi mexido pela pessoa: grava na vista ativa (a vista e a fita ficam iguais) */
+    daFita: function (fitaId) {
+      var f = F(); if (!f || this._sinc) return false;
+      if (this._ativaTipo === "folha") return false;
+      var disc = f.paraVista(f.daFita(fitaId));
+      var ok = this._gravarVista(this._ativa, disc);
+      if (!ok) { status("A disciplina desta vista é controlada pelo modelo de vista: tire o modelo para mudar só nela."); this.aplicarVista(this._ativa, this._ativaTipo); return false; }
+      try { if (SH() && SH().repintarVista) SH().repintarVista(); } catch (e) {}
+      this._refazerImplicitas(this._ativa);
+      return true;
+    },
+    /* o clique desta vista 2D pode pegar a peça? (a de OUTRA disciplina que a da vista não pega) */
+    selecionavelNaVista: function (vistaId, uid) {
+      var f = F(); if (!f) return true;
+      var d = this.discDaVista(vistaId, "2d"); if (d == null || f.daVista(d) === "coordenacao") return true;
+      var inf = this._info(uid); if (!inf) return true;
+      return !f.fundoNaVista(d, inf.tipo, inf.disc);
+    },
+    _info: function (uid) {
+      var b = B(), els = b && b.elementos; if (!els) return null;
+      if (!this._idx || this._idxN !== els.length || this._idxRef !== els) {
+        var m = {}; for (var i = 0; i < els.length; i++) { var e = els[i]; if (e && e.uid != null) m[e.uid] = { tipo: e.tipo, disc: e.disciplina }; }
+        this._idx = m; this._idxN = els.length; this._idxRef = els;
+      }
+      return this._idx[uid] || null;
+    },
     /* texto da barra de status ao trocar de disciplina */
     frase: function () {
       var f = F(); if (!f) return "";
       var e = f.get(), d = null;
-      f.DISCIPLINAS.forEach(function (x) { if (x.id === e.disc) d = x; });
+      f.DISCIPLINAS.concat(f.DISC_VIS).forEach(function (x) { if (x.id === e.disc && !d) d = x; });
       if (!d || e.disc === "coordenacao") return "Coordenação: todas as disciplinas visíveis e editáveis.";
       return d.rotulo + " em foco: as outras disciplinas ficam esmaecidas e sem clique" + (e.esmaecer ? "." : " (desligado no painel Visibilidade por categoria).");
     },

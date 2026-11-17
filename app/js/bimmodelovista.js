@@ -189,6 +189,7 @@
       o.escala = Math.max(1, Math.round(num(v.escala, p.escala)));
       o.nivelDetalhe = NIVEIS_DETALHE[v.nivelDetalhe] ? v.nivelDetalhe : p.nivelDetalhe;
       o.disciplina = DISCIPLINAS[v.disciplina] ? v.disciplina : p.disciplina;
+      if (v.discExp === true) o.discExp = true;   /* a pessoa escolheu a disciplina desta vista (campo ou fita); sem isso ela segue a fita */
       o.estiloVisual = ESTILOS_VISUAIS[v.estiloVisual] ? v.estiloVisual : p.estiloVisual;
       o.faixa = PLANTAS[tipo] ? (v.faixa ? this.normFaixa(v.faixa, tipo) : null) : null;
       var rc = obj(v.recorte);
@@ -251,6 +252,11 @@
         if (c === "faixa" && !PLANTAS[o.tipo]) return;
         o[c] = clone(m.valores[c]); trav[c] = m.nome;
       });
+      /* DISCIPLINA SEGUE A FITA (16/11/2026): a vista em que ninguém escolheu a disciplina (sem discExp) vale a do seletor da fita — com a fita em
+         Coordenação (padrão) o desenho é o de sempre; abrir uma planta não troca a fita. Só no navegador (precisa da fita e do motor do foco). */
+      if (!trav.disciplina && o.discExp !== true && global.BimFoco && global.BimDisciplinas && global.BimDisciplinas.atual) {
+        try { o.disciplina = global.BimFoco.paraVista(global.BimFoco.daFita(global.BimDisciplinas.atual())); } catch (eDf) { /* fica a gravada */ }
+      }
       o.travados = trav;
       return o;
     },
@@ -300,6 +306,20 @@
       if (f.cor) s.cor = f.cor; if (f.padrao) s.padrao = f.padrao;
       return s;
     },
+    /* DISCIPLINA DA VISTA: (tipo IFC, uid) → true se a peça é de OUTRA disciplina que a da vista (meio-tom e sem clique). null = a vista não filtra
+       (Coordenação). A disciplina GRAVADA na peça (BIM.elementos) só desempata o que a classe IFC não decide (js/bimfoco.js). */
+    _fundoDeDisciplina: function (ef) {
+      var F = global.BimFoco, vd = ef && ef.disciplina;
+      if (!F || !F.fundoNaVista || !vd || F.daVista(vd) === "coordenacao") return null;
+      var idx = null;
+      function indice() {
+        if (idx) return idx;
+        idx = {};
+        try { arr(global.BIM && global.BIM.elementos).forEach(function (e) { if (e && e.uid != null && e.disciplina) idx[e.uid] = e.disciplina; }); } catch (e1) { idx = {}; }
+        return idx;
+      }
+      return function (t, u) { return F.fundoNaVista(vd, t, u != null ? indice()[u] : ""); };
+    },
     /* o que SAI do desenho (V/G): função sobre o userData da malha (tipo, mid, expressID) */
     ocultador: function (ef, estilos, filtroDe) {
       var self = this, vg = obj(ef && ef.vg), fl = obj(ef && ef.filtros), cache = {};
@@ -320,10 +340,14 @@
     /* põe a CHAVE de estilo em cada contorno (`k`) e aresta (`linhasK`) e devolve
        o mapa de estilos para o js/desenho2d.js (P6.corpo) */
     classificar: function (dados, ef, estilos, filtroDe) {
-      var self = this, est = {}, cache = {}, matDe = typeof this.materialDe === "function" ? this.materialDe : null;
+      var self = this, est = {}, cache = {}, matDe = typeof this.materialDe === "function" ? this.materialDe : null, discDe = this._fundoDeDisciplina(ef);
       function chave(ud) {
         ud = ud || {};
         var t = txt(ud.t), cat = cache[t] || (cache[t] = self.categoriaDe(t, estilos)), f = filtroDe && ud.u ? filtroDe(ud.u) : null;
+        /* DISCIPLINA DA VISTA (16/11/2026): a peça de OUTRA disciplina sai em meio-tom (hidro sobre arquitetura em cinza, e vice-versa) */
+        var fd = discDe ? discDe(t, ud.u) : false;
+        /* a categoria que JÁ sai em meio-tom (V/G, filtro, modelo estrutural) não ganha chave nova: o desenho é o mesmo de antes */
+        if (fd && self.estiloCategoria(cat, ef, estilos, f ? obj(ef.filtros)[f] : null).meioTom) fd = false;
         /* MATERIAIS (js/bimmateriais.js estiloCorte): o padrão de corte do material do projeto da peça */
         var mt = null; if (matDe && ud.u) { try { mt = matDe(ud.u); } catch (eM) { mt = null; } }
         /* NÍVEL DE DETALHE (js/biminstnivel.js): a linha UNIFILAR das instalações leva a pena, a cor e o tipo de linha do
@@ -331,7 +355,7 @@
            O V/G da categoria continua mandando no visível e no meio-tom. */
         var ins = ud.inst && ud.inst.k ? ud.inst : null;
         /* apresentação de prancha: "fundo" (louça em meio-tom) sai ANTES dos cortes; o polígono preenchido leva preench/corPreench */
-        var k = cat + (f ? "|" + f : "") + (mt ? "|mat:" + mt.id : "") + (ins ? (ins.fundo ? "|fundo:" : "|inst:") + ins.k : "");
+        var k = cat + (f ? "|" + f : "") + (fd ? "|dfundo" : "") + (mt ? "|mat:" + mt.id : "") + (ins ? (ins.fundo ? "|fundo:" : "|inst:") + ins.k : "");
         if (!est[k]) {
           est[k] = self.estiloCategoria(cat, ef, estilos, f ? obj(ef.filtros)[f] : null);
           if (mt && mt.preench) { est[k].preench = mt.preench; if (mt.cor) est[k].corPreench = mt.cor; }
@@ -341,6 +365,7 @@
             if (ins.oculto) est[k].oculto = true;   /* PARIDADE: alvo de clique sem tinta (o Alto desenha pela vista da cena) */
             if (ins.preench) { est[k].preench = ins.preench; if (ins.corPreench) est[k].corPreench = ins.corPreench; }
           }
+          if (fd) est[k].meioTom = true;   /* depois de tudo: nem a cor do sistema nem a do material furam o meio-tom da disciplina de fundo */
         }
         return k;
       }
@@ -890,7 +915,16 @@
         try { if (global.BimInstUI && global.BimInstUI._pintarBotaoNivel) global.BimInstUI._pintarBotaoNivel(); } catch (eB) {}
         return true;
       }
-      if (pid === "p6:disc") { if (bloqueado("disciplina")) return true; if (DISCIPLINAS[valor]) v.disciplina = valor; this.gravar(); this._arvore(); return true; }
+      if (pid === "p6:disc") {
+        if (bloqueado("disciplina")) return true;
+        if (DISCIPLINAS[valor]) { v.disciplina = valor; v.discExp = true; }
+        this.gravar(); this._arvore();
+        /* DISCIPLINA DA VISTA (16/11/2026): refaz o desenho (as outras disciplinas em meio-tom, sem clique), a folha que mostra a vista e a fita/foco do 3D */
+        this._redesenhar(id, true);
+        try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DD = global.BimFolhaUI._desenhos; Object.keys(DD).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0 || k.indexOf(id + "#") === 0) delete DD[k]; }); } } catch (eFD) {}
+        try { if (global.BimFocoUI && global.BimFocoUI.vistaMudou) global.BimFocoUI.vistaMudou(id); } catch (eFU) {}
+        return true;
+      }
       if (pid === "p6:ev") { if (bloqueado("estiloVisual")) return true; if (ESTILOS_VISUAIS[valor]) v.estiloVisual = valor; this.gravar(); this._redesenhar(id, true); return true; }
       if (pid === "p6:modelo") {
         var mo = this.modelo(est, valor);

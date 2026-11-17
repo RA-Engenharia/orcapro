@@ -108396,6 +108396,7 @@ if (alvo) r.irPara(alvo);
 }
 this._aplicarDisc();
 this.pintarFita();
+try { if (global.BimFocoUI && global.BimFocoUI.daFita) global.BimFocoUI.daFita(id); } catch (eVD) {}
 var fr = ""; try { fr = global.BimFocoUI ? global.BimFocoUI.frase() : ""; } catch (eFr) {}
 this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns.") + (fr ? " " + fr : ""));
 return res;
@@ -113273,6 +113274,7 @@ o.nivelId = v.nivelId == null ? null : txt(v.nivelId);
 o.escala = Math.max(1, Math.round(num(v.escala, p.escala)));
 o.nivelDetalhe = NIVEIS_DETALHE[v.nivelDetalhe] ? v.nivelDetalhe : p.nivelDetalhe;
 o.disciplina = DISCIPLINAS[v.disciplina] ? v.disciplina : p.disciplina;
+if (v.discExp === true) o.discExp = true;
 o.estiloVisual = ESTILOS_VISUAIS[v.estiloVisual] ? v.estiloVisual : p.estiloVisual;
 o.faixa = PLANTAS[tipo] ? (v.faixa ? this.normFaixa(v.faixa, tipo) : null) : null;
 var rc = obj(v.recorte);
@@ -113330,6 +113332,9 @@ if (!m.campos[c] || m.valores[c] === undefined) return;
 if (c === "faixa" && !PLANTAS[o.tipo]) return;
 o[c] = clone(m.valores[c]); trav[c] = m.nome;
 });
+if (!trav.disciplina && o.discExp !== true && global.BimFoco && global.BimDisciplinas && global.BimDisciplinas.atual) {
+try { o.disciplina = global.BimFoco.paraVista(global.BimFoco.daFita(global.BimDisciplinas.atual())); } catch (eDf) { }
+}
 o.travados = trav;
 return o;
 },
@@ -113373,6 +113378,18 @@ if (f.penaProj) s.proj = f.penaProj; if (f.penaCorte) s.corte = f.penaCorte;
 if (f.cor) s.cor = f.cor; if (f.padrao) s.padrao = f.padrao;
 return s;
 },
+_fundoDeDisciplina: function (ef) {
+var F = global.BimFoco, vd = ef && ef.disciplina;
+if (!F || !F.fundoNaVista || !vd || F.daVista(vd) === "coordenacao") return null;
+var idx = null;
+function indice() {
+if (idx) return idx;
+idx = {};
+try { arr(global.BIM && global.BIM.elementos).forEach(function (e) { if (e && e.uid != null && e.disciplina) idx[e.uid] = e.disciplina; }); } catch (e1) { idx = {}; }
+return idx;
+}
+return function (t, u) { return F.fundoNaVista(vd, t, u != null ? indice()[u] : ""); };
+},
 ocultador: function (ef, estilos, filtroDe) {
 var self = this, vg = obj(ef && ef.vg), fl = obj(ef && ef.filtros), cache = {};
 return function (ud) {
@@ -113388,13 +113405,15 @@ return false;
 },
 materialDe: null,
 classificar: function (dados, ef, estilos, filtroDe) {
-var self = this, est = {}, cache = {}, matDe = typeof this.materialDe === "function" ? this.materialDe : null;
+var self = this, est = {}, cache = {}, matDe = typeof this.materialDe === "function" ? this.materialDe : null, discDe = this._fundoDeDisciplina(ef);
 function chave(ud) {
 ud = ud || {};
 var t = txt(ud.t), cat = cache[t] || (cache[t] = self.categoriaDe(t, estilos)), f = filtroDe && ud.u ? filtroDe(ud.u) : null;
+var fd = discDe ? discDe(t, ud.u) : false;
+if (fd && self.estiloCategoria(cat, ef, estilos, f ? obj(ef.filtros)[f] : null).meioTom) fd = false;
 var mt = null; if (matDe && ud.u) { try { mt = matDe(ud.u); } catch (eM) { mt = null; } }
 var ins = ud.inst && ud.inst.k ? ud.inst : null;
-var k = cat + (f ? "|" + f : "") + (mt ? "|mat:" + mt.id : "") + (ins ? (ins.fundo ? "|fundo:" : "|inst:") + ins.k : "");
+var k = cat + (f ? "|" + f : "") + (fd ? "|dfundo" : "") + (mt ? "|mat:" + mt.id : "") + (ins ? (ins.fundo ? "|fundo:" : "|inst:") + ins.k : "");
 if (!est[k]) {
 est[k] = self.estiloCategoria(cat, ef, estilos, f ? obj(ef.filtros)[f] : null);
 if (mt && mt.preench) { est[k].preench = mt.preench; if (mt.cor) est[k].corPreench = mt.cor; }
@@ -113404,6 +113423,7 @@ if (ins.meioTom) est[k].meioTom = true;
 if (ins.oculto) est[k].oculto = true;
 if (ins.preench) { est[k].preench = ins.preench; if (ins.corPreench) est[k].corPreench = ins.corPreench; }
 }
+if (fd) est[k].meioTom = true;
 }
 return k;
 }
@@ -113889,7 +113909,15 @@ try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DF = global.Bi
 try { if (global.BimInstUI && global.BimInstUI._pintarBotaoNivel) global.BimInstUI._pintarBotaoNivel(); } catch (eB) {}
 return true;
 }
-if (pid === "p6:disc") { if (bloqueado("disciplina")) return true; if (DISCIPLINAS[valor]) v.disciplina = valor; this.gravar(); this._arvore(); return true; }
+if (pid === "p6:disc") {
+if (bloqueado("disciplina")) return true;
+if (DISCIPLINAS[valor]) { v.disciplina = valor; v.discExp = true; }
+this.gravar(); this._arvore();
+this._redesenhar(id, true);
+try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DD = global.BimFolhaUI._desenhos; Object.keys(DD).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0 || k.indexOf(id + "#") === 0) delete DD[k]; }); } } catch (eFD) {}
+try { if (global.BimFocoUI && global.BimFocoUI.vistaMudou) global.BimFocoUI.vistaMudou(id); } catch (eFU) {}
+return true;
+}
 if (pid === "p6:ev") { if (bloqueado("estiloVisual")) return true; if (ESTILOS_VISUAIS[valor]) v.estiloVisual = valor; this.gravar(); this._redesenhar(id, true); return true; }
 if (pid === "p6:modelo") {
 var mo = this.modelo(est, valor);
@@ -176875,6 +176903,7 @@ var D = D2(), df = D && D.def ? D.def(id) : null, yc = df && df.nivel && isFinit
 var v = global.BimVaoArr.naPlanta(this._estado(), this._avaliar(), { x: p[0], z: p[1] }, yc); if (v) l = ["edit:" + v];
 }
 if (global.PiscinaDeriv) l = l.filter(function (u) { return !PiscinaDeriv.ehDerivado(String(u).replace(/^edit:/, "")); });
+if (global.BimFocoUI && global.BimFocoUI.selecionavelNaVista) l = l.filter(function (u) { return global.BimFocoUI.selecionavelNaVista(id, u); });
 return l;
 },
 pecaEm: function (id, p) {
@@ -177003,7 +177032,7 @@ this.desenhar(id);
 return true;
 }
 if (d.modo === "janela" && d.j) {
-var ids = pegaJanela(d.j, pecasDoDesenho(c && c.dados, function (u) { return /^edit:/.test(u); }));
+var ids = pegaJanela(d.j, pecasDoDesenho(c && c.dados, function (u) { return /^edit:/.test(u) && (!global.BimFocoUI || !global.BimFocoUI.selecionavelNaVista || global.BimFocoUI.selecionavelNaVista(id, u)); }));
 this.selecionar(ids, d.ctrl ? "somar" : "trocar");
 try { if (global.BimInstJanela && global.BimInstJanela.aposJanela) global.BimInstJanela.aposJanela(ids, "2d"); } catch (eJ) {}
 status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
@@ -227195,7 +227224,7 @@ function limpaOp(v) { v = Number(v); if (!(v > 0)) return 1; if (v >= 1) return 
 function set(o) {
 var mudou = false;
 o = o || {};
-if (o.disc != null && ID_DISC[o.disc] && o.disc !== ESTADO.disc) { ESTADO.disc = o.disc; mudou = true; }
+if (o.disc != null && (ID_DISC[o.disc] || (o.vista === true && ID_DISC_VIS[o.disc])) && o.disc !== ESTADO.disc) { ESTADO.disc = o.disc; mudou = true; }
 if (o.esmaecer != null && !!o.esmaecer !== ESTADO.esmaecer) { ESTADO.esmaecer = !!o.esmaecer; mudou = true; }
 if (o.cats && typeof o.cats === "object") {
 Object.keys(o.cats).forEach(function (id) {
@@ -227243,6 +227272,15 @@ if (cont.outros) grupos.push({ disc: "outros", rotulo: "Outros", itens: [{ id: "
 return grupos;
 }
 function daFita(id) { return DA_FITA[id] || "coordenacao"; }
+var DA_VISTA = { arquitetura: "arquitetura", estrutural: "estrutura", hidraulica: "hidrossanitario", eletrica: "eletrica", mecanica: "climatizacao", coordenacao: "coordenacao" };
+var PARA_VISTA = { arquitetura: "arquitetura", estrutura: "estrutural", hidrossanitario: "hidraulica", eletrica: "eletrica", climatizacao: "mecanica", coordenacao: "coordenacao" };
+function daVista(id) { return DA_VISTA[txt(id).toLowerCase()] || "coordenacao"; }
+function paraVista(foco) { return PARA_VISTA[foco] || "coordenacao"; }
+function fundoNaVista(vistaDisc, tipo, discPeca) {
+var f = daVista(vistaDisc);
+if (f === "coordenacao") return false;
+return disciplinaDe(tipo, discPeca) !== f;
+}
 function sobra(a, b) {
 var dx = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
 var dy = Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2);
@@ -227321,6 +227359,7 @@ function esquecerVista(vista) { var t = lerTudo(); delete t[txt(vista)]; gravarT
 var BimFoco = {
 DISCIPLINAS: DISCIPLINAS, DISC_VIS: DISC_VIS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
 categoriaDe: categoriaDe, disciplinaDe: disciplinaDe, avaliar: avaliar, resumo: resumo, daFita: daFita,
+daVista: daVista, paraVista: paraVista, fundoNaVista: fundoNaVista, DA_VISTA: DA_VISTA, PARA_VISTA: PARA_VISTA,
 separarRotulos: separarRotulos, salvarVista: salvarVista, carregarVista: carregarVista, esquecerVista: esquecerVista, configurar: configurar,
 get: get, set: set, reiniciar: reiniciar, restaurarCategorias: restaurarCategorias, ativo: ativo,
 cotasOc: function () { return !!ESTADO.cotasOc; },
@@ -227348,15 +227387,128 @@ _eventos: false,
 sincronizar: function () {
 var f = F(), dd = global.BimDisciplinas;
 if (!f || !dd) return false;
+if (!this._montou) {
+this._montou = true;
+if (this._ler3()[this._ativa] || (this._ehDois(this._ativa) && this._explicita(this._ativa))) { this._sinc = true; try { return this.aplicarVista(this._ativa, this._ativaTipo); } finally { this._sinc = false; } }
+}
 var id = "completo"; try { id = dd.atual(); } catch (e) {}
 var mudou = f.set({ disc: f.daFita(id) });
 if (mudou) { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e2) {} this.repintar(); }
 return mudou;
 },
+_ativa: "3d", _ativaTipo: "3d", _v3: null, _sinc: false,
+_ler3: function () {
+if (this._v3) return this._v3;
+var o = {}; try { o = JSON.parse(global.localStorage.getItem("orcapro:bim:vistadisc:v1") || "{}") || {}; } catch (e) { o = {}; }
+return (this._v3 = o);
+},
+_gravar3: function () { try { global.localStorage.setItem("orcapro:bim:vistadisc:v1", JSON.stringify(this._v3 || {})); } catch (e) {} },
+_ehDois: function (id) { var P = global.Bim2D; return !!(P && P.ehVista2d && P.ehVista2d(id)); },
+discDaVista: function (id, tipo) {
+id = id || this._ativa; tipo = tipo || (id === this._ativa ? this._ativaTipo : null);
+var f = F(); if (!f) return null;
+if (this._ehDois(id)) {
+var M = global.BimModeloVista, P = global.Bim2D;
+if (!M || !P) return "arquitetura";
+try {
+var v = M.vistaObj(id, P.def(id));
+if (!v) return "arquitetura";
+return M.efetivo(v, M.estado()).disciplina || "arquitetura";
+} catch (e) { return "arquitetura"; }
+}
+if (tipo === "folha" || tipo === "2d") return null;
+var o = this._ler3();
+if (o[id]) return o[id];
+return f.paraVista(f.get().disc);
+},
+_gravarVista: function (id, disc) {
+if (this._ehDois(id)) {
+var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P || !M.DISCIPLINAS[disc]) return false;
+var v = M.vistaObj(id, P.def(id)); if (!v) return false;
+var ef = M.efetivo(v, M.estado());
+if (ef.travados && ef.travados.disciplina) return false;
+if (v.disciplina === disc && v.discExp === true) return true;
+v.disciplina = disc; v.discExp = true; M.gravar();
+try { M._redesenhar(id, true); } catch (e) {}
+try { if (M._arvore) M._arvore(); } catch (e1) {}
+try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) { var DD = global.BimFolhaUI._desenhos; Object.keys(DD).forEach(function (k) { if (k === id || k.indexOf(id + "@") === 0 || k.indexOf(id + "#") === 0) delete DD[k]; }); } } catch (e2) {}
+return true;
+}
+var o = this._ler3(); if (o[id] === disc) return true;
+o[id] = disc; this._gravar3(); return true;
+},
+aplicarVista: function (id, tipo) {
+var f = F(), d = this.discDaVista(id, tipo); if (!f || d == null) return false;
+if (this._ehDois(id) && !this._explicita(id)) return false;
+var foco = f.daVista(d), mudou = f.set({ disc: foco, vista: true });
+var dd = global.BimDisciplinas, sh = SH();
+if (dd && sh) {
+var fita = PARA_FITA[foco] || null;
+try {
+if (fita && fita !== dd.atual()) {
+var r = dd.escolher(fita);
+if (r && r.ok) { if (sh._aplicarDisc) sh._aplicarDisc(); if (sh.pintarFita) sh.pintarFita(); this._refazerImplicitas(id); }
+}
+} catch (eF) {}
+}
+if (mudou) { try { var b = B(); if (b && b.foco) b.foco({}); } catch (e2) {} }
+this.repintar();
+return mudou;
+},
+_explicita: function (id) {
+var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P) return false;
+try { var v = M.vistaObj(id, P.def(id)); return !!(v && v.discExp === true); } catch (e) { return false; }
+},
+_refazerImplicitas: function (menos) {
+var M = global.BimModeloVista, P = global.Bim2D; if (!M || !P || !P._cache) return;
+var self = this;
+Object.keys(P._cache).forEach(function (k) {
+if (k === menos || !self._ehDois(k) || self._explicita(k)) return;
+try { M._redesenhar(k, true); } catch (e) {}
+});
+},
+vistaAtiva: function (id, tipo) {
+this._ativa = id || "3d"; this._ativaTipo = tipo || (this._ativa === "3d" ? "3d" : "2d");
+if (this._ativaTipo === "folha") return false;
+if (!this._ehDois(this._ativa)) { var o = this._ler3(), f = F(); if (f && !o[this._ativa]) { o[this._ativa] = f.paraVista(f.get().disc); this._gravar3(); } }
+this._sinc = true; try { return this.aplicarVista(this._ativa, this._ativaTipo); } finally { this._sinc = false; }
+},
+vistaMudou: function (id) { if (id && id === this._ativa) this.aplicarVista(id, this._ativaTipo); else if (id && this._ehDois(id) && !this._ativa) this._ativa = id; },
+definirVista: function (id, disc) {
+var f = F(); if (!f || !f.DA_VISTA[disc]) return false;
+this._gravarVista(id, disc);
+if (id === this._ativa) this.aplicarVista(id, this._ativaTipo);
+status(this.frase());
+return true;
+},
+daFita: function (fitaId) {
+var f = F(); if (!f || this._sinc) return false;
+if (this._ativaTipo === "folha") return false;
+var disc = f.paraVista(f.daFita(fitaId));
+var ok = this._gravarVista(this._ativa, disc);
+if (!ok) { status("A disciplina desta vista é controlada pelo modelo de vista: tire o modelo para mudar só nela."); this.aplicarVista(this._ativa, this._ativaTipo); return false; }
+try { if (SH() && SH().repintarVista) SH().repintarVista(); } catch (e) {}
+this._refazerImplicitas(this._ativa);
+return true;
+},
+selecionavelNaVista: function (vistaId, uid) {
+var f = F(); if (!f) return true;
+var d = this.discDaVista(vistaId, "2d"); if (d == null || f.daVista(d) === "coordenacao") return true;
+var inf = this._info(uid); if (!inf) return true;
+return !f.fundoNaVista(d, inf.tipo, inf.disc);
+},
+_info: function (uid) {
+var b = B(), els = b && b.elementos; if (!els) return null;
+if (!this._idx || this._idxN !== els.length || this._idxRef !== els) {
+var m = {}; for (var i = 0; i < els.length; i++) { var e = els[i]; if (e && e.uid != null) m[e.uid] = { tipo: e.tipo, disc: e.disciplina }; }
+this._idx = m; this._idxN = els.length; this._idxRef = els;
+}
+return this._idx[uid] || null;
+},
 frase: function () {
 var f = F(); if (!f) return "";
 var e = f.get(), d = null;
-f.DISCIPLINAS.forEach(function (x) { if (x.id === e.disc) d = x; });
+f.DISCIPLINAS.concat(f.DISC_VIS).forEach(function (x) { if (x.id === e.disc && !d) d = x; });
 if (!d || e.disc === "coordenacao") return "Coordenação: todas as disciplinas visíveis e editáveis.";
 return d.rotulo + " em foco: as outras disciplinas ficam esmaecidas e sem clique" + (e.esmaecer ? "." : " (desligado no painel Visibilidade por categoria).");
 },

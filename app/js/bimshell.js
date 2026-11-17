@@ -617,6 +617,8 @@
       }
       this._aplicarDisc();
       this.pintarFita();
+      /* DISCIPLINA DA VISTA (16/11/2026): a escolha da fita grava no campo "Disciplina" da vista ativa (o campo e a fita são um só) */
+      try { if (global.BimFocoUI && global.BimFocoUI.daFita) global.BimFocoUI.daFita(id); } catch (eVD) {}
       /* A DISCIPLINA ATIVA TAMBÉM É O FOCO DO 3D (js/bimfocoui.js): as outras ficam esmaecidas e sem clique; Coordenação = tudo normal */
       var fr = ""; try { fr = global.BimFocoUI ? global.BimFocoUI.frase() : ""; } catch (eFr) {}
       this.status("Disciplina: " + dd.get(id).nome + (id === dd.PADRAO ? " — a fita inteira." : " — só as ferramentas dela e as comuns.") + (fr ? " " + fr : ""));

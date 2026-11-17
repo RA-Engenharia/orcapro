@@ -15698,7 +15698,9 @@ secoes: [
 { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
 { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" },
 { id: "vista-fundo", rotulo: "Fundo", tipo: "lista", valor: fundoAtual, opcoes: (window.BimFundo ? BimFundo.MODOS : []).map(function (m) { return { id: m.id, rotulo: m.rotulo }; }) },
-{ id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual } ]
+{ id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual },
+{ id: "vista-disc", rotulo: "Disciplina", tipo: "lista", valor: (window.BimFocoUI && BimFocoUI.discDaVista ? BimFocoUI.discDaVista(id, "3d") : "coordenacao") || "coordenacao",
+opcoes: (window.BimModeloVista ? Object.keys(BimModeloVista.DISCIPLINAS) : ["arquitetura", "coordenacao"]).map(function (k) { return { id: k, rotulo: window.BimModeloVista ? BimModeloVista.DISCIPLINAS[k] : k }; }) } ]
 .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
 { nome: "Extensões", params: [
 { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
@@ -15714,6 +15716,7 @@ if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaC
 if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
 if (pid === "vista-fundo" && b.fundo) b.fundo(String(valor));
 if (pid === "vista-grade" && b.grade) b.grade(valor === true || valor === "true");
+if (pid === "vista-disc" && window.BimFocoUI && BimFocoUI.definirVista) BimFocoUI.definirVista(id, String(valor));
 if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
 if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
 BimShell.pintarFita();
@@ -15784,6 +15787,7 @@ if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} 
 this._bimVxMedir(st.ativa, id);
 st.ativa = id;
 this._bimVxLayout();
+try { if (window.BimFocoUI && BimFocoUI.vistaAtiva) BimFocoUI.vistaAtiva(id, v ? v.tipo : "3d"); } catch (eVD) {}
 try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
 try { if (window.BimInstUI && BimInstUI.aoAtivarVista) BimInstUI.aoAtivarVista(id); } catch (eND) {}
 if (v && (v.tipo === "2d" || v.tipo === "folha")) { try { BimShell.repintarVista(); } catch (e2d) {} return; }
@@ -86171,5 +86175,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=88135f3cff"},{"src":"js/bim-pacote.js?v=3a7a7c295a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=933c4c3d4f"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=00a41e4d45"},{"src":"js/bim-pacote.js?v=3a7a7c295a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=933c4c3d4f"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

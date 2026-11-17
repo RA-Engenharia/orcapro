@@ -15172,7 +15172,10 @@
             { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" },
             /* FUNDO E GRADE (js/bimfundo.js): material de venda sai sem grade e com fundo branco ou preto; vale ao reabrir */
             { id: "vista-fundo", rotulo: "Fundo", tipo: "lista", valor: fundoAtual, opcoes: (window.BimFundo ? BimFundo.MODOS : []).map(function (m) { return { id: m.id, rotulo: m.rotulo }; }) },
-            { id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual } ]
+            { id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual },
+            /* DISCIPLINA DA VISTA (16/11/2026): a disciplina escolhida fica plena e selecionável; as outras, esmaecidas e sem clique (Coordenação = tudo) — a mesma da fita */
+            { id: "vista-disc", rotulo: "Disciplina", tipo: "lista", valor: (window.BimFocoUI && BimFocoUI.discDaVista ? BimFocoUI.discDaVista(id, "3d") : "coordenacao") || "coordenacao",
+              opcoes: (window.BimModeloVista ? Object.keys(BimModeloVista.DISCIPLINAS) : ["arquitetura", "coordenacao"]).map(function (k) { return { id: k, rotulo: window.BimModeloVista ? BimModeloVista.DISCIPLINAS[k] : k }; }) } ]
               /* NÍVEL DE DETALHE (js/biminstui.js): Baixo / Médio / Alto desta vista 3D — o mesmo menu da barra de baixo */
               .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
           { nome: "Extensões", params: [
@@ -15190,6 +15193,7 @@
             if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
             if (pid === "vista-fundo" && b.fundo) b.fundo(String(valor));
             if (pid === "vista-grade" && b.grade) b.grade(valor === true || valor === "true");
+            if (pid === "vista-disc" && window.BimFocoUI && BimFocoUI.definirVista) BimFocoUI.definirVista(id, String(valor));
             if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
             if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
             BimShell.pintarFita();
@@ -15266,6 +15270,8 @@
       this._bimVxMedir(st.ativa, id);
       st.ativa = id;
       this._bimVxLayout();
+      /* DISCIPLINA DA VISTA (16/11/2026): o foco do 3D e o seletor da fita acompanham a disciplina da vista que ficou na frente (js/bimfocoui.js) */
+      try { if (window.BimFocoUI && BimFocoUI.vistaAtiva) BimFocoUI.vistaAtiva(id, v ? v.tipo : "3d"); } catch (eVD) {}
       /* S8: a regra do topo da viga é da vista na frente (planta estrutural × piso/3D) */
       try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
       /* NÍVEL DE DETALHE: a cena 3D passa ao nível da aba 3D ativada; o botão da barra mostra o da vista ativa (2D ou 3D) */

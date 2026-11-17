@@ -138,7 +138,8 @@
   function set(o) {
     var mudou = false;
     o = o || {};
-    if (o.disc != null && ID_DISC[o.disc] && o.disc !== ESTADO.disc) { ESTADO.disc = o.disc; mudou = true; }
+    /* o.vista === true: a escolha vem do campo Disciplina da VISTA, que também tem Mecânica = Climatização (a fita não tem) */
+    if (o.disc != null && (ID_DISC[o.disc] || (o.vista === true && ID_DISC_VIS[o.disc])) && o.disc !== ESTADO.disc) { ESTADO.disc = o.disc; mudou = true; }
     if (o.esmaecer != null && !!o.esmaecer !== ESTADO.esmaecer) { ESTADO.esmaecer = !!o.esmaecer; mudou = true; }
     if (o.cats && typeof o.cats === "object") {
       Object.keys(o.cats).forEach(function (id) {
@@ -198,6 +199,21 @@
   }
 
   function daFita(id) { return DA_FITA[id] || "coordenacao"; }
+
+  /* ------------------------------------------------------------------ DISCIPLINA DA VISTA (16/11/2026)
+   * Pedido do Rogério: o campo "Disciplina" das Propriedades de uma vista (planta, corte, elevação, 3D) passa a MANDAR no que sai pleno e
+   * selecionável (a da vista) e no que sai em meio-tom e sem clique (as outras). O vocabulário do campo é o do js/bimmodelovista.js
+   * (arquitetura, estrutural, hidraulica, eletrica, mecanica, coordenacao); o do foco é o daqui. Coordenação = tudo pleno e selecionável. */
+  var DA_VISTA = { arquitetura: "arquitetura", estrutural: "estrutura", hidraulica: "hidrossanitario", eletrica: "eletrica", mecanica: "climatizacao", coordenacao: "coordenacao" };
+  var PARA_VISTA = { arquitetura: "arquitetura", estrutura: "estrutural", hidrossanitario: "hidraulica", eletrica: "eletrica", climatizacao: "mecanica", coordenacao: "coordenacao" };
+  function daVista(id) { return DA_VISTA[txt(id).toLowerCase()] || "coordenacao"; }
+  function paraVista(foco) { return PARA_VISTA[foco] || "coordenacao"; }
+  /* a peça (classe IFC + disciplina gravada) fica em MEIO-TOM e sem clique numa vista de disciplina `vistaDisc` (id do campo da vista)? */
+  function fundoNaVista(vistaDisc, tipo, discPeca) {
+    var f = daVista(vistaDisc);
+    if (f === "coordenacao") return false;
+    return disciplinaDe(tipo, discPeca) !== f;
+  }
 
   /* ------------------------------------------------------------------ ROTULOS SEM SOBREPOSIÇÃO (16/11/2026)
    * Pedido do Rogério: "não deixar rótulos sobrepostos (2,92 duplicado em cima de outro)". Recebe as caixas dos rótulos NA TELA, em px
@@ -293,6 +309,7 @@
   var BimFoco = {
     DISCIPLINAS: DISCIPLINAS, DISC_VIS: DISC_VIS, CATEGORIAS: CATEGORIAS, OUTROS: OUTROS, OPACIDADES: OPACIDADES, FUNDO_OP: FUNDO_OP, DA_FITA: DA_FITA,
     categoriaDe: categoriaDe, disciplinaDe: disciplinaDe, avaliar: avaliar, resumo: resumo, daFita: daFita,
+    daVista: daVista, paraVista: paraVista, fundoNaVista: fundoNaVista, DA_VISTA: DA_VISTA, PARA_VISTA: PARA_VISTA,
     separarRotulos: separarRotulos, salvarVista: salvarVista, carregarVista: carregarVista, esquecerVista: esquecerVista, configurar: configurar,
     get: get, set: set, reiniciar: reiniciar, restaurarCategorias: restaurarCategorias, ativo: ativo,
     cotasOc: function () { return !!ESTADO.cotasOc; },

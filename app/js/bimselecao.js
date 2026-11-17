@@ -386,6 +386,8 @@
       }
       /* o tubo derivado da piscina (js/piscinaderiv.js) não é peça que se pegue: quem anda é a piscina ou a casa de máquinas */
       if (global.PiscinaDeriv) l = l.filter(function (u) { return !PiscinaDeriv.ehDerivado(String(u).replace(/^edit:/, "")); });
+      /* DISCIPLINA DA VISTA (16/11/2026): a peça de OUTRA disciplina que a da vista não pega clique (nem o Tab) — a parede atrás do tubo é a pegada */
+      if (global.BimFocoUI && global.BimFocoUI.selecionavelNaVista) l = l.filter(function (u) { return global.BimFocoUI.selecionavelNaVista(id, u); });
       return l;
     },
     /* a peça sob o ponto: a 1ª candidata — ou a escolhida com Tab, enquanto o cursor não sai do lugar */
@@ -526,7 +528,7 @@
         return true;
       }
       if (d.modo === "janela" && d.j) {
-        var ids = pegaJanela(d.j, pecasDoDesenho(c && c.dados, function (u) { return /^edit:/.test(u); }));
+        var ids = pegaJanela(d.j, pecasDoDesenho(c && c.dados, function (u) { return /^edit:/.test(u) && (!global.BimFocoUI || !global.BimFocoUI.selecionavelNaVista || global.BimFocoUI.selecionavelNaVista(id, u)); }));
         this.selecionar(ids, d.ctrl ? "somar" : "trocar");
         try { if (global.BimInstJanela && global.BimInstJanela.aposJanela) global.BimInstJanela.aposJanela(ids, "2d"); } catch (eJ) {}   /* item 8: a oferta do 3D do ambiente (prévia hidro, js/biminstjanela.js) */
         status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
