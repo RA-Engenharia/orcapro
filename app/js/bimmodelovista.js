@@ -114,7 +114,7 @@
       campos: { escala: true, nivelDetalhe: true, disciplina: true, estiloVisual: true, vg: true, filtros: true },
       valores: { escala: 50, nivelDetalhe: "medio", disciplina: "arquitetura", estiloVisual: "linhasOcultas", vg: {}, filtros: {} } },
     "ra-detalhe": { id: "ra-detalhe", nome: "Detalhe RA", tipoVista: "chamada", ra: true,
-      campos: { escala: true, nivelDetalhe: true, estiloVisual: true },
+      campos: { nivelDetalhe: true, estiloVisual: true },   /* a ESCALA é de cada detalhe (1:20 de início; 1:10, 1:5… à escolha do usuário) — o modelo não a trava (16/11/2026) */
       valores: { escala: 20, nivelDetalhe: "alto", estiloVisual: "linhasOcultas" } },
     "ra-desenho": { id: "ra-desenho", nome: "Vista de Desenho RA", tipoVista: "desenho", ra: true,
       campos: { escala: true, nivelDetalhe: true },
@@ -203,6 +203,8 @@
       if (v.paiId) o.paiId = txt(v.paiId);
       if (v.ret) { var r = obj(v.ret); o.ret = { x0: num(r.x0, 0), y0: num(r.y0, 0), x1: num(r.x1, 1), y1: num(r.y1, 1) }; }
       if (v.numero) o.numero = txt(v.numero).slice(0, 8);
+      /* CHAMADA CIRCULAR (16/11/2026): a região é um círculo (centro e raio, em m); `ret` guarda a caixa dele — o recorte continua o da caixa */
+      if (v.forma === "circulo" && v.circ && isFinite(+v.circ.cx) && isFinite(+v.circ.cy) && +v.circ.r > 0) { o.forma = "circulo"; o.circ = { cx: +v.circ.cx, cy: +v.circ.cy, r: +v.circ.r }; }
       /* a elevação que o GERADOR DE PRANCHAS pôs (pvAuto) e a face dela: ele a reposiciona quando a caixa da edificação muda; a feita à mão não */
       if (v.pvAuto) { o.pvAuto = true; if (/^(norte|sul|leste|oeste)$/.test(txt(v.pvDir))) o.pvDir = txt(v.pvDir); }
       if (v.linhas2d) { o.linhas2d = {}; Object.keys(obj(v.linhas2d)).forEach(function (k) { var q = obj(v.linhas2d[k]); if ([q.x1, q.y1, q.x2, q.y2].every(function (x) { return isFinite(+x); })) o.linhas2d[k] = { x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, pena: Math.max(1, Math.min(16, Math.round(num(q.pena, 3)))) }; }); }
@@ -1157,7 +1159,7 @@
       var P = P2(); if (!P || !P._cache[id] || !P._cache[id].el) { toast("Abra a vista primeiro.", "aviso"); return false; }
       this._pick = { id: id, modo: modo, pts: [] };
       P._cache[id].el.setAttribute("data-d2-pick", "1");
-      var dica = { recorte: "Região de recorte: clique dois cantos.", chamada: "Chamada de detalhe: clique dois cantos da região.", linha: "Linha de detalhe: clique o início e o fim (Esc encerra).", interior: "Elevação interior: clique dentro do cômodo, perto da parede que quer ver." }[modo];
+      var dica = { recorte: "Região de recorte: clique dois cantos.", chamada: "Chamada de detalhe: clique dois cantos da região.", "chamada-circulo": "Chamada circular: clique o CENTRO e depois um ponto da borda do círculo.", linha: "Linha de detalhe: clique o início e o fim (Esc encerra).", interior: "Elevação interior: clique dentro do cômodo, perto da parede que quer ver." }[modo];
       status(dica + " Esc cancela.");
       var self = this;
       if (!this._esc && typeof document !== "undefined") {
@@ -1185,6 +1187,12 @@
         pk.pts = [b]; status("Linha gravada. Próximo ponto (Esc encerra)."); return true;
       }
       this.cancelarPick();
+      if (pk.modo === "chamada-circulo") {   /* centro + ponto da borda -> circulo; o recorte e a caixa dele */
+        var rcc = Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2));
+        if (rcc < 0.05) { toast("Círculo pequeno demais: clique a borda mais longe do centro.", "aviso"); return true; }
+        if (P && P.criarChamada) P.criarChamada(id, { x0: r4(a[0] - rcc), y0: r4(a[1] - rcc), x1: r4(a[0] + rcc), y1: r4(a[1] + rcc) }, { forma: "circulo", circ: { cx: r4(a[0]), cy: r4(a[1]), r: r4(rcc) } });
+        return true;
+      }
       if (Math.abs(b[0] - a[0]) < 0.1 || Math.abs(b[1] - a[1]) < 0.1) { toast("Região pequena demais: clique dois cantos mais afastados.", "aviso"); return true; }
       if (pk.modo === "recorte") {
         var vv = this.vistaObj(id, P.def(id));
@@ -1207,7 +1215,8 @@
         { id: "elevacao-interior", rotulo: "Elevação\ninterior", icone: "casa", dica: "Clique dentro do cômodo, perto da parede: a elevação interior olha para ela, recortada pelas paredes do cômodo." },
         { id: "planta-forro", rotulo: "Planta\nde forro", icone: "planta", dica: "Planta de forro refletido do nível de trabalho: corte a 2,30 m olhando para CIMA, desenhada como a planta (o forro, as vigas e a laje acima)." },
         { id: "planta-estrutural", rotulo: "Planta\nestrutural", icone: "estrutura", dica: "Planta estrutural (fôrma) do nível de trabalho, com o modelo de vista Planta Estrutural RA: sem mobiliário, portas e instalações; paredes em meio-tom." },
-        { id: "chamada-detalhe", rotulo: "Chamada de\ndetalhe", icone: "alvo", dica: "Desenhe um retângulo na planta ou no corte: a região vira uma vista de detalhe em escala maior (1:20), com a marca na vista-mãe." },
+        { id: "chamada-detalhe", rotulo: "Chamada de\ndetalhe", icone: "alvo", dica: "Desenhe um retângulo na planta ou no corte: a região vira uma vista de detalhe em escala maior (1:20), com a marca na vista-mãe (bolha com o número e, quando a vista está numa folha, o número da folha). Na vista de detalhe, Anotar › texto, nota-chave, linha de detalhe e cota." },
+        { id: "chamada-circular", rotulo: "Chamada\ncircular", icone: "alvo", dica: "Chamada de detalhe em CÍRCULO: clique o centro e um ponto da borda. Mesma vista de detalhe (escala própria, anotações, folha), com a marca redonda na vista-mãe." },
         { id: "vista-desenho", rotulo: "Vista de\ndesenho", icone: "regua", dica: "Vista de desenho: um papel em branco em escala, para detalhe típico com linhas de detalhe (sem o modelo)." },
         { id: "duplicar-vista", rotulo: "Duplicar\nvista", icone: "copiar", dica: "Duplica a vista 2D ativa com os mesmos parâmetros e V/G próprio." }
       ]);
@@ -1239,6 +1248,11 @@
         var a = ativa2d(), P = P2(), d = a ? P.def(a) : null;
         if (!d || d.tipo === "desenho") { toast("Abra uma planta, corte ou elevação 2D e use a Chamada de detalhe nela.", "aviso"); return true; }
         self.armarPick(a, "chamada"); return true;
+      };
+      reg["chamada-circular"] = function () {
+        var a = ativa2d(), P = P2(), d = a ? P.def(a) : null;
+        if (!d || d.tipo === "desenho") { toast("Abra uma planta, corte ou elevação 2D e use a Chamada circular nela.", "aviso"); return true; }
+        self.armarPick(a, "chamada-circulo"); return true;
       };
       reg["vista-desenho"] = function () { P2().criarDesenhoP6(); return true; };
       reg["duplicar-vista"] = function () { var a = ativa2d(); if (!a) { toast("Ative uma vista 2D (planta, corte, elevação) para duplicar.", "aviso"); return true; } self.duplicarVista(a); return true; };

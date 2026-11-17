@@ -64,7 +64,7 @@
       }
       var r = global.Store.salvar(this.empresa(), "bim_pranchas", reg);
       if (!r) toast("Não consegui salvar a folha (armazenamento cheio?).", "erro");
-      else this._marcar(r);
+      else { this._marcar(r); try { if (B2() && B2().atualizarBolhasFolha) B2().atualizarBolhasFolha(); } catch (eB) {} }   /* a bolha da chamada na vista-mae mostra a folha */
       return r;
     },
     /* a pilha é DA OBRA: trocou de obra, zera (Ctrl+Z na obra B não pode gravar a folha da obra A) */

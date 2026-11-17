@@ -11074,6 +11074,7 @@
            "é a elevação que está errada. O <b>corte da planta</b> é a altura em que o desenho corta a parede — " +
            "1,20 m passa acima do peitoril e abaixo do topo da porta.</p>";
       if (temCopia) h += this._nivOpcHtml();
+      if (!novo) h += this._nivManterHtml();
       if (v.erros.length) {
         h += '<div class="bim-aviso bim-aviso-erro" style="margin-top:10px">' +
              v.erros.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
@@ -11100,6 +11101,7 @@
       this._nivNovo1 = novo;
       this._nivCopias = {};   /* id do rascunho → nome do nível de origem (Copiar para cima) */
       this._nivOpc = { planta: true, estrutural: false };
+      this._nivManter = false;   /* padrão = o comportamento de sempre: o que está preso ao nível acompanha */
 
       var bg = UI.modal("Níveis do projeto", this._nivCorpo(lista, novo), [
         { texto: "+ Nível acima", classe: "", onClick: function () { self._nivNovo(); } },
@@ -11118,6 +11120,58 @@
         inp.onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); this.blur(); } };
       });
       this._nivOpcLigar(box);
+      this._nivManterLigar(box);
+    },
+
+    /* ---- MOVER NÍVEL SEM MEXER NA VOLUMETRIA (16/11/2026, js/bimnivelmover.js) ----
+       Pedido do Rogério: "ao editar a elevação de um nível, opção 'Manter os elementos onde estão'". Padrão DESMARCADO
+       = o de sempre (o que está preso ao nível acompanha). Marcada: cada peça presa ao nível recebe o deslocamento
+       compensatório e fica exatamente onde estava; o lote leva a cota antiga e a nova do nível, então o Desfazer
+       devolve as duas coisas (js/bim.js, _editDesfazer). */
+    _nivManterHtml: function () {
+      return '<div class="bim-aviso bim-aviso-info" style="margin-top:10px;font-size:12px" data-niv-manter-box="1">' +
+        '<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-gniv-manter="1"' + (this._nivManter ? " checked" : "") + '> <b>Manter os elementos onde estão</b></label>' +
+        '<div class="muted" style="font-size:10.5px;margin-top:4px">Desmarcado, as paredes, lajes, pilares e vigas presos ao nível sobem e descem com ele. Marcado, só a cota do nível muda: cada peça ganha o deslocamento (base e topo) que a deixa na mesma posição 3D, e o orçamento não muda. Desfazer (Ctrl+Z) devolve a cota do nível junto.</div></div>';
+    },
+    _nivManterLigar: function (box) {
+      var self = this; if (!box) return;
+      var c = box.querySelector("[data-gniv-manter]");
+      if (c) c.onchange = function () { self._nivManter = !!this.checked; };
+    },
+    /* a cota antiga e a nova de cada nível que andou → { idDaChave: elevação } (a chave do Store, a mesma que a peça guarda) */
+    _nivMapaCotas: function (lista) {
+      var m = {}; (lista || []).forEach(function (n) { if (n && n.id != null && isFinite(Number(n.elevacao))) m[String(n.id)] = Number(n.elevacao); }); return m;
+    },
+    /* grava os níveis (lista de rascunho) e, com `manter`, empurra o lote compensatório para o modelo aberto. Devolve { falhou, compensadas }.
+       `antes` = os níveis gravados até agora. Sem modelo aberto não há peça para compensar: só grava a cota. */
+    _nivAplicarMudanca: function (antes, depois, manter) {
+      var self = this, MV = window.BimNivelMover, falhou = 0, comp = 0, lote = null;
+      var dl = MV ? MV.deltas(antes.map(function (n) { return { id: self._nivChave(n.id), elevacao: n.elevacao }; }), depois.map(function (n) { return { id: self._nivChave(n.id), elevacao: n.elevacao }; })) : {};
+      if (manter && MV && Object.keys(dl).length) {
+        var est = null; try { est = window.BIM && BIM.editarEstado ? (BIM.editarEstado() || {}).estado : null; } catch (eE) { est = null; }
+        if (est) {
+          var cp = MV.compensar(est, dl);
+          if (cp.ops.length) {
+            lote = MV.lote(cp.ops, "nv" + Date.now().toString(36));
+            lote.nivelMover = { antes: this._nivMapaCotas(antes.map(function (n) { return { id: self._nivChave(n.id), elevacao: n.elevacao }; })), depois: this._nivMapaCotas(depois.map(function (n) { return { id: self._nivChave(n.id), elevacao: n.elevacao }; })) };
+            comp = cp.ops.length;
+          }
+        }
+      }
+      depois.forEach(function (n) { if (!self._nivGravar(n)) falhou++; });
+      if (!falhou && lote) { try { if (!(window.BIM && BIM.editarLote && BIM.editarLote(lote))) comp = 0; } catch (eL) { comp = 0; } }
+      return { falhou: falhou, compensadas: comp, mexeu: Object.keys(dl).length };
+    },
+    /* Desfazer/Refazer do lote: devolve as cotas dos níveis ({ idDaChave: elevação }) sem tocar nas peças */
+    _nivRestaurar: function (mapa) {
+      var self = this, L = this._nivLer(); if (!mapa) return;
+      L.forEach(function (n) {
+        var k = String(n.id); if (!Object.prototype.hasOwnProperty.call(mapa, k)) return;
+        if (Math.abs(Number(n.elevacao) - mapa[k]) < 1e-9) return;
+        n.elevacao = mapa[k]; self._nivGravar(n);
+      });
+      try { this._nivArvore(); } catch (eA) {}
+      try { if (window.Bim2D) Bim2D._avisarMudou(); } catch (eM) {}
     },
 
     /* ---- COPIAR NÍVEL PARA CIMA (de qualquer nível) — o motor é o
@@ -11313,6 +11367,54 @@
       this._nivAquiAtualizar();
       return ops;
     },
+    /* ENCAIXAR NÍVEL NO TOPO DE… (16/11/2026): clicar numa peça (ou num ponto do corte) → um nível JÁ EXISTENTE vai para essa cota.
+       A mesma opção "Manter os elementos onde estão" da tela de Níveis (padrão desmarcada: o que está preso ao nível acompanha). */
+    _nivEncaixarDialogo: function (info, extra) {
+      var N = window.Niveis, self = this;
+      if (!N || !window.BimNivelMover) return null;
+      if (this._bloqueado && this._bloqueado()) return null;
+      info = info || { cotas: [] }; extra = extra || {};
+      if (info.cotas == null && info.uid) info = this._nivAquiInfo(info.uid) || { uid: info.uid, cotas: [] };
+      var ops = (info.cotas || []).slice();
+      if (extra.cotaClique != null && isFinite(extra.cotaClique)) ops.push({ id: "clique", rotulo: "Onde cliquei (no corte)", cota: Math.round(extra.cotaClique * 100) / 100 });
+      var lista = this._nivLer();
+      if (!ops.length) { UI.toast("Não achei a cota desta peça. Selecione uma peça modelada (pilar, viga, laje, parede).", "aviso"); return null; }
+      if (!lista.length) { UI.toast("Esta obra ainda não tem níveis.", "aviso"); return null; }
+      function br(z) { return (z >= 0 ? "+" : "") + z.toFixed(2).replace(".", ","); }
+      var L = N.listar(lista);
+      this._nivEncCtx = { ops: ops, lista: lista };
+      var h = '<p class="muted" style="margin:0 0 8px;font-size:12px">' + (info.uid ? "<b>" + Util.esc(info.nome || "Peça") + "</b> selecionada. " : "") + "Escolha a cota e o nível que vai para ela.</p>" +
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:start;font-size:12.5px"><b>Cota</b><div>' + ops.map(function (o, i) {
+          return '<label style="display:flex;gap:6px;align-items:center;padding:2px 0"><input type="radio" name="niv-enc-ref" value="' + o.id + '"' + (i === 0 ? " checked" : "") + "> " + Util.esc(o.rotulo) + ' <b style="margin-left:4px">' + br(o.cota) + " m</b></label>";
+        }).join("") + "</div>" +
+        '<label for="niv-enc-nivel"><b>Nível</b></label><select id="niv-enc-nivel">' + L.map(function (n) { return '<option value="' + Util.esc(n.id) + '">' + Util.esc(n.nome) + " (" + br(n.elevacao) + " m)</option>"; }).join("") + "</select></div>" +
+        '<div class="bim-aviso bim-aviso-info" style="margin-top:10px;font-size:12px"><label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="niv-enc-manter"> <b>Manter os elementos onde estão</b></label>' +
+        '<div class="muted" style="font-size:10.5px;margin-top:4px">Desmarcado, o que está preso ao nível anda junto com ele. Marcado, as peças ficam na mesma posição 3D e só a cota do nível muda. Desfazer (Ctrl+Z) volta a cota quando marcado.</div></div>';
+      UI.modal("Encaixar nível no topo daqui", h, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Encaixar", classe: "primary", onClick: function () { self._nivEncaixarConfirmar(); } }
+      ]);
+      return ops;
+    },
+    _nivEncaixarConfirmar: function () {
+      var N = window.Niveis, MV = window.BimNivelMover, ctx = this._nivEncCtx || { ops: [], lista: [] };
+      if (!N || !MV) return null;
+      if (this._semSessao()) { UI.toast("Entre na sua conta para salvar os níveis.", "erro"); return null; }
+      var r = document.querySelector('#modal-bg input[name="niv-enc-ref"]:checked'), sel = document.getElementById("niv-enc-nivel"), mt = document.getElementById("niv-enc-manter");
+      var o = ctx.ops.filter(function (x) { return r && x.id === r.value; })[0] || ctx.ops[0];
+      if (!o || !sel) return null;
+      var antes = this._nivLer(), depois = MV.encaixar(antes, sel.value, o.cota);
+      if (!depois) { UI.toast("Não achei o nível escolhido.", "erro"); return null; }
+      var v = N.validar(depois);
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return null; }
+      var ap = this._nivAplicarMudanca(antes, depois, !!(mt && mt.checked));
+      if (ap.falhou) { UI.toast("Não consegui salvar o nível. Confira o espaço do navegador.", "erro"); return null; }
+      UI.fecharModal();
+      this._nivArvore();
+      try { if (window.Bim2D) Bim2D._avisarMudou(); } catch (eM) {}
+      UI.toast("Nível encaixado a " + (o.cota >= 0 ? "+" : "") + o.cota.toFixed(2).replace(".", ",") + " m." + (ap.compensadas ? " " + ap.compensadas + " peça(s) mantida(s) onde estavam." : ""), "ok");
+      return { cota: o.cota, compensadas: ap.compensadas };
+    },
     _nivAquiCota: function () {
       var ctx = this._nivAquiCtx || { ops: [] }, r = document.querySelector('#modal-bg input[name="niv-aq-ref"]:checked');
       var o = ctx.ops.filter(function (x) { return r && x.id === r.value; })[0] || ctx.ops[0];
@@ -11383,7 +11485,8 @@
         if (!uid && sob) uid = sob;
         if (!uid) { try { var s = BIM.selecao().uids || []; if (s.length === 1) uid = s[0]; } catch (eS) {} }
         var info = uid ? self._nivAquiInfo(uid) : null;
-        var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }] : [];
+        var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } },
+          { id: "niv-encaixar", rotulo: "Encaixar nível no topo daqui…", fn: function () { self._nivEncaixarDialogo(info || { cotas: [] }, extra); } }] : [];
         /* PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js): "Paginar piso" no ambiente sob o
            cursor (planta ou 3D) e "Paginar revestimento" na parede / nas paredes selecionadas */
         try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.concat(BimPaginacaoUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (ePg) {}
@@ -11480,12 +11583,11 @@
       r.forEach(function (n) { idsNovos[String(n.id)] = 1; });
       var apagar = antes.filter(function (n) { return !idsNovos[String(n.id)]; })
                         .map(function (n) { return String(n.id); });
-      var falhou = 0;
-      r.forEach(function (n) { if (!self._nivGravar(n)) falhou++; });
+      var ap = this._nivAplicarMudanca(antes, r, !!this._nivManter), falhou = ap.falhou;
       if (apagar.length) { try { Store.excluirVarios(eid(), "bim_niveis", apagar); } catch (e) {} }
       if (falhou) { UI.toast("Não consegui salvar " + falhou + " nível(is). Confira o espaço do navegador.", "erro"); return; }
       UI.fecharModal();
-      UI.toast(r.length + " nível(is) salvos.", "ok");
+      UI.toast(r.length + " nível(is) salvos." + (ap.compensadas ? " " + ap.compensadas + " peça(s) mantida(s) onde estavam (Desfazer volta a cota do nível)." : ""), "ok");
       /* os copiados para cima nesta abertura: as plantas que as opções pediram */
       var cps = this._nivCopias || {}, novos = [];
       r.forEach(function (n) { if (cps[String(n.id)]) novos.push({ id: self._nivChave(n.id), nome: n.nome }); });

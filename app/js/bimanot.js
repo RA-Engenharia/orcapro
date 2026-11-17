@@ -548,7 +548,7 @@
  *
  * OPS
  *   { op:"anot2d", id, vista, tipo, …campos }  cria/substitui um item:
- *       tipo = cota | texto | simbolo | notaChave | nuvem | linha | regiao |
+ *       tipo = cota | texto | simbolo | nivelCota | notaChave | nuvem | linha | regiao |
  *              componente | legenda
  *   { op:"anot2dAjustar", id, campos:{…} }     muda campos (Propriedades)
  *   { op:"anot2dTipo", id, cat:"cota"|"texto", nome, base, valores:{…} }
@@ -761,7 +761,7 @@
     "junta": { nome: "Junta de dilatação", larg: 0.02, alt: 0.15, padrao: null }
   };
 
-  var TIPOS_ITEM = { cota: 1, texto: 1, simbolo: 1, notaChave: 1, nuvem: 1, linha: 1, regiao: 1, componente: 1, legenda: 1 };
+  var TIPOS_ITEM = { cota: 1, texto: 1, simbolo: 1, nivelCota: 1, notaChave: 1, nuvem: 1, linha: 1, regiao: 1, componente: 1, legenda: 1 };
   var TIPOS_DE_COTA = { linear: 1, alinhada: 1, angular: 1, radial: 1, diametro: 1, arco: 1, elevacao: 1, inclinacao: 1, coordenada: 1 };
   var OPS = { anot2d: 1, anot2dAjustar: 1, anot2dTipo: 1, revisao: 1 };
   /* campos que o anot2dAjustar aceita (o resto é do tipo do item ou fixo)
@@ -771,7 +771,7 @@
   var AJUSTAVEIS = { tipoCota: 1, tipoTexto: 1, off: 1, orient: 1, prefixo: 1, sufixo: 1, eq: 1, travada: 1, valorTravado: 1, chamada: 1,
                      texto: 1, x: 1, y: 1, lx: 1, ly: 1, comLider: 1, alinhH: 1, alinhV: 1, rot: 1, legivel: 1, simbolo: 1, escalaSimb: 1,
                      chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1,
-                     txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1 };
+                     txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1, nomeNivel: 1, cotaZ: 1, lado: 1 };
 
   /* ===================================================== tipos efetivos (RA + projeto) */
   function tiposProjeto(estado) { var a = estado && estado.anot2d; return (a && a.tipos) || { cota: [], texto: [] }; }
@@ -1049,6 +1049,8 @@
         (o.cota === "linear" || o.cota === "alinhada" || o.cota === "angular" || o.cota === "coordenada" ? o.refs.length >= 2 : true);
       case "texto": return fin(+o.x) && fin(+o.y) && String(o.texto || "").trim().length > 0;
       case "simbolo": return fin(+o.x) && fin(+o.y) && !!SIMBOLOS[o.simbolo];
+      /* NÍVEL DE COTA (16/11/2026): símbolo de nível só gráfico — nome e cota (m) ficam gravados na anotação; nada do modelo */
+      case "nivelCota": return fin(+o.x) && fin(+o.y) && fin(+o.cotaZ) && Math.abs(+o.cotaZ) < 1e4;
       case "notaChave": return fin(+o.x) && fin(+o.y) && String(o.chave || "").trim().length > 0;
       case "nuvem": return ptsOk(o.pts, 3) && o.revisao != null && o.revisao !== "";
       case "linha": return o.arco ? (fin(+o.arco.cx) && fin(+o.arco.cy) && +o.arco.r > 0) : ptsOk(o.pts, 2);
@@ -1364,6 +1366,13 @@
     var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "simbolo", x: r4(+o.x), y: r4(+o.y), simbolo: o.simbolo || "norte", rot: r4(num(o.rot, 0)) };
     return itemValido(it) ? { ok: true, op: it } : { ok: false, motivo: "Símbolo desconhecido." };
   }
+  /* nome (padrão "Nível"), cotaZ em metros (lida da altura clicada ou digitada), lado do texto ("dir" | "esq") */
+  function opNivelCota(o) {
+    var czs = String(o.cotaZ == null ? "" : o.cotaZ).trim(), cz = czs === "" ? NaN : Number(czs.replace(",", "."));
+    var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "nivelCota", x: r4(+o.x), y: r4(+o.y), nomeNivel: String(o.nomeNivel == null ? "Nível" : o.nomeNivel).trim().slice(0, 40), cotaZ: isFinite(cz) ? r4(cz) : NaN, lado: o.lado === "esq" ? "esq" : "dir" };
+    if (o.auto) it.auto = true;
+    return itemValido(it) ? { ok: true, op: it } : { ok: false, motivo: "Informe a cota do nível (em metros, ex.: 3,00)." };
+  }
   function opNotaChave(o) {
     var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "notaChave", x: r4(+o.x), y: r4(+o.y), chave: String(o.chave || "").trim(), texto: String(o.texto || "").trim() };
     if (fin(+o.lx) && fin(+o.ly)) { it.comLider = true; it.lx = r4(+o.lx); it.ly = r4(+o.ly); }
@@ -1652,6 +1661,20 @@
     }
     return '<g class="a7-item a7-simbolo' + (sel ? " a7-sel" : "") + '" data-a7="' + esc(it.id) + '"' + tr + ">" + s + "</g>";
   }
+  /* NÍVEL DE COTA — a mesma família do nível ▼ do corte (js/desenho2d.js svgNivel): linha fina, triângulo cheio com a ponta
+     NA cota e o texto "Nome +0,00" sobre a linha. Só desenho: não lê nem muda o modelo. */
+  function textoNivelCota(it) {
+    var v = +it.cotaZ, ab = Math.round(Math.abs(v) * 100) / 100, n = fmtNum(ab, 2);
+    var sg = ab === 0 ? "±" : v > 0 ? "+" : "-";
+    return (String(it.nomeNivel || "").trim() ? String(it.nomeNivel).trim() + " " : "") + sg + n;
+  }
+  function svgNivelCota(it, k, jogo, sel) {
+    var P = [num(it.x, 0), num(it.y, 0)], h = 2.5 * k, w = penaPx(2, jogo), sgn = it.lado === "esq" ? -1 : 1, tx = textoNivelCota(it), wT = largTexto(tx, h, null), t = 1.8 * k, s = "";
+    s += lnS([P[0] - sgn * 3.5 * k, P[1]], [P[0] + sgn * (wT + 5.5 * k), P[1]], w, "a7-l");
+    s += '<path d="M' + n4(P[0]) + " " + n4(P[1]) + "L" + n4(P[0] - t) + " " + n4(P[1] - t * 1.4) + "L" + n4(P[0] + t) + " " + n4(P[1] - t * 1.4) + 'Z" class="a7-cheio"/>';
+    s += txS([P[0] + sgn * 2.6 * k, P[1] - 1.1 * k], h, esc(tx), "a7-tx", sgn < 0 ? "end" : "start", 0, null);
+    return '<g class="a7-item a7-nivelcota' + (sel ? " a7-sel" : "") + '" data-a7="' + esc(it.id) + '">' + s + "</g>";
+  }
   function svgNotaChave(it, k, jogo, sel) {
     var p = [num(it.x, 0), num(it.y, 0)], h = 2.5 * k, w = penaPx(1, jogo), ch = String(it.chave || ""), bw = Math.max(largTexto(ch, h, null) + 1.6 * k, 6 * k), bh = h * 1.7, s = "";
     if (it.comLider && fin(+it.lx) && fin(+it.ly)) { var alvo = [+it.lx, +it.ly], a = [p[0] + (alvo[0] < p[0] ? -bw / 2 : bw / 2), p[1]]; s += lnS(a, alvo, w, "a7-l") + marcaS(alvo, unit(sub(alvo, a)) || [1, 0], { marca: "seta" }, k, w); }
@@ -1822,6 +1845,7 @@
       else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel, e && e.corCotas); }
       else if (it.tipo === "texto") resto += svgTexto(it, o.t, k, jogo, sel);
       else if (it.tipo === "simbolo") resto += svgSimbolo(it, k, jogo, sel, e);
+      else if (it.tipo === "nivelCota") resto += svgNivelCota(it, k, jogo, sel);
       else if (it.tipo === "notaChave") resto += svgNotaChave(it, k, jogo, sel);
       else if (it.tipo === "nuvem") resto += svgNuvem(it, a.revs[it.revisao], k, jogo, sel);
       else if (it.tipo === "linha") resto += svgLinha(it, k, jogo, sel);
@@ -1842,6 +1866,7 @@
     a.itens.forEach(function (o) {
       var it = o.it;
       if (fin(+it.x)) P([+it.x, +it.y], 12 * k);
+      if (it.tipo === "nivelCota") P([+it.x + (it.lado === "esq" ? -1 : 1) * (largTexto(textoNivelCota(it), 2.5 * k, null) + 6 * k), +it.y], 3 * k);
       if (fin(+it.lx)) P([+it.lx, +it.ly], 4 * k);
       arr(it.pts).forEach(function (q) { P([+q.x, +q.y], 4 * k); });
       if (it.arco) P([+it.arco.cx, +it.arco.cy], +it.arco.r + 2 * k);
@@ -1868,7 +1893,7 @@
     acharRef: acharRef, offsetPara: offsetPara,
     validaOp: validaOp, aplicarOp: aplicarOp, fimOp: fimOp, registrar: registrar,
     tingir: tingir, itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
-    opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
+    opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNivelCota: opNivelCota, textoNivelCota: textoNivelCota, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
     opComponente: opComponente, opLegenda: opLegenda, opRevisao: opRevisao, opTravar: opTravar, opsIgualar: opsIgualar, opsManterTrava: opsManterTrava,
     anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda,
     /* COTAS (js/bimcotas.js): a fonte da projeção de cada vista (o corte) e a projeção de uma vista */

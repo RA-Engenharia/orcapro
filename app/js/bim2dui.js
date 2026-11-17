@@ -1160,7 +1160,7 @@
         var pai = /^d2v-/.test(v.paiId) ? this._p6Def(v.paiId, (prof || 0) + 1) : this._defBase(v.paiId);
         if (!pai || pai.tipo === "desenho") return null;
         var o = {}; Object.keys(pai).forEach(function (k) { o[k] = pai[k]; });
-        o.id = id; o.p6base = pai.p6 || null; o.p6 = "chamada"; o.nome = v.nome; o.pai = v.paiId; o.ret = v.ret;
+        o.id = id; o.p6base = pai.p6 || null; o.p6 = "chamada"; o.nome = v.nome; o.pai = v.paiId; o.ret = v.ret; if (v.forma) { o.forma = v.forma; o.circ = v.circ; }
         return o;
       }
       if (v.tipo === "desenho") return { id: id, tipo: "desenho", p6: "desenho", nome: v.nome };
@@ -1210,8 +1210,27 @@
       return out;
     },
     /* as marcas das vistas P6 que aparecem nesta vista */
+    /* em que folha a vista esta: { folha: "A-05", detalhe: "2" } ou null (falha = sem folha) */
+    _p6FolhaDe: function (vistaId) {
+      try {
+        var BF = global.BimFolhaUI, PR = global.Prancha; if (!BF || !PR || !PR.vistaEmFolha || !BF.registros) return null;
+        var em = PR.vistaEmFolha(BF.registros().map(function (r) { return PR.normalizar(r); }), vistaId); if (!em) return null;
+        return { folha: String(PR.numeroFolha(em.prancha, em.folha) || ""), detalhe: em.bloco && em.bloco.numeroDetalhe != null ? String(em.bloco.numeroDetalhe) : "" };
+      } catch (e) { return null; }
+    },
+    /* a folha mudou (a vista de detalhe entrou ou saiu dela): as vistas-mae redesenham a bolha so se o "n / folha" de alguma chamada mudou */
+    atualizarBolhasFolha: function () {
+      var M = this._p6(); if (!M) return false;
+      var self = this, sig = [], pais = {};
+      var vs = M.estado().vistas || {};
+      Object.keys(vs).forEach(function (k) { var v = vs[k]; if (v && v.tipo === "chamada" && v.paiId) { var f = self._p6FolhaDe(k); sig.push(k + "=" + (f ? f.folha + "/" + f.detalhe : "")); pais[v.paiId] = 1; } });
+      var s = sig.join("|"); if (s === this._sigFolhas) return false;
+      this._sigFolhas = s;
+      Object.keys(pais).forEach(function (p) { if (self._cache[p]) self.redesenhar(p, false); });
+      return true;
+    },
     _p6Marcas: function (d) {
-      var M = this._p6(), out = []; if (!M) return out;
+      var M = this._p6(), out = [], self = this; if (!M) return out;
       var est = M.estado();
       function olhar(L) { var dx = L.bx - L.ax, dz = L.bz - L.az, n = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / n, nz = -dx / n; return L.inv ? [-nx, -nz] : [nx, nz]; }
       Object.keys(est.vistas).forEach(function (k) {
@@ -1223,7 +1242,11 @@
           }
           if (v.tipo === "corte") out.push({ tipo: "corte", id: k, letra: v.marca || "?", a: [v.linha.ax, v.linha.az], b: [v.linha.bx, v.linha.bz], olhar: olhar(v.linha) });
         }
-        if (v.tipo === "chamada" && v.paiId === d.id && v.ret) out.push({ tipo: "chamada", id: k, x0: v.ret.x0, y0: v.ret.y0, x1: v.ret.x1, y1: v.ret.y1, rotulo: v.numero || "" });
+        if (v.tipo === "chamada" && v.paiId === d.id && v.ret) {
+          /* a bolha leva o numero do detalhe e, com a vista numa FOLHA, o numero da folha (n / folha, como a chamada do Revit) */
+          var fo = self._p6FolhaDe(k);
+          out.push({ tipo: "chamada", id: k, x0: v.ret.x0, y0: v.ret.y0, x1: v.ret.x1, y1: v.ret.y1, rotulo: (fo && fo.detalhe) || v.numero || "", folha: fo ? fo.folha : "", forma: v.forma || "", circ: v.forma ? v.circ : null });
+        }
       });
       return out;
     },
@@ -1300,10 +1323,12 @@
       return v;
     },
     /* CHAMADA DE DETALHE: a região (coordenadas da vista-mãe) vira uma vista em escala maior */
-    criarChamada: function (idPai, ret) {
+    criarChamada: function (idPai, ret, extra) {
       var M = this._p6(), pai = this.def(idPai); if (!M || !pai || pai.tipo === "desenho") return null;
       var n = Object.keys(M.estado().vistas).filter(function (k) { return M.estado().vistas[k].tipo === "chamada"; }).length + 1;
-      var v = M.criar("chamada", { nome: "Detalhe " + n, paiId: idPai, ret: ret, numero: String(n) });
+      var campos = { nome: "Detalhe " + n, paiId: idPai, ret: ret, numero: String(n) };
+      if (extra && extra.forma === "circulo") { campos.forma = "circulo"; campos.circ = extra.circ; }   /* CHAMADA CIRCULAR */
+      var v = M.criar("chamada", campos);
       return this._p6Depois(v, true, "“" + v.nome + "” criada (1:" + v.escala + "): a marca está em " + pai.nome + ".");
     }
   };

@@ -1063,12 +1063,24 @@
   }
   function p6MarcaChamada(m, k, pena) {
     var x0 = Math.min(m.x0, m.x1), x1 = Math.max(m.x0, m.x1), y0 = Math.min(m.y0, m.y1), y1 = Math.max(m.y0, m.y1), r = Math.min(2.5 * k, (x1 - x0) / 4, (y1 - y0) / 4), R = 3.5 * k;
-    var bx = x1 + 7 * k, by = y0 - 7 * k;
-    return '<g class="d2-p6-chamada" data-d2-vista="' + esc(m.id) + '">' +
-      '<rect x="' + n4(x0) + '" y="' + n4(y0) + '" width="' + n4(x1 - x0) + '" height="' + n4(y1 - y0) + '" rx="' + n4(r) + '" ry="' + n4(r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
-      '<line x1="' + n4(x1) + '" y1="' + n4(y0) + '" x2="' + n4(bx - R * 0.7071) + '" y2="' + n4(by + R * 0.7071) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
-      '<circle cx="' + n4(bx) + '" cy="' + n4(by) + '" r="' + n4(R) + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-marca-circ"/>' +
-      txt(bx, by + 1.0 * k, 2.8 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle") + "</g>";
+    var bx = x1 + 7 * k, by = y0 - 7 * k, circ = m.forma === "circulo" && m.circ && m.circ.r > 0 ? m.circ : null, s = "";
+    if (circ) {
+      /* CHAMADA CIRCULAR: o circulo (centro e raio) e a linha de chamada saindo da borda a 45 graus ate a bolha */
+      var d45 = 0.7071, ex = circ.cx + circ.r * d45, ey = circ.cy - circ.r * d45;
+      bx = ex + 7 * k * d45; by = ey - 7 * k * d45;
+      s += '<circle cx="' + n4(circ.cx) + '" cy="' + n4(circ.cy) + '" r="' + n4(circ.r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+        '<line x1="' + n4(ex) + '" y1="' + n4(ey) + '" x2="' + n4(bx - R * d45) + '" y2="' + n4(by + R * d45) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>';
+    } else {
+      s += '<rect x="' + n4(x0) + '" y="' + n4(y0) + '" width="' + n4(x1 - x0) + '" height="' + n4(y1 - y0) + '" rx="' + n4(r) + '" ry="' + n4(r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+        '<line x1="' + n4(x1) + '" y1="' + n4(y0) + '" x2="' + n4(bx - R * 0.7071) + '" y2="' + n4(by + R * 0.7071) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>';
+    }
+    s += '<circle cx="' + n4(bx) + '" cy="' + n4(by) + '" r="' + n4(R) + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-marca-circ"/>';
+    /* com a vista numa folha: numero do detalhe em cima, numero da folha embaixo, separados por um traco (como a chamada do Revit) */
+    if (m.folha) {
+      s += '<line x1="' + n4(bx - R) + '" y1="' + n4(by) + '" x2="' + n4(bx + R) + '" y2="' + n4(by) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+        txt(bx, by - 0.5 * k, 2.2 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle") + txt(bx, by + 2.4 * k, 1.8 * k, esc(m.folha), "d2-marca-tx", "middle");
+    } else s += txt(bx, by + 1.0 * k, 2.8 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle");
+    return '<g class="d2-p6-chamada' + (circ ? " d2-p6-chamada-circ" : "") + '" data-d2-vista="' + esc(m.id) + '">' + s + "</g>";
   }
   function p6Marcas(lista, e, pena) {
     var k = e.escala / 1000, s = "";
@@ -1088,7 +1100,7 @@
     (lista || []).forEach(function (m) {
       if (!m) return;
       if (m.tipo === "elevacao") pt(+m.x, +m.y, M);
-      else if (m.tipo === "chamada") { pt(Math.max(m.x0, m.x1) + 7 * k, Math.min(m.y0, m.y1) - 7 * k, 5 * k); pt(m.x0, m.y0, 0); pt(m.x1, m.y1, 0); }
+      else if (m.tipo === "chamada") { if (m.forma === "circulo" && m.circ) pt(m.circ.cx + m.circ.r * 0.7071 + 5 * k, m.circ.cy - m.circ.r * 0.7071 - 5 * k, 5 * k); else pt(Math.max(m.x0, m.x1) + 7 * k, Math.min(m.y0, m.y1) - 7 * k, 5 * k); pt(m.x0, m.y0, 0); pt(m.x1, m.y1, 0); }
       else if (m.tipo === "corte" && m.a && m.b) { pt(m.a[0], m.a[1], M); pt(m.b[0], m.b[1], M); }
       else if (m.tipo === "recorte") { pt(m.x0, m.y0, k); pt(m.x1, m.y1, k); }
     });

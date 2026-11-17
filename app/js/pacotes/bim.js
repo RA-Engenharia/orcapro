@@ -14909,6 +14909,11 @@ if (!dentro.length) return null;
 var l = { op: "lote", id: o.id, ops: dentro };
 if (o.origem) l.origem = String(o.origem).slice(0, 20);
 if (o.pedido) l.pedido = String(o.pedido).slice(0, 300);
+if (o.nivelMover && typeof o.nivelMover === "object" && o.nivelMover.antes && o.nivelMover.depois) {
+var nm = { antes: {}, depois: {} };
+["antes", "depois"].forEach(function (q) { Object.keys(o.nivelMover[q] || {}).slice(0, 200).forEach(function (k) { var v = Number(o.nivelMover[q][k]); if (isFinite(v) && Math.abs(v) < 1e4) nm[q][String(k).slice(0, 120)] = v; }); });
+if (Object.keys(nm.antes).length) l.nivelMover = nm;
+}
 return l;
 });
 function fin(v) { return typeof v === "number" && isFinite(v); }
@@ -16208,6 +16213,75 @@ _setTeclas: function (c, s) { held.ctrl = !!c; held.shift = !!s; }
 };
 global.BimCotaRapida = CotaRapida;
 if (typeof module !== "undefined" && module.exports) module.exports = CotaRapida;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimnivelmover.js ==== */
+try {
+(function (global) {
+"use strict";
+var TOL = 1e-4;
+function arr(v) { return Array.isArray(v) ? v : []; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function mapa(niveis) {
+var m = {};
+arr(niveis).forEach(function (n) {
+if (!n || n.id == null) return;
+var e = Number(n.elevacao); if (!isFinite(e)) return;
+m[String(n.id)] = e;
+});
+return m;
+}
+function deltas(antes, depois) {
+var a = mapa(antes), d = mapa(depois), out = {};
+Object.keys(d).forEach(function (id) {
+if (!Object.prototype.hasOwnProperty.call(a, id)) return;
+var dz = d[id] - a[id];
+if (Math.abs(dz) > TOL) out[id] = r6(dz);
+});
+return out;
+}
+var VERTICAIS = { parede: 1, pilar: 1, escada: 1 };
+var DE_NIVEL = { laje: 1, viga: 1, cobertura: 1 };
+function compensar(estado, deltasMap) {
+var ops = [], dl = deltasMap || {};
+if (!Object.keys(dl).length) return { ops: ops, n: 0 };
+var lista = arr(estado && estado.caixas).concat(arr(estado && estado.coberturas));
+lista.forEach(function (c) {
+if (!c || c.id == null || c.v !== 2 || !(VERTICAIS[c.tipo] || DE_NIVEL[c.tipo])) return;
+var r = {}, mexeu = false;
+var nb = c.nivelBase != null && c.nivelBase !== "" ? String(c.nivelBase) : null;
+if (nb != null && Object.prototype.hasOwnProperty.call(dl, nb) && fin(c.deslocBase)) {
+r.nivelBase = nb; r.deslocBase = r6(c.deslocBase - dl[nb]); mexeu = true;
+}
+if (VERTICAIS[c.tipo]) {
+var rs = c.restricaoSuperior != null && c.restricaoSuperior !== "" ? String(c.restricaoSuperior) : null;
+if (rs != null && Object.prototype.hasOwnProperty.call(dl, rs)) {
+var ds = fin(c.deslocSuperior) ? c.deslocSuperior : 0;
+r.restricaoSuperior = rs; r.deslocSuperior = r6(ds - dl[rs]); mexeu = true;
+}
+}
+if (mexeu) ops.push({ op: "ajustar", id: c.id, campos: { restricoes: r } });
+});
+return { ops: ops, n: ops.length };
+}
+function lote(ops, id) {
+if (!arr(ops).length) return null;
+return { op: "lote", id: id || ("nv" + Date.now().toString(36)), origem: "nivel", pedido: "Mover nível mantendo os elementos", ops: ops };
+}
+function encaixar(niveis, id, cota) {
+var c = Number(cota); if (!isFinite(c)) return null;
+var achou = false;
+var nova = arr(niveis).map(function (n) {
+if (n && String(n.id) === String(id)) { achou = true; var o = {}; Object.keys(n).forEach(function (k) { o[k] = n[k]; }); o.elevacao = Math.round(c * 1000) / 1000; return o; }
+return n;
+});
+return achou ? nova : null;
+}
+var BimNivelMover = { deltas: deltas, compensar: compensar, lote: lote, encaixar: encaixar, TOL: TOL };
+global.BimNivelMover = BimNivelMover;
+global.BimNivelMoverUI = { restaurar: function (mapa) { var G = global.Gestao; if (G && G._nivRestaurar) G._nivRestaurar(mapa); } };
+if (typeof module !== "undefined" && module.exports) module.exports = BimNivelMover;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimprecisaoui.js ==== */
@@ -74168,13 +74242,13 @@ var COMPONENTES = {
 "perfil-u": { nome: "Perfil U (corte)", larg: 0.075, alt: 0.040, esp: 0.003, padrao: null },
 "junta": { nome: "Junta de dilatação", larg: 0.02, alt: 0.15, padrao: null }
 };
-var TIPOS_ITEM = { cota: 1, texto: 1, simbolo: 1, notaChave: 1, nuvem: 1, linha: 1, regiao: 1, componente: 1, legenda: 1 };
+var TIPOS_ITEM = { cota: 1, texto: 1, simbolo: 1, nivelCota: 1, notaChave: 1, nuvem: 1, linha: 1, regiao: 1, componente: 1, legenda: 1 };
 var TIPOS_DE_COTA = { linear: 1, alinhada: 1, angular: 1, radial: 1, diametro: 1, arco: 1, elevacao: 1, inclinacao: 1, coordenada: 1 };
 var OPS = { anot2d: 1, anot2dAjustar: 1, anot2dTipo: 1, revisao: 1 };
 var AJUSTAVEIS = { tipoCota: 1, tipoTexto: 1, off: 1, orient: 1, prefixo: 1, sufixo: 1, eq: 1, travada: 1, valorTravado: 1, chamada: 1,
 texto: 1, x: 1, y: 1, lx: 1, ly: 1, comLider: 1, alinhH: 1, alinhV: 1, rot: 1, legivel: 1, simbolo: 1, escalaSimb: 1,
 chave: 1, revisao: 1, estilo: 1, padrao: 1, mascara: 1, comp: 1, larg: 1, alt: 1, titulo: 1, refs: 1, pts: 1, ang: 1, base: 1,
-txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1 };
+txt: 1, unidade: 1, casas: 1, tmov: 1, dirMed: 1, graus: 1, auto: 1, cor: 1, nomeNivel: 1, cotaZ: 1, lado: 1 };
 function tiposProjeto(estado) { var a = estado && estado.anot2d; return (a && a.tipos) || { cota: [], texto: [] }; }
 function tiposCota(estado) { return TIPOS_COTA.concat(arr(tiposProjeto(estado).cota)); }
 function tiposTexto(estado) { return TIPOS_TEXTO.concat(arr(tiposProjeto(estado).texto)); }
@@ -74412,6 +74486,7 @@ case "cota": return !!TIPOS_DE_COTA[o.cota] && refsOk(o.refs) && (o.off == null 
 (o.cota === "linear" || o.cota === "alinhada" || o.cota === "angular" || o.cota === "coordenada" ? o.refs.length >= 2 : true);
 case "texto": return fin(+o.x) && fin(+o.y) && String(o.texto || "").trim().length > 0;
 case "simbolo": return fin(+o.x) && fin(+o.y) && !!SIMBOLOS[o.simbolo];
+case "nivelCota": return fin(+o.x) && fin(+o.y) && fin(+o.cotaZ) && Math.abs(+o.cotaZ) < 1e4;
 case "notaChave": return fin(+o.x) && fin(+o.y) && String(o.chave || "").trim().length > 0;
 case "nuvem": return ptsOk(o.pts, 3) && o.revisao != null && o.revisao !== "";
 case "linha": return o.arco ? (fin(+o.arco.cx) && fin(+o.arco.cy) && +o.arco.r > 0) : ptsOk(o.pts, 2);
@@ -74697,6 +74772,12 @@ function opSimbolo(o) {
 var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "simbolo", x: r4(+o.x), y: r4(+o.y), simbolo: o.simbolo || "norte", rot: r4(num(o.rot, 0)) };
 return itemValido(it) ? { ok: true, op: it } : { ok: false, motivo: "Símbolo desconhecido." };
 }
+function opNivelCota(o) {
+var czs = String(o.cotaZ == null ? "" : o.cotaZ).trim(), cz = czs === "" ? NaN : Number(czs.replace(",", "."));
+var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "nivelCota", x: r4(+o.x), y: r4(+o.y), nomeNivel: String(o.nomeNivel == null ? "Nível" : o.nomeNivel).trim().slice(0, 40), cotaZ: isFinite(cz) ? r4(cz) : NaN, lado: o.lado === "esq" ? "esq" : "dir" };
+if (o.auto) it.auto = true;
+return itemValido(it) ? { ok: true, op: it } : { ok: false, motivo: "Informe a cota do nível (em metros, ex.: 3,00)." };
+}
 function opNotaChave(o) {
 var it = { op: "anot2d", id: o.id, vista: o.vista, tipo: "notaChave", x: r4(+o.x), y: r4(+o.y), chave: String(o.chave || "").trim(), texto: String(o.texto || "").trim() };
 if (fin(+o.lx) && fin(+o.ly)) { it.comLider = true; it.lx = r4(+o.lx); it.ly = r4(+o.ly); }
@@ -74959,6 +75040,18 @@ s += txS([4 * passo + 1.5 * k, hh], 2 * k, "m", "a7-tx", "start", 0, null);
 }
 return '<g class="a7-item a7-simbolo' + (sel ? " a7-sel" : "") + '" data-a7="' + esc(it.id) + '"' + tr + ">" + s + "</g>";
 }
+function textoNivelCota(it) {
+var v = +it.cotaZ, ab = Math.round(Math.abs(v) * 100) / 100, n = fmtNum(ab, 2);
+var sg = ab === 0 ? "±" : v > 0 ? "+" : "-";
+return (String(it.nomeNivel || "").trim() ? String(it.nomeNivel).trim() + " " : "") + sg + n;
+}
+function svgNivelCota(it, k, jogo, sel) {
+var P = [num(it.x, 0), num(it.y, 0)], h = 2.5 * k, w = penaPx(2, jogo), sgn = it.lado === "esq" ? -1 : 1, tx = textoNivelCota(it), wT = largTexto(tx, h, null), t = 1.8 * k, s = "";
+s += lnS([P[0] - sgn * 3.5 * k, P[1]], [P[0] + sgn * (wT + 5.5 * k), P[1]], w, "a7-l");
+s += '<path d="M' + n4(P[0]) + " " + n4(P[1]) + "L" + n4(P[0] - t) + " " + n4(P[1] - t * 1.4) + "L" + n4(P[0] + t) + " " + n4(P[1] - t * 1.4) + 'Z" class="a7-cheio"/>';
+s += txS([P[0] + sgn * 2.6 * k, P[1] - 1.1 * k], h, esc(tx), "a7-tx", sgn < 0 ? "end" : "start", 0, null);
+return '<g class="a7-item a7-nivelcota' + (sel ? " a7-sel" : "") + '" data-a7="' + esc(it.id) + '">' + s + "</g>";
+}
 function svgNotaChave(it, k, jogo, sel) {
 var p = [num(it.x, 0), num(it.y, 0)], h = 2.5 * k, w = penaPx(1, jogo), ch = String(it.chave || ""), bw = Math.max(largTexto(ch, h, null) + 1.6 * k, 6 * k), bh = h * 1.7, s = "";
 if (it.comLider && fin(+it.lx) && fin(+it.ly)) { var alvo = [+it.lx, +it.ly], a = [p[0] + (alvo[0] < p[0] ? -bw / 2 : bw / 2), p[1]]; s += lnS(a, alvo, w, "a7-l") + marcaS(alvo, unit(sub(alvo, a)) || [1, 0], { marca: "seta" }, k, w); }
@@ -75115,6 +75208,7 @@ else if (it.tipo === "componente") { usar((COMPONENTES[it.comp] || {}).padrao); 
 else if (it.tipo === "cota") { if (o.m && o.m.ok) resto += svgCota(it, o.m, o.t, k, jogo, sel, e && e.corCotas); }
 else if (it.tipo === "texto") resto += svgTexto(it, o.t, k, jogo, sel);
 else if (it.tipo === "simbolo") resto += svgSimbolo(it, k, jogo, sel, e);
+else if (it.tipo === "nivelCota") resto += svgNivelCota(it, k, jogo, sel);
 else if (it.tipo === "notaChave") resto += svgNotaChave(it, k, jogo, sel);
 else if (it.tipo === "nuvem") resto += svgNuvem(it, a.revs[it.revisao], k, jogo, sel);
 else if (it.tipo === "linha") resto += svgLinha(it, k, jogo, sel);
@@ -75133,6 +75227,7 @@ function P(p, m) { m = m || 0; if (!p || !fin(p[0]) || !fin(p[1])) return; b.x0 
 a.itens.forEach(function (o) {
 var it = o.it;
 if (fin(+it.x)) P([+it.x, +it.y], 12 * k);
+if (it.tipo === "nivelCota") P([+it.x + (it.lado === "esq" ? -1 : 1) * (largTexto(textoNivelCota(it), 2.5 * k, null) + 6 * k), +it.y], 3 * k);
 if (fin(+it.lx)) P([+it.lx, +it.ly], 4 * k);
 arr(it.pts).forEach(function (q) { P([+q.x, +q.y], 4 * k); });
 if (it.arco) P([+it.arco.cx, +it.arco.cy], +it.arco.r + 2 * k);
@@ -75158,7 +75253,7 @@ indice: indice, resolverRef: resolverRef, medirCota: function (estado, it, opc) 
 acharRef: acharRef, offsetPara: offsetPara,
 validaOp: validaOp, aplicarOp: aplicarOp, fimOp: fimOp, registrar: registrar,
 tingir: tingir, itensDaVista: itensDaVista, item: item, revisoes: revisoes, revisaoAtual: revisaoAtual, proximoNumero: proximoNumero, violacoes: violacoes,
-opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
+opCota: opCota, opTexto: opTexto, opSimbolo: opSimbolo, opNivelCota: opNivelCota, textoNivelCota: textoNivelCota, opNotaChave: opNotaChave, opNuvem: opNuvem, opLinha: opLinha, opRegiao: opRegiao,
 opComponente: opComponente, opLegenda: opLegenda, opRevisao: opRevisao, opTravar: opTravar, opsIgualar: opsIgualar, opsManterTrava: opsManterTrava,
 anotarVista: anotarVista, svg: svgVista, caixa: caixaVista, conteudoLegenda: conteudoLegenda,
 fonteVistas: function (fn) { _fonteProj = typeof fn === "function" ? fn : null; return true; },
@@ -110139,12 +110234,22 @@ txt(cx, cy + 1.1 * k, 3 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle") + "</
 }
 function p6MarcaChamada(m, k, pena) {
 var x0 = Math.min(m.x0, m.x1), x1 = Math.max(m.x0, m.x1), y0 = Math.min(m.y0, m.y1), y1 = Math.max(m.y0, m.y1), r = Math.min(2.5 * k, (x1 - x0) / 4, (y1 - y0) / 4), R = 3.5 * k;
-var bx = x1 + 7 * k, by = y0 - 7 * k;
-return '<g class="d2-p6-chamada" data-d2-vista="' + esc(m.id) + '">' +
-'<rect x="' + n4(x0) + '" y="' + n4(y0) + '" width="' + n4(x1 - x0) + '" height="' + n4(y1 - y0) + '" rx="' + n4(r) + '" ry="' + n4(r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
-'<line x1="' + n4(x1) + '" y1="' + n4(y0) + '" x2="' + n4(bx - R * 0.7071) + '" y2="' + n4(by + R * 0.7071) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
-'<circle cx="' + n4(bx) + '" cy="' + n4(by) + '" r="' + n4(R) + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-marca-circ"/>' +
-txt(bx, by + 1.0 * k, 2.8 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle") + "</g>";
+var bx = x1 + 7 * k, by = y0 - 7 * k, circ = m.forma === "circulo" && m.circ && m.circ.r > 0 ? m.circ : null, s = "";
+if (circ) {
+var d45 = 0.7071, ex = circ.cx + circ.r * d45, ey = circ.cy - circ.r * d45;
+bx = ex + 7 * k * d45; by = ey - 7 * k * d45;
+s += '<circle cx="' + n4(circ.cx) + '" cy="' + n4(circ.cy) + '" r="' + n4(circ.r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+'<line x1="' + n4(ex) + '" y1="' + n4(ey) + '" x2="' + n4(bx - R * d45) + '" y2="' + n4(by + R * d45) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>';
+} else {
+s += '<rect x="' + n4(x0) + '" y="' + n4(y0) + '" width="' + n4(x1 - x0) + '" height="' + n4(y1 - y0) + '" rx="' + n4(r) + '" ry="' + n4(r) + '" fill="none" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+'<line x1="' + n4(x1) + '" y1="' + n4(y0) + '" x2="' + n4(bx - R * 0.7071) + '" y2="' + n4(by + R * 0.7071) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>';
+}
+s += '<circle cx="' + n4(bx) + '" cy="' + n4(by) + '" r="' + n4(R) + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-marca-circ"/>';
+if (m.folha) {
+s += '<line x1="' + n4(bx - R) + '" y1="' + n4(by) + '" x2="' + n4(bx + R) + '" y2="' + n4(by) + '" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-p6-chamada-l"/>' +
+txt(bx, by - 0.5 * k, 2.2 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle") + txt(bx, by + 2.4 * k, 1.8 * k, esc(m.folha), "d2-marca-tx", "middle");
+} else s += txt(bx, by + 1.0 * k, 2.8 * k, esc(m.rotulo || ""), "d2-marca-tx", "middle");
+return '<g class="d2-p6-chamada' + (circ ? " d2-p6-chamada-circ" : "") + '" data-d2-vista="' + esc(m.id) + '">' + s + "</g>";
 }
 function p6Marcas(lista, e, pena) {
 var k = e.escala / 1000, s = "";
@@ -110164,7 +110269,7 @@ function pt(x, y, m) { if (!isFinite(x) || !isFinite(y)) return; if (x - m < q.x
 (lista || []).forEach(function (m) {
 if (!m) return;
 if (m.tipo === "elevacao") pt(+m.x, +m.y, M);
-else if (m.tipo === "chamada") { pt(Math.max(m.x0, m.x1) + 7 * k, Math.min(m.y0, m.y1) - 7 * k, 5 * k); pt(m.x0, m.y0, 0); pt(m.x1, m.y1, 0); }
+else if (m.tipo === "chamada") { if (m.forma === "circulo" && m.circ) pt(m.circ.cx + m.circ.r * 0.7071 + 5 * k, m.circ.cy - m.circ.r * 0.7071 - 5 * k, 5 * k); else pt(Math.max(m.x0, m.x1) + 7 * k, Math.min(m.y0, m.y1) - 7 * k, 5 * k); pt(m.x0, m.y0, 0); pt(m.x1, m.y1, 0); }
 else if (m.tipo === "corte" && m.a && m.b) { pt(m.a[0], m.a[1], M); pt(m.b[0], m.b[1], M); }
 else if (m.tipo === "recorte") { pt(m.x0, m.y0, k); pt(m.x1, m.y1, k); }
 });
@@ -111592,7 +111697,7 @@ if (v.tipo === "chamada" && v.paiId && v.paiId !== id && v.ret) {
 var pai = /^d2v-/.test(v.paiId) ? this._p6Def(v.paiId, (prof || 0) + 1) : this._defBase(v.paiId);
 if (!pai || pai.tipo === "desenho") return null;
 var o = {}; Object.keys(pai).forEach(function (k) { o[k] = pai[k]; });
-o.id = id; o.p6base = pai.p6 || null; o.p6 = "chamada"; o.nome = v.nome; o.pai = v.paiId; o.ret = v.ret;
+o.id = id; o.p6base = pai.p6 || null; o.p6 = "chamada"; o.nome = v.nome; o.pai = v.paiId; o.ret = v.ret; if (v.forma) { o.forma = v.forma; o.circ = v.circ; }
 return o;
 }
 if (v.tipo === "desenho") return { id: id, tipo: "desenho", p6: "desenho", nome: v.nome };
@@ -111638,8 +111743,25 @@ if (out.ambientes && out.ambientes.itens) out.ambientes.itens = out.ambientes.it
 if (mk.length) out.marcasP6 = mk;
 return out;
 },
+_p6FolhaDe: function (vistaId) {
+try {
+var BF = global.BimFolhaUI, PR = global.Prancha; if (!BF || !PR || !PR.vistaEmFolha || !BF.registros) return null;
+var em = PR.vistaEmFolha(BF.registros().map(function (r) { return PR.normalizar(r); }), vistaId); if (!em) return null;
+return { folha: String(PR.numeroFolha(em.prancha, em.folha) || ""), detalhe: em.bloco && em.bloco.numeroDetalhe != null ? String(em.bloco.numeroDetalhe) : "" };
+} catch (e) { return null; }
+},
+atualizarBolhasFolha: function () {
+var M = this._p6(); if (!M) return false;
+var self = this, sig = [], pais = {};
+var vs = M.estado().vistas || {};
+Object.keys(vs).forEach(function (k) { var v = vs[k]; if (v && v.tipo === "chamada" && v.paiId) { var f = self._p6FolhaDe(k); sig.push(k + "=" + (f ? f.folha + "/" + f.detalhe : "")); pais[v.paiId] = 1; } });
+var s = sig.join("|"); if (s === this._sigFolhas) return false;
+this._sigFolhas = s;
+Object.keys(pais).forEach(function (p) { if (self._cache[p]) self.redesenhar(p, false); });
+return true;
+},
 _p6Marcas: function (d) {
-var M = this._p6(), out = []; if (!M) return out;
+var M = this._p6(), out = [], self = this; if (!M) return out;
 var est = M.estado();
 function olhar(L) { var dx = L.bx - L.ax, dz = L.bz - L.az, n = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / n, nz = -dx / n; return L.inv ? [-nx, -nz] : [nx, nz]; }
 Object.keys(est.vistas).forEach(function (k) {
@@ -111651,7 +111773,10 @@ out.push({ tipo: "elevacao", id: k, x: cx, y: cy, dir: olhar(L), rotulo: v.numer
 }
 if (v.tipo === "corte") out.push({ tipo: "corte", id: k, letra: v.marca || "?", a: [v.linha.ax, v.linha.az], b: [v.linha.bx, v.linha.bz], olhar: olhar(v.linha) });
 }
-if (v.tipo === "chamada" && v.paiId === d.id && v.ret) out.push({ tipo: "chamada", id: k, x0: v.ret.x0, y0: v.ret.y0, x1: v.ret.x1, y1: v.ret.y1, rotulo: v.numero || "" });
+if (v.tipo === "chamada" && v.paiId === d.id && v.ret) {
+var fo = self._p6FolhaDe(k);
+out.push({ tipo: "chamada", id: k, x0: v.ret.x0, y0: v.ret.y0, x1: v.ret.x1, y1: v.ret.y1, rotulo: (fo && fo.detalhe) || v.numero || "", folha: fo ? fo.folha : "", forma: v.forma || "", circ: v.forma ? v.circ : null });
+}
 });
 return out;
 },
@@ -111716,10 +111841,12 @@ this._p6Depois(v, true, "“" + v.nome + "” criada. Em Propriedades: Desenhar 
 try { M.armarPick(v.id, "linha"); } catch (e) {}
 return v;
 },
-criarChamada: function (idPai, ret) {
+criarChamada: function (idPai, ret, extra) {
 var M = this._p6(), pai = this.def(idPai); if (!M || !pai || pai.tipo === "desenho") return null;
 var n = Object.keys(M.estado().vistas).filter(function (k) { return M.estado().vistas[k].tipo === "chamada"; }).length + 1;
-var v = M.criar("chamada", { nome: "Detalhe " + n, paiId: idPai, ret: ret, numero: String(n) });
+var campos = { nome: "Detalhe " + n, paiId: idPai, ret: ret, numero: String(n) };
+if (extra && extra.forma === "circulo") { campos.forma = "circulo"; campos.circ = extra.circ; }
+var v = M.criar("chamada", campos);
 return this._p6Depois(v, true, "“" + v.nome + "” criada (1:" + v.escala + "): a marca está em " + pai.nome + ".");
 }
 };
@@ -111800,7 +111927,7 @@ valores: { escala: 50, nivelDetalhe: "medio", disciplina: "arquitetura", estiloV
 campos: { escala: true, nivelDetalhe: true, disciplina: true, estiloVisual: true, vg: true, filtros: true },
 valores: { escala: 50, nivelDetalhe: "medio", disciplina: "arquitetura", estiloVisual: "linhasOcultas", vg: {}, filtros: {} } },
 "ra-detalhe": { id: "ra-detalhe", nome: "Detalhe RA", tipoVista: "chamada", ra: true,
-campos: { escala: true, nivelDetalhe: true, estiloVisual: true },
+campos: { nivelDetalhe: true, estiloVisual: true },
 valores: { escala: 20, nivelDetalhe: "alto", estiloVisual: "linhasOcultas" } },
 "ra-desenho": { id: "ra-desenho", nome: "Vista de Desenho RA", tipoVista: "desenho", ra: true,
 campos: { escala: true, nivelDetalhe: true },
@@ -111879,6 +112006,7 @@ if (v.ponto && isFinite(+v.ponto.x) && isFinite(+v.ponto.z)) o.ponto = { x: +v.p
 if (v.paiId) o.paiId = txt(v.paiId);
 if (v.ret) { var r = obj(v.ret); o.ret = { x0: num(r.x0, 0), y0: num(r.y0, 0), x1: num(r.x1, 1), y1: num(r.y1, 1) }; }
 if (v.numero) o.numero = txt(v.numero).slice(0, 8);
+if (v.forma === "circulo" && v.circ && isFinite(+v.circ.cx) && isFinite(+v.circ.cy) && +v.circ.r > 0) { o.forma = "circulo"; o.circ = { cx: +v.circ.cx, cy: +v.circ.cy, r: +v.circ.r }; }
 if (v.pvAuto) { o.pvAuto = true; if (/^(norte|sul|leste|oeste)$/.test(txt(v.pvDir))) o.pvDir = txt(v.pvDir); }
 if (v.linhas2d) { o.linhas2d = {}; Object.keys(obj(v.linhas2d)).forEach(function (k) { var q = obj(v.linhas2d[k]); if ([q.x1, q.y1, q.x2, q.y2].every(function (x) { return isFinite(+x); })) o.linhas2d[k] = { x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, pena: Math.max(1, Math.min(16, Math.round(num(q.pena, 3)))) }; }); }
 return o;
@@ -112737,7 +112865,7 @@ armarPick: function (id, modo) {
 var P = P2(); if (!P || !P._cache[id] || !P._cache[id].el) { toast("Abra a vista primeiro.", "aviso"); return false; }
 this._pick = { id: id, modo: modo, pts: [] };
 P._cache[id].el.setAttribute("data-d2-pick", "1");
-var dica = { recorte: "Região de recorte: clique dois cantos.", chamada: "Chamada de detalhe: clique dois cantos da região.", linha: "Linha de detalhe: clique o início e o fim (Esc encerra).", interior: "Elevação interior: clique dentro do cômodo, perto da parede que quer ver." }[modo];
+var dica = { recorte: "Região de recorte: clique dois cantos.", chamada: "Chamada de detalhe: clique dois cantos da região.", "chamada-circulo": "Chamada circular: clique o CENTRO e depois um ponto da borda do círculo.", linha: "Linha de detalhe: clique o início e o fim (Esc encerra).", interior: "Elevação interior: clique dentro do cômodo, perto da parede que quer ver." }[modo];
 status(dica + " Esc cancela.");
 var self = this;
 if (!this._esc && typeof document !== "undefined") {
@@ -112764,6 +112892,12 @@ if (v) { v.linhas2d = v.linhas2d || {}; v.linhas2d["l" + Date.now().toString(36)
 pk.pts = [b]; status("Linha gravada. Próximo ponto (Esc encerra)."); return true;
 }
 this.cancelarPick();
+if (pk.modo === "chamada-circulo") {
+var rcc = Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2));
+if (rcc < 0.05) { toast("Círculo pequeno demais: clique a borda mais longe do centro.", "aviso"); return true; }
+if (P && P.criarChamada) P.criarChamada(id, { x0: r4(a[0] - rcc), y0: r4(a[1] - rcc), x1: r4(a[0] + rcc), y1: r4(a[1] + rcc) }, { forma: "circulo", circ: { cx: r4(a[0]), cy: r4(a[1]), r: r4(rcc) } });
+return true;
+}
 if (Math.abs(b[0] - a[0]) < 0.1 || Math.abs(b[1] - a[1]) < 0.1) { toast("Região pequena demais: clique dois cantos mais afastados.", "aviso"); return true; }
 if (pk.modo === "recorte") {
 var vv = this.vistaObj(id, P.def(id));
@@ -112784,7 +112918,8 @@ R.acrescentar("vista", "Vista", "Criar", [
 { id: "elevacao-interior", rotulo: "Elevação\ninterior", icone: "casa", dica: "Clique dentro do cômodo, perto da parede: a elevação interior olha para ela, recortada pelas paredes do cômodo." },
 { id: "planta-forro", rotulo: "Planta\nde forro", icone: "planta", dica: "Planta de forro refletido do nível de trabalho: corte a 2,30 m olhando para CIMA, desenhada como a planta (o forro, as vigas e a laje acima)." },
 { id: "planta-estrutural", rotulo: "Planta\nestrutural", icone: "estrutura", dica: "Planta estrutural (fôrma) do nível de trabalho, com o modelo de vista Planta Estrutural RA: sem mobiliário, portas e instalações; paredes em meio-tom." },
-{ id: "chamada-detalhe", rotulo: "Chamada de\ndetalhe", icone: "alvo", dica: "Desenhe um retângulo na planta ou no corte: a região vira uma vista de detalhe em escala maior (1:20), com a marca na vista-mãe." },
+{ id: "chamada-detalhe", rotulo: "Chamada de\ndetalhe", icone: "alvo", dica: "Desenhe um retângulo na planta ou no corte: a região vira uma vista de detalhe em escala maior (1:20), com a marca na vista-mãe (bolha com o número e, quando a vista está numa folha, o número da folha). Na vista de detalhe, Anotar › texto, nota-chave, linha de detalhe e cota." },
+{ id: "chamada-circular", rotulo: "Chamada\ncircular", icone: "alvo", dica: "Chamada de detalhe em CÍRCULO: clique o centro e um ponto da borda. Mesma vista de detalhe (escala própria, anotações, folha), com a marca redonda na vista-mãe." },
 { id: "vista-desenho", rotulo: "Vista de\ndesenho", icone: "regua", dica: "Vista de desenho: um papel em branco em escala, para detalhe típico com linhas de detalhe (sem o modelo)." },
 { id: "duplicar-vista", rotulo: "Duplicar\nvista", icone: "copiar", dica: "Duplica a vista 2D ativa com os mesmos parâmetros e V/G próprio." }
 ]);
@@ -112816,6 +112951,11 @@ reg["chamada-detalhe"] = function () {
 var a = ativa2d(), P = P2(), d = a ? P.def(a) : null;
 if (!d || d.tipo === "desenho") { toast("Abra uma planta, corte ou elevação 2D e use a Chamada de detalhe nela.", "aviso"); return true; }
 self.armarPick(a, "chamada"); return true;
+};
+reg["chamada-circular"] = function () {
+var a = ativa2d(), P = P2(), d = a ? P.def(a) : null;
+if (!d || d.tipo === "desenho") { toast("Abra uma planta, corte ou elevação 2D e use a Chamada circular nela.", "aviso"); return true; }
+self.armarPick(a, "chamada-circulo"); return true;
 };
 reg["vista-desenho"] = function () { P2().criarDesenhoP6(); return true; };
 reg["duplicar-vista"] = function () { var a = ativa2d(); if (!a) { toast("Ative uma vista 2D (planta, corte, elevação) para duplicar.", "aviso"); return true; } self.duplicarVista(a); return true; };
@@ -169848,6 +169988,7 @@ var CMDS = {
 "cota-coordenada": { k: "cota", cota: "coordenada", rotulo: "Cota por coordenada" },
 "p7-texto": { k: "texto", rotulo: "Texto" },
 "p7-simbolo": { k: "simbolo", rotulo: "Símbolo" },
+"p7-nivel-cota": { k: "nivelCota", rotulo: "Nível de cota" },
 "p7-nota-chave": { k: "notaChave", rotulo: "Nota-chave" },
 "p7-linha-detalhe": { k: "linha", rotulo: "Linha de detalhe" },
 "p7-regiao": { k: "regiao", rotulo: "Região preenchida" },
@@ -169856,7 +169997,7 @@ var CMDS = {
 "p7-legenda": { k: "legenda", rotulo: "Legenda" },
 "p7-nuvem": { k: "nuvem", rotulo: "Nuvem de revisão" }
 };
-var ROTULO_TIPO = { cota: "Cota", texto: "Nota de texto", simbolo: "Símbolo", notaChave: "Nota-chave", nuvem: "Nuvem de revisão",
+var ROTULO_TIPO = { cota: "Cota", texto: "Nota de texto", simbolo: "Símbolo", nivelCota: "Nível de cota", notaChave: "Nota-chave", nuvem: "Nuvem de revisão",
 linha: "Linha de detalhe", regiao: "Região preenchida", componente: "Componente de detalhe", legenda: "Legenda" };
 var BimAnot2DUI = {
 _f: null,
@@ -169870,7 +170011,7 @@ opcoes: function () {
 if (this._opc) return this._opc;
 var o = null; try { o = JSON.parse(global.localStorage.getItem("orcapro:bim:anot2d:opc") || "null"); } catch (e) { o = null; }
 var p = { tipoCota: "", orient: "auto", tipoTexto: "t25", comLider: false, simbolo: "norte", estilo: "<Linhas finas>", forma: "linhas",
-padrao: "Diagonal ascendente", comp: "bloco-ceramico", revisao: "" };
+padrao: "Diagonal ascendente", comp: "bloco-ceramico", revisao: "", nivNome: "Nível", nivModo: "auto", nivCota: "0,00", nivLado: "dir" };
 if (o && typeof o === "object") Object.keys(p).forEach(function (k) { if (o[k] != null) p[k] = o[k]; });
 this._opc = p; return p;
 },
@@ -169895,6 +170036,7 @@ C("p7-tipos", "Tipos de cota\ne texto", "ajustes", "Os tipos nomeados de cota e 
 R.acrescentar("anotar", "Anotar", "Texto", [
 C("p7-texto", "Texto", "editar", "Nota de texto na vista, com ou sem chamada (seta): o tipo de texto dá a altura (padrão RA: 2,5 · 3,5 · 5 · 7 mm), o fundo e a seta.", true),
 C("p7-simbolo", "Símbolo", "estrela", "Símbolo 2D: norte, seta, ponto de referência, escala gráfica."),
+C("p7-nivel-cota", "Nível de\ncota", "niveis", "Nível de cota: o símbolo de nível ▼ com nome e cota, SÓ no desenho (não muda o modelo). Clique onde vai: no corte e na elevação a cota é lida da altura clicada; na planta, ou digitando, vale o valor que você escrever. Sai na folha e no PDF."),
 C("p7-nota-chave", "Nota-chave", "chave", "Nota-chave: a chave num quadro na vista e o texto na Legenda.")
 ]);
 R.acrescentar("anotar", "Anotar", "Detalhe", [
@@ -169965,6 +170107,7 @@ if (d.cota === "elevacao") return f.refs.length ? "Cota de elevação: clique on
 if (d.cota === "inclinacao") return "Inclinação: clique numa água da cobertura (planta) ou dois pontos (corte).";
 return f.refs.length ? d.rotulo + ": clique onde vai o texto." : d.rotulo + ": clique no contorno do círculo ou do arco.";
 }
+if (d.k === "nivelCota") return "Nível de cota: clique onde vai o símbolo" + (this.opcoes().nivModo === "auto" ? " (a cota é lida da altura clicada no corte/elevação)." : " (cota digitada nas opções).") + " Esc sai.";
 if (d.k === "linha") return "Linha de detalhe: clique os pontos; Enter termina; Esc cancela.";
 if (d.k === "regiao" || d.k === "nuvem") return d.rotulo + ": clique o contorno; Enter (ou clique no 1º ponto) fecha.";
 if (d.k === "texto") return this.opcoes().comLider && !f.pts.length ? "Texto com chamada: clique a ponta da seta, depois onde vai o texto." : "Texto: clique onde vai o texto.";
@@ -169984,6 +170127,12 @@ if (U && U.paramsFerramenta) params = params.concat(U.paramsFerramenta());
 if (d.k === "texto") {
 params.push(lista("tipoTexto", "Tipo de texto", o.tipoTexto, M.tiposTexto(st).map(function (t) { return { id: t.id, rotulo: t.nome }; })));
 params.push({ id: "comLider", rotulo: "Com chamada (seta)", tipo: "sim-nao", valor: !!o.comLider });
+}
+if (d.k === "nivelCota") {
+params.push({ id: "nivNome", rotulo: "Nome do nível", tipo: "texto", valor: o.nivNome });
+params.push(lista("nivModo", "Cota", o.nivModo, [{ id: "auto", rotulo: "Lida da altura clicada" }, { id: "digitada", rotulo: "Digitada" }]));
+if (o.nivModo === "digitada") params.push({ id: "nivCota", rotulo: "Cota (m)", tipo: "texto", valor: o.nivCota });
+params.push(lista("nivLado", "Texto", o.nivLado, [{ id: "dir", rotulo: "À direita do símbolo" }, { id: "esq", rotulo: "À esquerda do símbolo" }]));
 }
 if (d.k === "simbolo") params.push(lista("simbolo", "Símbolo", o.simbolo, Object.keys(M.SIMBOLOS).map(function (k) { return { id: k, rotulo: M.SIMBOLOS[k].nome }; })));
 if (d.k === "linha") {
@@ -170010,6 +170159,16 @@ self.opcoes()[pid] = valor; self._gravarOpc(); return self.esquemaFerramenta();
 _tol: function (id, px) {
 var P = P2(), c = P && P._cache[id]; if (!c || !c.svg || !c.svg.getScreenCTM) return 0.08;
 var m = c.svg.getScreenCTM(); return m && m.a ? (px || 9) / m.a : 0.08;
+},
+_cotaDoNivel: function (id, p, o) {
+var P = P2(), d = P && P.def ? P.def(id) : null;
+if (o.nivModo !== "digitada") {
+if (d && d.tipo === "corte") return { cota: Math.round(-p[1] * 1000) / 1000, auto: true };
+if (d && d.nivel && isFinite(num(d.nivel.y, NaN))) return { cota: Math.round(num(d.nivel.y, 0) * 1000) / 1000, auto: true };
+}
+var tc = String(o.nivCota == null ? "" : o.nivCota).trim(), v = Number(tc.indexOf(",") >= 0 ? tc.replace(/\./g, "").replace(",", ".") : tc);
+if (String(o.nivCota == null ? "" : o.nivCota).trim() === "" || !isFinite(v)) return null;
+return { cota: v, auto: false };
 },
 _nivelY: function (id) { var P = P2(), d = P && P.def ? P.def(id) : null; return d && d.nivel ? num(d.nivel.y, 0) : null; },
 _op: function (o) {
@@ -170043,6 +170202,14 @@ var r = M.opTexto({ id: novoId(), vista: id, x: p[0], y: p[1], texto: tx, tipoTe
 if (!r.ok) { toast(r.motivo, "aviso"); return; }
 BimAnot2DUI._op(r.op); status("Texto colocado. Clique outro lugar ou Esc.");
 });
+return true;
+}
+if (d.k === "nivelCota") {
+var rn0 = this._cotaDoNivel(id, p, o);
+if (rn0 == null) { toast("Digite a cota do nível nas opções da ferramenta (em metros, ex.: 3,00).", "aviso"); return true; }
+var rn = M.opNivelCota({ id: novoId(), vista: id, x: p[0], y: p[1], nomeNivel: o.nivNome, cotaZ: rn0.cota, lado: o.nivLado, auto: rn0.auto });
+if (!rn.ok) { toast(rn.motivo, "aviso"); return true; }
+this._op(rn.op); status("Nível de cota colocado: " + M.textoNivelCota(rn.op) + ". Clique outro lugar ou Esc.");
 return true;
 }
 if (d.k === "simbolo") { var rs = M.opSimbolo({ id: novoId(), vista: id, x: p[0], y: p[1], simbolo: o.simbolo }); if (rs.ok) this._op(rs.op); return true; }
@@ -170565,6 +170732,13 @@ secoes.push({ nome: "Símbolo", params: [
 { id: "simbolo", rotulo: "Símbolo", tipo: "lista", valor: it.simbolo, opcoes: Object.keys(M.SIMBOLOS).map(function (k) { return { id: k, rotulo: M.SIMBOLOS[k].nome }; }) },
 { id: "rot", rotulo: "Rotação", unidade: "°", tipo: "numero", passo: 15, valor: it.rot || 0 }, excluir] });
 mapa = { simbolo: "texto", rot: "num" };
+} else if (it.tipo === "nivelCota") {
+secoes.push({ nome: "Nível de cota", params: [
+{ id: "nomeNivel", rotulo: "Nome", tipo: "texto", valor: it.nomeNivel || "" },
+{ id: "cotaZ", rotulo: "Cota", unidade: "m", tipo: "numero", passo: 0.01, valor: it.cotaZ },
+{ id: "lado", rotulo: "Texto", tipo: "lista", valor: it.lado || "dir", opcoes: [{ id: "dir", rotulo: "À direita" }, { id: "esq", rotulo: "À esquerda" }] },
+{ id: "niv-so-desenho", rotulo: "Vínculo", leitura: true, valor: "só desenho — não muda o modelo" }, excluir] });
+mapa = { nomeNivel: "texto", cotaZ: "num", lado: "texto" };
 } else if (it.tipo === "notaChave") {
 secoes.push({ nome: "Nota-chave", params: [{ id: "chave", rotulo: "Chave", tipo: "texto", valor: it.chave }, { id: "texto", rotulo: "Texto", tipo: "texto", valor: it.texto || "" }, excluir] });
 mapa = { chave: "texto", texto: "texto" };
@@ -185161,7 +185335,7 @@ if (passo) { this._pilha.push(passo); if (this._pilha.length > 60) this._pilha.s
 }
 var r = global.Store.salvar(this.empresa(), "bim_pranchas", reg);
 if (!r) toast("Não consegui salvar a folha (armazenamento cheio?).", "erro");
-else this._marcar(r);
+else { this._marcar(r); try { if (B2() && B2().atualizarBolhasFolha) B2().atualizarBolhasFolha(); } catch (eB) {} }
 return r;
 },
 _conferirObra: function () { var k = this.obraKey(); if (this._pilhaObra !== k) { this._pilha = []; this._refazerP = []; this._marcas = {}; this._pilhaObra = k; } return k; },

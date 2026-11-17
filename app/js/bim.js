@@ -14688,8 +14688,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return o.op === 'trecho' || o.op === 'familia';
   }
   /* desfazer/refazer da edição (Ctrl+Z / Ctrl+Y e a barra de título) */
-  S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
-  S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
+  S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); try { if (o && o.nivelMover && window.BimNivelMoverUI) BimNivelMoverUI.restaurar(o.nivelMover.antes); } catch (_eNm) {}   /* mover nível mantendo os elementos: a cota do nível volta junto */ if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
+  S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); try { if (o && o.nivelMover && window.BimNivelMoverUI) BimNivelMoverUI.restaurar(o.nivelMover.depois); } catch (_eNm2) {} if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
   S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
   S._editOpExterna = function (o) { editOp(o); };
   /* CONVERTER O IFC GENÉRICO EM ELEMENTOS EDITÁVEIS (js/bimifcconvui.js, 23/10/2026). O motor (js/bimifcconv.js) classifica

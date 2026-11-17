@@ -11160,8 +11160,8 @@ if (!o) return false;
 if (o.op === 'lote') return Array.isArray(o.ops) && o.ops.some(opTocaTubo);
 return o.op === 'trecho' || o.op === 'familia';
 }
-S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
-S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
+S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); try { if (o && o.nivelMover && window.BimNivelMoverUI) BimNivelMoverUI.restaurar(o.nivelMover.antes); } catch (_eNm) {} if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
+S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); try { if (o && o.nivelMover && window.BimNivelMoverUI) BimNivelMoverUI.restaurar(o.nivelMover.depois); } catch (_eNm2) {} if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
 S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
 S._editOpExterna = function (o) { editOp(o); };
 function ifcConvCamadas(mid) {

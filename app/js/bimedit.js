@@ -1135,6 +1135,13 @@
         var l = { op: "lote", id: o.id, ops: dentro };
         if (o.origem) l.origem = String(o.origem).slice(0, 20);
         if (o.pedido) l.pedido = String(o.pedido).slice(0, 300);
+        /* MOVER NÍVEL SEM MEXER NA VOLUMETRIA (js/bimnivelmover.js): as elevações de antes e de depois (mapas id → m, sem lista
+           dentro de lista), para o Desfazer/Refazer devolverem também a cota do nível */
+        if (o.nivelMover && typeof o.nivelMover === "object" && o.nivelMover.antes && o.nivelMover.depois) {
+          var nm = { antes: {}, depois: {} };
+          ["antes", "depois"].forEach(function (q) { Object.keys(o.nivelMover[q] || {}).slice(0, 200).forEach(function (k) { var v = Number(o.nivelMover[q][k]); if (isFinite(v) && Math.abs(v) < 1e4) nm[q][String(k).slice(0, 120)] = v; }); });
+          if (Object.keys(nm.antes).length) l.nivelMover = nm;
+        }
         return l;
       });
       function fin(v) { return typeof v === "number" && isFinite(v); }

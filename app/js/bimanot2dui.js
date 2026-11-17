@@ -54,6 +54,8 @@
     "cota-coordenada": { k: "cota", cota: "coordenada", rotulo: "Cota por coordenada" },
     "p7-texto": { k: "texto", rotulo: "Texto" },
     "p7-simbolo": { k: "simbolo", rotulo: "Símbolo" },
+    /* NÍVEL DE COTA (16/11/2026): o símbolo de nível só gráfico — nome e cota na anotação, nada do modelo */
+    "p7-nivel-cota": { k: "nivelCota", rotulo: "Nível de cota" },
     "p7-nota-chave": { k: "notaChave", rotulo: "Nota-chave" },
     "p7-linha-detalhe": { k: "linha", rotulo: "Linha de detalhe" },
     "p7-regiao": { k: "regiao", rotulo: "Região preenchida" },
@@ -62,7 +64,7 @@
     "p7-legenda": { k: "legenda", rotulo: "Legenda" },
     "p7-nuvem": { k: "nuvem", rotulo: "Nuvem de revisão" }
   };
-  var ROTULO_TIPO = { cota: "Cota", texto: "Nota de texto", simbolo: "Símbolo", notaChave: "Nota-chave", nuvem: "Nuvem de revisão",
+  var ROTULO_TIPO = { cota: "Cota", texto: "Nota de texto", simbolo: "Símbolo", nivelCota: "Nível de cota", notaChave: "Nota-chave", nuvem: "Nuvem de revisão",
                       linha: "Linha de detalhe", regiao: "Região preenchida", componente: "Componente de detalhe", legenda: "Legenda" };
 
   var BimAnot2DUI = {
@@ -78,7 +80,7 @@
       if (this._opc) return this._opc;
       var o = null; try { o = JSON.parse(global.localStorage.getItem("orcapro:bim:anot2d:opc") || "null"); } catch (e) { o = null; }
       var p = { tipoCota: "", orient: "auto", tipoTexto: "t25", comLider: false, simbolo: "norte", estilo: "<Linhas finas>", forma: "linhas",
-                padrao: "Diagonal ascendente", comp: "bloco-ceramico", revisao: "" };
+                padrao: "Diagonal ascendente", comp: "bloco-ceramico", revisao: "", nivNome: "Nível", nivModo: "auto", nivCota: "0,00", nivLado: "dir" };
       if (o && typeof o === "object") Object.keys(p).forEach(function (k) { if (o[k] != null) p[k] = o[k]; });
       this._opc = p; return p;
     },
@@ -108,6 +110,7 @@
       R.acrescentar("anotar", "Anotar", "Texto", [
         C("p7-texto", "Texto", "editar", "Nota de texto na vista, com ou sem chamada (seta): o tipo de texto dá a altura (padrão RA: 2,5 · 3,5 · 5 · 7 mm), o fundo e a seta.", true),
         C("p7-simbolo", "Símbolo", "estrela", "Símbolo 2D: norte, seta, ponto de referência, escala gráfica."),
+        C("p7-nivel-cota", "Nível de\ncota", "niveis", "Nível de cota: o símbolo de nível ▼ com nome e cota, SÓ no desenho (não muda o modelo). Clique onde vai: no corte e na elevação a cota é lida da altura clicada; na planta, ou digitando, vale o valor que você escrever. Sai na folha e no PDF."),
         C("p7-nota-chave", "Nota-chave", "chave", "Nota-chave: a chave num quadro na vista e o texto na Legenda.")
       ]);
       R.acrescentar("anotar", "Anotar", "Detalhe", [
@@ -183,6 +186,7 @@
         if (d.cota === "inclinacao") return "Inclinação: clique numa água da cobertura (planta) ou dois pontos (corte).";
         return f.refs.length ? d.rotulo + ": clique onde vai o texto." : d.rotulo + ": clique no contorno do círculo ou do arco.";
       }
+      if (d.k === "nivelCota") return "Nível de cota: clique onde vai o símbolo" + (this.opcoes().nivModo === "auto" ? " (a cota é lida da altura clicada no corte/elevação)." : " (cota digitada nas opções).") + " Esc sai.";
       if (d.k === "linha") return "Linha de detalhe: clique os pontos; Enter termina; Esc cancela.";
       if (d.k === "regiao" || d.k === "nuvem") return d.rotulo + ": clique o contorno; Enter (ou clique no 1º ponto) fecha.";
       if (d.k === "texto") return this.opcoes().comLider && !f.pts.length ? "Texto com chamada: clique a ponta da seta, depois onde vai o texto." : "Texto: clique onde vai o texto.";
@@ -205,6 +209,12 @@
       if (d.k === "texto") {
         params.push(lista("tipoTexto", "Tipo de texto", o.tipoTexto, M.tiposTexto(st).map(function (t) { return { id: t.id, rotulo: t.nome }; })));
         params.push({ id: "comLider", rotulo: "Com chamada (seta)", tipo: "sim-nao", valor: !!o.comLider });
+      }
+      if (d.k === "nivelCota") {
+        params.push({ id: "nivNome", rotulo: "Nome do nível", tipo: "texto", valor: o.nivNome });
+        params.push(lista("nivModo", "Cota", o.nivModo, [{ id: "auto", rotulo: "Lida da altura clicada" }, { id: "digitada", rotulo: "Digitada" }]));
+        if (o.nivModo === "digitada") params.push({ id: "nivCota", rotulo: "Cota (m)", tipo: "texto", valor: o.nivCota });
+        params.push(lista("nivLado", "Texto", o.nivLado, [{ id: "dir", rotulo: "À direita do símbolo" }, { id: "esq", rotulo: "À esquerda do símbolo" }]));
       }
       if (d.k === "simbolo") params.push(lista("simbolo", "Símbolo", o.simbolo, Object.keys(M.SIMBOLOS).map(function (k) { return { id: k, rotulo: M.SIMBOLOS[k].nome }; })));
       if (d.k === "linha") {
@@ -233,6 +243,18 @@
     _tol: function (id, px) {
       var P = P2(), c = P && P._cache[id]; if (!c || !c.svg || !c.svg.getScreenCTM) return 0.08;
       var m = c.svg.getScreenCTM(); return m && m.a ? (px || 9) / m.a : 0.08;
+    },
+    /* a cota do Nível de cota: lida da altura clicada (corte/elevação: o y do desenho é a cota com o sinal trocado; planta: o nível da vista)
+       ou a digitada. → { cota (m), auto } ou null quando falta valor */
+    _cotaDoNivel: function (id, p, o) {
+      var P = P2(), d = P && P.def ? P.def(id) : null;
+      if (o.nivModo !== "digitada") {
+        if (d && d.tipo === "corte") return { cota: Math.round(-p[1] * 1000) / 1000, auto: true };
+        if (d && d.nivel && isFinite(num(d.nivel.y, NaN))) return { cota: Math.round(num(d.nivel.y, 0) * 1000) / 1000, auto: true };
+      }
+      var tc = String(o.nivCota == null ? "" : o.nivCota).trim(), v = Number(tc.indexOf(",") >= 0 ? tc.replace(/\./g, "").replace(",", ".") : tc);
+      if (String(o.nivCota == null ? "" : o.nivCota).trim() === "" || !isFinite(v)) return null;
+      return { cota: v, auto: false };
     },
     _nivelY: function (id) { var P = P2(), d = P && P.def ? P.def(id) : null; return d && d.nivel ? num(d.nivel.y, 0) : null; },
     _op: function (o) {
@@ -267,6 +289,14 @@
           if (!r.ok) { toast(r.motivo, "aviso"); return; }
           BimAnot2DUI._op(r.op); status("Texto colocado. Clique outro lugar ou Esc.");
         });
+        return true;
+      }
+      if (d.k === "nivelCota") {
+        var rn0 = this._cotaDoNivel(id, p, o);
+        if (rn0 == null) { toast("Digite a cota do nível nas opções da ferramenta (em metros, ex.: 3,00).", "aviso"); return true; }
+        var rn = M.opNivelCota({ id: novoId(), vista: id, x: p[0], y: p[1], nomeNivel: o.nivNome, cotaZ: rn0.cota, lado: o.nivLado, auto: rn0.auto });
+        if (!rn.ok) { toast(rn.motivo, "aviso"); return true; }
+        this._op(rn.op); status("Nível de cota colocado: " + M.textoNivelCota(rn.op) + ". Clique outro lugar ou Esc.");
         return true;
       }
       if (d.k === "simbolo") { var rs = M.opSimbolo({ id: novoId(), vista: id, x: p[0], y: p[1], simbolo: o.simbolo }); if (rs.ok) this._op(rs.op); return true; }
@@ -852,6 +882,13 @@
           { id: "simbolo", rotulo: "Símbolo", tipo: "lista", valor: it.simbolo, opcoes: Object.keys(M.SIMBOLOS).map(function (k) { return { id: k, rotulo: M.SIMBOLOS[k].nome }; }) },
           { id: "rot", rotulo: "Rotação", unidade: "°", tipo: "numero", passo: 15, valor: it.rot || 0 }, excluir] });
         mapa = { simbolo: "texto", rot: "num" };
+      } else if (it.tipo === "nivelCota") {
+        secoes.push({ nome: "Nível de cota", params: [
+          { id: "nomeNivel", rotulo: "Nome", tipo: "texto", valor: it.nomeNivel || "" },
+          { id: "cotaZ", rotulo: "Cota", unidade: "m", tipo: "numero", passo: 0.01, valor: it.cotaZ },
+          { id: "lado", rotulo: "Texto", tipo: "lista", valor: it.lado || "dir", opcoes: [{ id: "dir", rotulo: "À direita" }, { id: "esq", rotulo: "À esquerda" }] },
+          { id: "niv-so-desenho", rotulo: "Vínculo", leitura: true, valor: "só desenho — não muda o modelo" }, excluir] });
+        mapa = { nomeNivel: "texto", cotaZ: "num", lado: "texto" };
       } else if (it.tipo === "notaChave") {
         secoes.push({ nome: "Nota-chave", params: [{ id: "chave", rotulo: "Chave", tipo: "texto", valor: it.chave }, { id: "texto", rotulo: "Texto", tipo: "texto", valor: it.texto || "" }, excluir] });
         mapa = { chave: "texto", texto: "texto" };
