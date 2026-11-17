@@ -1062,6 +1062,24 @@
     if (avisos.length) f.avisos = avisos; else delete f.avisos;
     return f;
   }
+  /* PERFIL SIMÉTRICO DE 2 ÁGUAS → PERÍMETRO VIRTUAL (docs/madeira/TELHADO-DESENHADO-REFERENCIA.md): a estrutura de madeira é DERIVADA de um retângulo virtual (largura = vão do perfil,
+     comprimento = extrusão, inclinação = a do perfil); o telhado do usuário continua do tipo "extrusão" (perfil). Perfil assimétrico, curvo ou com mais de 3 pontos: null (recusa clara em quem chama). */
+  function perimetroVirtual(t) {
+    if (!t || !t.ok || t.modo !== "extrusao") return null;
+    var pf = arr(t.perfil).map(function (q) { return [Number(q && q.u), Number(q && q.y)]; });
+    if (pf.length !== 3 || pf.some(function (q) { return !fin(q[0]) || !fin(q[1]); })) return null;
+    var W0 = pf[2][0] - pf[0][0]; if (!(W0 > 0.3) || Math.abs(pf[1][0] - pf[0][0] - W0 / 2) > 0.01 * W0 || Math.abs(pf[0][1] - pf[2][1]) > 1e-6 || !(pf[1][1] > pf[0][1])) return null;
+    var w0 = num(t.inicio, 0), w1 = num(t.fim, 0); if (!(w1 - w0 > 0.3)) return null;
+    var o = pt(t.origem || { x: 0, z: 0 }), ang = num(t.ang, 0) * Math.PI / 180, U = [Math.cos(ang), Math.sin(ang)], Wd = [-U[1], U[0]], incl = (pf[1][1] - pf[0][1]) / (W0 / 2) * 100;
+    function pl(u, w) { return { x: r6(o[0] + U[0] * u + Wd[0] * w), z: r6(o[1] + U[1] * u + Wd[1] * w) }; }
+    var C = [pl(pf[0][0], w0), pl(pf[2][0], w0), pl(pf[2][0], w1), pl(pf[0][0], w1)];
+    C[0].d = false; C[2].d = false; C[1].i = r6(incl); C[3].i = r6(incl);   /* as arestas que SAEM de 1 e 3 (em u0 e u2) são os beirais que definem a inclinação */
+    var f = clone(t); ["aguasCalc", "arestasCalc", "beirais", "beiralEf", "pacote", "ok", "avisos", "perfil", "origem", "ang", "inicio", "fim", "area", "areaProjecao", "tipo", "ifc"].forEach(function (k) { delete f[k]; });
+    f.modo = "perimetro"; f.contorno = C; f.beiral = 0; f.inclinacao = r6(incl); f.nivelId = undefined; f.base = t.elevNivel; f.deslocBase = r6(num(t.deslocBaseEf, 0) + pf[0][1]); delete f.nivelId;
+    var v = calcular(f, [], null);
+    if (!v || !v.ok) return null;
+    v.virtualDe = String(t.id); return v;
+  }
   /* COBERTURA COMPLETA: o que o catálogo da telha do tipo diz sobre ESTA geometria — inclinação mínima do
      fabricante e comprimento da água (rampa). Só avisa (a regra é do fabricante; o projetista decide). */
   function comprimentoDaAgua(ag) {
@@ -1307,6 +1325,8 @@
     if (o.conjunto !== undefined) { if (o.conjunto !== null && !conjuntoValido(o.conjunto)) return false; algum = true; }
     /* MADEIRA CALCULADA (cobertura × módulo Madeira): o resultado do cálculo que volta para as peças — js/madcobertura.js (null apaga) */
     if (o.calcMadeira !== undefined) { if (o.calcMadeira !== null && !calcMadeiraValido(o.calcMadeira)) return false; algum = true; }
+    /* CÓPIA do cálculo da versão anterior (migração): FORA do calcMadeira — recálculo e "voltar à madeira de partida" não a tocam; só o próprio campo null a apaga */
+    if (o.calcMadeiraV1 !== undefined) { if (o.calcMadeiraV1 !== null) { if (!obj(o.calcMadeiraV1)) return false; var tamV1 = 0; try { tamV1 = JSON.stringify(o.calcMadeiraV1).length; } catch (eV1) { return false; } if (tamV1 > 24000 || !semListaEmLista(o.calcMadeiraV1, false, 0)) return false; }   /* M-a: o mesmo teto (24 KB) e a mesma regra de "sem lista dentro de lista" do calcMadeira */ algum = true; }
     /* T5 (20/10/2026): a EDIÇÃO DE PEÇA da estrutura derivada — um remendo { <id da peça>: campos | null } (js/bimtelhadoestrut.js) */
     if (o.sobrepor !== undefined) {
       var ESv = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
@@ -1332,6 +1352,9 @@
     if (c.espApoio !== undefined && c.espApoio !== null && !(fin(c.espApoio) && c.espApoio >= 0.3 && c.espApoio <= 8)) return false;
     if (c.espTerca !== undefined && c.espTerca !== null && !(fin(c.espTerca) && c.espTerca >= 0.3 && c.espTerca <= 4)) return false;
     if (c.pecasMotor !== undefined) { if (!Array.isArray(c.pecasMotor) || c.pecasMotor.length > 90 || !c.pecasMotor.every(function (q) { return obj(q) && /^[a-z]{3,12}$/.test(String(q.r)) && fin(q.b) && fin(q.h) && q.b > 0 && q.h > 0 && ["x0", "y0", "z0", "x1", "y1", "z1"].every(function (k) { return fin(q[k]) && Math.abs(q[k]) <= 1e6; }); })) return false; }
+    /* O TELHADO DESENHADO = a geometria do motor (js/madtelhadodesenhado.js): entrada do motor + seções por grupo (objetos planos); `anterior` = a cópia do cálculo de antes da migração */
+    if (c.motor !== undefined && c.motor !== null) { var mo = c.motor; if (!obj(mo) || !(mo.tip === "T2" || mo.tip === "T3" || mo.tip === "T4") || !fin(mo.v) || !obj(mo.params) || !obj(mo.sec) || Object.keys(mo.sec).length > 40) return false; }
+    if (c.anterior !== undefined && c.anterior !== null && !obj(c.anterior)) return false;
     if (c.pontosApoio !== undefined) { if (!Array.isArray(c.pontosApoio) || c.pontosApoio.length > 64 || !c.pontosApoio.every(function (q) { return obj(q) && fin(q.x) && fin(q.z) && Math.abs(q.x) <= 1e6 && Math.abs(q.z) <= 1e6; })) return false; }
     var tam = 0; try { tam = JSON.stringify(c).length; } catch (e) { return false; }
     return tam <= 24000 && semListaEmLista(c, false, 0);
@@ -1381,7 +1404,7 @@
     return algum;
   }
 
-  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto", "calcMadeira"];
+  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto", "calcMadeira", "calcMadeiraV1"];
   var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct", "saidas", "semDescida", "alturaAuto", "recuo"];
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 
@@ -1475,6 +1498,7 @@
   }
 
   var BimTelhado = {
+    perimetroVirtual: perimetroVirtual,
     inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
     inverterDoEstado: inverterDoEstado,
     /* o contorno do telhado JÁ com a inclinação por aresta do texto `inclinacoes` fundida em d/i (reescrever o contorno apaga o texto:
@@ -1573,7 +1597,13 @@
         var t = T[o.id], novo = !t;
         if (novo && !(o.modo === "extrusao" ? arr(o.perfil).length : arr(o.contorno).length)) return false;
         if (novo) { t = T[o.id] = { id: o.id, tipo: "telhado" }; ordT.push(o.id); dono[o.id] = "telhado"; }
-        CAMPOS.forEach(function (k) { if (!temChave(o, k)) return; if (o[k] === null) delete t[k]; else t[k] = clone(o[k]); });
+        /* N1: gravar um cálculo NOVO sobre um cálculo da VERSÃO 1 (sem motor) guarda ANTES a cópia completa em calcMadeiraV1 (recálculo, Ajustar, op de parede… — todo caminho) */
+        if (temChave(o, "calcMadeira") && o.calcMadeira && t.calcMadeira && (t.calcMadeira.versao || 1) === 1 && !t.calcMadeira.motor && !t.calcMadeiraV1 && !temChave(o, "calcMadeiraV1")) t.calcMadeiraV1 = clone(t.calcMadeira);
+        CAMPOS.forEach(function (k) {
+          if (!temChave(o, k)) return;
+          if (k === "calcMadeiraV1" && t.calcMadeiraV1 && o[k] !== null) return;   /* M-b: a cópia existente só sai com null EXPLÍCITO */
+          if (o[k] === null) delete t[k]; else t[k] = clone(o[k]);
+        });
         if (temChave(o, "tipoId") && o.tipoId != null && !temChave(o, "tipoTelhado")) delete t.tipoTelhado;
         if (temChave(o, "contorno") && o.contorno) delete t.inclinacoes;
         /* T5: o remendo das edições de peça MESCLA no que já está guardado (cada edição é uma op: um Ctrl+Z desfaz só ela) */
@@ -1713,8 +1743,9 @@
         var ES = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
         if (ES && ES.modelar) saida.telhados.forEach(function (t) {
           if (!t || !t.ok || !t.modelo) return;
-          var pk = null;
-          try { pk = ES.modelar(t, saida, { ctxCob: ctx.cob }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
+          var pk = null, tm = t;
+          if (t.modo === "extrusao" && t.calcMadeira && t.calcMadeira.motor) { tm = null; try { tm = perimetroVirtual(t); } catch (eV) { tm = null; } if (!tm) { (t.avisos = t.avisos || []).push("Madeira do motor NÃO aplicada ao desenho: o perfil da extrusão deixou de ser simétrico de 2 águas (ou o retângulo virtual não fecha). O cálculo da madeira continua gravado; volte o perfil ao simétrico ou use o telhado por contorno."); tm = t; } }   /* extrusão simétrica: a estrutura é derivada do perímetro virtual; o telhado continua "perfil" */
+          try { pk = ES.modelar(tm, saida, { ctxCob: ctx.cob }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
           if (!pk) return;
           t.pacote = pk;
           if (pk.ok) {

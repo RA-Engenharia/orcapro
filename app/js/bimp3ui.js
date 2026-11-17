@@ -670,7 +670,8 @@
           return true;
         }
         cancelar(); api.op(r.op); if (api.fechou) api.fechou();
-        if (cfg.telhado.madCalc === "auto" && r.op && r.op.op === "telhado" && global.MadCoberturaUI) global.MadCoberturaUI.aposLancar(r.op.id);   /* MADEIRA CALCULADA: calcula logo depois de lançar */
+        var ESMc = ESM(), mad = !!(r.op && r.op.modelo && ESMc && ESMc.MODELOS && ESMc.MODELOS[r.op.modelo] && ESMc.MODELOS[r.op.modelo].mat === "madeira");   /* "Estrutura: Madeira" escolhida = calcula ao lançar (em segundo plano, no worker); "Só desenhar" / aço seguem como antes */
+        if ((cfg.telhado.madCalc === "auto" || mad) && r.op && r.op.op === "telhado" && global.MadCoberturaUI) global.MadCoberturaUI.aposLancar(r.op.id);   /* MADEIRA CALCULADA: calcula logo depois de lançar */
         api.hint(r.resumo + " Clique para outro, ou Esc."); status(r.resumo);
         return true;
       }

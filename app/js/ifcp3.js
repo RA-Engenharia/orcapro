@@ -111,9 +111,16 @@
       /* (q_w, q_v) → perfil (q_w, −q_v): com X = w e Z = o eixo, o Y do perfil é Z × X = −v */
       if (!perfis[kP]) perfis[kP] = A.perfilPoli(S0.map(function (q) { return [q[0], -q[1]]; }), null, secRot, "telhado " + t.id + ", seção " + secRot);
       var sol = A.extrudado(perfis[kP], A.pos3(c2i(o.a), d2i(ax), d2i(w)), L), matN = aco ? "Aço" : "Madeira serrada";
+      var tipoForma = "SweptSolid";
+      /* PEÇA DO MOTOR (js/madtelhadodesenhado.js): o sólido CORTADO (encaixe de carpinteiro) vai como IfcFacetedBrep, como no IFC do módulo Madeira; sem malha = o prisma de sempre */
+      if (o.malha && o.malha.length >= 36) {
+        var fcs = [], mm = o.malha, ii;
+        for (ii = 0; ii + 8 < mm.length; ii += 9) fcs.push([c2i([mm[ii], mm[ii + 1], mm[ii + 2]]), c2i([mm[ii + 6], mm[ii + 7], mm[ii + 8]]), c2i([mm[ii + 3], mm[ii + 4], mm[ii + 5]])]);   /* ordem invertida: a malha do BIM tem volume assinado negativo */
+        var br = A.brepFaces ? A.brepFaces(fcs) : null; if (br) { sol = br; tipoForma = "Brep"; }
+      }
       A.pintar(sol, matN);
       var k = (nPorPapel[o.p] = (nPorPapel[o.p] || 0) + 1), chave = t.id + ":" + o.p + k, nome = m[2] + " " + k + " do telhado " + t.id;
-      var el = A.peca(chave, ent, nome, m[2] + " " + secRot, plE, A.forma([sol], "SweptSolid"), [A.E(m[1])], Math.min(o.a[1], o.b[1]), nv, { parte: t.id, mapa: MAPA_PECA[ent] });
+      var el = A.peca(chave, ent, nome, m[2] + " " + secRot, plE, A.forma([sol], tipoForma), [A.E(m[1])], Math.min(o.a[1], o.b[1]), nv, { parte: t.id, mapa: MAPA_PECA[ent] });
       A.ligarMaterial(el, matN);
       var As = areaPoli(S0), V = As * L, q = [["Length", "L", L], ["CrossSectionArea", "A", As], ["NetVolume", "V", V]];
       if (aco) { var PA = A.dep ? A.dep("PerfisAco", "./perfisaco.js") : null, pf = PA && PA.obter && o.perfil ? PA.obter(o.perfil) : null; if (pf && isFinite(pf.massa)) q.push(["NetWeight", "W", pf.massa * L]); else if (o.p === "contravento" || o.p === "corrente" || o.p === "calco") q.push(["NetWeight", "W", (o.forma === "barra" ? Math.PI * o.w * o.w / 4 : o.w * o.h) * L * 7850]); }   /* conjunto: aço 7.850 kg/m³ × seção */

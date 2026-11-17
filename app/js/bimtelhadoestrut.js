@@ -752,6 +752,8 @@
   }
   /* a peça extrudada (lados + tampas) em `pos` (triângulos soltos); devolve quantos triângulos */
   function extrudar(pos, pc) {
+    /* PEÇA DO MOTOR (js/madtelhadodesenhado.js): o sólido já cortado (encaixe de carpinteiro) vem pronto em triângulos soltos */
+    if (pc.malha && pc.malha.length >= 9) { for (var im = 0; im < pc.malha.length; im++) pos.push(pc.malha[im]); return pc.malha.length / 9; }
     var a = pc.a, b = pc.b, ax = nz3(s3(b, a)), up = pc.up || [0, 1, 0];
     if (Math.abs(dt3(ax, up)) > 0.999) up = Math.abs(ax[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
     var w = nz3(cr3(ax, up)), v = nz3(cr3(w, ax)), S = secaoPts(pc), n = S.length, nt = 0;
@@ -918,6 +920,7 @@
       if (o.p === "terca" && o.agua != null) (fil[o.agua] = fil[o.agua] || {})[String(o.fileira)] = 1;
     });
     pecas.forEach(function (o) {
+      if (o.idMotor) { o.id = "mot." + o.idMotor; return; }   /* peça do MOTOR: o id é o do membro, SEM a chave do cálculo — a edição sobrevive ao recálculo; só fica órfã (com aviso) quando o membro deixa de existir */
       var k = chaveId(o), n0 = cont[k] || 0; cont[k] = n0 + 1;
       var id = k + "#" + n0;
       if (ctx != null) {
@@ -997,6 +1000,12 @@
         if (L0 + ea + eb > 0.05) { o.a = rr(ad3(o.a, ax, -ea)); o.b = rr(ad3(o.b, ax, eb)); mud.push("ext"); }
       }
       o.L = r4(ln3(s3(o.b, o.a)));
+      /* peça do MOTOR editada: arrastada = o sólido cortado vai junto; mudou seção/comprimento = o corte não vale mais, fica o prisma reto */
+      if (o.malha && mud.length) {
+        if (mud.length === 1 && mud[0] === "desloc") { var dMs = s3(o.a, auto.a); o.malha = o.malha.map(function (v, ii) { return v + dMs[ii % 3]; }); }
+        else delete o.malha;
+        delete o.vol;
+      }
       if (mud.length) { o.editada = mud; o.auto = auto; out.editadas.push(o.id); }
       return true;
     });
@@ -1231,6 +1240,17 @@
     /* MADEIRA CALCULADA (js/madcobertura.js): o resultado do módulo Madeira volta para as peças POR PAPEL — a seção calculada (b × h) substitui a de partida
        do SINAPI e as alturas empilhadas (terça, caibro, telha) já saem dela; o espaçamento de apoio e o de terça também. Sem t.calcMadeira = o modelo de antes, byte a byte. */
     var CMX = t.calcMadeira && typeof t.calcMadeira === "object" ? t.calcMadeira : null;
+    /* O TELHADO DESENHADO = A ESTRUTURA DO MOTOR (js/madtelhadodesenhado.js): com calcMadeira.motor as peças estruturais são os MEMBROS do motor com os sólidos cortados
+       (encaixe de carpinteiro), o frechal assenta no topo da parede e a pilha caibro/ripa/telha começa no topo dos banzos/terças (terça embutida no plano do banzo).
+       Sem calcMadeira.motor (ou se a geometria do motor não vale mais) = o modelo do SINAPI de antes, byte a byte. */
+    var MOT = null;
+    if (CMX && CMX.motor && mat !== "aco" && M.tesoura && !M.obra) {
+      var MDes = dep("MadTelhadoDes", "./madtelhadodesenhado.js");
+      if (MDes && MDes.geometriaMundo) {
+        try { MOT = MDes.geometriaMundo(t, CMX.motor, { caixas: estado && estado.caixas, H0: H0 }); } catch (eMot) { MOT = { ok: false, motivo: "geometria do motor: " + (eMot && eMot.message ? eMot.message : eMot) }; }
+        if (!MOT.ok) { avisos.push("Madeira do motor NÃO aplicada ao desenho (fica a geometria do SINAPI com as seções calculadas): " + MOT.motivo); MOT = null; }
+      }
+    }
     /* o material e a forma do pilar do modelo: só é MADEIRA o que diz que é; sem informação = NÃO madeira (nunca se transforma pilar de concreto/aço em madeira) */
     function pilarInfo(c) {
       var m = txt(c.material || c.mat || (c.cob && c.cob.material) || c.materialNome || "").toLowerCase();
@@ -1401,8 +1421,8 @@
       hTesV = sPerna.h;
       if (mat !== "aco" && !M.viga) { usar("perna", sPerna); usar("linha", secC("linha", SEC.linha)); usar("pendural", secC("pendural", SEC.pendural)); if (vaoTes >= 4 - 1e-6) usar("escora", secC("escora", SEC.escora)); if (vaoTes >= 7 - 1e-6) usar("montante", SEC.montante); }
     }
-    var baseT = (hTesV + eF) * f0;                  /* fundo das terças acima do plano (vertical); no conjunto, acima do FORRO (eForro) */
-    var baseC = baseT + sT.h * f0;                  /* fundo dos caibros */
+    var baseT = MOT ? MOT.D : (hTesV + eF) * f0;                  /* fundo das terças acima do plano (vertical); no conjunto, acima do FORRO (eForro) — MOTOR: a terça é EMBUTIDA no plano do banzo, o topo dos banzos/terças é MOT.D */
+    var baseC = MOT ? MOT.D : baseT + sT.h * f0;                  /* fundo dos caibros */
     var baseR = baseC + (sC ? sC.h * f0 : 0);       /* fundo das ripas */
     var baseTel = baseR + (sR ? sR.h * f0 : 0);     /* fundo da telha */
     if (!sC) baseTel = baseC;
@@ -1418,7 +1438,7 @@
        camada é h · √(1 + i²) da água em que ela está. Com o fator da água principal (f0) em todas, a água de inclinação
        diferente ficava com a camada descolada (ou entrando na de baixo) alguns mm — 4 águas de 30/45/35/60 %: até 8 mm. */
     function camadasDe(f) {
-      var bT = (hTesV + eF) * f, bC = bT + sT.h * f, bR = bC + (sC ? sC.h * f : 0), bTel = bR + (sR ? sR.h * f : 0);
+      var bT = MOT ? MOT.D : (hTesV + eF) * f, bC = MOT ? MOT.D : bT + sT.h * f, bR = bC + (sC ? sC.h * f : 0), bTel = bR + (sR ? sR.h * f : 0);
       if (!sC) bTel = bC;
       if (M.osb) bTel = bR + eOSB * f;
       return { tercas: bT, caibros: bC, ripas: bR, telha: bTel };
@@ -1913,7 +1933,7 @@
       pecas.length = 0; novas.forEach(function (o) { pecas.push(o); });
     }
     /* PEÇAS DO MOTOR (js/madcobertura.js): frechal, pilares, cumeeira e contraventamento que o módulo Madeira calculou viram PEÇAS do modelo (pontos já no sistema da obra) */
-    if (CMX && mat !== "aco") arr(CMX.pecasMotor).forEach(function (q) {
+    if (CMX && mat !== "aco" && !MOT) arr(CMX.pecasMotor).forEach(function (q) {
       if (!q || !/^[a-z]{3,12}$/.test(String(q.r))) return;
       var pa = [num(q.x0, 0), num(q.y0, 0), num(q.z0, 0)], pb = [num(q.x1, 0), num(q.y1, 0), num(q.z1, 0)], axm = s3(pb, pa), Lm = ln3(axm); if (!(Lm > 0.05) || !(q.b > 0) || !(q.h > 0)) return;
       var vertM = Math.abs(axm[1]) > 0.98 * Lm, upM = vertM ? [1, 0, 0] : (Math.abs(axm[1]) < 0.02 * Lm ? [0, 1, 0] : upNoPlano(axm));
@@ -2044,6 +2064,16 @@
       });
       if ((pertoOitao || (!M.tesoura && dentroP)) && anexaOk(w)) anexar[String(w.id)] = 1;
     });
+    /* ---- 5a) O MOTOR no lugar do SINAPI: sai tesoura/terça/espigão/frechal/pilar/cumeeira/contraventamento do SINAPI; entram os membros do motor (caibro, ripa, testeira e o resto ficam) */
+    if (MOT) {
+      var PAP_MOT = { perna: 1, linha: 1, pendural: 1, escora: 1, montante: 1, terca: 1, espigao: 1, rincao: 1, frechal: 1, pilar: 1, cumeeira: 1, contravento: 1, pontalete: 1, viga: 1, maofrancesa: 1 };
+      var antes = pecas.length;
+      pecas = pecas.filter(function (o) { return !PAP_MOT[o.p]; });
+      MOT.pecas.forEach(function (o) { var q = {}; Object.keys(o).forEach(function (k) { q[k] = o[k]; }); q.calcFonte = "Calculada pelo módulo Madeira (NBR 7190-1:2022, " + txt(CMX.sistema || "") + "); geometria e sólidos cortados do motor de encaixes" + (CMX.preliminar ? " — PRELIMINAR" : ""); q.calcPrelim = !!CMX.preliminar; q.ctxMotor = String(CMX.chave || ""); pecas.push(q); });
+      nTes = 0; tesVaos = []; nMeias = 0; nDiag = 0;
+      MOT.avisos.forEach(function (a) { avisos.push(a); });
+      prem.push("Estrutura de madeira = membros do motor (" + txt(CMX.sistema || "") + "): " + MOT.pecas.length + " peças com os sólidos cortados do módulo de encaixes; terça embutida no plano do banzo; o frechal assenta no topo da parede (a estrutura sobe " + virg(MOT.s * 100, 1) + " cm sobre a cota de apoio); a pilha caibro/ripa/telha começa " + virg(MOT.D * 100, 1) + " cm acima do plano de apoio do telhado. Peças SINAPI trocadas: " + (antes - pecas.length + MOT.pecas.length) + " → " + MOT.pecas.length + ".");
+    }
     /* ---- 5b) T5 (20/10/2026): ids ESTÁVEIS das peças e as EDIÇÕES DE PEÇA (t.sobrepor) */
     var ed = aplicarSobreposicoes(t, pecas, { perfAco: perfAco, ags: ags, espT: espT, espCb: sC ? espCb : null, M: M });
     pecas = ed.pecas;
@@ -2056,7 +2086,7 @@
     var tp = topoPlatibanda(t, opc.ctxCob, espPacote);
     if (tp != null && maxY > tp + 1e-6) avisos.push("A cobertura (estrutura + telha) chega a " + virg(maxY) + " m e passa do topo da platibanda (" + virg(tp) + " m): suba a platibanda ou diminua a inclinação — o telhado embutido não pode aparecer.");
     /* ---- 7) quantitativo (lista de material) */
-    var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT, removidas: ed.removidas });
+    var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT, removidas: ed.removidas, motor: MOT ? { pecas: MOT.pecas.length, sistema: txt(CMX.sistema || ""), ligOrc: arr(CMX.ligOrc).filter(function (l) { return !(MOT.pecas.some(function (q) { return q.p === "cubo"; }) && /cubo|chapas? radia|02\.05/i.test(String(l.d || ""))); }) } : null });   /* N3: o cubo e as chapas radiais são PEÇAS de aço do motor (kg): não entram de novo pela lista de ligações */
     arr(Q.avisos).forEach(function (a) { avisos.push(a); });
     var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; delete o.supObra; });
     /* as MEDIDAS do orçamento do modelo (BimTelhado.medidas → servicos do telhado no Orçamento do modelo) */
@@ -2064,7 +2094,7 @@
     pecas.forEach(function (o) {
       if (o.p === "ripa") med.ripas += o.L; else if (o.p === "caibro") med.caibros += o.L; else if (o.p === "terca") med.tercas += o.L; else if (o.p === "pontalete") med.pontaletes += o.L;
       /* a madeira da tesoura que vai pela composição SINAPI NÃO entra (já está na composição) */
-      if (o.mat === "madeira" && !(o.tesoura && Q.tesComp && Q.tesComp[o.tesoura])) med.madeiraM3 += o.L * o.w * o.h;
+      if (o.mat === "madeira" && !(o.tesoura && Q.tesComp && Q.tesComp[o.tesoura])) med.madeiraM3 += o.vol != null ? o.vol : o.L * o.w * o.h;
     });
     med.madeiraM3 += num(Q.excessoM3, 0);   /* REVISOR T5: a seção a mais nas peças editadas das tesouras da composição */
     Q.itens.forEach(function (q) {
@@ -2192,7 +2222,7 @@
     pecas.forEach(function (o) {
       var inf = !!(o.tesoura && tesComp[o.tesoura]);
       var k = o.p + "|" + (o.perfil || (o.w + "x" + o.h)) + (inf ? "|det" : "") + (o.calc ? "|calc" : "") + (o.calcNao ? "|nao" : ""), g = por[k] || (por[k] = { p: o.p, n: 0, m: 0, m3: 0, kg: 0, perfil: o.perfil, w: o.w, h: o.h, mat: o.mat, inf: inf, calc: !!o.calc, calcFonte: o.calcFonte, calcPrelim: !!o.calcPrelim, calcNao: !!o.calcNao });
-      g.n++; g.m += o.L; g.m3 += o.L * o.w * o.h;
+      g.n++; g.m += o.L; g.m3 += o.vol != null ? o.vol : o.L * o.w * o.h; g.kg += o.kg || 0;
     });
     var cods0 = {}; Object.keys(tesComp).forEach(function (id) { cods0[tesComp[id][1]] = 1; });
     var inclTes = "composição SINAPI de tesoura " + Object.keys(cods0).join(", ");
@@ -2204,8 +2234,8 @@
       var g = por[k], rot = ROT[g.p] || g.p;
       if ((g.p === "contravento" && g.mat !== "madeira") || g.p === "corrente" || g.p === "calco") return;   /* o conjunto (aço) tem grupo próprio, abaixo */
       if (g.mat === "aco" || g.perfil) {
-        var A9 = PA(), o = A9 && A9.obter ? A9.obter(g.perfil) : null, kg = o && fin(o.massa) ? o.massa * g.m : null;
-        it("Estrutura do telhado (aço)", rot + " " + (g.perfil || "") + " — " + g.n + " peça(s), " + virg(g.m) + " m", "kg", kg == null ? 0 : kg, "perfil ADOTADO (valor de partida) — confirmar no cálculo da Metálica", true);
+        var A9 = PA(), o = A9 && A9.obter ? A9.obter(g.perfil) : null, kg = o && fin(o.massa) ? o.massa * g.m : (g.kg > 0 ? g.kg : null);
+        it("Estrutura do telhado (aço)", rot + " " + (g.perfil || "") + " — " + g.n + " peça(s), " + virg(g.m) + " m", "kg", kg == null ? 0 : kg, g.calc && g.kg > 0 && !g.perfil ? "massa do sólido do motor T4 (tubo oco 16,8 kg/m; chapa = volume × 7.850 kg/m³) — peça de aço do ápice calculada pelo módulo Madeira" : "perfil ADOTADO (valor de partida) — confirmar no cálculo da Metálica", !(g.calc && g.kg > 0 && !g.perfil));
       } else {
         var sp = g.p === "perna" ? (g.h >= 0.16 ? SEC.perna16 : SEC.perna) : SECP[g.p], part = !sp || !!sp.partida;
         if (g.calc) { sp = { fonte: g.calcFonte, partida: g.calcPrelim }; part = g.calcPrelim; }
@@ -2277,6 +2307,8 @@
            "mínimo da norma (" + NBR_PREGO.minFonte + ") — dimensionar no módulo Madeira; bitola " + lgM.texto + "; " + lgM.pr.porKg + " pregos/kg (" + F_BELGO + ")", false, { informativo: true, inclusoEm: "a taxa de pregos do SINAPI (base do orçamento das meias-tesouras)" });
       } else it("Fixação", "Ligações parafusadas dos nós das meias-tesouras e de canto", "un", x.nMeias + x.nDiag, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
     }
+    if (x.motor && x.motor.ligOrc && x.motor.ligOrc.length) x.motor.ligOrc.forEach(function (l) { it("Fixação", "Ligações do motor — " + l.d, l.un, l.q, "quantidade do ORÇAMENTO do módulo Madeira (motor " + x.motor.sistema + "): chapas, pinos e peças de aço orçados pelo cálculo de ligações", false); });
+    else if (x.motor) it("Fixação", "Ligações da estrutura do motor (chapas internas de aço, pinos, selas e cintas) — " + x.motor.pecas + " peças de madeira", "vb", 1, "NÃO ORÇADAS NESTA LISTA: chapas e pinos saem do orçamento do módulo Madeira (" + x.motor.sistema + "); a madeira (m e m³ dos sólidos cortados) está no Madeiramento acima", true);
     if (M.tesoura && mat === "aco" && x.nTes) it("Fixação", "Ligações parafusadas dos nós da tesoura metálica", "un", x.nTes, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
     /* pregos da trama: o ORÇAMENTO fica pelo kg/m² do SINAPI (é a base de orçamento: inclui perdas e fixações auxiliares);
        a contagem pela NORMA (ligações do modelo × mínimo 2, bitola pela 7.2) vai como DETALHAMENTO logo abaixo de cada um */
