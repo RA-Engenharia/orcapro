@@ -529,6 +529,14 @@
     status((bloq ? "NÃO LIBERADO — " : "") + "Pranchas da estrutura: " + r.folhas.length + " folhas · aço " + Math.round(r.resumo.totalKg) + " kg (sem perda).");
     return r;
   }
+  /* PDF INTERATIVO (js/pdfinterativo.js): o detalhamento de armação de UMA peça (viga, pilar ou laje) para a página de detalhe do PDF da folha. Null quando não há cálculo, o modelo mudou depois do
+     Calcular (armação velha não entra) ou a peça não tem detalhamento. Devolve o mesmo resultado de ConcPranchas.pecaSvg ({ ok, svg, titulo, w, h, pesoKg, naoLiberado… }). */
+  function detalheArmacaoSvg(uid) {
+    var P = global.ConcPranchas, pac = P ? pacoteC8() : null; if (!P || !pac || modeloMudouC8(pac)) return null;
+    var id = String(uid == null ? "" : uid).replace(/^edit:/, ""); if (!id) return null;
+    if (!arr(P.pecasDisponiveis(pac)).some(function (q) { return q.id === id; })) return null;
+    var r = P.pecaSvg(pac, id, opcoesC8()); return r && r.ok ? r : null;
+  }
   /* o cartão da peça (não modal): desenho da armação + tabela de aço */
   var PAINEL_C8 = { chave: null, timer: null };
   function fecharPainelC8() { var el = typeof document !== "undefined" ? document.getElementById("conc-peca-painel") : null; if (el && el.parentNode) el.parentNode.removeChild(el); }
@@ -619,6 +627,7 @@
     ocultarArquitetura: ocultarArquitetura, arquiteturaOculta: arquiteturaOculta, calcular: calcular, memorial: memorial, limparCores: limparCores, problemasDoCalculo: problemasDoCalculo, aplicarSugestao: aplicarSugestao, ultimoCalculo: function () { return ULTIMO_CALC; }, acoDaPeca: acoDaPeca,
     sugerir: sugerir, opcoes: opcoes, vistaEstrutura: vistaEstrutura, vigiarVista: vigiarVista, registroDaVista: registroDaVista, permitirPilar12: permitirPilar12, definirPilar12: definirPilar12, problemasDosBloqueios: problemasDosBloqueios, aoCorrigirBloqueio: aoCorrigirBloqueio,
     prelancar: prelancar, auditar: auditar, quantitativo: quant, ifc: ifc, criterios: criterios, liberada: liberada,
+    detalheArmacaoSvg: detalheArmacaoSvg,
     pranchas: pranchas, painelPeca: painelPeca, vigiarSelecaoC8: vigiarSelecaoC8, fecharPainelPeca: fecharPainelC8
   };
   global.ConcUI = ConcUI;

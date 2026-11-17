@@ -298,6 +298,18 @@
     if (ocPend) emc(ocPend);
     return { w: W, h: H, ocs: ocs, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, nSemEstilo: nSemEstilo, ims: Object.keys(ims) };
   }
+
+  /* ---------------------------------------------------------------------------------------------------------------------------------
+     PDF INTERATIVO (16/11/2026): anotações (link para página, link externo, nota ao passar o mouse, botão de modo de camadas), marcadores
+     (/Outlines), anexos (/EmbeddedFiles), configurações de camadas (/Configs) e vista 3D. Tudo declarativo: `info.interativo` e SEM JavaScript.
+       interativo = { anot: [ { pg, x, y, w, h (mm, origem no canto de cima como no SVG), tipo: "ir"|"uri"|"nota"|"modo"|"extra", titulo, texto,
+                                dest: { pg, x, y, w, h }, uri, acoes: [{ liga: [ids], desliga: [ids] }] } ],
+                      outline: [ { t, pg, f: [ ... ] } ], anexos: [ { nome, dados (texto binário), mime, desc } ],
+                      modos: [ { nome, liga: [ids de camada], desliga: [ids] } ], idioma }
+     Os números dos objetos novos vão DEPOIS de todos os outros (a numeração do resto não muda). */
+  function u16(s) { var t = txt(s), h = "FEFF"; for (var i = 0; i < t.length; i++) h += ("0000" + t.charCodeAt(i).toString(16)).slice(-4); return "<" + h + ">"; }
+  function uriAscii(u) { return txt(u).replace(/[^\x21-\x7e]/g, function (c) { return encodeURIComponent(c); }).replace(/[()\\]/g, function (c) { return "%" + c.charCodeAt(0).toString(16).toUpperCase(); }); }
+  function nomeMime(m) { return txt(m || "application/octet-stream").replace(/[^A-Za-z0-9.+\-]/g, function (c) { return "#" + ("0" + c.charCodeAt(0).toString(16)).slice(-2).toUpperCase(); }); }
   function paginas(svgs) { return (Array.isArray(svgs) ? svgs : [svgs]).map(pagina).filter(Boolean); }
   function pdf(svgs, info) {
     info = info || {};
@@ -314,12 +326,78 @@
     }
     var ref = function (id) { return ocNum[id] + " 0 R"; };
     var ordemT = function (L) { return (L || []).map(function (q) { return Array.isArray(q) ? "[" + ordemT(q) + "]" : (ocNum[q] && ocIds.indexOf(q) >= 0 ? ref(q) : ""); }).filter(function (q) { return q && q !== "[]"; }).join(" "); };
+    /* INTERATIVO: aloca os objetos novos (anotações, marcadores, anexos) já com o número que terão (depois dos OCGs) */
+    var itv = info.interativo || null, fileNum = {}, extra = [], nx = ocBase + ocIds.length, annPg = {}, outlRaiz = 0, nomesArq = [], afRefs = [];
+    function slot() { extra.push(null); return nx + extra.length - 1; }
+    function poe(n, str) { extra[n - nx] = str; }
+    function rectPdf(a, H) { return "[" + f(a.x * PT) + " " + f((H - a.y - a.h) * PT) + " " + f((a.x + a.w) * PT) + " " + f((H - a.y) * PT) + "]"; }
+    function destPdf(d) {
+      var pg = pgs[num(d && d.pg, 0)]; if (!pg) return null;
+      var r = (6 + 2 * num(d.pg, 0)) + " 0 R";
+      if (d.w > 0 && d.h > 0) return "[" + r + " /FitR " + f(d.x * PT) + " " + f((pg.h - d.y - d.h) * PT) + " " + f((d.x + d.w) * PT) + " " + f((pg.h - d.y) * PT) + "]";
+      return "[" + r + " /Fit]";
+    }
+    if (itv) {
+      /* anexos: o arquivo vai inteiro, sem compressão extra (xlsx/docx/pdf já são comprimidos) */
+      (itv.anexos || []).filter(function (x) { return x && typeof x.dados === "string" && x.dados.length && txt(x.nome); }).sort(function (a, b) { return txt(a.nome) < txt(b.nome) ? -1 : 1; }).forEach(function (x) {
+        var ne = slot(), nf = slot();
+        poe(ne, "<< /Type /EmbeddedFile /Subtype /" + nomeMime(x.mime) + " /Params << /Size " + x.dados.length + " >> /Length " + x.dados.length + " >>\nstream\n" + x.dados + "\nendstream");
+        poe(nf, "<< /Type /Filespec /F (" + win1252(txt(x.nome)) + ") /UF " + u16(x.nome) + " /Desc " + u16(x.desc || x.nome) + " /AFRelationship /Supplement /EF << /F " + ne + " 0 R /UF " + ne + " 0 R >> >>");
+        fileNum[txt(x.nome)] = nf; nomesArq.push("(" + win1252(txt(x.nome)) + ") " + nf + " 0 R"); afRefs.push(nf + " 0 R");
+      });
+      (itv.anot || []).forEach(function (a) {
+        var pg = pgs[num(a.pg, 0)]; if (!pg || !(a.w > 0 && a.h > 0)) return;
+        var tipo = a.tipo || "ir", base = "/Type /Annot /Rect " + rectPdf(a, pg.h) + " /F 4", tit = a.titulo ? " /Contents " + u16(a.titulo) : "", o = null;
+        if (tipo === "ir") { var d = destPdf(a.dest); if (!d) return; o = "<< " + base + " /Subtype /Link /Border [0 0 0]" + tit + " /A << /S /GoTo /D " + d + " >> >>"; }
+        else if (tipo === "uri") { if (!/^(https?:\/\/|mailto:)/i.test(txt(a.uri))) return; o = "<< " + base + " /Subtype /Link /Border [0 0 0]" + tit + " /A << /S /URI /URI (" + uriAscii(a.uri) + ") >> >>"; }
+        else if (tipo === "nota") {
+          var nn = slot(), np = slot();
+          poe(nn, "<< " + base + " /Subtype /Square /Border [0 0 0] /BS << /W 0 >> /C [0.12 0.45 0.78] /CA 0.01 /T " + u16(a.titulo || "") + " /Contents " + u16(a.texto || "") + " /Popup " + np + " 0 R /Subj " + u16("Ficha") + " >>");
+          poe(np, "<< /Type /Annot /Subtype /Popup /Rect " + rectPdf({ x: a.x + a.w, y: a.y, w: 70, h: 40 }, pg.h) + " /Parent " + nn + " 0 R /Open false /F 28 >>");
+          (annPg[a.pg] = annPg[a.pg] || []).push(nn + " 0 R"); annPg[a.pg].push(np + " 0 R"); return;
+        }
+        else if (tipo === "modo") {
+          var st = [];
+          (a.acoes || []).forEach(function (ac) { (ac.desliga || []).forEach(function (id) { if (ocNum[id] && ocIds.indexOf(id) >= 0) st.push("/OFF " + ref(id)); }); (ac.liga || []).forEach(function (id) { if (ocNum[id] && ocIds.indexOf(id) >= 0) st.push("/ON " + ref(id)); }); });
+          if (!st.length) return;
+          o = "<< " + base + " /Subtype /Link /Border [0 0 0]" + tit + " /A << /S /SetOCGState /State [" + st.join(" ") + "] /PreserveRB false >> >>";
+        }
+        else if (tipo === "anexo") { if (!fileNum[txt(a.nome)]) return; o = "<< " + base + " /Subtype /FileAttachment /FS " + fileNum[txt(a.nome)] + " 0 R /Name /PushPin" + tit + " >>"; }
+        else if (tipo === "extra") { o = a.obj; if (!o) return; }
+        if (!o) return;
+        var n = slot(); poe(n, o); (annPg[a.pg] = annPg[a.pg] || []).push(n + " 0 R");
+      });
+      /* marcadores: disciplina > folha */
+      var contaOl = function (l) { var t = 0; (l || []).forEach(function (q) { t += 1 + contaOl(q.f); }); return t; };
+      if (contaOl(itv.outline) > 0) {
+        outlRaiz = slot();
+        var montar = function (lista, paiN) {
+          var ns = lista.map(function () { return slot(); }), total = 0;
+          lista.forEach(function (q, i) {
+            var filhos = (q.f && q.f.length) ? montar(q.f, ns[i]) : null, d = destPdf({ pg: q.pg });
+            var s2 = "<< /Title " + u16(q.t) + " /Parent " + paiN + " 0 R" + (i > 0 ? " /Prev " + ns[i - 1] + " 0 R" : "") + (i < lista.length - 1 ? " /Next " + ns[i + 1] + " 0 R" : "") +
+              (d ? " /Dest " + d : "") + (filhos ? " /First " + filhos.p + " 0 R /Last " + filhos.u + " 0 R /Count " + filhos.n : "") + " >>";
+            poe(ns[i], s2); total += 1 + (filhos ? filhos.n : 0);
+          });
+          return { p: ns[0], u: ns[ns.length - 1], n: total };
+        };
+        var rl = montar(itv.outline, outlRaiz);
+        poe(outlRaiz, "<< /Type /Outlines /First " + rl.p + " 0 R /Last " + rl.u + " 0 R /Count " + rl.n + " >>");
+      }
+    }
     var cat = "<< /Type /Catalog /Pages 2 0 R";
     if (ocIds.length) {
       var off = ocIds.filter(function (id) { return cam && cam.off && cam.off[id]; }).map(ref).join(" "), rbs = ((cam && cam.radios) || []).map(function (g2) { return g2.filter(function (id) { return ocIds.indexOf(id) >= 0; }); }).filter(function (g2) { return g2.length > 1; });
-      cat += " /PageMode /UseOC /OCProperties << /OCGs [" + ocIds.map(ref).join(" ") + "] /D << /Name (Camadas) /BaseState /ON" + (off ? " /OFF [" + off + "]" : "") +
-        " /Order [" + ordemT((cam && cam.ordem) || ocIds) + "]" + (rbs.length ? " /RBGroups [" + rbs.map(function (g2) { return "[" + g2.map(ref).join(" ") + "]"; }).join(" ") + "]" : "") + " /ListMode /AllPages >> >>";
-    }
+      var cfgs = ((itv && itv.modos) || []).map(function (md) {
+        var of2 = (md.desliga || []).filter(function (id) { return ocIds.indexOf(id) >= 0; }).map(ref).join(" ");
+        return "<< /Name (" + win1252(txt(md.nome)) + ") /BaseState /ON" + (of2 ? " /OFF [" + of2 + "]" : "") + " >>";
+      });
+      cat += (outlRaiz ? " /PageMode /UseOutlines" : " /PageMode /UseOC") + " /OCProperties << /OCGs [" + ocIds.map(ref).join(" ") + "] /D << /Name (Camadas) /BaseState /ON" + (off ? " /OFF [" + off + "]" : "") +
+        " /Order [" + ordemT((cam && cam.ordem) || ocIds) + "]" + (rbs.length ? " /RBGroups [" + rbs.map(function (g2) { return "[" + g2.map(ref).join(" ") + "]"; }).join(" ") + "]" : "") + " /ListMode /AllPages >>" + (cfgs.length ? " /Configs [" + cfgs.join(" ") + "]" : "") + " >>";
+    } else if (outlRaiz) cat += " /PageMode /UseOutlines";
+    if (outlRaiz) cat += " /Outlines " + outlRaiz + " 0 R";
+    if (nomesArq.length) cat += " /Names << /EmbeddedFiles << /Names [" + nomesArq.join(" ") + "] >> >> /AF [" + afRefs.join(" ") + "]";
+    if (itv) cat += " /Lang (" + win1252(txt(itv.idioma || "pt-BR")) + ") /ViewerPreferences << /DisplayDocTitle true >>";
     objs.push(cat + " >>");
     objs.push("<< /Type /Pages /Kids [" + pgs.map(function (p, i) { return (6 + 2 * i) + " 0 R"; }).join(" ") + "] /Count " + pgs.length + " >>");
     objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
@@ -341,7 +419,7 @@
       });
       (p.ims || []).forEach(function (kc) { var ix = chavesUsadas.indexOf(kc); if (ix >= 0) xo.push("/Im_" + kc + " " + (baseCh + ix) + " 0 R"); });
       var prop = Object.keys(p.ocs || {}).map(function (nm) { return "/" + nm + " " + ocNum[p.ocs[nm].join("+")] + " 0 R"; });
-      objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + (prop.length ? " /Properties << " + prop.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
+      objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + (prop.length ? " /Properties << " + prop.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R" + (annPg[i] ? " /Annots [" + annPg[i].join(" ") + "] /Tabs /S" : "") + " >>");
       objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
     });
     imgs.forEach(function (im) {
@@ -350,7 +428,8 @@
     /* por chave: JPEG (DCTDecode) ou RGB 8 bits deflate (FlateDecode, SEM perda — a vista 3D e o logo da folha) */
     chavesUsadas.forEach(function (k) { var im = porChave[k], ehF = typeof im.flate === "string", dado = ehF ? im.flate : im.jpeg; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + (ehF ? "FlateDecode" : "DCTDecode") + " /Length " + dado.length + " >>\nstream\n" + dado + "\nendstream"); });
     ocObjs.forEach(function (o) { objs.push(o); });
-    var s = (ocIds.length ? "%PDF-1.5" : "%PDF-1.4") + "\n%\xe2\xe3\xcf\xd3\n", offs = [];
+    extra.forEach(function (o) { objs.push(o || "null"); });
+    var s = (itv ? "%PDF-1.7" : ocIds.length ? "%PDF-1.5" : "%PDF-1.4") + "\n%\xe2\xe3\xcf\xd3\n", offs = [];
     objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
     var xref = s.length;
     s += "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n";

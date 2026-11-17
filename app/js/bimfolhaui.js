@@ -1264,7 +1264,8 @@
       return Promise.resolve(self._garantir3d(itens)).then(function () {
         lista.forEach(function (it, i) { var rec = self.recursos(itens[i], false); rec.projeto = projeto; it.rec = rec; });
         var cfgCam = PR().pdfCamadasDe(itens[0].pr);   /* PDF interativo: ligado por padrão (Propriedades da folha › Escolher camadas) */
-        return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, ""), camadas: cfgCam.ativo === false ? null : cfgCam });
+        var ivo = null;
+        return Promise.resolve(cfgCam.ativo === false ? null : self._interativoCompleto(itens, projeto)).then(function (iv) { ivo = iv; return FPd.gerar(lista, { P: UI2(), titulo: nome.replace(/\.pdf$/, ""), camadas: cfgCam.ativo === false ? null : cfgCam, interativo: cfgCam.ativo === false ? null : ivo }); });
       }).then(function (r) {
         var d = r.bytes;
         if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, d, "application/pdf", ""); if (!wT) return null; nome = wT.nome; d = wT.dados; }
@@ -1276,10 +1277,57 @@
         } catch (e) {}
         var mb = d.length / 1048576;
         toast("PDF vetorial: " + nome + " (" + r.paginas + " folha" + (r.paginas > 1 ? "s" : "") + ", " + (mb >= 1 ? mb.toFixed(1) + " MB" : Math.round(d.length / 1024) + " KB") + ")." + (mb > 30 ? " Arquivo grande: reduza as vistas 3D da folha." : ""), mb > 30 ? "aviso" : "ok");
-        return { nome: nome, tamanho: d.length, paginas: r.paginas };
+        arr(r.avisos).slice(0, 4).forEach(function (av) { toast("PDF interativo: " + av, "aviso"); });   /* o que ficou de fora e por quê (QR sem placa publicada, anexo vazio…) */
+        try { self._guardarSnapsRev(r.snapshots, itens, projeto); } catch (eSn) {}   /* revisão emitida: guarda o retrato para a próxima comparar */
+        return { nome: nome, tamanho: d.length, paginas: r.paginas, avisos: arr(r.avisos) };
       })["catch"](function (e) { toast("Não consegui gerar o PDF: " + (e && e.message || e), "erro"); return null; });
     },
     _garantir3d: function (itens) { return this.garantir3d(itens); },
+    /* PDF INTERATIVO (js/pdfinterativo.js): o que o app sabe e o motor puro não. Cada função é opcional e falha para "sem dado" (nunca inventa). */
+    _interativoOpc: function (itens, projeto) {
+      var self = this, PIv = global.PdfInterativo, ad = PIv && PIv.adaptadorApp ? PIv.adaptadorApp(global) : {};
+      var rev = PIv.criarRevisao(PR(), projeto, self._revSnaps);
+      return { ativo: true, indice: true, ambiente: ad.ambiente, peca: ad.peca, etapaDe: ad.etapaDe, revisao: rev, detalheArmacao: function (uid) { try { return global.ConcUI && global.ConcUI.detalheArmacaoSvg ? global.ConcUI.detalheArmacaoSvg(uid) : null; } catch (e) { return null; } }, qr: function (t) { return self._qrModulos(t); } };
+    },
+    /* REVISÃO ANTERIOR e NUVEM: o retrato do desenho de cada vista fica guardado (IndexedDB) quando a revisão da folha é EMITIDA; o PDF seguinte, com outra revisão atual, compara com ele. */
+    _revSnaps: {},
+    _carregarSnapsRev: function (itens) {
+      var self = this, ok = this.obraKey(), tarefas = [], mapa = this._revSnaps; Object.keys(mapa).forEach(function (k) { delete mapa[k]; });   /* esvazia NO LUGAR: a revisão do PDF já aponta para este objeto */
+      if (!global.Idb) return Promise.resolve();
+      itens.forEach(function (a) { arr(a.folha.blocos).forEach(function (b, ix) {
+        if (b.tipo !== "viewport") return;
+        var ch = a.pr.id + "|" + a.folha.id + "|" + b.vistaId + "#" + ix;
+        tarefas.push(Promise.resolve(global.Idb.get("folharev:" + ok + ":" + ch)).then(function (v) { if (v && v.mapa) mapa[ch] = v; })["catch"](function () {}));
+      }); });
+      return Promise.all(tarefas);
+    },
+    _guardarSnapsRev: function (snaps, itens, projeto) {
+      var self = this, ok = this.obraKey(), PIv = global.PdfInterativo; if (!global.Idb || !PIv) return;
+      PIv.guardaveis(snaps, itens, projeto, PR(), this._revSnaps).forEach(function (q) { try { Promise.resolve(global.Idb.set("folharev:" + ok + ":" + q.chave, q.snap))["catch"](function () {}); } catch (e) {} });
+    },
+    _qrModulos: function (t) {
+      var lib = global.qrcode; if (!lib) return null;
+      try { var q = lib(0, "M"); q.addData(String(t)); q.make(); return { n: q.getModuleCount(), escuro: function (y, x) { return q.isDark(y, x); } }; } catch (e) { return null; }
+    },
+    /* o que depende de rede e de arquivos: a placa da obra PUBLICADA (QR e link da Prancha Viva) e os anexos. Falha em qualquer um = PDF sai sem aquela parte (com aviso), nunca trava. */
+    _interativoCompleto: function (itens, projeto) {
+      var self = this, I = this._interativoOpc(itens, projeto);
+      return Promise.all([this._portalPublicado(), this._anexosPdf(), this._carregarSnapsRev(itens)]).then(function (r) {
+        I.portal = r[0]; I.anexos = r[1];
+        return r[0] ? self._imagemCapa3d() : null;   /* a imagem do modelo 3D só vale com a placa publicada (o link dela é o que leva ao 3D girável) */
+      }).then(function (img) { if (img) I.imagem3d = img; return I; })["catch"](function () { return I; });
+    },
+    /* a IMAGEM DE CAPA do modelo (página "Modelo 3D" do PDF): captura do 3D aberto, 85 x 55 mm a 300 dpi (≈ 150 dpi na página: PDF leve). Sem o 3D aberto, ou passando de 10 s: null (o PDF sai sem a página, com aviso). */
+    _imagemCapa3d: function () {
+      var self = this, BIM = global.BIM; if (!BIM || !BIM.desenharQuadroEm || !this.capturar3d) return Promise.resolve(null);
+      var limite = new Promise(function (res) { setTimeout(function () { res(null); }, 10000); });
+      var q = Promise.resolve(this.capturar3d("atual", 85, 55)).then(function (r) { return r && /^data:image\//.test(String(r.uri || "")) ? { uri: r.uri } : null; })["catch"](function () { return null; });
+      return Promise.race([q, limite]);
+    },
+    /* a placa desta obra NO AR ({ url, urlPv }) ou null; os anexos (tabelas do modelo + extras registrados). A lógica mora em js/pdfinterativo.js (adaptadorApp), testada sem o app. */
+    anexosPdfExtras: [],
+    _portalPublicado: function () { var PIv = global.PdfInterativo; return PIv ? PIv.adaptadorApp(global).portal(this.G(), 6000) : Promise.resolve(null); },
+    _anexosPdf: function () { var PIv = global.PdfInterativo; return PIv ? PIv.adaptadorApp(global).anexos(this.anexosPdfExtras) : Promise.resolve([]); },
     /* PDF INTERATIVO (camadas / OCG): { ativo, incluir:{id:false}, desligadas:[ids], variantes:{cotas, parede} } do conjunto da folha (padrão: ligado, tudo incluído, tudo ligado) */
     pdfCamadasCfg: function (id) { var a = this.achar(id); return PR().pdfCamadasDe(a ? a.pr : null); },
     mudarPdfCamadas: function (id, cfg) {

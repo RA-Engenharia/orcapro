@@ -20,6 +20,7 @@
   function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : d; }
   function esc(s) { return txt(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
   function n3(v) { return Math.round(v * 1000) / 1000; }
+  function PIm() { return global.PdfInterativo || (typeof require === "function" ? require("./pdfinterativo.js") : null); }
   function SP() { return global.SvgPdf || (typeof require === "function" ? require("./svgpdf.js") : null); }
 
   /* ------------------------------------------------ CSS do papel → atributo style
@@ -69,8 +70,13 @@
      camada liga/desliga do leitor (Acrobat, Edge, Chrome). Variantes em rádio (só uma ligada, as duas DESENHADAS): cotas coloridas × pretas (quando alguma cota tem cor) e parede
      hachura × cinza × branco (… o preenchimento da vista é o que começa ligado). A variante só aparece com o mestre ligado (OCMD /AllOn "mestre+variante"). O carimbo, a moldura
      e o desenho que não é de nenhuma camada ficam sempre. Config (por conjunto de folhas, pr.pdfCamadas): { ativo, incluir:{id:false}, desligadas:[ids], variantes:{cotas:"cor"|"preta", parede:"parede-…"} }. */
-  var CAMADAS = [{ id: "cotas", nome: "Cotas" }, { id: "parede", nome: "Parede (preenchimento)" }, { id: "mobiliario", nome: "Mobiliário" }, { id: "paginacao", nome: "Paginação de piso" },
-    { id: "construir", nome: "Construir" }, { id: "demolir", nome: "Demolir" }, { id: "existente", nome: "Existente" }, { id: "niveis", nome: "Níveis" }, { id: "textos", nome: "Textos e ambientes" }, { id: "eixos", nome: "Eixos" }];
+  var CAMADAS = [{ id: "cotas", nome: "Cotas" }, { id: "parede", nome: "Parede (preenchimento)" }, { id: "mobiliario", nome: "Mobiliário" }, { id: "paginacao", nome: "Paginação de piso" }, { id: "cores", nome: "Cores dos ambientes" },
+    { id: "construir", nome: "Construir" }, { id: "demolir", nome: "Demolir" }, { id: "existente", nome: "Existente" }, { id: "niveis", nome: "Níveis" }, { id: "textos", nome: "Textos e ambientes" }, { id: "eixos", nome: "Eixos" },
+    { id: "estrutura", nome: "Estrutura" }, { id: "hidro", nome: "Hidrossanitário" }, { id: "eletrica", nome: "Elétrica" }, { id: "climat", nome: "Climatização" }, { id: "inst", nome: "Instalações (rótulos e símbolos)" }];
+  /* DISCIPLINAS como camadas (16/11/2026): pela categoria do traço (data-cat, a chave de estilo da vista: OST_… e "|inst:" das instalações). Só existe onde a vista leva a categoria no SVG (vista da P6 / folha de arquitetura); sem data-cat o desenho fica inteiro na camada-base. */
+  var DISC = { estrutura: /OST_(Structural\w*|Floors|Framing)\b|IFC(BEAM|COLUMN|SLAB|FOOTING|PILE|MEMBER)\b/i, eletrica: /OST_(Electrical\w*|LightingFixtures|LightingDevices|Conduit\w*|CableTray\w*|DataDevices|CommunicationDevices|FireAlarmDevices)\b|IFC(CABLE\w*|LIGHTFIXTURE|OUTLET|ELECTRIC\w*)/i,
+    climat: /OST_(Duct\w*|Mechanical\w*|AirTerminals|FlexDuct\w*)\b|IFC(DUCT\w*|AIRTERMINAL|FAN|UNITARYEQUIPMENT)\b/i, hidro: /OST_(Pipe\w*|PlumbingFixtures|Sprinklers)\b|\|(?:inst|fundo):|IFC(PIPE\w*|SANITARYTERMINAL|VALVE|WASTETERMINAL)\b/i };
+  var ORDEM_DISC = ["estrutura", "eletrica", "climat", "hidro"];
   var NOMES_VAR = { "cotas-cor": "Cotas coloridas", "cotas-preta": "Cotas pretas", "parede-hachura": "Parede: hachura 45°", "parede-cinza": "Parede: cinza", "parede-branco": "Parede: branco", "parede-preto": "Parede: preto", "parede-outro": "Parede: preenchimento da vista" };
   var FILL_PAREDE = { cinza: "#cfd3d8", branco: "#ffffff" };
   function camCfg(c) {
@@ -121,7 +127,9 @@
           else if (cl.indexOf("d2-nivel") >= 0) id = "niveis";
           else if (cl.indexOf("d2-eixo-g") >= 0) id = "eixos";
           else if (cl.indexOf("d2-paginacao") >= 0) id = "paginacao";
-          else if (cl.indexOf("d2-ambientes") >= 0 || cl.indexOf("d2-amb-legenda") >= 0 || cl.indexOf("d2-identificadores") >= 0 || cl.indexOf("d2-amb-cores") >= 0) id = "textos";
+          else if (cl.indexOf("d2-amb-cores") >= 0) id = "cores";
+          else if (cl.indexOf("d2-inst") >= 0) id = "inst";   /* rótulos (ø25, RSE 100x40) e símbolos das instalações: dado real, 142 textos numa planta */
+          else if (cl.indexOf("d2-ambientes") >= 0 || cl.indexOf("d2-amb-legenda") >= 0 || cl.indexOf("d2-identificadores") >= 0) id = "textos";
         }
         if (id && inc(id) && !auto) {
           out += s.slice(ult, m.index);
@@ -147,6 +155,7 @@
       else if (cl2.indexOf("d2-fase-demolido") >= 0 || cl2.indexOf("d2-fase-temporario") >= 0) id2 = "demolir";
       else if (cl2.indexOf("d2-fase-existente") >= 0) id2 = "existente";
       else if (/furniture|mobili|casework|moveis|m[oó]vel/i.test(cat)) id2 = "mobiliario";
+      else if (cat) { for (var qd = 0; qd < ORDEM_DISC.length && !id2; qd++) if (DISC[ORDEM_DISC[qd]].test(cat)) id2 = ORDEM_DISC[qd]; }
       if (id2) { if (inc(id2)) { out += s.slice(ult, m.index) + comOcg(tag, at, auto, marca(id2)); ult = re.lastIndex; } continue; }
       /* PAREDE: o corte da vista (non-P6: toda forma d2-corte; P6: a categoria parede). Contorno numa camada, o preenchimento em variantes (rádio). */
       if (cl2.indexOf("d2-corte") >= 0 && cl2.indexOf("d2-p6-sobre") < 0 && (!cat || /wall|parede/i.test(cat)) && inc("parede")) {
@@ -182,6 +191,9 @@
       var vs = (sub[d.id] || []).filter(function (v) { return U[v]; });
       if (vs.length > 1) { ordem.push(vs); radios.push(vs); vs.forEach(function (v) { if (v !== sel[d.id]) off[v] = true; }); }
     });
+    /* camadas DINÂMICAS (etapas da obra, revisão anterior, nuvem): nascem do modelo/da revisão, não da lista fixa; ficam no fim, na ordem em que apareceram */
+    var dyn = cam.dyn || { ordem: [], nomes: {}, off: {} };
+    dyn.ordem.forEach(function (id) { if (!U[id]) return; ordem.push(id); nomes[id] = dyn.nomes[id] || id; if (dyn.off[id]) off[id] = true; });
     return { nomes: nomes, off: off, radios: radios, ordem: ordem };
   }
 
@@ -203,8 +215,11 @@
       var x = num((/\bx="([^"]*)"/.exec(a1 + a2) || [])[1], 0), y = num((/\by="([^"]*)"/.exec(a1 + a2) || [])[1], 0), w = num((/\bwidth="([^"]*)"/.exec(a1 + a2) || [])[1], 0), h = num((/\bheight="([^"]*)"/.exec(a1 + a2) || [])[1], 0);
       return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
     });
+    var sobre = "", PIx = PIm(), sv = {};
+    if (ctx.inter && ctx.cfg && PIx && PIx.sobreposicao) { try { sobre = PIx.sobreposicao({ vp: vp, b: b, svg: s, I: ctx.inter, cam: ctx.cam, cfg: ctx.cfg, pr: ctx.pr, folha: ctx.fl, ix: i, saida: sv }) || ""; } catch (eSob) { sobre = ""; } }   /* etapas, revisão anterior e nuvem de revisão: camadas por cima do desenho */
+    if (ctx.vps) ctx.vps.push({ ix: i, b: b, vp: vp, ox: ox, oy: oy, k: k, svg: s, nuvens: sv.nuvens || [] });   /* PDF interativo: onde cada vista caiu no papel (mm) */
     return "<clipPath id=\"cvp" + i + "\"><rect x=\"" + n3(b.x) + "\" y=\"" + n3(b.y) + "\" width=\"" + n3(b.w) + "\" height=\"" + n3(b.h) + "\"/></clipPath>" +
-      "<g clip-path=\"url(#cvp" + i + ")\"><g transform=\"translate(" + n3(ox) + " " + n3(oy) + ") scale(" + (Math.round(k * 1e9) / 1e9) + ")\">" + interiorSvg(s) + "</g></g>" + titulo(b, vp);
+      "<g clip-path=\"url(#cvp" + i + ")\"><g transform=\"translate(" + n3(ox) + " " + n3(oy) + ") scale(" + (Math.round(k * 1e9) / 1e9) + ")\">" + interiorSvg(s) + sobre + "</g></g>" + titulo(b, vp);
   }
   function titulo(b, vp) {
     if (b.mostrarTitulo === false) return "";
@@ -274,9 +289,9 @@
   }
 
   /* a folha inteira: 1 unidade = 1 mm. `dims` ({chave:{w,h}}) deixa a imagem "caber" no quadro sem esticar (object-fit: contain) */
-  function svgDaFolha(P, pr, fl, rec, geo, dims, camadas) {
+  function svgDaFolha(P, pr, fl, rec, geo, dims, camadas, inter) {
     rec = rec || {}; dims = dims || {};
-    var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {}, cfg: camCfg(camadas), cam: { usados: {}, atual: {} } }, s = "";
+    var g = geo, Pp = g.papel, M = g.moldura, ctx = { n: 0, imagens: {}, cfg: camCfg(camadas), cam: { usados: {}, atual: {}, dyn: { ordem: [], nomes: {}, off: {} } }, vps: [], inter: inter || null, pr: pr, fl: fl }, s = "";
     s += "<rect x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\" fill=\"#fff\"/>";
     if (fl.imagemInteira && rec.imagens && rec.imagens[fl.imagemInteira]) {
       ctx.imagens.i0 = rec.imagens[fl.imagemInteira]; s += "<image data-im=\"i0\" x=\"0\" y=\"0\" width=\"" + Pp.w + "\" height=\"" + Pp.h + "\"/>";
@@ -293,6 +308,9 @@
         }
       });
       s += coluna(P, pr, g) + carimbo(P, pr, fl, g, rec, ctx);
+      if (ctx.inter && ctx.inter.indice !== false && ctx.inter.comIndice) s += "<text x=\"20\" y=\"7.4\" font-size=\"2.6\" fill=\"#0b57a4\">Indice de folhas</text><line x1=\"20\" y1=\"8.2\" x2=\"" + n3(20 + (SP() ? SP().largura("Indice de folhas", 2.6, false) : 20)) + "\" y2=\"8.2\" stroke=\"#0b57a4\" stroke-width=\"0.15\"/>";
+      var PIx = global.PdfInterativo || (typeof require === "function" ? require("./pdfinterativo.js") : null);
+      if (ctx.inter && PIx && PIx.rodapeFolha) { ctx.rodape = PIx.rodapeFolha({ pr: pr, folha: fl }, g, ctx.inter); s += ctx.rodape.svg; }   /* QR + "Abrir em 3D (Prancha Viva)": só com a placa da obra publicada */
     }
     /* "caber" no quadro: troca x/y/width/height da imagem pelo retângulo contido, conforme as dimensões em pixel conhecidas */
     s = s.replace(/<image data-im="([^"]+)" data-fit="1" x="([^"]*)" y="([^"]*)" width="([^"]*)" height="([^"]*)"\/>/g, function (_, ch, x, y, w, h) {
@@ -300,7 +318,7 @@
       if (d && d.w > 0 && d.h > 0) { var k = Math.min(w / d.w, h / d.h), nw = d.w * k, nh = d.h * k; x += (w - nw) / 2; y += (h - nh) / 2; w = nw; h = nh; }
       return "<image data-im=\"" + ch + "\" x=\"" + n3(x) + "\" y=\"" + n3(y) + "\" width=\"" + n3(w) + "\" height=\"" + n3(h) + "\"/>";
     });
-    return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens, cam: ctx.cam };
+    return { svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + Pp.w + "mm\" height=\"" + Pp.h + "mm\" viewBox=\"0 0 " + Pp.w + " " + Pp.h + "\">" + s + "</svg>", imagens: ctx.imagens, cam: ctx.cam, vps: ctx.vps, rodape: ctx.rodape || null };
   }
 
   /* itens: [{ pr, folha, rec, geo }]. opc.codificar(uri) → Promise<{ flate|jpeg (texto binário), pxW, pxH }>; opc.dimensoes(uri) → Promise<{w,h}> (opcional). */
@@ -308,24 +326,40 @@
     opc = opc || {}; var P = opc.P || global.PranchaUI, SPM = SP();
     var codificar = opc.codificar || codificarNavegador, dimensoes = opc.dimensoes || null;
     var todas = [], pend = [];
+    var I = opc.interativo && opc.interativo.ativo !== false ? opc.interativo : null, PI = global.PdfInterativo || (typeof require === "function" ? require("./pdfinterativo.js") : null);
+    if (I && !PI) I = null;
+    if (I) I.comIndice = I.indice !== false && itens.length >= 1;
     itens.forEach(function (it, ix) { var r0 = svgDaFolha(P, it.pr, it.folha, it.rec, it.geo, null, null); todas.push({ it: it, imagens: r0.imagens, pref: "p" + ix + "_" }); });
     var uris = {}, dims = {};
     todas.forEach(function (t) { Object.keys(t.imagens).forEach(function (ch) { uris[t.pref + ch] = t.imagens[ch]; }); });
+    if (I && I.imagem3d && /^data:image\//.test(txt(I.imagem3d.uri))) uris.capa3d = I.imagem3d.uri;   /* a imagem de capa do modelo 3D (página "Modelo 3D" do PDF interativo) */
     var chaves = Object.keys(uris), cod = {};
     var seq = Promise.resolve();
     chaves.forEach(function (k) { seq = seq.then(function () { return codificar(uris[k]); }).then(function (r) { if (r && (typeof r.flate === "string" || typeof r.jpeg === "string")) { cod[k] = r; dims[k] = { w: r.pxW, h: r.pxH }; } }); });
-    var camTot = { usados: {}, atual: {} }, cfgCam = camCfg(opc.camadas);
+    var camTot = { usados: {}, atual: {}, dyn: { ordem: [], nomes: {}, off: {} } }, cfgCam = camCfg(opc.camadas);
     return seq.then(function () {
+      if (I) { if (cod.capa3d) I._capa3d = { w: cod.capa3d.pxW, h: cod.capa3d.pxH }; else delete I._capa3d; }
+      var resFolhas = [];
       var svgs = todas.map(function (t) {
         var d = {}; Object.keys(t.imagens).forEach(function (ch) { if (dims[t.pref + ch]) d[ch] = dims[t.pref + ch]; });
-        var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d, opc.camadas);
-        Object.keys(r1.cam.usados).forEach(function (k) { camTot.usados[k] = 1; }); if (r1.cam.atual.parede && !camTot.atual.parede) camTot.atual.parede = r1.cam.atual.parede;
+        var r1 = svgDaFolha(P, t.it.pr, t.it.folha, t.it.rec, t.it.geo, d, opc.camadas, I); resFolhas.push(r1);
+        Object.keys(r1.cam.usados).forEach(function (k) { camTot.usados[k] = 1; });
+        r1.cam.dyn.ordem.forEach(function (id) { if (camTot.dyn.ordem.indexOf(id) < 0) camTot.dyn.ordem.push(id); camTot.dyn.nomes[id] = r1.cam.dyn.nomes[id]; if (r1.cam.dyn.off[id]) camTot.dyn.off[id] = true; }); if (r1.cam.atual.parede && !camTot.atual.parede) camTot.atual.parede = r1.cam.atual.parede;
         return r1.svg.replace(/data-im="([^"]+)"/g, function (_, ch) { return "data-im=\"" + t.pref.replace(/[^A-Za-z0-9]/g, "") + ch + "\""; });
       });
       var porChave = {}; Object.keys(cod).forEach(function (k) { porChave[k.replace(/[^A-Za-z0-9]/g, "")] = cod[k]; });
       var camInfo = cfgCam && Object.keys(camTot.usados).length ? infoCamadas(cfgCam, camTot) : null;
-      var bytes = SPM.pdf(svgs, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave, camadas: camInfo });
-      return { bytes: bytes, paginas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgs, camadas: camInfo ? Object.keys(camTot.usados) : [] };
+      var interativo = null, plano = null, svgsFinal = svgs;
+      if (I) {
+        plano = PI.planejar({ itens: itens, res: resFolhas, I: I, P: P, camadas: camInfo, avisos: [] });
+        svgs = svgs.map(function (sv, i) { return plano.acrescimos && plano.acrescimos[i] ? sv.replace(/<\/svg>\s*$/, plano.acrescimos[i] + "</svg>") : sv; });   /* botões de modo na margem da folha */
+        svgsFinal = plano.antes.concat(svgs, plano.depois);
+        interativo = { anot: plano.anot, outline: plano.outline, anexos: plano.anexos, modos: plano.modos, idioma: "pt-BR" };
+      }
+      var bytes = SPM.pdf(svgsFinal, { titulo: opc.titulo || "Folhas", imagensPorChave: porChave, camadas: camInfo, interativo: interativo });
+      var avisosFim = (plano ? plano.avisos : []).slice();
+      if (bytes.length > 30 * 1048576) avisosFim.push("O PDF tem " + (bytes.length / 1048576).toFixed(1) + " MB (acima de 30 MB): reduza as vistas 3D, as imagens ou os anexos.");
+      return { bytes: bytes, paginas: svgsFinal.length, folhas: svgs.length, imagens: Object.keys(porChave).length, svgs: svgsFinal, camadas: camInfo ? Object.keys(camTot.usados) : [], avisos: avisosFim, interativo: interativo, snapshots: plano ? plano.snapshots : [], modos: plano ? plano.modos : [] };
     });
   }
 
