@@ -251,7 +251,12 @@
     var nPinos = 0, kgChapa = 0, nWT = 0, nAssento = 0, kgAssento = 0, cintaParaf = 0;
     Object.keys(L2).forEach(function (k) {
       var l = L2[k], m = mult[k] || 0;
-      if (l.pinos && l.pinos.ok) { nPinos += m * l.pinos.n; kgChapa += m * 0.008 * Math.max(0.03, (l.chapa ? l.chapa.largura_mm / 1000 : 0.1)) * ((l.pinos.comprimento || 0.2) + 0.05) * 7850; }
+      if (k === "noDiagonal" && l.banzo && l.banzo.BS && l.banzo.BI && l.pinos && l.pinos.ok) {
+        /* HOWE: por diagonal, 2 pontas × grupo da diagonal + 1 grupo no banzo superior + 1 no banzo inferior (a ponta de cima prende no BS e a de baixo no BI; antes só contava o lado da diagonal). A chapa sai do MAIOR grupo (comprimento) e da maior largura (a coluna dupla do banzo alarga a chapa: 2a + 4d). */
+        var nDGh = qm("DG"), grp = [l.pinos, l.banzo.BS.pinos, l.banzo.BI.pinos], compH = Math.max.apply(null, grp.map(function (g) { return g.comprimento || 0.2; })), largH = Math.max(0.03, l.chapa ? l.chapa.largura_mm / 1000 : 0.1);
+        grp.forEach(function (g) { if (g.nc > 1 && g.centroGrupo) largH = Math.max(largH, 2 * g.centroGrupo.a + 4 * g.d); });
+        nPinos += nDGh * 2 * l.pinos.n + nDGh * (l.banzo.BS.pinos.n + l.banzo.BI.pinos.n); kgChapa += m * 0.008 * largH * (compH + 0.05) * 7850;
+      } else if (l.pinos && l.pinos.ok) { nPinos += m * l.pinos.n; kgChapa += m * 0.008 * Math.max(0.03, (l.chapa ? l.chapa.largura_mm / 1000 : 0.1)) * ((l.pinos.comprimento || 0.2) + 0.05) * 7850; }
       if (l.f90 && l.f90.reforco && m) nWT += m * l.f90.reforco.parafusos;      /* M5 (r14): parafusos de rosca total de reforço ⊥ às fibras contra o fendilhamento (F90) entram no orçamento — antes só terça e caibro */
       if (k === "tercaTesoura") nWT += qm("T") * 4 * l.porApoio + qm("CM") * 4 * l.porApoio;
       if (k === "caibroCumeeira") nWT += qm("CB") * l.porApoio;

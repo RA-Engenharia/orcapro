@@ -472,7 +472,7 @@
     a: 12, b: 8, peDireito: 3.0, baseZ: 0, incl: 0.30, beiral: { frente: 0.8, fundo: 0.8, esq: 0.8, dir: 0.8 },
     sistema: "tesoura", vMaxPilar: 4.0, telha: { peso: 0.55, descricao: "telha cerâmica com ripas" },
     cobertura: { sTercaMax: 1.4, caibros: false, sCaibro: 0.5, caibro: { b: 0.05, h: 0.10 } },
-    tesoura: { sTes: 4.0 }, cumeeira: { sCaibro: 1.0, pilaresIntermediarios: null, assento: "deslizante", tirante: false },
+    tesoura: { sTes: 4.0, tipo: "pratt" }, cumeeira: { sCaibro: 1.0, pilaresIntermediarios: null, assento: "deslizante", tirante: false },
     contraventamento: { aguas: "extremos", tipo: "madeira", fita: { b: 0.06, e: 0.002, aproveitamento: 0.75 } }, vedacaoRigida: false,
     vergas: null, origem: { x: 0, y: 0 }, nome: "Casa de duas águas"
   };
@@ -482,6 +482,7 @@
     if (!(q.incl > 0.05)) throw new Error("madtipologias T2: inclinação mínima de 5 % (telha)");
     if (q.a < q.b - 1e-9) throw new Error("madtipologias T2: a cumeeira corre pela maior dimensão (a ≥ b, NBR 6123 Tabela 5): gire a planta 90°");
     if (q.cumeeira.assento !== "deslizante" && q.cumeeira.assento !== "fixo") throw new Error("madtipologias T2: assento do caibro \"deslizante\" ou \"fixo\"");
+    if (q.tesoura.tipo !== "pratt" && q.tesoura.tipo !== "howe") throw new Error("madtipologias T2: tesoura.tipo deve ser \"pratt\" ou \"howe\"");
     q._t2 = true; return q;
   }
   function t2Geometria(pp) {
@@ -491,7 +492,7 @@
     var yT = function (z) { return z < 0 ? Hp + i * z : (z > b ? Hp + i * (b - z) : Hp + i * Math.min(z, b - z)); };
     var m = nH; while (m > 1 && (nH % m !== 0 || m * dz > p.vMaxPilar + 1e-9)) m--;
     var zsOit = []; for (j = 0; j <= 2 * nH; j += m) zsOit.push(j * dz);
-    var eE = B.esq, eD = B.dir, n = 0, nc = 0, tipF = B.frente * sc, tipB = B.fundo * sc;
+    var howe = p.sistema === "tesoura" && p.tesoura.tipo === "howe", eE = B.esq, eD = B.dir, n = 0, nc = 0, tipF = B.frente * sc, tipB = B.fundo * sc;
     function add(o) { o.p0 = o.p0.map(function (v) { return rd(v, 4); }); o.p1 = o.p1.map(function (v) { return rd(v, 4); }); M.push(o); return o; }
     var P3 = function (x, z, y) { return [x, z, y]; }, cumeeira = p.sistema === "cumeeira";
     /* pilares do perímetro: faces Y=0 e Y=b (esquerda/direita da NBR 6123 na convenção do motor) e oitões X=0 e X=a (frente/fundo) */
@@ -514,7 +515,12 @@
           for (j = 1; j <= nH; j++) {
             var zj = sg < 0 ? zH(j) : b - zH(j);
             if (j < nH || ag === "F") add({ id: "PD" + ag + j + "_" + kx, g: "PD", tes: kx, p0: P3(x, zj, Hp), p1: P3(x, zj, yT(zj)), pinI: true, pinJ: true });
-            if (j >= 2) add({ id: "DG" + ag + j + "_" + kx, g: "DG", tes: kx, agua: ag, p0: P3(x, sg < 0 ? zH(j - 1) : b - zH(j - 1), Hp), p1: P3(x, zj, yT(zj)), pinI: true, pinJ: true });
+            if (j >= 2) {
+              /* PRATT: diagonal do nó inferior externo (j-1) ao nó superior interno (j) — tracionada sob gravidade, montante comprimido.
+                 HOWE (docs/madeira/HOWE-REFERENCIA.md): espelhada — do nó SUPERIOR externo (j-1) ao nó INFERIOR interno (j): diagonal COMPRIMIDA, montante TRACIONADO. Mesmos nós e mesmo nº de barras. */
+              var zj1 = sg < 0 ? zH(j - 1) : b - zH(j - 1);
+              add({ id: "DG" + ag + j + "_" + kx, g: "DG", tes: kx, agua: ag, p0: howe ? P3(x, zj1, yT(zj1)) : P3(x, zj1, Hp), p1: howe ? P3(x, zj, Hp) : P3(x, zj, yT(zj)), pinI: true, pinJ: true });
+            }
           }
         });
       });
@@ -581,15 +587,62 @@
       [0, b].forEach(function (z) { bb2.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "x", z)); }); }); });
       [0, a].forEach(function (x) { zO.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "z", x)); }); }); });
     }
-    return { p: p, membros: M, info: { xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+    return { p: p, membros: M, info: { tesouraTipo: howe ? "howe" : "pratt", xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+  }
+
+  /* ---- HOWE: FOLGA CONSTRUTIVA (HOWE-REFERENCIA §4, decisão do RT 17/11/2026) ----
+   * A diagonal comprimida NÃO encosta no banzo nem no montante: a ponta é cortada em bisel (plano paralelo à face do banzo) a ≥ FOLGA_HOWE da face, e a carga passa SÓ pela chapa interna e pelos pinos.
+   * O modelo de cálculo usa o EIXO (nó a nó); a fonte/prancha/IFC usam a peça APARADA. Geometria no plano da tesoura: (z da planta, altura). */
+  var FOLGA_HOWE = 0.010;
+  function segDist(a, b, c, d) {
+    function pt(p, s0, s1) { var dx = s1[0] - s0[0], dy = s1[1] - s0[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - s0[0]) * dx + (p[1] - s0[1]) * dy) / L2)) : 0; return Math.hypot(p[0] - s0[0] - t * dx, p[1] - s0[1] - t * dy); }
+    function cr(o, p, q) { return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]); }
+    if (cr(a, b, c) * cr(a, b, d) < 0 && cr(c, d, a) * cr(c, d, b) < 0) return 0;
+    return Math.min(pt(a, c, d), pt(b, c, d), pt(c, a, b), pt(d, a, b));
+  }
+  function dentroPol(P, x, y) { var c = false, k, j = P.length - 1; for (k = 0; k < P.length; k++) { if ((P[k][1] > y) !== (P[j][1] > y) && x < (P[j][0] - P[k][0]) * (y - P[k][1]) / (P[j][1] - P[k][1]) + P[k][0]) c = !c; j = k; } return c; }
+  /** distância mínima entre dois polígonos (0 se há contato ou sobreposição) */
+  function distPol(P, Q) {
+    if (dentroPol(Q, P[0][0], P[0][1]) || dentroPol(P, Q[0][0], Q[0][1])) return 0;
+    var m = Infinity, i, j; for (i = 0; i < P.length; i++) for (j = 0; j < Q.length; j++) m = Math.min(m, segDist(P[i], P[(i + 1) % P.length], Q[j], Q[(j + 1) % Q.length]));
+    return m;
+  }
+  /** faixa de largura w centrada no eixo p0→p1 (2D: z da planta, altura) */
+  function faixa(p0, p1, w) { var dx = p1[0] - p0[0], dy = p1[1] - p0[1], L = Math.hypot(dx, dy), nx = -dy / L * w / 2, ny = dx / L * w / 2; return [[p0[0] + nx, p0[1] + ny], [p1[0] + nx, p1[1] + ny], [p1[0] - nx, p1[1] - ny], [p0[0] - nx, p0[1] - ny]]; }
+  /** a diagonal Howe aparada: devolve { p0, p1 (3D, mesmo sentido do eixo), polig (2D), aparo, folga: { BS, BI, PD } (m) } */
+  function howeAparar(m, G, sec) {
+    var p = G.p, I = G.info, hb = p.b / 2, i = p.incl, sc = I.sc, gap = FOLGA_HOWE, w = sec.DG.h;
+    var topo = m.p0[2] > m.p1[2] ? m.p0 : m.p1, base = topo === m.p0 ? m.p1 : m.p0, T = [topo[1], topo[2]], B = [base[1], base[2]];
+    var L = Math.hypot(B[0] - T[0], B[1] - T[1]), u = [(B[0] - T[0]) / L, (B[1] - T[1]) / L], n = [-u[1], u[0]];
+    var sg = T[0] < hb ? 1 : -1, cBS = [sg / sc, i / sc];
+    var sinT = Math.abs(u[0] * cBS[1] - u[1] * cBS[0]), sinB = Math.abs(u[1]);
+    function montante(z) { var yt = I.yT(z); return [[z - sec.PD.h / 2, I.Hp + sec.BI.h / 2], [z + sec.PD.h / 2, I.Hp + sec.BI.h / 2], [z + sec.PD.h / 2, yt - sec.BS.h / 2 * sc], [z - sec.PD.h / 2, yt - sec.BS.h / 2 * sc]]; }
+    var bz = G.membros.filter(function (q) { return q.tes === m.tes && (q.g === "BS" || q.g === "BI"); }), bancos = bz.map(function (q) { return faixa([q.p0[1], q.p0[2]], [q.p1[1], q.p1[2]], sec[q.g].h); });
+    var mont = [montante(T[0]), montante(B[0])];
+    function pol(tt, tb) {
+      var A = [T[0] + u[0] * tt, T[1] + u[1] * tt], Bq = [B[0] - u[0] * tb, B[1] - u[1] * tb], nA = [-cBS[1], cBS[0]], nB = [0, 1];
+      function cantos(P, cn) { var nn = n[0] * cn[0] + n[1] * cn[1], un = u[0] * cn[0] + u[1] * cn[1], r = []; [1, -1].forEach(function (s) { var tau = -s * (w / 2) * nn / un; r.push([P[0] + n[0] * s * w / 2 + u[0] * tau, P[1] + n[1] * s * w / 2 + u[1] * tau]); }); return r; }
+      var a = cantos(A, nA), b = cantos(Bq, nB); return [a[0], b[0], b[1], a[1]];
+    }
+    var t0 = (sec.BS.h / 2 + gap) / sinT, t1 = (sec.BI.h / 2 + gap) / sinB, P = pol(t0, t1), k;
+    function minMont(Pp) { return Math.min(distPol(Pp, mont[0]), distPol(Pp, mont[1])); }
+    for (k = 0; k < 800 && minMont(P) < gap - 1e-9; k++) {        /* a ponta ainda chega a < 10 mm de um montante: recua 1 mm na ponta mais próxima */
+      var dT = distPol(P, mont[0]), dB = distPol(P, mont[1]); if (dT <= dB) t0 += 0.001; else t1 += 0.001; P = pol(t0, t1);
+    }
+    function r4(v) { return Math.round(v * 1e4) / 1e4; }
+    var A3 = [T[0] + u[0] * t0, T[1] + u[1] * t0], B3 = [B[0] - u[0] * t1, B[1] - u[1] * t1], aTop = [topo[0], r4(A3[0]), r4(A3[1])], aBot = [base[0], r4(B3[0]), r4(B3[1])];
+    var f = { BS: Infinity, BI: Infinity }; bancos.forEach(function (q, ix) { f[bz[ix].g] = Math.min(f[bz[ix].g], distPol(P, q)); });
+    return { p0: topo === m.p0 ? aTop : aBot, p1: topo === m.p0 ? aBot : aTop, polig: P, aparo: { topo: t0, base: t1 }, folga: { BS: f.BS, BI: f.BI, PD: minMont(P) } };
   }
 
   /** FONTE de T2: agrupa os membros iguais em marcas com quantidade. sec = { P, PO, PC, FR, BS, BI, PD, DG, T, CM, CB, TI:{d} }; ext = { classe } */
   function t2Fonte(p, sec, ext) {
     ext = ext || {}; var G = t2Geometria(p), lista = Lista(), add = comClasse(lista, ext.classe), M = G.membros, I = G.info, marcas = {}, ordem = [], cont = {};
+    if (I.tesouraTipo === "howe" && sec.DG && sec.BS && sec.BI && sec.PD) M = M.map(function (m) { if (m.g !== "DG") return m; var a = howeAparar(m, G, sec), c = {}; Object.keys(m).forEach(function (k) { c[k] = m[k]; }); c.eixo0 = m.p0; c.eixo1 = m.p1; c.p0 = a.p0; c.p1 = a.p1; c.folga = a.folga; c.aparo = a.aparo; return c; });      /* HOWE: peça APARADA (folga >= 10 mm; o modelo de cálculo segue pelo eixo) */
     var NOMES = { P: ["Casa — pilares", "Pilar do perímetro"], PO: ["Casa — pilares de oitão", "Pilar de oitão"], PC: ["Casa — pilares de oitão", "Pilar de cumeeira (oitão/central)"], FR: ["Casa — frechal", "Frechal (viga de respaldo)"],
       LB: ["Contraventamento — linhas do banzo inferior", "Linha longitudinal do banzo inferior (6.6.4)"], DX: ["Contraventamento — águas (madeira)", "Diagonal de madeira em X no plano das águas (6.6.2 e 6.6.4)"], DP: ["Contraventamento — paredes (madeira)", "Diagonal de madeira em X nos painéis das paredes (pilar → frechal)"], DV: ["Contraventamento — vertical (madeira)", "Diagonal de madeira em X nos planos verticais entre tesouras (6.6.4, Figura 5)"], BS: ["Tesouras", "Banzo superior da tesoura"], BI: ["Tesouras", "Banzo inferior (tirante) da tesoura"], PD: ["Tesouras", "Montante da tesoura (comprimido sob gravidade)"], DG: ["Tesouras", "Diagonal da tesoura"],
       T: ["Cobertura — terças", "Terça"], CM: ["Cobertura — cumeeira", "Viga de cumeeira"], CB: ["Cobertura — caibros principais", "Caibro principal (cumeeira ao frechal)"] };
+    if (I.tesouraTipo === "howe") { NOMES.PD = ["Tesouras", "Montante da tesoura Howe (tracionado sob gravidade)"]; NOMES.DG = ["Tesouras", "Diagonal da tesoura Howe (comprimida sob gravidade)"]; }
     M.forEach(function (m) {
       if (!NOMES[m.g]) return;
       var s = sec[m.g === "DV" ? "DX" : m.g] || {}, L = norm(m.p0, m.p1), linear = m.g === "T" || m.g === "CM" || m.g === "FR" || m.g === "LB", key = [m.g, rd(L, 3), linear ? m.id : "", JSON.stringify(s)].join("|");
@@ -628,7 +681,7 @@
   var MadTipologias = {
     MATERIAIS: MATERIAIS,
     T1: { padrao: T1_PADRAO, parametros: t1Parametros, geometria: t1Geometria, fonte: t1Fonte },
-    T2: { padrao: T2_PADRAO, parametros: t2Parametros, geometria: t2Geometria, fonte: t2Fonte, baiasContraventadas: baiasContraventadas },
+    T2: { padrao: T2_PADRAO, parametros: t2Parametros, geometria: t2Geometria, fonte: t2Fonte, howeAparar: howeAparar, FOLGA_HOWE: FOLGA_HOWE, distPol: distPol, faixa: faixa, baiasContraventadas: baiasContraventadas },
     T7: { fonte: t7Fonte },
     volumePorMaterial: volumePorMaterial, arange: arange, linspace: linspace, rd: rd
   };

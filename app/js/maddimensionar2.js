@@ -1103,7 +1103,8 @@
           else if (g === "BS") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.lp, L0z: CTV ? CTV.BS.L0z : I.lp, L1: CTV ? CTV.BS.L0z : I.lp, classe: CL, perfil: pf })); }
           else if (g === "BI") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: I.dz, L0z: CTV ? CTV.BI.L0z : p.b, L1: CTV ? CTV.BI.L0z : p.b, classe: CL, perfil: pf })); }
           else if (g === "PD" || g === "DG" || g === "DX" || g === "DP") { v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: b.L, L0z: b.L, L1: 0.01, classe: CL, perfil: pf })); }      /* DX (contraventamento de madeira): sem crédito do cruzamento — L0 = comprimento da diagonal nos dois eixos */
-          if (v) { regG(g, v.eta, b.id + "@" + e.x.toFixed(2), cb.id + " " + car, v.governa); regEsb(g, v); }
+          if (v) { regG(g, v.eta, b.id + "@" + e.x.toFixed(2), cb.id + " " + car, v.governa); regEsb(g, v);      /* HOWE: a diagonal é comprimida; expõe L0 e λ POR EIXO da barra de maior esbeltez (o teste da Howe lê daqui, não recalcula) */
+            if (g === "DG" && v.lambda) { var cpr = res.compressaoDG || null, lm = Math.max(v.lambda[0] || 0, v.lambda[1] || 0); if (!cpr || lm > cpr.lambdaMax) res.compressaoDG = { barra: b.id, L0y: b.L, L0z: b.L, lambda: v.lambda.slice(), lambdaRel: v.lambdaRel ? v.lambdaRel.slice() : null, lambdaMax: lm, limite: 40 * Math.sqrt(12), eta: v.eta }; } }
         });
       });
       Object.keys(fnd).forEach(function (n9) { var nb = nBanzo[n9], f9 = fnd[n9], d9 = f9[0] * nb.t[0] + f9[1] * nb.t[1] + f9[2] * nb.t[2], pr = Math.sqrt(Math.pow(f9[0] - d9 * nb.t[0], 2) + Math.pow(f9[1] - d9 * nb.t[1], 2) + Math.pow(f9[2] - d9 * nb.t[2], 2)) * FK; if (pr > f90Perp[nb.g]) f90Perp[nb.g] = pr; });
@@ -1255,6 +1256,18 @@
     Object.keys(out.porGrupo).forEach(function (g) { if (g === gov) return; var x = out.porGrupo[g].LG; (x.verificacoes || []).forEach(function (v) { if (/^base/.test(v.nome)) LG.verificacoes.push({ nome: v.nome + "[" + g + "]", eta: v.eta, ok: v.ok }); }); if (x.ok === false) LG.ok = false; });
     return { LG: LG, Ktheta: G0.Ktheta, pilar: env[gov], grupoGov: gov, porGrupo: out.porGrupo };
   }
+  /** HOWE: maior ângulo (rad) entre o eixo de cada diagonal DG e o do banzo superior (BS, no nó do topo da diagonal) e do banzo inferior (BI, horizontal), no plano da tesoura; geometria única de madtipologias.T2.geometria */
+  function t2HoweAngulos(params) {
+    var G = MT.T2.geometria(params), hb = params.b / 2, bs = 0, bi = 0;
+    G.membros.forEach(function (m) {
+      if (m.g !== "DG") return;
+      var top = m.p0[2] > m.p1[2] ? m.p0 : m.p1, bot = top === m.p0 ? m.p1 : m.p0, dz = bot[1] - top[1], dy = bot[2] - top[2], Ld = Math.sqrt(dz * dz + dy * dy) || 1;
+      var sg = top[1] < hb ? 1 : -1, ux = sg, uy = params.incl, Lu = Math.sqrt(ux * ux + uy * uy);      /* eixo do banzo superior apontando para a cumeeira */
+      bs = Math.max(bs, Math.acos(Math.min(1, Math.abs(dz * ux + dy * uy) / (Ld * Lu))));
+      bi = Math.max(bi, Math.acos(Math.min(1, Math.abs(dz) / Ld)));
+    });
+    return { betaBS: bs, betaBI: bi };
+  }
   /** ligações da T2 (madligacoes.pacoteT2) a partir dos esforços do resultado: reações por grupo de pilar, assento deslizante, esforços nos banzos/terças/caibros */
   function t2Ligacoes(q, sec, r) {
     var cl = MM.classe2022(q.classe), agg = {}, asn = { Nmax: -1e9, Nmin: 1e9, Hmax: 0 };
@@ -1263,7 +1276,9 @@
     if (!agg.P) agg.P = { Nmax: 0, Nmin: 0, Hmax: 0, NminEq: 0, HmaxEq: 0 };
     var c = { kmod: r.kmodRef, kmod1: r.kmod1Ref, kmod2: r.kmod2Ref, rhok: cl.rhok, k90Tipo: cl.grupo === "dicotiledonea" ? "folhosa" : "conifera" };
     var Lp0 = Math.abs(q.params.peDireito), pesoPil = {}; ["P", "PO", "PC"].forEach(function (g) { if (sec[g]) pesoPil[g === "PO" ? "P" : g] = Math.max(pesoPil[g === "PO" ? "P" : g] || 0, sec[g].b * sec[g].h * (g === "PC" ? Lp0 + (q.params.b / 2) * q.params.incl : Lp0) * q.pesoMLC); });      /* B1 (r14): a reação de BASE subestima o arrancamento no TOPO do pilar pelo peso do próprio pilar (U_topo = U_base + P_pilar) */
-    return ML.pacoteT2({ sistema: q.params.sistema, pesoPilar: pesoPil, secoes: sec, cfg: c, esf: r.esf, reacoes: agg, assento: asn, incl: q.params.incl, fita: { N: Math.max(sec.FT ? r.tracoes.fita : 0, r.tracoes.parede, sec.FT ? (r.tracoes.vert || 0) : 0), b: sec.FT ? sec.FT.b : 0.06, e: sec.FT ? sec.FT.e : 0.002 }, contrav: r.contrav || null, f90Perp: r.f90Perp || null, mat: { fc90k: cl.fc90k, fc0k: cl.fc0k, kmod90: perfilFn(q)("longa").kmod } });
+    var howe = null;
+    if (q.params.sistema === "tesoura" && q.params.tesoura && q.params.tesoura.tipo === "howe") howe = t2HoweAngulos(q.params);      /* HOWE: ângulos da diagonal comprimida com os banzos (pinos do banzo, madligacoes.pacoteT2) */
+    return ML.pacoteT2({ howe: howe, sistema: q.params.sistema, pesoPilar: pesoPil, secoes: sec, cfg: c, esf: r.esf, reacoes: agg, assento: asn, incl: q.params.incl, fita: { N: Math.max(sec.FT ? r.tracoes.fita : 0, r.tracoes.parede, sec.FT ? (r.tracoes.vert || 0) : 0), b: sec.FT ? sec.FT.b : 0.06, e: sec.FT ? sec.FT.e : 0.002 }, contrav: r.contrav || null, f90Perp: r.f90Perp || null, mat: { fc90k: cl.fc90k, fc0k: cl.fc0k, kmod90: perfilFn(q)("longa").kmod } });
   }
   function t2Projetar(proj, partida, opcoes) {
     opcoes = opcoes || {};
