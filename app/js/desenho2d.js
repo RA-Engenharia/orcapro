@@ -488,15 +488,28 @@
   /* MARCA DAS ESQUADRIAS (19/11/2026): ao lado de cada porta e janela, do lado de fora da parede, um círculo com a marca (P1, J1) e as medidas em cm embaixo
      ("80×210"; janela "120×120/110" = largura × altura / peitoril). lista = d.esquadrias [{ marca, texto, centro:{x,z}, normal:{x,z}, esp }] em metros do desenho.
      Círculo e texto têm tamanho de PAPEL (mm × escala); texto com halo branco; cor/fonte em atributos (a folha e o PDF levam o desenho igual). */
+  /* ROTULO ARRASTÁVEL (19/11/2026): off = { dx, dz } em metros do desenho (guardado por vista e por elemento em js/bim2dui.js). Sem off = posição automática.
+     Distante do elemento, a linha de chamada fina liga o rótulo ao ponto de origem (x0, y0). */
+  function offRot(o) { return { dx: o && isFinite(o.dx) ? +o.dx : 0, dz: o && isFinite(o.dz) ? +o.dz : 0 }; }
+  function chamadaRot(x0, y0, x1, y1, raio, pena, k) {
+    var dx = x1 - x0, dy = y1 - y0, L = Math.sqrt(dx * dx + dy * dy);
+    if (L < raio * 2.5) return "";
+    return '<line x1="' + n4(x0) + '" y1="' + n4(y0) + '" x2="' + n4(x1 - dx / L * raio) + '" y2="' + n4(y1 - dy / L * raio) + '" stroke="#000000" stroke-width="' + pena.cota + '" ' + NS + ' class="d2-rotulo-chamada"/>';
+  }
   function svgMarcasEsquadrias(lista, e, pena) {
     var k = e.escala / 1000, r = 2.6 * k, hM = 2.2 * k, cor = "#000000", s = "";
     lista.forEach(function (q) {
-      var nx = q.normal ? q.normal.x : 0, nz = q.normal ? q.normal.z : 1, d1 = (q.esp || 0.15) / 2 + 3.6 * k, cx = q.centro.x + nx * d1, cy = q.centro.z + nz * d1;
+      var nx = q.normal ? q.normal.x : 0, nz = q.normal ? q.normal.z : 1, d1 = (q.esp || 0.15) / 2 + 3.6 * k, cx0 = q.centro.x + nx * d1, cy0 = q.centro.z + nz * d1;
+      var of = offRot(q.off), cx = cx0 + of.dx, cy = cy0 + of.dz, g = "";
+      if (of.dx || of.dz) g += chamadaRot(q.centro.x, q.centro.z, cx, cy, r, pena, k);   /* RÓTULO ARRASTADO: linha de chamada fina até o vão */
       var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" stroke="#ffffff" stroke-width="' + n4(0.7 * k) + '" paint-order="stroke"';
-      s += '<circle cx="' + n4(cx) + '" cy="' + n4(cy) + '" r="' + n4(r) + '" fill="#ffffff" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-esq-c"/>';
-      s += txt(cx, cy + 0.85 * k, 2.4 * k, esc(q.marca), "d2-esq-tx", "middle", 0, fam + ' font-weight="bold"');
-      var acima = nz < -0.3, ty = acima ? cy - r - 0.9 * k : cy + r + hM + 0.4 * k, tx = cx + (Math.abs(nz) <= 0.3 ? nx * String(q.texto).length * 0.62 * hM / 2 : 0);
-      s += txt(tx, ty, hM, esc(q.texto), "d2-esq-tx", "middle", 0, fam);
+      g += '<circle cx="' + n4(cx) + '" cy="' + n4(cy) + '" r="' + n4(r) + '" fill="#ffffff" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-esq-c"/>';
+      g += txt(cx, cy + 0.85 * k, 2.4 * k, esc(q.marca), "d2-esq-tx", "middle", 0, fam + ' font-weight="bold"');
+      if (q.texto) {   /* sem medida: só a marca (nada de "s/ medida") */
+        var acima = nz < -0.3, ty = acima ? cy - r - 0.9 * k : cy + r + hM + 0.4 * k, tx = cx + (Math.abs(nz) <= 0.3 ? nx * String(q.texto).length * 0.62 * hM / 2 : 0);
+        g += txt(tx, ty, hM, esc(q.texto), "d2-esq-tx", "middle", 0, fam);
+      }
+      s += '<g class="d2-esq-g d2-rotulo" data-d2-rotulo="esq:' + esc(q.id) + '">' + g + "</g>";
     });
     return '<g class="d2-esquadrias">' + s + "</g>";
   }
@@ -858,10 +871,12 @@
       if (!e.identAmbiente || !isFinite(it.x) || !isFinite(it.y)) return;
       var h1 = 3 * k, h2 = 2.5 * k, l1 = String(it.linha1 || ""), l2 = String(it.linha2 || "");
       var w = Math.max(l1.length * h1 * 0.6, l2.length * h2 * 0.58, 8 * k);
-      s += '<g class="d2-amb-tag' + (it.sel ? " d2-amb-sel" : "") + (it.aviso ? " d2-amb-aviso" : "") + '" data-d2-amb="' + esc(it.id) + '">' +
-        '<rect x="' + n4(it.x - w / 2 - k) + '" y="' + n4(it.y - h1 - 1.2 * k) + '" width="' + n4(w + 2 * k) + '" height="' + n4(h1 + h2 + 3.4 * k) + '" class="d2-amb-alvo"/>' +
-        txt(it.x, it.y - 0.4 * k, h1, esc(l1), "d2-amb-tx d2-amb-nome", "middle") +
-        txt(it.x, it.y + h2 + 0.6 * k, h2, esc(l2), "d2-amb-tx d2-amb-num" + (it.aviso ? " d2-amb-av" : ""), "middle") + "</g>";
+      var of = offRot(it.off), ax = it.x + of.dx, ay = it.y + of.dz;   /* IDENTIFICADOR ARRASTADO: posição + deslocamento da vista */
+      if (of.dx || of.dz) s += chamadaRot(it.x, it.y, ax, ay, 6 * k, pena, k);
+      s += '<g class="d2-amb-tag d2-rotulo' + (it.sel ? " d2-amb-sel" : "") + (it.aviso ? " d2-amb-aviso" : "") + '" data-d2-amb="' + esc(it.id) + '" data-d2-rotulo="amb:' + esc(it.id) + '">' +
+        '<rect x="' + n4(ax - w / 2 - k) + '" y="' + n4(ay - h1 - 1.2 * k) + '" width="' + n4(w + 2 * k) + '" height="' + n4(h1 + h2 + 3.4 * k) + '" class="d2-amb-alvo"/>' +
+        txt(ax, ay - 0.4 * k, h1, esc(l1), "d2-amb-tx d2-amb-nome", "middle") +
+        txt(ax, ay + h2 + 0.6 * k, h2, esc(l2), "d2-amb-tx d2-amb-num" + (it.aviso ? " d2-amb-av" : ""), "middle") + "</g>";
     });
     return s ? '<g class="d2-ambientes">' + s + "</g>" : "";
   }

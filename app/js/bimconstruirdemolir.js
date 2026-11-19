@@ -219,7 +219,7 @@
      (x, z) = o vão no plano; (nx, nz) = a normal da parede voltada PARA FORA da obra (lado oposto ao centro das paredes); texto = "80×210" ou "120×120/110" (cm). */
   function cmTxt(v) { return String(Math.round(v * 100)); }
   function textoMedidas(tipo, larg, alt, peit) {
-    if (!fin(larg) || !fin(alt)) return "s/ medida";
+    if (!fin(larg) || !fin(alt)) return "";   /* sem medida: só a marca (nada de "s/ medida" no desenho) */
     return cmTxt(larg) + "×" + cmTxt(alt) + (tipo === "janela" ? "/" + cmTxt(fin(peit) ? peit : 0) : "");
   }
   function esquadriasMarcadas(estado, opc) {
@@ -233,10 +233,18 @@
       if ((p.categoria !== "porta" && p.categoria !== "janela") || !p.fase) return;
       var el = p.el || {}, tipo = p.categoria, ab = null, par = el.host ? paredes[String(el.host.id)] : null;
       if (opc.yMin != null && opc.yMax != null && par && fin(par.cy) && fin(par.altura) && (par.cy - par.altura / 2 < opc.yMin || par.cy - par.altura / 2 > opc.yMax)) return;   /* só os vãos do pavimento da vista: a base da parede cai na faixa [yMin, yMax] */
-      try { var r = typeof av === "function" ? av(el.famId, el.tipoId, el.inst) : null; ab = r && r.abertura && r.abertura.largura > 0 ? r.abertura : null; } catch (e) { ab = null; }
+      try {
+        var r = typeof av === "function" ? av(el.famId, el.tipoId, el.inst) : null; ab = r && r.abertura && r.abertura.largura > 0 ? r.abertura : null;
+        /* FAMÍLIA LIVRE (pele de vidro entre pilares): sem vão de parede — a largura é o comprimento da caixa da peça, a altura é a altura dela, o peitoril é a base (nunca abaixo de 0) */
+        if (!ab && r && r.caixa && fin(r.caixa.x0) && fin(r.caixa.x1) && fin(r.caixa.y0) && fin(r.caixa.y1)) {
+          var cw = Math.max(r.caixa.x1 - r.caixa.x0, fin(r.caixa.z0) && fin(r.caixa.z1) ? r.caixa.z1 - r.caixa.z0 : 0), pb = Math.max(0, r.caixa.y0), ch = r.caixa.y1 - pb;   /* a base abaixo do piso (trilho embutido) não conta */
+          if (cw > 0 && ch > 0) ab = { largura: cw, altura: ch, peitoril: pb };
+        }
+      } catch (e) { ab = null; }
       var larg = ab ? ab.largura : null, alt = ab ? ab.altura : null, peit = ab ? (fin(ab.peitoril) ? ab.peitoril : 0) : null;
-      var chave = [txt(el.famId), txt(el.tipoId), larg, alt, peit].join("|"), L = chaves[tipo];
-      if (L.indexOf(chave) < 0) L.push(chave);
+      /* o vão não passa da parede que o hospeda: peitoril + altura maior que a parede = altura lida errada (a da extremidade/nível, não a do vão) → corta na altura da parede */
+      if (ab && par && fin(par.altura) && par.altura > 0 && peit + alt > par.altura + 0.02) alt = Math.max(0.05, par.altura - peit);
+      var chave = [txt(el.famId), txt(el.tipoId), larg, alt, peit].join("|");
       var nrm = { x: 0, z: 0 }, esp = par && fin(par.espessura) ? par.espessura : 0.15;
       if (par && fin(par.rotY)) {
         nrm = { x: Math.sin(par.rotY), z: Math.cos(par.rotY) };   /* normal da parede (a parede vai de (cos, −sin)) */
@@ -244,11 +252,22 @@
       }
       var RA = dep("FamiliasRA", "./familiasra.js"), reg = null; try { reg = RA && RA.obter ? RA.obter(el.famId, true) : null; } catch (e2) { reg = null; }
       var ins = el.inst || {};
-      out.push({ id: p.id, tipo: tipo, marca: (tipo === "porta" ? "P" : "J") + (L.indexOf(chave) + 1), famId: txt(el.famId), tipoId: txt(el.tipoId), nome: txt(reg && reg.nome) || txt(el.famId),
+      out.push({ id: p.id, tipo: tipo, chave: chave, marca: "", famId: txt(el.famId), tipoId: txt(el.tipoId), nome: txt(reg && reg.nome) || txt(el.famId),
                  material: txt(ins.Material_folha || ins.Material_marco || ""), larg: larg, alt: alt, peit: tipo === "janela" ? peit : null, fase: p.fase,
-                 x: fin(el.x) ? el.x : null, z: fin(el.z) ? el.z : null, nx: nrm.x, nz: nrm.z, esp: esp, texto: textoMedidas(tipo, larg, alt, peit) });
+                 x: fin(el.x) ? el.x : null, z: fin(el.z) ? el.z : null, nx: nrm.x, nz: nrm.z, esp: esp, hostId: el.host ? String(el.host.id) : "", texto: textoMedidas(tipo, larg, alt, peit) });
     });
-    return out;
+    /* UM RÓTULO POR VÃO: duas esquadrias da mesma categoria no mesmo ponto da mesma parede (a janela e a peça por cima dela) saem como um vão só — fica a de maior área */
+    var res = [];
+    out.forEach(function (q) {
+      var dup = -1;
+      res.forEach(function (o, i) { if (dup < 0 && o.tipo === q.tipo && o.x != null && q.x != null && Math.abs(o.x - q.x) < 0.1 && Math.abs(o.z - q.z) < 0.1 && o.hostId === q.hostId) dup = i; });
+      if (dup < 0) res.push(q); else if ((q.larg || 0) * (q.alt || 0) > (res[dup].larg || 0) * (res[dup].alt || 0)) res[dup] = q;
+    });
+    res.forEach(function (q) {   /* a marca só depois de tirar o vão repetido: P1, J1… sem número perdido */
+      var L = chaves[q.tipo]; if (L.indexOf(q.chave) < 0) L.push(q.chave);
+      q.marca = (q.tipo === "porta" ? "P" : "J") + (L.indexOf(q.chave) + 1);
+    });
+    return res;
   }
   /* o que a planta 2D desenha: [{ marca, texto, centro: {x, z} em m do desenho, tipo }] — uma marca por vão, fora da parede; some o vão a demolir? não: A demolir também leva a marca */
   function marcasPlanta(estado, opc) {

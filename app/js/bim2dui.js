@@ -51,9 +51,35 @@
       if (!Array.isArray(e.cortes)) e.cortes = [];
       if (!e.estilos || typeof e.estilos !== "object") e.estilos = {};
       if (!e.plantas || typeof e.plantas !== "object") e.plantas = {};
+      if (!e.rotulos || typeof e.rotulos !== "object" || Array.isArray(e.rotulos)) e.rotulos = {};   /* RÓTULOS ARRASTADOS: vista → { "esq:<id>" | "amb:<id>": { dx, dz } } (m do desenho) */
       if (!e.acima || typeof e.acima !== "object" || Array.isArray(e.acima)) e.acima = {};   /* ACIMA DO CORTE: a opção de cada vista (id → {on, modo, altura, rotulo}) */
       this._est = e;
       return e;
+    },
+    /* RÓTULOS ARRASTÁVEIS (19/11/2026): a marca de esquadria (círculo + medidas) e o identificador de ambiente (nome + área) podem ser arrastados na planta para
+       não ficarem um sobre o outro. O deslocamento { dx, dz } fica POR VISTA e POR ELEMENTO no estado das vistas; o desenho (tela, folha e PDF leem o mesmo _anotar) soma
+       o deslocamento à posição automática; sem deslocamento = posição automática. */
+    rotuloOff: function (vistaId, chave) {
+      var r = this.estado().rotulos[vistaId], o = r && r[chave];
+      return o && isFinite(o.dx) && isFinite(o.dz) && (o.dx || o.dz) ? { dx: +o.dx, dz: +o.dz } : null;
+    },
+    rotuloMover: function (vistaId, chave, dx, dz) {
+      var e = this.estado(); if (!vistaId || !chave || !isFinite(dx) || !isFinite(dz)) return false;
+      if (!dx && !dz) return this.rotuloRedefinir(vistaId, chave);
+      if (!e.rotulos[vistaId]) e.rotulos[vistaId] = {};
+      e.rotulos[vistaId][chave] = { dx: Math.round(dx * 10000) / 10000, dz: Math.round(dz * 10000) / 10000 };
+      this._gravar(); return true;
+    },
+    rotuloRedefinir: function (vistaId, chave) {
+      var e = this.estado(), r = e.rotulos[vistaId]; if (!r) return false;
+      if (chave) { if (!r[chave]) return false; delete r[chave]; } else delete e.rotulos[vistaId];
+      if (!Object.keys(r).length) delete e.rotulos[vistaId];
+      this._gravar(); return true;
+    },
+    _aplicarRotulos: function (d, out) {
+      var self = this;
+      if (out.esquadrias) out.esquadrias.forEach(function (q) { var o = self.rotuloOff(d.id, "esq:" + q.id); if (o) q.off = o; });
+      if (out.ambientes && out.ambientes.itens) out.ambientes.itens.forEach(function (it) { var o = self.rotuloOff(d.id, "amb:" + it.id); if (o) it.off = o; });
     },
     _gravar: function () { try { localStorage.setItem(this._chave(), JSON.stringify(this.estado())); } catch (x) { toast("Não consegui guardar as vistas 2D neste aparelho (armazenamento cheio).", "erro"); } },
     _avisarMudou: function () { try { if (this._cfg.aoMudar) this._cfg.aoMudar(); } catch (e) {} try { this.agendarAntes(); } catch (eA) {} },   /* FLUIDEZ: vista nova (corte, elevação) entra no desenho de antemão */
@@ -350,7 +376,7 @@
           if (CD8 && CD8.marcasPlanta && ez8 && ez8.estado && this._marcaEsqLigada(d)) {
             var bb8 = B() || {}, mq8 = CD8.marcasPlanta(ez8.estado, { avaliarFam: bb8.familiaAvaliar ? function (f, t, i) { return bb8.familiaAvaliar(f, t, i); } : null,
               deps: { categoriaFam: bb8.familiaCategoria ? function (id) { return bb8.familiaCategoria(id); } : null }, yMin: d.nivel.y - 0.5, yMax: d.nivel.y + 0.5 });
-            if (mq8.length) out.esquadrias = mq8;
+            if (mq8.length) { out.esquadrias = mq8; this._aplicarRotulos(d, out); }
           }
         } catch (eEq) { /* sem marca: a planta de sempre */ }
         out.marcas = this.estado().cortes.map(function (c) {
@@ -370,7 +396,7 @@
            identificador (nome; número · área), esquema de cores e legenda */
         try {
           var AU = global.BimAmbienteUI;
-          if (AU && AU.anotarPlanta) { var am = AU.anotarPlanta(d, this.estilo(d.id), this.niveis()); if (am) out.ambientes = am; }
+          if (AU && AU.anotarPlanta) { var am = AU.anotarPlanta(d, this.estilo(d.id), this.niveis()); if (am) { out.ambientes = am; this._aplicarRotulos(d, out); } }
         } catch (eAm) {}
         /* P5 (js/bimanot.js, prévia do modelador): identificadores (porta P01, parede PA-1…) — texto do registro */
         try { var AN5 = global.BimAnot; if (AN5 && AN5.anotarPlanta) { var an5 = AN5.anotarPlanta(d, this.estilo(d.id)); if (an5) out.anotacao = an5; } } catch (eAn5) {}
@@ -734,7 +760,7 @@
     },
     _ligarInteracao: function (v, id) {
       if (v._d2Ligado) return; v._d2Ligado = true;
-      var self = this, arr = null;
+      var self = this, arr = null, rot = null;
       /* FLUIDEZ (17/10/2026): a vista marcada "suja" enquanto escondida (js/bimambienteui.js) se refaz quando aparece */
       /* FLUIDEZ (25/10/2026): refeita em segundo plano (escondida) → ao aparecer, só a camada de seleção/alças (camadaPend) */
       try { if (global.ResizeObserver) new global.ResizeObserver(function () { var c0 = self._cache[id]; if (!c0 || !self.visivel(id)) return; if (c0.sujo) { c0.sujo = false; self._fundo = true; try { self.atualizar(id); } finally { self._fundo = false; } } else if (c0.camadaPend) { c0.camadaPend = false; self._camadas(id); } }).observe(v); } catch (eRO) {}
@@ -763,6 +789,17 @@
         }
         /* P2-D (js/bimambienteui.js): com Ambiente/Separador armado o clique na planta é o
            ponto; sem ferramenta, o clique no identificador seleciona o ambiente */
+        /* ARRASTAR RÓTULO (19/11/2026): botão esquerdo na marca de esquadria ou no identificador de ambiente e arrastar; sem mover, o clique segue como sempre (seleciona o ambiente) */
+        var rEl = ev.button === 0 && ev.target && ev.target.closest ? ev.target.closest("[data-d2-rotulo]") : null;
+        var AUr = global.BimAmbienteUI;
+        if (rEl && !(global.BimPlantaModelar && global.BimPlantaModelar.ocupado && global.BimPlantaModelar.ocupado()) && !(AUr && AUr.ferramenta && AUr.ferramenta())) {
+          var ch = rEl.getAttribute("data-d2-rotulo"), p0 = self._ptSvg(id, ev), o0 = self.rotuloOff(id, ch);
+          if (p0) {
+            rot = { chave: ch, el: rEl, p0: p0, x: ev.clientX, y: ev.clientY, o0: o0 || { dx: 0, dz: 0 }, moveu: false, dx: 0, dz: 0 };
+            try { v.setPointerCapture(ev.pointerId); } catch (eRc) {}
+            return;
+          }
+        }
         var AU = global.BimAmbienteUI;
         if (AU && AU.clique2d && ev.button === 0 && AU.clique2d(id, ev, self._ptSvg(id, ev))) return;
         var AN5 = global.BimAnot;   /* P5: Identificar por categoria (clique na peça) e clique na etiqueta seleciona */
@@ -786,6 +823,13 @@
       v.addEventListener("mousedown", function (ev) { if (ev.button === 1) ev.preventDefault(); });
       v.addEventListener("auxclick", function (ev) { if (ev.button === 1) ev.preventDefault(); });
       v.addEventListener("pointermove", function (ev) {
+        if (rot) {   /* arrastando um rótulo: o grupo acompanha o mouse; o desenho refeito vem ao soltar */
+          if (!rot.moveu && Math.abs(ev.clientX - rot.x) + Math.abs(ev.clientY - rot.y) < 4) return;
+          var pm = self._ptSvg(id, ev); if (!pm) return;
+          rot.moveu = true; rot.dx = pm[0] - rot.p0[0]; rot.dz = pm[1] - rot.p0[1];
+          try { rot.el.setAttribute("transform", "translate(" + rot.dx + " " + rot.dz + ")"); } catch (eT) {}
+          return;
+        }
         var SLm = global.BimSelecao;   /* SELECIONAR: a janela, o arrasto da peça/alça e o realce sob o cursor */
         if (!arr && SLm && SLm.move2d && SLm.move2d(id, ev, self._ptSvg(id, ev))) return;
         if (self._pick && self._pick.id === id && self._pick.pts.length === 1) self._mostrarPick(id, ev);
@@ -798,6 +842,13 @@
         self._aplicarVb(id, { x: arr.vb.x - dx, y: arr.vb.y - dy, w: arr.vb.w, h: arr.vb.h });
       });
       function solta(ev) {
+        if (rot) {
+          var r0 = rot; rot = null;
+          if (r0.moveu && ev && ev.type === "pointerup") { self.rotuloMover(id, r0.chave, r0.o0.dx + r0.dx, r0.o0.dz + r0.dz); self.redesenhar(id, false); }
+          else if (r0.moveu) { try { r0.el.removeAttribute("transform"); } catch (eR) {} }
+          else if (ev && ev.type === "pointerup" && /^amb:/.test(r0.chave) && global.BimAmbienteUI && global.BimAmbienteUI.selecionar) global.BimAmbienteUI.selecionar(r0.chave.slice(4));   /* sem arrastar: o clique de sempre (seleciona o ambiente) */
+          return;
+        }
         var SLu = global.BimSelecao;
         /* SELECIONAR: o toque simples (o dedo não andou) seleciona; o arrasto do esquerdo termina aqui */
         if (arr && arr.toque && ev && ev.type === "pointerup" && SLu && SLu.clique2d && Math.abs(ev.clientX - arr.x) + Math.abs(ev.clientY - arr.y) < 8) SLu.clique2d(id, ev, self._ptSvg(id, ev));
@@ -806,6 +857,9 @@
       }
       v.addEventListener("pointerup", solta); v.addEventListener("pointercancel", solta);
       v.addEventListener("dblclick", function (ev) {
+        /* DUPLO CLIQUE no rótulo arrastado: volta à posição automática */
+        var rD = ev.target && ev.target.closest ? ev.target.closest("[data-d2-rotulo]") : null;
+        if (rD && self.rotuloRedefinir(id, rD.getAttribute("data-d2-rotulo"))) { self.redesenhar(id, false); status("Rótulo na posição automática."); return; }
         /* PLANTA: com a ferramenta de modelar armada o duplo clique é ponto, não "enquadrar" */
         if (global.BimPlantaModelar && global.BimPlantaModelar.ocupado && global.BimPlantaModelar.ocupado()) return;
         /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA abre o diálogo dela (js/metalcomponenteui.js) */
