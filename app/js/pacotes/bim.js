@@ -112930,7 +112930,7 @@ var BT7 = global.BimTelhado, bz7 = B(), ez7 = bz7 && bz7.editarEstado ? bz7.edit
 try { var M7 = this._p6(); vp7 = M7 && M7.estado ? M7.estado().vistas[d.id] : null; } catch (eV7) { vp7 = null; }
 var lig7 = typeof est7.caimentoTelha === "boolean" ? est7.caimentoTelha : (BT7 && BT7.caimentoAuto ? BT7.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), vp7 && vp7.modeloId) : false);
 if (lig7 && BT7 && BT7.caimentosPlanta && ez7 && ez7.estado && ez7.estado.telhados && ez7.estado.telhados.length) {
-var cm7 = BT7.caimentosPlanta(ez7.estado, { nivelId: d.nivel && d.nivel.id });
+var cm7 = BT7.caimentosPlanta(ez7.estado, {});
 if (cm7.length) out.caimentos = cm7;
 }
 } catch (eCm) { }
