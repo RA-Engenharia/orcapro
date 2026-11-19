@@ -1109,6 +1109,12 @@
       if (qual === "folhas") return PR().listaFolhas(regs, this.projeto());
       if (qual === "vistas") return PR().listaVistas(this.vistas2d(), regs);
       /* TABELAS QUANTITATIVAS DO MODELO (demolição, construção, portas e janelas): o motor lê a geometria — js/bimconstruirdemolir.js */
+      /* QUADRO DA COBERTURA (19/11/2026): por tipo de telha — inclinação, área, telhas e metros de cumeeira/espigão/rincão/calha/rufo, lidos do telhado (js/bimtelhado.js quadroCobertura) */
+      if (qual === "cobertura") {
+        var BTq = global.BimTelhado, stQ = this._estadoBim();
+        if (!BTq || !BTq.quadroCobertura || !stQ) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
+        return BTq.quadroCobertura(stQ, {});
+      }
       if (qual === "demolicao" || qual === "construcao" || qual === "esquadrias") {
         var CDt = global.BimConstruirDemolir, stT = this._estadoBim();
         if (!CDt || !stT) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
@@ -1768,6 +1774,7 @@
         { id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." },
         { id: "construir-demolir", rotulo: "Construir e\nDemolir", icone: "prancha", grande: true, dica: "Gera a prancha de reforma do nível: a planta com o demolir em verde tracejado, a alvenaria nova em vermelho e o existente em cinza, a legenda só com o que existe no modelo, as notas padrão (editáveis) e o quadro de demolição. A fase de cada peça é a do BIM (Fase criada / Fase demolida, nas Propriedades); o projeto de reforma liga em Gerenciar › Fases." },
         { id: "tabela-demolicao", rotulo: "Tabela de\ndemolição", icone: "tabela", dica: "m² de parede a demolir e de piso a remover por ambiente, lidos da geometria do modelo. Pode ir para a folha aberta." },
+        { id: "tabela-cobertura", rotulo: "Quadro da\ncobertura", icone: "tabela", dica: "INFORMAÇÕES SOBRE A COBERTURA: por tipo de telha, a inclinação, a área inclinada, as telhas (só se calculadas) e os metros de cumeeira, espigão, rincão, calha e rufo, lidos da geometria do telhado. O que não dá para calcular sai —. Pode ir para a folha aberta." },
         { id: "tabela-construcao", rotulo: "Tabela de\nconstrução", icone: "tabela", dica: "m² de parede nova (alvenaria e drywall) por ambiente, lidos da geometria. Pode ir para a folha aberta." },
         { id: "tabela-esquadrias", rotulo: "Portas e\njanelas", icone: "tabela", dica: "Cada porta e janela com a marca, o tipo e a fase (Existente, Nova, A demolir). Pode ir para a folha aberta." }
       ]);
@@ -1795,6 +1802,7 @@
       reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
       reg["construir-demolir"] = function () { return !!self.gerarConstruirDemolir(); };
       reg["tabela-demolicao"] = function () { self.mostrarLista("demolicao"); return true; };
+      reg["tabela-cobertura"] = function () { self.mostrarLista("cobertura"); return true; };
       reg["tabela-construcao"] = function () { self.mostrarLista("construcao"); return true; };
       reg["tabela-esquadrias"] = function () { self.mostrarLista("esquadrias"); return true; };
       reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };

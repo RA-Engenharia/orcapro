@@ -141,6 +141,8 @@
     o.corteForcado = o.corteForcado === true || o.corteForcado === "true"; if (!o.corteForcado) delete o.corteForcado;
     o.corCotas = /^#[0-9a-fA-F]{6}$/.test(String(o.corCotas || "")) ? String(o.corCotas).toLowerCase() : ""; if (!o.corCotas) delete o.corCotas;
     o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
+    /* CAIMENTO E TELHA (19/11/2026): só fica gravado quando a pessoa escolheu (true/false); sem escolha vale o automático das vistas de cobertura (js/bim2dui.js) */
+    if (e && (e.caimentoTelha === true || e.caimentoTelha === false)) o.caimentoTelha = e.caimentoTelha;
     return o;
   }
 
@@ -463,6 +465,24 @@
     return '<g class="d2-marca" data-d2-corte="' + esc(m.id) + '">' + s + "</g>";
   }
 
+  /* PLANTA DE COBERTURA (19/11/2026): a seta de caimento de cada água (do alto para onde a água escorre) com a inclinação em % em cima e o tipo de telha embaixo.
+     lista = d.caimentos [{ centro:{x,z}, sentido:{x,z}, texto:"↓ 10%", rotulo }] em metros do desenho; a seta e o texto têm tamanho de PAPEL (mm × escala).
+     Cor/fonte em atributos (não em classe): a folha e o PDF levam o desenho igual. */
+  function svgCaimentos(lista, e, pena) {
+    var k = e.escala / 1000, half = 6 * k, cor = "#c00000", s = "";
+    lista.forEach(function (c) {
+      var cx = c.centro.x, cy = c.centro.z, ux = c.sentido.x, uy = c.sentido.z;
+      var x0 = cx - ux * half, y0 = cy - uy * half, x1 = cx + ux * half, y1 = cy + uy * half, hl = 2.2 * k, hw = 0.9 * k;
+      var bx = x1 - ux * hl, by = y1 - uy * hl;
+      s += '<line x1="' + n4(x0) + '" y1="' + n4(y0) + '" x2="' + n4(bx) + '" y2="' + n4(by) + '" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-caim-l"/>';
+      s += '<path d="M' + n4(x1) + " " + n4(y1) + "L" + n4(bx - uy * hw) + " " + n4(by + ux * hw) + "L" + n4(bx + uy * hw) + " " + n4(by - ux * hw) + 'Z" fill="' + cor + '" class="d2-caim-p"/>';
+      var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" font-weight="bold"';
+      s += txt(cx, Math.min(y0, y1) - 1.6 * k, 2.6 * k, esc(c.texto), "d2-caim-tx", "middle", 0, fam);
+      if (c.rotulo) s += txt(cx, Math.max(y0, y1) + 3.4 * k, 2 * k, esc(c.rotulo), "d2-caim-tx", "middle", 0, fam);
+    });
+    return '<g class="d2-caimentos">' + s + "</g>";
+  }
+
   /* EIXO da grade (B2, js/bimarq.js): traço-ponto de ponta a ponta e a bolinha
      com o nome além de cada ponta. Planta: { nome, a:[x,y], b:[x,y] }; corte:
      { nome, x } (linha vertical na altura do desenho, bolinha em cima). */
@@ -651,6 +671,7 @@
     /* 3) anotação */
     if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
     if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
+    if (d.tipo === "planta" && d.caimentos && d.caimentos.length && e.caimentoTelha !== false) p.push(svgCaimentos(d.caimentos, e, pena));   /* PLANTA DE COBERTURA: seta de caimento + % + tipo de telha */
     if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));   /* P6: elevação, chamada de detalhe, recorte */
     eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
     /* P8 (junção 18/10/2026): o lugar novo do número da cota curta só com a prévia ?previa=hidro (sem BimPrevia — Node,

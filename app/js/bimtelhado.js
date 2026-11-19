@@ -118,6 +118,7 @@
   function fin(v) { return typeof v === "number" && isFinite(v); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
+  function r2(v) { return Math.round(v * 100) / 100; }
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
@@ -1497,6 +1498,17 @@
     return rInv;
   }
 
+  /* ---- planta de cobertura (caimentosPlanta / quadroCobertura): rótulo da telha, laje plana e porcentagem em texto */
+  function pctTxt(v) { var x = Math.round(v * 10) / 10; return (x === Math.round(x) ? String(Math.round(x)) : x.toFixed(1)).replace(".", ","); }
+  function rotuloPlano(t, r) {
+    var cam = arr(t && t.tipoTelhado && t.tipoTelhado.camadas).map(function (c) { return txt(c.material) + " " + txt(c.rotulo); }).join(" ");
+    return /laje|impermeabil|manta asf|concreto/i.test(txt(r && r.nome) + " " + txt(t && t.tipoId) + " " + cam);
+  }
+  /* o nome do tipo de telhado até a 1ª vírgula (o resto é detalhe de camada), em caixa alta */
+  function rotuloTelha(t, r) {
+    var n = txt(r && r.nome) || txt(t && t.tipoId); n = n.split(",")[0].replace(/\s+/g, " ").trim();
+    return (n || "TIPO DE TELHA NÃO INFORMADO").toUpperCase();
+  }
   var BimTelhado = {
     perimetroVirtual: perimetroVirtual,
     inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
@@ -1856,6 +1868,67 @@
         if (C && C.resumoDoTelhado) { var rc = C.resumoDoTelhado(estado, t.id); o.calhas = rc.calhas; o.rufos = rc.rufos; o.platibandas = rc.platibandas; o.condutores = rc.condutores; }
         return o;
       });
+    },
+    /* PLANTA DE COBERTURA NO PADRÃO TÉCNICO (19/11/2026, pedido do Rogério): a seta de caimento de CADA ÁGUA (do alto para onde a água escorre), com a
+       inclinação em % e o tipo de telha embaixo. Tudo sai do modelo (resumoPlanta); nada é inventado. Devolve
+       [{ telhadoId, aresta, centro:{x,z}, sentido:{x,z}, pct, texto:"↓ 10%", rotulo:"TELHA …", plano:bool }]. opc.nivelId filtra o telhado do nível. */
+    caimentosPlanta: function (estado, opc) {
+      opc = opc || {};
+      var rp = this.resumoPlanta(estado), porId = {}, out = [];
+      arr(estado && estado.telhados).forEach(function (t) { porId[String(t.id)] = t; });
+      rp.forEach(function (r) {
+        var t = porId[String(r.id)] || {};
+        if (!r.ok) return;
+        if (opc.nivelId != null && t.nivelId != null && String(t.nivelId) !== String(opc.nivelId)) return;
+        var plano = rotuloPlano(t, r), rot = rotuloTelha(t, r);
+        r.aguas.forEach(function (ag) {
+          if (!ag.seta || !(ag.pct > 0)) return;   /* água sem caimento (plano) não leva seta */
+          var pc = pctTxt(ag.pct);
+          out.push({ telhadoId: r.id, aresta: ag.aresta, centro: { x: ag.centro.x, z: ag.centro.z }, sentido: { x: ag.seta.sentido.x, z: ag.seta.sentido.z }, pct: ag.pct,
+                     texto: "↓ " + pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
+        });
+      });
+      return out;
+    },
+    /* a planta liga a opção sozinha nas vistas de cobertura / platibanda / telhado (pelo nome da vista ou do nível, ou pelo modelo de vista de cobertura) */
+    caimentoAuto: function (nome, modeloId) { return modeloId === "ra-planta-cobertura" || /cobertura|platibanda|telhado/i.test(txt(nome)); },
+    /* QUADRO "INFORMAÇÕES SOBRE A COBERTURA": uma linha por tipo de telha. Item que não dá para calcular sai "—" (nunca valor inventado):
+       telhas só quando o telhado tem pacote calculado; calha e rufo = BimCobertura + bordas calha/rufo do telhado. */
+    quadroCobertura: function (estado, opc) {
+      opc = opc || {};
+      var C = dep("BimCobertura", "./bimcobertura.js"), rp = this.resumoPlanta(estado), porId = {}, grupos = [], idx = {}, bordas = arr(estado && estado.bordas);
+      arr(estado && estado.telhados).forEach(function (t) { porId[String(t.id)] = t; });
+      rp.forEach(function (r) {
+        var t = porId[String(r.id)] || {};
+        if (!r.ok) return;
+        if (opc.nivelId != null && t.nivelId != null && String(t.nivelId) !== String(opc.nivelId)) return;
+        var plano = rotuloPlano(t, r), nome = plano ? "LAJE IMPERMEABILIZADA" : rotuloTelha(t, r), ch = plano ? "laje" : nome;
+        var g = idx[ch];
+        if (!g) { g = idx[ch] = { tipo: nome, plano: plano, pcts: [], area: 0, areaProj: 0, telhas: 0, telhasOk: true, cumeeira: 0, espigao: 0, rincao: 0, calha: 0, rufo: 0, n: 0 }; grupos.push(g); }
+        g.n++; g.area += num(r.area, 0); g.areaProj += num(r.areaProjecao, 0);
+        r.aguas.forEach(function (ag) { if (ag.pct > 0 && g.pcts.indexOf(ag.pct) < 0) g.pcts.push(ag.pct); });
+        g.cumeeira += num(r.linhas.cumeeira, 0); g.espigao += num(r.linhas.espigao, 0); g.rincao += num(r.linhas.rincao, 0);
+        var pk = t.pacote && t.pacote.ok && t.pacote.medidas ? t.pacote.medidas.telhasUn : null;
+        if (fin(pk) && pk > 0 && !plano) g.telhas += pk; else g.telhasOk = false;
+        r.calhas.forEach(function (c) { g.calha += num(c.comprimento, 0); });
+        r.rufos.forEach(function (u) { if (u.tipo !== "testeira") g.rufo += num(u.comprimento, 0); });
+        bordas.forEach(function (b) {
+          if (!b || String(b.telhado) !== String(r.id) || !fin(b.comprimento)) return;
+          if (b.tipoBorda === "calha") g.calha += b.comprimento; else if (b.tipoBorda === "rufo") g.rufo += b.comprimento;
+        });
+      });
+      function m(v, ok) { return ok === false ? "—" : r2(v).toFixed(2).replace(".", ","); }
+      var temC = !!C;
+      var linhas = grupos.map(function (g) {
+        var mn = Math.min.apply(null, g.pcts), mx = Math.max.apply(null, g.pcts);
+        var inc = !g.pcts.length ? "—" : (mn === mx ? pctTxt(mn) + "%" : pctTxt(mn) + "–" + pctTxt(mx) + "%");
+        return [g.tipo, inc, m(g.area), g.telhasOk && g.telhas > 0 ? String(Math.round(g.telhas)) : "—", m(g.cumeeira), m(g.espigao), m(g.rincao), m(g.calha, temC || g.calha > 0), m(g.rufo, temC || g.rufo > 0)];
+      });
+      var tot = grupos.reduce(function (a, g) { a.area += g.area; return a; }, { area: 0 });
+      if (!linhas.length) linhas.push(["Nenhum telhado", "—", "—", "—", "—", "—", "—", "—", "—"]);
+      else if (linhas.length > 1) linhas.push(["TOTAL", "", m(tot.area), "", "", "", "", "", ""]);
+      return { titulo: "INFORMAÇÕES SOBRE A COBERTURA", cabecalho: ["Tipo de telha", "Inclinação", "Área (m²)", "Telhas (un)", "Cumeeira (m)", "Espigão (m)", "Rincão (m)", "Calha (m)", "Rufo (m)"],
+               linhas: linhas, dados: { grupos: grupos, areaTotal: r2(tot.area) }, avisos: [] };
     },
     /* "Inclinação por aresta" em texto, como a Propriedade mostra: "30;30;-;30" */
     textoInclinacoes: function (t) {

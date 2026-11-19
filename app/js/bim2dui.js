@@ -324,6 +324,17 @@
             }
           }
         } catch (eI5) {}
+        /* PLANTA DE COBERTURA (19/11/2026): seta de caimento de cada água + % + tipo de telha, lidos do modelo (BimTelhado.caimentosPlanta). Opção "Mostrar caimento e telha":
+           sem escolha da pessoa, liga sozinha nas vistas de cobertura/platibanda/telhado. */
+        try {
+          var BT7 = global.BimTelhado, bz7 = B(), ez7 = bz7 && bz7.editarEstado ? bz7.editarEstado() : null, est7 = this.estilo(d.id), vp7 = null;
+          try { var M7 = this._p6(); vp7 = M7 && M7.estado ? M7.estado().vistas[d.id] : null; } catch (eV7) { vp7 = null; }
+          var lig7 = typeof est7.caimentoTelha === "boolean" ? est7.caimentoTelha : (BT7 && BT7.caimentoAuto ? BT7.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), vp7 && vp7.modeloId) : false);
+          if (lig7 && BT7 && BT7.caimentosPlanta && ez7 && ez7.estado && ez7.estado.telhados && ez7.estado.telhados.length) {
+            var cm7 = BT7.caimentosPlanta(ez7.estado, { nivelId: d.nivel && d.nivel.id });
+            if (cm7.length) out.caimentos = cm7;
+          }
+        } catch (eCm) { /* sem seta: a planta de sempre */ }
         out.marcas = this.estado().cortes.map(function (c) {
           var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
           if (c.inv) { nx = -nx; nz = -nz; }
@@ -969,7 +980,8 @@
           { id: "convencao", rotulo: "Convenção de reforma", tipo: "lista", valor: e.convencao || "padrao", opcoes: op(D.CONVENCOES) },
           /* padrão de detalhamento da empresa (js/padraodet.js): cota, unidade, texto e escala de uma vez */
           { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
-        ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte }]
+        ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte },
+                                       { id: "caimentoTelha", rotulo: "Mostrar caimento e telha", tipo: "sim-nao", valor: typeof e.caimentoTelha === "boolean" ? e.caimentoTelha : !!(global.BimTelhado && global.BimTelhado.caimentoAuto && global.BimTelhado.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null)) }]
                                      : [{ id: "niveis", rotulo: "Níveis", tipo: "sim-nao", valor: e.niveis }]) },
         { nome: "Cotas", params: [
           { id: "cotas", rotulo: "Mostrar cotas", tipo: "sim-nao", valor: e.cotas },
@@ -1090,8 +1102,9 @@
       var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
       est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
       if (pid === "preenchimento") est.corteForcado = true;   /* escolhido na vista: vale também nas vistas com estilos de objeto (P6) */
+      if (pid === "caimentoTelha") est.caimentoTelha = valor === true || valor === "true" || valor === 1 || valor === "1";   /* a seta vem do modelo: refaz a extração */
       e.estilos[id] = D2().normEstilo(est);
-      this._gravar(); this.redesenhar(id, false);
+      this._gravar(); this.redesenhar(id, pid === "caimentoTelha");
     },
     /* NÍVEIS ocultos por vista (estilo.niveisOcultos, chave "nome|cota"): gravado no projeto com o estilo da vista */
     _nivelVisivel: function (id, chave, visivel) {

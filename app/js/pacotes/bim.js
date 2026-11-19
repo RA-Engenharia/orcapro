@@ -66637,6 +66637,7 @@ function num(v, d) { if (v == null || v === "") return d; var n = Number(v); ret
 function fin(v) { return typeof v === "number" && isFinite(v); }
 function arr(v) { return Array.isArray(v) ? v : []; }
 function txt(v) { return v == null ? "" : String(v); }
+function r2(v) { return Math.round(v * 100) / 100; }
 function r4(v) { return Math.round(v * 10000) / 10000; }
 function r6(v) { return Math.round(v * 1e6) / 1e6; }
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
@@ -67829,6 +67830,15 @@ var rInv = inverterCaimento(t.contorno.map(function (q) { var o = { x: q.x, z: q
 if (rInv.ok && t.conjunto) { var cj = clone(t.conjunto); cj.arestaQueda = rInv.para; rInv.ops.push({ op: "telhado", id: id, conjunto: cj }); rInv.avisos.push("Conjunto: a queda foi para a aresta " + (rInv.para + 1) + " — refazer a verificação das terças."); }
 return rInv;
 }
+function pctTxt(v) { var x = Math.round(v * 10) / 10; return (x === Math.round(x) ? String(Math.round(x)) : x.toFixed(1)).replace(".", ","); }
+function rotuloPlano(t, r) {
+var cam = arr(t && t.tipoTelhado && t.tipoTelhado.camadas).map(function (c) { return txt(c.material) + " " + txt(c.rotulo); }).join(" ");
+return /laje|impermeabil|manta asf|concreto/i.test(txt(r && r.nome) + " " + txt(t && t.tipoId) + " " + cam);
+}
+function rotuloTelha(t, r) {
+var n = txt(r && r.nome) || txt(t && t.tipoId); n = n.split(",")[0].replace(/\s+/g, " ").trim();
+return (n || "TIPO DE TELHA NÃO INFORMADO").toUpperCase();
+}
 var BimTelhado = {
 perimetroVirtual: perimetroVirtual,
 inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
@@ -68134,6 +68144,61 @@ o.calhas = []; o.rufos = []; o.platibandas = []; o.condutores = [];
 if (C && C.resumoDoTelhado) { var rc = C.resumoDoTelhado(estado, t.id); o.calhas = rc.calhas; o.rufos = rc.rufos; o.platibandas = rc.platibandas; o.condutores = rc.condutores; }
 return o;
 });
+},
+caimentosPlanta: function (estado, opc) {
+opc = opc || {};
+var rp = this.resumoPlanta(estado), porId = {}, out = [];
+arr(estado && estado.telhados).forEach(function (t) { porId[String(t.id)] = t; });
+rp.forEach(function (r) {
+var t = porId[String(r.id)] || {};
+if (!r.ok) return;
+if (opc.nivelId != null && t.nivelId != null && String(t.nivelId) !== String(opc.nivelId)) return;
+var plano = rotuloPlano(t, r), rot = rotuloTelha(t, r);
+r.aguas.forEach(function (ag) {
+if (!ag.seta || !(ag.pct > 0)) return;
+var pc = pctTxt(ag.pct);
+out.push({ telhadoId: r.id, aresta: ag.aresta, centro: { x: ag.centro.x, z: ag.centro.z }, sentido: { x: ag.seta.sentido.x, z: ag.seta.sentido.z }, pct: ag.pct,
+texto: "↓ " + pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
+});
+});
+return out;
+},
+caimentoAuto: function (nome, modeloId) { return modeloId === "ra-planta-cobertura" || /cobertura|platibanda|telhado/i.test(txt(nome)); },
+quadroCobertura: function (estado, opc) {
+opc = opc || {};
+var C = dep("BimCobertura", "./bimcobertura.js"), rp = this.resumoPlanta(estado), porId = {}, grupos = [], idx = {}, bordas = arr(estado && estado.bordas);
+arr(estado && estado.telhados).forEach(function (t) { porId[String(t.id)] = t; });
+rp.forEach(function (r) {
+var t = porId[String(r.id)] || {};
+if (!r.ok) return;
+if (opc.nivelId != null && t.nivelId != null && String(t.nivelId) !== String(opc.nivelId)) return;
+var plano = rotuloPlano(t, r), nome = plano ? "LAJE IMPERMEABILIZADA" : rotuloTelha(t, r), ch = plano ? "laje" : nome;
+var g = idx[ch];
+if (!g) { g = idx[ch] = { tipo: nome, plano: plano, pcts: [], area: 0, areaProj: 0, telhas: 0, telhasOk: true, cumeeira: 0, espigao: 0, rincao: 0, calha: 0, rufo: 0, n: 0 }; grupos.push(g); }
+g.n++; g.area += num(r.area, 0); g.areaProj += num(r.areaProjecao, 0);
+r.aguas.forEach(function (ag) { if (ag.pct > 0 && g.pcts.indexOf(ag.pct) < 0) g.pcts.push(ag.pct); });
+g.cumeeira += num(r.linhas.cumeeira, 0); g.espigao += num(r.linhas.espigao, 0); g.rincao += num(r.linhas.rincao, 0);
+var pk = t.pacote && t.pacote.ok && t.pacote.medidas ? t.pacote.medidas.telhasUn : null;
+if (fin(pk) && pk > 0 && !plano) g.telhas += pk; else g.telhasOk = false;
+r.calhas.forEach(function (c) { g.calha += num(c.comprimento, 0); });
+r.rufos.forEach(function (u) { if (u.tipo !== "testeira") g.rufo += num(u.comprimento, 0); });
+bordas.forEach(function (b) {
+if (!b || String(b.telhado) !== String(r.id) || !fin(b.comprimento)) return;
+if (b.tipoBorda === "calha") g.calha += b.comprimento; else if (b.tipoBorda === "rufo") g.rufo += b.comprimento;
+});
+});
+function m(v, ok) { return ok === false ? "—" : r2(v).toFixed(2).replace(".", ","); }
+var temC = !!C;
+var linhas = grupos.map(function (g) {
+var mn = Math.min.apply(null, g.pcts), mx = Math.max.apply(null, g.pcts);
+var inc = !g.pcts.length ? "—" : (mn === mx ? pctTxt(mn) + "%" : pctTxt(mn) + "–" + pctTxt(mx) + "%");
+return [g.tipo, inc, m(g.area), g.telhasOk && g.telhas > 0 ? String(Math.round(g.telhas)) : "—", m(g.cumeeira), m(g.espigao), m(g.rincao), m(g.calha, temC || g.calha > 0), m(g.rufo, temC || g.rufo > 0)];
+});
+var tot = grupos.reduce(function (a, g) { a.area += g.area; return a; }, { area: 0 });
+if (!linhas.length) linhas.push(["Nenhum telhado", "—", "—", "—", "—", "—", "—", "—", "—"]);
+else if (linhas.length > 1) linhas.push(["TOTAL", "", m(tot.area), "", "", "", "", "", ""]);
+return { titulo: "INFORMAÇÕES SOBRE A COBERTURA", cabecalho: ["Tipo de telha", "Inclinação", "Área (m²)", "Telhas (un)", "Cumeeira (m)", "Espigão (m)", "Rincão (m)", "Calha (m)", "Rufo (m)"],
+linhas: linhas, dados: { grupos: grupos, areaTotal: r2(tot.area) }, avisos: [] };
 },
 textoInclinacoes: function (t) {
 return arr(t && t.contorno).map(function (q) { return q && q.d === false ? "-" : String(fin(Number(q && q.i)) && q.i !== null ? Number(q.i) : num(t.inclinacao, INCL_PADRAO)).replace(".", ","); }).join(";");
@@ -107512,7 +107577,7 @@ def(COMUM, [
 "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
 "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
 "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
-"construir-demolir", "tabela-demolicao", "tabela-construcao", "tabela-esquadrias",
+"construir-demolir", "tabela-demolicao", "tabela-cobertura", "tabela-construcao", "tabela-esquadrias",
 "travar-vista", "salvar-vista-3d", "duplicar-folha", "excluir-folha",
 "gerar-pranchas",
 "prancha-viva",
@@ -111339,6 +111404,7 @@ if (o.convencao === "padrao") delete o.convencao;
 o.corteForcado = o.corteForcado === true || o.corteForcado === "true"; if (!o.corteForcado) delete o.corteForcado;
 o.corCotas = /^#[0-9a-fA-F]{6}$/.test(String(o.corCotas || "")) ? String(o.corCotas).toLowerCase() : ""; if (!o.corCotas) delete o.corCotas;
 o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
+if (e && (e.caimentoTelha === true || e.caimentoTelha === false)) o.caimentoTelha = e.caimentoTelha;
 return o;
 }
 function fmtNum(v, casas) {
@@ -111590,6 +111656,20 @@ s += txt(cx, cy + 1.1 * k, 3.2 * k, esc(m.letra), "d2-marca-tx", "middle");
 });
 return '<g class="d2-marca" data-d2-corte="' + esc(m.id) + '">' + s + "</g>";
 }
+function svgCaimentos(lista, e, pena) {
+var k = e.escala / 1000, half = 6 * k, cor = "#c00000", s = "";
+lista.forEach(function (c) {
+var cx = c.centro.x, cy = c.centro.z, ux = c.sentido.x, uy = c.sentido.z;
+var x0 = cx - ux * half, y0 = cy - uy * half, x1 = cx + ux * half, y1 = cy + uy * half, hl = 2.2 * k, hw = 0.9 * k;
+var bx = x1 - ux * hl, by = y1 - uy * hl;
+s += '<line x1="' + n4(x0) + '" y1="' + n4(y0) + '" x2="' + n4(bx) + '" y2="' + n4(by) + '" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-caim-l"/>';
+s += '<path d="M' + n4(x1) + " " + n4(y1) + "L" + n4(bx - uy * hw) + " " + n4(by + ux * hw) + "L" + n4(bx + uy * hw) + " " + n4(by - ux * hw) + 'Z" fill="' + cor + '" class="d2-caim-p"/>';
+var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" font-weight="bold"';
+s += txt(cx, Math.min(y0, y1) - 1.6 * k, 2.6 * k, esc(c.texto), "d2-caim-tx", "middle", 0, fam);
+if (c.rotulo) s += txt(cx, Math.max(y0, y1) + 3.4 * k, 2 * k, esc(c.rotulo), "d2-caim-tx", "middle", 0, fam);
+});
+return '<g class="d2-caimentos">' + s + "</g>";
+}
 function svgEixo(ex, cx, e, pena) {
 var k = e.escala / 1000, R = 4 * k, s = "", a = ex.a, b = ex.b, cent = [];
 if (!a) { a = [ex.x, cx.y1 + 4 * k]; b = [ex.x, cx.y0 - 4 * k]; }
@@ -111738,6 +111818,7 @@ if (d.inst) p.push(svgInst(d.inst, k, pena));
 if (A7) p.push(A7.svg(d.anotP7, e, pena, "fundo"));
 if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
 if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
+if (d.tipo === "planta" && d.caimentos && d.caimentos.length && e.caimentoTelha !== false) p.push(svgCaimentos(d.caimentos, e, pena));
 if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));
 eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
 var semPrevia = false; try { semPrevia = !!(global.BimPrevia && typeof global.BimPrevia.hidro === "function" && !global.BimPrevia.hidro()); } catch (eP8) { semPrevia = false; }
@@ -112844,6 +112925,15 @@ try { this._rotulosInst(d, dados, out.inst, segRot, e5.estado.instalacoes.pecas)
 }
 }
 } catch (eI5) {}
+try {
+var BT7 = global.BimTelhado, bz7 = B(), ez7 = bz7 && bz7.editarEstado ? bz7.editarEstado() : null, est7 = this.estilo(d.id), vp7 = null;
+try { var M7 = this._p6(); vp7 = M7 && M7.estado ? M7.estado().vistas[d.id] : null; } catch (eV7) { vp7 = null; }
+var lig7 = typeof est7.caimentoTelha === "boolean" ? est7.caimentoTelha : (BT7 && BT7.caimentoAuto ? BT7.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), vp7 && vp7.modeloId) : false);
+if (lig7 && BT7 && BT7.caimentosPlanta && ez7 && ez7.estado && ez7.estado.telhados && ez7.estado.telhados.length) {
+var cm7 = BT7.caimentosPlanta(ez7.estado, { nivelId: d.nivel && d.nivel.id });
+if (cm7.length) out.caimentos = cm7;
+}
+} catch (eCm) { }
 out.marcas = this.estado().cortes.map(function (c) {
 var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
 if (c.inv) { nx = -nx; nz = -nz; }
@@ -113365,7 +113455,8 @@ var secoes = [
 { id: "titulo", rotulo: "Título da vista", tipo: "sim-nao", valor: e.titulo },
 { id: "convencao", rotulo: "Convenção de reforma", tipo: "lista", valor: e.convencao || "padrao", opcoes: op(D.CONVENCOES) },
 { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
-].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte }]
+].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte },
+{ id: "caimentoTelha", rotulo: "Mostrar caimento e telha", tipo: "sim-nao", valor: typeof e.caimentoTelha === "boolean" ? e.caimentoTelha : !!(global.BimTelhado && global.BimTelhado.caimentoAuto && global.BimTelhado.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null)) }]
 : [{ id: "niveis", rotulo: "Níveis", tipo: "sim-nao", valor: e.niveis }]) },
 { nome: "Cotas", params: [
 { id: "cotas", rotulo: "Mostrar cotas", tipo: "sim-nao", valor: e.cotas },
@@ -113481,8 +113572,9 @@ if (mnv) { this._nivelVisivel(id, mnv[1], valor === true || valor === "true" || 
 var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
 est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
 if (pid === "preenchimento") est.corteForcado = true;
+if (pid === "caimentoTelha") est.caimentoTelha = valor === true || valor === "true" || valor === 1 || valor === "1";
 e.estilos[id] = D2().normEstilo(est);
-this._gravar(); this.redesenhar(id, false);
+this._gravar(); this.redesenhar(id, pid === "caimentoTelha");
 },
 _nivelVisivel: function (id, chave, visivel) {
 var e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id)), L = (est.niveisOcultos || []).filter(function (q) { return q !== chave; });
@@ -185514,7 +185606,7 @@ var ABA_VISTA = [
 { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "max-3d", "janela-3d", "navegador-org",
 "fx-interface"] },
 { nome: "Apresentação", ids: ["cena", "render-fisico", "render-ia", "acabamento-ia", "galeria-ia", "apresentar-reforma"] },
-{ nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "construir-demolir", "tabela-demolicao", "tabela-construcao", "tabela-esquadrias", "prancha-viva"] },
+{ nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "construir-demolir", "tabela-demolicao", "tabela-cobertura", "tabela-construcao", "tabela-esquadrias", "prancha-viva"] },
 { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
 ];
 var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "cena": 1, "apresentar-reforma": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
@@ -194055,6 +194147,11 @@ tabela: function (qual) {
 var regs = this.registros();
 if (qual === "folhas") return PR().listaFolhas(regs, this.projeto());
 if (qual === "vistas") return PR().listaVistas(this.vistas2d(), regs);
+if (qual === "cobertura") {
+var BTq = global.BimTelhado, stQ = this._estadoBim();
+if (!BTq || !BTq.quadroCobertura || !stQ) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
+return BTq.quadroCobertura(stQ, {});
+}
 if (qual === "demolicao" || qual === "construcao" || qual === "esquadrias") {
 var CDt = global.BimConstruirDemolir, stT = this._estadoBim();
 if (!CDt || !stT) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
@@ -194636,6 +194733,7 @@ R.acrescentar("vista", "Vista", "Composição da folha", [
 { id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." },
 { id: "construir-demolir", rotulo: "Construir e\nDemolir", icone: "prancha", grande: true, dica: "Gera a prancha de reforma do nível: a planta com o demolir em verde tracejado, a alvenaria nova em vermelho e o existente em cinza, a legenda só com o que existe no modelo, as notas padrão (editáveis) e o quadro de demolição. A fase de cada peça é a do BIM (Fase criada / Fase demolida, nas Propriedades); o projeto de reforma liga em Gerenciar › Fases." },
 { id: "tabela-demolicao", rotulo: "Tabela de\ndemolição", icone: "tabela", dica: "m² de parede a demolir e de piso a remover por ambiente, lidos da geometria do modelo. Pode ir para a folha aberta." },
+{ id: "tabela-cobertura", rotulo: "Quadro da\ncobertura", icone: "tabela", dica: "INFORMAÇÕES SOBRE A COBERTURA: por tipo de telha, a inclinação, a área inclinada, as telhas (só se calculadas) e os metros de cumeeira, espigão, rincão, calha e rufo, lidos da geometria do telhado. O que não dá para calcular sai —. Pode ir para a folha aberta." },
 { id: "tabela-construcao", rotulo: "Tabela de\nconstrução", icone: "tabela", dica: "m² de parede nova (alvenaria e drywall) por ambiente, lidos da geometria. Pode ir para a folha aberta." },
 { id: "tabela-esquadrias", rotulo: "Portas e\njanelas", icone: "tabela", dica: "Cada porta e janela com a marca, o tipo e a fase (Existente, Nova, A demolir). Pode ir para a folha aberta." }
 ]);
@@ -194663,6 +194761,7 @@ reg["lista-folhas"] = function () { self.mostrarLista("folhas"); return true; };
 reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
 reg["construir-demolir"] = function () { return !!self.gerarConstruirDemolir(); };
 reg["tabela-demolicao"] = function () { self.mostrarLista("demolicao"); return true; };
+reg["tabela-cobertura"] = function () { self.mostrarLista("cobertura"); return true; };
 reg["tabela-construcao"] = function () { self.mostrarLista("construcao"); return true; };
 reg["tabela-esquadrias"] = function () { self.mostrarLista("esquadrias"); return true; };
 reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };
