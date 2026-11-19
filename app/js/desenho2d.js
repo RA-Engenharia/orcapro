@@ -88,11 +88,20 @@
        A DEMOLIR    — amarelo, tracejado;
        EXISTENTE A MANTER — preto / cinza.
      As pranchas de arquitetura (js/arqpranchas.js) usam esta MESMA tabela; o teste confere. */
-  var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente" };
+  var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente", construirDemolir: "Construir e demolir (prancha de reforma)" };
   var CONV_REFORMA = {
     novo:      { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
     demolido:  { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
     existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+  };
+
+  /* PRANCHA CONSTRUIR E DEMOLIR (19/11/2026, js/bimconstruirdemolir.js — as cores e o tracejado vêm de lá, o teste confere): demolir = tracejado VERDE sem preenchimento; alvenaria nova = preenchimento
+     VERMELHO; existente = cinza; piso a remover = hachura diagonal (ambiente com `hachura:"piso"`). A legenda NÃO vai embutida: é o bloco da folha (à direita, só com o que existe no modelo). */
+  var CONV_CD = {
+    novo:      { rotulo: "ALVENARIA NOVA", cor: "#d00000", fill: "#d00000", hachura: null, tracejado: null },
+    demolido:  { rotulo: "PAREDE A DEMOLIR", cor: "#1f8a3b", fill: "none", hachura: null, tracejado: [1.5, 1] },
+    existente: { rotulo: "EXISTENTE A MANTER", cor: "#6b6b6b", fill: "#bdbdbd", hachura: null, tracejado: null },
+    legenda: false, pisoHachura: "#333333"
   };
 
   function estiloPadrao() {
@@ -518,8 +527,9 @@
     var cx = caixa(d) || (d.area && d.area.x1 > d.area.x0 && d.area.y1 > d.area.y0 ? { x0: d.area.x0, y0: d.area.y0, x1: d.area.x1, y1: d.area.y1 } : null) || { x0: 0, y0: 0, x1: 1, y1: 1 };
     var cotas = cotasDe(d, e);
     var m = 32 * k;   /* margem de papel para cotas, níveis e marcas */
-    var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
-    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
+    var conv = e.convencao === "reforma" ? CONV_REFORMA : (e.convencao === "construirDemolir" ? CONV_CD : null);
+    var semLeg = !!(conv && conv.legenda === false), convFill = conv ? (conv.novo.hachura ? "url(#d2-hach-n)" : conv.novo.fill) : null;
+    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv && !semLeg ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv && !semLeg ? 22 * k : 0) };
     /* vínculo CAD (DWG/DXF): fica FORA da caixa das cotas (cota mede o modelo),
        mas o papel cresce para ele caber inteiro */
     var cad = d.cad || [], cadPath = "", cadTx = "";
@@ -570,7 +580,8 @@
     p.push("<defs>" +
       '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
       '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
-      (conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+      (conv && conv.pisoHachura ? '<pattern id="d2-hach-piso" patternUnits="userSpaceOnUse" width="' + n4(2 * k) + '" height="' + n4(2 * k) + '" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="' + n4(2 * k) + '" stroke="' + conv.pisoHachura + '" stroke-width="' + n4(0.25 * k) + '"/></pattern>' : "") +
+      (conv && conv.novo.hachura ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
       (e.preenchimento === "cruzada" || e.preenchimento === "concreto" || e.preenchimento === "tijolo" ? defPreenchimento(e.preenchimento, k) : "") +
       (p6 ? p6.defs : "") + "</defs>");
     p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
@@ -610,11 +621,11 @@
     if (porCat) {
       Object.keys(porCatC).forEach(function (kc) {
         var q2 = porCatC[kc], dc = ' data-cat="' + esc(kc) + '"';
-        if (q2.f) p.push('<path d="' + q2.f + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+        if (q2.f) p.push('<path d="' + q2.f + '" fill="' + (conv ? convFill : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
         if (q2.a) p.push('<path d="' + q2.a + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
       });
     } else {
-      if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+      if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? convFill : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
       if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
     }
     }
@@ -622,13 +633,13 @@
     if (conv && p6) {
       var fN = "", aN = "";
       (d.cortes || []).forEach(function (c) { if (c.fase) return; if (c.fechado) fN += caminho(c.pts, true, c.arcos); else aN += caminho(c.pts, false, c.arcos); });
-      if (fN) p.push('<path d="' + fN + '" fill="url(#d2-hach-n)" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
+      if (fN) p.push('<path d="' + fN + '" fill="' + convFill + '" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
       if (aN) p.push('<path d="' + aN + '" fill="none" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
     }
     /* 2a) P10 (js/bimfases.js): GRÁFICOS DE FASE — o existente em meio-tom (cinza, preenchimento claro),
        o demolido TRACEJADO e sem preenchimento, o temporário em traço-ponto */
     p.push(svgFases(fase, d.linhasFase, pena, k, conv));
-    if (conv) p.push(svgLegendaReforma(conv, vb, k, pena));
+    if (conv && !semLeg) p.push(svgLegendaReforma(conv, vb, k, pena));
     /* 2a') PORTA (js/simboloporta.js): a folha aberta a 90° (pena média) e o arco do giro (pena fina) */
     if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
     /* 2b) INSTALAÇÕES (B5, js/biminst.js planta): o eixo de cada trecho na cor do
@@ -787,6 +798,7 @@
   function svgAmbCores(amb) {
     var s = "";
     (amb.itens || []).forEach(function (it) {
+      if (it.hachura === "piso" && it.pts && it.pts.length >= 3) { s += '<path d="' + caminhoAmb(it) + '" fill="url(#d2-hach-piso)" fill-rule="evenodd" class="d2-amb-cor d2-piso-remover" data-d2-amb-cor="' + esc(it.id) + '"/>'; return; }   /* prancha Construir e Demolir: piso a remover */
       if (!it.cor || !it.pts || it.pts.length < 3) return;
       s += '<path d="' + caminhoAmb(it) + '" ' + fillCor(it) + ' fill-rule="evenodd" class="d2-amb-cor" data-d2-amb-cor="' + esc(it.id) + '"/>';
     });
@@ -1270,7 +1282,7 @@
 
   var Desenho2D = {
     FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tracoPx, tracoAttr: tracoAttr, tracoK: tracoK,
-    PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
+    PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, CONV_CD: CONV_CD, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
     caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,

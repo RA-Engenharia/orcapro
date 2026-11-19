@@ -115,13 +115,18 @@
   /* ------------------------------------------------------------ fases */
   function lista(estado) {
     var f = estado && estado.fases, l = f && Array.isArray(f.lista) && f.lista.length ? f.lista : FASES_PADRAO;
-    return l.slice();
+    l = l.slice();
+    /* PROJETO DE REFORMA (19/11/2026): peça sem fase marcada é EXISTENTE (a 1ª fase), não a de agora. Só liga com a op `fases.reforma`;
+       sem ela, tudo como sempre foi. A flag viaja na própria lista (as funções abaixo já recebem `l`). */
+    if (f && f.reforma === true) l.reforma = true;
+    return l;
   }
+  function ehReforma(estado) { return !!(estado && estado.fases && estado.fases.reforma === true); }
   /* "Construção nova" quando o projeto tem; senão a ÚLTIMA (a fase de agora) */
   function faseNova(l) { return l.indexOf("Construção nova") >= 0 ? "Construção nova" : l[l.length - 1]; }
   function criadaDe(el, l) {
     var s = txt(el && el.faseCriada).trim();
-    return s && l.indexOf(s) >= 0 ? s : faseNova(l);
+    return s && l.indexOf(s) >= 0 ? s : (l.reforma && l.length > 1 ? l[0] : faseNova(l));
   }
   function demolidaDe(el, l) {
     var s = txt(el && el.faseDemolida).trim();
@@ -171,7 +176,7 @@
     NENHUM: NENHUM, FASES_PADRAO: FASES_PADRAO, STATUS_NOME: STATUS_NOME, STATUS_REVIT: STATUS_REVIT,
     FILTROS: FILTROS, FILTRO_PADRAO: FILTRO_PADRAO, GRAFICOS: GRAFICOS, MAPA_DEMOLICAO: MAPA_DEMOLICAO, FONTE_MAPA: FONTE_MAPA,
     MEDIDA_CAT: MEDIDA_CAT,
-    lista: lista, faseNova: faseNova, criadaDe: criadaDe, demolidaDe: demolidaDe, statusDe: statusDe, pecas: pecas, faseado: faseado,
+    lista: lista, ehReforma: ehReforma, faseNova: faseNova, criadaDe: criadaDe, demolidaDe: demolidaDe, statusDe: statusDe, pecas: pecas, faseado: faseado,
 
     /* a lista nova, conferida: nomes não vazios, sem repetir, sem "Nenhum" */
     normalizarLista: function (l) {
@@ -200,6 +205,9 @@
         op.demolicao = {};
         Object.keys(o.demolicao).forEach(function (k) { var v = o.demolicao[k]; op.demolicao[k] = v == null || txt(v).trim() === "" ? null : txt(v).trim().slice(0, 24); });
       }
+      /* REFORMA: reforma (liga/desliga o padrão "Existente") e pisoManter (ids de ambiente que NÃO removem o piso na reforma) */
+      if (o && (o.reforma === true || o.reforma === false)) op.reforma = o.reforma;
+      if (o && Array.isArray(o.pisoManter)) op.pisoManter = o.pisoManter.map(String).filter(function (x) { return x; }).slice(0, 2000);
       var E = dep("BimEdit", "./bimedit.js");
       if (E && E.opP10Valida && !E.opP10Valida(op)) return { ok: false, motivo: "Lista de fases inválida." };
       return { ok: true, op: op };
@@ -362,7 +370,11 @@
       }
       var dem = clone(atual.demolicao || {});
       if (o.demolicao) Object.keys(o.demolicao).forEach(function (k) { if (o.demolicao[k] == null) delete dem[k]; else dem[k] = txt(o.demolicao[k]); });
-      ctx.ext.fases = { lista: n.lista, demolicao: dem };
+      var nf = { lista: n.lista, demolicao: dem };
+      var reforma = o.reforma === true || o.reforma === false ? o.reforma : atual.reforma, manter = Array.isArray(o.pisoManter) ? o.pisoManter.slice() : atual.pisoManter;
+      if (reforma === true) nf.reforma = true;
+      if (Array.isArray(manter) && manter.length) nf.pisoManter = manter;
+      ctx.ext.fases = nf;
       return true;
     }
   };

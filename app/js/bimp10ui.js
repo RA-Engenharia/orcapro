@@ -226,6 +226,9 @@
     dialogoFases: function () {
       var st = this.estado(), BF = global.BimFases, self = this; if (!BF || !global.UI) return false;
       var l = BF.lista(st), linhas = l.map(function (n) { return { nome: n, orig: n }; }), renomear = {}, dem = clone((st && st.fases && st.fases.demolicao) || {});
+      /* PROJETO DE REFORMA (19/11/2026, js/bimconstruirdemolir.js): peça sem fase = Existente; o piso de cada ambiente vira "remover piso existente + piso novo" (configurável por ambiente) */
+      var refl0 = !!(st && st.fases && st.fases.reforma), refl = refl0, manter0 = ((st && st.fases && st.fases.pisoManter) || []).map(String), manter = manter0.slice();
+      var ambsR = ((st && st.ambientes) || []).filter(function (a) { return a && a.id != null; });
       var v = this.vista(), CATS = ["parede", "laje", "pilar", "viga", "escada", "guarda", "cobertura", "forro", "porta", "janela"];
       var NOME = { parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", cobertura: "Cobertura", forro: "Forro", porta: "Porta", janela: "Janela" };
       function padrao(cat) { var m = BF.MAPA_DEMOLICAO[cat] || (cat === "forro" ? BF.MAPA_DEMOLICAO["forro:gesso"] : null); return m ? m.codigo : ""; }
@@ -235,10 +238,16 @@
           '</tbody></table><button class="btn sm" data-p10="fase-nova">Nova fase (no fim)</button>' +
           '<p style="font-size:12.5px;margin-top:10px"><b>Vista</b> — fase <select data-p10="fase-vista">' + linhas.map(function (x) { return '<option' + (x.orig === self.fase(st) ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + "</select> · filtro <select data-p10=\"filtro-vista\">" +
           BF.FILTROS.map(function (f) { return '<option value="' + f.id + '"' + (f.id === v.filtro ? " selected" : "") + ">" + esc(f.nome) + "</option>"; }).join("") + "</select></p>" +
+          '<p style="font-size:12.5px;margin:10px 0 4px"><label><input type="checkbox" data-p10="reforma"' + (refl ? " checked" : "") + '> <b>Projeto de reforma</b></label> — peça sem fase marcada vale <b>Existente</b> (nos demais projetos vale Nova) e todo piso vira "remover piso existente + piso novo".</p>' +
+          (refl && ambsR.length ? '<table class="tbl"><thead><tr><th>Ambiente</th><th>Remover o piso existente</th></tr></thead><tbody>' + ambsR.map(function (a) { return "<tr><td>" + esc(a.nome || "Ambiente") + '</td><td><input type="checkbox" data-p10-piso="' + esc(String(a.id)) + '"' + (manter.indexOf(String(a.id)) < 0 ? " checked" : "") + "></td></tr>"; }).join("") + "</tbody></table>" : "") +
           '<p style="font-size:12.5px;margin:10px 0 4px"><b>Demolição</b> — a composição SINAPI de cada categoria (vazio = a do mapa; sem composição, a linha sai PENDENTE):</p>' +
           '<table class="tbl"><tbody>' + CATS.map(function (k) { return "<tr><td>" + NOME[k] + '</td><td><input data-p10-dem="' + k + '" value="' + esc(dem[k] || "") + '" placeholder="' + esc(padrao(k) || "sem composição no mapa") + '" style="width:120px"></td></tr>'; }).join("") + "</tbody></table>";
       }
-      function ler() { Array.prototype.forEach.call(document.querySelectorAll("[data-p10-fase]"), function (inp) { var i = +inp.getAttribute("data-p10-fase"); if (linhas[i]) linhas[i].nome = inp.value.trim(); }); }
+      function ler() {
+        Array.prototype.forEach.call(document.querySelectorAll("[data-p10-fase]"), function (inp) { var i = +inp.getAttribute("data-p10-fase"); if (linhas[i]) linhas[i].nome = inp.value.trim(); });
+        var cr = document.querySelector('[data-p10="reforma"]'); if (cr) refl = !!cr.checked;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-p10-piso]"), function (inp) { var id = inp.getAttribute("data-p10-piso"), i = manter.indexOf(id); if (inp.checked && i >= 0) manter.splice(i, 1); else if (!inp.checked && i < 0) manter.push(id); });
+      }
       var bg = global.UI.modal("Fases", '<div data-p10="fases-corpo">' + corpo() + "</div>", [
         { texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
         { texto: "Aplicar", classe: "primary", onClick: function () {
@@ -247,16 +256,22 @@
           var d2 = {};
           Array.prototype.forEach.call(document.querySelectorAll("[data-p10-dem]"), function (inp) { var k = inp.getAttribute("data-p10-dem"), val = inp.value.trim(); if (val) d2[k] = val; else if (dem[k]) d2[k] = null; });
           var fv = (document.querySelector('[data-p10="fase-vista"]') || {}).value, fl = (document.querySelector('[data-p10="filtro-vista"]') || {}).value;
-          var r = BF.opFases(linhas.map(function (x) { return x.nome; }), { renomear: renomear, demolicao: d2 });
+          var reformaMudou = refl !== refl0, manterMudou = JSON.stringify(manter.slice().sort()) !== JSON.stringify(manter0.slice().sort());
+          var opcF = { renomear: renomear, demolicao: d2 };
+          if (reformaMudou) opcF.reforma = refl;
+          if (manterMudou) opcF.pisoManter = manter;
+          var r = BF.opFases(linhas.map(function (x) { return x.nome; }), opcF);
           if (!r.ok) { toast(r.motivo, "erro"); return; }
           global.UI.fecharModal();
-          var mudou = JSON.stringify(r.op.lista) !== JSON.stringify(l) || r.op.renomear || r.op.demolicao;
+          var mudou = JSON.stringify(r.op.lista) !== JSON.stringify(l) || r.op.renomear || r.op.demolicao || reformaMudou || manterMudou;
           if (mudou && !self.enviar(r.op)) { toast("O editor recusou as fases.", "erro"); return; }
           self.definirVista({ fase: fv || null, filtro: fl || v.filtro });
           status("Fases: " + r.op.lista.join(" → ") + ". Vista na fase \"" + self.fase() + "\", " + BF.filtro(self.vista().filtro).nome + ".");
         } }
       ]);
       if (bg) bg.addEventListener("click", function (e) {
+        var tr = e.target.closest ? e.target.closest("[data-p10=reforma]") : null;
+        if (tr) { ler(); var cr2 = document.querySelector('[data-p10="fases-corpo"]'); if (cr2) cr2.innerHTML = corpo(); return; }   /* liga/desliga a reforma: a lista de pisos por ambiente aparece/some */
         var t = e.target.closest ? e.target.closest("[data-p10-combinar],[data-p10=fase-nova]") : null; if (!t) return;
         ler();
         if (t.getAttribute("data-p10") === "fase-nova") { var k = linhas.length + 1, nm = "Fase " + k; while (linhas.some(function (x) { return x.nome === nm; })) nm = "Fase " + (++k); linhas.push({ nome: nm, orig: null }); }

@@ -1060,7 +1060,7 @@
        e opções de projeto (js/bimopcoes.js), aqui para o sanear nunca jogar
        fora uma delas numa tela que não carregou o motor. Sem lista dentro de
        lista (a nuvem recusa): lista de textos, lista de ids, mapas simples.
-       {op:'fases', lista:[nome…], renomear?:{de: para}, demolicao?:{categoria: código|null}}
+       {op:'fases', lista:[nome…], renomear?:{de: para}, demolicao?:{categoria: código|null}, reforma?:boolean, pisoManter?:[idAmbiente…]}
        {op:'grupo', acao:'criar', id, nome, membros:[id…], nivelId?}
        {op:'grupo', acao:'colar', id, inst, dx?, dz?, dy?, nivelId?}
        {op:'grupo', acao:'editar', id, nome?, membros?}  {op:'grupo', acao:'moverInst', id, inst, dx, dz}
@@ -1084,6 +1084,8 @@
         }
         if (o.renomear != null && !mapa(o.renomear, function (v) { return nome(v, 40); })) return false;
         if (o.demolicao != null && !mapa(o.demolicao, function (v) { return v === null || (typeof v === "string" && v.length <= 24); })) return false;
+        if (o.reforma != null && typeof o.reforma !== "boolean") return false;
+        if (o.pisoManter != null && !(Array.isArray(o.pisoManter) && o.pisoManter.length <= 2000 && o.pisoManter.every(idOk))) return false;
         return true;
       }
       if (o.op === "grupo") {

@@ -222,7 +222,7 @@
     { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "max-3d", "janela-3d", "navegador-org",
       "fx-interface"] },
     { nome: "Apresentação", ids: ["cena", "render-fisico", "render-ia", "acabamento-ia", "galeria-ia", "apresentar-reforma"] },
-    { nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "prancha-viva"] },
+    { nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "construir-demolir", "tabela-demolicao", "tabela-construcao", "tabela-esquadrias", "prancha-viva"] },
     { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
   ];
   /* na Vista os botões são pequenos (3 por coluna): são ~60 comandos — fora estes, que são o que mais se usa */

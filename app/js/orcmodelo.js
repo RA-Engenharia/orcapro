@@ -890,6 +890,16 @@
         l.bloco = "demolicao"; l.medida = sv.medida; l.codigoOrigem = sv.fonte || "mapa"; l.fase = FX.fase; l.statusFase = p.status;
         somar(p.id, rot + " — " + p.rotulo, { linhas: [l], resumo: resumir([l], opcoes), peso: false });
       });
+      /* REFORMA (js/bimconstruirdemolir.js, 19/11/2026): com o projeto marcado como reforma, o piso de cada ambiente é "remover o piso existente + piso novo" — o piso novo
+         já vem do acabamento do ambiente (bloco acima); aqui entra a REMOÇÃO, pela composição do mapa (cerâmica/madeira) ou PENDENTE com o motivo. Nunca código inventado. */
+      var BCD = estTodo && estTodo.fases && estTodo.fases.reforma ? dep("BimConstruirDemolir", "./bimconstruirdemolir.js") : null;
+      if (BCD) BCD.servicosOrc(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, vaos: vaos, forroDe: opcoes && opcoes.forroDe, niveis: opcoes && opcoes.niveis }).forEach(function (s) {
+        var lp;
+        if (s.codigo) lp = arredLinha(orcar({ id: "demolicao", codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes));
+        else lp = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", horas: [], servico: "demolicao", avisos: [s.motivo] };
+        lp.bloco = "demolicao"; lp.medida = "area"; lp.codigoOrigem = "mapa"; lp.fase = FX.fase; lp.statusFase = "existente";
+        somar(s.id, s.rotulo, { linhas: [lp], resumo: resumir([lp], opcoes), peso: false });
+      });
     }
     var porComposicao = ordem.map(function (k) {
       var g = porCod[k], fh = fecharHoras(g.horasAcc, opcoes);

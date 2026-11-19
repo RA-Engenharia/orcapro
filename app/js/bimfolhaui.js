@@ -253,7 +253,7 @@
     desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
 
     /* o desenho de uma vista 2D, pronto para o viewport (cache da sessão; "Atualizar" refaz) */
-    desenho: function (vistaId, refazer, escala, semInst) {
+    desenho: function (vistaId, refazer, escala, semInst, conv) {
       if (/^d3:/.test(String(vistaId))) return this._desenho3d(vistaId);
       /* ⚠ O DESENHO É DA OBRA (revisão da Prancha Viva, 23/10/2026): o id da vista ("d2p-pav0", "d2c-…") se repete em toda
          obra, e o cache era só por id — abrir a obra A, trocar para a B e a folha da B mostrava a planta da A; o pacote do
@@ -262,7 +262,8 @@
       if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
       /* `semInst` ("arquitetura" | "estrutural") vem do VIEWPORT da folha gerada (b.semInst), não da vista: a mesma vista pode estar numa folha sem tubo e noutra com */
       var tagSI = semInst === "arquitetura" || semInst === "estrutural" ? semInst : "";
-      var chave = (escala ? vistaId + "@" + escala : vistaId) + (tagSI ? "#" + tagSI : "");
+      var tagCV = conv === "construirDemolir" ? "~cd" : "";   /* a cópia na convenção Construir e Demolir é outro desenho da MESMA vista (a vista não muda) */
+      var chave = (escala ? vistaId + "@" + escala : vistaId) + (tagSI ? "#" + tagSI : "") + tagCV;
       if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
       var b2 = B2(), D = D2(); if (!b2 || !D) return null;
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
@@ -276,6 +277,11 @@
         if (!fdF && an.inst) { var limpa = function (l) { if (!l || !l.fundo) return l; var o = {}; Object.keys(l).forEach(function (k) { if (k !== "fundo") o[k] = l[k]; }); return o; }; an.inst = Object.assign({}, an.inst, { linhas: (an.inst.linhas || []).map(limpa), simbolos: (an.inst.simbolos || []).map(limpa) }); }
       } catch (eSF) { /* fica como está */ }
       var est = clone(b2.estilo(vistaId)); est.titulo = false;
+      if (tagCV) {
+        est.convencao = "construirDemolir";
+        /* o piso a REMOVER (reforma, por ambiente) vira hachura diagonal no ambiente — a regra é do motor (js/bimconstruirdemolir.js) */
+        try { var CDh = global.BimConstruirDemolir, stH = this._estadoBim(); if (CDh && stH && an.ambientes && an.ambientes.itens) an.ambientes.itens.forEach(function (it) { if (CDh.pisoRemove(stH, it.id) && it.pts && it.pts.length >= 3) it.hachura = "piso"; }); } catch (eCD) { /* sem o piso hachurado: o resto da planta sai */ }
+      }
       if (escala) est.escala = Math.max(1, Math.round(+escala));   /* a cópia com escala própria: anotação do tamanho certo nela */   /* o título é o do viewport */
       var exF = { titulo: "" };
       /* NÍVEL DE DETALHE / P6: a folha sai com as PENAS e as cores das linhas da vista (a tubulação em linha única na cor
@@ -303,7 +309,7 @@
     /* a chave do desenho de UMA cópia: com escala própria a anotação (texto, cota, marca) sai do tamanho certo
        naquela escala — o desenho é refeito nela, não esticado */
     chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
-    desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst); },
+    desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst, b.convencao); },
     /* =====================================================================
      * VISTA 3D E ELEVAÇÃO NA FOLHA (16/11/2026, pedido do Rogério: "puxar para dentro da folha a vista 3D e as elevações, igual planta e corte")
      *   • ELEVAÇÃO (d2e-norte|sul|leste|oeste): o mesmo motor do corte, olhando de fora (js/bim2dui.js _defBase) — vetor em escala, como planta e corte.
@@ -1102,6 +1108,14 @@
       var regs = this.registros();
       if (qual === "folhas") return PR().listaFolhas(regs, this.projeto());
       if (qual === "vistas") return PR().listaVistas(this.vistas2d(), regs);
+      /* TABELAS QUANTITATIVAS DO MODELO (demolição, construção, portas e janelas): o motor lê a geometria — js/bimconstruirdemolir.js */
+      if (qual === "demolicao" || qual === "construcao" || qual === "esquadrias") {
+        var CDt = global.BimConstruirDemolir, stT = this._estadoBim();
+        if (!CDt || !stT) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
+        var tq = CDt.TABELAS[qual](stT, this._opcCD());
+        if (tq.avisos && tq.avisos.length) toast(tq.avisos[0], "aviso");
+        return tq;
+      }
       return PR().tabelaRevisoes(this.projeto(), regs);
     },
     mostrarLista: function (qual) {
@@ -1113,6 +1127,52 @@
       bts.push({ texto: "Fechar", onClick: function () { global.UI.fecharModal(); } });
       global.UI.modal(t.titulo.charAt(0) + t.titulo.slice(1).toLowerCase(), h, bts);
       return t;
+    },
+    /* ---- PRANCHA CONSTRUIR E DEMOLIR (19/11/2026): o estado do modelo e os ganchos da família vêm do editor do BIM; a regra toda é do motor puro */
+    _estadoBim: function () { try { var b = global.BIM, e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.estado : null; } catch (e2) { return null; } },
+    _opcCD: function () {
+      var b = global.BIM || {};
+      var af = b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, cf = b.familiaCategoria ? function (id) { return b.familiaCategoria(id); } : null;
+      var niv = []; try { niv = global.BimArqUI && global.BimArqUI.niveis ? global.BimArqUI.niveis() : []; } catch (e) { niv = []; }
+      return { avaliarFam: af, niveis: niv, deps: { avaliarFam: af, categoriaFam: cf } };
+    },
+    /* o botão "Construir e Demolir": uma folha nova com a planta do nível na convenção de reforma, a legenda só com o que existe, as notas padrão e a tabela de demolição */
+    gerarConstruirDemolir: function (nivelId) {
+      if (!this.ativo()) return false;
+      var self = this, CD = global.BimConstruirDemolir, b2 = B2(), st = this._estadoBim();
+      if (!CD || !b2) { toast("O motor da prancha Construir e Demolir não carregou.", "erro"); return false; }
+      if (!st) { toast("Abra o modelo da obra primeiro.", "aviso"); return false; }
+      var niv = []; try { niv = b2.niveis(); } catch (e0) { niv = []; }
+      if (!niv.length) { toast("O modelo não tem nível com planta ainda.", "aviso"); return false; }
+      if (nivelId == null && niv.length > 1) {
+        var h = '<label style="font-size:12.5px">Nível <select id="pv-cd-nivel">' + niv.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.nome) + "</option>"; }).join("") + "</select></label>" +
+          '<p class="muted" style="font-size:12px;margin:8px 0 0">A prancha usa a planta do nível, na convenção de reforma (demolir verde tracejado, alvenaria nova vermelha, existente cinza). A planta comum do nível não muda.</p>';
+        global.UI.modal("Gerar prancha Construir e Demolir", h, [
+          { texto: "Gerar", classe: "primary", onClick: function () { var v = (document.getElementById("pv-cd-nivel") || {}).value; global.UI.fecharModal(); self.gerarConstruirDemolir(v); } },
+          { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+        return true;
+      }
+      var nv = niv.filter(function (n) { return String(n.id) === String(nivelId); })[0] || niv[0];
+      var vistaId = b2.idPlanta(nv.id);
+      /* a planta 2D segue o filtro de fase da cena: a prancha precisa de TODAS as fases (existente, demolir e novo) */
+      try { var P10 = global.BimP10UI; if (P10 && P10.vista && P10.vista().filtro !== "tudo") { P10.definirVista({ filtro: "tudo" }); toast("Filtro de fase da vista passou para \"Mostrar tudo\": a prancha leva as três fases.", "info"); } } catch (eF) { /* fica o filtro de agora */ }
+      var dz = this.desenho(vistaId, true, undefined, undefined, "construirDemolir");
+      if (!dz) { toast("Não consegui desenhar a planta: abra o modelo da obra primeiro.", "erro"); return false; }
+      var id = this.novaFolha("A1"); if (!id) return false;
+      var a = this.achar(id); if (!a) return false;
+      var ar = a.geo.area, W = Math.max(40, Math.min(75, ar.w * 0.22)), livreW = ar.w - W - 8, livreH = ar.h - 16, cand = [20, 25, 50, 75, 100, 125, 200, 500], esc = 500;
+      for (var i = 0; i < cand.length; i++) if (dz.vb.w * 1000 / cand[i] <= livreW && dz.vb.h * 1000 / cand[i] <= livreH) { esc = cand[i]; break; }
+      var f = clone(a.folha); f.conteudo = "Construir e Demolir - " + nv.nome;
+      var r = PR().colocarViewport(a.pr, f, { vistaId: vistaId, nome: "Construir e Demolir - " + nv.nome, escala: esc, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: ar.x + livreW / 2, cy: ar.y + livreH / 2, repetir: true }, this.registros().map(function (q) { return PR().normalizar(q); }));
+      if (!r.ok) { toast(r.erro, "aviso"); return false; }
+      f = r.folha;
+      var vp = f.blocos[f.blocos.length - 1]; vp.escalaPropria = true; vp.escala = esc; vp.convencao = "construirDemolir";
+      var oc = this._opcCD(), cd = CD.blocosDaFolha(st, ar, { avaliarFam: oc.avaliarFam, deps: oc.deps, niveis: oc.niveis, incluirDrywall: false });
+      f.blocos = f.blocos.concat(cd.blocos);
+      this.gravarFolha(a, f); this.pintar(id);
+      status("Prancha Construir e Demolir: " + nv.nome + " · 1:" + esc + " · legenda com " + cd.legenda.itens.length + " convenção(ões)." + (CD.reforma(st) ? "" : " O projeto não está marcado como Reforma (Gerenciar › Fases): o piso não entra como a remover."));
+      if (cd.demolicao.avisos && cd.demolicao.avisos.length) toast(cd.demolicao.avisos[0], "aviso");
+      return id;
     },
     inserirTabela: function (id, t) {
       var a = this.achar(id); if (!a) return false;
@@ -1705,7 +1765,11 @@
         { id: "posicionar-vista", rotulo: "Posicionar\nvista", icone: "planta", grande: true, dica: "Escolhe uma planta ou um corte e põe na folha aberta (o mesmo que arrastar do Navegador)." },
         { id: "revisoes-folha", rotulo: "Revisões", icone: "lista", dica: "Revisões e emissões do PROJETO (número, data, descrição, emitido por/para). Cada folha escolhe as dela; a última vira a Revisão atual do carimbo." },
         { id: "lista-folhas", rotulo: "Lista de\nfolhas", icone: "tabela", dica: "A tabela da categoria Folhas: número, nome, revisão atual, data de emissão, desenhado por. Pode ir para a folha aberta." },
-        { id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." }
+        { id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." },
+        { id: "construir-demolir", rotulo: "Construir e\nDemolir", icone: "prancha", grande: true, dica: "Gera a prancha de reforma do nível: a planta com o demolir em verde tracejado, a alvenaria nova em vermelho e o existente em cinza, a legenda só com o que existe no modelo, as notas padrão (editáveis) e o quadro de demolição. A fase de cada peça é a do BIM (Fase criada / Fase demolida, nas Propriedades); o projeto de reforma liga em Gerenciar › Fases." },
+        { id: "tabela-demolicao", rotulo: "Tabela de\ndemolição", icone: "tabela", dica: "m² de parede a demolir e de piso a remover por ambiente, lidos da geometria do modelo. Pode ir para a folha aberta." },
+        { id: "tabela-construcao", rotulo: "Tabela de\nconstrução", icone: "tabela", dica: "m² de parede nova (alvenaria e drywall) por ambiente, lidos da geometria. Pode ir para a folha aberta." },
+        { id: "tabela-esquadrias", rotulo: "Portas e\njanelas", icone: "tabela", dica: "Cada porta e janela com a marca, o tipo e a fase (Existente, Nova, A demolir). Pode ir para a folha aberta." }
       ]);
       R.acrescentar("vista", "Vista", "Exportar", [
         { id: "exportar-dxf", rotulo: "DXF", icone: "exportar", grande: true, dica: "DXF da folha aberta (em mm de papel, carimbo completo) ou da planta/corte aberto (1:1 em metros). Camada por categoria (ARQ-PAREDE-CORTE, EST-PILAR-CORTE…), espessura pela pena, cota que o AutoCAD mede de novo." },
@@ -1729,6 +1793,10 @@
       reg["revisoes-folha"] = function () { self.editarRevisoes(); return true; };
       reg["lista-folhas"] = function () { self.mostrarLista("folhas"); return true; };
       reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
+      reg["construir-demolir"] = function () { return !!self.gerarConstruirDemolir(); };
+      reg["tabela-demolicao"] = function () { self.mostrarLista("demolicao"); return true; };
+      reg["tabela-construcao"] = function () { self.mostrarLista("construcao"); return true; };
+      reg["tabela-esquadrias"] = function () { self.mostrarLista("esquadrias"); return true; };
       reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };
       reg["exportar-cad"] = function () { return !!self.exportarCad(); };
       reg["exportar-dwg"] = function () { self.exportarDwg(); return true; };

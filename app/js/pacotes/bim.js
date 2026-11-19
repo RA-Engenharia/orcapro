@@ -11990,6 +11990,13 @@ if (t === 'vista') { o.vistaId = txt(b.vistaId); o.origemVista = txt(b.origemVis
 if (t === 'imagem') { o.chave = txt(b.chave); if (!o.chave) return null; }
 if (t === 'texto') { o.linhas = arr(b.linhas).map(txt); var al0 = num(b.alt, 0); if (al0 > 0) o.alt = Math.max(1, Math.min(20, al0)); if (b.negrito) o.negrito = true; }
 if (t === 'tabela') { o.cabecalho = arr(b.cabecalho).map(txt); o.linhas = arr(b.linhas).map(function (l) { return arr(l).map(txt); }); }
+if (t === 'tabela' && arr(b.amostras).length) {
+o.amostras = arr(b.amostras).slice(0, 40).map(function (a) {
+a = a || {};
+var h = txt(a.hachura); if (['diagonal', 'azul', 'drywall'].indexOf(h) < 0) h = '';
+return { cor: /^#[0-9a-fA-F]{6}$/.test(txt(a.cor)) ? txt(a.cor) : '#000000', fill: /^#[0-9a-fA-F]{6}$/.test(txt(a.fill)) ? txt(a.fill) : 'none', hachura: h, tracejado: a.tracejado === true };
+});
+}
 return o;
 }
 var PV_CAMPOS_NUM = ['w', 'h', 'dpi', 'cota_corte', 'cota_piso'];
@@ -12108,6 +12115,7 @@ o.numeroDetalhe = txt(b.numeroDetalhe);
 o.tituloVista = txt(b.tituloVista);
 o.mostrarTitulo = b.mostrarTitulo !== false;
 if (b.escalaPropria) o.escalaPropria = true;
+if (b.convencao === 'construirDemolir') o.convencao = b.convencao;
 if (b.semInst === 'arquitetura' || b.semInst === 'estrutural') o.semInst = b.semInst;
 o.titulo = ''; o.subtitulo = '';
 return o;
@@ -12676,6 +12684,18 @@ s.itens.map(function (i) { return '<li style="margin:0 0 0.5mm">' + esc(i) + '</
 }).join('');
 return '<div style="' + abs(k.x, k.y, k.w, altura, 'border-left:0.35mm solid #111;font-size:' + fs + 'pt;line-height:1.28;overflow:hidden') + '">' + h + '</div>';
 }
+function amostraSvg(a) {
+if (!a) return '';
+var cor = esc(a.cor || '#000000'), s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 4" width="' + mm(9) + '" height="' + mm(4) + '" style="display:block">' +
+'<rect x="0.2" y="0.2" width="8.6" height="3.6" fill="' + esc(a.fill || 'none') + '" stroke="' + cor + '" stroke-width="0.3"' + (a.tracejado ? ' stroke-dasharray="1.2 0.8"' : '') + '/>';
+if (a.hachura) {
+var i, d = '';
+for (i = -4; i <= 9; i += 1.4) d += 'M' + i + ' 4L' + (i + 4) + ' 0';
+if (a.hachura === 'drywall') for (i = -4; i <= 9; i += 1.4) d += 'M' + i + ' 0L' + (i + 4) + ' 4';
+s += '<path d="' + d + '" stroke="' + cor + '" stroke-width="0.18" fill="none"/>';
+}
+return s + '</svg>';
+}
 function blocoHtml(b, rec, i) {
 var t = '';
 if (b.tipo === 'viewport') {
@@ -12696,8 +12716,9 @@ t = im ? '<img src="' + esc(im) + '" style="width:100%;height:100%;object-fit:co
 var fsT = b.alt > 0 ? mm(b.alt / 0.716) : '8pt';
 t = '<div data-pv-texto="1" style="font-size:' + fsT + ';line-height:1.3;white-space:pre' + (b.negrito ? ';font-weight:bold' : '') + '">' + (b.linhas || []).map(function (l) { return '<div>' + (l ? esc(l) : '&#160;') + '</div>'; }).join('') + '</div>';
 } else if (b.tipo === 'tabela') {
-t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
-(b.linhas || []).map(function (l) { return '<tr>' + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;text-align:center">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
+var am = b.amostras || null;
+t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (am ? '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm"></th>' : '') + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
+(b.linhas || []).map(function (l, li) { return '<tr>' + (am ? '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;width:11mm">' + amostraSvg(am[li]) + '</td>' : '') + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;' + (am ? 'text-align:left' : 'text-align:center') + '">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
 }
 var tit = b.titulo ? '<div style="position:absolute;left:0;top:' + mm(b.h + 1) + ';font-size:10pt;white-space:nowrap">' + esc(b.titulo) +
 (b.subtitulo ? '<div style="font-size:7pt">' + esc(b.subtitulo) + '</div>' : '') + '</div>' : '';
@@ -12733,7 +12754,7 @@ var h = documento0(pr, rec, geo);
 if (rec && rec.titulo) h = h.replace('<title>' + esc(pr.nome) + '</title>', '<title>' + esc(rec.titulo) + '</title>');
 return h;
 }
-var PranchaUI = { folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL, carimboRA: carimboRA, COR_DESTAQUE: COR_DESTAQUE };
+var PranchaUI = { blocoHtml: blocoHtml, folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL, carimboRA: carimboRA, COR_DESTAQUE: COR_DESTAQUE };
 global.PranchaUI = PranchaUI;
 if (typeof module !== 'undefined' && module.exports) module.exports = PranchaUI;
 })(typeof window !== 'undefined' ? window : this);
@@ -14889,6 +14910,8 @@ vistos[f.trim()] = 1;
 }
 if (o.renomear != null && !mapa(o.renomear, function (v) { return nome(v, 40); })) return false;
 if (o.demolicao != null && !mapa(o.demolicao, function (v) { return v === null || (typeof v === "string" && v.length <= 24); })) return false;
+if (o.reforma != null && typeof o.reforma !== "boolean") return false;
+if (o.pisoManter != null && !(Array.isArray(o.pisoManter) && o.pisoManter.length <= 2000 && o.pisoManter.every(idOk))) return false;
 return true;
 }
 if (o.op === "grupo") {
@@ -78260,12 +78283,15 @@ var MEDIDA_CAT = { platibanda: "volume", parede: "volume", laje: "volume", pilar
 var NOME_CAT = { platibanda: "Platibanda", parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", cobertura: "Cobertura", forro: "Forro", porta: "Porta", janela: "Janela", volume: "Volume", generico: "Família" };
 function lista(estado) {
 var f = estado && estado.fases, l = f && Array.isArray(f.lista) && f.lista.length ? f.lista : FASES_PADRAO;
-return l.slice();
+l = l.slice();
+if (f && f.reforma === true) l.reforma = true;
+return l;
 }
+function ehReforma(estado) { return !!(estado && estado.fases && estado.fases.reforma === true); }
 function faseNova(l) { return l.indexOf("Construção nova") >= 0 ? "Construção nova" : l[l.length - 1]; }
 function criadaDe(el, l) {
 var s = txt(el && el.faseCriada).trim();
-return s && l.indexOf(s) >= 0 ? s : faseNova(l);
+return s && l.indexOf(s) >= 0 ? s : (l.reforma && l.length > 1 ? l[0] : faseNova(l));
 }
 function demolidaDe(el, l) {
 var s = txt(el && el.faseDemolida).trim();
@@ -78306,7 +78332,7 @@ var BimFases = {
 NENHUM: NENHUM, FASES_PADRAO: FASES_PADRAO, STATUS_NOME: STATUS_NOME, STATUS_REVIT: STATUS_REVIT,
 FILTROS: FILTROS, FILTRO_PADRAO: FILTRO_PADRAO, GRAFICOS: GRAFICOS, MAPA_DEMOLICAO: MAPA_DEMOLICAO, FONTE_MAPA: FONTE_MAPA,
 MEDIDA_CAT: MEDIDA_CAT,
-lista: lista, faseNova: faseNova, criadaDe: criadaDe, demolidaDe: demolidaDe, statusDe: statusDe, pecas: pecas, faseado: faseado,
+lista: lista, ehReforma: ehReforma, faseNova: faseNova, criadaDe: criadaDe, demolidaDe: demolidaDe, statusDe: statusDe, pecas: pecas, faseado: faseado,
 normalizarLista: function (l) {
 var out = [], vistos = {};
 if (!Array.isArray(l) || !l.length) return { ok: false, motivo: "O projeto precisa de pelo menos uma fase." };
@@ -78332,6 +78358,8 @@ if (o && o.demolicao && Object.keys(o.demolicao).length) {
 op.demolicao = {};
 Object.keys(o.demolicao).forEach(function (k) { var v = o.demolicao[k]; op.demolicao[k] = v == null || txt(v).trim() === "" ? null : txt(v).trim().slice(0, 24); });
 }
+if (o && (o.reforma === true || o.reforma === false)) op.reforma = o.reforma;
+if (o && Array.isArray(o.pisoManter)) op.pisoManter = o.pisoManter.map(String).filter(function (x) { return x; }).slice(0, 2000);
 var E = dep("BimEdit", "./bimedit.js");
 if (E && E.opP10Valida && !E.opP10Valida(op)) return { ok: false, motivo: "Lista de fases inválida." };
 return { ok: true, op: op };
@@ -78462,7 +78490,11 @@ if (c.faseDemolida && Object.prototype.hasOwnProperty.call(R, c.faseDemolida)) c
 }
 var dem = clone(atual.demolicao || {});
 if (o.demolicao) Object.keys(o.demolicao).forEach(function (k) { if (o.demolicao[k] == null) delete dem[k]; else dem[k] = txt(o.demolicao[k]); });
-ctx.ext.fases = { lista: n.lista, demolicao: dem };
+var nf = { lista: n.lista, demolicao: dem };
+var reforma = o.reforma === true || o.reforma === false ? o.reforma : atual.reforma, manter = Array.isArray(o.pisoManter) ? o.pisoManter.slice() : atual.pisoManter;
+if (reforma === true) nf.reforma = true;
+if (Array.isArray(manter) && manter.length) nf.pisoManter = manter;
+ctx.ext.fases = nf;
 return true;
 }
 };
@@ -78475,6 +78507,225 @@ valida: function (o) { if (!o || o.op !== "fases") return undefined; var E = dep
 });
 global.BimFases = BimFases;
 if (typeof module !== "undefined" && module.exports) module.exports = BimFases;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimconstruirdemolir.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function r2(v) { return Math.round(v * 100) / 100; }
+function br(v) { return r2(v).toFixed(2).replace(".", ","); }
+var FASES = ["Existente", "Nova", "A demolir"];
+var FONTE = "SINAPI 06/2026 (data/sinapi-MG-2026-06.json) — conferido em tools/test-construir-demolir.js";
+var ESTILOS = {
+existente: { rotulo: "Existente a manter", cor: "#6b6b6b", fill: "#bdbdbd", hachura: null, tracejado: null, desenha: true },
+demolir_parede: { rotulo: "Parede a demolir", cor: "#1f8a3b", fill: "none", hachura: null, tracejado: [1.5, 1], desenha: true },
+nova_alvenaria: { rotulo: "Alvenaria nova", cor: "#d00000", fill: "#d00000", hachura: null, tracejado: null, desenha: true },
+nova_drywall: { rotulo: "Drywall novo", cor: "#d00000", fill: "none", hachura: "drywall", tracejado: null, desenha: false },
+piso_remover: { rotulo: "Piso a remover", cor: "#333333", fill: "none", hachura: "diagonal", tracejado: null, desenha: true },
+revestimento_remover: { rotulo: "Revestimento / louça a remover", cor: "#0b5fff", fill: "none", hachura: "azul", tracejado: null, desenha: false }
+};
+var ORDEM_LEGENDA = ["existente", "demolir_parede", "nova_alvenaria", "nova_drywall", "piso_remover", "revestimento_remover"];
+var NOTAS_PADRAO = [
+"Impermeabilizar todas as áreas molhadas.",
+"Conferir todas as medidas no local antes da execução.",
+"Os elementos a demolir só serão retirados após a verificação de que não são estruturais.",
+"O entulho da demolição será removido e destinado conforme a legislação local."
+];
+var MAPA_PISO = [
+{ re: /cer[aâ]mic|porcelanat|azulej/i, codigo: "97633", unidade: "M2", descricao: "DEMOLIÇÃO DE REVESTIMENTO CERÂMICO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023" },
+{ re: /madeira|assoalho|tabua|taco/i, codigo: "97643", unidade: "M2", descricao: "REMOÇÃO DE PISO DE MADEIRA (ASSOALHO E BARROTE), DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023" }
+];
+function nomeFase(status) {
+if (status === "existente") return "Existente";
+if (status === "demolido") return "A demolir";
+if (status === "novo" || status === "temporario") return "Nova";
+return null;
+}
+function pecasDaFase(estado, deps) {
+var BF = dep("BimFases", "./bimfases.js"); if (!BF) return [];
+deps = comCategoria(deps);
+var cls = BF.classificar(estado || {}, undefined, deps);
+return BF.pecas(estado || {}, deps).map(function (p) {
+var st = cls.porId[p.id];
+return { id: p.id, origem: p.origem, categoria: categoriaDe(p), el: p.el, status: st, fase: nomeFase(st) };
+});
+}
+function comCategoria(deps) {
+if (deps && typeof deps.categoriaFam === "function") return deps;
+var RA = dep("FamiliasRA", "./familiasra.js"), o = {};
+Object.keys(deps || {}).forEach(function (k) { o[k] = deps[k]; });
+o.categoriaFam = function (id) { var f = RA && RA.obter ? RA.obter(id, true) : null; return f ? f.categoria : null; };
+return o;
+}
+var RE_LOUCA = /bacia|vaso|lavat[oó]rio|\bpia\b|cuba|tanque|bidet|mict[oó]rio|chuveiro|loucas?\b/i;
+var RE_DRYWALL = /drywall|dry-wall|gesso acartonado|placa de gesso|steel ?frame/i;
+function categoriaDe(p) {
+var el = p.el || {};
+if (p.origem === "caixa" && (p.categoria === "parede" || el.tipo === "parede")) return "parede";
+if (p.origem === "familia") {
+if (p.categoria === "porta" || p.categoria === "janela") return p.categoria;
+if (RE_LOUCA.test(txt(el.famId) + " " + txt(el.tipoId))) return "louca";
+}
+return "outro";
+}
+function ehDrywall(el) { return RE_DRYWALL.test(JSON.stringify((el && el.tipoParede) || "") + " " + txt(el && el.material)); }
+function estiloDe(item) {
+var c = item && item.categoria, f = item && item.fase;
+if (!f) return null;
+if (c === "parede" || c === "porta" || c === "janela") {
+if (f === "Existente") return "existente";
+if (f === "A demolir") return "demolir_parede";
+return c === "parede" && ehDrywall(item.el) ? "nova_drywall" : "nova_alvenaria";
+}
+if (c === "louca") return f === "A demolir" ? "revestimento_remover" : null;
+return null;
+}
+function reforma(estado) { return !!(estado && estado.fases && estado.fases.reforma === true); }
+function pisoRemove(estado, ambId) {
+if (!reforma(estado)) return false;
+return arr(estado.fases.pisoManter).map(String).indexOf(String(ambId)) < 0;
+}
+function ambientesPiso(estado) {
+return arr(estado && estado.ambientes).filter(function (a) { return a && a.id != null; })
+.map(function (a) { return { id: String(a.id), nome: txt(a.nome) || "Ambiente", remover: pisoRemove(estado, a.id), piso: txt(a.acabPiso) }; });
+}
+function opReforma(estado, ligada, manter) {
+var BF = dep("BimFases", "./bimfases.js"); if (!BF) return { ok: false, motivo: "Motor de fases não carregado." };
+var o = { reforma: !!ligada };
+if (Array.isArray(manter)) o.pisoManter = manter;
+return BF.opFases(BF.lista(estado), o);
+}
+function opFase(estado, ids, fase, deps) {
+var BF = dep("BimFases", "./bimfases.js"); if (!BF) return { ok: false, motivo: "Motor de fases não carregado." };
+var l = BF.lista(estado);
+if (FASES.indexOf(fase) < 0) return { ok: false, motivo: "Fase inválida: " + fase + "." };
+if (l.length < 2) return { ok: false, motivo: "O projeto tem uma fase só: crie a fase \"Construção nova\" em Gerenciar › Fases." };
+var nova = BF.faseNova(l), exist = l[0], porId = {};
+BF.pecas(estado, deps).forEach(function (p) { porId[p.id] = p; });
+var alvo = arr(ids).map(String).filter(function (id) { return porId[id]; });
+if (!alvo.length) return { ok: false, motivo: "Selecione peças que tenham fase (parede, porta, janela, louça…)." };
+var campos = fase === "Existente" ? { faseCriada: exist, faseDemolida: BF.NENHUM } : (fase === "Nova" ? { faseCriada: nova, faseDemolida: BF.NENHUM } : { faseCriada: exist, faseDemolida: nova });
+var ops = alvo.map(function (id) { return { op: "marcar", id: id, faseCriada: campos.faseCriada, faseDemolida: campos.faseDemolida }; });
+return { ok: true, op: ops.length === 1 ? ops[0] : { op: "lote", id: "fase-" + alvo.join("-").slice(0, 40), origem: "fase", ops: ops }, ids: alvo };
+}
+function legenda(estado, opc) {
+opc = opc || {};
+var pecas = pecasDaFase(estado, opc.deps), tem = {};
+pecas.forEach(function (p) { var k = estiloDe(p); if (k) tem[k] = (tem[k] || 0) + 1; });
+arr(estado && estado.ambientes).forEach(function (a) { if (a && a.id != null && pisoRemove(estado, a.id)) tem.piso_remover = (tem.piso_remover || 0) + 1; });
+var itens = ORDEM_LEGENDA.filter(function (k) { return tem[k] && (opc.incluirDrywall !== false || k !== "nova_drywall"); }).map(function (k) {
+var e = ESTILOS[k]; return { chave: k, rotulo: e.rotulo, cor: e.cor, fill: e.fill, hachura: e.hachura, tracejado: !!e.tracejado, n: tem[k] };
+});
+return { itens: itens, presentes: itens.map(function (i) { return i.chave; }) };
+}
+function quantidadesAmb(estado, opc) {
+var BA = dep("BimAcabamento", "./bimacabamento.js"); if (!BA) return { porId: {} };
+opc = opc || {};
+return BA.quantidades(estado, { avaliarFam: opc.avaliarFam, vaos: opc.vaos, forroDe: opc.forroDe, niveis: opc.niveis });
+}
+function porAmbiente(estado, opc) {
+var Q = quantidadesAmb(estado, opc), st = {}, el = {}, drywall = {};
+pecasDaFase(estado, opc && opc.deps).forEach(function (p) { if (p.categoria === "parede") { st[p.id] = p.fase; el[p.id] = p.el; drywall[p.id] = ehDrywall(p.el); } });
+var out = [], avisos = [];
+arr(estado && estado.ambientes).forEach(function (a) {
+if (!a || a.id == null) return;
+var q = Q.porId[String(a.id)];
+var o = { id: String(a.id), nome: txt(a.nome) || "Ambiente", delimitado: !!(q && q.estado === "delimitado"), demolirParede: 0, novaAlvenaria: 0, novaDrywall: 0, pisoRemover: 0, areaPiso: 0 };
+if (!o.delimitado) { avisos.push("Ambiente \"" + o.nome + "\" não delimitado: sem quantidade (feche a região com paredes)."); out.push(o); return; }
+arr(q.lados).forEach(function (ld) {
+if (ld.tipo !== "parede" || !fin(ld.area) || ld.duplicado) return;
+var f = st[String(ld.id)];
+if (f === "A demolir") o.demolirParede += ld.area;
+else if (f === "Nova") { if (drywall[String(ld.id)]) o.novaDrywall += ld.area; else o.novaAlvenaria += ld.area; }
+});
+o.areaPiso = fin(q.areaPiso) ? q.areaPiso : 0;
+if (pisoRemove(estado, a.id)) o.pisoRemover = o.areaPiso;
+out.push(o);
+});
+return { ambientes: out, avisos: avisos };
+}
+function soma(l, k) { return l.reduce(function (s, x) { return s + (x[k] || 0); }, 0); }
+function tabelaDemolicao(estado, opc) {
+var r = porAmbiente(estado, opc), l = r.ambientes.filter(function (a) { return a.delimitado && (a.demolirParede > 0 || a.pisoRemover > 0); });
+var linhas = l.map(function (a) { return [a.nome, br(a.demolirParede), br(a.pisoRemover)]; });
+var tp = soma(l, "demolirParede"), ts = soma(l, "pisoRemover");
+if (!linhas.length) linhas.push(["Nada a demolir", "0,00", "0,00"]); else linhas.push(["TOTAL", br(tp), br(ts)]);
+return { titulo: "QUADRO DE DEMOLIÇÃO", cabecalho: ["Ambiente", "Parede a demolir (m²)", "Piso a remover (m²)"], linhas: linhas,
+dados: { ambientes: l, totalParede: r2(tp), totalPiso: r2(ts) }, avisos: r.avisos };
+}
+function tabelaConstrucao(estado, opc) {
+var r = porAmbiente(estado, opc), l = r.ambientes.filter(function (a) { return a.delimitado && (a.novaAlvenaria > 0 || a.novaDrywall > 0); });
+var linhas = l.map(function (a) { return [a.nome, br(a.novaAlvenaria), br(a.novaDrywall)]; });
+var ta = soma(l, "novaAlvenaria"), td = soma(l, "novaDrywall");
+if (!linhas.length) linhas.push(["Nada a construir", "0,00", "0,00"]); else linhas.push(["TOTAL", br(ta), br(td)]);
+return { titulo: "QUADRO DE CONSTRUÇÃO", cabecalho: ["Ambiente", "Alvenaria nova (m²)", "Drywall novo (m²)"], linhas: linhas,
+dados: { ambientes: l, totalAlvenaria: r2(ta), totalDrywall: r2(td) }, avisos: r.avisos };
+}
+function tabelaEsquadrias(estado, opc) {
+var l = pecasDaFase(estado, opc && opc.deps).filter(function (p) { return (p.categoria === "porta" || p.categoria === "janela") && p.fase; });
+var linhas = l.map(function (p) { return [p.categoria === "porta" ? "Porta" : "Janela", p.id, txt(p.el.tipoId || p.el.famId), p.fase]; });
+if (!linhas.length) linhas.push(["Nenhuma esquadria", "", "", ""]);
+var n = { Existente: 0, Nova: 0, "A demolir": 0 }; l.forEach(function (p) { n[p.fase]++; });
+return { titulo: "PORTAS E JANELAS", cabecalho: ["Elemento", "Marca", "Tipo", "Fase"], linhas: linhas, dados: { n: n, total: l.length }, avisos: [] };
+}
+var TABELAS = { demolicao: tabelaDemolicao, construcao: tabelaConstrucao, esquadrias: tabelaEsquadrias };
+function servicoPiso(piso) {
+var s = txt(piso).trim();
+if (!s) return { codigo: null, motivo: "o ambiente não tem o acabamento do piso preenchido: sem o material não há composição de remoção — pendente" };
+for (var i = 0; i < MAPA_PISO.length; i++) if (MAPA_PISO[i].re.test(s)) return { codigo: MAPA_PISO[i].codigo, unidade: MAPA_PISO[i].unidade, descricao: MAPA_PISO[i].descricao, fonte: "mapa" };
+return { codigo: null, motivo: "piso \"" + s + "\": o mapa de remoção cobre cerâmica/porcelanato e madeira — escolha a composição à mão — pendente" };
+}
+function servicosOrc(estado, opc) {
+if (!reforma(estado)) return [];
+var Q = quantidadesAmb(estado, opc), out = [];
+arr(estado.ambientes).forEach(function (a) {
+if (!a || a.id == null || !pisoRemove(estado, a.id)) return;
+var q = Q.porId[String(a.id)], nome = txt(a.nome) || "Ambiente", sv = servicoPiso(a.acabPiso);
+var s = { id: "remover-piso:" + a.id, ambId: String(a.id), rotulo: "Remoção de piso existente — " + nome, quantidade: q && fin(q.areaPiso) ? q.areaPiso : 0, unidade: sv.unidade || "M2" };
+if (!(q && q.estado === "delimitado" && fin(q.areaPiso))) { s.codigo = null; s.motivo = "ambiente não delimitado: sem área de piso — pendente"; }
+else if (!sv.codigo) { s.codigo = null; s.motivo = sv.motivo; }
+else { s.codigo = sv.codigo; s.descricao = sv.descricao; }
+out.push(s);
+});
+return out;
+}
+function blocosDaFolha(estado, area, opc) {
+opc = opc || {};
+var lg = legenda(estado, { incluirDrywall: opc.incluirDrywall, deps: opc.deps }), W = Math.max(40, Math.min(75, area.w * 0.22)), x = area.x + area.w - W, y = area.y + 4, blocos = [];
+if (lg.itens.length) {
+blocos.push({ tipo: "tabela", x: x, y: y, w: W, h: (lg.itens.length + 1) * 5, titulo: "LEGENDA", cabecalho: ["Convenção"],
+linhas: lg.itens.map(function (i) { return [i.rotulo]; }),
+amostras: lg.itens.map(function (i) { return { cor: i.cor, fill: i.fill, hachura: i.hachura, tracejado: i.tracejado }; }) });
+y += (lg.itens.length + 1) * 5 + 10;
+}
+var notas = arr(opc.notas).length ? arr(opc.notas) : NOTAS_PADRAO, linhasN = ["NOTAS"];
+notas.forEach(function (n, i) { linhasN.push((i + 1) + ". " + n); });
+var alt = 2.2, hN = linhasN.length * 3.6 + 4;
+blocos.push({ tipo: "texto", x: x, y: y, w: W, h: hN, alt: alt, linhas: linhasN });
+y += hN + 6;
+var td = tabelaDemolicao(estado, opc);
+blocos.push({ tipo: "tabela", x: x, y: y, w: W, h: Math.max(10, (td.linhas.length + 1) * 5), titulo: td.titulo, cabecalho: td.cabecalho, linhas: td.linhas });
+return { blocos: blocos, legenda: lg, demolicao: td };
+}
+var BimConstruirDemolir = {
+FASES: FASES, ESTILOS: ESTILOS, ORDEM_LEGENDA: ORDEM_LEGENDA, NOTAS_PADRAO: NOTAS_PADRAO, MAPA_PISO: MAPA_PISO, FONTE: FONTE, TABELAS: TABELAS,
+nomeFase: nomeFase, categoriaDe: categoriaDe, ehDrywall: ehDrywall, reforma: reforma, pisoRemove: pisoRemove, ambientesPiso: ambientesPiso,
+pecasDaFase: pecasDaFase, estiloDe: estiloDe, opFase: opFase, opReforma: opReforma,
+faseDe: function (estado, id, deps) { var p = pecasDaFase(estado, deps).filter(function (x) { return x.id === String(id); })[0]; return p ? p.fase : null; },
+legenda: legenda, porAmbiente: porAmbiente, tabelaDemolicao: tabelaDemolicao, tabelaConstrucao: tabelaConstrucao, tabelaEsquadrias: tabelaEsquadrias,
+servicoPiso: servicoPiso, servicosOrc: servicosOrc, blocosDaFolha: blocosDaFolha
+};
+global.BimConstruirDemolir = BimConstruirDemolir;
+if (typeof module !== "undefined" && module.exports) module.exports = BimConstruirDemolir;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimapresentacao.js ==== */
@@ -95272,6 +95523,14 @@ if (q) { l.param = q.def.id; l.paramNome = q.def.nome; }
 l.bloco = "demolicao"; l.medida = sv.medida; l.codigoOrigem = sv.fonte || "mapa"; l.fase = FX.fase; l.statusFase = p.status;
 somar(p.id, rot + " — " + p.rotulo, { linhas: [l], resumo: resumir([l], opcoes), peso: false });
 });
+var BCD = estTodo && estTodo.fases && estTodo.fases.reforma ? dep("BimConstruirDemolir", "./bimconstruirdemolir.js") : null;
+if (BCD) BCD.servicosOrc(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, vaos: vaos, forroDe: opcoes && opcoes.forroDe, niveis: opcoes && opcoes.niveis }).forEach(function (s) {
+var lp;
+if (s.codigo) lp = arredLinha(orcar({ id: "demolicao", codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes));
+else lp = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", horas: [], servico: "demolicao", avisos: [s.motivo] };
+lp.bloco = "demolicao"; lp.medida = "area"; lp.codigoOrigem = "mapa"; lp.fase = FX.fase; lp.statusFase = "existente";
+somar(s.id, s.rotulo, { linhas: [lp], resumo: resumir([lp], opcoes), peso: false });
+});
 }
 var porComposicao = ordem.map(function (k) {
 var g = porCod[k], fh = fecharHoras(g.horasAcc, opcoes);
@@ -107253,6 +107512,7 @@ def(COMUM, [
 "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
 "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
 "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
+"construir-demolir", "tabela-demolicao", "tabela-construcao", "tabela-esquadrias",
 "travar-vista", "salvar-vista-3d", "duplicar-folha", "excluir-folha",
 "gerar-pranchas",
 "prancha-viva",
@@ -111039,11 +111299,17 @@ var MARCAS_COTA = { obliquo: "Traço oblíquo", seta: "Seta", ponto: "Ponto" };
 var UNIDADES = { m: "metros (3,45)", cm: "centímetros (345)", mm: "milímetros (3450)" };
 var ESCALAS = [20, 25, 50, 75, 100, 125, 200];
 var ESQUEMAS = { nenhum: "Nenhum", nome: "Por nome", departamento: "Por departamento" };
-var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente" };
+var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente", construirDemolir: "Construir e demolir (prancha de reforma)" };
 var CONV_REFORMA = {
 novo: { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
 demolido: { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
 existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+};
+var CONV_CD = {
+novo: { rotulo: "ALVENARIA NOVA", cor: "#d00000", fill: "#d00000", hachura: null, tracejado: null },
+demolido: { rotulo: "PAREDE A DEMOLIR", cor: "#1f8a3b", fill: "none", hachura: null, tracejado: [1.5, 1] },
+existente: { rotulo: "EXISTENTE A MANTER", cor: "#6b6b6b", fill: "#bdbdbd", hachura: null, tracejado: null },
+legenda: false, pisoHachura: "#333333"
 };
 function estiloPadrao() {
 return { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo",
@@ -111375,8 +111641,9 @@ var e = normEstilo(est), pena = PENAS[e.pena], k = e.escala / 1000;
 var cx = caixa(d) || (d.area && d.area.x1 > d.area.x0 && d.area.y1 > d.area.y0 ? { x0: d.area.x0, y0: d.area.y0, x1: d.area.x1, y1: d.area.y1 } : null) || { x0: 0, y0: 0, x1: 1, y1: 1 };
 var cotas = cotasDe(d, e);
 var m = 32 * k;
-var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
-var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
+var conv = e.convencao === "reforma" ? CONV_REFORMA : (e.convencao === "construirDemolir" ? CONV_CD : null);
+var semLeg = !!(conv && conv.legenda === false), convFill = conv ? (conv.novo.hachura ? "url(#d2-hach-n)" : conv.novo.fill) : null;
+var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 88 * k : 0), conv && !semLeg ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv && !semLeg ? 22 * k : 0) };
 var cad = d.cad || [], cadPath = "", cadTx = "";
 if (cad.length) {
 var q = { x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h };
@@ -111419,7 +111686,8 @@ p.push('<svg xmlns="http://www.w3.org/2000/svg" class="d2-svg" data-d2-tipo="' +
 p.push("<defs>" +
 '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
 '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
-(conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+(conv && conv.pisoHachura ? '<pattern id="d2-hach-piso" patternUnits="userSpaceOnUse" width="' + n4(2 * k) + '" height="' + n4(2 * k) + '" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="' + n4(2 * k) + '" stroke="' + conv.pisoHachura + '" stroke-width="' + n4(0.25 * k) + '"/></pattern>' : "") +
+(conv && conv.novo.hachura ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
 (e.preenchimento === "cruzada" || e.preenchimento === "concreto" || e.preenchimento === "tijolo" ? defPreenchimento(e.preenchimento, k) : "") +
 (p6 ? p6.defs : "") + "</defs>");
 p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
@@ -111448,22 +111716,22 @@ var stN = conv ? ' style="stroke:' + conv.novo.cor + '"' : "";
 if (porCat) {
 Object.keys(porCatC).forEach(function (kc) {
 var q2 = porCatC[kc], dc = ' data-cat="' + esc(kc) + '"';
-if (q2.f) p.push('<path d="' + q2.f + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+if (q2.f) p.push('<path d="' + q2.f + '" fill="' + (conv ? convFill : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
 if (q2.a) p.push('<path d="' + q2.a + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + dc + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
 });
 } else {
-if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? convFill : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
 if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
 }
 }
 if (conv && p6) {
 var fN = "", aN = "";
 (d.cortes || []).forEach(function (c) { if (c.fase) return; if (c.fechado) fN += caminho(c.pts, true, c.arcos); else aN += caminho(c.pts, false, c.arcos); });
-if (fN) p.push('<path d="' + fN + '" fill="url(#d2-hach-n)" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
+if (fN) p.push('<path d="' + fN + '" fill="' + convFill + '" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
 if (aN) p.push('<path d="' + aN + '" fill="none" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
 }
 p.push(svgFases(fase, d.linhasFase, pena, k, conv));
-if (conv) p.push(svgLegendaReforma(conv, vb, k, pena));
+if (conv && !semLeg) p.push(svgLegendaReforma(conv, vb, k, pena));
 if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
 if (!p6 && d.instImagens) p.push(svgInstImagens(d.instImagens, d.instClip));
 if (d.inst) p.push(svgInst(d.inst, k, pena));
@@ -111584,6 +111852,7 @@ function caminhoAmb(it) { var dd = caminho(it.pts, true); (it.furos || []).forEa
 function svgAmbCores(amb) {
 var s = "";
 (amb.itens || []).forEach(function (it) {
+if (it.hachura === "piso" && it.pts && it.pts.length >= 3) { s += '<path d="' + caminhoAmb(it) + '" fill="url(#d2-hach-piso)" fill-rule="evenodd" class="d2-amb-cor d2-piso-remover" data-d2-amb-cor="' + esc(it.id) + '"/>'; return; }
 if (!it.cor || !it.pts || it.pts.length < 3) return;
 s += '<path d="' + caminhoAmb(it) + '" ' + fillCor(it) + ' fill-rule="evenodd" class="d2-amb-cor" data-d2-amb-cor="' + esc(it.id) + '"/>';
 });
@@ -111966,7 +112235,7 @@ var Acima = { TIPOS: ACIMA_TIPOS, MODOS: ACIMA_MODOS, ROTULOS: ACIMA_ROTULOS, TR
 cfg: acimaCfg, topo: acimaTopo, classificar: acimaClassificar, elegivel: acimaElegivel, tipoPode: acimaTipoPode, casco: casco, area: areaPol, retMin: retMin, peca: acimaPeca, texto: acimaTexto, svg: svgAcima };
 var Desenho2D = {
 FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tracoPx, tracoAttr: tracoAttr, tracoK: tracoK,
-PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
+PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, CONV_CD: CONV_CD, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
 estiloPadrao: estiloPadrao, normEstilo: normEstilo,
 fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
 caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
@@ -185245,7 +185514,7 @@ var ABA_VISTA = [
 { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "max-3d", "janela-3d", "navegador-org",
 "fx-interface"] },
 { nome: "Apresentação", ids: ["cena", "render-fisico", "render-ia", "acabamento-ia", "galeria-ia", "apresentar-reforma"] },
-{ nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "prancha-viva"] },
+{ nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "construir-demolir", "tabela-demolicao", "tabela-construcao", "tabela-esquadrias", "prancha-viva"] },
 { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
 ];
 var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "cena": 1, "apresentar-reforma": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
@@ -193018,12 +193287,13 @@ if (global.ResizeObserver && !c._pvRO) { c._pvRO = new global.ResizeObserver(fun
 return this.pintar(id);
 },
 desmontar: function (id) { var t = this._telas[id]; if (t && t.el && t.el._pvRO) { try { t.el._pvRO.disconnect(); } catch (e) {} } delete this._telas[id]; if (this._sel && this._sel.id === id) this._sel = null; },
-desenho: function (vistaId, refazer, escala, semInst) {
+desenho: function (vistaId, refazer, escala, semInst, conv) {
 if (/^d3:/.test(String(vistaId))) return this._desenho3d(vistaId);
 var obraK = this.obraKey();
 if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
 var tagSI = semInst === "arquitetura" || semInst === "estrutural" ? semInst : "";
-var chave = (escala ? vistaId + "@" + escala : vistaId) + (tagSI ? "#" + tagSI : "");
+var tagCV = conv === "construirDemolir" ? "~cd" : "";
+var chave = (escala ? vistaId + "@" + escala : vistaId) + (tagSI ? "#" + tagSI : "") + tagCV;
 if (!refazer && this._desenhos[chave]) return this._desenhos[chave];
 var b2 = B2(), D = D2(); if (!b2 || !D) return null;
 try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
@@ -193036,6 +193306,10 @@ var M6s = b2._p6 ? b2._p6() : null, fdF = M6s && M6s.fundoDeSistema ? M6s.fundoD
 if (!fdF && an.inst) { var limpa = function (l) { if (!l || !l.fundo) return l; var o = {}; Object.keys(l).forEach(function (k) { if (k !== "fundo") o[k] = l[k]; }); return o; }; an.inst = Object.assign({}, an.inst, { linhas: (an.inst.linhas || []).map(limpa), simbolos: (an.inst.simbolos || []).map(limpa) }); }
 } catch (eSF) { }
 var est = clone(b2.estilo(vistaId)); est.titulo = false;
+if (tagCV) {
+est.convencao = "construirDemolir";
+try { var CDh = global.BimConstruirDemolir, stH = this._estadoBim(); if (CDh && stH && an.ambientes && an.ambientes.itens) an.ambientes.itens.forEach(function (it) { if (CDh.pisoRemove(stH, it.id) && it.pts && it.pts.length >= 3) it.hachura = "piso"; }); } catch (eCD) { }
+}
 if (escala) est.escala = Math.max(1, Math.round(+escala));
 var exF = { titulo: "" };
 var comHidroF = false; try { comHidroF = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()); } catch (eH) {}
@@ -193051,7 +193325,7 @@ this._desenhos[chave] = o;
 return o;
 },
 chaveVp: function (b) { return b && b.escalaPropria ? b.vistaId + "@" + b.escala : b.vistaId; },
-desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst); },
+desenhoVp: function (b, refazer) { return this.desenho(b.vistaId, refazer, b.escalaPropria ? b.escala : undefined, b.semInst, b.convencao); },
 DPI_3D: 300, LADO_MAX_3D: 8192, ESCALA_NOMINAL_3D: 100,
 _chave3d: function (id) { return this.obraKey() + "|" + id; },
 _idb3d: function (id) { return "folha3d:" + this.obraKey() + ":" + String(id).replace(/^d3:/, ""); },
@@ -193781,6 +194055,13 @@ tabela: function (qual) {
 var regs = this.registros();
 if (qual === "folhas") return PR().listaFolhas(regs, this.projeto());
 if (qual === "vistas") return PR().listaVistas(this.vistas2d(), regs);
+if (qual === "demolicao" || qual === "construcao" || qual === "esquadrias") {
+var CDt = global.BimConstruirDemolir, stT = this._estadoBim();
+if (!CDt || !stT) { toast("Abra o modelo da obra primeiro.", "aviso"); return { titulo: "SEM MODELO", cabecalho: ["Tabela"], linhas: [["Abra o modelo da obra."]] }; }
+var tq = CDt.TABELAS[qual](stT, this._opcCD());
+if (tq.avisos && tq.avisos.length) toast(tq.avisos[0], "aviso");
+return tq;
+}
 return PR().tabelaRevisoes(this.projeto(), regs);
 },
 mostrarLista: function (qual) {
@@ -193792,6 +194073,49 @@ if (fa) bts.push({ texto: "Pôr na folha aberta", classe: "primary", onClick: fu
 bts.push({ texto: "Fechar", onClick: function () { global.UI.fecharModal(); } });
 global.UI.modal(t.titulo.charAt(0) + t.titulo.slice(1).toLowerCase(), h, bts);
 return t;
+},
+_estadoBim: function () { try { var b = global.BIM, e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.estado : null; } catch (e2) { return null; } },
+_opcCD: function () {
+var b = global.BIM || {};
+var af = b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, cf = b.familiaCategoria ? function (id) { return b.familiaCategoria(id); } : null;
+var niv = []; try { niv = global.BimArqUI && global.BimArqUI.niveis ? global.BimArqUI.niveis() : []; } catch (e) { niv = []; }
+return { avaliarFam: af, niveis: niv, deps: { avaliarFam: af, categoriaFam: cf } };
+},
+gerarConstruirDemolir: function (nivelId) {
+if (!this.ativo()) return false;
+var self = this, CD = global.BimConstruirDemolir, b2 = B2(), st = this._estadoBim();
+if (!CD || !b2) { toast("O motor da prancha Construir e Demolir não carregou.", "erro"); return false; }
+if (!st) { toast("Abra o modelo da obra primeiro.", "aviso"); return false; }
+var niv = []; try { niv = b2.niveis(); } catch (e0) { niv = []; }
+if (!niv.length) { toast("O modelo não tem nível com planta ainda.", "aviso"); return false; }
+if (nivelId == null && niv.length > 1) {
+var h = '<label style="font-size:12.5px">Nível <select id="pv-cd-nivel">' + niv.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.nome) + "</option>"; }).join("") + "</select></label>" +
+'<p class="muted" style="font-size:12px;margin:8px 0 0">A prancha usa a planta do nível, na convenção de reforma (demolir verde tracejado, alvenaria nova vermelha, existente cinza). A planta comum do nível não muda.</p>';
+global.UI.modal("Gerar prancha Construir e Demolir", h, [
+{ texto: "Gerar", classe: "primary", onClick: function () { var v = (document.getElementById("pv-cd-nivel") || {}).value; global.UI.fecharModal(); self.gerarConstruirDemolir(v); } },
+{ texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]);
+return true;
+}
+var nv = niv.filter(function (n) { return String(n.id) === String(nivelId); })[0] || niv[0];
+var vistaId = b2.idPlanta(nv.id);
+try { var P10 = global.BimP10UI; if (P10 && P10.vista && P10.vista().filtro !== "tudo") { P10.definirVista({ filtro: "tudo" }); toast("Filtro de fase da vista passou para \"Mostrar tudo\": a prancha leva as três fases.", "info"); } } catch (eF) { }
+var dz = this.desenho(vistaId, true, undefined, undefined, "construirDemolir");
+if (!dz) { toast("Não consegui desenhar a planta: abra o modelo da obra primeiro.", "erro"); return false; }
+var id = this.novaFolha("A1"); if (!id) return false;
+var a = this.achar(id); if (!a) return false;
+var ar = a.geo.area, W = Math.max(40, Math.min(75, ar.w * 0.22)), livreW = ar.w - W - 8, livreH = ar.h - 16, cand = [20, 25, 50, 75, 100, 125, 200, 500], esc = 500;
+for (var i = 0; i < cand.length; i++) if (dz.vb.w * 1000 / cand[i] <= livreW && dz.vb.h * 1000 / cand[i] <= livreH) { esc = cand[i]; break; }
+var f = clone(a.folha); f.conteudo = "Construir e Demolir - " + nv.nome;
+var r = PR().colocarViewport(a.pr, f, { vistaId: vistaId, nome: "Construir e Demolir - " + nv.nome, escala: esc, caixa: { w: dz.vb.w, h: dz.vb.h }, cx: ar.x + livreW / 2, cy: ar.y + livreH / 2, repetir: true }, this.registros().map(function (q) { return PR().normalizar(q); }));
+if (!r.ok) { toast(r.erro, "aviso"); return false; }
+f = r.folha;
+var vp = f.blocos[f.blocos.length - 1]; vp.escalaPropria = true; vp.escala = esc; vp.convencao = "construirDemolir";
+var oc = this._opcCD(), cd = CD.blocosDaFolha(st, ar, { avaliarFam: oc.avaliarFam, deps: oc.deps, niveis: oc.niveis, incluirDrywall: false });
+f.blocos = f.blocos.concat(cd.blocos);
+this.gravarFolha(a, f); this.pintar(id);
+status("Prancha Construir e Demolir: " + nv.nome + " · 1:" + esc + " · legenda com " + cd.legenda.itens.length + " convenção(ões)." + (CD.reforma(st) ? "" : " O projeto não está marcado como Reforma (Gerenciar › Fases): o piso não entra como a remover."));
+if (cd.demolicao.avisos && cd.demolicao.avisos.length) toast(cd.demolicao.avisos[0], "aviso");
+return id;
 },
 inserirTabela: function (id, t) {
 var a = this.achar(id); if (!a) return false;
@@ -194309,7 +194633,11 @@ R.acrescentar("vista", "Vista", "Composição da folha", [
 { id: "posicionar-vista", rotulo: "Posicionar\nvista", icone: "planta", grande: true, dica: "Escolhe uma planta ou um corte e põe na folha aberta (o mesmo que arrastar do Navegador)." },
 { id: "revisoes-folha", rotulo: "Revisões", icone: "lista", dica: "Revisões e emissões do PROJETO (número, data, descrição, emitido por/para). Cada folha escolhe as dela; a última vira a Revisão atual do carimbo." },
 { id: "lista-folhas", rotulo: "Lista de\nfolhas", icone: "tabela", dica: "A tabela da categoria Folhas: número, nome, revisão atual, data de emissão, desenhado por. Pode ir para a folha aberta." },
-{ id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." }
+{ id: "lista-vistas", rotulo: "Lista de\nvistas", icone: "tabela", dica: "Todas as plantas e cortes, com a escala e a folha/número de detalhe onde estão." },
+{ id: "construir-demolir", rotulo: "Construir e\nDemolir", icone: "prancha", grande: true, dica: "Gera a prancha de reforma do nível: a planta com o demolir em verde tracejado, a alvenaria nova em vermelho e o existente em cinza, a legenda só com o que existe no modelo, as notas padrão (editáveis) e o quadro de demolição. A fase de cada peça é a do BIM (Fase criada / Fase demolida, nas Propriedades); o projeto de reforma liga em Gerenciar › Fases." },
+{ id: "tabela-demolicao", rotulo: "Tabela de\ndemolição", icone: "tabela", dica: "m² de parede a demolir e de piso a remover por ambiente, lidos da geometria do modelo. Pode ir para a folha aberta." },
+{ id: "tabela-construcao", rotulo: "Tabela de\nconstrução", icone: "tabela", dica: "m² de parede nova (alvenaria e drywall) por ambiente, lidos da geometria. Pode ir para a folha aberta." },
+{ id: "tabela-esquadrias", rotulo: "Portas e\njanelas", icone: "tabela", dica: "Cada porta e janela com a marca, o tipo e a fase (Existente, Nova, A demolir). Pode ir para a folha aberta." }
 ]);
 R.acrescentar("vista", "Vista", "Exportar", [
 { id: "exportar-dxf", rotulo: "DXF", icone: "exportar", grande: true, dica: "DXF da folha aberta (em mm de papel, carimbo completo) ou da planta/corte aberto (1:1 em metros). Camada por categoria (ARQ-PAREDE-CORTE, EST-PILAR-CORTE…), espessura pela pena, cota que o AutoCAD mede de novo." },
@@ -194333,6 +194661,10 @@ reg["posicionar-vista"] = function () { self.escolherVista(); return true; };
 reg["revisoes-folha"] = function () { self.editarRevisoes(); return true; };
 reg["lista-folhas"] = function () { self.mostrarLista("folhas"); return true; };
 reg["lista-vistas"] = function () { self.mostrarLista("vistas"); return true; };
+reg["construir-demolir"] = function () { return !!self.gerarConstruirDemolir(); };
+reg["tabela-demolicao"] = function () { self.mostrarLista("demolicao"); return true; };
+reg["tabela-construcao"] = function () { self.mostrarLista("construcao"); return true; };
+reg["tabela-esquadrias"] = function () { self.mostrarLista("esquadrias"); return true; };
 reg["exportar-dxf"] = function () { return !!self.exportarDxf(); };
 reg["exportar-cad"] = function () { return !!self.exportarCad(); };
 reg["exportar-dwg"] = function () { self.exportarDwg(); return true; };
@@ -227237,6 +227569,8 @@ return r;
 dialogoFases: function () {
 var st = this.estado(), BF = global.BimFases, self = this; if (!BF || !global.UI) return false;
 var l = BF.lista(st), linhas = l.map(function (n) { return { nome: n, orig: n }; }), renomear = {}, dem = clone((st && st.fases && st.fases.demolicao) || {});
+var refl0 = !!(st && st.fases && st.fases.reforma), refl = refl0, manter0 = ((st && st.fases && st.fases.pisoManter) || []).map(String), manter = manter0.slice();
+var ambsR = ((st && st.ambientes) || []).filter(function (a) { return a && a.id != null; });
 var v = this.vista(), CATS = ["parede", "laje", "pilar", "viga", "escada", "guarda", "cobertura", "forro", "porta", "janela"];
 var NOME = { parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", cobertura: "Cobertura", forro: "Forro", porta: "Porta", janela: "Janela" };
 function padrao(cat) { var m = BF.MAPA_DEMOLICAO[cat] || (cat === "forro" ? BF.MAPA_DEMOLICAO["forro:gesso"] : null); return m ? m.codigo : ""; }
@@ -227246,10 +227580,16 @@ linhas.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td><input data
 '</tbody></table><button class="btn sm" data-p10="fase-nova">Nova fase (no fim)</button>' +
 '<p style="font-size:12.5px;margin-top:10px"><b>Vista</b> — fase <select data-p10="fase-vista">' + linhas.map(function (x) { return '<option' + (x.orig === self.fase(st) ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + "</select> · filtro <select data-p10=\"filtro-vista\">" +
 BF.FILTROS.map(function (f) { return '<option value="' + f.id + '"' + (f.id === v.filtro ? " selected" : "") + ">" + esc(f.nome) + "</option>"; }).join("") + "</select></p>" +
+'<p style="font-size:12.5px;margin:10px 0 4px"><label><input type="checkbox" data-p10="reforma"' + (refl ? " checked" : "") + '> <b>Projeto de reforma</b></label> — peça sem fase marcada vale <b>Existente</b> (nos demais projetos vale Nova) e todo piso vira "remover piso existente + piso novo".</p>' +
+(refl && ambsR.length ? '<table class="tbl"><thead><tr><th>Ambiente</th><th>Remover o piso existente</th></tr></thead><tbody>' + ambsR.map(function (a) { return "<tr><td>" + esc(a.nome || "Ambiente") + '</td><td><input type="checkbox" data-p10-piso="' + esc(String(a.id)) + '"' + (manter.indexOf(String(a.id)) < 0 ? " checked" : "") + "></td></tr>"; }).join("") + "</tbody></table>" : "") +
 '<p style="font-size:12.5px;margin:10px 0 4px"><b>Demolição</b> — a composição SINAPI de cada categoria (vazio = a do mapa; sem composição, a linha sai PENDENTE):</p>' +
 '<table class="tbl"><tbody>' + CATS.map(function (k) { return "<tr><td>" + NOME[k] + '</td><td><input data-p10-dem="' + k + '" value="' + esc(dem[k] || "") + '" placeholder="' + esc(padrao(k) || "sem composição no mapa") + '" style="width:120px"></td></tr>'; }).join("") + "</tbody></table>";
 }
-function ler() { Array.prototype.forEach.call(document.querySelectorAll("[data-p10-fase]"), function (inp) { var i = +inp.getAttribute("data-p10-fase"); if (linhas[i]) linhas[i].nome = inp.value.trim(); }); }
+function ler() {
+Array.prototype.forEach.call(document.querySelectorAll("[data-p10-fase]"), function (inp) { var i = +inp.getAttribute("data-p10-fase"); if (linhas[i]) linhas[i].nome = inp.value.trim(); });
+var cr = document.querySelector('[data-p10="reforma"]'); if (cr) refl = !!cr.checked;
+Array.prototype.forEach.call(document.querySelectorAll("[data-p10-piso]"), function (inp) { var id = inp.getAttribute("data-p10-piso"), i = manter.indexOf(id); if (inp.checked && i >= 0) manter.splice(i, 1); else if (!inp.checked && i < 0) manter.push(id); });
+}
 var bg = global.UI.modal("Fases", '<div data-p10="fases-corpo">' + corpo() + "</div>", [
 { texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
 { texto: "Aplicar", classe: "primary", onClick: function () {
@@ -227258,16 +227598,22 @@ linhas.forEach(function (x) { if (x.orig && x.orig !== x.nome) renomear[x.orig] 
 var d2 = {};
 Array.prototype.forEach.call(document.querySelectorAll("[data-p10-dem]"), function (inp) { var k = inp.getAttribute("data-p10-dem"), val = inp.value.trim(); if (val) d2[k] = val; else if (dem[k]) d2[k] = null; });
 var fv = (document.querySelector('[data-p10="fase-vista"]') || {}).value, fl = (document.querySelector('[data-p10="filtro-vista"]') || {}).value;
-var r = BF.opFases(linhas.map(function (x) { return x.nome; }), { renomear: renomear, demolicao: d2 });
+var reformaMudou = refl !== refl0, manterMudou = JSON.stringify(manter.slice().sort()) !== JSON.stringify(manter0.slice().sort());
+var opcF = { renomear: renomear, demolicao: d2 };
+if (reformaMudou) opcF.reforma = refl;
+if (manterMudou) opcF.pisoManter = manter;
+var r = BF.opFases(linhas.map(function (x) { return x.nome; }), opcF);
 if (!r.ok) { toast(r.motivo, "erro"); return; }
 global.UI.fecharModal();
-var mudou = JSON.stringify(r.op.lista) !== JSON.stringify(l) || r.op.renomear || r.op.demolicao;
+var mudou = JSON.stringify(r.op.lista) !== JSON.stringify(l) || r.op.renomear || r.op.demolicao || reformaMudou || manterMudou;
 if (mudou && !self.enviar(r.op)) { toast("O editor recusou as fases.", "erro"); return; }
 self.definirVista({ fase: fv || null, filtro: fl || v.filtro });
 status("Fases: " + r.op.lista.join(" → ") + ". Vista na fase \"" + self.fase() + "\", " + BF.filtro(self.vista().filtro).nome + ".");
 } }
 ]);
 if (bg) bg.addEventListener("click", function (e) {
+var tr = e.target.closest ? e.target.closest("[data-p10=reforma]") : null;
+if (tr) { ler(); var cr2 = document.querySelector('[data-p10="fases-corpo"]'); if (cr2) cr2.innerHTML = corpo(); return; }
 var t = e.target.closest ? e.target.closest("[data-p10-combinar],[data-p10=fase-nova]") : null; if (!t) return;
 ler();
 if (t.getAttribute("data-p10") === "fase-nova") { var k = linhas.length + 1, nm = "Fase " + k; while (linhas.some(function (x) { return x.nome === nm; })) nm = "Fase " + (++k); linhas.push({ nome: nm, orig: null }); }

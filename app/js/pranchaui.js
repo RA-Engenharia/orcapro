@@ -162,6 +162,20 @@
     return '<div style="' + abs(k.x, k.y, k.w, altura, 'border-left:0.35mm solid #111;font-size:' + fs + 'pt;line-height:1.28;overflow:hidden') + '">' + h + '</div>';
   }
 
+  /* o quadradinho da legenda (9 x 4 mm): contorno na cor, preenchimento, hachura (linhas a 45° / cruzadas) e tracejado */
+  function amostraSvg(a) {
+    if (!a) return '';
+    var cor = esc(a.cor || '#000000'), s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 4" width="' + mm(9) + '" height="' + mm(4) + '" style="display:block">' +
+      '<rect x="0.2" y="0.2" width="8.6" height="3.6" fill="' + esc(a.fill || 'none') + '" stroke="' + cor + '" stroke-width="0.3"' + (a.tracejado ? ' stroke-dasharray="1.2 0.8"' : '') + '/>';
+    if (a.hachura) {
+      var i, d = '';
+      for (i = -4; i <= 9; i += 1.4) d += 'M' + i + ' 4L' + (i + 4) + ' 0';
+      if (a.hachura === 'drywall') for (i = -4; i <= 9; i += 1.4) d += 'M' + i + ' 0L' + (i + 4) + ' 4';
+      s += '<path d="' + d + '" stroke="' + cor + '" stroke-width="0.18" fill="none"/>';
+    }
+    return s + '</svg>';
+  }
+
   function blocoHtml(b, rec, i) {
     var t = '';
     if (b.tipo === 'viewport') {
@@ -183,8 +197,9 @@
       var fsT = b.alt > 0 ? mm(b.alt / 0.716) : '8pt';   /* `alt` = altura da maiúscula em mm (como o texto do CAD) */
       t = '<div data-pv-texto="1" style="font-size:' + fsT + ';line-height:1.3;white-space:pre' + (b.negrito ? ';font-weight:bold' : '') + '">' + (b.linhas || []).map(function (l) { return '<div>' + (l ? esc(l) : '&#160;') + '</div>'; }).join('') + '</div>';
     } else if (b.tipo === 'tabela') {
-      t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
-        (b.linhas || []).map(function (l) { return '<tr>' + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;text-align:center">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
+      var am = b.amostras || null;   /* a legenda da prancha: um quadradinho (svg) antes do texto de cada linha */
+      t = '<table style="border-collapse:collapse;font-size:6.8pt;width:100%"><tr>' + (am ? '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm"></th>' : '') + (b.cabecalho || []).map(function (h) { return '<th style="border:0.2mm solid #333;background:#eef2f5;padding:0.3mm 0.8mm">' + esc(h) + '</th>'; }).join('') + '</tr>' +
+        (b.linhas || []).map(function (l, li) { return '<tr>' + (am ? '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;width:11mm">' + amostraSvg(am[li]) + '</td>' : '') + l.map(function (c) { return '<td style="border:0.2mm solid #999;padding:0.3mm 0.8mm;' + (am ? 'text-align:left' : 'text-align:center') + '">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
     }
     var tit = b.titulo ? '<div style="position:absolute;left:0;top:' + mm(b.h + 1) + ';font-size:10pt;white-space:nowrap">' + esc(b.titulo) +
       (b.subtitulo ? '<div style="font-size:7pt">' + esc(b.subtitulo) + '</div>' : '') + '</div>' : '';
@@ -228,7 +243,7 @@
     return h;
   }
 
-  var PranchaUI = { folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL, carimboRA: carimboRA, COR_DESTAQUE: COR_DESTAQUE };
+  var PranchaUI = { blocoHtml: blocoHtml, folha: folha, documento: documento, viewportSvg: viewportSvg, tituloVista: tituloVista, ESTILO_PAPEL: ESTILO_PAPEL, carimboRA: carimboRA, COR_DESTAQUE: COR_DESTAQUE };
   global.PranchaUI = PranchaUI;
   if (typeof module !== 'undefined' && module.exports) module.exports = PranchaUI;
 })(typeof window !== 'undefined' ? window : this);

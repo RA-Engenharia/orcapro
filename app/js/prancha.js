@@ -99,6 +99,14 @@
     /* texto livre da folha (edição manual, 14/11/2026): `alt` = altura da letra em mm de papel (0 = o 8 pt de antes) */
     if (t === 'texto') { o.linhas = arr(b.linhas).map(txt); var al0 = num(b.alt, 0); if (al0 > 0) o.alt = Math.max(1, Math.min(20, al0)); if (b.negrito) o.negrito = true; }
     if (t === 'tabela') { o.cabecalho = arr(b.cabecalho).map(txt); o.linhas = arr(b.linhas).map(function (l) { return arr(l).map(txt); }); }
+    /* AMOSTRAS (prancha Construir e Demolir, 19/11/2026): uma por linha — o quadradinho da legenda ao lado do texto (cor, preenchimento, hachura, tracejado). Sem elas, a tabela é a de sempre. */
+    if (t === 'tabela' && arr(b.amostras).length) {
+      o.amostras = arr(b.amostras).slice(0, 40).map(function (a) {
+        a = a || {};
+        var h = txt(a.hachura); if (['diagonal', 'azul', 'drywall'].indexOf(h) < 0) h = '';
+        return { cor: /^#[0-9a-fA-F]{6}$/.test(txt(a.cor)) ? txt(a.cor) : '#000000', fill: /^#[0-9a-fA-F]{6}$/.test(txt(a.fill)) ? txt(a.fill) : 'none', hachura: h, tracejado: a.tracejado === true };
+      });
+    }
     return o;
   }
 
@@ -251,6 +259,7 @@
     o.mostrarTitulo = b.mostrarTitulo !== false;
     /* escala PRÓPRIA desta cópia (clicou no 1:50 do título e trocou): a folha não segue mais a escala da vista */
     if (b.escalaPropria) o.escalaPropria = true;
+    if (b.convencao === 'construirDemolir') o.convencao = b.convencao;   /* a planta desta cópia sai na convenção Construir e Demolir (js/bimconstruirdemolir.js), sem mudar a vista */
     if (b.semInst === 'arquitetura' || b.semInst === 'estrutural') o.semInst = b.semInst;   /* a folha gerada SEM a instalação (js/bimfolhaui.js): fica no viewport, não na vista */
     o.titulo = ''; o.subtitulo = '';   /* o título do viewport é o "título de vista", não o rótulo dos outros blocos */
     return o;
