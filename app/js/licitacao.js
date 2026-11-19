@@ -461,6 +461,25 @@
          pessoa acrescentar DEPOIS não leva a marca e continua livre (e o
          aviso de "fora da planilha do órgão" o mostra). */
       var travados = 0;
+      /* 19/11/2026 (Rogério, Morada Nova): o projeto do órgão é SEINFRA e os itens chegam com o código da SEINFRA
+         (C2872, C3233...), mas sem a base marcada: o item não abria o analítico e não aparecia a etiqueta SEINFRA.
+         Quando o edital usa a SEINFRA (bases exigidas ou tabela lida do projeto) e o código tem o formato dela
+         (C + 4 dígitos), o item já entra ligado à SEINFRA. Código fora desse formato (CXXXX, próprio) fica como veio. */
+      var leitTab = (bloco.leitura && bloco.leitura.tabelas && typeof bloco.leitura.tabelas === "object") ? bloco.leitura.tabelas : {};
+      var cabTxt = "";
+      try { cabTxt = JSON.stringify((bloco.leitura && (bloco.leitura.cabecalho || bloco.leitura.desonerado)) || ""); } catch (eCab) { cabTxt = ""; }
+      var usaSeinfra = !!s(leitTab.seinfra) || /SEINFRA/i.test(cabTxt)
+        || (lic.basesExigidas || []).some(function (b) { return /SEINFRA/i.test(s(b && b.fonte)); });
+      (orc.etapas || []).forEach(function (e) {
+        ((e && e.itens) || []).forEach(function (it) {
+          if (!it || s(it.baseFonte)) return;
+          var oU = s(it.origem).toUpperCase(), fU = s(it.fonte).toUpperCase();
+          var declarou = /SEINFRA/.test(fU) || /SEINFRA/.test(oU);
+          if ((usaSeinfra || declarou) && /^C\d{4}$/.test(s(it.codigo).toUpperCase()) && !/SINAPI/.test(oU)) {
+            it.baseFonte = "SEINFRA"; it.origem = "SEINFRA";
+          }
+        });
+      });
       (orc.etapas || []).forEach(function (e) {
         ((e && e.itens) || []).forEach(function (it) {
           if (!it) return;

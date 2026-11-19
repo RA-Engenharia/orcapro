@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.392",
+versao: "1.2.393",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -70073,6 +70073,21 @@ lic.basesProprias = cont.proprias;
 lic.basesExigidasIgnoradas = bloco.bases_exigidas.length - lic.basesExigidas.length - cont.proprias;
 }
 var travados = 0;
+var leitTab = (bloco.leitura && bloco.leitura.tabelas && typeof bloco.leitura.tabelas === "object") ? bloco.leitura.tabelas : {};
+var cabTxt = "";
+try { cabTxt = JSON.stringify((bloco.leitura && (bloco.leitura.cabecalho || bloco.leitura.desonerado)) || ""); } catch (eCab) { cabTxt = ""; }
+var usaSeinfra = !!s(leitTab.seinfra) || /SEINFRA/i.test(cabTxt)
+|| (lic.basesExigidas || []).some(function (b) { return /SEINFRA/i.test(s(b && b.fonte)); });
+(orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) {
+if (!it || s(it.baseFonte)) return;
+var oU = s(it.origem).toUpperCase(), fU = s(it.fonte).toUpperCase();
+var declarou = /SEINFRA/.test(fU) || /SEINFRA/.test(oU);
+if ((usaSeinfra || declarou) && /^C\d{4}$/.test(s(it.codigo).toUpperCase()) && !/SINAPI/.test(oU)) {
+it.baseFonte = "SEINFRA"; it.origem = "SEINFRA";
+}
+});
+});
 (orc.etapas || []).forEach(function (e) {
 ((e && e.itens) || []).forEach(function (it) {
 if (!it) return;
