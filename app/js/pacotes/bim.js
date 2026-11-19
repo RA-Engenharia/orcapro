@@ -68158,7 +68158,7 @@ r.aguas.forEach(function (ag) {
 if (!ag.seta || !(ag.pct > 0)) return;
 var pc = pctTxt(ag.pct);
 out.push({ telhadoId: r.id, aresta: ag.aresta, centro: { x: ag.centro.x, z: ag.centro.z }, sentido: { x: ag.seta.sentido.x, z: ag.seta.sentido.z }, pct: ag.pct,
-texto: "↓ " + pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
+texto: pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
 });
 });
 return out;
@@ -111664,7 +111664,7 @@ var x0 = cx - ux * half, y0 = cy - uy * half, x1 = cx + ux * half, y1 = cy + uy 
 var bx = x1 - ux * hl, by = y1 - uy * hl;
 s += '<line x1="' + n4(x0) + '" y1="' + n4(y0) + '" x2="' + n4(bx) + '" y2="' + n4(by) + '" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-caim-l"/>';
 s += '<path d="M' + n4(x1) + " " + n4(y1) + "L" + n4(bx - uy * hw) + " " + n4(by + ux * hw) + "L" + n4(bx + uy * hw) + " " + n4(by - ux * hw) + 'Z" fill="' + cor + '" class="d2-caim-p"/>';
-var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" font-weight="bold"';
+var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" font-weight="bold" stroke="#ffffff" stroke-width="' + n4(0.7 * k) + '" paint-order="stroke"';
 s += txt(cx, Math.min(y0, y1) - 1.6 * k, 2.6 * k, esc(c.texto), "d2-caim-tx", "middle", 0, fam);
 if (c.rotulo) s += txt(cx, Math.max(y0, y1) + 3.4 * k, 2 * k, esc(c.rotulo), "d2-caim-tx", "middle", 0, fam);
 });

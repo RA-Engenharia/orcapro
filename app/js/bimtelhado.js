@@ -1885,7 +1885,7 @@
           if (!ag.seta || !(ag.pct > 0)) return;   /* água sem caimento (plano) não leva seta */
           var pc = pctTxt(ag.pct);
           out.push({ telhadoId: r.id, aresta: ag.aresta, centro: { x: ag.centro.x, z: ag.centro.z }, sentido: { x: ag.seta.sentido.x, z: ag.seta.sentido.z }, pct: ag.pct,
-                     texto: "↓ " + pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
+                     texto: pc + "%", rotulo: plano ? "LAJE IMPERMEABILIZADA i=" + pc + "%" : rot, plano: plano });
         });
       });
       return out;
