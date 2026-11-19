@@ -78735,12 +78735,59 @@ if (!linhas.length) linhas.push(["Nada a construir", "0,00", "0,00"]); else linh
 return { titulo: "QUADRO DE CONSTRUÇÃO", cabecalho: ["Ambiente", "Alvenaria nova (m²)", "Drywall novo (m²)"], linhas: linhas,
 dados: { ambientes: l, totalAlvenaria: r2(ta), totalDrywall: r2(td) }, avisos: r.avisos };
 }
+function cmTxt(v) { return String(Math.round(v * 100)); }
+function textoMedidas(tipo, larg, alt, peit) {
+if (!fin(larg) || !fin(alt)) return "s/ medida";
+return cmTxt(larg) + "×" + cmTxt(alt) + (tipo === "janela" ? "/" + cmTxt(fin(peit) ? peit : 0) : "");
+}
+function esquadriasMarcadas(estado, opc) {
+opc = opc || {};
+var av = opc.avaliarFam || (opc.deps && opc.deps.avaliarFam) || null;
+var pecas = pecasDaFase(estado, opc.deps), paredes = {}, nPar = 0, mx = 0, mz = 0;
+pecas.forEach(function (p) { if (p.categoria === "parede" && fin(p.el.cx) && fin(p.el.cz)) { paredes[p.id] = p.el; nPar++; mx += p.el.cx; mz += p.el.cz; } });
+if (nPar) { mx /= nPar; mz /= nPar; }
+var chaves = { porta: [], janela: [] }, out = [];
+pecas.forEach(function (p) {
+if ((p.categoria !== "porta" && p.categoria !== "janela") || !p.fase) return;
+var el = p.el || {}, tipo = p.categoria, ab = null, par = el.host ? paredes[String(el.host.id)] : null;
+if (opc.yMin != null && opc.yMax != null && par && fin(par.cy) && fin(par.altura) && (par.cy - par.altura / 2 < opc.yMin || par.cy - par.altura / 2 > opc.yMax)) return;
+try { var r = typeof av === "function" ? av(el.famId, el.tipoId, el.inst) : null; ab = r && r.abertura && r.abertura.largura > 0 ? r.abertura : null; } catch (e) { ab = null; }
+var larg = ab ? ab.largura : null, alt = ab ? ab.altura : null, peit = ab ? (fin(ab.peitoril) ? ab.peitoril : 0) : null;
+var chave = [txt(el.famId), txt(el.tipoId), larg, alt, peit].join("|"), L = chaves[tipo];
+if (L.indexOf(chave) < 0) L.push(chave);
+var nrm = { x: 0, z: 0 }, esp = par && fin(par.espessura) ? par.espessura : 0.15;
+if (par && fin(par.rotY)) {
+nrm = { x: Math.sin(par.rotY), z: Math.cos(par.rotY) };
+if ((el.x - mx) * nrm.x + (el.z - mz) * nrm.z < 0) { nrm.x = -nrm.x; nrm.z = -nrm.z; }
+}
+var RA = dep("FamiliasRA", "./familiasra.js"), reg = null; try { reg = RA && RA.obter ? RA.obter(el.famId, true) : null; } catch (e2) { reg = null; }
+var ins = el.inst || {};
+out.push({ id: p.id, tipo: tipo, marca: (tipo === "porta" ? "P" : "J") + (L.indexOf(chave) + 1), famId: txt(el.famId), tipoId: txt(el.tipoId), nome: txt(reg && reg.nome) || txt(el.famId),
+material: txt(ins.Material_folha || ins.Material_marco || ""), larg: larg, alt: alt, peit: tipo === "janela" ? peit : null, fase: p.fase,
+x: fin(el.x) ? el.x : null, z: fin(el.z) ? el.z : null, nx: nrm.x, nz: nrm.z, esp: esp, texto: textoMedidas(tipo, larg, alt, peit) });
+});
+return out;
+}
+function marcasPlanta(estado, opc) {
+return esquadriasMarcadas(estado, opc).filter(function (q) { return q.x != null && q.z != null; }).map(function (q) {
+return { id: q.id, marca: q.marca, texto: q.texto, tipo: q.tipo, centro: { x: q.x, z: q.z }, normal: { x: q.nx, z: q.nz }, esp: q.esp };
+});
+}
 function tabelaEsquadrias(estado, opc) {
-var l = pecasDaFase(estado, opc && opc.deps).filter(function (p) { return (p.categoria === "porta" || p.categoria === "janela") && p.fase; });
-var linhas = l.map(function (p) { return [p.categoria === "porta" ? "Porta" : "Janela", p.id, txt(p.el.tipoId || p.el.famId), p.fase]; });
-if (!linhas.length) linhas.push(["Nenhuma esquadria", "", "", ""]);
+var l = esquadriasMarcadas(estado, opc), por = {}, ordem = [];
+l.forEach(function (q) {
+if (!por[q.marca]) { por[q.marca] = { marca: q.marca, tipo: q.tipo, nome: q.nome, larg: q.larg, alt: q.alt, peit: q.peit, material: q.material, qtd: 0, ids: [] }; ordem.push(q.marca); }
+por[q.marca].qtd++; por[q.marca].ids.push(q.id);
+});
+ordem.sort(function (a, b) { return a.charAt(0) === b.charAt(0) ? +a.slice(1) - +b.slice(1) : (a.charAt(0) < b.charAt(0) ? 1 : -1); });
+var grupos = ordem.map(function (m) { return por[m]; });
+var linhas = grupos.map(function (g) {
+return [g.marca, (g.tipo === "porta" ? "Porta " : "Janela ") + g.nome, fin(g.larg) ? cmTxt(g.larg) : "s/ medida", fin(g.alt) ? cmTxt(g.alt) : "s/ medida", g.tipo === "janela" && fin(g.peit) ? cmTxt(g.peit) : "-", String(g.qtd), g.material || "informe"];
+});
+if (!linhas.length) linhas.push(["Nenhuma esquadria", "", "", "", "", "", ""]);
 var n = { Existente: 0, Nova: 0, "A demolir": 0 }; l.forEach(function (p) { n[p.fase]++; });
-return { titulo: "PORTAS E JANELAS", cabecalho: ["Elemento", "Marca", "Tipo", "Fase"], linhas: linhas, dados: { n: n, total: l.length }, avisos: [] };
+return { titulo: "PORTAS E JANELAS", cabecalho: ["Marca", "Tipo / descrição", "Largura (cm)", "Altura (cm)", "Peitoril (cm)", "Quantidade", "Material"], linhas: linhas,
+dados: { n: n, total: l.length, grupos: grupos, esquadrias: l }, avisos: [] };
 }
 var TABELAS = { demolicao: tabelaDemolicao, construcao: tabelaConstrucao, esquadrias: tabelaEsquadrias };
 function servicoPiso(piso) {
@@ -78786,7 +78833,7 @@ FASES: FASES, ESTILOS: ESTILOS, ORDEM_LEGENDA: ORDEM_LEGENDA, NOTAS_PADRAO: NOTA
 nomeFase: nomeFase, categoriaDe: categoriaDe, ehDrywall: ehDrywall, reforma: reforma, pisoRemove: pisoRemove, ambientesPiso: ambientesPiso,
 pecasDaFase: pecasDaFase, estiloDe: estiloDe, opFase: opFase, opReforma: opReforma,
 faseDe: function (estado, id, deps) { var p = pecasDaFase(estado, deps).filter(function (x) { return x.id === String(id); })[0]; return p ? p.fase : null; },
-legenda: legenda, porAmbiente: porAmbiente, tabelaDemolicao: tabelaDemolicao, tabelaConstrucao: tabelaConstrucao, tabelaEsquadrias: tabelaEsquadrias,
+legenda: legenda, porAmbiente: porAmbiente, tabelaDemolicao: tabelaDemolicao, tabelaConstrucao: tabelaConstrucao, tabelaEsquadrias: tabelaEsquadrias, esquadriasMarcadas: esquadriasMarcadas, marcasPlanta: marcasPlanta, textoMedidas: textoMedidas,
 servicoPiso: servicoPiso, servicosOrc: servicosOrc, blocosDaFolha: blocosDaFolha
 };
 global.BimConstruirDemolir = BimConstruirDemolir;
@@ -111405,6 +111452,7 @@ o.corteForcado = o.corteForcado === true || o.corteForcado === "true"; if (!o.co
 o.corCotas = /^#[0-9a-fA-F]{6}$/.test(String(o.corCotas || "")) ? String(o.corCotas).toLowerCase() : ""; if (!o.corCotas) delete o.corCotas;
 o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
 if (e && (e.caimentoTelha === true || e.caimentoTelha === false)) o.caimentoTelha = e.caimentoTelha;
+if (e && (e.marcaEsquadrias === true || e.marcaEsquadrias === false)) o.marcaEsquadrias = e.marcaEsquadrias;
 return o;
 }
 function fmtNum(v, casas) {
@@ -111670,6 +111718,18 @@ if (c.rotulo) s += txt(cx, Math.max(y0, y1) + 3.4 * k, 2 * k, esc(c.rotulo), "d2
 });
 return '<g class="d2-caimentos">' + s + "</g>";
 }
+function svgMarcasEsquadrias(lista, e, pena) {
+var k = e.escala / 1000, r = 2.6 * k, hM = 2.2 * k, cor = "#000000", s = "";
+lista.forEach(function (q) {
+var nx = q.normal ? q.normal.x : 0, nz = q.normal ? q.normal.z : 1, d1 = (q.esp || 0.15) / 2 + 3.6 * k, cx = q.centro.x + nx * d1, cy = q.centro.z + nz * d1;
+var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" stroke="#ffffff" stroke-width="' + n4(0.7 * k) + '" paint-order="stroke"';
+s += '<circle cx="' + n4(cx) + '" cy="' + n4(cy) + '" r="' + n4(r) + '" fill="#ffffff" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-esq-c"/>';
+s += txt(cx, cy + 0.85 * k, 2.4 * k, esc(q.marca), "d2-esq-tx", "middle", 0, fam + ' font-weight="bold"');
+var acima = nz < -0.3, ty = acima ? cy - r - 0.9 * k : cy + r + hM + 0.4 * k, tx = cx + (Math.abs(nz) <= 0.3 ? nx * String(q.texto).length * 0.62 * hM / 2 : 0);
+s += txt(tx, ty, hM, esc(q.texto), "d2-esq-tx", "middle", 0, fam);
+});
+return '<g class="d2-esquadrias">' + s + "</g>";
+}
 function svgEixo(ex, cx, e, pena) {
 var k = e.escala / 1000, R = 4 * k, s = "", a = ex.a, b = ex.b, cent = [];
 if (!a) { a = [ex.x, cx.y1 + 4 * k]; b = [ex.x, cx.y0 - 4 * k]; }
@@ -111819,6 +111879,7 @@ if (A7) p.push(A7.svg(d.anotP7, e, pena, "fundo"));
 if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
 if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
 if (d.tipo === "planta" && d.caimentos && d.caimentos.length && e.caimentoTelha !== false) p.push(svgCaimentos(d.caimentos, e, pena));
+if (d.tipo === "planta" && d.esquadrias && d.esquadrias.length && e.marcaEsquadrias !== false) p.push(svgMarcasEsquadrias(d.esquadrias, e, pena));
 if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));
 eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
 var semPrevia = false; try { semPrevia = !!(global.BimPrevia && typeof global.BimPrevia.hidro === "function" && !global.BimPrevia.hidro()); } catch (eP8) { semPrevia = false; }
@@ -112731,6 +112792,13 @@ return L;
 },
 cortes: function () { return this.estado().cortes.slice(); },
 acimaCfg: function (id) { var D = D2(); return D && D.Acima ? D.Acima.cfg(this.estado().acima[id]) : { on: false }; },
+_marcaEsqLigada: function (d) {
+var est = this.estilo(d.id);
+if (typeof est.marcaEsquadrias === "boolean") return est.marcaEsquadrias;
+if (d.p6 === "forro" || d.p6base === "forro") return false;
+var BT = global.BimTelhado;
+return !(BT && BT.caimentoAuto && BT.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null));
+},
 _acimaVale: function (d) { return !!(d && d.tipo === "planta" && d.p6 !== "forro" && d.p6base !== "forro"); },
 acimaTopo: function (d, yCorte) {
 var D = D2(); if (!D || !D.Acima || !this._acimaVale(d)) return null;
@@ -112934,6 +113002,14 @@ var cm7 = BT7.caimentosPlanta(ez7.estado, {});
 if (cm7.length) out.caimentos = cm7;
 }
 } catch (eCm) { }
+try {
+var CD8 = global.BimConstruirDemolir, ez8 = B() && B().editarEstado ? B().editarEstado() : null;
+if (CD8 && CD8.marcasPlanta && ez8 && ez8.estado && this._marcaEsqLigada(d)) {
+var bb8 = B() || {}, mq8 = CD8.marcasPlanta(ez8.estado, { avaliarFam: bb8.familiaAvaliar ? function (f, t, i) { return bb8.familiaAvaliar(f, t, i); } : null,
+deps: { categoriaFam: bb8.familiaCategoria ? function (id) { return bb8.familiaCategoria(id); } : null }, yMin: d.nivel.y - 0.5, yMax: d.nivel.y + 0.5 });
+if (mq8.length) out.esquadrias = mq8;
+}
+} catch (eEq) { }
 out.marcas = this.estado().cortes.map(function (c) {
 var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
 if (c.inv) { nx = -nx; nz = -nz; }
@@ -113456,6 +113532,7 @@ var secoes = [
 { id: "convencao", rotulo: "Convenção de reforma", tipo: "lista", valor: e.convencao || "padrao", opcoes: op(D.CONVENCOES) },
 { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
 ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte },
+{ id: "marcaEsquadrias", rotulo: "Mostrar marca de esquadrias", tipo: "sim-nao", valor: this._marcaEsqLigada(d) },
 { id: "caimentoTelha", rotulo: "Mostrar caimento e telha", tipo: "sim-nao", valor: typeof e.caimentoTelha === "boolean" ? e.caimentoTelha : !!(global.BimTelhado && global.BimTelhado.caimentoAuto && global.BimTelhado.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null)) }]
 : [{ id: "niveis", rotulo: "Níveis", tipo: "sim-nao", valor: e.niveis }]) },
 { nome: "Cotas", params: [
@@ -113572,9 +113649,10 @@ if (mnv) { this._nivelVisivel(id, mnv[1], valor === true || valor === "true" || 
 var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
 est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
 if (pid === "preenchimento") est.corteForcado = true;
+if (pid === "marcaEsquadrias") est.marcaEsquadrias = valor === true || valor === "true" || valor === 1 || valor === "1";
 if (pid === "caimentoTelha") est.caimentoTelha = valor === true || valor === "true" || valor === 1 || valor === "1";
 e.estilos[id] = D2().normEstilo(est);
-this._gravar(); this.redesenhar(id, pid === "caimentoTelha");
+this._gravar(); this.redesenhar(id, pid === "caimentoTelha" || pid === "marcaEsquadrias");
 },
 _nivelVisivel: function (id, chave, visivel) {
 var e = this.estado(), est = e.estilos[id] || (e.estilos[id] = this.estilo(id)), L = (est.niveisOcultos || []).filter(function (q) { return q !== chave; });

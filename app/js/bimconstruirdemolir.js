@@ -213,13 +213,65 @@
     return { titulo: "QUADRO DE CONSTRUÇÃO", cabecalho: ["Ambiente", "Alvenaria nova (m²)", "Drywall novo (m²)"], linhas: linhas,
              dados: { ambientes: l, totalAlvenaria: r2(ta), totalDrywall: r2(td) }, avisos: r.avisos };
   }
-  /* PORTAS E JANELAS: cada esquadria com a fase em que está */
+  /* MARCA DAS ESQUADRIAS (19/11/2026): P1, P2… e J1, J2… — um número por TIPO de vão (família + tipo + largura + altura + peitoril), na ordem em que o vão aparece no modelo
+     (ordem estável). É a numeração da planta 2D (marca + medidas em cm) e do quadro "Portas e janelas": a mesma fonte, a mesma marca.
+     [{ id, tipo, marca, famId, tipoId, nome, material, larg, alt, peit (m, null = sem medida avaliada), fase, x, z, nx, nz, esp, texto }]
+     (x, z) = o vão no plano; (nx, nz) = a normal da parede voltada PARA FORA da obra (lado oposto ao centro das paredes); texto = "80×210" ou "120×120/110" (cm). */
+  function cmTxt(v) { return String(Math.round(v * 100)); }
+  function textoMedidas(tipo, larg, alt, peit) {
+    if (!fin(larg) || !fin(alt)) return "s/ medida";
+    return cmTxt(larg) + "×" + cmTxt(alt) + (tipo === "janela" ? "/" + cmTxt(fin(peit) ? peit : 0) : "");
+  }
+  function esquadriasMarcadas(estado, opc) {
+    opc = opc || {};
+    var av = opc.avaliarFam || (opc.deps && opc.deps.avaliarFam) || null;
+    var pecas = pecasDaFase(estado, opc.deps), paredes = {}, nPar = 0, mx = 0, mz = 0;
+    pecas.forEach(function (p) { if (p.categoria === "parede" && fin(p.el.cx) && fin(p.el.cz)) { paredes[p.id] = p.el; nPar++; mx += p.el.cx; mz += p.el.cz; } });
+    if (nPar) { mx /= nPar; mz /= nPar; }
+    var chaves = { porta: [], janela: [] }, out = [];
+    pecas.forEach(function (p) {
+      if ((p.categoria !== "porta" && p.categoria !== "janela") || !p.fase) return;
+      var el = p.el || {}, tipo = p.categoria, ab = null, par = el.host ? paredes[String(el.host.id)] : null;
+      if (opc.yMin != null && opc.yMax != null && par && fin(par.cy) && fin(par.altura) && (par.cy - par.altura / 2 < opc.yMin || par.cy - par.altura / 2 > opc.yMax)) return;   /* só os vãos do pavimento da vista: a base da parede cai na faixa [yMin, yMax] */
+      try { var r = typeof av === "function" ? av(el.famId, el.tipoId, el.inst) : null; ab = r && r.abertura && r.abertura.largura > 0 ? r.abertura : null; } catch (e) { ab = null; }
+      var larg = ab ? ab.largura : null, alt = ab ? ab.altura : null, peit = ab ? (fin(ab.peitoril) ? ab.peitoril : 0) : null;
+      var chave = [txt(el.famId), txt(el.tipoId), larg, alt, peit].join("|"), L = chaves[tipo];
+      if (L.indexOf(chave) < 0) L.push(chave);
+      var nrm = { x: 0, z: 0 }, esp = par && fin(par.espessura) ? par.espessura : 0.15;
+      if (par && fin(par.rotY)) {
+        nrm = { x: Math.sin(par.rotY), z: Math.cos(par.rotY) };   /* normal da parede (a parede vai de (cos, −sin)) */
+        if ((el.x - mx) * nrm.x + (el.z - mz) * nrm.z < 0) { nrm.x = -nrm.x; nrm.z = -nrm.z; }   /* para o lado oposto ao centro da obra */
+      }
+      var RA = dep("FamiliasRA", "./familiasra.js"), reg = null; try { reg = RA && RA.obter ? RA.obter(el.famId, true) : null; } catch (e2) { reg = null; }
+      var ins = el.inst || {};
+      out.push({ id: p.id, tipo: tipo, marca: (tipo === "porta" ? "P" : "J") + (L.indexOf(chave) + 1), famId: txt(el.famId), tipoId: txt(el.tipoId), nome: txt(reg && reg.nome) || txt(el.famId),
+                 material: txt(ins.Material_folha || ins.Material_marco || ""), larg: larg, alt: alt, peit: tipo === "janela" ? peit : null, fase: p.fase,
+                 x: fin(el.x) ? el.x : null, z: fin(el.z) ? el.z : null, nx: nrm.x, nz: nrm.z, esp: esp, texto: textoMedidas(tipo, larg, alt, peit) });
+    });
+    return out;
+  }
+  /* o que a planta 2D desenha: [{ marca, texto, centro: {x, z} em m do desenho, tipo }] — uma marca por vão, fora da parede; some o vão a demolir? não: A demolir também leva a marca */
+  function marcasPlanta(estado, opc) {
+    return esquadriasMarcadas(estado, opc).filter(function (q) { return q.x != null && q.z != null; }).map(function (q) {
+      return { id: q.id, marca: q.marca, texto: q.texto, tipo: q.tipo, centro: { x: q.x, z: q.z }, normal: { x: q.nx, z: q.nz }, esp: q.esp };
+    });
+  }
+  /* PORTAS E JANELAS (quadro de esquadrias): uma linha por marca — Marca, Tipo/descrição, Largura, Altura, Peitoril (janela), Quantidade e Material (cm) */
   function tabelaEsquadrias(estado, opc) {
-    var l = pecasDaFase(estado, opc && opc.deps).filter(function (p) { return (p.categoria === "porta" || p.categoria === "janela") && p.fase; });
-    var linhas = l.map(function (p) { return [p.categoria === "porta" ? "Porta" : "Janela", p.id, txt(p.el.tipoId || p.el.famId), p.fase]; });
-    if (!linhas.length) linhas.push(["Nenhuma esquadria", "", "", ""]);
+    var l = esquadriasMarcadas(estado, opc), por = {}, ordem = [];
+    l.forEach(function (q) {
+      if (!por[q.marca]) { por[q.marca] = { marca: q.marca, tipo: q.tipo, nome: q.nome, larg: q.larg, alt: q.alt, peit: q.peit, material: q.material, qtd: 0, ids: [] }; ordem.push(q.marca); }
+      por[q.marca].qtd++; por[q.marca].ids.push(q.id);
+    });
+    ordem.sort(function (a, b) { return a.charAt(0) === b.charAt(0) ? +a.slice(1) - +b.slice(1) : (a.charAt(0) < b.charAt(0) ? 1 : -1); });   /* portas antes das janelas */
+    var grupos = ordem.map(function (m) { return por[m]; });
+    var linhas = grupos.map(function (g) {
+      return [g.marca, (g.tipo === "porta" ? "Porta " : "Janela ") + g.nome, fin(g.larg) ? cmTxt(g.larg) : "s/ medida", fin(g.alt) ? cmTxt(g.alt) : "s/ medida", g.tipo === "janela" && fin(g.peit) ? cmTxt(g.peit) : "-", String(g.qtd), g.material || "informe"];
+    });
+    if (!linhas.length) linhas.push(["Nenhuma esquadria", "", "", "", "", "", ""]);
     var n = { Existente: 0, Nova: 0, "A demolir": 0 }; l.forEach(function (p) { n[p.fase]++; });
-    return { titulo: "PORTAS E JANELAS", cabecalho: ["Elemento", "Marca", "Tipo", "Fase"], linhas: linhas, dados: { n: n, total: l.length }, avisos: [] };
+    return { titulo: "PORTAS E JANELAS", cabecalho: ["Marca", "Tipo / descrição", "Largura (cm)", "Altura (cm)", "Peitoril (cm)", "Quantidade", "Material"], linhas: linhas,
+             dados: { n: n, total: l.length, grupos: grupos, esquadrias: l }, avisos: [] };
   }
   var TABELAS = { demolicao: tabelaDemolicao, construcao: tabelaConstrucao, esquadrias: tabelaEsquadrias };
 
@@ -272,7 +324,7 @@
     nomeFase: nomeFase, categoriaDe: categoriaDe, ehDrywall: ehDrywall, reforma: reforma, pisoRemove: pisoRemove, ambientesPiso: ambientesPiso,
     pecasDaFase: pecasDaFase, estiloDe: estiloDe, opFase: opFase, opReforma: opReforma,
     faseDe: function (estado, id, deps) { var p = pecasDaFase(estado, deps).filter(function (x) { return x.id === String(id); })[0]; return p ? p.fase : null; },
-    legenda: legenda, porAmbiente: porAmbiente, tabelaDemolicao: tabelaDemolicao, tabelaConstrucao: tabelaConstrucao, tabelaEsquadrias: tabelaEsquadrias,
+    legenda: legenda, porAmbiente: porAmbiente, tabelaDemolicao: tabelaDemolicao, tabelaConstrucao: tabelaConstrucao, tabelaEsquadrias: tabelaEsquadrias, esquadriasMarcadas: esquadriasMarcadas, marcasPlanta: marcasPlanta, textoMedidas: textoMedidas,
     servicoPiso: servicoPiso, servicosOrc: servicosOrc, blocosDaFolha: blocosDaFolha
   };
 

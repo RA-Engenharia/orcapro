@@ -143,6 +143,8 @@
     o.niveisOcultos = Array.isArray(o.niveisOcultos) ? o.niveisOcultos.filter(function (q) { return typeof q === "string" && q; }).slice(0, 400) : []; if (!o.niveisOcultos.length) delete o.niveisOcultos;
     /* CAIMENTO E TELHA (19/11/2026): só fica gravado quando a pessoa escolheu (true/false); sem escolha vale o automático das vistas de cobertura (js/bim2dui.js) */
     if (e && (e.caimentoTelha === true || e.caimentoTelha === false)) o.caimentoTelha = e.caimentoTelha;
+    /* MARCA DE ESQUADRIAS (19/11/2026): mesma regra — só grava quando a pessoa escolheu; sem escolha: ligada nas plantas baixas, desligada nas de cobertura e de forro (js/bim2dui.js) */
+    if (e && (e.marcaEsquadrias === true || e.marcaEsquadrias === false)) o.marcaEsquadrias = e.marcaEsquadrias;
     return o;
   }
 
@@ -483,6 +485,22 @@
     return '<g class="d2-caimentos">' + s + "</g>";
   }
 
+  /* MARCA DAS ESQUADRIAS (19/11/2026): ao lado de cada porta e janela, do lado de fora da parede, um círculo com a marca (P1, J1) e as medidas em cm embaixo
+     ("80×210"; janela "120×120/110" = largura × altura / peitoril). lista = d.esquadrias [{ marca, texto, centro:{x,z}, normal:{x,z}, esp }] em metros do desenho.
+     Círculo e texto têm tamanho de PAPEL (mm × escala); texto com halo branco; cor/fonte em atributos (a folha e o PDF levam o desenho igual). */
+  function svgMarcasEsquadrias(lista, e, pena) {
+    var k = e.escala / 1000, r = 2.6 * k, hM = 2.2 * k, cor = "#000000", s = "";
+    lista.forEach(function (q) {
+      var nx = q.normal ? q.normal.x : 0, nz = q.normal ? q.normal.z : 1, d1 = (q.esp || 0.15) / 2 + 3.6 * k, cx = q.centro.x + nx * d1, cy = q.centro.z + nz * d1;
+      var fam = ' fill="' + cor + '" font-family="Arial,Helvetica,sans-serif" stroke="#ffffff" stroke-width="' + n4(0.7 * k) + '" paint-order="stroke"';
+      s += '<circle cx="' + n4(cx) + '" cy="' + n4(cy) + '" r="' + n4(r) + '" fill="#ffffff" stroke="' + cor + '" stroke-width="' + pena.marca + '" ' + NS + ' class="d2-esq-c"/>';
+      s += txt(cx, cy + 0.85 * k, 2.4 * k, esc(q.marca), "d2-esq-tx", "middle", 0, fam + ' font-weight="bold"');
+      var acima = nz < -0.3, ty = acima ? cy - r - 0.9 * k : cy + r + hM + 0.4 * k, tx = cx + (Math.abs(nz) <= 0.3 ? nx * String(q.texto).length * 0.62 * hM / 2 : 0);
+      s += txt(tx, ty, hM, esc(q.texto), "d2-esq-tx", "middle", 0, fam);
+    });
+    return '<g class="d2-esquadrias">' + s + "</g>";
+  }
+
   /* EIXO da grade (B2, js/bimarq.js): traço-ponto de ponta a ponta e a bolinha
      com o nome além de cada ponta. Planta: { nome, a:[x,y], b:[x,y] }; corte:
      { nome, x } (linha vertical na altura do desenho, bolinha em cima). */
@@ -672,6 +690,7 @@
     if (d.tipo === "corte" && e.niveis) { var sNv = svgNiveis(d, cx, e, pena); if (sNv) p.push(sNv); }
     if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
     if (d.tipo === "planta" && d.caimentos && d.caimentos.length && e.caimentoTelha !== false) p.push(svgCaimentos(d.caimentos, e, pena));   /* PLANTA DE COBERTURA: seta de caimento + % + tipo de telha */
+    if (d.tipo === "planta" && d.esquadrias && d.esquadrias.length && e.marcaEsquadrias !== false) p.push(svgMarcasEsquadrias(d.esquadrias, e, pena));   /* marca P1/J1 + medidas em cm */
     if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));   /* P6: elevação, chamada de detalhe, recorte */
     eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
     /* P8 (junção 18/10/2026): o lugar novo do número da cota curta só com a prévia ?previa=hidro (sem BimPrevia — Node,

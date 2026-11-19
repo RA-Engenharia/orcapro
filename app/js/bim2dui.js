@@ -79,6 +79,14 @@
        plano de corte em projeção tracejada, até o nível de cima (padrão) ou até uma altura do piso.
        Gravada POR VISTA; ligada por padrão. Planta de forro não tem (ela já olha para cima). */
     acimaCfg: function (id) { var D = D2(); return D && D.Acima ? D.Acima.cfg(this.estado().acima[id]) : { on: false }; },
+    /* a marca das esquadrias está ligada nesta vista? escolha da pessoa; senão, ligada na planta baixa e desligada na de cobertura (nome da vista/nível) e na de forro */
+    _marcaEsqLigada: function (d) {
+      var est = this.estilo(d.id);
+      if (typeof est.marcaEsquadrias === "boolean") return est.marcaEsquadrias;
+      if (d.p6 === "forro" || d.p6base === "forro") return false;
+      var BT = global.BimTelhado;
+      return !(BT && BT.caimentoAuto && BT.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null));
+    },
     _acimaVale: function (d) { return !!(d && d.tipo === "planta" && d.p6 !== "forro" && d.p6base !== "forro"); },
     /* o topo da faixa acima do corte em cota de MUNDO (null = desligado) */
     acimaTopo: function (d, yCorte) {
@@ -335,6 +343,16 @@
             if (cm7.length) out.caimentos = cm7;
           }
         } catch (eCm) { /* sem seta: a planta de sempre */ }
+        /* MARCA DAS ESQUADRIAS (19/11/2026): P1/J1 + medidas, lidas do modelo (BimConstruirDemolir.marcasPlanta), as mesmas marcas do quadro "Portas e janelas".
+           Opção "Mostrar marca de esquadrias": sem escolha, liga nas plantas baixas e desliga nas de cobertura e de forro. */
+        try {
+          var CD8 = global.BimConstruirDemolir, ez8 = B() && B().editarEstado ? B().editarEstado() : null;
+          if (CD8 && CD8.marcasPlanta && ez8 && ez8.estado && this._marcaEsqLigada(d)) {
+            var bb8 = B() || {}, mq8 = CD8.marcasPlanta(ez8.estado, { avaliarFam: bb8.familiaAvaliar ? function (f, t, i) { return bb8.familiaAvaliar(f, t, i); } : null,
+              deps: { categoriaFam: bb8.familiaCategoria ? function (id) { return bb8.familiaCategoria(id); } : null }, yMin: d.nivel.y - 0.5, yMax: d.nivel.y + 0.5 });
+            if (mq8.length) out.esquadrias = mq8;
+          }
+        } catch (eEq) { /* sem marca: a planta de sempre */ }
         out.marcas = this.estado().cortes.map(function (c) {
           var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
           if (c.inv) { nx = -nx; nz = -nz; }
@@ -981,6 +999,7 @@
           /* padrão de detalhamento da empresa (js/padraodet.js): cota, unidade, texto e escala de uma vez */
           { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
         ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte },
+                                       { id: "marcaEsquadrias", rotulo: "Mostrar marca de esquadrias", tipo: "sim-nao", valor: this._marcaEsqLigada(d) },
                                        { id: "caimentoTelha", rotulo: "Mostrar caimento e telha", tipo: "sim-nao", valor: typeof e.caimentoTelha === "boolean" ? e.caimentoTelha : !!(global.BimTelhado && global.BimTelhado.caimentoAuto && global.BimTelhado.caimentoAuto(d.nome + " " + (d.nivel && d.nivel.nome), null)) }]
                                      : [{ id: "niveis", rotulo: "Níveis", tipo: "sim-nao", valor: e.niveis }]) },
         { nome: "Cotas", params: [
@@ -1102,9 +1121,10 @@
       var est = e.estilos[id] || (e.estilos[id] = this.estilo(id));
       est[pid] = (pid === "escala" || pid === "casas" || pid === "textoCota") ? num(valor, est[pid]) : valor;
       if (pid === "preenchimento") est.corteForcado = true;   /* escolhido na vista: vale também nas vistas com estilos de objeto (P6) */
+      if (pid === "marcaEsquadrias") est.marcaEsquadrias = valor === true || valor === "true" || valor === 1 || valor === "1";   /* a marca vem do modelo: refaz a extração */
       if (pid === "caimentoTelha") est.caimentoTelha = valor === true || valor === "true" || valor === 1 || valor === "1";   /* a seta vem do modelo: refaz a extração */
       e.estilos[id] = D2().normEstilo(est);
-      this._gravar(); this.redesenhar(id, pid === "caimentoTelha");
+      this._gravar(); this.redesenhar(id, pid === "caimentoTelha" || pid === "marcaEsquadrias");
     },
     /* NÍVEIS ocultos por vista (estilo.niveisOcultos, chave "nome|cota"): gravado no projeto com o estilo da vista */
     _nivelVisivel: function (id, chave, visivel) {
