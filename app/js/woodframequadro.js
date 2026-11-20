@@ -79,6 +79,7 @@
     osbModulo: [1200, 2400],    /* mm — chapa de OSB (largura × altura) */
     espOsbBorda: 150,           /* mm — fixação do OSB na borda */
     espOsbCampo: 300,           /* mm — fixação do OSB no campo */
+    guiaCompMax: 4800,          /* mm — comprimento máximo de COMPRA da guia superior (emenda sobre montante); a confirmar com o fornecedor */
     espChumbador: 1200,         /* mm — chumbador na guia inferior (e hold-down nas pontas e cantos) */
     espParafusoGesso: 250,      /* mm — parafuso do gesso ao longo de cada montante (critério RA) */
     sobreposicaoMembrana: 0.10, /* fração — sobreposição da membrana (critério RA: 10 %) */
@@ -243,8 +244,6 @@
       segs = nova;
     });
     segs.forEach(function (s) { if (s.u1 - s.u0 > 0.02) add("guia-inferior", "madeira", SEC_MONT, s.u0, s.u1, 0, guia, wn0, wn1, { compra: COMPRA_MONT }); });
-    add("guia-superior-1", "madeira", SEC_MONT, 0, L, H - 2 * guia, H - guia, wn0, wn1, { compra: COMPRA_MONT });
-    add("guia-superior-2", "madeira", SEC_MONT, 0, L, H - guia, H, wn0, wn1, { compra: COMPRA_MONT });
 
     /* --- pontas: livre = 1 montante rente; L = o arranjo de canto */
     function ponta(tipoPonta, aPartirDeA) {
@@ -267,12 +266,20 @@
     ponta(pontaA, true); ponta(pontaB, false);
 
     /* --- encontros T/X no meio da parede */
+    /* as juntas verticais do OSB são conhecidas ANTES (a cada módulo, a partir da ponta de origem): se uma cai no vão do encontro T, o bloco de
+       pregação cede lugar a um montante CHEIO centrado na junta (a junta não se move) */
+    var juntasPrev = [];
+    if (osbL) for (var jk = P.osbModulo[0] / 1000; jk < L - 1e-6; jk += P.osbModulo[0] / 1000) juntasPrev.push(jk);
     encontros.forEach(function (e) {
       var a0 = e.u - e.larg / 2 - b, a1 = e.u - e.larg / 2, c0 = e.u + e.larg / 2, c1 = e.u + e.larg / 2 + b;
       if (a0 < 0 || c1 > L) { avisos.push("Encontro em " + virg(e.u) + " m: a parede que chega fica rente à ponta — o montante de encontro foi dispensado (a ponta já tem o seu)."); return; }
       mont("montante-encontro", a0, a1, guia, yTopoMont, { compra: COMPRA_MONT });
       mont("montante-encontro", c0, c1, guia, yTopoMont, { compra: COMPRA_MONT });
-      for (var yb = guia + 0.3; yb < yTopoMont - guia; yb += P.espBlocoEncontro / 1000) bloco(a1, c0, yb);
+      var jEnc = null; juntasPrev.forEach(function (jj) { if (jj >= a1 - 1e-6 && jj <= c0 + 1e-6) jEnc = jj; });
+      if (jEnc != null) {
+        var m0 = jEnc - b / 2; if (c0 - a1 >= b) { if (m0 < a1) m0 = a1; if (m0 + b > c0) m0 = c0 - b; }
+        mont("montante-encontro", m0, m0 + b, guia, yTopoMont, { compra: COMPRA_MONT, junta: true });
+      } else for (var yb = guia + 0.3; yb < yTopoMont - guia; yb += P.espBlocoEncontro / 1000) bloco(a1, c0, yb);
       ocupa(a0, c1);
     });
     vazios.forEach(function (z) {
@@ -341,6 +348,30 @@
       mont("montante", g0, g1, guia, yTopoMont, { compra: COMPRA_MONT });
     }
 
+    /* --- guias superiores (dupla), com EMENDA quando passam do comprimento de compra: a emenda cai sobre o centro de um montante e as duas
+           guias ficam defasadas em pelo menos um vão (o espaçamento) */
+    (function () {
+      var maxC = P.guiaCompMax / 1000, cs = [];
+      pecas.forEach(function (q) { if (q.grupo === "madeira" && /^(montante|ombreira)/.test(q.tipo) && q.y1 - q.y0 > 0.5 * hMont) cs.push((q.u0 + q.u1) / 2); });
+      cs = cs.filter(function (v, i, A) { return A.indexOf(v) === i; }).sort(function (a, c) { return a - c; });
+      function emendas(evita) {
+        var out = [], pos = 0, guard = 0;
+        while (L - pos > maxC + 1e-9 && guard++ < 50) {
+          var cand = cs.filter(function (c) { return c > pos + 0.2 && c - pos <= maxC + 1e-9 && evita.every(function (e) { return Math.abs(e - c) >= P.espac / 1000 - 1e-6; }); });
+          if (!cand.length) cand = cs.filter(function (c) { return c > pos + 0.2 && c - pos <= maxC + 1e-9; });
+          var cx = cand.length ? cand[cand.length - 1] : Math.min(pos + maxC, L);
+          if (!cand.length) avisos.push("Guia superior: sem montante para emendar a menos de " + virg(maxC) + " m — emenda fora de montante em " + virg(cx) + " m.");
+          out.push(cx); pos = cx;
+        }
+        return out;
+      }
+      var e1 = emendas([]), e2 = emendas(e1);
+      [["guia-superior-1", H - 2 * guia, H - guia, e1], ["guia-superior-2", H - guia, H, e2]].forEach(function (g) {
+        var pts = [0].concat(g[3]).concat([L]);
+        for (var kk = 0; kk + 1 < pts.length; kk++) add(g[0], "madeira", SEC_MONT, pts[kk], pts[kk + 1], g[1], g[2], wn0, wn1, { compra: COMPRA_MONT, emenda: kk > 0 });
+      });
+    })();
+
     /* --- vão na ponta: rei/jack que cai sobre o montante de ponta (ou de canto) é FUNDIDO com ele (a parte que sobra no estoque da ponta
            sai da peça) e peça com menos de 5 mm de largura é descartada (antes saía uma "ombreira" de 0 mm) */
     for (var iL = pecas.length - 1; iL >= 0; iL--) {
@@ -369,6 +400,7 @@
       for (var i = 0; i + 1 < vs.length; i++) {
         var a = vs[i], c2 = vs[i + 1], g = c2.u0 - a.u1;
         if (g < 0.02) continue;
+        if (pecas.some(function (z) { return z.tipo === "bloco" && z.u0 >= a.u1 - 1e-6 && z.u1 <= c2.u0 + 1e-6; })) continue;     /* o vão entre montantes de encontro/canto já tem bloco de pregação */
         var dentroDoVaoLivre = vaosOk.some(function (v) { return a.u1 >= v.x0 - 1e-6 && c2.u0 <= v.x1 + 1e-6 && yc >= v.y0 - 1e-6 && yc <= v._hdrTopo + 1e-6; });
         if (dentroDoVaoLivre) continue;
         add("bloqueador", "madeira", SEC_MONT, a.u1, c2.u0, yc - guia / 2, yc + guia / 2, wn0, wn1, { compra: COMPRA_MONT });
@@ -442,6 +474,24 @@
     return c;
   }
 
+  /* POSIÇÃO dos chumbadores da guia inferior (m a partir da ponta inicial do quadro) — UMA função para o desenho e para o quantitativo.
+     Ordem: 1º os da porta (0,15 m antes e depois do vão); 2º a grade de espChumbador, descartando o que ficar a menos de max(0,30 m; espChumbador/2)
+     de um chumbador de porta ou a menos de 0,10 m do FIM de um trecho de guia cortado pela porta (a borda do vão; o chumbador na ponta da parede continua, a ponta tem o hold-down). */
+  function posChumbadores(res) {
+    var P = res.params, L = res.L, des = res.deslocU, portas = arr(res.vaos).filter(function (v) { return v.porta; }), out = [], porta = [], i;
+    portas.forEach(function (v) { porta.push(Math.max(0.05, v.x0 - des - 0.15)); porta.push(Math.min(L - 0.05, v.x1 - des + 0.15)); });
+    var fins = []; portas.forEach(function (v) { fins.push(v.x0 - des, v.x1 - des); });
+    var dmin = Math.max(0.30, P.espChumbador / 2000), nCh = Math.max(2, ceilT(L / (P.espChumbador / 1000)) + 1), passo = L / (nCh - 1);
+    for (i = 0; i < nCh; i++) {
+      var u = i * passo;
+      if (portas.some(function (v) { return u > v.x0 - des - 0.02 && u < v.x1 - des + 0.02; })) continue;
+      if (porta.some(function (c) { return Math.abs(c - u) < dmin - 1e-9; })) continue;
+      if (fins.some(function (f) { return Math.abs(f - u) < 0.10 - 1e-9; })) continue;
+      out.push(u);
+    }
+    return out.concat(porta).sort(function (a, c) { return a - c; });
+  }
+
   /* ----------------------------------------------------------- QUANTIDADES de UMA parede */
   function quantidades(res, p) {
     var P = res.params, L = res.L, H = res.H, q = {}, i;
@@ -477,11 +527,8 @@
     });
     q.osbBorda = pB; q.osbCampo = pC; q.osbFixacoes = pB + pC;
     /* ancoragem: chumbadores na guia inferior (fora das portas) e hold-down nas pontas e cantos */
-    var nCh = Math.max(2, ceilT(L / (P.espChumbador / 1000)) + 1), passoCh = L / (nCh - 1), pos = [];
-    for (i = 0; i < nCh; i++) pos.push(i * passoCh);
     var portas = vaos.filter(function (v) { return v.porta; });
-    var livres = pos.filter(function (u) { return !portas.some(function (v) { return u > v.x0 - res.deslocU - 0.02 && u < v.x1 - res.deslocU + 0.02; }); });
-    q.chumbadores = livres.length + 2 * portas.length;
+    q.chumbadores = posChumbadores(res).length;
     /* canto = hold-down dividido entre as duas paredes (0,5 em cada); pé de T = nenhum (a parede de apoio é quem ancora); ponta livre = 1 */
     function hdPonta(t) { return t === "L" || t === "Lb" ? 0.5 : (t === "T" ? 0 : 1); }
     q.holdDown = hdPonta(res.pontas.ini) + hdPonta(res.pontas.fim);
@@ -699,7 +746,7 @@
   var WoodFrameQuadro = {
     PADRAO: PADRAO, VERGAS: VERGAS, VERGA_ACIMA: VERGA_ACIMA, VERGAS_NOTA: VERGAS_NOTA,
     params: params, vergaDe: vergaDe, gerar: gerar, ehWf: ehWf, daCaixa: daCaixa, paraParede: paraParede, emMundo: emMundo,
-    planta: planta, quantitativo: quantitativo, vaosDasParedes: vaosDasParedes, limparCache: limparCache, estatisticas: estatisticas, posCamadas: posCamadas, hachDe: hachDe
+    planta: planta, posChumbadores: posChumbadores, quantitativo: quantitativo, vaosDasParedes: vaosDasParedes, limparCache: limparCache, estatisticas: estatisticas, posCamadas: posCamadas, hachDe: hachDe
   };
   if (typeof module !== "undefined" && module.exports) module.exports = WoodFrameQuadro;
   else global.WoodFrameQuadro = WoodFrameQuadro;

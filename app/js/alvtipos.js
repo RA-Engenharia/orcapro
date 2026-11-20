@@ -400,8 +400,10 @@
           if (face === "fora" && id === "emboco" && esp[id] == null && esp["fora:" + id] == null) e = 25;
           /* WOOD FRAME: o OSB tem a espessura do parâmetro do tipo (11,1 ou 9,5 mm) quando ninguém digitou outra */
           if (id === "osb" && wfp && esp[id] == null && esp[face + ":" + id] == null) e = num(wfp.osbE) || c.e;
+          /* o rótulo do OSB diz a espessura que o tipo usa (9,5 ou 11,1 mm), não a do catálogo */
+          var rotC = (id === "osb" && wfp) ? "OSB " + String(r2(e)).replace(".", ",") + " mm" : c.rotulo;
           return {
-            id: id, ordem: i + 1, face: face, rotulo: c.rotulo,
+            id: id, ordem: i + 1, face: face, rotulo: rotC,
             espessura: r2(e), material: c.material, traco: c.traco,
             servico: c.servico, fonte: c.fonte,
             pesoM2: r2(e / 1000 * (self.PESO[c.material] || 0))

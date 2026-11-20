@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.402",
+versao: "1.2.403",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -89685,8 +89685,9 @@ if (!c) return { id: id, erro: "Camada desconhecida: " + id + "." };
 var e = esp[id] != null ? num(esp[id]) : (esp[face + ":" + id] != null ? num(esp[face + ":" + id]) : c.e);
 if (face === "fora" && id === "emboco" && esp[id] == null && esp["fora:" + id] == null) e = 25;
 if (id === "osb" && wfp && esp[id] == null && esp[face + ":" + id] == null) e = num(wfp.osbE) || c.e;
+var rotC = (id === "osb" && wfp) ? "OSB " + String(r2(e)).replace(".", ",") + " mm" : c.rotulo;
 return {
-id: id, ordem: i + 1, face: face, rotulo: c.rotulo,
+id: id, ordem: i + 1, face: face, rotulo: rotC,
 espessura: r2(e), material: c.material, traco: c.traco,
 servico: c.servico, fonte: c.fonte,
 pesoM2: r2(e / 1000 * (self.PESO[c.material] || 0))

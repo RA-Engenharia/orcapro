@@ -1329,7 +1329,7 @@
         if (wq.canto === "3montantes" || wq.canto === "bloco") wfN.canto = wq.canto;
         if (num(wq.osbE, 0) >= 6 && num(wq.osbE, 0) <= 25) {
           wfN.osbE = num(wq.osbE, 0);
-          tpW.camadas.forEach(function (k) { if (k.id === "osb") k.e = r6(wfN.osbE / 1000); });
+          tpW.camadas.forEach(function (k) { if (k.id === "osb") { k.e = r6(wfN.osbE / 1000); k.rotulo = "OSB " + String(wfN.osbE).replace(".", ",") + " mm"; } });
           tpW.espessura = r6(tpW.camadas.reduce(function (s, k) { return s + num(k.e, 0); }, 0));
         }
         tpW.wf = wfN;
