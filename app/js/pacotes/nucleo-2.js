@@ -76741,6 +76741,7 @@ if (fontes > 0) UI.toast("Fonte de " + fontes + " item(ns) corrigida (não eram 
 } catch (e) {}
 this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
 this.render();
+this._licDescricoesOficiais(orc);
 this._preloadAnalitico();
 },
 _preloadAnalitico: function () {
@@ -77563,6 +77564,22 @@ this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, funct
 return;
 }
 seguir();
+},
+_licDescricoesOficiais: function (orc) {
+var self = this;
+if (!orc || typeof Licitacao === "undefined" || !Licitacao.descricoesOficiais || typeof AnaliticoBases === "undefined") return;
+var tem = (orc.etapas || []).some(function (e) { return ((e && e.itens) || []).some(function (it) {
+return it && String(it.baseFonte || it.origem || "").toUpperCase() === "SEINFRA"; }); });
+if (!tem) return;
+AnaliticoBases.carregar("SEINFRA").then(function (ent) {
+var por = ent && ent.porCodigo;
+if (!por) return;
+var n = Licitacao.descricoesOficiais(orc, function (c) { return por[c] || null; }, "SEINFRA");
+if (!n) return;
+Store.salvarOrcamento(Auth.empresaId(), orc);
+if (self.orcAtual === orc) self.render();
+UI.toast(n + " descrição(ões) lida(s) do PDF do órgão trocada(s) pela descrição oficial da SEINFRA (mesmo código).", "ok");
+}, function () {});
 },
 _licPegarBase: function (lic, cb) {
 var tabs = (lic && lic.leitura && lic.leitura.tabelas) || {};

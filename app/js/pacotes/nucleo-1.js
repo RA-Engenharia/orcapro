@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.412",
+versao: "1.2.413",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -70066,6 +70066,36 @@ var pg = _imgOk(e.pagina), mg = pg ? _margensOk(e.margens) : null;
 return { topo: s(e.topo), fundo: s(e.fundo), pagina: mg ? pg : "", margens: mg };
 },
 _timbradoLimpar: function () { _timbMem = null; try { if (typeof localStorage !== "undefined") localStorage.removeItem(TIMBRADO_CHAVE); } catch (e) {} },
+descricoesOficiais: function (orc, obter, fonte) {
+if (!orc || typeof obter !== "function") return 0;
+var F = s(fonte || "SEINFRA").toUpperCase(), n = 0;
+function parecido(a, b) {
+if (!a || !b) return 0;
+if (a === b) return 1;
+var m = a.length, k = b.length, prev = new Array(k + 1).fill(0), cur;
+for (var i = 1; i <= m; i++) {
+cur = new Array(k + 1).fill(0);
+for (var j = 1; j <= k; j++) cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+prev = cur;
+}
+return 2 * prev[k] / (m + k);
+}
+(orc.etapas || []).forEach(function (e) {
+((e && e.itens) || []).forEach(function (it) {
+if (!it || s(it.baseFonte || it.origem).toUpperCase() !== F) return;
+var cod = s(it.codigo).toUpperCase(), c = null;
+if (!cod) return;
+try { c = obter(cod); } catch (eO) { c = null; }
+var of = s(c && (c.descricao || c.desc));
+if (!of || s(it.descricao) === of) return;
+var a = _normTxt(it.descricao), b = _normTxt(of);
+if (a.length < 6 || parecido(a, b) < 0.8) return;
+if (!it.descricaoOrgaoLida) it.descricaoOrgaoLida = s(it.descricao);
+it.descricao = of; n++;
+});
+});
+return n;
+},
 aplicarPacote: function (orc, bloco) {
 if (!orc || !bloco || typeof bloco !== "object") return null;
 orc.config = (orc.config && typeof orc.config === "object") ? orc.config : {};

@@ -341,6 +341,43 @@
      * bloco não existe / não é objeto. Idempotente: importar o mesmo pacote
      * de novo reescreve os mesmos campos.
      * ------------------------------------------------------------------ */
+    /* 20/11/2026 (Rogério, Morada Nova): a planilha do órgão veio de PDF escaneado e o OCR entregou descrições coladas
+       ("LOCACAOOAOBRACOMAUXILIOTOPCGRAFICOAREA5OOOM2"). O item tem o código da SEINFRA e a base tem a descrição oficial:
+       troca pela oficial SÓ quando é o mesmo texto mal lido (letras quase iguais, sem espaço/acento/pontuação — ≥ 80%).
+       Descrição que o órgão escreveu diferente (outra redação) fica como veio. A lida fica em `descricaoOrgaoLida`.
+       `obter(codigo)` → composição da base ({ descricao }). Devolve quantos itens trocou (idempotente: 2ª vez dá 0). */
+    descricoesOficiais: function (orc, obter, fonte) {
+      if (!orc || typeof obter !== "function") return 0;
+      var F = s(fonte || "SEINFRA").toUpperCase(), n = 0;
+      function parecido(a, b) {
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        // LCS por programação dinâmica (textos de até ~200 letras)
+        var m = a.length, k = b.length, prev = new Array(k + 1).fill(0), cur;
+        for (var i = 1; i <= m; i++) {
+          cur = new Array(k + 1).fill(0);
+          for (var j = 1; j <= k; j++) cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+          prev = cur;
+        }
+        return 2 * prev[k] / (m + k);
+      }
+      (orc.etapas || []).forEach(function (e) {
+        ((e && e.itens) || []).forEach(function (it) {
+          if (!it || s(it.baseFonte || it.origem).toUpperCase() !== F) return;
+          var cod = s(it.codigo).toUpperCase(), c = null;
+          if (!cod) return;
+          try { c = obter(cod); } catch (eO) { c = null; }
+          var of = s(c && (c.descricao || c.desc));
+          if (!of || s(it.descricao) === of) return;
+          var a = _normTxt(it.descricao), b = _normTxt(of);
+          if (a.length < 6 || parecido(a, b) < 0.8) return;
+          if (!it.descricaoOrgaoLida) it.descricaoOrgaoLida = s(it.descricao);
+          it.descricao = of; n++;
+        });
+      });
+      return n;
+    },
+
     aplicarPacote: function (orc, bloco) {
       if (!orc || !bloco || typeof bloco !== "object") return null;
       orc.config = (orc.config && typeof orc.config === "object") ? orc.config : {};

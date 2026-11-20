@@ -11767,6 +11767,7 @@
       } catch (e) {}
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
       this.render();
+      this._licDescricoesOficiais(orc);
       this._preloadAnalitico(); // pré-carrega a base analítica em 2º plano → detalhe de insumos abre na hora
     },
 
@@ -12779,6 +12780,25 @@
         return;
       }
       seguir();
+    },
+
+    /* Item SEINFRA com descrição que o OCR colou: troca pela oficial da base (Licitacao.descricoesOficiais) quando o
+       orçamento abre. Só carrega a base se houver item SEINFRA; grava e redesenha só se trocou algo (2ª abertura: nada). */
+    _licDescricoesOficiais: function (orc) {
+      var self = this;
+      if (!orc || typeof Licitacao === "undefined" || !Licitacao.descricoesOficiais || typeof AnaliticoBases === "undefined") return;
+      var tem = (orc.etapas || []).some(function (e) { return ((e && e.itens) || []).some(function (it) {
+        return it && String(it.baseFonte || it.origem || "").toUpperCase() === "SEINFRA"; }); });
+      if (!tem) return;
+      AnaliticoBases.carregar("SEINFRA").then(function (ent) {
+        var por = ent && ent.porCodigo;
+        if (!por) return;
+        var n = Licitacao.descricoesOficiais(orc, function (c) { return por[c] || null; }, "SEINFRA");
+        if (!n) return;
+        Store.salvarOrcamento(Auth.empresaId(), orc);
+        if (self.orcAtual === orc) self.render();
+        UI.toast(n + " descrição(ões) lida(s) do PDF do órgão trocada(s) pela descrição oficial da SEINFRA (mesmo código).", "ok");
+      }, function () {});
     },
 
     /* Base SEINFRA do pacote (ou null), para as composições auxiliares do documento. */
