@@ -176,17 +176,19 @@
   function paraGlobal(lam, v) { return [lam[0][0] * v[0] + lam[1][0] * v[1] + lam[2][0] * v[2], lam[0][1] * v[0] + lam[1][1] * v[1] + lam[2][1] * v[2], lam[0][2] * v[0] + lam[1][2] * v[1] + lam[2][2] * v[2]]; }
   function vetLocal(lam, d12) { var o = []; for (var b = 0; b < 4; b++) { var l = paraLocal(lam, [d12[3 * b], d12[3 * b + 1], d12[3 * b + 2]]); o.push(l[0], l[1], l[2]); } return o; }
   function vetGlobal(lam, d12) { var o = []; for (var b = 0; b < 4; b++) { var g = paraGlobal(lam, [d12[3 * b], d12[3 * b + 1], d12[3 * b + 2]]); o.push(g[0], g[1], g[2]); } return o; }
+  var KT_BUF = new Float64Array(144);
   /* kG = Tᵀ k T, com T bloco-diagonal de λ */
   function kGlobal(lam, k) {
     /* T é bloco-diagonal de 3×3 (λ): faz por blocos, somando na MESMA ordem de antes (os termos nulos que a versão cheia somava não alteram o valor) — 4× mais rápido */
-    var o = zeros(12), kt = zeros(12), bi, bj, i, j, m, s;
+    /* 20/11: kt num Float64Array reaproveitado (menos lixo para o coletor) — mesmas somas, mesma ordem */
+    var o = zeros(12), kt = KT_BUF, bi, bj, i, j, m, s;
     for (bi = 0; bi < 4; bi++) for (bj = 0; bj < 4; bj++) {
       var r0 = 3 * bi, c0 = 3 * bj;
-      for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += k[r0 + i][c0 + m] * lam[m][j]; kt[r0 + i][c0 + j] = s; }
+      for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += k[r0 + i][c0 + m] * lam[m][j]; kt[(r0 + i) * 12 + c0 + j] = s; }
     }
     for (bi = 0; bi < 4; bi++) for (bj = 0; bj < 4; bj++) {
-      var r1 = 3 * bi, c1 = 3 * bj;
-      for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += lam[m][i] * kt[r1 + m][c1 + j]; o[r1 + i][c1 + j] = s; }
+      var r1 = 3 * bi, c1 = 3 * bj, oi;
+      for (i = 0; i < 3; i++) { oi = o[r1 + i]; for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += lam[m][i] * kt[(r1 + m) * 12 + c1 + j]; oi[c1 + j] = s; } }
     }
     return o;
   }
@@ -316,7 +318,124 @@
     }
     return y;
   };
-  function novaMatriz(M) { return new Perfil(M.nGL, M.primeira); }
+  /* ============================================= SISTEMA ESPARSO EM BLOCOS 6×6 (20/11/2026)
+   * Cholesky esparso por NÓ (bloco de 6 GL), com a numeração dos nós por MÍNIMO GRAU (grafo dos nós, desempate pelo menor
+   * índice — determinístico). No galpão de tesoura leve 20 × 30 m (2.456 nós, 14.736 GL) o skyline com Cuthill-McKee fazia
+   * ~9,1·10⁸ operações por fatoração e o mínimo grau ~1,8·10⁷ (50× menos): a fatoração era 71 % do tempo do cálculo.
+   * Mesma interface do Perfil (n, soma, get, set, identidade, zerar, fatorar → {ok, gl, pivo, pivMin}, resolver, mult); a
+   * estrutura do fator (com o preenchimento) sai da eliminação simbólica no `preparar` (M.simb). O resultado é o mesmo do
+   * skyline a menos do arredondamento (ordem das somas diferente: ~1e-12 relativo) — tools/test-aco-esparsa.js confere.
+   * O antigo continua: op.solver = "perfil" (comparação e recuo). */
+  function ordemMinimoGrau(N, viz) {
+    var adj = [], i, v; for (i = 0; i < N; i++) { adj.push({}); for (v = 0; v < viz[i].length; v++) if (viz[i][v] !== i) adj[i][viz[i][v]] = 1; }
+    var deg = new Int32Array(N), elim = new Uint8Array(N), ordem = [], est = [];
+    for (i = 0; i < N; i++) deg[i] = Object.keys(adj[i]).length;
+    /* baldes por grau: escolhe o de menor grau, desempate pelo menor índice */
+    for (var s = 0; s < N; s++) {
+      var b = -1, bd = 1e9;
+      for (v = 0; v < N; v++) if (!elim[v] && deg[v] < bd) { bd = deg[v]; b = v; if (bd === 0) break; }
+      var nb = Object.keys(adj[b]).map(Number);
+      ordem.push(b); est.push(nb); elim[b] = 1;
+      for (var x = 0; x < nb.length; x++) { var ax = adj[nb[x]]; delete ax[b]; for (var y = 0; y < nb.length; y++) if (y !== x) ax[nb[y]] = 1; }
+      for (var x2 = 0; x2 < nb.length; x2++) deg[nb[x2]] = Object.keys(adj[nb[x2]]).length;
+    }
+    var pos = new Array(N); ordem.forEach(function (n, k) { pos[n] = k; });
+    /* estrutura do fator por coluna-nó (na numeração nova), em ordem crescente */
+    var colunas = new Array(N);
+    for (var k = 0; k < N; k++) colunas[k] = est[k].map(function (n) { return pos[n]; }).sort(function (p, q) { return p - q; });
+    return { pos: pos, colunas: colunas };
+  }
+  function Simbolico(N, colunas) {
+    var off = new Int32Array(N + 1), idx = new Array(N), linhasDe = new Array(N), t = 0, c, k;
+    for (c = 0; c < N; c++) linhasDe[c] = [];
+    for (c = 0; c < N; c++) {
+      off[c] = t; t += 36; var o = {};
+      for (k = 0; k < colunas[c].length; k++) { o[colunas[c][k]] = t; linhasDe[colunas[c][k]].push(t); t += 36; }
+      idx[c] = o;
+    }
+    off[N] = t;
+    return { N: N, colunas: colunas, off: off, idx: idx, linhasDe: linhasDe, tam: t };
+  }
+  function Esparsa(S) { this.S = S; this.n = S.N * 6; this.a = new Float64Array(S.tam); }
+  Esparsa.prototype.ix = function (i, j) {
+    if (j > i) { var t = i; i = j; j = t; }
+    var pi = (i / 6) | 0, pj = (j / 6) | 0, li = i - 6 * pi, lj = j - 6 * pj;
+    if (pi === pj) return this.S.off[pi] + li * 6 + lj;
+    var o = this.S.idx[pj][pi]; if (o === undefined) return -1;
+    return o + li * 6 + lj;
+  };
+  Esparsa.prototype.soma = function (i, j, v) { var q = this.ix(i, j); if (q < 0) throw new Error("fora do perfil"); this.a[q] += v; };
+  Esparsa.prototype.get = function (i, j) { var q = this.ix(i, j); return q < 0 ? 0 : this.a[q]; };
+  Esparsa.prototype.set = function (i, j, v) { var q = this.ix(i, j); if (q >= 0) this.a[q] = v; };
+  Esparsa.prototype.zerar = function (g0) {
+    var S = this.S, a = this.a, p = (g0 / 6) | 0, l = g0 - 6 * p, d = S.off[p], k, r;
+    for (r = 0; r < 6; r++) { if (r >= l) a[d + r * 6 + l] = 0; if (r <= l) a[d + l * 6 + r] = 0; }
+    var cols = S.colunas[p];
+    for (k = 0; k < cols.length; k++) { var o = S.idx[p][cols[k]]; for (r = 0; r < 6; r++) a[o + r * 6 + l] = 0; }   /* coluna l dos blocos abaixo */
+    var ls = S.linhasDe[p];
+    for (k = 0; k < ls.length; k++) for (r = 0; r < 6; r++) a[ls[k] + l * 6 + r] = 0;   /* linha l dos blocos à esquerda */
+  };
+  Esparsa.prototype.identidade = function (g0) { this.zerar(g0); var p = (g0 / 6) | 0, l = g0 - 6 * p; this.a[this.S.off[p] + l * 7] = 1; };
+  Esparsa.prototype.fatorar = function () {
+    var S = this.S, a = this.a, N = S.N, pivMin = 1, c, k, k2, r, t, s, u, D0 = new Float64Array(this.n);
+    for (c = 0; c < N; c++) for (t = 0; t < 6; t++) D0[c * 6 + t] = a[S.off[c] + t * 7];
+    for (c = 0; c < N; c++) {
+      var d = S.off[c], cols = S.colunas[c], nc = cols.length;
+      /* bloco da diagonal (já com as atualizações das colunas anteriores) — Cholesky denso 6×6 */
+      for (t = 0; t < 6; t++) {
+        var g = c * 6 + t, d0 = D0[g], dd = a[d + t * 7];
+        for (s = 0; s < t; s++) { var v0 = a[d + t * 6 + s]; dd -= v0 * v0; }
+        if (!(dd > 0)) return { ok: false, gl: g, pivo: dd };
+        if (d0 > 0 && dd / d0 < pivMin) pivMin = dd / d0;
+        var dt = Math.sqrt(dd); a[d + t * 7] = dt;
+        for (u = t + 1; u < 6; u++) { var x = a[d + u * 6 + t]; for (s = 0; s < t; s++) x -= a[d + u * 6 + s] * a[d + t * 6 + s]; a[d + u * 6 + t] = x / dt; }
+      }
+      /* blocos abaixo: L_qc = A_qc · D⁻ᵀ */
+      for (k = 0; k < nc; k++) {
+        var o = S.idx[c][cols[k]];
+        for (r = 0; r < 6; r++) for (t = 0; t < 6; t++) { var y = a[o + r * 6 + t]; for (s = 0; s < t; s++) y -= a[o + r * 6 + s] * a[d + t * 6 + s]; a[o + r * 6 + t] = y / a[d + t * 7]; }
+      }
+      /* atualização das colunas seguintes: A_q1,q2 −= L_q1 · L_q2ᵀ (q1 ≥ q2) */
+      for (k = 0; k < nc; k++) {
+        var q2 = cols[k], o2 = S.idx[c][q2], dq = S.off[q2];
+        for (r = 0; r < 6; r++) for (t = 0; t <= r; t++) { var z = 0; for (s = 0; s < 6; s++) z += a[o2 + r * 6 + s] * a[o2 + t * 6 + s]; a[dq + r * 6 + t] -= z; }
+        var iq = S.idx[q2];
+        for (k2 = k + 1; k2 < nc; k2++) {
+          var q1 = cols[k2], o1 = S.idx[c][q1], ot = iq[q1];
+          for (r = 0; r < 6; r++) for (t = 0; t < 6; t++) { var w = 0; for (s = 0; s < 6; s++) w += a[o1 + r * 6 + s] * a[o2 + t * 6 + s]; a[ot + r * 6 + t] -= w; }
+        }
+      }
+    }
+    return { ok: true, pivMin: pivMin };
+  };
+  Esparsa.prototype.resolver = function (b) {
+    var S = this.S, a = this.a, N = S.N, x = Float64Array.from(b), c, k, r, t;
+    for (c = 0; c < N; c++) {
+      var d = S.off[c], b0 = c * 6;
+      for (t = 0; t < 6; t++) { var s = x[b0 + t]; for (r = 0; r < t; r++) s -= a[d + t * 6 + r] * x[b0 + r]; x[b0 + t] = s / a[d + t * 7]; }
+      var cols = S.colunas[c];
+      for (k = 0; k < cols.length; k++) { var o = S.idx[c][cols[k]], bq = cols[k] * 6; for (r = 0; r < 6; r++) { var acc = 0; for (t = 0; t < 6; t++) acc += a[o + r * 6 + t] * x[b0 + t]; x[bq + r] -= acc; } }
+    }
+    for (c = N - 1; c >= 0; c--) {
+      var d2 = S.off[c], b1 = c * 6, cols2 = S.colunas[c];
+      for (k = 0; k < cols2.length; k++) { var o3 = S.idx[c][cols2[k]], bq2 = cols2[k] * 6; for (t = 0; t < 6; t++) { var acc2 = 0; for (r = 0; r < 6; r++) acc2 += a[o3 + r * 6 + t] * x[bq2 + r]; x[b1 + t] -= acc2; } }
+      for (t = 5; t >= 0; t--) { var s2 = x[b1 + t]; for (r = t + 1; r < 6; r++) s2 -= a[d2 + r * 6 + t] * x[b1 + r]; x[b1 + t] = s2 / a[d2 + t * 7]; }
+    }
+    return x;
+  };
+  Esparsa.prototype.mult = function (x) {
+    var S = this.S, a = this.a, N = S.N, y = new Float64Array(this.n), c, k, r, t;
+    for (c = 0; c < N; c++) {
+      var d = S.off[c], b0 = c * 6;
+      for (r = 0; r < 6; r++) { y[b0 + r] += a[d + r * 7] * x[b0 + r]; for (t = 0; t < r; t++) { var v = a[d + r * 6 + t]; if (v !== 0) { y[b0 + r] += v * x[b0 + t]; y[b0 + t] += v * x[b0 + r]; } } }
+      var cols = S.colunas[c];
+      for (k = 0; k < cols.length; k++) { var o = S.idx[c][cols[k]], bq = cols[k] * 6; for (r = 0; r < 6; r++) for (t = 0; t < 6; t++) { var w = a[o + r * 6 + t]; if (w !== 0) { y[bq + r] += w * x[b0 + t]; y[b0 + t] += w * x[bq + r]; } } }
+    }
+    return y;
+  };
+
+  var OPC = { solver: (typeof process !== "undefined" && process.env && process.env.ACO_SOLVER) || "esparso" };   /* "perfil" = o skyline com Cuthill-McKee de antes (comparação nos testes e recuo) */
+  function novaMatriz(M) { return M.simb ? new Esparsa(M.simb) : new Perfil(M.nGL, M.primeira); }
 
   /* Cuthill-McKee reverso sobre o grafo dos nós */
   /* Numeração dos nós para o perfil (skyline) da matriz: Cuthill-McKee reverso com início PSEUDO-PERIFÉRICO
@@ -433,7 +552,8 @@
     /* vizinhança e numeração */
     var viz = nos.map(function () { return []; });
     elems.forEach(function (e) { if (viz[e.a].indexOf(e.b) < 0) viz[e.a].push(e.b); if (viz[e.b].indexOf(e.a) < 0) viz[e.b].push(e.a); });
-    var pos = rcm(nos.length, viz, nos), banda = 0;
+    var md = (op.solver || OPC.solver) === "perfil" ? null : ordemMinimoGrau(nos.length, viz);
+    var pos = md ? md.pos : rcm(nos.length, viz, nos), banda = 0;
     elems.forEach(function (e) { banda = Math.max(banda, Math.abs(pos[e.a] - pos[e.b])); });
     var bGL = (banda + 1) * 6 - 1;
     /* envelope: para cada GL, o menor GL ligado a ele por algum elemento (e ele mesmo) */
@@ -453,7 +573,7 @@
         else if (typeof v === "number" && v > 0) molas[g] = (molas[g] || 0) + v;
       });
     });
-    return { nos: nos, idx: idx, pos: pos, barras: barras, elems: elems, nGL: nos.length * 6, banda: bGL, primeira: primeira, restr: restr, molas: molas, avisos: avisos };
+    return { nos: nos, idx: idx, pos: pos, barras: barras, elems: elems, nGL: nos.length * 6, banda: bGL, primeira: primeira, restr: restr, molas: molas, avisos: avisos, simb: md ? Simbolico(nos.length, md.colunas) : null };
   }
 
   /* ===================================================== CARGAS */
@@ -916,8 +1036,8 @@
              lambdaCritico: pos.length ? pos[0].lambda : null, semPositivoAte: pos.length ? null : maxAbs };
   }
 
-  var AcoAnalise = { analisar: analisar, flambagem: flambagem, GAMMA_ACO: GAMMA_ACO,
-                     _int: { rigidezLocal: rigidezLocal, rigidezGeometrica: rigidezGeometrica, condensar: condensar, condensarMolas: condensarMolas, equivalentes: equivalentes, Banda: Banda, Perfil: Perfil, rcm: rcm } };
+  var AcoAnalise = { OPC: OPC, analisar: analisar, flambagem: flambagem, GAMMA_ACO: GAMMA_ACO,
+                     _int: { preparar: preparar, montar: montar, Esparsa: Esparsa, Simbolico: Simbolico, ordemMinimoGrau: ordemMinimoGrau, rigidezLocal: rigidezLocal, rigidezGeometrica: rigidezGeometrica, condensar: condensar, condensarMolas: condensarMolas, equivalentes: equivalentes, Banda: Banda, Perfil: Perfil, rcm: rcm } };
   global.AcoAnalise = AcoAnalise;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoAnalise;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
