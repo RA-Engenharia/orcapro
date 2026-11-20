@@ -1208,7 +1208,7 @@
         if (this.ehFolha(id)) {
           var a = this.achar(id); if (!a) return null;
           /* folha das pranchas do hidro (imagem inteira = o SVG gerado): o DXF antigo desta aba saía só com a moldura e o carimbo; vai pelo CAD único */
-          if (/^hidsvg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
+          if (/^(hid|met)svg:/.test(a.folha.imagemInteira || "")) return this.exportarCad(id);
           var vps = {}, self = this;
           a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenhoVp(b); if (dz && dz.tipo !== "3d") vps[self.chaveVp(b)] = { dados: dz.dados, estilo: dz.estilo, vb: dz.vb, svgSemTitulo: dz.svg }; } });
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
@@ -1244,9 +1244,10 @@
       var a = this.achar(id || (this.G() && this.G()._bimVxEst && this.G()._bimVxEst().ativa)); if (!a) { toast("Abra uma folha para exportar o arquivo CAD.", "aviso"); return null; }
       var pr = a.pr, self = this, base = String(pr.nome || "Folhas").replace(/[\\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim() || "Folhas";
       var ehHidro = function (f) { return /^hidsvg:/.test(f.imagemInteira || ""); };
-      var hidro = arr(pr.folhas).filter(ehHidro), comuns = arr(pr.folhas).filter(function (f) { return !ehHidro(f); }), saidas = [];
+      var ehMet = function (f) { return /^metsvg:/.test(f.imagemInteira || ""); };   /* pranchas da Metálica (js/metalfolhasbim.js): SVG gerado, CTB geral */
+      var hidro = arr(pr.folhas).filter(ehHidro), met = arr(pr.folhas).filter(ehMet), comuns = arr(pr.folhas).filter(function (f) { return !ehHidro(f) && !ehMet(f); }), saidas = [];
       var nomesDe = function (suf) { return { dxf: base + suf + ".dxf", dwg: base + suf + ".dwg", base: base + suf }; };
-      var misto = hidro.length > 0 && comuns.length > 0;
+      var misto = (hidro.length > 0 ? 1 : 0) + (met.length > 0 ? 1 : 0) + (comuns.length > 0 ? 1 : 0) > 1;
       try {
         if (hidro.length) {
           var fols = hidro.map(function (f) {
@@ -1256,6 +1257,14 @@
           if (!fols.length) toast("As folhas do hidro desta sessão não estão em memória: use Gerar pranchas de novo e exporte em seguida.", "aviso");
           else { var nh = nomesDe(misto ? " - hidro" : ""); saidas.push({ o: BC.paraCad({ ok: true, folhas: fols }, { disciplina: "hidrossanitario", dxfNome: nh.dxf, dwgNome: nh.dwg }), base: nh.base, rotulo: "hidrossanitário",
             partes: global.BimCadUI ? global.BimCadUI.partesHidro({ folhas: fols }) : null }); }
+        }
+        if (met.length) {
+          var folsM = met.map(function (f) {
+            var m = /^(\S+) - ([\s\S]*)$/.exec(f.conteudo || ""), svg = self._svgDaFolhaHidro(f);
+            return svg ? { numero: m ? m[1] : (f.numero || "F" + f.n), titulo: m ? m[2] : (f.conteudo || ""), escala: f.escala || "", formato: pr.formato || "A1", svg: svg } : null;
+          }).filter(function (x) { return !!x; });
+          if (!folsM.length) toast("As pranchas da Metálica desta sessão não estão em memória: use Calcular › Pranchas de novo e exporte em seguida.", "aviso");
+          else { var nm = nomesDe(misto ? " - metalica" : ""); saidas.push({ o: BC.paraCad({ ok: true, folhas: folsM }, { disciplina: "estrutural", dxfNome: nm.dxf, dwgNome: nm.dwg }), base: nm.base, rotulo: "estrutura metálica", partes: null }); }
         }
         if (comuns.length) {
           var logoConta = null; try { logoConta = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (eL) {}
@@ -1596,6 +1605,13 @@
       if (!this.ativo() && !podePv) return null;
       var self = this, PRm = PR(), b2 = B2(), g = this.G();
       var todas = this.vistasParaGerar(opts.disciplina), ids = opts.vistas ? opts.vistas.map(String) : null;
+      /* VISTA 3D NO "GERAR PRANCHAS" (20/11/2026): as vistas 3D salvas (Navegador › Vistas 3D, ids "d3:…") não passam pelo jogo 2D — cada uma ganha a SUA folha
+         (chave auto "3d:<id>", idempotente) e a foto entra pela mesma porta do arrastar (posicionar3d). Só 3D marcado: nenhuma folha 2D é mexida. */
+      var ids3d = ids ? ids.filter(function (x) { return /^d3:/.test(x); }) : [];
+      if (ids) {
+        ids = ids.filter(function (x) { return !/^d3:/.test(x); });
+        if (!ids.length && ids3d.length) { var p3 = this.gerar3d(ids3d, opts.formato); return { ok: true, so3d: true, criadas: 0, atualizadas: 0, puladas: [], v3d: p3 }; }
+      }
 
       var escolhidas = todas.filter(function (v) { return !ids || ids.indexOf(v.id) >= 0; });
       var semInstGer = this.discSemTubo(opts.disciplina) ? String(opts.disciplina).toLowerCase() : "";   /* arquitetura/estrutural: os VIEWPORTS gerados levam b.semInst (sem tubo); "Todas"/Hidráulica/…: o tubo fica */
@@ -1644,8 +1660,43 @@
         (auto ? " " + avisoFormato + escTxt : "") +
         (soltas.length ? " Escala solta do modelo de vista RA (para caber): " + soltas.map(function (id) { return (nomeDe[id] || id) + " em 1:" + r1.escalas[id]; }).join(", ") + "." : "");
       toast(msg, r.puladas.length ? "aviso" : "ok"); status(msg);
-      return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr),
+      var v3d = ids3d.length ? this.gerar3d(ids3d, formato) : null;
+      return { ok: true, id: salvo.id, v3d: v3d, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr),
                formato: formato, automatico: auto, aviso: auto ? avisoFormato : "", soltas: soltas, mensagem: msg };
+    },
+    /* as vistas 3D salvas que dá para pôr em folha (o diálogo do Gerar pranchas e o motor) */
+    vistas3dParaGerar: function () {
+      return this.vistasExtras().filter(function (v) { return /^d3:/.test(v.id) && v.id !== "d3:atual"; }).map(function (v) { return { id: v.id, nome: v.nome }; });
+    },
+    /* uma folha por vista 3D, no conjunto "Folhas do projeto". IDEMPOTENTE: a folha de chave auto "3d:<id>" é reaproveitada — se a vista já está nela, só refaz a foto
+       (a posição que o usuário deu fica); senão a foto entra. → Promise { ok, criadas, atualizadas, folhas:[idFolha] } */
+    gerar3d: function (ids, formato) {
+      var self = this, PRm = PR(), vs = this.vistas3dParaGerar().filter(function (v) { return arr(ids).indexOf(v.id) >= 0; });
+      if (!vs.length) return Promise.resolve({ ok: false, criadas: 0, atualizadas: 0, folhas: [] });
+      var reg = this.conjunto(PRm.FORMATOS[formato] ? formato : null), pr = PRm.normalizar(reg), criadas = 0, atualizadas = 0, chaves = {};
+      vs.forEach(function (v) {
+        var chave = "3d:" + v.id, f = pr.folhas.filter(function (x) { return x.auto === chave; })[0];
+        if (f) { atualizadas++; f.conteudo = "Vista 3D - " + v.nome; }
+        else {
+          var n = pr.folhas.length + 1;
+          f = PRm.normalizar({ folhas: [{ id: "f3d" + Date.now().toString(36) + n, n: n, conteudo: "Vista 3D - " + v.nome, escala: "indicada", auto: chave }] }).folhas[0];
+          pr.folhas.push(f); criadas++;
+        }
+        chaves[v.id] = chave;
+      });
+      pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm; if (!pr.id) delete pr.id;
+      var salvo = this.salvarRegistro(pr); if (!salvo) return Promise.resolve({ ok: false, criadas: 0, atualizadas: 0, folhas: [] });
+      var ids2 = [], seq = Promise.resolve();
+      vs.forEach(function (v) {
+        var f = PRm.normalizar(salvo).folhas.filter(function (x) { return x.auto === chaves[v.id]; })[0]; if (!f) return;
+        var idf = self.idFolha(salvo.id, f.id); ids2.push(idf);
+        var jaTem = arr(f.blocos).some(function (b) { return b.tipo === "viewport" && b.vistaId === v.id; });
+        seq = seq.then(function () { return jaTem ? self.atualizar3d(idf) : self.posicionar3d(idf, v.id); });
+      });
+      return seq.then(function () {
+        toast("Vistas 3D: " + criadas + " folha(s) nova(s), " + atualizadas + " atualizada(s) (a foto da câmera salva).", "ok");
+        return { ok: true, criadas: criadas, atualizadas: atualizadas, folhas: ids2 };
+      });
     },
     /* PRANCHAS DO HIDRO PELO BOTÃO GERAL (13/11/2026). Roteiro do defeito: o dono gerou o hidro pelo "Gerar pranchas" do BIM
        e saíram 8 folhas A1 genéricas para um banheiro (sem diâmetro, sem altura de ponto, sem tag de conexão, sem quadro),
@@ -1680,7 +1731,8 @@
     abrirGerar: function () {
       if (!this.ativo()) return false;
       var self = this, vs = this.vistasParaGerar(), reg = this.registros().filter(function (r) { return r.origem === "folhas"; })[0], f0 = (reg && reg.formato) || "A1";
-      if (!vs.length) { toast("Nenhuma planta, corte ou elevação ainda: abra o modelo da obra e crie as vistas (Navegador › Vistas).", "aviso"); return false; }
+      var vs3 = this.vistas3dParaGerar();
+      if (!vs.length && !vs3.length) { toast("Nenhuma planta, corte ou elevação ainda: abra o modelo da obra e crie as vistas (Navegador › Vistas).", "aviso"); return false; }
       var DISC = { arquitetura: "Arquitetura", estrutural: "Estrutural", hidraulica: "Hidráulica", eletrica: "Elétrica", mecanica: "Mecânica", coordenacao: "Coordenação" };
       /* DISCIPLINA: abre na Arquitetura (a 1ª que tem vista); só as vistas dela vêm marcadas. "Todas" é escolha explícita. */
       var temDisc = {}; vs.forEach(function (v) { temDisc[v.disciplina] = 1; });
@@ -1692,6 +1744,7 @@
         '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
           return '<label data-pv-disc="' + esc(v.disciplina) + '" style="display:' + (v.disciplina === disc0 ? "block" : "none") + ';font-size:12.5px;padding:2px 0"><input type="checkbox"' + (v.disciplina === disc0 ? " checked" : "") + ' data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
         }).join("") + "</div>" +
+        (vs3.length ? '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px;margin-top:8px"><legend><b>Vistas 3D salvas</b> <span class="muted">(uma folha para cada; a foto da câmera salva)</span></legend>' + vs3.map(function (v) { return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" data-pv-ger3d="' + esc(v.id) + '"> ' + esc(v.nome) + "</label>"; }).join("") + "</fieldset>" : "") +
         (global.BimCadUI ? '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px;margin-top:8px"><legend><b>Saída CAD</b></legend>' + global.BimCadUI.opcoesHtml("pvg") + "</fieldset>" : "");
       if (this.temHidro()) h = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--primary,#0b5)"><b>Projeto hidrossanitário:</b> use <b>Hidrossanitário completo</b> — planta por sistema com diâmetro e declividade, isométrico, cortes das paredes com a altura de cada ponto, detalhes e quadro de materiais. Esta lista abaixo só enquadra as vistas.</p>' + h;
       global.UI.modal("Gerar pranchas", h, (this.temHidro() ? [{ texto: "Hidrossanitário completo", classe: "primary", onClick: function () { global.UI.fecharModal(); self.pranchasHidro(); } }] : []).concat([
@@ -1700,9 +1753,11 @@
           var fm = (document.getElementById("pv-ger-formato") || {}).value || f0;
           var dsel = (document.getElementById("pv-ger-disc") || {}).value || disc0;
           var ids = [].slice.call(document.querySelectorAll("[data-pv-ger]")).filter(function (c) { var lb = c.parentNode; return c.checked && (dsel === "todas" || (lb && lb.getAttribute("data-pv-disc") === dsel)); }).map(function (c) { return c.getAttribute("data-pv-ger"); });
+          var ids3 = [].slice.call(document.querySelectorAll("[data-pv-ger3d]")).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pv-ger3d"); });
           global.UI.fecharModal();
-          if (!ids.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
-          var rg = self.gerar({ formato: fm, vistas: ids, disciplina: dsel === "todas" ? "" : dsel });
+          if (!ids.length && !ids3.length) { toast("Marque ao menos uma vista.", "aviso"); return; }
+          var rg = self.gerar({ formato: fm, vistas: ids.concat(ids3), disciplina: dsel === "todas" ? "" : dsel });
+          if (rg && rg.so3d) return;
           if (rg && rg.ok && (qCad.cad || qCad.dwg)) self.cadDoGerar(rg.id, qCad, dsel);
         } },
         { texto: "Cancelar", onClick: function () { global.UI.fecharModal(); } }]));

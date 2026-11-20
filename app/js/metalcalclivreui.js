@@ -881,7 +881,8 @@
     var x; try { x = P.gerar(r, opcoesPranchas()); } catch (e) { toast("Pranchas: " + e.message, "erro", 9000); return; }
     if (!x || !x.ok || !arr(x.folhas).length) { toast("Pranchas: " + ((x && arr(x.avisos)[0]) || "nada gerado") + ".", "erro", 9000); return; }
     U.pranchas = x; U.modo = "pranchas"; render();
-    status("Pranchas da estrutura desenhada: " + x.folhas.length + " folhas.");
+    var env = null; try { env = global.MetalFolhasBim ? global.MetalFolhasBim.enviar(x, {}) : null; } catch (eF) { env = null; }
+    status("Pranchas da estrutura desenhada: " + x.folhas.length + " folhas" + (env ? " (também em Navegador › Folhas)." : "."));
   }
   /* BACKLOG #59/#53 — os avisos das pranchas como CARTÕES: o que é, "Corrigir: …" só quando há ação real (ligar todos os nós, ver as
      ligações que não atendem, refazer o cálculo) e o resto como texto ("Sem correção automática — …"). Os avisos de desenho (folha com

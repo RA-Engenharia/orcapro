@@ -104,7 +104,7 @@
         { id: "met-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula o galpão desta obra com os dados do assistente, em paralelo (a tela continua livre), e mostra o resultado." },
         { id: "met-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Aprovado ou não, peso e kg/m², aproveitamento por grupo, as decisões do sistema com o motivo e os problemas com as soluções." },
         { id: "met-calc-memorial", rotulo: "Memorial", icone: "relatorio", grande: false, dica: "Memorial de cálculo: ações, vento com o mapa, combinações, verificações passo a passo, cargas na fundação e as normas usadas." },
-        { id: "met-calc-pranchas", rotulo: "Pranchas", icone: "prancha", grande: false, dica: "Pranchas no padrão da casa: locação, cobertura, elevações, pórtico típico, detalhes e lista de materiais." },
+        { id: "met-calc-pranchas", rotulo: "Pranchas", icone: "prancha", grande: false, dica: "Pranchas no padrão da casa: locação, cobertura, elevações, pórtico típico, detalhes e lista de materiais. Saem na tela do cálculo e também em Navegador › Folhas (gerar de novo atualiza as mesmas folhas; entram no CAD único e no PDF em lote)." },
         { id: "met-calc-cype", rotulo: "Para o CYPE 3D", icone: "exportar", grande: false, dica: "Arquivo para o CYPE 3D com os perfis (inclusive os que o CYPE não tem), as cargas e os apoios." },
         { id: "met-calc-normas", rotulo: "Normas", icone: "livro", grande: true, dica: "As normas configuradas: a edição em vigor, a que o motor usa e o que falta conferir." }
       ],
@@ -119,6 +119,9 @@
         { id: "met-dstv", rotulo: "DSTV\n(.nc1)", icone: "exportar", grande: true, dica: "Arquivos DSTV NC1 para serra, furadeira e corte — um por marca (perfis e chapas), num .zip." },
         { id: "met-dxf", rotulo: "DXF de\nchapas", icone: "baixar", grande: true, dica: "DXF 1:1 em mm para laser/plasma: CUT_OUTSIDE, CUT_INSIDE e ETCH, um por marca, e o aproveitamento numa chapa padrão." },
         { id: "met-listas", rotulo: "Listas\n(.xlsx)", icone: "planilha", grande: true, dica: "Lista de peças, de conjuntos, de parafusos/porcas/arruelas, de chapas e o resumo de peso por material (o mesmo peso do içamento)." },
+        { id: "met-relacao", rotulo: "Relação\nfábrica", icone: "planilha", grande: true, dica: "Relação de materiais no formato da metalúrgica: componentes da estrutura (tesoura, terças, colunas, linha de corrente) e materiais (barras de 6/12 m, chapas, cachorros, parafusos, calha, consumíveis) — .xlsx e HTML. Consumíveis por índice editável; sem preço." },
+        { id: "met-executivo", rotulo: "Pranchas\nexecutivas", icone: "prancha", grande: true, dica: "Jogo de pranchas executivas do pórtico da biblioteca (1 clique): planta de montagem da cobertura, elevações, tesoura e coluna tipo cotadas, detalhes das ligações recortados do modelo, base e chumbadores, seções dos perfis e quadro de materiais. Vai para Navegador › Folhas; as ligações saem como A DIMENSIONAR - NÃO VERIFICADAS." },
+        { id: "met-vista-portico", rotulo: "Vista do\npórtico", icone: "alvo", grande: true, dica: "Com UMA peça do pórtico selecionada (dois cliques no 3D), isola no 3D todas as peças do mesmo pórtico (a tesoura inteira) e oferece Salvar como vista 3D, para arrastar para uma prancha. Acha o pórtico pela referência da biblioteca de pórticos ou, sem ela, pelo plano (mesmo Z)." },
         { id: "met-ifc", rotulo: "IFC de\nfabricação", icone: "estrutura", grande: true, dica: "IFC4 com IfcPlate, IfcMember, IfcBeam e IfcColumn agrupados em conjuntos (IfcElementAssembly), parafusos como IfcMechanicalFastener e os furos como aberturas." },
         { id: "met-pacote", rotulo: "Pacote da\nfábrica", icone: "pasta", grande: true, dica: "Tudo num .zip: DSTV, DXF, nesting, listas em Excel e o IFC de fabricação." },
         /* 23/10/2026: o orçamento por peso (js/metalorc.js) só abria por dentro de "Pintura e peso"; o plano de montagem
@@ -173,7 +176,7 @@
         "met-calc-cype": function () { self.calcRota("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
         "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.fab("desenhos"); }, "met-corte": function () { self.fab("corte"); }, "met-dobrada": function () { self.fab("dobrada"); },
         "met-planif": function () { self.fab("planificacao"); }, "met-nesting": function () { self.fab("nesting"); }, "met-pintura": function () { self.fab("pintura"); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
-        "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); },
+        "met-listas": function () { self.listas(); }, "met-relacao": function () { self.fab("relacao"); }, "met-vista-portico": function () { self.fab("vistaPortico"); }, "met-executivo": function () { self.fab("executivo"); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); },
         "met-orcamento": function () { if (!global.MetalOrc || !global.MetalOrc.abrir) { toast("O orçamento da estrutura não carregou (js/metalorc.js).", "erro", 8000); return; } global.MetalOrc.abrir(); },
         "met-montagem": function () {
           var G = self._G || global.Gestao;

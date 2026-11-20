@@ -21,6 +21,7 @@
   function PL() { return global.BimMetalPlanif; }
   function PI() { return global.BimMetalPintura; }
   function FD() { return global.BimMetalFabDes; }
+  function RF() { return global.BimMetalRelacaoFab; }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(/\./g, function (m, i, s) { return /,/.test(s) ? "" : m; }).replace(",", ".")); return isFinite(n) ? n : d; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function br(v, c) { c = c == null ? 2 : c; var s = (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c), neg = s.charAt(0) === "-"; if (neg) s = s.slice(1); var p = s.split("."); return (neg ? "-" : "") + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + (p[1] ? "," + p[1] : ""); }
@@ -54,7 +55,7 @@
                chapas: c.chapas || CC.chapas.map(function (x) { return x.slice(); }), folga: c.folga != null ? c.folga : CC.folga, borda: c.borda != null ? c.borda : CC.borda,
                demaos: c.demaos || CP.demaos.map(function (d) { return { nome: d.nome, rendimento: d.rendimento }; }), perda: c.perda != null ? c.perda : CP.perda, bordas: !!c.bordas,
                sistema: c.sistema || null, perdaModo: c.perdaModo || "acrescimo", sisSel: c.sisSel || null,
-               kModo: c.kModo || "padrao", k: c.k != null ? c.k : 0.33 };
+               kModo: c.kModo || "padrao", k: c.k != null ? c.k : 0.33, relacao: c.relacao || null };
     },
     gravar: function (mud) { var c = this.cfg(); Object.keys(mud || {}).forEach(function (k) { c[k] = mud[k]; }); try { global.localStorage.setItem(CHAVE, JSON.stringify(c)); } catch (e) {} if (PL()) PL().configurar({ kModo: c.kModo, k: c.k }); return c; },
     estado: function () { return U() ? U().estado() : null; },
@@ -130,6 +131,97 @@
       var nome = this.nomeArq("plano-de-corte.pdf"); this.pdfBaixar(r.folhas, nome, "Plano de corte");
       this.ultimo = { tipo: "corte", plano: p, pdf: nome, folhas: r.folhas.length };
       toast("Plano de corte em PDF: " + r.folhas.length + " folha(s) A3 com o carimbo.", "ok");
+    },
+
+    /* ============================================================ RELAÇÃO DE MATERIAIS — FORMATO FÁBRICA (js/metalrelacaofab.js) */
+    relacao: function () {
+      var self = this, n = this.numeracao(); if (!n) return;
+      if (!RF()) { toast("A relação formato fábrica não carregou (js/metalrelacaofab.js).", "erro", 8000); return; }
+      if (!n.pecas.length) { toast("Não há peça de aço no modelo para a relação.", "aviso"); return; }
+      var cf = RF().cfg(this.cfg().relacao || {}), I = RF().INDICE_ROTULOS, ch = Object.keys(I);
+      var h = NAO_CALC + '<p style="font-size:12px;margin:0 0 6px"><b>' + esc(RF().ROTULO_INDICE) + '</b> — eletrodo, thinner, zarcão e discos saem do índice por tonelada de aço (padrão derivado da lista de uma obra de referência da metalúrgica; não é norma). Sem preço: itens sem insumo no catálogo ficam "pendente — cotar".</p>' +
+        '<div style="' + CSS_CAMPOS + '">' + ch.map(function (k) { return campo("ri_" + k, I[k][0] + " — " + I[k][1], br(cf.indice[k], 3), { num: true, partida: true }); }).join("") + "</div>" +
+        '<div style="' + CSS_CAMPOS + '">' + campo("rf_terca", "Cachorros por terça (1 por ligação)", cf.fatorCachorro.terca, { num: true, partida: true }) + campo("rf_contra", "Cachorros por contravento", cf.fatorCachorro.contravento, { num: true, partida: true }) +
+        campo("rf_corrente", "Cachorros por linha de corrente", cf.fatorCachorro.corrente, { num: true, partida: true }) + campo("re_calha", "Calha #18 desenv. 600 (m) — o modelo não tem", cf.extras.calhaM, { num: true }) + campo("re_cond", "Condutores 150 (un) — o modelo não tem", cf.extras.condutores, { num: true }) + "</div>" +
+        '<div data-mf="res-relacao"></div>';
+      UI.modal("Relação de materiais — formato fábrica", h, [
+        { texto: "Recalcular", onClick: function () { self._relacaoCalc(true); } },
+        { texto: "Baixar .xlsx", classe: "primary", onClick: function () { self._relacaoCalc(true); self.relacaoXlsx(); } },
+        { texto: "Baixar HTML", onClick: function () { self._relacaoCalc(true); self.relacaoHtml(); } },
+        { texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+      this._relacaoCalc(false);
+    },
+    _relacaoCalc: function (ler) {
+      var cfg0 = this.cfg(), rc = cfg0.relacao || {};
+      if (ler) {
+        var ind = {}, I = RF().INDICE_ROTULOS;
+        Object.keys(I).forEach(function (k) { var v = val("ri_" + k); if (v != null && v !== "") ind[k] = num(v, null); });
+        rc = { indice: ind, fatorCachorro: { terca: num(val("rf_terca"), 2), contravento: num(val("rf_contra"), 2), corrente: num(val("rf_corrente"), 2) }, extras: { calhaM: num(val("re_calha"), 0), condutores: num(val("re_cond"), 0), barrasRoscadas: (rc.extras && rc.extras.barrasRoscadas) || [] } };
+        /* só guarda como "editado" o que difere do padrão (senão o rótulo mentiria) */
+        var pad = RF().indicePadrao() || {}; Object.keys(ind).forEach(function (k) { if (Math.abs(ind[k] - (pad[k] || 0)) < 0.0005) delete rc.indice[k]; });
+        this.gravar({ relacao: rc });
+      }
+      var n = this.numeracao(); if (!n) return null;
+      var L = F().listas(this.estado(), n), plano = CO().planoBarras(n, cfg0), R = RF().montar(L, plano, rc);
+      this.ultimo = { tipo: "relacao", relacao: R };
+      var el = q('[data-mf="res-relacao"]'); if (el) el.innerHTML = RF().html(R, { obra: U() ? U().nomeObra() : "" });
+      status("Relação formato fábrica: " + R.totais.itensParte1 + " componente(s), " + R.totais.itensParte2 + " material(is), " + br(R.totais.acoTon, 2) + " t de aço.");
+      return R;
+    },
+    relacaoXlsx: function () {
+      var R = this.ultimo && this.ultimo.tipo === "relacao" ? this.ultimo.relacao : this._relacaoCalc(false), self = this, nome = this.nomeArq("relacao-de-materiais-fabrica.xlsx"); if (!R) return;
+      this.excel(function (X) { return RF().xlsx(R, X, { obra: U() ? U().nomeObra() : "" }); }, nome, function () {
+        self.ultimo = { tipo: "relacao", relacao: R, xlsx: nome };
+        toast("Relação formato fábrica: " + R.totais.itensParte1 + " componente(s) e " + R.totais.itensParte2 + " material(is) — " + nome + ".", "ok", 9000);
+      });
+    },
+    relacaoHtml: function () {
+      var R = this.ultimo && this.ultimo.tipo === "relacao" ? this.ultimo.relacao : this._relacaoCalc(false); if (!R) return;
+      var nome = this.nomeArq("relacao-de-materiais-fabrica.html"); this.baixar(nome, RF().htmlDocumento(R, { obra: U() ? U().nomeObra() : "" }), "text/html;charset=utf-8");
+      this.ultimo = { tipo: "relacao", relacao: R, html: nome };
+      toast("Relação formato fábrica em HTML — " + nome + ".", "ok", 7000);
+    },
+
+    /* ============================================================ PRANCHAS EXECUTIVAS (js/metalexecutivo.js)
+     * Fiação fina: acha o pórtico paramétrico (porticoInfo da biblioteca de pórticos — o da peça selecionada, ou o
+     * primeiro do modelo), refaz o modelo pela tipologia e grava o jogo em Navegador › Folhas (registro próprio,
+     * origem "metalica-executivo"; gerar de novo troca as mesmas folhas). */
+    executivo: function () {
+      var X = global.MetalExecutivo, MP = global.MetalPorticos, MF = global.MetalFolhasBim, st = this.estado();
+      if (!X || !MP || !MF) { toast("O gerador das pranchas executivas não carregou (js/metalexecutivo.js).", "erro", 8000); return false; }
+      if (!st || !st.caixas) { toast("Abra o modelador (3D) com a estrutura primeiro.", "aviso"); return false; }
+      var sel = U() && U().selecao ? U().selecao() : [], cx = st.caixas, info = null, gid = null;
+      if (sel.length === 1) { var c0 = cx.filter(function (c) { return c.id === sel[0]; })[0]; gid = c0 && c0.portico; }
+      cx.forEach(function (c) { if (!info && c.porticoInfo && (!gid || c.portico === gid)) info = c.porticoInfo; });
+      if (!info || !info.tipo) { toast("As pranchas executivas saem de um pórtico da biblioteca de pórticos (Metálica › Pórticos). Este modelo não tem nenhum.", "aviso", 9000); return false; }
+      var M = MP.modelo(info.tipo, info.par || {}); if (!M.ok) { toast("Pórtico: " + (M.motivo || "não montou"), "aviso", 9000); return false; }
+      var op = this.opFolhas(); op.codigo = "EST-MET"; op.formato = "A1";
+      var r = X.gerar(M, op); if (!r.ok) { toast("Pranchas executivas: " + (r.avisos[0] || "nada gerado"), "erro", 9000); return false; }
+      var env = null; try { env = MF.enviar(r, { abrir: true, origem: "metalica-executivo", nome: "Pranchas executivas da estrutura metálica" }); } catch (e) { env = null; }
+      var ruim = r.conferencia.filter(function (c) { return c.textoTexto.length || c.textoTraco.length || c.foraDaArea || c.vistasSobrepostas || c.semLugar.length; });
+      toast(r.folhas.length + " pranchas executivas" + (env ? " em Navegador › Folhas" + (env.atualizou ? " (atualizadas)" : "") : " (sem as Folhas do BIM abertas)") + ". Ligações saem como A DIMENSIONAR - NÃO VERIFICADAS." + (ruim.length ? " Conferir sobreposição: " + ruim.map(function (c) { return c.folha; }).join(", ") : ""), ruim.length ? "aviso" : "ok", 10000);
+      this.ultimo = { tipo: "executivo", folhas: r.folhas.length, conferencia: r.conferencia, avisos: r.avisos };
+      return r;
+    },
+
+    /* ============================================================ VISTA DESTE PÓRTICO (js/metalvistaportico.js) */
+    vistaPortico: function () {
+      var self = this, VP = global.MetalVistaPortico, B = global.BIM, st = this.estado();
+      if (!VP || !B || !B.isolarChaves || !B.chaveDe || !st) { toast("Abra o modelador (3D) com a estrutura primeiro.", "aviso"); return false; }
+      var sel = U() && U().selecao ? U().selecao() : [];
+      if (sel.length !== 1) { toast("Selecione UMA peça do pórtico (dois cliques no 3D) e clique em Vista do pórtico.", "aviso"); return false; }
+      var g = VP.grupoDoPortico(st.caixas, sel[0]); if (!g.ok) { toast(g.motivo, "aviso", 9000); return false; }
+      var chaves = g.ids.map(function (id) { return B.chaveDe("edit:" + id); }).filter(function (c) { return !!c; });
+      if (!chaves.length) { toast("As peças do pórtico ainda não têm identidade no 3D: recarregue a vista e tente de novo.", "aviso"); return false; }
+      var vistas = B.isolarChaves(chaves), nome = "3D - Pórtico " + (g.rotulo || g.referencia || "") + " (" + g.ids.length + " peças)";
+      var txt = "<p style=\"font-size:13px\"><b>" + g.ids.length + " peça(s)</b> do pórtico isoladas no 3D (" + (g.criterio === "portico" ? "pela referência do pórtico" : "pelo plano " + esc(g.rotulo) + ", tolerância " + br(VP.TOL * 100, 0) + " cm") + ").</p>" +
+        "<p class=\"muted\" style=\"font-size:12px\">Salvar como vista 3D guarda a câmera e o isolamento em Navegador › Vistas 3D — de lá é só arrastar para a folha. Restaurar tudo volta o modelo.</p>";
+      UI.modal("Vista deste pórtico", txt, [
+        { texto: "Salvar como vista 3D", classe: "primary", onClick: function () { var G = (U() && U()._G) || global.Gestao; UI.fecharModal(); if (G && G._bimVistaSalvar3d) G._bimVistaSalvar3d(nome); else toast("Salve pela fita Vista › Salvar como vista 3D.", "aviso"); } },
+        { texto: "Restaurar tudo", onClick: function () { UI.fecharModal(); if (B.restaurarVisibilidade) B.restaurarVisibilidade(); } },
+        { texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+      this.ultimo = { tipo: "vistaPortico", criterio: g.criterio, pecas: g.ids.length, isoladas: vistas, nome: nome };
+      return { ok: true, grupo: g, isoladas: vistas, nome: nome };
     },
 
     /* ============================================================ CHAPA DOBRADA (criar) */
@@ -409,6 +501,10 @@
     DICAS: {
       "met-corte": ["Lista de corte", "Junta as peças de cada perfil e aço e encaixa os comprimentos nas barras comerciais (6 m e 12 m), descontando a serra a cada corte.", "Na compra do aço e no corte em serra: quantas barras pedir, o plano barra a barra, as sobras para estoque e a perda em kg e %.", "Barra de 12 m nem sempre existe em toda bitola: ajuste os comprimentos com o fornecedor antes de comprar.",
         '<rect x="20" y="60" width="280" height="22" fill="#c5d0dc" stroke="#4f6275" stroke-width="1.2"/><rect x="20" y="60" width="120" height="22" fill="#e9a23b" stroke="#a86a10" stroke-width="1.2"/><rect x="144" y="60" width="100" height="22" fill="#e9a23b" stroke="#a86a10" stroke-width="1.2"/><line x1="142" y1="52" x2="142" y2="90" stroke="#1d2733" stroke-width="1.6"/><line x1="246" y1="52" x2="246" y2="90" stroke="#1d2733" stroke-width="1.6"/><text x="80" y="110" font-size="11" font-family="sans-serif" fill="#1d2733" text-anchor="middle">P1</text><text x="194" y="110" font-size="11" font-family="sans-serif" fill="#1d2733" text-anchor="middle">P2</text><text x="272" y="110" font-size="11" font-family="sans-serif" fill="#1d2733" text-anchor="middle">sobra</text><text x="160" y="150" font-size="11" font-family="sans-serif" fill="#1d2733" text-anchor="middle">barra de 12 m</text>'],
+      "met-relacao": ["Relação formato fábrica", "A lista que a metalúrgica lê: componentes da estrutura (tesoura, colunas, terças, linha de corrente, contravento, chumbador) com quantidade e tamanho, e a relação de materiais — barras de 6 e 12 m, chapas, cachorros, parafusos com porca, calha e os consumíveis.", "Na compra e na produção: o pedido de material da fábrica sai do modelo, em .xlsx e HTML.", "Eletrodo, thinner, zarcão e discos vêm do índice por tonelada de aço (referência do cliente, editável). Sem preço: o que não tem insumo no catálogo fica \"pendente — cotar\".",
+        '<rect x="50" y="30" width="220" height="140" fill="#fff" stroke="#4f6275" stroke-width="1.4"/><line x1="50" y1="56" x2="270" y2="56" stroke="#4f6275"/><line x1="50" y1="82" x2="270" y2="82" stroke="#c5d0dc"/><line x1="50" y1="108" x2="270" y2="108" stroke="#c5d0dc"/><line x1="50" y1="134" x2="270" y2="134" stroke="#c5d0dc"/><line x1="96" y1="30" x2="96" y2="170" stroke="#c5d0dc"/><rect x="104" y="40" width="110" height="8" fill="#e9a23b"/><rect x="104" y="66" width="80" height="8" fill="#e9a23b"/><rect x="104" y="92" width="130" height="8" fill="#e9a23b"/><rect x="104" y="118" width="60" height="8" fill="#e9a23b"/>'],
+      "met-vista-portico": ["Vista do pórtico", "Com UMA peça do pórtico selecionada, isola no 3D todas as peças do mesmo pórtico (a tesoura inteira: banzos, diagonais, montantes e pilares) e oferece Salvar como vista 3D.", "Para pôr a tesoura ou o pórtico numa prancha: a vista salva fica em Navegador › Vistas 3D e é arrastada para a folha.", "Acha o pórtico pela referência da biblioteca de pórticos; sem ela, pelo plano (mesmo Z, 15 cm). Terça e corrente não pertencem a pórtico.",
+        '<polyline points="40,150 160,50 280,150" fill="none" stroke="#e9a23b" stroke-width="5"/><line x1="40" y1="150" x2="280" y2="150" stroke="#e9a23b" stroke-width="5"/><polyline points="70,150 100,100 130,150 160,80 190,150 220,100 250,150" fill="none" stroke="#a86a10" stroke-width="2.4"/>'],
       "met-dobrada": ["Chapa dobrada", "Peça de chapa fina dobrada (L, U, Ue, Z, cartola ou polilinha livre) com espessura e raio interno; o 3D, o peso e o IFC saem dela.", "Rufos, calhas, perfis de acabamento, cantoneiras e Us dobrados em dobradeira.", "Raio interno menor que a espessura pode trincar: confira com a dobradeira e o aço.",
         '<polyline points="80,60 60,60 60,150 200,150 200,60 220,60" fill="none" stroke="#a86a10" stroke-width="8.4" stroke-linejoin="round"/><polyline points="80,60 60,60 60,150 200,150 200,60 220,60" fill="none" stroke="#e9a23b" stroke-width="6" stroke-linejoin="round"/><text x="130" y="175" font-size="11" font-family="sans-serif" fill="#1d2733" text-anchor="middle">t e raio interno</text>'],
       "met-planif": ["Planificação", "O comprimento desenvolvido da chapa dobrada pelo fator K e a chapa plana com as linhas de dobra, o ângulo e o sentido de cada dobra — e o DXF para o corte.", "Antes de cortar a chapa que vai para a dobradeira.", "K = 0,33 é de partida: a dobradeira informa o K da ferramenta e do aço dela.",

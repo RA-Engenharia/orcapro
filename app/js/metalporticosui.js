@@ -34,23 +34,29 @@
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
   var COMANDOS = [
-    { id: "met-porticos", rotulo: "Pórticos\nindustriais", icone: "estrutura", grande: true, dica: "Biblioteca de pórticos industriais paramétricos: alma cheia de uma e duas águas, mísula, atirantado, treliçados (banzos paralelos, trapezoidal, tesouras Howe/Pratt/Warren), shed, multivão, ponte rolante, mezanino e coluna treliçada. Gera o modelo BIM inteiro e prepara o cálculo." }
+    { id: "met-porticos", rotulo: "Pórticos\nindustriais", icone: "estrutura", grande: true, dica: "Biblioteca de pórticos industriais paramétricos: alma cheia de uma e duas águas, mísula, atirantado, treliçados (banzos paralelos, trapezoidal, tesouras Howe/Pratt/Warren), shed, multivão, ponte rolante, mezanino, coluna treliçada e tesoura leve (coluna treliçada de U com alma em cantoneira). Gera o modelo BIM inteiro e prepara o cálculo." }
   ];
 
   /* ------------------------------------------------------------ campos [id, rótulo, tipo, opções] */
-  var S_PRINC = ["GERDAU", "W", "VS", "CVS", "CS"], S_TUBO = ["VMB-TQ", "VMB-TR", "VMB-TC", "HSSR"], S_TERCA = ["UE", "UFF", "GERDAU"], S_BARRA = ["BARRA-R"], S_L = ["L", "GERDAU-L"];
+  var S_PRINC = ["GERDAU", "W", "VS", "CVS", "CS"], S_TUBO = ["VMB-TQ", "VMB-TR", "VMB-TC", "HSSR"], S_TERCA = ["UE", "UFF", "GERDAU"], S_BARRA = ["BARRA-R"], S_L = ["L", "GERDAU-L"], S_LEVE_U = ["UFF", "GERDAU-U", "AM-U"], S_LEVE_L = ["AM-L", "GERDAU-L", "L"], S_LEVE_TUBO = ["TUPER-TQ", "TUPER-TR", "VMB-TQ"];
   var SN = [["rotulada", "Rotulada"], ["engastada", "Engastada"]];
   function campos(t) {
     var c = [];
     if (t !== "shed" && t !== "multivao") c.push(["vao", "Vão (m)", "num"]);
-    c.push(["peDireito", t === "trelica-paralelos" || t === "trelica-trapezoidal" || t === "tesoura" ? "Altura do banzo de cima no pilar (m)" : "Pé-direito — altura do beiral (m)", "num"]);
+    c.push(["peDireito", t === "trelica-paralelos" || t === "trelica-trapezoidal" || t === "tesoura" || t === "tesoura-leve" ? "Altura do banzo de cima no pilar (m)" : "Pé-direito — altura do beiral (m)", "num"]);
     if (t !== "shed") c.push(["inclinacao", "Inclinação do telhado (%)", "num"]);
     c.push(["espacamento", "Espaçamento dos pórticos (m)", "num"], ["nPorticos", "Número de pórticos", "int"]);
-    if (t !== "coluna-trelicada") c.push(["base", "Base dos pilares", "sel", SN]);
+    if (t !== "coluna-trelicada" && t !== "tesoura-leve") c.push(["base", "Base dos pilares", "sel", SN]);   /* coluna de 2 banzos: banzos rotulados, engaste pelo binário */
     c.push(["fechamento", "Fechamento (laterais e oitões)", "sel", [["fechado", "Fechado — telha trapezoidal"], ["aberto", "Aberto"]]]);
     c.push(["contraventamento", "Contraventamento (vãos das pontas)", "sel", [["X-barra", "X de barra redonda"], ["X-cantoneira", "X de cantoneira"], ["nenhum", "Nenhum"]]]);
     if (t === "trelica-paralelos") c.push(["aguas", "Águas", "sel", [["2", "Duas águas"], ["1", "Uma água"]]]);
-    if (/^trelica|^tesoura/.test(t)) {
+    if (t === "tesoura-leve") {
+      c.push(["forma", "Tesoura", "sel", [["paralelos", "Banzos paralelos (duas águas)"], ["trapezoidal", "Trapezoidal (banzo de baixo reto)"]]], ["padrao", "Alma", "sel", [["howe", "Montante em todo nó, diagonais descendo para o meio"], ["warren", "Warren (montante só nas terças: banzo de cima com painel dobrado)"]]],
+             ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/20)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
+             ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_U.concat(S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["montante", "Perfil dos montantes (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["escora", "Escora longitudinal (banzo de baixo e coluna)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
+             ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
+    }
+    else if (/^trelica|^tesoura/.test(t)) {
       c.push(["padrao", "Treliça", "sel", [["pratt", "Pratt"], ["howe", "Howe"], ["warren", "Warren"]]]);
       if (t !== "tesoura") c.push(["alturaTrelica", t === "trelica-paralelos" ? "Altura da treliça (m, entre eixos)" : "Altura no apoio (m, entre eixos)", "num"]);
       c.push(["paineis", "Nº de painéis (0 = automático)", "int"], ["banzo", "Perfil dos banzos", "cat", S_TUBO.concat(S_PRINC)], ["diagonal", "Perfil das diagonais (tubo)", "cat", S_TUBO], ["montante", "Perfil dos montantes (tubo)", "cat", S_TUBO], ["escora", "Escora do banzo de baixo", "cat", S_TUBO]);
@@ -58,7 +64,7 @@
     if (t === "shed") c.push(["dentes", "Número de dentes", "int"], ["vaoDente", "Vão de cada dente (m)", "num"], ["alturaDente", "Altura da face envidraçada (m)", "num"]);
     if (t === "multivao") c.push(["vaos", "Número de vãos", "int"], ["vaoCada", "Vão de cada módulo (m)", "num"], ["cobertura", "Cobertura", "sel", [["unica", "Única em duas águas"], ["geminada", "Geminada (duas águas por vão)"]]], ["ligInterna", "Pilar interno no topo", "sel", [["rigida", "Rígido com as vigas"], ["rotulada", "Rotulado (pendular)"]]], ["pilarInterno", "Perfil do pilar interno", "cat", S_PRINC]);
     if (t === "coluna-trelicada") c.push(["larguraColuna", "Largura da coluna (m, entre eixos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_PRINC], ["travejamento", "Perfil do travejamento (tubo)", "cat", S_TUBO], ["escora", "Escora longitudinal da coluna", "cat", S_TUBO]);
-    else c.push(["pilar", "Perfil dos pilares", "cat", S_PRINC]);
+    else if (t !== "tesoura-leve") c.push(["pilar", "Perfil dos pilares", "cat", S_PRINC]);
     if (!/^trelica|^tesoura/.test(t)) c.push(["viga", "Perfil das vigas", "cat", S_PRINC]);
     if (t === "misula") c.push(["misulaComprimento", "Mísula: comprimento em planta (m; 0 = vão/10)", "num"], ["misulaAltura", "Mísula: altura acrescida no joelho (m; 0 = a da viga)", "num"], ["degraus", "Mísula: degraus do cálculo (2 a 6)", "int"]);
     if (t === "atirantado") c.push(["tirante", "Tirante (barra redonda)", "cat", S_BARRA], ["pendural", "Pendural (barra redonda)", "cat", S_BARRA]);
@@ -66,7 +72,7 @@
       ["rodaMax", "Reação MÁX. por roda, com impacto (kN) — fabricante", "num"], ["rodaMin", "Reação mín. por roda (kN) — fabricante", "num"], ["rodaTransv", "Força transversal por roda (kN) — fabricante", "num"], ["forcaLong", "Força longitudinal por trilho (kN) — fabricante", "num"], ["entreEixos", "Distância entre as rodas de um lado (m)", "num"], ["capacidade", "Capacidade da ponte (t) — só dado", "num"]);
     if (t === "mezanino") c.push(["largura", "Largura do mezanino (m, da lateral esquerda)", "num"], ["cotaPiso", "Cota do piso — topo do aço (m)", "num"], ["espSec", "Espaçamento das secundárias (m)", "num"], ["vigaMez", "Viga do mezanino", "cat", S_PRINC], ["secMez", "Secundária do mezanino", "cat", S_PRINC], ["pilarMez", "Pilar do mezanino", "cat", S_PRINC.concat(S_TUBO)],
       ["uso", "Uso do piso (NBR 6120, Tabela 10)", "sel", usos()], ["qInformado", "Sobrecarga informada (kN/m²; só se o uso pede)", "num"], ["gPiso", "Permanente do piso (kN/m²)", "num"]);
-    c.push(["terca", "Perfil das terças", "cat", S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
+    c.push(["terca", "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
     c.push(["tapamento", "Coluna de tapamento (oitão fechado)", "cat", S_TUBO.concat(S_PRINC)]);
     if (true) c.push(["barraCv", "Barra do X (contraventamento)", "cat", S_BARRA], ["cantoneiraCv", "Cantoneira do X (contraventamento)", "cat", S_L]);
     c.push(["x0", "Origem X (m)", "num"], ["z0", "Origem Z (m)", "num"], ["cota", "Cota da base (m)", "num"]);

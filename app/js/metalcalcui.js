@@ -1731,7 +1731,7 @@
       '<button class="mc-bt ghost" data-mc-acao="voltar-assistente" style="margin-right:auto">' + ico("editar", 15) + " Editar os dados</button>" +
       bt("vista3d", "Ver em 3D", "olho", ok && !!global.MetalCalcVista, global.MetalCalcVista ? "Deformada, esforços e flambagem no 3D" : "A vista 3D dos resultados está em preparação (js/metalcalcvista.js)") +
       bt("memorial", "Memorial", "relatorio", ok && !!(global.AcoMemorial && AcoMemorial.gerar), global.AcoMemorial ? "Memorial de cálculo para imprimir ou salvar em PDF" : "O memorial está em preparação (js/acomemorial.js)") +
-      bt("pranchas", "Pranchas", "prancha", ok && !!(global.AcoPranchas && AcoPranchas.gerar), global.AcoPranchas ? "Pranchas no padrão da casa, em Pranchas do projeto" : "As pranchas estão em preparação (js/acopranchas.js)") +
+      bt("pranchas", "Pranchas", "prancha", ok && !!(global.AcoPranchas && AcoPranchas.gerar), global.AcoPranchas ? "Pranchas no padrão da casa, na tela e em Navegador › Folhas" : "As pranchas estão em preparação (js/acopranchas.js)") +
       bt("cype", "Exportar para o CYPE", "exportar", ok && !!global.AcoCype, global.AcoCype ? "Arquivo para o CYPE 3D com perfis, cargas e apoios" : "A exportação para o CYPE está em preparação (js/acocype.js)") +
       bt("cype-guia", "Como usar no CYPE 3D", "checklist", !!(global.AcoCype && AcoCype.comoUsarHTML), "Passo a passo no CYPE 3D com os números deste cálculo: abrir o IFC, perfis, vínculos, flambagem, cargas e conferir o resultado") +
       (function () {
@@ -1859,6 +1859,7 @@
     try { x = PR.gerar(r, opcoesPranchas()); } catch (e) { toast("Pranchas: " + e.message, "erro", 9000); return; }
     if (!x || !x.ok || !arr(x.folhas).length) { toast("Pranchas: " + ((x && arr(x.avisos)[0]) || "nada gerado") + ".", "erro", 9000); return; }
     UIC.pranchas = x; UIC.modo = "pranchas"; render();
+    try { if (global.MetalFolhasBim) global.MetalFolhasBim.enviar(x, {}); } catch (eF) { /* sem o BIM de folhas: ficam só na tela */ }
   }
   function pranchasHtml() {
     var x = UIC.pranchas || { folhas: [], avisos: [] };

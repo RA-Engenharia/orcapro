@@ -122,6 +122,15 @@
     "ponte": tipo("ponte", "Com ponte rolante", "Industrial pesado", "livre", "Alma cheia com consoles nos pilares e viga de rolamento biapoiada em cada vão; as cargas das rodas vêm do fabricante da ponte.", { base: "engastada", vao: 18, peDireito: 8, pilar: "W 460 x 74,0 Gerdau", viga: "W 360 x 51,0 Gerdau", tapamento: "TR 200 x 150 x 6,4 VMB", cotaConsole: 0, excentricidade: 0.75, console: "W 250 x 32,7 Gerdau", vigaRolamento: "W 530 x 74,0 Gerdau", capacidade: 5, vaoPonte: 0, rodaMax: "", rodaMin: "", rodaTransv: "", forcaLong: "", entreEixos: 3.0 }),
     "mezanino": tipo("mezanino", "Com mezanino interno", "Industrial pesado", "livre", "Alma cheia com mezanino ao longo de uma lateral: vigas apoiadas no pilar do pórtico e numa fila de pilares própria.", { vao: 18, peDireito: 8, base: "engastada", pilar: "W 460 x 82,0 Gerdau", viga: "W 410 x 46,1 Gerdau", tapamento: "TR 180 x 130 x 6,4 VMB", largura: 5, cotaPiso: 3.5, vigaMez: "W 310 x 28,3 Gerdau", secMez: "W 310 x 32,7 Gerdau", pilarMez: "W 310 x 28,3 Gerdau", espSec: 1.5, uso: "industrial-adm", qInformado: "", gPiso: 0.5 }),
     "atirantado": tipo("atirantado", "Pórtico atirantado", "Alma cheia", "livre", "Duas águas com tirante de barra redonda entre os joelhos (e pendural na cumeeira): o tirante leva o empuxo das vigas.", { tirante: "BR 3/4\" (D 19,05 mm) Gerdau", pendural: "BR 5/8\" (D 15,88 mm) Gerdau", base: "engastada", pilar: "W 250 x 38,5 Gerdau", viga: "W 200 x 31,3 Gerdau" }),
+    /* 20/11/2026 (Alumetal, Castanhal-PA): o galpão leve de serralheria — coluna treliçada de 2 U simples com travejamento em
+       cantoneira e tesoura de banzos paralelos em duas águas apoiada pelos dois banzos na coluna. Alturas de partida: treliça
+       vão/20 (o mínimo da faixa usual vão/20 a vão/15 — a alma em L 1" pede barra curta: L/rz ≤ 200 → ~0,98 m), coluna de
+       0,30 m entre eixos dos banzos (proporção usual de serralheria com U 100; premissa editável). U 1/8": o catálogo NBR 6355
+       não tem 3,18 mm — "U 100 x 40 x 3,04" é o mais próximo sem passar (3,04 < 3,18: a favor da segurança). */
+    "tesoura-leve": tipo("tesoura-leve", "Tesoura com coluna treliçada (perfil leve)", "Treliçado", "livre", "Galpão leve de serralheria: coluna treliçada de dois U com travejamento em cantoneira e tesoura de banzos paralelos (ou trapezoidal) em duas águas apoiada pelos dois banzos na coluna; terças em metalon.",
+      comTrelica({ vao: 20, peDireito: 6, inclinacao: 10, base: "rotulada", forma: "paralelos", alturaTrelica: 0, larguraColuna: 0.30, painelColuna: 0.5, subPaineis: 0, padrao: "howe",
+                   maoFrancesa: "BR 3/8\" (D 9,53 mm) Gerdau", banzoColuna: "U 100 x 40 x 4,76", travejamento: "L 25,4 x 3,17 (serie pol) ArcelorMittal", banzo: "U 100 x 40 x 3,04", diagonal: "L 25,4 x 3,17 (serie pol) ArcelorMittal", montante: "L 25,4 x 3,17 (serie pol) ArcelorMittal",
+                   terca: "TR 40 x 100 x 2 Tuper", barraCv: "BR 3/8\" (D 9,53 mm) Gerdau", pilar: "U 100 x 40 x 4,76", viga: "U 100 x 40 x 3,04" })),
     "coluna-trelicada": tipo("coluna-trelicada", "Coluna treliçada", "Industrial pesado", "livre", "Pilar treliçado (dois banzos e travejamento em zigue-zague) com viga de alma cheia: pé-direito alto e rigidez com pouco aço.", { vao: 20, peDireito: 10, larguraColuna: 0.8, banzoColuna: "W 200 x 26,6 Gerdau", travejamento: "TQ 60 x 60 x 3,6 VMB", painelColuna: 1.0, escora: "TQ 90 x 90 x 4 VMB", viga: "W 460 x 52,0 Gerdau", tapamento: "TR 250 x 150 x 7,1 VMB" })
   };
   /* o que fica NÃO VERIFICADO em cada tipologia (a tela mostra antes de gerar; o cálculo põe em "não verificados") */
@@ -130,7 +139,9 @@
     shed: ["o vento da cobertura em shed (telhado múltiplo: NBR 6123, Tabelas 7 e 8 — não estão no motor)"],
     multivao: ["com cobertura GEMINADA: o vento (telhado múltiplo — NBR 6123, Tabelas 7 e 8)"],
     ponte: ["a fadiga (NBR 8800, Anexo K)", "as flechas e a torção da viga de rolamento", "o limite de deslocamento próprio de galpão com ponte rolante (Tabela C.1)", "sem as cargas das rodas (fabricante): a ponte não entra"],
-    mezanino: ["a vibração do piso do mezanino (NBR 8800, Anexo L)"]   /* o deslocamento é o entre pisos (h/500): o pilar é dividido no piso */
+    mezanino: ["a vibração do piso do mezanino (NBR 8800, Anexo L)"],
+    "tesoura-leve": ["a esbeltez equivalente da cantoneira simples ligada por uma aba (NBR 8800, 5.3.4.4) na alma da tesoura e no travejamento da coluna — o motor usa L/r mínimo (com rz); a conta complementar sai à parte e não aprova sozinha",
+                     "os nós soldados das barras da alma na alma do U simples (excentricidade entre os eixos e a solda)"]   /* o deslocamento é o entre pisos (h/500): o pilar é dividido no piso */
   };
   Object.keys(NAO_VERIFICA).forEach(function (k) { TIPOS[k].naoVerifica = NAO_VERIFICA[k]; });
   Object.keys(TIPOS).forEach(function (k) {
@@ -138,10 +149,10 @@
     /* REVISÃO M4: na estrutura desenhada as ligações declaradas pela tipologia não são dimensionadas (no galpão são) */
     if (TIPOS[k].motor === "livre") TIPOS[k].naoVerifica = TIPOS[k].naoVerifica.concat(["as ligações e placas de base que a tipologia declara (o cálculo da estrutura desenhada não as dimensiona)"]);
   });
-  var ORDEM = ["alma-cheia-1", "alma-cheia-2", "misula", "atirantado", "trelica-paralelos", "trelica-trapezoidal", "tesoura", "shed", "multivao", "ponte", "mezanino", "coluna-trelicada"];
+  var ORDEM = ["alma-cheia-1", "alma-cheia-2", "misula", "atirantado", "trelica-paralelos", "trelica-trapezoidal", "tesoura", "shed", "multivao", "ponte", "mezanino", "coluna-trelicada", "tesoura-leve"];
   var NUMS = ["vao", "peDireito", "inclinacao", "espacamento", "nPorticos", "cota", "x0", "z0", "espTercas", "espTapamento", "permanenteExtra", "correntes", "aguas", "misulaComprimento", "misulaAltura", "degraus",
               "alturaTrelica", "paineis", "dentes", "vaoDente", "alturaDente", "vaos", "vaoCada", "cotaConsole", "excentricidade", "capacidade", "vaoPonte", "entreEixos", "largura", "cotaPiso", "espSec", "gPiso",
-              "larguraColuna", "painelColuna"];
+              "larguraColuna", "painelColuna", "subPaineis"];
   var PADROES = { howe: "Howe", pratt: "Pratt", warren: "Warren" };
   function padrao(t) { var T = TIPOS[t]; return T ? clone(T.PADRAO) : null; }
   /* #49 e) a regra, MEDIDA no cálculo (vento local do cpe médio, terça de beiral Ue 200 × 75 × 25 × 3,00 do padrão, atirantado
@@ -176,7 +187,15 @@
     if (t === "shed") { p.dentes = Math.round(p.dentes); p.vao = r6(p.dentes * p.vaoDente); p.inclinacao = r6(100 * p.alturaDente / p.vaoDente); }
     if (t === "multivao") { p.vaos = Math.round(p.vaos); p.vao = r6(p.vaos * p.vaoCada); p.cobertura = p.cobertura === "geminada" ? "geminada" : "unica"; p.ligInterna = p.ligInterna === "rotulada" ? "rotulada" : "rigida"; }
     if (t === "alma-cheia-1") p.aguas = 1;
-    if (t === "alma-cheia-2" || t === "trelica-trapezoidal" || t === "tesoura") p.aguas = 2;
+    if (t === "alma-cheia-2" || t === "trelica-trapezoidal" || t === "tesoura" || t === "tesoura-leve") p.aguas = 2;
+    if (t === "tesoura-leve") {
+      /* a coluna de 2 banzos tem os DOIS banzos rotulados na base: o engaste do pórtico vem do binário dos banzos (chumbador por
+         banzo, sem momento na placa) — modelar a placa engastada contaria duas vezes a mesma rigidez */
+      p.base = "rotulada"; p.forma = p.forma === "trapezoidal" ? "trapezoidal" : "paralelos";
+      p.alturaAuto = !(p.alturaTrelica > 0);
+      if (p.alturaAuto) p.alturaTrelica = Math.max(0.3, Math.round(p.vao / 20 / 0.05) * 0.05);
+      p.subPaineis = Math.max(0, Math.round(num(p.subPaineis, 0)));
+    }
     if (t === "trelica-paralelos") p.aguas = num(p.aguas, 2) === 1 ? 1 : 2;
     if (p.padrao != null) p.padrao = PADROES[p.padrao] ? p.padrao : "pratt";
     if (t === "misula") { p.degraus = Math.max(2, Math.min(6, Math.round(num(p.degraus, 3)))); }
@@ -197,6 +216,7 @@
     var ks = ["pilar", "terca"];
     if (t === "alma-cheia-1" || t === "alma-cheia-2" || t === "misula" || t === "atirantado" || t === "ponte" || t === "mezanino" || t === "multivao" || t === "shed" || t === "coluna-trelicada") ks.push("viga");
     if (/^trelica|^tesoura/.test(t)) ks = ks.concat(["banzo", "diagonal", "montante", "escora"]);
+    if (t === "tesoura-leve") ks = ks.concat(["banzoColuna", "travejamento"]).concat(p.maoFrancesa ? ["maoFrancesa"] : []);
     if (p.fechamento === "fechado") ks.push("tapamento");
     if (p.correntes > 0) ks.push("barraCorrente");
     if (p.contraventamento === "X-barra") ks.push("barraCv"); else if (p.contraventamento === "X-cantoneira") ks.push("cantoneiraCv");
@@ -212,7 +232,7 @@
        NBR 8800, 5.3.4.4 (cantoneira ligada por uma aba — maior que a dele): alma de treliça e travejamento só em perfil que o
        motor verifica inteiro (tubo, U, I) */
     var webs = /^trelica|^tesoura/.test(t) ? ["diagonal", "montante"] : (t === "coluna-trelicada" ? ["travejamento"] : []);
-    var emL = webs.filter(function (k) { var q = perfilCat(p[k]); return q && q.forma === "L"; });
+    var emL = t === "tesoura-leve" ? [] : webs.filter(function (k) { var q = perfilCat(p[k]); return q && q.forma === "L"; });   /* tesoura leve: a cantoneira entra e a esbeltez equivalente fica NÃO VERIFICADA (declarada nas peças) */
     if (emL.length) return "Cantoneira simples na alma comprimida (" + emL.map(function (k) { return k + " = " + p[k]; }).join(", ") + "): a esbeltez equivalente da cantoneira ligada por uma aba (NBR 8800, 5.3.4.4) não está no motor — use tubo (TQ/TR/TC).";
     if (/^trelica|^tesoura/.test(t)) {
       if (t !== "tesoura" && (e = faixa(p.alturaTrelica, 0.3, 4, "Altura da treliça no apoio", "m"))) return e;
@@ -221,6 +241,13 @@
       if (t === "trelica-paralelos" && p.alturaTrelica >= p.peDireito - 1) return "A treliça tem de deixar pelo menos 1 m de pilar abaixo do banzo inferior.";
       if (t !== "tesoura" && p.alturaTrelica < tolLeitor(p.banzo, p.banzo)) return "Treliça: " + br(p.alturaTrelica, 2) + " m entre os banzos no apoio é menos que a seção deles (" + br(tolLeitor(p.banzo, p.banzo), 2) + " m): o cálculo juntaria os dois banzos no pilar.";
       if (p.paineis && (e = faixa(p.paineis, 2, 30, "Número de painéis", ""))) return e;
+    }
+    if (t === "tesoura-leve") {
+      if ((e = faixa(p.larguraColuna, 0.15, 1.2, "Largura da coluna treliçada (entre eixos dos banzos)", "m") || faixa(p.painelColuna, 0.3, 3, "Altura do painel do travejamento", "m"))) return e;
+      if (p.larguraColuna < tolLeitor(p.banzoColuna, p.travejamento) + 0.02) return "Coluna treliçada: " + br(p.larguraColuna, 2) + " m entre os banzos é pouco para a seção deles (mínimo " + br(tolLeitor(p.banzoColuna, p.travejamento) + 0.02, 2) + " m): o cálculo juntaria os dois banzos.";
+      if (p.alturaTrelica > p.peDireito - 2) return "A tesoura tem de deixar pelo menos 2 m de coluna abaixo do banzo inferior.";
+      var gl = geomLeve(p); if (gl.dx < tolLeitor(p.banzo, p.diagonal) + 0.05) return "Tesoura: o painel da alma (" + br(gl.dx, 2) + " m) ficou menor que a seção das peças — diminua os subpainéis.";
+      if (p.painelColuna < tolLeitor(p.travejamento, p.travejamento) + 0.05) return "Painel do travejamento menor que a seção da cantoneira.";
     }
     if (t === "shed") { if ((e = faixa(p.dentes, 2, 6, "Número de dentes", "") || faixa(p.vaoDente, 4, 20, "Vão de cada dente", "m") || faixa(p.alturaDente, 0.5, 6, "Altura do dente (face envidraçada)", "m"))) return e; if (p.alturaDente / p.vaoDente > 0.6) return "Dente com mais de 60 % de inclinação: aumente o vão ou baixe a altura do dente.";
       if (p.alturaDente < tolLeitor(p.viga, p.viga)) return "Shed: a face envidraçada de " + br(p.alturaDente, 2) + " m é menor que a seção das vigas (" + br(tolLeitor(p.viga, p.viga), 2) + " m): o cálculo juntaria as pontas das duas vigas no pilar — aumente o dente."; }
@@ -533,6 +560,119 @@
     Q.dec.push("Coluna treliçada de " + br(bc, 2) + " m entre eixos dos banzos: os dois banzos rotulados na base e no topo (a coluna é engastada pelo binário dos banzos), travejamento em zigue-zague articulado; a viga passa contínua sobre o banzo de dentro.");
   }
 
+  /* ---------------------------------------------------------------- tesoura com coluna treliçada (perfil leve)
+   * Coluna: banzo de fora em x = 0 (do chão ao nó do banzo de cima da tesoura, passando pelo nó do banzo de baixo) e banzo de
+   * dentro em x = bc (do chão ao banzo de baixo), os dois ROTULADOS na base; travejamento em zigue-zague até o banzo de baixo
+   * (que faz o último horizontal). Tesoura: banzos paralelos (yB = yT − h) ou trapezoidal (banzo de baixo reto em H − h);
+   * painéis das terças (≤ espTercas) divididos em subpainéis de alma de ~h (diagonal perto de 45°); Warren com montante nas
+   * terças (ou Pratt/Howe com montante em todo nó). Só os nós que alguma peça usa entram no quadro. */
+  function geomLeve(p) {
+    var meio = p.vao / 2, he = p.alturaTrelica, nTer = Math.max(2, Math.ceil(meio / p.espTercas - 1e-9)), lt = meio / nTer;
+    var sub = p.subPaineis > 0 ? p.subPaineis : Math.max(1, Math.round(lt / Math.max(he, 0.3)));
+    return { meio: meio, he: he, nTer: nTer, lt: lt, sub: sub, n: nTer * sub, dx: lt / sub };
+  }
+  function qTesouraLeve(Q, p) {
+    var B = p.vao, H = p.peDireito, i = p.inclinacao / 100, bc = p.larguraColuna, gl = geomLeve(p), he = gl.he, n = gl.n, dx = gl.dx, sub = gl.sub, pad = p.padrao;
+    var yT = function (x) { return H + i * Math.min(x, B - x); };
+    var yB = p.forma === "trapezoidal" ? function () { return H - he; } : function (x) { return yT(x) - he; };
+    var pb = perfilCat(p.banzo), dch = Math.max(pb.d || 0, pb.h || 0, pb.bw || 0, 0.05), usados = {}, pend = {};
+    function pt(nm, x, y) { pend[nm] = [x, y]; return nm; }
+    function M(a, b, o) { usados[a] = 1; usados[b] = 1; Q.M(a, b, o); }
+    var nomT = function (ld, k) { return k === n ? "TC" : "T" + ld + k; }, nomD = function (ld, k) { return k === n ? "DC" : "D" + ld + k; };
+    var lados = [["L", 0, 1], ["R", B, -1]], W = { papel: "diagonal" }, calcBanzo = { ini: "rotulada", fim: "continua" };
+    var nvL = [{ tema: "Cantoneira simples ligada por uma aba", motivo: "a cantoneira da alma/travejamento é ligada por uma aba (solda ou parafuso numa aba só): a esbeltez equivalente da NBR 8800, 5.3.4.4, não está no motor — ele verifica a compressão com L/r mínimo (inclui rz) e a tração; a conta complementar (72 + 0,75·L/rx ou 32 + 1,25·L/rx, a do js/acotanque.js) sai à parte" }];
+    var nvU = [{ tema: "Nós soldados de U simples", motivo: "as barras da alma soldadas na alma do U simples: a excentricidade entre os eixos das barras no nó e a solda dos nós NÃO são verificadas pelo motor (treliça calculada com nós articulados nos eixos)" }];
+    function trel(cat, papel, grupo, calc) {
+      var c = clone(calc || {}), q = perfilCat(cat);
+      if (q && q.forma === "L") c.naoVerificado = clone(nvL);
+      if (/^Banzo/.test(papel) && q && q.forma === "frio") c.naoVerificado = arr(c.naoVerificado).concat(clone(nvU));
+      return pecaTrel(p, cat, papel, grupo, c, /^Banzo/.test(papel) ? { giro: 90 } : null);
+    }
+    var colLev = {};
+    lados.forEach(function (ld) {
+      var X = function (k) { return ld[1] + ld[2] * dx * k; };
+      for (var k = 0; k <= n; k++) { if (k === n && ld[0] === "R") continue; pt(nomT(ld[0], k), X(k), yT(X(k))); pt(nomD(ld[0], k), X(k), yB(X(k))); }
+      /* o topo do banzo de dentro da coluna: um nó do banzo de baixo — o da alma se estiver a menos de meia seção, senão um nó próprio */
+      var xi = ld[1] + ld[2] * bc, kS = Math.round(bc / dx), topI;
+      /* 20/11 (revisão Alumetal): o banzo de dentro NUNCA chega num ponto do banzo de baixo sem alma — a força dele vira flexão
+         do banzo (o U trabalhava no eixo fraco com razão ~30 na NBR 14762 9.8.4). Fora de um nó da alma, entra um nó NOVO da
+         treliça em x = bc, com montante e diagonais (o painel do apoio fica dividido em dois) */
+      var ins = null;
+      if (kS >= 1 && kS < n && Math.abs(kS * dx - bc) < tolLeitor(p.banzo, p.banzoColuna) + 0.02) topI = nomD(ld[0], kS);
+      else { topI = pt("DI" + ld[0], xi, yB(xi)); pt("TI" + ld[0] + "x", xi, yT(xi)); ins = { k0: Math.floor(bc / dx + 1e-9), nT: "TI" + ld[0] + "x", nD: "DI" + ld[0] }; }
+      var xiR = pend[topI][0];
+      var Hc = yB(ld[1]), nPc = Math.max(2, Math.round(Hc / p.painelColuna)), h = Hc / nPc, nmO = "D" + ld[0] + "0", lado = ld[0] === "L" ? "esquerda" : "direita";
+      pt("BO" + ld[0], ld[1], 0); pt("BI" + ld[0], xiR, 0);
+      M("BO" + ld[0], nomT(ld[0], 0), pecaPilar(p, p.banzoColuna, { base: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", aco: acoDe(p, p.banzoColuna), giro: 90, nome: "Coluna treliçada " + lado + " — banzo de fora" }));
+      M("BI" + ld[0], topI, pecaPilar(p, p.banzoColuna, { base: "rotulada", fim: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", aco: acoDe(p, p.banzoColuna), giro: 90, nome: "Coluna treliçada " + lado + " — banzo de dentro" }));
+      /* o painel da BASE em X (do pé de cada banzo ao 1º nível do outro): a reação horizontal de cada chumbador entra numa
+         diagonal — sem ela o trecho do banzo entre o chão e o 1º travejamento leva o cortante da coluna por flexão (revisão 20/11) */
+      var xbR = pend[topI][0];
+      for (var q = 0; q < nPc; q++) {
+        var y = q === 0 ? Math.min(0.3, h / 2) : q * h;
+        pt("TO" + ld[0] + q, ld[1], y); pt("TI" + ld[0] + q, xiR, y);
+        M("TO" + ld[0] + q, "TI" + ld[0] + q, trel(p.travejamento, "Travejamento", "travejamento", { papel: "diagonal" }));
+        if (q === 0) { M("BO" + ld[0], "TI" + ld[0] + "0", trel(p.travejamento, "Diagonal da coluna", "travejamento", { papel: "diagonal" })); M("BI" + ld[0], "TO" + ld[0] + "0", trel(p.travejamento, "Diagonal da coluna", "travejamento", { papel: "diagonal" })); }
+        if (q > 0) M(q % 2 ? "TO" + ld[0] + (q - 1) : "TI" + ld[0] + (q - 1), q % 2 ? "TI" + ld[0] + q : "TO" + ld[0] + q, trel(p.travejamento, "Diagonal da coluna", "travejamento", { papel: "diagonal" }));
+      }
+      /* a ÚLTIMA diagonal da coluna chega SEMPRE no nó do banzo de baixo no banzo de fora (D0): sem ela a força do banzo de baixo
+         entra no banzo de fora da coluna num ponto sem alma e vira flexão (NBR 14762 9.8.4 com razão ~5 — revisão 20/11) */
+      M("TI" + ld[0] + (nPc - 1), nmO, trel(p.travejamento, "Diagonal da coluna", "travejamento", { papel: "diagonal" }));
+      /* escoras longitudinais nos dois banzos da coluna a cada ~3 m (fora do plano) */
+      var nNiv = Math.max(1, Math.round(Hc / 3)), ks = [];
+      for (var q2 = 1; q2 < nNiv; q2++) { var kq = Math.round(nPc * q2 / nNiv); if (kq > 0 && kq < nPc && ks.indexOf(kq) < 0) ks.push(kq); }
+      ks.forEach(function (kq) { Q.esc.push({ pt: "TO" + ld[0] + kq, coluna: true }); Q.esc.push({ pt: "TI" + ld[0] + kq, coluna: true }); });
+      colLev[ld[0]] = { o: ["BO" + ld[0]].concat(ks.map(function (kq) { return "TO" + ld[0] + kq; })).concat([nmO]), i: ["BI" + ld[0]].concat(ks.map(function (kq) { return "TI" + ld[0] + kq; })).concat([topI]), xi: xiR };
+      /* banzos da tesoura */
+      M(nomT(ld[0], 0), nomT(ld[0], n), trel(p.banzo, "Banzo superior", "banzoSup", calcBanzo));
+      if (p.forma === "paralelos") M(nomD(ld[0], 0), nomD(ld[0], n), trel(p.banzo, "Banzo inferior", "banzoInf", calcBanzo));
+      /* alma: a lista ordenada dos nós (com o nó do banzo de dentro da coluna, se entrou um) */
+      var lst = [];
+      for (var k1 = 0; k1 <= n; k1++) { if (k1 === n && ld[0] === "R") { lst.push({ nT: "TC", nD: "DC", fim: true }); continue; } lst.push({ nT: nomT(ld[0], k1), nD: nomD(ld[0], k1), m: pad !== "warren" || k1 % sub === 0 }); if (ins && k1 === ins.k0) lst.push({ nT: ins.nT, nD: ins.nD, m: true, ins: true }); }
+      for (var i1 = 1; i1 < lst.length; i1++) if (!lst[i1].fim && lst[i1].m) M(lst[i1].nD, lst[i1].nT, trel(p.montante, "Montante", "montante", W));
+      for (var i2 = 0; i2 + 1 < lst.length; i2++) {
+        /* o 1º painel (o do apoio) desce SEMPRE do nó do banzo de cima no banzo de fora: sem ela a força do banzo de cima chega
+           no topo da coluna sem barra de alma e o trecho do banzo de fora entre os dois banzos da tesoura a leva por flexão */
+        /* tesoura leve: as diagonais descem do banzo de cima para o de baixo rumo ao meio (T_i → D_i+1) em TODOS os painéis — assim
+           o joelho, o nó novo da coluna e todo nó de montante do banzo de cima têm diagonal (Pratt ao contrário deixava órfãos com o
+           nó da coluna); Warren alterna e só tem montante nas terças */
+        var desce = pad === "warren" ? (i2 === 0 || lst[i2].ins || i2 % 2 === 0) : true;
+        M(desce ? lst[i2].nT : lst[i2].nD, desce ? lst[i2 + 1].nD : lst[i2 + 1].nT, trel(p.diagonal, "Diagonal", "diagonal", W));
+      }
+      /* terças nos nós das terças (a cada `sub` nós), apoiadas na face de cima do banzo */
+      var th = Math.atan(i);
+      for (var k3 = 0; k3 <= n; k3 += sub) {
+        if (k3 === n && ld[0] === "R") continue;
+        var nm = nomT(ld[0], k3), P0 = pend[nm], nx = k3 === n ? 0 : -ld[2] * Math.sin(th), ny = k3 === n ? 1 : Math.cos(th);
+        usados[nm] = 1;
+        if (p.maoFrancesa && k3 > 0) (Q.extra.maos = Q.extra.maos || []).push({ pt: nomD(ld[0], k3), x: r6(P0[0]), y: r6(P0[1] + dch / 2 / Math.cos(th)) });
+        Q.tel.push({ pt: nm, x: r6(P0[0]), y: r6(P0[1] + dch / 2 / Math.cos(th)), giro: giroAgua(nx, ny), agua: ld[0] === "L" ? "esquerda" : "direita", normal: [r6(nx), r6(ny)], aguas: k3 === n ? ["esquerda", "direita"] : null });
+      }
+      /* escoras do banzo de baixo a cada ~3 m, nos nós com montante (o X vertical entre tesouras vai do pé ao topo) */
+      var m = Math.max(1, Math.round(3.0 / gl.lt)) * sub;
+      for (var k4 = m; k4 <= n; k4 += m) { if (k4 === n && ld[0] === "R") continue; if (usados[nomD(ld[0], k4)] && usados[nomT(ld[0], k4)]) Q.esc.push({ pt: nomD(ld[0], k4), topo: nomT(ld[0], k4) }); }
+      if (ld[0] === "L" && n % m) Q.esc.push({ pt: "DC", topo: "TC" });
+    });
+    if (p.forma === "trapezoidal") M("DL0", "DR0", trel(p.banzo, "Banzo inferior", "banzoInf", { ini: "rotulada", fim: "rotulada" }));
+    Object.keys(pend).forEach(function (nm) { if (usados[nm]) Q.P(nm, pend[nm][0], pend[nm][1]); });
+    Q.colX.push(0, colLev.L.xi, colLev.R.xi, B);
+    Q.parede = { esq: ["BOL", "TL0"], dir: ["BOR", "TR0"] };
+    Q.paredesPaineis = [colLev.L.o, colLev.R.o, colLev.L.i, colLev.R.i];
+    Q.topoTap = function (x) { return [x, yT(x)]; };
+    /* a coluna de tapamento do oitão chega num NÓ de terça da tesoura (lá estão a terça e o contravento da cobertura): fora dele a
+       reação do vento do oitão entra no meio do painel e o U do banzo de cima a leva por flexão (revisão 20/11) */
+    Q.snapTap = function (x) { var xm = Math.min(x, B - x), j = Math.max(1, Math.round(xm / gl.lt)), xs = Math.min(gl.meio, j * gl.lt); return r6(x <= B / 2 ? xs : B - xs); };
+    Q.yR = yT;
+    var th0 = Math.atan(i);
+    Q.aguas.push({ agua: "esquerda", x0: 0, x1: B / 2, normal: [-Math.sin(th0), Math.cos(th0)] }, { agua: "direita", x0: B / 2, x1: B, normal: [Math.sin(th0), Math.cos(th0)] });
+    Q.extra.trelica = { paineis: 2 * n, painel: r6(dx), altura: he, padrao: PADROES[pad], dch: dch, forma: p.forma, subPaineis: sub, painelTercas: r6(gl.lt) };
+    Q.extra.colunaLeve = { largura: bc, painel: p.painelColuna };
+    Q.dec.push("Tesoura leve " + (p.forma === "trapezoidal" ? "trapezoidal (banzo de baixo reto)" : "de banzos paralelos") + " em duas águas, altura " + br(he, 2) + " m" + (p.alturaAuto ? " (vão/20: o mínimo da faixa usual vão/20 a vão/15 — a alma em cantoneira pede barra curta; premissa editável)" : " (escolha do engenheiro)") + ", " + PADROES[pad] + " com painel de alma de " + br(dx, 2) + " m (" + sub + " por painel de terça de " + br(gl.lt, 2) + " m): banzos contínuos, alma articulada; a tesoura apoia nos DOIS banzos da coluna (banzo de cima no banzo de fora, banzo de baixo nos dois).");
+    Q.dec.push("Coluna treliçada de " + br(bc, 2) + " m entre eixos dos banzos (" + p.banzoColuna + "), travejamento em zigue-zague " + p.travejamento + " a cada ~" + br(p.painelColuna, 2) + " m: os dois banzos ROTULADOS na base (um chumbador por banzo) — o engaste do pórtico vem do binário dos banzos, sem momento na placa de base.");
+    Q.dec.push("U dos banzos (coluna e tesoura) com a ALMA perpendicular ao plano do pórtico e as abas voltadas para a alma da treliça (a cantoneira entra entre as abas, soldada nelas — o detalhe usual da serralharia): o eixo forte do U trava a flambagem fora do plano (entre escoras/terças) e o fraco fica no plano, entre nós da alma.");
+    Q.dec.push("Pórtico triangular puro (altura zero no apoio) não é oferecido nesta tipologia: sem altura no apoio a coluna treliçada não recebe o binário dos banzos e o pórtico perde a rigidez lateral; a alternativa é a forma trapezoidal (banzo de baixo reto).");
+  }
+
   function quadro(t, p) {
     var Q = Quadro(p, t);
     if (t === "alma-cheia-1") qUmaAgua(Q, p);
@@ -541,6 +681,7 @@
     else if (t === "shed") qShed(Q, p);
     else if (t === "multivao") qMultivao(Q, p);
     else if (t === "coluna-trelicada") qColunaTrel(Q, p);
+    else if (t === "tesoura-leve") qTesouraLeve(Q, p);
     return Q;
   }
 
@@ -619,6 +760,22 @@
     if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água e ANCORADAS por corrente diagonal até a terça da cumeeira no pórtico (" + nAncC + " diagonais) — travam as terças no eixo fraco" + (catsAnc.length ? " — diagonal de ancoragem " + catsAnc.join(", ") + " (A ≥ A da corrente/(n·cos β): leva a força da linha / cos β)" : "") + (p.correntesAuto ? "; " + p.correntes + " linha(s) pela regra do cálculo: o trecho do eixo fraco entre correntes ancoradas até " + String(LIMITE_LZ_CORRENTE).replace(".", ",") + " m (vão " + String(esp).replace(".", ",") + " m / " + (p.correntes + 1) + ")" : " (escolha do engenheiro)") + ".");
     /* escoras do banzo de baixo (treliças) */
     zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + es.pt, ferr: "viga", cat: p.escora, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, p.escora), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
+    /* MÃOS-FRANCESAS (tesoura leve): de cada nó do banzo de baixo sob uma terça até a terça, a ±a ao longo do comprimento
+       (a = a distância vertical: 45°), em par — barra redonda só de tração: quando o banzo de baixo comprimido (sucção) tenta
+       sair do plano, a mão-francesa do outro lado traciona e o segura na terça */
+    var nMao = 0;
+    if (Q.extra.maos && p.maoFrancesa) zs.forEach(function (z, k) {
+      Q.extra.maos.forEach(function (mf, j) {
+        var PD = Q.pts[mf.pt]; if (!PD) return; var a = Math.max(0.4, Math.min(esp / 3 - 0.3, mf.y - PD[1]));
+        [-1, 1].forEach(function (sg) {
+          var zt = z + sg * a; if (zt < -1e-9 || zt > zs[nP - 1] + 1e-9) return;
+          var nt = no("mf" + k + ":" + j + ":" + sg, mf.x, mf.y, zt);
+          barra({ a: k + ":" + mf.pt, b: nt, ferr: "diagonal", cat: p.maoFrancesa, just: "centro", papel: "Mão-francesa", grupo: "maoFrancesa", aco: acoDe(p, p.maoFrancesa), nome: "Mão-francesa — pórtico " + (k + 1), calc: {} });
+          nMao++;
+        });
+      });
+    });
+    if (nMao) dec.push("Mãos-francesas: " + nMao + " barras " + p.maoFrancesa + " do banzo de baixo de cada tesoura às terças, em par (só tração): travam o banzo de baixo fora do plano em cada terça — sem elas, com a sucção do vento o banzo de baixo comprimido flamba entre as escoras (a análise de 2ª ordem não fecha).");
     /* ponte rolante: vigas de rolamento biapoiadas em cada vão, nos consoles */
     var rolamento = { esq: [], dir: [] };
     if (Q.extra.consoles) zs.forEach(function (z, k) {
@@ -675,7 +832,7 @@
       var nT = Math.max(0, Math.ceil(p.vao / p.espTapamento - 1e-9) - 1);
       [0, nP - 1].forEach(function (k) {
         for (var q = 1; q <= nT; q++) {
-          var x = p.vao * q / (nT + 1), perto = tolLeitor(p.tapamento, p.pilar) + 0.1; if (Q.colX.some(function (c) { return Math.abs(c - x) < perto; })) continue;   /* a menos da meia seção dos dois: seria o mesmo nó */
+          var x = Q.snapTap ? Q.snapTap(p.vao * q / (nT + 1)) : p.vao * q / (nT + 1), perto = tolLeitor(p.tapamento, p.pilar) + 0.1; if (Q.colX.some(function (c) { return Math.abs(c - x) < perto; })) continue;   /* a menos da meia seção dos dois: seria o mesmo nó */
           if (Q.extra.mez && Math.abs(x - Q.extra.mez.largura) < perto) continue;
           var tp = Q.topoTap(x), a = no("tap" + k + ":" + q, x, 0, zs[k]), b = no("tap" + k + ":" + q + "t", tp[0], tp[1], zs[k]);
           barra({ a: a, b: b, ferr: "pilar", cat: p.tapamento, just: "centro", giro: 90, papel: "Coluna de tapamento", grupo: "tapamento", aco: p.aco, nome: "Coluna de tapamento — oitão " + (k ? "fundo" : "frente"), calc: { base: "rotulada", fim: "rotulada" } });
@@ -748,7 +905,7 @@
   }
   var ROT_GRUPO = { pilar: "pilares", viga: "vigas", misula: "degraus de mísula", terca: "terças", contravento: "contraventos", tapamento: "colunas de tapamento", banzoSup: "banzos superiores", banzoInf: "banzos inferiores",
                     montante: "montantes", diagonal: "diagonais", escora: "escoras", console: "consoles", rolamento: "vigas de rolamento", pilarMez: "pilares do mezanino", vigaMez: "vigas do mezanino", secMez: "secundárias do mezanino",
-                    tirante: "tirantes", pendural: "pendurais", corrente: "correntes", pilarInterno: "pilares internos", banzoColuna: "banzos de coluna", travejamento: "barras de travejamento" };
+                    tirante: "tirantes", pendural: "pendurais", corrente: "correntes", pilarInterno: "pilares internos", banzoColuna: "banzos de coluna", travejamento: "barras de travejamento", maoFrancesa: "mãos-francesas" };
 
   /* ================================================================ MOTOR DO GALPÃO (alma cheia) */
   function parGalpaoBIM(t, par) {
