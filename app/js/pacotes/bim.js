@@ -172621,6 +172621,96 @@ if (Math.sqrt(Math.pow(p[0] - (a[0] + k * dx), 2) + Math.pow(p[1] - (a[1] + k * 
 return false;
 }
 function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+var NORM_TOL = { dup: 0.01, colDist: 0.01, colAng: 1, dente: 0.10, area: 0.005 };
+function areaPts(P) { var a = 0, i, n = P.length; for (i = 0; i < n; i++) { var p = P[i], q = P[(i + 1) % n]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
+function distPts(a, b) { return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2)); }
+function propsFundem(x, y) {
+if (x == null || y == null) return true;
+if (!!x.define !== !!y.define) return false;
+if (x.define && Math.abs(num(x.inclinacao, 0) - num(y.inclinacao, 0)) > 0.01) return false;
+return Math.abs(num(x.beiralM, 0) - num(y.beiralM, 0)) <= 0.005;
+}
+function normalizarContorno(pts, props, opc) {
+var tol = ext({}, NORM_TOL, opc || {}), pr = arr(props), V = arr(pts).map(function (q, i) { return { p: [Number(q[0]), Number(q[1])], e: pr.length === pts.length ? pr[i] : null }; });
+var rem = { duplicados: 0, colineares: 0, dentes: 0 }, a0 = Math.abs(areaPts(V.map(function (v) { return v.p; }))), passes = 0, mudou = true;
+function md(i, n) { return ((i % n) + n) % n; }
+function dir(a, b) { var L0 = distPts(a, b); return L0 > 0 ? [(b[0] - a[0]) / L0, (b[1] - a[1]) / L0] : [0, 0]; }
+function perp(u, v) { return Math.abs(u[0] * v[0] + u[1] * v[1]) < 0.05; }
+function pontos(W) { return W.map(function (v) { return v.p; }); }
+function dArea(W) { return Math.abs(Math.abs(areaPts(pontos(W))) - a0); }
+function areaOk(W) { return dArea(W) <= tol.area * a0; }
+function copia(W) { return W.map(function (v) { return { p: v.p.slice(), e: v.e }; }); }
+while (mudou && passes++ < 60 && V.length > 3) {
+mudou = false; var n = V.length, k;
+for (k = 0; k < n && !mudou; k++) {
+var j = (k + 1) % n; if (distPts(V[k].p, V[j].p) < tol.dup) { V[k].e = V[j].e; V.splice(j, 1); rem.duplicados++; mudou = true; }
+}
+if (mudou) continue;
+for (k = 0; k < n && !mudou; k++) {
+var A = V[md(k - 1, n)].p, B = V[k].p, C = V[(k + 1) % n].p, ab = dir(A, B), bc = dir(B, C), cs = ab[0] * bc[0] + ab[1] * bc[1], cr = ab[0] * bc[1] - ab[1] * bc[0];
+var ang = Math.abs(Math.atan2(cr, cs)) * 180 / Math.PI, dAC = distPts(A, C), dseg = dAC > 0 ? Math.abs((C[0] - A[0]) * (A[1] - B[1]) - (A[0] - B[0]) * (C[1] - A[1])) / dAC : 0;
+if (cs > 0 && (ang < tol.colAng || dseg < tol.colDist) && propsFundem(V[md(k - 1, n)].e, V[k].e)) { V.splice(k, 1); rem.colineares++; mudou = true; }
+}
+if (mudou) continue;
+for (k = 0; k < n && !mudou; k++) {
+var i0 = md(k - 1, n), i1 = k, i2 = (k + 1) % n, i3 = (k + 2) % n, Ap = V[i0].p, Bp = V[i1].p, Cp = V[i2].p, Dp = V[i3].p, w = distPts(Bp, Cp);
+if (!(w >= tol.dup && w < tol.dente)) continue;
+var uAB = dir(Ap, Bp), uBC = dir(Bp, Cp), uCD = dir(Cp, Dp);
+if (!perp(uAB, uBC) || !perp(uCD, uBC)) continue;
+if (uAB[0] * uCD[0] + uAB[1] * uCD[1] > 0) {
+var tent = [], W1, W2;
+if (perp(dir(Dp, V[(k + 3) % n].p), uCD)) { W1 = copia(V); W1[i2].p = Bp.slice(); W1[i3].p = [Dp[0] + Bp[0] - Cp[0], Dp[1] + Bp[1] - Cp[1]]; tent.push(W1); }
+if (perp(dir(V[md(k - 2, n)].p, Ap), uAB)) { W2 = copia(V); W2[i1].p = Cp.slice(); W2[i0].p = [Ap[0] + Cp[0] - Bp[0], Ap[1] + Cp[1] - Bp[1]]; tent.push(W2); }
+tent = tent.filter(areaOk).sort(function (x, y) { return dArea(x) - dArea(y); });
+if (tent.length) { V = tent[0]; rem.dentes++; mudou = true; }
+} else if (Math.abs(distPts(Ap, Bp) - distPts(Cp, Dp)) <= tol.dup) {
+var W3 = copia(V).filter(function (v, idx) { return idx !== i1 && idx !== i2; });
+if (W3.length >= 3 && areaOk(W3)) { V = W3; rem.dentes++; mudou = true; }
+}
+}
+}
+var P = pontos(V);
+return { pts: P, props: V.map(function (v) { return v.e; }), removidos: rem, areaAntes: a0, areaDepois: Math.abs(areaPts(P)), n: P.length };
+}
+function descreverForma(P) {
+var n = P.length, k, ort = true, tur = [], s = areaPts(P) >= 0 ? 1 : -1, nr = 0, ir = [];
+for (k = 0; k < n; k++) {
+var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], u = [p1[0] - p0[0], p1[1] - p0[1]], v = [p2[0] - p1[0], p2[1] - p1[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+if (!(lu > 0 && lv > 0) || Math.abs(u[0] * v[0] + u[1] * v[1]) / (lu * lv) > 0.03) ort = false;
+var cz = (u[0] * v[1] - u[1] * v[0]) * s; tur.push(cz < 0 ? "R" : "C"); if (cz < 0) { nr++; ir.push(k); }
+}
+if (!ort) return "polígono irregular (há ângulos que não são de 90°)";
+if (n === 4) return "retângulo";
+if (nr === 0) return "polígono ortogonal convexo de " + n + " lados";
+if (n === 6 && nr === 1) return "L ortogonal";
+if (n === 8 && nr === 2) {
+var gap = (ir[1] - ir[0] + n) % n, mn = Math.min(gap, n - gap);
+return mn === 1 ? "U" : mn === 3 ? "T" : mn === 4 ? "Z/S (escada)" : "polígono ortogonal de 8 lados";
+}
+if (n === 12 && nr === 4) return "cruz (+)";
+return "polígono ortogonal de " + n + " lados com " + nr + " cantos côncavos";
+}
+function normalizarArestas(ar) {
+var P = ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), r = normalizarContorno(P, ar);
+if (r.removidos.duplicados + r.removidos.colineares + r.removidos.dentes === 0) return { ar: ar, info: r, mudou: false };
+var out = r.pts.map(function (p, i) {
+var q = r.pts[(i + 1) % r.pts.length], base = r.props[i] || ar[0], par = ext({}, base.parede || {});
+par.a = { x: r4(p[0]), z: r4(p[1]) }; par.b = { x: r4(q[0]), z: r4(q[1]) };
+return ext({}, base, { parede: par });
+});
+return { ar: out, info: r, mudou: true };
+}
+function ladosTxt(P) { return P.map(function (p, i) { return virg(distPts(p, P[(i + 1) % P.length])) + " m"; }).join(" · "); }
+function coordsTxt(P) { return P.map(function (p, i) { return (i + 1) + "=(" + virg(p[0]) + "; " + virg(p[1]) + ")"; }).join("  "); }
+function vertsProblema(P) {
+var n = P.length, out = [], k, s = areaPts(P) >= 0 ? 1 : -1;
+for (k = 0; k < n; k++) {
+var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], u = [p1[0] - p0[0], p1[1] - p0[1]], v = [p2[0] - p1[0], p2[1] - p1[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+var oblq = !(lu > 0 && lv > 0) || Math.abs(u[0] * v[0] + u[1] * v[1]) / (lu * lv) > 0.03, conc = (u[0] * v[1] - u[1] * v[0]) * s < 0;
+if (oblq || conc) out.push({ i: k + 1, x: r3(p1[0]), z: r3(p1[1]), motivo: oblq ? "ângulo diferente de 90°" : "canto côncavo" });
+}
+return out;
+}
 function lerPoligonal(t, id, ar, n) {
 var P = ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), L = [], k;
 for (k = 0; k < n; k++) { var a = P[k], b = P[(k + 1) % n]; L.push(Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2))); }
@@ -172717,10 +172807,14 @@ var BTv = BT(), tv = BTv && BTv.perimetroVirtual ? BTv.perimetroVirtual(t) : nul
 if (!tv) return { ok: false, motivo: "O telhado por extrusão só ganha a madeira calculada quando o perfil é SIMÉTRICO de 2 águas (3 pontos: beiral, cumeeira no meio, beiral na mesma cota) sobre retângulo. Perfil assimétrico, curvo ou com mais pontos: use o telhado por contorno." };
 t = tv;
 }
-var ar = arr(t.arestasCalc), n = ar.length;
+var ar = arr(t.arestasCalc), n = ar.length, norm = null;
+if (n > 4) { norm = normalizarArestas(ar); if (norm.mudou) { ar = norm.ar; n = ar.length; } }
 if (n === 6 || n === 8) { var l4 = lerPoligonal(t, id, ar, n); if (l4) return l4; }
 if (n === 6) { var lL = lerL(t, id, ar); if (lL) return lL; }
-if (n !== 4) return { ok: false, motivo: "A delimitação tem " + n + " lados: o módulo Madeira calcula cobertura RETANGULAR de 1, 2 ou 4 águas. Só são calculados o retângulo (1, 2 ou 4 águas), a planta em L ORTOGONAL de 6 lados (4 águas, com rincão) e o sextavado/oitavado regulares; outras plantas (T, U, poligonal irregular) precisam de tesouras de canto que ainda não são calculadas — desenhe a cobertura em retângulos separados (Unir telhado) ou use o modelo de madeira sem cálculo." };
+if (n !== 4) {
+var Pn = ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), forma = descreverForma(Pn), lim = norm && norm.mudou ? " (já limpo: eram " + arr(t.arestasCalc).length + " lados; saíram " + norm.info.removidos.duplicados + " repetido(s), " + norm.info.removidos.colineares + " alinhado(s) e " + norm.info.removidos.dentes + " dente(s) < 10 cm)" : "";
+return { ok: false, forma: forma, nLados: n, vertices: vertsProblema(Pn), contornoCalculo: Pn, motivo: "A delimitação tem " + n + " lados" + lim + "; forma detectada: " + forma + ". Lados: " + ladosTxt(Pn) + ". Vértices (x; z em m): " + coordsTxt(Pn) + ". O módulo Madeira calcula cobertura RETANGULAR de 1, 2 ou 4 águas. Só são calculados o retângulo (1, 2 ou 4 águas), a planta em L ORTOGONAL de 6 lados (4 águas, com rincão) e o sextavado/oitavado regulares; outras plantas (T, U, poligonal irregular) precisam de tesouras de canto que ainda não são calculadas — desenhe a cobertura em retângulos separados (Unir telhado) ou use o modelo de madeira sem cálculo." };
+}
 var L = [], k;
 for (k = 0; k < 4; k++) L.push(distP(ar[k].parede.a, ar[k].parede.b));
 var ortog = true;
@@ -173360,7 +173454,7 @@ return (c.preliminar ? "PRELIMINAR — " : "") + c.sistema + (c.aparente ? ", ap
 }
 var MadCobertura = {
 VERSAO: VERSAO, GRADE_TERCA: GRADE_TERCA, GRADE_CAIBRO: GRADE_CAIBRO, MAPA_GRUPOS: MAPA_GRUPOS, CLASSE_PADRAO: CLASSE_PADRAO,
-lerTelhado: lerTelhado, lerTelhadoObj: lerTelhadoObj, axisLido: axisLido, tipologiaDe: tipologiaDe, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
+lerTelhado: lerTelhado, lerTelhadoObj: lerTelhadoObj, axisLido: axisLido, normalizarContorno: normalizarContorno, normalizarArestas: normalizarArestas, descreverForma: descreverForma, tipologiaDe: tipologiaDe, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
 preparar: preparar, concluirMotor: concluirMotor, concluirLaco: concluirLaco, rodarLaco: rodarLaco, proximaTentativa: proximaTentativa, calcularSync: calcularSync,
 secoesDoMotor: secoesDoMotor, pecasDoMotor: pecasDoMotor, opAplicar: opAplicar, opLimpar: opLimpar, situacao: situacao, pecasCalculadas: pecasCalculadas, encaixe: encaixe, resumo: resumo, chaveDe: chaveDe,
 cfgEfetiva: cfgEfetiva, montarEstadoMadeira: montarEstadoMadeira, vaosDosPontos: vaosDosPontos, pilaresTesoura: pilaresTesoura, pilaresDoModelo: pilaresDoModelo

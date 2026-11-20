@@ -81,6 +81,108 @@
   function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
 
   /* ======================================================================
+   * 0) NORMALIZAR O CONTORNO — função PURA (testada em tools/test-madeira-contorno.js)
+   * Pedido do Rogério (20/11/2026): o telhado em L de 4 águas dele chegou com 10 lados e foi recusado ("a delimitação tem 10 lados"). Um L desenhado à mão ou unido traz vértices
+   * duplicados, colineares (ponto no meio de um lado reto) e dentes de poucos centímetros (snap). Antes de classificar a tipologia o CÁLCULO usa o contorno LIMPO; o desenho do telhado
+   * no modelo NÃO muda. Regras: (1) duplicado (aresta < 1 cm) sai; (2) colinear (desvio < 1° ou distância ao segmento < 1 cm) sai SE as duas arestas têm a mesma água, inclinação e
+   * beiral; (3) dente ortogonal (aresta curta < 0,10 m entre duas arestas perpendiculares a ela: DEGRAU ou DEDO) é absorvido movendo o vértice vizinho, SE a área mudar até 0,5 %.
+   * Entrada: pts [[x,z]…] e props (uma por aresta k = pts[k]→pts[k+1], opcional). Saída: { pts, props, removidos:{duplicados,colineares,dentes}, areaAntes, areaDepois, n }.
+   * ====================================================================== */
+  var NORM_TOL = { dup: 0.01, colDist: 0.01, colAng: 1, dente: 0.10, area: 0.005 };
+  function areaPts(P) { var a = 0, i, n = P.length; for (i = 0; i < n; i++) { var p = P[i], q = P[(i + 1) % n]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
+  function distPts(a, b) { return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2)); }
+  function propsFundem(x, y) {
+    if (x == null || y == null) return true;
+    if (!!x.define !== !!y.define) return false;
+    if (x.define && Math.abs(num(x.inclinacao, 0) - num(y.inclinacao, 0)) > 0.01) return false;
+    return Math.abs(num(x.beiralM, 0) - num(y.beiralM, 0)) <= 0.005;
+  }
+  function normalizarContorno(pts, props, opc) {
+    var tol = ext({}, NORM_TOL, opc || {}), pr = arr(props), V = arr(pts).map(function (q, i) { return { p: [Number(q[0]), Number(q[1])], e: pr.length === pts.length ? pr[i] : null }; });
+    var rem = { duplicados: 0, colineares: 0, dentes: 0 }, a0 = Math.abs(areaPts(V.map(function (v) { return v.p; }))), passes = 0, mudou = true;
+    function md(i, n) { return ((i % n) + n) % n; }
+    function dir(a, b) { var L0 = distPts(a, b); return L0 > 0 ? [(b[0] - a[0]) / L0, (b[1] - a[1]) / L0] : [0, 0]; }
+    function perp(u, v) { return Math.abs(u[0] * v[0] + u[1] * v[1]) < 0.05; }
+    function pontos(W) { return W.map(function (v) { return v.p; }); }
+    function dArea(W) { return Math.abs(Math.abs(areaPts(pontos(W))) - a0); }
+    function areaOk(W) { return dArea(W) <= tol.area * a0; }
+    function copia(W) { return W.map(function (v) { return { p: v.p.slice(), e: v.e }; }); }
+    while (mudou && passes++ < 60 && V.length > 3) {
+      mudou = false; var n = V.length, k;
+      for (k = 0; k < n && !mudou; k++) {                       /* (1) duplicado: aresta k de comprimento < 1 cm; o vértice k+1 sai e a aresta seguinte passa a ser a do k */
+        var j = (k + 1) % n; if (distPts(V[k].p, V[j].p) < tol.dup) { V[k].e = V[j].e; V.splice(j, 1); rem.duplicados++; mudou = true; }
+      }
+      if (mudou) continue;
+      for (k = 0; k < n && !mudou; k++) {                       /* (2) colinear: vértice k entre as arestas k-1 e k */
+        var A = V[md(k - 1, n)].p, B = V[k].p, C = V[(k + 1) % n].p, ab = dir(A, B), bc = dir(B, C), cs = ab[0] * bc[0] + ab[1] * bc[1], cr = ab[0] * bc[1] - ab[1] * bc[0];
+        var ang = Math.abs(Math.atan2(cr, cs)) * 180 / Math.PI, dAC = distPts(A, C), dseg = dAC > 0 ? Math.abs((C[0] - A[0]) * (A[1] - B[1]) - (A[0] - B[0]) * (C[1] - A[1])) / dAC : 0;
+        if (cs > 0 && (ang < tol.colAng || dseg < tol.colDist) && propsFundem(V[md(k - 1, n)].e, V[k].e)) { V.splice(k, 1); rem.colineares++; mudou = true; }
+      }
+      if (mudou) continue;
+      for (k = 0; k < n && !mudou; k++) {                       /* (3) dente ortogonal: aresta curta k = V[k]→V[k+1] */
+        var i0 = md(k - 1, n), i1 = k, i2 = (k + 1) % n, i3 = (k + 2) % n, Ap = V[i0].p, Bp = V[i1].p, Cp = V[i2].p, Dp = V[i3].p, w = distPts(Bp, Cp);
+        if (!(w >= tol.dup && w < tol.dente)) continue;
+        var uAB = dir(Ap, Bp), uBC = dir(Bp, Cp), uCD = dir(Cp, Dp);
+        if (!perp(uAB, uBC) || !perp(uCD, uBC)) continue;
+        if (uAB[0] * uCD[0] + uAB[1] * uCD[1] > 0) {            /* DEGRAU: leva C e D para a linha de A–B, ou B e A para a linha de C–D (o vizinho anda ao longo do lado perpendicular) */
+          var tent = [], W1, W2;
+          if (perp(dir(Dp, V[(k + 3) % n].p), uCD)) { W1 = copia(V); W1[i2].p = Bp.slice(); W1[i3].p = [Dp[0] + Bp[0] - Cp[0], Dp[1] + Bp[1] - Cp[1]]; tent.push(W1); }
+          if (perp(dir(V[md(k - 2, n)].p, Ap), uAB)) { W2 = copia(V); W2[i1].p = Cp.slice(); W2[i0].p = [Ap[0] + Cp[0] - Bp[0], Ap[1] + Cp[1] - Bp[1]]; tent.push(W2); }
+          tent = tent.filter(areaOk).sort(function (x, y) { return dArea(x) - dArea(y); });
+          if (tent.length) { V = tent[0]; rem.dentes++; mudou = true; }
+        } else if (Math.abs(distPts(Ap, Bp) - distPts(Cp, Dp)) <= tol.dup) {   /* DEDO (ou entalhe) de largura w: tira B e C; A–D fica colinear com os vizinhos e sai no passe (2) */
+          var W3 = copia(V).filter(function (v, idx) { return idx !== i1 && idx !== i2; });
+          if (W3.length >= 3 && areaOk(W3)) { V = W3; rem.dentes++; mudou = true; }
+        }
+      }
+    }
+    var P = pontos(V);
+    return { pts: P, props: V.map(function (v) { return v.e; }), removidos: rem, areaAntes: a0, areaDepois: Math.abs(areaPts(P)), n: P.length };
+  }
+  /* A FORMA do contorno já normalizado, em palavras (para a mensagem de recusa): retângulo, L, T, U, Z/S, cruz, polígono ortogonal de N lados ou irregular. */
+  function descreverForma(P) {
+    var n = P.length, k, ort = true, tur = [], s = areaPts(P) >= 0 ? 1 : -1, nr = 0, ir = [];
+    for (k = 0; k < n; k++) {
+      var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], u = [p1[0] - p0[0], p1[1] - p0[1]], v = [p2[0] - p1[0], p2[1] - p1[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+      if (!(lu > 0 && lv > 0) || Math.abs(u[0] * v[0] + u[1] * v[1]) / (lu * lv) > 0.03) ort = false;
+      var cz = (u[0] * v[1] - u[1] * v[0]) * s; tur.push(cz < 0 ? "R" : "C"); if (cz < 0) { nr++; ir.push(k); }
+    }
+    if (!ort) return "polígono irregular (há ângulos que não são de 90°)";
+    if (n === 4) return "retângulo";
+    if (nr === 0) return "polígono ortogonal convexo de " + n + " lados";
+    if (n === 6 && nr === 1) return "L ortogonal";
+    if (n === 8 && nr === 2) {
+      var gap = (ir[1] - ir[0] + n) % n, mn = Math.min(gap, n - gap);
+      return mn === 1 ? "U" : mn === 3 ? "T" : mn === 4 ? "Z/S (escada)" : "polígono ortogonal de 8 lados";
+    }
+    if (n === 12 && nr === 4) return "cruz (+)";
+    return "polígono ortogonal de " + n + " lados com " + nr + " cantos côncavos";
+  }
+  /* o contorno do telhado (arestasCalc) normalizado — devolve { ar, info, mudou }; ar tem as MESMAS propriedades das arestas (parede a→b refeita) */
+  function normalizarArestas(ar) {
+    var P = ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), r = normalizarContorno(P, ar);
+    if (r.removidos.duplicados + r.removidos.colineares + r.removidos.dentes === 0) return { ar: ar, info: r, mudou: false };
+    var out = r.pts.map(function (p, i) {
+      var q = r.pts[(i + 1) % r.pts.length], base = r.props[i] || ar[0], par = ext({}, base.parede || {});
+      par.a = { x: r4(p[0]), z: r4(p[1]) }; par.b = { x: r4(q[0]), z: r4(q[1]) };
+      return ext({}, base, { parede: par });
+    });
+    return { ar: out, info: r, mudou: true };
+  }
+  function ladosTxt(P) { return P.map(function (p, i) { return virg(distPts(p, P[(i + 1) % P.length])) + " m"; }).join(" · "); }
+  function coordsTxt(P) { return P.map(function (p, i) { return (i + 1) + "=(" + virg(p[0]) + "; " + virg(p[1]) + ")"; }).join("  "); }
+  /* vértices que impedem o cálculo: os de ângulo diferente de 90° (ou, no ortogonal, os côncavos) — para a tela marcar */
+  function vertsProblema(P) {
+    var n = P.length, out = [], k, s = areaPts(P) >= 0 ? 1 : -1;
+    for (k = 0; k < n; k++) {
+      var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], u = [p1[0] - p0[0], p1[1] - p0[1]], v = [p2[0] - p1[0], p2[1] - p1[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+      var oblq = !(lu > 0 && lv > 0) || Math.abs(u[0] * v[0] + u[1] * v[1]) / (lu * lv) > 0.03, conc = (u[0] * v[1] - u[1] * v[0]) * s < 0;
+      if (oblq || conc) out.push({ i: k + 1, x: r3(p1[0]), z: r3(p1[1]), motivo: oblq ? "ângulo diferente de 90°" : "canto côncavo" });
+    }
+    return out;
+  }
+
+  /* ======================================================================
    * 1) LER O TELHADO — o que o motor aceita e o que recusa (a frase clara)
    * ====================================================================== */
   /* POLÍGONO REGULAR de 6 ou 8 lados (T4, sextavado/oitavado): lados iguais (±2 %), ângulo externo 360/n (±2°), TODAS as águas definem a mesma inclinação, mesmo beiral. Senão null (cai na recusa de "lados"). */
@@ -187,10 +289,14 @@
       if (!tv) return { ok: false, motivo: "O telhado por extrusão só ganha a madeira calculada quando o perfil é SIMÉTRICO de 2 águas (3 pontos: beiral, cumeeira no meio, beiral na mesma cota) sobre retângulo. Perfil assimétrico, curvo ou com mais pontos: use o telhado por contorno." };
       t = tv;   /* a estrutura é derivada do perímetro virtual; o telhado do usuário continua do tipo perfil */
     }
-    var ar = arr(t.arestasCalc), n = ar.length;
+    var ar = arr(t.arestasCalc), n = ar.length, norm = null;
+    if (n > 4) { norm = normalizarArestas(ar); if (norm.mudou) { ar = norm.ar; n = ar.length; } }   /* o cálculo usa o contorno LIMPO; o desenho do telhado não muda */
     if (n === 6 || n === 8) { var l4 = lerPoligonal(t, id, ar, n); if (l4) return l4; }
     if (n === 6) { var lL = lerL(t, id, ar); if (lL) return lL; }
-    if (n !== 4) return { ok: false, motivo: "A delimitação tem " + n + " lados: o módulo Madeira calcula cobertura RETANGULAR de 1, 2 ou 4 águas. Só são calculados o retângulo (1, 2 ou 4 águas), a planta em L ORTOGONAL de 6 lados (4 águas, com rincão) e o sextavado/oitavado regulares; outras plantas (T, U, poligonal irregular) precisam de tesouras de canto que ainda não são calculadas — desenhe a cobertura em retângulos separados (Unir telhado) ou use o modelo de madeira sem cálculo." };
+    if (n !== 4) {
+      var Pn = ar.map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), forma = descreverForma(Pn), lim = norm && norm.mudou ? " (já limpo: eram " + arr(t.arestasCalc).length + " lados; saíram " + norm.info.removidos.duplicados + " repetido(s), " + norm.info.removidos.colineares + " alinhado(s) e " + norm.info.removidos.dentes + " dente(s) < 10 cm)" : "";
+      return { ok: false, forma: forma, nLados: n, vertices: vertsProblema(Pn), contornoCalculo: Pn, motivo: "A delimitação tem " + n + " lados" + lim + "; forma detectada: " + forma + ". Lados: " + ladosTxt(Pn) + ". Vértices (x; z em m): " + coordsTxt(Pn) + ". O módulo Madeira calcula cobertura RETANGULAR de 1, 2 ou 4 águas. Só são calculados o retângulo (1, 2 ou 4 águas), a planta em L ORTOGONAL de 6 lados (4 águas, com rincão) e o sextavado/oitavado regulares; outras plantas (T, U, poligonal irregular) precisam de tesouras de canto que ainda não são calculadas — desenhe a cobertura em retângulos separados (Unir telhado) ou use o modelo de madeira sem cálculo." };
+    }
     var L = [], k;
     for (k = 0; k < 4; k++) L.push(distP(ar[k].parede.a, ar[k].parede.b));
     var ortog = true;
@@ -918,7 +1024,7 @@
 
   var MadCobertura = {
     VERSAO: VERSAO, GRADE_TERCA: GRADE_TERCA, GRADE_CAIBRO: GRADE_CAIBRO, MAPA_GRUPOS: MAPA_GRUPOS, CLASSE_PADRAO: CLASSE_PADRAO,
-    lerTelhado: lerTelhado, lerTelhadoObj: lerTelhadoObj, axisLido: axisLido, tipologiaDe: tipologiaDe, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
+    lerTelhado: lerTelhado, lerTelhadoObj: lerTelhadoObj, axisLido: axisLido, normalizarContorno: normalizarContorno, normalizarArestas: normalizarArestas, descreverForma: descreverForma, tipologiaDe: tipologiaDe, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
     preparar: preparar, concluirMotor: concluirMotor, concluirLaco: concluirLaco, rodarLaco: rodarLaco, proximaTentativa: proximaTentativa, calcularSync: calcularSync,
     secoesDoMotor: secoesDoMotor, pecasDoMotor: pecasDoMotor, opAplicar: opAplicar, opLimpar: opLimpar, situacao: situacao, pecasCalculadas: pecasCalculadas, encaixe: encaixe, resumo: resumo, chaveDe: chaveDe,
     cfgEfetiva: cfgEfetiva, montarEstadoMadeira: montarEstadoMadeira, vaosDosPontos: vaosDosPontos, pilaresTesoura: pilaresTesoura, pilaresDoModelo: pilaresDoModelo
