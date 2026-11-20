@@ -1322,6 +1322,8 @@
     /* TELHADO PARAMÉTRICO (T1): o MODELO da estrutura (js/bimtelhadoestrut.js MODELOS) e se as paredes de baixo anexam o topo */
     if (o.modelo !== undefined) { if (o.modelo !== null && !(typeof o.modelo === "string" && /^[a-z0-9-]{1,40}$/.test(o.modelo))) return false; algum = true; }
     if (o.anexarParedes !== undefined) { if (o.anexarParedes !== null && typeof o.anexarParedes !== "boolean") return false; algum = true; }
+    /* TELHADO AUTOMÁTICO (js/bimtelhadoauto.js): "meio da laje" = o pontalete a mais disto (m) do eixo da parede/viga mais perto apoia numa viga de distribuição. Só vale com o campo: projeto antigo não muda */
+    if (o.distMeio !== undefined) { if (o.distMeio !== null && !(fin(o.distMeio) && o.distMeio >= 0.1 && o.distMeio <= 3)) return false; algum = true; }
     /* CONJUNTO do Telhado paramétrico: forro, perfil da terça, linhas de apoio da obra, o cálculo e as fontes (null apaga) */
     if (o.conjunto !== undefined) { if (o.conjunto !== null && !conjuntoValido(o.conjunto)) return false; algum = true; }
     /* MADEIRA CALCULADA (cobertura × módulo Madeira): o resultado do cálculo que volta para as peças — js/madcobertura.js (null apaga) */
@@ -1405,7 +1407,7 @@
     return algum;
   }
 
-  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "conjunto", "calcMadeira", "calcMadeiraV1"];
+  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "distMeio", "conjunto", "calcMadeira", "calcMadeiraV1"];
   var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct", "saidas", "semDescida", "alturaAuto", "recuo"];
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 
@@ -1578,6 +1580,7 @@
       else if (d.tipoId != null && fin(inclinacaoPadrao(d.tipoId))) o.inclinacao = r6(inclinacaoPadrao(d.tipoId));   /* T1: sem inclinação = a MÍNIMA do fabricante */
       if (d.modelo != null) o.modelo = String(d.modelo);
       if (d.anexarParedes === false) o.anexarParedes = false;
+      if (d.distMeio != null && fin(Number(d.distMeio))) o.distMeio = r6(Number(d.distMeio));
       if (fin(Number(d.beiral)) && d.beiral !== null) o.beiral = r6(Number(d.beiral));
       if (d.nivelId != null) o.nivelId = String(d.nivelId);
       if (fin(Number(d.base)) && d.base !== null) o.base = r6(Number(d.base));

@@ -917,20 +917,84 @@
     if (vento) calc.vento = { pmin: vento.pmin, pmax: vento.pmax, v0: vento.v0, texto: vento.texto };
     if (laco.pontalete) calc.pontalete = { ok: laco.pontalete.ok === true, b: laco.pontalete.b, h: laco.pontalete.h, H: laco.pontalete.H, N: laco.pontalete.N, eta: laco.pontalete.eta, circ: laco.pontalete.circ, pilarMadeira: !!(pil && pil.madeira) };
     calc.ligacoes = ligs.map(function (l) { return { ok: l.ok, F: l.F, n: l.n || 0, texto: l.texto }; }).slice(0, 6);
-    if (tipo === "laje") calc.cargasNaLaje = cargasNaLaje(prep, calc, laco);
+    if (tipo === "laje") {
+      /* o critério de "meio da laje" (m): o da cfg, o do telhado (op) ou o padrão da RA (js/bimtelhadoauto.js DIST_MEIO) — declarado no cálculo */
+      calc.distMeio = fin(prep.cfg.distMeio) ? prep.cfg.distMeio : (fin(prep.lido.t.distMeio) ? prep.lido.t.distMeio : (dep("BimTelhadoAuto", "./bimtelhadoauto.js") || { DIST_MEIO: 0.5 }).DIST_MEIO);
+      calc.cargasNaLaje = cargasNaLaje(prep, calc, laco);
+      var vgs = calc.cargasNaLaje.vigas; delete calc.cargasNaLaje.vigas;   /* só para verificar: o que fica no cálculo é vigasDistribuicao (o calcMadeira tem teto de 24 mil caracteres) */
+      if (vgs.length) {
+        var vd = verVigasDistribuicao(prep, laco, vgs);
+        calc.vigasDistribuicao = { ok: vd.ok, secao: vd.secao, vigas: vd.vigas, calco: vd.calco, pontalete: vd.pontalete, limites: vd.limites, alfaN: vd.alfaN, premissa: vd.premissa, cargaPontalete_kN: vd.cargaPontalete_kN, criterio: "pontalete a mais de " + virg(calc.distMeio) + " m do eixo da parede/viga mais perto = meio da laje" };
+        calc.cargasNasParedes = vd.cargasNasParedes;
+        if (vd.secao) calc.secoes.vigadist = { b: vd.secao.b, h: vd.secao.h };
+        if (vd.ok) { calc.secoes.vigadist = { b: vd.secao.b, h: vd.secao.h }; calc.motivos.push("viga de distribuição " + virg(vd.secao.b * 100, 0) + "×" + virg(vd.secao.h * 100, 0) + " cm (" + vgs.length + " viga(s), " + calc.cargasNaLaje.viaVigaDistribuicao + " pontaletes do meio da laje): " + vd.premissa); }
+        else { calc.preliminar = true; calc.semSolucao = true; calc.motivos.unshift(vd.motivo); }
+        calc.motivos = calc.motivos.slice(0, 8);
+      }
+    }
     return { ok: true, calc: calc, resumo: resumo(calc) };
   }
   /* as CARGAS que os pontaletes descarregam na laje (kN característico = de cálculo / 1,4) nos pontos reais: pelo próprio modelo de madeira (peças pontalete com apoio "laje") */
   function cargasNaLaje(prep, calc, laco) {
-    var E = ES(), out = { aviso: "confirmar a laje com o RT (punção, flexão local e carga total)", porPonto_kN: r3((laco.Rcomp || 0) / 1.4), n: 0, total_kN: 0, pontos: [] };
+    var E = ES(), out = { aviso: "confirmar a laje com o RT (punção, flexão local e carga total)", porPonto_kN: r3((laco.Rcomp || 0) / 1.4), n: 0, total_kN: 0, pontos: [], viaVigaDistribuicao: 0, vigas: [] };
     if (!E || !E.modelar || !prep.estado) return out;
     try {
       var t2 = clone(prep.lido.t); t2.modelo = calc.modelo; t2.calcMadeira = calc;
       var pk = E.modelar(t2, prep.estado, {}), pts = [];
-      arr(pk && pk.pecas).forEach(function (o) { if (o.p === "pontalete" && o.apoio === "laje") pts.push({ x: r3(o.a[0]), z: r3(o.a[2]), kN: out.porPonto_kN }); });
+      arr(pk && pk.pecas).forEach(function (o) {
+        if (o.p === "pontalete" && o.apoio === "laje") { if (o.viga) out.viaVigaDistribuicao++; else pts.push({ x: r3(o.a[0]), z: r3(o.a[2]), kN: out.porPonto_kN }); }   /* sobre viga de distribuição a carga vai para as paredes, não para a laje */
+        if (o.p === "vigadist") out.vigas.push({ id: o.vd, L: r3(o.L - (o.ext0 || 0) - (o.ext1 || 0)), Lfis: r3(o.L), espApoio: o.espApoio, apoios: arr(o.apoiosVd), cargas: arr(o.cargas).map(function (q) { return { x: q.x, z: q.z, s: q.s }; }) });
+      });
       out.n = pts.length; out.total_kN = r3(pts.length * out.porPonto_kN); out.pontos = pts.slice(0, 60);
     } catch (e) { out.erro = String(e && e.message || e).slice(0, 80); }
     return out;
+  }
+  /* VIGA DE DISTRIBUIÇÃO (js/bimtelhadoauto.js): o pontalete que cairia no meio da laje apoia numa viga de madeira sobre COXINS nas paredes/vigas, de parede a parede.
+     Verificada como viga biapoiada (NBR 7190-1:2022, MadDim.vigaFletida: flexão, cisalhamento, flecha) + ESTABILIDADE LATERAL (6.5.6, L1 = o vão: sem travamento) +
+     σc90 no apoio (viga até a face oposta da parede: lb = espessura) e sob o pontalete (6.3.3: fc90,d = 0,25·fc0,d·αn, αn = 1,0 adotado). Peso próprio + uma carga pontual por
+     pontalete (a reação de cálculo). A laje NÃO ajuda (premissa conservadora). Madeira SERRADA limitada ao catálogo (h e comprimento); sem MLC no catálogo → PRELIMINAR. */
+  var ALFA_N = 1.0;   /* αn adotado (6.3.3): o valor tabelado depende do comprimento do apoio e é ≥ 1,0 — 1,0 é o conservador */
+  function limitesSerrada() { var T = dep("BimTelhadoAuto", "./bimtelhadoauto.js"); return T && T.limitesSerrada ? T.limitesSerrada() : { hMax: 0.25, Lmax: 5, mlc: false }; }
+  function verVigasDistribuicao(prep, laco, vigas) {
+    var D = MD(), perfL = perfilVigas(prep.ctx.obra), classe = laco.classe || CLASSE_PADRAO, Nk = (laco.Rcomp || 0) / 1.4, res = null, i, lim = limitesSerrada();
+    var pr = D.perfilEResist(classe, perfL), fc90d = 0.25 * pr.f.fc0d * ALFA_N, bPont = laco.pontalete && laco.pontalete.b ? laco.pontalete.b : 0.08, limVao = perfL.limVao || 300;
+    var grade = GRADE_VIGA.filter(function (g) { return g.h <= lim.hMax + 1e-9; });
+    var Lfis = Math.max.apply(null, vigas.map(function (v) { return v.Lfis || v.L; })), forcaPont = 1.4 * Nk;
+    function conferir(sec) {
+      var lista = [], todas = true;
+      vigas.forEach(function (v) {
+        var Lv = v.L, r = D.vigaFletida({ L: Lv, apoios: [0, Lv], G: { d: [[0, Lv, G_MAD * sec.b * sec.h]], p: v.cargas.map(function (c) { return [Math.max(0.05, Math.min(Lv - 0.05, c.s)), Nk]; }) }, Q: { d: [], p: [] }, b: sec.b, h: sec.h, classe: classe, perfil: perfL });
+        var ks = Object.keys(r.reacoes).sort(function (a, b) { return Number(a) - Number(b); }), R0 = 1.4 * (r.reacoes[ks[0]][0] + r.reacoes[ks[0]][1]), R1 = 1.4 * (r.reacoes[ks[ks.length - 1]][0] + r.reacoes[ks[ks.length - 1]][1]);
+        var sMd = r.Md / (sec.b * sec.h * sec.h / 6) / 1e3, el = D.estabilidadeLateral2022({ b: sec.b, h: sec.h, L1: Lv, sigmaMd: sMd, classe: classe, perfil: perfL });
+        var lb0 = v.espApoio ? v.espApoio[0] : 0.15, lb1 = v.espApoio ? v.espApoio[1] : 0.15, s0 = R0 / (sec.b * lb0) / 1e3, s1 = R1 / (sec.b * lb1) / 1e3, sApoio = Math.max(s0, s1);
+        var w = r.eta_flecha * Lv / limVao;   /* flecha final (m) = η·L/limite */
+        var ok = r.ok && el.ok && sApoio <= fc90d + 1e-9;
+        lista.push({ id: v.id, L: r3(Lv), Lfisico: r3(v.Lfis || Lv), apoios: v.apoios, nPontaletes: v.cargas.length, eta: r3(r.eta), etaFlexao: r3(r.eta_flexao), etaCisalh: r3(r.eta_cisalh), etaFlecha: r3(r.eta_flecha), flecha_mm: r3(w * 1000),
+          etaLateral: r3(el.eta), lateralDispensada: !!el.dispensa, L1: r3(Lv), sigmaC90_MPa: r3(sApoio), etaC90Apoio: r3(sApoio / fc90d), reacaoApoio_kN: r3(Math.max(R0, R1)), reacoes: [r3(R0), r3(R1)], ok: ok });
+        if (!ok) todas = false;
+      });
+      return { ok: todas, lista: lista };
+    }
+    var etaPont = forcaPont / (bPont * bPont) / 1e3 / fc90d, pontOk = etaPont <= 1 + 1e-9;
+    if (Lfis <= lim.Lmax + 1e-9) for (i = 0; i < grade.length; i++) { var c = conferir(grade[i]); if (c.ok) { res = { ok: true, secao: { b: grade[i].b, h: grade[i].h }, vigas: c.lista }; break; } }
+    if (!res) {
+      var u = grade[grade.length - 1], cu = conferir(u);
+      res = { ok: false, secao: null, vigas: cu.lista, motivo: (Lfis > lim.Lmax + 1e-9 ? "A viga de distribuição teria " + virg(Lfis) + " m (o catálogo de madeira serrada vai até " + virg(lim.Lmax, 0) + " m). " : "Nenhuma viga serrada até " + virg(u.b * 100, 0) + "×" + virg(u.h * 100, 0) + " cm (limite do catálogo: h ≤ " + virg(lim.hMax * 100, 0) + " cm) fecha com " + virg(Nk, 1) + " kN por pontalete (flexão, flecha, estabilidade lateral e σc90). ") +
+        (lim.mlc ? "Use MLC do catálogo." : "O catálogo NÃO tem MLC: resultado PRELIMINAR — ponha apoio intermediário de CONCRETO (parede ou viga de concreto) perto dos pontaletes ou aumente o espaçamento das terças.") };
+    }
+    /* o COXIM sob a viga: folga MAIOR que a flecha final calculada; verificado à compressão normal (mesma área do apoio: b × lb) */
+    var wMax = Math.max.apply(null, res.vigas.map(function (v) { return v.flecha_mm; })) / 1000, hC = Math.max(0.05, Math.ceil((wMax + 0.01) * 100 - 1e-9) / 100), bC = res.secao ? res.secao.b : 0.08;
+    var sCx = Math.max.apply(null, res.vigas.map(function (v) { return v.sigmaC90_MPa; })), calcoOk = sCx <= fc90d + 1e-9;
+    res.calco = { b: bC, h: hC, lb: "= espessura da parede (a viga vai até a face oposta)", folga_mm: r3(hC * 1000 - wMax * 1000), flecha_mm: r3(wMax * 1000), sigmaC90_MPa: r3(sCx), fc90d_MPa: r3(fc90d), eta: r3(sCx / fc90d), ok: calcoOk && res.ok };
+    res.pontalete = { sigmaC90_MPa: r3(forcaPont / (bPont * bPont) / 1e3), fc90d_MPa: r3(fc90d), eta: r3(etaPont), ok: pontOk, bPontalete: bPont };
+    if (!pontOk) { res.ok = false; res.motivo = (res.motivo ? res.motivo + " " : "") + "σc90 sob o pontalete (" + virg(res.pontalete.sigmaC90_MPa, 2) + " MPa) passa de fc90,d = " + virg(fc90d, 2) + " MPa: aumente a seção do pontalete (a viga não resolve)."; }
+    /* as CARGAS NAS PAREDES: a reação de cálculo de cada viga em cada apoio, somada por apoio */
+    var soma = {}; res.vigas.forEach(function (v, k) { [0, 1].forEach(function (e) { var ap = vigas[k].apoios[e]; soma[ap] = soma[ap] || { apoio: ap, kN: 0, vigas: 0 }; soma[ap].kN += v.reacoes[e]; soma[ap].vigas++; }); });
+    res.cargasNasParedes = Object.keys(soma).map(function (k) { return { apoio: soma[k].apoio, kN: r3(soma[k].kN), vigas: soma[k].vigas }; });
+    res.limites = { hMax_m: lim.hMax, Lmax_m: lim.Lmax, mlcNoCatalogo: lim.mlc, fonte: "catálogo de madeira serrada (js/madcatalogo.js); h ≤ 25 cm e L ≤ 5 m salvo se o catálogo tiver mais" };
+    res.cargaPontalete_kN = r3(Nk); res.alfaN = ALFA_N;
+    res.premissa = "viga biapoiada nas paredes, sem a ajuda da laje, sobre COXINS de madeira com folga acima da flecha; estabilidade lateral com L1 = o vão (sem travamento); σc90 no apoio com lb = espessura da parede e sob o pontalete, fc90,d = 0,25·fc0,d·αn com αn = " + virg(ALFA_N, 1) + " (adotado, conservador); carga = reação de cálculo do pontalete; seção única (a pior). Resistência da alvenaria/concreto sob o coxim e a laje sob as cargas diretas: RT";
+    return res;
   }
 
   function montarCalc(prep, partes) {

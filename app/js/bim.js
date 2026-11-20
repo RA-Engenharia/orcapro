@@ -15926,6 +15926,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return '';
     },
     aguasTelhado: function () { return window.BimP3UI ? BimP3UI.cfg('telhado').aguas : 4; },
+    /* TELHADO AUTOMÁTICO (js/bimtelhadoauto.js): o contorno com as águas vira o telhado (op `telhado`, madeira, beiral do parâmetro) */
+    lancarTelhado: function (C, o) { return (S._p3 && S._p3.lancarAuto) ? S._p3.lancarAuto(C, o) : { ok: false, motivo: 'A ferramenta de Telhado não está pronta.' }; },
     criar: function (sub, contornos, extra) {
       var feitos = 0;
       if (sub === 'telhado') { contornos.forEach(function (C) { if (S._p3 && S._p3.criarPorContorno && S._p3.criarPorContorno(C, extra)) feitos++; }); return feitos; }
@@ -20584,6 +20586,7 @@ window.BIM = {
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
   /* CONTORNO LIVRE: o botão "Editar contorno" (js/bimcontornoui.js) — a peça selecionada ganha alças nos vértices e nas arestas */
   contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
+  telhadoAuto: function (modo) { return !!(S && S._ctr && S._ctr.telhadoAuto && S._ctr.telhadoAuto(modo)); },   /* TELHADO AUTOMÁTICO / TELHADO NOS AMBIENTES (js/bimcontornoui.js) */
   contornoAjustarParedes: function () { return !!(S && S._ctr && S._ctr.ajustarParedes()); },
   contornoAjustarTudo: function (o) { return !!(S && S._ctr && S._ctr.ajustarTudo(o)); },   /* TUDO SEGUE AS PAREDES: "Ajustar TUDO às paredes" (projeto antigo) */   /* TELHADO SEGUE AS PAREDES: "Ajustar às paredes agora" */
   contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },

@@ -544,6 +544,8 @@
     pontalete: { b: 0.08, h: 0.08, rot: "Pontalete 8×8 cm", fonte: FONTE_MADEIRA, partida: true },
     espigao: { b: 0.06, h: 0.16, rot: "Espigão/rincão 6×16 cm", fonte: null, partida: true },
     viga: { b: 0.08, h: 0.16, rot: "Viga principal 8×16 cm", fonte: FONTE_MADEIRA, partida: true },
+    coxim: { b: 0.08, h: 0.05, rot: "Coxim de apoio da viga de distribuição", fonte: "adoção da RA (coxim de madeira sobre a parede; o módulo Madeira dimensiona)", partida: true },
+    vigadist: { b: 0.08, h: 0.16, rot: "Viga de distribuição 8×16 cm", fonte: "adoção da RA (viga deitada sobre a laje, de parede a parede; o módulo Madeira dimensiona)", partida: true },
     testeira: { b: 0.025, h: 0.20, rot: "Testeira tábua 2,5×20 cm", fonte: null, partida: true }
   };
   /* espaçamentos (eixo a eixo) — SINAPI p. 35: ripas pela GALGA da telha; caibros 0,55; terças 1,5 a 2,0;
@@ -903,7 +905,7 @@
    * ====================================================================== */
   var ROTULO_PECA = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo)", terca: "Terça", caibro: "Caibro", ripa: "Ripa",
     pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira", "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal",
-    "pilar-aco": "Pilar", viga: "Viga principal (madeira)", frechal: "Frechal", pilar: "Pilar (madeira)", cumeeira: "Cumeeira", maofrancesa: "Mão-francesa", contravento: "Contraventamento (madeira)", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
+    "pilar-aco": "Pilar", viga: "Viga principal (madeira)", frechal: "Frechal", pilar: "Pilar (madeira)", vigadist: "Viga de distribuição", coxim: "Coxim da viga de distribuição", cumeeira: "Cumeeira", maofrancesa: "Mão-francesa", contravento: "Contraventamento (madeira)", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
     contravento: "Contraventamento em X (barra redonda)", corrente: "Corrente (barra redonda)", calco: "Calço metálico" };
   function rotuloPeca(o) { return o ? (ROTULO_PECA[o.p] || String(o.p)) : ""; }
   function chaveId(o) { return o.p + (o.agua != null ? ".a" + o.agua : "") + (o.fileira != null ? ".f" + o.fileira : "") + (o.tesoura ? "." + o.tesoura : "") + (o.lado != null ? ".l" + o.lado : ""); }
@@ -1271,6 +1273,7 @@
     /* MADEIRA CALCULADA (js/madcobertura.js): o resultado do módulo Madeira volta para as peças POR PAPEL — a seção calculada (b × h) substitui a de partida
        do SINAPI e as alturas empilhadas (terça, caibro, telha) já saem dela; o espaçamento de apoio e o de terça também. Sem t.calcMadeira = o modelo de antes, byte a byte. */
     var CMX = t.calcMadeira && typeof t.calcMadeira === "object" ? t.calcMadeira : null;
+    var distMeioEf = CMX && fin(CMX.distMeio) ? CMX.distMeio : (fin(t.distMeio) ? t.distMeio : null);   /* TELHADO AUTOMÁTICO: "meio da laje" (m); sem o campo (projeto antigo) nada de viga de distribuição nem linha na parede interna */
     /* O TELHADO DESENHADO = A ESTRUTURA DO MOTOR (js/madtelhadodesenhado.js): com calcMadeira.motor as peças estruturais são os MEMBROS do motor com os sólidos cortados
        (encaixe de carpinteiro), o frechal assenta no topo da parede e a pilha caibro/ripa/telha começa no topo dos banzos/terças (terça embutida no plano do banzo).
        Sem calcMadeira.motor (ou se a geometria do motor não vale mais) = o modelo do SINAPI de antes, byte a byte. */
@@ -1354,6 +1357,19 @@
       var a0 = Infinity, a1 = -Infinity;
       P.forEach(function (q) { var tt = G.td[0] * q[0] + G.td[1] * q[1]; if (tt < a0) a0 = tt; if (tt > a1) a1 = tt; });
       var req = [a0, a1]; vertsInt.forEach(function (v) { var tt = G.td[0] * v[0] + G.td[1] * v[1]; if (tt > a0 + 0.05 && tt < a1 - 0.05) req.push(tt); });
+      /* TELHADO AUTOMÁTICO: com LAJE embaixo, a linha de apoio dos pontaletes passa pelo EIXO da parede/viga que segura a laje e é paralela ao caimento
+         (o pontalete cai sobre a parede, não no vão da laje); entre elas a divisão segue em partes iguais ≤ o eixo de apoio */
+      if (distMeioEf != null && mat !== "aco" && !M.tesoura && !M.obra && !(CMX && arr(CMX.pontosApoio).length)) {
+        var TAl = dep("BimTelhadoAuto", "./bimtelhadoauto.js");
+        if (TAl && TAl.apoiosDaLaje) arr(estado && estado.caixas).forEach(function (lj) {
+          if (!lj || lj.tipo !== "laje" || Math.abs(num(lj.cy, 0) + num(lj.altura, 0) / 2 - H0) > 0.35) return;
+          TAl.apoiosDaLaje(estado.caixas, lj).forEach(function (sp) {
+            if (Math.abs(sp.u[0] * G.d[1] - sp.u[1] * G.d[0]) > 0.05) return;   /* só a paralela ao caimento */
+            var mx = (sp.a[0] + sp.b[0]) / 2, mz = (sp.a[1] + sp.b[1]) / 2, tt = G.td[0] * mx + G.td[1] * mz;
+            if (tt > a0 + 0.3 && tt < a1 - 0.3 && T.dentro([mx, mz], P) && !req.some(function (v) { return Math.abs(v - tt) < 0.05; })) req.push(tt);
+          });
+        });
+      }
       /* TELHADO APARENTE (js/madcobertura.js): as linhas de apoio passam pelos pilares/pontos do modelo (t.calcMadeira.pontosApoio) */
       if (G.principal && CMX && mat !== "aco" && arr(CMX.pontosApoio).length) {   /* SÓ os pilares/pontos reais: nada de linha inventada na borda — o que passa da última linha é balanço */
         var rq0 = []; arr(CMX.pontosApoio).forEach(function (pp) { var tt = G.td[0] * num(pp.x, 0) + G.td[1] * num(pp.z, 0); if (tt >= a0 - 0.1 && tt <= a1 + 0.1) rq0.push(tt); });
@@ -1494,7 +1510,7 @@
       if (sec.dims) o.dims = sec.dims;
       if (sec.nome) o.perfil = sec.nome;
       if (sec.calc) { o.calc = true; o.calcFonte = sec.fonte; o.calcPrelim = !!sec.partida; }
-      else if (CMX && o.mat === "madeira" && /^(perna|linha|pendural|escora|montante|terca|caibro|espigao|viga|pontalete)$/.test(papel)) o.calcNao = true;   /* peça SEM grupo calculado: marcada (o resultado fica PRELIMINAR) */
+      else if (CMX && o.mat === "madeira" && /^(perna|linha|pendural|escora|montante|terca|caibro|espigao|viga|pontalete|vigadist|coxim)$/.test(papel)) o.calcNao = true;   /* peça SEM grupo calculado: marcada (o resultado fica PRELIMINAR) */
       o.L = r4(ln3(s3(b, a)));
       if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
       pecas.push(o); return o;
@@ -1948,6 +1964,30 @@
       pc(ln.tipo, a, b, upNoPlano(s3(b, a)), mat === "aco" ? sT : secC("espigao", SEC.espigao), {});
     });
     if (mat !== "aco" && arr(t.linhas).some(function (l) { return l.tipo === "espigao" || l.tipo === "rincao"; })) usar("espigao", SEC.espigao);
+    /* VIGA DE DISTRIBUIÇÃO (TELHADO AUTOMÁTICO, js/bimtelhadoauto.js): pontalete que cai no MEIO da laje (longe do eixo de parede/viga: distMeio, padrão 0,50 m)
+       apoia numa viga de madeira DEITADA sobre a laje, de parede a parede — a carga vai para as paredes, não para o vão da laje. O pontalete sobe até a viga. */
+    var distrib = null;
+    if (distMeioEf != null && mat !== "aco" && !MOT) {
+      var TAu = dep("BimTelhadoAuto", "./bimtelhadoauto.js"), pLj = pecas.filter(function (o) { return o.p === "pontalete" && o.apoio === "laje"; });
+      if (TAu && TAu.distribuicao && pLj.length) {
+        var dr0 = TAu.distribuicao(arr(estado && estado.caixas), pLj.map(function (o) { return { x: o.a[0], z: o.a[2] }; }), { cota: H0, distMeio: distMeioEf, bViga: SEC.vigadist.b, bPontalete: secC("pontalete", SEC.pontalete).b });
+        distrib = { distMeio: dr0.distMeio, vigas: dr0.vigas.length, pontaletes: 0, semApoio: dr0.semApoio.length };
+        if (dr0.vigas.length) usar("vigadist", secC("vigadist", SEC.vigadist));
+        /* COXINS: a viga NÃO deita direto na laje — apoia em coxins de madeira sobre as paredes/vigas, com folga MAIOR que a flecha calculada (calc.vigasDistribuicao.calco.h; 5 cm de partida) */
+        var VDc = CMX && CMX.vigasDistribuicao && CMX.vigasDistribuicao.calco ? CMX.vigasDistribuicao.calco : null, hC = VDc && fin(VDc.h) ? VDc.h : 0.05;
+        dr0.vigas.forEach(function (v) {
+          var sV = secC("vigadist", SEC.vigadist), yL = pLj[v.pontos[0].i].a[1], yV = r4(yL + hC + sV.h / 2), dx = v.b[0] - v.a[0], dz = v.b[1] - v.a[1], Lx = Math.sqrt(dx * dx + dz * dz) || 1, ux = dx / Lx, uz = dz / Lx;
+          pc("vigadist", [v.aFis[0], yV, v.aFis[1]], [v.bFis[0], yV, v.bFis[1]], UPV, sV, { apoio: "laje", apoioId: v.laje, vd: v.id, apoiosVd: v.apoios, ext0: v.ext[0], ext1: v.ext[1], espApoio: v.espApoio, cargas: v.pontos.map(function (q) { return { x: q.x, z: q.z, s: q.s }; }) });
+          [[v.a, 0], [v.b, 1]].forEach(function (e) {
+            var lb = v.espApoio[e[1]], yC = r4(yL + hC / 2), sx = ux * lb / 2, sz = uz * lb / 2;
+            pc("coxim", [r4(e[0][0] - sx), yC, r4(e[0][1] - sz)], [r4(e[0][0] + sx), yC, r4(e[0][1] + sz)], UPV, { b: sV.b, h: hC, calc: !!VDc, partida: !VDc, fonte: VDc ? "verificado no módulo Madeira (σc90, NBR 7190-1:2022 6.3.3)" : "VALOR DE PARTIDA: coxim 5 cm sobre a parede — o cálculo da madeira dimensiona" }, { apoio: "laje", apoioId: v.laje, vd: v.id });
+          });
+          v.pontos.forEach(function (q) { var o = pLj[q.i]; o.a = rr([o.a[0], yL + hC + sV.h, o.a[2]]); o.L = r4(o.b[1] - o.a[1]); o.viga = v.id; distrib.pontaletes++; });
+        });
+        if (dr0.vigas.length) prem.push("Viga de distribuição (madeira sobre COXINS nas paredes/vigas, com folga acima da flecha; vai até a face oposta da parede): " + dr0.vigas.length + " viga(s) levam " + distrib.pontaletes + " pontalete(s) que cairiam no MEIO da laje (> " + virg(dr0.distMeio) + " m do eixo da parede/viga mais perto) para as paredes — critério e seção em t.calcMadeira (premissa da RA, o RT confirma).");
+        if (dr0.aviso) avisos.push(dr0.aviso);
+      }
+    }
     /* CONTRAVENTAMENTO DOS PONTALETES (js/madcobertura.js): pontalete alto sem travamento não vale L0 = H — uma mão-francesa em cada direção (a do caimento e a das terças) vira peça do modelo */
     if (CMX && CMX.contravento && mat !== "aco") {
       var nbr = 0, pontas = pecas.filter(function (o) { return o.p === "pontalete"; });
@@ -2271,9 +2311,9 @@
     var cods0 = {}; Object.keys(tesComp).forEach(function (id) { cods0[tesComp[id][1]] = 1; });
     var inclTes = "composição SINAPI de tesoura " + Object.keys(cods0).join(", ");
     var ROT = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo, 2 por montante)", terca: "Terça", caibro: "Caibro", ripa: "Ripa", pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira",
-                "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", viga: "Viga principal (madeira)", frechal: "Frechal", pilar: "Pilar (madeira)", cumeeira: "Cumeeira", contravento: "Contraventamento (madeira)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
+                "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", viga: "Viga principal (madeira)", vigadist: "Viga de distribuição (sobre coxins)", coxim: "Coxim da viga de distribuição (sobre a parede)", frechal: "Frechal", pilar: "Pilar (madeira)", cumeeira: "Cumeeira", contravento: "Contraventamento (madeira)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura",
                 contravento: "Contraventamento em X", corrente: "Corrente", calco: "Calço metálico" };
-    var SECP = { linha: SEC.linha, perna: null, pendural: SEC.pendural, escora: SEC.escora, montante: SEC.montante, terca: SEC.terca, caibro: SEC.caibro, ripa: SEC.ripa, pontalete: SEC.pontalete, viga: SEC.viga, espigao: SEC.espigao, rincao: SEC.espigao, testeira: SEC.testeira };
+    var SECP = { linha: SEC.linha, perna: null, pendural: SEC.pendural, escora: SEC.escora, montante: SEC.montante, terca: SEC.terca, caibro: SEC.caibro, ripa: SEC.ripa, pontalete: SEC.pontalete, viga: SEC.viga, vigadist: SEC.vigadist, coxim: SEC.coxim, espigao: SEC.espigao, rincao: SEC.espigao, testeira: SEC.testeira };
     Object.keys(por).forEach(function (k) {
       var g = por[k], rot = ROT[g.p] || g.p;
       if ((g.p === "contravento" && g.mat !== "madeira") || g.p === "corrente" || g.p === "calco") return;   /* o conjunto (aço) tem grupo próprio, abaixo */

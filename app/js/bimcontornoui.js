@@ -189,18 +189,111 @@
 
       function ids() { return pend ? pend.ids.slice() : []; }
 
+      /* ------------------------------------------------ TELHADO AUTOMÁTICO (js/bimtelhadoauto.js)
+         Telhado automático (perímetro da edificação) e Telhado nos ambientes (os selecionados): o contorno sai pela face externa das paredes,
+         o beiral é o parâmetro do Telhado, pergunta 1, 2 ou 4 águas (1 água: clique a parede para onde a água cai; 2 águas: cumeeira no sentido do
+         lado maior, ou clique o oitão; 4 águas: sai direto) e, depois de lançar, "Calcular a madeira agora?" (MadCoberturaUI.calcularModelo). */
+      var pendAuto = null;   /* { modo, ids, beiral, contorno, aguas, etapa: "parede" | "oitao" | null } */
+      function TA() { return global.BimTelhadoAuto || null; }
+      function escA(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+      function beiralParametro() {
+        var P3 = global.BimP3UI, c = P3 && P3.cfg ? P3.cfg("telhado") : null;
+        return c && fin(Number(c.beiral)) ? (P3.beiralEf ? P3.beiralEf(c) : Number(c.beiral)) : (TA() ? TA().BEIRAL_PADRAO : 0.5);
+      }
+      function idsAmbientesSelecionados() {
+        var st = edit && edit.estado, ambs = {}, out = [];
+        arr(st && st.ambientes).forEach(function (a) { if (a && a.id != null) ambs[String(a.id)] = 1; });
+        (api.selecao ? api.selecao() : []).forEach(function (u) { var id = String(u).replace(/^edit:/, ""); if (ambs[id] && out.indexOf(id) < 0) out.push(id); });
+        /* o ambiente clicado fica guardado na tela de Ambiente (js/bimambienteui.js), fora da seleção comum */
+        try { var AU = global.BimAmbienteUI, sa = AU && AU.selecionado ? AU.selecionado() : null; if (sa != null && ambs[String(sa)] && out.indexOf(String(sa)) < 0) out.push(String(sa)); } catch (eAm) { /* sem a tela de ambiente */ }
+        return out;
+      }
+      function janelaAuto(titulo, html) { var CU = global.BimCoberturaUI; return CU && CU.janela ? CU.janela(titulo, html) : null; }
+      function fecharJanela(jn) { try { var f = jn && jn.querySelector ? jn.querySelector("[data-cob-fechar]") : null; if (f && f.click) f.click(); } catch (e) { /* já fechou */ } }
+      function planoAuto(n, paredeId) {
+        var o = opcoes(); o.ids = pendAuto.ids; o.aguas = n; o.paredeId = paredeId; o.beiral = pendAuto.beiral;
+        return TA().planejar(edit.estado, pendAuto.modo, o);
+      }
+      /* parede INTERNA clicada (1 água): mostra a seta do caimento e pede confirmação antes de lançar */
+      function confirmarInterna(n, paredeId, pl) {
+        var seta = TA().setaSvg ? TA().setaSvg(pl) : "";
+        var jn = janelaAuto("Confirmar o caimento", '<p style="margin:0 0 8px">A parede clicada é <b>interna</b>: a água vai cair para a parede externa mais perto dela, no sentido da seta.</p>' + seta +
+          '<div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn" data-tauto-conf="sim">Confirmar e lançar</button><button type="button" class="btn sm" data-tauto-conf="nao">Escolher outra parede</button></div>');
+        api.hint("Parede interna: confira a seta do caimento e confirme (ou escolha outra parede).");
+        if (!jn || !jn.addEventListener) return;
+        jn.addEventListener("click", function (ev) {
+          var v = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-tauto-conf") : null; if (!v) return;
+          fecharJanela(jn);
+          if (v === "sim") lancarAuto(n, paredeId, true); else api.hint("Clique outra parede (a externa para onde a água deve cair).");
+        });
+      }
+      function lancarAuto(n, paredeId, confirmado) {
+        var pa = pendAuto, pl = planoAuto(n, paredeId);
+        if (pl.ok && pl.interna && !confirmado) { confirmarInterna(n, paredeId, pl); return true; }
+        pendAuto = null;
+        if (!pl.ok) { api.hint((pl.motivo || "Não deu para montar o telhado.") + " " + (pl.corrigir || "")); return true; }
+        var r = api.lancarTelhado ? api.lancarTelhado(pl.contorno, { beiral: pa.beiral, vincular: "externa" }) : { ok: false, motivo: "Sem o lançamento do telhado." };
+        if (!r || !r.ok) { api.hint((r && r.motivo) || "Não deu para lançar o telhado."); return true; }
+        api.hint(pl.resumo + (pl.aviso ? " " + pl.aviso : "") + " " + r.resumo);
+        perguntarCalcular(r.id);
+        return true;
+      }
+      function perguntarCalcular(id) {
+        var jn = janelaAuto("Telhado " + id + " lançado", '<p style="margin:0 0 6px">Calcular a madeira agora?</p><p style="margin:0 0 10px;font-size:12px;opacity:.85">O cálculo é um passo de desfazer <b>separado</b>: Ctrl+Z desfaz primeiro o cálculo (o telhado fica) e só no segundo Ctrl+Z o telhado sai.</p><div style="display:flex;gap:8px"><button type="button" class="btn" data-tauto-calc="sim">Sim, calcular</button><button type="button" class="btn sm" data-tauto-calc="nao">Agora não</button></div>');
+        if (!jn || !jn.addEventListener) return;
+        jn.addEventListener("click", function (ev) {
+          var v = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-tauto-calc") : null; if (!v) return;
+          fecharJanela(jn);
+          if (v !== "sim") return;
+          var U = global.MadCoberturaUI, B = global.BIM;
+          /* sem o telhado selecionado o Calcular pegaria TODOS os telhados do modelo: se a seleção falhar, aborta */
+          var selOk = false;
+          try { var rs = B && B.selecionar ? B.selecionar(["edit:" + id], "trocar") : null; selOk = Array.isArray(rs) ? rs.indexOf("edit:" + id) >= 0 : !!rs; } catch (e1) { selOk = false; }
+          if (!selOk) { api.hint("Não consegui selecionar o telhado " + id + ": o cálculo foi CANCELADO para não calcular os outros telhados do modelo. Selecione o telhado e use Madeira calculada › Calcular."); return; }
+          api.hint("Calculando a madeira do telhado " + id + ". Lembrete: o cálculo é um passo de desfazer separado do lançamento do telhado.");
+          if (U && U.calcularModelo) U.calcularModelo({ origem: "telhado-automatico" }); else api.hint("O cálculo da madeira não carregou.");
+        });
+      }
+      function perguntarAguas() {
+        var c = pendAuto.contorno, pa = pendAuto;
+        var html = '<p style="margin:0 0 6px">Contorno ' + escA(c.forma) + ' pela face externa das paredes: ' + n2(c.area) + ' m², perímetro ' + n2(c.perimetro) + ' m.</p>' +
+          '<label style="display:block;margin:0 0 8px">Beiral (m) <input type="number" step="0.05" min="0" max="2" value="' + String(pa.beiral).replace(",", ".") + '" data-tauto-beiral style="width:80px"></label>' +
+          '<p style="margin:0 0 6px"><b>Quantas águas?</b></p><div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button type="button" class="btn" data-tauto-aguas="1">1 água</button><button type="button" class="btn" data-tauto-aguas="2">2 águas</button><button type="button" class="btn" data-tauto-aguas="4">4 águas (várias)</button></div>';
+        var jn = janelaAuto(pa.modo === "ambientes" ? "Telhado nos ambientes" : "Telhado automático", html);
+        if (!jn || !jn.addEventListener) { api.hint("Não abri a janela de águas: use o telhado de 4 águas pelo modo \"Contorno da edificação\"."); pendAuto = null; return; }
+        jn.addEventListener("click", function (ev) {
+          var v = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-tauto-aguas") : null; if (!v) return;
+          var inp = jn.querySelector ? jn.querySelector("[data-tauto-beiral]") : null, b = inp ? Number(String(inp.value).replace(",", ".")) : NaN;
+          if (fin(b) && b >= 0 && b <= 2) pa.beiral = b;
+          fecharJanela(jn);
+          if (!pendAuto) return;
+          pa.aguas = Number(v);
+          if (pa.aguas === 4) { lancarAuto(4); return; }
+          pa.etapa = pa.aguas === 1 ? "parede" : "oitao";
+          api.hint(self.dica("telhado"));
+        });
+      }
+
       var self = {
         dica: function (sub) {
           if (!ligado(sub)) return "";
+          if (pendAuto && pendAuto.etapa === "parede") return "Telhado de 1 água: clique na PAREDE para onde a água vai cair (o caimento sai perpendicular a ela, apontando para ela). Esc cancela.";
+          if (pendAuto && pendAuto.etapa === "oitao") return "Telhado de 2 águas: a cumeeira segue o lado maior. Clique numa parede para indicar o OITÃO (a cumeeira vai dele para o lado oposto) ou Enter para aceitar o lado maior. Esc cancela.";
           if (pendBeiral) return "Clique perto da aresta do BEIRAL (a mais baixa); Enter = a mais comprida.";
           var m = modoDe(sub);
           return dicaModo(sub, m);
         },
-        cancelar: function () { pend = null; pendBeiral = null; },
-        aoSub: function () { pend = null; pendBeiral = null; },
+        cancelar: function () { pend = null; pendBeiral = null; pendAuto = null; },
+        aoSub: function () { pend = null; pendBeiral = null; pendAuto = null; },
         clique: function (sub, e, hit, p) {
           if (sessao) return true;      /* editando: o clique do 3D não cria nada */
           if (!ligado(sub)) return false;
+          if (pendAuto && sub === "telhado" && pendAuto.etapa) {
+            var idA = paredeEm(p, e);
+            if (idA == null) { api.hint("Clique em cima de uma parede. " + self.dica("telhado")); return true; }
+            return lancarAuto(pendAuto.aguas, idA);
+          }
           if (pendBeiral && sub === "telhado") {
             if (!p) return true;
             var k = M.arestaMaisPerto(pendBeiral.r.contornos[0].pts, { x: p.x, z: p.z });
@@ -245,7 +338,24 @@
           var r1 = pendBeiral.r; pendBeiral = null;
           return criarDe("telhado", r1, {});
         },
-        pendentes: function () { return { paredes: ids(), beiral: !!pendBeiral, sessao: !!sessao }; },
+        /* o botão "Telhado automático" (modo "edificacao") e "Telhado nos ambientes" (modo "ambientes") */
+        telhadoAuto: function (modo) {
+          var T = TA();
+          if (!T) { api.hint("O motor do telhado automático (js/bimtelhadoauto.js) não carregou. Recarregue o aplicativo."); return false; }
+          if (!edit || !edit.on || edit.sub !== "telhado") { api.hint("Ligue o Editor (Modelador) e a ferramenta Telhado para lançar o telhado automático."); return false; }
+          if (sessao) return true;
+          modo = modo === "ambientes" ? "ambientes" : "edificacao";
+          var idsA = modo === "ambientes" ? idsAmbientesSelecionados() : [], c;
+          if (modo === "ambientes" && !idsA.length) { api.hint("Selecione um ou mais ambientes (clique neles) e use \"Telhado nos ambientes\"."); return false; }
+          c = modo === "ambientes" ? T.contornoAmbientes(edit.estado, idsA, opcoes()) : T.contornoEdificacao(edit.estado, opcoes());
+          if (!c.ok) { api.hint((c.motivo || "Contorno inválido.") + " " + (c.corrigir || "")); return false; }
+          pend = null; pendBeiral = null;
+          pendAuto = { modo: modo, ids: idsA, beiral: beiralParametro(), contorno: c, etapa: null, aguas: null };
+          perguntarAguas();
+          return true;
+        },
+        concluirOitao: function () { if (!pendAuto || pendAuto.etapa !== "oitao") return false; return lancarAuto(2, null); },
+        pendentes: function () { return { paredes: ids(), beiral: !!pendBeiral, sessao: !!sessao, auto: pendAuto ? { modo: pendAuto.modo, etapa: pendAuto.etapa, aguas: pendAuto.aguas } : null }; },
 
         /* ------------------------------------------------ EDITAR CONTORNO de uma peça pronta */
         editar: function (uidsDados, auto) {
@@ -598,6 +708,11 @@
       /* Enter / Tab / Esc das escolhas (captura: o Enter da casca repetiria o comando da fita) */
       window.addEventListener("keydown", function (ev) {
         if (sessao || !edit || !edit.on || !SUBS[edit.sub]) return;
+        if (pendAuto && pendAuto.etapa) {
+          if (ev.key === "Enter" && pendAuto.etapa === "oitao") { ev.preventDefault(); ev.stopPropagation(); self.concluirOitao(); }
+          else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); pendAuto = null; api.hint("Telhado automático cancelado."); }
+          return;
+        }
         if (ev.key === "Enter" && (pend || pendBeiral)) {
           ev.preventDefault(); ev.stopPropagation();
           if (pendBeiral) self.concluirBeiral(); else self.concluirParedes();

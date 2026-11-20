@@ -235,6 +235,10 @@
                   { id: "tel-mod-aco-trapezoidal", rotulo: "Metálica — terça Ue + trapezoidal", icone: "estrutura" }, { id: "tel-mod-aco-sanduiche", rotulo: "Metálica — terça Ue + sanduíche", icone: "estrutura" },
                   { id: "tel-mod-aco-viga", rotulo: "Metálica — terça Ue + viga W com pilar na cumeeira (baixa inclinação)", icone: "estrutura" },
                   { id: "tel-mod-nenhum", rotulo: "Sem estrutura (só o telhado)", icone: "telhado" }] },
+        { id: "telhado-auto", rotulo: "Telhado\nautomático", icone: "telhado", grande: true,
+          dica: "Lança o telhado sozinho: acha o contorno externo das paredes que delimitam a edificação (face externa), soma o beiral (o do parâmetro do Telhado) e pergunta 1, 2 ou 4 águas. 1 água: clique na parede para onde a água cai. 2 águas: cumeeira no sentido do lado maior (clique uma parede para indicar o oitão). 4 águas: sai direto. No fim pergunta se calcula a madeira. Um Ctrl+Z desfaz." },
+        { id: "telhado-ambientes", rotulo: "Telhado nos\nambientes", icone: "telhado", grande: true,
+          dica: "Selecione um ou mais ambientes e clique: o contorno sai da união dos ambientes mais as paredes que os fecham (face externa); o resto é igual ao Telhado automático." },
         { id: "telhado-unir", rotulo: "Unir\ntelhado", icone: "mais", grande: true, tipo: "alterna",
           dica: "Unir/desunir telhado: clique o telhado que ENTRA e depois o telhado em que ele encosta — a parte que fica por baixo sai e o rincão do encontro é medido. Clicar de novo o mesmo par desune." }
       ]);
@@ -248,6 +252,15 @@
       /* o comando de Telhado de sempre desliga o conjunto — MENOS no instante em que o próprio Telhado paramétrico arma a ferramenta (o armar devolve o eco do botão) */
       reg.cobertura = function (e) { if (!(cfg.telhado._ate && Date.now() < cfg.telhado._ate) && cfg.telhado.conjunto) BimP3UI.conjuntoLigar(false); return armar("telhado")(e); }; reg.fundacao = armar("fundacao");
       reg["telhado-borda"] = armar("telhado-borda"); reg["telhado-unir"] = armar("telhado-unir");
+      /* TELHADO AUTOMÁTICO / NOS AMBIENTES: arma a ferramenta Telhado (liga o editor) e roda o fluxo (js/bimcontornoui.js telhadoAuto) */
+      function autoTelhado(modo) {
+        return function () {
+          var B = global.BIM; if (!B || !B.telhadoAuto) return false;
+          if (arqui && arqui.armar) arqui.armar("telhado");
+          return B.telhadoAuto(modo);
+        };
+      }
+      reg["telhado-auto"] = autoTelhado("edificacao"); reg["telhado-ambientes"] = autoTelhado("ambientes");
       /* T1: o modelo do telhado (os que existem + os próximos) — um lote, um Ctrl+Z */
       var self = BimP3UI;
       reg["telhado-modelo"] = function () { return true; };
@@ -400,6 +413,10 @@
       if (mEf && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = mEf;
       /* MADEIRA CALCULADA: nasce com um modelo de madeira pela telha; o cálculo (js/madcobertura.js) escolhe o sistema pelo apoio e o regrava logo depois de lançar */
       if (c.madCalc === "auto" && global.MadCobertura && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = global.MadCobertura.modeloMadeira("terca", { telha: T.telha(c.tipoId) });   /* T1: o telhado nasce com o modelo (estrutura + telhas derivadas) */
+      /* TELHADO AUTOMÁTICO (js/bimtelhadoauto.js): o beiral do parâmetro do fluxo e o modelo de MADEIRA (terça + caibro + ripa; o cálculo vem depois, perguntado) */
+      if (fin(dados.beiral) && dados.beiral >= 0) d.beiral = dados.beiral;
+      if (fin(dados.distMeio) && dados.distMeio > 0) d.distMeio = dados.distMeio;
+      if (dados.modeloMadeira && global.MadCobertura && !(dados.p1 && dados.p2 && dados.p3)) { var mmA = global.MadCobertura.modeloMadeira("terca", { telha: T.telha(c.tipoId) }); if (mmA) d.modelo = mmA; }
       d.deslocBase = c.deslocBase != null ? c.deslocBase : (nivel && +nivel.peDireito > 0 ? +nivel.peDireito : 2.8);
       if (nivel && nivel.id != null) { d.nivelId = String(nivel.id); d.base = +nivel.elevacao || 0; } else d.base = +base || 0;
       /* T4: o desenho (linha, corte, seguir peça) pode trazer a inclinação e a COTA de apoio (absoluta) — a do perfil
@@ -445,7 +462,7 @@
       if (!t.ok) return { ok: false, motivo: (t.avisos || []).join(" ") || "Não deu para montar o telhado." };
       if (leve) return { ok: true, op: op, telhado: t };   /* T4: a PRÉVIA (fantasma) — sem estrutura, sem avisos do modelo */
       /* o AUTOMÁTICO na metálica olha o telhado: tesoura triangular baixa demais → viga W (o que nasce pelo padrão nasce válido) */
-      var MEa = ESM(); if (op.modelo && c.modelo === "auto" && MEa && MEa.modeloSugerido) op.modelo = MEa.modeloSugerido(c.tipoId, t, estado);
+      var MEa = ESM(); if (op.modelo && c.modelo === "auto" && !dados.modeloMadeira && MEa && MEa.modeloSugerido) op.modelo = MEa.modeloSugerido(c.tipoId, t, estado);
       var abaixo = (t.avisos || []).filter(function (a) { return /abaixo do mínimo/i.test(a); })[0];
       /* T1 (revisor): os avisos do MODELO (tesoura baixa, pontalete sem apoio, "fase 2: meias-tesouras de espigão") já no resumo
          do comando — o pacote sai do mesmo motor do replay, sobre o estado de agora (paredes e lajes) */
@@ -900,10 +917,24 @@
         criarPorContorno: function (C, o) {
           if (!edit || !edit.on || edit.sub !== "telhado") return false;
           cancelar();
-          var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { return { x: q.x, z: q.z }; }), arestaSobe: o && o.arestaSobe, vincular: o && o.vincular }, nivel(), edit.base);
+          var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { var o2 = { x: q.x, z: q.z }; if (q.d === false) o2.d = false; return o2; }), arestaSobe: o && o.arestaSobe, vincular: o && o.vincular }, nivel(), edit.base);
           /* TELHADO PARAMÉTRICO: o contorno puxado das paredes/edificação já traz a aresta do beiral (a queda) quando o usuário a clicou */
           if (r.ok && r.conjuntoPendente) { feito(r); return o && fin(o.arestaSobe) && o.arestaSobe >= 0 ? escolherQueda(o.arestaSobe) : true; }
           return r.ok ? feito(r) && true : (api.hint(r.motivo), false);
+        },
+        /* TELHADO AUTOMÁTICO (js/bimtelhadoauto.js + js/bimcontornoui.js): o contorno externo já com as águas (d:false = oitão) vira o telhado de uma vez,
+           com o beiral do parâmetro e o modelo de madeira; o cálculo da madeira é PERGUNTADO depois (não roda sozinho). Um Ctrl+Z desfaz. */
+        lancarAuto: function (C, o) {
+          o = o || {};
+          if (!edit || !edit.on) return { ok: false, motivo: "Ligue o Editor (Modelador) para lançar o telhado." };
+          cancelar();
+          var dados = { contorno: arr(C).map(function (q) { var o2 = { x: q.x, z: q.z }; if (q.d === false) o2.d = false; return o2; }), vincular: o.vincular || "externa", beiral: o.beiral, distMeio: fin(o.distMeio) ? o.distMeio : (global.BimTelhadoAuto ? global.BimTelhadoAuto.DIST_MEIO : undefined), modeloMadeira: o.modeloMadeira !== false, aguasContorno: false };
+          var r = self.opTelhado(edit.estado, dados, nivel(), edit.base);
+          if (!r.ok) { api.hint(r.motivo); return { ok: false, motivo: r.motivo }; }
+          if (r.conjuntoPendente) { var mp = "O Telhado paramétrico está ligado: desligue-o para lançar o telhado automático."; api.hint(mp); return { ok: false, motivo: mp }; }
+          api.op(r.op); if (api.fechou) api.fechou();
+          api.hint(r.resumo); status(r.resumo);
+          return { ok: true, id: r.op.id, resumo: r.resumo, op: r.op };
         },
         fechar: function () {
           var sub = edit && edit.sub; if (!SUBS[sub] || pts.length < 3) return false;
