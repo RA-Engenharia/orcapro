@@ -1217,6 +1217,20 @@ tr.tr-aviso-insumo td { padding: 4px 16px 8px 16px !important; border-bottom: 1p
 tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 tr.tr-analitico-inline > td { padding: 0 !important; background: var(--bg-card, transparent); border-bottom: 1px solid var(--linha); }
 .an-embutido .an { padding: 8px 16px 10px; }
+/* 20/11 (Rogerio): o analitico embutido herdava as regras da tabela da planilha (largura fixa das colunas, altura de linha,
+   linhas verticais e realce de coluna no hover). Aqui ele tem o desenho proprio, compacto. */
+.an-embutido table.an-tab { table-layout: auto !important; width: 100% !important; border-collapse: collapse; font-size: 12px; margin: 0; }
+.an-embutido table.an-tab th, .an-embutido table.an-tab td { width: auto !important; min-width: 0 !important; max-width: none !important; height: auto !important;
+  padding: 3px 8px !important; border: 0 !important; border-bottom: 1px solid var(--linha) !important; outline: 0 !important; box-shadow: none !important;
+  background: transparent !important; line-height: 1.35; vertical-align: middle; position: static !important; }
+.an-embutido table.an-tab thead th { font-size: 11px; color: var(--texto-fraco); font-weight: 600; white-space: nowrap; border-bottom: 1px solid var(--linha) !important; }
+.an-embutido table.an-tab tr:hover td { background: rgba(0,0,0,.025) !important; }
+.an-embutido table.an-tab .an-c-cod { width: 1% !important; white-space: nowrap; }
+.an-embutido table.an-tab .an-c-desc { width: auto !important; white-space: normal; }
+.an-embutido table.an-tab .an-c-desc .an-desc { text-align: left; white-space: normal; padding: 0; }
+.an-embutido table.an-tab .an-c-und, .an-embutido table.an-tab .an-c-cat { width: 1% !important; white-space: nowrap; }
+.an-embutido table.an-tab td.num, .an-embutido table.an-tab th.num { width: 1% !important; white-space: nowrap; text-align: right; }
+.an-embutido .an-rolagem { max-height: none; overflow: visible; }
 .pill.sicro { background: rgba(161,98,7,.15); color: #865206; }
 .pill.seinfra { background: rgba(13,148,136,.15); color: #096c63; }
 .pill.setop { background: rgba(124,58,237,.15); color: #7027eb; }

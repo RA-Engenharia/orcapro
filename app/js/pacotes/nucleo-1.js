@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.407",
+versao: "1.2.408",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -20584,7 +20584,13 @@ custoMO: soma.MO, custoMAT: soma.MAT, custoEQ: soma.EQ, insumos: ins };
 renderAnaliticoItem: function (it) {
 var a = UI._analiticoDoItem(it);
 if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
-var ufAtivo = (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+var orcUf = (typeof App !== "undefined" && App.orcAtual && App.orcAtual.uf) ? String(App.orcAtual.uf).toUpperCase() : null;
+var fonteIt = String(it.baseFonte || it.origem || "").toUpperCase();
+if (Array.isArray(it.insumos) && it.insumos.length && fonteIt && !/SINAPI/.test(fonteIt)) {
+return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
+rotulo: fonteIt + " (composição publicada pelo órgão)", avisos: [] }) + '</div>';
+}
+var ufAtivo = orcUf || (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
 return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
 },
 _celCoeficiente: function (ins) {

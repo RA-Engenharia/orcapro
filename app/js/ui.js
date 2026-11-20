@@ -2811,7 +2811,15 @@
     renderAnaliticoItem: function (it) {
       var a = UI._analiticoDoItem(it);
       if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
-      var ufAtivo = (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+      /* 20/11 (Rogério): item com a composição do órgão (SEINFRA etc., it.insumos) não é "analítico SINAPI de referência":
+         mostra a fonte do item e a UF do ORÇAMENTO, sem o aviso "base ativa é PA" quando o orçamento é do CE. */
+      var orcUf = (typeof App !== "undefined" && App.orcAtual && App.orcAtual.uf) ? String(App.orcAtual.uf).toUpperCase() : null;
+      var fonteIt = String(it.baseFonte || it.origem || "").toUpperCase();
+      if (Array.isArray(it.insumos) && it.insumos.length && fonteIt && !/SINAPI/.test(fonteIt)) {
+        return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
+          rotulo: fonteIt + " (composição publicada pelo órgão)", avisos: [] }) + '</div>';
+      }
+      var ufAtivo = orcUf || (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
       return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
     },
     _celCoeficiente: function (ins) {
