@@ -16743,6 +16743,7 @@ var s = {}; pr.sel.forEach(function (id) { s[id] = 1; });
 if (pr.sel.length > MUITAS_SEL) { realcarCaixas(s, mo); return; }
 mo.grupo.children.forEach(function (m) {
 if (!s[m.userData.expressID] || !m.geometry) return;
+if (m.userData.wfPeca) return;
 var gd = m.geometry.userData || {}, ge = gd.metGeo ? (gd._arestas || (gd._arestas = new THREE.EdgesGeometry(m.geometry))) : new THREE.EdgesGeometry(m.geometry);
 if (gd.metGeo) ge.userData._guardada = true;
 var ln = new THREE.LineSegments(ge, matSelLinha);
@@ -74909,19 +74910,54 @@ try {
 "use strict";
 function B() { return global.BIM; }
 function status(msg) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(msg); else if (B() && B().hint) B().hint(msg); } catch (e) { } }
+var CHAVE = "orcapro:bim:wf-quadro";
 var WoodFrameUI = {
-modo: function () { return global.WoodFrameModo === "quadro" ? "quadro" : "normal"; },
+modo: function () {
+if (global.WoodFrameModo === undefined) { try { global.WoodFrameModo = global.localStorage && global.localStorage.getItem(CHAVE) === "1" ? "quadro" : "normal"; } catch (e) { global.WoodFrameModo = "normal"; } }
+return global.WoodFrameModo === "quadro" ? "quadro" : "normal";
+},
 definirModo: function (m) {
 global.WoodFrameModo = m === "quadro" ? "quadro" : "normal";
+try { if (global.localStorage) global.localStorage.setItem(CHAVE, global.WoodFrameModo === "quadro" ? "1" : "0"); } catch (eL) { }
 try { if (global.BimRibbon && global.BimRibbon.setAtivo) global.BimRibbon.setAtivo("wf-quadro", global.WoodFrameModo === "quadro"); } catch (e) { }
+this.sincBotao();
 try { if (B() && B().editarReconstruir) B().editarReconstruir(); } catch (eR) { }
 return global.WoodFrameModo;
 },
 alternar: function (ligado) {
 var novo = ligado === true ? "quadro" : (ligado === false ? "normal" : (this.modo() === "quadro" ? "normal" : "quadro"));
+if (!this.temWf()) { status("Este modelo não tem parede Wood Frame: o quadro só aparece nas paredes de tipo \"Wood Frame · …\" (use Converter para Wood Frame…)."); return false; }
 this.definirModo(novo);
-status(novo === "quadro" ? "Raio-X do quadro: só a madeira (guias, montantes, ombreiras, vergas, bloqueadores); as placas somem." : "Parede inteira de novo (camadas e placas).");
+status(novo === "quadro" ? "Raio-X do quadro: só a madeira (guias, montantes, ombreiras, vergas, bloqueadores); as placas somem em TODAS as paredes Wood Frame (" + (+global.WoodFrameTem || 0) + " no modelo); parede de alvenaria ou de outro tipo não muda." : "Parede inteira de novo (camadas e placas).");
 return true;
+},
+temWf: function () { return (+global.WoodFrameTem || 0) > 0; },
+paramVista: function () {
+if (!this.temWf()) return null;
+return { id: "wf:quadro", rotulo: "Mostrar quadro Wood Frame", tipo: "sim-nao", valor: this.modo() === "quadro" };
+},
+mudarVista: function (pid, valor) {
+if (pid !== "wf:quadro") return false;
+var sim = valor === true || valor === "true" || valor === "sim";
+if (sim !== (this.modo() === "quadro")) this.alternar(sim);
+return true;
+},
+botaoBarra: function (el, ico) {
+var self = this, bt = el("button", "rv-vb");
+bt.type = "button"; bt.setAttribute("data-rv-vb", "wf-quadro"); bt.setAttribute("aria-pressed", this.modo() === "quadro" ? "true" : "false");
+bt.setAttribute("aria-label", "Quadro Wood Frame"); bt.title = "Quadro WF: esconde as chapas e camadas de TODAS as paredes Wood Frame e mostra só a estrutura. A parede selecionada sempre mostra o próprio quadro.";
+bt.innerHTML = ico("camadas", 14) + "<span>Quadro WF</span>";
+bt.hidden = !this.temWf();
+bt.onclick = function () { self.alternar(); };
+this._bt = bt;
+if (!this._ouvindo && global.addEventListener) { this._ouvindo = true; global.addEventListener("bim:wf", function () { self.sincBotao(); try { if (global.BimShell && global.BimShell.pintarFita) global.BimShell.pintarFita(); } catch (e) { } }); }
+return bt;
+},
+sincBotao: function () {
+var bt = this._bt; if (!bt) return;
+var tem = this.temWf();
+if (bt.hidden === tem) bt.hidden = !tem;
+bt.setAttribute("aria-pressed", this.modo() === "quadro" ? "true" : "false");
 },
 _estado: function () {
 var Bm = B(), E = global.BimEdit;
@@ -111615,6 +111651,7 @@ d.appendChild(bt);
 });
 if (global.BimInstUI && global.BimInstUI.botaoNivel) { var bND = global.BimInstUI.botaoNivel(el, ico); if (bND) { var bEst = d.querySelector('[data-rv-vb="estilo"]'); d.insertBefore(bND, bEst ? bEst.nextSibling : null); } }
 if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
+if (global.WoodFrameUI && global.WoodFrameUI.botaoBarra) { var bWF = global.WoodFrameUI.botaoBarra(el, ico); if (bWF) d.appendChild(bWF); }
 var maisItens = [];
 if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) maisItens.push(bAD); }
 if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) maisItens.push(bAP); }
@@ -193835,6 +193872,23 @@ var s = this.selecao(); status(s.length > 1 ? "Propriedades: " + s.length + " se
 return true;
 } catch (e) { return false; }
 },
+temParedeNaoWf: function () {
+var b = B(), est = null; try { est = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e0) { est = null; }
+var Q = global.WoodFrameQuadro, sel = {}, ok = false;
+arr(this.selecao()).forEach(function (x) { sel[String(x).replace(/^edit:/, "")] = 1; });
+arr(est && est.caixas).forEach(function (c) { if (c && c.tipo === "parede" && sel[String(c.id)] && !(Q && Q.ehWf(c))) ok = true; });
+return ok;
+},
+converterWoodFrame: function () {
+var r = this.trocarTipo(), d = global.document;
+if (r !== "tipo") return r;
+try {
+var bus = d.querySelector(".rv-props .bp1-tipos-busca");
+if (bus) { bus.value = "Wood Frame"; bus.dispatchEvent(new global.Event("input", { bubbles: true })); }
+status("Converter para Wood Frame: escolha o tipo na lista — vale para todas as paredes selecionadas (um Ctrl+Z desfaz).");
+} catch (e) { }
+return r;
+},
 trocarTipo: function () {
 var d = global.document; this.propriedades();
 var bt = d.querySelector('.rv-props [data-bp1="tipo"]');
@@ -193884,6 +193938,7 @@ var acoes = [
 { a: "apoiar", r: "Apoiar em…", tecla: "AE", n: alvosN, off: !(ed && mod && global.BimApoiarUI) },
 { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
 { a: "trocar-tipo", r: "Trocar tipo/perfil…", off: !ed },
+{ a: "converter-wf", r: "Converter para Wood Frame…", n: alvosN, off: !(ed && mod && this.temParedeNaoWf()) },
 { a: "inv-fora", r: "Inverter dentro/fora", tecla: "Espaço", off: !(invs.fora) },
 { a: "inv-mao", r: "Espelhar (mão)", tecla: "⇧ Espaço", off: !(invs.mao) },
 { a: "lista", r: "Lista da seleção" }
@@ -193940,6 +193995,7 @@ if (a === "elevar") return this.comando("elevar");
 if (a === "apoiar") return this.comando("apoiar");
 if (a === "props") return this.propriedades();
 if (a === "trocar-tipo") return this.trocarTipo();
+if (a === "converter-wf") return this.converterWoodFrame();
 if ((a === "inv-fora" || a === "inv-mao") && uidAlvo && global.BimVaoArr && global.BimVaoArr.inverter) return global.BimVaoArr.inverter(a === "inv-fora" ? "fora" : "mao", String(uidAlvo).replace(/^edit:/, ""));
 if (a === "lista") return this.lista(alvos);
 return null;

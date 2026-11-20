@@ -1407,6 +1407,8 @@
       if (global.BimInstUI && global.BimInstUI.botaoNivel) { var bND = global.BimInstUI.botaoNivel(el, ico); if (bND) { var bEst = d.querySelector('[data-rv-vb="estilo"]'); d.insertBefore(bND, bEst ? bEst.nextSibling : null); } }
       /* CORES POR CATEGORIA (js/bimcorescatui.js): o interruptor da vista ativa, ao lado do Estilo */
       if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
+      /* QUADRO WF (js/woodframeui.js): esconde as chapas das paredes Wood Frame e mostra só a estrutura — só aparece com parede Wood Frame no modelo */
+      if (global.WoodFrameUI && global.WoodFrameUI.botaoBarra) { var bWF = global.WoodFrameUI.botaoBarra(el, ico); if (bWF) d.appendChild(bWF); }
       /* ANTES · OBRA · DEPOIS · COMPARAR (js/bimapresentacaoui.js): só aparece quando o modelo tem fases; vale na {3D} e nas plantas */
       var maisItens = [];   /* o que só aparece às vezes e ocupava a barra inteira vai para UM menu (14/11/2026: "a barra de baixo está cheia") */
       if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) maisItens.push(bAD); }

@@ -16424,6 +16424,7 @@ secoes: [
 { id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual },
 { id: "vista-disc", rotulo: "Disciplina", tipo: "lista", valor: (window.BimFocoUI && BimFocoUI.discDaVista ? BimFocoUI.discDaVista(id, "3d") : "coordenacao") || "coordenacao",
 opcoes: (window.BimModeloVista ? Object.keys(BimModeloVista.DISCIPLINAS) : ["arquitetura", "coordenacao"]).map(function (k) { return { id: k, rotulo: window.BimModeloVista ? BimModeloVista.DISCIPLINAS[k] : k }; }) } ]
+.concat((function () { try { var pW = window.WoodFrameUI && WoodFrameUI.paramVista ? WoodFrameUI.paramVista() : null; return pW ? [pW] : []; } catch (eW) { return []; } })())
 .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
 { nome: "Extensões", params: [
 { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
@@ -16441,6 +16442,7 @@ if (pid === "vista-fundo" && b.fundo) b.fundo(String(valor));
 if (pid === "vista-grade" && b.grade) b.grade(valor === true || valor === "true");
 if (pid === "vista-disc" && window.BimFocoUI && BimFocoUI.definirVista) BimFocoUI.definirVista(id, String(valor));
 if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
+if (pid === "wf:quadro" && window.WoodFrameUI) WoodFrameUI.mudarVista(pid, valor);
 if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
 BimShell.pintarFita();
 } catch (e2) {}
@@ -86939,5 +86941,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=d03d3e40ad"},{"src":"js/bim-pacote.js?v=3f2a34f3e4","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=1b91b58fe2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=0c23d0833c"},{"src":"js/bim-pacote.js?v=208d01ebbb","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=1b91b58fe2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -15178,6 +15178,7 @@
             { id: "vista-disc", rotulo: "Disciplina", tipo: "lista", valor: (window.BimFocoUI && BimFocoUI.discDaVista ? BimFocoUI.discDaVista(id, "3d") : "coordenacao") || "coordenacao",
               opcoes: (window.BimModeloVista ? Object.keys(BimModeloVista.DISCIPLINAS) : ["arquitetura", "coordenacao"]).map(function (k) { return { id: k, rotulo: window.BimModeloVista ? BimModeloVista.DISCIPLINAS[k] : k }; }) } ]
               /* NÍVEL DE DETALHE (js/biminstui.js): Baixo / Médio / Alto desta vista 3D — o mesmo menu da barra de baixo */
+              .concat((function () { try { var pW = window.WoodFrameUI && WoodFrameUI.paramVista ? WoodFrameUI.paramVista() : null; return pW ? [pW] : []; } catch (eW) { return []; } })())
               .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
           { nome: "Extensões", params: [
             { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
@@ -15196,6 +15197,7 @@
             if (pid === "vista-grade" && b.grade) b.grade(valor === true || valor === "true");
             if (pid === "vista-disc" && window.BimFocoUI && BimFocoUI.definirVista) BimFocoUI.definirVista(id, String(valor));
             if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
+            if (pid === "wf:quadro" && window.WoodFrameUI) WoodFrameUI.mudarVista(pid, valor);
             if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
             BimShell.pintarFita();
           } catch (e2) {}

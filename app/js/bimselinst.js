@@ -391,6 +391,25 @@
         return true;
       } catch (e) { return false; }
     },
+    /* alguma parede selecionada que ainda NÃO é Wood Frame? (o item "Converter para Wood Frame…" só vale com isso) */
+    temParedeNaoWf: function () {
+      var b = B(), est = null; try { est = b && b.editarEstado ? b.editarEstado().estado : null; } catch (e0) { est = null; }
+      var Q = global.WoodFrameQuadro, sel = {}, ok = false;
+      arr(this.selecao()).forEach(function (x) { sel[String(x).replace(/^edit:/, "")] = 1; });
+      arr(est && est.caixas).forEach(function (c) { if (c && c.tipo === "parede" && sel[String(c.id)] && !(Q && Q.ehWf(c))) ok = true; });
+      return ok;
+    },
+    /* CONVERTER PARA WOOD FRAME: abre a lista de tipos da seleção (a troca em lote que já existia) já filtrada em "Wood Frame ·" */
+    converterWoodFrame: function () {
+      var r = this.trocarTipo(), d = global.document;
+      if (r !== "tipo") return r;
+      try {
+        var bus = d.querySelector(".rv-props .bp1-tipos-busca");
+        if (bus) { bus.value = "Wood Frame"; bus.dispatchEvent(new global.Event("input", { bubbles: true })); }
+        status("Converter para Wood Frame: escolha o tipo na lista — vale para todas as paredes selecionadas (um Ctrl+Z desfaz).");
+      } catch (e) { /* sem lista aberta */ }
+      return r;
+    },
     trocarTipo: function () {
       var d = global.document; this.propriedades();
       var bt = d.querySelector('.rv-props [data-bp1="tipo"]');
@@ -446,6 +465,7 @@
           { a: "apoiar", r: "Apoiar em…", tecla: "AE", n: alvosN, off: !(ed && mod && global.BimApoiarUI) },   /* APOIAR EM… (js/bimapoiarui.js) */
           { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
           { a: "trocar-tipo", r: "Trocar tipo/perfil…", off: !ed },
+          { a: "converter-wf", r: "Converter para Wood Frame…", n: alvosN, off: !(ed && mod && this.temParedeNaoWf()) },   /* WOOD FRAME: a troca de tipo em lote das paredes selecionadas (a mesma do seletor Tipo) já filtrada em "Wood Frame" */
           { a: "inv-fora", r: "Inverter dentro/fora", tecla: "Espaço", off: !(invs.fora) },   /* PORTAS E JANELAS (js/vaoinverter.js) */
           { a: "inv-mao", r: "Espelhar (mão)", tecla: "⇧ Espaço", off: !(invs.mao) },
           { a: "lista", r: "Lista da seleção" }
@@ -502,6 +522,7 @@
       if (a === "apoiar") return this.comando("apoiar");
       if (a === "props") return this.propriedades();
       if (a === "trocar-tipo") return this.trocarTipo();
+      if (a === "converter-wf") return this.converterWoodFrame();
       if ((a === "inv-fora" || a === "inv-mao") && uidAlvo && global.BimVaoArr && global.BimVaoArr.inverter) return global.BimVaoArr.inverter(a === "inv-fora" ? "fora" : "mao", String(uidAlvo).replace(/^edit:/, ""));
       if (a === "lista") return this.lista(alvos);
       return null;

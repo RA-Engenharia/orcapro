@@ -517,6 +517,8 @@
         if (pr.sel.length > MUITAS_SEL) { realcarCaixas(s, mo); return; }
         mo.grupo.children.forEach(function (m) {
           if (!s[m.userData.expressID] || !m.geometry) return;
+          /* WOOD FRAME: o quadro (peça de madeira juntada) NÃO leva contorno — o traço de cada montante pintava a parede toda de verde; a casca da parede (mesmo invisível no raio-X) já dá o contorno dela e a madeira fica com a própria cor */
+          if (m.userData.wfPeca) return;
           /* a peça metálica tem a malha GUARDADA entre as reconstruções (js/bim.js, metGeo): as arestas
              dela também ficam — selecionar 300 peças de novo não recalcula as arestas de cada uma */
           var gd = m.geometry.userData || {}, ge = gd.metGeo ? (gd._arestas || (gd._arestas = new THREE.EdgesGeometry(m.geometry))) : new THREE.EdgesGeometry(m.geometry);

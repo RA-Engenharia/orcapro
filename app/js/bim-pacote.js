@@ -589,6 +589,15 @@ var orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping 
 var modelRoot = new THREE.Group(); modelRoot.rotation.x = 0; scene.add(modelRoot);
 var matAndamento = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x7a4a06, transparent: true, opacity: .9, metalness: .05, roughness: .8, side: THREE.DoubleSide });
 var selMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, emissive: 0x0a5a2a, metalness: .1, roughness: .7 });
+var _wfSelCache = {};
+function matSelDe(m) {
+try {
+var b = m && m.userData && m.userData.wfPeca && m.material;
+if (!b || !b.isMeshStandardMaterial || b === selMat) return selMat;
+var k = b.uuid; if (!_wfSelCache[k]) { var cl = b.clone(); cl.emissive = new THREE.Color(0x0a5a2a); cl.emissiveIntensity = 0.28; _wfSelCache[k] = cl; }
+return _wfSelCache[k];
+} catch (_) { return selMat; }
+}
 var clashMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x5a0a0a, metalness: .1, roughness: .6 });
 S = { host: host, opts: opts, scene: scene, camera: camera, renderer: renderer, orbit: orbit, modelRoot: modelRoot,
 _definirTema: definirTema,
@@ -1109,7 +1118,7 @@ var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
 if (S._limparRaioX) S._limparRaioX();
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
 if (hit && hit.object.userData && hit.object.userData.expressID != null) {
-S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
+S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = matSelDe(S.selected);
 contornoSelecao(hit.object);
 if (!fly.on && !xr.on && !planta.on && !corteL.on && !visitante && !trava.on) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6);
 if (opts.onPick) opts.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
@@ -1948,7 +1957,7 @@ if (soUid) return hit ? uidDeMalha(hit.object) : null;
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
 var o = (S && S.opts) || opts;
 if (hit && hit.object.userData && hit.object.userData.expressID != null) {
-S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
+S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = matSelDe(S.selected);
 contornoSelecao(hit.object);
 if (o.onPick) o.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
 } else { contornoSelecao(null); if (o.onPick) o.onPick(null); }
@@ -1957,7 +1966,7 @@ S._selecionarUid = function (uid) {
 var m = S.meshPorUid && S.meshPorUid[uid]; if (!m) return false;
 if (m.userData && m.userData._focoNaoSel === true) return false;
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
-S.selected = m; S.prevMat = m.material; m.material = selMat; contornoSelecao(m);
+S.selected = m; S.prevMat = m.material; m.material = matSelDe(m); contornoSelecao(m);
 var o = (S && S.opts) || opts;
 if (o.onPick) o.onPick(propsDe(m.userData.mid != null ? m.userData.mid : S.modelID, m.userData.expressID, m.userData.tipo));
 try { if (window.BimSelecao && BimSelecao.mudou) BimSelecao.mudou(); } catch (_) {}
@@ -5612,6 +5621,18 @@ return r;
 function precConhece(id) {
 try { var Pr = window.BimPrecisao, e = S.edit && S.edit.estado; return !(Pr && Pr.tipoNoEstado && e) || !!Pr.tipoNoEstado(e, id); } catch (_) { return true; }
 }
+function wfSelecaoMudou(ids) {
+try {
+var Q = window.WoodFrameQuadro, cx = {}, mapa = {}, sig;
+if (!Q || !edit.estado) return;
+(edit.estado.caixas || []).forEach(function (c) { if (c && c.id != null) cx[c.id] = c; });
+(ids || []).forEach(function (id) { if (cx[id] && Q.ehWf(cx[id])) mapa[id] = 1; });
+sig = Object.keys(mapa).sort().join('|');
+if (sig === (S._wfSelSig || '')) return;
+S._wfSelSig = sig; S._wfSel = mapa;
+if (window.WoodFrameModo !== 'quadro') setTimeout(function () { try { if (S && S.alive && edit.ops.length) editRebuild(); } catch (_) {} }, 0);
+} catch (_) {}
+}
 function selAplicar(uids, modo) {
 var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
 novo = novo.filter(function (u) { var m = S.meshPorUid && S.meshPorUid[u]; return !!m && !(m.userData && m.userData._focoNaoSel === true); });
@@ -5621,12 +5642,13 @@ var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u) && insts.inde
 var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
 selInst = insts; realcarInst();
 if (mod) { if ((eds.length || insts.length) && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
+wfSelecaoMudou(eds);
 S._selN = (S._selN || 0) + 1;
 if (S._limparRaioX) S._limparRaioX();
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
 contornoSelecao(null);
 var ult = outros.length ? S.meshPorUid[outros[outros.length - 1]] : null;
-if (ult) { S.selected = ult; S.prevMat = ult.material; ult.material = selMat; contornoSelecao(ult); }
+if (ult) { S.selected = ult; S.prevMat = ult.material; ult.material = matSelDe(ult); contornoSelecao(ult); }
 var o = (S && S.opts) || opts, m0 = novo.length ? S.meshPorUid[novo[0]] : null;
 if (o.onPick) { try { o.onPick(m0 ? propsDe(m0.userData.mid != null ? m0.userData.mid : S.modelID, m0.userData.expressID, m0.userData.tipo) : null); } catch (_) {} }
 if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover (com Ctrl, copia); Delete apaga; Esc limpa.');
@@ -10930,6 +10952,7 @@ if (!S.meshPorUid['edit:' + id]) S.meshPorUid['edit:' + id] = m;
 mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
 }
 var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
+S._wfN = 0;
 st.caixas.forEach(function (c) {
 if (window.BimEmbutido && typeof BimDisciplinas !== 'undefined' && BimDisciplinas.atual && BimEmbutido.oculta(c, BimDisciplinas.atual())) return;
 var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
@@ -10954,6 +10977,7 @@ mo.qto[c.id] = b2r ? b2r.qto : { comprimento: c.tipo === 'pilar' ? (c.compriment
 mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'vedacao' && c.vedacao ? String(c.vedacao.nome || c.vedacao.papel || 'Vedação') : c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
 mo.nEl++;
 });
+try { if (S._wfTem !== S._wfN) { S._wfTem = S._wfN; window.WoodFrameTem = S._wfN; window.dispatchEvent(new CustomEvent('bim:wf', { detail: { n: S._wfN } })); } } catch (_) {}
 st.coberturas.forEach(function (cb) {
 var matC = editMat('cobertura');
 cb.planos.forEach(function (p) {
@@ -12438,7 +12462,7 @@ if (c.tipo === 'parede') {
 var r = A.pecasParede(c, vz ? vz.aceitos : []);
 if (!r.pecas.length) return null;
 var wfQ = null, wfRX = false;
-try { if (window.WoodFrameQuadro && WoodFrameQuadro.ehWf(c)) { wfQ = WoodFrameQuadro.paraParede(c, vz ? vz.aceitos : []); wfRX = !!(wfQ && wfQ.ok && window.WoodFrameModo === 'quadro'); } } catch (eWf) { wfQ = null; }
+try { if (window.WoodFrameQuadro && WoodFrameQuadro.ehWf(c)) { wfQ = WoodFrameQuadro.paraParede(c, vz ? vz.aceitos : []); S._wfN = (S._wfN || 0) + 1; wfRX = !!(wfQ && wfQ.ok && (window.WoodFrameModo === 'quadro' || (S._wfSel && S._wfSel[c.id]))); } } catch (eWf) { wfQ = null; }
 var matCasca = wfRX ? b2Mat('wfOculto') : mat;
 r.pecas.forEach(function (pc) { var m = new THREE.Mesh(b2Geo(pc.pts, null, pc.y0, pc.ytopo, b2Plano), matCasca); addMesh(m, c.id, c.ifc, matCasca); });
 if (wfQ && wfQ.ok) {
