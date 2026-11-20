@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.415",
+versao: "1.2.416",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -72725,7 +72725,7 @@ pend.dados.push("A base de referência carregada é a tabela " + base.mes + ", e
 } else if (baseExigida) {
 pend.dados.push("Base de referência (composições auxiliares) não carregada: as composições auxiliares saem sem detalhamento e as descrições ficam como lidas.");
 }
-var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {};
+var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {}, auxProp = 0, auxPropDif = 0;
 var ufOrcamento = s(orc.uf).toUpperCase();
 function compAAAAMM(v) {
 var t = s(v), m = /(\d{4})\D+(\d{1,2})/.exec(t);
@@ -72738,6 +72738,23 @@ var compOrgao = "";
 if (!compOrgao) compOrgao = compAAAAMM(orc.competenciaSinapi);
 var compDif = { n: 0, base: "", orgao: compOrgao };
 function proporcaoDaBase(it, fonteRaw) {
+if (/SEINFRA/i.test(s(fonteRaw)) || /SEINFRA/i.test(s(it.baseFonte)) || /SEINFRA/i.test(s(it.origem))) {
+var Bs = base;
+if (!Bs || typeof Bs.obter !== "function" || !s(it.codigo)) return null;
+var rs = Bs.obter(s(it.codigo));
+if (!rs) return null;
+var ufS = s(Bs.uf || (Bs.pacote && Bs.pacote.uf)).toUpperCase();
+if (ufS && ufOrcamento && ufS !== ufOrcamento) { semUfBase.push(s(it.codigo)); return null; }
+var Ut3 = U(), uk3 = function (u) { return (Ut3 && Ut3.unidadeChave) ? Ut3.unidadeChave(u) : s(u).toLowerCase(); };
+if (s(it.unidade) && s(rs.unidade) && uk3(rs.unidade) !== uk3(it.unidade)) return null;
+var mo3 = nm(rs.custoMO), mat3 = nm(rs.custoMAT), eq3 = nm(rs.custoEQ), so3 = mo3 + mat3 + eq3;
+if (!(mo3 >= 0 && mat3 >= 0 && eq3 >= 0 && so3 > 0)) return null;
+fontesProp["SEINFRA" + (s(Bs.mes) ? " " + s(Bs.mes) : "") + (ufS ? ", UF " + ufS : "")] = true;
+fonteProporcao = Object.keys(fontesProp).join(" e ");
+var difS = !!(s(tab.seinfra) && s(Bs.mes) && norm(Bs.mes) !== norm(tab.seinfra));
+if (difS) { compDif.base = "SEINFRA " + s(Bs.mes); compDif.orgao = "SEINFRA " + s(tab.seinfra); }
+return { mo: mo3 / so3, mat: mat3 / so3, eq: eq3 / so3, compDif: difS };
+}
 var Orc2 = O(), Ut2 = U();
 if (!Orc2 || !(Orc2.ehSinapi(it.origem) || Orc2.ehSinapi(it.baseFonte) || /^SINAPI/i.test(fonteRaw))) return null;
 var cod = s(it.codigo);
@@ -72805,7 +72822,7 @@ ins.forEach(function (x) {
 var val = Ln.quantidade * x.ct;
 if (x.composicao && x.cat === "OUTROS") {
 var pa = proporcaoDaBase({ origem: x.fonte || "SINAPI", baseFonte: x.fonte, codigo: x.codigo, unidade: x.unidade }, x.fonte);
-if (pa) { cats.MO += val * pa.mo; cats.MAT += val * pa.mat; cats.EQ += val * pa.eq; if (pa.compDif) compDif.n++; return; }
+if (pa) { cats.MO += val * pa.mo; cats.MAT += val * pa.mat; cats.EQ += val * pa.eq; auxProp++; if (pa.compDif) auxPropDif++; return; }
 auxRaw += val;
 }
 cats[x.cat] += val;
@@ -72816,6 +72833,10 @@ if (somaI > 0) { CATS.forEach(function (c) { cats[c] = cats[c] * Ln.custoTotal /
 var rep = Orc.repartirCusto ? Orc.repartirCusto(it, Ln.custoTotal) : null;
 if (rep && (nm(rep.mo) + nm(rep.mat) + nm(rep.eq)) > 0) { cats.MO += nm(rep.mo); cats.MAT += nm(rep.mat); cats.EQ += nm(rep.eq); }
 else if (it.modoCusto === "mo") { cats.MO += Ln.custoTotal; porModoMO++; }
+else if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao)) && (propria || /^C?X+$/i.test(s(Ln.codigo)) || !s(Ln.codigo)) && !proporcaoDaBase(it, fonteRaw)) {
+cats.MO += Ln.custoTotal;
+pend.dados.push("Item " + numeroDoc + " (" + (Ln.codigo || "sem código") + ", administração local) sem composição do órgão: custo contado como mão de obra (equipe da obra). Conferir.");
+}
 else {
 var prop = proporcaoDaBase(it, fonteRaw);
 if (prop) { cats.MO += Ln.custoTotal * prop.mo; cats.MAT += Ln.custoTotal * prop.mat; cats.EQ += Ln.custoTotal * prop.eq; porProporcao++; if (prop.compDif) compDif.n++; }
@@ -72843,6 +72864,7 @@ tot.semBdi += Ln.custoTotal; tot.comBdi += Ln.precoTotal;
 });
 if (colidiu.length) pend.dados.push("Item(ns) acrescentado(s) por você com número igual ao do órgão (" + colidiu.slice(0, 8).join(", ") + (colidiu.length > 8 ? " e mais" : "") + "): saem com o número A.<nº> para não se confundir com a planilha do órgão.");
 if (porProporcao) pend.dados.push(porProporcao + " item(ns) com material, mão de obra e equipamento repartidos pela proporção da base " + fonteProporcao + " do mesmo código; o preço é o da proposta.");
+if (auxPropDif) pend.dados.push(auxPropDif + " composição(ões) auxiliar(es) repartida(s) em material, mão de obra e equipamento pela proporção da " + s(compDif.base) + "; o projeto usa a " + s(compDif.orgao) + ". A proporção pode diferir: conferir.");
 if (compDif.n) pend.dados.push(compDif.n + " item(ns) sem composição no pacote repartidos pela proporção da SINAPI " + compDif.base + "; o órgão usa " + compDif.orgao + ". A proporção pode diferir da do órgão: conferir.");
 if (porModoMO) pend.dados.push(porModoMO + " item(ns) \"só mão de obra\" sem parcelas: custo inteiro em mão de obra.");
 if (semUfBase.length) {
@@ -73210,7 +73232,7 @@ var a = Math.min(L.auxOutros || 0, L.OUTROS), sv = arr(L.OUTROS - a, 2);
 if (a > 0.005) { auxOut += a; nAuxOut++; }
 if (sv > 0.005) { servOut += sv; nServOut++; }
 });
-var todosOrgao = ci.linhas.length > 0 && ci.linhas.every(function (L) { return L.doOrgao; });
+var todosOrgao = ci.linhas.length > 0 && emOutros.every(function (L) { return L.doOrgao; });
 var outrosTot = arr(auxOut + servOut, 2), pctOut = tot.semBdi > 0 ? outrosTot / tot.semBdi * 100 : 0;
 var foraOrgaoOutros = ci.linhas.filter(function (L) { return !L.doOrgao && L.OUTROS > 0.005 && !L.semComposicao; });
 var estCat = (!fecha || ci.todosOutros) ? "reprovado"

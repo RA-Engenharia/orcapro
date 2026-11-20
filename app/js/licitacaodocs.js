@@ -598,7 +598,7 @@
 
     /* Item sem composição e sem parcelas próprias: a base do MESMO tipo (SINAPI) só empresta a PROPORÇÃO
        material/mão de obra/equipamento do mesmo código. O custo, o preço e a composição do item não mudam. */
-    var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {};
+    var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {}, auxProp = 0, auxPropDif = 0;
     var ufOrcamento = s(orc.uf).toUpperCase();
     /* competência (AAAA-MM) que o órgão usa: a SINAPI exigida no edital; sem ela, a do orçamento */
     function compAAAAMM(v) {
@@ -612,6 +612,27 @@
     if (!compOrgao) compOrgao = compAAAAMM(orc.competenciaSinapi);
     var compDif = { n: 0, base: "", orgao: compOrgao };
     function proporcaoDaBase(it, fonteRaw) {
+      /* 20/11/2026 (Rogério, Morada Nova: 21% do custo direto em "outros"): auxiliar SEINFRA dentro da composição do órgão
+         ficava sem repartição porque só a SINAPI era consultada. A base SEINFRA carregada traz custoMO/custoMAT/custoEQ de cada
+         composição: a PROPORÇÃO vem dela (o custo e o preço do item não mudam). Base de outra competência que a do projeto
+         ainda serve para a proporção, marcada para conferir (compDif). UF da base tem de ser a do orçamento. */
+      if (/SEINFRA/i.test(s(fonteRaw)) || /SEINFRA/i.test(s(it.baseFonte)) || /SEINFRA/i.test(s(it.origem))) {
+        var Bs = base;
+        if (!Bs || typeof Bs.obter !== "function" || !s(it.codigo)) return null;
+        var rs = Bs.obter(s(it.codigo));
+        if (!rs) return null;
+        var ufS = s(Bs.uf || (Bs.pacote && Bs.pacote.uf)).toUpperCase();
+        if (ufS && ufOrcamento && ufS !== ufOrcamento) { semUfBase.push(s(it.codigo)); return null; }
+        var Ut3 = U(), uk3 = function (u) { return (Ut3 && Ut3.unidadeChave) ? Ut3.unidadeChave(u) : s(u).toLowerCase(); };
+        if (s(it.unidade) && s(rs.unidade) && uk3(rs.unidade) !== uk3(it.unidade)) return null;
+        var mo3 = nm(rs.custoMO), mat3 = nm(rs.custoMAT), eq3 = nm(rs.custoEQ), so3 = mo3 + mat3 + eq3;
+        if (!(mo3 >= 0 && mat3 >= 0 && eq3 >= 0 && so3 > 0)) return null;
+        fontesProp["SEINFRA" + (s(Bs.mes) ? " " + s(Bs.mes) : "") + (ufS ? ", UF " + ufS : "")] = true;
+        fonteProporcao = Object.keys(fontesProp).join(" e ");
+        var difS = !!(s(tab.seinfra) && s(Bs.mes) && norm(Bs.mes) !== norm(tab.seinfra));
+        if (difS) { compDif.base = "SEINFRA " + s(Bs.mes); compDif.orgao = "SEINFRA " + s(tab.seinfra); }
+        return { mo: mo3 / so3, mat: mat3 / so3, eq: eq3 / so3, compDif: difS };
+      }
       var Orc2 = O(), Ut2 = U();
       if (!Orc2 || !(Orc2.ehSinapi(it.origem) || Orc2.ehSinapi(it.baseFonte) || /^SINAPI/i.test(fonteRaw))) return null;
       var cod = s(it.codigo);
@@ -694,7 +715,7 @@
                regime, reparte MO/MAT/EQ pela proporção da própria auxiliar (mesma regra dos itens sem composição); senão fica em
                "outros", identificada (o detalhe da conferência diz quanto). */
             var pa = proporcaoDaBase({ origem: x.fonte || "SINAPI", baseFonte: x.fonte, codigo: x.codigo, unidade: x.unidade }, x.fonte);
-            if (pa) { cats.MO += val * pa.mo; cats.MAT += val * pa.mat; cats.EQ += val * pa.eq; if (pa.compDif) compDif.n++; return; }
+            if (pa) { cats.MO += val * pa.mo; cats.MAT += val * pa.mat; cats.EQ += val * pa.eq; auxProp++; if (pa.compDif) auxPropDif++; return; }
             auxRaw += val;
           }
           cats[x.cat] += val;
@@ -708,6 +729,12 @@
         var rep = Orc.repartirCusto ? Orc.repartirCusto(it, Ln.custoTotal) : null;
         if (rep && (nm(rep.mo) + nm(rep.mat) + nm(rep.eq)) > 0) { cats.MO += nm(rep.mo); cats.MAT += nm(rep.mat); cats.EQ += nm(rep.eq); }
         else if (it.modoCusto === "mo") { cats.MO += Ln.custoTotal; porModoMO++; }   // item só mão de obra: tudo MO
+        else if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao)) && (propria || /^C?X+$/i.test(s(Ln.codigo)) || !s(Ln.codigo)) && !proporcaoDaBase(it, fonteRaw)) {
+          /* 20/11/2026: administração local sem composição publicada pelo órgão (Morada Nova 1.1, CXXXX) é a equipe da obra
+             (engenheiro, encarregado, apontador): vai para MÃO DE OBRA, avisado para conferir — antes ia inteira para "outros". */
+          cats.MO += Ln.custoTotal;
+          pend.dados.push("Item " + numeroDoc + " (" + (Ln.codigo || "sem código") + ", administração local) sem composição do órgão: custo contado como mão de obra (equipe da obra). Conferir.");
+        }
         else {
           var prop = proporcaoDaBase(it, fonteRaw);
           if (prop) { cats.MO += Ln.custoTotal * prop.mo; cats.MAT += Ln.custoTotal * prop.mat; cats.EQ += Ln.custoTotal * prop.eq; porProporcao++; if (prop.compDif) compDif.n++; }
@@ -735,6 +762,7 @@
     });
     if (colidiu.length) pend.dados.push("Item(ns) acrescentado(s) por você com número igual ao do órgão (" + colidiu.slice(0, 8).join(", ") + (colidiu.length > 8 ? " e mais" : "") + "): saem com o número A.<nº> para não se confundir com a planilha do órgão.");
     if (porProporcao) pend.dados.push(porProporcao + " item(ns) com material, mão de obra e equipamento repartidos pela proporção da base " + fonteProporcao + " do mesmo código; o preço é o da proposta.");
+    if (auxPropDif) pend.dados.push(auxPropDif + " composição(ões) auxiliar(es) repartida(s) em material, mão de obra e equipamento pela proporção da " + s(compDif.base) + "; o projeto usa a " + s(compDif.orgao) + ". A proporção pode diferir: conferir.");
     if (compDif.n) pend.dados.push(compDif.n + " item(ns) sem composição no pacote repartidos pela proporção da SINAPI " + compDif.base + "; o órgão usa " + compDif.orgao + ". A proporção pode diferir da do órgão: conferir.");
     if (porModoMO) pend.dados.push(porModoMO + " item(ns) \"só mão de obra\" sem parcelas: custo inteiro em mão de obra.");
     if (semUfBase.length) {
@@ -1185,7 +1213,9 @@
       /* O VERDE tem condição dupla (revisão de 09/11/2026): TODOS os itens são composição do ÓRGÃO (composicaoOrgao) e o que ficou em "outros"
          (serviço + auxiliar sem repartição) é no máximo 2% do custo direto. Item com composição própria (sem composicaoOrgao) e custo em "outros"
          nunca é verde: nada garante que "outros" seja serviço que o órgão publica como um valor só. */
-      var todosOrgao = ci.linhas.length > 0 && ci.linhas.every(function (L) { return L.doOrgao; });
+      /* 20/11/2026: a folga de 2% exige que os itens EM "outros" sejam composição do órgão (item próprio sem composição, já
+         repartido — ex.: administração local como mão de obra —, não derruba o verde) */
+      var todosOrgao = ci.linhas.length > 0 && emOutros.every(function (L) { return L.doOrgao; });
       var outrosTot = arr(auxOut + servOut, 2), pctOut = tot.semBdi > 0 ? outrosTot / tot.semBdi * 100 : 0;
       var foraOrgaoOutros = ci.linhas.filter(function (L) { return !L.doOrgao && L.OUTROS > 0.005 && !L.semComposicao; });
       var estCat = (!fecha || ci.todosOutros) ? "reprovado"
