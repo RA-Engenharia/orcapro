@@ -13,6 +13,9 @@
  *     Clicar de novo volta a parede inteira. O mesmo interruptor mora na barra de baixo da vista 3D ("Quadro WF", só com
  *     parede Wood Frame no modelo) e nas Propriedades da vista 3D ("Mostrar quadro Wood Frame"). A parede Wood Frame SELECIONADA
  *     mostra o próprio quadro mesmo com o interruptor desligado (js/bim.js, wfSelecaoMudou). Converter alvenaria: menu de seleção › "Converter para Wood Frame…".
+ *   · CÁLCULO ESTRUTURAL (fase 2B, js/woodframecalc.js): as Pranchas e o Memorial rodam o cálculo NBR 7190-1:2022 das paredes (montante, verga, contraventamento,
+ *     hold-down, ligações) no Worker (js/madengworker.js, mensagem "woodframe"); V0 e categoria saem do cadastro da obra no módulo Madeira (mesmo armazenamento da cobertura).
+ *     Sem localização da obra o vento não é calculado e a emissão sai PRELIMINAR — nunca com um V0 de cabeça.
  *   · PRANCHAS WOOD FRAME (fase 2A): Vista › Composição da folha › "Pranchas Wood Frame" — gera o PDF (A1, carimbo RA) com a
  *     planta de painéis, a elevação de cada painel (P01, P02…) com a lista de corte, a lista consolidada e os detalhes típicos
  *     (js/woodframepranchas.js e js/woodframedetalhes.js; os motores de folha da madeira vêm do mesmo grupo do BIM).
@@ -101,17 +104,114 @@
       try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
     },
     /* PRANCHAS WOOD FRAME: planta de painéis, uma elevação por painel (com a lista de corte), lista consolidada e detalhes típicos → PDF vetorial A1 */
-    pranchas: function () {
+    pranchas: function (calc) {
       var WP = global.WoodFramePranchas, PDF = global.SvgPdf;
       if (!WP || !PDF) { status("O gerador de pranchas do Wood Frame não carregou."); return false; }
       var est = this._estado();
       if (!est) { status("Abra o editor 3D para gerar as pranchas do Wood Frame."); return false; }
-      var opc = this._opcoes(), x = WP.gerar(est, opc);
+      var opc = this._opcoes(); if (calc && calc.ok) opc.calculo = calc;
+      var x = WP.gerar(est, opc);
       try { global.localStorage.setItem(opc._chave || "ra:wf:painel:geral", JSON.stringify(opc.numeracao || {})); } catch (eL) { /* sem armazenamento: a numeração vale só desta geração */ }
       if (!x.ok) { status("Pranchas Wood Frame: " + (x.avisos[x.avisos.length - 1] || "não há parede de Wood Frame no modelo.")); return false; }
       var ok = this._baixar("pranchas-wood-frame.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: "Pranchas Wood Frame" }), "application/pdf");
       status(ok ? (x.folhas.length + " pranchas Wood Frame em PDF (A1): " + x.paineis.length + " painéis" + (x.avisos.length ? " · " + x.avisos.length + " aviso(s): " + x.avisos[0] : "") + ".") : "Não foi possível baixar o PDF das pranchas.");
       return !!ok;
+    },
+    /* dados da obra para o vento e a umidade: o mesmo cadastro que a cobertura calculada usa (módulo Madeira) */
+    _opcCalc: function (est) {
+      var o = {};
+      try {
+        var g = global.Gestao, id = String((g && g._bimSel) || "geral"), t = global.localStorage.getItem("orcapro:madeira:eng:v1:" + id), s = t ? JSON.parse(t) : null, ob = s && s.estado && s.estado.obra ? s.estado.obra : {};
+        if (ob.lat != null && ob.lon != null) o.vento = { local: { lat: Number(ob.lat), lon: Number(ob.lon), descricao: ob.local || "" }, categoria: ob.categoria || "II", grupoS3: ob.grupoS3 || 2, s1tipo: ob.s1tipo || "plano", s1: ob.s1 != null ? ob.s1 : 1 };
+        if (ob.v0 != null && Number(ob.v0) > 0) o.vento = { v0: Number(ob.v0), categoria: ob.categoria || "II", grupoS3: ob.grupoS3 || 2, s1tipo: ob.s1tipo || "plano", s1: ob.s1 != null ? ob.s1 : 1 };
+        if (ob.umidade) o.umidade = Number(ob.umidade);
+      } catch (e) { /* sem cadastro: o vento sai "não calculado" e a emissão PRELIMINAR */ }
+      /* a cobertura DESENHADA no modelo (telha do catálogo + trama, inclinação, beiral, eixo da cumeeira): sem telhado, vira pendência do cálculo (PRELIMINAR) */
+      try {
+        var WC0 = global.WoodFrameCalc, tl = est && est.telhados;
+        if (WC0 && WC0.coberturaDoEstado && tl && tl.length) { var cb = WC0.coberturaDoEstado(est, null); if (cb && !cb.erro) o.cobertura = cb; }
+      } catch (eC) { /* sem a ponte da cobertura: o cálculo tenta ler o telhado sozinho */ }
+      return o;
+    },
+    _obraId: function () { try { var g = global.Gestao; return String((g && g._bimSel) || "geral"); } catch (e) { return "geral"; } },
+    /* o cálculo roda no Worker (leve, mas não trava a tela); sem Worker, só se os motores estiverem na página. cb(resultado | null, mensagem) */
+    calcular: function (est, cb) {
+      var opc = this._opcoes(), WQ = global.WoodFrameQuadro, entrada;
+      try {
+        var vaos = WQ && WQ.vaosDasParedes ? (WQ.vaosDasParedes(est, opc) || {}) : {};
+        entrada = JSON.parse(JSON.stringify({ estado: { caixas: est.caixas, telhados: est.telhados || [] }, vaos: vaos, opc: this._opcCalc(est), obraId: this._obraId() }));
+      } catch (e) { cb(null, "não consegui preparar o modelo para o cálculo: " + (e && e.message ? e.message : e)); return false; }
+      var feito = false, w = null;
+      function fim(r, msg) { if (feito) return; feito = true; try { if (r && r.ok && global.WoodFrameCalc && global.WoodFrameCalc.guardar) global.WoodFrameCalc.guardar(r); } catch (eG) { /* sem guarda */ } try { if (w) w.terminate(); } catch (e0) { /* já encerrado */ } cb(r, msg); }
+      if (typeof global.Worker === "function") {
+        var ver = ""; try { var mv = /[?&]v=([^&]+)/.exec(String(global.location && global.location.search || "")); if (mv) ver = "?v=" + mv[1]; } catch (e1) { /* sem versão */ }
+        try {
+          w = new global.Worker("js/madengworker.js" + ver);
+          w.onmessage = function (ev) {
+            var m = ev.data || {};
+            if (m.tipo === "fim-woodframe") { try { fim(JSON.parse(m.texto)); } catch (e2) { fim(null, "resposta ilegível do cálculo"); } }
+            else if (m.tipo === "erro") fim(null, m.mensagem || "o cálculo falhou");
+          };
+          w.onerror = function () { fim(null, "o Worker do cálculo não abriu"); };
+          w.postMessage({ tipo: "woodframe", id: 1, entrada: entrada });
+          return true;
+        } catch (e3) { w = null; }
+      }
+      var WC = global.WoodFrameCalc;
+      try { var r = WC && global.MadLigCalc && global.MadWoodFrame ? WC.calcular(entrada) : null; if (r) fim(r); else fim(null, "o Worker não abriu e os motores não estão na página"); } catch (e4) { fim(null, e4 && e4.message ? e4.message : String(e4)); }
+      return true;
+    },
+    /* PRANCHAS: calcula, depois gera (a folha de resumo e a seção calculada entram sozinhas) */
+    pranchasCalculadas: function () {
+      var self = this, est = this._estado(), WQ = global.WoodFrameQuadro, resp = null, assinc = false;
+      if (!est) { status("Abra o editor 3D para gerar as pranchas do Wood Frame."); return false; }
+      if (!WQ || !(est.caixas || []).some(function (c) { return WQ.ehWf(c); })) return this.pranchas();      /* sem parede de quadro: o aviso de sempre, sem cálculo */
+      status("Wood Frame: calculando as paredes (NBR 7190-1:2022)…");
+      this.calcular(est, function (calc, msg) {
+        var r;
+        if (!calc || !calc.ok) { status("Cálculo do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + " — pranchas sem o cálculo."); r = self.pranchas(); }
+        else r = self.pranchas(calc);
+        resp = r; if (assinc) return;
+      });
+      assinc = true;
+      return resp === null ? true : resp;            /* Worker: o PDF baixa quando o cálculo volta; sem Worker: já voltou */
+    },
+    memorial: function () {
+      var self = this, est = this._estado(), MEM = global.WoodFrameMemorial;
+      if (!est) { status("Abra o editor 3D para gerar o memorial do Wood Frame."); return false; }
+      if (!MEM) { status("O gerador do memorial do Wood Frame não carregou."); return false; }
+      status("Wood Frame: calculando as paredes (NBR 7190-1:2022)…");
+      return this.calcular(est, function (calc, msg) {
+        if (!calc || !calc.ok) { status("Memorial do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + "."); return; }
+        var opc = self._opcoes(), r = MEM.gerar(calc, { obra: { nome: opc.obra || "", cidade: opc.local || "", proprietario: opc.proprietario || "" }, documento: { numero: opc.codigo || "EST-MAD-WF", revisao: opc.revisao || "R00", data: new Date().toISOString().slice(0, 10) } });
+        if (!r.ok) { status("Memorial do Wood Frame: " + (r.motivo || "não gerou")); return; }
+        var ok = self._baixar("memorial-wood-frame.html", r.html, "text/html;charset=utf-8");
+        status(ok ? "Memorial do Wood Frame (" + r.tabelas + " tabelas)" + (r.preliminar ? " — PRELIMINAR: " + calc.motivosPreliminar[0] : "") + "." : "Não foi possível baixar o memorial.");
+      });
+    },
+    /* APLICAR A SEÇÃO CALCULADA — ação explícita: troca o tipo das paredes que o cálculo manda mudar (38×89 → 38×140), o espaçamento e o prego de borda; UM desfazer volta tudo;
+       depois recalcula. Só vale para o cálculo VIGENTE (o modelo não mudou depois dele). */
+    aplicarSecaoCalculada: function () {
+      var self = this, est = this._estado(), WC = global.WoodFrameCalc, Bm = B(), WQ = global.WoodFrameQuadro;
+      if (!est || !Bm || !Bm.editarLote || !WC || !WC.planoAplicar) { status("Abra o editor 3D para aplicar a seção calculada do Wood Frame."); return false; }
+      var calc = WC.ultimo();
+      if (!calc) { status("Calcule antes (Memorial ou Pranchas Wood Frame): não há cálculo para aplicar."); return false; }
+      var vaos = {}; try { vaos = WQ && WQ.vaosDasParedes ? (WQ.vaosDasParedes(est, this._opcoes()) || {}) : {}; } catch (e) { vaos = {}; }
+      if (!WC.vigente(est, vaos, calc, { opc: this._opcCalc(est), obraId: this._obraId() })) { status("O cálculo do Wood Frame está DESATUALIZADO (o modelo mudou depois dele): calcule de novo antes de aplicar."); return false; }
+      var ops = Bm.editarOps(), seq = 0;
+      ops.forEach(function (o) { var m = /^[eaf](\d+)$/.exec(String(o && o.id || "")); if (m) seq = Math.max(seq, parseInt(m[1], 10)); });
+      var pl = WC.planoAplicar(est, calc, seq);
+      if (!pl.ok) { status("Aplicar a seção calculada: " + pl.motivo); return false; }
+      if (pl.vazio) { status("Nada a aplicar: o modelo já está na seção, no espaçamento e no prego calculados." + (pl.pendencias.length ? " Pendência: " + pl.pendencias[0] : "")); return false; }
+      /* o caminho de edição do USUÁRIO (BIM.editarLote): grava, limpa o refazer, passa pelo BimGrupos e não mexe na câmera; um Ctrl+Z desfaz o lote inteiro */
+      if (!Bm.editarLote(pl.lote)) { status("Aplicar a seção calculada: o editor recusou o lote."); return false; }
+      status("Seção calculada aplicada em " + pl.resumo.length + " parede(s) (" + pl.resumo[0].id + ": " + pl.resumo[0].mudancas.join("; ") + ") — um Ctrl+Z desfaz tudo. Recalculando…");
+      var est2 = this._estado();
+      if (est2) this.calcular(est2, function (c2, msg) {
+        if (!c2 || !c2.ok) { status("Seção aplicada; o recálculo falhou: " + (msg || (c2 && c2.motivo) || "sem resultado") + "."); return; }
+        status("Seção aplicada e recalculado: " + (c2.preliminar ? "PRELIMINAR — " + c2.motivosPreliminar[0] : "atende") + " (η máx. " + c2.resumo.etaMax.toFixed(2).replace(".", ",") + ").");
+      });
+      return true;
     },
     registrar: function (reg) {
       var self = this, R = global.BimRibbon;
@@ -121,10 +221,14 @@
       ]);
       /* junto das pranchas da folha: o mesmo painel "Composição da folha" (a fita junta pelo nome do painel) */
       R.acrescentar("vista", "Vista", "Composição da folha", [
-        { id: "wf-pranchas", rotulo: "Pranchas\nWood Frame", icone: "prancha", grande: true, dica: "Gera o jogo de pranchas do Wood Frame num PDF A1 com o carimbo RA: planta de painéis (P01, P02… e o sentido de montagem), a elevação de cada painel (montantes com eixo e cotas acumuladas, guias, vãos com verga, ombreiras e cripples, bloqueadores, OSB com as juntas, chumbadores e hold-downs) com a lista de corte, a lista consolidada da obra (m³ e peças por seção) e os detalhes típicos desenhados do tipo de parede (canto, encontro, junta de OSB, esquadria, base, topo e verga)." }
+        { id: "wf-pranchas", rotulo: "Pranchas\nWood Frame", icone: "prancha", grande: true, dica: "Gera o jogo de pranchas do Wood Frame num PDF A1 com o carimbo RA: planta de painéis (P01, P02… e o sentido de montagem), a elevação de cada painel (montantes com eixo e cotas acumuladas, guias, vãos com verga, ombreiras e cripples, bloqueadores, OSB com as juntas, chumbadores e hold-downs) com a lista de corte, a lista consolidada da obra (m³ e peças por seção) e os detalhes típicos desenhados do tipo de parede (canto, encontro, junta de OSB, esquadria, base, topo e verga)." },
+        { id: "wf-memorial", rotulo: "Memorial\nWood Frame", icone: "prancha", dica: "Calcula as paredes de Wood Frame pela NBR 7190-1:2022 (montante, verga, contraventamento por OSB, hold-down, ligações) e baixa o MEMORIAL DE CÁLCULO em HTML. Sai PRELIMINAR enquanto o vento não estiver calculado (informe a localização da obra no módulo Madeira) ou houver premissa sem confirmação do RT." },
+        { id: "wf-aplicar", rotulo: "Aplicar seção\ncalculada", icone: "camadas", dica: "Aplica o resultado do último cálculo do Wood Frame: troca o tipo das paredes que reprovam (38×89 → 38×140 …), o espaçamento dos montantes e o prego de borda do OSB, e recalcula. É uma ação sua; um Ctrl+Z desfaz tudo de uma vez. Precisa de um cálculo vigente (rode o Memorial ou as Pranchas antes)." }
       ]);
       reg["wf-quadro"] = function (e) { return self.alternar(e && e.ligado !== undefined ? !!e.ligado : undefined); };
-      reg["wf-pranchas"] = function () { return self.pranchas(); };
+      reg["wf-pranchas"] = function () { return self.pranchasCalculadas(); };
+      reg["wf-memorial"] = function () { return self.memorial(); };
+      reg["wf-aplicar"] = function () { return self.aplicarSecaoCalculada(); };
       return true;
     }
   };

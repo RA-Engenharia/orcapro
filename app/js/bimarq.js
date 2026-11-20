@@ -1327,6 +1327,7 @@
         var tpW = clone(c.tipoParede), wfN = tpW.wf || {}, wq = campos.wf;
         if (num(wq.espac, 0) >= 150 && num(wq.espac, 0) <= 1000) wfN.espac = Math.round(num(wq.espac, 0));
         if (wq.canto === "3montantes" || wq.canto === "bloco") wfN.canto = wq.canto;
+        if (num(wq.espOsbBorda, 0) >= 30 && num(wq.espOsbBorda, 0) <= 300) wfN.espOsbBorda = Math.round(num(wq.espOsbBorda, 0));     /* prego de borda do OSB (mm): calculado pela fase 2B */
         if (num(wq.osbE, 0) >= 6 && num(wq.osbE, 0) <= 25) {
           wfN.osbE = num(wq.osbE, 0);
           tpW.camadas.forEach(function (k) { if (k.id === "osb") { k.e = r6(wfN.osbE / 1000); k.rotulo = "OSB " + String(wfN.osbE).replace(".", ",") + " mm"; } });

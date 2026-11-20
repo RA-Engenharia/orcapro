@@ -915,13 +915,20 @@
     });
     var Es = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); if (Es && Es.quantitativo) { var qe = Es.quantitativo(estado, opc); qe.itens.forEach(function (x) { itens.push(x); }); qe.avisos.forEach(function (x) { avisos.push(x); }); }
     var wfParcial = false, wfSemPreco = 0;
-    var Wq = dep("WoodFrameQuadro", "./woodframequadro.js"); if (Wq && Wq.quantitativo) { var qw = Wq.quantitativo(estado, opc); qw.itens.forEach(function (x) { itens.push(x); }); qw.avisos.forEach(function (x) { avisos.push(x); }); wfParcial = !!qw.parcial; wfSemPreco = qw.semPreco || 0; }   /* WOOD FRAME: peças, OSB, fixações e membrana */
+    var wfPrelim = false, wfCalculado = false;
+    var Wq = dep("WoodFrameQuadro", "./woodframequadro.js");
+    if (Wq && Wq.quantitativo) {
+      /* o ÚLTIMO cálculo estrutural do Wood Frame (NBR 7190-1:2022) segue para o orçamento: PRELIMINAR e "o cálculo pede 38×140 / prego 75" chegam aqui; sem o cálculo, o orçamento é o do MODELO como sempre */
+      var opW = opc, WCq = dep("WoodFrameCalc", "./woodframecalc.js");
+      if (!opc.calculo && WCq && WCq.ultimo && WCq.ultimo()) { opW = {}; Object.keys(opc).forEach(function (k) { opW[k] = opc[k]; }); opW.calculo = WCq.ultimo(); }
+      var qw = Wq.quantitativo(estado, opW); qw.itens.forEach(function (x) { itens.push(x); }); qw.avisos.forEach(function (x) { avisos.push(x); }); wfParcial = !!qw.parcial; wfSemPreco = qw.semPreco || 0; wfPrelim = !!qw.preliminar; wfCalculado = !!qw.calculado;
+    }   /* WOOD FRAME: peças, OSB, fixações e membrana */
     var Fd = dep("BimForroDrywall", "./bimforrodrywall.js"); if (Fd && Fd.quantitativo) { var qf = Fd.quantitativo(estado, opc); qf.itens.forEach(function (x) { itens.push(x); }); qf.avisos.forEach(function (x) { avisos.push(x); }); }
     var totais = {};
     itens.forEach(function (x) { var k = x.item + "|" + x.un; totais[x.grupo] = (totais[x.grupo] || 0) + 1; void k; });
     return { itens: itens, avisos: avisos, base: SINAPI.base, contagemPorGrupo: totais,
              comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length,
-             parcial: wfParcial, semPrecoWoodFrame: wfSemPreco };   /* WOOD FRAME: sem composição SINAPI, o total que alguém somar fica PARCIAL */
+             parcial: wfParcial, semPrecoWoodFrame: wfSemPreco, woodFramePreliminar: wfPrelim, woodFrameCalculado: wfCalculado };   /* WOOD FRAME: sem composição SINAPI, o total que alguém somar fica PARCIAL */
   }
 
   /* ============================================================ T2 (20/10/2026): RUFO E CONTRARRUFO NO ENCONTRO COM PAREDE MAIS ALTA

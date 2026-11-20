@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.405",
+versao: "1.2.406",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -89483,6 +89483,7 @@ tijolinho_11: { rotulo: "Tijolinho laminado aparente 5,5×11×23", e: 110, famil
 concreto_armado_15: { rotulo: "Parede de concreto 15 cm", e: 150, familia: null, peso: 2500, unidade: "kg/m3", tipo: "concreto", fonte: "NBR 6120:2019 — concreto armado 25 kN/m³" },
 drywall_70: { rotulo: "Drywall montante 70 mm", e: 95, familia: null, peso: 280, unidade: "kg/m3", tipo: "seco", fonte: "prática — 70 mm + 2 chapas de 12,5 mm" },
 wf_89: { rotulo: "Quadro de madeira 38×89 + lã", e: 89, familia: null, peso: null, unidade: "kg/m3", tipo: "woodframe", fonte: "pedido RA (Wood Frame): montante 38×89; a seção bruta do catálogo Nibra é 50×100 — confirmar o beneficiamento com o fornecedor" },
+wf_140: { rotulo: "Quadro de madeira 38×140 + lã", e: 140, familia: null, peso: null, unidade: "kg/m3", tipo: "woodframe", fonte: "cálculo Wood Frame (fase 2B, NBR 7190-1:2022): montante 38×140 quando o 38×89 reprova; seção bruta do catálogo Nibra 50×150 — confirmar o beneficiamento com o fornecedor; lã de 140 mm" },
 wf_64: { rotulo: "Quadro de madeira 38×64 + lã", e: 64, familia: null, peso: null, unidade: "kg/m3", tipo: "woodframe", fonte: "pedido RA (Wood Frame): montante 38×64 (divisória interna não portante)" },
 blocok_10: { rotulo: "Blocok 10 cm (painel EPS)", e: 100, familia: null, peso: 469, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "38 kg ÷ (0,81 m² × 0,10 m) — franqueado Blocok" },
 blocok_13: { rotulo: "Blocok 13 cm (painel EPS)", e: 130, familia: null, peso: 427, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "45 kg ÷ (0,81 m² × 0,13 m) — franqueado Blocok" },
@@ -89608,6 +89609,34 @@ nota: "Fachada com siding de 10 mm no lugar da placa cimentícia."
 "wf-ext-ru": {
 rotulo: "Wood Frame · externa, gesso RU (área molhada por dentro)",
 funcao: "estrutural", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+dentro: ["gesso_acart_ru"],
+fora: ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+nota: "Fachada cujo lado de dentro é banheiro/cozinha: gesso acartonado resistente à umidade (RU)."
+},
+"wf-ext-140": {
+rotulo: "Wood Frame 38×140 · externa (cimentícia + OSB + gesso)",
+funcao: "estrutural", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
+dentro: ["gesso_acart"],
+fora: ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+nota: "Fachada: placa cimentícia 10 mm, câmara ventilada de 20 mm, membrana hidrófuga, OSB 11,1 mm, quadro 38×140 com lã de 140 mm e gesso acartonado 12,5 mm. Montantes a 400 mm (parâmetro do tipo)."
+},
+"wf-ext-vapor-140": {
+rotulo: "Wood Frame 38×140 · externa com barreira de vapor",
+funcao: "estrutural", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
+dentro: ["barreira_vapor", "gesso_acart"],
+fora: ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+nota: "Igual à externa, com barreira de vapor entre a lã e o gesso (opcional — clima e projeto decidem)."
+},
+"wf-ext-siding-140": {
+rotulo: "Wood Frame 38×140 · externa com siding",
+funcao: "estrutural", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
+dentro: ["gesso_acart"],
+fora: ["osb", "membrana_hidrofuga", "camara_ripa_20", "siding"],
+nota: "Fachada com siding de 10 mm no lugar da placa cimentícia."
+},
+"wf-ext-ru-140": {
+rotulo: "Wood Frame 38×140 · externa, gesso RU (área molhada por dentro)",
+funcao: "estrutural", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
 dentro: ["gesso_acart_ru"],
 fora: ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
 nota: "Fachada cujo lado de dentro é banheiro/cozinha: gesso acartonado resistente à umidade (RU)."

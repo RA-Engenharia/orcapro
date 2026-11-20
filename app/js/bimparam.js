@@ -242,6 +242,7 @@
     paredeLinhaLoc: function (x) { var v = el(x).linhaLoc, L = x.linhasLoc || []; for (var i = 0; i < L.length; i++) if (L[i].v === (v || 0)) return L[i].nome; return "Linha central da parede"; },
     /* WOOD FRAME: os parâmetros do quadro vêm do tipo (Editar tipo) e, sem ele, da foto do tipo na parede (js/woodframequadro.js) */
     paredeWfEspac: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf; if (t && t.wfEspac != null && t.wfEspac !== "") return txt(t.wfEspac); return w ? String(w.espac) : null; },
+    paredeWfPregoBorda: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf; if (t && t.wfPregoBorda != null && t.wfPregoBorda !== "") return txt(t.wfPregoBorda); return w ? String(w.espOsbBorda != null ? w.espOsbBorda : 150) : null; },
     paredeWfOsb: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf; if (t && t.wfOsbE != null && t.wfOsbE !== "") return txt(t.wfOsbE); return w ? String(w.osbE).replace(".", ",") : null; },
     paredeWfCanto: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf, v = t && t.wfCanto ? t.wfCanto : (w ? w.canto : null); return v ? (v === "bloco" ? "Bloco" : "3 montantes") : null; },
     paredeVirarExt: function (x) { var t = x.tipo && x.tipo.valores, v = el(x).virar; if (t && t.virarExtremidades) return txt(t.virarExtremidades); return v && v.ext ? (v.ext === "fora" ? "Exterior" : "Interior") : "Nenhum"; },
@@ -847,6 +848,7 @@
         /* P4: virar camadas — do TIPO ("Editar tipo" muda todas as instâncias) */
         /* WOOD FRAME (Editar tipo): espaçamento dos montantes, OSB e canto — o quadro se refaz em todas as paredes do tipo */
         P(T, "Construção", "Wood Frame: espaçamento dos montantes (mm)", "RA_WF_ESPAC", "lista", { calc: "paredeWfEspac", campo: "wfEspac", escrita: "ajustarTipo.valores.wfEspac", leitura: false, opcoes: ["300", "400", "600"] }),
+        P(T, "Construção", "Wood Frame: espaçamento do prego de borda do OSB (mm)", "RA_WF_PREGO_BORDA", "lista", { calc: "paredeWfPregoBorda", campo: "wfPregoBorda", escrita: "ajustarTipo.valores.wfPregoBorda", leitura: false, opcoes: ["50", "75", "100", "150"] }),
         P(T, "Construção", "Wood Frame: espessura do OSB (mm)", "RA_WF_OSB", "lista", { calc: "paredeWfOsb", campo: "wfOsbE", escrita: "ajustarTipo.valores.wfOsbE", leitura: false, opcoes: ["9,5", "11,1"] }),
         P(T, "Construção", "Wood Frame: canto em L", "RA_WF_CANTO", "lista", { calc: "paredeWfCanto", campo: "wfCanto", escrita: "ajustarTipo.valores.wfCanto", leitura: false, opcoes: ["3 montantes", "Bloco"] }),
         P(T, "Construção", "Virar nas extremidades", "WRAPPING_AT_ENDS_PARAM", "lista", { calc: "paredeVirarExt", campo: "virarExtremidades", escrita: "ajustarTipo.valores.virarExtremidades", leitura: false, opcoes: ["Nenhum", "Exterior", "Interior"] }),
@@ -1821,9 +1823,10 @@
     if (cat === "laje" && fin(Number(v.espessura)) && Number(v.espessura) >= 0.03) return A.ajustar(c, { tipoLaje: { id: t.id, rotulo: t.nome || "", espessura: Number(v.espessura) } });
     /* P4: virar camadas é do TIPO de parede: vale para todas as instâncias */
     /* WOOD FRAME: espaçamento, OSB e canto são do TIPO — valem para todas as paredes dele; o quadro se regenera na hora (chave nova no cache) */
-    if (cat === "parede" && (v.wfEspac != null || v.wfOsbE != null || v.wfCanto != null)) {
+    if (cat === "parede" && (v.wfEspac != null || v.wfOsbE != null || v.wfCanto != null || v.wfPregoBorda != null)) {
       var wq = {};
       if (v.wfEspac != null && v.wfEspac !== "") wq.espac = Number(String(v.wfEspac).replace(",", "."));
+      if (v.wfPregoBorda != null && v.wfPregoBorda !== "") wq.espOsbBorda = Number(String(v.wfPregoBorda).replace(",", "."));
       if (v.wfOsbE != null && v.wfOsbE !== "") wq.osbE = Number(String(v.wfOsbE).replace(",", "."));
       if (v.wfCanto != null && v.wfCanto !== "") wq.canto = /bloco/i.test(String(v.wfCanto)) ? "bloco" : "3montantes";
       var rW = Object.keys(wq).length ? A.ajustar(c, { wf: wq }) : false;

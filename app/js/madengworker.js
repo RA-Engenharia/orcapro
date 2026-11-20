@@ -20,12 +20,14 @@
   var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
     "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
     "madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js",
-    "madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js"];      /* o encaixe de carpinteiro + a geometria do telhado desenhado: mensagem "geometria" (abaixo) */
+    "madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js",      /* o encaixe de carpinteiro + a geometria do telhado desenhado: mensagem "geometria" (abaixo) */
+    "madligcalc.js", "madwoodframe.js", "woodframequadro.js", "woodframecalc.js"];      /* Wood Frame fase 2B: o cálculo estrutural das paredes de quadro — mensagem "woodframe" (abaixo) */
   var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
     "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
     "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
     "madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas",
-    "madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes" };
+    "madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes",
+    "madligcalc.js": "MadLigCalc", "madwoodframe.js": "MadWoodFrame", "woodframequadro.js": "WoodFrameQuadro", "woodframecalc.js": "WoodFrameCalc" };
   var ETAPAS = ["preparar", "deck", "dimensionar", "ligacoes", "fonte", "auditoria", "orcamento"];
   var NOME_ETAPA = { preparar: "Montando o modelo, as cargas e o vento (NBR 6123, com vento oblíquo e abertura dominante)", dimensionar: "Dimensionando as seções no catálogo e verificando (NBR 7190, 2ª ordem)",
     deck: "Deck: tábuas, barrotes, vigas, pilaretes, estabilidade lateral, guarda-corpo e escada (NBR 7190-1, 6120, 14718)", ligacoes: "Ligações: pinos, chapas, placa de base e chumbadores", fonte: "Lista de peças com geometria", auditoria: "Pente-fino do projeto (peças sem apoio, esbeltez, verga, reforço)", orcamento: "Itens do orçamento, com preço e fonte" };
@@ -152,7 +154,14 @@
     return MD.paraTexto(MD.calcularMotor(motor));
   }
 
-  var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, geometria: geometria, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
+  /* WOOD FRAME fase 2B: o cálculo estrutural das paredes de quadro ({ estado: {caixas, telhados?}, vaos, opc } — só dados, sem função) → resultado em TEXTO JSON */
+  function woodframe(entrada) {
+    var WC = G("WoodFrameCalc") || (typeof require === "function" ? require("./woodframecalc.js") : null);
+    if (!WC) throw new Error("js/woodframecalc.js não carregou");
+    return JSON.stringify(WC.calcular(entrada));
+  }
+
+  var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, geometria: geometria, woodframe: woodframe, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
   if (!NO_WORKER) {
     global.MadEngWorker = API;
     if (typeof module !== "undefined" && module.exports) module.exports = API;
@@ -180,6 +189,10 @@
         if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
         var tg = geometria(m.motor);
         global.postMessage({ tipo: "fim-geometria", id: m.id, ms: Date.now() - t0, texto: tg });
+      } else if (m.tipo === "woodframe") {
+        if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
+        var tw = woodframe(m.entrada);
+        global.postMessage({ tipo: "fim-woodframe", id: m.id, ms: Date.now() - t0, texto: tw });
       }
     } catch (e) {
       global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.message : String(e), pilha: e && e.stack ? String(e.stack).slice(0, 1200) : "" });

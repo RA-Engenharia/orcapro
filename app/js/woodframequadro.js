@@ -224,8 +224,9 @@
       if (ex) for (var k in ex) if (Object.prototype.hasOwnProperty.call(ex, k)) o[k] = ex[k];
       pecas.push(o); return o;
     }
-    var SEC_MONT = P.montante[0] + "x" + P.montante[1], COMPRA_MONT = "50x100";
-    if (P.montante[1] !== 89) COMPRA_MONT = null;     /* 38×64 e outras: sem seção de catálogo — pendência */
+    var SEC_MONT = P.montante[0] + "x" + P.montante[1], COMPRA_MONT = "50x100", cm0 = null;
+    VERGAS.concat([{ secao: VERGA_ACIMA.secao, compra: VERGA_ACIMA.compra }]).forEach(function (t) { if (t.secao[0] === P.montante[0] && t.secao[1] === P.montante[1]) cm0 = t.compra; });
+    COMPRA_MONT = cm0;     /* a seção de compra do catálogo Nibra (89 → 50x100, 140 → 50x150…); 38×64 e outras: sem seção de catálogo — pendência */
     function mont(tipo, u0, u1, y0, y1, ex) { return add(tipo, "madeira", SEC_MONT, u0, u1, y0, y1, wn0, wn1, ex); }
     function bloco(u0, u1, yc) { return add("bloco", "madeira", SEC_MONT, u0, u1, yc - guia / 2, yc + guia / 2, wn0, wn1, { aoLado: "bloco" }); }
     function ocupa(u0, u1) { ocupado.push({ u0: u0, u1: u1 }); }
@@ -737,10 +738,48 @@
     if (tot.membr) avisos.push("Wood Frame: a membrana hidrófuga sai só em 'Camadas — quantitativo' da parede; ao orçar essa camada, acrescente a sobreposição de " + virg(PADRAO.sobreposicaoMembrana * 100, 0) + " % (critério RA).");
     if (tot.gessoParaf) itens.push(item("Parafuso de gesso acartonado", "un", tot.gessoParaf, "1 a cada " + Object.keys(parafSet).sort().join(" ou ") + " mm ao longo de cada linha de montante (o canto conta uma linha por face) e nas bordas horizontais; " + PEND, ex));
     pend.forEach(function (x) { avisos.push("Pendente: " + x + " — fora da tabela, calcular."); });
+    /* CÁLCULO ESTRUTURAL (fase 2B, js/woodframecalc.js): opc.calculo (resultado) ou opc.calcular = true. O orçamento continua refletindo o MODELO; o cálculo só
+       marca PRELIMINAR (reprova, sem solução ou premissa sem confirmação do RT), diz a força do hold-down e avisa onde a seção/espaçamento calculados diferem. */
+    var calc = opc.calculo || null, WCm = global.WoodFrameCalc || (typeof require === "function" ? (function () { try { return require("./woodframecalc.js"); } catch (eW) { return null; } })() : null);
+    if (!calc && opc.calcular) {
+      try { if (WCm) calc = WCm.calcular({ estado: estado, vaos: vaosTodos || {}, opc: opc.calcOpc || {} }); } catch (eC) { avisos.push("Cálculo estrutural do Wood Frame: " + (eC && eC.message ? eC.message : eC)); }
+    }
+    var preliminar = false, prelMsg = null;
+    /* o cálculo guardado só vale para o modelo que ele viu (assinatura das paredes de quadro e dos vãos): mudou depois = DESATUALIZADO, sem aplicar as diferenças */
+    var obraAtual = typeof Gestao !== "undefined" && Gestao && Gestao._bimSel != null ? String(Gestao._bimSel) : null, cobAtual = null;     /* a obra aberta agora (o cálculo guardado é de UMA obra) */
+    try { if (WCm && WCm.coberturaDoEstado && arr(estado && estado.telhados).length) { var cdq = WCm.coberturaDoEstado(estado, null); if (cdq && !cdq.erro) cobAtual = WCm.cobKey(cdq); } } catch (eK) { cobAtual = null; }
+    if (calc && calc.ok && ((calc.assinatura != null && WCm && WCm.assinatura && calc.assinatura !== WCm.assinatura(estado, vaosTodos || {})) ||
+        (calc.obraId != null && obraAtual != null && calc.obraId !== obraAtual) || (cobAtual != null && calc.cobKey != null && calc.cobKey !== "" && calc.cobKey !== cobAtual))) {
+      preliminar = true; prelMsg = "PRELIMINAR: o cálculo estrutural do Wood Frame está DESATUALIZADO (o modelo mudou depois dele) — rode o cálculo de novo; o orçamento segue o MODELO.";
+      itens.forEach(function (x) { x.preliminar = true; x.obs = (x.obs ? x.obs + "; " : "") + "PRELIMINAR (cálculo estrutural desatualizado)"; });
+      calc = null;
+    }
+    if (calc && calc.ok) {
+      var difs = [], tdMax = 0;
+      Object.keys(calc.paredes).forEach(function (id) {
+        var R = calc.paredes[id], mc = R.montante.calculado;
+        if (!mc) difs.push(id + ": nenhum montante do catálogo atende");
+        else if (mc.mudou) difs.push(id + ": montante 38×" + R.montante.modelo.secao[1] + " c/ " + R.montante.modelo.espac + " do modelo → calculado 38×" + mc.secao[1] + " c/ " + mc.espac);
+        arr(R.vergas).forEach(function (v) { if (v.calculada.mudou || !v.calculada.ok) difs.push(id + " vão " + v.vao + ": verga 38×" + v.tabela.secao[1] + " da tabela → calculada 38×" + v.calculada.secao[1] + (v.calculada.ok ? "" : " (NÃO ATENDE)")); });
+        if (R.contraventamento && R.contraventamento.contribui) {
+          if (R.contraventamento.pregoBorda.s !== R.contraventamento.espModelo) difs.push(id + ": prego de borda do OSB a " + R.contraventamento.pregoBorda.s + " mm (modelo " + R.contraventamento.espModelo + " mm)");
+          if (R.contraventamento.hdMax > tdMax) tdMax = R.contraventamento.hdMax;
+        }
+      });
+      preliminar = !!calc.preliminar;
+      itens.forEach(function (x) {
+        x.calculoEstrutural = true; x.preliminar = preliminar;
+        if (/^Hold-down/.test(x.item) && tdMax > 0) x.obs = (x.obs ? x.obs + "; " : "") + "força de cálculo do hold-down Td até " + virg(tdMax, 1) + " kN (NBR 7190-1:2022, memorial)";
+        if (preliminar) x.obs = (x.obs ? x.obs + "; " : "") + "PRELIMINAR (cálculo estrutural)";
+      });
+      difs.slice().reverse().forEach(function (d) { avisos.unshift("O CÁLCULO difere do modelo — " + d + ": o orçamento reflete o MODELO até o tipo ser atualizado."); });
+      if (preliminar) prelMsg = "PRELIMINAR (cálculo estrutural do Wood Frame): " + calc.motivosPreliminar.join("; ") + ".";
+    } else if (calc && !calc.ok) avisos.push("Cálculo estrutural do Wood Frame não rodou: " + (calc.motivo || "sem resultado") + ".");
     /* sem preço: nenhum item daqui tem composição SINAPI (código nunca inventado). O total que a tela mostrar fica PARCIAL e o aviso diz quantos. */
     var semPreco = itens.filter(function (x) { return x.orcarAParte && !x.sinapi; }).length;
     if (semPreco) avisos.unshift(semPreco + " itens Wood Frame sem preço (sem composição SINAPI neste sistema): o total do orçamento é PARCIAL até orçá-los à parte.");
-    return { itens: itens, avisos: avisos, paredes: A.paredes, semPreco: semPreco, parcial: semPreco > 0 };
+    if (prelMsg) avisos.unshift(prelMsg);       /* o PRELIMINAR vai na frente de tudo */
+    return { itens: itens, avisos: avisos, paredes: A.paredes, semPreco: semPreco, parcial: semPreco > 0, preliminar: preliminar, calculado: !!(calc && calc.ok) };
   }
 
   var WoodFrameQuadro = {
