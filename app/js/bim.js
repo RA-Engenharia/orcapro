@@ -16290,7 +16290,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (wfRX && pc.grupo !== 'madeira') return;
           var bx = WoodFrameQuadro.emMundo(c, wfQ, pc), kW = pc.grupo === 'osb' ? 'wfOsb' : (pc.grupo === 'espacador' ? 'wfEsp' : 'madeira');
           var eW = wfRX ? 0 : 0.002;   /* 3D normal: a peça entra 1 mm em cada face — coplanar com a casca (topo, pontas, faces) ela piscava (z-fighting, visto na tela em 20/11/2026) */
-          var gW = new THREE.BoxGeometry(Math.max(0.001, bx.comp - eW), Math.max(0.001, bx.alt - eW), Math.max(0.001, bx.esp - eW)); gW.rotateY(bx.rotY); gW.translate(bx.x, bx.y, bx.z);
+          var gW = null;
+          /* EMPENA (fase 2C): a peça cortada no ângulo (guia inclinada, montante de ponta inclinada, OSB recortado) vem com o contorno `pol`: prisma pelo contorno, não a caixa */
+          if (pc.pol && WoodFrameQuadro.malhaPol) {
+            try {
+              var mpW = WoodFrameQuadro.malhaPol(c, wfQ, pc, eW / 2);
+              if (mpW && mpW.pos.length >= 9) {
+                var nW = mpW.pos.length / 3, ixW = new Uint32Array(nW), iw; for (iw = 0; iw < nW; iw++) ixW[iw] = iw;
+                gW = new THREE.BufferGeometry(); gW.setAttribute('position', new THREE.BufferAttribute(new Float32Array(mpW.pos), 3)); gW.setIndex(new THREE.BufferAttribute(ixW, 1)); gW.computeVertexNormals();
+                gW.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(nW * 2), 2));
+              }
+            } catch (eMp) { gW = null; }
+          }
+          if (!gW) { gW = new THREE.BoxGeometry(Math.max(0.001, bx.comp - eW), Math.max(0.001, bx.alt - eW), Math.max(0.001, bx.esp - eW)); gW.rotateY(bx.rotY); gW.translate(bx.x, bx.y, bx.z); }
           (wfGrupos[kW] = wfGrupos[kW] || []).push(gW);
         });
         Object.keys(wfGrupos).forEach(function (kW) {

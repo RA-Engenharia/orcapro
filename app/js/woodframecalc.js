@@ -124,9 +124,18 @@
     var P = res.params, tp = c.tipoParede || {}, cam = arr(res.camadas);
     var tem = function (rx) { return cam.some(function (k) { return rx.test(k.id); }); };
     var mont = pecasDe(res, /^montante$/), hMont = mont.length ? mont[0].comp : res.H - 3 * res.b;
+    /* EMPENA (fase 2C): os montantes têm comprimentos diferentes; vale o MAIS LONGO (a favor da segurança: flambagem e momento do vento) e o peso usa a área real sob o topo */
+    var emp = res.empena || null;
+    var reiComp = null;
+    if (emp) {
+      var vert = pecasDe(res, /^(montante|montante-extremo|montante-canto|montante-encontro|ombreira-rei)$/);
+      if (vert.length) hMont = Math.max.apply(null, vert.map(function (m) { return m.comp; }));
+      reiComp = {};
+      pecasDe(res, /^ombreira-rei$/).forEach(function (q) { var k = String(q.vao); if (!(reiComp[k] >= q.comp)) reiComp[k] = q.comp; });
+    }
     var temOsb = larguraOsb(res);
     return {
-      ok: true, id: String(c.id), c: c, res: res, tipoId: String(tp.id || ""), L: res.L, H: res.H, b: res.b, d: res.d, hMont: hMont,
+      ok: true, id: String(c.id), c: c, res: res, tipoId: String(tp.id || ""), L: res.L, H: res.H, b: res.b, d: res.d, hMont: hMont, reiComp: reiComp, empena: emp, areaReal: emp ? emp.areaBruta : res.L * res.H,
       sec: [P.montante[0], P.montante[1]], espac: P.espac, osb: temOsb, osbE: num(res.osb && res.osb.e, 0),
       fragilAuto: tem(/gesso|cimenticia|siding/), fragil: tem(/gesso|cimenticia|siding/), gesso: tem(/gesso/),
       ext: /^wf-ext/.test(String(tp.id || "")) || temOsb, estrutural: /^wf-ext/.test(String(tp.id || "")) || (!!c.wf && c.wf.portante === true) || temOsb,
@@ -193,7 +202,7 @@
   function pesoParede(ctx, P) {
     var m = ctx.m, cls = m.MM.classe2022(ctx.opc.classe), pc = ctx.opc.pesoCamadas, gMad = (cls.rhom || cls.rhok / 0.83) * G / 1000;   /* kN/m³ (ρm da Tab. 3) */
     var evoply = 19 / (1.2 * 2.4 * 0.012) * G / 1000, decor = 42 / (1.2 * 2.4) / 8 * 1000 * G / 1000;    /* kN/m³ */
-    var itens = [], tot = 0, area = P.L * P.H;
+    var itens = [], tot = 0, area = P.areaReal != null ? P.areaReal : P.L * P.H;
     var volMad = 0; arr(P.res.pecas).forEach(function (p) { if (p.grupo === "madeira") volMad += p.vol; });
     var gQuadro = area > 0 ? volMad * gMad / area : 0;
     itens.push({ rotulo: "Quadro de madeira (guias, montantes, vergas, bloqueadores)", kNm2: gQuadro, fonte: "ρm " + br(cls.rhom, 0) + " kg/m³ (" + NORMA + " Tab. 3) × volume das peças do quadro" });
@@ -471,16 +480,21 @@
       var vl = v.x1 - v.x0, tribRei = sec.espac / 2000 + vl / 2, nG = (Gl + gH) * (sec.espac / 1000 / 2), nS = Qk * sec.espac / 2000, nU = Upl * sec.espac / 2000;
       var out = null, n;
       for (n = 1; n <= 3 && !out; n++) {
-        var vr = verificarMontante(ctx, { b: P.sec[0] / 1000, h: sec.h / 1000, L: P.hMont, Lz: travFraco, trib: tribRei / n, N: { G: nG / n, Sc: nS / n, U: nU / n }, pv: pv, fragil: P.fragil });
+        var vr = verificarMontante(ctx, { b: P.sec[0] / 1000, h: sec.h / 1000, L: (P.reiComp && P.reiComp[String(v.id)]) || P.hMont, Lz: travFraco, trib: tribRei / n, N: { G: nG / n, Sc: nS / n, U: nU / n }, pv: pv, fragil: P.fragil });
         if (vr.eta <= 1 + TOL) out = { n: n, v: vr };
       }
-      R.reis.push({ vao: v.id, vaoLivre: vl, tribRei: tribRei, nReis: out ? out.n : 4, ok: !!out, eta: out ? out.v.eta : null, v: out ? out.v : null });
+      R.reis.push({ vao: v.id, comp: (P.reiComp && P.reiComp[String(v.id)]) || P.hMont, vaoLivre: vl, tribRei: tribRei, nReis: out ? out.n : 4, ok: !!out, eta: out ? out.v.eta : null, v: out ? out.v : null });
     });
     /* ---------- vergas ---------- */
     R.vergas = [];
     arr(P.res.vaos).forEach(function (v, iv) {
       var vl = v.x1 - v.x0, vi = arr(P.res.vergas).filter(function (x) { return String(x.vao) === String(v.id); })[0] || { pecas: 2, secao: [38, 140] };
-      var nP = vi.pecas || 2, bTot = nP * P.sec[0] / 1000, disp = (P.H - 2 * P.b) - v.y1, hJack = v.y1 - P.b;
+      var infoE = P.empena ? arr(P.empena.vaos).filter(function (x) { return String(x.id) === String(v.id); })[0] : null;
+      var nP = vi.pecas || 2, bTot = nP * P.sec[0] / 1000, disp = (infoE ? infoE.topoMin : P.H - 2 * P.b) - v.y1, hJack = v.y1 - P.b;
+      if (infoE && infoE.interfere) {
+        ctx.pendencia("parede " + P.id + ", vão " + v.id + ": o topo da verga (" + br(infoE.topoVerga, 2) + " m) interfere com a guia superior inclinada (face de baixo a " + br(infoE.topoMin, 2) + " m no ponto mais baixo sobre o vão): verga, jacks e cripples NÃO verificados — baixar o vão ou rever o telhado");
+        ctx.naoVerificado("verga-topo-inclinado-" + P.id + "-" + v.id, "Parede " + P.id + ", vão " + v.id + ": a verga não cabe sob a guia superior inclinada (espaço livre " + br(disp, 3) + " m): a verificação da verga e dos jacks NÃO foi concluída; o RT define.");
+      }
       var qG0 = Gl + pw.total * Math.max(0, P.H - v.y1), qQ0 = Qk;
       var iV = 0; cadeiaH.forEach(function (c, i) { if (c.h === vi.secao[1]) iV = i; });
       var hMod = vi.secao[1], vModelo = verificarVerga(ctx, { vao: vl, b: bTot, h: hMod / 1000, qG: qG0, qQ: qQ0, hJack: hJack, Lz: travFraco, fragil: P.fragil });
@@ -491,7 +505,7 @@
         if (rv.ok) { ok = { k: k, rv: rv }; break; }
       }
       var sel = ok || ultimo;
-      R.vergas.push({ vao: v.id, vaoLivre: vl, pecas: nP, disponivel: disp, tabela: { secao: [P.sec[0], hMod], eta: vModelo.eta, ok: vModelo.ok, v: vModelo },
+      R.vergas.push({ vao: v.id, vaoLivre: vl, pecas: nP, disponivel: disp, interferenciaTopo: !!(infoE && infoE.interfere), tabela: { secao: [P.sec[0], hMod], eta: vModelo.eta, ok: vModelo.ok, v: vModelo },
         calculada: { secao: [P.sec[0], cadeiaH[sel.k].h], compra: cadeiaH[sel.k].compra, eta: sel.rv.eta, ok: !!ok, cabe: cadeiaH[sel.k].h / 1000 <= disp + 1e-9, v: sel.rv, mudou: cadeiaH[sel.k].h !== hMod },
         jacks: sel.rv.nJackAdotado, jacksModelo: 1 });
       if (!ok) ctx.aviso("Parede " + P.id + ", vão " + v.id + ": nenhuma verga do catálogo atende com " + br(qG0, 2) + " kN/m permanente + " + br(qQ0, 2) + " kN/m de sobrecarga.");
@@ -578,6 +592,9 @@
     } else if (hCob) {
       if (Math.abs(hCob - hMaxP) / Math.max(hCob, hMaxP) > 0.10) ctx.pendencia("altura do beiral do telhado (" + br(hCob, 2) + " m) difere em mais de 10 % da maior parede (" + br(hMaxP, 2) + " m): conferir o pé-direito");
       geo.hBeiral = Math.max(hCob, hMaxP);
+    }
+    if (paredes.some(function (p) { return p.empena; })) {
+      ctx.premissa("empena", "Parede com EMPENA (topo inclinado seguindo o telhado: " + paredes.filter(function (p) { return p.empena; }).map(function (p) { return p.id; }).join(", ") + "): o montante é verificado pelo comprimento do MAIS LONGO da parede (a favor da segurança) e o peso próprio do montante crítico usa a altura máxima (o do restante da parede, a área real sob o topo); o vento usa a altura máxima. As ombreiras-rei levam o comprimento real de cada uma. O oitão passa a ser a própria parede recortada; a ligação da cobertura com a guia inclinada não é verificada aqui.", "premissa RA (fase 2C)");
     }
     var vento = ventoDe(ctx, geo, cob, paredes);
     if (!vento.ok) ctx.naoVerificado("vento", "Vento NBR 6123: " + vento.motivo + " — flexão do montante, flecha, contraventamento, hold-down e chumbador NÃO verificados para a ação horizontal.");
@@ -681,14 +698,21 @@
   /* ASSINATURA do que o cálculo viu: (1) o MODELO — paredes de quadro (dimensões, POSIÇÃO cx/cz/rotY, tipo, parâmetros do quadro, vãos) e as demais paredes (que mudam o contorno e a
      largura de influência); (2) a ENTRADA — cobertura usada (tipo, peso, inclinação, beiral, eixo, oitão, altura), vento, umidade, classe, revestimento, pavimento — e o id da obra.
      O cálculo guardado só vale enquanto as duas batem. */
+  /* o TOPO da parede (u0/u1/a/b arredondados) e o `anexarTopo`: mexer no telhado muda a empena e o cálculo guardado deixa de valer (só entra na chave quando existe) */
+  function topoKey(c) {
+    var t = arr(c.topo), a = (c.anexarTopo ? 1 : 0) + (c.anexarTelhado ? String(c.anexarTelhado) : "");
+    if (!t.length && !c.anexarTopo && !c.anexarTelhado) return "";
+    return "|T" + a + ":" + t.map(function (g) { return [rr(num(g.u0, 0), 3), rr(num(g.u1, 0), 3), rr(num(g.a, 0), 4), rr(num(g.b, 0), 5)].join(","); }).join("/");
+  }
   function assinatura(estado, vaos) {
     var l = [];
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || c.tipo !== "parede") return;
       var pos = [rr(num(c.cx, 0), 4), rr(num(c.cz, 0), 4), rr(num(c.rotY, 0), 5), rr(num(c.cy, 0), 4)].join(",");
-      if (!c.tipoParede || !c.tipoParede.wf) { l.push(["N", c.id, pos, rr(num(c.comprimento, 0), 4), rr(num(c.altura, 0), 4), c.tipoParede ? c.tipoParede.id : ""].join("|")); return; }
+      var tpk = topoKey(c);
+      if (!c.tipoParede || !c.tipoParede.wf) { l.push(["N", c.id, pos, rr(num(c.comprimento, 0), 4), rr(num(c.altura, 0), 4), c.tipoParede ? c.tipoParede.id : ""].join("|") + tpk); return; }
       var v = vaos && vaos[c.id] ? arr(vaos[c.id].aceitos).map(function (x) { return [x.id, rr(num(x.x0, 0), 4), rr(num(x.x1, 0), 4), rr(num(x.y0, 0), 4), rr(num(x.y1, 0), 4)].join(":"); }) : [];
-      l.push(["Q", c.id, pos, rr(num(c.comprimento, 0), 4), rr(num(c.altura, 0), 4), c.tipoParede.id, JSON.stringify(c.tipoParede.wf), v.join(",")].join("|"));
+      l.push(["Q", c.id, pos, rr(num(c.comprimento, 0), 4), rr(num(c.altura, 0), 4), c.tipoParede.id, JSON.stringify(c.tipoParede.wf), v.join(",")].join("|") + tpk);
     });
     return l.join(";");
   }

@@ -252,10 +252,11 @@
     var q = C.quantitativo(st, {});
     if (!q.itens.length) { status("Nada de cobertura ou forro no modelo ainda."); return; }
     var linhas = q.itens.map(function (i) {
-      return "<tr><td>" + esc(i.grupo) + "</td><td>" + esc(i.item) + "</td><td>" + esc(i.un) + "</td><td align=\"right\">" + virg(i.qtd, 2) + "</td><td>" + (i.sinapi ? esc(i.sinapi.codigo) + (i.sinapi.aproximado ? " (aprox.)" : "") : "<i>orçar à parte</i>") + "</td><td>" + (i.somar === false ? "<i>conferência, não somar</i> — " : "") + esc(i.obs || "") + "</td></tr>";
+      return "<tr><td>" + esc(i.grupo) + "</td><td>" + esc(i.item) + "</td><td>" + esc(i.un) + "</td><td align=\"right\">" + virg(i.qtd, 2) + "</td><td>" + (i.sinapi ? esc(i.sinapi.codigo) + (i.sinapi.aproximado ? " (aprox.)" : "") : (i.refSinapi ? "<i>ref. " + esc(i.refSinapi.codigo) + "</i>" : "<i>orçar à parte</i>")) + "</td><td>" + (i.compra ? esc(virg(i.compra.qtd, i.compra.qtd % 1 ? 3 : 0)) + " " + esc(i.compra.un) + "<br><small>" + esc(i.compra.regra || "") + "</small>" : "") + "</td><td>" + (i.somar === false ? "<i>conferência, não somar</i> — " : "") + esc(i.obs || "") + "</td></tr>";
     }).join("");
     janela("Quantitativo da cobertura e do forro", '<p>' + q.comCodigo + ' item(ns) com composição SINAPI (' + esc(q.base) + '); ' + q.aParte + ' a orçar à parte. Código só quando existe na base do sistema.' + (q.parcial ? ' <b>Total PARCIAL: ' + q.semPrecoWoodFrame + ' itens Wood Frame sem preço.</b>' : '') + '</p>' +
-      '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr><th align="left">Grupo</th><th align="left">Item</th><th align="left">Un</th><th align="right">Qtd</th><th align="left">SINAPI</th><th align="left">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>" + lista("Avisos", q.avisos));
+      (q.woodFrameTotal ? '<p><b>Wood Frame — total ' + (q.woodFrameTotal.total != null ? 'R$ ' + virg(q.woodFrameTotal.total, 2) : '(preços SINAPI não consultados)') + (q.woodFrameTotal.parcial ? ' PARCIAL' : '') + '</b> — ' + q.woodFrameTotal.comPreco + ' item(ns) com preço, ' + q.woodFrameTotal.semCodigo + ' sem código SINAPI, ' + q.woodFrameTotal.semPrecoNaBase + ' sem preço na base (' + esc(q.woodFrameTotal.base) + '). Soma só o que tem código e preço, na unidade de compra.</p>' : '') +
+      '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr><th align="left">Grupo</th><th align="left">Item</th><th align="left">Un</th><th align="right">Qtd</th><th align="left">SINAPI</th><th align="left">Compra (qtd, un, regra)</th><th align="left">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>" + lista("Avisos", q.avisos));
   }
 
   var BimCoberturaUI = {

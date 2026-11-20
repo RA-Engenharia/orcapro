@@ -47,6 +47,12 @@
   /* m → cota em cm ("40", "2,5") */
   function cmT(vm) { var v = Math.round(vm * 1000) / 10; return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : br(v, 1); }
   function nivelDe(c) { return String(c.nivelBase || c.nivelId || c.nivel || "n0"); }
+  /* o topo (m, a partir da base) no u ABSOLUTO da parede, pelos trechos da empena */
+  function topoEm(segs, u) {
+    var S = arr(segs), k; if (!S.length) return 0;
+    for (k = 0; k < S.length; k++) if (u >= S[k].u0 - 1e-9 && u <= S[k].u1 + 1e-9) return S[k].a + S[k].b * u;
+    var g = S[u < S[0].u0 ? 0 : S.length - 1]; return g.a + g.b * u;
+  }
 
   var NOME = { "guia-inferior": "Guia inferior", "guia-superior": "Guia superior (dupla)", "montante": "Montante", "montante-extremo": "Montante de extremidade",
     "montante-canto": "Montante de canto", "montante-encontro": "Montante de encontro T/X", "ombreira-rei": "Ombreira rei (king)", "ombreira-jack": "Ombreira jack (trimmer)",
@@ -94,12 +100,13 @@
     var res = P.res, gr = {}, ordem = [], osb = {}, ordemO = [], marcaDe = {};
     res.pecas.forEach(function (q) {
       if (q.grupo === "osb") {
-        var w = mmI(q.u1 - q.u0), h = mmI(q.y1 - q.y0), ko = w + "x" + h;
-        if (!osb[ko]) { osb[ko] = { w: w, h: h, qtd: 0, ids: [] }; ordemO.push(ko); }
+        var w = mmI(q.u1 - q.u0), h = mmI(q.y1 - q.y0), ko = w + "x" + h + (q.pol ? "|" + q.pol.map(function (pp) { return mmI(pp[0] - q.u0) + "," + mmI(pp[1] - q.y0); }).join(";") : "");
+        if (!osb[ko]) { osb[ko] = { w: w, h: h, qtd: 0, ids: [], rec: !!q.pol }; ordemO.push(ko); }
         osb[ko].qtd++; osb[ko].ids.push(q.id); return;
       }
-      var tb = tipoBase(q.tipo), comp = mmI(q.comp), k = tb + "|" + q.secao + "|" + comp;
-      if (!gr[k]) { gr[k] = { tipo: tb, nome: NOME[tb] || tb, secao: q.secao, compra: q.compra || null, comp_mm: comp, qtd: 0, vol_m3: 0, vol_bruta_m3: 0, ids: [], grupo: q.grupo, vao: q.vao || null }; ordem.push(k); }
+      /* EMPENA (fase 2C): a peça cortada no ângulo leva comprimento MAIOR (ponta alta), MENOR (ponta baixa) e o ângulo do corte na lista */
+      var tb = tipoBase(q.tipo), comp = mmI(q.comp), cmin = q.pol ? mmI(q.compMin != null ? q.compMin : q.comp) : comp, ang = q.pol && q.ang ? q.ang : 0, k = tb + "|" + q.secao + "|" + comp + (q.pol ? "|" + cmin + "|" + ang + (q.duplo ? "|bico" : "") : "");
+      if (!gr[k]) { gr[k] = { tipo: tb, nome: NOME[tb] || tb, secao: q.secao, compra: q.compra || null, comp_mm: comp, comp_min_mm: cmin, ang: ang || null, bico: !!q.duplo, qtd: 0, vol_m3: 0, vol_bruta_m3: 0, ids: [], grupo: q.grupo, vao: q.vao || null }; ordem.push(k); }
       gr[k].qtd++; gr[k].vol_m3 += q.vol; gr[k].ids.push(q.id);
       gr[k].vol_bruta_m3 += brutaDe(q);
     });
@@ -125,12 +132,12 @@
     });
     var linhasO = ordemO.map(function (k) { return osb[k]; });
     linhasO.sort(function (a, b) { return (b.w * b.h) - (a.w * a.h); });
-    linhasO.forEach(function (o, i) { o.marca = P.marca + "-O" + (i + 1); o.nome = "Chapa de OSB (recorte)"; o.secao = "OSB " + br(num(res.osb.e, 0), 1) + " mm"; o.comp_mm = Math.max(o.w, o.h); o.dim = o.w + "×" + o.h; o.ids.forEach(function (id) { marcaDe[id] = o.marca; }); });
+    linhasO.forEach(function (o, i) { o.marca = P.marca + "-O" + (i + 1); o.nome = o.rec ? "Chapa de OSB (recorte inclinado)" : "Chapa de OSB (recorte)"; o.secao = "OSB " + br(num(res.osb.e, 0), 1) + " mm"; o.comp_mm = Math.max(o.w, o.h); o.dim = o.w + "×" + o.h + (o.rec ? " (inclin.)" : ""); o.ids.forEach(function (id) { marcaDe[id] = o.marca; }); });
     var tot = { pecas: 0, espacadores: 0, vol_m3: 0, vol_bruta_m3: 0 };
     linhas.forEach(function (l) { if (l.grupo === "madeira") { tot.pecas += l.qtd; tot.vol_m3 += l.vol_m3; tot.vol_bruta_m3 += l.vol_bruta_m3; } else tot.espacadores += l.qtd; });
     tot.vol_m3 = r6(tot.vol_m3); tot.vol_bruta_m3 = r6(tot.vol_bruta_m3);
     tot.osbChapas = res.osb.chapas; tot.osbRecortes = res.pecas.filter(function (q) { return q.grupo === "osb"; }).length; tot.osbArea_m2 = res.osb.area;
-    return { painel: P.marca, modulo: arr(res.params.osbModulo).join("×"), linhas: linhas, osb: linhasO, totais: tot, marcaDe: marcaDe, temCalc: !!P.calc };
+    return { painel: P.marca, modulo: arr(res.params.osbModulo).join("×"), linhas: linhas, osb: linhasO, totais: tot, marcaDe: marcaDe, temCalc: !!P.calc, temEmpena: !!res.empena };
   }
 
   /* ================================================================== CONSOLIDADO DA OBRA */
@@ -141,8 +148,8 @@
       var ct = P.corte;
       ct.linhas.forEach(function (l) {
         if (l.grupo !== "madeira") { esp.qtd += l.qtd; return; }
-        var k = l.tipo + "|" + l.secao + "|" + l.comp_mm;
-        if (!chave[k]) { chave[k] = { tipo: l.tipo, nome: l.nome, secao: l.secao, compra: l.compra, comp_mm: l.comp_mm, qtd: 0, vol_m3: 0, vol_bruta_m3: 0, paineis: [] }; ordem.push(k); }
+        var k = l.tipo + "|" + l.secao + "|" + l.comp_mm + (l.ang ? "|" + l.comp_min_mm + "|" + l.ang + (l.bico ? "|bico" : "") : "");
+        if (!chave[k]) { chave[k] = { tipo: l.tipo, nome: l.nome, secao: l.secao, compra: l.compra, comp_mm: l.comp_mm, comp_min_mm: l.comp_min_mm, ang: l.ang || null, bico: !!l.bico, qtd: 0, vol_m3: 0, vol_bruta_m3: 0, paineis: [] }; ordem.push(k); }
         var x = chave[k]; x.qtd += l.qtd; x.vol_m3 += l.vol_m3; x.vol_bruta_m3 += l.vol_bruta_m3; if (x.paineis.indexOf(P.marca) < 0) x.paineis.push(P.marca);
         var ks = l.secao;
         if (!sec[ks]) { sec[ks] = { secao: l.secao, compra: l.compra, pecas: 0, comp_m: 0, vol_m3: 0, vol_bruta_m3: 0 }; ordS.push(ks); }
@@ -218,19 +225,25 @@
   function colunasTabela(ct) {
     var c = [{ t: "MARCA", al: "E" }, { t: "PEÇA", al: "E" }, { t: ["SEÇÃO", "mm"] }, { t: ["COMPRA", "bruta mm"] }, { t: ["COMP.", "mm"] }, { t: "QTD" }, { t: ["VOL. final / bruta", "m³"] }];
     if (ct && ct.temCalc) c.splice(3, 0, { t: ["SEÇÃO CALC.", "mm"] });
+    if (ct && ct.temEmpena) c.splice(ct.temCalc ? 6 : 5, 0, { t: ["COMP. MÍN.", "mm"] }, { t: ["CORTE", "graus"] });
     return c;
   }
   function linhasTabela(ct) {
-    var out = [], tc = !!(ct && ct.temCalc);
-    function ins(row, v) { if (tc && Array.isArray(row)) row.splice(3, 0, v); return row; }
+    var out = [], tc = !!(ct && ct.temCalc), te = !!(ct && ct.temEmpena);
+    function ins(row, v, vMin, vAng) {
+      if (tc && Array.isArray(row)) row.splice(3, 0, v);
+      if (te && Array.isArray(row)) row.splice(tc ? 6 : 5, 0, vMin == null ? "-" : vMin, vAng == null ? "-" : vAng);
+      return row;
+    }
     ct.linhas.forEach(function (l) { out.push(ins([l.marca, l.nome, l.secao.replace("x", "×"), l.compra ? l.compra.replace("x", "×") : "-", String(l.comp_mm), String(l.qtd), l.grupo === "madeira" ? br(l.vol_m3, 4) + " / " + br(l.vol_bruta_m3, 4) : "-"],
-      l.secaoCalc ? l.secaoCalc.replace("x", "×") + (l.secaoCalc !== l.secao ? " *" : "") : "-")); });
+      l.secaoCalc ? l.secaoCalc.replace("x", "×") + (l.secaoCalc !== l.secao ? " *" : "") : "-",
+      l.ang ? String(l.comp_min_mm) : "-", l.ang ? br(l.ang, 1) + (l.bico ? " (bico)" : "") : "-")); });
     if (ct.osb.length) {
       out.push({ titulo: "CHAPAS DE OSB (recortes dos módulos de " + ct.modulo + " mm)" });
-      ct.osb.forEach(function (o) { out.push(ins([o.marca, o.nome, o.secao.replace("OSB ", "") , "-", o.dim, String(o.qtd), "-"], "-")); });
+      ct.osb.forEach(function (o) { out.push(ins([o.marca, o.nome, o.secao.replace("OSB ", "") , "-", o.dim, String(o.qtd), "-"], "-", "-", "-")); });
     }
     var t = ct.totais, tot = ["QTD (madeira)", String(t.pecas) + " peças de madeira" + (t.espacadores ? " + " + t.espacadores + " espaçador(es)" : "") + " · " + t.osbChapas + " chapa(s) de OSB", "", "", "", String(t.pecas), br(t.vol_m3, 4) + " / " + br(t.vol_bruta_m3, 4)];
-    out.push({ total: ins(tot, "") });
+    out.push({ total: ins(tot, "", "", "") });
     return out;
   }
 
@@ -261,9 +274,10 @@
       var camPeca = { "verga": "MAD-PRINCIPAL", "peitoril": "MAD-PRINCIPAL", "bloco": "MAD-FINA", "bloqueador": "MAD-FINA" };
       res.pecas.forEach(function (q) {
         if (q.grupo !== "madeira") return;
-        var xs = rx(q.u0, q.u1), y0 = Y(q.y1), y1 = Y(q.y0), ch = q.tipo + "|" + xs[0].toFixed(2) + "|" + xs[1].toFixed(2) + "|" + y0.toFixed(2) + "|" + y1.toFixed(2);
+        var xs = rx(q.u0, q.u1), y0 = Y(q.y1), y1 = Y(q.y0), ch = q.tipo + "|" + xs[0].toFixed(2) + "|" + xs[1].toFixed(2) + "|" + y0.toFixed(2) + "|" + y1.toFixed(2) + (q.pol ? "|p" : "");
         if (vistas[ch]) return; vistas[ch] = 1;
-        D.ret(xs[0], y0, xs[1] - xs[0], y1 - y0, camPeca[q.tipo] || "MAD-PECA");
+        if (q.pol) D.poli(q.pol.map(function (pp) { return [X(pp[0]), Y(pp[1])]; }), camPeca[q.tipo] || "MAD-PECA", true);       /* EMPENA: o contorno real da peça cortada */
+        else D.ret(xs[0], y0, xs[1] - xs[0], y1 - y0, camPeca[q.tipo] || "MAD-PECA");
       });
       /* ---- eixos dos montantes + cotas acumuladas a partir da ponta de origem */
       var origemU = par.origem === "fim" ? Le : 0, cands = [];
@@ -299,11 +313,23 @@
       D.balao(ax + (esp ? 6 : -6), yTot, "A"); D.balao(bx + (esp ? -6 : 6), yTot, "B");
       /* cotas verticais: níveis dos vãos e total à esquerda; guias e montante à direita */
       var niveis = [0]; res.vaos.forEach(function (v) { [v.y0, v.y1].forEach(function (yv) { if (yv > 0.001 && yv < H - 0.001 && niveis.every(function (z) { return Math.abs(z - yv) > 0.004; })) niveis.push(yv); }); });
-      niveis.push(H); niveis.sort(function (p, q2) { return p - q2; });
+      /* EMPENA (fase 2C): a altura de cada ponta vem do topo inclinado (a da esquerda e a da direita do desenho); sem empena é a H de sempre */
+      var emp = res.empena, hEsq = H, hDir = H;
+      if (emp) { var uEsq = esp ? des + Le : des, uDir = esp ? des : des + Le; hEsq = topoEm(emp.topo, uEsq); hDir = topoEm(emp.topo, uDir); niveis = niveis.filter(function (yv) { return yv < hEsq - 0.001; }); }
+      niveis.push(hEsq); niveis.sort(function (p, q2) { return p - q2; });
       if (niveis.length > 2) D.cadeia(niveis.map(function (yv) { return [fx0, Y(yv)]; }), 9, niveis.slice(1).map(function (yv, k) { return cmT(yv - niveis[k]); }));
-      D.cadeia([[fx0, Y(0)], [fx0, Y(H)]], niveis.length > 2 ? 21 : 9, [cmT(H)]);
-      var yMont = H - 2 * guia;
-      D.cadeia([[fx1, Y(0)], [fx1, Y(guia)], [fx1, Y(yMont)], [fx1, Y(H)]], -11, [cmT(guia), cmT(yMont - guia), cmT(2 * guia)].map(function (t) { return t; }));
+      D.cadeia([[fx0, Y(0)], [fx0, Y(hEsq)]], niveis.length > 2 ? 21 : 9, [cmT(hEsq)]);
+      var yMont = hDir - 2 * guia;
+      D.cadeia([[fx1, Y(0)], [fx1, Y(guia)], [fx1, Y(yMont)], [fx1, Y(hDir)]], -11, [cmT(guia), cmT(yMont - guia), cmT(2 * guia)].map(function (t) { return t; }));
+      if (emp) {
+        /* a linha do topo (telhado) e a altura máxima / ângulo, em texto */
+        arr(emp.topo).forEach(function (sg) {
+          var ua = Math.max(sg.u0, des), uc = Math.min(sg.u1, des + Le); if (uc <= ua) return;
+          D.linha(xr(ua - des), Y(sg.a + sg.b * ua), xr(uc - des), Y(sg.a + sg.b * uc), "MAD-OCULTA");
+        });
+        var uMax = des, hM = -1; arr(emp.topo).forEach(function (sg) { [Math.max(sg.u0, des), Math.min(sg.u1, des + Le)].forEach(function (u) { var yv = sg.a + sg.b * u; if (yv > hM + 1e-6) { hM = yv; uMax = u; } }); });
+        D.texto(xr(uMax - des), Y(hM) - 2.6, "TOPO DO TELHADO - ALT. MÁX. " + cmT(hM) + " cm - INCL. " + emp.angulos.map(function (an) { return br(an, 1); }).join(" / ") + "°", T.nota * 0.92, { al: "C" });
+      }
       /* vãos: largura e altura livres dentro do vão + marca */
       res.vaos.forEach(function (v) {
         var xs = rx(v.x0, v.x1), ym = (Y(v.y0) + Y(v.y1)) / 2;
@@ -340,7 +366,8 @@
       var osbPcs = res.pecas.filter(function (q) { return q.grupo === "osb"; });
       osbPcs.forEach(function (q) {
         var xs = rx(q.u0, q.u1), yy0 = oy1 - q.y1 * s, yy1 = oy1 - q.y0 * s;
-        D.ret(xs[0], yy0, xs[1] - xs[0], yy1 - yy0, "MAD-PECA");
+        if (q.pol) D.poli(q.pol.map(function (pp) { return [X(pp[0]), oy1 - pp[1] * s]; }), "MAD-PECA", true);       /* EMPENA: chapa recortada pela inclinação */
+        else D.ret(xs[0], yy0, xs[1] - xs[0], yy1 - yy0, "MAD-PECA");
         var mk = ct.marcaDe[q.id], tl = mk ? mk.replace(P.marca + "-", "") : "";
         if (tl && xs[1] - xs[0] > lg(D, tl, T.nota) + 2 && yy1 - yy0 > T.nota + 2) D.texto((xs[0] + xs[1]) / 2, (yy0 + yy1) / 2, tl, T.nota, { al: "C", meio: true });
       });
@@ -383,6 +410,7 @@
       D.texto(tx, ty - 3.2, "LISTA DE CORTE DO PAINEL " + P.marca, T.nota * 1.1, { peso: 0.06 });
       D.tabela(tx, ty, colunasTabela(ct), linhasTabela(ct), { fs: T.tabela });
       var yFim = Math.max(ty + tab.h + extra, oy1 + 24);
+      if (res.empena) D.texto(tx, ty + tab.h + 8.6, "EMPENA: guias superiores inclinadas (corte de prumo); montantes cortados no ângulo da água - COMP. = ponta alta, COMP. MÍN. = ponta baixa; OSB recortado pelo topo.", T.nota * 0.92);
       D.texto(tx, ty + tab.h + 5.4, "Marcas iguais = peças iguais (mesma seção e corte). CH = chumbador na guia inferior; HD = hold-down (esquema: modelo " + (P.calc ? "pelo fabricante; Td = força de cálculo, kN" : "e capacidade pelo cálculo") + ").", T.nota * 0.92);
       var extra = 0;
       if (P.calc) {

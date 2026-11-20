@@ -164,6 +164,194 @@
     return lista.filter(function (q) { return q.u1 - q.u0 > 0.005 && q.y1 - q.y0 > 0.005; });
   }
 
+  /* ================================================================== EMPENA / TOPO INCLINADO (fase 2C, 20/11/2026)
+   * Quando a parede segue o telhado (topo recortado/anexado à cobertura: oitão, empena, meia-água) o quadro acompanha o recorte. O quadro é gerado
+   * como retângulo na altura MÁXIMA (o motor de sempre, sem mudança) e `empenar` recorta as peças pela linha do topo `t(u)` (m, a partir da base):
+   *   · GUIA SUPERIOR DUPLA inclinada: as duas guias seguem o topo (cada uma com a espessura de 38 mm medida PERPENDICULAR à água: na vertical vale
+   *     38·√(1+i²)); a peça é um paralelogramo de pontas verticais (corte de prumo = o ângulo da água), partida onde o topo muda de inclinação
+   *     (na cumeeira as duas águas se encontram em duas peças de corte de prumo). Comprimento de compra = o ao longo da água (Δu·√(1+i²)).
+   *   · MONTANTES (grade, extremo, canto, encontro, ombreira-rei, cripple superior) CORTADOS no ângulo: o topo de cada um acompanha a face de baixo da
+   *     guia inferior da dupla; a lista de corte leva o comprimento MAIOR (ponta alta), o MENOR (ponta baixa) e o ângulo do corte (= atan da inclinação).
+   *     Montante a cavaleiro da cumeeira leva duas águas ("bico": corte duplo). Montante que fica curto demais (≤ 3 cm) é descartado com aviso.
+   *   · BLOQUEADORES: o que fica acima do topo some; onde o montante mais curto do vão passa de `blocoAlt` e não sobrou bloqueador, entra um a meia altura
+   *     do montante curto (o que não passa de `blocoAlt` não leva bloqueio).
+   *   · OSB: cada chapa é RECORTADA pela linha do topo (polígono `pol`); a contagem de chapas e a área são as das peças recortadas.
+   * Peça recortada = a mesma peça (id, tipo, seção) + `pol` [[u, y]…] (contorno real na elevação), `comp` (maior), `compMin`, `ang` (graus) e `vol` exato do polígono.
+   * A caixa envolvente (u0..u1 × y0..y1) segue valendo para o resto do motor (planta, OSB, 3D de caixas). SEM `topo` nada disto roda: o quadro é o de sempre. */
+  function criarTopo(segs) {
+    var S = arr(segs).map(function (g) { return { u0: g.u0, u1: g.u1, a: g.a, b: g.b }; });
+    function segEm(uu) {
+      var k;
+      for (k = 0; k < S.length; k++) if (uu >= S[k].u0 - 1e-9 && uu <= S[k].u1 + 1e-9) return S[k];
+      return S[uu < S[0].u0 ? 0 : S.length - 1];
+    }
+    return {
+      segs: S, segEm: segEm,
+      /* y em u; `m` = um u do lado de dentro do trecho (decide o lado numa quebra) */
+      y: function (u, m) { var g = segEm(m != null ? m : u); return g.a + g.b * u; },
+      quebras: function (a, c) { var o = []; S.forEach(function (g) { [g.u0, g.u1].forEach(function (u) { if (u > a + 1e-6 && u < c - 1e-6 && o.indexOf(u) < 0) o.push(u); }); }); return o.sort(function (p, q) { return p - q; }); }
+    };
+  }
+  function areaPol(pol) { var s = 0, i; for (i = 0; i < pol.length; i++) { var a = pol[i], b = pol[(i + 1) % pol.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; }
+  function perimPol(pol) { var s = 0, i; for (i = 0; i < pol.length; i++) { var a = pol[i], b = pol[(i + 1) % pol.length]; s += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])); } return s; }
+  function limparPol(pol) {
+    var o = [], i;
+    pol.forEach(function (q) { var u = o[o.length - 1]; if (!u || Math.abs(u[0] - q[0]) > 1e-6 || Math.abs(u[1] - q[1]) > 1e-6) o.push([r6(q[0]), r6(q[1])]); });
+    if (o.length > 1 && Math.abs(o[0][0] - o[o.length - 1][0]) < 1e-6 && Math.abs(o[0][1] - o[o.length - 1][1]) < 1e-6) o.pop();
+    /* vértice no meio de uma reta cai */
+    for (i = o.length - 1; i >= 0 && o.length > 3; i--) {
+      var a = o[(i - 1 + o.length) % o.length], b = o[i], c = o[(i + 1) % o.length];
+      if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) < 1e-9) o.splice(i, 1);
+    }
+    return o;
+  }
+  function ymaxPol(pol) { var m = -Infinity; pol.forEach(function (q) { if (q[1] > m) m = q[1]; }); return m; }
+  function yminPol(pol) { var m = Infinity; pol.forEach(function (q) { if (q[1] < m) m = q[1]; }); return m; }
+  /* o OSB (retângulo u0..u1 × y0..y1) sob a linha do topo: polígono (contorno) ou null se nada sobra */
+  function recortarRet(T, r) {
+    var cand = [r.u0, r.u1], k;
+    T.quebras(r.u0, r.u1).forEach(function (u) { cand.push(u); });
+    cand.sort(function (a, c) { return a - c; });
+    /* onde a linha do topo cruza y0 e y1 dentro de cada trecho */
+    var extra = [];
+    for (k = 0; k + 1 < cand.length; k++) {
+      var m = (cand[k] + cand[k + 1]) / 2, g = T.segEm(m);
+      if (Math.abs(g.b) < 1e-9) continue;
+      [r.y0, r.y1].forEach(function (yy) { var uc = (yy - g.a) / g.b; if (uc > cand[k] + 1e-6 && uc < cand[k + 1] - 1e-6) extra.push(uc); });
+    }
+    cand = cand.concat(extra).sort(function (a, c) { return a - c; });
+    var top = [];
+    cand.forEach(function (u, i) {
+      var mEsq = i > 0 ? (cand[i - 1] + u) / 2 : u + 1e-7, mDir = i + 1 < cand.length ? (u + cand[i + 1]) / 2 : u - 1e-7;
+      var ye = T.y(u, mEsq), yd = T.y(u, mDir);
+      var ce = Math.max(r.y0, Math.min(r.y1, ye)), cd = Math.max(r.y0, Math.min(r.y1, yd));
+      top.push([u, ce]); if (Math.abs(ce - cd) > 1e-6) top.push([u, cd]);
+    });
+    var pol = [[r.u0, r.y0], [r.u1, r.y0]];
+    top.slice().reverse().forEach(function (q) { pol.push(q); });
+    pol = limparPol(pol);
+    if (pol.length < 3 || areaPol(pol) < 1e-4) return null;
+    return pol;
+  }
+  /* o corte de um polígono CONVEXO por y = yh: [ua, ub] ou null (a planta corta as peças recortadas pelo mesmo contorno) */
+  function corteHPol(pol, yh) {
+    var us = [], i;
+    for (i = 0; i < pol.length; i++) {
+      var a = pol[i], b = pol[(i + 1) % pol.length];
+      if ((a[1] - yh) * (b[1] - yh) <= 0 && Math.abs(a[1] - b[1]) > 1e-12) us.push(a[0] + (b[0] - a[0]) * (yh - a[1]) / (b[1] - a[1]));
+      else if (Math.abs(a[1] - yh) < 1e-9 && Math.abs(b[1] - yh) < 1e-9) { us.push(a[0]); us.push(b[0]); }
+    }
+    if (us.length < 2) return null;
+    return [Math.min.apply(null, us), Math.max.apply(null, us)];
+  }
+  var VERTICAIS_TOPO = /^(montante|montante-extremo|montante-canto|montante-encontro|ombreira-rei|cripple-superior)$/;
+
+  /* cx = { topo, pecas, add, avisos, guia, guiaInf, yTopoMont, P, vaosOk (x já com o deslocamento), wn0, wn1, SEC_MONT, COMPRA_MONT, osb } */
+  function empenar(cx) {
+    var T = cx.topo, pecas = cx.pecas, g = cx.guia, avisos = cx.avisos, P = cx.P, out = [], k;
+    function fsec(seg) { return Math.sqrt(1 + seg.b * seg.b); }
+    function angDe(seg) { return r4(Math.atan(Math.abs(seg.b)) * 180 / Math.PI); }
+    function ybEm(u, seg) { return seg.a + seg.b * u - 2 * g * fsec(seg); }     /* face de baixo da guia superior dupla, na água `seg` */
+    var angulos = {}, descartados = 0, nBico = 0;
+    /* ---- 1. guias superiores e montantes */
+    pecas.forEach(function (q) {
+      if (/^guia-superior-[12]$/.test(q.tipo)) {
+        var cortes = [q.u0].concat(T.quebras(q.u0, q.u1)).concat([q.u1]), n = 0;
+        for (k = 0; k + 1 < cortes.length; k++) {
+          var a = cortes[k], c = cortes[k + 1]; if (c - a < 0.005) continue;
+          var sg = T.segEm((a + c) / 2), tv = g * fsec(sg), o0 = q.tipo === "guia-superior-2" ? 0 : tv, o1 = o0 + tv;
+          var pol = limparPol([[a, sg.a + sg.b * a - o1], [c, sg.a + sg.b * c - o1], [c, sg.a + sg.b * c - o0], [a, sg.a + sg.b * a - o0]]);
+          var peca = { id: n ? q.id + "~" + (n + 1) : q.id, tipo: q.tipo, grupo: q.grupo, secao: q.secao, u0: r6(a), u1: r6(c), y0: r6(yminPol(pol)), y1: r6(ymaxPol(pol)), w0: q.w0, w1: q.w1, pol: pol };
+          if (q.compra) peca.compra = q.compra;
+          peca.comp = r4((c - a) * fsec(sg)); peca.ang = angDe(sg); peca.compMin = peca.comp; peca.vol = r6(peca.comp * g * (q.w1 - q.w0));
+          if (peca.ang > 0) angulos[peca.ang] = 1;
+          out.push(peca); n++;
+        }
+        return;
+      }
+      if (q.grupo === "madeira" && VERTICAIS_TOPO.test(q.tipo) && Math.abs(q.y1 - cx.yTopoMont) < 1e-6) {
+        var br = T.quebras(q.u0, q.u1), cs = [q.u0].concat(br).concat([q.u1]), cadeia = [], sg0 = T.segEm((q.u0 + q.u1) / 2);
+        for (k = 0; k + 1 < cs.length; k++) {
+          var sgk = T.segEm((cs[k] + cs[k + 1]) / 2);
+          if (k === 0) cadeia.push([cs[k], ybEm(cs[k], sgk)]);
+          else {
+            var ant = cadeia[cadeia.length - 1], ya = ybEm(cs[k], sgk);
+            if (Math.abs(ant[1] - ya) > 1e-6) { var yb2 = Math.min(ant[1], ya); ant[1] = yb2; ya = yb2; }
+            cadeia.push([cs[k], ya]);
+          }
+        }
+        cadeia.push([q.u1, ybEm(q.u1, T.segEm(q.u1 - 1e-7))]);
+        var topoMin = Infinity, topoMax = -Infinity; cadeia.forEach(function (v) { if (v[1] < topoMin) topoMin = v[1]; if (v[1] > topoMax) topoMax = v[1]; });
+        if (topoMin - q.y0 <= 0.03) { descartados++; avisos.push("Peça " + q.tipo + " em u = " + virg(q.u0) + " m fica com menos de 3 cm sob o topo inclinado — descartada (conferir o telhado)."); return; }
+        var inclinada = cadeia.some(function (v, i) { return i > 0 && Math.abs(v[1] - cadeia[i - 1][1]) > 1e-6; });
+        var p2 = { id: q.id, tipo: q.tipo, grupo: q.grupo, secao: q.secao, u0: q.u0, u1: q.u1, y0: q.y0, y1: r6(topoMax), w0: q.w0, w1: q.w1 };
+        if (q.compra) p2.compra = q.compra;
+        if (q.aoLado) p2.aoLado = q.aoLado;
+        if (inclinada) {
+          var pol2 = [[q.u0, q.y0], [q.u1, q.y0]]; cadeia.slice().reverse().forEach(function (v) { pol2.push([v[0], v[1]]); });
+          p2.pol = limparPol(pol2); p2.comp = r4(topoMax - q.y0); p2.compMin = r4(topoMin - q.y0);
+          p2.ang = angDe(sg0); if (br.length) { p2.duplo = true; nBico++; }
+          p2.vol = r6(areaPol(p2.pol) * (q.w1 - q.w0)); angulos[p2.ang] = 1;
+        } else { p2.comp = r4(topoMax - q.y0); p2.compMin = p2.comp; p2.ang = 0; p2.vol = r6((q.u1 - q.u0) * (topoMax - q.y0) * (q.w1 - q.w0)); }
+        out.push(p2); return;
+      }
+      out.push(q);
+    });
+    pecas.length = 0; out.forEach(function (q) { pecas.push(q); });
+    /* ---- 2. bloqueadores e blocos: o que passa do topo some; onde o montante curto passa de blocoAlt e ficou sem bloqueador, entra um */
+    function topoMinEm(a, c) {
+      var us = [a, c].concat(T.quebras(a, c)), mn = Infinity;
+      us.forEach(function (u) { var m = u <= a + 1e-6 ? a + 1e-6 : (u >= c - 1e-6 ? c - 1e-6 : u), y = ybEm(u, T.segEm(m)); if (y < mn) mn = y; });
+      return mn;
+    }
+    var jH = P.osbModulo[1] / 1000, lim = P.blocoAlt / 1000, fora = 0;
+    for (k = pecas.length - 1; k >= 0; k--) {
+      var z = pecas[k];
+      if (z.grupo !== "madeira" || !/^(bloqueador|bloco)$/.test(z.tipo)) continue;
+      var tm = topoMinEm(z.u0, z.u1), yc = (z.y0 + z.y1) / 2, nec = tm - cx.guiaInf > lim - 1e-9;      /* o montante mais curto do vão passa de blocoAlt? */
+      if (z.y1 > tm + 1e-6 || (z.tipo === "bloqueador" && !nec && Math.abs(yc - jH) >= 0.10)) { pecas.splice(k, 1); fora++; }
+    }
+    var verts = pecas.filter(function (z) { return z.grupo === "madeira" && /^(montante|montante-extremo|montante-canto|montante-encontro|ombreira-rei)$/.test(z.tipo) && z.y0 <= cx.guiaInf + 1e-6; }).sort(function (p, q) { return p.u0 - q.u0; });
+    var nBloq = 0;
+    for (k = 0; k + 1 < verts.length; k++) {
+      var va = verts[k], vc = verts[k + 1], gap = vc.u0 - va.u1;
+      if (gap < 0.02) continue;
+      var hmin = Math.min(va.compMin != null ? va.compMin : va.comp, vc.compMin != null ? vc.compMin : vc.comp);
+      if (hmin <= lim + 1e-9) continue;
+      var temVao = cx.vaosOk.some(function (v) { return v.x1 > va.u1 - 1e-6 && v.x0 < vc.u0 + 1e-6; });
+      if (temVao) continue;
+      var jaTem = pecas.some(function (z) { return /^(bloqueador|bloco)$/.test(z.tipo) && z.u0 >= va.u1 - 1e-6 && z.u1 <= vc.u0 + 1e-6; });
+      if (jaTem) continue;
+      var ycn = cx.guiaInf + hmin / 2;
+      cx.add("bloqueador", "madeira", cx.SEC_MONT, va.u1, vc.u0, ycn - g / 2, ycn + g / 2, cx.wn0, cx.wn1, { compra: cx.COMPRA_MONT, ajusteEmpena: true }); nBloq++;
+    }
+    /* ---- 3. OSB recortado */
+    var osbN = 0, osbArea = 0, mods = {}, perdidas = 0;
+    for (k = pecas.length - 1; k >= 0; k--) {
+      var o = pecas[k]; if (o.grupo !== "osb") continue;
+      var pg = recortarRet(T, { u0: o.u0, u1: o.u1, y0: o.y0, y1: o.y1 });
+      if (!pg) { pecas.splice(k, 1); perdidas++; continue; }
+      var recortada = Math.abs(areaPol(pg) - (o.u1 - o.u0) * (o.y1 - o.y0)) > 1e-6;
+      if (recortada) { o.pol = pg; o.y1 = r6(ymaxPol(pg)); o.recorte = true; }
+      o.area = r6(recortada ? areaPol(pg) : (o.u1 - o.u0) * (o.y1 - o.y0)); o.vol = r6(o.area * (o.w1 - o.w0)); o.comp = r4(Math.max(o.u1 - o.u0, o.y1 - o.y0));
+      osbN++; osbArea += o.area; mods[o.modulo] = 1;
+    }
+    cx.osb.chapas = Object.keys(mods).length; cx.osb.area = r4(osbArea); cx.osb.pecas = osbN;
+    /* ---- 4. conferência dos vãos contra o topo */
+    var vaosInfo = [], interf = [];
+    cx.vaosOk.forEach(function (v) {
+      var tm = topoMinEm(v.x0, v.x1), topoV = v._hdrTopo != null ? v._hdrTopo : v.y1;
+      vaosInfo.push({ id: v.id, topoMin: r4(tm), topoVerga: r4(topoV), interfere: topoV > tm - 0.01 });
+      if (topoV > tm - 0.01) interf.push(v.id);
+      if (topoV > tm - 0.01) avisos.push("Vão " + v.id + ": o topo da verga (" + virg(topoV) + " m) chega na guia superior inclinada (face de baixo a " + virg(tm) + " m no ponto mais baixo): conferir o vão ou o telhado.");
+    });
+    var hs = []; T.segs.forEach(function (sg) { [sg.u0, sg.u1].forEach(function (u) { hs.push(sg.a + sg.b * u); }); });
+    return { ativo: true, hMax: r4(Math.max.apply(null, hs)), hMin: r4(Math.min.apply(null, hs)), angulos: Object.keys(angulos).map(Number).sort(function (a, b2) { return a - b2; }),
+             descartados: descartados, bicos: nBico, bloqueadoresFora: fora, bloqueadoresNovos: nBloq, osbPerdidas: perdidas,
+             vaos: vaosInfo, interferencias: interf };
+  }
+
+
   /* ================================================================== GERAR */
   /* p = { id, L, H, t, vaos:[{id,x0,x1,y0,y1}] (u de 0 a L, y da base), encontros:[{u,larg}], vazios:[{u0,u1}],
            pontas:{ini:"L"|"livre", fim:"L"|"livre"}, wf:{…}, camadas:[{id,face,e (m),…}], inverterFaces, deslocU } */
@@ -454,13 +642,25 @@
         if (qc.u1 - qc.u0 < 0.005) pecas.splice(iC, 1);
       }
     }
-    pecas.forEach(function (q) { q.comp = r4(Math.max(q.u1 - q.u0, q.y1 - q.y0, q.w1 - q.w0)); q.vol = r6((q.u1 - q.u0) * (q.y1 - q.y0) * (q.w1 - q.w0)); });
     juntas.forEach(function (j) { if (desl) j.u = r4(j.u + desl); });
+    /* EMPENA (fase 2C): o topo inclinado recorta guias, montantes, bloqueadores e OSB (só quando `p.topo` vem; sem ele o quadro é o de sempre) */
+    var empena = null;
+    if (arr(p.topo).length) {
+      empena = empenar({ topo: criarTopo(p.topo), pecas: pecas, add: add, avisos: avisos, guia: guia, guiaInf: guia, yTopoMont: yTopoMont, P: P, wn0: wn0, wn1: wn1, SEC_MONT: SEC_MONT, COMPRA_MONT: COMPRA_MONT, osb: osb,
+        vaosOk: vaosOk.map(function (v) { return { id: v.id, x0: v.x0 + desl, x1: v.x1 + desl, y0: v.y0, y1: v.y1, _hdrTopo: v._hdrTopo }; }) });
+    }
+    pecas.forEach(function (q) { if (q.pol) return; q.comp = r4(Math.max(q.u1 - q.u0, q.y1 - q.y0, q.w1 - q.w0)); q.vol = r6((q.u1 - q.u0) * (q.y1 - q.y0) * (q.w1 - q.w0)); });
 
     var res = { ok: true, id: String(p.id), L: L, H: H, t: num(p.t, 0), params: P, b: b, d: d, wn0: wn0, wn1: wn1, deslocU: desl,
       pecas: pecas, juntasOsb: juntas, vergas: vergas, osb: osb, avisos: avisos, vergasNota: VERGAS_NOTA,
       vaos: vaosOk.map(function (v) { return { id: v.id, x0: v.x0 + desl, x1: v.x1 + desl, y0: v.y0, y1: v.y1, porta: v.porta }; }),
       camadas: wL, inverterFaces: !!p.inverterFaces, pontas: { ini: ptIni, fim: ptFim } };
+    if (empena) {
+      /* área real da parede = ∫ topo(u) du no corpo do quadro (trapézios por trecho) */
+      var areaE = 0; arr(p.topo).forEach(function (sg) { var ua = Math.max(sg.u0, desl), uc = Math.min(sg.u1, desl + L); if (uc > ua) areaE += (uc - ua) * (sg.a + sg.b * (ua + uc) / 2); });
+      empena.areaBruta = r4(areaE); empena.topo = arr(p.topo).map(function (sg) { return { u0: sg.u0, u1: sg.u1, a: sg.a, b: sg.b }; });
+      res.empena = empena;
+    }
     res.contagem = contagem(pecas);
     res.q = quantidades(res, p);
     return res;
@@ -498,8 +698,9 @@
     var P = res.params, L = res.L, H = res.H, q = {}, i;
     var vaos = res.vaos, areaVaos = 0, perim = 0;
     vaos.forEach(function (v) { areaVaos += (v.x1 - v.x0) * (v.y1 - v.y0); perim += 2 * ((v.x1 - v.x0) + (v.y1 - v.y0)); });
-    var areaLiq = Math.max(0, L * H - areaVaos);
-    q.areaBruta = r4(L * H); q.areaVaos = r4(areaVaos); q.areaLiquida = r4(areaLiq); q.perimetroVaos = r4(perim);
+    var areaBr = res.empena ? res.empena.areaBruta : L * H;           /* empena: a área real sob o topo inclinado */
+    var areaLiq = Math.max(0, areaBr - areaVaos);
+    q.areaBruta = r4(areaBr); q.areaVaos = r4(areaVaos); q.areaLiquida = r4(areaLiq); q.perimetroVaos = r4(perim);
     /* madeira por seção (final) → compra (bruta) */
     var sec = {};
     res.pecas.forEach(function (x) {
@@ -514,13 +715,17 @@
     var vert = res.pecas.filter(function (x) { return x.grupo === "madeira" && /^(montante|ombreira|cripple)/.test(x.tipo); });
     q.pregoMontante = vert.length * 2 * P.pregosPorExtremidade;
     q.pregoGuiaSup = ceilT(L / (P.espPregoGuiaSup / 1000)) + 1;
+    if (res.empena) {      /* a guia superior segue a água: o comprimento é o ao longo dela, em cada peça */
+      var lgs = 0, ngs = 0; res.pecas.forEach(function (x) { if (x.tipo === "guia-superior-1") { lgs += x.comp; ngs++; } });
+      q.pregoGuiaSup = ceilT(lgs / (P.espPregoGuiaSup / 1000)) + ngs;
+    }
     var pv = 0; res.pecas.forEach(function (x) { if (x.tipo === "verga") pv += 2 * (ceilT((x.u1 - x.u0) / (P.espPregoVerga / 1000)) + 1); });
     q.pregoVerga = pv;
     /* OSB: borda e campo */
     var pB = 0, pC = 0;
     res.pecas.forEach(function (x) {
       if (x.tipo !== "osb") return;
-      var per = 2 * ((x.u1 - x.u0) + (x.y1 - x.y0));
+      var per = x.pol ? perimPol(x.pol) : 2 * ((x.u1 - x.u0) + (x.y1 - x.y0));
       pB += ceilT(per / (P.espOsbBorda / 1000));
       var internos = 0;
       vert.forEach(function (m) { var c = (m.u0 + m.u1) / 2; if (c > x.u0 + res.b / 2 + 1e-6 && c < x.u1 - res.b / 2 - 1e-6 && m.y0 < x.y1 && m.y1 > x.y0) internos += Math.min(m.y1, x.y1) - Math.max(m.y0, x.y0); });
@@ -549,7 +754,8 @@
        extremo) + as bordas horizontais (guia inferior fora das portas e guia superior). O canto (2 ou 3 montantes lado a lado) conta UMA linha
        por face — a placa não prende nos três — e a ponta "Lb"/"T" já tem o seu montante de ponta na lista. */
     var altVert = 0, hCanto = H - 3 * res.b, nCanto = 0;
-    vert.forEach(function (m) { if (m.tipo === "montante-canto") { hCanto = m.y1 - m.y0; return; } altVert += m.y1 - m.y0; });
+    function altDe(m) { return m.pol ? (m.comp + (m.compMin != null ? m.compMin : m.comp)) / 2 : m.y1 - m.y0; }    /* empena: altura média do montante cortado */
+    vert.forEach(function (m) { if (m.tipo === "montante-canto") { hCanto = altDe(m); return; } altVert += altDe(m); });
     if (res.pontas.ini === "L") nCanto++;
     if (res.pontas.fim === "L") nCanto++;
     altVert += nCanto * hCanto;
@@ -577,6 +783,28 @@
     return d > 0 ? "L" : "Lb";
   }
 
+  /* TOPO INCLINADO (fase 2C): o BIM guarda o topo da parede em `c.topo` = [{ u0, u1, a, b }] (js/bimarq.js topoParede): u = distância ao CENTRO da
+     parede ao longo do eixo e y = a + b·u na cota ABSOLUTA do mundo. Aqui vira o topo no sistema do quadro (u a partir da ponta inicial da parede, y a
+     partir da base). Só há empena quando algum trecho do corpo do quadro [u0, u1] é inclinado (|b| > 1e-4); topo plano (mesmo mais alto ou mais baixo
+     que `altura`) segue como sempre, o quadro retangular de `altura`. */
+  function topoDaCaixa(c, u0, u1) {
+    var tp = arr(c && c.topo); if (!tp.length) return null;
+    var L = num(c.comprimento, 0), base = num(c.cy, 0) - num(c.altura, 0) / 2, segs = [], inclinado = false;
+    tp.forEach(function (sg) {
+      var a = num(sg.u0, -1e9) + L / 2, z = num(sg.u1, 1e9) + L / 2, b = num(sg.b, 0);
+      if (z <= u0 + 1e-6 || a >= u1 - 1e-6) return;
+      a = Math.max(a, u0); z = Math.min(z, u1);
+      if (!(z - a > 1e-6)) return;
+      if (Math.abs(b) > 1e-4) inclinado = true;
+      segs.push({ u0: r6(a), u1: r6(z), a: r6(num(sg.a, 0) - b * L / 2 - base), b: r6(b) });
+    });
+    if (!inclinado || !segs.length) return null;
+    segs.sort(function (p, q) { return p.u0 - q.u0; });
+    segs[0].u0 = r6(Math.min(segs[0].u0, u0)); segs[segs.length - 1].u1 = r6(Math.max(segs[segs.length - 1].u1, u1));
+    var hMax = 0;
+    segs.forEach(function (sg) { [sg.u0, sg.u1].forEach(function (u) { var y = sg.a + sg.b * u; if (y > hMax) hMax = y; }); });
+    return { segs: segs, hMax: r6(hMax) };
+  }
   /* vaos = o `aceitos` do BimEdit.vaosNaParede (local da parede: x de −L/2 a L/2, y da base) */
   function daCaixa(c, vaos) {
     if (!ehWf(c)) return null;
@@ -585,8 +813,9 @@
     var u1 = un.fim && isFinite(Number(un.fim.c0)) ? Number(un.fim.c0) + L / 2 : L;
     if (!(u1 - u0 > 0.15)) { u0 = 0; u1 = L; }
     var Le = u1 - u0;
+    var tp = topoDaCaixa(c, u0, u1);
     return {
-      id: String(c.id), L: Le, H: num(c.altura, 0), t: num(c.espessura, 0), deslocU: u0,
+      id: String(c.id), L: Le, H: tp ? tp.hMax : num(c.altura, 0), t: num(c.espessura, 0), deslocU: u0, topo: tp ? tp.segs : null,
       vaos: arr(vaos).map(function (v) { return { id: v.id, x0: num(v.x0, 0) + L / 2 - u0, x1: num(v.x1, 0) + L / 2 - u0, y0: num(v.y0, 0), y1: num(v.y1, 0) }; }),
       encontros: arr(un.abut).map(function (ab) { return { u: (num(ab.u0, 0) + num(ab.u1, 0)) / 2 + L / 2 - u0, larg: Math.abs(num(ab.u1, 0) - num(ab.u0, 0)) }; }),
       vazios: arr(un.cruz).filter(function (g) { return g && g.a && g.b; }).map(function (g) { return { u0: num(g.a.c0, 0) + L / 2 - u0, u1: num(g.b.c0, 0) + L / 2 - u0 }; }),
@@ -599,7 +828,7 @@
     function q(v) { return typeof v === "number" ? r4(v) : v; }
     return JSON.stringify([q(p.L), q(p.H), q(p.t), q(p.deslocU), p.wf, p.wfInst, arr(p.camadas).map(function (k) { return [k.id, q(k.e)]; }),
       arr(p.vaos).map(function (v) { return [v.id, q(v.x0), q(v.x1), q(v.y0), q(v.y1)]; }),
-      arr(p.encontros).map(function (e) { return [q(e.u), q(e.larg)]; }), arr(p.vazios).map(function (z) { return [q(z.u0), q(z.u1)]; }), p.pontas, p.corte || null, !!p.inverterFaces]);
+      arr(p.encontros).map(function (e) { return [q(e.u), q(e.larg)]; }), arr(p.vazios).map(function (z) { return [q(z.u0), q(z.u1)]; }), p.pontas, p.corte || null, !!p.inverterFaces, p.topo ? p.topo.map(function (g) { return [q(g.u0), q(g.u1), q(g.a), q(g.b)]; }) : null]);
   }
   var _cache = {}, _nCache = 0, _estat = { gerados: 0, reaproveitados: 0 };
   function limparCache() { _cache = {}; _nCache = 0; }
@@ -607,8 +836,8 @@
   function paraParede(c, vaos) {
     var p = daCaixa(c, vaos); if (!p) return null;
     var pw = { id: p.id, L: p.L, H: p.H, t: p.t, deslocU: p.deslocU, vaos: p.vaos, encontros: p.encontros, vazios: p.vazios, pontas: p.pontas,
-      wf: mesclaWf(p.wf, p.wfInst), camadas: p.camadas, inverterFaces: p.inverterFaces, corte: p.corte };
-    var k = chaveDe({ L: p.L, H: p.H, t: p.t, deslocU: p.deslocU, wf: pw.wf, wfInst: null, camadas: p.camadas, vaos: p.vaos, encontros: p.encontros, vazios: p.vazios, pontas: p.pontas, corte: p.corte, inverterFaces: p.inverterFaces });
+      wf: mesclaWf(p.wf, p.wfInst), camadas: p.camadas, inverterFaces: p.inverterFaces, corte: p.corte, topo: p.topo };
+    var k = chaveDe({ L: p.L, H: p.H, t: p.t, deslocU: p.deslocU, wf: pw.wf, wfInst: null, camadas: p.camadas, vaos: p.vaos, encontros: p.encontros, vazios: p.vazios, pontas: p.pontas, corte: p.corte, inverterFaces: p.inverterFaces, topo: p.topo });
     var e = _cache[p.id];
     /* ⚠ a POSIÇÃO da parede (cx, cy, cz, rotY) não entra na chave do quadro (mover/girar não muda as peças, só o lugar delas), mas o lugar
        tem de ser o ATUAL a cada chamada: antes `res.parede` ficava com o da 1ª geração e a planta desenhava o quadro onde a parede ESTAVA. */
@@ -630,6 +859,49 @@
              z: r6(num(parede.cz, 0) - uc * si + wc * co), rotY: num(parede.rotY, 0), comp: r6(peca.u1 - peca.u0), alt: r6(peca.y1 - peca.y0), esp: r6(peca.w1 - peca.w0) };
   }
 
+  /* peça com contorno recortado (empena) → triângulos do MUNDO do prisma (u, y) × (w0..w1): { pos: [x,y,z, …] } para o 3D. Contorno convexo ou não: corte de orelhas. */
+  function triangulos(pol) {
+    var idx = [], n = pol.length, i, area = 0;
+    for (i = 0; i < n; i++) { var a0 = pol[i], b0 = pol[(i + 1) % n]; area += a0[0] * b0[1] - b0[0] * a0[1]; }
+    var ord = []; for (i = 0; i < n; i++) ord.push(area >= 0 ? i : n - 1 - i);
+    var guard = 0;
+    function cruzP(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
+    while (ord.length > 3 && guard++ < 500) {
+      var feito = false;
+      for (i = 0; i < ord.length; i++) {
+        var ia = ord[(i + ord.length - 1) % ord.length], ib = ord[i], ic = ord[(i + 1) % ord.length], A = pol[ia], B = pol[ib], C = pol[ic];
+        if (cruzP(A, B, C) <= 1e-12) continue;
+        var dentro = false, j;
+        for (j = 0; j < ord.length; j++) { var k2 = ord[j]; if (k2 === ia || k2 === ib || k2 === ic) continue; var Pp = pol[k2]; if (cruzP(A, B, Pp) >= -1e-12 && cruzP(B, C, Pp) >= -1e-12 && cruzP(C, A, Pp) >= -1e-12) { dentro = true; break; } }
+        if (dentro) continue;
+        idx.push([ia, ib, ic]); ord.splice(i, 1); feito = true; break;
+      }
+      if (!feito) break;
+    }
+    if (ord.length === 3) idx.push([ord[0], ord[1], ord[2]]);
+    return idx;
+  }
+  function malhaPol(parede, res, peca, folga) {
+    if (!peca || !peca.pol) return null;
+    folga = num(folga, 0);                         /* folga (m) em cada face da espessura: o 3D normal entra eW/2 de cada lado para não coincidir com a casca (z-fighting) */
+    var co = Math.cos(num(parede.rotY, 0)), si = Math.sin(num(parede.rotY, 0)), L = num(parede.comprimento, res.L), sgn = (res.inverterFaces || parede.inverterFaces ? -1 : 1);
+    var base = num(parede.cy, 0) - num(parede.altura, res.H) / 2, pos = [], pol = peca.pol, tri = triangulos(pol), w0 = peca.w0 + folga, w1 = peca.w1 - folga;
+    if (!(w1 > w0)) { w0 = peca.w0; w1 = peca.w1; }
+    function mundo(u, y, w) { var uc = u - L / 2, wc = w * sgn; return [num(parede.cx, 0) + uc * co + wc * si, base + y, num(parede.cz, 0) - uc * si + wc * co]; }
+    /* face invertida (sgn < 0) espelha a peça em w: a ordem dos vértices vira, senão as normais apontam para DENTRO */
+    function push3(a, b, c) { if (sgn < 0) pos.push(a[0], a[1], a[2], c[0], c[1], c[2], b[0], b[1], b[2]); else pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); }
+    tri.forEach(function (t) {
+      var A0 = mundo(pol[t[0]][0], pol[t[0]][1], w0), B0 = mundo(pol[t[1]][0], pol[t[1]][1], w0), C0 = mundo(pol[t[2]][0], pol[t[2]][1], w0);
+      var A1 = mundo(pol[t[0]][0], pol[t[0]][1], w1), B1 = mundo(pol[t[1]][0], pol[t[1]][1], w1), C1 = mundo(pol[t[2]][0], pol[t[2]][1], w1);
+      push3(A0, C0, B0); push3(A1, B1, C1);
+    });
+    pol.forEach(function (q, i) {
+      var r = pol[(i + 1) % pol.length], a0 = mundo(q[0], q[1], w0), b0 = mundo(r[0], r[1], w0), a1 = mundo(q[0], q[1], w1), b1 = mundo(r[0], r[1], w1);
+      push3(a0, b0, b1); push3(a0, b1, a1);
+    });
+    return { pos: pos };
+  }
+
   /* ============================================================ PLANTA (corte da parede) */
   /* O que o corte horizontal à altura `h` (mundo) mostra desta parede: cada camada com a espessura real, os montantes
      cortados (38×89 na posição exata) e a cota de espaçamento entre eixos. Coordenadas do MUNDO (x, z) = tela (x, y).
@@ -637,7 +909,7 @@
   function planta(c, vaos, h) {
     var res = paraParede(c, vaos); if (!res || !res.ok) return null;
     var par = res.parede, base = par.cy - par.altura / 2, yh = h - base;
-    if (yh < 0 || yh > par.altura) return null;
+    if (yh < 0 || yh > Math.max(par.altura, res.H)) return null;
     var co = Math.cos(par.rotY), si = Math.sin(par.rotY), L = par.comprimento, sg = par.inverterFaces ? -1 : 1;
     function mundo(u, w) { return [r4(par.cx + (u - L / 2) * co + sg * w * si), r4(par.cz - (u - L / 2) * si + sg * w * co)]; }
     var desl = res.deslocU, Le = res.L, u0 = desl, u1 = desl + Le;
@@ -657,7 +929,9 @@
     res.pecas.forEach(function (q) {
       if (q.grupo !== "madeira") return;
       if (yh < q.y0 - 1e-6 || yh > q.y1 + 1e-6) return;
-      itens.push({ k: "montante", tipo: q.tipo, id: q.id, pts: [mundo(q.u0, q.w0), mundo(q.u1, q.w0), mundo(q.u1, q.w1), mundo(q.u0, q.w1)] });
+      var qa = q.u0, qb = q.u1;
+      if (q.pol) { var iv = corteHPol(q.pol, yh); if (!iv) return; qa = iv[0]; qb = iv[1]; }      /* empena: o corte na altura do plano pega só o que a peça cortada tem ali */
+      itens.push({ k: "montante", tipo: q.tipo, id: q.id, pts: [mundo(qa, q.w0), mundo(qb, q.w0), mundo(qb, q.w1), mundo(qa, q.w1)] });
       if (/^montante/.test(q.tipo)) studs.push((q.u0 + q.u1) / 2);
     });
     studs.sort(function (a, b2) { return a - b2; });
@@ -681,6 +955,43 @@
     return o;
   }
   var PEND = "sem composição SINAPI neste sistema: orçar à parte (código nunca inventado)";
+  /* ---- SINAPI (fase 2C): só códigos que EXISTEM na base do sistema (data/sinapi-MG-2026-06.json, SINAPI 06/2026 MG); o teste tools/test-woodframe-f2c.js confere CADA um
+     (código, unidade e descrição) contra a base. NÃO existe composição de Wood Frame, nem insumo de OSB/membrana hidrófuga/hold-down/fita de esquadria nessa base:
+     esses ficam pendentes, com o motivo. `aprox`: o insumo é o mais próximo (a bitola do projeto não consta), e vai escrito. */
+  var SINAPI_BASE = "SINAPI 06/2026 (MG)";
+  var SINAPI_WF = {
+    madeira:    { cod: "4006",   un: "M3",    desc: "MADEIRA SERRADA EM PINUS, MISTA OU EQUIVALENTE DA REGIAO - BRUTA" },
+    pregoMont:  { cod: "39027",  un: "KG",    desc: "PREGO DE ACO POLIDO COM CABECA 19 X 36 (3 1/4 X 9)", aprox: true, d: 3.76, L: 82.55,
+                  obs: "o prego do cálculo é 3,4 × 82,8 mm (EN 1995); o insumo mais próximo é o 19 × 36 (3 1/4 × 9: 3,76 × 82,55 mm) — peso por prego calculado da geometria desse insumo" },
+    pregoOsb:   { cod: "5068",   un: "KG",    desc: "PREGO DE ACO POLIDO COM CABECA 17 X 21 (2 X 11)", aprox: true, d: 3.05, L: 50.8,
+                  obs: "fixação do OSB: o insumo mais próximo do prego de 2 pol (3,05 × 50,8 mm) — bitola definitiva pelo cálculo/fornecedor" },
+    selante:    { cod: "142",    un: "310ML", desc: "SELANTE ELASTICO MONOCOMPONENTE A BASE DE POLIURETANO (PU) PARA JUNTAS DIVERSAS" },
+    espuma:     { cod: "38124",  un: "UN",    desc: "ESPUMA EXPANSIVA DE POLIURETANO, APLICACAO MANUAL - 500 ML" },
+    gessoST:    { cod: "39413",  un: "M2",    desc: "PLACA / CHAPA DE GESSO ACARTONADO, STANDARD (ST), COR BRANCA, E = 12,5 MM, 1200 X 2400 MM (L X C)" },
+    gessoRU:    { cod: "39417",  un: "M2",    desc: "PLACA / CHAPA DE GESSO ACARTONADO, RESISTENTE A UMIDADE (RU), COR VERDE, E = 12,5 MM, 1200 X 2400 MM (L X C)" },
+    cimenticia: { cod: "11062",  un: "M2",    desc: "PLACA CIMENTICIA LISA E = 10 MM, DE 1,20 X *2,50* M (SEM AMIANTO)" },
+    la:         { cod: "104725", un: "M2",    desc: "INSTALAÇÃO DE ISOLAMENTO COM LÃ DE VIDRO EM PAREDE DRYWALL. AF_07/2023", obs: "composição de instalação em parede drywall; preço 0 na base MG 06/2026 (sem preço na UF)" }
+  };
+  /* o que NÃO tem código na base e por quê (a tela e o teste leem daqui) */
+  var SINAPI_PENDENTE = {
+    osb: "a base tem só composições de tapume e de parede TEMPORÁRIA em OSB (105117…105134, 105118), não a chapa de OSB estrutural",
+    membrana: "a base não tem membrana hidrófuga/permeável ao vapor de parede (só subcobertura de telhado e camada separadora de piso)",
+    hold: "a base não tem hold-down; o chumbador zincado de 1/2 pol × 75 mm (11977) é curto para guia de 38 mm + ancoragem e o parabolt (13279) vem por kg: diâmetro e comprimento pelo cálculo/fornecedor",
+    fita: "a base não tem fita de vedação de esquadria (só fita de espuma 43727 e a aluminizada de subcobertura 42529, de outra função)",
+    paraf: "o único parafuso de gesso da base (39438, GN55) é para perfil metálico drywall, não para quadro de madeira",
+    madeiraSemSecao: "seção sem medida de compra no catálogo Nibra: cotar com o fornecedor"
+  };
+  /* RENDIMENTOS e perdas (parâmetros; opc.compra sobrescreve): TODOS "a confirmar com o fornecedor" — nenhum vem de norma ou de manual */
+  var COMPRA_PADRAO = {
+    perdaMadeira: 0.10, perdaPrego: 0.05, perdaSelante: 0.10, perdaEspuma: 0.10, perdaFita: 0.10, perdaMembrana: 0.10, perdaPlaca: 0.10,
+    selanteCordaoMm: [10, 6],        /* seção do cordão no perímetro do vão (largura × profundidade, mm) → ml por metro */
+    selanteCartuchoMl: 310,          /* o cartucho do insumo 142 */
+    espumaMPorLata: 10,              /* m de cordão por lata de 500 ml (rendimento de partida) */
+    fitaRoloM: 25, membranaRoloM2: 75, parafusoCaixaUn: 1000, pregoCaixaKg: 18, placaM2: 2.88   /* 1,20 × 2,40 m */
+  };
+  function mesclaCompra(o) { var c = {}, k; for (k in COMPRA_PADRAO) c[k] = COMPRA_PADRAO[k]; if (o && typeof o === "object") for (k in o) if (o[k] != null) c[k] = o[k]; return c; }
+  function sinRef(ref) { var x = SINAPI_WF[ref]; return x ? { codigo: x.cod, un: x.un, descricao: x.desc, base: SINAPI_BASE, aproximado: !!x.aprox, obs: x.obs || null } : null; }
+  function pesoPrego(ref) { var x = SINAPI_WF[ref]; return Math.PI / 4 * x.d * x.d * x.L * 7.85e-6; }     /* kg por prego: haste cilíndrica de aço (7850 kg/m³), sem a cabeça */
   /* os vãos de cada parede: do chamador (opc.vaos) ou, no navegador, do BimEdit + a avaliação das famílias do BIM */
   function vaosDasParedes(estado, opc) {
     if (opc && opc.vaos) return opc.vaos;
@@ -695,7 +1006,7 @@
     opc = opc || {};
     var vaosTodos = null;
     var itens = [], avisos = [], A = { paredes: 0 }, mad = {}, camadas = {}, pend = [];
-    var extSet = {}, parafSet = {}, tot = { osb: 0, osbArea: 0, pregoMontante: 0, pregoGuiaSup: 0, pregoVerga: 0, osbFix: 0, chumb: 0, hd: 0, membr: 0, la: 0, gessoParaf: 0, fita: 0, selante: 0, espuma: 0 }, osbE = {};
+    var interf = [], extSet = {}, parafSet = {}, tot = { osb: 0, osbArea: 0, pregoMontante: 0, pregoGuiaSup: 0, pregoVerga: 0, osbFix: 0, chumb: 0, hd: 0, membr: 0, la: 0, gessoParaf: 0, fita: 0, selante: 0, espuma: 0 }, osbE = {};
     arr(estado && estado.caixas).forEach(function (c) {
       if (!ehWf(c)) return;
       if (!vaosTodos) vaosTodos = vaosDasParedes(estado, opc);
@@ -705,38 +1016,92 @@
       r.avisos.forEach(function (a) { avisos.push("Parede " + c.id + ": " + a); });
       var q = r.q; extSet[r.params.pregosPorExtremidade] = 1; parafSet[r.params.espParafusoGesso] = 1;
       q.madeira.forEach(function (m) {
-        var k = m.secao + "|" + (m.compra || ""), s = mad[k] || (mad[k] = { secao: m.secao, compra: m.compra, n: 0, comp: 0, vol: 0 });
+        var k = m.secao + "|" + (m.compra || ""), s = mad[k] || (mad[k] = { secao: m.secao, compra: m.compra, n: 0, comp: 0, vol: 0, bruto: 0 });
         s.n += m.n; s.comp += m.comp_m; s.vol += m.vol_m3;
+      });
+      r.pecas.forEach(function (x) {
+        if (x.grupo !== "madeira") return;
+        var k = x.secao + "|" + (x.compra || ""), s = mad[k], mc = /^(\d+)x(\d+)$/.exec(String(x.compra || ""));
+        if (s) s.bruto += mc ? (+mc[1] / 1000) * (+mc[2] / 1000) * x.comp : x.vol;
       });
       tot.osb += r.osb.chapas; tot.osbArea += r.osb.area; if (r.osb.e) osbE[r.osb.e] = 1;
       tot.pregoMontante += q.pregoMontante; tot.pregoGuiaSup += q.pregoGuiaSup; tot.pregoVerga += q.pregoVerga; tot.osbFix += q.osbFixacoes;
       tot.chumb += q.chumbadores; tot.hd += q.holdDown; tot.membr += q.membrana_m2; tot.la += q.la_m2; tot.gessoParaf += q.parafusoGesso;
       tot.fita += q.fitaVaos_m; tot.selante += q.selanteVaos_m; tot.espuma += q.espumaVaos_m;
       q.camadas.forEach(function (k) { var s = camadas[k.id] || (camadas[k.id] = { rotulo: k.rotulo, e: k.e_mm, area: 0 }); s.area += k.area_m2; });
+      if (r.empena && arr(r.empena.interferencias).length) interf.push("parede " + c.id + ", vão(s) " + r.empena.interferencias.join(", "));
       r.vergas.forEach(function (v) { if (v.foraTabela) pend.push("verga do vão " + v.vao + " da parede " + c.id + " acima de 3,00 m"); });
     });
     if (!A.paredes) return { itens: [], avisos: avisos, paredes: 0 };
-    var ex = { woodframe: true };
+    var ex = { woodframe: true }, CP = mesclaCompra(opc.compra);
+    /* põe o código SINAPI e a UNIDADE DE COMPRA no item (a quantidade de medição fica; a de compra vai em item.compra) */
+    function comCod(it, ref, compra) {
+      it.sinapi = sinRef(ref); it.orcarAParte = !it.sinapi;
+      if (compra) it.compra = compra;
+      return it;
+    }
+    /* item de CONFERÊNCIA (informativo): a referência SINAPI vai em `refSinapi`, NUNCA em `sinapi` (não conta como item com código nem entra no total) */
+    function comRef(it, ref, compra) {
+      it.refSinapi = sinRef(ref); it.sinapi = null; it.orcarAParte = false;
+      if (compra) it.compra = compra;
+      return it;
+    }
+    function semCod(it, motivo) { it.motivoPendente = motivo; it.obs = (it.obs ? it.obs + "; " : "") + "SEM CÓDIGO NA BASE: " + motivo; return it; }
     Object.keys(mad).sort().forEach(function (k) {
-      var s = mad[k];
-      itens.push(item("Madeira serrada do quadro Wood Frame — seção " + s.secao.replace("x", "×") + (s.compra ? " (compra: " + s.compra.replace("x", "×") + " bruta, catálogo Nibra)" : " (sem seção no catálogo: cotar com o fornecedor)"),
-        "m³", s.vol, s.n + " peças, " + virg(s.comp) + " m lineares; volume líquido da seção final; " + PEND + "; pré-dimensionamento a confirmar no cálculo (NBR 7190-1:2022 / Diretriz SINAT nº 005)", ex));
+      var s = mad[k], it = item("Madeira serrada do quadro Wood Frame — seção " + s.secao.replace("x", "×") + (s.compra ? " (compra: " + s.compra.replace("x", "×") + " bruta, catálogo Nibra)" : " (sem seção no catálogo: cotar com o fornecedor)"),
+        "m³", s.vol, s.n + " peças, " + virg(s.comp) + " m lineares; volume líquido da seção final; pré-dimensionamento a confirmar no cálculo (NBR 7190-1:2022 / Diretriz SINAT nº 005)", ex);
+      if (!s.compra) semCod(it, SINAPI_PENDENTE.madeiraSemSecao);
+      else {
+        comCod(it, "madeira", { un: "m³", qtd: r4(s.bruto * (1 + CP.perdaMadeira)), regra: "volume BRUTO da seção de compra (" + s.compra.replace("x", "×") + ") + " + virg(CP.perdaMadeira * 100, 0) + " % de perda (a confirmar com o fornecedor); SINAPI 4006 é madeira serrada de Pinus BRUTA, por m³" });
+        it.sinapi.obs = "insumo de madeira serrada de Pinus bruta (não é composição de Wood Frame); preço por m³ do volume bruto comprado";
+      }
+      itens.push(it);
     });
     var osbTxt = Object.keys(osbE).map(function (e) { return virg(+e, 1); }).join(" / ");
-    if (tot.osb) itens.push(item("Chapa de OSB 1,20 × 2,40 m (" + osbTxt + " mm) do contraventamento", "un", tot.osb, "uma chapa por módulo tocado pela parede (o recorte dos vãos não reaproveita sobra); " + virg(tot.osbArea) + " m² líquidos; " + PEND, ex));
-    if (tot.pregoMontante) itens.push(item("Pregos dos montantes nas guias (" + Object.keys(extSet).sort().join(" ou ") + " por ponta de montante) — prego para madeira, bitola e comprimento a definir no cálculo", "un", tot.pregoMontante, PEND, ex));
-    if (tot.pregoGuiaSup + tot.pregoVerga) itens.push(item("Pregos das guias superiores duplas e das vergas — bitola a definir no cálculo", "un", tot.pregoGuiaSup + tot.pregoVerga, "guia superior a cada 600 mm; verga em 2 fileiras a cada 300 mm; " + PEND, ex));
-    if (tot.osbFix) itens.push(item("Fixação do OSB (prego ou parafuso) — borda a 150 mm, campo a 300 mm", "un", tot.osbFix, "espaçamentos são parâmetros do tipo; " + PEND, ex));
-    if (tot.chumb) itens.push(item("Chumbador de expansão da guia inferior na fundação (a cada 1,20 m e junto às portas)", "un", tot.chumb, "catálogo: chumbador de expansão Eurotec (eurotec-bolt-anchor*); diâmetro e classe pelo cálculo; " + PEND, ex));
-    if (tot.hd) itens.push(item("Hold-down nas pontas e cantos da parede", "un", ceilT(tot.hd - 1e-9), "canto compartilhado entre duas paredes conta 0,5 em cada uma; modelo e capacidade pelo cálculo; " + PEND, ex));
+    if (tot.osb) itens.push(semCod(item("Chapa de OSB 1,20 × 2,40 m (" + osbTxt + " mm) do contraventamento", "un", tot.osb, "uma chapa por módulo tocado pela parede (o recorte dos vãos e da empena não reaproveita sobra); " + virg(tot.osbArea) + " m² líquidos; " + PEND, ex), SINAPI_PENDENTE.osb));
+    function kgPrego(nUn, ref) { return r4(nUn * pesoPrego(ref) * (1 + CP.perdaPrego)); }
+    function compraPrego(nUn, ref) { var kg = kgPrego(nUn, ref); return { un: "kg", qtd: kg, caixas: ceilT(kg / CP.pregoCaixaKg - 1e-9), regra: nUn + " pregos × " + virg(pesoPrego(ref) * 1000, 2) + " g (haste de aço do insumo SINAPI " + SINAPI_WF[ref].cod + ") + " + virg(CP.perdaPrego * 100, 0) + " % de perda; caixa de " + CP.pregoCaixaKg + " kg (a confirmar com o fornecedor)" }; }
+    if (tot.pregoMontante) itens.push(comCod(item("Pregos dos montantes nas guias (" + Object.keys(extSet).sort().join(" ou ") + " por ponta de montante) — prego para madeira, bitola e comprimento a definir no cálculo", "un", tot.pregoMontante, "peso pela bitola do insumo SINAPI mais próximo", ex), "pregoMont", compraPrego(tot.pregoMontante, "pregoMont")));
+    if (tot.pregoGuiaSup + tot.pregoVerga) itens.push(comCod(item("Pregos das guias superiores duplas e das vergas — bitola a definir no cálculo", "un", tot.pregoGuiaSup + tot.pregoVerga, "guia superior a cada 600 mm (empena: pelo comprimento ao longo da água); verga em 2 fileiras a cada 300 mm", ex), "pregoMont", compraPrego(tot.pregoGuiaSup + tot.pregoVerga, "pregoMont")));
+    if (tot.osbFix) itens.push(comCod(item("Fixação do OSB (prego ou parafuso) — borda a 150 mm, campo a 300 mm", "un", tot.osbFix, "espaçamentos são parâmetros do tipo; contado como prego", ex), "pregoOsb", compraPrego(tot.osbFix, "pregoOsb")));
+    if (tot.chumb) itens.push(semCod(item("Chumbador de expansão da guia inferior na fundação (a cada 1,20 m e junto às portas)", "un", tot.chumb, "catálogo: chumbador de expansão Eurotec (eurotec-bolt-anchor*); diâmetro e classe pelo cálculo; " + PEND, ex), SINAPI_PENDENTE.hold));
+    if (tot.hd) itens.push(semCod(item("Hold-down nas pontas e cantos da parede", "un", ceilT(tot.hd - 1e-9), "canto compartilhado entre duas paredes conta 0,5 em cada uma; modelo e capacidade pelo cálculo; " + PEND, ex), SINAPI_PENDENTE.hold));
     /* UMA FONTE SÓ (revisão 20/11/2026): as CAMADAS da parede (lã do núcleo, membrana, OSB, gesso, cimentícia…) já saem em m² no
        quantitativo da própria parede ("Camadas — quantitativo", js/bimedit.js/bimarq.js `camadasDe`). Aqui ficam só as peças que a camada
        não tem: madeira do quadro, pregos, parafusos, ancoragem, vedação dos vãos. Membrana, lã e camadas NÃO entram aqui de novo. */
-    if (tot.fita) itens.push(item("Fita de vedação do perímetro dos vãos", "m", tot.fita, "catálogo: fitas Eurovent; " + PEND, ex));
-    if (tot.selante) itens.push(item("Selante nos vãos (perímetro)", "m", tot.selante, "rendimento do cartucho a definir pelo fornecedor; " + PEND, ex));
-    if (tot.espuma) itens.push(item("Espuma expansiva nos vãos (perímetro)", "m", tot.espuma, "conversão para lata a definir pelo fornecedor; " + PEND, ex));
-    if (tot.membr) avisos.push("Wood Frame: a membrana hidrófuga sai só em 'Camadas — quantitativo' da parede; ao orçar essa camada, acrescente a sobreposição de " + virg(PADRAO.sobreposicaoMembrana * 100, 0) + " % (critério RA).");
-    if (tot.gessoParaf) itens.push(item("Parafuso de gesso acartonado", "un", tot.gessoParaf, "1 a cada " + Object.keys(parafSet).sort().join(" ou ") + " mm ao longo de cada linha de montante (o canto conta uma linha por face) e nas bordas horizontais; " + PEND, ex));
+    if (tot.fita) {
+      var itF = semCod(item("Fita de vedação do perímetro dos vãos", "m", tot.fita, "catálogo: fitas Eurovent; " + PEND, ex), SINAPI_PENDENTE.fita);
+      itF.compra = { un: "rolo", qtd: ceilT(tot.fita * (1 + CP.perdaFita) / CP.fitaRoloM - 1e-9), regra: virg(tot.fita) + " m + " + virg(CP.perdaFita * 100, 0) + " % de perda ÷ rolo de " + CP.fitaRoloM + " m (a confirmar com o fornecedor)" };
+      itens.push(itF);
+    }
+    if (tot.selante) {
+      var mlM = CP.selanteCordaoMm[0] * CP.selanteCordaoMm[1];           /* mm² × 1 m (1000 mm) = mm³ ÷ 1000 = ml por metro */
+      itens.push(comCod(item("Selante nos vãos (perímetro)", "m", tot.selante, "cordão de " + CP.selanteCordaoMm[0] + " × " + CP.selanteCordaoMm[1] + " mm (parâmetro a confirmar com o fornecedor)", ex), "selante",
+        { un: "cartucho 310 ml", qtd: ceilT(tot.selante * mlM * (1 + CP.perdaSelante) / CP.selanteCartuchoMl - 1e-9), regra: virg(tot.selante) + " m × " + virg(mlM, 0) + " ml/m + " + virg(CP.perdaSelante * 100, 0) + " % de perda ÷ cartucho de " + CP.selanteCartuchoMl + " ml (SINAPI 142 é por cartucho de 310 ml)" }));
+    }
+    if (tot.espuma) itens.push(comCod(item("Espuma expansiva nos vãos (perímetro)", "m", tot.espuma, "rendimento da lata a confirmar com o fornecedor", ex), "espuma",
+      { un: "lata 500 ml", qtd: ceilT(tot.espuma * (1 + CP.perdaEspuma) / CP.espumaMPorLata - 1e-9), regra: virg(tot.espuma) + " m + " + virg(CP.perdaEspuma * 100, 0) + " % de perda ÷ " + CP.espumaMPorLata + " m por lata de 500 ml (rendimento de partida, a confirmar com o fornecedor)" }));
+    if (tot.membr) {
+      avisos.push("Wood Frame: a membrana hidrófuga sai só em 'Camadas — quantitativo' da parede; ao orçar essa camada, acrescente a sobreposição de " + virg(PADRAO.sobreposicaoMembrana * 100, 0) + " % (critério RA).");
+      var itM = semCod(item("Membrana hidrófuga — unidade de compra (conferência)", "m²", tot.membr, "conferência: a camada já sai em 'Camadas — quantitativo' (não somar)", { woodframe: true, somar: false, informativo: true, inclusoEm: "Camadas — quantitativo" }), SINAPI_PENDENTE.membrana);
+      itM.orcarAParte = false; itM.compra = { un: "rolo", qtd: ceilT(tot.membr * (1 + CP.perdaMembrana) / CP.membranaRoloM2 - 1e-9), regra: virg(tot.membr) + " m² (já com a sobreposição) + " + virg(CP.perdaMembrana * 100, 0) + " % de perda ÷ rolo de " + CP.membranaRoloM2 + " m² (a confirmar com o fornecedor)" };
+      itens.push(itM);
+    }
+    if (tot.gessoParaf) {
+      var itP = semCod(item("Parafuso de gesso acartonado", "un", tot.gessoParaf, "1 a cada " + Object.keys(parafSet).sort().join(" ou ") + " mm ao longo de cada linha de montante (o canto conta uma linha por face) e nas bordas horizontais; " + PEND, ex), SINAPI_PENDENTE.paraf);
+      itP.compra = { un: "caixa", qtd: ceilT(tot.gessoParaf / CP.parafusoCaixaUn - 1e-9), regra: tot.gessoParaf + " un ÷ caixa de " + CP.parafusoCaixaUn + " un (a confirmar com o fornecedor)" };
+      itens.push(itP);
+    }
+    /* as CAMADAS de placa (m², já medidas em 'Camadas — quantitativo'): só a REFERÊNCIA SINAPI e a conversão em chapas — conferência, NÃO somar */
+    function refCamada(id, ref, nome, planta) {
+      var cm = camadas[id]; if (!cm || !(cm.area > 0)) return;
+      var it = item(nome + " — referência SINAPI e chapas (conferência)", "m²", cm.area, "conferência: a camada já sai em 'Camadas — quantitativo' (não somar)", { woodframe: true, somar: false, informativo: true, inclusoEm: "Camadas — quantitativo" });
+      comRef(it, ref, { un: "chapa", qtd: ceilT(cm.area * (1 + CP.perdaPlaca) / planta - 1e-9), regra: virg(cm.area) + " m² + " + virg(CP.perdaPlaca * 100, 0) + " % de perda ÷ chapa de " + virg(planta, 2) + " m² (a confirmar com o fornecedor)" });
+      itens.push(it);
+    }
+    refCamada("gesso_acart", "gessoST", "Gesso acartonado ST 12,5 mm", CP.placaM2); refCamada("gesso_acart_ru", "gessoRU", "Gesso acartonado RU 12,5 mm", CP.placaM2); refCamada("cimenticia_10", "cimenticia", "Placa cimentícia 10 mm", 1.2 * 2.5);
+    if (tot.la > 0) { var itL = item("Lã do núcleo — referência SINAPI (conferência)", "m²", tot.la, "conferência: a camada já sai em 'Camadas — quantitativo' (não somar); SINAPI 104725 é instalação em parede drywall (sem preço na base MG)", { woodframe: true, somar: false, informativo: true, inclusoEm: "Camadas — quantitativo" }); comRef(itL, "la", null); itens.push(itL);
+      avisos.push("Wood Frame: a lã do núcleo tem só REFERÊNCIA SINAPI 104725 (instalação em parede drywall) e essa composição está SEM PREÇO na base MG 06/2026 (custo 0): não entra no total; orçar à parte."); }
     pend.forEach(function (x) { avisos.push("Pendente: " + x + " — fora da tabela, calcular."); });
     /* CÁLCULO ESTRUTURAL (fase 2B, js/woodframecalc.js): opc.calculo (resultado) ou opc.calcular = true. O orçamento continua refletindo o MODELO; o cálculo só
        marca PRELIMINAR (reprova, sem solução ou premissa sem confirmação do RT), diz a força do hold-down e avisa onde a seção/espaçamento calculados diferem. */
@@ -745,6 +1110,11 @@
       try { if (WCm) calc = WCm.calcular({ estado: estado, vaos: vaosTodos || {}, opc: opc.calcOpc || {} }); } catch (eC) { avisos.push("Cálculo estrutural do Wood Frame: " + (eC && eC.message ? eC.message : eC)); }
     }
     var preliminar = false, prelMsg = null;
+    if (interf.length) {
+      /* EMPENA: a verga chega na guia superior inclinada — a verga/jacks não foram dimensionados contra o topo; o orçamento é PRELIMINAR até o RT resolver */
+      preliminar = true; prelMsg = "PRELIMINAR (empena): o topo da verga interfere com a guia superior inclinada em " + interf.join("; ") + " — conferir o vão ou o telhado.";
+      itens.forEach(function (x) { x.preliminar = true; x.obs = (x.obs ? x.obs + "; " : "") + "PRELIMINAR (verga × topo inclinado)"; });
+    }
     /* o cálculo guardado só vale para o modelo que ele viu (assinatura das paredes de quadro e dos vãos): mudou depois = DESATUALIZADO, sem aplicar as diferenças */
     var obraAtual = typeof Gestao !== "undefined" && Gestao && Gestao._bimSel != null ? String(Gestao._bimSel) : null, cobAtual = null;     /* a obra aberta agora (o cálculo guardado é de UMA obra) */
     try { if (WCm && WCm.coberturaDoEstado && arr(estado && estado.telhados).length) { var cdq = WCm.coberturaDoEstado(estado, null); if (cdq && !cdq.erro) cobAtual = WCm.cobKey(cdq); } } catch (eK) { cobAtual = null; }
@@ -766,26 +1136,41 @@
           if (R.contraventamento.hdMax > tdMax) tdMax = R.contraventamento.hdMax;
         }
       });
-      preliminar = !!calc.preliminar;
+      preliminar = !!calc.preliminar || interf.length > 0;
       itens.forEach(function (x) {
         x.calculoEstrutural = true; x.preliminar = preliminar;
         if (/^Hold-down/.test(x.item) && tdMax > 0) x.obs = (x.obs ? x.obs + "; " : "") + "força de cálculo do hold-down Td até " + virg(tdMax, 1) + " kN (NBR 7190-1:2022, memorial)";
         if (preliminar) x.obs = (x.obs ? x.obs + "; " : "") + "PRELIMINAR (cálculo estrutural)";
       });
       difs.slice().reverse().forEach(function (d) { avisos.unshift("O CÁLCULO difere do modelo — " + d + ": o orçamento reflete o MODELO até o tipo ser atualizado."); });
-      if (preliminar) prelMsg = "PRELIMINAR (cálculo estrutural do Wood Frame): " + calc.motivosPreliminar.join("; ") + ".";
+      if (preliminar) prelMsg = (calc.preliminar ? "PRELIMINAR (cálculo estrutural do Wood Frame): " + calc.motivosPreliminar.join("; ") + "." : "") + (interf.length ? (calc.preliminar ? " " : "") + "PRELIMINAR (empena): o topo da verga interfere com a guia superior inclinada em " + interf.join("; ") + " — conferir o vão ou o telhado." : "");
     } else if (calc && !calc.ok) avisos.push("Cálculo estrutural do Wood Frame não rodou: " + (calc.motivo || "sem resultado") + ".");
     /* sem preço: nenhum item daqui tem composição SINAPI (código nunca inventado). O total que a tela mostrar fica PARCIAL e o aviso diz quantos. */
-    var semPreco = itens.filter(function (x) { return x.orcarAParte && !x.sinapi; }).length;
-    if (semPreco) avisos.unshift(semPreco + " itens Wood Frame sem preço (sem composição SINAPI neste sistema): o total do orçamento é PARCIAL até orçá-los à parte.");
+    /* TOTAL do Wood Frame (fase 2C): soma só o que tem código E preço na base (opc.precos(codigo) → R$ por unidade do SINAPI, ou Sinapi.obter no navegador), na UNIDADE DE COMPRA quando ela
+       é a do insumo (m³, kg, cartucho, lata); o resto é pendente. Enquanto houver item sem código ou sem preço o total é PARCIAL e o aviso diz quantos. */
+    var PREC = typeof opc.precos === "function" ? opc.precos : (global.Sinapi && global.Sinapi.obter ? function (cd) { var z = global.Sinapi.obter(cd); return z ? Number(z.custoUnitario) : null; } : null);
+    var totalRS = 0, comPreco = 0, semPrecoBase = 0, semCodigo = 0, linhasTot = [];
+    itens.forEach(function (x) {
+      if (x.somar === false || x.informativo) return;
+      if (!x.sinapi) { semCodigo++; return; }
+      var pr = PREC ? PREC(x.sinapi.codigo) : null;
+      if (!PREC) return;                       /* sem consulta de preço: o item tem código, o total em R$ simplesmente não é calculado (aviso abaixo) */
+      if (!(pr > 0)) { semPrecoBase++; return; }
+      var qtd = x.compra && (/^(m³|kg)$/.test(x.compra.un) || /^(cartucho|lata)/.test(x.compra.un)) ? x.compra.qtd : x.qtd, valor = r4(qtd * pr);
+      totalRS += valor; comPreco++; linhasTot.push({ item: x.item, codigo: x.sinapi.codigo, qtd: qtd, un: x.compra ? x.compra.un : x.un, precoUn: pr, valor: valor });
+    });
+    var semPreco = semCodigo + semPrecoBase;
+    var resumoTotal = { total: PREC ? r4(totalRS) : null, comPreco: comPreco, semCodigo: semCodigo, semPrecoNaBase: semPrecoBase, semPreco: semPreco, parcial: semPreco > 0, base: SINAPI_BASE, linhas: linhasTot, precosConsultados: !!PREC };
+    if (!PREC) avisos.push("Wood Frame: os preços do SINAPI não foram consultados (opc.precos / Sinapi.obter ausente): o total em R$ não foi calculado.");
+    if (semPreco) avisos.unshift(semPreco + " itens Wood Frame sem preço (" + semCodigo + " sem composição/insumo SINAPI, " + semPrecoBase + " sem preço na base): o total do orçamento é PARCIAL até orçá-los à parte.");
     if (prelMsg) avisos.unshift(prelMsg);       /* o PRELIMINAR vai na frente de tudo */
-    return { itens: itens, avisos: avisos, paredes: A.paredes, semPreco: semPreco, parcial: semPreco > 0, preliminar: preliminar, calculado: !!(calc && calc.ok) };
+    return { itens: itens, avisos: avisos, paredes: A.paredes, semPreco: semPreco, parcial: semPreco > 0, preliminar: preliminar, calculado: !!(calc && calc.ok), total: resumoTotal };
   }
 
   var WoodFrameQuadro = {
     PADRAO: PADRAO, VERGAS: VERGAS, VERGA_ACIMA: VERGA_ACIMA, VERGAS_NOTA: VERGAS_NOTA,
     params: params, vergaDe: vergaDe, gerar: gerar, ehWf: ehWf, daCaixa: daCaixa, paraParede: paraParede, emMundo: emMundo,
-    planta: planta, posChumbadores: posChumbadores, quantitativo: quantitativo, vaosDasParedes: vaosDasParedes, limparCache: limparCache, estatisticas: estatisticas, posCamadas: posCamadas, hachDe: hachDe
+    SINAPI: SINAPI_WF, SINAPI_BASE: SINAPI_BASE, SINAPI_PENDENTE: SINAPI_PENDENTE, COMPRA_PADRAO: COMPRA_PADRAO, planta: planta, malhaPol: malhaPol, corteHPol: corteHPol, areaPol: areaPol, posChumbadores: posChumbadores, quantitativo: quantitativo, vaosDasParedes: vaosDasParedes, limparCache: limparCache, estatisticas: estatisticas, posCamadas: posCamadas, hachDe: hachDe
   };
   if (typeof module !== "undefined" && module.exports) module.exports = WoodFrameQuadro;
   else global.WoodFrameQuadro = WoodFrameQuadro;

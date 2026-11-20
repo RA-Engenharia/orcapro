@@ -915,20 +915,31 @@
     });
     var Es = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); if (Es && Es.quantitativo) { var qe = Es.quantitativo(estado, opc); qe.itens.forEach(function (x) { itens.push(x); }); qe.avisos.forEach(function (x) { avisos.push(x); }); }
     var wfParcial = false, wfSemPreco = 0;
-    var wfPrelim = false, wfCalculado = false;
+    var wfPrelim = false, wfCalculado = false, wfTotal = null, wfStale = false;
     var Wq = dep("WoodFrameQuadro", "./woodframequadro.js");
     if (Wq && Wq.quantitativo) {
       /* o ÚLTIMO cálculo estrutural do Wood Frame (NBR 7190-1:2022) segue para o orçamento: PRELIMINAR e "o cálculo pede 38×140 / prego 75" chegam aqui; sem o cálculo, o orçamento é o do MODELO como sempre */
       var opW = opc, WCq = dep("WoodFrameCalc", "./woodframecalc.js");
-      if (!opc.calculo && WCq && WCq.ultimo && WCq.ultimo()) { opW = {}; Object.keys(opc).forEach(function (k) { opW[k] = opc[k]; }); opW.calculo = WCq.ultimo(); }
-      var qw = Wq.quantitativo(estado, opW); qw.itens.forEach(function (x) { itens.push(x); }); qw.avisos.forEach(function (x) { avisos.push(x); }); wfParcial = !!qw.parcial; wfSemPreco = qw.semPreco || 0; wfPrelim = !!qw.preliminar; wfCalculado = !!qw.calculado;
+      if (!opc.calculo && WCq && WCq.ultimo && WCq.ultimo()) {
+        /* só o cálculo VIGENTE (o modelo, o topo e os vãos que ele viu) vai ao orçamento; o velho não entra e o aviso diz */
+        var ultW = WCq.ultimo(), vgW = false;
+        try { vgW = WCq.vigente(estado, Wq.vaosDasParedes(estado, opc), ultW); } catch (eVg) { vgW = false; }
+        if (vgW) { opW = {}; Object.keys(opc).forEach(function (k) { opW[k] = opc[k]; }); opW.calculo = ultW; }
+        else wfStale = true;
+      }
+      var qw = Wq.quantitativo(estado, opW); qw.itens.forEach(function (x) { itens.push(x); }); qw.avisos.forEach(function (x) { avisos.push(x); }); wfParcial = !!qw.parcial; wfSemPreco = qw.semPreco || 0; wfPrelim = !!qw.preliminar; wfCalculado = !!qw.calculado; wfTotal = qw.total || null;
+      if (wfStale) {
+        /* o cálculo guardado não é mais do modelo (nem do topo do telhado): NÃO vai ao orçamento; o orçamento segue o MODELO e fica PRELIMINAR com o aviso na frente */
+        wfPrelim = true; qw.itens.forEach(function (x) { x.preliminar = true; });
+        avisos.unshift("PRELIMINAR: o cálculo estrutural do Wood Frame está DESATUALIZADO (o modelo, o topo do telhado ou os vãos mudaram depois dele) e NÃO foi usado no orçamento: calcule de novo.");
+      }
     }   /* WOOD FRAME: peças, OSB, fixações e membrana */
     var Fd = dep("BimForroDrywall", "./bimforrodrywall.js"); if (Fd && Fd.quantitativo) { var qf = Fd.quantitativo(estado, opc); qf.itens.forEach(function (x) { itens.push(x); }); qf.avisos.forEach(function (x) { avisos.push(x); }); }
     var totais = {};
     itens.forEach(function (x) { var k = x.item + "|" + x.un; totais[x.grupo] = (totais[x.grupo] || 0) + 1; void k; });
     return { itens: itens, avisos: avisos, base: SINAPI.base, contagemPorGrupo: totais,
-             comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length,
-             parcial: wfParcial, semPrecoWoodFrame: wfSemPreco, woodFramePreliminar: wfPrelim, woodFrameCalculado: wfCalculado };   /* WOOD FRAME: sem composição SINAPI, o total que alguém somar fica PARCIAL */
+             comCodigo: itens.filter(function (x) { return !!x.sinapi && !x.informativo; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length,
+             parcial: wfParcial, semPrecoWoodFrame: wfSemPreco, woodFramePreliminar: wfPrelim, woodFrameCalculado: wfCalculado, woodFrameTotal: wfTotal };   /* WOOD FRAME: sem composição SINAPI, o total que alguém somar fica PARCIAL */
   }
 
   /* ============================================================ T2 (20/10/2026): RUFO E CONTRARRUFO NO ENCONTRO COM PAREDE MAIS ALTA

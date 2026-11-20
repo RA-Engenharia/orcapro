@@ -139,8 +139,18 @@
   var PADROES_HATCH = {
     cruzada: { nome: "RA-CRUZADA", fam: [{ a: 45, dxl: 0, dyl: 0.75 }, { a: 135, dxl: 0, dyl: 0.75 }] },
     tijolo: { nome: "RA-TIJOLO", fam: [{ a: 0, dxl: 0, dyl: 0.4 }, { a: 90, dxl: 0.4, dyl: 0.67, dash: [0.4, -0.4] }] },
-    concreto: { nome: "RA-CONCRETO", fam: [{ a: 0, dxl: 0.45, dyl: 0.45, dash: [0, -0.9] }, { a: 63, dxl: 0.9, dyl: 1.7, dash: [0, -1.8] }] }
+    concreto: { nome: "RA-CONCRETO", fam: [{ a: 0, dxl: 0.45, dyl: 0.45, dash: [0, -0.9] }, { a: 63, dxl: 0.9, dyl: 1.7, dash: [0, -1.8] }] },
+    /* WOOD FRAME (fase 2C): a hachura de cada CAMADA da parede de quadro (a mesma ideia do <pattern> d2-wf-* da tela) */
+    "wf-osb": { nome: "RA-WF-OSB", fam: [{ a: 45, dxl: 0, dyl: 0.5, dash: [1.4, -0.5] }, { a: 135, dxl: 0, dyl: 0.5, dash: [1.4, -0.5] }] },
+    "wf-gesso": { nome: "RA-WF-GESSO", fam: [{ a: 0, dxl: 0.35, dyl: 0.35, dash: [0, -0.7] }] },
+    "wf-cimenticia": { nome: "RA-WF-CIMENT", fam: [{ a: 45, dxl: 0, dyl: 0.35 }] },
+    "wf-la": { nome: "RA-WF-LA", fam: [{ a: 0, dxl: 0, dyl: 0.8, dash: [1.2, -0.6] }, { a: 90, dxl: 0.6, dyl: 1.2, dash: [0.6, -1.8] }] },
+    "wf-ripa": { nome: "RA-WF-RIPA", fam: [{ a: 90, dxl: 0, dyl: 0.8 }] }
   };
+  /* WOOD FRAME: camada (hach do quadro) → [nome da camada DXF, padrão de hachura] ; montante por tipo → camada */
+  var WF_CAMADA = { osb: ["WF-OSB", "wf-osb"], gesso: ["WF-GESSO", "wf-gesso"], cimenticia: ["WF-CIMENTICIA", "wf-cimenticia"], la: ["WF-LA", "wf-la"], ripa: ["WF-RIPA", "wf-ripa"], imper: ["WF-IMPERMEABILIZACAO", null], solido: ["WF-CAMADA", null] };
+  var WF_LINHA = { membrana: "WF-MEMBRANA", vapor: "WF-BARREIRA-VAPOR" };
+  function wfCamadaMontante(tipo) { return /^guia/.test(tipo) ? "WF-GUIA" : (/^(verga|peitoril|espacador)/.test(tipo) ? "WF-VERGA" : "WF-MONTANTE"); }
 
   /* ---------------------------------------------------------- escrever */
   function escrever(doc) {
@@ -758,6 +768,44 @@
         if (r) doc.linha(cG, r[0], r[1], r[2], r[3]);
       });
     });
+    /* 2c) WOOD FRAME (js/woodframequadro.js planta): cada CAMADA da parede de quadro no seu layer (WF-OSB, WF-GESSO, WF-CIMENTICIA, WF-LA…), com a hachura
+       dela, e os montantes CORTADOS pelo plano da planta em WF-MONTANTE (guias em WF-GUIA; vergas/peitoril em WF-VERGA, hachura de madeira a 45°). Linhas finas
+       (membrana, barreira de vapor) em WF-MEMBRANA / WF-BARREIRA-VAPOR; a cota do espaçamento em WF-COTA. O nível de detalhe da vista decide: "baixo" nada,
+       "medio" só as camadas, "alto" (padrão) camadas + montantes + cota — o mesmo do desenho da tela. */
+    var nvWf = opts.nivelDetalhe || e.nivelDetalhe || "alto";
+    if (dados.tipo === "planta" && (dados.wf || []).length && nvWf !== "baixo") {
+      var hWf = {}, hMont = [];
+      function seguirWf(nome, mm, lt) { return cam(nome, mm, lt); }
+      function poliWf(c, P, fechado) {
+        if (!rec || P.every(function (q) { return dentro(q[0], q[1], rec); })) { doc.poli(c, P, fechado); return true; }
+        for (var iw = 0; iw < P.length; iw++) { var a2 = P[iw], b2 = P[(iw + 1) % P.length], r2 = recortarSeg(a2[0], a2[1], b2[0], b2[1], rec); if (r2) doc.linha(c, r2[0], r2[1], r2[2], r2[3]); }
+        return false;
+      }
+      dados.wf.forEach(function (w) {
+        (w.itens || []).forEach(function (it) {
+          if (it.k === "camada") {
+            var cm = WF_CAMADA[it.hach] || WF_CAMADA.solido, nm = seguirWf(cm[0], pn.vista), P = (it.pts || []).map(function (q) { return xf.pt(q[0], q[1]); });
+            if (P.length < 3) return;
+            if (poliWf(nm, P, true) && cm[1]) { var hk = hWf[nm] || (hWf[nm] = { pad: cm[1], lacos: [], e: it.e }); hk.lacos.push(P); }
+          } else if (it.k === "linha") {
+            var nl = seguirWf(WF_LINHA[it.hach] || "WF-MEMBRANA", pn.corte, it.hach === "vapor" ? "TRACO-PONTO" : "TRACEJADO"), p1 = xf.pt(it.a[0], it.a[1]), p2 = xf.pt(it.b[0], it.b[1]), r3 = recortarSeg(p1[0], p1[1], p2[0], p2[1], rec);
+            if (r3) { var en = doc.linha(nl, r3[0], r3[1], r3[2], r3[3]); if (en) en.lt = it.hach === "vapor" ? "TRACO-PONTO" : "TRACEJADO"; }
+          } else if (it.k === "montante" && nvWf !== "medio") {
+            var nM = seguirWf(wfCamadaMontante(it.tipo), pn.corte), PM = (it.pts || []).map(function (q) { return xf.pt(q[0], q[1]); });
+            if (PM.length < 3) return;
+            if (poliWf(nM, PM, true)) { (hMont[nM] = hMont[nM] || []).push(PM); if (hMont.indexOf(nM) < 0) hMont.push(nM); }
+          }
+        });
+        if (nvWf !== "medio") (w.cotas || []).forEach(function (c0) {
+          var nC = seguirWf("WF-COTA", pn.cota), pa = xf.pt(c0.a[0], c0.a[1]), pb = xf.pt(c0.b[0], c0.b[1]);
+          if (rec && !(dentro(pa[0], pa[1], rec) && dentro(pb[0], pb[1], rec))) return;
+          var ang0 = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI; if (ang0 > 90 || ang0 <= -90) ang0 += 180;
+          doc.linha(nC, pa[0], pa[1], pb[0], pb[1]); doc.texto(nC, (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, e.textoCota * k * xf.s * 0.7, String(c0.texto), ang0, true);
+        });
+      });
+      Object.keys(hWf).forEach(function (nm) { var hk = hWf[nm]; doc.hachura(nm, hk.lacos, 0.6 * k * xf.s, false, { padrao: hk.pad });     /* espaço = fator · k · xf.s: a mesma regra do preenchimento do corte (1,6 · k · xf.s), o espaçamento acompanha a ESCALA da vista */ });
+      hMont.forEach(function (nM) { doc.hachura(nM, hMont[nM], 1.6 * k * xf.s, false, null);     /* madeira cortada: ANSI31 (45°), o mesmo espaçamento do corte */ });
+    }
     /* 3) COTAS como DIMENSION (mede de novo no CAD) */
     var cCota = cam("ANOT-COTA", pn.cota);
     D2.cotas(dados, e).forEach(function (c) {
@@ -785,7 +833,7 @@
     var svg = opts.svg || D2.svg(dados, e, { titulo: opts.titulo || "" }).svg;
     var mapa = {}; CAMADA_CLASSE.forEach(function (cc) { mapa[cc[1]] = doc.especificar(pre + cc[1], cc[1] === "ANOT-TITULO" || cc[1] === "ANOT-EIXO" || cc[1] === "ANOT-MARCA-CORTE" ? pn.marca : cc[1] === "CAD-VINCULO" ? pn.vista : pn.cota); });
     mapa.ANOT = doc.especificar(pre + "ANOT", pn.cota);
-    svgParaDxf(svg, doc, xf, { recorte: rec, camadas: mapa, pular: { "d2-papel": 1, "d2-vista": 1, "d2-corte": 1, "d2-porta": 1, "d2-cota": 1, "d2-amb-alvo": 1, "d2-amb-cores": 1, "d2-amb-sel-l": 1, "d2-acima-l": 1, "d2-fase-demolido": 1, "d2-fase-temporario": 1 } });
+    svgParaDxf(svg, doc, xf, { recorte: rec, camadas: mapa, pular: { "d2-papel": 1, "d2-vista": 1, "d2-corte": 1, "d2-porta": 1, "d2-cota": 1, "d2-amb-alvo": 1, "d2-amb-cores": 1, "d2-amb-sel-l": 1, "d2-acima-l": 1, "d2-wf": 1, "d2-fase-demolido": 1, "d2-fase-temporario": 1 } });
     doc.camadasUsadas = Object.keys(camadasUsadas);
     return doc;
   }

@@ -441,6 +441,8 @@
     /* T3 (20/10/2026): as PEÇAS do telhado paramétrico (js/ifcp3.js escreverPacote), partes do IfcRoof. A categoria em que
        o importador põe cada uma NÃO foi conferida no IFCCategoryUtil.cs: sem abrirIfc (pendente de ida e volta no Revit) */
     membroTelhado: { ifc: "IFCMEMBER", revit: "Telhados", parte: "telhado" },
+    /* WOOD FRAME (fase 2C): as peças de madeira do quadro, partes (IfcRelAggregates) da IfcWall */
+    membroWoodFrame: { ifc: "IFCMEMBER", revit: "Paredes", parte: "parede" },
     vigaTelhado:   { ifc: "IFCBEAM", tipo: "BEAM", revit: "Telhados", parte: "telhado" },
     pilarTelhado:  { ifc: "IFCCOLUMN", tipo: "COLUMN", revit: "Telhados", parte: "telhado" },
     telhaTelhado:  { ifc: "IFCCOVERING", tipo: "ROOFING", revit: "Telhados", parte: "telhado" },
@@ -1105,7 +1107,42 @@
       ligarCodigos(ew, arr(c.servicos).map(function (s) { return s.codigo; })); origemPset(ew, [["Modelador", "IFCLABEL", "B2"]]);
       ew.volume = r6(vol - aV * t); ew.volumeBruto = r6(vol);
       paredesIfc[c.id] = { el: ew, pl: pl, c: c, nivel: nv, conflitos: vz ? vz.conflitos : [] };
+      woodFrameB2(c, ew, pl, nv, vz);
     }
+
+    /* ================= WOOD FRAME (fase 2C, 20/11/2026) =================
+     * As peças de madeira do quadro (js/woodframequadro.js: guias, montantes, ombreiras, vergas, cripples, peitoril, bloqueadores) saem como IfcMember
+     * (.MEMBER.; montante .POST.) com o material "Madeira serrada", a seção (Pset OrcaPRO_PecaWoodFrame + Qto_MemberBaseQuantities: Length, CrossSectionArea,
+     * NetVolume) e o comprimento, AGREGADAS à IfcWall por IfcRelAggregates (o mesmo arranjo da escada e do telhado). As camadas da parede já vão no
+     * IfcMaterialLayerSet do tipo (usoCamadas, com as espessuras do tipo). Cada peça é o contorno (u, y) da elevação extrudado na espessura do núcleo:
+     * peça de empena (cortada no ângulo) leva o contorno real. Volume das peças NÃO se soma ao da parede (a parede já é o volume cheio). */
+    function woodFrameB2(c, ew, pl, nv, vz) {
+      var WQ = dep("WoodFrameQuadro", "./woodframequadro.js");
+      if (!WQ || !WQ.ehWf || !WQ.ehWf(c)) return;
+      var r = WQ.paraParede(c, vz && vz.aceitos ? vz.aceitos : []);
+      if (!r || !r.ok) { avisos.push("Wood Frame " + c.id + ": quadro não gerado (" + (r && r.motivo ? r.motivo : "sem motivo") + ") — a parede saiu sem as peças"); return; }
+      var inv = !!c.inverterFaces, Lc = num(c.comprimento, 0), plW = placement(pl, [0, 0, 0]), partes = [], k = 0;
+      r.pecas.forEach(function (q) {
+        if (q.grupo !== "madeira") return;
+        var pts = q.pol ? q.pol.map(function (p) { return [p[0] - Lc / 2, p[1]]; }) : [[q.u0 - Lc / 2, q.y0], [q.u1 - Lc / 2, q.y0], [q.u1 - Lc / 2, q.y1], [q.u0 - Lc / 2, q.y1]];
+        /* local da parede: x ao longo do eixo, y = -w (face "fora" em +y quando as faces não estão invertidas), z para cima (a partir da base) */
+        var yHi = inv ? q.w1 : -q.w0, prof = q.w1 - q.w0;
+        var sol = extrudado(perfilPoli(pts.map(function (p) { return [p[0], p[1]]; }), null, q.tipo, "Wood Frame " + c.id + " " + q.tipo), pos3([0, yHi, 0], [0, -1, 0], [1, 0, 0]), prof);
+        pintar(sol, "Madeira serrada");
+        var pre = /^montante|^ombreira|^cripple/.test(q.tipo) ? "POST" : "MEMBER", nome = (NOMES_WF[q.tipo.replace(/-[12]$/, "")] || q.tipo) + " " + (++k) + " da parede " + c.id;
+        var el = peca(c.id + ":wf:" + q.id, "IFCMEMBER", nome, (NOMES_WF[q.tipo.replace(/-[12]$/, "")] || q.tipo) + " " + String(q.secao).replace("x", "×"), plW, forma([sol], "SweptSolid"), [E(pre)], 0, nv, { parte: c.id, mapa: "membroWoodFrame" });
+        ligarMaterial(el, "Madeira serrada");
+        var sm = /^(\d+)x(\d+)$/.exec(String(q.secao)), area = sm ? (+sm[1] / 1000) * (+sm[2] / 1000) : 0;
+        qto(el, "Qto_MemberBaseQuantities", [["Length", "L", q.comp], ["CrossSectionArea", "A", area], ["NetVolume", "V", q.vol]]);
+        pset(el, "OrcaPRO_PecaWoodFrame", [["Papel", "IFCLABEL", NOMES_WF[q.tipo.replace(/-[12]$/, "")] || q.tipo], ["Secao", "IFCLABEL", String(q.secao).replace("x", "×") + " mm"], ["SecaoCompra", "IFCLABEL", q.compra ? String(q.compra).replace("x", "×") + " mm (bruta)" : null],
+          ["Comprimento", "IFCLENGTHMEASURE", q.comp], ["ComprimentoMinimo", "IFCLENGTHMEASURE", q.pol ? q.compMin : null], ["AnguloCorte", "IFCPLANEANGLEMEASURE", q.pol && q.ang ? q.ang * Math.PI / 180 : null],
+          ["Parede", "IFCIDENTIFIER", String(c.id)], ["Observacao", "IFCTEXT", "Peça do quadro, parte da parede: o volume NÃO se soma ao da IfcWall"]]);
+        el.volume = r6(q.vol); el.comprimento = r6(q.comp); partes.push(el.ent);
+      });
+      if (partes.length) { w("IFCRELAGGREGATES", [G("rel:woodframe:" + c.id), OH, "$", "$", ref(ew.ent), L(partes.map(ref))]); ew.partesWoodFrame = partes.length; }
+    }
+    var NOMES_WF = { "guia-inferior": "Guia inferior", "guia-superior": "Guia superior", montante: "Montante", "montante-extremo": "Montante de extremidade", "montante-canto": "Montante de canto", "montante-encontro": "Montante de encontro",
+      "ombreira-rei": "Ombreira rei", "ombreira-jack": "Ombreira jack", verga: "Verga", "cripple-superior": "Cripple superior", "cripple-inferior": "Cripple inferior", peitoril: "Peitoril", bloco: "Bloco de pregação", bloqueador: "Bloqueador" };
 
     /* ================= CURVA — PAREDE CURVA (js/bimcurva.js) =================
      * Cada fatia (entre os cortes das pontas, das quebras do topo) é um
